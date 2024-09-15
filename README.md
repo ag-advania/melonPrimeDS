@@ -34,8 +34,8 @@ Releases for [Windows, Linux and macOS here!](https://github.com/makidoll/melonP
 
 -   Fyi. the emulator hack uses a different config path than melonDS, so this won't conflict
 
--   Aquire a copy of the **USA 1.1 rom** of Metroid Prime Hunters<br>
-    Other regions don't work beacuse memory injection is used
+-   ~~Aquire a copy of the **USA 1.1 rom** of Metroid Prime Hunters~~<br>
+    ~~Other regions don't work beacuse memory injection is used~~
 
 -   Make sure to set all DS bindings to `None` in<br>
     `Config → Input and hotkeys → DS keypad`<br>
@@ -117,7 +117,7 @@ Downloadable builds were made using GitHub actions
 
 > **⚠️🖱️ マウス加速を使用している場合の注意！**<br>
 > マウス加速を無効にしてください。さもないと違和感があります。<br>
-> [Windowsの場合はこちらのガイド](https://www.lifewire.com/turn-off-mouse-acceleration-in-windows-11-5193828)を参照し、[macOSの場合はSteerMouse](https://plentycom.jp/en/steermouse/index.html)を使用してください。<br>
+> [Windowsの場合はこちらのガイド]([https://www.lifewire.com/turn-off-mouse-acceleration-in-windows-11-5193828](https://trlog.org/mouse-acceleration/))を参照し、[macOSの場合はSteerMouse](https://plentycom.jp/en/steermouse/index.html)を使用してください。<br>
 > 残念ながら、生のマウス入力を取得することはできませんでした。
 
 > **⚠️ macOSユーザーへの注意！**<br>
@@ -127,8 +127,8 @@ Downloadable builds were made using GitHub actions
 ### 説明
 
 -   エミュレータのハックはmelonDSとは異なる設定パスを使用するため、競合しません
--   Metroid Prime Huntersの**USA 1.1 ROM**のコピーを入手してください<br>
-   メモリインジェクションを使用しているため、他の地域のROMは動作しません
+-   ~~Metroid Prime Huntersの**USA 1.1 ROM**のコピーを入手してください~~<br>
+   ~~メモリインジェクションを使用しているため、他の地域のROMは動作しません~~
 -   必ず以下の場所ですべてのDSバインディングを`None`に設定してください<br>
    `Config → Input and hotkeys → DS keypad`<br>
    デフォルトですでに空になっているはずです<br>
