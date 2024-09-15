@@ -93,5 +93,5 @@ Downloadable builds were made using GitHub actions
 ### Todo
 
 -   ~~Change controls when map is open. Need to find memory location~~
--   ~~Update to latest melonDS~~
+-   Update to latest melonDS
 -   ~~Would be really nice if weapon switching was done through the memory~~
