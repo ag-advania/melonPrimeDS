@@ -1,6 +1,6 @@
 <p align="center"><img src="./res/icon/melon_128x128.png"></p>
 <h1 align="center"><b>melonPrimeDS</b></h1>
-<br>
+  
 
 Modded version of [melonDS](https://melonds.kuribo64.net/) emulator to play Metroid Prime Hunters.
 
@@ -21,29 +21,29 @@ Releases for [Windows, Linux and macOS here!](https://github.com/makidoll/melonP
 [![aur](https://img.shields.io/aur/version/melonprimeds-bin?style=flat&logo=archlinux)](https://aur.archlinux.org/packages/melonprimeds-bin)
 
 
-> **⚠️🖱️ Warning if using mouse acceleration!** <br>
-> Please disable mouse acceleration or it will feel strange.<br>
-> Find a [guide for Windows here](https://www.lifewire.com/turn-off-mouse-acceleration-in-windows-11-5193828) and use [SteerMouse if on macOS](https://plentycom.jp/en/steermouse/index.html)<br>
+> **⚠️🖱️ Warning if using mouse acceleration!**   
+> Please disable mouse acceleration or it will feel strange.  
+> Find a [guide for Windows here](https://www.lifewire.com/turn-off-mouse-acceleration-in-windows-11-5193828) and use [SteerMouse if on macOS](https://plentycom.jp/en/steermouse/index.html)  
 > Wasn't able to get raw mouse input unfortunately.
 
-> **⚠️ Warning for macOS users!** <br>
-> Once you start the program, you're going to have to go into macOS settings:<br>
+> **⚠️ Warning for macOS users!**   
+> Once you start the program, you're going to have to go into macOS settings:  
 > **Privacy & Security > Accessibility**, and ensure melonPrimeDS is enabled.
 
 ### Instructions
 
 -   Fyi. the emulator hack uses a different config path than melonDS, so this won't conflict
 
--   ~~Aquire a copy of the **USA 1.1 rom** of Metroid Prime Hunters~~<br>
+-   ~~Aquire a copy of the **USA 1.1 rom** of Metroid Prime Hunters~~  
     ~~Other regions don't work beacuse memory injection is used~~
 
--   Make sure to set all DS bindings to `None` in<br>
-    `Config → Input and hotkeys → DS keypad`<br>
-    Defaults should already be empty<br>
+-   Make sure to set all DS bindings to `None` in  
+    `Config → Input and hotkeys → DS keypad`  
+    Defaults should already be empty  
     _(click binding and press backspace)_
 
--   Find Metroid related `Keyboard mappings` in<br>
-    `Metroid → Input settings`<br>
+-   Find Metroid related `Keyboard mappings` in  
+    `Metroid → Input settings`  
     Recommended defaults have already been set, but feel free to change them if you want to
 
     Notes:
@@ -55,14 +55,14 @@ Releases for [Windows, Linux and macOS here!](https://github.com/makidoll/melonP
     -   UI left `Q` and right `E` will also press on the touch screen, for scan visor messages
     -   When in map view, press `Shift` to zoom out and `LMB` to zoom in
 
--   Find Metroid sensitivity settings in<br>
-    `Metroid → Other settings`<br>
-    <br>
-    When in-game, **make sure to set the aim sensitivty to the lowest!** <br>
-    The DS touchscreen isn't very precise, so setting it to lowest helps<br>
+-   Find Metroid sensitivity settings in  
+    `Metroid → Other settings`  
+      
+    When in-game, **make sure to set the aim sensitivty to the lowest!**   
+    The DS touchscreen isn't very precise, so setting it to lowest helps  
 -   Also recommended to set audio settings in-game to headphones
 
-<br>
+  
 <img src="./metroid/keyboard.png"/>
 
 ### Default settings changed from melonDS
@@ -98,7 +98,7 @@ Downloadable builds were made using GitHub actions
 
 <p align="center"><img src="./res/icon/melon_128x128.png"></p>
 <h1 align="center"><b>melonPrimeDS</b></h1>
-<br>
+  
 
 [melonDS](https://melonds.kuribo64.net/)エミュレータの改造版で、Metroid Prime Huntersをプレイするためのもの。
 少しハック的ですが、マウスとキーボードを使ってできるだけ楽しくゲームをプレイすることが目的です。
@@ -115,26 +115,26 @@ Downloadable builds were made using GitHub actions
 
 [![aur](https://img.shields.io/aur/version/melonprimeds-bin?style=flat&logo=archlinux)](https://aur.archlinux.org/packages/melonprimeds-bin)
 
-> **⚠️🖱️ マウス加速を使用している場合の注意！** <br>
-> マウス加速を無効にしてください。さもないと違和感があります。<br>
-> [Windowsの場合はこちらのガイド](https://trlog.org/mouse-acceleration/)を参照し、[macOSの場合はSteerMouse](https://plentycom.jp/en/steermouse/index.html)を使用してください。<br>
+> **⚠️🖱️ マウス加速を使用している場合の注意！**   
+> マウス加速を無効にしてください。さもないと違和感があります。  
+> [Windowsの場合はこちらのガイド](https://trlog.org/mouse-acceleration/)を参照し、[macOSの場合はSteerMouse](https://plentycom.jp/en/steermouse/index.html)を使用してください。  
 > 残念ながら、生のマウス入力を取得することはできませんでした。
 
-> **⚠️ macOSユーザーへの注意！** <br>
-> プログラムを起動したら、macOSの設定で以下の操作が必要です：<br>
+> **⚠️ macOSユーザーへの注意！**   
+> プログラムを起動したら、macOSの設定で以下の操作が必要です：  
 > **プライバシーとセキュリティ > アクセシビリティ**で、melonPrimeDSが有効になっていることを確認してください。
 
 ### 説明
 
 -   エミュレータのハックはmelonDSとは異なる設定パスを使用するため、競合しません
--   ~~Metroid Prime Huntersの**USA 1.1 ROM**のコピーを入手してください~~<br>
+-   ~~Metroid Prime Huntersの**USA 1.1 ROM**のコピーを入手してください~~  
    ~~メモリインジェクションを使用しているため、他の地域のROMは動作しません~~
--   必ず以下の場所ですべてのDSバインディングを`None`に設定してください<br>
-   `Config → Input and hotkeys → DS keypad`<br>
-   デフォルトですでに空になっているはずです<br>
+-   必ず以下の場所ですべてのDSバインディングを`None`に設定してください  
+   `Config → Input and hotkeys → DS keypad`  
+   デフォルトですでに空になっているはずです  
    *（バインディングをクリックしてバックスペースを押してください）*
--   以下の場所でMetroid関連の`キーボードマッピング`を見つけてください<br>
-   `Metroid → Input settings`<br>
+-   以下の場所でMetroid関連の`キーボードマッピング`を見つけてください  
+   `Metroid → Input settings`  
    推奨のデフォルト設定がすでに設定されていますが、必要に応じて変更してください
    注意点：
    -   ウィンドウにフォーカスするとマウスがキャプチャされます。`ESC`で解放できます。
@@ -143,14 +143,14 @@ Downloadable builds were made using GitHub actions
    -   UI OK `F`はタッチスクリーンの「OK」を押しますが、ジャンプして一時的に照準が狂う可能性があります
    -   UI左`Q`と右`E`もタッチスクリーンを押し、スキャンバイザーのメッセージに使用します
    -   マップビューでは、`Shift`を押してズームアウト、`LMB`を押してズームインします
--   以下の場所でMetroidの感度設定を見つけてください<br>
-   `Metroid → Other settings`<br>
-   <br>
-   ゲーム内では、**必ず照準感度を最低に設定してください！** <br>
-   DSのタッチスクリーンはあまり精密ではないので、最低に設定すると役立ちます<br>
+-   以下の場所でMetroidの感度設定を見つけてください  
+   `Metroid → Other settings`  
+     
+   ゲーム内では、**必ず照準感度を最低に設定してください！**   
+   DSのタッチスクリーンはあまり精密ではないので、最低に設定すると役立ちます  
 -   ゲーム内でのオーディオ設定をヘッドフォンに設定することもおすすめします
 
-<br>
+  
 
 <img src="./metroid/keyboard.png"/>
 
