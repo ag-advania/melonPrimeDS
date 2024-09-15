@@ -21,12 +21,12 @@ Releases for [Windows, Linux and macOS here!](https://github.com/makidoll/melonP
 [![aur](https://img.shields.io/aur/version/melonprimeds-bin?style=flat&logo=archlinux)](https://aur.archlinux.org/packages/melonprimeds-bin)
 
 
-> **⚠️🖱️ Warning if using mouse acceleration!**<br>
+> **⚠️🖱️ Warning if using mouse acceleration!** <br>
 > Please disable mouse acceleration or it will feel strange.<br>
 > Find a [guide for Windows here](https://www.lifewire.com/turn-off-mouse-acceleration-in-windows-11-5193828) and use [SteerMouse if on macOS](https://plentycom.jp/en/steermouse/index.html)<br>
 > Wasn't able to get raw mouse input unfortunately.
 
-> **⚠️ Warning for macOS users!**<br>
+> **⚠️ Warning for macOS users!** <br>
 > Once you start the program, you're going to have to go into macOS settings:<br>
 > **Privacy & Security > Accessibility**, and ensure melonPrimeDS is enabled.
 
@@ -58,7 +58,7 @@ Releases for [Windows, Linux and macOS here!](https://github.com/makidoll/melonP
 -   Find Metroid sensitivity settings in<br>
     `Metroid → Other settings`<br>
     <br>
-    When in-game, **make sure to set the aim sensitivty to the lowest!**<br>
+    When in-game, **make sure to set the aim sensitivty to the lowest!** <br>
     The DS touchscreen isn't very precise, so setting it to lowest helps<br>
 -   Also recommended to set audio settings in-game to headphones
 
@@ -115,12 +115,12 @@ Downloadable builds were made using GitHub actions
 
 [![aur](https://img.shields.io/aur/version/melonprimeds-bin?style=flat&logo=archlinux)](https://aur.archlinux.org/packages/melonprimeds-bin)
 
-> **⚠️🖱️ マウス加速を使用している場合の注意！**<br>
+> **⚠️🖱️ マウス加速を使用している場合の注意！** <br>
 > マウス加速を無効にしてください。さもないと違和感があります。<br>
 > [Windowsの場合はこちらのガイド](https://trlog.org/mouse-acceleration/)を参照し、[macOSの場合はSteerMouse](https://plentycom.jp/en/steermouse/index.html)を使用してください。<br>
 > 残念ながら、生のマウス入力を取得することはできませんでした。
 
-> **⚠️ macOSユーザーへの注意！**<br>
+> **⚠️ macOSユーザーへの注意！** <br>
 > プログラムを起動したら、macOSの設定で以下の操作が必要です：<br>
 > **プライバシーとセキュリティ > アクセシビリティ**で、melonPrimeDSが有効になっていることを確認してください。
 
@@ -146,7 +146,7 @@ Downloadable builds were made using GitHub actions
 -   以下の場所でMetroidの感度設定を見つけてください<br>
    `Metroid → Other settings`<br>
    <br>
-   ゲーム内では、**必ず照準感度を最低に設定してください！**<br>
+   ゲーム内では、**必ず照準感度を最低に設定してください！** <br>
    DSのタッチスクリーンはあまり精密ではないので、最低に設定すると役立ちます<br>
 -   ゲーム内でのオーディオ設定をヘッドフォンに設定することもおすすめします
 
