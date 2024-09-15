@@ -117,7 +117,7 @@ Downloadable builds were made using GitHub actions
 
 > **⚠️🖱️ マウス加速を使用している場合の注意！**<br>
 > マウス加速を無効にしてください。さもないと違和感があります。<br>
-> [Windowsの場合はこちらのガイド]([https://www.lifewire.com/turn-off-mouse-acceleration-in-windows-11-5193828](https://trlog.org/mouse-acceleration/))を参照し、[macOSの場合はSteerMouse](https://plentycom.jp/en/steermouse/index.html)を使用してください。<br>
+> [Windowsの場合はこちらのガイド](https://www.lifewire.com/turn-off-mouse-acceleration-in-windows-11-5193828)を参照し、[macOSの場合はSteerMouse](https://plentycom.jp/en/steermouse/index.html)を使用してください。<br>
 > 残念ながら、生のマウス入力を取得することはできませんでした。
 
 > **⚠️ macOSユーザーへの注意！**<br>
