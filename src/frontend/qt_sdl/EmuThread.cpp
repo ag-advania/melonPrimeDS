@@ -1446,12 +1446,18 @@ void EmuThread::run()
 
         NDS->SetKeyMask(Input::GetInputMask());
 
-        /*
+
         if (screenGL) {
+            mainWindow->osdAddMessage(0, "ScreenGL");
+
             screenGL->virtualCursorShow = drawVCur;
             screenGL->virtualCursorX = virtualStylusX;
             screenGL->virtualCursorY = virtualStylusY;
         } else if (drawVCur) {
+            // TODO Fix that drawVCur is not working...
+
+            mainWindow->osdAddMessage(0, "drawVCur");
+
             const int cursorSize = virtualCursorSize;
             const int cursorOffset = virtualCursorSize / 2;
 
@@ -1483,7 +1489,9 @@ void EmuThread::run()
                 }
             }
         }
-        */
+
+
+        /*
 
         if (screenGL) {
             mainWindow->osdAddMessage(0, "ScreenGL");
@@ -1492,6 +1500,8 @@ void EmuThread::run()
             screenGL->virtualCursorY = virtualStylusY;
         }
         else if (drawVCur) {
+            // TODO Fix that drawVCur is not working...
+
             mainWindow->osdAddMessage(0, "drawVCur");
 
             const int cursorSize = virtualCursorSize;
@@ -1523,6 +1533,7 @@ void EmuThread::run()
                 }
             }
         }
+        */
 
 
 
