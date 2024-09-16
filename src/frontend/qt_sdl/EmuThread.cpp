@@ -1433,11 +1433,19 @@ void EmuThread::run()
 
         NDS->SetKeyMask(Input::GetInputMask());
 
+        // Showing Virtual Stylus
         if (screenGL) {
+            // OpenGL
             screenGL->virtualCursorShow = drawVCur;
             screenGL->virtualCursorX = virtualStylusX;
             screenGL->virtualCursorY = virtualStylusY;
+
         } else if (drawVCur) {
+            // no OpenGL
+            
+            // TODO Fix that drawVCur is not working with limited Framerate
+            // TODO If OpenGL is not used, Virtual Stylus is only visible when the frame rate limit is removed.
+
             const int cursorSize = virtualCursorSize;
             const int cursorOffset = virtualCursorSize / 2;
 
