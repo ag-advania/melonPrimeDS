@@ -1415,7 +1415,14 @@ void EmuThread::run()
                 }
 
 
+                // TODO move this to best place
+                // Altform process. Why is it here?
 
+                isAltForm = NDS->ARM9Read8(isAltFormAddr) == 0x02;
+                if (!isAltForm && enableAim) {
+                    // mainWindow->osdAddMessage(0,"touching screen for aim");
+                    NDS->TouchScreen(128, 96); // required for aiming
+                }
 
 			}
 
@@ -1425,11 +1432,6 @@ void EmuThread::run()
 
 		}// END of if(isFocused)
 
-        isAltForm = NDS->ARM9Read8(isAltFormAddr) == 0x02;
-        if (!isAltForm && enableAim) {
-            // mainWindow->osdAddMessage(0,"touching screen for aim");
-            NDS->TouchScreen(128, 96); // required for aiming
-        }
 
         NDS->SetKeyMask(Input::GetInputMask());
 
@@ -1479,7 +1481,8 @@ void EmuThread::run()
         }
 
         frameAdvanceOnce();
-    }
+
+    } // End of while (EmuRunning != emuStatus_Exit)
 
     file = Platform::OpenLocalFile("rtc.bin", Platform::FileMode::Write);
     if (file)
