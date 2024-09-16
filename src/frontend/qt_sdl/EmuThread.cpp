@@ -1486,29 +1486,33 @@ void EmuThread::run()
         */
 
         if (screenGL) {
+            mainWindow->osdAddMessage(0, "ScreenGL");
             screenGL->virtualCursorShow = drawVCur;
             screenGL->virtualCursorX = virtualStylusX;
             screenGL->virtualCursorY = virtualStylusY;
-        } else if (drawVCur) {
+        }
+        else if (drawVCur) {
+            mainWindow->osdAddMessage(0, "drawVCur");
+
             const int cursorSize = virtualCursorSize;
             const int cursorOffset = cursorSize / 2;
-            const int minX = std::max(0, virtualStylusX - cursorOffset);
-            const int maxX = std::min(255, virtualStylusX + cursorOffset);
-            const int minY = std::max(0, virtualStylusY - cursorOffset);
-            const int maxY = std::min(191, virtualStylusY + cursorOffset);
+
+            const int minX = std::max(0, static_cast<int>(virtualStylusX - cursorOffset));
+            const int maxX = std::min(255, static_cast<int>(virtualStylusX + cursorOffset));
+            const int minY = std::max(0, static_cast<int>(virtualStylusY - cursorOffset));
+            const int maxY = std::min(191, static_cast<int>(virtualStylusY + cursorOffset));
 
             const bool isAccelerated = NDS->GPU.GPU3D.IsRendererAccelerated();
             auto& framebuffer0 = NDS->GPU.Framebuffer[0][1];
             auto& framebuffer1 = NDS->GPU.Framebuffer[1][1];
-
             const int stride = isAccelerated ? 256 * 3 + 1 : 256;
 
             for (int y = minY; y <= maxY; y++) {
-                const int cursorY = y - (virtualStylusY - cursorOffset);
+                const int cursorY = y - (static_cast<int>(virtualStylusY) - cursorOffset);
                 if (cursorY < 0 || cursorY >= cursorSize) continue;
 
                 for (int x = minX; x <= maxX; x++) {
-                    const int cursorX = x - (virtualStylusX - cursorOffset);
+                    const int cursorX = x - (static_cast<int>(virtualStylusX) - cursorOffset);
                     if (cursorX < 0 || cursorX >= cursorSize) continue;
 
                     if (virtualCursorPixels[cursorY * cursorSize + cursorX]) {
@@ -1519,6 +1523,7 @@ void EmuThread::run()
                 }
             }
         }
+
 
 
         frameAdvanceOnce();
