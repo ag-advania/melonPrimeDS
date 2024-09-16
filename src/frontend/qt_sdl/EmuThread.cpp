@@ -1447,43 +1447,38 @@ void EmuThread::run()
         NDS->SetKeyMask(Input::GetInputMask());
 
         if (screenGL) {
-            // mainWindow->osdAddMessage(0, "ScreenGL");
             screenGL->virtualCursorShow = drawVCur;
             screenGL->virtualCursorX = virtualStylusX;
             screenGL->virtualCursorY = virtualStylusY;
-        }
-        else if (drawVCur) {
-            // TODO Fix that drawVCur is not working with limited Framerate
-            // TODO If OpenGL is not used, Virtual Stylus is only visible when the frame rate limit is removed.
-
-            // mainWindow->osdAddMessage(0, "drawVCur");
-
+        } else if (drawVCur) {
             const int cursorSize = virtualCursorSize;
-            const int cursorOffset = cursorSize / 2;
+            const int cursorOffset = virtualCursorSize / 2;
 
-            const int minX = std::max(0, static_cast<int>(virtualStylusX - cursorOffset));
-            const int maxX = std::min(255, static_cast<int>(virtualStylusX + cursorOffset));
-            const int minY = std::max(0, static_cast<int>(virtualStylusY - cursorOffset));
-            const int maxY = std::min(191, static_cast<int>(virtualStylusY + cursorOffset));
-
-            const bool isAccelerated = NDS->GPU.GPU3D.IsRendererAccelerated();
-            auto& framebuffer0 = NDS->GPU.Framebuffer[0][1];
-            auto& framebuffer1 = NDS->GPU.Framebuffer[1][1];
-            const int stride = isAccelerated ? 256 * 3 + 1 : 256;
-
-            for (int y = minY; y <= maxY; y++) {
-                const int cursorY = y - (static_cast<int>(virtualStylusY) - cursorOffset);
-                if (cursorY < 0 || cursorY >= cursorSize) continue;
-
-                for (int x = minX; x <= maxX; x++) {
-                    const int cursorX = x - (static_cast<int>(virtualStylusX) - cursorOffset);
-                    if (cursorX < 0 || cursorX >= cursorSize) continue;
-
-                    if (virtualCursorPixels[cursorY * cursorSize + cursorX]) {
-                        const int index = y * stride + x;
-                        framebuffer0[index] = 0xFFFFFFFF;
-                        framebuffer1[index] = 0xFFFFFFFF;
+            auto setPixel {
+                [&](int x, int y, melonDS::u32 color) {
+                    if (x < 0) return;
+                    if (x > 255) return;
+                    if (y < 0) return;
+                    if (y > 191) return;
+                    if (NDS->GPU.GPU3D.IsRendererAccelerated()) {
+                        NDS->GPU.Framebuffer[0][1][y * (256 * 3 + 1) + x] = color;
+                        NDS->GPU.Framebuffer[1][1][y * (256 * 3 + 1) + x] = color;
+                    } else {
+                        NDS->GPU.Framebuffer[0][1][y * 256 + x] = color;
+                        NDS->GPU.Framebuffer[1][1][y * 256 + x] = color;
                     }
+                }
+            };
+
+            for (int y = 0; y < cursorSize; y++) {
+                for (int x = 0; x < cursorSize; x++) {
+                    int value = virtualCursorPixels[y * cursorSize + x];
+                    if (!value) continue;
+                    setPixel(
+                        virtualStylusX + x - cursorOffset,
+                        virtualStylusY + y - cursorOffset,
+                        0xFFFFFFFF
+                    );
                 }
             }
         }
