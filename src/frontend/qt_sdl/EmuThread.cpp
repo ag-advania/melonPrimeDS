@@ -1446,6 +1446,7 @@ void EmuThread::run()
 
         NDS->SetKeyMask(Input::GetInputMask());
 
+        /*
         if (screenGL) {
             screenGL->virtualCursorShow = drawVCur;
             screenGL->virtualCursorX = virtualStylusX;
@@ -1482,6 +1483,43 @@ void EmuThread::run()
                 }
             }
         }
+        */
+
+        if (screenGL) {
+            screenGL->virtualCursorShow = drawVCur;
+            screenGL->virtualCursorX = virtualStylusX;
+            screenGL->virtualCursorY = virtualStylusY;
+        } else if (drawVCur) {
+            const int cursorSize = virtualCursorSize;
+            const int cursorOffset = cursorSize / 2;
+            const int minX = std::max(0, virtualStylusX - cursorOffset);
+            const int maxX = std::min(255, virtualStylusX + cursorOffset);
+            const int minY = std::max(0, virtualStylusY - cursorOffset);
+            const int maxY = std::min(191, virtualStylusY + cursorOffset);
+
+            const bool isAccelerated = NDS->GPU.GPU3D.IsRendererAccelerated();
+            auto& framebuffer0 = NDS->GPU.Framebuffer[0][1];
+            auto& framebuffer1 = NDS->GPU.Framebuffer[1][1];
+
+            const int stride = isAccelerated ? 256 * 3 + 1 : 256;
+
+            for (int y = minY; y <= maxY; y++) {
+                const int cursorY = y - (virtualStylusY - cursorOffset);
+                if (cursorY < 0 || cursorY >= cursorSize) continue;
+
+                for (int x = minX; x <= maxX; x++) {
+                    const int cursorX = x - (virtualStylusX - cursorOffset);
+                    if (cursorX < 0 || cursorX >= cursorSize) continue;
+
+                    if (virtualCursorPixels[cursorY * cursorSize + cursorX]) {
+                        const int index = y * stride + x;
+                        framebuffer0[index] = 0xFFFFFFFF;
+                        framebuffer1[index] = 0xFFFFFFFF;
+                    }
+                }
+            }
+        }
+
 
         frameAdvanceOnce();
     }
