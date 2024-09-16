@@ -1446,63 +1446,17 @@ void EmuThread::run()
 
         NDS->SetKeyMask(Input::GetInputMask());
 
-
         if (screenGL) {
-            mainWindow->osdAddMessage(0, "ScreenGL");
-
-            screenGL->virtualCursorShow = drawVCur;
-            screenGL->virtualCursorX = virtualStylusX;
-            screenGL->virtualCursorY = virtualStylusY;
-        } else if (drawVCur) {
-            // TODO Fix that drawVCur is not working...
-
-            mainWindow->osdAddMessage(0, "drawVCur");
-
-            const int cursorSize = virtualCursorSize;
-            const int cursorOffset = virtualCursorSize / 2;
-
-            auto setPixel {
-                [&](int x, int y, melonDS::u32 color) {
-                    if (x < 0) return;
-                    if (x > 255) return;
-                    if (y < 0) return;
-                    if (y > 191) return;
-                    if (NDS->GPU.GPU3D.IsRendererAccelerated()) {
-                        NDS->GPU.Framebuffer[0][1][y * (256 * 3 + 1) + x] = color;
-                        NDS->GPU.Framebuffer[1][1][y * (256 * 3 + 1) + x] = color;
-                    } else {
-                        NDS->GPU.Framebuffer[0][1][y * 256 + x] = color;
-                        NDS->GPU.Framebuffer[1][1][y * 256 + x] = color;
-                    }
-                }
-            };
-
-            for (int y = 0; y < cursorSize; y++) {
-                for (int x = 0; x < cursorSize; x++) {
-                    int value = virtualCursorPixels[y * cursorSize + x];
-                    if (!value) continue;
-                    setPixel(
-                        virtualStylusX + x - cursorOffset,
-                        virtualStylusY + y - cursorOffset,
-                        0xFFFFFFFF
-                    );
-                }
-            }
-        }
-
-
-        /*
-
-        if (screenGL) {
-            mainWindow->osdAddMessage(0, "ScreenGL");
+            // mainWindow->osdAddMessage(0, "ScreenGL");
             screenGL->virtualCursorShow = drawVCur;
             screenGL->virtualCursorX = virtualStylusX;
             screenGL->virtualCursorY = virtualStylusY;
         }
         else if (drawVCur) {
-            // TODO Fix that drawVCur is not working...
+            // TODO Fix that drawVCur is not working with limited Framerate
+            // TODO If OpenGL is not used, Virtual Stylus is only visible when the frame rate limit is removed.
 
-            mainWindow->osdAddMessage(0, "drawVCur");
+            // mainWindow->osdAddMessage(0, "drawVCur");
 
             const int cursorSize = virtualCursorSize;
             const int cursorOffset = cursorSize / 2;
@@ -1533,9 +1487,6 @@ void EmuThread::run()
                 }
             }
         }
-        */
-
-
 
         frameAdvanceOnce();
     }
