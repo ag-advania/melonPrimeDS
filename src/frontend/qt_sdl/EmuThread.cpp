@@ -1307,16 +1307,16 @@ void EmuThread::run()
 
                 // Array of sub-weapon hotkeys (Associating hotkey definitions with weapon indices)
                 Hotkey weaponHotkeys[] = {
-                    HK_MetroidWeapon4,  // Imperialist  4
+                    HK_MetroidWeapon1,  // ShockCoil    7
                     HK_MetroidWeapon2,  // Magmaul      6
                     HK_MetroidWeapon3,  // Judicator    5
-                    HK_MetroidWeapon1,  // ShockCoil    7
-                    HK_MetroidWeapon6,  // VoltDriver   1
-                    HK_MetroidWeapon5   // Battlehammer 3
+                    HK_MetroidWeapon4,  // Imperialist  4
+                    HK_MetroidWeapon5,  // Battlehammer 3
+                    HK_MetroidWeapon6   // VoltDriver   1
                                         // Omega Cannon 8 we don't need to set this here, because we need {last used weapon / Omega cannon}
                 };
 
-                int weaponIndices[] = { 4, 6, 5, 7, 1, 3 };  // Address of the weapon corresponding to each hotkey
+                int weaponIndices[] = { 7, 6, 5, 4, 3, 1 };  // Address of the weapon corresponding to each hotkey
 
 				// Sub-weapons processing (handled in a loop)
 				for (int i = 0; i < 6; i++) {
