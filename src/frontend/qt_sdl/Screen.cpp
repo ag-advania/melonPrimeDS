@@ -987,6 +987,8 @@ void ScreenPanelGL::drawScreenGL()
                             GL_UNSIGNED_BYTE, emuThread->NDS->GPU.Framebuffer[frontbuf][1].get());
         }
 
+        // OSD test{
+        // 
         // 下画面のOSDとしての描画
         glUseProgram(screenShaderProgram[2]);  // シェーダープログラムの使用
         glBindTexture(GL_TEXTURE_2D, screenTexture);  // 下画面のテクスチャをバインド
@@ -1004,6 +1006,8 @@ void ScreenPanelGL::drawScreenGL()
         glDrawArrays(GL_TRIANGLES, 0, 2 * 3);  // テクスチャを描画
 
         glContext->SwapBuffers();
+
+        // }OSD test
     }
 
     screenSettingsLock.lock();
