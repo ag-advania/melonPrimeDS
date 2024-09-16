@@ -1414,17 +1414,17 @@ void EmuThread::run()
                     frameAdvance(2);
                 }
 
-                // Touch again for aming in normal form
-                isAltForm = NDS->ARM9Read8(isAltFormAddr) == 0x02;
-                if (!isAltForm && enableAim) {
-                    // mainWindow->osdAddMessage(0,"touching screen for aim");
-                    NDS->TouchScreen(128, 96); // required for aiming
-                }
-
 			} // End of inGame
 
 
 		}// END of if(isFocused)
+
+        // Touch again for aiming in normal form
+        isAltForm = NDS->ARM9Read8(isAltFormAddr) == 0x02;
+        if (!isAltForm && enableAim) {
+            // mainWindow->osdAddMessage(0,"touching screen for aim");
+            NDS->TouchScreen(128, 96); // required for aiming
+        }
 
 
         NDS->SetKeyMask(Input::GetInputMask());
