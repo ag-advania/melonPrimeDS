@@ -1149,7 +1149,7 @@ void EmuThread::run()
 				drawVCur = false;
 
 
-                // cursor looking
+                // Aiming
 
                 // Processing for the X-axis
                 float mouseX = mouseRel.x();
@@ -1171,11 +1171,10 @@ void EmuThread::run()
                     enableAim = true;
                 }
 
-                // move
-
+                // Move hunter
                 processMoveInput();
 
-                // shoot
+                // Shoot
                 if (Input::HotkeyDown(HK_MetroidShootScan) || Input::HotkeyDown(HK_MetroidScanShoot)) {
                     FN_INPUT_PRESS(INPUT_L);
                 }
@@ -1183,7 +1182,7 @@ void EmuThread::run()
                     FN_INPUT_RELEASE(INPUT_L);
                 }
 
-                // morph ball boost, map zoom out, imperialist zoom
+                // Zoom, morph ball boost, map zoom out
                 if (Input::HotkeyDown(HK_MetroidMorphBallBoost)) {
                     isAltForm = NDS->ARM9Read8(isAltFormAddr) == 0x02;
                     bool isSamus = NDS->ARM9Read8(chosenHunterAddr) == 0x00;
@@ -1199,7 +1198,7 @@ void EmuThread::run()
                     FN_INPUT_RELEASE(INPUT_R);
                 }
 
-                // jump
+                // Jump
                 if (Input::HotkeyDown(HK_MetroidJump)) {
                     FN_INPUT_PRESS(INPUT_B);
                 }
@@ -1207,7 +1206,7 @@ void EmuThread::run()
                     FN_INPUT_RELEASE(INPUT_B);
                 }
 
-				// morph ball
+				// Alt-Form, morph ball
 				if (Input::HotkeyPressed(HK_MetroidMorphBall)) {
 					bool isSamus = NDS->ARM9Read8(chosenHunterAddr) == 0x00;
 					if (isSamus) {
@@ -1317,14 +1316,14 @@ void EmuThread::run()
 										// Omega Cannon 8 we don't need to set this here, because we need {last used weapon / Omega cannon}
 				};
 
-				int weaponIndices[] = { 7, 6, 5, 4, 3, 1 };  // 各ホットキーに対応する武器のアドレス
+				int weaponIndices[] = { 7, 6, 5, 4, 3, 1 };  // Address of the weapon corresponding to each hotkey
 
-				// サブ武器の処理(ループで処理する)
+				// Sub-weapons processing (handled in a loop)
 				for (int i = 0; i < 6; i++) {
 					if (Input::HotkeyPressed(weaponHotkeys[i])) {
-						SwitchWeapon(weaponIndices[i]);  // 対応する武器に切り替える
+						SwitchWeapon(weaponIndices[i]);  // Switch to the corresponding weapon
 
-						// ホットキーが押された場合にループを抜ける(武器切り替えが完了したため)
+						// Exit loop when hotkey is pressed (because weapon switching is completed)
 						break;
 					}
 				}
@@ -1337,7 +1336,7 @@ void EmuThread::run()
 					frameAdvance(2);
 				}
 
-                // start
+                // Start / View Match progress, points
                 if (Input::HotkeyDown(HK_MetroidMenu)) {
                     FN_INPUT_PRESS(INPUT_START);
                 }
@@ -1348,7 +1347,7 @@ void EmuThread::run()
 
                 // Adventure Mode Functions
 
-                // scan visor
+                // Scan Visor
                 if (Input::HotkeyPressed(HK_MetroidScanVisor)) {
                     NDS->ReleaseScreen();
                     frameAdvance(2);
@@ -1375,7 +1374,7 @@ void EmuThread::run()
                     frameAdvance(2);
                 }
 
-                // ok (in scans and messages)
+                // OK (in scans and messages)
                 if (Input::HotkeyPressed(HK_MetroidUIOk)) {
                     NDS->ReleaseScreen();
                     frameAdvance(2);
@@ -1383,7 +1382,7 @@ void EmuThread::run()
                     frameAdvance(2);
                 }
 
-                // left arrow (in scans and messages)
+                // Left arrow (in scans and messages)
                 if (Input::HotkeyPressed(HK_MetroidUILeft)) {
                     NDS->ReleaseScreen();
                     frameAdvance(2);
@@ -1391,7 +1390,7 @@ void EmuThread::run()
                     frameAdvance(2);
                 }
 
-                // right arrow (in scans and messages)
+                // Right arrow (in scans and messages)
                 if (Input::HotkeyPressed(HK_MetroidUIRight)) {
                     NDS->ReleaseScreen();
                     frameAdvance(2);
@@ -1399,6 +1398,7 @@ void EmuThread::run()
                     frameAdvance(2);
                 }
 
+                // Enter to Starship
                 if (Input::HotkeyPressed(HK_MetroidUIYes)) {
                     NDS->ReleaseScreen();
                     frameAdvance(2);
@@ -1406,6 +1406,7 @@ void EmuThread::run()
                     frameAdvance(2);
                 }
 
+                // No Enter to Starship
                 if (Input::HotkeyPressed(HK_MetroidUINo)) {
                     NDS->ReleaseScreen();
                     frameAdvance(2);
@@ -1424,10 +1425,7 @@ void EmuThread::run()
 
 		}// END of if(isFocused)
 
-        // is this a good way of detecting morph ball status?
         isAltForm = NDS->ARM9Read8(isAltFormAddr) == 0x02;
- //       bool isSamus = NDS->ARM9Read8(chosenHunterAddr) == 0x00;
-//        if (!isAltForm && isSamus && enableAim) {
         if (!isAltForm && enableAim) {
             // mainWindow->osdAddMessage(0,"touching screen for aim");
             NDS->TouchScreen(128, 96); // required for aiming
