@@ -986,6 +986,24 @@ void ScreenPanelGL::drawScreenGL()
             glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 192+2, 256, 192, GL_RGBA,
                             GL_UNSIGNED_BYTE, emuThread->NDS->GPU.Framebuffer[frontbuf][1].get());
         }
+
+        // 下画面のOSDとしての描画
+        glUseProgram(screenShaderProgram[2]);  // シェーダープログラムの使用
+        glBindTexture(GL_TEXTURE_2D, screenTexture);  // 下画面のテクスチャをバインド
+
+        // 下画面のテクスチャを設定
+        glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, 256, 192, GL_RGBA, GL_UNSIGNED_BYTE, emuThread->NDS->GPU.Framebuffer[frontbuf][1].get());
+
+        // OSDの位置を右上に設定
+        int osdX = this->width() - 256 - kOSDMargin;  // 右端に寄せる
+        int osdY = kOSDMargin;  // 上端に配置
+
+        // OSDの描画
+        glUniform2i(osdPosULoc, osdX, osdY);  // OSDの位置を指定
+        glUniform2i(osdSizeULoc, 256, 192);   // OSDのサイズを指定
+        glDrawArrays(GL_TRIANGLES, 0, 2 * 3);  // テクスチャを描画
+
+        glContext->SwapBuffers();
     }
 
     screenSettingsLock.lock();
