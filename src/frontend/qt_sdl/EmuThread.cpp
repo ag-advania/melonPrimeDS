@@ -966,6 +966,8 @@ void EmuThread::run()
 
 
         // auto mouseRel = rawInputThread->fetchMouseDelta();
+
+        // The QPoint class defines a point in the plane using integer precision. 
         QPoint mouseRel;
 
         // 感度係数を定数として定義
@@ -973,6 +975,10 @@ void EmuThread::run()
         const float SENSITIVITY_FACTOR_VIRTUAL_STYLUS = Config::MetroidVirtualStylusSensitivity * 0.01f;
 
         auto isFocused = mainWindow->panel->getFocused();
+
+
+        // Calculate for aim 
+        // updateMouseRelativeAndRecenterCursor
 
         // Handle the case when the window is focused
         if (isFocused) {
@@ -989,6 +995,7 @@ void EmuThread::run()
             QCursor::setPos(windowCenter);
         }
 
+        // record last frame was forcused or not
         focusedLastFrame = isFocused;
 
         bool drawVCur = false;
@@ -1084,90 +1091,65 @@ void EmuThread::run()
             weaponAddr = calculatePlayerAddress(baseWeaponAddr, playerPosition, playerAddressIncrement);
             jumpFlagAddr = calculatePlayerAddress(baseJumpFlagAddr, playerPosition, playerAddressIncrement);
 
-            // aim addresses for version and player number
-
-            /*
-            if (globalChecksum == RomVersions::KOREA1_0) {
-                aimAddrIncrement = 0x46;
-            }
-            */
-
+            // aim addresses
             aimXAddr = calculatePlayerAddress(baseAimXAddr, playerPosition, aimAddrIncrement);
             aimYAddr = calculatePlayerAddress(baseAimYAddr, playerPosition, aimAddrIncrement);
 
             // mainWindow->osdAddMessage(0, "Completed address calculation.");
 
 		}
-		if (isFocused) {
+
+        if (isFocused) {
 
 
-			if (isVirtualStylusEnabled) {
-				// VirtualStylus
+			if (!isVirtualStylusEnabled) {
+                // inGame
 
 
-				// this exists to just delay the pressing of the screen when you
-				// release the virtual stylus key
-				enableAim = false;
-
-				drawVCur = true;
-
-				if (Input::HotkeyDown(HK_MetroidShootScan) || Input::HotkeyDown(HK_MetroidScanShoot)) {
-					NDS->TouchScreen(virtualStylusX, virtualStylusY);
-				}
-				else {
-					NDS->ReleaseScreen();
-				}
-
-				// mouse (VirtualStylus)
-
-				mouseX = mouseRel.x();
-
-				if (abs(mouseX) > 0) {
-					virtualStylusX += (
-						mouseX * SENSITIVITY_FACTOR_VIRTUAL_STYLUS
-						);
-				}
-
-				mouseY = mouseRel.y();
-
-				if (abs(mouseY) > 0) {
-					virtualStylusY += (
-						mouseY * dsAspectRatio * SENSITIVITY_FACTOR_VIRTUAL_STYLUS
-						);
-				}
-
-				if (virtualStylusX < 0) virtualStylusX = 0;
-				if (virtualStylusX > 255) virtualStylusX = 255;
-				if (virtualStylusY < 0) virtualStylusY = 0;
-				if (virtualStylusY > 191) virtualStylusY = 191;
-
-			}
-			else {
-				// inGame
-
-
-				drawVCur = false;
+                drawVCur = false;
 
 
                 // Aiming
 
+                // Lambda function to adjust scaled mouse input
+                auto adjustMouseInput = [](float value) {
+                    // For positive values less than 1, set to 1
+                    if (value > 0 && value < 1.0f) {
+                        return 1.0f;
+                    }
+                    // For negative values greater than -1, set to -1
+                    else if (value < 0 && value > -1.0f) {
+                        return -1.0f;
+                    }
+                    // For other values, return as is
+                    return value;
+                    };
+
                 // Processing for the X-axis
                 float mouseX = mouseRel.x();
-                if (abs(mouseX) != 0) {
-                    NDS->ARM9Write32(
-                        aimXAddr,
-                        static_cast<int32_t>(mouseX * SENSITIVITY_FACTOR)
-                    );
+                // We don't use abs() here to preserve the sign of the movement
+                // This allows us to detect and process even very small movements in either direction
+                if (mouseX != 0) {
+                    // Scale the mouse X movement
+                    float scaledMouseX = mouseX * SENSITIVITY_FACTOR;
+                    // Adjust the scaled value to ensure minimal movement is registered
+                    scaledMouseX = adjustMouseInput(scaledMouseX);
+                    // Convert to 16-bit integer and write the adjusted X value to the NDS memory
+                    NDS->ARM9Write16(aimXAddr, static_cast<uint16_t>(scaledMouseX));
                     enableAim = true;
                 }
 
                 // Processing for the Y-axis
                 float mouseY = mouseRel.y();
-                if (abs(mouseY) != 0) {
-                    NDS->ARM9Write32(
-                        aimYAddr,
-                        static_cast<int32_t>(mouseY * aimAspectRatio * SENSITIVITY_FACTOR)
-                    );
+                // Again, we avoid using abs() to maintain directional information
+                // This ensures that even slight movements are captured and processed
+                if (mouseY != 0) {
+                    // Scale the mouse Y movement and apply aspect ratio correction
+                    float scaledMouseY = mouseY * aimAspectRatio * SENSITIVITY_FACTOR;
+                    // Adjust the scaled value to ensure minimal movement is registered
+                    scaledMouseY = adjustMouseInput(scaledMouseY);
+                    // Convert to 16-bit integer and write the adjusted Y value to the NDS memory
+                    NDS->ARM9Write16(aimYAddr, static_cast<uint16_t>(scaledMouseY));
                     enableAim = true;
                 }
 
@@ -1206,135 +1188,135 @@ void EmuThread::run()
                     FN_INPUT_RELEASE(INPUT_B);
                 }
 
-				// Alt-Form, morph ball
-				if (Input::HotkeyPressed(HK_MetroidMorphBall)) {
-					bool isSamus = NDS->ARM9Read8(chosenHunterAddr) == 0x00;
-					if (isSamus) {
-						enableAim = false; // in case isAltForm isnt immediately true
-					}
-					NDS->ReleaseScreen();
-					frameAdvance(2);
-					NDS->TouchScreen(231, 167);
-					// boost ball doesnt work unless i release screen late enough
-					for (int i = 0; i < 4; i++) {
-						frameAdvance(2);
-						NDS->ReleaseScreen();
-					}
-				}
+                // Alt-Form, morph ball
+                if (Input::HotkeyPressed(HK_MetroidMorphBall)) {
+                    bool isSamus = NDS->ARM9Read8(chosenHunterAddr) == 0x00;
+                    if (isSamus) {
+                        enableAim = false; // in case isAltForm isnt immediately true
+                    }
+                    NDS->ReleaseScreen();
+                    frameAdvance(2);
+                    NDS->TouchScreen(231, 167);
+                    // boost ball doesnt work unless i release screen late enough
+                    for (int i = 0; i < 4; i++) {
+                        frameAdvance(2);
+                        NDS->ReleaseScreen();
+                    }
+                }
 
-				// Define a lambda function to switch weapons
-				auto SwitchWeapon = [&](int weaponIndex) {
+                // Define a lambda function to switch weapons
+                auto SwitchWeapon = [&](int weaponIndex) {
 
-					// Check for Already equipped
-					uint8_t currentWeapon = NDS->ARM9Read8(weaponAddr);
-					if (currentWeapon == weaponIndex) {
-						// mainWindow->osdAddMessage(0, "Weapon switch unnecessary: Already equipped");
-						return; // Early return if the weapon is already equipped
-					}
+                    // Check for Already equipped
+                    uint8_t currentWeapon = NDS->ARM9Read8(weaponAddr);
+                    if (currentWeapon == weaponIndex) {
+                        // mainWindow->osdAddMessage(0, "Weapon switch unnecessary: Already equipped");
+                        return; // Early return if the weapon is already equipped
+                    }
 
-					// Check isMapOrUserActionPaused, for the issue "If you switch weapons while the map is open, the aiming mechanism may become stuck."
-					bool isMapOrUserActionPaused = NDS->ARM9Read8(isMapOrUserActionPausedAddr) == 0x1;
-					if (isMapOrUserActionPaused) {
-						return;
-					}
+                    // Check isMapOrUserActionPaused, for the issue "If you switch weapons while the map is open, the aiming mechanism may become stuck."
+                    bool isMapOrUserActionPaused = NDS->ARM9Read8(isMapOrUserActionPausedAddr) == 0x1;
+                    if (isMapOrUserActionPaused) {
+                        return;
+                    }
 
-					// Read the current jump flag value
-					uint8_t currentFlags = NDS->ARM9Read8(jumpFlagAddr);
-					uint8_t jumpFlag = currentFlags & 0x0F;  // Get the lower 4 bits
-					//mainWindow->osdAddMessage(0, ("JumpFlag:" + std::string(1, "0123456789ABCDEF"[NDS->ARM9Read8(jumpFlagAddr) & 0x0F])).c_str());
-					bool needToRestore = false;
+                    // Read the current jump flag value
+                    uint8_t currentFlags = NDS->ARM9Read8(jumpFlagAddr);
+                    uint8_t jumpFlag = currentFlags & 0x0F;  // Get the lower 4 bits
+                    //mainWindow->osdAddMessage(0, ("JumpFlag:" + std::string(1, "0123456789ABCDEF"[NDS->ARM9Read8(jumpFlagAddr) & 0x0F])).c_str());
+                    bool needToRestore = false;
 
-					// Check if in alternate form (transformed state)
-					isAltForm = NDS->ARM9Read8(isAltFormAddr) == 0x02;
+                    // Check if in alternate form (transformed state)
+                    isAltForm = NDS->ARM9Read8(isAltFormAddr) == 0x02;
 
-					// If not jumping (jumpFlag == 0) and in normal form, temporarily set to jumped state (jumpFlag == 1)
-					if (jumpFlag == 0 && !isAltForm) {
-						uint8_t newFlags = (currentFlags & 0xF0) | 0x01;  // Set lower 4 bits to 1
-						NDS->ARM9Write8(jumpFlagAddr, newFlags);
-						needToRestore = true;
-						//mainWindow->osdAddMessage(0, ("JumpFlag:" + std::string(1, "0123456789ABCDEF"[NDS->ARM9Read8(jumpFlagAddr) & 0x0F])).c_str());
-						//mainWindow->osdAddMessage(0, "Done setting jumpFlag.");
-					}
+                    // If not jumping (jumpFlag == 0) and in normal form, temporarily set to jumped state (jumpFlag == 1)
+                    if (jumpFlag == 0 && !isAltForm) {
+                        uint8_t newFlags = (currentFlags & 0xF0) | 0x01;  // Set lower 4 bits to 1
+                        NDS->ARM9Write8(jumpFlagAddr, newFlags);
+                        needToRestore = true;
+                        //mainWindow->osdAddMessage(0, ("JumpFlag:" + std::string(1, "0123456789ABCDEF"[NDS->ARM9Read8(jumpFlagAddr) & 0x0F])).c_str());
+                        //mainWindow->osdAddMessage(0, "Done setting jumpFlag.");
+                    }
 
-					// Release the screen (for weapon change)
-					NDS->ReleaseScreen();
+                    // Release the screen (for weapon change)
+                    NDS->ReleaseScreen();
 
-					// Lambda to set the weapon-changing state
-					auto setChangingWeapon = [](int value) -> int {
-						// Apply mask to set the lower 4 bits to 1011 (B in hexadecimal)
-						return (value & 0xF0) | 0x0B; // Keep the upper 4 bits, set lower 4 bits to 1011
-						};
+                    // Lambda to set the weapon-changing state
+                    auto setChangingWeapon = [](int value) -> int {
+                        // Apply mask to set the lower 4 bits to 1011 (B in hexadecimal)
+                        return (value & 0xF0) | 0x0B; // Keep the upper 4 bits, set lower 4 bits to 1011
+                        };
 
-					// Modify the value using the lambda
-					int valueOfWeaponChange = setChangingWeapon(NDS->ARM9Read8(weaponChangeAddr));
+                    // Modify the value using the lambda
+                    int valueOfWeaponChange = setChangingWeapon(NDS->ARM9Read8(weaponChangeAddr));
 
-					// Write the weapon change command to ARM9
-					NDS->ARM9Write8(weaponChangeAddr, valueOfWeaponChange); // Only change the lower 4 bits to B
+                    // Write the weapon change command to ARM9
+                    NDS->ARM9Write8(weaponChangeAddr, valueOfWeaponChange); // Only change the lower 4 bits to B
 
-					// Change the weapon
-					NDS->ARM9Write8(weaponAddr, weaponIndex);  // Write the address of the corresponding weapon
+                    // Change the weapon
+                    NDS->ARM9Write8(weaponAddr, weaponIndex);  // Write the address of the corresponding weapon
 
-					// Advance frames (for reflection of ReleaseScreen, WeaponChange)
-					frameAdvance(2);
+                    // Advance frames (for reflection of ReleaseScreen, WeaponChange)
+                    frameAdvance(2);
 
-					// Need Touch after ReleaseScreen for aiming.
-					NDS->TouchScreen(128, 96);
+                    // Need Touch after ReleaseScreen for aiming.
+                    NDS->TouchScreen(128, 96);
 
-					// Advance frames (for reflection of Touch. This is necessary for no jump)
-					frameAdvance(2);
+                    // Advance frames (for reflection of Touch. This is necessary for no jump)
+                    frameAdvance(2);
 
-					// Restore the jump flag to its original value (if necessary)
-					if (needToRestore) {
-						uint8_t restoredFlags = (currentFlags & 0xF0) | jumpFlag;
-						NDS->ARM9Write8(jumpFlagAddr, restoredFlags);
-						//mainWindow->osdAddMessage(0, ("JumpFlag:" + std::string(1, "0123456789ABCDEF"[NDS->ARM9Read8(jumpFlagAddr) & 0x0F])).c_str());
-						//mainWindow->osdAddMessage(0, "Restored jumpFlag.");
+                    // Restore the jump flag to its original value (if necessary)
+                    if (needToRestore) {
+                        uint8_t restoredFlags = (currentFlags & 0xF0) | jumpFlag;
+                        NDS->ARM9Write8(jumpFlagAddr, restoredFlags);
+                        //mainWindow->osdAddMessage(0, ("JumpFlag:" + std::string(1, "0123456789ABCDEF"[NDS->ARM9Read8(jumpFlagAddr) & 0x0F])).c_str());
+                        //mainWindow->osdAddMessage(0, "Restored jumpFlag.");
 
-					}
+                    }
 
-					};
+                    };
 
-				// Switch to Power Beam
-				if (Input::HotkeyPressed(HK_MetroidWeaponBeam)) {
-					SwitchWeapon(0);
-				}
+                // Switch to Power Beam
+                if (Input::HotkeyPressed(HK_MetroidWeaponBeam)) {
+                    SwitchWeapon(0);
+                }
 
-				// Switch to Missile
-				if (Input::HotkeyPressed(HK_MetroidWeaponMissile)) {
-					SwitchWeapon(2);
+                // Switch to Missile
+                if (Input::HotkeyPressed(HK_MetroidWeaponMissile)) {
+                    SwitchWeapon(2);
 
-				}
+                }
 
-				// Array of sub-weapon hotkeys (Associating hotkey definitions with weapon indices)
-				Hotkey weaponHotkeys[] = {
-					HK_MetroidWeapon1,  // ShockCoil    7
-					HK_MetroidWeapon2,  // Magmaul      6
-					HK_MetroidWeapon3,  // Judicator    5
-					HK_MetroidWeapon4,  // Imperialist  4
-					HK_MetroidWeapon5,  // Battlehammer 3
-					HK_MetroidWeapon6   // VoltDriver   1
-										// Omega Cannon 8 we don't need to set this here, because we need {last used weapon / Omega cannon}
-				};
+                // Array of sub-weapon hotkeys (Associating hotkey definitions with weapon indices)
+                Hotkey weaponHotkeys[] = {
+                    HK_MetroidWeapon1,  // ShockCoil    7
+                    HK_MetroidWeapon2,  // Magmaul      6
+                    HK_MetroidWeapon3,  // Judicator    5
+                    HK_MetroidWeapon4,  // Imperialist  4
+                    HK_MetroidWeapon5,  // Battlehammer 3
+                    HK_MetroidWeapon6   // VoltDriver   1
+                                        // Omega Cannon 8 we don't need to set this here, because we need {last used weapon / Omega cannon}
+                };
 
-				int weaponIndices[] = { 7, 6, 5, 4, 3, 1 };  // Address of the weapon corresponding to each hotkey
+                int weaponIndices[] = { 7, 6, 5, 4, 3, 1 };  // Address of the weapon corresponding to each hotkey
 
-				// Sub-weapons processing (handled in a loop)
-				for (int i = 0; i < 6; i++) {
-					if (Input::HotkeyPressed(weaponHotkeys[i])) {
-						SwitchWeapon(weaponIndices[i]);  // Switch to the corresponding weapon
+                // Sub-weapons processing (handled in a loop)
+                for (int i = 0; i < 6; i++) {
+                    if (Input::HotkeyPressed(weaponHotkeys[i])) {
+                        SwitchWeapon(weaponIndices[i]);  // Switch to the corresponding weapon
 
-						// Exit loop when hotkey is pressed (because weapon switching is completed)
-						break;
-					}
-				}
+                        // Exit loop when hotkey is pressed (because weapon switching is completed)
+                        break;
+                    }
+                }
 
-				// Omega Canon or Last used weapon
-				if (Input::HotkeyPressed(HK_MetroidWeaponSpecial)) {
-					NDS->ReleaseScreen();
-					frameAdvance(2);
-					NDS->TouchScreen(173, 32);
-					frameAdvance(2);
-				}
+                // Omega Canon or Last used weapon
+                if (Input::HotkeyPressed(HK_MetroidWeaponSpecial)) {
+                    NDS->ReleaseScreen();
+                    frameAdvance(2);
+                    NDS->TouchScreen(173, 32);
+                    frameAdvance(2);
+                }
 
                 // Start / View Match progress, points
                 if (Input::HotkeyDown(HK_MetroidMenu)) {
@@ -1414,30 +1396,77 @@ void EmuThread::run()
                     frameAdvance(2);
                 }
 
-
-
-
+                // End of in-game
 			}
+			else {
+                // VirtualStylus
 
 
+                // this exists to just delay the pressing of the screen when you
+                // release the virtual stylus key
+                enableAim = false;
 
+                drawVCur = true;
+
+                if (Input::HotkeyDown(HK_MetroidShootScan) || Input::HotkeyDown(HK_MetroidScanShoot)) {
+                    NDS->TouchScreen(virtualStylusX, virtualStylusY);
+                }
+                else {
+                    NDS->ReleaseScreen();
+                }
+
+                // mouse (VirtualStylus)
+
+                mouseX = mouseRel.x();
+
+                if (abs(mouseX) > 0) {
+                    virtualStylusX += (
+                        mouseX * SENSITIVITY_FACTOR_VIRTUAL_STYLUS
+                        );
+                }
+
+                mouseY = mouseRel.y();
+
+                if (abs(mouseY) > 0) {
+                    virtualStylusY += (
+                        mouseY * dsAspectRatio * SENSITIVITY_FACTOR_VIRTUAL_STYLUS
+                        );
+                }
+
+                if (virtualStylusX < 0) virtualStylusX = 0;
+                if (virtualStylusX > 255) virtualStylusX = 255;
+                if (virtualStylusY < 0) virtualStylusY = 0;
+                if (virtualStylusY > 191) virtualStylusY = 191;
+
+
+			} // End of isVirtualStylusEnabled
 
 
 		}// END of if(isFocused)
 
+        // Touch again for aiming in normal form
         isAltForm = NDS->ARM9Read8(isAltFormAddr) == 0x02;
         if (!isAltForm && enableAim) {
             // mainWindow->osdAddMessage(0,"touching screen for aim");
             NDS->TouchScreen(128, 96); // required for aiming
         }
 
+
         NDS->SetKeyMask(Input::GetInputMask());
 
+        // Showing Virtual Stylus
         if (screenGL) {
+            // OpenGL
             screenGL->virtualCursorShow = drawVCur;
             screenGL->virtualCursorX = virtualStylusX;
             screenGL->virtualCursorY = virtualStylusY;
+
         } else if (drawVCur) {
+            // no OpenGL
+            
+            // TODO Fix that drawVCur is not working with limited Framerate
+            // TODO If OpenGL is not used, Virtual Stylus is only visible when the frame rate limit is removed.
+
             const int cursorSize = virtualCursorSize;
             const int cursorOffset = virtualCursorSize / 2;
 
@@ -1471,7 +1500,8 @@ void EmuThread::run()
         }
 
         frameAdvanceOnce();
-    }
+
+    } // End of while (EmuRunning != emuStatus_Exit)
 
     file = Platform::OpenLocalFile("rtc.bin", Platform::FileMode::Write);
     if (file)
