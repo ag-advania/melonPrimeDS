@@ -494,7 +494,7 @@ void detectRomAndSetAddresses() {
  *         - For negative values greater than -1, returns -1.
  *         - For all other values, returns the input value unchanged.
  */
-__forceinline float adjustMouseInput(float value) {
+float adjustMouseInput(float value) {
     // For positive values less than 1, set to 1
     if (value > 0 && value < 1.0f) {
         return 1.0f;
