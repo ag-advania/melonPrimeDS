@@ -1111,13 +1111,13 @@ void EmuThread::run()
 
                 // Aiming
 
-                // Lambda function to adjust scaled mouse input
-                auto adjustMouseInput = [](int32_t value) {
+                // Lambda function to adjust scaled mouse input (16-bit version)
+                auto adjustMouseInput = [](int16_t value) {
                     if (value > 0) {
-                        return value + 1;
+                        return static_cast<int16_t>(std::min(static_cast<int>(value) + 1, 32767));
                     }
                     else if (value < 0) {
-                        return value - 1;
+                        return static_cast<int16_t>(std::max(static_cast<int>(value) - 1, -32768));
                     }
                     return value;
                     };
@@ -1125,18 +1125,18 @@ void EmuThread::run()
                 // Processing for the X-axis
                 float mouseX = mouseRel.x();
                 if (abs(mouseX) != 0) {
-                    int32_t scaledMouseX = static_cast<int32_t>(mouseX * SENSITIVITY_FACTOR);
+                    int16_t scaledMouseX = static_cast<int16_t>(mouseX * SENSITIVITY_FACTOR);
                     scaledMouseX = adjustMouseInput(scaledMouseX);
-                    NDS->ARM9Write32(aimXAddr, scaledMouseX);
+                    NDS->ARM9Write16(aimXAddr, static_cast<uint16_t>(scaledMouseX));
                     enableAim = true;
                 }
 
                 // Processing for the Y-axis
                 float mouseY = mouseRel.y();
                 if (abs(mouseY) != 0) {
-                    int32_t scaledMouseY = static_cast<int32_t>(mouseY * aimAspectRatio * SENSITIVITY_FACTOR);
+                    int16_t scaledMouseY = static_cast<int16_t>(mouseY * aimAspectRatio * SENSITIVITY_FACTOR);
                     scaledMouseY = adjustMouseInput(scaledMouseY);
-                    NDS->ARM9Write32(aimYAddr, scaledMouseY);
+                    NDS->ARM9Write16(aimYAddr, static_cast<uint16_t>(scaledMouseY));
                     enableAim = true;
                 }
 
