@@ -485,27 +485,6 @@ void detectRomAndSetAddresses() {
     }
 }
 
-/**
- * Adjusts the scaled mouse input to ensure minimal movement is registered.
- *
- * @param value The scaled mouse input value.
- * @return float The adjusted value:
- *         - For positive values less than 1, returns 1.
- *         - For negative values greater than -1, returns -1.
- *         - For all other values, returns the input value unchanged.
- */
-float adjustMouseInput(float value) {
-    // For positive values less than 1, set to 1
-    if (value > 0 && value < 1.0f) {
-        return 1.0f;
-    }
-    // For negative values greater than -1, set to -1
-    else if (value < 0 && value > -1.0f) {
-        return -1.0f;
-    }
-    // For other values, return as is
-    return value;
-}
 
 void EmuThread::run()
 {
@@ -1132,7 +1111,6 @@ void EmuThread::run()
 
                 // Aiming
 
-                /*
                 // Lambda function to adjust scaled mouse input
                 auto adjustMouseInput = [](float value) {
                     // For positive values less than 1, set to 1
@@ -1146,7 +1124,6 @@ void EmuThread::run()
                     // For other values, return as is
                     return value;
                     };
-                */
 
                 // Processing for the X-axis
                 float mouseX = mouseRel.x();
@@ -1154,9 +1131,11 @@ void EmuThread::run()
                 // This allows us to detect and process even very small movements in either direction
                 if (mouseX != 0) {
                     // Scale the mouse X movement
+                    float scaledMouseX = mouseX * SENSITIVITY_FACTOR;
                     // Adjust the scaled value to ensure minimal movement is registered
+                    scaledMouseX = adjustMouseInput(scaledMouseX);
                     // Convert to 16-bit integer and write the adjusted X value to the NDS memory
-                    NDS->ARM9Write16(aimXAddr, static_cast<uint16_t>(adjustMouseInput(mouseX * SENSITIVITY_FACTOR)));
+                    NDS->ARM9Write16(aimXAddr, static_cast<uint16_t>(scaledMouseX));
                     enableAim = true;
                 }
 
@@ -1166,9 +1145,11 @@ void EmuThread::run()
                 // This ensures that even slight movements are captured and processed
                 if (mouseY != 0) {
                     // Scale the mouse Y movement and apply aspect ratio correction
+                    float scaledMouseY = mouseY * aimAspectRatio * SENSITIVITY_FACTOR;
                     // Adjust the scaled value to ensure minimal movement is registered
+                    scaledMouseY = adjustMouseInput(scaledMouseY);
                     // Convert to 16-bit integer and write the adjusted Y value to the NDS memory
-                    NDS->ARM9Write16(aimYAddr, static_cast<uint16_t>(adjustMouseInput(mouseY * aimAspectRatio * SENSITIVITY_FACTOR)));
+                    NDS->ARM9Write16(aimYAddr, static_cast<uint16_t>(scaledMouseY));
                     enableAim = true;
                 }
 
