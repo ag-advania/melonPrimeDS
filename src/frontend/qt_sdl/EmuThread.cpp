@@ -1116,7 +1116,7 @@ void EmuThread::run()
                 if (abs(mouseX) != 0) {
                     NDS->ARM9Write32(
                         aimXAddr,
-                        static_cast<int32_t>(mouseX * SENSITIVITY_FACTOR)
+                        static_cast<int32_t>(1 + mouseX * SENSITIVITY_FACTOR)
                     );
                     enableAim = true;
                 }
@@ -1126,7 +1126,7 @@ void EmuThread::run()
                 if (abs(mouseY) != 0) {
                     NDS->ARM9Write32(
                         aimYAddr,
-                        static_cast<int32_t>(mouseY * aimAspectRatio * SENSITIVITY_FACTOR)
+                        static_cast<int32_t>(1 + mouseY * aimAspectRatio * SENSITIVITY_FACTOR)
                     );
                     enableAim = true;
                 }
