@@ -1135,7 +1135,7 @@ void EmuThread::run()
                     // Adjust the scaled value to ensure minimal movement is registered
                     scaledMouseX = adjustMouseInput(scaledMouseX);
                     // Convert to 16-bit integer and write the adjusted X value to the NDS memory
-                    NDS->ARM9Write16(aimXAddr, static_cast<uint16_t>(std::round(scaledMouseX)));
+                    NDS->ARM9Write16(aimXAddr, static_cast<uint16_t>(scaledMouseX));
                     enableAim = true;
                 }
 
@@ -1149,7 +1149,7 @@ void EmuThread::run()
                     // Adjust the scaled value to ensure minimal movement is registered
                     scaledMouseY = adjustMouseInput(scaledMouseY);
                     // Convert to 16-bit integer and write the adjusted Y value to the NDS memory
-                    NDS->ARM9Write16(aimYAddr, static_cast<uint16_t>(std::round(scaledMouseY)));
+                    NDS->ARM9Write16(aimYAddr, static_cast<uint16_t>(scaledMouseY));
                     enableAim = true;
                 }
 
