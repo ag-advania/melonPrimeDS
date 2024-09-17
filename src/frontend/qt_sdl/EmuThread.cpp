@@ -1111,23 +1111,32 @@ void EmuThread::run()
 
                 // Aiming
 
+                // Lambda function to adjust scaled mouse input
+                auto adjustMouseInput = [](int32_t value) {
+                    if (value > 0) {
+                        return value + 1;
+                    }
+                    else if (value < 0) {
+                        return value - 1;
+                    }
+                    return value;
+                    };
+
                 // Processing for the X-axis
                 float mouseX = mouseRel.x();
                 if (abs(mouseX) != 0) {
-                    NDS->ARM9Write32(
-                        aimXAddr,
-                        static_cast<int32_t>(1 + mouseX * SENSITIVITY_FACTOR)
-                    );
+                    int32_t scaledMouseX = static_cast<int32_t>(mouseX * SENSITIVITY_FACTOR);
+                    scaledMouseX = adjustMouseInput(scaledMouseX);
+                    NDS->ARM9Write32(aimXAddr, scaledMouseX);
                     enableAim = true;
                 }
 
                 // Processing for the Y-axis
                 float mouseY = mouseRel.y();
                 if (abs(mouseY) != 0) {
-                    NDS->ARM9Write32(
-                        aimYAddr,
-                        static_cast<int32_t>(1 + mouseY * aimAspectRatio * SENSITIVITY_FACTOR)
-                    );
+                    int32_t scaledMouseY = static_cast<int32_t>(mouseY * aimAspectRatio * SENSITIVITY_FACTOR);
+                    scaledMouseY = adjustMouseInput(scaledMouseY);
+                    NDS->ARM9Write32(aimYAddr, scaledMouseY);
                     enableAim = true;
                 }
 
