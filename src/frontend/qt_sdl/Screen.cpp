@@ -92,6 +92,8 @@ void ScreenPanel::setupScreenLayout()
     int w = width();
     int h = height();
 
+    PrimeCanvas = new OSD_Canvas(0,0,w,h);
+
     int sizing = Config::ScreenSizing;
     if (sizing == 3) sizing = autoScreenSizing;
 
@@ -668,6 +670,10 @@ void ScreenPanelNative::paintEvent(QPaintEvent* event)
             painter.drawImage(screenrc, screen[screenKind[i]]);
         }
     }
+
+    
+    //MellonPrimeOSD Stuff
+    painter.drawImage(PrimeCanvas->x,PrimeCanvas->y,*PrimeCanvas->CanvasBuffer);
 
     osdUpdate();
     if (osdEnabled)

@@ -33,6 +33,7 @@
 #include "glad/glad.h"
 #include "FrontendUtil.h"
 #include "duckstation/gl/context.h"
+#include "ScreenPrimeOSD.h"
 
 
 class EmuThread;
@@ -56,6 +57,8 @@ class ScreenPanel : public QWidget
 public:
     explicit ScreenPanel(QWidget* parent);
     virtual ~ScreenPanel();
+
+    OSD_Canvas* PrimeCanvas;
 
     // QTimer* setupMouseTimer();
     // void updateMouseTimer();

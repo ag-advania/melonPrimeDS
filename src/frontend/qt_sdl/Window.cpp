@@ -582,6 +582,10 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
 
         actInputConfig = menu->addAction("Other settings");
         connect(actInputConfig, &QAction::triggered, this, &MainWindow::onOpenMetroidOtherSettings);
+
+        actTestOSD = menu->addAction("Test OSD");
+        connect(actTestOSD, &QAction::triggered, this, &MainWindow::onOpenMetroidTest);
+
     }
     setMenuBar(menubar);
 
@@ -2107,4 +2111,16 @@ void MainWindow::onOpenMetroidOtherSettings()
     dlg->switchTabToMetroid();
 
     connect(dlg, &InputConfigDialog::finished, this, &MainWindow::onInputConfigFinished);
+}
+
+void MainWindow::onOpenMetroidTest()
+{
+    QPainter* paint = panel->PrimeCanvas->Painter;
+    QImage* buffer = panel->PrimeCanvas->CanvasBuffer;
+
+    int random_color = std::rand()*256*256+std::rand();
+
+    buffer->fill(random_color);
+    paint->setPen(0xff000000);
+    paint->drawText(100,100,"Hello World");
 }
