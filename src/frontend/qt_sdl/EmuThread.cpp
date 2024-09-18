@@ -1223,56 +1223,12 @@ void EmuThread::run()
                     // Read the current jump flag value
                     uint8_t currentFlags = NDS->ARM9Read8(jumpFlagAddr);
 
+                    bool isNoJumpFlagOn = true;
                     // Check if the upper 4 bits are odd (1 or 3)
                     if (currentFlags & 0x10) {
                         // this is for fixing issue: Shooting and transforming become impossible, when changing weapons at high speed while transitioning from transformed to normal form.
 
-                        // EmuThreadクラスのメンバー関数内でこのコードを使用することを想定
-                        auto handleWeaponSwitching = [this, &frameAdvance]() {
-                            auto switchWeapon = [this, &frameAdvance](int x, int y, bool initialRelease, bool finalRelease) {
-                                if (initialRelease) {
-                                    NDS->ReleaseScreen();
-                                    frameAdvance(2);
-                                }
-                                NDS->TouchScreen(x, y);
-                                frameAdvance(2);
-                                if (finalRelease) {
-                                    NDS->ReleaseScreen();
-                                    frameAdvance(2);
-                                }
-                                };
-
-                            // Main weapons
-                            if (Input::HotkeyPressed(HK_MetroidWeaponBeam)) {
-                                switchWeapon(85, 32, true, true);
-                                return;
-                            }
-                            if (Input::HotkeyPressed(HK_MetroidWeaponMissile)) {
-                                switchWeapon(125, 32, true, true);
-                                return;
-                            }
-
-                            // Subweapons
-                            static const struct { Hotkey key; int x, y; } subweapons[] = {
-                                {HK_MetroidWeapon1, 93, 48},
-                                {HK_MetroidWeapon2, 97, 86},
-                                {HK_MetroidWeapon3, 106, 125},
-                                {HK_MetroidWeapon4, 138, 158},
-                                {HK_MetroidWeapon5, 177, 168},
-                                {HK_MetroidWeapon6, 217, 172}
-                            };
-
-                            for (const auto& weapon : subweapons) {
-                                if (Input::HotkeyPressed(weapon.key)) {
-                                    switchWeapon(232, 34, true, false);  // Open subweapon menu
-                                    switchWeapon(weapon.x, weapon.y, false, true);  // Select subweapon
-                                    break;
-                                }
-                            }
-                            };
-
-                        // 武器切り替えロジックの呼び出し
-                        handleWeaponSwitching();
+                        isNoJumpFlagOn = false;
 
                         return;
                     }
@@ -1286,7 +1242,7 @@ void EmuThread::run()
                     isAltForm = NDS->ARM9Read8(isAltFormAddr) == 0x02;
 
                     // If not jumping (jumpFlag == 0) and in normal form, temporarily set to jumped state (jumpFlag == 1)
-                    if (jumpFlag == 0 && !isAltForm) {
+                    if (isNoJumpFlagOn && jumpFlag == 0 && !isAltForm) {
                         uint8_t newFlags = (currentFlags & 0xF0) | 0x01;  // Set lower 4 bits to 1
                         NDS->ARM9Write8(jumpFlagAddr, newFlags);
                         needToRestore = true;
