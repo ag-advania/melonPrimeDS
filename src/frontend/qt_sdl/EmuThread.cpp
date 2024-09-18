@@ -1227,9 +1227,10 @@ void EmuThread::run()
                     if (currentFlags & 0x10) {
                         // this is for fixing issue: Shooting and transforming become impossible, when changing weapons at high speed while transitioning from transformed to normal form.
 
-                        auto handleWeaponSwitching = []() {
+                        // EmuThreadクラスのメンバー関数内でこのコードを使用することを想定
+                        auto handleWeaponSwitching = [this, &frameAdvance]() {
                             // Common lambda for weapon switching
-                            auto switchWeapon = [](int x, int y, bool initialRelease, bool finalRelease) {
+                            auto switchWeapon = [this, &frameAdvance](int x, int y, bool initialRelease, bool finalRelease) {
                                 if (initialRelease) {
                                     NDS->ReleaseScreen();
                                     frameAdvance(2);
@@ -1243,7 +1244,7 @@ void EmuThread::run()
                                 };
 
                             // Lambda for checking hotkey and switching weapon
-                            auto checkAndSwitchWeapon = [&](Hotkey hotkey, int x, int y) {
+                            auto checkAndSwitchWeapon = [&switchWeapon](Hotkey hotkey, int x, int y) {
                                 if (Input::HotkeyPressed(hotkey)) {
                                     switchWeapon(x, y, true, true);
                                     return true;
