@@ -1229,8 +1229,6 @@ void EmuThread::run()
                         // this is for fixing issue: Shooting and transforming become impossible, when changing weapons at high speed while transitioning from transformed to normal form.
 
                         isNoJumpFlagOn = false;
-
-                        return;
                     }
 
                     uint8_t jumpFlag = currentFlags & 0x0F;  // Get the lower 4 bits
