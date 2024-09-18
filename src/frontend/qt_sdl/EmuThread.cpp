@@ -1229,7 +1229,6 @@ void EmuThread::run()
 
                         // EmuThreadクラスのメンバー関数内でこのコードを使用することを想定
                         auto handleWeaponSwitching = [this, &frameAdvance]() {
-                            // Common lambda for weapon switching
                             auto switchWeapon = [this, &frameAdvance](int x, int y, bool initialRelease, bool finalRelease) {
                                 if (initialRelease) {
                                     NDS->ReleaseScreen();
@@ -1243,36 +1242,30 @@ void EmuThread::run()
                                 }
                                 };
 
-                            // Lambda for checking hotkey and switching weapon
-                            auto checkAndSwitchWeapon = [&switchWeapon](Hotkey hotkey, int x, int y) {
-                                if (Input::HotkeyPressed(hotkey)) {
-                                    switchWeapon(x, y, true, true);
-                                    return true;
-                                }
-                                return false;
-                                };
-
-                            // Switch to beam
-                            if (checkAndSwitchWeapon(HK_MetroidWeaponBeam, 85, 32)) {
+                            // Main weapons
+                            if (Input::HotkeyPressed(HK_MetroidWeaponBeam)) {
+                                switchWeapon(85, 32, true, true);
+                                return;
+                            }
+                            if (Input::HotkeyPressed(HK_MetroidWeaponMissile)) {
+                                switchWeapon(125, 32, true, true);
                                 return;
                             }
 
-                            // Switch to missiles
-                            if (checkAndSwitchWeapon(HK_MetroidWeaponMissile, 125, 32)) {
-                                return;
-                            }
-
-                            // Switch subweapon
-                            static const Hotkey weaponHotkeys[] = {
-                                HK_MetroidWeapon1, HK_MetroidWeapon2, HK_MetroidWeapon3,
-                                HK_MetroidWeapon4, HK_MetroidWeapon5, HK_MetroidWeapon6
+                            // Subweapons
+                            static const struct { Hotkey key; int x, y; } subweapons[] = {
+                                {HK_MetroidWeapon1, 93, 48},
+                                {HK_MetroidWeapon2, 97, 86},
+                                {HK_MetroidWeapon3, 106, 125},
+                                {HK_MetroidWeapon4, 138, 158},
+                                {HK_MetroidWeapon5, 177, 168},
+                                {HK_MetroidWeapon6, 217, 172}
                             };
-                            static const int weaponHotkeysSize = sizeof(weaponHotkeys) / sizeof(weaponHotkeys[0]);
 
-                            for (int i = 0; i < weaponHotkeysSize; ++i) {
-                                if (Input::HotkeyPressed(weaponHotkeys[i])) {
-                                    switchWeapon(232, 34, true, false);  // 最初のタッチ: 初期リリースあり、最終リリースなし
-                                    switchWeapon(93 + 25 * i, 48 + 25 * i, false, true);  // 2回目のタッチ: 初期リリースなし、最終リリースあり
+                            for (const auto& weapon : subweapons) {
+                                if (Input::HotkeyPressed(weapon.key)) {
+                                    switchWeapon(232, 34, true, false);  // Open subweapon menu
+                                    switchWeapon(weapon.x, weapon.y, false, true);  // Select subweapon
                                     break;
                                 }
                             }
