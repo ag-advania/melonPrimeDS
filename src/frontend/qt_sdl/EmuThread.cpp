@@ -1220,9 +1220,10 @@ void EmuThread::run()
                         return;
                     }
 
-                    /*
                     // Read the current jump flag value
                     uint8_t currentFlags = NDS->ARM9Read8(jumpFlagAddr);
+
+                    /*
 
                     // Check if the upper 4 bits are odd (1 or 3)
                     if (currentFlags & 0x10) {
