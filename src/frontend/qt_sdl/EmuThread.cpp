@@ -1220,6 +1220,7 @@ void EmuThread::run()
                         return;
                     }
 
+                    /*
                     // Read the current jump flag value
                     uint8_t currentFlags = NDS->ARM9Read8(jumpFlagAddr);
 
@@ -1230,6 +1231,7 @@ void EmuThread::run()
                         // this is for fixing issue: Shooting and transforming become impossible, when changing weapons at high speed while transitioning from transformed to normal form.
                         return;
                     }
+                    */
 
                     /*
                     // Check the upper 4 bits of jumpAddr
@@ -1292,6 +1294,28 @@ void EmuThread::run()
                         //mainWindow->osdAddMessage(0, ("JumpFlag:" + std::string(1, "0123456789ABCDEF"[NDS->ARM9Read8(jumpFlagAddr) & 0x0F])).c_str());
                         //mainWindow->osdAddMessage(0, "Restored jumpFlag.");
 
+                    }
+
+                    // Finally, if in normal form but the upper 4 bits of currentFlags are 1 or 3, subtract 1 from the upper 4 bits
+                    // - This is for fixing the issue: Shooting and transforming become impossible 
+                    //   when changing weapons at high speed while transitioning from transformed to normal form.
+
+                    // Read the current jump flag value
+                    currentFlags = NDS->ARM9Read8(jumpFlagAddr);
+                    isAltForm = NDS->ARM9Read8(isAltFormAddr) == 0x02;
+
+                    // Check if in normal form and the upper 4 bits are odd (1 or 3)
+                    if (!isAltForm && (currentFlags & 0x10)) {
+                        // Subtract 1 from the upper 4 bits
+                        uint8_t upperBits = currentFlags & 0xF0;  // Extract upper 4 bits
+                        uint8_t lowerBits = currentFlags & 0x0F;  // Extract lower 4 bits
+                        upperBits -= 0x10;  // Subtract 1 from upper 4 bits
+
+                        // Combine the modified upper bits with the original lower bits
+                        uint8_t newFlags = upperBits | lowerBits;
+
+                        // Write the new value back to jumpFlagAddr
+                        NDS->ARM9Write8(jumpFlagAddr, newFlags);
                     }
 
                     };
