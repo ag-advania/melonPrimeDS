@@ -1,11 +1,18 @@
 #include <QImage>
 #include <QPainter>
+#include <vector>
 
-struct OSD_Canvas
+
+
+namespace PrimeOSD
 {
-    int x;
-    int y;
-    QImage* CanvasBuffer;
+
+struct Canvas
+{
+    QImage CanvasBuffer;
     QPainter* Painter;
-    OSD_Canvas(int x,int y, int w,int h);
+    Canvas(int w,int h);
 };
+
+}
+

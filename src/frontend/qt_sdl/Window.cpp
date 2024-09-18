@@ -2115,12 +2115,12 @@ void MainWindow::onOpenMetroidOtherSettings()
 
 void MainWindow::onOpenMetroidTest()
 {
-    QPainter* paint = panel->PrimeCanvas->Painter;
-    QImage* buffer = panel->PrimeCanvas->CanvasBuffer;
+    QPainter* paint = panel->OSDCanvas[0]->Painter;
+    QImage buffer = panel->OSDCanvas[0]->CanvasBuffer;
 
     int random_color = std::rand()*256*256+std::rand();
 
-    buffer->fill(random_color);
+    buffer.fill(random_color);
     paint->setPen(0xff000000);
-    paint->drawText(100,100,"Hello World");
+    paint->drawText(50,50,"Hello World");
 }
