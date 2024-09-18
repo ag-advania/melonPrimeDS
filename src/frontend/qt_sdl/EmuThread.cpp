@@ -1225,9 +1225,57 @@ void EmuThread::run()
 
                     // Check if the upper 4 bits are odd (1 or 3)
                     if (currentFlags & 0x10) {
-                        // Immediate return if the upper 4 bits are odd(1 or 3)
-                        // We're in the transformation process, so return immediately
                         // this is for fixing issue: Shooting and transforming become impossible, when changing weapons at high speed while transitioning from transformed to normal form.
+
+                        auto handleWeaponSwitching = []() {
+                            // Common lambda for weapon switching
+                            auto switchWeapon = [](int x, int y) {
+                                NDS->ReleaseScreen();
+                                frameAdvance(2);
+                                NDS->TouchScreen(x, y);
+                                frameAdvance(2);
+                                NDS->ReleaseScreen();
+                                frameAdvance(2);
+                                };
+
+                            // Lambda for checking hotkey and switching weapon
+                            auto checkAndSwitchWeapon = [&](Hotkey hotkey, int x, int y) {
+                                if (Input::HotkeyPressed(hotkey)) {
+                                    switchWeapon(x, y);
+                                    return true;
+                                }
+                                return false;
+                                };
+
+                            // Switch to beam
+                            if (checkAndSwitchWeapon(HK_MetroidWeaponBeam, 85, 32)) {
+                                return;
+                            }
+
+                            // Switch to missiles
+                            if (checkAndSwitchWeapon(HK_MetroidWeaponMissile, 125, 32)) {
+                                return;
+                            }
+
+                            // Switch subweapon
+                            static const Hotkey weaponHotkeys[] = {
+                                HK_MetroidWeapon1, HK_MetroidWeapon2, HK_MetroidWeapon3,
+                                HK_MetroidWeapon4, HK_MetroidWeapon5, HK_MetroidWeapon6
+                            };
+                            static const int weaponHotkeysSize = sizeof(weaponHotkeys) / sizeof(weaponHotkeys[0]);
+
+                            for (int i = 0; i < weaponHotkeysSize; ++i) {
+                                if (Input::HotkeyPressed(weaponHotkeys[i])) {
+                                    switchWeapon(232, 34);
+                                    switchWeapon(93 + 25 * i, 48 + 25 * i);
+                                    break;
+                                }
+                            }
+                            };
+
+                        // 武器切り替えロジックの呼び出し
+                        handleWeaponSwitching();
+
                         return;
                     }
 
