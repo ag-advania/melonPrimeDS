@@ -1229,19 +1229,23 @@ void EmuThread::run()
 
                         auto handleWeaponSwitching = []() {
                             // Common lambda for weapon switching
-                            auto switchWeapon = [](int x, int y) {
-                                NDS->ReleaseScreen();
-                                frameAdvance(2);
+                            auto switchWeapon = [](int x, int y, bool initialRelease, bool finalRelease) {
+                                if (initialRelease) {
+                                    NDS->ReleaseScreen();
+                                    frameAdvance(2);
+                                }
                                 NDS->TouchScreen(x, y);
                                 frameAdvance(2);
-                                NDS->ReleaseScreen();
-                                frameAdvance(2);
+                                if (finalRelease) {
+                                    NDS->ReleaseScreen();
+                                    frameAdvance(2);
+                                }
                                 };
 
                             // Lambda for checking hotkey and switching weapon
                             auto checkAndSwitchWeapon = [&](Hotkey hotkey, int x, int y) {
                                 if (Input::HotkeyPressed(hotkey)) {
-                                    switchWeapon(x, y);
+                                    switchWeapon(x, y, true, true);
                                     return true;
                                 }
                                 return false;
@@ -1266,8 +1270,8 @@ void EmuThread::run()
 
                             for (int i = 0; i < weaponHotkeysSize; ++i) {
                                 if (Input::HotkeyPressed(weaponHotkeys[i])) {
-                                    switchWeapon(232, 34);
-                                    switchWeapon(93 + 25 * i, 48 + 25 * i);
+                                    switchWeapon(232, 34, true, false);  // 最初のタッチ: 初期リリースあり、最終リリースなし
+                                    switchWeapon(93 + 25 * i, 48 + 25 * i, false, true);  // 2回目のタッチ: 初期リリースなし、最終リリースあり
                                     break;
                                 }
                             }
