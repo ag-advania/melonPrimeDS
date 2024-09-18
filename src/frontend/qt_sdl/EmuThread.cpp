@@ -1222,8 +1222,28 @@ void EmuThread::run()
 
                     // Read the current jump flag value
                     uint8_t currentFlags = NDS->ARM9Read8(jumpFlagAddr);
+
+                    // Check if the upper 4 bits are odd (1 or 3)
+                    if (currentFlags & 0x10) {
+                        // Immediate return if the upper 4 bits are odd(1 or 3)
+                        // We're in the transformation process, so return immediately
+                        // this is for fixing issue: Shooting and transforming become impossible, when changing weapons at high speed while transitioning from transformed to normal form.
+                        return;
+                    }
+
+                    /*
+                    // Check the upper 4 bits of jumpAddr
+                    uint8_t upperBits = (currentFlags >> 4) & 0x0F;
+                    if (upperBits == 1 || upperBits == 3) {
+                        // We're in the transformation process, so return immediately
+                        // this is for fixing issue: Shooting and transforming become impossible, when changing weapons at high speed while transitioning from transformed to normal form.
+                        return;
+                    }
+                    */
+
                     uint8_t jumpFlag = currentFlags & 0x0F;  // Get the lower 4 bits
                     //mainWindow->osdAddMessage(0, ("JumpFlag:" + std::string(1, "0123456789ABCDEF"[NDS->ARM9Read8(jumpFlagAddr) & 0x0F])).c_str());
+
                     bool needToRestore = false;
 
                     // Check if in alternate form (transformed state)
