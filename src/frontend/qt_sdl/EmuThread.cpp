@@ -1332,21 +1332,9 @@ void EmuThread::run()
                     }
                 }
 
-                // Omega Canon or Last used weapon
+                // Change to loaded SpecialWeapon, Last used weapon or Omega Canon
                 if (Input::HotkeyPressed(HK_MetroidWeaponSpecial)) {
-
-                    if (NDS->ARM9Read8(loadedSpecialWeaponAddr) != 0x4) {
-                        // if Imperialist is not loaded
-                        NDS->ReleaseScreen();
-                        frameAdvance(2);
-                        NDS->TouchScreen(173, 32);
-                        frameAdvance(2);
-                    }
-                    else {
-                        // if Imperialist is loaded
-                        SwitchWeapon(4);
-                    }
-
+                    SwitchWeapon(NDS->ARM9Read8(loadedSpecialWeaponAddr));
                 }
 
                 // Start / View Match progress, points
