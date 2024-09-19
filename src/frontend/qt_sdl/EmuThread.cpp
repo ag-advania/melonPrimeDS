@@ -330,6 +330,7 @@ uint32_t calculatePlayerAddress(uint32_t baseAddress, uint8_t playerPosition, in
 }
 
 melonDS::u32 baseIsAltFormAddr;
+melonDS::u32 baseLoadedSpecialWeaponAddr:
 melonDS::u32 baseWeaponChangeAddr;
 melonDS::u32 baseSelectedWeaponAddr;
 melonDS::u32 baseChosenHunterAddr;
@@ -356,6 +357,7 @@ void detectRomAndSetAddresses() {
         inVisorOrMapAddr = 0x020D9A7D; // 推定アドレス
         PlayerPosAddr = 0x020DA538;
         baseIsAltFormAddr = 0x020DB098; // 1p(host)
+        baseLoadedSpecialWeaponAddr = baseIsAltFormAddr + 0x56; // 1p(host). For special weapons only. Missile and powerBeam are not special weapon.
         baseWeaponChangeAddr = 0x020DB45B; // 1p(host)
         baseSelectedWeaponAddr = 0x020DB463; // 1p(host)
         baseJumpFlagAddr = baseSelectedWeaponAddr - 0xA;
@@ -374,6 +376,7 @@ void detectRomAndSetAddresses() {
         PlayerPosAddr = 0x020D9CB8;
         inVisorOrMapAddr = PlayerPosAddr - 0xabb; // 推定アドレス
         baseIsAltFormAddr = 0x020DC6D8 - 0x1EC0; // 1p(host)
+        baseLoadedSpecialWeaponAddr = baseIsAltFormAddr + 0x56; // 1p(host). For special weapons only. Missile and powerBeam are not special weapon.
         baseWeaponChangeAddr = 0x020DCA9B - 0x1EC0; // 1p(host)
         baseSelectedWeaponAddr = 0x020DCAA3 - 0x1EC0; // 1p(host)
         baseJumpFlagAddr = baseSelectedWeaponAddr - 0xA;
@@ -392,6 +395,7 @@ void detectRomAndSetAddresses() {
         PlayerPosAddr = 0x020DBB78;
         inVisorOrMapAddr = PlayerPosAddr - 0xabb; // 推定アドレス
         baseIsAltFormAddr = 0x020DC6D8; // 1p(host)
+        baseLoadedSpecialWeaponAddr = baseIsAltFormAddr + 0x56; // 1p(host). For special weapons only. Missile and powerBeam are not special weapon.
         baseWeaponChangeAddr = 0x020DCA9B; // 1p(host)
         baseSelectedWeaponAddr = 0x020DCAA3; // 1p(host)
         baseJumpFlagAddr = baseSelectedWeaponAddr - 0xA;
@@ -410,6 +414,7 @@ void detectRomAndSetAddresses() {
         PlayerPosAddr = 0x020DBB38;
         inVisorOrMapAddr = PlayerPosAddr - 0xabb; // 推定アドレス
         baseIsAltFormAddr = 0x020DC6D8 - 0x64; // 1p(host)
+        baseLoadedSpecialWeaponAddr = baseIsAltFormAddr + 0x56; // 1p(host). For special weapons only. Missile and powerBeam are not special weapon.
         baseWeaponChangeAddr = 0x020DCA9B - 0x40; // 1p(host)
         baseSelectedWeaponAddr = 0x020DCAA3 - 0x40; // 1p(host)
         baseJumpFlagAddr = baseSelectedWeaponAddr - 0xA;
@@ -428,6 +433,7 @@ void detectRomAndSetAddresses() {
         PlayerPosAddr = 0x020DA558;
         inVisorOrMapAddr = PlayerPosAddr - 0xabb; // 推定アドレス
         baseIsAltFormAddr = 0x020DC6D8 - 0x1620; // 1p(host)
+        baseLoadedSpecialWeaponAddr = baseIsAltFormAddr + 0x56; // 1p(host). For special weapons only. Missile and powerBeam are not special weapon.
         baseWeaponChangeAddr = 0x020DCA9B - 0x1620; // 1p(host)
         baseSelectedWeaponAddr = 0x020DCAA3 - 0x1620; // 1p(host)
         baseJumpFlagAddr = baseSelectedWeaponAddr - 0xA;
@@ -446,6 +452,7 @@ void detectRomAndSetAddresses() {
         PlayerPosAddr = 0x020DA5D8;
         inVisorOrMapAddr = PlayerPosAddr - 0xabb; // 推定アドレス
         baseIsAltFormAddr = 0x020DC6D8 - 0x15A0; // 1p(host)
+        baseLoadedSpecialWeaponAddr = baseIsAltFormAddr + 0x56; // 1p(host). For special weapons only. Missile and powerBeam are not special weapon.
         baseWeaponChangeAddr = 0x020DCA9B - 0x15A0; // 1p(host)
         baseSelectedWeaponAddr = 0x020DCAA3 - 0x15A0; // 1p(host)
         baseJumpFlagAddr = baseSelectedWeaponAddr - 0xA;
@@ -465,6 +472,7 @@ void detectRomAndSetAddresses() {
         inVisorOrMapAddr = PlayerPosAddr - 0xabb; // 推定アドレス
         PlayerPosAddr = 0x020D33A9; // it's weird but "3A9" is correct.
         baseIsAltFormAddr = 0x020DC6D8 - 0x87F4; // 1p(host)
+        baseLoadedSpecialWeaponAddr = baseIsAltFormAddr + 0x56; // 1p(host). For special weapons only. Missile and powerBeam are not special weapon.
         baseWeaponChangeAddr = 0x020DCA9B - 0x87F4; // 1p(host)
         baseSelectedWeaponAddr = 0x020DCAA3 - 0x87F4; // 1p(host)
         baseJumpFlagAddr = baseSelectedWeaponAddr - 0xA;
@@ -1055,13 +1063,15 @@ void EmuThread::run()
             ingameSoVirtualStylusAutolyDisabled = false;
         }
 
-        bool calcAddr = false;
+        bool isAddressCalculationNeeded = false;
 
         if(isInGame && isVirtualStylusEnabled && !ingameSoVirtualStylusAutolyDisabled) {
             isVirtualStylusEnabled = false;
             // mainWindow->osdAddMessage(0, "Virtual Stylus disabled");
             ingameSoVirtualStylusAutolyDisabled = true;
-            calcAddr = true;
+
+            // inGame so need calculate address
+            isAddressCalculationNeeded = true;
         }
 
         // VirtualStylus is Enabled when not in game
@@ -1073,18 +1083,20 @@ void EmuThread::run()
         const int32_t playerAddressIncrement = 0xF30;
         int32_t aimAddrIncrement = 0x48;
         uint32_t isAltFormAddr;
+        uint32_t loadedSpecialWeaponAddr;
         uint32_t chosenHunterAddr;
         uint32_t weaponChangeAddr;
         uint32_t selectedWeaponAddr;
         uint32_t jumpFlagAddr;
 
         
-        if (calcAddr) {
+        if (isAddressCalculationNeeded) {
             // Read the player position
             playerPosition = NDS->ARM9Read8(PlayerPosAddr);
 
             // get addresses
             isAltFormAddr = calculatePlayerAddress(baseIsAltFormAddr, playerPosition, playerAddressIncrement);
+            loadedSpecialWeaponAddr = calculatePlayerAddress(baseLoadedSpecialWeaponAddr, playerPosition, playerAddressIncrement);
             chosenHunterAddr = calculatePlayerAddress(baseChosenHunterAddr, playerPosition, 0x01);
             weaponChangeAddr = calculatePlayerAddress(baseWeaponChangeAddr, playerPosition, playerAddressIncrement);
             selectedWeaponAddr = calculatePlayerAddress(baseSelectedWeaponAddr, playerPosition, playerAddressIncrement);
@@ -1325,12 +1337,16 @@ void EmuThread::run()
 
                     melonDS::u32 currentWeaponAddr = selectedWeaponAddr - 0x1;
 
-                    if (NDS->ARM9Read8(currentWeaponAddr) != 0x4) {
-                        // if not equipping Imperialist
+                    if (NDS->ARM9Read8(loadedSpecialWeaponAddr) != 0x4) {
+                        // if Imperialist is not loaded
                         NDS->ReleaseScreen();
                         frameAdvance(2);
                         NDS->TouchScreen(173, 32);
                         frameAdvance(2);
+                    }
+                    else {
+                        // if Imperialist is loaded
+                        SwitchWeapon(4);
                     }
 
                 }
