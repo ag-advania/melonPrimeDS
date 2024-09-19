@@ -969,9 +969,24 @@ void EmuThread::run()
         }
     };
 
+    uint8_t playerPosition;
+    const int32_t playerAddressIncrement = 0xF30;
+    int32_t aimAddrIncrement = 0x48;
+    uint32_t isAltFormAddr;
+    uint32_t loadedSpecialWeaponAddr;
+    uint32_t chosenHunterAddr;
+    uint32_t weaponChangeAddr;
+    uint32_t selectedWeaponAddr;
+    uint32_t jumpFlagAddr;
+    bool isAddressCalculationNeeded;
+    bool isInGame;
+    bool drawVCur;
+
     while (EmuRunning != emuStatus_Exit) {
 
 
+
+        auto isFocused = mainWindow->panel->getFocused();
 
         // auto mouseRel = rawInputThread->fetchMouseDelta();
 
@@ -981,9 +996,6 @@ void EmuThread::run()
         // 感度係数を定数として定義
         const float SENSITIVITY_FACTOR = Config::MetroidAimSensitivity * 0.01f;
         const float SENSITIVITY_FACTOR_VIRTUAL_STYLUS = Config::MetroidVirtualStylusSensitivity * 0.01f;
-
-        auto isFocused = mainWindow->panel->getFocused();
-
 
         // Calculate for aim 
         // updateMouseRelativeAndRecenterCursor
@@ -1005,7 +1017,7 @@ void EmuThread::run()
 
 
 
-        bool drawVCur = false;
+        drawVCur = false;
 
         #ifdef ENABLE_MEMORY_DUMP
             if (Input::HotkeyPressed(HK_MetroidUIOk)) {
@@ -1022,38 +1034,7 @@ void EmuThread::run()
             isNewRom = false;
         }
 
-        bool isInGame = NDS->ARM9Read16(inGameAddr) == 0x0001;
-
-        /*
-        if(isFocused && Input::HotkeyReleased(HK_MetroidVirtualStylus) && !isInGame){
-            isVirtualStylusEnabled = !isVirtualStylusEnabled;
-            if(isVirtualStylusEnabled){
-                mainWindow->osdAddMessage(0, "Virtual Stylus enabled");
-            }else {
-                mainWindow->osdAddMessage(0, "Virtual Stylus disabled");
-
-                // Create an empty image of 200x100 pixels with a transparent background
-                QImage image(200, 100, QImage::Format_ARGB32);
-                image.fill(Qt::transparent);  // Fill with transparency
-
-                // Create a QPainter to draw on the image
-                QPainter painter(&image);
-                painter.setRenderHint(QPainter::Antialiasing);
-                painter.setPen(QPen(Qt::black));  // Set the text color
-
-                // Set the font and text size
-                QFont font("Arial", 12);
-                painter.setFont(font);
-
-                // Draw the text
-                painter.drawText(image.rect(), Qt::AlignBottom | Qt::AlignRight, "first line\nsecond line");
-
-                // Finish drawing
-                painter.end();
-
-            }
-        }
-        */
+        isInGame = NDS->ARM9Read16(inGameAddr) == 0x0001;
 
         // Auto Enable/Disable VirtualStylus Before/After the game
         // you can still enable VirtualStylus in Game
@@ -1063,7 +1044,7 @@ void EmuThread::run()
             ingameSoVirtualStylusAutolyDisabled = false;
         }
 
-        bool isAddressCalculationNeeded = false;
+        isAddressCalculationNeeded = false;
 
         if(isInGame && isVirtualStylusEnabled && !ingameSoVirtualStylusAutolyDisabled) {
             isVirtualStylusEnabled = false;
@@ -1078,16 +1059,7 @@ void EmuThread::run()
         isVirtualStylusEnabled = !isInGame;
 
 
-        uint8_t playerPosition;
 
-        const int32_t playerAddressIncrement = 0xF30;
-        int32_t aimAddrIncrement = 0x48;
-        uint32_t isAltFormAddr;
-        uint32_t loadedSpecialWeaponAddr;
-        uint32_t chosenHunterAddr;
-        uint32_t weaponChangeAddr;
-        uint32_t selectedWeaponAddr;
-        uint32_t jumpFlagAddr;
 
         
         if (isAddressCalculationNeeded) {
@@ -1118,11 +1090,6 @@ void EmuThread::run()
 
 
                 drawVCur = false;
-
-                if (!wasLastFrameFocused) {
-                    // touch again for aiming
-                    NDS->TouchScreen(128, 96); // required for aiming
-                }
 
                 // Aiming
 
@@ -1481,13 +1448,14 @@ void EmuThread::run()
 
 		}// END of if(isFocused)
 
-        // Touch again for aiming in normal form
+        // Touch again for aiming
         isAltForm = NDS->ARM9Read8(isAltFormAddr) == 0x02;
-        if (!isAltForm && enableAim) {
+        if (!wasLastFrameFocused || (!isAltForm && enableAim)) {
+            // touch again for aiming
+
             // mainWindow->osdAddMessage(0,"touching screen for aim");
             NDS->TouchScreen(128, 96); // required for aiming
         }
-
 
         NDS->SetKeyMask(Input::GetInputMask());
 
