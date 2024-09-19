@@ -1334,7 +1334,11 @@ void EmuThread::run()
 
                 // Change to loaded SpecialWeapon, Last used weapon or Omega Canon
                 if (Input::HotkeyPressed(HK_MetroidWeaponSpecial)) {
-                    SwitchWeapon(NDS->ARM9Read8(loadedSpecialWeaponAddr));
+                    uint8_t loadedSpecialWeapon = NDS->ARM9Read8(loadedSpecialWeaponAddr);
+                    if(loadedSpecialWeapon != 0xFF){
+                        // switchWeapon if special weapon is loaded
+                        SwitchWeapon(loadedSpecialWeapon);
+                    }
                 }
 
                 // Start / View Match progress, points
