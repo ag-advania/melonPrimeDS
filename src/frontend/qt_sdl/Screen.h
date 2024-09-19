@@ -58,7 +58,7 @@ public:
     explicit ScreenPanel(QWidget* parent);
     virtual ~ScreenPanel();
 
-    PrimeOSD::Canvas* OSDCanvas[2];
+    PrimeOSD::Canvas OSDCanvas[2];
     
     // QTimer* setupMouseTimer();
     // void updateMouseTimer();

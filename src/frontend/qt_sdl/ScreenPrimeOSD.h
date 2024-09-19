@@ -9,9 +9,10 @@ namespace PrimeOSD
 
 struct Canvas
 {
-    QImage CanvasBuffer;
+    QImage* CanvasBuffer;
     QPainter* Painter;
     Canvas(int w,int h);
+    Canvas();
 };
 
 }

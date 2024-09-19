@@ -621,8 +621,8 @@ ScreenPanelNative::ScreenPanelNative(QWidget* parent) : ScreenPanel(parent)
     screenTrans[1].reset();
 
     //MelonPrime OSD
-    OSDCanvas[0] = new PrimeOSD::Canvas(256, 192);
-    OSDCanvas[1] = new PrimeOSD::Canvas(256, 192);
+    OSDCanvas[0] = PrimeOSD::Canvas(256, 192);
+    OSDCanvas[1] = PrimeOSD::Canvas(256, 192);
 
 }
 
@@ -673,7 +673,7 @@ void ScreenPanelNative::paintEvent(QPaintEvent* event)
             painter.drawImage(screenrc, screen[screenKind[i]]);
 
             //MellonPrimeOSD
-            painter.drawImage(screenrc, OSDCanvas[screenKind[i]]->CanvasBuffer);
+            painter.drawImage(screenrc, *OSDCanvas[screenKind[i]].CanvasBuffer);
 
         }
     }
