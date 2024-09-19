@@ -330,7 +330,7 @@ uint32_t calculatePlayerAddress(uint32_t baseAddress, uint8_t playerPosition, in
 }
 
 melonDS::u32 baseIsAltFormAddr;
-melonDS::u32 baseLoadedSpecialWeaponAddr:
+melonDS::u32 baseLoadedSpecialWeaponAddr;
 melonDS::u32 baseWeaponChangeAddr;
 melonDS::u32 baseSelectedWeaponAddr;
 melonDS::u32 baseChosenHunterAddr;
@@ -1334,8 +1334,6 @@ void EmuThread::run()
 
                 // Omega Canon or Last used weapon
                 if (Input::HotkeyPressed(HK_MetroidWeaponSpecial)) {
-
-                    melonDS::u32 currentWeaponAddr = selectedWeaponAddr - 0x1;
 
                     if (NDS->ARM9Read8(loadedSpecialWeaponAddr) != 0x4) {
                         // if Imperialist is not loaded
