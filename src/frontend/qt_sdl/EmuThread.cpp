@@ -1223,15 +1223,13 @@ void EmuThread::run()
                 auto SwitchWeapon = [&](int weaponIndex) {
 
                     // Check for Already equipped
-                    uint8_t currentWeapon = NDS->ARM9Read8(selectedWeaponAddr);
-                    if (currentWeapon == weaponIndex) {
+                    if (NDS->ARM9Read8(selectedWeaponAddr) == weaponIndex) {
                         // mainWindow->osdAddMessage(0, "Weapon switch unnecessary: Already equipped");
                         return; // Early return if the weapon is already equipped
                     }
 
                     // Check isMapOrUserActionPaused, for the issue "If you switch weapons while the map is open, the aiming mechanism may become stuck."
-                    bool isMapOrUserActionPaused = NDS->ARM9Read8(isMapOrUserActionPausedAddr) == 0x1;
-                    if (isMapOrUserActionPaused) {
+                    if (NDS->ARM9Read8(isMapOrUserActionPausedAddr) == 0x1) {
                         return;
                     }
 
