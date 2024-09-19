@@ -1126,6 +1126,7 @@ void EmuThread::run()
 
                 // Aiming
 
+                /*
                 // Lambda function to adjust scaled mouse input
                 auto adjustMouseInput = [](float value) {
                     // For positive values less than 1, set to 1
@@ -1134,6 +1135,21 @@ void EmuThread::run()
                     }
                     // For negative values greater than -1, set to -1
                     else if (value < 0 && value > -1.0f) {
+                        return -1.0f;
+                    }
+                    // For other values, return as is
+                    return value;
+                    };
+                */
+
+                // Lambda function to adjust scaled mouse input
+                auto adjustMouseInput = [](float value) {
+                    // For positive values between 0.5 and 1, set to 1
+                    if (value >= 0.5f && value < 1.0f) {
+                        return 1.0f;
+                    }
+                    // For negative values between -0.5 and -1, set to -1
+                    else if (value <= -0.5f && value > -1.0f) {
                         return -1.0f;
                     }
                     // For other values, return as is
