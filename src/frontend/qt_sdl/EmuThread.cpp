@@ -1197,12 +1197,16 @@ void EmuThread::run()
                     {
                         isAltForm = NDS->ARM9Read8(isAltFormAddr) == 0x02;
                         if (isAltForm) {
-                            bool isBoostGaugeEnough = NDS->ARM9Read8(isAltFormAddr + 0x44) > 0x05;
+                            // boostable when gauge value is 0x05-0x0F(max)
+//                            bool isBoostGaugeEnough = NDS->ARM9Read8(isAltFormAddr + 0x44) > 0x05;
+                            bool isBoostGaugeEnough = NDS->ARM9Read8(isAltFormAddr + 0x44) > 0x0A;
+
                             if (isBoostGaugeEnough) {
                                 // do boost by releasing boost key
                                 FN_INPUT_RELEASE(INPUT_R);
                             }
                             else {
+                                FN_INPUT_RELEASE(INPUT_R);
                                 // charge boost gauge by holding boost key
                                 FN_INPUT_PRESS(INPUT_R);
                             }
