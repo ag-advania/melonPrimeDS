@@ -991,6 +991,7 @@ void EmuThread::run()
     bool isInGame;
     bool isInAdventure;
     bool isSamus;
+    bool isRbuttonReleased = false;
 
     while (EmuRunning != emuStatus_Exit) {
 
@@ -1177,15 +1178,21 @@ void EmuThread::run()
                 else {
                     FN_INPUT_RELEASE(INPUT_L);
                 }
+                
+
 
                 // Zoom, morph ball boost, map zoom out
                 if (Input::HotkeyDown(HK_MetroidMorphBallBoost)) {
+                    /*
                     isAltForm = NDS->ARM9Read8(isAltFormAddr) == 0x02;
                     if (isSamus && isAltForm) {
                         // just incase
                         enableAim = false;
+
+                        // release for boost?
                         NDS->ReleaseScreen();
                     }
+                    */
 
                     FN_INPUT_PRESS(INPUT_R);
                 }
@@ -1205,8 +1212,13 @@ void EmuThread::run()
                             if (!isBoosting && isBoostGaugeEnough) {
                                 // do boost by releasing boost key
                                 FN_INPUT_RELEASE(INPUT_R);
+                                isRbuttonReleased = true;
                             }
                             else {
+                                if (!isRbuttonReleased) {
+                                    FN_INPUT_RELEASE(INPUT_R);
+                                    isRbuttonReleased = true;
+                                }
                                 // charge boost gauge by holding boost key
                                 FN_INPUT_PRESS(INPUT_R);
                             }
@@ -1215,6 +1227,7 @@ void EmuThread::run()
                     }
                     else {
                         FN_INPUT_RELEASE(INPUT_R);
+                        isRbuttonReleased = true;
                     }
 
                 }
@@ -1229,17 +1242,23 @@ void EmuThread::run()
 
                 // Alt-Form, morph ball
                 if (Input::HotkeyPressed(HK_MetroidMorphBall)) {
+                    /*
                     if (isSamus) {
                         enableAim = false; // in case isAltForm isnt immediately true
                     }
+                    */
                     NDS->ReleaseScreen();
                     frameAdvance(2);
                     NDS->TouchScreen(231, 167);
+                    frameAdvance(2);
+
+                    /*
                     // boost ball doesnt work unless i release screen late enough
                     for (int i = 0; i < 4; i++) {
                         frameAdvance(2);
                         NDS->ReleaseScreen();
                     }
+                    */
                 }
 
 
@@ -1496,7 +1515,7 @@ void EmuThread::run()
 
         // Touch again for aiming
         isAltForm = NDS->ARM9Read8(isAltFormAddr) == 0x02;
-        if (!wasLastFrameFocused || (!isAltForm && enableAim)) {
+        if (!wasLastFrameFocused || enableAim) {
             // touch again for aiming
             // When you return to melonPrimeDS or normal form
 
