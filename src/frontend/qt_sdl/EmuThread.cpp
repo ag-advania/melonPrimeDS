@@ -1200,13 +1200,16 @@ void EmuThread::run()
                             // boostable when gauge value is 0x05-0x0F(max)
 //                            bool isBoostGaugeEnough = NDS->ARM9Read8(isAltFormAddr + 0x44) > 0x05;
                             bool isBoostGaugeEnough = NDS->ARM9Read8(isAltFormAddr + 0x44) > 0x0A;
+                            bool isBoosting = NDS->ARM9Read8(isAltFormAddr + 0x46) != 0x00;
 
-                            if (isBoostGaugeEnough) {
+                            if (!isBoosting && isBoostGaugeEnough) {
                                 // do boost by releasing boost key
                                 FN_INPUT_RELEASE(INPUT_R);
                             }
                             else {
                                 FN_INPUT_RELEASE(INPUT_R);
+                                frameAdvance(2);
+
                                 // charge boost gauge by holding boost key
                                 FN_INPUT_PRESS(INPUT_R);
                             }
