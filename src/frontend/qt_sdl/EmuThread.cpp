@@ -991,7 +991,6 @@ void EmuThread::run()
     bool isInGame;
     bool isInAdventure;
     bool isSamus;
-    bool isTouchNeededForBoost;
 
     while (EmuRunning != emuStatus_Exit) {
 
@@ -1180,7 +1179,6 @@ void EmuThread::run()
                 }
                 
 
-                isTouchNeededForBoost = false;
 
                 // Zoom, morph ball boost, map zoom out
                 if (Input::HotkeyDown(HK_MetroidMorphBallBoost)) {
@@ -1205,24 +1203,24 @@ void EmuThread::run()
                         isAltForm = NDS->ARM9Read8(isAltFormAddr) == 0x02;
                         if (isAltForm) {
 
-							// boostable when gauge value is 0x05-0x0F(max)
+                            // boostable when gauge value is 0x05-0x0F(max)
                             // bool isBoostGaugeEnough = NDS->ARM9Read8(isAltFormAddr + 0x44) > 0x05;
-							uint8_t boostGaugeValue = NDS->ARM9Read8(isAltFormAddr + 0x44);
-							bool isBoostGaugeEnough = boostGaugeValue > 0x0A;
-							bool isBoosting = NDS->ARM9Read8(isAltFormAddr + 0x46) != 0x00;
+                            uint8_t boostGaugeValue = NDS->ARM9Read8(isAltFormAddr + 0x44);
+                            bool isBoostGaugeEnough = boostGaugeValue > 0x0A;
+                            bool isBoosting = NDS->ARM9Read8(isAltFormAddr + 0x46) != 0x00;
+
+                            // just incase
+                            enableAim = false;
+
+                            // release for boost?
+                            NDS->ReleaseScreen();
 
 
-
+                            /*
                             if (boostGaugeValue == 0x00 && !isBoosting) {
                                 // need untouching for increasing boostGauge at first time boost
-
-                                // just incase
-                                enableAim = false;
-
-                                // release for boost?
-                                NDS->ReleaseScreen();
-                                isTouchNeededForBoost = true;
                             }
+                            */
 
 							if (!isBoosting && isBoostGaugeEnough) {
 								// do boost by releasing boost key
@@ -1231,12 +1229,6 @@ void EmuThread::run()
 							else {
 								// charge boost gauge by holding boost key
 								FN_INPUT_PRESS(INPUT_R);
-
-                                if (isTouchNeededForBoost) {
-                                    frameAdvance(2);
-                                    NDS->TouchScreen(128, 96); // required for aiming
-                                    isTouchNeededForBoost = false;
-                                }
 							}
 
                         }
