@@ -1222,15 +1222,15 @@ void EmuThread::run()
                             if (!isBoosting && isBoostGaugeEnough) {
                                 // do boost by releasing boost key
                                 FN_INPUT_RELEASE(INPUT_R);
+                            }
+                            else {
+                                // charge boost gauge by holding boost key
+                                FN_INPUT_PRESS(INPUT_R);
                                 if (isTouchNeededForBoost) {
                                     frameAdvance(2);
                                     NDS->TouchScreen(128, 96); // required for aiming
                                     isTouchNeededForBoost = false;
                                 }
-                            }
-                            else {
-                                // charge boost gauge by holding boost key
-                                FN_INPUT_PRESS(INPUT_R);
                             }
 
                         }
