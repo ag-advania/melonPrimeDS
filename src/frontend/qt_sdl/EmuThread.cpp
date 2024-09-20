@@ -1177,73 +1177,12 @@ void EmuThread::run()
                 else {
                     FN_INPUT_RELEASE(INPUT_L);
                 }
-                
 
-                bool isBoostHoldOn = false;
-
-                // Zoom, morph ball boost, map zoom out
-                if (Input::HotkeyDown(HK_MetroidMorphBallBoost)) {
-
-                    isAltForm = NDS->ARM9Read8(isAltFormAddr) == 0x02;
-                    if(isSamus && isAltForm){
-                        isBoostHoldOn = true;
-                    }
-                    else {
+                // Zoom, map zoom out
+                if (Input::HotkeyDown(HK_MetroidZoom)) {
                         FN_INPUT_PRESS(INPUT_R);
-                        isBoostHoldOn = false;
-                    }
-                }
-                else {
-                    // FN_INPUT_RELEASE(INPUT_R);
-
-                    // morph ball boost holding
-                    if (Input::HotkeyDown(HK_MetroidMorphBallBoostHold) && isSamus)
-                    {
-                        isBoostHoldOn = true;
-                    }
-                    else {
+                }else{
                         FN_INPUT_RELEASE(INPUT_R);
-                        isBoostHoldOn = false;
-                    }
-
-                }
-
-                if (isBoostHoldOn) {
-                    isAltForm = NDS->ARM9Read8(isAltFormAddr) == 0x02;
-                    if (isAltForm) {
-
-                        // boostable when gauge value is 0x05-0x0F(max)
-                        // bool isBoostGaugeEnough = NDS->ARM9Read8(isAltFormAddr + 0x44) > 0x05;
-                        uint8_t boostGaugeValue = NDS->ARM9Read8(isAltFormAddr + 0x44);
-                        bool isBoosting = NDS->ARM9Read8(isAltFormAddr + 0x46) != 0x00;
-
-                        uint8_t BOOST_GAUGE_THRESHOLD = 0x0A;
-                        if (boostGaugeValue == 0x00 && !isBoosting) {
-                            BOOST_GAUGE_THRESHOLD = 0x05;
-                        }
-                        bool isBoostGaugeEnough = boostGaugeValue > BOOST_GAUGE_THRESHOLD;
-
-                        // just incase
-                        enableAim = false;
-
-                        // release for boost?
-                        NDS->ReleaseScreen();
-
-                        if (!isBoosting && isBoostGaugeEnough) {
-                            // do boost by releasing boost key
-                            FN_INPUT_RELEASE(INPUT_R);
-                        }
-                        else {
-                            // charge boost gauge by holding boost key
-                            FN_INPUT_PRESS(INPUT_R);
-                        }
-
-                        if (isBoosting) {
-                            // touch again for aiming
-                            NDS->TouchScreen(128, 96); // required for aiming
-                        }
-
-                    }
                 }
 
                 // Jump
@@ -1254,7 +1193,7 @@ void EmuThread::run()
                     FN_INPUT_RELEASE(INPUT_B);
                 }
 
-                // Alt-Form, morph ball
+                // Alt-form
                 if (Input::HotkeyPressed(HK_MetroidMorphBall)) {
 
                     NDS->ReleaseScreen();
@@ -1394,6 +1333,48 @@ void EmuThread::run()
                         // switchWeapon if special weapon is loaded
                         SwitchWeapon(loadedSpecialWeapon);
                     }
+                }
+
+                // Morph ball boost,
+                if (isSamus) {
+
+                    // morph ball boost holding
+                    if (Input::HotkeyDown(HK_MetroidHoldMorphBallBoost))
+                    {
+                        isAltForm = NDS->ARM9Read8(isAltFormAddr) == 0x02;
+                        if (isAltForm) {
+                            uint8_t boostGaugeValue = NDS->ARM9Read8(isAltFormAddr + 0x44);
+                            bool isBoosting = NDS->ARM9Read8(isAltFormAddr + 0x46) != 0x00;
+
+                            // boostable when gauge value is 0x05-0x0F(max)
+                            bool isBoostGaugeEnough = boostGaugeValue > 0x0A;
+
+                            // just incase
+                            enableAim = false;
+
+                            // release for boost?
+                            NDS->ReleaseScreen();
+
+                            if (!isBoosting && isBoostGaugeEnough) {
+                                // do boost by releasing boost key
+                                FN_INPUT_RELEASE(INPUT_R);
+                            }
+                            else {
+                                // charge boost gauge by holding boost key
+                                FN_INPUT_PRESS(INPUT_R);
+                            }
+
+                            if (isBoosting) {
+                                // touch again for aiming
+                                NDS->TouchScreen(128, 96); // required for aiming
+                            }
+
+                        }
+                    }
+                    else {
+                        FN_INPUT_RELEASE(INPUT_R);
+                    }
+
                 }
 
                 // Start / View Match progress, points

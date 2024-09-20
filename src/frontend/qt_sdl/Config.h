@@ -49,8 +49,8 @@ Hotkey
     HK_MetroidJump,
 
     HK_MetroidMorphBall,
-    HK_MetroidMorphBallBoost,
-    HK_MetroidMorphBallBoostHold,
+    HK_MetroidZoom,
+    HK_MetroidHoldMorphBallBoost,
 
     HK_MetroidScanVisor,
 
