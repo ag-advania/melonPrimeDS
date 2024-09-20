@@ -1185,7 +1185,7 @@ void EmuThread::run()
                 // Zoom, morph ball boost, map zoom out
                 if (Input::HotkeyDown(HK_MetroidMorphBallBoost)) {
                     isAltForm = NDS->ARM9Read8(isAltFormAddr) == 0x02;
-                    if (isAltForm && isSamus) {
+                    if (isSamus && isAltForm) {
                         // just incase
                         enableAim = false;
                         NDS->ReleaseScreen();
@@ -1230,7 +1230,7 @@ void EmuThread::run()
                     }
 
                     // Check isMapOrUserActionPaused, for the issue "If you switch weapons while the map is open, the aiming mechanism may become stuck."
-                    if (NDS->ARM9Read8(isMapOrUserActionPausedAddr) == 0x1) {
+                    if (isInAdventure && NDS->ARM9Read8(isMapOrUserActionPausedAddr) == 0x1) {
                         return;
                     }
 
