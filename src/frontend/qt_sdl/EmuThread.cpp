@@ -1190,7 +1190,29 @@ void EmuThread::run()
                     FN_INPUT_PRESS(INPUT_R);
                 }
                 else {
-                    FN_INPUT_RELEASE(INPUT_R);
+                    // FN_INPUT_RELEASE(INPUT_R);
+
+                    // morph ball boost holding
+                    if (Input::HotkeyDown(HK_MetroidMorphBallBoostHold) && isSamus)
+                    {
+                        isAltForm = NDS->ARM9Read8(isAltFormAddr) == 0x02;
+                        if (isAltForm) {
+                            bool isBoostGaugeEnough = NDS->ARM9Read8(isAltFormAddr + 0x44) > 0x05;
+                            if (isBoostGaugeEnough) {
+                                // do boost by releasing boost key
+                                FN_INPUT_RELEASE(INPUT_R);
+                            }
+                            else {
+                                // charge boost gauge by holding boost key
+                                FN_INPUT_PRESS(INPUT_R);
+                            }
+
+                        }
+                    }
+                    else {
+                        FN_INPUT_RELEASE(INPUT_R);
+                    }
+
                 }
 
                 // Jump
@@ -1216,26 +1238,7 @@ void EmuThread::run()
                     }
                 }
 
-                // morph ball boost holding
-                if (Input::HotkeyDown(HK_MetroidMorphBallBoostHold) && isSamus)
-                {
-                    isAltForm = NDS->ARM9Read8(isAltFormAddr) == 0x02;
-                    if (isAltForm) {
-                        bool isBoostGaugeOk = NDS->ARM9Read8(isAltFormAddr + 0x44) > 0x05;
-                        if (isBoostGaugeOk) {
-                            // do boost by releasing boost key
-                            FN_INPUT_RELEASE(INPUT_R);
-                        }
-                        else {
-                            // charge boost gauge by holding boost key
-                            FN_INPUT_PRESS(INPUT_R);
-                        }
 
-                    }
-                }
-                else {
-                    FN_INPUT_RELEASE(INPUT_R);
-                }
 
                 // Define a lambda function to switch weapons
                 auto SwitchWeapon = [&](int weaponIndex) {
@@ -1366,9 +1369,11 @@ void EmuThread::run()
                 }
 
 
-                // Adventure Mode Functions
 
                 if (isInAdventure) {
+                    // Adventure Mode Functions
+
+
                     // Scan Visor
                     if (Input::HotkeyPressed(HK_MetroidScanVisor)) {
                         NDS->ReleaseScreen();
