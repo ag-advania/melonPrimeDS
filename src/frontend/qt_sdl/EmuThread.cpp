@@ -1180,9 +1180,10 @@ void EmuThread::run()
 
                 // Zoom, map zoom out
                 if (Input::HotkeyDown(HK_MetroidZoom)) {
-                        FN_INPUT_PRESS(INPUT_R);
-                }else{
-                        FN_INPUT_RELEASE(INPUT_R);
+                    FN_INPUT_PRESS(INPUT_R);
+                }
+                else {
+                    FN_INPUT_RELEASE(INPUT_R);
                 }
 
                 // Jump
