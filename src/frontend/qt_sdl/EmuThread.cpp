@@ -1221,7 +1221,7 @@ void EmuThread::run()
                 {
                     isAltForm = NDS->ARM9Read8(isAltFormAddr) == 0x02;
                     if (isAltForm) {
-                        isBoostGaugeOk = NDS->ARM9Read8(isAltFormAddr + 0x44) > 0x05;
+                        bool isBoostGaugeOk = NDS->ARM9Read8(isAltFormAddr + 0x44) > 0x05;
                         if (isBoostGaugeOk) {
                             // do boost by releasing boost key
                             FN_INPUT_RELEASE(INPUT_R);
