@@ -299,7 +299,7 @@ ConfigEntry ConfigFile[] =
     {"Threaded3D", 1, &Threaded3D, true, false},
 
     {"GL_ScaleFactor", 0, &GL_ScaleFactor, 4, false}, // 8 is too much 4 is enough
-    {"GL_BetterPolygons", 1, &GL_BetterPolygons, false, false},
+    {"GL_BetterPolygons", 1, &GL_BetterPolygons, true, false}, // If you don't check the box to improve Polygon division, part of the sky will blink in Alinos Perch.
 
     {"LimitFPS", 1, &LimitFPS, true, false},
     {"AudioSync", 1, &AudioSync, false},
@@ -364,9 +364,7 @@ ConfigEntry ConfigFile[] =
 
     {"AudioInterp", 0, &AudioInterp, 0, false},
     {"AudioBitDepth", 0, &AudioBitDepth, 0, false},
-// Changed defaultVolume to 128. because 256 is max and too loud for default
-//    {"AudioVolume", 0, &AudioVolume, 256, true},
-    {"AudioVolume", 0, &AudioVolume, 128, true},
+    {"AudioVolume", 0, &AudioVolume, 256, true},
     {"DSiVolumeSync", 1, &DSiVolumeSync, false, true},
     // disable mic by default or mac will have mic notification
     {"MicInputType", 0, &MicInputType, 0, false},
