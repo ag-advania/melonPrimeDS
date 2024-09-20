@@ -1193,6 +1193,12 @@ void EmuThread::run()
                     }
 
                     FN_INPUT_PRESS(INPUT_R);
+
+                    bool isBoosting = NDS->ARM9Read8(isAltFormAddr + 0x46) != 0x00;
+                    if (isBoosting) {
+                        // touch again for aiming
+                        NDS->TouchScreen(128, 96); // required for aiming
+                    }
                 }
                 else {
                     // FN_INPUT_RELEASE(INPUT_R);
