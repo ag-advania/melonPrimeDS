@@ -342,6 +342,7 @@ melonDS::u32 baseAimXAddr;
 melonDS::u32 baseAimYAddr;
 melonDS::u32 aimXAddr;
 melonDS::u32 aimYAddr;
+melonDS::u32 isInAdventureAddr;
 melonDS::u32 isMapOrUserActionPausedAddr; // for issue in AdventureMode, Aim Stopping when SwitchingWeapon. 
 
 bool isAltForm;
@@ -363,6 +364,7 @@ void detectRomAndSetAddresses() {
         baseJumpFlagAddr = baseSelectedWeaponAddr - 0xA;
         baseAimXAddr = 0x020DEDA6;
         baseAimYAddr = 0x020DEDAE;
+        isInAdventureAddr = 0x020E83BC; // Read8 0x02: ADV, 0x03: Multi
         isMapOrUserActionPausedAddr = 0x020FBF18; // 0x00000001: true, 0x00000000 false. Read8 is enough though.
         isRomDetected = true;
         mainWindow->osdAddMessage(0, "Rom detected: US1.1");
@@ -382,6 +384,7 @@ void detectRomAndSetAddresses() {
         baseJumpFlagAddr = baseSelectedWeaponAddr - 0xA;
         baseAimXAddr = 0x020de526;
         baseAimYAddr = 0x020de52E;
+        isInAdventureAddr = 0x020E78FC; // Read8 0x02: ADV, 0x03: Multi
         isMapOrUserActionPausedAddr = 0x020FB458; // 0x00000001: true, 0x00000000 false. Read8 is enough though.
         isRomDetected = true;
         mainWindow->osdAddMessage(0, "Rom detected: US1.0");
@@ -401,6 +404,7 @@ void detectRomAndSetAddresses() {
         baseJumpFlagAddr = baseSelectedWeaponAddr - 0xA;
         baseAimXAddr = 0x020E03E6;
         baseAimYAddr = 0x020E03EE;
+        isInAdventureAddr = 0x020E9A3C; // Read8 0x02: ADV, 0x03: Multi
         isMapOrUserActionPausedAddr = 0x020FD598; // 0x00000001: true, 0x00000000 false. Read8 is enough though.
         isRomDetected = true;
         mainWindow->osdAddMessage(0, "Rom detected: JP1.0");
@@ -420,6 +424,7 @@ void detectRomAndSetAddresses() {
         baseJumpFlagAddr = baseSelectedWeaponAddr - 0xA;
         baseAimXAddr = 0x020e03a6;
         baseAimYAddr = 0x020e03ae;
+        isInAdventureAddr = 0x020E99FC; // Read8 0x02: ADV, 0x03: Multi
         isMapOrUserActionPausedAddr = 0x020FD558; // 0x00000001: true, 0x00000000 false. Read8 is enough though.
         isRomDetected = true;
         mainWindow->osdAddMessage(0, "Rom detected: JP1.1");
@@ -439,6 +444,7 @@ void detectRomAndSetAddresses() {
         baseJumpFlagAddr = baseSelectedWeaponAddr - 0xA;
         baseAimXAddr = 0x020dedc6;
         baseAimYAddr = 0x020dedcE;
+        isInAdventureAddr = 0x020E83DC; // Read8 0x02: ADV, 0x03: Multi
         isMapOrUserActionPausedAddr = 0x020FBF38; // 0x00000001: true, 0x00000000 false. Read8 is enough though.
         isRomDetected = true;
         mainWindow->osdAddMessage(0, "Rom detected: EU1.0");
@@ -458,6 +464,7 @@ void detectRomAndSetAddresses() {
         baseJumpFlagAddr = baseSelectedWeaponAddr - 0xA;
         baseAimXAddr = 0x020dee46;
         baseAimYAddr = 0x020dee4e;
+        isInAdventureAddr = 0x020E845C; // Read8 0x02: ADV, 0x03: Multi
         isMapOrUserActionPausedAddr = 0x020FBFB8; // 0x00000001: true, 0x00000000 false. Read8 is enough though.
         mainWindow->osdAddMessage(0, "Rom detected: EU1.1");
 
@@ -478,7 +485,7 @@ void detectRomAndSetAddresses() {
         baseJumpFlagAddr = baseSelectedWeaponAddr - 0xA;
         baseAimXAddr = 0x020D7C0E;
         baseAimYAddr = 0x020D7C16;
-
+        isInAdventureAddr = 0x020E11F8; // Read8 0x02: ADV, 0x03: Multi
         isMapOrUserActionPausedAddr = 0x020F4CF8; // 0x00000001: true, 0x00000000 false. Read8 is enough though.
         mainWindow->osdAddMessage(0, "Rom detected: KR1.0");
 
@@ -969,9 +976,12 @@ void EmuThread::run()
         }
     };
 
+    
+    bool drawVCur;
+
     uint8_t playerPosition;
     const int32_t playerAddressIncrement = 0xF30;
-    int32_t aimAddrIncrement = 0x48;
+    const int32_t aimAddrIncrement = 0x48;
     uint32_t isAltFormAddr;
     uint32_t loadedSpecialWeaponAddr;
     uint32_t chosenHunterAddr;
@@ -980,7 +990,8 @@ void EmuThread::run()
     uint32_t jumpFlagAddr;
     bool isAddressCalculationNeeded;
     bool isInGame;
-    bool drawVCur;
+    bool isInAdventure;
+    bool isSamus;
 
     while (EmuRunning != emuStatus_Exit) {
 
@@ -1063,6 +1074,8 @@ void EmuThread::run()
 
         
         if (isAddressCalculationNeeded) {
+            // Read once at game start
+
             // Read the player position
             playerPosition = NDS->ARM9Read8(PlayerPosAddr);
 
@@ -1074,9 +1087,16 @@ void EmuThread::run()
             selectedWeaponAddr = calculatePlayerAddress(baseSelectedWeaponAddr, playerPosition, playerAddressIncrement);
             jumpFlagAddr = calculatePlayerAddress(baseJumpFlagAddr, playerPosition, playerAddressIncrement);
 
+            // getChosenHunterAddr
+            chosenHunterAddr = calculatePlayerAddress(baseChosenHunterAddr, playerPosition, 0x01);
+            isSamus = NDS->ARM9Read8(chosenHunterAddr) == 0x00;
+
             // aim addresses
             aimXAddr = calculatePlayerAddress(baseAimXAddr, playerPosition, aimAddrIncrement);
             aimYAddr = calculatePlayerAddress(baseAimYAddr, playerPosition, aimAddrIncrement);
+
+
+            isInAdventure = NDS->ARM9Read8(isInAdventureAddr) == 0x02;
 
             // mainWindow->osdAddMessage(0, "Completed address calculation.");
 
@@ -1165,7 +1185,6 @@ void EmuThread::run()
                 // Zoom, morph ball boost, map zoom out
                 if (Input::HotkeyDown(HK_MetroidMorphBallBoost)) {
                     isAltForm = NDS->ARM9Read8(isAltFormAddr) == 0x02;
-                    bool isSamus = NDS->ARM9Read8(chosenHunterAddr) == 0x00;
                     if (isAltForm && isSamus) {
                         // just incase
                         enableAim = false;
@@ -1188,7 +1207,6 @@ void EmuThread::run()
 
                 // Alt-Form, morph ball
                 if (Input::HotkeyPressed(HK_MetroidMorphBall)) {
-                    bool isSamus = NDS->ARM9Read8(chosenHunterAddr) == 0x00;
                     if (isSamus) {
                         enableAim = false; // in case isAltForm isnt immediately true
                     }
@@ -1333,72 +1351,75 @@ void EmuThread::run()
 
                 // Adventure Mode Functions
 
-                // Scan Visor
-                if (Input::HotkeyPressed(HK_MetroidScanVisor)) {
-                    NDS->ReleaseScreen();
-                    frameAdvance(2);
+            
+                if (isInAdventure) {
+                    // Scan Visor
+                    if (Input::HotkeyPressed(HK_MetroidScanVisor)) {
+                        NDS->ReleaseScreen();
+                        frameAdvance(2);
 
-                    bool inVisor = NDS->ARM9Read8(inVisorOrMapAddr) == 0x1;
-                    // mainWindow->osdAddMessage(0, "in visor %d", inVisor);
+                        bool inVisor = NDS->ARM9Read8(inVisorOrMapAddr) == 0x1;
+                        // mainWindow->osdAddMessage(0, "in visor %d", inVisor);
 
-                    NDS->TouchScreen(128, 173);
+                        NDS->TouchScreen(128, 173);
 
-                    if (inVisor) {
+                        if (inVisor) {
+                            frameAdvance(2);
+                        }
+                        else {
+                            for (int i = 0; i < 30; i++) {
+                                // still allow movement whilst we're enabling scan visor
+                                processMoveInput();
+                                NDS->SetKeyMask(Input::GetInputMask());
+
+                                frameAdvanceOnce();
+                            }
+                        }
+
+                        NDS->ReleaseScreen();
                         frameAdvance(2);
                     }
-                    else {
-                        for (int i = 0; i < 30; i++) {
-                            // still allow movement whilst we're enabling scan visor
-                            processMoveInput();
-                            NDS->SetKeyMask(Input::GetInputMask());
 
-                            frameAdvanceOnce();
-                        }
+                    // OK (in scans and messages)
+                    if (Input::HotkeyPressed(HK_MetroidUIOk)) {
+                        NDS->ReleaseScreen();
+                        frameAdvance(2);
+                        NDS->TouchScreen(128, 142);
+                        frameAdvance(2);
                     }
 
-                    NDS->ReleaseScreen();
-                    frameAdvance(2);
-                }
+                    // Left arrow (in scans and messages)
+                    if (Input::HotkeyPressed(HK_MetroidUILeft)) {
+                        NDS->ReleaseScreen();
+                        frameAdvance(2);
+                        NDS->TouchScreen(71, 141);
+                        frameAdvance(2);
+                    }
 
-                // OK (in scans and messages)
-                if (Input::HotkeyPressed(HK_MetroidUIOk)) {
-                    NDS->ReleaseScreen();
-                    frameAdvance(2);
-                    NDS->TouchScreen(128, 142);
-                    frameAdvance(2);
-                }
+                    // Right arrow (in scans and messages)
+                    if (Input::HotkeyPressed(HK_MetroidUIRight)) {
+                        NDS->ReleaseScreen();
+                        frameAdvance(2);
+                        NDS->TouchScreen(185, 141); // optimization ?
+                        frameAdvance(2);
+                    }
 
-                // Left arrow (in scans and messages)
-                if (Input::HotkeyPressed(HK_MetroidUILeft)) {
-                    NDS->ReleaseScreen();
-                    frameAdvance(2);
-                    NDS->TouchScreen(71, 141);
-                    frameAdvance(2);
-                }
+                    // Enter to Starship
+                    if (Input::HotkeyPressed(HK_MetroidUIYes)) {
+                        NDS->ReleaseScreen();
+                        frameAdvance(2);
+                        NDS->TouchScreen(96, 142);
+                        frameAdvance(2);
+                    }
 
-                // Right arrow (in scans and messages)
-                if (Input::HotkeyPressed(HK_MetroidUIRight)) {
-                    NDS->ReleaseScreen();
-                    frameAdvance(2);
-                    NDS->TouchScreen(185, 141); // optimization ?
-                    frameAdvance(2);
-                }
-
-                // Enter to Starship
-                if (Input::HotkeyPressed(HK_MetroidUIYes)) {
-                    NDS->ReleaseScreen();
-                    frameAdvance(2);
-                    NDS->TouchScreen(96, 142);
-                    frameAdvance(2);
-                }
-
-                // No Enter to Starship
-                if (Input::HotkeyPressed(HK_MetroidUINo)) {
-                    NDS->ReleaseScreen();
-                    frameAdvance(2);
-                    NDS->TouchScreen(160, 142);
-                    frameAdvance(2);
-                }
+                    // No Enter to Starship
+                    if (Input::HotkeyPressed(HK_MetroidUINo)) {
+                        NDS->ReleaseScreen();
+                        frameAdvance(2);
+                        NDS->TouchScreen(160, 142);
+                        frameAdvance(2);
+                    }
+                } // End of Adventure Functions
 
                 // End of in-game
 			}
