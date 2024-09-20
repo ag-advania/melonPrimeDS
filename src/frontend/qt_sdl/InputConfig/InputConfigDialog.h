@@ -84,6 +84,7 @@ static constexpr std::initializer_list<const char*> hk_addons_labels =
 
     "[Metroid] (L. Ctrl) Morph Ball",
     "[Metroid] (Mouse Right) Morph Ball Boost, Map Zoom Out, Imperialist Zoom",
+    "[Metroid] (Shift) Morph Ball Boost Hold",
 
     "[Metroid] (C) Scan Visor",
 
