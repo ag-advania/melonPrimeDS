@@ -1215,14 +1215,12 @@ void EmuThread::run()
 
                             if (boostGaugeValue == 0x00 && !isBoosting) {
                                 // need untouching for increasing boostGauge at first time boost
-                                isAltForm = NDS->ARM9Read8(isAltFormAddr) == 0x02;
-                                if (isSamus && isAltForm) {
-                                    // just incase
-                                    enableAim = false;
 
-                                    // release for boost?
-                                    NDS->ReleaseScreen();
-                                }
+                                // just incase
+                                enableAim = false;
+
+                                // release for boost?
+                                NDS->ReleaseScreen();
                                 isTouchNeededForBoost = true;
                             }
 
