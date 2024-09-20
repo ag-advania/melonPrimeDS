@@ -1216,17 +1216,18 @@ void EmuThread::run()
                     }
                 }
 
-                // TODO HK_MetroidMorphBallBoostHold 実装 SHIFTキーとする
+                // morph ball boost holding
                 if (Input::HotkeyDown(HK_MetroidMorphBallBoostHold) && isSamus)
                 {
                     isAltForm = NDS->ARM9Read8(isAltFormAddr) == 0x02;
                     if (isAltForm) {
-                        // ブースとを定期的に行いたい
                         isBoostGaugeOk = NDS->ARM9Read8(isAltFormAddr + 0x44) > 0x05;
                         if (isBoostGaugeOk) {
+                            // do boost by releasing boost key
                             FN_INPUT_RELEASE(INPUT_R);
                         }
                         else {
+                            // charge boost gauge by holding boost key
                             FN_INPUT_PRESS(INPUT_R);
                         }
 
