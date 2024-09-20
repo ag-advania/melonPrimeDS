@@ -1465,6 +1465,22 @@ void EmuThread::run()
 
         NDS->SetKeyMask(Input::GetInputMask());
 
+        PrimeOSD::Canvas* OSD = mainWindow->panel->OSDCanvas;
+        QImage* Top_buffer = OSD[0].CanvasBuffer;
+        QPainter* Top_paint = OSD[0].Painter;
+        QImage* Bott_buffer = OSD[1].CanvasBuffer;
+        QPainter* Bott_paint = OSD[1].Painter;
+        
+        Top_buffer->fill(0x00000000);
+        Bott_buffer->fill(0x00000000);
+
+        if (drawVCur) {
+            Bott_paint->setPen(Qt::white);
+            Bott_paint->drawEllipse(virtualStylusX,virtualStylusY,11,11);
+        }
+
+        /*
+
         // Showing Virtual Stylus
         if (screenGL) {
             // OpenGL
@@ -1509,7 +1525,7 @@ void EmuThread::run()
                 }
             }
         }
-
+        */
         frameAdvanceOnce();
 
     } // End of while (EmuRunning != emuStatus_Exit)

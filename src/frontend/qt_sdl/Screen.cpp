@@ -581,7 +581,7 @@ void ScreenPanel::osdAddMessage(unsigned int color, const char* text)
 }
 
 void ScreenPanel::osdUpdate()
-{
+{    
     osdMutex.lock();
 
     qint64 tick_now = QDateTime::currentMSecsSinceEpoch();
@@ -666,6 +666,7 @@ void ScreenPanelNative::paintEvent(QPaintEvent* event)
         emuThread->FrontBufferLock.unlock();
 
         QRect screenrc(0, 0, 256, 192);
+        painter.setCompositionMode(QPainter::CompositionMode_SourceOver);
 
         for (int i = 0; i < numScreens; i++)
         {
@@ -903,7 +904,6 @@ void ScreenPanelGL::initOpenGL()
             256,192,0,
             GL_RGBA, GL_UNSIGNED_BYTE,OSDCanvas[i].CanvasBuffer->bits()
         );
-        printf("TextureLoaded:%i",OSDCanvas[i].GLTexture);
     }
 
 
