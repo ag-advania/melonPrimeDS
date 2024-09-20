@@ -1207,7 +1207,6 @@ void EmuThread::run()
                                 FN_INPUT_RELEASE(INPUT_R);
                             }
                             else {
-                                FN_INPUT_RELEASE(INPUT_R);
                                 // charge boost gauge by holding boost key
                                 FN_INPUT_PRESS(INPUT_R);
                             }
