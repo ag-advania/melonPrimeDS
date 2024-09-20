@@ -238,6 +238,7 @@ ConfigEntry ConfigFile[] =
 
     {"HKKey_MetroidMorphBall",         0, &HKKeyMapping[HK_MetroidMorphBall],         Qt::Key_Control, true},
     {"HKKey_MetroidMorphBallBoost",    0, &HKKeyMapping[HK_MetroidMorphBallBoost],    (int)Qt::RightButton | (int)0xF0000000, true},
+    {"HKKey_MetroidMorphBallBoostHold",    0, &HKKeyMapping[HK_MetroidMorphBallBoostHold],    Qt::Key_Shift, true},
 
     {"HKKey_MetroidScanVisor",         0, &HKKeyMapping[HK_MetroidScanVisor],         Qt::Key_C, true},
 

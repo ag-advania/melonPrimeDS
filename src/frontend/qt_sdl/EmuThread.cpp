@@ -1216,6 +1216,26 @@ void EmuThread::run()
                     }
                 }
 
+                // TODO HK_MetroidMorphBallBoostHold 実装 SHIFTキーとする
+                if (Input::HotkeyDown(HK_MetroidMorphBallBoostHold) && isSamus)
+                {
+                    isAltForm = NDS->ARM9Read8(isAltFormAddr) == 0x02;
+                    if (isAltForm) {
+                        // ブースとを定期的に行いたい
+                        isBoostGaugeOk = NDS->ARM9Read8(isAltFormAddr + 0x44) > 0x05;
+                        if (isBoostGaugeOk) {
+                            FN_INPUT_RELEASE(INPUT_R);
+                        }
+                        else {
+                            FN_INPUT_PRESS(INPUT_R);
+                        }
+
+                    }
+                }
+                else {
+                    FN_INPUT_RELEASE(INPUT_R);
+                }
+
                 // Define a lambda function to switch weapons
                 auto SwitchWeapon = [&](int weaponIndex) {
 
@@ -1347,7 +1367,6 @@ void EmuThread::run()
 
                 // Adventure Mode Functions
 
-            
                 if (isInAdventure) {
                     // Scan Visor
                     if (Input::HotkeyPressed(HK_MetroidScanVisor)) {

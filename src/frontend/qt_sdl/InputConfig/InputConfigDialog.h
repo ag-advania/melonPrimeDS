@@ -41,6 +41,7 @@ static constexpr std::initializer_list<int> hk_addons =
 
     HK_MetroidMorphBall,
     HK_MetroidMorphBallBoost,
+    HK_MetroidMorphBallBoostHold,
 
     HK_MetroidScanVisor,
     

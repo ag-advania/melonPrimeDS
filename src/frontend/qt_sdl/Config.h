@@ -50,6 +50,7 @@ Hotkey
 
     HK_MetroidMorphBall,
     HK_MetroidMorphBallBoost,
+    HK_MetroidMorphBallBoostHold,
 
     HK_MetroidScanVisor,
 
