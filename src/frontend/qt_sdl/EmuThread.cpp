@@ -991,8 +991,7 @@ void EmuThread::run()
     bool isInGame;
     bool isInAdventure;
     bool isSamus;
-    // bool isRbuttonReleased = false;
-    bool isTouchNeededForBoost = false;
+    bool isTouchNeededForBoost;
 
     while (EmuRunning != emuStatus_Exit) {
 
@@ -1181,10 +1180,11 @@ void EmuThread::run()
                 }
                 
 
+                isTouchNeededForBoost = false;
 
                 // Zoom, morph ball boost, map zoom out
                 if (Input::HotkeyDown(HK_MetroidMorphBallBoost)) {
-                    /*
+
                     isAltForm = NDS->ARM9Read8(isAltFormAddr) == 0x02;
                     if (isSamus && isAltForm) {
                         // just incase
@@ -1193,7 +1193,6 @@ void EmuThread::run()
                         // release for boost?
                         NDS->ReleaseScreen();
                     }
-                    */
 
                     FN_INPUT_PRESS(INPUT_R);
                 }
@@ -1206,32 +1205,35 @@ void EmuThread::run()
                         isAltForm = NDS->ARM9Read8(isAltFormAddr) == 0x02;
                         if (isAltForm) {
 
-                            // boostable when gauge value is 0x05-0x0F(max)
-//                            bool isBoostGaugeEnough = NDS->ARM9Read8(isAltFormAddr + 0x44) > 0x05;
-                            uint8_t boostGaugeValue = NDS->ARM9Read8(isAltFormAddr + 0x44);
-                            bool isBoostGaugeEnough = boostGaugeValue > 0x0A;
-                            bool isBoosting = NDS->ARM9Read8(isAltFormAddr + 0x46) != 0x00;
+							// boostable when gauge value is 0x05-0x0F(max)
+                            // bool isBoostGaugeEnough = NDS->ARM9Read8(isAltFormAddr + 0x44) > 0x05;
+							uint8_t boostGaugeValue = NDS->ARM9Read8(isAltFormAddr + 0x44);
+							bool isBoostGaugeEnough = boostGaugeValue > 0x0A;
+							bool isBoosting = NDS->ARM9Read8(isAltFormAddr + 0x46) != 0x00;
 
-                            if(boostGaugeValue == 0x00 && !isBoosting) {
+
+
+                            if (boostGaugeValue == 0x00 && !isBoosting) {
                                 // need untouching for increasing boostGauge at first time boost
                                 NDS->ReleaseScreen();
                                 frameAdvance(2);
                                 isTouchNeededForBoost = true;
                             }
 
-                            if (!isBoosting && isBoostGaugeEnough) {
-                                // do boost by releasing boost key
-                                FN_INPUT_RELEASE(INPUT_R);
-                            }
-                            else {
-                                // charge boost gauge by holding boost key
-                                FN_INPUT_PRESS(INPUT_R);
+							if (!isBoosting && isBoostGaugeEnough) {
+								// do boost by releasing boost key
+								FN_INPUT_RELEASE(INPUT_R);
+							}
+							else {
+								// charge boost gauge by holding boost key
+								FN_INPUT_PRESS(INPUT_R);
+
                                 if (isTouchNeededForBoost) {
                                     frameAdvance(2);
                                     NDS->TouchScreen(128, 96); // required for aiming
                                     isTouchNeededForBoost = false;
                                 }
-                            }
+							}
 
                         }
                     }
@@ -1252,23 +1254,22 @@ void EmuThread::run()
 
                 // Alt-Form, morph ball
                 if (Input::HotkeyPressed(HK_MetroidMorphBall)) {
-                    /*
-                    if (isSamus) {
-                        enableAim = false; // in case isAltForm isnt immediately true
-                    }
-                    */
+
                     NDS->ReleaseScreen();
                     frameAdvance(2);
                     NDS->TouchScreen(231, 167);
                     frameAdvance(2);
 
-                    /*
-                    // boost ball doesnt work unless i release screen late enough
-                    for (int i = 0; i < 4; i++) {
-                        frameAdvance(2);
-                        NDS->ReleaseScreen();
+                    if (isSamus) {
+                        enableAim = false; // in case isAltForm isnt immediately true
+
+                        // boost ball doesnt work unless i release screen late enough
+                        for (int i = 0; i < 4; i++) {
+                            frameAdvance(2);
+                            NDS->ReleaseScreen();
+                        }
+
                     }
-                    */
                 }
 
 
