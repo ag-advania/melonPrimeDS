@@ -991,7 +991,7 @@ void EmuThread::run()
     bool isInGame;
     bool isInAdventure;
     bool isSamus;
-    bool isRbuttonReleased = false;
+    // bool isRbuttonReleased = false;
 
     while (EmuRunning != emuStatus_Exit) {
 
@@ -1195,7 +1195,7 @@ void EmuThread::run()
                     */
 
                     FN_INPUT_PRESS(INPUT_R);
-                    isRbuttonReleased = false;
+                    // isRbuttonReleased = false;
                 }
                 else {
                     // FN_INPUT_RELEASE(INPUT_R);
@@ -1213,22 +1213,23 @@ void EmuThread::run()
                             if (!isBoosting && isBoostGaugeEnough) {
                                 // do boost by releasing boost key
                                 FN_INPUT_RELEASE(INPUT_R);
-                                isRbuttonReleased = true;
+                                // isRbuttonReleased = true;
                             }
                             else {
+                                /*
                                 if (!isRbuttonReleased) {
                                     FN_INPUT_RELEASE(INPUT_R);
-                                }
+                                }*/
                                 // charge boost gauge by holding boost key
                                 FN_INPUT_PRESS(INPUT_R);
-                                isRbuttonReleased = false;
+                                // isRbuttonReleased = false;
                             }
 
                         }
                     }
                     else {
                         FN_INPUT_RELEASE(INPUT_R);
-                        isRbuttonReleased = true;
+                        // isRbuttonReleased = true;
                     }
 
                 }
