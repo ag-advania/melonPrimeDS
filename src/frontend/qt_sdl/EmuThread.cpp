@@ -987,6 +987,11 @@ void EmuThread::run()
     uint32_t weaponChangeAddr;
     uint32_t selectedWeaponAddr;
     uint32_t jumpFlagAddr;
+
+    uint32_t boostGaugeAddr;
+    uint32_t isBoostingAddr;
+
+
     bool isAddressCalculationNeeded;
     bool isInGame;
     bool isInAdventure;
@@ -1086,6 +1091,9 @@ void EmuThread::run()
             // getChosenHunterAddr
             chosenHunterAddr = calculatePlayerAddress(baseChosenHunterAddr, playerPosition, 0x01);
             isSamus = NDS->ARM9Read8(chosenHunterAddr) == 0x00;
+
+            boostGaugeAddr = isAltFormAddr + 0x44;
+            isBoostingAddr = isAltFormAddr + 0x46;
 
             // aim addresses
             aimXAddr = calculatePlayerAddress(baseAimXAddr, playerPosition, aimAddrIncrement);
@@ -1341,8 +1349,8 @@ void EmuThread::run()
                 {
                     isAltForm = NDS->ARM9Read8(isAltFormAddr) == 0x02;
                     if (isAltForm) {
-                        uint8_t boostGaugeValue = NDS->ARM9Read8(isAltFormAddr + 0x44);
-                        bool isBoosting = NDS->ARM9Read8(isAltFormAddr + 0x46) != 0x00;
+                        uint8_t boostGaugeValue = NDS->ARM9Read8(boostGaugeAddr);
+                        bool isBoosting = NDS->ARM9Read8(isBoostingAddr) != 0x00;
 
                         // boostable when gauge value is 0x05-0x0F(max)
                         bool isBoostGaugeEnough = boostGaugeValue > 0x0A;
