@@ -1231,6 +1231,11 @@ void EmuThread::run()
 								FN_INPUT_PRESS(INPUT_R);
 							}
 
+                            if (isBoosting) {
+                                // touch again for aiming
+                                NDS->TouchScreen(128, 96); // required for aiming
+                            }
+
                         }
                     }
                     else {
