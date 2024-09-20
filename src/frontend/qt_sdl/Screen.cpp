@@ -889,6 +889,24 @@ void ScreenPanelGL::initOpenGL()
         // GL_ALPHA, GL_UNSIGNED_BYTE, virtualCursorImage.bits()
         GL_RGBA, GL_UNSIGNED_BYTE, &virtualCursorBytes
     );
+
+    //Generate OSDTexture for both screens
+    for(int i=0;i<numScreens;i++){
+        glGenTextures(1, &OSDCanvas[i].GLTexture);
+        glBindTexture(GL_TEXTURE_2D, OSDCanvas[i].GLTexture);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+        glTexImage2D(
+            GL_TEXTURE_2D,0,GL_RGBA,
+            256,192,0,
+            GL_RGBA, GL_UNSIGNED_BYTE,OSDCanvas[i].CanvasBuffer->bits()
+        );
+        printf("TextureLoaded:%i",OSDCanvas[i].GLTexture);
+    }
+
+
 }
 
 void ScreenPanelGL::deinitOpenGL()
@@ -1028,6 +1046,26 @@ void ScreenPanelGL::drawScreenGL()
 
     screenSettingsLock.lock();
 
+    // 0 = top screen; 1 = bottom screen
+    for(int ScreenType = 0;ScreenType<numScreens;ScreenType++){
+        glBindTexture(GL_TEXTURE_2D, OSDCanvas[ScreenType].GLTexture);
+        
+        //Update texture each frame to match the CanvasBuffer.
+        glTexSubImage2D(GL_TEXTURE_2D,0,0,0,256,192,GL_RGBA,GL_UNSIGNED_BYTE,OSDCanvas[ScreenType].CanvasBuffer->bits());
+        
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+        glUniform2f(overlayPosULoc,0,0);
+        glUniform2f(overlaySizeULoc,256,192);
+        glUniform1i(overlayScreenTypeULoc, ScreenType);
+        glUniformMatrix2x3fv(
+            overlayTransformULoc, 1, GL_TRUE,
+            screenMatrix[ScreenType]
+        );
+        glDrawArrays(GL_TRIANGLES,screenKind[ScreenType] == 0 ? 0 : 2*3, 2*3);
+    }
+
+    /*
     if (virtualCursorShow) {
         glBindTexture(GL_TEXTURE_2D, virtualCursorTexture);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
@@ -1047,7 +1085,7 @@ void ScreenPanelGL::drawScreenGL()
             glDrawArrays(GL_TRIANGLES, screenKind[screenType] == 0 ? 0 : 2*3, 2*3);
         }
     }
-
+    */
     screenSettingsLock.unlock();
 
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, filter);
