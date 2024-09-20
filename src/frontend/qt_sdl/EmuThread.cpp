@@ -1195,7 +1195,6 @@ void EmuThread::run()
                     */
 
                     FN_INPUT_PRESS(INPUT_R);
-                    // isRbuttonReleased = false;
                 }
                 else {
                     // FN_INPUT_RELEASE(INPUT_R);
@@ -1205,24 +1204,32 @@ void EmuThread::run()
                     {
                         isAltForm = NDS->ARM9Read8(isAltFormAddr) == 0x02;
                         if (isAltForm) {
+
                             // boostable when gauge value is 0x05-0x0F(max)
 //                            bool isBoostGaugeEnough = NDS->ARM9Read8(isAltFormAddr + 0x44) > 0x05;
-                            bool isBoostGaugeEnough = NDS->ARM9Read8(isAltFormAddr + 0x44) > 0x0A;
+                            uint8_t boostGaugeValue = NDS->ARM9Read8(isAltFormAddr + 0x44);
+                            bool isBoostGaugeEnough = boostGaugeValue > 0x0A;
                             bool isBoosting = NDS->ARM9Read8(isAltFormAddr + 0x46) != 0x00;
+                            bool isTouchNeeded = false;
+
+                            if(boostGaugeValue == 0x00 && !isBoosting) {
+                                // need untouching for increasing boostGauge at first time boost
+                                NDS->ReleaseScreen();
+                                frameAdvance(2);
+                                bool isTouchNeeded = true;                               
+                            }
 
                             if (!isBoosting && isBoostGaugeEnough) {
                                 // do boost by releasing boost key
                                 FN_INPUT_RELEASE(INPUT_R);
-                                // isRbuttonReleased = true;
                             }
                             else {
-                                /*
-                                if (!isRbuttonReleased) {
-                                    FN_INPUT_RELEASE(INPUT_R);
-                                }*/
                                 // charge boost gauge by holding boost key
                                 FN_INPUT_PRESS(INPUT_R);
-                                // isRbuttonReleased = false;
+                                if (isTouchNeeded) {
+                                    frameAdvance(2);
+                                    NDS->TouchScreen(128, 96); // required for aiming
+                                }
                             }
 
                         }
