@@ -992,6 +992,7 @@ void EmuThread::run()
     bool isInAdventure;
     bool isSamus;
     // bool isRbuttonReleased = false;
+    bool isTouchNeededForBoost = false;
 
     while (EmuRunning != emuStatus_Exit) {
 
@@ -1210,26 +1211,26 @@ void EmuThread::run()
                             uint8_t boostGaugeValue = NDS->ARM9Read8(isAltFormAddr + 0x44);
                             bool isBoostGaugeEnough = boostGaugeValue > 0x0A;
                             bool isBoosting = NDS->ARM9Read8(isAltFormAddr + 0x46) != 0x00;
-                            bool isTouchNeeded = false;
 
                             if(boostGaugeValue == 0x00 && !isBoosting) {
                                 // need untouching for increasing boostGauge at first time boost
                                 NDS->ReleaseScreen();
                                 frameAdvance(2);
-                                bool isTouchNeeded = true;                               
+                                isTouchNeededForBoost = true;
                             }
 
                             if (!isBoosting && isBoostGaugeEnough) {
                                 // do boost by releasing boost key
                                 FN_INPUT_RELEASE(INPUT_R);
+                                if (isTouchNeededForBoost) {
+                                    frameAdvance(2);
+                                    NDS->TouchScreen(128, 96); // required for aiming
+                                    isTouchNeededForBoost = false;
+                                }
                             }
                             else {
                                 // charge boost gauge by holding boost key
                                 FN_INPUT_PRESS(INPUT_R);
-                                if (isTouchNeeded) {
-                                    frameAdvance(2);
-                                    NDS->TouchScreen(128, 96); // required for aiming
-                                }
                             }
 
                         }
