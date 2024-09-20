@@ -1184,7 +1184,8 @@ void EmuThread::run()
                 if (Input::HotkeyDown(HK_MetroidMorphBallBoost)) {
 
                     isAltForm = NDS->ARM9Read8(isAltFormAddr) == 0x02;
-                    if (isSamus && isAltForm) {
+                    bool isBoosting = NDS->ARM9Read8(isAltFormAddr + 0x46) != 0x00;
+                    if (isAltForm && isSamus && !isBoosting) {
                         // just incase
                         enableAim = false;
 
@@ -1194,7 +1195,6 @@ void EmuThread::run()
 
                     FN_INPUT_PRESS(INPUT_R);
 
-                    bool isBoosting = NDS->ARM9Read8(isAltFormAddr + 0x46) != 0x00;
                     if (isBoosting) {
                         // touch again for aiming
                         NDS->TouchScreen(128, 96); // required for aiming
@@ -1221,13 +1221,6 @@ void EmuThread::run()
                             // release for boost?
                             NDS->ReleaseScreen();
 
-
-                            /*
-                            if (boostGaugeValue == 0x00 && !isBoosting) {
-                                // need untouching for increasing boostGauge at first time boost
-                            }
-                            */
-
 							if (!isBoosting && isBoostGaugeEnough) {
 								// do boost by releasing boost key
 								FN_INPUT_RELEASE(INPUT_R);
@@ -1246,7 +1239,6 @@ void EmuThread::run()
                     }
                     else {
                         FN_INPUT_RELEASE(INPUT_R);
-                        // isRbuttonReleased = true;
                     }
 
                 }
