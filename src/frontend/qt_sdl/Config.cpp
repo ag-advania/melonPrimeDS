@@ -237,7 +237,8 @@ ConfigEntry ConfigFile[] =
     {"HKKey_MetroidJump",              0, &HKKeyMapping[HK_MetroidJump],              Qt::Key_Space, true},
 
     {"HKKey_MetroidMorphBall",         0, &HKKeyMapping[HK_MetroidMorphBall],         Qt::Key_Control, true},
-    {"HKKey_MetroidMorphBallBoost",    0, &HKKeyMapping[HK_MetroidMorphBallBoost],    (int)Qt::RightButton | (int)0xF0000000, true},
+    {"HKKey_MetroidZoom",              0, &HKKeyMapping[HK_MetroidZoom],              (int)Qt::RightButton | (int)0xF0000000, true},
+    {"HKKey_MetroidHoldMorphBallBoost",0, &HKKeyMapping[HK_MetroidHoldMorphBallBoost],Qt::Key_Shift, true},
 
     {"HKKey_MetroidScanVisor",         0, &HKKeyMapping[HK_MetroidScanVisor],         Qt::Key_C, true},
 
@@ -295,11 +296,11 @@ ConfigEntry ConfigFile[] =
     {"ScreenVSync",         1, &ScreenVSync,         false, false},
     {"ScreenVSyncInterval", 0, &ScreenVSyncInterval, 1, false},
 
-    {"3DRenderer", 0, &_3DRenderer, 1, false},
+    {"3DRenderer", 0, &_3DRenderer, 0, false}, //0: Software, 1:OpenGL
     {"Threaded3D", 1, &Threaded3D, true, false},
 
-    {"GL_ScaleFactor", 0, &GL_ScaleFactor, 8, false},
-    {"GL_BetterPolygons", 1, &GL_BetterPolygons, false, false},
+    {"GL_ScaleFactor", 0, &GL_ScaleFactor, 4, false}, // 8 is too much 4 is enough
+    {"GL_BetterPolygons", 1, &GL_BetterPolygons, true, false}, // If you don't check the box to improve Polygon division, part of the sky will blink in Alinos Perch.
 
     {"LimitFPS", 1, &LimitFPS, true, false},
     {"AudioSync", 1, &AudioSync, false},
