@@ -1215,8 +1215,13 @@ void EmuThread::run()
                         // boostable when gauge value is 0x05-0x0F(max)
                         // bool isBoostGaugeEnough = NDS->ARM9Read8(isAltFormAddr + 0x44) > 0x05;
                         uint8_t boostGaugeValue = NDS->ARM9Read8(isAltFormAddr + 0x44);
-                        bool isBoostGaugeEnough = boostGaugeValue > 0x0A;
                         bool isBoosting = NDS->ARM9Read8(isAltFormAddr + 0x46) != 0x00;
+
+                        uint8_t BOOST_GAUGE_THRESHOLD = 0x0A;
+                        if (boostGaugeValue == 0x00 && !isBoosting) {
+                            BOOST_GAUGE_THRESHOLD = 0x05;
+                        }
+                        bool isBoostGaugeEnough = boostGaugeValue > BOOST_GAUGE_THRESHOLD;
 
                         // just incase
                         enableAim = false;
