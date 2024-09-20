@@ -944,11 +944,10 @@ void EmuThread::run()
 
 
     bool enableAim = true;
+    bool wasLastFrameFocused = false;
 
     float virtualStylusX = 128;
     float virtualStylusY = 96;
-
-    bool wasLastFrameFocused = false;
 
     const float dsAspectRatio = 256.0 / 192.0;
     const float aimAspectRatio = 6.0 / 4.0; // i have no idea
@@ -1070,9 +1069,6 @@ void EmuThread::run()
         isVirtualStylusEnabled = !isInGame;
 
 
-
-
-        
         if (isAddressCalculationNeeded) {
             // Read once at game start
 
@@ -1473,6 +1469,7 @@ void EmuThread::run()
         isAltForm = NDS->ARM9Read8(isAltFormAddr) == 0x02;
         if (!wasLastFrameFocused || (!isAltForm && enableAim)) {
             // touch again for aiming
+            // When you return to melonPrimeDS or normal form
 
             // mainWindow->osdAddMessage(0,"touching screen for aim");
             NDS->TouchScreen(128, 96); // required for aiming
