@@ -295,10 +295,10 @@ ConfigEntry ConfigFile[] =
     {"ScreenVSync",         1, &ScreenVSync,         false, false},
     {"ScreenVSyncInterval", 0, &ScreenVSyncInterval, 1, false},
 
-    {"3DRenderer", 0, &_3DRenderer, 1, false},
+    {"3DRenderer", 0, &_3DRenderer, 0, false}, //0: Software, 1:OpenGL
     {"Threaded3D", 1, &Threaded3D, true, false},
 
-    {"GL_ScaleFactor", 0, &GL_ScaleFactor, 8, false},
+    {"GL_ScaleFactor", 0, &GL_ScaleFactor, 4, false}, // 8 is too much 4 is enough
     {"GL_BetterPolygons", 1, &GL_BetterPolygons, false, false},
 
     {"LimitFPS", 1, &LimitFPS, true, false},
@@ -364,7 +364,9 @@ ConfigEntry ConfigFile[] =
 
     {"AudioInterp", 0, &AudioInterp, 0, false},
     {"AudioBitDepth", 0, &AudioBitDepth, 0, false},
-    {"AudioVolume", 0, &AudioVolume, 256, true},
+// Changed defaultVolume to 128. because 256 is max and too loud for default
+//    {"AudioVolume", 0, &AudioVolume, 256, true},
+    {"AudioVolume", 0, &AudioVolume, 128, true},
     {"DSiVolumeSync", 1, &DSiVolumeSync, false, true},
     // disable mic by default or mac will have mic notification
     {"MicInputType", 0, &MicInputType, 0, false},
