@@ -1184,13 +1184,16 @@ void EmuThread::run()
                 if (Input::HotkeyDown(HK_MetroidMorphBallBoost)) {
 
                     isAltForm = NDS->ARM9Read8(isAltFormAddr) == 0x02;
-                    bool isBoosting = NDS->ARM9Read8(isAltFormAddr + 0x46) != 0x00;
-                    if (isAltForm && isSamus && !isBoosting) {
-                        // just incase
-                        enableAim = false;
+                    bool isBoosting = false;
+                    if(isAltForm && isSamus){
+                        isBoosting = NDS->ARM9Read8(isAltFormAddr + 0x46) != 0x00;
+                        if (!isBoosting) {
+                            // just incase
+                            enableAim = false;
 
-                        // release for boost?
-                        NDS->ReleaseScreen();
+                            // release for boost?
+                            NDS->ReleaseScreen();
+                        }
                     }
 
                     FN_INPUT_PRESS(INPUT_R);
