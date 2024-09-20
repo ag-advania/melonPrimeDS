@@ -1195,6 +1195,7 @@ void EmuThread::run()
                     */
 
                     FN_INPUT_PRESS(INPUT_R);
+                    isRbuttonReleased = false;
                 }
                 else {
                     // FN_INPUT_RELEASE(INPUT_R);
@@ -1217,10 +1218,10 @@ void EmuThread::run()
                             else {
                                 if (!isRbuttonReleased) {
                                     FN_INPUT_RELEASE(INPUT_R);
-                                    isRbuttonReleased = true;
                                 }
                                 // charge boost gauge by holding boost key
                                 FN_INPUT_PRESS(INPUT_R);
+                                isRbuttonReleased = false;
                             }
 
                         }
