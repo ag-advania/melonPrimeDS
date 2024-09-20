@@ -1179,28 +1179,18 @@ void EmuThread::run()
                 }
                 
 
+                bool isBoostHoldOn = false;
 
                 // Zoom, morph ball boost, map zoom out
                 if (Input::HotkeyDown(HK_MetroidMorphBallBoost)) {
 
                     isAltForm = NDS->ARM9Read8(isAltFormAddr) == 0x02;
-                    bool isBoosting = false;
-                    if(isAltForm && isSamus){
-                        isBoosting = NDS->ARM9Read8(isAltFormAddr + 0x46) != 0x00;
-                        if (!isBoosting) {
-                            // just incase
-                            enableAim = false;
-
-                            // release for boost?
-                            NDS->ReleaseScreen();
-                        }
+                    if(isSamus && isAltForm){
+                        isBoostHoldOn = true;
                     }
-
-                    FN_INPUT_PRESS(INPUT_R);
-
-                    if (isBoosting) {
-                        // touch again for aiming
-                        NDS->TouchScreen(128, 96); // required for aiming
+                    else {
+                        FN_INPUT_PRESS(INPUT_R);
+                        isBoostHoldOn = false;
                     }
                 }
                 else {
@@ -1209,41 +1199,46 @@ void EmuThread::run()
                     // morph ball boost holding
                     if (Input::HotkeyDown(HK_MetroidMorphBallBoostHold) && isSamus)
                     {
-                        isAltForm = NDS->ARM9Read8(isAltFormAddr) == 0x02;
-                        if (isAltForm) {
-
-                            // boostable when gauge value is 0x05-0x0F(max)
-                            // bool isBoostGaugeEnough = NDS->ARM9Read8(isAltFormAddr + 0x44) > 0x05;
-                            uint8_t boostGaugeValue = NDS->ARM9Read8(isAltFormAddr + 0x44);
-                            bool isBoostGaugeEnough = boostGaugeValue > 0x0A;
-                            bool isBoosting = NDS->ARM9Read8(isAltFormAddr + 0x46) != 0x00;
-
-                            // just incase
-                            enableAim = false;
-
-                            // release for boost?
-                            NDS->ReleaseScreen();
-
-							if (!isBoosting && isBoostGaugeEnough) {
-								// do boost by releasing boost key
-								FN_INPUT_RELEASE(INPUT_R);
-							}
-							else {
-								// charge boost gauge by holding boost key
-								FN_INPUT_PRESS(INPUT_R);
-							}
-
-                            if (isBoosting) {
-                                // touch again for aiming
-                                NDS->TouchScreen(128, 96); // required for aiming
-                            }
-
-                        }
+                        isBoostHoldOn = true;
                     }
                     else {
                         FN_INPUT_RELEASE(INPUT_R);
+                        isBoostHoldOn = false;
                     }
 
+                }
+
+                if (isBoostHoldOn) {
+                    isAltForm = NDS->ARM9Read8(isAltFormAddr) == 0x02;
+                    if (isAltForm) {
+
+                        // boostable when gauge value is 0x05-0x0F(max)
+                        // bool isBoostGaugeEnough = NDS->ARM9Read8(isAltFormAddr + 0x44) > 0x05;
+                        uint8_t boostGaugeValue = NDS->ARM9Read8(isAltFormAddr + 0x44);
+                        bool isBoostGaugeEnough = boostGaugeValue > 0x0A;
+                        bool isBoosting = NDS->ARM9Read8(isAltFormAddr + 0x46) != 0x00;
+
+                        // just incase
+                        enableAim = false;
+
+                        // release for boost?
+                        NDS->ReleaseScreen();
+
+                        if (!isBoosting && isBoostGaugeEnough) {
+                            // do boost by releasing boost key
+                            FN_INPUT_RELEASE(INPUT_R);
+                        }
+                        else {
+                            // charge boost gauge by holding boost key
+                            FN_INPUT_PRESS(INPUT_R);
+                        }
+
+                        if (isBoosting) {
+                            // touch again for aiming
+                            NDS->TouchScreen(128, 96); // required for aiming
+                        }
+
+                    }
                 }
 
                 // Jump
