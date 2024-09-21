@@ -1009,6 +1009,8 @@ void EmuThread::run()
         QFont font("System", 10);
         font.setBold(true);
 
+        QFont font1("System", 5);
+
         //Clear OSD buffers
         Top_buffer->fill(0x00000000);
         Bott_buffer->fill(0x00000000);
@@ -1127,7 +1129,7 @@ void EmuThread::run()
                 // inGame
 
                 // OSD Testing
-                Top_paint->setFont(font);
+                Top_paint->setFont(font1);
                 Top_paint->setPen(Qt::white);
                 Top_paint->drawText(QPoint(50, 50), "Project");
 
