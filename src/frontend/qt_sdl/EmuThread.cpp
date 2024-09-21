@@ -1007,7 +1007,7 @@ void EmuThread::run()
         QImage* Bott_buffer = OSD[1].CanvasBuffer;
         QPainter* Bott_paint = OSD[1].Painter;
         QFont font("System", 10);
-        QFontMetrics fm(font);
+        font.setBold(true);
 
         //Clear OSD buffers
         Top_buffer->fill(0x00000000);
@@ -1127,6 +1127,7 @@ void EmuThread::run()
                 // inGame
 
                 // OSD Testing
+                Top_paint->setFont(font);
                 Top_paint->setPen(Qt::white);
                 Top_paint->drawText(QPoint(50, 50), "Project");
 
@@ -1178,6 +1179,7 @@ void EmuThread::run()
                     NDS->ARM9Write16(aimXAddr, static_cast<uint16_t>(scaledMouseX));
                     enableAim = true;
 
+                    Top_paint->setFont(font);
                     Top_paint->setPen(Qt::white);
                     Top_paint->drawText(QPoint(50, 100), (std::string("AIM X") + std::to_string(scaledMouseX)).c_str());
 
