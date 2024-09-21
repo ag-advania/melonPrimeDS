@@ -59,7 +59,7 @@ public:
     virtual ~ScreenPanel();
 
     PrimeOSD::Canvas OSDCanvas[2];
-    uint OSDtextures[3];
+    uint OSDCanvastextures[2];
 
     // QTimer* setupMouseTimer();
     // void updateMouseTimer();
@@ -207,7 +207,6 @@ private:
     GLuint overlayScreenSizeULoc, overlayTransformULoc;
     GLuint overlayPosULoc, overlaySizeULoc, overlayScreenTypeULoc;
 
-    GLuint virtualCursorTexture;
 public:
     bool virtualCursorShow = false;
     float virtualCursorX;

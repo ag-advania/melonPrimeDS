@@ -79,6 +79,11 @@ ScreenPanel::ScreenPanel(QWidget* parent) : QWidget(parent)
 
     osdEnabled = false;
     osdID = 1;
+
+    //MelonPrime OSD
+    OSDCanvas[0] = PrimeOSD::Canvas(256, 192);//Bottom Screen OSD
+    OSDCanvas[1] = PrimeOSD::Canvas(256, 192);//Top Screen OSD
+
 }
 
 ScreenPanel::~ScreenPanel()
@@ -620,10 +625,6 @@ ScreenPanelNative::ScreenPanelNative(QWidget* parent) : ScreenPanel(parent)
     screenTrans[0].reset();
     screenTrans[1].reset();
 
-    //MelonPrime OSD
-    OSDCanvas[0] = PrimeOSD::Canvas(256, 192);//Bottom Screen OSD
-    OSDCanvas[1] = PrimeOSD::Canvas(256, 192);//Top Screen OSD
-
 }
 
 ScreenPanelNative::~ScreenPanelNative()
@@ -742,6 +743,7 @@ void ScreenPanelGL::setSwapInterval(int intv)
 
 void ScreenPanelGL::initOpenGL()
 {
+    printf("Start:InitOpenGL");
     if (!glContext) return;
 
     glContext->MakeCurrent();
@@ -864,10 +866,10 @@ void ScreenPanelGL::initOpenGL()
     overlayScreenTypeULoc = glGetUniformLocation(pid, "uOverlayScreenType");
 
 
-    //Generate OSDTexture for all screens
-    for(int i=0;i<numScreens;i++){
-        glGenTextures(1, &OSDtextures[i]);
-        glBindTexture(GL_TEXTURE_2D, OSDtextures[i]);
+    //Generate OSDCanvasTextures for Top and Bottom Screen
+    for(int i=0;i<2;i++){
+        glGenTextures(1, &OSDCanvastextures[i]);
+        glBindTexture(GL_TEXTURE_2D, OSDCanvastextures[i]);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
@@ -875,11 +877,11 @@ void ScreenPanelGL::initOpenGL()
         glTexImage2D(
             GL_TEXTURE_2D,0,GL_RGBA,
             256,192,0,
-            GL_RGBA, GL_UNSIGNED_BYTE,OSDCanvas[screenKind[i]].CanvasBuffer->bits()
+            GL_RGBA, GL_UNSIGNED_BYTE,OSDCanvas[0].CanvasBuffer->bits()
         );
     }
 
-
+    printf(":End\n");
 }
 
 void ScreenPanelGL::deinitOpenGL()
@@ -905,9 +907,11 @@ void ScreenPanelGL::deinitOpenGL()
 
     OpenGL::DeleteShaderProgram(osdShader);
 
-    OpenGL::DeleteShaderProgram(overlayShader);
+    for(int i=0;i<2;i++){
+        glDeleteTextures(1, &OSDCanvastextures[i]);
+    }
 
-    glDeleteTextures(1, &virtualCursorTexture);
+    OpenGL::DeleteShaderProgram(overlayShader);
 
     glContext->DoneCurrent();
 
@@ -1019,9 +1023,9 @@ void ScreenPanelGL::drawScreenGL()
 
     screenSettingsLock.lock();
 
-    // 0 = top screen; 1 = bottom screen
+    // Draw Textures for all screens
     for(int i = 0;i<numScreens;i++){
-        glBindTexture(GL_TEXTURE_2D, OSDtextures[i]);
+        glBindTexture(GL_TEXTURE_2D, OSDCanvastextures[screenKind[i]]);
         
         //Update texture each frame to match the CanvasBuffer.
         glTexSubImage2D(GL_TEXTURE_2D,0,0,0,256,192,GL_RGBA,GL_UNSIGNED_BYTE,OSDCanvas[screenKind[i]].CanvasBuffer->bits());
