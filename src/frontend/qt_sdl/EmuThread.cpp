@@ -1006,10 +1006,12 @@ void EmuThread::run()
         QPainter* Top_paint = OSD[0].Painter;
         QImage* Bott_buffer = OSD[1].CanvasBuffer;
         QPainter* Bott_paint = OSD[1].Painter;
-        QFont font("System", 10);
-        font.setBold(true);
+        
+        
+        // QFont font("System", 10);
+        // QFont font1("System", 5);
 
-        QFont font1("System", 5);
+        // font.setBold(true);
 
         //Clear OSD buffers
         Top_buffer->fill(0x00000000);
@@ -1129,11 +1131,17 @@ void EmuThread::run()
                 // inGame
 
                 // OSD Testing
+                // Définir la première police pour "Project"
+                QFont font1("Arial", 20);  // Par exemple, Arial avec taille 20
                 Top_paint->setFont(font1);
-                Top_paint->setPen(Qt::white);
-                Top_paint->drawText(QPoint(50, 50), "Project");
+                Top_paint->setPen(Qt::white);  // Définir la couleur du texte
+                Top_paint->drawText(QPoint(50, 50), "Project");  // Dessiner "Project"
 
-
+                // Définir une deuxième police pour "Project2"
+                QFont font2("Times New Roman", 15);  // Par exemple, Times New Roman avec taille 15
+                font2.setItalic(true);  // Optionnel: texte en italique
+                Top_paint->setFont(font2);  // Appliquer la deuxième police
+                Top_paint->drawText(QPoint(50, 100), "Project2");  // Dessiner "Project2" avec une autre police
                 drawVCur = false;
 
                 // Aiming
