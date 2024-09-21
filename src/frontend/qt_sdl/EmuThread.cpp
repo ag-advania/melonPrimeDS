@@ -1130,8 +1130,6 @@ void EmuThread::run()
                 Top_paint->setPen(Qt::white);
                 Top_paint->drawText(QPoint(50, 50), "Project");
 
-                Top_paint->setPen(Qt::white);
-                Top_paint->drawText(QPoint(50, 100), (std::string("AIM X") + std::to_string(scaledMouseX)).c_str());
 
                 drawVCur = false;
 
@@ -1179,6 +1177,10 @@ void EmuThread::run()
                     // Convert to 16-bit integer and write the adjusted X value to the NDS memory
                     NDS->ARM9Write16(aimXAddr, static_cast<uint16_t>(scaledMouseX));
                     enableAim = true;
+
+                    Top_paint->setPen(Qt::white);
+                    Top_paint->drawText(QPoint(50, 100), (std::string("AIM X") + std::to_string(scaledMouseX)).c_str());
+
                 }
 
                 // Processing for the Y-axis
