@@ -1068,6 +1068,10 @@ void EmuThread::run()
 
             // inGame so need calculate address
             isAddressCalculationNeeded = true;
+
+            // OSD Testing
+            Top_paint->setPen(Qt::white);
+            Top_paint->drawText(rect, Qt::AlignCenter, tr("Qt\nProject"));
         }
 
         // VirtualStylus is Enabled when not in game
