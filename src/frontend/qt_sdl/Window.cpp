@@ -582,7 +582,6 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
 
         actInputConfig = menu->addAction("Other settings");
         connect(actInputConfig, &QAction::triggered, this, &MainWindow::onOpenMetroidOtherSettings);
-
     }
     setMenuBar(menubar);
 
@@ -2108,4 +2107,4 @@ void MainWindow::onOpenMetroidOtherSettings()
     dlg->switchTabToMetroid();
 
     connect(dlg, &InputConfigDialog::finished, this, &MainWindow::onInputConfigFinished);
-}f
+}
