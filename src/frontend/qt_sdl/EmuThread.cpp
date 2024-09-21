@@ -1284,7 +1284,7 @@ void EmuThread::run()
                     frameAdvance(2);
 
                     // Need Touch after ReleaseScreen for aiming.
-                    NDS->TouchScreen(128, 96);
+                    NDS->TouchScreen(128, 88);
 
                     // Advance frames (for reflection of Touch. This is necessary for no jump)
                     frameAdvance(2);
@@ -1372,7 +1372,7 @@ void EmuThread::run()
 
                         if (isBoosting) {
                             // touch again for aiming
-                            NDS->TouchScreen(128, 96); // required for aiming
+                            NDS->TouchScreen(128, 88); // required for aiming
                         }
 
                     }
