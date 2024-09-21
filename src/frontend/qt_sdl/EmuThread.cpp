@@ -1189,9 +1189,9 @@ void EmuThread::run()
                     NDS->ARM9Write16(aimXAddr, static_cast<uint16_t>(scaledMouseX));
                     enableAim = true;
 
-                    Top_paint->setFont(font);
-                    Top_paint->setPen(Qt::white);
-                    Top_paint->drawText(QPoint(50, 100), (std::string("AIM X") + std::to_string(scaledMouseX)).c_str());
+                    // Top_paint->setFont(font);
+                    // Top_paint->setPen(Qt::white);
+                    // Top_paint->drawText(QPoint(50, 100), (std::string("AIM X") + std::to_string(scaledMouseX)).c_str());
 
                 }
 
