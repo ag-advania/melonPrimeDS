@@ -1515,7 +1515,10 @@ void EmuThread::run()
             // When you return to melonPrimeDS or normal form
 
             // mainWindow->osdAddMessage(0,"touching screen for aim");
-            NDS->TouchScreen(128, 96); // required for aiming
+
+            // Changed Y point center(96) to 88, For fixing issue: Alt Tab switches hunter choice.
+            //NDS->TouchScreen(128, 96); // required for aiming
+            NDS->TouchScreen(128, 88); // required for aiming
         }
 
         NDS->SetKeyMask(Input::GetInputMask());
