@@ -59,7 +59,8 @@ public:
     virtual ~ScreenPanel();
 
     PrimeOSD::Canvas OSDCanvas[2];
-    
+    uint OSDtextures[3];
+
     // QTimer* setupMouseTimer();
     // void updateMouseTimer();
     // QTimer* mouseTimer;
