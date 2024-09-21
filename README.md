@@ -72,7 +72,7 @@ Releases for [Windows, Linux and macOS here!](https://github.com/makidoll/melonP
 -   Screen sizing set to **emphasize top**
 -   Screen filter set to **false**
 -   3D renderer set to **OpenGL**
--   3D scale factor set to **8x** for 1440p
+-   ~~3D scale factor set to **8x** for 1440p~~
 -   JIT recompiler set to **enabled** _(helps with performance)_
 
 VSync was already disabled but keeping it off also helps with performance
@@ -161,7 +161,7 @@ Downloadable builds were made using GitHub actions
 -   画面サイズを**上画面を強調**に設定
 -   画面フィルターを**無効**に設定
 -   3Dレンダラーを**OpenGL**に設定
--   3Dスケールファクターを1440p用に**8x**に設定
+-   ~~3Dスケールファクターを1440p用に**8x**に設定~~
 -   JITリコンパイラを**有効**に設定 *（パフォーマンス向上に役立ちます）*
 
 VSyncはすでに無効になっていましたが、オフのままにするとパフォーマンスの向上に役立ちます
