@@ -999,7 +999,7 @@ void ScreenPanelGL::drawScreenGL()
 
     for (int i = 0; i < numScreens; i++)
     {
-        glUniformMatrix2x3fv(screenShaderTransformULoc, 1, GL_TRUE, screenMatrix[screenKind[i]]);
+        glUniformMatrix2x3fv(screenShaderTransformULoc, 1, GL_TRUE, screenMatrix[i]);
         glDrawArrays(GL_TRIANGLES, screenKind[i] == 0 ? 0 : 2*3, 2*3);
     }
 
