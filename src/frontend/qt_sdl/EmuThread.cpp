@@ -1006,7 +1006,9 @@ void EmuThread::run()
         QPainter* Top_paint = OSD[0].Painter;
         QImage* Bott_buffer = OSD[1].CanvasBuffer;
         QPainter* Bott_paint = OSD[1].Painter;
-        
+        QFont font("times", 25);
+        QFontMetrics fm(font);
+
         //Clear OSD buffers
         Top_buffer->fill(0x00000000);
         Bott_buffer->fill(0x00000000);
@@ -1081,7 +1083,7 @@ void EmuThread::run()
 
             // OSD Testing
             Top_paint->setPen(Qt::white);
-            Top_paint->drawText(QPoint(50, 50), tr("Qt\nProject"));
+            Top_paint->drawText(QPoint(50, 50), "Project");
         }
 
         // VirtualStylus is Enabled when not in game
