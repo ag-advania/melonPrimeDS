@@ -1081,7 +1081,7 @@ void EmuThread::run()
 
             // OSD Testing
             Top_paint->setPen(Qt::white);
-            Top_paint->drawText(rect, Qt::AlignCenter, tr("Qt\nProject"));
+            Top_paint->drawText(QPoint(50, 50), tr("Qt\nProject"));
         }
 
         // VirtualStylus is Enabled when not in game
