@@ -1006,7 +1006,7 @@ void EmuThread::run()
         QPainter* Top_paint = OSD[0].Painter;
         QImage* Bott_buffer = OSD[1].CanvasBuffer;
         QPainter* Bott_paint = OSD[1].Painter;
-        QFont font("times", 25);
+        QFont font("System", 10);
         QFontMetrics fm(font);
 
         //Clear OSD buffers
@@ -1129,6 +1129,9 @@ void EmuThread::run()
                 // OSD Testing
                 Top_paint->setPen(Qt::white);
                 Top_paint->drawText(QPoint(50, 50), "Project");
+
+                Top_paint->setPen(Qt::white);
+                Top_paint->drawText(QPoint(100, 50), aimXAddr);
                 drawVCur = false;
 
                 // Aiming
