@@ -1523,49 +1523,22 @@ void EmuThread::run()
 
         NDS->SetKeyMask(Input::GetInputMask());
 
-        // Showing Virtual Stylus
-        if (screenGL) {
-            // OpenGL
-            screenGL->virtualCursorShow = drawVCur;
-            screenGL->virtualCursorX = virtualStylusX;
-            screenGL->virtualCursorY = virtualStylusY;
+        //MelonPrime OSD stuff
 
-        } else if (drawVCur) {
-            // no OpenGL
-            
-            // TODO Fix that drawVCur is not working with limited Framerate
-            // TODO If OpenGL is not used, Virtual Stylus is only visible when the frame rate limit is removed.
+        PrimeOSD::Canvas* OSD = mainWindow->panel->OSDCanvas;
+        QImage* Top_buffer = OSD[0].CanvasBuffer;
+        QPainter* Top_paint = OSD[0].Painter;
+        QImage* Bott_buffer = OSD[1].CanvasBuffer;
+        QPainter* Bott_paint = OSD[1].Painter;
+        
+        //Clear OSD buffers
+        Top_buffer->fill(0x00000000);
+        Bott_buffer->fill(0x00000000);
 
-            const int cursorSize = virtualCursorSize;
-            const int cursorOffset = virtualCursorSize / 2;
-
-            auto setPixel {
-                [&](int x, int y, melonDS::u32 color) {
-                    if (x < 0) return;
-                    if (x > 255) return;
-                    if (y < 0) return;
-                    if (y > 191) return;
-                    if (NDS->GPU.GPU3D.IsRendererAccelerated()) {
-                        NDS->GPU.Framebuffer[0][1][y * (256 * 3 + 1) + x] = color;
-                        NDS->GPU.Framebuffer[1][1][y * (256 * 3 + 1) + x] = color;
-                    } else {
-                        NDS->GPU.Framebuffer[0][1][y * 256 + x] = color;
-                        NDS->GPU.Framebuffer[1][1][y * 256 + x] = color;
-                    }
-                }
-            };
-
-            for (int y = 0; y < cursorSize; y++) {
-                for (int x = 0; x < cursorSize; x++) {
-                    int value = virtualCursorPixels[y * cursorSize + x];
-                    if (!value) continue;
-                    setPixel(
-                        virtualStylusX + x - cursorOffset,
-                        virtualStylusY + y - cursorOffset,
-                        0xFFFFFFFF
-                    );
-                }
-            }
+        //Draw Vcurs
+        if (drawVCur) {
+            Bott_paint->setPen(Qt::white);
+            Bott_paint->drawEllipse(virtualStylusX-5,virtualStylusY-5,10,10);
         }
 
         // record last frame was forcused or not
