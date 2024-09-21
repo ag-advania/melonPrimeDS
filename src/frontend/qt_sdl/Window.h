@@ -209,7 +209,6 @@ private slots:
 
     void onOpenMetroidInputSettings();
     void onOpenMetroidOtherSettings();
-    void onOpenMetroidTest();
 
 private:
     virtual void closeEvent(QCloseEvent* event) override;
@@ -264,7 +263,6 @@ public:
     QAction* actMPNewInstance;
 
     QAction* actEmuSettings;
-    QAction* actTestOSD;
 #ifdef __APPLE__
     QAction* actPreferences;
 #endif
