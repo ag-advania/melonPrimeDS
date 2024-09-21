@@ -999,7 +999,17 @@ void EmuThread::run()
 
     while (EmuRunning != emuStatus_Exit) {
 
+        //MelonPrime OSD stuff
 
+        PrimeOSD::Canvas* OSD = mainWindow->panel->OSDCanvas;
+        QImage* Top_buffer = OSD[0].CanvasBuffer;
+        QPainter* Top_paint = OSD[0].Painter;
+        QImage* Bott_buffer = OSD[1].CanvasBuffer;
+        QPainter* Bott_paint = OSD[1].Painter;
+        
+        //Clear OSD buffers
+        Top_buffer->fill(0x00000000);
+        Bott_buffer->fill(0x00000000);
 
         auto isFocused = mainWindow->panel->getFocused();
 
@@ -1526,18 +1536,6 @@ void EmuThread::run()
         }
 
         NDS->SetKeyMask(Input::GetInputMask());
-
-        //MelonPrime OSD stuff
-
-        PrimeOSD::Canvas* OSD = mainWindow->panel->OSDCanvas;
-        QImage* Top_buffer = OSD[0].CanvasBuffer;
-        QPainter* Top_paint = OSD[0].Painter;
-        QImage* Bott_buffer = OSD[1].CanvasBuffer;
-        QPainter* Bott_paint = OSD[1].Painter;
-        
-        //Clear OSD buffers
-        Top_buffer->fill(0x00000000);
-        Bott_buffer->fill(0x00000000);
 
         //Draw Vcurs
         if (drawVCur) {
