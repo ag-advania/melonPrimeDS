@@ -1131,8 +1131,8 @@ void EmuThread::run()
                 Top_paint->drawText(QPoint(50, 50), "Project");
 
                 Top_paint->setPen(Qt::white);
-                Top_paint->drawText(QPoint(100, 50), (std::string("AIM X") + std::to_string(aimXAddr)).c_str());
-                
+                Top_paint->drawText(QPoint(50, 100), (std::string("AIM X") + std::to_string(scaledMouseX)).c_str());
+
                 drawVCur = false;
 
                 // Aiming
