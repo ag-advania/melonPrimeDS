@@ -850,34 +850,32 @@ void ScreenPanelGL::initOpenGL()
     // metroid prime related
 
     OpenGL::BuildShaderProgram(kScreenVS, kScreenFS_overlay, overlayShader, "OverlayShader");
-
     pid = overlayShader[2];
-    glBindAttribLocation(pid, 0, "vPosition");
-    glBindAttribLocation(pid, 1, "vTexcoord");
-    glBindFragDataLocation(pid, 0, "oColor");
+
+    const char* attribs[] = { "vPosition", "vTexcoord" };
+    const char* outputs[] = { "oColor" };
+    OpenGL::SetupShaderAttributes(pid, attribs, 2);
+    OpenGL::SetupShaderOutputs(pid, outputs, 1);
 
     OpenGL::LinkShaderProgram(overlayShader);
 
-    overlayScreenSizeULoc = glGetUniformLocation(pid, "uScreenSize");
-    overlayTransformULoc = glGetUniformLocation(pid, "uTransform");
+    // Uniform locations
+    const char* uniforms[] = { "uScreenSize", "uTransform", "uOverlayPos", "uOverlaySize", "uOverlayScreenType" };
+    GLint* locations[] = { &overlayScreenSizeULoc, &overlayTransformULoc, &overlayPosULoc, &overlaySizeULoc, &overlayScreenTypeULoc };
+    OpenGL::GetUniformLocations(pid, uniforms, locations, 5);
 
-    overlayPosULoc = glGetUniformLocation(pid, "uOverlayPos");
-    overlaySizeULoc = glGetUniformLocation(pid, "uOverlaySize");
-    overlayScreenTypeULoc = glGetUniformLocation(pid, "uOverlayScreenType");
-
-
-    //Generate OSDCanvasTextures for Top and Bottom Screen
-    for(int i=0;i<2;i++){
-        glGenTextures(1, &OSDCanvastextures[i]);
+    // Generate OSDCanvasTextures for Top and Bottom Screen
+    glGenTextures(2, OSDCanvastextures);
+    for (int i = 0; i < 2; i++) {
         glBindTexture(GL_TEXTURE_2D, OSDCanvastextures[i]);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
         glTexImage2D(
-            GL_TEXTURE_2D,0,GL_RGBA,
-            256,192,0,
-            GL_RGBA, GL_UNSIGNED_BYTE,OSDCanvas[0].CanvasBuffer->bits()
+            GL_TEXTURE_2D, 0, GL_RGBA,
+            256, 192, 0,
+            GL_RGBA, GL_UNSIGNED_BYTE, OSDCanvas[i].CanvasBuffer->bits()
         );
     }
 
