@@ -996,6 +996,7 @@ void EmuThread::run()
     bool isInGame;
     bool isInAdventure;
     bool isSamus;
+    bool isOsdContentChanged;
 
     while (EmuRunning != emuStatus_Exit) {
         
@@ -1012,8 +1013,9 @@ void EmuThread::run()
         Top_buffer->fill(0x00000000);
         Bott_buffer->fill(0x00000000);
         */
-        memset(Top_buffer->bits(), 0, Top_buffer->byteCount());
-        memset(Bott_buffer->bits(), 0, Bott_buffer->byteCount());
+        memset(Top_buffer->bits(), 0, Top_buffer->sizeInBytes());
+        memset(Bott_buffer->bits(), 0, Bott_buffer->sizeInBytes());
+
 
         auto isFocused = mainWindow->panel->getFocused();
 
