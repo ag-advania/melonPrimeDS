@@ -998,15 +998,17 @@ void EmuThread::run()
     bool isSamus;
     bool isOsdContentChanged;
 
+    //MelonPrime OSD stuff
+
+    PrimeOSD::Canvas* OSD = mainWindow->panel->OSDCanvas;
+    QImage* Top_buffer = OSD[0].CanvasBuffer;
+    QPainter* Top_paint = OSD[0].Painter;
+    QImage* Bott_buffer = OSD[1].CanvasBuffer;
+    QPainter* Bott_paint = OSD[1].Painter;
+
+
     while (EmuRunning != emuStatus_Exit) {
         
-        //MelonPrime OSD stuff
-
-        PrimeOSD::Canvas* OSD = mainWindow->panel->OSDCanvas;
-        QImage* Top_buffer = OSD[0].CanvasBuffer;
-        QPainter* Top_paint = OSD[0].Painter;
-        QImage* Bott_buffer = OSD[1].CanvasBuffer;
-        QPainter* Bott_paint = OSD[1].Painter;
         
         //Clear OSD buffers
         /*
