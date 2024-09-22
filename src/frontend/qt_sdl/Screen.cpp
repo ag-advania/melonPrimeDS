@@ -79,6 +79,11 @@ ScreenPanel::ScreenPanel(QWidget* parent) : QWidget(parent)
 
     osdEnabled = false;
     osdID = 1;
+
+    //MelonPrime OSD
+    OSDCanvas[0] = PrimeOSD::Canvas(256, 192);//Bottom Screen OSD
+    OSDCanvas[1] = PrimeOSD::Canvas(256, 192);//Top Screen OSD
+
 }
 
 ScreenPanel::~ScreenPanel()
@@ -581,7 +586,7 @@ void ScreenPanel::osdAddMessage(unsigned int color, const char* text)
 }
 
 void ScreenPanel::osdUpdate()
-{
+{    
     osdMutex.lock();
 
     qint64 tick_now = QDateTime::currentMSecsSinceEpoch();
@@ -619,6 +624,7 @@ ScreenPanelNative::ScreenPanelNative(QWidget* parent) : ScreenPanel(parent)
 
     screenTrans[0].reset();
     screenTrans[1].reset();
+
 }
 
 ScreenPanelNative::~ScreenPanelNative()
@@ -661,11 +667,16 @@ void ScreenPanelNative::paintEvent(QPaintEvent* event)
         emuThread->FrontBufferLock.unlock();
 
         QRect screenrc(0, 0, 256, 192);
+        painter.setCompositionMode(QPainter::CompositionMode_SourceOver);
 
         for (int i = 0; i < numScreens; i++)
         {
             painter.setTransform(screenTrans[i]);
             painter.drawImage(screenrc, screen[screenKind[i]]);
+
+            //MellonPrimeOSD
+            painter.drawImage(screenrc, *OSDCanvas[screenKind[i]].CanvasBuffer);
+
         }
     }
 
@@ -732,6 +743,7 @@ void ScreenPanelGL::setSwapInterval(int intv)
 
 void ScreenPanelGL::initOpenGL()
 {
+    printf("Start:InitOpenGL");
     if (!glContext) return;
 
     glContext->MakeCurrent();
@@ -853,33 +865,23 @@ void ScreenPanelGL::initOpenGL()
     overlaySizeULoc = glGetUniformLocation(pid, "uOverlaySize");
     overlayScreenTypeULoc = glGetUniformLocation(pid, "uOverlayScreenType");
 
-    glGenTextures(1, &virtualCursorTexture);
-    glBindTexture(GL_TEXTURE_2D, virtualCursorTexture);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
 
-    // QImage virtualCursorImage;
-    // virtualCursorImage.load("/home/maki/cursor.png");
-    // virtualCursorImage.convertTo(QImage::Format_RGBA8888);
-
-    char virtualCursorBytes[virtualCursorSize * virtualCursorSize * 4];
-
-    for (int i = 0; i < virtualCursorSize * virtualCursorSize; i++) {
-        virtualCursorBytes[i * 4 + 0] = 0xff;
-        virtualCursorBytes[i * 4 + 1] = 0xff;
-        virtualCursorBytes[i * 4 + 2] = 0xff;
-        virtualCursorBytes[i * 4 + 3] = virtualCursorPixels[i] ? 0xff : 0x00;
+    //Generate OSDCanvasTextures for Top and Bottom Screen
+    for(int i=0;i<2;i++){
+        glGenTextures(1, &OSDCanvastextures[i]);
+        glBindTexture(GL_TEXTURE_2D, OSDCanvastextures[i]);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+        glTexImage2D(
+            GL_TEXTURE_2D,0,GL_RGBA,
+            256,192,0,
+            GL_RGBA, GL_UNSIGNED_BYTE,OSDCanvas[0].CanvasBuffer->bits()
+        );
     }
 
-    glTexImage2D(
-        GL_TEXTURE_2D, 0, GL_RGBA,
-        // virtualCursorImage.width(), virtualCursorImage.height(), 0,
-        virtualCursorSize, virtualCursorSize, 0,
-        // GL_ALPHA, GL_UNSIGNED_BYTE, virtualCursorImage.bits()
-        GL_RGBA, GL_UNSIGNED_BYTE, &virtualCursorBytes
-    );
+    printf(":End\n");
 }
 
 void ScreenPanelGL::deinitOpenGL()
@@ -905,9 +907,11 @@ void ScreenPanelGL::deinitOpenGL()
 
     OpenGL::DeleteShaderProgram(osdShader);
 
-    OpenGL::DeleteShaderProgram(overlayShader);
+    for(int i=0;i<2;i++){
+        glDeleteTextures(1, &OSDCanvastextures[i]);
+    }
 
-    glDeleteTextures(1, &virtualCursorTexture);
+    OpenGL::DeleteShaderProgram(overlayShader);
 
     glContext->DoneCurrent();
 
@@ -1019,24 +1023,23 @@ void ScreenPanelGL::drawScreenGL()
 
     screenSettingsLock.lock();
 
-    if (virtualCursorShow) {
-        glBindTexture(GL_TEXTURE_2D, virtualCursorTexture);
+    // Draw Textures for all screens
+    for(int i = 0;i<numScreens;i++){
+        glBindTexture(GL_TEXTURE_2D, OSDCanvastextures[screenKind[i]]);
+        
+        //Update texture each frame to match the CanvasBuffer.
+        glTexSubImage2D(GL_TEXTURE_2D,0,0,0,256,192,GL_RGBA,GL_UNSIGNED_BYTE,OSDCanvas[screenKind[i]].CanvasBuffer->bits());
+        
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-
-        glUniform2f(overlayPosULoc, virtualCursorX - 5, virtualCursorY - 5);
-        glUniform2f(overlaySizeULoc, 11, 11);
-
-        const int screenType = 1; // bottom screen
-
-        if (numScreens > 1 || (numScreens == 1 && screenKind[0] == screenType)) {
-            glUniform1i(overlayScreenTypeULoc, screenType);
-            glUniformMatrix2x3fv(
-                overlayTransformULoc, 1, GL_TRUE,
-                numScreens == 1 ? screenMatrix[0] : screenMatrix[screenType]
-            );
-            glDrawArrays(GL_TRIANGLES, screenKind[screenType] == 0 ? 0 : 2*3, 2*3);
-        }
+        glUniform2f(overlayPosULoc,0,0);
+        glUniform2f(overlaySizeULoc,256,192);
+        glUniform1i(overlayScreenTypeULoc, screenKind[i]);
+        glUniformMatrix2x3fv(
+            overlayTransformULoc, 1, GL_TRUE,
+            screenMatrix[i]
+        );
+        glDrawArrays(GL_TRIANGLES,screenKind[i] == 0 ? 0 : 2*3, 2*3);
     }
 
     screenSettingsLock.unlock();

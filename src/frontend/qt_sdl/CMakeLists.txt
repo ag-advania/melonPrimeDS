@@ -59,6 +59,10 @@ set(SOURCES_QT_SDL
 
     # rawinput/rawinput_common.c
     # RawInputThread.cpp
+
+    ScreenPrimeOSD.cpp
+    ScreenPrimeOSD.h
+
 )
 
 if (APPLE)

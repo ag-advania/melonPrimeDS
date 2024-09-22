@@ -33,6 +33,7 @@
 #include "glad/glad.h"
 #include "FrontendUtil.h"
 #include "duckstation/gl/context.h"
+#include "ScreenPrimeOSD.h"
 
 
 class EmuThread;
@@ -56,6 +57,9 @@ class ScreenPanel : public QWidget
 public:
     explicit ScreenPanel(QWidget* parent);
     virtual ~ScreenPanel();
+
+    PrimeOSD::Canvas OSDCanvas[2];
+    uint OSDCanvastextures[2];
 
     // QTimer* setupMouseTimer();
     // void updateMouseTimer();
@@ -203,7 +207,6 @@ private:
     GLuint overlayScreenSizeULoc, overlayTransformULoc;
     GLuint overlayPosULoc, overlaySizeULoc, overlayScreenTypeULoc;
 
-    GLuint virtualCursorTexture;
 public:
     bool virtualCursorShow = false;
     float virtualCursorX;
