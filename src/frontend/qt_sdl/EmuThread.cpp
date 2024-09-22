@@ -1149,7 +1149,7 @@ void EmuThread::run()
                     float scaledcrosshairX = crosshairX + 256;
                 }
                 else {
-                    float scaledcrosshairX = crosshairX
+                    float scaledcrosshairX = crosshairX;
                 }
 
                 Top_paint->drawText(QPoint(scaledcrosshairX,crosshairY ), "x");
