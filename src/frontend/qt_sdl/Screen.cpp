@@ -852,17 +852,18 @@ void ScreenPanelGL::initOpenGL()
     OpenGL::BuildShaderProgram(kScreenVS, kScreenFS_overlay, overlayShader, "OverlayShader");
     pid = overlayShader[2];
 
-    const char* attribs[] = { "vPosition", "vTexcoord" };
-    const char* outputs[] = { "oColor" };
-    OpenGL::SetupShaderAttributes(pid, attribs, 2);
-    OpenGL::SetupShaderOutputs(pid, outputs, 1);
+    glBindAttribLocation(pid, 0, "vPosition");
+    glBindAttribLocation(pid, 1, "vTexcoord");
+    glBindFragDataLocation(pid, 0, "oColor");
 
     OpenGL::LinkShaderProgram(overlayShader);
 
     // Uniform locations
-    const char* uniforms[] = { "uScreenSize", "uTransform", "uOverlayPos", "uOverlaySize", "uOverlayScreenType" };
-    GLint* locations[] = { &overlayScreenSizeULoc, &overlayTransformULoc, &overlayPosULoc, &overlaySizeULoc, &overlayScreenTypeULoc };
-    OpenGL::GetUniformLocations(pid, uniforms, locations, 5);
+    overlayScreenSizeULoc = glGetUniformLocation(pid, "uScreenSize");
+    overlayTransformULoc = glGetUniformLocation(pid, "uTransform");
+    overlayPosULoc = glGetUniformLocation(pid, "uOverlayPos");
+    overlaySizeULoc = glGetUniformLocation(pid, "uOverlaySize");
+    overlayScreenTypeULoc = glGetUniformLocation(pid, "uOverlayScreenType");
 
     // Generate OSDCanvasTextures for Top and Bottom Screen
     glGenTextures(2, OSDCanvastextures);
