@@ -1008,9 +1008,12 @@ void EmuThread::run()
         QPainter* Bott_paint = OSD[1].Painter;
         
         //Clear OSD buffers
+        /*
         Top_buffer->fill(0x00000000);
         Bott_buffer->fill(0x00000000);
-
+        */
+        memset(Top_buffer->bits(), 0, Top_buffer->byteCount());
+        memset(Bott_buffer->bits(), 0, Bott_buffer->byteCount());
 
         auto isFocused = mainWindow->panel->getFocused();
 
