@@ -1132,7 +1132,7 @@ void EmuThread::run()
 
                 // OSD Testing
                 // Définir la première police pour "Project"
-                QFont font1("Terminal", 5);  
+                QFont font1("Terminal", 3);  
                 Top_paint->setFont(font1);
                 Top_paint->setPen(Qt::white);  
                 Top_paint->setRenderHint(QPainter::TextAntialiasing, false);
@@ -1149,13 +1149,16 @@ void EmuThread::run()
 
                 if (crosshairX < 0) {
                     float scaledcrosshairX = crosshairX + 256;
+                    Top_paint->drawText(QPoint(scaledcrosshairX,crosshairY ), "x");
                 }
                 else {
                     float scaledcrosshairX = crosshairX;
+                    Top_paint->drawText(QPoint(scaledcrosshairX,crosshairY ), "x");
                 }
 
-                Top_paint->drawText(QPoint(scaledcrosshairX,crosshairY ), "x");
-                Top_paint->drawText(QPoint(4, 178), (std::string("X value: ") + std::to_string(scaledcrosshairX)).c_str());
+                
+                Top_paint->drawText(QPoint(4, 178), (std::string("scaled X value: ") + std::to_string(scaledcrosshairX)).c_str());
+                Top_paint->drawText(QPoint(4, 178), (std::string("scaled X value: ") + std::to_string(crosshairX)).c_str());
 
         
 
