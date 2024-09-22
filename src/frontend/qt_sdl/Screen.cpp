@@ -52,7 +52,7 @@
 
 #include "main_shaders.h"
 #include "OSD_shaders.h"
-#include "overlay_shaders.h"
+// #include "overlay_shaders.h"
 #include "font.h"
 
 using namespace melonDS;
@@ -847,7 +847,90 @@ void ScreenPanelGL::initOpenGL()
     glContext->SetSwapInterval(Config::ScreenVSync ? Config::ScreenVSyncInterval : 0);
     transferLayout();
 
-    // metroid prime related
+	// metroid prime related
+    
+    /*
+    const inline char* kScreenFS_overlay = R"(#version 140
+
+    uniform sampler2D OverlayTex;
+
+    smooth in vec2 fTexcoord;
+
+    uniform vec2 uOverlayPos;
+    uniform vec2 uOverlaySize;
+    uniform int uOverlayScreenType;
+
+    out vec4 oColor;
+
+    void main()
+    {
+        const vec2 dsSize = vec2(256.0, 193.0); // +1 on y for pixel gap
+
+        vec2 uv = fTexcoord * vec2(1.0, 2.0);
+
+        if (uOverlayScreenType < 1) {
+            // top screen
+            uv -= uOverlayPos / dsSize;
+            uv *= dsSize / uOverlaySize;
+        } else {
+            // bottom screen
+            uv -= vec2(0.0, 1.0);
+            uv -= (uOverlayPos + vec2(0.0, 1.0)) / dsSize;
+            uv *= dsSize / uOverlaySize;
+        }
+
+        vec4 pixel = texture(OverlayTex, uv);
+        pixel.rgb *= pixel.a;
+
+        if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) {
+            oColor = vec4(0.0, 0.0, 0.0, 0.0);
+        } else {
+            oColor = pixel;
+        }
+    }
+)";
+    */
+
+	const inline char* kScreenFS_overlay = R"(#version 140
+        uniform sampler2D OverlayTex;
+        smooth in vec2 fTexcoord;
+        uniform vec2 uOverlayPos;
+        uniform vec2 uOverlaySize;
+        uniform int uOverlayScreenType;
+        out vec4 oColor;
+        void main()
+        {
+            const vec2 dsSize = vec2(256.0, 193.0); // +1 on y for pixel gap
+            vec2 uv = fTexcoord * vec2(1.0, 2.0);
+
+            // Precompute the scale factor
+            vec2 scaleFactor = dsSize / uOverlaySize;
+
+            // Determine if it's the bottom screen (1.0 if true, 0.0 if false)
+            float isBottomScreen = float(uOverlayScreenType >= 1);
+
+            // Adjust 'uv' without branching
+            uv -= isBottomScreen * vec2(0.0, 1.0);
+            uv -= (uOverlayPos + vec2(0.0, isBottomScreen)) / dsSize;
+
+            // Apply the scale factor
+            uv *= scaleFactor;
+
+            // UV coordinate boundary check mask
+            vec2 uvMask = step(vec2(0.0), uv) * step(uv, vec2(1.0));
+            float mask = uvMask.x * uvMask.y;
+
+            // Sample the texture
+            vec4 pixel = texture(OverlayTex, uv);
+
+            // Premultiply alpha
+            pixel.rgb *= pixel.a;
+
+            // Output color with mask applied
+            oColor = pixel * mask;
+        }
+    )";
+
 
     OpenGL::BuildShaderProgram(kScreenVS, kScreenFS_overlay, overlayShader, "OverlayShader");
 
