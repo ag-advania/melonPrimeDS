@@ -1161,7 +1161,7 @@ void EmuThread::run()
 
                 // Draw crosshaire
                 Top_paint->setPen(Qt::white);  // Couleur de la croix
-                Top_paint->drawLines(points, 4);
+                Top_paint->drawLines(points, 2);
 
 
                 // Aiming
