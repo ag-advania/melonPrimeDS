@@ -52,7 +52,7 @@
 
 #include "main_shaders.h"
 #include "OSD_shaders.h"
-// #include "overlay_shaders.h"
+#include "overlay_shaders.h"
 #include "font.h"
 
 using namespace melonDS;
@@ -764,7 +764,7 @@ void ScreenPanelGL::initOpenGL()
 
     // to prevent bleeding between both parts of the screen
     // with bilinear filtering enabled
-    const int paddedHeight = 192 * 2 + 2;
+    const int paddedHeight = 192*2+2;
     const float padPixels = 1.f / paddedHeight;
 
     const float vertices[] =
@@ -791,9 +791,9 @@ void ScreenPanelGL::initOpenGL()
     glGenVertexArrays(1, &screenVertexArray);
     glBindVertexArray(screenVertexArray);
     glEnableVertexAttribArray(0); // position
-    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 4 * 4, (void*)(0));
+    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 4*4, (void*)(0));
     glEnableVertexAttribArray(1); // texcoord
-    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 4 * 4, (void*)(2 * 4));
+    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 4*4, (void*)(2*4));
 
     glGenTextures(1, &screenTexture);
     glActiveTexture(GL_TEXTURE0);
@@ -804,7 +804,7 @@ void ScreenPanelGL::initOpenGL()
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, 256, paddedHeight, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
     // fill the padding
-    u8 zeroData[256 * 4 * 4];
+    u8 zeroData[256*4*4];
     memset(zeroData, 0, sizeof(zeroData));
     glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 192, 256, 2, GL_RGBA, GL_UNSIGNED_BYTE, zeroData);
 
@@ -824,7 +824,7 @@ void ScreenPanelGL::initOpenGL()
     osdSizeULoc = glGetUniformLocation(pid, "uOSDSize");
     osdScaleFactorULoc = glGetUniformLocation(pid, "uScaleFactor");
 
-    const float osdvertices[6 * 2] =
+    const float osdvertices[6*2] =
     {
         0, 0,
         1, 1,
@@ -849,7 +849,6 @@ void ScreenPanelGL::initOpenGL()
 
     // metroid prime related
 
-    /*
     OpenGL::BuildShaderProgram(kScreenVS, kScreenFS_overlay, overlayShader, "OverlayShader");
 
     pid = overlayShader[2];
@@ -866,7 +865,6 @@ void ScreenPanelGL::initOpenGL()
     overlaySizeULoc = glGetUniformLocation(pid, "uOverlaySize");
     overlayScreenTypeULoc = glGetUniformLocation(pid, "uOverlayScreenType");
 
-    */
 
     //Generate OSDCanvasTextures for Top and Bottom Screen
     for(int i=0;i<2;i++){
