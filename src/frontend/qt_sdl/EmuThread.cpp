@@ -1135,9 +1135,9 @@ void EmuThread::run()
                 QFont font1("System", 5);  
                 Top_paint->setFont(font1);
                 Top_paint->setPen(Qt::white);  
-                Top_paint->drawText(QPoint(4, 188), (std::string("HP ") + std::to_string(NDS->ARM9Read8(0x020DB06E);)).c_str());
-                Top_paint->drawText(QPoint(188, 188), (std::string("Miss Ammo: ") + std::to_string(NDS->ARM9Read8(0x020DB0E2);)).c_str());
-                Top_paint->drawText(QPoint(188, 178), (std::string("Other Ammo: ") + std::to_string(NDS->ARM9Read8(0x020DB0E0);)).c_str());
+                Top_paint->drawText(QPoint(4, 188), (std::string("HP ") + std::to_string(NDS->ARM9Read8(0x020DB06E))).c_str());
+                Top_paint->drawText(QPoint(188, 188), (std::string("Miss Ammo: ") + std::to_string(NDS->ARM9Read8(0x020DB0E2))).c_str());
+                Top_paint->drawText(QPoint(188, 178), (std::string("Other Ammo: ") + std::to_string(NDS->ARM9Read8(0x020DB0E0))).c_str());
 
 
                 // Aiming
