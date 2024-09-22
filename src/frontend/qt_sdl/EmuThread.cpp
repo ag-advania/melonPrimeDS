@@ -69,9 +69,6 @@
 
 #include "melonPrime/def.h"
 
-#include <thread>
-#include <immintrin.h> // SIMD命令用
-
 // TODO: uniform variable spelling
 using namespace melonDS;
 
@@ -503,46 +500,6 @@ void detectRomAndSetAddresses() {
     }
 }
 
-
-// SIMDを使用してバッファをクリアする関数
-void clearBufferSIMD(uint8_t* data, size_t size) {
-    size_t i = 0;
-
-#ifdef __AVX2__
-    __m256i zero = _mm256_setzero_si256();
-    // 32バイトずつクリア
-    for (; i + 31 < size; i += 32) {
-        _mm256_storeu_si256((__m256i*)(data + i), zero);
-    }
-#elif defined(__SSE2__)
-    __m128i zero = _mm_setzero_si128();
-    // 16バイトずつクリア
-    for (; i + 15 < size; i += 16) {
-        _mm_storeu_si128((__m128i*)(data + i), zero);
-    }
-#endif
-
-    // 残りのバイトをクリア
-    for (; i < size; ++i) {
-        data[i] = 0;
-    }
-}
-
-// メインコード内での使用例
-void clearBuffersConcurrently(QImage* Top_buffer, QImage* Bott_buffer) {
-    uint8_t* topData = Top_buffer->bits();
-    size_t topSize = Top_buffer->sizeInBytes();
-    uint8_t* bottData = Bott_buffer->bits();
-    size_t bottSize = Bott_buffer->sizeInBytes();
-
-    // スレッドを作成して並列にバッファをクリア
-    std::thread topThread(clearBufferSIMD, topData, topSize);
-    std::thread bottThread(clearBufferSIMD, bottData, bottSize);
-
-    // スレッドの終了を待機
-    topThread.join();
-    bottThread.join();
-}
 
 void EmuThread::run()
 {
@@ -1052,19 +1009,15 @@ void EmuThread::run()
 
     while (EmuRunning != emuStatus_Exit) {
         
-        /*
         // Clear OSD buffers
+        /*
         Top_buffer->fill(0x00000000);
         Bott_buffer->fill(0x00000000);
         */
-        /*
+
         // Clear OSD buffers. less latency version.
         memset(Top_buffer->bits(), 0, Top_buffer->sizeInBytes());
         memset(Bott_buffer->bits(), 0, Bott_buffer->sizeInBytes());
-        */
-
-        clearBuffersConcurrently(Top_buffer, Bott_buffer);
-
 
         auto isFocused = mainWindow->panel->getFocused();
 
