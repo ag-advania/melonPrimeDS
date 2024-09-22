@@ -1132,7 +1132,7 @@ void EmuThread::run()
 
                 // OSD Testing
                 // Définir la première police pour "Project"
-                QFont font1("Terminal", 3);  
+                QFont font1("Terminal", 4);  
                 Top_paint->setFont(font1);
                 Top_paint->setPen(Qt::white);  
                 Top_paint->setRenderHint(QPainter::TextAntialiasing, false);
@@ -1141,26 +1141,28 @@ void EmuThread::run()
                 Top_paint->drawText(QPoint(188, 178), (std::string("Other Ammo: ") + std::to_string(NDS->ARM9Read8(0x020DB0E0))).c_str());
 
                 // Draw Crosshair
-
+                // Lire les valeurs
                 float crosshairX = NDS->ARM9Read8(0x020DF024);
                 float crosshairY = NDS->ARM9Read8(0x020DF026);
 
-                float scaledcrosshairX;
+                // Calculer scaledcrosshairX
+                float scaledcrosshairX = (crosshairX < 0) ? crosshairX + 254 : crosshairX;
 
-                if (crosshairX < 0) {
-                    float scaledcrosshairX = crosshairX + 256;
-                    Top_paint->drawText(QPoint(scaledcrosshairX,crosshairY ), "x");
-                }
-                else {
-                    float scaledcrosshairX = crosshairX;
-                    Top_paint->drawText(QPoint(scaledcrosshairX,crosshairY ), "x");
-                }
+                // Taille des bras de la croix (ajustez cette valeur selon vos besoins)
+                int crossSize = 5;
 
-                
-                Top_paint->drawText(QPoint(4, 178), (std::string("scaled X value: ") + std::to_string(scaledcrosshairX)).c_str());
-                Top_paint->drawText(QPoint(4, 178), (std::string("scaled X value: ") + std::to_string(crosshairX)).c_str());
+                // Définir les points pour dessiner une croix
+                QPoint points[4] = {
+                    QPoint(scaledcrosshairX - crossSize, crosshairY),  // Ligne horizontale gauche
+                    QPoint(scaledcrosshairX + crossSize, crosshairY),  // Ligne horizontale droite
+                    QPoint(scaledcrosshairX, crosshairY - crossSize),  // Ligne verticale haut
+                    QPoint(scaledcrosshairX, crosshairY + crossSize)   // Ligne verticale bas
+                };
 
-        
+                // Dessiner la croix avec drawLines
+                Top_paint->setPen(Qt::white);  // Couleur de la croix
+                Top_paint->drawLines(points, 4);
+
 
                 // Aiming
 
