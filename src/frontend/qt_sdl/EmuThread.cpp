@@ -1132,7 +1132,7 @@ void EmuThread::run()
 
                 // OSD Testing
                 // Définir la première police pour "Project"
-                QFont font1("System", 1);  
+                QFont font1("Arial", 5);  
                 Top_paint->setFont(font1);
                 Top_paint->setPen(Qt::white);  
                 Top_paint->drawText(QPoint(4, 188), (std::string("HP ") + std::to_string(NDS->ARM9Read8(0x020DB06E))).c_str());
