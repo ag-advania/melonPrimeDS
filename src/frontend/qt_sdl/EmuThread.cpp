@@ -1132,7 +1132,7 @@ void EmuThread::run()
 
                 // OSD Testing
                 // Définir la première police pour "Project"
-                QFont font1("Verdana", 5);  
+                QFont font1("Terminalt", 5);  
                 Top_paint->setFont(font1);
                 Top_paint->setPen(Qt::white);  
                 Top_paint->setRenderHint(QPainter::TextAntialiasing, true);
