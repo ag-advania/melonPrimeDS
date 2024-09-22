@@ -1145,25 +1145,23 @@ void EmuThread::run()
                 float crosshairX = NDS->ARM9Read8(0x020DF024);
                 float crosshairY = NDS->ARM9Read8(0x020DF026);
 
-                // Calculer scaledcrosshairX
+                // scaledcrosshairX
                 float scaledcrosshairX = (crosshairX < 0) ? crosshairX + 254 : crosshairX;
 
-                // Taille des bras de la croix (ajustez cette valeur selon vos besoins)
-                int crossSize = 5;
+                // Crosshair Size
+                int crossSize = 3;
 
-                // Définir les points pour dessiner une croix (avec 5 points)
-                QPoint points[5] = {
-                    QPoint(scaledcrosshairX - crossSize, crosshairY),  // Ligne horizontale gauche
-                    QPoint(scaledcrosshairX + crossSize, crosshairY),  // Ligne horizontale droite
-                    QPoint(scaledcrosshairX, crosshairY),              // Commencement de la ligne verticale
-                    QPoint(scaledcrosshairX, crosshairY - crossSize),  // Ligne verticale haut
-                    QPoint(scaledcrosshairX, crosshairY + crossSize)   // Ligne verticale bas
+                // Cross points definition
+                QPoint points[4] = {
+                    QPoint(scaledcrosshairX - crossSize, crosshairY),  // Line horizontal left
+                    QPoint(scaledcrosshairX + crossSize, crosshairY),  // Line horizontal right
+                    QPoint(scaledcrosshairX, crosshairY - crossSize),  // Line vertical up
+                    QPoint(scaledcrosshairX, crosshairY + crossSize)   // Line vertical down
                 };
 
-                // Dessiner la croix avec drawLines
+                // Draw crosshaire
                 Top_paint->setPen(Qt::white);  // Couleur de la croix
-                Top_paint->drawLines(points, 5);
-
+                Top_paint->drawLines(points, 4);
 
 
                 // Aiming
