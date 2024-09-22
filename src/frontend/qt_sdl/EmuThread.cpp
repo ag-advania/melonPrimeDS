@@ -69,6 +69,9 @@
 
 #include "melonPrime/def.h"
 
+#include <QtConcurrent>
+#include <immintrin.h>
+
 // TODO: uniform variable spelling
 using namespace melonDS;
 
@@ -497,6 +500,24 @@ void detectRomAndSetAddresses() {
         // 未対応のチェックサムに対する処理
         // デフォルトの動作やエラーメッセージの追加
         break;
+    }
+}
+
+
+void clearBufferOptimized(QImage* buffer) {
+    size_t size = buffer->sizeInBytes();
+    uint8_t* data = buffer->bits();
+    size_t i = 0;
+
+#ifdef __AVX2__
+    __m256i zero = _mm256_setzero_si256();
+    for (; i + 31 < size; i += 32) {
+        _mm256_storeu_si256((__m256i*)(data + i), zero);
+    }
+#endif
+
+    for (; i < size; ++i) {
+        data[i] = 0;
     }
 }
 
@@ -1009,14 +1030,23 @@ void EmuThread::run()
 
     while (EmuRunning != emuStatus_Exit) {
         
-        // Clear OSD buffers
         /*
+        // Clear OSD buffers
         Top_buffer->fill(0x00000000);
         Bott_buffer->fill(0x00000000);
         */
+        /*
         // Clear OSD buffers. less latency version.
         memset(Top_buffer->bits(), 0, Top_buffer->sizeInBytes());
         memset(Bott_buffer->bits(), 0, Bott_buffer->sizeInBytes());
+        */
+        // 並列にバッファをクリア
+        QFuture<void> topFuture = QtConcurrent::run(clearBufferOptimized, Top_buffer);
+        QFuture<void> bottFuture = QtConcurrent::run(clearBufferOptimized, Bott_buffer);
+
+        topFuture.waitForFinished();
+        bottFuture.waitForFinished();
+
 
         auto isFocused = mainWindow->panel->getFocused();
 
