@@ -847,8 +847,8 @@ void ScreenPanelGL::initOpenGL()
     glContext->SetSwapInterval(Config::ScreenVSync ? Config::ScreenVSyncInterval : 0);
     transferLayout();
 
-    // metroid prime related
-
+	// metroid prime related
+    
     OpenGL::BuildShaderProgram(kScreenVS, kScreenFS_overlay, overlayShader, "OverlayShader");
 
     pid = overlayShader[2];
