@@ -1145,6 +1145,8 @@ void EmuThread::run()
                 float crosshairX = NDS->ARM9Read8(0x020DF024);
                 float crosshairY = NDS->ARM9Read8(0x020DF026);
 
+                float scaledcrosshairX;
+
                 if (crosshairX < 0) {
                     float scaledcrosshairX = crosshairX + 256;
                 }
