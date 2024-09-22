@@ -1151,17 +1151,19 @@ void EmuThread::run()
                 // Taille des bras de la croix (ajustez cette valeur selon vos besoins)
                 int crossSize = 5;
 
-                // Définir les points pour dessiner une croix
-                QPoint points[4] = {
+                // Définir les points pour dessiner une croix (avec 5 points)
+                QPoint points[5] = {
                     QPoint(scaledcrosshairX - crossSize, crosshairY),  // Ligne horizontale gauche
                     QPoint(scaledcrosshairX + crossSize, crosshairY),  // Ligne horizontale droite
+                    QPoint(scaledcrosshairX, crosshairY),              // Commencement de la ligne verticale
                     QPoint(scaledcrosshairX, crosshairY - crossSize),  // Ligne verticale haut
                     QPoint(scaledcrosshairX, crosshairY + crossSize)   // Ligne verticale bas
                 };
 
                 // Dessiner la croix avec drawLines
                 Top_paint->setPen(Qt::white);  // Couleur de la croix
-                Top_paint->drawLines(points, 4);
+                Top_paint->drawLines(points, 5);
+
 
 
                 // Aiming
