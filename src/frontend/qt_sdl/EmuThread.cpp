@@ -1140,6 +1140,20 @@ void EmuThread::run()
                 Top_paint->drawText(QPoint(188, 188), (std::string("Miss Ammo: ") + std::to_string(NDS->ARM9Read8(0x020DB0E2))).c_str());
                 Top_paint->drawText(QPoint(188, 178), (std::string("Other Ammo: ") + std::to_string(NDS->ARM9Read8(0x020DB0E0))).c_str());
 
+                // Draw Crosshair
+
+                float crosshairX = NDS->ARM9Read8(0x020DF024);
+                float crosshairY = NDS->ARM9Read8(0x020DF026);
+
+                if (crosshairX < 0) {
+                    float scaledcrosshairX = crosshairX + 256;
+                }
+                else {
+                    float scaledcrosshairX = crosshairX
+                }
+
+                Top_paint->drawText(QPoint(scaledcrosshairX,crosshairY ), "x");
+        
 
                 // Aiming
 
