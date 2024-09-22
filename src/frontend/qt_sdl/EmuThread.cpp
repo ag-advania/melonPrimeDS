@@ -1132,17 +1132,13 @@ void EmuThread::run()
 
                 // OSD Testing
                 // Définir la première police pour "Project"
-                QFont font1("Arial", 20);  // Par exemple, Arial avec taille 20
+                QFont font1("System", 5);  
                 Top_paint->setFont(font1);
-                Top_paint->setPen(Qt::white);  // Définir la couleur du texte
-                Top_paint->drawText(QPoint(50, 50), "Project");  // Dessiner "Project"
+                Top_paint->setPen(Qt::white);  
+                Top_paint->drawText(QPoint(4, 188), (std::string("HP ") + std::to_string(NDS->ARM9Read8(0x020DB06E);)).c_str());
+                Top_paint->drawText(QPoint(188, 188), (std::string("Miss Ammo: ") + std::to_string(NDS->ARM9Read8(0x020DB0E2);)).c_str());
+                Top_paint->drawText(QPoint(188, 178), (std::string("Other Ammo: ") + std::to_string(NDS->ARM9Read8(0x020DB0E0);)).c_str());
 
-                // Définir une deuxième police pour "Project2"
-                QFont font2("Times New Roman", 15);  // Par exemple, Times New Roman avec taille 15
-                font2.setItalic(true);  // Optionnel: texte en italique
-                Top_paint->setFont(font2);  // Appliquer la deuxième police
-                Top_paint->drawText(QPoint(50, 100), "Project2");  // Dessiner "Project2" avec une autre police
-                drawVCur = false;
 
                 // Aiming
 
