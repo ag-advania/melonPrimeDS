@@ -1124,26 +1124,18 @@ void EmuThread::run()
                 // Load the custom font
                 QFontDatabase fontDB;
                 int fontId = fontDB.addApplicationFont("melonPrime/Metroid Prime Hunters.fon");
-
                 if (fontId != -1) {
-                    QStringList fontFamilies = fontDB.applicationFontFamilies(fontId);
-                    mainWindow->osdAddMessage(0, "Loaded font families: " + fontFamilies.join(", "));
-
-                    if (!fontFamilies.isEmpty()) {
-                        QFont font1(fontFamilies.first(), 8);
-                        if (Top_paint->setFont(font1)) {
-                            mainWindow->osdAddMessage(0, "Custom font successfully applied");
-                        }
-                        else {
-                            mainWindow->osdAddMessage(0, "Failed to apply custom font");
-                        }
+                    QString family = fontDB.applicationFontFamilies(fontId).at(0);
+                    QFont font1(family, 8);
+                    if (Top_paint->setFont(font1)) {
+                        mainWindow->osdAddMessage(0, "Font applied: " + family);
                     }
                     else {
-                        mainWindow->osdAddMessage(0, "No font families found in the loaded font");
+                        mainWindow->osdAddMessage(0, "Font application failed");
                     }
                 }
                 else {
-                    mainWindow->osdAddMessage(0, "Failed to load custom font");
+                    mainWindow->osdAddMessage(0, "Font load failed");
                 }
 
                 Top_paint->setPen(Qt::white);
