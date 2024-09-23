@@ -1120,18 +1120,41 @@ void EmuThread::run()
 
 
                 // OSD Testing
-
-                // Load the custom font
+// Load the custom font
                 QFontDatabase fontDB;
-                int fontId = fontDB.addApplicationFont(":/melonPrime/Metroid Prime Hunters.fon");
-                if (fontId != -1) {
-                    QString family = fontDB.applicationFontFamilies(fontId).at(0);
-                    QFont font1(family, 8);
-                    Top_paint->setFont(font1);
-                    mainWindow->osdAddMessage(0, family.toStdString().c_str());
+
+                // フォントファイルのパスをリストに設定
+                QStringList fontPaths = {
+                    ":/melonPrime/mph.fon",
+                    "src/frontend/qt_sdl/melonPrime/mph.fon",
+                    ":/src/frontend/qt_sdl/melonPrime/mph.fon",
+                    "melonPrime/mph.fon",
+                    "/frontend/qt_sdl/melonPrime/mph.fon",
+                    ":/frontend/qt_sdl/melonPrime/mph.fon"
+                };
+
+                // フォントを読み込む関数
+                int loadFont(const QString& path, QFontDatabase& fontDB, MainWindow* mainWindow) {
+                    int fontId = fontDB.addApplicationFont(path);
+                    if (fontId == -1) {
+                        mainWindow->osdAddMessage(0, QString("Font load failed from path: %1").arg(path).toStdString().c_str());
+                    }
+                    else {
+                        QString family = fontDB.applicationFontFamilies(fontId).at(0);
+                        QFont font1(family, 8);
+                        Top_paint->setFont(font1);
+                        mainWindow->osdAddMessage(0, QString("Font loaded from path: %1").arg(path).toStdString().c_str());
+                    }
+                    return fontId;
                 }
-                else {
-                    mainWindow->osdAddMessage(0, "Font load failed");
+
+                // フォントパスを順に試す
+                int fontId = -1;
+                for (const QString& path : fontPaths) {
+                    fontId = loadFont(path, fontDB, mainWindow);
+                    if (fontId != -1) {
+                        break;
+                    }
                 }
 
                 Top_paint->setPen(Qt::white);
@@ -1154,7 +1177,7 @@ void EmuThread::run()
                 int crossSize = 3;
 
                 // Draw crosshair using drawLine
-                Top_paint->setPen(Qt::red);  // Cross color
+                Top_paint->setPen(Qt::white);  // Cross color
                 Top_paint->drawLine(crosshairX - crossSize, crosshairY, crosshairX + crossSize, crosshairY); // Horizontal line
                 Top_paint->drawLine(crosshairX, crosshairY - crossSize, crosshairX, crosshairY + crossSize); // Vertical line
 
