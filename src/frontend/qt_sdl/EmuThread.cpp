@@ -1288,8 +1288,6 @@ void EmuThread::run()
 
                 
                 if (!isAltForm) {
-                     = 0x020DEDA6;
-                    baseAimYAddr = 0x020DEDAE;
                     // Read crosshair values
 //                    float crosshairX = NDS->ARM9Read8(0x020DF024);
 //                    float crosshairY = NDS->ARM9Read8(0x020DF026);
