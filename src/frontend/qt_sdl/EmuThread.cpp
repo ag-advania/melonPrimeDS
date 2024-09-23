@@ -1134,7 +1134,7 @@ void EmuThread::run()
                 };
 
                 // フォントを読み込むラムダ式
-                auto loadFont = [&](const QString& path) -> int {
+                auto loadFont = [&](const QString& path) {
                     // フォントを追加（フォントが正しく読み込まれなかった場合、-1が返される）
                     int fontId = fontDB.addApplicationFont(path);
 
