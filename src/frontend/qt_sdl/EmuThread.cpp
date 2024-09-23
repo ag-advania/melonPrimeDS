@@ -1129,14 +1129,8 @@ void EmuThread::run()
 
                 // フォントファイルのパスをリストに設定
                 QStringList fontPaths = {
-                    ":/melonPrime/mph.fon",
-                    "src/frontend/qt_sdl/melonPrime/mph.fon",
-                    ":/src/frontend/qt_sdl/melonPrime/mph.fon",
-                    "melonPrime/mph.fon",
-                    "/frontend/qt_sdl/melonPrime/mph.fon",
-                    ":/frontend/qt_sdl/melonPrime/mph.fon",
-                    ":/mph.fon",
-                    "mph.fon"
+                    "mph.fon",
+                    "mph.ttf"
                 };
 
                 // フォントをメモリに読み込んでから追加するラムダ式
@@ -1159,7 +1153,7 @@ void EmuThread::run()
                     }
                     else {
                         QString family = fontDB.applicationFontFamilies(fontId).at(0);
-                        QFont font1(family, 8);
+                        QFont font1(family, 6);
                         Top_paint->setFont(font1);
                         mainWindow->osdAddMessage(0, QString("Font loaded from data at path: %1").arg(fullPath).toStdString().c_str());
                     }
