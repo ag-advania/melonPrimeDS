@@ -68,8 +68,10 @@
 // #include "overlay_shaders.h"
 
 #include "melonPrime/def.h"
+#include <QCoreApplication>
 #include <QFontDatabase>
-
+#include <QFile>
+#include <QByteArray>
 
 // TODO: uniform variable spelling
 using namespace melonDS;
@@ -1121,6 +1123,8 @@ void EmuThread::run()
 
                 // OSD Testing
 // Load the custom font
+
+
                 QFontDatabase fontDB;
 
                 // フォントファイルのパスをリストに設定
@@ -1135,24 +1139,31 @@ void EmuThread::run()
                     "mph.fon"
                 };
 
-                // フォントを読み込むラムダ式
+                // フォントをメモリに読み込んでから追加するラムダ式
                 auto loadFont = [&](const QString& path) {
-                    // フォントを追加（フォントが正しく読み込まれなかった場合、-1が返される）
-                    int fontId = fontDB.addApplicationFont(path);
+                    QString fullPath = QCoreApplication::applicationDirPath() + "/" + path;  // appDir + path をここで行う
 
-                    // 読み込み失敗時のメッセージ
-                    if (fontId == -1) {
-                        mainWindow->osdAddMessage(0, QString("Font load failed from path: %1").arg(path).toStdString().c_str());
+                    QFile fontFile(fullPath);
+                    if (!fontFile.open(QIODevice::ReadOnly)) {
+                        mainWindow->osdAddMessage(0, QString("Failed to open font file: %1").arg(fullPath).toStdString().c_str());
+                        return -1;
                     }
-                    // 読み込み成功時の処理
+
+                    QByteArray fontData = fontFile.readAll();
+                    fontFile.close();
+
+                    // フォントをメモリから追加
+                    int fontId = fontDB.addApplicationFontFromData(fontData);
+                    if (fontId == -1) {
+                        mainWindow->osdAddMessage(0, QString("Font load failed from data at path: %1").arg(fullPath).toStdString().c_str());
+                    }
                     else {
                         QString family = fontDB.applicationFontFamilies(fontId).at(0);
                         QFont font1(family, 8);
                         Top_paint->setFont(font1);
-                        mainWindow->osdAddMessage(0, QString("Font loaded from path: %1").arg(path).toStdString().c_str());
+                        mainWindow->osdAddMessage(0, QString("Font loaded from data at path: %1").arg(fullPath).toStdString().c_str());
                     }
 
-                    // フォントIDを返す
                     return fontId;
                     };
 
@@ -1164,6 +1175,7 @@ void EmuThread::run()
                         break; // 成功したらループを抜ける
                     }
                 }
+
 
 
 
