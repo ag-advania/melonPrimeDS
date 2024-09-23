@@ -498,8 +498,8 @@ void detectRomAndSetAddresses() {
         break;
 
     default:
-        // 未対応のチェックサムに対する処理
-        // デフォルトの動作やエラーメッセージの追加
+        // Handle unsupported checksums.
+        // Add default behavior or error handling.
         break;
     }
 }
@@ -987,18 +987,22 @@ void EmuThread::run()
     uint32_t chosenHunterAddr;
     uint32_t weaponChangeAddr;
     uint32_t selectedWeaponAddr;
-    uint32_t currentWeaponAddr;
     uint32_t jumpFlagAddr;
 
     uint32_t boostGaugeAddr;
     uint32_t isBoostingAddr;
 
-
     bool isAddressCalculationNeeded;
     bool isInGame;
     bool isInAdventure;
     bool isSamus;
-    bool isOsdContentChanged;
+
+    // added for HUD
+    uint32_t currentWeaponAddr;
+    uint32_t currentHpAddr;
+    uint32_t currentAmmoMissileAddr;
+    uint32_t currentAmmoSpecialAddr;
+
 
     // MelonPrime OSD stuff
 
@@ -1012,53 +1016,62 @@ void EmuThread::run()
 
 
     QFontDatabase fontDB;
-
-    // フォントファイルのパスをリストに設定
+    // Set the list of font file paths.
     QStringList fontPaths = {
         "mph.fon",
         "mph.ttf"
     };
 
-    // フォントをメモリに読み込んでから追加するラムダ式
+    // Lambda function to load a font from memory and add it.
     auto loadFont = [&](const QString& path) {
-        QString fullPath = QCoreApplication::applicationDirPath() + "/" + path;  // appDir + path をここで行う
+        // Combine the application directory path with the font file path.
+        QString fullPath = QCoreApplication::applicationDirPath() + "/" + path;
 
+        // Open the font file.
         QFile fontFile(fullPath);
         if (!fontFile.open(QIODevice::ReadOnly)) {
+            // Display an error message if the font file cannot be opened.
             mainWindow->osdAddMessage(0, QString("Failed to open font file: %1").arg(fullPath).toStdString().c_str());
             return -1;
         }
 
+        // Read the entire font file into memory.
         QByteArray fontData = fontFile.readAll();
         fontFile.close();
 
-        // フォントをメモリから追加
+        // Add the font from memory.
         int fontId = fontDB.addApplicationFontFromData(fontData);
         if (fontId == -1) {
+            // Display an error message if the font loading failed.
             mainWindow->osdAddMessage(0, QString("Font load failed from data at path: %1").arg(fullPath).toStdString().c_str());
         }
         else {
+            // Get the font family name of the loaded font.
             QString family = fontDB.applicationFontFamilies(fontId).at(0);
             QFont font1(family, 6);
 
-            // アンチエイリアスを無効化するためのスタイル設定
+            // Disable anti-aliasing for the font.
             font1.setStyleStrategy(QFont::NoAntialias);
 
+            // Set the font for the painter object.
             Top_paint->setFont(font1);
+
+            // Display a success message.
             mainWindow->osdAddMessage(0, QString("Font loaded from data at path: %1").arg(fullPath).toStdString().c_str());
         }
 
         return fontId;
         };
 
-    // フォントパスを順に試す
+    // Try each font path sequentially.
     int fontId = -1;
     for (const QString& path : fontPaths) {
         fontId = loadFont(path);
         if (fontId != -1) {
-            break; // 成功したらループを抜ける
+            break; // Exit the loop if a font is successfully loaded.
         }
     }
+
 
 
 
@@ -1120,7 +1133,11 @@ void EmuThread::run()
             selectedWeaponAddr = calculatePlayerAddress(baseSelectedWeaponAddr, playerPosition, playerAddressIncrement);
             jumpFlagAddr = calculatePlayerAddress(baseJumpFlagAddr, playerPosition, playerAddressIncrement);
 
-            currentWeaponAddr = selectedWeaponAddr - 0x1;
+            
+            currentWeaponAddr = selectedWeaponAddr - 0x1; // DCAA2 in JP1.0
+            currentHpAddr = 0X020DCAA2 - 0x020DC6AE + currentWeaponAddr;
+            currentAmmoMissileAddr = 0X020DCAA2 - 0x020DC722 + currentWeaponAddr;
+            currentAmmoSpecialAddr = 0X020DCAA2 - 0x020DC720 + currentWeaponAddr;
 
             // getChosenHunterAddr
             chosenHunterAddr = calculatePlayerAddress(baseChosenHunterAddr, playerPosition, 0x01);
@@ -1152,7 +1169,7 @@ void EmuThread::run()
             // The QPoint class defines a point in the plane using integer precision. 
             QPoint mouseRel;
 
-            // 感度係数を定数として定義
+            // Define sensitivity coefficient as a constant
             const float SENSITIVITY_FACTOR = Config::MetroidAimSensitivity * 0.01f;
             const float SENSITIVITY_FACTOR_VIRTUAL_STYLUS = Config::MetroidVirtualStylusSensitivity * 0.01f;
 
@@ -1186,82 +1203,91 @@ void EmuThread::run()
                 Top_paint->setPen(Qt::white);
                 Top_paint->setRenderHint(QPainter::TextAntialiasing, false);
 
-                // Draw HP and ammo information
-                // HPのアドレスから現在のHPを取得.
-                uint8_t currentHP = NDS->ARM9Read8(0x020DB06E);
+                // Draw HP information
+                // Retrieve the current HP from the HP address.
+                uint8_t currentHP = NDS->ARM9Read16(currentHpAddr);
 
-                // HPが25以下の場合は赤色、そうでなければ白色に設定.
+                // If HP is 25 or below, set the pen color to red; otherwise, set it to white.
                 if (currentHP <= 25) {
-                    Top_paint->setPen(QColor(255, 0, 0)); // 赤色のペンを設定 (RGBで赤).
+                    Top_paint->setPen(QColor(255, 0, 0)); // Set the pen to red (RGB format for red).
                 }
                 else {
-                    Top_paint->setPen(QColor(255, 255, 255)); // 白色のペンを設定 (RGBで白).
+                    Top_paint->setPen(QColor(255, 255, 255)); // Set the pen to white (RGB format for white).
                 }
 
-                // 描画用のテキストを表示 (HP値を10進数で表示).
+                // Display the text to draw (display HP value in decimal).
                 Top_paint->drawText(QPoint(4, 188), (std::string("HP ") + std::to_string(currentHP)).c_str());
 
+
+
                 // Missile Ammo
+
                 Top_paint->setPen(Qt::white);
-                Top_paint->drawText(QPoint(164, 188), (std::string("Miss Ammo: ") + std::to_string(NDS->ARM9Read8(0x020DB0E2)/0x0A)).c_str());
+                // Display the missile ammo text (divide value by 10 in decimal format).
+                Top_paint->drawText(QPoint(164, 188), (std::string("Miss Ammo: ") + std::to_string(NDS->ARM9Read16(currentAmmoMissileAddr) / 0x0A)).c_str());
+
 
 
                 // SpecialWeapon Ammo
-                
-                // currentWeaponAddrから現在の武器を取得.
+                // 
+                // Retrieve the current weapon from the currentWeaponAddr.
                 uint8_t currentWeapon = NDS->ARM9Read8(currentWeaponAddr);
 
-                // 0x020DB0E0のアドレスから弾薬の現在値を取得.
-                uint8_t ammoCount = NDS->ARM9Read8(0x020DB0E0);
+                // Retrieve the current ammo count from address 0x020DB0E0.
+                uint8_t ammoCount = NDS->ARM9Read16(currentAmmoSpecialAddr);
 
-                // 現在の弾薬消費を格納する変数.
-                uint8_t ammoConsumption = ammoCount; // 最初はそのままの値を使う.
+                // Store the current ammo consumption value.
+                uint8_t ammoConsumption = ammoCount; // Initially use the value as is.
 
-                // currentWeaponの値に応じた弾薬消費の割り算 (16進数を使用).
+                // Apply ammo consumption logic based on the currentWeapon value (use hexadecimal division).
                 switch (currentWeapon) {
-                case 0: // PBの場合.
-                    ammoConsumption = ammoCount; // PBは弾薬消費なし.
+                case 0: // For PB.
+                    ammoConsumption = ammoCount; // PB does not consume ammo.
                     break;
-                case 1: // ボルドラの場合.
+                case 1: // For Voltra.
                     ammoConsumption = ammoCount / 0x5;
                     break;
-                case 2: // ミサイルの場合.
-                    ammoConsumption = ammoCount / 0xA; // ミサイルの弾薬消費 (10進数で10).
+                case 2: // For Missiles.
+                    ammoConsumption = ammoCount / 0xA; // Missiles consume ammo in decimal (10).
                     break;
-                case 3: // バトハンの場合.
-                    ammoConsumption = ammoCount / 0x4; // バトハンの弾薬消費 (10進数で4).
+                case 3: // For Battle Hammer.
+                    ammoConsumption = ammoCount / 0x4; // Battle Hammer consumes ammo in decimal (4).
                     break;
-                case 4: // インペの場合.
-                    ammoConsumption = ammoCount / 0x14; // インペの弾薬消費 (10進数で20).
+                case 4: // For Imperialist.
+                    ammoConsumption = ammoCount / 0x14; // Imperialist consumes ammo in decimal (20).
                     break;
-                case 5: // ジュディの場合.
-                    ammoConsumption = ammoCount / 0x5; // ジュディの弾薬消費 (10進数で5).
+                case 5: // For Judicator.
+                    ammoConsumption = ammoCount / 0x5; // Judicator consumes ammo in decimal (5).
                     break;
-                case 6: // マグモの場合.
-                    ammoConsumption = ammoCount / 0xA; // マグモの弾薬消費 (10進数で10).
+                case 6: // For Magmaul.
+                    ammoConsumption = ammoCount / 0xA; // Magmaul consumes ammo in decimal (10).
                     break;
-                case 7: // ショッコの場合.
-                    ammoConsumption = ammoCount / 0xA; // ショッコの弾薬消費 (10進数で10).
+                case 7: // For Shock Coil.
+                    ammoConsumption = ammoCount / 0xA; // Shock Coil consumes ammo in decimal (10).
                     break;
-                case 8: // オメガの場合.
-                    ammoConsumption = 1; // オメガは弾薬消費なし.
+                case 8: // For Omega Cannon.
+                    ammoConsumption = 1; // Omega Cannon does not consume ammo.
                     break;
                 default:
-                    ammoConsumption = ammoCount; // 不明な武器の場合、弾薬消費なし.
+                    ammoConsumption = ammoCount; // If unknown weapon, do not change ammo consumption.
                     break;
                 }
 
-                if(currentWeapon != 0 && currentWeapon != 2){
-                    // 描画用のテキストを表示 (10進数のフォーマット).
+                // If the weapon is not PB or Missiles, draw the ammo consumption text.
+                if (currentWeapon != 0 && currentWeapon != 2) {
+                    // Display the text to draw (ammo consumption value in decimal format).
                     Top_paint->drawText(QPoint(164, 178), (std::string("Other Ammo: ") + std::to_string(ammoConsumption)).c_str());
                 }
+
+
+
+                // Draw Crosshair:
 
                 // Check if in alternate form (transformed state)
                 isAltForm = NDS->ARM9Read8(isAltFormAddr) == 0x02;
 
                 
                 if (!isAltForm) {
-                    // Draw Crosshair:
 
                     // Read crosshair values
                     float crosshairX = NDS->ARM9Read8(0x020DF024);
