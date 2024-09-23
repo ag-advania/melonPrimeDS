@@ -1154,6 +1154,10 @@ void EmuThread::run()
                     else {
                         QString family = fontDB.applicationFontFamilies(fontId).at(0);
                         QFont font1(family, 6);
+
+                        // アンチエイリアスを無効化するためのスタイル設定
+                        font1.setStyleStrategy(QFont::NoAntialias);
+
                         Top_paint->setFont(font1);
                         mainWindow->osdAddMessage(0, QString("Font loaded from data at path: %1").arg(fullPath).toStdString().c_str());
                     }
