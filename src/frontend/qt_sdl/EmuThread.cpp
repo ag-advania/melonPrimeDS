@@ -1135,9 +1135,9 @@ void EmuThread::run()
 
             
             currentWeaponAddr = selectedWeaponAddr - 0x1; // DCAA2 in JP1.0
-            currentHpAddr = 0X020DCAA2 - 0x020DC6AE + currentWeaponAddr;
-            currentAmmoMissileAddr = 0X020DCAA2 - 0x020DC722 + currentWeaponAddr;
-            currentAmmoSpecialAddr = 0X020DCAA2 - 0x020DC720 + currentWeaponAddr;
+            currentHpAddr = currentWeaponAddr - (0x020DCAA2 - 0x020DC6AE);
+            currentAmmoMissileAddr = currentWeaponAddr - (0x020DCAA2 - 0x020DC722);
+            currentAmmoSpecialAddr = currentWeaponAddr - (0x020DCAA2 - 0x020DC720);
 
             // getChosenHunterAddr
             chosenHunterAddr = calculatePlayerAddress(baseChosenHunterAddr, playerPosition, 0x01);
@@ -1288,10 +1288,13 @@ void EmuThread::run()
 
                 
                 if (!isAltForm) {
-
+                     = 0x020DEDA6;
+                    baseAimYAddr = 0x020DEDAE;
                     // Read crosshair values
-                    float crosshairX = NDS->ARM9Read8(0x020DF024);
-                    float crosshairY = NDS->ARM9Read8(0x020DF026);
+//                    float crosshairX = NDS->ARM9Read8(0x020DF024);
+//                    float crosshairY = NDS->ARM9Read8(0x020DF026);
+                    float crosshairX = NDS->ARM9Read8(baseAimXAddr + 0x27E);
+                    float crosshairY = NDS->ARM9Read8(baseAimXAddr + 0x280);
 
                     // Scale crosshair X value
                     crosshairX = (crosshairX < 0) ? crosshairX + 254 : crosshairX;
