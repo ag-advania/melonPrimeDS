@@ -1134,28 +1134,35 @@ void EmuThread::run()
                 };
 
                 // フォントを読み込むラムダ式
-                auto loadFont = &fontDB, & mainWindow -> int{
+                auto loadFont = [&](const QString& path) -> int {
+                    // フォントを追加（フォントが正しく読み込まれなかった場合、-1が返される）
                     int fontId = fontDB.addApplicationFont(path);
+
+                    // 読み込み失敗時のメッセージ
                     if (fontId == -1) {
                         mainWindow->osdAddMessage(0, QString("Font load failed from path: %1").arg(path).toStdString().c_str());
                     }
-                 else {
-                  QString family = fontDB.applicationFontFamilies(fontId).at(0);
-                  QFont font1(family, 8);
-                  Top_paint->setFont(font1);
-                  mainWindow->osdAddMessage(0, QString("Font loaded from path: %1").arg(path).toStdString().c_str());
-              }
-              return fontId;
-                };
+                    // 読み込み成功時の処理
+                    else {
+                        QString family = fontDB.applicationFontFamilies(fontId).at(0);
+                        QFont font1(family, 8);
+                        Top_paint->setFont(font1);
+                        mainWindow->osdAddMessage(0, QString("Font loaded from path: %1").arg(path).toStdString().c_str());
+                    }
+
+                    // フォントIDを返す
+                    return fontId;
+                    };
 
                 // フォントパスを順に試す
                 int fontId = -1;
                 for (const QString& path : fontPaths) {
                     fontId = loadFont(path);
                     if (fontId != -1) {
-                        break;
+                        break; // 成功したらループを抜ける
                     }
                 }
+
 
 
                 Top_paint->setPen(Qt::white);
