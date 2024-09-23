@@ -1130,8 +1130,8 @@ void EmuThread::run()
                     ":/src/frontend/qt_sdl/melonPrime/mph.fon",
                     "melonPrime/mph.fon",
                     "/frontend/qt_sdl/melonPrime/mph.fon",
-                    ":/frontend/qt_sdl/melonPrime/mph.fon"
-                    ":/mph.fon"
+                    ":/frontend/qt_sdl/melonPrime/mph.fon",
+                    ":/mph.fon",
                     "mph.fon"
                 };
 
