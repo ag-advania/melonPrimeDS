@@ -1131,6 +1131,8 @@ void EmuThread::run()
                     "melonPrime/mph.fon",
                     "/frontend/qt_sdl/melonPrime/mph.fon",
                     ":/frontend/qt_sdl/melonPrime/mph.fon"
+                    ":/mph.fon"
+                    "mph.fon"
                 };
 
                 // フォントを読み込むラムダ式
@@ -1173,7 +1175,7 @@ void EmuThread::run()
                 Top_paint->drawText(QPoint(188, 188), (std::string("Miss Ammo: ") + std::to_string(NDS->ARM9Read8(0x020DB0E2))).c_str());
                 Top_paint->drawText(QPoint(188, 178), (std::string("Other Ammo: ") + std::to_string(NDS->ARM9Read8(0x020DB0E0))).c_str());
 
-                // Draw Crosshair
+                // Draw Crosshair:
                 // Read crosshair values
                 float crosshairX = NDS->ARM9Read8(0x020DF024);
                 float crosshairY = NDS->ARM9Read8(0x020DF026);
