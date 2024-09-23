@@ -1061,6 +1061,10 @@ void EmuThread::run()
         isAddressCalculationNeeded = false;
 
         if(isInGame && !ingameSoVirtualStylusAutolyDisabled) {
+            // Clear OSD buffers
+            Top_buffer->fill(0x00000000);
+            Bott_buffer->fill(0x00000000);
+
             // mainWindow->osdAddMessage(0, "Virtual Stylus disabled");
             ingameSoVirtualStylusAutolyDisabled = true;
 
