@@ -975,9 +975,6 @@ void EmuThread::run()
         }
     };
 
-    
-    bool drawVCur;
-
     uint8_t playerPosition;
     const int32_t playerAddressIncrement = 0xF30;
     const int32_t aimAddrIncrement = 0x48;
@@ -1007,10 +1004,6 @@ void EmuThread::run()
     QPainter* Bott_paint = OSD[1].Painter;
 
     while (EmuRunning != emuStatus_Exit) {
-        
-        // Clear OSD buffers
-        Top_buffer->fill(0x00000000);
-        Bott_buffer->fill(0x00000000);
 
         auto isFocused = mainWindow->panel->getFocused();
 
@@ -1040,10 +1033,6 @@ void EmuThread::run()
             // Move the cursor to the center of the window
             QCursor::setPos(windowCenter);
         }
-
-
-
-        drawVCur = false;
 
         #ifdef ENABLE_MEMORY_DUMP
             if (Input::HotkeyPressed(HK_MetroidUIOk)) {
@@ -1124,7 +1113,6 @@ void EmuThread::run()
                 // inGame
 
 
-                drawVCur = false;
 
                 // Aiming
 
@@ -1475,13 +1463,14 @@ void EmuThread::run()
 			}
 			else {
                 // VirtualStylus
-
+                // 
+                // Clear OSD buffers
+                Top_buffer->fill(0x00000000);
+                Bott_buffer->fill(0x00000000);
 
                 // this exists to just delay the pressing of the screen when you
                 // release the virtual stylus key
                 enableAim = false;
-
-                drawVCur = true;
 
                 if (Input::HotkeyDown(HK_MetroidShootScan) || Input::HotkeyDown(HK_MetroidScanShoot)) {
                     NDS->TouchScreen(virtualStylusX, virtualStylusY);
@@ -1513,6 +1502,16 @@ void EmuThread::run()
                 if (virtualStylusY < 0) virtualStylusY = 0;
                 if (virtualStylusY > 191) virtualStylusY = 191;
 
+                //Draw VirtualStylus
+                Bott_paint->setPen(Qt::white);
+
+                // Crosshair Circle
+                Bott_paint->drawEllipse(virtualStylusX - 5, virtualStylusY - 5, 10, 10);
+
+                // 3x3 center Crosshair
+                Bott_paint->drawLine(virtualStylusX - 1, virtualStylusY, virtualStylusX + 1, virtualStylusY);
+                Bott_paint->drawLine(virtualStylusX, virtualStylusY - 1, virtualStylusX, virtualStylusY + 1);
+
 
 			} // End of isVirtualStylusEnabled
 
@@ -1533,18 +1532,6 @@ void EmuThread::run()
         }
 
         NDS->SetKeyMask(Input::GetInputMask());
-
-        //Draw VirtualStylus
-        if (drawVCur) {
-            Bott_paint->setPen(Qt::white);
-
-            // Crosshair Circle
-            Bott_paint->drawEllipse(virtualStylusX-5,virtualStylusY-5,10,10);
-
-            // 3x3 center Crosshair
-            Bott_paint->drawLine(virtualStylusX - 1, virtualStylusY, virtualStylusX + 1, virtualStylusY);
-            Bott_paint->drawLine(virtualStylusX, virtualStylusY - 1, virtualStylusX, virtualStylusY + 1);
-        }
 
         // record last frame was forcused or not
         wasLastFrameFocused = isFocused;
