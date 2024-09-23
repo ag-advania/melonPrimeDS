@@ -1007,6 +1007,60 @@ void EmuThread::run()
     QImage* Bott_buffer = OSD[1].CanvasBuffer;
     QPainter* Bott_paint = OSD[1].Painter;
 
+    // Load the custom font
+
+
+    QFontDatabase fontDB;
+
+    // フォントファイルのパスをリストに設定
+    QStringList fontPaths = {
+        "mph.fon",
+        "mph.ttf"
+    };
+
+    // フォントをメモリに読み込んでから追加するラムダ式
+    auto loadFont = [&](const QString& path) {
+        QString fullPath = QCoreApplication::applicationDirPath() + "/" + path;  // appDir + path をここで行う
+
+        QFile fontFile(fullPath);
+        if (!fontFile.open(QIODevice::ReadOnly)) {
+            mainWindow->osdAddMessage(0, QString("Failed to open font file: %1").arg(fullPath).toStdString().c_str());
+            return -1;
+        }
+
+        QByteArray fontData = fontFile.readAll();
+        fontFile.close();
+
+        // フォントをメモリから追加
+        int fontId = fontDB.addApplicationFontFromData(fontData);
+        if (fontId == -1) {
+            mainWindow->osdAddMessage(0, QString("Font load failed from data at path: %1").arg(fullPath).toStdString().c_str());
+        }
+        else {
+            QString family = fontDB.applicationFontFamilies(fontId).at(0);
+            QFont font1(family, 6);
+
+            // アンチエイリアスを無効化するためのスタイル設定
+            font1.setStyleStrategy(QFont::NoAntialias);
+
+            Top_paint->setFont(font1);
+            mainWindow->osdAddMessage(0, QString("Font loaded from data at path: %1").arg(fullPath).toStdString().c_str());
+        }
+
+        return fontId;
+        };
+
+    // フォントパスを順に試す
+    int fontId = -1;
+    for (const QString& path : fontPaths) {
+        fontId = loadFont(path);
+        if (fontId != -1) {
+            break; // 成功したらループを抜ける
+        }
+    }
+
+
+
     while (EmuRunning != emuStatus_Exit) {
 
         // Clear OSD buffers
@@ -1122,57 +1176,6 @@ void EmuThread::run()
 
 
                 // OSD Testing
-// Load the custom font
-
-
-                QFontDatabase fontDB;
-
-                // フォントファイルのパスをリストに設定
-                QStringList fontPaths = {
-                    "mph.fon",
-                    "mph.ttf"
-                };
-
-                // フォントをメモリに読み込んでから追加するラムダ式
-                auto loadFont = [&](const QString& path) {
-                    QString fullPath = QCoreApplication::applicationDirPath() + "/" + path;  // appDir + path をここで行う
-
-                    QFile fontFile(fullPath);
-                    if (!fontFile.open(QIODevice::ReadOnly)) {
-                        mainWindow->osdAddMessage(0, QString("Failed to open font file: %1").arg(fullPath).toStdString().c_str());
-                        return -1;
-                    }
-
-                    QByteArray fontData = fontFile.readAll();
-                    fontFile.close();
-
-                    // フォントをメモリから追加
-                    int fontId = fontDB.addApplicationFontFromData(fontData);
-                    if (fontId == -1) {
-                        mainWindow->osdAddMessage(0, QString("Font load failed from data at path: %1").arg(fullPath).toStdString().c_str());
-                    }
-                    else {
-                        QString family = fontDB.applicationFontFamilies(fontId).at(0);
-                        QFont font1(family, 6);
-
-                        // アンチエイリアスを無効化するためのスタイル設定
-                        font1.setStyleStrategy(QFont::NoAntialias);
-
-                        Top_paint->setFont(font1);
-                        mainWindow->osdAddMessage(0, QString("Font loaded from data at path: %1").arg(fullPath).toStdString().c_str());
-                    }
-
-                    return fontId;
-                    };
-
-                // フォントパスを順に試す
-                int fontId = -1;
-                for (const QString& path : fontPaths) {
-                    fontId = loadFont(path);
-                    if (fontId != -1) {
-                        break; // 成功したらループを抜ける
-                    }
-                }
 
 
 
@@ -1182,8 +1185,8 @@ void EmuThread::run()
 
                 // Draw HP and ammo information
                 Top_paint->drawText(QPoint(4, 188), (std::string("HP ") + std::to_string(NDS->ARM9Read8(0x020DB06E))).c_str());
-                Top_paint->drawText(QPoint(188, 188), (std::string("Miss Ammo: ") + std::to_string(NDS->ARM9Read8(0x020DB0E2))).c_str());
-                Top_paint->drawText(QPoint(188, 178), (std::string("Other Ammo: ") + std::to_string(NDS->ARM9Read8(0x020DB0E0))).c_str());
+                Top_paint->drawText(QPoint(168, 188), (std::string("Miss Ammo: ") + std::to_string(NDS->ARM9Read8(0x020DB0E2))).c_str());
+                Top_paint->drawText(QPoint(168, 178), (std::string("Other Ammo: ") + std::to_string(NDS->ARM9Read8(0x020DB0E0))).c_str());
 
                 // Draw Crosshair:
                 // Read crosshair values
