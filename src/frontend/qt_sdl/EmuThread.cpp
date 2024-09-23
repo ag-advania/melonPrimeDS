@@ -1127,10 +1127,13 @@ void EmuThread::run()
 
                 // Get the font family name
                 QStringList fontFamilies = fontDB.families(fontId);
+                qDebug() << "Loaded font families:" << fontFamilies;  // デバッグ出力
+
                 if (!fontFamilies.isEmpty()) {
-                    QFont font1(fontFamilies.first(), 8);  // Use the first loaded font family
+                    QFont font1(fontFamilies.first(), 5);  // Use the first loaded font family
                     Top_paint->setFont(font1);
                 }
+
                 Top_paint->setPen(Qt::white);
                 Top_paint->setRenderHint(QPainter::TextAntialiasing, false);
 
