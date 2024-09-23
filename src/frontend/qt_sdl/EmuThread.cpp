@@ -1133,29 +1133,30 @@ void EmuThread::run()
                     ":/frontend/qt_sdl/melonPrime/mph.fon"
                 };
 
-                // フォントを読み込む関数
-                int loadFont(const QString& path, QFontDatabase& fontDB, MainWindow* mainWindow) {
+                // フォントを読み込むラムダ式
+                auto loadFont = &fontDB, & mainWindow -> int{
                     int fontId = fontDB.addApplicationFont(path);
                     if (fontId == -1) {
                         mainWindow->osdAddMessage(0, QString("Font load failed from path: %1").arg(path).toStdString().c_str());
                     }
-                    else {
-                        QString family = fontDB.applicationFontFamilies(fontId).at(0);
-                        QFont font1(family, 8);
-                        Top_paint->setFont(font1);
-                        mainWindow->osdAddMessage(0, QString("Font loaded from path: %1").arg(path).toStdString().c_str());
-                    }
-                    return fontId;
-                }
+                 else {
+                  QString family = fontDB.applicationFontFamilies(fontId).at(0);
+                  QFont font1(family, 8);
+                  Top_paint->setFont(font1);
+                  mainWindow->osdAddMessage(0, QString("Font loaded from path: %1").arg(path).toStdString().c_str());
+              }
+              return fontId;
+                };
 
                 // フォントパスを順に試す
                 int fontId = -1;
                 for (const QString& path : fontPaths) {
-                    fontId = loadFont(path, fontDB, mainWindow);
+                    fontId = loadFont(path);
                     if (fontId != -1) {
                         break;
                     }
                 }
+
 
                 Top_paint->setPen(Qt::white);
                 Top_paint->setRenderHint(QPainter::TextAntialiasing, false);
