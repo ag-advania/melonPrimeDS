@@ -68,6 +68,8 @@
 // #include "overlay_shaders.h"
 
 #include "melonPrime/def.h"
+#include <QFontDatabase>
+
 
 // TODO: uniform variable spelling
 using namespace melonDS;
@@ -1143,7 +1145,7 @@ void EmuThread::run()
                 float crosshairY = NDS->ARM9Read8(0x020DF026);
 
                 // Scale crosshair X value
-                float crosshairX = (crosshairX < 0) ? crosshairX + 254 : crosshairX;
+                crosshairX = (crosshairX < 0) ? crosshairX + 254 : crosshairX;
 
                 // Crosshair size (1 pixel)
                 int crossSize = 3;
@@ -1152,6 +1154,8 @@ void EmuThread::run()
                 Top_paint->setPen(Qt::red);  // Cross color
                 Top_paint->drawLine(crosshairX - crossSize, crosshairY, crosshairX + crossSize, crosshairY); // Horizontal line
                 Top_paint->drawLine(crosshairX, crosshairY - crossSize, crosshairX, crosshairY + crossSize); // Vertical line
+
+
 
 
 
