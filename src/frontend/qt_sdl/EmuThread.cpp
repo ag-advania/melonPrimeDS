@@ -1127,12 +1127,8 @@ void EmuThread::run()
                 if (fontId != -1) {
                     QString family = fontDB.applicationFontFamilies(fontId).at(0);
                     QFont font1(family, 8);
-                    if (Top_paint->setFont(font1)) {
-                        mainWindow->osdAddMessage(0, "Font applied: " + family);
-                    }
-                    else {
-                        mainWindow->osdAddMessage(0, "Font application failed");
-                    }
+                    Top_paint->setFont(font1);
+                    mainWindow->osdAddMessage(0, family.toStdString().c_str());
                 }
                 else {
                     mainWindow->osdAddMessage(0, "Font load failed");
