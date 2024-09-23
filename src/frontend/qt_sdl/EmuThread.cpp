@@ -987,6 +987,7 @@ void EmuThread::run()
     uint32_t chosenHunterAddr;
     uint32_t weaponChangeAddr;
     uint32_t selectedWeaponAddr;
+    uint32_t currentWeaponAddr;
     uint32_t jumpFlagAddr;
 
     uint32_t boostGaugeAddr;
@@ -1119,6 +1120,8 @@ void EmuThread::run()
             selectedWeaponAddr = calculatePlayerAddress(baseSelectedWeaponAddr, playerPosition, playerAddressIncrement);
             jumpFlagAddr = calculatePlayerAddress(baseJumpFlagAddr, playerPosition, playerAddressIncrement);
 
+            currentWeaponAddr = selectedWeaponAddr - 0x1;
+
             // getChosenHunterAddr
             chosenHunterAddr = calculatePlayerAddress(baseChosenHunterAddr, playerPosition, 0x01);
             isSamus = NDS->ARM9Read8(chosenHunterAddr) == 0x00;
@@ -1185,25 +1188,77 @@ void EmuThread::run()
 
                 // Draw HP and ammo information
                 Top_paint->drawText(QPoint(4, 188), (std::string("HP ") + std::to_string(NDS->ARM9Read8(0x020DB06E))).c_str());
-                Top_paint->drawText(QPoint(168, 188), (std::string("Miss Ammo: ") + std::to_string(NDS->ARM9Read8(0x020DB0E2))).c_str());
-                Top_paint->drawText(QPoint(168, 178), (std::string("Other Ammo: ") + std::to_string(NDS->ARM9Read8(0x020DB0E0))).c_str());
+                Top_paint->drawText(QPoint(164, 188), (std::string("Miss Ammo: ") + std::to_string(NDS->ARM9Read8(0x020DB0E2)/0x0A)).c_str());
 
-                // Draw Crosshair:
-                // Read crosshair values
-                float crosshairX = NDS->ARM9Read8(0x020DF024);
-                float crosshairY = NDS->ARM9Read8(0x020DF026);
+                // currentWeaponAddrから現在の武器を取得.
+                uint8_t currentWeapon = NDS->ARM9Read8(currentWeaponAddr);
 
-                // Scale crosshair X value
-                crosshairX = (crosshairX < 0) ? crosshairX + 254 : crosshairX;
+                // 0x020DB0E0のアドレスから弾薬の現在値を取得.
+                uint8_t ammoCount = NDS->ARM9Read8(0x020DB0E0);
 
-                // Crosshair size (1 pixel)
-                int crossSize = 3;
+                // 現在の弾薬消費を格納する変数.
+                uint8_t ammoConsumption = ammoCount; // 最初はそのままの値を使う.
 
-                // Draw crosshair using drawLine
-                Top_paint->setPen(Qt::white);  // Cross color
-                Top_paint->drawLine(crosshairX - crossSize, crosshairY, crosshairX + crossSize, crosshairY); // Horizontal line
-                Top_paint->drawLine(crosshairX, crosshairY - crossSize, crosshairX, crosshairY + crossSize); // Vertical line
+                // currentWeaponの値に応じた弾薬消費の割り算 (16進数を使用).
+                switch (currentWeapon) {
+                case 0: // PBの場合.
+                    ammoConsumption = ammoCount / 0x1; // PBは弾薬消費なし.
+                    break;
+                case 1: // ボルドラの場合.
+                    ammoConsumption = ammoCount / 0x1; // ボルドラも消費なし.
+                    break;
+                case 2: // ミサイルの場合.
+                    ammoConsumption = ammoCount / 0xA; // ミサイルの弾薬消費 (10進数で10).
+                    break;
+                case 3: // バトハンの場合.
+                    ammoConsumption = ammoCount / 0x4; // バトハンの弾薬消費 (10進数で4).
+                    break;
+                case 4: // インペの場合.
+                    ammoConsumption = ammoCount / 0x14; // インペの弾薬消費 (10進数で20).
+                    break;
+                case 5: // ジュディの場合.
+                    ammoConsumption = ammoCount / 0x5; // ジュディの弾薬消費 (10進数で5).
+                    break;
+                case 6: // マグモの場合.
+                    ammoConsumption = ammoCount / 0xA; // マグモの弾薬消費 (10進数で10).
+                    break;
+                case 7: // ショッコの場合.
+                    ammoConsumption = ammoCount / 0xA; // ショッコの弾薬消費 (10進数で10).
+                    break;
+                case 8: // オメガの場合.
+                    ammoConsumption = ammoCount / 0x1; // オメガは弾薬消費なし.
+                    break;
+                default:
+                    ammoConsumption = ammoCount; // 不明な武器の場合、弾薬消費なし.
+                    break;
+                }
 
+                // 描画用のテキストを表示 (10進数のフォーマット).
+                Top_paint->drawText(QPoint(164, 178), (std::string("Other Ammo: ") + std::to_string(ammoConsumption)).c_str());
+
+                // Check if in alternate form (transformed state)
+                isAltForm = NDS->ARM9Read8(isAltFormAddr) == 0x02;
+
+                
+                if (!isAltForm) {
+
+                    // Draw Crosshair:
+                    // Read crosshair values
+                    float crosshairX = NDS->ARM9Read8(0x020DF024);
+                    float crosshairY = NDS->ARM9Read8(0x020DF026);
+
+                    // Scale crosshair X value
+                    crosshairX = (crosshairX < 0) ? crosshairX + 254 : crosshairX;
+
+                    // Crosshair size (1 pixel)
+                    int crossSize = 3;
+
+                    // Draw crosshair using drawLine
+                    Top_paint->setPen(Qt::white);  // Cross color
+                    Top_paint->drawLine(crosshairX - crossSize, crosshairY, crosshairX + crossSize, crosshairY); // Horizontal line
+                    Top_paint->drawLine(crosshairX, crosshairY - crossSize, crosshairX, crosshairY + crossSize); // Vertical line
+
+                }
 
 
 
