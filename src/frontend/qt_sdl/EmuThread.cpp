@@ -1005,34 +1005,11 @@ void EmuThread::run()
 
     while (EmuRunning != emuStatus_Exit) {
 
-        auto isFocused = mainWindow->panel->getFocused();
+        // Clear OSD buffers
+        Top_buffer->fill(0x00000000);
+        Bott_buffer->fill(0x00000000);
 
-        // auto mouseRel = rawInputThread->fetchMouseDelta();
 
-        // The QPoint class defines a point in the plane using integer precision. 
-        QPoint mouseRel;
-
-        // 感度係数を定数として定義
-        const float SENSITIVITY_FACTOR = Config::MetroidAimSensitivity * 0.01f;
-        const float SENSITIVITY_FACTOR_VIRTUAL_STYLUS = Config::MetroidVirtualStylusSensitivity * 0.01f;
-
-        // Calculate for aim 
-        // updateMouseRelativeAndRecenterCursor
-
-        // Handle the case when the window is focused
-        if (isFocused) {
-            // Get the center coordinates of the window
-            auto windowCenter = mainWindow->geometry().center();
-
-            // If the window was also focused in the previous frame
-            if (wasLastFrameFocused) {
-                // Calculate the relative mouse position (current cursor position - window center)
-                mouseRel = QCursor::pos() - windowCenter;
-            }
-
-            // Move the cursor to the center of the window
-            QCursor::setPos(windowCenter);
-        }
 
         #ifdef ENABLE_MEMORY_DUMP
             if (Input::HotkeyPressed(HK_MetroidUIOk)) {
@@ -1061,9 +1038,6 @@ void EmuThread::run()
         isAddressCalculationNeeded = false;
 
         if(isInGame && !ingameSoVirtualStylusAutolyDisabled) {
-            // Clear OSD buffers
-            Top_buffer->fill(0x00000000);
-            Bott_buffer->fill(0x00000000);
 
             // mainWindow->osdAddMessage(0, "Virtual Stylus disabled");
             ingameSoVirtualStylusAutolyDisabled = true;
@@ -1105,11 +1079,79 @@ void EmuThread::run()
 
 		}
 
+
+        auto isFocused = mainWindow->panel->getFocused();
+
+
         if (isFocused) {
 
 
+            // auto mouseRel = rawInputThread->fetchMouseDelta();
+
+            // The QPoint class defines a point in the plane using integer precision. 
+            QPoint mouseRel;
+
+            // 感度係数を定数として定義
+            const float SENSITIVITY_FACTOR = Config::MetroidAimSensitivity * 0.01f;
+            const float SENSITIVITY_FACTOR_VIRTUAL_STYLUS = Config::MetroidVirtualStylusSensitivity * 0.01f;
+
+            // Calculate for aim 
+            // updateMouseRelativeAndRecenterCursor
+
+            // Handle the case when the window is focused
+            if (isFocused) {
+                // Get the center coordinates of the window
+                auto windowCenter = mainWindow->geometry().center();
+
+                // If the window was also focused in the previous frame
+                if (wasLastFrameFocused) {
+                    // Calculate the relative mouse position (current cursor position - window center)
+                    mouseRel = QCursor::pos() - windowCenter;
+                }
+
+                // Move the cursor to the center of the window
+                QCursor::setPos(windowCenter);
+            }
+
 			if (isInGame) {
                 // inGame
+
+
+                // OSD Testing
+
+                // Load the custom font
+                QFontDatabase fontDB;  // Create a font database instance
+                int fontId = fontDB.addApplicationFont("melonPrime/Metroid Prime Hunters.fon");  // Load the custom font
+
+                // Get the font family name
+                QStringList fontFamilies = fontDB.families(fontId);
+                if (!fontFamilies.isEmpty()) {
+                    QFont font1(fontFamilies.first(), 8);  // Use the first loaded font family
+                    Top_paint->setFont(font1);
+                }
+                Top_paint->setPen(Qt::white);
+                Top_paint->setRenderHint(QPainter::TextAntialiasing, false);
+
+                // Draw HP and ammo information
+                Top_paint->drawText(QPoint(4, 188), (std::string("HP ") + std::to_string(NDS->ARM9Read8(0x020DB06E))).c_str());
+                Top_paint->drawText(QPoint(188, 188), (std::string("Miss Ammo: ") + std::to_string(NDS->ARM9Read8(0x020DB0E2))).c_str());
+                Top_paint->drawText(QPoint(188, 178), (std::string("Other Ammo: ") + std::to_string(NDS->ARM9Read8(0x020DB0E0))).c_str());
+
+                // Draw Crosshair
+                // Read crosshair values
+                float crosshairX = NDS->ARM9Read8(0x020DF024);
+                float crosshairY = NDS->ARM9Read8(0x020DF026);
+
+                // Scale crosshair X value
+                float crosshairX = (crosshairX < 0) ? crosshairX + 254 : crosshairX;
+
+                // Crosshair size (1 pixel)
+                int crossSize = 3;
+
+                // Draw crosshair using drawLine
+                Top_paint->setPen(Qt::red);  // Cross color
+                Top_paint->drawLine(crosshairX - crossSize, crosshairY, crosshairX + crossSize, crosshairY); // Horizontal line
+                Top_paint->drawLine(crosshairX, crosshairY - crossSize, crosshairX, crosshairY + crossSize); // Vertical line
 
 
 
@@ -1462,10 +1504,6 @@ void EmuThread::run()
 			}
 			else {
                 // VirtualStylus
-                // 
-                // Clear OSD buffers
-                Top_buffer->fill(0x00000000);
-                Bott_buffer->fill(0x00000000);
 
                 // this exists to just delay the pressing of the screen when you
                 // release the virtual stylus key
