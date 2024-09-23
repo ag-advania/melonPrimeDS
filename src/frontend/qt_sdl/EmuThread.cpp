@@ -1053,25 +1053,20 @@ void EmuThread::run()
 
         // Auto Enable/Disable VirtualStylus Before/After the game
         // you can still enable VirtualStylus in Game
-        if (!isInGame && !isVirtualStylusEnabled && ingameSoVirtualStylusAutolyDisabled) {
-            isVirtualStylusEnabled = true;
+        if (!isInGame && ingameSoVirtualStylusAutolyDisabled) {
             // mainWindow->osdAddMessage(0, "Virtual Stylus enabled");
             ingameSoVirtualStylusAutolyDisabled = false;
         }
 
         isAddressCalculationNeeded = false;
 
-        if(isInGame && isVirtualStylusEnabled && !ingameSoVirtualStylusAutolyDisabled) {
-            isVirtualStylusEnabled = false;
+        if(isInGame && !ingameSoVirtualStylusAutolyDisabled) {
             // mainWindow->osdAddMessage(0, "Virtual Stylus disabled");
             ingameSoVirtualStylusAutolyDisabled = true;
 
             // inGame so need calculate address
             isAddressCalculationNeeded = true;
         }
-
-        // VirtualStylus is Enabled when not in game
-        isVirtualStylusEnabled = !isInGame;
 
 
         if (isAddressCalculationNeeded) {
@@ -1109,7 +1104,7 @@ void EmuThread::run()
         if (isFocused) {
 
 
-			if (!isVirtualStylusEnabled) {
+			if (isInGame) {
                 // inGame
 
 

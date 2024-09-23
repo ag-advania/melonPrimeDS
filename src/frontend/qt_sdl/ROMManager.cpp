@@ -1346,7 +1346,7 @@ bool LoadROM(EmuThread* emuthread, QStringList filepath, bool reset)
     isRomDetected = false;
 
     // virtualStylusFlag ON
-    isVirtualStylusEnabled = true;
+    // isVirtualStylusEnabled = true;
     ingameSoVirtualStylusAutolyDisabled = false;
 
 
