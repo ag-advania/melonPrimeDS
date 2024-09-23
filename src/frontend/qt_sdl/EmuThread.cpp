@@ -1123,7 +1123,7 @@ void EmuThread::run()
 
                 // Load the custom font
                 QFontDatabase fontDB;
-                int fontId = fontDB.addApplicationFont("melonPrime/Metroid Prime Hunters.fon");
+                int fontId = fontDB.addApplicationFont(":/melonPrime/Metroid Prime Hunters.fon");
                 if (fontId != -1) {
                     QString family = fontDB.applicationFontFamilies(fontId).at(0);
                     QFont font1(family, 8);
