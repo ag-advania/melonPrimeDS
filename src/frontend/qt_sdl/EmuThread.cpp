@@ -1187,9 +1187,27 @@ void EmuThread::run()
                 Top_paint->setRenderHint(QPainter::TextAntialiasing, false);
 
                 // Draw HP and ammo information
-                Top_paint->drawText(QPoint(4, 188), (std::string("HP ") + std::to_string(NDS->ARM9Read8(0x020DB06E))).c_str());
+                // HPのアドレスから現在のHPを取得.
+                uint8_t currentHP = NDS->ARM9Read8(0x020DB06E);
+
+                // HPが25以下の場合は赤色、そうでなければ白色に設定.
+                if (currentHP <= 25) {
+                    Top_paint->setPen(QColor(255, 0, 0)); // 赤色のペンを設定 (RGBで赤).
+                }
+                else {
+                    Top_paint->setPen(QColor(255, 255, 255)); // 白色のペンを設定 (RGBで白).
+                }
+
+                // 描画用のテキストを表示 (HP値を10進数で表示).
+                Top_paint->drawText(QPoint(4, 188), (std::string("HP ") + std::to_string(currentHP)).c_str());
+
+                // Missile Ammo
+                Top_paint->setPen(Qt::white);
                 Top_paint->drawText(QPoint(164, 188), (std::string("Miss Ammo: ") + std::to_string(NDS->ARM9Read8(0x020DB0E2)/0x0A)).c_str());
 
+
+                // SpecialWeapon Ammo
+                
                 // currentWeaponAddrから現在の武器を取得.
                 uint8_t currentWeapon = NDS->ARM9Read8(currentWeaponAddr);
 
@@ -1202,10 +1220,10 @@ void EmuThread::run()
                 // currentWeaponの値に応じた弾薬消費の割り算 (16進数を使用).
                 switch (currentWeapon) {
                 case 0: // PBの場合.
-                    ammoConsumption = ammoCount / 0x1; // PBは弾薬消費なし.
+                    ammoConsumption = ammoCount; // PBは弾薬消費なし.
                     break;
                 case 1: // ボルドラの場合.
-                    ammoConsumption = ammoCount / 0x1; // ボルドラも消費なし.
+                    ammoConsumption = ammoCount / 0x5;
                     break;
                 case 2: // ミサイルの場合.
                     ammoConsumption = ammoCount / 0xA; // ミサイルの弾薬消費 (10進数で10).
@@ -1226,23 +1244,25 @@ void EmuThread::run()
                     ammoConsumption = ammoCount / 0xA; // ショッコの弾薬消費 (10進数で10).
                     break;
                 case 8: // オメガの場合.
-                    ammoConsumption = ammoCount / 0x1; // オメガは弾薬消費なし.
+                    ammoConsumption = 1; // オメガは弾薬消費なし.
                     break;
                 default:
                     ammoConsumption = ammoCount; // 不明な武器の場合、弾薬消費なし.
                     break;
                 }
 
-                // 描画用のテキストを表示 (10進数のフォーマット).
-                Top_paint->drawText(QPoint(164, 178), (std::string("Other Ammo: ") + std::to_string(ammoConsumption)).c_str());
+                if(currentWeapon != 0 && currentWeapon != 2){
+                    // 描画用のテキストを表示 (10進数のフォーマット).
+                    Top_paint->drawText(QPoint(164, 178), (std::string("Other Ammo: ") + std::to_string(ammoConsumption)).c_str());
+                }
 
                 // Check if in alternate form (transformed state)
                 isAltForm = NDS->ARM9Read8(isAltFormAddr) == 0x02;
 
                 
                 if (!isAltForm) {
-
                     // Draw Crosshair:
+
                     // Read crosshair values
                     float crosshairX = NDS->ARM9Read8(0x020DF024);
                     float crosshairY = NDS->ARM9Read8(0x020DF026);
