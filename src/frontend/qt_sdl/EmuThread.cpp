@@ -1301,34 +1301,42 @@ void EmuThread::run()
                 Top_paint->setPen(Qt::white);
                 Top_paint->setRenderHint(QPainter::TextAntialiasing, false);
                 QFont font2(family, 8);
+                font2.setStyleStrategy(QFont::NoAntialias);
                 Top_paint->setFont(font2);
                 Top_paint->drawText(QPoint(4, 54), QString::fromStdString("Size 8 ABCDEFGHI_+- "));
 
                 QFont font3(family, 7);
+                font3.setStyleStrategy(QFont::NoAntialias);
                 Top_paint->setFont(font3);
                 Top_paint->drawText(QPoint(4, 34), QString::fromStdString("Size 7 ABCDEFGHI_+- "));
 
                 QFont font4(family, 6);
+                font4.setStyleStrategy(QFont::NoAntialias);
                 Top_paint->setFont(font4);
                 Top_paint->drawText(QPoint(4, 24), QString::fromStdString("Size 6 ABCDEFGHI_+- "));
 
                 QFont font5(family, 5);
+                font5.setStyleStrategy(QFont::NoAntialias);
                 Top_paint->setFont(font5);
                 Top_paint->drawText(QPoint(4, 14), QString::fromStdString("Size 5 ABCDEFGHI_+- "));
 
                 QFont font6(family, 9);
+                font6.setStyleStrategy(QFont::NoAntialias);
                 Top_paint->setFont(font6);
                 Top_paint->drawText(QPoint(4, 74), QString::fromStdString("Size 9 ABCDEFGHI_+- "));
 
                 QFont font7(family, 10);
+                font7.setStyleStrategy(QFont::NoAntialias);
                 Top_paint->setFont(font7);
                 Top_paint->drawText(QPoint(4, 94), QString::fromStdString("Size 10 ABCDEFGHI_+- "));
 
                 QFont font8(family, 11);
+                font8.setStyleStrategy(QFont::NoAntialias);
                 Top_paint->setFont(font8);
                 Top_paint->drawText(QPoint(4, 114), QString::fromStdString("Size 11 ABCDEFGHI_+- "));
 
                 QFont font9(family, 12);
+                font9.setStyleStrategy(QFont::NoAntialias);
                 Top_paint->setFont(font9);
                 Top_paint->drawText(QPoint(4, 144), QString::fromStdString("Size 12 ABCDEFGHI_+- "));
 
