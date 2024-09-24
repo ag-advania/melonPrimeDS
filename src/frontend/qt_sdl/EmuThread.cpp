@@ -1069,7 +1069,7 @@ void EmuThread::run()
             mainWindow->osdAddMessage(0, "Font loading failed");
         }
     QString family = fontDB.applicationFontFamilies(fontId).at(0);
-    QFont font1(family, 6);
+    QFont font1(family, 8);
 
     // Disable anti-aliasing for the font.
     font1.setStyleStrategy(QFont::NoAntialias);
