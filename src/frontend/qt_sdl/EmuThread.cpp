@@ -1016,61 +1016,76 @@ void EmuThread::run()
 
 
     QFontDatabase fontDB;
-    // Set the list of font file paths.
-    QStringList fontPaths = {
-        "mph.fon",
-        "mph.ttf"
-    };
+    // // Set the list of font file paths.
+    // QStringList fontPaths = {
+    //     "mph.fon",
+    //     "mph.ttf"
+    // };
 
-    // Lambda function to load a font from memory and add it.
-    auto loadFont = [&](const QString& path) {
-        // Combine the application directory path with the font file path.
-        QString fullPath = QCoreApplication::applicationDirPath() + "/" + path;
+    // // Lambda function to load a font from memory and add it.
+    // auto loadFont = [&](const QString& path) {
+    //     // Combine the application directory path with the font file path.
+    //     QString fullPath = QCoreApplication::applicationDirPath() + "/" + path;
 
-        // Open the font file.
-        QFile fontFile(fullPath);
-        if (!fontFile.open(QIODevice::ReadOnly)) {
-            // Display an error message if the font file cannot be opened.
-            mainWindow->osdAddMessage(0, QString("Failed to open font file: %1").arg(fullPath).toStdString().c_str());
-            return -1;
-        }
+    //     // Open the font file.
+    //     QFile fontFile(fullPath);
+    //     if (!fontFile.open(QIODevice::ReadOnly)) {
+    //         // Display an error message if the font file cannot be opened.
+    //         mainWindow->osdAddMessage(0, QString("Failed to open font file: %1").arg(fullPath).toStdString().c_str());
+    //         return -1;
+    //     }
 
-        // Read the entire font file into memory.
-        QByteArray fontData = fontFile.readAll();
-        fontFile.close();
+    //     // Read the entire font file into memory.
+    //     QByteArray fontData = fontFile.readAll();
+    //     fontFile.close();
 
-        // Add the font from memory.
-        int fontId = fontDB.addApplicationFontFromData(fontData);
-        if (fontId == -1) {
+    //     // Add the font from memory.
+    //     int fontId = fontDB.addApplicationFontFromData(fontData);
+    //     if (fontId == -1) {
+    //         // Display an error message if the font loading failed.
+    //         mainWindow->osdAddMessage(0, QString("Font load failed from data at path: %1").arg(fullPath).toStdString().c_str());
+    //     }
+    //     else {
+    //         // Get the font family name of the loaded font.
+    //         QString family = fontDB.applicationFontFamilies(fontId).at(0);
+    //         QFont font1(family, 6);
+
+    //         // Disable anti-aliasing for the font.
+    //         font1.setStyleStrategy(QFont::NoAntialias);
+
+    //         // Set the font for the painter object.
+    //         Top_paint->setFont(font1);
+
+    //         // Display a success message.
+    //         mainWindow->osdAddMessage(0, QString("Font loaded from data at path: %1").arg(fullPath).toStdString().c_str());
+    //     }
+
+    //     return fontId;
+    //     };
+
+    int fontId = QFontDatabase::addApplicationFont(":/mph-font");
+    if (fontId == -1) {
             // Display an error message if the font loading failed.
-            mainWindow->osdAddMessage(0, QString("Font load failed from data at path: %1").arg(fullPath).toStdString().c_str());
+            mainWindow->osdAddMessage(0, "Font loading failed");
         }
-        else {
-            // Get the font family name of the loaded font.
-            QString family = fontDB.applicationFontFamilies(fontId).at(0);
-            QFont font1(family, 6);
+    QString family = fontDB.applicationFontFamilies(fontId).at(0);
+    QFont font1(family, 6);
 
-            // Disable anti-aliasing for the font.
-            font1.setStyleStrategy(QFont::NoAntialias);
+    // Disable anti-aliasing for the font.
+    font1.setStyleStrategy(QFont::NoAntialias);
 
-            // Set the font for the painter object.
-            Top_paint->setFont(font1);
+    // Set the font for the painter object.
+    Top_paint->setFont(font1);
 
-            // Display a success message.
-            mainWindow->osdAddMessage(0, QString("Font loaded from data at path: %1").arg(fullPath).toStdString().c_str());
-        }
 
-        return fontId;
-        };
-
-    // Try each font path sequentially.
-    int fontId = -1;
-    for (const QString& path : fontPaths) {
-        fontId = loadFont(path);
-        if (fontId != -1) {
-            break; // Exit the loop if a font is successfully loaded.
-        }
-    }
+    // // Try each font path sequentially.
+    // int fontId = -1;
+    // for (const QString& path : fontPaths) {
+    //     fontId = loadFont(path);
+    //     if (fontId != -1) {
+    //         break; // Exit the loop if a font is successfully loaded.
+    //     }
+    // }
 
 
 
