@@ -1211,7 +1211,43 @@ void EmuThread::run()
 
 
                 // OSD Testing
+                
+                QFont font1(family, 8);
+                Top_paint->setFont(font1);
+                Top_paint->drawText(QPoint(14, 188), (std::string("Size 8 ABCDEFGHI_+- ") + std::to_string(currentHP)).c_str());
 
+                QFont font1(family, 7);
+                Top_paint->setFont(font1);
+                Top_paint->drawText(QPoint(24, 188), (std::string("Size 7 ABCDEFGHI_+- ") + std::to_string(currentHP)).c_str());
+
+                QFont font1(family, 6);
+                Top_paint->setFont(font1);
+                Top_paint->drawText(QPoint(34, 188), (std::string("Size 6 ABCDEFGHI_+- ") + std::to_string(currentHP)).c_str());
+
+                QFont font1(family, 5);
+                Top_paint->setFont(font1);
+                Top_paint->drawText(QPoint(34, 188), (std::string("Size 5 ABCDEFGHI_+- ") + std::to_string(currentHP)).c_str());
+
+                QFont font1(family, 9);
+                Top_paint->setFont(font1);
+                Top_paint->drawText(QPoint(44, 188), (std::string("Size 9 ABCDEFGHI_+- ") + std::to_string(currentHP)).c_str());
+
+                QFont font1(family, 10);
+                Top_paint->setFont(font1);
+                Top_paint->drawText(QPoint(64, 188), (std::string("Size 10 ABCDEFGHI_+- ") + std::to_string(currentHP)).c_str());
+
+                QFont font1(family, 11);
+                Top_paint->setFont(font1);
+                Top_paint->drawText(QPoint(94, 188), (std::string("Size 11 ABCDEFGHI_+- ") + std::to_string(currentHP)).c_str());
+
+                QFont font1(family, 12);
+                Top_paint->setFont(font1);
+                Top_paint->drawText(QPoint(114, 188), (std::string("Size 12 ABCDEFGHI_+- ") + std::to_string(currentHP)).c_str());
+
+
+
+
+                // OSD testing end
 
 
 
