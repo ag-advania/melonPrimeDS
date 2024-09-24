@@ -2,6 +2,6 @@
 <RCC version="1.0">
 	<qresource>
 		<file alias="melon-icon">icon/melon_256x256.png</file>
-		<file alias="mph-font">fonts/mph.ttf</file>
+		<file alias="mph-font">fonts/mph.fon</file>
 	</qresource>
 </RCC>
