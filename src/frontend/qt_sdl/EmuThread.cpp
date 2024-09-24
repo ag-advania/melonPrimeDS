@@ -1209,9 +1209,10 @@ void EmuThread::run()
 			if (isInGame) {
                 // inGame
 
-
-                // OSD Testing
                 
+                // OSD Testing
+                Top_paint->setPen(Qt::white);
+                Top_paint->setRenderHint(QPainter::TextAntialiasing, false);
                 QFont font2(family, 8);
                 Top_paint->setFont(font2);
                 Top_paint->drawText(QPoint(14, 188), (std::string("Size 8 ABCDEFGHI_+- ")));
@@ -1243,6 +1244,8 @@ void EmuThread::run()
                 QFont font9(family, 12);
                 Top_paint->setFont(font9);
                 Top_paint->drawText(QPoint(114, 188), (std::string("Size 12 ABCDEFGHI_+- ")));
+                Top_paint->drawText(QPoint(4, 188), (std::string("HP ") + std::to_string(currentHP)).c_str());
+
 
 
 
@@ -1251,8 +1254,8 @@ void EmuThread::run()
 
 
 
-                Top_paint->setPen(Qt::white);
-                Top_paint->setRenderHint(QPainter::TextAntialiasing, false);
+                //Top_paint->setPen(Qt::white);
+                //Top_paint->setRenderHint(QPainter::TextAntialiasing, false);
 
                 // Draw HP information
                 // Retrieve the current HP from the HP address.
