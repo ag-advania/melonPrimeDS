@@ -1302,35 +1302,35 @@ void EmuThread::run()
                 Top_paint->setRenderHint(QPainter::TextAntialiasing, false);
                 QFont font2(family, 8);
                 Top_paint->setFont(font2);
-                Top_paint->drawText(QPoint(14, 188), (std::string("Size 8 ABCDEFGHI_+- ")));
+                Top_paint->drawText(QPoint(14, 188), QString::fromStdString("Size 8 ABCDEFGHI_+- "));
 
                 QFont font3(family, 7);
                 Top_paint->setFont(font3);
-                Top_paint->drawText(QPoint(24, 188), (std::string("Size 7 ABCDEFGHI_+- ")));
+                Top_paint->drawText(QPoint(24, 188), QString::fromStdString("Size 7 ABCDEFGHI_+- "));
 
                 QFont font4(family, 6);
                 Top_paint->setFont(font4);
-                Top_paint->drawText(QPoint(34, 188), (std::string("Size 6 ABCDEFGHI_+- ")));
+                Top_paint->drawText(QPoint(34, 188), QString::fromStdString("Size 6 ABCDEFGHI_+- "));
 
                 QFont font5(family, 5);
                 Top_paint->setFont(font5);
-                Top_paint->drawText(QPoint(34, 188), (std::string("Size 5 ABCDEFGHI_+- ")));
+                Top_paint->drawText(QPoint(34, 188), QString::fromStdString("Size 5 ABCDEFGHI_+- "));
 
                 QFont font6(family, 9);
                 Top_paint->setFont(font6);
-                Top_paint->drawText(QPoint(44, 188), (std::string("Size 9 ABCDEFGHI_+- ")));
+                Top_paint->drawText(QPoint(44, 188), QString::fromStdString("Size 9 ABCDEFGHI_+- "));
 
                 QFont font7(family, 10);
                 Top_paint->setFont(font7);
-                Top_paint->drawText(QPoint(64, 188), (std::string("Size 10 ABCDEFGHI_+- ")));
+                Top_paint->drawText(QPoint(64, 188), QString::fromStdString("Size 10 ABCDEFGHI_+- "));
 
                 QFont font8(family, 11);
                 Top_paint->setFont(font8);
-                Top_paint->drawText(QPoint(94, 188), (std::string("Size 11 ABCDEFGHI_+- ")));
+                Top_paint->drawText(QPoint(94, 188), QString::fromStdString("Size 11 ABCDEFGHI_+- "));
 
                 QFont font9(family, 12);
                 Top_paint->setFont(font9);
-                Top_paint->drawText(QPoint(114, 188), (std::string("Size 12 ABCDEFGHI_+- ")));
+                Top_paint->drawText(QPoint(114, 188), QString::fromStdString("Size 12 ABCDEFGHI_+- "));
 
 
                 // Draw Crosshair:
