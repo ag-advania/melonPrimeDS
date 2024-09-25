@@ -881,7 +881,6 @@ void ScreenPanelGL::initOpenGL()
         );
     }
 
-    printf(":End\n");
 }
 
 void ScreenPanelGL::deinitOpenGL()
