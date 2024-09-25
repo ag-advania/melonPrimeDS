@@ -996,6 +996,7 @@ void EmuThread::run()
     bool isInGame;
     bool isInAdventure;
     bool isSamus;
+    bool isTransforming;
 
     // added for HUD
     uint32_t currentWeaponAddr;
@@ -1016,52 +1017,7 @@ void EmuThread::run()
 
 
     QFontDatabase fontDB;
-    // // Set the list of font file paths.
-    // QStringList fontPaths = {
-    //     "mph.fon",
-    //     "mph.ttf"
-    // };
 
-    // // Lambda function to load a font from memory and add it.
-    // auto loadFont = [&](const QString& path) {
-    //     // Combine the application directory path with the font file path.
-    //     QString fullPath = QCoreApplication::applicationDirPath() + "/" + path;
-
-    //     // Open the font file.
-    //     QFile fontFile(fullPath);
-    //     if (!fontFile.open(QIODevice::ReadOnly)) {
-    //         // Display an error message if the font file cannot be opened.
-    //         mainWindow->osdAddMessage(0, QString("Failed to open font file: %1").arg(fullPath).toStdString().c_str());
-    //         return -1;
-    //     }
-
-    //     // Read the entire font file into memory.
-    //     QByteArray fontData = fontFile.readAll();
-    //     fontFile.close();
-
-    //     // Add the font from memory.
-    //     int fontId = fontDB.addApplicationFontFromData(fontData);
-    //     if (fontId == -1) {
-    //         // Display an error message if the font loading failed.
-    //         mainWindow->osdAddMessage(0, QString("Font load failed from data at path: %1").arg(fullPath).toStdString().c_str());
-    //     }
-    //     else {
-    //         // Get the font family name of the loaded font.
-    //         QString family = fontDB.applicationFontFamilies(fontId).at(0);
-    //         QFont font1(family, 6);
-
-    //         // Disable anti-aliasing for the font.
-    //         font1.setStyleStrategy(QFont::NoAntialias);
-
-    //         // Set the font for the painter object.
-    //         Top_paint->setFont(font1);
-
-    //         // Display a success message.
-    //         mainWindow->osdAddMessage(0, QString("Font loaded from data at path: %1").arg(fullPath).toStdString().c_str());
-    //     }
-
-    //     return fontId;
-    //     };
 
     int fontId = QFontDatabase::addApplicationFont(":/mph-font");
     if (fontId == -1) {
@@ -1069,25 +1025,14 @@ void EmuThread::run()
             mainWindow->osdAddMessage(0, "Font loading failed");
         }
     QString family = fontDB.applicationFontFamilies(fontId).at(0);
-    QFont font1(family, 8);
+    QFont font1(family, 6);
 
     // Disable anti-aliasing for the font.
     font1.setStyleStrategy(QFont::NoAntialias);
+    font1.setHintingPreference(QFont::HintingPreference::PreferFullHinting);
 
     // Set the font for the painter object.
     Top_paint->setFont(font1);
-
-
-    // // Try each font path sequentially.
-    // int fontId = -1;
-    // for (const QString& path : fontPaths) {
-    //     fontId = loadFont(path);
-    //     if (fontId != -1) {
-    //         break; // Exit the loop if a font is successfully loaded.
-    //     }
-    // }
-
-
 
 
     while (EmuRunning != emuStatus_Exit) {
@@ -1298,6 +1243,7 @@ void EmuThread::run()
                 }
 
                 // OSD Testing
+                /*
                 Top_paint->setPen(Qt::white);
                 Top_paint->setRenderHint(QPainter::TextAntialiasing, false);
                 QFont font2(family, 5);
@@ -1323,15 +1269,19 @@ void EmuThread::run()
                 font5.setHintingPreference(QFont::HintingPreference::PreferFullHinting);
                 Top_paint->setFont(font5);
                 Top_paint->drawText(QPoint(4, 14), QString::fromStdString("Size 2 ABCDEFGHI_+- "));
-
+                */
         
                 // Draw Crosshair:
 
                 // Check if in alternate form (transformed state)
                 isAltForm = NDS->ARM9Read8(isAltFormAddr) == 0x02;
 
+                // Check if the upper 4 bits are odd (1 or 3)
+                // this is for fixing issue: Shooting and transforming become impossible, when changing weapons at high speed while transitioning from transformed to normal form.
+                isTransforming = NDS->ARM9Read8(jumpFlagAddr) & 0x10;
+
                 
-                if (!isAltForm) {
+                if (!isAltForm && !isTransforming) {
                     // Read crosshair values
 //                    float crosshairX = NDS->ARM9Read8(0x020DF024);
 //                    float crosshairY = NDS->ARM9Read8(0x020DF026);
@@ -1484,7 +1434,7 @@ void EmuThread::run()
 
                     // Check if the upper 4 bits are odd (1 or 3)
                     // this is for fixing issue: Shooting and transforming become impossible, when changing weapons at high speed while transitioning from transformed to normal form.
-                    bool isTransforming = currentFlags & 0x10;
+                    //bool isTransforming = currentFlags & 0x10;
 
                     uint8_t jumpFlag = currentFlags & 0x0F;  // Get the lower 4 bits
                     //mainWindow->osdAddMessage(0, ("JumpFlag:" + std::string(1, "0123456789ABCDEF"[NDS->ARM9Read8(jumpFlagAddr) & 0x0F])).c_str());
@@ -1492,7 +1442,7 @@ void EmuThread::run()
                     bool isRestoreNeeded = false;
 
                     // Check if in alternate form (transformed state)
-                    isAltForm = NDS->ARM9Read8(isAltFormAddr) == 0x02;
+                    // isAltForm = NDS->ARM9Read8(isAltFormAddr) == 0x02;
 
                     // If not jumping (jumpFlag == 0) and in normal form, temporarily set to jumped state (jumpFlag == 1)
                     if (!isTransforming && jumpFlag == 0 && !isAltForm) {
@@ -1588,7 +1538,7 @@ void EmuThread::run()
                 // Morph ball boost
                 if (isSamus && Input::HotkeyDown(HK_MetroidHoldMorphBallBoost))
                 {
-                    isAltForm = NDS->ARM9Read8(isAltFormAddr) == 0x02;
+                    // isAltForm = NDS->ARM9Read8(isAltFormAddr) == 0x02;
                     if (isAltForm) {
                         uint8_t boostGaugeValue = NDS->ARM9Read8(boostGaugeAddr);
                         bool isBoosting = NDS->ARM9Read8(isBoostingAddr) != 0x00;
@@ -1757,7 +1707,7 @@ void EmuThread::run()
 		}// END of if(isFocused)
 
         // Touch again for aiming
-        isAltForm = NDS->ARM9Read8(isAltFormAddr) == 0x02;
+        // isAltForm = NDS->ARM9Read8(isAltFormAddr) == 0x02;
         if (!wasLastFrameFocused || enableAim) {
             // touch again for aiming
             // When you return to melonPrimeDS
