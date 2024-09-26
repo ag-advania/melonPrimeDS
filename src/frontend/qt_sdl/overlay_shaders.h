@@ -51,7 +51,7 @@ const inline char* kScreenFS_overlay = R"(#version 140
         if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) {
             oColor = vec4(0.0, 0.0, 0.0, 0.0);
         } else {
-            oColor = pixel;
+            oColor = pixel.bgra;
         }
     }
 )";
