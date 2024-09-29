@@ -1238,7 +1238,7 @@ void EmuThread::run()
                 if (currentWeapon != 0 && currentWeapon != 2) {
                     // Display the text to draw (ammo consumption value in decimal format).
                     Top_paint->drawText(QPoint(164, 178), (std::string("other Ammo: ") + std::to_string(ammoConsumption)).c_str());
-                    Top_paint->drawImage(QPoint(128, 188), image);
+                    Top_paint->drawImage(QPoint(128, 168), image);
                 }
 
         
