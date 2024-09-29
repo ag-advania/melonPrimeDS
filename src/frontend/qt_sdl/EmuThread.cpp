@@ -1191,42 +1191,43 @@ void EmuThread::run()
                 uint8_t ammoConsumption = ammoCount; // Initially use the value as is.
 
                 // Apply ammo consumption logic based on the currentWeapon value (use hexadecimal division).
+                QImage image; // Declare QImage
                 switch (currentWeapon) {
                 case 0: // For PB.
                     ammoConsumption = ammoCount; // PB does not consume ammo.
-                    QImage image(":/mph-icon-pb");
+                    image = QImage(":/mph-icon-pb");
                     break;
                 case 1: // For Voltra.
                     ammoConsumption = ammoCount / 0x5;
-                    QImage image(":/mph-icon-volt");
+                    image = QImage(":/mph-icon-volt");
                     break;
                 case 2: // For Missiles.
                     ammoConsumption = ammoCount / 0xA; // Missiles consume ammo in decimal (10).
-                    QImage image(":/mph-icon-missile");
+                    image = QImage(":/mph-icon-missile");
                     break;
                 case 3: // For Battle Hammer.
                     ammoConsumption = ammoCount / 0x4; // Battle Hammer consumes ammo in decimal (4).
-                    QImage image(":/mph-icon-battlehammer");
+                    image = QImage(":/mph-icon-battlehammer");
                     break;
                 case 4: // For Imperialist.
                     ammoConsumption = ammoCount / 0x14; // Imperialist consumes ammo in decimal (20).
-                    QImage image(":/mph-icon-imperialist");
+                    image = QImage(":/mph-icon-imperialist");
                     break;
                 case 5: // For Judicator.
                     ammoConsumption = ammoCount / 0x5; // Judicator consumes ammo in decimal (5).
-                    QImage image(":/mph-icon-judicator");
+                    image = QImage(":/mph-icon-judicator");
                     break;
                 case 6: // For Magmaul.
                     ammoConsumption = ammoCount / 0xA; // Magmaul consumes ammo in decimal (10).
-                    QImage image(":/mph-icon-magmaul");
+                    image = QImage(":/mph-icon-magmaul");
                     break;
                 case 7: // For Shock Coil.
                     ammoConsumption = ammoCount / 0xA; // Shock Coil consumes ammo in decimal (10).
-                    QImage image(":/mph-icon-shock");
+                    image = QImage(":/mph-icon-shock");
                     break;
                 case 8: // For Omega Cannon.
                     ammoConsumption = 1; // Omega Cannon does not consume ammo.
-                    QImage image(":/mph-icon-omega");
+                    image = QImage(":/mph-icon-omega");
                     break;
                 default:
                     ammoConsumption = ammoCount; // If unknown weapon, do not change ammo consumption.
@@ -1237,7 +1238,7 @@ void EmuThread::run()
                 if (currentWeapon != 0 && currentWeapon != 2) {
                     // Display the text to draw (ammo consumption value in decimal format).
                     Top_paint->drawText(QPoint(164, 178), (std::string("other Ammo: ") + std::to_string(ammoConsumption)).c_str());
-                    Top_paint->drawImage(QPoint(128, 188), image)
+                    Top_paint->drawImage(QPoint(128, 188), image);
                 }
 
         
