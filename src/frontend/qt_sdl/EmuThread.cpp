@@ -1154,18 +1154,6 @@ void EmuThread::run()
 			if (isInGame) {
                 // inGame
 
-                
-        
-                
-
-
-                // OSD testing end
-
-
-
-                //Top_paint->setPen(Qt::white);
-                //Top_paint->setRenderHint(QPainter::TextAntialiasing, false);
-
                 // Draw HP information
                 // Retrieve the current HP from the HP address.
                 uint8_t currentHP = NDS->ARM9Read16(currentHpAddr);
@@ -1179,7 +1167,7 @@ void EmuThread::run()
                 }
 
                 // Display the text to draw (display HP value in decimal).
-                Top_paint->drawText(QPoint(4, 188), (std::string("HP ") + std::to_string(currentHP)).c_str());
+                Top_paint->drawText(QPoint(4, 188), (std::string("hp ") + std::to_string(currentHP)).c_str());
 
 
 
@@ -1187,8 +1175,8 @@ void EmuThread::run()
 
                 Top_paint->setPen(Qt::white);
                 // Display the missile ammo text (divide value by 10 in decimal format).
-                Top_paint->drawText(QPoint(164, 188), (std::string("Miss Ammo: ") + std::to_string(NDS->ARM9Read16(currentAmmoMissileAddr) / 0x0A)).c_str());
-
+                Top_paint->drawText(QPoint(164, 188), (std::string("miss Ammo: ") + std::to_string(NDS->ARM9Read16(currentAmmoMissileAddr) / 0x0A)).c_str());
+                
 
 
                 // SpecialWeapon Ammo
@@ -1206,30 +1194,39 @@ void EmuThread::run()
                 switch (currentWeapon) {
                 case 0: // For PB.
                     ammoConsumption = ammoCount; // PB does not consume ammo.
+                    QImage image(":/mph-icon-pb");
                     break;
                 case 1: // For Voltra.
                     ammoConsumption = ammoCount / 0x5;
+                    QImage image(":/mph-icon-volt");
                     break;
                 case 2: // For Missiles.
                     ammoConsumption = ammoCount / 0xA; // Missiles consume ammo in decimal (10).
+                    QImage image(":/mph-icon-missile");
                     break;
                 case 3: // For Battle Hammer.
                     ammoConsumption = ammoCount / 0x4; // Battle Hammer consumes ammo in decimal (4).
+                    QImage image(":/mph-icon-battlehammer");
                     break;
                 case 4: // For Imperialist.
                     ammoConsumption = ammoCount / 0x14; // Imperialist consumes ammo in decimal (20).
+                    QImage image(":/mph-icon-imperialist");
                     break;
                 case 5: // For Judicator.
                     ammoConsumption = ammoCount / 0x5; // Judicator consumes ammo in decimal (5).
+                    QImage image(":/mph-icon-judicator");
                     break;
                 case 6: // For Magmaul.
                     ammoConsumption = ammoCount / 0xA; // Magmaul consumes ammo in decimal (10).
+                    QImage image(":/mph-icon-magmaul");
                     break;
                 case 7: // For Shock Coil.
                     ammoConsumption = ammoCount / 0xA; // Shock Coil consumes ammo in decimal (10).
+                    QImage image(":/mph-icon-shock");
                     break;
                 case 8: // For Omega Cannon.
                     ammoConsumption = 1; // Omega Cannon does not consume ammo.
+                    QImage image(":/mph-icon-omega");
                     break;
                 default:
                     ammoConsumption = ammoCount; // If unknown weapon, do not change ammo consumption.
@@ -1239,37 +1236,10 @@ void EmuThread::run()
                 // If the weapon is not PB or Missiles, draw the ammo consumption text.
                 if (currentWeapon != 0 && currentWeapon != 2) {
                     // Display the text to draw (ammo consumption value in decimal format).
-                    Top_paint->drawText(QPoint(164, 178), (std::string("Other Ammo: ") + std::to_string(ammoConsumption)).c_str());
+                    Top_paint->drawText(QPoint(164, 178), (std::string("other Ammo: ") + std::to_string(ammoConsumption)).c_str());
+                    Top_paint->drawImage(QPoint(128, 188), image)
                 }
 
-                // OSD Testing
-                /*
-                Top_paint->setPen(Qt::white);
-                Top_paint->setRenderHint(QPainter::TextAntialiasing, false);
-                QFont font2(family, 5);
-                font2.setStyleStrategy(QFont::NoAntialias);
-                font2.setHintingPreference(QFont::HintingPreference::PreferFullHinting);
-                Top_paint->setFont(font2);
-                Top_paint->drawText(QPoint(4, 54), QString::fromStdString("Size 5 ABCDEFGHI_+- "));
-
-                QFont font3(family, 4);
-                font3.setStyleStrategy(QFont::NoAntialias);
-                font3.setHintingPreference(QFont::HintingPreference::PreferFullHinting);
-                Top_paint->setFont(font3);
-                Top_paint->drawText(QPoint(4, 34), QString::fromStdString("Size 4 ABCDEFGHI_+- "));
-
-                QFont font4(family, 3);
-                font4.setStyleStrategy(QFont::NoAntialias);
-                font4.setHintingPreference(QFont::HintingPreference::PreferFullHinting);
-                Top_paint->setFont(font4);
-                Top_paint->drawText(QPoint(4, 24), QString::fromStdString("Size 3 ABCDEFGHI_+- "));
-
-                QFont font5(family, 2);
-                font5.setStyleStrategy(QFont::NoAntialias);
-                font5.setHintingPreference(QFont::HintingPreference::PreferFullHinting);
-                Top_paint->setFont(font5);
-                Top_paint->drawText(QPoint(4, 14), QString::fromStdString("Size 2 ABCDEFGHI_+- "));
-                */
         
                 // Draw Crosshair:
 
