@@ -348,6 +348,7 @@ melonDS::u32 aimXAddr;
 melonDS::u32 aimYAddr;
 melonDS::u32 isInAdventureAddr;
 melonDS::u32 isMapOrUserActionPausedAddr; // for issue in AdventureMode, Aim Stopping when SwitchingWeapon. 
+melonDS::u32 isTransformingtoAltAddr;
 
 bool isAltForm;
 
@@ -988,7 +989,6 @@ void EmuThread::run()
     uint32_t weaponChangeAddr;
     uint32_t selectedWeaponAddr;
     uint32_t jumpFlagAddr;
-    uint32_t isTransformingtoAltAddr;
 
     uint32_t boostGaugeAddr;
     uint32_t isBoostingAddr;
