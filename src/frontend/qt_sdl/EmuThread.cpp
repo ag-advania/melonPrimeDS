@@ -1252,7 +1252,7 @@ void EmuThread::run()
                 // Check if the upper 4 bits are odd (1 or 3)
                 // this is for fixing issue: Shooting and transforming become impossible, when changing weapons at high speed while transitioning from transformed to normal form.
                 isTransforming = NDS->ARM9Read8(jumpFlagAddr) & 0x10;
-                isTransformingtoAlt = NDS->ARM9Read8(isTransformingtoAltAddr) == 0x84;
+                isTransformingtoAlt = NDS->ARM9Read8(isTransformingtoAltAddr) == 0x228;
                 
                 if (!isAltForm && !isTransformingtoAlt) {
                     // Read crosshair values
