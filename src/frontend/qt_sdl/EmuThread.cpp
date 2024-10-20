@@ -1211,6 +1211,7 @@ void EmuThread::run()
                     ammoConsumption = ammoCount / 0xA; // Missiles consume ammo in decimal (10).
                     image = QImage(":/mph-icon-missile");
                     Top_paint->drawText(QPoint(10, 165), std::to_string(NDS->ARM9Read16(currentAmmoMissileAddr) / 0x0A)).c_str());
+                    Top_paint->drawImage(QPoint(5, 165), image);
                     break;
                 case 3: // For Battle Hammer.
                     ammoConsumption = ammoCount / 0x4; // Battle Hammer consumes ammo in decimal (4).
