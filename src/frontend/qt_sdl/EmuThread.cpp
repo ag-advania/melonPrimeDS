@@ -1181,7 +1181,7 @@ void EmuThread::run()
 
                 Top_paint->setPen(Qt::white);
                 // Display the missile ammo text (divide value by 10 in decimal format).
-                Top_paint->drawText(QPoint(164, 188), (std::string("miss Ammo: ") + std::to_string(NDS->ARM9Read16(currentAmmoMissileAddr) / 0x0A)).c_str());
+                
                 
 
 
@@ -1240,12 +1240,9 @@ void EmuThread::run()
                     break;
                 }
 
-                // If the weapon is not PB or Missiles, draw the ammo consumption text.
-                if (currentWeapon != 0 && currentWeapon != 2) {
-                    // Display the text to draw (ammo consumption value in decimal format).
-                    Top_paint->drawText(QPoint(164, 178), (std::string("other Ammo: ") + std::to_string(ammoConsumption)).c_str());
-                    Top_paint->drawImage(QPoint(128, 168), image);
-                }
+                // Display the text to draw (ammo consumption value in decimal format).
+                Top_paint->drawText(QPoint(164, 178), (std::string("Ammo: ") + std::to_string(ammoConsumption)).c_str());
+                Top_paint->drawImage(QPoint(8, 165), image);
 
         
                 // Draw Crosshair:
