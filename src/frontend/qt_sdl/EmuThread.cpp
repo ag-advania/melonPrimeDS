@@ -368,11 +368,11 @@ void detectRomAndSetAddresses() {
         baseJumpFlagAddr = baseSelectedWeaponAddr - 0xA;
         baseAimXAddr = 0x020DEDA6;
         baseAimYAddr = 0x020DEDAE;
+        isTransformingtoAltAddr = 0x020F1328;
         isInAdventureAddr = 0x020E83BC; // Read8 0x02: ADV, 0x03: Multi
         isMapOrUserActionPausedAddr = 0x020FBF18; // 0x00000001: true, 0x00000000 false. Read8 is enough though.
         isRomDetected = true;
         mainWindow->osdAddMessage(0, "Rom detected: US1.1");
-
         break;
 
     case RomVersions::USA1_0:
@@ -988,6 +988,7 @@ void EmuThread::run()
     uint32_t weaponChangeAddr;
     uint32_t selectedWeaponAddr;
     uint32_t jumpFlagAddr;
+    uint32_t isTransformingtoAltAddr;
 
     uint32_t boostGaugeAddr;
     uint32_t isBoostingAddr;
@@ -997,6 +998,7 @@ void EmuThread::run()
     bool isInAdventure;
     bool isSamus;
     bool isTransforming;
+    bool isTransformingtoAlt;
 
     // added for HUD
     uint32_t currentWeaponAddr;
@@ -1250,9 +1252,9 @@ void EmuThread::run()
                 // Check if the upper 4 bits are odd (1 or 3)
                 // this is for fixing issue: Shooting and transforming become impossible, when changing weapons at high speed while transitioning from transformed to normal form.
                 isTransforming = NDS->ARM9Read8(jumpFlagAddr) & 0x10;
-
+                isTransformingtoAlt = NDS->ARM9Read8(isTransformingtoAltAddr) == 0x84;
                 
-                if (!isAltForm && !isTransforming) {
+                if (!isAltForm && !isTransformingtoAlt) {
                     // Read crosshair values
 //                    float crosshairX = NDS->ARM9Read8(0x020DF024);
 //                    float crosshairY = NDS->ARM9Read8(0x020DF026);
