@@ -1164,12 +1164,13 @@ void EmuThread::run()
                 if (currentHP <= 25) {
                     Top_paint->setPen(QColor(255, 0, 0)); // Set the pen to red (RGB format for red).
                 }
-                if (currentHP <= 50 && currentHP >= 26) {
-                    Top_paint->setPen(QColor(255, 165, 0)); // Set the pen to red (RGB format for red).
+                else if (currentHP <= 50 && currentHP >= 26) {
+                    Top_paint->setPen(QColor(255, 165, 0)); // Set the pen to orange (RGB format for orange).
                 }
                 else {
                     Top_paint->setPen(QColor(255, 255, 255)); // Set the pen to white (RGB format for white).
                 }
+
 
                 // Display the text to draw (display HP value in decimal).
                 Top_paint->drawText(QPoint(4, 188), (std::string("hp ") + std::to_string(currentHP)).c_str());
@@ -1255,13 +1256,13 @@ void EmuThread::run()
                 // Check if the upper 4 bits are odd (1 or 3)
                 // this is for fixing issue: Shooting and transforming become impossible, when changing weapons at high speed while transitioning from transformed to normal form.
                 isTransforming = NDS->ARM9Read8(jumpFlagAddr) & 0x10;
-                isTransformingtoAlt = NDS->ARM9Read8(isTransformingtoAltAddr) == 0xE4;
+                isTransformingtoAlt = NDS->ARM9Read8(isTransformingtoAltAddr) == 0x40;
                 
                 if (!isAltForm && !isTransformingtoAlt) {
                     // Read crosshair values
 //                    float crosshairX = NDS->ARM9Read8(0x020DF024);
 //                    float crosshairY = NDS->ARM9Read8(0x020DF026);
-                    Top_paint->drawText(QPoint(164, 100), (std::string("transforming: ") + std::to_string(isTransformingtoAlt)).c_str());
+                    Top_paint->drawText(QPoint(164, 100), (std::string("transforming: ") + std::to_string(NDS->ARM9Read8(isTransformingtoAltAddr))).c_str());
                     // currently US1.1 only... JP1.0 doesnt work with this addr
                     float crosshairX = NDS->ARM9Read8(baseAimXAddr + 0x27E);
                     float crosshairY = NDS->ARM9Read8(baseAimXAddr + 0x280);
