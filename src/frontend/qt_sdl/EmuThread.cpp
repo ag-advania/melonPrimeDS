@@ -1164,6 +1164,9 @@ void EmuThread::run()
                 if (currentHP <= 25) {
                     Top_paint->setPen(QColor(255, 0, 0)); // Set the pen to red (RGB format for red).
                 }
+                if (currentHP <= 50 && currentHP >= 26) {
+                    Top_paint->setPen(QColor(255, 165, 0)); // Set the pen to red (RGB format for red).
+                }
                 else {
                     Top_paint->setPen(QColor(255, 255, 255)); // Set the pen to white (RGB format for white).
                 }
