@@ -1266,7 +1266,7 @@ void EmuThread::run()
                     // Read crosshair values
 //                    float crosshairX = NDS->ARM9Read8(0x020DF024);
 //                    float crosshairY = NDS->ARM9Read8(0x020DF026);
-                    Top_paint->drawText(QPoint(164, 100), (std::string("transforming: ") + std::to_string(NDS->ARM9Read8(isTransformingtoAlt))).c_str());
+                    //DEBUG: Top_paint->drawText(QPoint(164, 100), (std::to_string(NDS->ARM9Read8(isTransformingtoAlt))).c_str());
                     // currently US1.1 only... JP1.0 doesnt work with this addr
                     float crosshairX = NDS->ARM9Read8(baseAimXAddr + 0x27E);
                     float crosshairY = NDS->ARM9Read8(baseAimXAddr + 0x280);
