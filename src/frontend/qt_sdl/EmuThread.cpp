@@ -348,7 +348,7 @@ melonDS::u32 aimXAddr;
 melonDS::u32 aimYAddr;
 melonDS::u32 isInAdventureAddr;
 melonDS::u32 isMapOrUserActionPausedAddr; // for issue in AdventureMode, Aim Stopping when SwitchingWeapon. 
-melonDS::u32 isHUDdisplayedAddr;
+melonDS::u32 isTransformingtoAltAddr;
 
 bool isAltForm;
 
@@ -369,7 +369,7 @@ void detectRomAndSetAddresses() {
         baseJumpFlagAddr = baseSelectedWeaponAddr - 0xA;
         baseAimXAddr = 0x020DEDA6;
         baseAimYAddr = 0x020DEDAE;
-        isHUDdisplayedAddr = 0x02293164;
+        isTransformingtoAltAddr = 0x020DB45D;
         isInAdventureAddr = 0x020E83BC; // Read8 0x02: ADV, 0x03: Multi
         isMapOrUserActionPausedAddr = 0x020FBF18; // 0x00000001: true, 0x00000000 false. Read8 is enough though.
         isRomDetected = true;
@@ -998,7 +998,7 @@ void EmuThread::run()
     bool isInAdventure;
     bool isSamus;
     bool isTransforming;
-    bool isHUDdisplayed;
+    bool isTransformingtoAlt;
 
     // added for HUD
     uint32_t currentWeaponAddr;
@@ -1253,13 +1253,13 @@ void EmuThread::run()
                 // Check if the upper 4 bits are odd (1 or 3)
                 // this is for fixing issue: Shooting and transforming become impossible, when changing weapons at high speed while transitioning from transformed to normal form.
                 isTransforming = NDS->ARM9Read8(jumpFlagAddr) & 0x10;
-                isHUDdisplayed = NDS->ARM9Read8(isHUDdisplayedAddr) == 0x00;
+                isTransformingtoAlt = NDS->ARM9Read8(isTransformingtoAltAddr) == 0x16;
                 
-                if (isHUDdisplayed) {
+                if (!isTransformingtoAlt && !isAltForm) {
                     // Read crosshair values
 //                    float crosshairX = NDS->ARM9Read8(0x020DF024);
 //                    float crosshairY = NDS->ARM9Read8(0x020DF026);
-                    Top_paint->drawText(QPoint(164, 100), (std::string("transforming: ") + std::to_string(NDS->ARM9Read8(isHUDdisplayedAddr))).c_str());
+                    Top_paint->drawText(QPoint(164, 100), (std::string("transforming: ") + std::to_string(NDS->ARM9Read8(isTransformingtoAltAddr))).c_str());
                     // currently US1.1 only... JP1.0 doesnt work with this addr
                     float crosshairX = NDS->ARM9Read8(baseAimXAddr + 0x27E);
                     float crosshairY = NDS->ARM9Read8(baseAimXAddr + 0x280);
