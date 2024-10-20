@@ -724,35 +724,47 @@ void EmuThread::run()
             AudioInOut::MicProcess(*NDS);
 
             // auto screen layout
+            // 自動スクリーンレイアウト
             if (Config::ScreenSizing == Frontend::screenSizing_Auto)
             {
+                // Update main screen positions
+                // メインスクリーンの位置を更新
                 mainScreenPos[2] = mainScreenPos[1];
                 mainScreenPos[1] = mainScreenPos[0];
                 mainScreenPos[0] = NDS->PowerControl9 >> 15;
-
                 int guess;
+                // Detect screen flickering
+                // 画面のちらつきを検出
                 if (mainScreenPos[0] == mainScreenPos[2] &&
                     mainScreenPos[0] != mainScreenPos[1])
                 {
                     // constant flickering, likely displaying 3D on both screens
                     // TODO: when both screens are used for 2D only...???
+                    // 常にちらつきがある場合、おそらく両画面で3Dを表示している
+                    // TODO: 両画面が2Dのみに使用される場合の処理
                     guess = Frontend::screenSizing_Even;
                 }
                 else
                 {
+                    // Guess layout based on main screen position
+                    // メインスクリーンの位置に基づいてレイアウトを推測
                     if (mainScreenPos[0] == 1)
-                        guess = Frontend::screenSizing_EmphTop;
+                        guess = Frontend::screenSizing_EmphTop;  // Emphasize top screen // 上画面強調
                     else
-                        guess = Frontend::screenSizing_EmphBot;
+                        guess = Frontend::screenSizing_EmphBot;  // Emphasize bottom screen // 下画面強調
                 }
-
+                // If the guessed layout has changed
+                // 推測されたレイアウトが変更された場合
                 if (guess != autoScreenSizing)
                 {
+                    // Set the new layout
+                    // 新しいレイアウトを設定
                     autoScreenSizing = guess;
+                    // Emit signal for layout change
+                    // レイアウト変更のシグナルを発信
                     emit screenLayoutChange();
                 }
             }
-
 
             // emulate
             u32 nlines = NDS->RunFrame();
@@ -1015,6 +1027,7 @@ void EmuThread::run()
         // Calculate for aim 
         // updateMouseRelativeAndRecenterCursor
 
+        /*
         // Handle the case when the window is focused
         if (isFocused) {
             // Get the center coordinates of the window
@@ -1029,6 +1042,22 @@ void EmuThread::run()
             // Move the cursor to the center of the window
             QCursor::setPos(windowCenter);
         }
+        */
+
+        if (isFocused) {
+            auto windowCenterX = mainWindow->pos().x() + mainWindow->size().width() / 2;
+            auto windowCenterY = mainWindow->pos().y() + mainWindow->size().height() / 2;
+            // if (!focusedLastFrame) {
+            //     // fetch will flush but discard values
+            //     mouseRel.first = 0;
+            //     mouseRel.second = 0;
+            // }
+            if (focusedLastFrame) {
+                mouseRel = QCursor::pos() - QPoint(windowCenterX, windowCenterY);
+            }
+            QCursor::setPos(windowCenterX, windowCenterY);
+        }
+
 
 
 
