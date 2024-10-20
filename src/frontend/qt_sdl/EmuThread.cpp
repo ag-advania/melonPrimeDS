@@ -1210,8 +1210,8 @@ void EmuThread::run()
                 case 2: // For Missiles.
                     ammoConsumption = ammoCount / 0xA; // Missiles consume ammo in decimal (10).
                     image = QImage(":/mph-icon-missile");
-                    Top_paint->drawText(QPoint(10, 165), (std::to_string(NDS->ARM9Read16(currentAmmoMissileAddr) / 0x0A)).c_str());
-                    Top_paint->drawImage(QPoint(5, 165), image);
+                    Top_paint->drawText(QPoint(13, 175), (std::to_string(NDS->ARM9Read16(currentAmmoMissileAddr) / 0x0A)).c_str());
+                    Top_paint->drawImage(QPoint(4, 165), image);
                     break;
                 case 3: // For Battle Hammer.
                     ammoConsumption = ammoCount / 0x4; // Battle Hammer consumes ammo in decimal (4).
@@ -1243,7 +1243,7 @@ void EmuThread::run()
                 }
                 if (currentWeapon != 0 && currentWeapon != 2) {
                     // Display the text to draw (ammo consumption value in decimal format).
-                    Top_paint->drawText(QPoint(10, 165), (std::to_string(ammoConsumption)).c_str());
+                    Top_paint->drawText(QPoint(13, 175), (std::to_string(ammoConsumption)).c_str());
                     Top_paint->drawImage(QPoint(5, 165), image);
                 }
    
@@ -1257,7 +1257,7 @@ void EmuThread::run()
                 // Check if the upper 4 bits are odd (1 or 3)
                 // this is for fixing issue: Shooting and transforming become impossible, when changing weapons at high speed while transitioning from transformed to normal form.
                 isTransforming = NDS->ARM9Read8(jumpFlagAddr) & 0x10;
-                isTransformingtoAlt = NDS->ARM9Read8(isTransformingtoAltAddr) != 0x00;
+                isTransformingtoAlt = NDS->ARM9Read8(isTransformingtoAltAddr) != 0x00 && NDS->ARM9Read8(isTransformingtoAltAddr) != 0x01;
                 
                 if (!isTransformingtoAlt && !isAltForm) {
                     // Read crosshair values
