@@ -1265,7 +1265,7 @@ void EmuThread::run()
                       NDS->ARM9Read8(isTransformingtoAltAddr) != 0x06 &&
                       NDS->ARM9Read8(isTransformingtoAltAddr) != 0x07 &&
                       NDS->ARM9Read8(isTransformingtoAltAddr) != 0x20 &&
-                      NDS->ARM9Read8(isTransformingtoAltAddr) != 0x21 &&;
+                      NDS->ARM9Read8(isTransformingtoAltAddr) != 0x21 ;
 
                 
                 if (!isTransformingtoAlt && !isAltForm) {
