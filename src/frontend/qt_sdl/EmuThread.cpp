@@ -1258,9 +1258,11 @@ void EmuThread::run()
                 // this is for fixing issue: Shooting and transforming become impossible, when changing weapons at high speed while transitioning from transformed to normal form.
                 isTransforming = NDS->ARM9Read8(jumpFlagAddr) & 0x10;
 
-                std::set<uint8_t> excludedValues = {0x00, 0x01, 0x20, 0x21};
-                uint8_t value = NDS->ARM9Read8(isTransformingtoAltAddr);
-                isTransformingtoAlt = excludedValues.find(value) == excludedValues.end();
+                isTransformingtoAlt = NDS->ARM9Read8(isTransformingtoAltAddr) != 0x00 && 
+                      NDS->ARM9Read8(isTransformingtoAltAddr) != 0x01 && 
+                      NDS->ARM9Read8(isTransformingtoAltAddr) != 0x02 && 
+                      NDS->ARM9Read8(isTransformingtoAltAddr) != 0x03;
+
                 
                 if (!isTransformingtoAlt && !isAltForm) {
                     // Read crosshair values
