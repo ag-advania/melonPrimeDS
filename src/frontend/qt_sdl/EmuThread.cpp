@@ -1210,7 +1210,7 @@ void EmuThread::run()
                 case 2: // For Missiles.
                     ammoConsumption = ammoCount / 0xA; // Missiles consume ammo in decimal (10).
                     image = QImage(":/mph-icon-missile");
-                    Top_paint->drawText(QPoint(13, 175), (std::to_string(NDS->ARM9Read16(currentAmmoMissileAddr) / 0x0A)).c_str());
+                    Top_paint->drawText(QPoint(15, 173), (std::to_string(NDS->ARM9Read16(currentAmmoMissileAddr) / 0x0A)).c_str());
                     Top_paint->drawImage(QPoint(4, 165), image);
                     break;
                 case 3: // For Battle Hammer.
@@ -1243,7 +1243,7 @@ void EmuThread::run()
                 }
                 if (currentWeapon != 0 && currentWeapon != 2) {
                     // Display the text to draw (ammo consumption value in decimal format).
-                    Top_paint->drawText(QPoint(13, 175), (std::to_string(ammoConsumption)).c_str());
+                    Top_paint->drawText(QPoint(15, 173), (std::to_string(ammoConsumption)).c_str());
                     Top_paint->drawImage(QPoint(5, 165), image);
                 }
    
@@ -1261,7 +1261,9 @@ void EmuThread::run()
                 isTransformingtoAlt = NDS->ARM9Read8(isTransformingtoAltAddr) != 0x00 && 
                       NDS->ARM9Read8(isTransformingtoAltAddr) != 0x01 && 
                       NDS->ARM9Read8(isTransformingtoAltAddr) != 0x02 && 
-                      NDS->ARM9Read8(isTransformingtoAltAddr) != 0x03;
+                      NDS->ARM9Read8(isTransformingtoAltAddr) != 0x03 &&
+                      NDS->ARM9Read8(isTransformingtoAltAddr) != 0x06 &&
+                      NDS->ARM9Read8(isTransformingtoAltAddr) != 0x07 &&;
 
                 
                 if (!isTransformingtoAlt && !isAltForm) {
