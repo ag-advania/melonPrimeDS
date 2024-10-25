@@ -1047,7 +1047,18 @@ void EmuThread::run()
         if (isFocused) {
             auto windowCenterX = mainWindow->pos().x() + mainWindow->size().width() / 2;
             auto windowCenterY = mainWindow->pos().y() + mainWindow->size().height() / 2;
-            windowCenterY = windowCenterY / 2; // for fixing aim stuttering bug
+//            windowCenterY = windowCenterY / 2; // for fixing aim stuttering bug 
+// 
+//             // for fixing aim stuttering bug 
+            if (Config::ScreenLayout == Frontend::screenLayout_Natural)
+            {
+                bool isHori = (Config::ScreenRotation == Frontend::screenRot_90Deg
+                    || Config::ScreenRotation == Frontend::screenRot_270Deg);
+                if (isHori)
+                    windowCenterX = windowCenterX / 2; // for fixing aim stuttering bug 
+                else
+                    windowCenterY = windowCenterY / 2; // for fixing aim stuttering bug 
+            }
             // if (!focusedLastFrame) {
             //     // fetch will flush but discard values
             //     mouseRel.first = 0;
