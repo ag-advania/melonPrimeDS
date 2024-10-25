@@ -1047,12 +1047,13 @@ void EmuThread::run()
         if (isFocused) {
             auto windowCenterX = mainWindow->pos().x() + mainWindow->size().width() / 2;
             auto windowCenterY = mainWindow->pos().y() + mainWindow->size().height() / 2;
+            windowCenterY = windowCenterY / 2; // for fixing aim stuttering bug
             // if (!focusedLastFrame) {
             //     // fetch will flush but discard values
             //     mouseRel.first = 0;
             //     mouseRel.second = 0;
             // }
-            if (focusedLastFrame) {
+            if (wasLastFrameFocused) {
                 mouseRel = QCursor::pos() - QPoint(windowCenterX, windowCenterY);
             }
             QCursor::setPos(windowCenterX, windowCenterY);
