@@ -1035,7 +1035,7 @@ void EmuThread::run()
             // for fixing aim stuttering bug 
             if (Config::ScreenLayout == Frontend::screenLayout_Natural) {
                     // set adjustedCenter to the center of top screen
-                    adjustedCenter.setY(adjustedCenter.y() / 2);
+                    adjustedCenter.setY(adjustedCenter.y() - (adjustedCenter.y() / 4));
             }
 
             // If the window was also focused in the previous frame
