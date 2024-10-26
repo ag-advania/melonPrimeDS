@@ -1030,7 +1030,7 @@ void EmuThread::run()
         // Handle the case when the window is focused
         if (isFocused) {
             // Get the center coordinates of the window
-            const QPoint adjustedCenter = mainWindow->geometry().center();
+            QPoint adjustedCenter = mainWindow->geometry().center();
 
             // for fixing aim stuttering bug 
             if (Config::ScreenLayout == Frontend::screenLayout_Natural) {
