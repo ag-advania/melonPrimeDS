@@ -1028,23 +1028,25 @@ void EmuThread::run()
         // updateMouseRelativeAndRecenterCursor
 
         // Handle the case when the window is focused
+        // Update mouse relative position and recenter cursor for aim control
         if (isFocused) {
-            // Get the center coordinates of the window
-            QPoint adjustedCenter = mainWindow->geometry().center();
+            // Get and cache window geometry to avoid multiple calls
+            const QRect windowGeometry = mainWindow->geometry();
+            QPoint adjustedCenter = windowGeometry.center();
 
-            // for fixing aim stuttering bug 
+            // Fix aim stuttering bug by adjusting cursor position
             if (Config::ScreenLayout == Frontend::screenLayout_Natural) {
-                    // set adjustedCenter to the center of top screen
-                    adjustedCenter.setY(adjustedCenter.y() - (adjustedCenter.y() / 4));
+                // Adjust cursor to top screen - position it 1/4 down from the center
+                // This creates a more natural aiming feel for the top screen
+                adjustedCenter.ry() -= adjustedCenter.y() / 4;
             }
 
-            // If the window was also focused in the previous frame
+            // Calculate relative mouse movement if window was focused last frame
             if (wasLastFrameFocused) {
-                
-                // Calculate the relative mouse position
                 mouseRel = QCursor::pos() - adjustedCenter;
             }
-            // Move the cursor to the adjustedCenter
+
+            // Recenter cursor to maintain consistent aim position
             QCursor::setPos(adjustedCenter);
         }
 
