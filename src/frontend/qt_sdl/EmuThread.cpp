@@ -1027,51 +1027,26 @@ void EmuThread::run()
         // Calculate for aim 
         // updateMouseRelativeAndRecenterCursor
 
-        /*
         // Handle the case when the window is focused
         if (isFocused) {
             // Get the center coordinates of the window
-            auto windowCenter = mainWindow->geometry().center();
+            const QPoint adjustedCenter = mainWindow->geometry().center();
+
+            // for fixing aim stuttering bug 
+            if (Config::ScreenLayout == Frontend::screenLayout_Natural) {
+                    // set adjustedCenter to the center of top screen
+                    adjustedCenter.setY(windowCenter.y() / 2);
+            }
 
             // If the window was also focused in the previous frame
             if (wasLastFrameFocused) {
-                // Calculate the relative mouse position (current cursor position - window center)
-                mouseRel = QCursor::pos() - windowCenter;
+                
+                // Calculate the relative mouse position
+                mouseRel = QCursor::pos() - adjustedCenter;
             }
-
-            // Move the cursor to the center of the window
-            QCursor::setPos(windowCenter);
+            // Move the cursor to the adjustedCenter
+            QCursor::setPos(adjustedCenter);
         }
-        */
-
-        if (isFocused) {
-            auto windowCenterX = mainWindow->pos().x() + mainWindow->size().width() / 2;
-            auto windowCenterY = mainWindow->pos().y() + mainWindow->size().height() / 2;
-//            windowCenterY = windowCenterY / 2; // for fixing aim stuttering bug 
-// 
-//             // for fixing aim stuttering bug 
-            if (Config::ScreenLayout == Frontend::screenLayout_Natural)
-            {
-                bool isHori = (Config::ScreenRotation == Frontend::screenRot_90Deg
-                    || Config::ScreenRotation == Frontend::screenRot_270Deg);
-                if (isHori)
-                    windowCenterX = windowCenterX / 2; // for fixing aim stuttering bug 
-                else
-                    windowCenterY = windowCenterY / 2; // for fixing aim stuttering bug 
-            }
-            // if (!focusedLastFrame) {
-            //     // fetch will flush but discard values
-            //     mouseRel.first = 0;
-            //     mouseRel.second = 0;
-            // }
-            if (wasLastFrameFocused) {
-                mouseRel = QCursor::pos() - QPoint(windowCenterX, windowCenterY);
-            }
-            QCursor::setPos(windowCenterX, windowCenterY);
-        }
-
-
-
 
         drawVCur = false;
 
