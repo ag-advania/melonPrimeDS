@@ -62,7 +62,6 @@ using namespace melonDS::Platform;
 unsigned int globalChecksum = 0;
 bool isNewRom = false;
 bool isRomDetected = false;
-bool isVirtualStylusEnabled = true;
 bool ingameSoVirtualStylusAutolyDisabled = false;
 
 namespace ROMManager
@@ -1346,7 +1345,6 @@ bool LoadROM(EmuThread* emuthread, QStringList filepath, bool reset)
     isRomDetected = false;
 
     // virtualStylusFlag ON
-    isVirtualStylusEnabled = true;
     ingameSoVirtualStylusAutolyDisabled = false;
 
 

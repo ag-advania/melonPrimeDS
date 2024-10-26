@@ -494,8 +494,8 @@ void detectRomAndSetAddresses() {
         break;
 
     default:
-        // 未対応のチェックサムに対する処理
-        // デフォルトの動作やエラーメッセージの追加
+        // Handle unsupported checksums.
+        // Add default behavior or error handling.
         break;
     }
 }
@@ -1069,25 +1069,21 @@ void EmuThread::run()
 
         // Auto Enable/Disable VirtualStylus Before/After the game
         // you can still enable VirtualStylus in Game
-        if (!isInGame && !isVirtualStylusEnabled && ingameSoVirtualStylusAutolyDisabled) {
-            isVirtualStylusEnabled = true;
+        if (!isInGame && ingameSoVirtualStylusAutolyDisabled) {
             // mainWindow->osdAddMessage(0, "Virtual Stylus enabled");
             ingameSoVirtualStylusAutolyDisabled = false;
         }
 
         isAddressCalculationNeeded = false;
 
-        if(isInGame && isVirtualStylusEnabled && !ingameSoVirtualStylusAutolyDisabled) {
-            isVirtualStylusEnabled = false;
+        if (isInGame && !ingameSoVirtualStylusAutolyDisabled) {
+
             // mainWindow->osdAddMessage(0, "Virtual Stylus disabled");
             ingameSoVirtualStylusAutolyDisabled = true;
 
             // inGame so need calculate address
             isAddressCalculationNeeded = true;
         }
-
-        // VirtualStylus is Enabled when not in game
-        isVirtualStylusEnabled = !isInGame;
 
 
         if (isAddressCalculationNeeded) {
@@ -1125,7 +1121,7 @@ void EmuThread::run()
         if (isFocused) {
 
 
-			if (!isVirtualStylusEnabled) {
+			if (isInGame) {
                 // inGame
 
 
@@ -1264,7 +1260,7 @@ void EmuThread::run()
                     uint8_t jumpFlag = currentFlags & 0x0F;  // Get the lower 4 bits
                     //mainWindow->osdAddMessage(0, ("JumpFlag:" + std::string(1, "0123456789ABCDEF"[NDS->ARM9Read8(jumpFlagAddr) & 0x0F])).c_str());
 
-                    bool needToRestore = false;
+                    bool isRestoreNeeded = false;
 
                     // Check if in alternate form (transformed state)
                     isAltForm = NDS->ARM9Read8(isAltFormAddr) == 0x02;
@@ -1273,7 +1269,7 @@ void EmuThread::run()
                     if (!isTransforming && jumpFlag == 0 && !isAltForm) {
                         uint8_t newFlags = (currentFlags & 0xF0) | 0x01;  // Set lower 4 bits to 1
                         NDS->ARM9Write8(jumpFlagAddr, newFlags);
-                        needToRestore = true;
+                        isRestoreNeeded = true;
                         //mainWindow->osdAddMessage(0, ("JumpFlag:" + std::string(1, "0123456789ABCDEF"[NDS->ARM9Read8(jumpFlagAddr) & 0x0F])).c_str());
                         //mainWindow->osdAddMessage(0, "Done setting jumpFlag.");
                     }
@@ -1306,7 +1302,7 @@ void EmuThread::run()
                     frameAdvance(2);
 
                     // Restore the jump flag to its original value (if necessary)
-                    if (needToRestore) {
+                    if (isRestoreNeeded) {
                         currentFlags = NDS->ARM9Read8(jumpFlagAddr);
                         uint8_t restoredFlags = (currentFlags & 0xF0) | jumpFlag;
                         NDS->ARM9Write8(jumpFlagAddr, restoredFlags);
@@ -1519,7 +1515,7 @@ void EmuThread::run()
                 if (virtualStylusY > 191) virtualStylusY = 191;
 
 
-			} // End of isVirtualStylusEnabled
+			} 
 
 
 		}// END of if(isFocused)
