@@ -1039,6 +1039,7 @@ void EmuThread::run()
             const float adjustmentFactor = 0.25f; // 1/4 adjustment
 
             // Adjust cursor position based on screen layout and swap configuration
+            /*
             switch (Config::ScreenLayout) {
             case Frontend::screenLayout_Natural:
                 adjustedCenter.ry() += (Config::ScreenSwap ? 1 : -1) *
@@ -1050,6 +1051,31 @@ void EmuThread::run()
                     (baseCenter.x() * adjustmentFactor);
                 break;
             }
+            */
+
+
+
+            if (Config::ScreenLayout == Frontend::screenLayout_Natural)
+            {
+                mainWindow->osdAddMessage(0, "Natural");
+                adjustedCenter.ry() += (Config::ScreenSwap ? 1 : -1) *
+                    (baseCenter.y() * adjustmentFactor);
+            }
+            else if (Config::ScreenLayout == Frontend::screenLayout_Vertical)
+            {
+                mainWindow->osdAddMessage(0, "Vertical");
+            }
+            else if (Config::ScreenLayout == Frontend::screenLayout_Horizontal)
+            {
+                mainWindow->osdAddMessage(0, "Horizontal");
+                adjustedCenter.rx() += (Config::ScreenSwap ? 1 : -1) *
+                    (baseCenter.x() * adjustmentFactor);
+            }
+            else // hybrid
+            {
+                mainWindow->osdAddMessage(0, "Hybrid");
+            }
+
 
             // Calculate relative mouse movement if window was focused last frame
             if (wasLastFrameFocused) {
