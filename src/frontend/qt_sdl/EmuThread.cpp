@@ -1064,10 +1064,12 @@ void EmuThread::run()
 
             default: // hybrid
                 // mainWindow->osdAddMessage(0, "Hybrid");
-                adjustedCenter.rx() += adjustmentDirection *
-                    (baseCenter.x() * 0.5);
-                adjustedCenter.ry() += adjustmentDirection *
+                if(isSwapScreen){
+                adjustedCenter.rx() += 
+                    (baseCenter.x() * 0.25);
+                adjustedCenter.ry() += 
                     (baseCenter.y() * adjustmentFactor);
+                }
                 break;
             }
 
