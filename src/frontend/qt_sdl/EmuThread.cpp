@@ -1062,13 +1062,13 @@ void EmuThread::run()
             default: // hybrid
                 if (isSwapScreen) {
                     adjustedCenter.rx() +=
-                        (windowGeometry.width() * 0.5f);
+                        (windowGeometry.width() * adjustmentFactor);
                     adjustedCenter.ry() -=
                         (windowGeometry.height() * adjustmentFactor);
                 }
                 else {
                     adjustedCenter.rx() -=
-                        (windowGeometry.width() * adjustmentFactor);
+                        (windowGeometry.width() * 0.1f);
                 }
                 break;
             }
