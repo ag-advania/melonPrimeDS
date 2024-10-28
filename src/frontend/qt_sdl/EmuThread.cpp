@@ -1030,15 +1030,25 @@ void EmuThread::run()
         // Handle the case when the window is focused
         // Update mouse relative position and recenter cursor for aim control
         if (isFocused) {
-            // Get and cache window geometry to avoid multiple calls
-            const QRect windowGeometry = mainWindow->geometry();
-            QPoint adjustedCenter = windowGeometry.center();
+            // Cache window geometry and center position
+            static const QRect windowGeometry = mainWindow->geometry();
+            static const QPoint baseCenter = windowGeometry.center();
 
-            // Fix aim stuttering bug by adjusting cursor position
-            if (Config::ScreenLayout == Frontend::screenLayout_Natural) {
-                // Adjust cursor to top screen - position it 1/4 down from the center
-                // This creates a more natural aiming feel for the top screen
-                adjustedCenter.ry() -= adjustedCenter.y() / 4;
+            // Calculate adjusted center based on screen layout configuration
+            QPoint adjustedCenter = baseCenter;
+            const float adjustmentFactor = 0.25f; // 1/4 adjustment
+
+            // Adjust cursor position based on screen layout and swap configuration
+            switch (Config::ScreenLayout) {
+            case Frontend::screenLayout_Natural:
+                adjustedCenter.ry() += (Config::ScreenSwap ? 1 : -1) *
+                    (baseCenter.y() * adjustmentFactor);
+                break;
+
+            case Frontend::screenLayout_Horizontal:
+                adjustedCenter.rx() += (Config::ScreenSwap ? 1 : -1) *
+                    (baseCenter.x() * adjustmentFactor);
+                break;
             }
 
             // Calculate relative mouse movement if window was focused last frame
@@ -1046,7 +1056,7 @@ void EmuThread::run()
                 mouseRel = QCursor::pos() - adjustedCenter;
             }
 
-            // Recenter cursor to maintain consistent aim position
+            // Center cursor
             QCursor::setPos(adjustedCenter);
         }
 
