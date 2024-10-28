@@ -1026,56 +1026,46 @@ void EmuThread::run()
 
         // Calculate for aim 
         // updateMouseRelativeAndRecenterCursor
-
+        // 
         // Handle the case when the window is focused
         // Update mouse relative position and recenter cursor for aim control
         if (isFocused) {
             // Cache window geometry and center position
             QRect windowGeometry = mainWindow->geometry();
             QPoint baseCenter = windowGeometry.center();
-
             // Calculate adjusted center based on screen layout configuration
             QPoint adjustedCenter = baseCenter;
             const float adjustmentFactor = 0.25f; // 1/4 adjustment
 
             // Adjust cursor position based on screen layout and swap configuration
-            /*
+            const bool isSwapScreen = Config::ScreenSwap != 0;
+            const int adjustmentDirection = isSwapScreen ? 1 : -1;
+
             switch (Config::ScreenLayout) {
             case Frontend::screenLayout_Natural:
-                adjustedCenter.ry() += (Config::ScreenSwap ? 1 : -1) *
+                mainWindow->osdAddMessage(0, "Natural");
+                adjustedCenter.ry() += adjustmentDirection *
                     (baseCenter.y() * adjustmentFactor);
+                break;
+
+            case Frontend::screenLayout_Vertical:
+                // Note: This case actually handles horizontal layout despite being named Vertical in enum
+                mainWindow->osdAddMessage(0, "Horizontal");
+                adjustedCenter.rx() += adjustmentDirection *
+                    (baseCenter.x() * adjustmentFactor);
                 break;
 
             case Frontend::screenLayout_Horizontal:
-                adjustedCenter.rx() += (Config::ScreenSwap ? 1 : -1) *
-                    (baseCenter.x() * adjustmentFactor);
+                // Note: This case actually handles vertical layout despite being named Horizontal in enum
+                mainWindow->osdAddMessage(0, "Vertical");
+                adjustedCenter.ry() += adjustmentDirection *
+                    (baseCenter.y() * adjustmentFactor);
+                break;
+
+            default: // hybrid
+                mainWindow->osdAddMessage(0, "Hybrid");
                 break;
             }
-            */
-
-
-
-            if (Config::ScreenLayout == Frontend::screenLayout_Natural)
-            {
-                mainWindow->osdAddMessage(0, "Natural");
-                adjustedCenter.ry() += (Config::ScreenSwap ? 1 : -1) *
-                    (baseCenter.y() * adjustmentFactor);
-            }
-            else if (Config::ScreenLayout == Frontend::screenLayout_Vertical)
-            {
-                mainWindow->osdAddMessage(0, "Vertical");
-            }
-            else if (Config::ScreenLayout == Frontend::screenLayout_Horizontal)
-            {
-                mainWindow->osdAddMessage(0, "Horizontal");
-                adjustedCenter.rx() += (Config::ScreenSwap ? 1 : -1) *
-                    (baseCenter.x() * adjustmentFactor);
-            }
-            else // hybrid
-            {
-                mainWindow->osdAddMessage(0, "Hybrid");
-            }
-
 
             // Calculate relative mouse movement if window was focused last frame
             if (wasLastFrameFocused) {
