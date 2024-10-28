@@ -1031,36 +1031,31 @@ void EmuThread::run()
         // Update mouse relative position and recenter cursor for aim control
         if (isFocused) {
             // Cache window geometry and center position
-            QRect windowGeometry = mainWindow->geometry();
-            QPoint baseCenter = windowGeometry.center();
-            // Calculate adjusted center based on screen layout configuration
-            QPoint adjustedCenter = baseCenter;
-            const float adjustmentFactor = 0.25f;
+            const QRect windowGeometry = mainWindow->geometry();
+            QPoint adjustedCenter = windowGeometry.center();
 
-            // Adjust cursor position based on screen layout and swap configuration
-            const bool isSwapScreen = Config::ScreenSwap != 0;
-            const int adjustmentDirection = isSwapScreen ? 1 : -1;
+            // Screen layout adjustment constants
+            constexpr float DEFAULT_ADJUSTMENT = 0.25f;
+            constexpr float HYBRID_RIGHT = 0.333203125f;  // (2133-1280)/2560
+            constexpr float HYBRID_LEFT = 0.166796875f;   // (1280-853)/2560
+
+            // Calculate adjustment direction based on screen swap configuration
+            const float direction = (Config::ScreenSwap != 0) ? 1.0f : -1.0f;
 
             switch (Config::ScreenLayout) {
             case Frontend::screenLayout_Natural:
-                adjustedCenter.ry() += adjustmentDirection *
-                    (windowGeometry.height() * adjustmentFactor);
-                break;
-
-            case Frontend::screenLayout_Vertical:
-                // Note: This case actually handles horizontal layout despite being named Vertical in enum
-                adjustedCenter.rx() += adjustmentDirection *
-                    (windowGeometry.width() * adjustmentFactor);
-                break;
-
             case Frontend::screenLayout_Horizontal:
                 // Note: This case actually handles vertical layout despite being named Horizontal in enum
-                adjustedCenter.ry() += adjustmentDirection *
-                    (windowGeometry.height() * adjustmentFactor);
+                adjustedCenter.ry() += static_cast<int>(direction * windowGeometry.height() * DEFAULT_ADJUSTMENT);
                 break;
-
+            case Frontend::screenLayout_Vertical:
+                // Note: This case actually handles horizontal layout despite being named Vertical in enum
+                adjustedCenter.rx() += static_cast<int>(direction * windowGeometry.width() * DEFAULT_ADJUSTMENT);
+                break;
             default: // hybrid
-                /*
+                /* 
+                ### Monitor Specification
+                - Monitor resolution: 2560x1440 pixels
                 ### Adjusted Conditions (with Black Bars)
                 1. Total monitor height: 1440 pixels
                 2. 80px black bars at the top and bottom, making the usable height:
@@ -1083,25 +1078,22 @@ void EmuThread::run()
                 - Right stacked 4:3 screen center: ~2133 pixels
 
                 */
-                if (isSwapScreen) {
-                    adjustedCenter.rx() +=
-                        (windowGeometry.width() * 0.333203125f); // (2133-1280)/2560
-                    adjustedCenter.ry() -=
-                        (windowGeometry.height() * adjustmentFactor);
+                if (Config::ScreenSwap != 0) {
+                    adjustedCenter.rx() += static_cast<int>(windowGeometry.width() * HYBRID_RIGHT);
+                    adjustedCenter.ry() -= static_cast<int>(windowGeometry.height() * DEFAULT_ADJUSTMENT);
                 }
                 else {
-                    adjustedCenter.rx() -=
-                        (windowGeometry.width() * 0.166796875f); // (1280-853)/2560
+                    adjustedCenter.rx() -= static_cast<int>(windowGeometry.width() * HYBRID_LEFT);
                 }
                 break;
             }
 
-            // Calculate relative mouse movement if window was focused last frame
+            // Update relative mouse position if window was focused last frame
             if (wasLastFrameFocused) {
                 mouseRel = QCursor::pos() - adjustedCenter;
             }
 
-            // Center cursor
+            // Recenter cursor
             QCursor::setPos(adjustedCenter);
         }
 
