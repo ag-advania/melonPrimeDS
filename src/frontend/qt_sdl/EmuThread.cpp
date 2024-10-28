@@ -1043,27 +1043,31 @@ void EmuThread::run()
 
             switch (Config::ScreenLayout) {
             case Frontend::screenLayout_Natural:
-                mainWindow->osdAddMessage(0, "Natural");
+                // mainWindow->osdAddMessage(0, "Natural");
                 adjustedCenter.ry() += adjustmentDirection *
                     (baseCenter.y() * adjustmentFactor);
                 break;
 
             case Frontend::screenLayout_Vertical:
                 // Note: This case actually handles horizontal layout despite being named Vertical in enum
-                mainWindow->osdAddMessage(0, "Horizontal");
+                // mainWindow->osdAddMessage(0, "Horizontal");
                 adjustedCenter.rx() += adjustmentDirection *
                     (baseCenter.x() * adjustmentFactor);
                 break;
 
             case Frontend::screenLayout_Horizontal:
                 // Note: This case actually handles vertical layout despite being named Horizontal in enum
-                mainWindow->osdAddMessage(0, "Vertical");
+                // mainWindow->osdAddMessage(0, "Vertical");
                 adjustedCenter.ry() += adjustmentDirection *
                     (baseCenter.y() * adjustmentFactor);
                 break;
 
             default: // hybrid
-                mainWindow->osdAddMessage(0, "Hybrid");
+                // mainWindow->osdAddMessage(0, "Hybrid");
+                adjustedCenter.rx() += adjustmentDirection *
+                    (baseCenter.x() * 0.5);
+                adjustedCenter.ry() += adjustmentDirection *
+                    (baseCenter.y() * adjustmentFactor);
                 break;
             }
 
