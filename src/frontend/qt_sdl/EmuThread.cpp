@@ -1066,7 +1066,7 @@ void EmuThread::run()
                 // mainWindow->osdAddMessage(0, "Hybrid");
                 if(isSwapScreen){
                 adjustedCenter.rx() += 
-                    (baseCenter.x() * 0.25);
+                    (baseCenter.x() * adjustmentFactor);
                 adjustedCenter.ry() -= 
                     (baseCenter.y() * adjustmentFactor);
                 }
