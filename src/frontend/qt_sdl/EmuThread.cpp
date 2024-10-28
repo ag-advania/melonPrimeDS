@@ -1031,8 +1031,8 @@ void EmuThread::run()
         // Update mouse relative position and recenter cursor for aim control
         if (isFocused) {
             // Cache window geometry and center position
-            static const QRect windowGeometry = mainWindow->geometry();
-            static const QPoint baseCenter = windowGeometry.center();
+            QRect windowGeometry = mainWindow->geometry();
+            QPoint baseCenter = windowGeometry.center();
 
             // Calculate adjusted center based on screen layout configuration
             QPoint adjustedCenter = baseCenter;
