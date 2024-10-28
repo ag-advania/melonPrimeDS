@@ -1036,7 +1036,6 @@ void EmuThread::run()
             // Calculate adjusted center based on screen layout configuration
             QPoint adjustedCenter = baseCenter;
             const float adjustmentFactor = 0.25f;
-            const float adjustmentFactor2 = 0.333984375f;
 
             // Adjust cursor position based on screen layout and swap configuration
             const bool isSwapScreen = Config::ScreenSwap != 0;
@@ -1061,15 +1060,38 @@ void EmuThread::run()
                 break;
 
             default: // hybrid
+                /*
+                ### Adjusted Conditions (with Black Bars)
+                1. Total monitor height: 1440 pixels
+                2. 80px black bars at the top and bottom, making the usable height:
+                   1440 - 160 = 1280 pixels
+
+                3. 4:3 screen width, based on the usable height (1280 pixels):
+                   4:3 width = (1280 / 3) * 4 = 1706.67 pixels
+
+                ### Position Calculations (with Black Bars)
+                #### Left 4:3 Screen Center
+                Left 4:3 center = 1706.67 / 2 = 853.33 pixels
+
+                #### Right Stacked 4:3 Screen Center
+                - The first 4:3 screen starts at the monitor’s center (1280 pixels).
+                - The center of this screen:
+                  1280 + (1706.67 / 2) = 2133.33 pixels
+
+                ### Final Results
+                - Left 4:3 screen center: ~853 pixels
+                - Right stacked 4:3 screen center: ~2133 pixels
+
+                */
                 if (isSwapScreen) {
                     adjustedCenter.rx() +=
-                        (windowGeometry.width() * adjustmentFactor2);
+                        (windowGeometry.width() * 0.333203125f); // (2133-1280)/2560
                     adjustedCenter.ry() -=
                         (windowGeometry.height() * adjustmentFactor);
                 }
                 else {
                     adjustedCenter.rx() -=
-                        (windowGeometry.width() * 0.1734375f);
+                        (windowGeometry.width() * 0.166796875f); // (1280-853)/2560
                 }
                 break;
             }
