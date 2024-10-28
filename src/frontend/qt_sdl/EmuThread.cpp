@@ -1035,8 +1035,8 @@ void EmuThread::run()
             QPoint baseCenter = windowGeometry.center();
             // Calculate adjusted center based on screen layout configuration
             QPoint adjustedCenter = baseCenter;
-            const float adjustmentFactor = 0.25f; // 1/4 adjustment
-            const float adjustmentFactor2 = 0.375f; // 1/4 adjustment
+            const float adjustmentFactor = 0.25f;
+            const float adjustmentFactor2 = 0.35f; 
 
             // Adjust cursor position based on screen layout and swap configuration
             const bool isSwapScreen = Config::ScreenSwap != 0;
@@ -1069,7 +1069,7 @@ void EmuThread::run()
                 }
                 else {
                     adjustedCenter.rx() -=
-                        (windowGeometry.width() * 0.125f);
+                        (windowGeometry.width() * 0.15f); 
                 }
                 break;
             }
