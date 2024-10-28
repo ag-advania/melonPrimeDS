@@ -1067,7 +1067,7 @@ void EmuThread::run()
                 if(isSwapScreen){
                 adjustedCenter.rx() += 
                     (baseCenter.x() * 0.25);
-                adjustedCenter.ry() += 
+                adjustedCenter.ry() -= 
                     (baseCenter.y() * adjustmentFactor);
                 }
                 break;
