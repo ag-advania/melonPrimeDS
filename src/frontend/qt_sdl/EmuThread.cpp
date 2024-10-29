@@ -507,7 +507,7 @@ void detectRomAndSetAddresses() {
  * @param wasLastFrameFocused Whether the window was focused in the last frame
  * @param mouseRel Reference to store relative mouse position
  */
-__forceinline void adjustCursorPosition(QMainWindow* mainWindow, bool wasLastFrameFocused, QPoint& mouseRel) {
+__forceinline void adjustCursorPosition1(QMainWindow* mainWindow, bool wasLastFrameFocused, QPoint& mouseRel) {
     // Cache window geometry and center position
     const QRect windowGeometry = mainWindow->geometry();
     QPoint adjustedCenter = windowGeometry.center();
@@ -570,6 +570,83 @@ __forceinline void adjustCursorPosition(QMainWindow* mainWindow, bool wasLastFra
 
     // Recenter cursor
     QCursor::setPos(adjustedCenter);
+}
+
+static void adjustCursorPosition(QMainWindow* mainWindow, bool wasLastFrameFocused, QPoint& mouseRel) {
+    // Cache window geometry and center position
+    // Use stack-based QRect to avoid heap allocation
+    const QRect& windowGeometry = mainWindow->geometry();
+
+    // Precalculate center coordinates using integer arithmetic
+    // Avoid QPoint construction overhead by using direct integers
+    const int centerX = windowGeometry.x() + (windowGeometry.width() >> 1);
+    const int centerY = windowGeometry.y() + (windowGeometry.height() >> 1);
+
+    // Use integer arithmetic instead of floating point
+    // Precalculated fixed-point values (16.16 format) for better precision
+    // Original floating point values converted to fixed point:
+    // DEFAULT_ADJUSTMENT (0.25) = 16384
+    // HYBRID_RIGHT (0.333203125) = 21845
+    // HYBRID_LEFT (0.166796875) = 10923
+    constexpr int32_t FIXED_POINT_SHIFT = 16;
+    constexpr int32_t DEFAULT_ADJUSTMENT = 16384; // 0.25 in 16.16 fixed point
+    constexpr int32_t HYBRID_RIGHT = 21845;       // 0.333203125 in 16.16 fixed point
+    constexpr int32_t HYBRID_LEFT = 10923;        // 0.166796875 in 16.16 fixed point
+
+    // Get dimension once to avoid multiple function calls
+    const int width = windowGeometry.width();
+    const int height = windowGeometry.height();
+
+    // Calculate offsets using integer arithmetic
+    int offsetX = 0;
+    int offsetY = 0;
+
+    // Use bit manipulation for direction instead of floating point
+    const int32_t direction = (Config::ScreenSwap != 0) ? 1 : -1;
+
+    // Optimize switch case for most common scenarios first
+    switch (Config::ScreenLayout) {
+    case Frontend::screenLayout_Natural:
+    case Frontend::screenLayout_Horizontal:
+        // Use fixed-point arithmetic for height adjustment
+        offsetY = (height * DEFAULT_ADJUSTMENT * direction) >> FIXED_POINT_SHIFT;
+        break;
+
+    case Frontend::screenLayout_Vertical:
+        // Use fixed-point arithmetic for width adjustment
+        offsetX = (width * DEFAULT_ADJUSTMENT * direction) >> FIXED_POINT_SHIFT;
+        break;
+
+    default: // hybrid
+        if (Config::ScreenSwap != 0) {
+            // Combine calculations to reduce operations
+            offsetX = (width * HYBRID_RIGHT) >> FIXED_POINT_SHIFT;
+            offsetY = -(height * DEFAULT_ADJUSTMENT) >> FIXED_POINT_SHIFT;
+        }
+        else {
+            offsetX = -(width * HYBRID_LEFT) >> FIXED_POINT_SHIFT;
+        }
+        break;
+    }
+
+    // Calculate final position using direct integer arithmetic
+    const int finalX = centerX + offsetX;
+    const int finalY = centerY + offsetY;
+
+    // Update relative mouse position if needed
+    // Avoid branching by using conditional move when possible
+    if (wasLastFrameFocused) {
+        const QPoint currentPos = QCursor::pos();
+        mouseRel.rx() = currentPos.x() - finalX;
+        mouseRel.ry() = currentPos.y() - finalY;
+    }
+
+    // Use native cursor API if available for lower latency
+#ifdef Q_OS_WIN
+    SetCursorPos(finalX, finalY);
+#else
+    QCursor::setPos(finalX, finalY);
+#endif
 }
 
 void EmuThread::run()
@@ -1102,7 +1179,7 @@ void EmuThread::run()
         // Update mouse relative position and recenter cursor for aim control
         if (isFocused) {
 
-            adjustCursorPosition(mainWindow, wasLastFrameFocused, mouseRel);
+            ClassName::adjustCursorPosition(mainWindow, wasLastFrameFocused, mouseRel);
         }
 
         drawVCur = false;
