@@ -1080,27 +1080,29 @@ void EmuThread::run()
     bool isInAdventure;
     bool isSamus;
 
+    // The QPoint class defines a point in the plane using integer precision. 
+            // auto mouseRel = rawInputThread->fetchMouseDelta();
+    QPoint mouseRel;
+
+    // Adjusted centerの初期化
+    QPoint adjustedCenter;
+
+
     while (EmuRunning != emuStatus_Exit) {
 
 
 
         auto isFocused = mainWindow->panel->getFocused();
 
-        // auto mouseRel = rawInputThread->fetchMouseDelta();
 
-        // The QPoint class defines a point in the plane using integer precision. 
-        QPoint mouseRel;
+
 
         // 感度係数を定数として定義
         const float SENSITIVITY_FACTOR = Config::MetroidAimSensitivity * 0.01f;
         const float SENSITIVITY_FACTOR_VIRTUAL_STYLUS = Config::MetroidVirtualStylusSensitivity * 0.01f;
 
-        // Calculate for aim 
-        // updateMouseRelativeAndRecenterCursor
-        // 
-        // Handle the case when the window is focused
-        // Update mouse relative position and recenter cursor for aim control
-        if (isFocused) {
+        // フォーカスが外れている場合にadjustedCenterを計算する
+        if (!isFocused) {
 
             // Cache window geometry and center position
             const QRect windowGeometry = mainWindow->geometry();
@@ -1167,6 +1169,15 @@ void EmuThread::run()
 
             // Adjust the center position (call the lambda function)
             adjustCenter(adjustedCenter, windowGeometry);
+
+        }
+
+        // Calculate for aim 
+        // updateMouseRelativeAndRecenterCursor
+        // 
+        // Handle the case when the window is focused
+        // Update mouse relative position and recenter cursor for aim control
+        if (isFocused) {
 
             // Update relative mouse position if window was focused last frame
             if (wasLastFrameFocused) {
