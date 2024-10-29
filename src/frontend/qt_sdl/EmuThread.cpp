@@ -79,6 +79,8 @@ extern int autoScreenSizing;
 extern int videoRenderer;
 extern bool videoSettingsDirty;
 
+bool isAdjustCenterCalcNeeded;
+bool isAdjustCenterCalcDone;
 
 float mouseX;
 float mouseY;
@@ -646,9 +648,17 @@ void EmuThread::run()
         if (Input::HotkeyPressed(HK_Reset)) emit windowEmuReset();
         if (Input::HotkeyPressed(HK_FrameStep)) emit windowEmuFrameStep();
 
-        if (Input::HotkeyPressed(HK_FullscreenToggle)) emit windowFullscreenToggle();
+        if (Input::HotkeyPressed(HK_FullscreenToggle)) {
+            emit windowFullscreenToggle();
+            isAdjustCenterCalcNeeded = true;
+            isAdjustCenterCalcDone = false;
+        }
 
-        if (Input::HotkeyPressed(HK_SwapScreens)) emit swapScreensToggle();
+        if (Input::HotkeyPressed(HK_SwapScreens)) {
+            emit swapScreensToggle();
+            isAdjustCenterCalcNeeded = true;
+            isAdjustCenterCalcDone = false;
+        }
         if (Input::HotkeyPressed(HK_SwapScreenEmphasis)) emit screenEmphasisToggle();
 
         // Lambda to update aim sensitivity and display a message
@@ -1101,8 +1111,14 @@ void EmuThread::run()
         const float SENSITIVITY_FACTOR = Config::MetroidAimSensitivity * 0.01f;
         const float SENSITIVITY_FACTOR_VIRTUAL_STYLUS = Config::MetroidVirtualStylusSensitivity * 0.01f;
 
-        // フォーカスが外れている場合にadjustedCenterを計算する
         if (!isFocused) {
+            isAdjustCenterCalcNeeded = true;
+            isAdjustCenterCalcDone = false;
+        }
+
+        // adjustedCenterを計算する
+        if (isAdjustCenterCalcNeeded && !isAdjustCenterCalcDone) {
+            isAdjustCenterCalcDone = true;
 
             // Cache window geometry and center position
             const QRect windowGeometry = mainWindow->geometry();
