@@ -1179,7 +1179,7 @@ void EmuThread::run()
         // Update mouse relative position and recenter cursor for aim control
         if (isFocused) {
 
-            ClassName::adjustCursorPosition(mainWindow, wasLastFrameFocused, mouseRel);
+            adjustCursorPosition(mainWindow, wasLastFrameFocused, mouseRel);
         }
 
         drawVCur = false;
