@@ -501,6 +501,77 @@ void detectRomAndSetAddresses() {
 }
 
 
+/**
+ * @brief Adjusts cursor position based on screen layout configuration
+ * @param mainWindow Pointer to the main window
+ * @param wasLastFrameFocused Whether the window was focused in the last frame
+ * @param mouseRel Reference to store relative mouse position
+ */
+__forceinline void adjustCursorPosition(QMainWindow* mainWindow, bool wasLastFrameFocused, QPoint& mouseRel) {
+    // Cache window geometry and center position
+    const QRect windowGeometry = mainWindow->geometry();
+    QPoint adjustedCenter = windowGeometry.center();
+
+    // Screen layout adjustment constants
+    constexpr float DEFAULT_ADJUSTMENT = 0.25f;
+    constexpr float HYBRID_RIGHT = 0.333203125f;  // (2133-1280)/2560
+    constexpr float HYBRID_LEFT = 0.166796875f;   // (1280-853)/2560
+
+    // Calculate adjustment direction based on screen swap configuration
+    const float direction = (Config::ScreenSwap != 0) ? 1.0f : -1.0f;
+
+    switch (Config::ScreenLayout) {
+    case Frontend::screenLayout_Natural:
+    case Frontend::screenLayout_Horizontal:
+        // Note: This case actually handles vertical layout despite being named Horizontal in enum
+        adjustedCenter.ry() += static_cast<int>(direction * windowGeometry.height() * DEFAULT_ADJUSTMENT);
+        break;
+
+    case Frontend::screenLayout_Vertical:
+        // Note: This case actually handles horizontal layout despite being named Vertical in enum
+        adjustedCenter.rx() += static_cast<int>(direction * windowGeometry.width() * DEFAULT_ADJUSTMENT);
+        break;
+
+    default: // hybrid
+        /*
+        ### Monitor Specification
+        - Monitor resolution: 2560x1440 pixels
+        ### Adjusted Conditions (with Black Bars)
+        1. Total monitor height: 1440 pixels
+        2. 80px black bars at the top and bottom, making the usable height:
+           1440 - 160 = 1280 pixels
+        3. 4:3 screen width, based on the usable height (1280 pixels):
+           4:3 width = (1280 / 3) * 4 = 1706.67 pixels
+        ### Position Calculations (with Black Bars)
+        #### Left 4:3 Screen Center
+        Left 4:3 center = 1706.67 / 2 = 853.33 pixels
+        #### Right Stacked 4:3 Screen Center
+        - The first 4:3 screen starts at the monitor's center (1280 pixels).
+        - The center of this screen:
+          1280 + (1706.67 / 2) = 2133.33 pixels
+        ### Final Results
+        - Left 4:3 screen center: ~853 pixels
+        - Right stacked 4:3 screen center: ~2133 pixels
+        */
+        if (Config::ScreenSwap != 0) {
+            adjustedCenter.rx() += static_cast<int>(windowGeometry.width() * HYBRID_RIGHT);
+            adjustedCenter.ry() -= static_cast<int>(windowGeometry.height() * DEFAULT_ADJUSTMENT);
+        }
+        else {
+            adjustedCenter.rx() -= static_cast<int>(windowGeometry.width() * HYBRID_LEFT);
+        }
+        break;
+    }
+
+    // Update relative mouse position if window was focused last frame
+    if (wasLastFrameFocused) {
+        mouseRel = QCursor::pos() - adjustedCenter;
+    }
+
+    // Recenter cursor
+    QCursor::setPos(adjustedCenter);
+}
+
 void EmuThread::run()
 {
     u32 mainScreenPos[3];
@@ -1030,71 +1101,8 @@ void EmuThread::run()
         // Handle the case when the window is focused
         // Update mouse relative position and recenter cursor for aim control
         if (isFocused) {
-            // Cache window geometry and center position
-            const QRect windowGeometry = mainWindow->geometry();
-            QPoint adjustedCenter = windowGeometry.center();
 
-            // Screen layout adjustment constants
-            constexpr float DEFAULT_ADJUSTMENT = 0.25f;
-            constexpr float HYBRID_RIGHT = 0.333203125f;  // (2133-1280)/2560
-            constexpr float HYBRID_LEFT = 0.166796875f;   // (1280-853)/2560
-
-            // Calculate adjustment direction based on screen swap configuration
-            const float direction = (Config::ScreenSwap != 0) ? 1.0f : -1.0f;
-
-            switch (Config::ScreenLayout) {
-            case Frontend::screenLayout_Natural:
-            case Frontend::screenLayout_Horizontal:
-                // Note: This case actually handles vertical layout despite being named Horizontal in enum
-                adjustedCenter.ry() += static_cast<int>(direction * windowGeometry.height() * DEFAULT_ADJUSTMENT);
-                break;
-            case Frontend::screenLayout_Vertical:
-                // Note: This case actually handles horizontal layout despite being named Vertical in enum
-                adjustedCenter.rx() += static_cast<int>(direction * windowGeometry.width() * DEFAULT_ADJUSTMENT);
-                break;
-            default: // hybrid
-                /* 
-                ### Monitor Specification
-                - Monitor resolution: 2560x1440 pixels
-                ### Adjusted Conditions (with Black Bars)
-                1. Total monitor height: 1440 pixels
-                2. 80px black bars at the top and bottom, making the usable height:
-                   1440 - 160 = 1280 pixels
-
-                3. 4:3 screen width, based on the usable height (1280 pixels):
-                   4:3 width = (1280 / 3) * 4 = 1706.67 pixels
-
-                ### Position Calculations (with Black Bars)
-                #### Left 4:3 Screen Center
-                Left 4:3 center = 1706.67 / 2 = 853.33 pixels
-
-                #### Right Stacked 4:3 Screen Center
-                - The first 4:3 screen starts at the monitor’s center (1280 pixels).
-                - The center of this screen:
-                  1280 + (1706.67 / 2) = 2133.33 pixels
-
-                ### Final Results
-                - Left 4:3 screen center: ~853 pixels
-                - Right stacked 4:3 screen center: ~2133 pixels
-
-                */
-                if (Config::ScreenSwap != 0) {
-                    adjustedCenter.rx() += static_cast<int>(windowGeometry.width() * HYBRID_RIGHT);
-                    adjustedCenter.ry() -= static_cast<int>(windowGeometry.height() * DEFAULT_ADJUSTMENT);
-                }
-                else {
-                    adjustedCenter.rx() -= static_cast<int>(windowGeometry.width() * HYBRID_LEFT);
-                }
-                break;
-            }
-
-            // Update relative mouse position if window was focused last frame
-            if (wasLastFrameFocused) {
-                mouseRel = QCursor::pos() - adjustedCenter;
-            }
-
-            // Recenter cursor
-            QCursor::setPos(adjustedCenter);
+            adjustCursorPosition(mainWindow, wasLastFrameFocused, mouseRel);
         }
 
         drawVCur = false;
