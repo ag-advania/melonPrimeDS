@@ -1117,12 +1117,12 @@ void EmuThread::run()
         }
 
         // adjustedCenterを計算する
-        if (isAdjustCenterCalcNeeded && !isAdjustCenterCalcDone) {
+        if (isFocused && isAdjustCenterCalcNeeded && !isAdjustCenterCalcDone) {
             isAdjustCenterCalcDone = true;
 
             // Cache window geometry and center position
             const QRect windowGeometry = mainWindow->geometry();
-            QPoint adjustedCenter = windowGeometry.center();
+            adjustedCenter = windowGeometry.center();
 
             // Lambda function for adjusting the center position
             auto adjustCenter = [](QPoint& adjustedCenter, const QRect& windowGeometry) {
