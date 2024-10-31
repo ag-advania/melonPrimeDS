@@ -122,6 +122,8 @@ void ScreenPanel::setupScreenLayout()
                                 aspectBot);
 
     numScreens = Frontend::GetScreenTransforms(screenMatrix[0], screenKind);
+
+    mainWindow->osdAddMessage(0, "setupScreenLayout.");
 }
 
 QSize ScreenPanel::screenGetMinSize(int factor = 1)
@@ -173,8 +175,6 @@ void ScreenPanel::onScreenLayoutChanged()
 {
     setMinimumSize(screenGetMinSize());
     setupScreenLayout();
-
-    mainWindow->osdAddMessage(0, "screenLayoutChanged.");
 }
 
 void ScreenPanel::resizeEvent(QResizeEvent* event)
@@ -330,7 +330,6 @@ void ScreenPanel::unfocus()
 {
     isFocused = false;
     setCursor(Qt::ArrowCursor);
-    mainWindow->osdAddMessage(0, "unfocus.");
 }
 
 void ScreenPanel::focusOutEvent(QFocusEvent* event)

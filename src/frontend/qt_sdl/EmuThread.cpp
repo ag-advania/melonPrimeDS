@@ -1111,15 +1111,24 @@ void EmuThread::run()
         const float SENSITIVITY_FACTOR = Config::MetroidAimSensitivity * 0.01f;
         const float SENSITIVITY_FACTOR_VIRTUAL_STYLUS = Config::MetroidVirtualStylusSensitivity * 0.01f;
 
-        if (!isFocused) {
-            isAdjustCenterCalcNeeded = true;
-            isAdjustCenterCalcDone = false;
-        }
+   //     if (!isFocused) {
+    //        isAdjustCenterCalcNeeded = true;
+   //         isAdjustCenterCalcDone = false;
+      //  }
 
         // adjustedCenterを計算する
-        if (isFocused && isAdjustCenterCalcNeeded && !isAdjustCenterCalcDone) {
-            isAdjustCenterCalcDone = true;
+       // if (isFocused && isAdjustCenterCalcNeeded && !isAdjustCenterCalcDone) {
+       //     isAdjustCenterCalcDone = true;
 
+
+     //   }
+
+        // Calculate for aim 
+        // updateMouseRelativeAndRecenterCursor
+        // 
+        // Handle the case when the window is focused
+        // Update mouse relative position and recenter cursor for aim control
+        if (isFocused) {
             // Cache window geometry and center position
             const QRect windowGeometry = mainWindow->geometry();
             adjustedCenter = windowGeometry.center();
@@ -1186,14 +1195,6 @@ void EmuThread::run()
             // Adjust the center position (call the lambda function)
             adjustCenter(adjustedCenter, windowGeometry);
 
-        }
-
-        // Calculate for aim 
-        // updateMouseRelativeAndRecenterCursor
-        // 
-        // Handle the case when the window is focused
-        // Update mouse relative position and recenter cursor for aim control
-        if (isFocused) {
 
             // Update relative mouse position if window was focused last frame
             if (wasLastFrameFocused) {
