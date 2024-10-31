@@ -173,6 +173,8 @@ void ScreenPanel::onScreenLayoutChanged()
 {
     setMinimumSize(screenGetMinSize());
     setupScreenLayout();
+
+    mainWindow->osdAddMessage(0, "screenLayoutChanged.");
 }
 
 void ScreenPanel::resizeEvent(QResizeEvent* event)
@@ -328,6 +330,7 @@ void ScreenPanel::unfocus()
 {
     isFocused = false;
     setCursor(Qt::ArrowCursor);
+    mainWindow->osdAddMessage(0, "unfocus.");
 }
 
 void ScreenPanel::focusOutEvent(QFocusEvent* event)
