@@ -122,8 +122,6 @@ void ScreenPanel::setupScreenLayout()
                                 aspectBot);
 
     numScreens = Frontend::GetScreenTransforms(screenMatrix[0], screenKind);
-
-    // mainWindow->osdAddMessage(0, "setupScreenLayout.");
 }
 
 QSize ScreenPanel::screenGetMinSize(int factor = 1)
