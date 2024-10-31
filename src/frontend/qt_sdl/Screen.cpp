@@ -123,7 +123,7 @@ void ScreenPanel::setupScreenLayout()
 
     numScreens = Frontend::GetScreenTransforms(screenMatrix[0], screenKind);
 
-    mainWindow->osdAddMessage(0, "setupScreenLayout.");
+    // mainWindow->osdAddMessage(0, "setupScreenLayout.");
 }
 
 QSize ScreenPanel::screenGetMinSize(int factor = 1)
