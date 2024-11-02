@@ -1076,12 +1076,31 @@ void EmuThread::run()
             }
 
             // Hybrid以外のレイアウトの場合、まずBotOnlyのチェックを行う
-            if (Config::ScreenSizing == Frontend::screenSizing_BotOnly) {
+            if (Config::ScreenSizing == Frontend::screenSizing_BotOnly ) {
                 // 下画面のみ表示の場合の処理
                 // TODO: カーソル位置の重複タッチを避けるための調整
-                adjustedCenter.rx() -= static_cast<int>(windowGeometry.width() * 0.4f);
-                adjustedCenter.ry() -= static_cast<int>(windowGeometry.height() * 0.4f);
+
+                if (mainWindow->isFullScreen())
+                {
+                    // isFullScreen
+                    adjustedCenter.rx() -= static_cast<int>(windowGeometry.width() * 0.4f);
+                    adjustedCenter.ry() -= static_cast<int>(windowGeometry.height() * 0.4f);
+                }
+                /*
+                else
+                {
+                    // isNotFullScreen
+                    // The cursor may be better centered because there is a problem that the cursor may click outside the window.
+                    // I would recommend playing in full screen.
+                    return;
+                }
+                */
+
                 return;  // BotOnlyの場合はここで終了
+            }
+
+            if (Config::ScreenSizing == Frontend::screenSizing_TopOnly) {
+                return;  // TopOnlyの場合はここで終了
             }
 
             // 通常のレイアウト調整（BotOnlyでない場合）
