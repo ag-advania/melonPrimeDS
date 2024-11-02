@@ -1044,8 +1044,7 @@ void EmuThread::run()
             const float direction = (Config::ScreenSwap != 0) ? 1.0f : -1.0f;
 
             // Adjust the center position based on screen layout in specified order
-            switch (Config::ScreenLayout) {
-            case Frontend::screenLayout_Hybrid:
+            if (Config::ScreenLayout == Frontend::screenLayout_Hybrid) {
                 /*
                 ### Monitor Specification
                 - Monitor resolution: 2560x1440 pixels
@@ -1073,8 +1072,20 @@ void EmuThread::run()
                 else {
                     adjustedCenter.rx() -= static_cast<int>(windowGeometry.width() * HYBRID_LEFT);
                 }
-                break;
+                return;  // Hybrid modeの場合はここで終了
+            }
 
+            // Hybrid以外のレイアウトの場合、まずBotOnlyのチェックを行う
+            if (Config::ScreenSizing == Frontend::screenSizing_BotOnly) {
+                // 下画面のみ表示の場合の処理
+                // TODO: カーソル位置の重複タッチを避けるための調整
+                adjustedCenter.rx() += static_cast<int>(windowGeometry.width() * 0.4f);
+                adjustedCenter.ry() -= static_cast<int>(windowGeometry.height() * 0.4f);
+                return;  // BotOnlyの場合はここで終了
+            }
+
+            // 通常のレイアウト調整（BotOnlyでない場合）
+            switch (Config::ScreenLayout) {
             case Frontend::screenLayout_Natural:
             case Frontend::screenLayout_Horizontal:
                 // Note: This case actually handles vertical layout despite being named Horizontal in enum
