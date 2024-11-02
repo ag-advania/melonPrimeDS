@@ -1112,9 +1112,10 @@ void EmuThread::run()
         // 
         // Handle the case when the window is focused
         // Update mouse relative position and recenter cursor for aim control
+
         if (isFocused) {
 
-            if (Input::HotkeyPressed(HK_FullscreenToggle) || Input::HotkeyPressed(HK_SwapScreens)) {
+            if (!wasLastFrameFocused || Input::HotkeyPressed(HK_FullscreenToggle) || Input::HotkeyPressed(HK_SwapScreens)) {
                 // TODO SwapScreenかFullScreenにされたりWindowサイズが変更されたときは実行しない。 もしくはadjustedCenterを再計算する。
 
                 // 調整された中心位置を取得
