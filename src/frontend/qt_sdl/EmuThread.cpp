@@ -1598,35 +1598,40 @@ void EmuThread::run()
 
                 drawVCur = true;
 
+                // VirtualStylus movement state tracking
+                struct {
+                    float actualX;  // Actual position without bounds
+                    float actualY;  // Actual position without bounds
+                    int boundedX;   // Position constrained to screen bounds
+                    int boundedY;   // Position constrained to screen bounds
+                } virtualStylus = { 128, 96, 128, 96 };  // Initialize to screen center
+
+                // Input handling
                 if (Input::HotkeyDown(HK_MetroidShootScan) || Input::HotkeyDown(HK_MetroidScanShoot)) {
-                    NDS->TouchScreen(static_cast<int>(virtualStylusX), static_cast<int>(virtualStylusY));
+                    NDS->TouchScreen(virtualStylus.boundedX, virtualStylus.boundedY);
                 }
                 else {
                     NDS->ReleaseScreen();
                 }
 
-                // mouse (VirtualStylus)
+                // Update actual position without bounds
                 mouseX = mouseRel.x();
-                virtualStylusX += mouseX * SENSITIVITY_FACTOR_VIRTUAL_STYLUS;
+                if (abs(mouseX) > 0) {
+                    virtualStylus.actualX += (mouseX * SENSITIVITY_FACTOR_VIRTUAL_STYLUS);
+                }
 
                 mouseY = mouseRel.y();
-                virtualStylusY += mouseY * dsAspectRatio * SENSITIVITY_FACTOR_VIRTUAL_STYLUS;
-
-                // 範囲チェック
-                virtualStylusX = std::clamp(virtualStylusX, 0.0f, 255.0f);
-                virtualStylusY = std::clamp(virtualStylusY, 0.0f, 191.0f);
-
-                // Optional: Add momentum when near bounds to make it easier to move away
-                const float BOUNDARY_THRESHOLD = 5.0f;
-                const float BOUNDARY_BOOST = 1.5f;
-
-                if (virtualStylusY > (191 - BOUNDARY_THRESHOLD) && mouseY < 0) {
-                    virtualStylusY += mouseY * BOUNDARY_BOOST;
-                }
-                if (virtualStylusY < BOUNDARY_THRESHOLD && mouseY > 0) {
-                    virtualStylusY += mouseY * BOUNDARY_BOOST;
+                if (abs(mouseY) > 0) {
+                    virtualStylus.actualY += (mouseY * dsAspectRatio * SENSITIVITY_FACTOR_VIRTUAL_STYLUS);
                 }
 
+                // Convert actual position to bounded screen coordinates
+                virtualStylus.boundedX = std::clamp(static_cast<int>(virtualStylus.actualX), 0, 255);
+                virtualStylus.boundedY = std::clamp(static_cast<int>(virtualStylus.actualY), 0, 191);
+
+                // Update the visual cursor position
+                virtualStylusX = virtualStylus.boundedX;
+                virtualStylusY = virtualStylus.boundedY;
                 mainWindow->osdAddMessage(0, ("virtualStylusY: " + std::to_string(virtualStylusY)).c_str());
 
 			} 
