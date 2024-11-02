@@ -1627,6 +1627,8 @@ void EmuThread::run()
                     virtualStylusY += mouseY * BOUNDARY_BOOST;
                 }
 
+                mainWindow->osdAddMessage(0, ("virtualStylusY: " + std::to_string(virtualStylusY)).c_str());
+
 			} 
 
 
