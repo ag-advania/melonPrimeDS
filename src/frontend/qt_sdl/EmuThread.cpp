@@ -1115,15 +1115,16 @@ void EmuThread::run()
 
         if (isFocused) {
 
-            if (!wasLastFrameFocused || Input::HotkeyPressed(HK_FullscreenToggle) || Input::HotkeyPressed(HK_SwapScreens)) {
-                // TODO SwapScreenかFullScreenにされたりWindowサイズが変更されたときは実行しない。 もしくはadjustedCenterを再計算する。
+            // ホットキーの状態をチェック
+            bool isLayoutChanging = Input::HotkeyPressed(HK_FullscreenToggle) || Input::HotkeyPressed(HK_SwapScreens);
 
-                // 調整された中心位置を取得
+            // フォーカスを得たとき、もしくはレイアウトが変更されたときに中心位置を再計算
+            if (!wasLastFrameFocused || isLayoutChanging) {
                 adjustedCenter = getAdjustedCenter(mainWindow);
             }
 
-            // Update relative mouse position if window was focused last frame
-            if (wasLastFrameFocused) {
+            // レイアウト変更中でない場合のみ相対位置を更新
+            if (wasLastFrameFocused && !isLayoutChanging) {
                 mouseRel = QCursor::pos() - adjustedCenter;
             }
 
