@@ -1039,7 +1039,7 @@ void EmuThread::run()
         QPoint adjustedCenter = windowGeometry.center();
 
         // Inner lambda function for adjusting the center position
-        auto adjustCenter = [](QPoint& adjustedCenter, const QRect& windowGeometry) {
+        auto adjustCenter = [](QPoint& adjustedCenter, const QRect& windowGeometry, QMainWindow* mainWindow) {
             // Calculate adjustment direction based on screen swap configuration
             const float direction = (Config::ScreenSwap != 0) ? 1.0f : -1.0f;
 
@@ -1119,7 +1119,7 @@ void EmuThread::run()
         };
 
         // Adjust the center position and return
-        adjustCenter(adjustedCenter, windowGeometry);
+        adjustCenter(adjustedCenter, windowGeometry, mainWindow);
         return adjustedCenter;
     };
 
