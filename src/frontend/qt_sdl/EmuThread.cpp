@@ -1599,35 +1599,22 @@ void EmuThread::run()
                 drawVCur = true;
 
                 if (Input::HotkeyDown(HK_MetroidShootScan) || Input::HotkeyDown(HK_MetroidScanShoot)) {
-                    NDS->TouchScreen(virtualStylusX, virtualStylusY);
+                    NDS->TouchScreen(static_cast<int>(virtualStylusX), static_cast<int>(virtualStylusY));
                 }
                 else {
                     NDS->ReleaseScreen();
                 }
 
                 // mouse (VirtualStylus)
-
                 mouseX = mouseRel.x();
-
-                if (abs(mouseX) > 0) {
-                    virtualStylusX += (
-                        mouseX * SENSITIVITY_FACTOR_VIRTUAL_STYLUS
-                        );
-                }
+                virtualStylusX += mouseX * SENSITIVITY_FACTOR_VIRTUAL_STYLUS;
 
                 mouseY = mouseRel.y();
+                virtualStylusY += mouseY * dsAspectRatio * SENSITIVITY_FACTOR_VIRTUAL_STYLUS;
 
-                if (abs(mouseY) > 0) {
-                    virtualStylusY += (
-                        mouseY * dsAspectRatio * SENSITIVITY_FACTOR_VIRTUAL_STYLUS
-                        );
-                }
-
-                if (virtualStylusX < 0) virtualStylusX = 0;
-                if (virtualStylusX > 255) virtualStylusX = 255;
-                if (virtualStylusY < 0) virtualStylusY = 0;
-                if (virtualStylusY > 191) virtualStylusY = 191;
-
+                // 範囲チェック
+                virtualStylusX = std::clamp(virtualStylusX, 0.0f, 255.0f);
+                virtualStylusY = std::clamp(virtualStylusY, 0.0f, 191.0f);
 
 			} 
 
