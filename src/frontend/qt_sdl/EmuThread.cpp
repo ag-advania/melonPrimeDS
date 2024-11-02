@@ -968,7 +968,7 @@ void EmuThread::run()
     bool wasLastFrameFocused = false;
 
     float virtualStylusX = 128;
-    float virtualStylusY = 96;
+    float virtualStylusY = 96; // これが良くないかも bottom onlyの時に場外になる？ Yが0でようやくしたギリギリ？
 
     const float dsAspectRatio = 256.0 / 192.0;
     const float aimAspectRatio = 6.0 / 4.0; // i have no idea
@@ -1595,43 +1595,31 @@ void EmuThread::run()
                 // this exists to just delay the pressing of the screen when you
                 // release the virtual stylus key
                 enableAim = false;
-
                 drawVCur = true;
-
-                // VirtualStylus movement state tracking
-                struct {
-                    float actualX;  // Actual position without bounds
-                    float actualY;  // Actual position without bounds
-                    int boundedX;   // Position constrained to screen bounds
-                    int boundedY;   // Position constrained to screen bounds
-                } virtualStylus = { 128, 96, 128, 96 };  // Initialize to screen center
-
-                // Input handling
                 if (Input::HotkeyDown(HK_MetroidShootScan) || Input::HotkeyDown(HK_MetroidScanShoot)) {
-                    NDS->TouchScreen(virtualStylus.boundedX, virtualStylus.boundedY);
+                    NDS->TouchScreen(virtualStylusX, virtualStylusY);
                 }
                 else {
                     NDS->ReleaseScreen();
                 }
-
-                // Update actual position without bounds
+                // mouse (VirtualStylus)
                 mouseX = mouseRel.x();
                 if (abs(mouseX) > 0) {
-                    virtualStylus.actualX += (mouseX * SENSITIVITY_FACTOR_VIRTUAL_STYLUS);
+                    virtualStylusX += (
+                        mouseX * SENSITIVITY_FACTOR_VIRTUAL_STYLUS
+                        );
                 }
-
                 mouseY = mouseRel.y();
                 if (abs(mouseY) > 0) {
-                    virtualStylus.actualY += (mouseY * dsAspectRatio * SENSITIVITY_FACTOR_VIRTUAL_STYLUS);
+                    virtualStylusY += (
+                        mouseY * dsAspectRatio * SENSITIVITY_FACTOR_VIRTUAL_STYLUS
+                        );
                 }
+                if (virtualStylusX < 0) virtualStylusX = 0;
+                if (virtualStylusX > 255) virtualStylusX = 255;
+                if (virtualStylusY < 0) virtualStylusY = 0;
+                if (virtualStylusY > 191) virtualStylusY = 191;
 
-                // Convert actual position to bounded screen coordinates
-                virtualStylus.boundedX = std::clamp(static_cast<int>(virtualStylus.actualX), 0, 255);
-                virtualStylus.boundedY = std::clamp(static_cast<int>(virtualStylus.actualY), 0, 191);
-
-                // Update the visual cursor position
-                virtualStylusX = virtualStylus.boundedX;
-                virtualStylusY = virtualStylus.boundedY;
                 mainWindow->osdAddMessage(0, ("virtualStylusY: " + std::to_string(virtualStylusY)).c_str());
 
 			} 
@@ -1660,8 +1648,10 @@ void EmuThread::run()
             screenGL->virtualCursorShow = drawVCur;
             screenGL->virtualCursorX = virtualStylusX;
             screenGL->virtualCursorY = virtualStylusY;
-
+            mainWindow->osdAddMessage(0, ("screenGL"));
         } else if (drawVCur) {
+            mainWindow->osdAddMessage(0, ("drawVCur"));
+
             // no OpenGL
             
             // TODO Fix that drawVCur is not working with limited Framerate
