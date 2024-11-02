@@ -1616,6 +1616,17 @@ void EmuThread::run()
                 virtualStylusX = std::clamp(virtualStylusX, 0.0f, 255.0f);
                 virtualStylusY = std::clamp(virtualStylusY, 0.0f, 191.0f);
 
+                // Optional: Add momentum when near bounds to make it easier to move away
+                const float BOUNDARY_THRESHOLD = 5.0f;
+                const float BOUNDARY_BOOST = 1.5f;
+
+                if (virtualStylusY > (191 - BOUNDARY_THRESHOLD) && mouseY < 0) {
+                    virtualStylusY += mouseY * BOUNDARY_BOOST;
+                }
+                if (virtualStylusY < BOUNDARY_THRESHOLD && mouseY > 0) {
+                    virtualStylusY += mouseY * BOUNDARY_BOOST;
+                }
+
 			} 
 
 
