@@ -1079,7 +1079,7 @@ void EmuThread::run()
             if (Config::ScreenSizing == Frontend::screenSizing_BotOnly) {
                 // 下画面のみ表示の場合の処理
                 // TODO: カーソル位置の重複タッチを避けるための調整
-                adjustedCenter.rx() += static_cast<int>(windowGeometry.width() * 0.4f);
+                adjustedCenter.rx() -= static_cast<int>(windowGeometry.width() * 0.4f);
                 adjustedCenter.ry() -= static_cast<int>(windowGeometry.height() * 0.4f);
                 return;  // BotOnlyの場合はここで終了
             }
