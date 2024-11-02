@@ -94,7 +94,7 @@ InputConfigDialog::InputConfigDialog(QWidget* parent) : QDialog(parent), ui(new 
 
     ui->metroidAimSensitvitySpinBox->setValue(Config::MetroidAimSensitivity);
     ui->metroidVirtualStylusSensitvitySpinBox->setValue(Config::MetroidVirtualStylusSensitivity);
-    //ui->metroidVsPlayerInputSpinBox->setValue(Config::MetroidVsPlayerInput);
+    ui->enable_customhud->setChecked(Config::enable_customhud);
 }
 
 void InputConfigDialog::switchTabToAddons() {

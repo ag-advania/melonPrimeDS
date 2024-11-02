@@ -242,6 +242,7 @@ extern bool GdbARM9BreakOnStartup;
 
 extern int MetroidAimSensitivity;
 extern int MetroidVirtualStylusSensitivity;
+extern bool enable_customhud;
 //extern int MetroidVsPlayerInput;
 
 const int MetroidAimSensitivityDefault = 30;

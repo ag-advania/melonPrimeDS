@@ -1154,140 +1154,136 @@ void EmuThread::run()
             }
 
 			if (isInGame) {
-                // inGame
 
-                // Draw HP information
-                // Retrieve the current HP from the HP address.
-                uint8_t currentHP = NDS->ARM9Read16(currentHpAddr);
+                bool customhud = Config::enable_customhud;
+                if (customhud) {
+                    // inGame
 
-                // If HP is 25 or below, set the pen color to red; otherwise, set it to white.
-                if (currentHP <= 25) {
-                    Top_paint->setPen(QColor(255, 0, 0)); // Set the pen to red (RGB format for red).
-                }
-                else if (currentHP <= 50 && currentHP >= 26) {
-                    Top_paint->setPen(QColor(255, 165, 0)); // Set the pen to orange (RGB format for orange).
-                }
-                else {
-                    Top_paint->setPen(QColor(255, 255, 255)); // Set the pen to white (RGB format for white).
-                }
+                    // Draw HP information
+                    // Retrieve the current HP from the HP address.
+                    uint8_t currentHP = NDS->ARM9Read16(currentHpAddr);
 
-
-                // Display the text to draw (display HP value in decimal).
-                Top_paint->drawText(QPoint(4, 188), (std::string("hp ") + std::to_string(currentHP)).c_str());
-
-
-
-                // Missile Ammo
-
-                Top_paint->setPen(Qt::white);
-                // Display the missile ammo text (divide value by 10 in decimal format).
-                
-                
+                    // If HP is 25 or below, set the pen color to red; otherwise, set it to white.
+                    if (currentHP <= 25) {
+                        Top_paint->setPen(QColor(255, 0, 0)); // Set the pen to red (RGB format for red).
+                    }
+                    else if (currentHP <= 50 && currentHP >= 26) {
+                        Top_paint->setPen(QColor(255, 165, 0)); // Set the pen to orange (RGB format for orange).
+                    }
+                    else {
+                        Top_paint->setPen(QColor(255, 255, 255)); // Set the pen to white (RGB format for white).
+                    }
+                    // Display the text to draw (display HP value in decimal).
+                    Top_paint->drawText(QPoint(4, 188), (std::string("hp ") + std::to_string(currentHP)).c_str());
+                    // Missile Ammo
+                    Top_paint->setPen(Qt::white);
+                    // Display the missile ammo text (divide value by 10 in decimal format).
+                    
+                    
 
 
-                // SpecialWeapon Ammo
-                // 
-                // Retrieve the current weapon from the currentWeaponAddr.
-                uint8_t currentWeapon = NDS->ARM9Read8(currentWeaponAddr);
+                    // SpecialWeapon Ammo
+                    // 
+                    // Retrieve the current weapon from the currentWeaponAddr.
+                    uint8_t currentWeapon = NDS->ARM9Read8(currentWeaponAddr);
 
-                // Retrieve the current ammo count from address 0x020DB0E0.
-                uint8_t ammoCount = NDS->ARM9Read16(currentAmmoSpecialAddr);
+                    // Retrieve the current ammo count from address 0x020DB0E0.
+                    uint8_t ammoCount = NDS->ARM9Read16(currentAmmoSpecialAddr);
 
-                // Store the current ammo consumption value.
-                uint8_t ammoConsumption = ammoCount; // Initially use the value as is.
+                    // Store the current ammo consumption value.
+                    uint8_t ammoConsumption = ammoCount; // Initially use the value as is.
 
-                // Apply ammo consumption logic based on the currentWeapon value (use hexadecimal division).
-                QImage image; // Declare QImage
-                switch (currentWeapon) {
-                case 0: // For PB.
-                    ammoConsumption = ammoCount; // PB does not consume ammo.
-                    image = QImage(":/mph-icon-pb");
-                    break;
-                case 1: // For Voltra.
-                    ammoConsumption = ammoCount / 0x5;
-                    image = QImage(":/mph-icon-volt");
-                    break;
-                case 2: // For Missiles.
-                    ammoConsumption = ammoCount / 0xA; // Missiles consume ammo in decimal (10).
-                    image = QImage(":/mph-icon-missile");
-                    Top_paint->drawText(QPoint(15, 173), (std::to_string(NDS->ARM9Read16(currentAmmoMissileAddr) / 0x0A)).c_str());
-                    Top_paint->drawImage(QPoint(4, 165), image);
-                    break;
-                case 3: // For Battle Hammer.
-                    ammoConsumption = ammoCount / 0x4; // Battle Hammer consumes ammo in decimal (4).
-                    image = QImage(":/mph-icon-battlehammer");
-                    break;
-                case 4: // For Imperialist.
-                    ammoConsumption = ammoCount / 0x14; // Imperialist consumes ammo in decimal (20).
-                    image = QImage(":/mph-icon-imperialist");
-                    break;
-                case 5: // For Judicator.
-                    ammoConsumption = ammoCount / 0x5; // Judicator consumes ammo in decimal (5).
-                    image = QImage(":/mph-icon-judicator");
-                    break;
-                case 6: // For Magmaul.
-                    ammoConsumption = ammoCount / 0xA; // Magmaul consumes ammo in decimal (10).
-                    image = QImage(":/mph-icon-magmaul");
-                    break;
-                case 7: // For Shock Coil.
-                    ammoConsumption = ammoCount / 0xA; // Shock Coil consumes ammo in decimal (10).
-                    image = QImage(":/mph-icon-shock");
-                    break;
-                case 8: // For Omega Cannon.
-                    ammoConsumption = 1; // Omega Cannon does not consume ammo.
-                    image = QImage(":/mph-icon-omega");
-                    break;
-                default:
-                    ammoConsumption = ammoCount; // If unknown weapon, do not change ammo consumption.
-                    break;
-                }
-                if (currentWeapon != 0 && currentWeapon != 2) {
-                    // Display the text to draw (ammo consumption value in decimal format).
-                    Top_paint->drawText(QPoint(15, 173), (std::to_string(ammoConsumption)).c_str());
-                    Top_paint->drawImage(QPoint(5, 165), image);
-                }
-   
+                    // Apply ammo consumption logic based on the currentWeapon value (use hexadecimal division).
+                    QImage image; // Declare QImage
+                    switch (currentWeapon) {
+                    case 0: // For PB.
+                        ammoConsumption = ammoCount; // PB does not consume ammo.
+                        image = QImage(":/mph-icon-pb");
+                        break;
+                    case 1: // For Voltra.
+                        ammoConsumption = ammoCount / 0x5;
+                        image = QImage(":/mph-icon-volt");
+                        break;
+                    case 2: // For Missiles.
+                        ammoConsumption = ammoCount / 0xA; // Missiles consume ammo in decimal (10).
+                        image = QImage(":/mph-icon-missile");
+                        Top_paint->drawText(QPoint(15, 173), (std::to_string(NDS->ARM9Read16(currentAmmoMissileAddr) / 0x0A)).c_str());
+                        Top_paint->drawImage(QPoint(4, 165), image);
+                        break;
+                    case 3: // For Battle Hammer.
+                        ammoConsumption = ammoCount / 0x4; // Battle Hammer consumes ammo in decimal (4).
+                        image = QImage(":/mph-icon-battlehammer");
+                        break;
+                    case 4: // For Imperialist.
+                        ammoConsumption = ammoCount / 0x14; // Imperialist consumes ammo in decimal (20).
+                        image = QImage(":/mph-icon-imperialist");
+                        break;
+                    case 5: // For Judicator.
+                        ammoConsumption = ammoCount / 0x5; // Judicator consumes ammo in decimal (5).
+                        image = QImage(":/mph-icon-judicator");
+                        break;
+                    case 6: // For Magmaul.
+                        ammoConsumption = ammoCount / 0xA; // Magmaul consumes ammo in decimal (10).
+                        image = QImage(":/mph-icon-magmaul");
+                        break;
+                    case 7: // For Shock Coil.
+                        ammoConsumption = ammoCount / 0xA; // Shock Coil consumes ammo in decimal (10).
+                        image = QImage(":/mph-icon-shock");
+                        break;
+                    case 8: // For Omega Cannon.
+                        ammoConsumption = 1; // Omega Cannon does not consume ammo.
+                        image = QImage(":/mph-icon-omega");
+                        break;
+                    default:
+                        ammoConsumption = ammoCount; // If unknown weapon, do not change ammo consumption.
+                        break;
+                    }
+                    if (currentWeapon != 0 && currentWeapon != 2) {
+                        // Display the text to draw (ammo consumption value in decimal format).
+                        Top_paint->drawText(QPoint(15, 173), (std::to_string(ammoConsumption)).c_str());
+                        Top_paint->drawImage(QPoint(5, 165), image);
+                    }
+    
+                    // Draw Crosshair:
 
-        
-                // Draw Crosshair:
+                    // Check if in alternate form (transformed state)
+                    isAltForm = NDS->ARM9Read8(isAltFormAddr) == 0x02;
 
-                // Check if in alternate form (transformed state)
-                isAltForm = NDS->ARM9Read8(isAltFormAddr) == 0x02;
+                    // Check if the upper 4 bits are odd (1 or 3)
+                    // this is for fixing issue: Shooting and transforming become impossible, when changing weapons at high speed while transitioning from transformed to normal form.
+                    isTransforming = NDS->ARM9Read8(jumpFlagAddr) & 0x10;
 
-                // Check if the upper 4 bits are odd (1 or 3)
-                // this is for fixing issue: Shooting and transforming become impossible, when changing weapons at high speed while transitioning from transformed to normal form.
-                isTransforming = NDS->ARM9Read8(jumpFlagAddr) & 0x10;
+                    isTransformingtoAlt = NDS->ARM9Read8(isTransformingtoAltAddr) != 0x00 && 
+                        NDS->ARM9Read8(isTransformingtoAltAddr) != 0x01 && 
+                        NDS->ARM9Read8(isTransformingtoAltAddr) != 0x02 && 
+                        NDS->ARM9Read8(isTransformingtoAltAddr) != 0x03 &&
+                        NDS->ARM9Read8(isTransformingtoAltAddr) != 0x06 &&
+                        NDS->ARM9Read8(isTransformingtoAltAddr) != 0x07 &&
+                        NDS->ARM9Read8(isTransformingtoAltAddr) != 0x20 &&
+                        NDS->ARM9Read8(isTransformingtoAltAddr) != 0x21 ;
 
-                isTransformingtoAlt = NDS->ARM9Read8(isTransformingtoAltAddr) != 0x00 && 
-                      NDS->ARM9Read8(isTransformingtoAltAddr) != 0x01 && 
-                      NDS->ARM9Read8(isTransformingtoAltAddr) != 0x02 && 
-                      NDS->ARM9Read8(isTransformingtoAltAddr) != 0x03 &&
-                      NDS->ARM9Read8(isTransformingtoAltAddr) != 0x06 &&
-                      NDS->ARM9Read8(isTransformingtoAltAddr) != 0x07 &&
-                      NDS->ARM9Read8(isTransformingtoAltAddr) != 0x20 &&
-                      NDS->ARM9Read8(isTransformingtoAltAddr) != 0x21 ;
+                    
+                    if (!isTransformingtoAlt && !isAltForm) {
+                        // Read crosshair values
+                        // float crosshairX = NDS->ARM9Read8(0x020DF024);
+                        // float crosshairY = NDS->ARM9Read8(0x020DF026);
+                        //DEBUG: Top_paint->drawText(QPoint(164, 100), (std::to_string(NDS->ARM9Read8(isTransformingtoAlt))).c_str());
+                        // currently US1.1 only... JP1.0 doesnt work with this addr
+                        float crosshairX = NDS->ARM9Read8(baseAimXAddr + 0x27E);
+                        float crosshairY = NDS->ARM9Read8(baseAimXAddr + 0x280);
 
-                
-                if (!isTransformingtoAlt && !isAltForm) {
-                    // Read crosshair values
-//                    float crosshairX = NDS->ARM9Read8(0x020DF024);
-//                    float crosshairY = NDS->ARM9Read8(0x020DF026);
-                    //DEBUG: Top_paint->drawText(QPoint(164, 100), (std::to_string(NDS->ARM9Read8(isTransformingtoAlt))).c_str());
-                    // currently US1.1 only... JP1.0 doesnt work with this addr
-                    float crosshairX = NDS->ARM9Read8(baseAimXAddr + 0x27E);
-                    float crosshairY = NDS->ARM9Read8(baseAimXAddr + 0x280);
+                        // Scale crosshair X value
+                        crosshairX = (crosshairX < 0) ? crosshairX + 254 : crosshairX;
 
-                    // Scale crosshair X value
-                    crosshairX = (crosshairX < 0) ? crosshairX + 254 : crosshairX;
+                        // Crosshair size (1 pixel)
+                        int crossSize = 3;
 
-                    // Crosshair size (1 pixel)
-                    int crossSize = 3;
+                        // Draw crosshair using drawLine
+                        Top_paint->setPen(Qt::white);  // Cross color
+                        Top_paint->drawLine(crosshairX - crossSize, crosshairY, crosshairX + crossSize, crosshairY); // Horizontal line
+                        Top_paint->drawLine(crosshairX, crosshairY - crossSize, crosshairX, crosshairY + crossSize); // Vertical line
 
-                    // Draw crosshair using drawLine
-                    Top_paint->setPen(Qt::white);  // Cross color
-                    Top_paint->drawLine(crosshairX - crossSize, crosshairY, crosshairX + crossSize, crosshairY); // Horizontal line
-                    Top_paint->drawLine(crosshairX, crosshairY - crossSize, crosshairX, crosshairY + crossSize); // Vertical line
-
+                    }
                 }
 
 
