@@ -1640,6 +1640,7 @@ void EmuThread::run()
                         );
                 }
 
+                mainWindow->osdAddMessage(0, ("mouseY: " + std::to_string(mouseY)).c_str());
                 mainWindow->osdAddMessage(0, ("virtualStylusY: " + std::to_string(virtualStylusY)).c_str());
 
 			} 
@@ -1668,9 +1669,9 @@ void EmuThread::run()
             screenGL->virtualCursorShow = drawVCur;
             screenGL->virtualCursorX = virtualStylusX;
             screenGL->virtualCursorY = virtualStylusY;
-            mainWindow->osdAddMessage(0, ("screenGL"));
+            //mainWindow->osdAddMessage(0, ("screenGL"));
         } else if (drawVCur) {
-            mainWindow->osdAddMessage(0, ("drawVCur"));
+            //mainWindow->osdAddMessage(0, ("drawVCur"));
 
             // no OpenGL
             
