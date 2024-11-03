@@ -1131,11 +1131,7 @@ void EmuThread::run()
     QPainter* Bott_paint = OSD[1].Painter;
 
     while (EmuRunning != emuStatus_Exit) {
-        
-        //Clear OSD buffers
-        Top_buffer->fill(0x00000000);
-        Bott_buffer->fill(0x00000000);
-      
+
         auto isFocused = mainWindow->panel->getFocused();
 
         // Define sensitivity factor as a constant
@@ -1214,6 +1210,10 @@ void EmuThread::run()
 
         if (isAddressCalculationNeeded) {
             // Read once at game start
+
+            //Clear OSD buffers
+            Top_buffer->fill(0x00000000);
+            Bott_buffer->fill(0x00000000);
 
             // Read the player position
             playerPosition = NDS->ARM9Read8(PlayerPosAddr);
@@ -1617,6 +1617,9 @@ void EmuThread::run()
 			else {
                 // VirtualStylus
 
+                //Clear OSD buffers
+                Top_buffer->fill(0x00000000);
+                Bott_buffer->fill(0x00000000);
 
                 // this exists to just delay the pressing of the screen when you
                 // release the virtual stylus key
