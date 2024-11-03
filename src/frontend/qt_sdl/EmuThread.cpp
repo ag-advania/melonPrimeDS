@@ -1611,7 +1611,14 @@ void EmuThread::run()
                 else {
                     NDS->ReleaseScreen();
                 }
-                // mouse (VirtualStylus)
+
+                // force virtualStylus inside window
+                if (virtualStylusX < 0) virtualStylusX = 0;
+                if (virtualStylusX > 255) virtualStylusX = 255;
+                if (virtualStylusY < 0) virtualStylusY = 0;
+                if (virtualStylusY > 191) virtualStylusY = 191;
+
+                // move VirtualStylus
                 mouseX = mouseRel.x();
                 if (mouseX > 0) {
                     virtualStylusX += (
@@ -1624,11 +1631,6 @@ void EmuThread::run()
                         mouseY * dsAspectRatio * SENSITIVITY_FACTOR_VIRTUAL_STYLUS
                         );
                 }
-                if (virtualStylusX < 0) virtualStylusX = 0;
-                if (virtualStylusX > 255) virtualStylusX = 255;
-                if (virtualStylusY < 0) virtualStylusY = 0;
-                if (virtualStylusY > 191) virtualStylusY = 191;
-
                 mainWindow->osdAddMessage(0, ("virtualStylusY: " + std::to_string(virtualStylusY)).c_str());
 
 			} 
