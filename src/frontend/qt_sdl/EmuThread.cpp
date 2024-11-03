@@ -1613,9 +1613,7 @@ void EmuThread::run()
                 }
 
 
-                // force virtualStylus inside window
-                if (virtualStylusX < 0) virtualStylusX = 0;
-                if (virtualStylusX > 255) virtualStylusX = 255;
+                // force virtualStylusY inside window
                 if (virtualStylusY < 0) virtualStylusY = 0;
                 if (virtualStylusY > 191) virtualStylusY = 191;
 
@@ -1634,6 +1632,11 @@ void EmuThread::run()
                         mouseY * dsAspectRatio * SENSITIVITY_FACTOR_VIRTUAL_STYLUS
                         );
                 }
+
+                // force virtualStylusX inside window
+                if (virtualStylusX < 0) virtualStylusX = 0;
+                if (virtualStylusX > 255) virtualStylusX = 255;
+
                 mainWindow->osdAddMessage(0, ("virtualStylusY: " + std::to_string(virtualStylusY)).c_str());
 
 			} 
