@@ -81,8 +81,8 @@ ScreenPanel::ScreenPanel(QWidget* parent) : QWidget(parent)
     osdID = 1;
 
     //MelonPrime OSD
-    OSDCanvas[0] = PrimeOSD::Canvas(256, 192);//Bottom Screen OSD
-    OSDCanvas[1] = PrimeOSD::Canvas(256, 192);//Top Screen OSD
+    OSDCanvas[0] = PrimeOSD::Canvas(256, 192); //Bottom Screen OSD
+    OSDCanvas[1] = PrimeOSD::Canvas(256, 192); //Top Screen OSD
 
 }
 
