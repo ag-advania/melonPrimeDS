@@ -1166,6 +1166,9 @@ void EmuThread::run()
             if (wasLastFrameFocused && !isLayoutChanging) {
                 mouseRel = QCursor::pos() - adjustedCenter;
             }
+            else {
+                mouseRel = QPoint(0, 0);  // 原点に初期化
+            }
 
             // Recenter cursor
             QCursor::setPos(adjustedCenter);
@@ -1612,7 +1615,15 @@ void EmuThread::run()
                     NDS->ReleaseScreen();
                 }
 
+                // force virtualStylusX inside window
+                if (virtualStylusX < 0) virtualStylusX = 0;
+                if (virtualStylusX > 255) virtualStylusX = 255;
+                // force virtualStylusY inside window
+                if (virtualStylusY < 0) virtualStylusY = 0;
+                if (virtualStylusY > 191) virtualStylusY = 191;
 
+                // 理由が分かった。上に挙げても下がるから下がるエイムが発動している。
+                // なぜ下がるエイムが発動しているのかを確認して解決しないと進まない。
 
                 // move VirtualStylus
                 // absを取り除くとマイナス値の判定ができなくなるので、右と下にしか動かすことができない。
@@ -1629,16 +1640,6 @@ void EmuThread::run()
                         mouseY * dsAspectRatio * SENSITIVITY_FACTOR_VIRTUAL_STYLUS
                         );
                 }
-
-                virtualStylusX = abs(virtualStylusX);
-                virtualStylusY = abs(virtualStylusY);
-
-                // force virtualStylusX inside window
-                if (virtualStylusX < 0) virtualStylusX = 0;
-                if (virtualStylusX > 255) virtualStylusX = 255;
-                // force virtualStylusY inside window
-                if (virtualStylusY < 0) virtualStylusY = 0;
-                if (virtualStylusY > 191) virtualStylusY = 191;
 
                 mainWindow->osdAddMessage(0, ("virtualStylusY: " + std::to_string(virtualStylusY)).c_str());
 
