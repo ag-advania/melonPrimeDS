@@ -1660,7 +1660,12 @@ void EmuThread::run()
 
             // TODO check
             // TESTING Touch top left to avoid unexpected touching
-            NDS->TouchScreen(0, 0); // required for aiming
+            if (!isInGame) {
+                NDS->TouchScreen(0, 0); // required for aiming
+            }
+            else {
+                NDS->TouchScreen(128, 88); // required for aiming
+            }
         }
 
         NDS->SetKeyMask(Input::GetInputMask());
