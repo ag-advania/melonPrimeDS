@@ -357,7 +357,7 @@ void detectRomAndSetAddresses() {
 
         baseChosenHunterAddr = 0x020CBDA4; // BattleConfig:ChosenHunter 0 samus 1 kanden 2 trace 3 sylux 4 noxus 5 spire 6 weavel
         inGameAddr = 0x020eec40 + 0x8F0; // inGame:1
-        inVisorOrMapAddr = 0x020D9A7D; // 推定アドレス
+        inVisorOrMapAddr = 0x020D9A7D; // Estimated address
         PlayerPosAddr = 0x020DA538;
         baseIsAltFormAddr = 0x020DB098; // 1p(host)
         baseLoadedSpecialWeaponAddr = baseIsAltFormAddr + 0x56; // 1p(host). For special weapons only. Missile and powerBeam are not special weapon.
@@ -378,7 +378,7 @@ void detectRomAndSetAddresses() {
         baseChosenHunterAddr = 0x020CB51C; // BattleConfig:ChosenHunter
         inGameAddr = 0x020ee180 + 0x8F0; // inGame:1
         PlayerPosAddr = 0x020D9CB8;
-        inVisorOrMapAddr = PlayerPosAddr - 0xabb; // 推定アドレス
+        inVisorOrMapAddr = PlayerPosAddr - 0xabb; // Estimated address
         baseIsAltFormAddr = 0x020DC6D8 - 0x1EC0; // 1p(host)
         baseLoadedSpecialWeaponAddr = baseIsAltFormAddr + 0x56; // 1p(host). For special weapons only. Missile and powerBeam are not special weapon.
         baseWeaponChangeAddr = 0x020DCA9B - 0x1EC0; // 1p(host)
@@ -398,7 +398,7 @@ void detectRomAndSetAddresses() {
         baseChosenHunterAddr = 0x020CD358; // BattleConfig:ChosenHunter
         inGameAddr = 0x020F0BB0; // inGame:1
         PlayerPosAddr = 0x020DBB78;
-        inVisorOrMapAddr = PlayerPosAddr - 0xabb; // 推定アドレス
+        inVisorOrMapAddr = PlayerPosAddr - 0xabb; // Estimated address
         baseIsAltFormAddr = 0x020DC6D8; // 1p(host)
         baseLoadedSpecialWeaponAddr = baseIsAltFormAddr + 0x56; // 1p(host). For special weapons only. Missile and powerBeam are not special weapon.
         baseWeaponChangeAddr = 0x020DCA9B; // 1p(host)
@@ -418,7 +418,7 @@ void detectRomAndSetAddresses() {
         baseChosenHunterAddr = 0x020CD318; // BattleConfig:ChosenHunter
         inGameAddr = 0x020F0280 + 0x8F0; // inGame:1
         PlayerPosAddr = 0x020DBB38;
-        inVisorOrMapAddr = PlayerPosAddr - 0xabb; // 推定アドレス
+        inVisorOrMapAddr = PlayerPosAddr - 0xabb; // Estimated address
         baseIsAltFormAddr = 0x020DC6D8 - 0x64; // 1p(host)
         baseLoadedSpecialWeaponAddr = baseIsAltFormAddr + 0x56; // 1p(host). For special weapons only. Missile and powerBeam are not special weapon.
         baseWeaponChangeAddr = 0x020DCA9B - 0x40; // 1p(host)
@@ -438,7 +438,7 @@ void detectRomAndSetAddresses() {
         baseChosenHunterAddr = 0x020CBDC4; // BattleConfig:ChosenHunter
         inGameAddr = 0x020eec60 + 0x8F0; // inGame:1
         PlayerPosAddr = 0x020DA558;
-        inVisorOrMapAddr = PlayerPosAddr - 0xabb; // 推定アドレス
+        inVisorOrMapAddr = PlayerPosAddr - 0xabb; // Estimated address
         baseIsAltFormAddr = 0x020DC6D8 - 0x1620; // 1p(host)
         baseLoadedSpecialWeaponAddr = baseIsAltFormAddr + 0x56; // 1p(host). For special weapons only. Missile and powerBeam are not special weapon.
         baseWeaponChangeAddr = 0x020DCA9B - 0x1620; // 1p(host)
@@ -458,7 +458,7 @@ void detectRomAndSetAddresses() {
         baseChosenHunterAddr = 0x020CBE44; // BattleConfig:ChosenHunter
         inGameAddr = 0x020eece0 + 0x8F0; // inGame:1
         PlayerPosAddr = 0x020DA5D8;
-        inVisorOrMapAddr = PlayerPosAddr - 0xabb; // 推定アドレス
+        inVisorOrMapAddr = PlayerPosAddr - 0xabb; // Estimated address
         baseIsAltFormAddr = 0x020DC6D8 - 0x15A0; // 1p(host)
         baseLoadedSpecialWeaponAddr = baseIsAltFormAddr + 0x56; // 1p(host). For special weapons only. Missile and powerBeam are not special weapon.
         baseWeaponChangeAddr = 0x020DCA9B - 0x15A0; // 1p(host)
@@ -478,7 +478,7 @@ void detectRomAndSetAddresses() {
         // Korea1.0
         baseChosenHunterAddr = 0x020C4B88; // BattleConfig:ChosenHunter
         inGameAddr = 0x020E81B4; // inGame:1
-        inVisorOrMapAddr = PlayerPosAddr - 0xabb; // 推定アドレス
+        inVisorOrMapAddr = PlayerPosAddr - 0xabb; // Estimated address
         PlayerPosAddr = 0x020D33A9; // it's weird but "3A9" is correct.
         baseIsAltFormAddr = 0x020DC6D8 - 0x87F4; // 1p(host)
         baseLoadedSpecialWeaponAddr = baseIsAltFormAddr + 0x56; // 1p(host). For special weapons only. Missile and powerBeam are not special weapon.
@@ -733,44 +733,36 @@ void EmuThread::run()
             AudioInOut::MicProcess(*NDS);
 
             // auto screen layout
-            // 自動スクリーンレイアウト
             if (Config::ScreenSizing == Frontend::screenSizing_Auto)
             {
                 // Update main screen positions
-                // メインスクリーンの位置を更新
                 mainScreenPos[2] = mainScreenPos[1];
                 mainScreenPos[1] = mainScreenPos[0];
                 mainScreenPos[0] = NDS->PowerControl9 >> 15;
                 int guess;
+
                 // Detect screen flickering
-                // 画面のちらつきを検出
                 if (mainScreenPos[0] == mainScreenPos[2] &&
                     mainScreenPos[0] != mainScreenPos[1])
                 {
                     // constant flickering, likely displaying 3D on both screens
                     // TODO: when both screens are used for 2D only...???
-                    // 常にちらつきがある場合、おそらく両画面で3Dを表示している
-                    // TODO: 両画面が2Dのみに使用される場合の処理
                     guess = Frontend::screenSizing_Even;
                 }
                 else
                 {
                     // Guess layout based on main screen position
-                    // メインスクリーンの位置に基づいてレイアウトを推測
                     if (mainScreenPos[0] == 1)
-                        guess = Frontend::screenSizing_EmphTop;  // Emphasize top screen // 上画面強調
+                        guess = Frontend::screenSizing_EmphTop;  // Emphasize top screen
                     else
-                        guess = Frontend::screenSizing_EmphBot;  // Emphasize bottom screen // 下画面強調
+                        guess = Frontend::screenSizing_EmphBot;  // Emphasize bottom screen
                 }
                 // If the guessed layout has changed
-                // 推測されたレイアウトが変更された場合
                 if (guess != autoScreenSizing)
                 {
                     // Set the new layout
-                    // 新しいレイアウトを設定
                     autoScreenSizing = guess;
                     // Emit signal for layout change
-                    // レイアウト変更のシグナルを発信
                     emit screenLayoutChange();
                 }
             }
@@ -968,7 +960,7 @@ void EmuThread::run()
     bool wasLastFrameFocused = false;
 
     float virtualStylusX = 128;
-    float virtualStylusY = 96; // これが良くないかも bottom onlyの時に場外になる？ Yが0でようやくしたギリギリ？
+    float virtualStylusY = 96; // This might not be good - does it go out of bounds when bottom-only? Is Y=0 barely at the bottom limit?
 
     const float dsAspectRatio = 256.0 / 192.0;
     const float aimAspectRatio = 6.0 / 4.0; // i have no idea
@@ -1024,7 +1016,7 @@ void EmuThread::run()
     constexpr float HYBRID_LEFT = 0.166796875f;   // (1280-853)/2560
 
     // The QPoint class defines a point in the plane using integer precision. 
-// auto mouseRel = rawInputThread->fetchMouseDelta();
+    // auto mouseRel = rawInputThread->fetchMouseDelta();
     QPoint mouseRel;
 
     // Adjusted centerの初期化
@@ -1126,7 +1118,7 @@ void EmuThread::run()
         return adjustedCenter;
     };
 
-    // 調整された中心位置を取得
+    // Get adjusted center position
     adjustedCenter = getAdjustedCenter(mainWindow);
 
 
@@ -1136,7 +1128,7 @@ void EmuThread::run()
 
         auto isFocused = mainWindow->panel->getFocused();
 
-        // 感度係数を定数として定義
+        // Define sensitivity factor as a constant
         const float SENSITIVITY_FACTOR = Config::MetroidAimSensitivity * 0.01f;
         const float SENSITIVITY_FACTOR_VIRTUAL_STYLUS = Config::MetroidVirtualStylusSensitivity * 0.01f;
 
@@ -1148,9 +1140,9 @@ void EmuThread::run()
 
         if (isFocused) {
 
-            mouseRel = QPoint(0, 0);  // 原点に初期化
+            mouseRel = QPoint(0, 0);  // Initialize to origin
 
-            // ホットキーの状態をチェック
+            // Check hotkey status
             bool isLayoutChanging = Input::HotkeyPressed(HK_FullscreenToggle) || Input::HotkeyPressed(HK_SwapScreens);
 
             // These conditional branches cannot be simplified to a simple else statement
@@ -1158,12 +1150,12 @@ void EmuThread::run()
             // 1. Recalculating center position when focus is gained or layout is changing
             // 2. Updating relative position only when focused and layout is not changing
 
-            // フォーカスを得たとき、もしくはレイアウトが変更されたときに中心位置を再計算
+            // Recalculate center position when focus is gained or layout is changing
             if (!wasLastFrameFocused || isLayoutChanging) {
                 adjustedCenter = getAdjustedCenter(mainWindow);
             }
 
-            // レイアウト変更中でない場合のみ相対位置を更新
+            // Update relative position only when not changing layout
             if (wasLastFrameFocused && !isLayoutChanging) {
                 mouseRel = QCursor::pos() - adjustedCenter;
             }
@@ -1405,7 +1397,7 @@ void EmuThread::run()
                     auto setChangingWeapon = [](int value) -> int {
                         // Apply mask to set the lower 4 bits to 1011 (B in hexadecimal)
                         return (value & 0xF0) | 0x0B; // Keep the upper 4 bits, set lower 4 bits to 1011
-                        };
+                    };
 
                     // Modify the value using the lambda
                     int valueOfWeaponChange = setChangingWeapon(NDS->ARM9Read8(weaponChangeAddr));
@@ -1435,7 +1427,7 @@ void EmuThread::run()
 
                     }
 
-                    };
+                };
 
                 // Switch to Power Beam
                 if (Input::HotkeyPressed(HK_MetroidWeaponBeam)) {
@@ -1445,7 +1437,6 @@ void EmuThread::run()
                 // Switch to Missile
                 if (Input::HotkeyPressed(HK_MetroidWeaponMissile)) {
                     SwitchWeapon(2);
-
                 }
 
                 // Array of sub-weapon hotkeys (Associating hotkey definitions with weapon indices)
@@ -1635,11 +1626,11 @@ void EmuThread::run()
                 if (virtualStylusY < 0) virtualStylusY = 0;
                 if (virtualStylusY > 191) virtualStylusY = 191;
 
-                // 理由が分かった。上に挙げても下がるから下がるエイムが発動している。
-                // なぜ下がるエイムが発動しているのかを確認して解決しないと進まない。
+                // Found the issue reason. Even when aiming up, it goes down because downward aim is being triggered.
+                // TODO Need to check why downward aim is being triggered and fix it before moving forward.
 
                 // move VirtualStylus
-                // absを取り除くとマイナス値の判定ができなくなるので、右と下にしか動かすことができない。
+                // If we remove abs(), we can't detect negative values, so movement would only be possible to the right and down.
 
                 mouseX = mouseRel.x();
                 if (abs(mouseX) > 0) {
