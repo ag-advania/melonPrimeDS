@@ -1007,52 +1007,50 @@ void ScreenPanelGL::drawScreenGL()
 
    // metroid related
 
-    // Activate the overlay shader program
+    const int SCREEN_TOP = 0;
+    const int SCREEN_BOTTOM = 1;
+    const float CURSOR_OFFSET = 5.0f;  // カーソル中心からのオフセット
+    const float CURSOR_SIZE = 11.0f;   // カーソルのサイズ
+    const int VERTICES_PER_TRIANGLE = 3;
+    const int TRIANGLES_PER_CURSOR = 2;
+
+    // Activate the overlay shader program 
     glUseProgram(overlayShader[2]);
-    // Enable alpha blending
     glEnable(GL_BLEND);
-    // Set blending function (additive blending mode with alpha)
     glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
-    // Pass screen dimensions to the shader
     glUniform2f(overlayScreenSizeULoc, w / factor, h / factor);
-    // Bind the screen vertex buffer
     glBindBuffer(GL_ARRAY_BUFFER, screenVertexBuffer);
-    // Bind the screen vertex array object
     glBindVertexArray(screenVertexArray);
-    // Lock screen settings for thread safety
+
     screenSettingsLock.lock();
-    // Process virtual cursor if it's enabled
+
     if (virtualCursorShow) {
-        // Bind the cursor texture
         glBindTexture(GL_TEXTURE_2D, virtualCursorTexture);
-        // Set texture minification filter to nearest neighbor
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-        // Set texture magnification filter to nearest neighbor
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-        // Set cursor position in shader (offset by 5 pixels from center)
-        glUniform2f(overlayPosULoc, virtualCursorX - 5, virtualCursorY - 5);
-        // Set cursor size in shader (11x11 pixels)
-        glUniform2f(overlaySizeULoc, 11, 11);
-        // Define bottom screen constant (1=bottom screen, 0=top screen)
-        const int screenType = 1; // bottom screen
-        // Check conditions for bottom screen display:
-        // 1. Always show in dual screen mode (numScreens > 1)
-        // 2. In single screen mode (numScreens == 1), show only if bottom screen is active
-        if (numScreens > 1 || (numScreens == 1 && screenKind[0] == screenType)) {
-            // Notify shader that we're rendering for bottom screen
-            glUniform1i(overlayScreenTypeULoc, screenType);
-            // Pass screen transformation matrix to shader
-            // - Single screen mode: use screenMatrix[0]
-            // - Dual screen mode: use screenMatrix[screenType] for bottom screen
-            glUniformMatrix2x3fv(
-                overlayTransformULoc, 1, GL_TRUE,
-                numScreens == 1 ? screenMatrix[0] : screenMatrix[screenType]
-            );
-            // Draw cursor triangles
-            // - For top screen (screenKind == 0): start at vertex offset 0
-            // - For bottom screen (screenKind == 1): start at vertex offset 6 (2*3)
-            // - 2*3 represents two triangles (6 vertices) forming the cursor
-            glDrawArrays(GL_TRIANGLES, screenKind[screenType] == 0 ? 0 : 2 * 3, 2 * 3);
+
+        // Y座標を画面の種類に応じて調整
+        float adjustedY = (numScreens == 1 && screenKind[0] == SCREEN_BOTTOM) ?
+            (h - virtualCursorY) : virtualCursorY;
+
+        glUniform2f(overlayPosULoc, virtualCursorX - CURSOR_OFFSET, adjustedY - CURSOR_OFFSET);
+        glUniform2f(overlaySizeULoc, CURSOR_SIZE, CURSOR_SIZE);
+
+        if (numScreens > 1 || (numScreens == 1 && screenKind[0] == SCREEN_BOTTOM)) {
+            glUniform1i(overlayScreenTypeULoc, SCREEN_BOTTOM);
+
+            // 変換行列の調整
+            float adjustedMatrix[6];
+            memcpy(adjustedMatrix,
+                numScreens == 1 ? screenMatrix[0] : screenMatrix[SCREEN_BOTTOM],
+                sizeof(float) * 6);
+            adjustedMatrix[1] *= -1.0f;  // Y軸のスケールを反転
+            adjustedMatrix[4] = h - adjustedMatrix[4];  // Y位置を調整
+
+            glUniformMatrix2x3fv(overlayTransformULoc, 1, GL_TRUE, adjustedMatrix);
+            int vertexOffset = screenKind[SCREEN_BOTTOM] == SCREEN_TOP ? 0 :
+                VERTICES_PER_TRIANGLE * TRIANGLES_PER_CURSOR;
+            glDrawArrays(GL_TRIANGLES, vertexOffset, VERTICES_PER_TRIANGLE * TRIANGLES_PER_CURSOR);
         }
     }
 
