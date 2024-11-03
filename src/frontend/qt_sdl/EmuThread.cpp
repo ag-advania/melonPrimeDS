@@ -1629,19 +1629,6 @@ void EmuThread::run()
                     NDS->ReleaseScreen();
                 }
 
-                // force virtualStylusX inside window
-                if (virtualStylusX < 0) virtualStylusX = 0;
-                if (virtualStylusX > 255) virtualStylusX = 255;
-                // force virtualStylusY inside window
-                if (virtualStylusY < 0) virtualStylusY = 0;
-                if (virtualStylusY > 191) virtualStylusY = 191;
-
-                // Found the issue reason. Even when aiming up, it goes down because downward aim is being triggered.
-                // TODO Need to check why downward aim is being triggered and fix it before moving forward.
-
-                // move VirtualStylus
-                // If we remove abs(), we can't detect negative values, so movement would only be possible to the right and down.
-
                 mouseX = mouseRel.x();
                 if (abs(mouseX) > 0) {
                     virtualStylusX += (
@@ -1655,8 +1642,15 @@ void EmuThread::run()
                         );
                 }
 
-                mainWindow->osdAddMessage(0, ("mouseY: " + std::to_string(mouseY)).c_str());
-                mainWindow->osdAddMessage(0, ("virtualStylusY: " + std::to_string(virtualStylusY)).c_str());
+                // force virtualStylusX inside window
+                if (virtualStylusX < 0) virtualStylusX = 0;
+                if (virtualStylusX > 255) virtualStylusX = 255;
+                // force virtualStylusY inside window
+                if (virtualStylusY < 0) virtualStylusY = 0;
+                if (virtualStylusY > 191) virtualStylusY = 191;
+
+                // mainWindow->osdAddMessage(0, ("mouseY: " + std::to_string(mouseY)).c_str());
+                // mainWindow->osdAddMessage(0, ("virtualStylusY: " + std::to_string(virtualStylusY)).c_str());
 
 			} 
 
