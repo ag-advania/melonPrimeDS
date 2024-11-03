@@ -1596,6 +1596,21 @@ void EmuThread::run()
                     }
                 } // End of Adventure Functions
 
+
+                // Touch again for aiming
+                if (!wasLastFrameFocused || enableAim) {
+                    // touch again for aiming
+                    // When you return to melonPrimeDS or normal form
+
+                    // mainWindow->osdAddMessage(0,"touching screen for aim");
+
+                    // Changed Y point center(96) to 88, For fixing issue: Alt Tab switches hunter choice.
+                    //NDS->TouchScreen(128, 96); // required for aiming
+
+
+                    NDS->TouchScreen(128, 88); // required for aiming
+                }
+
                 // End of in-game
 			}
 			else {
@@ -1642,31 +1657,27 @@ void EmuThread::run()
                 mainWindow->osdAddMessage(0, ("mouseY: " + std::to_string(mouseY)).c_str());
                 mainWindow->osdAddMessage(0, ("virtualStylusY: " + std::to_string(virtualStylusY)).c_str());
 
+                // Touch again for aiming
+                if (!wasLastFrameFocused || enableAim) {
+                    // touch again for aiming
+                    // When you return to melonPrimeDS or normal form
+
+                    // mainWindow->osdAddMessage(0,"touching screen for aim");
+
+                    // Changed Y point center(96) to 88, For fixing issue: Alt Tab switches hunter choice.
+                    //NDS->TouchScreen(128, 96); // required for aiming
+
+                    // TODO check
+                    // TESTING Touch top left to avoid unexpected touching
+                    NDS->TouchScreen(0, 0); // required for aiming
+                }
+
 			} 
 
 
 		}// END of if(isFocused)
 
-        // Touch again for aiming
-        isAltForm = NDS->ARM9Read8(isAltFormAddr) == 0x02;
-        if (!wasLastFrameFocused || enableAim) {
-            // touch again for aiming
-            // When you return to melonPrimeDS or normal form
 
-            // mainWindow->osdAddMessage(0,"touching screen for aim");
-
-            // Changed Y point center(96) to 88, For fixing issue: Alt Tab switches hunter choice.
-            //NDS->TouchScreen(128, 96); // required for aiming
-
-            // TODO check
-            // TESTING Touch top left to avoid unexpected touching
-            if (!isInGame) {
-                NDS->TouchScreen(0, 0); // required for aiming
-            }
-            else {
-                NDS->TouchScreen(128, 88); // required for aiming
-            }
-        }
 
         NDS->SetKeyMask(Input::GetInputMask());
 
