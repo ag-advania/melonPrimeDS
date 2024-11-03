@@ -968,6 +968,7 @@ void EmuThread::run()
     // RawInputThread* rawInputThread = new RawInputThread(parent());
     // rawInputThread->start();
 
+    /*
     auto processMoveInput = []() {
         const struct {
             int hotkey;
@@ -987,6 +988,61 @@ void EmuThread::run()
             }
         }
     };
+    */
+
+    auto processMoveInput = []() {
+        // Static array to minimize stack operations
+        static constexpr struct InputPair {
+            int hotkey;
+            int input;
+            int oppositeHotkey;
+        } moves[] = {
+            {HK_MetroidMoveForward, INPUT_UP, HK_MetroidMoveBack},
+            {HK_MetroidMoveBack, INPUT_DOWN, HK_MetroidMoveForward},
+            {HK_MetroidMoveLeft, INPUT_LEFT, HK_MetroidMoveRight},
+            {HK_MetroidMoveRight, INPUT_RIGHT, HK_MetroidMoveLeft}
+        };
+
+        // Process horizontal and vertical axes separately for better branch prediction
+        // and to avoid unnecessary checks
+
+        // Horizontal axis
+        const bool leftPressed = Input::HotkeyDown(moves[2].hotkey);
+        const bool rightPressed = Input::HotkeyDown(moves[3].hotkey);
+
+        if (leftPressed && !rightPressed) {
+            FN_INPUT_PRESS(INPUT_LEFT);
+        }
+        else {
+            FN_INPUT_RELEASE(INPUT_LEFT);
+        }
+
+        if (rightPressed && !leftPressed) {
+            FN_INPUT_PRESS(INPUT_RIGHT);
+        }
+        else {
+            FN_INPUT_RELEASE(INPUT_RIGHT);
+        }
+
+        // Vertical axis
+        const bool upPressed = Input::HotkeyDown(moves[0].hotkey);
+        const bool downPressed = Input::HotkeyDown(moves[1].hotkey);
+
+        if (upPressed && !downPressed) {
+            FN_INPUT_PRESS(INPUT_UP);
+        }
+        else {
+            FN_INPUT_RELEASE(INPUT_UP);
+        }
+
+        if (downPressed && !upPressed) {
+            FN_INPUT_PRESS(INPUT_DOWN);
+        }
+        else {
+            FN_INPUT_RELEASE(INPUT_DOWN);
+        }
+    };
+
 
     
     bool drawVCur;
