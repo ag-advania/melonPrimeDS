@@ -1612,6 +1612,7 @@ void EmuThread::run()
                     NDS->ReleaseScreen();
                 }
 
+
                 // force virtualStylus inside window
                 if (virtualStylusX < 0) virtualStylusX = 0;
                 if (virtualStylusX > 255) virtualStylusX = 255;
@@ -1619,14 +1620,16 @@ void EmuThread::run()
                 if (virtualStylusY > 191) virtualStylusY = 191;
 
                 // move VirtualStylus
+                // absを取り除くとマイナス値の判定ができなくなるので、右と下にしか動かすことができない。
+
                 mouseX = mouseRel.x();
-                if (mouseX > 0) {
+                if (abs(mouseX) > 0) {
                     virtualStylusX += (
                         mouseX * SENSITIVITY_FACTOR_VIRTUAL_STYLUS
                         );
                 }
                 mouseY = mouseRel.y();
-                if (mouseY > 0) {
+                if (abs(mouseY) > 0) {
                     virtualStylusY += (
                         mouseY * dsAspectRatio * SENSITIVITY_FACTOR_VIRTUAL_STYLUS
                         );
