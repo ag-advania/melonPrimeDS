@@ -1669,9 +1669,15 @@ void EmuThread::run()
 
         //Draw Vcurs
         if (drawVCur) {
+            //Draw VirtualStylus
             Bott_paint->setPen(Qt::white);
-            Bott_paint->drawEllipse(virtualStylusX-5,virtualStylusY-5,10,10);
 
+            // Crosshair Circle
+            Bott_paint->drawEllipse(virtualStylusX - 5, virtualStylusY - 5, 10, 10);
+
+            // 3x3 center Crosshair
+            Bott_paint->drawLine(virtualStylusX - 1, virtualStylusY, virtualStylusX + 1, virtualStylusY);
+            Bott_paint->drawLine(virtualStylusX, virtualStylusY - 1, virtualStylusX, virtualStylusY + 1);
         }
 
         // record last frame was forcused or not
