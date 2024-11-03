@@ -1023,6 +1023,10 @@ void EmuThread::run()
     constexpr float HYBRID_RIGHT = 0.333203125f;  // (2133-1280)/2560
     constexpr float HYBRID_LEFT = 0.166796875f;   // (1280-853)/2560
 
+    // The QPoint class defines a point in the plane using integer precision. 
+// auto mouseRel = rawInputThread->fetchMouseDelta();
+    QPoint mouseRel;
+
     // Adjusted centerの初期化
     QPoint adjustedCenter;
 
@@ -1142,11 +1146,9 @@ void EmuThread::run()
         // Handle the case when the window is focused
         // Update mouse relative position and recenter cursor for aim control
 
-        // The QPoint class defines a point in the plane using integer precision. 
-        // auto mouseRel = rawInputThread->fetchMouseDelta();
-        QPoint mouseRel;
-
         if (isFocused) {
+
+            mouseRel = QPoint(0, 0);  // 原点に初期化
 
             // ホットキーの状態をチェック
             bool isLayoutChanging = Input::HotkeyPressed(HK_FullscreenToggle) || Input::HotkeyPressed(HK_SwapScreens);
@@ -1164,9 +1166,6 @@ void EmuThread::run()
             // レイアウト変更中でない場合のみ相対位置を更新
             if (wasLastFrameFocused && !isLayoutChanging) {
                 mouseRel = QCursor::pos() - adjustedCenter;
-            }
-            else {
-                mouseRel = QPoint(0, 0);  // 原点に初期化
             }
 
             // Recenter cursor
@@ -1658,7 +1657,10 @@ void EmuThread::run()
 
             // Changed Y point center(96) to 88, For fixing issue: Alt Tab switches hunter choice.
             //NDS->TouchScreen(128, 96); // required for aiming
-            NDS->TouchScreen(128, 88); // required for aiming
+
+            // TODO check
+            // TESTING Touch top left to avoid unexpected touching
+            NDS->TouchScreen(0, 0); // required for aiming
         }
 
         NDS->SetKeyMask(Input::GetInputMask());
