@@ -1080,11 +1080,15 @@ void EmuThread::run()
                 // 下画面のみ表示の場合の処理
                 // TODO: カーソル位置の重複タッチを避けるための調整
 
+
+                // TODO Config::WindowMaximized = mainWindow->isMaximized()
+
                 if (mainWindow->isFullScreen())
                 {
                     // isFullScreen
                     adjustedCenter.rx() -= static_cast<int>(windowGeometry.width() * 0.4f);
                     adjustedCenter.ry() -= static_cast<int>(windowGeometry.height() * 0.4f);
+
                 }
                 /*
                 else
@@ -1147,6 +1151,11 @@ void EmuThread::run()
 
             // ホットキーの状態をチェック
             bool isLayoutChanging = Input::HotkeyPressed(HK_FullscreenToggle) || Input::HotkeyPressed(HK_SwapScreens);
+
+            // These conditional branches cannot be simplified to a simple else statement
+            // because they handle different independent cases:
+            // 1. Recalculating center position when focus is gained or layout is changing
+            // 2. Updating relative position only when focused and layout is not changing
 
             // フォーカスを得たとき、もしくはレイアウトが変更されたときに中心位置を再計算
             if (!wasLastFrameFocused || isLayoutChanging) {
@@ -1604,13 +1613,13 @@ void EmuThread::run()
                 }
                 // mouse (VirtualStylus)
                 mouseX = mouseRel.x();
-                if (abs(mouseX) > 0) {
+                if (mouseX > 0) {
                     virtualStylusX += (
                         mouseX * SENSITIVITY_FACTOR_VIRTUAL_STYLUS
                         );
                 }
                 mouseY = mouseRel.y();
-                if (abs(mouseY) > 0) {
+                if (mouseY > 0) {
                     virtualStylusY += (
                         mouseY * dsAspectRatio * SENSITIVITY_FACTOR_VIRTUAL_STYLUS
                         );
