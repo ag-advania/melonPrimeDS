@@ -1018,11 +1018,6 @@ void EmuThread::run()
     bool isInAdventure;
     bool isSamus;
 
-    // The QPoint class defines a point in the plane using integer precision. 
-            // auto mouseRel = rawInputThread->fetchMouseDelta();
-    QPoint mouseRel;
-
-
     // Screen layout adjustment constants
     constexpr float DEFAULT_ADJUSTMENT = 0.25f;
     constexpr float HYBRID_RIGHT = 0.333203125f;  // (2133-1280)/2560
@@ -1146,6 +1141,10 @@ void EmuThread::run()
         // 
         // Handle the case when the window is focused
         // Update mouse relative position and recenter cursor for aim control
+
+        // The QPoint class defines a point in the plane using integer precision. 
+        // auto mouseRel = rawInputThread->fetchMouseDelta();
+        QPoint mouseRel;
 
         if (isFocused) {
 
