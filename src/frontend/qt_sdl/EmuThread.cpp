@@ -81,6 +81,8 @@ extern bool videoSettingsDirty;
 
 bool isAdjustCenterCalcNeeded;
 bool isAdjustCenterCalcDone;
+static bool hasInitialized = false;
+
 
 float mouseX;
 float mouseY;
@@ -1006,6 +1008,8 @@ void EmuThread::run()
         // Process horizontal and vertical axes separately for better branch prediction
         // and to avoid unnecessary checks
 
+        // for supporting "counter-strafing" feature
+
         // Horizontal axis
         const bool leftPressed = Input::HotkeyDown(moves[2].hotkey);
         const bool rightPressed = Input::HotkeyDown(moves[3].hotkey);
@@ -1061,7 +1065,7 @@ void EmuThread::run()
     uint32_t isBoostingAddr;
 
 
-    bool isAddressCalculationNeeded;
+    bool isRoundJustStarted;
     bool isInGame;
     bool isInAdventure;
     bool isSamus;
@@ -1245,29 +1249,10 @@ void EmuThread::run()
 
         isInGame = NDS->ARM9Read16(inGameAddr) == 0x0001;
 
-        // Auto Enable/Disable VirtualStylus Before/After the game
-        // you can still enable VirtualStylus in Game
-        if (!isInGame && ingameSoVirtualStylusAutolyDisabled) {
-            // mainWindow->osdAddMessage(0, "Virtual Stylus enabled");
-            ingameSoVirtualStylusAutolyDisabled = false;
-        }
-
-        isAddressCalculationNeeded = false;
-
-        if (isInGame && !ingameSoVirtualStylusAutolyDisabled) {
-
-            // mainWindow->osdAddMessage(0, "Virtual Stylus disabled");
-            ingameSoVirtualStylusAutolyDisabled = true;
-
-            // inGame so need calculate address
-            isAddressCalculationNeeded = true;
-        }
-
-
-        if (isAddressCalculationNeeded) {
+        if (isInGame && !hasInitialized) {
             // Read once at game start
 
-            //Clear OSD buffers
+            //Clear OSD buffers to delete VirtualStylus from touch-screen
             Top_buffer->fill(0x00000000);
             Bott_buffer->fill(0x00000000);
 
@@ -1298,6 +1283,8 @@ void EmuThread::run()
 
             // mainWindow->osdAddMessage(0, "Completed address calculation.");
 
+            // 初期化完了フラグを設定
+            hasInitialized = true;
 		}
 
         if (isFocused) {
@@ -1305,9 +1292,6 @@ void EmuThread::run()
 
 			if (isInGame) {
                 // inGame
-
-
-                drawVCur = false;
 
                 // Aiming
 
@@ -1673,6 +1657,9 @@ void EmuThread::run()
 			else {
                 // VirtualStylus
 
+                // reset initialized flag
+                hasInitialized = false;
+
                 //Clear OSD buffers
                 Top_buffer->fill(0x00000000);
                 Bott_buffer->fill(0x00000000);
@@ -1681,6 +1668,7 @@ void EmuThread::run()
                 // release the virtual stylus key
                 enableAim = false;
                 drawVCur = true;
+
                 if (Input::HotkeyDown(HK_MetroidShootScan) || Input::HotkeyDown(HK_MetroidScanShoot)) {
                     NDS->TouchScreen(virtualStylusX, virtualStylusY);
                 }
