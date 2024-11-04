@@ -407,34 +407,45 @@ const inline char* kScreenFS_overlay = R"(#version 140
 
         void main()
         {
-            // Fastest UV calculation without precision loss
+            // Fast UV calculation - maintain addition for stability
             float u = fTexcoord.x;
-            float v = fTexcoord.y << 1;  // Bit shift for speed
+            float v = fTexcoord.y + fTexcoord.y;
     
-            // Optimal constants maintaining aspect ratio
-            const float INV_WIDTH = 0.00390625;  // Exact 1/256
-            const float INV_HEIGHT = 0.005208333; // Close to 1/193
+            // Optimized constants - keep precise values
+            const float INV_WIDTH = 0.00390625;  // 1/256
+            const float INV_HEIGHT = 0.005208333; // 1/193 approximation
     
-            // Ultra fast scale - maintaining aspect
+            // Fast scaling with minimal operations
             float scaleX = 256.0 * (1.0 / uOverlaySize.x);
-            float scaleY = 192.0 * (1.0 / uOverlaySize.y); // Keep 192 for speed
+            float scaleY = 192.0 * (1.0 / uOverlaySize.y);
     
-            // Direct screen offset
+            // Direct screen offset without type conversion
             float s_offset = uOverlayScreenType;
     
-            // Fast position calculation while preserving aspect
-            u = (u - uOverlayPos.x * INV_WIDTH) * scaleX;
-            v = (v - s_offset - uOverlayPos.y * INV_HEIGHT) * scaleY;
+            // Optimized position calculation - split for better pipelining
+            float offsetX = uOverlayPos.x * INV_WIDTH;
+            float offsetY = uOverlayPos.y * INV_HEIGHT;
+            u = u - offsetX;
+            v = v - s_offset - offsetY;
     
-            // Quick bounds check - optimized but maintaining separate axes
-            float inBounds = float(max(u, v) <= 1.0 && min(u, v) >= 0.0);
+            // Fast scale - separated for potential parallel execution
+            u *= scaleX;
+            v *= scaleY;
     
-            // Direct texture fetch
-            vec4 color = texture(OverlayTex, vec2(u, v)) * inBounds;
+            // Optimized boundary check
+            float maskU = float(u >= 0.0 && u <= 1.0);
+            float maskV = float(v >= 0.0 && v <= 1.0);
+            float mask = maskU * maskV;
     
-            // Fast output with minimal operations
+            // Single texture fetch
+            vec4 color = texture(OverlayTex, vec2(u, v));
+    
+            // Optimized output calculation
+            color *= mask;
+            color.rgb *= color.a;
             oColor = color;
         }
+
     )";
 
 
