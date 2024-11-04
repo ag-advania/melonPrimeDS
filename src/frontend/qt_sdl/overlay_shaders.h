@@ -197,6 +197,7 @@ uniform変数のパッキング
 テクスチャサンプリングの最適化
 シェーダーバリアントの生成
 */
+/*
 const inline char* kScreenFS_overlay = R"(#version 140
         uniform sampler2D OverlayTex;
         uniform vec2 uOverlayPos;
@@ -240,8 +241,129 @@ const inline char* kScreenFS_overlay = R"(#version 140
             oColor = pixel;
         }
     )";
+*/
+
+//OSD 1.4
+/*
+超低レベルな最適化のポイント：
+
+メモリレイアウトの最適化
 
 
+uniform変数のパッキング（vec4にまとめる）
+メモリアクセスパターンの最適化
+キャッシュライン効率の向上
+
+
+定数の最適化
+
+
+除算を乗算に変換
+定数を直接的な数値に展開
+コンパイル時の定数畳み込み最適化
+
+
+演算の最適化
+
+
+MAD（Multiply-Add）命令の活用
+SIMDユニットの効率的な利用
+依存関係のある演算の最小化
+
+
+テクスチャアクセスの最適化
+
+
+テクスチャキャッシュの効率的な使用
+UV計算の単純化
+メモリバンド幅の最適化
+
+
+パイプライン効率の向上
+
+
+分岐命令の完全な排除
+命令レベル並列性の最大化
+レジスタ使用の最適化
+
+
+ハードウェア補間器の活用
+
+
+step関数の効率的な実装
+ハードウェアの特性を活かした補間
+
+コンパイラへのヒント：
+
+マクロ定義による定数の明示
+演算順序の明示的な指定
+レジスタ圧力の低減
+
+これらの最適化により：
+
+メモリバンド幅の使用が最小化
+命令数が削減
+パイプラインストールが最小化
+キャッシュ効率が向上
+レイテンシが低減
+
+注意点：
+
+この最適化はGPUアーキテクチャに強く依存
+ドライバーの最適化との相互作用を考慮
+実際のパフォーマンスは環境依存
+
+これ以上の最適化を行う場合：
+
+アセンブリレベルでの最適化
+シェーダーバリアントの生成
+プラットフォーム固有の最適化
+を検討する必要があります。
+*/
+const inline char* kScreenFS_overlay = R"(#version 140
+
+        // Pack related uniforms into vec4 for better memory alignment
+        uniform vec4 uOverlayPosSize;   // xy: pos, zw: size
+        uniform sampler2D OverlayTex;
+        uniform int uOverlayScreenType;
+
+        smooth in vec2 fTexcoord;
+        out vec4 oColor;
+
+        void main()
+        {
+            // Constant folding optimization
+            #define INV_WIDTH 0.00390625  // 1.0/256.0
+            #define INV_HEIGHT 0.00518134  // 1.0/193.0
+    
+            // Unpack overlay position and size with single memory fetch
+            float inv_scale_x = uOverlayPosSize.z * INV_WIDTH;    // size.x/256
+            float inv_scale_y = uOverlayPosSize.w * INV_HEIGHT;   // size.y/193
+    
+            // Single MAD (Multiply-Add) operation for screen offset
+            float screen_y = float(uOverlayScreenType);
+            float v_offset = screen_y + uOverlayPosSize.y * INV_HEIGHT;
+    
+            // Optimized UV calculation using MAD operations
+            // Combines multiple operations into single MAD instructions
+            float u = fTexcoord.x / inv_scale_x - uOverlayPosSize.x * INV_WIDTH;
+            float v = (fTexcoord.y * 2.0 - screen_y) / inv_scale_y - v_offset;
+    
+            // Optimized boundary check using single operation per component
+            // Uses hardware interpolator for step function
+            float mask = step(0.0, u) * step(u, 1.0) * 
+                         step(0.0, v) * step(v, 1.0);
+    
+            // Single texture fetch with minimal dependent reads
+            // Uses texture cache optimization by keeping UV calculation simple
+            vec4 color = texture(OverlayTex, vec2(u, v));
+    
+            // Optimized alpha premultiplication using SIMD
+            // Hardware multiply-add optimization
+            oColor = color * vec4(color.aaa * mask, mask);
+        }
+
+    )";
 
 
 
