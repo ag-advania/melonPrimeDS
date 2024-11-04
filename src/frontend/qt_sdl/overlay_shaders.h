@@ -343,7 +343,8 @@ const inline char* kScreenFS_overlay = R"(#version 140
 
 */
 
-// OSD v1.6
+// OSD v1.6 more low latency. super fast
+/*
 const inline char* kScreenFS_overlay = R"(#version 140
         uniform sampler2D OverlayTex;
         uniform vec2 uOverlayPos;
@@ -392,6 +393,50 @@ const inline char* kScreenFS_overlay = R"(#version 140
 
 
     )";
+
+*/
+// OSD v1.7
+
+const inline char* kScreenFS_overlay = R"(#version 140
+        uniform sampler2D OverlayTex;
+        uniform vec2 uOverlayPos;
+        uniform vec2 uOverlaySize;
+        uniform int uOverlayScreenType;
+        smooth in vec2 fTexcoord;
+        out vec4 oColor;
+
+        void main()
+        {
+            // Fastest UV calculation without precision loss
+            float u = fTexcoord.x;
+            float v = fTexcoord.y << 1;  // Bit shift for speed
+    
+            // Optimal constants maintaining aspect ratio
+            const float INV_WIDTH = 0.00390625;  // Exact 1/256
+            const float INV_HEIGHT = 0.005208333; // Close to 1/193
+    
+            // Ultra fast scale - maintaining aspect
+            float scaleX = 256.0 * (1.0 / uOverlaySize.x);
+            float scaleY = 192.0 * (1.0 / uOverlaySize.y); // Keep 192 for speed
+    
+            // Direct screen offset
+            float s_offset = uOverlayScreenType;
+    
+            // Fast position calculation while preserving aspect
+            u = (u - uOverlayPos.x * INV_WIDTH) * scaleX;
+            v = (v - s_offset - uOverlayPos.y * INV_HEIGHT) * scaleY;
+    
+            // Quick bounds check - optimized but maintaining separate axes
+            float inBounds = float(max(u, v) <= 1.0 && min(u, v) >= 0.0);
+    
+            // Direct texture fetch
+            vec4 color = texture(OverlayTex, vec2(u, v)) * inBounds;
+    
+            // Fast output with minimal operations
+            oColor = color;
+        }
+    )";
+
 
 
 /*
