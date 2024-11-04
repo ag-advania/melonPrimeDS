@@ -141,63 +141,6 @@ const inline char* kScreenFS_overlay = R"(#version 140
 
 // OSD v1.3 (v1.1 is better)
 /*
-
-主な低レベル最適化ポイント：
-
-スカラー演算の活用
-
-
-ベクトル演算を個別のスカラー演算に分解
-GPU のSIMDユニットの効率的な使用
-
-
-除算の最適化
-
-
-定数除算を乗算に変換（inv_width/inv_height の使用）
-除算命令のレイテンシを削減
-
-
-メモリアクセスの最適化
-
-
-テクスチャフェッチを1回に集約
-依存テクスチャ読み込みの最小化
-
-
-命令レベルの並列性（ILP）向上
-
-
-演算の依存関係を減らす
-パイプライン・ストールの削減
-
-
-条件分岐の最適化
-
-
-分岐命令を算術演算に変換
-実行パスの予測性向上
-
-このバージョンは：
-
-より少ないGPU命令で実行可能
-メモリバンド幅の使用を最適化
-より効率的なGPUパイプラインの使用
-キャッシュヒット率の向上
-
-ただし、このような低レベルな最適化は：
-
-GPUアーキテクチャに依存する可能性がある
-コンパイラの最適化との相性を考慮する必要がある
-実際のパフォーマンス向上は使用環境でテストが必要
-
-更なる最適化の可能性：
-
-uniform変数のパッキング
-テクスチャサンプリングの最適化
-シェーダーバリアントの生成
-*/
-/*
 const inline char* kScreenFS_overlay = R"(#version 140
         uniform sampler2D OverlayTex;
         uniform vec2 uOverlayPos;
@@ -395,6 +338,7 @@ const inline char* kScreenFS_overlay = R"(#version 140
     )";
 
 */
+
 // OSD v1.7 more low latency. ultra fast.
 /*
 const inline char* kScreenFS_overlay = R"(#version 140
@@ -450,7 +394,7 @@ const inline char* kScreenFS_overlay = R"(#version 140
 */
 
 // OSD v1.8 ultra low latency
-/*
+
 const inline char* kScreenFS_overlay = R"(#version 140
         uniform sampler2D OverlayTex;
         uniform vec2 uOverlayPos;
@@ -504,7 +448,8 @@ const inline char* kScreenFS_overlay = R"(#version 140
 
 
     )";
-    */
+
+
 // OSD v1.9 (maybe 1.8 is better? but so fast)
 /*
 const inline char* kScreenFS_overlay = R"(#version 140
@@ -559,7 +504,7 @@ const inline char* kScreenFS_overlay = R"(#version 140
 */
 
 // OSD v2.0 super ultra low latency, almost realtime.
-
+/*
 const inline char* kScreenFS_overlay = R"(#version 140
         uniform sampler2D OverlayTex;
         uniform vec2 uOverlayPos;
@@ -606,6 +551,8 @@ const inline char* kScreenFS_overlay = R"(#version 140
         }
 
     )";
+*/
+
 
 // OSD v2.1 ( v2.0 is really better, it's realtime. v2.1 is needless)
 /*
