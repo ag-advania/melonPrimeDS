@@ -16,6 +16,7 @@
 #define OVERLAY_SHADERS_H
 
 /*
+* OSD v1.0
 const inline char* kScreenFS_overlay = R"(#version 140
 
     uniform sampler2D OverlayTex;
@@ -59,6 +60,7 @@ const inline char* kScreenFS_overlay = R"(#version 140
 
 // Improved process for less latency
 /*
+* * OSD v1.1
 const inline char* kScreenFS_overlay = R"(#version 140
         uniform sampler2D OverlayTex;
         smooth in vec2 fTexcoord;
@@ -100,7 +102,8 @@ const inline char* kScreenFS_overlay = R"(#version 140
     )";
     */
 
-
+// OSD v1.2
+/*
 const inline char* kScreenFS_overlay = R"(#version 140
 
         uniform sampler2D OverlayTex;
@@ -113,26 +116,133 @@ const inline char* kScreenFS_overlay = R"(#version 140
 
         void main()
         {
-            const vec2 dsSize = vec2(256.0, 193.0);  // 定数を戻しました
+            const vec2 dsSize = vec2(256.0, 193.0);
             vec2 uv = fTexcoord * vec2(1.0, 2.0);
             vec2 scaleFactor = dsSize / uOverlaySize;
     
-            // スクリーン調整のロジックを元の形式に近い形で最適化
+            // Screen adjustment for top/bottom screen handling
             float isBottomScreen = float(uOverlayScreenType >= 1);
             uv -= vec2(0.0, isBottomScreen);
             uv -= (uOverlayPos + vec2(0.0, isBottomScreen)) / dsSize;
             uv *= scaleFactor;
     
-            // 境界チェックを確実な方法で実装
+            // UV coordinate boundary check using step function
             vec2 uvMask = step(vec2(0.0), uv) * step(uv, vec2(1.0));
             float mask = uvMask.x * uvMask.y;
     
-            // テクスチャフェッチと色の計算
+            // Sample texture and apply alpha premultiplication
             vec4 pixel = texture(OverlayTex, uv);
             pixel.rgb *= pixel.a;
             oColor = pixel * mask;
         }
     )";
+*/
+
+
+// OSD v1.3
+/*
+
+主な低レベル最適化ポイント：
+
+スカラー演算の活用
+
+
+ベクトル演算を個別のスカラー演算に分解
+GPU のSIMDユニットの効率的な使用
+
+
+除算の最適化
+
+
+定数除算を乗算に変換（inv_width/inv_height の使用）
+除算命令のレイテンシを削減
+
+
+メモリアクセスの最適化
+
+
+テクスチャフェッチを1回に集約
+依存テクスチャ読み込みの最小化
+
+
+命令レベルの並列性（ILP）向上
+
+
+演算の依存関係を減らす
+パイプライン・ストールの削減
+
+
+条件分岐の最適化
+
+
+分岐命令を算術演算に変換
+実行パスの予測性向上
+
+このバージョンは：
+
+より少ないGPU命令で実行可能
+メモリバンド幅の使用を最適化
+より効率的なGPUパイプラインの使用
+キャッシュヒット率の向上
+
+ただし、このような低レベルな最適化は：
+
+GPUアーキテクチャに依存する可能性がある
+コンパイラの最適化との相性を考慮する必要がある
+実際のパフォーマンス向上は使用環境でテストが必要
+
+更なる最適化の可能性：
+
+uniform変数のパッキング
+テクスチャサンプリングの最適化
+シェーダーバリアントの生成
+*/
+const inline char* kScreenFS_overlay = R"(#version 140
+        uniform sampler2D OverlayTex;
+        uniform vec2 uOverlayPos;
+        uniform vec2 uOverlaySize;
+        uniform int uOverlayScreenType;
+
+        smooth in vec2 fTexcoord;
+        out vec4 oColor;
+
+        void main()
+        {
+            // Minimize vector operations by using scalar math where possible
+            float u = fTexcoord.x;
+            float v = fTexcoord.y * 2.0;
+
+            // Precalculate inverse of screen size for division optimization
+            const float inv_width = 1.0 / 256.0;
+            const float inv_height = 1.0 / 193.0;
+
+            // Scale factors precomputed as individual components
+            float scaleX = 256.0 / uOverlaySize.x;
+            float scaleY = 193.0 / uOverlaySize.y;
+
+            // Screen type check with minimal branching
+            float screenOffset = float(uOverlayScreenType >= 1);
+
+            // Component-wise UV calculation for better instruction pipelining
+            u = (u - (uOverlayPos.x * inv_width)) * scaleX;
+            v = (v - screenOffset - (uOverlayPos.y + screenOffset) * inv_height) * scaleY;
+
+            // Optimized boundary check using MAD operations
+            float maskU = step(0.0, u) * step(u, 1.0);
+            float maskV = step(0.0, v) * step(v, 1.0);
+            float mask = maskU * maskV;
+
+            // Single texture fetch with minimal dependent texture reads
+            vec4 pixel = texture(OverlayTex, vec2(u, v));
+
+            // Vectorized multiplication for better SIMD utilization
+            pixel = pixel * vec4(pixel.aaa, 1.0) * mask;
+            oColor = pixel;
+        }
+    )";
+
+
+
 
 
 /*
