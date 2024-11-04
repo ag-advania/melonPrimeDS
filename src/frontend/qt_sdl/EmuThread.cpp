@@ -1049,7 +1049,12 @@ void EmuThread::run()
 
     */
 
-    // processMoveInput
+    // processMoveInputFunction{
+
+        // Helper macro/inline function for branchless input handling
+#define FN_INPUT_PRESS_OR_RELEASE(input, condition) \
+    ((condition) ? FN_INPUT_PRESS(input) : FN_INPUT_RELEASE(input))
+
     auto processMoveInput = []() {
         // Pre-computed bit masks for each direction
         static constexpr uint8_t MASK_UP = 0b0001;
@@ -1095,11 +1100,8 @@ void EmuThread::run()
         FN_INPUT_PRESS_OR_RELEASE(INPUT_RIGHT, finalState & MASK_RIGHT);
         };
 
-    // Helper macro/inline function for branchless input handling
-#define FN_INPUT_PRESS_OR_RELEASE(input, condition) \
-    ((condition) ? FN_INPUT_PRESS(input) : FN_INPUT_RELEASE(input))
 
-    // /processMoveInput
+    // /processMoveInputFunction }
     
     bool drawVCur;
 
