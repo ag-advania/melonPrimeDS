@@ -244,138 +244,46 @@ const inline char* kScreenFS_overlay = R"(#version 140
 */
 
 //OSD 1.4
-/*
-超低レベルな最適化のポイント：
 
-メモリレイアウトの最適化
-
-
-uniform変数のパッキング（vec4にまとめる）
-メモリアクセスパターンの最適化
-キャッシュライン効率の向上
-
-
-定数の最適化
-
-
-除算を乗算に変換
-定数を直接的な数値に展開
-コンパイル時の定数畳み込み最適化
-
-
-演算の最適化
-
-
-MAD（Multiply-Add）命令の活用
-SIMDユニットの効率的な利用
-依存関係のある演算の最小化
-
-
-テクスチャアクセスの最適化
-
-
-テクスチャキャッシュの効率的な使用
-UV計算の単純化
-メモリバンド幅の最適化
-
-
-パイプライン効率の向上
-
-
-分岐命令の完全な排除
-命令レベル並列性の最大化
-レジスタ使用の最適化
-
-
-ハードウェア補間器の活用
-
-
-step関数の効率的な実装
-ハードウェアの特性を活かした補間
-
-コンパイラへのヒント：
-
-マクロ定義による定数の明示
-演算順序の明示的な指定
-レジスタ圧力の低減
-
-これらの最適化により：
-
-メモリバンド幅の使用が最小化
-命令数が削減
-パイプラインストールが最小化
-キャッシュ効率が向上
-レイテンシが低減
-
-注意点：
-
-この最適化はGPUアーキテクチャに強く依存
-ドライバーの最適化との相互作用を考慮
-実際のパフォーマンスは環境依存
-
-これ以上の最適化を行う場合：
-
-アセンブリレベルでの最適化
-シェーダーバリアントの生成
-プラットフォーム固有の最適化
-を検討する必要があります。
-
-rev
-主な修正点：
-
-uniform変数のパッキングを維持しつつ、わかりやすく展開
-dsSize定数を復活
-UV計算のロジックを安定した形に戻す
-過度な最適化を取り除き、可読性と安定性を向上
-
-最適化のポイント（維持）：
-
-uniform変数のパッキング
-最小限の分岐処理
-効率的な境界チェック
-テクスチャフェッチの最適化
-*/
 const inline char* kScreenFS_overlay = R"(#version 140
-
-        // Pack related uniforms into vec4 for better memory alignment
-        uniform vec4 uOverlayPosSize;   // xy: pos, zw: size
         uniform sampler2D OverlayTex;
+        uniform vec2 uOverlayPos;
+        uniform vec2 uOverlaySize;
         uniform int uOverlayScreenType;
-
         smooth in vec2 fTexcoord;
         out vec4 oColor;
 
         void main()
         {
-            // Constant screen dimensions
-            const vec2 dsSize = vec2(256.0, 193.0);
+            // Minimize vector operations by using scalar math where possible
+            float u = fTexcoord.x;
+            float v = fTexcoord.y * 2.0;
     
-            // Unpack overlay position and size
-            vec2 overlayPos = uOverlayPosSize.xy;
-            vec2 overlaySize = uOverlayPosSize.zw;
+            // Precalculate inverse of screen size for division optimization
+            const float inv_width = 1.0 / 256.0;
+            const float inv_height = 1.0 / 193.0;
     
-            // Precalculated scale factors
-            vec2 scale = dsSize / overlaySize;
+            // Scale factors precomputed as individual components
+            float scaleX = 256.0 / uOverlaySize.x;
+            float scaleY = 193.0 / uOverlaySize.y;
     
-            // Screen type handling with minimal branching
-            float screenOffset = float(uOverlayScreenType >= 1);
+            // Screen type check optimized without comparison
+            float screenOffset = uOverlayScreenType * 1.0;
     
-            // UV calculation optimized for minimal operations
-            vec2 uv = fTexcoord * vec2(1.0, 2.0);
-            uv.y -= screenOffset;
-            uv -= (overlayPos + vec2(0.0, screenOffset)) / dsSize;
-            uv *= scale;
+            // Component-wise UV calculation for better instruction pipelining
+            u = (u - (uOverlayPos.x * inv_width)) * scaleX;
+            v = (v - screenOffset - (uOverlayPos.y + screenOffset) * inv_height) * scaleY;
     
-            // Efficient boundary check
-            float mask = step(0.0, uv.x) * step(uv.x, 1.0) * 
-                         step(0.0, uv.y) * step(uv.y, 1.0);
+            // Optimized boundary check using single step operation
+            float mask = step(0.0, min(min(u, 1.0-u), min(v, 1.0-v)));
     
-            // Single texture fetch with premultiplied alpha
-            vec4 color = texture(OverlayTex, uv);
-            color.rgb *= color.a;
+            // Precalculate texture coordinates to minimize memory access
+            vec2 texCoord = vec2(u, v);
+            vec4 pixel = texture(OverlayTex, texCoord);
     
-            // Final output with mask
-            oColor = color * mask;
+            // Vectorized multiplication for better SIMD utilization
+            pixel = pixel * vec4(pixel.aaa, 1.0) * mask;
+            oColor = pixel;
         }
 
     )";
