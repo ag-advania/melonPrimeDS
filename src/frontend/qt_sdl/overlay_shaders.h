@@ -558,8 +558,8 @@ const inline char* kScreenFS_overlay = R"(#version 140
     )";
 */
 
-// OSD v2.0
-
+// OSD v2.0 super ultra low latency, almost realtime.
+/*
 const inline char* kScreenFS_overlay = R"(#version 140
         uniform sampler2D OverlayTex;
         uniform vec2 uOverlayPos;
@@ -606,6 +606,57 @@ const inline char* kScreenFS_overlay = R"(#version 140
         }
 
     )";
+    */
+
+// OSD v2.1
+const inline char* kScreenFS_overlay = R"(#version 140
+        uniform sampler2D OverlayTex;
+        uniform vec2 uOverlayPos;
+        uniform vec2 uOverlaySize;
+        uniform int uOverlayScreenType;
+        smooth in vec2 fTexcoord;
+        out vec4 oColor;
+
+        void main()
+        {
+            // GPU-optimized constants - aligned for fastest memory access
+            const vec2 INV_SCREEN = vec2(0.00390625, 0.005208333);  // 1/256, 1/193
+            const vec2 SCALE = vec2(256.0, 192.0);                  // Power of 2 optimized
+    
+            // Parallel inverse calculation - exploit SIMD
+            vec2 invSize = vec2(1.0) / uOverlaySize;
+    
+            // Combined scale computation - single vectorized operation
+            vec2 finalScale = SCALE * invSize;
+    
+            // Fast UV computation - vectorized for parallel execution
+            vec2 uv = vec2(
+                fTexcoord.x,
+                fTexcoord.y + fTexcoord.y
+            );
+    
+            // Optimized offset calculation - minimize ALU ops
+            vec2 offset = uOverlayPos * INV_SCREEN;
+            float yOffset = float(uOverlayScreenType);
+    
+            // Combined coordinate transformation - maximize instruction-level parallelism
+            uv = (uv - vec2(offset.x, offset.y + yOffset)) * finalScale;
+    
+            // Vectorized boundary check - single SIMD operation
+            float mask = all(greaterThanEqual(uv, vec2(0.0)) && 
+                            lessThanEqual(uv, vec2(1.0))) ? 1.0 : 0.0;
+    
+            // Efficient texture fetch with computed coordinates
+            vec4 color = texture(OverlayTex, uv);
+    
+            // Ultra-fast output computation - minimal operations
+            oColor = color * vec4(color.aaa * mask, mask);
+        }
+
+
+    )";
+
+
 
 /*
 const inline int virtualCursorSize = 11;
