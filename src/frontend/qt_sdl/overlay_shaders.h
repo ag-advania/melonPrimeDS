@@ -559,7 +559,7 @@ const inline char* kScreenFS_overlay = R"(#version 140
 */
 
 // OSD v2.0 super ultra low latency, almost realtime.
-/*
+
 const inline char* kScreenFS_overlay = R"(#version 140
         uniform sampler2D OverlayTex;
         uniform vec2 uOverlayPos;
@@ -606,9 +606,9 @@ const inline char* kScreenFS_overlay = R"(#version 140
         }
 
     )";
-    */
 
-// OSD v2.1
+// OSD v2.1 ( v2.0 is really better, it's realtime. v2.1 is needless)
+/*
 const inline char* kScreenFS_overlay = R"(#version 140
         uniform sampler2D OverlayTex;
         uniform vec2 uOverlayPos;
@@ -655,7 +655,7 @@ const inline char* kScreenFS_overlay = R"(#version 140
 
 
     )";
-
+    */
 
 
 /*
