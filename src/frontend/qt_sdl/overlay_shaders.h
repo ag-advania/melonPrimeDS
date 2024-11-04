@@ -58,6 +58,7 @@ const inline char* kScreenFS_overlay = R"(#version 140
 */
 
 // Improved process for less latency
+/*
 const inline char* kScreenFS_overlay = R"(#version 140
         uniform sampler2D OverlayTex;
         smooth in vec2 fTexcoord;
@@ -97,6 +98,40 @@ const inline char* kScreenFS_overlay = R"(#version 140
             oColor = pixel * mask;
         }
     )";
+    */
+
+
+const inline char* kScreenFS_overlay = R"(#version 140
+        uniform sampler2D OverlayTex;
+        uniform vec2 uOverlayPos;
+        uniform vec2 uOverlaySize;
+        uniform int uOverlayScreenType;
+        uniform vec2 uDSSize;  // Pre-calculated on CPU side
+
+        smooth in vec2 fTexcoord;
+        out vec4 oColor;
+
+        void main()
+        {
+            vec2 uv = fTexcoord * vec2(1.0, 2.0);
+            vec2 scaleFactor = uDSSize / uOverlaySize;
+
+            // Simplified screen adjustment
+            uv.y -= float(uOverlayScreenType >= 1);
+            uv -= (uOverlayPos + vec2(0.0, float(uOverlayScreenType >= 1))) / uDSSize;
+            uv *= scaleFactor;
+
+            // Optimized boundary check
+            float mask = float(all(greaterThanEqual(uv, vec2(0.0))) &&
+                all(lessThanEqual(uv, vec2(1.0))));
+
+            // Efficient texture fetch with early-out
+            vec4 pixel = texture(OverlayTex, uv);
+            pixel.rgb *= pixel.a;
+            oColor = pixel * mask;
+        }
+    )";
+
 
 /*
 const inline int virtualCursorSize = 11;
