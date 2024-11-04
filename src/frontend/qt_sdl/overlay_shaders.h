@@ -393,7 +393,7 @@ const inline char* kScreenFS_overlay = R"(#version 140
     )";
 */
 
-// OSD v1.8 ultra low latency
+// OSD v1.8 STABLE. ultra low latency
 
 const inline char* kScreenFS_overlay = R"(#version 140
         uniform sampler2D OverlayTex;
