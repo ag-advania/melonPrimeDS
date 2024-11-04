@@ -102,30 +102,32 @@ const inline char* kScreenFS_overlay = R"(#version 140
 
 
 const inline char* kScreenFS_overlay = R"(#version 140
+
         uniform sampler2D OverlayTex;
         uniform vec2 uOverlayPos;
         uniform vec2 uOverlaySize;
         uniform int uOverlayScreenType;
-        uniform vec2 uDSSize;  // Pre-calculated on CPU side
 
         smooth in vec2 fTexcoord;
         out vec4 oColor;
 
         void main()
         {
+            const vec2 dsSize = vec2(256.0, 193.0);  // 定数を戻しました
             vec2 uv = fTexcoord * vec2(1.0, 2.0);
-            vec2 scaleFactor = uDSSize / uOverlaySize;
-
-            // Simplified screen adjustment
-            uv.y -= float(uOverlayScreenType >= 1);
-            uv -= (uOverlayPos + vec2(0.0, float(uOverlayScreenType >= 1))) / uDSSize;
+            vec2 scaleFactor = dsSize / uOverlaySize;
+    
+            // スクリーン調整のロジックを元の形式に近い形で最適化
+            float isBottomScreen = float(uOverlayScreenType >= 1);
+            uv -= vec2(0.0, isBottomScreen);
+            uv -= (uOverlayPos + vec2(0.0, isBottomScreen)) / dsSize;
             uv *= scaleFactor;
-
-            // Optimized boundary check
-            float mask = float(all(greaterThanEqual(uv, vec2(0.0))) &&
-                all(lessThanEqual(uv, vec2(1.0))));
-
-            // Efficient texture fetch with early-out
+    
+            // 境界チェックを確実な方法で実装
+            vec2 uvMask = step(vec2(0.0), uv) * step(uv, vec2(1.0));
+            float mask = uvMask.x * uvMask.y;
+    
+            // テクスチャフェッチと色の計算
             vec4 pixel = texture(OverlayTex, uv);
             pixel.rgb *= pixel.a;
             oColor = pixel * mask;
