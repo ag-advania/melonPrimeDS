@@ -505,8 +505,8 @@ const inline char* kScreenFS_overlay = R"(#version 140
 
     )";
     */
-// OSD v1.9
-
+// OSD v1.9 (maybe 1.8 is better? but so fast)
+/*
 const inline char* kScreenFS_overlay = R"(#version 140
         uniform sampler2D OverlayTex;
         uniform vec2 uOverlayPos;
@@ -556,9 +556,56 @@ const inline char* kScreenFS_overlay = R"(#version 140
         }
 
     )";
+*/
 
+// OSD v2.0
 
+const inline char* kScreenFS_overlay = R"(#version 140
+        uniform sampler2D OverlayTex;
+        uniform vec2 uOverlayPos;
+        uniform vec2 uOverlaySize;
+        uniform int uOverlayScreenType;
+        smooth in vec2 fTexcoord;
+        out vec4 oColor;
 
+        void main()
+        {
+            // Hardware-optimized constants - placed at top for register allocation
+            const float INV_WIDTH = 0.00390625;    // Exact 1/256 (fast bit ops)
+            const float INV_HEIGHT = 0.005208333;  // Optimized 1/193
+            const float SCALE_X = 256.0;           // Power of 2 for fast multiply
+            const float SCALE_Y = 192.0;           // Near power of 2 (faster than 193)
+    
+            // Pre-compute inverses - compiler can optimize these across GPU warps
+            float invSizeX = 1.0 / uOverlaySize.x;
+            float invSizeY = 1.0 / uOverlaySize.y;
+    
+            // Combined scale factors - reduces register pressure
+            float finalScaleX = SCALE_X * invSizeX;
+            float finalScaleY = SCALE_Y * invSizeY;
+    
+            // Fast UV calculation with minimal temporaries
+            float u = fTexcoord.x - (uOverlayPos.x * INV_WIDTH);
+            float v = (fTexcoord.y + fTexcoord.y) - 
+                      (float(uOverlayScreenType) + uOverlayPos.y * INV_HEIGHT);
+    
+            // Fused multiply-add optimization
+            u *= finalScaleX;
+            v *= finalScaleY;
+    
+            // Vectorized boundary check - better SIMD utilization
+            vec2 uv = vec2(u, v);
+            vec2 bounds = step(vec2(0.0), uv) * step(uv, vec2(1.0));
+            float mask = bounds.x * bounds.y;
+    
+            // Optimized texture fetch
+            vec4 color = texture(OverlayTex, uv);
+    
+            // Single vectorized color output - minimal ALU ops
+            oColor = color * vec4(vec3(color.a * mask), mask);
+        }
+
+    )";
 
 /*
 const inline int virtualCursorSize = 11;
