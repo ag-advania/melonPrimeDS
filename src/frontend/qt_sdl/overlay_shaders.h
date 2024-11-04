@@ -319,6 +319,21 @@ step関数の効率的な実装
 シェーダーバリアントの生成
 プラットフォーム固有の最適化
 を検討する必要があります。
+
+rev
+主な修正点：
+
+uniform変数のパッキングを維持しつつ、わかりやすく展開
+dsSize定数を復活
+UV計算のロジックを安定した形に戻す
+過度な最適化を取り除き、可読性と安定性を向上
+
+最適化のポイント（維持）：
+
+uniform変数のパッキング
+最小限の分岐処理
+効率的な境界チェック
+テクスチャフェッチの最適化
 */
 const inline char* kScreenFS_overlay = R"(#version 140
 
@@ -332,35 +347,35 @@ const inline char* kScreenFS_overlay = R"(#version 140
 
         void main()
         {
-            // Constant folding optimization
-            #define INV_WIDTH 0.00390625  // 1.0/256.0
-            #define INV_HEIGHT 0.00518134  // 1.0/193.0
+            // Constant screen dimensions
+            const vec2 dsSize = vec2(256.0, 193.0);
     
-            // Unpack overlay position and size with single memory fetch
-            float inv_scale_x = uOverlayPosSize.z * INV_WIDTH;    // size.x/256
-            float inv_scale_y = uOverlayPosSize.w * INV_HEIGHT;   // size.y/193
+            // Unpack overlay position and size
+            vec2 overlayPos = uOverlayPosSize.xy;
+            vec2 overlaySize = uOverlayPosSize.zw;
     
-            // Single MAD (Multiply-Add) operation for screen offset
-            float screen_y = float(uOverlayScreenType);
-            float v_offset = screen_y + uOverlayPosSize.y * INV_HEIGHT;
+            // Precalculated scale factors
+            vec2 scale = dsSize / overlaySize;
     
-            // Optimized UV calculation using MAD operations
-            // Combines multiple operations into single MAD instructions
-            float u = fTexcoord.x / inv_scale_x - uOverlayPosSize.x * INV_WIDTH;
-            float v = (fTexcoord.y * 2.0 - screen_y) / inv_scale_y - v_offset;
+            // Screen type handling with minimal branching
+            float screenOffset = float(uOverlayScreenType >= 1);
     
-            // Optimized boundary check using single operation per component
-            // Uses hardware interpolator for step function
-            float mask = step(0.0, u) * step(u, 1.0) * 
-                         step(0.0, v) * step(v, 1.0);
+            // UV calculation optimized for minimal operations
+            vec2 uv = fTexcoord * vec2(1.0, 2.0);
+            uv.y -= screenOffset;
+            uv -= (overlayPos + vec2(0.0, screenOffset)) / dsSize;
+            uv *= scale;
     
-            // Single texture fetch with minimal dependent reads
-            // Uses texture cache optimization by keeping UV calculation simple
-            vec4 color = texture(OverlayTex, vec2(u, v));
+            // Efficient boundary check
+            float mask = step(0.0, uv.x) * step(uv.x, 1.0) * 
+                         step(0.0, uv.y) * step(uv.y, 1.0);
     
-            // Optimized alpha premultiplication using SIMD
-            // Hardware multiply-add optimization
-            oColor = color * vec4(color.aaa * mask, mask);
+            // Single texture fetch with premultiplied alpha
+            vec4 color = texture(OverlayTex, uv);
+            color.rgb *= color.a;
+    
+            // Final output with mask
+            oColor = color * mask;
         }
 
     )";
