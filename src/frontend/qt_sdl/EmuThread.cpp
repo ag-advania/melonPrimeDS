@@ -1051,54 +1051,67 @@ void EmuThread::run()
 
     // processMoveInputFunction{
 
-        // Helper macro/inline function for branchless input handling
-#define FN_INPUT_PRESS_OR_RELEASE(input, condition) \
-    ((condition) ? FN_INPUT_PRESS(input) : FN_INPUT_RELEASE(input))
-
     auto processMoveInput = []() {
-        // Pre-computed bit masks for each direction
-        static constexpr uint8_t MASK_UP = 0b0001;
-        static constexpr uint8_t MASK_DOWN = 0b0010;
-        static constexpr uint8_t MASK_LEFT = 0b0100;
-        static constexpr uint8_t MASK_RIGHT = 0b1000;
+        // Pack all input flags into a single 32-bit register for SIMD-like processing
+        static constexpr uint32_t INPUT_PACKED_UP = (1u << 0) | (uint32_t(INPUT_UP) << 16);
+        static constexpr uint32_t INPUT_PACKED_DOWN = (1u << 1) | (uint32_t(INPUT_DOWN) << 16);
+        static constexpr uint32_t INPUT_PACKED_LEFT = (1u << 2) | (uint32_t(INPUT_LEFT) << 16);
+        static constexpr uint32_t INPUT_PACKED_RIGHT = (1u << 3) | (uint32_t(INPUT_RIGHT) << 16);
 
-        // Collect all inputs in a single byte to minimize branching
-        uint8_t inputState = 0;
-        inputState |= (Input::HotkeyDown(HK_MetroidMoveForward) ? MASK_UP : 0);
-        inputState |= (Input::HotkeyDown(HK_MetroidMoveBack) ? MASK_DOWN : 0);
-        inputState |= (Input::HotkeyDown(HK_MetroidMoveLeft) ? MASK_LEFT : 0);
-        inputState |= (Input::HotkeyDown(HK_MetroidMoveRight) ? MASK_RIGHT : 0);
+        // Pre-fetch all hotkey states at once to minimize input latency
+        register uint32_t inputBitmap =
+            (uint32_t(Input::HotkeyDown(HK_MetroidMoveForward)) << 0) |
+            (uint32_t(Input::HotkeyDown(HK_MetroidMoveBack)) << 1) |
+            (uint32_t(Input::HotkeyDown(HK_MetroidMoveLeft)) << 2) |
+            (uint32_t(Input::HotkeyDown(HK_MetroidMoveRight)) << 3);
 
-        // Look-up table for input states to avoid branches
-        // Index is the 4-bit input state, value is packed with which inputs to press/release
-        static constexpr uint8_t INPUT_LUT[16] = {
-            0b0000,  // No keys pressed
-            0b0001,  // Up only
-            0b0010,  // Down only
-            0b0000,  // Up+Down (cancel out)
-            0b0100,  // Left only
-            0b0101,  // Left+Up
-            0b0110,  // Left+Down
-            0b0100,  // Left+Up+Down (vertical cancels)
-            0b1000,  // Right only
-            0b1001,  // Right+Up
-            0b1010,  // Right+Down
-            0b1000,  // Right+Up+Down (vertical cancels)
-            0b0000,  // Left+Right (cancel out)
-            0b0001,  // Left+Right+Up (horizontal cancels)
-            0b0010,  // Left+Right+Down (horizontal cancels)
-            0b0000   // All keys (all cancel)
+        // Optimized LUT using bit manipulation to handle all cases
+        // Each entry is pre-computed and packed with both mask and input value
+        static constexpr uint32_t PACKED_LUT[16] = {
+            0x00000000u, // None
+            INPUT_PACKED_UP,    // Up
+            INPUT_PACKED_DOWN,  // Down
+            0x00000000u, // Up+Down (cancel)
+            INPUT_PACKED_LEFT,  // Left
+            INPUT_PACKED_UP | INPUT_PACKED_LEFT,    // Left+Up
+            INPUT_PACKED_DOWN | INPUT_PACKED_LEFT,  // Left+Down
+            INPUT_PACKED_LEFT,  // Left+Up+Down
+            INPUT_PACKED_RIGHT, // Right
+            INPUT_PACKED_UP | INPUT_PACKED_RIGHT,   // Right+Up
+            INPUT_PACKED_DOWN | INPUT_PACKED_RIGHT, // Right+Down
+            INPUT_PACKED_RIGHT, // Right+Up+Down
+            0x00000000u, // Left+Right (cancel)
+            INPUT_PACKED_UP,    // Left+Right+Up
+            INPUT_PACKED_DOWN,  // Left+Right+Down
+            0x00000000u  // All pressed (cancel)
         };
 
-        // Get final input state from LUT
-        uint8_t finalState = INPUT_LUT[inputState];
+        // Single LUT lookup to get final state
+        register uint32_t finalState = PACKED_LUT[inputBitmap & 0xF];
 
-        // Apply inputs using branchless operations
-        FN_INPUT_PRESS_OR_RELEASE(INPUT_UP, finalState & MASK_UP);
-        FN_INPUT_PRESS_OR_RELEASE(INPUT_DOWN, finalState & MASK_DOWN);
-        FN_INPUT_PRESS_OR_RELEASE(INPUT_LEFT, finalState & MASK_LEFT);
-        FN_INPUT_PRESS_OR_RELEASE(INPUT_RIGHT, finalState & MASK_RIGHT);
+        // Branchless input application using bit manipulation
+        static const auto applyInput = [](uint32_t packedInput, uint32_t state) {
+            if (state & packedInput & 0xF) {
+                FN_INPUT_PRESS(packedInput >> 16);
+            }
+            else {
+                FN_INPUT_RELEASE(packedInput >> 16);
+            }
+            };
+
+        // Process all inputs in parallel using packed values
+        // Compiler should be able to unroll this loop
+        static constexpr uint32_t ALL_INPUTS[] = {
+            INPUT_PACKED_UP, INPUT_PACKED_DOWN,
+            INPUT_PACKED_LEFT, INPUT_PACKED_RIGHT
         };
+
+#pragma unroll
+        for (const auto& input : ALL_INPUTS) {
+            applyInput(input, finalState);
+        }
+        };
+
 
 
     // /processMoveInputFunction }
