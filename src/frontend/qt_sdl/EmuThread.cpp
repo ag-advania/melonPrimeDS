@@ -1059,7 +1059,7 @@ void EmuThread::run()
         static constexpr uint32_t INPUT_PACKED_RIGHT = (1u << 3) | (uint32_t(INPUT_RIGHT) << 16);
 
         // Pre-fetch all hotkey states at once to minimize input latency
-        register uint32_t inputBitmap =
+        uint32_t inputBitmap =
             (uint32_t(Input::HotkeyDown(HK_MetroidMoveForward)) << 0) |
             (uint32_t(Input::HotkeyDown(HK_MetroidMoveBack)) << 1) |
             (uint32_t(Input::HotkeyDown(HK_MetroidMoveLeft)) << 2) |
@@ -1087,7 +1087,7 @@ void EmuThread::run()
         };
 
         // Single LUT lookup to get final state
-        register uint32_t finalState = PACKED_LUT[inputBitmap & 0xF];
+        uint32_t finalState = PACKED_LUT[inputBitmap & 0xF];
 
         // Branchless input application using bit manipulation
         static const auto applyInput = [](uint32_t packedInput, uint32_t state) {
