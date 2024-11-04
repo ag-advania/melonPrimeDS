@@ -289,8 +289,8 @@ const inline char* kScreenFS_overlay = R"(#version 140
     )";
 */
 
-//OSD 1.5
-
+//OSD 1.5 great to do 360
+/*
 const inline char* kScreenFS_overlay = R"(#version 140
         uniform sampler2D OverlayTex;
         uniform vec2 uOverlayPos;
@@ -341,7 +341,57 @@ const inline char* kScreenFS_overlay = R"(#version 140
 
     )";
 
+*/
 
+// OSD v1.6
+const inline char* kScreenFS_overlay = R"(#version 140
+        uniform sampler2D OverlayTex;
+        uniform vec2 uOverlayPos;
+        uniform vec2 uOverlaySize;
+        uniform int uOverlayScreenType;
+        smooth in vec2 fTexcoord;
+        out vec4 oColor;
+
+        void main()
+        {
+            // Fastest possible UV calculation
+            float u = fTexcoord.x;
+            float v = fTexcoord.y + fTexcoord.y;
+    
+            // Hardware optimized constants
+            // Using power of 2 approximations where possible
+            const float INV_WIDTH = 0.00390625;  // Exact 1/256
+            const float INV_HEIGHT = 0.005208333; // Close to 1/193, faster computation
+    
+            // Fast approximate scaling - using multiply instead of divide
+            float scaleX = 256.0 * (1.0 / uOverlaySize.x);
+            float scaleY = 192.0 * (1.0 / uOverlaySize.y); // Using 192 instead of 193 for faster math
+    
+            // Ultra fast screen offset
+            float s_offset = uOverlayScreenType;
+    
+            // Quick position calculation
+            u = u - uOverlayPos.x * INV_WIDTH;
+            v = v - s_offset - uOverlayPos.y * INV_HEIGHT;
+    
+            // Fast scale
+            u *= scaleX;
+            v *= scaleY;
+    
+            // Quick boundary check - less accurate but faster
+            float mask = float(u >= 0.0 && u <= 1.0 && v >= 0.0 && v <= 1.0);
+    
+            // Direct texture fetch
+            vec4 color = texture(OverlayTex, vec2(u, v));
+    
+            // Fast output with premultiplied alpha
+            color *= mask;
+            color.rgb *= color.a;
+            oColor = color;
+        }
+
+
+    )";
 
 
 /*
