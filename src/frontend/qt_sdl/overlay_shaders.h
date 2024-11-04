@@ -449,8 +449,8 @@ const inline char* kScreenFS_overlay = R"(#version 140
     )";
 */
 
-// OSD v1.8
-
+// OSD v1.8 ultra low latency
+/*
 const inline char* kScreenFS_overlay = R"(#version 140
         uniform sampler2D OverlayTex;
         uniform vec2 uOverlayPos;
@@ -504,6 +504,60 @@ const inline char* kScreenFS_overlay = R"(#version 140
 
 
     )";
+    */
+// OSD v1.9
+
+const inline char* kScreenFS_overlay = R"(#version 140
+        uniform sampler2D OverlayTex;
+        uniform vec2 uOverlayPos;
+        uniform vec2 uOverlaySize;
+        uniform int uOverlayScreenType;
+        smooth in vec2 fTexcoord;
+        out vec4 oColor;
+
+        void main()
+        {
+            // Ultra optimized UV calculation - minimize ALU ops
+            // Reuse and minimize temporaries
+            float x = fTexcoord.x;
+            float y = fTexcoord.y;
+    
+            // Optimal constants - hardware friendly values
+            const float INV_WIDTH = 0.00390625;     // Exact 1/256
+            const float INV_HEIGHT = 0.005208333;   // Optimized 1/193
+            const float SCALE_X = 256.0;            // Direct scale value
+            const float SCALE_Y = 192.0;            // Optimized scale
+    
+            // Pre-compute inverse sizes - enables parallel execution
+            float invSizeX = 1.0 / uOverlaySize.x;
+            float invSizeY = 1.0 / uOverlaySize.y;
+    
+            // Position and scale calculations - designed for instruction-level parallelism
+            float u = x - (uOverlayPos.x * INV_WIDTH);
+            float v = (y + y) - (uOverlayScreenType + uOverlayPos.y * INV_HEIGHT);
+    
+            // Apply scale with fused multiply - compiler optimization friendly
+            u *= SCALE_X * invSizeX;
+            v *= SCALE_Y * invSizeY;
+    
+            // Optimized boundary test - parallel evaluation possible
+            // Uses single comparison chain for better branch prediction
+            float inBounds = float(
+                u >= 0.0 && u <= 1.0 &&
+                v >= 0.0 && v <= 1.0
+            );
+    
+            // Single texture fetch with computed coordinates
+            vec4 color = texture(OverlayTex, vec2(u, v));
+    
+            // Final color computation - minimized operations
+            // Combined multiply for better SIMD utilization
+            oColor = color * vec4(color.aaa * inBounds, inBounds);
+        }
+
+    )";
+
+
 
 
 /*
