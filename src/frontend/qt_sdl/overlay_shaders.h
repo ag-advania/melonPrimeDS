@@ -395,8 +395,8 @@ const inline char* kScreenFS_overlay = R"(#version 140
     )";
 
 */
-// OSD v1.7
-
+// OSD v1.7 more low latency. ultra fast.
+/*
 const inline char* kScreenFS_overlay = R"(#version 140
         uniform sampler2D OverlayTex;
         uniform vec2 uOverlayPos;
@@ -447,7 +447,63 @@ const inline char* kScreenFS_overlay = R"(#version 140
         }
 
     )";
+*/
 
+// OSD v1.8
+
+const inline char* kScreenFS_overlay = R"(#version 140
+        uniform sampler2D OverlayTex;
+        uniform vec2 uOverlayPos;
+        uniform vec2 uOverlaySize;
+        uniform int uOverlayScreenType;
+        smooth in vec2 fTexcoord;
+        out vec4 oColor;
+
+        void main()
+        {
+            // Optimized UV calculation - reuse fTexcoord.y
+            float u = fTexcoord.x;
+            float y = fTexcoord.y;
+            float v = y + y;  // Faster than multiplication
+    
+            // Optimized constants with mix of precision and speed
+            const float INV_WIDTH = 0.00390625;    // 1/256 - exact power of 2
+            const float INV_HEIGHT = 0.005208333;  // 1/193 - precision where needed
+    
+            // Fast inverse size calculation - one multiplication instead of division
+            float invSizeX = 1.0 / uOverlaySize.x;
+            float invSizeY = 1.0 / uOverlaySize.y;
+            float scaleX = 256.0 * invSizeX;
+            float scaleY = 192.0 * invSizeY;
+    
+            // Direct screen offset - minimal operations
+            float s_offset = uOverlayScreenType;
+    
+            // Position calculation - optimized order for parallel execution
+            u -= uOverlayPos.x * INV_WIDTH;
+            v -= s_offset + uOverlayPos.y * INV_HEIGHT;
+    
+            // Parallel scale application
+            u *= scaleX;
+            v *= scaleY;
+    
+            // Optimized boundary check - potential for parallel evaluation
+            float inBoundsX = float(u >= 0.0 && u <= 1.0);
+            float inBoundsY = float(v >= 0.0 && v <= 1.0);
+            float mask = inBoundsX * inBoundsY;
+    
+            // Efficient texture fetch with computed coordinates
+            vec2 texCoord = vec2(u, v);
+            vec4 color = texture(OverlayTex, texCoord);
+    
+            // Final color computation - maintains precise alpha handling
+            color *= mask;
+            color.rgb *= color.a;
+            oColor = color;
+        }
+
+
+    )";
 
 
 /*
