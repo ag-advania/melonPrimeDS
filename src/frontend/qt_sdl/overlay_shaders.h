@@ -102,7 +102,7 @@ const inline char* kScreenFS_overlay = R"(#version 140
     )";
     */
 
-// OSD v1.2
+// OSD v1.2 (v1.1 is better)
 /*
 const inline char* kScreenFS_overlay = R"(#version 140
 
@@ -139,7 +139,7 @@ const inline char* kScreenFS_overlay = R"(#version 140
 */
 
 
-// OSD v1.3
+// OSD v1.3 (v1.1 is better)
 /*
 
 主な低レベル最適化ポイント：
@@ -243,8 +243,8 @@ const inline char* kScreenFS_overlay = R"(#version 140
     )";
 */
 
-//OSD 1.4
-
+//OSD 1.4 awesome low latency
+/*
 const inline char* kScreenFS_overlay = R"(#version 140
         uniform sampler2D OverlayTex;
         uniform vec2 uOverlayPos;
@@ -287,6 +287,60 @@ const inline char* kScreenFS_overlay = R"(#version 140
         }
 
     )";
+*/
+
+//OSD 1.5
+
+const inline char* kScreenFS_overlay = R"(#version 140
+        uniform sampler2D OverlayTex;
+        uniform vec2 uOverlayPos;
+        uniform vec2 uOverlaySize;
+        uniform int uOverlayScreenType;
+        smooth in vec2 fTexcoord;
+        out vec4 oColor;
+
+        void main()
+        {
+            // Optimized scalar calculations with minimal temporaries
+            const float inv_width = 1.0 / 256.0;  // Precomputed constant
+            const float inv_height = 1.0 / 193.0;  // Precomputed constant
+    
+            // Direct scale calculation to minimize register pressure
+            float scaleX = 256.0 / uOverlaySize.x;
+            float scaleY = 193.0 / uOverlaySize.y;
+    
+            // Fused multiply-add optimization for UV calculation
+            float u = fTexcoord.x;
+            float v = fTexcoord.y + fTexcoord.y;  // Optimized multiply by 2
+    
+            // Screen offset calculation without branching
+            float screenOffset = float(uOverlayScreenType);
+    
+            // Optimized position adjustment
+            float offsetX = uOverlayPos.x * inv_width;
+            float offsetY = (uOverlayPos.y + screenOffset) * inv_height;
+    
+            // Fused multiply-add for final UV computation
+            u = (u - offsetX) * scaleX;
+            v = (v - screenOffset - offsetY) * scaleY;
+    
+            // Optimized boundary check with minimal operations
+            float inBoundsU = step(0.0, u) * step(u, 1.0);
+            float inBoundsV = step(0.0, v) * step(v, 1.0);
+    
+            // Single texture fetch
+            vec4 pixel = texture(OverlayTex, vec2(u, v));
+    
+            // Optimized alpha premultiplication and masking
+            float mask = inBoundsU * inBoundsV;
+            pixel.rgb *= pixel.a * mask;
+            pixel.a *= mask;
+    
+            oColor = pixel;
+        }
+
+    )";
+
 
 
 
