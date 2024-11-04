@@ -991,7 +991,7 @@ void EmuThread::run()
         }
     };
     */
-
+    /*
     auto processMoveInput = []() {
         // Static array to minimize stack operations
         static constexpr struct InputPair {
@@ -1047,7 +1047,59 @@ void EmuThread::run()
         }
     };
 
+    */
 
+    // processMoveInput
+    auto processMoveInput = []() {
+        // Pre-computed bit masks for each direction
+        static constexpr uint8_t MASK_UP = 0b0001;
+        static constexpr uint8_t MASK_DOWN = 0b0010;
+        static constexpr uint8_t MASK_LEFT = 0b0100;
+        static constexpr uint8_t MASK_RIGHT = 0b1000;
+
+        // Collect all inputs in a single byte to minimize branching
+        uint8_t inputState = 0;
+        inputState |= (Input::HotkeyDown(HK_MetroidMoveForward) ? MASK_UP : 0);
+        inputState |= (Input::HotkeyDown(HK_MetroidMoveBack) ? MASK_DOWN : 0);
+        inputState |= (Input::HotkeyDown(HK_MetroidMoveLeft) ? MASK_LEFT : 0);
+        inputState |= (Input::HotkeyDown(HK_MetroidMoveRight) ? MASK_RIGHT : 0);
+
+        // Look-up table for input states to avoid branches
+        // Index is the 4-bit input state, value is packed with which inputs to press/release
+        static constexpr uint8_t INPUT_LUT[16] = {
+            0b0000,  // No keys pressed
+            0b0001,  // Up only
+            0b0010,  // Down only
+            0b0000,  // Up+Down (cancel out)
+            0b0100,  // Left only
+            0b0101,  // Left+Up
+            0b0110,  // Left+Down
+            0b0100,  // Left+Up+Down (vertical cancels)
+            0b1000,  // Right only
+            0b1001,  // Right+Up
+            0b1010,  // Right+Down
+            0b1000,  // Right+Up+Down (vertical cancels)
+            0b0000,  // Left+Right (cancel out)
+            0b0001,  // Left+Right+Up (horizontal cancels)
+            0b0010,  // Left+Right+Down (horizontal cancels)
+            0b0000   // All keys (all cancel)
+        };
+
+        // Get final input state from LUT
+        uint8_t finalState = INPUT_LUT[inputState];
+
+        // Apply inputs using branchless operations
+        FN_INPUT_PRESS_OR_RELEASE(INPUT_UP, finalState & MASK_UP);
+        FN_INPUT_PRESS_OR_RELEASE(INPUT_DOWN, finalState & MASK_DOWN);
+        FN_INPUT_PRESS_OR_RELEASE(INPUT_LEFT, finalState & MASK_LEFT);
+        FN_INPUT_PRESS_OR_RELEASE(INPUT_RIGHT, finalState & MASK_RIGHT);
+        };
+
+    // Helper macro/inline function for branchless input handling
+#define FN_INPUT_PRESS_OR_RELEASE(input, condition) \
+    ((condition) ? FN_INPUT_PRESS(input) : FN_INPUT_RELEASE(input))
+
+    // /processMoveInput
     
     bool drawVCur;
 
