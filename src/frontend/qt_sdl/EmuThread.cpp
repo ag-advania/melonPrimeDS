@@ -1146,7 +1146,7 @@ void EmuThread::run()
     // auto mouseRel = rawInputThread->fetchMouseDelta();
     QPoint mouseRel;
 
-    // Adjusted centerの初期化
+    // Initialize Adjusted Center 
     QPoint adjustedCenter;
 
     // test
@@ -1322,6 +1322,10 @@ void EmuThread::run()
             //Clear OSD buffers to delete VirtualStylus from touch-screen
             Top_buffer->fill(0x00000000);
             Bott_buffer->fill(0x00000000);
+
+            // Reset/end any active painters
+            Top_paint->end();
+            Bott_paint->end();
 
             // Read the player position
             playerPosition = NDS->ARM9Read8(PlayerPosAddr);
@@ -1726,6 +1730,13 @@ void EmuThread::run()
 
                 // reset initialized flag
                 hasInitialized = false;
+
+                if (!Top_paint->isActive()) {
+                    Top_paint->begin(Top_buffer);
+                }
+                if (!Bott_paint->isActive()) {
+                    Bott_paint->begin(Bott_buffer);
+                }
 
                 //Clear OSD buffers
                 Top_buffer->fill(0x00000000);
