@@ -1251,8 +1251,8 @@ void EmuThread::run()
     PrimeOSD::Canvas* OSD = nullptr;
     QImage* Top_buffer = nullptr;
     QPainter* Top_paint = nullptr;
-    QImage* Bott_buffer = nullptr;
-    QPainter* Bott_paint = nullptr;
+    QImage* Btm_buffer = nullptr;
+    QPainter* Btm_paint = nullptr;
 
     while (EmuRunning != emuStatus_Exit) {
 
@@ -1314,21 +1314,14 @@ void EmuThread::run()
         if (isInGame && !hasInitialized) {
             // Read once at game start
             if (OSD) {
-                //Clear OSD buffers to delete VirtualStylus from touch-screen
-                /*
-                Top_buffer->fill(0x00000000);
-                Bott_buffer->fill(0x00000000);
-                */
-
-                // Reset/end any active painters
-                Top_paint->end();
-                Bott_paint->end();
+                mainWindow->panel->OSDCanvas[0].destroy();  // Top screen
+                mainWindow->panel->OSDCanvas[1].destroy();  // Bottom screen
 
                 OSD = nullptr;
                 Top_buffer = nullptr;
                 Top_paint = nullptr;
-                Bott_buffer = nullptr;
-                Bott_paint = nullptr;
+                Btm_buffer = nullptr;
+                Btm_paint = nullptr;
             }
 
             // Read the player position
@@ -1736,31 +1729,24 @@ void EmuThread::run()
                     OSD = mainWindow->panel->OSDCanvas;
                     Top_buffer = OSD[0].CanvasBuffer;
                     Top_paint = OSD[0].Painter;
-                    Bott_buffer = OSD[1].CanvasBuffer;
-                    Bott_paint = OSD[1].Painter;
+                    Btm_buffer = OSD[1].CanvasBuffer;
+                    Btm_paint = OSD[1].Painter;
 
-                    // 必要に応じてペインターを開始
+                    // Start the painter if necessary
                     if (!Top_paint->isActive()) {
                         Top_paint->begin(Top_buffer);
                     }
-                    if (!Bott_paint->isActive()) {
-                        Bott_paint->begin(Bott_buffer);
+                    if (!Btm_paint->isActive()) {
+                        Btm_paint->begin(Btm_buffer);
                     }
                 }
 
                 // reset initialized flag
                 hasInitialized = false;
 
-                if (!Top_paint->isActive()) {
-                    Top_paint->begin(Top_buffer);
-                }
-                if (!Bott_paint->isActive()) {
-                    Bott_paint->begin(Bott_buffer);
-                }
-
                 //Clear OSD buffers
                 Top_buffer->fill(0x00000000);
-                Bott_buffer->fill(0x00000000);
+                Btm_buffer->fill(0x00000000);
 
                 // this exists to just delay the pressing of the screen when you
                 // release the virtual stylus key
@@ -1797,14 +1783,14 @@ void EmuThread::run()
                 // mainWindow->osdAddMessage(0, ("virtualStylusY: " + std::to_string(virtualStylusY)).c_str());
 
                 //Draw VirtualStylus
-                Bott_paint->setPen(Qt::white);
+                Btm_paint->setPen(Qt::white);
 
                 // Crosshair Circle
-                Bott_paint->drawEllipse(virtualStylusX - 5, virtualStylusY - 5, 10, 10);
+                Btm_paint->drawEllipse(virtualStylusX - 5, virtualStylusY - 5, 10, 10);
 
                 // 3x3 center Crosshair
-                Bott_paint->drawLine(virtualStylusX - 1, virtualStylusY, virtualStylusX + 1, virtualStylusY);
-                Bott_paint->drawLine(virtualStylusX, virtualStylusY - 1, virtualStylusX, virtualStylusY + 1);
+                Btm_paint->drawLine(virtualStylusX - 1, virtualStylusY, virtualStylusX + 1, virtualStylusY);
+                Btm_paint->drawLine(virtualStylusX, virtualStylusY - 1, virtualStylusX, virtualStylusY + 1);
 
 			} 
 
