@@ -1250,12 +1250,11 @@ void EmuThread::run()
 
 
     //MelonPrime OSD stuff
-
-    PrimeOSD::Canvas* OSD = mainWindow->panel->OSDCanvas;
-    QImage* Top_buffer = OSD[0].CanvasBuffer;
-    QPainter* Top_paint = OSD[0].Painter;
-    QImage* Bott_buffer = OSD[1].CanvasBuffer;
-    QPainter* Bott_paint = OSD[1].Painter;
+    PrimeOSD::Canvas* OSD = nullptr;
+    QImage* Top_buffer = nullptr;
+    QPainter* Top_paint = nullptr;
+    QImage* Bott_buffer = nullptr;
+    QPainter* Bott_paint = nullptr;
 
     while (EmuRunning != emuStatus_Exit) {
 
@@ -1318,14 +1317,21 @@ void EmuThread::run()
 
         if (isInGame && !hasInitialized) {
             // Read once at game start
+            if (OSD) {
+                //Clear OSD buffers to delete VirtualStylus from touch-screen
+                Top_buffer->fill(0x00000000);
+                Bott_buffer->fill(0x00000000);
 
-            //Clear OSD buffers to delete VirtualStylus from touch-screen
-            Top_buffer->fill(0x00000000);
-            Bott_buffer->fill(0x00000000);
+                // Reset/end any active painters
+                Top_paint->end();
+                Bott_paint->end();
 
-            // Reset/end any active painters
-            Top_paint->end();
-            Bott_paint->end();
+                OSD = nullptr;
+                Top_buffer = nullptr;
+                Top_paint = nullptr;
+                Bott_buffer = nullptr;
+                Bott_paint = nullptr;
+            }
 
             // Read the player position
             playerPosition = NDS->ARM9Read8(PlayerPosAddr);
@@ -1728,6 +1734,22 @@ void EmuThread::run()
 			else {
                 // VirtualStylus
 
+                if (!OSD) {
+                    OSD = mainWindow->panel->OSDCanvas;
+                    Top_buffer = OSD[0].CanvasBuffer;
+                    Top_paint = OSD[0].Painter;
+                    Bott_buffer = OSD[1].CanvasBuffer;
+                    Bott_paint = OSD[1].Painter;
+
+                    // 必要に応じてペインターを開始
+                    if (!Top_paint->isActive()) {
+                        Top_paint->begin(Top_buffer);
+                    }
+                    if (!Bott_paint->isActive()) {
+                        Bott_paint->begin(Bott_buffer);
+                    }
+                }
+
                 // reset initialized flag
                 hasInitialized = false;
 
@@ -1777,6 +1799,16 @@ void EmuThread::run()
                 // mainWindow->osdAddMessage(0, ("mouseY: " + std::to_string(mouseY)).c_str());
                 // mainWindow->osdAddMessage(0, ("virtualStylusY: " + std::to_string(virtualStylusY)).c_str());
 
+                //Draw VirtualStylus
+                Bott_paint->setPen(Qt::white);
+
+                // Crosshair Circle
+                Bott_paint->drawEllipse(virtualStylusX - 5, virtualStylusY - 5, 10, 10);
+
+                // 3x3 center Crosshair
+                Bott_paint->drawLine(virtualStylusX - 1, virtualStylusY, virtualStylusX + 1, virtualStylusY);
+                Bott_paint->drawLine(virtualStylusX, virtualStylusY - 1, virtualStylusX, virtualStylusY + 1);
+
 			} 
 
 
@@ -1785,19 +1817,6 @@ void EmuThread::run()
 
 
         NDS->SetKeyMask(Input::GetInputMask());
-
-        //Draw Vcurs
-        if (drawVCur) {
-            //Draw VirtualStylus
-            Bott_paint->setPen(Qt::white);
-
-            // Crosshair Circle
-            Bott_paint->drawEllipse(virtualStylusX - 5, virtualStylusY - 5, 10, 10);
-
-            // 3x3 center Crosshair
-            Bott_paint->drawLine(virtualStylusX - 1, virtualStylusY, virtualStylusX + 1, virtualStylusY);
-            Bott_paint->drawLine(virtualStylusX, virtualStylusY - 1, virtualStylusX, virtualStylusY + 1);
-        }
 
         // record last frame was forcused or not
         wasLastFrameFocused = isFocused;
