@@ -1115,8 +1115,6 @@ void EmuThread::run()
 
 
     // /processMoveInputFunction }
-    
-    bool drawVCur;
 
     uint8_t playerPosition;
     const int32_t playerAddressIncrement = 0xF30;
@@ -1296,8 +1294,6 @@ void EmuThread::run()
             QCursor::setPos(adjustedCenter);
         }
 
-        drawVCur = false;
-
         #ifdef ENABLE_MEMORY_DUMP
             if (Input::HotkeyPressed(HK_MetroidUIOk)) {
                 printf("MainRAMMask 0x%.8" PRIXPTR "\n", (uintptr_t)NDS->MainRAMMask);
@@ -1319,8 +1315,10 @@ void EmuThread::run()
             // Read once at game start
             if (OSD) {
                 //Clear OSD buffers to delete VirtualStylus from touch-screen
+                /*
                 Top_buffer->fill(0x00000000);
                 Bott_buffer->fill(0x00000000);
+                */
 
                 // Reset/end any active painters
                 Top_paint->end();
@@ -1767,7 +1765,6 @@ void EmuThread::run()
                 // this exists to just delay the pressing of the screen when you
                 // release the virtual stylus key
                 enableAim = false;
-                drawVCur = true;
 
                 if (Input::HotkeyDown(HK_MetroidShootScan) || Input::HotkeyDown(HK_MetroidScanShoot)) {
                     NDS->TouchScreen(virtualStylusX, virtualStylusY);
