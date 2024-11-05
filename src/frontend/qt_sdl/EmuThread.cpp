@@ -1321,12 +1321,31 @@ void EmuThread::run()
                 // Reset/end any active painters
                 Top_paint->end();
                 Btm_paint->end();
+                
+                if (Top_paint) {
+                    if (Top_paint->isActive()) {
+                        Top_paint->end();  // ペインターを終了 (リソースのクリーンアップのため)
+                    }
+                    delete Top_paint;  // Top_paintのメモリを解放
+                    Top_paint = nullptr;  // ポインタをクリア
+                }
+
+                if (Btm_paint) {
+                    if (Btm_paint->isActive()) {
+                        Btm_paint->end();  // ペインターを終了
+                    }
+                    delete Btm_paint;  // Btm_paintのメモリを解放
+                    Btm_paint = nullptr;  // ポインタをクリア
+                }
+
+                delete Top_buffer;  // Top_bufferのメモリを解放
+                Top_buffer = nullptr;  // ポインタをクリア
+
+                delete Btm_buffer;  // Btm_bufferのメモリを解放
+                Btm_buffer = nullptr;  // ポインタをクリア
+
 
                 OSD = nullptr;
-                Top_buffer = nullptr;
-                Top_paint = nullptr;
-                Btm_buffer = nullptr;
-                Btm_paint = nullptr;
             }
 
             // Read the player position
