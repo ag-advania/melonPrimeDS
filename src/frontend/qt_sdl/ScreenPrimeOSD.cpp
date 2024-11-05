@@ -19,10 +19,6 @@ namespace PrimeOSD
         this->Painter = new QPainter(CanvasBuffer);
     }
 
-    Canvas::~Canvas(){
-        destroy();
-    }
-
     void Canvas::destroy()
     {
         if (CanvasBuffer) {
