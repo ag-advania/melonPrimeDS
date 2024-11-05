@@ -1314,8 +1314,13 @@ void EmuThread::run()
         if (isInGame && !hasInitialized) {
             // Read once at game start
             if (OSD) {
-                mainWindow->panel->OSDCanvas[0].destroy();  // Top screen
-                mainWindow->panel->OSDCanvas[1].destroy();  // Bottom screen
+                //Clear OSD buffers to delete VirtualStylus from touch-screen
+                Top_buffer->fill(0x00000000);
+                Btm_buffer->fill(0x00000000);
+
+                // Reset/end any active painters
+                Top_paint->end();
+                Btm_paint->end();
 
                 OSD = nullptr;
                 Top_buffer = nullptr;
