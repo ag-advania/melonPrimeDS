@@ -1403,17 +1403,17 @@ void EmuThread::run()
                     }
                     // For other values, return as is
                     return value;
-                    };
+                };
 
                 // マウス入力を処理する内部関数
-                auto processMouseAxis = [this](float value, float scaleFactor, uint32_t addr) {
+                auto processMouseAxis = [this, &enableAim, &adjustMouseInput](float value, float scaleFactor, uint32_t addr) {
                     if (value != 0) {
                         float scaledValue = value * scaleFactor;
                         scaledValue = adjustMouseInput(scaledValue);
                         NDS->ARM9Write16(addr, static_cast<uint16_t>(scaledValue));
                         enableAim = true;
                     }
-                    };
+                };
 
                 // X軸とY軸の処理
                 processMouseAxis(mouseRel.x(), SENSITIVITY_FACTOR, aimXAddr);
@@ -1465,8 +1465,6 @@ void EmuThread::run()
 
                     }
                 }
-
-
 
                 // Define a lambda function to switch weapons
                 auto SwitchWeapon = [&](int weaponIndex) {
@@ -1628,7 +1626,6 @@ void EmuThread::run()
                 else {
                     FN_INPUT_RELEASE(INPUT_START);
                 }
-
 
 
                 if (isInAdventure) {
