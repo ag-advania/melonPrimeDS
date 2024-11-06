@@ -1405,17 +1405,22 @@ void EmuThread::run()
                     return value;
                 };
 
-                // マウス入力を処理する内部関数
+                // Internal function to process mouse input
                 auto processMouseAxis = [this, &enableAim, &adjustMouseInput](float mouseRelValue, float scaleFactor, uint32_t addr) {
                     if (mouseRelValue != 0) {
+                        // Scale the mouse input (to adjust for sensitivity)
                         float scaledValue = mouseRelValue * scaleFactor;
+                        // Adjust the scaled input value (using provided adjustment function)
                         scaledValue = adjustMouseInput(scaledValue);
+                        // Write adjusted value to memory address (for input handling)
                         NDS->ARM9Write16(addr, static_cast<uint16_t>(scaledValue));
+                        // Enable aiming mode
                         enableAim = true;
                     }
                 };
 
-                // X軸とY軸の処理
+                // Processing for X and Y axes
+
                 processMouseAxis(mouseRel.x(), SENSITIVITY_FACTOR, aimXAddr);
                 processMouseAxis(mouseRel.y(), SENSITIVITY_FACTOR * aimAspectRatio, aimYAddr);
 
@@ -1760,7 +1765,7 @@ void EmuThread::run()
                     }
                     };
 
-                // X軸とY軸の処理
+                // Processing for X and Y axes
                 processVirtualStylus(mouseRel.x(), SENSITIVITY_FACTOR_VIRTUAL_STYLUS, virtualStylusX);
                 processVirtualStylus(mouseRel.y(), SENSITIVITY_FACTOR_VIRTUAL_STYLUS* dsAspectRatio, virtualStylusY);
 
