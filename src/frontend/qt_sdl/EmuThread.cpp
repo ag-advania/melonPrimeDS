@@ -1307,7 +1307,6 @@ void EmuThread::run()
 
         if (!isRomDetected) {
             detectRomAndSetAddresses();
-            isNewRom = false;
         }
 
         isInGame = NDS->ARM9Read16(inGameAddr) == 0x0001;

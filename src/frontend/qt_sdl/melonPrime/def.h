@@ -27,7 +27,6 @@
 extern unsigned int globalChecksum;
 
 // Declare global variables with extern (to make them accessible from other files)
-extern bool isNewRom;
 extern bool isRomDetected;
 
 // Use extern to declare these variables for use in other files

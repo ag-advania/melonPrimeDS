@@ -60,7 +60,6 @@ using namespace melonDS::Platform;
 // 以下はmelonPrime/def.hで定義。
 // グローバル変数の定義（ここで初期化する）
 unsigned int globalChecksum = 0;
-bool isNewRom = false;
 bool isRomDetected = false;
 
 namespace ROMManager
@@ -1340,7 +1339,6 @@ bool LoadROM(EmuThread* emuthread, QStringList filepath, bool reset)
     globalChecksum = cart->Checksum();
 
     // newRomFlag ON
-    isNewRom = true;
     isRomDetected = false;
 
     // ROM Check
