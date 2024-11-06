@@ -79,10 +79,11 @@ extern int autoScreenSizing;
 extern int videoRenderer;
 extern bool videoSettingsDirty;
 
+
+// melonPrime related
 bool isAdjustCenterCalcNeeded;
 bool isAdjustCenterCalcDone;
 static bool hasInitialized = false;
-
 
 float mouseX;
 float mouseY;
@@ -313,6 +314,8 @@ bool EmuThread::UpdateConsole(UpdateConsoleNDSArgs&& ndsargs, UpdateConsoleGBAAr
 
     return true;
 }
+
+// melonPrime
 
 // CalculatePlayerAddress Function
 uint32_t calculatePlayerAddress(uint32_t baseAddress, uint8_t playerPosition, int32_t increment) {
@@ -1188,13 +1191,13 @@ void EmuThread::run()
                 else {
                     adjustedCenter.rx() -= static_cast<int>(windowGeometry.width() * HYBRID_LEFT);
                 }
-                return;  // Hybrid modeの場合はここで終了
+                return;  // End here if in Hybrid mode
             }
 
-            // Hybrid以外のレイアウトの場合、まずBotOnlyのチェックを行う
-            if (Config::ScreenSizing == Frontend::screenSizing_BotOnly ) {
-                // 下画面のみ表示の場合の処理
-                // TODO: カーソル位置の重複タッチを避けるための調整
+            // For layouts other than Hybrid, first check BotOnly mode
+            if (Config::ScreenSizing == Frontend::screenSizing_BotOnly) {
+                // Process for bottom-screen-only display
+                // TODO: Adjust to avoid duplicate touches at the cursor position
 
 
                 // TODO Config::WindowMaximized = mainWindow->isMaximized()
@@ -1216,14 +1219,14 @@ void EmuThread::run()
                 }
                 */
 
-                return;  // BotOnlyの場合はここで終了
+                return;  // End here if in BotOnly mode
             }
 
             if (Config::ScreenSizing == Frontend::screenSizing_TopOnly) {
-                return;  // TopOnlyの場合はここで終了
+                return;  // End here if in TopOnly mode
             }
 
-            // 通常のレイアウト調整（BotOnlyでない場合）
+            // Standard layout adjustment (when not in BotOnly mode)
             switch (Config::ScreenLayout) {
             case Frontend::screenLayout_Natural:
             case Frontend::screenLayout_Horizontal:
@@ -1253,6 +1256,11 @@ void EmuThread::run()
     QPainter* Top_paint = nullptr;
     QImage* Btm_buffer = nullptr;
     QPainter* Btm_paint = nullptr;
+
+    if (!isRomDetected) {
+        detectRomAndSetAddresses();
+        isNewRom = false;
+    }
 
     while (EmuRunning != emuStatus_Exit) {
 
@@ -1304,10 +1312,7 @@ void EmuThread::run()
             }
         #endif
 
-        if (!isRomDetected) {
-            detectRomAndSetAddresses();
-            isNewRom = false;
-        }
+
 
         isInGame = NDS->ARM9Read16(inGameAddr) == 0x0001;
 
@@ -1321,31 +1326,12 @@ void EmuThread::run()
                 // Reset/end any active painters
                 Top_paint->end();
                 Btm_paint->end();
-                
-                if (Top_paint) {
-                    if (Top_paint->isActive()) {
-                        Top_paint->end();  // ペインターを終了 (リソースのクリーンアップのため)
-                    }
-                    delete Top_paint;  // Top_paintのメモリを解放
-                    Top_paint = nullptr;  // ポインタをクリア
-                }
-
-                if (Btm_paint) {
-                    if (Btm_paint->isActive()) {
-                        Btm_paint->end();  // ペインターを終了
-                    }
-                    delete Btm_paint;  // Btm_paintのメモリを解放
-                    Btm_paint = nullptr;  // ポインタをクリア
-                }
-
-                delete Top_buffer;  // Top_bufferのメモリを解放
-                Top_buffer = nullptr;  // ポインタをクリア
-
-                delete Btm_buffer;  // Btm_bufferのメモリを解放
-                Btm_buffer = nullptr;  // ポインタをクリア
-
 
                 OSD = nullptr;
+                Top_buffer = nullptr;
+                Top_paint = nullptr;
+                Btm_buffer = nullptr;
+                Btm_paint = nullptr;
             }
 
             // Read the player position
