@@ -1406,9 +1406,9 @@ void EmuThread::run()
                 };
 
                 // マウス入力を処理する内部関数
-                auto processMouseAxis = [this, &enableAim, &adjustMouseInput](float value, float scaleFactor, uint32_t addr) {
-                    if (value != 0) {
-                        float scaledValue = value * scaleFactor;
+                auto processMouseAxis = [this, &enableAim, &adjustMouseInput](float mouseRelValue, float scaleFactor, uint32_t addr) {
+                    if (mouseRelValue != 0) {
+                        float scaledValue = mouseRelValue * scaleFactor;
                         scaledValue = adjustMouseInput(scaledValue);
                         NDS->ARM9Write16(addr, static_cast<uint16_t>(scaledValue));
                         enableAim = true;
@@ -1754,18 +1754,16 @@ void EmuThread::run()
                     NDS->ReleaseScreen();
                 }
 
-                mouseX = mouseRel.x();
-                if (abs(mouseX) > 0) {
-                    virtualStylusX += (
-                        mouseX * SENSITIVITY_FACTOR_VIRTUAL_STYLUS
-                        );
-                }
-                mouseY = mouseRel.y();
-                if (abs(mouseY) > 0) {
-                    virtualStylusY += (
-                        mouseY * dsAspectRatio * SENSITIVITY_FACTOR_VIRTUAL_STYLUS
-                        );
-                }
+                auto processVirtualStylus = [](float mouseRelValue, float scaleFactor, float& virtualStylus) {
+                    if (abs(mouseRelValue) > 0) {
+                        virtualStylus += mouseRelValue * scaleFactor;
+                    }
+                    };
+
+                // X軸とY軸の処理
+                processVirtualStylus(mouseRel.x(), SENSITIVITY_FACTOR_VIRTUAL_STYLUS, virtualStylusX);
+                processVirtualStylus(mouseRel.y(), SENSITIVITY_FACTOR_VIRTUAL_STYLUS* dsAspectRatio, virtualStylusY);
+
 
                 // force virtualStylusX inside window
                 if (virtualStylusX < 0) virtualStylusX = 0;
