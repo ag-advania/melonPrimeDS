@@ -1257,11 +1257,6 @@ void EmuThread::run()
     QImage* Btm_buffer = nullptr;
     QPainter* Btm_paint = nullptr;
 
-    if (!isRomDetected) {
-        detectRomAndSetAddresses();
-        isNewRom = false;
-    }
-
     while (EmuRunning != emuStatus_Exit) {
 
         auto isFocused = mainWindow->panel->getFocused();
@@ -1312,7 +1307,10 @@ void EmuThread::run()
             }
         #endif
 
-
+        if (!isRomDetected) {
+            detectRomAndSetAddresses();
+            isNewRom = false;
+        }
 
         isInGame = NDS->ARM9Read16(inGameAddr) == 0x0001;
 
