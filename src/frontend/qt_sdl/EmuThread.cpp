@@ -81,8 +81,6 @@ extern bool videoSettingsDirty;
 
 
 // melonPrime related
-bool isAdjustCenterCalcNeeded;
-bool isAdjustCenterCalcDone;
 static bool hasInitialized = false;
 
 float mouseX;
@@ -583,14 +581,10 @@ void EmuThread::run()
 
         if (Input::HotkeyPressed(HK_FullscreenToggle)) {
             emit windowFullscreenToggle();
-            isAdjustCenterCalcNeeded = true;
-            isAdjustCenterCalcDone = false;
         }
 
         if (Input::HotkeyPressed(HK_SwapScreens)) {
             emit swapScreensToggle();
-            isAdjustCenterCalcNeeded = true;
-            isAdjustCenterCalcDone = false;
         }
         if (Input::HotkeyPressed(HK_SwapScreenEmphasis)) emit screenEmphasisToggle();
 
