@@ -163,6 +163,7 @@ bool GdbARM9BreakOnStartup;
 int MetroidAimSensitivity;
 int MetroidVirtualStylusSensitivity;
 bool enable_customhud;
+int crosshaire_size;
 
 //int MetroidVsPlayerInput;
 
@@ -416,7 +417,8 @@ ConfigEntry ConfigFile[] =
 
     {"MetroidAimSensitivity", 0, &MetroidAimSensitivity, MetroidAimSensitivityDefault, false},
     {"MetroidVirtualStylusSensitivity", 0, &MetroidVirtualStylusSensitivity, MetroidVirtualStylusSensitivityDefault, false},
-    {"enable_customhud", 1, &enable_customhud, true, false},
+    {"enable_customhud", 1, &enable_customhud, false, false},
+    {"crosshaire_size", 0, &crosshaire_size, 3, false},
 
     // TODO!!
     // we need a more elegant way to deal with this

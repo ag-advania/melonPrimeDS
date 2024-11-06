@@ -349,6 +349,9 @@ melonDS::u32 aimYAddr;
 melonDS::u32 isInAdventureAddr;
 melonDS::u32 isMapOrUserActionPausedAddr; // for issue in AdventureMode, Aim Stopping when SwitchingWeapon. 
 melonDS::u32 isTransformingtoAltAddr;
+melonDS::u32 isDeadAddr;
+melonDS::u32 isStartPressedAddr;
+melonDS::u32 isSpectactingAddr;
 
 bool isAltForm;
 
@@ -372,6 +375,9 @@ void detectRomAndSetAddresses() {
         isTransformingtoAltAddr = 0x020DB459;
         isInAdventureAddr = 0x020E83BC; // Read8 0x02: ADV, 0x03: Multi
         isMapOrUserActionPausedAddr = 0x020FBF18; // 0x00000001: true, 0x00000000 false. Read8 is enough though.
+        isDeadAddr = 0x020DB46A; // Dead = 3, Game ended = 2 
+        isStartPressedAddr = 0x020DEEB4; // Pressed = 1
+        isSpectactingAddr = 0x020C1CFC; // Spectacting = 5
         isRomDetected = true;
         mainWindow->osdAddMessage(0, "Rom detected: US1.1");
         break;
@@ -620,6 +626,16 @@ void EmuThread::run()
             updateAimSensitivity(-1);  // Decrease sensitivity by 1
         }
 
+        bool isStartPressed = NDS->ARM9Read8(isStartPressedAddr) == 0x01 ;
+        if (Config::enable_customhud){
+            // Disable HUD :
+                if (isStartPressed) {
+                    NDS->ARM9Write8(0x020D9A50,0x11);
+                }
+                else {
+                    NDS->ARM9Write8(0x020D9A50,0x01);
+                }
+        }
 
         if (EmuRunning == emuStatus_Running || EmuRunning == emuStatus_FrameStep)
         {
@@ -999,6 +1015,7 @@ void EmuThread::run()
     bool isSamus;
     bool isTransforming;
     bool isTransformingtoAlt;
+    bool isDead;
 
     // added for HUD
     uint32_t currentWeaponAddr;
@@ -1078,6 +1095,9 @@ void EmuThread::run()
 
             // inGame so need calculate address
             isAddressCalculationNeeded = true;
+
+            // If Widescreen enabled
+
         }
 
 
@@ -1124,8 +1144,20 @@ void EmuThread::run()
 
 
         if (isFocused) {
-
-
+            
+            bool customhud = Config::enable_customhud;
+            bool isStartPressed = NDS->ARM9Read8(isStartPressedAddr) == 0x01 ;
+            // debug : Top_paint->drawText(QPoint(4, 150), (std::string("start ") + std::to_string(NDS->ARM9Read8(isStartPressedAddr))).c_str());
+            if (customhud) {
+                // Disable HUD :
+                if (isStartPressed) {
+                    NDS->ARM9Write8(0x020D9A50,0x11);
+                }
+                else {
+                    NDS->ARM9Write8(0x020D9A50,0x01);
+                }
+            }
+            
             // auto mouseRel = rawInputThread->fetchMouseDelta();
 
             // The QPoint class defines a point in the plane using integer precision. 
@@ -1154,11 +1186,14 @@ void EmuThread::run()
             }
 
 			if (isInGame) {
+                
+                // Check if is dead / spectacting 
+                isDead = NDS->ARM9Read8(isDeadAddr) == 0x03 ||
+                NDS->ARM9Read8(isDeadAddr) == 0x02;
+                bool isSpectacting = NDS->ARM9Read8(isSpectactingAddr) == 0x05 ;
 
-                bool customhud = Config::enable_customhud;
-                if (customhud) {
-                    // inGame
-
+                if (customhud && !isDead && !isStartPressed && !isSpectacting) {
+                                  
                     // Draw HP information
                     // Retrieve the current HP from the HP address.
                     uint8_t currentHP = NDS->ARM9Read16(currentHpAddr);
@@ -1179,9 +1214,7 @@ void EmuThread::run()
                     Top_paint->setPen(Qt::white);
                     // Display the missile ammo text (divide value by 10 in decimal format).
                     
-                    
-
-
+            
                     // SpecialWeapon Ammo
                     // 
                     // Retrieve the current weapon from the currentWeaponAddr.
@@ -1249,6 +1282,8 @@ void EmuThread::run()
                     // Check if in alternate form (transformed state)
                     isAltForm = NDS->ARM9Read8(isAltFormAddr) == 0x02;
 
+                
+
                     // Check if the upper 4 bits are odd (1 or 3)
                     // this is for fixing issue: Shooting and transforming become impossible, when changing weapons at high speed while transitioning from transformed to normal form.
                     isTransforming = NDS->ARM9Read8(jumpFlagAddr) & 0x10;
@@ -1256,7 +1291,6 @@ void EmuThread::run()
                     isTransformingtoAlt = NDS->ARM9Read8(isTransformingtoAltAddr) != 0x00 && 
                         NDS->ARM9Read8(isTransformingtoAltAddr) != 0x01 && 
                         NDS->ARM9Read8(isTransformingtoAltAddr) != 0x02 && 
-                        NDS->ARM9Read8(isTransformingtoAltAddr) != 0x03 &&
                         NDS->ARM9Read8(isTransformingtoAltAddr) != 0x06 &&
                         NDS->ARM9Read8(isTransformingtoAltAddr) != 0x07 &&
                         NDS->ARM9Read8(isTransformingtoAltAddr) != 0x20 &&
@@ -1276,7 +1310,7 @@ void EmuThread::run()
                         crosshairX = (crosshairX < 0) ? crosshairX + 254 : crosshairX;
 
                         // Crosshair size (1 pixel)
-                        int crossSize = 3;
+                        int crossSize = Config::crosshaire_size;
 
                         // Draw crosshair using drawLine
                         Top_paint->setPen(Qt::white);  // Cross color
