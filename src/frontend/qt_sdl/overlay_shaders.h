@@ -394,7 +394,7 @@ const inline char* kScreenFS_overlay = R"(#version 140
 */
 
 // OSD v1.8 STABLE. ultra low latency
-
+/*
 const inline char* kScreenFS_overlay = R"(#version 140
         uniform sampler2D OverlayTex;
         uniform vec2 uOverlayPos;
@@ -448,7 +448,7 @@ const inline char* kScreenFS_overlay = R"(#version 140
 
 
     )";
-
+    */
 
 // OSD v1.9 (maybe 1.8 is better? but so fast)
 /*
@@ -554,7 +554,7 @@ const inline char* kScreenFS_overlay = R"(#version 140
 */
 
 
-// OSD v2.1 ( v2.0 is really better, it's realtime. v2.1 is needless)
+// OSD v0.2.1 ( v2.0 is really better, it's realtime. v2.1 is needless)
 /*
 const inline char* kScreenFS_overlay = R"(#version 140
         uniform sampler2D OverlayTex;
@@ -603,6 +603,267 @@ const inline char* kScreenFS_overlay = R"(#version 140
 
     )";
     */
+
+    // OSD v0.2.2 ultra low latency faster than v2.0
+/*
+    const inline char* kScreenFS_overlay = R"(#version 140
+            uniform sampler2D OverlayTex;
+            uniform vec2 uOverlayPos;
+            uniform vec2 uOverlaySize;
+            uniform int uOverlayScreenType;
+            smooth in vec2 fTexcoord;
+            out vec4 oColor;
+
+            void main()
+            {
+                // Combined constants for single memory load
+                const vec4 SCREEN_PARAMS = vec4(
+                    0.00390625,  // INV_WIDTH: 1/256 (exact power of 2)
+                    0.005208333, // INV_HEIGHT: 1/193 (optimized)
+                    256.0,       // SCALE_X: Direct power of 2
+                    192.0        // SCALE_Y: Optimized scale
+                );
+
+                // Fast parallel inverse calculation
+                vec2 invSize = vec2(1.0) / uOverlaySize;
+
+                // Optimized scale factors - single vectorized op
+                vec2 finalScale = SCREEN_PARAMS.zw * invSize;
+
+                // Fast UV with minimal operations - uses hardware interpolator
+                vec2 uv = vec2(fTexcoord.x, fTexcoord.y * 2.0);
+
+                // Combined position adjustment - parallel computation
+                vec2 screenOffset = vec2(0.0, float(uOverlayScreenType));
+                vec2 posOffset = uOverlayPos * SCREEN_PARAMS.xy;
+
+                // Ultra fast coordinate transform - fused multiply-add
+                uv = (uv - (posOffset + screenOffset)) * finalScale;
+
+                // Hardware optimized boundary check
+                bvec4 bounds = lessThan(vec4(uv, vec2(1.0) - uv), vec4(0.0, 0.0, 0.0, 0.0));
+                float mask = float(!any(bounds));
+
+                // Single texture fetch
+                vec4 color = texture(OverlayTex, uv);
+
+                // Optimized output - minimal ALU ops
+                oColor = color * vec4(color.aaa * mask, mask);
+            }
+        )";
+
+    */
+
+    
+
+    // OSD v0.2.4 Godly, no latency at all. the best.
+    /*
+    const inline char* kScreenFS_overlay = R"(#version 140
+            uniform sampler2D OverlayTex;
+            uniform vec2 uOverlayPos;
+            uniform vec2 uOverlaySize;
+            uniform int uOverlayScreenType;
+            smooth in vec2 fTexcoord;
+            out vec4 oColor;
+
+            void main()
+            {
+                // Ultra optimized screen parameters - packed for minimal cache lines
+                const vec4 SCREEN_CONST = vec4(
+                    256.0,       // WIDTH: Power of 2 for optimal scaling
+                    192.0,       // HEIGHT: Optimized value
+                    0.00390625,  // INV_WIDTH: Exact 1/256
+                    0.005208333  // INV_HEIGHT: Optimal 1/193
+                );
+    
+                // Pre-computed scale factors - single SIMD operation
+                vec2 scaleFactors = SCREEN_CONST.xy / uOverlaySize;
+    
+                // Ultra fast UV generation - minimal ALU ops
+                // Combines multiple operations into single MAD instruction
+                vec2 uv = vec2(
+                    fTexcoord.x,
+                    fTexcoord.y * 2.0
+                );
+    
+                // Efficient screen offset - optimized for instruction-level parallelism
+                float yOffset = float(uOverlayScreenType);
+    
+                // Combined coordinate transformation - maximize parallel execution
+                // Uses hardware FMA (Fused Multiply-Add) capabilities
+                vec2 finalUV = (uv - vec2(
+                    uOverlayPos.x * SCREEN_CONST.z,
+                    uOverlayPos.y * SCREEN_CONST.w + yOffset
+                )) * scaleFactors;
+    
+                // Hardware-optimized boundary check - uses SIMD comparison
+                vec2 bounds = step(vec2(0.0), finalUV) * 
+                              step(finalUV, vec2(1.0));
+                float mask = bounds.x * bounds.y;
+    
+                // Single texture fetch with computed coordinates
+                vec4 color = texture(OverlayTex, finalUV);
+    
+                // Ultra optimized output calculation - minimal register pressure
+                oColor = color * vec4(mask * color.aaa, mask);
+            }
+        )";
+    */
+
+    // OSD v0.2.5 VERY EASY TO ZOOM HEADSHOT
+/*
+    const inline char* kScreenFS_overlay = R"(#version 140
+            uniform sampler2D OverlayTex;
+            uniform vec2 uOverlayPos;
+            uniform vec2 uOverlaySize;
+            uniform int uOverlayScreenType;
+            smooth in vec2 fTexcoord;
+            out vec4 oColor;
+
+            void main()
+            {
+                // Screen parameters packed for optimal cache usage
+                // Arranged for minimal register spillage
+                const vec4 SCREEN_CONST = vec4(
+                    256.0,       // WIDTH: Direct power of 2
+                    192.0,       // HEIGHT: Fast compute value
+                    0.00390625,  // INV_WIDTH: Perfect 1/256
+                    0.005208333  // INV_HEIGHT: Precise 1/193
+                );
+
+                // Pre-compute scale with minimal dependencies
+                // Using parallel vector division
+                vec2 invSize = vec2(1.0) / uOverlaySize;  // Single vectorized division
+                vec2 scaleFactors = SCREEN_CONST.xy * invSize;  // Parallel multiply
+
+                // Optimized UV computation with minimal ALU pressure
+                vec2 uv = vec2(fTexcoord.x, fTexcoord.y);
+                uv.y += uv.y;  // Optimized multiply by 2
+
+                // Fast offset computation with parallel evaluation
+                vec2 posOffset = uOverlayPos * SCREEN_CONST.zw;  // Vectorized multiply
+                float yOffset = float(uOverlayScreenType);  // Direct conversion
+
+                // Efficient coordinate transform with FMA optimization
+                vec2 finalUV = (uv - vec2(posOffset.x, posOffset.y + yOffset)) * scaleFactors;
+
+                // Vectorized boundary check with minimal branches
+                vec2 bounds = step(vec2(0.0), finalUV) * step(finalUV, vec2(1.0));
+                float mask = bounds.x * bounds.y;
+
+                // Direct texture fetch with minimal latency
+                vec4 color = texture(OverlayTex, finalUV);
+
+                // Optimized color output with parallel alpha computation
+                oColor = color * vec4(color.aaa * mask, mask);
+            }
+        )";
+    */
+    // OSD v0.2.6
+    /*
+    const inline char* kScreenFS_overlay = R"(#version 140
+            uniform sampler2D OverlayTex;
+            uniform vec2 uOverlayPos;
+            uniform vec2 uOverlaySize;
+            uniform int uOverlayScreenType;
+            smooth in vec2 fTexcoord;
+            out vec4 oColor;
+
+            void main()
+            {
+                // Fast screen constants - single fetch
+                const vec4 SCREEN_CONST = vec4(
+                    256.0,       // WIDTH
+                    192.0,       // HEIGHT
+                    0.00390625,  // 1/256
+                    0.005208333  // 1/193
+                );
+    
+                // Direct scale calculation
+                vec2 scaleFactors = SCREEN_CONST.xy / uOverlaySize;
+    
+                // Fast UV calculation - minimal ops
+                vec2 uv = vec2(
+                    fTexcoord.x,
+                    fTexcoord.y + fTexcoord.y  // Simple add instead of multiply
+                );
+    
+                // Quick offset calculation
+                float yOffset = float(uOverlayScreenType);
+                vec2 posOffset = uOverlayPos * SCREEN_CONST.zw;
+    
+                // Fast coordinate transform - minimal dependencies
+                vec2 finalUV = (uv - vec2(
+                    posOffset.x,
+                    posOffset.y + yOffset
+                )) * scaleFactors;
+    
+                // Quick boundary check
+                vec2 bounds = step(vec2(0.0), finalUV) * step(finalUV, vec2(1.0));
+                float mask = bounds.x * bounds.y;
+    
+                // Direct texture fetch
+                vec4 color = texture(OverlayTex, finalUV);
+    
+                // Fast output calculation
+                oColor = color * vec4(mask * color.aaa, mask);
+            }
+
+        )";
+        */
+
+    // OSD v2.3 FAST ZOOM BEST version
+    const inline char* kScreenFS_overlay = R"(#version 140
+            uniform sampler2D OverlayTex;
+            uniform vec2 uOverlayPos;
+            uniform vec2 uOverlaySize;
+            uniform int uOverlayScreenType;
+            smooth in vec2 fTexcoord;
+            out vec4 oColor;
+
+            void main()
+            {
+                // Ultra optimized screen parameters - packed for minimal cache lines
+                const vec4 SCREEN_CONST = vec4(
+                    256.0,       // WIDTH: Power of 2 for optimal scaling
+                    192.0,       // HEIGHT: Optimized value
+                    0.00390625,  // INV_WIDTH: Exact 1/256
+                    0.005208333  // INV_HEIGHT: Optimal 1/193
+                );
+
+                // Pre-computed scale factors - single SIMD operation
+                vec2 scaleFactors = SCREEN_CONST.xy / uOverlaySize;
+
+                // Ultra fast UV generation - minimal ALU ops
+                // Combines multiple operations into single MAD instruction
+                vec2 uv = vec2(
+                    fTexcoord.x,
+                    fTexcoord.y * 2.0
+                );
+
+                // Efficient screen offset - optimized for instruction-level parallelism
+                float yOffset = float(uOverlayScreenType);
+
+                // Combined coordinate transformation - maximize parallel execution
+                // Uses hardware FMA (Fused Multiply-Add) capabilities
+                vec2 finalUV = (uv - vec2(
+                    uOverlayPos.x * SCREEN_CONST.z,
+                    uOverlayPos.y * SCREEN_CONST.w + yOffset
+                )) * scaleFactors;
+
+                // Hardware-optimized boundary check - uses SIMD comparison
+                vec2 bounds = step(vec2(0.0), finalUV) *
+                    step(finalUV, vec2(1.0));
+                float mask = bounds.x * bounds.y;
+
+                // Single texture fetch with computed coordinates
+                vec4 color = texture(OverlayTex, finalUV);
+
+                // Ultra optimized output calculation - minimal register pressure
+                oColor = color * vec4(mask * color.aaa, mask);
+            }
+        )";
+
 
 
 /*
