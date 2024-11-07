@@ -656,8 +656,8 @@ const inline char* kScreenFS_overlay = R"(#version 140
 
     
 
-    // OSD v0.2.4 Godly, no latency at all. the best.
-    /*
+    // OSD v2.4 Godly, no latency at all. the best.
+
     const inline char* kScreenFS_overlay = R"(#version 140
             uniform sampler2D OverlayTex;
             uniform vec2 uOverlayPos;
@@ -708,7 +708,6 @@ const inline char* kScreenFS_overlay = R"(#version 140
                 oColor = color * vec4(mask * color.aaa, mask);
             }
         )";
-    */
 
     // OSD v0.2.5 VERY EASY TO ZOOM HEADSHOT
 /*
@@ -813,6 +812,7 @@ const inline char* kScreenFS_overlay = R"(#version 140
         */
 
     // OSD v2.3 FAST ZOOM BEST version
+    /*
     const inline char* kScreenFS_overlay = R"(#version 140
             uniform sampler2D OverlayTex;
             uniform vec2 uOverlayPos;
@@ -863,7 +863,7 @@ const inline char* kScreenFS_overlay = R"(#version 140
                 oColor = color * vec4(mask * color.aaa, mask);
             }
         )";
-
+        */
 
 
 /*
