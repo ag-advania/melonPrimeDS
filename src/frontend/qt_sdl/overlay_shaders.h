@@ -449,7 +449,7 @@ const inline char* kScreenFS_overlay = R"(#version 140
 
     )";
 
-// OSD v1.9 (maybe 1.8 is better? but so fast)
+// OSD v0.1.9 (maybe 1.8 is better? but so fast)
 /*
 const inline char* kScreenFS_overlay = R"(#version 140
         uniform sampler2D OverlayTex;
@@ -655,7 +655,7 @@ const inline char* kScreenFS_overlay = R"(#version 140
 
     
 
-    // OSD v2.4 v1.8 is better
+    // OSD v0.2.4 v1.8 is better
     /*
     const inline char* kScreenFS_overlay = R"(#version 140
             uniform sampler2D OverlayTex;
@@ -811,7 +811,7 @@ const inline char* kScreenFS_overlay = R"(#version 140
         )";
         */
 
-    // OSD v2.3 FAST ZOOM BEST version
+    // OSD v0.2.3 FAST ZOOM but v1.8 is better
     /*
     const inline char* kScreenFS_overlay = R"(#version 140
             uniform sampler2D OverlayTex;
