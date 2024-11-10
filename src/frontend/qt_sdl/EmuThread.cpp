@@ -963,8 +963,10 @@ void EmuThread::run()
     float virtualStylusX = 128;
     float virtualStylusY = 96; // This might not be good - does it go out of bounds when bottom-only? Is Y=0 barely at the bottom limit?
 
+    /*
     const float dsAspectRatio = 256.0 / 192.0;
-    const float aimAspectRatio = 6.0 / 4.0; // i have no idea
+    */
+    const float dsAspectRatio = 4.0 / 3.0;
 
     // RawInputThread* rawInputThread = new RawInputThread(parent());
     // rawInputThread->start();
@@ -1398,6 +1400,7 @@ void EmuThread::run()
                     return value;
                 };
 
+                /*
                 // Internal function to process mouse input
                 auto processMouseAxis = [this, &enableAim, &adjustMouseInput](float mouseRelValue, float scaleFactor, uint32_t addr) {
                     if (mouseRelValue != 0) {
@@ -1415,7 +1418,36 @@ void EmuThread::run()
                 // Processing for X and Y axes
 
                 processMouseAxis(mouseRel.x(), SENSITIVITY_FACTOR, aimXAddr);
-                processMouseAxis(mouseRel.y(), SENSITIVITY_FACTOR * aimAspectRatio, aimYAddr);
+                processMouseAxis(mouseRel.y(), SENSITIVITY_FACTOR * dsAspectRatio, aimYAddr);
+                */
+
+                // Processing for the X-axis
+                float mouseX = mouseRel.x();
+                // We don't use abs() here to preserve the sign of the movement
+                // This allows us to detect and process even very small movements in either direction
+                if (mouseX != 0) {
+                    // Scale the mouse X movement
+                    float scaledMouseX = mouseX * SENSITIVITY_FACTOR;
+                    // Adjust the scaled value to ensure minimal movement is registered
+                    scaledMouseX = adjustMouseInput(scaledMouseX);
+                    // Convert to 16-bit integer and write the adjusted X value to the NDS memory
+                    NDS->ARM9Write16(aimXAddr, static_cast<uint16_t>(scaledMouseX));
+                    enableAim = true;
+                }
+
+                // Processing for the Y-axis
+                float mouseY = mouseRel.y();
+                // Again, we avoid using abs() to maintain directional information
+                // This ensures that even slight movements are captured and processed
+                if (mouseY != 0) {
+                    // Scale the mouse Y movement and apply aspect ratio correction
+                    float scaledMouseY = mouseY * dsAspectRatio * SENSITIVITY_FACTOR;
+                    // Adjust the scaled value to ensure minimal movement is registered
+                    scaledMouseY = adjustMouseInput(scaledMouseY);
+                    // Convert to 16-bit integer and write the adjusted Y value to the NDS memory
+                    NDS->ARM9Write16(aimYAddr, static_cast<uint16_t>(scaledMouseY));
+                    enableAim = true;
+                }
 
                 // Move hunter
                 processMoveInput();
@@ -1624,7 +1656,6 @@ void EmuThread::run()
                 else {
                     FN_INPUT_RELEASE(INPUT_START);
                 }
-
 
                 if (isInAdventure) {
                     // Adventure Mode Functions
