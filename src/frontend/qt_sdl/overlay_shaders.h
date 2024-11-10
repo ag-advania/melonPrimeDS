@@ -184,7 +184,7 @@ const inline char* kScreenFS_overlay = R"(#version 140
             oColor = pixel;
         }
     )";
-*/
+    */
 
 //OSD 1.4 awesome low latency
 /*
@@ -394,7 +394,6 @@ const inline char* kScreenFS_overlay = R"(#version 140
 */
 
 // OSD v1.8 STABLE. ultra low latency
-
 const inline char* kScreenFS_overlay = R"(#version 140
         uniform sampler2D OverlayTex;
         uniform vec2 uOverlayPos;
@@ -449,7 +448,7 @@ const inline char* kScreenFS_overlay = R"(#version 140
 
     )";
 
-// OSD v0.1.9 (maybe 1.8 is better? but so fast)
+// OSD v1.9
 /*
 const inline char* kScreenFS_overlay = R"(#version 140
         uniform sampler2D OverlayTex;
@@ -500,7 +499,7 @@ const inline char* kScreenFS_overlay = R"(#version 140
         }
 
     )";
-*/
+    */
 
 // OSD v2.0 super ultra low latency, almost realtime.
 /*
