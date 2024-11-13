@@ -71,7 +71,13 @@ public:
 
     bool getFocused() { return isFocused; }
     void unfocus();
-
+    
+    int getDelta() {  // melonPrimeDS
+        // Store and reset in one operation for optimal performance
+        int currentDelta = wheelDelta;
+        wheelDelta = 0;
+        return currentDelta;
+    }
 private slots:
     void onScreenLayoutChanged();
 
@@ -87,6 +93,13 @@ protected:
         bool rendered;
         QImage bitmap;
     };
+
+    int wheelDelta = 0;  // melonPrimeDS
+
+    void wheelEvent(QWheelEvent* event) override { // melonPrimeDS
+        wheelDelta = (event->angleDelta().y() > 0) ? 1 : -1;
+        event->accept();
+    }
 
     QMutex osdMutex;
     bool osdEnabled;

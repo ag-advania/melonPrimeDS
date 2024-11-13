@@ -963,10 +963,8 @@ void EmuThread::run()
     float virtualStylusX = 128;
     float virtualStylusY = 96; // This might not be good - does it go out of bounds when bottom-only? Is Y=0 barely at the bottom limit?
 
-    /*
-    const float dsAspectRatio = 256.0 / 192.0;
-    */
-    const float dsAspectRatio = 4.0 / 3.0;
+    //const float dsAspectRatio = 4.0 / 3.0;
+    const float dsAspectRatio = 1.333333333f;
 
     // RawInputThread* rawInputThread = new RawInputThread(parent());
     // rawInputThread->start();
@@ -1126,6 +1124,9 @@ void EmuThread::run()
     uint32_t weaponChangeAddr;
     uint32_t selectedWeaponAddr;
     uint32_t jumpFlagAddr;
+
+    uint32_t havingWeaponsAddr;
+    uint32_t currentWeaponAddr;
 
     uint32_t boostGaugeAddr;
     uint32_t isBoostingAddr;
@@ -1339,7 +1340,12 @@ void EmuThread::run()
             loadedSpecialWeaponAddr = calculatePlayerAddress(baseLoadedSpecialWeaponAddr, playerPosition, playerAddressIncrement);
             chosenHunterAddr = calculatePlayerAddress(baseChosenHunterAddr, playerPosition, 0x01);
             weaponChangeAddr = calculatePlayerAddress(baseWeaponChangeAddr, playerPosition, playerAddressIncrement);
+
+
+
             selectedWeaponAddr = calculatePlayerAddress(baseSelectedWeaponAddr, playerPosition, playerAddressIncrement);
+            havingWeaponsAddr = selectedWeaponAddr + 0x3; // DCAA6 in JP1.0
+            currentWeaponAddr = selectedWeaponAddr - 0x1; // DCAA2 in JP1.0
             jumpFlagAddr = calculatePlayerAddress(baseJumpFlagAddr, playerPosition, playerAddressIncrement);
 
             // getChosenHunterAddr
@@ -1655,6 +1661,61 @@ void EmuThread::run()
                 }
                 else {
                     FN_INPUT_RELEASE(INPUT_START);
+                }
+
+                // 武器の定数定義
+                static constexpr uint8_t WEAPON_ORDER[] = { 0, 2, 7, 6, 5, 4, 3, 1, 8 };  // Sorted order
+                static constexpr uint16_t WEAPON_MASKS[] = {
+                    0x001,  // 0: Power Beam
+                    0x004,  // 2: Missile
+                    0x080,  // 7: Shock Coil
+                    0x040,  // 6: Magmaul
+                    0x020,  // 5: Judicator
+                    0x010,  // 4: Imperialist
+                    0x008,  // 3: Battle Hammer
+                    0x002,  // 1: Volt Driver
+                    0x100   // 8: Omega Cannon
+                };
+                static constexpr size_t WEAPON_COUNT = sizeof(WEAPON_ORDER) / sizeof(WEAPON_ORDER[0]);
+
+                auto findNextWeapon = [](uint16_t havingWeapons, uint8_t currentWeapon, bool isNext) {
+                    // Find index of current weapon
+                    size_t currentIdx = 0;
+                    for (; currentIdx < WEAPON_COUNT; currentIdx++) {
+                        if (WEAPON_ORDER[currentIdx] == currentWeapon) break;
+                    }
+
+                    // Store starting position
+                    const size_t startIdx = currentIdx;
+
+                    do {
+                        // Calculate next/previous index
+                        currentIdx = (currentIdx + (isNext ? 1 : WEAPON_COUNT - 1)) % WEAPON_COUNT;
+
+                        // Get next weapon ID
+                        uint8_t nextWeapon = WEAPON_ORDER[currentIdx];
+
+                        // Power Beam (0) and Missile (2) are always available
+                        // For other weapons, check possession flags
+                        if (nextWeapon == 0 || nextWeapon == 2 ||
+                            (havingWeapons & WEAPON_MASKS[currentIdx])) {
+                            return nextWeapon;
+                        }
+                    } while (currentIdx != startIdx);  // Exit after one full cycle
+
+                    return currentWeapon;  // Return current weapon if no other available weapon found
+                    };
+
+                // Switch weapons by Mouse Wheel
+                const int currentDelta = mainWindow->panel->getDelta();
+                if (__builtin_expect(currentDelta != 0, true)) {
+                    // Single memory access for register storage
+                    const uint8_t currentWeapon = NDS->ARM9Read8(currentWeaponAddr);
+                    const uint16_t havingWeapons = NDS->ARM9Read8(havingWeaponsAddr);
+
+                    // Single delta sign check for branch prediction optimization
+                    const bool isNext = currentDelta < 0;
+                    SwitchWeapon(findNextWeapon(havingWeapons, currentWeapon, isNext));
                 }
 
                 if (isInAdventure) {
