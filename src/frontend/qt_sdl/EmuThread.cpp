@@ -1706,16 +1706,16 @@ void EmuThread::run()
                     return currentWeapon;  // Return current weapon if no other available weapon found
                     };
 
-                // Switch weapons by Mouse Wheel
+                // Switch weapons by Mouse Wheel or Hotkeys
                 const int currentDelta = mainWindow->panel->getDelta();
-                if (__builtin_expect(currentDelta != 0, true)) {
-                    // Single memory access for register storage
+                const bool hotkeyNext = Input::HotkeyPressed(HK_MetroidWeaponNext);
+                const bool switchWeapon = currentDelta != 0 || hotkeyNext || Input::HotkeyPressed(HK_MetroidWeaponPrevious);
+
+                if (__builtin_expect(switchWeapon, true)) {
                     const uint8_t currentWeapon = NDS->ARM9Read8(currentWeaponAddr);
                     const uint16_t havingWeapons = NDS->ARM9Read8(havingWeaponsAddr);
-
-                    // Single delta sign check for branch prediction optimization
-                    const bool isNext = currentDelta < 0;
-                    SwitchWeapon(findNextWeapon(havingWeapons, currentWeapon, isNext));
+                    const bool nextTrigger = (currentDelta < 0) || hotkeyNext;
+                    SwitchWeapon(findNextWeapon(havingWeapons, currentWeapon, nextTrigger));
                 }
 
                 if (isInAdventure) {
