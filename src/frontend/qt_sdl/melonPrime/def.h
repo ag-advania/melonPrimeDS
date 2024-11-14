@@ -23,16 +23,13 @@
 #include <QTimer>
 #include <cstdint> // added for romversions
 
-// グローバル変数をexternで宣言（他のファイルから参照可能にする）
+// Declare global variable with extern (to make it accessible from other files)
 extern unsigned int globalChecksum;
 
-// グローバル変数をexternで宣言（他のファイルから参照可能にする）
-extern bool isNewRom;
+// Declare global variables with extern (to make them accessible from other files)
 extern bool isRomDetected;
-extern bool isVirtualStylusEnabled;
-extern bool ingameSoVirtualStylusAutolyDisabled;
 
-// 他のファイルで使用するためにexternを使用して宣言する
+// Use extern to declare these variables for use in other files
 
 namespace RomVersions {
     constexpr uint32_t USA1_0 = 0x218DA42C;

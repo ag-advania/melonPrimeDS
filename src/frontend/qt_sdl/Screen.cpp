@@ -81,8 +81,8 @@ ScreenPanel::ScreenPanel(QWidget* parent) : QWidget(parent)
     osdID = 1;
 
     //MelonPrime OSD
-    OSDCanvas[0] = PrimeOSD::Canvas(256, 192);//Bottom Screen OSD
-    OSDCanvas[1] = PrimeOSD::Canvas(256, 192);//Top Screen OSD
+    OSDCanvas[0] = PrimeOSD::Canvas(256, 192); //Bottom Screen OSD
+    OSDCanvas[1] = PrimeOSD::Canvas(256, 192); //Top Screen OSD
 
 }
 
@@ -1010,16 +1010,19 @@ void ScreenPanelGL::drawScreenGL()
 
    // metroid related
 
+    // Activate the overlay shader program
     glUseProgram(overlayShader[2]);
-
+    // Enable alpha blending
     glEnable(GL_BLEND);
+    // Set blending function (additive blending mode with alpha)
     glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
-
+    // Pass screen dimensions to the shader
     glUniform2f(overlayScreenSizeULoc, w / factor, h / factor);
-
+    // Bind the screen vertex buffer
     glBindBuffer(GL_ARRAY_BUFFER, screenVertexBuffer);
+    // Bind the screen vertex array object
     glBindVertexArray(screenVertexArray);
-
+    // Lock screen settings for thread safety
     screenSettingsLock.lock();
 
     // Draw Textures for all screens
@@ -1029,8 +1032,11 @@ void ScreenPanelGL::drawScreenGL()
         //Update texture each frame to match the CanvasBuffer.
         glTexSubImage2D(GL_TEXTURE_2D,0,0,0,256,192,GL_RGBA,GL_UNSIGNED_BYTE,OSDCanvas[screenKind[i]].CanvasBuffer->bits());
         
+
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+        // Set texture magnification filter to nearest neighbor
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+
         glUniform2f(overlayPosULoc,0,0);
         glUniform2f(overlaySizeULoc,256,192);
         glUniform1i(overlayScreenTypeULoc, screenKind[i]);
@@ -1039,7 +1045,9 @@ void ScreenPanelGL::drawScreenGL()
             screenMatrix[i]
         );
         glDrawArrays(GL_TRIANGLES,screenKind[i] == 0 ? 0 : 2*3, 2*3);
+
     }
+
 
     screenSettingsLock.unlock();
 

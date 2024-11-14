@@ -60,10 +60,7 @@ using namespace melonDS::Platform;
 // 以下はmelonPrime/def.hで定義。
 // グローバル変数の定義（ここで初期化する）
 unsigned int globalChecksum = 0;
-bool isNewRom = false;
 bool isRomDetected = false;
-bool isVirtualStylusEnabled = true;
-bool ingameSoVirtualStylusAutolyDisabled = false;
 
 namespace ROMManager
 {
@@ -1342,13 +1339,7 @@ bool LoadROM(EmuThread* emuthread, QStringList filepath, bool reset)
     globalChecksum = cart->Checksum();
 
     // newRomFlag ON
-    isNewRom = true;
     isRomDetected = false;
-
-    // virtualStylusFlag ON
-    isVirtualStylusEnabled = true;
-    ingameSoVirtualStylusAutolyDisabled = false;
-
 
     // ROM Check
     if (globalChecksum != RomVersions::USA1_0 && globalChecksum != RomVersions::USA1_1 &&

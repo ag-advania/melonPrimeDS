@@ -65,7 +65,7 @@
 //#include "CLI.h"
 
 // #include "RawInputThread.h"
-#include "overlay_shaders.h"
+// #include "overlay_shaders.h"
 
 #include "melonPrime/def.h"
 
@@ -79,6 +79,9 @@ extern int autoScreenSizing;
 extern int videoRenderer;
 extern bool videoSettingsDirty;
 
+
+// melonPrime related
+static bool hasInitialized = false;
 
 float mouseX;
 float mouseY;
@@ -310,6 +313,8 @@ bool EmuThread::UpdateConsole(UpdateConsoleNDSArgs&& ndsargs, UpdateConsoleGBAAr
     return true;
 }
 
+// melonPrime
+
 // CalculatePlayerAddress Function
 uint32_t calculatePlayerAddress(uint32_t baseAddress, uint8_t playerPosition, int32_t increment) {
     // If player position is 0, return the base address without modification
@@ -355,7 +360,7 @@ void detectRomAndSetAddresses() {
 
         baseChosenHunterAddr = 0x020CBDA4; // BattleConfig:ChosenHunter 0 samus 1 kanden 2 trace 3 sylux 4 noxus 5 spire 6 weavel
         inGameAddr = 0x020eec40 + 0x8F0; // inGame:1
-        inVisorOrMapAddr = 0x020D9A7D; // 推定アドレス
+        inVisorOrMapAddr = 0x020D9A7D; // Estimated address
         PlayerPosAddr = 0x020DA538;
         baseIsAltFormAddr = 0x020DB098; // 1p(host)
         baseLoadedSpecialWeaponAddr = baseIsAltFormAddr + 0x56; // 1p(host). For special weapons only. Missile and powerBeam are not special weapon.
@@ -376,7 +381,7 @@ void detectRomAndSetAddresses() {
         baseChosenHunterAddr = 0x020CB51C; // BattleConfig:ChosenHunter
         inGameAddr = 0x020ee180 + 0x8F0; // inGame:1
         PlayerPosAddr = 0x020D9CB8;
-        inVisorOrMapAddr = PlayerPosAddr - 0xabb; // 推定アドレス
+        inVisorOrMapAddr = PlayerPosAddr - 0xabb; // Estimated address
         baseIsAltFormAddr = 0x020DC6D8 - 0x1EC0; // 1p(host)
         baseLoadedSpecialWeaponAddr = baseIsAltFormAddr + 0x56; // 1p(host). For special weapons only. Missile and powerBeam are not special weapon.
         baseWeaponChangeAddr = 0x020DCA9B - 0x1EC0; // 1p(host)
@@ -396,7 +401,7 @@ void detectRomAndSetAddresses() {
         baseChosenHunterAddr = 0x020CD358; // BattleConfig:ChosenHunter
         inGameAddr = 0x020F0BB0; // inGame:1
         PlayerPosAddr = 0x020DBB78;
-        inVisorOrMapAddr = PlayerPosAddr - 0xabb; // 推定アドレス
+        inVisorOrMapAddr = PlayerPosAddr - 0xabb; // Estimated address
         baseIsAltFormAddr = 0x020DC6D8; // 1p(host)
         baseLoadedSpecialWeaponAddr = baseIsAltFormAddr + 0x56; // 1p(host). For special weapons only. Missile and powerBeam are not special weapon.
         baseWeaponChangeAddr = 0x020DCA9B; // 1p(host)
@@ -416,7 +421,7 @@ void detectRomAndSetAddresses() {
         baseChosenHunterAddr = 0x020CD318; // BattleConfig:ChosenHunter
         inGameAddr = 0x020F0280 + 0x8F0; // inGame:1
         PlayerPosAddr = 0x020DBB38;
-        inVisorOrMapAddr = PlayerPosAddr - 0xabb; // 推定アドレス
+        inVisorOrMapAddr = PlayerPosAddr - 0xabb; // Estimated address
         baseIsAltFormAddr = 0x020DC6D8 - 0x64; // 1p(host)
         baseLoadedSpecialWeaponAddr = baseIsAltFormAddr + 0x56; // 1p(host). For special weapons only. Missile and powerBeam are not special weapon.
         baseWeaponChangeAddr = 0x020DCA9B - 0x40; // 1p(host)
@@ -436,7 +441,7 @@ void detectRomAndSetAddresses() {
         baseChosenHunterAddr = 0x020CBDC4; // BattleConfig:ChosenHunter
         inGameAddr = 0x020eec60 + 0x8F0; // inGame:1
         PlayerPosAddr = 0x020DA558;
-        inVisorOrMapAddr = PlayerPosAddr - 0xabb; // 推定アドレス
+        inVisorOrMapAddr = PlayerPosAddr - 0xabb; // Estimated address
         baseIsAltFormAddr = 0x020DC6D8 - 0x1620; // 1p(host)
         baseLoadedSpecialWeaponAddr = baseIsAltFormAddr + 0x56; // 1p(host). For special weapons only. Missile and powerBeam are not special weapon.
         baseWeaponChangeAddr = 0x020DCA9B - 0x1620; // 1p(host)
@@ -456,7 +461,7 @@ void detectRomAndSetAddresses() {
         baseChosenHunterAddr = 0x020CBE44; // BattleConfig:ChosenHunter
         inGameAddr = 0x020eece0 + 0x8F0; // inGame:1
         PlayerPosAddr = 0x020DA5D8;
-        inVisorOrMapAddr = PlayerPosAddr - 0xabb; // 推定アドレス
+        inVisorOrMapAddr = PlayerPosAddr - 0xabb; // Estimated address
         baseIsAltFormAddr = 0x020DC6D8 - 0x15A0; // 1p(host)
         baseLoadedSpecialWeaponAddr = baseIsAltFormAddr + 0x56; // 1p(host). For special weapons only. Missile and powerBeam are not special weapon.
         baseWeaponChangeAddr = 0x020DCA9B - 0x15A0; // 1p(host)
@@ -476,7 +481,7 @@ void detectRomAndSetAddresses() {
         // Korea1.0
         baseChosenHunterAddr = 0x020C4B88; // BattleConfig:ChosenHunter
         inGameAddr = 0x020E81B4; // inGame:1
-        inVisorOrMapAddr = PlayerPosAddr - 0xabb; // 推定アドレス
+        inVisorOrMapAddr = PlayerPosAddr - 0xabb; // Estimated address
         PlayerPosAddr = 0x020D33A9; // it's weird but "3A9" is correct.
         baseIsAltFormAddr = 0x020DC6D8 - 0x87F4; // 1p(host)
         baseLoadedSpecialWeaponAddr = baseIsAltFormAddr + 0x56; // 1p(host). For special weapons only. Missile and powerBeam are not special weapon.
@@ -494,12 +499,11 @@ void detectRomAndSetAddresses() {
         break;
 
     default:
-        // 未対応のチェックサムに対する処理
-        // デフォルトの動作やエラーメッセージの追加
+        // Handle unsupported checksums.
+        // Add default behavior or error handling.
         break;
     }
 }
-
 
 void EmuThread::run()
 {
@@ -575,9 +579,13 @@ void EmuThread::run()
         if (Input::HotkeyPressed(HK_Reset)) emit windowEmuReset();
         if (Input::HotkeyPressed(HK_FrameStep)) emit windowEmuFrameStep();
 
-        if (Input::HotkeyPressed(HK_FullscreenToggle)) emit windowFullscreenToggle();
+        if (Input::HotkeyPressed(HK_FullscreenToggle)) {
+            emit windowFullscreenToggle();
+        }
 
-        if (Input::HotkeyPressed(HK_SwapScreens)) emit swapScreensToggle();
+        if (Input::HotkeyPressed(HK_SwapScreens)) {
+            emit swapScreensToggle();
+        }
         if (Input::HotkeyPressed(HK_SwapScreenEmphasis)) emit screenEmphasisToggle();
 
         // Lambda to update aim sensitivity and display a message
@@ -726,11 +734,13 @@ void EmuThread::run()
             // auto screen layout
             if (Config::ScreenSizing == Frontend::screenSizing_Auto)
             {
+                // Update main screen positions
                 mainScreenPos[2] = mainScreenPos[1];
                 mainScreenPos[1] = mainScreenPos[0];
                 mainScreenPos[0] = NDS->PowerControl9 >> 15;
-
                 int guess;
+
+                // Detect screen flickering
                 if (mainScreenPos[0] == mainScreenPos[2] &&
                     mainScreenPos[0] != mainScreenPos[1])
                 {
@@ -740,19 +750,21 @@ void EmuThread::run()
                 }
                 else
                 {
+                    // Guess layout based on main screen position
                     if (mainScreenPos[0] == 1)
-                        guess = Frontend::screenSizing_EmphTop;
+                        guess = Frontend::screenSizing_EmphTop;  // Emphasize top screen
                     else
-                        guess = Frontend::screenSizing_EmphBot;
+                        guess = Frontend::screenSizing_EmphBot;  // Emphasize bottom screen
                 }
-
+                // If the guessed layout has changed
                 if (guess != autoScreenSizing)
                 {
+                    // Set the new layout
                     autoScreenSizing = guess;
+                    // Emit signal for layout change
                     emit screenLayoutChange();
                 }
             }
-
 
             // emulate
             u32 nlines = NDS->RunFrame();
@@ -938,23 +950,28 @@ void EmuThread::run()
 
 
 // #define ENABLE_MEMORY_DUMP 1
+
+/*
 #ifdef ENABLE_MEMORY_DUMP
     int memoryDump = 0;
 #endif
-
+*/
 
     bool enableAim = true;
     bool wasLastFrameFocused = false;
 
     float virtualStylusX = 128;
-    float virtualStylusY = 96;
+    float virtualStylusY = 96; // This might not be good - does it go out of bounds when bottom-only? Is Y=0 barely at the bottom limit?
 
-    const float dsAspectRatio = 256.0 / 192.0;
-    const float aimAspectRatio = 6.0 / 4.0; // i have no idea
+    //const float dsAspectRatio = 4.0 / 3.0;
+    const float dsAspectRatio = 1.333333333f;
+    //const float aimAspectRatio = 6.0 / 4.0; // i have no idea
+    const float aimAspectRatio = 1.5f; // i have no idea  6.0 / 4.0
 
     // RawInputThread* rawInputThread = new RawInputThread(parent());
     // rawInputThread->start();
 
+    /*
     auto processMoveInput = []() {
         const struct {
             int hotkey;
@@ -974,9 +991,131 @@ void EmuThread::run()
             }
         }
     };
+    */
+    /*
+    auto processMoveInput = []() {
+        // Static array to minimize stack operations
+        static constexpr struct InputPair {
+            int hotkey;
+            int input;
+            int oppositeHotkey;
+        } moves[] = {
+            {HK_MetroidMoveForward, INPUT_UP, HK_MetroidMoveBack},
+            {HK_MetroidMoveBack, INPUT_DOWN, HK_MetroidMoveForward},
+            {HK_MetroidMoveLeft, INPUT_LEFT, HK_MetroidMoveRight},
+            {HK_MetroidMoveRight, INPUT_RIGHT, HK_MetroidMoveLeft}
+        };
 
-    
-    bool drawVCur;
+        // Process horizontal and vertical axes separately for better branch prediction
+        // and to avoid unnecessary checks
+
+        // for supporting "counter-strafing" feature
+
+        // Horizontal axis
+        const bool leftPressed = Input::HotkeyDown(moves[2].hotkey);
+        const bool rightPressed = Input::HotkeyDown(moves[3].hotkey);
+
+        if (leftPressed && !rightPressed) {
+            FN_INPUT_PRESS(INPUT_LEFT);
+        }
+        else {
+            FN_INPUT_RELEASE(INPUT_LEFT);
+        }
+
+        if (rightPressed && !leftPressed) {
+            FN_INPUT_PRESS(INPUT_RIGHT);
+        }
+        else {
+            FN_INPUT_RELEASE(INPUT_RIGHT);
+        }
+
+        // Vertical axis
+        const bool upPressed = Input::HotkeyDown(moves[0].hotkey);
+        const bool downPressed = Input::HotkeyDown(moves[1].hotkey);
+
+        if (upPressed && !downPressed) {
+            FN_INPUT_PRESS(INPUT_UP);
+        }
+        else {
+            FN_INPUT_RELEASE(INPUT_UP);
+        }
+
+        if (downPressed && !upPressed) {
+            FN_INPUT_PRESS(INPUT_DOWN);
+        }
+        else {
+            FN_INPUT_RELEASE(INPUT_DOWN);
+        }
+    };
+
+    */
+
+    // processMoveInputFunction{
+
+    auto processMoveInput = []() {
+        // Pack all input flags into a single 32-bit register for SIMD-like processing
+        static constexpr uint32_t INPUT_PACKED_UP = (1u << 0) | (uint32_t(INPUT_UP) << 16);
+        static constexpr uint32_t INPUT_PACKED_DOWN = (1u << 1) | (uint32_t(INPUT_DOWN) << 16);
+        static constexpr uint32_t INPUT_PACKED_LEFT = (1u << 2) | (uint32_t(INPUT_LEFT) << 16);
+        static constexpr uint32_t INPUT_PACKED_RIGHT = (1u << 3) | (uint32_t(INPUT_RIGHT) << 16);
+
+        // Pre-fetch all hotkey states at once to minimize input latency
+        uint32_t inputBitmap =
+            (uint32_t(Input::HotkeyDown(HK_MetroidMoveForward)) << 0) |
+            (uint32_t(Input::HotkeyDown(HK_MetroidMoveBack)) << 1) |
+            (uint32_t(Input::HotkeyDown(HK_MetroidMoveLeft)) << 2) |
+            (uint32_t(Input::HotkeyDown(HK_MetroidMoveRight)) << 3);
+
+        // Optimized LUT using bit manipulation to handle all cases
+        // Each entry is pre-computed and packed with both mask and input value
+        static constexpr uint32_t PACKED_LUT[16] = {
+            0x00000000u, // None
+            INPUT_PACKED_UP,    // Up
+            INPUT_PACKED_DOWN,  // Down
+            0x00000000u, // Up+Down (cancel)
+            INPUT_PACKED_LEFT,  // Left
+            INPUT_PACKED_UP | INPUT_PACKED_LEFT,    // Left+Up
+            INPUT_PACKED_DOWN | INPUT_PACKED_LEFT,  // Left+Down
+            INPUT_PACKED_LEFT,  // Left+Up+Down
+            INPUT_PACKED_RIGHT, // Right
+            INPUT_PACKED_UP | INPUT_PACKED_RIGHT,   // Right+Up
+            INPUT_PACKED_DOWN | INPUT_PACKED_RIGHT, // Right+Down
+            INPUT_PACKED_RIGHT, // Right+Up+Down
+            0x00000000u, // Left+Right (cancel)
+            INPUT_PACKED_UP,    // Left+Right+Up
+            INPUT_PACKED_DOWN,  // Left+Right+Down
+            0x00000000u  // All pressed (cancel)
+        };
+
+        // Single LUT lookup to get final state
+        uint32_t finalState = PACKED_LUT[inputBitmap & 0xF];
+
+        // Branchless input application using bit manipulation
+        static const auto applyInput = [](uint32_t packedInput, uint32_t state) {
+            if (state & packedInput & 0xF) {
+                FN_INPUT_PRESS(packedInput >> 16);
+            }
+            else {
+                FN_INPUT_RELEASE(packedInput >> 16);
+            }
+            };
+
+        // Process all inputs in parallel using packed values
+        // Compiler should be able to unroll this loop
+        static constexpr uint32_t ALL_INPUTS[] = {
+            INPUT_PACKED_UP, INPUT_PACKED_DOWN,
+            INPUT_PACKED_LEFT, INPUT_PACKED_RIGHT
+        };
+
+#pragma unroll
+        for (const auto& input : ALL_INPUTS) {
+            applyInput(input, finalState);
+        }
+        };
+
+
+
+    // /processMoveInputFunction }
 
     uint8_t playerPosition;
     const int32_t playerAddressIncrement = 0xF30;
@@ -988,63 +1127,178 @@ void EmuThread::run()
     uint32_t selectedWeaponAddr;
     uint32_t jumpFlagAddr;
 
+    uint32_t havingWeaponsAddr;
+    uint32_t currentWeaponAddr;
+
     uint32_t boostGaugeAddr;
     uint32_t isBoostingAddr;
 
 
-    bool isAddressCalculationNeeded;
+    bool isRoundJustStarted;
     bool isInGame;
     bool isInAdventure;
     bool isSamus;
 
+    // Screen layout adjustment constants
+    constexpr float DEFAULT_ADJUSTMENT = 0.25f;
+    constexpr float HYBRID_RIGHT = 0.333203125f;  // (2133-1280)/2560
+    constexpr float HYBRID_LEFT = 0.166796875f;   // (1280-853)/2560
+
+    // The QPoint class defines a point in the plane using integer precision. 
+    // auto mouseRel = rawInputThread->fetchMouseDelta();
+    QPoint mouseRel;
+
+    // Initialize Adjusted Center 
+    QPoint adjustedCenter;
+
+    // test
+    // Lambda function to get adjusted center position based on window geometry and screen layout
+    auto getAdjustedCenter = [](QMainWindow* mainWindow) {
+        // Cache window geometry and initialize center position
+        const QRect windowGeometry = mainWindow->geometry();
+        QPoint adjustedCenter = windowGeometry.center();
+
+        // Inner lambda function for adjusting the center position
+        auto adjustCenter = [](QPoint& adjustedCenter, const QRect& windowGeometry, QMainWindow* mainWindow) {
+            // Calculate adjustment direction based on screen swap configuration
+            const float direction = (Config::ScreenSwap != 0) ? 1.0f : -1.0f;
+
+            // Adjust the center position based on screen layout in specified order
+            if (Config::ScreenLayout == Frontend::screenLayout_Hybrid) {
+                /*
+                ### Monitor Specification
+                - Monitor resolution: 2560x1440 pixels
+                ### Adjusted Conditions (with Black Bars)
+                1. Total monitor height: 1440 pixels
+                2. 80px black bars at the top and bottom, making the usable height:
+                   1440 - 160 = 1280 pixels
+                3. 4:3 screen width, based on the usable height (1280 pixels):
+                   4:3 width = (1280 / 3) * 4 = 1706.67 pixels
+                ### Position Calculations (with Black Bars)
+                #### Left 4:3 Screen Center
+                Left 4:3 center = 1706.67 / 2 = 853.33 pixels
+                #### Right Stacked 4:3 Screen Center
+                - The first 4:3 screen starts at the monitor's center (1280 pixels).
+                - The center of this screen:
+                  1280 + (1706.67 / 2) = 2133.33 pixels
+                ### Final Results
+                - Left 4:3 screen center: ~853 pixels
+                - Right stacked 4:3 screen center: ~2133 pixels
+                */
+                if (Config::ScreenSwap != 0) {
+                    adjustedCenter.rx() += static_cast<int>(windowGeometry.width() * HYBRID_RIGHT);
+                    adjustedCenter.ry() -= static_cast<int>(windowGeometry.height() * DEFAULT_ADJUSTMENT);
+                }
+                else {
+                    adjustedCenter.rx() -= static_cast<int>(windowGeometry.width() * HYBRID_LEFT);
+                }
+                return;  // End here if in Hybrid mode
+            }
+
+            // For layouts other than Hybrid, first check BotOnly mode
+            if (Config::ScreenSizing == Frontend::screenSizing_BotOnly) {
+                // Process for bottom-screen-only display
+                // TODO: Adjust to avoid duplicate touches at the cursor position
+
+
+                // TODO Config::WindowMaximized = mainWindow->isMaximized()
+
+                if (mainWindow->isFullScreen())
+                {
+                    // isFullScreen
+                    adjustedCenter.rx() -= static_cast<int>(windowGeometry.width() * 0.4f);
+                    adjustedCenter.ry() -= static_cast<int>(windowGeometry.height() * 0.4f);
+
+                }
+                /*
+                else
+                {
+                    // isNotFullScreen
+                    // The cursor may be better centered because there is a problem that the cursor may click outside the window.
+                    // I would recommend playing in full screen.
+                    return;
+                }
+                */
+
+                return;  // End here if in BotOnly mode
+            }
+
+            if (Config::ScreenSizing == Frontend::screenSizing_TopOnly) {
+                return;  // End here if in TopOnly mode
+            }
+
+            // Standard layout adjustment (when not in BotOnly mode)
+            switch (Config::ScreenLayout) {
+            case Frontend::screenLayout_Natural:
+            case Frontend::screenLayout_Horizontal:
+                // Note: This case actually handles vertical layout despite being named Horizontal in enum
+                adjustedCenter.ry() += static_cast<int>(direction * windowGeometry.height() * DEFAULT_ADJUSTMENT);
+                break;
+
+            case Frontend::screenLayout_Vertical:
+                // Note: This case actually handles horizontal layout despite being named Vertical in enum
+                adjustedCenter.rx() += static_cast<int>(direction * windowGeometry.width() * DEFAULT_ADJUSTMENT);
+                break;
+            }
+        };
+
+        // Adjust the center position and return
+        adjustCenter(adjustedCenter, windowGeometry, mainWindow);
+        return adjustedCenter;
+    };
+
+    // Get adjusted center position
+    adjustedCenter = getAdjustedCenter(mainWindow);
+
+
+    //MelonPrime OSD stuff
+    PrimeOSD::Canvas* OSD = nullptr;
+    QImage* Top_buffer = nullptr;
+    QPainter* Top_paint = nullptr;
+    QImage* Btm_buffer = nullptr;
+    QPainter* Btm_paint = nullptr;
+
     while (EmuRunning != emuStatus_Exit) {
-        
-        //MelonPrime OSD stuff
-
-        PrimeOSD::Canvas* OSD = mainWindow->panel->OSDCanvas;
-        QImage* Top_buffer = OSD[0].CanvasBuffer;
-        QPainter* Top_paint = OSD[0].Painter;
-        QImage* Bott_buffer = OSD[1].CanvasBuffer;
-        QPainter* Bott_paint = OSD[1].Painter;
-        
-        //Clear OSD buffers
-        Top_buffer->fill(0x00000000);
-        Bott_buffer->fill(0x00000000);
-
 
         auto isFocused = mainWindow->panel->getFocused();
 
-        // auto mouseRel = rawInputThread->fetchMouseDelta();
-
-        // The QPoint class defines a point in the plane using integer precision. 
-        QPoint mouseRel;
-
-        // 感度係数を定数として定義
+        // Define sensitivity factor as a constant
         const float SENSITIVITY_FACTOR = Config::MetroidAimSensitivity * 0.01f;
         const float SENSITIVITY_FACTOR_VIRTUAL_STYLUS = Config::MetroidVirtualStylusSensitivity * 0.01f;
 
         // Calculate for aim 
         // updateMouseRelativeAndRecenterCursor
-
+        // 
         // Handle the case when the window is focused
-        if (isFocused) {
-            // Get the center coordinates of the window
-            auto windowCenter = mainWindow->geometry().center();
+        // Update mouse relative position and recenter cursor for aim control
 
-            // If the window was also focused in the previous frame
-            if (wasLastFrameFocused) {
-                // Calculate the relative mouse position (current cursor position - window center)
-                mouseRel = QCursor::pos() - windowCenter;
+        if (isFocused) {
+
+            mouseRel = QPoint(0, 0);  // Initialize to origin
+
+            // Check hotkey status
+            bool isLayoutChanging = Input::HotkeyPressed(HK_FullscreenToggle) || Input::HotkeyPressed(HK_SwapScreens);
+
+            // These conditional branches cannot be simplified to a simple else statement
+            // because they handle different independent cases:
+            // 1. Recalculating center position when focus is gained or layout is changing
+            // 2. Updating relative position only when focused and layout is not changing
+
+            // Recalculate center position when focus is gained or layout is changing
+            if (!wasLastFrameFocused || isLayoutChanging) {
+                adjustedCenter = getAdjustedCenter(mainWindow);
             }
 
-            // Move the cursor to the center of the window
-            QCursor::setPos(windowCenter);
+            // Update relative position only when not changing layout
+            if (wasLastFrameFocused && !isLayoutChanging) {
+                mouseRel = QCursor::pos() - adjustedCenter;
+            }
+
+            // Recenter cursor
+            QCursor::setPos(adjustedCenter);
         }
 
-
-
-        drawVCur = false;
-
+        /*
         #ifdef ENABLE_MEMORY_DUMP
             if (Input::HotkeyPressed(HK_MetroidUIOk)) {
                 printf("MainRAMMask 0x%.8" PRIXPTR "\n", (uintptr_t)NDS->MainRAMMask);
@@ -1054,39 +1308,31 @@ void EmuThread::run()
                 }
             }
         #endif
+        */
 
         if (!isRomDetected) {
             detectRomAndSetAddresses();
-            isNewRom = false;
         }
 
         isInGame = NDS->ARM9Read16(inGameAddr) == 0x0001;
 
-        // Auto Enable/Disable VirtualStylus Before/After the game
-        // you can still enable VirtualStylus in Game
-        if (!isInGame && !isVirtualStylusEnabled && ingameSoVirtualStylusAutolyDisabled) {
-            isVirtualStylusEnabled = true;
-            // mainWindow->osdAddMessage(0, "Virtual Stylus enabled");
-            ingameSoVirtualStylusAutolyDisabled = false;
-        }
-
-        isAddressCalculationNeeded = false;
-
-        if(isInGame && isVirtualStylusEnabled && !ingameSoVirtualStylusAutolyDisabled) {
-            isVirtualStylusEnabled = false;
-            // mainWindow->osdAddMessage(0, "Virtual Stylus disabled");
-            ingameSoVirtualStylusAutolyDisabled = true;
-
-            // inGame so need calculate address
-            isAddressCalculationNeeded = true;
-        }
-
-        // VirtualStylus is Enabled when not in game
-        isVirtualStylusEnabled = !isInGame;
-
-
-        if (isAddressCalculationNeeded) {
+        if (isInGame && !hasInitialized) {
             // Read once at game start
+            if (OSD) {
+                //Clear OSD buffers to delete VirtualStylus from touch-screen
+                Top_buffer->fill(0x00000000);
+                Btm_buffer->fill(0x00000000);
+
+                // Reset/end any active painters
+                Top_paint->end();
+                Btm_paint->end();
+
+                OSD = nullptr;
+                Top_buffer = nullptr;
+                Top_paint = nullptr;
+                Btm_buffer = nullptr;
+                Btm_paint = nullptr;
+            }
 
             // Read the player position
             playerPosition = NDS->ARM9Read8(PlayerPosAddr);
@@ -1096,7 +1342,12 @@ void EmuThread::run()
             loadedSpecialWeaponAddr = calculatePlayerAddress(baseLoadedSpecialWeaponAddr, playerPosition, playerAddressIncrement);
             chosenHunterAddr = calculatePlayerAddress(baseChosenHunterAddr, playerPosition, 0x01);
             weaponChangeAddr = calculatePlayerAddress(baseWeaponChangeAddr, playerPosition, playerAddressIncrement);
+
+
+
             selectedWeaponAddr = calculatePlayerAddress(baseSelectedWeaponAddr, playerPosition, playerAddressIncrement);
+            havingWeaponsAddr = selectedWeaponAddr + 0x3; // DCAA6 in JP1.0
+            currentWeaponAddr = selectedWeaponAddr - 0x1; // DCAA2 in JP1.0
             jumpFlagAddr = calculatePlayerAddress(baseJumpFlagAddr, playerPosition, playerAddressIncrement);
 
             // getChosenHunterAddr
@@ -1115,16 +1366,15 @@ void EmuThread::run()
 
             // mainWindow->osdAddMessage(0, "Completed address calculation.");
 
+            // 初期化完了フラグを設定
+            hasInitialized = true;
 		}
 
         if (isFocused) {
 
 
-			if (!isVirtualStylusEnabled) {
+			if (isInGame) {
                 // inGame
-
-
-                drawVCur = false;
 
                 // Aiming
 
@@ -1156,7 +1406,28 @@ void EmuThread::run()
                     }
                     // For other values, return as is
                     return value;
-                    };
+                };
+
+                /*
+                // Internal function to process mouse input
+                auto processMouseAxis = [this, &enableAim, &adjustMouseInput](float mouseRelValue, float scaleFactor, uint32_t addr) {
+                    if (mouseRelValue != 0) {
+                        // Scale the mouse input (to adjust for sensitivity)
+                        float scaledValue = mouseRelValue * scaleFactor;
+                        // Adjust the scaled input value (using provided adjustment function)
+                        scaledValue = adjustMouseInput(scaledValue);
+                        // Write adjusted value to memory address (for input handling)
+                        NDS->ARM9Write16(addr, static_cast<uint16_t>(scaledValue));
+                        // Enable aiming mode
+                        enableAim = true;
+                    }
+                };
+
+                // Processing for X and Y axes
+
+                processMouseAxis(mouseRel.x(), SENSITIVITY_FACTOR, aimXAddr);
+                processMouseAxis(mouseRel.y(), SENSITIVITY_FACTOR * dsAspectRatio, aimYAddr);
+                */
 
                 // Processing for the X-axis
                 float mouseX = mouseRel.x();
@@ -1233,8 +1504,6 @@ void EmuThread::run()
                     }
                 }
 
-
-
                 // Define a lambda function to switch weapons
                 auto SwitchWeapon = [&](int weaponIndex) {
 
@@ -1259,7 +1528,7 @@ void EmuThread::run()
                     uint8_t jumpFlag = currentFlags & 0x0F;  // Get the lower 4 bits
                     //mainWindow->osdAddMessage(0, ("JumpFlag:" + std::string(1, "0123456789ABCDEF"[NDS->ARM9Read8(jumpFlagAddr) & 0x0F])).c_str());
 
-                    bool needToRestore = false;
+                    bool isRestoreNeeded = false;
 
                     // Check if in alternate form (transformed state)
                     isAltForm = NDS->ARM9Read8(isAltFormAddr) == 0x02;
@@ -1268,7 +1537,7 @@ void EmuThread::run()
                     if (!isTransforming && jumpFlag == 0 && !isAltForm) {
                         uint8_t newFlags = (currentFlags & 0xF0) | 0x01;  // Set lower 4 bits to 1
                         NDS->ARM9Write8(jumpFlagAddr, newFlags);
-                        needToRestore = true;
+                        isRestoreNeeded = true;
                         //mainWindow->osdAddMessage(0, ("JumpFlag:" + std::string(1, "0123456789ABCDEF"[NDS->ARM9Read8(jumpFlagAddr) & 0x0F])).c_str());
                         //mainWindow->osdAddMessage(0, "Done setting jumpFlag.");
                     }
@@ -1280,7 +1549,7 @@ void EmuThread::run()
                     auto setChangingWeapon = [](int value) -> int {
                         // Apply mask to set the lower 4 bits to 1011 (B in hexadecimal)
                         return (value & 0xF0) | 0x0B; // Keep the upper 4 bits, set lower 4 bits to 1011
-                        };
+                    };
 
                     // Modify the value using the lambda
                     int valueOfWeaponChange = setChangingWeapon(NDS->ARM9Read8(weaponChangeAddr));
@@ -1301,7 +1570,7 @@ void EmuThread::run()
                     frameAdvance(2);
 
                     // Restore the jump flag to its original value (if necessary)
-                    if (needToRestore) {
+                    if (isRestoreNeeded) {
                         currentFlags = NDS->ARM9Read8(jumpFlagAddr);
                         uint8_t restoredFlags = (currentFlags & 0xF0) | jumpFlag;
                         NDS->ARM9Write8(jumpFlagAddr, restoredFlags);
@@ -1310,7 +1579,7 @@ void EmuThread::run()
 
                     }
 
-                    };
+                };
 
                 // Switch to Power Beam
                 if (Input::HotkeyPressed(HK_MetroidWeaponBeam)) {
@@ -1320,7 +1589,6 @@ void EmuThread::run()
                 // Switch to Missile
                 if (Input::HotkeyPressed(HK_MetroidWeaponMissile)) {
                     SwitchWeapon(2);
-
                 }
 
                 // Array of sub-weapon hotkeys (Associating hotkey definitions with weapon indices)
@@ -1397,7 +1665,61 @@ void EmuThread::run()
                     FN_INPUT_RELEASE(INPUT_START);
                 }
 
+                // Switch weapons by Mouse Wheel or Hotkeys
+                const int currentDelta = mainWindow->panel->getDelta();
+                const bool hotkeyNext = Input::HotkeyPressed(HK_MetroidWeaponNext);
+                const bool switchWeapon = currentDelta != 0 || hotkeyNext || Input::HotkeyPressed(HK_MetroidWeaponPrevious);
 
+                if (__builtin_expect(switchWeapon, true)) {
+                    const uint8_t currentWeapon = NDS->ARM9Read8(currentWeaponAddr);
+                    const uint16_t havingWeapons = NDS->ARM9Read16(havingWeaponsAddr);
+                    const bool nextTrigger = (currentDelta < 0) || hotkeyNext;
+
+                    // 武器の定数定義
+                    static constexpr uint8_t WEAPON_ORDER[] = { 0, 2, 7, 6, 5, 4, 3, 1, 8 };  // Sorted order
+                    static constexpr uint16_t WEAPON_MASKS[] = {
+                        0x001,  // 0: Power Beam
+                        0x004,  // 2: Missile
+                        0x080,  // 7: Shock Coil
+                        0x040,  // 6: Magmaul
+                        0x020,  // 5: Judicator
+                        0x010,  // 4: Imperialist
+                        0x008,  // 3: Battle Hammer
+                        0x002,  // 1: Volt Driver
+                        0x100   // 8: Omega Cannon
+                    };
+                    static constexpr size_t WEAPON_COUNT = sizeof(WEAPON_ORDER) / sizeof(WEAPON_ORDER[0]);
+
+                    auto findNextWeapon = [](uint16_t havingWeapons, uint8_t currentWeapon, bool isNext) {
+                        // Find index of current weapon
+                        size_t currentIdx = 0;
+                        for (; currentIdx < WEAPON_COUNT; currentIdx++) {
+                            if (WEAPON_ORDER[currentIdx] == currentWeapon) break;
+                        }
+
+                        // Store starting position
+                        const size_t startIdx = currentIdx;
+
+                        do {
+                            // Calculate next/previous index
+                            currentIdx = (currentIdx + (isNext ? 1 : WEAPON_COUNT - 1)) % WEAPON_COUNT;
+
+                            // Get next weapon ID
+                            uint8_t nextWeapon = WEAPON_ORDER[currentIdx];
+
+                            // Power Beam (0) and Missile (2) are always available
+                            // For other weapons, check possession flags
+                            if (nextWeapon == 0 || nextWeapon == 2 ||
+                                (havingWeapons & WEAPON_MASKS[currentIdx])) {
+                                return nextWeapon;
+                            }
+                        } while (currentIdx != startIdx);  // Exit after one full cycle
+
+                        return currentWeapon;  // Return current weapon if no other available weapon found
+                        };
+
+                    SwitchWeapon(findNextWeapon(havingWeapons, currentWeapon, nextTrigger));
+                }
 
                 if (isInAdventure) {
                     // Adventure Mode Functions
@@ -1471,17 +1793,52 @@ void EmuThread::run()
                     }
                 } // End of Adventure Functions
 
+
+                // Touch again for aiming
+                if (!wasLastFrameFocused || enableAim) {
+                    // touch again for aiming
+                    // When you return to melonPrimeDS or normal form
+
+                    // mainWindow->osdAddMessage(0,"touching screen for aim");
+
+                    // Changed Y point center(96) to 88, For fixing issue: Alt Tab switches hunter choice.
+                    //NDS->TouchScreen(128, 96); // required for aiming
+
+
+                    NDS->TouchScreen(128, 88); // required for aiming
+                }
+
                 // End of in-game
 			}
 			else {
                 // VirtualStylus
 
+                if (!OSD) {
+                    OSD = mainWindow->panel->OSDCanvas;
+                    Top_buffer = OSD[0].CanvasBuffer;
+                    Top_paint = OSD[0].Painter;
+                    Btm_buffer = OSD[1].CanvasBuffer;
+                    Btm_paint = OSD[1].Painter;
+
+                    // Start the painter if necessary
+                    if (!Top_paint->isActive()) {
+                        Top_paint->begin(Top_buffer);
+                    }
+                    if (!Btm_paint->isActive()) {
+                        Btm_paint->begin(Btm_buffer);
+                    }
+                }
+
+                // reset initialized flag
+                hasInitialized = false;
+
+                //Clear OSD buffers
+                Top_buffer->fill(0x00000000);
+                Btm_buffer->fill(0x00000000);
 
                 // this exists to just delay the pressing of the screen when you
                 // release the virtual stylus key
                 enableAim = false;
-
-                drawVCur = true;
 
                 if (Input::HotkeyDown(HK_MetroidShootScan) || Input::HotkeyDown(HK_MetroidScanShoot)) {
                     NDS->TouchScreen(virtualStylusX, virtualStylusY);
@@ -1490,55 +1847,45 @@ void EmuThread::run()
                     NDS->ReleaseScreen();
                 }
 
-                // mouse (VirtualStylus)
+                auto processVirtualStylus = [](float mouseRelValue, float scaleFactor, float& virtualStylus) {
+                    if (abs(mouseRelValue) > 0) {
+                        virtualStylus += mouseRelValue * scaleFactor;
+                    }
+                    };
 
-                mouseX = mouseRel.x();
+                // Processing for X and Y axes
+                processVirtualStylus(mouseRel.x(), SENSITIVITY_FACTOR_VIRTUAL_STYLUS, virtualStylusX);
+                processVirtualStylus(mouseRel.y(), SENSITIVITY_FACTOR_VIRTUAL_STYLUS* dsAspectRatio, virtualStylusY);
 
-                if (abs(mouseX) > 0) {
-                    virtualStylusX += (
-                        mouseX * SENSITIVITY_FACTOR_VIRTUAL_STYLUS
-                        );
-                }
 
-                mouseY = mouseRel.y();
-
-                if (abs(mouseY) > 0) {
-                    virtualStylusY += (
-                        mouseY * dsAspectRatio * SENSITIVITY_FACTOR_VIRTUAL_STYLUS
-                        );
-                }
-
+                // force virtualStylusX inside window
                 if (virtualStylusX < 0) virtualStylusX = 0;
                 if (virtualStylusX > 255) virtualStylusX = 255;
+                // force virtualStylusY inside window
                 if (virtualStylusY < 0) virtualStylusY = 0;
                 if (virtualStylusY > 191) virtualStylusY = 191;
 
+                // mainWindow->osdAddMessage(0, ("mouseY: " + std::to_string(mouseY)).c_str());
+                // mainWindow->osdAddMessage(0, ("virtualStylusY: " + std::to_string(virtualStylusY)).c_str());
 
-			} // End of isVirtualStylusEnabled
+                //Draw VirtualStylus
+                Btm_paint->setPen(Qt::white);
+
+                // Crosshair Circle
+                Btm_paint->drawEllipse(virtualStylusX - 5, virtualStylusY - 5, 10, 10);
+
+                // 3x3 center Crosshair
+                Btm_paint->drawLine(virtualStylusX - 1, virtualStylusY, virtualStylusX + 1, virtualStylusY);
+                Btm_paint->drawLine(virtualStylusX, virtualStylusY - 1, virtualStylusX, virtualStylusY + 1);
+
+			} 
 
 
 		}// END of if(isFocused)
 
-        // Touch again for aiming
-        isAltForm = NDS->ARM9Read8(isAltFormAddr) == 0x02;
-        if (!wasLastFrameFocused || enableAim) {
-            // touch again for aiming
-            // When you return to melonPrimeDS or normal form
 
-            // mainWindow->osdAddMessage(0,"touching screen for aim");
-
-            // Changed Y point center(96) to 88, For fixing issue: Alt Tab switches hunter choice.
-            //NDS->TouchScreen(128, 96); // required for aiming
-            NDS->TouchScreen(128, 88); // required for aiming
-        }
 
         NDS->SetKeyMask(Input::GetInputMask());
-
-        //Draw Vcurs
-        if (drawVCur) {
-            Bott_paint->setPen(Qt::white);
-            Bott_paint->drawEllipse(virtualStylusX-5,virtualStylusY-5,10,10);
-        }
 
         // record last frame was forcused or not
         wasLastFrameFocused = isFocused;
