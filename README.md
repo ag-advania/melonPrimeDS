@@ -34,9 +34,6 @@ Releases for [Windows, Linux and macOS here!](https://github.com/makidoll/melonP
 
 -   Fyi. the emulator hack uses a different config path than melonDS, so this won't conflict
 
--   ~~Aquire a copy of the **USA 1.1 rom** of Metroid Prime Hunters~~  
-    ~~Other regions don't work beacuse memory injection is used~~
-
 -   Make sure to set all DS bindings to `None` in  
     `Config → Input and hotkeys → DS keypad`  
     Defaults should already be empty  
@@ -50,10 +47,6 @@ Releases for [Windows, Linux and macOS here!](https://github.com/makidoll/melonP
 
     -   Focusing the window will capture your mouse. Use `ESC` to release.
     -   The stylus gets placed in the middle of the DS screen for aiming which can cause accidental presses
-    -   Whilst holding the virtual stylus button `Tab`, use your mouse to click around on the touchscreen
-    -   UI OK `F` will press "OK" on the touch screen, which will also jump and briefly break aiming
-    -   UI left `Q` and right `E` will also press on the touch screen, for scan visor messages
-    -   When in map view, press `Shift` to zoom out and `LMB` to zoom in
 
 -   Find Metroid sensitivity settings in  
     `Metroid → Other settings`  
@@ -104,7 +97,6 @@ Releases for [Windows, Linux and macOS here!](https://github.com/makidoll/melonP
 -   Screen sizing set to **emphasize top**
 -   Screen filter set to **false**
 -   3D renderer set to **OpenGL**
--   ~~3D scale factor set to **8x** for 1440p~~
 -   JIT recompiler set to **enabled** _(helps with performance)_
 
 VSync was already disabled but keeping it off also helps with performance
@@ -124,9 +116,7 @@ Downloadable builds were made using GitHub actions
 
 ### Todo
 
--   ~~Change controls when map is open. Need to find memory location~~
 -   Update to latest melonDS
--   ~~Would be really nice if weapon switching was done through the memory~~
 
 <p align="center"><img src="./res/icon/melon_128x128.png"></p>
 <h1 align="center"><b>melonPrimeDS</b></h1>
@@ -159,8 +149,6 @@ Downloadable builds were made using GitHub actions
 ### 説明
 
 -   エミュレータのハックはmelonDSとは異なる設定パスを使用するため、競合しません
--   ~~Metroid Prime Huntersの**USA 1.1 ROM**のコピーを入手してください~~  
-   ~~メモリインジェクションを使用しているため、他の地域のROMは動作しません~~
 -   必ず以下の場所ですべてのDSバインディングを`None`に設定してください  
    `Config → Input and hotkeys → DS keypad`  
    デフォルトですでに空になっているはずです  
@@ -171,10 +159,6 @@ Downloadable builds were made using GitHub actions
    注意点：
    -   ウィンドウにフォーカスするとマウスがキャプチャされます。`ESC`で解放できます。
    -   スタイラスはDS画面の中央に配置され、狙いを定めるために使用されますが、誤ってタッチする可能性があります
-   -   仮想スタイラスボタン`Tab`を押しながら、マウスを使用してタッチスクリーンをクリックしてください
-   -   UI OK `F`はタッチスクリーンの「OK」を押しますが、ジャンプして一時的に照準が狂う可能性があります
-   -   UI左`Q`と右`E`もタッチスクリーンを押し、スキャンバイザーのメッセージに使用します
-   -   マップビューでは、`Shift`を押してズームアウト、`LMB`を押してズームインします
 -   以下の場所でMetroidの感度設定を見つけてください  
    `Metroid → Other settings`  
      
@@ -225,7 +209,6 @@ Downloadable builds were made using GitHub actions
 -   画面サイズを**上画面を強調**に設定
 -   画面フィルターを**無効**に設定
 -   3Dレンダラーを**OpenGL**に設定
--   ~~3Dスケールファクターを1440p用に**8x**に設定~~
 -   JITリコンパイラを**有効**に設定 *（パフォーマンス向上に役立ちます）*
 
 VSyncはすでに無効になっていましたが、オフのままにするとパフォーマンスの向上に役立ちます
@@ -245,6 +228,4 @@ ninja
 
 ### Todo
 
--   ~~マップが開いているときのコントロールを変更する。メモリ位置を見つける必要がある~~
 -   最新のmelonDSに更新する
--   ~~武器の切り替えをメモリを通じて行えるようにするとよい~~
