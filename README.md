@@ -97,7 +97,6 @@ Releases for [Windows, Linux and macOS here!](https://github.com/makidoll/melonP
 -   Screen sizing set to **emphasize top**
 -   Screen filter set to **false**
 -   3D renderer set to **OpenGL**
--   ~~3D scale factor set to **8x** for 1440p~~
 -   JIT recompiler set to **enabled** _(helps with performance)_
 
 VSync was already disabled but keeping it off also helps with performance
@@ -117,9 +116,7 @@ Downloadable builds were made using GitHub actions
 
 ### Todo
 
--   ~~Change controls when map is open. Need to find memory location~~
 -   Update to latest melonDS
--   ~~Would be really nice if weapon switching was done through the memory~~
 
 <p align="center"><img src="./res/icon/melon_128x128.png"></p>
 <h1 align="center"><b>melonPrimeDS</b></h1>
@@ -212,7 +209,6 @@ Downloadable builds were made using GitHub actions
 -   画面サイズを**上画面を強調**に設定
 -   画面フィルターを**無効**に設定
 -   3Dレンダラーを**OpenGL**に設定
--   ~~3Dスケールファクターを1440p用に**8x**に設定~~
 -   JITリコンパイラを**有効**に設定 *（パフォーマンス向上に役立ちます）*
 
 VSyncはすでに無効になっていましたが、オフのままにするとパフォーマンスの向上に役立ちます
@@ -232,6 +228,4 @@ ninja
 
 ### Todo
 
--   ~~マップが開いているときのコントロールを変更する。メモリ位置を見つける必要がある~~
 -   最新のmelonDSに更新する
--   ~~武器の切り替えをメモリを通じて行えるようにするとよい~~
