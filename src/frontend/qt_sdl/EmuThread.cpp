@@ -1669,13 +1669,12 @@ void EmuThread::run()
                 const int currentDelta = mainWindow->panel->getDelta();
                 const bool hotkeyNext = Input::HotkeyPressed(HK_MetroidWeaponNext);
                 const bool switchWeapon = currentDelta != 0 || hotkeyNext || Input::HotkeyPressed(HK_MetroidWeaponPrevious);
-
                 if (__builtin_expect(switchWeapon, true)) {
                     const uint8_t currentWeapon = NDS->ARM9Read8(currentWeaponAddr);
                     const uint16_t havingWeapons = NDS->ARM9Read16(havingWeaponsAddr);
                     const bool nextTrigger = (currentDelta < 0) || hotkeyNext;
 
-                    // 武器の定数定義
+                    // Definition of weapon constants
                     static constexpr uint8_t WEAPON_ORDER[] = { 0, 2, 7, 6, 5, 4, 3, 1, 8 };  // Sorted order
                     static constexpr uint16_t WEAPON_MASKS[] = {
                         0x001,  // 0: Power Beam
