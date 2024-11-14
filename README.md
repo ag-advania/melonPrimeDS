@@ -63,7 +63,39 @@ Releases for [Windows, Linux and macOS here!](https://github.com/makidoll/melonP
 -   Also recommended to set audio settings in-game to headphones
 
   
-<img src="./metroid/keyboard.png"/>
+| Function                              | Key Binding                         |
+|---------------------------------------|-------------------------------------|
+| Move Forward                          | W                                  |
+| Move Back                             | S                                  |
+| Move Left                             | A                                  |
+| Move Right                            | D                                  |
+| Jump                                  | Spacebar                           |
+| Transform                             | Left Ctrl                          |
+| Imperialist Zoom, Map Zoom Out, Morph Ball Boost | Right Click                    |
+| Fast Morph Ball Boost (Hold to sustain) | Shift                              |
+| Scan Visor                            | C                                  |
+| UI Left                               | Z                                  |
+| UI Right                              | X                                  |
+| UI Confirm                            | F                                  |
+| UI "Yes" (Enter Starship)             | G                                  |
+| UI "No" (Enter Starship)              | H                                  |
+| Shoot/Scan, Map Zoom In               | Left Click                         |
+| Scan/Shoot, Map Zoom In               | V                                  |
+| Power Beam                            | Mouse 5 (Side Top)                 |
+| Missile                               | Mouse 4 (Side Bottom)              |
+| Special Weapon (Last Used, Omega Cannon) | R                              |
+| Next Weapon (Sorted Order)            | J or Mouse Wheel Down              |
+| Previous Weapon (Sorted Order)        | K or Mouse Wheel Up                |
+| Weapon 1                              | 1                                  |
+| Weapon 2                              | 2                                  |
+| Weapon 3                              | 3                                  |
+| Weapon 4                              | 4                                  |
+| Weapon 5                              | 5                                  |
+| Weapon 6                              | 6                                  |
+| Menu/Map                              | Tab                                |
+| Aim Sensitivity Up                    | PageUp                             |
+| Aim Sensitivity Down                  | PageDown                           |
+
 
 ### Default settings changed from melonDS
 
@@ -152,7 +184,39 @@ Downloadable builds were made using GitHub actions
 
   
 
-<img src="./metroid/keyboard.png"/>
+| 機能                                   | キー設定                             |
+|--------------------------------------|-------------------------------------|
+| 前進                                   | Wキー                               |
+| 後退                                   | Sキー                               |
+| 左に移動                               | Aキー                               |
+| 右に移動                               | Dキー                               |
+| ジャンプ                                | スペースバー                          |
+| 変身                                   | 左コントロール                        |
+| インペリアリストズーム、マップズームアウト、モーフボールブースト | 右クリック                           |
+| 高速モーフボールブースト（押し続けて継続）  | Shiftキー                            |
+| スキャンバイザー                         | Cキー                               |
+| UI左                                   | Zキー                               |
+| UI右                                   | Xキー                               |
+| UI決定                                 | Fキー                               |
+| UI「はい」（スターシップに入る）          | Gキー                               |
+| UI「いいえ」（スターシップに入る）        | Hキー                               |
+| 射撃/スキャン、マップズームイン           | 左クリック                           |
+| スキャン/射撃、マップズームイン           | Vキー                               |
+| パワービーム                             | マウス5（サイド上）                   |
+| ミサイル                                | マウス4（サイド下）                   |
+| 特殊武器（最後に使用した武器、オメガキャノン）| Rキー                               |
+| 次の武器（ソート順）                     | Jキー または マウスホイールダウン     |
+| 前の武器（ソート順）                     | Kキー または マウスホイールアップ     |
+| 武器1                                   | 1キー                               |
+| 武器2                                   | 2キー                               |
+| 武器3                                   | 3キー                               |
+| 武器4                                   | 4キー                               |
+| 武器5                                   | 5キー                               |
+| 武器6                                   | 6キー                               |
+| メニュー/マップ                          | Tabキー                             |
+| エイム感度アップ                         | PageUpキー                          |
+| エイム感度ダウン                         | PageDownキー                        |
+
 
 ### melonDSからのデフォルト設定の変更点
 
