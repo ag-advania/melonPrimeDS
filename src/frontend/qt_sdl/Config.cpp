@@ -255,7 +255,7 @@ ConfigEntry ConfigFile[] =
     {"HKKey_MetroidWeaponMissile",     0, &HKKeyMapping[HK_MetroidWeaponMissile],     (int)Qt::ExtraButton1 | (int)0xF0000000, true},
     {"HKKey_MetroidWeaponSpecial",     0, &HKKeyMapping[HK_MetroidWeaponSpecial],     Qt::Key_R, true},
     {"HKKey_MetroidWeaponNext",        0, &HKKeyMapping[HK_MetroidWeaponNext],        Qt::Key_J, true},
-    {"HKKey_MetroidWeaponPrevious",    0, &HKKeyMapping[HK_MetroidWeaponPrevious],     Qt::Key_K, true},
+    {"HKKey_MetroidWeaponPrevious",    0, &HKKeyMapping[HK_MetroidWeaponPrevious],    Qt::Key_K, true},
     {"HKKey_MetroidWeapon1",           0, &HKKeyMapping[HK_MetroidWeapon1],           Qt::Key_1, true},
     {"HKKey_MetroidWeapon2",           0, &HKKeyMapping[HK_MetroidWeapon2],           Qt::Key_2, true},
     {"HKKey_MetroidWeapon3",           0, &HKKeyMapping[HK_MetroidWeapon3],           Qt::Key_3, true},
