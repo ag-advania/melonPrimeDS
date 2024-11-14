@@ -34,9 +34,6 @@ Releases for [Windows, Linux and macOS here!](https://github.com/makidoll/melonP
 
 -   Fyi. the emulator hack uses a different config path than melonDS, so this won't conflict
 
--   ~~Aquire a copy of the **USA 1.1 rom** of Metroid Prime Hunters~~  
-    ~~Other regions don't work beacuse memory injection is used~~
-
 -   Make sure to set all DS bindings to `None` in  
     `Config → Input and hotkeys → DS keypad`  
     Defaults should already be empty  
@@ -50,10 +47,6 @@ Releases for [Windows, Linux and macOS here!](https://github.com/makidoll/melonP
 
     -   Focusing the window will capture your mouse. Use `ESC` to release.
     -   The stylus gets placed in the middle of the DS screen for aiming which can cause accidental presses
-    -   Whilst holding the virtual stylus button `Tab`, use your mouse to click around on the touchscreen
-    -   UI OK `F` will press "OK" on the touch screen, which will also jump and briefly break aiming
-    -   UI left `Q` and right `E` will also press on the touch screen, for scan visor messages
-    -   When in map view, press `Shift` to zoom out and `LMB` to zoom in
 
 -   Find Metroid sensitivity settings in  
     `Metroid → Other settings`  
@@ -159,8 +152,6 @@ Downloadable builds were made using GitHub actions
 ### 説明
 
 -   エミュレータのハックはmelonDSとは異なる設定パスを使用するため、競合しません
--   ~~Metroid Prime Huntersの**USA 1.1 ROM**のコピーを入手してください~~  
-   ~~メモリインジェクションを使用しているため、他の地域のROMは動作しません~~
 -   必ず以下の場所ですべてのDSバインディングを`None`に設定してください  
    `Config → Input and hotkeys → DS keypad`  
    デフォルトですでに空になっているはずです  
@@ -171,10 +162,6 @@ Downloadable builds were made using GitHub actions
    注意点：
    -   ウィンドウにフォーカスするとマウスがキャプチャされます。`ESC`で解放できます。
    -   スタイラスはDS画面の中央に配置され、狙いを定めるために使用されますが、誤ってタッチする可能性があります
-   -   仮想スタイラスボタン`Tab`を押しながら、マウスを使用してタッチスクリーンをクリックしてください
-   -   UI OK `F`はタッチスクリーンの「OK」を押しますが、ジャンプして一時的に照準が狂う可能性があります
-   -   UI左`Q`と右`E`もタッチスクリーンを押し、スキャンバイザーのメッセージに使用します
-   -   マップビューでは、`Shift`を押してズームアウト、`LMB`を押してズームインします
 -   以下の場所でMetroidの感度設定を見つけてください  
    `Metroid → Other settings`  
      
