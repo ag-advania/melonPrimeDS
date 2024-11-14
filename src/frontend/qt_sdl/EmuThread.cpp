@@ -965,6 +965,8 @@ void EmuThread::run()
 
     //const float dsAspectRatio = 4.0 / 3.0;
     const float dsAspectRatio = 1.333333333f;
+    //const float aimAspectRatio = 6.0 / 4.0; // i have no idea
+    const float aimAspectRatio = 1.5f; // i have no idea  6.0 / 4.0
 
     // RawInputThread* rawInputThread = new RawInputThread(parent());
     // rawInputThread->start();
@@ -1447,7 +1449,7 @@ void EmuThread::run()
                 // This ensures that even slight movements are captured and processed
                 if (mouseY != 0) {
                     // Scale the mouse Y movement and apply aspect ratio correction
-                    float scaledMouseY = mouseY * dsAspectRatio * SENSITIVITY_FACTOR;
+                    float scaledMouseY = mouseY * aimAspectRatio * SENSITIVITY_FACTOR;
                     // Adjust the scaled value to ensure minimal movement is registered
                     scaledMouseY = adjustMouseInput(scaledMouseY);
                     // Convert to 16-bit integer and write the adjusted Y value to the NDS memory
@@ -1663,49 +1665,6 @@ void EmuThread::run()
                     FN_INPUT_RELEASE(INPUT_START);
                 }
 
-                // 武器の定数定義
-                static constexpr uint8_t WEAPON_ORDER[] = { 0, 2, 7, 6, 5, 4, 3, 1, 8 };  // Sorted order
-                static constexpr uint16_t WEAPON_MASKS[] = {
-                    0x001,  // 0: Power Beam
-                    0x004,  // 2: Missile
-                    0x080,  // 7: Shock Coil
-                    0x040,  // 6: Magmaul
-                    0x020,  // 5: Judicator
-                    0x010,  // 4: Imperialist
-                    0x008,  // 3: Battle Hammer
-                    0x002,  // 1: Volt Driver
-                    0x100   // 8: Omega Cannon
-                };
-                static constexpr size_t WEAPON_COUNT = sizeof(WEAPON_ORDER) / sizeof(WEAPON_ORDER[0]);
-
-                auto findNextWeapon = [](uint16_t havingWeapons, uint8_t currentWeapon, bool isNext) {
-                    // Find index of current weapon
-                    size_t currentIdx = 0;
-                    for (; currentIdx < WEAPON_COUNT; currentIdx++) {
-                        if (WEAPON_ORDER[currentIdx] == currentWeapon) break;
-                    }
-
-                    // Store starting position
-                    const size_t startIdx = currentIdx;
-
-                    do {
-                        // Calculate next/previous index
-                        currentIdx = (currentIdx + (isNext ? 1 : WEAPON_COUNT - 1)) % WEAPON_COUNT;
-
-                        // Get next weapon ID
-                        uint8_t nextWeapon = WEAPON_ORDER[currentIdx];
-
-                        // Power Beam (0) and Missile (2) are always available
-                        // For other weapons, check possession flags
-                        if (nextWeapon == 0 || nextWeapon == 2 ||
-                            (havingWeapons & WEAPON_MASKS[currentIdx])) {
-                            return nextWeapon;
-                        }
-                    } while (currentIdx != startIdx);  // Exit after one full cycle
-
-                    return currentWeapon;  // Return current weapon if no other available weapon found
-                    };
-
                 // Switch weapons by Mouse Wheel or Hotkeys
                 const int currentDelta = mainWindow->panel->getDelta();
                 const bool hotkeyNext = Input::HotkeyPressed(HK_MetroidWeaponNext);
@@ -1713,8 +1672,52 @@ void EmuThread::run()
 
                 if (__builtin_expect(switchWeapon, true)) {
                     const uint8_t currentWeapon = NDS->ARM9Read8(currentWeaponAddr);
-                    const uint16_t havingWeapons = NDS->ARM9Read8(havingWeaponsAddr);
+                    const uint16_t havingWeapons = NDS->ARM9Read16(havingWeaponsAddr);
                     const bool nextTrigger = (currentDelta < 0) || hotkeyNext;
+
+                    // 武器の定数定義
+                    static constexpr uint8_t WEAPON_ORDER[] = { 0, 2, 7, 6, 5, 4, 3, 1, 8 };  // Sorted order
+                    static constexpr uint16_t WEAPON_MASKS[] = {
+                        0x001,  // 0: Power Beam
+                        0x004,  // 2: Missile
+                        0x080,  // 7: Shock Coil
+                        0x040,  // 6: Magmaul
+                        0x020,  // 5: Judicator
+                        0x010,  // 4: Imperialist
+                        0x008,  // 3: Battle Hammer
+                        0x002,  // 1: Volt Driver
+                        0x100   // 8: Omega Cannon
+                    };
+                    static constexpr size_t WEAPON_COUNT = sizeof(WEAPON_ORDER) / sizeof(WEAPON_ORDER[0]);
+
+                    auto findNextWeapon = [](uint16_t havingWeapons, uint8_t currentWeapon, bool isNext) {
+                        // Find index of current weapon
+                        size_t currentIdx = 0;
+                        for (; currentIdx < WEAPON_COUNT; currentIdx++) {
+                            if (WEAPON_ORDER[currentIdx] == currentWeapon) break;
+                        }
+
+                        // Store starting position
+                        const size_t startIdx = currentIdx;
+
+                        do {
+                            // Calculate next/previous index
+                            currentIdx = (currentIdx + (isNext ? 1 : WEAPON_COUNT - 1)) % WEAPON_COUNT;
+
+                            // Get next weapon ID
+                            uint8_t nextWeapon = WEAPON_ORDER[currentIdx];
+
+                            // Power Beam (0) and Missile (2) are always available
+                            // For other weapons, check possession flags
+                            if (nextWeapon == 0 || nextWeapon == 2 ||
+                                (havingWeapons & WEAPON_MASKS[currentIdx])) {
+                                return nextWeapon;
+                            }
+                        } while (currentIdx != startIdx);  // Exit after one full cycle
+
+                        return currentWeapon;  // Return current weapon if no other available weapon found
+                        };
+
                     SwitchWeapon(findNextWeapon(havingWeapons, currentWeapon, nextTrigger));
                 }
 
