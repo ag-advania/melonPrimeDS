@@ -1133,11 +1133,18 @@ void EmuThread::run()
     uint32_t boostGaugeAddr;
     uint32_t isBoostingAddr;
 
+    uint32_t weaponAmmoAddr;
+    uint32_t missileAmmoAddr;
+
+    // uint32_t isPrimeHunterAddr;
+
 
     bool isRoundJustStarted;
     bool isInGame;
     bool isInAdventure;
     bool isSamus;
+
+    bool isWeavel;
 
     // Screen layout adjustment constants
     constexpr float DEFAULT_ADJUSTMENT = 0.25f;
@@ -1345,14 +1352,29 @@ void EmuThread::run()
 
 
 
-            selectedWeaponAddr = calculatePlayerAddress(baseSelectedWeaponAddr, playerPosition, playerAddressIncrement);
-            havingWeaponsAddr = selectedWeaponAddr + 0x3; // DCAA6 in JP1.0
-            currentWeaponAddr = selectedWeaponAddr - 0x1; // DCAA2 in JP1.0
+            selectedWeaponAddr = calculatePlayerAddress(baseSelectedWeaponAddr, playerPosition, playerAddressIncrement); // 020DCAA3 in JP1.0
+            havingWeaponsAddr = selectedWeaponAddr + 0x3; // 020DCAA6 in JP1.0
+            currentWeaponAddr = selectedWeaponAddr - 0x1; // 020DCAA2 in JP1.0
+
+
+
+            weaponAmmoAddr = selectedWeaponAddr - 0x383; // 020D720 in JP1.0 current weapon ammo
+            missileAmmoAddr = selectedWeaponAddr - 0x381; // 020D722 in JP1.0 current missile ammo
             jumpFlagAddr = calculatePlayerAddress(baseJumpFlagAddr, playerPosition, playerAddressIncrement);
 
             // getChosenHunterAddr
             chosenHunterAddr = calculatePlayerAddress(baseChosenHunterAddr, playerPosition, 0x01);
             isSamus = NDS->ARM9Read8(chosenHunterAddr) == 0x00;
+            isWeavel = NDS->ARM9Read8(chosenHunterAddr) == 0x06;
+            /*
+            00 - Samus
+            01 - Kanden
+            02 - Trace
+            03 - Sylux
+            04 - Noxus
+            05 - Spire
+            06 - Weavel
+            */
 
             boostGaugeAddr = isAltFormAddr + 0x44;
             isBoostingAddr = isAltFormAddr + 0x46;
@@ -1363,6 +1385,8 @@ void EmuThread::run()
 
 
             isInAdventure = NDS->ARM9Read8(isInAdventureAddr) == 0x02;
+
+            // isPrimeHunterAddr = isInAdventureAddr + 0xAD; // isPrimeHunter Addr NotPrimeHunter:0xFF, PrimeHunter:0x00 220E9AE9 in JP1.0
 
             // mainWindow->osdAddMessage(0, "Completed address calculation.");
 
@@ -1717,8 +1741,86 @@ void EmuThread::run()
                         return currentWeapon;  // Return current weapon if no other available weapon found
                         };
 
-                    SwitchWeapon(findNextWeapon(havingWeapons, currentWeapon, nextTrigger));
+                    /*
+                    auto checkAmmoIsEnoughOrNot = [this, missileAmmoAddr, weaponAmmoAddr, isWeavel](uint8_t currentWeapon) {
+                        // Power Beam or Omega Cannon
+                        if (currentWeapon == 0 || currentWeapon == 8) {
+                            return true;
+                        }
+                        // Missiles
+                        if (currentWeapon == 2) {
+                            const uint16_t missileAmmo = NDS->ARM9Read16(missileAmmoAddr);
+                            return missileAmmo >= 0xA;
+                        }
+                        const uint16_t weaponAmmo = NDS->ARM9Read16(weaponAmmoAddr);
+                        switch (currentWeapon) {
+                        case 1: return weaponAmmo >= 0x5;  // Volt Driver
+                        case 3: { // Battle Hammer
+                            if (isWeavel) return weaponAmmo >= 0x5;
+                            // Prime Hunter check is needless, if we have only 0x4 ammo, we can equipt battleHammer but can't shoot. it's a bug of MPH. so what we need to check is only it's weavel or not.
+                            // const bool isPrimeHunter = NDS->ARM9Read8(isPrimeHunterAddr) == 0x00;
+                            // return weaponAmmo >= (isPrimeHunter ? 0x5 : 0x4);
+                            return weaponAmmo >= 0x4;
+                        }
+                        case 4: return weaponAmmo >= 0x14; // Imperialist  
+                        case 5: return weaponAmmo >= 0x5;  // Judicator
+                        case 6: return weaponAmmo >= 0xA;  // Magmaul
+                        case 7: return weaponAmmo >= 0xA;  // Shock Coil
+                        default: return false;
+                        }
+                        };
+                    */
+                    auto checkAmmoIsEnoughOrNot = [this, missileAmmoAddr, weaponAmmoAddr, isWeavel](uint8_t currentWeapon) {
+                        // Switch文を配列ルックアップに変換
+                        static const uint16_t MIN_AMMO[] = {
+                            0,    // Power Beam (0) - always enough
+                            0x5,  // Volt Driver (1)
+                            0xA,  // Missiles (2)
+                            0x4,  // Battle Hammer (3)
+                            0x14, // Imperialist (4)
+                            0x5,  // Judicator (5)
+                            0xA,  // Magmaul (6)
+                            0xA,  // Shock Coil (7)
+                            0     // Omega Cannon (8) - always enough
+                        };
+
+                        // Power BeamとOmega Cannonは即時リターン
+                        if (currentWeapon == 0 || currentWeapon == 8) return true;
+
+                        // 範囲チェック
+                        if (currentWeapon > 8) return false;
+
+                        // 必要な弾薬量を取得
+                        const uint16_t requiredAmmo = MIN_AMMO[currentWeapon];
+
+                        // Battle Hammer用の特別処理
+                        if (currentWeapon == 3 && isWeavel) {
+                            return NDS->ARM9Read16(weaponAmmoAddr) >= 0x5;
+                        }
+
+                        // Missiles用の特別処理
+                        const uint16_t currentAmmo = (currentWeapon == 2) ?
+                            NDS->ARM9Read16(missileAmmoAddr) :
+                            NDS->ARM9Read16(weaponAmmoAddr);
+
+                        return currentAmmo >= requiredAmmo;
+                        };
+
+
+                    uint8_t returnedNextWeapon = findNextWeapon(havingWeapons, currentWeapon, nextTrigger);
+
+
+                    while (!checkAmmoIsEnoughOrNot(returnedNextWeapon)) {
+                        returnedNextWeapon = findNextWeapon(havingWeapons, returnedNextWeapon, nextTrigger);
+                    }
+
+                    SwitchWeapon(returnedNextWeapon);
+
                 }
+
+
+
+
 
                 if (isInAdventure) {
                     // Adventure Mode Functions
