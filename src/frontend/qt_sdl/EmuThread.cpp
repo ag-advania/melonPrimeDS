@@ -1771,7 +1771,7 @@ void EmuThread::run()
                         };
                     */
                     auto checkAmmoIsEnoughOrNot = [this, missileAmmoAddr, weaponAmmoAddr, isWeavel](uint8_t currentWeapon) {
-                        // Switch文を配列ルックアップに変換
+                        // Convert switch statement to array lookup
                         static const uint16_t MIN_AMMO[] = {
                             0,    // Power Beam (0) - always enough
                             0x5,  // Volt Driver (1)
@@ -1784,21 +1784,22 @@ void EmuThread::run()
                             0     // Omega Cannon (8) - always enough
                         };
 
-                        // Power BeamとOmega Cannonは即時リターン
+                        // Immediate return for Power Beam and Omega Cannon
                         if (currentWeapon == 0 || currentWeapon == 8) return true;
 
-                        // 範囲チェック
-                        if (currentWeapon > 8) return false;
+                        // Range check
+                        // if (currentWeapon > 8) return false;
 
-                        // 必要な弾薬量を取得
+                        // Get required ammo amount
                         const uint16_t requiredAmmo = MIN_AMMO[currentWeapon];
 
-                        // Battle Hammer用の特別処理
+                        // Special handling for Battle Hammer
+                        // Prime Hunter check is needless, if we have only 0x4 ammo, we can equipt battleHammer but can't shoot. it's a bug of MPH. so what we need to check is only it's weavel or not.
                         if (currentWeapon == 3 && isWeavel) {
                             return NDS->ARM9Read16(weaponAmmoAddr) >= 0x5;
                         }
 
-                        // Missiles用の特別処理
+                        // Special handling for Missiles
                         const uint16_t currentAmmo = (currentWeapon == 2) ?
                             NDS->ARM9Read16(missileAmmoAddr) :
                             NDS->ARM9Read16(weaponAmmoAddr);
