@@ -1566,9 +1566,6 @@ void EmuThread::run()
                         //mainWindow->osdAddMessage(0, "Done setting jumpFlag.");
                     }
 
-                    // Release the screen (for weapon change)
-                    NDS->ReleaseScreen();
-
                     // Lambda to set the weapon-changing state
                     auto setChangingWeapon = [](int value) -> int {
                         // Apply mask to set the lower 4 bits to 1011 (B in hexadecimal)
@@ -1583,6 +1580,9 @@ void EmuThread::run()
 
                     // Change the weapon
                     NDS->ARM9Write8(selectedWeaponAddr, weaponIndex);  // Write the address of the corresponding weapon
+
+                    // Release the screen (for weapon change)
+                    NDS->ReleaseScreen();
 
                     // Advance frames (for reflection of ReleaseScreen, WeaponChange)
                     frameAdvance(2);
