@@ -80,9 +80,8 @@ extern int videoRenderer;
 extern bool videoSettingsDirty;
 
 
-// melonPrime related
+// melonPrimeDS
 static bool hasInitialized = false;
-
 float mouseX;
 float mouseY;
 
@@ -574,18 +573,11 @@ void EmuThread::run()
         Input::Process();
 
         if (Input::HotkeyPressed(HK_FastForwardToggle)) emit windowLimitFPSChange();
-
         if (Input::HotkeyPressed(HK_Pause)) emit windowEmuPause();
         if (Input::HotkeyPressed(HK_Reset)) emit windowEmuReset();
         if (Input::HotkeyPressed(HK_FrameStep)) emit windowEmuFrameStep();
-
-        if (Input::HotkeyPressed(HK_FullscreenToggle)) {
-            emit windowFullscreenToggle();
-        }
-
-        if (Input::HotkeyPressed(HK_SwapScreens)) {
-            emit swapScreensToggle();
-        }
+        if (Input::HotkeyPressed(HK_FullscreenToggle)) emit windowFullscreenToggle();
+        if (Input::HotkeyPressed(HK_SwapScreens)) emit swapScreensToggle();
         if (Input::HotkeyPressed(HK_SwapScreenEmphasis)) emit screenEmphasisToggle();
 
         // Lambda to update aim sensitivity and display a message
@@ -1387,7 +1379,7 @@ void EmuThread::run()
 
             // mainWindow->osdAddMessage(0, "Completed address calculation.");
 
-            // 初期化完了フラグを設定
+            // Set the initialization complete flag
             hasInitialized = true;
 		}
 
@@ -1691,10 +1683,13 @@ void EmuThread::run()
 
 
                 // Weapon switching of Next/Previous
-                const int currentDelta = mainWindow->panel->getDelta();
-                const bool hotkeyNext = Input::HotkeyPressed(HK_MetroidWeaponNext);
-                const bool hotkeyPrev = Input::HotkeyPressed(HK_MetroidWeaponPrevious);
-                if (__builtin_expect((currentDelta != 0) || hotkeyNext || hotkeyPrev, true)) {
+                const int wheelDelta = mainWindow->panel->getDelta();
+                const bool hasDelta = wheelDelta != 0;
+                const bool hotkeyNext = hasDelta ? false : Input::HotkeyPressed(HK_MetroidWeaponNext);
+
+                if (__builtin_expect(hasDelta || hotkeyNext || Input::HotkeyPressed(HK_MetroidWeaponPrevious), true)) {
+                // const bool hotkeyPrev = Input::HotkeyPressed(HK_MetroidWeaponPrevious);
+                // if (__builtin_expect((wheelDelta != 0) || hotkeyNext || Input::HotkeyPressed(HK_MetroidWeaponPrevious), true)) {
                     // Pre-fetch memory values to avoid multiple reads
                     const uint8_t currentWeapon = NDS->ARM9Read8(currentWeaponAddr);
                     const uint16_t havingWeapons = NDS->ARM9Read16(havingWeaponsAddr);
@@ -1704,25 +1699,29 @@ void EmuThread::run()
                     const uint32_t ammoData = NDS->ARM9Read32(weaponAmmoAddr);
                     const uint16_t missileAmmo = ammoData >> 16;     // Extract upper 16 bits for missile ammo
                     const uint16_t weaponAmmo = ammoData & 0xFFFF;   // Extract lower 16 bits for weapon ammo
-                    const bool nextTrigger = (currentDelta < 0) || hotkeyNext;
+                    const bool nextTrigger = (wheelDelta < 0) || hotkeyNext;
+                    // const bool nextTrigger = hasDelta ? (wheelDelta < 0) : hotkeyNext;
 
                     // Weapon constants as lookup tables
                     static constexpr uint8_t WEAPON_ORDER[] = { 0, 2, 7, 6, 5, 4, 3, 1, 8 };
                     static constexpr uint16_t WEAPON_MASKS[] = { 0x001, 0x004, 0x080, 0x040, 0x020, 0x010, 0x008, 0x002, 0x100 };
-                    static constexpr uint16_t MIN_AMMO[] = { 0, 0x5, 0xA, 0x4, 0x14, 0x5, 0xA, 0xA, 0 };
-                    static constexpr size_t WEAPON_COUNT = sizeof(WEAPON_ORDER) / sizeof(WEAPON_ORDER[0]);
-
+                    static constexpr uint8_t  MIN_AMMO[] = { 0, 0x5, 0xA, 0x4, 0x14, 0x5, 0xA, 0xA, 0 };
+                    // static constexpr size_t WEAPON_COUNT = sizeof(WEAPON_ORDER) / sizeof(WEAPON_ORDER[0]);
+                    static constexpr uint8_t WEAPON_COUNT = 9;
                     // Find current weapon index using lookup table
                     static constexpr uint8_t WEAPON_INDEX_MAP[9] = { 0, 7, 1, 6, 5, 4, 3, 2, 8 };
-                    size_t currentIdx = WEAPON_INDEX_MAP[currentWeapon];
-                    const size_t startIdx = currentIdx;
+                    //size_t currentIndex = WEAPON_INDEX_MAP[currentWeapon];
+                    // const size_t startIndex = currentIndex;
+                    uint8_t currentIndex = WEAPON_INDEX_MAP[currentWeapon];
+                    const uint8_t startIndex = currentIndex;
 
                     // Inline weapon checking logic for better performance
                     auto hasWeapon = [havingWeapons](uint8_t weapon, uint16_t mask) {
-                        return weapon == 0 || weapon == 2 || (havingWeapons & mask);
+                        // return weapon == 0 || weapon == 2 || (havingWeapons & mask);
+                        return havingWeapons & mask;
                         };
 
-                    auto hasEnoughAmmo = [weaponAmmo, missileAmmo, isWeavel](uint8_t weapon, uint16_t minAmmo) {
+                    auto hasEnoughAmmo = [weaponAmmo, missileAmmo, isWeavel](uint8_t weapon, uint8_t minAmmo) {
                         if (weapon == 0 || weapon == 8) return true;
                         if (weapon == 2) return missileAmmo >= 0xA;
                         if (weapon == 3 && isWeavel) return weaponAmmo >= 0x5; // Prime Hunter check is needless, if we have only 0x4 ammo, we can equipt battleHammer but can't shoot. it's a bug of MPH. so what we need to check is only it's weavel or not.
@@ -1731,15 +1730,15 @@ void EmuThread::run()
 
                     // Main weapon selection loop
                     do {
-                        currentIdx = (currentIdx + (nextTrigger ? 1 : WEAPON_COUNT - 1)) % WEAPON_COUNT;
-                        uint8_t nextWeapon = WEAPON_ORDER[currentIdx];
+                        currentIndex = (currentIndex + (nextTrigger ? 1 : WEAPON_COUNT - 1)) % WEAPON_COUNT;
+                        uint8_t nextWeapon = WEAPON_ORDER[currentIndex];
 
-                        if (hasWeapon(nextWeapon, WEAPON_MASKS[currentIdx]) &&
+                        if (hasWeapon(nextWeapon, WEAPON_MASKS[currentIndex]) &&
                             hasEnoughAmmo(nextWeapon, MIN_AMMO[nextWeapon])) {
                             SwitchWeapon(nextWeapon);
                             break;
                         }
-                    } while (currentIdx != startIdx);
+                    } while (currentIndex != startIndex);
                 }
 
 
