@@ -1688,8 +1688,6 @@ void EmuThread::run()
                 const bool hotkeyNext = hasDelta ? false : Input::HotkeyPressed(HK_MetroidWeaponNext);
 
                 if (__builtin_expect(hasDelta || hotkeyNext || Input::HotkeyPressed(HK_MetroidWeaponPrevious), true)) {
-                // const bool hotkeyPrev = Input::HotkeyPressed(HK_MetroidWeaponPrevious);
-                // if (__builtin_expect((wheelDelta != 0) || hotkeyNext || Input::HotkeyPressed(HK_MetroidWeaponPrevious), true)) {
                     // Pre-fetch memory values to avoid multiple reads
                     const uint8_t currentWeapon = NDS->ARM9Read8(currentWeaponAddr);
                     const uint16_t havingWeapons = NDS->ARM9Read16(havingWeaponsAddr);
@@ -1700,18 +1698,18 @@ void EmuThread::run()
                     const uint16_t missileAmmo = ammoData >> 16;     // Extract upper 16 bits for missile ammo
                     const uint16_t weaponAmmo = ammoData & 0xFFFF;   // Extract lower 16 bits for weapon ammo
                     const bool nextTrigger = (wheelDelta < 0) || hotkeyNext;
-                    // const bool nextTrigger = hasDelta ? (wheelDelta < 0) : hotkeyNext;
 
                     // Weapon constants as lookup tables
                     static constexpr uint8_t WEAPON_ORDER[] = { 0, 2, 7, 6, 5, 4, 3, 1, 8 };
                     static constexpr uint16_t WEAPON_MASKS[] = { 0x001, 0x004, 0x080, 0x040, 0x020, 0x010, 0x008, 0x002, 0x100 };
                     static constexpr uint8_t  MIN_AMMO[] = { 0, 0x5, 0xA, 0x4, 0x14, 0x5, 0xA, 0xA, 0 };
+
                     // static constexpr size_t WEAPON_COUNT = sizeof(WEAPON_ORDER) / sizeof(WEAPON_ORDER[0]);
                     static constexpr uint8_t WEAPON_COUNT = 9;
+
                     // Find current weapon index using lookup table
                     static constexpr uint8_t WEAPON_INDEX_MAP[9] = { 0, 7, 1, 6, 5, 4, 3, 2, 8 };
-                    //size_t currentIndex = WEAPON_INDEX_MAP[currentWeapon];
-                    // const size_t startIndex = currentIndex;
+
                     uint8_t currentIndex = WEAPON_INDEX_MAP[currentWeapon];
                     const uint8_t startIndex = currentIndex;
 
