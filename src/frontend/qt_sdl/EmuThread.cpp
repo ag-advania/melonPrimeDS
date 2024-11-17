@@ -80,9 +80,8 @@ extern int videoRenderer;
 extern bool videoSettingsDirty;
 
 
-// melonPrime related
+// melonPrimeDS
 static bool hasInitialized = false;
-
 float mouseX;
 float mouseY;
 
@@ -574,18 +573,11 @@ void EmuThread::run()
         Input::Process();
 
         if (Input::HotkeyPressed(HK_FastForwardToggle)) emit windowLimitFPSChange();
-
         if (Input::HotkeyPressed(HK_Pause)) emit windowEmuPause();
         if (Input::HotkeyPressed(HK_Reset)) emit windowEmuReset();
         if (Input::HotkeyPressed(HK_FrameStep)) emit windowEmuFrameStep();
-
-        if (Input::HotkeyPressed(HK_FullscreenToggle)) {
-            emit windowFullscreenToggle();
-        }
-
-        if (Input::HotkeyPressed(HK_SwapScreens)) {
-            emit swapScreensToggle();
-        }
+        if (Input::HotkeyPressed(HK_FullscreenToggle)) emit windowFullscreenToggle();
+        if (Input::HotkeyPressed(HK_SwapScreens)) emit swapScreensToggle();
         if (Input::HotkeyPressed(HK_SwapScreenEmphasis)) emit screenEmphasisToggle();
 
         // Lambda to update aim sensitivity and display a message
@@ -1134,7 +1126,6 @@ void EmuThread::run()
     uint32_t isBoostingAddr;
 
     uint32_t weaponAmmoAddr;
-    uint32_t missileAmmoAddr;
 
     // uint32_t isPrimeHunterAddr;
 
@@ -1350,23 +1341,21 @@ void EmuThread::run()
             chosenHunterAddr = calculatePlayerAddress(baseChosenHunterAddr, playerPosition, 0x01);
             weaponChangeAddr = calculatePlayerAddress(baseWeaponChangeAddr, playerPosition, playerAddressIncrement);
 
-
-
             selectedWeaponAddr = calculatePlayerAddress(baseSelectedWeaponAddr, playerPosition, playerAddressIncrement); // 020DCAA3 in JP1.0
-            havingWeaponsAddr = selectedWeaponAddr + 0x3; // 020DCAA6 in JP1.0
             currentWeaponAddr = selectedWeaponAddr - 0x1; // 020DCAA2 in JP1.0
+            havingWeaponsAddr = selectedWeaponAddr + 0x3; // 020DCAA6 in JP1.0
 
-
-
-            weaponAmmoAddr = selectedWeaponAddr - 0x383; // 020D720 in JP1.0 current weapon ammo
-            missileAmmoAddr = selectedWeaponAddr - 0x381; // 020D722 in JP1.0 current missile ammo
+            weaponAmmoAddr = selectedWeaponAddr - 0x383; // 020D720 in JP1.0 current weapon ammo. DC722 is for MissleAmmo. can read both with read32.
             jumpFlagAddr = calculatePlayerAddress(baseJumpFlagAddr, playerPosition, playerAddressIncrement);
 
             // getChosenHunterAddr
             chosenHunterAddr = calculatePlayerAddress(baseChosenHunterAddr, playerPosition, 0x01);
-            isSamus = NDS->ARM9Read8(chosenHunterAddr) == 0x00;
-            isWeavel = NDS->ARM9Read8(chosenHunterAddr) == 0x06;
+            uint8_t hunterID = NDS->ARM9Read8(chosenHunterAddr); // Perform memory read only once
+            isSamus = hunterID == 0x00;
+            isWeavel = hunterID == 0x06;
+
             /*
+            Hunter IDs:
             00 - Samus
             01 - Kanden
             02 - Trace
@@ -1390,7 +1379,7 @@ void EmuThread::run()
 
             // mainWindow->osdAddMessage(0, "Completed address calculation.");
 
-            // 初期化完了フラグを設定
+            // Set the initialization complete flag
             hasInitialized = true;
 		}
 
@@ -1401,23 +1390,7 @@ void EmuThread::run()
                 // inGame
 
                 // Aiming
-
-                /*
-                // Lambda function to adjust scaled mouse input
-                auto adjustMouseInput = [](float value) {
-                    // For positive values less than 1, set to 1
-                    if (value > 0 && value < 1.0f) {
-                        return 1.0f;
-                    }
-                    // For negative values greater than -1, set to -1
-                    else if (value < 0 && value > -1.0f) {
-                        return -1.0f;
-                    }
-                    // For other values, return as is
-                    return value;
-                    };
-                */
-
+// 
                 // Lambda function to adjust scaled mouse input
                 auto adjustMouseInput = [](float value) {
                     // For positive values between 0.5 and 1, set to 1
@@ -1453,6 +1426,22 @@ void EmuThread::run()
                 processMouseAxis(mouseRel.y(), SENSITIVITY_FACTOR * dsAspectRatio, aimYAddr);
                 */
 
+                /*
+                // Process X Y AIM
+                [this, &adjustMouseInput, &enableAim, SENSITIVITY_FACTOR, aimAspectRatio](const float x, const float y) {
+                    // X-axis
+                    if (x) {
+                        NDS->ARM9Write16(aimXAddr, static_cast<uint16_t>(adjustMouseInput(x * SENSITIVITY_FACTOR)));
+                        enableAim = true;
+                    }
+                    // Y-axis
+                    if (y) {
+                        NDS->ARM9Write16(aimYAddr, static_cast<uint16_t>(adjustMouseInput(y * SENSITIVITY_FACTOR * aimAspectRatio)));
+                        enableAim = true;
+                    }
+                    }(mouseRel.x(), mouseRel.y());
+                */
+
                 // Processing for the X-axis
                 float mouseX = mouseRel.x();
                 // We don't use abs() here to preserve the sign of the movement
@@ -1480,6 +1469,9 @@ void EmuThread::run()
                     NDS->ARM9Write16(aimYAddr, static_cast<uint16_t>(scaledMouseY));
                     enableAim = true;
                 }
+
+
+
 
                 // Move hunter
                 processMoveInput();
@@ -1566,9 +1558,6 @@ void EmuThread::run()
                         //mainWindow->osdAddMessage(0, "Done setting jumpFlag.");
                     }
 
-                    // Release the screen (for weapon change)
-                    NDS->ReleaseScreen();
-
                     // Lambda to set the weapon-changing state
                     auto setChangingWeapon = [](int value) -> int {
                         // Apply mask to set the lower 4 bits to 1011 (B in hexadecimal)
@@ -1583,6 +1572,9 @@ void EmuThread::run()
 
                     // Change the weapon
                     NDS->ARM9Write8(selectedWeaponAddr, weaponIndex);  // Write the address of the corresponding weapon
+
+                    // Release the screen (for weapon change)
+                    NDS->ReleaseScreen();
 
                     // Advance frames (for reflection of ReleaseScreen, WeaponChange)
                     frameAdvance(2);
@@ -1689,134 +1681,62 @@ void EmuThread::run()
                     FN_INPUT_RELEASE(INPUT_START);
                 }
 
-                // Switch weapons by Mouse Wheel or Hotkeys
-                const int currentDelta = mainWindow->panel->getDelta();
-                const bool hotkeyNext = Input::HotkeyPressed(HK_MetroidWeaponNext);
-                const bool switchWeapon = currentDelta != 0 || hotkeyNext || Input::HotkeyPressed(HK_MetroidWeaponPrevious);
-                if (__builtin_expect(switchWeapon, true)) {
+
+                // Weapon switching of Next/Previous
+                const int wheelDelta = mainWindow->panel->getDelta();
+                const bool hasDelta = wheelDelta != 0;
+                const bool hotkeyNext = hasDelta ? false : Input::HotkeyPressed(HK_MetroidWeaponNext);
+
+                if (__builtin_expect(hasDelta || hotkeyNext || Input::HotkeyPressed(HK_MetroidWeaponPrevious), true)) {
+                    // Pre-fetch memory values to avoid multiple reads
                     const uint8_t currentWeapon = NDS->ARM9Read8(currentWeaponAddr);
                     const uint16_t havingWeapons = NDS->ARM9Read16(havingWeaponsAddr);
-                    const bool nextTrigger = (currentDelta < 0) || hotkeyNext;
 
-                    // Definition of weapon constants
-                    static constexpr uint8_t WEAPON_ORDER[] = { 0, 2, 7, 6, 5, 4, 3, 1, 8 };  // Sorted order
-                    static constexpr uint16_t WEAPON_MASKS[] = {
-                        0x001,  // 0: Power Beam
-                        0x004,  // 2: Missile
-                        0x080,  // 7: Shock Coil
-                        0x040,  // 6: Magmaul
-                        0x020,  // 5: Judicator
-                        0x010,  // 4: Imperialist
-                        0x008,  // 3: Battle Hammer
-                        0x002,  // 1: Volt Driver
-                        0x100   // 8: Omega Cannon
-                    };
-                    static constexpr size_t WEAPON_COUNT = sizeof(WEAPON_ORDER) / sizeof(WEAPON_ORDER[0]);
+                    // Read both ammo values with a single 32-bit read
+                    // Format: [16-bit missile ammo][16-bit weapon ammo]
+                    const uint32_t ammoData = NDS->ARM9Read32(weaponAmmoAddr);
+                    const uint16_t missileAmmo = ammoData >> 16;     // Extract upper 16 bits for missile ammo
+                    const uint16_t weaponAmmo = ammoData & 0xFFFF;   // Extract lower 16 bits for weapon ammo
+                    const bool nextTrigger = (wheelDelta < 0) || hotkeyNext;
 
-                    auto findNextWeapon = [](uint16_t havingWeapons, uint8_t currentWeapon, bool isNext) {
-                        // Find index of current weapon
-                        size_t currentIdx = 0;
-                        for (; currentIdx < WEAPON_COUNT; currentIdx++) {
-                            if (WEAPON_ORDER[currentIdx] == currentWeapon) break;
-                        }
+                    // Weapon constants as lookup tables
+                    static constexpr uint8_t WEAPON_ORDER[] = { 0, 2, 7, 6, 5, 4, 3, 1, 8 };
+                    static constexpr uint16_t WEAPON_MASKS[] = { 0x001, 0x004, 0x080, 0x040, 0x020, 0x010, 0x008, 0x002, 0x100 };
+                    static constexpr uint8_t  MIN_AMMO[] = { 0, 0x5, 0xA, 0x4, 0x14, 0x5, 0xA, 0xA, 0 };
 
-                        // Store starting position
-                        const size_t startIdx = currentIdx;
+                    // static constexpr size_t WEAPON_COUNT = sizeof(WEAPON_ORDER) / sizeof(WEAPON_ORDER[0]);
+                    static constexpr uint8_t WEAPON_COUNT = 9;
 
-                        do {
-                            // Calculate next/previous index
-                            currentIdx = (currentIdx + (isNext ? 1 : WEAPON_COUNT - 1)) % WEAPON_COUNT;
+                    // Find current weapon index using lookup table
+                    static constexpr uint8_t WEAPON_INDEX_MAP[9] = { 0, 7, 1, 6, 5, 4, 3, 2, 8 };
 
-                            // Get next weapon ID
-                            uint8_t nextWeapon = WEAPON_ORDER[currentIdx];
+                    uint8_t currentIndex = WEAPON_INDEX_MAP[currentWeapon];
+                    const uint8_t startIndex = currentIndex;
 
-                            // Power Beam (0) and Missile (2) are always available
-                            // For other weapons, check possession flags
-                            if (nextWeapon == 0 || nextWeapon == 2 ||
-                                (havingWeapons & WEAPON_MASKS[currentIdx])) {
-                                return nextWeapon;
-                            }
-                        } while (currentIdx != startIdx);  // Exit after one full cycle
-
-                        return currentWeapon;  // Return current weapon if no other available weapon found
+                    // Inline weapon checking logic for better performance
+                    auto hasWeapon = [havingWeapons](uint8_t weapon, uint16_t mask) {
+                        // return weapon == 0 || weapon == 2 || (havingWeapons & mask);
+                        return havingWeapons & mask;
                         };
 
-                    /*
-                    auto checkAmmoIsEnoughOrNot = [this, missileAmmoAddr, weaponAmmoAddr, isWeavel](uint8_t currentWeapon) {
-                        // Power Beam or Omega Cannon
-                        if (currentWeapon == 0 || currentWeapon == 8) {
-                            return true;
-                        }
-                        // Missiles
-                        if (currentWeapon == 2) {
-                            const uint16_t missileAmmo = NDS->ARM9Read16(missileAmmoAddr);
-                            return missileAmmo >= 0xA;
-                        }
-                        const uint16_t weaponAmmo = NDS->ARM9Read16(weaponAmmoAddr);
-                        switch (currentWeapon) {
-                        case 1: return weaponAmmo >= 0x5;  // Volt Driver
-                        case 3: { // Battle Hammer
-                            if (isWeavel) return weaponAmmo >= 0x5;
-                            // Prime Hunter check is needless, if we have only 0x4 ammo, we can equipt battleHammer but can't shoot. it's a bug of MPH. so what we need to check is only it's weavel or not.
-                            // const bool isPrimeHunter = NDS->ARM9Read8(isPrimeHunterAddr) == 0x00;
-                            // return weaponAmmo >= (isPrimeHunter ? 0x5 : 0x4);
-                            return weaponAmmo >= 0x4;
-                        }
-                        case 4: return weaponAmmo >= 0x14; // Imperialist  
-                        case 5: return weaponAmmo >= 0x5;  // Judicator
-                        case 6: return weaponAmmo >= 0xA;  // Magmaul
-                        case 7: return weaponAmmo >= 0xA;  // Shock Coil
-                        default: return false;
-                        }
-                        };
-                    */
-                    auto checkAmmoIsEnoughOrNot = [this, missileAmmoAddr, weaponAmmoAddr, isWeavel](uint8_t currentWeapon) {
-                        // Convert switch statement to array lookup
-                        static const uint16_t MIN_AMMO[] = {
-                            0,    // Power Beam (0) - always enough
-                            0x5,  // Volt Driver (1)
-                            0xA,  // Missiles (2)
-                            0x4,  // Battle Hammer (3)
-                            0x14, // Imperialist (4)
-                            0x5,  // Judicator (5)
-                            0xA,  // Magmaul (6)
-                            0xA,  // Shock Coil (7)
-                            0     // Omega Cannon (8) - always enough
+                    auto hasEnoughAmmo = [weaponAmmo, missileAmmo, isWeavel](uint8_t weapon, uint8_t minAmmo) {
+                        if (weapon == 0 || weapon == 8) return true;
+                        if (weapon == 2) return missileAmmo >= 0xA;
+                        if (weapon == 3 && isWeavel) return weaponAmmo >= 0x5; // Prime Hunter check is needless, if we have only 0x4 ammo, we can equipt battleHammer but can't shoot. it's a bug of MPH. so what we need to check is only it's weavel or not.
+                        return weaponAmmo >= minAmmo;
                         };
 
-                        // Immediate return for Power Beam and Omega Cannon
-                        if (currentWeapon == 0 || currentWeapon == 8) return true;
+                    // Main weapon selection loop
+                    do {
+                        currentIndex = (currentIndex + (nextTrigger ? 1 : WEAPON_COUNT - 1)) % WEAPON_COUNT;
+                        uint8_t nextWeapon = WEAPON_ORDER[currentIndex];
 
-                        // Range check
-                        // if (currentWeapon > 8) return false;
-
-                        // Get required ammo amount
-                        const uint16_t requiredAmmo = MIN_AMMO[currentWeapon];
-
-                        // Special handling for Battle Hammer
-                        // Prime Hunter check is needless, if we have only 0x4 ammo, we can equipt battleHammer but can't shoot. it's a bug of MPH. so what we need to check is only it's weavel or not.
-                        if (currentWeapon == 3 && isWeavel) {
-                            return NDS->ARM9Read16(weaponAmmoAddr) >= 0x5;
+                        if (hasWeapon(nextWeapon, WEAPON_MASKS[currentIndex]) &&
+                            hasEnoughAmmo(nextWeapon, MIN_AMMO[nextWeapon])) {
+                            SwitchWeapon(nextWeapon);
+                            break;
                         }
-
-                        // Special handling for Missiles
-                        const uint16_t currentAmmo = (currentWeapon == 2) ?
-                            NDS->ARM9Read16(missileAmmoAddr) :
-                            NDS->ARM9Read16(weaponAmmoAddr);
-
-                        return currentAmmo >= requiredAmmo;
-                        };
-
-
-                    uint8_t returnedNextWeapon = findNextWeapon(havingWeapons, currentWeapon, nextTrigger);
-
-
-                    while (!checkAmmoIsEnoughOrNot(returnedNextWeapon)) {
-                        returnedNextWeapon = findNextWeapon(havingWeapons, returnedNextWeapon, nextTrigger);
-                    }
-
-                    SwitchWeapon(returnedNextWeapon);
-
+                    } while (currentIndex != startIndex);
                 }
 
 

@@ -667,14 +667,14 @@ void ScreenPanelNative::paintEvent(QPaintEvent* event)
         emuThread->FrontBufferLock.unlock();
 
         QRect screenrc(0, 0, 256, 192);
-        painter.setCompositionMode(QPainter::CompositionMode_SourceOver);
+        painter.setCompositionMode(QPainter::CompositionMode_SourceOver); // melonPrimeDS
 
         for (int i = 0; i < numScreens; i++)
         {
             painter.setTransform(screenTrans[i]);
             painter.drawImage(screenrc, screen[screenKind[i]]);
 
-            //MellonPrimeOSD
+            //melonPrimeDSOSD
             painter.drawImage(screenrc, *OSDCanvas[screenKind[i]].CanvasBuffer);
 
         }
@@ -847,7 +847,7 @@ void ScreenPanelGL::initOpenGL()
     glContext->SetSwapInterval(Config::ScreenVSync ? Config::ScreenVSyncInterval : 0);
     transferLayout();
 
-    // metroid prime related
+    // melonPrimeDS {
 
     OpenGL::BuildShaderProgram(kScreenVS, kScreenFS_overlay, overlayShader, "OverlayShader");
 
@@ -881,6 +881,9 @@ void ScreenPanelGL::initOpenGL()
         );
     }
 
+    // } melonPrimeDS
+
+
 }
 
 void ScreenPanelGL::deinitOpenGL()
@@ -906,9 +909,12 @@ void ScreenPanelGL::deinitOpenGL()
 
     OpenGL::DeleteShaderProgram(osdShader);
 
+    // melonPrimeDS {
     for(int i=0;i<2;i++){
         glDeleteTextures(1, &OSDCanvastextures[i]);
     }
+    // } melonPrimeDS 
+
 
     OpenGL::DeleteShaderProgram(overlayShader);
 
@@ -1008,7 +1014,7 @@ void ScreenPanelGL::drawScreenGL()
 
     screenSettingsLock.unlock();
 
-   // metroid related
+    // melonPrimeDS {
 
     // Activate the overlay shader program
     glUseProgram(overlayShader[2]);
@@ -1054,6 +1060,9 @@ void ScreenPanelGL::drawScreenGL()
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, filter);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, filter);
     
+    // } melonPrimeDS
+
+
     osdUpdate();
     if (osdEnabled)
     {
