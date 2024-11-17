@@ -215,7 +215,7 @@ private:
     void osdRenderItem(OSDItem* item) override;
     void osdDeleteItem(OSDItem* item) override;
 
-    // metroid prime related
+    // melonPrimeDS {
     GLuint overlayShader[3];
     GLuint overlayScreenSizeULoc, overlayTransformULoc;
     GLuint overlayPosULoc, overlaySizeULoc, overlayScreenTypeULoc;
@@ -224,6 +224,8 @@ public:
     bool virtualCursorShow = false;
     float virtualCursorX;
     float virtualCursorY;
+
+    // } melonPrimeDS
 };
 
 #endif // SCREEN_H
