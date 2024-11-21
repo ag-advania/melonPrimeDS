@@ -1110,8 +1110,8 @@ void EmuThread::run()
     // /processMoveInputFunction }
 
     uint8_t playerPosition;
-    const int32_t playerAddressIncrement = 0xF30;
-    const int32_t aimAddrIncrement = 0x48;
+    const uint16_t playerAddressIncrement = 0xF30;
+    const uint8_t aimAddrIncrement = 0x48;
     uint32_t isAltFormAddr;
     uint32_t loadedSpecialWeaponAddr;
     uint32_t chosenHunterAddr;
@@ -1201,11 +1201,12 @@ void EmuThread::run()
 
                 // TODO Config::WindowMaximized = mainWindow->isMaximized()
 
+                constexpr float FULLSCREEN_ADJUSTMENT = 0.4f;
                 if (mainWindow->isFullScreen())
                 {
                     // isFullScreen
-                    adjustedCenter.rx() -= static_cast<int>(windowGeometry.width() * 0.4f);
-                    adjustedCenter.ry() -= static_cast<int>(windowGeometry.height() * 0.4f);
+                    adjustedCenter.rx() -= static_cast<int>(windowGeometry.width() * FULLSCREEN_ADJUSTMENT);
+                    adjustedCenter.ry() -= static_cast<int>(windowGeometry.height() * FULLSCREEN_ADJUSTMENT);
 
                 }
                 /*

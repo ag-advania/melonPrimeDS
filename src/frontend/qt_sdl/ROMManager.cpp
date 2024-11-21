@@ -57,9 +57,9 @@ using std::wstring_convert;
 using namespace melonDS;
 using namespace melonDS::Platform;
 
-// 以下はmelonPrime/def.hで定義。
-// グローバル変数の定義（ここで初期化する）
-unsigned int globalChecksum = 0;
+// Global variable definitions with initialization
+// Source: melonPrime/def.h
+uint32_t globalChecksum = 0;
 bool isRomDetected = false;
 
 namespace ROMManager
