@@ -24,7 +24,7 @@
 #include <cstdint> // added for romversions
 
 // Declare global variable with extern (to make it accessible from other files)
-extern unsigned int globalChecksum;
+extern uint32_t globalChecksum;
 
 // Declare global variables with extern (to make them accessible from other files)
 extern bool isRomDetected;
