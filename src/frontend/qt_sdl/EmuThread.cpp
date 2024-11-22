@@ -1265,37 +1265,6 @@ void EmuThread::run()
         const float SENSITIVITY_FACTOR = Config::MetroidAimSensitivity * 0.01f;
         const float SENSITIVITY_FACTOR_VIRTUAL_STYLUS = Config::MetroidVirtualStylusSensitivity * 0.01f;
 
-        // Calculate for aim 
-        // updateMouseRelativeAndRecenterCursor
-        // 
-        // Handle the case when the window is focused
-        // Update mouse relative position and recenter cursor for aim control
-
-        if (isFocused) {
-
-            mouseRel = QPoint(0, 0);  // Initialize to origin
-
-            // Check hotkey status
-            bool isLayoutChanging = Input::HotkeyPressed(HK_FullscreenToggle) || Input::HotkeyPressed(HK_SwapScreens);
-
-            // These conditional branches cannot be simplified to a simple else statement
-            // because they handle different independent cases:
-            // 1. Recalculating center position when focus is gained or layout is changing
-            // 2. Updating relative position only when focused and layout is not changing
-
-            // Recalculate center position when focus is gained or layout is changing
-            if (!wasLastFrameFocused || isLayoutChanging) {
-                adjustedCenter = getAdjustedCenter(mainWindow);
-            }
-
-            // Update relative position only when not changing layout
-            if (wasLastFrameFocused && !isLayoutChanging) {
-                mouseRel = QCursor::pos() - adjustedCenter;
-            }
-
-            // Recenter cursor
-            QCursor::setPos(adjustedCenter);
-        }
 
         /*
         #ifdef ENABLE_MEMORY_DUMP
@@ -1387,6 +1356,38 @@ void EmuThread::run()
         if (isFocused) {
 
 
+            // Calculate for aim 
+            // updateMouseRelativeAndRecenterCursor
+            // 
+            // Handle the case when the window is focused
+            // Update mouse relative position and recenter cursor for aim control
+
+
+            // Check hotkey status
+            bool isLayoutChanging = Input::HotkeyPressed(HK_SwapScreens) || Input::HotkeyPressed(HK_FullscreenToggle);
+
+            // These conditional branches cannot be simplified to a simple else statement
+            // because they handle different independent cases:
+            // 1. Recalculating center position when focus is gained or layout is changing
+            // 2. Updating relative position only when focused and layout is not changing
+
+            // Recalculate center position when focus is gained or layout is changing
+            if (!wasLastFrameFocused || isLayoutChanging) {
+                adjustedCenter = getAdjustedCenter(mainWindow);
+            }
+
+            // Update relative position only when not changing layout
+            if (wasLastFrameFocused && !isLayoutChanging) {
+                mouseRel = QCursor::pos() - adjustedCenter;
+            }
+            else {
+                mouseRel = QPoint(0, 0);  // Initialize to origin
+            }
+
+            // Recenter cursor
+            QCursor::setPos(adjustedCenter);
+
+
 			if (isInGame) {
                 // inGame
 
@@ -1472,11 +1473,6 @@ void EmuThread::run()
                 }
 
 
-
-
-                // Move hunter
-                processMoveInput();
-
                 // Shoot
                 if (Input::HotkeyDown(HK_MetroidShootScan) || Input::HotkeyDown(HK_MetroidScanShoot)) {
                     FN_INPUT_PRESS(INPUT_L);
@@ -1484,6 +1480,9 @@ void EmuThread::run()
                 else {
                     FN_INPUT_RELEASE(INPUT_L);
                 }
+
+                // Move hunter
+                processMoveInput();
 
                 // Zoom, map zoom out
                 if (Input::HotkeyDown(HK_MetroidZoom)) {
@@ -1674,14 +1673,6 @@ void EmuThread::run()
                     }
                 }
 
-                // Start / View Match progress, points
-                if (Input::HotkeyDown(HK_MetroidMenu)) {
-                    FN_INPUT_PRESS(INPUT_START);
-                }
-                else {
-                    FN_INPUT_RELEASE(INPUT_START);
-                }
-
 
                 // Weapon switching of Next/Previous
                 const int wheelDelta = mainWindow->panel->getDelta();
@@ -1741,7 +1732,13 @@ void EmuThread::run()
                 }
 
 
-
+                // Start / View Match progress, points
+                if (Input::HotkeyDown(HK_MetroidMenu)) {
+                    FN_INPUT_PRESS(INPUT_START);
+                }
+                else {
+                    FN_INPUT_RELEASE(INPUT_START);
+                }
 
 
                 if (isInAdventure) {

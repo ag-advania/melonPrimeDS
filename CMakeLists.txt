@@ -20,7 +20,7 @@ project(melonDS
     HOMEPAGE_URL "https://melonds.kuribo64.net"
     LANGUAGES C CXX)
 
-add_compile_definitions(MELONPRIMEDS_VERSION="1.2.5")
+add_compile_definitions(MELONPRIMEDS_VERSION="1.2.6")
 
 include(CheckSymbolExists)
 include(CheckLibraryExists)
