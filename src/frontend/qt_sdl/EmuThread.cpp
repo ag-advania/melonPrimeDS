@@ -1391,6 +1391,18 @@ void EmuThread::run()
 			if (isInGame) {
                 // inGame
 
+
+
+                // Shoot
+                if (Input::HotkeyDown(HK_MetroidShootScan) || Input::HotkeyDown(HK_MetroidScanShoot)) {
+                    FN_INPUT_PRESS(INPUT_L);
+                }
+                else {
+                    FN_INPUT_RELEASE(INPUT_L);
+                }
+
+
+
                 // Aiming
 // 
                 // Lambda function to adjust scaled mouse input
@@ -1473,13 +1485,6 @@ void EmuThread::run()
                 }
 
 
-                // Shoot
-                if (Input::HotkeyDown(HK_MetroidShootScan) || Input::HotkeyDown(HK_MetroidScanShoot)) {
-                    FN_INPUT_PRESS(INPUT_L);
-                }
-                else {
-                    FN_INPUT_RELEASE(INPUT_L);
-                }
 
                 // Move hunter
                 processMoveInput();
@@ -1833,6 +1838,14 @@ void EmuThread::run()
 			else {
                 // VirtualStylus
 
+                // Touch Scren
+                if (Input::HotkeyDown(HK_MetroidShootScan) || Input::HotkeyDown(HK_MetroidScanShoot)) {
+                    NDS->TouchScreen(virtualStylusX, virtualStylusY);
+                }
+                else {
+                    NDS->ReleaseScreen();
+                }
+
                 if (!OSD) {
                     OSD = mainWindow->panel->OSDCanvas;
                     Top_buffer = OSD[0].CanvasBuffer;
@@ -1856,27 +1869,15 @@ void EmuThread::run()
                 Top_buffer->fill(0x00000000);
                 Btm_buffer->fill(0x00000000);
 
-                // this exists to just delay the pressing of the screen when you
-                // release the virtual stylus key
-                enableAim = false;
 
-                if (Input::HotkeyDown(HK_MetroidShootScan) || Input::HotkeyDown(HK_MetroidScanShoot)) {
-                    NDS->TouchScreen(virtualStylusX, virtualStylusY);
-                }
-                else {
-                    NDS->ReleaseScreen();
-                }
-
+                // Processing for VirtualStylus X and Y axes
                 auto processVirtualStylus = [](float mouseRelValue, float scaleFactor, float& virtualStylus) {
                     if (abs(mouseRelValue) > 0) {
                         virtualStylus += mouseRelValue * scaleFactor;
                     }
                     };
-
-                // Processing for X and Y axes
                 processVirtualStylus(mouseRel.x(), SENSITIVITY_FACTOR_VIRTUAL_STYLUS, virtualStylusX);
                 processVirtualStylus(mouseRel.y(), SENSITIVITY_FACTOR_VIRTUAL_STYLUS* dsAspectRatio, virtualStylusY);
-
 
                 // force virtualStylusX inside window
                 if (virtualStylusX < 0) virtualStylusX = 0;
@@ -1888,13 +1889,13 @@ void EmuThread::run()
                 // mainWindow->osdAddMessage(0, ("mouseY: " + std::to_string(mouseY)).c_str());
                 // mainWindow->osdAddMessage(0, ("virtualStylusY: " + std::to_string(virtualStylusY)).c_str());
 
-                //Draw VirtualStylus
+                // Draw VirtualStylus Start
                 Btm_paint->setPen(Qt::white);
 
-                // Crosshair Circle
+                // Draw VirtualStylus : Crosshair Circle
                 Btm_paint->drawEllipse(virtualStylusX - 5, virtualStylusY - 5, 10, 10);
 
-                // 3x3 center Crosshair
+                // Draw VirtualStylus : 3x3 center Crosshair
                 Btm_paint->drawLine(virtualStylusX - 1, virtualStylusY, virtualStylusX + 1, virtualStylusY);
                 Btm_paint->drawLine(virtualStylusX, virtualStylusY - 1, virtualStylusX, virtualStylusY + 1);
 
