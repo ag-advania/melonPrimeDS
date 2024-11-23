@@ -197,6 +197,8 @@ private slots:
     void on_cbxJoystick_currentIndexChanged(int id);
 
     void on_metroidResetSensitivityValues_clicked();
+    void on_metroidSetVideoQualityToLow_clicked();
+    void on_metroidSetVideoQualityToHigh_clicked();
 
 private:
     void populatePage(QWidget* page,

@@ -254,3 +254,32 @@ void InputConfigDialog::on_metroidResetSensitivityValues_clicked()
     ui->metroidAimSensitvitySpinBox->setValue(Config::MetroidAimSensitivityDefault);
     ui->metroidVirtualStylusSensitvitySpinBox->setValue(Config::MetroidVirtualStylusSensitivityDefault);
 }
+
+void InputConfigDialog::on_metroidSetVideoQualityToHigh_clicked()
+{
+    Config::ScreenUseGL = true;
+    Config::ScreenVSync = false;
+    Config::ScreenVSyncInterval = 1;
+
+    Config::_3DRenderer = 1;  //0: Software, 1:OpenGL
+    Config::Threaded3D = true;
+
+    Config::GL_ScaleFactor = 4; // 8 is too much 4 is enough
+    Config::GL_BetterPolygons = true; // If you don't check the box to improve Polygon division, part of the sky will blink in Alinos Perch.
+
+}
+
+void InputConfigDialog::on_metroidSetVideoQualityToLow_clicked()
+{
+
+    Config::ScreenUseGL = true;
+    Config::ScreenVSync = false;
+    Config::ScreenVSyncInterval = 1;
+
+    Config::_3DRenderer = 0;  //0: Software, 1:OpenGL
+    Config::Threaded3D = true;
+
+    Config::GL_ScaleFactor = 4; // 8 is too much 4 is enough
+    Config::GL_BetterPolygons = true; // If you don't check the box to improve Polygon division, part of the sky will blink in Alinos Perch.
+
+}
