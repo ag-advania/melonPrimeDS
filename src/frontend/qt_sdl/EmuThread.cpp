@@ -1392,17 +1392,6 @@ void EmuThread::run()
                 // inGame
 
 
-
-                // Shoot
-                if (Input::HotkeyDown(HK_MetroidShootScan) || Input::HotkeyDown(HK_MetroidScanShoot)) {
-                    FN_INPUT_PRESS(INPUT_L);
-                }
-                else {
-                    FN_INPUT_RELEASE(INPUT_L);
-                }
-
-
-
                 // Aiming
 // 
                 // Lambda function to adjust scaled mouse input
@@ -1484,7 +1473,13 @@ void EmuThread::run()
                     enableAim = true;
                 }
 
-
+                // Shoot
+                if (Input::HotkeyDown(HK_MetroidShootScan) || Input::HotkeyDown(HK_MetroidScanShoot)) {
+                    FN_INPUT_PRESS(INPUT_L);
+                }
+                else {
+                    FN_INPUT_RELEASE(INPUT_L);
+                }
 
                 // Move hunter
                 processMoveInput();
