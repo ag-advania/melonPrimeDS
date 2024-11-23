@@ -1473,6 +1473,9 @@ void EmuThread::run()
                     enableAim = true;
                 }
 
+                // Move hunter
+                processMoveInput();
+
                 // Shoot
                 if (Input::HotkeyDown(HK_MetroidShootScan) || Input::HotkeyDown(HK_MetroidScanShoot)) {
                     FN_INPUT_PRESS(INPUT_L);
@@ -1480,9 +1483,6 @@ void EmuThread::run()
                 else {
                     FN_INPUT_RELEASE(INPUT_L);
                 }
-
-                // Move hunter
-                processMoveInput();
 
                 // Zoom, map zoom out
                 if (Input::HotkeyDown(HK_MetroidZoom)) {
