@@ -251,10 +251,11 @@ void InputConfigDialog::on_cbxJoystick_currentIndexChanged(int id)
 
 void InputConfigDialog::on_metroidResetSensitivityValues_clicked()
 {
-    Config::MetroidAimSensitivity = Config::MetroidAimSensitivityDefault;
-    Config::MetroidVirtualStylusSensitivity = Config::MetroidVirtualStylusSensitivityDefault;
-    Config::Save();
+    // Comment-outed wrong process
+    // Config::MetroidAimSensitivity = Config::MetroidAimSensitivityDefault;
+    // Config::MetroidVirtualStylusSensitivity = Config::MetroidVirtualStylusSensitivityDefault;
+    // Config::Save(); // Save should be only done when we press OK button so comment-outed
 
-    ui->metroidAimSensitvitySpinBox->setValue(Config::MetroidAimSensitivity);
-    ui->metroidVirtualStylusSensitvitySpinBox->setValue(Config::MetroidVirtualStylusSensitivity);
+    ui->metroidAimSensitvitySpinBox->setValue(Config::MetroidAimSensitivityDefault);
+    ui->metroidVirtualStylusSensitvitySpinBox->setValue(Config::MetroidVirtualStylusSensitivityDefault);
 }

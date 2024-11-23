@@ -2277,12 +2277,17 @@
        <string>Add-ons (Metroid)</string>
       </attribute>
      </widget>
+     <!-- Tab for Metroid-specific settings -->
      <widget class="QWidget" name="tabMetroid">
+      <!-- Tab title configuration -->
       <attribute name="title">
        <string>Other Metroid settings</string>
       </attribute>
+      <!-- Form layout to organize setting items in a grid -->
       <layout class="QFormLayout" name="metroidFormLayout">
+       <!-- Aim sensitivity configuration -->
        <item row="0" column="0">
+        <!-- Label for aim sensitivity -->
         <widget class="QLabel" name="metroidAimSensitvityLabel">
          <property name="text">
           <string>Aim sensitivity:</string>
@@ -2290,6 +2295,7 @@
         </widget>
        </item>
        <item row="0" column="1">
+        <!-- Spin box for aim sensitivity value (range: 0-99999) -->
         <widget class="QSpinBox" name="metroidAimSensitvitySpinBox">
          <property name="minimum">
           <number>0</number>
@@ -2302,7 +2308,10 @@
          </property>
         </widget>
        </item>
+     
+       <!-- Virtual stylus sensitivity configuration -->
        <item row="1" column="0">
+        <!-- Label for virtual stylus sensitivity -->
         <widget class="QLabel" name="metroidVirtualStylusSensitvityLabel">
          <property name="text">
           <string>Virtual stylus sensitivity:</string>
@@ -2310,6 +2319,7 @@
         </widget>
        </item>
        <item row="1" column="1">
+        <!-- Spin box for virtual stylus sensitivity value (range: 0-999) -->
         <widget class="QSpinBox" name="metroidVirtualStylusSensitvitySpinBox">
          <property name="minimum">
           <number>0</number>
@@ -2322,6 +2332,8 @@
          </property>
         </widget>
        </item>
+     
+       <!-- Reset button for sensitivity settings -->
        <item row="2" column="0">
         <widget class="QPushButton" name="metroidResetSensitivityValues">
          <property name="text">
@@ -2331,7 +2343,9 @@
        </item>
       </layout>
      </widget>
-    </widget>
+     <!-- /Tab for Metroid-specific settings -->
+
+	</widget>
    </item>
    <item row="7" column="0" colspan="2">
     <layout class="QHBoxLayout" name="horizontalLayout">
