@@ -414,7 +414,7 @@ void EmuThread::run()
 
             // if (emuInstance->hotkeyPressed(HK_SolarSensorDecrease))
             // {
-            //     int level = NDS->GBACartSlot.SetInput(GBACart::Input_SolarSensorDown, true);
+            //     int level = emuInstance->nds->GBACartSlot.SetInput(GBACart::Input_SolarSensorDown, true);
             //     if (level != -1)
             //     {
             //         mainWindow->osdAddMessage(0, "Solar sensor level: %d", level);
@@ -422,7 +422,7 @@ void EmuThread::run()
             // }
             // if (emuInstance->hotkeyPressed(HK_SolarSensorIncrease))
             // {
-            //     int level = NDS->GBACartSlot.SetInput(GBACart::Input_SolarSensorUp, true);
+            //     int level = emuInstance->nds->GBACartSlot.SetInput(GBACart::Input_SolarSensorUp, true);
             //     if (level != -1)
             //     {
             //         mainWindow->osdAddMessage(0, "Solar sensor level: %d", level);
@@ -741,9 +741,8 @@ void EmuThread::run()
     #define INPUT_L 9
     #define INPUT_X 10
     #define INPUT_Y 11
-    #define FN_INPUT_PRESS(i) Input::InputMask.setBit(i, false);
-    #define FN_INPUT_RELEASE(i) Input::InputMask.setBit(i, true);
-
+    #define FN_INPUT_PRESS(i) emuInstance->inputMask.setBit(i, false);
+    #define FN_INPUT_RELEASE(i) emuInstance->inputMask.setBit(i, true);
 
 
 
@@ -1076,10 +1075,10 @@ void EmuThread::run()
         /*
         #ifdef ENABLE_MEMORY_DUMP
             if (emuInstance->hotkeyPressed(HK_MetroidUIOk)) {
-                printf("MainRAMMask 0x%.8" PRIXPTR "\n", (uintptr_t)NDS->MainRAMMask);
+                printf("MainRAMMask 0x%.8" PRIXPTR "\n", (uintptr_t)emuInstance->nds->MainRAMMask);
                 QFile file("memory" + QString::number(memoryDump++) + ".bin");
                 if (file.open(QIODevice::ReadWrite)) {
-                    file.write(QByteArray((char*)NDS->MainRAM, NDS->MainRAMMaxSize));
+                    file.write(QByteArray((char*)emuInstance->nds->MainRAM, emuInstance->nds->MainRAMMaxSize));
                 }
             }
         #endif
@@ -1089,7 +1088,7 @@ void EmuThread::run()
             detectRomAndSetAddresses();
         }
 
-        isInGame = NDS->ARM9Read16(inGameAddr) == 0x0001;
+        isInGame = emuInstance->nds->ARM9Read16(inGameAddr) == 0x0001;
 
         if (isInGame && !hasInitialized) {
             // Read once at game start
@@ -1110,7 +1109,7 @@ void EmuThread::run()
             }
 
             // Read the player position
-            playerPosition = NDS->ARM9Read8(PlayerPosAddr);
+            playerPosition = emuInstance->nds->ARM9Read8(PlayerPosAddr);
 
             // get addresses
             isAltFormAddr = calculatePlayerAddress(baseIsAltFormAddr, playerPosition, playerAddressIncrement);
@@ -1127,7 +1126,7 @@ void EmuThread::run()
 
             // getChosenHunterAddr
             chosenHunterAddr = calculatePlayerAddress(baseChosenHunterAddr, playerPosition, 0x01);
-            uint8_t hunterID = NDS->ARM9Read8(chosenHunterAddr); // Perform memory read only once
+            uint8_t hunterID = emuInstance->nds->ARM9Read8(chosenHunterAddr); // Perform memory read only once
             isSamus = hunterID == 0x00;
             isWeavel = hunterID == 0x06;
 
@@ -1150,7 +1149,7 @@ void EmuThread::run()
             aimYAddr = calculatePlayerAddress(baseAimYAddr, playerPosition, aimAddrIncrement);
 
 
-            isInAdventure = NDS->ARM9Read8(isInAdventureAddr) == 0x02;
+            isInAdventure = emuInstance->nds->ARM9Read8(isInAdventureAddr) == 0x02;
 
             // isPrimeHunterAddr = isInAdventureAddr + 0xAD; // isPrimeHunter Addr NotPrimeHunter:0xFF, PrimeHunter:0x00 220E9AE9 in JP1.0
 
@@ -1224,7 +1223,7 @@ void EmuThread::run()
                         // Adjust the scaled input value (using provided adjustment function)
                         scaledValue = adjustMouseInput(scaledValue);
                         // Write adjusted value to memory address (for input handling)
-                        NDS->ARM9Write16(addr, static_cast<uint16_t>(scaledValue));
+                        emuInstance->nds->ARM9Write16(addr, static_cast<uint16_t>(scaledValue));
                         // Enable aiming mode
                         enableAim = true;
                     }
@@ -1241,12 +1240,12 @@ void EmuThread::run()
                 [this, &adjustMouseInput, &enableAim, SENSITIVITY_FACTOR, aimAspectRatio](const float x, const float y) {
                     // X-axis
                     if (x) {
-                        NDS->ARM9Write16(aimXAddr, static_cast<uint16_t>(adjustMouseInput(x * SENSITIVITY_FACTOR)));
+                        emuInstance->nds->ARM9Write16(aimXAddr, static_cast<uint16_t>(adjustMouseInput(x * SENSITIVITY_FACTOR)));
                         enableAim = true;
                     }
                     // Y-axis
                     if (y) {
-                        NDS->ARM9Write16(aimYAddr, static_cast<uint16_t>(adjustMouseInput(y * SENSITIVITY_FACTOR * aimAspectRatio)));
+                        emuInstance->nds->ARM9Write16(aimYAddr, static_cast<uint16_t>(adjustMouseInput(y * SENSITIVITY_FACTOR * aimAspectRatio)));
                         enableAim = true;
                     }
                     }(mouseRel.x(), mouseRel.y());
@@ -1262,7 +1261,7 @@ void EmuThread::run()
                     // Adjust the scaled value to ensure minimal movement is registered
                     scaledMouseX = adjustMouseInput(scaledMouseX);
                     // Convert to 16-bit integer and write the adjusted X value to the NDS memory
-                    NDS->ARM9Write16(aimXAddr, static_cast<uint16_t>(scaledMouseX));
+                    emuInstance->nds->ARM9Write16(aimXAddr, static_cast<uint16_t>(scaledMouseX));
                     enableAim = true;
                 }
 
@@ -1276,7 +1275,7 @@ void EmuThread::run()
                     // Adjust the scaled value to ensure minimal movement is registered
                     scaledMouseY = adjustMouseInput(scaledMouseY);
                     // Convert to 16-bit integer and write the adjusted Y value to the NDS memory
-                    NDS->ARM9Write16(aimYAddr, static_cast<uint16_t>(scaledMouseY));
+                    emuInstance->nds->ARM9Write16(aimYAddr, static_cast<uint16_t>(scaledMouseY));
                     enableAim = true;
                 }
 
@@ -1310,9 +1309,9 @@ void EmuThread::run()
                 // Alt-form
                 if (emuInstance->hotkeyPressed(HK_MetroidMorphBall)) {
 
-                    NDS->ReleaseScreen();
+                    emuInstance->nds->ReleaseScreen();
                     frameAdvance(2);
-                    NDS->TouchScreen(231, 167);
+                    emuInstance->nds->TouchScreen(231, 167);
                     frameAdvance(2);
 
                     if (isSamus) {
@@ -1321,7 +1320,7 @@ void EmuThread::run()
                         // boost ball doesnt work unless i release screen late enough
                         for (int i = 0; i < 4; i++) {
                             frameAdvance(2);
-                            NDS->ReleaseScreen();
+                            emuInstance->nds->ReleaseScreen();
                         }
 
                     }
@@ -1331,37 +1330,37 @@ void EmuThread::run()
                 auto SwitchWeapon = [&](int weaponIndex) {
 
                     // Check for Already equipped
-                    if (NDS->ARM9Read8(selectedWeaponAddr) == weaponIndex) {
+                    if (emuInstance->nds->ARM9Read8(selectedWeaponAddr) == weaponIndex) {
                         // mainWindow->osdAddMessage(0, "Weapon switch unnecessary: Already equipped");
                         return; // Early return if the weapon is already equipped
                     }
 
                     // Check isMapOrUserActionPaused, for the issue "If you switch weapons while the map is open, the aiming mechanism may become stuck."
-                    if (isInAdventure && NDS->ARM9Read8(isMapOrUserActionPausedAddr) == 0x1) {
+                    if (isInAdventure && emuInstance->nds->ARM9Read8(isMapOrUserActionPausedAddr) == 0x1) {
                         return;
                     }
 
                     // Read the current jump flag value
-                    uint8_t currentFlags = NDS->ARM9Read8(jumpFlagAddr);
+                    uint8_t currentFlags = emuInstance->nds->ARM9Read8(jumpFlagAddr);
 
                     // Check if the upper 4 bits are odd (1 or 3)
                     // this is for fixing issue: Shooting and transforming become impossible, when changing weapons at high speed while transitioning from transformed to normal form.
                     bool isTransforming = currentFlags & 0x10;
 
                     uint8_t jumpFlag = currentFlags & 0x0F;  // Get the lower 4 bits
-                    //mainWindow->osdAddMessage(0, ("JumpFlag:" + std::string(1, "0123456789ABCDEF"[NDS->ARM9Read8(jumpFlagAddr) & 0x0F])).c_str());
+                    //mainWindow->osdAddMessage(0, ("JumpFlag:" + std::string(1, "0123456789ABCDEF"[emuInstance->nds->ARM9Read8(jumpFlagAddr) & 0x0F])).c_str());
 
                     bool isRestoreNeeded = false;
 
                     // Check if in alternate form (transformed state)
-                    isAltForm = NDS->ARM9Read8(isAltFormAddr) == 0x02;
+                    isAltForm = emuInstance->nds->ARM9Read8(isAltFormAddr) == 0x02;
 
                     // If not jumping (jumpFlag == 0) and in normal form, temporarily set to jumped state (jumpFlag == 1)
                     if (!isTransforming && jumpFlag == 0 && !isAltForm) {
                         uint8_t newFlags = (currentFlags & 0xF0) | 0x01;  // Set lower 4 bits to 1
-                        NDS->ARM9Write8(jumpFlagAddr, newFlags);
+                        emuInstance->nds->ARM9Write8(jumpFlagAddr, newFlags);
                         isRestoreNeeded = true;
-                        //mainWindow->osdAddMessage(0, ("JumpFlag:" + std::string(1, "0123456789ABCDEF"[NDS->ARM9Read8(jumpFlagAddr) & 0x0F])).c_str());
+                        //mainWindow->osdAddMessage(0, ("JumpFlag:" + std::string(1, "0123456789ABCDEF"[emuInstance->nds->ARM9Read8(jumpFlagAddr) & 0x0F])).c_str());
                         //mainWindow->osdAddMessage(0, "Done setting jumpFlag.");
                     }
 
@@ -1372,32 +1371,32 @@ void EmuThread::run()
                         };
 
                     // Modify the value using the lambda
-                    int valueOfWeaponChange = setChangingWeapon(NDS->ARM9Read8(weaponChangeAddr));
+                    int valueOfWeaponChange = setChangingWeapon(emuInstance->nds->ARM9Read8(weaponChangeAddr));
 
                     // Write the weapon change command to ARM9
-                    NDS->ARM9Write8(weaponChangeAddr, valueOfWeaponChange); // Only change the lower 4 bits to B
+                    emuInstance->nds->ARM9Write8(weaponChangeAddr, valueOfWeaponChange); // Only change the lower 4 bits to B
 
                     // Change the weapon
-                    NDS->ARM9Write8(selectedWeaponAddr, weaponIndex);  // Write the address of the corresponding weapon
+                    emuInstance->nds->ARM9Write8(selectedWeaponAddr, weaponIndex);  // Write the address of the corresponding weapon
 
                     // Release the screen (for weapon change)
-                    NDS->ReleaseScreen();
+                    emuInstance->nds->ReleaseScreen();
 
                     // Advance frames (for reflection of ReleaseScreen, WeaponChange)
                     frameAdvance(2);
 
                     // Need Touch after ReleaseScreen for aiming.
-                    NDS->TouchScreen(128, 88);
+                    emuInstance->nds->TouchScreen(128, 88);
 
                     // Advance frames (for reflection of Touch. This is necessary for no jump)
                     frameAdvance(2);
 
                     // Restore the jump flag to its original value (if necessary)
                     if (isRestoreNeeded) {
-                        currentFlags = NDS->ARM9Read8(jumpFlagAddr);
+                        currentFlags = emuInstance->nds->ARM9Read8(jumpFlagAddr);
                         uint8_t restoredFlags = (currentFlags & 0xF0) | jumpFlag;
-                        NDS->ARM9Write8(jumpFlagAddr, restoredFlags);
-                        //mainWindow->osdAddMessage(0, ("JumpFlag:" + std::string(1, "0123456789ABCDEF"[NDS->ARM9Read8(jumpFlagAddr) & 0x0F])).c_str());
+                        emuInstance->nds->ARM9Write8(jumpFlagAddr, restoredFlags);
+                        //mainWindow->osdAddMessage(0, ("JumpFlag:" + std::string(1, "0123456789ABCDEF"[emuInstance->nds->ARM9Read8(jumpFlagAddr) & 0x0F])).c_str());
                         //mainWindow->osdAddMessage(0, "Restored jumpFlag.");
 
                     }
@@ -1439,7 +1438,7 @@ void EmuThread::run()
 
                 // Change to loaded SpecialWeapon, Last used weapon or Omega Canon
                 if (emuInstance->hotkeyPressed(HK_MetroidWeaponSpecial)) {
-                    uint8_t loadedSpecialWeapon = NDS->ARM9Read8(loadedSpecialWeaponAddr);
+                    uint8_t loadedSpecialWeapon = emuInstance->nds->ARM9Read8(loadedSpecialWeaponAddr);
                     if (loadedSpecialWeapon != 0xFF) {
                         // switchWeapon if special weapon is loaded
                         SwitchWeapon(loadedSpecialWeapon);
@@ -1449,10 +1448,10 @@ void EmuThread::run()
                 // Morph ball boost
                 if (isSamus && emuInstance->hotkeyDown(HK_MetroidHoldMorphBallBoost))
                 {
-                    isAltForm = NDS->ARM9Read8(isAltFormAddr) == 0x02;
+                    isAltForm = emuInstance->nds->ARM9Read8(isAltFormAddr) == 0x02;
                     if (isAltForm) {
-                        uint8_t boostGaugeValue = NDS->ARM9Read8(boostGaugeAddr);
-                        bool isBoosting = NDS->ARM9Read8(isBoostingAddr) != 0x00;
+                        uint8_t boostGaugeValue = emuInstance->nds->ARM9Read8(boostGaugeAddr);
+                        bool isBoosting = emuInstance->nds->ARM9Read8(isBoostingAddr) != 0x00;
 
                         // boostable when gauge value is 0x05-0x0F(max)
                         bool isBoostGaugeEnough = boostGaugeValue > 0x0A;
@@ -1461,7 +1460,7 @@ void EmuThread::run()
                         enableAim = false;
 
                         // release for boost?
-                        NDS->ReleaseScreen();
+                        emuInstance->nds->ReleaseScreen();
 
                         if (!isBoosting && isBoostGaugeEnough) {
                             // do boost by releasing boost key
@@ -1474,7 +1473,7 @@ void EmuThread::run()
 
                         if (isBoosting) {
                             // touch again for aiming
-                            NDS->TouchScreen(128, 88); // required for aiming
+                            emuInstance->nds->TouchScreen(128, 88); // required for aiming
                         }
 
                     }
@@ -1488,12 +1487,12 @@ void EmuThread::run()
 
                 if (__builtin_expect(hasDelta || hotkeyNext || emuInstance->hotkeyPressed(HK_MetroidWeaponPrevious), true)) {
                     // Pre-fetch memory values to avoid multiple reads
-                    const uint8_t currentWeapon = NDS->ARM9Read8(currentWeaponAddr);
-                    const uint16_t havingWeapons = NDS->ARM9Read16(havingWeaponsAddr);
+                    const uint8_t currentWeapon = emuInstance->nds->ARM9Read8(currentWeaponAddr);
+                    const uint16_t havingWeapons = emuInstance->nds->ARM9Read16(havingWeaponsAddr);
 
                     // Read both ammo values with a single 32-bit read
                     // Format: [16-bit missile ammo][16-bit weapon ammo]
-                    const uint32_t ammoData = NDS->ARM9Read32(weaponAmmoAddr);
+                    const uint32_t ammoData = emuInstance->nds->ARM9Read32(weaponAmmoAddr);
                     const uint16_t missileAmmo = ammoData >> 16;     // Extract upper 16 bits for missile ammo
                     const uint16_t weaponAmmo = ammoData & 0xFFFF;   // Extract lower 16 bits for weapon ammo
                     const bool nextTrigger = (wheelDelta < 0) || hotkeyNext;
@@ -1554,13 +1553,13 @@ void EmuThread::run()
 
                     // Scan Visor
                     if (emuInstance->hotkeyPressed(HK_MetroidScanVisor)) {
-                        NDS->ReleaseScreen();
+                        emuInstance->nds->ReleaseScreen();
                         frameAdvance(2);
 
-                        bool inVisor = NDS->ARM9Read8(inVisorOrMapAddr) == 0x1;
+                        bool inVisor = emuInstance->nds->ARM9Read8(inVisorOrMapAddr) == 0x1;
                         // mainWindow->osdAddMessage(0, "in visor %d", inVisor);
 
-                        NDS->TouchScreen(128, 173);
+                        emuInstance->nds->TouchScreen(128, 173);
 
                         if (inVisor) {
                             frameAdvance(2);
@@ -1569,53 +1568,52 @@ void EmuThread::run()
                             for (int i = 0; i < 30; i++) {
                                 // still allow movement whilst we're enabling scan visor
                                 processMoveInput();
-                                NDS->SetKeyMask(Input::GetInputMask());
-
+                               emuInstance->nds->SetKeyMask(emuInstance->inputMask);
                                 frameAdvanceOnce();
                             }
                         }
 
-                        NDS->ReleaseScreen();
+                        emuInstance->nds->ReleaseScreen();
                         frameAdvance(2);
                     }
 
                     // OK (in scans and messages)
                     if (emuInstance->hotkeyPressed(HK_MetroidUIOk)) {
-                        NDS->ReleaseScreen();
+                        emuInstance->nds->ReleaseScreen();
                         frameAdvance(2);
-                        NDS->TouchScreen(128, 142);
+                        emuInstance->nds->TouchScreen(128, 142);
                         frameAdvance(2);
                     }
 
                     // Left arrow (in scans and messages)
                     if (emuInstance->hotkeyPressed(HK_MetroidUILeft)) {
-                        NDS->ReleaseScreen();
+                        emuInstance->nds->ReleaseScreen();
                         frameAdvance(2);
-                        NDS->TouchScreen(71, 141);
+                        emuInstance->nds->TouchScreen(71, 141);
                         frameAdvance(2);
                     }
 
                     // Right arrow (in scans and messages)
                     if (emuInstance->hotkeyPressed(HK_MetroidUIRight)) {
-                        NDS->ReleaseScreen();
+                        emuInstance->nds->ReleaseScreen();
                         frameAdvance(2);
-                        NDS->TouchScreen(185, 141); // optimization ?
+                        emuInstance->nds->TouchScreen(185, 141); // optimization ?
                         frameAdvance(2);
                     }
 
                     // Enter to Starship
                     if (emuInstance->hotkeyPressed(HK_MetroidUIYes)) {
-                        NDS->ReleaseScreen();
+                        emuInstance->nds->ReleaseScreen();
                         frameAdvance(2);
-                        NDS->TouchScreen(96, 142);
+                        emuInstance->nds->TouchScreen(96, 142);
                         frameAdvance(2);
                     }
 
                     // No Enter to Starship
                     if (emuInstance->hotkeyPressed(HK_MetroidUINo)) {
-                        NDS->ReleaseScreen();
+                        emuInstance->nds->ReleaseScreen();
                         frameAdvance(2);
-                        NDS->TouchScreen(160, 142);
+                        emuInstance->nds->TouchScreen(160, 142);
                         frameAdvance(2);
                     }
                 } // End of Adventure Functions
@@ -1629,10 +1627,10 @@ void EmuThread::run()
                     // mainWindow->osdAddMessage(0,"touching screen for aim");
 
                     // Changed Y point center(96) to 88, For fixing issue: Alt Tab switches hunter choice.
-                    //NDS->TouchScreen(128, 96); // required for aiming
+                    //emuInstance->nds->TouchScreen(128, 96); // required for aiming
 
 
-                    NDS->TouchScreen(128, 88); // required for aiming
+                    emuInstance->nds->TouchScreen(128, 88); // required for aiming
                 }
 
                 // End of in-game
@@ -1665,10 +1663,10 @@ void EmuThread::run()
 
                 // Touch Scren
                 if (emuInstance->hotkeyDown(HK_MetroidShootScan) || emuInstance->hotkeyDown(HK_MetroidScanShoot)) {
-                    NDS->TouchScreen(virtualStylusX, virtualStylusY);
+                    emuInstance->nds->TouchScreen(virtualStylusX, virtualStylusY);
                 }
                 else {
-                    NDS->ReleaseScreen();
+                    emuInstance->nds->ReleaseScreen();
                 }
 
 
@@ -1707,8 +1705,7 @@ void EmuThread::run()
         }// END of if(isFocused)
 
 
-
-        NDS->SetKeyMask(Input::GetInputMask());
+        emuInstance->nds->SetKeyMask(emuInstance->inputMask);
 
         // record last frame was forcused or not
         wasLastFrameFocused = isFocused;
