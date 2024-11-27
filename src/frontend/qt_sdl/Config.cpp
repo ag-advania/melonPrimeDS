@@ -60,8 +60,8 @@ DefaultList<int> DefaultInts =
     {"Instance*.Window*.Width", 256},
     {"Instance*.Window*.Height", 384},
     {"Screen.VSyncInterval", 1},
-    {"3D.Renderer", renderer3D_Software},
-    {"3D.GL.ScaleFactor", 1},
+    {"3D.Renderer", renderer3D_OpenGL}, // melonPrimeDS. renderer3D_Software  renderer3D_OpenGL  renderer3D_OpenGLCompute:
+    {"3D.GL.ScaleFactor", 4}, // melonPrimeDS. 8 is too much 4 is enough
 #ifdef JIT_ENABLED
     {"JIT.MaxBlockSize", 32},
 #endif
@@ -104,6 +104,7 @@ DefaultList<bool> DefaultBools =
 {
     {"Screen.Filter", true},
     {"3D.Soft.Threaded", true},
+    {"3D.GL.BetterPolygons", true}, // melonPrimeDS. If you don't check the box to improve Polygon division, part of the sky will blink in Alinos Perch.
     {"3D.GL.HiresCoordinates", true},
     {"LimitFPS", true},
     {"Instance*.Window*.ShowOSD", true},
@@ -193,46 +194,45 @@ LegacyEntry LegacyFile[] =
     // metroid key
     // not including any joystick bindings
 
-    {"HKKey_MetroidMoveForward",       0, &HKKeyMapping[HK_MetroidMoveForward],       Qt::Key_W, true},
-    {"HKKey_MetroidMoveBack",          0, &HKKeyMapping[HK_MetroidMoveBack],          Qt::Key_S, true},
-    {"HKKey_MetroidMoveLeft",          0, &HKKeyMapping[HK_MetroidMoveLeft],          Qt::Key_A, true},
-    {"HKKey_MetroidMoveRight",         0, &HKKeyMapping[HK_MetroidMoveRight],         Qt::Key_D, true},
 
-    {"HKKey_MetroidJump",              0, &HKKeyMapping[HK_MetroidJump],              Qt::Key_Space, true},
+    {"HKKey_MetroidMoveForward",       0, "Keyboard.HK_MetroidMoveForward",       Qt::Key_W, true},
+    {"HKKey_MetroidMoveBack",          0, "Keyboard.HK_MetroidMoveBack",          Qt::Key_S, true},
+    {"HKKey_MetroidMoveLeft",          0, "Keyboard.HK_MetroidMoveLeft",          Qt::Key_A, true},
+    {"HKKey_MetroidMoveRight",         0, "Keyboard.HK_MetroidMoveRight",         Qt::Key_D, true},
 
-    {"HKKey_MetroidMorphBall",         0, &HKKeyMapping[HK_MetroidMorphBall],         Qt::Key_Control, true},
-    {"HKKey_MetroidZoom",              0, &HKKeyMapping[HK_MetroidZoom],              (int)Qt::RightButton | (int)0xF0000000, true},
-    {"HKKey_MetroidHoldMorphBallBoost",0, &HKKeyMapping[HK_MetroidHoldMorphBallBoost],Qt::Key_Shift, true},
+    {"HKKey_MetroidJump",              0, "Keyboard.HK_MetroidJump",              Qt::Key_Space, true},
 
-    {"HKKey_MetroidScanVisor",         0, &HKKeyMapping[HK_MetroidScanVisor],         Qt::Key_C, true},
+    {"HKKey_MetroidMorphBall",         0, "Keyboard.HK_MetroidMorphBall",         Qt::Key_Control, true},
+    {"HKKey_MetroidZoom",              0, "Keyboard.HK_MetroidZoom",              (int)Qt::RightButton | (int)0xF0000000, true},
+    {"HKKey_MetroidHoldMorphBallBoost",0, "Keyboard.HK_MetroidHoldMorphBallBoost",Qt::Key_Shift, true},
 
-    {"HKKey_MetroidUILeft",            0, &HKKeyMapping[HK_MetroidUILeft],            Qt::Key_Z, true},
-    {"HKKey_MetroidUIRight",           0, &HKKeyMapping[HK_MetroidUIRight],           Qt::Key_X, true},
-    {"HKKey_MetroidUIOk",              0, &HKKeyMapping[HK_MetroidUIOk],              Qt::Key_F, true},
-    {"HKKey_MetroidUIYes",             0, &HKKeyMapping[HK_MetroidUIYes],             Qt::Key_G, true},
-    {"HKKey_MetroidUINo",              0, &HKKeyMapping[HK_MetroidUINo],              Qt::Key_H, true},
+    {"HKKey_MetroidScanVisor",         0, "Keyboard.HK_MetroidScanVisor",         Qt::Key_C, true},
 
-    {"HKKey_MetroidShootScan",         0, &HKKeyMapping[HK_MetroidShootScan],         (int)Qt::LeftButton | (int)0xF0000000, true},
-    {"HKKey_MetroidScanShoot",         0, &HKKeyMapping[HK_MetroidScanShoot],         Qt::Key_V, true},
+    {"HKKey_MetroidUILeft",            0, "Keyboard.HK_MetroidUILeft",            Qt::Key_Z, true},
+    {"HKKey_MetroidUIRight",           0, "Keyboard.HK_MetroidUIRight",           Qt::Key_X, true},
+    {"HKKey_MetroidUIOk",              0, "Keyboard.HK_MetroidUIOk",              Qt::Key_F, true},
+    {"HKKey_MetroidUIYes",             0, "Keyboard.HK_MetroidUIYes",             Qt::Key_G, true},
+    {"HKKey_MetroidUINo",              0, "Keyboard.HK_MetroidUINo",              Qt::Key_H, true},
 
-    {"HKKey_MetroidWeaponBeam",        0, &HKKeyMapping[HK_MetroidWeaponBeam],        (int)Qt::ExtraButton2 | (int)0xF0000000, true},
-    {"HKKey_MetroidWeaponMissile",     0, &HKKeyMapping[HK_MetroidWeaponMissile],     (int)Qt::ExtraButton1 | (int)0xF0000000, true},
-    {"HKKey_MetroidWeaponSpecial",     0, &HKKeyMapping[HK_MetroidWeaponSpecial],     Qt::Key_R, true},
-    {"HKKey_MetroidWeaponNext",        0, &HKKeyMapping[HK_MetroidWeaponNext],        Qt::Key_J, true},
-    {"HKKey_MetroidWeaponPrevious",    0, &HKKeyMapping[HK_MetroidWeaponPrevious],    Qt::Key_K, true},
-    {"HKKey_MetroidWeapon1",           0, &HKKeyMapping[HK_MetroidWeapon1],           Qt::Key_1, true},
-    {"HKKey_MetroidWeapon2",           0, &HKKeyMapping[HK_MetroidWeapon2],           Qt::Key_2, true},
-    {"HKKey_MetroidWeapon3",           0, &HKKeyMapping[HK_MetroidWeapon3],           Qt::Key_3, true},
-    {"HKKey_MetroidWeapon4",           0, &HKKeyMapping[HK_MetroidWeapon4],           Qt::Key_4, true},
-    {"HKKey_MetroidWeapon5",           0, &HKKeyMapping[HK_MetroidWeapon5],           Qt::Key_5, true},
-    {"HKKey_MetroidWeapon6",           0, &HKKeyMapping[HK_MetroidWeapon6],           Qt::Key_6, true},
+    {"HKKey_MetroidShootScan",         0, "Keyboard.HK_MetroidShootScan",         (int)Qt::LeftButton | (int)0xF0000000, true},
+    {"HKKey_MetroidScanShoot",         0, "Keyboard.HK_MetroidScanShoot",         Qt::Key_V, true},
 
-    // {"HKKey_MetroidVirtualStylus",     0, &HKKeyMapping[HK_MetroidVirtualStylus],     Qt::Key_Tab, true},
-    {"HKKey_MetroidMenu",              0, &HKKeyMapping[HK_MetroidMenu],              Qt::Key_Tab, true},
-    {"HKKey_MetroidIngameSensiUp",     0, &HKKeyMapping[HK_MetroidIngameSensiUp],     Qt::Key_PageUp, true},
-    {"HKKey_MetroidIngameSensiDown",   0, &HKKeyMapping[HK_MetroidIngameSensiDown],   Qt::Key_PageDown, true},
+    {"HKKey_MetroidWeaponBeam",        0, "Keyboard.HK_MetroidWeaponBeam",        (int)Qt::ExtraButton2 | (int)0xF0000000, true},
+    {"HKKey_MetroidWeaponMissile",     0, "Keyboard.HK_MetroidWeaponMissile",     (int)Qt::ExtraButton1 | (int)0xF0000000, true},
+    {"HKKey_MetroidWeaponSpecial",     0, "Keyboard.HK_MetroidWeaponSpecial",     Qt::Key_R, true},
+    {"HKKey_MetroidWeaponNext",        0, "Keyboard.HK_MetroidWeaponNext",        Qt::Key_J, true},
+    {"HKKey_MetroidWeaponPrevious",    0, "Keyboard.HK_MetroidWeaponPrevious",    Qt::Key_K, true},
+    {"HKKey_MetroidWeapon1",           0, "Keyboard.HK_MetroidWeapon1",           Qt::Key_1, true},
+    {"HKKey_MetroidWeapon2",           0, "Keyboard.HK_MetroidWeapon2",           Qt::Key_2, true},
+    {"HKKey_MetroidWeapon3",           0, "Keyboard.HK_MetroidWeapon3",           Qt::Key_3, true},
+    {"HKKey_MetroidWeapon4",           0, "Keyboard.HK_MetroidWeapon4",           Qt::Key_4, true},
+    {"HKKey_MetroidWeapon5",           0, "Keyboard.HK_MetroidWeapon5",           Qt::Key_5, true},
+    {"HKKey_MetroidWeapon6",           0, "Keyboard.HK_MetroidWeapon6",           Qt::Key_6, true},
 
-
+    // {"HKKey_MetroidVirtualStylus",     0, "Keyboard.HK_MetroidVirtualStylus",     Qt::Key_Tab, true},
+    {"HKKey_MetroidMenu",              0, "Keyboard.HK_MetroidMenu",              Qt::Key_Tab, true},
+    {"HKKey_MetroidIngameSensiUp",     0, "Keyboard.HK_MetroidIngameSensiUp",     Qt::Key_PageUp, true},
+    {"HKKey_MetroidIngameSensiDown",   0, "Keyboard.HK_MetroidIngameSensiDown",   Qt::Key_PageDown, true},
 
 
     // not metroid
@@ -372,9 +372,8 @@ LegacyEntry LegacyFile[] =
     {"GdbARM9BreakOnStartup", 1, "Gdb.ARM9.BreakOnStartup", true},
 #endif
 
-    { "MetroidAimSensitivity", 0, &MetroidAimSensitivity, MetroidAimSensitivityDefault, false },
-    { "MetroidVirtualStylusSensitivity", 0, &MetroidVirtualStylusSensitivity, MetroidVirtualStylusSensitivityDefault, false },
-
+    { "MetroidAimSensitivity", 0, "MetroidAimSensitivity",  false },
+    { "MetroidVirtualStylusSensitivity", 0, "MetroidVirtualStylusSensitivity", false },
 
     {"Camera0_InputType", 0, "DSi.Camera0.InputType", false},
     {"Camera0_ImagePath", 2, "DSi.Camera0.ImagePath", false},
@@ -718,21 +717,18 @@ toml::value& Table::ResolvePath(const std::string& path)
 
 template<typename T> T Table::FindDefault(const std::string& path, T def, DefaultList<T> list)
 {
-    std::string defkey = GetDefaultKey(PathPrefix+path);
+    std::string defkey = GetDefaultKey(PathPrefix + path);
 
-    {"MetroidAimSensitivity", 0, &MetroidAimSensitivity, MetroidAimSensitivityDefault, false},
-    {"MetroidVirtualStylusSensitivity", 0, &MetroidVirtualStylusSensitivity, MetroidVirtualStylusSensitivityDefault, false},
-
-    // TODO!!
-    // we need a more elegant way to deal with this
-    {"Camera0_InputType", 0, &Camera[0].InputType, 0, false},
-    {"Camera0_ImagePath", 2, &Camera[0].ImagePath, (std::string)"", false},
-    {"Camera0_CamDeviceName", 2, &Camera[0].CamDeviceName, (std::string)"", false},
-    {"Camera0_XFlip", 1, &Camera[0].XFlip, false, false},
-    {"Camera1_InputType", 0, &Camera[1].InputType, 0, false},
-    {"Camera1_ImagePath", 2, &Camera[1].ImagePath, (std::string)"", false},
-    {"Camera1_CamDeviceName", 2, &Camera[1].CamDeviceName, (std::string)"", false},
-    {"Camera1_XFlip", 1, &Camera[1].XFlip, false, false},
+    T ret = def;
+    while (list.count(defkey) == 0)
+    {
+        if (defkey.empty()) break;
+        size_t sep = defkey.rfind('.');
+        if (sep == std::string::npos) break;
+        defkey = defkey.substr(0, sep);
+    }
+    if (list.count(defkey) != 0)
+        ret = list[defkey];
 
     return ret;
 }
