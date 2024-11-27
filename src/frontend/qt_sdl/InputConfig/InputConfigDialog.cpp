@@ -229,7 +229,7 @@ void InputConfigDialog::on_InputConfigDialog_accepted()
         i++;
     }
 
-    Config::JoystickID = emuInstance -> JoystickID;
+    Config::JoystickID = emuInstance -> getJoystickID();
 
     Config::MetroidAimSensitivity = ui->metroidAimSensitvitySpinBox->value();
     Config::MetroidVirtualStylusSensitivity = ui->metroidVirtualStylusSensitvitySpinBox->value();
@@ -281,29 +281,35 @@ void InputConfigDialog::on_metroidResetSensitivityValues_clicked()
 
 void InputConfigDialog::on_metroidSetVideoQualityToHigh_clicked()
 {
-    Config::ScreenUseGL = true;
-    Config::ScreenVSync = false;
-    Config::ScreenVSyncInterval = 1;
+    auto& cfg = emuInstance->getGlobalConfig();
+    cfg.SetBool("Screen.UseGL", true);
+    cfg.SetBool("Screen.VSync", false);
+    cfg.SetInt("Screen.VSyncInterval", 1);
 
-    Config::_3DRenderer = 1;  //0: Software, 1:OpenGL
-    Config::Threaded3D = true;
 
-    Config::GL_ScaleFactor = 4; // 8 is too much 4 is enough
-    Config::GL_BetterPolygons = true; // If you don't check the box to improve Polygon division, part of the sky will blink in Alinos Perch.
+    cfg.SetInt("3D.Renderer", renderer3D_OpenGL); // melonPrimeDS. renderer3D_Software  renderer3D_OpenGL  renderer3D_OpenGLCompute:
+    cfg.SetBool("3D.Soft.Threaded", true);
+
+
+    cfg.SetInt("3D.GL.ScaleFactor", 4); // 8 is too much 4 is enough
+    cfg.SetBool("3D.GL.BetterPolygons", true); // If you don't check the box to improve Polygon division, part of the sky will blink in Alinos Perch.
+
 
 }
 
 void InputConfigDialog::on_metroidSetVideoQualityToLow_clicked()
 {
 
-    Config::ScreenUseGL = true;
-    Config::ScreenVSync = false;
-    Config::ScreenVSyncInterval = 1;
+    auto& cfg = emuInstance->getGlobalConfig();
+    cfg.SetBool("Screen.UseGL", true);
+    cfg.SetBool("Screen.VSync", false);
+    cfg.SetInt("Screen.VSyncInterval", 1);
 
-    Config::_3DRenderer = 0;  //0: Software, 1:OpenGL
-    Config::Threaded3D = true;
+    cfg.SetInt("3D.Renderer", renderer3D_Software); // melonPrimeDS. renderer3D_Software  renderer3D_OpenGL  renderer3D_OpenGLCompute:
+    cfg.SetBool("3D.Soft.Threaded", true);
 
-    Config::GL_ScaleFactor = 4; // 8 is too much 4 is enough
-    Config::GL_BetterPolygons = true; // If you don't check the box to improve Polygon division, part of the sky will blink in Alinos Perch.
+    cfg.SetInt("3D.GL.ScaleFactor", 4); // 8 is too much 4 is enough
+    cfg.SetBool("3D.GL.BetterPolygons", true); // If you don't check the box to improve Polygon division, part of the sky will blink in Alinos Perch.
+
 
 }
