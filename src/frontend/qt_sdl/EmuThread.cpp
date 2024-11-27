@@ -356,13 +356,6 @@ void EmuThread::run()
     emuInstance->fastForwardToggled = false;
     emuInstance->slowmoToggled = false;
 
-    auto frameAdvance{
-[&](int n)
-{
-    for (int i = 0; i < n; i++) frameAdvanceOnce();
-}
-    };
-
     auto frameAdvanceOnce {
     [&]()
     {
@@ -720,6 +713,13 @@ void EmuThread::run()
     }
 };
 
+
+auto frameAdvance{
+[&](int n)
+{
+    for (int i = 0; i < n; i++) frameAdvanceOnce();
+}
+};
 
 
 

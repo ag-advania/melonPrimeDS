@@ -53,206 +53,190 @@ extern melonDS::Net net;
 namespace melonDS::Platform
 {
 
-void SignalStop(StopReason reason, void* userdata)
-{
-    EmuInstance* inst = (EmuInstance*)userdata;
-    inst->emuStop(reason);
-}
-
-
-static QIODevice::OpenMode GetQMode(FileMode mode)
-{
-    QIODevice::OpenMode qmode = QIODevice::OpenModeFlag::NotOpen;
-    if (mode & FileMode::Read)
-        qmode |= QIODevice::OpenModeFlag::ReadOnly;
-    if (mode & FileMode::Write)
-        qmode |= QIODevice::OpenModeFlag::WriteOnly;
-    if (mode & FileMode::Append)
-        qmode |= QIODevice::OpenModeFlag::Append;
-
-    if ((mode & FileMode::Write) && !(mode & FileMode::Preserve))
-        qmode |= QIODevice::OpenModeFlag::Truncate;
-
-    if (mode & FileMode::NoCreate)
-        qmode |= QIODevice::OpenModeFlag::ExistingOnly;
-
-    if (mode & FileMode::Text)
-        qmode |= QIODevice::OpenModeFlag::Text;
-
-
-void Init(int argc, char** argv)
-{
-#if defined(__WIN32__) || defined(PORTABLE)
-    if (argc > 0 && strlen(argv[0]) > 0)
+    void SignalStop(StopReason reason, void* userdata)
     {
-        int len = strlen(argv[0]);
-        while (len > 0)
-        {
-            if (argv[0][len] == '/') break;
-            if (argv[0][len] == '\\') break;
-            len--;
+        EmuInstance* inst = (EmuInstance*)userdata;
+        inst->emuStop(reason);
+    }
+
+
+    static QIODevice::OpenMode GetQMode(FileMode mode)
+    {
+        QIODevice::OpenMode qmode = QIODevice::OpenModeFlag::NotOpen;
+        if (mode & FileMode::Read)
+            qmode |= QIODevice::OpenModeFlag::ReadOnly;
+        if (mode & FileMode::Write)
+            qmode |= QIODevice::OpenModeFlag::WriteOnly;
+        if (mode & FileMode::Append)
+            qmode |= QIODevice::OpenModeFlag::Append;
+
+        if ((mode & FileMode::Write) && !(mode & FileMode::Preserve))
+            qmode |= QIODevice::OpenModeFlag::Truncate;
+
+        if (mode & FileMode::NoCreate)
+            qmode |= QIODevice::OpenModeFlag::ExistingOnly;
+
+        if (mode & FileMode::Text)
+            qmode |= QIODevice::OpenModeFlag::Text;
+
+        return qmode;
+    }
+
+    constexpr char AccessMode(FileMode mode, bool file_exists)
+    {
+        if (mode & FileMode::Append)
+            return  'a';
+
+        if (!(mode & FileMode::Write))
+            // If we're only opening the file for reading...
+            return 'r';
+
+        if (mode & (FileMode::NoCreate))
+            // If we're not allowed to create a new file...
+            return 'r'; // Open in "r+" mode (IsExtended will add the "+")
+
+        if ((mode & FileMode::Preserve) && file_exists)
+            // If we're not allowed to overwrite a file that already exists...
+            return 'r'; // Open in "r+" mode (IsExtended will add the "+")
+
+        return 'w';
+    }
+
+    constexpr bool IsExtended(FileMode mode)
+    {
+        // fopen's "+" flag always opens the file for read/write
+        return (mode & FileMode::ReadWrite) == FileMode::ReadWrite;
+    }
+
+    static std::string GetModeString(FileMode mode, bool file_exists)
+    {
+        std::string modeString;
+
+        modeString += AccessMode(mode, file_exists);
+
+        if (IsExtended(mode))
+            modeString += '+';
+
+        if (!(mode & FileMode::Text))
+            modeString += 'b';
+
+        return modeString;
+    }
+
+    FileHandle* OpenFile(const std::string& path, FileMode mode)
+    {
+        if ((mode & (FileMode::ReadWrite | FileMode::Append)) == FileMode::None)
+        { // If we aren't reading or writing, then we can't open the file
+            Log(LogLevel::Error, "Attempted to open \"%s\" in neither read nor write mode (FileMode 0x%x)\n", path.c_str(), mode);
+            return nullptr;
         }
-        if (len > 0)
+
+        QString qpath{ QString::fromStdString(path) };
+
+        std::string modeString = GetModeString(mode, QFile::exists(qpath));
+        QIODevice::OpenMode qmode = GetQMode(mode);
+        QFile qfile{ qpath };
+        qfile.open(qmode);
+        FILE* file = fdopen(dup(qfile.handle()), modeString.c_str());
+        qfile.close();
+
+        if (file)
         {
-            std::string emudir = argv[0];
-            EmuDirectory = emudir.substr(0, len);
+            Log(LogLevel::Debug, "Opened \"%s\" with FileMode 0x%x (effective mode \"%s\")\n", path.c_str(), mode, modeString.c_str());
+            return reinterpret_cast<FileHandle*>(file);
         }
         else
         {
-            EmuDirectory = ".";
+            Log(LogLevel::Warn, "Failed to open \"%s\" with FileMode 0x%x (effective mode \"%s\")\n", path.c_str(), mode, modeString.c_str());
+            return nullptr;
         }
     }
-    else
+
+    std::string GetLocalFilePath(const std::string& filename)
     {
-        EmuDirectory = ".";
-    }
-#else
-    QString confdir;
-    QDir config(QStandardPaths::writableLocation(QStandardPaths::ConfigLocation));
-    config.mkdir("melonPrimeDS");
-    confdir = config.absolutePath() + "/melonPrimeDS/";
-    EmuDirectory = confdir.toStdString();
-#endif
+        QString qpath = QString::fromStdString(filename);
+        QDir dir(qpath);
+        QString fullpath;
 
-constexpr char AccessMode(FileMode mode, bool file_exists)
-{
-    if (mode & FileMode::Append)
-        return  'a';
+        if (dir.isAbsolute())
+        {
+            // If it's an absolute path, just open that.
+            fullpath = qpath;
+        }
+        else
+        {
+            fullpath = emuDirectory + QDir::separator() + qpath;
+        }
 
-    if (!(mode & FileMode::Write))
-        // If we're only opening the file for reading...
-        return 'r';
-
-    if (mode & (FileMode::NoCreate))
-        // If we're not allowed to create a new file...
-        return 'r'; // Open in "r+" mode (IsExtended will add the "+")
-
-    if ((mode & FileMode::Preserve) && file_exists)
-        // If we're not allowed to overwrite a file that already exists...
-        return 'r'; // Open in "r+" mode (IsExtended will add the "+")
-
-    return 'w';
-}
-
-constexpr bool IsExtended(FileMode mode)
-{
-    // fopen's "+" flag always opens the file for read/write
-    return (mode & FileMode::ReadWrite) == FileMode::ReadWrite;
-}
-
-static std::string GetModeString(FileMode mode, bool file_exists)
-{
-    std::string modeString;
-
-    modeString += AccessMode(mode, file_exists);
-
-    if (IsExtended(mode))
-        modeString += '+';
-
-    if (!(mode & FileMode::Text))
-        modeString += 'b';
-
-    return modeString;
-}
-
-FileHandle* OpenFile(const std::string& path, FileMode mode)
-{
-    if ((mode & (FileMode::ReadWrite | FileMode::Append)) == FileMode::None)
-    { // If we aren't reading or writing, then we can't open the file
-        Log(LogLevel::Error, "Attempted to open \"%s\" in neither read nor write mode (FileMode 0x%x)\n", path.c_str(), mode);
-        return nullptr;
+        return fullpath.toStdString();
     }
 
-    QString qpath{QString::fromStdString(path)};
-
-    std::string modeString = GetModeString(mode, QFile::exists(qpath));
-    QIODevice::OpenMode qmode = GetQMode(mode);
-    QFile qfile{qpath};
-    qfile.open(qmode);
-    FILE* file = fdopen(dup(qfile.handle()), modeString.c_str());
-    qfile.close();
-
-    if (file)
+    FileHandle* OpenLocalFile(const std::string& path, FileMode mode)
     {
-        Log(LogLevel::Debug, "Opened \"%s\" with FileMode 0x%x (effective mode \"%s\")\n", path.c_str(), mode, modeString.c_str());
-        return reinterpret_cast<FileHandle *>(file);
-    }
-    else
-    {
-        Log(LogLevel::Warn, "Failed to open \"%s\" with FileMode 0x%x (effective mode \"%s\")\n", path.c_str(), mode, modeString.c_str());
-        return nullptr;
-    }
-}
-
-std::string GetLocalFilePath(const std::string& filename)
-{
-    QString qpath = QString::fromStdString(filename);
-    QDir dir(qpath);
-    QString fullpath;
-
-    if (dir.isAbsolute())
-    {
-        // If it's an absolute path, just open that.
-        fullpath = qpath;
-    }
-    else
-    {
-#ifdef PORTABLE
-        fullpath = QString::fromStdString(EmuDirectory) + QDir::separator() + qpath;
-#else
-        // Check user configuration directory
-        QDir config(QStandardPaths::writableLocation(QStandardPaths::GenericConfigLocation));
-        config.mkdir("melonPrimeDS");
-        fullpath = config.absolutePath() + "/melonPrimeDS/";
-        fullpath.append(qpath);
-#endif
+        return OpenFile(GetLocalFilePath(path), mode);
     }
 
-FileHandle* OpenLocalFile(const std::string& path, FileMode mode)
-{
-    return OpenFile(GetLocalFilePath(path), mode);
-}
-
-bool CloseFile(FileHandle* file)
-{
-    return fclose(reinterpret_cast<FILE *>(file)) == 0;
-}
-
-bool IsEndOfFile(FileHandle* file)
-{
-    return feof(reinterpret_cast<FILE *>(file)) != 0;
-}
-
-bool FileReadLine(char* str, int count, FileHandle* file)
-{
-    return fgets(str, count, reinterpret_cast<FILE *>(file)) != nullptr;
-}
-
-bool FileExists(const std::string& name)
-{
-    FileHandle* f = OpenFile(name, FileMode::Read);
-    if (!f) return false;
-    CloseFile(f);
-    return true;
-}
-
-bool LocalFileExists(const std::string& name)
-{
-    FileHandle* f = OpenLocalFile(name, FileMode::Read);
-    if (!f) return false;
-    CloseFile(f);
-    return true;
-}
-
-bool CheckFileWritable(const std::string& filepath)
-{
-    FileHandle* file = Platform::OpenFile(filepath.c_str(), FileMode::Read);
-
-    if (file)
+    bool CloseFile(FileHandle* file)
     {
-        // if the file exists, check if it can be opened for writing.
-        Platform::CloseFile(file);
-        file = Platform::OpenFile(filepath.c_str(), FileMode::Append);
+        return fclose(reinterpret_cast<FILE*>(file)) == 0;
+    }
+
+    bool IsEndOfFile(FileHandle* file)
+    {
+        return feof(reinterpret_cast<FILE*>(file)) != 0;
+    }
+
+    bool FileReadLine(char* str, int count, FileHandle* file)
+    {
+        return fgets(str, count, reinterpret_cast<FILE*>(file)) != nullptr;
+    }
+
+    bool FileExists(const std::string& name)
+    {
+        FileHandle* f = OpenFile(name, FileMode::Read);
+        if (!f) return false;
+        CloseFile(f);
+        return true;
+    }
+
+    bool LocalFileExists(const std::string& name)
+    {
+        FileHandle* f = OpenLocalFile(name, FileMode::Read);
+        if (!f) return false;
+        CloseFile(f);
+        return true;
+    }
+
+    bool CheckFileWritable(const std::string& filepath)
+    {
+        FileHandle* file = Platform::OpenFile(filepath.c_str(), FileMode::Read);
+
+        if (file)
+        {
+            // if the file exists, check if it can be opened for writing.
+            Platform::CloseFile(file);
+            file = Platform::OpenFile(filepath.c_str(), FileMode::Append);
+            if (file)
+            {
+                Platform::CloseFile(file);
+                return true;
+            }
+            else return false;
+        }
+        else
+        {
+            // if the file does not exist, create a temporary file to check, to avoid creating an empty file.
+            if (QTemporaryFile(filepath.c_str()).open())
+            {
+                return true;
+            }
+            else return false;
+        }
+    }
+
+    bool CheckLocalFileWritable(const std::string& name)
+    {
+        FileHandle* file = Platform::OpenLocalFile(name.c_str(), FileMode::Append);
         if (file)
         {
             Platform::CloseFile(file);
@@ -260,355 +244,334 @@ bool CheckFileWritable(const std::string& filepath)
         }
         else return false;
     }
-    else
+
+    bool FileSeek(FileHandle* file, s64 offset, FileSeekOrigin origin)
     {
-        // if the file does not exist, create a temporary file to check, to avoid creating an empty file.
-        if (QTemporaryFile(filepath.c_str()).open())
+        int stdorigin;
+        switch (origin)
         {
-            return true;
-        }
-        else return false;
-    }
-}
-
-bool CheckLocalFileWritable(const std::string& name)
-{
-    FileHandle* file = Platform::OpenLocalFile(name.c_str(), FileMode::Append);
-    if (file)
-    {
-        Platform::CloseFile(file);
-        return true;
-    }
-    else return false;
-}
-
-bool FileSeek(FileHandle* file, s64 offset, FileSeekOrigin origin)
-{
-    int stdorigin;
-    switch (origin)
-    {
         case FileSeekOrigin::Start: stdorigin = SEEK_SET; break;
         case FileSeekOrigin::Current: stdorigin = SEEK_CUR; break;
         case FileSeekOrigin::End: stdorigin = SEEK_END; break;
-    }
-
-    return fseek(reinterpret_cast<FILE *>(file), offset, stdorigin) == 0;
-}
-
-void FileRewind(FileHandle* file)
-{
-    rewind(reinterpret_cast<FILE *>(file));
-}
-
-u64 FileRead(void* data, u64 size, u64 count, FileHandle* file)
-{
-    return fread(data, size, count, reinterpret_cast<FILE *>(file));
-}
-
-bool FileFlush(FileHandle* file)
-{
-    return fflush(reinterpret_cast<FILE *>(file)) == 0;
-}
-
-u64 FileWrite(const void* data, u64 size, u64 count, FileHandle* file)
-{
-    return fwrite(data, size, count, reinterpret_cast<FILE *>(file));
-}
-
-u64 FileWriteFormatted(FileHandle* file, const char* fmt, ...)
-{
-    if (fmt == nullptr)
-        return 0;
-
-    va_list args;
-    va_start(args, fmt);
-    u64 ret = vfprintf(reinterpret_cast<FILE *>(file), fmt, args);
-    va_end(args);
-    return ret;
-}
-
-u64 FileLength(FileHandle* file)
-{
-    FILE* stdfile = reinterpret_cast<FILE *>(file);
-    long pos = ftell(stdfile);
-    fseek(stdfile, 0, SEEK_END);
-    long len = ftell(stdfile);
-    fseek(stdfile, pos, SEEK_SET);
-    return len;
-}
-
-void Log(LogLevel level, const char* fmt, ...)
-{
-    if (fmt == nullptr)
-        return;
-
-    va_list args;
-    va_start(args, fmt);
-    vprintf(fmt, args);
-    va_end(args);
-}
-
-Thread* Thread_Create(std::function<void()> func)
-{
-    QThread* t = QThread::create(func);
-    t->start();
-    return (Thread*) t;
-}
-
-void Thread_Free(Thread* thread)
-{
-    QThread* t = (QThread*) thread;
-    t->terminate();
-    delete t;
-}
-
-void Thread_Wait(Thread* thread)
-{
-    ((QThread*) thread)->wait();
-}
-
-Semaphore* Semaphore_Create()
-{
-    return (Semaphore*)new QSemaphore();
-}
-
-void Semaphore_Free(Semaphore* sema)
-{
-    delete (QSemaphore*) sema;
-}
-
-void Semaphore_Reset(Semaphore* sema)
-{
-    QSemaphore* s = (QSemaphore*) sema;
-
-    s->acquire(s->available());
-}
-
-void Semaphore_Wait(Semaphore* sema)
-{
-    ((QSemaphore*) sema)->acquire();
-}
-
-bool Semaphore_TryWait(Semaphore* sema, int timeout_ms)
-{
-    if (!timeout_ms)
-        return ((QSemaphore*)sema)->tryAcquire(1);
-
-    return ((QSemaphore*)sema)->tryAcquire(1, timeout_ms);
-}
-
-void Semaphore_Post(Semaphore* sema, int count)
-{
-    ((QSemaphore*) sema)->release(count);
-}
-
-Mutex* Mutex_Create()
-{
-    return (Mutex*)new QMutex();
-}
-
-void Mutex_Free(Mutex* mutex)
-{
-    delete (QMutex*) mutex;
-}
-
-void Mutex_Lock(Mutex* mutex)
-{
-    ((QMutex*) mutex)->lock();
-}
-
-void Mutex_Unlock(Mutex* mutex)
-{
-    ((QMutex*) mutex)->unlock();
-}
-
-bool Mutex_TryLock(Mutex* mutex)
-{
-    return ((QMutex*) mutex)->try_lock();
-}
-
-void Sleep(u64 usecs)
-{
-    QThread::usleep(usecs);
-}
-
-u64 GetMSCount()
-{
-    return sysTimer.elapsed();
-}
-
-u64 GetUSCount()
-{
-    return sysTimer.nsecsElapsed() / 1000;
-}
-
-
-void WriteNDSSave(const u8* savedata, u32 savelen, u32 writeoffset, u32 writelen, void* userdata)
-{
-    EmuInstance* inst = (EmuInstance*)userdata;
-    if (inst->ndsSave)
-        inst->ndsSave->RequestFlush(savedata, savelen, writeoffset, writelen);
-}
-
-void WriteGBASave(const u8* savedata, u32 savelen, u32 writeoffset, u32 writelen, void* userdata)
-{
-    EmuInstance* inst = (EmuInstance*)userdata;
-    if (inst->gbaSave)
-        inst->gbaSave->RequestFlush(savedata, savelen, writeoffset, writelen);
-}
-
-void WriteFirmware(const Firmware& firmware, u32 writeoffset, u32 writelen, void* userdata)
-{
-    EmuInstance* inst = (EmuInstance*)userdata;
-    printf("saving firmware for instance %d\n", inst->getInstanceID());
-    if (!inst->firmwareSave)
-        return;
-
-    if (firmware.GetHeader().Identifier != GENERATED_FIRMWARE_IDENTIFIER)
-    { // If this is not the default built-in firmware...
-        // ...then write the whole thing back.
-        inst->firmwareSave->RequestFlush(firmware.Buffer(), firmware.Length(), writeoffset, writelen);
-    }
-    else
-    {
-        u32 eapstart = firmware.GetExtendedAccessPointOffset();
-        u32 eapend = eapstart + sizeof(firmware.GetExtendedAccessPoints());
-
-        u32 apstart = firmware.GetWifiAccessPointOffset();
-        u32 apend = apstart + sizeof(firmware.GetAccessPoints());
-
-        // assert that the extended access points come just before the regular ones
-        assert(eapend == apstart);
-
-        if (eapstart <= writeoffset && writeoffset < apend)
-        { // If we're writing to the access points...
-            const u8* buffer = firmware.GetExtendedAccessPointPosition();
-            u32 length = sizeof(firmware.GetExtendedAccessPoints()) + sizeof(firmware.GetAccessPoints());
-            inst->firmwareSave->RequestFlush(buffer, length, writeoffset - eapstart, writelen);
         }
+
+        return fseek(reinterpret_cast<FILE*>(file), offset, stdorigin) == 0;
     }
 
-}
+    void FileRewind(FileHandle* file)
+    {
+        rewind(reinterpret_cast<FILE*>(file));
+    }
 
-void WriteDateTime(int year, int month, int day, int hour, int minute, int second, void* userdata)
-{
-    EmuInstance* inst = (EmuInstance*)userdata;
-    QDateTime hosttime = QDateTime::currentDateTime();
-    QDateTime time = QDateTime(QDate(year, month, day), QTime(hour, minute, second));
-    auto& cfg = inst->getLocalConfig();
+    u64 FileRead(void* data, u64 size, u64 count, FileHandle* file)
+    {
+        return fread(data, size, count, reinterpret_cast<FILE*>(file));
+    }
 
-    cfg.SetInt64("RTC.Offset", hosttime.secsTo(time));
-    Config::Save();
-}
+    bool FileFlush(FileHandle* file)
+    {
+        return fflush(reinterpret_cast<FILE*>(file)) == 0;
+    }
+
+    u64 FileWrite(const void* data, u64 size, u64 count, FileHandle* file)
+    {
+        return fwrite(data, size, count, reinterpret_cast<FILE*>(file));
+    }
+
+    u64 FileWriteFormatted(FileHandle* file, const char* fmt, ...)
+    {
+        if (fmt == nullptr)
+            return 0;
+
+        va_list args;
+        va_start(args, fmt);
+        u64 ret = vfprintf(reinterpret_cast<FILE*>(file), fmt, args);
+        va_end(args);
+        return ret;
+    }
+
+    u64 FileLength(FileHandle* file)
+    {
+        FILE* stdfile = reinterpret_cast<FILE*>(file);
+        long pos = ftell(stdfile);
+        fseek(stdfile, 0, SEEK_END);
+        long len = ftell(stdfile);
+        fseek(stdfile, pos, SEEK_SET);
+        return len;
+    }
+
+    void Log(LogLevel level, const char* fmt, ...)
+    {
+        if (fmt == nullptr)
+            return;
+
+        va_list args;
+        va_start(args, fmt);
+        vprintf(fmt, args);
+        va_end(args);
+    }
+
+    Thread* Thread_Create(std::function<void()> func)
+    {
+        QThread* t = QThread::create(func);
+        t->start();
+        return (Thread*)t;
+    }
+
+    void Thread_Free(Thread* thread)
+    {
+        QThread* t = (QThread*)thread;
+        t->terminate();
+        delete t;
+    }
+
+    void Thread_Wait(Thread* thread)
+    {
+        ((QThread*)thread)->wait();
+    }
+
+    Semaphore* Semaphore_Create()
+    {
+        return (Semaphore*)new QSemaphore();
+    }
+
+    void Semaphore_Free(Semaphore* sema)
+    {
+        delete (QSemaphore*)sema;
+    }
+
+    void Semaphore_Reset(Semaphore* sema)
+    {
+        QSemaphore* s = (QSemaphore*)sema;
+
+        s->acquire(s->available());
+    }
+
+    void Semaphore_Wait(Semaphore* sema)
+    {
+        ((QSemaphore*)sema)->acquire();
+    }
+
+    bool Semaphore_TryWait(Semaphore* sema, int timeout_ms)
+    {
+        if (!timeout_ms)
+            return ((QSemaphore*)sema)->tryAcquire(1);
+
+        return ((QSemaphore*)sema)->tryAcquire(1, timeout_ms);
+    }
+
+    void Semaphore_Post(Semaphore* sema, int count)
+    {
+        ((QSemaphore*)sema)->release(count);
+    }
+
+    Mutex* Mutex_Create()
+    {
+        return (Mutex*)new QMutex();
+    }
+
+    void Mutex_Free(Mutex* mutex)
+    {
+        delete (QMutex*)mutex;
+    }
+
+    void Mutex_Lock(Mutex* mutex)
+    {
+        ((QMutex*)mutex)->lock();
+    }
+
+    void Mutex_Unlock(Mutex* mutex)
+    {
+        ((QMutex*)mutex)->unlock();
+    }
+
+    bool Mutex_TryLock(Mutex* mutex)
+    {
+        return ((QMutex*)mutex)->try_lock();
+    }
+
+    void Sleep(u64 usecs)
+    {
+        QThread::usleep(usecs);
+    }
+
+    u64 GetMSCount()
+    {
+        return sysTimer.elapsed();
+    }
+
+    u64 GetUSCount()
+    {
+        return sysTimer.nsecsElapsed() / 1000;
+    }
 
 
-void MP_Begin(void* userdata)
-{
-    int inst = ((EmuInstance*)userdata)->getInstanceID();
-    MPInterface::Get().Begin(inst);
-}
+    void WriteNDSSave(const u8* savedata, u32 savelen, u32 writeoffset, u32 writelen, void* userdata)
+    {
+        EmuInstance* inst = (EmuInstance*)userdata;
+        if (inst->ndsSave)
+            inst->ndsSave->RequestFlush(savedata, savelen, writeoffset, writelen);
+    }
 
-void MP_End(void* userdata)
-{
-    int inst = ((EmuInstance*)userdata)->getInstanceID();
-    MPInterface::Get().End(inst);
-}
+    void WriteGBASave(const u8* savedata, u32 savelen, u32 writeoffset, u32 writelen, void* userdata)
+    {
+        EmuInstance* inst = (EmuInstance*)userdata;
+        if (inst->gbaSave)
+            inst->gbaSave->RequestFlush(savedata, savelen, writeoffset, writelen);
+    }
 
-int MP_SendPacket(u8* data, int len, u64 timestamp, void* userdata)
-{
-    int inst = ((EmuInstance*)userdata)->getInstanceID();
-    return MPInterface::Get().SendPacket(inst, data, len, timestamp);
-}
+    void WriteFirmware(const Firmware& firmware, u32 writeoffset, u32 writelen, void* userdata)
+    {
+        EmuInstance* inst = (EmuInstance*)userdata;
+        printf("saving firmware for instance %d\n", inst->getInstanceID());
+        if (!inst->firmwareSave)
+            return;
 
-int MP_RecvPacket(u8* data, u64* timestamp, void* userdata)
-{
-    int inst = ((EmuInstance*)userdata)->getInstanceID();
-    return MPInterface::Get().RecvPacket(inst, data, timestamp);
-}
+        if (firmware.GetHeader().Identifier != GENERATED_FIRMWARE_IDENTIFIER)
+        { // If this is not the default built-in firmware...
+            // ...then write the whole thing back.
+            inst->firmwareSave->RequestFlush(firmware.Buffer(), firmware.Length(), writeoffset, writelen);
+        }
+        else
+        {
+            u32 eapstart = firmware.GetExtendedAccessPointOffset();
+            u32 eapend = eapstart + sizeof(firmware.GetExtendedAccessPoints());
 
-int MP_SendCmd(u8* data, int len, u64 timestamp, void* userdata)
-{
-    int inst = ((EmuInstance*)userdata)->getInstanceID();
-    return MPInterface::Get().SendCmd(inst, data, len, timestamp);
-}
+            u32 apstart = firmware.GetWifiAccessPointOffset();
+            u32 apend = apstart + sizeof(firmware.GetAccessPoints());
 
-int MP_SendReply(u8* data, int len, u64 timestamp, u16 aid, void* userdata)
-{
-    int inst = ((EmuInstance*)userdata)->getInstanceID();
-    return MPInterface::Get().SendReply(inst, data, len, timestamp, aid);
-}
+            // assert that the extended access points come just before the regular ones
+            assert(eapend == apstart);
 
-int MP_SendAck(u8* data, int len, u64 timestamp, void* userdata)
-{
-    int inst = ((EmuInstance*)userdata)->getInstanceID();
-    return MPInterface::Get().SendAck(inst, data, len, timestamp);
-}
+            if (eapstart <= writeoffset && writeoffset < apend)
+            { // If we're writing to the access points...
+                const u8* buffer = firmware.GetExtendedAccessPointPosition();
+                u32 length = sizeof(firmware.GetExtendedAccessPoints()) + sizeof(firmware.GetAccessPoints());
+                inst->firmwareSave->RequestFlush(buffer, length, writeoffset - eapstart, writelen);
+            }
+        }
 
-int MP_RecvHostPacket(u8* data, u64* timestamp, void* userdata)
-{
-    int inst = ((EmuInstance*)userdata)->getInstanceID();
-    return MPInterface::Get().RecvHostPacket(inst, data, timestamp);
-}
+    }
 
-u16 MP_RecvReplies(u8* data, u64 timestamp, u16 aidmask, void* userdata)
-{
-    int inst = ((EmuInstance*)userdata)->getInstanceID();
-    return MPInterface::Get().RecvReplies(inst, data, timestamp, aidmask);
-}
+    void WriteDateTime(int year, int month, int day, int hour, int minute, int second, void* userdata)
+    {
+        EmuInstance* inst = (EmuInstance*)userdata;
+        QDateTime hosttime = QDateTime::currentDateTime();
+        QDateTime time = QDateTime(QDate(year, month, day), QTime(hour, minute, second));
+        auto& cfg = inst->getLocalConfig();
 
-
-int Net_SendPacket(u8* data, int len, void* userdata)
-{
-    int inst = ((EmuInstance*)userdata)->getInstanceID();
-    net.SendPacket(data, len, inst);
-    return 0;
-}
-
-int Net_RecvPacket(u8* data, void* userdata)
-{
-    int inst = ((EmuInstance*)userdata)->getInstanceID();
-    return net.RecvPacket(data, inst);
-}
+        cfg.SetInt64("RTC.Offset", hosttime.secsTo(time));
+        Config::Save();
+    }
 
 
-void Camera_Start(int num, void* userdata)
-{
-    return camManager[num]->start();
-}
+    void MP_Begin(void* userdata)
+    {
+        int inst = ((EmuInstance*)userdata)->getInstanceID();
+        MPInterface::Get().Begin(inst);
+    }
 
-void Camera_Stop(int num, void* userdata)
-{
-    return camManager[num]->stop();
-}
+    void MP_End(void* userdata)
+    {
+        int inst = ((EmuInstance*)userdata)->getInstanceID();
+        MPInterface::Get().End(inst);
+    }
 
-void Camera_CaptureFrame(int num, u32* frame, int width, int height, bool yuv, void* userdata)
-{
-    return camManager[num]->captureFrame(frame, width, height, yuv);
-}
+    int MP_SendPacket(u8* data, int len, u64 timestamp, void* userdata)
+    {
+        int inst = ((EmuInstance*)userdata)->getInstanceID();
+        return MPInterface::Get().SendPacket(inst, data, len, timestamp);
+    }
 
-void Addon_RumbleStart(u32 len, void* userdata)
-{
-    ((EmuInstance*)userdata)->inputRumbleStart(len);
-}
+    int MP_RecvPacket(u8* data, u64* timestamp, void* userdata)
+    {
+        int inst = ((EmuInstance*)userdata)->getInstanceID();
+        return MPInterface::Get().RecvPacket(inst, data, timestamp);
+    }
 
-void Addon_RumbleStop(void* userdata)
-{
-    ((EmuInstance*)userdata)->inputRumbleStop();
-}
+    int MP_SendCmd(u8* data, int len, u64 timestamp, void* userdata)
+    {
+        int inst = ((EmuInstance*)userdata)->getInstanceID();
+        return MPInterface::Get().SendCmd(inst, data, len, timestamp);
+    }
 
-DynamicLibrary* DynamicLibrary_Load(const char* lib)
-{
-    return (DynamicLibrary*) SDL_LoadObject(lib);
-}
+    int MP_SendReply(u8* data, int len, u64 timestamp, u16 aid, void* userdata)
+    {
+        int inst = ((EmuInstance*)userdata)->getInstanceID();
+        return MPInterface::Get().SendReply(inst, data, len, timestamp, aid);
+    }
 
-void DynamicLibrary_Unload(DynamicLibrary* lib)
-{
-    SDL_UnloadObject(lib);
-}
+    int MP_SendAck(u8* data, int len, u64 timestamp, void* userdata)
+    {
+        int inst = ((EmuInstance*)userdata)->getInstanceID();
+        return MPInterface::Get().SendAck(inst, data, len, timestamp);
+    }
 
-void* DynamicLibrary_LoadFunction(DynamicLibrary* lib, const char* name)
-{
-    return SDL_LoadFunction(lib, name);
-}
+    int MP_RecvHostPacket(u8* data, u64* timestamp, void* userdata)
+    {
+        int inst = ((EmuInstance*)userdata)->getInstanceID();
+        return MPInterface::Get().RecvHostPacket(inst, data, timestamp);
+    }
+
+    u16 MP_RecvReplies(u8* data, u64 timestamp, u16 aidmask, void* userdata)
+    {
+        int inst = ((EmuInstance*)userdata)->getInstanceID();
+        return MPInterface::Get().RecvReplies(inst, data, timestamp, aidmask);
+    }
+
+
+    int Net_SendPacket(u8* data, int len, void* userdata)
+    {
+        int inst = ((EmuInstance*)userdata)->getInstanceID();
+        net.SendPacket(data, len, inst);
+        return 0;
+    }
+
+    int Net_RecvPacket(u8* data, void* userdata)
+    {
+        int inst = ((EmuInstance*)userdata)->getInstanceID();
+        return net.RecvPacket(data, inst);
+    }
+
+
+    void Camera_Start(int num, void* userdata)
+    {
+        return camManager[num]->start();
+    }
+
+    void Camera_Stop(int num, void* userdata)
+    {
+        return camManager[num]->stop();
+    }
+
+    void Camera_CaptureFrame(int num, u32* frame, int width, int height, bool yuv, void* userdata)
+    {
+        return camManager[num]->captureFrame(frame, width, height, yuv);
+    }
+
+    void Addon_RumbleStart(u32 len, void* userdata)
+    {
+        ((EmuInstance*)userdata)->inputRumbleStart(len);
+    }
+
+    void Addon_RumbleStop(void* userdata)
+    {
+        ((EmuInstance*)userdata)->inputRumbleStop();
+    }
+
+    DynamicLibrary* DynamicLibrary_Load(const char* lib)
+    {
+        return (DynamicLibrary*)SDL_LoadObject(lib);
+    }
+
+    void DynamicLibrary_Unload(DynamicLibrary* lib)
+    {
+        SDL_UnloadObject(lib);
+    }
+
+    void* DynamicLibrary_LoadFunction(DynamicLibrary* lib, const char* name)
+    {
+        return SDL_LoadFunction(lib, name);
+    }
 
 }

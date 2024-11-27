@@ -209,8 +209,8 @@ void pathInit()
 #else
         QString confdir;
         QDir config(QStandardPaths::writableLocation(QStandardPaths::ConfigLocation));
-        config.mkdir("melonDS");
-        confdir = config.absolutePath() + QDir::separator() + "melonDS";
+        config.mkdir("melonPrimeDS");
+        confdir = config.absolutePath() + QDir::separator() + "melonPrimeDS";
         emuDirectory = confdir;
 #endif
     }
