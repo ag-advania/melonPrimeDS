@@ -229,7 +229,7 @@ void InputConfigDialog::on_InputConfigDialog_accepted()
         i++;
     }
 
-    Config::JoystickID = emuInstance -> getJoystickID();
+    emuInstance->setJoystick(instcfg.GetInt("JoystickID"));
 
     Config::MetroidAimSensitivity = ui->metroidAimSensitvitySpinBox->value();
     Config::MetroidVirtualStylusSensitivity = ui->metroidVirtualStylusSensitvitySpinBox->value();

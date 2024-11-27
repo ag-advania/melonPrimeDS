@@ -789,13 +789,13 @@ void EmuThread::run()
 
     // test
     // Lambda function to get adjusted center position based on window geometry and screen layout
-    auto getAdjustedCenter = [&](QMainWindow* mainWindow) {
+    auto getAdjustedCenter = [&]() {
         // Cache window geometry and initialize center position
-        const QRect windowGeometry = mainWindow->geometry();
+        const QRect windowGeometry = QGuiApplication::primaryScreen()->availableGeometry();
         QPoint adjustedCenter = windowGeometry.center();
 
         // Inner lambda function for adjusting the center position
-        auto adjustCenter = [&](QPoint& adjustedCenter, const QRect& windowGeometry, QMainWindow* mainWindow) {
+        auto adjustCenter = [&](QPoint& adjustedCenter, const QRect& windowGeometry) {
             // Calculate adjustment direction based on screen swap configuration
             const float direction = (cfg.GetBool("ScreenSwap") != false) ? 1.0f : -1.0f;
 
@@ -841,7 +841,7 @@ void EmuThread::run()
                 // TODO Config::WindowMaximized = mainWindow->isMaximized()
 
                 constexpr float FULLSCREEN_ADJUSTMENT = 0.4f;
-                if (mainWindow->isFullScreen())
+                if (emuInstance->getMainWindow()->isFullScreen())
                 {
                     // isFullScreen
                     adjustedCenter.rx() -= static_cast<int>(windowGeometry.width() * FULLSCREEN_ADJUSTMENT);
@@ -881,12 +881,12 @@ void EmuThread::run()
             };
 
         // Adjust the center position and return
-        adjustCenter(adjustedCenter, windowGeometry, mainWindow);
+        adjustCenter(adjustedCenter, windowGeometry);
         return adjustedCenter;
         };
 
     // Get adjusted center position
-    adjustedCenter = getAdjustedCenter(mainWindow);
+    adjustedCenter = getAdjustedCenter();
 
 
     //MelonPrime OSD stuff
@@ -1078,7 +1078,7 @@ void EmuThread::run()
 
     while (emuStatus  != emuStatus_Exit) {
 
-        auto isFocused = mainWindow->panel->getFocused();
+        auto isFocused = emuInstance->getMainWindow()->panel->getFocused();
 
         // Define sensitivity factor as a constant
         const float SENSITIVITY_FACTOR = Config::MetroidAimSensitivity * 0.01f;
@@ -1192,7 +1192,7 @@ void EmuThread::run()
 
             // Recalculate center position when focus is gained or layout is changing
             if (!wasLastFrameFocused || isLayoutChanging) {
-                adjustedCenter = getAdjustedCenter(mainWindow);
+                adjustedCenter = getAdjustedCenter();// emuInstance->getMainWindow()
             }
 
             // Update relative position only when not changing layout
@@ -1494,7 +1494,7 @@ void EmuThread::run()
 
 
                 // Weapon switching of Next/Previous
-                const int wheelDelta = mainWindow->panel->getDelta();
+                const int wheelDelta = emuInstance->getMainWindow()->panel->getDelta();
                 const bool hasDelta = wheelDelta != 0;
                 const bool hotkeyNext = hasDelta ? false : emuInstance->hotkeyPressed(HK_MetroidWeaponNext);
 
@@ -1652,7 +1652,7 @@ void EmuThread::run()
                 // VirtualStylus
 
                 if (!OSD) {
-                    OSD = mainWindow->panel->OSDCanvas;
+                    OSD = emuInstance->getMainWindow()->panel->OSDCanvas;
                     Top_buffer = OSD[0].CanvasBuffer;
                     Top_paint = OSD[0].Painter;
                     Btm_buffer = OSD[1].CanvasBuffer;
