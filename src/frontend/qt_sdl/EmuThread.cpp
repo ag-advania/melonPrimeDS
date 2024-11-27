@@ -153,7 +153,9 @@ melonDS::u32 isMapOrUserActionPausedAddr; // for issue in AdventureMode, Aim Sto
 bool isAltForm;
 
 
-void detectRomAndSetAddresses() {
+void detectRomAndSetAddresses(EmuInstance* emuInstance) {
+
+
     switch (globalChecksum) {
     case RomVersions::USA1_1:
         // USA1.1
@@ -172,7 +174,7 @@ void detectRomAndSetAddresses() {
         isInAdventureAddr = 0x020E83BC; // Read8 0x02: ADV, 0x03: Multi
         isMapOrUserActionPausedAddr = 0x020FBF18; // 0x00000001: true, 0x00000000 false. Read8 is enough though.
         isRomDetected = true;
-        mainWindow->osdAddMessage(0, "Rom detected: US1.1");
+        emuInstance->osdAddMessage(0, "Rom detected: US1.1");
 
         break;
 
@@ -192,7 +194,7 @@ void detectRomAndSetAddresses() {
         isInAdventureAddr = 0x020E78FC; // Read8 0x02: ADV, 0x03: Multi
         isMapOrUserActionPausedAddr = 0x020FB458; // 0x00000001: true, 0x00000000 false. Read8 is enough though.
         isRomDetected = true;
-        mainWindow->osdAddMessage(0, "Rom detected: US1.0");
+        emuInstance->osdAddMessage(0, "Rom detected: US1.0");
 
         break;
 
@@ -212,7 +214,7 @@ void detectRomAndSetAddresses() {
         isInAdventureAddr = 0x020E9A3C; // Read8 0x02: ADV, 0x03: Multi
         isMapOrUserActionPausedAddr = 0x020FD598; // 0x00000001: true, 0x00000000 false. Read8 is enough though.
         isRomDetected = true;
-        mainWindow->osdAddMessage(0, "Rom detected: JP1.0");
+        emuInstance->osdAddMessage(0, "Rom detected: JP1.0");
 
         break;
 
@@ -232,7 +234,7 @@ void detectRomAndSetAddresses() {
         isInAdventureAddr = 0x020E99FC; // Read8 0x02: ADV, 0x03: Multi
         isMapOrUserActionPausedAddr = 0x020FD558; // 0x00000001: true, 0x00000000 false. Read8 is enough though.
         isRomDetected = true;
-        mainWindow->osdAddMessage(0, "Rom detected: JP1.1");
+        emuInstance->osdAddMessage(0, "Rom detected: JP1.1");
 
         break;
 
@@ -252,7 +254,7 @@ void detectRomAndSetAddresses() {
         isInAdventureAddr = 0x020E83DC; // Read8 0x02: ADV, 0x03: Multi
         isMapOrUserActionPausedAddr = 0x020FBF38; // 0x00000001: true, 0x00000000 false. Read8 is enough though.
         isRomDetected = true;
-        mainWindow->osdAddMessage(0, "Rom detected: EU1.0");
+        emuInstance->osdAddMessage(0, "Rom detected: EU1.0");
 
         break;
 
@@ -271,7 +273,7 @@ void detectRomAndSetAddresses() {
         baseAimYAddr = 0x020dee4e;
         isInAdventureAddr = 0x020E845C; // Read8 0x02: ADV, 0x03: Multi
         isMapOrUserActionPausedAddr = 0x020FBFB8; // 0x00000001: true, 0x00000000 false. Read8 is enough though.
-        mainWindow->osdAddMessage(0, "Rom detected: EU1.1");
+        emuInstance->osdAddMessage(0, "Rom detected: EU1.1");
 
         isRomDetected = true;
 
@@ -292,7 +294,7 @@ void detectRomAndSetAddresses() {
         baseAimYAddr = 0x020D7C16;
         isInAdventureAddr = 0x020E11F8; // Read8 0x02: ADV, 0x03: Multi
         isMapOrUserActionPausedAddr = 0x020F4CF8; // 0x00000001: true, 0x00000000 false. Read8 is enough though.
-        mainWindow->osdAddMessage(0, "Rom detected: KR1.0");
+        emuInstance->osdAddMessage(0, "Rom detected: KR1.0");
 
         isRomDetected = true;
 
@@ -379,7 +381,7 @@ void EmuThread::run()
         if (emuInstance->hotkeyPressed(HK_SwapScreenEmphasis)) emit screenEmphasisToggle();
 
         // Lambda to update aim sensitivity and display a message
-        auto updateAimSensitivity = [](int change) {
+        auto updateAimSensitivity = [&](int change) {
             // Store the current sensitivity in a local variable
             int currentSensitivity = Config::MetroidAimSensitivity;
 
@@ -395,11 +397,11 @@ void EmuThread::run()
                     Config::Save();
                 }
                 // Create and display the OSD message
-                mainWindow->osdAddMessage(0, ("AimSensi Updated: " + std::to_string(newSensitivity)).c_str());
+                emuInstance->osdAddMessage(0, ("AimSensi Updated: " + std::to_string(newSensitivity)).c_str());
             }
             else {
                 // Display a message when trying to decrease below 1
-                mainWindow->osdAddMessage(0, "AimSensi cannot be decreased below 1");
+                emuInstance->osdAddMessage(0, "AimSensi cannot be decreased below 1");
             }
             };
 
@@ -424,7 +426,7 @@ void EmuThread::run()
             //     int level = emuInstance->nds->GBACartSlot.SetInput(GBACart::Input_SolarSensorDown, true);
             //     if (level != -1)
             //     {
-            //         mainWindow->osdAddMessage(0, "Solar sensor level: %d", level);
+            //         emuInstance->osdAddMessage(0, "Solar sensor level: %d", level);
             //     }
             // }
             // if (emuInstance->hotkeyPressed(HK_SolarSensorIncrease))
@@ -432,7 +434,7 @@ void EmuThread::run()
             //     int level = emuInstance->nds->GBACartSlot.SetInput(GBACart::Input_SolarSensorUp, true);
             //     if (level != -1)
             //     {
-            //         mainWindow->osdAddMessage(0, "Solar sensor level: %d", level);
+            //         emuInstance->osdAddMessage(0, "Solar sensor level: %d", level);
             //     }
             // }
 
@@ -743,8 +745,8 @@ void EmuThread::run()
     #define INPUT_L 9
     #define INPUT_X 10
     #define INPUT_Y 11
-    #define FN_INPUT_PRESS(i) emuInstance->inputMask.setBit(i, false);
-    #define FN_INPUT_RELEASE(i) emuInstance->inputMask.setBit(i, true);
+    #define FN_INPUT_PRESS(i) emuInstance->inputMask &= ~(1u << i)    // Clear bit (0)
+    #define FN_INPUT_RELEASE(i) emuInstance->inputMask |= (1u << i)   // Set bit (1)
 
 
 
@@ -946,20 +948,23 @@ void EmuThread::run()
     // Initialize Adjusted Center 
     QPoint adjustedCenter;
 
+    auto& cfg = emuInstance->getGlobalConfig();
+
     // test
     // Lambda function to get adjusted center position based on window geometry and screen layout
-    auto getAdjustedCenter = [](QMainWindow* mainWindow) {
+    auto getAdjustedCenter = [&](QMainWindow* mainWindow) {
         // Cache window geometry and initialize center position
         const QRect windowGeometry = mainWindow->geometry();
         QPoint adjustedCenter = windowGeometry.center();
 
         // Inner lambda function for adjusting the center position
-        auto adjustCenter = [](QPoint& adjustedCenter, const QRect& windowGeometry, QMainWindow* mainWindow) {
+        auto adjustCenter = [&](QPoint& adjustedCenter, const QRect& windowGeometry, QMainWindow* mainWindow) {
             // Calculate adjustment direction based on screen swap configuration
-            const float direction = (Config::ScreenSwap != 0) ? 1.0f : -1.0f;
+            const float direction = (cfg.GetBool("ScreenSwap") != false) ? 1.0f : -1.0f;
+
 
             // Adjust the center position based on screen layout in specified order
-            if (Config::ScreenLayout == ScreenLayoutType::screenLayout_Hybrid) {
+            if (cfg.GetInt("ScreenLayout") == ScreenLayoutType::screenLayout_Hybrid) {
                 /*
                 ### Monitor Specification
                 - Monitor resolution: 2560x1440 pixels
@@ -980,7 +985,7 @@ void EmuThread::run()
                 - Left 4:3 screen center: ~853 pixels
                 - Right stacked 4:3 screen center: ~2133 pixels
                 */
-                if (Config::ScreenSwap != 0) {
+                if (cfg.GetBool("ScreenSwap") != false) {
                     adjustedCenter.rx() += static_cast<int>(windowGeometry.width() * HYBRID_RIGHT);
                     adjustedCenter.ry() -= static_cast<int>(windowGeometry.height() * DEFAULT_ADJUSTMENT);
                 }
@@ -991,7 +996,7 @@ void EmuThread::run()
             }
 
             // For layouts other than Hybrid, first check BotOnly mode
-            if (mainWindow->getWindowConfig().GetInt("ScreenSizing") == ScreenSizing::screenSizing_BotOnly) {
+            if (cfg.GetInt("ScreenSizing") == ScreenSizing::screenSizing_BotOnly) {
                 // Process for bottom-screen-only display
                 // TODO: Adjust to avoid duplicate touches at the cursor position
 
@@ -1019,12 +1024,12 @@ void EmuThread::run()
                 return;  // End here if in BotOnly mode
             }
 
-            if (mainWindow->getWindowConfig().GetInt("ScreenSizing") == ScreenSizing::screenSizing_TopOnly) {
+            if (cfg.GetInt("ScreenSizing") == ScreenSizing::screenSizing_TopOnly) {
                 return;  // End here if in TopOnly mode
             }
 
             // Standard layout adjustment (when not in BotOnly mode)
-            switch (Config::ScreenLayout) {
+            switch (cfg.GetInt("ScreenLayout")) {
             case ScreenLayoutType::screenLayout_Natural:
             case ScreenLayoutType::screenLayout_Horizontal:
                 // Note: This case actually handles vertical layout despite being named Horizontal in enum
@@ -1088,7 +1093,7 @@ void EmuThread::run()
         */
 
         if (!isRomDetected) {
-            detectRomAndSetAddresses();
+            detectRomAndSetAddresses(emuInstance);
         }
 
         isInGame = emuInstance->nds->ARM9Read16(inGameAddr) == 0x0001;
@@ -1156,7 +1161,7 @@ void EmuThread::run()
 
             // isPrimeHunterAddr = isInAdventureAddr + 0xAD; // isPrimeHunter Addr NotPrimeHunter:0xFF, PrimeHunter:0x00 220E9AE9 in JP1.0
 
-            // mainWindow->osdAddMessage(0, "Completed address calculation.");
+            // emuInstance->osdAddMessage(0, "Completed address calculation.");
 
             // Set the initialization complete flag
             hasInitialized = true;
@@ -1334,7 +1339,7 @@ void EmuThread::run()
 
                     // Check for Already equipped
                     if (emuInstance->nds->ARM9Read8(selectedWeaponAddr) == weaponIndex) {
-                        // mainWindow->osdAddMessage(0, "Weapon switch unnecessary: Already equipped");
+                        // emuInstance->osdAddMessage(0, "Weapon switch unnecessary: Already equipped");
                         return; // Early return if the weapon is already equipped
                     }
 
@@ -1351,7 +1356,7 @@ void EmuThread::run()
                     bool isTransforming = currentFlags & 0x10;
 
                     uint8_t jumpFlag = currentFlags & 0x0F;  // Get the lower 4 bits
-                    //mainWindow->osdAddMessage(0, ("JumpFlag:" + std::string(1, "0123456789ABCDEF"[emuInstance->nds->ARM9Read8(jumpFlagAddr) & 0x0F])).c_str());
+                    //emuInstance->osdAddMessage(0, ("JumpFlag:" + std::string(1, "0123456789ABCDEF"[emuInstance->nds->ARM9Read8(jumpFlagAddr) & 0x0F])).c_str());
 
                     bool isRestoreNeeded = false;
 
@@ -1363,8 +1368,8 @@ void EmuThread::run()
                         uint8_t newFlags = (currentFlags & 0xF0) | 0x01;  // Set lower 4 bits to 1
                         emuInstance->nds->ARM9Write8(jumpFlagAddr, newFlags);
                         isRestoreNeeded = true;
-                        //mainWindow->osdAddMessage(0, ("JumpFlag:" + std::string(1, "0123456789ABCDEF"[emuInstance->nds->ARM9Read8(jumpFlagAddr) & 0x0F])).c_str());
-                        //mainWindow->osdAddMessage(0, "Done setting jumpFlag.");
+                        //emuInstance->osdAddMessage(0, ("JumpFlag:" + std::string(1, "0123456789ABCDEF"[emuInstance->nds->ARM9Read8(jumpFlagAddr) & 0x0F])).c_str());
+                        //emuInstance->osdAddMessage(0, "Done setting jumpFlag.");
                     }
 
                     // Lambda to set the weapon-changing state
@@ -1399,8 +1404,8 @@ void EmuThread::run()
                         currentFlags = emuInstance->nds->ARM9Read8(jumpFlagAddr);
                         uint8_t restoredFlags = (currentFlags & 0xF0) | jumpFlag;
                         emuInstance->nds->ARM9Write8(jumpFlagAddr, restoredFlags);
-                        //mainWindow->osdAddMessage(0, ("JumpFlag:" + std::string(1, "0123456789ABCDEF"[emuInstance->nds->ARM9Read8(jumpFlagAddr) & 0x0F])).c_str());
-                        //mainWindow->osdAddMessage(0, "Restored jumpFlag.");
+                        //emuInstance->osdAddMessage(0, ("JumpFlag:" + std::string(1, "0123456789ABCDEF"[emuInstance->nds->ARM9Read8(jumpFlagAddr) & 0x0F])).c_str());
+                        //emuInstance->osdAddMessage(0, "Restored jumpFlag.");
 
                     }
 
@@ -1560,7 +1565,7 @@ void EmuThread::run()
                         frameAdvance(2);
 
                         bool inVisor = emuInstance->nds->ARM9Read8(inVisorOrMapAddr) == 0x1;
-                        // mainWindow->osdAddMessage(0, "in visor %d", inVisor);
+                        // emuInstance->osdAddMessage(0, "in visor %d", inVisor);
 
                         emuInstance->nds->TouchScreen(128, 173);
 
@@ -1627,7 +1632,7 @@ void EmuThread::run()
                     // touch again for aiming
                     // When you return to melonPrimeDS or normal form
 
-                    // mainWindow->osdAddMessage(0,"touching screen for aim");
+                    // emuInstance->osdAddMessage(0,"touching screen for aim");
 
                     // Changed Y point center(96) to 88, For fixing issue: Alt Tab switches hunter choice.
                     //emuInstance->nds->TouchScreen(128, 96); // required for aiming
@@ -1689,8 +1694,8 @@ void EmuThread::run()
                 if (virtualStylusY < 0) virtualStylusY = 0;
                 if (virtualStylusY > 191) virtualStylusY = 191;
 
-                // mainWindow->osdAddMessage(0, ("mouseY: " + std::to_string(mouseY)).c_str());
-                // mainWindow->osdAddMessage(0, ("virtualStylusY: " + std::to_string(virtualStylusY)).c_str());
+                // emuInstance->osdAddMessage(0, ("mouseY: " + std::to_string(mouseY)).c_str());
+                // emuInstance->osdAddMessage(0, ("virtualStylusY: " + std::to_string(virtualStylusY)).c_str());
 
                 // Draw VirtualStylus Start
                 Btm_paint->setPen(Qt::white);
