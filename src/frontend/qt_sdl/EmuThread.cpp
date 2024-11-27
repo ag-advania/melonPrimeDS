@@ -1856,6 +1856,14 @@ void EmuThread::run()
                 Top_buffer->fill(0x00000000);
                 Btm_buffer->fill(0x00000000);
 
+                // Touch Scren
+                if (Input::HotkeyDown(HK_MetroidShootScan) || Input::HotkeyDown(HK_MetroidScanShoot)) {
+                    NDS->TouchScreen(virtualStylusX, virtualStylusY);
+                }
+                else {
+                    NDS->ReleaseScreen();
+                }
+
 
                 // Processing for VirtualStylus X and Y axes
                 auto processVirtualStylus = [](float mouseRelValue, float scaleFactor, float& virtualStylus) {
@@ -1885,14 +1893,6 @@ void EmuThread::run()
                 // Draw VirtualStylus : 3x3 center Crosshair
                 Btm_paint->drawLine(virtualStylusX - 1, virtualStylusY, virtualStylusX + 1, virtualStylusY);
                 Btm_paint->drawLine(virtualStylusX, virtualStylusY - 1, virtualStylusX, virtualStylusY + 1);
-
-                // Touch Scren
-                if (Input::HotkeyDown(HK_MetroidShootScan) || Input::HotkeyDown(HK_MetroidScanShoot)) {
-                    NDS->TouchScreen(virtualStylusX, virtualStylusY);
-                }
-                else {
-                    NDS->ReleaseScreen();
-                }
 
 			} 
 
