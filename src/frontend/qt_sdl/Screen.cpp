@@ -42,7 +42,7 @@
 #include "GPU3D_OpenGL.h"
 #include "Platform.h"
 #include "Config.h"
-#include "Input.h"
+// #include "Input.h"
 
 #include "main_shaders.h"
 #include "OSD_shaders.h"
@@ -218,7 +218,7 @@ void ScreenPanel::mousePressEvent(QMouseEvent* event)
 
     // so we dont press buttons before fully focusing
     if (isFocused) {
-        Input::MousePress(event);
+        emuInstance->mousePress(event);
     }
 
     if (event->button() != Qt::LeftButton) return;
@@ -242,7 +242,7 @@ void ScreenPanel::mouseReleaseEvent(QMouseEvent* event)
 {
     event->accept();
 
-    Input::MouseRelease(event);
+    emuInstance->mouseRelease(event);
 
     if (event->button() != Qt::LeftButton) return;
 

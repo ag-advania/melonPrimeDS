@@ -354,6 +354,13 @@ void EmuThread::run()
     emuInstance->fastForwardToggled = false;
     emuInstance->slowmoToggled = false;
 
+    auto frameAdvance{
+[&](int n)
+{
+    for (int i = 0; i < n; i++) frameAdvanceOnce();
+}
+    };
+
     auto frameAdvanceOnce {
     [&]()
     {
@@ -715,12 +722,7 @@ void EmuThread::run()
 
 
 
-    auto frameAdvance{
-    [&](int n)
-    {
-        for (int i = 0; i < n; i++) frameAdvanceOnce();
-    }
-    };
+
 
     // metroid prime hunters code
     // adapted from https://forums.desmume.org/viewtopic.php?id=11715
@@ -968,7 +970,7 @@ void EmuThread::run()
             const float direction = (Config::ScreenSwap != 0) ? 1.0f : -1.0f;
 
             // Adjust the center position based on screen layout in specified order
-            if (Config::ScreenLayout == Frontend::screenLayout_Hybrid) {
+            if (Config::ScreenLayout == ScreenLayoutType::screenLayout_Hybrid) {
                 /*
                 ### Monitor Specification
                 - Monitor resolution: 2560x1440 pixels
@@ -1000,7 +1002,7 @@ void EmuThread::run()
             }
 
             // For layouts other than Hybrid, first check BotOnly mode
-            if (Config::ScreenSizing == Frontend::screenSizing_BotOnly) {
+            if (Config::ScreenSizing == ScreenSizing::screenSizing_BotOnly) {
                 // Process for bottom-screen-only display
                 // TODO: Adjust to avoid duplicate touches at the cursor position
 
@@ -1028,19 +1030,19 @@ void EmuThread::run()
                 return;  // End here if in BotOnly mode
             }
 
-            if (Config::ScreenSizing == Frontend::screenSizing_TopOnly) {
+            if (Config::ScreenSizing == ScreenSizing::screenSizing_TopOnly) {
                 return;  // End here if in TopOnly mode
             }
 
             // Standard layout adjustment (when not in BotOnly mode)
             switch (Config::ScreenLayout) {
-            case Frontend::screenLayout_Natural:
-            case Frontend::screenLayout_Horizontal:
+            case ScreenLayoutType::screenLayout_Natural:
+            case ScreenLayoutType::screenLayout_Horizontal:
                 // Note: This case actually handles vertical layout despite being named Horizontal in enum
                 adjustedCenter.ry() += static_cast<int>(direction * windowGeometry.height() * DEFAULT_ADJUSTMENT);
                 break;
 
-            case Frontend::screenLayout_Vertical:
+            case ScreenLayoutType::screenLayout_Vertical:
                 // Note: This case actually handles horizontal layout despite being named Vertical in enum
                 adjustedCenter.rx() += static_cast<int>(direction * windowGeometry.width() * DEFAULT_ADJUSTMENT);
                 break;

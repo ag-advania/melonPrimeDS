@@ -229,7 +229,7 @@ void InputConfigDialog::on_InputConfigDialog_accepted()
         i++;
     }
 
-    Config::JoystickID = Input::JoystickID;
+    Config::JoystickID = emuInstance -> JoystickID;
 
     Config::MetroidAimSensitivity = ui->metroidAimSensitvitySpinBox->value();
     Config::MetroidVirtualStylusSensitivity = ui->metroidVirtualStylusSensitvitySpinBox->value();

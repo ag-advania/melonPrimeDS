@@ -81,6 +81,7 @@ QStringList ArchiveMimeTypes
     "application/x-7z-compressed",
     "application/vnd.rar", // *.rar
     "application/x-tar",
+}
 
 const int kMaxEmuInstances = 16;
 EmuInstance* emuInstances[kMaxEmuInstances];

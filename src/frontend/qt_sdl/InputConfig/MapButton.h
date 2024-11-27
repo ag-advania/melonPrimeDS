@@ -78,7 +78,7 @@ protected:
 
         // if (!ismod)
         //     key |= mod;
-        // else if (Input::IsRightModKey(event))
+        // else if (emuInstance -> isRightModKey(event))
         //     key |= (1<<31);
 
         *mapping = key;
