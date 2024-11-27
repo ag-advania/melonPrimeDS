@@ -991,7 +991,7 @@ void EmuThread::run()
             }
 
             // For layouts other than Hybrid, first check BotOnly mode
-            if (windowCfg.GetInt("ScreenSizing") == ScreenSizing::screenSizing_BotOnly) {
+            if (mainWindow->getWindowConfig().GetInt("ScreenSizing") == ScreenSizing::screenSizing_BotOnly) {
                 // Process for bottom-screen-only display
                 // TODO: Adjust to avoid duplicate touches at the cursor position
 
@@ -1019,7 +1019,7 @@ void EmuThread::run()
                 return;  // End here if in BotOnly mode
             }
 
-            if (windowCfg.GetInt("ScreenSizing") == ScreenSizing::screenSizing_TopOnly) {
+            if (mainWindow->getWindowConfig().GetInt("ScreenSizing") == ScreenSizing::screenSizing_TopOnly) {
                 return;  // End here if in TopOnly mode
             }
 
