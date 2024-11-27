@@ -942,7 +942,7 @@ void MainWindow::keyPressEvent(QKeyEvent* event)
     emuInstance->onKeyPress(event);
     // for metroid cursor lock 
     if (event->key() == Qt::Key_Escape) {
-        mainWindow->panel->unfocus();
+        panel->unfocus();
     }
 }
 
