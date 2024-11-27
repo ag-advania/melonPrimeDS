@@ -199,6 +199,46 @@ LegacyEntry LegacyFile[] =
     // not including any joystick bindings
 
 
+    {"HKKey_MetroidMoveForward",       0, "Keyboard.HK_MetroidMoveForward",        true},
+    {"HKKey_MetroidMoveBack",          0, "Keyboard.HK_MetroidMoveBack",           true},
+    {"HKKey_MetroidMoveLeft",          0, "Keyboard.HK_MetroidMoveLeft",           true},
+    {"HKKey_MetroidMoveRight",         0, "Keyboard.HK_MetroidMoveRight",          true},
+
+    {"HKKey_MetroidJump",              0, "Keyboard.HK_MetroidJump",               true},
+
+    {"HKKey_MetroidMorphBall",         0, "Keyboard.HK_MetroidMorphBall",          true},
+    {"HKKey_MetroidZoom",              0, "Keyboard.HK_MetroidZoom",               true},
+    {"HKKey_MetroidHoldMorphBallBoost",0, "Keyboard.HK_MetroidHoldMorphBallBoost", true},
+
+    {"HKKey_MetroidScanVisor",         0, "Keyboard.HK_MetroidScanVisor",          true},
+                                                                                  
+    {"HKKey_MetroidUILeft",            0, "Keyboard.HK_MetroidUILeft",             true},
+    {"HKKey_MetroidUIRight",           0, "Keyboard.HK_MetroidUIRight",            true},
+    {"HKKey_MetroidUIOk",              0, "Keyboard.HK_MetroidUIOk",               true},
+    {"HKKey_MetroidUIYes",             0, "Keyboard.HK_MetroidUIYes",              true},
+    {"HKKey_MetroidUINo",              0, "Keyboard.HK_MetroidUINo",               true},
+                                                                                  
+    {"HKKey_MetroidShootScan",         0, "Keyboard.HK_MetroidShootScan",          true},
+    {"HKKey_MetroidScanShoot",         0, "Keyboard.HK_MetroidScanShoot",          true},
+                                                                                  
+    {"HKKey_MetroidWeaponBeam",        0, "Keyboard.HK_MetroidWeaponBeam",         true},
+    {"HKKey_MetroidWeaponMissile",     0, "Keyboard.HK_MetroidWeaponMissile",      true},
+    {"HKKey_MetroidWeaponSpecial",     0, "Keyboard.HK_MetroidWeaponSpecial",      true},
+    {"HKKey_MetroidWeaponNext",        0, "Keyboard.HK_MetroidWeaponNext",         true},
+    {"HKKey_MetroidWeaponPrevious",    0, "Keyboard.HK_MetroidWeaponPrevious",     true},
+    {"HKKey_MetroidWeapon1",           0, "Keyboard.HK_MetroidWeapon1",            true},
+    {"HKKey_MetroidWeapon2",           0, "Keyboard.HK_MetroidWeapon2",            true},
+    {"HKKey_MetroidWeapon3",           0, "Keyboard.HK_MetroidWeapon3",            true},
+    {"HKKey_MetroidWeapon4",           0, "Keyboard.HK_MetroidWeapon4",            true},
+    {"HKKey_MetroidWeapon5",           0, "Keyboard.HK_MetroidWeapon5",            true},
+    {"HKKey_MetroidWeapon6",           0, "Keyboard.HK_MetroidWeapon6",            true},
+
+    // {"HKKey_MetroidVirtualStylus",     0, "Keyboard.HK_MetroidVirtualStylus",     Qt::Key_Tab, true},
+    {"HKKey_MetroidMenu",              0, "Keyboard.HK_MetroidMenu",               true},
+    {"HKKey_MetroidIngameSensiUp",     0, "Keyboard.HK_MetroidIngameSensiUp",      true},
+    {"HKKey_MetroidIngameSensiDown",   0, "Keyboard.HK_MetroidIngameSensiDown",    true},
+
+    /*
     {"HKKey_MetroidMoveForward",       0, "Keyboard.HK_MetroidMoveForward",       Qt::Key_W, true},
     {"HKKey_MetroidMoveBack",          0, "Keyboard.HK_MetroidMoveBack",          Qt::Key_S, true},
     {"HKKey_MetroidMoveLeft",          0, "Keyboard.HK_MetroidMoveLeft",          Qt::Key_A, true},
@@ -237,7 +277,7 @@ LegacyEntry LegacyFile[] =
     {"HKKey_MetroidMenu",              0, "Keyboard.HK_MetroidMenu",              Qt::Key_Tab, true},
     {"HKKey_MetroidIngameSensiUp",     0, "Keyboard.HK_MetroidIngameSensiUp",     Qt::Key_PageUp, true},
     {"HKKey_MetroidIngameSensiDown",   0, "Keyboard.HK_MetroidIngameSensiDown",   Qt::Key_PageDown, true},
-
+    */
 
     // not metroid
 
@@ -376,8 +416,8 @@ LegacyEntry LegacyFile[] =
     {"GdbARM9BreakOnStartup", 1, "Gdb.ARM9.BreakOnStartup", true},
 #endif
 
-    { "MetroidAimSensitivity", 0, "MetroidAimSensitivity",  false },
-    { "MetroidVirtualStylusSensitivity", 0, "MetroidVirtualStylusSensitivity", false },
+    {"MetroidAimSensitivity", 0, "MetroidAimSensitivity",  false },
+    {"MetroidVirtualStylusSensitivity", 0, "MetroidVirtualStylusSensitivity", false },
 
     {"Camera0_InputType", 0, "DSi.Camera0.InputType", false},
     {"Camera0_ImagePath", 2, "DSi.Camera0.ImagePath", false},
