@@ -858,7 +858,6 @@ void EmuThread::run()
             (uint32_t(emuInstance->hotkeyDown(HK_MetroidMoveRight)) << 3);
 
         // Optimized LUT using bit manipulation to handle all cases
-        // Each entry is pre-computed and packed with both mask and input value
         static constexpr uint32_t PACKED_LUT[16] = {
             0x00000000u, // None
             INPUT_PACKED_UP,    // Up
@@ -892,7 +891,6 @@ void EmuThread::run()
             };
 
         // Process all inputs in parallel using packed values
-        // Compiler should be able to unroll this loop
         static constexpr uint32_t ALL_INPUTS[] = {
             INPUT_PACKED_UP, INPUT_PACKED_DOWN,
             INPUT_PACKED_LEFT, INPUT_PACKED_RIGHT
@@ -903,6 +901,7 @@ void EmuThread::run()
             applyInput(input, finalState);
         }
         };
+
 
 
 
