@@ -937,7 +937,7 @@ void MainWindow::keyPressEvent(QKeyEvent* event)
     // TODO!! REMOVE ME IN RELEASE BUILDS!!
     //if (event->key() == Qt::Key_F11) emuThread->NDS->debug(0);
 
-    Input::KeyPress(event);
+    emuInstance->keyPress(event);
 
     // for metroid cursor lock 
     if (event->key() == Qt::Key_Escape) {
