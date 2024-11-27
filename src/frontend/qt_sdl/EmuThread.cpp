@@ -757,17 +757,6 @@ void EmuThread::run()
     #endif
     */
 
-    bool enableAim = true;
-    bool wasLastFrameFocused = false;
-
-    float virtualStylusX = 128;
-    float virtualStylusY = 96; // This might not be good - does it go out of bounds when bottom-only? Is Y=0 barely at the bottom limit?
-
-    //const float dsAspectRatio = 4.0 / 3.0;
-    const float dsAspectRatio = 1.333333333f;
-    //const float aimAspectRatio = 6.0 / 4.0; // i have no idea
-    const float aimAspectRatio = 1.5f; // i have no idea  6.0 / 4.0
-
     // RawInputThread* rawInputThread = new RawInputThread(parent());
     // rawInputThread->start();
 
@@ -1064,6 +1053,18 @@ void EmuThread::run()
     QPainter* Top_paint = nullptr;
     QImage* Btm_buffer = nullptr;
     QPainter* Btm_paint = nullptr;
+
+    bool enableAim = true;
+    bool wasLastFrameFocused = false;
+
+    float virtualStylusX = 128;
+    float virtualStylusY = 96; // This might not be good - does it go out of bounds when bottom-only? Is Y=0 barely at the bottom limit?
+
+    //const float dsAspectRatio = 4.0 / 3.0;
+    const float dsAspectRatio = 1.333333333f;
+    //const float aimAspectRatio = 6.0 / 4.0; // i have no idea
+    const float aimAspectRatio = 1.5f; // i have no idea  6.0 / 4.0
+
 
     while (EmuRunning != emuStatus_Exit) {
 
