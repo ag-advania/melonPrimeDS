@@ -101,6 +101,18 @@ InputConfigDialog::InputConfigDialog(QWidget* parent) : QDialog(parent), ui(new 
         ui->lblInstanceNum->setText(QString("Configuring mappings for instance %1").arg(inst+1));
     else
         ui->lblInstanceNum->hide();
+
+    ui->metroidAimSensitvitySpinBox->setValue(Config::MetroidAimSensitivity);
+    ui->metroidVirtualStylusSensitvitySpinBox->setValue(Config::MetroidVirtualStylusSensitivity);
+    //ui->metroidVsPlayerInputSpinBox->setValue(Config::MetroidVsPlayerInput);
+}
+
+void InputConfigDialog::switchTabToAddons() {
+    ui->tabWidget->setCurrentWidget(ui->tabAddons);
+}
+
+void InputConfigDialog::switchTabToMetroid() {
+    ui->tabWidget->setCurrentWidget(ui->tabMetroid);
 }
 
 InputConfigDialog::~InputConfigDialog()
@@ -161,23 +173,27 @@ void InputConfigDialog::populatePage(QWidget* page,
     group->setLayout(group_layout);
     group->setMinimumWidth(275);
 
-    group = new QGroupBox("Joystick mappings:");
-    main_layout->addWidget(group);
-    group_layout = new QGridLayout();
-    group_layout->setSpacing(1);
-    i = 0;
-    for (const char* labelStr : labels)
+    // disable joystick mappings for metroid since config doesnt even have them
+    if (page != ui->tabAddons)
     {
-        QLabel* label = new QLabel(QString(labelStr)+":");
-        JoyMapButton* btn = new JoyMapButton(&joymap[i], ishotkey);
+        group = new QGroupBox("Joystick mappings:");
+        main_layout->addWidget(group);
+        group_layout = new QGridLayout();
+        group_layout->setSpacing(1);
+        i = 0;
+        for (const char* labelStr : labels)
+        {
+            QLabel* label = new QLabel(QString(labelStr)+":");
+            JoyMapButton* btn = new JoyMapButton(&joymap[i], ishotkey);
 
-        group_layout->addWidget(label, i, 0);
-        group_layout->addWidget(btn, i, 1);
-        i++;
+            group_layout->addWidget(label, i, 0);
+            group_layout->addWidget(btn, i, 1);
+            i++;
+        }
+        group_layout->setRowStretch(labels.size(), 1);
+        group->setLayout(group_layout);
+        group->setMinimumWidth(275);
     }
-    group_layout->setRowStretch(labels.size(), 1);
-    group->setLayout(group_layout);
-    group->setMinimumWidth(275);
 
     page->setLayout(main_layout);
 }
@@ -213,7 +229,11 @@ void InputConfigDialog::on_InputConfigDialog_accepted()
         i++;
     }
 
-    instcfg.SetInt("JoystickID", joystickID);
+    Config::JoystickID = Input::JoystickID;
+
+    Config::MetroidAimSensitivity = ui->metroidAimSensitvitySpinBox->value();
+    Config::MetroidVirtualStylusSensitivity = ui->metroidVirtualStylusSensitvitySpinBox->value();
+    //Config::MetroidVsPlayerInput = ui->metroidVsPlayerInputSpinBox->value();
     Config::Save();
 
     emuInstance->inputLoadConfig();
@@ -251,4 +271,39 @@ void InputConfigDialog::on_cbxJoystick_currentIndexChanged(int id)
 SDL_Joystick* InputConfigDialog::getJoystick()
 {
     return emuInstance->getJoystick();
+}
+
+void InputConfigDialog::on_metroidResetSensitivityValues_clicked()
+{
+    ui->metroidAimSensitvitySpinBox->setValue(Config::MetroidAimSensitivityDefault);
+    ui->metroidVirtualStylusSensitvitySpinBox->setValue(Config::MetroidVirtualStylusSensitivityDefault);
+}
+
+void InputConfigDialog::on_metroidSetVideoQualityToHigh_clicked()
+{
+    Config::ScreenUseGL = true;
+    Config::ScreenVSync = false;
+    Config::ScreenVSyncInterval = 1;
+
+    Config::_3DRenderer = 1;  //0: Software, 1:OpenGL
+    Config::Threaded3D = true;
+
+    Config::GL_ScaleFactor = 4; // 8 is too much 4 is enough
+    Config::GL_BetterPolygons = true; // If you don't check the box to improve Polygon division, part of the sky will blink in Alinos Perch.
+
+}
+
+void InputConfigDialog::on_metroidSetVideoQualityToLow_clicked()
+{
+
+    Config::ScreenUseGL = true;
+    Config::ScreenVSync = false;
+    Config::ScreenVSyncInterval = 1;
+
+    Config::_3DRenderer = 0;  //0: Software, 1:OpenGL
+    Config::Threaded3D = true;
+
+    Config::GL_ScaleFactor = 4; // 8 is too much 4 is enough
+    Config::GL_BetterPolygons = true; // If you don't check the box to improve Polygon division, part of the sky will blink in Alinos Perch.
+
 }

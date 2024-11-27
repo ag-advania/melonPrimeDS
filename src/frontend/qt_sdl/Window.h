@@ -240,6 +240,9 @@ private slots:
     void onFullscreenToggled();
     void onScreenEmphasisToggled();
 
+    void onOpenMetroidInputSettings();
+    void onOpenMetroidOtherSettings();
+
 private:
     virtual void closeEvent(QCloseEvent* event) override;
 

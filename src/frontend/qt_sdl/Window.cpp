@@ -261,7 +261,7 @@ MainWindow::MainWindow(int id, EmuInstance* inst, QWidget* parent) :
 
     showOSD = windowCfg.GetBool("ShowOSD");
 
-    setWindowTitle("melonDS " MELONDS_VERSION);
+    setWindowTitle("melonPrimeDS " MELONPRIMEDS_VERSION);
     setAttribute(Qt::WA_DeleteOnClose);
     setAcceptDrops(true);
     setFocusPolicy(Qt::ClickFocus);
@@ -657,21 +657,20 @@ MainWindow::MainWindow(int id, EmuInstance* inst, QWidget* parent) :
             actLimitFramerate->setCheckable(true);
             connect(actLimitFramerate, &QAction::triggered, this, &MainWindow::onChangeLimitFramerate);
 
-            actAudioSync = menu->addAction("Audio sync");
-            actAudioSync->setCheckable(true);
-            connect(actAudioSync, &QAction::triggered, this, &MainWindow::onChangeAudioSync);
-        }
-        {
-            QMenu * menu = menubar->addMenu("Help");
-            actAbout = menu->addAction("About...");
-            connect(actAbout, &QAction::triggered, this, [&]
-            {
-                auto dialog = AboutDialog(this);
-                dialog.exec();
-            });
-        }
+        actAudioSync = menu->addAction("Audio sync");
+        actAudioSync->setCheckable(true);
+        connect(actAudioSync, &QAction::triggered, this, &MainWindow::onChangeAudioSync);
+    }
+    {
+        QMenu* menu = menubar->addMenu("Metroid");
 
-        setMenuBar(menubar);
+        actEmuSettings = menu->addAction("Input settings");
+        connect(actEmuSettings, &QAction::triggered, this, &MainWindow::onOpenMetroidInputSettings);
+
+        actInputConfig = menu->addAction("Other settings");
+        connect(actInputConfig, &QAction::triggered, this, &MainWindow::onOpenMetroidOtherSettings);
+    }
+    setMenuBar(menubar);
 
         if (localCfg.GetString("Firmware.Username") == "Arisotura")
             actMPNewInstance->setText("Fart");
@@ -938,7 +937,12 @@ void MainWindow::keyPressEvent(QKeyEvent* event)
     // TODO!! REMOVE ME IN RELEASE BUILDS!!
     //if (event->key() == Qt::Key_F11) emuThread->NDS->debug(0);
 
-    emuInstance->onKeyPress(event);
+    Input::KeyPress(event);
+
+    // for metroid cursor lock 
+    if (event->key() == Qt::Key_Escape) {
+        mainWindow->panel->unfocus();
+    }
 }
 
 void MainWindow::keyReleaseEvent(QKeyEvent* event)
@@ -947,7 +951,6 @@ void MainWindow::keyReleaseEvent(QKeyEvent* event)
 
     emuInstance->onKeyRelease(event);
 }
-
 
 void MainWindow::dragEnterEvent(QDragEnterEvent* event)
 {
@@ -1996,12 +1999,7 @@ void MainWindow::onOpenInterfaceSettings()
 
 void MainWindow::onUpdateInterfaceSettings()
 {
-    pauseOnLostFocus = globalCfg.GetBool("PauseLostFocus");
-    emuInstance->targetFPS = globalCfg.GetDouble("TargetFPS");
-    emuInstance->fastForwardFPS = globalCfg.GetDouble("FastForwardFPS");
-    emuInstance->slowmoFPS = globalCfg.GetDouble("SlowmoFPS");
-    panel->setMouseHide(globalCfg.GetBool("Mouse.Hide"),
-                        globalCfg.GetInt("Mouse.HideSeconds")*1000);
+    // panel->mouseTimer->setInterval(Config::MouseHideSeconds*1000);
 }
 
 void MainWindow::onInterfaceSettingsFinished(int res)
@@ -2294,4 +2292,24 @@ void MainWindow::onUpdateVideoSettings(bool glchange)
     {
         emuThread->emuUnpause();
     }
+}
+
+void MainWindow::onOpenMetroidInputSettings()
+{
+    emuThread->emuPause();
+
+    InputConfigDialog* dlg = InputConfigDialog::openDlg(this);
+    dlg->switchTabToAddons();
+
+    connect(dlg, &InputConfigDialog::finished, this, &MainWindow::onInputConfigFinished);
+}
+
+void MainWindow::onOpenMetroidOtherSettings()
+{
+    emuThread->emuPause();
+
+    InputConfigDialog* dlg = InputConfigDialog::openDlg(this);
+    dlg->switchTabToMetroid();
+
+    connect(dlg, &InputConfigDialog::finished, this, &MainWindow::onInputConfigFinished);
 }

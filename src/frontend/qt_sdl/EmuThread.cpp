@@ -20,7 +20,10 @@
 #include <time.h>
 #include <stdio.h>
 #include <string.h>
-
+#include <QImage>
+#include <QPainter>
+#include <QLabel>      
+#include <QWidget>     
 #include <optional>
 #include <vector>
 #include <string>
@@ -56,8 +59,14 @@
 
 #include "EmuInstance.h"
 
+#include "melonPrime/def.h"
 using namespace melonDS;
 
+
+// melonPrimeDS
+static bool hasInitialized = false;
+float mouseX;
+float mouseY;
 
 EmuThread::EmuThread(EmuInstance* inst, QObject* parent) : QThread(parent)
 {
@@ -104,6 +113,198 @@ void EmuThread::detachWindow(MainWindow* window)
     }
 }
 
+// melonPrime
+
+// CalculatePlayerAddress Function
+uint32_t calculatePlayerAddress(uint32_t baseAddress, uint8_t playerPosition, int32_t increment) {
+    // If player position is 0, return the base address without modification
+    if (playerPosition == 0) {
+        return baseAddress;
+    }
+
+    // Calculate using 64-bit integers to prevent overflow
+    // Use playerPosition as is (no subtraction)
+    int64_t result = static_cast<int64_t>(baseAddress) + (static_cast<int64_t>(playerPosition) * increment);
+
+    // Ensure the result is within the 32-bit range
+    if (result < 0 || result > UINT32_MAX) {
+        return baseAddress;  // Return the original address if out of range
+    }
+
+    return static_cast<uint32_t>(result);
+}
+
+melonDS::u32 baseIsAltFormAddr;
+melonDS::u32 baseLoadedSpecialWeaponAddr;
+melonDS::u32 baseWeaponChangeAddr;
+melonDS::u32 baseSelectedWeaponAddr;
+melonDS::u32 baseChosenHunterAddr;
+melonDS::u32 baseJumpFlagAddr;
+melonDS::u32 inGameAddr;
+melonDS::u32 PlayerPosAddr;
+melonDS::u32 inVisorOrMapAddr;
+melonDS::u32 baseAimXAddr;
+melonDS::u32 baseAimYAddr;
+melonDS::u32 aimXAddr;
+melonDS::u32 aimYAddr;
+melonDS::u32 isInAdventureAddr;
+melonDS::u32 isMapOrUserActionPausedAddr; // for issue in AdventureMode, Aim Stopping when SwitchingWeapon. 
+
+bool isAltForm;
+
+
+void detectRomAndSetAddresses() {
+    switch (globalChecksum) {
+    case RomVersions::USA1_1:
+        // USA1.1
+
+        baseChosenHunterAddr = 0x020CBDA4; // BattleConfig:ChosenHunter 0 samus 1 kanden 2 trace 3 sylux 4 noxus 5 spire 6 weavel
+        inGameAddr = 0x020eec40 + 0x8F0; // inGame:1
+        inVisorOrMapAddr = 0x020D9A7D; // Estimated address
+        PlayerPosAddr = 0x020DA538;
+        baseIsAltFormAddr = 0x020DB098; // 1p(host)
+        baseLoadedSpecialWeaponAddr = baseIsAltFormAddr + 0x56; // 1p(host). For special weapons only. Missile and powerBeam are not special weapon.
+        baseWeaponChangeAddr = 0x020DB45B; // 1p(host)
+        baseSelectedWeaponAddr = 0x020DB463; // 1p(host)
+        baseJumpFlagAddr = baseSelectedWeaponAddr - 0xA;
+        baseAimXAddr = 0x020DEDA6;
+        baseAimYAddr = 0x020DEDAE;
+        isInAdventureAddr = 0x020E83BC; // Read8 0x02: ADV, 0x03: Multi
+        isMapOrUserActionPausedAddr = 0x020FBF18; // 0x00000001: true, 0x00000000 false. Read8 is enough though.
+        isRomDetected = true;
+        mainWindow->osdAddMessage(0, "Rom detected: US1.1");
+
+        break;
+
+    case RomVersions::USA1_0:
+        // USA1.0
+        baseChosenHunterAddr = 0x020CB51C; // BattleConfig:ChosenHunter
+        inGameAddr = 0x020ee180 + 0x8F0; // inGame:1
+        PlayerPosAddr = 0x020D9CB8;
+        inVisorOrMapAddr = PlayerPosAddr - 0xabb; // Estimated address
+        baseIsAltFormAddr = 0x020DC6D8 - 0x1EC0; // 1p(host)
+        baseLoadedSpecialWeaponAddr = baseIsAltFormAddr + 0x56; // 1p(host). For special weapons only. Missile and powerBeam are not special weapon.
+        baseWeaponChangeAddr = 0x020DCA9B - 0x1EC0; // 1p(host)
+        baseSelectedWeaponAddr = 0x020DCAA3 - 0x1EC0; // 1p(host)
+        baseJumpFlagAddr = baseSelectedWeaponAddr - 0xA;
+        baseAimXAddr = 0x020de526;
+        baseAimYAddr = 0x020de52E;
+        isInAdventureAddr = 0x020E78FC; // Read8 0x02: ADV, 0x03: Multi
+        isMapOrUserActionPausedAddr = 0x020FB458; // 0x00000001: true, 0x00000000 false. Read8 is enough though.
+        isRomDetected = true;
+        mainWindow->osdAddMessage(0, "Rom detected: US1.0");
+
+        break;
+
+    case RomVersions::JAPAN1_0:
+        // Japan1.0
+        baseChosenHunterAddr = 0x020CD358; // BattleConfig:ChosenHunter
+        inGameAddr = 0x020F0BB0; // inGame:1
+        PlayerPosAddr = 0x020DBB78;
+        inVisorOrMapAddr = PlayerPosAddr - 0xabb; // Estimated address
+        baseIsAltFormAddr = 0x020DC6D8; // 1p(host)
+        baseLoadedSpecialWeaponAddr = baseIsAltFormAddr + 0x56; // 1p(host). For special weapons only. Missile and powerBeam are not special weapon.
+        baseWeaponChangeAddr = 0x020DCA9B; // 1p(host)
+        baseSelectedWeaponAddr = 0x020DCAA3; // 1p(host)
+        baseJumpFlagAddr = baseSelectedWeaponAddr - 0xA;
+        baseAimXAddr = 0x020E03E6;
+        baseAimYAddr = 0x020E03EE;
+        isInAdventureAddr = 0x020E9A3C; // Read8 0x02: ADV, 0x03: Multi
+        isMapOrUserActionPausedAddr = 0x020FD598; // 0x00000001: true, 0x00000000 false. Read8 is enough though.
+        isRomDetected = true;
+        mainWindow->osdAddMessage(0, "Rom detected: JP1.0");
+
+        break;
+
+    case RomVersions::JAPAN1_1:
+        // Japan1.1
+        baseChosenHunterAddr = 0x020CD318; // BattleConfig:ChosenHunter
+        inGameAddr = 0x020F0280 + 0x8F0; // inGame:1
+        PlayerPosAddr = 0x020DBB38;
+        inVisorOrMapAddr = PlayerPosAddr - 0xabb; // Estimated address
+        baseIsAltFormAddr = 0x020DC6D8 - 0x64; // 1p(host)
+        baseLoadedSpecialWeaponAddr = baseIsAltFormAddr + 0x56; // 1p(host). For special weapons only. Missile and powerBeam are not special weapon.
+        baseWeaponChangeAddr = 0x020DCA9B - 0x40; // 1p(host)
+        baseSelectedWeaponAddr = 0x020DCAA3 - 0x40; // 1p(host)
+        baseJumpFlagAddr = baseSelectedWeaponAddr - 0xA;
+        baseAimXAddr = 0x020e03a6;
+        baseAimYAddr = 0x020e03ae;
+        isInAdventureAddr = 0x020E99FC; // Read8 0x02: ADV, 0x03: Multi
+        isMapOrUserActionPausedAddr = 0x020FD558; // 0x00000001: true, 0x00000000 false. Read8 is enough though.
+        isRomDetected = true;
+        mainWindow->osdAddMessage(0, "Rom detected: JP1.1");
+
+        break;
+
+    case RomVersions::EU1_0:
+        // EU1.0
+        baseChosenHunterAddr = 0x020CBDC4; // BattleConfig:ChosenHunter
+        inGameAddr = 0x020eec60 + 0x8F0; // inGame:1
+        PlayerPosAddr = 0x020DA558;
+        inVisorOrMapAddr = PlayerPosAddr - 0xabb; // Estimated address
+        baseIsAltFormAddr = 0x020DC6D8 - 0x1620; // 1p(host)
+        baseLoadedSpecialWeaponAddr = baseIsAltFormAddr + 0x56; // 1p(host). For special weapons only. Missile and powerBeam are not special weapon.
+        baseWeaponChangeAddr = 0x020DCA9B - 0x1620; // 1p(host)
+        baseSelectedWeaponAddr = 0x020DCAA3 - 0x1620; // 1p(host)
+        baseJumpFlagAddr = baseSelectedWeaponAddr - 0xA;
+        baseAimXAddr = 0x020dedc6;
+        baseAimYAddr = 0x020dedcE;
+        isInAdventureAddr = 0x020E83DC; // Read8 0x02: ADV, 0x03: Multi
+        isMapOrUserActionPausedAddr = 0x020FBF38; // 0x00000001: true, 0x00000000 false. Read8 is enough though.
+        isRomDetected = true;
+        mainWindow->osdAddMessage(0, "Rom detected: EU1.0");
+
+        break;
+
+    case RomVersions::EU1_1:
+        // EU1.1
+        baseChosenHunterAddr = 0x020CBE44; // BattleConfig:ChosenHunter
+        inGameAddr = 0x020eece0 + 0x8F0; // inGame:1
+        PlayerPosAddr = 0x020DA5D8;
+        inVisorOrMapAddr = PlayerPosAddr - 0xabb; // Estimated address
+        baseIsAltFormAddr = 0x020DC6D8 - 0x15A0; // 1p(host)
+        baseLoadedSpecialWeaponAddr = baseIsAltFormAddr + 0x56; // 1p(host). For special weapons only. Missile and powerBeam are not special weapon.
+        baseWeaponChangeAddr = 0x020DCA9B - 0x15A0; // 1p(host)
+        baseSelectedWeaponAddr = 0x020DCAA3 - 0x15A0; // 1p(host)
+        baseJumpFlagAddr = baseSelectedWeaponAddr - 0xA;
+        baseAimXAddr = 0x020dee46;
+        baseAimYAddr = 0x020dee4e;
+        isInAdventureAddr = 0x020E845C; // Read8 0x02: ADV, 0x03: Multi
+        isMapOrUserActionPausedAddr = 0x020FBFB8; // 0x00000001: true, 0x00000000 false. Read8 is enough though.
+        mainWindow->osdAddMessage(0, "Rom detected: EU1.1");
+
+        isRomDetected = true;
+
+        break;
+
+    case RomVersions::KOREA1_0:
+        // Korea1.0
+        baseChosenHunterAddr = 0x020C4B88; // BattleConfig:ChosenHunter
+        inGameAddr = 0x020E81B4; // inGame:1
+        inVisorOrMapAddr = PlayerPosAddr - 0xabb; // Estimated address
+        PlayerPosAddr = 0x020D33A9; // it's weird but "3A9" is correct.
+        baseIsAltFormAddr = 0x020DC6D8 - 0x87F4; // 1p(host)
+        baseLoadedSpecialWeaponAddr = baseIsAltFormAddr + 0x56; // 1p(host). For special weapons only. Missile and powerBeam are not special weapon.
+        baseWeaponChangeAddr = 0x020DCA9B - 0x87F4; // 1p(host)
+        baseSelectedWeaponAddr = 0x020DCAA3 - 0x87F4; // 1p(host)
+        baseJumpFlagAddr = baseSelectedWeaponAddr - 0xA;
+        baseAimXAddr = 0x020D7C0E;
+        baseAimYAddr = 0x020D7C16;
+        isInAdventureAddr = 0x020E11F8; // Read8 0x02: ADV, 0x03: Multi
+        isMapOrUserActionPausedAddr = 0x020F4CF8; // 0x00000001: true, 0x00000000 false. Read8 is enough though.
+        mainWindow->osdAddMessage(0, "Rom detected: KR1.0");
+
+        isRomDetected = true;
+
+        break;
+
+    default:
+        // Handle unsupported checksums.
+        // Add default behavior or error handling.
+        break;
+    }
+}
+
 void EmuThread::run()
 {
     Config::Table& globalCfg = emuInstance->getGlobalConfig();
@@ -146,12 +347,15 @@ void EmuThread::run()
 
     char melontitle[100];
 
+
+
     bool fastforward = false;
     bool slowmo = false;
     emuInstance->fastForwardToggled = false;
     emuInstance->slowmoToggled = false;
 
-    while (emuStatus != emuStatus_Exit)
+    auto frameAdvanceOnce {
+    [&]()
     {
         MPInterface::Get().Process();
         emuInstance->inputProcess();
@@ -167,26 +371,63 @@ void EmuThread::run()
         if (emuInstance->hotkeyPressed(HK_SwapScreens)) emit swapScreensToggle();
         if (emuInstance->hotkeyPressed(HK_SwapScreenEmphasis)) emit screenEmphasisToggle();
 
-        if (emuStatus == emuStatus_Running || emuStatus == emuStatus_FrameStep)
-        {
-            if (emuStatus == emuStatus_FrameStep) emuStatus = emuStatus_Paused;
+        // Lambda to update aim sensitivity and display a message
+        auto updateAimSensitivity = [](int change) {
+            // Store the current sensitivity in a local variable
+            int currentSensitivity = Config::MetroidAimSensitivity;
 
-            if (emuInstance->hotkeyPressed(HK_SolarSensorDecrease))
-            {
-                int level = emuInstance->nds->GBACartSlot.SetInput(GBACart::Input_SolarSensorDown, true);
-                if (level != -1)
-                {
-                    emuInstance->osdAddMessage(0, "Solar sensor level: %d", level);
+            // Calculate the new sensitivity
+            int newSensitivity = currentSensitivity + change;
+
+            // Check if the new sensitivity is at least 1
+            if (newSensitivity >= 1) {
+                // Update the config only if the value has changed
+                if (newSensitivity != currentSensitivity) {
+                    Config::MetroidAimSensitivity = newSensitivity;
+                    // Save the changes to the configuration file (to persist settings for future sessions)
+                    Config::Save();
                 }
+                // Create and display the OSD message
+                mainWindow->osdAddMessage(0, ("AimSensi Updated: " + std::to_string(newSensitivity)).c_str());
             }
-            if (emuInstance->hotkeyPressed(HK_SolarSensorIncrease))
-            {
-                int level = emuInstance->nds->GBACartSlot.SetInput(GBACart::Input_SolarSensorUp, true);
-                if (level != -1)
-                {
-                    emuInstance->osdAddMessage(0, "Solar sensor level: %d", level);
-                }
+            else {
+                // Display a message when trying to decrease below 1
+                mainWindow->osdAddMessage(0, "AimSensi cannot be decreased below 1");
             }
+            };
+
+        // Sensitivity UP
+        if (Input::HotkeyReleased(HK_MetroidIngameSensiUp)) {
+            updateAimSensitivity(1);  // Increase sensitivity by 1
+        }
+
+        // Sensitivity DOWN
+        if (Input::HotkeyReleased(HK_MetroidIngameSensiDown)) {
+            updateAimSensitivity(-1);  // Decrease sensitivity by 1
+        }
+
+
+        if (EmuRunning == emuStatus_Running || EmuRunning == emuStatus_FrameStep)
+        {
+            EmuStatus = emuStatus_Running;
+            if (EmuRunning == emuStatus_FrameStep) EmuRunning = emuStatus_Paused;
+
+            // if (Input::HotkeyPressed(HK_SolarSensorDecrease))
+            // {
+            //     int level = NDS->GBACartSlot.SetInput(GBACart::Input_SolarSensorDown, true);
+            //     if (level != -1)
+            //     {
+            //         mainWindow->osdAddMessage(0, "Solar sensor level: %d", level);
+            //     }
+            // }
+            // if (Input::HotkeyPressed(HK_SolarSensorIncrease))
+            // {
+            //     int level = NDS->GBACartSlot.SetInput(GBACart::Input_SolarSensorUp, true);
+            //     if (level != -1)
+            //     {
+            //         mainWindow->osdAddMessage(0, "Solar sensor level: %d", level);
+            //     }
+            // }
 
             if (emuInstance->nds->ConsoleType == 1)
             {
@@ -251,6 +492,7 @@ void EmuThread::run()
             }
 
             // process input and hotkeys
+            /*
             emuInstance->nds->SetKeyMask(emuInstance->inputMask);
 
             if (emuInstance->isTouching)
@@ -264,17 +506,21 @@ void EmuThread::run()
                 emuInstance->nds->SetLidClosed(lid);
                 emuInstance->osdAddMessage(0, lid ? "Lid closed" : "Lid opened");
             }
+            */
 
             // microphone input
             emuInstance->micProcess();
 
             // auto screen layout
             {
+                // Update main screen positions
                 mainScreenPos[2] = mainScreenPos[1];
                 mainScreenPos[1] = mainScreenPos[0];
                 mainScreenPos[0] = emuInstance->nds->PowerControl9 >> 15;
 
                 int guess;
+
+                // Detect screen flickering
                 if (mainScreenPos[0] == mainScreenPos[2] &&
                     mainScreenPos[0] != mainScreenPos[1])
                 {
@@ -284,19 +530,20 @@ void EmuThread::run()
                 }
                 else
                 {
+                    // Guess layout based on main screen position
                     if (mainScreenPos[0] == 1)
                         guess = screenSizing_EmphTop;
                     else
                         guess = screenSizing_EmphBot;
                 }
-
+                // If the guessed layout has changed
                 if (guess != autoScreenSizing)
                 {
+                    // Set the new layout
                     autoScreenSizing = guess;
                     emit autoScreenSizingChange(autoScreenSizing);
                 }
             }
-
 
             // emulate
             u32 nlines;
@@ -334,6 +581,8 @@ void EmuThread::run()
 #ifdef MELONCAP
             MelonCap::Update();
 #endif // MELONCAP
+
+            if (EmuRunning == emuStatus_Exit) return;
 
             winUpdateCount++;
             if (winUpdateCount >= winUpdateFreq && !useOpenGL)
@@ -428,9 +677,9 @@ void EmuThread::run()
                 double actualfps = (59.8261 * 263.0) / nlines;
                 int inst = emuInstance->instanceID;
                 if (inst == 0)
-                    sprintf(melontitle, "[%d/%.0f] melonDS " MELONDS_VERSION, fps, actualfps);
+                    sprintf(melontitle, "[%d/%.0f] melonPrimeDS " MELONPRIMEDS_VERSION " (" MELONDS_VERSION ")", fps, actualfps);
                 else
-                    sprintf(melontitle, "[%d/%.0f] melonDS (%d)", fps, fpstarget, inst+1);
+                    sprintf(melontitle, "[%d/%.0f] melonPrimeDS " MELONPRIMEDS_VERSION " (" MELONDS_VERSION ") (%d)", fps, fpstarget, inst+1);
                 changeWindowTitle(melontitle);
             }
         }
@@ -445,9 +694,9 @@ void EmuThread::run()
 
             int inst = emuInstance->instanceID;
             if (inst == 0)
-                sprintf(melontitle, "melonDS " MELONDS_VERSION);
+                sprintf(melontitle, "melonPrimeDS " MELONPRIMEDS_VERSION " (" MELONDS_VERSION ")");
             else
-                sprintf(melontitle, "melonDS (%d)", inst+1);
+                sprintf(melontitle, "melonPrimeDS " MELONPRIMEDS_VERSION " (" MELONDS_VERSION ") (%d)", inst+1);
             changeWindowTitle(melontitle);
 
             SDL_Delay(75);

@@ -42,9 +42,11 @@
 #include "GPU3D_OpenGL.h"
 #include "Platform.h"
 #include "Config.h"
+#include "Input.h"
 
 #include "main_shaders.h"
 #include "OSD_shaders.h"
+#include "overlay_shaders.h"
 #include "font.h"
 #include "version.h"
 
@@ -59,58 +61,22 @@ ScreenPanel::ScreenPanel(QWidget* parent) : QWidget(parent)
 {
     setMouseTracking(true);
     setAttribute(Qt::WA_AcceptTouchEvents);
-
-    QWidget* w = parent;
-    for (;;)
-    {
-        mainWindow = qobject_cast<MainWindow*>(w);
-        if (mainWindow) break;
-        w = w->parentWidget();
-        if (!w) break;
-    }
-
-    emuInstance = mainWindow->getEmuInstance();
-
-    mouseHide = false;
-    mouseHideDelay = 0;
-
-    QTimer* mouseTimer = setupMouseTimer();
-    connect(mouseTimer, &QTimer::timeout, [=] { if (mouseHide) setCursor(Qt::BlankCursor);});
+    // QTimer* mouseTimer = setupMouseTimer();
+    // connect(mouseTimer, &QTimer::timeout, [=] { if (Config::MouseHide) setCursor(Qt::BlankCursor);});
 
     osdEnabled = false;
     osdID = 1;
-    
-    loadConfig();
-    setFilter(mainWindow->getWindowConfig().GetBool("ScreenFilter"));
 
-    splashLogo = QPixmap(":/melon-logo");
+    //MelonPrime OSD
+    OSDCanvas[0] = PrimeOSD::Canvas(256, 192); //Bottom Screen OSD
+    OSDCanvas[1] = PrimeOSD::Canvas(256, 192); //Top Screen OSD
 
-    strncpy(splashText[0].text, "File->Open ROM...", 256);
-    splashText[0].id = 0x80000000;
-    splashText[0].color = 0;
-    splashText[0].rendered = false;
-    splashText[0].rainbowstart = -1;
-
-    strncpy(splashText[1].text, "to get started", 256);
-    splashText[1].id = 0x80000001;
-    splashText[1].color = 0;
-    splashText[1].rendered = false;
-    splashText[1].rainbowstart = -1;
-
-    std::string url = MELONDS_URL;
-    int urlpos = url.find("://");
-    urlpos = (urlpos == std::string::npos) ? 0 : urlpos+3;
-    strncpy(splashText[2].text, url.c_str() + urlpos, 256);
-    splashText[2].id = 0x80000002;
-    splashText[2].color = 0;
-    splashText[2].rendered = false;
-    splashText[2].rainbowstart = -1;
 }
 
 ScreenPanel::~ScreenPanel()
 {
-    mouseTimer->stop();
-    delete mouseTimer;
+    // mouseTimer->stop();
+    // delete mouseTimer;
 }
 
 void ScreenPanel::loadConfig()
@@ -249,7 +215,12 @@ void ScreenPanel::resizeEvent(QResizeEvent* event)
 void ScreenPanel::mousePressEvent(QMouseEvent* event)
 {
     event->accept();
-    if (!emuInstance->emuIsActive()) { touching = false; return; }
+
+    // so we dont press buttons before fully focusing
+    if (isFocused) {
+        Input::MousePress(event);
+    }
+
     if (event->button() != Qt::LeftButton) return;
 
     int x = event->pos().x();
@@ -260,12 +231,19 @@ void ScreenPanel::mousePressEvent(QMouseEvent* event)
         touching = true;
         emuInstance->touchScreen(x, y);
     }
+
+    if (emuThread->NDS->IsRunning()) {
+        isFocused = true;
+        setCursor(Qt::BlankCursor);
+    }
 }
 
 void ScreenPanel::mouseReleaseEvent(QMouseEvent* event)
 {
     event->accept();
-    if (!emuInstance->emuIsActive()) { touching = false; return; }
+
+    Input::MouseRelease(event);
+
     if (event->button() != Qt::LeftButton) return;
 
     if (touching)
@@ -279,7 +257,7 @@ void ScreenPanel::mouseMoveEvent(QMouseEvent* event)
 {
     event->accept();
 
-    showCursor();
+    // showCursor();
 
     if (!emuInstance->emuIsActive()) return;
     //if (!(event->buttons() & Qt::LeftButton)) return;
@@ -393,21 +371,32 @@ bool ScreenPanel::event(QEvent* event)
     return QWidget::event(event);
 }
 
-void ScreenPanel::showCursor()
+void ScreenPanel::unfocus()
 {
-    mainWindow->panel->setCursor(Qt::ArrowCursor);
-    mouseTimer->start();
+    isFocused = false;
+    setCursor(Qt::ArrowCursor);
 }
 
-QTimer* ScreenPanel::setupMouseTimer()
+void ScreenPanel::focusOutEvent(QFocusEvent* event)
 {
-    mouseTimer = new QTimer();
-    mouseTimer->setSingleShot(true);
-    mouseTimer->setInterval(mouseHideDelay);
-    mouseTimer->start();
-
-    return mouseTimer;
+    unfocus();
 }
+
+// void ScreenPanel::showCursor()
+// {
+//     mainWindow->panel->setCursor(Qt::ArrowCursor);
+//     mouseTimer->start();
+// }
+
+// QTimer* ScreenPanel::setupMouseTimer()
+// {
+//     mouseTimer = new QTimer();
+//     mouseTimer->setSingleShot(true);
+//     mouseTimer->setInterval(Config::MouseHideSeconds*1000);
+//     mouseTimer->start();
+
+//     return mouseTimer;
+// }
 
 int ScreenPanel::osdFindBreakPoint(const char* text, int i)
 {
@@ -648,7 +637,7 @@ void ScreenPanel::osdAddMessage(unsigned int color, const char* text)
 }
 
 void ScreenPanel::osdUpdate()
-{
+{    
     osdMutex.lock();
 
     qint64 tick_now = QDateTime::currentMSecsSinceEpoch();
@@ -753,6 +742,7 @@ ScreenPanelNative::ScreenPanelNative(QWidget* parent) : ScreenPanel(parent)
 
     screenTrans[0].reset();
     screenTrans[1].reset();
+
 }
 
 ScreenPanelNative::~ScreenPanelNative()
@@ -800,11 +790,16 @@ void ScreenPanelNative::paintEvent(QPaintEvent* event)
         emuThread->frontBufferLock.unlock();
 
         QRect screenrc(0, 0, 256, 192);
+        painter.setCompositionMode(QPainter::CompositionMode_SourceOver); // melonPrimeDS
 
         for (int i = 0; i < numScreens; i++)
         {
             painter.setTransform(screenTrans[i]);
             painter.drawImage(screenrc, screen[screenKind[i]]);
+
+            //melonPrimeDSOSD
+            painter.drawImage(screenrc, *OSDCanvas[screenKind[i]].CanvasBuffer);
+
         }
         emuInstance->renderLock.unlock();
     }
@@ -901,6 +896,7 @@ void ScreenPanelGL::setSwapInterval(int intv)
 
 void ScreenPanelGL::initOpenGL()
 {
+    printf("Start:InitOpenGL");
     if (!glContext) return;
     if (glInited) return;
 
@@ -1012,7 +1008,44 @@ void ScreenPanelGL::initOpenGL()
     logoTexture = tex;
 
     transferLayout();
-    glInited = true;
+
+    // melonPrimeDS {
+
+    OpenGL::BuildShaderProgram(kScreenVS, kScreenFS_overlay, overlayShader, "OverlayShader");
+
+    pid = overlayShader[2];
+    glBindAttribLocation(pid, 0, "vPosition");
+    glBindAttribLocation(pid, 1, "vTexcoord");
+    glBindFragDataLocation(pid, 0, "oColor");
+
+    OpenGL::LinkShaderProgram(overlayShader);
+
+    overlayScreenSizeULoc = glGetUniformLocation(pid, "uScreenSize");
+    overlayTransformULoc = glGetUniformLocation(pid, "uTransform");
+
+    overlayPosULoc = glGetUniformLocation(pid, "uOverlayPos");
+    overlaySizeULoc = glGetUniformLocation(pid, "uOverlaySize");
+    overlayScreenTypeULoc = glGetUniformLocation(pid, "uOverlayScreenType");
+
+
+    //Generate OSDCanvasTextures for Top and Bottom Screen
+    for(int i=0;i<2;i++){
+        glGenTextures(1, &OSDCanvastextures[i]);
+        glBindTexture(GL_TEXTURE_2D, OSDCanvastextures[i]);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+        glTexImage2D(
+            GL_TEXTURE_2D,0,GL_RGBA,
+            256,192,0,
+            GL_RGBA, GL_UNSIGNED_BYTE,OSDCanvas[0].CanvasBuffer->bits()
+        );
+    }
+
+    // } melonPrimeDS
+
+
 }
 
 void ScreenPanelGL::deinitOpenGL()
@@ -1041,6 +1074,14 @@ void ScreenPanelGL::deinitOpenGL()
 
     glDeleteProgram(osdShader);
 
+    // melonPrimeDS {
+    for(int i=0;i<2;i++){
+        glDeleteTextures(1, &OSDCanvastextures[i]);
+    }
+    // } melonPrimeDS 
+
+
+    OpenGL::DeleteShaderProgram(overlayShader);
 
     glContext->DoneCurrent();
 
@@ -1144,14 +1185,62 @@ void ScreenPanelGL::drawScreenGL()
         glBindBuffer(GL_ARRAY_BUFFER, screenVertexBuffer);
         glBindVertexArray(screenVertexArray);
 
-        for (int i = 0; i < numScreens; i++)
-        {
-            glUniformMatrix2x3fv(screenShaderTransformULoc, 1, GL_TRUE, screenMatrix[i]);
-            glDrawArrays(GL_TRIANGLES, screenKind[i] == 0 ? 0 : 2 * 3, 2 * 3);
-        }
-
-        screenSettingsLock.unlock();
+    for (int i = 0; i < numScreens; i++)
+    {
+        glUniformMatrix2x3fv(screenShaderTransformULoc, 1, GL_TRUE, screenMatrix[i]);
+        glDrawArrays(GL_TRIANGLES, screenKind[i] == 0 ? 0 : 2*3, 2*3);
     }
+
+    screenSettingsLock.unlock();
+
+    // melonPrimeDS {
+
+    // Activate the overlay shader program
+    glUseProgram(overlayShader[2]);
+    // Enable alpha blending
+    glEnable(GL_BLEND);
+    // Set blending function (additive blending mode with alpha)
+    glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
+    // Pass screen dimensions to the shader
+    glUniform2f(overlayScreenSizeULoc, w / factor, h / factor);
+    // Bind the screen vertex buffer
+    glBindBuffer(GL_ARRAY_BUFFER, screenVertexBuffer);
+    // Bind the screen vertex array object
+    glBindVertexArray(screenVertexArray);
+    // Lock screen settings for thread safety
+    screenSettingsLock.lock();
+
+    // Draw Textures for all screens
+    for(int i = 0;i<numScreens;i++){
+        glBindTexture(GL_TEXTURE_2D, OSDCanvastextures[screenKind[i]]);
+        
+        //Update texture each frame to match the CanvasBuffer.
+        glTexSubImage2D(GL_TEXTURE_2D,0,0,0,256,192,GL_RGBA,GL_UNSIGNED_BYTE,OSDCanvas[screenKind[i]].CanvasBuffer->bits());
+        
+
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+        // Set texture magnification filter to nearest neighbor
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+
+        glUniform2f(overlayPosULoc,0,0);
+        glUniform2f(overlaySizeULoc,256,192);
+        glUniform1i(overlayScreenTypeULoc, screenKind[i]);
+        glUniformMatrix2x3fv(
+            overlayTransformULoc, 1, GL_TRUE,
+            screenMatrix[i]
+        );
+        glDrawArrays(GL_TRIANGLES,screenKind[i] == 0 ? 0 : 2*3, 2*3);
+
+    }
+
+
+    screenSettingsLock.unlock();
+
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, filter);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, filter);
+    
+    // } melonPrimeDS
+
 
     osdUpdate();
 

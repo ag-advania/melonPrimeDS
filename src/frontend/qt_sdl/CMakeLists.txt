@@ -55,6 +55,11 @@ set(SOURCES_QT_SDL
     CLI.h
     CLI.cpp
 
+    # rawinput/rawinput_common.c
+    # RawInputThread.cpp
+
+    ScreenPrimeOSD.cpp
+    ScreenPrimeOSD.h
     LANDialog.cpp
     NetplayDialog.cpp
 )
@@ -102,6 +107,8 @@ if (WIN32)
         ../duckstation/gl/context_wgl.cpp
 
         ../glad/glad_wgl.c
+
+        # rawinput/rawinput_win32.c
     )
 
     if (MINGW AND CMAKE_HOST_SYSTEM_NAME STREQUAL "Linux")
@@ -150,6 +157,8 @@ else()
 
         ../glad/glad_egl.c
         ../glad/glad_glx.c
+
+        # rawinput/rawinput_linux.c
     )
     target_link_libraries(melonDS PRIVATE "${X11_LIBRARIES}" "${EGL_LIBRARIES}")
     target_include_directories(melonDS PRIVATE "${X11_INCLUDE_DIR}")
@@ -240,10 +249,10 @@ if (UNIX AND NOT APPLE)
     foreach(SIZE 16 32 48 64 128 256)
         install(FILES ${CMAKE_SOURCE_DIR}/res/icon/melon_${SIZE}x${SIZE}.png
             DESTINATION ${CMAKE_INSTALL_PREFIX}/share/icons/hicolor/${SIZE}x${SIZE}/apps
-            RENAME net.kuribo64.melonDS.png)
+            RENAME io.makidoll.melonPrimeDS.png)
     endforeach()
 
-    install(FILES ${CMAKE_SOURCE_DIR}/res/net.kuribo64.melonDS.desktop DESTINATION ${CMAKE_INSTALL_PREFIX}/share/applications)
+    install(FILES ${CMAKE_SOURCE_DIR}/res/io.makidoll.melonPrimeDS.desktop DESTINATION ${CMAKE_INSTALL_PREFIX}/share/applications)
     install(TARGETS melonDS BUNDLE DESTINATION ${CMAKE_BINARY_DIR} RUNTIME DESTINATION ${CMAKE_INSTALL_PREFIX}/bin)
 
     if (NOT USE_QT6)

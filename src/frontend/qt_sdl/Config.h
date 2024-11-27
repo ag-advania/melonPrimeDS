@@ -25,6 +25,66 @@
 #include <unordered_map>
 #include <tuple>
 
+enum
+Hotkey
+{
+    HK_Lid = 0,
+    HK_Mic,
+    HK_Pause,
+    HK_Reset,
+    HK_FastForward,
+    HK_FastForwardToggle,
+    HK_FullscreenToggle,
+    HK_SwapScreens,
+    HK_SwapScreenEmphasis,
+    // HK_SolarSensorDecrease,
+    // HK_SolarSensorIncrease,
+    HK_FrameStep,
+    HK_PowerButton,
+    HK_VolumeUp,
+    HK_VolumeDown,
+    
+    HK_MetroidMoveForward,
+    HK_MetroidMoveBack,
+    HK_MetroidMoveLeft,
+    HK_MetroidMoveRight,
+
+    HK_MetroidJump,
+
+    HK_MetroidMorphBall,
+    HK_MetroidZoom,
+    HK_MetroidHoldMorphBallBoost,
+
+    HK_MetroidScanVisor,
+
+    HK_MetroidUILeft,
+    HK_MetroidUIRight,
+    HK_MetroidUIOk,
+    HK_MetroidUIYes,
+    HK_MetroidUINo,
+
+    HK_MetroidShootScan,
+    HK_MetroidScanShoot,
+    
+    HK_MetroidWeaponBeam,
+    HK_MetroidWeaponMissile,
+    HK_MetroidWeaponSpecial,
+    HK_MetroidWeaponNext,
+    HK_MetroidWeaponPrevious,
+    HK_MetroidWeapon1,
+    HK_MetroidWeapon2,
+    HK_MetroidWeapon3,
+    HK_MetroidWeapon4,
+    HK_MetroidWeapon5,
+    HK_MetroidWeapon6,
+
+    //HK_MetroidVirtualStylus,
+    HK_MetroidMenu,
+    HK_MetroidIngameSensiUp,
+    HK_MetroidIngameSensiDown,
+    
+    HK_MAX
+};
 #include "toml/toml11/types.hpp"
 
 namespace Config
@@ -129,6 +189,13 @@ private:
     template<typename T> T FindDefault(const std::string& path, T def, DefaultList<T> list);
 };
 
+extern int MetroidAimSensitivity;
+extern int MetroidVirtualStylusSensitivity;
+//extern int MetroidVsPlayerInput;
+
+const int MetroidAimSensitivityDefault = 30;
+const int MetroidVirtualStylusSensitivityDefault = 20;
+//const int MetroidVsPlayerInputDefault = 1;
 
 bool Load();
 void Save();

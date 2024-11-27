@@ -25,11 +25,18 @@
 #include <filesystem>
 #include <regex>
 #include "toml/toml.hpp"
+#include <QtCore/qnamespace.h>
+#include <iostream>
+#include <fstream>
+#include <filesystem>
+#include <regex>
+#include "toml/toml.hpp"
 
 #include "Platform.h"
 #include "Config.h"
 #include "ScreenLayout.h"
 #include "main.h"
+#include "FrontendUtil.h"
 
 using namespace std::string_literals;
 
@@ -460,6 +467,11 @@ void Array::SetInt(const int id, int val)
     toml::value& tval = Data[id];
     tval = val;
 }
+int MetroidAimSensitivity;
+int MetroidVirtualStylusSensitivity;
+//int MetroidVsPlayerInput;
+
+CameraConfig Camera[2];
 
 void Array::SetInt64(const int id, int64_t val)
 {
@@ -655,16 +667,19 @@ template<typename T> T Table::FindDefault(const std::string& path, T def, Defaul
 {
     std::string defkey = GetDefaultKey(PathPrefix+path);
 
-    T ret = def;
-    while (list.count(defkey) == 0)
-    {
-        if (defkey.empty()) break;
-        size_t sep = defkey.rfind('.');
-        if (sep == std::string::npos) break;
-        defkey = defkey.substr(0, sep);
-    }
-    if (list.count(defkey) != 0)
-        ret = list[defkey];
+    {"MetroidAimSensitivity", 0, &MetroidAimSensitivity, MetroidAimSensitivityDefault, false},
+    {"MetroidVirtualStylusSensitivity", 0, &MetroidVirtualStylusSensitivity, MetroidVirtualStylusSensitivityDefault, false},
+
+    // TODO!!
+    // we need a more elegant way to deal with this
+    {"Camera0_InputType", 0, &Camera[0].InputType, 0, false},
+    {"Camera0_ImagePath", 2, &Camera[0].ImagePath, (std::string)"", false},
+    {"Camera0_CamDeviceName", 2, &Camera[0].CamDeviceName, (std::string)"", false},
+    {"Camera0_XFlip", 1, &Camera[0].XFlip, false, false},
+    {"Camera1_InputType", 0, &Camera[1].InputType, 0, false},
+    {"Camera1_ImagePath", 2, &Camera[1].ImagePath, (std::string)"", false},
+    {"Camera1_CamDeviceName", 2, &Camera[1].CamDeviceName, (std::string)"", false},
+    {"Camera1_XFlip", 1, &Camera[1].XFlip, false, false},
 
     return ret;
 }

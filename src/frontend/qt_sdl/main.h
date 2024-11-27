@@ -22,6 +22,15 @@
 #include "glad/glad.h"
 
 #include <QApplication>
+#include <QWidget>
+#include <QWindow>
+#include <QMainWindow>
+#include <QImage>
+#include <QActionGroup>
+#include <QTimer>
+#include <QScreen>
+#include <QCloseEvent>
+#include <cstdint> // added for romversions
 #include <QEvent>
 #include <QElapsedTimer>
 

@@ -102,7 +102,10 @@ ROMInfoDialog::ROMInfoDialog(QWidget* parent) : QDialog(parent), ui(new Ui::ROMI
         ui->koreanTitle->setText("None");
 
     ui->gameTitle->setText(QString::fromLatin1(header.GameTitle, 12));
+
+    // 4文字のゲームコードと16進数のチェックサムを連結して表示する
     ui->gameCode->setText(QString::fromLatin1(header.GameCode, 4));
+
     ui->makerCode->setText(QString::fromLatin1(header.MakerCode, 2));
     ui->cardSize->setText(QString::number(128 << header.CardSize) + " KB");
 

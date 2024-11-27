@@ -3,6 +3,7 @@
 #include <ws2tcpip.h>
 #include <winsock.h>
 #include <winsock2.h>
+#include <windows.h>
 #endif
 
 #include <stdarg.h>

@@ -33,6 +33,7 @@
 #include "glad/glad.h"
 #include "ScreenLayout.h"
 #include "duckstation/gl/context.h"
+#include "ScreenPrimeOSD.h"
 
 
 class MainWindow;
@@ -58,18 +59,26 @@ public:
     explicit ScreenPanel(QWidget* parent);
     virtual ~ScreenPanel();
 
-    void setFilter(bool filter);
+    PrimeOSD::Canvas OSDCanvas[2];
+    uint OSDCanvastextures[2];
 
-    void setMouseHide(bool enable, int delay);
-
-    QTimer* setupMouseTimer();
-    void updateMouseTimer();
-    QTimer* mouseTimer;
+    // QTimer* setupMouseTimer();
+    // void updateMouseTimer();
+    // QTimer* mouseTimer;
     QSize screenGetMinSize(int factor);
 
     void osdSetEnabled(bool enabled);
     void osdAddMessage(unsigned int color, const char* msg);
 
+    bool getFocused() { return isFocused; }
+    void unfocus();
+    
+    int getDelta() {  // melonPrimeDS
+        // Store and reset in one operation for optimal performance
+        int currentDelta = wheelDelta;
+        wheelDelta = 0;
+        return currentDelta;
+    }
 private slots:
     void onScreenLayoutChanged();
     void onAutoScreenSizingChanged(int sizing);
@@ -115,6 +124,13 @@ protected:
         int rainbowend;
     };
 
+    int wheelDelta = 0;  // melonPrimeDS
+
+    void wheelEvent(QWheelEvent* event) override { // melonPrimeDS
+        wheelDelta = (event->angleDelta().y() > 0) ? 1 : -1;
+        event->accept();
+    }
+
     QMutex osdMutex;
     bool osdEnabled;
     unsigned int osdID;
@@ -138,7 +154,17 @@ protected:
     void touchEvent(QTouchEvent* event);
     bool event(QEvent* event) override;
 
-    void showCursor();
+    void focusOutEvent(QFocusEvent* event) override;
+
+    float screenMatrix[Frontend::MaxScreenTransforms][6];
+    int screenKind[Frontend::MaxScreenTransforms];
+    int numScreens;
+
+    bool touching = false;
+
+    // void showCursor();
+
+    bool isFocused = false;
 
     int osdFindBreakPoint(const char* text, int i);
     void osdLayoutText(const char* text, int* width, int* height, int* breaks);
@@ -230,6 +256,18 @@ private:
 
     void osdRenderItem(OSDItem* item) override;
     void osdDeleteItem(OSDItem* item) override;
+
+    // melonPrimeDS {
+    GLuint overlayShader[3];
+    GLuint overlayScreenSizeULoc, overlayTransformULoc;
+    GLuint overlayPosULoc, overlaySizeULoc, overlayScreenTypeULoc;
+
+public:
+    bool virtualCursorShow = false;
+    float virtualCursorX;
+    float virtualCursorY;
+
+    // } melonPrimeDS
 };
 
 #endif // SCREEN_H

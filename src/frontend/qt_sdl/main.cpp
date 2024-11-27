@@ -71,9 +71,16 @@
 using namespace melonDS;
 
 QString* systemThemeName;
-
-
 QString emuDirectory;
+
+// This list of supported archive formats is based on libarchive(3) version 3.6.2 (2022-12-09).
+QStringList ArchiveMimeTypes
+{
+#ifdef ARCHIVE_SUPPORT_ENABLED
+    "application/zip",
+    "application/x-7z-compressed",
+    "application/vnd.rar", // *.rar
+    "application/x-tar",
 
 const int kMaxEmuInstances = 16;
 EmuInstance* emuInstances[kMaxEmuInstances];
@@ -246,7 +253,7 @@ MelonApplication::MelonApplication(int& argc, char** argv)
 #if !defined(Q_OS_APPLE)
     setWindowIcon(QIcon(":/melon-icon"));
     #if defined(Q_OS_UNIX)
-        setDesktopFileName(QString("net.kuribo64.melonDS"));
+        setDesktopFileName(QString("io.makidoll.melonPrimeDS"));
     #endif
 #endif
 }

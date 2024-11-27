@@ -79,8 +79,40 @@ static QIODevice::OpenMode GetQMode(FileMode mode)
     if (mode & FileMode::Text)
         qmode |= QIODevice::OpenModeFlag::Text;
 
-    return qmode;
-}
+
+void Init(int argc, char** argv)
+{
+#if defined(__WIN32__) || defined(PORTABLE)
+    if (argc > 0 && strlen(argv[0]) > 0)
+    {
+        int len = strlen(argv[0]);
+        while (len > 0)
+        {
+            if (argv[0][len] == '/') break;
+            if (argv[0][len] == '\\') break;
+            len--;
+        }
+        if (len > 0)
+        {
+            std::string emudir = argv[0];
+            EmuDirectory = emudir.substr(0, len);
+        }
+        else
+        {
+            EmuDirectory = ".";
+        }
+    }
+    else
+    {
+        EmuDirectory = ".";
+    }
+#else
+    QString confdir;
+    QDir config(QStandardPaths::writableLocation(QStandardPaths::ConfigLocation));
+    config.mkdir("melonPrimeDS");
+    confdir = config.absolutePath() + "/melonPrimeDS/";
+    EmuDirectory = confdir.toStdString();
+#endif
 
 constexpr char AccessMode(FileMode mode, bool file_exists)
 {
@@ -165,11 +197,16 @@ std::string GetLocalFilePath(const std::string& filename)
     }
     else
     {
-        fullpath = emuDirectory + QDir::separator() + qpath;
+#ifdef PORTABLE
+        fullpath = QString::fromStdString(EmuDirectory) + QDir::separator() + qpath;
+#else
+        // Check user configuration directory
+        QDir config(QStandardPaths::writableLocation(QStandardPaths::GenericConfigLocation));
+        config.mkdir("melonPrimeDS");
+        fullpath = config.absolutePath() + "/melonPrimeDS/";
+        fullpath.append(qpath);
+#endif
     }
-
-    return fullpath.toStdString();
-}
 
 FileHandle* OpenLocalFile(const std::string& path, FileMode mode)
 {

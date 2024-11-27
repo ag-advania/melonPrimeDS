@@ -58,7 +58,7 @@ signals:
 private slots:
     void done(int r);
 
-    void on_cbMouseHide_clicked();
+    // void on_cbMouseHide_clicked();
 
     void on_pbClean_clicked();
     void on_pbAccurate_clicked();
