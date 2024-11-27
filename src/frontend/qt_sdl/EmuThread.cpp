@@ -414,10 +414,10 @@ void EmuThread::run()
         }
 
 
-        if (EmuRunning == emuStatus_Running || EmuRunning == emuStatus_FrameStep)
+        if (emuStatus == emuStatus_Running || emuStatus == emuStatus_FrameStep)
         {
-            EmuStatus = emuStatus_Running;
-            if (EmuRunning == emuStatus_FrameStep) EmuRunning = emuStatus_Paused;
+            emuStatus = emuStatus_Running;
+            if (emuStatus == emuStatus_FrameStep) emuStatus = emuStatus_Paused;
 
             // if (emuInstance->hotkeyPressed(HK_SolarSensorDecrease))
             // {
@@ -589,7 +589,7 @@ void EmuThread::run()
             MelonCap::Update();
 #endif // MELONCAP
 
-            if (EmuRunning == emuStatus_Exit) return;
+            if (emuStatus == emuStatus_Exit) return;
 
             winUpdateCount++;
             if (winUpdateCount >= winUpdateFreq && !useOpenGL)
@@ -991,7 +991,7 @@ void EmuThread::run()
             }
 
             // For layouts other than Hybrid, first check BotOnly mode
-            if (Config::ScreenSizing == ScreenSizing::screenSizing_BotOnly) {
+            if (windowCfg.GetInt("ScreenSizing") == ScreenSizing::screenSizing_BotOnly) {
                 // Process for bottom-screen-only display
                 // TODO: Adjust to avoid duplicate touches at the cursor position
 
@@ -1019,7 +1019,7 @@ void EmuThread::run()
                 return;  // End here if in BotOnly mode
             }
 
-            if (Config::ScreenSizing == ScreenSizing::screenSizing_TopOnly) {
+            if (windowCfg.GetInt("ScreenSizing") == ScreenSizing::screenSizing_TopOnly) {
                 return;  // End here if in TopOnly mode
             }
 
@@ -1066,7 +1066,7 @@ void EmuThread::run()
     const float aimAspectRatio = 1.5f; // i have no idea  6.0 / 4.0
 
 
-    while (EmuRunning != emuStatus_Exit) {
+    while (emuStatus  != emuStatus_Exit) {
 
         auto isFocused = mainWindow->panel->getFocused();
 
@@ -1715,7 +1715,7 @@ void EmuThread::run()
 
         frameAdvanceOnce();
 
-    } // End of while (EmuRunning != emuStatus_Exit)
+    } // End of while (emuStatus != emuStatus_Exit)
 
 }
 void EmuThread::sendMessage(Message msg)
