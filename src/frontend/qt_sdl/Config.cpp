@@ -41,6 +41,10 @@
 using namespace std::string_literals;
 
 
+int MetroidAimSensitivity;
+int MetroidVirtualStylusSensitivity;
+//int MetroidVsPlayerInput;
+
 namespace Config
 {
 using namespace melonDS;
@@ -519,11 +523,6 @@ void Array::SetInt(const int id, int val)
     toml::value& tval = Data[id];
     tval = val;
 }
-int MetroidAimSensitivity;
-int MetroidVirtualStylusSensitivity;
-//int MetroidVsPlayerInput;
-
-CameraConfig Camera[2];
 
 void Array::SetInt64(const int id, int64_t val)
 {
