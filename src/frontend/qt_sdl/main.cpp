@@ -71,17 +71,9 @@
 using namespace melonDS;
 
 QString* systemThemeName;
-QString emuDirectory;
 
-// This list of supported archive formats is based on libarchive(3) version 3.6.2 (2022-12-09).
-QStringList ArchiveMimeTypes
-{
-#ifdef ARCHIVE_SUPPORT_ENABLED
-    "application/zip",
-    "application/x-7z-compressed",
-    "application/vnd.rar", // *.rar
-    "application/x-tar",
-}
+
+QString emuDirectory;
 
 const int kMaxEmuInstances = 16;
 EmuInstance* emuInstances[kMaxEmuInstances];
@@ -109,7 +101,7 @@ void NetInit()
             std::string devicename = cfg.GetString("LAN.Device");
             std::unique_ptr<Net_PCap> netPcap = pcap->Open(devicename, [](const u8* data, int len) {
                 net.RXEnqueue(data, len);
-            });
+                });
 
             if (netPcap)
             {
@@ -121,7 +113,7 @@ void NetInit()
     {
         net.SetDriver(std::make_unique<Net_Slirp>([](const u8* data, int len) {
             net.RXEnqueue(data, len);
-        }));
+            }));
     }
 }
 
@@ -253,22 +245,22 @@ MelonApplication::MelonApplication(int& argc, char** argv)
 {
 #if !defined(Q_OS_APPLE)
     setWindowIcon(QIcon(":/melon-icon"));
-    #if defined(Q_OS_UNIX)
-        setDesktopFileName(QString("io.makidoll.melonPrimeDS"));
-    #endif
+#if defined(Q_OS_UNIX)
+    setDesktopFileName(QString("net.kuribo64.melonDS"));
+#endif
 #endif
 }
 
 // TODO: ROM loading should be moved to EmuInstance
 // especially so the preloading below and in main() can be done in a nicer fashion
 
-bool MelonApplication::event(QEvent *event)
+bool MelonApplication::event(QEvent* event)
 {
     if (event->type() == QEvent::FileOpen)
     {
         EmuInstance* inst = emuInstances[0];
         MainWindow* win = inst->getMainWindow();
-        QFileOpenEvent *openEvent = static_cast<QFileOpenEvent*>(event);
+        QFileOpenEvent* openEvent = static_cast<QFileOpenEvent*>(event);
 
         const QStringList file = win->splitArchivePath(openEvent->file(), true);
         win->preloadROMs(file, {}, true);
@@ -332,8 +324,8 @@ int main(int argc, char** argv)
 
     if (!Config::Load())
         QMessageBox::critical(nullptr,
-                              "melonDS",
-                              "Unable to write to config.\nPlease check the write permissions of the folder you placed melonDS in.");
+            "melonDS",
+            "Unable to write to config.\nPlease check the write permissions of the folder you placed melonDS in.");
 
     camStarted[0] = false;
     camStarted[1] = false;
@@ -362,19 +354,19 @@ int main(int argc, char** argv)
     {
         MainWindow* win = emuInstances[0]->getMainWindow();
         bool memberSyntaxUsed = false;
-        const auto prepareRomPath = [&](const std::optional<QString> &romPath,
-                                        const std::optional<QString> &romArchivePath) -> QStringList
-        {
-            if (!romPath.has_value())
-                return {};
+        const auto prepareRomPath = [&](const std::optional<QString>& romPath,
+            const std::optional<QString>& romArchivePath) -> QStringList
+            {
+                if (!romPath.has_value())
+                    return {};
 
-            if (romArchivePath.has_value())
-                return {*romPath, *romArchivePath};
+                if (romArchivePath.has_value())
+                    return { *romPath, *romArchivePath };
 
-            const QStringList path = win->splitArchivePath(*romPath, true);
-            if (path.size() > 1) memberSyntaxUsed = true;
-            return path;
-        };
+                const QStringList path = win->splitArchivePath(*romPath, true);
+                if (path.size() > 1) memberSyntaxUsed = true;
+                return path;
+            };
 
         const QStringList dsfile = prepareRomPath(options->dsRomPath, options->dsRomArchivePath);
         const QStringList gbafile = prepareRomPath(options->gbaRomPath, options->gbaRomArchivePath);
