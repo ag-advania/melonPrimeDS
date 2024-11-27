@@ -98,12 +98,15 @@ void ScreenPanel::setFilter(bool filter)
     this->filter = filter;
 }
 
+
 void ScreenPanel::setMouseHide(bool enable, int delay)
 {
+    /*
     mouseHide = enable;
     mouseHideDelay = delay;
 
     mouseTimer->setInterval(mouseHideDelay);
+    */
 }
 
 void ScreenPanel::setupScreenLayout()
@@ -218,7 +221,7 @@ void ScreenPanel::mousePressEvent(QMouseEvent* event)
 
     // so we dont press buttons before fully focusing
     if (isFocused) {
-        emuInstance->mousePress(event);
+        emuInstance->touchScreen(event->pos().x(), event->pos().y());
     }
 
     if (event->button() != Qt::LeftButton) return;
@@ -232,7 +235,9 @@ void ScreenPanel::mousePressEvent(QMouseEvent* event)
         emuInstance->touchScreen(x, y);
     }
 
-    if (emuThread->NDS->IsRunning()) {
+
+    auto emuThread = emuInstance->getEmuThread();
+    if (emuThread->emuIsRunning()) {
         isFocused = true;
         setCursor(Qt::BlankCursor);
     }
@@ -242,7 +247,7 @@ void ScreenPanel::mouseReleaseEvent(QMouseEvent* event)
 {
     event->accept();
 
-    emuInstance->mouseRelease(event);
+    // emuInstance->mouseRelease(event);
 
     if (event->button() != Qt::LeftButton) return;
 
@@ -1011,38 +1016,30 @@ void ScreenPanelGL::initOpenGL()
 
     // melonPrimeDS {
 
-    OpenGL::BuildShaderProgram(kScreenVS, kScreenFS_overlay, overlayShader, "OverlayShader");
+    // Overlay shader setup
+    OpenGL::CompileVertexFragmentProgram(overlayShader[2],
+        kScreenVS, kScreenFS_overlay,
+        "OverlayShader",
+        { {"vPosition", 0}, {"vTexcoord", 1} },
+        { {"oColor", 0} });
 
-    pid = overlayShader[2];
-    glBindAttribLocation(pid, 0, "vPosition");
-    glBindAttribLocation(pid, 1, "vTexcoord");
-    glBindFragDataLocation(pid, 0, "oColor");
-
-    OpenGL::LinkShaderProgram(overlayShader);
-
-    overlayScreenSizeULoc = glGetUniformLocation(pid, "uScreenSize");
-    overlayTransformULoc = glGetUniformLocation(pid, "uTransform");
-
-    overlayPosULoc = glGetUniformLocation(pid, "uOverlayPos");
-    overlaySizeULoc = glGetUniformLocation(pid, "uOverlaySize");
-    overlayScreenTypeULoc = glGetUniformLocation(pid, "uOverlayScreenType");
-
-
-    //Generate OSDCanvasTextures for Top and Bottom Screen
-    for(int i=0;i<2;i++){
-        glGenTextures(1, &OSDCanvastextures[i]);
+    // uniform location�̎擾
+    overlayScreenSizeULoc = glGetUniformLocation(overlayShader[2], "uScreenSize");
+    overlayTransformULoc = glGetUniformLocation(overlayShader[2], "uTransform");
+    overlayPosULoc = glGetUniformLocation(overlayShader[2], "uOverlayPos");
+    overlaySizeULoc = glGetUniformLocation(overlayShader[2], "uOverlaySize");
+    overlayScreenTypeULoc = glGetUniformLocation(overlayShader[2], "uOverlayScreenType");
+    // Generate OSD Canvas textures
+    glGenTextures(2, OSDCanvastextures);
+    for (int i = 0; i < 2; i++)
+    {
         glBindTexture(GL_TEXTURE_2D, OSDCanvastextures[i]);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-        glTexImage2D(
-            GL_TEXTURE_2D,0,GL_RGBA,
-            256,192,0,
-            GL_RGBA, GL_UNSIGNED_BYTE,OSDCanvas[0].CanvasBuffer->bits()
-        );
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, 256, 192, 0, GL_RGBA, GL_UNSIGNED_BYTE, OSDCanvas[i].CanvasBuffer->bits());
     }
-
     // } melonPrimeDS
 
 
@@ -1075,13 +1072,13 @@ void ScreenPanelGL::deinitOpenGL()
     glDeleteProgram(osdShader);
 
     // melonPrimeDS {
-    for(int i=0;i<2;i++){
-        glDeleteTextures(1, &OSDCanvastextures[i]);
-    }
+    // overlayShader�̍폜
+    glDeleteProgram(overlayShader[2]);
+    glDeleteTextures(2, OSDCanvastextures);
     // } melonPrimeDS 
 
 
-    OpenGL::DeleteShaderProgram(overlayShader);
+    // OpenGL::DeleteShaderProgram(overlayShader);
 
     glContext->DoneCurrent();
 
@@ -1161,7 +1158,8 @@ void ScreenPanelGL::drawScreenGL()
         {
             // hardware-accelerated render
             nds->GPU.GetRenderer3D().BindOutputTexture(frontbuf);
-        } else
+        }
+        else
 #endif
         {
             // regular render
@@ -1170,9 +1168,9 @@ void ScreenPanelGL::drawScreenGL()
             if (nds->GPU.Framebuffer[frontbuf][0] && nds->GPU.Framebuffer[frontbuf][1])
             {
                 glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, 256, 192, GL_RGBA,
-                                GL_UNSIGNED_BYTE, nds->GPU.Framebuffer[frontbuf][0].get());
+                    GL_UNSIGNED_BYTE, nds->GPU.Framebuffer[frontbuf][0].get());
                 glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 192 + 2, 256, 192, GL_RGBA,
-                                GL_UNSIGNED_BYTE, nds->GPU.Framebuffer[frontbuf][1].get());
+                    GL_UNSIGNED_BYTE, nds->GPU.Framebuffer[frontbuf][1].get());
             }
         }
 
@@ -1185,153 +1183,139 @@ void ScreenPanelGL::drawScreenGL()
         glBindBuffer(GL_ARRAY_BUFFER, screenVertexBuffer);
         glBindVertexArray(screenVertexArray);
 
-    for (int i = 0; i < numScreens; i++)
-    {
-        glUniformMatrix2x3fv(screenShaderTransformULoc, 1, GL_TRUE, screenMatrix[i]);
-        glDrawArrays(GL_TRIANGLES, screenKind[i] == 0 ? 0 : 2*3, 2*3);
-    }
-
-    screenSettingsLock.unlock();
-
-    // melonPrimeDS {
-
-    // Activate the overlay shader program
-    glUseProgram(overlayShader[2]);
-    // Enable alpha blending
-    glEnable(GL_BLEND);
-    // Set blending function (additive blending mode with alpha)
-    glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
-    // Pass screen dimensions to the shader
-    glUniform2f(overlayScreenSizeULoc, w / factor, h / factor);
-    // Bind the screen vertex buffer
-    glBindBuffer(GL_ARRAY_BUFFER, screenVertexBuffer);
-    // Bind the screen vertex array object
-    glBindVertexArray(screenVertexArray);
-    // Lock screen settings for thread safety
-    screenSettingsLock.lock();
-
-    // Draw Textures for all screens
-    for(int i = 0;i<numScreens;i++){
-        glBindTexture(GL_TEXTURE_2D, OSDCanvastextures[screenKind[i]]);
-        
-        //Update texture each frame to match the CanvasBuffer.
-        glTexSubImage2D(GL_TEXTURE_2D,0,0,0,256,192,GL_RGBA,GL_UNSIGNED_BYTE,OSDCanvas[screenKind[i]].CanvasBuffer->bits());
-        
-
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-        // Set texture magnification filter to nearest neighbor
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-
-        glUniform2f(overlayPosULoc,0,0);
-        glUniform2f(overlaySizeULoc,256,192);
-        glUniform1i(overlayScreenTypeULoc, screenKind[i]);
-        glUniformMatrix2x3fv(
-            overlayTransformULoc, 1, GL_TRUE,
-            screenMatrix[i]
-        );
-        glDrawArrays(GL_TRIANGLES,screenKind[i] == 0 ? 0 : 2*3, 2*3);
-
-    }
-
-
-    screenSettingsLock.unlock();
-
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, filter);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, filter);
-    
-    // } melonPrimeDS
-
-
-    osdUpdate();
-
-    if (!emuThread->emuIsActive())
-    {
-        // splashscreen
-        osdMutex.lock();
-
-        glUseProgram(osdShader);
-
-        glUniform2f(osdScreenSizeULoc, w, h);
-        glUniform1f(osdScaleFactorULoc, factor);
-        glUniform1f(osdTexScaleULoc, 2.0);
-
-        glBindBuffer(GL_ARRAY_BUFFER, osdVertexBuffer);
-        glBindVertexArray(osdVertexArray);
-
-        glActiveTexture(GL_TEXTURE0);
-
-        glEnable(GL_BLEND);
-        glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
-
-        glBindTexture(GL_TEXTURE_2D, logoTexture);
-        glUniform2i(osdPosULoc, splashPos[3].x(), splashPos[3].y());
-        glUniform2i(osdSizeULoc, kLogoWidth, kLogoWidth);
-        glDrawArrays(GL_TRIANGLES, 0, 2*3);
-
-        glUniform1f(osdTexScaleULoc, 1.0);
-
-        for (int i = 0; i < 3; i++)
+        for (int i = 0; i < numScreens; i++)
         {
-            OSDItem& item = splashText[i];
-
-            if (!osdTextures.count(item.id))
-                continue;
-
-            glBindTexture(GL_TEXTURE_2D, osdTextures[item.id]);
-            glUniform2i(osdPosULoc, splashPos[i].x(), splashPos[i].y());
-            glUniform2i(osdSizeULoc, item.bitmap.width(), item.bitmap.height());
-            glDrawArrays(GL_TRIANGLES, 0, 2*3);
+            glUniformMatrix2x3fv(screenShaderTransformULoc, 1, GL_TRUE, screenMatrix[i]);
+            glDrawArrays(GL_TRIANGLES, screenKind[i] == 0 ? 0 : 2 * 3, 2 * 3);
         }
 
-        glDisable(GL_BLEND);
-        glUseProgram(0);
+        screenSettingsLock.unlock();
 
-        osdMutex.unlock();
-    }
-
-    if (osdEnabled)
-    {
-        osdMutex.lock();
-
-        u32 y = kOSDMargin;
-
-        glUseProgram(osdShader);
-
-        glUniform2f(osdScreenSizeULoc, w, h);
-        glUniform1f(osdScaleFactorULoc, factor);
-        glUniform1f(osdTexScaleULoc, 1.0);
-
-        glBindBuffer(GL_ARRAY_BUFFER, osdVertexBuffer);
-        glBindVertexArray(osdVertexArray);
-
-        glActiveTexture(GL_TEXTURE0);
-
+        // melonPrimeDS {
+        // 
+        // Draw overlay textures
+        glUseProgram(overlayShader[2]);
         glEnable(GL_BLEND);
         glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
+        glUniform2f(overlayScreenSizeULoc, w / factor, h / factor);
 
-        for (auto it = osdItems.begin(); it != osdItems.end(); )
+        glBindBuffer(GL_ARRAY_BUFFER, screenVertexBuffer);
+        glBindVertexArray(screenVertexArray);
+
+        screenSettingsLock.lock();
+
+        for (int i = 0; i < numScreens; i++)
         {
-            OSDItem& item = *it;
+            glActiveTexture(GL_TEXTURE0);
+            glBindTexture(GL_TEXTURE_2D, OSDCanvastextures[screenKind[i]]);
+            glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, 256, 192, GL_RGBA, GL_UNSIGNED_BYTE,
+                OSDCanvas[screenKind[i]].CanvasBuffer->bits());
 
-            if (!osdTextures.count(item.id))
-                continue;
+            glUniform2f(overlayPosULoc, 0, 0);
+            glUniform2f(overlaySizeULoc, 256, 192);
+            glUniform1i(overlayScreenTypeULoc, screenKind[i]);
+            glUniformMatrix2x3fv(overlayTransformULoc, 1, GL_TRUE, screenMatrix[i]);
 
-            glBindTexture(GL_TEXTURE_2D, osdTextures[item.id]);
-            glUniform2i(osdPosULoc, kOSDMargin, y);
-            glUniform2i(osdSizeULoc, item.bitmap.width(), item.bitmap.height());
-            glDrawArrays(GL_TRIANGLES, 0, 2*3);
-
-            y += item.bitmap.height();
-            it++;
+            glDrawArrays(GL_TRIANGLES, screenKind[i] == 0 ? 0 : 2 * 3, 2 * 3);
         }
 
+        screenSettingsLock.unlock();
         glDisable(GL_BLEND);
-        glUseProgram(0);
 
-        osdMutex.unlock();
+        // } melonPrimeDS
+
+
+        osdUpdate();
+
+        if (!emuThread->emuIsActive())
+        {
+            // splashscreen
+            osdMutex.lock();
+
+            glUseProgram(osdShader);
+
+            glUniform2f(osdScreenSizeULoc, w, h);
+            glUniform1f(osdScaleFactorULoc, factor);
+            glUniform1f(osdTexScaleULoc, 2.0);
+
+            glBindBuffer(GL_ARRAY_BUFFER, osdVertexBuffer);
+            glBindVertexArray(osdVertexArray);
+
+            glActiveTexture(GL_TEXTURE0);
+
+            glEnable(GL_BLEND);
+            glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
+
+            glBindTexture(GL_TEXTURE_2D, logoTexture);
+            glUniform2i(osdPosULoc, splashPos[3].x(), splashPos[3].y());
+            glUniform2i(osdSizeULoc, kLogoWidth, kLogoWidth);
+            glDrawArrays(GL_TRIANGLES, 0, 2 * 3);
+
+            glUniform1f(osdTexScaleULoc, 1.0);
+
+            for (int i = 0; i < 3; i++)
+            {
+                OSDItem& item = splashText[i];
+
+                if (!osdTextures.count(item.id))
+                    continue;
+
+                glBindTexture(GL_TEXTURE_2D, osdTextures[item.id]);
+                glUniform2i(osdPosULoc, splashPos[i].x(), splashPos[i].y());
+                glUniform2i(osdSizeULoc, item.bitmap.width(), item.bitmap.height());
+                glDrawArrays(GL_TRIANGLES, 0, 2 * 3);
+            }
+
+            glDisable(GL_BLEND);
+            glUseProgram(0);
+
+            osdMutex.unlock();
+        }
+
+        if (osdEnabled)
+        {
+            osdMutex.lock();
+
+            u32 y = kOSDMargin;
+
+            glUseProgram(osdShader);
+
+            glUniform2f(osdScreenSizeULoc, w, h);
+            glUniform1f(osdScaleFactorULoc, factor);
+            glUniform1f(osdTexScaleULoc, 1.0);
+
+            glBindBuffer(GL_ARRAY_BUFFER, osdVertexBuffer);
+            glBindVertexArray(osdVertexArray);
+
+            glActiveTexture(GL_TEXTURE0);
+
+            glEnable(GL_BLEND);
+            glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
+
+            for (auto it = osdItems.begin(); it != osdItems.end(); )
+            {
+                OSDItem& item = *it;
+
+                if (!osdTextures.count(item.id))
+                    continue;
+
+                glBindTexture(GL_TEXTURE_2D, osdTextures[item.id]);
+                glUniform2i(osdPosULoc, kOSDMargin, y);
+                glUniform2i(osdSizeULoc, item.bitmap.width(), item.bitmap.height());
+                glDrawArrays(GL_TRIANGLES, 0, 2 * 3);
+
+                y += item.bitmap.height();
+                it++;
+            }
+
+            glDisable(GL_BLEND);
+            glUseProgram(0);
+
+            osdMutex.unlock();
+        }
+
+        glContext->SwapBuffers();
     }
-
-    glContext->SwapBuffers();
 }
 
 qreal ScreenPanelGL::devicePixelRatioFromScreen() const
