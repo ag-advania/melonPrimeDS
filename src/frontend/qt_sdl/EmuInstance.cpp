@@ -29,7 +29,7 @@
 #include <fstream>
 
 #include <QDateTime>
-
+#include <QMessageBox>
 #include <zstd.h>
 #ifdef ARCHIVE_SUPPORT_ENABLED
 #include "ArchiveUtil.h"
@@ -47,6 +47,7 @@
 #include "DSi_I2C.h"
 #include "FreeBIOS.h"
 #include "main.h"
+#include "melonPrime/def.h"
 
 using std::make_unique;
 using std::pair;
@@ -56,6 +57,11 @@ using std::unique_ptr;
 using std::wstring_convert;
 using namespace melonDS;
 using namespace melonDS::Platform;
+
+// Global variable definitions with initialization
+// Source: melonPrime/def.h
+uint32_t globalChecksum = 0;
+bool isRomDetected = false;
 
 
 MainWindow* topWindow = nullptr;
@@ -1917,6 +1923,31 @@ bool EmuInstance::loadROM(QStringList filepath, bool reset, QString& errorstr)
         errorstr = "Failed to load the DS ROM.";
         return false;
     }
+
+
+    // MelonPrimeDS{
+
+    // Define the instance of the global variable
+    globalChecksum = cart->Checksum();
+
+    // newRomFlag ON
+    isRomDetected = false;
+
+    // ROM Check
+    if (globalChecksum != RomVersions::USA1_0 && globalChecksum != RomVersions::USA1_1 &&
+        globalChecksum != RomVersions::EU1_0 && globalChecksum != RomVersions::EU1_1 &&
+        globalChecksum != RomVersions::JAPAN1_0 && globalChecksum != RomVersions::JAPAN1_1 &&
+        globalChecksum != RomVersions::KOREA1_0)
+    {
+        QMessageBox::warning(
+            nullptr,
+            "Unknown ROM",
+            // "Please make sure to use\nMetroid Prime Hunters USA version 1.1"
+            "Please make sure to use\nthe untrimmed and unmodified Metroid Prime Hunters ROM which is not encrypted."
+        );
+    }
+
+    // }MelonPrimeDS
 
     if (reset)
     {
