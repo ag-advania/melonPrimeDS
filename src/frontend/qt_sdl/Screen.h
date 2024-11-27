@@ -35,7 +35,6 @@
 #include "duckstation/gl/context.h"
 #include "ScreenPrimeOSD.h"
 
-
 class MainWindow;
 class EmuInstance;
 
@@ -43,7 +42,7 @@ class EmuInstance;
 const struct { int id; float ratio; const char* label; } aspectRatios[] =
 {
     { 0, 1,                       "4:3 (native)" },
-    { 4, (5.f  / 3) / (4.f / 3), "5:3 (3DS)"},
+    { 4, (5.f / 3) / (4.f / 3), "5:3 (3DS)"},
     { 1, (16.f / 9) / (4.f / 3),  "16:9" },
     { 2, (21.f / 9) / (4.f / 3),  "21:9" },
     { 3, 0,                       "window" }
@@ -59,20 +58,19 @@ public:
     explicit ScreenPanel(QWidget* parent);
     virtual ~ScreenPanel();
 
-    PrimeOSD::Canvas OSDCanvas[2];
-    uint OSDCanvastextures[2];
+    void setFilter(bool filter);
 
-    // QTimer* setupMouseTimer();
-    // void updateMouseTimer();
-    // QTimer* mouseTimer;
+    void setMouseHide(bool enable, int delay);
+
+    PrimeOSD::Canvas OSDCanvas[2]; // MelonPrimeDS
+    uint OSDCanvastextures[2]; // MelonPrimeDS
     QSize screenGetMinSize(int factor);
 
     void osdSetEnabled(bool enabled);
     void osdAddMessage(unsigned int color, const char* msg);
+    bool getFocused() { return isFocused; } // MelonPrimeDS
+    void unfocus(); // MelonPrimeDS
 
-    bool getFocused() { return isFocused; }
-    void unfocus();
-    
     int getDelta() {  // melonPrimeDS
         // Store and reset in one operation for optimal performance
         int currentDelta = wheelDelta;
@@ -100,6 +98,7 @@ protected:
     int autoScreenSizing;
 
     ScreenLayout layout;
+    void focusOutEvent(QFocusEvent* event) override; // MelonPrimeDS
     float screenMatrix[kMaxScreenTransforms][6];
     int screenKind[kMaxScreenTransforms];
     int numScreens;
@@ -129,7 +128,7 @@ protected:
     void wheelEvent(QWheelEvent* event) override { // melonPrimeDS
         wheelDelta = (event->angleDelta().y() > 0) ? 1 : -1;
         event->accept();
-    }
+    } // /melonPrimeDS
 
     QMutex osdMutex;
     bool osdEnabled;
@@ -154,10 +153,8 @@ protected:
     void touchEvent(QTouchEvent* event);
     bool event(QEvent* event) override;
 
-    void focusOutEvent(QFocusEvent* event) override;
-    // void showCursor();
-
-    bool isFocused = false;
+    // void showCursor(); melonPrimeDS comment-out
+    bool isFocused = false; // melonPrimeDS
 
     int osdFindBreakPoint(const char* text, int i);
     void osdLayoutText(const char* text, int* width, int* height, int* breaks);
@@ -165,6 +162,18 @@ protected:
 
     virtual void osdRenderItem(OSDItem* item);
     virtual void osdDeleteItem(OSDItem* item);
+
+    // melonPrimeDS {
+    GLuint overlayShader[3];
+    GLuint overlayScreenSizeULoc, overlayTransformULoc;
+    GLuint overlayPosULoc, overlaySizeULoc, overlayScreenTypeULoc;
+
+public:
+    bool virtualCursorShow = false;
+    float virtualCursorX;
+    float virtualCursorY;
+
+    // } melonPrimeDS
 
     void osdUpdate();
 
@@ -249,19 +258,6 @@ private:
 
     void osdRenderItem(OSDItem* item) override;
     void osdDeleteItem(OSDItem* item) override;
-
-    // melonPrimeDS {
-    GLuint overlayShader[3];
-    GLuint overlayScreenSizeULoc, overlayTransformULoc;
-    GLuint overlayPosULoc, overlaySizeULoc, overlayScreenTypeULoc;
-
-public:
-    bool virtualCursorShow = false;
-    float virtualCursorX;
-    float virtualCursorY;
-
-    // } melonPrimeDS
 };
 
 #endif // SCREEN_H
-
