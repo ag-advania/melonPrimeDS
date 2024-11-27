@@ -397,12 +397,12 @@ void EmuThread::run()
             };
 
         // Sensitivity UP
-        if (Input::HotkeyReleased(HK_MetroidIngameSensiUp)) {
+        if (emuInstance->hotkeyReleased(HK_MetroidIngameSensiUp)) {
             updateAimSensitivity(1);  // Increase sensitivity by 1
         }
 
         // Sensitivity DOWN
-        if (Input::HotkeyReleased(HK_MetroidIngameSensiDown)) {
+        if (emuInstance->hotkeyReleased(HK_MetroidIngameSensiDown)) {
             updateAimSensitivity(-1);  // Decrease sensitivity by 1
         }
 
@@ -412,7 +412,7 @@ void EmuThread::run()
             EmuStatus = emuStatus_Running;
             if (EmuRunning == emuStatus_FrameStep) EmuRunning = emuStatus_Paused;
 
-            // if (Input::HotkeyPressed(HK_SolarSensorDecrease))
+            // if (emuInstance->hotkeyPressed(HK_SolarSensorDecrease))
             // {
             //     int level = NDS->GBACartSlot.SetInput(GBACart::Input_SolarSensorDown, true);
             //     if (level != -1)
@@ -420,7 +420,7 @@ void EmuThread::run()
             //         mainWindow->osdAddMessage(0, "Solar sensor level: %d", level);
             //     }
             // }
-            // if (Input::HotkeyPressed(HK_SolarSensorIncrease))
+            // if (emuInstance->hotkeyPressed(HK_SolarSensorIncrease))
             // {
             //     int level = NDS->GBACartSlot.SetInput(GBACart::Input_SolarSensorUp, true);
             //     if (level != -1)
@@ -783,7 +783,7 @@ void EmuThread::run()
         };
 
         for (const auto& move : moves) {
-            if (Input::HotkeyDown(move.hotkey)) {
+            if (emuInstance->hotkeyDown(move.hotkey)) {
                 FN_INPUT_PRESS(move.input);
             } else {
                 FN_INPUT_RELEASE(move.input);
@@ -811,8 +811,8 @@ void EmuThread::run()
         // for supporting "counter-strafing" feature
 
         // Horizontal axis
-        const bool leftPressed = Input::HotkeyDown(moves[2].hotkey);
-        const bool rightPressed = Input::HotkeyDown(moves[3].hotkey);
+        const bool leftPressed = emuInstance->hotkeyDown(moves[2].hotkey);
+        const bool rightPressed = emuInstance->hotkeyDown(moves[3].hotkey);
 
         if (leftPressed && !rightPressed) {
             FN_INPUT_PRESS(INPUT_LEFT);
@@ -829,8 +829,8 @@ void EmuThread::run()
         }
 
         // Vertical axis
-        const bool upPressed = Input::HotkeyDown(moves[0].hotkey);
-        const bool downPressed = Input::HotkeyDown(moves[1].hotkey);
+        const bool upPressed = emuInstance->hotkeyDown(moves[0].hotkey);
+        const bool downPressed = emuInstance->hotkeyDown(moves[1].hotkey);
 
         if (upPressed && !downPressed) {
             FN_INPUT_PRESS(INPUT_UP);
@@ -860,10 +860,10 @@ void EmuThread::run()
 
         // Pre-fetch all hotkey states at once to minimize input latency
         uint32_t inputBitmap =
-            (uint32_t(Input::HotkeyDown(HK_MetroidMoveForward)) << 0) |
-            (uint32_t(Input::HotkeyDown(HK_MetroidMoveBack)) << 1) |
-            (uint32_t(Input::HotkeyDown(HK_MetroidMoveLeft)) << 2) |
-            (uint32_t(Input::HotkeyDown(HK_MetroidMoveRight)) << 3);
+            (uint32_t(emuInstance->hotkeyDown(HK_MetroidMoveForward)) << 0) |
+            (uint32_t(emuInstance->hotkeyDown(HK_MetroidMoveBack)) << 1) |
+            (uint32_t(emuInstance->hotkeyDown(HK_MetroidMoveLeft)) << 2) |
+            (uint32_t(emuInstance->hotkeyDown(HK_MetroidMoveRight)) << 3);
 
         // Optimized LUT using bit manipulation to handle all cases
         // Each entry is pre-computed and packed with both mask and input value
@@ -1075,7 +1075,7 @@ void EmuThread::run()
 
         /*
         #ifdef ENABLE_MEMORY_DUMP
-            if (Input::HotkeyPressed(HK_MetroidUIOk)) {
+            if (emuInstance->hotkeyPressed(HK_MetroidUIOk)) {
                 printf("MainRAMMask 0x%.8" PRIXPTR "\n", (uintptr_t)NDS->MainRAMMask);
                 QFile file("memory" + QString::number(memoryDump++) + ".bin");
                 if (file.open(QIODevice::ReadWrite)) {
@@ -1171,7 +1171,7 @@ void EmuThread::run()
 
 
             // Check hotkey status
-            bool isLayoutChanging = Input::HotkeyPressed(HK_SwapScreens) || Input::HotkeyPressed(HK_FullscreenToggle);
+            bool isLayoutChanging = emuInstance->hotkeyPressed(HK_SwapScreens) || emuInstance->hotkeyPressed(HK_FullscreenToggle);
 
             // These conditional branches cannot be simplified to a simple else statement
             // because they handle different independent cases:
@@ -1284,7 +1284,7 @@ void EmuThread::run()
                 processMoveInput();
 
                 // Shoot
-                if (Input::HotkeyDown(HK_MetroidShootScan) || Input::HotkeyDown(HK_MetroidScanShoot)) {
+                if (emuInstance->hotkeyDown(HK_MetroidShootScan) || emuInstance->hotkeyDown(HK_MetroidScanShoot)) {
                     FN_INPUT_PRESS(INPUT_L);
                 }
                 else {
@@ -1292,7 +1292,7 @@ void EmuThread::run()
                 }
 
                 // Zoom, map zoom out
-                if (Input::HotkeyDown(HK_MetroidZoom)) {
+                if (emuInstance->hotkeyDown(HK_MetroidZoom)) {
                     FN_INPUT_PRESS(INPUT_R);
                 }
                 else {
@@ -1300,7 +1300,7 @@ void EmuThread::run()
                 }
 
                 // Jump
-                if (Input::HotkeyDown(HK_MetroidJump)) {
+                if (emuInstance->hotkeyDown(HK_MetroidJump)) {
                     FN_INPUT_PRESS(INPUT_B);
                 }
                 else {
@@ -1308,7 +1308,7 @@ void EmuThread::run()
                 }
 
                 // Alt-form
-                if (Input::HotkeyPressed(HK_MetroidMorphBall)) {
+                if (emuInstance->hotkeyPressed(HK_MetroidMorphBall)) {
 
                     NDS->ReleaseScreen();
                     frameAdvance(2);
@@ -1405,12 +1405,12 @@ void EmuThread::run()
                     };
 
                 // Switch to Power Beam
-                if (Input::HotkeyPressed(HK_MetroidWeaponBeam)) {
+                if (emuInstance->hotkeyPressed(HK_MetroidWeaponBeam)) {
                     SwitchWeapon(0);
                 }
 
                 // Switch to Missile
-                if (Input::HotkeyPressed(HK_MetroidWeaponMissile)) {
+                if (emuInstance->hotkeyPressed(HK_MetroidWeaponMissile)) {
                     SwitchWeapon(2);
                 }
 
@@ -1429,7 +1429,7 @@ void EmuThread::run()
 
                 // Sub-weapons processing (handled in a loop)
                 for (int i = 0; i < 6; i++) {
-                    if (Input::HotkeyPressed(weaponHotkeys[i])) {
+                    if (emuInstance->hotkeyPressed(weaponHotkeys[i])) {
                         SwitchWeapon(weaponIndices[i]);  // Switch to the corresponding weapon
 
                         // Exit loop when hotkey is pressed (because weapon switching is completed)
@@ -1438,7 +1438,7 @@ void EmuThread::run()
                 }
 
                 // Change to loaded SpecialWeapon, Last used weapon or Omega Canon
-                if (Input::HotkeyPressed(HK_MetroidWeaponSpecial)) {
+                if (emuInstance->hotkeyPressed(HK_MetroidWeaponSpecial)) {
                     uint8_t loadedSpecialWeapon = NDS->ARM9Read8(loadedSpecialWeaponAddr);
                     if (loadedSpecialWeapon != 0xFF) {
                         // switchWeapon if special weapon is loaded
@@ -1447,7 +1447,7 @@ void EmuThread::run()
                 }
 
                 // Morph ball boost
-                if (isSamus && Input::HotkeyDown(HK_MetroidHoldMorphBallBoost))
+                if (isSamus && emuInstance->hotkeyDown(HK_MetroidHoldMorphBallBoost))
                 {
                     isAltForm = NDS->ARM9Read8(isAltFormAddr) == 0x02;
                     if (isAltForm) {
@@ -1484,9 +1484,9 @@ void EmuThread::run()
                 // Weapon switching of Next/Previous
                 const int wheelDelta = mainWindow->panel->getDelta();
                 const bool hasDelta = wheelDelta != 0;
-                const bool hotkeyNext = hasDelta ? false : Input::HotkeyPressed(HK_MetroidWeaponNext);
+                const bool hotkeyNext = hasDelta ? false : emuInstance->hotkeyPressed(HK_MetroidWeaponNext);
 
-                if (__builtin_expect(hasDelta || hotkeyNext || Input::HotkeyPressed(HK_MetroidWeaponPrevious), true)) {
+                if (__builtin_expect(hasDelta || hotkeyNext || emuInstance->hotkeyPressed(HK_MetroidWeaponPrevious), true)) {
                     // Pre-fetch memory values to avoid multiple reads
                     const uint8_t currentWeapon = NDS->ARM9Read8(currentWeaponAddr);
                     const uint16_t havingWeapons = NDS->ARM9Read16(havingWeaponsAddr);
@@ -1540,7 +1540,7 @@ void EmuThread::run()
 
 
                 // Start / View Match progress, points
-                if (Input::HotkeyDown(HK_MetroidMenu)) {
+                if (emuInstance->hotkeyDown(HK_MetroidMenu)) {
                     FN_INPUT_PRESS(INPUT_START);
                 }
                 else {
@@ -1553,7 +1553,7 @@ void EmuThread::run()
 
 
                     // Scan Visor
-                    if (Input::HotkeyPressed(HK_MetroidScanVisor)) {
+                    if (emuInstance->hotkeyPressed(HK_MetroidScanVisor)) {
                         NDS->ReleaseScreen();
                         frameAdvance(2);
 
@@ -1580,7 +1580,7 @@ void EmuThread::run()
                     }
 
                     // OK (in scans and messages)
-                    if (Input::HotkeyPressed(HK_MetroidUIOk)) {
+                    if (emuInstance->hotkeyPressed(HK_MetroidUIOk)) {
                         NDS->ReleaseScreen();
                         frameAdvance(2);
                         NDS->TouchScreen(128, 142);
@@ -1588,7 +1588,7 @@ void EmuThread::run()
                     }
 
                     // Left arrow (in scans and messages)
-                    if (Input::HotkeyPressed(HK_MetroidUILeft)) {
+                    if (emuInstance->hotkeyPressed(HK_MetroidUILeft)) {
                         NDS->ReleaseScreen();
                         frameAdvance(2);
                         NDS->TouchScreen(71, 141);
@@ -1596,7 +1596,7 @@ void EmuThread::run()
                     }
 
                     // Right arrow (in scans and messages)
-                    if (Input::HotkeyPressed(HK_MetroidUIRight)) {
+                    if (emuInstance->hotkeyPressed(HK_MetroidUIRight)) {
                         NDS->ReleaseScreen();
                         frameAdvance(2);
                         NDS->TouchScreen(185, 141); // optimization ?
@@ -1604,7 +1604,7 @@ void EmuThread::run()
                     }
 
                     // Enter to Starship
-                    if (Input::HotkeyPressed(HK_MetroidUIYes)) {
+                    if (emuInstance->hotkeyPressed(HK_MetroidUIYes)) {
                         NDS->ReleaseScreen();
                         frameAdvance(2);
                         NDS->TouchScreen(96, 142);
@@ -1612,7 +1612,7 @@ void EmuThread::run()
                     }
 
                     // No Enter to Starship
-                    if (Input::HotkeyPressed(HK_MetroidUINo)) {
+                    if (emuInstance->hotkeyPressed(HK_MetroidUINo)) {
                         NDS->ReleaseScreen();
                         frameAdvance(2);
                         NDS->TouchScreen(160, 142);
@@ -1664,7 +1664,7 @@ void EmuThread::run()
                 Btm_buffer->fill(0x00000000);
 
                 // Touch Scren
-                if (Input::HotkeyDown(HK_MetroidShootScan) || Input::HotkeyDown(HK_MetroidScanShoot)) {
+                if (emuInstance->hotkeyDown(HK_MetroidShootScan) || emuInstance->hotkeyDown(HK_MetroidScanShoot)) {
                     NDS->TouchScreen(virtualStylusX, virtualStylusY);
                 }
                 else {
