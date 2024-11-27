@@ -186,8 +186,57 @@ LegacyEntry LegacyFile[] =
     {"HKJoy_FullscreenToggle",    0, "Joystick.HK_FullscreenToggle", true},
     {"HKJoy_SwapScreens",         0, "Joystick.HK_SwapScreens", true},
     {"HKJoy_SwapScreenEmphasis",  0, "Joystick.HK_SwapScreenEmphasis", true},
-    {"HKJoy_SolarSensorDecrease", 0, "Joystick.HK_SolarSensorDecrease", true},
-    {"HKJoy_SolarSensorIncrease", 0, "Joystick.HK_SolarSensorIncrease", true},
+    //{"HKJoy_SolarSensorDecrease", 0, "Joystick.HK_SolarSensorDecrease", true},
+    //{"HKJoy_SolarSensorIncrease", 0, "Joystick.HK_SolarSensorIncrease", true},
+
+
+    // metroid key
+    // not including any joystick bindings
+
+    {"HKKey_MetroidMoveForward",       0, &HKKeyMapping[HK_MetroidMoveForward],       Qt::Key_W, true},
+    {"HKKey_MetroidMoveBack",          0, &HKKeyMapping[HK_MetroidMoveBack],          Qt::Key_S, true},
+    {"HKKey_MetroidMoveLeft",          0, &HKKeyMapping[HK_MetroidMoveLeft],          Qt::Key_A, true},
+    {"HKKey_MetroidMoveRight",         0, &HKKeyMapping[HK_MetroidMoveRight],         Qt::Key_D, true},
+
+    {"HKKey_MetroidJump",              0, &HKKeyMapping[HK_MetroidJump],              Qt::Key_Space, true},
+
+    {"HKKey_MetroidMorphBall",         0, &HKKeyMapping[HK_MetroidMorphBall],         Qt::Key_Control, true},
+    {"HKKey_MetroidZoom",              0, &HKKeyMapping[HK_MetroidZoom],              (int)Qt::RightButton | (int)0xF0000000, true},
+    {"HKKey_MetroidHoldMorphBallBoost",0, &HKKeyMapping[HK_MetroidHoldMorphBallBoost],Qt::Key_Shift, true},
+
+    {"HKKey_MetroidScanVisor",         0, &HKKeyMapping[HK_MetroidScanVisor],         Qt::Key_C, true},
+
+    {"HKKey_MetroidUILeft",            0, &HKKeyMapping[HK_MetroidUILeft],            Qt::Key_Z, true},
+    {"HKKey_MetroidUIRight",           0, &HKKeyMapping[HK_MetroidUIRight],           Qt::Key_X, true},
+    {"HKKey_MetroidUIOk",              0, &HKKeyMapping[HK_MetroidUIOk],              Qt::Key_F, true},
+    {"HKKey_MetroidUIYes",             0, &HKKeyMapping[HK_MetroidUIYes],             Qt::Key_G, true},
+    {"HKKey_MetroidUINo",              0, &HKKeyMapping[HK_MetroidUINo],              Qt::Key_H, true},
+
+    {"HKKey_MetroidShootScan",         0, &HKKeyMapping[HK_MetroidShootScan],         (int)Qt::LeftButton | (int)0xF0000000, true},
+    {"HKKey_MetroidScanShoot",         0, &HKKeyMapping[HK_MetroidScanShoot],         Qt::Key_V, true},
+
+    {"HKKey_MetroidWeaponBeam",        0, &HKKeyMapping[HK_MetroidWeaponBeam],        (int)Qt::ExtraButton2 | (int)0xF0000000, true},
+    {"HKKey_MetroidWeaponMissile",     0, &HKKeyMapping[HK_MetroidWeaponMissile],     (int)Qt::ExtraButton1 | (int)0xF0000000, true},
+    {"HKKey_MetroidWeaponSpecial",     0, &HKKeyMapping[HK_MetroidWeaponSpecial],     Qt::Key_R, true},
+    {"HKKey_MetroidWeaponNext",        0, &HKKeyMapping[HK_MetroidWeaponNext],        Qt::Key_J, true},
+    {"HKKey_MetroidWeaponPrevious",    0, &HKKeyMapping[HK_MetroidWeaponPrevious],    Qt::Key_K, true},
+    {"HKKey_MetroidWeapon1",           0, &HKKeyMapping[HK_MetroidWeapon1],           Qt::Key_1, true},
+    {"HKKey_MetroidWeapon2",           0, &HKKeyMapping[HK_MetroidWeapon2],           Qt::Key_2, true},
+    {"HKKey_MetroidWeapon3",           0, &HKKeyMapping[HK_MetroidWeapon3],           Qt::Key_3, true},
+    {"HKKey_MetroidWeapon4",           0, &HKKeyMapping[HK_MetroidWeapon4],           Qt::Key_4, true},
+    {"HKKey_MetroidWeapon5",           0, &HKKeyMapping[HK_MetroidWeapon5],           Qt::Key_5, true},
+    {"HKKey_MetroidWeapon6",           0, &HKKeyMapping[HK_MetroidWeapon6],           Qt::Key_6, true},
+
+    // {"HKKey_MetroidVirtualStylus",     0, &HKKeyMapping[HK_MetroidVirtualStylus],     Qt::Key_Tab, true},
+    {"HKKey_MetroidMenu",              0, &HKKeyMapping[HK_MetroidMenu],              Qt::Key_Tab, true},
+    {"HKKey_MetroidIngameSensiUp",     0, &HKKeyMapping[HK_MetroidIngameSensiUp],     Qt::Key_PageUp, true},
+    {"HKKey_MetroidIngameSensiDown",   0, &HKKeyMapping[HK_MetroidIngameSensiDown],   Qt::Key_PageDown, true},
+
+
+
+
+    // not metroid
+
     {"HKJoy_FrameStep",           0, "Joystick.HK_FrameStep", true},
     {"HKJoy_PowerButton",         0, "Joystick.HK_PowerButton", true},
     {"HKJoy_VolumeUp",            0, "Joystick.HK_VolumeUp", true},
@@ -322,6 +371,10 @@ LegacyEntry LegacyFile[] =
     {"GdbARM7BreakOnStartup", 1, "Gdb.ARM7.BreakOnStartup", true},
     {"GdbARM9BreakOnStartup", 1, "Gdb.ARM9.BreakOnStartup", true},
 #endif
+
+    { "MetroidAimSensitivity", 0, &MetroidAimSensitivity, MetroidAimSensitivityDefault, false },
+    { "MetroidVirtualStylusSensitivity", 0, &MetroidVirtualStylusSensitivity, MetroidVirtualStylusSensitivityDefault, false },
+
 
     {"Camera0_InputType", 0, "DSi.Camera0.InputType", false},
     {"Camera0_ImagePath", 2, "DSi.Camera0.ImagePath", false},
