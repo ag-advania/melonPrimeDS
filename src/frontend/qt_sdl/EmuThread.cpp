@@ -375,8 +375,10 @@ void EmuThread::run()
 
         // Lambda to update aim sensitivity and display a message
         auto updateAimSensitivity = [&](int change) {
+
             // Store the current sensitivity in a local variable
-            int currentSensitivity = Config::MetroidAimSensitivity;
+            auto& cfg = emuInstance->getGlobalConfig();
+            int currentSensitivity = cfg.GetInt("Metroid.Sensitivity.Aim");
 
             // Calculate the new sensitivity
             int newSensitivity = currentSensitivity + change;
@@ -385,7 +387,7 @@ void EmuThread::run()
             if (newSensitivity >= 1) {
                 // Update the config only if the value has changed
                 if (newSensitivity != currentSensitivity) {
-                    Config::MetroidAimSensitivity = newSensitivity;
+                    cfg.SetInt("Metroid.Sensitivity.Aim", newSensitivity);
                     // Save the changes to the configuration file (to persist settings for future sessions)
                     Config::Save();
                 }
@@ -1081,9 +1083,9 @@ auto frameAdvance{
         auto isFocused = emuInstance->getMainWindow()->panel->getFocused();
 
         // Define sensitivity factor as a constant
-        const float SENSITIVITY_FACTOR = Config::MetroidAimSensitivity * 0.01f;
-        const float SENSITIVITY_FACTOR_VIRTUAL_STYLUS = Config::MetroidVirtualStylusSensitivity * 0.01f;
-
+        auto& cfg = emuInstance->getGlobalConfig();
+        const float SENSITIVITY_FACTOR = cfg.GetInt("Metroid.Sensitivity.Aim") * 0.01f;
+        const float SENSITIVITY_FACTOR_VIRTUAL_STYLUS = cfg.GetInt("Metroid.Sensitivity.VirtualStylus") * 0.01f;
 
         /*
         #ifdef ENABLE_MEMORY_DUMP

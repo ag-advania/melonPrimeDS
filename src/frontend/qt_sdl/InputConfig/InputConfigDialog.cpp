@@ -102,8 +102,9 @@ InputConfigDialog::InputConfigDialog(QWidget* parent) : QDialog(parent), ui(new 
     else
         ui->lblInstanceNum->hide();
 
-    ui->metroidAimSensitvitySpinBox->setValue(Config::MetroidAimSensitivity);
-    ui->metroidVirtualStylusSensitvitySpinBox->setValue(Config::MetroidVirtualStylusSensitivity);
+    auto& cfg = emuInstance->getGlobalConfig();
+    ui->metroidAimSensitvitySpinBox->setValue(cfg.GetInt("Metroid.Sensitivity.Aim"));
+    ui->metroidVirtualStylusSensitvitySpinBox->setValue(cfg.GetInt("Metroid.Sensitivity.VirtualStylus"));
     //ui->metroidVsPlayerInputSpinBox->setValue(Config::MetroidVsPlayerInput);
 }
 
@@ -230,9 +231,8 @@ void InputConfigDialog::on_InputConfigDialog_accepted()
     }
 
     emuInstance->setJoystick(instcfg.GetInt("JoystickID"));
-
-    Config::MetroidAimSensitivity = ui->metroidAimSensitvitySpinBox->value();
-    Config::MetroidVirtualStylusSensitivity = ui->metroidVirtualStylusSensitvitySpinBox->value();
+    instcfg.SetInt("Metroid.Sensitivity.Aim", ui->metroidAimSensitvitySpinBox->value());
+    instcfg.SetInt("Metroid.Sensitivity.VirtualStylus", ui->metroidVirtualStylusSensitvitySpinBox->value());
     //Config::MetroidVsPlayerInput = ui->metroidVsPlayerInputSpinBox->value();
     Config::Save();
 

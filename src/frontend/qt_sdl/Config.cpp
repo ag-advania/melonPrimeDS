@@ -83,6 +83,10 @@ DefaultList<int> DefaultInts =
     {"Instance*.Gdb.ARM9.Port", 3333},
 #endif
     {"LAN.HostNumPlayers", 16},
+
+    // melonPrimeDS
+    {"Metroid.Sensitivity.Aim", 16},
+    {"Metroid.Sensitivity.VirtualStylus", 16},
 };
 
 RangeList IntRanges =
@@ -102,6 +106,10 @@ RangeList IntRanges =
     {"Instance*.Window*.ScreenAspectBot", {0, AspectRatiosNum-1}},
     {"MP.AudioMode", {0, 2}},
     {"LAN.HostNumPlayers", {2, 16}},
+
+    // melonPrimeDS
+    {"Metroid.Sensitivity.Aim", {1, 999999}},
+    {"Metroid.Sensitivity.VirtualStylus", {1, 999999}},
 };
 
 DefaultList<bool> DefaultBools =
@@ -416,8 +424,8 @@ LegacyEntry LegacyFile[] =
     {"GdbARM9BreakOnStartup", 1, "Gdb.ARM9.BreakOnStartup", true},
 #endif
 
-    {"MetroidAimSensitivity", 0, "MetroidAimSensitivity",  false },
-    {"MetroidVirtualStylusSensitivity", 0, "MetroidVirtualStylusSensitivity", false },
+    {"MetroidAimSensitivity", 0, "Metroid.Sensitivity.Aim",  false },
+    {"MetroidVirtualStylusSensitivity", 0, "Metroid.Sensitivity.VirtualStylus", false },
 
     {"Camera0_InputType", 0, "DSi.Camera0.InputType", false},
     {"Camera0_ImagePath", 2, "DSi.Camera0.ImagePath", false},
