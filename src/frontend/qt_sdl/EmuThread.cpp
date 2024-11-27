@@ -718,194 +718,32 @@ void EmuThread::run()
 
         handleMessages();
     }
-}
+};
+
+
+
+
+#define INPUT_A 0
+#define INPUT_B 1
+#define INPUT_SELECT 2
+#define INPUT_START 3
+#define INPUT_RIGHT 4
+#define INPUT_LEFT 5
+#define INPUT_UP 6
+#define INPUT_DOWN 7
+#define INPUT_R 8
+#define INPUT_L 9
+#define INPUT_X 10
+#define INPUT_Y 11
+
+#define FN_INPUT_PRESS(i) do { emuInstance->inputMask &= ~(1u << i); } while(0);
+#define FN_INPUT_RELEASE(i) do { emuInstance->inputMask |= (1u << i); } while(0);
 
 
 
 
 
 
-
-    // metroid prime hunters code
-    // adapted from https://forums.desmume.org/viewtopic.php?id=11715
-
-    // #define INTERP_IN(t) (t * t)
-    // #define INTERP_IN_CUBIC(t) (t * t * t)
-    // #define INTERP_IN_QUART(t) (t * t * t * t)
-
-    #define INPUT_A 0
-    #define INPUT_B 1
-    #define INPUT_SELECT 2
-    #define INPUT_START 3
-    #define INPUT_RIGHT 4
-    #define INPUT_LEFT 5
-    #define INPUT_UP 6
-    #define INPUT_DOWN 7
-    #define INPUT_R 8
-    #define INPUT_L 9
-    #define INPUT_X 10
-    #define INPUT_Y 11
-    #define FN_INPUT_PRESS(i) emuInstance->inputMask &= ~(1u << i)    // Clear bit (0)
-    #define FN_INPUT_RELEASE(i) emuInstance->inputMask |= (1u << i)   // Set bit (1)
-
-
-
-
-    // #define ENABLE_MEMORY_DUMP 1
-
-    /*
-    #ifdef ENABLE_MEMORY_DUMP
-        int memoryDump = 0;
-    #endif
-    */
-
-    // RawInputThread* rawInputThread = new RawInputThread(parent());
-    // rawInputThread->start();
-
-    /*
-    auto processMoveInput = []() {
-        const struct {
-            int hotkey;
-            int input;
-        } moves[] = {
-            {HK_MetroidMoveForward, INPUT_UP},
-            {HK_MetroidMoveBack, INPUT_DOWN},
-            {HK_MetroidMoveLeft, INPUT_LEFT},
-            {HK_MetroidMoveRight, INPUT_RIGHT}
-        };
-
-        for (const auto& move : moves) {
-            if (emuInstance->hotkeyDown(move.hotkey)) {
-                FN_INPUT_PRESS(move.input);
-            } else {
-                FN_INPUT_RELEASE(move.input);
-            }
-        }
-    };
-    */
-    /*
-    auto processMoveInput = []() {
-        // Static array to minimize stack operations
-        static constexpr struct InputPair {
-            int hotkey;
-            int input;
-            int oppositeHotkey;
-        } moves[] = {
-            {HK_MetroidMoveForward, INPUT_UP, HK_MetroidMoveBack},
-            {HK_MetroidMoveBack, INPUT_DOWN, HK_MetroidMoveForward},
-            {HK_MetroidMoveLeft, INPUT_LEFT, HK_MetroidMoveRight},
-            {HK_MetroidMoveRight, INPUT_RIGHT, HK_MetroidMoveLeft}
-        };
-
-        // Process horizontal and vertical axes separately for better branch prediction
-        // and to avoid unnecessary checks
-
-        // for supporting "counter-strafing" feature
-
-        // Horizontal axis
-        const bool leftPressed = emuInstance->hotkeyDown(moves[2].hotkey);
-        const bool rightPressed = emuInstance->hotkeyDown(moves[3].hotkey);
-
-        if (leftPressed && !rightPressed) {
-            FN_INPUT_PRESS(INPUT_LEFT);
-        }
-        else {
-            FN_INPUT_RELEASE(INPUT_LEFT);
-        }
-
-        if (rightPressed && !leftPressed) {
-            FN_INPUT_PRESS(INPUT_RIGHT);
-        }
-        else {
-            FN_INPUT_RELEASE(INPUT_RIGHT);
-        }
-
-        // Vertical axis
-        const bool upPressed = emuInstance->hotkeyDown(moves[0].hotkey);
-        const bool downPressed = emuInstance->hotkeyDown(moves[1].hotkey);
-
-        if (upPressed && !downPressed) {
-            FN_INPUT_PRESS(INPUT_UP);
-        }
-        else {
-            FN_INPUT_RELEASE(INPUT_UP);
-        }
-
-        if (downPressed && !upPressed) {
-            FN_INPUT_PRESS(INPUT_DOWN);
-        }
-        else {
-            FN_INPUT_RELEASE(INPUT_DOWN);
-        }
-    };
-
-    */
-
-    // processMoveInputFunction{
-
-    auto processMoveInput = []() {
-        // Pack all input flags into a single 32-bit register for SIMD-like processing
-        static constexpr uint32_t INPUT_PACKED_UP = (1u << 0) | (uint32_t(INPUT_UP) << 16);
-        static constexpr uint32_t INPUT_PACKED_DOWN = (1u << 1) | (uint32_t(INPUT_DOWN) << 16);
-        static constexpr uint32_t INPUT_PACKED_LEFT = (1u << 2) | (uint32_t(INPUT_LEFT) << 16);
-        static constexpr uint32_t INPUT_PACKED_RIGHT = (1u << 3) | (uint32_t(INPUT_RIGHT) << 16);
-
-        // Pre-fetch all hotkey states at once to minimize input latency
-        uint32_t inputBitmap =
-            (uint32_t(emuInstance->hotkeyDown(HK_MetroidMoveForward)) << 0) |
-            (uint32_t(emuInstance->hotkeyDown(HK_MetroidMoveBack)) << 1) |
-            (uint32_t(emuInstance->hotkeyDown(HK_MetroidMoveLeft)) << 2) |
-            (uint32_t(emuInstance->hotkeyDown(HK_MetroidMoveRight)) << 3);
-
-        // Optimized LUT using bit manipulation to handle all cases
-        static constexpr uint32_t PACKED_LUT[16] = {
-            0x00000000u, // None
-            INPUT_PACKED_UP,    // Up
-            INPUT_PACKED_DOWN,  // Down
-            0x00000000u, // Up+Down (cancel)
-            INPUT_PACKED_LEFT,  // Left
-            INPUT_PACKED_UP | INPUT_PACKED_LEFT,    // Left+Up
-            INPUT_PACKED_DOWN | INPUT_PACKED_LEFT,  // Left+Down
-            INPUT_PACKED_LEFT,  // Left+Up+Down
-            INPUT_PACKED_RIGHT, // Right
-            INPUT_PACKED_UP | INPUT_PACKED_RIGHT,   // Right+Up
-            INPUT_PACKED_DOWN | INPUT_PACKED_RIGHT, // Right+Down
-            INPUT_PACKED_RIGHT, // Right+Up+Down
-            0x00000000u, // Left+Right (cancel)
-            INPUT_PACKED_UP,    // Left+Right+Up
-            INPUT_PACKED_DOWN,  // Left+Right+Down
-            0x00000000u  // All pressed (cancel)
-        };
-
-        // Single LUT lookup to get final state
-        uint32_t finalState = PACKED_LUT[inputBitmap & 0xF];
-
-        // Branchless input application using bit manipulation
-        static const auto applyInput = [](uint32_t packedInput, uint32_t state) {
-            if (state & packedInput & 0xF) {
-                FN_INPUT_PRESS(packedInput >> 16);
-            }
-            else {
-                FN_INPUT_RELEASE(packedInput >> 16);
-            }
-            };
-
-        // Process all inputs in parallel using packed values
-        static constexpr uint32_t ALL_INPUTS[] = {
-            INPUT_PACKED_UP, INPUT_PACKED_DOWN,
-            INPUT_PACKED_LEFT, INPUT_PACKED_RIGHT
-        };
-
-    #pragma unroll
-        for (const auto& input : ALL_INPUTS) {
-            applyInput(input, finalState);
-        }
-        };
-
-
-
-
-    // /processMoveInputFunction }
 
     uint8_t playerPosition;
     const uint16_t playerAddressIncrement = 0xF30;
@@ -1069,6 +907,174 @@ void EmuThread::run()
     //const float aimAspectRatio = 6.0 / 4.0; // i have no idea
     const float aimAspectRatio = 1.5f; // i have no idea  6.0 / 4.0
 
+
+
+    // metroid prime hunters code
+    // adapted from https://forums.desmume.org/viewtopic.php?id=11715
+
+    // #define INTERP_IN(t) (t * t)
+    // #define INTERP_IN_CUBIC(t) (t * t * t)
+    // #define INTERP_IN_QUART(t) (t * t * t * t)
+
+
+
+
+
+    // #define ENABLE_MEMORY_DUMP 1
+
+    /*
+    #ifdef ENABLE_MEMORY_DUMP
+        int memoryDump = 0;
+    #endif
+    */
+
+    // RawInputThread* rawInputThread = new RawInputThread(parent());
+    // rawInputThread->start();
+
+    /*
+    auto processMoveInput = []() {
+        const struct {
+            int hotkey;
+            int input;
+        } moves[] = {
+            {HK_MetroidMoveForward, INPUT_UP},
+            {HK_MetroidMoveBack, INPUT_DOWN},
+            {HK_MetroidMoveLeft, INPUT_LEFT},
+            {HK_MetroidMoveRight, INPUT_RIGHT}
+        };
+
+        for (const auto& move : moves) {
+            if (emuInstance->hotkeyDown(move.hotkey)) {
+                FN_INPUT_PRESS(move.input);
+            } else {
+                FN_INPUT_RELEASE(move.input);
+            }
+        }
+    };
+    */
+    /*
+    auto processMoveInput = []() {
+        // Static array to minimize stack operations
+        static constexpr struct InputPair {
+            int hotkey;
+            int input;
+            int oppositeHotkey;
+        } moves[] = {
+            {HK_MetroidMoveForward, INPUT_UP, HK_MetroidMoveBack},
+            {HK_MetroidMoveBack, INPUT_DOWN, HK_MetroidMoveForward},
+            {HK_MetroidMoveLeft, INPUT_LEFT, HK_MetroidMoveRight},
+            {HK_MetroidMoveRight, INPUT_RIGHT, HK_MetroidMoveLeft}
+        };
+
+        // Process horizontal and vertical axes separately for better branch prediction
+        // and to avoid unnecessary checks
+
+        // for supporting "counter-strafing" feature
+
+        // Horizontal axis
+        const bool leftPressed = emuInstance->hotkeyDown(moves[2].hotkey);
+        const bool rightPressed = emuInstance->hotkeyDown(moves[3].hotkey);
+
+        if (leftPressed && !rightPressed) {
+            FN_INPUT_PRESS(INPUT_LEFT);
+        }
+        else {
+            FN_INPUT_RELEASE(INPUT_LEFT);
+        }
+
+        if (rightPressed && !leftPressed) {
+            FN_INPUT_PRESS(INPUT_RIGHT);
+        }
+        else {
+            FN_INPUT_RELEASE(INPUT_RIGHT);
+        }
+
+        // Vertical axis
+        const bool upPressed = emuInstance->hotkeyDown(moves[0].hotkey);
+        const bool downPressed = emuInstance->hotkeyDown(moves[1].hotkey);
+
+        if (upPressed && !downPressed) {
+            FN_INPUT_PRESS(INPUT_UP);
+        }
+        else {
+            FN_INPUT_RELEASE(INPUT_UP);
+        }
+
+        if (downPressed && !upPressed) {
+            FN_INPUT_PRESS(INPUT_DOWN);
+        }
+        else {
+            FN_INPUT_RELEASE(INPUT_DOWN);
+        }
+    };
+
+    */
+
+    // processMoveInputFunction{
+
+    auto processMoveInput = [&]() {
+        // Pack all input flags into a single 32-bit register for SIMD-like processing
+        static constexpr uint32_t INPUT_PACKED_UP = (1u << 0) | (uint32_t(INPUT_UP) << 16);
+        static constexpr uint32_t INPUT_PACKED_DOWN = (1u << 1) | (uint32_t(INPUT_DOWN) << 16);
+        static constexpr uint32_t INPUT_PACKED_LEFT = (1u << 2) | (uint32_t(INPUT_LEFT) << 16);
+        static constexpr uint32_t INPUT_PACKED_RIGHT = (1u << 3) | (uint32_t(INPUT_RIGHT) << 16);
+
+        // Pre-fetch all hotkey states at once to minimize input latency
+        uint32_t inputBitmap =
+            (uint32_t(emuInstance->hotkeyDown(HK_MetroidMoveForward)) << 0) |
+            (uint32_t(emuInstance->hotkeyDown(HK_MetroidMoveBack)) << 1) |
+            (uint32_t(emuInstance->hotkeyDown(HK_MetroidMoveLeft)) << 2) |
+            (uint32_t(emuInstance->hotkeyDown(HK_MetroidMoveRight)) << 3);
+
+        // Optimized LUT using bit manipulation to handle all cases
+        static constexpr uint32_t PACKED_LUT[16] = {
+            0x00000000u, // None
+            INPUT_PACKED_UP,    // Up
+            INPUT_PACKED_DOWN,  // Down
+            0x00000000u, // Up+Down (cancel)
+            INPUT_PACKED_LEFT,  // Left
+            INPUT_PACKED_UP | INPUT_PACKED_LEFT,    // Left+Up
+            INPUT_PACKED_DOWN | INPUT_PACKED_LEFT,  // Left+Down
+            INPUT_PACKED_LEFT,  // Left+Up+Down
+            INPUT_PACKED_RIGHT, // Right
+            INPUT_PACKED_UP | INPUT_PACKED_RIGHT,   // Right+Up
+            INPUT_PACKED_DOWN | INPUT_PACKED_RIGHT, // Right+Down
+            INPUT_PACKED_RIGHT, // Right+Up+Down
+            0x00000000u, // Left+Right (cancel)
+            INPUT_PACKED_UP,    // Left+Right+Up
+            INPUT_PACKED_DOWN,  // Left+Right+Down
+            0x00000000u  // All pressed (cancel)
+        };
+
+        // Single LUT lookup to get final state
+        uint32_t finalState = PACKED_LUT[inputBitmap & 0xF];
+
+        // Branchless input application using bit manipulation
+        static const auto applyInput = [&](uint32_t packedInput, uint32_t state) {
+            if (state & packedInput & 0xF) {
+                FN_INPUT_PRESS(packedInput >> 16);
+            }
+            else {
+                FN_INPUT_RELEASE(packedInput >> 16);
+            }
+            };
+
+        // Process all inputs in parallel using packed values
+        static constexpr uint32_t ALL_INPUTS[] = {
+            INPUT_PACKED_UP, INPUT_PACKED_DOWN,
+            INPUT_PACKED_LEFT, INPUT_PACKED_RIGHT
+        };
+
+#pragma unroll
+        for (const auto& input : ALL_INPUTS) {
+            applyInput(input, finalState);
+        }
+        };
+
+
+
+
+    // /processMoveInputFunction }
 
     while (emuStatus  != emuStatus_Exit) {
 
@@ -1421,7 +1427,7 @@ void EmuThread::run()
                 }
 
                 // Array of sub-weapon hotkeys (Associating hotkey definitions with weapon indices)
-                Hotkey weaponHotkeys[] = {
+                static constexpr int weaponHotkeys[] = {
                     HK_MetroidWeapon1,  // ShockCoil    7
                     HK_MetroidWeapon2,  // Magmaul      6
                     HK_MetroidWeapon3,  // Judicator    5
