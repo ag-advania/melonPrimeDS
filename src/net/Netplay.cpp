@@ -1029,10 +1029,10 @@ void ProcessInput()
 
         InputFrame frame;
         frame.FrameNum = NDS::NumFrames + lag;
-        frame.KeyMask = emuInstance -> inputMask;
-        frame.Touching = emuInstance->touching ? 1:0;
-        frame.TouchX = emuInstance->touchX;
-        frame.TouchY = emuInstance->touchY;
+        frame.KeyMask = Input::InputMask;
+        frame.Touching = Input::Touching ? 1 : 0;
+        frame.TouchX = Input::TouchX;
+        frame.TouchY = Input::TouchY;
         // TODO: other shit! (some hotkeys for example?)
 
         InputQueue.push(frame);
