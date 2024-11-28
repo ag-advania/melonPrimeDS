@@ -918,10 +918,6 @@ void EmuThread::run()
     // metroid prime hunters code
     // adapted from https://forums.desmume.org/viewtopic.php?id=11715
 
-    // #define INTERP_IN(t) (t * t)
-    // #define INTERP_IN_CUBIC(t) (t * t * t)
-    // #define INTERP_IN_QUART(t) (t * t * t * t)
-
     #define INPUT_A 0
     #define INPUT_B 1
     #define INPUT_SELECT 2
@@ -938,17 +934,6 @@ void EmuThread::run()
     #define FN_INPUT_RELEASE(i) Input::InputMask.setBit(i, true);
 
 
-
-
-
-// #define ENABLE_MEMORY_DUMP 1
-
-/*
-#ifdef ENABLE_MEMORY_DUMP
-    int memoryDump = 0;
-#endif
-*/
-
     bool enableAim = true;
     bool wasLastFrameFocused = false;
 
@@ -959,88 +944,6 @@ void EmuThread::run()
     const float dsAspectRatio = 1.333333333f;
     //const float aimAspectRatio = 6.0 / 4.0; // i have no idea
     const float aimAspectRatio = 1.5f; // i have no idea  6.0 / 4.0
-
-    // RawInputThread* rawInputThread = new RawInputThread(parent());
-    // rawInputThread->start();
-
-    /*
-    auto processMoveInput = []() {
-        const struct {
-            int hotkey;
-            int input;
-        } moves[] = {
-            {HK_MetroidMoveForward, INPUT_UP},
-            {HK_MetroidMoveBack, INPUT_DOWN},
-            {HK_MetroidMoveLeft, INPUT_LEFT},
-            {HK_MetroidMoveRight, INPUT_RIGHT}
-        };
-
-        for (const auto& move : moves) {
-            if (Input::HotkeyDown(move.hotkey)) {
-                FN_INPUT_PRESS(move.input);
-            } else {
-                FN_INPUT_RELEASE(move.input);
-            }
-        }
-    };
-    */
-    /*
-    auto processMoveInput = []() {
-        // Static array to minimize stack operations
-        static constexpr struct InputPair {
-            int hotkey;
-            int input;
-            int oppositeHotkey;
-        } moves[] = {
-            {HK_MetroidMoveForward, INPUT_UP, HK_MetroidMoveBack},
-            {HK_MetroidMoveBack, INPUT_DOWN, HK_MetroidMoveForward},
-            {HK_MetroidMoveLeft, INPUT_LEFT, HK_MetroidMoveRight},
-            {HK_MetroidMoveRight, INPUT_RIGHT, HK_MetroidMoveLeft}
-        };
-
-        // Process horizontal and vertical axes separately for better branch prediction
-        // and to avoid unnecessary checks
-
-        // for supporting "counter-strafing" feature
-
-        // Horizontal axis
-        const bool leftPressed = Input::HotkeyDown(moves[2].hotkey);
-        const bool rightPressed = Input::HotkeyDown(moves[3].hotkey);
-
-        if (leftPressed && !rightPressed) {
-            FN_INPUT_PRESS(INPUT_LEFT);
-        }
-        else {
-            FN_INPUT_RELEASE(INPUT_LEFT);
-        }
-
-        if (rightPressed && !leftPressed) {
-            FN_INPUT_PRESS(INPUT_RIGHT);
-        }
-        else {
-            FN_INPUT_RELEASE(INPUT_RIGHT);
-        }
-
-        // Vertical axis
-        const bool upPressed = Input::HotkeyDown(moves[0].hotkey);
-        const bool downPressed = Input::HotkeyDown(moves[1].hotkey);
-
-        if (upPressed && !downPressed) {
-            FN_INPUT_PRESS(INPUT_UP);
-        }
-        else {
-            FN_INPUT_RELEASE(INPUT_UP);
-        }
-
-        if (downPressed && !upPressed) {
-            FN_INPUT_PRESS(INPUT_DOWN);
-        }
-        else {
-            FN_INPUT_RELEASE(INPUT_DOWN);
-        }
-    };
-
-    */
 
     // processMoveInputFunction{
 
@@ -1264,19 +1167,6 @@ void EmuThread::run()
         // Define sensitivity factor as a constant
         const float SENSITIVITY_FACTOR = Config::MetroidAimSensitivity * 0.01f;
         const float SENSITIVITY_FACTOR_VIRTUAL_STYLUS = Config::MetroidVirtualStylusSensitivity * 0.01f;
-
-
-        /*
-        #ifdef ENABLE_MEMORY_DUMP
-            if (Input::HotkeyPressed(HK_MetroidUIOk)) {
-                printf("MainRAMMask 0x%.8" PRIXPTR "\n", (uintptr_t)NDS->MainRAMMask);
-                QFile file("memory" + QString::number(memoryDump++) + ".bin");
-                if (file.open(QIODevice::ReadWrite)) {
-                    file.write(QByteArray((char*)NDS->MainRAM, NDS->MainRAMMaxSize));
-                }
-            }
-        #endif
-        */
 
         if (!isRomDetected) {
             detectRomAndSetAddresses();
@@ -1881,9 +1771,6 @@ void EmuThread::run()
                 if (virtualStylusY < 0) virtualStylusY = 0;
                 if (virtualStylusY > 191) virtualStylusY = 191;
 
-                // mainWindow->osdAddMessage(0, ("mouseY: " + std::to_string(mouseY)).c_str());
-                // mainWindow->osdAddMessage(0, ("virtualStylusY: " + std::to_string(virtualStylusY)).c_str());
-
                 // Draw VirtualStylus Start
                 Btm_paint->setPen(Qt::white);
 
@@ -1918,8 +1805,6 @@ void EmuThread::run()
         Platform::FileWrite(&state, sizeof(state), 1, file);
         Platform::CloseFile(file);
     }
-
-    // rawInputThread->quit();
 
     EmuStatus = emuStatus_Exit;
 
