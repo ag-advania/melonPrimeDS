@@ -55,9 +55,6 @@ set(SOURCES_QT_SDL
     CLI.h
     CLI.cpp
 
-    # rawinput/rawinput_common.c
-    # RawInputThread.cpp
-
     ScreenPrimeOSD.cpp
     ScreenPrimeOSD.h
     LANDialog.cpp
@@ -107,8 +104,6 @@ if (WIN32)
         ../duckstation/gl/context_wgl.cpp
 
         ../glad/glad_wgl.c
-
-        # rawinput/rawinput_win32.c
     )
 
     if (MINGW AND CMAKE_HOST_SYSTEM_NAME STREQUAL "Linux")
