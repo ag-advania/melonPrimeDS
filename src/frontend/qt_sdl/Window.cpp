@@ -831,6 +831,7 @@ void MainWindow::keyReleaseEvent(QKeyEvent* event)
     Input::KeyRelease(event);
 }
 
+
 void MainWindow::dragEnterEvent(QDragEnterEvent* event)
 {
     if (!event->mimeData()->hasUrls()) return;
