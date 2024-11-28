@@ -1030,7 +1030,7 @@ void ProcessInput()
         InputFrame frame;
         frame.FrameNum = NDS::NumFrames + lag;
         frame.KeyMask = Input::InputMask;
-        frame.Touching = Input::Touching ? 1 : 0;
+        frame.Touching = Input::Touching ? 1:0;
         frame.TouchX = Input::TouchX;
         frame.TouchY = Input::TouchY;
         // TODO: other shit! (some hotkeys for example?)

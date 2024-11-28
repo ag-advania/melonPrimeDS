@@ -25,7 +25,6 @@
 #include <unordered_map>
 #include <tuple>
 
-
 #include "toml/toml11/types.hpp"
 
 namespace Config

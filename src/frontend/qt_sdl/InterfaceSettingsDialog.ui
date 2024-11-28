@@ -314,7 +314,7 @@
       <set>QDialogButtonBox::StandardButton::Cancel|QDialogButtonBox::StandardButton::Ok</set>
      </property>
     </widget>
-   </item> -->
+   </item>
   </layout>
  </widget>
  <resources/>

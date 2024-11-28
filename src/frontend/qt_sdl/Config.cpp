@@ -764,7 +764,7 @@ toml::value& Table::ResolvePath(const std::string& path)
 
 template<typename T> T Table::FindDefault(const std::string& path, T def, DefaultList<T> list)
 {
-    std::string defkey = GetDefaultKey(PathPrefix + path);
+    std::string defkey = GetDefaultKey(PathPrefix+path);
 
     T ret = def;
     while (list.count(defkey) == 0)

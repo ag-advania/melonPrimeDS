@@ -349,8 +349,6 @@ void EmuThread::run()
 
     char melontitle[100];
 
-
-
     bool fastforward = false;
     bool slowmo = false;
     emuInstance->fastForwardToggled = false;
