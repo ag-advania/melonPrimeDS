@@ -1853,6 +1853,26 @@ void MainWindow::onOpenInputConfig()
     connect(dlg, &InputConfigDialog::finished, this, &MainWindow::onInputConfigFinished);
 }
 
+void MainWindow::onOpenMetroidInputSettings()
+{
+    emuThread->emuPause();
+
+    InputConfigDialog* dlg = InputConfigDialog::openDlg(this);
+    dlg->switchTabToAddons();
+
+    connect(dlg, &InputConfigDialog::finished, this, &MainWindow::onInputConfigFinished);
+}
+
+void MainWindow::onOpenMetroidOtherSettings()
+{
+    emuThread->emuPause();
+
+    InputConfigDialog* dlg = InputConfigDialog::openDlg(this);
+    dlg->switchTabToMetroid();
+
+    connect(dlg, &InputConfigDialog::finished, this, &MainWindow::onInputConfigFinished);
+}
+
 void MainWindow::onInputConfigFinished(int res)
 {
     emuThread->emuUnpause();
@@ -2294,24 +2314,4 @@ void MainWindow::onUpdateVideoSettings(bool glchange)
     {
         emuThread->emuUnpause();
     }
-}
-
-void MainWindow::onOpenMetroidInputSettings()
-{
-    emuThread->emuPause();
-
-    InputConfigDialog* dlg = InputConfigDialog::openDlg(this);
-    dlg->switchTabToAddons();
-
-    connect(dlg, &InputConfigDialog::finished, this, &MainWindow::onInputConfigFinished);
-}
-
-void MainWindow::onOpenMetroidOtherSettings()
-{
-    emuThread->emuPause();
-
-    InputConfigDialog* dlg = InputConfigDialog::openDlg(this);
-    dlg->switchTabToMetroid();
-
-    connect(dlg, &InputConfigDialog::finished, this, &MainWindow::onInputConfigFinished);
 }
