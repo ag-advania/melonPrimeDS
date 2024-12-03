@@ -25,7 +25,7 @@
 #include "LAN_Socket.h"
 #include "FIFO.h"
 #include "Platform.h"
-
+#include <chrono>
 #include <libslirp.h>
 
 #ifdef __WIN32__
@@ -84,35 +84,64 @@ int clock_gettime(int, struct timespec *spec)
 
 #endif // __WIN32__
 
+// Helper function to get current timestamp in nanoseconds
+uint64_t getCurrentTimestampNS() {
+    auto now = std::chrono::steady_clock::now();
+    return std::chrono::duration_cast<std::chrono::nanoseconds>(now.time_since_epoch()).count();
+}
 
-void RXEnqueue(const void* buf, int len)
-{
+
+void RXEnqueue(const void* buf, int len) {
     int alignedlen = (len + 3) & ~3;
     int totallen = alignedlen + 4;
 
-    if (!RXBuffer.CanFit(totallen >> 2))
-    {
+    if (!RXBuffer.CanFit(totallen >> 2)) {
         Log(LogLevel::Warn, "slirp: !! NOT ENOUGH SPACE IN RX BUFFER\n");
         return;
     }
 
+    // Read the timestamp from the packet (last 8 bytes)
+    const char* packetData = static_cast<const char*>(buf);
+    uint64_t sentTimestamp;
+    memcpy(&sentTimestamp, packetData + len - sizeof(uint64_t), sizeof(sentTimestamp));
+
+    // Calculate current time and latency
+    uint64_t receivedTimestamp = getCurrentTimestampNS();
+    uint64_t latency = receivedTimestamp - sentTimestamp;
+
+    //Log(LogLevel::Info, "slirp: Packet latency: %llu ns\n", latency);
+     mainWindow->osdAddMessage(0, ("Latency" + std::to_string(latency)).c_str());
+
     u32 header = (alignedlen & 0xFFFF) | (len << 16);
     RXBuffer.Write(header);
+
     for (int i = 0; i < alignedlen; i += 4)
-        RXBuffer.Write(((u32*)buf)[i>>2]);
+        RXBuffer.Write(((u32*)buf)[i >> 2]);
 }
 
-ssize_t SlirpCbSendPacket(const void* buf, size_t len, void* opaque)
-{
-    if (len > 2048)
-    {
+ssize_t SlirpCbSendPacket(const void* buf, size_t len, void* opaque) {
+    if (len > 2048) {
         Log(LogLevel::Warn, "slirp: packet too big (%zu)\n", len);
         return 0;
     }
 
-    Log(LogLevel::Debug, "slirp: response packet of %zu bytes, type %04X\n", len, ntohs(((u16*)buf)[6]));
+    Log(LogLevel::Debug, "slirp: sending packet of %zu bytes\n", len);
 
-    RXEnqueue(buf, len);
+    // Get the timestamp in nanoseconds
+    uint64_t timestamp = getCurrentTimestampNS();
+
+    // Allocate memory to hold both the packet data and timestamp
+    size_t newLen = len + sizeof(timestamp);
+    char* packetWithTimestamp = new char[newLen];
+    
+    // Copy the original packet data and append the timestamp
+    memcpy(packetWithTimestamp, buf, len);
+    memcpy(packetWithTimestamp + len, &timestamp, sizeof(timestamp));
+
+    // Queue the packet with the timestamp attached
+    RXEnqueue(packetWithTimestamp, newLen);
+    
+    delete[] packetWithTimestamp; // Free allocated memory
 
     return len;
 }
