@@ -843,6 +843,7 @@ void EmuThread::run()
 
     bool isWeavel;
 
+    /*
     // Screen layout adjustment constants
     constexpr float DEFAULT_ADJUSTMENT = 0.25f;
     constexpr float HYBRID_RIGHT = 0.333203125f;  // (2133-1280)/2560
@@ -935,17 +936,18 @@ void EmuThread::run()
 
     // Get adjusted center position
     adjustedCenter = getAdjustedCenter();
-
+    */
     bool enableAim = true;
     bool wasLastFrameFocused = false;
 
 
     // TouchPad variables
+    /*
     const double DOUBLE_TOUCH_WINDOW = 0.3; // 200ミリ秒
     double lastTouchTime = -DOUBLE_TOUCH_WINDOW;
     bool isFirstTouch = true;
     bool isJumpTriggered = false;
-
+    */
 
 
     //const float dsAspectRatio = 4.0 / 3.0;
@@ -1017,7 +1019,7 @@ void EmuThread::run()
         };
 
 
-    QPoint lastFrameQpoint;
+    // QPoint lastFrameQpoint;
     // /processMoveInputFunction }
 
     while (emuStatus != emuStatus_Exit) {
@@ -1028,9 +1030,11 @@ void EmuThread::run()
         // auto isFocused = emuInstance->getMainWindow()->panel->getFocused();
         bool isFocused = emuInstance->getMainWindow()->panel->getFocused();
 
+        /*
         // Define sensitivity factor as a constant
         int currentSensitivity = localCfg.GetInt("Metroid.Sensitivity.Aim");
         const float SENSITIVITY_FACTOR = currentSensitivity * 0.01f;
+        */
 
         if (!isRomDetected) {
             detectRomAndSetAddresses(emuInstance);
@@ -1046,7 +1050,7 @@ void EmuThread::run()
                 hasInitialized = true;
 
                 // Hide cursor
-                showCursorOnMelonPrimeDS(false);
+                // showCursorOnMelonPrimeDS(false);
 
 
                 // Read the player position
@@ -1113,6 +1117,14 @@ void EmuThread::run()
 
 
                 if (isInGame) {
+
+                    if (emuInstance->isTouching) {
+                        emuInstance->nds->TouchScreen(emuInstance->touchX, emuInstance->touchY);
+                    }
+                    else {
+                        emuInstance->nds->ReleaseScreen();
+                    }
+
                     // inGame
 
                     /*
@@ -1126,7 +1138,7 @@ void EmuThread::run()
                     // because they handle different independent cases:
                     // 1. Recalculating center position when focus is gained or layout is changing
                     // 2. Updating relative position only when focused and layout is not changing
-
+                    /*
                     // Recalculate center position when focus is gained or layout is changing
                     if (!wasLastFrameFocused || isLayoutChanging) {
                         // emuInstance->osdAddMessage(0, "adjust change needed"); // TODO DELETE THIS
@@ -1135,7 +1147,7 @@ void EmuThread::run()
 
 
                     mouseRel = QCursor::pos() - lastFrameQpoint;  // Initialize to origin
-
+                    */
                     // Recenter cursor
                     // QCursor::setPos(lastFrameQpoint);
 
@@ -1143,6 +1155,7 @@ void EmuThread::run()
 
                     // Aiming
 
+                    /*
                     // Lambda function to adjust scaled mouse input
                     auto adjustMouseInput = [](float value) {
                         // For positive values between 0.5 and 1, set to 1
@@ -1156,6 +1169,7 @@ void EmuThread::run()
                         // For other values, return as is
                         return value;
                         };
+                        */
 
                     /*
                     // Internal function to process mouse input
@@ -1192,6 +1206,7 @@ void EmuThread::run()
                         }(mouseRel.x(), mouseRel.y());
                     */
 
+                    /*
                     // ダブルタッチ処理用
                     auto handleTouchScreen = [&]() {
                         double currentTime = SDL_GetPerformanceCounter() * perfCountsSec;
@@ -1244,6 +1259,7 @@ void EmuThread::run()
                         isFirstTouch = true;
                         isJumpTriggered = false;
                     }
+                    */
 
                     // Move hunter
                     processMoveInput();
@@ -1582,7 +1598,7 @@ void EmuThread::run()
                         }
                     } // End of Adventure Functions
 
-
+                    /*
                     // Touch again for aiming
                     if (!wasLastFrameFocused || enableAim) {
                         // touch again for aiming
@@ -1596,6 +1612,7 @@ void EmuThread::run()
 
                         emuInstance->nds->TouchScreen(128, 88); // required for aiming
                     }
+                    */
 
                     // End of in-game
                 }
@@ -1604,7 +1621,7 @@ void EmuThread::run()
 
                     if (hasInitialized) {
                         hasInitialized = false;
-                        showCursorOnMelonPrimeDS(true);
+                        // showCursorOnMelonPrimeDS(true);
                     }
 
                     if (emuInstance->isTouching) {
@@ -1622,7 +1639,7 @@ void EmuThread::run()
 
             // record last frame was forcused or not
             wasLastFrameFocused = isFocused;
-            lastFrameQpoint = QCursor::pos();
+            // lastFrameQpoint = QCursor::pos();
         } // End of isRomDetected
 
 

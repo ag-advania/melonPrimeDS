@@ -281,10 +281,12 @@ void ScreenPanel::mousePressEvent(QMouseEvent* event)
     if (emuInstance->emuIsActive()) {
         isFocused = true;
 
+        /*
         if (emuInstance->getEmuThread()->isInGame) {
             // BlankCursor when it's focused and inGame.
             setCursor(Qt::BlankCursor);
         }
+        */
     }
 }
 
