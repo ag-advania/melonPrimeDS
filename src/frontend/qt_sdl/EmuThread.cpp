@@ -939,10 +939,20 @@ void EmuThread::run()
     bool enableAim = true;
     bool wasLastFrameFocused = false;
 
+
+    // TouchPad variables
+    const double DOUBLE_TOUCH_WINDOW = 0.3; // 200ミリ秒
+    double lastTouchTime = -DOUBLE_TOUCH_WINDOW;
+    bool isFirstTouch = true;
+    bool isJumpTriggered = false;
+
+
+
     //const float dsAspectRatio = 4.0 / 3.0;
     const float dsAspectRatio = 1.333333333f;
     //const float aimAspectRatio = 6.0 / 4.0; // i have no idea
     const float aimAspectRatio = 1.5f; // i have no idea  6.0 / 4.0
+
 
 
     // processMoveInputFunction{
@@ -1007,6 +1017,7 @@ void EmuThread::run()
         };
 
 
+    QPoint lastFrameQpoint;
     // /processMoveInputFunction }
 
     while (emuStatus != emuStatus_Exit) {
@@ -1122,16 +1133,11 @@ void EmuThread::run()
                         adjustedCenter = getAdjustedCenter();// emuInstance->getMainWindow()
                     }
 
-                    // Update relative position only when not changing layout
-                    if (wasLastFrameFocused && !isLayoutChanging) {
-                        mouseRel = QCursor::pos() - adjustedCenter;
-                    }
-                    else {
-                        mouseRel = QPoint(0, 0);  // Initialize to origin
-                    }
+
+                    mouseRel = QCursor::pos() - lastFrameQpoint;  // Initialize to origin
 
                     // Recenter cursor
-                    QCursor::setPos(adjustedCenter);
+                    // QCursor::setPos(lastFrameQpoint);
 
 
 
@@ -1186,39 +1192,64 @@ void EmuThread::run()
                         }(mouseRel.x(), mouseRel.y());
                     */
 
-                    // Processing for the X-axis
-                    float mouseX = mouseRel.x();
-                    // We don't use abs() here to preserve the sign of the movement
-                    // This allows us to detect and process even very small movements in either direction
-                    if (mouseX != 0) {
-                        // Scale the mouse X movement
-                        float scaledMouseX = mouseX * SENSITIVITY_FACTOR;
-                        // Adjust the scaled value to ensure minimal movement is registered
-                        scaledMouseX = adjustMouseInput(scaledMouseX);
-                        // Convert to 16-bit integer and write the adjusted X value to the NDS memory
-                        emuInstance->nds->ARM9Write16(aimXAddr, static_cast<uint16_t>(scaledMouseX));
-                        enableAim = true;
-                    }
+                    // ダブルタッチ処理用
+                    auto handleTouchScreen = [&]() {
+                        double currentTime = SDL_GetPerformanceCounter() * perfCountsSec;
+                        double timeDiff = currentTime - lastTouchTime;
 
-                    // Processing for the Y-axis
-                    float mouseY = mouseRel.y();
-                    // Again, we avoid using abs() to maintain directional information
-                    // This ensures that even slight movements are captured and processed
-                    if (mouseY != 0) {
-                        // Scale the mouse Y movement and apply aspect ratio correction
-                        float scaledMouseY = mouseY * aimAspectRatio * SENSITIVITY_FACTOR;
-                        // Adjust the scaled value to ensure minimal movement is registered
-                        scaledMouseY = adjustMouseInput(scaledMouseY);
-                        // Convert to 16-bit integer and write the adjusted Y value to the NDS memory
-                        emuInstance->nds->ARM9Write16(aimYAddr, static_cast<uint16_t>(scaledMouseY));
-                        enableAim = true;
+                        // ダブルタッチ判定
+                        if (!isJumpTriggered && timeDiff < DOUBLE_TOUCH_WINDOW && timeDiff > 0) {
+                            // ダブルタッチ処理
+                            FN_INPUT_PRESS(INPUT_Y);
+                            isJumpTriggered = true;
+                            isFirstTouch = true;  // 2回目のタッチも初回判定から開始
+                            // 他のダブルタッチ時の処理をここに追加
+                        }
+                        else {
+                            lastTouchTime = currentTime;
+                        }
+
+                        // タッチ処理
+                        // emuInstance->nds->TouchScreen(128, 88);
+                        };
+
+                    // メインの処理部分
+                    if (emuInstance->hotkeyDown(HK_MetroidScanShoot)) {
+                        handleTouchScreen();
+
+                        if (!isFirstTouch) {
+                            float mouseX = mouseRel.x();
+                            if (mouseX != 0) {
+                                float scaledMouseX = mouseX * SENSITIVITY_FACTOR;
+                                scaledMouseX = adjustMouseInput(scaledMouseX);
+                                emuInstance->nds->ARM9Write16(aimXAddr, static_cast<uint16_t>(scaledMouseX));
+                                enableAim = true;
+                            }
+
+                            float mouseY = mouseRel.y();
+                            if (mouseY != 0) {
+                                float scaledMouseY = mouseY * aimAspectRatio * SENSITIVITY_FACTOR;
+                                scaledMouseY = adjustMouseInput(scaledMouseY);
+                                emuInstance->nds->ARM9Write16(aimYAddr, static_cast<uint16_t>(scaledMouseY));
+                                enableAim = true;
+                            }
+                        }
+                        else {
+                            isFirstTouch = false;
+                        }
+                    }
+                    else {
+                        // emuInstance->nds->ReleaseScreen();
+                        FN_INPUT_RELEASE(INPUT_Y);
+                        isFirstTouch = true;
+                        isJumpTriggered = false;
                     }
 
                     // Move hunter
                     processMoveInput();
 
                     // Shoot
-                    if (emuInstance->hotkeyDown(HK_MetroidShootScan) || emuInstance->hotkeyDown(HK_MetroidScanShoot)) {
+                    if (emuInstance->hotkeyDown(HK_MetroidShootScan)) {
                         FN_INPUT_PRESS(INPUT_L);
                     }
                     else {
@@ -1571,7 +1602,7 @@ void EmuThread::run()
                 else {
                     // !isInGame
 
-                    if(hasInitialized){
+                    if (hasInitialized) {
                         hasInitialized = false;
                         showCursorOnMelonPrimeDS(true);
                     }
@@ -1591,8 +1622,9 @@ void EmuThread::run()
 
             // record last frame was forcused or not
             wasLastFrameFocused = isFocused;
+            lastFrameQpoint = QCursor::pos();
         } // End of isRomDetected
- 
+
 
         // MelonPrimeDS Functions END
 
