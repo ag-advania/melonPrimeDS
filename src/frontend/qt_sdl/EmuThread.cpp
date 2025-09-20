@@ -78,7 +78,7 @@
 
 // 匿名名前空間：この翻訳単位だけで見えるように
 namespace {
-
+    /*
     struct RawHK {
         bool nowShoot = false, prevShoot = false;
         bool nowZoom = false, prevZoom = false;
@@ -103,6 +103,7 @@ namespace {
     };
 
     RawHK g_rawHK;                       // ← これでどこからでも使える
+    */
     RawInputWinFilter* g_rawFilter = nullptr; // ← フィルタもファイルスコープに出す
 
 } // namespace
@@ -621,10 +622,10 @@ melonDS::u32 addrSensitivity;
 melonDS::u32 addrDsNameFlagAndMicVolume;
 melonDS::u32 addrMainHunter;
 melonDS::u32 addrRankColor;
-melonDS::u32 AddrIsDead;
-melonDS::u32 addrStartPressed;
-melonDS::u32 addrIsSpectacting;
-melonDS::u32 addrHudToggle;
+melonDS::u32 addrIsDead; // MelonPrimeDS HUD empty
+melonDS::u32 addrStartPressed;// MelonPrimeDS HUD
+melonDS::u32 addrIsSpectacting;// MelonPrimeDS HUD empty
+melonDS::u32 addrHudToggle;// MelonPrimeDS HUD
 
 // melonDS::u32 addrLanguage;
 static bool isUnlockMapsHuntersApplied = false;
@@ -3254,8 +3255,8 @@ void EmuThread::run()
                 
                 // Check if is dead / spectacting 
                 bool isDead;
-                isDead = emuInstance->nds->ARM9Read8(AddrIsDead) == 0x03 ||
-                emuInstance->nds->ARM9Read8(AddrIsDead) == 0x02;
+                isDead = emuInstance->nds->ARM9Read8(addrIsDead) == 0x03 ||
+                emuInstance->nds->ARM9Read8(addrIsDead) == 0x02;
                 bool isSpectacting = emuInstance->nds->ARM9Read8(addrIsSpectacting) == 0x05 ;
 
                 if (customhud && !isDead && !isStartPressed && !isSpectacting) {
