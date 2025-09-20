@@ -59,10 +59,55 @@
 // melonPrimeDS
 #include <cstdint>
 #include <cmath>
+// MelonPrimeDS FixedOverlays_2025
 #include <QPainter>
 #include <QFontDatabase>
 #include <QFile>
 #include <QByteArray>
+// }MelonPrimeDS FixedOverlays_2025
+
+#if defined(_WIN32)
+        // 追加ヘッダ参照(バインド呼出のため)
+#include "MelonPrimeHotkeyVkBinding.h"
+#endif
+
+#if defined(_WIN32)
+
+// 既にどこかで include 済みなら重複はOK（ヘッダガードあり）
+#include "MelonPrimeRawInputWinFilter.h"
+
+// 匿名名前空間：この翻訳単位だけで見えるように
+namespace {
+
+    struct RawHK {
+        bool nowShoot = false, prevShoot = false;
+        bool nowZoom = false, prevZoom = false;
+
+        void refresh(RawInputWinFilter* f) noexcept {
+            if (!f) { nowShoot = nowZoom = false; return; }
+            // 必要になったらここに他HKも足していけます
+            nowShoot = f->hotkeyDown(HK_MetroidShootScan)
+                || f->hotkeyDown(HK_MetroidScanShoot);
+            nowZoom = f->hotkeyDown(HK_MetroidZoom);
+        }
+        void commit() noexcept {
+            prevShoot = nowShoot;
+            prevZoom = nowZoom;
+        }
+
+        // 使いたければ
+        bool shootDown()   const noexcept { return nowShoot; }
+        bool zoomDown()    const noexcept { return nowZoom; }
+        bool shootPressed()const noexcept { return  nowShoot && !prevShoot; }
+        bool shootReleased()const noexcept { return !nowShoot && prevShoot; }
+    };
+
+    RawHK g_rawHK;                       // ← これでどこからでも使える
+    RawInputWinFilter* g_rawFilter = nullptr; // ← フィルタもファイルスコープに出す
+
+} // namespace
+#endif
+
 
 using namespace melonDS;
 
@@ -147,8 +192,9 @@ float mouseY;
 #include "MelonPrimeRomAddrTable.h"
 #if defined(_WIN32)
 // #include "RawInputThread.h"
-#include "RawInputWinFilter.h"
+#include "MelonPrimeRawInputWinFilter.h"
 #endif
+
 
 /**
  * 感度値変換関数.
@@ -233,12 +279,12 @@ bool ApplyHeadphoneOnce(NDS* nds, Config::Table& localCfg, uint32_t kCfgAddr, bo
     }
 
     // 多重適用回避(すでに処理済みなら即リターンするため)
-    if (__builtin_expect(isHeadphoneApplied, 0)) {
+    if (Q_LIKELY(isHeadphoneApplied)) {
         return false;
     }
 
     // 設定有効判定(ユーザーがヘッドフォン適用を指定しなければ即リターンするため)
-    if (!localCfg.GetBool("Metroid.Apply.Headphone")) {
+    if (Q_LIKELY(!localCfg.GetBool("Metroid.Apply.Headphone"))) {
         return false;
     }
 
@@ -291,7 +337,7 @@ bool applyLicenseColorStrict(NDS* nds, Config::Table& localCfg, std::uint32_t ad
     if (!nds) return false;
 
     // 設定で適用OFFなら処理しない
-    if (!localCfg.GetBool("Metroid.HunterLicense.Color.Apply"))
+    if (Q_LIKELY(!localCfg.GetBool("Metroid.HunterLicense.Color.Apply")))
         return false;
 
     // 関数内enum（外部には露出させない）
@@ -349,7 +395,7 @@ bool applyLicenseColorStrict(NDS* nds, Config::Table& localCfg, std::uint32_t ad
 bool applySelectedHunterStrict(NDS* nds, Config::Table& localCfg, std::uint32_t addrMainHunter)
 {
     if (!nds) return false;
-    if (!localCfg.GetBool("Metroid.HunterLicense.Hunter.Apply")) return false;
+    if (Q_LIKELY(!localCfg.GetBool("Metroid.HunterLicense.Hunter.Apply"))) return false;
 
     // bit 定義
     //constexpr std::uint8_t FAVORITE_MASK = 0x80; // 参照のみ(保持)
@@ -401,7 +447,8 @@ bool useDsName(NDS* nds, Config::Table& localCfg, std::uint32_t addrDsNameFlagAn
     }
 
     // 設定有効判定(ユーザーがDSの名前を使う指定をしていなければ即リターンするため)
-    bool useDsNameSetting = localCfg.GetBool("Metroid.Use.Firmware.Name");
+    if (Q_LIKELY(!localCfg.GetBool("Metroid.Use.Firmware.Name"))) return false;
+
 
     // 現在値読み込み(フラグの状態を確認するため)
     std::uint8_t oldVal = nds->ARM9Read8(addrDsNameFlagAndMicVolume);
@@ -411,14 +458,10 @@ bool useDsName(NDS* nds, Config::Table& localCfg, std::uint32_t addrDsNameFlagAn
 
     // 新しい値を算出(useDsNameSettingの真偽に応じてビット操作を行うため)
     std::uint8_t newVal;
-    if (useDsNameSetting) {
-        // 設定がtrue → フラグをオフに設定(bit0を下ろしてDSの名前を使うようにするため)
-        newVal = static_cast<std::uint8_t>(oldVal & ~kFlagMask);
-    }
-    else {
-        // 設定がfalse → フラグをオンに設定(bit0を立ててDSの名前を使わないようにするため)
-        newVal = static_cast<std::uint8_t>(oldVal | kFlagMask);
-    }
+    
+    // 設定がtrue → DS名設定済みフラグをオフに設定
+    // (bit0を下ろしてDSの名前を使うようにするため)
+    newVal = static_cast<std::uint8_t>(oldVal & ~kFlagMask);
 
     // 差分確認(値に変化がなければ何もせずリターンするため)
     if (newVal == oldVal) {
@@ -478,12 +521,12 @@ bool ApplyUnlockHuntersMaps(
 {
 
     // 既適用チェック(多重実行防止のため)
-    if (__builtin_expect(isUnlockApplied, 0)) {
+    if (Q_LIKELY(isUnlockApplied)) {
         return false;
     }
 
     // 設定フラグ確認(ユーザー指定OFFなら処理不要のため)
-    if (!localCfg.GetBool("Metroid.Data.Unlock")) {
+    if (Q_LIKELY(!localCfg.GetBool("Metroid.Data.Unlock"))) {
         return false;
     }
 
@@ -758,8 +801,7 @@ void EmuThread::run()
     emuInstance->fastForwardToggled = false;
     emuInstance->slowmoToggled = false;
 
-    
-
+ 
 
 
     auto frameAdvanceOnce = [&]()  __attribute__((hot, always_inline, flatten)) {
@@ -787,6 +829,7 @@ void EmuThread::run()
             emit screenEmphasisToggle();
             isLayoutChangePending = true;
         }
+
         // Define minimum sensitivity as a constant to improve readability and optimization
         static constexpr int MIN_SENSITIVITY = 1;
 
@@ -1129,6 +1172,7 @@ void EmuThread::run()
         }
 
         handleMessages();
+
     };
 
 
@@ -1209,6 +1253,12 @@ void EmuThread::run()
             [panel, show]() {
                 // Set cursor visibility (normal ArrowCursor or invisible BlankCursor)
                 panel->setCursor(show ? Qt::ArrowCursor : Qt::BlankCursor);
+                if (show) {
+                    panel->unclip();
+                }
+                else {
+                    panel->clipCenter1px();
+                }
             },
             Qt::ConnectionType::QueuedConnection
         );
@@ -1479,7 +1529,7 @@ void EmuThread::run()
             uint8_t finalState;
 
             // 分岐予測最適化 - 通常モード優先
-            if (__builtin_expect(!isSnapTapMode, 1)) {
+            if (Q_LIKELY(!isSnapTapMode)) {
                 // 通常モード - 直接配列アクセス（最速）
                 finalState = LUT[curr];
             }
@@ -1492,7 +1542,7 @@ void EmuThread::run()
                 const uint32_t vConflict = (curr & VERT_MASK) ^ VERT_MASK;
 
                 // 条件最適化 - 新入力は稀
-                if (__builtin_expect(newPressed != 0, 0)) {
+                if (Q_UNLIKELY(newPressed != 0)) {
                     // 超高速branchless更新 - 単一式統合
                     const uint32_t hMask = -(hConflict == 0);
                     const uint32_t vMask = -(vConflict == 0);
@@ -1511,7 +1561,7 @@ void EmuThread::run()
                     ((hConflict == 0) ? HORIZ_MASK : 0) |
                     ((vConflict == 0) ? VERT_MASK : 0);
 
-                if (__builtin_expect(conflictMask != 0, 0)) {
+                if (Q_UNLIKELY(conflictMask != 0)) {
                     finalInput = (finalInput & ~conflictMask) | (snapTapState.priorityInput & conflictMask);
                 }
 
@@ -1587,7 +1637,7 @@ void EmuThread::run()
             uint8_t finalState;
 
             // 分岐予測最適化 - 通常モード優先
-            if (__builtin_expect(!isSnapTapMode, 1)) {
+            if (Q_LIKELY(!isSnapTapMode)) {
                 // 通常モード - 直接配列アクセス（最速）
                 finalState = LUT[curr];
             }
@@ -1600,7 +1650,7 @@ void EmuThread::run()
                 const uint32_t vConflict = (curr & VERT_MASK) ^ VERT_MASK;
 
                 // 条件最適化 - 新入力は稀
-                if (__builtin_expect(newPressed != 0, 0)) {
+                if (Q_UNLIKELY(newPressed != 0)) {
                     // 超高速branchless更新 - 単一式統合
                     const uint32_t hMask = -(hConflict == 0);
                     const uint32_t vMask = -(vConflict == 0);
@@ -1619,7 +1669,7 @@ void EmuThread::run()
                     ((hConflict == 0) ? HORIZ_MASK : 0) |
                     ((vConflict == 0) ? VERT_MASK : 0);
 
-                if (__builtin_expect(conflictMask != 0, 0)) {
+                if (Q_UNLIKELY(conflictMask != 0)) {
                     finalInput = (finalInput & ~conflictMask) | (snapTapState.priorityInput & conflictMask);
                 }
 
@@ -1696,7 +1746,7 @@ void EmuThread::run()
             uint8_t finalState;
 
             // 分岐予測最適化 - 通常モード優先
-            if (__builtin_expect(!isSnapTapMode, 1)) {
+            if (Q_LIKELY(!isSnapTapMode)) {
                 // 通常モード - 直接配列アクセス（最速）
                 finalState = LUT[curr];
 
@@ -1717,7 +1767,7 @@ void EmuThread::run()
             const uint32_t vConflict = (curr & VERT_MASK) ^ VERT_MASK;
 
             // 条件最適化 - 新入力は稀
-            if (__builtin_expect(newPressed != 0, 0)) {
+            if (Q_UNLIKELY(newPressed != 0)) {
                 // 超高速branchless更新 - 単一式統合
                 const uint32_t hMask = -(hConflict == 0);
                 const uint32_t vMask = -(vConflict == 0);
@@ -1736,7 +1786,7 @@ void EmuThread::run()
                 ((hConflict == 0) ? HORIZ_MASK : 0) |
                 ((vConflict == 0) ? VERT_MASK : 0);
 
-            if (__builtin_expect(conflictMask != 0, 0)) {
+            if (Q_UNLIKELY(conflictMask != 0)) {
                 finalInput = (finalInput & ~conflictMask) | (snapTapState.priorityInput & conflictMask);
             }
 
@@ -1804,7 +1854,7 @@ void EmuThread::run()
                 (hk[HK_MetroidMoveRight] ? 8 : 0);
 
             // SnapTapが無効な場合、即座にLUT参照して方向bit反映（最短4命令）
-            if (__builtin_expect(!isSnapTapMode, 1)) {
+            if (Q_LIKELY(!isSnapTapMode)) {
                 mask[INPUT_UP] = MaskLUT[curr][0];
                 mask[INPUT_DOWN] = MaskLUT[curr][1];
                 mask[INPUT_LEFT] = MaskLUT[curr][2];
@@ -1888,7 +1938,7 @@ void EmuThread::run()
                 (-hk[HK_MetroidMoveRight] & 8);     // Right = bit3
 
             // 通常モード：即座にLUT適用
-            if (__builtin_expect(!isSnapTapMode, 1)) {
+            if (Q_LIKELY(!isSnapTapMode)) {
                 const uint32_t maskBits = MaskLUT[curr];
                 mask[INPUT_UP] = maskBits & 1;
                 mask[INPUT_DOWN] = (maskBits >> 8) & 1;
@@ -1983,7 +2033,7 @@ void EmuThread::run()
             const uint32_t curr = f | (b << 1) | (l << 2) | (r << 3);
 
             // 通常モード：即座にLUT適用
-            if (__builtin_expect(!isSnapTapMode, 1)) {
+            if (Q_LIKELY(!isSnapTapMode)) {
                 const uint32_t maskBits = MaskLUT[curr];
                 mask[INPUT_UP] = maskBits & 1;
                 mask[INPUT_DOWN] = (maskBits >> 8) & 1;
@@ -2068,7 +2118,7 @@ void EmuThread::run()
             const uint32_t curr = f | (b << 1) | (l << 2) | (r << 3);
 
             // 通常モード：即座にLUT適用
-            if (__builtin_expect(!isSnapTapMode, 1)) {
+            if (Q_LIKELY(!isSnapTapMode)) {
                 const uint32_t maskBits = MaskLUT[curr];
                 mask[INPUT_UP] = maskBits & 1;
                 mask[INPUT_DOWN] = (maskBits >> 8) & 1;
@@ -2164,20 +2214,25 @@ void EmuThread::run()
             // (フレーム間で切り替え優先度を維持するため)
             static uint16_t snapState = 0;
 
-            // 入力読み取り(演算前に確定値取得のため)
+
+            // ★ ここだけ差し替え（Win32=RAW / 他OS=Qt）
+#if defined(_WIN32)
+            const uint32_t f = (g_rawFilter && g_rawFilter->hotkeyDown(HK_MetroidMoveForward));
+            const uint32_t b = (g_rawFilter && g_rawFilter->hotkeyDown(HK_MetroidMoveBack));
+            const uint32_t l = (g_rawFilter && g_rawFilter->hotkeyDown(HK_MetroidMoveLeft));
+            const uint32_t r = (g_rawFilter && g_rawFilter->hotkeyDown(HK_MetroidMoveRight));
+#else
             const uint32_t f = hk.testBit(HK_MetroidMoveForward);
-            // 入力読み取り(演算前に確定値取得のため)
             const uint32_t b = hk.testBit(HK_MetroidMoveBack);
-            // 入力読み取り(演算前に確定値取得のため)
             const uint32_t l = hk.testBit(HK_MetroidMoveLeft);
-            // 入力読み取り(演算前に確定値取得のため)
             const uint32_t r = hk.testBit(HK_MetroidMoveRight);
+#endif
 
             // 4方向の現在ビット生成(後段LUT索引用ビット圧縮のため)
             const uint32_t curr = (f) | (b << 1) | (l << 2) | (r << 3);
 
             // 通常モード判定(分岐予測命中率向上のため)
-            if (__builtin_expect(!isSnapTapMode, 1)) {
+            if (Q_LIKELY(!isSnapTapMode)) {
                 // LUTロード(即時マスク決定のため)
                 const uint32_t mb = MaskLUT[curr];
 
@@ -2260,19 +2315,22 @@ void EmuThread::run()
         //rawInputThread->start();
 
 // ヘッダ参照(クラス宣言のため)
-#include "RawInputWinFilter.h"
+// #include "MelonPrimeRawInputWinFilter.h"
 // アプリケーション参照(QCoreApplicationのため)
 #include <QCoreApplication>
 
 // 静的ポインタ定義(単一インスタンス保持のため)
-        static RawInputWinFilter* g_rawFilter = nullptr;
+        // static RawInputWinFilter* g_rawFilter = nullptr;
 
         // どこか一度だけ(例: EmuThread::run の前段やMainWindow生成時)
         if (!g_rawFilter) {
             g_rawFilter = new RawInputWinFilter();
             qApp->installNativeEventFilter(g_rawFilter);
+            // 新: 全HK（Shoot/Zoom 以外も）をRawに登録
+            BindMetroidHotkeysFromConfig(g_rawFilter, /*instance*/ 0);
         }
 #endif
+
 
     /**
      * Aim input processing (QCursor-based, structure-preserving, low-latency, drift-prevention version).
@@ -2299,7 +2357,7 @@ void EmuThread::run()
 #define UPDATE_SENSITIVITY(localCfg, aimData, isSensitivityChangePending)               \
     do {                                                                               \
         /* 変更待ち判定(不要計算回避のため) */                                         \
-        if (__builtin_expect(isSensitivityChangePending, 0)) {                         \
+        if (Q_UNLIKELY(isSensitivityChangePending)) {                         \
             /* 感度値取得(設定値を適用するため) */                                     \
             const int sens = (localCfg).GetInt("Metroid.Sensitivity.Aim");             \
             /* Y軸倍率取得(ユーザー設定を反映するため) */                              \
@@ -2333,9 +2391,13 @@ void EmuThread::run()
 
 
 // Hot path branch (fast processing when focus is maintained and layout is unchanged)
-
-        if (__builtin_expect(!isLayoutChangePending && wasLastFrameFocused, 1)) {
-			// フォーカス時かつレイアウト変更なしの場合の処理
+#if defined(_WIN32)
+        // noIf
+#else
+        if (Q_LIKELY(!isLayoutChangePending && wasLastFrameFocused))
+#endif
+        {
+            // フォーカス時かつレイアウト変更なしの場合の処理
             int deltaX = 0, deltaY = 0;
 
 
@@ -2394,16 +2456,22 @@ void EmuThread::run()
 
 #if defined(_WIN32)
             // RawInputでもこの処理は必用。無いとこうなる： If you have a secondary screen the mouse can slide to it and the main window gets unfocused
-            QCursor::setPos(aimData.centerX, aimData.centerY);
-            g_rawFilter->discardDeltas();
+            //QCursor::setPos(aimData.centerX, aimData.centerY);
+            //g_rawFilter->discardDeltas();
 #else
             // Return cursor to center (keep next delta calculation zero-based)
             QCursor::setPos(aimData.centerX, aimData.centerY);
 #endif
+
+
             // End processing (avoid unnecessary branching)
             return;
         }
 
+
+#if defined(_WIN32)
+
+#else
         // Recalculate center coordinates (for layout changes and initialization)
         const QPoint center = getAdjustedCenter();
         // Update center X (set origin for next delta calculation)
@@ -2413,20 +2481,26 @@ void EmuThread::run()
 
         // Set initial cursor position (for visual consistency and zeroing delta)
         QCursor::setPos(center);
+#endif
+
+
 #if defined(_WIN32)
         // RAW累積捨て呼び出し(センタリング直後の残存デルタ排除のため)
         // フォーカスイン時にsetPosで中央に戻す処理が動くため、移動距離が強制で大きくなってしまうため
-        g_rawFilter->discardDeltas();
-#endif
+        // g_rawFilter->discardDeltas();
+#else
+
         // Clear layout change flag (to return to hot path)
         isLayoutChangePending = false;
 
         // 感度更新呼び出し(設定変更を即時反映するため)
         UPDATE_SENSITIVITY(localCfg, aimData, isSensitivityChangePending);
 
+#endif
+
 #else
         // スタイラス押下分岐(タッチ入力直通処理のため)
-        if (__builtin_expect(emuInstance->isTouching, 1)) {
+        if (Q_LIKELY(emuInstance->isTouching)) {
             // タッチ送出(座標反映のため)
             emuInstance->nds->TouchScreen(emuInstance->touchX, emuInstance->touchY);
         }
@@ -2529,7 +2603,27 @@ void EmuThread::run()
     static QBitArray& inputMask = emuInstance->inputMask;
     static const QBitArray& hotkeyPress = emuInstance->hotkeyPress;
 
-#define TOUCH_IF(PRESS, X, Y) if (hotkeyPress.testBit(PRESS)) { emuInstance->nds->ReleaseScreen(); frameAdvanceTwice(); emuInstance->nds->TouchScreen(X, Y); frameAdvanceTwice(); }
+// #define TOUCH_IF(PRESS, X, Y) if (hotkeyPress.testBit(PRESS)) { emuInstance->nds->ReleaseScreen(); frameAdvanceTwice(); emuInstance->nds->TouchScreen(X, Y); frameAdvanceTwice(); }
+
+#if defined(_WIN32)
+#define TOUCH_IF(PRESS, X, Y)                                         \
+    if (g_rawFilter && g_rawFilter->hotkeyPressed(PRESS)) {           \
+        emuInstance->nds->ReleaseScreen();                            \
+        frameAdvanceTwice();                                           \
+        emuInstance->nds->TouchScreen((X), (Y));                      \
+        frameAdvanceTwice();                                           \
+    }
+#else
+#define TOUCH_IF(PRESS, X, Y)                                         \
+    if (hotkeyPress.testBit(PRESS)) {                                 \
+        emuInstance->nds->ReleaseScreen();                            \
+        frameAdvanceTwice();                                           \
+        emuInstance->nds->TouchScreen((X), (Y));                      \
+        frameAdvanceTwice();                                           \
+    }
+#endif
+
+
 
 
     while (emuStatus != emuStatus_Exit) {
@@ -2550,7 +2644,7 @@ void EmuThread::run()
         }
         // No "else" here, cuz flag will be changed after detecting.
 
-        if (__builtin_expect(isRomDetected, 1)) {
+        if (Q_LIKELY(isRomDetected)) {
             isInGame = emuInstance->nds->ARM9Read16(addrInGame) == 0x0001;
 
             // Determine whether it is cursor mode in one place
@@ -2633,7 +2727,7 @@ void EmuThread::run()
                 // Handle the case when the window is focused
                 // Update mouse relative position and recenter cursor for aim control
 
-                if (__builtin_expect(isInGame, 1)) {
+                if (Q_LIKELY(isInGame)) {
                     // inGame
                 
                     /*
@@ -2650,17 +2744,71 @@ void EmuThread::run()
                     // Move hunter
                     processMoveInput(hotkeyMask, inputMask);
 
+
+                    // Win32分岐開始(Raw専用化のため)
+#if defined(_WIN32)
+    // Raw経由Shoot押下判定生成(HKのみ参照のため)
+                    const bool rawShoot =
+                        // フィルタ存在確認(安全動作のため)
+                        (g_rawFilter &&
+                            // HK_MetroidShootScan押下判定実行(HK参照のため)
+                            (g_rawFilter->hotkeyDown(HK_MetroidShootScan)
+                                // HK_MetroidScanShoot押下判定実行(複合HK対応のため)
+                                || g_rawFilter->hotkeyDown(HK_MetroidScanShoot)));
+
+                    // Raw経由Zoom押下判定生成(HKのみ参照のため)
+                    const bool rawZoom =
+                        // フィルタ存在確認(安全動作のため)
+                        (g_rawFilter &&
+                            // HK_MetroidZoom押下判定実行(HK参照のため)
+                            g_rawFilter->hotkeyDown(HK_MetroidZoom));
+
+                    // Lボタンビット設定処理(Raw専用否定論理適用のため)
+                    inputMask.setBit(INPUT_L,
+                        // 非押下時true設定(既存反転仕様順守のため)
+                        !rawShoot);
+
+                    // Rボタンビット設定処理(Raw専用否定論理適用のため)
+                    inputMask.setBit(INPUT_R,
+                        // 非押下時true設定(既存反転仕様順守のため)
+                        !rawZoom);
+
+#else
+    // 非Win32分岐開始(Qtホットキー参照のため)
+    // Lボタンビット設定処理(Qt側否定論理適用のため)
+                    inputMask.setBit(INPUT_L,
+                        // 非押下時true設定(既存反転仕様順守のため)
+                        !(hotkeyMask.testBit(HK_MetroidShootScan)
+                            // 代替HK参照(複合HK対応のため)
+                            | hotkeyMask.testBit(HK_MetroidScanShoot)));
+
+                    // Rボタンビット設定処理(Qt側否定論理適用のため)
+                    inputMask.setBit(INPUT_R,
+                        // 非押下時true設定(既存反転仕様順守のため)
+                        !hotkeyMask.testBit(HK_MetroidZoom));
+#endif
+
+
+/*
                     // Shoot
                     inputMask.setBit(INPUT_L, !(hotkeyMask.testBit(HK_MetroidShootScan) | hotkeyMask.testBit(HK_MetroidScanShoot)));
 
                     // Zoom, map zoom out
                     inputMask.setBit(INPUT_R, !hotkeyMask.testBit(HK_MetroidZoom));
-
-                    // Jump
+                                        // Jump
                     inputMask.setBit(INPUT_B, !hotkeyMask.testBit(HK_MetroidJump));
 
+                    */
+
+                    // Jump（B）
+#if defined(_WIN32)
+                    inputMask.setBit(INPUT_B, !(g_rawFilter&& g_rawFilter->hotkeyDown(HK_MetroidJump)));
+#else
+                    inputMask.setBit(INPUT_B, !hotkeyMask.testBit(HK_MetroidJump));
+#endif
+
                     // Alt-form
-                    TOUCH_IF(HK_MetroidMorphBall, 231, 167) 
+                    TOUCH_IF(HK_MetroidMorphBall, 231, 167)
 
                     // Compile-time constants
                     static constexpr uint8_t WEAPON_ORDER[] = { 0, 2, 7, 6, 5, 4, 3, 1, 8 };
@@ -2685,10 +2833,6 @@ void EmuThread::run()
                         { HK_MetroidWeaponSpecial, 0xFF }
                     };
 
-                    // Branch prediction hints
-                    #define likely(x)   __builtin_expect(!!(x), 1)
-                    #define unlikely(x) __builtin_expect(!!(x), 0)
-
                     // Main lambda for weapon switching
                     static const auto processWeaponSwitch = [&]() -> bool {
                         bool weaponSwitched = false;
@@ -2701,7 +2845,15 @@ void EmuThread::run()
                                 //if (hotkeyPress.testBit(HOTKEY_MAP[i].hotkey)) {
                                 //    states |= (1u << i);
                                 //}
-                                states |= static_cast<uint32_t>(hotkeyPress.testBit(HOTKEY_MAP[i].hotkey)) << i;
+#if defined(_WIN32)
+                                states |= static_cast<uint32_t>(
+                                    g_rawFilter && g_rawFilter->hotkeyPressed(HOTKEY_MAP[i].hotkey)
+                                    ) << i;
+#else
+                                states |= static_cast<uint32_t>(
+                                    hotkeyPress.testBit(HOTKEY_MAP[i].hotkey)
+                                    ) << i;
+#endif
                             }
                             return states;
                             };
@@ -2712,7 +2864,7 @@ void EmuThread::run()
 
                             const int firstSet = __builtin_ctz(hotkeyStates);
 
-                            if (unlikely(firstSet == 8)) {
+                            if (Q_UNLIKELY(firstSet == 8)) {
                                 const uint8_t special = emuInstance->nds->ARM9Read8(addrLoadedSpecialWeapon);
                                 if (special != 0xFF) {
                                     SwitchWeapon(special);
@@ -2792,8 +2944,13 @@ void EmuThread::run()
                         // Lambda: Process wheel and navigation keys
                         static const auto processWheelInput = [&]() -> bool {
                             const int wheelDelta = emuInstance->getMainWindow()->panel->getDelta();
+#if defined(_WIN32)
+                            const bool nextKey = (g_rawFilter && g_rawFilter->hotkeyPressed(HK_MetroidWeaponNext));
+                            const bool prevKey = (g_rawFilter && g_rawFilter->hotkeyPressed(HK_MetroidWeaponPrevious));
+#else
                             const bool nextKey = hotkeyPress.testBit(HK_MetroidWeaponNext);
                             const bool prevKey = hotkeyPress.testBit(HK_MetroidWeaponPrevious);
+#endif
 
                             if (!wheelDelta && !nextKey && !prevKey) return false;
 
@@ -2867,7 +3024,12 @@ void EmuThread::run()
                     // INFO If this function is not used, mouse boosting can only be done once.
                     // This is because it doesn't release from the touch state, which is necessary for aiming. 
                     // There's no way around it.
+// Morph ball boost（保持型）
+#if defined(_WIN32)
+                    if (isSamus && g_rawFilter && g_rawFilter->hotkeyDown(HK_MetroidHoldMorphBallBoost))
+#else
                     if (isSamus && hotkeyMask.testBit(HK_MetroidHoldMorphBallBoost))
+#endif
                     {
                         isAltForm = emuInstance->nds->ARM9Read8(addrIsAltForm) == 0x02;
                         if (isAltForm) {
@@ -2900,14 +3062,19 @@ void EmuThread::run()
                         }
                     }
 
-                    if (__builtin_expect(isInAdventure, 0)) {
+                    if (Q_UNLIKELY(isInAdventure)) {
                         // Adventure Mode Functions
 
                         // To determine the state of pause or user operation stop (to detect the state of map or action pause)
                         isPaused = emuInstance->nds->ARM9Read8(addrIsMapOrUserActionPaused) == 0x1;
 
                         // Scan Visor
-                        if (hotkeyPress.testBit(HK_MetroidScanVisor)) {
+#if defined(_WIN32)
+                        if (g_rawFilter && g_rawFilter->hotkeyPressed(HK_MetroidScanVisor))
+#else
+                        if (hotkeyPress.testBit(HK_MetroidScanVisor))
+#endif
+                        {
                             emuInstance->nds->ReleaseScreen();
                             frameAdvanceTwice();
 
@@ -2986,12 +3153,16 @@ void EmuThread::run()
                         updateRenderer();
                     }
 
-                    // L For Hunter License
+                    // L / R for Hunter License (one-frame press)
+#if defined(_WIN32)
+                    inputMask.setBit(INPUT_L, !(g_rawFilter&& g_rawFilter->hotkeyPressed(HK_MetroidUILeft)));
+                    inputMask.setBit(INPUT_R, !(g_rawFilter&& g_rawFilter->hotkeyPressed(HK_MetroidUIRight)));
+#else
                     inputMask.setBit(INPUT_L, !hotkeyPress.testBit(HK_MetroidUILeft));
-                    // R For Hunter License
                     inputMask.setBit(INPUT_R, !hotkeyPress.testBit(HK_MetroidUIRight));
+#endif
 
-                    if (__builtin_expect(isRomDetected, 1)) {
+                    if (Q_LIKELY(isRomDetected)) {
 
                         // ヘッドフォン設定
                         ApplyHeadphoneOnce(emuInstance->nds, localCfg, addrOperationAndSound, isHeadphoneApplied);
@@ -3030,21 +3201,35 @@ void EmuThread::run()
                 }
 
                 if (isCursorMode) {
-
                     if (emuInstance->isTouching) {
                         emuInstance->nds->TouchScreen(emuInstance->touchX, emuInstance->touchY);
                     }
                     else {
                         emuInstance->nds->ReleaseScreen();
                     }
-
                 }
 
                 // Start / View Match progress, points / Map(Adventure)
+#if defined(_WIN32)
+                inputMask.setBit(INPUT_START, !(g_rawFilter&& g_rawFilter->hotkeyDown(HK_MetroidMenu)));
+#else
                 inputMask.setBit(INPUT_START, !hotkeyMask.testBit(HK_MetroidMenu));
+#endif
 
 
-            }// END of if(isFocused)
+                // END of if(isFocused)
+            } else {
+				// when not focused
+#if defined(_WIN32)
+                    // RAWデルタ破棄呼出(残差排除のため)
+                    if (g_rawFilter) g_rawFilter->discardDeltas();
+                    // マウスボタン状態リセット呼出(押下取り残し排除のため)
+                    if (g_rawFilter) g_rawFilter->resetMouseButtons();
+                    // キー押下状態リセット呼出(誤爆抑止のため)
+                    if (g_rawFilter) g_rawFilter->resetAllKeys();
+                    if (g_rawFilter) g_rawFilter->resetHotkeyEdges();
+#endif
+            }
             
             bool customhud = localCfg.GetBool("Metroid.Visual.CustomHUD");
 
@@ -3222,10 +3407,8 @@ void EmuThread::run()
 
         frameAdvanceOnce();
 
+
     } // End of while (emuStatus != emuStatus_Exit)
-#if defined(_WIN32)
-    //rawInputThread->quit(); //rawMouseInput
-#endif
 
 }
 
