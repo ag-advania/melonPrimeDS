@@ -71,6 +71,12 @@ public:
     void osdAddMessage(unsigned int color, const char* msg);
 
     /* MelonPrimeDS { */
+
+    QImage Overlay[2];
+    QPainter* Top_paint;
+    QPainter* Btm_paint;
+    bool isOverlayRendered[2]={false,false};
+    
     bool getFocused() { return isFocused; }
 
     void unfocus();
@@ -81,12 +87,8 @@ public:
         wheelDelta = 0;
         return currentDelta;
     }
-
-public slots:
-    void clipCenter1px();
-    void unclip();
-    void updateClipIfNeeded();
     /* MelonPrimeDS } */
+
 private slots:
     void onScreenLayoutChanged();
     void onAutoScreenSizingChanged(int sizing);
@@ -109,7 +111,6 @@ protected:
 
     ScreenLayout layout;
     void focusOutEvent(QFocusEvent* event) override; // MelonPrimeDS
-	void moveEvent(QMoveEvent* event) override; // MelonPrimeDS
     float screenMatrix[kMaxScreenTransforms][6];
     int screenKind[kMaxScreenTransforms];
     int numScreens;
@@ -177,10 +178,6 @@ protected:
     void osdUpdate();
 
     void calcSplashLayout();
-
-    private:
-
-        bool clipWanted = false;   // çSë©óvãÅÉtÉâÉO melonPrimeDS
 };
 
 
@@ -234,8 +231,14 @@ protected:
     QPaintEngine* paintEngine() const override;
 
 private:
-
     void setupScreenLayout() override;
+    GLuint btmOverlayTexture;
+    GLuint topOverlayTexture;
+    GLuint OverlayID[2];
+
+
+
+    void drawOverlays(int type,int screen);
 
     std::unique_ptr<GL::Context> glContext;
     bool glInited;
@@ -262,7 +265,10 @@ private:
 
     void osdRenderItem(OSDItem* item) override;
     void osdDeleteItem(OSDItem* item) override;
+
+    GLuint overlayShader;
+    GLuint overlayScreenSizeULoc, overlayTransformULoc;
+    GLuint overlayPosULoc, overlaySizeULoc, overlayScreenTypeULoc;
 };
 
 #endif // SCREEN_H
-
