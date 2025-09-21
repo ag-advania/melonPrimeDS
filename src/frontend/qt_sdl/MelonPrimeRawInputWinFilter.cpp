@@ -1,4 +1,4 @@
-#include "MelonPrimeRawInputWinFilter.h"
+﻿#include "MelonPrimeRawInputWinFilter.h"
 #include <cstring>
 #include <algorithm>
 #include <immintrin.h>
@@ -53,110 +53,88 @@ bool RawInputWinFilter::nativeEventFilter(const QByteArray& /*eventType*/, void*
 {
 #ifdef _WIN32
     MSG* const msg = static_cast<MSG*>(message);
-
-    // Early return with branch prediction
     if (Q_UNLIKELY(!msg)) [[unlikely]] return false;
     if (Q_LIKELY(msg->message != WM_INPUT)) [[likely]] return false;
 
-    // Pre-calculate buffer size
-    constexpr UINT expectedSize = sizeof(RAWINPUT);
-    UINT size = expectedSize;
+    // 期待バッファサイズ（RAWINPUT固定）
+    UINT size = sizeof(RAWINPUT);
 
-    // Optimized GetRawInputData call
-    const UINT result = GetRawInputData(
+    // 失敗なら即リターン（処理を増やさない）
+    const UINT got = GetRawInputData(
         reinterpret_cast<HRAWINPUT>(msg->lParam),
         RID_INPUT,
         m_rawBuf,
         &size,
-        sizeof(RAWINPUTHEADER)
-    );
-
-    if (Q_UNLIKELY(result == static_cast<UINT>(-1))) [[unlikely]] return false;
+        sizeof(RAWINPUTHEADER));
+    if (Q_UNLIKELY(got == static_cast<UINT>(-1))) [[unlikely]] return false;
 
     const RAWINPUT* const raw = reinterpret_cast<const RAWINPUT*>(m_rawBuf);
-    const DWORD deviceType = raw->header.dwType;
+    const DWORD type = raw->header.dwType;
 
-    // Most frequent case first - mouse movement
-    if (Q_LIKELY(deviceType == RIM_TYPEMOUSE)) [[likely]] {
-        const RAWMOUSE& mouse = raw->data.mouse;
+    // 最頻出のマウスを先に
+    if (Q_LIKELY(type == RIM_TYPEMOUSE)) [[likely]] {
+        const RAWMOUSE& m = raw->data.mouse;
 
-        // Mouse movement processing (optimized)
-        const LONG deltaX = mouse.lLastX;
-        const LONG deltaY = mouse.lLastY;
-
-        // Use bitwise OR for zero check
-        if (Q_LIKELY((deltaX | deltaY) != 0)) [[likely]] {
-            // Prefetch cache line for atomic operations
+        // 相対移動（0判定は OR で一発）
+        const LONG dxv = m.lLastX;
+        const LONG dyv = m.lLastY;
+        if (Q_LIKELY((dxv | dyv) != 0)) [[likely]] {
+            // アトミック書き込みのキャッシュ行を先読み
             _mm_prefetch(reinterpret_cast<const char*>(&dx), _MM_HINT_T0);
             _mm_prefetch(reinterpret_cast<const char*>(&dy), _MM_HINT_T0);
-
-            dx.fetch_add(deltaX, std::memory_order_relaxed);
-            dy.fetch_add(deltaY, std::memory_order_relaxed);
+            dx.fetch_add(dxv, std::memory_order_relaxed);
+            dy.fetch_add(dyv, std::memory_order_relaxed);
         }
 
-        const USHORT buttonFlags = mouse.usButtonFlags;
-        const USHORT relevantFlags = buttonFlags & kAllMouseBtnMask;
+        // ボタン（関係ないフラグなら即抜け）
+        const USHORT f = m.usButtonFlags;
+        const USHORT rf = (f & kAllMouseBtnMask);
+        if (Q_LIKELY(rf == 0)) [[likely]] return false;
 
-        // Skip if no button events
-        if (Q_LIKELY(relevantFlags == 0)) [[likely]] return false;
+        // 手動アンローリング（分岐最小化）
+        if (rf & (RI_MOUSE_LEFT_BUTTON_DOWN | RI_MOUSE_LEFT_BUTTON_UP))
+            m_mb[0].store((f & RI_MOUSE_LEFT_BUTTON_DOWN) ? 1u : 0u, std::memory_order_relaxed);
+        if (rf & (RI_MOUSE_RIGHT_BUTTON_DOWN | RI_MOUSE_RIGHT_BUTTON_UP))
+            m_mb[1].store((f & RI_MOUSE_RIGHT_BUTTON_DOWN) ? 1u : 0u, std::memory_order_relaxed);
+        if (rf & (RI_MOUSE_MIDDLE_BUTTON_DOWN | RI_MOUSE_MIDDLE_BUTTON_UP))
+            m_mb[2].store((f & RI_MOUSE_MIDDLE_BUTTON_DOWN) ? 1u : 0u, std::memory_order_relaxed);
+        if (rf & (RI_MOUSE_BUTTON_4_DOWN | RI_MOUSE_BUTTON_4_UP))
+            m_mb[3].store((f & RI_MOUSE_BUTTON_4_DOWN) ? 1u : 0u, std::memory_order_relaxed);
+        if (rf & (RI_MOUSE_BUTTON_5_DOWN | RI_MOUSE_BUTTON_5_UP))
+            m_mb[4].store((f & RI_MOUSE_BUTTON_5_DOWN) ? 1u : 0u, std::memory_order_relaxed);
 
-        // Optimized button processing with manual unrolling
-        // Process buttons using bit manipulation
-        if (relevantFlags & (RI_MOUSE_LEFT_BUTTON_DOWN | RI_MOUSE_LEFT_BUTTON_UP)) {
-            m_mb[0].store((buttonFlags & RI_MOUSE_LEFT_BUTTON_DOWN) ? 1u : 0u,
-                std::memory_order_relaxed);
-        }
-        if (relevantFlags & (RI_MOUSE_RIGHT_BUTTON_DOWN | RI_MOUSE_RIGHT_BUTTON_UP)) {
-            m_mb[1].store((buttonFlags & RI_MOUSE_RIGHT_BUTTON_DOWN) ? 1u : 0u,
-                std::memory_order_relaxed);
-        }
-        if (relevantFlags & (RI_MOUSE_MIDDLE_BUTTON_DOWN | RI_MOUSE_MIDDLE_BUTTON_UP)) {
-            m_mb[2].store((buttonFlags & RI_MOUSE_MIDDLE_BUTTON_DOWN) ? 1u : 0u,
-                std::memory_order_relaxed);
-        }
-        if (relevantFlags & (RI_MOUSE_BUTTON_4_DOWN | RI_MOUSE_BUTTON_4_UP)) {
-            m_mb[3].store((buttonFlags & RI_MOUSE_BUTTON_4_DOWN) ? 1u : 0u,
-                std::memory_order_relaxed);
-        }
-        if (relevantFlags & (RI_MOUSE_BUTTON_5_DOWN | RI_MOUSE_BUTTON_5_UP)) {
-            m_mb[4].store((buttonFlags & RI_MOUSE_BUTTON_5_DOWN) ? 1u : 0u,
-                std::memory_order_relaxed);
-        }
+        return false;
     }
-    else if (Q_UNLIKELY(deviceType == RIM_TYPEKEYBOARD)) [[unlikely]] {
-        const RAWKEYBOARD& keyboard = raw->data.keyboard;
-        UINT virtualKey = keyboard.VKey;
-        const USHORT flags = keyboard.Flags;
-        const bool isKeyUp = (flags & RI_KEY_BREAK) != 0;
 
-        // Use jump table for special key normalization
-        if (Q_UNLIKELY(virtualKey == VK_SHIFT || virtualKey == VK_CONTROL || virtualKey == VK_MENU)) [[unlikely]] {
-            switch (virtualKey) {
-            case VK_SHIFT:
-                virtualKey = MapVirtualKey(keyboard.MakeCode, MAPVK_VSC_TO_VK_EX);
-                break;
-            case VK_CONTROL:
-                virtualKey = (flags & RI_KEY_E0) ? VK_RCONTROL : VK_LCONTROL;
-                break;
-            case VK_MENU:
-                virtualKey = (flags & RI_KEY_E0) ? VK_RMENU : VK_LMENU;
-                break;
+    // キーボード（頻度は低いので unlikely）
+    if (Q_UNLIKELY(type == RIM_TYPEKEYBOARD)) [[unlikely]] {
+        const RAWKEYBOARD& kb = raw->data.keyboard;
+        UINT vk = kb.VKey;
+        const USHORT flags = kb.Flags;
+        const bool isUp = (flags & RI_KEY_BREAK) != 0;
+
+        // 特殊キーを最短で正規化
+        if (Q_UNLIKELY(vk == VK_SHIFT || vk == VK_CONTROL || vk == VK_MENU)) [[unlikely]] {
+            switch (vk) {
+            case VK_SHIFT:   vk = MapVirtualKey(kb.MakeCode, MAPVK_VSC_TO_VK_EX); break;
+            case VK_CONTROL: vk = (flags & RI_KEY_E0) ? VK_RCONTROL : VK_LCONTROL; break;
+            case VK_MENU:    vk = (flags & RI_KEY_E0) ? VK_RMENU : VK_LMENU;    break;
             }
         }
 
-        // Boundary check with prefetch
-        if (Q_LIKELY(virtualKey < m_vkDown.size())) [[likely]] {
-            _mm_prefetch(reinterpret_cast<const char*>(&m_vkDown[virtualKey]), _MM_HINT_T0);
-            const uint8_t state = static_cast<uint8_t>(!isKeyUp);
-            m_vkDown[virtualKey].store(state, std::memory_order_relaxed);
+        if (Q_LIKELY(vk < m_vkDown.size())) [[likely]] {
+            _mm_prefetch(reinterpret_cast<const char*>(&m_vkDown[vk]), _MM_HINT_T0);
+            m_vkDown[vk].store(static_cast<uint8_t>(!isUp), std::memory_order_relaxed);
         }
     }
 
     return false;
 #else
+    Q_UNUSED(message);
     return false;
 #endif
 }
+
 
 void RawInputWinFilter::resetAllKeys() noexcept
 {
@@ -223,58 +201,51 @@ void RawInputWinFilter::setHotkeyVks(int hk, const std::vector<UINT>& vks) noexc
 
 bool RawInputWinFilter::hotkeyDown(int hk) const noexcept
 {
-    // 1) Check keyboard/mouse state (optimized)
-    const HotkeyMapping* mapping = findHotkey(hk);
-    if (Q_LIKELY(mapping != nullptr)) [[likely]] {
-        const uint8_t vkCount = mapping->vkCount;
-        const UINT* vks = mapping->vks;
+    // 1) Raw(KB/Mouse)
+    const HotkeyMapping* m = findHotkey(hk);
+    if (Q_LIKELY(m)) {
+        const UINT* p = m->vks;
+        const UINT* e = p + m->vkCount;
 
-        // Manual unrolling for common cases
-        if (vkCount == 1) {
-            const UINT vk = vks[0];
+        // 単体バインド：押下なら即 return true、未押下ならフォールスルーで Joy を見る
+        if (Q_LIKELY(p + 1 == e)) {
+            const UINT vk = *p;
+            bool down = false;
+
             if (vk < 8) {
-                const uint8_t mbIndex = kMouseButtonLUT[vk];
-                if (mbIndex != 255) {
-                    return m_mb[mbIndex].load(std::memory_order_relaxed) != 0;
-                }
+                const uint8_t idx = kMouseButtonLUT[vk];
+                if (idx != 0xFF) down = (m_mb[idx].load(std::memory_order_relaxed) != 0);
             }
-            return (vk < m_vkDown.size()) &&
-                m_vkDown[vk].load(std::memory_order_relaxed) != 0;
+            else if (vk < m_vkDown.size()) {
+                down = (m_vkDown[vk].load(std::memory_order_relaxed) != 0);
+            }
+
+            if (down) return true;
         }
+        else {
+            // 複数バインド：どれか押下で即 return、未押下ならフォールスルー
+            for (; p != e; ++p) {
+                const UINT vk = *p;
 
-        // General case with prefetching
-        for (uint8_t i = 0; i < vkCount; ++i) {
-            const UINT vk = vks[i];
-
-            if (Q_UNLIKELY(vk < 8)) [[unlikely]] {
-                const uint8_t mbIndex = kMouseButtonLUT[vk];
-                if (mbIndex != 255 && m_mb[mbIndex].load(std::memory_order_relaxed)) {
-                    return true;
+                if (vk < 8) {
+                    const uint8_t idx = kMouseButtonLUT[vk];
+                    if (idx != 0xFF && m_mb[idx].load(std::memory_order_relaxed)) return true;
                 }
-            }
-            else if (Q_LIKELY(vk < m_vkDown.size())) [[likely]] {
-                // Prefetch next key if not last
-                if (i + 1 < vkCount && vks[i + 1] < m_vkDown.size()) {
-                    _mm_prefetch(reinterpret_cast<const char*>(&m_vkDown[vks[i + 1]]), _MM_HINT_T0);
-                }
-
-                if (m_vkDown[vk].load(std::memory_order_relaxed)) {
+                else if (vk < m_vkDown.size() && m_vkDown[vk].load(std::memory_order_relaxed)) {
                     return true;
                 }
             }
         }
     }
 
-    // 2) Check joystick state
-    const QBitArray* const joyMask = m_joyHK;
-    const int maskSize = joyMask->size();
-
-    if (Q_LIKELY(static_cast<unsigned>(hk) < static_cast<unsigned>(maskSize))) [[likely]] {
-        return joyMask->testBit(hk);
-    }
-
-    return false;
+    // 2) Joystick mask（EmuInstance が毎フレ更新）
+    // m_joyHK 非null前提ならこのままでOK。万一の安全策を入れるなら kEmptyMask を参照させる実装に。
+    const QBitArray* jm = m_joyHK;
+    const int n = jm->size();
+    return (static_cast<unsigned>(hk) < static_cast<unsigned>(n)) && jm->testBit(hk);
 }
+
+
 
 bool RawInputWinFilter::hotkeyPressed(int hk) noexcept
 {
