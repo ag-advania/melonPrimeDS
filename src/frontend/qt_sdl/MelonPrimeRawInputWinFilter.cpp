@@ -1,220 +1,222 @@
-// ƒwƒbƒ_ŽQÆéŒ¾(ƒNƒ‰ƒX’è‹`‚ÆƒVƒOƒlƒ`ƒƒˆê’v‚Ì‚½‚ß)
+
+// ãƒ˜ãƒƒãƒ€å‚ç…§å®£è¨€(ã‚¯ãƒ©ã‚¹å®šç¾©ã¨ã‚·ã‚°ãƒãƒãƒ£ä¸€è‡´ã®ãŸã‚)
 #include "MelonPrimeRawInputWinFilter.h"
-// C•W€“üo—ÍŽQÆéŒ¾(ƒfƒoƒbƒOŽžprintf—˜—p‚Ì‚½‚ß)
+// Cæ¨™æº–å…¥å‡ºåŠ›å‚ç…§å®£è¨€(ãƒ‡ãƒãƒƒã‚°æ™‚printfåˆ©ç”¨ã®ãŸã‚)
 #include <cstdio>
-// ƒAƒ‹ƒSƒŠƒYƒ€ŽQÆéŒ¾(•â•ƒ†[ƒeƒBƒŠƒeƒB‚Ì‚½‚ß)
+// ã‚¢ãƒ«ã‚´ãƒªã‚ºãƒ å‚ç…§å®£è¨€(è£œåŠ©ãƒ¦ãƒ¼ãƒ†ã‚£ãƒªãƒ†ã‚£ã®ãŸã‚)
 #include <algorithm>
 
 #ifdef _WIN32
 #include <windows.h>
 #include <hidsdi.h>
+
 #include <QBitArray>
 #endif
 
 
 ///**
-/// * ƒRƒ“ƒXƒgƒ‰ƒNƒ^’è‹`.
+/// * ã‚³ãƒ³ã‚¹ãƒˆãƒ©ã‚¯ã‚¿å®šç¾©.
 /// *
-/// * RawInput“o˜^‚Æ“à•”ó‘Ô‰Šú‰»‚ðs‚¤.
+/// * RawInputç™»éŒ²ã¨å†…éƒ¨çŠ¶æ…‹åˆæœŸåŒ–ã‚’è¡Œã†.
 /// */
- // ƒƒ“ƒoŠÖ”–{‘Ì’è‹`(‰Šú‰»ˆ—‚Ì‚½‚ß)
+ // ãƒ¡ãƒ³ãƒé–¢æ•°æœ¬ä½“å®šç¾©(åˆæœŸåŒ–å‡¦ç†ã®ãŸã‚)
 RawInputWinFilter::RawInputWinFilter()
 {
-    // ƒ}ƒEƒXƒfƒoƒCƒX“o˜^Ý’èˆ—(usage 0x01/0x02Žw’è‚Ì‚½‚ß)
+    // ãƒžã‚¦ã‚¹ãƒ‡ãƒã‚¤ã‚¹ç™»éŒ²è¨­å®šå‡¦ç†(usage 0x01/0x02æŒ‡å®šã®ãŸã‚)
     rid[0] = { 0x01, 0x02, 0, nullptr };
-    // ƒL[ƒ{[ƒhƒfƒoƒCƒX“o˜^Ý’èˆ—(usage 0x01/0x06Žw’è‚Ì‚½‚ß)
+    // ã‚­ãƒ¼ãƒœãƒ¼ãƒ‰ãƒ‡ãƒã‚¤ã‚¹ç™»éŒ²è¨­å®šå‡¦ç†(usage 0x01/0x06æŒ‡å®šã®ãŸã‚)
     rid[1] = { 0x01, 0x06, 0, nullptr };
 
-    // ƒfƒoƒCƒX“o˜^ŒÄoˆ—(ŽóMŠJŽn‚Ì‚½‚ß)
+    // ãƒ‡ãƒã‚¤ã‚¹ç™»éŒ²å‘¼å‡ºå‡¦ç†(å—ä¿¡é–‹å§‹ã®ãŸã‚)
     RegisterRawInputDevices(rid, 2, sizeof(RAWINPUTDEVICE));
 
-    // ƒL[”z—ñ‰Šú‰»ˆ—(ŒëŒŸ’m–hŽ~‚Ì‚½‚ß)
+    // ã‚­ãƒ¼é…åˆ—åˆæœŸåŒ–å‡¦ç†(èª¤æ¤œçŸ¥é˜²æ­¢ã®ãŸã‚)
     for (auto& a : m_vkDown) a.store(0, std::memory_order_relaxed);
-    // ƒ}ƒEƒX”z—ñ‰Šú‰»ˆ—(ŒëŒŸ’m–hŽ~‚Ì‚½‚ß)
+    // ãƒžã‚¦ã‚¹é…åˆ—åˆæœŸåŒ–å‡¦ç†(èª¤æ¤œçŸ¥é˜²æ­¢ã®ãŸã‚)
     for (auto& b : m_mb)     b.store(0, std::memory_order_relaxed);
-    // ‘Š‘Îƒfƒ‹ƒ^‰Šú‰»ˆ—(Žc·”rœ‚Ì‚½‚ß)
+    // ç›¸å¯¾ãƒ‡ãƒ«ã‚¿åˆæœŸåŒ–å‡¦ç†(æ®‹å·®æŽ’é™¤ã®ãŸã‚)
     dx.store(0, std::memory_order_relaxed);
-    // ‘Š‘Îƒfƒ‹ƒ^‰Šú‰»ˆ—(Žc·”rœ‚Ì‚½‚ß)
+    // ç›¸å¯¾ãƒ‡ãƒ«ã‚¿åˆæœŸåŒ–å‡¦ç†(æ®‹å·®æŽ’é™¤ã®ãŸã‚)
     dy.store(0, std::memory_order_relaxed);
 }
 
 ///**
-/// * ƒfƒXƒgƒ‰ƒNƒ^’è‹`.
+/// * ãƒ‡ã‚¹ãƒˆãƒ©ã‚¯ã‚¿å®šç¾©.
 /// *
-/// * RawInput“o˜^‰ðœ‚ðs‚¤.
+/// * RawInputç™»éŒ²è§£é™¤ã‚’è¡Œã†.
 /// */
- // ƒƒ“ƒoŠÖ”–{‘Ì’è‹`(ŒãŽn––ˆ—‚Ì‚½‚ß)
+ // ãƒ¡ãƒ³ãƒé–¢æ•°æœ¬ä½“å®šç¾©(å¾Œå§‹æœ«å‡¦ç†ã®ãŸã‚)
 RawInputWinFilter::~RawInputWinFilter()
 {
-    // ƒ}ƒEƒX‰ðœŽw’èÝ’èˆ—(“o˜^‰ðœ‚Ì‚½‚ß)
+    // ãƒžã‚¦ã‚¹è§£é™¤æŒ‡å®šè¨­å®šå‡¦ç†(ç™»éŒ²è§£é™¤ã®ãŸã‚)
     rid[0].dwFlags = RIDEV_REMOVE; rid[0].hwndTarget = nullptr;
-    // ƒL[ƒ{[ƒh‰ðœŽw’èÝ’èˆ—(“o˜^‰ðœ‚Ì‚½‚ß)
+    // ã‚­ãƒ¼ãƒœãƒ¼ãƒ‰è§£é™¤æŒ‡å®šè¨­å®šå‡¦ç†(ç™»éŒ²è§£é™¤ã®ãŸã‚)
     rid[1].dwFlags = RIDEV_REMOVE; rid[1].hwndTarget = nullptr;
-    // “o˜^‰ðœŒÄoˆ—(ƒNƒŠ[ƒ“ƒAƒbƒv‚Ì‚½‚ß)
+    // ç™»éŒ²è§£é™¤å‘¼å‡ºå‡¦ç†(ã‚¯ãƒªãƒ¼ãƒ³ã‚¢ãƒƒãƒ—ã®ãŸã‚)
     RegisterRawInputDevices(rid, 2, sizeof(RAWINPUTDEVICE));
 }
 
 
 /**
- * ƒlƒCƒeƒBƒuƒCƒxƒ“ƒgƒtƒBƒ‹ƒ^’è‹`i’áƒTƒCƒNƒ‹Å“K‰»”Åj
+ * ãƒã‚¤ãƒ†ã‚£ãƒ–ã‚¤ãƒ™ãƒ³ãƒˆãƒ•ã‚£ãƒ«ã‚¿å®šç¾©ï¼ˆä½Žã‚µã‚¤ã‚¯ãƒ«æœ€é©åŒ–ç‰ˆï¼‰
  *
- * Å“K‰»ƒ|ƒCƒ“ƒg:
- * 1. ‘ŠúƒŠƒ^[ƒ“‚É‚æ‚é•s—v‚Èˆ—ƒXƒLƒbƒv
- * 2. ƒ‹ƒbƒNƒAƒbƒvƒe[ƒuƒ‹‚É‚æ‚éðŒ•ªŠòíŒ¸
- * 3. ƒrƒbƒg‰‰ŽZ‚ÌÅ“K‰»
- * 4. ƒLƒƒƒbƒVƒ…‹ÇŠ«‚ÌŒüã
+ * æœ€é©åŒ–ãƒã‚¤ãƒ³ãƒˆ:
+ * 1. æ—©æœŸãƒªã‚¿ãƒ¼ãƒ³ã«ã‚ˆã‚‹ä¸è¦ãªå‡¦ç†ã‚¹ã‚­ãƒƒãƒ—
+ * 2. ãƒ«ãƒƒã‚¯ã‚¢ãƒƒãƒ—ãƒ†ãƒ¼ãƒ–ãƒ«ã«ã‚ˆã‚‹æ¡ä»¶åˆ†å²å‰Šæ¸›
+ * 3. ãƒ“ãƒƒãƒˆæ¼”ç®—ã®æœ€é©åŒ–
+ * 4. ã‚­ãƒ£ãƒƒã‚·ãƒ¥å±€æ‰€æ€§ã®å‘ä¸Š
  */
  /**
-  * ƒlƒCƒeƒBƒuƒCƒxƒ“ƒgƒtƒBƒ‹ƒ^’è‹`i’áƒTƒCƒNƒ‹Å“K‰»”Åj
+  * ãƒã‚¤ãƒ†ã‚£ãƒ–ã‚¤ãƒ™ãƒ³ãƒˆãƒ•ã‚£ãƒ«ã‚¿å®šç¾©ï¼ˆä½Žã‚µã‚¤ã‚¯ãƒ«æœ€é©åŒ–ç‰ˆï¼‰
   *
-  * Å“K‰»ƒ|ƒCƒ“ƒg:
-  * 1. ‘ŠúƒŠƒ^[ƒ“‚É‚æ‚é•s—v‚Èˆ—ƒXƒLƒbƒv
-  * 2. ƒ‹ƒbƒNƒAƒbƒvƒe[ƒuƒ‹‚É‚æ‚éðŒ•ªŠòíŒ¸
-  * 3. ƒrƒbƒg‰‰ŽZ‚ÌÅ“K‰»
-  * 4. ƒLƒƒƒbƒVƒ…‹ÇŠ«‚ÌŒüã
+  * æœ€é©åŒ–ãƒã‚¤ãƒ³ãƒˆ:
+  * 1. æ—©æœŸãƒªã‚¿ãƒ¼ãƒ³ã«ã‚ˆã‚‹ä¸è¦ãªå‡¦ç†ã‚¹ã‚­ãƒƒãƒ—
+  * 2. ãƒ«ãƒƒã‚¯ã‚¢ãƒƒãƒ—ãƒ†ãƒ¼ãƒ–ãƒ«ã«ã‚ˆã‚‹æ¡ä»¶åˆ†å²å‰Šæ¸›
+  * 3. ãƒ“ãƒƒãƒˆæ¼”ç®—ã®æœ€é©åŒ–
+  * 4. ã‚­ãƒ£ãƒƒã‚·ãƒ¥å±€æ‰€æ€§ã®å‘ä¸Š
   */
 bool RawInputWinFilter::nativeEventFilter(const QByteArray& eventType, void* message, qintptr* result)
 {
 #ifdef _WIN32
-    // OSƒƒbƒZ[ƒWŽæ“¾ˆ—(ƒlƒCƒeƒBƒuî•ñŽQÆ‚Ì‚½‚ß)
+    // OSãƒ¡ãƒƒã‚»ãƒ¼ã‚¸å–å¾—å‡¦ç†(ãƒã‚¤ãƒ†ã‚£ãƒ–æƒ…å ±å‚ç…§ã®ãŸã‚)
     MSG* msg = static_cast<MSG*>(message);
 
-    // ‘ŠúƒŠƒ^[ƒ“ˆ—(WM_INPUTˆÈŠO‚Ì–³‘Êˆ—‰ñ”ð‚Ì‚½‚ß)
+    // æ—©æœŸãƒªã‚¿ãƒ¼ãƒ³å‡¦ç†(WM_INPUTä»¥å¤–ã®ç„¡é§„å‡¦ç†å›žé¿ã®ãŸã‚)
     if (!msg || msg->message != WM_INPUT) return false;
 
-    // ƒXƒ^ƒbƒNãƒoƒbƒtƒ@Šm•Ûˆ—(ƒq[ƒvŠm•Û‰ñ”ð‚É‚æ‚é’á’x‰„‚Ì‚½‚ß)
-    alignas(64) BYTE buffer[sizeof(RAWINPUT)]; // ƒLƒƒƒbƒVƒ…ƒ‰ƒCƒ“‹«ŠE‚ÉƒAƒ‰ƒCƒ“(ƒƒ‚ƒŠƒAƒNƒZƒXŒø—¦‰»‚Ì‚½‚ß)
-    // RAWINPUTƒrƒ…[Žæ“¾ˆ—(Œ^ˆÀ‘S‚ÈÄ‰ðŽß‚Ì‚½‚ß)
+    // ã‚¹ã‚¿ãƒƒã‚¯ä¸Šãƒãƒƒãƒ•ã‚¡ç¢ºä¿å‡¦ç†(ãƒ’ãƒ¼ãƒ—ç¢ºä¿å›žé¿ã«ã‚ˆã‚‹ä½Žé…å»¶ã®ãŸã‚)
+    alignas(64) BYTE buffer[sizeof(RAWINPUT)]; // ã‚­ãƒ£ãƒƒã‚·ãƒ¥ãƒ©ã‚¤ãƒ³å¢ƒç•Œã«ã‚¢ãƒ©ã‚¤ãƒ³(ãƒ¡ãƒ¢ãƒªã‚¢ã‚¯ã‚»ã‚¹åŠ¹çŽ‡åŒ–ã®ãŸã‚)
+    // RAWINPUTãƒ“ãƒ¥ãƒ¼å–å¾—å‡¦ç†(åž‹å®‰å…¨ãªå†è§£é‡ˆã®ãŸã‚)
     RAWINPUT* raw = reinterpret_cast<RAWINPUT*>(buffer);
-    // ƒTƒCƒY‰Šú‰»ˆ—(APIŒÄ‚Ño‚µ®‡‚Ì‚½‚ß)
+    // ã‚µã‚¤ã‚ºåˆæœŸåŒ–å‡¦ç†(APIå‘¼ã³å‡ºã—æ•´åˆã®ãŸã‚)
     UINT size = sizeof(RAWINPUT);
 
-    // “ü—Íƒf[ƒ^Žæ“¾ˆ—(Win32 API—˜—p‚Ì‚½‚ß)
+    // å…¥åŠ›ãƒ‡ãƒ¼ã‚¿å–å¾—å‡¦ç†(Win32 APIåˆ©ç”¨ã®ãŸã‚)
     if (GetRawInputData(reinterpret_cast<HRAWINPUT>(msg->lParam),
         RID_INPUT, raw, &size, sizeof(RAWINPUTHEADER)) == (UINT)-1) {
-        // Ž¸”sŽž‘Šú•œ‹Aˆ—(ˆÀ’è«Šm•Û‚Ì‚½‚ß)
+        // å¤±æ•—æ™‚æ—©æœŸå¾©å¸°å‡¦ç†(å®‰å®šæ€§ç¢ºä¿ã®ãŸã‚)
         return false;
     }
 
-    // ƒfƒoƒCƒXƒ^ƒCƒv’Šoˆ—(ˆ—•ªŠò‚Ì‚½‚ß)
+    // ãƒ‡ãƒã‚¤ã‚¹ã‚¿ã‚¤ãƒ—æŠ½å‡ºå‡¦ç†(å‡¦ç†åˆ†å²ã®ãŸã‚)
     const DWORD dwType = raw->header.dwType;
 
-    // ƒ}ƒEƒXˆ—•ªŠò’è‹`(ê—pŒo˜H‚Å‚‘¬ˆ—‚·‚é‚½‚ß)
+    // ãƒžã‚¦ã‚¹å‡¦ç†åˆ†å²å®šç¾©(å°‚ç”¨çµŒè·¯ã§é«˜é€Ÿå‡¦ç†ã™ã‚‹ãŸã‚)
     if (dwType == RIM_TYPEMOUSE) {
-        // ƒ}ƒEƒX\‘¢‘ÌŽQÆˆ—(ƒtƒB[ƒ‹ƒhƒAƒNƒZƒXŠÈ—ª‰»‚Ì‚½‚ß)
+        // ãƒžã‚¦ã‚¹æ§‹é€ ä½“å‚ç…§å‡¦ç†(ãƒ•ã‚£ãƒ¼ãƒ«ãƒ‰ã‚¢ã‚¯ã‚»ã‚¹ç°¡ç•¥åŒ–ã®ãŸã‚)
         const RAWMOUSE& m = raw->data.mouse;
 
-        // ‘Š‘ÎˆÚ“®‰ÁŽZ”»’èˆ—(–³ˆÚ“®Žž‚Ì•s—v‰ÁŽZ‰ñ”ð‚Ì‚½‚ß)
-        if (m.lLastX | m.lLastY) { // ”ñƒ[ƒ”»’èˆ—(OR‚Å—¼•û“¯Žžƒ`ƒFƒbƒN‚Ì‚½‚ß)
-            // X‰ÁŽZˆ—(ƒƒbƒNƒŒƒX‰ÁŽZ‚É‚æ‚é’áƒI[ƒo[ƒwƒbƒh‚Ì‚½‚ß)
+        // ç›¸å¯¾ç§»å‹•åŠ ç®—åˆ¤å®šå‡¦ç†(ç„¡ç§»å‹•æ™‚ã®ä¸è¦åŠ ç®—å›žé¿ã®ãŸã‚)
+        if (m.lLastX | m.lLastY) { // éžã‚¼ãƒ­åˆ¤å®šå‡¦ç†(ORã§ä¸¡æ–¹åŒæ™‚ãƒã‚§ãƒƒã‚¯ã®ãŸã‚)
+            // XåŠ ç®—å‡¦ç†(ãƒ­ãƒƒã‚¯ãƒ¬ã‚¹åŠ ç®—ã«ã‚ˆã‚‹ä½Žã‚ªãƒ¼ãƒãƒ¼ãƒ˜ãƒƒãƒ‰ã®ãŸã‚)
             dx.fetch_add(m.lLastX, std::memory_order_relaxed);
-            // Y‰ÁŽZˆ—(ƒƒbƒNƒŒƒX‰ÁŽZ‚É‚æ‚é’áƒI[ƒo[ƒwƒbƒh‚Ì‚½‚ß)
+            // YåŠ ç®—å‡¦ç†(ãƒ­ãƒƒã‚¯ãƒ¬ã‚¹åŠ ç®—ã«ã‚ˆã‚‹ä½Žã‚ªãƒ¼ãƒãƒ¼ãƒ˜ãƒƒãƒ‰ã®ãŸã‚)
             dy.fetch_add(m.lLastY, std::memory_order_relaxed);
         }
 
-        // ƒ{ƒ^ƒ“ƒtƒ‰ƒOŽæ“¾ˆ—(•ªŠò‰ñ”Å¬‰»‚Ì‚½‚ß)
+        // ãƒœã‚¿ãƒ³ãƒ•ãƒ©ã‚°å–å¾—å‡¦ç†(åˆ†å²å›žæ•°æœ€å°åŒ–ã®ãŸã‚)
         const USHORT f = m.usButtonFlags;
-        // –³ƒtƒ‰ƒO‘Šú•œ‹Aˆ—(•s—vˆ—‰ñ”ð‚Ì‚½‚ß)
+        // ç„¡ãƒ•ãƒ©ã‚°æ—©æœŸå¾©å¸°å‡¦ç†(ä¸è¦å‡¦ç†å›žé¿ã®ãŸã‚)
         if (!f) return false;
 
-        // —v‘fŒ^“±oˆ—(m_mb—v‘f‚Ì³‚µ‚¢Œ^‚©‚çƒ|ƒCƒ“ƒ^Œ^‚ð“¾‚é‚½‚ß)
+        // è¦ç´ åž‹å°Žå‡ºå‡¦ç†(m_mbè¦ç´ ã®æ­£ã—ã„åž‹ã‹ã‚‰ãƒã‚¤ãƒ³ã‚¿åž‹ã‚’å¾—ã‚‹ãŸã‚)
         using MbElem = std::remove_reference_t<decltype(m_mb[0])>;
-        // ƒ|ƒCƒ“ƒ^Œ^•Ê–¼’è‹`(‰Â“Ç«Œüã‚Ì‚½‚ß)
+        // ãƒã‚¤ãƒ³ã‚¿åž‹åˆ¥åå®šç¾©(å¯èª­æ€§å‘ä¸Šã®ãŸã‚)
         using MbElemPtr = MbElem*;
 
-        // ƒ}ƒbƒsƒ“ƒO\‘¢‘Ì’è‹`(Œ^ˆÀ‘Sƒ|ƒCƒ“ƒ^•ÛŽ‚Ì‚½‚ß)
+        // ãƒžãƒƒãƒ”ãƒ³ã‚°æ§‹é€ ä½“å®šç¾©(åž‹å®‰å…¨ãƒã‚¤ãƒ³ã‚¿ä¿æŒã®ãŸã‚)
         struct ButtonMapping {
-            // ‰Ÿ‰ºƒtƒ‰ƒO’è‹`(ƒrƒbƒg”»’è‚Ì‚½‚ß)
+            // æŠ¼ä¸‹ãƒ•ãƒ©ã‚°å®šç¾©(ãƒ“ãƒƒãƒˆåˆ¤å®šã®ãŸã‚)
             USHORT downFlag;
-            // ‰ð•úƒtƒ‰ƒO’è‹`(ƒrƒbƒg”»’è‚Ì‚½‚ß)
+            // è§£æ”¾ãƒ•ãƒ©ã‚°å®šç¾©(ãƒ“ãƒƒãƒˆåˆ¤å®šã®ãŸã‚)
             USHORT upFlag;
-            // ‘ÎÛŒ´Žqƒ|ƒCƒ“ƒ^’è‹`(’¼ÚstoreŽÀs‚Ì‚½‚ß)
+            // å¯¾è±¡åŽŸå­ãƒã‚¤ãƒ³ã‚¿å®šç¾©(ç›´æŽ¥storeå®Ÿè¡Œã®ãŸã‚)
             MbElemPtr target;
         };
 
-        // ƒ}ƒbƒsƒ“ƒO”z—ñ’è‹`(thisŒ‹‡‚Ì‚½‚ß”ñstaticÌ—p‚Ì‚½‚ß)
+        // ãƒžãƒƒãƒ”ãƒ³ã‚°é…åˆ—å®šç¾©(thisçµåˆã®ãŸã‚éžstaticæŽ¡ç”¨ã®ãŸã‚)
         const ButtonMapping mappings[] = {
-            // ¶ƒ{ƒ^ƒ“‘Î‰ž’è‹`(‰Ÿ‰º/‰ð•ú‚ð“‡ˆ—‚·‚é‚½‚ß)
+            // å·¦ãƒœã‚¿ãƒ³å¯¾å¿œå®šç¾©(æŠ¼ä¸‹/è§£æ”¾ã‚’çµ±åˆå‡¦ç†ã™ã‚‹ãŸã‚)
             {RI_MOUSE_LEFT_BUTTON_DOWN,   RI_MOUSE_LEFT_BUTTON_UP,   &m_mb[static_cast<std::size_t>(kMB_Left)]},
-            // ‰Eƒ{ƒ^ƒ“‘Î‰ž’è‹`(‰Ÿ‰º/‰ð•ú‚ð“‡ˆ—‚·‚é‚½‚ß)
+            // å³ãƒœã‚¿ãƒ³å¯¾å¿œå®šç¾©(æŠ¼ä¸‹/è§£æ”¾ã‚’çµ±åˆå‡¦ç†ã™ã‚‹ãŸã‚)
             {RI_MOUSE_RIGHT_BUTTON_DOWN,  RI_MOUSE_RIGHT_BUTTON_UP,  &m_mb[static_cast<std::size_t>(kMB_Right)]},
-            // ’†ƒ{ƒ^ƒ“‘Î‰ž’è‹`(‰Ÿ‰º/‰ð•ú‚ð“‡ˆ—‚·‚é‚½‚ß)
+            // ä¸­ãƒœã‚¿ãƒ³å¯¾å¿œå®šç¾©(æŠ¼ä¸‹/è§£æ”¾ã‚’çµ±åˆå‡¦ç†ã™ã‚‹ãŸã‚)
             {RI_MOUSE_MIDDLE_BUTTON_DOWN, RI_MOUSE_MIDDLE_BUTTON_UP, &m_mb[static_cast<std::size_t>(kMB_Middle)]},
-            // X1ƒ{ƒ^ƒ“‘Î‰ž’è‹`(‰Ÿ‰º/‰ð•ú‚ð“‡ˆ—‚·‚é‚½‚ß)
+            // X1ãƒœã‚¿ãƒ³å¯¾å¿œå®šç¾©(æŠ¼ä¸‹/è§£æ”¾ã‚’çµ±åˆå‡¦ç†ã™ã‚‹ãŸã‚)
             {RI_MOUSE_BUTTON_4_DOWN,      RI_MOUSE_BUTTON_4_UP,      &m_mb[static_cast<std::size_t>(kMB_X1)]},
-            // X2ƒ{ƒ^ƒ“‘Î‰ž’è‹`(‰Ÿ‰º/‰ð•ú‚ð“‡ˆ—‚·‚é‚½‚ß)
+            // X2ãƒœã‚¿ãƒ³å¯¾å¿œå®šç¾©(æŠ¼ä¸‹/è§£æ”¾ã‚’çµ±åˆå‡¦ç†ã™ã‚‹ãŸã‚)
             {RI_MOUSE_BUTTON_5_DOWN,      RI_MOUSE_BUTTON_5_UP,      &m_mb[static_cast<std::size_t>(kMB_X2)]}
         };
 
-        // ƒ‹[ƒvˆ—ŠJŽn’è‹`(•ªŠòíŒ¸‚Æ‹ÇŠ«Œüã‚Ì‚½‚ß)
+        // ãƒ«ãƒ¼ãƒ—å‡¦ç†é–‹å§‹å®šç¾©(åˆ†å²å‰Šæ¸›ã¨å±€æ‰€æ€§å‘ä¸Šã®ãŸã‚)
         for (const auto& map : mappings) {
-            // ƒ}ƒXƒN‡¬ˆ—(’PˆêAND‚ÅŠÖŒW—L–³”»’è‚Ì‚½‚ß)
+            // ãƒžã‚¹ã‚¯åˆæˆå‡¦ç†(å˜ä¸€ANDã§é–¢ä¿‚æœ‰ç„¡åˆ¤å®šã®ãŸã‚)
             const USHORT mask = map.downFlag | map.upFlag;
-            // ŠÖŒW”»’èˆ—(ŠY“–Žž‚Ì‚ÝstoreŽÀs‚Ì‚½‚ß)
+            // é–¢ä¿‚åˆ¤å®šå‡¦ç†(è©²å½“æ™‚ã®ã¿storeå®Ÿè¡Œã®ãŸã‚)
             if (f & mask) {
-                // ’lŒˆ’èˆ—(‰Ÿ‰º=1/‰ð•ú=0‚Ì“ñ’lŒˆ’è‚Ì‚½‚ß)
+                // å€¤æ±ºå®šå‡¦ç†(æŠ¼ä¸‹=1/è§£æ”¾=0ã®äºŒå€¤æ±ºå®šã®ãŸã‚)
                 const uint8_t v = (f & map.downFlag) ? uint8_t(1) : uint8_t(0);
-                // Œ´Žq‘‚«ž‚Ýˆ—(relaxed‚Å’áƒI[ƒo[ƒwƒbƒhˆÛŽ‚Ì‚½‚ß)
+                // åŽŸå­æ›¸ãè¾¼ã¿å‡¦ç†(relaxedã§ä½Žã‚ªãƒ¼ãƒãƒ¼ãƒ˜ãƒƒãƒ‰ç¶­æŒã®ãŸã‚)
                 map.target->store(v, std::memory_order_relaxed);
             }
         }
     }
-    // ƒL[ƒ{[ƒhˆ—•ªŠò’è‹`(ê—pŒo˜H‚Å‚‘¬ˆ—‚·‚é‚½‚ß)
+    // ã‚­ãƒ¼ãƒœãƒ¼ãƒ‰å‡¦ç†åˆ†å²å®šç¾©(å°‚ç”¨çµŒè·¯ã§é«˜é€Ÿå‡¦ç†ã™ã‚‹ãŸã‚)
     else if (dwType == RIM_TYPEKEYBOARD) {
-        // ƒL[ƒ{[ƒh\‘¢‘ÌŽQÆˆ—(ƒtƒB[ƒ‹ƒhƒAƒNƒZƒXŠÈ—ª‰»‚Ì‚½‚ß)
+        // ã‚­ãƒ¼ãƒœãƒ¼ãƒ‰æ§‹é€ ä½“å‚ç…§å‡¦ç†(ãƒ•ã‚£ãƒ¼ãƒ«ãƒ‰ã‚¢ã‚¯ã‚»ã‚¹ç°¡ç•¥åŒ–ã®ãŸã‚)
         const RAWKEYBOARD& kb = raw->data.keyboard;
-        // ‰¼‘zƒL[‰ŠúŽæ“¾ˆ—(Œã‘±‚Ì³‹K‰»‚É”õ‚¦‚é‚½‚ß)
+        // ä»®æƒ³ã‚­ãƒ¼åˆæœŸå–å¾—å‡¦ç†(å¾Œç¶šã®æ­£è¦åŒ–ã«å‚™ãˆã‚‹ãŸã‚)
         UINT vk = kb.VKey;
-        // ƒtƒ‰ƒOŽæ“¾ˆ—(‰Ÿ‰º/‰ð•ú”»’è‚Ì‚½‚ß)
+        // ãƒ•ãƒ©ã‚°å–å¾—å‡¦ç†(æŠ¼ä¸‹/è§£æ”¾åˆ¤å®šã®ãŸã‚)
         const USHORT flags = kb.Flags;
-        // ‰ð•ú”»’èˆ—(Ši”[’l”½“]‚É—p‚¢‚é‚½‚ß)
+        // è§£æ”¾åˆ¤å®šå‡¦ç†(æ ¼ç´å€¤åè»¢ã«ç”¨ã„ã‚‹ãŸã‚)
         const bool isKeyUp = (flags & RI_KEY_BREAK) != 0;
 
-        // “ÁŽêƒL[³‹K‰»ˆ—(¶‰E/Šg’£”»’è®‡‚Ì‚½‚ß)
+        // ç‰¹æ®Šã‚­ãƒ¼æ­£è¦åŒ–å‡¦ç†(å·¦å³/æ‹¡å¼µåˆ¤å®šæ•´åˆã®ãŸã‚)
         if (vk == VK_SHIFT) {
-            // ¶‰EShift”»•Êˆ—(ƒXƒLƒƒƒ“ƒR[ƒh‚©‚çŽÀƒL[Žæ“¾‚Ì‚½‚ß)
+            // å·¦å³Shiftåˆ¤åˆ¥å‡¦ç†(ã‚¹ã‚­ãƒ£ãƒ³ã‚³ãƒ¼ãƒ‰ã‹ã‚‰å®Ÿã‚­ãƒ¼å–å¾—ã®ãŸã‚)
             vk = MapVirtualKey(kb.MakeCode, MAPVK_VSC_TO_VK_EX);
         }
-        // Ctrl¶‰E•ª—£ˆ—(Šg’£ƒrƒbƒg‚Å¶‰EŒˆ’è‚Ì‚½‚ß)
+        // Ctrlå·¦å³åˆ†é›¢å‡¦ç†(æ‹¡å¼µãƒ“ãƒƒãƒˆã§å·¦å³æ±ºå®šã®ãŸã‚)
         else if (vk == VK_CONTROL) {
-            // ¶‰ECtrlŠ„“–ˆ—(‰Ÿ‰ºƒL[‚Ì³Šm‚È‹L˜^‚Ì‚½‚ß)
+            // å·¦å³Ctrlå‰²å½“å‡¦ç†(æŠ¼ä¸‹ã‚­ãƒ¼ã®æ­£ç¢ºãªè¨˜éŒ²ã®ãŸã‚)
             vk = (flags & RI_KEY_E0) ? VK_RCONTROL : VK_LCONTROL;
         }
-        // Alt¶‰E•ª—£ˆ—(Šg’£ƒrƒbƒg‚Å¶‰EŒˆ’è‚Ì‚½‚ß)
+        // Altå·¦å³åˆ†é›¢å‡¦ç†(æ‹¡å¼µãƒ“ãƒƒãƒˆã§å·¦å³æ±ºå®šã®ãŸã‚)
         else if (vk == VK_MENU) {
-            // ¶‰EAltŠ„“–ˆ—(‰Ÿ‰ºƒL[‚Ì³Šm‚È‹L˜^‚Ì‚½‚ß)
+            // å·¦å³Altå‰²å½“å‡¦ç†(æŠ¼ä¸‹ã‚­ãƒ¼ã®æ­£ç¢ºãªè¨˜éŒ²ã®ãŸã‚)
             vk = (flags & RI_KEY_E0) ? VK_RMENU : VK_LMENU;
         }
 
-        // ”ÍˆÍ–hŒäˆ—(”z—ñ‹«ŠEˆÀ‘SŠm•Û‚Ì‚½‚ß)
+        // ç¯„å›²é˜²å¾¡å‡¦ç†(é…åˆ—å¢ƒç•Œå®‰å…¨ç¢ºä¿ã®ãŸã‚)
         if (vk < m_vkDown.size()) {
-            // Œ´Žq‘‚«ž‚Ýˆ—(relaxed‚Å’áƒI[ƒo[ƒwƒbƒhˆÛŽ‚Ì‚½‚ß)
+            // åŽŸå­æ›¸ãè¾¼ã¿å‡¦ç†(relaxedã§ä½Žã‚ªãƒ¼ãƒãƒ¼ãƒ˜ãƒƒãƒ‰ç¶­æŒã®ãŸã‚)
             m_vkDown[vk].store(static_cast<uint8_t>(!isKeyUp), std::memory_order_relaxed);
         }
     }
-    // HID–¢ˆ—‹–—eˆ—(‘z’èŠOƒfƒoƒCƒX–³Ž‹‚Ì‚½‚ß)
+    // HIDæœªå‡¦ç†è¨±å®¹å‡¦ç†(æƒ³å®šå¤–ãƒ‡ãƒã‚¤ã‚¹ç„¡è¦–ã®ãŸã‚)
 
-    // Šù’è•œ‹Aˆ—(Qt‘¤‚Öˆ—Œp‘±ˆÏ÷‚Ì‚½‚ß)
+    // æ—¢å®šå¾©å¸°å‡¦ç†(Qtå´ã¸å‡¦ç†ç¶™ç¶šå§”è­²ã®ãŸã‚)
     return false;
 #else
-    // –¢Žg—pˆø”—}Ž~ˆ—(ƒrƒ‹ƒhŒx‰ñ”ð‚Ì‚½‚ß)
+    // æœªä½¿ç”¨å¼•æ•°æŠ‘æ­¢å‡¦ç†(ãƒ“ãƒ«ãƒ‰è­¦å‘Šå›žé¿ã®ãŸã‚)
     Q_UNUSED(eventType) Q_UNUSED(message) Q_UNUSED(result)
-        // Šù’è•œ‹Aˆ—(”ñWindowsŠÂ‹«ŒÝŠ·‚Ì‚½‚ß)
+        // æ—¢å®šå¾©å¸°å‡¦ç†(éžWindowsç’°å¢ƒäº’æ›ã®ãŸã‚)
         return false;
 #endif
 }
 
 
 /**
- * TODO ’Ç‰Á‚ÌÅ“K‰»ˆÄiƒNƒ‰ƒXÝŒvƒŒƒxƒ‹j:
+ * TODO è¿½åŠ ã®æœ€é©åŒ–æ¡ˆï¼ˆã‚¯ãƒ©ã‚¹è¨­è¨ˆãƒ¬ãƒ™ãƒ«ï¼‰:
  *
- * 1. ƒoƒbƒtƒ@ƒTƒCƒY‚ÌŽ–‘OŠm•Û:
+ * 1. ãƒãƒƒãƒ•ã‚¡ã‚µã‚¤ã‚ºã®äº‹å‰ç¢ºä¿:
  *    class RawInputWinFilter {
- *        alignas(64) BYTE m_buffer[sizeof(RAWINPUT)]; // ƒƒ“ƒo•Ï”‚Æ‚µ‚Ä•ÛŽ
+ *        alignas(64) BYTE m_buffer[sizeof(RAWINPUT)]; // ãƒ¡ãƒ³ãƒå¤‰æ•°ã¨ã—ã¦ä¿æŒ
  *    };
  *
- * 2. ƒrƒbƒgƒ}ƒXƒNˆ—‚ÌÅ“K‰»:
- *    // •¡”‚Ìƒtƒ‰ƒO‚ðˆê“x‚Éƒ`ƒFƒbƒN
+ * 2. ãƒ“ãƒƒãƒˆãƒžã‚¹ã‚¯å‡¦ç†ã®æœ€é©åŒ–:
+ *    // è¤‡æ•°ã®ãƒ•ãƒ©ã‚°ã‚’ä¸€åº¦ã«ãƒã‚§ãƒƒã‚¯
  *    constexpr USHORT ALL_BUTTON_FLAGS =
  *        RI_MOUSE_LEFT_BUTTON_DOWN | RI_MOUSE_LEFT_BUTTON_UP |
  *        RI_MOUSE_RIGHT_BUTTON_DOWN | RI_MOUSE_RIGHT_BUTTON_UP |
@@ -222,30 +224,30 @@ bool RawInputWinFilter::nativeEventFilter(const QByteArray& eventType, void* mes
  *        RI_MOUSE_BUTTON_4_DOWN | RI_MOUSE_BUTTON_4_UP |
  *        RI_MOUSE_BUTTON_5_DOWN | RI_MOUSE_BUTTON_5_UP;
  *
- *    if (!(f & ALL_BUTTON_FLAGS)) return false; // ‘Sƒ{ƒ^ƒ“–³ŠÖŒW‚È‚ç‘¦ƒŠƒ^[ƒ“
+ *    if (!(f & ALL_BUTTON_FLAGS)) return false; // å…¨ãƒœã‚¿ãƒ³ç„¡é–¢ä¿‚ãªã‚‰å³ãƒªã‚¿ãƒ¼ãƒ³
  *
  *
  */
 
 ///**
-/// * ‘Š‘Îƒfƒ‹ƒ^Žæ“¾ŠÖ”’è‹`.
+/// * ç›¸å¯¾ãƒ‡ãƒ«ã‚¿å–å¾—é–¢æ•°å®šç¾©.
 /// *
-/// * —ÝÏ’l‚ðŽæ‚èo‚µƒ[ƒƒNƒŠƒA‚·‚é.
+/// * ç´¯ç©å€¤ã‚’å–ã‚Šå‡ºã—ã‚¼ãƒ­ã‚¯ãƒªã‚¢ã™ã‚‹.
 /// */
- // ƒƒ“ƒoŠÖ”–{‘Ì’è‹`(‘Š‘Îƒfƒ‹ƒ^Žæ‚èo‚µ‚Ì‚½‚ß)
+ // ãƒ¡ãƒ³ãƒé–¢æ•°æœ¬ä½“å®šç¾©(ç›¸å¯¾ãƒ‡ãƒ«ã‚¿å–ã‚Šå‡ºã—ã®ãŸã‚)
 void RawInputWinFilter::fetchMouseDelta(int& outDx, int& outDy)
 {
-    // š relaxed ‚Å\•ªi’P‚ÉÅV’l‚ð‰ñŽû‚·‚é‚¾‚¯j
+    // â˜… relaxed ã§ååˆ†ï¼ˆå˜ã«æœ€æ–°å€¤ã‚’å›žåŽã™ã‚‹ã ã‘ï¼‰
     outDx = dx.exchange(0, std::memory_order_relaxed);
     outDy = dy.exchange(0, std::memory_order_relaxed);
 }
 
 ///**
-/// * ‘Š‘Îƒfƒ‹ƒ^”jŠüŠÖ”’è‹`.
+/// * ç›¸å¯¾ãƒ‡ãƒ«ã‚¿ç ´æ£„é–¢æ•°å®šç¾©.
 /// *
-/// * Žc·‚ð‘¦Žžƒ[ƒ‰»‚·‚é.
+/// * æ®‹å·®ã‚’å³æ™‚ã‚¼ãƒ­åŒ–ã™ã‚‹.
 /// */
- // ƒƒ“ƒoŠÖ”–{‘Ì’è‹`(Žc·œ‹Ž‚Ì‚½‚ß)
+ // ãƒ¡ãƒ³ãƒé–¢æ•°æœ¬ä½“å®šç¾©(æ®‹å·®é™¤åŽ»ã®ãŸã‚)
 void RawInputWinFilter::discardDeltas()
 {
     dx.exchange(0, std::memory_order_relaxed);
@@ -253,48 +255,48 @@ void RawInputWinFilter::discardDeltas()
 }
 
 ///**
-/// * ‘SƒL[ó‘ÔƒŠƒZƒbƒgŠÖ”’è‹`.
+/// * å…¨ã‚­ãƒ¼çŠ¶æ…‹ãƒªã‚»ãƒƒãƒˆé–¢æ•°å®šç¾©.
 /// *
-/// * ‚·‚×‚Ä–¢‰Ÿ‰º‚Ö–ß‚·.
+/// * ã™ã¹ã¦æœªæŠ¼ä¸‹ã¸æˆ»ã™.
 /// */
- // ƒƒ“ƒoŠÖ”–{‘Ì’è‹`(Œë”š—}Ž~‚Ì‚½‚ß)
+ // ãƒ¡ãƒ³ãƒé–¢æ•°æœ¬ä½“å®šç¾©(èª¤çˆ†æŠ‘æ­¢ã®ãŸã‚)
 void RawInputWinFilter::resetAllKeys()
 {
-    // ”z—ñ”½•œƒ[ƒ‰»ˆ—(‰Ÿ‰º­Õ”rœ‚Ì‚½‚ß)
+    // é…åˆ—åå¾©ã‚¼ãƒ­åŒ–å‡¦ç†(æŠ¼ä¸‹ç—•è·¡æŽ’é™¤ã®ãŸã‚)
     for (auto& a : m_vkDown) a.store(0, std::memory_order_relaxed);
 }
 
 ///**
-/// * ƒ}ƒEƒXƒ{ƒ^ƒ“ó‘ÔƒŠƒZƒbƒgŠÖ”’è‹`.
+/// * ãƒžã‚¦ã‚¹ãƒœã‚¿ãƒ³çŠ¶æ…‹ãƒªã‚»ãƒƒãƒˆé–¢æ•°å®šç¾©.
 /// *
-/// * ¶‰E/’†/X1/X2‚ð–¢‰Ÿ‰º‚Ö–ß‚·.
+/// * å·¦å³/ä¸­/X1/X2ã‚’æœªæŠ¼ä¸‹ã¸æˆ»ã™.
 /// */
- // ƒƒ“ƒoŠÖ”–{‘Ì’è‹`(Œë”š—}Ž~‚Ì‚½‚ß)
+ // ãƒ¡ãƒ³ãƒé–¢æ•°æœ¬ä½“å®šç¾©(èª¤çˆ†æŠ‘æ­¢ã®ãŸã‚)
 void RawInputWinFilter::resetMouseButtons()
 {
-    // ”z—ñ”½•œƒ[ƒ‰»ˆ—(‰Ÿ‰º­Õ”rœ‚Ì‚½‚ß)
+    // é…åˆ—åå¾©ã‚¼ãƒ­åŒ–å‡¦ç†(æŠ¼ä¸‹ç—•è·¡æŽ’é™¤ã®ãŸã‚)
     for (auto& b : m_mb) b.store(0, std::memory_order_relaxed);
 }
 
 ///**
-/// * HK¨VK“o˜^ŠÖ”’è‹`.
+/// * HKâ†’VKç™»éŒ²é–¢æ•°å®šç¾©.
 /// *
-/// * Ž«‘‚ðXV‚·‚é.
+/// * è¾žæ›¸ã‚’æ›´æ–°ã™ã‚‹.
 /// */
- // ƒƒ“ƒoŠÖ”–{‘Ì’è‹`(Ý’è”½‰f‚Ì‚½‚ß)
+ // ãƒ¡ãƒ³ãƒé–¢æ•°æœ¬ä½“å®šç¾©(è¨­å®šåæ˜ ã®ãŸã‚)
 void RawInputWinFilter::setHotkeyVks(int hk, const std::vector<UINT>& vks)
 {
-    // “o˜^XVˆ—(ã‘‚«“K—p‚Ì‚½‚ß)
+    // ç™»éŒ²æ›´æ–°å‡¦ç†(ä¸Šæ›¸ãé©ç”¨ã®ãŸã‚)
     m_hkToVk[hk] = vks;
 }
 ///**
-/// * HK‰Ÿ‰º”»’èŠÖ”’è‹`.
+/// * HKæŠ¼ä¸‹åˆ¤å®šé–¢æ•°å®šç¾©.
 /// *
-/// * ‚¢‚¸‚ê‚©‚ÌVK‚ª‰Ÿ‰º’†‚È‚çtrue.
+/// * ã„ãšã‚Œã‹ã®VKãŒæŠ¼ä¸‹ä¸­ãªã‚‰true.
 /// */
 bool RawInputWinFilter::hotkeyDown(int hk) const
 {
-    // 1) Rawiƒ}ƒEƒX/ƒL[ƒ{[ƒhj‚ðæ‚Éƒ`ƒFƒbƒN
+    // 1) Rawï¼ˆãƒžã‚¦ã‚¹/ã‚­ãƒ¼ãƒœãƒ¼ãƒ‰ï¼‰ã‚’å…ˆã«ãƒã‚§ãƒƒã‚¯
     auto it = m_hkToVk.find(hk);
     if (it != m_hkToVk.end()) {
         const auto& vks = it->second;
@@ -315,21 +317,21 @@ bool RawInputWinFilter::hotkeyDown(int hk) const
     }
     return false;
     /*
-    // 2) joystickiQBitArrayj‚ðŒã‚Åƒ`ƒFƒbƒN
+    // 2) joystickï¼ˆQBitArrayï¼‰ã‚’å¾Œã§ãƒã‚§ãƒƒã‚¯
     const QBitArray* jm = m_joyHK;
     return jm && static_cast<unsigned>(hk) < static_cast<unsigned>(jm->size()) && jm->testBit(hk);*/
 }
 
 bool RawInputWinFilter::hotkeyPressed(int hk) noexcept {
-    const bool down = hotkeyDown(hk); // ‚¢‚Ü‰Ÿ‰º’†H
+    const bool down = hotkeyDown(hk); // ã„ã¾æŠ¼ä¸‹ä¸­ï¼Ÿ
     auto& prev = m_hkPrev[static_cast<size_t>(hk) & 511];
     const uint8_t p = prev.exchange(down, std::memory_order_acq_rel);
-    return down && !p;  // ¡true‚Å‘O‰ñfalse‚È‚ç Pressed
+    return down && !p;  // ä»Štrueã§å‰å›žfalseãªã‚‰ Pressed
 }
 
 bool RawInputWinFilter::hotkeyReleased(int hk) noexcept {
     const bool down = hotkeyDown(hk);
     auto& prev = m_hkPrev[static_cast<size_t>(hk) & 511];
     const uint8_t p = prev.exchange(down, std::memory_order_acq_rel);
-    return (!down) && p; // ¡false‚Å‘O‰ñtrue‚È‚ç Released
+    return (!down) && p; // ä»Šfalseã§å‰å›žtrueãªã‚‰ Released
 }

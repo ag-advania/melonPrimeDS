@@ -59,12 +59,14 @@
 // melonPrimeDS
 #include <cstdint>
 #include <cmath>
+
 // MelonPrimeDS FixedOverlays_2025
 #include <QPainter>
 #include <QFontDatabase>
 #include <QFile>
 #include <QByteArray>
 // }MelonPrimeDS FixedOverlays_2025
+
 
 #include "MelonPrimeDef.h"
 #include "MelonPrimeRomAddrTable.h"
@@ -74,9 +76,16 @@
 // 既にどこかで include 済みなら重複はOK（ヘッダガードあり）
 #include "MelonPrimeRawInputWinFilter.h"
 #include "MelonPrimeHotkeyVkBinding.h"
+
+// MelonPrimeDS joystick
+/*
 #include "MelonPrimeXInputFilter.h"
 #include "MelonPrimeXInputBinding.h"
+#include "MelonPrimeDirectInputBinding.h"
+#include "MelonPrimeDirectInputFilter.h"
+*/
 
+>>>>>>> Zection_dev_HUD_2025
 
 // 匿名名前空間：この翻訳単位だけで見えるように
 namespace {
@@ -235,7 +244,6 @@ std::uint16_t sensiNumToSensiVal(double sensiNum)
 }
 
 
-
 /**
  * ヘッドフォン設定一度適用関数.
  *
@@ -281,7 +289,8 @@ bool ApplyHeadphoneOnce(NDS* nds, Config::Table& localCfg, uint32_t kCfgAddr, bo
     constexpr std::uint8_t kAudioFieldMask = 0x18;
 
     // 既設定判定(すでにbit4:bit3が11bであれば即リターンするため)
-    if ((oldVal & kAudioFieldMask) == kAudioFieldMask) {
+    if ((oldVal & kAudioFieldMask) 
+  kAudioFieldMask) {
         // 適用済みフラグ更新(以降呼び出しで再処理しないため)
         isHeadphoneApplied = true;
         // 書き込み無しリターン
@@ -804,6 +813,125 @@ void EmuThread::run()
         frameAdvanceTwice();                                           \
     }
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+// MelonPrimeDS input handling for joystics
+/*
+static MelonPrimeXInputFilter* g_xin = nullptr;
+static MelonPrimeDirectInputFilter* g_din = nullptr;
+*/
+
+/* MelonPrimeDS function goes here */
+void EmuThread::run()
+{
+
+#ifdef _WIN32
+    // RawMouseInput
+    //RawInputThread* rawInputThread = new RawInputThread(parent());
+    //rawInputThread->start();
+
+// ヘッダ参照(クラス宣言のため)
+// #include "MelonPrimeRawInputWinFilter.h"
+// アプリケーション参照(QCoreApplicationのため)
+#include <QCoreApplication>
+
+// 静的ポインタ定義(単一インスタンス保持のため)
+        // static RawInputWinFilter* g_rawFilter = nullptr;
+
+        // どこか一度だけ(例: EmuThread::run の前段やMainWindow生成時)
+    if (!g_rawFilter) {
+        g_rawFilter = new RawInputWinFilter();
+        // emuInstance が生きていて、Raw フィルタが作られた直後あたりで
+        /*
+        if (g_rawFilter) {
+            g_rawFilter->setJoyHotkeyMaskPtr(&emuInstance->joyHotkeyMask);
+        }
+        */
+        qApp->installNativeEventFilter(g_rawFilter);
+        // 新: 全HK（Shoot/Zoom 以外も）をRawに登録
+        BindMetroidHotkeysFromConfig(g_rawFilter, /*instance*/ emuInstance->getInstanceID());
+    }
+    /*
+    if (!g_xin) {
+        g_xin = new MelonPrimeXInputFilter();
+        g_xin->autoPickUserIndex();
+        g_xin->setDeadzone(7849, 8689, 30);
+        MelonPrime_BindMetroidHotkeysFromJoystickConfig(g_xin, emuInstance->getInstanceID());
+    }
+
+    // グローバル or EmuThreadメンバ
+    if (!g_din) {
+        g_din = new MelonPrimeDirectInputFilter();
+
+        // Qt のウィンドウハンドル → HWND
+        MainWindow* mw = emuInstance->getMainWindow();
+        HWND hwnd = reinterpret_cast<HWND>(mw ? mw->winId() : 0);
+
+        g_din->init(hwnd); // ※あなたの DirectInput フィルタの初期化API名に合わせて
+        MelonPrime_BindMetroidHotkeysFromJoystickConfig(g_din, emuInstance->getInstanceID());
+    }
+    */
+#endif
+
+
+    static const QBitArray& hotkeyMask = emuInstance->hotkeyMask;
+    static QBitArray& inputMask = emuInstance->inputMask;
+    static const QBitArray& hotkeyPress = emuInstance->hotkeyPress;
+
+// ---- Hotkey boolean macros (WIN: RawInput + XInput / Non-WIN: Qt) ----
+#if defined(_WIN32)
+
+    // ジョイだけ版
+#define MP_JOY_DOWN(id)      (emuInstance->joyHotkeyMask.testBit((id)))
+#define MP_JOY_PRESSED(id)   (emuInstance->joyHotkeyPress.testBit((id)))
+#define MP_JOY_RELEASED(id)  (emuInstance->joyHotkeyRelease.testBit((id)))
+
+//#define MP_HK_DOWN(id)     ( ((g_rawFilter && g_rawFilter->hotkeyDown((id)))     || (g_xin && g_xin->hotkeyDown((id)))     || (g_din && g_din->hotkeyDown((id))) ) )
+//#define MP_HK_PRESSED(id)  ( ((g_rawFilter && g_rawFilter->hotkeyPressed((id)))  || (g_xin && g_xin->hotkeyPressed((id)))  || (g_din && g_din->hotkeyPressed((id))) ) )
+//#define MP_HK_RELEASED(id) ( ((g_rawFilter && g_rawFilter->hotkeyReleased((id))) || (g_xin && g_xin->hotkeyReleased((id))) || (g_din && g_din->hotkeyReleased((id))) ) )
+
+//#define MP_HK_DOWN(id)     ( (g_rawFilter && g_rawFilter->hotkeyDown((id)))   ) 
+//#define MP_HK_PRESSED(id)  ( (g_rawFilter && g_rawFilter->hotkeyPressed((id))) )
+//#define MP_HK_RELEASED(id) ( (g_rawFilter && g_rawFilter->hotkeyReleased((id))) )
+
+#define MP_HK_DOWN(id)     ( (g_rawFilter && g_rawFilter->hotkeyDown((id)))     || MP_JOY_DOWN((id)) )
+#define MP_HK_PRESSED(id)  ( (g_rawFilter && g_rawFilter->hotkeyPressed((id)))  || MP_JOY_PRESSED((id)) )
+#define MP_HK_RELEASED(id) ( (g_rawFilter && g_rawFilter->hotkeyReleased((id))) || MP_JOY_RELEASED((id)) )
+
+
+#else
+#define MP_HK_DOWN(id)     ( hotkeyMask.testBit((id)) )
+#define MP_HK_PRESSED(id)  ( hotkeyPress.testBit((id)) )
+#define MP_HK_RELEASED(id) ( hotkeyRelease.testBit((id)) )
+#endif
+
+        // #define TOUCH_IF(PRESS, X, Y) if (hotkeyPress.testBit(PRESS)) { emuInstance->nds->ReleaseScreen(); frameAdvanceTwice(); emuInstance->nds->TouchScreen(X, Y); frameAdvanceTwice(); }
+
+#define TOUCH_IF(PRESS, X, Y)                                         \
+    if (MP_HK_PRESSED(PRESS)) {           \
+        emuInstance->nds->ReleaseScreen();                            \
+        frameAdvanceTwice();                                           \
+        emuInstance->nds->TouchScreen((X), (Y));                      \
+        frameAdvanceTwice();                                           \
+    }
+
+
     Config::Table& globalCfg = emuInstance->getGlobalConfig();
     Config::Table& localCfg = emuInstance->getLocalConfig();
     isSnapTapMode = localCfg.GetBool("Metroid.Operation.SnapTap"); // MelonPrimeDS
@@ -857,7 +985,11 @@ void EmuThread::run()
     auto frameAdvanceOnce = [&]()  __attribute__((hot, always_inline, flatten)) {
         MPInterface::Get().Process();
 #ifdef _WIN32
-        if (g_xin) g_xin->update(); // MelonPrimeDS
+  
+        //if (g_xin) g_xin->update(); // MelonPrimeDS
+        //if (g_din) g_din->update(); // MelonPrimeDS
+         
+
 #endif
         emuInstance->inputProcess();
 
@@ -1257,6 +1389,7 @@ void EmuThread::run()
     bool isCursorVisible = true;
     bool enableAim = true;
     bool wasLastFrameFocused = false;
+
 
     //MelonPrime OSD stuff
 
@@ -1788,9 +1921,11 @@ void EmuThread::run()
           
 
 #if defined(_WIN32)
+
             // RawInputでもこの処理は必用。無いとこうなる： If you have a secondary screen the mouse can slide to it and the main window gets unfocused
             //QCursor::setPos(aimData.centerX, aimData.centerY);
             //g_rawFilter->discardDeltas();
+
 #else
             // Return cursor to center (keep next delta calculation zero-based)
             QCursor::setPos(aimData.centerX, aimData.centerY);
@@ -2436,6 +2571,19 @@ void EmuThread::run()
 
                 // Start / View Match progress, points / Map(Adventure)
                 inputMask.setBit(INPUT_START, !MP_HK_DOWN(HK_MetroidMenu));
+
+
+                // END of if(isFocused)
+            } else {
+				// when not focused
+#if defined(_WIN32)
+                    
+                    if (g_rawFilter) g_rawFilter->discardDeltas(); // RAWデルタ破棄呼出(残差排除のため)
+                    if (g_rawFilter) g_rawFilter->resetMouseButtons(); // マウスボタン状態リセット呼出(押下取り残し排除のため)
+                    if (g_rawFilter) g_rawFilter->resetAllKeys(); // キー押下状態リセット呼出(誤爆抑止のため)
+                    if (g_rawFilter) g_rawFilter->resetHotkeyEdges(); // ほぼ必須（再開直後の Pressed/Released の誤発火防止）
+#endif
+
 
                 // END of if(isFocused)
             } else {

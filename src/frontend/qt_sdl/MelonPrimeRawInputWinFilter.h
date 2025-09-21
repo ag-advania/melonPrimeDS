@@ -1,195 +1,196 @@
-// �C���N���[�h�K�[�h�錾(���d��`�h�~�̂���)
+
+// インクルードガード宣言(多重定義防止のため)
 #pragma once
-// Qt���ۃC�x���g�t�B���^�Q�Ɛ錾(�l�C�e�B�u�t�b�N�����̂���)
+// Qt抽象イベントフィルタ参照宣言(ネイティブフック実装のため)
 #include <QtCore/QAbstractNativeEventFilter>
-// QByteArray�Q�Ɛ錾(�V�O�l�`����v�̂���)
+// QByteArray参照宣言(シグネチャ一致のため)
 #include <QtCore/QByteArray>
-// Qt�O���[�o���Q�Ɛ錾(Q_UNUSED���p�̂���)
+// Qtグローバル参照宣言(Q_UNUSED利用のため)
 #include <QtCore/QtGlobal>
-// ���q����Q�Ɛ錾(���b�N���X��ԊǗ��̂���)
+// 原子操作参照宣言(ロックレス状態管理のため)
 #include <atomic>
-// �z��Q�Ɛ錾(�Œ蒷�W���ێ��̂���)
+// 配列参照宣言(固定長集合保持のため)
 #include <array>
-// �x�N�^�Q�Ɛ錾(HK��VK�}�b�s���O�ێ��̂���)
+// ベクタ参照宣言(HK→VKマッピング保持のため)
 #include <vector>
-// �A�z�z��Q�Ɛ錾(HK��VK�����ێ��̂���)
+// 連想配列参照宣言(HK→VK辞書保持のため)
 #include <unordered_map>
-// �����^�Q�Ɛ錾(uint8_t���p�̂���)
+// 整数型参照宣言(uint8_t利用のため)
 #include <cstdint>
 
 #include <QBitArray>
 
-// �����t��Win32��荞��(��d��`����̂���)
+// 条件付きWin32取り込み(二重定義回避のため)
 #ifdef _WIN32
-// �y��Windows�w�b�_�w��(�r���h���ԒZ�k�̂���)
+// 軽量Windowsヘッダ指定(ビルド時間短縮のため)
 #ifndef WIN32_LEAN_AND_MEAN
-// �}�N����`(�œK���̂���)
+// マクロ定義(最適化のため)
 #define WIN32_LEAN_AND_MEAN 1
 #endif
-// Windows API����(UINT��VK_*�̂���)
+// Windows API導入(UINTやVK_*のため)
 #include <windows.h>
 #endif
 
 
 ///**
-/// * RawInput�l�C�e�B�u�C�x���g�t�B���^�N���X�錾.
+/// * RawInputネイティブイベントフィルタクラス宣言.
 /// *
-/// * �}�E�X���΃f���^�^�S�{�^����ԁ^�L�[�{�[�hVK������Ԃ����W���A
-/// * HK��VK�}�b�s���O�Ɋ�Â������Ɖ�API��񋟂���.
+/// * マウス相対デルタ／全ボタン状態／キーボードVK押下状態を収集し、
+/// * HK→VKマッピングに基づく押下照会APIを提供する.
 /// */
- // �N���X��`�{�̐錾(�C�x���g�t�B���^�����̂���)
+ // クラス定義本体宣言(イベントフィルタ実装のため)
 class RawInputWinFilter final : public QAbstractNativeEventFilter
 {
 public:
     ///**
-    /// * �R���X�g���N�^�錾.
+    /// * コンストラクタ宣言.
     /// *
-    /// * �f�o�C�X�o�^�Ɠ�����ԏ��������s��.
+    /// * デバイス登録と内部状態初期化を行う.
     /// */
-     // �R���X�g���N�^�錾(���������s�̂���)
+     // コンストラクタ宣言(初期化実行のため)
     RawInputWinFilter();
 
     ///**
-    /// * �f�X�g���N�^�錾.
+    /// * デストラクタ宣言.
     /// *
-    /// * �f�o�C�X�o�^�������s��.
+    /// * デバイス登録解除を行う.
     /// */
-     // �f�X�g���N�^�錾(��n�����s�̂���)
+     // デストラクタ宣言(後始末実行のため)
     ~RawInputWinFilter() override;
 
-	/// JoyHotkeyMaskPtr�ݒ�֐��錾.
+	/// JoyHotkeyMaskPtr設定関数宣言.
     // inline void setJoyHotkeyMaskPtr(const QBitArray* p) noexcept { m_joyHK = p; }
 
     ///**
-    /// * �l�C�e�B�u�C�x���g�t�B���^�錾.
+    /// * ネイティブイベントフィルタ宣言.
     /// *
-    /// * WM_INPUT����Raw���͂����W����.
+    /// * WM_INPUTからRaw入力を収集する.
     /// *
-    /// * @param eventType �C�x���g���.
-    /// * @param message OS���b�Z�[�W�|�C���^.
-    /// * @param result �ԋp�l�|�C���^.
-    /// * @return �`�d��.
+    /// * @param eventType イベント種別.
+    /// * @param message OSメッセージポインタ.
+    /// * @param result 返却値ポインタ.
+    /// * @return 伝播可否.
     /// */
-     // �����o�֐��錾(�C�x���g�����̂���)
+     // メンバ関数宣言(イベント処理のため)
     bool nativeEventFilter(const QByteArray& eventType, void* message, qintptr* result) override;
 
     ///**
-    /// * ���΃f���^�擾�֐��錾.
+    /// * 相対デルタ取得関数宣言.
     /// *
-    /// * �ݐ�dx,dy�����o���ă��Z�b�g����.
+    /// * 累積dx,dyを取り出してリセットする.
     /// */
-     // �����o�֐��錾(�f���^��̂̂���)
+     // メンバ関数宣言(デルタ受領のため)
     void fetchMouseDelta(int& outDx, int& outDy);
 
     ///**
-    /// * ���΃f���^�j���֐��錾.
+    /// * 相対デルタ破棄関数宣言.
     /// *
-    /// * �ݐ�dx,dy�𑦎��[��������.
+    /// * 累積dx,dyを即時ゼロ化する.
     /// */
-     // �����o�֐��錾(�c�������̂���)
+     // メンバ関数宣言(残差除去のため)
     void discardDeltas();
 
     ///**
-    /// * �S�L�[��ԃ��Z�b�g�֐��錾.
+    /// * 全キー状態リセット関数宣言.
     /// *
-    /// * ���ׂẴL�[�{�[�hVK�𖢉����֖߂�.
+    /// * すべてのキーボードVKを未押下へ戻す.
     /// */
-     // �����o�֐��錾(�딚�h�~�̂���)
+     // メンバ関数宣言(誤爆防止のため)
     void resetAllKeys();
 
     ///**
-    /// * �}�E�X�{�^����ԃ��Z�b�g�֐��錾.
+    /// * マウスボタン状態リセット関数宣言.
     /// *
-    /// * ��/�E/��/X1/X2�𖢉����֖߂�.
+    /// * 左/右/中/X1/X2を未押下へ戻す.
     /// */
-     // �����o�֐��錾(�딚�h�~�̂���)
+     // メンバ関数宣言(誤爆防止のため)
     void resetMouseButtons();
 
     ///**
-    /// * HK��VK�o�^�֐��錾.
+    /// * HK→VK登録関数宣言.
     /// *
-    /// * �w��HK�ɑ΂��Ή�����VK���ݒ肷��.
+    /// * 指定HKに対し対応するVK列を設定する.
     /// *
-    /// * @param hk �z�b�g�L�[ID.
-    /// * @param vks ���z�L�[��.
+    /// * @param hk ホットキーID.
+    /// * @param vks 仮想キー列.
     /// */
-     // �����o�֐��錾(�ݒ蔽�f�̂���)
+     // メンバ関数宣言(設定反映のため)
     void setHotkeyVks(int hk, const std::vector<UINT>& vks);
 
     ///**
-    /// * HK��������֐��錾.
+    /// * HK押下判定関数宣言.
     /// *
-    /// * �o�^�ς�VK�̂����ꂩ�������Ȃ�true.
+    /// * 登録済みVKのいずれかが押下ならtrue.
     /// *
-    /// * @param hk �z�b�g�L�[ID.
-    /// * @return �������.
+    /// * @param hk ホットキーID.
+    /// * @return 押下状態.
     /// */
-     // �����o�֐��錾(�����Ɖ�̂���)
+     // メンバ関数宣言(押下照会のため)
     bool hotkeyDown(int hk) const;
 
-    // �ǉ��F�G�b�W����icommit�s�v�j
+    // 追加：エッジ判定（commit不要）
     bool hotkeyPressed(int hk)  noexcept;
     bool hotkeyReleased(int hk) noexcept;
 
-    // �ǉ��F�K�v�Ȃ珉������/���Z�b�g���ɌĂ�
+    // 追加：必要なら初期化時/リセット時に呼ぶ
     inline void resetHotkeyEdges() noexcept {
         for (auto& a : m_hkPrev) a.store(0, std::memory_order_relaxed);
     }
 
-    void setAimClipArmed(bool armed) noexcept;  // ����Łu���̓N���b�v����/�s���v���O������w��
+    void setAimClipArmed(bool armed) noexcept;  // これで「今はクリップ許可/不許可」を外部から指定
 
 
 #ifdef COMMENTOUTTTTTTTTT
     ///**
-    /// * ���{�^�������Q�ƃC�����C���֐��錾.
+    /// * 左ボタン押下参照インライン関数宣言.
     /// *
-    /// * �݊�API�p�r�̂���.
+    /// * 互換API用途のため.
     /// */
-     // �C�����C���֐��錾(�݊��񋟂̂���)
+     // インライン関数宣言(互換提供のため)
     inline bool leftPressed() const noexcept {
-        // �ǂݎ�菈�����s(���q�Q�Ƃ̂���)
+        // 読み取り処理実行(原子参照のため)
         return m_mb[kMB_Left].load(std::memory_order_relaxed);
     }
 
     ///**
-    /// * �E�{�^�������Q�ƃC�����C���֐��錾.
+    /// * 右ボタン押下参照インライン関数宣言.
     /// *
-    /// * �݊�API�p�r�̂���.
+    /// * 互換API用途のため.
     /// */
-     // �C�����C���֐��錾(�݊��񋟂̂���)
+     // インライン関数宣言(互換提供のため)
     inline bool rightPressed() const noexcept {
-        // �ǂݎ�菈�����s(���q�Q�Ƃ̂���)
+        // 読み取り処理実行(原子参照のため)
         return m_mb[kMB_Right].load(std::memory_order_relaxed);
     }
 #endif // COMMENTOUTTTTTTTTT
 
 private:
-    // Win32�f�o�C�X�o�^�z��錾(�o�^/�����Ǘ��̂���)
+    // Win32デバイス登録配列宣言(登録/解除管理のため)
 #ifdef _WIN32
-    // RAWINPUTDEVICE�z��錾(�}�E�X/�L�[�{�[�h�̂���)
+    // RAWINPUTDEVICE配列宣言(マウス/キーボードのため)
     RAWINPUTDEVICE rid[2]{};
-    // const QBitArray* m_joyHK = nullptr;       // �ǉ��F�Q�Ƃ����i���L���Ȃ��j
+    // const QBitArray* m_joyHK = nullptr;       // 追加：参照だけ（所有しない）
 #endif
 
-    // ����X�ݐϐ錾(���b�N���X���Z�̂���)
+    // 相対X累積宣言(ロックレス加算のため)
     std::atomic<int> dx{ 0 };
-    // ����Y�ݐϐ錾(���b�N���X���Z�̂���)
+    // 相対Y累積宣言(ロックレス加算のため)
     std::atomic<int> dy{ 0 };
 
-    // �}�E�X�{�^�����萔�錾(�z�񒷌���̂���)
+    // マウスボタン数定数宣言(配列長決定のため)
     static constexpr size_t kMouseBtnCount = 5;
-    // �}�E�X�{�^���C���f�b�N�X�񋓐錾(�ǂ݂₷������̂���)
+    // マウスボタンインデックス列挙宣言(読みやすさ向上のため)
     enum : size_t { kMB_Left = 0, kMB_Right = 1, kMB_Middle = 2, kMB_X1 = 3, kMB_X2 = 4 };
 
-    // �L�[�{�[�hVK������Ԕz��錾(256�L�[���̂���)
+    // キーボードVK押下状態配列宣言(256キー分のため)
     std::array<std::atomic<uint8_t>, 256> m_vkDown{};
-    // �}�E�X�{�^��������Ԕz��錾(��/�E/��/X1/X2�̂���)
+    // マウスボタン押下状態配列宣言(左/右/中/X1/X2のため)
     std::array<std::atomic<uint8_t>, kMouseBtnCount> m_mb{};
 
-    // HK��VK�Ή��\�錾(������������̂���)
+    // HK→VK対応表宣言(押下判定解決のため)
     std::unordered_map<int, std::vector<UINT>> m_hkToVk;
 
-    std::array<std::atomic<uint8_t>, 512> m_hkPrev{}; // �O��́udown�v��ԁiHK���Ɓj
+    std::array<std::atomic<uint8_t>, 512> m_hkPrev{}; // 前回の「down」状態（HKごと）
 
 
 };

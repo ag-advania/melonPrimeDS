@@ -61,8 +61,12 @@ set(SOURCES_QT_SDL
     #RawInputThread.cpp
     MelonPrimeRawInputWinFilter.cpp
     MelonPrimeHotkeyVkBinding.cpp
-    MelonPrimeXInputFilter.cpp
-    MelonPrimeXInputBinding.cpp
+
+    #MelonPrimeXInputFilter.cpp
+    #MelonPrimeXInputBinding.cpp
+    #MelonPrimeDirectInputFilter.cpp
+    #MelonPrimeDirectInputBinding.cpp
+
 )
 
 option(USE_QT6 "Use Qt 6 instead of Qt 5" ON)
@@ -96,26 +100,34 @@ add_compile_definitions(ARCHIVE_SUPPORT_ENABLED)
 
 
 if (WIN32)
-    # windows‚ÌœŠOİ’è‚Í‚Æ‚­‚É‚È‚µB
+    # windowsã®é™¤å¤–è¨­å®šã¯ã¨ãã«ãªã—ã€‚
 elseif (APPLE)
-    # macOS‚Å‚Í¶RawInput˜AŒg‚ğ–³Œø‰»‚·‚éiŠY“–ƒ\[ƒX‚ğœŠOj
+    # macOSã§ã¯ç”ŸRawInputé€£æºã‚’ç„¡åŠ¹åŒ–ã™ã‚‹ï¼ˆè©²å½“ã‚½ãƒ¼ã‚¹ã‚’é™¤å¤–ï¼‰
     list(REMOVE_ITEM SOURCES_QT_SDL
         #rawinput/rawinput_common.c
         #RawInputThread.cpp
         MelonPrimeRawInputWinFilter.cpp
         MelonPrimeHotkeyVkBinding.cpp
-        MelonPrimeXInputFilter.cpp
-        MelonPrimeXInputBinding.cpp
+
+        #MelonPrimeXInputFilter.cpp
+        #MelonPrimeXInputBinding.cpp
+        #MelonPrimeDirectInputFilter.cpp
+        #MelonPrimeDirectInputBinding.cpp
+
     )
 else()
-    # Linux‚Å‚Í¶RawInput˜AŒg‚ğ–³Œø‰»‚·‚éiŠY“–ƒ\[ƒX‚ğœŠOj
+    # Linuxã§ã¯ç”ŸRawInputé€£æºã‚’ç„¡åŠ¹åŒ–ã™ã‚‹ï¼ˆè©²å½“ã‚½ãƒ¼ã‚¹ã‚’é™¤å¤–ï¼‰
     list(REMOVE_ITEM SOURCES_QT_SDL
         #rawinput/rawinput_common.c
         #RawInputThread.cpp
         MelonPrimeRawInputWinFilter.cpp
         MelonPrimeHotkeyVkBinding.cpp
-        MelonPrimeXInputFilter.cpp
-        MelonPrimeXInputBinding.cpp
+
+        #MelonPrimeXInputFilter.cpp
+        #MelonPrimeXInputBinding.cpp
+        #MelonPrimeDirectInputFilter.cpp
+        #MelonPrimeDirectInputBinding.cpp
+
     )
 endif()
 
@@ -128,7 +140,10 @@ target_link_libraries(melonDS PRIVATE net-utils)
 
 if (WIN32)
     target_link_libraries(melonDS PUBLIC opengl32)
-    target_link_libraries(melonDS PRIVATE Xinput9_1_0) # MelonPrimeDS
+
+    #target_link_libraries(melonDS PRIVATE Xinput9_1_0) # MelonPrimeDS
+    #target_link_libraries(melonDS PRIVATE dinput8 dxguid)  # MelonPrimeDS
+
 
     target_sources(melonDS PRIVATE
         ../duckstation/gl/context_wgl.cpp
