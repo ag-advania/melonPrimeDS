@@ -59,7 +59,8 @@
 
 #endif
 
-// æ“ª‚Ì include ŒQ‚Ì‚ ‚Æ‚É
+// å…ˆé ­ã® include ç¾¤ã®ã‚ã¨ã«
+
 // MelonPrimeDS
 #ifdef _WIN32
 #include <windows.h>
@@ -69,7 +70,8 @@ static RECT computeCenter1pxClipRect(HWND hwnd) {
     ClientToScreen(hwnd, &tl);
     ClientToScreen(hwnd, &br);
     const LONG cx = (tl.x + br.x) / 2;
-    RECT clip{ cx, tl.y, cx + 1, br.y }; // •1px‚Ìc‘Ñ
+
+    RECT clip{ cx, tl.y, cx + 1, br.y }; // å¹…1pxã®ç¸¦å¸¯
     return clip;
 }
 #endif
@@ -84,8 +86,9 @@ const int kLogoWidth = 192;
 
 bool isFocused; // MelonPrimeDS TODO move this.
 
-// Šù‘¶‚Ì“½–¼namespace‚Ìƒwƒ‹ƒp‚Ííœ/–¢g—p‚É‚µ‚ÄOKB
-// ƒƒ\ƒbƒh‚Æ‚µ‚ÄÀ‘•iUIƒXƒŒƒbƒh‚ÅÀs‚³‚ê‚é‘z’èj
+
+// æ—¢å­˜ã®åŒ¿ånamespaceã®ãƒ˜ãƒ«ãƒ‘ã¯å‰Šé™¤/æœªä½¿ç”¨ã«ã—ã¦OKã€‚
+// ãƒ¡ã‚½ãƒƒãƒ‰ã¨ã—ã¦å®Ÿè£…ï¼ˆUIã‚¹ãƒ¬ãƒƒãƒ‰ã§å®Ÿè¡Œã•ã‚Œã‚‹æƒ³å®šï¼‰
 void ScreenPanel::clipCenter1px() { // MelonPrimeDS
     clipWanted = true;
 #ifdef _WIN32
@@ -142,6 +145,23 @@ ScreenPanel::ScreenPanel(QWidget* parent) : QWidget(parent)
     osdEnabled = false;
     osdID = 1;
     
+
+    //MelonPrime OSD
+    Overlay[0] = QImage(256, 192,QImage::Format_ARGB32_Premultiplied);
+    Overlay[0].fill(0x00000000);
+    
+    Overlay[1] = QImage(256, 192,QImage::Format_ARGB32_Premultiplied);
+    Overlay[1].fill(0x00000000);
+    
+    Top_paint = new QPainter(&Overlay[0]);
+    Btm_paint = new QPainter(&Overlay[1]);
+
+
+    // printf("NewCanvas\n");
+    // OSDCanvas[0] = PrimeOSD::Canvas(256, 192,197); //Bottom Screen OSD (Can adjust Canvas sizes for higher resolution)
+    // OSDCanvas[1] = PrimeOSD::Canvas(256, 192,801); //Top Screen OSD
+    //OSDCanvas[2] = PrimeOSD::Canvas(500, 500); //Non-Screen target / floating (not tied to either screen) -unused for now...
+
     loadConfig();
     setFilter(mainWindow->getWindowConfig().GetBool("ScreenFilter"));
 
@@ -172,6 +192,11 @@ ScreenPanel::ScreenPanel(QWidget* parent) : QWidget(parent)
 ScreenPanel::~ScreenPanel()
 {
     /* MelonPrimeDS comment-out    */
+
+
+    Top_paint->end(); // MelonPrimeDSFixedOverlays_2025
+    Btm_paint->end(); // MelonPrimeDSFixedOverlays_2025
+
 #if defined(_WIN32)
     unclip(); // MelonPrimeDS
 #endif
@@ -359,7 +384,8 @@ void ScreenPanel::mousePressEvent(QMouseEvent* event)
             setCursor(Qt::BlankCursor); // MelonPrimeDS
         }
 #if defined(_WIN32)
-        // in-game ‚©‚Â ƒJ[ƒ\ƒ‹ƒ‚[ƒh‚Å‚È‚¯‚ê‚Î 1px ƒNƒŠƒbƒvŠJn
+
+        // in-game ã‹ã¤ ã‚«ãƒ¼ã‚½ãƒ«ãƒ¢ãƒ¼ãƒ‰ã§ãªã‘ã‚Œã° 1px ã‚¯ãƒªãƒƒãƒ—é–‹å§‹
         if (!emuInstance->getEmuThread()->isCursorMode) { // MelonPrimeDS
             clipCenter1px(); // MelonPrimeDS
         } // MelonPrimeDS

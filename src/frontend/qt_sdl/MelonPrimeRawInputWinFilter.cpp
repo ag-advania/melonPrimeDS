@@ -1,268 +1,337 @@
-﻿#include "MelonPrimeRawInputWinFilter.h"
-#include <cstring>
+
+// ヘッダ参照宣言(クラス定義とシグネチャ一致のため)
+#include "MelonPrimeRawInputWinFilter.h"
+// C標準入出力参照宣言(デバッグ時printf利用のため)
+#include <cstdio>
+// アルゴリズム参照宣言(補助ユーティリティのため)
 #include <algorithm>
-#include <immintrin.h>
 
 #ifdef _WIN32
 #include <windows.h>
 #include <hidsdi.h>
+
+#include <QBitArray>
 #endif
 
+
+///**
+/// * コンストラクタ定義.
+/// *
+/// * RawInput登録と内部状態初期化を行う.
+/// */
+ // メンバ関数本体定義(初期化処理のため)
 RawInputWinFilter::RawInputWinFilter()
 {
-    rid[0] = { 0x01, 0x02, 0, nullptr }; // mouse
-    rid[1] = { 0x01, 0x06, 0, nullptr }; // keyboard
+    // マウスデバイス登録設定処理(usage 0x01/0x02指定のため)
+    rid[0] = { 0x01, 0x02, 0, nullptr };
+    // キーボードデバイス登録設定処理(usage 0x01/0x06指定のため)
+    rid[1] = { 0x01, 0x06, 0, nullptr };
+
+    // デバイス登録呼出処理(受信開始のため)
     RegisterRawInputDevices(rid, 2, sizeof(RAWINPUTDEVICE));
 
-    // Use AVX for faster initialization if available
-#ifdef __AVX2__
-    const __m256i zero = _mm256_setzero_si256();
-
-    // Initialize m_vkDown
-    __m256i* vkPtr = reinterpret_cast<__m256i*>(m_vkDown.data());
-    for (size_t i = 0; i < sizeof(m_vkDown) / 32; ++i) {
-        _mm256_store_si256(vkPtr + i, zero);
-    }
-
-    // Initialize m_hkPrev
-    __m256i* hkPtr = reinterpret_cast<__m256i*>(m_hkPrev.data());
-    for (size_t i = 0; i < sizeof(m_hkPrev) / 32; ++i) {
-        _mm256_store_si256(hkPtr + i, zero);
-    }
-#else
-    std::memset(m_vkDown.data(), 0, sizeof(m_vkDown));
-    std::memset(m_hkPrev.data(), 0, sizeof(m_hkPrev));
-#endif
-
-    std::memset(m_mb.data(), 0, sizeof(m_mb));
-
+    // キー配列初期化処理(誤検知防止のため)
+    for (auto& a : m_vkDown) a.store(0, std::memory_order_relaxed);
+    // マウス配列初期化処理(誤検知防止のため)
+    for (auto& b : m_mb)     b.store(0, std::memory_order_relaxed);
+    // 相対デルタ初期化処理(残差排除のため)
     dx.store(0, std::memory_order_relaxed);
+    // 相対デルタ初期化処理(残差排除のため)
     dy.store(0, std::memory_order_relaxed);
-
-    // if (!m_joyHK) m_joyHK = &kEmptyMask;
 }
 
+///**
+/// * デストラクタ定義.
+/// *
+/// * RawInput登録解除を行う.
+/// */
+ // メンバ関数本体定義(後始末処理のため)
 RawInputWinFilter::~RawInputWinFilter()
 {
+    // マウス解除指定設定処理(登録解除のため)
     rid[0].dwFlags = RIDEV_REMOVE; rid[0].hwndTarget = nullptr;
+    // キーボード解除指定設定処理(登録解除のため)
     rid[1].dwFlags = RIDEV_REMOVE; rid[1].hwndTarget = nullptr;
+    // 登録解除呼出処理(クリーンアップのため)
     RegisterRawInputDevices(rid, 2, sizeof(RAWINPUTDEVICE));
 }
 
-bool RawInputWinFilter::nativeEventFilter(const QByteArray& /*eventType*/, void* message, qintptr* /*result*/)
+
+/**
+ * ネイティブイベントフィルタ定義（低サイクル最適化版）
+ *
+ * 最適化ポイント:
+ * 1. 早期リターンによる不要な処理スキップ
+ * 2. ルックアップテーブルによる条件分岐削減
+ * 3. ビット演算の最適化
+ * 4. キャッシュ局所性の向上
+ */
+ /**
+  * ネイティブイベントフィルタ定義（低サイクル最適化版）
+  *
+  * 最適化ポイント:
+  * 1. 早期リターンによる不要な処理スキップ
+  * 2. ルックアップテーブルによる条件分岐削減
+  * 3. ビット演算の最適化
+  * 4. キャッシュ局所性の向上
+  */
+bool RawInputWinFilter::nativeEventFilter(const QByteArray& eventType, void* message, qintptr* result)
 {
 #ifdef _WIN32
-    MSG* const msg = static_cast<MSG*>(message);
-    if (Q_UNLIKELY(!msg)) [[unlikely]] return false;
-    if (Q_LIKELY(msg->message != WM_INPUT)) [[likely]] return false;
+    // OSメッセージ取得処理(ネイティブ情報参照のため)
+    MSG* msg = static_cast<MSG*>(message);
 
-    // 期待バッファサイズ（RAWINPUT固定）
+    // 早期リターン処理(WM_INPUT以外の無駄処理回避のため)
+    if (!msg || msg->message != WM_INPUT) return false;
+
+    // スタック上バッファ確保処理(ヒープ確保回避による低遅延のため)
+    alignas(64) BYTE buffer[sizeof(RAWINPUT)]; // キャッシュライン境界にアライン(メモリアクセス効率化のため)
+    // RAWINPUTビュー取得処理(型安全な再解釈のため)
+    RAWINPUT* raw = reinterpret_cast<RAWINPUT*>(buffer);
+    // サイズ初期化処理(API呼び出し整合のため)
     UINT size = sizeof(RAWINPUT);
 
-    // 失敗なら即リターン（処理を増やさない）
-    const UINT got = GetRawInputData(
-        reinterpret_cast<HRAWINPUT>(msg->lParam),
-        RID_INPUT,
-        m_rawBuf,
-        &size,
-        sizeof(RAWINPUTHEADER));
-    if (Q_UNLIKELY(got == static_cast<UINT>(-1))) [[unlikely]] return false;
-
-    const RAWINPUT* const raw = reinterpret_cast<const RAWINPUT*>(m_rawBuf);
-    const DWORD type = raw->header.dwType;
-
-    // 最頻出のマウスを先に
-    if (Q_LIKELY(type == RIM_TYPEMOUSE)) [[likely]] {
-        const RAWMOUSE& m = raw->data.mouse;
-
-        // 相対移動（0判定は OR で一発）
-        const LONG dxv = m.lLastX;
-        const LONG dyv = m.lLastY;
-        if (Q_LIKELY((dxv | dyv) != 0)) [[likely]] {
-            // アトミック書き込みのキャッシュ行を先読み
-            _mm_prefetch(reinterpret_cast<const char*>(&dx), _MM_HINT_T0);
-            _mm_prefetch(reinterpret_cast<const char*>(&dy), _MM_HINT_T0);
-            dx.fetch_add(dxv, std::memory_order_relaxed);
-            dy.fetch_add(dyv, std::memory_order_relaxed);
-        }
-
-        // ボタン（関係ないフラグなら即抜け）
-        const USHORT f = m.usButtonFlags;
-        const USHORT rf = (f & kAllMouseBtnMask);
-        if (Q_LIKELY(rf == 0)) [[likely]] return false;
-
-        // 手動アンローリング（分岐最小化）
-        if (rf & (RI_MOUSE_LEFT_BUTTON_DOWN | RI_MOUSE_LEFT_BUTTON_UP))
-            m_mb[0].store((f & RI_MOUSE_LEFT_BUTTON_DOWN) ? 1u : 0u, std::memory_order_relaxed);
-        if (rf & (RI_MOUSE_RIGHT_BUTTON_DOWN | RI_MOUSE_RIGHT_BUTTON_UP))
-            m_mb[1].store((f & RI_MOUSE_RIGHT_BUTTON_DOWN) ? 1u : 0u, std::memory_order_relaxed);
-        if (rf & (RI_MOUSE_MIDDLE_BUTTON_DOWN | RI_MOUSE_MIDDLE_BUTTON_UP))
-            m_mb[2].store((f & RI_MOUSE_MIDDLE_BUTTON_DOWN) ? 1u : 0u, std::memory_order_relaxed);
-        if (rf & (RI_MOUSE_BUTTON_4_DOWN | RI_MOUSE_BUTTON_4_UP))
-            m_mb[3].store((f & RI_MOUSE_BUTTON_4_DOWN) ? 1u : 0u, std::memory_order_relaxed);
-        if (rf & (RI_MOUSE_BUTTON_5_DOWN | RI_MOUSE_BUTTON_5_UP))
-            m_mb[4].store((f & RI_MOUSE_BUTTON_5_DOWN) ? 1u : 0u, std::memory_order_relaxed);
-
+    // 入力データ取得処理(Win32 API利用のため)
+    if (GetRawInputData(reinterpret_cast<HRAWINPUT>(msg->lParam),
+        RID_INPUT, raw, &size, sizeof(RAWINPUTHEADER)) == (UINT)-1) {
+        // 失敗時早期復帰処理(安定性確保のため)
         return false;
     }
 
-    // キーボード（頻度は低いので unlikely）
-    if (Q_UNLIKELY(type == RIM_TYPEKEYBOARD)) [[unlikely]] {
-        const RAWKEYBOARD& kb = raw->data.keyboard;
-        UINT vk = kb.VKey;
-        const USHORT flags = kb.Flags;
-        const bool isUp = (flags & RI_KEY_BREAK) != 0;
+    // デバイスタイプ抽出処理(処理分岐のため)
+    const DWORD dwType = raw->header.dwType;
 
-        // 特殊キーを最短で正規化
-        if (Q_UNLIKELY(vk == VK_SHIFT || vk == VK_CONTROL || vk == VK_MENU)) [[unlikely]] {
-            switch (vk) {
-            case VK_SHIFT:   vk = MapVirtualKey(kb.MakeCode, MAPVK_VSC_TO_VK_EX); break;
-            case VK_CONTROL: vk = (flags & RI_KEY_E0) ? VK_RCONTROL : VK_LCONTROL; break;
-            case VK_MENU:    vk = (flags & RI_KEY_E0) ? VK_RMENU : VK_LMENU;    break;
+    // マウス処理分岐定義(専用経路で高速処理するため)
+    if (dwType == RIM_TYPEMOUSE) {
+        // マウス構造体参照処理(フィールドアクセス簡略化のため)
+        const RAWMOUSE& m = raw->data.mouse;
+
+        // 相対移動加算判定処理(無移動時の不要加算回避のため)
+        if (m.lLastX | m.lLastY) { // 非ゼロ判定処理(ORで両方同時チェックのため)
+            // X加算処理(ロックレス加算による低オーバーヘッドのため)
+            dx.fetch_add(m.lLastX, std::memory_order_relaxed);
+            // Y加算処理(ロックレス加算による低オーバーヘッドのため)
+            dy.fetch_add(m.lLastY, std::memory_order_relaxed);
+        }
+
+        // ボタンフラグ取得処理(分岐回数最小化のため)
+        const USHORT f = m.usButtonFlags;
+        // 無フラグ早期復帰処理(不要処理回避のため)
+        if (!f) return false;
+
+        // 要素型導出処理(m_mb要素の正しい型からポインタ型を得るため)
+        using MbElem = std::remove_reference_t<decltype(m_mb[0])>;
+        // ポインタ型別名定義(可読性向上のため)
+        using MbElemPtr = MbElem*;
+
+        // マッピング構造体定義(型安全ポインタ保持のため)
+        struct ButtonMapping {
+            // 押下フラグ定義(ビット判定のため)
+            USHORT downFlag;
+            // 解放フラグ定義(ビット判定のため)
+            USHORT upFlag;
+            // 対象原子ポインタ定義(直接store実行のため)
+            MbElemPtr target;
+        };
+
+        // マッピング配列定義(this結合のため非static採用のため)
+        const ButtonMapping mappings[] = {
+            // 左ボタン対応定義(押下/解放を統合処理するため)
+            {RI_MOUSE_LEFT_BUTTON_DOWN,   RI_MOUSE_LEFT_BUTTON_UP,   &m_mb[static_cast<std::size_t>(kMB_Left)]},
+            // 右ボタン対応定義(押下/解放を統合処理するため)
+            {RI_MOUSE_RIGHT_BUTTON_DOWN,  RI_MOUSE_RIGHT_BUTTON_UP,  &m_mb[static_cast<std::size_t>(kMB_Right)]},
+            // 中ボタン対応定義(押下/解放を統合処理するため)
+            {RI_MOUSE_MIDDLE_BUTTON_DOWN, RI_MOUSE_MIDDLE_BUTTON_UP, &m_mb[static_cast<std::size_t>(kMB_Middle)]},
+            // X1ボタン対応定義(押下/解放を統合処理するため)
+            {RI_MOUSE_BUTTON_4_DOWN,      RI_MOUSE_BUTTON_4_UP,      &m_mb[static_cast<std::size_t>(kMB_X1)]},
+            // X2ボタン対応定義(押下/解放を統合処理するため)
+            {RI_MOUSE_BUTTON_5_DOWN,      RI_MOUSE_BUTTON_5_UP,      &m_mb[static_cast<std::size_t>(kMB_X2)]}
+        };
+
+        // ループ処理開始定義(分岐削減と局所性向上のため)
+        for (const auto& map : mappings) {
+            // マスク合成処理(単一ANDで関係有無判定のため)
+            const USHORT mask = map.downFlag | map.upFlag;
+            // 関係判定処理(該当時のみstore実行のため)
+            if (f & mask) {
+                // 値決定処理(押下=1/解放=0の二値決定のため)
+                const uint8_t v = (f & map.downFlag) ? uint8_t(1) : uint8_t(0);
+                // 原子書き込み処理(relaxedで低オーバーヘッド維持のため)
+                map.target->store(v, std::memory_order_relaxed);
             }
         }
+    }
+    // キーボード処理分岐定義(専用経路で高速処理するため)
+    else if (dwType == RIM_TYPEKEYBOARD) {
+        // キーボード構造体参照処理(フィールドアクセス簡略化のため)
+        const RAWKEYBOARD& kb = raw->data.keyboard;
+        // 仮想キー初期取得処理(後続の正規化に備えるため)
+        UINT vk = kb.VKey;
+        // フラグ取得処理(押下/解放判定のため)
+        const USHORT flags = kb.Flags;
+        // 解放判定処理(格納値反転に用いるため)
+        const bool isKeyUp = (flags & RI_KEY_BREAK) != 0;
 
-        if (Q_LIKELY(vk < m_vkDown.size())) [[likely]] {
-            _mm_prefetch(reinterpret_cast<const char*>(&m_vkDown[vk]), _MM_HINT_T0);
-            m_vkDown[vk].store(static_cast<uint8_t>(!isUp), std::memory_order_relaxed);
+        // 特殊キー正規化処理(左右/拡張判定整合のため)
+        if (vk == VK_SHIFT) {
+            // 左右Shift判別処理(スキャンコードから実キー取得のため)
+            vk = MapVirtualKey(kb.MakeCode, MAPVK_VSC_TO_VK_EX);
+        }
+        // Ctrl左右分離処理(拡張ビットで左右決定のため)
+        else if (vk == VK_CONTROL) {
+            // 左右Ctrl割当処理(押下キーの正確な記録のため)
+            vk = (flags & RI_KEY_E0) ? VK_RCONTROL : VK_LCONTROL;
+        }
+        // Alt左右分離処理(拡張ビットで左右決定のため)
+        else if (vk == VK_MENU) {
+            // 左右Alt割当処理(押下キーの正確な記録のため)
+            vk = (flags & RI_KEY_E0) ? VK_RMENU : VK_LMENU;
+        }
+
+        // 範囲防御処理(配列境界安全確保のため)
+        if (vk < m_vkDown.size()) {
+            // 原子書き込み処理(relaxedで低オーバーヘッド維持のため)
+            m_vkDown[vk].store(static_cast<uint8_t>(!isKeyUp), std::memory_order_relaxed);
         }
     }
+    // HID未処理許容処理(想定外デバイス無視のため)
 
+    // 既定復帰処理(Qt側へ処理継続委譲のため)
     return false;
 #else
-    Q_UNUSED(message);
-    return false;
+    // 未使用引数抑止処理(ビルド警告回避のため)
+    Q_UNUSED(eventType) Q_UNUSED(message) Q_UNUSED(result)
+        // 既定復帰処理(非Windows環境互換のため)
+        return false;
 #endif
 }
 
 
-void RawInputWinFilter::resetAllKeys() noexcept
+/**
+ * TODO 追加の最適化案（クラス設計レベル）:
+ *
+ * 1. バッファサイズの事前確保:
+ *    class RawInputWinFilter {
+ *        alignas(64) BYTE m_buffer[sizeof(RAWINPUT)]; // メンバ変数として保持
+ *    };
+ *
+ * 2. ビットマスク処理の最適化:
+ *    // 複数のフラグを一度にチェック
+ *    constexpr USHORT ALL_BUTTON_FLAGS =
+ *        RI_MOUSE_LEFT_BUTTON_DOWN | RI_MOUSE_LEFT_BUTTON_UP |
+ *        RI_MOUSE_RIGHT_BUTTON_DOWN | RI_MOUSE_RIGHT_BUTTON_UP |
+ *        RI_MOUSE_MIDDLE_BUTTON_DOWN | RI_MOUSE_MIDDLE_BUTTON_UP |
+ *        RI_MOUSE_BUTTON_4_DOWN | RI_MOUSE_BUTTON_4_UP |
+ *        RI_MOUSE_BUTTON_5_DOWN | RI_MOUSE_BUTTON_5_UP;
+ *
+ *    if (!(f & ALL_BUTTON_FLAGS)) return false; // 全ボタン無関係なら即リターン
+ *
+ *
+ */
+
+///**
+/// * 相対デルタ取得関数定義.
+/// *
+/// * 累積値を取り出しゼロクリアする.
+/// */
+ // メンバ関数本体定義(相対デルタ取り出しのため)
+void RawInputWinFilter::fetchMouseDelta(int& outDx, int& outDy)
 {
-    // Use AVX2 for faster clearing
-#ifdef __AVX2__
-    const __m256i zero = _mm256_setzero_si256();
-    __m256i* ptr = reinterpret_cast<__m256i*>(m_vkDown.data());
-
-    // Unroll loop for better performance
-    constexpr size_t chunks = sizeof(m_vkDown) / 32;
-    size_t i = 0;
-
-    // Process 4 chunks at a time
-    for (; i + 3 < chunks; i += 4) {
-        _mm256_store_si256(ptr + i, zero);
-        _mm256_store_si256(ptr + i + 1, zero);
-        _mm256_store_si256(ptr + i + 2, zero);
-        _mm256_store_si256(ptr + i + 3, zero);
-    }
-
-    // Process remaining chunks
-    for (; i < chunks; ++i) {
-        _mm256_store_si256(ptr + i, zero);
-    }
-#else
-    std::memset(m_vkDown.data(), 0, sizeof(m_vkDown));
-#endif
+    // ★ relaxed で十分（単に最新値を回収するだけ）
+    outDx = dx.exchange(0, std::memory_order_relaxed);
+    outDy = dy.exchange(0, std::memory_order_relaxed);
 }
 
-void RawInputWinFilter::resetMouseButtons() noexcept
+///**
+/// * 相対デルタ破棄関数定義.
+/// *
+/// * 残差を即時ゼロ化する.
+/// */
+ // メンバ関数本体定義(残差除去のため)
+void RawInputWinFilter::discardDeltas()
 {
-    // Unroll for small fixed size
-    m_mb[0].store(0, std::memory_order_relaxed);
-    m_mb[1].store(0, std::memory_order_relaxed);
-    m_mb[2].store(0, std::memory_order_relaxed);
-    m_mb[3].store(0, std::memory_order_relaxed);
-    m_mb[4].store(0, std::memory_order_relaxed);
+    dx.exchange(0, std::memory_order_relaxed);
+    dy.exchange(0, std::memory_order_relaxed);
 }
 
-void RawInputWinFilter::setHotkeyVks(int hk, const std::vector<UINT>& vks) noexcept
+///**
+/// * 全キー状態リセット関数定義.
+/// *
+/// * すべて未押下へ戻す.
+/// */
+ // メンバ関数本体定義(誤爆抑止のため)
+void RawInputWinFilter::resetAllKeys()
 {
-    const size_t currentCount = m_hkCount.load(std::memory_order_acquire);
-
-    // Find existing or add new
-    for (size_t i = 0; i < currentCount; ++i) {
-        if (m_hkMappings[i].hk == hk) {
-            // Update existing
-            m_hkMappings[i].vkCount = static_cast<uint8_t>(std::min(vks.size(), size_t(16)));
-            std::memcpy(m_hkMappings[i].vks, vks.data(),
-                m_hkMappings[i].vkCount * sizeof(UINT));
-            return;
-        }
-    }
-
-    // Add new if space available
-    if (currentCount < kMaxHotkeys) {
-        HotkeyMapping& mapping = m_hkMappings[currentCount];
-        mapping.hk = hk;
-        mapping.vkCount = static_cast<uint8_t>(std::min(vks.size(), size_t(16)));
-        std::memcpy(mapping.vks, vks.data(), mapping.vkCount * sizeof(UINT));
-        m_hkCount.store(currentCount + 1, std::memory_order_release);
-    }
+    // 配列反復ゼロ化処理(押下痕跡排除のため)
+    for (auto& a : m_vkDown) a.store(0, std::memory_order_relaxed);
 }
 
-bool RawInputWinFilter::hotkeyDown(int hk) const noexcept
+///**
+/// * マウスボタン状態リセット関数定義.
+/// *
+/// * 左右/中/X1/X2を未押下へ戻す.
+/// */
+ // メンバ関数本体定義(誤爆抑止のため)
+void RawInputWinFilter::resetMouseButtons()
 {
-    // Raw(KB/Mouse) だけを見る低サイクル版
-    const HotkeyMapping* m = findHotkey(hk);
-    if (Q_UNLIKELY(!m)) return false;
+    // 配列反復ゼロ化処理(押下痕跡排除のため)
+    for (auto& b : m_mb) b.store(0, std::memory_order_relaxed);
+}
 
-    const UINT* p = m->vks;
-    const UINT* e = p + m->vkCount;
-    const size_t vkCap = m_vkDown.size();
-
-    // 単体バインド最速パス
-    if (Q_LIKELY(p + 1 == e)) {
-        const UINT vk = *p;
-        if (vk < 8) {
-            const uint8_t idx = kMouseButtonLUT[vk];
-            return (idx != 0xFF) && m_mb[idx].load(std::memory_order_relaxed);
-        }
-        return (vk < vkCap) && m_vkDown[vk].load(std::memory_order_relaxed);
-    }
-
-    // 複数バインド：いずれか押下で即 return
-    for (; p != e; ++p) {
-        const UINT vk = *p;
-
-        if (vk < 8) {
-            const uint8_t idx = kMouseButtonLUT[vk];
-            if (idx != 0xFF && m_mb[idx].load(std::memory_order_relaxed))
+///**
+/// * HK→VK登録関数定義.
+/// *
+/// * 辞書を更新する.
+/// */
+ // メンバ関数本体定義(設定反映のため)
+void RawInputWinFilter::setHotkeyVks(int hk, const std::vector<UINT>& vks)
+{
+    // 登録更新処理(上書き適用のため)
+    m_hkToVk[hk] = vks;
+}
+///**
+/// * HK押下判定関数定義.
+/// *
+/// * いずれかのVKが押下中ならtrue.
+/// */
+bool RawInputWinFilter::hotkeyDown(int hk) const
+{
+    // 1) Raw（マウス/キーボード）を先にチェック
+    auto it = m_hkToVk.find(hk);
+    if (it != m_hkToVk.end()) {
+        const auto& vks = it->second;
+        for (UINT vk : vks) {
+            if (vk <= VK_XBUTTON2) {
+                switch (vk) {
+                case VK_LBUTTON:  if (m_mb[kMB_Left].load(std::memory_order_relaxed)) return true; break;
+                case VK_RBUTTON:  if (m_mb[kMB_Right].load(std::memory_order_relaxed)) return true; break;
+                case VK_MBUTTON:  if (m_mb[kMB_Middle].load(std::memory_order_relaxed)) return true; break;
+                case VK_XBUTTON1: if (m_mb[kMB_X1].load(std::memory_order_relaxed)) return true; break;
+                case VK_XBUTTON2: if (m_mb[kMB_X2].load(std::memory_order_relaxed)) return true; break;
+                }
+            }
+            else if (vk < m_vkDown.size() && m_vkDown[vk].load(std::memory_order_relaxed)) {
                 return true;
-        }
-        else if (vk < vkCap && m_vkDown[vk].load(std::memory_order_relaxed)) {
-            return true;
+            }
         }
     }
     return false;
+    /*
+    // 2) joystick（QBitArray）を後でチェック
+    const QBitArray* jm = m_joyHK;
+    return jm && static_cast<unsigned>(hk) < static_cast<unsigned>(jm->size()) && jm->testBit(hk);*/
 }
 
-
-
-bool RawInputWinFilter::hotkeyPressed(int hk) noexcept
-{
-    const bool currentState = hotkeyDown(hk);
-    const size_t index = static_cast<size_t>(hk) & 511;
-
-    // Use exchange for atomic read-modify-write
-    const uint8_t previousState = m_hkPrev[index].exchange(
-        static_cast<uint8_t>(currentState),
-        std::memory_order_acq_rel
-    );
-
-    // Rising edge detection
-    return currentState && !previousState;
+bool RawInputWinFilter::hotkeyPressed(int hk) noexcept {
+    const bool down = hotkeyDown(hk); // いま押下中？
+    auto& prev = m_hkPrev[static_cast<size_t>(hk) & 511];
+    const uint8_t p = prev.exchange(down, std::memory_order_acq_rel);
+    return down && !p;  // 今trueで前回falseなら Pressed
 }
 
-bool RawInputWinFilter::hotkeyReleased(int hk) noexcept
-{
-    const bool currentState = hotkeyDown(hk);
-    const size_t index = static_cast<size_t>(hk) & 511;
-
-    // Use exchange for atomic read-modify-write
-    const uint8_t previousState = m_hkPrev[index].exchange(
-        static_cast<uint8_t>(currentState),
-        std::memory_order_acq_rel
-    );
-
-    // Falling edge detection
-    return !currentState && previousState;
+bool RawInputWinFilter::hotkeyReleased(int hk) noexcept {
+    const bool down = hotkeyDown(hk);
+    auto& prev = m_hkPrev[static_cast<size_t>(hk) & 511];
+    const uint8_t p = prev.exchange(down, std::memory_order_acq_rel);
+    return (!down) && p; // 今falseで前回trueなら Released
 }
