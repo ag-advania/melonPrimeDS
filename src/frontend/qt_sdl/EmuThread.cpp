@@ -1781,9 +1781,7 @@ void EmuThread::run()
 
 
 #if defined(_WIN32)
-            // RawInputでもこの処理は必用。無いとこうなる： If you have a secondary screen the mouse can slide to it and the main window gets unfocused
-            //QCursor::setPos(aimData.centerX, aimData.centerY);
-            //g_rawFilter->discardDeltas();
+
 #else
             // Return cursor to center (keep next delta calculation zero-based)
             QCursor::setPos(aimData.centerX, aimData.centerY);
@@ -2424,13 +2422,11 @@ void EmuThread::run()
             } else {
 				// when not focused
 #if defined(_WIN32)
-                    // RAWデルタ破棄呼出(残差排除のため)
-                    if (g_rawFilter) g_rawFilter->discardDeltas();
-                    // マウスボタン状態リセット呼出(押下取り残し排除のため)
-                    if (g_rawFilter) g_rawFilter->resetMouseButtons();
-                    // キー押下状態リセット呼出(誤爆抑止のため)
-                    if (g_rawFilter) g_rawFilter->resetAllKeys();
-                    if (g_rawFilter) g_rawFilter->resetHotkeyEdges();
+                    
+                    if (g_rawFilter) g_rawFilter->discardDeltas(); // RAWデルタ破棄呼出(残差排除のため)
+                    if (g_rawFilter) g_rawFilter->resetMouseButtons(); // マウスボタン状態リセット呼出(押下取り残し排除のため)
+                    if (g_rawFilter) g_rawFilter->resetAllKeys(); // キー押下状態リセット呼出(誤爆抑止のため)
+                    if (g_rawFilter) g_rawFilter->resetHotkeyEdges(); // ほぼ必須（再開直後の Pressed/Released の誤発火防止）
 #endif
             }
             
