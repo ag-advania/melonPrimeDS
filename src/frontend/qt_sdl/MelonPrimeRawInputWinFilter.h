@@ -1,82 +1,91 @@
 #pragma once
-#include <QtCore/QAbstractNativeEventFilter>
-#include <QtCore/QByteArray>
-#include <QtCore/QtGlobal>
-#include <atomic>
+#ifdef _WIN32
+
+// Qt
+#include <QAbstractNativeEventFilter>
+#include <QByteArray>
+#include <QBitArray>
+#include <QtGlobal>
+
+// Win32
+#include <windows.h>
+#include <hidsdi.h>
+
+// C++/STL
 #include <array>
 #include <vector>
+#include <unordered_map>
+#include <atomic>
 #include <cstdint>
-#include <QBitArray>
+#include <cstring>
+
+#if defined(__AVX2__)
 #include <immintrin.h>
-
-#ifdef _WIN32
-#ifndef WIN32_LEAN_AND_MEAN
-#define WIN32_LEAN_AND_MEAN 1
-#endif
-#include <windows.h>
 #endif
 
-class RawInputWinFilter final : public QAbstractNativeEventFilter
+// 強制インラインヒント
+#ifndef FORCE_INLINE
+#if defined(_MSC_VER)
+#define FORCE_INLINE __forceinline
+#else
+#define FORCE_INLINE __attribute__((always_inline)) inline
+#endif
+#endif
+
+// SSE/AVX を使わないビルドでも安全に動作するように条件分岐
+// （AVX2がある場合のみストリームストア等を使用）
+
+class RawInputWinFilter : public QAbstractNativeEventFilter
 {
 public:
     RawInputWinFilter();
     ~RawInputWinFilter() override;
 
-    /*
-    inline void setJoyHotkeyMaskPtr(const QBitArray* p) noexcept {
-        m_joyHK = p ? p : &kEmptyMask;
-    }
-    */
+    // Qt ネイティブイベントフック
     bool nativeEventFilter(const QByteArray& eventType, void* message, qintptr* result) override;
 
-    // Inline hot path functions
-    [[gnu::hot, gnu::always_inline]] inline void fetchMouseDelta(int& outDx, int& outDy) noexcept {
-        // Use relaxed ordering for better performance
-        outDx = dx.exchange(0, std::memory_order_relaxed);
-        outDy = dy.exchange(0, std::memory_order_relaxed);
-    }
+    // マウス相対デルタ取得（取り出し時にゼロクリア）
+    void fetchMouseDelta(int& outDx, int& outDy);
 
-    [[gnu::hot, gnu::always_inline]] inline void discardDeltas() noexcept {
-        dx.store(0, std::memory_order_relaxed);
-        dy.store(0, std::memory_order_relaxed);
-    }
+    // 累積デルタの破棄
+    void discardDeltas();
 
-    void resetAllKeys() noexcept;
-    void resetMouseButtons() noexcept;
+    // 全キー（キーボード）を未押下に
+    void resetAllKeys();
 
-    void setHotkeyVks(int hk, const std::vector<UINT>& vks) noexcept;
+    // 全マウスボタンを未押下に
+    void resetMouseButtons();
 
-    // Most frequently called functions
-    [[gnu::hot, gnu::flatten]] bool hotkeyDown(int hk) const noexcept;
-    [[gnu::hot, gnu::flatten]] bool hotkeyPressed(int hk) noexcept;
-    [[gnu::hot]] bool hotkeyReleased(int hk) noexcept;
+    // 全ホットキーの立下り/立上りエッジ状態をリセット
+    void resetHotkeyEdges();
 
-    [[gnu::always_inline]] inline void resetHotkeyEdges() noexcept {
-#ifdef __AVX2__
-        // Use AVX2 for fast zeroing
-        const __m256i zero = _mm256_setzero_si256();
-        __m256i* ptr = reinterpret_cast<__m256i*>(m_hkPrev.data());
-        constexpr size_t chunks = sizeof(m_hkPrev) / 32;
-        for (size_t i = 0; i < chunks; ++i) {
-            _mm256_store_si256(ptr + i, zero);
-        }
-#else
-        std::memset(m_hkPrev.data(), 0, sizeof(m_hkPrev));
-#endif
-    }
+    // HK→VK の登録（キーボード/マウス側の前計算マスクを作る）
+    void setHotkeyVks(int hk, const std::vector<UINT>& vks);
+
+    // SDL 側（EmuInstance）が毎フレ更新する joyHotkeyMask を参照させる
+    // （常に有効を渡す前提ならnullチェック不要）
+    //FORCE_INLINE void setJoyHotkeyMaskPtr(const QBitArray* p) noexcept { m_joyHK = p ? p : &kEmptyMask; }
+
+    // 取得系
+    bool hotkeyDown(int hk) const noexcept;
+    bool hotkeyPressed(int hk) noexcept;
+    bool hotkeyReleased(int hk) noexcept;
 
 private:
-#ifdef _WIN32
-    RAWINPUTDEVICE rid[2]{};
-    /*
-    * joy stick
-    const QBitArray* m_joyHK = nullptr;
-    inline static const QBitArray kEmptyMask{};
-    */
-    // Cache line aligned buffer (128 bytes for AVX-512 compatibility)
-    alignas(128) BYTE m_rawBuf[sizeof(RAWINPUT) + 128];
+    // --------- 内部型と定数 ---------
+    enum MouseIndex : uint8_t { kMB_Left = 0, kMB_Right, kMB_Middle, kMB_X1, kMB_X2, kMB_Max };
 
-    // Optimized bitmask constants
+    // VK(0..255) 用 256bit と、Mouse(5bit) の前計算マスク
+    struct alignas(16) HotkeyMask {
+        uint64_t vkMask[4];  // 256bit = 4 * 64bit
+        uint8_t  mouseMask;  // L/R/M/X1/X2 -> 5bit
+        uint8_t  hasMask;    // 0:空, 1:有効
+        uint8_t  _pad[6];
+    };
+
+    static constexpr size_t kMaxHotkeyId = 256;
+
+    // すべてのボタンフラグ（早期リターン用）
     static constexpr USHORT kAllMouseBtnMask =
         RI_MOUSE_LEFT_BUTTON_DOWN | RI_MOUSE_LEFT_BUTTON_UP |
         RI_MOUSE_RIGHT_BUTTON_DOWN | RI_MOUSE_RIGHT_BUTTON_UP |
@@ -84,78 +93,72 @@ private:
         RI_MOUSE_BUTTON_4_DOWN | RI_MOUSE_BUTTON_4_UP |
         RI_MOUSE_BUTTON_5_DOWN | RI_MOUSE_BUTTON_5_UP;
 
-    // Button mapping structure
-    struct ButtonMap {
-        USHORT down;
-        USHORT up;
-        uint8_t idx;
-        uint8_t _pad; // Padding for alignment
-    };
-
-    static constexpr ButtonMap kButtonMaps[5] = {
-        {RI_MOUSE_LEFT_BUTTON_DOWN,   RI_MOUSE_LEFT_BUTTON_UP,   0, 0},
-        {RI_MOUSE_RIGHT_BUTTON_DOWN,  RI_MOUSE_RIGHT_BUTTON_UP,  1, 0},
-        {RI_MOUSE_MIDDLE_BUTTON_DOWN, RI_MOUSE_MIDDLE_BUTTON_UP, 2, 0},
-        {RI_MOUSE_BUTTON_4_DOWN,      RI_MOUSE_BUTTON_4_UP,      3, 0},
-        {RI_MOUSE_BUTTON_5_DOWN,      RI_MOUSE_BUTTON_5_UP,      4, 0},
-    };
-#endif
-
-    // Cache line separation for atomic variables
-    alignas(128) std::atomic<int> dx{ 0 };
-    alignas(128) std::atomic<int> dy{ 0 };
-
-    static constexpr size_t kMouseBtnCount = 5;
-    enum : uint8_t { kMB_Left = 0, kMB_Right = 1, kMB_Middle = 2, kMB_X1 = 3, kMB_X2 = 4 };
-
-    // Memory layout optimization with proper alignment
-    alignas(64) std::array<std::atomic<uint8_t>, 256> m_vkDown{};
-    alignas(64) std::array<std::atomic<uint8_t>, kMouseBtnCount> m_mb{};
-    alignas(64) std::array<std::atomic<uint8_t>, 512> m_hkPrev{};
-
-    // Use fixed-size array for better cache locality (assuming max 64 hotkeys)
-    static constexpr size_t kMaxHotkeys = 64;
-    struct HotkeyMapping {
-        int hk;
-        uint8_t vkCount;
-        uint8_t _pad[3]; // Padding for alignment
-        UINT vks[16]; // Fixed size array for virtual keys
-    };
-
-    alignas(64) std::array<HotkeyMapping, kMaxHotkeys> m_hkMappings{};
-    std::atomic<size_t> m_hkCount{ 0 };
-
-    // Fast lookup table for mouse buttons
+    // Win32 VK_* → MouseIndex の簡易LUT（0..7だけ使用）
     static constexpr uint8_t kMouseButtonLUT[8] = {
-        255,        // VK_NULL
-        kMB_Left,   // VK_LBUTTON
-        kMB_Right,  // VK_RBUTTON
-        255,        // VK_CANCEL
-        kMB_Middle, // VK_MBUTTON
-        kMB_X1,     // VK_XBUTTON1
-        kMB_X2,     // VK_XBUTTON2
-        255         // padding
+        0xFF,       // 0 (unused)
+        kMB_Left,   // VK_LBUTTON   (1)
+        kMB_Right,  // VK_RBUTTON   (2)
+        0xFF,       // 3
+        kMB_Middle, // VK_MBUTTON   (4)
+        kMB_X1,     // VK_XBUTTON1  (5)
+        kMB_X2,     // VK_XBUTTON2  (6)
+        0xFF        // 7
     };
 
-    // Helper for fast hotkey lookup
-    [[gnu::hot, gnu::always_inline]] inline const HotkeyMapping* findHotkey(int hk) const noexcept {
-        const size_t count = m_hkCount.load(std::memory_order_acquire);
-        // Unroll for small counts
-        if (count <= 8) {
-            for (size_t i = 0; i < count; ++i) {
-                if (m_hkMappings[i].hk == hk) {
-                    return &m_hkMappings[i];
-                }
-            }
-            return nullptr;
-        }
+    // イベント処理用の小バッファ（HIDは扱わないので十分）
+    alignas(64) BYTE m_rawBuf[256] = {};
 
-        // Linear search for larger counts
-        const HotkeyMapping* begin = m_hkMappings.data();
-        const HotkeyMapping* end = begin + count;
-        for (const HotkeyMapping* it = begin; it != end; ++it) {
-            if (it->hk == hk) return it;
-        }
-        return nullptr;
+    // キー/マウス実時間状態（低コスト参照のためビットベクタ化）
+    struct StateBits {
+        std::atomic<uint64_t> vkDown[4];      // 256bit の押下状態
+        std::atomic<uint8_t>  mouseButtons;   // 5bit の押下状態（L,R,M,X1,X2）
+    } m_state{ {0,0,0,0}, 0 };
+
+    // 低頻度API: VKの現在状態取得
+    FORCE_INLINE bool getVkState(uint32_t vk) const noexcept {
+        if (vk >= 256) return false;
+        const uint64_t w = m_state.vkDown[vk >> 6].load(std::memory_order_relaxed);
+        return (w & (1ULL << (vk & 63))) != 0ULL;
     }
+    // 低頻度API: Mouseボタン状態
+    FORCE_INLINE bool getMouseButton(uint8_t idx) const noexcept {
+        const uint8_t b = m_state.mouseButtons.load(std::memory_order_relaxed);
+        return (idx < 5) && ((b >> idx) & 1u);
+    }
+    // 低頻度API: VKセット/クリア
+    FORCE_INLINE void setVkBit(uint32_t vk, bool down) noexcept {
+        if (vk >= 256) return;
+        const uint64_t mask = 1ULL << (vk & 63);
+        auto& word = m_state.vkDown[vk >> 6];
+        if (down) (void)word.fetch_or(mask, std::memory_order_relaxed);
+        else      (void)word.fetch_and(~mask, std::memory_order_relaxed);
+    }
+
+    // 前計算済み Hotkey マスク（高速パス用）
+    alignas(64) std::array<HotkeyMask, kMaxHotkeyId> m_hkMask{};
+
+    // フォールバック用（大きいHK IDなど）
+    std::unordered_map<int, std::vector<UINT>> m_hkToVk;
+
+    // joyHotkeyMask 参照
+    //inline static const QBitArray kEmptyMask{};
+    //const QBitArray* m_joyHK = &kEmptyMask;
+
+    // 立上り/立下りエッジ検出用（O(1)）
+    std::array<std::atomic<uint64_t>, (kMaxHotkeyId + 63) / 64> m_hkPrev{};
+
+    // RawInput 登録情報
+    RAWINPUTDEVICE m_rid[2]{};
+
+    // 相対デルタ
+    std::atomic<int> dx{ 0 }, dy{ 0 };
+
+    // 古い実装との互換（必要なら残す）
+    std::array<std::atomic<int>, 256> m_vkDownCompat{};
+    std::array<std::atomic<int>, kMB_Max> m_mbCompat{};
+
+    // ヘルパ
+    static FORCE_INLINE void addVkToMask(HotkeyMask& m, UINT vk) noexcept;
 };
+
+#endif // _WIN32
