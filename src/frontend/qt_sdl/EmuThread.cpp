@@ -1361,7 +1361,6 @@ void EmuThread::run()
 #if defined(_WIN32)
             /* ==== Raw Input 経路==== */
             do {
-                // 設定でRaw Inputが有効なら、WM_INPUT由来の相対デルタだけで処理して早期return
                 // emuInstance->osdAddMessage(0, "raw");
 
                 g_rawFilter->fetchMouseDelta(deltaX, deltaY);
@@ -1667,6 +1666,20 @@ void EmuThread::run()
             }
             else
             {
+                // ここから先は下に行くほど低遅延。RunFrameの直前が最も低遅延。
+
+                // ズーム
+                const bool rawZoom = MP_HK_DOWN(HK_MetroidZoom);
+                inputMask.setBit(INPUT_R, !rawZoom);
+
+                // Move hunter
+                processMoveInput(inputMask);
+
+                // 射撃（Shoot/Scanのどちらか）
+                const bool rawShoot = MP_HK_DOWN(HK_MetroidShootScan) || MP_HK_DOWN(HK_MetroidScanShoot);
+                inputMask.setBit(INPUT_L, !rawShoot);
+
+				// Aim
                 if (!isCursorMode) {
                     processAimInput();
                 }
@@ -2046,21 +2059,7 @@ void EmuThread::run()
 
 
 
-                    // Move hunter
-                    processMoveInput(inputMask);
 
-
-                    // 射撃（Shoot/Scanのどちらか）
-                    const bool rawShoot = MP_HK_DOWN(HK_MetroidShootScan) || MP_HK_DOWN(HK_MetroidScanShoot);
-
-                    // ズーム
-                    const bool rawZoom = MP_HK_DOWN(HK_MetroidZoom);
-
-                    // 射撃（Shoot/Scanのどちらか）
-                    inputMask.setBit(INPUT_L, !rawShoot);
-
-                    // ズーム
-                    inputMask.setBit(INPUT_R, !rawZoom);
 
                     // Jump（B）
                     inputMask.setBit(INPUT_B, !MP_HK_DOWN(HK_MetroidJump));
@@ -2262,7 +2261,7 @@ void EmuThread::run()
                     // } Weapon check
 
 
-                    // Morph ball boost
+					// Morph ball boost. This should be worked in Adventure mode and Arena mode.
                     // INFO If this function is not used, mouse boosting can only be done once.
                     // This is because it doesn't release from the touch state, which is necessary for aiming. 
                     // There's no way around it.
