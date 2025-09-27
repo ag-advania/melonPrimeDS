@@ -1666,8 +1666,19 @@ void EmuThread::run()
             }
             else
             {
+                // ここから先は下に行くほど低遅延。RunFrameの直前が最も低遅延。
+
+                // ズーム
+                const bool rawZoom = MP_HK_DOWN(HK_MetroidZoom);
+                inputMask.setBit(INPUT_R, !rawZoom);
+
                 // Move hunter
                 processMoveInput(inputMask);
+
+                // 射撃（Shoot/Scanのどちらか）
+                const bool rawShoot = MP_HK_DOWN(HK_MetroidShootScan) || MP_HK_DOWN(HK_MetroidScanShoot);
+                inputMask.setBit(INPUT_L, !rawShoot);
+
 				// Aim
                 if (!isCursorMode) {
                     processAimInput();
@@ -2049,19 +2060,6 @@ void EmuThread::run()
 
 
 
-
-
-                    // 射撃（Shoot/Scanのどちらか）
-                    const bool rawShoot = MP_HK_DOWN(HK_MetroidShootScan) || MP_HK_DOWN(HK_MetroidScanShoot);
-
-                    // ズーム
-                    const bool rawZoom = MP_HK_DOWN(HK_MetroidZoom);
-
-                    // 射撃（Shoot/Scanのどちらか）
-                    inputMask.setBit(INPUT_L, !rawShoot);
-
-                    // ズーム
-                    inputMask.setBit(INPUT_R, !rawZoom);
 
                     // Jump（B）
                     inputMask.setBit(INPUT_B, !MP_HK_DOWN(HK_MetroidJump));
