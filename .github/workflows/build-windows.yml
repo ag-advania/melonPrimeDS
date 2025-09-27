@@ -51,6 +51,12 @@ jobs:
           path-type: inherit
           pacboy: gcc:p cmake:p ninja:p make:p jq:p
 
+      - name: Show toolchain versions
+        run: |
+          x86_64-w64-mingw32-g++ --version
+          cmake --version
+          pkg-config --version || true
+
       # vcpkg.json ‚ª overlay ‚ğ—v‹‚µ‚Ä‚¢‚é‚½‚ßA‹ó‚Å‚à•K‚¸ì‚é
       - name: Ensure vcpkg overlay directories exist
         run: |
