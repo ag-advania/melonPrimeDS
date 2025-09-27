@@ -1672,9 +1672,6 @@ void EmuThread::run()
                 const bool rawZoom = MP_HK_DOWN(HK_MetroidZoom);
                 inputMask.setBit(INPUT_R, !rawZoom);
 
-                // Move hunter
-                processMoveInput(inputMask);
-
                 // 射撃（Shoot/Scanのどちらか）
                 const bool rawShoot = MP_HK_DOWN(HK_MetroidShootScan) || MP_HK_DOWN(HK_MetroidScanShoot);
                 inputMask.setBit(INPUT_L, !rawShoot);
@@ -2058,6 +2055,8 @@ void EmuThread::run()
                     */
 
 
+                    // Move hunter
+                    processMoveInput(inputMask);
 
 
 
