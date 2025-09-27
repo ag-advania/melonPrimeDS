@@ -1361,7 +1361,6 @@ void EmuThread::run()
 #if defined(_WIN32)
             /* ==== Raw Input 経路==== */
             do {
-                // 設定でRaw Inputが有効なら、WM_INPUT由来の相対デルタだけで処理して早期return
                 // emuInstance->osdAddMessage(0, "raw");
 
                 g_rawFilter->fetchMouseDelta(deltaX, deltaY);
@@ -1667,6 +1666,9 @@ void EmuThread::run()
             }
             else
             {
+                // Move hunter
+                processMoveInput(inputMask);
+				// Aim
                 if (!isCursorMode) {
                     processAimInput();
                 }
@@ -2046,8 +2048,7 @@ void EmuThread::run()
 
 
 
-                    // Move hunter
-                    processMoveInput(inputMask);
+
 
 
                     // 射撃（Shoot/Scanのどちらか）
@@ -2262,7 +2263,7 @@ void EmuThread::run()
                     // } Weapon check
 
 
-                    // Morph ball boost
+					// Morph ball boost. This should be worked in Adventure mode and Arena mode.
                     // INFO If this function is not used, mouse boosting can only be done once.
                     // This is because it doesn't release from the touch state, which is necessary for aiming. 
                     // There's no way around it.

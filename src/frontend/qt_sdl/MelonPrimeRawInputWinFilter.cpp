@@ -1,6 +1,13 @@
 ﻿#ifdef _WIN32
 #include "MelonPrimeRawInputWinFilter.h"
 
+/*
+TODO:
+さらに低レイテンシ&低サイクルにするなら
+イベント頻度が高い時に原子RMW回数を減らすのが効きます。今は X と Y で2回 fetch_add が走るので、64bitにまとめて1回にするとヒット率が上がります。
+
+*/
+
 RawInputWinFilter::RawInputWinFilter()
 {
     // RawInput登録（マウス/キーボード）
