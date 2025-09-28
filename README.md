@@ -16,9 +16,22 @@ Support the original creator of melonPrimeDS, Makidoll:
 
 Support the current maintainer and updater, Zection:
 
-[<img width="186" height="186" alt="image" src="https://github.com/user-attachments/assets/a8afd222-960c-432c-9d0b-4a28865939e7" />](https://ko-fi.com/zection)
-
-[<img width="1200" height="600" alt="image" src="https://github.com/user-attachments/assets/ec1dd31e-2727-4539-b88d-3c1fc0b31799" />](https://ko-fi.com/zection)
+<table width="100%">
+  <tr>
+    <td align="left" valign="middle" width="76%">
+      <a href="https://ko-fi.com/zection">
+        <img src="https://github.com/user-attachments/assets/ec1dd31e-2727-4539-b88d-3c1fc0b31799"
+             alt="Ko-fi Banner" width="100%">
+      </a>
+    </td>
+    <td align="center" valign="middle" width="24%">
+      <a href="https://ko-fi.com/zection">
+        <img src="https://github.com/user-attachments/assets/a8afd222-960c-432c-9d0b-4a28865939e7"
+             alt="Ko-fi QR" width="100%">
+      </a>
+    </td>
+  </tr>
+</table>
 
 
 [melonPrimeDS.webm](https://github.com/makidoll/melonPrimeDS/assets/8362329/69ab26bb-7205-451a-a11c-70a2ca0b549d)
@@ -164,9 +177,22 @@ melonPrimeDS の元の作者、Makidoll をサポートする：
 
 現在メンテナンスと更新を行っている Zection をサポートする：
 
-[<img width="186" height="186" alt="image" src="https://github.com/user-attachments/assets/a8afd222-960c-432c-9d0b-4a28865939e7" />](https://ko-fi.com/zection)
-
-[<img width="1200" height="600" alt="image" src="https://github.com/user-attachments/assets/ec1dd31e-2727-4539-b88d-3c1fc0b31799" />](https://ko-fi.com/zection)
+<table width="100%">
+  <tr>
+    <td align="left" valign="middle" width="76%">
+      <a href="https://ko-fi.com/zection">
+        <img src="https://github.com/user-attachments/assets/ec1dd31e-2727-4539-b88d-3c1fc0b31799"
+             alt="Ko-fi Banner" width="100%">
+      </a>
+    </td>
+    <td align="center" valign="middle" width="24%">
+      <a href="https://ko-fi.com/zection">
+        <img src="https://github.com/user-attachments/assets/a8afd222-960c-432c-9d0b-4a28865939e7"
+             alt="Ko-fi QR" width="100%">
+      </a>
+    </td>
+  </tr>
+</table>
 
 [melonPrimeDS.webm](https://github.com/makidoll/melonPrimeDS/assets/8362329/69ab26bb-7205-451a-a11c-70a2ca0b549d)
 
