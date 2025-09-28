@@ -10,7 +10,13 @@ I originally made this for controller but because there's no lock-on, it wasn't 
 
 **Please read the instructions carefully.**
 
+Support the original creator of melonPrimeDS, Makidoll:
+
 [![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/Q5Q0MLBI)
+
+Support the current maintainer and updater, Zection:
+
+[<img width="1200" height="600" alt="image" src="https://github.com/user-attachments/assets/c4677887-f319-4f9f-9a0a-e5e0fbad77f3" />](https://ko-fi.com/zection)
 
 [melonPrimeDS.webm](https://github.com/makidoll/melonPrimeDS/assets/8362329/69ab26bb-7205-451a-a11c-70a2ca0b549d)
 
@@ -149,7 +155,13 @@ Downloadable builds were made using GitHub actions
 元々はコントローラー用に作りましたが、ロックオン機能がないため、あまり楽しくありませんでした。
 **説明をよくお読みください。**
 
+melonPrimeDS の元の作者、Makidoll をサポートする：
+
 [![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/Q5Q0MLBI)
+
+現在メンテナンスと更新を行っている Zection をサポートする：
+
+[<img width="1200" height="600" alt="image" src="https://github.com/user-attachments/assets/c4677887-f319-4f9f-9a0a-e5e0fbad77f3" />](https://ko-fi.com/zection)
 
 [melonPrimeDS.webm](https://github.com/makidoll/melonPrimeDS/assets/8362329/69ab26bb-7205-451a-a11c-70a2ca0b549d)
 
