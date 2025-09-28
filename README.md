@@ -1,4 +1,4 @@
-<img width="1200" height="600" alt="image" src="https://github.com/user-attachments/assets/bcf3cabd-9d45-40e7-abb2-3265771ac5e9" />﻿<p align="center"><img src="./res/icon/melon_128x128.png"></p>
+<p align="center"><img src="./res/icon/melon_128x128.png"></p>
 <h1 align="center"><b>melonPrimeDS</b></h1>
   
 
