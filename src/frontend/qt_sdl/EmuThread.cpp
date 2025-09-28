@@ -65,7 +65,6 @@
 
 #if defined(_WIN32)
 
-// 既にどこかで include 済みなら重複はOK（ヘッダガードあり）
 #include "MelonPrimeRawInputWinFilter.h"
 #include "MelonPrimeHotkeyVkBinding.h"
 
@@ -77,7 +76,7 @@
 #include "MelonPrimeDirectInputFilter.h"
 */
 
-// 匿名名前空間：この翻訳単位だけで見えるように
+// Anonymous namespace: Visible only within this translation unit
 namespace {
     /*
     struct RawHK {
@@ -110,6 +109,78 @@ namespace {
 
 } // namespace
 #endif
+
+
+
+
+// Aim可否ビット管理（single-thread最小コスト版：必要ならAIMBLOCK_ATOMIC=1でatomic化）
+#include <cstdint>
+
+#ifndef AIMBLOCK_ATOMIC
+#define AIMBLOCK_ATOMIC 0
+#endif
+
+#if AIMBLOCK_ATOMIC
+#include <atomic>
+using AimBitsType = std::atomic<uint32_t>;
+#define AIMBITS_LOAD(x)    (x.load(std::memory_order_relaxed))
+#define AIMBITS_STORE(x,v) (x.store((v), std::memory_order_relaxed))
+#define AIMBITS_OR(x, m)   (x.fetch_or((m), std::memory_order_relaxed))
+#define AIMBITS_AND(x, m)  (x.fetch_and((m), std::memory_order_relaxed))
+#else
+using AimBitsType = uint32_t;
+#define AIMBITS_LOAD(x)    (x)
+#define AIMBITS_STORE(x,v) ((x) = (v))
+#define AIMBITS_OR(x, m)   ((x) |= (m))
+#define AIMBITS_AND(x, m)  ((x) &= (m))
+#endif
+
+namespace {
+    // gAimBlockBits==0 → Aim可、どれか1ビットでも立つとAim不可
+    static AimBitsType gAimBlockBits
+#if AIMBLOCK_ATOMIC
+    { 0 };
+#else
+        = 0u;
+#endif
+
+    // 外部が直接参照する「総和ビット」：非0ならAim不可（理由ビット込み）
+    // 例: if (isAimDisabled) { … } / if (isAimDisabled & AIMBLK_CHECK_WEAPON) { … }
+    static uint32_t isAimDisabled = 0u;
+
+    // 理由ビット定義（必要に応じて追加）
+    enum : uint32_t {
+        AIMBLK_CHECK_WEAPON = 1u << 0, // 武器チェック/切替中はAim停止
+        AIMBLK_MORPHBALL_BOOST = 1u << 1, // モーフボールBoost中はAim停止
+        // AIMBLK_SOMETHING_ELSE = 1u << 2,
+    };
+
+    // 内部→外部の同期（総和ビットをミラー）
+    __attribute__((always_inline)) inline void syncIsAimDisabled() noexcept {
+        isAimDisabled = AIMBLOCK_ATOMIC ? AIMBITS_LOAD(gAimBlockBits) : gAimBlockBits;
+    }
+
+    // 指定ビットのON/OFF（更新のたびに isAimDisabled を同期）
+    __attribute__((always_inline)) inline void setAimBlock(uint32_t bitMask, bool enable) noexcept {
+        if (enable) {
+            AIMBITS_OR(gAimBlockBits, bitMask);
+        }
+        else {
+            AIMBITS_AND(gAimBlockBits, ~bitMask);
+        }
+        syncIsAimDisabled();
+    }
+
+    // スコープ限定の一時ブロック（解除漏れ防止）
+    struct ScopeAimBlock {
+        uint32_t mask;
+        explicit ScopeAimBlock(uint32_t m) : mask(m) { setAimBlock(mask, true); }
+        ~ScopeAimBlock() { setAimBlock(mask, false); }
+        ScopeAimBlock(const ScopeAimBlock&) = delete;
+        void operator=(const ScopeAimBlock&) = delete;
+    };
+} // namespace
+
 
 
 using namespace melonDS;
@@ -924,7 +995,6 @@ void EmuThread::run()
     // melonPrimeDS
 
     bool isCursorVisible = true;
-    bool enableAim = true;
     bool wasLastFrameFocused = false;
 
     /**
@@ -1324,7 +1394,9 @@ void EmuThread::run()
      */
     static const auto processAimInput = [&]() __attribute__((hot, always_inline, flatten)) {
 #ifndef STYLUS_MODE
-
+        if(isAimDisabled || isCursorMode) {
+            return;
+		}
         // Define macro to prevent drift by rounding (single evaluation and snap within tolerance range)
 #define AIM_ADJUST(v)                                        \
         ({                                                       \
@@ -1394,7 +1466,7 @@ void EmuThread::run()
             emuInstance->nds->ARM9Write16(addrAimY, static_cast<int16_t>(AIM_ADJUST(scaledY)));
 
             // Set aim enable flag (for conditional processing downstream)
-            enableAim = true;
+            // enableAim = true;
 
 
 #if defined(_WIN32)
@@ -1667,6 +1739,7 @@ void EmuThread::run()
             else
             {
                 // ここから先は下に行くほど低遅延。RunFrameの直前が最も低遅延。
+				// TODO !isFocusedの時の入力排除。RawInputでは排除済み。linux macでは必要。
 
                 // ズーム
                 const bool rawZoom = MP_HK_DOWN(HK_MetroidZoom);
@@ -1677,9 +1750,7 @@ void EmuThread::run()
                 inputMask.setBit(INPUT_L, !rawShoot);
 
 				// Aim
-                if (!isCursorMode) {
-                    processAimInput();
-                }
+                processAimInput();
                 nlines = emuInstance->nds->RunFrame();
             }
 
@@ -1996,7 +2067,7 @@ void EmuThread::run()
                 addrChosenHunter = calculatePlayerAddress(addrBaseChosenHunter, playerPosition, 0x01);
                 addrWeaponChange = calculatePlayerAddress(addrBaseWeaponChange, playerPosition, incrementOfPlayerAddress);
 
-                addrSelectedWeapon = calculatePlayerAddress(addrBaseSelectedWeapon, playerPosition, incrementOfPlayerAddress); // 020DCAA3 in JP1.0
+                addrSelectedWeapon = calculatePlayerAddress(addrBaseSelectedWeapon, playerPosition, incrementOfPlayerAddress); // 020DCAA3 in JP1.0.
                 addrCurrentWeapon = addrSelectedWeapon - 0x1; // 020DCAA2 in JP1.0
                 addrHavingWeapons = addrSelectedWeapon + 0x3; // 020DCAA6 in JP1.0
 
@@ -2228,35 +2299,45 @@ void EmuThread::run()
 
 
                     // Weapon check {
-                    /*
-                    // TODO 終了時の武器選択を防ぐ。　マグモールになってしまう
+					// TODO モーフボールブーストと併用したい場合は、ここを工夫する必要がある。
                     static bool isWeaponCheckActive = false;
+                    //static uint8_t weaponCheckWeaponIndex;
 
                     if (emuInstance->hotkeyDown(HK_MetroidWeaponCheck)) {
                         if (!isWeaponCheckActive) {
                             // 初回のみ実行
                             isWeaponCheckActive = true;
+							// Disable aim during weapon check
+                            setAimBlock(AIMBLK_CHECK_WEAPON, true);
+                            //weaponCheckWeaponIndex = emuInstance->nds->ARM9Read8(addrSelectedWeapon);
                             emuInstance->nds->ReleaseScreen();
                             frameAdvanceTwice();
                         }
 
                         // キーが押されている間は継続
-                        emuInstance->nds->TouchScreen(236, 30);
+                        //emuInstance->nds->ARM9Write8(addrSelectedWeapon, 0x00); // 無選択に見えるようにパワービームにしておく
+						// Touch for weapon check
+                        emuInstance->nds->TouchScreen(236, 30); // このタッチせいでどうしてもエイム発動してマグモ選択されてしまう問題があった。
+						// タッチ反映の為に2フレーム進める
                         frameAdvanceTwice();
-
                         // still allow movement
                         processMoveInput(inputMask);
+
                     }
                     else {
                         if (isWeaponCheckActive) {
+                            isWeaponCheckActive = false;
                             // キーが離されたときの終了処理
                             emuInstance->nds->ReleaseScreen();
+                            // 終了時の武器選択を防ぐ。そのままだとマグモールになってしまう為。
+                            //emuInstance->nds->ARM9Write8(addrSelectedWeapon, weaponCheckWeaponIndex);
+
+							// Re-enable aim after weapon check
+                            setAimBlock(AIMBLK_CHECK_WEAPON, false);
+							// リリース反映の為に2フレーム進める
                             frameAdvanceTwice();
-                            frameAdvanceTwice();
-                            isWeaponCheckActive = false;
                         }
                     }
-                    */
                     // } Weapon check
 
 
@@ -2264,36 +2345,45 @@ void EmuThread::run()
                     // INFO If this function is not used, mouse boosting can only be done once.
                     // This is because it doesn't release from the touch state, which is necessary for aiming. 
                     // There's no way around it.
-// Morph ball boost（保持型）
-                    if (isSamus && MP_HK_DOWN(HK_MetroidHoldMorphBallBoost)) {
-                        isAltForm = emuInstance->nds->ARM9Read8(addrIsAltForm) == 0x02;
-                        if (isAltForm) {
-                            uint8_t boostGaugeValue = emuInstance->nds->ARM9Read8(addrBoostGauge);
-                            bool isBoosting = emuInstance->nds->ARM9Read8(addrIsBoosting) != 0x00;
+                    // Morph ball boost（保持型）
+                    if (isSamus){
+                        if (MP_HK_DOWN(HK_MetroidHoldMorphBallBoost)) {
+                            isAltForm = emuInstance->nds->ARM9Read8(addrIsAltForm) == 0x02;
+                            if (isAltForm) {
+                                uint8_t boostGaugeValue = emuInstance->nds->ARM9Read8(addrBoostGauge);
+                                bool isBoosting = emuInstance->nds->ARM9Read8(addrIsBoosting) != 0x00;
 
-                            // boostable when gauge value is 0x05-0x0F(max)
-                            bool isBoostGaugeEnough = boostGaugeValue > 0x0A;
+                                // boostable when gauge value is 0x05-0x0F(max)
+                                bool isBoostGaugeEnough = boostGaugeValue > 0x0A;
 
-                            // just incase
-                            enableAim = false;
+                                // just incase
+                                setAimBlock(AIMBLK_MORPHBALL_BOOST, true);
 
-                            // release for boost?
-                            emuInstance->nds->ReleaseScreen();
-
-                            // Boost input determination (true during boost, false during charge)
-                            inputMask.setBit(INPUT_R, (!isBoosting && isBoostGaugeEnough));
-
-                            if (isBoosting) {
-                                // touch again for aiming
-#ifndef STYLUS_MODE
-                                emuInstance->nds->TouchScreen(128, 88);
-#else
-                                if (emuInstance->isTouching) {
-                                    emuInstance->nds->TouchScreen(emuInstance->touchX, emuInstance->touchY);
+                                // release for boost?
+								// ここでリリースしてしまうせいで、武器チェックで武器表示と非表示が連発で点滅してしまう問題があった。
+                                if(!(emuInstance->hotkeyDown(HK_MetroidWeaponCheck))){
+                                    emuInstance->nds->ReleaseScreen();
                                 }
-#endif
-                            }
+                                // Boost input determination (true during boost, false during charge)
+                                inputMask.setBit(INPUT_R, (!isBoosting && isBoostGaugeEnough));
 
+                                if (isBoosting) {
+                                    // touch again for aiming
+                                    setAimBlock(AIMBLK_MORPHBALL_BOOST, false);
+#ifndef STYLUS_MODE
+									// ここでタッチしてしまうと、WeaponCheckで武器選択されてしまう問題がある。
+                                    //emuInstance->nds->TouchScreen(128, 88);
+#else
+                                    if (emuInstance->isTouching) {
+                                        emuInstance->nds->TouchScreen(emuInstance->touchX, emuInstance->touchY);
+                                    }
+#endif
+                                }
+
+                            }
+                        }
+                        else {
+                            setAimBlock(AIMBLK_MORPHBALL_BOOST, false);
                         }
                     }
 
@@ -2344,7 +2434,7 @@ void EmuThread::run()
 
 #ifndef STYLUS_MODE
                     // Touch again for aiming
-                    if (!wasLastFrameFocused || enableAim) {
+                    if (!wasLastFrameFocused || !isAimDisabled) {
                         // touch again for aiming
                         // When you return to melonPrimeDS or normal form
 
@@ -2383,13 +2473,13 @@ void EmuThread::run()
 
                     if (Q_LIKELY(isRomDetected)) {
 
-                        // ヘッドフォン設定
+                        // Headphone settings
                         ApplyHeadphoneOnce(emuInstance->nds, localCfg, addrOperationAndSound, isHeadphoneApplied);
 
-                        // MPH感度設定適用処理呼び出し
+                        // Apply MPH sensitivity settings
                         ApplyMphSensitivity(emuInstance->nds, localCfg, addrSensitivity);
                         
-                        // ハンター/マップ全開処理
+                        // Unlock all Hunters/Maps
                         ApplyUnlockHuntersMaps(
                             emuInstance->nds,
                             localCfg,
@@ -2401,12 +2491,12 @@ void EmuThread::run()
                             addrUnlockMapsHunters5
                         );
 
-                        // DS名適用
+                        // Apply DS name
                         useDsName(emuInstance->nds, localCfg, addrDsNameFlagAndMicVolume);
 
-                        // ハンター適用
+                        // Apply license Hunter
                         applySelectedHunterStrict(emuInstance->nds, localCfg, addrMainHunter);
-						// ライセンスカラー適用
+                        // Apply license color
                         applyLicenseColorStrict(emuInstance->nds, localCfg, addrRankColor);
                     }
 
@@ -2436,10 +2526,10 @@ void EmuThread::run()
 				// when not focused
 #if defined(_WIN32)
                     
-                    if (g_rawFilter) g_rawFilter->discardDeltas(); // RAWデルタ破棄呼出(残差排除のため)
-                    if (g_rawFilter) g_rawFilter->resetMouseButtons(); // マウスボタン状態リセット呼出(押下取り残し排除のため)
-                    if (g_rawFilter) g_rawFilter->resetAllKeys(); // キー押下状態リセット呼出(誤爆抑止のため)
-                    if (g_rawFilter) g_rawFilter->resetHotkeyEdges(); // ほぼ必須（再開直後の Pressed/Released の誤発火防止）
+                    if (g_rawFilter) g_rawFilter->discardDeltas(); // Call to discard RAW deltas (to eliminate residuals)
+                    if (g_rawFilter) g_rawFilter->resetMouseButtons(); // Call to reset mouse button states (to eliminate leftover presses)
+                    if (g_rawFilter) g_rawFilter->resetAllKeys(); // Call to reset key press states (to prevent accidental inputs)
+                    if (g_rawFilter) g_rawFilter->resetHotkeyEdges(); // Almost essential (prevents false triggers of Pressed/Released right after resuming)
 #endif
             }
             
