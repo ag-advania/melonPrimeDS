@@ -103,7 +103,7 @@ DefaultList<int> DefaultInts =
     {"Instance*.Keyboard.HK_MetroidWeapon4",           Qt::Key_4},
     {"Instance*.Keyboard.HK_MetroidWeapon5",           Qt::Key_5},
     {"Instance*.Keyboard.HK_MetroidWeapon6",           Qt::Key_6},
-    // {"Instance*.Keyboard.HK_MetroidWeaponCheck",       Qt::Key_T},
+    {"Instance*.Keyboard.HK_MetroidWeaponCheck",       Qt::Key_Y},
     {"Instance*.Keyboard.HK_MetroidMenu",              Qt::Key_Tab},
     {"Instance*.Keyboard.HK_MetroidIngameSensiUp",     Qt::Key_PageUp},
     {"Instance*.Keyboard.HK_MetroidIngameSensiDown",   Qt::Key_PageDown},
@@ -176,6 +176,7 @@ DefaultList<double> DefaultDoubles =
     {"SlowmoFPS", 30.0},
     {"Instance*.Metroid.Sensitivity.Mph", -2.000},
     {"Instance*.Metroid.Sensitivity.AimYAxisScale", 1.500000},
+    {"Instance*.Metroid.Aim.Adjust", 0.500000},
 };
 
 /*
@@ -261,7 +262,7 @@ LegacyEntry LegacyFile[] =
     {"HKKey_MetroidWeapon4",           0, "Keyboard.HK_MetroidWeapon4",            true},
     {"HKKey_MetroidWeapon5",           0, "Keyboard.HK_MetroidWeapon5",            true},
     {"HKKey_MetroidWeapon6",           0, "Keyboard.HK_MetroidWeapon6",            true},
-    // {"HKKey_MetroidWeaponCheck",       0, "Keyboard.HK_MetroidWeaponCheck",        true},
+    {"HKKey_MetroidWeaponCheck",       0, "Keyboard.HK_MetroidWeaponCheck",        true},
 
     {"HKKey_MetroidMenu",              0, "Keyboard.HK_MetroidMenu",               true},
     {"HKKey_MetroidIngameSensiUp",     0, "Keyboard.HK_MetroidIngameSensiUp",      true},
@@ -321,7 +322,7 @@ LegacyEntry LegacyFile[] =
     { "HKJoy_MetroidWeapon4",           0, "Joystick.HK_MetroidWeapon4",            true},
     { "HKJoy_MetroidWeapon5",           0, "Joystick.HK_MetroidWeapon5",            true},
     { "HKJoy_MetroidWeapon6",           0, "Joystick.HK_MetroidWeapon6",            true },
-    // { "HKJoy_MetroidWeaponCheck",       0, "Joystick.HK_MetroidWeaponCheck",        true },
+    { "HKJoy_MetroidWeaponCheck",       0, "Joystick.HK_MetroidWeaponCheck",        true },
 
     { "HKJoy_MetroidMenu",              0, "Joystick.HK_MetroidMenu",               true},
     { "HKJoy_MetroidIngameSensiUp",     0, "Joystick.HK_MetroidIngameSensiUp",      true},

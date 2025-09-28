@@ -2399,6 +2399,34 @@
 					</widget>
 				</item>
 
+				<item row="6" column="0">
+					<!-- Label for aim sensitivity -->
+					<widget class="QLabel" name="metroidAimAdjustLabel">
+						<property name="text">
+							<string>Ignore input under threshold (default: 0.5): |x| &lt; min → ignored, min ≤ |x| &lt; 1 → ±1, |x| ≥ 1 → as-is (0 = off)</string>
+						</property>
+					</widget>
+				</item>
+				<item row="7" column="0">
+					<widget class="QDoubleSpinBox" name="metroidAimAdjustSpinBox">
+						<property name="minimum">
+							<double>0.000000</double>
+						</property>
+						<property name="maximum">
+							<double>100.000000</double>
+						</property>
+						<property name="singleStep">
+							<double>0.1</double>
+						</property>
+						<property name="decimals">
+							<number>6</number>
+						</property>
+						<property name="value">
+							<double>0.500000</double>
+						</property>
+					</widget>
+				</item>
+
 			    <!-- Reset button for sensitivity settings -->
 			    <item row="8" column="0">
 				    <widget class="QPushButton" name="metroidResetSensitivityValues">
