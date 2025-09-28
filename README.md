@@ -1,4 +1,4 @@
-﻿<p align="center"><img src="./res/icon/melon_128x128.png"></p>
+<img width="1200" height="600" alt="image" src="https://github.com/user-attachments/assets/bcf3cabd-9d45-40e7-abb2-3265771ac5e9" />﻿<p align="center"><img src="./res/icon/melon_128x128.png"></p>
 <h1 align="center"><b>melonPrimeDS</b></h1>
   
 
@@ -15,7 +15,9 @@ Support the original creator of melonPrimeDS, Makidoll:
 [![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/Q5Q0MLBI)
 
 Support the current maintainer and updater, Zection:
-[<img width="1200" height="600" alt="image" src="https://github.com/user-attachments/assets/a73c8a97-0e03-4d72-877c-7f7b6aeb4e5a" />](https://ko-fi.com/zection)
+
+[<img width="1200" height="600" alt="image" src="https://github.com/user-attachments/assets/ec1dd31e-2727-4539-b88d-3c1fc0b31799" />](https://ko-fi.com/zection)
+
 
 [melonPrimeDS.webm](https://github.com/makidoll/melonPrimeDS/assets/8362329/69ab26bb-7205-451a-a11c-70a2ca0b549d)
 
@@ -160,7 +162,7 @@ melonPrimeDS の元の作者、Makidoll をサポートする：
 
 現在メンテナンスと更新を行っている Zection をサポートする：
 
-[<img width="1200" height="600" alt="image" src="https://github.com/user-attachments/assets/a73c8a97-0e03-4d72-877c-7f7b6aeb4e5a" />](https://ko-fi.com/zection)
+[<img width="1200" height="600" alt="image" src="https://github.com/user-attachments/assets/ec1dd31e-2727-4539-b88d-3c1fc0b31799" />](https://ko-fi.com/zection)
 
 [melonPrimeDS.webm](https://github.com/makidoll/melonPrimeDS/assets/8362329/69ab26bb-7205-451a-a11c-70a2ca0b549d)
 
