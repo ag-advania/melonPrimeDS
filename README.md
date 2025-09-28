@@ -46,7 +46,6 @@ Releases for [Windows, Linux and macOS here!](https://github.com/makidoll/melonP
 > **⚠️🖱️ Warning if using mouse acceleration!**   
 > Please disable mouse acceleration or it will feel strange.  
 > Find a [guide for Windows here](https://www.lifewire.com/turn-off-mouse-acceleration-in-windows-11-5193828) and use [SteerMouse if on macOS](https://plentycom.jp/en/steermouse/index.html)  
-> Wasn't able to get raw mouse input unfortunately.
 
 > **⚠️ Warning for macOS users!**   
 > Once you start the program, you're going to have to go into macOS settings:  
@@ -108,6 +107,7 @@ Releases for [Windows, Linux and macOS here!](https://github.com/makidoll/melonP
 | Weapon 5                              | 5                                  |
 | Weapon 6                              | 6                                  |
 | Menu/Map                              | Tab                                |
+| Weapon Check                          | Y                                  |
 | Aim Sensitivity Up                    | PageUp                             |
 | Aim Sensitivity Down                  | PageDown                           |
 
@@ -205,7 +205,6 @@ melonPrimeDS の元の作者、Makidoll をサポートする：
 > **⚠️🖱️ マウス加速を使用している場合の注意！**   
 > マウス加速を無効にしてください。さもないと違和感があります。  
 > [Windowsの場合はこちらのガイド](https://trlog.org/mouse-acceleration/)を参照し、[macOSの場合はSteerMouse](https://plentycom.jp/en/steermouse/index.html)を使用してください。  
-> 残念ながら、生のマウス入力を取得することはできませんでした。
 
 > **⚠️ macOSユーザーへの注意！**   
 > プログラムを起動したら、macOSの設定で以下の操作が必要です：  
@@ -262,6 +261,7 @@ melonPrimeDS の元の作者、Makidoll をサポートする：
 | 武器4                                   | 4キー                               |
 | 武器5                                   | 5キー                               |
 | 武器6                                   | 6キー                               |
+| 所有武器確認                             | Y                                  |
 | メニュー/マップ                          | Tabキー                             |
 | エイム感度アップ                         | PageUpキー                          |
 | エイム感度ダウン                         | PageDownキー                        |
