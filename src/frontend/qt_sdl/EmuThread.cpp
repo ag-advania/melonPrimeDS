@@ -206,11 +206,11 @@ namespace {
         applyAimAdjustSetting(const_cast<Config::Table&>(cfgConst));
     }
 
-    __attribute__((always_inline)) inline void applyAimAdjustFloat(float& dx, float& dy) noexcept {
+    __attribute__((always_inline, flatten)) inline void applyAimAdjustFloat(float& dx, float& dy) noexcept {
         const float a = gAimAdjust;
         if (a <= 0.0f) return; // 無効（即スキップ）
 
-        auto adj1 = [a](float& v) __attribute__((always_inline)) {
+        auto adj1 = [a](float& v) __attribute__((always_inline, flatten)) {
             float av = std::fabs(v);
             if (av < a) { v = 0.0f; }
             else if (av < 1.0f) { v = (v >= 0.0f ? 1.0f : -1.0f); }
