@@ -103,7 +103,7 @@ DefaultList<int> DefaultInts =
     {"Instance*.Keyboard.HK_MetroidWeapon4",           Qt::Key_4},
     {"Instance*.Keyboard.HK_MetroidWeapon5",           Qt::Key_5},
     {"Instance*.Keyboard.HK_MetroidWeapon6",           Qt::Key_6},
-    {"Instance*.Keyboard.HK_MetroidWeaponCheck",       Qt::Key_T},
+    {"Instance*.Keyboard.HK_MetroidWeaponCheck",       Qt::Key_Y},
     {"Instance*.Keyboard.HK_MetroidMenu",              Qt::Key_Tab},
     {"Instance*.Keyboard.HK_MetroidIngameSensiUp",     Qt::Key_PageUp},
     {"Instance*.Keyboard.HK_MetroidIngameSensiDown",   Qt::Key_PageDown},
@@ -176,6 +176,7 @@ DefaultList<double> DefaultDoubles =
     {"SlowmoFPS", 30.0},
     {"Instance*.Metroid.Sensitivity.Mph", -2.000},
     {"Instance*.Metroid.Sensitivity.AimYAxisScale", 1.500000},
+    {"Instance*.Metroid.Aim.Adjust", 0.500000},
 };
 
 /*

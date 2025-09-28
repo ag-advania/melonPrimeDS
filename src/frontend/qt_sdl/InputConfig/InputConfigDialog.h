@@ -165,7 +165,7 @@ static constexpr std::initializer_list<const char*> hk_tabAddonsMetroid2_labels 
     "[Metroid] (F) UI Ok",
     "[Metroid] (G) UI Yes (Enter Starship)",
     "[Metroid] (H) UI No (Enter Starship)",
-    "[Metroid] (T) Weapon Check",
+    "[Metroid] (Y) Weapon Check",
 };
 
 static_assert(hk_tabAddonsMetroid2.size() == hk_tabAddonsMetroid2_labels.size());

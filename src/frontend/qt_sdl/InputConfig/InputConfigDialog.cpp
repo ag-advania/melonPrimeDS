@@ -119,9 +119,10 @@ InputConfigDialog::InputConfigDialog(QWidget* parent) : QDialog(parent), ui(new 
     // Other Metroid Settings Tab
 
     // Sensitivities
-    ui->metroidAimSensitvitySpinBox->setValue(instcfg.GetInt("Metroid.Sensitivity.Aim"));
     ui->metroidMphSensitvitySpinBox->setValue(instcfg.GetDouble("Metroid.Sensitivity.Mph"));
+    ui->metroidAimSensitvitySpinBox->setValue(instcfg.GetInt("Metroid.Sensitivity.Aim"));
     ui->metroidAimYAxisScaleSpinBox->setValue(instcfg.GetDouble("Metroid.Sensitivity.AimYAxisScale"));
+    ui->metroidAimAdjustSpinBox->setValue(instcfg.GetDouble("Metroid.Aim.Adjust"));
 
     ui->cbMetroidEnableSnapTap->setChecked(instcfg.GetBool("Metroid.Operation.SnapTap"));
     ui->cbMetroidUnlockAll->setChecked(instcfg.GetBool("Metroid.Data.Unlock"));
@@ -317,6 +318,7 @@ void InputConfigDialog::on_InputConfigDialog_accepted()
     instcfg.SetInt("Metroid.Sensitivity.Aim", ui->metroidAimSensitvitySpinBox->value());
     instcfg.SetDouble("Metroid.Sensitivity.Mph", ui->metroidMphSensitvitySpinBox->value());
     instcfg.SetDouble("Metroid.Sensitivity.AimYAxisScale", ui->metroidAimYAxisScaleSpinBox->value());
+    instcfg.SetDouble("Metroid.Aim.Adjust", ui->metroidAimAdjustSpinBox->value());
 
     // SnapTap
     instcfg.SetBool("Metroid.Operation.SnapTap", ui->cbMetroidEnableSnapTap->checkState() == Qt::Checked);
@@ -387,6 +389,7 @@ void InputConfigDialog::on_metroidResetSensitivityValues_clicked()
     ui->metroidMphSensitvitySpinBox->setValue(-2);
     ui->metroidAimSensitvitySpinBox->setValue(45);
     ui->metroidAimYAxisScaleSpinBox->setValue(1.500000);
+    ui->metroidAimAdjustSpinBox->setValue(0.500000);
 }
 
 void InputConfigDialog::on_metroidSetVideoQualityToLow_clicked()

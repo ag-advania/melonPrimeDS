@@ -152,7 +152,7 @@ namespace {
     enum : uint32_t {
         AIMBLK_CHECK_WEAPON = 1u << 0, // 武器チェック/切替中はAim停止
         AIMBLK_MORPHBALL_BOOST = 1u << 1, // モーフボールBoost中はAim停止
-        // AIMBLK_SOMETHING_ELSE = 1u << 2,
+        AIMBLK_CURSOR_MODE = 1u << 2, // ← 追加：カーソルモード中はAim禁止
     };
 
     // 内部→外部の同期（総和ビットをミラー）
@@ -181,6 +181,48 @@ namespace {
     };
 } // namespace
 
+// ===== AIM_ADJUST: deadzone + snap（0.5未満捨て、0.5〜1未満は±1、1以上そのまま）=====
+#include <cmath>
+
+namespace {
+    // 設定で変更可能。0.0f で無効（即 return）
+    static float gAimAdjust = 0.5f;
+
+    // 0で無効／負値・NaNは0扱い
+    inline void setAimAdjustFromValue(double v) noexcept {
+        if (std::isnan(v) || v < 0.0) v = 0.0;
+        gAimAdjust = static_cast<float>(v);
+    }
+
+    // Config::Table 非const版（本体）
+    inline void applyAimAdjustSetting(Config::Table& cfg) noexcept {
+        // GetDouble は 1引数・非const。未浮動は内部で 0.0 を既定挿入して返す実装
+        double v = cfg.GetDouble("Metroid.Aim.Adjust");
+        setAimAdjustFromValue(v);
+    }
+
+    // Config::Table const版（getLocalConfig() が const を返す場合用ラッパ）
+    inline void applyAimAdjustSetting(const Config::Table& cfgConst) noexcept {
+        applyAimAdjustSetting(const_cast<Config::Table&>(cfgConst));
+    }
+
+    __attribute__((always_inline)) inline void applyAimAdjustFloat(float& dx, float& dy) noexcept {
+        const float a = gAimAdjust;
+        if (a <= 0.0f) return; // 無効（即スキップ）
+
+        auto adj1 = [a](float& v) __attribute__((always_inline)) {
+            float av = std::fabs(v);
+            if (av < a) { v = 0.0f; }
+            else if (av < 1.0f) { v = (v >= 0.0f ? 1.0f : -1.0f); }
+            // av >= 1.0f はそのまま
+        };
+        adj1(dx);
+        adj1(dy);
+    }
+}
+
+// 互換マクロ（float前提）
+#define AIM_ADJUST(dx, dy) do { applyAimAdjustFloat((dx), (dy)); } while (0)
 
 
 using namespace melonDS;
@@ -259,7 +301,7 @@ static float gAimCombinedY   = 0.013333333f;   // 初期値(安全側)
 
 // 再計算関数(感度キャッシュを即時更新するため)
 // localCfgから現在のAimとAimYAxisScaleを取り出し、共有キャッシュへ反映
-static inline void RecalcAimSensitivityCache(Config::Table& localCfg) {
+static inline void recalcAimSensitivityCache(Config::Table& localCfg) {
     // 現在のAim感度値取得(再計算入力の取得のため)
     const int   sens          = localCfg.GetInt("Metroid.Sensitivity.Aim");
     // Y軸倍率取得(合成係数算出のため)
@@ -809,7 +851,10 @@ __attribute__((always_inline, flatten)) inline void detectRomAndSetAddresses(Emu
     isHeadphoneApplied = false;
 
     // 感度キャッシュ初期化(ホットパス無関与で一度だけ反映するため)
-    RecalcAimSensitivityCache(emuInstance->getLocalConfig());
+    recalcAimSensitivityCache(emuInstance->getLocalConfig());
+
+    // Apply Aim Adjust setting
+    applyAimAdjustSetting(emuInstance->getLocalConfig());
 }
 
 
@@ -1394,23 +1439,9 @@ void EmuThread::run()
      */
     static const auto processAimInput = [&]() __attribute__((hot, always_inline, flatten)) {
 #ifndef STYLUS_MODE
-        if(isAimDisabled || isCursorMode) {
+        if(isAimDisabled) {
             return;
 		}
-        // Define macro to prevent drift by rounding (single evaluation and snap within tolerance range)
-#define AIM_ADJUST(v)                                        \
-        ({                                                       \
-            /* Store input value (to prevent multiple evaluations) */ \
-            float _v = (v);                                      \
-            /* Convert to int scaled by 10 (make threshold comparison constant-domain) */ \
-            int _vi = static_cast<int>(_v * 10.001f);            \
-            /* Snap positive range (fix ±1 for values in 0.5–0.9 range) */ \
-            (_vi >= 5 && _vi <= 9) ? 1 :                         \
-            /* Snap negative range (fix ±1 for values in -0.9–-0.5 range) */ \
-            (_vi >= -9 && _vi <= -5) ? -1 :                      \
-            /* Otherwise truncate (to suppress drift) */         \
-            static_cast<int16_t>(_v);                            \
-        })
 
 // Hot path branch (fast processing when focus is maintained and layout is unchanged)
 #if defined(_WIN32)
@@ -1458,12 +1489,14 @@ void EmuThread::run()
             if ((deltaX | deltaY) == 0) return;
 
             // 係数は共有キャッシュから直接取得(ホットパスでの再計算排除のため)
-            const float scaledX = deltaX * gAimSensiFactor;
-            const float scaledY = deltaY * gAimCombinedY;
+            float scaledX = deltaX * gAimSensiFactor;
+            float scaledY = deltaY * gAimCombinedY;
+
+            AIM_ADJUST(scaledX, scaledY);
 
             // NDS書き込み
-            emuInstance->nds->ARM9Write16(addrAimX, static_cast<int16_t>(AIM_ADJUST(scaledX)));
-            emuInstance->nds->ARM9Write16(addrAimY, static_cast<int16_t>(AIM_ADJUST(scaledY)));
+            emuInstance->nds->ARM9Write16(addrAimX, static_cast<int16_t>(scaledX));
+            emuInstance->nds->ARM9Write16(addrAimY, static_cast<int16_t>(scaledY));
 
             // Set aim enable flag (for conditional processing downstream)
             // enableAim = true;
@@ -1574,7 +1607,7 @@ void EmuThread::run()
                 // OSD表示(ユーザー通知のため)
                 emuInstance->osdAddMessage(0, "AimSensi Updated: %d->%d", currentSensitivity, newSensitivity);
                 // 即時再計算(ホットパスでのポーリング排除のため)
-                RecalcAimSensitivityCache(localCfg);
+                recalcAimSensitivityCache(localCfg);
             }
             };
         // Optimize hotkey handling with a single expression
@@ -2360,8 +2393,7 @@ void EmuThread::run()
                                 setAimBlock(AIMBLK_MORPHBALL_BOOST, true);
 
                                 // release for boost?
-								// ここでリリースしてしまうせいで、武器チェックで武器表示と非表示が連発で点滅してしまう問題があった。
-                                if(!(emuInstance->hotkeyDown(HK_MetroidWeaponCheck))){
+                                if(!(emuInstance->hotkeyDown(HK_MetroidWeaponCheck))){ // ここでリリースしてしまうせいで、武器チェックで武器表示と非表示が連発で点滅してしまう問題があった。
                                     emuInstance->nds->ReleaseScreen();
                                 }
                                 // Boost input determination (true during boost, false during charge)
@@ -2504,8 +2536,10 @@ void EmuThread::run()
 
                 if (shouldBeCursorMode != isCursorMode) {
                     isCursorMode = shouldBeCursorMode;
+                    // カーソルモードの有無をAimブロックに反映
+                    setAimBlock(AIMBLK_CURSOR_MODE, isCursorMode);
 #ifndef STYLUS_MODE
-                    showCursorOnMelonPrimeDS(isCursorMode);
+                    showCursorOnMelonPrimeDS(isCursorMode); 
 #endif
                 }
 
@@ -2650,6 +2684,13 @@ void EmuThread::handleMessages()
                 isUnlockMapsHuntersApplied = false; // Unlockリセット用
                 // lastMphSensitivity = std::numeric_limits<double>::quiet_NaN(); // Mph感度リセット用
                 isHeadphoneApplied = false; // ヘッドフォンリセット用
+
+
+                // 再開時に現在の設定値をキャッシュへ即反映（Aim感度）
+                recalcAimSensitivityCache(emuInstance->getLocalConfig());
+
+                // Apply Aim Adjust setting
+                applyAimAdjustSetting(emuInstance->getLocalConfig());
 
                 // MelonPrimeDS }
             }
