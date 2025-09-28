@@ -16,6 +16,8 @@ Support the original creator of melonPrimeDS, Makidoll:
 
 Support the current maintainer and updater, Zection:
 
+<img width="186" height="186" alt="image" src="https://github.com/user-attachments/assets/a8afd222-960c-432c-9d0b-4a28865939e7" />
+
 [<img width="1200" height="600" alt="image" src="https://github.com/user-attachments/assets/ec1dd31e-2727-4539-b88d-3c1fc0b31799" />](https://ko-fi.com/zection)
 
 
@@ -161,6 +163,8 @@ melonPrimeDS の元の作者、Makidoll をサポートする：
 [![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/Q5Q0MLBI)
 
 現在メンテナンスと更新を行っている Zection をサポートする：
+
+<img width="186" height="186" alt="image" src="https://github.com/user-attachments/assets/a8afd222-960c-432c-9d0b-4a28865939e7" />
 
 [<img width="1200" height="600" alt="image" src="https://github.com/user-attachments/assets/ec1dd31e-2727-4539-b88d-3c1fc0b31799" />](https://ko-fi.com/zection)
 
