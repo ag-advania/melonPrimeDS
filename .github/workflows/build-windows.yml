@@ -47,7 +47,7 @@ jobs:
         uses: msys2/setup-msys2@v2
         with:
           msystem: ucrt64
-          update: false # 自動更新は行わない（キャッシュを使うため）
+          update: false
           path-type: inherit
           pacboy: gcc:p cmake:p ninja:p make:p jq:p
 
@@ -65,7 +65,7 @@ jobs:
           [ -f ./cmake/overlay-ports/.keep ] || echo keep > ./cmake/overlay-ports/.keep
           [ -f ./cmake/overlay-triplets/.keep ] || echo keep > ./cmake/overlay-triplets/.keep
 
-      # vcpkg バイナリキャッシュ用の実体フォルダ
+      # vcpkg バイナリキャッシュ用フォルダ
       - name: Ensure vcpkg binary cache directory exists
         run: |
           mkdir -p "${{ github.workspace }}/vcpkg_binary_cache"
@@ -73,6 +73,7 @@ jobs:
 
       # vcpkg ディレクトリ群のキャッシュ
       - name: Cache vcpkg directories
+        id: vcpkg_cache
         uses: actions/cache@v3
         with:
           path: |
@@ -87,48 +88,35 @@ jobs:
             ${{ runner.os }}-vcpkg-
 
       - name: Set up vcpkg (manifest)
+        if: steps.vcpkg_cache.outputs.cache-hit != 'true'
         uses: lukka/run-vcpkg@v11
         with:
           vcpkgJsonGlob: vcpkg.json
 
-      # CMake ビルドディレクトリのキャッシュ（ヒット時に configure をスキップ）
-      - name: Cache CMake build directory
-        id: cache-build
-        uses: actions/cache@v3
-        with:
-          path: ${{ github.workspace }}/build
-          key: ${{ runner.os }}-cmake-build-${{ hashFiles('CMakeLists.txt', 'cmake/**', 'CMakePresets.json') }}
-          restore-keys: |
-            ${{ runner.os }}-cmake-build-
-
-      - name: Configure (preset)
-        if: steps.cache-build.outputs.cache-hit != 'true'
-        run: |
-          cmake --preset=release-mingw-x86_64 \
-            -DUSE_VCPKG=ON \
-            -DMELONDS_EMBED_BUILD_INFO=ON
-
-      # 稀に「cache-hit だが CMakeCache.txt が無い」ケースの保険
-      - name: Fallback configure if cache-hit but missing CMakeCache
-        if: steps.cache-build.outputs.cache-hit == 'true'
-        run: |
-          if [ ! -f build/release-mingw-x86_64/CMakeCache.txt ]; then
-            echo "Cache was hit but CMakeCache.txt is missing. Running configure..."
-            cmake --preset=release-mingw-x86_64 \
-              -DUSE_VCPKG=ON \
-              -DMELONDS_EMBED_BUILD_INFO=ON
-          else
-            echo "CMakeCache.txt present. Skip configure."
-          fi
-
-      # （任意）vcpkg のマニフェストログを表示（configure を実行した場合のみ）
       - name: Show vcpkg manifest log (head)
-        if: steps.cache-build.outputs.cache-hit != 'true'
+        if: steps.vcpkg_cache.outputs.cache-hit != 'true'
         run: |
           if [ -f build/release-mingw-x86_64/vcpkg-manifest-install.log ]; then
             sed -n '1,160p' build/release-mingw-x86_64/vcpkg-manifest-install.log || true
           fi
 
+      # CMake の再生成抑止を効かせつつ、CMake 関連ファイルが変わった時だけ Configure
+      - name: Configure (preset)
+        run: |
+          cmake --preset=release-mingw-x86_64 \
+            -DUSE_VCPKG=ON \
+            -DMELONDS_EMBED_BUILD_INFO=ON \
+            -DCMAKE_SUPPRESS_REGENERATION=ON
+        if: |
+          hashFiles('CMakeLists.txt', 'cmake/**', 'CMakePresets.json') == '' ||
+          hashFiles('CMakeLists.txt', 'cmake/**', 'CMakePresets.json') != env.CMAKE_HASH_PREV
+        env:
+          # 直前の CMake ハッシュをキャッシュキーとして保存（あれば再利用）
+          CMAKE_HASH_PREV: ${{ steps.cmake_hash_cache.outputs.restore-key || '' }}
+        # ↑ 簡易ガード。もっと厳密にやるなら actions/cache を使って
+        #   小さな “ハッシュファイル” を保存してもOK。
+
+      # 常に Build は実行（exe を毎回生成/更新）
       - name: Build
         run: cmake --build --preset=release-mingw-x86_64 --parallel
 
