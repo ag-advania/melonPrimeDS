@@ -2173,7 +2173,7 @@ void EmuThread::run()
                     // Compile-time constants
                     static constexpr uint8_t WEAPON_ORDER[] = { 0, 2, 7, 6, 5, 4, 3, 1, 8 };
                     static constexpr uint16_t WEAPON_MASKS[] = { 0x001, 0x004, 0x080, 0x040, 0x020, 0x010, 0x008, 0x002, 0x100 };
-                    static constexpr uint8_t MIN_AMMO[] = { 0, 0x5, 0xA, 0x4, 0x14, 0x5, 0xA, 0xA, 0 };
+                    static constexpr uint8_t MIN_AMMO[] = { 0, 0x5, 0xA, 0x4, 0x14, 0x5, 0xA, 0xA, 0 }; // TODO カンデンボルトドライバのminAmmoがおかしい？
                     static constexpr uint8_t WEAPON_INDEX_MAP[9] = { 0, 7, 1, 6, 5, 4, 3, 2, 8 };
                     static constexpr uint8_t WEAPON_COUNT = 9;
 
@@ -2206,25 +2206,6 @@ void EmuThread::run()
                             return states;
                             };
 
-                        // Lambda: Process hotkeys
-                        static const auto processHotkeys = [&](uint32_t hotkeyStates) -> bool {
-                            if (!hotkeyStates) return false;
-
-                            const int firstSet = __builtin_ctz(hotkeyStates);
-
-                            if (Q_UNLIKELY(firstSet == 8)) {
-                                const uint8_t special = emuInstance->nds->ARM9Read8(addrLoadedSpecialWeapon);
-                                if (special != 0xFF) {
-                                    SwitchWeapon(special);
-                                    return true;
-                                }
-                            }
-                            else {
-                                SwitchWeapon(HOTKEY_MAP[firstSet].weapon);
-                                return true;
-                            }
-                            return false;
-                            };
 
                         // Lambda: Calculate available weapons
                         static const auto getAvailableWeapons = [&]() -> uint16_t {
@@ -2263,6 +2244,33 @@ void EmuThread::run()
                             }
 
                             return available;
+                            };
+
+
+                        // ホットキー処理：未所持/弾不足/未ロード Special は false で返してフォールバック可にする
+                        //（※以前は握りつぶし true 返し→ここを変更）元の雛形参照: :contentReference[oaicite:8]{index=8}
+                        static const auto processHotkeys = [&](uint32_t hotkeyStates) -> bool {
+                            if (!hotkeyStates) return false;
+
+                            const int firstSet = __builtin_ctz(hotkeyStates);
+
+                            // Special キー（HOTKEY_MAP[8]）
+                            if (Q_UNLIKELY(firstSet == 8)) {
+                                const uint8_t loaded = emuInstance->nds->ARM9Read8(addrLoadedSpecialWeapon);
+                                if (loaded == 0xFF) return false;     // 未ロード → フォールバック
+                                SwitchWeapon(loaded);
+                                return true;
+                            }
+
+                            // 通常武器：available 判定（ダメなら未処理で返す → フォールバック）
+                            const uint8_t weaponID = HOTKEY_MAP[firstSet].weapon;
+                            const uint16_t available = getAvailableWeapons();
+                            const uint8_t  index = WEAPON_INDEX_MAP[weaponID];
+                            if (!(available & (1u << index))) return false; // 未所持/弾不足
+
+                            // 切替
+                            SwitchWeapon(weaponID);
+                            return true;
                             };
 
                         // Lambda: Find next available weapon
@@ -2691,6 +2699,15 @@ void EmuThread::handleMessages()
 
                 // Apply Aim Adjust setting
                 applyAimAdjustSetting(emuInstance->getLocalConfig());
+
+#ifdef _WIN32
+                // VKバインド再適用（ポーズ中に設定が変わっていた場合に反映）
+                if (g_rawFilter) {
+                    BindMetroidHotkeysFromConfig(g_rawFilter, emuInstance->getInstanceID());
+                    // 再バインド直後の誤判定（連続 Pressed/Released）を避ける
+                    g_rawFilter->resetHotkeyEdges();
+                }
+#endif
 
                 // MelonPrimeDS }
             }

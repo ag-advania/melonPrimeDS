@@ -74,8 +74,8 @@ DefaultList<int> DefaultInts =
 #endif
     {"LAN.HostNumPlayers", 16},
 
-    /* MelonPrimeDS { */
-    {"Instance*.Metroid.Sensitivity.Aim", 45},
+    /* MelonPrimeDS { */ // Sensitivity
+    {"Instance*.Metroid.Sensitivity.Aim", 63},
     {"Instance*.Keyboard.HK_MetroidMoveForward",       Qt::Key_W},
     {"Instance*.Keyboard.HK_MetroidMoveBack",          Qt::Key_S},
     {"Instance*.Keyboard.HK_MetroidMoveLeft",          Qt::Key_A},
@@ -174,7 +174,7 @@ DefaultList<double> DefaultDoubles =
     {"TargetFPS", 60.0},
     {"FastForwardFPS", 1000.0},
     {"SlowmoFPS", 30.0},
-    {"Instance*.Metroid.Sensitivity.Mph", -2.000},
+    {"Instance*.Metroid.Sensitivity.Mph", -3.000},
     {"Instance*.Metroid.Sensitivity.AimYAxisScale", 1.500000},
     {"Instance*.Metroid.Aim.Adjust", 0.500000},
 };
