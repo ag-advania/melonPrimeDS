@@ -11,8 +11,10 @@ env:
   MELONDS_GIT_BRANCH: ${{ github.ref }}
   MELONDS_GIT_HASH: ${{ github.sha }}
   MELONDS_BUILD_PROVIDER: GitHub Actions
-  # vcpkg バイナリキャッシュ（リポ直下のフォルダを使う）
+  # vcpkg バイナリキャッシュ
   VCPKG_BINARY_SOURCES: clear;files,${{ github.workspace }}/vcpkg_binary_cache,readwrite
+  # vcpkg のルートディレクトリを明示的に指定
+  VCPKG_ROOT: ${{ github.workspace }}/vcpkg
 
 jobs:
   build:
@@ -32,10 +34,9 @@ jobs:
           path: |
             C:/msys64/var/cache/pacman/pkg
             C:/msys64/etc/pacman.d/gnupg
-            ${{ github.workspace }}/vcpkg/downloads/tools/msys2
-          key: ${{ runner.os }}-msys2-pacman-${{ hashFiles('**/*.cmake') }}
+          key: ${{ runner.os }}-msys2-${{ hashFiles('**/*.cmake', 'vcpkg.json') }}
           restore-keys: |
-            ${{ runner.os }}-msys2-pacman-
+            ${{ runner.os }}-msys2-
 
       - name: Purge temp msys64 (cache safety)
         shell: pwsh
@@ -57,7 +58,7 @@ jobs:
           cmake --version
           pkg-config --version || true
 
-      # vcpkg.json が overlay を要求しているため、空でも必ず作る
+      # オーバーレイディレクトリの作成
       - name: Ensure vcpkg overlay directories exist
         run: |
           mkdir -p ./cmake/overlay-ports
@@ -69,59 +70,117 @@ jobs:
       - name: Ensure vcpkg binary cache directory exists
         run: |
           mkdir -p "${{ github.workspace }}/vcpkg_binary_cache"
-          ls -la "${{ github.workspace }}/vcpkg_binary_cache" || true
 
-      # vcpkg ディレクトリ群のキャッシュ
-      - name: Cache vcpkg directories
-        id: vcpkg_cache
+      # vcpkg インストール済みパッケージのキャッシュ（最重要）
+      - name: Cache vcpkg installed packages
+        id: vcpkg_installed_cache
+        uses: actions/cache@v3
+        with:
+          path: |
+            ${{ github.workspace }}/vcpkg_installed
+            ${{ github.workspace }}/vcpkg_binary_cache
+          key: ${{ runner.os }}-vcpkg-installed-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json') }}
+          restore-keys: |
+            ${{ runner.os }}-vcpkg-installed-
+
+      # vcpkg ツール本体のキャッシュ（別途管理）
+      - name: Cache vcpkg tool
+        id: vcpkg_tool_cache
         uses: actions/cache@v3
         with:
           path: |
             ${{ github.workspace }}/vcpkg
-            ${{ github.workspace }}/vcpkg_installed
-            ${{ github.workspace }}/vcpkg/buildtrees
-            ${{ github.workspace }}/vcpkg/downloads
-            ${{ github.workspace }}/vcpkg/packages
-            ${{ github.workspace }}/vcpkg_binary_cache
-          key: ${{ runner.os }}-vcpkg-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json', 'cmake/overlay-triplets/**', 'cmake/overlay-ports/**', 'triplets/**') }}
+            !${{ github.workspace }}/vcpkg/buildtrees
+            !${{ github.workspace }}/vcpkg/packages
+            !${{ github.workspace }}/vcpkg/installed
+          key: ${{ runner.os }}-vcpkg-tool-${{ hashFiles('.github/workflows/*.yml') }}
           restore-keys: |
-            ${{ runner.os }}-vcpkg-
+            ${{ runner.os }}-vcpkg-tool-
 
-      - name: Set up vcpkg (manifest)
-        if: steps.vcpkg_cache.outputs.cache-hit != 'true'
-        uses: lukka/run-vcpkg@v11
-        with:
-          vcpkgJsonGlob: vcpkg.json
-
-      - name: Show vcpkg manifest log (head)
-        if: steps.vcpkg_cache.outputs.cache-hit != 'true'
+      # vcpkg のセットアップ（キャッシュの有無に関わらず実行）
+      - name: Set up vcpkg
         run: |
-          if [ -f build/release-mingw-x86_64/vcpkg-manifest-install.log ]; then
-            sed -n '1,160p' build/release-mingw-x86_64/vcpkg-manifest-install.log || true
+          # vcpkg がない場合はクローン
+          if [ ! -d "$VCPKG_ROOT" ]; then
+            echo "Cloning vcpkg..."
+            git clone https://github.com/Microsoft/vcpkg.git "$VCPKG_ROOT"
           fi
+          
+          # vcpkg のブートストラップ（必要な場合のみ）
+          if [ ! -f "$VCPKG_ROOT/vcpkg.exe" ]; then
+            echo "Bootstrapping vcpkg..."
+            "$VCPKG_ROOT/bootstrap-vcpkg.bat" -disableMetrics
+          fi
+          
+          # バージョン確認
+          "$VCPKG_ROOT/vcpkg.exe" version
 
-      # CMake の再生成抑止を効かせつつ、CMake 関連ファイルが変わった時だけ Configure
+      # CMake ビルドディレクトリのキャッシュ
+      - name: Cache CMake build directory
+        id: cmake_build_cache
+        uses: actions/cache@v3
+        with:
+          path: |
+            build/release-mingw-x86_64
+            !build/release-mingw-x86_64/*.exe
+            !build/release-mingw-x86_64/*.dll
+          key: ${{ runner.os }}-cmake-build-${{ hashFiles('CMakeLists.txt', 'cmake/**', 'src/**/*.cpp', 'src/**/*.h') }}
+          restore-keys: |
+            ${{ runner.os }}-cmake-build-
+
+      # Configure（キャッシュミスまたは CMake ファイル変更時）
       - name: Configure (preset)
         run: |
-          cmake --preset=release-mingw-x86_64 \
-            -DUSE_VCPKG=ON \
-            -DMELONDS_EMBED_BUILD_INFO=ON \
-            -DCMAKE_SUPPRESS_REGENERATION=ON
-        if: |
-          hashFiles('CMakeLists.txt', 'cmake/**', 'CMakePresets.json') == '' ||
-          hashFiles('CMakeLists.txt', 'cmake/**', 'CMakePresets.json') != env.CMAKE_HASH_PREV
-        env:
-          # 直前の CMake ハッシュをキャッシュキーとして保存（あれば再利用）
-          CMAKE_HASH_PREV: ${{ steps.cmake_hash_cache.outputs.restore-key || '' }}
-        # ↑ 簡易ガード。もっと厳密にやるなら actions/cache を使って
-        #   小さな “ハッシュファイル” を保存してもOK。
+          # ビルドディレクトリが存在し、CMakeCache.txt があるかチェック
+          if [ ! -f "build/release-mingw-x86_64/CMakeCache.txt" ]; then
+            echo "CMakeCache.txt not found, running configure..."
+            NEED_CONFIGURE=1
+          else
+            echo "CMakeCache.txt found, checking if reconfigure is needed..."
+            # CMakeLists.txt や cmake ファイルの変更をチェック
+            NEED_CONFIGURE=0
+          fi
+          
+          if [ "$NEED_CONFIGURE" = "1" ] || [ "${{ steps.cmake_build_cache.outputs.cache-hit }}" != "true" ]; then
+            cmake --preset=release-mingw-x86_64 \
+              -DUSE_VCPKG=ON \
+              -DMELONDS_EMBED_BUILD_INFO=ON \
+              -DCMAKE_SUPPRESS_REGENERATION=ON \
+              -DVCPKG_INSTALLED_DIR="${{ github.workspace }}/vcpkg_installed" \
+              -DCMAKE_TOOLCHAIN_FILE="${VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake"
+          else
+            echo "Using cached CMake configuration"
+          fi
 
-      # 常に Build は実行（exe を毎回生成/更新）
+      # Build
       - name: Build
-        run: cmake --build --preset=release-mingw-x86_64 --parallel
+        run: |
+          cmake --build --preset=release-mingw-x86_64 --parallel
+          
+          # ビルド成功を確認
+          if [ ! -f "build/release-mingw-x86_64/melonDS.exe" ]; then
+            echo "Build failed: melonDS.exe not found"
+            exit 1
+          fi
 
+      # アーティファクトのアップロード
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: melonDS-windows-x86_64
           path: build/release-mingw-x86_64/melonDS.exe
+
+      # デバッグ情報（必要に応じて）
+      - name: Show cache usage
+        if: always()
+        run: |
+          echo "=== Cache Hit Status ==="
+          echo "MSYS2: ${{ steps.msys2_cache.outputs.cache-hit }}"
+          echo "vcpkg installed: ${{ steps.vcpkg_installed_cache.outputs.cache-hit }}"
+          echo "vcpkg tool: ${{ steps.vcpkg_tool_cache.outputs.cache-hit }}"
+          echo "CMake build: ${{ steps.cmake_build_cache.outputs.cache-hit }}"
+          
+          echo "=== Directory Sizes ==="
+          du -sh "${{ github.workspace }}/vcpkg_installed" 2>/dev/null || echo "vcpkg_installed not found"
+          du -sh "${{ github.workspace }}/vcpkg" 2>/dev/null || echo "vcpkg not found"
+          du -sh "build/release-mingw-x86_64" 2>/dev/null || echo "build directory not found"
