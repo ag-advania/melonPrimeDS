@@ -47,7 +47,7 @@ jobs:
         uses: msys2/setup-msys2@v2
         with:
           msystem: ucrt64
-          update: false # 自動更新は行わない　（キャッシュを使うため）
+          update: false # 自動更新は行わない（キャッシュを使うため）
           path-type: inherit
           pacboy: gcc:p cmake:p ninja:p make:p jq:p
 
@@ -91,15 +91,9 @@ jobs:
         with:
           vcpkgJsonGlob: vcpkg.json
 
-      # （任意）最初の数行だけでもログを出すと原因追跡が楽
-      - name: Show vcpkg manifest log (head)
-        run: |
-          if [ -f build/release-mingw-x86_64/vcpkg-manifest-install.log ]; then
-            sed -n '1,160p' build/release-mingw-x86_64/vcpkg-manifest-install.log || true
-          fi
-
-      # CMake ビルドディレクトリのキャッシュ
+      # CMake ビルドディレクトリのキャッシュ（ヒット時に configure をスキップ）
       - name: Cache CMake build directory
+        id: cache-build
         uses: actions/cache@v3
         with:
           path: ${{ github.workspace }}/build
@@ -108,10 +102,32 @@ jobs:
             ${{ runner.os }}-cmake-build-
 
       - name: Configure (preset)
+        if: steps.cache-build.outputs.cache-hit != 'true'
         run: |
           cmake --preset=release-mingw-x86_64 \
             -DUSE_VCPKG=ON \
             -DMELONDS_EMBED_BUILD_INFO=ON
+
+      # 稀に「cache-hit だが CMakeCache.txt が無い」ケースの保険
+      - name: Fallback configure if cache-hit but missing CMakeCache
+        if: steps.cache-build.outputs.cache-hit == 'true'
+        run: |
+          if [ ! -f build/release-mingw-x86_64/CMakeCache.txt ]; then
+            echo "Cache was hit but CMakeCache.txt is missing. Running configure..."
+            cmake --preset=release-mingw-x86_64 \
+              -DUSE_VCPKG=ON \
+              -DMELONDS_EMBED_BUILD_INFO=ON
+          else
+            echo "CMakeCache.txt present. Skip configure."
+          fi
+
+      # （任意）vcpkg のマニフェストログを表示（configure を実行した場合のみ）
+      - name: Show vcpkg manifest log (head)
+        if: steps.cache-build.outputs.cache-hit != 'true'
+        run: |
+          if [ -f build/release-mingw-x86_64/vcpkg-manifest-install.log ]; then
+            sed -n '1,160p' build/release-mingw-x86_64/vcpkg-manifest-install.log || true
+          fi
 
       - name: Build
         run: cmake --build --preset=release-mingw-x86_64 --parallel
