@@ -14,7 +14,7 @@ Support the original creator of melonPrimeDS, Makidoll:
 
 [![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/Q5Q0MLBI)
 
-Support the current maintainer and updater, Zection:
+You can buy the developer a coffee if you’d like:
 
 <table width="100%">
   <tr>
