@@ -14,7 +14,7 @@ Support the original creator of melonPrimeDS, Makidoll:
 
 [![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/Q5Q0MLBI)
 
-You can buy the developer a coffee if you’d like:
+You can buy the current maintainer and updater, Zection, a coffee if you’d like:
 
 <table width="100%">
   <tr>
@@ -175,7 +175,7 @@ melonPrimeDS の元の作者、Makidoll をサポートする：
 
 [![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/Q5Q0MLBI)
 
-現在メンテナンスと更新を行っている Zection をサポートする：
+現在のメンテナー兼アップデーターであるZectionに、もしよければコーヒーをご馳走できます：
 
 <table width="100%">
   <tr>
