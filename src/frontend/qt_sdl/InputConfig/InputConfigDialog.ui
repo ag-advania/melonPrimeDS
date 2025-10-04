@@ -2403,7 +2403,7 @@
 					<!-- Label for aim sensitivity -->
 					<widget class="QLabel" name="metroidAimAdjustLabel">
 						<property name="text">
-							<string>Ignore input under threshold (recommended: 0[default] or 0.5): |x| &lt; min → ignored, min ≤ |x| &lt; 1 → ±1, |x| ≥ 1 → as-is (0 = off)</string>
+							<string>Ignore input under threshold (recommended: 0.01[default] or 0.5): |x| &lt; min → ignored, min ≤ |x| &lt; 1 → ±1, |x| ≥ 1 → as-is (0 = off)</string>
 						</property>
 					</widget>
 				</item>
@@ -2422,7 +2422,7 @@
 							<number>6</number>
 						</property>
 						<property name="value">
-							<double>0.000000</double>
+							<double>0.010000</double>
 						</property>
 					</widget>
 				</item>
