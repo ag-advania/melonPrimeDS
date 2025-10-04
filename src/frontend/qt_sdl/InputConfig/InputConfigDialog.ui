@@ -2318,8 +2318,7 @@
 								&lt;html&gt;&lt;body&gt;
 								Mph sensitivity (default: -3):&lt;br/&gt;
 								(Set this value to 1 or lower if possible for precise aiming. We recommend a range of -3 to 0.&lt;br/&gt;
-								However, setting it too low will increase the HUD shake when aiming.&lt;br/&gt;
-								&lt;b&gt;This setting is not reflected during matches&lt;/b&gt;)
+								However, setting it too low will increase the HUD shake when aiming)
 								&lt;/body&gt;&lt;/html&gt;
 							</string>
 						</property>
