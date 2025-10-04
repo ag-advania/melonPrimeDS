@@ -322,7 +322,7 @@ void EmuThread::detachWindow(MainWindow* window)
 
 
 // melonPrime
-static bool hasInitialized = false;
+static bool isInGameAndHasInitialized = false;
 
 // 共有キャッシュ定義(エイムのホットパスから再計算を排除するため)
 // X軸感度係数(ホットパスで直接参照するため)
@@ -631,7 +631,7 @@ bool useDsName(NDS* nds, Config::Table& localCfg, std::uint32_t addrDsNameFlagAn
  * @param std::uint32_t addrSensitivity 感度設定アドレス.
  * @return bool 書き込み実施有無.
  */
-void ApplyMphSensitivity(NDS* nds, Config::Table& localCfg, std::uint32_t addrSensitivity)
+void ApplyMphSensitivity(NDS* nds, Config::Table& localCfg, std::uint32_t addrSensitivity, std::uint32_t addrInGameSensi, bool isInGameAndHasInitialized)
 {
     // 現在の感度数値を設定から取得(ユーザー入力を読むため)
     double mphSensitivity = localCfg.GetDouble("Metroid.Sensitivity.Mph");
@@ -641,6 +641,10 @@ void ApplyMphSensitivity(NDS* nds, Config::Table& localCfg, std::uint32_t addrSe
 
     // NDSメモリに16bit値を書き込み(ゲーム設定を即時反映するため)
     nds->ARM9Write16(addrSensitivity, static_cast<std::uint16_t>(sensiVal));
+
+    if (isInGameAndHasInitialized) {
+        nds->ARM9Write16(addrInGameSensi, static_cast<std::uint16_t>(sensiVal));
+    }
 }
 
 /**
@@ -762,6 +766,8 @@ melonDS::u32 addrSensitivity;
 melonDS::u32 addrDsNameFlagAndMicVolume;
 melonDS::u32 addrMainHunter;
 melonDS::u32 addrRankColor;
+melonDS::u32 addrBaseInGameSensi;
+melonDS::u32 addrInGameSensi;
 // melonDS::u32 addrLanguage;
 static bool isUnlockMapsHuntersApplied = false;
 
@@ -867,6 +873,8 @@ __attribute__((always_inline, flatten)) inline void detectRomAndSetAddresses(Emu
     addrUnlockMapsHunters5 = addrUnlockMapsHunters + 0xF;
     addrDsNameFlagAndMicVolume = addrUnlockMapsHunters5 + 0x1;
     // addrLanguage = addrUnlockMapsHunters - 0xB1;
+    addrBaseInGameSensi = addrSensitivity + 0xB4;
+    // addrInGameSensi = addrBaseInGameSensi;
     addrRankColor = addrMainHunter + 0x3;
     isRomDetected = true;
 
@@ -2103,11 +2111,11 @@ void EmuThread::run()
             // Determine whether it is cursor mode in one place
             bool shouldBeCursorMode = !isInGame || (isInAdventure && isPaused);
 
-            if (isInGame && !hasInitialized) {
+            if (isInGame && !isInGameAndHasInitialized) {
                 // Run once at game start
 
                 // Set the initialization complete flag
-                hasInitialized = true;
+                isInGameAndHasInitialized = true;
 
                 // updateRenderer because of using softwareRenderer when not in Game.
                 videoRenderer = emuInstance->getGlobalConfig().GetInt("3D.Renderer");
@@ -2154,6 +2162,7 @@ void EmuThread::run()
                 05 - Spire
                 06 - Weavel
                 */
+                addrInGameSensi = calculatePlayerAddress(addrBaseInGameSensi, playerPosition, 0x04);
 
                 addrBoostGauge = addrIsAltForm + 0x44;
                 addrIsBoosting = addrIsAltForm + 0x46;
@@ -2179,7 +2188,7 @@ void EmuThread::run()
                 // Handle the case when the window is focused
                 // Update mouse relative position and recenter cursor for aim control
 
-                if (Q_LIKELY(isInGame)) {
+				if (Q_LIKELY(isInGame)) { // ここをisInGameAndHasInitializedにしてはいけない
                     // inGame
 
                     /*
@@ -2379,7 +2388,7 @@ void EmuThread::run()
                         if (!isWeaponCheckActive) {
                             // 初回のみ実行
                             isWeaponCheckActive = true;
-							// Disable aim during weapon check
+							// Disable aim during weapon check, this is to prevent weapon selection due to aiming touch input.
                             setAimBlock(AIMBLK_CHECK_WEAPON, true);
                             //weaponCheckWeaponIndex = emuInstance->nds->ARM9Read8(addrSelectedWeapon);
                             emuInstance->nds->ReleaseScreen();
@@ -2528,8 +2537,8 @@ void EmuThread::run()
                     isInAdventure = false;
                     isAimDisabled = true;
 
-                    if (hasInitialized) {
-                        hasInitialized = false;
+                    if (isInGameAndHasInitialized) {
+                        isInGameAndHasInitialized = false;
                     }
 
                     // Resolve Menu flickering
@@ -2544,12 +2553,13 @@ void EmuThread::run()
 
 
                     if (Q_LIKELY(isRomDetected)) {
+                        // TODO オープニングムービーの終了後に実行しないとフリーズの恐れあり。
 
                         // Headphone settings
                         ApplyHeadphoneOnce(emuInstance->nds, localCfg, addrOperationAndSound, isHeadphoneApplied);
 
                         // Apply MPH sensitivity settings
-                        ApplyMphSensitivity(emuInstance->nds, localCfg, addrSensitivity);
+                        ApplyMphSensitivity(emuInstance->nds, localCfg, addrSensitivity, addrInGameSensi, isInGameAndHasInitialized);
                         
                         // Unlock all Hunters/Maps
                         ApplyUnlockHuntersMaps(
@@ -2706,6 +2716,9 @@ void EmuThread::handleMessages()
                     // updateRenderer because of using softwareRenderer when not in Game.
                     videoRenderer = emuInstance->getGlobalConfig().GetInt("3D.Renderer");
                     updateRenderer();
+
+                    // Apply MPH sensitivity settings
+                    ApplyMphSensitivity(emuInstance->nds, emuInstance->getLocalConfig(), addrSensitivity, addrInGameSensi, isInGameAndHasInitialized);
                 }
 
                 /*
@@ -2731,6 +2744,7 @@ void EmuThread::handleMessages()
 
                 // Apply Aim Adjust setting
                 applyAimAdjustSetting(emuInstance->getLocalConfig());
+
 
 #ifdef _WIN32
                 // VKバインド再適用（ポーズ中に設定が変わっていた場合に反映）

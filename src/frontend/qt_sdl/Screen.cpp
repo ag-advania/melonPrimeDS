@@ -63,6 +63,52 @@
 // MelonPrimeDS
 #ifdef _WIN32
 #include <windows.h>
+// 仮想デスクトップ矩形取得用ヘルパー(負座標含むマルチモニタ対応のため)
+inline RECT getVirtualScreenRect() {
+    // 左上座標取得(仮想デスクトップ原点取得のため)
+    const int vx = GetSystemMetrics(SM_XVIRTUALSCREEN);
+    const int vy = GetSystemMetrics(SM_YVIRTUALSCREEN);
+    // 幅高さ取得(仮想デスクトップ全域取得のため)
+    const int vw = GetSystemMetrics(SM_CXVIRTUALSCREEN);
+    const int vh = GetSystemMetrics(SM_CYVIRTUALSCREEN);
+    // 矩形生成(交差判定に用いるため)
+    return RECT{ vx, vy, vx + vw, vy + vh };
+}
+
+// 幅1pxのクリップ縦帯を生成し、仮想デスクトップに収める安全版(画面外ウィンドウでも破綻回避のため)
+static RECT computeCenter1pxClipRectSafe(HWND hwnd) {
+    // クライアント矩形取得(基準矩形取得のため)
+    RECT rc; GetClientRect(hwnd, &rc);
+    // 左上右下点のスクリーン座標化(スクリーン基準のクリップに必要なため)
+    POINT tl{ rc.left, rc.top }, br{ rc.right, rc.bottom };
+    ClientToScreen(hwnd, &tl);
+    ClientToScreen(hwnd, &br);
+
+    // 中央X計算(1px縦帯のX位置決定のため)
+    LONG cx = (tl.x + br.x) / 2;
+
+    // 仮想デスクトップ取得(マルチモニタ・負座標対応のため)
+    const RECT vs = getVirtualScreenRect();
+
+    // Xを仮想デスクトップにクランプ(画面外中央による空矩形回避のため)
+    if (cx < vs.left)  cx = vs.left;
+    if (cx >= vs.right) cx = vs.right - 1; // 幅1pxを確保するため右端は-1にする
+
+    // Y範囲をウィンドウ由来と仮想デスクトップで交差(画面外はみ出し時の破綻回避のため)
+    LONG top = (tl.y > vs.top) ? tl.y : vs.top;
+    LONG bottom = (br.y < vs.bottom) ? br.y : vs.bottom;
+
+    // 交差が空になった場合のフォールバック(ウィンドウが上下とも画面外のケース対策のため)
+    if (top >= bottom) {
+        top = vs.top;
+        bottom = vs.bottom;
+    }
+
+    // 1px幅の縦帯を生成(ClipCursorに渡すため)
+    RECT clip{ cx, top, cx + 1, bottom };
+    return clip;
+}
+/*
 static RECT computeCenter1pxClipRect(HWND hwnd) {
     RECT rc; GetClientRect(hwnd, &rc);
     POINT tl{ rc.left, rc.top }, br{ rc.right, rc.bottom };
@@ -72,9 +118,28 @@ static RECT computeCenter1pxClipRect(HWND hwnd) {
     RECT clip{ cx, tl.y, cx + 1, br.y }; // 幅1pxの縦帯
     return clip;
 }
+*/
+// 垂直中央を維持してRECTの高さを1/2に縮小するユーティリティ(既存関数の戻り値に適用するため)
+inline RECT shrinkRectHeightToHalfCentered(RECT r) {
+    // 高さ計算(後続の中心計算に必要なため)
+    const LONG h = r.bottom - r.top;
+
+    // 垂直中央計算(上下を等距離で切り詰めるため)
+    const LONG cy = (r.top + r.bottom) / 2;
+
+    // 片側の切り詰め量算出(全体1/2へ縮小するために1/4ずつ詰めるため)
+    const LONG quarter = h / 4;
+
+    // 上端更新(中央基準に上側を1/4だけ下げるため)
+    r.top = cy - quarter;
+
+    // 下端更新(中央基準に下側を1/4だけ上げるため)
+    r.bottom = cy + quarter;
+
+    // 結果返却(呼び出し元でSetCursorClip等に渡すため)
+    return r;
+}
 #endif
-
-
 
 using namespace melonDS;
 
@@ -91,7 +156,9 @@ void ScreenPanel::clipCursorCenter1px() { // MelonPrimeDS
 #ifdef _WIN32
     if (!isVisible() || !window() || !window()->isActiveWindow()) return;
     const HWND hwnd = reinterpret_cast<HWND>(winId());
-    const RECT clip = computeCenter1pxClipRect(hwnd);
+    RECT clip = computeCenter1pxClipRectSafe(hwnd);
+    // 高さ半分化(垂直中央を維持したまま高さ1/2にするため)
+    clip = shrinkRectHeightToHalfCentered(clip);
     ClipCursor(&clip);
 #endif
 }
@@ -108,7 +175,9 @@ void ScreenPanel::updateClipIfNeeded() { // MelonPrimeDS
 #ifdef _WIN32
     if (!isVisible() || !window() || !window()->isActiveWindow()) return;
     const HWND hwnd = reinterpret_cast<HWND>(winId());
-    const RECT clip = computeCenter1pxClipRect(hwnd);
+    RECT clip = computeCenter1pxClipRectSafe(hwnd);
+    // 高さ半分化(垂直中央を維持したまま高さ1/2にするため)
+    clip = shrinkRectHeightToHalfCentered(clip);
     ClipCursor(&clip);
 #endif
 }
