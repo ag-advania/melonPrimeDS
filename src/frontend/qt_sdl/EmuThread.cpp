@@ -2553,6 +2553,7 @@ void EmuThread::run()
 
 
                     if (Q_LIKELY(isRomDetected)) {
+                        // TODO オープニングムービーの終了後に実行しないとフリーズの恐れあり。
 
                         // Headphone settings
                         ApplyHeadphoneOnce(emuInstance->nds, localCfg, addrOperationAndSound, isHeadphoneApplied);
