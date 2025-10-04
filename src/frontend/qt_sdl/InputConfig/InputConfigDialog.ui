@@ -2351,7 +2351,7 @@
 				    <!-- Label for aim sensitivity -->
 				    <widget class="QLabel" name="metroidAimSensitvityLabel">
 					    <property name="text">
-						    <string>Aim sensitivity (default: 65):</string>
+						    <string>Aim sensitivity (default: 63):</string>
 					    </property>
 				    </widget>
 			    </item>
