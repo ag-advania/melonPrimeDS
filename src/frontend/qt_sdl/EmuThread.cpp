@@ -181,6 +181,13 @@ namespace {
     };
 } // namespace
 
+
+
+
+
+
+
+
 // ===== AIM_ADJUST: deadzone + snap（0.5未満捨て、0.5〜1未満は±1、1以上そのまま）=====
 #include <cmath>
 
@@ -223,6 +230,30 @@ namespace {
 
 // 互換マクロ（float前提）
 #define AIM_ADJUST(dx, dy) do { applyAimAdjustFloat((dx), (dy)); } while (0)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 using namespace melonDS;
@@ -2495,6 +2526,7 @@ void EmuThread::run()
                     // !isInGame
 
                     isInAdventure = false;
+                    isAimDisabled = true;
 
                     if (hasInitialized) {
                         hasInitialized = false;
