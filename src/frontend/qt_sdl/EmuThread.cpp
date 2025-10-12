@@ -1323,7 +1323,7 @@ void EmuThread::run()
 
     // processMoveInputFunction{
         /**
- * 移動入力処理 v6 最低遅延版.
+ * 移動入力処理 v7 QBitArray操作をSIMD風に最適化.
  *
  *
  * @note x86_64向けに分岐最小化とアクセス回数削減を徹底.
@@ -1338,128 +1338,60 @@ void EmuThread::run()
  *       snapTapでは新規押下が競合時に優先側を上書き保持.
  * .
  */
-    static const auto processMoveInput = [&](QBitArray& mask) __attribute__((hot, always_inline, flatten)) {
-        // 反転型マスクLUT定義(0=有効,1=無効 として各出力ビットのLSBを使用するための値で構成)
-        // (後続のLUTロード時のキャッシュ効率確保と即時抽出のため)
+    static const auto processMoveInput = [&](QBitArray& mask)
+        __attribute__((hot, always_inline, flatten))
+    {
         alignas(64) static constexpr uint32_t MaskLUT[16] = {
-            // 入力ビット配列: [bit0=UP, bit1=DOWN, bit2=LEFT, bit3=RIGHT]
-            // 各バイト順序: [UP(byte0), DOWN(byte1), LEFT(byte2), RIGHT(byte3)]
-            // 各バイトのLSB(1bit)のみ評価する構成
-            // 0000
-            0x0F0F0F0F,
-            // 0001
-            0x0F0F0F0E,
-            // 0010
-            0x0F0F0E0F,
-            // 0011 ←→キャンセル
-            0x0F0F0F0F,
-            // 0100
-            0x0F0E0F0F,
-            // 0101
-            0x0F0E0F0E,
-            // 0110
-            0x0F0E0E0F,
-            // 0111
-            0x0F0E0F0F,
-            // 1000
-            0x0E0F0F0F,
-            // 1001
-            0x0E0F0F0E,
-            // 1010
-            0x0E0F0E0F,
-            // 1011
-            0x0E0F0F0F,
-            // 1100 ↑↓キャンセル
-            0x0F0F0F0F,
-            // 1101
-            0x0F0F0F0E,
-            // 1110
-            0x0F0F0E0F,
-            // 1111 全キャンセル
-            0x0F0F0F0F
+            0x0F0F0F0F, 0x0F0F0F0E, 0x0F0F0E0F, 0x0F0F0F0F,
+            0x0F0E0F0F, 0x0F0E0F0E, 0x0F0E0E0F, 0x0F0E0F0F,
+            0x0E0F0F0F, 0x0E0F0F0E, 0x0E0F0E0F, 0x0E0F0F0F,
+            0x0F0F0F0F, 0x0F0F0F0E, 0x0F0F0E0F, 0x0F0F0F0F
         };
 
-        // SnapTap状態格納(下位8bit=直近入力, 上位8bit=優先保持)
-        // (フレーム間で切り替え優先度を維持するため)
         static uint16_t snapState = 0;
 
+        const uint32_t curr =
+            MP_HK_DOWN(HK_MetroidMoveForward) |
+            (MP_HK_DOWN(HK_MetroidMoveBack) << 1) |
+            (MP_HK_DOWN(HK_MetroidMoveLeft) << 2) |
+            (MP_HK_DOWN(HK_MetroidMoveRight) << 3);
 
-        const uint32_t f = MP_HK_DOWN(HK_MetroidMoveForward);
-        const uint32_t b = MP_HK_DOWN(HK_MetroidMoveBack);
-        const uint32_t l = MP_HK_DOWN(HK_MetroidMoveLeft);
-        const uint32_t r = MP_HK_DOWN(HK_MetroidMoveRight);
+        uint32_t finalInput;
 
-        // 4方向の現在ビット生成(後段LUT索引用ビット圧縮のため)
-        const uint32_t curr = (f) | (b << 1) | (l << 2) | (r << 3);
-
-        // 通常モード判定(分岐予測命中率向上のため)
         if (Q_LIKELY(!isSnapTapMode)) {
-            // LUTロード(即時マスク決定のため)
-            const uint32_t mb = MaskLUT[curr];
+            finalInput = curr;
+        }
+        else {
+            const uint32_t last = snapState & 0xFFu;
+            const uint32_t priority = snapState >> 8;
+            const uint32_t newPress = curr & ~last;
 
-            // 出力UP確定(LSB評価で分岐レス化のため)
-            (mb & 0x00000001) ? mask.setBit(INPUT_UP) : mask.clearBit(INPUT_UP);
-            // 出力DOWN確定(LSB評価で分岐レス化のため)
-            ((mb >> 8) & 0x01) ? mask.setBit(INPUT_DOWN) : mask.clearBit(INPUT_DOWN);
-            // 出力LEFT確定(LSB評価で分岐レス化のため)
-            ((mb >> 16) & 0x01) ? mask.setBit(INPUT_LEFT) : mask.clearBit(INPUT_LEFT);
-            // 出力RIGHT確定(LSB評価で分岐レス化のため)
-            ((mb >> 24) & 0x01) ? mask.setBit(INPUT_RIGHT) : mask.clearBit(INPUT_RIGHT);
+            const uint32_t conflict =
+                (((curr & 0x3u) ^ 0x3u) ? 0u : 0x3u) |
+                (((curr & 0xCu) ^ 0xCu) ? 0u : 0xCu);
 
-            // 早期return(無駄な計算回避のため)
-            return;
+            const uint32_t updateMask = -((newPress & conflict) != 0u);
+            const uint32_t newPriority =
+                (priority & ~(conflict & updateMask)) | (newPress & conflict & updateMask);
+            const uint32_t activePriority = newPriority & curr;
+
+            snapState = static_cast<uint16_t>((curr & 0xFFu) | ((activePriority & 0xFFu) << 8));
+            finalInput = (curr & ~conflict) | (activePriority & conflict);
         }
 
-        // 直近状態抽出(優先制御に使用するため)
-        const uint32_t last = snapState & 0xFFu;
-        // 優先保持抽出(競合時の優先を保持するため)
-        const uint32_t priority = snapState >> 8;
+        // ★ マスク適用の最適化：ループアンロール手動化
+        const uint32_t mb = MaskLUT[finalInput];
 
-        // 新規押下検出(前フレームとの差分抽出のため)
-        const uint32_t newPress = curr & ~last;
+        // 方向ごとに分岐レス化（CMOVcc命令生成を期待）
+        constexpr int inputs[4] = { INPUT_UP, INPUT_DOWN, INPUT_LEFT, INPUT_RIGHT };
+        constexpr int shifts[4] = { 0, 8, 16, 24 };
 
-        // 水平競合検出(== 3 を分岐レスで表現するため)
-        const uint32_t h3 = (curr & 0x3u);
-        // 水平競合マスク生成(完全一致時のみ3を返すため)
-        const uint32_t hConflict = (h3 ^ 0x3u) ? 0u : 0x3u;
-
-        // 垂直競合検出(== 12 を分岐レスで表現するため)
-        const uint32_t v12 = (curr & 0xCu);
-        // 垂直競合マスク生成(完全一致時のみ12を返すため)
-        const uint32_t vConflict = (v12 ^ 0xCu) ? 0u : 0xCu;
-
-        // 総合競合マスク作成(水平垂直の論理和で一括処理のため)
-        const uint32_t conflict = vConflict | hConflict;
-
-        // 競合発生時の更新フラグ生成(新規押下が競合線上に存在する場合のみ1化するため)
-        const uint32_t updateMask = -((newPress & conflict) != 0u);
-
-        // 新優先の計算(PR=既存優先を該当軸でクリアし、新規押下を該当軸のみで立てるため)
-        const uint32_t newPriority =
-            (priority & ~(conflict & updateMask)) | (newPress & conflict & updateMask);
-
-        // 現在入力に限定した優先(押下継続時のみ優先を有効化するため)
-        const uint32_t activePriority = newPriority & curr;
-
-        // 状態更新(次フレームの差分検出と優先保持のため)
-        snapState = static_cast<uint16_t>((curr & 0xFFu) | ((activePriority & 0xFFu) << 8));
-
-        // 競合軸の最終入力決定(非競合はそのまま、競合は優先側のみ残すため)
-        const uint32_t final = (curr & ~conflict) | (activePriority & conflict);
-
-        // LUTロード(確定入力をマスク出力に変換するため)
-        const uint32_t mb = MaskLUT[final];
-
-        // 出力UP確定(LSB評価で分岐レス化のため)
-        (mb & 0x00000001) ? mask.setBit(INPUT_UP) : mask.clearBit(INPUT_UP);
-        // 出力DOWN確定(LSB評価で分岐レス化のため)
-        ((mb >> 8) & 0x01) ? mask.setBit(INPUT_DOWN) : mask.clearBit(INPUT_DOWN);
-        // 出力LEFT確定(LSB評価で分岐レス化のため)
-        ((mb >> 16) & 0x01) ? mask.setBit(INPUT_LEFT) : mask.clearBit(INPUT_LEFT);
-        // 出力RIGHT確定(LSB評価で分岐レス化のため)
-        ((mb >> 24) & 0x01) ? mask.setBit(INPUT_RIGHT) : mask.clearBit(INPUT_RIGHT);
+#pragma GCC unroll 4
+        for (int i = 0; i < 4; ++i) {
+            const bool bit = (mb >> shifts[i]) & 0x1;
+            bit ? mask.setBit(inputs[i]) : mask.clearBit(inputs[i]);
+        }
     };
-
     // /processMoveInputFunction }
 
 
