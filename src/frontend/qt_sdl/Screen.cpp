@@ -203,7 +203,7 @@ ScreenPanel::ScreenPanel(QWidget* parent) : QWidget(parent)
     mouseHideDelay = 0;
 
     /* MelonPrimeDS comment-out    */
-    QTimer* mouseTimer = setupMouseTimer();
+    // QTimer* mouseTimer = setupMouseTimer();
     /* MelonPrimeDS comment-out  
     connect(mouseTimer, &QTimer::timeout, [=] { if (mouseHide) setCursor(Qt::BlankCursor);});
       */
@@ -240,13 +240,14 @@ ScreenPanel::ScreenPanel(QWidget* parent) : QWidget(parent)
 
 ScreenPanel::~ScreenPanel()
 {
-    /* MelonPrimeDS comment-out    */
 #if defined(_WIN32)
     unclip(); // MelonPrimeDS
 #endif
 
+    /* MelonPrimeDS comment-out    
     mouseTimer->stop();
     delete mouseTimer;
+    */
 
 }
 
@@ -273,8 +274,9 @@ void ScreenPanel::setMouseHide(bool enable, int delay)
 {
     mouseHide = enable;
     mouseHideDelay = delay;
-
+    /* MelonPrimeDS comment-out
     mouseTimer->setInterval(mouseHideDelay);
+    */
 }
 
 void ScreenPanel::setupScreenLayout()
@@ -591,16 +593,19 @@ void ScreenPanel::showCursor()
     mouseTimer->start();
     */
 }
-
+/* MelonPrimeDS comment-out
 QTimer* ScreenPanel::setupMouseTimer()
 {
+
     mouseTimer = new QTimer();
     mouseTimer->setSingleShot(true);
     mouseTimer->setInterval(mouseHideDelay);
     mouseTimer->start();
 
     return mouseTimer;
+
 }
+    */
 
 int ScreenPanel::osdFindBreakPoint(const char* text, int i)
 {
