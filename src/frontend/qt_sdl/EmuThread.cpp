@@ -965,7 +965,7 @@ void EmuThread::run()
         BindMetroidHotkeysFromConfig(g_rawFilter, /*instance*/ emuInstance->getInstanceID());
 
         // ★ Level3: 専用入力スレッドを起動（フォーカス外も拾うならtrueに）
-        // g_rawFilter->startInputThread(false);
+        g_rawFilter->startInputThread(false);
     }
     /*
     if (!g_xin) {
