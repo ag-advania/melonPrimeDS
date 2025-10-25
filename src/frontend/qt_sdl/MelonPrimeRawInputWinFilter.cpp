@@ -4,7 +4,6 @@
 
 namespace {
 
-    // bit mask of all RAWMOUSE::usButtonFlags we care about
     static constexpr USHORT kAllMouseBtnMask =
         0x0001 | 0x0002 | // LeftDown/Up
         0x0004 | 0x0008 | // RightDown/Up
@@ -12,49 +11,38 @@ namespace {
         0x0040 | 0x0080 | // X1Down/Up
         0x0100 | 0x0200;  // X2Down/Up
 
-    // Map VK_* to mouse button index (0..4) or 0xFF if not a mouse VK
     static constexpr uint8_t kMouseButtonLUT[8] = {
-        0xFF, // 0
-        0,    // VK_LBUTTON   (0x01)
-        1,    // VK_RBUTTON   (0x02)
-        0xFF, // 0x03 (VK_CANCEL)
-        2,    // VK_MBUTTON   (0x04)
-        3,    // VK_XBUTTON1  (0x05)
-        4,    // VK_XBUTTON2  (0x06)
-        0xFF
+        0xFF, 0, 1, 0xFF, 2, 3, 4, 0xFF
     };
 
-    // Generic (no intrinsics) 5-bit packing: {L,R,M,X1,X2}
     FORCE_INLINE uint8_t mask_down_from_flags(USHORT f) noexcept {
         uint8_t m = 0;
-        m |= (f & 0x0001) ? 0x01 : 0; // LeftDown
-        m |= (f & 0x0004) ? 0x02 : 0; // RightDown
-        m |= (f & 0x0010) ? 0x04 : 0; // MiddleDown
-        m |= (f & 0x0040) ? 0x08 : 0; // X1Down
-        m |= (f & 0x0100) ? 0x10 : 0; // X2Down
+        m |= (f & 0x0001) ? 0x01 : 0; // L
+        m |= (f & 0x0004) ? 0x02 : 0; // R
+        m |= (f & 0x0010) ? 0x04 : 0; // M
+        m |= (f & 0x0040) ? 0x08 : 0; // X1
+        m |= (f & 0x0100) ? 0x10 : 0; // X2
         return m;
     }
     FORCE_INLINE uint8_t mask_up_from_flags(USHORT f) noexcept {
         uint8_t m = 0;
-        m |= (f & 0x0002) ? 0x01 : 0; // LeftUp
-        m |= (f & 0x0008) ? 0x02 : 0; // RightUp
-        m |= (f & 0x0020) ? 0x04 : 0; // MiddleUp
-        m |= (f & 0x0080) ? 0x08 : 0; // X1Up
-        m |= (f & 0x0200) ? 0x10 : 0; // X2Up
+        m |= (f & 0x0002) ? 0x01 : 0; // L
+        m |= (f & 0x0008) ? 0x02 : 0; // R
+        m |= (f & 0x0020) ? 0x04 : 0; // M
+        m |= (f & 0x0080) ? 0x08 : 0; // X1
+        m |= (f & 0x0200) ? 0x10 : 0; // X2
         return m;
     }
 
 } // namespace
 
 //------------------------------------------------------------------------------
-// ctor/dtor（※ ここではRawInput登録を行わない：二重登録を避ける）
+// ctor/dtor（登録はここでは行わない：二重登録を避ける）
 //------------------------------------------------------------------------------
-
 RawInputWinFilter::RawInputWinFilter()
 {
-    // Descriptors only。登録は registerRawInput() か startInputThread() 側で行う。
-    m_rid[0] = { 0x01, 0x02, 0, nullptr }; // mouse
-    m_rid[1] = { 0x01, 0x06, 0, nullptr }; // keyboard
+    m_rid[0] = { 0x01, 0x02, 0, nullptr }; // Mouse
+    m_rid[1] = { 0x01, 0x06, 0, nullptr }; // Keyboard
 
     for (auto& a : m_vkDownCompat) a.store(0, std::memory_order_relaxed);
     for (auto& a : m_mbCompat)     a.store(0, std::memory_order_relaxed);
@@ -67,7 +55,7 @@ RawInputWinFilter::~RawInputWinFilter()
 }
 
 //------------------------------------------------------------------------------
-// 共通：全RawInput登録の除去（重複送達の排除）
+// 共通：全RAWINPUT登録の除去
 //------------------------------------------------------------------------------
 void RawInputWinFilter::clearAllRawInputRegistration() noexcept
 {
@@ -78,7 +66,7 @@ void RawInputWinFilter::clearAllRawInputRegistration() noexcept
 }
 
 //------------------------------------------------------------------------------
-// 外向け：メインウィンドウへ登録（スレッド未使用運用や明示切替に）
+// 明示登録：指定hwndへバインド
 //------------------------------------------------------------------------------
 bool RawInputWinFilter::registerRawInput(HWND hwnd)
 {
@@ -89,9 +77,8 @@ bool RawInputWinFilter::registerRawInput(HWND hwnd)
 }
 
 //------------------------------------------------------------------------------
-// nativeEventFilter（スレッド起動中は通常ここに来ない）
+// nativeEventFilter（スレッド未使用時のフォールバック）
 //------------------------------------------------------------------------------
-
 bool RawInputWinFilter::nativeEventFilter(const QByteArray& /*eventType*/, void* message, qintptr* /*result*/)
 {
     if (m_threadRunning.load(std::memory_order_acquire)) return false;
@@ -99,22 +86,22 @@ bool RawInputWinFilter::nativeEventFilter(const QByteArray& /*eventType*/, void*
     MSG* msg = static_cast<MSG*>(message);
     if (!msg || msg->message != WM_INPUT) return false;
 
-    UINT size = sizeof(RAWINPUT);
-    if (GetRawInputData((HRAWINPUT)msg->lParam, RID_INPUT, m_rawBuf, &size, sizeof(RAWINPUTHEADER)) == (UINT)-1)
+    UINT sz = sizeof(m_rawBuf);
+    if (GetRawInputData((HRAWINPUT)msg->lParam, RID_INPUT, m_rawBuf, &sz, sizeof(RAWINPUTHEADER)) == (UINT)-1)
         return false;
 
     const RAWINPUT& ri = *reinterpret_cast<const RAWINPUT*>(m_rawBuf);
     if (ri.header.dwType == RIM_TYPEMOUSE) {
         const RAWMOUSE& m = ri.data.mouse;
 
-        // relative motion（互換維持）
+        // 相対移動（fetch_add二重バッファ）～イベント毎に即時反映
         if ((m.usFlags & MOUSE_MOVE_ABSOLUTE) == 0) {
             const LONG dx = (LONG)m.lLastX;
             const LONG dy = (LONG)m.lLastY;
             if ((dx | dy) != 0) accumMouseDelta(dx, dy);
         }
 
-        // buttons
+        // ボタン
         const USHORT f = m.usButtonFlags;
         if ((f & kAllMouseBtnMask) != 0) {
             const uint8_t downMask = mask_down_from_flags(f);
@@ -145,7 +132,6 @@ bool RawInputWinFilter::nativeEventFilter(const QByteArray& /*eventType*/, void*
         const bool e1 = (k.Flags & RI_KEY_E1) != 0;
         (void)e1;
 
-        // Normalize a few extended keys
         if (vk == VK_SHIFT) {
             const UINT sc = k.MakeCode;
             vk = (sc == 0x36) ? VK_RSHIFT : VK_LSHIFT;
@@ -166,9 +152,8 @@ bool RawInputWinFilter::nativeEventFilter(const QByteArray& /*eventType*/, void*
 }
 
 //------------------------------------------------------------------------------
-// Mouse delta (double-buffered, fetch_add)（互換維持）
+// Mouse Δ（二重バッファ＋fetch_add）
 //------------------------------------------------------------------------------
-
 FORCE_INLINE void RawInputWinFilter::accumMouseDelta(LONG dx, LONG dy) noexcept
 {
     if ((dx | dy) == 0) return;
@@ -196,7 +181,6 @@ void RawInputWinFilter::discardDeltas()
 //------------------------------------------------------------------------------
 // Resets
 //------------------------------------------------------------------------------
-
 void RawInputWinFilter::resetAll()
 {
     resetAllKeys();
@@ -225,7 +209,6 @@ void RawInputWinFilter::resetHotkeyEdges()
 //------------------------------------------------------------------------------
 // Queries
 //------------------------------------------------------------------------------
-
 FORCE_INLINE bool RawInputWinFilter::getVkState(UINT vk) const noexcept
 {
     if (vk >= 256u) return false;
@@ -240,20 +223,12 @@ FORCE_INLINE bool RawInputWinFilter::getMouseButton(int b) const noexcept
     return (mb & (1u << b)) != 0;
 }
 
-bool RawInputWinFilter::keyDown(UINT vk) const noexcept
-{
-    return getVkState(vk);
-}
-
-bool RawInputWinFilter::mouseButtonDown(int b) const noexcept
-{
-    return getMouseButton(b);
-}
+bool RawInputWinFilter::keyDown(UINT vk) const noexcept { return getVkState(vk); }
+bool RawInputWinFilter::mouseButtonDown(int b) const noexcept { return getMouseButton(b); }
 
 //------------------------------------------------------------------------------
 // Hotkey
 //------------------------------------------------------------------------------
-
 FORCE_INLINE void RawInputWinFilter::addVkToMask(HotkeyMask& m, UINT vk) noexcept
 {
     if (vk < 8u) {
@@ -284,12 +259,10 @@ bool RawInputWinFilter::hotkeyDown(int hk) const noexcept
     const HotkeyMask& m = m_hkMask[hk];
     if (!m.hasMask) return false;
 
-    // keyboard
     for (int i = 0; i < 4; ++i) {
         const uint64_t cur = m_state.vkDown[i].load(std::memory_order_relaxed);
         if (cur & m.vkMask[i]) return true;
     }
-    // mouse
     if (m.mouseMask != 0) {
         const uint8_t mb = m_state.mouseButtons.load(std::memory_order_relaxed);
         if ((mb & m.mouseMask) != 0) return true;
@@ -352,9 +325,8 @@ bool RawInputWinFilter::hotkeyReleased(int hk) noexcept
 }
 
 //------------------------------------------------------------------------------
-// Level3: dedicated input thread（遅延対策A+B+C適用）
+// Level3: 入力専用スレッド（レベルAのみ適用）
 //------------------------------------------------------------------------------
-
 bool RawInputWinFilter::startInputThread(bool inputSink) noexcept
 {
     bool expected = false;
@@ -398,41 +370,32 @@ LRESULT CALLBACK RawInputWinFilter::ThreadWndProc(HWND hWnd, UINT msg, WPARAM wP
     if (!self) return DefWindowProcW(hWnd, msg, wParam, lParam);
 
     switch (msg) {
-    case WM_INPUT:
-        self->handleRawInputMessage(lParam);
-        return 0;
-    case WM_CLOSE:
-        DestroyWindow(hWnd);
-        return 0;
-    case WM_DESTROY:
-        PostQuitMessage(0);
-        return 0;
-    default:
-        return DefWindowProcW(hWnd, msg, wParam, lParam);
+    case WM_INPUT:   self->handleRawInputMessage(lParam); return 0; // ★ここで処理
+    case WM_CLOSE:   DestroyWindow(hWnd); return 0;
+    case WM_DESTROY: PostQuitMessage(0);  return 0;
+    default: return DefWindowProcW(hWnd, msg, wParam, lParam);
     }
 }
 
 void RawInputWinFilter::inputThreadMain(bool inputSink) noexcept
 {
-    // A) スレッド優先度を引き上げ（互換性に影響しないOS設定）
+    // A-2: 優先度を固定的に引き上げ（動的ブースト無効化）
     SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_HIGHEST);
+    SetThreadPriorityBoost(GetCurrentThread(), TRUE);
 
-    // 1) Register window class
+    // 1) メッセージ専用ウィンドウ
     WNDCLASSW wc{};
     wc.lpfnWndProc = &RawInputWinFilter::ThreadWndProc;
     wc.hInstance = GetModuleHandleW(nullptr);
     wc.lpszClassName = L"RawInputWinFilterThreadWindow";
     RegisterClassW(&wc);
 
-    // 2) Create message-only window
     HWND h = CreateWindowExW(0, wc.lpszClassName, L"", 0, 0, 0, 0, 0, HWND_MESSAGE, nullptr, wc.hInstance, this);
     m_threadHwnd.store(h, std::memory_order_release);
     if (!h) return;
 
-    // A) メインや他対象への既存登録を除去 → 二重送達を排除
+    // 2) 二重登録の除去→このスレッドへ登録（NOLEGACY/NOHOTKEYSは使わない）
     clearAllRawInputRegistration();
-
-    // 3) Register RawInput to this thread window（NOLEGACY/NOHOTKEYSは使わない）
     RAWINPUTDEVICE rid[2];
     rid[0].usUsagePage = 0x01; rid[0].usUsage = 0x02; // Mouse
     rid[0].dwFlags = inputSink ? RIDEV_INPUTSINK : 0;
@@ -442,40 +405,38 @@ void RawInputWinFilter::inputThreadMain(bool inputSink) noexcept
     rid[1].hwndTarget = h;
     RegisterRawInputDevices(rid, 2, sizeof(RAWINPUTDEVICE));
 
-    // 4) Low-latency wait loop
+    // 3) ループ：QS_RAWINPUTで起床（A-1）、WM_INPUTだけをポンプしてDispatch（Translate不要）
     while (!m_stopRequested.load(std::memory_order_acquire)) {
-        // C) 起床条件をRAWINPUTに限定（QS_ALLEVENTSやALERTABLEは外す）
         (void)MsgWaitForMultipleObjectsEx(
             0, nullptr, INFINITE,
-            QS_RAWINPUT,
+            QS_RAWINPUT,       // WM_INPUT到着でのみ起床
             MWMO_INPUTAVAILABLE
         );
 
         MSG msg;
-        while (PeekMessageW(&msg, nullptr, 0, 0, PM_REMOVE)) {
-            TranslateMessage(&msg);
+        while (PeekMessageW(&msg, nullptr, WM_INPUT, WM_INPUT, PM_REMOVE)) {
+            // WM_INPUTは翻訳不要
             DispatchMessageW(&msg);
         }
     }
 }
 
+//------------------------------------------------------------------------------
+// RAWINPUT共通ハンドラ（Qt/Thread）
+//------------------------------------------------------------------------------
 void RawInputWinFilter::handleRawInputMessage(LPARAM lParam) noexcept
 {
-    RAWINPUT ri;
-    UINT sz = sizeof(ri);
-    if (GetRawInputData((HRAWINPUT)lParam, RID_INPUT, &ri, &sz, sizeof(RAWINPUTHEADER)) == (UINT)-1) return;
+    UINT sz = sizeof(m_rawBuf);
+    if (GetRawInputData((HRAWINPUT)lParam, RID_INPUT, m_rawBuf, &sz, sizeof(RAWINPUTHEADER)) == (UINT)-1) return;
 
+    const RAWINPUT& ri = *reinterpret_cast<const RAWINPUT*>(m_rawBuf);
     if (ri.header.dwType == RIM_TYPEMOUSE) {
         const RAWMOUSE& m = ri.data.mouse;
 
-        // relative motion（互換維持：今回はデルタに特別な扱いはしない）
         if ((m.usFlags & MOUSE_MOVE_ABSOLUTE) == 0) {
-            const LONG dx = (LONG)m.lLastX;
-            const LONG dy = (LONG)m.lLastY;
-            if ((dx | dy) != 0) accumMouseDelta(dx, dy);
+            accumMouseDelta((LONG)m.lLastX, (LONG)m.lLastY); // A：即時反映
         }
 
-        // buttons
         const USHORT f = m.usButtonFlags;
         if ((f & kAllMouseBtnMask) != 0) {
             const uint8_t downMask = mask_down_from_flags(f);
@@ -501,8 +462,7 @@ void RawInputWinFilter::handleRawInputMessage(LPARAM lParam) noexcept
         UINT vk = k.VKey;
         const bool breakFlag = (k.Flags & RI_KEY_BREAK) != 0;
         const bool e0 = (k.Flags & RI_KEY_E0) != 0;
-        const bool e1 = (k.Flags & RI_KEY_E1) != 0;
-        (void)e1;
+        const bool e1 = (k.Flags & RI_KEY_E1) != 0; (void)e1;
 
         if (vk == VK_SHIFT) {
             const UINT sc = k.MakeCode;
@@ -521,7 +481,7 @@ void RawInputWinFilter::handleRawInputMessage(LPARAM lParam) noexcept
 }
 
 //------------------------------------------------------------------------------
-// VK set/clear（ヘッダ宣言の定義を欠かさず提供）
+// VK set/clear
 //------------------------------------------------------------------------------
 FORCE_INLINE void RawInputWinFilter::setVkBit(UINT vk, bool down) noexcept
 {
@@ -534,14 +494,12 @@ FORCE_INLINE void RawInputWinFilter::setVkBit(UINT vk, bool down) noexcept
     if (down) {
         do {
             newv = oldv | bit;
-        } while (!word.compare_exchange_weak(
-            oldv, newv, std::memory_order_relaxed, std::memory_order_relaxed));
+        } while (!word.compare_exchange_weak(oldv, newv, std::memory_order_relaxed, std::memory_order_relaxed));
     }
     else {
         do {
             newv = oldv & ~bit;
-        } while (!word.compare_exchange_weak(
-            oldv, newv, std::memory_order_relaxed, std::memory_order_relaxed));
+        } while (!word.compare_exchange_weak(oldv, newv, std::memory_order_relaxed, std::memory_order_relaxed));
     }
 }
 
