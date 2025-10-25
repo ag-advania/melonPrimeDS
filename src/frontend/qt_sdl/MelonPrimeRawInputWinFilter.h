@@ -1,20 +1,32 @@
-ï»¿#pragma once
+#pragma once
 #ifdef _WIN32
 
+// ƒ‰ƒCƒuƒ‰ƒŠ“Ç(QAbstractNativeEventFilter‚ÆQtŒ^‚Ì‰Â‹‰»‚Ì‚½‚ß)
 #include <QtCore/QAbstractNativeEventFilter>
+// ƒ‰ƒCƒuƒ‰ƒŠ“Ç(QByteArray‚Ì‰Â‹‰»‚Ì‚½‚ß)
 #include <QtCore/QByteArray>
+// ƒ‰ƒCƒuƒ‰ƒŠ“Ç(qintptr’è‹`‚Ì‚½‚ß)
 #include <QtCore/qglobal.h>
 
+// ƒ‰ƒCƒuƒ‰ƒŠ“Ç(Win32Œ^g—p‚Ì‚½‚ß)
 #include <windows.h>
+// ƒ‰ƒCƒuƒ‰ƒŠ“Ç(HIDŠÖ˜A’è”‚Ì‚½‚ß)
 #include <hidsdi.h>
 
+// ƒ‰ƒCƒuƒ‰ƒŠ“Ç(STLŠeí‚Ì‚½‚ß)
 #include <array>
-#include <atomic>
-#include <cstdint>
-#include <cstring>
-#include <thread>
+// ƒ‰ƒCƒuƒ‰ƒŠ“Ç(‰Â•Ï’·”z—ñ‚Ì‚½‚ß)
 #include <vector>
+// ƒ‰ƒCƒuƒ‰ƒŠ“Ç(˜A‘z”z—ñ‚Ì‚½‚ß)
+#include <unordered_map>
+// ƒ‰ƒCƒuƒ‰ƒŠ“Ç(Œ´q‘€ì‚Ì‚½‚ß)
+#include <atomic>
+// ƒ‰ƒCƒuƒ‰ƒŠ“Ç(•W€®”‚Ì‚½‚ß)
+#include <cstdint>
+// ƒ‰ƒCƒuƒ‰ƒŠ“Ç(ƒƒ‚ƒŠ‘€ì‚Ì‚½‚ß)
+#include <cstring>
 
+// ‹­§ƒCƒ“ƒ‰ƒCƒ“’è‹`(ƒzƒbƒgƒpƒXÅ“K‰»‚Ì‚½‚ß)
 #ifndef FORCE_INLINE
 #  if defined(_MSC_VER)
 #    define FORCE_INLINE __forceinline
@@ -23,123 +35,176 @@
 #  endif
 #endif
 
-// Low-latency Raw Input filter (Qt + Win32).
-// - No RIDEV_NOLEGACY / No RIDEV_NOHOTKEYS.
-// - No CPU-specific intrinsics (generic x86-64).
-// - Level3: dedicated input thread + message-only window + MsgWaitForMultipleObjectsEx.
-// - Mouse delta path: reverted to legacy 64-bit packed CAS accumulation (m_dxyPack).
-class RawInputWinFilter final : public QAbstractNativeEventFilter
+/**
+ * RawInputƒtƒBƒ‹ƒ^–{‘Ì.
+ *
+ * ’á’x‰„d‹‚ÅWM_INPUT‚ğ’¼Úˆ—‚µAƒL[/ƒ}ƒEƒXó‘Ô‚Æ‘Š‘Îƒfƒ‹ƒ^‚ğWŒv‚·‚é.
+ */
+class RawInputWinFilter : public QAbstractNativeEventFilter
 {
 public:
-    enum : uint32_t {
-        kTypeNone = 0,
-        kTypeMouse = 1,
-        kTypeKeyboard = 2
-    };
+    /**
+     * \’zq.
+     *
+     *
+     * @brief RawInputƒfƒoƒCƒX“o˜^‚Æ“à•”ó‘Ô‰Šú‰»‚ğs‚¤.
+     */
+    RawInputWinFilter();
 
+    /**
+     * ”jŠüq.
+     *
+     *
+     * @brief RawInputƒfƒoƒCƒX“o˜^‚ğ‰ğœ‚·‚é.
+     */
+    ~RawInputWinFilter() override;
+
+    /**
+     * ƒlƒCƒeƒBƒuƒCƒxƒ“ƒgƒtƒBƒ‹ƒ^.
+     *
+     *
+     * @param eventType ƒCƒxƒ“ƒgí•Ê•¶š—ñ.
+     * @param message Win32 MSGƒ|ƒCƒ“ƒ^.
+     * @param result —\–ñ—Ìˆæ.
+     * @return bool Œp‘±‰Â”Û.
+     */
+    bool nativeEventFilter(const QByteArray& eventType, void* message, qintptr* result) override;
+
+    /**
+     * ƒ}ƒEƒX‘Š‘Îƒfƒ‹ƒ^æ“¾.
+     *
+     *
+     * @param outDx X‘Š‘Î—Ê.
+     * @param outDy Y‘Š‘Î—Ê.
+     */
+    void fetchMouseDelta(int& outDx, int& outDy);
+
+    /**
+     * –¢“Çƒfƒ‹ƒ^”jŠü.
+     *
+     *
+     * @brief ’~Ï‚³‚ê‚½‘Š‘Îƒfƒ‹ƒ^‚ğƒ[ƒ‰»‚·‚é.
+     */
+    void discardDeltas();
+
+    /**
+     * ‘SƒL[ƒ_ƒEƒ“ó‘ÔƒŠƒZƒbƒg.
+     *
+     *
+     * @brief VK”z—ñ‚ÆŒİŠ·”z—ñ‚ğ–¢‰Ÿ‰º‰»‚·‚é.
+     */
+    void resetAllKeys();
+
+    /**
+     * ‘Sƒ}ƒEƒXƒ{ƒ^ƒ“ƒŠƒZƒbƒg.
+     *
+     *
+     * @brief “à•”ƒrƒbƒg‚ÆŒİŠ·”z—ñ‚ğ–¢‰Ÿ‰º‰»‚·‚é.
+     */
+    void resetMouseButtons();
+
+    /**
+     * ƒzƒbƒgƒL[ƒGƒbƒWƒŠƒZƒbƒg.
+     *
+     *
+     * @brief ‰Ÿ‰º/‰ğ•úƒGƒbƒWŒŸo—p‚Ì‘O‰ñó‘Ô‚ğƒNƒŠƒA‚·‚é.
+     */
+    void resetHotkeyEdges();
+
+    /**
+     * ƒzƒbƒgƒL[“o˜^.
+     *
+     *
+     * @param hk ƒzƒbƒgƒL[ID.
+     * @param vks \¬‰¼‘zƒL[”z—ñ.
+     */
+    void setHotkeyVks(int hk, const std::vector<UINT>& vks);
+
+    /**
+     * ƒzƒbƒgƒL[‰Ÿ‰º’†”»’è.
+     *
+     *
+     * @param hk ƒzƒbƒgƒL[ID.
+     * @return bool ‰Ÿ‰º’†.
+     */
+    bool hotkeyDown(int hk) const noexcept;
+
+    /**
+     * ƒzƒbƒgƒL[—§ã‚èŒŸo.
+     *
+     *
+     * @param hk ƒzƒbƒgƒL[ID.
+     * @return bool —§ã‚è.
+     */
+    bool hotkeyPressed(int hk) noexcept;
+
+    /**
+     * ƒzƒbƒgƒL[—§‰º‚èŒŸo.
+     *
+     *
+     * @param hk ƒzƒbƒgƒL[ID.
+     * @return bool —§‰º‚è.
+     */
+    bool hotkeyReleased(int hk) noexcept;
+
+private:
+    // “à•”ƒ}ƒXƒN\‘¢‘Ì’è‹`(‘OŒvZÆ‡‚Ì‚½‚ß)
     struct HotkeyMask {
-        uint64_t vkMask[4]{ 0,0,0,0 }; // 256 VK bits
-        uint8_t  mouseMask{ 0 };       // 5 mouse bits (L,R,M,X1,X2)
-        uint8_t  hasMask{ 0 };         // 1 if any mask is set
+        // ƒrƒbƒgƒ}ƒbƒv”z—ñ’è‹`(VK 256bit•Û‚Ì‚½‚ß)
+        uint64_t vkMask[4]{ 0,0,0,0 };
+        // ƒ}ƒEƒXƒ{ƒ^ƒ“W‡’è‹`(5bit•Û‚Ì‚½‚ß)
+        uint8_t  mouseMask{ 0 };
+        // —LŒøƒtƒ‰ƒO’è‹`(•ªŠò’Z—‚Ì‚½‚ß)
+        uint8_t  hasMask{ 0 };
+        // ƒpƒfƒBƒ“ƒO’è‹`(ƒAƒ‰ƒCƒ“•Û‚Ì‚½‚ß)
         uint16_t _pad{ 0 };
     };
 
-    // 64B-aligned to avoid false sharing on hot path.
-    struct alignas(64) InputState {
+    // “ü—Íó‘Ô\‘¢‘Ì’è‹`(’áƒRƒXƒgQÆ‚Ì‚½‚ß)
+    struct InputState {
+        // VK‰Ÿ‰ºó‘Ô’è‹`(64bit~4‚Ì‚½‚ß)
         std::array<std::atomic<uint64_t>, 4> vkDown{ {0,0,0,0} };
-        std::atomic<uint8_t>                mouseButtons{ 0 }; // 5 bits used
+        // ƒ}ƒEƒXƒ{ƒ^ƒ“‰Ÿ‰ºó‘Ô’è‹`(5bit‚Ì‚½‚ß)
+        std::atomic<uint8_t>                 mouseButtons{ 0 };
     };
 
-    // Legacy kept-but-unused double buffer (ABI/option compatibility).
-    struct alignas(64) DeltaBuf {
-        std::atomic<int32_t> dx{ 0 };
-        std::atomic<int32_t> dy{ 0 };
-    };
-
+    // ƒzƒbƒgƒL[”ãŒÀ’è‹`(”z—ñ’·Œˆ’è‚Ì‚½‚ß)
     static constexpr int kMaxHotkeyId = 256;
 
-public:
-    RawInputWinFilter();
-    ~RawInputWinFilter() override;
-
-    // QAbstractNativeEventFilter
-    bool nativeEventFilter(const QByteArray& eventType, void* message, qintptr* result) override;
-
-    // Bind RAWINPUT to a specific hwndï¼ˆthreaded modeã¨æ’ä»–ã€‚å†…éƒ¨ã§æ—¢å­˜ç™»éŒ²ã‚’é™¤å»ã—ã¦ã‹ã‚‰å†ç™»éŒ²ï¼‰
-    bool registerRawInput(HWND hwnd);
-
-    // Mouse delta: legacy 64-bit packed read (low=dx, high=dy)
-    void fetchMouseDelta(int& outDx, int& outDy);
-    bool getMouseDelta(int& outDx, int& outDy) { fetchMouseDelta(outDx, outDy); return (outDx | outDy) != 0; }
-    void discardDeltas();
-
-    // Resets
-    void resetAll();
-    void resetAllKeys();
-    void resetMouseButtons();
-    void resetHotkeyEdges();
-
-    // Hotkey API
-    bool hotkeyDown(int hk) const noexcept;
-    bool hotkeyPressed(int hk) noexcept;   // edge: 0->1
-    bool hotkeyReleased(int hk) noexcept;  // edge: 1->0
-    void setHotkeyVks(int hk, const std::vector<UINT>& vks) noexcept;
-
-    // Direct queries
-    bool keyDown(UINT vk) const noexcept;
-    bool mouseButtonDown(int b) const noexcept; // 0..4 = L,R,M,X1,X2
-
-    // ==== Level3: input thread control ====
-    bool startInputThread(bool inputSink = false) noexcept; // RIDEV_INPUTSINK if true
-    void stopInputThread() noexcept;
-    bool isInputThreadRunning() const noexcept { return m_threadRunning.load(std::memory_order_acquire); }
-
-private:
-    // Registered raw input devices (descriptors reused)
+    // RAWINPUT“o˜^”z—ñ’è‹`(“o˜^/‰ğœŠÇ—‚Ì‚½‚ß)
     RAWINPUTDEVICE m_rid[2]{};
 
-    // State
+    // “ü—Íó‘Ô•Û’è‹`(“à•”WŒv‚Ì‚½‚ß)
     InputState m_state{};
 
-    // --- Legacy kept-but-unused double buffer (not used in this variant)
-    alignas(64) DeltaBuf  m_delta[2]{};
-    std::atomic<uint8_t>  m_writeIdx{ 0 };
-
-    // --- Active path: 64-bit packed atomic (low32=dx, high32=dy)
+    // X/Y‘Š‘Îƒfƒ‹ƒ^64bitƒpƒbƒN’è‹`(Œ´qRMW‰ñ”íŒ¸‚Ì‚½‚ß)
     alignas(8) std::atomic<uint64_t> m_dxyPack{ 0 };
 
-    // Compat mirrors (byte-per-key/button)
+    // ŒİŠ·”z—ñ’è‹`(Šù‘¶I/FˆÛ‚Ì‚½‚ß)
     std::array<std::atomic<uint8_t>, 256> m_vkDownCompat{};
+    // ŒİŠ·”z—ñ’è‹`(Šù‘¶I/FˆÛ‚Ì‚½‚ß)
     std::array<std::atomic<uint8_t>, 5>   m_mbCompat{};
 
-    // Hotkey edge memory
+    // ƒGƒbƒWŒŸo—p‘O‰ñó‘Ô’è‹`(64bit•ªŠ„‚Ì‚½‚ß)
     std::array<std::atomic<uint64_t>, (kMaxHotkeyId + 63) / 64> m_hkPrev{};
 
-    // Hotkey masks
+    // ‘OŒvZƒ}ƒXƒNW‡’è‹`(‚‘¬Æ‡‚Ì‚½‚ß)
     std::array<HotkeyMask, kMaxHotkeyId> m_hkMask{};
 
-    // Single RAWINPUT scratch bufferï¼ˆä¿é™ºï¼‰
+    // ƒtƒH[ƒ‹ƒoƒbƒN“o˜^’è‹`(‹‘å/“ÁêHK‚Ì‚½‚ß)
+    std::unordered_map<int, std::vector<UINT>> m_hkToVk;
+
+    // RAWINPUTóM—pƒoƒbƒtƒ@’è‹`(’Pˆêæ“¾‚Ì‚½‚ß)
     alignas(8) BYTE m_rawBuf[sizeof(RAWINPUT) + 64]{};
 
-    // ==== Level3 thread fields ====
-    std::thread        m_inputThread{};
-    std::atomic<bool>  m_threadRunning{ false };
-    std::atomic<bool>  m_stopRequested{ false };
-    std::atomic<HWND>  m_threadHwnd{ nullptr };
-
-private:
-    // Helpersï¼ˆå…±é€šãƒ­ã‚¸ãƒƒã‚¯ï¼‰
-    FORCE_INLINE void accumMouseDelta(LONG dx, LONG dy) noexcept; // â† æ—§64bitåŠ ç®—ã«æˆ»ã™
+    // VKó‘Ôİ’èƒwƒ‹ƒp’è‹`(Œ´q1‰ñXV‚Ì‚½‚ß)
     FORCE_INLINE void setVkBit(UINT vk, bool down) noexcept;
+    // VKó‘Ôæ“¾ƒwƒ‹ƒp’è‹`(’áƒRƒXƒgQÆ‚Ì‚½‚ß)
     FORCE_INLINE bool getVkState(UINT vk) const noexcept;
+    // ƒ}ƒEƒXƒ{ƒ^ƒ“æ“¾ƒwƒ‹ƒp’è‹`(’áƒRƒXƒgQÆ‚Ì‚½‚ß)
     FORCE_INLINE bool getMouseButton(int b) const noexcept;
+    // ƒ}ƒXƒN\’zƒwƒ‹ƒp’è‹`(–‘OŒvZ‚Ì‚½‚ß)
     FORCE_INLINE void addVkToMask(HotkeyMask& m, UINT vk) noexcept;
-
-    // Level3 internals
-    static LRESULT CALLBACK ThreadWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
-    void inputThreadMain(bool inputSink) noexcept;
-    void handleRawInputMessage(LPARAM lParam) noexcept;
-    void clearAllRawInputRegistration() noexcept;
 };
 
 #endif // _WIN32
