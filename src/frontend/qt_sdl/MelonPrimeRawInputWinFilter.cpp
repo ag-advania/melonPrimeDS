@@ -87,6 +87,7 @@ bool RawInputWinFilter::nativeEventFilter(const QByteArray& /*eventType*/, void*
 //------------------------------------------------------------------------------
 // リアルタイム化のキモ：フレーム先頭でWM_INPUTを即時ドレイン
 //------------------------------------------------------------------------------
+/*
 bool RawInputWinFilter::drainRawInputNow(int maxLoops)
 {
     MSG m;
@@ -111,6 +112,130 @@ bool RawInputWinFilter::drainRawInputNow(int maxLoops)
     }
     return any;
 }
+*/
+// claude v1
+bool RawInputWinFilter::drainRawInputNow(int maxLoops)
+{
+    MSG m;
+    bool any = false;
+    int cnt = 0;
+    UINT size;
+
+    // UIスレッド（このウィンドウキュー）に残っているWM_INPUTを全部抜く
+    while (cnt < maxLoops && PeekMessageW(&m, nullptr, WM_INPUT, WM_INPUT, PM_REMOVE)) {
+        size = sizeof(RAWINPUT);
+        if (GetRawInputData((HRAWINPUT)m.lParam, RID_INPUT, m_rawBuf, &size, sizeof(RAWINPUTHEADER)) != (UINT)-1) {
+            handleRawInput(*reinterpret_cast<const RAWINPUT*>(m_rawBuf));
+            any = true;
+        }
+        ++cnt;
+    }
+    return any;
+}
+
+
+// chatgpt v1
+/*
+#include <windows.h>
+
+#ifndef Q_LIKELY
+#  define Q_LIKELY(x)   (x)
+#  define Q_UNLIKELY(x) (x)
+#endif
+
+bool RawInputWinFilter::drainRawInputNow(int maxLoops) 
+{
+    if (Q_UNLIKELY(maxLoops <= 0)) return false;
+
+    // 高速プレチェック：RAWINPUTが無ければ即リターン
+    // HIWORD(GetQueueStatus(QS_RAWINPUT)) は「現在キューにある種別」を直接示す
+    // （LOWORDは“前回呼び出し以降に変化した種別”なので不適） 
+    if (Q_LIKELY((HIWORD(GetQueueStatus(QS_RAWINPUT)) & QS_RAWINPUT) == 0)) {
+        return false;
+    }
+
+    MSG  m;
+    bool any = false;
+    int  cnt = 0;
+
+    do {
+        // WM_INPUT だけを除去（min/max 同値指定で完全フィルタ）
+        if (!PeekMessageW(&m, nullptr, WM_INPUT, WM_INPUT, PM_REMOVE)) break;
+
+        // フィルタしているため必ず WM_INPUT
+        UINT sz = sizeof(RAWINPUT); // GetRawInputData が実サイズを書き戻すので毎回リセット
+        if (Q_LIKELY(GetRawInputData(reinterpret_cast<HRAWINPUT>(m.lParam),
+            RID_INPUT,
+            m_rawBuf,
+            &sz,
+            sizeof(RAWINPUTHEADER)) != static_cast<UINT>(-1))) {
+            handleRawInput(*reinterpret_cast<const RAWINPUT*>(m_rawBuf));
+            any = true;
+        }
+        ++cnt;
+    } while (cnt < maxLoops);
+
+    return any;
+}
+*/
+
+/*
+// chatgpt v2
+//=============================================================================
+// 吞み込み最速版（高スループット）：GetRawInputBuffer 一括読み
+// 目的：システムコール回数を大幅削減し、1000Hz超の高頻度入力を取りこぼしなく回収
+// 備考：WM_INPUT は GetRawInputBuffer 呼出しに伴って自動的にキューから除去されます
+//       （MS Docsの仕様）
+// 使用方法：maxLoops 制限が不要（=可能な限り全部ドレインしたい）場面で呼ぶ
+//=============================================================================
+#include <vector>
+#include <windows.h>
+
+bool RawInputWinFilter::drainRawInputNow() 
+{
+    // 高速プレチェック（現在キューにRAWINPUTがあるか）
+    if ((HIWORD(GetQueueStatus(QS_RAWINPUT)) & QS_RAWINPUT) == 0) return false;
+
+    // 64KB開始→必要に応じて拡張（thread_localで再利用して割当コストをゼロ近傍化）
+    thread_local std::vector<BYTE> sBuf(64u * 1024u);
+
+    bool any = false;
+
+    for (;;) {
+        UINT bytes = static_cast<UINT>(sBuf.size());
+        // 可変長 RAWINPUT の配列として読み出し
+        UINT nread = GetRawInputBuffer(reinterpret_cast<PRAWINPUT>(sBuf.data()),
+            &bytes,
+            sizeof(RAWINPUTHEADER));
+
+        if (nread == 0u) break; // もう無い
+
+        if (nread == static_cast<UINT>(-1)) {
+            const DWORD err = GetLastError();
+            if (err == ERROR_INSUFFICIENT_BUFFER && bytes > sBuf.size()) {
+                // OSが要求したバイト数に拡張して再試行
+                sBuf.resize(bytes);
+                continue;
+            }
+            // その他のエラーは諦めて終了（anyは維持）
+            break;
+        }
+
+        // 返却値は“構造体数”。ただし各要素は dwSize 可変なのでポインタは dwSize で進める
+        BYTE* it = sBuf.data();
+        for (UINT i = 0; i < nread; ++i) {
+            auto* ri = reinterpret_cast<PRAWINPUT>(it);
+            handleRawInput(*ri);
+            it += ri->header.dwSize;
+        }
+        any = true;
+
+        // まだ残っている可能性があるのでループ継続
+    }
+
+    return any;
+}
+*/
 
 //------------------------------------------------------------------------------
 FORCE_INLINE void RawInputWinFilter::handleRawInput(const RAWINPUT& ri) noexcept
