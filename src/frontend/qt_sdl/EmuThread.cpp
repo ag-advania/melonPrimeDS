@@ -963,9 +963,6 @@ void EmuThread::run()
         qApp->installNativeEventFilter(g_rawFilter);
         // 新: 全HK（Shoot/Zoom 以外も）をRawに登録
         BindMetroidHotkeysFromConfig(g_rawFilter, /*instance*/ emuInstance->getInstanceID());
-
-        // ★ Level3: 専用入力スレッドを起動（フォーカス外も拾うならtrueに）
-        // g_rawFilter->startInputThread(false);
     }
     /*
     if (!g_xin) {
@@ -2201,8 +2198,6 @@ void EmuThread::run()
                     }
                     */
 
-                    // これでWM_INPUTの残りをゼロに
-                    if (g_rawFilter) g_rawFilter->drainRawInputNow();
 
                     // Move hunter
                     processMoveInput(inputMask);
