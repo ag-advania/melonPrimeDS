@@ -1,485 +1,276 @@
 ﻿#ifdef _WIN32
 #include "MelonPrimeRawInputWinFilter.h"
-#include <cstring>
 
-namespace {
-    static constexpr USHORT kAllMouseBtnMask =
-        0x0001 | 0x0002 |
-        0x0004 | 0x0008 |
-        0x0010 | 0x0020 |
-        0x0040 | 0x0080 |
-        0x0100 | 0x0200;
+/*
+TODO:
+さらに低レイテンシ&低サイクルにするなら
+イベント頻度が高い時に原子RMW回数を減らすのが効きます。今は X と Y で2回 fetch_add が走るので、64bitにまとめて1回にするとヒット率が上がります。
 
-    static constexpr uint8_t kMouseButtonLUT[8] = {
-        0xFF, 0, 1, 0xFF, 2, 3, 4, 0xFF
-    };
+*/
 
-    FORCE_INLINE uint8_t mask_down_from_flags(USHORT f) noexcept {
-        uint8_t m = 0;
-        m |= (f & 0x0001) ? 0x01 : 0;
-        m |= (f & 0x0004) ? 0x02 : 0;
-        m |= (f & 0x0010) ? 0x04 : 0;
-        m |= (f & 0x0040) ? 0x08 : 0;
-        m |= (f & 0x0100) ? 0x10 : 0;
-        return m;
-    }
-    FORCE_INLINE uint8_t mask_up_from_flags(USHORT f) noexcept {
-        uint8_t m = 0;
-        m |= (f & 0x0002) ? 0x01 : 0;
-        m |= (f & 0x0008) ? 0x02 : 0;
-        m |= (f & 0x0020) ? 0x04 : 0;
-        m |= (f & 0x0080) ? 0x08 : 0;
-        m |= (f & 0x0200) ? 0x10 : 0;
-        return m;
-    }
-} // namespace
-
-//------------------------------------------------------------------------------
 RawInputWinFilter::RawInputWinFilter()
 {
-    m_rid[0] = { 0x01, 0x02, 0, nullptr }; // mouse
-    m_rid[1] = { 0x01, 0x06, 0, nullptr }; // keyboard
+    // RawInput登録（マウス/キーボード）
+    m_rid[0] = { 0x01, 0x02, 0, nullptr }; // Mouse
+    m_rid[1] = { 0x01, 0x06, 0, nullptr }; // Keyboard
     RegisterRawInputDevices(m_rid, 2, sizeof(RAWINPUTDEVICE));
 
-#if RAWFILTER_ENABLE_COMPAT_MIRRORS
+    // 互換配列をゼロ
     for (auto& a : m_vkDownCompat) a.store(0, std::memory_order_relaxed);
-    for (auto& a : m_mbCompat)     a.store(0, std::memory_order_relaxed);
-#endif
-    for (auto& a : m_hkPrev)       a.store(0, std::memory_order_relaxed);
+    for (auto& b : m_mbCompat)     b.store(0, std::memory_order_relaxed);
+
+    // エッジ状態ゼロ
+    for (auto& w : m_hkPrev) w.store(0, std::memory_order_relaxed);
+
+    // 事前計算マスクをゼロ（AVXなし・移植性優先）
+    std::memset(m_hkMask.data(), 0, sizeof(m_hkMask));
 }
 
-bool RawInputWinFilter::registerRawInput(HWND hwnd)
+RawInputWinFilter::~RawInputWinFilter()
 {
-    m_rid[0] = { 0x01, 0x02, 0, hwnd };
-    m_rid[1] = { 0x01, 0x06, 0, hwnd };
-    return RegisterRawInputDevices(m_rid, 2, sizeof(RAWINPUTDEVICE)) != FALSE;
+    // 登録解除
+    m_rid[0].dwFlags = RIDEV_REMOVE; m_rid[0].hwndTarget = nullptr;
+    m_rid[1].dwFlags = RIDEV_REMOVE; m_rid[1].hwndTarget = nullptr;
+    RegisterRawInputDevices(m_rid, 2, sizeof(RAWINPUTDEVICE));
 }
 
-bool RawInputWinFilter::registerRawInputEx(HWND hwnd, bool inputSink)
-{
-    const DWORD flags = inputSink ? RIDEV_INPUTSINK : 0;
-    m_rid[0] = { 0x01, 0x02, flags, hwnd };
-    m_rid[1] = { 0x01, 0x06, flags, hwnd };
-    return RegisterRawInputDevices(m_rid, 2, sizeof(RAWINPUTDEVICE)) != FALSE;
-}
-
-bool RawInputWinFilter::registerRawInputEx2(HWND hwnd, DWORD flags)
-{
-    m_rid[0] = { 0x01, 0x02, flags, hwnd };
-    m_rid[1] = { 0x01, 0x06, flags, hwnd };
-    return RegisterRawInputDevices(m_rid, 2, sizeof(RAWINPUTDEVICE)) != FALSE;
-}
-
-//------------------------------------------------------------------------------
 bool RawInputWinFilter::nativeEventFilter(const QByteArray& /*eventType*/, void* message, qintptr* /*result*/)
 {
     MSG* msg = static_cast<MSG*>(message);
     if (!msg || msg->message != WM_INPUT) return false;
 
-    UINT size = sizeof(RAWINPUT);
-    if (GetRawInputData((HRAWINPUT)msg->lParam, RID_INPUT, m_rawBuf, &size, sizeof(RAWINPUTHEADER)) == (UINT)-1)
-        return false;
-
-    handleRawInput(*reinterpret_cast<const RAWINPUT*>(m_rawBuf));
-    return false; // Qtにも流す（が、ここで事実上処理は完了）
-}
-
-//------------------------------------------------------------------------------
-// リアルタイム化のキモ：フレーム先頭でWM_INPUTを即時ドレイン
-//------------------------------------------------------------------------------
-/*
-bool RawInputWinFilter::drainRawInputNow(int maxLoops)
-{
-    MSG m;
-    bool any = false;
-    int  cnt = 0;
-
-    // UIスレッド（このウィンドウキュー）に残っているWM_INPUTを全部抜く
-    while (cnt < maxLoops && PeekMessageW(&m, nullptr, WM_INPUT, WM_INPUT, PM_REMOVE)) {
-        if (m.message == WM_INPUT) {
-            UINT size = sizeof(RAWINPUT);
-            if (GetRawInputData((HRAWINPUT)m.lParam, RID_INPUT, m_rawBuf, &size, sizeof(RAWINPUTHEADER)) != (UINT)-1) {
-                handleRawInput(*reinterpret_cast<const RAWINPUT*>(m_rawBuf));
-                any = true;
-            }
-        }
-        else {
-            // ここに来ることは通常ないが、保険として戻す
-            TranslateMessage(&m);
-            DispatchMessageW(&m);
-        }
-        ++cnt;
-    }
-    return any;
-}
-*/
-// claude v1
-bool RawInputWinFilter::drainRawInputNow(int maxLoops)
-{
-    MSG m;
-    bool any = false;
-    int cnt = 0;
-    UINT size;
-
-    // UIスレッド（このウィンドウキュー）に残っているWM_INPUTを全部抜く
-    while (cnt < maxLoops && PeekMessageW(&m, nullptr, WM_INPUT, WM_INPUT, PM_REMOVE)) {
-        size = sizeof(RAWINPUT);
-        if (GetRawInputData((HRAWINPUT)m.lParam, RID_INPUT, m_rawBuf, &size, sizeof(RAWINPUTHEADER)) != (UINT)-1) {
-            handleRawInput(*reinterpret_cast<const RAWINPUT*>(m_rawBuf));
-            any = true;
-        }
-        ++cnt;
-    }
-    return any;
-}
-
-
-// chatgpt v1
-/*
-#include <windows.h>
-
-#ifndef Q_LIKELY
-#  define Q_LIKELY(x)   (x)
-#  define Q_UNLIKELY(x) (x)
-#endif
-
-bool RawInputWinFilter::drainRawInputNow(int maxLoops) 
-{
-    if (Q_UNLIKELY(maxLoops <= 0)) return false;
-
-    // 高速プレチェック：RAWINPUTが無ければ即リターン
-    // HIWORD(GetQueueStatus(QS_RAWINPUT)) は「現在キューにある種別」を直接示す
-    // （LOWORDは“前回呼び出し以降に変化した種別”なので不適） 
-    if (Q_LIKELY((HIWORD(GetQueueStatus(QS_RAWINPUT)) & QS_RAWINPUT) == 0)) {
+    UINT size = sizeof(m_rawBuf);
+    if (GetRawInputData(reinterpret_cast<HRAWINPUT>(msg->lParam),
+        RID_INPUT, m_rawBuf, &size,
+        sizeof(RAWINPUTHEADER)) == (UINT)-1) {
         return false;
     }
 
-    MSG  m;
-    bool any = false;
-    int  cnt = 0;
+    RAWINPUT* raw = reinterpret_cast<RAWINPUT*>(m_rawBuf);
+    const DWORD type = raw->header.dwType;
 
-    do {
-        // WM_INPUT だけを除去（min/max 同値指定で完全フィルタ）
-        if (!PeekMessageW(&m, nullptr, WM_INPUT, WM_INPUT, PM_REMOVE)) break;
+    // ---- Mouse first (頻度高) ----
+    if (type == RIM_TYPEMOUSE) {
+        const RAWMOUSE& m = raw->data.mouse;
 
-        // フィルタしているため必ず WM_INPUT
-        UINT sz = sizeof(RAWINPUT); // GetRawInputData が実サイズを書き戻すので毎回リセット
-        if (Q_LIKELY(GetRawInputData(reinterpret_cast<HRAWINPUT>(m.lParam),
-            RID_INPUT,
-            m_rawBuf,
-            &sz,
-            sizeof(RAWINPUTHEADER)) != static_cast<UINT>(-1))) {
-            handleRawInput(*reinterpret_cast<const RAWINPUT*>(m_rawBuf));
-            any = true;
-        }
-        ++cnt;
-    } while (cnt < maxLoops);
-
-    return any;
-}
-*/
-
-/*
-// chatgpt v2
-//=============================================================================
-// 吞み込み最速版（高スループット）：GetRawInputBuffer 一括読み
-// 目的：システムコール回数を大幅削減し、1000Hz超の高頻度入力を取りこぼしなく回収
-// 備考：WM_INPUT は GetRawInputBuffer 呼出しに伴って自動的にキューから除去されます
-//       （MS Docsの仕様）
-// 使用方法：maxLoops 制限が不要（=可能な限り全部ドレインしたい）場面で呼ぶ
-//=============================================================================
-#include <vector>
-#include <windows.h>
-
-bool RawInputWinFilter::drainRawInputNow() 
-{
-    // 高速プレチェック（現在キューにRAWINPUTがあるか）
-    if ((HIWORD(GetQueueStatus(QS_RAWINPUT)) & QS_RAWINPUT) == 0) return false;
-
-    // 64KB開始→必要に応じて拡張（thread_localで再利用して割当コストをゼロ近傍化）
-    thread_local std::vector<BYTE> sBuf(64u * 1024u);
-
-    bool any = false;
-
-    for (;;) {
-        UINT bytes = static_cast<UINT>(sBuf.size());
-        // 可変長 RAWINPUT の配列として読み出し
-        UINT nread = GetRawInputBuffer(reinterpret_cast<PRAWINPUT>(sBuf.data()),
-            &bytes,
-            sizeof(RAWINPUTHEADER));
-
-        if (nread == 0u) break; // もう無い
-
-        if (nread == static_cast<UINT>(-1)) {
-            const DWORD err = GetLastError();
-            if (err == ERROR_INSUFFICIENT_BUFFER && bytes > sBuf.size()) {
-                // OSが要求したバイト数に拡張して再試行
-                sBuf.resize(bytes);
-                continue;
-            }
-            // その他のエラーは諦めて終了（anyは維持）
-            break;
+        // 相対移動
+        const LONG dx_ = m.lLastX;
+        const LONG dy_ = m.lLastY;
+        if ((dx_ | dy_) != 0) {
+            dx.fetch_add((int)dx_, std::memory_order_relaxed);
+            dy.fetch_add((int)dy_, std::memory_order_relaxed);
         }
 
-        // 返却値は“構造体数”。ただし各要素は dwSize 可変なのでポインタは dwSize で進める
-        BYTE* it = sBuf.data();
-        for (UINT i = 0; i < nread; ++i) {
-            auto* ri = reinterpret_cast<PRAWINPUT>(it);
-            handleRawInput(*ri);
-            it += ri->header.dwSize;
-        }
-        any = true;
+        const USHORT f = m.usButtonFlags;
+        if ((f & kAllMouseBtnMask) == 0) return false;
 
-        // まだ残っている可能性があるのでループ継続
-    }
+        // down/up を5bitにパック（分岐最小化）
+        const uint8_t downMask =
+            ((f & 0x0001) ? 0x01 : 0) | ((f & 0x0004) ? 0x02 : 0) |
+            ((f & 0x0010) ? 0x04 : 0) | ((f & 0x0040) ? 0x08 : 0) |
+            ((f & 0x0100) ? 0x10 : 0);
 
-    return any;
-}
-*/
+        const uint8_t upMask =
+            ((f & 0x0002) ? 0x01 : 0) | ((f & 0x0008) ? 0x02 : 0) |
+            ((f & 0x0020) ? 0x04 : 0) | ((f & 0x0080) ? 0x08 : 0) |
+            ((f & 0x0200) ? 0x10 : 0);
 
-//------------------------------------------------------------------------------
-FORCE_INLINE void RawInputWinFilter::handleRawInput(const RAWINPUT& ri) noexcept
-{
-    if (ri.header.dwType == RIM_TYPEMOUSE) {
-        handleRawMouse(ri.data.mouse);
-    }
-    else if (ri.header.dwType == RIM_TYPEKEYBOARD) {
-        handleRawKeyboard(ri.data.keyboard);
-    }
-}
-
-FORCE_INLINE void RawInputWinFilter::handleRawMouse(const RAWMOUSE& m) noexcept
-{
-    if ((m.usFlags & MOUSE_MOVE_ABSOLUTE) == 0) {
-        const LONG dx = (LONG)m.lLastX;
-        const LONG dy = (LONG)m.lLastY;
-        if ((dx | dy) != 0) accumMouseDelta(dx, dy);
-    }
-
-    const USHORT f = m.usButtonFlags;
-    if ((f & kAllMouseBtnMask) != 0) {
-        const uint8_t downMask = mask_down_from_flags(f);
-        const uint8_t upMask = mask_up_from_flags(f);
-
+        // 現在のマスクを1発更新
         const uint8_t cur = m_state.mouseButtons.load(std::memory_order_relaxed);
         const uint8_t nxt = (uint8_t)((cur | downMask) & (uint8_t)~upMask);
         m_state.mouseButtons.store(nxt, std::memory_order_relaxed);
 
-#if RAWFILTER_ENABLE_COMPAT_MIRRORS
-        const uint8_t chg = (uint8_t)(cur ^ nxt);
-        if (chg) {
-            if (chg & 0x01) m_mbCompat[0].store((nxt & 0x01) ? 1u : 0u, std::memory_order_relaxed);
-            if (chg & 0x02) m_mbCompat[1].store((nxt & 0x02) ? 1u : 0u, std::memory_order_relaxed);
-            if (chg & 0x04) m_mbCompat[2].store((nxt & 0x04) ? 1u : 0u, std::memory_order_relaxed);
-            if (chg & 0x08) m_mbCompat[3].store((nxt & 0x08) ? 1u : 0u, std::memory_order_relaxed);
-            if (chg & 0x10) m_mbCompat[4].store((nxt & 0x10) ? 1u : 0u, std::memory_order_relaxed);
+        // 互換配列（必要なら）
+        if (downMask | upMask) {
+            if (downMask & 0x01) m_mbCompat[kMB_Left].store(1, std::memory_order_relaxed);
+            if (upMask & 0x01)   m_mbCompat[kMB_Left].store(0, std::memory_order_relaxed);
+            if (downMask & 0x02) m_mbCompat[kMB_Right].store(1, std::memory_order_relaxed);
+            if (upMask & 0x02)   m_mbCompat[kMB_Right].store(0, std::memory_order_relaxed);
+            if (downMask & 0x04) m_mbCompat[kMB_Middle].store(1, std::memory_order_relaxed);
+            if (upMask & 0x04)   m_mbCompat[kMB_Middle].store(0, std::memory_order_relaxed);
+            if (downMask & 0x08) m_mbCompat[kMB_X1].store(1, std::memory_order_relaxed);
+            if (upMask & 0x08)   m_mbCompat[kMB_X1].store(0, std::memory_order_relaxed);
+            if (downMask & 0x10) m_mbCompat[kMB_X2].store(1, std::memory_order_relaxed);
+            if (upMask & 0x10)   m_mbCompat[kMB_X2].store(0, std::memory_order_relaxed);
         }
-#endif
-    }
-}
 
-FORCE_INLINE void RawInputWinFilter::handleRawKeyboard(const RAWKEYBOARD& k) noexcept
-{
-    UINT vk = k.VKey;
-    const bool breakFlag = (k.Flags & RI_KEY_BREAK) != 0;
-    const bool e0 = (k.Flags & RI_KEY_E0) != 0;
-    const bool e1 = (k.Flags & RI_KEY_E1) != 0;
-    (void)e1;
-
-    if (vk == VK_SHIFT) {
-        const UINT sc = k.MakeCode;
-        vk = (sc == 0x36) ? VK_RSHIFT : VK_LSHIFT;
+        return false;
     }
-    else if (vk == VK_CONTROL) {
-        vk = e0 ? VK_RCONTROL : VK_LCONTROL;
-    }
-    else if (vk == VK_MENU) {
-        vk = e0 ? VK_RMENU : VK_LMENU;
+    // ---- Keyboard ----
+    else if (type == RIM_TYPEKEYBOARD) {
+        const RAWKEYBOARD& kb = raw->data.keyboard;
+        UINT vk = kb.VKey;
+        const USHORT flags = kb.Flags;
+        const bool isUp = (flags & RI_KEY_BREAK) != 0;
+
+        // Shift/Control/Alt の正規化
+        switch (vk) {
+        case VK_SHIFT:
+            vk = MapVirtualKey(kb.MakeCode, MAPVK_VSC_TO_VK_EX);
+            break;
+        case VK_CONTROL:
+            vk = (flags & RI_KEY_E0) ? VK_RCONTROL : VK_LCONTROL;
+            break;
+        case VK_MENU:
+            vk = (flags & RI_KEY_E0) ? VK_RMENU : VK_LMENU;
+            break;
+        default:
+            break;
+        }
+
+        // ビットベクタ更新
+        setVkBit(vk, !isUp);
+
+        // 互換配列（必要なら）
+        if (vk < m_vkDownCompat.size())
+            m_vkDownCompat[vk].store(!isUp, std::memory_order_relaxed);
+
+        return false;
     }
 
-    setVkBit(vk, !breakFlag);
-#if RAWFILTER_ENABLE_COMPAT_MIRRORS
-    if (vk < 256u) m_vkDownCompat[vk].store(!breakFlag ? 1u : 0u, std::memory_order_relaxed);
-#endif
-}
-
-//------------------------------------------------------------------------------
-// Mouse delta（ダブルバッファ＋fetch_add）
-//------------------------------------------------------------------------------
-FORCE_INLINE void RawInputWinFilter::accumMouseDelta(LONG dx, LONG dy) noexcept
-{
-    if ((dx | dy) == 0) return;
-    const uint8_t wi = m_writeIdx.load(std::memory_order_relaxed);
-    m_delta[wi].dx.fetch_add((int32_t)dx, std::memory_order_relaxed);
-    m_delta[wi].dy.fetch_add((int32_t)dy, std::memory_order_relaxed);
+    // HID等は無視
+    return false;
 }
 
 void RawInputWinFilter::fetchMouseDelta(int& outDx, int& outDy)
 {
-    const uint8_t readIdx = (uint8_t)(m_writeIdx.fetch_xor(1u, std::memory_order_acq_rel) ^ 1u);
-    outDx = m_delta[readIdx].dx.exchange(0, std::memory_order_relaxed);
-    outDy = m_delta[readIdx].dy.exchange(0, std::memory_order_relaxed);
+    outDx = dx.exchange(0, std::memory_order_relaxed);
+    outDy = dy.exchange(0, std::memory_order_relaxed);
 }
 
 void RawInputWinFilter::discardDeltas()
 {
-    (void)m_delta[0].dx.exchange(0, std::memory_order_relaxed);
-    (void)m_delta[0].dy.exchange(0, std::memory_order_relaxed);
-    (void)m_delta[1].dx.exchange(0, std::memory_order_relaxed);
-    (void)m_delta[1].dy.exchange(0, std::memory_order_relaxed);
-    (void)m_dxyPack.exchange(0, std::memory_order_relaxed);
-}
-
-//------------------------------------------------------------------------------
-// Reset / Query / Hotkey（同前）
-//------------------------------------------------------------------------------
-void RawInputWinFilter::resetAll()
-{
-    resetAllKeys();
-    resetMouseButtons();
-    resetHotkeyEdges();
-    discardDeltas();
+    (void)dx.exchange(0, std::memory_order_relaxed);
+    (void)dy.exchange(0, std::memory_order_relaxed);
 }
 
 void RawInputWinFilter::resetAllKeys()
 {
+    // AVXなし：各アトミックをゼロ化
     for (auto& w : m_state.vkDown) w.store(0, std::memory_order_relaxed);
-#if RAWFILTER_ENABLE_COMPAT_MIRRORS
     for (auto& a : m_vkDownCompat) a.store(0, std::memory_order_relaxed);
-#endif
 }
 
 void RawInputWinFilter::resetMouseButtons()
 {
     m_state.mouseButtons.store(0, std::memory_order_relaxed);
-#if RAWFILTER_ENABLE_COMPAT_MIRRORS
-    for (auto& a : m_mbCompat) a.store(0, std::memory_order_relaxed);
-#endif
+    for (auto& b : m_mbCompat) b.store(0, std::memory_order_relaxed);
 }
 
 void RawInputWinFilter::resetHotkeyEdges()
 {
-    for (auto& a : m_hkPrev) a.store(0, std::memory_order_relaxed);
+    for (auto& w : m_hkPrev) w.store(0, std::memory_order_relaxed);
 }
 
-FORCE_INLINE bool RawInputWinFilter::getVkState(UINT vk) const noexcept
-{
-    if (vk >= 256u) return false;
-    const uint64_t word = m_state.vkDown[vk >> 6].load(std::memory_order_relaxed);
-    return (word & (1ULL << (vk & 63u))) != 0;
-}
-
-FORCE_INLINE bool RawInputWinFilter::getMouseButton(int b) const noexcept
-{
-    if (b < 0 || b >= 5) return false;
-    const uint8_t mb = m_state.mouseButtons.load(std::memory_order_relaxed);
-    return (mb & (1u << b)) != 0;
-}
-
-bool RawInputWinFilter::keyDown(UINT vk) const noexcept { return getVkState(vk); }
-bool RawInputWinFilter::mouseButtonDown(int b) const noexcept { return getMouseButton(b); }
-
+// ---- 前計算マスク構築 ----
 FORCE_INLINE void RawInputWinFilter::addVkToMask(HotkeyMask& m, UINT vk) noexcept
 {
-    if (vk < 8u) {
-        const uint8_t id = kMouseButtonLUT[vk];
-        if (id != 0xFF) {
-            m.mouseMask = (uint8_t)(m.mouseMask | (1u << id));
-            m.hasMask = 1;
-            return;
-        }
+    if (vk < 8) {
+        const uint8_t b = kMouseButtonLUT[vk];
+        if (b < 5) { m.mouseMask |= (1u << b); m.hasMask = 1; }
     }
-    if (vk < 256u) {
-        m.vkMask[vk >> 6] |= (1ULL << (vk & 63u));
+    else if (vk < 256) {
+        m.vkMask[vk >> 6] |= (1ULL << (vk & 63));
         m.hasMask = 1;
     }
 }
 
-void RawInputWinFilter::setHotkeyVksRaw(int hk, const UINT* vks, size_t count) noexcept
+void RawInputWinFilter::setHotkeyVks(int hk, const std::vector<UINT>& vks)
 {
-    if (hk < 0 || hk >= kMaxHotkeyId) return;
-    HotkeyMask& m = m_hkMask[hk];
-    std::memset(&m, 0, sizeof(m));
-    for (size_t i = 0; i < count; ++i) addVkToMask(m, vks[i]);
+    if ((unsigned)hk < kMaxHotkeyId) {
+        HotkeyMask& m = m_hkMask[hk];
+        std::memset(&m, 0, sizeof(m)); // AVXなし
+        const size_t n = (vks.size() > 8) ? 8 : vks.size(); // 8個までで十分
+        for (size_t i = 0; i < n; ++i) addVkToMask(m, vks[i]);
+        return;
+    }
+    // 大きいIDはフォールバックに
+    m_hkToVk[hk] = vks;
 }
 
-void RawInputWinFilter::setHotkeyVks(int hk, const std::vector<UINT>& vks) noexcept
-{
-    setHotkeyVksRaw(hk, vks.data(), vks.size());
-}
-
+// ---- 取得 ----
 bool RawInputWinFilter::hotkeyDown(int hk) const noexcept
 {
-    if (hk < 0 || hk >= kMaxHotkeyId) return false;
-    const HotkeyMask& m = m_hkMask[hk];
-    if (!m.hasMask) return false;
+    // 1) 高速パス：前計算マスク
+    if ((unsigned)hk < kMaxHotkeyId) {
+        const HotkeyMask& m = m_hkMask[hk];
+        if (m.hasMask) {
+            const bool vkHit =
+                ((m_state.vkDown[0].load(std::memory_order_relaxed) & m.vkMask[0]) |
+                    (m_state.vkDown[1].load(std::memory_order_relaxed) & m.vkMask[1]) |
+                    (m_state.vkDown[2].load(std::memory_order_relaxed) & m.vkMask[2]) |
+                    (m_state.vkDown[3].load(std::memory_order_relaxed) & m.vkMask[3])) != 0ULL;
 
-    for (int i = 0; i < 4; ++i) {
-        const uint64_t cur = m_state.vkDown[i].load(std::memory_order_relaxed);
-        if (cur & m.vkMask[i]) return true;
+            const bool mouseHit =
+                (m_state.mouseButtons.load(std::memory_order_relaxed) & m.mouseMask) != 0u;
+
+            if (vkHit | mouseHit) return true;
+        }
     }
-    if (m.mouseMask != 0) {
-        const uint8_t mb = m_state.mouseButtons.load(std::memory_order_relaxed);
-        if ((mb & m.mouseMask) != 0) return true;
+
+    // 2) フォールバック（登録が巨大/特殊な場合のみ）
+    auto it = m_hkToVk.find(hk);
+    if (it != m_hkToVk.end()) {
+        for (UINT vk : it->second) {
+            if (vk < 8) {
+                const uint8_t b = kMouseButtonLUT[vk];
+                if (b < 5 && getMouseButton(b)) return true;
+            }
+            else if (getVkState(vk)) {
+                return true;
+            }
+        }
     }
     return false;
 }
 
 bool RawInputWinFilter::hotkeyPressed(int hk) noexcept
 {
-    if (hk < 0 || hk >= kMaxHotkeyId) return false;
-    const bool cur = hotkeyDown(hk);
-    const int wordIdx = hk >> 6;
-    const uint64_t bit = 1ULL << (hk & 63);
+    const bool now = hotkeyDown(hk);
 
-    const uint64_t old = m_hkPrev[wordIdx].load(std::memory_order_relaxed);
-    const bool prev = (old & bit) != 0;
-
-    if (cur) {
-        if (!prev) {
-            m_hkPrev[wordIdx].fetch_or(bit, std::memory_order_relaxed);
-            return true;
+    if ((unsigned)hk < kMaxHotkeyId) {
+        const size_t idx = ((unsigned)hk) >> 6;
+        const uint64_t bit = 1ULL << (hk & 63);
+        if (now) {
+            const uint64_t prev = m_hkPrev[idx].fetch_or(bit, std::memory_order_acq_rel);
+            return (prev & bit) == 0;
+        }
+        else {
+            const uint64_t prev = m_hkPrev[idx].fetch_and(~bit, std::memory_order_acq_rel);
+            (void)prev;
+            return false;
         }
     }
-    else {
-        if (prev) m_hkPrev[wordIdx].fetch_and(~bit, std::memory_order_relaxed);
-    }
-    return false;
+
+    // 大きいIDは簡易フォールバック
+    static std::array<std::atomic<uint8_t>, 1024> s{};
+    const size_t i = ((unsigned)hk) & 1023;
+    const uint8_t prev = s[i].exchange(now ? 1u : 0u, std::memory_order_acq_rel);
+    return now && !prev;
 }
 
 bool RawInputWinFilter::hotkeyReleased(int hk) noexcept
 {
-    if (hk < 0 || hk >= kMaxHotkeyId) return false;
-    const bool cur = hotkeyDown(hk);
-    const int wordIdx = hk >> 6;
-    const uint64_t bit = 1ULL << (hk & 63);
+    const bool now = hotkeyDown(hk);
 
-    const uint64_t old = m_hkPrev[wordIdx].load(std::memory_order_relaxed);
-    const bool prev = (old & bit) != 0;
-
-    if (!cur) {
-        if (prev) {
-            m_hkPrev[wordIdx].fetch_and(~bit, std::memory_order_relaxed);
-            return true;
+    if ((unsigned)hk < kMaxHotkeyId) {
+        const size_t idx = ((unsigned)hk) >> 6;
+        const uint64_t bit = 1ULL << (hk & 63);
+        if (!now) {
+            const uint64_t prev = m_hkPrev[idx].fetch_and(~bit, std::memory_order_acq_rel);
+            return (prev & bit) != 0;
+        }
+        else {
+            (void)m_hkPrev[idx].fetch_or(bit, std::memory_order_acq_rel);
+            return false;
         }
     }
-    else {
-        if (!prev) m_hkPrev[wordIdx].fetch_or(bit, std::memory_order_relaxed);
-    }
-    return false;
-}
 
-FORCE_INLINE void RawInputWinFilter::setVkBit(UINT vk, bool down) noexcept
-{
-    if (vk >= 256u) return;
-    auto& word = m_state.vkDown[vk >> 6];
-    const uint64_t bit = 1ULL << (vk & 63u);
-    if (down) {
-        (void)word.fetch_or(bit, std::memory_order_relaxed);
-    }
-    else {
-        (void)word.fetch_and(~bit, std::memory_order_relaxed);
-    }
+    // 大きいIDは簡易フォールバック
+    static std::array<std::atomic<uint8_t>, 1024> s{};
+    const size_t i = ((unsigned)hk) & 1023;
+    const uint8_t prev = s[i].exchange(now ? 1u : 0u, std::memory_order_acq_rel);
+    return (!now) && prev;
 }
 
 #endif // _WIN32
