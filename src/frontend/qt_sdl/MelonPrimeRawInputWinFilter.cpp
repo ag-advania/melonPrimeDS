@@ -112,7 +112,7 @@ bool RawInputWinFilter::drainRawInputNow(int maxLoops)
     }
     return any;
 }
-*/
+
 // claude v1
 bool RawInputWinFilter::drainRawInputNow(int maxLoops)
 {
@@ -132,7 +132,7 @@ bool RawInputWinFilter::drainRawInputNow(int maxLoops)
     }
     return any;
 }
-
+*/
 
 // chatgpt v1
 /*
@@ -179,7 +179,7 @@ bool RawInputWinFilter::drainRawInputNow(int maxLoops)
 }
 */
 
-/*
+
 // chatgpt v2
 //=============================================================================
 // 吞み込み最速版（高スループット）：GetRawInputBuffer 一括読み
@@ -235,7 +235,6 @@ bool RawInputWinFilter::drainRawInputNow()
 
     return any;
 }
-*/
 
 //------------------------------------------------------------------------------
 FORCE_INLINE void RawInputWinFilter::handleRawInput(const RAWINPUT& ri) noexcept
