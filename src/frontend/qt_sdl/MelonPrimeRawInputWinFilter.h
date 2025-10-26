@@ -68,6 +68,7 @@ public:
 
     // フレーム先頭で呼ぶだけ～WM_INPUTを即時ドレインして最新状態へ
     bool drainRawInputNow(int maxLoops = 256);
+    //bool drainRawInputNow();
 
     void fetchMouseDelta(int& outDx, int& outDy);
     bool getMouseDelta(int& outDx, int& outDy) { fetchMouseDelta(outDx, outDy); return (outDx | outDy) != 0; }
