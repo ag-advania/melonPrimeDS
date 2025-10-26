@@ -621,6 +621,79 @@ bool useDsName(NDS* nds, Config::Table& localCfg, std::uint32_t addrDsNameFlagAn
     // 書き込み実施リターン
     return true;
 }
+#include <cstdint>
+#include <algorithm>
+
+/**
+ * SFX音量一度適用関数本体定義.
+ *
+ * @param NDS* nds                       NDS本体参照.
+ * @param Config::Table& localCfg        ローカル設定参照.
+ * @param uint32_t kSfxAddr              SFX音量アドレス(例: 0x020E9999).
+ * @param bool& isVolumeSfxApplied       一度適用済みフラグ.
+ * @return bool                          書き込み実施有無.
+ */
+bool ApplySfxVolumeOnce(NDS* nds, Config::Table& localCfg, std::uint32_t kSfxAddr, bool& isVolumeSfxApplied)
+{
+    if (!nds) return false;
+    if (Q_LIKELY(isVolumeSfxApplied)) return false;
+    if (Q_LIKELY(!localCfg.GetBool("Metroid.Apply.SfxVolume"))) return false;
+
+    // 現在値読出し
+    std::uint8_t oldVal = nds->ARM9Read8(kSfxAddr);
+
+    // 設定から段数を取得し0～9にクランプ
+    int cfgSteps = localCfg.GetInt("Metroid.Volume.SFX");
+    std::uint8_t steps = static_cast<std::uint8_t>(std::clamp(cfgSteps, 0, 9));
+
+    // 合成：b7～b6保持、b5～b2=段数、b1～b0は11固定
+    std::uint8_t newVal = static_cast<std::uint8_t>((oldVal & 0xC0) | ((steps & 0x0F) << 2) | 0x03);
+
+    if (newVal == oldVal) {
+        isVolumeSfxApplied = true;
+        return false;
+    }
+    nds->ARM9Write8(kSfxAddr, newVal);
+    isVolumeSfxApplied = true;
+    return true;
+}
+
+/**
+ * Music音量一度適用関数本体定義.
+ *
+ * @param NDS* nds                         NDS本体参照.
+ * @param Config::Table& localCfg          ローカル設定参照.
+ * @param uint32_t kMusicAddr              Music音量アドレス(例: 0x020E999A).
+ * @param bool& isVolumeMusicApplied       一度適用済みフラグ.
+ * @return bool                            書き込み実施有無.
+ */
+bool ApplyMusicVolumeOnce(NDS* nds, Config::Table& localCfg, std::uint32_t kMusicAddr, bool& isVolumeMusicApplied)
+{
+    if (!nds) return false;
+    if (Q_LIKELY(isVolumeMusicApplied)) return false;
+    if (Q_LIKELY(!localCfg.GetBool("Metroid.Apply.MusicVolume"))) return false;
+
+    // 現在値読出し
+    std::uint8_t oldVal = nds->ARM9Read8(kMusicAddr);
+
+    // 設定から段数を取得し0～9にクランプ
+    int cfgSteps = localCfg.GetInt("Metroid.Volume.Music");
+    std::uint8_t steps = static_cast<std::uint8_t>(std::clamp(cfgSteps, 0, 9));
+
+    // 合成：b5～b2だけ差し替え、他ビット保持
+    std::uint8_t newField = static_cast<std::uint8_t>((steps & 0x0F) << 2);
+    std::uint8_t newVal = static_cast<std::uint8_t>((oldVal & static_cast<std::uint8_t>(~0x3C)) | newField);
+
+    if (newVal == oldVal) {
+        isVolumeMusicApplied = true;
+        return false;
+    }
+    nds->ARM9Write8(kMusicAddr, newVal);
+    isVolumeMusicApplied = true;
+    return true;
+}
+
+
 
 
 /**
@@ -739,7 +812,8 @@ bool isSnapTapMode = false;
 bool isUnlockHuntersMaps = false;
 // グローバル適用フラグ定義(多重適用を避けるため)
 bool isHeadphoneApplied = false;
-
+bool isVolumeSfxApplied = false;
+bool isVolumeMusicApplied = false;
 
 melonDS::u32 addrBaseIsAltForm;
 melonDS::u32 addrBaseLoadedSpecialWeapon;
@@ -758,6 +832,8 @@ melonDS::u32 addrIsInAdventure;
 melonDS::u32 addrIsMapOrUserActionPaused; // for issue in AdventureMode, Aim Stopping when SwitchingWeapon. 
 melonDS::u32 addrOperationAndSound; // ToSet headphone. 8bit write
 melonDS::u32 addrUnlockMapsHunters; // Sound Test Open, SFX Volum Addr
+melonDS::u32 addrVolSfx8Bit; // Sound Test Open, SFX Volum Addr
+melonDS::u32 addrVolMusic8Bit; // Sound Test Open, SFX Volum Addr
 melonDS::u32 addrUnlockMapsHunters2; // All maps open addr
 melonDS::u32 addrUnlockMapsHunters3; // All hunters open addr
 melonDS::u32 addrUnlockMapsHunters4; // All gallery open addr
@@ -866,6 +942,8 @@ __attribute__((always_inline, flatten)) inline void detectRomAndSetAddresses(Emu
     addrIsInVisorOrMap = addrPlayerPos - 0xABB;
     addrBaseLoadedSpecialWeapon = addrBaseIsAltForm + 0x56;
     addrBaseJumpFlag = addrBaseSelectedWeapon - 0xA;
+    addrVolSfx8Bit = addrUnlockMapsHunters;
+    addrVolMusic8Bit = addrVolSfx8Bit + 0x1;
     addrOperationAndSound = addrUnlockMapsHunters - 0x1;
     addrUnlockMapsHunters2 = addrUnlockMapsHunters + 0x3;
     addrUnlockMapsHunters3 = addrUnlockMapsHunters + 0x7;
@@ -888,6 +966,8 @@ __attribute__((always_inline, flatten)) inline void detectRomAndSetAddresses(Emu
     // フラグリセット(起動後初期適用のため)
     isUnlockMapsHuntersApplied = false;
     isHeadphoneApplied = false;
+    isVolumeSfxApplied = false;
+    isVolumeMusicApplied = false;
 
     // 感度キャッシュ初期化(ホットパス無関与で一度だけ反映するため)
     recalcAimSensitivityCache(emuInstance->getLocalConfig());
@@ -2559,6 +2639,11 @@ void EmuThread::run()
                         applySelectedHunterStrict(emuInstance->nds, localCfg, addrMainHunter);
                         // Apply license color
                         applyLicenseColorStrict(emuInstance->nds, localCfg, addrRankColor);
+
+                        // Apply Volumes
+                        ApplySfxVolumeOnce(emuInstance->nds, localCfg, addrVolSfx8Bit, isVolumeSfxApplied);
+
+                        ApplyMusicVolumeOnce(emuInstance->nds, localCfg, addrVolMusic8Bit, isVolumeMusicApplied);
                     }
 
                 }
@@ -2716,7 +2801,8 @@ void EmuThread::handleMessages()
                 isUnlockMapsHuntersApplied = false; // Unlockリセット用
                 // lastMphSensitivity = std::numeric_limits<double>::quiet_NaN(); // Mph感度リセット用
                 isHeadphoneApplied = false; // ヘッドフォンリセット用
-
+                isVolumeSfxApplied = false;
+                isVolumeMusicApplied = false;
 
                 // 再開時に現在の設定値をキャッシュへ即反映（Aim感度）
                 recalcAimSensitivityCache(emuInstance->getLocalConfig());
