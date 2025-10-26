@@ -24,7 +24,7 @@
 
 // 互換ミラー（m_vkDownCompat/m_mbCompat）を書かないなら 0 に
 #ifndef RAWFILTER_ENABLE_COMPAT_MIRRORS
-#define RAWFILTER_ENABLE_COMPAT_MIRRORS 1
+#define RAWFILTER_ENABLE_COMPAT_MIRRORS 0
 #endif
 
 class RawInputWinFilter final : public QAbstractNativeEventFilter
@@ -67,8 +67,7 @@ public:
     bool registerRawInputEx2(HWND hwnd, DWORD flags);
 
     // フレーム先頭で呼ぶだけ～WM_INPUTを即時ドレインして最新状態へ
-    bool drainRawInputNow(int maxLoops = 256);
-    //bool drainRawInputNow();
+    bool drainRawInputNow();
 
     void fetchMouseDelta(int& outDx, int& outDy);
     bool getMouseDelta(int& outDx, int& outDy) { fetchMouseDelta(outDx, outDy); return (outDx | outDy) != 0; }
