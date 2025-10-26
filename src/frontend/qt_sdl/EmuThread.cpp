@@ -1816,9 +1816,6 @@ void EmuThread::run()
                 // ここから先は下に行くほど低遅延。RunFrameの直前が最も低遅延。
 				// TODO !isFocusedの時の入力排除。RawInputでは排除済み。linux macでは必要。
 
-                // これでWM_INPUTの残りをゼロに
-                if (g_rawFilter) g_rawFilter->drainRawInputNow();
-
                 // ズーム
                 const bool rawZoom = MP_HK_DOWN(HK_MetroidZoom);
                 inputMask.setBit(INPUT_R, !rawZoom);
@@ -1826,9 +1823,6 @@ void EmuThread::run()
                 // 射撃（Shoot/Scanのどちらか）
                 const bool rawShoot = MP_HK_DOWN(HK_MetroidShootScan) || MP_HK_DOWN(HK_MetroidScanShoot);
                 inputMask.setBit(INPUT_L, !rawShoot);
-
-                // これでWM_INPUTの残りをゼロに
-                if (g_rawFilter) g_rawFilter->drainRawInputNow();
 
 				// Aim
                 processAimInput();
