@@ -62,9 +62,12 @@ public:
 
     void setMouseHide(bool enable, int delay);
 
-    QTimer* setupMouseTimer();
-    void updateMouseTimer();
-    QTimer* mouseTimer;
+    /*
+    * MelonPrimeDS CommentOut
+    //QTimer* setupMouseTimer();
+    //void updateMouseTimer();
+    //QTimer* mouseTimer;
+    */
     QSize screenGetMinSize(int factor);
 
     void osdSetEnabled(bool enabled);
