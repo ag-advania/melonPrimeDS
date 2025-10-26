@@ -138,6 +138,15 @@ InputConfigDialog::InputConfigDialog(QWidget* parent) : QDialog(parent), ui(new 
     ui->comboMetroidSelectedColor->setCurrentIndex(
         instcfg.GetInt("Metroid.HunterLicense.Color.Selected"));
 
+
+    // Volume
+
+    ui->cbMetroidApplySfxVolume->setChecked(instcfg.GetBool("Metroid.Apply.SfxVolume"));
+    ui->spinMetroidVolumeSFX->setValue(instcfg.GetInt("Metroid.Volume.SFX"));
+
+    ui->cbMetroidApplyMusicVolume->setChecked(instcfg.GetBool("Metroid.Apply.MusicVolume"));
+    ui->spinMetroidVolumeMusic->setValue(instcfg.GetInt("Metroid.Volume.Music"));
+
     // } MelonPrimeDS
 
 
@@ -336,6 +345,14 @@ void InputConfigDialog::on_InputConfigDialog_accepted()
         ui->cbMetroidApplyColor->checkState() == Qt::Checked);
     instcfg.SetInt("Metroid.HunterLicense.Color.Selected",
         ui->comboMetroidSelectedColor->currentIndex());
+
+    // Volume
+    instcfg.SetBool("Metroid.Apply.SfxVolume",
+        ui->cbMetroidApplySfxVolume->checkState() == Qt::Checked);
+    instcfg.SetInt("Metroid.Volume.SFX", ui->spinMetroidVolumeSFX->value());
+    instcfg.SetBool("Metroid.Apply.MusicVolume",
+        ui->cbMetroidApplyMusicVolume->checkState() == Qt::Checked);
+    instcfg.SetInt("Metroid.Volume.Music", ui->spinMetroidVolumeMusic->value());
 
 
     // } MelonPrimeDS

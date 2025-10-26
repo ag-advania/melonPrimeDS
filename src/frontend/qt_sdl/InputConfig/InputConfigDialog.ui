@@ -18,7 +18,7 @@
   </property>
   <layout class="QGridLayout" name="gridLayout_4">
    <property name="sizeConstraint">
-    <enum>QLayout::SetFixedSize</enum>
+    <enum>QLayout::SetMinimumSize</enum>
    </property>
    <item row="8" column="1">
     <widget class="QDialogButtonBox" name="buttonBox">
@@ -2299,312 +2299,510 @@
 				<string>Add-ons (Metroid) 2</string>
 			</attribute>
 		</widget>
-
-		<!-- Tab Other Metroid settings -->
-	    <widget class="QWidget" name="tabMetroid">
-		    <attribute name="title">
-			    <string>Other Metroid settings</string>
-		    </attribute>
-		    <!-- Form layout to organize setting items in a grid -->
-		    <layout class="QFormLayout" name="metroidFormLayout">
-
-
-				<!-- MPH sensitivity configuration -->
-				<item row="0" column="0">
-					<!-- Label for aim sensitivity -->
-					<widget class="QLabel" name="metroidMphSensitvityLabel">
+		<widget class="QWidget" name="tabMetroid">
+			<attribute name="title">
+				<string>Other Metroid settings</string>
+			</attribute>
+			<layout class="QVBoxLayout" name="metroidVLayout" stretch="0,0,0,0,1">
+				<!-- ===== セクション：Sensitivity ===== -->
+				<item>
+					<widget class="QToolButton" name="secSensBtn">
+						<property name="checkable">
+							<bool>true</bool>
+						</property>
+						<property name="checked">
+							<bool>true</bool>
+						</property>
+						<property name="toolButtonStyle">
+							<enum>Qt::ToolButtonTextBesideIcon</enum>
+						</property>
 						<property name="text">
-							<string>
-								&lt;html&gt;&lt;body&gt;
-								Mph sensitivity (default: -3):&lt;br/&gt;
-								(Set this value to 1 or lower if possible for precise aiming. We recommend a range of -3 to 0.&lt;br/&gt;
-								However, setting it too low will increase the HUD shake when aiming)
-								&lt;/body&gt;&lt;/html&gt;
-							</string>
+							<string>[Sensitivity]</string>
 						</property>
 					</widget>
 				</item>
-				<item row="1" column="0">
-					<!-- Double spin box for aim sensitivity value (range: -5.0 ~ 155.0) -->
-					<widget class="QDoubleSpinBox" name="metroidMphSensitvitySpinBox">
-						<property name="minimum">
-							<double>-5.008</double>
+				<item>
+					<widget class="QFrame" name="secSensBody">
+						<property name="frameShape">
+							<enum>QFrame::NoFrame</enum>
 						</property>
-						<property name="maximum">
-							<double>155.225</double>
-						</property>
-						<property name="singleStep">
-							<double>0.1</double>
-						</property>
-						<property name="decimals">
-							<number>3</number>
-						</property>
-						<property name="value">
-							<double>-3.000</double>
-						</property>
+						<layout class="QFormLayout" name="formSens">
+							<!-- MPH sensitivity -->
+							<item row="0" column="0">
+								<widget class="QDoubleSpinBox" name="metroidMphSensitvitySpinBox">
+									<property name="minimum">
+										<double>-5.008</double>
+									</property>
+									<property name="maximum">
+										<double>155.225</double>
+									</property>
+									<property name="singleStep">
+										<double>0.1</double>
+									</property>
+									<property name="decimals">
+										<number>3</number>
+									</property>
+									<property name="value">
+										<double>-3.000</double>
+									</property>
+								</widget>
+							</item>
+							<item row="0" column="1">
+								<widget class="QLabel" name="metroidMphSensitvityLabel">
+									<property name="text">
+										<string>Mph sensitivity (default: -3)</string>
+									</property>
+								</widget>
+							</item>
+							
+							<item row="1" column="1">
+								<widget class="QLabel" name="metroidMphSensitvityLabel2">
+									<property name="text">
+										<string>(Set this value to 1 or lower if possible for precise aiming. We recommend a range of -3 to 0. However, setting it too low will increase the HUD shake when aiming)</string>
+									</property>
+								</widget>
+							</item>
+							
+							<!-- Aim sensitivity -->
+							<item row="2" column="0">
+								<widget class="QSpinBox" name="metroidAimSensitvitySpinBox">
+									<property name="minimum">
+										<number>0</number>
+									</property>
+									<property name="maximum">
+										<number>99999</number>
+									</property>
+									<property name="value">
+										<number>63</number>
+									</property>
+								</widget>
+							</item>
+							<item row="2" column="1">
+								<widget class="QLabel" name="metroidAimSensitvityLabel">
+									<property name="text">
+										<string>Aim sensitivity (default: 63)</string>
+									</property>
+								</widget>
+							</item>
+
+
+							<!-- Y-axis scale -->
+							<item row="3" column="0">
+								<widget class="QDoubleSpinBox" name="metroidAimYAxisScaleSpinBox">
+									<property name="minimum">
+										<double>0.000001</double>
+									</property>
+									<property name="maximum">
+										<double>2</double>
+									</property>
+									<property name="singleStep">
+										<double>0.1</double>
+									</property>
+									<property name="decimals">
+										<number>6</number>
+									</property>
+									<property name="value">
+										<double>1.500000</double>
+									</property>
+								</widget>
+							</item>
+							<item row="3" column="1">
+								<widget class="QLabel" name="metroidAimYAxisScaleLabel">
+									<property name="text">
+										<string>Aim Y-Axis Scale (default: 1.5)</string>
+									</property>
+								</widget>
+							</item>
+
+							<!-- Input threshold -->
+							<item row="6" column="0">
+								<widget class="QDoubleSpinBox" name="metroidAimAdjustSpinBox">
+									<property name="minimum">
+										<double>0.000000</double>
+									</property>
+									<property name="maximum">
+										<double>100.000000</double>
+									</property>
+									<property name="singleStep">
+										<double>0.1</double>
+									</property>
+									<property name="decimals">
+										<number>6</number>
+									</property>
+									<property name="value">
+										<double>0.010000</double>
+									</property>
+								</widget>
+							</item>
+							<item row="6" column="1">
+								<widget class="QLabel" name="metroidAimAdjustLabel">
+									<property name="text">
+										<string>Input threshold (deadzone + snap) (recommended: 0.01[default] or 0.5): |x|&lt;a → 0, a ≤ |x|&lt;1 → ±1, |x|≥1 → as is (a=0: off = all values under 1 ignored, no snap)</string>
+									</property>
+								</widget>
+							</item>
+
+
+							<!-- Reset -->
+							<item row="8" column="0">
+								<widget class="QPushButton" name="metroidResetSensitivityValues">
+									<property name="text">
+										<string>Reset sensitivity values</string>
+									</property>
+								</widget>
+							</item>
+						</layout>
 					</widget>
 				</item>
 
-				<!-- Aim sensitivity configuration -->
-			    <item row="2" column="0">
-				    <!-- Label for aim sensitivity -->
-				    <widget class="QLabel" name="metroidAimSensitvityLabel">
-					    <property name="text">
-						    <string>Aim sensitivity (default: 63):</string>
-					    </property>
-				    </widget>
-			    </item>
-			    <item row="3" column="0">
-				    <!-- Spin box for aim sensitivity value (range: 0-99999) -->
-				    <widget class="QSpinBox" name="metroidAimSensitvitySpinBox">
-					    <property name="minimum">
-						    <number>0</number>
-					    </property>
-					    <property name="maximum">
-						    <number>99999</number>
-					    </property>
-					    <property name="value">
-						    <number>63</number>
-					    </property>
-				    </widget>
-			    </item>
-
-				<!-- Aim sensitivity configuration -->
-				<item row="4" column="0">
-					<!-- Label for aim sensitivity -->
-					<widget class="QLabel" name="metroidAimYAxisScaleLabel">
+				<!-- ===== セクション：Gameplay Toggles ===== -->
+				<item>
+					<widget class="QToolButton" name="secGameplayBtn">
+						<property name="checkable">
+							<bool>true</bool>
+						</property>
+						<property name="checked">
+							<bool>true</bool>
+						</property>
+						<property name="toolButtonStyle">
+							<enum>Qt::ToolButtonTextBesideIcon</enum>
+						</property>
 						<property name="text">
-							<string>Aim Y-Axis Scale (default: 1.5):</string>
+							<string>[Gameplay Toggles]</string>
 						</property>
 					</widget>
 				</item>
-				<item row="5" column="0">
-					<widget class="QDoubleSpinBox" name="metroidAimYAxisScaleSpinBox">
-						<property name="minimum">
-							<double>0.000001</double>
+				<item>
+					<widget class="QFrame" name="secGameplayBody">
+						<property name="frameShape">
+							<enum>QFrame::NoFrame</enum>
 						</property>
-						<property name="maximum">
-							<double>2</double>
-						</property>
-						<property name="singleStep">
-							<double>0.1</double>
-						</property>
-						<property name="decimals">
-							<number>6</number>
-						</property>
-						<property name="value">
-							<double>1.500000</double>
-						</property>
+						<layout class="QFormLayout" name="formGameplay">
+							<item row="0" column="0">
+								<widget class="QCheckBox" name="cbMetroidEnableSnapTap">
+									<property name="text">
+										<string>Enable SnapTap (Faster directional switching for smooth strafing — may slightly increase input delay)</string>
+									</property>
+								</widget>
+							</item>
+							<item row="1" column="0">
+								<widget class="QCheckBox" name="cbMetroidUnlockAll">
+									<property name="text">
+										<string>Unlock All Hunters/Maps/SoundTest/Gallery (Change a setting in MPH and save to update the save data. Uncheck this option after saving)</string>
+									</property>
+								</widget>
+							</item>
+							<item row="2" column="0">
+								<widget class="QCheckBox" name="cbMetroidApplyHeadphone">
+									<property name="text">
+										<string>Set MPH audio settings to headphones.(recommended) (Change a setting in MPH and save to update the save data. Uncheck this option after saving)</string>
+									</property>
+								</widget>
+							</item>
+							<item row="3" column="0">
+								<widget class="QCheckBox" name="cbMetroidUseFirmwareName">
+									<property name="text">
+										<string>Use DS Name (Resets in-game name and HL color):You can change the DS name from [File -&gt; Boot firmware] or [Config -&gt; Firmware Settings].</string>
+									</property>
+								</widget>
+							</item>
+						</layout>
 					</widget>
 				</item>
 
-				<item row="6" column="0">
-					<!-- Label for aim sensitivity -->
-					<widget class="QLabel" name="metroidAimAdjustLabel">
+				<!-- ===== セクション：Video Quality ===== -->
+				<item>
+					<widget class="QToolButton" name="secVideoBtn">
+						<property name="checkable">
+							<bool>true</bool>
+						</property>
+						<property name="checked">
+							<bool>true</bool>
+						</property>
+						<property name="toolButtonStyle">
+							<enum>Qt::ToolButtonTextBesideIcon</enum>
+						</property>
 						<property name="text">
-							<string>Input threshold (deadzone + snap) (recommended: 0.01[default] or 0.5): |x|&lt;a → 0, a ≤ |x|&lt;1 → ±1, |x|≥1 → as is (a=0: off = all values under 1 ignored, no snap)</string>
+							<string>[Video Quality]</string>
 						</property>
 					</widget>
 				</item>
-				<item row="7" column="0">
-					<widget class="QDoubleSpinBox" name="metroidAimAdjustSpinBox">
-						<property name="minimum">
-							<double>0.000000</double>
+				<item>
+					<widget class="QFrame" name="secVideoBody">
+						<property name="frameShape">
+							<enum>QFrame::NoFrame</enum>
 						</property>
-						<property name="maximum">
-							<double>100.000000</double>
-						</property>
-						<property name="singleStep">
-							<double>0.1</double>
-						</property>
-						<property name="decimals">
-							<number>6</number>
-						</property>
-						<property name="value">
-							<double>0.010000</double>
-						</property>
+						<!-- ↓ ここから置き換え -->
+						<layout class="QHBoxLayout" name="videoButtonsLayout">
+							<property name="spacing">
+								<number>8</number>
+							</property>
+							<item>
+								<widget class="QPushButton" name="metroidSetVideoQualityToLow">
+									<property name="text">
+										<string>Video quality: Low (High Performance)</string>
+									</property>
+								</widget>
+							</item>
+							<item>
+								<widget class="QPushButton" name="metroidSetVideoQualityToHigh">
+									<property name="text">
+										<string>Video quality: High (Lower Performance)</string>
+									</property>
+								</widget>
+							</item>
+							<item>
+								<widget class="QPushButton" name="metroidSetVideoQualityToHigh2">
+									<property name="text">
+										<string>Video quality: High2 (Recommended. Best Performance, Minor Visual Glitches)</string>
+									</property>
+								</widget>
+							</item>
+							<!-- 余白用（右側に伸ばして左寄せを保つ）-->
+							<item>
+								<spacer name="videoButtonsSpacer">
+									<property name="orientation">
+										<enum>Qt::Horizontal</enum>
+									</property>
+									<property name="sizeHint" stdset="0">
+										<size>
+											<width>40</width>
+											<height>20</height>
+										</size>
+									</property>
+								</spacer>
+							</item>
+						</layout>
+						<!-- ↑ ここまで置き換え -->
 					</widget>
 				</item>
 
-			    <!-- Reset button for sensitivity settings -->
-			    <item row="8" column="0">
-				    <widget class="QPushButton" name="metroidResetSensitivityValues">
-					    <property name="text">
-						    <string>Reset sensitivity values</string>
-					    </property>
-				    </widget>
-			    </item>
-
-			    <!-- Add vertical spacing -->
-			    <item row="9" column="0">
-				    <widget class="QLabel" name="emptyLabel2">
-					    <property name="text">
-						    <string> </string>
-					    </property>
-				    </widget>
-			    </item>
-
-				<!-- SnapTap -->
-				<item row="10" column="0">
-					<widget class="QCheckBox" name="cbMetroidEnableSnapTap">
+				<!-- ===== セクション：Volume ===== -->
+				<item>
+					<widget class="QToolButton" name="secVolumeBtn">
+						<property name="checkable">
+							<bool>true</bool>
+						</property>
+						<property name="checked">
+							<bool>true</bool>
+						</property>
+						<property name="toolButtonStyle">
+							<enum>Qt::ToolButtonTextBesideIcon</enum>
+						</property>
 						<property name="text">
-							<string>Enable SnapTap (Faster directional switching for smooth strafing — may slightly increase input delay)</string>
+							<string>[Volume]</string>
 						</property>
 					</widget>
 				</item>
-				
-				<item row="11" column="0">
-					<widget class="QCheckBox" name="cbMetroidUnlockAll">
+				<item>
+					<widget class="QFrame" name="secVolumeBody">
+						<property name="frameShape">
+							<enum>QFrame::NoFrame</enum>
+						</property>
+						<layout class="QFormLayout" name="formVolume">
+
+							<!-- SFX volume -->
+							<item row="0" column="0">
+								<widget class="QCheckBox" name="cbMetroidApplySfxVolume">
+									<property name="text">
+										<string>Apply SFX volume</string>
+									</property>
+									<!-- 設定キー: Metroid.Apply.SfxVolume (bool) -->
+									<property name="toolTip">
+										<string>Setting Key: Metroid.Apply.SfxVolume (check to apply)</string>
+									</property>
+								</widget>
+							</item>
+							<item row="0" column="1">
+								<widget class="QSpinBox" name="spinMetroidVolumeSFX">
+									<property name="minimum">
+										<number>0</number>
+									</property>
+									<property name="maximum">
+										<number>9</number>
+									</property>
+									<property name="value">
+										<number>9</number>
+									</property>
+									<!-- 設定キー: Metroid.Volume.SFX (0～9) -->
+									<property name="toolTip">
+										<string>Setting Key: Metroid.Volume.SFX (0–9)</string>
+									</property>
+								</widget>
+							</item>
+
+							<!-- Music volume -->
+							<item row="1" column="0">
+								<widget class="QCheckBox" name="cbMetroidApplyMusicVolume">
+									<property name="text">
+										<string>Apply music volume</string>
+									</property>
+									<!-- 設定キー: Metroid.Apply.MusicVolume (bool) -->
+									<property name="toolTip">
+										<string>Setting Key: Metroid.Apply.MusicVolume (check to apply)</string>
+									</property>
+								</widget>
+							</item>
+							<item row="1" column="1">
+								<widget class="QSpinBox" name="spinMetroidVolumeMusic">
+									<property name="minimum">
+										<number>0</number>
+									</property>
+									<property name="maximum">
+										<number>9</number>
+									</property>
+									<property name="value">
+										<number>9</number>
+									</property>
+									<!-- 設定キー: Metroid.Volume.Music (0～9) -->
+									<property name="toolTip">
+										<string>Setting Key: Metroid.Volume.Music (0–9)</string>
+									</property>
+								</widget>
+							</item>
+
+						</layout>
+					</widget>
+				</item>
+
+
+				<!-- ===== セクション：License Apply ===== -->
+				<item>
+					<widget class="QToolButton" name="secLicenseBtn">
+						<property name="checkable">
+							<bool>true</bool>
+						</property>
+						<property name="checked">
+							<bool>true</bool>
+						</property>
+						<property name="toolButtonStyle">
+							<enum>Qt::ToolButtonTextBesideIcon</enum>
+						</property>
 						<property name="text">
-							<string>Unlock All Hunters/Maps/SoundTest/Gallery (Change a setting in MPH and save to update the save data. Uncheck this option after saving)</string>
+							<string>[License Apply]</string>
 						</property>
 					</widget>
 				</item>
-
-				<item row="12" column="0">
-					<widget class="QCheckBox" name="cbMetroidApplyHeadphone">
-						<property name="text">
-							<string>Set MPH audio settings to headphones.(recommended) (Change a setting in MPH and save to update the save data. Uncheck this option after saving)</string>
+				<item>
+					<widget class="QFrame" name="secLicenseBody">
+						<property name="frameShape">
+							<enum>QFrame::NoFrame</enum>
 						</property>
+						<layout class="QFormLayout" name="formLicense">
+							<!-- Hunter -->
+							<item row="0" column="0">
+								<widget class="QCheckBox" name="cbMetroidApplyHunter">
+									<property name="text">
+										<string>Apply the selected hunter to your license. (Renaming will update the save data)</string>
+									</property>
+									<property name="toolTip">
+										<string>Enables applying the selected hunter to the license.</string>
+									</property>
+								</widget>
+							</item>
+							<item row="0" column="1">
+								<widget class="QComboBox" name="comboMetroidSelectedHunter">
+									<property name="toolTip">
+										<string>Select the hunter to apply.</string>
+									</property>
+									<item>
+										<property name="text">
+											<string>Samus</string>
+										</property>
+									</item>
+									<item>
+										<property name="text">
+											<string>Kanden</string>
+										</property>
+									</item>
+									<item>
+										<property name="text">
+											<string>Trace</string>
+										</property>
+									</item>
+									<item>
+										<property name="text">
+											<string>Sylux</string>
+										</property>
+									</item>
+									<item>
+										<property name="text">
+											<string>Noxus</string>
+										</property>
+									</item>
+									<item>
+										<property name="text">
+											<string>Spire</string>
+										</property>
+									</item>
+									<item>
+										<property name="text">
+											<string>Weavel</string>
+										</property>
+									</item>
+									<property name="currentIndex">
+										<number>0</number>
+									</property>
+								</widget>
+							</item>
+
+							<!-- Color -->
+							<item row="1" column="0">
+								<widget class="QCheckBox" name="cbMetroidApplyColor">
+									<property name="text">
+										<string>Apply the selected color to your license. (Renaming will update the save data)</string>
+									</property>
+									<property name="toolTip">
+										<string>Enables applying the selected color to the license.</string>
+									</property>
+								</widget>
+							</item>
+							<item row="1" column="1">
+								<widget class="QComboBox" name="comboMetroidSelectedColor">
+									<property name="toolTip">
+										<string>Select the color to apply.</string>
+									</property>
+									<item>
+										<property name="text">
+											<string>Blue(US)</string>
+										</property>
+									</item>
+									<item>
+										<property name="text">
+											<string>Red(JP,KR)</string>
+										</property>
+									</item>
+									<item>
+										<property name="text">
+											<string>Green(EU)</string>
+										</property>
+									</item>
+									<property name="currentIndex">
+										<number>0</number>
+									</property>
+								</widget>
+							</item>
+						</layout>
 					</widget>
 				</item>
 
-				<item row="13" column="0">
-					<widget class="QCheckBox" name="cbMetroidUseFirmwareName">
-						<property name="text">
-							<string>Use DS Name (Resets in-game name and HL color):You can change the DS name from [File -&gt; Boot firmware] or [Config -&gt; Firmware Settings].</string>
+				<item>
+					<spacer name="verticalSpacer">
+						<property name="orientation">
+							<enum>Qt::Vertical</enum>
 						</property>
-					</widget>
+						<property name="sizeHint" stdset="0">
+							<size>
+								<width>20</width>
+								<height>40</height>
+							</size>
+						</property>
+					</spacer>
 				</item>
-
-				<!-- Low quality -->
-			    <item row="14" column="0">
-				    <widget class="QPushButton" name="metroidSetVideoQualityToLow">
-					    <property name="text">
-						    <string>Video quality: Low (High Performance)</string>
-					    </property>
-				    </widget>
-			    </item>
-
-			    <!-- High quality -->
-			    <item row="15" column="0">
-				    <widget class="QPushButton" name="metroidSetVideoQualityToHigh">
-					    <property name="text">
-						    <string>Video quality: High (Lower Performance)</string>
-					    </property>
-				    </widget>
-			    </item>
-
-				<!-- High2 quality -->
-				<item row="16" column="0">
-					<widget class="QPushButton" name="metroidSetVideoQualityToHigh2">
-						<property name="text">
-							<string>Video quality: High2 (Recommended. Best Performance, Minor Visual Glitches) </string>
-						</property>
-					</widget>
-				</item>
-
-				<!-- Apply selected Hunter -->
-				<item row="17" column="0">
-					<widget class="QCheckBox" name="cbMetroidApplyHunter">
-						<property name="text">
-							<string>Apply the selected hunter to your license. (Renaming will update the save data)</string>
-						</property>
-						<property name="toolTip">
-							<string>Enables applying the selected hunter to the license.</string>
-						</property>
-						<!-- 設定キー: Metroid.Apply.Hunter (bool) -->
-					</widget>
-				</item>
-				<item row="17" column="1">
-					<widget class="QComboBox" name="comboMetroidSelectedHunter">
-						<property name="toolTip">
-							<string>Select the hunter to apply.</string>
-						</property>
-						<item>
-							<property name="text">
-								<string>Samus</string>
-							</property>
-						</item>
-						<item>
-							<property name="text">
-								<string>Kanden</string>
-							</property>
-						</item>
-						<item>
-							<property name="text">
-								<string>Trace</string>
-							</property>
-						</item>
-						<item>
-							<property name="text">
-								<string>Sylux</string>
-							</property>
-						</item>
-						<item>
-							<property name="text">
-								<string>Noxus</string>
-							</property>
-						</item>
-						<item>
-							<property name="text">
-								<string>Spire</string>
-							</property>
-						</item>
-						<item>
-							<property name="text">
-								<string>Weavel</string>
-							</property>
-						</item>
-						<!-- 設定キー: Metroid.Hunter.Selected (int: 0..6) -->
-						<property name="currentIndex">
-							<number>0</number>
-						</property>
-					</widget>
-				</item>
-
-				<!-- Apply selected Color -->
-				<item row="18" column="0">
-					<widget class="QCheckBox" name="cbMetroidApplyColor">
-						<property name="text">
-							<string>Apply the selected color to your license. (Renaming will update the save data)</string>
-						</property>
-						<property name="toolTip">
-							<string>Enables applying the selected color to the license.</string>
-						</property>
-						<!-- 設定キー: Metroid.Apply.Color (bool) -->
-					</widget>
-				</item>
-				<item row="18" column="1">
-					<widget class="QComboBox" name="comboMetroidSelectedColor">
-						<property name="toolTip">
-							<string>Select the color to apply.</string>
-						</property>
-						<item>
-							<property name="text">
-								<string>Blue(US)</string>
-							</property>
-						</item>
-						<item>
-							<property name="text">
-								<string>Red(JP,KR)</string>
-							</property>
-						</item>
-						<item>
-							<property name="text">
-								<string>Green(EU)</string>
-							</property>
-						</item>
-						<!-- 設定キー: Metroid.Color.Selected (int: 0..2) -->
-						<property name="currentIndex">
-							<number>0</number>
-						</property>
-					</widget>
-				</item>
-
 			</layout>
-	    </widget>
-		<!-- /MelonPrimeDS -->
+
+		</widget>
+
 	</widget>
    </item>
    <item row="7" column="0" colspan="2">
@@ -2728,5 +2926,40 @@
     </hint>
    </hints>
   </connection>
+
+	 <!-- MelonPrimeDSここからtoggled→setVisibleを結線 -->
+	 <connection>
+		 <sender>secSensBtn</sender>
+		 <signal>toggled(bool)</signal>
+		 <receiver>secSensBody</receiver>
+		 <slot>setVisible(bool)</slot>
+	 </connection>
+	 <connection>
+		 <sender>secGameplayBtn</sender>
+		 <signal>toggled(bool)</signal>
+		 <receiver>secGameplayBody</receiver>
+		 <slot>setVisible(bool)</slot>
+	 </connection>
+	 <connection>
+		 <sender>secVideoBtn</sender>
+		 <signal>toggled(bool)</signal>
+		 <receiver>secVideoBody</receiver>
+		 <slot>setVisible(bool)</slot>
+	 </connection>
+	 <connection>
+		 <sender>secVolumeBtn</sender>
+		 <signal>toggled(bool)</signal>
+		 <receiver>secVolumeBody</receiver>
+		 <slot>setVisible(bool)</slot>
+	 </connection>
+	 <connection>
+		 <sender>secLicenseBtn</sender>
+		 <signal>toggled(bool)</signal>
+		 <receiver>secLicenseBody</receiver>
+		 <slot>setVisible(bool)</slot>
+	 </connection>
+	 <!-- MelonPrimeDSここまで -->
+	 
  </connections>
+
 </ui>
