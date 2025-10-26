@@ -2201,6 +2201,8 @@ void EmuThread::run()
                     }
                     */
 
+                    // これでWM_INPUTの残りをゼロに
+                    if (g_rawFilter) g_rawFilter->drainRawInputNow();
 
                     // Move hunter
                     processMoveInput(inputMask);

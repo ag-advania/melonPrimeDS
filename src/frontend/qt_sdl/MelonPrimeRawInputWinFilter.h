@@ -22,10 +22,11 @@
 #  endif
 #endif
 
-// Low-latency Raw Input filter (Qt + Win32).
-// - No RIDEV_NOLEGACY / No RIDEV_NOHOTKEYS.
-// - Double-buffered mouse delta accumulation (fetch_add) to avoid CAS spin.
-// - CPU-specific intrinsics are NOT used (generic x86-64 only).
+// 互換ミラー（m_vkDownCompat/m_mbCompat）を書かないなら 0 に
+#ifndef RAWFILTER_ENABLE_COMPAT_MIRRORS
+#define RAWFILTER_ENABLE_COMPAT_MIRRORS 1
+#endif
+
 class RawInputWinFilter final : public QAbstractNativeEventFilter
 {
 public:
@@ -38,17 +39,15 @@ public:
     struct HotkeyMask {
         uint64_t vkMask[4]{ 0,0,0,0 }; // 256 VK bits
         uint8_t  mouseMask{ 0 };       // 5 mouse bits (L,R,M,X1,X2)
-        uint8_t  hasMask{ 0 };         // 1 if any mask is set
+        uint8_t  hasMask{ 0 };
         uint16_t _pad{ 0 };
     };
 
-    // 64B-aligned to avoid false sharing on hot path.
     struct alignas(64) InputState {
         std::array<std::atomic<uint64_t>, 4> vkDown{ {0,0,0,0} };
-        std::atomic<uint8_t>                mouseButtons{ 0 }; // 5 bits used
+        std::atomic<uint8_t>                mouseButtons{ 0 }; // 5 bits
     };
 
-    // Double buffer for mouse relative deltas.
     struct alignas(64) DeltaBuf {
         std::atomic<int32_t> dx{ 0 };
         std::atomic<int32_t> dy{ 0 };
@@ -60,62 +59,61 @@ public:
     RawInputWinFilter();
     ~RawInputWinFilter() override = default;
 
-    // QAbstractNativeEventFilter
     bool nativeEventFilter(const QByteArray& eventType, void* message, qintptr* result) override;
 
-    // Optional explicit registration. If hwnd != nullptr, target that window.
     bool registerRawInput(HWND hwnd);
+    bool registerRawInputEx(HWND hwnd, bool inputSink);
+    // 任意フラグを直接渡したい場合用（NOLEGACY/NOHOTKEYSは付けないでください）
+    bool registerRawInputEx2(HWND hwnd, DWORD flags);
 
-    // Mouse delta aggregation
+    // フレーム先頭で呼ぶだけ～WM_INPUTを即時ドレインして最新状態へ
+    bool drainRawInputNow(int maxLoops = 256);
+    //bool drainRawInputNow();
+
     void fetchMouseDelta(int& outDx, int& outDy);
     bool getMouseDelta(int& outDx, int& outDy) { fetchMouseDelta(outDx, outDy); return (outDx | outDy) != 0; }
     void discardDeltas();
 
-    // Resets
     void resetAll();
     void resetAllKeys();
     void resetMouseButtons();
     void resetHotkeyEdges();
 
-    // Hotkey API
     bool hotkeyDown(int hk) const noexcept;
-    bool hotkeyPressed(int hk) noexcept;   // edge: 0->1
-    bool hotkeyReleased(int hk) noexcept;  // edge: 1->0
+    bool hotkeyPressed(int hk) noexcept;
+    bool hotkeyReleased(int hk) noexcept;
     void setHotkeyVks(int hk, const std::vector<UINT>& vks) noexcept;
+    void setHotkeyVksRaw(int hk, const UINT* vks, size_t count) noexcept;
 
-    // Direct queries
     bool keyDown(UINT vk) const noexcept;
-    bool mouseButtonDown(int b) const noexcept; // 0..4 = L,R,M,X1,X2
+    bool mouseButtonDown(int b) const noexcept;
 
 private:
-    // Registered raw input devices (mouse, keyboard)
     RAWINPUTDEVICE m_rid[2]{};
 
-    // State (64B-aligned fields live inside)
     InputState m_state{};
 
-    // Mouse delta double-buffer
     alignas(64) DeltaBuf  m_delta[2]{};
     std::atomic<uint8_t>  m_writeIdx{ 0 };
 
-    // Legacy leftover (unused here; kept to avoid ABI break)
-    alignas(8) std::atomic<uint64_t> m_dxyPack{ 0 };
+    alignas(8) std::atomic<uint64_t> m_dxyPack{ 0 }; // 旧互換
 
-    // Compat mirrors (byte-per-key/button)
+#if RAWFILTER_ENABLE_COMPAT_MIRRORS
     std::array<std::atomic<uint8_t>, 256> m_vkDownCompat{};
     std::array<std::atomic<uint8_t>, 5>   m_mbCompat{};
+#endif
 
-    // Hotkey edge memory
     std::array<std::atomic<uint64_t>, (kMaxHotkeyId + 63) / 64> m_hkPrev{};
-
-    // Hotkey masks
     std::array<HotkeyMask, kMaxHotkeyId> m_hkMask{};
 
-    // Single RAWINPUT scratch buffer
     alignas(8) BYTE m_rawBuf[sizeof(RAWINPUT) + 64]{};
 
 private:
-    // Helpers
+    // 共通ハンドラ（nativeEventFilter/ドレインの双方から呼ぶ）
+    FORCE_INLINE void handleRawInput(const RAWINPUT& ri) noexcept;
+    FORCE_INLINE void handleRawMouse(const RAWMOUSE& m) noexcept;
+    FORCE_INLINE void handleRawKeyboard(const RAWKEYBOARD& k) noexcept;
+
     FORCE_INLINE void accumMouseDelta(LONG dx, LONG dy) noexcept;
     FORCE_INLINE void setVkBit(UINT vk, bool down) noexcept;
     FORCE_INLINE bool getVkState(UINT vk) const noexcept;
