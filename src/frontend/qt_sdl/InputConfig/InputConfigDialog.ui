@@ -2472,7 +2472,7 @@
 				<item row="13" column="0">
 					<widget class="QCheckBox" name="cbMetroidUseFirmwareName">
 						<property name="text">
-							<string>Use DS Name (Resets in-game name and HL color):You can change the DS name from [Config -&gt; Firmware Settings]. Make sure to enable 'Override settings from external firmware'.</string>
+							<string>Use DS Name (Resets in-game name and HL color):You can change the DS name from [File -&gt; Boot firmware] or [Config -&gt; Firmware Settings].</string>
 						</property>
 					</widget>
 				</item>
