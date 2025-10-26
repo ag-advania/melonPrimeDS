@@ -76,6 +76,8 @@ DefaultList<int> DefaultInts =
 
     /* MelonPrimeDS { */ // Sensitivity
     {"Instance*.Metroid.Sensitivity.Aim", 63},
+    {"Instance*.Metroid.Volume.SFX", 9},
+    {"Instance*.Metroid.Volume.Music", 9},
     {"Instance*.Keyboard.HK_MetroidMoveForward",       Qt::Key_W},
     {"Instance*.Keyboard.HK_MetroidMoveBack",          Qt::Key_S},
     {"Instance*.Keyboard.HK_MetroidMoveLeft",          Qt::Key_A},
@@ -131,6 +133,8 @@ RangeList IntRanges =
 
     /* MelonPrimeDS. this is not for input. this is for loading. */
     {"Instance*.Metroid.Sensitivity.Aim", {0,99999}},
+    {"Instance*.Metroid.Volume.Music", {0,9}},
+    {"Instance*.Metroid.Volume.SFX", {0,9}},
     //{"Instance*.Metroid.Sensitivity.Mph", {-5,155}},
     //{"Instance*.Metroid.Sensitivity.AimYAxisScale", {0.000001,100.000000}},
 };
