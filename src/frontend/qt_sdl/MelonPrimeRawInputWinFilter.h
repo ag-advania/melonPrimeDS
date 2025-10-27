@@ -4,22 +4,20 @@
 // Qt
 #include <QAbstractNativeEventFilter>
 #include <QByteArray>
-#include <QBitArray>
 #include <QtGlobal>
 
 // Win32
 #include <windows.h>
-#include <hidsdi.h>
 
-// C++/STL
+// STL
 #include <array>
 #include <vector>
 #include <unordered_map>
 #include <atomic>
+#include <thread>
 #include <cstdint>
 #include <cstring>
 
-// 強制インラインヒント
 #ifndef FORCE_INLINE
 #  if defined(_MSC_VER)
 #    define FORCE_INLINE __forceinline
@@ -28,122 +26,130 @@
 #  endif
 #endif
 
-class RawInputWinFilter : public QAbstractNativeEventFilter
+// 極限低遅延：
+// ・専用入力スレッド（message-only HWND）で WM_INPUT 即時処理
+// ・マウス相対は単一バッファ：fetch_add(int32)×2、取得は exchange(0)×2（追加遅延ゼロ）
+// ・VK/Mouse は 256bit＋5bit のビットベクタ（relaxed）
+// ・UI側ドレインやダブルバッファは撤去
+// ・MMCSS “Games” を動的に適用（avrt.dll を動的ロード）
+
+class RawInputWinFilter final : public QAbstractNativeEventFilter
 {
 public:
     RawInputWinFilter();
     ~RawInputWinFilter() override;
 
-    // Qt ネイティブイベントフック
+    // Qt側には WM_INPUT を流さない設計なので常に false（ここでは何もしない）
     bool nativeEventFilter(const QByteArray& eventType, void* message, qintptr* result) override;
+
+    // 入力スレッド制御（useInputSink=true で非フォーカス時も取得）
+    bool startInputThread(bool useInputSink = false);
+    void stopInputThread();
 
     // マウス相対デルタ取得（取り出し時にゼロクリア）
     void fetchMouseDelta(int& outDx, int& outDy);
-
-    // 累積デルタの破棄
     void discardDeltas();
 
-    // 全キー（キーボード）を未押下に
-    void resetAllKeys();
+    // 現在のマウスボタン状態（bit0..4 = L,R,M,X1,X2）
+    uint8_t mouseButtons() const noexcept;
 
-    // 全マウスボタンを未押下に
-    void resetMouseButtons();
+    // VK押下（0..255）
+    bool vkDown(uint32_t vk) const noexcept;
 
-    // 全ホットキーの立下り/立上りエッジ状態をリセット
-    void resetHotkeyEdges();
-
-    // HK→VK の登録（キーボード/マウス側の前計算マスクを作る）
+    // ホットキー設定／状態
     void setHotkeyVks(int hk, const std::vector<UINT>& vks);
-
-    // 取得系
     bool hotkeyDown(int hk) const noexcept;
     bool hotkeyPressed(int hk) noexcept;
     bool hotkeyReleased(int hk) noexcept;
 
+    // 状態リセット
+    void resetMouseButtons();
+    void resetAllKeys();
+    void resetHotkeyEdges();
+
 private:
-    // --------- 内部型と定数 ---------
     enum MouseIndex : uint8_t { kMB_Left = 0, kMB_Right, kMB_Middle, kMB_X1, kMB_X2, kMB_Max };
 
-    // VK(0..255) 用 256bit と、Mouse(5bit) の前計算マスク
     struct alignas(16) HotkeyMask {
-        uint64_t vkMask[4];  // 256bit = 4 * 64bit
-        uint8_t  mouseMask;  // L/R/M/X1/X2 -> 5bit
-        uint8_t  hasMask;    // 0:空, 1:有効
+        uint64_t vkMask[4];
+        uint8_t  mouseMask;
+        uint8_t  hasMask;
         uint8_t  _pad[6];
     };
 
     static constexpr size_t kMaxHotkeyId = 256;
 
-    // すべてのボタンフラグ（早期リターン用）
-    static constexpr USHORT kAllMouseBtnMask =
-        RI_MOUSE_LEFT_BUTTON_DOWN | RI_MOUSE_LEFT_BUTTON_UP |
-        RI_MOUSE_RIGHT_BUTTON_DOWN | RI_MOUSE_RIGHT_BUTTON_UP |
-        RI_MOUSE_MIDDLE_BUTTON_DOWN | RI_MOUSE_MIDDLE_BUTTON_UP |
-        RI_MOUSE_BUTTON_4_DOWN | RI_MOUSE_BUTTON_4_UP |
-        RI_MOUSE_BUTTON_5_DOWN | RI_MOUSE_BUTTON_5_UP;
-
-    // Win32 VK_* → MouseIndex の簡易LUT（0..7だけ使用）
     static constexpr uint8_t kMouseButtonLUT[8] = {
         0xFF,       // 0 (unused)
-        kMB_Left,   // VK_LBUTTON   (1)
-        kMB_Right,  // VK_RBUTTON   (2)
+        kMB_Left,   // 1 VK_LBUTTON
+        kMB_Right,  // 2 VK_RBUTTON
         0xFF,       // 3
-        kMB_Middle, // VK_MBUTTON   (4)
-        kMB_X1,     // VK_XBUTTON1  (5)
-        kMB_X2,     // VK_XBUTTON2  (6)
+        kMB_Middle, // 4 VK_MBUTTON
+        kMB_X1,     // 5 VK_XBUTTON1
+        kMB_X2,     // 6 VK_XBUTTON2
         0xFF        // 7
     };
 
-    // イベント処理用の小バッファ（HIDは扱わないので十分）
-    alignas(64) BYTE m_rawBuf[256] = {};
+    // ---- 共有状態（読み：エミュ／書き：入力スレッド） ----
+    struct alignas(64) StateBits {
+        std::array<std::atomic<uint64_t>, 4> vk; // 256bit VK押下
+        std::atomic<uint8_t> mouse;              // 5bit L,R,M,X1,X2
+        StateBits() : vk{ 0,0,0,0 }, mouse(0) {}
+    } m_state;
 
-    // キー/マウス実時間状態（低コスト参照のためビットベクタ化）
-    struct StateBits {
-        std::atomic<uint64_t> vkDown[4];      // 256bit の押下状態
-        std::atomic<uint8_t>  mouseButtons;   // 5bit の押下状態（L,R,M,X1,X2）
-    } m_state{ {0,0,0,0}, 0 };
+    // 相対移動（単一バッファ）
+    alignas(64) std::atomic<int32_t> m_dx{ 0 };
+    alignas(64) std::atomic<int32_t> m_dy{ 0 };
 
-    // 低頻度API: VKの現在状態取得
-    FORCE_INLINE bool getVkState(uint32_t vk) const noexcept {
-        if (vk >= 256) return false;
-        const uint64_t w = m_state.vkDown[vk >> 6].load(std::memory_order_relaxed);
-        return (w & (1ULL << (vk & 63))) != 0ULL;
-    }
-    // 低頻度API: Mouseボタン状態
-    FORCE_INLINE bool getMouseButton(uint8_t idx) const noexcept {
-        const uint8_t b = m_state.mouseButtons.load(std::memory_order_relaxed);
-        return (idx < 5) && ((b >> idx) & 1u);
-    }
-    // 低頻度API: VKセット/クリア
-    FORCE_INLINE void setVkBit(uint32_t vk, bool down) noexcept {
-        if (vk >= 256) return;
-        const uint64_t mask = 1ULL << (vk & 63);
-        auto& word = m_state.vkDown[vk >> 6];
-        if (down) (void)word.fetch_or(mask, std::memory_order_relaxed);
-        else      (void)word.fetch_and(~mask, std::memory_order_relaxed);
-    }
-
-    // 前計算済み Hotkey マスク（高速パス用）
+    // ホットキー
     alignas(64) std::array<HotkeyMask, kMaxHotkeyId> m_hkMask{};
-
-    // フォールバック用（大きいHK IDなど）
-    std::unordered_map<int, std::vector<UINT>> m_hkToVk;
-
-    // 立上り/立下りエッジ検出用（O(1)）
     std::array<std::atomic<uint64_t>, (kMaxHotkeyId + 63) / 64> m_hkPrev{};
 
-    // RawInput 登録情報
-    RAWINPUTDEVICE m_rid[2]{};
+    // ---- 入力スレッド資源 ----
+    std::thread              m_thr;
+    std::atomic<bool>        m_thrRunning{ false };
+    std::atomic<bool>        m_thrQuit{ false };
+    HWND                     m_hwndMsg = nullptr;
+    HINSTANCE                m_hinst = nullptr;
+    bool                     m_useInputSink = false;
 
-    // 相対デルタ
-    std::atomic<int> dx{ 0 }, dy{ 0 };
+    // RawInput 一時バッファ（十分大きめ）
+    alignas(64) BYTE         m_rawBuf[256] = {};
 
-    // 古い実装との互換（必要なら残す）
-    std::array<std::atomic<int>, 256> m_vkDownCompat{};
-    std::array<std::atomic<int>, kMB_Max> m_mbCompat{};
+    // ---- MMCSS（動的ロード）----
+    // avrt.dll API の最小定義（ヘッダ非依存）
+    enum AVRT_PRIORITY { AVRT_PRIORITY_LOW = -1, AVRT_PRIORITY_NORMAL = 0, AVRT_PRIORITY_HIGH = 1, AVRT_PRIORITY_CRITICAL = 2 };
+    using PFN_AvSetMmThreadCharacteristicsW = HANDLE(WINAPI*)(LPCWSTR, LPDWORD);
+    using PFN_AvRevertMmThreadCharacteristics = BOOL(WINAPI*)(HANDLE);
+    using PFN_AvSetMmThreadPriority = BOOL(WINAPI*)(HANDLE, AVRT_PRIORITY);
 
-    // ヘルパ
-    static FORCE_INLINE void addVkToMask(HotkeyMask& m, UINT vk) noexcept;
+    HMODULE                               m_hAvrt = nullptr;
+    PFN_AvSetMmThreadCharacteristicsW     m_pAvSetMmThreadCharacteristicsW = nullptr;
+    PFN_AvRevertMmThreadCharacteristics   m_pAvRevertMmThreadCharacteristics = nullptr;
+    PFN_AvSetMmThreadPriority             m_pAvSetMmThreadPriority = nullptr;
+    HANDLE                                m_mmcssHandle = nullptr;
+    DWORD                                 m_mmcssTaskIndex = 0;
+
+    // ---- 内部処理 ----
+    static LRESULT CALLBACK  WndProcThunk(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp);
+    LRESULT                  WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp);
+
+    void                     inputThreadMain();
+    bool                     registerRawInput(HWND target);
+    void                     applyThreadQoS();
+    void                     handleRawInput(const RAWINPUT& raw) noexcept;
+    void                     handleRawMouse(const RAWMOUSE& m) noexcept;
+    void                     handleRawKeyboard(const RAWKEYBOARD& k) noexcept;
+    static void              addVkToMask(HotkeyMask& m, UINT vk) noexcept;
+
+    // ユーティリティ
+    FORCE_INLINE bool        getVkState(uint32_t vk) const noexcept;
+
+    // 安全読みラッパ
+    FORCE_INLINE bool        readRawInputToBuf(LPARAM lp, const RAWINPUT*& out) noexcept;
+
+    // avrt.dll ロード
+    void                     loadAvrt();
 };
 
 #endif // _WIN32
