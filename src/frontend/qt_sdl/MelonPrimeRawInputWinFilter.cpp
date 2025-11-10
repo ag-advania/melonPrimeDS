@@ -83,18 +83,18 @@ void RawInputWinFilter::stopInputThread()
 // ---------------- QoS（MMCSS “Games” 適用） ----------------
 void RawInputWinFilter::applyThreadQoS()
 {
-    // MMCSS 参加
-    loadAvrt();
-    if (m_pAvSetMmThreadCharacteristicsW) {
-        m_mmcssHandle = m_pAvSetMmThreadCharacteristicsW(L"Games", &m_mmcssTaskIndex);
-        if (m_mmcssHandle && m_pAvSetMmThreadPriority) {
-            // 高めだが余裕を残す。さらに詰めるなら CRITICAL でも可。
-            (void)m_pAvSetMmThreadPriority(m_mmcssHandle, AVRT_PRIORITY_HIGH);
-        }
-    }
-    // Win32スレッド優先度も上げる（MMCSSと併用可）
-    ::SetThreadPriority(::GetCurrentThread(), THREAD_PRIORITY_HIGHEST);
+    // ★デフォはMMCSSを使わず、OS通常スケジューラで高め（軽量・十分高速）
+    ::SetThreadPriority(::GetCurrentThread(), THREAD_PRIORITY_ABOVE_NORMAL);
+
+    // --- 必要になったら下3行を有効化（MMCSS “Games”） ---
+    // loadAvrt(); // 既に実装済みなら呼ぶ
+    // if (m_pAvSetMmThreadCharacteristicsW) {
+    //     m_mmcssHandle = m_pAvSetMmThreadCharacteristicsW(L"Games", &m_mmcssTaskIndex);
+    //     if (m_mmcssHandle && m_pAvSetMmThreadPriority)
+    //         (void)m_pAvSetMmThreadPriority(m_mmcssHandle, AVRT_PRIORITY_HIGH);
+    // }
 }
+
 
 LRESULT CALLBACK RawInputWinFilter::WndProcThunk(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp)
 {
@@ -150,55 +150,56 @@ bool RawInputWinFilter::registerRawInput(HWND target)
 
 void RawInputWinFilter::inputThreadMain()
 {
-    // QoS 適用（このスレッド上で実行することが重要）
     applyThreadQoS();
 
-    // メッセージ専用ウィンドウ生成
+    // message-only window 作成
     m_hinst = (HINSTANCE)::GetModuleHandleW(nullptr);
-    const wchar_t kCls[] = L"MPDS_RI_CLASS_MIN_SB_MMCSS";
+    const wchar_t kCls[] = L"MPDS_RI_CLASS_EVT";
+    WNDCLASSEXW wc{}; wc.cbSize = sizeof(wc); wc.lpfnWndProc = &RawInputWinFilter::WndProcThunk;
+    wc.hInstance = m_hinst; wc.lpszClassName = kCls; ::RegisterClassExW(&wc);
 
-    WNDCLASSEXW wc{};
-    wc.cbSize = sizeof(wc);
-    wc.lpfnWndProc = &RawInputWinFilter::WndProcThunk;
-    wc.hInstance = m_hinst;
-    wc.lpszClassName = kCls;
-    ::RegisterClassExW(&wc); // 既登録でもOK
-
-    HWND h = ::CreateWindowExW(0, kCls, L"MPDS_RI_WINDOW_MIN_SB_MMCSS", 0,
-        0, 0, 0, 0,
-        HWND_MESSAGE, nullptr, m_hinst, this);
+    HWND h = ::CreateWindowExW(0, kCls, L"MPDS_RI_WINDOW_EVT", 0,
+        0, 0, 0, 0, HWND_MESSAGE, nullptr, m_hinst, this);
     m_hwndMsg = h;
 
-    if (!h) { m_thrRunning.store(true, std::memory_order_release); goto exit_thread; }
-    if (!registerRawInput(h)) { ::DestroyWindow(h); m_thrRunning.store(true, std::memory_order_release); goto exit_thread; }
+    if (!h) { m_thrRunning.store(true, std::memory_order_release); return; }
+    if (!registerRawInput(h)) { ::DestroyWindow(h); m_thrRunning.store(true, std::memory_order_release); return; }
 
     m_thrRunning.store(true, std::memory_order_release);
 
-    // ループ：WM_INPUT 即時処理（キュー滞留ゼロ）
-    MSG m;
-    while (!m_thrQuit.load(std::memory_order_acquire)) {
-        while (::PeekMessageW(&m, h, WM_INPUT, WM_INPUT, PM_REMOVE)) {
-            if (m.message == WM_QUIT) goto exit_thread;
-            ::TranslateMessage(&m);
-            ::DispatchMessageW(&m);
+    MSG msg;
+    for (;;) {
+        if (m_thrQuit.load(std::memory_order_acquire)) break;
+
+        // 1) WM_INPUT を一気に直ハンドル（Dispatchを通さない）
+        while (::PeekMessageW(&msg, h, WM_INPUT, WM_INPUT, PM_REMOVE)) {
+            const RAWINPUT* raw = nullptr;
+            if (readRawInputToBuf(msg.lParam, raw)) {
+                handleRawInput(*raw);
+            }
         }
-        if (::PeekMessageW(&m, h, 0, 0, PM_REMOVE)) {
-            if (m.message == WM_QUIT) break;
-            ::TranslateMessage(&m);
-            ::DispatchMessageW(&m);
-            continue;
+
+        // 2) その他のメッセージだけ通常ポンプ
+        while (::PeekMessageW(&msg, h, 0, 0, PM_REMOVE)) {
+            if (msg.message == WM_QUIT) goto exit_thread;
+            ::TranslateMessage(&msg);
+            ::DispatchMessageW(&msg);
         }
-        ::SwitchToThread(); // 軽く譲る
+
+        // 3) イベント待ち（スピン禁止、入力が来たら即復帰）
+        DWORD r = ::MsgWaitForMultipleObjectsEx(
+            0, nullptr, INFINITE, QS_INPUT, MWMO_INPUTAVAILABLE | MWMO_ALERTABLE);
+        (void)r; // 何か来た → 次ループで処理
     }
 
 exit_thread:
-    // MMCSS から離脱（同一スレッドで行う）
+    // MMCSS参加中なら離脱処理（有効化している場合のみ）
     if (m_mmcssHandle && m_pAvRevertMmThreadCharacteristics) {
         (void)m_pAvRevertMmThreadCharacteristics(m_mmcssHandle);
         m_mmcssHandle = nullptr;
     }
-    return;
 }
+
 
 // ---------------- RawInput 読みラッパ ----------------
 FORCE_INLINE bool RawInputWinFilter::readRawInputToBuf(LPARAM lp, const RAWINPUT*& out) noexcept
