@@ -1,7 +1,7 @@
 ﻿#ifdef _WIN32
 #include "MelonPrimeRawInputWinFilter.h"
 
-// 5bitボタンマスク（分岐ゼロ）
+// --- 5bitボタンマスク（分岐ゼロ） ---
 namespace {
     FORCE_INLINE uint8_t mask_down_from_flags(USHORT f) noexcept {
         // LDOWN:0, RDOWN:2, MDOWN:4, X1DOWN:6, X2DOWN:8
@@ -35,23 +35,8 @@ RawInputWinFilter::~RawInputWinFilter()
 
 bool RawInputWinFilter::nativeEventFilter(const QByteArray&, void*, qintptr*)
 {
-    // WM_INPUT は専用スレッドで受けるため常に false
+    // WM_INPUTは専用スレッドで処理
     return false;
-}
-
-// ---------------- avrt.dll ロード ----------------
-void RawInputWinFilter::loadAvrt()
-{
-    if (m_hAvrt) return;
-    m_hAvrt = ::LoadLibraryW(L"avrt.dll");
-    if (!m_hAvrt) return;
-
-    m_pAvSetMmThreadCharacteristicsW = reinterpret_cast<PFN_AvSetMmThreadCharacteristicsW>(
-        ::GetProcAddress(m_hAvrt, "AvSetMmThreadCharacteristicsW"));
-    m_pAvRevertMmThreadCharacteristics = reinterpret_cast<PFN_AvRevertMmThreadCharacteristics>(
-        ::GetProcAddress(m_hAvrt, "AvRevertMmThreadCharacteristics"));
-    m_pAvSetMmThreadPriority = reinterpret_cast<PFN_AvSetMmThreadPriority>(
-        ::GetProcAddress(m_hAvrt, "AvSetMmThreadPriority"));
 }
 
 // ---------------- スレッド制御 ----------------
@@ -80,22 +65,39 @@ void RawInputWinFilter::stopInputThread()
     m_hwndMsg = nullptr;
 }
 
-// ---------------- QoS（MMCSS “Games” 適用） ----------------
+// ---------------- QoS（省電力スロットリングOFF＋優先度） ----------------
 void RawInputWinFilter::applyThreadQoS()
 {
-    // ★デフォはMMCSSを使わず、OS通常スケジューラで高め（軽量・十分高速）
+    // 1) まずは通常スケジューラで十分高めに
     ::SetThreadPriority(::GetCurrentThread(), THREAD_PRIORITY_ABOVE_NORMAL);
 
-    // --- 必要になったら下3行を有効化（MMCSS “Games”） ---
-    // loadAvrt(); // 既に実装済みなら呼ぶ
-    // if (m_pAvSetMmThreadCharacteristicsW) {
-    //     m_mmcssHandle = m_pAvSetMmThreadCharacteristicsW(L"Games", &m_mmcssTaskIndex);
-    //     if (m_mmcssHandle && m_pAvSetMmThreadPriority)
-    //         (void)m_pAvSetMmThreadPriority(m_mmcssHandle, AVRT_PRIORITY_HIGH);
-    // }
+    // 2) 省電力スロットリングを無効化（Win10/11）
+    //    SDKが古い場合でもビルドできるように定義を用意
+#ifndef THREAD_POWER_THROTTLING_CURRENT_VERSION
+#  define THREAD_POWER_THROTTLING_CURRENT_VERSION 1
+#  define THREAD_POWER_THROTTLING_EXECUTION_SPEED 0x1
+    typedef struct _THREAD_POWER_THROTTLING_STATE {
+        ULONG Version;
+        ULONG ControlMask;
+        ULONG StateMask;
+    } THREAD_POWER_THROTTLING_STATE, * PTHREAD_POWER_THROTTLING_STATE;
+#endif
+
+#ifndef ThreadPowerThrottling
+    // 一部SDKで未定義な場合のフォールバック（実値は公式SDKと同じ）
+#  define ThreadPowerThrottling ((THREAD_INFORMATION_CLASS)9)
+#endif
+
+    THREAD_POWER_THROTTLING_STATE pts = {};
+    pts.Version = THREAD_POWER_THROTTLING_CURRENT_VERSION;
+    pts.ControlMask = THREAD_POWER_THROTTLING_EXECUTION_SPEED;
+    pts.StateMask = 0; // 0=スロットリング無効
+    (void)::SetThreadInformation(::GetCurrentThread(),
+        ThreadPowerThrottling,
+        &pts, sizeof(pts));
 }
 
-
+// ---------------- Win32 Window ----------------
 LRESULT CALLBACK RawInputWinFilter::WndProcThunk(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp)
 {
     RawInputWinFilter* self =
@@ -115,12 +117,16 @@ LRESULT RawInputWinFilter::WndProc(HWND hWnd, UINT msg, WPARAM, LPARAM lp)
     switch (msg) {
     case WM_INPUT:
     {
+        // ※通常はinputThreadMain側で直処理するためここには来ない想定
         const RAWINPUT* raw = nullptr;
         if (readRawInputToBuf(lp, raw)) {
             handleRawInput(*raw);
         }
         return 0;
     }
+    case MP_RAW_REREGISTER:
+        registerRawInput(hWnd);
+        return 0;
     case WM_CLOSE:
         ::DestroyWindow(hWnd);
         return 0;
@@ -132,12 +138,13 @@ LRESULT RawInputWinFilter::WndProc(HWND hWnd, UINT msg, WPARAM, LPARAM lp)
     }
 }
 
+// ---------------- RawInput 登録 ----------------
 bool RawInputWinFilter::registerRawInput(HWND target)
 {
     RAWINPUTDEVICE rid[2]{};
     rid[0].usUsagePage = 0x01; // Generic Desktop Controls
     rid[0].usUsage = 0x02; // Mouse
-    rid[0].dwFlags = m_useInputSink ? RIDEV_INPUTSINK : 0; // ※ NOLEGACY/NOHOTKEYS は使わない
+    rid[0].dwFlags = m_useInputSink ? RIDEV_INPUTSINK : 0; // ※NOLEGACY/NOHOTKEYSは付けない
     rid[0].hwndTarget = target;
 
     rid[1].usUsagePage = 0x01;
@@ -148,18 +155,24 @@ bool RawInputWinFilter::registerRawInput(HWND target)
     return !!::RegisterRawInputDevices(rid, 2, sizeof(RAWINPUTDEVICE));
 }
 
+// ---------------- スレッド本体（完全イベント駆動） ----------------
 void RawInputWinFilter::inputThreadMain()
 {
     applyThreadQoS();
 
-    // message-only window 作成
+    // message-only window
     m_hinst = (HINSTANCE)::GetModuleHandleW(nullptr);
-    const wchar_t kCls[] = L"MPDS_RI_CLASS_EVT";
-    WNDCLASSEXW wc{}; wc.cbSize = sizeof(wc); wc.lpfnWndProc = &RawInputWinFilter::WndProcThunk;
-    wc.hInstance = m_hinst; wc.lpszClassName = kCls; ::RegisterClassExW(&wc);
+    const wchar_t kCls[] = L"MPDS_RI_CLASS_EVT2";
+    WNDCLASSEXW wc{};
+    wc.cbSize = sizeof(wc);
+    wc.lpfnWndProc = &RawInputWinFilter::WndProcThunk;
+    wc.hInstance = m_hinst;
+    wc.lpszClassName = kCls;
+    ::RegisterClassExW(&wc); // 既登録でもOK
 
-    HWND h = ::CreateWindowExW(0, kCls, L"MPDS_RI_WINDOW_EVT", 0,
-        0, 0, 0, 0, HWND_MESSAGE, nullptr, m_hinst, this);
+    HWND h = ::CreateWindowExW(0, kCls, L"MPDS_RI_WINDOW_EVT2", 0,
+        0, 0, 0, 0,
+        HWND_MESSAGE, nullptr, m_hinst, this);
     m_hwndMsg = h;
 
     if (!h) { m_thrRunning.store(true, std::memory_order_release); return; }
@@ -171,7 +184,7 @@ void RawInputWinFilter::inputThreadMain()
     for (;;) {
         if (m_thrQuit.load(std::memory_order_acquire)) break;
 
-        // 1) WM_INPUT を一気に直ハンドル（Dispatchを通さない）
+        // 1) WM_INPUT は直ハンドル（Dispatchを通さない）
         while (::PeekMessageW(&msg, h, WM_INPUT, WM_INPUT, PM_REMOVE)) {
             const RAWINPUT* raw = nullptr;
             if (readRawInputToBuf(msg.lParam, raw)) {
@@ -179,27 +192,23 @@ void RawInputWinFilter::inputThreadMain()
             }
         }
 
-        // 2) その他のメッセージだけ通常ポンプ
+        // 2) それ以外のメッセージだけ通常ポンプ
         while (::PeekMessageW(&msg, h, 0, 0, PM_REMOVE)) {
             if (msg.message == WM_QUIT) goto exit_thread;
             ::TranslateMessage(&msg);
             ::DispatchMessageW(&msg);
         }
 
-        // 3) イベント待ち（スピン禁止、入力が来たら即復帰）
-        DWORD r = ::MsgWaitForMultipleObjectsEx(
-            0, nullptr, INFINITE, QS_INPUT, MWMO_INPUTAVAILABLE | MWMO_ALERTABLE);
-        (void)r; // 何か来た → 次ループで処理
+        // 3) 起床条件の絞り込み：Raw入力 or Post系（WM_CLOSE等）
+        (void)::MsgWaitForMultipleObjectsEx(
+            0, nullptr, INFINITE,
+            QS_RAWINPUT | QS_POSTMESSAGE,
+            MWMO_INPUTAVAILABLE | MWMO_ALERTABLE);
     }
 
 exit_thread:
-    // MMCSS参加中なら離脱処理（有効化している場合のみ）
-    if (m_mmcssHandle && m_pAvRevertMmThreadCharacteristics) {
-        (void)m_pAvRevertMmThreadCharacteristics(m_mmcssHandle);
-        m_mmcssHandle = nullptr;
-    }
+    return;
 }
-
 
 // ---------------- RawInput 読みラッパ ----------------
 FORCE_INLINE bool RawInputWinFilter::readRawInputToBuf(LPARAM lp, const RAWINPUT*& out) noexcept
@@ -207,7 +216,7 @@ FORCE_INLINE bool RawInputWinFilter::readRawInputToBuf(LPARAM lp, const RAWINPUT
     UINT need = 0;
     if (::GetRawInputData((HRAWINPUT)lp, RID_INPUT, nullptr, &need, sizeof(RAWINPUTHEADER)) == (UINT)-1)
         return false;
-    if (need > sizeof(m_rawBuf)) return false; // 256B超なら拡張方針に
+    if (need > sizeof(m_rawBuf)) return false; // 256B超なら拡張検討
     UINT size = need;
     if (::GetRawInputData((HRAWINPUT)lp, RID_INPUT, m_rawBuf, &size, sizeof(RAWINPUTHEADER)) == (UINT)-1)
         return false;
@@ -228,7 +237,7 @@ void RawInputWinFilter::handleRawInput(const RAWINPUT& raw) noexcept
 
 void RawInputWinFilter::handleRawMouse(const RAWMOUSE& m) noexcept
 {
-    // 相対移動（ABSでない場合のみ）
+    // 相対移動のみ
     if ((m.usFlags & MOUSE_MOVE_ABSOLUTE) == 0) {
         const LONG dx_ = m.lLastX;
         const LONG dy_ = m.lLastY;
@@ -238,7 +247,7 @@ void RawInputWinFilter::handleRawMouse(const RAWMOUSE& m) noexcept
         }
     }
 
-    // ボタン（分岐ゼロ合成）
+    // ボタン
     const USHORT f = m.usButtonFlags;
     if (f) {
         const uint8_t downMask = mask_down_from_flags(f);
@@ -302,6 +311,7 @@ bool RawInputWinFilter::vkDown(uint32_t vk) const noexcept
     return (w & (1ULL << (vk & 63))) != 0ULL;
 }
 
+// ---------- Hotkey ----------
 void RawInputWinFilter::addVkToMask(HotkeyMask& m, UINT vk) noexcept
 {
     if (vk < 8) {
@@ -320,7 +330,7 @@ void RawInputWinFilter::setHotkeyVks(int hk, const std::vector<UINT>& vks)
     if ((unsigned)hk >= kMaxHotkeyId) return;
     HotkeyMask& m = m_hkMask[hk];
     std::memset(&m, 0, sizeof(m));
-    const size_t n = (vks.size() > 16) ? 16 : vks.size();
+    const size_t n = (vks.size() > 16) ? 16 : vks.size(); // 過剰は切る
     for (size_t i = 0; i < n; ++i) addVkToMask(m, vks[i]);
 }
 
