@@ -61,6 +61,7 @@ set(SOURCES_QT_SDL
     #RawInputThread.cpp
     MelonPrimeRawInputWinFilter.cpp
     MelonPrimeHotkeyVkBinding.cpp
+    MelonPrimeScreen.cpp
     #MelonPrimeXInputFilter.cpp
     #MelonPrimeXInputBinding.cpp
     #MelonPrimeDirectInputFilter.cpp

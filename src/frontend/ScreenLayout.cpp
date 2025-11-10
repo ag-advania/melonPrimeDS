@@ -1,4 +1,4 @@
-/*
+﻿/*
     Copyright 2016-2024 melonDS team
 
     This file is part of melonDS.
@@ -21,6 +21,7 @@
 #include <algorithm>
 
 #include "ScreenLayout.h"
+#include "MelonPrimeScreen.h" // MelonPrimeDS
 
 
 void M23_Identity(float* m)
@@ -129,6 +130,125 @@ void ScreenLayout::Setup(int screenWidth, int screenHeight,
     bool swapScreens,
     float topAspect, float botAspect)
 {
+
+    // ============================================================
+// 特殊レイアウト置き換え:
+// screenSizing_EmphBot が指定された場合、
+// 「上画面をフルスクリーン＋下画面を右上に半分で重ねる」
+// ============================================================
+    if (sizing == screenSizing_EmphBot)
+        /*
+    {
+        // -------------------------------
+        // 上画面をフルスクリーンにスケーリング
+        // -------------------------------
+        M23_Identity(TopScreenMtx);
+        float scaleTopX = static_cast<float>(screenWidth) / 256.0f;
+        float scaleTopY = static_cast<float>(screenHeight) / 192.0f;
+        float scaleTop = std::min(scaleTopX, scaleTopY);
+        M23_Scale(TopScreenMtx, scaleTop);
+        M23_Translate(TopScreenMtx,
+            (screenWidth - 256.0f * scaleTop) * 0.5f,
+            (screenHeight - 192.0f * scaleTop) * 0.5f);
+
+        // 上画面の描画領域（右上基準で下画面配置用）
+        float topX = (screenWidth - 256.0f * scaleTop) * 0.5f;
+        float topY = (screenHeight - 192.0f * scaleTop) * 0.5f;
+        float topW = 256.0f * scaleTop;
+        float topH = 192.0f * scaleTop;
+
+        // -------------------------------
+        // 下画面を1/4スケールで「上画面右上内部」に配置
+        // -------------------------------
+        M23_Identity(BotScreenMtx);
+        float scaleBot = 0.25f * scaleTop;
+        M23_Scale(BotScreenMtx, scaleBot);
+        float overlayW = 256.0f * scaleBot;
+        float overlayH = 192.0f * scaleBot;
+
+        // 右上配置（上画面内部）
+        const float marginX = 0.0f;
+        const float marginY = 0.0f;
+        float overlayX = topX + topW - overlayW - marginX;
+        float overlayY = topY + marginY;
+
+        M23_Translate(BotScreenMtx, overlayX, overlayY);
+
+        // -------------------------------
+        // 有効フラグ設定
+        // -------------------------------
+        TopEnable = true;
+        BotEnable = true;
+        HybEnable = false;
+
+        // -------------------------------
+        // Touch座標逆変換行列を構築
+        // （タッチ入力→DS座標に正しく変換）
+        // -------------------------------
+        M23_Identity(TouchMtx);
+        // 下画面の位置を逆に平行移動
+        M23_Translate(TouchMtx, -overlayX, -overlayY);
+        // スケールを逆に戻す（1/scaleBot）
+        M23_Scale(TouchMtx, 1.f / scaleBot);
+        // DSスクリーン(256x192)座標系にそのまま対応
+
+        // -------------------------------
+        // 早期リターン（標準レイアウト処理をスキップ）
+        // -------------------------------
+        return;
+    }
+    */
+        {
+            // -------------------------------
+            // 上画面をフルスクリーンにスケーリング
+            // -------------------------------
+            M23_Identity(TopScreenMtx);
+            float scaleTopX = static_cast<float>(screenWidth) / 256.0f;
+            float scaleTopY = static_cast<float>(screenHeight) / 192.0f;
+            float scaleTop = std::min(scaleTopX, scaleTopY);
+            M23_Scale(TopScreenMtx, scaleTop);
+            M23_Translate(TopScreenMtx,
+                (screenWidth - 256.0f * scaleTop) * 0.5f,
+                (screenHeight - 192.0f * scaleTop) * 0.5f);
+
+            // -------------------------------
+            // MelonPrimeScreen: 下画面位置を算出
+            // -------------------------------
+            float overlayX = 0.f, overlayY = 0.f, overlayW = 0.f, overlayH = 0.f;
+            MelonPrimeScreen::ArrangeOverlayTopRight(
+                screenWidth, screenHeight, scaleTop,
+                overlayX, overlayY, overlayW, overlayH,
+                0.33f); // 右上方向に1/3シフト
+
+            // -------------------------------
+            // 下画面行列
+            // -------------------------------
+            M23_Identity(BotScreenMtx);
+            float scaleBot = 0.25f * scaleTop;
+            M23_Scale(BotScreenMtx, scaleBot);
+            M23_Translate(BotScreenMtx, overlayX, overlayY);
+
+            // タッチマトリクス補正
+            M23_Identity(TouchMtx);
+            M23_Translate(TouchMtx, -overlayX, -overlayY);
+            M23_Scale(TouchMtx, 1.f / scaleBot);
+
+            TopEnable = BotEnable = true;
+            HybEnable = false;
+
+            return;
+        }
+
+
+
+
+
+
+
+    // ============================================================
+    // 以下は標準のmelonDSレイアウト処理（既存そのまま）
+    // ============================================================
+
     HybEnable = screenLayout == 3;
     if (HybEnable)
     {
