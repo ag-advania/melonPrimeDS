@@ -25,6 +25,20 @@
 #  endif
 #endif
 
+// ---- オプション（必要に応じて切替） ----
+// 可能なら高性能(P)コアへピン止め（GetLogicalProcessorInformationEx + SetThreadGroupAffinity）
+#ifndef MP_RAW_PIN_BIGCORE
+#define MP_RAW_PIN_BIGCORE 0
+#endif
+// 入力スレッドの寿命中のみ timeBeginPeriod(1) を使う（必要な場合のみ）
+#ifndef MP_TIMEPERIOD_1MS
+#define MP_TIMEPERIOD_1MS 0
+#endif
+// GetRawInputData を 1回呼びで読む FastPath（サイズ不足時のみフォールバック）
+#ifndef MP_RAW_FAST_GETRAWINPUT
+#define MP_RAW_FAST_GETRAWINPUT 1
+#endif
+
 class RawInputWinFilter final : public QAbstractNativeEventFilter
 {
 public:
@@ -57,7 +71,7 @@ public:
     void resetAllKeys();
     void resetHotkeyEdges();
 
-    // 他スレッドから参照したい場合だけ
+    // 参照のみ（他スレッドからはPostMessage等のみ）
     HWND rawMessageWindow() const noexcept { return m_hwndMsg; }
 
 private:
@@ -72,7 +86,7 @@ private:
     static constexpr size_t kMaxHotkeyId = 256;
 
     static constexpr uint8_t kMouseButtonLUT[8] = {
-        0xFF,       // 0 (unused)
+        0xFF,       // 0
         kMB_Left,   // 1 VK_LBUTTON
         kMB_Right,  // 2 VK_RBUTTON
         0xFF,       // 3
@@ -87,7 +101,7 @@ private:
         std::atomic<uint8_t> mouse{ 0 };                        // bit0..4 = L,R,M,X1,X2
     } m_state;
 
-    // 相対移動（単一バッファ）
+    // 相対移動（最短経路：単一バッファ）
     alignas(64) std::atomic<int32_t> m_dx{ 0 };
     alignas(64) std::atomic<int32_t> m_dy{ 0 };
 
@@ -103,8 +117,9 @@ private:
     HINSTANCE         m_hinst = nullptr;
     bool              m_useInputSink = false;
 
-    // RawInput一時バッファ
+    // RawInputバッファ（FastPath用固定＋動的拡張）
     alignas(64) BYTE  m_rawBuf[256] = {};
+    std::vector<BYTE> m_dynRawBuf;
 
     // --- MMCSS（動的ロード） ---
     enum AVRT_PRIORITY { AVRT_PRIORITY_LOW = -1, AVRT_PRIORITY_NORMAL = 0, AVRT_PRIORITY_HIGH = 1, AVRT_PRIORITY_CRITICAL = 2 };
@@ -138,13 +153,16 @@ private:
     static void addVkToMask(HotkeyMask& m, UINT vk) noexcept;
     FORCE_INLINE bool getVkState(uint32_t vk) const noexcept;
 
-    // 安全読みラッパ
+    // 安全読みラッパ（FastPath＋フォールバック）
     FORCE_INLINE bool readRawInputToBuf(LPARAM lp, const RAWINPUT*& out) noexcept;
 
     // avrt.dll ロード
     void  loadAvrt();
 
-    // 制御メッセージ（必要なら拡張）
+    // （任意）高性能コアへピン止め
+    void  tryPinToPerformanceCore();
+
+    // 制御メッセージ
     enum : UINT { MP_RAW_REREGISTER = WM_APP + 100 };
 };
 

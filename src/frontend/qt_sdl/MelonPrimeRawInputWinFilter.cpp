@@ -1,6 +1,17 @@
 ﻿#ifdef _WIN32
 #include "MelonPrimeRawInputWinFilter.h"
 
+#if MP_TIMEPERIOD_1MS
+#include <mmsystem.h> // timeBeginPeriod / timeEndPeriod
+#if defined(_MSC_VER)
+#pragma comment(lib, "winmm.lib")
+#endif
+#endif
+
+#if defined(_MSC_VER)
+#include <intrin.h>   // _BitScanForward64
+#endif
+
 // --- 5bitボタンマスク（分岐ゼロ） ---
 namespace {
     FORCE_INLINE uint8_t mask_down_from_flags(USHORT f) noexcept {
@@ -80,13 +91,36 @@ void RawInputWinFilter::stopInputThread()
     m_hwndMsg = nullptr;
 }
 
-// ---------------- QoS（MMCSS “Games” 有効＋省電力スロットリングOFF） ----------------
+// ---------------- QoS（MMCSS＋スロットリング無効＋ブースト許可＋（任意）Pコア固定） ----------------
 void RawInputWinFilter::applyThreadQoS()
 {
-    // Win32スレッド優先度を上げる
+    // Win32スレッド優先度：高め
     ::SetThreadPriority(::GetCurrentThread(), THREAD_PRIORITY_ABOVE_NORMAL);
+    // 動的ブースト許可
+    ::SetThreadPriorityBoost(::GetCurrentThread(), FALSE);
 
-    // 省電力スロットリングを無効化（Win10/11）
+    // --- プロセス全体のスロットリング無効 ---
+#ifndef PROCESS_POWER_THROTTLING_CURRENT_VERSION
+#  define PROCESS_POWER_THROTTLING_CURRENT_VERSION 1
+#  define PROCESS_POWER_THROTTLING_EXECUTION_SPEED 0x1
+    typedef struct _PROCESS_POWER_THROTTLING_STATE {
+        ULONG Version;
+        ULONG ControlMask;
+        ULONG StateMask;
+    } PROCESS_POWER_THROTTLING_STATE, * PPROCESS_POWER_THROTTLING_STATE;
+#endif
+#ifndef ProcessPowerThrottling
+#  define ProcessPowerThrottling ((PROCESS_INFORMATION_CLASS)9)
+#endif
+    PROCESS_POWER_THROTTLING_STATE pps{};
+    pps.Version = PROCESS_POWER_THROTTLING_CURRENT_VERSION;
+    pps.ControlMask = PROCESS_POWER_THROTTLING_EXECUTION_SPEED;
+    pps.StateMask = 0; // 無効
+    (void)::SetProcessInformation(::GetCurrentProcess(),
+        ProcessPowerThrottling,
+        &pps, sizeof(pps));
+
+    // --- スレッドのスロットリング無効 ---
 #ifndef THREAD_POWER_THROTTLING_CURRENT_VERSION
 #  define THREAD_POWER_THROTTLING_CURRENT_VERSION 1
 #  define THREAD_POWER_THROTTLING_EXECUTION_SPEED 0x1
@@ -99,7 +133,7 @@ void RawInputWinFilter::applyThreadQoS()
 #ifndef ThreadPowerThrottling
 #  define ThreadPowerThrottling ((THREAD_INFORMATION_CLASS)9)
 #endif
-    THREAD_POWER_THROTTLING_STATE pts = {};
+    THREAD_POWER_THROTTLING_STATE pts{};
     pts.Version = THREAD_POWER_THROTTLING_CURRENT_VERSION;
     pts.ControlMask = THREAD_POWER_THROTTLING_EXECUTION_SPEED;
     pts.StateMask = 0; // 無効
@@ -107,17 +141,88 @@ void RawInputWinFilter::applyThreadQoS()
         ThreadPowerThrottling,
         &pts, sizeof(pts));
 
-    // MMCSS “Games” に参加（動的ロード、失敗時は静かにスキップ）
+    // --- MMCSS “Games” 参加（失敗時はスキップ） ---
     loadAvrt();
     if (m_pAvSetMmThreadCharacteristicsW) {
         m_mmcssHandle = m_pAvSetMmThreadCharacteristicsW(L"Games", &m_mmcssTaskIndex);
         if (m_mmcssHandle && m_pAvSetMmThreadPriority) {
-            // まずは HIGH。さらに攻めるなら CRITICAL でも可。
             (void)m_pAvSetMmThreadPriority(m_mmcssHandle, AVRT_PRIORITY_HIGH);
         }
-        // 併用で通常優先度も高めにしておく
         ::SetThreadPriority(::GetCurrentThread(), THREAD_PRIORITY_HIGHEST);
     }
+
+#if MP_RAW_PIN_BIGCORE
+    tryPinToPerformanceCore(); // 可能なら高性能コアへ（失敗時は何もしない）
+#endif
+}
+
+// ---------------- （任意）高性能コアへピン止め ----------------
+void RawInputWinFilter::tryPinToPerformanceCore()
+{
+    // RelationProcessorCore で最小 EfficiencyClass のコアの1CPUに張り付け
+    DWORD bytes = 0;
+    if (!::GetLogicalProcessorInformationEx(RelationProcessorCore, nullptr, &bytes) &&
+        ::GetLastError() != ERROR_INSUFFICIENT_BUFFER) {
+        return;
+    }
+    std::vector<BYTE> buf(bytes);
+    if (!::GetLogicalProcessorInformationEx(RelationProcessorCore,
+        reinterpret_cast<PSYSTEM_LOGICAL_PROCESSOR_INFORMATION_EX>(buf.data()),
+        &bytes)) {
+        return;
+    }
+
+    WORD   bestGroup = 0;
+    KAFFINITY bestMask = 0;
+    BYTE   bestEff = 0xFF; // 0 が最も高性能
+
+    BYTE* p = buf.data();
+    BYTE* end = buf.data() + bytes;
+    while (p < end) {
+        auto* info = reinterpret_cast<PSYSTEM_LOGICAL_PROCESSOR_INFORMATION_EX>(p);
+        if (info->Relationship == RelationProcessorCore) {
+            const PROCESSOR_RELATIONSHIP& pr = info->Processor;
+            const BYTE eff = pr.EfficiencyClass;
+
+            for (WORD i = 0; i < pr.GroupCount; ++i) {
+                const GROUP_AFFINITY& ga = pr.GroupMask[i];
+                if (!ga.Mask) continue;
+
+                KAFFINITY one = 0;
+#if defined(_MSC_VER)
+                unsigned long idx = 0;
+                unsigned long long m = ga.Mask;
+                if (_BitScanForward64(&idx, m)) {
+                    one = (KAFFINITY)(1ull << idx);
+                }
+                else {
+                    continue;
+                }
+#else
+                int idx = __builtin_ctzll((unsigned long long)ga.Mask);
+                one = (KAFFINITY)(1ull << idx);
+#endif
+
+                if (eff < bestEff) {
+                    bestEff = eff;
+                    bestGroup = ga.Group;
+                    bestMask = one;
+                    if (bestEff == 0) break;
+                }
+            }
+        }
+        p += info->Size;
+    }
+
+    if (bestMask == 0) return;
+
+    GROUP_AFFINITY ga{};
+    ga.Group = bestGroup;
+    ga.Mask = bestMask;
+
+    GROUP_AFFINITY oldGa{};
+    (void)::SetThreadGroupAffinity(::GetCurrentThread(), &ga, &oldGa);
+    // 失敗しても静かにスキップ
 }
 
 // ---------------- Win32 Window ----------------
@@ -138,13 +243,10 @@ LRESULT CALLBACK RawInputWinFilter::WndProcThunk(HWND hWnd, UINT msg, WPARAM wp,
 LRESULT RawInputWinFilter::WndProc(HWND hWnd, UINT msg, WPARAM, LPARAM lp)
 {
     switch (msg) {
-    case WM_INPUT:
-    {
+    case WM_INPUT: {
         // 通常はinputThreadMain側で直処理
         const RAWINPUT* raw = nullptr;
-        if (readRawInputToBuf(lp, raw)) {
-            handleRawInput(*raw);
-        }
+        if (readRawInputToBuf(lp, raw)) handleRawInput(*raw);
         return 0;
     }
     case MP_RAW_REREGISTER:
@@ -167,7 +269,7 @@ bool RawInputWinFilter::registerRawInput(HWND target)
     RAWINPUTDEVICE rid[2]{};
     rid[0].usUsagePage = 0x01; // Generic Desktop Controls
     rid[0].usUsage = 0x02; // Mouse
-    rid[0].dwFlags = m_useInputSink ? RIDEV_INPUTSINK : 0; // NOLEGACY/HOTKEYSは使わない
+    rid[0].dwFlags = m_useInputSink ? RIDEV_INPUTSINK : 0; // NOLEGACY/NOHOTKEYSは不使用
     rid[0].hwndTarget = target;
 
     rid[1].usUsagePage = 0x01;
@@ -178,14 +280,18 @@ bool RawInputWinFilter::registerRawInput(HWND target)
     return !!::RegisterRawInputDevices(rid, 2, sizeof(RAWINPUTDEVICE));
 }
 
-// ---------------- スレッド本体（イベント駆動＋起床条件最小化） ----------------
+// ---------------- スレッド本体（A案：外周1回＋起床条件最小化） ----------------
 void RawInputWinFilter::inputThreadMain()
 {
+#if MP_TIMEPERIOD_1MS
+    timeBeginPeriod(1); // 入力スレッドの寿命中だけ
+#endif
+
     applyThreadQoS();
 
     // message-only window
     m_hinst = (HINSTANCE)::GetModuleHandleW(nullptr);
-    const wchar_t kCls[] = L"MPDS_RI_CLASS_EVT_MMCSS";
+    const wchar_t kCls[] = L"MelonPrime_RI_CLASS_EVT_MMCSS_A";
     WNDCLASSEXW wc{};
     wc.cbSize = sizeof(wc);
     wc.lpfnWndProc = &RawInputWinFilter::WndProcThunk;
@@ -193,7 +299,7 @@ void RawInputWinFilter::inputThreadMain()
     wc.lpszClassName = kCls;
     ::RegisterClassExW(&wc); // 既登録でもOK
 
-    HWND h = ::CreateWindowExW(0, kCls, L"MPDS_RI_WINDOW_EVT_MMCSS", 0,
+    HWND h = ::CreateWindowExW(0, kCls, L"MelonPrime_RI_WINDOW_EVT_MMCSS_A", 0,
         0, 0, 0, 0,
         HWND_MESSAGE, nullptr, m_hinst, this);
     m_hwndMsg = h;
@@ -207,22 +313,19 @@ void RawInputWinFilter::inputThreadMain()
     for (;;) {
         if (m_thrQuit.load(std::memory_order_acquire)) break;
 
-        // 1) WM_INPUT は直ハンドル（Dispatchを通さない）
-        while (::PeekMessageW(&msg, h, WM_INPUT, WM_INPUT, PM_REMOVE)) {
+        // 1) WM_INPUT は“外周1回”だけ処理（1件）
+        if (::PeekMessageW(&msg, h, WM_INPUT, WM_INPUT, PM_REMOVE)) {
             const RAWINPUT* raw = nullptr;
-            if (readRawInputToBuf(msg.lParam, raw)) {
-                handleRawInput(*raw);
-            }
+            if (readRawInputToBuf(msg.lParam, raw)) handleRawInput(*raw);
         }
 
-        // 2) それ以外のメッセージだけ通常ポンプ
+        // 2) その他のメッセージ（Translate不要）
         while (::PeekMessageW(&msg, h, 0, 0, PM_REMOVE)) {
             if (msg.message == WM_QUIT) goto exit_thread;
-            ::TranslateMessage(&msg);
             ::DispatchMessageW(&msg);
         }
 
-        // 3) 起床条件の絞り込み：Raw入力 or Post系（WM_CLOSE等）
+        // 3) 起床条件の最小化：Raw入力 or Post（WM_CLOSE等）
         (void)::MsgWaitForMultipleObjectsEx(
             0, nullptr, INFINITE,
             QS_RAWINPUT | QS_POSTMESSAGE,
@@ -230,7 +333,7 @@ void RawInputWinFilter::inputThreadMain()
     }
 
 exit_thread:
-    // MMCSS からの離脱（参加していれば）
+    // MMCSS 離脱
     if (m_mmcssHandle && m_pAvRevertMmThreadCharacteristics) {
         (void)m_pAvRevertMmThreadCharacteristics(m_mmcssHandle);
         m_mmcssHandle = nullptr;
@@ -242,21 +345,51 @@ exit_thread:
         m_pAvRevertMmThreadCharacteristics = nullptr;
         m_pAvSetMmThreadPriority = nullptr;
     }
+#if MP_TIMEPERIOD_1MS
+    timeEndPeriod(1);
+#endif
     return;
 }
 
-// ---------------- RawInput 読みラッパ ----------------
+// ---------------- RawInput 読みラッパ（FastPath＋フォールバック） ----------------
 FORCE_INLINE bool RawInputWinFilter::readRawInputToBuf(LPARAM lp, const RAWINPUT*& out) noexcept
 {
+#if MP_RAW_FAST_GETRAWINPUT
+    UINT size = sizeof(m_rawBuf);
+    UINT got = ::GetRawInputData((HRAWINPUT)lp, RID_INPUT, m_rawBuf, &size, sizeof(RAWINPUTHEADER));
+    if (got == (UINT)-1) {
+        // 典型：バッファ不足。size に必要サイズが入る（仕様）
+        if (size == 0) return false;
+        if (size <= sizeof(m_rawBuf)) return false; // 理論上ほぼ来ない
+        m_dynRawBuf.resize(size);
+        UINT sz2 = size;
+        if (::GetRawInputData((HRAWINPUT)lp, RID_INPUT, m_dynRawBuf.data(), &sz2, sizeof(RAWINPUTHEADER)) == (UINT)-1)
+            return false;
+        out = reinterpret_cast<const RAWINPUT*>(m_dynRawBuf.data());
+        return true;
+    }
+    // 成功（got==コピー済みバイト数）
+    out = reinterpret_cast<const RAWINPUT*>(m_rawBuf);
+    return true;
+#else
+    // 旧来の2段呼び（保険）
     UINT need = 0;
     if (::GetRawInputData((HRAWINPUT)lp, RID_INPUT, nullptr, &need, sizeof(RAWINPUTHEADER)) == (UINT)-1)
         return false;
-    if (need > sizeof(m_rawBuf)) return false; // 256B超なら拡張検討
-    UINT size = need;
-    if (::GetRawInputData((HRAWINPUT)lp, RID_INPUT, m_rawBuf, &size, sizeof(RAWINPUTHEADER)) == (UINT)-1)
+    if (need > sizeof(m_rawBuf)) {
+        m_dynRawBuf.resize(need);
+        UINT sz = need;
+        if (::GetRawInputData((HRAWINPUT)lp, RID_INPUT, m_dynRawBuf.data(), &sz, sizeof(RAWINPUTHEADER)) == (UINT)-1)
+            return false;
+        out = reinterpret_cast<const RAWINPUT*>(m_dynRawBuf.data());
+        return true;
+    }
+    UINT sz = need;
+    if (::GetRawInputData((HRAWINPUT)lp, RID_INPUT, m_rawBuf, &sz, sizeof(RAWINPUTHEADER)) == (UINT)-1)
         return false;
     out = reinterpret_cast<const RAWINPUT*>(m_rawBuf);
     return true;
+#endif
 }
 
 // ---------------- RawInput 処理 ----------------
@@ -301,11 +434,11 @@ void RawInputWinFilter::handleRawKeyboard(const RAWKEYBOARD& kb) noexcept
     const USHORT flags = kb.Flags;
     const bool isUp = (flags & RI_KEY_BREAK) != 0;
 
-    // 左右修正
+    // 左右修正（低コスト）
     switch (vk) {
     case VK_SHIFT: {
-        const UINT ex = MapVirtualKey(kb.MakeCode, MAPVK_VSC_TO_VK_EX);
-        vk = ex ? ex : VK_SHIFT;
+        const UINT sc = kb.MakeCode;
+        vk = (sc == 0x36) ? VK_RSHIFT : (sc == 0x2A ? VK_LSHIFT : VK_SHIFT);
         break;
     }
     case VK_CONTROL: vk = (flags & RI_KEY_E0) ? VK_RCONTROL : VK_LCONTROL; break;
