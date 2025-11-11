@@ -2430,7 +2430,7 @@
 										<number>6</number>
 									</property>
 									<property name="value">
-										<double>0.001000</double>
+										<double>0.000100</double>
 									</property>
 								</widget>
 							</item>
@@ -2439,7 +2439,7 @@
 									<property name="text">
 										<string notr="true">
 											<![CDATA[
-<b>Input threshold (deadzone + snap)</b> (recommended: 0.001 [default] or 0.5): |x|&lt;a → 0, a ≤ |x|&lt;1 → ±1, |x|≥1 → as is (a=0: off = all values under 1 ignored, no snap)<br />
+<b>Input threshold (deadzone + snap)</b> (recommended: 0.0001 [default] or 0.5): |x|&lt;a → 0, a ≤ |x|&lt;1 → ±1, |x|≥1 → as is (a=0: off = all values under 1 ignored, no snap)<br />
 When your aim isn't going the way you want, try lowering this value.
 ]]>
 										</string>
