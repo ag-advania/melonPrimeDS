@@ -31,7 +31,7 @@ public:
     RawInputWinFilter();
     ~RawInputWinFilter() override;
 
-    // WM_INPUTは専用スレッドで処理するので常にfalse
+    // WM_INPUTは専用スレッドで処理するため常にfalse
     bool nativeEventFilter(const QByteArray& eventType, void* message, qintptr* result) override;
 
     // 入力スレッド（message-only HWND）
@@ -57,7 +57,7 @@ public:
     void resetAllKeys();
     void resetHotkeyEdges();
 
-    // 他スレッドから制御用に参照したい場合だけ
+    // 他スレッドから参照したい場合だけ
     HWND rawMessageWindow() const noexcept { return m_hwndMsg; }
 
 private:
@@ -87,7 +87,7 @@ private:
         std::atomic<uint8_t> mouse{ 0 };                        // bit0..4 = L,R,M,X1,X2
     } m_state;
 
-    // 相対移動（単一バッファ：最短経路）
+    // 相対移動（単一バッファ）
     alignas(64) std::atomic<int32_t> m_dx{ 0 };
     alignas(64) std::atomic<int32_t> m_dy{ 0 };
 
@@ -105,6 +105,19 @@ private:
 
     // RawInput一時バッファ
     alignas(64) BYTE  m_rawBuf[256] = {};
+
+    // --- MMCSS（動的ロード） ---
+    enum AVRT_PRIORITY { AVRT_PRIORITY_LOW = -1, AVRT_PRIORITY_NORMAL = 0, AVRT_PRIORITY_HIGH = 1, AVRT_PRIORITY_CRITICAL = 2 };
+    using PFN_AvSetMmThreadCharacteristicsW = HANDLE(WINAPI*)(LPCWSTR, LPDWORD);
+    using PFN_AvRevertMmThreadCharacteristics = BOOL(WINAPI*)(HANDLE);
+    using PFN_AvSetMmThreadPriority = BOOL(WINAPI*)(HANDLE, AVRT_PRIORITY);
+
+    HMODULE m_hAvrt = nullptr;
+    PFN_AvSetMmThreadCharacteristicsW   m_pAvSetMmThreadCharacteristicsW = nullptr;
+    PFN_AvRevertMmThreadCharacteristics m_pAvRevertMmThreadCharacteristics = nullptr;
+    PFN_AvSetMmThreadPriority           m_pAvSetMmThreadPriority = nullptr;
+    HANDLE m_mmcssHandle = nullptr;
+    DWORD  m_mmcssTaskIndex = 0;
 
 private:
     // Win32ウィンドウ
@@ -127,6 +140,9 @@ private:
 
     // 安全読みラッパ
     FORCE_INLINE bool readRawInputToBuf(LPARAM lp, const RAWINPUT*& out) noexcept;
+
+    // avrt.dll ロード
+    void  loadAvrt();
 
     // 制御メッセージ（必要なら拡張）
     enum : UINT { MP_RAW_REREGISTER = WM_APP + 100 };

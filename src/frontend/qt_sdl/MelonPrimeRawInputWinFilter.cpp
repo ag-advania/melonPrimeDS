@@ -39,6 +39,21 @@ bool RawInputWinFilter::nativeEventFilter(const QByteArray&, void*, qintptr*)
     return false;
 }
 
+// ---------------- avrt.dll ロード ----------------
+void RawInputWinFilter::loadAvrt()
+{
+    if (m_hAvrt) return;
+    m_hAvrt = ::LoadLibraryW(L"avrt.dll");
+    if (!m_hAvrt) return;
+
+    m_pAvSetMmThreadCharacteristicsW = reinterpret_cast<PFN_AvSetMmThreadCharacteristicsW>(
+        ::GetProcAddress(m_hAvrt, "AvSetMmThreadCharacteristicsW"));
+    m_pAvRevertMmThreadCharacteristics = reinterpret_cast<PFN_AvRevertMmThreadCharacteristics>(
+        ::GetProcAddress(m_hAvrt, "AvRevertMmThreadCharacteristics"));
+    m_pAvSetMmThreadPriority = reinterpret_cast<PFN_AvSetMmThreadPriority>(
+        ::GetProcAddress(m_hAvrt, "AvSetMmThreadPriority"));
+}
+
 // ---------------- スレッド制御 ----------------
 bool RawInputWinFilter::startInputThread(bool useInputSink)
 {
@@ -65,14 +80,13 @@ void RawInputWinFilter::stopInputThread()
     m_hwndMsg = nullptr;
 }
 
-// ---------------- QoS（省電力スロットリングOFF＋優先度） ----------------
+// ---------------- QoS（MMCSS “Games” 有効＋省電力スロットリングOFF） ----------------
 void RawInputWinFilter::applyThreadQoS()
 {
-    // 1) まずは通常スケジューラで十分高めに
+    // Win32スレッド優先度を上げる
     ::SetThreadPriority(::GetCurrentThread(), THREAD_PRIORITY_ABOVE_NORMAL);
 
-    // 2) 省電力スロットリングを無効化（Win10/11）
-    //    SDKが古い場合でもビルドできるように定義を用意
+    // 省電力スロットリングを無効化（Win10/11）
 #ifndef THREAD_POWER_THROTTLING_CURRENT_VERSION
 #  define THREAD_POWER_THROTTLING_CURRENT_VERSION 1
 #  define THREAD_POWER_THROTTLING_EXECUTION_SPEED 0x1
@@ -82,19 +96,28 @@ void RawInputWinFilter::applyThreadQoS()
         ULONG StateMask;
     } THREAD_POWER_THROTTLING_STATE, * PTHREAD_POWER_THROTTLING_STATE;
 #endif
-
 #ifndef ThreadPowerThrottling
-    // 一部SDKで未定義な場合のフォールバック（実値は公式SDKと同じ）
 #  define ThreadPowerThrottling ((THREAD_INFORMATION_CLASS)9)
 #endif
-
     THREAD_POWER_THROTTLING_STATE pts = {};
     pts.Version = THREAD_POWER_THROTTLING_CURRENT_VERSION;
     pts.ControlMask = THREAD_POWER_THROTTLING_EXECUTION_SPEED;
-    pts.StateMask = 0; // 0=スロットリング無効
+    pts.StateMask = 0; // 無効
     (void)::SetThreadInformation(::GetCurrentThread(),
         ThreadPowerThrottling,
         &pts, sizeof(pts));
+
+    // MMCSS “Games” に参加（動的ロード、失敗時は静かにスキップ）
+    loadAvrt();
+    if (m_pAvSetMmThreadCharacteristicsW) {
+        m_mmcssHandle = m_pAvSetMmThreadCharacteristicsW(L"Games", &m_mmcssTaskIndex);
+        if (m_mmcssHandle && m_pAvSetMmThreadPriority) {
+            // まずは HIGH。さらに攻めるなら CRITICAL でも可。
+            (void)m_pAvSetMmThreadPriority(m_mmcssHandle, AVRT_PRIORITY_HIGH);
+        }
+        // 併用で通常優先度も高めにしておく
+        ::SetThreadPriority(::GetCurrentThread(), THREAD_PRIORITY_HIGHEST);
+    }
 }
 
 // ---------------- Win32 Window ----------------
@@ -117,7 +140,7 @@ LRESULT RawInputWinFilter::WndProc(HWND hWnd, UINT msg, WPARAM, LPARAM lp)
     switch (msg) {
     case WM_INPUT:
     {
-        // ※通常はinputThreadMain側で直処理するためここには来ない想定
+        // 通常はinputThreadMain側で直処理
         const RAWINPUT* raw = nullptr;
         if (readRawInputToBuf(lp, raw)) {
             handleRawInput(*raw);
@@ -144,7 +167,7 @@ bool RawInputWinFilter::registerRawInput(HWND target)
     RAWINPUTDEVICE rid[2]{};
     rid[0].usUsagePage = 0x01; // Generic Desktop Controls
     rid[0].usUsage = 0x02; // Mouse
-    rid[0].dwFlags = m_useInputSink ? RIDEV_INPUTSINK : 0; // ※NOLEGACY/NOHOTKEYSは付けない
+    rid[0].dwFlags = m_useInputSink ? RIDEV_INPUTSINK : 0; // NOLEGACY/HOTKEYSは使わない
     rid[0].hwndTarget = target;
 
     rid[1].usUsagePage = 0x01;
@@ -155,14 +178,14 @@ bool RawInputWinFilter::registerRawInput(HWND target)
     return !!::RegisterRawInputDevices(rid, 2, sizeof(RAWINPUTDEVICE));
 }
 
-// ---------------- スレッド本体（完全イベント駆動） ----------------
+// ---------------- スレッド本体（イベント駆動＋起床条件最小化） ----------------
 void RawInputWinFilter::inputThreadMain()
 {
     applyThreadQoS();
 
     // message-only window
     m_hinst = (HINSTANCE)::GetModuleHandleW(nullptr);
-    const wchar_t kCls[] = L"MPDS_RI_CLASS_EVT2";
+    const wchar_t kCls[] = L"MPDS_RI_CLASS_EVT_MMCSS";
     WNDCLASSEXW wc{};
     wc.cbSize = sizeof(wc);
     wc.lpfnWndProc = &RawInputWinFilter::WndProcThunk;
@@ -170,13 +193,13 @@ void RawInputWinFilter::inputThreadMain()
     wc.lpszClassName = kCls;
     ::RegisterClassExW(&wc); // 既登録でもOK
 
-    HWND h = ::CreateWindowExW(0, kCls, L"MPDS_RI_WINDOW_EVT2", 0,
+    HWND h = ::CreateWindowExW(0, kCls, L"MPDS_RI_WINDOW_EVT_MMCSS", 0,
         0, 0, 0, 0,
         HWND_MESSAGE, nullptr, m_hinst, this);
     m_hwndMsg = h;
 
-    if (!h) { m_thrRunning.store(true, std::memory_order_release); return; }
-    if (!registerRawInput(h)) { ::DestroyWindow(h); m_thrRunning.store(true, std::memory_order_release); return; }
+    if (!h) { m_thrRunning.store(true, std::memory_order_release); goto exit_thread; }
+    if (!registerRawInput(h)) { ::DestroyWindow(h); m_thrRunning.store(true, std::memory_order_release); goto exit_thread; }
 
     m_thrRunning.store(true, std::memory_order_release);
 
@@ -207,6 +230,18 @@ void RawInputWinFilter::inputThreadMain()
     }
 
 exit_thread:
+    // MMCSS からの離脱（参加していれば）
+    if (m_mmcssHandle && m_pAvRevertMmThreadCharacteristics) {
+        (void)m_pAvRevertMmThreadCharacteristics(m_mmcssHandle);
+        m_mmcssHandle = nullptr;
+    }
+    if (m_hAvrt) {
+        ::FreeLibrary(m_hAvrt);
+        m_hAvrt = nullptr;
+        m_pAvSetMmThreadCharacteristicsW = nullptr;
+        m_pAvRevertMmThreadCharacteristics = nullptr;
+        m_pAvSetMmThreadPriority = nullptr;
+    }
     return;
 }
 
