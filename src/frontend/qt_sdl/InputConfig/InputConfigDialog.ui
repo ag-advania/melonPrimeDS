@@ -2437,7 +2437,12 @@
 							<item row="6" column="1">
 								<widget class="QLabel" name="metroidAimAdjustLabel">
 									<property name="text">
-										<string>Input threshold (deadzone + snap) (recommended: 0.01[default] or 0.5): |x|&lt;a → 0, a ≤ |x|&lt;1 → ±1, |x|≥1 → as is (a=0: off = all values under 1 ignored, no snap)</string>
+										<string notr="true">
+											<![CDATA[
+<b>Input threshold (deadzone + snap)</b> (recommended: 0.001 [default] or 0.5): |x|&lt;a → 0, a ≤ |x|&lt;1 → ±1, |x|≥1 → as is (a=0: off = all values under 1 ignored, no snap)<br />
+When your aim isn't going the way you want, try lowering this value.
+]]>
+										</string>
 									</property>
 								</widget>
 							</item>
