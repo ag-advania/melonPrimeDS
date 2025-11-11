@@ -2430,7 +2430,7 @@
 										<number>6</number>
 									</property>
 									<property name="value">
-										<double>0.010000</double>
+										<double>0.001000</double>
 									</property>
 								</widget>
 							</item>
