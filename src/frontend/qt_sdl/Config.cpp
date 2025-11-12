@@ -180,7 +180,7 @@ DefaultList<double> DefaultDoubles =
     {"SlowmoFPS", 30.0},
     {"Instance*.Metroid.Sensitivity.Mph", -3.000},
     {"Instance*.Metroid.Sensitivity.AimYAxisScale", 1.500000},
-    {"Instance*.Metroid.Aim.Adjust", 0.001000},
+    {"Instance*.Metroid.Aim.Adjust", 0.010000},
 };
 
 /*
