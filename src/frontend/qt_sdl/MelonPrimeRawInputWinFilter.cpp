@@ -94,12 +94,13 @@ void RawInputWinFilter::stopInputThread()
 // ---------------- QoS（MMCSS＋スロットリング無効＋ブースト許可＋（任意）Pコア固定） ----------------
 void RawInputWinFilter::applyThreadQoS()
 {
-    // Win32スレッド優先度：高め
-    ::SetThreadPriority(::GetCurrentThread(), THREAD_PRIORITY_ABOVE_NORMAL);
-    // 動的ブースト許可
-    ::SetThreadPriorityBoost(::GetCurrentThread(), FALSE);
+    // —— 優先度：常に Normal。MelonPrimeDS（エミュ本体）を上回らない ——
+    ::SetThreadPriority(::GetCurrentThread(), THREAD_PRIORITY_NORMAL);
 
-    // --- プロセス全体のスロットリング無効 ---
+    // 動的ブースト禁止：一時的な高優先度化を抑止（出過ぎ防止）
+    ::SetThreadPriorityBoost(::GetCurrentThread(), TRUE);
+
+    // —— スロットリング無効（優先度は変えない／実行権を奪わない） ——
 #ifndef PROCESS_POWER_THROTTLING_CURRENT_VERSION
 #  define PROCESS_POWER_THROTTLING_CURRENT_VERSION 1
 #  define PROCESS_POWER_THROTTLING_EXECUTION_SPEED 0x1
@@ -115,12 +116,9 @@ void RawInputWinFilter::applyThreadQoS()
     PROCESS_POWER_THROTTLING_STATE pps{};
     pps.Version = PROCESS_POWER_THROTTLING_CURRENT_VERSION;
     pps.ControlMask = PROCESS_POWER_THROTTLING_EXECUTION_SPEED;
-    pps.StateMask = 0; // 無効
-    (void)::SetProcessInformation(::GetCurrentProcess(),
-        ProcessPowerThrottling,
-        &pps, sizeof(pps));
+    pps.StateMask = 0; // 無効（速度抑制なし：優先度は変わらない）
+    (void)::SetProcessInformation(::GetCurrentProcess(), ProcessPowerThrottling, &pps, sizeof(pps));
 
-    // --- スレッドのスロットリング無効 ---
 #ifndef THREAD_POWER_THROTTLING_CURRENT_VERSION
 #  define THREAD_POWER_THROTTLING_CURRENT_VERSION 1
 #  define THREAD_POWER_THROTTLING_EXECUTION_SPEED 0x1
@@ -136,25 +134,28 @@ void RawInputWinFilter::applyThreadQoS()
     THREAD_POWER_THROTTLING_STATE pts{};
     pts.Version = THREAD_POWER_THROTTLING_CURRENT_VERSION;
     pts.ControlMask = THREAD_POWER_THROTTLING_EXECUTION_SPEED;
-    pts.StateMask = 0; // 無効
-    (void)::SetThreadInformation(::GetCurrentThread(),
-        ThreadPowerThrottling,
-        &pts, sizeof(pts));
+    pts.StateMask = 0; // 無効（これも優先度には影響しない）
+    (void)::SetThreadInformation(::GetCurrentThread(), ThreadPowerThrottling, &pts, sizeof(pts));
 
-    // --- MMCSS “Games” 参加（失敗時はスキップ） ---
+    // —— MMCSS（デフォルトOFF、使う場合でも NORMAL 参加） ——
+#if MP_ENABLE_MMCSS
     loadAvrt();
     if (m_pAvSetMmThreadCharacteristicsW) {
         m_mmcssHandle = m_pAvSetMmThreadCharacteristicsW(L"Games", &m_mmcssTaskIndex);
         if (m_mmcssHandle && m_pAvSetMmThreadPriority) {
-            (void)m_pAvSetMmThreadPriority(m_mmcssHandle, AVRT_PRIORITY_HIGH);
+            // MMCSS内でも NORMAL に固定（HIGHEST/CRITICAL などは使わない）
+            (void)m_pAvSetMmThreadPriority(m_mmcssHandle, AVRT_PRIORITY_NORMAL);
         }
-        ::SetThreadPriority(::GetCurrentThread(), THREAD_PRIORITY_HIGHEST);
+        // Win32のベース優先度は Normal のまま触らない
     }
+#endif
 
 #if MP_RAW_PIN_BIGCORE
-    tryPinToPerformanceCore(); // 可能なら高性能コアへ（失敗時は何もしない）
+    // Pコア固定は“同優先度内の実行効率”を上げるだけなのでそのまま
+    tryPinToPerformanceCore();
 #endif
 }
+
 
 // ---------------- （任意）高性能コアへピン止め ----------------
 void RawInputWinFilter::tryPinToPerformanceCore()
@@ -280,7 +281,7 @@ bool RawInputWinFilter::registerRawInput(HWND target)
     return !!::RegisterRawInputDevices(rid, 2, sizeof(RAWINPUTDEVICE));
 }
 
-// ---------------- スレッド本体（A案：外周1回＋起床条件最小化） ----------------
+// ---------------- スレッド本体（外周1回＋待機は“新規到着まで”ブロック） ----------------
 void RawInputWinFilter::inputThreadMain()
 {
 #if MP_TIMEPERIOD_1MS
@@ -291,7 +292,7 @@ void RawInputWinFilter::inputThreadMain()
 
     // message-only window
     m_hinst = (HINSTANCE)::GetModuleHandleW(nullptr);
-    const wchar_t kCls[] = L"MelonPrime_RI_CLASS_EVT_MMCSS_A";
+    const wchar_t kCls[] = L"MelonPrime_RI_CLASS_EVT_MMCSS_A_LIGHT";
     WNDCLASSEXW wc{};
     wc.cbSize = sizeof(wc);
     wc.lpfnWndProc = &RawInputWinFilter::WndProcThunk;
@@ -299,7 +300,7 @@ void RawInputWinFilter::inputThreadMain()
     wc.lpszClassName = kCls;
     ::RegisterClassExW(&wc); // 既登録でもOK
 
-    HWND h = ::CreateWindowExW(0, kCls, L"MelonPrime_RI_WINDOW_EVT_MMCSS_A", 0,
+    HWND h = ::CreateWindowExW(0, kCls, L"MelonPrime_RI_WINDOW_EVT_MMCSS_A_LIGHT", 0,
         0, 0, 0, 0,
         HWND_MESSAGE, nullptr, m_hinst, this);
     m_hwndMsg = h;
@@ -313,10 +314,13 @@ void RawInputWinFilter::inputThreadMain()
     for (;;) {
         if (m_thrQuit.load(std::memory_order_acquire)) break;
 
+        bool handledRaw = false;
+
         // 1) WM_INPUT は“外周1回”だけ処理（1件）
         if (::PeekMessageW(&msg, h, WM_INPUT, WM_INPUT, PM_REMOVE)) {
             const RAWINPUT* raw = nullptr;
             if (readRawInputToBuf(msg.lParam, raw)) handleRawInput(*raw);
+            handledRaw = true;
         }
 
         // 2) その他のメッセージ（Translate不要）
@@ -325,11 +329,17 @@ void RawInputWinFilter::inputThreadMain()
             ::DispatchMessageW(&msg);
         }
 
-        // 3) 起床条件の最小化：Raw入力 or Post（WM_CLOSE等）
+        // 3) バックログ検知：まだWM_INPUTが残っていれば軽く譲って即ループ（スピン防止）
+        if (handledRaw && ::PeekMessageW(&msg, h, WM_INPUT, WM_INPUT, PM_NOREMOVE)) {
+            ::Sleep(0); // 同優先度の他スレへ譲る（最短yield）
+            continue;
+        }
+
+        // 4) 新規到着までブロック（※ MWMO_INPUTAVAILABLE は付けない）
         (void)::MsgWaitForMultipleObjectsEx(
             0, nullptr, INFINITE,
             QS_RAWINPUT | QS_POSTMESSAGE,
-            MWMO_INPUTAVAILABLE | MWMO_ALERTABLE);
+            MWMO_ALERTABLE);
     }
 
 exit_thread:
