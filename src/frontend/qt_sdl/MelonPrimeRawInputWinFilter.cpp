@@ -1,28 +1,18 @@
 ﻿#ifdef _WIN32
 #include "MelonPrimeRawInputWinFilter.h"
 
-/*
-TODO:
-さらに低レイテンシ&低サイクルにするなら
-イベント頻度が高い時に原子RMW回数を減らすのが効きます。今は X と Y で2回 fetch_add が走るので、64bitにまとめて1回にするとヒット率が上がります。
-
-*/
-
 RawInputWinFilter::RawInputWinFilter()
 {
-    // RawInput登録（マウス/キーボード）
+    // RawInput 登録（mouse / keyboard）
     m_rid[0] = { 0x01, 0x02, 0, nullptr }; // Mouse
     m_rid[1] = { 0x01, 0x06, 0, nullptr }; // Keyboard
     RegisterRawInputDevices(m_rid, 2, sizeof(RAWINPUTDEVICE));
 
-    // 互換配列をゼロ
+    // 初期化
     for (auto& a : m_vkDownCompat) a.store(0, std::memory_order_relaxed);
     for (auto& b : m_mbCompat)     b.store(0, std::memory_order_relaxed);
+    for (auto& w : m_hkPrev)       w.store(0, std::memory_order_relaxed);
 
-    // エッジ状態ゼロ
-    for (auto& w : m_hkPrev) w.store(0, std::memory_order_relaxed);
-
-    // 事前計算マスクをゼロ（AVXなし・移植性優先）
     std::memset(m_hkMask.data(), 0, sizeof(m_hkMask));
 }
 
@@ -49,7 +39,7 @@ bool RawInputWinFilter::nativeEventFilter(const QByteArray& /*eventType*/, void*
     RAWINPUT* raw = reinterpret_cast<RAWINPUT*>(m_rawBuf);
     const DWORD type = raw->header.dwType;
 
-    // ---- Mouse first (頻度高) ----
+    // ---------- Mouse ----------
     if (type == RIM_TYPEMOUSE) {
         const RAWMOUSE& m = raw->data.mouse;
 
@@ -61,10 +51,10 @@ bool RawInputWinFilter::nativeEventFilter(const QByteArray& /*eventType*/, void*
             dy.fetch_add((int)dy_, std::memory_order_relaxed);
         }
 
+        // ボタン
         const USHORT f = m.usButtonFlags;
         if ((f & kAllMouseBtnMask) == 0) return false;
 
-        // down/up を5bitにパック（分岐最小化）
         const uint8_t downMask =
             ((f & 0x0001) ? 0x01 : 0) | ((f & 0x0004) ? 0x02 : 0) |
             ((f & 0x0010) ? 0x04 : 0) | ((f & 0x0040) ? 0x08 : 0) |
@@ -75,35 +65,35 @@ bool RawInputWinFilter::nativeEventFilter(const QByteArray& /*eventType*/, void*
             ((f & 0x0020) ? 0x04 : 0) | ((f & 0x0080) ? 0x08 : 0) |
             ((f & 0x0200) ? 0x10 : 0);
 
-        // 現在のマスクを1発更新
         const uint8_t cur = m_state.mouseButtons.load(std::memory_order_relaxed);
         const uint8_t nxt = (uint8_t)((cur | downMask) & (uint8_t)~upMask);
         m_state.mouseButtons.store(nxt, std::memory_order_relaxed);
 
-        // 互換配列（必要なら）
+        // 互換
         if (downMask | upMask) {
             if (downMask & 0x01) m_mbCompat[kMB_Left].store(1, std::memory_order_relaxed);
-            if (upMask & 0x01)   m_mbCompat[kMB_Left].store(0, std::memory_order_relaxed);
+            if (upMask & 0x01) m_mbCompat[kMB_Left].store(0, std::memory_order_relaxed);
             if (downMask & 0x02) m_mbCompat[kMB_Right].store(1, std::memory_order_relaxed);
-            if (upMask & 0x02)   m_mbCompat[kMB_Right].store(0, std::memory_order_relaxed);
+            if (upMask & 0x02) m_mbCompat[kMB_Right].store(0, std::memory_order_relaxed);
             if (downMask & 0x04) m_mbCompat[kMB_Middle].store(1, std::memory_order_relaxed);
-            if (upMask & 0x04)   m_mbCompat[kMB_Middle].store(0, std::memory_order_relaxed);
+            if (upMask & 0x04) m_mbCompat[kMB_Middle].store(0, std::memory_order_relaxed);
             if (downMask & 0x08) m_mbCompat[kMB_X1].store(1, std::memory_order_relaxed);
-            if (upMask & 0x08)   m_mbCompat[kMB_X1].store(0, std::memory_order_relaxed);
+            if (upMask & 0x08) m_mbCompat[kMB_X1].store(0, std::memory_order_relaxed);
             if (downMask & 0x10) m_mbCompat[kMB_X2].store(1, std::memory_order_relaxed);
-            if (upMask & 0x10)   m_mbCompat[kMB_X2].store(0, std::memory_order_relaxed);
+            if (upMask & 0x10) m_mbCompat[kMB_X2].store(0, std::memory_order_relaxed);
         }
 
         return false;
     }
-    // ---- Keyboard ----
-    else if (type == RIM_TYPEKEYBOARD) {
+
+    // ---------- Keyboard ----------
+    if (type == RIM_TYPEKEYBOARD) {
         const RAWKEYBOARD& kb = raw->data.keyboard;
         UINT vk = kb.VKey;
         const USHORT flags = kb.Flags;
         const bool isUp = (flags & RI_KEY_BREAK) != 0;
 
-        // Shift/Control/Alt の正規化
+        // 特殊キー正規化
         switch (vk) {
         case VK_SHIFT:
             vk = MapVirtualKey(kb.MakeCode, MAPVK_VSC_TO_VK_EX);
@@ -118,17 +108,14 @@ bool RawInputWinFilter::nativeEventFilter(const QByteArray& /*eventType*/, void*
             break;
         }
 
-        // ビットベクタ更新
         setVkBit(vk, !isUp);
 
-        // 互換配列（必要なら）
         if (vk < m_vkDownCompat.size())
             m_vkDownCompat[vk].store(!isUp, std::memory_order_relaxed);
 
         return false;
     }
 
-    // HID等は無視
     return false;
 }
 
@@ -146,7 +133,6 @@ void RawInputWinFilter::discardDeltas()
 
 void RawInputWinFilter::resetAllKeys()
 {
-    // AVXなし：各アトミックをゼロ化
     for (auto& w : m_state.vkDown) w.store(0, std::memory_order_relaxed);
     for (auto& a : m_vkDownCompat) a.store(0, std::memory_order_relaxed);
 }
@@ -162,7 +148,6 @@ void RawInputWinFilter::resetHotkeyEdges()
     for (auto& w : m_hkPrev) w.store(0, std::memory_order_relaxed);
 }
 
-// ---- 前計算マスク構築 ----
 FORCE_INLINE void RawInputWinFilter::addVkToMask(HotkeyMask& m, UINT vk) noexcept
 {
     if (vk < 8) {
@@ -179,19 +164,16 @@ void RawInputWinFilter::setHotkeyVks(int hk, const std::vector<UINT>& vks)
 {
     if ((unsigned)hk < kMaxHotkeyId) {
         HotkeyMask& m = m_hkMask[hk];
-        std::memset(&m, 0, sizeof(m)); // AVXなし
-        const size_t n = (vks.size() > 8) ? 8 : vks.size(); // 8個までで十分
+        std::memset(&m, 0, sizeof(m));
+        const size_t n = (vks.size() > 8) ? 8 : vks.size();
         for (size_t i = 0; i < n; ++i) addVkToMask(m, vks[i]);
         return;
     }
-    // 大きいIDはフォールバックに
     m_hkToVk[hk] = vks;
 }
 
-// ---- 取得 ----
 bool RawInputWinFilter::hotkeyDown(int hk) const noexcept
 {
-    // 1) 高速パス：前計算マスク
     if ((unsigned)hk < kMaxHotkeyId) {
         const HotkeyMask& m = m_hkMask[hk];
         if (m.hasMask) {
@@ -208,7 +190,6 @@ bool RawInputWinFilter::hotkeyDown(int hk) const noexcept
         }
     }
 
-    // 2) フォールバック（登録が巨大/特殊な場合のみ）
     auto it = m_hkToVk.find(hk);
     if (it != m_hkToVk.end()) {
         for (UINT vk : it->second) {
@@ -224,10 +205,10 @@ bool RawInputWinFilter::hotkeyDown(int hk) const noexcept
     return false;
 }
 
+
 bool RawInputWinFilter::hotkeyPressed(int hk) noexcept
 {
     const bool now = hotkeyDown(hk);
-
     if ((unsigned)hk < kMaxHotkeyId) {
         const size_t idx = ((unsigned)hk) >> 6;
         const uint64_t bit = 1ULL << (hk & 63);
@@ -236,13 +217,11 @@ bool RawInputWinFilter::hotkeyPressed(int hk) noexcept
             return (prev & bit) == 0;
         }
         else {
-            const uint64_t prev = m_hkPrev[idx].fetch_and(~bit, std::memory_order_acq_rel);
-            (void)prev;
+            (void)m_hkPrev[idx].fetch_and(~bit, std::memory_order_acq_rel);
             return false;
         }
     }
 
-    // 大きいIDは簡易フォールバック
     static std::array<std::atomic<uint8_t>, 1024> s{};
     const size_t i = ((unsigned)hk) & 1023;
     const uint8_t prev = s[i].exchange(now ? 1u : 0u, std::memory_order_acq_rel);
@@ -252,7 +231,6 @@ bool RawInputWinFilter::hotkeyPressed(int hk) noexcept
 bool RawInputWinFilter::hotkeyReleased(int hk) noexcept
 {
     const bool now = hotkeyDown(hk);
-
     if ((unsigned)hk < kMaxHotkeyId) {
         const size_t idx = ((unsigned)hk) >> 6;
         const uint64_t bit = 1ULL << (hk & 63);
@@ -266,7 +244,6 @@ bool RawInputWinFilter::hotkeyReleased(int hk) noexcept
         }
     }
 
-    // 大きいIDは簡易フォールバック
     static std::array<std::atomic<uint8_t>, 1024> s{};
     const size_t i = ((unsigned)hk) & 1023;
     const uint8_t prev = s[i].exchange(now ? 1u : 0u, std::memory_order_acq_rel);
