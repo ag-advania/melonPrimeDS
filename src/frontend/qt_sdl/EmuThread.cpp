@@ -776,7 +776,7 @@ bool ApplyUnlockHuntersMaps(
 
     // 全ギャラリーアンロック
     nds->ARM9Write32(addrUnlock4, 0xFFFFFFFF);
-    nds->ARM9Write8(addrUnlock5, 0xFF);
+    nds->ARM9Write8(addrUnlock5, 0x7F); // 7F: ギャラリー全開 振動OFF , FF: ギャラリー全開 振動ON
 
     // 適用済みフラグ更新(再実行を避けるため)
     isUnlockApplied = true;

@@ -205,7 +205,6 @@ bool RawInputWinFilter::hotkeyDown(int hk) const noexcept
     return false;
 }
 
-
 bool RawInputWinFilter::hotkeyPressed(int hk) noexcept
 {
     const bool now = hotkeyDown(hk);
