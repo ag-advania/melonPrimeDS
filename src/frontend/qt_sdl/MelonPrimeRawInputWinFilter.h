@@ -28,6 +28,7 @@
 #  endif
 #endif
 
+
 class RawInputWinFilter : public QAbstractNativeEventFilter
 {
 public:
@@ -59,6 +60,15 @@ public:
     bool hotkeyDown(int hk) const noexcept;
     bool hotkeyPressed(int hk) noexcept;
     bool hotkeyReleased(int hk) noexcept;
+
+    //=====================================================
+    // ★ マウスボタン LUT を public 化（初期化コードが外側にあるため）
+    //=====================================================
+    struct BtnLutEntry {
+        uint8_t down;
+        uint8_t up;
+    };
+    static BtnLutEntry s_btnLut[1024];
 
 private:
     // マウスボタン index
@@ -94,10 +104,14 @@ private:
         0xFF        // 7
     };
 
-    // 固定長 RawInput バッファ
-    alignas(64) BYTE m_rawBuf[256] = {};
+    //=====================================================
+    // ★ RawInput バッファ：64 byte に縮小（L1汚染削減）
+    //=====================================================
+    alignas(64) BYTE m_rawBuf[64] = {};
 
+    //=====================================================
     // 実時間キー/マウス状態
+    //=====================================================
     struct StateBits {
         std::atomic<uint64_t> vkDown[4];   // 256 bit
         std::atomic<uint8_t>  mouseButtons;
@@ -107,7 +121,7 @@ private:
     FORCE_INLINE bool getVkState(uint32_t vk) const noexcept {
         if (vk >= 256) return false;
         const uint64_t w = m_state.vkDown[vk >> 6].load(std::memory_order_relaxed);
-        return (w & (1ULL << (vk & 63))) != 0ULL;
+        return (w >> (vk & 63)) & 1ULL;
     }
 
     // Mouse押下状態
@@ -116,13 +130,17 @@ private:
         return (idx < 5) && ((b >> idx) & 1u);
     }
 
-    // VKセット/クリア
+    //=====================================================
+    // ★ RMW(fetch_or/fetch_and) を使わない最短ビット更新
+    //=====================================================
     FORCE_INLINE void setVkBit(uint32_t vk, bool down) noexcept {
         if (vk >= 256) return;
-        const uint64_t mask = 1ULL << (vk & 63);
-        auto& word = m_state.vkDown[vk >> 6];
-        if (down) (void)word.fetch_or(mask, std::memory_order_relaxed);
-        else      (void)word.fetch_and(~mask, std::memory_order_relaxed);
+        const uint32_t wordIdx = vk >> 6;
+        const uint64_t bit = 1ULL << (vk & 63);
+
+        uint64_t cur = m_state.vkDown[wordIdx].load(std::memory_order_relaxed);
+        uint64_t nxt = down ? (cur | bit) : (cur & ~bit);
+        m_state.vkDown[wordIdx].store(nxt, std::memory_order_relaxed);
     }
 
     // 前計算マスク
