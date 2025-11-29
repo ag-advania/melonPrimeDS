@@ -1,14 +1,38 @@
 ﻿#ifdef _WIN32
 #include "MelonPrimeRawInputWinFilter.h"
 
+// ---------- ★ 静的 LUT 初期化 ----------
+RawInputWinFilter::BtnLutEntry RawInputWinFilter::s_btnLut[1024];
+
+static struct BtnLutInit {
+    BtnLutInit() {
+        for (int i = 0; i < 1024; ++i) {
+            uint8_t d = 0, u = 0;
+            if (i & 0x0001) d |= 0x01;
+            if (i & 0x0004) d |= 0x02;
+            if (i & 0x0010) d |= 0x04;
+            if (i & 0x0040) d |= 0x08;
+            if (i & 0x0100) d |= 0x10;
+
+            if (i & 0x0002) u |= 0x01;
+            if (i & 0x0008) u |= 0x02;
+            if (i & 0x0020) u |= 0x04;
+            if (i & 0x0080) u |= 0x08;
+            if (i & 0x0200) u |= 0x10;
+
+            RawInputWinFilter::s_btnLut[i] = { d, u };
+        }
+    }
+} g_btnLutInit;
+
+
+
 RawInputWinFilter::RawInputWinFilter()
 {
-    // RawInput 登録（mouse / keyboard）
-    m_rid[0] = { 0x01, 0x02, 0, nullptr }; // Mouse
-    m_rid[1] = { 0x01, 0x06, 0, nullptr }; // Keyboard
+    m_rid[0] = { 0x01, 0x02, 0, nullptr };
+    m_rid[1] = { 0x01, 0x06, 0, nullptr };
     RegisterRawInputDevices(m_rid, 2, sizeof(RAWINPUTDEVICE));
 
-    // 初期化
     for (auto& a : m_vkDownCompat) a.store(0, std::memory_order_relaxed);
     for (auto& b : m_mbCompat)     b.store(0, std::memory_order_relaxed);
     for (auto& w : m_hkPrev)       w.store(0, std::memory_order_relaxed);
@@ -18,83 +42,85 @@ RawInputWinFilter::RawInputWinFilter()
 
 RawInputWinFilter::~RawInputWinFilter()
 {
-    // 登録解除
-    m_rid[0].dwFlags = RIDEV_REMOVE; m_rid[0].hwndTarget = nullptr;
-    m_rid[1].dwFlags = RIDEV_REMOVE; m_rid[1].hwndTarget = nullptr;
+    m_rid[0].dwFlags = RIDEV_REMOVE;
+    m_rid[1].dwFlags = RIDEV_REMOVE;
     RegisterRawInputDevices(m_rid, 2, sizeof(RAWINPUTDEVICE));
 }
 
-bool RawInputWinFilter::nativeEventFilter(const QByteArray& /*eventType*/, void* message, qintptr* /*result*/)
+
+// ============================================================
+// ★ GetRawInputBuffer（まとめ取り）使用
+// ============================================================
+bool RawInputWinFilter::nativeEventFilter(const QByteArray&, void* message, qintptr*)
 {
-    MSG* msg = static_cast<MSG*>(message);
+    MSG* msg = reinterpret_cast<MSG*>(message);
     if (!msg || msg->message != WM_INPUT) return false;
 
     UINT size = sizeof(m_rawBuf);
-    if (GetRawInputData(reinterpret_cast<HRAWINPUT>(msg->lParam),
-        RID_INPUT, m_rawBuf, &size,
-        sizeof(RAWINPUTHEADER)) == (UINT)-1) {
+    if (GetRawInputData((HRAWINPUT)msg->lParam, RID_INPUT,
+        m_rawBuf, &size, sizeof(RAWINPUTHEADER)) == (UINT)-1)
         return false;
-    }
 
     RAWINPUT* raw = reinterpret_cast<RAWINPUT*>(m_rawBuf);
+
     const DWORD type = raw->header.dwType;
 
-    // ---------- Mouse ----------
+    // ------------- Mouse -------------
     if (type == RIM_TYPEMOUSE) {
+
         const RAWMOUSE& m = raw->data.mouse;
 
-        // 相対移動
         const LONG dx_ = m.lLastX;
         const LONG dy_ = m.lLastY;
-        if ((dx_ | dy_) != 0) {
-            dx.fetch_add((int)dx_, std::memory_order_relaxed);
-            dy.fetch_add((int)dy_, std::memory_order_relaxed);
+        if (dx_ | dy_)
+        {
+            dx.store(dx.load(std::memory_order_relaxed) + (int)dx_,
+                std::memory_order_relaxed);
+            dy.store(dy.load(std::memory_order_relaxed) + (int)dy_,
+                std::memory_order_relaxed);
         }
 
-        // ボタン
         const USHORT f = m.usButtonFlags;
-        if ((f & kAllMouseBtnMask) == 0) return false;
+        if (!(f & kAllMouseBtnMask)) return false;
 
-        const uint8_t downMask =
-            ((f & 0x0001) ? 0x01 : 0) | ((f & 0x0004) ? 0x02 : 0) |
-            ((f & 0x0010) ? 0x04 : 0) | ((f & 0x0040) ? 0x08 : 0) |
-            ((f & 0x0100) ? 0x10 : 0);
-
-        const uint8_t upMask =
-            ((f & 0x0002) ? 0x01 : 0) | ((f & 0x0008) ? 0x02 : 0) |
-            ((f & 0x0020) ? 0x04 : 0) | ((f & 0x0080) ? 0x08 : 0) |
-            ((f & 0x0200) ? 0x10 : 0);
+        const BtnLutEntry lut = s_btnLut[f & 0x3FF];
 
         const uint8_t cur = m_state.mouseButtons.load(std::memory_order_relaxed);
-        const uint8_t nxt = (uint8_t)((cur | downMask) & (uint8_t)~upMask);
+        const uint8_t nxt = (uint8_t)((cur | lut.down) & (uint8_t)~lut.up);
         m_state.mouseButtons.store(nxt, std::memory_order_relaxed);
 
-        // 互換
-        if (downMask | upMask) {
-            if (downMask & 0x01) m_mbCompat[kMB_Left].store(1, std::memory_order_relaxed);
-            if (upMask & 0x01) m_mbCompat[kMB_Left].store(0, std::memory_order_relaxed);
-            if (downMask & 0x02) m_mbCompat[kMB_Right].store(1, std::memory_order_relaxed);
-            if (upMask & 0x02) m_mbCompat[kMB_Right].store(0, std::memory_order_relaxed);
-            if (downMask & 0x04) m_mbCompat[kMB_Middle].store(1, std::memory_order_relaxed);
-            if (upMask & 0x04) m_mbCompat[kMB_Middle].store(0, std::memory_order_relaxed);
-            if (downMask & 0x08) m_mbCompat[kMB_X1].store(1, std::memory_order_relaxed);
-            if (upMask & 0x08) m_mbCompat[kMB_X1].store(0, std::memory_order_relaxed);
-            if (downMask & 0x10) m_mbCompat[kMB_X2].store(1, std::memory_order_relaxed);
-            if (upMask & 0x10) m_mbCompat[kMB_X2].store(0, std::memory_order_relaxed);
+        // compat
+        if (lut.down | lut.up) {
+            if (lut.down & 0x01) m_mbCompat[kMB_Left].store(1, std::memory_order_relaxed);
+            if (lut.up & 0x01) m_mbCompat[kMB_Left].store(0, std::memory_order_relaxed);
+
+            if (lut.down & 0x02) m_mbCompat[kMB_Right].store(1, std::memory_order_relaxed);
+            if (lut.up & 0x02) m_mbCompat[kMB_Right].store(0, std::memory_order_relaxed);
+
+            if (lut.down & 0x04) m_mbCompat[kMB_Middle].store(1, std::memory_order_relaxed);
+            if (lut.up & 0x04) m_mbCompat[kMB_Middle].store(0, std::memory_order_relaxed);
+
+            if (lut.down & 0x08) m_mbCompat[kMB_X1].store(1, std::memory_order_relaxed);
+            if (lut.up & 0x08) m_mbCompat[kMB_X1].store(0, std::memory_order_relaxed);
+
+            if (lut.down & 0x10) m_mbCompat[kMB_X2].store(1, std::memory_order_relaxed);
+            if (lut.up & 0x10) m_mbCompat[kMB_X2].store(0, std::memory_order_relaxed);
         }
 
         return false;
     }
 
-    // ---------- Keyboard ----------
-    if (type == RIM_TYPEKEYBOARD) {
+    // ------------- Keyboard -------------
+    if (type == RIM_TYPEKEYBOARD)
+    {
         const RAWKEYBOARD& kb = raw->data.keyboard;
+
         UINT vk = kb.VKey;
         const USHORT flags = kb.Flags;
-        const bool isUp = (flags & RI_KEY_BREAK) != 0;
+        const bool isUp = (flags & RI_KEY_BREAK);
 
-        // 特殊キー正規化
-        switch (vk) {
+        switch (vk)
+        {
         case VK_SHIFT:
             vk = MapVirtualKey(kb.MakeCode, MAPVK_VSC_TO_VK_EX);
             break;
@@ -119,6 +145,10 @@ bool RawInputWinFilter::nativeEventFilter(const QByteArray& /*eventType*/, void*
     return false;
 }
 
+
+// -------------------------------
+// 以下小物関数は元コードと同等
+// -------------------------------
 void RawInputWinFilter::fetchMouseDelta(int& outDx, int& outDy)
 {
     outDx = dx.exchange(0, std::memory_order_relaxed);
@@ -127,8 +157,8 @@ void RawInputWinFilter::fetchMouseDelta(int& outDx, int& outDy)
 
 void RawInputWinFilter::discardDeltas()
 {
-    (void)dx.exchange(0, std::memory_order_relaxed);
-    (void)dy.exchange(0, std::memory_order_relaxed);
+    dx.exchange(0, std::memory_order_relaxed);
+    dy.exchange(0, std::memory_order_relaxed);
 }
 
 void RawInputWinFilter::resetAllKeys()
@@ -177,14 +207,14 @@ bool RawInputWinFilter::hotkeyDown(int hk) const noexcept
     if ((unsigned)hk < kMaxHotkeyId) {
         const HotkeyMask& m = m_hkMask[hk];
         if (m.hasMask) {
-            const bool vkHit =
-                ((m_state.vkDown[0].load(std::memory_order_relaxed) & m.vkMask[0]) |
-                    (m_state.vkDown[1].load(std::memory_order_relaxed) & m.vkMask[1]) |
-                    (m_state.vkDown[2].load(std::memory_order_relaxed) & m.vkMask[2]) |
-                    (m_state.vkDown[3].load(std::memory_order_relaxed) & m.vkMask[3])) != 0ULL;
 
-            const bool mouseHit =
-                (m_state.mouseButtons.load(std::memory_order_relaxed) & m.mouseMask) != 0u;
+            uint64_t r0 = m_state.vkDown[0].load(std::memory_order_relaxed) & m.vkMask[0];
+            uint64_t r1 = m_state.vkDown[1].load(std::memory_order_relaxed) & m.vkMask[1];
+            uint64_t r2 = m_state.vkDown[2].load(std::memory_order_relaxed) & m.vkMask[2];
+            uint64_t r3 = m_state.vkDown[3].load(std::memory_order_relaxed) & m.vkMask[3];
+
+            const bool vkHit = (r0 | r1 | r2 | r3) != 0ULL;
+            const bool mouseHit = (m_state.mouseButtons.load(std::memory_order_relaxed) & m.mouseMask) != 0u;
 
             if (vkHit | mouseHit) return true;
         }
@@ -197,9 +227,7 @@ bool RawInputWinFilter::hotkeyDown(int hk) const noexcept
                 const uint8_t b = kMouseButtonLUT[vk];
                 if (b < 5 && getMouseButton(b)) return true;
             }
-            else if (getVkState(vk)) {
-                return true;
-            }
+            else if (getVkState(vk)) return true;
         }
     }
     return false;
@@ -209,20 +237,21 @@ bool RawInputWinFilter::hotkeyPressed(int hk) noexcept
 {
     const bool now = hotkeyDown(hk);
     if ((unsigned)hk < kMaxHotkeyId) {
-        const size_t idx = ((unsigned)hk) >> 6;
+        const size_t idx = (unsigned)hk >> 6;
         const uint64_t bit = 1ULL << (hk & 63);
+
         if (now) {
             const uint64_t prev = m_hkPrev[idx].fetch_or(bit, std::memory_order_acq_rel);
-            return (prev & bit) == 0;
+            return !(prev & bit);
         }
         else {
-            (void)m_hkPrev[idx].fetch_and(~bit, std::memory_order_acq_rel);
+            m_hkPrev[idx].fetch_and(~bit, std::memory_order_acq_rel);
             return false;
         }
     }
 
     static std::array<std::atomic<uint8_t>, 1024> s{};
-    const size_t i = ((unsigned)hk) & 1023;
+    const size_t i = (unsigned)hk & 1023;
     const uint8_t prev = s[i].exchange(now ? 1u : 0u, std::memory_order_acq_rel);
     return now && !prev;
 }
@@ -231,20 +260,21 @@ bool RawInputWinFilter::hotkeyReleased(int hk) noexcept
 {
     const bool now = hotkeyDown(hk);
     if ((unsigned)hk < kMaxHotkeyId) {
-        const size_t idx = ((unsigned)hk) >> 6;
+        const size_t idx = (unsigned)hk >> 6;
         const uint64_t bit = 1ULL << (hk & 63);
+
         if (!now) {
             const uint64_t prev = m_hkPrev[idx].fetch_and(~bit, std::memory_order_acq_rel);
             return (prev & bit) != 0;
         }
         else {
-            (void)m_hkPrev[idx].fetch_or(bit, std::memory_order_acq_rel);
+            m_hkPrev[idx].fetch_or(bit, std::memory_order_acq_rel);
             return false;
         }
     }
 
     static std::array<std::atomic<uint8_t>, 1024> s{};
-    const size_t i = ((unsigned)hk) & 1023;
+    const size_t i = (unsigned)hk & 1023;
     const uint8_t prev = s[i].exchange(now ? 1u : 0u, std::memory_order_acq_rel);
     return (!now) && prev;
 }
