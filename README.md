@@ -88,24 +88,24 @@ Releases for [Windows, Linux and macOS here!](https://github.com/makidoll/melonP
 | Imperialist Zoom, Map Zoom Out, Morph Ball Boost | Right Click                    |
 | Fast Morph Ball Boost (Hold to sustain) | Shift                              |
 | Scan Visor                            | C                                  |
-| UI Left                               | Z                                  |
-| UI Right                              | X                                  |
-| UI Confirm                            | F                                  |
+| UI Left（Adventure ← / License L） | Z |
+| UI Right（Adventure → / License R） | X |
+| UI OK | F |
 | UI "Yes" (Enter Starship)             | G                                  |
 | UI "No" (Enter Starship)              | H                                  |
 | Shoot/Scan, Map Zoom In               | Left Click                         |
 | Scan/Shoot, Map Zoom In               | V                                  |
 | Power Beam                            | Mouse 5 (Side Top)                 |
 | Missile                               | Mouse 4 (Side Bottom)              |
-| Special Weapon (Last Used, Omega Cannon) | R                              |
+| Affinity Weapon（Last Used Special / Omega Cannon） | R |
 | Next Weapon (Sorted Order)            | J or Mouse Wheel Down              |
 | Previous Weapon (Sorted Order)        | K or Mouse Wheel Up                |
-| Weapon 1                              | 1                                  |
-| Weapon 2                              | 2                                  |
-| Weapon 3                              | 3                                  |
-| Weapon 4                              | 4                                  |
-| Weapon 5                              | 5                                  |
-| Weapon 6                              | 6                                  |
+| Weapon 1: ShockCoil | 1 |
+| Weapon 2: Magmaul | 2 |
+| Weapon 3: Judicator | 3 |
+| Weapon 4: Imperialist | 4 |
+| Weapon 5: Battlehammer | 5 |
+| Weapon 6: Volt Driver | 6 |
 | Menu/Map                              | Tab                                |
 | Weapon Check                          | Y                                  |
 | Aim Sensitivity Up                    | PageUp                             |
@@ -255,12 +255,12 @@ melonPrimeDS の元の作者、Makidoll をサポートする：
 | 特殊武器（最後に使用した武器、オメガキャノン）| Rキー                               |
 | 次の武器（ソート順）                     | Jキー または マウスホイールダウン     |
 | 前の武器（ソート順）                     | Kキー または マウスホイールアップ     |
-| 武器1                                   | 1キー                               |
-| 武器2                                   | 2キー                               |
-| 武器3                                   | 3キー                               |
-| 武器4                                   | 4キー                               |
-| 武器5                                   | 5キー                               |
-| 武器6                                   | 6キー                               |
+| 武器1（ショックコイル） | 1 |
+| 武器2（マグモール） | 2 |
+| 武器3（ジュディケーター） | 3 |
+| 武器4（インペリアリスト） | 4 |
+| 武器5（バトルハンマー） | 5 |
+| 武器6（ボルトドライバー） | 6 |
 | 所有武器確認                             | Y                                  |
 | メニュー/マップ                          | Tabキー                             |
 | エイム感度アップ                         | PageUpキー                          |
