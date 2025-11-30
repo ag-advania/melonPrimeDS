@@ -1,18 +1,19 @@
 name: Windows
 
 on:
-  workflow_dispatch:
   push:
     branches:
       - master
       - ci/*
+  pull_request:
+    branches:
+      - master
 
 env:
   MELONDS_GIT_BRANCH: ${{ github.ref }}
   MELONDS_GIT_HASH: ${{ github.sha }}
   MELONDS_BUILD_PROVIDER: GitHub Actions
-  VCPKG_BINARY_SOURCES: clear;files,${{ github.workspace }}/vcpkg_binary_cache,readwrite
-  VCPKG_ROOT: ${{ github.workspace }}/vcpkg
+#  MELONDS_VERSION_SUFFIX: " RC"
 
 jobs:
   build:
@@ -20,155 +21,37 @@ jobs:
     defaults:
       run:
         shell: msys2 {0}
-
+    env:
+      VCPKG_BINARY_SOURCES: clear;files,${{ github.workspace }}/vcpkg_cache,readwrite
     steps:
-      - name: Check out sources
-        uses: actions/checkout@v3
-
-      # CMake を最新版に確実に設定（FetchContent対応）
-      - name: Setup CMake
-        uses: jwlawson/actions-setup-cmake@v2
-        with:
-          cmake-version: '3.29.3'
-
-      # MSYS2 のパッケージキャッシュ
-      - name: Cache MSYS2 packages
-        uses: actions/cache@v3
-        with:
-          path: |
-            C:/msys64/var/cache/pacman/pkg
-            C:/msys64/etc/pacman.d/gnupg
-          key: ${{ runner.os }}-msys2-${{ hashFiles('**/*.cmake', 'vcpkg.json') }}
-          restore-keys: |
-            ${{ runner.os }}-msys2-
-
-      - name: Purge temp msys64 (cache safety)
-        shell: pwsh
-        run: |
-          $p = Join-Path $env:RUNNER_TEMP 'msys64'
-          if (Test-Path $p) { Remove-Item -Recurse -Force $p }
-
-      - name: Set up MSYS2 (ucrt64)
-        uses: msys2/setup-msys2@v2
-        with:
-          msystem: ucrt64
-          update: false
-          path-type: inherit
-          pacboy: gcc:p ninja:p make:p jq:p   # cmake:p 削除（最新版CMakeを使用するため）
-
-      - name: Show toolchain versions
-        run: |
-          x86_64-w64-mingw32-g++ --version
-          cmake --version
-          pkg-config --version || true
-
-      - name: Ensure vcpkg overlay directories exist
-        run: |
-          mkdir -p ./cmake/overlay-ports
-          mkdir -p ./cmake/overlay-triplets
-          [ -f ./cmake/overlay-ports/.keep ] || echo keep > ./cmake/overlay-ports/.keep
-          [ -f ./cmake/overlay-triplets/.keep ] || echo keep > ./cmake/overlay-triplets/.keep
-
-      - name: Ensure vcpkg binary cache directory exists
-        run: |
-          mkdir -p "${{ github.workspace }}/vcpkg_binary_cache"
-
-      - name: Cache vcpkg installed packages
-        id: vcpkg_installed_cache
-        uses: actions/cache@v3
-        with:
-          path: |
-            ${{ github.workspace }}/vcpkg_installed
-            ${{ github.workspace }}/vcpkg_binary_cache
-          key: ${{ runner.os }}-vcpkg-installed-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json') }}
-          restore-keys: |
-            ${{ runner.os }}-vcpkg-installed-
-
-      - name: Cache vcpkg tool
-        id: vcpkg_tool_cache
-        uses: actions/cache@v3
-        with:
-          path: |
-            ${{ github.workspace }}/vcpkg
-            !${{ github.workspace }}/vcpkg/buildtrees
-            !${{ github.workspace }}/vcpkg/packages
-            !${{ github.workspace }}/vcpkg/installed
-          key: ${{ runner.os }}-vcpkg-tool-${{ hashFiles('.github/workflows/*.yml') }}
-          restore-keys: |
-            ${{ runner.os }}-vcpkg-tool-
-
-      - name: Set up vcpkg
-        run: |
-          if [ ! -d "$VCPKG_ROOT" ]; then
-            echo "Cloning vcpkg..."
-            git clone https://github.com/Microsoft/vcpkg.git "$VCPKG_ROOT"
-          fi
-
-          if [ ! -f "$VCPKG_ROOT/vcpkg.exe" ]; then
-            echo "Bootstrapping vcpkg..."
-            "$VCPKG_ROOT/bootstrap-vcpkg.bat" -disableMetrics
-          fi
-
-          "$VCPKG_ROOT/vcpkg.exe" version
-
-      - name: Cache CMake build directory
-        id: cmake_build_cache
-        uses: actions/cache@v3
-        with:
-          path: |
-            build/release-mingw-x86_64
-            !build/release-mingw-x86_64/*.exe
-            !build/release-mingw-x86_64/*.dll
-          key: ${{ runner.os }}-cmake-build-${{ hashFiles('CMakeLists.txt', 'cmake/**', 'src/**/*.cpp', 'src/**/*.h') }}
-          restore-keys: |
-            ${{ runner.os }}-cmake-build-
-
-      - name: Configure (preset)
-        run: |
-          if [ ! -f "build/release-mingw-x86_64/CMakeCache.txt" ]; then
-            echo "CMakeCache.txt not found, running configure..."
-            NEED_CONFIGURE=1
-          else
-            echo "CMakeCache.txt found, checking if reconfigure is needed..."
-            NEED_CONFIGURE=0
-          fi
-          
-          if [ "$NEED_CONFIGURE" = "1" ] || [ "${{ steps.cmake_build_cache.outputs.cache-hit }}" != "true" ]; then
-            cmake --preset=release-mingw-x86_64 \
-              -DUSE_VCPKG=ON \
-              -DMELONDS_EMBED_BUILD_INFO=ON \
-              -DCMAKE_SUPPRESS_REGENERATION=ON \
-              -DVCPKG_INSTALLED_DIR="${{ github.workspace }}/vcpkg_installed" \
-              -DCMAKE_TOOLCHAIN_FILE="${VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake"
-          else
-            echo "Using cached CMake configuration"
-          fi
-
-      - name: Build
-        run: |
-          cmake --build --preset=release-mingw-x86_64 --parallel
-          
-          if [ ! -f "build/release-mingw-x86_64/melonDS.exe" ]; then
-            echo "Build failed: melonDS.exe not found"
-            exit 1
-          fi
-
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: melonDS-windows-x86_64
-          path: build/release-mingw-x86_64/melonDS.exe
-
-      - name: Show cache usage
-        if: always()
-        run: |
-          echo "=== Cache Hit Status ==="
-          echo "MSYS2: ${{ steps.msys2_cache.outputs.cache-hit }}"
-          echo "vcpkg installed: ${{ steps.vcpkg_installed_cache.outputs.cache-hit }}"
-          echo "vcpkg tool: ${{ steps.vcpkg_tool_cache.outputs.cache-hit }}"
-          echo "CMake build: ${{ steps.cmake_build_cache.outputs.cache-hit }}"
-          
-          echo "=== Directory Sizes ==="
-          du -sh "${{ github.workspace }}/vcpkg_installed" 2>/dev/null || echo "vcpkg_installed not found"
-          du -sh "${{ github.workspace }}/vcpkg" 2>/dev/null || echo "vcpkg not found"
-          du -sh "build/release-mingw-x86_64" 2>/dev/null || echo "build directory not found"
+    - name: Check out sources
+      uses: actions/checkout@v3
+    - name: Set up MSYS2
+      uses: msys2/setup-msys2@v2
+      with:
+        msystem: ucrt64
+        update: true
+        pacboy: gcc:p cmake:p ninja:p make:p
+    - name: Restore vcpkg cache
+      uses: actions/cache/restore@v4
+      with:
+        path: ${{ github.workspace }}/vcpkg_cache
+        key: vcpkg-x86_64-mingw-${{ hashFiles('vcpkg.json') }}
+        restore-keys: vcpkg-x86_64-mingw-
+    - name: Set up vcpkg
+      uses: lukka/run-vcpkg@v11
+      with:
+        vcpkgJsonGlob: vcpkg.json
+    - name: Configure
+      run: cmake --preset=release-mingw-x86_64 -DMELONDS_EMBED_BUILD_INFO=ON
+    - name: Build
+      run: cmake --build --preset=release-mingw-x86_64
+    - uses: actions/upload-artifact@v4
+      with:
+        name: melonDS-windows-x86_64
+        path: .\build\release-mingw-x86_64\melonDS.exe
+    - name: Save vcpkg cache
+      uses: actions/cache/save@v4
+      with:
+        path: ${{ github.workspace }}/vcpkg_cache
+        key: vcpkg-x86_64-mingw-${{ hashFiles('vcpkg.json') }}
