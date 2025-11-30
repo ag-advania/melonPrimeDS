@@ -57,6 +57,7 @@ protected:
         Log(melonDS::Platform::Debug, "KEY PRESSED = %08X %08X | %08X %08X %08X\n", event->key(), (int)event->modifiers(), event->nativeVirtualKey(), event->nativeModifiers(), event->nativeScanCode());
 
         int key = event->key();
+
         int mod = event->modifiers();
         bool ismod = (key == Qt::Key_Control ||
                       key == Qt::Key_Alt ||
@@ -64,10 +65,15 @@ protected:
                       key == Qt::Key_Shift ||
                       key == Qt::Key_Meta);
 
+        /* MelonPrimeDS CommentOuted
         if (!mod)
         {
+        */
+
             if (key == Qt::Key_Escape) { click(); return; }
             if (key == Qt::Key_Backspace) { *mapping = -1; click(); return; }
+        
+        /* MelonPrimeDS CommentOuted
         }
 
         if (isHotkey)
@@ -76,12 +82,23 @@ protected:
                 return;
         }
 
+        */
         if (!ismod)
             key |= mod;
         else if (isRightModKey(event))
             key |= (1<<31);
 
         *mapping = key;
+        click();
+    }
+
+    // MelonPrimeDS
+    void mousePressEvent(QMouseEvent* event) override {
+        if (!isChecked()) return QPushButton::mousePressEvent(event);
+
+        // Log(melonDS::Platform::Debug, "MOUSE BUTTON PRESSED = %08X\n", event->button());
+
+        *mapping = (int)event->button() | 0xF0000000;
         click();
     }
 
@@ -117,6 +134,61 @@ private:
         int key = *mapping;
 
         if (key == -1) return "None";
+
+        /* MelonPrimeDS { */
+        auto getMouseButtonName = [](Qt::MouseButton button) -> std::optional<QString> {
+            static const struct {
+                Qt::MouseButton button;
+                const char* name;
+            } mouseButtons[] = {
+                {Qt::LeftButton, "LeftButton"},
+                {Qt::RightButton, "RightButton"},
+                {Qt::MiddleButton, "MiddleButton"},
+                {Qt::BackButton, "BackButton"},
+                {Qt::ForwardButton, "ForwardButton"},
+                {Qt::ExtraButton4, "ExtraButton4"},
+                {Qt::ExtraButton5, "ExtraButton5"},
+                {Qt::ExtraButton6, "ExtraButton6"},
+                {Qt::ExtraButton7, "ExtraButton7"},
+                {Qt::ExtraButton8, "ExtraButton8"},
+                {Qt::ExtraButton9, "ExtraButton9"},
+                {Qt::ExtraButton10, "ExtraButton10"},
+                {Qt::ExtraButton11, "ExtraButton11"},
+                {Qt::ExtraButton12, "ExtraButton12"},
+                {Qt::ExtraButton13, "ExtraButton13"},
+                {Qt::ExtraButton14, "ExtraButton14"},
+                {Qt::ExtraButton15, "ExtraButton15"},
+                {Qt::ExtraButton16, "ExtraButton16"},
+                {Qt::ExtraButton17, "ExtraButton17"},
+                {Qt::ExtraButton18, "ExtraButton18"},
+                {Qt::ExtraButton19, "ExtraButton19"},
+                {Qt::ExtraButton20, "ExtraButton20"},
+                {Qt::ExtraButton21, "ExtraButton21"},
+                {Qt::ExtraButton22, "ExtraButton22"},
+                {Qt::ExtraButton23, "ExtraButton23"},
+                {Qt::ExtraButton24, "ExtraButton24"}
+            };
+
+            for (const auto& mb : mouseButtons) {
+                if (button == mb.button) {
+                    return QString("Mouse ") + mb.name;
+                }
+            }
+            return std::nullopt;
+            };
+        auto mouseButton = key & ~0xF0000000;
+        if (auto name = getMouseButtonName(static_cast<Qt::MouseButton>(mouseButton))) {
+            return *name;
+        }
+        /*
+        auto mouseButton = key & ~0xF0000000;
+        if (mouseButton == Qt::LeftButton) return "Mouse Left";
+        if (mouseButton == Qt::MiddleButton) return "Mouse Middle";
+        if (mouseButton == Qt::RightButton) return "Mouse Right";
+        if (mouseButton == Qt::ExtraButton1) return "Mouse 4";
+        if (mouseButton == Qt::ExtraButton2) return "Mouse 5";
+        */
+        /* } MelonPrimeDS */
 
         QString isright = (key & (1<<31)) ? "Right " : "Left ";
         key &= ~(1<<31);

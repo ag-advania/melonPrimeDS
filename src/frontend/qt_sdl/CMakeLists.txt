@@ -59,6 +59,14 @@ set(SOURCES_QT_SDL
 
     LANDialog.cpp
     NetplayDialog.cpp
+    #rawinput/rawinput_common.c
+    #RawInputThread.cpp
+    MelonPrimeRawInputWinFilter.cpp
+    MelonPrimeHotkeyVkBinding.cpp
+    #MelonPrimeXInputFilter.cpp
+    #MelonPrimeXInputBinding.cpp
+    #MelonPrimeDirectInputFilter.cpp
+    #MelonPrimeDirectInputBinding.cpp
 )
 
 option(USE_QT6 "Use Qt 6 instead of Qt 5" ON)
@@ -91,6 +99,35 @@ fix_interface_includes(PkgConfig::SDL2 PkgConfig::LibArchive)
 
 add_compile_definitions(ARCHIVE_SUPPORT_ENABLED)
 
+
+if (WIN32)
+    # windowsの除外設定はとくになし。
+elseif (APPLE)
+    # macOSでは生RawInput連携を無効化する（該当ソースを除外）
+    list(REMOVE_ITEM SOURCES_QT_SDL
+        #rawinput/rawinput_common.c
+        #RawInputThread.cpp
+        MelonPrimeRawInputWinFilter.cpp
+        MelonPrimeHotkeyVkBinding.cpp
+        #MelonPrimeXInputFilter.cpp
+        #MelonPrimeXInputBinding.cpp
+        #MelonPrimeDirectInputFilter.cpp
+        #MelonPrimeDirectInputBinding.cpp
+    )
+else()
+    # Linuxでは生RawInput連携を無効化する（該当ソースを除外）
+    list(REMOVE_ITEM SOURCES_QT_SDL
+        #rawinput/rawinput_common.c
+        #RawInputThread.cpp
+        MelonPrimeRawInputWinFilter.cpp
+        MelonPrimeHotkeyVkBinding.cpp
+        #MelonPrimeXInputFilter.cpp
+        #MelonPrimeXInputBinding.cpp
+        #MelonPrimeDirectInputFilter.cpp
+        #MelonPrimeDirectInputBinding.cpp
+    )
+endif()
+
 add_executable(melonDS ${SOURCES_QT_SDL})
 
 add_subdirectory("../../net"
@@ -100,11 +137,15 @@ target_link_libraries(melonDS PRIVATE net-utils)
 
 if (WIN32)
     target_link_libraries(melonDS PUBLIC opengl32)
+    #target_link_libraries(melonDS PRIVATE Xinput9_1_0) # MelonPrimeDS
+    #target_link_libraries(melonDS PRIVATE dinput8 dxguid)  # MelonPrimeDS
+
 
     target_sources(melonDS PRIVATE
         ../duckstation/gl/context_wgl.cpp
 
         ../glad/glad_wgl.c
+        #rawinput/rawinput_win32.c
     )
 
     if (MINGW AND CMAKE_HOST_SYSTEM_NAME STREQUAL "Linux")
@@ -126,6 +167,7 @@ elseif (APPLE)
     target_link_libraries(melonDS PRIVATE ${OPENGL_LIB})
     target_sources(melonDS PRIVATE
         ../duckstation/gl/context_agl.mm
+        #rawinput/rawinput_macos.c
     )
     set_source_files_properties(
         ../duckstation/gl/context_agl.mm
@@ -160,6 +202,7 @@ else()
 
         ../glad/glad_egl.c
         ../glad/glad_glx.c
+        #rawinput/rawinput_linux.c
     )
     target_link_libraries(melonDS PRIVATE "${X11_LIBRARIES}" "${EGL_LIBRARIES}")
     target_include_directories(melonDS PRIVATE "${X11_INCLUDE_DIR}")
