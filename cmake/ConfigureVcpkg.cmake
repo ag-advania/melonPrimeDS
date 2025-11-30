@@ -20,13 +20,6 @@ if (VCPKG_ROOT STREQUAL "${_DEFAULT_VCPKG_ROOT}")
 
     file(LOCK "${CMAKE_SOURCE_DIR}/.vcpkg.lock" RELEASE)
     file(REMOVE "${CMAKE_SOURCE_DIR}/.vcpkg.lock")
-
-    FetchContent_Declare(vcpkg
-        GIT_REPOSITORY "https://github.com/Microsoft/vcpkg.git"
-        GIT_TAG HEAD
-        EXCLUDE_FROM_ALL
-        SOURCE_DIR "${CMAKE_SOURCE_DIR}/vcpkg")
-    FetchContent_MakeAvailable(vcpkg)
 endif()
 
 option(USE_RECOMMENDED_TRIPLETS "Use the recommended triplets that are used for official builds" ON)
