@@ -1014,6 +1014,11 @@ static MelonPrimeXInputFilter* g_xin = nullptr;
 static MelonPrimeDirectInputFilter* g_din = nullptr;
 */
 
+// ヘッダ参照(クラス宣言のため)
+// #include "MelonPrimeRawInputWinFilter.h"
+// アプリケーション参照(QCoreApplicationのため)
+#include <QCoreApplication>
+
 /* MelonPrimeDS function goes here */
 void EmuThread::run()
 {
@@ -1023,10 +1028,7 @@ void EmuThread::run()
     //RawInputThread* rawInputThread = new RawInputThread(parent());
     //rawInputThread->start();
 
-// ヘッダ参照(クラス宣言のため)
-// #include "MelonPrimeRawInputWinFilter.h"
-// アプリケーション参照(QCoreApplicationのため)
-#include <QCoreApplication>
+
 
 // 静的ポインタ定義(単一インスタンス保持のため)
         // static RawInputWinFilter* g_rawFilter = nullptr;
@@ -1155,10 +1157,6 @@ void EmuThread::run()
     emuInstance->fastForwardToggled = false;
     emuInstance->slowmoToggled = false;
 
-    while (emuStatus != emuStatus_Exit)
-    {
-        if (emuInstance->instanceID == 0)
-            MPInterface::Get().Process();
 
 
     // melonPrimeDS
@@ -2307,6 +2305,9 @@ void EmuThread::run()
 
 
     while (emuStatus != emuStatus_Exit) {
+        if (emuInstance->instanceID == 0) {
+            MPInterface::Get().Process();
+        }
 
         // MelonPrimeDS Functions START
 
