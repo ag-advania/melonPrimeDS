@@ -49,12 +49,13 @@ toml::value RootTable;
 DefaultList<int> DefaultInts =
 {
     {"Instance*.Keyboard", -1},
+    {"Instance*.Keyboard.HK_FullscreenToggle", Qt::Key_F11},
     {"Instance*.Joystick", -1},
     {"Instance*.Window*.Width", 256},
     {"Instance*.Window*.Height", 384},
     {"Screen.VSyncInterval", 1},
-    {"3D.Renderer", renderer3D_Software},
-    {"3D.GL.ScaleFactor", 1},
+    {"3D.Renderer", renderer3D_OpenGL}, // melonPrimeDS. renderer3D_Software  renderer3D_OpenGL  renderer3D_OpenGLCompute:
+    {"3D.GL.ScaleFactor", 4}, // melonPrimeDS. 8 is too much 4 is enough
 #ifdef JIT_ENABLED
     {"JIT.MaxBlockSize", 32},
 #endif
@@ -72,6 +73,44 @@ DefaultList<int> DefaultInts =
     {"Instance*.Gdb.ARM9.Port", 3333},
 #endif
     {"LAN.HostNumPlayers", 16},
+
+    /* MelonPrimeDS { */ // Sensitivity
+    {"Instance*.Metroid.Sensitivity.Aim", 63},
+    {"Instance*.Metroid.Volume.SFX", 9},
+    {"Instance*.Metroid.Volume.Music", 9},
+    {"Instance*.Keyboard.HK_MetroidMoveForward",       Qt::Key_W},
+    {"Instance*.Keyboard.HK_MetroidMoveBack",          Qt::Key_S},
+    {"Instance*.Keyboard.HK_MetroidMoveLeft",          Qt::Key_A},
+    {"Instance*.Keyboard.HK_MetroidMoveRight",         Qt::Key_D},
+    {"Instance*.Keyboard.HK_MetroidJump",              Qt::Key_Space},
+    {"Instance*.Keyboard.HK_MetroidMorphBall",         Qt::Key_Control},
+    {"Instance*.Keyboard.HK_MetroidZoom",              (int)Qt::RightButton | (int)0xF0000000},
+    {"Instance*.Keyboard.HK_MetroidHoldMorphBallBoost",Qt::Key_Shift},
+    {"Instance*.Keyboard.HK_MetroidScanVisor",         Qt::Key_C},
+    {"Instance*.Keyboard.HK_MetroidUILeft",            Qt::Key_Z},
+    {"Instance*.Keyboard.HK_MetroidUIRight",           Qt::Key_X},
+    {"Instance*.Keyboard.HK_MetroidUIOk",              Qt::Key_F},
+    {"Instance*.Keyboard.HK_MetroidUIYes",             Qt::Key_G},
+    {"Instance*.Keyboard.HK_MetroidUINo",              Qt::Key_H},
+    {"Instance*.Keyboard.HK_MetroidShootScan",         (int)Qt::LeftButton | (int)0xF0000000},
+    {"Instance*.Keyboard.HK_MetroidScanShoot",         Qt::Key_V},
+    {"Instance*.Keyboard.HK_MetroidWeaponBeam",        (int)Qt::ExtraButton2 | (int)0xF0000000},
+    {"Instance*.Keyboard.HK_MetroidWeaponMissile",     (int)Qt::ExtraButton1 | (int)0xF0000000},
+    {"Instance*.Keyboard.HK_MetroidWeaponSpecial",     Qt::Key_R},
+    {"Instance*.Keyboard.HK_MetroidWeaponNext",        Qt::Key_J},
+    {"Instance*.Keyboard.HK_MetroidWeaponPrevious",    Qt::Key_K},
+    {"Instance*.Keyboard.HK_MetroidWeapon1",           Qt::Key_1},
+    {"Instance*.Keyboard.HK_MetroidWeapon2",           Qt::Key_2},
+    {"Instance*.Keyboard.HK_MetroidWeapon3",           Qt::Key_3},
+    {"Instance*.Keyboard.HK_MetroidWeapon4",           Qt::Key_4},
+    {"Instance*.Keyboard.HK_MetroidWeapon5",           Qt::Key_5},
+    {"Instance*.Keyboard.HK_MetroidWeapon6",           Qt::Key_6},
+    {"Instance*.Keyboard.HK_MetroidWeaponCheck",       Qt::Key_Y},
+    {"Instance*.Keyboard.HK_MetroidMenu",              Qt::Key_Tab},
+    {"Instance*.Keyboard.HK_MetroidIngameSensiUp",     Qt::Key_PageUp},
+    {"Instance*.Keyboard.HK_MetroidIngameSensiDown",   Qt::Key_PageDown},
+    /* MelonPrimeDS } */
+
 };
 
 RangeList IntRanges =
@@ -91,18 +130,28 @@ RangeList IntRanges =
     {"Instance*.Window*.ScreenAspectBot", {0, AspectRatiosNum-1}},
     {"MP.AudioMode", {0, 2}},
     {"LAN.HostNumPlayers", {2, 16}},
+
+    /* MelonPrimeDS. this is not for input. this is for loading. */
+    {"Instance*.Metroid.Sensitivity.Aim", {0,99999}},
+    {"Instance*.Metroid.Volume.Music", {0,9}},
+    {"Instance*.Metroid.Volume.SFX", {0,9}},
+    //{"Instance*.Metroid.Sensitivity.Mph", {-5,155}},
+    //{"Instance*.Metroid.Sensitivity.AimYAxisScale", {0.000001,100.000000}},
 };
 
 DefaultList<bool> DefaultBools =
 {
-    {"Screen.Filter", true},
+    {"Screen.Filter", false}, // melonPrimeDS. filter OFF
+    {"Screen.UseGL", true}, // melonPrimeDS. Added.
     {"3D.Soft.Threaded", true},
+    {"3D.GL.BetterPolygons", true}, // melonPrimeDS. Added. If you don't check the box to improve Polygon division, part of the sky will blink in Alinos Perch.
     {"3D.GL.HiresCoordinates", true},
     {"LimitFPS", true},
     {"Instance*.Window*.ShowOSD", true},
     {"Emu.DirectBoot", true},
     {"Instance*.DS.Battery.LevelOkay", true},
     {"Instance*.DSi.Battery.Charging", true},
+    {"JIT.Enable", true}, // melonPrimeDS. Added.
 #ifdef JIT_ENABLED
     {"JIT.BranchOptimisations", true},
     {"JIT.LiteralOptimisations", true},
@@ -111,6 +160,11 @@ DefaultList<bool> DefaultBools =
 #endif
 #endif
     {"DSi.DSP.HLE", true},
+
+    /* MelonPrimeDS { */
+    {"Metroid.Operation.SnapTap", false},
+    /* MelonPrimeDS } */
+
 };
 
 DefaultList<std::string> DefaultStrings =
@@ -125,8 +179,19 @@ DefaultList<double> DefaultDoubles =
     {"TargetFPS", 60.0},
     {"FastForwardFPS", 1000.0},
     {"SlowmoFPS", 30.0},
+    {"Instance*.Metroid.Sensitivity.Mph", -3.000},
+    {"Instance*.Metroid.Sensitivity.AimYAxisScale", 1.500000},
+    {"Instance*.Metroid.Aim.Adjust", 0.010000},
 };
 
+/*
+struct LegacyEntry
+    char Name[32];
+    int Type;           // 0=int 1=bool 2=string 3=64bit int
+    char TOMLPath[64];
+    bool InstanceUnique; // whether the setting can exist individually for each instance in multiplayer
+
+*/
 LegacyEntry LegacyFile[] =
 {
     {"Key_A",      0, "Keyboard.A", true},
@@ -164,8 +229,53 @@ LegacyEntry LegacyFile[] =
     {"HKKey_FullscreenToggle",    0, "Keyboard.HK_FullscreenToggle", true},
     {"HKKey_SwapScreens",         0, "Keyboard.HK_SwapScreens", true},
     {"HKKey_SwapScreenEmphasis",  0, "Keyboard.HK_SwapScreenEmphasis", true},
-    {"HKKey_SolarSensorDecrease", 0, "Keyboard.HK_SolarSensorDecrease", true},
-    {"HKKey_SolarSensorIncrease", 0, "Keyboard.HK_SolarSensorIncrease", true},
+    {"HKJoy_SolarSensorDecrease", 0, "Joystick.HK_SolarSensorDecrease", true},
+    {"HKJoy_SolarSensorIncrease", 0, "Joystick.HK_SolarSensorIncrease", true},
+
+
+    // melonPrimeDS
+    {"HKKey_MetroidMoveForward",       0, "Keyboard.HK_MetroidMoveForward",        true},
+    {"HKKey_MetroidMoveBack",          0, "Keyboard.HK_MetroidMoveBack",           true},
+    {"HKKey_MetroidMoveLeft",          0, "Keyboard.HK_MetroidMoveLeft",           true},
+    {"HKKey_MetroidMoveRight",         0, "Keyboard.HK_MetroidMoveRight",          true},
+
+    {"HKKey_MetroidJump",              0, "Keyboard.HK_MetroidJump",               true},
+
+    {"HKKey_MetroidMorphBall",         0, "Keyboard.HK_MetroidMorphBall",          true},
+    {"HKKey_MetroidZoom",              0, "Keyboard.HK_MetroidZoom",               true},
+    {"HKKey_MetroidHoldMorphBallBoost",0, "Keyboard.HK_MetroidHoldMorphBallBoost", true},
+
+    {"HKKey_MetroidScanVisor",         0, "Keyboard.HK_MetroidScanVisor",          true},
+
+    {"HKKey_MetroidUILeft",            0, "Keyboard.HK_MetroidUILeft",             true},
+    {"HKKey_MetroidUIRight",           0, "Keyboard.HK_MetroidUIRight",            true},
+    {"HKKey_MetroidUIOk",              0, "Keyboard.HK_MetroidUIOk",               true},
+    {"HKKey_MetroidUIYes",             0, "Keyboard.HK_MetroidUIYes",              true},
+    {"HKKey_MetroidUINo",              0, "Keyboard.HK_MetroidUINo",               true},
+
+    {"HKKey_MetroidShootScan",         0, "Keyboard.HK_MetroidShootScan",          true},
+    {"HKKey_MetroidScanShoot",         0, "Keyboard.HK_MetroidScanShoot",          true},
+
+    {"HKKey_MetroidWeaponBeam",        0, "Keyboard.HK_MetroidWeaponBeam",         true},
+    {"HKKey_MetroidWeaponMissile",     0, "Keyboard.HK_MetroidWeaponMissile",      true},
+    {"HKKey_MetroidWeaponSpecial",     0, "Keyboard.HK_MetroidWeaponSpecial",      true},
+    {"HKKey_MetroidWeaponNext",        0, "Keyboard.HK_MetroidWeaponNext",         true},
+    {"HKKey_MetroidWeaponPrevious",    0, "Keyboard.HK_MetroidWeaponPrevious",     true},
+    {"HKKey_MetroidWeapon1",           0, "Keyboard.HK_MetroidWeapon1",            true},
+    {"HKKey_MetroidWeapon2",           0, "Keyboard.HK_MetroidWeapon2",            true},
+    {"HKKey_MetroidWeapon3",           0, "Keyboard.HK_MetroidWeapon3",            true},
+    {"HKKey_MetroidWeapon4",           0, "Keyboard.HK_MetroidWeapon4",            true},
+    {"HKKey_MetroidWeapon5",           0, "Keyboard.HK_MetroidWeapon5",            true},
+    {"HKKey_MetroidWeapon6",           0, "Keyboard.HK_MetroidWeapon6",            true},
+    {"HKKey_MetroidWeaponCheck",       0, "Keyboard.HK_MetroidWeaponCheck",        true},
+
+    {"HKKey_MetroidMenu",              0, "Keyboard.HK_MetroidMenu",               true},
+    {"HKKey_MetroidIngameSensiUp",     0, "Keyboard.HK_MetroidIngameSensiUp",      true},
+    {"HKKey_MetroidIngameSensiDown",   0, "Keyboard.HK_MetroidIngameSensiDown",    true},
+
+    // not metroid
+
+
     {"HKKey_FrameStep",           0, "Keyboard.HK_FrameStep", true},
     {"HKKey_PowerButton",         0, "Keyboard.HK_PowerButton", true},
     {"HKKey_VolumeUp",            0, "Keyboard.HK_VolumeUp", true},
@@ -186,6 +296,51 @@ LegacyEntry LegacyFile[] =
     {"HKJoy_SwapScreenEmphasis",  0, "Joystick.HK_SwapScreenEmphasis", true},
     {"HKJoy_SolarSensorDecrease", 0, "Joystick.HK_SolarSensorDecrease", true},
     {"HKJoy_SolarSensorIncrease", 0, "Joystick.HK_SolarSensorIncrease", true},
+
+    // melonPrimeDS
+    { "HKJoy_MetroidMoveForward",       0, "Joystick.HK_MetroidMoveForward",        true},
+    { "HKJoy_MetroidMoveBack",          0, "Joystick.HK_MetroidMoveBack",           true},
+    { "HKJoy_MetroidMoveLeft",          0, "Joystick.HK_MetroidMoveLeft",           true},
+    { "HKJoy_MetroidMoveRight",         0, "Joystick.HK_MetroidMoveRight",          true},
+
+    { "HKJoy_MetroidJump",              0, "Joystick.HK_MetroidJump",               true},
+
+    { "HKJoy_MetroidMorphBall",         0, "Joystick.HK_MetroidMorphBall",          true},
+    { "HKJoy_MetroidZoom",              0, "Joystick.HK_MetroidZoom",               true},
+    { "HKJoy_MetroidHoldMorphBallBoost",0, "Joystick.HK_MetroidHoldMorphBallBoost", true},
+
+    { "HKJoy_MetroidScanVisor",         0, "Joystick.HK_MetroidScanVisor",          true},
+
+    { "HKJoy_MetroidUILeft",            0, "Joystick.HK_MetroidUILeft",             true},
+    { "HKJoy_MetroidUIRight",           0, "Joystick.HK_MetroidUIRight",            true},
+    { "HKJoy_MetroidUIOk",              0, "Joystick.HK_MetroidUIOk",               true},
+    { "HKJoy_MetroidUIYes",             0, "Joystick.HK_MetroidUIYes",              true},
+    { "HKJoy_MetroidUINo",              0, "Joystick.HK_MetroidUINo",               true},
+
+    { "HKJoy_MetroidShootScan",         0, "Joystick.HK_MetroidShootScan",          true},
+    { "HKJoy_MetroidScanShoot",         0, "Joystick.HK_MetroidScanShoot",          true},
+
+    { "HKJoy_MetroidWeaponBeam",        0, "Joystick.HK_MetroidWeaponBeam",         true},
+    { "HKJoy_MetroidWeaponMissile",     0, "Joystick.HK_MetroidWeaponMissile",      true},
+    { "HKJoy_MetroidWeaponSpecial",     0, "Joystick.HK_MetroidWeaponSpecial",      true},
+    { "HKJoy_MetroidWeaponNext",        0, "Joystick.HK_MetroidWeaponNext",         true},
+    { "HKJoy_MetroidWeaponPrevious",    0, "Joystick.HK_MetroidWeaponPrevious",     true},
+    { "HKJoy_MetroidWeapon1",           0, "Joystick.HK_MetroidWeapon1",            true},
+    { "HKJoy_MetroidWeapon2",           0, "Joystick.HK_MetroidWeapon2",            true},
+    { "HKJoy_MetroidWeapon3",           0, "Joystick.HK_MetroidWeapon3",            true},
+    { "HKJoy_MetroidWeapon4",           0, "Joystick.HK_MetroidWeapon4",            true},
+    { "HKJoy_MetroidWeapon5",           0, "Joystick.HK_MetroidWeapon5",            true},
+    { "HKJoy_MetroidWeapon6",           0, "Joystick.HK_MetroidWeapon6",            true },
+    { "HKJoy_MetroidWeaponCheck",       0, "Joystick.HK_MetroidWeaponCheck",        true },
+
+    { "HKJoy_MetroidMenu",              0, "Joystick.HK_MetroidMenu",               true},
+    { "HKJoy_MetroidIngameSensiUp",     0, "Joystick.HK_MetroidIngameSensiUp",      true},
+    { "HKJoy_MetroidIngameSensiDown",   0, "Joystick.HK_MetroidIngameSensiDown",    true},
+
+
+
+    // not metroid
+
     {"HKJoy_FrameStep",           0, "Joystick.HK_FrameStep", true},
     {"HKJoy_PowerButton",         0, "Joystick.HK_PowerButton", true},
     {"HKJoy_VolumeUp",            0, "Joystick.HK_VolumeUp", true},
@@ -324,7 +479,7 @@ LegacyEntry LegacyFile[] =
     {"GdbARM7BreakOnStartup", 1, "Gdb.ARM7.BreakOnStartup", true},
     {"GdbARM9BreakOnStartup", 1, "Gdb.ARM9.BreakOnStartup", true},
 #endif
-
+    { "MetroidAimSensitivity", 0, "Metroid.Sensitivity.Aim",  true }, // MelonPrimeDS
     {"Camera0_InputType", 0, "DSi.Camera0.InputType", false},
     {"Camera0_ImagePath", 2, "DSi.Camera0.ImagePath", false},
     {"Camera0_CamDeviceName", 2, "DSi.Camera0.DeviceName", false},

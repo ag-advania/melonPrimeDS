@@ -1,5 +1,5 @@
 /*
-    Copyright 2016-2025 melonDS team
+    Copyright 2016-2024 melonDS team
 
     This file is part of melonDS.
 
@@ -28,6 +28,7 @@
 #include "Window.h"
 #include "Config.h"
 #include "SaveManager.h"
+#include <QBitArray> // MelonPrimeDS
 
 const int kMaxWindows = 4;
 
@@ -55,7 +56,44 @@ enum
     HK_GuitarGripRed,
     HK_GuitarGripYellow,
     HK_GuitarGripBlue,
-    HK_MAX
+
+    // melonPrimeDS {
+    HK_MetroidMoveForward,
+    HK_MetroidMoveBack,
+    HK_MetroidMoveLeft,
+    HK_MetroidMoveRight,
+    HK_MetroidJump,
+    HK_MetroidMorphBall,
+    HK_MetroidZoom,
+    HK_MetroidHoldMorphBallBoost,
+    HK_MetroidScanVisor,
+    HK_MetroidUILeft,
+    HK_MetroidUIRight,
+    HK_MetroidUIOk,
+    HK_MetroidUIYes,
+    HK_MetroidUINo,
+    HK_MetroidShootScan,
+    HK_MetroidScanShoot,
+    HK_MetroidWeaponBeam,
+    HK_MetroidWeaponMissile,
+    HK_MetroidWeaponSpecial,
+    HK_MetroidWeaponNext,
+    HK_MetroidWeaponPrevious,
+    HK_MetroidWeapon1,
+    HK_MetroidWeapon2,
+    HK_MetroidWeapon3,
+    HK_MetroidWeapon4,
+    HK_MetroidWeapon5,
+    HK_MetroidWeapon6,
+    HK_MetroidWeaponCheck,
+    HK_MetroidMenu,
+    HK_MetroidIngameSensiUp,
+    HK_MetroidIngameSensiDown,
+    // } melonPrimeDS
+
+    // HK_MAX should be last item.
+    HK_MAX,
+
 };
 
 enum
@@ -85,6 +123,11 @@ class EmuInstance
 public:
     EmuInstance(int inst);
     ~EmuInstance();
+
+    /* MelonPrimeDS { */
+    void onMousePress(QMouseEvent* event);
+    void onMouseRelease(QMouseEvent* event);
+    /* MelonPrimeDS } */
 
     int getInstanceID() { return instanceID; }
     int getConsoleType() { return consoleType; }
@@ -240,6 +283,12 @@ private:
 
     void onKeyPress(QKeyEvent* event);
     void onKeyRelease(QKeyEvent* event);
+
+    /* MelonPrimeDS { */
+    float hotkeyAnalogueValue(int val);
+    melonDS::u32 getInputMask();
+    /* MelonPrimeDS } */
+
     void keyReleaseAll();
 
     void openJoystick();
@@ -248,9 +297,17 @@ private:
 
     void inputProcess();
 
+    /* MelonPrimeDS comment-out
     bool hotkeyDown(int id)     { return hotkeyMask    & (1<<id); }
     bool hotkeyPressed(int id)  { return hotkeyPress   & (1<<id); }
     bool hotkeyReleased(int id) { return hotkeyRelease & (1<<id); }
+    */
+    /* MelonPrimeDS { */
+    bool hotkeyDown(int id)     { return hotkeyMask.at(id); }
+    bool hotkeyPressed(int id)  { return hotkeyPress.at(id); }
+    bool hotkeyReleased(int id) { return hotkeyRelease.at(id); }
+    /* MelonPrimeDS } */
+
 
     void loadRTCData();
     void saveRTCData();
@@ -362,12 +419,24 @@ private:
     static std::shared_ptr<SDL_mutex> joyMutexGlobal;
     std::shared_ptr<SDL_mutex> joyMutex;
 
+    /* MelonPrimeDS comment-out
     melonDS::u32 keyInputMask, joyInputMask;
     melonDS::u32 keyHotkeyMask, joyHotkeyMask;
     melonDS::u32 hotkeyMask, lastHotkeyMask;
     melonDS::u32 hotkeyPress, hotkeyRelease;
 
     melonDS::u32 inputMask;
+    */
+    /* MelonPrimeDS { */
+    QBitArray keyInputMask, joyInputMask;
+    QBitArray keyHotkeyMask, joyHotkeyMask;
+    QBitArray hotkeyMask, lastHotkeyMask;
+    QBitArray hotkeyPress, hotkeyRelease;
+    QBitArray joyHotkeyPress;    // ���ǉ�: �W���C�����́u���񉟂��ꂽ�v
+    QBitArray joyHotkeyRelease;  // ���ǉ�: �W���C�����́u���񗣂��ꂽ�v
+    QBitArray lastJoyHotkeyMask; // ���ǉ�: �O�t���̃W���CHK
+    QBitArray inputMask;
+    /* MelonPrimeDS } */
 
     bool isTouching;
     melonDS::u16 touchX, touchY;

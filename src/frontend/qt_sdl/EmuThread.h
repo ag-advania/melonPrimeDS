@@ -51,6 +51,8 @@ class EmuThread : public QThread
 public:
     explicit EmuThread(EmuInstance* inst, QObject* parent = nullptr);
 
+    bool isCursorMode = true; // MelonPrimeDS
+
     void attachWindow(MainWindow* window);
     void detachWindow(MainWindow* window);
 
