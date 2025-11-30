@@ -11,12 +11,8 @@ env:
   MELONDS_GIT_BRANCH: ${{ github.ref }}
   MELONDS_GIT_HASH: ${{ github.sha }}
   MELONDS_BUILD_PROVIDER: GitHub Actions
-
-  # vcpkg �o�C�i���L���b�V��
   VCPKG_BINARY_SOURCES: clear;files,${{ github.workspace }}/vcpkg_binary_cache,readwrite
-  # vcpkg �̃��[�g�f�B���N�g���𖾎��I�Ɏw��
   VCPKG_ROOT: ${{ github.workspace }}/vcpkg
-
 
 jobs:
   build:
@@ -24,11 +20,18 @@ jobs:
     defaults:
       run:
         shell: msys2 {0}
+
     steps:
       - name: Check out sources
         uses: actions/checkout@v3
 
-      # MSYS2 �̃p�b�P�[�W�L���b�V��
+      # CMake を最新版に確実に設定（FetchContent対応）
+      - name: Setup CMake
+        uses: jwlawson/actions-setup-cmake@v2
+        with:
+          cmake-version: '3.29.3'
+
+      # MSYS2 のパッケージキャッシュ
       - name: Cache MSYS2 packages
         uses: actions/cache@v3
         with:
@@ -51,7 +54,7 @@ jobs:
           msystem: ucrt64
           update: false
           path-type: inherit
-          pacboy: gcc:p cmake:p ninja:p make:p jq:p
+          pacboy: gcc:p ninja:p make:p jq:p   # cmake:p 削除（最新版CMakeを使用するため）
 
       - name: Show toolchain versions
         run: |
@@ -59,7 +62,6 @@ jobs:
           cmake --version
           pkg-config --version || true
 
-      # �I�[�o�[���C�f�B���N�g���̍쐬
       - name: Ensure vcpkg overlay directories exist
         run: |
           mkdir -p ./cmake/overlay-ports
@@ -67,12 +69,10 @@ jobs:
           [ -f ./cmake/overlay-ports/.keep ] || echo keep > ./cmake/overlay-ports/.keep
           [ -f ./cmake/overlay-triplets/.keep ] || echo keep > ./cmake/overlay-triplets/.keep
 
-      # vcpkg �o�C�i���L���b�V���p�t�H���_
       - name: Ensure vcpkg binary cache directory exists
         run: |
           mkdir -p "${{ github.workspace }}/vcpkg_binary_cache"
 
-      # vcpkg �C���X�g�[���ς݃p�b�P�[�W�̃L���b�V���i�ŏd�v�j
       - name: Cache vcpkg installed packages
         id: vcpkg_installed_cache
         uses: actions/cache@v3
@@ -84,7 +84,6 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-vcpkg-installed-
 
-      # vcpkg �c�[���{�̂̃L���b�V���i�ʓr�Ǘ��j
       - name: Cache vcpkg tool
         id: vcpkg_tool_cache
         uses: actions/cache@v3
@@ -98,25 +97,20 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-vcpkg-tool-
 
-      # vcpkg �̃Z�b�g�A�b�v�i�L���b�V���̗L���Ɋւ�炸���s�j
       - name: Set up vcpkg
         run: |
-          # vcpkg ���Ȃ��ꍇ�̓N���[��
           if [ ! -d "$VCPKG_ROOT" ]; then
             echo "Cloning vcpkg..."
             git clone https://github.com/Microsoft/vcpkg.git "$VCPKG_ROOT"
           fi
-          
-          # vcpkg �̃u�[�g�X�g���b�v�i�K�v�ȏꍇ�̂݁j
+
           if [ ! -f "$VCPKG_ROOT/vcpkg.exe" ]; then
             echo "Bootstrapping vcpkg..."
             "$VCPKG_ROOT/bootstrap-vcpkg.bat" -disableMetrics
           fi
-          
-          # �o�[�W�����m�F
+
           "$VCPKG_ROOT/vcpkg.exe" version
 
-      # CMake �r���h�f�B���N�g���̃L���b�V��
       - name: Cache CMake build directory
         id: cmake_build_cache
         uses: actions/cache@v3
@@ -129,16 +123,13 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-cmake-build-
 
-      # Configure�i�L���b�V���~�X�܂��� CMake �t�@�C���ύX���j
       - name: Configure (preset)
         run: |
-          # �r���h�f�B���N�g�������݂��ACMakeCache.txt �����邩�`�F�b�N
           if [ ! -f "build/release-mingw-x86_64/CMakeCache.txt" ]; then
             echo "CMakeCache.txt not found, running configure..."
             NEED_CONFIGURE=1
           else
             echo "CMakeCache.txt found, checking if reconfigure is needed..."
-            # CMakeLists.txt �� cmake �t�@�C���̕ύX���`�F�b�N
             NEED_CONFIGURE=0
           fi
           
@@ -153,25 +144,21 @@ jobs:
             echo "Using cached CMake configuration"
           fi
 
-      # Build
       - name: Build
         run: |
           cmake --build --preset=release-mingw-x86_64 --parallel
           
-          # �r���h�������m�F
           if [ ! -f "build/release-mingw-x86_64/melonDS.exe" ]; then
             echo "Build failed: melonDS.exe not found"
             exit 1
           fi
 
-      # �A�[�e�B�t�@�N�g�̃A�b�v���[�h
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: melonDS-windows-x86_64
           path: build/release-mingw-x86_64/melonDS.exe
 
-      # �f�o�b�O���i�K�v�ɉ����āj
       - name: Show cache usage
         if: always()
         run: |
