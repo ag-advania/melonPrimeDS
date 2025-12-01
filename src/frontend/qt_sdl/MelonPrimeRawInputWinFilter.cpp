@@ -106,20 +106,23 @@ bool RawInputWinFilter::nativeEventFilter(const QByteArray&, void* message, qint
         m_state.mouseButtons.store(nxt, std::memory_order_relaxed);
 
         if (lut.down | lut.up) {
-            if (lut.down & 0x01) m_mbCompat[kMB_Left].store(1, std::memory_order_relaxed);
-            if (lut.up & 0x01) m_mbCompat[kMB_Left].store(0, std::memory_order_relaxed);
+            // 現在の5bit（5個の m_mbCompat[X] をまとめて読み込む）
+            uint8_t cur =
+                (uint8_t(m_mbCompat[kMB_Left].load(std::memory_order_relaxed) & 1) << 0) |
+                (uint8_t(m_mbCompat[kMB_Right].load(std::memory_order_relaxed) & 1) << 1) |
+                (uint8_t(m_mbCompat[kMB_Middle].load(std::memory_order_relaxed) & 1) << 2) |
+                (uint8_t(m_mbCompat[kMB_X1].load(std::memory_order_relaxed) & 1) << 3) |
+                (uint8_t(m_mbCompat[kMB_X2].load(std::memory_order_relaxed) & 1) << 4);
 
-            if (lut.down & 0x02) m_mbCompat[kMB_Right].store(1, std::memory_order_relaxed);
-            if (lut.up & 0x02) m_mbCompat[kMB_Right].store(0, std::memory_order_relaxed);
+            // 新しい状態： down で ON, up で OFF
+            uint8_t nxt = uint8_t((cur | lut.down) & uint8_t(~lut.up));
 
-            if (lut.down & 0x04) m_mbCompat[kMB_Middle].store(1, std::memory_order_relaxed);
-            if (lut.up & 0x04) m_mbCompat[kMB_Middle].store(0, std::memory_order_relaxed);
-
-            if (lut.down & 0x08) m_mbCompat[kMB_X1].store(1, std::memory_order_relaxed);
-            if (lut.up & 0x08) m_mbCompat[kMB_X1].store(0, std::memory_order_relaxed);
-
-            if (lut.down & 0x10) m_mbCompat[kMB_X2].store(1, std::memory_order_relaxed);
-            if (lut.up & 0x10) m_mbCompat[kMB_X2].store(0, std::memory_order_relaxed);
+            // まとめて store
+            m_mbCompat[kMB_Left].store((nxt >> 0) & 1, std::memory_order_relaxed);
+            m_mbCompat[kMB_Right].store((nxt >> 1) & 1, std::memory_order_relaxed);
+            m_mbCompat[kMB_Middle].store((nxt >> 2) & 1, std::memory_order_relaxed);
+            m_mbCompat[kMB_X1].store((nxt >> 3) & 1, std::memory_order_relaxed);
+            m_mbCompat[kMB_X2].store((nxt >> 4) & 1, std::memory_order_relaxed);
         }
 
         return false;
