@@ -213,12 +213,14 @@ DWORD WINAPI RawInputWinFilter::ThreadFunc(LPVOID param)
 
 void RawInputWinFilter::threadLoop()
 {
+    // ----- ウィンドウクラス作成 -----
     WNDCLASSW wc{};
     wc.lpfnWndProc = HiddenWndProc;
     wc.hInstance = GetModuleHandle(nullptr);
     wc.lpszClassName = L"MPH_RawInputWndClass";
     RegisterClassW(&wc);
 
+    // ----- メッセージ専用ウィンドウ作成 -----
     hiddenWnd = CreateWindowW(
         L"MPH_RawInputWndClass",
         L"RawInputHidden",
@@ -230,29 +232,50 @@ void RawInputWinFilter::threadLoop()
         this // userdata に RawInputWinFilter*
     );
 
+    // ----- RawInput 登録 -----
     RAWINPUTDEVICE rid[2];
     rid[0] = { 1, 2, 0, hiddenWnd };
     rid[1] = { 1, 6, 0, hiddenWnd };
     RegisterRawInputDevices(rid, 2, sizeof(RAWINPUTDEVICE));
 
     MSG msg;
+
+    // ============================================================
+    // ★★ 超低レイテンシ版メッセージループ ★★
+    // Sleep(0) を完全排除
+    // MsgWaitForMultipleObjectsEx → WM_INPUT / その他メッセージを即処理
+    // ============================================================
     while (runThread.load(std::memory_order_relaxed))
     {
-        while (PeekMessage(&msg, nullptr, 0, 0, PM_REMOVE))
+        // 1) まずバックログ処理（ノンスリープ）
+        while (PeekMessageW(&msg, nullptr, 0, 0, PM_REMOVE))
         {
             if (msg.message == WM_QUIT)
                 goto exit_loop;
 
+            // WM_INPUT は HiddenWndProc→nativeEventFilter を経由
             TranslateMessage(&msg);
-            DispatchMessage(&msg);
+            DispatchMessageW(&msg);
         }
 
-        Sleep(0);
+        // 2) 新規メッセージ到着を待つ（ブロック）
+        //    QS_RAWINPUT があるので WM_INPUT が来ると即復帰
+        DWORD r = MsgWaitForMultipleObjectsEx(
+            0, nullptr,
+            INFINITE,
+            QS_ALLINPUT | QS_RAWINPUT,
+            MWMO_INPUTAVAILABLE | MWMO_ALERTABLE
+        );
+
+        // WAIT_OBJECT_0 のみチェックすれば十分（qs にメッセージがある）
+        // 次のループで PeekMessage が即走る
+        (void)r;
     }
 
 exit_loop:
     hiddenWnd = nullptr;
 }
+
 
 
 LRESULT CALLBACK RawInputWinFilter::HiddenWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
