@@ -21,6 +21,7 @@
 
 #include <SDL2/SDL.h>
 
+#include "Platform.h"
 #include "main.h"
 #include "NDS.h"
 #include "EmuThread.h"
@@ -51,6 +52,10 @@ enum
     HK_SlowMo,
     HK_FastForwardToggle,
     HK_SlowMoToggle,
+    HK_GuitarGripGreen,
+    HK_GuitarGripRed,
+    HK_GuitarGripYellow,
+    HK_GuitarGripBlue,
 
     // melonPrimeDS {
     HK_MetroidMoveForward,
@@ -158,6 +163,7 @@ public:
     void deinitOpenGL(int win);
     void setVSyncGL(bool vsync);
     void makeCurrentGL();
+    void releaseGL();
     void drawScreenGL();
 
     // return: empty string = setup OK, non-empty = error message
@@ -186,12 +192,21 @@ public:
     void inputRumbleStart(melonDS::u32 len_ms);
     void inputRumbleStop();
 
+    bool inputHotkeyDown(int id) { return hotkeyDown(id); }
+    float inputMotionQuery(melonDS::Platform::MotionQueryType type);
+
     void setJoystick(int id);
     int getJoystickID() { return joystickID; }
     SDL_Joystick* getJoystick() { return joystick; }
+    std::shared_ptr<SDL_mutex> getJoyMutex() { return joyMutex; }
 
     void touchScreen(int x, int y);
     void releaseScreen();
+
+    // mic start/stop control from core
+    void micStart();
+    void micStop();
+    int micReadInput(melonDS::s16* data, int maxlength);
 
     QMutex renderLock;
 
@@ -257,13 +272,13 @@ private:
     void micOpen();
     void micClose();
     void micLoadWav(const std::string& name);
-    void micProcess();
     void setupMicInputData();
 
     int audioGetNumSamplesOut(int outlen);
-    void audioResample(melonDS::s16* inbuf, int inlen, melonDS::s16* outbuf, int outlen, int volume);
-
     static void audioCallback(void* data, Uint8* stream, int len);
+
+    int micGetNumSamplesIn(int inlen);
+    void micResample(melonDS::s16* inbuf, int inlen);
     static void micCallback(void* data, Uint8* stream, int len);
 
     void onKeyPress(QKeyEvent* event);
@@ -353,6 +368,7 @@ private:
 
     SDL_AudioDeviceID audioDevice;
     int audioFreq;
+    int audioBufSize;
     float audioSampleFrac;
     bool audioMuted;
     SDL_cond* audioSyncCond;
@@ -360,7 +376,13 @@ private:
 
     int mpAudioMode;
 
+    bool micStarted;
+
     SDL_AudioDeviceID micDevice;
+    int micFreq;
+    int micBufSize;
+    float micSampleFrac;
+
     melonDS::s16 micExtBuffer[4096];
     melonDS::u32 micExtBufferWritePos;
     melonDS::u32 micExtBufferCount;
@@ -389,8 +411,13 @@ private:
     int joystickID;
     SDL_Joystick* joystick;
     SDL_GameController* controller;
+    bool hasAccelerometer = false;
+    bool hasGyroscope = false;
     bool hasRumble = false;
     bool isRumbling = false;
+
+    static std::shared_ptr<SDL_mutex> joyMutexGlobal;
+    std::shared_ptr<SDL_mutex> joyMutex;
 
     /* MelonPrimeDS comment-out
     melonDS::u32 keyInputMask, joyInputMask;
@@ -405,9 +432,9 @@ private:
     QBitArray keyHotkeyMask, joyHotkeyMask;
     QBitArray hotkeyMask, lastHotkeyMask;
     QBitArray hotkeyPress, hotkeyRelease;
-    QBitArray joyHotkeyPress;    // š’Ç‰Á: ƒWƒ‡ƒC‚¾‚¯‚Ìu¡‰ñ‰Ÿ‚³‚ê‚½v
-    QBitArray joyHotkeyRelease;  // š’Ç‰Á: ƒWƒ‡ƒC‚¾‚¯‚Ìu¡‰ñ—£‚³‚ê‚½v
-    QBitArray lastJoyHotkeyMask; // š’Ç‰Á: ‘OƒtƒŒ‚ÌƒWƒ‡ƒCHK
+    QBitArray joyHotkeyPress;    // ï¿½ï¿½ï¿½Ç‰ï¿½: ï¿½Wï¿½ï¿½ï¿½Cï¿½ï¿½ï¿½ï¿½ï¿½Ìuï¿½ï¿½ï¿½ñ‰Ÿ‚ï¿½ï¿½ê‚½ï¿½v
+    QBitArray joyHotkeyRelease;  // ï¿½ï¿½ï¿½Ç‰ï¿½: ï¿½Wï¿½ï¿½ï¿½Cï¿½ï¿½ï¿½ï¿½ï¿½Ìuï¿½ï¿½ï¿½ñ—£‚ï¿½ï¿½ê‚½ï¿½v
+    QBitArray lastJoyHotkeyMask; // ï¿½ï¿½ï¿½Ç‰ï¿½: ï¿½Oï¿½tï¿½ï¿½ï¿½ÌƒWï¿½ï¿½ï¿½CHK
     QBitArray inputMask;
     /* MelonPrimeDS } */
 
