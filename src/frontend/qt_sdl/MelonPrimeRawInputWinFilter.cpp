@@ -106,23 +106,20 @@ bool RawInputWinFilter::nativeEventFilter(const QByteArray&, void* message, qint
         m_state.mouseButtons.store(nxt, std::memory_order_relaxed);
 
         if (lut.down | lut.up) {
-            // 現在の5bit（5個の m_mbCompat[X] をまとめて読み込む）
-            uint8_t cur =
-                (uint8_t(m_mbCompat[kMB_Left].load(std::memory_order_relaxed) & 1) << 0) |
-                (uint8_t(m_mbCompat[kMB_Right].load(std::memory_order_relaxed) & 1) << 1) |
-                (uint8_t(m_mbCompat[kMB_Middle].load(std::memory_order_relaxed) & 1) << 2) |
-                (uint8_t(m_mbCompat[kMB_X1].load(std::memory_order_relaxed) & 1) << 3) |
-                (uint8_t(m_mbCompat[kMB_X2].load(std::memory_order_relaxed) & 1) << 4);
+            if (lut.down & 0x01) m_mbCompat[kMB_Left].store(1, std::memory_order_relaxed);
+            if (lut.up & 0x01) m_mbCompat[kMB_Left].store(0, std::memory_order_relaxed);
 
-            // 新しい状態： down で ON, up で OFF
-            uint8_t nxt = uint8_t((cur | lut.down) & uint8_t(~lut.up));
+            if (lut.down & 0x02) m_mbCompat[kMB_Right].store(1, std::memory_order_relaxed);
+            if (lut.up & 0x02) m_mbCompat[kMB_Right].store(0, std::memory_order_relaxed);
 
-            // まとめて store
-            m_mbCompat[kMB_Left].store((nxt >> 0) & 1, std::memory_order_relaxed);
-            m_mbCompat[kMB_Right].store((nxt >> 1) & 1, std::memory_order_relaxed);
-            m_mbCompat[kMB_Middle].store((nxt >> 2) & 1, std::memory_order_relaxed);
-            m_mbCompat[kMB_X1].store((nxt >> 3) & 1, std::memory_order_relaxed);
-            m_mbCompat[kMB_X2].store((nxt >> 4) & 1, std::memory_order_relaxed);
+            if (lut.down & 0x04) m_mbCompat[kMB_Middle].store(1, std::memory_order_relaxed);
+            if (lut.up & 0x04) m_mbCompat[kMB_Middle].store(0, std::memory_order_relaxed);
+
+            if (lut.down & 0x08) m_mbCompat[kMB_X1].store(1, std::memory_order_relaxed);
+            if (lut.up & 0x08) m_mbCompat[kMB_X1].store(0, std::memory_order_relaxed);
+
+            if (lut.down & 0x10) m_mbCompat[kMB_X2].store(1, std::memory_order_relaxed);
+            if (lut.up & 0x10) m_mbCompat[kMB_X2].store(0, std::memory_order_relaxed);
         }
 
         return false;
@@ -136,66 +133,20 @@ bool RawInputWinFilter::nativeEventFilter(const QByteArray&, void* message, qint
         const USHORT flags = kb.Flags;
         const bool isUp = (flags & RI_KEY_BREAK) != 0;
 
-        //=====================================================
-        // ★ L/R Shift, Ctrl, Alt を LUT で最適化
-        //=====================================================
-        static constexpr struct {
-            UINT base;
-            UINT left;
-            UINT right;
-            USHORT scanLeft;
-            USHORT scanRight;
-        } modLut[] = {
-            { VK_SHIFT,   VK_LSHIFT,   VK_RSHIFT,   0x2A, 0x36 },
-            { VK_CONTROL, VK_LCONTROL, VK_RCONTROL, 0,    0    },
-            { VK_MENU,    VK_LMENU,    VK_RMENU,    0,    0    },
-        };
-
-        for (const auto& m : modLut) {
-            if (vk != m.base) continue;
-
-            if (m.scanLeft && kb.MakeCode == m.scanLeft) {
-                vk = m.left;
-            }
-            else if (m.scanRight && kb.MakeCode == m.scanRight) {
-                vk = m.right;
-            }
-            else if (flags & RI_KEY_E0) {
-                vk = m.right;
-            }
-            else {
-                vk = m.left;
-            }
-            break;
+        switch (vk) {
+        case VK_SHIFT:   vk = MapVirtualKey(kb.MakeCode, MAPVK_VSC_TO_VK_EX); break;
+        case VK_CONTROL: vk = (flags & RI_KEY_E0) ? VK_RCONTROL : VK_LCONTROL; break;
+        case VK_MENU:    vk = (flags & RI_KEY_E0) ? VK_RMENU : VK_LMENU;    break;
+        default: break;
         }
 
-        //=====================================================
-        // ★ vk < 256 のみ処理（最適化パス）
-        //=====================================================
-        if (vk < 256) [[likely]] {
-            const uint32_t widx = vk >> 6;
-            const uint64_t bit = 1ULL << (vk & 63);
+        setVkBit(vk, !isUp);
 
-            //=================================================
-            // ★ fetch_and / fetch_or による分岐ゼロ化
-            //=================================================
-            if (isUp) {
-                m_state.vkDown[widx].fetch_and(~bit, std::memory_order_relaxed);
-            }
-            else {
-                m_state.vkDown[widx].fetch_or(bit, std::memory_order_relaxed);
-            }
-        }
-
-        //=====================================================
-        // ★ 互換レイヤー（UI用）も保持
-        //=====================================================
         if (vk < m_vkDownCompat.size())
             m_vkDownCompat[vk].store(!isUp, std::memory_order_relaxed);
 
         return false;
     }
-
 
     return false;
 }
@@ -213,14 +164,12 @@ DWORD WINAPI RawInputWinFilter::ThreadFunc(LPVOID param)
 
 void RawInputWinFilter::threadLoop()
 {
-    // ----- ウィンドウクラス作成 -----
     WNDCLASSW wc{};
     wc.lpfnWndProc = HiddenWndProc;
     wc.hInstance = GetModuleHandle(nullptr);
     wc.lpszClassName = L"MPH_RawInputWndClass";
     RegisterClassW(&wc);
 
-    // ----- メッセージ専用ウィンドウ作成 -----
     hiddenWnd = CreateWindowW(
         L"MPH_RawInputWndClass",
         L"RawInputHidden",
@@ -232,50 +181,29 @@ void RawInputWinFilter::threadLoop()
         this // userdata に RawInputWinFilter*
     );
 
-    // ----- RawInput 登録 -----
     RAWINPUTDEVICE rid[2];
     rid[0] = { 1, 2, 0, hiddenWnd };
     rid[1] = { 1, 6, 0, hiddenWnd };
     RegisterRawInputDevices(rid, 2, sizeof(RAWINPUTDEVICE));
 
     MSG msg;
-
-    // ============================================================
-    // ★★ 超低レイテンシ版メッセージループ ★★
-    // Sleep(0) を完全排除
-    // MsgWaitForMultipleObjectsEx → WM_INPUT / その他メッセージを即処理
-    // ============================================================
     while (runThread.load(std::memory_order_relaxed))
     {
-        // 1) まずバックログ処理（ノンスリープ）
-        while (PeekMessageW(&msg, nullptr, 0, 0, PM_REMOVE))
+        while (PeekMessage(&msg, nullptr, 0, 0, PM_REMOVE))
         {
             if (msg.message == WM_QUIT)
                 goto exit_loop;
 
-            // WM_INPUT は HiddenWndProc→nativeEventFilter を経由
             TranslateMessage(&msg);
-            DispatchMessageW(&msg);
+            DispatchMessage(&msg);
         }
 
-        // 2) 新規メッセージ到着を待つ（ブロック）
-        //    QS_RAWINPUT があるので WM_INPUT が来ると即復帰
-        DWORD r = MsgWaitForMultipleObjectsEx(
-            0, nullptr,
-            INFINITE,
-            QS_ALLINPUT | QS_RAWINPUT,
-            MWMO_INPUTAVAILABLE | MWMO_ALERTABLE
-        );
-
-        // WAIT_OBJECT_0 のみチェックすれば十分（qs にメッセージがある）
-        // 次のループで PeekMessage が即走る
-        (void)r;
+        Sleep(0);
     }
 
 exit_loop:
     hiddenWnd = nullptr;
 }
-
 
 
 LRESULT CALLBACK RawInputWinFilter::HiddenWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
