@@ -1,5 +1,5 @@
 /*
-    Copyright 2016-2024 melonDS team
+    Copyright 2016-2025 melonDS team
 
     This file is part of melonDS.
 
@@ -119,13 +119,14 @@ void TitleManagerDialog::createTitleItem(u32 category, u32 titleid)
 
     // TODO: make it possible to select other languages?
     QString title = QString::fromUtf16(banner.EnglishTitle, 128);
+    title = title.left(title.indexOf(QChar('\0')));
     title.replace("\n", " · ");
 
     char gamecode[5];
     *(u32*)&gamecode[0] = *(u32*)&header.GameCode[0];
     gamecode[4] = '\0';
     char extra[128];
-    sprintf(extra, "\n(title ID: %s · %08x/%08x · version %08x)", gamecode, category, titleid, version);
+    snprintf(extra, sizeof(extra), "\n(title ID: %s · %08x/%08x · version %08x)", gamecode, category, titleid, version);
 
     QListWidgetItem* item = new QListWidgetItem(title + QString(extra));
     item->setIcon(icon);
@@ -411,13 +412,10 @@ TitleImportDialog::~TitleImportDialog()
 
 void TitleImportDialog::accept()
 {
-    QString path;
-    FILE* f;
-
     bool tmdfromfile = (grpTmdSource->checkedId() == 0);
 
-    path = ui->txtAppFile->text();
-    f = fopen(path.toStdString().c_str(), "rb");
+    QString path = ui->txtAppFile->text();
+    Platform::FileHandle* f = Platform::OpenFile(path.toStdString(), FileMode::Read);
     if (!f)
     {
         QMessageBox::critical(this,
@@ -426,9 +424,9 @@ void TitleImportDialog::accept()
         return;
     }
 
-    fseek(f, 0x230, SEEK_SET);
-    fread(titleid, 8, 1, f);
-    fclose(f);
+    Platform::FileSeek(f, 0x230, FileSeekOrigin::Start);
+    Platform::FileRead(titleid, 8, 1, f);
+    Platform::CloseFile(f);
 
     if (titleid[1] != 0x00030004)
     {
@@ -441,7 +439,7 @@ void TitleImportDialog::accept()
     if (tmdfromfile)
     {
         path = ui->txtTmdFile->text();
-        f = fopen(path.toStdString().c_str(), "rb");
+        Platform::FileHandle* f = Platform::OpenFile(path.toStdString(), FileMode::Read);
         if (!f)
         {
             QMessageBox::critical(this,
@@ -450,8 +448,8 @@ void TitleImportDialog::accept()
             return;
         }
 
-        fread((void *) tmdData, sizeof(DSi_TMD::TitleMetadata), 1, f);
-        fclose(f);
+        Platform::FileRead((void *) tmdData, sizeof(DSi_TMD::TitleMetadata), 1, f);
+        Platform::CloseFile(f);
 
         u32 tmdtitleid[2];
         tmdtitleid[0] = tmdData->GetCategory();
@@ -481,7 +479,7 @@ void TitleImportDialog::accept()
         network = new QNetworkAccessManager(this);
 
         char url[256];
-        sprintf(url, "http://nus.cdn.t.shop.nintendowifi.net/ccs/download/%08x%08x/tmd", titleid[1], titleid[0]);
+        snprintf(url, sizeof(url), "http://nus.cdn.t.shop.nintendowifi.net/ccs/download/%08x%08x/tmd", titleid[1], titleid[0]);
 
         QNetworkRequest req;
         req.setUrl(QUrl(url));

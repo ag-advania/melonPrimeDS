@@ -1,5 +1,5 @@
 /*
-    Copyright 2016-2024 melonDS team
+    Copyright 2016-2025 melonDS team
 
     This file is part of melonDS.
 
@@ -92,7 +92,7 @@ InputConfigDialog::InputConfigDialog(QWidget* parent) : QDialog(parent), ui(new 
 
 
     // Addons ( Metroid ) Tab
-    // 
+    //
     // load key values from toml file
     i = 0;
     for (int hotkey : hk_tabAddonsMetroid)
@@ -486,3 +486,8 @@ void InputConfigDialog::on_cbMetroidUseFirmwareName_stateChanged(int state)
     cfg.SetBool("Metroid.Use.Firmware.Name", state != 0);
 }
 /* } MelonPrimeDS */
+
+std::shared_ptr<SDL_mutex> InputConfigDialog::getJoyMutex()
+{
+    return emuInstance->getJoyMutex();
+}

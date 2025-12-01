@@ -1,5 +1,5 @@
 /*
-    Copyright 2016-2024 melonDS team
+    Copyright 2016-2025 melonDS team
 
     This file is part of melonDS.
 
@@ -83,6 +83,8 @@
         #define CONTEXT_PC uc_mcontext.mc_rip
     #elif defined(__NetBSD__)
         #define CONTEXT_PC uc_mcontext.__gregs[_REG_RIP]
+    #elif defined(__OpenBSD__)
+        #define CONTEXT_PC sc_rip
     #endif
 #elif defined(__aarch64__)
     #if defined(_WIN32)
@@ -95,6 +97,8 @@
         #define CONTEXT_PC uc_mcontext.mc_gpregs.gp_elr
     #elif defined(__NetBSD__)
         #define CONTEXT_PC uc_mcontext.__gregs[_REG_PC]
+    #elif defined(__OpenBSD__)
+        #define CONTEXT_PC sc_elr
     #endif
 #endif
 
@@ -739,7 +743,7 @@ u32 ARMJIT_Memory::PageShift = 0;
 
 bool ARMJIT_Memory::IsFastMemSupported()
 {
-#ifdef __APPLE__
+#if defined(__APPLE__) || defined(__OpenBSD__)
     return false;
 #else
     static bool initialised = false;
@@ -753,7 +757,7 @@ bool ARMJIT_Memory::IsFastMemSupported()
 
         PageSize = RegularPageSize;
 #else
-        PageSize = __sysconf(_SC_PAGESIZE);
+        PageSize = sysconf(_SC_PAGESIZE);
         isSupported = PageSize == RegularPageSize || PageSize == LargePageSize;
 #endif
         PageShift = __builtin_ctz(PageSize);
@@ -826,7 +830,11 @@ bool ARMJIT_Memory::FaultHandler(FaultDescription& faultDesc, melonDS::NDS& nds)
             rewriteToSlowPath = !nds.JIT.Memory.MapAtAddress(faultDesc.EmulatedFaultAddr);
 
         if (rewriteToSlowPath)
+        {
+            nds.JIT.JitEnableWrite();
             faultDesc.FaultPC = nds.JIT.JITCompiler.RewriteMemAccess(faultDesc.FaultPC);
+            nds.JIT.JitEnableExecute();
+        }
 
         return true;
     }
@@ -900,7 +908,7 @@ ARMJIT_Memory::ARMJIT_Memory(melonDS::NDS& nds) : NDS(nds)
     }
 #else
     char fastmemPidName[snprintf(NULL, 0, "/melondsfastmem%d", getpid()) + 1];
-    sprintf(fastmemPidName, "/melondsfastmem%d", getpid());
+    snprintf(fastmemPidName, sizeof(fastmemPidName), "/melondsfastmem%d", getpid());
     MemoryFile = shm_open(fastmemPidName, O_RDWR | O_CREAT | O_EXCL, 0600);
     if (MemoryFile == -1)
     {

@@ -1,4 +1,4 @@
-﻿/*
+/*
     Copyright 2016-2024 melonDS team
 
     This file is part of melonDS.
@@ -455,7 +455,7 @@ void ComputeRenderer::SetRenderSettings(int scale, bool highResolutionCoordinate
 #ifdef COMMENTOUTTTTTTTT
     // v0
     // https://github.com/melonDS-emu/melonDS/pull/2065/files
-    
+
     template <typename T>
     T GetMSBit(T val)
     {
@@ -490,7 +490,7 @@ void ComputeRenderer::SetRenderSettings(int scale, bool highResolutionCoordinate
 
     // v1
 
-    // uint8_t TileScale 
+    // uint8_t TileScale
     TileScale = 2 * ScaleFactor / 9; //Starting at 4.5x we want to double TileSize every time scale doubles
 #define GET_MSBIT(val) \
     ({ \
@@ -521,7 +521,7 @@ void ComputeRenderer::SetRenderSettings(int scale, bool highResolutionCoordinate
 
 
     // v3 lut version なんか遅延ある？
-    // 
+    //
     // Tile情報のLUT構造体
     struct TileParams {
         uint8_t tileScale;    // TileScale（2のべき乗）
@@ -586,7 +586,7 @@ void ComputeRenderer::SetRenderSettings(int scale, bool highResolutionCoordinate
 
     // v2
 
-    // uint8_t TileScale 
+    // uint8_t TileScale
     TileScale = 2 * ScaleFactor / 9; //Starting at 4.5x we want to double TileSize every time scale doubles
     // 64bit整数に対応したMSB抽出マクロ（ビット操作のみ・分岐なし）
 #define GET_MSBIT(val)                            \
@@ -642,7 +642,7 @@ void ComputeRenderer::SetRenderSettings(int scale, bool highResolutionCoordinate
         return TileScale;
     };
 
-    // uint8_t TileScale 
+    // uint8_t TileScale
     TileScale = getTileScale(ScaleFactor);
 
     // TileSize計算 元の処理と完全一致
@@ -679,7 +679,7 @@ void ComputeRenderer::SetRenderSettings(int scale, bool highResolutionCoordinate
         _ts;                                                       \
     })
 
-    // uint8_t TileScale 
+    // uint8_t TileScale
     TileScale = GET_TILE_SCALE(ScaleFactor);
 
 
@@ -1297,7 +1297,7 @@ struct Variant
     u16 Width, Height;
     u8 BlendMode;
 
-    bool operator==(const Variant& other) const
+    bool operator==(const Variant& other)
     {
         return Texture == other.Texture && Sampler == other.Sampler && BlendMode == other.BlendMode;
     }
@@ -1772,7 +1772,7 @@ void ComputeRenderer::RenderFrame(GPU& gpu)
         finalPassShader |= 0x1;
     
     glUseProgram(ShaderFinalPass[finalPassShader]);
-    
+
     // ここは常に32固定なので右シフトで除算を代替
     // glDispatchCompute(ScreenWidth/32, ScreenHeight, 1);
     glDispatchCompute(static_cast<GLuint>(static_cast<unsigned>(ScreenWidth) >> 5),

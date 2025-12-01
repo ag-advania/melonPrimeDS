@@ -1,5 +1,5 @@
-﻿/*
-    Copyright 2016-2024 melonDS team
+/*
+    Copyright 2016-2025 melonDS team
 
     This file is part of melonDS.
 
@@ -605,7 +605,7 @@ bool useDsName(NDS* nds, Config::Table& localCfg, std::uint32_t addrDsNameFlagAn
 
     // 新しい値を算出(useDsNameSettingの真偽に応じてビット操作を行うため)
     std::uint8_t newVal;
-    
+
     // 設定がtrue → DS名設定済みフラグをオフに設定
     // (bit0を下ろしてDSの名前を使うようにするため)
     newVal = static_cast<std::uint8_t>(oldVal & ~kFlagMask);
@@ -767,10 +767,10 @@ bool ApplyUnlockHuntersMaps(
 
     // 書き込み実行(解除レジスタの該当ビットを立てるため)
     nds->ARM9Write8(addrUnlock1, newVal);
-			
+
     // 全マップアンロック
     nds->ARM9Write32(addrUnlock2, 0x07FFFFFF);
-			
+
     // 全ハンターアンロック
     nds->ARM9Write8(addrUnlock3, 0x7F);
 
@@ -829,7 +829,7 @@ melonDS::u32 addrBaseAimY;
 melonDS::u32 addrAimX;
 melonDS::u32 addrAimY;
 melonDS::u32 addrIsInAdventure;
-melonDS::u32 addrIsMapOrUserActionPaused; // for issue in AdventureMode, Aim Stopping when SwitchingWeapon. 
+melonDS::u32 addrIsMapOrUserActionPaused; // for issue in AdventureMode, Aim Stopping when SwitchingWeapon.
 melonDS::u32 addrOperationAndSound; // ToSet headphone. 8bit write
 melonDS::u32 addrUnlockMapsHunters; // Sound Test Open, SFX Volum Addr
 melonDS::u32 addrVolSfx8Bit; // Sound Test Open, SFX Volum Addr
@@ -1014,6 +1014,11 @@ static MelonPrimeXInputFilter* g_xin = nullptr;
 static MelonPrimeDirectInputFilter* g_din = nullptr;
 */
 
+// ヘッダ参照(クラス宣言のため)
+// #include "MelonPrimeRawInputWinFilter.h"
+// アプリケーション参照(QCoreApplicationのため)
+#include <QCoreApplication>
+
 /* MelonPrimeDS function goes here */
 void EmuThread::run()
 {
@@ -1023,10 +1028,7 @@ void EmuThread::run()
     //RawInputThread* rawInputThread = new RawInputThread(parent());
     //rawInputThread->start();
 
-// ヘッダ参照(クラス宣言のため)
-// #include "MelonPrimeRawInputWinFilter.h"
-// アプリケーション参照(QCoreApplicationのため)
-#include <QCoreApplication>
+
 
 // 静的ポインタ定義(単一インスタンス保持のため)
         // static RawInputWinFilter* g_rawFilter = nullptr;
@@ -1083,7 +1085,7 @@ void EmuThread::run()
 //#define MP_HK_PRESSED(id)  ( ((g_rawFilter && g_rawFilter->hotkeyPressed((id)))  || (g_xin && g_xin->hotkeyPressed((id)))  || (g_din && g_din->hotkeyPressed((id))) ) )
 //#define MP_HK_RELEASED(id) ( ((g_rawFilter && g_rawFilter->hotkeyReleased((id))) || (g_xin && g_xin->hotkeyReleased((id))) || (g_din && g_din->hotkeyReleased((id))) ) )
 
-//#define MP_HK_DOWN(id)     ( (g_rawFilter && g_rawFilter->hotkeyDown((id)))   ) 
+//#define MP_HK_DOWN(id)     ( (g_rawFilter && g_rawFilter->hotkeyDown((id)))   )
 //#define MP_HK_PRESSED(id)  ( (g_rawFilter && g_rawFilter->hotkeyPressed((id))) )
 //#define MP_HK_RELEASED(id) ( (g_rawFilter && g_rawFilter->hotkeyReleased((id))) )
 
@@ -1154,6 +1156,7 @@ void EmuThread::run()
     bool slowmo = false;
     emuInstance->fastForwardToggled = false;
     emuInstance->slowmoToggled = false;
+
 
 
     // melonPrimeDS
@@ -1288,11 +1291,11 @@ void EmuThread::run()
     bool isWeavel;
     bool isPaused = false; // MelonPrimeDS
 
-    // The QPoint class defines a point in the plane using integer precision. 
+    // The QPoint class defines a point in the plane using integer precision.
     // auto mouseRel = rawInputThread->fetchMouseDelta();
     // QPoint mouseRel;
 
-    // Initialize Adjusted Center 
+    // Initialize Adjusted Center
 
 
     // test
@@ -1547,7 +1550,7 @@ void EmuThread::run()
 
 
 
- 
+
 
     /**
      * Aim input processing (QCursor-based, structure-preserving, low-latency, drift-prevention version).
@@ -1672,10 +1675,10 @@ void EmuThread::run()
     auto frameAdvanceOnce = [&]()  __attribute__((hot, always_inline, flatten)) {
         MPInterface::Get().Process();
 #ifdef _WIN32
-        
+
         //if (g_xin) g_xin->update(); // MelonPrimeDS
         //if (g_din) g_din->update(); // MelonPrimeDS
-         
+
 #endif
         emuInstance->inputProcess();
 
@@ -1848,9 +1851,6 @@ void EmuThread::run()
             }
             */
 
-            // microphone input
-            emuInstance->micProcess();
-
             // auto screen layout
             {
                 mainScreenPos[2] = mainScreenPos[1];
@@ -1962,7 +1962,7 @@ void EmuThread::run()
 
             if (slowmo) emuInstance->curFPS = emuInstance->slowmoFPS;
             else if (fastforward) emuInstance->curFPS = emuInstance->fastForwardFPS;
-            else if (!emuInstance->doLimitFPS) emuInstance->curFPS = 1000.0;
+            else if (!emuInstance->doLimitFPS && !emuInstance->doAudioSync) emuInstance->curFPS = 1000.0;
             else emuInstance->curFPS = emuInstance->targetFPS;
 
             if (emuInstance->audioDSiVolumeSync && emuInstance->nds->ConsoleType == 1)
@@ -1985,6 +1985,7 @@ void EmuThread::run()
 
             if (frametimeStep < 0.001) frametimeStep = 0.001;
 
+            if (emuInstance->doLimitFPS)
             {
                 double curtime = SDL_GetPerformanceCounter() * perfCountsSec;
 
@@ -2022,11 +2023,7 @@ void EmuThread::run()
                     winUpdateFreq = 1;
                     
                 double actualfps = (59.8261 * 263.0) / nlines;
-                int inst = emuInstance->instanceID;
-                if (inst == 0)
-                    sprintf(melontitle, "[%d/%.0f] melonDS " MELONDS_VERSION, fps, actualfps);
-                else
-                    sprintf(melontitle, "[%d/%.0f] melonDS (%d)", fps, fpstarget, inst+1);
+                snprintf(melontitle, sizeof(melontitle), "[%d/%.0f] melonDS " MELONDS_VERSION, fps, actualfps);
                 changeWindowTitle(melontitle);
             }
         }
@@ -2039,11 +2036,7 @@ void EmuThread::run()
 
             emit windowUpdate();
 
-            int inst = emuInstance->instanceID;
-            if (inst == 0)
-                sprintf(melontitle, "melonDS " MELONDS_VERSION);
-            else
-                sprintf(melontitle, "melonDS (%d)", inst+1);
+            snprintf(melontitle, sizeof(melontitle), "melonDS " MELONDS_VERSION);
             changeWindowTitle(melontitle);
 
             SDL_Delay(75);
@@ -2312,6 +2305,9 @@ void EmuThread::run()
 
 
     while (emuStatus != emuStatus_Exit) {
+        if (emuInstance->instanceID == 0) {
+            MPInterface::Get().Process();
+        }
 
         // MelonPrimeDS Functions START
 
@@ -2406,9 +2402,9 @@ void EmuThread::run()
             if (isFocused) {
 
 
-                // Calculate for aim 
+                // Calculate for aim
                 // updateMouseRelativeAndRecenterCursor
-                // 
+                //
                 // Handle the case when the window is focused
                 // Update mouse relative position and recenter cursor for aim control
 
@@ -2483,7 +2479,7 @@ void EmuThread::run()
 
 					// Morph ball boost. This should be worked in Adventure mode and Arena mode.
                     // INFO If this function is not used, mouse boosting can only be done once.
-                    // This is because it doesn't release from the touch state, which is necessary for aiming. 
+                    // This is because it doesn't release from the touch state, which is necessary for aiming.
                     // There's no way around it.
                     // Morph ball boost（保持型）
                     if (isSamus){
@@ -2549,11 +2545,11 @@ void EmuThread::run()
                                 for (int i = 0; i < 30; i++) {
                                     // still allow movement whilst we're enabling scan visor
                                     processAimInput();
-                                    processMoveInput(inputMask); 
+                                    processMoveInput(inputMask);
 
                                     //emuInstance->nds->SetKeyMask(emuInstance->getInputMask());
                                     emuInstance->nds->SetKeyMask(GET_INPUT_MASK(inputMask));
-                                    
+
                                     frameAdvanceOnce();
                                 }
                             }
@@ -2619,7 +2615,7 @@ void EmuThread::run()
 
                         // Apply MPH sensitivity settings
                         ApplyMphSensitivity(emuInstance->nds, localCfg, addrSensitivity, addrInGameSensi, isInGameAndHasInitialized);
-                        
+
                         // Unlock all Hunters/Maps
                         ApplyUnlockHuntersMaps(
                             emuInstance->nds,
@@ -2653,7 +2649,7 @@ void EmuThread::run()
                     // カーソルモードの有無をAimブロックに反映
                     setAimBlock(AIMBLK_CURSOR_MODE, isCursorMode);
 #ifndef STYLUS_MODE
-                    showCursorOnMelonPrimeDS(isCursorMode); 
+                    showCursorOnMelonPrimeDS(isCursorMode);
 #endif
                 }
 
@@ -2673,14 +2669,14 @@ void EmuThread::run()
             } else {
 				// when not focused
 #if defined(_WIN32)
-                    
+
                     if (g_rawFilter) g_rawFilter->discardDeltas(); // Call to discard RAW deltas (to eliminate residuals)
                     if (g_rawFilter) g_rawFilter->resetMouseButtons(); // Call to reset mouse button states (to eliminate leftover presses)
                     if (g_rawFilter) g_rawFilter->resetAllKeys(); // Call to reset key press states (to prevent accidental inputs)
                     if (g_rawFilter) g_rawFilter->resetHotkeyEdges(); // Almost essential (prevents false triggers of Pressed/Released right after resuming)
 #endif
             }
-            
+
             // Apply input
             // emuInstance->nds->SetKeyMask(emuInstance->getInputMask());
             emuInstance->nds->SetKeyMask(GET_INPUT_MASK(inputMask));
@@ -2688,7 +2684,7 @@ void EmuThread::run()
             // record last frame was forcused or not
             wasLastFrameFocused = isFocused;
         } // End of isRomDetected
- 
+
 
         // MelonPrimeDS Functions END
 
@@ -2722,6 +2718,8 @@ void EmuThread::waitAllMessages()
 
 void EmuThread::handleMessages()
 {
+    bool glborrow = false;
+
     msgMutex.lock();
     while (!msgQueue.empty())
     {
@@ -2861,6 +2859,11 @@ void EmuThread::handleMessages()
                 useOpenGL = false;
             break;
 
+        case msg_BorrowGL:
+            emuInstance->releaseGL();
+            glborrow = true;
+            break;
+
         case msg_BootROM:
             msgResult = 0;
             if (!emuInstance->loadROM(msg.param.value<QStringList>(), true, msgError))
@@ -2952,6 +2955,13 @@ void EmuThread::handleMessages()
         msgSemaphore.release();
     }
     msgMutex.unlock();
+
+    if (glborrow)
+    {
+        glBorrowMutex.lock();
+        glBorrowCond.wait(&glBorrowMutex);
+        glBorrowMutex.unlock();
+    }
 }
 
 void EmuThread::changeWindowTitle(char* title)
@@ -2969,6 +2979,19 @@ void EmuThread::deinitContext(int win)
 {
     sendMessage({.type = msg_DeInitGL, .param = win});
     waitMessage();
+}
+
+void EmuThread::borrowGL()
+{
+    sendMessage(msg_BorrowGL);
+    waitMessage();
+}
+
+void EmuThread::returnGL()
+{
+    glBorrowMutex.lock();
+    glBorrowCond.wakeAll();
+    glBorrowMutex.unlock();
 }
 
 void EmuThread::emuRun()
