@@ -133,20 +133,66 @@ bool RawInputWinFilter::nativeEventFilter(const QByteArray&, void* message, qint
         const USHORT flags = kb.Flags;
         const bool isUp = (flags & RI_KEY_BREAK) != 0;
 
-        switch (vk) {
-        case VK_SHIFT:   vk = MapVirtualKey(kb.MakeCode, MAPVK_VSC_TO_VK_EX); break;
-        case VK_CONTROL: vk = (flags & RI_KEY_E0) ? VK_RCONTROL : VK_LCONTROL; break;
-        case VK_MENU:    vk = (flags & RI_KEY_E0) ? VK_RMENU : VK_LMENU;    break;
-        default: break;
+        //=====================================================
+        // ★ L/R Shift, Ctrl, Alt を LUT で最適化
+        //=====================================================
+        static constexpr struct {
+            UINT base;
+            UINT left;
+            UINT right;
+            USHORT scanLeft;
+            USHORT scanRight;
+        } modLut[] = {
+            { VK_SHIFT,   VK_LSHIFT,   VK_RSHIFT,   0x2A, 0x36 },
+            { VK_CONTROL, VK_LCONTROL, VK_RCONTROL, 0,    0    },
+            { VK_MENU,    VK_LMENU,    VK_RMENU,    0,    0    },
+        };
+
+        for (const auto& m : modLut) {
+            if (vk != m.base) continue;
+
+            if (m.scanLeft && kb.MakeCode == m.scanLeft) {
+                vk = m.left;
+            }
+            else if (m.scanRight && kb.MakeCode == m.scanRight) {
+                vk = m.right;
+            }
+            else if (flags & RI_KEY_E0) {
+                vk = m.right;
+            }
+            else {
+                vk = m.left;
+            }
+            break;
         }
 
-        setVkBit(vk, !isUp);
+        //=====================================================
+        // ★ vk < 256 のみ処理（最適化パス）
+        //=====================================================
+        if (vk < 256) [[likely]] {
+            const uint32_t widx = vk >> 6;
+            const uint64_t bit = 1ULL << (vk & 63);
 
+            //=================================================
+            // ★ fetch_and / fetch_or による分岐ゼロ化
+            //=================================================
+            if (isUp) {
+                m_state.vkDown[widx].fetch_and(~bit, std::memory_order_relaxed);
+            }
+            else {
+                m_state.vkDown[widx].fetch_or(bit, std::memory_order_relaxed);
+            }
+        }
+
+        //=====================================================
+        // ★ 互換レイヤー（UI用）も保持
+        //=====================================================
         if (vk < m_vkDownCompat.size())
             m_vkDownCompat[vk].store(!isUp, std::memory_order_relaxed);
 
         return false;
     }
+
 
     return false;
 }
