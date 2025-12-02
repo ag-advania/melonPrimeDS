@@ -126,21 +126,45 @@ bool RawInputWinFilter::nativeEventFilter(const QByteArray&, void* message, qint
     }
 
     //---------------- Keyboard ----------------
-    if (type == RIM_TYPEKEYBOARD) {
+    if (type == RIM_TYPEKEYBOARD)
+    {
         const RAWKEYBOARD& kb = raw->data.keyboard;
-
         UINT vk = kb.VKey;
         const USHORT flags = kb.Flags;
-        const bool isUp = (flags & RI_KEY_BREAK) != 0;
+        const bool isUp = (flags & RI_KEY_BREAK);
 
-        switch (vk) {
-        case VK_SHIFT:   vk = MapVirtualKey(kb.MakeCode, MAPVK_VSC_TO_VK_EX); break;
-        case VK_CONTROL: vk = (flags & RI_KEY_E0) ? VK_RCONTROL : VK_LCONTROL; break;
-        case VK_MENU:    vk = (flags & RI_KEY_E0) ? VK_RMENU : VK_LMENU;    break;
-        default: break;
+        // L/R 修正
+        static constexpr struct {
+            UINT base, left, right;
+            USHORT scanLeft, scanRight;
+        } modLut[] = {
+            { VK_SHIFT,   VK_LSHIFT,   VK_RSHIFT,   0x2A, 0x36 },
+            { VK_CONTROL, VK_LCONTROL, VK_RCONTROL, 0,    0    },
+            { VK_MENU,    VK_LMENU,    VK_RMENU,    0,    0    }
+        };
+
+        for (auto& m : modLut) {
+            if (vk == m.base) {
+                if (m.scanLeft && kb.MakeCode == m.scanLeft)
+                    vk = m.left;
+                else if (m.scanRight && kb.MakeCode == m.scanRight)
+                    vk = m.right;
+                else if (flags & RI_KEY_E0)
+                    vk = m.right;
+                else
+                    vk = m.left;
+                break;
+            }
         }
 
-        setVkBit(vk, !isUp);
+        if (vk < 256) {
+            const uint32_t idx = vk >> 6;
+            const uint64_t bit = 1ULL << (vk & 63);
+            if (isUp)
+                m_state.vkDown[idx].fetch_and(~bit, std::memory_order_relaxed);
+            else
+                m_state.vkDown[idx].fetch_or(bit, std::memory_order_relaxed);
+        }
 
         if (vk < m_vkDownCompat.size())
             m_vkDownCompat[vk].store(!isUp, std::memory_order_relaxed);
