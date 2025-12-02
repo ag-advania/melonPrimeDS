@@ -248,45 +248,82 @@ LRESULT CALLBACK RawInputWinFilter::HiddenWndProc(HWND hwnd, UINT msg, WPARAM wp
 //---------------------------------------------------------
 // Joy2Key（SendInput）補正
 //---------------------------------------------------------
+//---------------------------------------------------------
+// Joy2Key（SendInput）補正：必要なキーだけ同期
+//---------------------------------------------------------
 void RawInputWinFilter::syncWithSendInput()
 {
-    // Keyboard 全補正
-    for (UINT vk = 1; vk < 256; vk++)
+    //-----------------------------------------------------
+    // 1) Keyboard: ホットキーで使われている VK だけ補正
+    //-----------------------------------------------------
+    for (size_t hk = 0; hk < kMaxHotkeyId; hk++)
     {
-        SHORT st = GetAsyncKeyState(vk);
-        bool down = (st & 0x8000) != 0;
+        const HotkeyMask& m = m_hkMask[hk];
+        if (!m.hasMask) continue; // このHKはVK/Mouseどちらも未使用
 
-        bool raw = getVkState(vk);
-        if (raw != down)
-            setVkBit(vk, down);
+        // 256bit を4ワードとして走査
+        for (int wi = 0; wi < 4; wi++)
+        {
+            uint64_t mask = m.vkMask[wi];
+            while (mask)
+            {
+                // 最下位セットビット
+                uint64_t bit = mask & -mask;
+                int vk = (wi << 6) | __builtin_ctzll(mask);
 
-        m_vkDownCompat[vk].store(down, std::memory_order_relaxed);
+                SHORT st = GetAsyncKeyState(vk);
+                bool down = (st & 0x8000) != 0;
+
+                bool raw = getVkState(vk);
+                if (raw != down)
+                    setVkBit(vk, down);
+
+                m_vkDownCompat[vk].store(down, std::memory_order_relaxed);
+
+                mask ^= bit; // 次のビットへ
+            }
+        }
     }
 
-    // Mouse ボタン補正
-    struct { UINT vk; MouseIndex idx; } map[]{
-        {VK_LBUTTON,kMB_Left},
-        {VK_RBUTTON,kMB_Right},
-        {VK_MBUTTON,kMB_Middle},
-        {VK_XBUTTON1,kMB_X1},
-        {VK_XBUTTON2,kMB_X2},
-    };
-
-    for (auto& m : map)
+    //-----------------------------------------------------
+    // 2) Mouse: ホットキーで使われている Mouse bit だけ補正
+    //-----------------------------------------------------
+    for (size_t hk = 0; hk < kMaxHotkeyId; hk++)
     {
-        SHORT st = GetAsyncKeyState(m.vk);
-        bool down = (st & 0x8000) != 0;
+        const HotkeyMask& m = m_hkMask[hk];
+        if (!m.hasMask) continue;
+        const uint8_t mm = m.mouseMask;
+        if (!mm) continue;
 
-        bool raw = getMouseButton(m.idx);
-        if (raw != down) {
-            uint8_t cur = m_state.mouseButtons.load(std::memory_order_relaxed);
-            uint8_t nxt = down ? (cur | (1 << m.idx)) : (cur & ~(1 << m.idx));
-            m_state.mouseButtons.store(nxt, std::memory_order_relaxed);
+        // L/R/M/X1/X2 の5bitを見る
+        for (int idx = 0; idx < 5; idx++)
+        {
+            const uint8_t bit = (1u << idx);
+            if (!(mm & bit)) continue; // 未使用
+
+            UINT vk =
+                (idx == kMB_Left) ? VK_LBUTTON :
+                (idx == kMB_Right) ? VK_RBUTTON :
+                (idx == kMB_Middle) ? VK_MBUTTON :
+                (idx == kMB_X1) ? VK_XBUTTON1 :
+                VK_XBUTTON2;
+
+            SHORT st = GetAsyncKeyState(vk);
+            bool down = (st & 0x8000) != 0;
+
+            bool raw = getMouseButton(idx);
+            if (raw != down)
+            {
+                uint8_t cur = m_state.mouseButtons.load(std::memory_order_relaxed);
+                uint8_t nxt = down ? (cur | bit) : (cur & ~bit);
+                m_state.mouseButtons.store(nxt, std::memory_order_relaxed);
+            }
+
+            m_mbCompat[idx].store(down, std::memory_order_relaxed);
         }
-
-        m_mbCompat[m.idx].store(down, std::memory_order_relaxed);
     }
 }
+
 
 
 //---------------------------------------------------------
