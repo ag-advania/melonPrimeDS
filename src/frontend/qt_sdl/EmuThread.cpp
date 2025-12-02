@@ -1691,6 +1691,7 @@ void EmuThread::run()
         // MelonPrimeDS ホットキー処理部分を修正
         if (emuInstance->hotkeyPressed(HK_FullscreenToggle)) {
             emit windowFullscreenToggle();
+            // emuInstance->getMainWindow()->panel->updateClipIfNeeded();
             isLayoutChangePending = true;
         }
 
@@ -2313,7 +2314,7 @@ void EmuThread::run()
 
 #ifndef STYLUS_MODE
         // Mouse player
-        bool isFocused = emuInstance->getMainWindow()->panel->getFocused();
+        // bool isFocused = emuInstance->getMainWindow()->panel->getIsFocused();
 #else
         // isStylus
         bool isFocused = true;

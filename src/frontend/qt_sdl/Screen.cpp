@@ -151,12 +151,13 @@ using namespace QNativeInterface;
 const u32 kOSDMargin = 6;
 const int kLogoWidth = 192;
 
-bool isFocused; // MelonPrimeDS TODO move this.
-
 // 既存の匿名namespaceのヘルパは削除/未使用にしてOK。
 // メソッドとして実装（UIスレッドで実行される想定）
 void ScreenPanel::clipCursorCenter1px() { // MelonPrimeDS
-    clipWanted = true;
+    setClipWanted(true);
+	// BlankCursorにする
+    setCursor(Qt::BlankCursor); // MelonPrimeDS
+
 #ifdef _WIN32
     if (!isVisible() || !window() || !window()->isActiveWindow()) return;
     const HWND hwnd = reinterpret_cast<HWND>(winId());
@@ -168,22 +169,15 @@ void ScreenPanel::clipCursorCenter1px() { // MelonPrimeDS
 }
 
 void ScreenPanel::unclip() { // MelonPrimeDS
-    clipWanted = false;
+	setClipWanted(false);
 #ifdef _WIN32
     ClipCursor(nullptr);
 #endif
 }
 
 void ScreenPanel::updateClipIfNeeded() { // MelonPrimeDS
-    if (!clipWanted) return;
-#ifdef _WIN32
-    if (!isVisible() || !window() || !window()->isActiveWindow()) return;
-    const HWND hwnd = reinterpret_cast<HWND>(winId());
-    RECT clip = computeCenter1pxClipRectSafe(hwnd);
-    // 高さ半分化(垂直中央を維持したまま高さ1/2にするため)
-    clip = shrinkRectHeightToHalfCentered(clip);
-    ClipCursor(&clip);
-#endif
+    if (!getClipWanted()) return;
+    clipCursorCenter1px();
 }
 
 
@@ -399,7 +393,7 @@ void ScreenPanel::mousePressEvent(QMouseEvent* event)
 
     /* MelonPrimeDS { */
     // so we dont press buttons before fully focusing
-    if (isFocused) {
+    if (getIsFocused()) {
         emuInstance->onMousePress(event); // MelonPrimeDS
     }
     /* MelonPrimeDS } */
@@ -424,21 +418,18 @@ void ScreenPanel::mousePressEvent(QMouseEvent* event)
     // melonPrimeDS
 
     if (emuInstance->emuIsActive()) {
-        isFocused = true;
+		setIsFocused(true); // MelonPrimeDS
 
 // #define STYLUS_MODE 1 // this is for stylus user
 
 #ifndef STYLUS_MODE
         if (!emuInstance->getEmuThread()->isCursorMode) { // MelonPrimeDS
-            // BlankCursor when it's focused and inGame.
-            setCursor(Qt::BlankCursor); // MelonPrimeDS
-        }
+
 #if defined(_WIN32)
-        // in-game かつ カーソルモードでなければ 1px クリップ開始
-        if (!emuInstance->getEmuThread()->isCursorMode) { // MelonPrimeDS
+            // 1px クリップ開始
             clipCursorCenter1px(); // MelonPrimeDS
-        } // MelonPrimeDS
 #endif
+        }
 
 #endif
     }
@@ -588,28 +579,6 @@ bool ScreenPanel::event(QEvent* event)
 
     return QWidget::event(event);
 }
-
-void ScreenPanel::showCursor()
-{
-    /* MelonPrimeDS comment-out
-    mainWindow->panel->setCursor(Qt::ArrowCursor);
-
-    mouseTimer->start();
-    */
-}
-/* MelonPrimeDS comment-out
-QTimer* ScreenPanel::setupMouseTimer()
-{
-
-    mouseTimer = new QTimer();
-    mouseTimer->setSingleShot(true);
-    mouseTimer->setInterval(mouseHideDelay);
-    mouseTimer->start();
-
-    return mouseTimer;
-
-}
-    */
 
 int ScreenPanel::osdFindBreakPoint(const char* text, int i)
 {
@@ -1573,7 +1542,7 @@ void ScreenPanelGL::transferLayout()
 /* MelonPrimeDS */
 void ScreenPanel::unfocus()
 {
-    isFocused = false;
+    setIsFocused(false);
     setCursor(Qt::ArrowCursor);
 #if defined(_WIN32)
     unclip(); // MelonPrimeDS
@@ -1582,10 +1551,33 @@ void ScreenPanel::unfocus()
 
 void ScreenPanel::focusOutEvent(QFocusEvent* event)
 {
+    if (emuInstance->getEmuThread()->isFocused) {
+        return;
+    }
+
     unfocus();
 }
 
 void ScreenPanel::moveEvent(QMoveEvent* e) {
 	updateClipIfNeeded(); // MelonPrimeDS
     QWidget::moveEvent(e);
+}
+
+__attribute__((always_inline)) inline void ScreenPanel::setIsFocused(bool value)
+{
+    emuInstance->getEmuThread()->isFocused = value;
+}
+
+__attribute__((always_inline)) inline bool ScreenPanel::getIsFocused()
+{
+    return emuInstance->getEmuThread()->isFocused;
+}
+__attribute__((always_inline)) inline void ScreenPanel::setClipWanted(bool value)
+{
+    emuInstance->getEmuThread()->isClipWanted = value;
+}
+
+__attribute__((always_inline)) inline bool ScreenPanel::getClipWanted()
+{
+    return emuInstance->getEmuThread()->isClipWanted;
 }

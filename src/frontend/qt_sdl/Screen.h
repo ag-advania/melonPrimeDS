@@ -74,8 +74,6 @@ public:
     void osdAddMessage(unsigned int color, const char* msg);
 
     /* MelonPrimeDS { */
-    bool getFocused() { return isFocused; }
-
     void unfocus();
 
     int getDelta() {
@@ -167,9 +165,6 @@ protected:
     void touchEvent(QTouchEvent* event);
     bool event(QEvent* event) override;
 
-    void showCursor();
-
-    bool isFocused = false; // MelonPrimeDS
     int osdFindBreakPoint(const char* text, int i);
     void osdLayoutText(const char* text, int* width, int* height, int* breaks);
     unsigned int osdRainbowColor(int inc);
@@ -182,8 +177,10 @@ protected:
     void calcSplashLayout();
 
     private:
-
-        bool clipWanted = false;   // çSë©óvãÅÉtÉâÉO melonPrimeDS
+        void setClipWanted(bool value);
+        bool getClipWanted();
+        bool getIsFocused();
+        void setIsFocused(bool value);
 };
 
 

@@ -997,7 +997,15 @@ void MainWindow::keyPressEvent(QKeyEvent* event)
 
     // MelonPrimeDS. for Escaping from metroid cursor lock 
     if (event->key() == Qt::Key_Escape) {
-        emuInstance->getMainWindow()->panel->unfocus();
+        const auto widgets = QApplication::allWidgets();
+
+        for (QWidget* w : widgets)
+        {
+            ScreenPanel* panel = qobject_cast<ScreenPanel*>(w);
+            if (panel)
+                panel->unfocus();
+        }
+
     }
 }
 
