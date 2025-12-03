@@ -1,15 +1,12 @@
 #pragma once
 #ifdef _WIN32
 
-// Qt（fallbackを使わないため最小限でOK）
 #include <QAbstractNativeEventFilter>
 #include <QByteArray>
 
-// Win32
 #include <windows.h>
 #include <hidsdi.h>
 
-// C++/STL
 #include <array>
 #include <vector>
 #include <unordered_map>
@@ -17,7 +14,6 @@
 #include <cstdint>
 #include <cstring>
 
-// FORCE_INLINE
 #ifndef FORCE_INLINE
 #  if defined(_MSC_VER)
 #    define FORCE_INLINE __forceinline
@@ -26,42 +22,40 @@
 #  endif
 #endif
 
-
 class RawInputWinFilter : public QAbstractNativeEventFilter
 {
 public:
     RawInputWinFilter();
     ~RawInputWinFilter() override;
 
-    // Qt fallback は使わないが、Qt側が呼んできても無視する
     bool nativeEventFilter(const QByteArray& eventType, void* message, qintptr* result) override;
 
-    // 相対デルタ
     void fetchMouseDelta(int& outDx, int& outDy);
     void discardDeltas();
 
-    // リセット
     void resetAllKeys();
     void resetMouseButtons();
     void resetHotkeyEdges();
 
-    // ホットキー
     void setHotkeyVks(int hk, const std::vector<UINT>& vks);
+
     bool hotkeyDown(int hk) const noexcept;
     bool hotkeyPressed(int hk) noexcept;
     bool hotkeyReleased(int hk) noexcept;
 
-    // マウスボタン LUT
-    struct BtnLutEntry {
-        uint8_t down;
-        uint8_t up;
+    //=========================================================
+// 最新版の 1024 LUT
+//=========================================================
+    struct BtnEntry {
+        uint8_t d;
+        uint8_t u;
     };
-    static BtnLutEntry s_btnLut[1024];
+    static BtnEntry s_btnLut[1024];
 
 private:
-    //--------------------------------------------------
-    // RawInput 専用スレッド
-    //--------------------------------------------------
+    //=========================================================
+    // RawInput Thread
+    //=========================================================
     HANDLE hThread = nullptr;
     HWND hiddenWnd = nullptr;
     std::atomic<bool> runThread{ false };
@@ -70,14 +64,11 @@ private:
     void threadLoop();
     static LRESULT CALLBACK HiddenWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp);
 
-    //--------------------------------------------------
-    // SendInput（Joy2Key）補正
-    //--------------------------------------------------
-    void syncWithSendInput(); // ← コレ重要
+    void joy2keyUpdateBoundKeys();
 
-    //--------------------------------------------------
-    // 内部構造
-    //--------------------------------------------------
+    //=========================================================
+    // Internal State
+    //=========================================================
     enum MouseIndex : uint8_t { kMB_Left = 0, kMB_Right, kMB_Middle, kMB_X1, kMB_X2, kMB_Max };
 
     struct alignas(16) HotkeyMask {
@@ -89,19 +80,7 @@ private:
 
     static constexpr size_t kMaxHotkeyId = 256;
 
-    static constexpr USHORT kAllMouseBtnMask =
-        RI_MOUSE_LEFT_BUTTON_DOWN | RI_MOUSE_LEFT_BUTTON_UP |
-        RI_MOUSE_RIGHT_BUTTON_DOWN | RI_MOUSE_RIGHT_BUTTON_UP |
-        RI_MOUSE_MIDDLE_BUTTON_DOWN | RI_MOUSE_MIDDLE_BUTTON_UP |
-        RI_MOUSE_BUTTON_4_DOWN | RI_MOUSE_BUTTON_4_UP |
-        RI_MOUSE_BUTTON_5_DOWN | RI_MOUSE_BUTTON_5_UP;
-
-    static constexpr uint8_t kMouseButtonLUT[8] = {
-        0xFF, kMB_Left, kMB_Right, 0xFF,
-        kMB_Middle, kMB_X1, kMB_X2, 0xFF
-    };
-
-    alignas(64) BYTE m_rawBuf[64] = {};
+    alignas(64) BYTE m_rawBuf[256] = {};
 
     struct StateBits {
         std::atomic<uint64_t> vkDown[4];
@@ -119,7 +98,7 @@ private:
         const uint32_t widx = vk >> 6;
         const uint64_t bit = 1ULL << (vk & 63);
         uint64_t cur = m_state.vkDown[widx].load(std::memory_order_relaxed);
-        uint64_t nxt = down ? (cur | bit) : (cur & ~bit);
+        uint64_t nxt = down ? (cur | bit) : (cur & bit ? cur & ~bit : cur & ~bit);
         m_state.vkDown[widx].store(nxt, std::memory_order_relaxed);
     }
 
@@ -133,12 +112,42 @@ private:
 
     alignas(64) std::array<HotkeyMask, kMaxHotkeyId> m_hkMask{};
     std::unordered_map<int, std::vector<UINT>> m_hkToVk;
+
     std::array<std::atomic<uint64_t>, (kMaxHotkeyId + 63) / 64> m_hkPrev{};
 
     std::array<std::atomic<int>, 256> m_vkDownCompat{};
     std::array<std::atomic<int>, kMB_Max> m_mbCompat{};
 
+    static constexpr USHORT kAllMouseBtnMask =
+        RI_MOUSE_LEFT_BUTTON_DOWN | RI_MOUSE_LEFT_BUTTON_UP |
+        RI_MOUSE_RIGHT_BUTTON_DOWN | RI_MOUSE_RIGHT_BUTTON_UP |
+        RI_MOUSE_MIDDLE_BUTTON_DOWN | RI_MOUSE_MIDDLE_BUTTON_UP |
+        RI_MOUSE_BUTTON_4_DOWN | RI_MOUSE_BUTTON_4_UP |
+        RI_MOUSE_BUTTON_5_DOWN | RI_MOUSE_BUTTON_5_UP;
+
+    static FORCE_INLINE uint8_t ConvertMouseButtonLUT(USHORT flagsDown) {
+        switch (flagsDown & 0x1F) {
+        case RI_MOUSE_LEFT_BUTTON_DOWN: return 1 << kMB_Left;
+        case RI_MOUSE_RIGHT_BUTTON_DOWN: return 1 << kMB_Right;
+        case RI_MOUSE_MIDDLE_BUTTON_DOWN: return 1 << kMB_Middle;
+        case RI_MOUSE_BUTTON_4_DOWN: return 1 << kMB_X1;
+        case RI_MOUSE_BUTTON_5_DOWN: return 1 << kMB_X2;
+        default: return 0;
+        }
+    }
+
+    static FORCE_INLINE uint8_t ConvertMouseButtonUpLUT(USHORT flagsUp) {
+        switch (flagsUp & 0x1F) {
+        case RI_MOUSE_LEFT_BUTTON_UP: return 1 << kMB_Left;
+        case RI_MOUSE_RIGHT_BUTTON_UP: return 1 << kMB_Right;
+        case RI_MOUSE_MIDDLE_BUTTON_UP: return 1 << kMB_Middle;
+        case RI_MOUSE_BUTTON_4_UP: return 1 << kMB_X1;
+        case RI_MOUSE_BUTTON_5_UP: return 1 << kMB_X2;
+        default: return 0;
+        }
+    }
+
     static FORCE_INLINE void addVkToMask(HotkeyMask& m, UINT vk) noexcept;
 };
 
-#endif
+#endif // _WIN32
