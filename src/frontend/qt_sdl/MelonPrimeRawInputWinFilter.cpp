@@ -83,11 +83,13 @@ DWORD WINAPI RawInputWinFilter::ThreadFunc(LPVOID p)
 }
 
 
+
 //---------------------------------------------------------
-// threadLoop（MWMO最速）
+// threadLoop（MWMO最速 + 超低レイテンシ最適化）
 //---------------------------------------------------------
 void RawInputWinFilter::threadLoop()
 {
+    // ウィンドウクラス登録（初期化フェーズ）
     WNDCLASSW wc{};
     wc.lpfnWndProc = HiddenWndProc;
     wc.hInstance = GetModuleHandle(nullptr);
@@ -98,41 +100,61 @@ void RawInputWinFilter::threadLoop()
         L"MPH_RAWINPUT_HIDDEN", L"",
         0,
         0, 0, 0, 0,
-        nullptr, nullptr,
+        HWND_MESSAGE,  // メッセージオンリーウィンドウ（軽量化）
+        nullptr,
         GetModuleHandle(nullptr),
         this
     );
 
+    // RawInput登録
     RAWINPUTDEVICE rid[2];
-    rid[0] = { 1,2,0,hiddenWnd };
-    rid[1] = { 1,6,0,hiddenWnd };
+    rid[0] = { 1, 2, RIDEV_INPUTSINK, hiddenWnd };  // マウス
+    rid[1] = { 1, 6, RIDEV_INPUTSINK, hiddenWnd };  // キーボード
     RegisterRawInputDevices(rid, 2, sizeof(RAWINPUTDEVICE));
 
+    // スレッド優先度を最高に設定（入力レイテンシ削減）
+    // SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_TIME_CRITICAL);
+
     MSG msg;
+    bool running = true;
 
-    while (runThread.load(std::memory_order_relaxed))
+    // メインループ（最適化版）
+    while (running)
     {
-        DWORD w = MsgWaitForMultipleObjectsEx(
-            0, nullptr,
-            INFINITE,
-            QS_INPUT,
-            MWMO_INPUTAVAILABLE | MWMO_ALERTABLE
-        );
-
-        while (PeekMessage(&msg, nullptr, 0, 0, PM_REMOVE))
+        // MWMOではなく直接PeekMessage使用（レイテンシ削減）
+        // QS_INPUTのみを監視する場合、MWMOは不要
+        while (PeekMessage(&msg, hiddenWnd, 0, 0, PM_REMOVE | PM_QS_INPUT))
         {
-            if (msg.message == WM_QUIT)
-                goto exit_loop;
-            TranslateMessage(&msg);
+            if (__builtin_expect(msg.message == WM_QUIT, 0)) {
+                running = false;
+                break;
+            }
+
+            // WM_INPUTはTranslate不要（高速パス）
+            if (msg.message != WM_INPUT) {
+                TranslateMessage(&msg);
+            }
             DispatchMessage(&msg);
         }
 
-        // Joy2Key補正
+        // runThread チェック（メッセージ処理後）
+        if (__builtin_expect(!runThread.load(std::memory_order_relaxed), 0)) {
+            break;
+        }
+
+        // Joy2Key補正（メッセージ処理直後に実行）
         syncWithSendInput();
+
+        // CPU yield（ビジーウェイト回避、1ms以下でウェイクアップ）
+        // MsgWaitの代わりに軽量スリープ
+        SleepEx(0, TRUE);  // ALERTABLEでAPC処理可能
     }
 
-exit_loop:
-    hiddenWnd = nullptr;
+    // クリーンアップ
+    if (hiddenWnd) {
+        DestroyWindow(hiddenWnd);
+        hiddenWnd = nullptr;
+    }
 }
 
 
@@ -247,9 +269,6 @@ LRESULT CALLBACK RawInputWinFilter::HiddenWndProc(HWND hwnd, UINT msg, WPARAM wp
 
 //---------------------------------------------------------
 // Joy2Key（SendInput）補正
-//---------------------------------------------------------
-//---------------------------------------------------------
-// Joy2Key（SendInput）補正：cmov最適化＋bitstream最短ルート
 //---------------------------------------------------------
 void RawInputWinFilter::syncWithSendInput()
 {
