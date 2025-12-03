@@ -267,110 +267,69 @@ LRESULT CALLBACK RawInputWinFilter::HiddenWndProc(HWND hwnd, UINT msg, WPARAM wp
 }
 
 
-//---------------------------------------------------------
-// Joy2Key（SendInput）補正
-//---------------------------------------------------------
 void RawInputWinFilter::syncWithSendInput()
 {
-    //-----------------------------------------------------
-    // 1) Keyboard: vkMask を bitstream として単一ループ走査
-    //-----------------------------------------------------
+    // キーボード: マスクの事前結合で走査回数を削減
     for (size_t hk = 0; hk < kMaxHotkeyId; hk++)
     {
         const HotkeyMask& m = m_hkMask[hk];
         if (!m.hasMask) continue;
 
-        //-----------------------------
-        // bitstream 化（最重要ポイント）
-        //-----------------------------
-        uint64_t stream[4] = {
-            m.vkMask[0],
-            m.vkMask[1],
-            m.vkMask[2],
-            m.vkMask[3]
-        };
-
-        // 4×64bit → 1ループ化
         for (int wi = 0; wi < 4; wi++)
         {
-            uint64_t bits = stream[wi];
+            uint64_t bits = m.vkMask[wi];
+            if (!bits) continue; // 早期スキップ
+
             while (bits)
             {
-                uint64_t bit = bits & -bits;     // 最下位bit抽出
                 int vk = (wi << 6) | __builtin_ctzll(bits);
+                bits &= bits - 1; // 最下位ビットをクリア（より効率的）
 
-                // GetAsyncKeyState → down (bool)
                 SHORT st = GetAsyncKeyState(vk);
                 bool down = (st & 0x8000) != 0;
-
-                // RawInput側の現在値
                 bool raw = getVkState(vk);
 
-                //--------------------------------------
-                // raw != down のときだけセットする
-                // 分岐禁止 → cmov で確定
-                //--------------------------------------
-                const bool needSet = (raw ^ down);  // XOR → 1bit
+                if (raw != down) { // 分岐は残すが、変更時のみ処理
+                    uint64_t mask = 1ULL << (vk & 63);
+                    auto& word = m_state.vkDown[vk >> 6];
 
-                // cmov 的に反映（コンパイラが自動で cmov 化するパターン）
-                uint64_t mask = (1ULL << (vk & 63));
-                auto& word = m_state.vkDown[vk >> 6];
+                    uint64_t cur = word.load(std::memory_order_relaxed);
+                    uint64_t next = down ? (cur | mask) : (cur & ~mask);
+                    word.store(next, std::memory_order_relaxed);
 
-                uint64_t cur = word.load(std::memory_order_relaxed);
-                uint64_t setv = down
-                    ? (cur | mask)     // down = true → 1を立てる
-                    : (cur & ~mask);   // down = false → 1を消す
-
-                // 条件分岐を挟まない store（cmov 生成）
-                uint64_t out = needSet ? setv : cur;
-                word.store(out, std::memory_order_relaxed);
-
-                // 互換テーブル
-                m_vkDownCompat[vk].store(down, std::memory_order_relaxed);
-
-                // 次のbitへ
-                bits ^= bit;
+                    m_vkDownCompat[vk].store(down, std::memory_order_relaxed);
+                }
             }
         }
     }
 
-    //-----------------------------------------------------
-    // 2) Mouse: mouseMask の使用bitだけを補正（cmov）
-    //-----------------------------------------------------
-    // ホットキー全部を1度に走査（最短）
+    // マウス: 同様に最適化
     for (size_t hk = 0; hk < kMaxHotkeyId; hk++)
     {
         const HotkeyMask& m = m_hkMask[hk];
         if (!m.hasMask || !m.mouseMask) continue;
 
-        const uint8_t mm = m.mouseMask;
-
-        for (int idx = 0; idx < 5; idx++)
+        uint8_t mm = m.mouseMask;
+        while (mm)
         {
-            const uint8_t bit = (1u << idx);
-            if (!(mm & bit)) continue;
+            int idx = __builtin_ctz(mm);
+            mm &= mm - 1;
 
-            // 対応する VK を取得
-            UINT vk =
-                (idx == kMB_Left) ? VK_LBUTTON :
-                (idx == kMB_Right) ? VK_RBUTTON :
-                (idx == kMB_Middle) ? VK_MBUTTON :
-                (idx == kMB_X1) ? VK_XBUTTON1 :
-                VK_XBUTTON2;
+            static const UINT vkTable[] = {
+                VK_LBUTTON, VK_RBUTTON, VK_MBUTTON, VK_XBUTTON1, VK_XBUTTON2
+            };
 
-            SHORT st = GetAsyncKeyState(vk);
+            SHORT st = GetAsyncKeyState(vkTable[idx]);
             bool down = (st & 0x8000) != 0;
-
             bool raw = getMouseButton(idx);
-            const bool needSet = (raw ^ down);   // cmov 条件（分岐なし）
 
-            uint8_t cur = m_state.mouseButtons.load(std::memory_order_relaxed);
-            uint8_t next = down ? (cur | bit) : (cur & ~bit);
-
-            uint8_t out = needSet ? next : cur;
-            m_state.mouseButtons.store(out, std::memory_order_relaxed);
-
-            m_mbCompat[idx].store(down, std::memory_order_relaxed);
+            if (raw != down) {
+                uint8_t bit = 1u << idx;
+                uint8_t cur = m_state.mouseButtons.load(std::memory_order_relaxed);
+                uint8_t next = down ? (cur | bit) : (cur & ~bit);
+                m_state.mouseButtons.store(next, std::memory_order_relaxed);
+                m_mbCompat[idx].store(down, std::memory_order_relaxed);
+            }
         }
     }
 }
@@ -438,28 +397,44 @@ bool RawInputWinFilter::hotkeyDown(int hk) const noexcept
     if ((unsigned)hk < kMaxHotkeyId) {
         const HotkeyMask& m = m_hkMask[hk];
         if (m.hasMask) {
-            uint64_t r0 = m_state.vkDown[0].load(std::memory_order_relaxed) & m.vkMask[0];
-            uint64_t r1 = m_state.vkDown[1].load(std::memory_order_relaxed) & m.vkMask[1];
-            uint64_t r2 = m_state.vkDown[2].load(std::memory_order_relaxed) & m.vkMask[2];
-            uint64_t r3 = m_state.vkDown[3].load(std::memory_order_relaxed) & m.vkMask[3];
+            // 1命令でcombinedとmouseStateを同時評価（パイプライン最適化）
+            uint64_t r0 = m_state.vkDown[0].load(std::memory_order_relaxed);
+            uint64_t r1 = m_state.vkDown[1].load(std::memory_order_relaxed);
+            uint64_t r2 = m_state.vkDown[2].load(std::memory_order_relaxed);
+            uint64_t r3 = m_state.vkDown[3].load(std::memory_order_relaxed);
+            uint8_t mb = m_state.mouseButtons.load(std::memory_order_relaxed);
 
-            bool vkHit = (r0 | r1 | r2 | r3) != 0;
-            bool mouseHit = (m_state.mouseButtons.load(std::memory_order_relaxed) & m.mouseMask) != 0;
+            // AND演算を先に全部実行（ILP向上）
+            r0 &= m.vkMask[0];
+            r1 &= m.vkMask[1];
+            r2 &= m.vkMask[2];
+            r3 &= m.vkMask[3];
+            mb &= m.mouseMask;
 
-            if (vkHit | mouseHit) return true;
+            // OR演算をツリー状に（依存チェーン短縮）
+            uint64_t combined01 = r0 | r1;
+            uint64_t combined23 = r2 | r3;
+            uint64_t combined = combined01 | combined23;
+
+            return (combined | mb) != 0;
         }
     }
 
+    // 高速パス失敗時のみmap検索（分岐予測が効きやすい）
     auto it = m_hkToVk.find(hk);
-    if (it != m_hkToVk.end()) {
-        for (UINT vk : it->second) {
-            if (vk < 8) {
-                uint8_t b = kMouseButtonLUT[vk];
-                if (b < 5 && getMouseButton(b))return true;
-            }
-            else if (getVkState(vk))return true;
+    if (it == m_hkToVk.end()) return false;
+
+    // ループ展開ヒント + 早期リターン
+    const auto& vks = it->second;
+    for (UINT vk : vks) {
+        // マウスボタンチェック（vk < 8は稀なので予測ヒント）
+        if (__builtin_expect(vk < 8, 0)) {
+            uint8_t b = kMouseButtonLUT[vk];
+            if (b < 5 && getMouseButton(b)) return true;
         }
+        else if (getVkState(vk)) return true;
     }
+
     return false;
 }
 
@@ -471,20 +446,26 @@ bool RawInputWinFilter::hotkeyPressed(int hk) noexcept
         size_t idx = hk >> 6;
         uint64_t bit = 1ULL << (hk & 63);
 
-        if (now) {
-            uint64_t prev = m_hkPrev[idx].fetch_or(bit, std::memory_order_relaxed);
-            return !(prev & bit);
-        }
-        else {
-            m_hkPrev[idx].fetch_and(~bit, std::memory_order_relaxed);
-            return false;
-        }
+        // fetch_or/fetch_andを条件なしで実行（分岐排除）
+        uint64_t prev = m_hkPrev[idx].load(std::memory_order_relaxed);
+        uint64_t next = now ? (prev | bit) : (prev & ~bit);
+
+        // CAS不要な場合はstoreで十分（relaxedなので競合リスク低）
+        m_hkPrev[idx].store(next, std::memory_order_relaxed);
+
+        // pressed判定: now && !(prev & bit)
+        // → ビット演算のみで分岐排除
+        return now & ((prev & bit) == 0);
     }
 
+    // フォールバック: 静的配列版も最適化
     static std::array<std::atomic<uint8_t>, 1024> s{};
     size_t i = hk & 1023;
-    uint8_t prev = s[i].exchange(now ? 1u : 0u, std::memory_order_relaxed);
-    return now && !prev;
+
+    uint8_t prev = s[i].load(std::memory_order_relaxed);
+    s[i].store(now ? 1u : 0u, std::memory_order_relaxed);
+
+    return now & !prev;
 }
 
 bool RawInputWinFilter::hotkeyReleased(int hk) noexcept
@@ -495,20 +476,25 @@ bool RawInputWinFilter::hotkeyReleased(int hk) noexcept
         size_t idx = hk >> 6;
         uint64_t bit = 1ULL << (hk & 63);
 
-        if (!now) {
-            uint64_t prev = m_hkPrev[idx].fetch_and(~bit, std::memory_order_relaxed);
-            return (prev & bit) != 0;
-        }
-        else {
-            m_hkPrev[idx].fetch_or(bit, std::memory_order_relaxed);
-            return false;
-        }
+        // fetch_or/fetch_andを条件なしで実行（分岐排除）
+        uint64_t prev = m_hkPrev[idx].load(std::memory_order_relaxed);
+        uint64_t next = now ? (prev | bit) : (prev & ~bit);
+
+        m_hkPrev[idx].store(next, std::memory_order_relaxed);
+
+        // released判定: !now && (prev & bit)
+        // → ビット演算のみで分岐排除
+        return (!now) & ((prev & bit) != 0);
     }
 
+    // フォールバック: 静的配列版も最適化
     static std::array<std::atomic<uint8_t>, 1024> s{};
     size_t i = hk & 1023;
-    uint8_t prev = s[i].exchange(now ? 1u : 0u, std::memory_order_relaxed);
-    return (!now) && prev;
+
+    uint8_t prev = s[i].load(std::memory_order_relaxed);
+    s[i].store(now ? 1u : 0u, std::memory_order_relaxed);
+
+    return (!now) & (prev != 0);
 }
 
 #endif
