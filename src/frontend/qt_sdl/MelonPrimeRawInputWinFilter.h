@@ -80,7 +80,7 @@ private:
 
     static constexpr size_t kMaxHotkeyId = 256;
 
-    alignas(64) BYTE m_rawBuf[256] = {};
+    alignas(64) BYTE m_rawBuf[64] = {};
 
     struct StateBits {
         std::atomic<uint64_t> vkDown[4];
