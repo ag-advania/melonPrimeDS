@@ -122,11 +122,11 @@ void RawInputWinFilter::onKeyboard_fast(RawInputWinFilter* self, RAWINPUT* raw)
     uint32_t w = vk >> 6;
     uint64_t bit = 1ULL << (vk & 63);
 
-    uint64_t cur = self->m_state.vkDown[w].load();
-    uint64_t want = down ? bit : 0ULL;
-    uint64_t mask = (cur ^ want) & bit;
+    uint64_t cur = self->m_state.vkDown[w].load(std::memory_order_relaxed);
+    uint64_t nxt = down ? (cur | bit) : (cur & ~bit);
 
-    self->m_state.vkDown[w].store(cur ^ mask);
+    self->m_state.vkDown[w].store(nxt, std::memory_order_relaxed);
+
 }
 
 
