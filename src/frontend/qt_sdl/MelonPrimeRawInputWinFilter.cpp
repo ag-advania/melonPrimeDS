@@ -170,12 +170,18 @@ DWORD WINAPI RawInputWinFilter::ThreadFunc(LPVOID param)
 
 void RawInputWinFilter::threadLoop()
 {
+    //=====================================================
+    // 1. Hidden window class
+    //=====================================================
     WNDCLASSW wc{};
     wc.lpfnWndProc = HiddenWndProc;
     wc.hInstance = GetModuleHandle(nullptr);
     wc.lpszClassName = L"MPH_RI_HIDDEN_CLASS_LV_MIN";
     RegisterClassW(&wc);
 
+    //=====================================================
+    // 2. Create hidden window
+    //=====================================================
     hiddenWnd = CreateWindowW(
         L"MPH_RI_HIDDEN_CLASS_LV_MIN", L"",
         0, 0, 0, 0, 0,
@@ -184,65 +190,72 @@ void RawInputWinFilter::threadLoop()
         this
     );
 
+    //=====================================================
+    // 3. Register RawInput devices (mouse + keyboard)
+    //=====================================================
     RAWINPUTDEVICE rid[2]{
-        {1,2,0,hiddenWnd},
-        {1,6,0,hiddenWnd}
+        {1,2,0,hiddenWnd}, // mouse
+        {1,6,0,hiddenWnd}  // keyboard
     };
     RegisterRawInputDevices(rid, 2, sizeof(RAWINPUTDEVICE));
 
+    //=====================================================
+    // 4. 超短ループ（安全版）
+    //    「WM_INPUTがキューに来ている限り、最短経路で処理」
+    //=====================================================
     MSG msg;
 
     while (runThread.load(std::memory_order_relaxed))
     {
-        DWORD w = MsgWaitForMultipleObjectsEx(
-            0, nullptr,
-            INFINITE,
-            QS_INPUT,
-            MWMO_INPUTAVAILABLE
-        );
+        // ★★ MsgWait / GetMessage を全部やめる
+        //     → PeekMessage 単発のみ（インライン化されやすい）
+        //     → sysenter 最小化
+        //
+        // これが “安全版でできる最短の RawInput loop”
+        //
+        if (!PeekMessage(&msg, nullptr, 0, 0, PM_REMOVE))
+            continue;                           // 分岐１つでループ回転（高速）
 
-        if (w == WAIT_FAILED)
-            continue;
-
-        // ★ WM_INPUT のみ高速処理
-        while (PeekMessage(&msg, nullptr, 0, 0, PM_REMOVE))
+        //-------------------------------------------------
+        // WM_INPUT なら即 RawInputData を読み込む
+        //-------------------------------------------------
+        if (msg.message == WM_INPUT)
         {
-            switch (msg.message)
-            {
-            case WM_INPUT:
-            {
-                UINT size = sizeof(RAWINPUT);
-                GetRawInputData(
-                    (HRAWINPUT)msg.lParam,
-                    RID_INPUT,
-                    m_rawBuf,
-                    &size,
-                    sizeof(RAWINPUTHEADER)
-                );
+            UINT size = sizeof(RAWINPUT);
 
-                RAWINPUT* raw = reinterpret_cast<RAWINPUT*>(m_rawBuf);
+            GetRawInputData(
+                (HRAWINPUT)msg.lParam,
+                RID_INPUT,
+                m_rawBuf,
+                &size,
+                sizeof(RAWINPUTHEADER)
+            );
 
-                // ★ OPT: 直接分岐
-                if (raw->header.dwType == RIM_TYPEMOUSE)
-                    onMouse_fast(this, raw);
-                else
-                    onKeyboard_fast(this, raw);
+            RAWINPUT* raw = reinterpret_cast<RAWINPUT*>(m_rawBuf);
 
-                break;
-            }
+            // 直接分岐（handlerTbl 廃止済み）
+            if (raw->header.dwType == RIM_TYPEMOUSE)
+                onMouse_fast(this, raw);
+            else
+                onKeyboard_fast(this, raw);
 
-            case WM_QUIT:
-                goto exit;
-
-            default:
-                break;
-            }
+            continue;
         }
+
+        //-------------------------------------------------
+        // 終了
+        //-------------------------------------------------
+        if (msg.message == WM_QUIT)
+            break;
+
+        //-------------------------------------------------
+        // その他のメッセージは無視（Qtに干渉しない）
+        //-------------------------------------------------
     }
 
-exit:
     hiddenWnd = nullptr;
 }
+
 
 
 
