@@ -11,10 +11,11 @@ RawInputWinFilter::RawInputWinFilter()
 {
     for (auto& a : m_vkDownCompat) a.store(0, std::memory_order_relaxed);
     for (auto& b : m_mbCompat)     b.store(0, std::memory_order_relaxed);
-    for (auto& w : m_hkPrevAll)    w.store(0, std::memory_order_relaxed);
+    for (auto& e : m_hkPrevAll)    e.store(0, std::memory_order_relaxed);
 
     std::memset(m_hkMask.data(), 0, sizeof(m_hkMask));
     std::memset(m_usedVkTable.data(), 0, sizeof(m_usedVkTable));
+    std::memset(m_usedVkMask, 0, sizeof(m_usedVkMask));
     std::memset(m_keyBitmap.data(), 0, sizeof(m_keyBitmap));
 
     runThread.store(true, std::memory_order_relaxed);
@@ -22,8 +23,6 @@ RawInputWinFilter::RawInputWinFilter()
 }
 
 
-//=====================================================
-// Destructor
 //=====================================================
 RawInputWinFilter::~RawInputWinFilter()
 {
@@ -40,15 +39,6 @@ RawInputWinFilter::~RawInputWinFilter()
 
 
 //=====================================================
-// Qt fallback → 完全無効化
-//=====================================================
-bool RawInputWinFilter::nativeEventFilter(const QByteArray&, void*, qintptr*)
-{
-    return false;
-}
-
-
-//=====================================================
 // Mouse fast
 //=====================================================
 void RawInputWinFilter::onMouse_fast(RawInputWinFilter* self, RAWINPUT* raw)
@@ -57,17 +47,15 @@ void RawInputWinFilter::onMouse_fast(RawInputWinFilter* self, RAWINPUT* raw)
 
     LONG dx = m.lLastX;
     LONG dy = m.lLastY;
-
     if (dx | dy)
         self->addDelta(dx, dy);
 
     USHORT f = m.usButtonFlags;
-    if (!(
-        f & (RI_MOUSE_LEFT_BUTTON_DOWN | RI_MOUSE_LEFT_BUTTON_UP |
-            RI_MOUSE_RIGHT_BUTTON_DOWN | RI_MOUSE_RIGHT_BUTTON_UP |
-            RI_MOUSE_MIDDLE_BUTTON_DOWN | RI_MOUSE_MIDDLE_BUTTON_UP |
-            RI_MOUSE_BUTTON_4_DOWN | RI_MOUSE_BUTTON_4_UP |
-            RI_MOUSE_BUTTON_5_DOWN | RI_MOUSE_BUTTON_5_UP)))
+    if (!(f & (RI_MOUSE_LEFT_BUTTON_DOWN | RI_MOUSE_LEFT_BUTTON_UP |
+        RI_MOUSE_RIGHT_BUTTON_DOWN | RI_MOUSE_RIGHT_BUTTON_UP |
+        RI_MOUSE_MIDDLE_BUTTON_DOWN | RI_MOUSE_MIDDLE_BUTTON_UP |
+        RI_MOUSE_BUTTON_4_DOWN | RI_MOUSE_BUTTON_4_UP |
+        RI_MOUSE_BUTTON_5_DOWN | RI_MOUSE_BUTTON_5_UP)))
         return;
 
     uint8_t cur = self->m_state.mouseButtons.load(std::memory_order_relaxed);
@@ -77,12 +65,12 @@ void RawInputWinFilter::onMouse_fast(RawInputWinFilter* self, RAWINPUT* raw)
     if (f & RI_MOUSE_LEFT_BUTTON_UP)    u |= 1;
     if (f & RI_MOUSE_RIGHT_BUTTON_DOWN) d |= 2;
     if (f & RI_MOUSE_RIGHT_BUTTON_UP)   u |= 2;
-    if (f & RI_MOUSE_MIDDLE_BUTTON_DOWN) d |= 4;
-    if (f & RI_MOUSE_MIDDLE_BUTTON_UP)   u |= 4;
-    if (f & RI_MOUSE_BUTTON_4_DOWN) d |= 8;
-    if (f & RI_MOUSE_BUTTON_4_UP)   u |= 8;
-    if (f & RI_MOUSE_BUTTON_5_DOWN) d |= 16;
-    if (f & RI_MOUSE_BUTTON_5_UP)   u |= 16;
+    if (f & RI_MOUSE_MIDDLE_BUTTON_DOWN)d |= 4;
+    if (f & RI_MOUSE_MIDDLE_BUTTON_UP)  u |= 4;
+    if (f & RI_MOUSE_BUTTON_4_DOWN)     d |= 8;
+    if (f & RI_MOUSE_BUTTON_4_UP)       u |= 8;
+    if (f & RI_MOUSE_BUTTON_5_DOWN)     d |= 16;
+    if (f & RI_MOUSE_BUTTON_5_UP)       u |= 16;
 
     uint8_t nxt = (cur | d) & ~u;
     self->m_state.mouseButtons.store(nxt, std::memory_order_relaxed);
@@ -106,15 +94,18 @@ void RawInputWinFilter::onKeyboard_fast(RawInputWinFilter* self, RAWINPUT* raw)
     bool isUp = (k.Flags & RI_KEY_BREAK);
     bool down = !isUp;
 
-    if (vk == VK_SHIFT) {
+    if (vk == VK_SHIFT)
+    {
         UINT sc = k.MakeCode;
         vk = (sc == 0x2A) ? VK_LSHIFT :
             (sc == 0x36) ? VK_RSHIFT : VK_SHIFT;
     }
-    else if (vk == VK_CONTROL) {
+    else if (vk == VK_CONTROL)
+    {
         vk = (k.Flags & RI_KEY_E0) ? VK_RCONTROL : VK_LCONTROL;
     }
-    else if (vk == VK_MENU) {
+    else if (vk == VK_MENU)
+    {
         vk = (k.Flags & RI_KEY_E0) ? VK_RMENU : VK_LMENU;
     }
 
@@ -123,14 +114,14 @@ void RawInputWinFilter::onKeyboard_fast(RawInputWinFilter* self, RAWINPUT* raw)
 
     uint32_t w = vk >> 6;
     uint64_t bit = 1ULL << (vk & 63);
+
     uint64_t cur = self->m_state.vkDown[w].load(std::memory_order_relaxed);
     uint64_t nxt = down ? (cur | bit) : (cur & ~bit);
+
     self->m_state.vkDown[w].store(nxt, std::memory_order_relaxed);
 }
 
 
-//=====================================================
-// ThreadFunc
 //=====================================================
 DWORD WINAPI RawInputWinFilter::ThreadFunc(LPVOID p)
 {
@@ -140,7 +131,7 @@ DWORD WINAPI RawInputWinFilter::ThreadFunc(LPVOID p)
 
 
 //=====================================================
-// RawInput threadLoop
+// RawInput thread loop
 //=====================================================
 void RawInputWinFilter::threadLoop()
 {
@@ -168,16 +159,14 @@ void RawInputWinFilter::threadLoop()
 
     while (runThread.load(std::memory_order_relaxed))
     {
-        if (!PeekMessage(&msg, nullptr, 0, 0, PM_REMOVE)) {
+        if (!PeekMessage(&msg, nullptr, 0, 0, PM_REMOVE))
+        {
             syncWithSendInput();
             continue;
         }
 
-        if (msg.message == WM_INPUT) {
-
-            //---------------------------------------------------------
-            // WM_INPUT → サイズ取得 → 一括読み取り（1回だけ）
-            //---------------------------------------------------------
+        if (msg.message == WM_INPUT)
+        {
             UINT size = 0;
 
             GetRawInputData(
@@ -188,7 +177,8 @@ void RawInputWinFilter::threadLoop()
                 sizeof(RAWINPUTHEADER)
             );
 
-            if (size <= sizeof(m_rawBuf)) {
+            if (size <= sizeof(m_rawBuf))
+            {
                 GetRawInputData(
                     reinterpret_cast<HRAWINPUT>(msg.lParam),
                     RID_INPUT,
@@ -217,12 +207,11 @@ void RawInputWinFilter::threadLoop()
 
 
 //=====================================================
-// HiddenWndProc
-//=====================================================
 LRESULT CALLBACK RawInputWinFilter::HiddenWndProc(
     HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
 {
-    switch (msg) {
+    switch (msg)
+    {
     case WM_CREATE:   return 0;
     case WM_INPUT:    return 0;
     case WM_CLOSE:
@@ -233,52 +222,57 @@ LRESULT CALLBACK RawInputWinFilter::HiddenWndProc(
 
 
 //=====================================================
-// Joy2Key 補正（bitmap化最速版）
+// Joy2Key 補正（bitmap + BFS）
 //=====================================================
 void RawInputWinFilter::syncWithSendInput()
 {
-    //------------------------------------------------------
-    // 256キーまとめて読み取り（GetKeyboardState 1回）
-    //------------------------------------------------------
+    //--- 256キーをまとめて1回取得 ---
     BYTE buf[256];
     GetKeyboardState(buf);
 
     for (int i = 0; i < 256; i++)
         m_keyBitmap[i] = (buf[i] & 0x80) ? 1 : 0;
 
-    //------------------------------------------------------
-    // Keyboard 補正
-    //------------------------------------------------------
-    for (UINT vk = 0; vk < 256; vk++) {
-        if (!m_usedVkTable[vk]) continue;
 
-        bool down = m_keyBitmap[vk] != 0;
-        bool raw = getVkState(vk);
+    //--- BSF で使用キーだけ走査 ---
+    for (int blk = 0; blk < 4; blk++)
+    {
+        uint64_t mask = m_usedVkMask[blk];
 
-        if (raw != down)
-            setVkBit(vk, down);
+        while (mask)
+        {
+            unsigned long bit;
+            _BitScanForward64(&bit, mask);
 
-        m_vkDownCompat[vk].store(down, std::memory_order_relaxed);
+            UINT vk = (blk << 6) | bit;
+            mask &= (mask - 1);
+
+            bool down = m_keyBitmap[vk] != 0;
+            bool raw = getVkState(vk);
+
+            if (raw != down)
+                setVkBit(vk, down);
+
+            m_vkDownCompat[vk].store(down, std::memory_order_relaxed);
+        }
     }
 
-    //------------------------------------------------------
-    // Mouse 補正（GetAsyncKeyState 必須）
-    //------------------------------------------------------
-    struct { UINT vk; uint8_t idx; } map[]{
-        {VK_LBUTTON,0},
-        {VK_RBUTTON,1},
-        {VK_MBUTTON,2},
-        {VK_XBUTTON1,3},
-        {VK_XBUTTON2,4}
+
+    //--- Mouse 補正 ---
+    struct { UINT vk; uint8_t idx; } tbl[]{
+        {VK_LBUTTON,0}, {VK_RBUTTON,1}, {VK_MBUTTON,2},
+        {VK_XBUTTON1,3}, {VK_XBUTTON2,4},
     };
 
-    for (auto& m : map) {
+    for (auto& m : tbl)
+    {
         if (!m_usedVkTable[m.vk]) continue;
 
         bool down = (GetAsyncKeyState(m.vk) & 0x8000) != 0;
         bool raw = getMouseButton(m.idx);
 
-        if (raw != down) {
+        if (raw != down)
+        {
             uint8_t cur = m_state.mouseButtons.load(std::memory_order_relaxed);
             uint8_t nxt = down ? (cur | (1 << m.idx)) : (cur & ~(1 << m.idx));
             m_state.mouseButtons.store(nxt, std::memory_order_relaxed);
@@ -290,39 +284,43 @@ void RawInputWinFilter::syncWithSendInput()
 
 
 //=====================================================
-// Reset
-//=====================================================
 void RawInputWinFilter::resetAllKeys()
 {
     for (auto& v : m_state.vkDown)
         v.store(0, std::memory_order_relaxed);
-    for (auto& a : m_vkDownCompat)
-        a.store(0, std::memory_order_relaxed);
+
+    for (auto& c : m_vkDownCompat)
+        c.store(0, std::memory_order_relaxed);
 }
 
+
+//=====================================================
 void RawInputWinFilter::resetMouseButtons()
 {
     m_state.mouseButtons.store(0, std::memory_order_relaxed);
-    for (auto& a : m_mbCompat)
-        a.store(0, std::memory_order_relaxed);
-}
 
-void RawInputWinFilter::resetHotkeyEdges()
-{
-    for (auto& v : m_hkPrevAll)
-        v.store(0, std::memory_order_relaxed);
+    for (auto& m : m_mbCompat)
+        m.store(0, std::memory_order_relaxed);
 }
 
 
 //=====================================================
-// Hotkey 判定
+void RawInputWinFilter::resetHotkeyEdges()
+{
+    for (auto& h : m_hkPrevAll)
+        h.store(0, std::memory_order_relaxed);
+}
+
+
 //=====================================================
 bool RawInputWinFilter::hotkeyDown(int hk) const noexcept
 {
-    if ((unsigned)hk < kMaxHotkeyId) {
+    if ((unsigned)hk < kMaxHotkeyId)
+    {
         const HotkeyMask& m = m_hkMask[hk];
 
-        if (m.hasMask) {
+        if (m.hasMask)
+        {
             uint64_t a = m_state.vkDown[0].load(std::memory_order_relaxed) & m.vkMask[0];
             uint64_t b = m_state.vkDown[1].load(std::memory_order_relaxed) & m.vkMask[1];
             uint64_t c = m_state.vkDown[2].load(std::memory_order_relaxed) & m.vkMask[2];
@@ -338,15 +336,21 @@ bool RawInputWinFilter::hotkeyDown(int hk) const noexcept
         }
     }
 
+    // fallback
     auto it = m_hkToVk.find(hk);
-    if (it != m_hkToVk.end()) {
-        for (UINT vk : it->second) {
-            if (vk < 8) {
+    if (it != m_hkToVk.end())
+    {
+        for (UINT vk : it->second)
+        {
+            if (vk < 8)
+            {
                 static constexpr uint8_t tbl[8] = { 255,0,1,255,2,3,4,255 };
                 uint8_t idx = tbl[vk];
-                if (idx < 5 && getMouseButton(idx)) return true;
+                if (idx < 5 && getMouseButton(idx))
+                    return true;
             }
-            else if (vk < 256 && getVkState(vk)) return true;
+            else if (vk < 256 && getVkState(vk))
+                return true;
         }
     }
 
@@ -354,47 +358,57 @@ bool RawInputWinFilter::hotkeyDown(int hk) const noexcept
 }
 
 
+//=====================================================
 bool RawInputWinFilter::hotkeyPressed(int hk) noexcept
 {
     bool now = hotkeyDown(hk);
-    uint8_t prev = m_hkPrevAll[hk & 1023].exchange(now ? 1u : 0u, std::memory_order_relaxed);
-    return now && !prev;
+    uint8_t prev = m_hkPrevAll[hk & 1023].exchange(now, std::memory_order_acq_rel);
+    return (!prev && now);
 }
 
+
+//=====================================================
 bool RawInputWinFilter::hotkeyReleased(int hk) noexcept
 {
     bool now = hotkeyDown(hk);
-    uint8_t prev = m_hkPrevAll[hk & 1023].exchange(now ? 1u : 0u, std::memory_order_relaxed);
-    return (!now) && prev;
+    uint8_t prev = m_hkPrevAll[hk & 1023].exchange(now, std::memory_order_acq_rel);
+    return (prev && !now);
 }
 
 
-//=====================================================
-// setHotkeyVks
 //=====================================================
 void RawInputWinFilter::setHotkeyVks(int hk, const std::vector<UINT>& vks)
 {
-    if ((unsigned)hk < kMaxHotkeyId) {
+    if ((unsigned)hk < kMaxHotkeyId)
+    {
         HotkeyMask& m = m_hkMask[hk];
-
         std::memset(&m, 0, sizeof(m));
 
-        for (UINT vk : vks) {
+        for (UINT vk : vks)
+        {
             if (vk == 0) continue;
-
             addVkToMask(m, vk);
 
             if (vk < 256)
+            {
                 m_usedVkTable[vk] = 1;
+                m_usedVkMask[vk >> 6] |= (1ULL << (vk & 63));
+            }
         }
     }
-    else {
+    else
+    {
         m_hkToVk[hk] = vks;
 
         for (UINT vk : vks)
+        {
             if (vk < 256)
+            {
                 m_usedVkTable[vk] = 1;
+                m_usedVkMask[vk >> 6] |= (1ULL << (vk & 63));
+            }
+        }
     }
 }
 
-#endif
+#endif // _WIN32
