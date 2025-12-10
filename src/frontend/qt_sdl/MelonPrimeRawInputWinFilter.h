@@ -29,94 +29,116 @@ public:
     RawInputWinFilter();
     ~RawInputWinFilter() override;
 
-    bool nativeEventFilter(const QByteArray&, void* message, qintptr*) override;
+    //--------------------------------------------------
+    // Qt fallback → 完全無効化
+    //--------------------------------------------------
+    bool nativeEventFilter(const QByteArray&, void*, qintptr*) override;
 
-    void fetchMouseDelta(int& outDx, int& outDy);
-    void discardDeltas();
+    //--------------------------------------------------
+    // Public utilities
+    //--------------------------------------------------
+    void fetchMouseDelta(int& outDx, int& outDy)
+    {
+        outDx = m_dx.exchange(0, std::memory_order_relaxed);
+        outDy = m_dy.exchange(0, std::memory_order_relaxed);
+    }
+
+    FORCE_INLINE void discardDeltas() noexcept
+    {
+        m_dx.store(0, std::memory_order_relaxed);
+        m_dy.store(0, std::memory_order_relaxed);
+    }
 
     void resetAllKeys();
     void resetMouseButtons();
     void resetHotkeyEdges();
 
-    void setHotkeyVks(int hk, const std::vector<UINT>& vks);
+    //--------------------------------------------------
+    // Hotkeys
+    //--------------------------------------------------
+    static constexpr size_t kMaxHotkeyId = 256;
 
     bool hotkeyDown(int hk) const noexcept;
     bool hotkeyPressed(int hk) noexcept;
     bool hotkeyReleased(int hk) noexcept;
-
-
-    struct BtnLutEntry { uint8_t down; uint8_t up; };
-    static BtnLutEntry s_btnLut[1024] alignas(128);
-
-    static constexpr uint8_t kMouseButtonLUT[8] = {
-        0xFF, 0, 1, 0xFF,
-        2, 3, 4, 0xFF
-    };
+    void setHotkeyVks(int hk, const std::vector<UINT>& vks);
 
 private:
-
     //--------------------------------------------------
-    // RawInput Thread
+    // RawInput thread
     //--------------------------------------------------
     HANDLE hThread = nullptr;
     HWND hiddenWnd = nullptr;
     std::atomic<bool> runThread{ false };
 
-    static DWORD WINAPI ThreadFunc(LPVOID param);
+    static DWORD WINAPI ThreadFunc(LPVOID);
     void threadLoop();
-
     static LRESULT CALLBACK HiddenWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp);
 
-
     //--------------------------------------------------
-    // 高速 dispatch
+    // RawInput dispatch (fast path)
     //--------------------------------------------------
     static void onMouse_fast(RawInputWinFilter* self, RAWINPUT* raw);
     static void onKeyboard_fast(RawInputWinFilter* self, RAWINPUT* raw);
 
-    using HandlerFn = void(*)(RawInputWinFilter*, RAWINPUT*);
-    static constexpr HandlerFn handlerTbl[2] = {
-        &onMouse_fast,
-        &onKeyboard_fast
-    };
-
+    //--------------------------------------------------
+    // Joy2Key（SendInput）補正（bitmap高速版）
+    //--------------------------------------------------
+    void syncWithSendInput();
 
     //--------------------------------------------------
-    // RAWINPUT バッファ（※復活）
+    // RawInput buffer (64～80byte程度)
     //--------------------------------------------------
-    alignas(128) BYTE m_rawBuf[128] = {};   // ★ これが無いと GetRawInputData が動かない
-
+    alignas(128) BYTE m_rawBuf[128]{};
 
     //--------------------------------------------------
-    // Key / Mouse 状態
+    // キーボード・マウス状態
     //--------------------------------------------------
     struct alignas(128) StateBits {
-        std::array<std::atomic<uint64_t>, 4> vkDown;
+        std::array<std::atomic<uint64_t>, 4> vkDown;   // 256bit
         std::atomic<uint8_t> mouseButtons;
     } m_state{ {0,0,0,0}, 0 };
 
-
+    //--------------------------------------------------
+    // Keyboard helpers
+    //--------------------------------------------------
     FORCE_INLINE bool getVkState(uint32_t vk) const noexcept {
-        if (vk >= 256) return false;
-        return (m_state.vkDown[vk >> 6].load()
-            >> (vk & 63)) & 1ULL;
+        uint32_t w = vk >> 6;
+        uint64_t b = 1ULL << (vk & 63);
+        return (m_state.vkDown[w].load(std::memory_order_relaxed) & b) != 0;
     }
+
+    FORCE_INLINE void setVkBit(uint32_t vk, bool down) noexcept {
+        uint32_t w = vk >> 6;
+        uint64_t bit = 1ULL << (vk & 63);
+        uint64_t cur = m_state.vkDown[w].load(std::memory_order_relaxed);
+        uint64_t nxt = down ? (cur | bit) : (cur & ~bit);
+        m_state.vkDown[w].store(nxt, std::memory_order_relaxed);
+    }
+
+    //--------------------------------------------------
+    // Mouse bit helpers
+    //--------------------------------------------------
+    enum MouseIndex : uint8_t { kMB_Left = 0, kMB_Right, kMB_Middle, kMB_X1, kMB_X2 };
 
     FORCE_INLINE bool getMouseButton(uint8_t idx) const noexcept {
-        uint8_t b = m_state.mouseButtons.load();
-        return (idx < 5) && ((b >> idx) & 1);
+        uint8_t v = m_state.mouseButtons.load(std::memory_order_relaxed);
+        return (v >> idx) & 1u;
     }
 
+    //--------------------------------------------------
+    // Mouse delta（最速: LOCK完全排除）
+    //--------------------------------------------------
+    std::atomic<int> m_dx{ 0 };
+    std::atomic<int> m_dy{ 0 };
+
+    FORCE_INLINE void addDelta(int dx, int dy) noexcept {
+        m_dx.fetch_add(dx, std::memory_order_relaxed);
+        m_dy.fetch_add(dy, std::memory_order_relaxed);
+    }
 
     //--------------------------------------------------
-    // 【3】Mouse Deltas（atomic → volatile + Interlocked）
-    //--------------------------------------------------
-    volatile LONG dx = 0;
-    volatile LONG dy = 0;
-
-
-    //--------------------------------------------------
-    // Hotkey state
+    // Hotkey mask / edges
     //--------------------------------------------------
     struct alignas(128) HotkeyMask {
         uint64_t vkMask[4];
@@ -125,19 +147,25 @@ private:
         uint8_t  _pad[6];
     };
 
-    static constexpr size_t kMaxHotkeyId = 256;
-
     alignas(128) std::array<HotkeyMask, kMaxHotkeyId> m_hkMask{};
     std::unordered_map<int, std::vector<UINT>> m_hkToVk;
     alignas(128) std::array<std::atomic<uint8_t>, 1024> m_hkPrevAll{};
 
+    //--------------------------------------------------
+    // Joy2Key補正 → 使用されているキーのみ判定
+    //--------------------------------------------------
+    std::array<uint8_t, 256> m_usedVkTable{};
 
     //--------------------------------------------------
-    // Qt fallback（元と同じ）
+    // ビットマップ化したキーボード状態
     //--------------------------------------------------
-    std::array<std::atomic<int>, 256>     m_vkDownCompat{};
-    std::array<std::atomic<int>, 5>       m_mbCompat{};
+    alignas(64) std::array<uint8_t, 256> m_keyBitmap{};
 
+    //--------------------------------------------------
+    // Qt fallback互換（Compatibility）
+    //--------------------------------------------------
+    std::array<std::atomic<int>, 256> m_vkDownCompat{};
+    std::array<std::atomic<int>, 5>   m_mbCompat{};
 
     //--------------------------------------------------
     // Hotkey helper
