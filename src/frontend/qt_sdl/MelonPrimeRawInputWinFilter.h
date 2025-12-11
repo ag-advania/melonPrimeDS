@@ -1,4 +1,9 @@
-﻿#pragma once
+﻿
+// #ifndef MPFILTER_H はぜったい維持！ pragma once はあてにならないまじで。
+
+#ifndef MPFILTER_H
+#define MPFILTER_H
+
 #ifdef _WIN32
 
 #include <QAbstractNativeEventFilter>
@@ -179,7 +184,7 @@ private:
     //--------------------------------------------------
     // Hotkey edge
     //--------------------------------------------------
-    alignas(128) std::array<std::atomic<uint8_t>, 1024> m_hkPrevAll{};
+    alignas(128) std::array<std::atomic<uint32_t>, 1024> m_hkPrevAll{};
 
 
     //--------------------------------------------------
@@ -228,3 +233,5 @@ private:
 };
 
 #endif // _WIN32
+
+#endif // MPSETTINGSDIALOG_H
