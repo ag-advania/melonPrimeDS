@@ -54,6 +54,7 @@ public:
     bool isCursorMode = true; // MelonPrimeDS
     bool isClipWanted = false; // MelonPrimeDS カーソル拘束要求フラグ
     bool isFocused = false; // MelonPrimeDS
+    bool isInGame = false; // MelonPrimeDS
 
     void attachWindow(MainWindow* window);
     void detachWindow(MainWindow* window);

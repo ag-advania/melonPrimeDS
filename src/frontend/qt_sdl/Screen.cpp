@@ -391,23 +391,32 @@ void ScreenPanel::mousePressEvent(QMouseEvent* event)
 {
     event->accept();
 
-    /* MelonPrimeDS { */
     // so we dont press buttons before fully focusing
-    if (getIsFocused()) {
+    // （元コードと同じ: emuがアクティブなら focus->通知、ダメなら touching=false で return）
+    if (emuInstance->emuIsActive())
+    {
+        setIsFocused(true);            // MelonPrimeDS
         emuInstance->onMousePress(event); // MelonPrimeDS
     }
-    /* MelonPrimeDS } */
+    else
+    {
+        touching = false;
+        return;
+    }
 
-    if (!emuInstance->emuIsActive()) { touching = false; return; }
-    if (event->button() != Qt::LeftButton) return;
+    // 左クリック以外はここで終了（元コード同様）
+    if (event->button() != Qt::LeftButton)
+        return;
 
-    /*
+#ifdef STYLUS_MODE
+    // MelonPrimeDS: don't touch when in-game（元コード同様）
+    if (emuInstance->getEmuThread()->isInGame)
+        return;
+#endif
+
+    // touch Screen（QPointの一時変数を作らず直に取る）
     int x = event->pos().x();
     int y = event->pos().y();
-    */
-    const QPoint pos = event->pos();
-    int x = pos.x();
-    int y = pos.y();
 
     if (layout.GetTouchCoords(x, y, false))
     {
@@ -415,25 +424,17 @@ void ScreenPanel::mousePressEvent(QMouseEvent* event)
         emuInstance->touchScreen(x, y);
     }
 
-    // melonPrimeDS
-
-    if (emuInstance->emuIsActive()) {
-		setIsFocused(true); // MelonPrimeDS
-
-// #define STYLUS_MODE 1 // this is for stylus user
-
 #ifndef STYLUS_MODE
-        if (!emuInstance->getEmuThread()->isCursorMode) { // MelonPrimeDS
-
+    if (!emuInstance->getEmuThread()->isCursorMode)
+    {
 #if defined(_WIN32)
-            // 1px クリップ開始
-            clipCursorCenter1px(); // MelonPrimeDS
-#endif
-        }
-
+        // 1px クリップ開始
+        clipCursorCenter1px(); // MelonPrimeDS
 #endif
     }
+#endif
 }
+
 
 void ScreenPanel::mouseReleaseEvent(QMouseEvent* event)
 {
@@ -445,11 +446,11 @@ void ScreenPanel::mouseReleaseEvent(QMouseEvent* event)
     if (!emuInstance->emuIsActive()) { touching = false; return; }
     if (event->button() != Qt::LeftButton) return;
 
-    if (touching)
-    {
-        touching = false;
-        emuInstance->releaseScreen();
-    }
+    // ネスト削減
+    if (!touching) return;
+
+    touching = false;
+    emuInstance->releaseScreen();
 }
 
 void ScreenPanel::mouseMoveEvent(QMouseEvent* event)
