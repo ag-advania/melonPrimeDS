@@ -806,7 +806,6 @@ __attribute__((always_inline, flatten)) inline uint32_t calculatePlayerAddress(u
 }
 
 bool isAltForm;
-bool isInGame = false; // MelonPrimeDS
 bool isLayoutChangePending = true;       // MelonPrimeDS layout change flag - set true to trigger on first run
 bool isSnapTapMode = false;
 bool isUnlockHuntersMaps = false;
