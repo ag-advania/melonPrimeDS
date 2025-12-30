@@ -1,4 +1,3 @@
-// MelonPrimeRawInputWinFilter.cpp
 #ifdef _WIN32
 
 #include "MelonPrimeRawInputWinFilter.h"
@@ -37,9 +36,17 @@ static struct RawLutInit {
 //=====================================================
 RawInputWinFilter::RawInputWinFilter(bool joy2KeySupport, HWND mainHwnd)
 {
+    // hotkey edge cache（EmuThread 専用）
     for (auto& w : m_hkPrev) w = 0;
 
     std::memset(m_hkMask.data(), 0, sizeof(m_hkMask));
+
+    // dx/dy 累積（RMW回避）
+    m_prodDx = 0;
+    m_prodDy = 0;
+    m_consPrevDx = 0;
+    m_consPrevDy = 0;
+    m_mouseAccPacked.store(0, std::memory_order_relaxed);
 
     m_targetHwnd = mainHwnd;
     m_joy2KeySupport.store(joy2KeySupport, std::memory_order_relaxed);
@@ -152,12 +159,17 @@ FORCE_INLINE void RawInputWinFilter::processRawInput(HRAWINPUT hRaw) noexcept
     if (type == RIM_TYPEMOUSE) {
         const RAWMOUSE& m = raw->data.mouse;
 
-        const LONG dx_ = m.lLastX;
-        const LONG dy_ = m.lLastY;
+        const int32_t dx_ = (int32_t)m.lLastX;
+        const int32_t dy_ = (int32_t)m.lLastY;
 
         if (dx_ | dy_) {
-            dx.fetch_add((int)dx_, std::memory_order_relaxed);
-            dy.fetch_add((int)dy_, std::memory_order_relaxed);
+            // 生産者ローカル累積（単一 writer 前提）
+            // 負値も uint32_t として 2の補数で加算される（wrap差分で復元できる）
+            m_prodDx += (uint32_t)dx_;
+            m_prodDy += (uint32_t)dy_;
+
+            // 共有は store 1回だけ（RMWなし）
+            m_mouseAccPacked.store(PackU32U32(m_prodDx, m_prodDy), std::memory_order_relaxed);
         }
 
         const USHORT f = m.usButtonFlags;
@@ -316,14 +328,33 @@ LRESULT CALLBACK RawInputWinFilter::HiddenWndProc(HWND hwnd, UINT msg, WPARAM wp
 //=====================================================
 void RawInputWinFilter::fetchMouseDelta(int& outDx, int& outDy)
 {
-    outDx = dx.exchange(0, std::memory_order_relaxed);
-    outDy = dy.exchange(0, std::memory_order_relaxed);
+    // 累積の現在値を読む（RMW無し）
+    const uint64_t cur = m_mouseAccPacked.load(std::memory_order_relaxed);
+
+    uint32_t curDxU, curDyU;
+    UnpackU32U32(cur, curDxU, curDyU);
+
+    // wrap 差分（unsigned）→ signed に戻す
+    const uint32_t dDxU = curDxU - m_consPrevDx;
+    const uint32_t dDyU = curDyU - m_consPrevDy;
+
+    m_consPrevDx = curDxU;
+    m_consPrevDy = curDyU;
+
+    outDx = (int32_t)dDxU;
+    outDy = (int32_t)dDyU;
 }
 
 void RawInputWinFilter::discardDeltas()
 {
-    dx.exchange(0, std::memory_order_relaxed);
-    dy.exchange(0, std::memory_order_relaxed);
+    // 共有累積値に consumer 基準を合わせる（RMW無し）
+    const uint64_t cur = m_mouseAccPacked.load(std::memory_order_relaxed);
+
+    uint32_t curDxU, curDyU;
+    UnpackU32U32(cur, curDxU, curDyU);
+
+    m_consPrevDx = curDxU;
+    m_consPrevDy = curDyU;
 }
 
 void RawInputWinFilter::resetAllKeys()
@@ -359,11 +390,13 @@ FORCE_INLINE void RawInputWinFilter::addVkToMask(HotkeyMask& m, UINT vk) noexcep
 void RawInputWinFilter::setHotkeyVks(int hk, const std::vector<UINT>& vks)
 {
     // melonPrimeDS の HK_* は HK_MAX が小さい前提。
-    // hk は 0..255 のみを許可し、それ以外は無視する。
+    // hk は 0..255 のみを扱う（それ以外は無視）
     if ((unsigned)hk >= kMaxHotkeyId) return;
 
     HotkeyMask& m = m_hkMask[(unsigned)hk];
     std::memset(&m, 0, sizeof(m));
+
+    // vks は上限を設けず全部入れて良い（vkMask/mouseMask へ集約される）
     for (UINT vk : vks) addVkToMask(m, vk);
 }
 
