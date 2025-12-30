@@ -2807,6 +2807,30 @@ When your aim isn't going the way you want, try lowering this value.
 			</layout>
 
 		</widget>
+		<widget class="QWidget" name="tabMetroid2">
+			<attribute name="title">
+				<string>Other Metroid settings 2</string>
+			</attribute>
+			<layout class="QVBoxLayout" name="metroidVLayout2" stretch="0,0,0,0,1">
+				<item>
+					<widget class="QFrame" name="secGameplayBody2">
+						<property name="frameShape">
+							<enum>QFrame::NoFrame</enum>
+						</property>
+						<layout class="QFormLayout" name="formGameplay2">
+							<item row="0" column="0">
+								<widget class="QCheckBox" name="cbMetroidApplyJoy2KeySupport">
+									<property name="text">
+										<string>Enable Joy2KeySupport (slightly increase input delay)</string>
+									</property>
+								</widget>
+							</item>
+						</layout>
+					</widget>
+				</item>
+			</layout>
+ 
+		</widget>
 
 	</widget>
    </item>

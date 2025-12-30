@@ -162,7 +162,8 @@ DefaultList<bool> DefaultBools =
     {"DSi.DSP.HLE", true},
 
     /* MelonPrimeDS { */
-    {"Metroid.Operation.SnapTap", false},
+    {"Instance*.Metroid.Operation.SnapTap", false},
+    {"Instance*.Metroid.Apply.joy2KeySupport", true},
     /* MelonPrimeDS } */
 
 };

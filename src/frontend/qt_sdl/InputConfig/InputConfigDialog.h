@@ -214,7 +214,8 @@ public:
 
     /* MelonPrimeDS { */
     void switchTabToAddons();
-    void switchTabToMetroid();
+    void switchTabToMetroid(); // Tab Other Metroid Settings
+    void switchTabToMetroid2(); // Tab Other Metroid Settings 2
     /* } MelonPrimeDS*/
 
 private slots:
