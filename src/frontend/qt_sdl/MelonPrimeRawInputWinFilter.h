@@ -1,11 +1,9 @@
-// MelonPrimeRawInputWinFilter.h
 #pragma once
 #ifdef _WIN32
 
 // Qt
 #include <QAbstractNativeEventFilter>
 #include <QByteArray>
-#include <QBitArray>
 #include <QtGlobal>
 
 // Win32
@@ -44,7 +42,7 @@ public:
     // target HWND 更新（true側の RegisterRawInputDevices 用）
     void setRawInputTarget(HWND hwnd);
 
-    // 対象デルタ取得
+    // 対象デルタ取得（低遅延版：RMW を避ける累積カウンタ方式）
     void fetchMouseDelta(int& outDx, int& outDy);
     void discardDeltas();
 
@@ -120,6 +118,33 @@ private:
     };
 
 private:
+    //=====================================================
+    // dx/dy 低遅延化：RMW を避ける累積カウンタ方式
+    //=====================================================
+    // 共有：生産者が累積(dx,dy)を詰めて store するだけ（RMW なし）
+    //  - 下位32bit: dx累積（uint32_t）
+    //  - 上位32bit: dy累積（uint32_t）
+    std::atomic<uint64_t> m_mouseAccPacked{ 0 };
+
+    // 生産者（RawInput 側）専用：累積（単一 writer 前提なので非atomic）
+    uint32_t m_prodDx = 0;
+    uint32_t m_prodDy = 0;
+
+    // 消費者（EmuThread 側）専用：前回値（単一 reader 前提なので非atomic）
+    uint32_t m_consPrevDx = 0;
+    uint32_t m_consPrevDy = 0;
+
+    static FORCE_INLINE uint64_t PackU32U32(uint32_t lo, uint32_t hi) noexcept
+    {
+        return (uint64_t)lo | ((uint64_t)hi << 32);
+    }
+    static FORCE_INLINE void UnpackU32U32(uint64_t v, uint32_t& lo, uint32_t& hi) noexcept
+    {
+        lo = (uint32_t)(v & 0xFFFFFFFFu);
+        hi = (uint32_t)(v >> 32);
+    }
+
+private:
     // joy2KeySupport=true/false（呼び出し元で install/remove をやる想定だが、
     // 念のため nativeEventFilter 側でも判定して無駄を切る）
     std::atomic<bool> m_joy2KeySupport{ true };
@@ -160,12 +185,9 @@ private:
     alignas(64) std::array<HotkeyMask, kMaxHotkeyId> m_hkMask{};
 
     // hotkeyPressed/hotkeyReleased のエッジ判定用。
-    // EmuThread 側だけが触る前提（RawInput スレッドは触らない）なので非 atomic。
+    // EmuThread 側だけが触る前提（RawInput スレッドは触らない）なので非atomic。
     // 256bit = 4 * 64bit
     std::array<uint64_t, (kMaxHotkeyId + 63) / 64> m_hkPrev{};
-
-    std::atomic<int> dx{ 0 };
-    std::atomic<int> dy{ 0 };
 
     static FORCE_INLINE void addVkToMask(HotkeyMask& m, UINT vk) noexcept;
 };
