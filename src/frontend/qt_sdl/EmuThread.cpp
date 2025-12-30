@@ -720,6 +720,30 @@ void ApplyMphSensitivity(NDS* nds, Config::Table& localCfg, std::uint32_t addrSe
     }
 }
 
+void ToggleJoy2KeySupport(bool enable, EmuInstance* emuInstance)
+{
+#ifdef _WIN32
+    if (!g_rawFilter) return;
+
+    // 1) main window HWND を取り直す（ウィンドウ再生成やwinId変化対策）
+    HWND hwnd = nullptr;
+    if (auto* mw = emuInstance->getMainWindow())
+        hwnd = reinterpret_cast<HWND>(mw->winId());
+
+    g_rawFilter->setRawInputTarget(hwnd);
+
+    // 2) 切り替え（内部で start/stop thread + RegisterRawInputDevices をやる）
+    g_rawFilter->setJoy2KeySupport(enable);
+
+    // 3) 切り替え直後の張り付き防止（好みで）
+    g_rawFilter->resetAllKeys();
+    g_rawFilter->resetMouseButtons();
+    g_rawFilter->resetHotkeyEdges();
+#endif
+}
+
+
+
 /**
  * MPHハンター/マップ解除一度適用関数.
  *
@@ -808,6 +832,7 @@ __attribute__((always_inline, flatten)) inline uint32_t calculatePlayerAddress(u
 bool isAltForm;
 bool isLayoutChangePending = true;       // MelonPrimeDS layout change flag - set true to trigger on first run
 bool isSnapTapMode = false;
+bool isJoy2KeySupport = false;
 bool isUnlockHuntersMaps = false;
 // グローバル適用フラグ定義(多重適用を避けるため)
 bool isHeadphoneApplied = false;
@@ -1034,7 +1059,7 @@ void EmuThread::run()
 
         // どこか一度だけ(例: EmuThread::run の前段やMainWindow生成時)
     if (!g_rawFilter) {
-        g_rawFilter = new RawInputWinFilter();
+        g_rawFilter = new RawInputWinFilter(isJoy2KeySupport, (HWND)(uintptr_t)emuInstance->getMainWindow()->winId());
         // emuInstance が生きていて、Raw フィルタが作られた直後あたりで
         /*
         if (g_rawFilter) {
@@ -1112,6 +1137,7 @@ void EmuThread::run()
     Config::Table& globalCfg = emuInstance->getGlobalConfig();
     Config::Table& localCfg = emuInstance->getLocalConfig();
     isSnapTapMode = localCfg.GetBool("Metroid.Operation.SnapTap"); // MelonPrimeDS
+    isJoy2KeySupport = localCfg.GetBool("Metroid.Apply.joy2KeySupport"); // MelonPrimeDS
     u32 mainScreenPos[3];
 
     //emuInstance->updateConsole();
@@ -2796,6 +2822,15 @@ void EmuThread::handleMessages()
 
                 // reset Settings when unPaused
                 isSnapTapMode = emuInstance->getLocalConfig().GetBool("Metroid.Operation.SnapTap"); // SnapTapリセット用
+
+                // Joy2KeySupportリセット用
+                isJoy2KeySupport = emuInstance->getLocalConfig().GetBool("Metroid.Apply.joy2KeySupport"); 
+                if(g_rawFilter)
+                {
+					g_rawFilter->setJoy2KeySupport(isJoy2KeySupport);
+                }
+
+
                 isUnlockMapsHuntersApplied = false; // Unlockリセット用
                 // lastMphSensitivity = std::numeric_limits<double>::quiet_NaN(); // Mph感度リセット用
                 isHeadphoneApplied = false; // ヘッドフォンリセット用
