@@ -147,6 +147,11 @@ InputConfigDialog::InputConfigDialog(QWidget* parent) : QDialog(parent), ui(new 
     ui->cbMetroidApplyMusicVolume->setChecked(instcfg.GetBool("Metroid.Apply.MusicVolume"));
     ui->spinMetroidVolumeMusic->setValue(instcfg.GetInt("Metroid.Volume.Music"));
 
+
+    // Other Metroid Settings 2 Tab
+    ui->cbMetroidApplyJoy2KeySupport->setChecked(instcfg.GetBool("Metroid.Apply.joy2KeySupport"));
+
+
     // } MelonPrimeDS
 
 
@@ -354,6 +359,9 @@ void InputConfigDialog::on_InputConfigDialog_accepted()
         ui->cbMetroidApplyMusicVolume->checkState() == Qt::Checked);
     instcfg.SetInt("Metroid.Volume.Music", ui->spinMetroidVolumeMusic->value());
 
+	// Other Metroid Settings 2 Tab
+
+    instcfg.SetBool("Metroid.Apply.joy2KeySupport", ui->cbMetroidApplyJoy2KeySupport->checkState() == Qt::Checked);
 
     // } MelonPrimeDS
 
@@ -457,7 +465,11 @@ void InputConfigDialog::switchTabToAddons() {
 }
 
 void InputConfigDialog::switchTabToMetroid() {
-    ui->tabWidget->setCurrentWidget(ui->tabMetroid);
+	ui->tabWidget->setCurrentWidget(ui->tabMetroid); // Tab Other Metroid Settings
+}
+
+void InputConfigDialog::switchTabToMetroid2() {
+    ui->tabWidget->setCurrentWidget(ui->tabMetroid2); // Tab Other Metroid Settings 2
 }
 
 void InputConfigDialog::on_cbMetroidEnableSnapTap_stateChanged(int state)
