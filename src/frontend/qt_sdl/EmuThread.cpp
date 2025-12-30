@@ -323,6 +323,7 @@ void EmuThread::detachWindow(MainWindow* window)
 
 // melonPrime
 static bool isInGameAndHasInitialized = false;
+bool isJoy2KeySupport = false;
 
 // 共有キャッシュ定義(エイムのホットパスから再計算を排除するため)
 // X軸感度係数(ホットパスで直接参照するため)
@@ -720,30 +721,6 @@ void ApplyMphSensitivity(NDS* nds, Config::Table& localCfg, std::uint32_t addrSe
     }
 }
 
-void ToggleJoy2KeySupport(bool enable, EmuInstance* emuInstance)
-{
-#ifdef _WIN32
-    if (!g_rawFilter) return;
-
-    // 1) main window HWND を取り直す（ウィンドウ再生成やwinId変化対策）
-    HWND hwnd = nullptr;
-    if (auto* mw = emuInstance->getMainWindow())
-        hwnd = reinterpret_cast<HWND>(mw->winId());
-
-    g_rawFilter->setRawInputTarget(hwnd);
-
-    // 2) 切り替え（内部で start/stop thread + RegisterRawInputDevices をやる）
-    g_rawFilter->setJoy2KeySupport(enable);
-
-    // 3) 切り替え直後の張り付き防止（好みで）
-    g_rawFilter->resetAllKeys();
-    g_rawFilter->resetMouseButtons();
-    g_rawFilter->resetHotkeyEdges();
-#endif
-}
-
-
-
 /**
  * MPHハンター/マップ解除一度適用関数.
  *
@@ -810,6 +787,112 @@ bool ApplyUnlockHuntersMaps(
 }
 
 
+/**
+ * Joy2Key互換サポート切り替え適用関数（Qt native event filter の install/remove を含む）.
+ *
+ * ルール:
+ *   - enable=true  : setJoy2KeySupport(true) → installNativeEventFilter(g_rawFilter)
+ *   - enable=false : removeNativeEventFilter(g_rawFilter) → setJoy2KeySupport(false)
+ *
+ * @param EmuInstance* emuInstance エミュインスタンス参照.
+ * @param bool enable Joy2Key互換ON/OFF.
+ * @param bool doReset 切り替え後に入力状態をリセットするか.
+ * @return bool 実際に切り替え（再設定）を行ったかどうか.
+ */
+bool ApplyJoy2KeySupportAndQtFilter(EmuInstance* emuInstance, bool enable, bool doReset = true)
+{
+#ifdef _WIN32
+    // 事前条件確認（ヌル参照による異常動作を避けるため）
+    if (!emuInstance) {
+        return false;
+    }
+
+    // フィルタ未生成なら何もできないため即リターン
+    if (!g_rawFilter) {
+        return false;
+    }
+
+    // Qt アプリケーション参照（install/remove に必要なため）
+    QCoreApplication* app = QCoreApplication::instance();
+    if (!app) {
+        return false;
+    }
+
+    // main window HWND を最新化（true側の RegisterRawInputDevices 用。false側でも害はない）
+    HWND hwnd = nullptr;
+    if (auto* mw = emuInstance->getMainWindow()) {
+        hwnd = reinterpret_cast<HWND>(mw->winId());
+    }
+    g_rawFilter->setRawInputTarget(hwnd);
+
+    // 状態変数があるなら同期（外側の真実を保つため）
+    isJoy2KeySupport = enable;
+
+    // 「Qt native event filter が現在 install 済みか」を保持（無駄な呼び出しを避けるため）
+    // ※同一プロセス内で一つの g_rawFilter を想定
+    static bool s_isInstalled = false;
+
+    // 現在の joy2KeySupport 状態
+    const bool cur = g_rawFilter->getJoy2KeySupport();
+
+    // 差分が無く、かつ install 状態も目的と一致しているなら何もしない
+    const bool wantInstalled = enable;
+    if (Q_LIKELY(cur == enable && s_isInstalled == wantInstalled)) {
+        return false;
+    }
+
+    // ----------------------------
+    // enable=false へ行く場合
+    //   1) removeNativeEventFilter（入ってたら）
+    //   2) setJoy2KeySupport(false) で独自スレッド側へ
+    // ----------------------------
+    if (!enable)
+    {
+        if (s_isInstalled) {
+            app->removeNativeEventFilter(g_rawFilter);
+            s_isInstalled = false;
+        }
+
+        g_rawFilter->setJoy2KeySupport(false);
+
+        if (doReset) {
+            g_rawFilter->resetAllKeys();
+            g_rawFilter->resetMouseButtons();
+            g_rawFilter->resetHotkeyEdges();
+        }
+
+        return true;
+    }
+
+    // ----------------------------
+    // enable=true へ行く場合
+    //   1) setJoy2KeySupport(true) で Qt 側の RawInput 登録へ
+    //   2) installNativeEventFilter
+    // ----------------------------
+    g_rawFilter->setJoy2KeySupport(true);
+
+    if (!s_isInstalled) {
+        app->installNativeEventFilter(g_rawFilter);
+        s_isInstalled = true;
+    }
+
+    if (doReset) {
+        g_rawFilter->resetAllKeys();
+        g_rawFilter->resetMouseButtons();
+        g_rawFilter->resetHotkeyEdges();
+    }
+
+    return true;
+
+#else
+    (void)emuInstance;
+    (void)enable;
+    (void)doReset;
+    return false;
+#endif
+}
+
+
 // CalculatePlayerAddress Function
 __attribute__((always_inline, flatten)) inline uint32_t calculatePlayerAddress(uint32_t baseAddress, uint8_t playerPosition, int32_t increment) {
     // If player position is 0, return the base address without modification
@@ -832,7 +915,7 @@ __attribute__((always_inline, flatten)) inline uint32_t calculatePlayerAddress(u
 bool isAltForm;
 bool isLayoutChangePending = true;       // MelonPrimeDS layout change flag - set true to trigger on first run
 bool isSnapTapMode = false;
-bool isJoy2KeySupport = false;
+
 bool isUnlockHuntersMaps = false;
 // グローバル適用フラグ定義(多重適用を避けるため)
 bool isHeadphoneApplied = false;
@@ -1066,7 +1149,8 @@ void EmuThread::run()
             g_rawFilter->setJoyHotkeyMaskPtr(&emuInstance->joyHotkeyMask);
         }
         */
-        qApp->installNativeEventFilter(g_rawFilter);
+        ApplyJoy2KeySupportAndQtFilter(emuInstance, isJoy2KeySupport);
+
         // 新: 全HK（Shoot/Zoom 以外も）をRawに登録
         BindMetroidHotkeysFromConfig(g_rawFilter, /*instance*/ emuInstance->getInstanceID());
     }
@@ -2825,10 +2909,7 @@ void EmuThread::handleMessages()
 
                 // Joy2KeySupportリセット用
                 isJoy2KeySupport = emuInstance->getLocalConfig().GetBool("Metroid.Apply.joy2KeySupport"); 
-                if(g_rawFilter)
-                {
-					g_rawFilter->setJoy2KeySupport(isJoy2KeySupport);
-                }
+                ApplyJoy2KeySupportAndQtFilter(emuInstance, isJoy2KeySupport);
 
 
                 isUnlockMapsHuntersApplied = false; // Unlockリセット用
