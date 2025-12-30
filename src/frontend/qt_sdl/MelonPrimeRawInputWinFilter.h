@@ -1,3 +1,4 @@
+// MelonPrimeRawInputWinFilter.h
 #pragma once
 #ifdef _WIN32
 
@@ -14,7 +15,6 @@
 // C++/STL
 #include <array>
 #include <vector>
-#include <unordered_map>
 #include <atomic>
 #include <cstdint>
 #include <cstring>
@@ -158,15 +158,14 @@ private:
     }
 
     alignas(64) std::array<HotkeyMask, kMaxHotkeyId> m_hkMask{};
-    std::unordered_map<int, std::vector<UINT>> m_hkToVk;
-    std::array<std::atomic<uint64_t>, (kMaxHotkeyId + 63) / 64> m_hkPrev{};
+
+    // hotkeyPressed/hotkeyReleased のエッジ判定用。
+    // EmuThread 側だけが触る前提（RawInput スレッドは触らない）なので非 atomic。
+    // 256bit = 4 * 64bit
+    std::array<uint64_t, (kMaxHotkeyId + 63) / 64> m_hkPrev{};
 
     std::atomic<int> dx{ 0 };
     std::atomic<int> dy{ 0 };
-
-    // 互換用（既存コードが参照するなら維持）
-    std::array<std::atomic<int>, 256> m_vkDownCompat{};
-    std::array<std::atomic<int>, kMB_Max> m_mbCompat{};
 
     static FORCE_INLINE void addVkToMask(HotkeyMask& m, UINT vk) noexcept;
 };
