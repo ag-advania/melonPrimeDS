@@ -254,28 +254,27 @@ void RawInputWinFilter::threadLoop()
     MSG msg;
     while (runThread.load(std::memory_order_relaxed))
     {
-        while (PeekMessage(&msg, nullptr, 0, 0, PM_REMOVE))
+        // WM_INPUTだけ優先取得
+        while (PeekMessage(&msg, hiddenWnd, WM_INPUT, WM_INPUT, PM_REMOVE))
+        {
+            processRawInput(reinterpret_cast<HRAWINPUT>(msg.lParam));
+        }
+
+        // 他のメッセージ
+        if (PeekMessage(&msg, hiddenWnd, 0, 0, PM_REMOVE))
         {
             if (msg.message == WM_QUIT)
-                goto exit_loop;
-
-            // WM_INPUT は Dispatch を挟まず最短で処理
-            if (msg.message == WM_INPUT)
-            {
-                processRawInput(reinterpret_cast<HRAWINPUT>(msg.lParam));
-                continue;
-            }
-
+                break;
+            
             TranslateMessage(&msg);
             DispatchMessage(&msg);
         }
-
-        // 最速寄り（CPU は食うが latency が最小になりやすい）
-        Sleep(0);
-        // SwitchToThread(); でもOK。好みで切替可。
+        else
+        {
+            YieldProcessor();
+        }
     }
 
-exit_loop:
     hiddenWnd = nullptr;
 }
 
