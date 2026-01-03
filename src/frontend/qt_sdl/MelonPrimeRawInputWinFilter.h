@@ -1,5 +1,6 @@
 // MelonPrimeRawInputWinFilter.h
-#pragma once
+#ifndef MELON_PRIME_RAW_INPUT_FILTER_H
+#define MELON_PRIME_RAW_INPUT_FILTER_H
 #ifdef _WIN32
 
 // Qt
@@ -171,3 +172,5 @@ private:
 };
 
 #endif
+
+#endif // MELON_PRIME_RAW_INPUT_FILTER_H

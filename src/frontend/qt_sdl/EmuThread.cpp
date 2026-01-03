@@ -2423,10 +2423,10 @@ void EmuThread::run()
 
 #ifndef STYLUS_MODE
         // Mouse player
-        // bool isFocused = emuInstance->getMainWindow()->panel->getIsFocused();
+        //  isFocused = emuInstance->getMainWindow()->panel->getIsFocused();
 #else
         // isStylus
-        bool isFocused = true;
+         isFocused = true;
 #endif
 
 

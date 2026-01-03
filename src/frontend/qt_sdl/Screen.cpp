@@ -395,7 +395,7 @@ void ScreenPanel::mousePressEvent(QMouseEvent* event)
     // （元コードと同じ: emuがアクティブなら focus->通知、ダメなら touching=false で return）
     if (emuInstance->emuIsActive())
     {
-        setIsFocused(true);            // MelonPrimeDS
+        emuInstance->getEmuThread()->isFocused = true;            // MelonPrimeDS
         emuInstance->onMousePress(event); // MelonPrimeDS
     }
     else
@@ -1543,7 +1543,7 @@ void ScreenPanelGL::transferLayout()
 /* MelonPrimeDS */
 void ScreenPanel::unfocus()
 {
-    setIsFocused(false);
+    emuInstance->getEmuThread()->isFocused = false;
     setCursor(Qt::ArrowCursor);
 #if defined(_WIN32)
     unclip(); // MelonPrimeDS
@@ -1564,15 +1564,7 @@ void ScreenPanel::moveEvent(QMoveEvent* e) {
     QWidget::moveEvent(e);
 }
 
-__attribute__((always_inline)) inline void ScreenPanel::setIsFocused(bool value)
-{
-    emuInstance->getEmuThread()->isFocused = value;
-}
 
-__attribute__((always_inline)) inline bool ScreenPanel::getIsFocused()
-{
-    return emuInstance->getEmuThread()->isFocused;
-}
 __attribute__((always_inline)) inline void ScreenPanel::setClipWanted(bool value)
 {
     emuInstance->getEmuThread()->isClipWanted = value;
