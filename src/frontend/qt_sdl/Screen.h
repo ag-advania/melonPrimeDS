@@ -179,8 +179,6 @@ protected:
     private:
         void setClipWanted(bool value);
         bool getClipWanted();
-        bool getIsFocused();
-        void setIsFocused(bool value);
 };
 
 
