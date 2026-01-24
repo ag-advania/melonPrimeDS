@@ -391,91 +391,102 @@ void ScreenPanel::mousePressEvent(QMouseEvent* event)
 {
     event->accept();
 
+    // 参照をローカルに落として、ポインタ辿りと関数呼びを減らす
+    auto* const emu = emuInstance;
+    auto* const thr = emu->getEmuThread();
+
     // so we dont press buttons before fully focusing
     // （元コードと同じ: emuがアクティブなら focus->通知、ダメなら touching=false で return）
-    if (emuInstance->emuIsActive())
-    {
-        setIsFocused(true);            // MelonPrimeDS
-        emuInstance->onMousePress(event); // MelonPrimeDS
-    }
-    else
+    if (Q_UNLIKELY(!emu->emuIsActive()))
     {
         touching = false;
         return;
     }
 
+    // Active時のみここまで到達
+    thr->isFocused = true;        // MelonPrimeDS
+    emu->onMousePress(event);     // MelonPrimeDS
+
     // 左クリック以外はここで終了（元コード同様）
     if (event->button() != Qt::LeftButton)
         return;
 
-#ifdef STYLUS_MODE
+#if defined(STYLUS_MODE)
     // MelonPrimeDS: don't touch when in-game（元コード同様）
-    if (emuInstance->getEmuThread()->isInGame)
+    if (thr->isInGame)
         return;
 #endif
 
-    // touch Screen（QPointの一時変数を作らず直に取る）
-    int x = event->pos().x();
-    int y = event->pos().y();
+    // touch Screen（pos() を2回作らない）
+    const QPoint p = event->pos();
+    int x = p.x();
+    int y = p.y();
 
     if (layout.GetTouchCoords(x, y, false))
     {
         touching = true;
-        emuInstance->touchScreen(x, y);
+        emu->touchScreen(x, y);
     }
 
-#ifndef STYLUS_MODE
-    if (!emuInstance->getEmuThread()->isCursorMode)
+#if !defined(STYLUS_MODE) && defined(_WIN32)
+    // カーソルモードでない時だけ 1px クリップ開始
+    if (Q_LIKELY(!thr->isCursorMode))
     {
-#if defined(_WIN32)
-        // 1px クリップ開始
         clipCursorCenter1px(); // MelonPrimeDS
-#endif
     }
 #endif
 }
-
 
 void ScreenPanel::mouseReleaseEvent(QMouseEvent* event)
 {
     event->accept();
 
-    emuInstance->onMouseRelease(event); // MelonPrimeDS
+    auto* const emu = emuInstance;
 
+    emu->onMouseRelease(event); // MelonPrimeDS
 
-    if (!emuInstance->emuIsActive()) { touching = false; return; }
-    if (event->button() != Qt::LeftButton) return;
+    // 非アクティブなら押下状態を必ず解除（元コード通り）
+    if (Q_UNLIKELY(!emu->emuIsActive()))
+    {
+        touching = false;
+        return;
+    }
 
-    // ネスト削減
-    if (!touching) return;
+    if (event->button() != Qt::LeftButton)
+        return;
+
+    if (!touching)
+        return;
 
     touching = false;
-    emuInstance->releaseScreen();
+    emu->releaseScreen();
 }
 
 void ScreenPanel::mouseMoveEvent(QMouseEvent* event)
 {
     event->accept();
 
-    // showCursor(); // MelonPrimeDS comment-out
+    auto* const emu = emuInstance;
 
-    if (!emuInstance->emuIsActive()) return;
-    //if (!(event->buttons() & Qt::LeftButton)) return;
-    if (!touching) return;
+    // 非アクティブはホットパスじゃない想定
+    if (Q_UNLIKELY(!emu->emuIsActive()))
+        return;
 
-    /*
-    int x = event->pos().x();
-    int y = event->pos().y();
-    */
-    const QPoint pos = event->pos();
-    int x = pos.x();
-    int y = pos.y();
+    // 左ボタン押しっぱ判定は元コードでは無効化されてるのでそのまま
+    if (!touching)
+        return;
+
+    // pos() は1回だけ
+    const QPoint p = event->pos();
+    int x = p.x();
+    int y = p.y();
 
     if (layout.GetTouchCoords(x, y, true))
     {
-        emuInstance->touchScreen(x, y);
+        emu->touchScreen(x, y);
     }
 }
+
 
 void ScreenPanel::tabletEvent(QTabletEvent* event)
 {
@@ -1543,7 +1554,7 @@ void ScreenPanelGL::transferLayout()
 /* MelonPrimeDS */
 void ScreenPanel::unfocus()
 {
-    setIsFocused(false);
+    emuInstance->getEmuThread()->isFocused = false;
     setCursor(Qt::ArrowCursor);
 #if defined(_WIN32)
     unclip(); // MelonPrimeDS
@@ -1564,15 +1575,7 @@ void ScreenPanel::moveEvent(QMoveEvent* e) {
     QWidget::moveEvent(e);
 }
 
-__attribute__((always_inline)) inline void ScreenPanel::setIsFocused(bool value)
-{
-    emuInstance->getEmuThread()->isFocused = value;
-}
 
-__attribute__((always_inline)) inline bool ScreenPanel::getIsFocused()
-{
-    return emuInstance->getEmuThread()->isFocused;
-}
 __attribute__((always_inline)) inline void ScreenPanel::setClipWanted(bool value)
 {
     emuInstance->getEmuThread()->isClipWanted = value;

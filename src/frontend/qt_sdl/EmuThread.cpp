@@ -333,7 +333,7 @@ static float gAimCombinedY   = 0.013333333f;   // 初期値(安全側)
 
 // 再計算関数(感度キャッシュを即時更新するため)
 // localCfgから現在のAimとAimYAxisScaleを取り出し、共有キャッシュへ反映
-static inline void recalcAimSensitivityCache(Config::Table& localCfg) {
+__attribute__((always_inline, flatten)) static inline void recalcAimSensitivityCache(Config::Table& localCfg) {
     // 現在のAim感度値取得(再計算入力の取得のため)
     const int   sens          = localCfg.GetInt("Metroid.Sensitivity.Aim");
     // Y軸倍率取得(合成係数算出のため)
@@ -351,7 +351,7 @@ static inline void recalcAimSensitivityCache(Config::Table& localCfg) {
  * @param sensiVal 感度テーブルの値(uint32_t, 例: 0x00000999).
  * @return 計算された感度(double).
  */
-double sensiValToSensiNum(std::uint32_t sensiVal)
+__attribute__((always_inline, flatten)) inline double sensiValToSensiNum(std::uint32_t sensiVal)
 {
     // 基準値定義(sensi=1.0に対応させるため)
     constexpr std::uint32_t BASE_VAL = 0x0999;
@@ -371,7 +371,7 @@ double sensiValToSensiNum(std::uint32_t sensiVal)
  * @param sensiNum 感度数値(double, 例: 1.0).
  * @return 感度テーブル値(uint16_tに収まる範囲). 範囲外は0x0000～0xFFFFにクリップ.
  */
-std::uint16_t sensiNumToSensiVal(double sensiNum)
+__attribute__((always_inline, flatten)) inline std::uint16_t sensiNumToSensiVal(double sensiNum)
 {
     // 基準値定義(sensi=1.0に対応させるため)
     constexpr std::uint32_t BASE_VAL = 0x0999;
@@ -418,7 +418,7 @@ std::uint16_t sensiNumToSensiVal(double sensiNum)
   * @return bool 書き込み実施有無.
   */
   // ヘッドフォン設定一度適用関数本体開始(起動時一回だけ反映するため)
-bool ApplyHeadphoneOnce(NDS* nds, Config::Table& localCfg, uint32_t kCfgAddr, bool& isHeadphoneApplied)
+__attribute__((always_inline, flatten)) inline bool ApplyHeadphoneOnce(NDS* nds, Config::Table& localCfg, uint32_t kCfgAddr, bool& isHeadphoneApplied)
 {
     // 事前条件確認(ヌル参照による異常動作を避けるため)
     if (!nds) {
@@ -479,7 +479,7 @@ bool ApplyHeadphoneOnce(NDS* nds, Config::Table& localCfg, uint32_t kCfgAddr, bo
  * @param std::uint32_t addrRankColor ランクと色の格納アドレス（例: 0x220ECF43）.
  * @return bool 書き込み実施有無.
  */
-bool applyLicenseColorStrict(NDS* nds, Config::Table& localCfg, std::uint32_t addrRankColor)
+__attribute__((always_inline, flatten)) inline bool applyLicenseColorStrict(NDS* nds, Config::Table& localCfg, std::uint32_t addrRankColor)
 {
     // NDSが無効なら処理しない（安全性確保のため）
     if (!nds) return false;
@@ -540,7 +540,7 @@ bool applyLicenseColorStrict(NDS* nds, Config::Table& localCfg, std::uint32_t ad
  * @param std::uint32_t addrMainHunter 例: 0x220ECF40 (8bit)
  * @return bool 書き込み実施有無
  */
-bool applySelectedHunterStrict(NDS* nds, Config::Table& localCfg, std::uint32_t addrMainHunter)
+__attribute__((always_inline, flatten)) inline bool applySelectedHunterStrict(NDS* nds, Config::Table& localCfg, std::uint32_t addrMainHunter)
 {
     if (!nds) return false;
     if (Q_LIKELY(!localCfg.GetBool("Metroid.HunterLicense.Hunter.Apply"))) return false;
@@ -586,7 +586,7 @@ bool applySelectedHunterStrict(NDS* nds, Config::Table& localCfg, std::uint32_t 
  * @param std::uint32_t addrDsNameFlagAndMicVolume DS Name Flag/マイク音量共用アドレス.
  * @return bool 書き込み実施有無.
  */
-bool useDsName(NDS* nds, Config::Table& localCfg, std::uint32_t addrDsNameFlagAndMicVolume)
+__attribute__((always_inline, flatten)) inline bool useDsName(NDS* nds, Config::Table& localCfg, std::uint32_t addrDsNameFlagAndMicVolume)
 {
     // 事前条件確認(ヌル参照による異常動作を避けるため)
     if (!nds) {
@@ -634,7 +634,7 @@ bool useDsName(NDS* nds, Config::Table& localCfg, std::uint32_t addrDsNameFlagAn
  * @param bool& isVolumeSfxApplied       一度適用済みフラグ.
  * @return bool                          書き込み実施有無.
  */
-bool ApplySfxVolumeOnce(NDS* nds, Config::Table& localCfg, std::uint32_t kSfxAddr, bool& isVolumeSfxApplied)
+__attribute__((always_inline, flatten)) inline bool ApplySfxVolumeOnce(NDS* nds, Config::Table& localCfg, std::uint32_t kSfxAddr, bool& isVolumeSfxApplied)
 {
     if (!nds) return false;
     if (Q_LIKELY(isVolumeSfxApplied)) return false;
@@ -668,7 +668,7 @@ bool ApplySfxVolumeOnce(NDS* nds, Config::Table& localCfg, std::uint32_t kSfxAdd
  * @param bool& isVolumeMusicApplied       一度適用済みフラグ.
  * @return bool                            書き込み実施有無.
  */
-bool ApplyMusicVolumeOnce(NDS* nds, Config::Table& localCfg, std::uint32_t kMusicAddr, bool& isVolumeMusicApplied)
+__attribute__((always_inline, flatten)) inline bool ApplyMusicVolumeOnce(NDS* nds, Config::Table& localCfg, std::uint32_t kMusicAddr, bool& isVolumeMusicApplied)
 {
     if (!nds) return false;
     if (Q_LIKELY(isVolumeMusicApplied)) return false;
@@ -705,7 +705,7 @@ bool ApplyMusicVolumeOnce(NDS* nds, Config::Table& localCfg, std::uint32_t kMusi
  * @param std::uint32_t addrSensitivity 感度設定アドレス.
  * @return bool 書き込み実施有無.
  */
-void ApplyMphSensitivity(NDS* nds, Config::Table& localCfg, std::uint32_t addrSensitivity, std::uint32_t addrInGameSensi, bool isInGameAndHasInitialized)
+__attribute__((always_inline, flatten)) inline void ApplyMphSensitivity(NDS* nds, Config::Table& localCfg, std::uint32_t addrSensitivity, std::uint32_t addrInGameSensi, bool isInGameAndHasInitialized)
 {
     // 現在の感度数値を設定から取得(ユーザー入力を読むため)
     double mphSensitivity = localCfg.GetDouble("Metroid.Sensitivity.Mph");
@@ -734,7 +734,7 @@ void ApplyMphSensitivity(NDS* nds, Config::Table& localCfg, std::uint32_t addrSe
  * @param std::uint32_t addrUnlock5 書き込みアドレス5.
  * @return bool 書き込み実施有無.
  */
-bool ApplyUnlockHuntersMaps(
+__attribute__((always_inline, flatten)) inline bool ApplyUnlockHuntersMaps(
     NDS* nds,
     Config::Table& localCfg,
     bool& isUnlockApplied,
@@ -799,7 +799,7 @@ bool ApplyUnlockHuntersMaps(
  * @param bool doReset 切り替え後に入力状態をリセットするか.
  * @return bool 実際に切り替え（再設定）を行ったかどうか.
  */
-bool ApplyJoy2KeySupportAndQtFilter(EmuInstance* emuInstance, bool enable, bool doReset = true)
+__attribute__((always_inline, flatten)) inline bool ApplyJoy2KeySupportAndQtFilter(EmuInstance* emuInstance, bool enable, bool doReset = true)
 {
 #ifdef _WIN32
     // 事前条件確認（ヌル参照による異常動作を避けるため）
@@ -2423,10 +2423,10 @@ void EmuThread::run()
 
 #ifndef STYLUS_MODE
         // Mouse player
-        // bool isFocused = emuInstance->getMainWindow()->panel->getIsFocused();
+        //  isFocused = emuInstance->getMainWindow()->panel->getIsFocused();
 #else
         // isStylus
-        bool isFocused = true;
+         isFocused = true;
 #endif
 
 
