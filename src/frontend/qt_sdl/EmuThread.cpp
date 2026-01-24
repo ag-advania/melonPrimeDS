@@ -1042,12 +1042,13 @@ __attribute__((always_inline, flatten)) inline void detectRomAndSetAddresses(Emu
         addrIsMapOrUserActionPaused,
         addrUnlockMapsHunters,
         addrSensitivity,
-        addrMainHunter
+        addrMainHunter,
+        addrBaseLoadedSpecialWeapon
     );
 
     // Addresses calculated from base values
     addrIsInVisorOrMap = addrPlayerPos - 0xABB;
-    addrBaseLoadedSpecialWeapon = addrBaseIsAltForm + 0x56;
+    // addrBaseLoadedSpecialWeapon = addrBaseIsAltForm + 0x56; // TODO JP1.1の場合は違う。0x020DC6EE
     addrBaseJumpFlag = addrBaseSelectedWeapon - 0xA;
     addrVolSfx8Bit = addrUnlockMapsHunters;
     addrVolMusic8Bit = addrVolSfx8Bit + 0x1;
