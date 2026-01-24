@@ -40,6 +40,7 @@ struct RomAddrs
     uint32_t addrUnlockMapsHunters;
     uint32_t addrSensitivity;
     uint32_t addrMainHunter;
+    uint32_t addrBaseLoadedSpecialWeapon;
 };
 
 ///**
@@ -165,7 +166,9 @@ static constexpr std::array<RomAddrs, GROUP_COUNT> kRomAddrTable = { {
         // addrSensitivity設定
         0x020E832C,
         // addrMainHunter設定
-        0x020E83BC + 0x3504 // addrIsInAdventure + 0x3504;
+        0x020E83BC + 0x3504, // addrIsInAdventure + 0x3504;
+		// addrBaseLoadedSpecialWeapon設定
+        ABS_US11_IS_ALT_FORM + 0x56
     },
     // GROUP_US1_0行定義
     {
@@ -194,7 +197,9 @@ static constexpr std::array<RomAddrs, GROUP_COUNT> kRomAddrTable = { {
         // addrSensitivity設定
         0x020E786C,
         // addrMainHunter設定
-        0x020E78FC + 0x3504 // addrIsInAdventure + 0x3504;
+        0x020E78FC + 0x3504, // addrIsInAdventure + 0x3504;
+        // addrBaseLoadedSpecialWeapon設定
+        JP1_0_BASE_IS_ALT_FORM - OFF_US10_FROM_JP10 + 0x56
     },
     // GROUP_EU1_1行定義
     {
@@ -223,7 +228,9 @@ static constexpr std::array<RomAddrs, GROUP_COUNT> kRomAddrTable = { {
         // addrSensitivity設定
         0x020E83CC,
         // addrMainHunter設定
-        0x020E845C + 0x3504 // addrIsInAdventure + 0x3504;
+        0x020E845C + 0x3504, // addrIsInAdventure + 0x3504;
+        // addrBaseLoadedSpecialWeapon設定
+        JP1_0_BASE_IS_ALT_FORM - OFF_EU11_FROM_JP10 + 0x56
     },
     // GROUP_EU1_0行定義
     {
@@ -252,7 +259,9 @@ static constexpr std::array<RomAddrs, GROUP_COUNT> kRomAddrTable = { {
         // addrSensitivity設定
         0x020E834C,
         // addrMainHunter設定
-        0x020E83DC + 0x3504 // addrIsInAdventure + 0x3504;
+        0x020E83DC + 0x3504, // addrIsInAdventure + 0x3504;
+        // addrBaseLoadedSpecialWeapon設定
+         JP1_0_BASE_IS_ALT_FORM - OFF_EU10_FROM_JP10 + 0x56
     },
     // GROUP_JP1_0行定義(JP1.0素値の明示反映のため)
     {
@@ -281,7 +290,10 @@ static constexpr std::array<RomAddrs, GROUP_COUNT> kRomAddrTable = { {
         // addrSensitivity設定
         0x020E99AC,
         // addrMainHunter設定
-        0x020ECF40
+        0x020ECF40,
+
+        // addrBaseLoadedSpecialWeapon設定
+        JP1_0_BASE_IS_ALT_FORM + 0x56
     },
     // GROUP_JP1_1行定義
     {
@@ -310,7 +322,9 @@ static constexpr std::array<RomAddrs, GROUP_COUNT> kRomAddrTable = { {
         // addrSensitivity設定
         0x020E996C,
         // addrMainHunter設定
-        0x020E99FC + 0x3504 // addrIsInAdventure + 0x3504;
+        0x020E99FC + 0x3504, // addrIsInAdventure + 0x3504;
+        // addrBaseLoadedSpecialWeapon設定
+        0x020DC6EE // JP1.1は特殊
     },
     // GROUP_KR1_0行定義
     {
@@ -339,7 +353,9 @@ static constexpr std::array<RomAddrs, GROUP_COUNT> kRomAddrTable = { {
         // addrSensitivity設定
         0x020E1168,
         // addrMainHunter設定
-        0x020E44BC
+        0x020E44BC,
+        // addrBaseLoadedSpecialWeapon設定
+        JP1_0_BASE_IS_ALT_FORM - OFF_KR10_FROM_JP10 + 0x56
     }
 }};
 
@@ -391,8 +407,9 @@ static __attribute__((always_inline, flatten)) inline void detectRomAndSetAddres
     uint32_t& addrIsMapOrUserActionPaused_,
     uint32_t& addrUnlockMapsHunters,
     uint32_t& addrSensitivity,
-    uint32_t& addrMainHunter
-) noexcept
+    uint32_t& addrMainHunter,
+    uint32_t& addrBaseLoadedSpecialWeapon
+    ) noexcept
 {
     // テーブル取得実施(分岐削減のため)
     const RomAddrs a = getRomAddrs(group);
@@ -419,6 +436,7 @@ static __attribute__((always_inline, flatten)) inline void detectRomAndSetAddres
     addrUnlockMapsHunters = a.addrUnlockMapsHunters;
     addrSensitivity = a.addrSensitivity;
     addrMainHunter = a.addrMainHunter;
+    addrBaseLoadedSpecialWeapon = a.addrBaseLoadedSpecialWeapon;
 }
 
 #endif // MELON_PRIME_ROM_ADDR_TABLE_H
