@@ -985,6 +985,7 @@ __attribute__((always_inline, flatten)) inline void detectRomAndSetAddresses(Emu
         {RomVersions::EU1_1,           "EU1.1",           GROUP_EU1_1},
         {RomVersions::EU1_1_ENCRYPTED, "EU1.1 ENCRYPTED", GROUP_EU1_1},
         {RomVersions::EU1_1_BALANCED,  "EU1.1 BALANCED",  GROUP_EU1_1},
+        {RomVersions::EU1_1_RUSSIANED, "EU1.1 RUSSIANED", GROUP_EU1_1},
         {RomVersions::EU1_0,           "EU1.0",           GROUP_EU1_0},
         {RomVersions::EU1_0_ENCRYPTED, "EU1.0 ENCRYPTED", GROUP_EU1_0},
         {RomVersions::JP1_0,           "JP1.0",           GROUP_JP1_0},
