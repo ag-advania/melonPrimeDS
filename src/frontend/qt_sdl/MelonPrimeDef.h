@@ -16,6 +16,7 @@ namespace RomVersions {
     constexpr uint32_t EU1_0           = 0xA4A8FE5A;
     constexpr uint32_t EU1_1           = 0x910018A5;
     constexpr uint32_t EU1_1_BALANCED  = 0x948B1E48; // Balanced ROM
+    constexpr uint32_t EU1_1_RUSSIANED = 0x9E20F3A8; // ÉçÉVÉAåÍMODî≈
     constexpr uint32_t JP1_0           = 0xD75F539D;
     constexpr uint32_t JP1_1           = 0x42EBF348;
     constexpr uint32_t KR1_0           = 0xE54682F3;

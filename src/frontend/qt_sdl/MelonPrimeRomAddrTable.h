@@ -304,7 +304,7 @@ static constexpr std::array<RomAddrs, GROUP_COUNT> kRomAddrTable = { {
         // addrPlayerPos設定
         0x020DBB38,
         // addrBaseIsAltForm設定
-        JP1_0_BASE_IS_ALT_FORM     - OFF_JP11_ALT_FROM_JP10,
+        0x020DC698,
         // addrBaseWeaponChange設定
         JP1_0_BASE_WEAPON_CHANGE   - OFF_JP11_WEAPON_FROM_JP10,
         // addrBaseSelectedWeapon設定

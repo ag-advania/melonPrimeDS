@@ -985,6 +985,7 @@ __attribute__((always_inline, flatten)) inline void detectRomAndSetAddresses(Emu
         {RomVersions::EU1_1,           "EU1.1",           GROUP_EU1_1},
         {RomVersions::EU1_1_ENCRYPTED, "EU1.1 ENCRYPTED", GROUP_EU1_1},
         {RomVersions::EU1_1_BALANCED,  "EU1.1 BALANCED",  GROUP_EU1_1},
+        {RomVersions::EU1_1_RUSSIANED, "EU1.1 RUSSIANED", GROUP_EU1_1},
         {RomVersions::EU1_0,           "EU1.0",           GROUP_EU1_0},
         {RomVersions::EU1_0_ENCRYPTED, "EU1.0 ENCRYPTED", GROUP_EU1_0},
         {RomVersions::JP1_0,           "JP1.0",           GROUP_JP1_0},
@@ -1048,7 +1049,7 @@ __attribute__((always_inline, flatten)) inline void detectRomAndSetAddresses(Emu
 
     // Addresses calculated from base values
     addrIsInVisorOrMap = addrPlayerPos - 0xABB;
-    // addrBaseLoadedSpecialWeapon = addrBaseIsAltForm + 0x56; // TODO JP1.1の場合は違う。0x020DC6EE
+    // addrBaseLoadedSpecialWeapon = addrBaseIsAltForm + 0x56; // TODO JP1.1の場合は違う。JP1.1: 0x020DC6EE
     addrBaseJumpFlag = addrBaseSelectedWeapon - 0xA;
     addrVolSfx8Bit = addrUnlockMapsHunters;
     addrVolMusic8Bit = addrVolSfx8Bit + 0x1;
@@ -2495,8 +2496,8 @@ void EmuThread::run()
                 */
                 addrInGameSensi = calculatePlayerAddress(addrBaseInGameSensi, playerPosition, 0x04);
 
-                addrBoostGauge = addrIsAltForm + 0x44;
-                addrIsBoosting = addrIsAltForm + 0x46;
+                addrBoostGauge = addrLoadedSpecialWeapon - 0x12;
+                addrIsBoosting = addrLoadedSpecialWeapon - 0x10;
 
                 // aim addresses
                 addrAimX = calculatePlayerAddress(addrBaseAimX, playerPosition, incrementOfAimAddr);
