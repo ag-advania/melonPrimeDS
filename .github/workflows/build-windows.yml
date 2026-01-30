@@ -1,10 +1,7 @@
 name: Windows
 
 on:
-  push:
-    branches:
-      - master
-      - ci/*
+  workflow_dispatch :
   pull_request:
     branches:
       - master

@@ -1,5 +1,5 @@
 /*
-    Copyright 2016-2025 melonDS team
+    Copyright 2016-2024 melonDS team
 
     This file is part of melonDS.
 
@@ -19,9 +19,6 @@
 #include "GPU3D_Compute.h"
 
 #include <assert.h>
-#include <algorithm>
-
-#include "Utils.h"
 
 #include "OpenGLSupport.h"
 
@@ -220,15 +217,17 @@ std::unique_ptr<ComputeRenderer> ComputeRenderer::New()
     glBufferData(GL_UNIFORM_BUFFER, sizeof(MetaUniform), nullptr, GL_DYNAMIC_DRAW);
 
     glGenSamplers(9, result->Samplers);
+
+    static const GLenum translateWrapMode[3] = { GL_CLAMP_TO_EDGE, GL_REPEAT, GL_MIRRORED_REPEAT };
     for (u32 j = 0; j < 3; j++)
     {
         for (u32 i = 0; i < 3; i++)
         {
-            const GLenum translateWrapMode[3] = {GL_CLAMP_TO_EDGE, GL_REPEAT, GL_MIRRORED_REPEAT};
-            glSamplerParameteri(result->Samplers[i+j*3], GL_TEXTURE_WRAP_S, translateWrapMode[i]);
-            glSamplerParameteri(result->Samplers[i+j*3], GL_TEXTURE_WRAP_T, translateWrapMode[j]);
-            glSamplerParameteri(result->Samplers[i+j*3], GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-            glSamplerParameterf(result->Samplers[i+j*3], GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+            const u32 idx = i + j * 3;
+            glSamplerParameteri(result->Samplers[idx], GL_TEXTURE_WRAP_S, translateWrapMode[i]);
+            glSamplerParameteri(result->Samplers[idx], GL_TEXTURE_WRAP_T, translateWrapMode[j]);
+            glSamplerParameteri(result->Samplers[idx], GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+            glSamplerParameteri(result->Samplers[idx], GL_TEXTURE_MAG_FILTER, GL_NEAREST);
         }
     }
 
@@ -253,6 +252,7 @@ ComputeRenderer::~ComputeRenderer()
     glDeleteBuffers(1, &YSpanIndicesTextureMemory);
     glDeleteTextures(1, &YSpanIndicesTexture);
     glDeleteTextures(1, &Framebuffer);
+    glDeleteTextures(1, &LowResFramebuffer);
     glDeleteBuffers(1, &MetaUniformMemory);
 
     glDeleteSamplers(9, Samplers);
@@ -312,6 +312,9 @@ void ComputeRenderer::SetRenderSettings(int scale, bool highResolutionCoordinate
 
     CurGLCompositor.SetScaleFactor(scale);
 
+    CoarseTileW = CoarseTileCountX * TileSize;
+    CoarseTileH = CoarseTileCountY * TileSize;
+
     if (ScaleFactor != -1)
     {
         DeleteShaders();
@@ -322,16 +325,156 @@ void ComputeRenderer::SetRenderSettings(int scale, bool highResolutionCoordinate
     ScaleFactor = scale;
     ScreenWidth = 256 * ScaleFactor;
     ScreenHeight = 192 * ScaleFactor;
+    /* MelonPrimeDS { */
 
+    /* v1.0 15-20サイクル
+    // Calculate TileScale using efficient bit manipulation
+    // First, multiply ScaleFactor by 2 and divide by 9 to get the base scale value
+    TileScale = 2 * ScaleFactor / 9;
+
+    // Find the nearest power of 2 using bit manipulation:
+    // 1. __builtin_clz counts leading zeros to find the highest set bit
+    // 2. Uses CPU's native instructions (BSR/LZCNT) for optimal performance
+    // 3. If TileScale is 0, sets to 1; otherwise uses nearest power of 2
+    TileScale = TileScale ? (1u << (31 - __builtin_clz(TileScale))) : 1;
+
+    // Calculate TileSize using branchless conditional operations:
+    // 1. Multiply TileScale by 8 (shift left by 3)
+    // 2. Check if result is <= 32
+    // 3. If result exceeds 32, clamp it to 32
+    TileSize = (TileScale << 3) & (-(TileScale << 3) <= 32);
+    TileSize = TileSize ? TileSize : 32;
+
+    // Set grid parameters using branchless conditional calculation:
+    // - If TileSize >= 32, sets CoarseTileCountY to 6 (4 + 2)
+    // - Otherwise, sets it to 4
+    CoarseTileCountY = 4 + ((TileSize >= 32) << 1);
+
+    // Calculate clear mask size for coarse binning:
+    // - If TileSize >= 32, sets ClearCoarseBinMaskLocalSize to 48 (64 - 16)
+    // - Otherwise, keeps it at 64
+    ClearCoarseBinMaskLocalSize = 64 - ((TileSize >= 32) << 4);
+
+    CoarseTileArea = CoarseTileCountX * CoarseTileCountY;
+    CoarseTileW = CoarseTileCountX * TileSize;
+    CoarseTileH = CoarseTileCountY * TileSize;
+
+    TilesPerLine = ScreenWidth / TileSize;
+    TileLines = ScreenHeight / TileSize;
+
+    HiresCoordinates = highResolutionCoordinates;
+    MaxWorkTiles = TilesPerLine * TileLines * 16;
+
+    */
+
+    /* v2 シンプルビット演算版（3-4サイクル）
+    uint8_t range = (ScaleFactor >= 5) + (ScaleFactor >= 9);
+    TileScale = 1 << range;
+    TileSize = 8 << range;
+    // uint8_t is32 = (TileSize >= 32);
+    uint8_t is32 = range >> 1; // ビット演算のみ
+    CoarseTileCountY = 4 + (is32 << 1);
+    ClearCoarseBinMaskLocalSize = 64 - (is32 << 4);
+
+    CoarseTileArea = CoarseTileCountX * CoarseTileCountY;
+    CoarseTileW = CoarseTileCountX * TileSize;
+    CoarseTileH = CoarseTileCountY * TileSize;
+
+    TilesPerLine = ScreenWidth / TileSize;
+    TileLines = ScreenHeight / TileSize;
+
+    HiresCoordinates = highResolutionCoordinates;
+    MaxWorkTiles = TilesPerLine * TileLines * 16;
+    */
+
+    // v3 最もシンプルで効果的な実装 キャッシュヒット時（0.8-1.2サイクル）最速
+    /*
+    static uint8_t lastSF = UINT8_MAX;
+    static uint8_t lastTS, lastTSZ, lastCTY, lastCCBMLS;
+
+    if (ScaleFactor != lastSF) {
+        lastSF = ScaleFactor;
+        uint8_t range = (ScaleFactor >= 5) + (ScaleFactor >= 9);
+        lastTS = 1 << range;
+        lastTSZ = 8 << range;
+    //  uint8_t is32 = (lastTSZ >= 32);
+        uint8_t is32 = range >> 1; // ビット演算のみ
+        lastCTY = 4 + (is32 << 1);
+        lastCCBMLS = 64 - (is32 << 4);
+    }
+
+    TileScale = lastTS;
+    TileSize = lastTSZ;
+    CoarseTileCountY = lastCTY;
+    ClearCoarseBinMaskLocalSize = lastCCBMLS;
+
+    CoarseTileArea = CoarseTileCountX * CoarseTileCountY;
+    CoarseTileW = CoarseTileCountX * TileSize;
+    CoarseTileH = CoarseTileCountY * TileSize;
+
+    TilesPerLine = ScreenWidth / TileSize;
+    TileLines = ScreenHeight / TileSize;
+
+    HiresCoordinates = highResolutionCoordinates;
+    MaxWorkTiles = TilesPerLine * TileLines * 16;
+    */
+
+    /* v5 合計遅延: 5-6サイクル キャッシュヒット時2-3サイクル
+    static uint64_t lastState = 0xFFFFFFFFFFFFFFFF;
+
+    uint64_t sfShifted = ((uint64_t)ScaleFactor) << 56;
+    if ((lastState & 0xFF00000000000000ULL) != sfShifted) {
+        uint8_t r = (ScaleFactor >= 5) + (ScaleFactor >= 9);
+        lastState = sfShifted |
+            ((1ULL << r) << 24) |
+            ((8ULL << r) << 16) |
+            ((4ULL + ((r >> 1) << 1)) << 8) |
+            (64ULL - ((r >> 1) << 4));
+    }
+
+    // 最速アクセス（1サイクル）
+    uint32_t c = (uint32_t)lastState;
+    TileScale = c >> 24;
+    TileSize = (c >> 16) & 0xFF;
+    CoarseTileCountY = (c >> 8) & 0xFF;
+    ClearCoarseBinMaskLocalSize = c & 0xFF;
+
+    CoarseTileArea = CoarseTileCountX * CoarseTileCountY;
+    CoarseTileW = CoarseTileCountX * TileSize;
+    CoarseTileH = CoarseTileCountY * TileSize;
+
+    TilesPerLine = ScreenWidth / TileSize;
+    TileLines = ScreenHeight / TileSize;
+
+    HiresCoordinates = highResolutionCoordinates;
+    MaxWorkTiles = TilesPerLine * TileLines * 16;
+    */
+
+
+
+#ifdef COMMENTOUTTTTTTTT
+    // v0
+    // https://github.com/melonDS-emu/melonDS/pull/2065/files
+
+    template <typename T>
+    T GetMSBit(T val)
+    {
+        val |= (val >> 1);
+        val |= (val >> 2);
+        val |= (val >> 4);
+
+        if constexpr (sizeof(val) > 1) val |= (val >> 8);
+        if constexpr (sizeof(val) > 2) val |= (val >> 16);
+        if constexpr (sizeof(val) > 4) val |= (val >> 32);
+
+        return val - (val >> 1);
+    }
     //Starting at 4.5x we want to double TileSize every time scale doubles
     TileScale = 2 * ScaleFactor / 9;
     TileScale = GetMSBit(TileScale);
     TileScale <<= 1;
     TileScale += TileScale == 0;
 
-    std::printf("Scale: %d\n", ScaleFactor);
-    std::printf("TileScale: %d\n", TileScale);
-    
     TileSize = std::min(8 * TileScale, 32);
     CoarseTileCountY = TileSize < 32 ? 4 : 6;
     ClearCoarseBinMaskLocalSize = TileSize < 32 ? 64 : 48;
@@ -339,31 +482,587 @@ void ComputeRenderer::SetRenderSettings(int scale, bool highResolutionCoordinate
     CoarseTileW = CoarseTileCountX * TileSize;
     CoarseTileH = CoarseTileCountY * TileSize;
 
-    TilesPerLine = ScreenWidth/TileSize;
-    TileLines = ScreenHeight/TileSize;
+    TilesPerLine = ScreenWidth / TileSize;
+    TileLines = ScreenHeight / TileSize;
 
     HiresCoordinates = highResolutionCoordinates;
+    MaxWorkTiles = TilesPerLine * TileLines * 16;
 
-    MaxWorkTiles = TilesPerLine*TileLines*16;
+    // v1
+
+    // uint8_t TileScale
+    TileScale = 2 * ScaleFactor / 9; //Starting at 4.5x we want to double TileSize every time scale doubles
+#define GET_MSBIT(val) \
+    ({ \
+        auto _v = (val); \
+        _v |= (_v >> 1); \
+        _v |= (_v >> 2); \
+        _v |= (_v >> 4); \
+        _v |= (_v >> 8); \
+        _v |= (_v >> 16); \
+        _v - (_v >> 1); \
+    })
+    TileScale = GET_MSBIT(TileScale);
+    TileScale <<= 1;
+    TileScale += TileScale == 0;
+
+    TileSize = std::min(8 * TileScale, 32); // int
+    CoarseTileCountY = TileSize < 32 ? 4 : 6; // int
+    ClearCoarseBinMaskLocalSize = TileSize < 32 ? 64 : 48; // int
+    CoarseTileArea = CoarseTileCountX * CoarseTileCountY; // int
+    CoarseTileW = CoarseTileCountX * TileSize; // int
+    CoarseTileH = CoarseTileCountY * TileSize; // int
+
+    TilesPerLine = ScreenWidth / TileSize; // int
+    TileLines = ScreenHeight / TileSize; // int
+
+    HiresCoordinates = highResolutionCoordinates; // bool
+    MaxWorkTiles = TilesPerLine * TileLines * 16; // int
+
+
+    // v3 lut version なんか遅延ある？
+    //
+    // Tile情報のLUT構造体
+    struct TileParams {
+        uint8_t tileScale;    // TileScale（2のべき乗）
+        uint8_t tileSize;     // TileSize（tileScale × 8、最大32まで）
+        uint8_t shift;        // log2(tileSize)
+        uint8_t cty;          // CoarseTileCountY
+        uint8_t ccbmls;       // ClearCoarseBinMaskLocalSize
+        uint8_t area;         // CoarseTileArea（8 × cty）
+        uint16_t coarseW;     // CoarseTileW（8 × tileSize）
+        uint16_t coarseH;     // CoarseTileH（cty × tileSize）
+    };
+    // LUT定義（1-indexed、[0]番目は未使用） LUTはchatGptにpython使わせて生成する
+    alignas(64) static constexpr TileParams TileLUT[101] = {
+        {}, // index 0 は未使用（ScaleFactor 1～16対応）
+
+        // { tileScale, tileSize, shift, cty, ccbmls, area, coarseW, coarseH }
+        { 1,  8, 3, 4, 64, 32,  64,  32 },  // ScaleFactor = 1
+        { 1,  8, 3, 4, 64, 32,  64,  32 },  // = 2
+        { 1,  8, 3, 4, 64, 32,  64,  32 },  // = 3
+        { 1,  8, 3, 4, 64, 32,  64,  32 },  // = 4
+        { 2, 16, 4, 4, 64, 32, 128,  64 },  // = 5
+        { 2, 16, 4, 4, 64, 32, 128,  64 },  // = 6
+        { 2, 16, 4, 4, 64, 32, 128,  64 },  // = 7
+        { 2, 16, 4, 4, 64, 32, 128,  64 },  // = 8
+        { 4, 32, 5, 6, 48, 48, 256, 192 },  // = 9
+        { 4, 32, 5, 6, 48, 48, 256, 192 },  // = 10
+        { 4, 32, 5, 6, 48, 48, 256, 192 },  // = 11
+        { 4, 32, 5, 6, 48, 48, 256, 192 },  // = 12
+        { 4, 32, 5, 6, 48, 48, 256, 192 },  // = 13
+        { 4, 32, 5, 6, 48, 48, 256, 192 },  // = 14
+        { 4, 32, 5, 6, 48, 48, 256, 192 },  // = 15
+        { 4, 32, 5, 6, 48, 48, 256, 192 },  // = 16
+        //{ 8, 32, 5, 6, 48, 48, 256, 192 },  // = 17
+        //{ 8, 32, 5, 6, 48, 48, 256, 192 },  // = 18
+        //{ 8, 32, 5, 6, 48, 48, 256, 192 },  // = 19
+        // ...
+        // ScaleFactor = 20 ～ 100 も同様に { 8, 32, 5, 6, 48, 48, 256, 192 } 固定で続く
+    };
+    // */
+
+    // LUTからパラメータを取得
+    const auto& lut = TileLUT[ScaleFactor];
+
+    // 値の取り出し
+    TileScale = lut.tileScale;
+    TileSize = lut.tileSize;
+    CoarseTileCountY = lut.cty;
+    ClearCoarseBinMaskLocalSize = lut.ccbmls;
+    CoarseTileArea = lut.area;
+    CoarseTileW = lut.coarseW;
+    CoarseTileH = lut.coarseH;
+
+    TilesPerLine = ScreenWidth / TileSize; // int
+    TileLines = ScreenHeight / TileSize; // int
+
+    HiresCoordinates = highResolutionCoordinates; // bool
+    MaxWorkTiles = TilesPerLine * TileLines * 16; // int
+
+    // v3 lut version ここまで
+
+
+
+    // v2
+
+    // uint8_t TileScale
+    TileScale = 2 * ScaleFactor / 9; //Starting at 4.5x we want to double TileSize every time scale doubles
+    // 64bit整数に対応したMSB抽出マクロ（ビット操作のみ・分岐なし）
+#define GET_MSBIT(val)                            \
+    ([&]() -> decltype(val) {                          \
+        auto _v = (val);                               \
+        _v |= (_v >> 1);                               /* 下位1bitマージ */ \
+        _v |= (_v >> 2);                               /* 下位2bitマージ */ \
+        _v |= (_v >> 4);                               /* 下位4bitマージ */ \
+        if constexpr (sizeof(_v) > 1) _v |= (_v >> 8);  /* 16bit以上用 */ \
+        if constexpr (sizeof(_v) > 2) _v |= (_v >> 16); /* 32bit以上用 */ \
+        if constexpr (sizeof(_v) > 4) _v |= (_v >> 32); /* 64bit以上用 */ \
+        return _v - (_v >> 1);                          /* 最上位bitだけ残す */ \
+    })()
+
+    TileScale = GET_MSBIT(TileScale);
+    TileScale <<= 1;
+    TileScale += TileScale == 0;
+
+    TileSize = std::min(8 * TileScale, 32); // int
+    CoarseTileCountY = TileSize < 32 ? 4 : 6; // int
+    ClearCoarseBinMaskLocalSize = TileSize < 32 ? 64 : 48; // int
+    CoarseTileArea = CoarseTileCountX * CoarseTileCountY; // int
+    CoarseTileW = CoarseTileCountX * TileSize; // int
+    CoarseTileH = CoarseTileCountY * TileSize; // int
+
+    TilesPerLine = ScreenWidth / TileSize; // int
+    TileLines = ScreenHeight / TileSize; // int
+
+    HiresCoordinates = highResolutionCoordinates; // bool
+    MaxWorkTiles = TilesPerLine * TileLines * 16; // int
+
+
+    // v3
+
+    // TileScaleを補正付きで算出するラムダ式 元の処理結果と完全一致
+    const auto getTileScale = [](uint8_t ScaleFactor) __attribute__((always_inline, hot, flatten)) -> uint8_t {
+        // baseスケールを算出（除算＋0補正）
+        uint8_t base = (2 * ScaleFactor) / 9;
+
+        // base == 0 の場合は1に補正（MSB抽出のUB防止）
+        base |= (base == 0);
+
+        // 最上位ビット（MSB）を抽出（ビルトイン命令使用）
+        uint8_t msb = 1u << (31 - __builtin_clz(base));
+
+        // TileScale = MSB × 2
+        uint8_t TileScale = msb << 1;
+
+        // ScaleFactorが1～4のときは特別にTileScaleを1に補正（完全一致用）
+        if (ScaleFactor <= 4)
+            TileScale = 1;
+
+        return TileScale;
+    };
+
+    // uint8_t TileScale
+    TileScale = getTileScale(ScaleFactor);
+
+    // TileSize計算 元の処理と完全一致
+    TileSize = (TileScale << 3); // TileSizeはint
+    TileSize = (TileSize > 32) ? 32 : TileSize;
+
+    bool isSmall = TileSize < 32;
+    CoarseTileCountY = isSmall ? 4 : 6; // int
+    ClearCoarseBinMaskLocalSize = isSmall ? 64 : 48; // int
+
+
+    CoarseTileArea = CoarseTileCountX * CoarseTileCountY; // int
+    CoarseTileW = CoarseTileCountX * TileSize; // int
+    CoarseTileH = CoarseTileCountY * TileSize; // int
+
+    TilesPerLine = ScreenWidth / TileSize; // int
+    TileLines = ScreenHeight / TileSize; // int
+
+    HiresCoordinates = highResolutionCoordinates; // bool
+    MaxWorkTiles = TilesPerLine * TileLines * 16; // int
+
+
+    // v4
+
+// TileScale補正付き算出マクロ（元の処理と完全一致保証）
+#define GET_TILE_SCALE(sf)                                         \
+    ({                                                             \
+        uint8_t _sf = (sf);                                        \
+        uint8_t _base = (2 * _sf) / 9;                             \
+        _base |= (_base == 0); /* ゼロ補正（MSB抽出のUB防止） */  \
+        uint8_t _msb = 1u << (31 - __builtin_clz(_base));          \
+        uint8_t _ts = _msb << 1; /* TileScale = MSB × 2 */         \
+        if (_sf <= 4) _ts = 1; /* 完全一致補正 */                  \
+        _ts;                                                       \
+    })
+
+    // uint8_t TileScale
+    TileScale = GET_TILE_SCALE(ScaleFactor);
+
+
+    // TileSize計算 元の処理と完全一致
+    TileSize = (TileScale << 3); // TileSizeはint
+    TileSize = (TileSize > 32) ? 32 : TileSize;
+
+    bool isSmall = TileSize < 32;
+    CoarseTileCountY = isSmall ? 4 : 6; // int
+    ClearCoarseBinMaskLocalSize = isSmall ? 64 : 48; // int
+
+
+    CoarseTileArea = CoarseTileCountX * CoarseTileCountY; // int
+    CoarseTileW = CoarseTileCountX * TileSize; // int
+    CoarseTileH = CoarseTileCountY * TileSize; // int
+
+    TilesPerLine = ScreenWidth / TileSize; // int
+    TileLines = ScreenHeight / TileSize; // int
+
+    HiresCoordinates = highResolutionCoordinates; // bool
+    MaxWorkTiles = TilesPerLine * TileLines * 16; // int
+
+
+    // v5
+
+    // TileScale計算（v4と完全一致）__builtin_clz使用版
+    if (ScaleFactor <= 4) {
+        TileScale = 1;
+    }
+    else {
+        uint32_t base = (2 * ScaleFactor) / 9;
+        TileScale = (base != 0)
+            ? (1u << (31 - __builtin_clz(base))) << 1
+            : 1;
+    }
+
+    // TileSize計算 元の処理と完全一致
+    TileSize = (TileScale << 3); // TileSizeはint
+    TileSize = (TileSize > 32) ? 32 : TileSize;
+
+    bool isSmall = TileSize < 32;
+    CoarseTileCountY = isSmall ? 4 : 6; // int
+    ClearCoarseBinMaskLocalSize = isSmall ? 64 : 48; // int
+
+
+    CoarseTileArea = CoarseTileCountX * CoarseTileCountY; // int
+    CoarseTileW = CoarseTileCountX * TileSize; // int
+    CoarseTileH = CoarseTileCountY * TileSize; // int
+
+    TilesPerLine = ScreenWidth / TileSize; // int
+    TileLines = ScreenHeight / TileSize; // int
+
+    HiresCoordinates = highResolutionCoordinates; // bool
+    MaxWorkTiles = TilesPerLine * TileLines * 16; // int
+
+
+
+    // v6 かなり低遅延
+
+    uint32_t base = (2 * ScaleFactor) / 9;
+    base |= (base == 0);
+    uint32_t msb2 = (1u << (31 - __builtin_clz(base))) << 1;
+    TileScale = (msb2 & -(ScaleFactor > 4)) | (1 & -(ScaleFactor <= 4));
+
+    // TileSize計算 元の処理と完全一致
+    TileSize = (TileScale << 3); // TileSizeはint
+    TileSize = (TileSize > 32) ? 32 : TileSize;
+
+    bool isSmall = TileSize < 32;
+    CoarseTileCountY = isSmall ? 4 : 6; // int
+    ClearCoarseBinMaskLocalSize = isSmall ? 64 : 48; // int
+
+
+    CoarseTileArea = CoarseTileCountX * CoarseTileCountY; // int
+    CoarseTileW = CoarseTileCountX * TileSize; // int
+    CoarseTileH = CoarseTileCountY * TileSize; // int
+
+    TilesPerLine = ScreenWidth / TileSize; // int
+    TileLines = ScreenHeight / TileSize; // int
+
+    HiresCoordinates = highResolutionCoordinates; // bool
+    MaxWorkTiles = TilesPerLine * TileLines * 16; // int
+
+
+
+
+    // v7 各種値をマスク演算で高速に計算（分岐なし）
+
+    // TileScale計算（分岐なし・v4と完全一致）
+    uint32_t base = (2 * ScaleFactor) / 9;
+    base |= (base == 0);
+    uint32_t msb2 = (1u << (31 - __builtin_clz(base))) << 1;
+    TileScale = (msb2 & -(ScaleFactor > 4)) | (1 & -(ScaleFactor <= 4));
+
+    // TileSize = clamp(TileScale << 3, 0, 32)
+    TileSize = TileScale << 3;
+    TileSize -= (TileSize > 32) * (TileSize - 32); // 条件分岐なしで最大値32に制限
+
+    // TileSize32Mask = (TileSize < 32)
+    uint32_t isSmall = TileSize < 32;
+
+    // 各種値をマスク演算で高速に計算（分岐なし）
+    CoarseTileCountY = 6 - 2 * isSmall;
+    ClearCoarseBinMaskLocalSize = 48 + 16 * isSmall;
+
+    // 共通変数の合成展開（依存最小）
+    CoarseTileArea = CoarseTileCountX * CoarseTileCountY;
+    TileLines = ScreenHeight / TileSize;
+    TilesPerLine = ScreenWidth / TileSize;
+    CoarseTileW = CoarseTileCountX * TileSize;
+    CoarseTileH = CoarseTileCountY * TileSize;
+
+    // HiresCoordinatesは変化しない
+    HiresCoordinates = highResolutionCoordinates;
+
+    // タイル単位ワーク領域計算
+    MaxWorkTiles = TileLines * TilesPerLine * 16;
+
+
+    // v8
+    // range算出(閾値比較を加算化して分岐回避のため)
+    const uint8_t range = static_cast<uint8_t>((ScaleFactor >= 5) + (ScaleFactor >= 9));
+    // TileScale決定(2のべき乗をシフト一発で生成するため)
+    TileScale = 1u << range;
+    // TileSize決定(8×TileScaleを左シフト一発で生成するため)
+    TileSize = 8u << range;
+    // isSmall判定(32未満かどうかをビットで保持するため)
+    const uint8_t isSmall = static_cast<uint8_t>(range < 2);
+    // CoarseTileCountY決定(4 or 6をビット算術で導出するため)
+    CoarseTileCountY = 4 + (static_cast<int>(range >> 1) << 1);
+    // ClearCoarseBinMaskLocalSize決定(64 or 48をビット算術で導出するため)
+    ClearCoarseBinMaskLocalSize = 64 - (static_cast<int>(range >> 1) << 4);
+
+    // タイル総数算出(後続処理の共通基礎量確定のため)
+    CoarseTileArea = CoarseTileCountX * CoarseTileCountY;
+    // 幅方向ピクセル算出(描画計算の前処理簡略化のため)
+    CoarseTileW = CoarseTileCountX * TileSize;
+    // 高さ方向ピクセル算出(描画計算の前処理簡略化のため)
+    CoarseTileH = CoarseTileCountY * TileSize;
+
+    // 横方向タイル数算出(除算回数を必要最小限に抑えるため)
+    TilesPerLine = ScreenWidth / TileSize;
+    // 縦方向タイル数算出(除算回数を必要最小限に抑えるため)
+    TileLines = ScreenHeight / TileSize;
+
+    // 高解像度座標フラグ反映(外部設定をそのまま反映するため)
+    HiresCoordinates = highResolutionCoordinates;
+    // 最大ワークタイル数算出(固定係数16を乗算一発で反映するため)
+    MaxWorkTiles = TilesPerLine * TileLines * 16;
+
+
+    // v9
+    // タイル関連パラメータ用ローカル構造体定義(依存の明確化と一括受け渡しのため)
+    struct TileParams { uint8_t scale; uint8_t size; int cty; int ccbmls; };
+
+    // タイル関連パラメータ算出ラムダ定義(関数内定義許容とインライン展開誘導のため)
+    const auto ComputeTileParams =
+        // キャプチャ無し指定(外部状態非依存で副作用排除のため)
+        [](uint8_t sf) __attribute__((always_inline, hot, flatten)) -> TileParams
+    {
+        // range算出処理(閾値比較の算術化による分岐削減のため)
+        const uint8_t range =
+            // 5以上判定加算(タイル段階の下位ビット生成のため)
+            static_cast<uint8_t>((sf >= 5)
+                // 9以上判定加算(タイル段階の上位ビット生成のため)
+                + (sf >= 9));
+
+        // TileScale算出処理(2のべき乗生成の左シフト一発化のため)
+        const uint8_t tileScale = static_cast<uint8_t>(1u << range);
+
+        // TileSize算出処理(8×TileScaleの左シフト一発化のため)
+        const uint8_t tileSize = static_cast<uint8_t>(8u << range);
+
+        // isSmall判定保持処理(32未満条件のブール保持と後続算術簡略化のため)
+        const uint8_t isSmall = static_cast<uint8_t>(range < 2);
+
+        // CoarseTileCountY算出処理(4または6をビット算術で導出するため)
+        const int cty = 4 + ((static_cast<int>(range >> 1)) << 1);
+
+        // ClearCoarseBinMaskLocalSize算出処理(64または48をビット算術で導出するため)
+        const int ccbmls = 64 - ((static_cast<int>(range >> 1)) << 4);
+
+        // 結果構造体返却処理(集約初期化によるレジスタ渡し最適化のため)
+        return TileParams{ tileScale, tileSize, cty, ccbmls };
+    };
+
+    // タイル計算結果取得処理(ラムダ即時呼び出しで依存最小化のため)
+    const TileParams tp = ComputeTileParams(static_cast<uint8_t>(ScaleFactor));
+
+    // TileScale反映処理(後続のタイル寸法と分割数の基礎となるため)
+    TileScale = tp.scale;
+
+    // TileSize反映処理(タイルあたりピクセル数とワーク量決定のため)
+    TileSize = tp.size;
+
+    // CoarseTileCountY反映処理(縦方向タイル分割数決定のため)
+    CoarseTileCountY = tp.cty;
+
+    // ClearCoarseBinMaskLocalSize反映処理(ローカルワークグループ分割効率最適化のため)
+    ClearCoarseBinMaskLocalSize = tp.ccbmls;
+
+    // CoarseTileArea算出処理(タイル総数の共通基礎量確定のため)
+    CoarseTileArea = CoarseTileCountX * CoarseTileCountY;
+
+    // CoarseTileW算出処理(幅方向ピクセル寸法確定のため)
+    CoarseTileW = CoarseTileCountX * TileSize;
+
+    // CoarseTileH算出処理(高さ方向ピクセル寸法確定のため)
+    CoarseTileH = CoarseTileCountY * TileSize;
+
+    // TilesPerLine算出処理(水平タイル数の除算一回化のため)
+    TilesPerLine = ScreenWidth / TileSize;
+
+    // TileLines算出処理(垂直タイル数の除算一回化のため)
+    TileLines = ScreenHeight / TileSize;
+
+    // HiresCoordinates反映処理(高解像度座標設定の透過適用のため)
+    HiresCoordinates = highResolutionCoordinates;
+
+    // MaxWorkTiles算出処理(固定係数16の乗算一発適用のため)
+    MaxWorkTiles = TilesPerLine * TileLines * 16;
+
+
+    // v10
+    // タイル関連パラメータ用ローカル構造体定義(依存の明確化と一括受け渡しのため)
+    struct TileParams { uint8_t scale; uint8_t size; int cty; int ccbmls; };
+
+    // タイル関連パラメータ算出ラムダ定義(関数内定義許容とインライン展開誘導のため)
+    const auto ComputeTileParams =
+        // キャプチャ無し指定(外部状態非依存で副作用排除のため)
+        [](uint8_t sf) __attribute__((always_inline, hot, flatten)) -> TileParams
+    {
+        // range算出処理(閾値比較の算術化による分岐削減のため)
+        const uint8_t range =
+            // 5以上判定加算(タイル段階の下位ビット生成のため)
+            static_cast<uint8_t>((sf >= 5)
+                // 9以上判定加算(タイル段階の上位ビット生成のため)
+                + (sf >= 9));
+
+        // TileScale算出処理(2のべき乗生成の左シフト一発化のため)
+        const uint8_t tileScale = static_cast<uint8_t>(1u << range);
+
+        // TileSize算出処理(8×TileScaleの左シフト一発化のため)
+        const uint8_t tileSize = static_cast<uint8_t>(8u << range);
+
+        // isSmall判定保持処理(32未満条件のブール保持と後続算術簡略化のため)
+        const uint8_t isSmall = static_cast<uint8_t>(range < 2);
+
+        // CoarseTileCountY算出処理(4または6をビット算術で導出するため)
+        const int cty = 4 + ((static_cast<int>(range >> 1)) << 1);
+
+        // ClearCoarseBinMaskLocalSize算出処理(64または48をビット算術で導出するため)
+        const int ccbmls = 64 - ((static_cast<int>(range >> 1)) << 4);
+
+        // 結果構造体返却処理(集約初期化によるレジスタ渡し最適化のため)
+        return TileParams{ tileScale, tileSize, cty, ccbmls };
+    };
+
+    // タイル計算結果取得処理(ラムダ即時呼び出しで依存最小化のため)
+    const TileParams tp = ComputeTileParams(static_cast<uint8_t>(ScaleFactor));
+
+    // TileScale反映処理(後続のタイル寸法と分割数の基礎となるため)
+    TileScale = tp.scale;
+
+    // TileSize反映処理(タイルあたりピクセル数とワーク量決定のため)
+    TileSize = tp.size;
+
+    // CoarseTileCountY反映処理(縦方向タイル分割数決定のため)
+    CoarseTileCountY = tp.cty;
+
+    // ClearCoarseBinMaskLocalSize反映処理(ローカルワークグループ分割効率最適化のため)
+    ClearCoarseBinMaskLocalSize = tp.ccbmls;
+
+    // CoarseTileArea算出処理(タイル総数の共通基礎量確定のため)
+    CoarseTileArea = CoarseTileCountX * CoarseTileCountY;
+
+    // CoarseTileW算出処理(幅方向ピクセル寸法確定のため)
+    CoarseTileW = CoarseTileCountX * TileSize;
+
+    // CoarseTileH算出処理(高さ方向ピクセル寸法確定のため)
+    CoarseTileH = CoarseTileCountY * TileSize;
+
+    // タイルサイズのシフト量算出処理(除算のビットシフト化のため)
+    const uint8_t tileShift = static_cast<uint8_t>(3u + ((ScaleFactor >= 5) + (ScaleFactor >= 9)));
+
+    // 横方向タイル数算出処理(除算の右シフト化によるサイクル削減のため)
+    TilesPerLine = static_cast<int>(static_cast<unsigned>(ScreenWidth) >> tileShift);
+
+    // 縦方向タイル数算出処理(除算の右シフト化によるサイクル削減のため)
+    TileLines = static_cast<int>(static_cast<unsigned>(ScreenHeight) >> tileShift);
+
+    // HiresCoordinates反映処理(高解像度座標設定の透過適用のため)
+    HiresCoordinates = highResolutionCoordinates;
+
+    // MaxWorkTiles算出処理(固定係数16の乗算一発適用のため)
+    MaxWorkTiles = TilesPerLine * TileLines * 16;
+
+
+#endif
+
+
+
+
+    // v11
+    // range算出処理(2段階しきい値比較の算術化による分岐最小化のため)
+    const uint8_t range = static_cast<uint8_t>((ScaleFactor >= 5) + (ScaleFactor >= 9));
+
+    // TileScale反映処理(2のべき乗生成の左シフト一発化のため)
+    TileScale = static_cast<uint8_t>(1u << range);
+
+    // TileSize反映処理(8×TileScaleの左シフト一発化のため)
+    TileSize = static_cast<uint8_t>(8u << range);
+
+    // CoarseTileCountY反映処理(4または6をrange上位ビットから導出のため)
+    CoarseTileCountY = 4 + ((static_cast<int>(range >> 1)) << 1);
+
+    // ClearCoarseBinMaskLocalSize反映処理(64または48をrange上位ビットから導出のため)
+    ClearCoarseBinMaskLocalSize = 64 - ((static_cast<int>(range >> 1)) << 4);
+
+    // CoarseTileArea算出処理(タイル総数の基礎量確定のため)
+    CoarseTileArea = CoarseTileCountX * CoarseTileCountY;
+
+    // CoarseTileW算出処理(幅方向ピクセル寸法確定のため)
+    CoarseTileW = CoarseTileCountX * TileSize;
+
+    // CoarseTileH算出処理(高さ方向ピクセル寸法確定のため)
+    CoarseTileH = CoarseTileCountY * TileSize;
+
+    // タイルサイズのシフト量算出処理(range再利用による依存短縮のため)
+    /* const uint8_t tileShift = static_cast<uint8_t>(3u + ((ScaleFactor >= 5) + (ScaleFactor >= 9))); */
+    const uint8_t tileShift = static_cast<uint8_t>(3u + range);
+
+    // 横方向タイル数算出処理(除算の右シフト化によるサイクル削減のため)
+    TilesPerLine = static_cast<int>(static_cast<unsigned>(ScreenWidth) >> tileShift);
+
+    // 縦方向タイル数算出処理(除算の右シフト化によるサイクル削減のため)
+    TileLines = static_cast<int>(static_cast<unsigned>(ScreenHeight) >> tileShift);
+
+    // HiresCoordinates反映処理(高解像度座標設定の透過適用のため)
+    HiresCoordinates = highResolutionCoordinates;
+
+    // MaxWorkTiles算出処理(固定係数16倍のビットシフト化による軽量化のため)
+    /* MaxWorkTiles = TilesPerLine * TileLines * 16; */
+    MaxWorkTiles = (TilesPerLine * TileLines) << 4;
+
+
+    /* MelonPrimeDS } */
 
     for (int i = 0; i < tilememoryLayer_Num; i++)
     {
         glBindBuffer(GL_SHADER_STORAGE_BUFFER, TileMemory[i]);
-        glBufferData(GL_SHADER_STORAGE_BUFFER, 4*TileSize*TileSize*MaxWorkTiles, nullptr, GL_DYNAMIC_DRAW);
+        /* glBufferData(GL_SHADER_STORAGE_BUFFER, 4*TileSize*TileSize*MaxWorkTiles, nullptr, GL_DYNAMIC_DRAW); */
+        // バッファ確保サイズを4B×要素にシフトで算出(乗算表現からの置換による可読性向上とオーバーフロー抑制のため)
+        glBufferData(GL_SHADER_STORAGE_BUFFER,
+            static_cast<GLsizeiptr>((static_cast<uint64_t>(TileSize) * TileSize * MaxWorkTiles) << 2),
+            nullptr, GL_DYNAMIC_DRAW);
     }
 
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, FinalTileMemory);
-    glBufferData(GL_SHADER_STORAGE_BUFFER, 4*3*2*ScreenWidth*ScreenHeight, nullptr, GL_DYNAMIC_DRAW);
+    /* glBufferData(GL_SHADER_STORAGE_BUFFER, 4*3*2*ScreenWidth*ScreenHeight, nullptr, GL_DYNAMIC_DRAW); */
+    // バッファ確保サイズを3面×8Bで算出(24倍を3×(1<<3)に分解して表現の明確化のため)
+    glBufferData(GL_SHADER_STORAGE_BUFFER,
+        static_cast<GLsizeiptr>((static_cast<uint64_t>(ScreenWidth)* ScreenHeight * 3) << 3),
+        nullptr, GL_DYNAMIC_DRAW);
 
-    int binResultSize = sizeof(BinResultHeader)
+    /* int binResultSize = sizeof(BinResultHeader)
         + TilesPerLine*TileLines*CoarseBinStride*4 // BinnedMaskCoarse
         + TilesPerLine*TileLines*BinStride*4 // BinnedMask
-        + TilesPerLine*TileLines*BinStride*4; // WorkOffsets
+        + TilesPerLine*TileLines*BinStride*4; // WorkOffsets */
+        // ビン結果サイズの4倍項目をシフトへ置換(演算一貫性の確保と可読性向上のため)
+    int binResultSize = sizeof(BinResultHeader)
+        + ((TilesPerLine * TileLines * CoarseBinStride) << 2) // BinnedMaskCoarse
+        + ((TilesPerLine * TileLines * BinStride) << 2) // BinnedMask
+        + ((TilesPerLine * TileLines * BinStride) << 2); // WorkOffsets
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, BinResultMemory);
     glBufferData(GL_SHADER_STORAGE_BUFFER, binResultSize, nullptr, GL_DYNAMIC_DRAW);
 
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, WorkDescMemory);
-    glBufferData(GL_SHADER_STORAGE_BUFFER, MaxWorkTiles*2*4*2, nullptr, GL_DYNAMIC_DRAW);
+    /* glBufferData(GL_SHADER_STORAGE_BUFFER, MaxWorkTiles*2*4*2, nullptr, GL_DYNAMIC_DRAW); */
+    // バッファ確保サイズを16B単位で算出(2×4×2Bの積を1<<4に集約して表現の簡潔化のため)
+    glBufferData(GL_SHADER_STORAGE_BUFFER,
+        static_cast<GLsizeiptr>(static_cast<uint64_t>(MaxWorkTiles) << 4),
+        nullptr, GL_DYNAMIC_DRAW);
 
     if (Framebuffer != 0)
         glDeleteTextures(1, &Framebuffer);
@@ -371,7 +1070,7 @@ void ComputeRenderer::SetRenderSettings(int scale, bool highResolutionCoordinate
     glBindTexture(GL_TEXTURE_2D, Framebuffer);
     glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, ScreenWidth, ScreenHeight);
 
-    // eh those are pretty bad guesses
+    // TODO eh those are pretty bad guesses
     // though real hw shouldn't be eable to render all 2048 polygons on every line either
     int maxYSpanIndices = 64*2048 * ScaleFactor;
     YSpanIndices.resize(maxYSpanIndices);
@@ -947,7 +1646,7 @@ void ComputeRenderer::RenderFrame(GPU& gpu)
     glBindBufferBase(GL_UNIFORM_BUFFER, 0, MetaUniformMemory);
 
     glUseProgram(ShaderClearCoarseBinMask);
-    glDispatchCompute(TilesPerLine*TileLines/ClearCoarseBinMaskLocalSize, 1, 1);
+    glDispatchCompute(TilesPerLine* TileLines / ClearCoarseBinMaskLocalSize, 1, 1);
 
     bool wbuffer = false;
     if (numYSpans > 0)
@@ -961,23 +1660,23 @@ void ComputeRenderer::RenderFrame(GPU& gpu)
         glBindImageTexture(0, YSpanIndicesTexture, 0, GL_FALSE, 0, GL_READ_ONLY, GL_RGBA16UI);
         glUseProgram(ShaderInterpXSpans[wbuffer]);
         glDispatchCompute((numSetupIndices + 31) / 32, 1, 1);
-        glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT | GL_COMMAND_BARRIER_BIT);
+        glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
 
         // bin polygons
         glUseProgram(ShaderBinCombined);
         glDispatchCompute(((gpu.GPU3D.RenderNumPolygons + 31) / 32), ScreenWidth/CoarseTileW, ScreenHeight/CoarseTileH);
-        glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT | GL_COMMAND_BARRIER_BIT);
+        glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
 
         // calculate list offsets
         glUseProgram(ShaderCalculateWorkListOffset);
         glDispatchCompute((numVariants + 31) / 32, 1, 1);
-        glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT | GL_COMMAND_BARRIER_BIT);
+        glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
 
         // sort shader work
         glUseProgram(ShaderSortWork);
         glBindBuffer(GL_DISPATCH_INDIRECT_BUFFER, BinResultMemory);
         glDispatchComputeIndirect(offsetof(BinResultHeader, SortWorkWorkCount));
-        glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT | GL_COMMAND_BARRIER_BIT);
+        glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
 
         glActiveTexture(GL_TEXTURE0);
 
@@ -1042,7 +1741,7 @@ void ComputeRenderer::RenderFrame(GPU& gpu)
                 glUniform1ui(UniformIdxCurVariant, i);
                 glUniform2f(UniformIdxTextureSize, 1.f / variants[i].Width, 1.f / variants[i].Height);
                 glBindBuffer(GL_DISPATCH_INDIRECT_BUFFER, BinResultMemory);
-                glDispatchComputeIndirect(offsetof(BinResultHeader, VariantWorkCount) + i*4*4);
+                glDispatchComputeIndirect(offsetof(BinResultHeader, VariantWorkCount) + i * 4 * 4);
             }
         }
     }
@@ -1050,7 +1749,16 @@ void ComputeRenderer::RenderFrame(GPU& gpu)
 
     // compose final image
     glUseProgram(ShaderDepthBlend[wbuffer]);
-    glDispatchCompute(ScreenWidth/TileSize, ScreenHeight/TileSize, 1);
+
+    // TileSizeは8/16/32のみなので除算をビットシフト化（軽微な削減）
+    // tileShift = 3,4,5 に対応
+    // glDispatchCompute(ScreenWidth/TileSize, ScreenHeight/TileSize, 1);
+    const int tileShift =
+        (TileSize == 8)  ? 3 :
+        (TileSize == 16) ? 4 : 5;
+    glDispatchCompute(static_cast<GLuint>(static_cast<unsigned>(ScreenWidth)  >> tileShift),
+                      static_cast<GLuint>(static_cast<unsigned>(ScreenHeight) >> tileShift),
+                      1);
     glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
 
     glBindImageTexture(0, Framebuffer, 0, GL_FALSE, 0, GL_WRITE_ONLY, GL_RGBA8);
@@ -1064,7 +1772,12 @@ void ComputeRenderer::RenderFrame(GPU& gpu)
         finalPassShader |= 0x1;
     
     glUseProgram(ShaderFinalPass[finalPassShader]);
-    glDispatchCompute(ScreenWidth/32, ScreenHeight, 1);
+
+    // ここは常に32固定なので右シフトで除算を代替
+    // glDispatchCompute(ScreenWidth/32, ScreenHeight, 1);
+    glDispatchCompute(static_cast<GLuint>(static_cast<unsigned>(ScreenWidth) >> 5),
+                      static_cast<GLuint>(ScreenHeight),
+                      1);
     glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT);
 
     glBindSampler(0, 0);
