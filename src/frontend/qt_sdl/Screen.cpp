@@ -388,34 +388,37 @@ void ScreenPanel::resizeEvent(QResizeEvent* event)
 void ScreenPanel::mousePressEvent(QMouseEvent* event)
 {
     event->accept();
-
-    // 参照をローカルに落として、ポインタ辿りと関数呼びを減らす
     auto* const emu = emuInstance;
     auto* const thr = emu->getEmuThread();
+    auto* const core = thr->GetMelonPrimeCore(); // Coreを取得
 
-    // so we dont press buttons before fully focusing
-    // （元コードと同じ: emuがアクティブなら focus->通知、ダメなら touching=false で return）
     if (Q_UNLIKELY(!emu->emuIsActive()))
     {
         touching = false;
         return;
     }
 
-    if (thr->GetMelonPrimeCore()) thr->GetMelonPrimeCore()->isFocused = true;
+    if (core) core->isFocused = true;
 
-    emu->onMousePress(event);     // MelonPrimeDS
+    emu->onMousePress(event);
 
-    // 左クリック以外はここで終了（元コード同様）
     if (event->button() != Qt::LeftButton)
         return;
 
-#if defined(STYLUS_MODE)
-    // MelonPrimeDS: don't touch when in-game（元コード同様）
-    if (thr->GetMelonPrimeCore() && thr->GetMelonPrimeCore()->IsInGame())
+    // --- ここを修正 ---
+    // マウスエイムモード（!isStylusMode）かつ、ゲーム中の場合は、
+    // 下段のタッチ処理（DSの画面を触る処理）をスキップする
+    if (core && !core->isStylusMode && core->IsInGame())
+    {
+        // マウスモードでゲーム中なら、エイム開始（クリップ）だけして帰る
+        if (!core->isCursorMode)
+        {
+            clipCursorCenter1px();
+        }
         return;
-#endif
+    }
 
-    // touch Screen（pos() を2回作らない）
+    // スタイラスモード、またはメニュー画面中ならここから下のタッチ処理が実行される
     const QPoint p = event->pos();
     int x = p.x();
     int y = p.y();
@@ -426,13 +429,11 @@ void ScreenPanel::mousePressEvent(QMouseEvent* event)
         emu->touchScreen(x, y);
     }
 
-#if !defined(STYLUS_MODE) && defined(_WIN32)
-    // カーソルモードでない時だけ 1px クリップ開始
-    if (thr->GetMelonPrimeCore() && Q_LIKELY(!thr->GetMelonPrimeCore()->isCursorMode))
+    // クリップ処理も動的判定に変更
+    if (core && !core->isStylusMode && Q_LIKELY(!core->isCursorMode))
     {
-        clipCursorCenter1px(); // MelonPrimeDS
+        clipCursorCenter1px();
     }
-#endif
 }
 
 void ScreenPanel::mouseReleaseEvent(QMouseEvent* event)

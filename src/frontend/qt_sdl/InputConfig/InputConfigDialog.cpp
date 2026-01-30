@@ -150,7 +150,7 @@ InputConfigDialog::InputConfigDialog(QWidget* parent) : QDialog(parent), ui(new 
 
     // Other Metroid Settings 2 Tab
     ui->cbMetroidApplyJoy2KeySupport->setChecked(instcfg.GetBool("Metroid.Apply.joy2KeySupport"));
-
+    ui->cbMetroidEnableStylusMode->setChecked(instcfg.GetBool("Metroid.Enable.stylusMode"));
 
     // } MelonPrimeDS
 
@@ -362,6 +362,8 @@ void InputConfigDialog::on_InputConfigDialog_accepted()
 	// Other Metroid Settings 2 Tab
 
     instcfg.SetBool("Metroid.Apply.joy2KeySupport", ui->cbMetroidApplyJoy2KeySupport->checkState() == Qt::Checked);
+
+    instcfg.SetBool("Metroid.Enable.stylusMode", ui->cbMetroidEnableStylusMode->checkState() == Qt::Checked);
 
     // } MelonPrimeDS
 

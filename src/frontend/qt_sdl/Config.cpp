@@ -164,6 +164,7 @@ DefaultList<bool> DefaultBools =
     /* MelonPrimeDS { */
     {"Instance*.Metroid.Operation.SnapTap", false},
     {"Instance*.Metroid.Apply.joy2KeySupport", true},
+    {"Instance*.Metroid.Enable.stylusMode", false},
     /* MelonPrimeDS } */
 
 };

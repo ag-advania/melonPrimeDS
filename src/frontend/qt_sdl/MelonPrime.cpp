@@ -1,5 +1,5 @@
 /*
-    MelonPrimeDS Logic Implementation (Full Version: Focus Logic Fixed)
+    MelonPrimeDS Logic Implementation (Full Version: Dynamic Stylus Mode Fixed)
 */
 
 #include "MelonPrime.h"
@@ -202,6 +202,7 @@ void MelonPrimeCore::Initialize()
 {
     isJoy2KeySupport = localCfg.GetBool("Metroid.Apply.joy2KeySupport");
     isSnapTapMode = localCfg.GetBool("Metroid.Operation.SnapTap");
+    isStylusMode = localCfg.GetBool("Metroid.Enable.stylusMode");
 
     // Initial sensitivity cache
     recalcAimSensitivityCache(localCfg);
@@ -313,7 +314,9 @@ void MelonPrimeCore::OnEmuPause()
 void MelonPrimeCore::OnEmuUnpause()
 {
     isSnapTapMode = localCfg.GetBool("Metroid.Operation.SnapTap");
+    isStylusMode = localCfg.GetBool("Metroid.Enable.stylusMode");
     isJoy2KeySupport = localCfg.GetBool("Metroid.Apply.joy2KeySupport");
+
     ApplyJoy2KeySupportAndQtFilter(isJoy2KeySupport);
 
     // リセットフラグ関係
@@ -481,9 +484,10 @@ void MelonPrimeCore::RunFrameHook()
         bool isZoom = MP_HK_DOWN(HK_MetroidZoom);
         emuInstance->inputMask.setBit(INPUT_R, !isZoom);
 
-#ifndef STYLUS_MODE
-        ProcessAimInput();
-#endif
+        // 再帰中も、特殊操作中（m_blockStylusAim == true）ならエイムをスキップする
+        if (!m_blockStylusAim) {
+            ProcessAimInput();
+        }
 
         return;
     }
@@ -494,12 +498,10 @@ void MelonPrimeCore::RunFrameHook()
     // Global Hotkeys
     HandleGlobalHotkeys();
 
-#ifndef STYLUS_MODE
-    // Mouse player
-#else
-    // isStylus who touch touch screen to aim, operate.
-    isFocused = true;
-#endif
+    if (isStylusMode) {
+        // isStylus who touch touch screen to aim, operate.
+        isFocused = true;
+    }
 
     // Capture previous detection state to trigger renderer update on first detect
     bool wasDetected = isRomDetected;
@@ -578,9 +580,9 @@ void MelonPrimeCore::RunFrameHook()
             if (shouldBeCursorMode != isCursorMode) {
                 isCursorMode = shouldBeCursorMode;
                 setAimBlock(AIMBLK_CURSOR_MODE, isCursorMode);
-#ifndef STYLUS_MODE
-                ShowCursor(isCursorMode);
-#endif
+                if (!isStylusMode) {
+                    ShowCursor(isCursorMode);
+                }
             }
 
             if (isCursorMode) {
@@ -613,12 +615,29 @@ void MelonPrimeCore::RunFrameHook()
 
 void MelonPrimeCore::HandleInGameLogic()
 {
-    // 1. Macros / State
-    TOUCH_IF(HK_MetroidMorphBall, 231, 167)
-        ProcessWeaponSwitch();
+    // 1. 特別なタッチ操作の判定
+    m_blockStylusAim = false;
 
+    // トランスフォーム
+    if (MP_HK_PRESSED(HK_MetroidMorphBall)) {
+        if (isStylusMode) m_blockStylusAim = true; // このフレームのスタイラス処理をブロック
+        emuInstance->getNDS()->ReleaseScreen();
+        FrameAdvanceTwice();
+        emuInstance->getNDS()->TouchScreen(231, 167);
+        FrameAdvanceTwice();
+        emuInstance->getNDS()->ReleaseScreen();
+        FrameAdvanceTwice();
+    }
+
+    // 武器切り替え
+    if (ProcessWeaponSwitch()) {
+        if (isStylusMode) m_blockStylusAim = true;
+    }
+
+    // 武器チェック（押しっぱなしの間、他のタッチをブロック）
     static bool isWeaponCheckActive = false;
     if (emuInstance->hotkeyDown(HK_MetroidWeaponCheck)) {
+        if (isStylusMode) m_blockStylusAim = true; // 押している間はずっと true
         if (!isWeaponCheckActive) {
             isWeaponCheckActive = true;
             setAimBlock(AIMBLK_CHECK_WEAPON, true);
@@ -626,44 +645,42 @@ void MelonPrimeCore::HandleInGameLogic()
             FrameAdvanceTwice();
         }
         emuInstance->getNDS()->TouchScreen(236, 30);
-        FrameAdvanceTwice();
+        // ここでは FrameAdvance を呼ばず、通常のループに任せることで
+        // ProcessAimInput の上書きを m_blockStylusAim で防ぐ
     }
-    else {
-        if (isWeaponCheckActive) {
-            isWeaponCheckActive = false;
-            emuInstance->getNDS()->ReleaseScreen();
-            setAimBlock(AIMBLK_CHECK_WEAPON, false);
-            FrameAdvanceTwice();
-        }
+    else if (isWeaponCheckActive) {
+        isWeaponCheckActive = false;
+        emuInstance->getNDS()->ReleaseScreen();
+        setAimBlock(AIMBLK_CHECK_WEAPON, false);
+        FrameAdvanceTwice();
     }
 
     if (Q_UNLIKELY(isInAdventure)) {
         HandleAdventureMode();
+        // Adventureモード内のUI操作もタッチを伴うなら考慮が必要ですが、
+        // 現状は HandleAdventureMode 内の TOUCH_IF で完結しています
     }
 
-    // 2. Continuous Input
+    // 2. 基本入力
     ProcessMoveInput(emuInstance->inputMask);
-
-    // Jump (0 = Pressed)
     emuInstance->inputMask.setBit(INPUT_B, !MP_HK_DOWN(HK_MetroidJump));
+    emuInstance->inputMask.setBit(INPUT_L, !(MP_HK_DOWN(HK_MetroidShootScan) || MP_HK_DOWN(HK_MetroidScanShoot)));
+    emuInstance->inputMask.setBit(INPUT_R, !MP_HK_DOWN(HK_MetroidZoom));
 
-    // Shoot (L) / Zoom (R)
-    bool isShoot = MP_HK_DOWN(HK_MetroidShootScan) || MP_HK_DOWN(HK_MetroidScanShoot);
-    emuInstance->inputMask.setBit(INPUT_L, !isShoot);
-
-    bool isZoom = MP_HK_DOWN(HK_MetroidZoom);
-    emuInstance->inputMask.setBit(INPUT_R, !isZoom);
-
-    // Morph Ball Boost Override
     HandleMorphBallBoost();
 
-    // 3. Aim
-#ifndef STYLUS_MODE
-    ProcessAimInput();
-    if (!wasLastFrameFocused || !isAimDisabled) {
-        emuInstance->getNDS()->TouchScreen(128, 88);
+    // 3. エイム・タッチ入力の最終決定
+    // 特殊操作（変身、武器選択、武器チェック）をしていない時だけ、
+    // マウスエイムやユーザーの直接タッチを処理する
+    if (!m_blockStylusAim) {
+        ProcessAimInput();
+
+        if (!isStylusMode) {
+            if (!wasLastFrameFocused || !isAimDisabled) {
+                emuInstance->getNDS()->TouchScreen(128, 88);
+            }
+        }
     }
-#endif
 }
 
 void MelonPrimeCore::ProcessMoveInput(QBitArray& mask)
@@ -717,7 +734,16 @@ void MelonPrimeCore::ProcessMoveInput(QBitArray& mask)
 
 void MelonPrimeCore::ProcessAimInput()
 {
-#ifndef STYLUS_MODE
+    if (isStylusMode) {
+        if (Q_LIKELY(emuInstance->isTouching)) {
+            emuInstance->getNDS()->TouchScreen(emuInstance->touchX, emuInstance->touchY);
+        }
+        else {
+            emuInstance->getNDS()->ReleaseScreen();
+        }
+        return;
+    }
+
     if (isAimDisabled) return;
 
     if (isLayoutChangePending) {
@@ -759,15 +785,6 @@ void MelonPrimeCore::ProcessAimInput()
 #endif
 
     isLayoutChangePending = false;
-
-#else
-    if (Q_LIKELY(emuInstance->isTouching)) {
-        emuInstance->getNDS()->TouchScreen(emuInstance->touchX, emuInstance->touchY);
-    }
-    else {
-        emuInstance->getNDS()->ReleaseScreen();
-    }
-#endif
 }
 
 void MelonPrimeCore::HandleMorphBallBoost()
@@ -794,11 +811,11 @@ void MelonPrimeCore::HandleMorphBallBoost()
 
                 if (isBoosting) {
                     setAimBlock(AIMBLK_MORPHBALL_BOOST, false);
-#ifdef STYLUS_MODE
-                    if (emuInstance->isTouching) {
-                        emuInstance->getNDS()->TouchScreen(emuInstance->touchX, emuInstance->touchY);
+                    if (isStylusMode) {
+                        if (emuInstance->isTouching) {
+                            emuInstance->getNDS()->TouchScreen(emuInstance->touchX, emuInstance->touchY);
+                        }
                     }
-#endif
                 }
             }
         }
@@ -813,16 +830,25 @@ void MelonPrimeCore::HandleAdventureMode()
     isPaused = emuInstance->getNDS()->ARM9Read8(addr.isMapOrUserActionPaused) == 0x1;
 
     if (MP_HK_PRESSED(HK_MetroidScanVisor)) {
+        // スタイラスの干渉をブロック開始
+        if (isStylusMode) m_blockStylusAim = true;
+
         emuInstance->getNDS()->ReleaseScreen();
         FrameAdvanceTwice();
-        emuInstance->getNDS()->TouchScreen(128, 173);
+        emuInstance->getNDS()->TouchScreen(128, 173); // バイザーアイコンをタッチ
 
         if (emuInstance->getNDS()->ARM9Read8(addr.isInVisorOrMap) == 0x1) {
             FrameAdvanceTwice();
         }
         else {
+            // バイザー起動待ちループ
             for (int i = 0; i < 30; i++) {
-                ProcessAimInput();
+                // ここで ProcessAimInput が呼ばれますが、
+                // m_blockStylusAim が true なので、再帰ガード内で
+                // スタイラスの「離す」処理がスキップされます
+                if(!isStylusMode){
+                    ProcessAimInput();
+                }
                 ProcessMoveInput(emuInstance->inputMask);
                 emuInstance->getNDS()->SetKeyMask(GET_INPUT_MASK(emuInstance->inputMask));
                 FrameAdvanceOnce();
@@ -830,8 +856,13 @@ void MelonPrimeCore::HandleAdventureMode()
         }
         emuInstance->getNDS()->ReleaseScreen();
         FrameAdvanceTwice();
+
+        // 操作完了
+        m_blockStylusAim = false;
     }
 
+    // UI操作系も念のためガードを考慮（短いので現状のマクロでも動くはずですが、
+    // もし不安定ならここも m_blockStylusAim = true で囲んでください）
     TOUCH_IF(HK_MetroidUIOk, 128, 142)
         TOUCH_IF(HK_MetroidUILeft, 71, 141)
         TOUCH_IF(HK_MetroidUIRight, 185, 141)
@@ -979,13 +1010,14 @@ void MelonPrimeCore::SwitchWeapon(int weaponIndex)
     emuInstance->getNDS()->ReleaseScreen();
     FrameAdvanceTwice();
 
-#ifndef STYLUS_MODE
-    emuInstance->getNDS()->TouchScreen(128, 88);
-#else
-    if (emuInstance->isTouching) {
-        emuInstance->getNDS()->TouchScreen(emuInstance->touchX, emuInstance->touchY);
+    if (!isStylusMode) {
+        emuInstance->getNDS()->TouchScreen(128, 88);
     }
-#endif
+    else {
+        if (emuInstance->isTouching) {
+            emuInstance->getNDS()->TouchScreen(emuInstance->touchX, emuInstance->touchY);
+        }
+    }
     FrameAdvanceTwice();
 
     if (isRestoreNeeded) {
