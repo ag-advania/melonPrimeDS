@@ -1,5 +1,5 @@
 /*
-    MelonPrimeDS Logic Separation (Full Version: Added Sensitivity Hotkeys)
+    MelonPrimeDS Logic Separation (Fixed Header)
 */
 
 #ifndef MELONPRIME_H
@@ -8,13 +8,12 @@
 #include <QObject>
 #include <QBitArray>
 #include <QPoint>
-#include <functional> // for std::function
+#include <functional>
 #include <vector>
 
 #include "types.h"
 #include "Config.h"
 
-// Forward declarations
 class EmuInstance;
 namespace melonDS { class NDS; }
 
@@ -28,53 +27,43 @@ public:
     explicit MelonPrimeCore(EmuInstance* instance);
     ~MelonPrimeCore();
 
-    // Main Hooks called from EmuThread
     void Initialize();
-    void RunFrameHook(); // Called every frame inside the emulation loop
+    void RunFrameHook();
     void OnEmuStart();
     void OnEmuStop();
     void OnEmuPause();
     void OnEmuUnpause();
     void OnReset();
 
-    // Callback setter for FPS-limited frame advance
     void SetFrameAdvanceFunc(std::function<void()> func);
-
-    // Config/State updates
     void UpdateRendererSettings();
     bool IsInGame() const { return isInGame; }
-
-    // Check if we should force software renderer (Menu fix)
     bool ShouldForceSoftwareRenderer() const;
 
-    // --- Public State Flags (Accessed by Screen.cpp) ---
+    // Public State Flags
     bool isCursorMode = true;
     bool isFocused = false;
-    bool isClipWanted = false; // Added for ScreenPanel clip logic
-
-    void NotifyLayoutChange() { isLayoutChangePending = true; }
-
+    bool isClipWanted = false;
     bool isStylusMode = false;
 
+    void NotifyLayoutChange() { isLayoutChangePending = true; }
 
 private:
     EmuInstance* emuInstance;
     Config::Table& localCfg;
     Config::Table& globalCfg;
 
-    // Callback function to call EmuThread's frame advance (with FPS limit)
     std::function<void()> m_frameAdvanceFunc;
 
-    bool m_blockStylusAim = false; // クラスメンバとして追加
+    // 【修正】メンバ変数として復活（再帰ガード共有用）
+    bool m_blockStylusAim = false;
 
     // --- State Flags ---
     bool isRomDetected = false;
     bool isInGame = false;
     bool isInGameAndHasInitialized = false;
-    bool isPaused = false; // Adventure Mode pause state
+    bool isPaused = false;
     bool isInAdventure = false;
-
-    // Renderer state tracking
     bool wasInGameForRenderer = false;
 
     // --- Input / Control Flags ---
@@ -83,21 +72,18 @@ private:
     bool wasLastFrameFocused = false;
     bool isLayoutChangePending = true;
 
-    // --- Aim / Mouse State ---
     struct AimData {
         int centerX = 0;
         int centerY = 0;
     } aimData;
 
-    // --- One-time Application Flags ---
     bool isHeadphoneApplied = false;
     bool isUnlockMapsHuntersApplied = false;
     bool isVolumeSfxApplied = false;
     bool isVolumeMusicApplied = false;
 
-    // --- Memory Addresses (Cached) ---
+    // --- Memory Addresses ---
     struct GameAddresses {
-        // Dynamic addresses calculated from PlayerPos
         melonDS::u32 isAltForm;
         melonDS::u32 loadedSpecialWeapon;
         melonDS::u32 chosenHunter;
@@ -114,7 +100,6 @@ private:
         melonDS::u32 inGameSensi;
         melonDS::u32 isInVisorOrMap;
 
-        // Base addresses (set during detection)
         melonDS::u32 baseIsAltForm;
         melonDS::u32 baseLoadedSpecialWeapon;
         melonDS::u32 baseWeaponChange;
@@ -125,7 +110,6 @@ private:
         melonDS::u32 baseAimY;
         melonDS::u32 baseInGameSensi;
 
-        // Static addresses
         melonDS::u32 inGame;
         melonDS::u32 playerPos;
         melonDS::u32 isInAdventure;
@@ -144,7 +128,6 @@ private:
         melonDS::u32 rankColor;
     } addr;
 
-    // --- Game Context ---
     melonDS::u8 playerPosition = 0;
     bool isSamus = false;
     bool isWeavel = false;
@@ -153,26 +136,28 @@ private:
     // --- Internal Logic Methods ---
     void DetectRomAndSetAddresses();
     void ApplyGameSettingsOnce();
-
-    // [NEW] Global hotkeys (Sensitivity, Layout Reset)
     void HandleGlobalHotkeys();
 
-    void HandleInGameLogic();
+    void HandleInGameLogic(melonDS::u8* mainRAM);
     void ProcessMoveInput(QBitArray& inputMask);
-    void ProcessAimInput();
-    bool ProcessWeaponSwitch();
-    void HandleMorphBallBoost();
-    void HandleAdventureMode();
 
-    void SwitchWeapon(int weaponIndex);
+    void ProcessAimInputMouse(melonDS::u8* mainRAM);
+    void ProcessAimInputStylus();
 
-    // Helpers
+    // 戻り値変更なし、内部でメンバ変数を操作
+    bool ProcessWeaponSwitch(melonDS::u8* mainRAM);
+    bool HandleMorphBallBoost(melonDS::u8* mainRAM);
+
+    // 引数変更: bool& blockAimOut を削除
+    void HandleAdventureMode(melonDS::u8* mainRAM);
+
+    void SwitchWeapon(melonDS::u8* mainRAM, int weaponIndex);
+
     void ShowCursor(bool show);
     void FrameAdvanceTwice();
-    void FrameAdvanceOnce(); // Uses the callback
+    void FrameAdvanceOnce();
     QPoint GetAdjustedCenter();
 
-    // Private Static Helpers (ported from original EmuThread.cpp)
     static bool ApplyHeadphoneOnce(melonDS::NDS* nds, Config::Table& localCfg, melonDS::u32 addr, bool& applied);
     static bool ApplySfxVolumeOnce(melonDS::NDS* nds, Config::Table& localCfg, melonDS::u32 addr, bool& applied);
     static bool ApplyMusicVolumeOnce(melonDS::NDS* nds, Config::Table& localCfg, melonDS::u32 addr, bool& applied);
@@ -183,7 +168,6 @@ private:
     static bool ApplyUnlockHuntersMaps(melonDS::NDS* nds, Config::Table& localCfg, bool& applied, melonDS::u32 a1, melonDS::u32 a2, melonDS::u32 a3, melonDS::u32 a4, melonDS::u32 a5);
     static melonDS::u32 calculatePlayerAddress(melonDS::u32 base, melonDS::u8 pos, int32_t inc);
 
-    // Windows Specific
     void SetupRawInput();
     void ApplyJoy2KeySupportAndQtFilter(bool enable, bool doReset = true);
 };
