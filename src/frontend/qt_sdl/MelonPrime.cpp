@@ -1,5 +1,5 @@
 /*
-    MelonPrimeDS Logic Implementation (Full Version: Fixed Adventure Mode Input & MorphBall Boost)
+    MelonPrimeDS Logic Implementation (Full Version: Fixed Focus Logic)
 */
 
 #include "MelonPrime.h"
@@ -440,24 +440,21 @@ void MelonPrimeCore::RunFrameHook()
 
     // Check if we are being called recursively (e.g. from Adventure Mode loop)
     if (isRunningHook) {
-        // [FIX] Even during recursion (scan visor loop), we MUST process basic inputs.
-        // FrameAdvanceOnce() in EmuThread calls inputProcess() which resets masks.
-        // We must re-apply our overrides here so SetKeyMask() gets the correct values.
+        // Even during recursion, we MUST process basic inputs.
+        // FrameAdvanceOnce() calls inputProcess() which resets masks.
 
-        // 1. Move
         ProcessMoveInput(emuInstance->inputMask);
 
-        // 2. Jump (0 = Pressed)
+        // Jump (0 = Pressed)
         emuInstance->inputMask.setBit(INPUT_B, !MP_HK_DOWN(HK_MetroidJump));
 
-        // 3. Shoot / Zoom
+        // Shoot / Zoom (0 = Pressed)
         bool isShoot = MP_HK_DOWN(HK_MetroidShootScan) || MP_HK_DOWN(HK_MetroidScanShoot);
         emuInstance->inputMask.setBit(INPUT_L, !isShoot);
 
         bool isZoom = MP_HK_DOWN(HK_MetroidZoom);
         emuInstance->inputMask.setBit(INPUT_R, !isZoom);
 
-        // 4. Aim (Needed to look around while scanning?)
 #ifndef STYLUS_MODE
         ProcessAimInput();
 #endif
@@ -468,11 +465,7 @@ void MelonPrimeCore::RunFrameHook()
     isRunningHook = true;
     // -----------------------
 
-#ifndef STYLUS_MODE
-    isFocused = true;
-#else
-    isFocused = true;
-#endif
+    // [FIX] Removed forced isFocused = true. Now respects the value set by Screen.cpp (GUI thread).
 
     // Capture previous detection state to trigger renderer update on first detect
     bool wasDetected = isRomDetected;
@@ -481,7 +474,7 @@ void MelonPrimeCore::RunFrameHook()
         DetectRomAndSetAddresses();
     }
 
-    // Trigger update if just detected (to potentially switch to Software for menu)
+    // Trigger update if just detected
     if (!wasDetected && isRomDetected) {
         emuInstance->getEmuThread()->updateVideoRenderer();
     }
@@ -795,9 +788,9 @@ void MelonPrimeCore::HandleAdventureMode()
         }
         else {
             for (int i = 0; i < 30; i++) {
-                // [FIX] Loop internally but inputs are now handled by recursion in RunFrameHook
-                // We removed ProcessAim/Move from here because FrameAdvanceOnce calls RunFrameHook
-                // which now detects recursion and applies inputs.
+                ProcessAimInput();
+                ProcessMoveInput(emuInstance->inputMask);
+                emuInstance->getNDS()->SetKeyMask(GET_INPUT_MASK(emuInstance->inputMask));
                 FrameAdvanceOnce();
             }
         }
