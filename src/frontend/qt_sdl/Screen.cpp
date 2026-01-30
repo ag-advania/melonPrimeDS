@@ -405,20 +405,24 @@ void ScreenPanel::mousePressEvent(QMouseEvent* event)
     if (event->button() != Qt::LeftButton)
         return;
 
-    // --- ここを修正 ---
-    // マウスエイムモード（!isStylusMode）かつ、ゲーム中の場合は、
-    // 下段のタッチ処理（DSの画面を触る処理）をスキップする
+    // --- 修正箇所 ---
+    // マウスエイムモード（!isStylusMode）かつ、ゲーム中の場合
     if (core && !core->isStylusMode && core->IsInGame())
     {
-        // マウスモードでゲーム中なら、エイム開始（クリップ）だけして帰る
+        // エイムモード（!isCursorMode）の時は、クリックをエイム復帰（クリップ）として扱い、
+        // タッチパネルへの入力をブロックして return する。
         if (!core->isCursorMode)
         {
             clipCursorCenter1px();
+            return;
         }
-        return;
+
+        // 【修正点】
+        // isCursorMode == true (メニュー画面等) の場合は、
+        // ここで return せず、下の「layout.GetTouchCoords」へ処理を流す必要がある。
     }
 
-    // スタイラスモード、またはメニュー画面中ならここから下のタッチ処理が実行される
+    // スタイラスモード、またはカーソルモード（メニュー画面等）ならここが実行される
     const QPoint p = event->pos();
     int x = p.x();
     int y = p.y();
@@ -430,7 +434,8 @@ void ScreenPanel::mousePressEvent(QMouseEvent* event)
     }
 
     // クリップ処理も動的判定に変更
-    if (core && !core->isStylusMode && Q_LIKELY(!core->isCursorMode))
+    // カーソルモードならクリップしない
+    if (core && !core->isStylusMode && !core->isCursorMode)
     {
         clipCursorCenter1px();
     }
