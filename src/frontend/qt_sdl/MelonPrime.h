@@ -54,6 +54,9 @@ public:
 
     void NotifyLayoutChange() { isLayoutChangePending = true; }
 
+    bool isStylusMode = false;
+
+
 private:
     EmuInstance* emuInstance;
     Config::Table& localCfg;
@@ -61,6 +64,8 @@ private:
 
     // Callback function to call EmuThread's frame advance (with FPS limit)
     std::function<void()> m_frameAdvanceFunc;
+
+    bool m_blockStylusAim = false; // ƒNƒ‰ƒXƒƒ“ƒo‚Æ‚µ‚Ä’Ç‰Á
 
     // --- State Flags ---
     bool isRomDetected = false;
