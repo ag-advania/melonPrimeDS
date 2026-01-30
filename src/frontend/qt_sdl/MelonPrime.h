@@ -45,6 +45,9 @@ public:
     void UpdateRendererSettings();
     bool IsInGame() const { return isInGame; }
 
+    // Check if we should force software renderer (Menu fix)
+    bool ShouldForceSoftwareRenderer() const;
+
     // --- Public State Flags (Accessed by Screen.cpp) ---
     bool isCursorMode = true;
     bool isFocused = false;
@@ -64,6 +67,9 @@ private:
     bool isInGameAndHasInitialized = false;
     bool isPaused = false; // Adventure Mode pause state
     bool isInAdventure = false;
+
+    // Renderer state tracking
+    bool wasInGameForRenderer = false;
 
     // --- Input / Control Flags ---
     bool isJoy2KeySupport = false;

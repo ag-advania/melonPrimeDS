@@ -1,9 +1,10 @@
 /*
-    MelonPrimeDS Logic Implementation (Full Version: Fixed MorphBall Boost with Memory Checks)
+    MelonPrimeDS Logic Implementation (Full Version: Fixed MorphBall Boost & Renderer Switch)
 */
 
 #include "MelonPrime.h"
 #include "EmuInstance.h"
+#include "EmuThread.h" // Added for updateVideoRenderer call
 #include "NDS.h"
 #include "GPU.h"
 #include "main.h" 
@@ -288,6 +289,7 @@ void MelonPrimeCore::OnEmuStart()
     isInGame = false;
     isRomDetected = false;
     isInGameAndHasInitialized = false;
+    wasInGameForRenderer = false; // Reset renderer tracking
 
     isHeadphoneApplied = false;
     isVolumeSfxApplied = false;
@@ -300,6 +302,7 @@ void MelonPrimeCore::OnEmuStart()
 void MelonPrimeCore::OnEmuStop()
 {
     isInGame = false;
+    wasInGameForRenderer = false;
 }
 
 void MelonPrimeCore::OnEmuPause()
@@ -345,6 +348,14 @@ void MelonPrimeCore::UpdateRendererSettings()
 {
     bool vsyncFlag = globalCfg.GetBool("Screen.VSync");
     emuInstance->setVSyncGL(vsyncFlag);
+}
+
+// Logic to force software renderer when not in-game (fixes menu glitches)
+bool MelonPrimeCore::ShouldForceSoftwareRenderer() const
+{
+    // Only force if ROM is detected (MPH) and NOT in game (Menu)
+    if (!isRomDetected) return false;
+    return !isInGame;
 }
 
 void MelonPrimeCore::DetectRomAndSetAddresses()
@@ -444,6 +455,16 @@ void MelonPrimeCore::RunFrameHook()
 
     if (Q_LIKELY(isRomDetected)) {
         isInGame = emuInstance->getNDS()->ARM9Read16(addr.inGame) == 0x0001;
+
+        // --- Renderer Switch Logic ---
+        // If state (InGame <-> Menu) changes, notify EmuThread to update video settings.
+        if (isInGame != wasInGameForRenderer) {
+            wasInGameForRenderer = isInGame;
+            // Trigger updateVideoRenderer() in EmuThread to apply the change immediately
+            emuInstance->getEmuThread()->updateVideoRenderer();
+        }
+        // -----------------------------
+
         bool shouldBeCursorMode = !isInGame || (isInAdventure && isPaused);
 
         // One-time initialization per game session

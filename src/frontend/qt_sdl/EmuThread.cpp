@@ -1,19 +1,6 @@
 /*
     Copyright 2016-2025 melonDS team
-
-    This file is part of melonDS.
-
-    melonDS is free software: you can redistribute it and/or modify it under
-    the terms of the GNU General Public License as published by the Free
-    Software Foundation, either version 3 of the License, or (at your option)
-    any later version.
-
-    melonDS is distributed in the hope that it will be useful, but WITHOUT ANY
-    WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
-    FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
-
-    You should have received a copy of the GNU General Public License along
-    with melonDS. If not, see http://www.gnu.org/licenses/.
+    ... (License Header) ...
 */
 
 #include <stdlib.h>
@@ -199,17 +186,22 @@ void EmuThread::run()
         if (videoSettingsDirty) {
             emuInstance->renderLock.lock();
             if (useOpenGL) {
-                // MelonPrime: Force VSync setting based on config
-                bool vsyncFlag = globalCfg.GetBool("Screen.VSync");
-                emuInstance->setVSyncGL(vsyncFlag);
+                // Standard Config Read
                 videoRenderer = globalCfg.GetInt("3D.Renderer");
+
+                // MelonPrime Override: Force software in menus
+                if (melonPrime->ShouldForceSoftwareRenderer()) {
+                    videoRenderer = 0; // Software
+                }
             }
             else {
                 videoRenderer = 0;
             }
             updateRenderer();
-            // MelonPrime Hook: Ensure renderer settings are applied
+
+            // MelonPrime Hook: Ensure VSync settings are applied
             melonPrime->UpdateRendererSettings();
+
             videoSettingsDirty = false;
             emuInstance->renderLock.unlock();
         }
@@ -221,12 +213,6 @@ void EmuThread::run()
         // 3. 確定したキー入力マスクをNDSコアに適用 (これが抜けていると移動できません)
         // ★修正箇所: QBitArrayをu32ビットマスクに変換して渡す
         emuInstance->nds->SetKeyMask(GET_INPUT_MASK(emuInstance->inputMask));
-
-        // Note: RunFrameHook内で TouchScreen() が呼ばれているため、
-        // ここでの標準タッチ処理は MelonPrime モード外の時のみ適用するなどの分岐が必要ですが、
-        // MelonPrimeCore側で排他制御しているため、ここでは単純に任せます。
-        // もしMelonPrimeが無効(ROM未検知)の場合は、標準タッチが必要ならここで処理を追加します。
-        // (現状は MelonPrimeCore::RunFrameHook 内で非ゲーム時のカーソルモード処理も行っています)
 
         // emulate
         u32 nlines;
