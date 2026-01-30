@@ -121,11 +121,12 @@ int getEventKeyVal(QKeyEvent* event);
 
 class EmuInstance
 {
+    friend class MelonPrimeCore; // MelonPrimeDS
+
 public:
     EmuInstance(int inst);
     ~EmuInstance();
 
-    /* MelonPrimeDS { */
     void onMousePress(QMouseEvent* event);
     void onMouseRelease(QMouseEvent* event);
     /* MelonPrimeDS } */
