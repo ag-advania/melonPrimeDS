@@ -4,7 +4,7 @@
 
 #include "MelonPrime.h"
 #include "EmuInstance.h"
-#include "EmuThread.h" // Added for updateVideoRenderer call
+#include "EmuThread.h"
 #include "NDS.h"
 #include "GPU.h"
 #include "main.h" 
@@ -289,7 +289,7 @@ void MelonPrimeCore::OnEmuStart()
     isInGame = false;
     isRomDetected = false;
     isInGameAndHasInitialized = false;
-    wasInGameForRenderer = false; // Reset renderer tracking
+    wasInGameForRenderer = false;
 
     isHeadphoneApplied = false;
     isVolumeSfxApplied = false;
@@ -353,7 +353,6 @@ void MelonPrimeCore::UpdateRendererSettings()
 // Logic to force software renderer when not in-game (fixes menu glitches)
 bool MelonPrimeCore::ShouldForceSoftwareRenderer() const
 {
-    // Only force if ROM is detected (MPH) and NOT in game (Menu)
     if (!isRomDetected) return false;
     return !isInGame;
 }
@@ -394,7 +393,6 @@ void MelonPrimeCore::DetectRomAndSetAddresses()
 
     if (!romInfo) return;
 
-    // MelonPrimeRomAddrTable.h の関数を呼び出し
     detectRomAndSetAddresses_fast(
         romInfo->group,
         addr.baseChosenHunter,
@@ -449,29 +447,33 @@ void MelonPrimeCore::RunFrameHook()
     isFocused = true;
 #endif
 
+    // Capture previous detection state to trigger renderer update on first detect
+    bool wasDetected = isRomDetected;
+
     if (!isRomDetected) {
         DetectRomAndSetAddresses();
+    }
+
+    // Trigger update if just detected (to potentially switch to Software for menu)
+    if (!wasDetected && isRomDetected) {
+        emuInstance->getEmuThread()->updateVideoRenderer();
     }
 
     if (Q_LIKELY(isRomDetected)) {
         isInGame = emuInstance->getNDS()->ARM9Read16(addr.inGame) == 0x0001;
 
         // --- Renderer Switch Logic ---
-        // If state (InGame <-> Menu) changes, notify EmuThread to update video settings.
         if (isInGame != wasInGameForRenderer) {
             wasInGameForRenderer = isInGame;
-            // Trigger updateVideoRenderer() in EmuThread to apply the change immediately
             emuInstance->getEmuThread()->updateVideoRenderer();
         }
         // -----------------------------
 
         bool shouldBeCursorMode = !isInGame || (isInAdventure && isPaused);
 
-        // One-time initialization per game session
         if (isInGame && !isInGameAndHasInitialized) {
             isInGameAndHasInitialized = true;
 
-            // Calculate player specific addresses
             const uint16_t incrementOfPlayerAddress = 0xF30;
             const uint8_t incrementOfAimAddr = 0x48;
 
@@ -515,7 +517,6 @@ void MelonPrimeCore::RunFrameHook()
                     isInGameAndHasInitialized = false;
                 }
 
-                // One-time menu settings
                 ApplyGameSettingsOnce();
             }
 
@@ -535,7 +536,6 @@ void MelonPrimeCore::RunFrameHook()
                     emuInstance->getNDS()->ReleaseScreen();
             }
 
-            // Start / View Match progress
             emuInstance->inputMask.setBit(INPUT_START, !MP_HK_DOWN(HK_MetroidMenu));
 
         }
@@ -554,23 +554,15 @@ void MelonPrimeCore::RunFrameHook()
         wasLastFrameFocused = isFocused;
     }
 
-    // Release lock
     isRunningHook = false;
 }
 
 void MelonPrimeCore::HandleInGameLogic()
 {
-    // =========================================================
-    // 1. STATE MANAGEMENT / MACROS
-    // =========================================================
-
-    // Alt-form toggle
+    // 1. Macros / State
     TOUCH_IF(HK_MetroidMorphBall, 231, 167)
-
-        // Weapon Switch
         ProcessWeaponSwitch();
 
-    // Weapon Check (Animation macro)
     static bool isWeaponCheckActive = false;
     if (emuInstance->hotkeyDown(HK_MetroidWeaponCheck)) {
         if (!isWeaponCheckActive) {
@@ -579,12 +571,8 @@ void MelonPrimeCore::HandleInGameLogic()
             emuInstance->getNDS()->ReleaseScreen();
             FrameAdvanceTwice();
         }
-        // Touch for weapon check (avoid aim interference)
         emuInstance->getNDS()->TouchScreen(236, 30);
         FrameAdvanceTwice();
-
-        // Note: Move input is typically not desired during this check in vanilla,
-        // but can be allowed. We'll process inputs below regardless.
     }
     else {
         if (isWeaponCheckActive) {
@@ -595,42 +583,29 @@ void MelonPrimeCore::HandleInGameLogic()
         }
     }
 
-    // Adventure Mode (Scan visor macro)
     if (Q_UNLIKELY(isInAdventure)) {
         HandleAdventureMode();
     }
 
-    // =========================================================
-    // 2. CONTINUOUS INPUT PROCESSING (LOWEST LATENCY)
-    // =========================================================
-
-    // A. Move (D-Pad calculation)
+    // 2. Continuous Input
     ProcessMoveInput(emuInstance->inputMask);
 
-    // B. Jump (Map B)
-    // Logic: 0 = Pressed, 1 = Released. setBit(..., !true) -> 0.
+    // Jump (0 = Pressed)
     emuInstance->inputMask.setBit(INPUT_B, !MP_HK_DOWN(HK_MetroidJump));
 
-    // C. Shoot (L) / Zoom (R)
-    // Logic: setBit(..., !true) -> 0 -> Pressed.
+    // Shoot (L) / Zoom (R)
     bool isShoot = MP_HK_DOWN(HK_MetroidShootScan) || MP_HK_DOWN(HK_MetroidScanShoot);
     emuInstance->inputMask.setBit(INPUT_L, !isShoot);
 
-    // D. Zoom (R) vs MorphBall Boost (R) Conflict Resolution
     bool isZoom = MP_HK_DOWN(HK_MetroidZoom);
     emuInstance->inputMask.setBit(INPUT_R, !isZoom);
 
-    // E. Morph Ball Boost Logic (Contextual Override for R)
-    // This must come AFTER standard R processing to override it if valid.
+    // Morph Ball Boost Override
     HandleMorphBallBoost();
 
-    // =========================================================
-    // 3. AIM PROCESSING
-    // =========================================================
+    // 3. Aim
 #ifndef STYLUS_MODE
     ProcessAimInput();
-
-    // Force touch for aiming if valid
     if (!wasLastFrameFocused || !isAimDisabled) {
         emuInstance->getNDS()->TouchScreen(128, 88);
     }
@@ -639,7 +614,6 @@ void MelonPrimeCore::HandleInGameLogic()
 
 void MelonPrimeCore::ProcessMoveInput(QBitArray& mask)
 {
-    // Optimized Move Logic
     alignas(64) static constexpr uint32_t MaskLUT[16] = {
         0x0F0F0F0F, 0x0F0F0F0E, 0x0F0F0E0F, 0x0F0F0F0F,
         0x0F0E0F0F, 0x0F0E0F0E, 0x0F0E0E0F, 0x0F0E0F0F,
@@ -664,7 +638,7 @@ void MelonPrimeCore::ProcessMoveInput(QBitArray& mask)
         return;
     }
 
-    // SnapTap Logic
+    // SnapTap
     const uint32_t last = snapState & 0xFFu;
     const uint32_t priority = snapState >> 8;
     const uint32_t newPress = curr & ~last;
@@ -692,7 +666,6 @@ void MelonPrimeCore::ProcessAimInput()
 #ifndef STYLUS_MODE
     if (isAimDisabled) return;
 
-    // FIX: Unconditionally clear pending flag to ensure logic runs on Windows
     if (isLayoutChangePending) {
         isLayoutChangePending = false;
         if (g_rawFilter) g_rawFilter->discardDeltas();
@@ -731,7 +704,6 @@ void MelonPrimeCore::ProcessAimInput()
     QCursor::setPos(center);
 #endif
 
-    // Ensure flag is cleared even if focus lost temporarily
     isLayoutChangePending = false;
 
 #else
@@ -746,54 +718,37 @@ void MelonPrimeCore::ProcessAimInput()
 
 void MelonPrimeCore::HandleMorphBallBoost()
 {
-    // === RESTORED ORIGINAL COMPLEX LOGIC ===
-    // This function monitors memory state (boost gauge, boosting flag) to correctly
-    // replicate the "Charge -> Release to Boost" mechanic of Metroid Prime Hunters.
     if (isSamus) {
         if (MP_HK_DOWN(HK_MetroidHoldMorphBallBoost)) {
-            // Check if Samus is in Morph Ball mode
             isAltForm = emuInstance->getNDS()->ARM9Read8(addr.isAltForm) == 0x02;
 
             if (isAltForm) {
-                // Read memory states
                 uint8_t boostGaugeValue = emuInstance->getNDS()->ARM9Read8(addr.boostGauge);
                 bool isBoosting = emuInstance->getNDS()->ARM9Read8(addr.isBoosting) != 0x00;
-
-                // Boostable when gauge value is 0x05-0x0F (max)
-                // Original code used > 0x0A as a threshold for "Enough"
                 bool isBoostGaugeEnough = boostGaugeValue > 0x0A;
 
-                // Block aiming while boosting/charging to prevent erratic camera movement
                 setAimBlock(AIMBLK_MORPHBALL_BOOST, true);
 
-                // Release screen touch? (Original comment: prevent weapon check interference)
                 if (!emuInstance->hotkeyDown(HK_MetroidWeaponCheck)) {
                     emuInstance->getNDS()->ReleaseScreen();
                 }
 
-                // Boost Input Logic (Active Low: 0=Pressed, 1=Released)
-                // We want to PRESS R (0) to charge, and RELEASE R (1) to boost.
-                // Logic: (!isBoosting && isBoostGaugeEnough)
-                //   - If NOT boosting AND Gauge is Full: Result = TRUE (1 = Release R) -> Triggers Boost
-                //   - If Boosting OR Gauge Empty: Result = FALSE (0 = Press R) -> Charges or Holds
+                // Restore Original Logic: Auto-release R when gauge is full
+                // 1 (True) = Released -> Boosts
+                // 0 (False) = Pressed -> Charges
                 emuInstance->inputMask.setBit(INPUT_R, (!isBoosting && isBoostGaugeEnough));
 
                 if (isBoosting) {
-                    // Re-enable aim block when boosting starts (to allow steering?)
-                    // Actually original code sets it to false here to allow "touch again for aiming"
                     setAimBlock(AIMBLK_MORPHBALL_BOOST, false);
-
 #ifdef STYLUS_MODE
                     if (emuInstance->isTouching) {
                         emuInstance->getNDS()->TouchScreen(emuInstance->touchX, emuInstance->touchY);
                     }
 #endif
-                    // Note: Non-stylus aim touch is handled at the end of HandleInGameLogic
                 }
             }
         }
         else {
-            // Key not held: Reset block
             setAimBlock(AIMBLK_MORPHBALL_BOOST, false);
         }
     }
@@ -803,7 +758,6 @@ void MelonPrimeCore::HandleAdventureMode()
 {
     isPaused = emuInstance->getNDS()->ARM9Read8(addr.isMapOrUserActionPaused) == 0x1;
 
-    // Scan Visor
     if (MP_HK_PRESSED(HK_MetroidScanVisor)) {
         emuInstance->getNDS()->ReleaseScreen();
         FrameAdvanceTwice();
@@ -817,7 +771,7 @@ void MelonPrimeCore::HandleAdventureMode()
                 ProcessAimInput();
                 ProcessMoveInput(emuInstance->inputMask);
                 emuInstance->getNDS()->SetKeyMask(GET_INPUT_MASK(emuInstance->inputMask));
-                FrameAdvanceOnce(); // Calls EmuThread callback
+                FrameAdvanceOnce();
             }
         }
         emuInstance->getNDS()->ReleaseScreen();
@@ -858,7 +812,6 @@ bool MelonPrimeCore::ProcessWeaponSwitch()
     for (size_t i = 0; i < 9; ++i)
         if (MP_HK_PRESSED(HOTKEY_MAP[i].hotkey)) hot |= (1u << i);
 
-    // Direct Hotkey
     if (hot) {
         const int firstSet = __builtin_ctz(hot);
         if (Q_UNLIKELY(firstSet == 8)) {
@@ -1029,17 +982,14 @@ void MelonPrimeCore::ShowCursor(bool show)
 
 void MelonPrimeCore::FrameAdvanceOnce()
 {
-    // Use the callback provided by EmuThread to ensure correct FPS limiting
     if (m_frameAdvanceFunc) {
         m_frameAdvanceFunc();
     }
     else {
-        // Fallback (safe but no FPS limit in Adventure mode loops)
         emuInstance->inputProcess();
         if (emuInstance->usesOpenGL()) emuInstance->makeCurrentGL();
 
         if (emuInstance->getNDS()->GPU.GetRenderer3D().NeedsShaderCompile()) {
-            // Compile step (simplified)
             int currentShader, shadersCount;
             emuInstance->getNDS()->GPU.GetRenderer3D().ShaderCompileStep(currentShader, shadersCount);
         }
