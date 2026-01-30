@@ -396,9 +396,7 @@ void ScreenPanel::mousePressEvent(QMouseEvent* event)
         return;
     }
 
-    // [Fix] isFocused の更新は MelonPrimeCore 側の GetForegroundWindow() に任せるため、
-    // ここでのフラグ操作は削除する。
-    // if (thr->GetMelonPrimeCore()) thr->GetMelonPrimeCore()->isFocused = true;
+    if (thr->GetMelonPrimeCore()) thr->GetMelonPrimeCore()->isFocused = true;
 
     emu->onMousePress(event);     // MelonPrimeDS
 
@@ -1553,9 +1551,8 @@ void ScreenPanelGL::transferLayout()
 /* MelonPrimeDS */
 void ScreenPanel::unfocus()
 {
-    // [Fix] isFocusedの更新は削除。MelonPrimeCore側がOSイベントで自己管理する。
-    // if (emuInstance->getEmuThread()->GetMelonPrimeCore())
-    //    emuInstance->getEmuThread()->GetMelonPrimeCore()->isFocused = false;
+     if (emuInstance->getEmuThread()->GetMelonPrimeCore())
+        emuInstance->getEmuThread()->GetMelonPrimeCore()->isFocused = false;
 
     setCursor(Qt::ArrowCursor);
 #if defined(_WIN32)
@@ -1565,14 +1562,10 @@ void ScreenPanel::unfocus()
 
 void ScreenPanel::focusOutEvent(QFocusEvent * event)
 {
-    // [Fix] フォーカスが外れたら無条件でunfocusを呼ぶ。
-    // isFocusedのチェックを削除することで、フォーカス外操作やカーソル消失バグを防ぐ。
-
-    /* Original buggy logic:
     if (emuInstance->getEmuThread()->GetMelonPrimeCore() && emuInstance->getEmuThread()->GetMelonPrimeCore()->isFocused) {
         return;
     }
-    */
+    
 
     unfocus();
 }
