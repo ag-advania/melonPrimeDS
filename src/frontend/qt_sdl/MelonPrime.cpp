@@ -183,6 +183,12 @@ namespace {
     inline void FastWrite16(melonDS::u8* ram, melonDS::u32 addr, uint16_t val) {
         *reinterpret_cast<uint16_t*>(&ram[addr & 0x3FFFFF]) = val;
     }
+    alignas(64) static constexpr uint32_t MoveMaskLUT[16] = {
+    0x0F0F0F0F, 0x0F0F0F0E, 0x0F0F0E0F, 0x0F0F0F0F,
+    0x0F0E0F0F, 0x0F0E0F0E, 0x0F0E0E0F, 0x0F0E0F0F,
+    0x0E0F0F0F, 0x0E0F0F0E, 0x0E0F0E0F, 0x0E0F0F0F,
+    0x0F0F0F0F, 0x0F0F0F0E, 0x0F0F0E0F, 0x0F0F0F0F
+    };
 }
 
 using namespace melonDS;
@@ -631,12 +637,6 @@ void MelonPrimeCore::HandleInGameLogic(melonDS::u8* mainRAM)
 
 void MelonPrimeCore::ProcessMoveInput(QBitArray& mask)
 {
-    alignas(64) static constexpr uint32_t MaskLUT[16] = {
-        0x0F0F0F0F, 0x0F0F0F0E, 0x0F0F0E0F, 0x0F0F0F0F,
-        0x0F0E0F0F, 0x0F0E0F0E, 0x0F0E0E0F, 0x0F0E0F0F,
-        0x0E0F0F0F, 0x0E0F0F0E, 0x0E0F0E0F, 0x0E0F0F0F,
-        0x0F0F0F0F, 0x0F0F0F0E, 0x0F0F0E0F, 0x0F0F0F0F
-    };
 
     static uint16_t snapState = 0;
     const uint32_t f = MP_HK_DOWN(HK_MetroidMoveForward);
@@ -646,7 +646,7 @@ void MelonPrimeCore::ProcessMoveInput(QBitArray& mask)
     const uint32_t curr = (f) | (b << 1) | (l << 2) | (r << 3);
 
     if (Q_LIKELY(!isSnapTapMode)) {
-        const uint32_t mb = MaskLUT[curr];
+        const uint32_t mb = MoveMaskLUT[curr];
         (mb & 0x00000001) ? mask.setBit(INPUT_UP) : mask.clearBit(INPUT_UP);
         ((mb >> 8) & 0x01) ? mask.setBit(INPUT_DOWN) : mask.clearBit(INPUT_DOWN);
         ((mb >> 16) & 0x01) ? mask.setBit(INPUT_LEFT) : mask.clearBit(INPUT_LEFT);
@@ -667,7 +667,7 @@ void MelonPrimeCore::ProcessMoveInput(QBitArray& mask)
     const uint32_t activePriority = newPriority & curr;
     snapState = static_cast<uint16_t>((curr & 0xFFu) | ((activePriority & 0xFFu) << 8));
     const uint32_t final = (curr & ~conflict) | (activePriority & conflict);
-    const uint32_t mb = MaskLUT[final];
+    const uint32_t mb = MoveMaskLUT[final];
     (mb & 0x00000001) ? mask.setBit(INPUT_UP) : mask.clearBit(INPUT_UP);
     ((mb >> 8) & 0x01) ? mask.setBit(INPUT_DOWN) : mask.clearBit(INPUT_DOWN);
     ((mb >> 16) & 0x01) ? mask.setBit(INPUT_LEFT) : mask.clearBit(INPUT_LEFT);
