@@ -52,6 +52,8 @@ public:
     bool isFocused = false;
     bool isClipWanted = false; // Added for ScreenPanel clip logic
 
+    void NotifyLayoutChange() { isLayoutChangePending = true; }
+
 private:
     EmuInstance* emuInstance;
     Config::Table& localCfg;

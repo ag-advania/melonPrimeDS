@@ -307,6 +307,11 @@ void ScreenPanel::setupScreenLayout()
     numScreens = layout.GetScreenTransforms(screenMatrix[0], screenKind);
 
     calcSplashLayout();
+
+    // MelonPrimeDS: Notify layout change
+    if (auto* core = emuInstance->getEmuThread()->GetMelonPrimeCore()) {
+        core->NotifyLayoutChange();
+    }
 }
 
 QSize ScreenPanel::screenGetMinSize(int factor = 1)
