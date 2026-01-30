@@ -37,6 +37,8 @@ RawInputWinFilter::RawInputWinFilter(bool joy2KeySupport, HWND mainHwnd)
     // 初期化
     for (auto& a : m_state.vkDown) a.store(0);
     m_state.mouseButtons.store(0);
+    m_mouseDeltaCombined.store(0); // 64bit Pack初期化
+
     memset(m_hkMask.data(), 0, sizeof(m_hkMask));
     memset(m_hkPrev, 0, sizeof(m_hkPrev));
 
@@ -119,7 +121,6 @@ void RawInputWinFilter::registerRawToTarget(HWND targetHwnd)
 bool RawInputWinFilter::nativeEventFilter(const QByteArray&, void* message, qintptr*)
 {
     // OFF のときは独自スレッド側で処理しているので、こちらは無視
-    // これによりQtのイベントループ負荷を回避（バイパス）
     if (!m_joy2KeySupport.load(std::memory_order_relaxed)) return false;
 
     MSG* msg = static_cast<MSG*>(message);
@@ -137,14 +138,12 @@ FORCE_INLINE void RawInputWinFilter::processRawInput(HRAWINPUT hRaw) noexcept
 {
     // 【最適化ポイント】
     // ローカル変数の固定長配列（スタック）を使用。
-    // ヒープ確保(new/malloc)が発生しないため、超高速かつスレッドセーフ。
-    // L1キャッシュに乗りやすいため、1000Hzポーリングでも負荷にならない。
     constexpr UINT kBufSize = 1024;
     alignas(16) uint8_t rawBuf[kBufSize];
 
     UINT size = kBufSize;
     if (GetRawInputData(hRaw, RID_INPUT, rawBuf, &size, sizeof(RAWINPUTHEADER)) == (UINT)-1) {
-        return; // バッファ不足エラー（通常ありえないサイズなので無視）
+        return;
     }
 
     RAWINPUT* raw = reinterpret_cast<RAWINPUT*>(rawBuf);
@@ -159,8 +158,17 @@ FORCE_INLINE void RawInputWinFilter::processRawInput(HRAWINPUT hRaw) noexcept
             const LONG dx_ = m.lLastX;
             const LONG dy_ = m.lLastY;
             if (dx_ | dy_) {
-                m_mouseDeltaX.fetch_add((int)dx_, std::memory_order_relaxed);
-                m_mouseDeltaY.fetch_add((int)dy_, std::memory_order_relaxed);
+                // 【最適化】 64bit CASループで X,Y を一度に更新
+                // メモリバリアのコストを削減し、X/Yの同期ズレを防止
+                uint64_t cur = m_mouseDeltaCombined.load(std::memory_order_relaxed);
+                uint64_t nxt;
+                do {
+                    MouseDeltaPack p;
+                    p.combined = cur;
+                    p.s.x += dx_;
+                    p.s.y += dy_;
+                    nxt = p.combined;
+                } while (!m_mouseDeltaCombined.compare_exchange_weak(cur, nxt, std::memory_order_relaxed));
             }
         }
 
@@ -251,11 +259,9 @@ void RawInputWinFilter::threadLoop()
     if (!m_hiddenWnd) return;
 
     // このスレッドの隠しウィンドウにRawInputを紐付ける
-    // これにより、Joy2KeySupport OFF 時はメインスレッドに WM_INPUT が飛ばなくなる
     registerRawToTarget(m_hiddenWnd);
 
     MSG msg;
-    // GetMessage はメッセージが来るまでCPUを使わず待機するため、ループ負荷は低い
     while (m_runThread.load(std::memory_order_relaxed))
     {
         BOOL ret = GetMessage(&msg, nullptr, 0, 0);
@@ -344,13 +350,17 @@ bool RawInputWinFilter::hotkeyReleased(int hk) noexcept {
 }
 
 void RawInputWinFilter::fetchMouseDelta(int& outX, int& outY) {
-    outX = m_mouseDeltaX.exchange(0, std::memory_order_relaxed);
-    outY = m_mouseDeltaY.exchange(0, std::memory_order_relaxed);
+    // 【最適化】 1回のアトミック交換でX, Y両方を取得・リセット
+    // 2回のアトミック操作が不要になり、キャッシュライン効率が向上
+    uint64_t val = m_mouseDeltaCombined.exchange(0, std::memory_order_relaxed);
+    MouseDeltaPack p;
+    p.combined = val;
+    outX = p.s.x;
+    outY = p.s.y;
 }
 
 void RawInputWinFilter::discardDeltas() {
-    m_mouseDeltaX.store(0, std::memory_order_relaxed);
-    m_mouseDeltaY.store(0, std::memory_order_relaxed);
+    m_mouseDeltaCombined.store(0, std::memory_order_relaxed);
 }
 
 void RawInputWinFilter::resetAllKeys() {

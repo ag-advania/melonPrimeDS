@@ -51,7 +51,7 @@ public:
     void resetHotkeyEdges();
     void setRawInputTarget(HWND hwnd);
 
-    // Helpers (static初期化のためにpublic)
+    // Helpers
     struct BtnLutEntry { uint8_t downBits; uint8_t upBits; };
     static BtnLutEntry s_btnLut[1024];
 
@@ -81,8 +81,13 @@ private:
         std::atomic<uint8_t>  mouseButtons;
     } m_state;
 
-    std::atomic<int> m_mouseDeltaX{ 0 };
-    std::atomic<int> m_mouseDeltaY{ 0 };
+    // 【最適化】 X(32bit) と Y(32bit) を 64bit変数にパッキング
+    // アトミック操作を1回で済ませるための共用体
+    union MouseDeltaPack {
+        struct { int32_t x; int32_t y; } s;
+        uint64_t combined;
+    };
+    std::atomic<uint64_t> m_mouseDeltaCombined{ 0 };
 
     struct HotkeyMask {
         uint64_t vkMask[4];
