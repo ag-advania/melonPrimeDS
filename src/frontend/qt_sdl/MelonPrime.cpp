@@ -19,7 +19,6 @@
 #include <QCursor>
 
 #ifdef _WIN32
-#include <windows.h> // GetForegroundWindowのために必要
 #include "MelonPrimeRawInputWinFilter.h"
 #include "MelonPrimeHotkeyVkBinding.h"
 // Static filter instance
@@ -360,28 +359,31 @@ bool MelonPrimeCore::ShouldForceSoftwareRenderer() const
 
 void MelonPrimeCore::DetectRomAndSetAddresses()
 {
+    // 1. 構造体に name を追加
     struct RomInfo {
         uint32_t checksum;
+        const char* name;
         RomGroup group;
     };
 
+    // 2. テーブルに名前文字列を追加
     const RomInfo ROM_INFO_TABLE[] = {
-        {RomVersions::US1_1,           GROUP_US1_1},
-        {RomVersions::US1_1_ENCRYPTED, GROUP_US1_1},
-        {RomVersions::US1_0,           GROUP_US1_0},
-        {RomVersions::US1_0_ENCRYPTED, GROUP_US1_0},
-        {RomVersions::EU1_1,           GROUP_EU1_1},
-        {RomVersions::EU1_1_ENCRYPTED, GROUP_EU1_1},
-        {RomVersions::EU1_1_BALANCED,  GROUP_EU1_1},
-        {RomVersions::EU1_1_RUSSIANED, GROUP_EU1_1},
-        {RomVersions::EU1_0,           GROUP_EU1_0},
-        {RomVersions::EU1_0_ENCRYPTED, GROUP_EU1_0},
-        {RomVersions::JP1_0,           GROUP_JP1_0},
-        {RomVersions::JP1_0_ENCRYPTED, GROUP_JP1_0},
-        {RomVersions::JP1_1,           GROUP_JP1_1},
-        {RomVersions::JP1_1_ENCRYPTED, GROUP_JP1_1},
-        {RomVersions::KR1_0,           GROUP_KR1_0},
-        {RomVersions::KR1_0_ENCRYPTED, GROUP_KR1_0},
+        {RomVersions::US1_1,           "US1.1",           GROUP_US1_1},
+        {RomVersions::US1_1_ENCRYPTED, "US1.1 ENCRYPTED", GROUP_US1_1},
+        {RomVersions::US1_0,           "US1.0",           GROUP_US1_0},
+        {RomVersions::US1_0_ENCRYPTED, "US1.0 ENCRYPTED", GROUP_US1_0},
+        {RomVersions::EU1_1,           "EU1.1",           GROUP_EU1_1},
+        {RomVersions::EU1_1_ENCRYPTED, "EU1.1 ENCRYPTED", GROUP_EU1_1},
+        {RomVersions::EU1_1_BALANCED,  "EU1.1 BALANCED",  GROUP_EU1_1},
+        {RomVersions::EU1_1_RUSSIANED, "EU1.1 RUSSIANED", GROUP_EU1_1},
+        {RomVersions::EU1_0,           "EU1.0",           GROUP_EU1_0},
+        {RomVersions::EU1_0_ENCRYPTED, "EU1.0 ENCRYPTED", GROUP_EU1_0},
+        {RomVersions::JP1_0,           "JP1.0",           GROUP_JP1_0},
+        {RomVersions::JP1_0_ENCRYPTED, "JP1.0 ENCRYPTED", GROUP_JP1_0},
+        {RomVersions::JP1_1,           "JP1.1",           GROUP_JP1_1},
+        {RomVersions::JP1_1_ENCRYPTED, "JP1.1 ENCRYPTED", GROUP_JP1_1},
+        {RomVersions::KR1_0,           "KR1.0",           GROUP_KR1_0},
+        {RomVersions::KR1_0_ENCRYPTED, "KR1.0 ENCRYPTED", GROUP_KR1_0},
     };
 
     const RomInfo* romInfo = nullptr;
@@ -427,7 +429,12 @@ void MelonPrimeCore::DetectRomAndSetAddresses()
     addr.rankColor = addr.mainHunter + 0x3;
 
     isRomDetected = true;
-    emuInstance->osdAddMessage(0, "MPH Rom Detected");
+
+    // 3. OSDメッセージに名前を含めるように変更
+    char message[256];
+    // 安全のため snprintf を推奨しますが、元の sprintf でも動作します
+    sprintf(message, "MPH Rom Detected: %s", romInfo->name);
+    emuInstance->osdAddMessage(0, message);
 
     // 初期化
     recalcAimSensitivityCache(localCfg);
@@ -436,14 +443,7 @@ void MelonPrimeCore::DetectRomAndSetAddresses()
 
 void MelonPrimeCore::HandleGlobalHotkeys()
 {
-    // 1. Layout Reset (Fullscreen/Swap)
-    if (emuInstance->hotkeyPressed(HK_FullscreenToggle) ||
-        emuInstance->hotkeyPressed(HK_SwapScreens) ||
-        emuInstance->hotkeyPressed(HK_SwapScreenEmphasis)) {
-        isLayoutChangePending = true;
-    }
-
-    // 2. Aim Sensitivity Adjustment
+    // Aim Sensitivity Adjustment
     int sensitivityChange = 0;
     if (emuInstance->hotkeyReleased(HK_MetroidIngameSensiUp)) sensitivityChange = 1;
     if (emuInstance->hotkeyReleased(HK_MetroidIngameSensiDown)) sensitivityChange = -1;
@@ -494,13 +494,11 @@ void MelonPrimeCore::RunFrameHook()
     // Global Hotkeys
     HandleGlobalHotkeys();
 
-#ifndef _WIN32
-
-    // 非Windows環境では、強制trueにせず、Qt側のフォーカス管理に任せるのが安全
-    // ただし元のコードが isFocused = true 前提で動いていた場合は注意が必要
-    // 今回は安全側に倒して false スタートとする (Screen.cpp等で更新されることを期待)
-    // ユーザー環境はWindowsのようなので影響なし
-    isFocused = true; // 互換性のため一旦 true (非Windowsで動かなくなるのを防ぐ)
+#ifndef STYLUS_MODE
+    // Mouse player
+#else
+    // isStylus who touch touch screen to aim, operate.
+    isFocused = true;
 #endif
 
     // Capture previous detection state to trigger renderer update on first detect
