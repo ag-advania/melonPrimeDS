@@ -44,6 +44,99 @@
 #include "font.h"
 #include "version.h"
 
+// melonprimeds
+#if defined(_WIN32)
+
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#include <windows.h>
+
+
+#endif
+
+// 先頭の include 群のあとに
+// MelonPrimeDS
+#ifdef _WIN32
+#include <windows.h>
+// 仮想デスクトップ矩形取得用ヘルパー(負座標含むマルチモニタ対応のため)
+inline RECT getVirtualScreenRect() {
+    // 左上座標取得(仮想デスクトップ原点取得のため)
+    const int vx = GetSystemMetrics(SM_XVIRTUALSCREEN);
+    const int vy = GetSystemMetrics(SM_YVIRTUALSCREEN);
+    // 幅高さ取得(仮想デスクトップ全域取得のため)
+    const int vw = GetSystemMetrics(SM_CXVIRTUALSCREEN);
+    const int vh = GetSystemMetrics(SM_CYVIRTUALSCREEN);
+    // 矩形生成(交差判定に用いるため)
+    return RECT{ vx, vy, vx + vw, vy + vh };
+}
+
+// 幅1pxのクリップ縦帯を生成し、仮想デスクトップに収める安全版(画面外ウィンドウでも破綻回避のため)
+static RECT computeCenter1pxClipRectSafe(HWND hwnd) {
+    // クライアント矩形取得(基準矩形取得のため)
+    RECT rc; GetClientRect(hwnd, &rc);
+    // 左上右下点のスクリーン座標化(スクリーン基準のクリップに必要なため)
+    POINT tl{ rc.left, rc.top }, br{ rc.right, rc.bottom };
+    ClientToScreen(hwnd, &tl);
+    ClientToScreen(hwnd, &br);
+
+    // 中央X計算(1px縦帯のX位置決定のため)
+    LONG cx = (tl.x + br.x) / 2;
+
+    // 仮想デスクトップ取得(マルチモニタ・負座標対応のため)
+    const RECT vs = getVirtualScreenRect();
+
+    // Xを仮想デスクトップにクランプ(画面外中央による空矩形回避のため)
+    if (cx < vs.left)  cx = vs.left;
+    if (cx >= vs.right) cx = vs.right - 1; // 幅1pxを確保するため右端は-1にする
+
+    // Y範囲をウィンドウ由来と仮想デスクトップで交差(画面外はみ出し時の破綻回避のため)
+    LONG top = (tl.y > vs.top) ? tl.y : vs.top;
+    LONG bottom = (br.y < vs.bottom) ? br.y : vs.bottom;
+
+    // 交差が空になった場合のフォールバック(ウィンドウが上下とも画面外のケース対策のため)
+    if (top >= bottom) {
+        top = vs.top;
+        bottom = vs.bottom;
+    }
+
+    // 1px幅の縦帯を生成(ClipCursorに渡すため)
+    RECT clip{ cx, top, cx + 1, bottom };
+    return clip;
+}
+/*
+static RECT computeCenter1pxClipRect(HWND hwnd) {
+    RECT rc; GetClientRect(hwnd, &rc);
+    POINT tl{ rc.left, rc.top }, br{ rc.right, rc.bottom };
+    ClientToScreen(hwnd, &tl);
+    ClientToScreen(hwnd, &br);
+    const LONG cx = (tl.x + br.x) / 2;
+    RECT clip{ cx, tl.y, cx + 1, br.y }; // 幅1pxの縦帯
+    return clip;
+}
+*/
+// 垂直中央を維持してRECTの高さを1/2に縮小するユーティリティ(既存関数の戻り値に適用するため)
+inline RECT shrinkRectHeightToHalfCentered(RECT r) {
+    // 高さ計算(後続の中心計算に必要なため)
+    const LONG h = r.bottom - r.top;
+
+    // 垂直中央計算(上下を等距離で切り詰めるため)
+    const LONG cy = (r.top + r.bottom) / 2;
+
+    // 片側の切り詰め量算出(全体1/2へ縮小するために1/4ずつ詰めるため)
+    const LONG quarter = h / 4;
+
+    // 上端更新(中央基準に上側を1/4だけ下げるため)
+    r.top = cy - quarter;
+
+    // 下端更新(中央基準に下側を1/4だけ上げるため)
+    r.bottom = cy + quarter;
+
+    // 結果返却(呼び出し元でSetCursorClip等に渡すため)
+    return r;
+}
+#endif
+
 using namespace melonDS;
 
 #if !defined(_WIN32) && !defined(APPLE)
@@ -57,6 +150,35 @@ using namespace QNativeInterface;
 
 const u32 kOSDMargin = 6;
 const int kLogoWidth = 192;
+
+// 既存の匿名namespaceのヘルパは削除/未使用にしてOK。
+// メソッドとして実装（UIスレッドで実行される想定）
+void ScreenPanel::clipCursorCenter1px() { // MelonPrimeDS
+    setClipWanted(true);
+	// BlankCursorにする
+    setCursor(Qt::BlankCursor); // MelonPrimeDS
+
+#ifdef _WIN32
+    if (!isVisible() || !window() || !window()->isActiveWindow()) return;
+    const HWND hwnd = reinterpret_cast<HWND>(winId());
+    RECT clip = computeCenter1pxClipRectSafe(hwnd);
+    // 高さ半分化(垂直中央を維持したまま高さ1/2にするため)
+    clip = shrinkRectHeightToHalfCentered(clip);
+    ClipCursor(&clip);
+#endif
+}
+
+void ScreenPanel::unclip() { // MelonPrimeDS
+	setClipWanted(false);
+#ifdef _WIN32
+    ClipCursor(nullptr);
+#endif
+}
+
+void ScreenPanel::updateClipIfNeeded() { // MelonPrimeDS
+    if (!getClipWanted()) return;
+    clipCursorCenter1px();
+}
 
 
 ScreenPanel::ScreenPanel(QWidget* parent) : QWidget(parent)
@@ -78,8 +200,11 @@ ScreenPanel::ScreenPanel(QWidget* parent) : QWidget(parent)
     mouseHide = false;
     mouseHideDelay = 0;
 
-    QTimer* mouseTimer = setupMouseTimer();
+    /* MelonPrimeDS comment-out    */
+    // QTimer* mouseTimer = setupMouseTimer();
+    /* MelonPrimeDS comment-out  
     connect(mouseTimer, &QTimer::timeout, [=] { if (mouseHide) setCursor(Qt::BlankCursor);});
+      */
 
     osdEnabled = false;
     osdID = 1;
@@ -113,8 +238,15 @@ ScreenPanel::ScreenPanel(QWidget* parent) : QWidget(parent)
 
 ScreenPanel::~ScreenPanel()
 {
+#if defined(_WIN32)
+    unclip(); // MelonPrimeDS
+#endif
+
+    /* MelonPrimeDS comment-out    
     mouseTimer->stop();
     delete mouseTimer;
+    */
+
 }
 
 void ScreenPanel::loadConfig()
@@ -140,8 +272,9 @@ void ScreenPanel::setMouseHide(bool enable, int delay)
 {
     mouseHide = enable;
     mouseHideDelay = delay;
-
+    /* MelonPrimeDS comment-out
     mouseTimer->setInterval(mouseHideDelay);
+    */
 }
 
 void ScreenPanel::setupScreenLayout()
@@ -247,56 +380,113 @@ void ScreenPanel::onAutoScreenSizingChanged(int sizing)
 void ScreenPanel::resizeEvent(QResizeEvent* event)
 {
     setupScreenLayout();
+#if defined(_WIN32)
+    // melonprimeds
+    updateClipIfNeeded();
+#endif
     QWidget::resizeEvent(event);
 }
 
 void ScreenPanel::mousePressEvent(QMouseEvent* event)
 {
     event->accept();
-    if (!emuInstance->emuIsActive()) { touching = false; return; }
-    if (event->button() != Qt::LeftButton) return;
 
-    int x = event->pos().x();
-    int y = event->pos().y();
+    // 参照をローカルに落として、ポインタ辿りと関数呼びを減らす
+    auto* const emu = emuInstance;
+    auto* const thr = emu->getEmuThread();
+
+    // so we dont press buttons before fully focusing
+    // （元コードと同じ: emuがアクティブなら focus->通知、ダメなら touching=false で return）
+    if (Q_UNLIKELY(!emu->emuIsActive()))
+    {
+        touching = false;
+        return;
+    }
+
+    // Active時のみここまで到達
+    thr->isFocused = true;        // MelonPrimeDS
+    emu->onMousePress(event);     // MelonPrimeDS
+
+    // 左クリック以外はここで終了（元コード同様）
+    if (event->button() != Qt::LeftButton)
+        return;
+
+#if defined(STYLUS_MODE)
+    // MelonPrimeDS: don't touch when in-game（元コード同様）
+    if (thr->isInGame)
+        return;
+#endif
+
+    // touch Screen（pos() を2回作らない）
+    const QPoint p = event->pos();
+    int x = p.x();
+    int y = p.y();
 
     if (layout.GetTouchCoords(x, y, false))
     {
         touching = true;
-        emuInstance->touchScreen(x, y);
+        emu->touchScreen(x, y);
     }
+
+#if !defined(STYLUS_MODE) && defined(_WIN32)
+    // カーソルモードでない時だけ 1px クリップ開始
+    if (Q_LIKELY(!thr->isCursorMode))
+    {
+        clipCursorCenter1px(); // MelonPrimeDS
+    }
+#endif
 }
 
 void ScreenPanel::mouseReleaseEvent(QMouseEvent* event)
 {
     event->accept();
-    if (!emuInstance->emuIsActive()) { touching = false; return; }
-    if (event->button() != Qt::LeftButton) return;
 
-    if (touching)
+    auto* const emu = emuInstance;
+
+    emu->onMouseRelease(event); // MelonPrimeDS
+
+    // 非アクティブなら押下状態を必ず解除（元コード通り）
+    if (Q_UNLIKELY(!emu->emuIsActive()))
     {
         touching = false;
-        emuInstance->releaseScreen();
+        return;
     }
+
+    if (event->button() != Qt::LeftButton)
+        return;
+
+    if (!touching)
+        return;
+
+    touching = false;
+    emu->releaseScreen();
 }
 
 void ScreenPanel::mouseMoveEvent(QMouseEvent* event)
 {
     event->accept();
 
-    showCursor();
+    auto* const emu = emuInstance;
 
-    if (!emuInstance->emuIsActive()) return;
-    //if (!(event->buttons() & Qt::LeftButton)) return;
-    if (!touching) return;
+    // 非アクティブはホットパスじゃない想定
+    if (Q_UNLIKELY(!emu->emuIsActive()))
+        return;
 
-    int x = event->pos().x();
-    int y = event->pos().y();
+    // 左ボタン押しっぱ判定は元コードでは無効化されてるのでそのまま
+    if (!touching)
+        return;
+
+    // pos() は1回だけ
+    const QPoint p = event->pos();
+    int x = p.x();
+    int y = p.y();
 
     if (layout.GetTouchCoords(x, y, true))
     {
-        emuInstance->touchScreen(x, y);
+        emu->touchScreen(x, y);
     }
 }
+
 
 void ScreenPanel::tabletEvent(QTabletEvent* event)
 {
@@ -309,8 +499,13 @@ void ScreenPanel::tabletEvent(QTabletEvent* event)
     case QEvent::TabletMove:
         {
 #if QT_VERSION_MAJOR == 6
+            /*
             int x = event->position().x();
             int y = event->position().y();
+            */
+            const QPointF pos = event->position();
+            int x = pos.x();
+            int y = pos.y();
 #else
             int x = event->x();
             int y = event->y();
@@ -395,22 +590,6 @@ bool ScreenPanel::event(QEvent* event)
         mainWindow->onFocusOut();
 
     return QWidget::event(event);
-}
-
-void ScreenPanel::showCursor()
-{
-    mainWindow->panel->setCursor(Qt::ArrowCursor);
-    mouseTimer->start();
-}
-
-QTimer* ScreenPanel::setupMouseTimer()
-{
-    mouseTimer = new QTimer();
-    mouseTimer->setSingleShot(true);
-    mouseTimer->setInterval(mouseHideDelay);
-    mouseTimer->start();
-
-    return mouseTimer;
 }
 
 int ScreenPanel::osdFindBreakPoint(const char* text, int i)
@@ -1372,4 +1551,39 @@ void ScreenPanelGL::transferLayout()
 
         screenSettingsLock.unlock();
     }
+}
+
+/* MelonPrimeDS */
+void ScreenPanel::unfocus()
+{
+    emuInstance->getEmuThread()->isFocused = false;
+    setCursor(Qt::ArrowCursor);
+#if defined(_WIN32)
+    unclip(); // MelonPrimeDS
+#endif
+}
+
+void ScreenPanel::focusOutEvent(QFocusEvent* event)
+{
+    if (emuInstance->getEmuThread()->isFocused) {
+        return;
+    }
+
+    unfocus();
+}
+
+void ScreenPanel::moveEvent(QMoveEvent* e) {
+	updateClipIfNeeded(); // MelonPrimeDS
+    QWidget::moveEvent(e);
+}
+
+
+__attribute__((always_inline)) inline void ScreenPanel::setClipWanted(bool value)
+{
+    emuInstance->getEmuThread()->isClipWanted = value;
+}
+
+__attribute__((always_inline)) inline bool ScreenPanel::getClipWanted()
+{
+    return emuInstance->getEmuThread()->isClipWanted;
 }

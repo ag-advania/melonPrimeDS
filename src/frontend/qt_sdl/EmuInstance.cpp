@@ -48,6 +48,17 @@
 #include "FreeBIOS.h"
 #include "main.h"
 
+/* melonPrimeDS { */
+// #include <QMessageBox>
+#include "MelonPrimeDef.h"
+
+// Global variable definitions with initialization
+// Source: MelonPrimeDef.h
+uint32_t globalChecksum = 0;
+bool isRomDetected = false;
+
+/* } melonPrimeDS */
+
 using std::make_unique;
 using std::pair;
 using std::string;
@@ -1933,6 +1944,42 @@ bool EmuInstance::loadROM(QStringList filepath, bool reset, QString& errorstr)
         errorstr = "Failed to load the DS ROM.";
         return false;
     }
+
+    // MelonPrimeDS {
+
+    // Define the instance of the global variable
+    globalChecksum = cart->Checksum();
+
+    // newRomFlag ON
+    isRomDetected = false;
+
+    // ROM Check
+    switch (globalChecksum) {
+        case RomVersions::US1_0:
+        case RomVersions::US1_1:
+        case RomVersions::EU1_0:
+        case RomVersions::EU1_1:
+        case RomVersions::JP1_0:
+        case RomVersions::JP1_1:
+        case RomVersions::KR1_0:
+        case RomVersions::EU1_1_BALANCED:
+        case RomVersions::EU1_1_RUSSIANED:
+        case RomVersions::US1_0_ENCRYPTED:
+        case RomVersions::US1_1_ENCRYPTED:
+        case RomVersions::EU1_0_ENCRYPTED:
+        case RomVersions::EU1_1_ENCRYPTED:
+        case RomVersions::JP1_0_ENCRYPTED:
+        case RomVersions::JP1_1_ENCRYPTED:
+        case RomVersions::KR1_0_ENCRYPTED:
+            // Valid ROM
+            break;
+        default:
+            char message[256];
+            sprintf(message, "Unknown ROM (Checksum: 0x%08X). Please make sure to use the untrimmed and unmodified Metroid Prime Hunters ROM which is not encrypted.", globalChecksum);
+            osdAddMessage(0xFFA0A0, message);
+            break;
+    }
+    // } MelonPrimeDS
 
     if (reset)
     {
