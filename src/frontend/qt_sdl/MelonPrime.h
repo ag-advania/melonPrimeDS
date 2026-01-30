@@ -1,5 +1,5 @@
 /*
-    MelonPrimeDS Logic Separation (Fixed Header)
+    MelonPrimeDS Logic Separation (Optimized: uint16_t Input Mask)
 */
 
 #ifndef MELONPRIME_H
@@ -10,6 +10,7 @@
 #include <QPoint>
 #include <functional>
 #include <vector>
+#include <cstdint>
 
 #include "types.h"
 #include "Config.h"
@@ -40,7 +41,15 @@ public:
     bool IsInGame() const { return isInGame; }
     bool ShouldForceSoftwareRenderer() const;
 
-    // Public State Flags
+    // ============================================================
+    // Optimized Input Mask API
+    // ============================================================
+    // Returns the fast uint16_t input mask (for SetKeyMask)
+    uint16_t GetInputMaskFast() const;
+
+    // ============================================================
+    // Public State Flags (Accessed by Screen.cpp)
+    // ============================================================
     bool isCursorMode = true;
     bool isFocused = false;
     bool isClipWanted = false;
@@ -54,8 +63,6 @@ private:
     Config::Table& globalCfg;
 
     std::function<void()> m_frameAdvanceFunc;
-
-    // 【修正】メンバ変数として復活（再帰ガード共有用）
     bool m_blockStylusAim = false;
 
     // --- State Flags ---
@@ -139,16 +146,17 @@ private:
     void HandleGlobalHotkeys();
 
     void HandleInGameLogic(melonDS::u8* mainRAM);
+    
+    // Optimized: uses global uint16_t directly
+    void ProcessMoveInputFast();
+    // Legacy: syncs to QBitArray (for HandleAdventureMode compatibility)
     void ProcessMoveInput(QBitArray& inputMask);
 
     void ProcessAimInputMouse(melonDS::u8* mainRAM);
     void ProcessAimInputStylus();
 
-    // 戻り値変更なし、内部でメンバ変数を操作
     bool ProcessWeaponSwitch(melonDS::u8* mainRAM);
     bool HandleMorphBallBoost(melonDS::u8* mainRAM);
-
-    // 引数変更: bool& blockAimOut を削除
     void HandleAdventureMode(melonDS::u8* mainRAM);
 
     void SwitchWeapon(melonDS::u8* mainRAM, int weaponIndex);

@@ -212,7 +212,7 @@ void EmuThread::run()
 
         // 3. 確定したキー入力マスクをNDSコアに適用 (これが抜けていると移動できません)
         // ★修正箇所: QBitArrayをu32ビットマスクに変換して渡す
-        emuInstance->nds->SetKeyMask(GET_INPUT_MASK(emuInstance->inputMask));
+        emuInstance->nds->SetKeyMask(melonPrime->GetInputMaskFast());
 
         // emulate
         u32 nlines;
