@@ -400,7 +400,11 @@ void A_LDM(ARM* cpu)
 
     if (!(cpu->CurInstr & (1<<23)))
     {
-        base -= 4 * __builtin_popcount(cpu->CurInstr & 0xFFFF);
+        for (int i = 0; i < 16; i++)
+        {
+            if (cpu->CurInstr & (1<<i))
+                base -= 4;
+        }
 
         if (cpu->CurInstr & (1<<21))
         {
@@ -476,7 +480,11 @@ void A_STM(ARM* cpu)
 
     if (!(cpu->CurInstr & (1<<23)))
     {
-        base -= 4 * __builtin_popcount(cpu->CurInstr & 0xFFFF);
+        for (u32 i = 0; i < 16; i++)
+        {
+            if (cpu->CurInstr & (1<<i))
+                base -= 4;
+        }
 
         if (cpu->CurInstr & (1<<21))
             cpu->R[baseid] = base;
@@ -693,8 +701,17 @@ void T_LDR_SPREL(ARM* cpu)
 
 void T_PUSH(ARM* cpu)
 {
-    int nregs = __builtin_popcount(cpu->CurInstr & 0x1FF);
+    int nregs = 0;
     bool first = true;
+
+    for (int i = 0; i < 8; i++)
+    {
+        if (cpu->CurInstr & (1<<i))
+            nregs++;
+    }
+
+    if (cpu->CurInstr & (1<<8))
+        nregs++;
 
     u32 base = cpu->R[13];
     base -= (nregs<<2);

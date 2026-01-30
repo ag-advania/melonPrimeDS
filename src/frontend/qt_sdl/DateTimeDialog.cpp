@@ -83,12 +83,7 @@ void DateTimeDialog::done(int r)
 
 void DateTimeDialog::on_chkChangeTime_clicked(bool checked)
 {
-    if (checked)
-	{
-		ui->chkResetTime->setChecked(false);
-		ui->txtNewCustomTime->setDateTime(customTime);
-	}
-	
+    if (checked) ui->chkResetTime->setChecked(false);
     ui->txtNewCustomTime->setEnabled(checked);
 }
 

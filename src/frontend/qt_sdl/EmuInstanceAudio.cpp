@@ -36,9 +36,7 @@ void EmuInstance::audioInit()
     audioVolume = localCfg.GetInt("Audio.Volume");
     audioDSiVolumeSync = localCfg.GetBool("Audio.DSiVolumeSync");
 
-    audioMutedToggle = false;
-    audioMutedByFastForward = false;
-    audioMutedByWindowFocus = false;
+    audioMuted = false;
     audioSyncCond = SDL_CreateCond();
     audioSyncLock = SDL_CreateMutex();
 
@@ -99,40 +97,30 @@ void EmuInstance::audioDeInit()
     micLock = nullptr;
 }
 
-void EmuInstance::updateAudioMuteByWindowFocus()
+void EmuInstance::audioMute()
 {
-    audioMutedByWindowFocus = false;
+    audioMuted = false;
     if (numEmuInstances() < 2) return;
 
     switch (mpAudioMode)
     {
         case 1: // only instance 1
-            if (instanceID > 0) audioMutedByWindowFocus = true;
+            if (instanceID > 0) audioMuted = true;
             break;
 
         case 2: // only currently focused instance
-            audioMutedByWindowFocus = true;
+            audioMuted = true;
             for (int i = 0; i < kMaxWindows; i++)
             {
                 if (!windowList[i]) continue;
                 if (windowList[i]->isFocused())
                 {
-                    audioMutedByWindowFocus = false;
+                    audioMuted = false;
                     break;
                 }
             }
             break;
     }
-}
-
-void EmuInstance::toggleAudioMute()
-{
-    audioMutedToggle = !audioMutedToggle;
-}
-
-void EmuInstance::updateFastForwardMute(bool fastForward)
-{
-    audioMutedByFastForward = fastForward && globalCfg.GetBool("MuteFastForward");
 }
 
 void EmuInstance::audioSync()
@@ -176,7 +164,7 @@ void EmuInstance::audioCallback(void* data, Uint8* stream, int len)
     SDL_CondSignal(inst->audioSyncCond);
     SDL_UnlockMutex(inst->audioSyncLock);
 
-    if ((num_in < 1) || inst->audioMutedByWindowFocus || inst->audioMutedToggle || inst->audioMutedByFastForward)
+    if ((num_in < 1) || inst->audioMuted)
     {
         memset(stream, 0, len*sizeof(s16)*2);
         return;
