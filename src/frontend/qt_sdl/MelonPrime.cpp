@@ -1,5 +1,5 @@
 /*
-    MelonPrimeDS Logic Implementation (Fixed Logic Inversion for Input)
+    MelonPrimeDS Logic Implementation (Full Version: Latency Optimized)
 */
 
 #include "MelonPrime.h"
@@ -539,49 +539,17 @@ void MelonPrimeCore::RunFrameHook()
 
 void MelonPrimeCore::HandleInGameLogic()
 {
-    // 1. Move
-    ProcessMoveInput(emuInstance->inputMask);
+    // =========================================================
+    // 1. STATE MANAGEMENT / MACROS
+    // =========================================================
 
-    // 2. Jump (Map B)
-    // NDS Inputs are Active LOW (0 = Pressed, 1 = Released). 
-    // QBitArray sets the bit to 1 when value is true. 
-    // MelonDS interprets bit 1 as Released in SetKeyMask? 
-    // Actually standard MelonDS logic: SetKeyMask(mask) -> sets NDS KEYINPUT. 
-    // In NDS KEYINPUT, 0 is pressed.
-    // MelonDS internal `inputMask`: 1 typically means pressed in UI logic, but converted later?
-    // Let's check `ProcessMoveInput` logic again.
-    // MaskLUT sets bit for UP/DOWN. 
-    // If the emulator treats `setBit(1)` as Pressed, then `!MP_HK_DOWN` is WRONG.
-    // BUT user said "reversed" in previous attempt.
-    // If I press Jump, `MP_HK_DOWN` is true. `!true` is false. `setBit(..., 0)`.
-    // If 0 means "Released", then Jump is released when pressed.
-    // 
-    // CORRECT LOGIC FOR NDS (Active Low):
-    // We want the bit in the final u32 mask to be 0 for PRESS.
-    // `inputMask` in EmuInstance seems to be "1 = Pressed" logic based on standard frontend code,
-    // which is then inverted or processed before sending to hardware.
-    // HOWEVER, MelonPrime legacy code used `!MP_HK_DOWN`.
-    // If I restore `!`, it matches legacy code.
-
-    emuInstance->inputMask.setBit(INPUT_B, !MP_HK_DOWN(HK_MetroidJump));
-
-    // --- ADDED L/R BUTTON LOGIC (FIXED) ---
-    // Zoom (R)
-    bool isZoom = MP_HK_DOWN(HK_MetroidZoom);
-    emuInstance->inputMask.setBit(INPUT_R, !isZoom);
-
-    // Shoot (L)
-    bool isShoot = MP_HK_DOWN(HK_MetroidShootScan) || MP_HK_DOWN(HK_MetroidScanShoot);
-    emuInstance->inputMask.setBit(INPUT_L, !isShoot);
-    // --------------------------------------
-
-    // 3. Alt-form
+    // Alt-form toggle
     TOUCH_IF(HK_MetroidMorphBall, 231, 167)
 
-        // 4. Weapon Switch
+        // Weapon Switch
         ProcessWeaponSwitch();
 
-    // Weapon Check
+    // Weapon Check (Animation macro)
     static bool isWeaponCheckActive = false;
     if (emuInstance->hotkeyDown(HK_MetroidWeaponCheck)) {
         if (!isWeaponCheckActive) {
@@ -593,7 +561,9 @@ void MelonPrimeCore::HandleInGameLogic()
         // Touch for weapon check (avoid aim interference)
         emuInstance->getNDS()->TouchScreen(236, 30);
         FrameAdvanceTwice();
-        ProcessMoveInput(emuInstance->inputMask); // Allow move
+
+        // Note: Move input is typically not desired during this check in vanilla,
+        // but can be allowed. We'll process inputs below regardless.
     }
     else {
         if (isWeaponCheckActive) {
@@ -604,16 +574,39 @@ void MelonPrimeCore::HandleInGameLogic()
         }
     }
 
-    // 5. Morph Ball Boost
-    HandleMorphBallBoost();
-
-    // 6. Adventure Mode
+    // Adventure Mode (Scan visor macro)
     if (Q_UNLIKELY(isInAdventure)) {
         HandleAdventureMode();
     }
 
+    // =========================================================
+    // 2. CONTINUOUS INPUT PROCESSING (LOWEST LATENCY)
+    // =========================================================
+
+    // A. Move (D-Pad calculation)
+    ProcessMoveInput(emuInstance->inputMask);
+
+    // B. Jump (Map B)
+    // Logic: 0 = Pressed, 1 = Released. setBit(..., !true) -> 0.
+    emuInstance->inputMask.setBit(INPUT_B, !MP_HK_DOWN(HK_MetroidJump));
+
+    // C. Shoot (L) / Zoom (R)
+    // Logic: setBit(..., !true) -> 0 -> Pressed.
+    bool isShoot = MP_HK_DOWN(HK_MetroidShootScan) || MP_HK_DOWN(HK_MetroidScanShoot);
+    emuInstance->inputMask.setBit(INPUT_L, !isShoot);
+
+    // D. Zoom (R) vs MorphBall Boost (R) Conflict Resolution
+    bool isZoom = MP_HK_DOWN(HK_MetroidZoom);
+    emuInstance->inputMask.setBit(INPUT_R, !isZoom);
+
+    // E. Morph Ball Boost Logic (Contextual Override for R)
+    // This must come AFTER standard R processing to override it if valid.
+    HandleMorphBallBoost();
+
+    // =========================================================
+    // 3. AIM PROCESSING
+    // =========================================================
 #ifndef STYLUS_MODE
-    // Aim Process must be called
     ProcessAimInput();
 
     // Force touch for aiming if valid
@@ -745,7 +738,11 @@ void MelonPrimeCore::HandleMorphBallBoost()
                 if (!(emuInstance->hotkeyDown(HK_MetroidWeaponCheck))) {
                     emuInstance->getNDS()->ReleaseScreen();
                 }
-                emuInstance->inputMask.setBit(INPUT_R, (!isBoosting && isBoostGaugeEnough));
+
+                // Boost Logic: Overwrites R input if boosting is possible
+                // Press R (0) if conditions met
+                // (!isBoosting && isBoostGaugeEnough) -> true if valid charge -> !true = 0 (Press)
+                emuInstance->inputMask.setBit(INPUT_R, !(!isBoosting && isBoostGaugeEnough));
 
                 if (isBoosting) {
                     setAimBlock(AIMBLK_MORPHBALL_BOOST, false);
