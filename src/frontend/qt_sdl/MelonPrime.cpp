@@ -494,22 +494,8 @@ void MelonPrimeCore::RunFrameHook()
     // Global Hotkeys
     HandleGlobalHotkeys();
 
-    // === フォーカス判定の厳密化 ===
-    // 以前の強制 isFocused = true; を削除し、Windows APIを使って判定する。
-    // これにより、非アクティブ時に勝手に操作される問題を防ぐ。
-#ifdef _WIN32
-    if (auto* mw = emuInstance->getMainWindow()) {
-        // GetForegroundWindowはスレッドセーフで高速
-        HWND hActive = GetForegroundWindow();
-        HWND hMain = reinterpret_cast<HWND>(mw->winId());
-        // メインウィンドウが最前面のときのみ操作を受け付ける
-        isFocused = (hActive == hMain);
-    }
-    else {
-        // メインウィンドウが無い場合はフォーカスなしとみなす
-        isFocused = false;
-    }
-#else
+#ifndef _WIN32
+
     // 非Windows環境では、強制trueにせず、Qt側のフォーカス管理に任せるのが安全
     // ただし元のコードが isFocused = true 前提で動いていた場合は注意が必要
     // 今回は安全側に倒して false スタートとする (Screen.cpp等で更新されることを期待)
