@@ -1,5 +1,5 @@
 /*
-    MelonPrimeDS Logic Implementation (Full Version: Latency Optimized)
+    MelonPrimeDS Logic Implementation (Full Version: Fixed MorphBall Boost with Memory Checks)
 */
 
 #include "MelonPrime.h"
@@ -725,36 +725,54 @@ void MelonPrimeCore::ProcessAimInput()
 
 void MelonPrimeCore::HandleMorphBallBoost()
 {
+    // === RESTORED ORIGINAL COMPLEX LOGIC ===
+    // This function monitors memory state (boost gauge, boosting flag) to correctly
+    // replicate the "Charge -> Release to Boost" mechanic of Metroid Prime Hunters.
     if (isSamus) {
         if (MP_HK_DOWN(HK_MetroidHoldMorphBallBoost)) {
+            // Check if Samus is in Morph Ball mode
             isAltForm = emuInstance->getNDS()->ARM9Read8(addr.isAltForm) == 0x02;
+
             if (isAltForm) {
+                // Read memory states
                 uint8_t boostGaugeValue = emuInstance->getNDS()->ARM9Read8(addr.boostGauge);
                 bool isBoosting = emuInstance->getNDS()->ARM9Read8(addr.isBoosting) != 0x00;
+
+                // Boostable when gauge value is 0x05-0x0F (max)
+                // Original code used > 0x0A as a threshold for "Enough"
                 bool isBoostGaugeEnough = boostGaugeValue > 0x0A;
 
+                // Block aiming while boosting/charging to prevent erratic camera movement
                 setAimBlock(AIMBLK_MORPHBALL_BOOST, true);
 
-                if (!(emuInstance->hotkeyDown(HK_MetroidWeaponCheck))) {
+                // Release screen touch? (Original comment: prevent weapon check interference)
+                if (!emuInstance->hotkeyDown(HK_MetroidWeaponCheck)) {
                     emuInstance->getNDS()->ReleaseScreen();
                 }
 
-                // Boost Logic: Overwrites R input if boosting is possible
-                // Press R (0) if conditions met
-                // (!isBoosting && isBoostGaugeEnough) -> true if valid charge -> !true = 0 (Press)
-                emuInstance->inputMask.setBit(INPUT_R, !(!isBoosting && isBoostGaugeEnough));
+                // Boost Input Logic (Active Low: 0=Pressed, 1=Released)
+                // We want to PRESS R (0) to charge, and RELEASE R (1) to boost.
+                // Logic: (!isBoosting && isBoostGaugeEnough)
+                //   - If NOT boosting AND Gauge is Full: Result = TRUE (1 = Release R) -> Triggers Boost
+                //   - If Boosting OR Gauge Empty: Result = FALSE (0 = Press R) -> Charges or Holds
+                emuInstance->inputMask.setBit(INPUT_R, (!isBoosting && isBoostGaugeEnough));
 
                 if (isBoosting) {
+                    // Re-enable aim block when boosting starts (to allow steering?)
+                    // Actually original code sets it to false here to allow "touch again for aiming"
                     setAimBlock(AIMBLK_MORPHBALL_BOOST, false);
+
 #ifdef STYLUS_MODE
                     if (emuInstance->isTouching) {
                         emuInstance->getNDS()->TouchScreen(emuInstance->touchX, emuInstance->touchY);
                     }
 #endif
+                    // Note: Non-stylus aim touch is handled at the end of HandleInGameLogic
                 }
             }
         }
         else {
+            // Key not held: Reset block
             setAimBlock(AIMBLK_MORPHBALL_BOOST, false);
         }
     }
