@@ -1,5 +1,5 @@
 /*
-    MelonPrimeDS Logic Implementation (Full Version: Fixed MorphBall Boost & Renderer Switch)
+    MelonPrimeDS Logic Implementation (Full Version: Fixed Adventure Mode Input & MorphBall Boost)
 */
 
 #include "MelonPrime.h"
@@ -437,7 +437,34 @@ void MelonPrimeCore::RunFrameHook()
 {
     // --- RECURSION GUARD ---
     static bool isRunningHook = false;
-    if (isRunningHook) return;
+
+    // Check if we are being called recursively (e.g. from Adventure Mode loop)
+    if (isRunningHook) {
+        // [FIX] Even during recursion (scan visor loop), we MUST process basic inputs.
+        // FrameAdvanceOnce() in EmuThread calls inputProcess() which resets masks.
+        // We must re-apply our overrides here so SetKeyMask() gets the correct values.
+
+        // 1. Move
+        ProcessMoveInput(emuInstance->inputMask);
+
+        // 2. Jump (0 = Pressed)
+        emuInstance->inputMask.setBit(INPUT_B, !MP_HK_DOWN(HK_MetroidJump));
+
+        // 3. Shoot / Zoom
+        bool isShoot = MP_HK_DOWN(HK_MetroidShootScan) || MP_HK_DOWN(HK_MetroidScanShoot);
+        emuInstance->inputMask.setBit(INPUT_L, !isShoot);
+
+        bool isZoom = MP_HK_DOWN(HK_MetroidZoom);
+        emuInstance->inputMask.setBit(INPUT_R, !isZoom);
+
+        // 4. Aim (Needed to look around while scanning?)
+#ifndef STYLUS_MODE
+        ProcessAimInput();
+#endif
+
+        return;
+    }
+
     isRunningHook = true;
     // -----------------------
 
@@ -768,9 +795,9 @@ void MelonPrimeCore::HandleAdventureMode()
         }
         else {
             for (int i = 0; i < 30; i++) {
-                ProcessAimInput();
-                ProcessMoveInput(emuInstance->inputMask);
-                emuInstance->getNDS()->SetKeyMask(GET_INPUT_MASK(emuInstance->inputMask));
+                // [FIX] Loop internally but inputs are now handled by recursion in RunFrameHook
+                // We removed ProcessAim/Move from here because FrameAdvanceOnce calls RunFrameHook
+                // which now detects recursion and applies inputs.
                 FrameAdvanceOnce();
             }
         }
