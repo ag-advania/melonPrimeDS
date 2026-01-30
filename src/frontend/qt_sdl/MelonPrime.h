@@ -1,6 +1,5 @@
 /*
-    MelonPrimeDS Logic Separation (Full Version)
-    Dedicated handler for Metroid Prime Hunters specific enhancements.
+    MelonPrimeDS Logic Separation (Full Version: Added Sensitivity Hotkeys)
 */
 
 #ifndef MELONPRIME_H
@@ -147,6 +146,9 @@ private:
     // --- Internal Logic Methods ---
     void DetectRomAndSetAddresses();
     void ApplyGameSettingsOnce();
+
+    // [NEW] Global hotkeys (Sensitivity, Layout Reset)
+    void HandleGlobalHotkeys();
 
     void HandleInGameLogic();
     void ProcessMoveInput(QBitArray& inputMask);
