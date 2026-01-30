@@ -44,6 +44,9 @@
 #include "font.h"
 #include "version.h"
 
+// MelonPrimeDS Integration
+#include "MelonPrime.h"
+
 // melonprimeds
 #if defined(_WIN32)
 
@@ -104,17 +107,7 @@ static RECT computeCenter1pxClipRectSafe(HWND hwnd) {
     RECT clip{ cx, top, cx + 1, bottom };
     return clip;
 }
-/*
-static RECT computeCenter1pxClipRect(HWND hwnd) {
-    RECT rc; GetClientRect(hwnd, &rc);
-    POINT tl{ rc.left, rc.top }, br{ rc.right, rc.bottom };
-    ClientToScreen(hwnd, &tl);
-    ClientToScreen(hwnd, &br);
-    const LONG cx = (tl.x + br.x) / 2;
-    RECT clip{ cx, tl.y, cx + 1, br.y }; // 幅1pxの縦帯
-    return clip;
-}
-*/
+
 // 垂直中央を維持してRECTの高さを1/2に縮小するユーティリティ(既存関数の戻り値に適用するため)
 inline RECT shrinkRectHeightToHalfCentered(RECT r) {
     // 高さ計算(後続の中心計算に必要なため)
@@ -155,7 +148,7 @@ const int kLogoWidth = 192;
 // メソッドとして実装（UIスレッドで実行される想定）
 void ScreenPanel::clipCursorCenter1px() { // MelonPrimeDS
     setClipWanted(true);
-	// BlankCursorにする
+    // BlankCursorにする
     setCursor(Qt::BlankCursor); // MelonPrimeDS
 
 #ifdef _WIN32
@@ -169,7 +162,7 @@ void ScreenPanel::clipCursorCenter1px() { // MelonPrimeDS
 }
 
 void ScreenPanel::unclip() { // MelonPrimeDS
-	setClipWanted(false);
+    setClipWanted(false);
 #ifdef _WIN32
     ClipCursor(nullptr);
 #endif
@@ -202,13 +195,13 @@ ScreenPanel::ScreenPanel(QWidget* parent) : QWidget(parent)
 
     /* MelonPrimeDS comment-out    */
     // QTimer* mouseTimer = setupMouseTimer();
-    /* MelonPrimeDS comment-out  
+    /* MelonPrimeDS comment-out
     connect(mouseTimer, &QTimer::timeout, [=] { if (mouseHide) setCursor(Qt::BlankCursor);});
       */
 
     osdEnabled = false;
     osdID = 1;
-    
+
     loadConfig();
     setFilter(mainWindow->getWindowConfig().GetBool("ScreenFilter"));
 
@@ -228,7 +221,7 @@ ScreenPanel::ScreenPanel(QWidget* parent) : QWidget(parent)
 
     std::string url = MELONDS_URL;
     int urlpos = url.find("://");
-    urlpos = (urlpos == std::string::npos) ? 0 : urlpos+3;
+    urlpos = (urlpos == std::string::npos) ? 0 : urlpos + 3;
     strncpy(splashText[2].text, url.c_str() + urlpos, 256);
     splashText[2].id = 0x80000002;
     splashText[2].color = 0;
@@ -242,7 +235,7 @@ ScreenPanel::~ScreenPanel()
     unclip(); // MelonPrimeDS
 #endif
 
-    /* MelonPrimeDS comment-out    
+    /* MelonPrimeDS comment-out
     mouseTimer->stop();
     delete mouseTimer;
     */
@@ -252,7 +245,7 @@ ScreenPanel::~ScreenPanel()
 void ScreenPanel::loadConfig()
 {
     auto& cfg = mainWindow->getWindowConfig();
-    
+
     screenRotation = cfg.GetInt("ScreenRotation");
     screenGap = cfg.GetInt("ScreenGap");
     screenLayout = cfg.GetInt("ScreenLayout");
@@ -296,24 +289,29 @@ void ScreenPanel::setupScreenLayout()
     }
 
     if (aspectTop == 0)
-        aspectTop = ((float) w / h) / (4.f / 3.f);
+        aspectTop = ((float)w / h) / (4.f / 3.f);
 
     if (aspectBot == 0)
-        aspectBot = ((float) w / h) / (4.f / 3.f);
+        aspectBot = ((float)w / h) / (4.f / 3.f);
 
     layout.Setup(w, h,
-                static_cast<ScreenLayoutType>(screenLayout),
-                static_cast<ScreenRotation>(screenRotation),
-                static_cast<ScreenSizing>(sizing),
-                screenGap,
-                integerScaling != 0,
-                screenSwap != 0,
-                aspectTop,
-                aspectBot);
+        static_cast<ScreenLayoutType>(screenLayout),
+        static_cast<ScreenRotation>(screenRotation),
+        static_cast<ScreenSizing>(sizing),
+        screenGap,
+        integerScaling != 0,
+        screenSwap != 0,
+        aspectTop,
+        aspectBot);
 
     numScreens = layout.GetScreenTransforms(screenMatrix[0], screenKind);
 
     calcSplashLayout();
+
+    // MelonPrimeDS: Notify layout change
+    if (auto* core = emuInstance->getEmuThread()->GetMelonPrimeCore()) {
+        core->NotifyLayoutChange();
+    }
 }
 
 QSize ScreenPanel::screenGetMinSize(int factor = 1)
@@ -334,30 +332,30 @@ QSize ScreenPanel::screenGetMinSize(int factor = 1)
     if (screenLayout == screenLayout_Natural)
     {
         if (isHori)
-            return QSize(h+gap+h, w);
+            return QSize(h + gap + h, w);
         else
-            return QSize(w, h+gap+h);
+            return QSize(w, h + gap + h);
     }
     else if (screenLayout == screenLayout_Vertical)
     {
         if (isHori)
-            return QSize(h, w+gap+w);
+            return QSize(h, w + gap + w);
         else
-            return QSize(w, h+gap+h);
+            return QSize(w, h + gap + h);
     }
     else if (screenLayout == screenLayout_Horizontal)
     {
         if (isHori)
-            return QSize(h+gap+h, w);
+            return QSize(h + gap + h, w);
         else
-            return QSize(w+gap+w, h);
+            return QSize(w + gap + w, h);
     }
     else // hybrid
     {
         if (isHori)
-            return QSize(h+gap+h, 3*w + (int)ceil((4*gap) / 3.0));
+            return QSize(h + gap + h, 3 * w + (int)ceil((4 * gap) / 3.0));
         else
-            return QSize(3*w + (int)ceil((4*gap) / 3.0), h+gap+h);
+            return QSize(3 * w + (int)ceil((4 * gap) / 3.0), h + gap + h);
     }
 }
 
@@ -390,34 +388,37 @@ void ScreenPanel::resizeEvent(QResizeEvent* event)
 void ScreenPanel::mousePressEvent(QMouseEvent* event)
 {
     event->accept();
-
-    // 参照をローカルに落として、ポインタ辿りと関数呼びを減らす
     auto* const emu = emuInstance;
     auto* const thr = emu->getEmuThread();
+    auto* const core = thr->GetMelonPrimeCore(); // Coreを取得
 
-    // so we dont press buttons before fully focusing
-    // （元コードと同じ: emuがアクティブなら focus->通知、ダメなら touching=false で return）
     if (Q_UNLIKELY(!emu->emuIsActive()))
     {
         touching = false;
         return;
     }
 
-    // Active時のみここまで到達
-    thr->isFocused = true;        // MelonPrimeDS
-    emu->onMousePress(event);     // MelonPrimeDS
+    if (core) core->isFocused = true;
 
-    // 左クリック以外はここで終了（元コード同様）
+    emu->onMousePress(event);
+
     if (event->button() != Qt::LeftButton)
         return;
 
-#if defined(STYLUS_MODE)
-    // MelonPrimeDS: don't touch when in-game（元コード同様）
-    if (thr->isInGame)
+    // --- ここを修正 ---
+    // マウスエイムモード（!isStylusMode）かつ、ゲーム中の場合は、
+    // 下段のタッチ処理（DSの画面を触る処理）をスキップする
+    if (core && !core->isStylusMode && core->IsInGame())
+    {
+        // マウスモードでゲーム中なら、エイム開始（クリップ）だけして帰る
+        if (!core->isCursorMode)
+        {
+            clipCursorCenter1px();
+        }
         return;
-#endif
+    }
 
-    // touch Screen（pos() を2回作らない）
+    // スタイラスモード、またはメニュー画面中ならここから下のタッチ処理が実行される
     const QPoint p = event->pos();
     int x = p.x();
     int y = p.y();
@@ -428,13 +429,11 @@ void ScreenPanel::mousePressEvent(QMouseEvent* event)
         emu->touchScreen(x, y);
     }
 
-#if !defined(STYLUS_MODE) && defined(_WIN32)
-    // カーソルモードでない時だけ 1px クリップ開始
-    if (Q_LIKELY(!thr->isCursorMode))
+    // クリップ処理も動的判定に変更
+    if (core && !core->isStylusMode && Q_LIKELY(!core->isCursorMode))
     {
-        clipCursorCenter1px(); // MelonPrimeDS
+        clipCursorCenter1px();
     }
-#endif
 }
 
 void ScreenPanel::mouseReleaseEvent(QMouseEvent* event)
@@ -493,31 +492,31 @@ void ScreenPanel::tabletEvent(QTabletEvent* event)
     event->accept();
     if (!emuInstance->emuIsActive()) { touching = false; return; }
 
-    switch(event->type())
+    switch (event->type())
     {
     case QEvent::TabletPress:
     case QEvent::TabletMove:
-        {
+    {
 #if QT_VERSION_MAJOR == 6
-            /*
-            int x = event->position().x();
-            int y = event->position().y();
-            */
-            const QPointF pos = event->position();
-            int x = pos.x();
-            int y = pos.y();
+        /*
+        int x = event->position().x();
+        int y = event->position().y();
+        */
+        const QPointF pos = event->position();
+        int x = pos.x();
+        int y = pos.y();
 #else
-            int x = event->x();
-            int y = event->y();
+        int x = event->x();
+        int y = event->y();
 #endif
 
-            if (layout.GetTouchCoords(x, y, event->type()==QEvent::TabletMove))
-            {
-                touching = true;
-                emuInstance->touchScreen(x, y);
-            }
+        if (layout.GetTouchCoords(x, y, event->type() == QEvent::TabletMove))
+        {
+            touching = true;
+            emuInstance->touchScreen(x, y);
         }
-        break;
+    }
+    break;
     case QEvent::TabletRelease:
         if (touching)
         {
@@ -540,7 +539,7 @@ void ScreenPanel::touchEvent(QTouchEvent* event)
     event->accept();
     if (!emuInstance->emuIsActive()) { touching = false; return; }
 
-    switch(event->type())
+    switch (event->type())
     {
     case QEvent::TouchBegin:
     case QEvent::TouchUpdate:
@@ -556,7 +555,7 @@ void ScreenPanel::touchEvent(QTouchEvent* event)
             int x = (int)lastPosition.x();
             int y = (int)lastPosition.y();
 
-            if (layout.GetTouchCoords(x, y, event->type()==QEvent::TouchUpdate))
+            if (layout.GetTouchCoords(x, y, event->type() == QEvent::TouchUpdate))
             {
                 touching = true;
                 emuInstance->touchScreen(x, y);
@@ -572,10 +571,10 @@ void ScreenPanel::touchEvent(QTouchEvent* event)
         break;
     default:
         break;
+        }
     }
-}
 
-bool ScreenPanel::event(QEvent* event)
+bool ScreenPanel::event(QEvent * event)
 {
     if (event->type() == QEvent::TouchBegin
         || event->type() == QEvent::TouchEnd
@@ -610,33 +609,33 @@ void ScreenPanel::osdLayoutText(const char* text, int* width, int* height, int* 
     int w = 0;
     int h = 14;
     int totalw = 0;
-    int maxw = ((QWidget*)this)->width() - (kOSDMargin*2);
+    int maxw = ((QWidget*)this)->width() - (kOSDMargin * 2);
     int lastbreak = -1;
     int numbrk = 0;
     u16* ptr;
 
-    memset(breaks, 0, sizeof(int)*64);
+    memset(breaks, 0, sizeof(int) * 64);
 
     for (int i = 0; text[i] != '\0'; )
-	{
-	    int glyphsize;
-		if (text[i] == ' ')
-		{
-			glyphsize = 6;
-		}
-		else
+    {
+        int glyphsize;
+        if (text[i] == ' ')
+        {
+            glyphsize = 6;
+        }
+        else
         {
             u32 ch = text[i];
             if (ch < 0x10 || ch > 0x7E) ch = 0x7F;
 
-            ptr = &::font[(ch-0x10) << 4];
+            ptr = &::font[(ch - 0x10) << 4];
             glyphsize = ptr[0];
             if (!glyphsize) glyphsize = 6;
             else            glyphsize += 2; // space around the character
         }
 
-		w += glyphsize;
-		if (w > maxw)
+        w += glyphsize;
+        if (w > maxw)
         {
             // wrap shit as needed
             if (text[i] == ' ')
@@ -673,15 +672,15 @@ unsigned int ScreenPanel::osdRainbowColor(int inc)
 {
     // inspired from Acmlmboard
 
-    if      (inc < 100) return 0xFFFF9B9B + (inc << 8);
-    else if (inc < 200) return 0xFFFFFF9B - ((inc-100) << 16);
-    else if (inc < 300) return 0xFF9BFF9B + (inc-200);
-    else if (inc < 400) return 0xFF9BFFFF - ((inc-300) << 8);
-    else if (inc < 500) return 0xFF9B9BFF + ((inc-400) << 16);
-    else                return 0xFFFF9BFF - (inc-500);
+    if (inc < 100) return 0xFFFF9B9B + (inc << 8);
+    else if (inc < 200) return 0xFFFFFF9B - ((inc - 100) << 16);
+    else if (inc < 300) return 0xFF9BFF9B + (inc - 200);
+    else if (inc < 400) return 0xFF9BFFFF - ((inc - 300) << 8);
+    else if (inc < 500) return 0xFF9B9BFF + ((inc - 400) << 16);
+    else                return 0xFFFF9BFF - (inc - 500);
 }
 
-void ScreenPanel::osdRenderItem(OSDItem* item)
+void ScreenPanel::osdRenderItem(OSDItem * item)
 {
     int w, h;
     int breaks[64];
@@ -693,7 +692,7 @@ void ScreenPanel::osdRenderItem(OSDItem* item)
     u32 rainbowinc;
     if (item->rainbowstart == -1)
     {
-        u32 ticks = (u32) QDateTime::currentMSecsSinceEpoch();
+        u32 ticks = (u32)QDateTime::currentMSecsSinceEpoch();
         rainbowinc = ((text[0] * 17) + (ticks * 13)) % 600;
     }
     else
@@ -706,26 +705,26 @@ void ScreenPanel::osdRenderItem(OSDItem* item)
 
     item->bitmap = QImage(w, h, QImage::Format_ARGB32_Premultiplied);
     u32* bitmap = (u32*)item->bitmap.bits();
-    memset(bitmap, 0, w*h*sizeof(u32));
+    memset(bitmap, 0, w * h * sizeof(u32));
 
     int x = 0, y = 1;
-    u32 maxw = ((QWidget*)this)->width() - (kOSDMargin*2);
+    u32 maxw = ((QWidget*)this)->width() - (kOSDMargin * 2);
     int curline = 0;
     u16* ptr;
 
     for (int i = 0; text[i] != '\0'; )
-	{
-	    int glyphsize;
-		if (text[i] == ' ')
-		{
-			x += 6;
-		}
-		else
+    {
+        int glyphsize;
+        if (text[i] == ' ')
+        {
+            x += 6;
+        }
+        else
         {
             u32 ch = text[i];
             if (ch < 0x10 || ch > 0x7E) ch = 0x7F;
 
-            ptr = &::font[(ch-0x10) << 4];
+            ptr = &::font[(ch - 0x10) << 4];
             int glyphsize = ptr[0];
             if (!glyphsize) x += 6;
             else
@@ -741,12 +740,12 @@ void ScreenPanel::osdRenderItem(OSDItem* item)
                 // draw character
                 for (int cy = 0; cy < 12; cy++)
                 {
-                    u16 val = ptr[4+cy];
+                    u16 val = ptr[4 + cy];
 
                     for (int cx = 0; cx < glyphsize; cx++)
                     {
-                        if (val & (1<<cx))
-                            bitmap[((y+cy) * w) + x+cx] = color;
+                        if (val & (1 << cx))
+                            bitmap[((y + cy) * w) + x + cx] = color;
                     }
                 }
 
@@ -755,8 +754,8 @@ void ScreenPanel::osdRenderItem(OSDItem* item)
             }
         }
 
-		i++;
-		if (breaks[curline] && i >= breaks[curline])
+        i++;
+        if (breaks[curline] && i >= breaks[curline])
         {
             i = breaks[curline++];
             if (text[i] == ' ') i++;
@@ -776,19 +775,19 @@ void ScreenPanel::osdRenderItem(OSDItem* item)
             val = bitmap[(y * w) + x];
             if ((val >> 24) == 0xFF) continue;
 
-            if (x > 0)   val  = bitmap[(y * w) + x-1];
-            if (x < w-1) val |= bitmap[(y * w) + x+1];
+            if (x > 0)   val = bitmap[(y * w) + x - 1];
+            if (x < w - 1) val |= bitmap[(y * w) + x + 1];
             if (y > 0)
             {
-                if (x > 0)   val |= bitmap[((y-1) * w) + x-1];
-                val |= bitmap[((y-1) * w) + x];
-                if (x < w-1) val |= bitmap[((y-1) * w) + x+1];
+                if (x > 0)   val |= bitmap[((y - 1) * w) + x - 1];
+                val |= bitmap[((y - 1) * w) + x];
+                if (x < w - 1) val |= bitmap[((y - 1) * w) + x + 1];
             }
-            if (y < h-1)
+            if (y < h - 1)
             {
-                if (x > 0)   val |= bitmap[((y+1) * w) + x-1];
-                val |= bitmap[((y+1) * w) + x];
-                if (x < w-1) val |= bitmap[((y+1) * w) + x+1];
+                if (x > 0)   val |= bitmap[((y + 1) * w) + x - 1];
+                val |= bitmap[((y + 1) * w) + x];
+                if (x < w - 1) val |= bitmap[((y + 1) * w) + x + 1];
             }
 
             if ((val >> 24) == 0xFF)
@@ -799,7 +798,7 @@ void ScreenPanel::osdRenderItem(OSDItem* item)
     item->rainbowend = (int)rainbowinc;
 }
 
-void ScreenPanel::osdDeleteItem(OSDItem* item)
+void ScreenPanel::osdDeleteItem(OSDItem * item)
 {
 }
 
@@ -929,7 +928,7 @@ void ScreenPanel::calcSplashLayout()
 
 
 
-ScreenPanelNative::ScreenPanelNative(QWidget* parent) : ScreenPanel(parent)
+ScreenPanelNative::ScreenPanelNative(QWidget * parent) : ScreenPanel(parent)
 {
     screen[0] = QImage(256, 192, QImage::Format_RGB32);
     screen[1] = QImage(256, 192, QImage::Format_RGB32);
@@ -950,12 +949,12 @@ void ScreenPanelNative::setupScreenLayout()
     {
         float* mtx = screenMatrix[i];
         screenTrans[i].setMatrix(mtx[0], mtx[1], 0.f,
-                                 mtx[2], mtx[3], 0.f,
-                                 mtx[4], mtx[5], 1.f);
+            mtx[2], mtx[3], 0.f,
+            mtx[4], mtx[5], 1.f);
     }
 }
 
-void ScreenPanelNative::paintEvent(QPaintEvent* event)
+void ScreenPanelNative::paintEvent(QPaintEvent * event)
 {
     QPainter painter(this);
 
@@ -1031,7 +1030,7 @@ void ScreenPanelNative::paintEvent(QPaintEvent* event)
 
 
 
-ScreenPanelGL::ScreenPanelGL(QWidget* parent) : ScreenPanel(parent)
+ScreenPanelGL::ScreenPanelGL(QWidget * parent) : ScreenPanel(parent)
 {
     setAutoFillBackground(false);
     setAttribute(Qt::WA_NativeWindow, true);
@@ -1045,7 +1044,8 @@ ScreenPanelGL::ScreenPanelGL(QWidget* parent) : ScreenPanel(parent)
 }
 
 ScreenPanelGL::~ScreenPanelGL()
-{}
+{
+}
 
 bool ScreenPanelGL::createContext()
 {
@@ -1066,7 +1066,7 @@ bool ScreenPanelGL::createContext()
     {
         std::array<GL::Context::Version, 2> versionsToTry = {
                 GL::Context::Version{GL::Context::Profile::Core, 4, 3},
-                GL::Context::Version{GL::Context::Profile::Core, 3, 2}};
+                GL::Context::Version{GL::Context::Profile::Core, 3, 2} };
         if (windowinfo.has_value())
             if ((glContext = GL::Context::Create(*windowinfo, versionsToTry)))
                 glContext->DoneCurrent();
@@ -1090,10 +1090,10 @@ void ScreenPanelGL::initOpenGL()
     glContext->MakeCurrent();
 
     OpenGL::CompileVertexFragmentProgram(screenShaderProgram,
-                                         kScreenVS, kScreenFS,
-                                         "ScreenShader",
-                                         {{"vPosition", 0}, {"vTexcoord", 1}},
-                                         {{"oColor", 0}});
+        kScreenVS, kScreenFS,
+        "ScreenShader",
+        { {"vPosition", 0}, {"vTexcoord", 1} },
+        { {"oColor", 0} });
 
     glUseProgram(screenShaderProgram);
     glUniform1i(glGetUniformLocation(screenShaderProgram, "ScreenTex"), 0);
@@ -1103,7 +1103,7 @@ void ScreenPanelGL::initOpenGL()
 
     // to prevent bleeding between both parts of the screen
     // with bilinear filtering enabled
-    const int paddedHeight = 192*2+2;
+    const int paddedHeight = 192 * 2 + 2;
     const float padPixels = 1.f / paddedHeight;
 
     const float vertices[] =
@@ -1130,9 +1130,9 @@ void ScreenPanelGL::initOpenGL()
     glGenVertexArrays(1, &screenVertexArray);
     glBindVertexArray(screenVertexArray);
     glEnableVertexAttribArray(0); // position
-    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 4*4, (void*)(0));
+    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 4 * 4, (void*)(0));
     glEnableVertexAttribArray(1); // texcoord
-    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 4*4, (void*)(2*4));
+    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 4 * 4, (void*)(2 * 4));
 
     glGenTextures(1, &screenTexture);
     glActiveTexture(GL_TEXTURE0);
@@ -1143,16 +1143,16 @@ void ScreenPanelGL::initOpenGL()
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, 256, paddedHeight, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
     // fill the padding
-    u8 zeroData[256*4*4];
+    u8 zeroData[256 * 4 * 4];
     memset(zeroData, 0, sizeof(zeroData));
     glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 192, 256, 2, GL_RGBA, GL_UNSIGNED_BYTE, zeroData);
 
 
     OpenGL::CompileVertexFragmentProgram(osdShader,
-                                         kScreenVS_OSD, kScreenFS_OSD,
-                                         "OSDShader",
-                                         {{"vPosition", 0}},
-                                         {{"oColor", 0}});
+        kScreenVS_OSD, kScreenFS_OSD,
+        "OSDShader",
+        { {"vPosition", 0} },
+        { {"oColor", 0} });
 
     glUseProgram(osdShader);
     glUniform1i(glGetUniformLocation(osdShader, "OSDTex"), 0);
@@ -1163,7 +1163,7 @@ void ScreenPanelGL::initOpenGL()
     osdScaleFactorULoc = glGetUniformLocation(osdShader, "uScaleFactor");
     osdTexScaleULoc = glGetUniformLocation(osdShader, "uTexScale");
 
-    const float osdvertices[6*2] =
+    const float osdvertices[6 * 2] =
     {
         0, 0,
         1, 1,
@@ -1183,7 +1183,7 @@ void ScreenPanelGL::initOpenGL()
     glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 0, (void*)(0));
 
     // splash logo texture
-    QImage logo = splashLogo.scaled(kLogoWidth*2, kLogoWidth*2).toImage();
+    QImage logo = splashLogo.scaled(kLogoWidth * 2, kLogoWidth * 2).toImage();
     GLuint tex;
     glGenTextures(1, &tex);
     glBindTexture(GL_TEXTURE_2D, tex);
@@ -1247,7 +1247,7 @@ void ScreenPanelGL::releaseGL()
     glContext->DoneCurrent();
 }
 
-void ScreenPanelGL::osdRenderItem(OSDItem* item)
+void ScreenPanelGL::osdRenderItem(OSDItem * item)
 {
     ScreenPanel::osdRenderItem(item);
 
@@ -1263,7 +1263,7 @@ void ScreenPanelGL::osdRenderItem(OSDItem* item)
     osdTextures[item->id] = tex;
 }
 
-void ScreenPanelGL::osdDeleteItem(OSDItem* item)
+void ScreenPanelGL::osdDeleteItem(OSDItem * item)
 {
     if (osdTextures.count(item->id))
     {
@@ -1312,7 +1312,8 @@ void ScreenPanelGL::drawScreenGL()
         {
             // hardware-accelerated render
             nds->GPU.GetRenderer3D().BindOutputTexture(frontbuf);
-        } else
+        }
+        else
 #endif
         {
             // regular render
@@ -1321,9 +1322,9 @@ void ScreenPanelGL::drawScreenGL()
             if (nds->GPU.Framebuffer[frontbuf][0] && nds->GPU.Framebuffer[frontbuf][1])
             {
                 glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, 256, 192, GL_RGBA,
-                                GL_UNSIGNED_BYTE, nds->GPU.Framebuffer[frontbuf][0].get());
+                    GL_UNSIGNED_BYTE, nds->GPU.Framebuffer[frontbuf][0].get());
                 glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 192 + 2, 256, 192, GL_RGBA,
-                                GL_UNSIGNED_BYTE, nds->GPU.Framebuffer[frontbuf][1].get());
+                    GL_UNSIGNED_BYTE, nds->GPU.Framebuffer[frontbuf][1].get());
             }
         }
 
@@ -1369,7 +1370,7 @@ void ScreenPanelGL::drawScreenGL()
         glBindTexture(GL_TEXTURE_2D, logoTexture);
         glUniform2i(osdPosULoc, splashPos[3].x(), splashPos[3].y());
         glUniform2i(osdSizeULoc, kLogoWidth, kLogoWidth);
-        glDrawArrays(GL_TRIANGLES, 0, 2*3);
+        glDrawArrays(GL_TRIANGLES, 0, 2 * 3);
 
         glUniform1f(osdTexScaleULoc, 1.0);
 
@@ -1383,7 +1384,7 @@ void ScreenPanelGL::drawScreenGL()
             glBindTexture(GL_TEXTURE_2D, osdTextures[item.id]);
             glUniform2i(osdPosULoc, splashPos[i].x(), splashPos[i].y());
             glUniform2i(osdSizeULoc, item.bitmap.width(), item.bitmap.height());
-            glDrawArrays(GL_TRIANGLES, 0, 2*3);
+            glDrawArrays(GL_TRIANGLES, 0, 2 * 3);
         }
 
         glDisable(GL_BLEND);
@@ -1422,7 +1423,7 @@ void ScreenPanelGL::drawScreenGL()
             glBindTexture(GL_TEXTURE_2D, osdTextures[item.id]);
             glUniform2i(osdPosULoc, kOSDMargin, y);
             glUniform2i(osdSizeULoc, item.bitmap.width(), item.bitmap.height());
-            glDrawArrays(GL_TRIANGLES, 0, 2*3);
+            glDrawArrays(GL_TRIANGLES, 0, 2 * 3);
 
             y += item.bitmap.height();
             it++;
@@ -1448,12 +1449,12 @@ qreal ScreenPanelGL::devicePixelRatioFromScreen() const
 
 int ScreenPanelGL::scaledWindowWidth() const
 {
-  return std::max(static_cast<int>(std::ceil(static_cast<qreal>(width()) * devicePixelRatioFromScreen())), 1);
+    return std::max(static_cast<int>(std::ceil(static_cast<qreal>(width()) * devicePixelRatioFromScreen())), 1);
 }
 
 int ScreenPanelGL::scaledWindowHeight() const
 {
-  return std::max(static_cast<int>(std::ceil(static_cast<qreal>(height()) * devicePixelRatioFromScreen())), 1);
+    return std::max(static_cast<int>(std::ceil(static_cast<qreal>(height()) * devicePixelRatioFromScreen())), 1);
 }
 
 std::optional<WindowInfo> ScreenPanelGL::getWindowInfo()
@@ -1461,16 +1462,16 @@ std::optional<WindowInfo> ScreenPanelGL::getWindowInfo()
     WindowInfo wi;
 
     // Windows and Apple are easy here since there's no display connection.
-    #if defined(_WIN32)
+#if defined(_WIN32)
     wi.type = WindowInfo::Type::Win32;
     wi.window_handle = reinterpret_cast<void*>(winId());
-    #elif defined(__APPLE__)
+#elif defined(__APPLE__)
     wi.type = WindowInfo::Type::MacOS;
     wi.window_handle = reinterpret_cast<void*>(winId());
-    #else
+#else
     const QString platform_name = QGuiApplication::platformName();
 
-    #if QT_VERSION >= QT_VERSION_CHECK(6, 5, 0)
+#if QT_VERSION >= QT_VERSION_CHECK(6, 5, 0)
     if (platform_name == QStringLiteral("xcb"))
     {
         wi.type = WindowInfo::Type::X11;
@@ -1478,6 +1479,7 @@ std::optional<WindowInfo> ScreenPanelGL::getWindowInfo()
         wi.display_connection = x11->display();
         wi.window_handle = reinterpret_cast<void*>(winId());
     }
+#if defined(WAYLAND_ENABLED)
     else if (platform_name == QStringLiteral("wayland"))
     {
         wi.type = WindowInfo::Type::Wayland;
@@ -1485,7 +1487,8 @@ std::optional<WindowInfo> ScreenPanelGL::getWindowInfo()
         wi.display_connection = wl->display();
         wi.window_handle = reinterpret_cast<void*>(winId());
     }
-    #else
+#endif
+#else
     QPlatformNativeInterface* pni = QGuiApplication::platformNativeInterface();
     if (platform_name == QStringLiteral("xcb"))
     {
@@ -1503,13 +1506,13 @@ std::optional<WindowInfo> ScreenPanelGL::getWindowInfo()
         wi.display_connection = pni->nativeResourceForWindow("display", handle);
         wi.window_handle = pni->nativeResourceForWindow("surface", handle);
     }
-    #endif
+#endif
     else
     {
         Platform::Log(Platform::LogLevel::Error, "Unknown PNI platform %s\n", platform_name.toStdString().c_str());
         return std::nullopt;
     }
-    #endif
+#endif
 
     wi.surface_width = static_cast<u32>(scaledWindowWidth());
     wi.surface_height = static_cast<u32>(scaledWindowHeight());
@@ -1521,7 +1524,7 @@ std::optional<WindowInfo> ScreenPanelGL::getWindowInfo()
 
 QPaintEngine* ScreenPanelGL::paintEngine() const
 {
-  return nullptr;
+    return nullptr;
 }
 
 void ScreenPanelGL::setupScreenLayout()
@@ -1554,34 +1557,39 @@ void ScreenPanelGL::transferLayout()
 /* MelonPrimeDS */
 void ScreenPanel::unfocus()
 {
-    emuInstance->getEmuThread()->isFocused = false;
+     if (emuInstance->getEmuThread()->GetMelonPrimeCore())
+        emuInstance->getEmuThread()->GetMelonPrimeCore()->isFocused = false;
+
     setCursor(Qt::ArrowCursor);
 #if defined(_WIN32)
     unclip(); // MelonPrimeDS
 #endif
 }
 
-void ScreenPanel::focusOutEvent(QFocusEvent* event)
+void ScreenPanel::focusOutEvent(QFocusEvent * event)
 {
-    if (emuInstance->getEmuThread()->isFocused) {
+    if (emuInstance->getEmuThread()->GetMelonPrimeCore() && emuInstance->getEmuThread()->GetMelonPrimeCore()->isFocused) {
         return;
     }
+    
 
     unfocus();
 }
 
-void ScreenPanel::moveEvent(QMoveEvent* e) {
-	updateClipIfNeeded(); // MelonPrimeDS
+void ScreenPanel::moveEvent(QMoveEvent * e) {
+    updateClipIfNeeded(); // MelonPrimeDS
     QWidget::moveEvent(e);
 }
 
 
 __attribute__((always_inline)) inline void ScreenPanel::setClipWanted(bool value)
 {
-    emuInstance->getEmuThread()->isClipWanted = value;
+    if (emuInstance->getEmuThread()->GetMelonPrimeCore())
+        emuInstance->getEmuThread()->GetMelonPrimeCore()->isClipWanted = value;
 }
 
 __attribute__((always_inline)) inline bool ScreenPanel::getClipWanted()
 {
-    return emuInstance->getEmuThread()->isClipWanted;
+    if (!emuInstance->getEmuThread()->GetMelonPrimeCore()) return false;
+    return emuInstance->getEmuThread()->GetMelonPrimeCore()->isClipWanted;
 }
