@@ -2818,6 +2818,7 @@ When your aim isn't going the way you want, try lowering this value.
 							<enum>QFrame::NoFrame</enum>
 						</property>
 						<layout class="QFormLayout" name="formGameplay2">
+
 							<item row="0" column="0">
 								<widget class="QCheckBox" name="cbMetroidApplyJoy2KeySupport">
 									<property name="text">
@@ -2825,11 +2826,19 @@ When your aim isn't going the way you want, try lowering this value.
 									</property>
 								</widget>
 							</item>
+
+							<item row="1" column="0">
+								<widget class="QCheckBox" name="cbMetroidEnableStylusMode">
+									<property name="text">
+										<string>Enable Stylus Mode</string>
+									</property>
+								</widget>
+							</item>
+
 						</layout>
 					</widget>
 				</item>
 			</layout>
- 
 		</widget>
 
 	</widget>

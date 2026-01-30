@@ -164,6 +164,7 @@ DefaultList<bool> DefaultBools =
     /* MelonPrimeDS { */
     {"Instance*.Metroid.Operation.SnapTap", false},
     {"Instance*.Metroid.Apply.joy2KeySupport", true},
+    {"Instance*.Metroid.Enable.stylusMode", false},
     /* MelonPrimeDS } */
 
 };
@@ -463,6 +464,7 @@ LegacyEntry LegacyFile[] =
     {"MouseHide",        1, "Mouse.Hide", false},
     {"MouseHideSeconds", 0, "Mouse.HideSeconds", false},
     {"PauseLostFocus",   1, "PauseLostFocus", false},
+    {"MuteFastForward",   1, "MuteFastForward", false},
     {"UITheme",          2, "UITheme", false},
 
     {"RTCOffset",       3, "RTC.Offset", true},
