@@ -28,7 +28,7 @@ public:
     RawInputWinFilter(bool joy2KeySupport, HWND mainHwnd);
     ~RawInputWinFilter() override;
 
-    // Qt native filter (ONのときだけ使用)
+    // Qt native filter (Joy2KeySupport ON のときだけ使用)
     bool nativeEventFilter(const QByteArray& eventType, void* message, qintptr* result) override;
 
     // モード切替（スレッド起動/停止を伴う）
@@ -51,7 +51,7 @@ public:
     void resetHotkeyEdges();
     void setRawInputTarget(HWND hwnd);
 
-    // Helpers
+    // Helpers (static初期化のためにpublic)
     struct BtnLutEntry { uint8_t downBits; uint8_t upBits; };
     static BtnLutEntry s_btnLut[1024];
 
@@ -59,7 +59,7 @@ private:
     std::atomic<bool> m_joy2KeySupport{ false };
     HWND m_mainHwnd = nullptr;
 
-    // --- Thread / Hidden Window Members for Low Latency Mode ---
+    // --- 低遅延モード用の独自スレッド ---
     std::atomic<bool> m_runThread{ false };
     HANDLE m_hThread = nullptr;
     HWND m_hiddenWnd = nullptr;
@@ -72,16 +72,10 @@ private:
     // Core Logic
     void registerRawToTarget(HWND targetHwnd);
 
-    // 最速処理用バッファ（クラスメンバにして再利用）
-    // マルチスレッド競合は？ -> 
-    // ON時: メインスレッドのみ(Qt)
-    // OFF時: 独自スレッドのみ
-    // 同時に走ることはないので共有でOK。
-    alignas(16) uint8_t m_rawBuf[1024];
-
+    // データ処理コア (インライン展開でオーバーヘッド除去)
     FORCE_INLINE void processRawInput(HRAWINPUT hRaw) noexcept;
 
-    // State
+    // State (alignasでキャッシュ競合防止)
     struct alignas(64) StateBits {
         std::atomic<uint64_t> vkDown[4];
         std::atomic<uint8_t>  mouseButtons;

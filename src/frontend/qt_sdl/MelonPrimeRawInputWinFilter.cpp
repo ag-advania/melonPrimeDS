@@ -3,7 +3,7 @@
 
 #include "MelonPrimeRawInputWinFilter.h"
 #include <cassert>
-#include <process.h> // for _beginthreadex if needed, but CreateThread is fine
+#include <process.h>
 
 //=====================================================
 // LUT Init
@@ -56,11 +56,10 @@ RawInputWinFilter::RawInputWinFilter(bool joy2KeySupport, HWND mainHwnd)
 RawInputWinFilter::~RawInputWinFilter()
 {
     stopThreadIfRunning();
-    // スレッドが止まった後にデストラクタが走るので安全
 }
 
 //=====================================================
-// モード切り替え (元コードのロジックを再現+最適化)
+// モード切り替え
 //=====================================================
 void RawInputWinFilter::setJoy2KeySupport(bool enable)
 {
@@ -75,19 +74,16 @@ void RawInputWinFilter::setJoy2KeySupport(bool enable)
         if (m_mainHwnd) registerRawToTarget(m_mainHwnd);
     }
     else {
-        // ON -> OFF: 独自スレッド開始
-        // (注: RawInputは最後に登録したウィンドウが優先されるため、
-        //  スレッド側で隠しウィンドウに登録すればメイン側の受信は止まる)
+        // ON -> OFF: メインウィンドウ登録は上書きされるので放置でOK -> 独自スレッド開始
         startThreadIfNeeded();
     }
 }
 
 void RawInputWinFilter::setRawInputTarget(HWND hwnd)
 {
-    // メインウィンドウハンドルの更新
     if (m_mainHwnd != hwnd) {
         m_mainHwnd = hwnd;
-        // もし現在 ON モードなら、新しいウィンドウに対して再登録
+        // 現在 ON モードなら、新しいウィンドウに対して再登録
         if (m_joy2KeySupport.load(std::memory_order_relaxed)) {
             if (m_mainHwnd) registerRawToTarget(m_mainHwnd);
         }
@@ -118,11 +114,12 @@ void RawInputWinFilter::registerRawToTarget(HWND targetHwnd)
 }
 
 //=====================================================
-// Qt Native Filter (ON の時のみ)
+// Qt Native Filter (Joy2KeySupport ON の時のみ)
 //=====================================================
 bool RawInputWinFilter::nativeEventFilter(const QByteArray&, void* message, qintptr*)
 {
-    // OFF のときはスレッド側で処理しているので、こちらは無視
+    // OFF のときは独自スレッド側で処理しているので、こちらは無視
+    // これによりQtのイベントループ負荷を回避（バイパス）
     if (!m_joy2KeySupport.load(std::memory_order_relaxed)) return false;
 
     MSG* msg = static_cast<MSG*>(message);
@@ -130,25 +127,27 @@ bool RawInputWinFilter::nativeEventFilter(const QByteArray&, void* message, qint
 
     processRawInput(reinterpret_cast<HRAWINPUT>(msg->lParam));
 
-    // Qtにイベントを流す（消費しない）
-    return false;
+    return false; // Qtにイベントを流す（消費しない）
 }
 
 //=====================================================
-// 最速パス：RawInput 処理コア (最適化版)
+// 最速パス：RawInput 処理コア (スタックバッファ版)
 //=====================================================
 FORCE_INLINE void RawInputWinFilter::processRawInput(HRAWINPUT hRaw) noexcept
 {
-    // スタックバッファの代わりにメンバ変数 m_rawBuf を使用（アロケーション回避）
-    // この関数は「メインスレッド(ON)」または「独自スレッド(OFF)」のどちらか一方からしか
-    // 呼ばれないため、ロックなしで共有バッファを使って問題ない。
-    UINT size = sizeof(m_rawBuf);
+    // 【最適化ポイント】
+    // ローカル変数の固定長配列（スタック）を使用。
+    // ヒープ確保(new/malloc)が発生しないため、超高速かつスレッドセーフ。
+    // L1キャッシュに乗りやすいため、1000Hzポーリングでも負荷にならない。
+    constexpr UINT kBufSize = 1024;
+    alignas(16) uint8_t rawBuf[kBufSize];
 
-    if (GetRawInputData(hRaw, RID_INPUT, m_rawBuf, &size, sizeof(RAWINPUTHEADER)) == (UINT)-1) {
-        return;
+    UINT size = kBufSize;
+    if (GetRawInputData(hRaw, RID_INPUT, rawBuf, &size, sizeof(RAWINPUTHEADER)) == (UINT)-1) {
+        return; // バッファ不足エラー（通常ありえないサイズなので無視）
     }
 
-    RAWINPUT* raw = reinterpret_cast<RAWINPUT*>(m_rawBuf);
+    RAWINPUT* raw = reinterpret_cast<RAWINPUT*>(rawBuf);
     const DWORD type = raw->header.dwType;
 
     // ---------------- Mouse ----------------
@@ -207,7 +206,7 @@ void RawInputWinFilter::startThreadIfNeeded()
     m_runThread.store(true, std::memory_order_relaxed);
     m_hThread = CreateThread(nullptr, 0, ThreadFunc, this, 0, nullptr);
 
-    // スレッド優先度を上げて、メインスレッドが重くても入力だけは処理させる
+    // スレッド優先度を最高にする（メイン処理が重くてもマウス入力だけは飛ばさない）
     if (m_hThread) {
         SetThreadPriority(m_hThread, THREAD_PRIORITY_HIGHEST);
     }
@@ -219,13 +218,12 @@ void RawInputWinFilter::stopThreadIfRunning()
 
     m_runThread.store(false, std::memory_order_relaxed);
 
-    // スレッド内のメッセージループを終了させるために WM_CLOSE を送る
     if (m_hiddenWnd) {
         PostMessage(m_hiddenWnd, WM_CLOSE, 0, 0);
     }
 
     if (m_hThread) {
-        WaitForSingleObject(m_hThread, 1000); // タイムアウト付き待機
+        WaitForSingleObject(m_hThread, 500);
         CloseHandle(m_hThread);
         m_hThread = nullptr;
     }
@@ -240,28 +238,24 @@ DWORD WINAPI RawInputWinFilter::ThreadFunc(LPVOID param)
 
 void RawInputWinFilter::threadLoop()
 {
-    // メッセージ専用ウィンドウを作成 (HWND_MESSAGE)
-    // これにより、画面を持たない軽量なウィンドウでメッセージを受け取る
+    // メッセージ専用ウィンドウ (軽量・非表示)
     WNDCLASSEX wc = { 0 };
     wc.cbSize = sizeof(wc);
     wc.lpfnWndProc = DefWindowProc;
     wc.hInstance = GetModuleHandle(nullptr);
-    wc.lpszClassName = TEXT("MelonPrimeRawInputWorker");
+    wc.lpszClassName = TEXT("MelonPrimeRawWorker");
     RegisterClassEx(&wc);
 
     m_hiddenWnd = CreateWindowEx(0, wc.lpszClassName, nullptr, 0, 0, 0, 0, 0, HWND_MESSAGE, nullptr, wc.hInstance, nullptr);
 
-    if (!m_hiddenWnd) {
-        return;
-    }
+    if (!m_hiddenWnd) return;
 
-    // この隠しウィンドウに対して RawInput を登録する
-    // これにより、このスレッドのメッセージキューに WM_INPUT が飛んでくるようになる
+    // このスレッドの隠しウィンドウにRawInputを紐付ける
+    // これにより、Joy2KeySupport OFF 時はメインスレッドに WM_INPUT が飛ばなくなる
     registerRawToTarget(m_hiddenWnd);
 
-    // メッセージループ
     MSG msg;
-    // GetMessage はメッセージが来るまでスリープするためCPU負荷は低い
+    // GetMessage はメッセージが来るまでCPUを使わず待機するため、ループ負荷は低い
     while (m_runThread.load(std::memory_order_relaxed))
     {
         BOOL ret = GetMessage(&msg, nullptr, 0, 0);
@@ -284,7 +278,7 @@ void RawInputWinFilter::threadLoop()
 }
 
 //=====================================================
-// その他 API (互換性維持)
+// その他 API
 //=====================================================
 void RawInputWinFilter::setHotkeyVks(int id, const std::vector<UINT>& vks)
 {
