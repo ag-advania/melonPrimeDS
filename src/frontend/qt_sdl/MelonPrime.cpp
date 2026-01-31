@@ -393,7 +393,7 @@ void MelonPrimeCore::OnEmuStart()
     m_isInGame = false;
     m_appliedFlags = 0;
 
-    // ▼▼▼ 追加: 設定を再読み込みしてフラグと変数を同期させる ▼▼▼
+    // 設定を再読み込みしてフラグと変数を同期させる
     m_flags.assign(StateFlags::BIT_SNAP_TAP, localCfg.GetBool("Metroid.Operation.SnapTap"));
     m_flags.assign(StateFlags::BIT_STYLUS_MODE, localCfg.GetBool("Metroid.Enable.stylusMode"));
     m_flags.assign(StateFlags::BIT_JOY2KEY, localCfg.GetBool("Metroid.Apply.joy2KeySupport"));
@@ -402,7 +402,6 @@ void MelonPrimeCore::OnEmuStart()
 
     // Joy2Keyフィルタの適用もここで行うのが安全
     ApplyJoy2KeySupportAndQtFilter(m_flags.test(StateFlags::BIT_JOY2KEY));
-    // ▲▲▲ 追加ここまで ▲▲▲
 
     INPUT_RESET();
     UpdateRendererSettings();
