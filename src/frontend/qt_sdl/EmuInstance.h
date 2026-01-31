@@ -29,6 +29,7 @@
 #include "Config.h"
 #include "SaveManager.h"
 #include <QBitArray> // MelonPrimeDS
+namespace MelonPrime { class MelonPrimeCore; }
 
 const int kMaxWindows = 4;
 
@@ -121,7 +122,7 @@ int getEventKeyVal(QKeyEvent* event);
 
 class EmuInstance
 {
-    friend class MelonPrimeCore; // MelonPrimeDS
+    friend class MelonPrime::MelonPrimeCore; // MelonPrimeCore から private メンバへのアクセスを許可する
 
 public:
     EmuInstance(int inst);

@@ -142,6 +142,11 @@ namespace melonDS {
     {
         if (!filter) return;
 
+        // ★修正: シングルトンの設定上書き防止
+        // RawInputフィルタは全インスタンスで共有されるため、
+        // インスタンス0の設定のみを反映させる。
+        if (instance != 0) return;
+
         // 射撃/ズーム
         BindOneHotkeyFromConfig(filter, instance, "Keyboard.HK_MetroidShootScan", HK_MetroidShootScan);
         BindOneHotkeyFromConfig(filter, instance, "Keyboard.HK_MetroidScanShoot", HK_MetroidScanShoot);
@@ -158,12 +163,6 @@ namespace melonDS {
         BindOneHotkeyFromConfig(filter, instance, "Keyboard.HK_MetroidMorphBall", HK_MetroidMorphBall);
         BindOneHotkeyFromConfig(filter, instance, "Keyboard.HK_MetroidHoldMorphBallBoost", HK_MetroidHoldMorphBallBoost);
         BindOneHotkeyFromConfig(filter, instance, "Keyboard.HK_MetroidScanVisor", HK_MetroidScanVisor);
-
-        // 感度調整（ゲーム内）
-		/* これはQT側で処理する
-        BindOneHotkeyFromConfig(filter, instance, "Keyboard.HK_MetroidIngameSensiUp", HK_MetroidIngameSensiUp);
-        BindOneHotkeyFromConfig(filter, instance, "Keyboard.HK_MetroidIngameSensiDown", HK_MetroidIngameSensiDown);
-        */
 
         // 直接武器＆スペシャル
         BindOneHotkeyFromConfig(filter, instance, "Keyboard.HK_MetroidWeaponBeam", HK_MetroidWeaponBeam);
