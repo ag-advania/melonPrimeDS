@@ -1,5 +1,5 @@
 /*
-    MelonPrimeDS Logic Implementation (EXTREME OPTIMIZED VERSION)
+    MelonPrimeDS Logic Implementation (OPTIMIZED VERSION)
     Key Optimizations:
     1. Cache-line aligned hot data structures
     2. Branchless operations where possible
@@ -7,7 +7,6 @@
     4. LUT-based movement processing
     5. Reduced function call overhead
     6. SIMD-friendly data layout
-    7. SIMD (SSE) Aim Adjustment & Sub-pixel Accumulation [NEW]
 */
 
 #include "MelonPrime.h"
@@ -23,7 +22,6 @@
 
 #include <cmath>
 #include <algorithm>
-#include <immintrin.h> // Required for SSE Intrinsics
 #include <QCoreApplication>
 #include <QCursor>
 
@@ -92,19 +90,6 @@ FORCE_INLINE void setAimBlockBranchless(uint32_t bitMask, bool enable) noexcept 
 }
 
 // ============================================================
-// Aim Accumulator (Sub-pixel Precision) [NEW]
-// ============================================================
-// X, Y の端数（0.0 ~ 0.99...）を保持するバッファ
-static float gResidX = 0.0f;
-static float gResidY = 0.0f;
-
-// 感度変更時やリセット時に呼び出す
-FORCE_INLINE void ResetAimResidual() {
-    gResidX = 0.0f;
-    gResidY = 0.0f;
-}
-
-// ============================================================
 // Sensitivity Cache (Pre-computed)
 // ============================================================
 static float gAimSensiFactor = 0.01f;
@@ -116,9 +101,6 @@ FORCE_INLINE void recalcAimSensitivityCache(Config::Table& localCfg) {
     const float aimYAxisScale = static_cast<float>(localCfg.GetDouble("Metroid.Sensitivity.AimYAxisScale"));
     gAimSensiFactor = sens * 0.01f;
     gAimCombinedY = gAimSensiFactor * aimYAxisScale;
-
-    // 感度が変わったら端数をリセット（急な視点飛び防止）
-    ResetAimResidual();
 }
 
 FORCE_INLINE void applyAimAdjustSetting(Config::Table& cfg) noexcept {
@@ -126,47 +108,20 @@ FORCE_INLINE void applyAimAdjustSetting(Config::Table& cfg) noexcept {
     gAimAdjust = static_cast<float>(std::max(0.0, std::isnan(v) ? 0.0 : v));
 }
 
-// [OPTIMIZED] SIMD Aim Adjustment
-// Handles Deadzone and "Small Movement" Logic utilizing SSE
-FORCE_INLINE void applyAimAdjustSIMD(float& x, float& y, float adjustThreshold) noexcept {
-    // データロード (x, y, 0, 0)
-    __m128 val = _mm_set_ps(0.0f, 0.0f, y, x);
+// Branchless aim adjustment
+FORCE_INLINE void applyAimAdjustBranchless(float& dx, float& dy) noexcept {
+    const float a = gAimAdjust;
+    if (UNLIKELY(a <= 0.0f)) return;
 
-    // 絶対値を取得 (AND mask with 0x7FFFFFFF)
-    const __m128 signMask = _mm_set1_ps(-0.0f); // 0x80000000
-    __m128 absVal = _mm_andnot_ps(signMask, val); // abs(val)
+    const float avx = std::fabs(dx);
+    const float avy = std::fabs(dy);
 
-    // 閾値 (adjustThreshold)
-    __m128 vThresh = _mm_set1_ps(adjustThreshold);
+    // Branchless: (avx < a) ? 0 : ((avx < 1) ? sign(dx) : dx)
+    const float signX = (dx >= 0.0f) ? 1.0f : -1.0f;
+    const float signY = (dy >= 0.0f) ? 1.0f : -1.0f;
 
-    // 比較: absVal < adjustThreshold ? 0xFFFFFFFF : 0
-    __m128 cmpDeadzone = _mm_cmplt_ps(absVal, vThresh);
-
-    // 比較: absVal < 1.0f ? 0xFFFFFFFF : 0
-    __m128 vOne = _mm_set1_ps(1.0f);
-    __m128 cmpSmall = _mm_cmplt_ps(absVal, vOne);
-
-    // Sign Extraction for small values (1.0f with original sign)
-    __m128 vSignOnly = _mm_or_ps(_mm_and_ps(signMask, val), vOne);
-
-    // smallMask = cmpSmall & ~cmpDeadzone (デッドゾーンより大きく、1.0より小さい)
-    __m128 smallMask = _mm_andnot_ps(cmpDeadzone, cmpSmall);
-
-    // normalMask = ~cmpSmall (1.0以上) - all ones logic needs cast, simple NOT here
-    // cmpSmallがTRUEならnormalMaskはFALSE
-
-    // 正確なビットマスク生成
-    __m128 resNormal = _mm_andnot_ps(cmpSmall, val); // 1.0以上の値そのまま
-    __m128 resSmall = _mm_and_ps(smallMask, vSignOnly); // 1.0未満は +/- 1.0 に固定
-
-    // 合成
-    __m128 result = _mm_or_ps(resNormal, resSmall);
-
-    // ストア
-    float res[4];
-    _mm_storeu_ps(res, result);
-    x = res[0];
-    y = res[1];
+    dx = (avx < a) ? 0.0f : ((avx < 1.0f) ? signX : dx);
+    dy = (avy < a) ? 0.0f : ((avy < 1.0f) ? signY : dy);
 }
 
 FORCE_INLINE std::uint16_t sensiNumToSensiVal(double sensiNum) {
@@ -267,9 +222,6 @@ MelonPrimeCore::MelonPrimeCore(EmuInstance* instance)
     memset(&m_addrHot, 0, sizeof(m_addrHot));
     memset(&m_addrCold, 0, sizeof(m_addrCold));
     m_flags.packed = 0;
-
-    // Ensure residuals are zeroed
-    ResetAimResidual();
 }
 
 MelonPrimeCore::~MelonPrimeCore() {}
@@ -287,7 +239,6 @@ void MelonPrimeCore::Initialize()
 
     recalcAimSensitivityCache(localCfg);
     applyAimAdjustSetting(localCfg);
-    ResetAimResidual();
 
 #ifdef _WIN32
     SetupRawInput();
@@ -444,7 +395,6 @@ void MelonPrimeCore::OnEmuStart()
 
     INPUT_RESET();
     UpdateRendererSettings();
-    ResetAimResidual(); // Reset sub-pixel aim
 }
 
 void MelonPrimeCore::OnEmuStop()
@@ -469,7 +419,6 @@ void MelonPrimeCore::OnEmuUnpause()
 
     recalcAimSensitivityCache(localCfg);
     applyAimAdjustSetting(localCfg);
-    ResetAimResidual(); // Reset sub-pixel aim
 
 #ifdef _WIN32
     if (g_rawFilter) {
@@ -721,9 +670,6 @@ HOT_FUNCTION void MelonPrimeCore::RunFrameHook()
             InputSetBranchless(INPUT_START, !IsDown(IB_MENU));
         }
         else {
-            // Reset residue when losing focus to prevent jump on re-entry
-            ResetAimResidual();
-
 #ifdef _WIN32
             if (g_rawFilter) {
                 g_rawFilter->discardDeltas();
@@ -873,7 +819,6 @@ void MelonPrimeCore::ProcessAimInputStylus()
     }
 }
 
-// [OPTIMIZED] Aim Processing with Sub-pixel Accumulation
 HOT_FUNCTION void MelonPrimeCore::ProcessAimInputMouse(melonDS::u8* mainRAM)
 {
     if (isAimDisabled) return;
@@ -893,33 +838,15 @@ HOT_FUNCTION void MelonPrimeCore::ProcessAimInputMouse(melonDS::u8* mainRAM)
         // Early exit with single OR check
         if ((deltaX | deltaY) == 0) return;
 
-        // 1. Calculate base scaled values (float)
         float scaledX = deltaX * gAimSensiFactor;
         float scaledY = deltaY * gAimCombinedY;
+        applyAimAdjustBranchless(scaledX, scaledY);
 
-        // 2. Apply SIMD Aim Adjust (Deadzone & Small movements)
-        if (gAimAdjust > 0.0f) {
-            applyAimAdjustSIMD(scaledX, scaledY, gAimAdjust);
-        }
+        // Combined zero check
+        if (scaledX == 0.0f && scaledY == 0.0f) return;
 
-        // 3. Sub-pixel Accumulation
-        // Add residual from previous frame
-        float totalX = scaledX + gResidX;
-        float totalY = scaledY + gResidY;
-
-        // Convert to integer for NDS RAM
-        int16_t outX = static_cast<int16_t>(totalX);
-        int16_t outY = static_cast<int16_t>(totalY);
-
-        // Store new residual for next frame
-        gResidX = totalX - outX;
-        gResidY = totalY - outY;
-
-        // Combined zero check (write only if integer part is non-zero)
-        if (outX == 0 && outY == 0) return;
-
-        FastWrite16(mainRAM, m_addrHot.aimX, outX);
-        FastWrite16(mainRAM, m_addrHot.aimY, outY);
+        FastWrite16(mainRAM, m_addrHot.aimX, static_cast<int16_t>(scaledX));
+        FastWrite16(mainRAM, m_addrHot.aimY, static_cast<int16_t>(scaledY));
 
 #if !defined(_WIN32)
         QCursor::setPos(m_aimData.centerX, m_aimData.centerY);
@@ -934,7 +861,6 @@ HOT_FUNCTION void MelonPrimeCore::ProcessAimInputMouse(melonDS::u8* mainRAM)
     QCursor::setPos(center);
 #endif
     m_isLayoutChangePending = false;
-    ResetAimResidual();
 }
 
 // ============================================================
