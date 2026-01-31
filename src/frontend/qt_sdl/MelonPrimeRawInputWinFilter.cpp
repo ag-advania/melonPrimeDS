@@ -1,4 +1,13 @@
 // MelonPrimeRawInputWinFilter.cpp
+// High-Performance RawInput Filter Implementation
+//
+// Optimizations:
+// 1. GetRawInputBuffer for batched processing
+// 2. Local accumulation to minimize atomic operations
+// 3. VK remapping LUT
+// 4. Single-pass hotkey evaluation
+// 5. MsgWaitForMultipleObjects for efficient waiting
+
 #ifdef _WIN32
 
 #include "MelonPrimeRawInputWinFilter.h"
@@ -6,11 +15,18 @@
 #include <process.h>
 
 //=====================================================
-// LUT Init
+// LUT Init - Button Flags
 //=====================================================
 RawInputWinFilter::BtnLutEntry RawInputWinFilter::s_btnLut[1024];
+
+//=====================================================
+// LUT Init - VK Remapping
+//=====================================================
+RawInputWinFilter::VkRemapEntry RawInputWinFilter::s_vkRemap[256];
+
 static struct RawLutInit {
     RawLutInit() {
+        // Button LUT initialization
         for (int i = 0; i < 1024; ++i) {
             uint8_t d = 0, u = 0;
             if (i & RI_MOUSE_BUTTON_1_DOWN) d |= 0x01;
@@ -25,6 +41,17 @@ static struct RawLutInit {
             if (i & RI_MOUSE_BUTTON_5_UP)   u |= 0x10;
             RawInputWinFilter::s_btnLut[i] = { d, u };
         }
+
+        // VK Remapping LUT initialization
+        memset(RawInputWinFilter::s_vkRemap, 0, sizeof(RawInputWinFilter::s_vkRemap));
+
+        // Control key remapping
+        RawInputWinFilter::s_vkRemap[VK_CONTROL] = { VK_LCONTROL, VK_RCONTROL };
+
+        // Alt/Menu key remapping
+        RawInputWinFilter::s_vkRemap[VK_MENU] = { VK_LMENU, VK_RMENU };
+
+        // Note: VK_SHIFT uses MapVirtualKey, handled separately in remapVk()
     }
 } s_lutInit;
 
@@ -37,7 +64,7 @@ RawInputWinFilter::RawInputWinFilter(bool joy2KeySupport, HWND mainHwnd)
     // 初期化
     for (auto& a : m_state.vkDown) a.store(0);
     m_state.mouseButtons.store(0);
-    m_mouseDeltaCombined.store(0); // 64bit Pack初期化
+    m_mouseDeltaCombined.store(0);
 
     memset(m_hkMask.data(), 0, sizeof(m_hkMask));
     memset(m_hkPrev, 0, sizeof(m_hkPrev));
@@ -132,12 +159,10 @@ bool RawInputWinFilter::nativeEventFilter(const QByteArray&, void* message, qint
 }
 
 //=====================================================
-// 最速パス：RawInput 処理コア (スタックバッファ版)
+// 【最適化】単一イベント処理 (スタックバッファ版)
 //=====================================================
 FORCE_INLINE void RawInputWinFilter::processRawInput(HRAWINPUT hRaw) noexcept
 {
-    // 【最適化ポイント】
-    // ローカル変数の固定長配列（スタック）を使用。
     constexpr UINT kBufSize = 1024;
     alignas(16) uint8_t rawBuf[kBufSize];
 
@@ -158,8 +183,7 @@ FORCE_INLINE void RawInputWinFilter::processRawInput(HRAWINPUT hRaw) noexcept
             const LONG dx_ = m.lLastX;
             const LONG dy_ = m.lLastY;
             if (dx_ | dy_) {
-                // 【最適化】 64bit CASループで X,Y を一度に更新
-                // メモリバリアのコストを削減し、X/Yの同期ズレを防止
+                // 64bit CASループで X,Y を一度に更新
                 uint64_t cur = m_mouseDeltaCombined.load(std::memory_order_relaxed);
                 uint64_t nxt;
                 do {
@@ -193,14 +217,122 @@ FORCE_INLINE void RawInputWinFilter::processRawInput(HRAWINPUT hRaw) noexcept
 
         if (vk == 0 || vk >= 255) return;
 
-        // 左右補正
-        if (vk == VK_SHIFT)   vk = MapVirtualKey(kb.MakeCode, MAPVK_VSC_TO_VK_EX);
-        else if (vk == VK_CONTROL) vk = (flags & RI_KEY_E0) ? VK_RCONTROL : VK_LCONTROL;
-        else if (vk == VK_MENU)    vk = (flags & RI_KEY_E0) ? VK_RMENU : VK_LMENU;
+        // 【最適化】LUTを使用した左右補正
+        vk = remapVk(vk, kb.MakeCode, flags);
 
         bool isDown = !(flags & RI_KEY_BREAK);
         setVkBit(vk, isDown);
         return;
+    }
+}
+
+//=====================================================
+// 【最適化】バッチ処理版 RawInput 処理
+// 高ポーリングレートマウスで効果的
+//=====================================================
+void RawInputWinFilter::processRawInputBatched() noexcept
+{
+    constexpr UINT kBufferSize = 16384; // 16KB buffer for batch processing
+    alignas(16) uint8_t buffer[kBufferSize];
+
+    // Get required buffer size first
+    UINT size = kBufferSize;
+    UINT count = GetRawInputBuffer(reinterpret_cast<RAWINPUT*>(buffer), &size, sizeof(RAWINPUTHEADER));
+
+    if (count == 0 || count == (UINT)-1) return;
+
+    // Local accumulators to minimize atomic operations
+    int32_t accumX = 0, accumY = 0;
+    uint8_t btnDown = 0, btnUp = 0;
+
+    // Keyboard state changes (accumulated locally)
+    uint64_t localVkDown[4];
+    uint64_t localVkUp[4];
+    memset(localVkDown, 0, sizeof(localVkDown));
+    memset(localVkUp, 0, sizeof(localVkUp));
+    bool hasKeyChanges = false;
+
+    // Process all events in batch
+    RAWINPUT* raw = reinterpret_cast<RAWINPUT*>(buffer);
+    for (UINT i = 0; i < count; ++i) {
+        const DWORD type = raw->header.dwType;
+
+        if (type == RIM_TYPEMOUSE) {
+            const RAWMOUSE& m = raw->data.mouse;
+
+            // Accumulate mouse movement
+            if (!(m.usFlags & MOUSE_MOVE_ABSOLUTE)) {
+                accumX += m.lLastX;
+                accumY += m.lLastY;
+            }
+
+            // Accumulate button changes
+            const USHORT f = m.usButtonFlags & 0x03FF;
+            if (f) {
+                const auto& lut = s_btnLut[f];
+                btnDown |= lut.downBits;
+                btnUp |= lut.upBits;
+            }
+        }
+        else if (type == RIM_TYPEKEYBOARD) {
+            const RAWKEYBOARD& kb = raw->data.keyboard;
+            UINT vk = kb.VKey;
+
+            if (vk != 0 && vk < 255) {
+                vk = remapVk(vk, kb.MakeCode, kb.Flags);
+
+                const uint32_t widx = vk >> 6;
+                const uint64_t bit = 1ULL << (vk & 63);
+
+                if (!(kb.Flags & RI_KEY_BREAK)) {
+                    localVkDown[widx] |= bit;
+                    localVkUp[widx] &= ~bit; // Cancel any pending up
+                }
+                else {
+                    localVkUp[widx] |= bit;
+                    localVkDown[widx] &= ~bit; // Cancel any pending down
+                }
+                hasKeyChanges = true;
+            }
+        }
+
+        // Move to next RAWINPUT structure
+        // NEXTRAWINPUTBLOCK uses QWORD which is not defined in MinGW, so we calculate manually
+        raw = reinterpret_cast<RAWINPUT*>(reinterpret_cast<BYTE*>(raw) +
+            ((raw->header.dwSize + sizeof(void*) - 1) & ~(sizeof(void*) - 1)));
+    }
+
+    // Apply accumulated mouse delta (single atomic operation)
+    if (accumX | accumY) {
+        uint64_t cur = m_mouseDeltaCombined.load(std::memory_order_relaxed);
+        uint64_t nxt;
+        do {
+            MouseDeltaPack p;
+            p.combined = cur;
+            p.s.x += accumX;
+            p.s.y += accumY;
+            nxt = p.combined;
+        } while (!m_mouseDeltaCombined.compare_exchange_weak(cur, nxt, std::memory_order_relaxed));
+    }
+
+    // Apply accumulated button changes
+    if (btnDown | btnUp) {
+        uint8_t cur = m_state.mouseButtons.load(std::memory_order_relaxed);
+        uint8_t nxt = (cur | btnDown) & ~btnUp;
+        if (cur != nxt) m_state.mouseButtons.store(nxt, std::memory_order_relaxed);
+    }
+
+    // Apply accumulated keyboard changes
+    if (hasKeyChanges) {
+        for (int w = 0; w < 4; ++w) {
+            if (localVkDown[w] | localVkUp[w]) {
+                uint64_t cur = m_state.vkDown[w].load(std::memory_order_relaxed);
+                uint64_t nxt = (cur | localVkDown[w]) & ~localVkUp[w];
+                if (cur != nxt) {
+                    m_state.vkDown[w].store(nxt, std::memory_order_relaxed);
+                }
+            }
+        }
     }
 }
 
@@ -261,23 +393,34 @@ void RawInputWinFilter::threadLoop()
     // このスレッドの隠しウィンドウにRawInputを紐付ける
     registerRawToTarget(m_hiddenWnd);
 
-    MSG msg;
+    // 【最適化】MsgWaitForMultipleObjectsを使用した効率的な待機
     while (m_runThread.load(std::memory_order_relaxed))
     {
-        BOOL ret = GetMessage(&msg, nullptr, 0, 0);
-        if (ret == -1 || ret == 0) break;
+        // Wait for RawInput messages with 1ms timeout
+        DWORD ret = MsgWaitForMultipleObjects(0, nullptr, FALSE, 1, QS_RAWINPUT | QS_POSTMESSAGE);
 
-        if (msg.message == WM_INPUT) {
-            processRawInput(reinterpret_cast<HRAWINPUT>(msg.lParam));
-        }
-        else if (msg.message == WM_CLOSE) {
-            break;
-        }
+        if (ret == WAIT_OBJECT_0) {
+            // Check for WM_CLOSE first
+            MSG msg;
+            while (PeekMessage(&msg, m_hiddenWnd, WM_CLOSE, WM_CLOSE, PM_REMOVE)) {
+                goto cleanup;
+            }
 
-        TranslateMessage(&msg);
-        DispatchMessage(&msg);
+            // 【最適化】バッチ処理で複数のWM_INPUTを一度に処理
+            processRawInputBatched();
+
+            // Process any remaining messages individually
+            while (PeekMessage(&msg, m_hiddenWnd, WM_INPUT, WM_INPUT, PM_REMOVE)) {
+                processRawInput(reinterpret_cast<HRAWINPUT>(msg.lParam));
+            }
+        }
+        else if (ret == WAIT_TIMEOUT) {
+            // Timeout - check if we should exit
+            continue;
+        }
     }
 
+cleanup:
     DestroyWindow(m_hiddenWnd);
     UnregisterClass(wc.lpszClassName, wc.hInstance);
     m_hiddenWnd = nullptr;
@@ -313,16 +456,27 @@ void RawInputWinFilter::setHotkeyVks(int id, const std::vector<UINT>& vks)
     m.hasMask = true;
 }
 
+//=====================================================
+// 【最適化】ホットキー判定 - 一括ビット演算
+//=====================================================
 bool RawInputWinFilter::hotkeyDown(int hk) const noexcept {
     if ((unsigned)hk >= kMaxHotkeyId) return false;
     const HotkeyMask& m = m_hkMask[(unsigned)hk];
     if (!m.hasMask) return false;
-    if (m.mouseMask && (m_state.mouseButtons.load(std::memory_order_relaxed) & m.mouseMask)) return true;
-    if (m.vkMask[0] & m_state.vkDown[0].load(std::memory_order_relaxed)) return true;
-    if (m.vkMask[1] & m_state.vkDown[1].load(std::memory_order_relaxed)) return true;
-    if (m.vkMask[2] & m_state.vkDown[2].load(std::memory_order_relaxed)) return true;
-    if (m.vkMask[3] & m_state.vkDown[3].load(std::memory_order_relaxed)) return true;
-    return false;
+
+    // マウスボタンを先にチェック（頻度が高い場合に有効）
+    if (m.mouseMask && (m_state.mouseButtons.load(std::memory_order_relaxed) & m.mouseMask))
+        return true;
+
+    // 【最適化】4つのmaskをOR結合してから一括判定
+    // 分岐予測ミスを削減し、パイプライン効率を向上
+    const uint64_t anyMatch =
+        (m.vkMask[0] & m_state.vkDown[0].load(std::memory_order_relaxed)) |
+        (m.vkMask[1] & m_state.vkDown[1].load(std::memory_order_relaxed)) |
+        (m.vkMask[2] & m_state.vkDown[2].load(std::memory_order_relaxed)) |
+        (m.vkMask[3] & m_state.vkDown[3].load(std::memory_order_relaxed));
+
+    return anyMatch != 0;
 }
 
 bool RawInputWinFilter::hotkeyPressed(int hk) noexcept {
@@ -350,8 +504,7 @@ bool RawInputWinFilter::hotkeyReleased(int hk) noexcept {
 }
 
 void RawInputWinFilter::fetchMouseDelta(int& outX, int& outY) {
-    // 【最適化】 1回のアトミック交換でX, Y両方を取得・リセット
-    // 2回のアトミック操作が不要になり、キャッシュライン効率が向上
+    // 【最適化】1回のアトミック交換でX, Y両方を取得・リセット
     uint64_t val = m_mouseDeltaCombined.exchange(0, std::memory_order_relaxed);
     MouseDeltaPack p;
     p.combined = val;
