@@ -11,10 +11,14 @@
 #include <functional>
 #include <vector>
 #include <cstdint>
+#include <array>
+#include <string_view>
 #include <memory> 
 
 #include "types.h"
 #include "Config.h"
+
+// --- Compiler Optimization Macros ---
 
 #ifndef FORCE_INLINE
 #  if defined(_MSC_VER)
@@ -53,7 +57,10 @@
 #endif
 
 #ifndef LIKELY
-#  if defined(__GNUC__) || defined(__clang__)
+#  if defined(__cplusplus) && __cplusplus >= 202002L
+#    define LIKELY(x)   (x) [[likely]]
+#    define UNLIKELY(x) (x) [[unlikely]]
+#  elif defined(__GNUC__) || defined(__clang__)
 #    define LIKELY(x)   __builtin_expect(!!(x), 1)
 #    define UNLIKELY(x) __builtin_expect(!!(x), 0)
 #  else
@@ -224,17 +231,6 @@ namespace MelonPrime {
         alignas(64) FrameInputState m_input{};
         GameAddressesHot m_addrHot{};
 
-        struct alignas(64) HotState {
-            uint16_t inputMaskFast = 0xFFFF;
-            uint16_t snapState = 0;
-            uint32_t aimBlockBits = 0;
-            float aimSensiFactor = 0.01f;
-            float aimCombinedY = 0.013333333f;
-            float aimAdjust = 0.5f;
-            bool isAimDisabled = false;
-            bool isRunningHook = false;
-        };
-
         uint16_t m_inputMaskFast = 0xFFFF;
         uint16_t m_snapState = 0;
         uint32_t m_aimBlockBits = 0;
@@ -280,7 +276,7 @@ namespace MelonPrime {
         std::function<void()> m_frameAdvanceFunc;
 
 #ifdef _WIN32
-        // ★修正: 生ポインタ (シングルトン参照)
+        // Raw Pointer maintained (Manual Acquire/Release)
         RawInputWinFilter* m_rawFilter = nullptr;
 #endif
 
@@ -327,6 +323,12 @@ namespace MelonPrime {
             dx = (avx < a) ? 0.0f : ((avx < 1.0f) ? signX : dx);
             dy = (avy < a) ? 0.0f : ((avy < 1.0f) ? signY : dy);
         }
+
+        // --- Input Helper Functions (Replaces Macros) ---
+        FORCE_INLINE bool IsJoyDown(int id) const;
+        FORCE_INLINE bool IsJoyPressed(int id) const;
+        FORCE_INLINE bool IsHkDownRaw(int id) const;
+        FORCE_INLINE bool IsHkPressedRaw(int id) const;
 
         HOT_FUNCTION void UpdateInputState();
 
