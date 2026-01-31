@@ -1,10 +1,18 @@
 #ifndef MELON_PRIME_RAW_INPUT_FILTER_H
 #define MELON_PRIME_RAW_INPUT_FILTER_H
+
 #ifdef _WIN32
+
+// ビルド高速化と競合回避
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
 
 #include <QAbstractNativeEventFilter>
 #include <QByteArray>
-#include <QBitArray>
 #include <QtGlobal>
 #include <windows.h>
 #include <hidsdi.h>
@@ -13,7 +21,7 @@
 #include <atomic>
 #include <cstdint>
 #include <cstring>
-#include <mutex> // 追加
+#include <mutex>
 
 #ifndef FORCE_INLINE
 #  if defined(_MSC_VER)
@@ -26,11 +34,9 @@
 class RawInputWinFilter : public QAbstractNativeEventFilter
 {
 public:
-    // シングルトン管理メソッド
     static RawInputWinFilter* Acquire(bool joy2KeySupport, HWND mainHwnd);
     static void Release();
 
-    // Qt native filter
     bool nativeEventFilter(const QByteArray& eventType, void* message, qintptr* result) override;
 
     void setJoy2KeySupport(bool enable);
@@ -58,14 +64,15 @@ public:
     static VkRemapEntry s_vkRemap[256];
 
 private:
-    // コンストラクタ/デストラクタはprivateにする
     RawInputWinFilter(bool joy2KeySupport, HWND mainHwnd);
     ~RawInputWinFilter() override;
 
-    // シングルトン変数
     static RawInputWinFilter* s_instance;
     static int s_refCount;
     static std::mutex s_mutex;
+    static std::once_flag s_initFlag; // テーブル初期化用フラグ
+
+    static void initializeTables();   // 初期化関数
 
     std::atomic<bool> m_joy2KeySupport{ false };
     HWND m_mainHwnd = nullptr;

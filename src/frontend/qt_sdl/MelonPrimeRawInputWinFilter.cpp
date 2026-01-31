@@ -6,38 +6,37 @@
 #include <cstdio>
 #include <process.h>
 
-// 静的メンバの定義
 RawInputWinFilter* RawInputWinFilter::s_instance = nullptr;
 int RawInputWinFilter::s_refCount = 0;
 std::mutex RawInputWinFilter::s_mutex;
+std::once_flag RawInputWinFilter::s_initFlag; // 追加
 
 RawInputWinFilter::BtnLutEntry RawInputWinFilter::s_btnLut[1024];
 RawInputWinFilter::VkRemapEntry RawInputWinFilter::s_vkRemap[256];
 
-static struct RawLutInit {
-    RawLutInit() {
-        for (int i = 0; i < 1024; ++i) {
-            uint8_t d = 0, u = 0;
-            if (i & RI_MOUSE_BUTTON_1_DOWN) d |= 0x01;
-            if (i & RI_MOUSE_BUTTON_1_UP)   u |= 0x01;
-            if (i & RI_MOUSE_BUTTON_2_DOWN) d |= 0x02;
-            if (i & RI_MOUSE_BUTTON_2_UP)   u |= 0x02;
-            if (i & RI_MOUSE_BUTTON_3_DOWN) d |= 0x04;
-            if (i & RI_MOUSE_BUTTON_3_UP)   u |= 0x04;
-            if (i & RI_MOUSE_BUTTON_4_DOWN) d |= 0x08;
-            if (i & RI_MOUSE_BUTTON_4_UP)   u |= 0x08;
-            if (i & RI_MOUSE_BUTTON_5_DOWN) d |= 0x10;
-            if (i & RI_MOUSE_BUTTON_5_UP)   u |= 0x10;
-            RawInputWinFilter::s_btnLut[i] = { d, u };
-        }
-        memset(RawInputWinFilter::s_vkRemap, 0, sizeof(RawInputWinFilter::s_vkRemap));
-        RawInputWinFilter::s_vkRemap[VK_CONTROL] = { VK_LCONTROL, VK_RCONTROL };
-        RawInputWinFilter::s_vkRemap[VK_MENU] = { VK_LMENU, VK_RMENU };
+// 初期化ロジックを関数に分離 (安全化)
+void RawInputWinFilter::initializeTables() {
+    for (int i = 0; i < 1024; ++i) {
+        uint8_t d = 0, u = 0;
+        if (i & RI_MOUSE_BUTTON_1_DOWN) d |= 0x01;
+        if (i & RI_MOUSE_BUTTON_1_UP)   u |= 0x01;
+        if (i & RI_MOUSE_BUTTON_2_DOWN) d |= 0x02;
+        if (i & RI_MOUSE_BUTTON_2_UP)   u |= 0x02;
+        if (i & RI_MOUSE_BUTTON_3_DOWN) d |= 0x04;
+        if (i & RI_MOUSE_BUTTON_3_UP)   u |= 0x04;
+        if (i & RI_MOUSE_BUTTON_4_DOWN) d |= 0x08;
+        if (i & RI_MOUSE_BUTTON_4_UP)   u |= 0x08;
+        if (i & RI_MOUSE_BUTTON_5_DOWN) d |= 0x10;
+        if (i & RI_MOUSE_BUTTON_5_UP)   u |= 0x10;
+        s_btnLut[i] = { d, u };
     }
-} s_lutInit;
+    memset(s_vkRemap, 0, sizeof(s_vkRemap));
+    s_vkRemap[VK_CONTROL] = { VK_LCONTROL, VK_RCONTROL };
+    s_vkRemap[VK_MENU] = { VK_LMENU, VK_RMENU };
+}
 
 // =====================================================
-// シングルトン管理 (Acquire / Release)
+// シングルトン管理
 // =====================================================
 RawInputWinFilter* RawInputWinFilter::Acquire(bool joy2KeySupport, HWND mainHwnd)
 {
@@ -67,6 +66,9 @@ void RawInputWinFilter::Release()
 RawInputWinFilter::RawInputWinFilter(bool joy2KeySupport, HWND mainHwnd)
     : m_mainHwnd(mainHwnd)
 {
+    // コンストラクタで1回だけ確実に初期化
+    std::call_once(s_initFlag, &RawInputWinFilter::initializeTables);
+
     for (auto& a : m_state.vkDown) a.store(0);
     m_state.mouseButtons.store(0);
     m_mouseDeltaCombined.store(0);
@@ -90,7 +92,7 @@ RawInputWinFilter::~RawInputWinFilter()
 }
 
 // =====================================================
-// 以下、既存ロジック (変更なし部分は省略せず記述)
+// メソッド
 // =====================================================
 
 void RawInputWinFilter::setJoy2KeySupport(bool enable)
@@ -111,8 +113,6 @@ void RawInputWinFilter::setJoy2KeySupport(bool enable)
 
 void RawInputWinFilter::setRawInputTarget(HWND hwnd)
 {
-    // シングルトンなので、メインHWNDの切り替えには慎重になる必要があるが、
-    // 基本的にJoy2Keyモードでなければ隠しウィンドウを使うため影響は少ない。
     if (m_mainHwnd != hwnd) {
         m_mainHwnd = hwnd;
         if (m_joy2KeySupport.load(std::memory_order_relaxed)) {
@@ -205,90 +205,101 @@ FORCE_INLINE void RawInputWinFilter::processRawInput(HRAWINPUT hRaw) noexcept
     }
 }
 
+// =====================================================
+// バッチ処理 (Worker Thread) - ループ対応版
+// =====================================================
 void RawInputWinFilter::processRawInputBatched() noexcept
 {
     constexpr UINT kBufferSize = 16384;
     alignas(16) uint8_t buffer[kBufferSize];
 
-    UINT size = kBufferSize;
-    UINT count = GetRawInputBuffer(reinterpret_cast<RAWINPUT*>(buffer), &size, sizeof(RAWINPUTHEADER));
+    // 残っているデータがなくなるまでループで吸い出す
+    while (true) {
+        UINT size = kBufferSize;
+        // GetRawInputBuffer は読み取った分の WM_INPUT メッセージをキューから消去する
+        UINT count = GetRawInputBuffer(reinterpret_cast<RAWINPUT*>(buffer), &size, sizeof(RAWINPUTHEADER));
 
-    if (count == 0 || count == (UINT)-1) return;
-
-    int32_t accumX = 0, accumY = 0;
-    uint8_t btnDown = 0, btnUp = 0;
-
-    uint64_t localVkDown[4];
-    uint64_t localVkUp[4];
-    memset(localVkDown, 0, sizeof(localVkDown));
-    memset(localVkUp, 0, sizeof(localVkUp));
-    bool hasKeyChanges = false;
-
-    RAWINPUT* raw = reinterpret_cast<RAWINPUT*>(buffer);
-    for (UINT i = 0; i < count; ++i) {
-        const DWORD type = raw->header.dwType;
-
-        if (type == RIM_TYPEMOUSE) {
-            const RAWMOUSE& m = raw->data.mouse;
-            if (!(m.usFlags & MOUSE_MOVE_ABSOLUTE)) {
-                accumX += m.lLastX;
-                accumY += m.lLastY;
-            }
-            const USHORT f = m.usButtonFlags & 0x03FF;
-            if (f) {
-                const auto& lut = s_btnLut[f];
-                btnDown |= lut.downBits;
-                btnUp |= lut.upBits;
-            }
+        if (count == 0 || count == (UINT)-1) {
+            break; // データなし、またはエラー
         }
-        else if (type == RIM_TYPEKEYBOARD) {
-            const RAWKEYBOARD& kb = raw->data.keyboard;
-            UINT vk = kb.VKey;
-            if (vk != 0 && vk < 255) {
-                vk = remapVk(vk, kb.MakeCode, kb.Flags);
-                const uint32_t widx = vk >> 6;
-                const uint64_t bit = 1ULL << (vk & 63);
 
-                if (!(kb.Flags & RI_KEY_BREAK)) {
-                    localVkDown[widx] |= bit;
-                    localVkUp[widx] &= ~bit;
+        int32_t accumX = 0, accumY = 0;
+        uint8_t btnDown = 0, btnUp = 0;
+
+        uint64_t localVkDown[4] = { 0 };
+        uint64_t localVkUp[4] = { 0 };
+        bool hasKeyChanges = false;
+
+        const RAWINPUT* raw = reinterpret_cast<const RAWINPUT*>(buffer);
+        for (UINT i = 0; i < count; ++i) {
+            const DWORD type = raw->header.dwType;
+
+            if (type == RIM_TYPEMOUSE) {
+                const RAWMOUSE& m = raw->data.mouse;
+                if (!(m.usFlags & MOUSE_MOVE_ABSOLUTE)) {
+                    accumX += m.lLastX;
+                    accumY += m.lLastY;
                 }
-                else {
-                    localVkUp[widx] |= bit;
-                    localVkDown[widx] &= ~bit;
+                const USHORT f = m.usButtonFlags & 0x03FF;
+                if (f) {
+                    const auto& lut = s_btnLut[f];
+                    btnDown |= lut.downBits;
+                    btnUp |= lut.upBits;
                 }
-                hasKeyChanges = true;
             }
+            else if (type == RIM_TYPEKEYBOARD) {
+                const RAWKEYBOARD& kb = raw->data.keyboard;
+                UINT vk = kb.VKey;
+                if (vk > 0 && vk < 255) {
+                    vk = remapVk(vk, kb.MakeCode, kb.Flags);
+                    const uint32_t widx = vk >> 6;
+                    const uint64_t bit = 1ULL << (vk & 63);
+
+                    if (!(kb.Flags & RI_KEY_BREAK)) { // Down
+                        localVkDown[widx] |= bit;
+                        localVkUp[widx] &= ~bit;
+                    }
+                    else { // Up
+                        localVkUp[widx] |= bit;
+                        localVkDown[widx] &= ~bit;
+                    }
+                    hasKeyChanges = true;
+                }
+            }
+            // 次のデータへ (アライメント調整)
+            raw = reinterpret_cast<const RAWINPUT*>(
+                reinterpret_cast<const uint8_t*>(raw) +
+                ((raw->header.dwSize + sizeof(void*) - 1) & ~(sizeof(void*) - 1))
+                );
         }
-        raw = reinterpret_cast<RAWINPUT*>(reinterpret_cast<BYTE*>(raw) +
-            ((raw->header.dwSize + sizeof(void*) - 1) & ~(sizeof(void*) - 1)));
-    }
 
-    if (accumX | accumY) {
-        uint64_t cur = m_mouseDeltaCombined.load(std::memory_order_relaxed);
-        uint64_t nxt;
-        do {
-            MouseDeltaPack p;
-            p.combined = cur;
-            p.s.x += accumX;
-            p.s.y += accumY;
-            nxt = p.combined;
-        } while (!m_mouseDeltaCombined.compare_exchange_weak(cur, nxt, std::memory_order_relaxed));
-    }
+        // --- 結果反映 ---
+        if (accumX | accumY) {
+            uint64_t cur = m_mouseDeltaCombined.load(std::memory_order_relaxed);
+            uint64_t nxt;
+            do {
+                union { struct { int32_t x, y; } s; uint64_t c; } p;
+                p.c = cur;
+                p.s.x += accumX;
+                p.s.y += accumY;
+                nxt = p.c;
+            } while (!m_mouseDeltaCombined.compare_exchange_weak(cur, nxt, std::memory_order_relaxed));
+        }
 
-    if (btnDown | btnUp) {
-        uint8_t cur = m_state.mouseButtons.load(std::memory_order_relaxed);
-        uint8_t nxt = (cur | btnDown) & ~btnUp;
-        if (cur != nxt) m_state.mouseButtons.store(nxt, std::memory_order_relaxed);
-    }
+        if (btnDown | btnUp) {
+            uint8_t cur = m_state.mouseButtons.load(std::memory_order_relaxed);
+            uint8_t nxt = (cur | btnDown) & ~btnUp;
+            if (cur != nxt) m_state.mouseButtons.store(nxt, std::memory_order_relaxed);
+        }
 
-    if (hasKeyChanges) {
-        for (int w = 0; w < 4; ++w) {
-            if (localVkDown[w] | localVkUp[w]) {
-                uint64_t cur = m_state.vkDown[w].load(std::memory_order_relaxed);
-                uint64_t nxt = (cur | localVkDown[w]) & ~localVkUp[w];
-                if (cur != nxt) {
-                    m_state.vkDown[w].store(nxt, std::memory_order_relaxed);
+        if (hasKeyChanges) {
+            for (int w = 0; w < 4; ++w) {
+                if (localVkDown[w] | localVkUp[w]) {
+                    uint64_t cur = m_state.vkDown[w].load(std::memory_order_relaxed);
+                    uint64_t nxt = (cur | localVkDown[w]) & ~localVkUp[w];
+                    if (cur != nxt) {
+                        m_state.vkDown[w].store(nxt, std::memory_order_relaxed);
+                    }
                 }
             }
         }
@@ -303,7 +314,9 @@ void RawInputWinFilter::startThreadIfNeeded()
     m_hThread = CreateThread(nullptr, 0, ThreadFunc, this, 0, nullptr);
 
     if (m_hThread) {
-        SetThreadPriority(m_hThread, THREAD_PRIORITY_HIGHEST);
+        // 【重要】最高優先度ではなく「リアルタイムクラスの最低」である TIME_CRITICAL に設定
+        // 入力遅延を最小化するため
+        SetThreadPriority(m_hThread, THREAD_PRIORITY_TIME_CRITICAL);
     }
 }
 
@@ -331,9 +344,11 @@ DWORD WINAPI RawInputWinFilter::ThreadFunc(LPVOID param)
     return 0;
 }
 
+// =====================================================
+// スレッドループ (修正版: WM_INPUT取りこぼし防止)
+// =====================================================
 void RawInputWinFilter::threadLoop()
 {
-    // シングルトンなので、ウィンドウクラス名は固定でOK (1プロセスに1つ)
     const TCHAR* clsName = TEXT("MelonPrimeRawWorker_Singleton");
 
     WNDCLASSEX wc = { 0 };
@@ -342,7 +357,6 @@ void RawInputWinFilter::threadLoop()
     wc.hInstance = GetModuleHandle(nullptr);
     wc.lpszClassName = clsName;
 
-    // クラス登録 (失敗しても既存があればOK)
     RegisterClassEx(&wc);
 
     m_hiddenWnd = CreateWindowEx(0, wc.lpszClassName, nullptr, 0, 0, 0, 0, 0, HWND_MESSAGE, nullptr, wc.hInstance, nullptr);
@@ -351,20 +365,35 @@ void RawInputWinFilter::threadLoop()
 
     registerRawToTarget(m_hiddenWnd);
 
+    // 開始前にキューを掃除
+    MSG msg;
+    while (PeekMessage(&msg, nullptr, 0, 0, PM_REMOVE)) {}
+
     while (m_runThread.load(std::memory_order_relaxed))
     {
-        DWORD ret = MsgWaitForMultipleObjects(0, nullptr, FALSE, 1, QS_RAWINPUT | QS_POSTMESSAGE);
+        // 1. バッチ処理でHIDバッファを吸い尽くす
+        processRawInputBatched();
 
-        if (ret == WAIT_OBJECT_0) {
-            MSG msg;
-            while (PeekMessage(&msg, m_hiddenWnd, WM_CLOSE, WM_CLOSE, PM_REMOVE)) {
+        // 2. メッセージキュー処理
+        // ここで WM_INPUT が見つかった場合、それは「バッチ処理の隙間に滑り込んだ新規データ」なので
+        // 絶対に捨てずに処理しなければならない。
+        while (PeekMessage(&msg, m_hiddenWnd, 0, 0, PM_REMOVE)) {
+            if (msg.message == WM_QUIT || msg.message == WM_CLOSE) {
                 goto cleanup;
             }
-            processRawInputBatched();
-            while (PeekMessage(&msg, m_hiddenWnd, WM_INPUT, WM_INPUT, PM_REMOVE)) {
+
+            if (msg.message == WM_INPUT) {
+                // 【重要】捨てずに単発処理へ回す
                 processRawInput(reinterpret_cast<HRAWINPUT>(msg.lParam));
             }
+            else {
+                TranslateMessage(&msg);
+                DispatchMessage(&msg);
+            }
         }
+
+        // 3. 待機 (QS_RAWINPUTにより入力があれば即復帰)
+        MsgWaitForMultipleObjects(0, nullptr, FALSE, INFINITE, QS_RAWINPUT | QS_POSTMESSAGE);
     }
 
 cleanup:
@@ -372,6 +401,10 @@ cleanup:
     UnregisterClass(wc.lpszClassName, wc.hInstance);
     m_hiddenWnd = nullptr;
 }
+
+// =====================================================
+// 以下、既存ロジック (変更なし)
+// =====================================================
 
 void RawInputWinFilter::setHotkeyVks(int id, const std::vector<UINT>& vks)
 {
