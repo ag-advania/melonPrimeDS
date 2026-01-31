@@ -103,22 +103,6 @@ void EmuThread::run()
     Config::Table& globalCfg = emuInstance->getGlobalConfig();
     u32 mainScreenPos[3];
 
-    // Input Mask Helper Macro (Defined here for local use in EmuThread)
-#define GET_INPUT_MASK(inputMask) ( \
-        (static_cast<uint32_t>((inputMask).testBit(0))  << 0)  | \
-        (static_cast<uint32_t>((inputMask).testBit(1))  << 1)  | \
-        (static_cast<uint32_t>((inputMask).testBit(2))  << 2)  | \
-        (static_cast<uint32_t>((inputMask).testBit(3))  << 3)  | \
-        (static_cast<uint32_t>((inputMask).testBit(4))  << 4)  | \
-        (static_cast<uint32_t>((inputMask).testBit(5))  << 5)  | \
-        (static_cast<uint32_t>((inputMask).testBit(6))  << 6)  | \
-        (static_cast<uint32_t>((inputMask).testBit(7))  << 7)  | \
-        (static_cast<uint32_t>((inputMask).testBit(8))  << 8)  | \
-        (static_cast<uint32_t>((inputMask).testBit(9))  << 9)  | \
-        (static_cast<uint32_t>((inputMask).testBit(10)) << 10) | \
-        (static_cast<uint32_t>((inputMask).testBit(11)) << 11)   \
-    )
-
     // MelonPrime Initialization Hook
     melonPrime->Initialize();
 
