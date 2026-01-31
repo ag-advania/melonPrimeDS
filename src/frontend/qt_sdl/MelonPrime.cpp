@@ -1,10 +1,7 @@
 /*
-    MelonPrimeDS Logic Implementation (Optimized: uint16_t Input Mask)
-
-    Performance Optimizations:
-    - QBitArray -> uint16_t direct bit manipulation
-    - Fast RAM access via direct pointer
-    - LUT-based movement input
+    MelonPrimeDS Logic Implementation (Optimized: Plan 1 Only)
+    Plan 1: Input Snapshot (Batch Read) -> ENABLED
+    Plan 3: Unsafe RAM Access -> DISABLED (Safety First)
 */
 
 #include "MelonPrime.h"
@@ -30,29 +27,19 @@ static RawInputWinFilter* g_rawFilter = nullptr;
 #endif
 
 // ============================================================
-// Input Bit Definitions (NDS: 0 = pressed, 1 = released)
+// Input Bit Definitions (NDS)
 // ============================================================
 enum InputBit : uint16_t {
-    INPUT_A = 0,
-    INPUT_B = 1,
-    INPUT_SELECT = 2,
-    INPUT_START = 3,
-    INPUT_RIGHT = 4,
-    INPUT_LEFT = 5,
-    INPUT_UP = 6,
-    INPUT_DOWN = 7,
-    INPUT_R = 8,
-    INPUT_L = 9,
-    INPUT_X = 10,
-    INPUT_Y = 11,
+    INPUT_A = 0, INPUT_B = 1, INPUT_SELECT = 2, INPUT_START = 3,
+    INPUT_RIGHT = 4, INPUT_LEFT = 5, INPUT_UP = 6, INPUT_DOWN = 7,
+    INPUT_R = 8, INPUT_L = 9, INPUT_X = 10, INPUT_Y = 11,
 };
 
 // ============================================================
-// Fast Input Mask (uint16_t replaces QBitArray)
+// Fast Input Mask
 // ============================================================
 static uint16_t gInputMaskFast = 0xFFFF;
 
-// Inline bit operations - zero function call overhead
 #define INPUT_PRESS(bit)   (gInputMaskFast &= ~(1u << (bit)))
 #define INPUT_RELEASE(bit) (gInputMaskFast |= (1u << (bit)))
 #define INPUT_SET(bit, released) do { \
@@ -61,40 +48,23 @@ static uint16_t gInputMaskFast = 0xFFFF;
 } while(0)
 #define INPUT_RESET() (gInputMaskFast = 0xFFFF)
 
-// Legacy macro for compatibility (EmuThread still uses this)
-#define GET_INPUT_MASK_FROM_QBITARRAY(inputMask) ( \
-    (static_cast<uint32_t>((inputMask).testBit(0))  << 0)  | \
-    (static_cast<uint32_t>((inputMask).testBit(1))  << 1)  | \
-    (static_cast<uint32_t>((inputMask).testBit(2))  << 2)  | \
-    (static_cast<uint32_t>((inputMask).testBit(3))  << 3)  | \
-    (static_cast<uint32_t>((inputMask).testBit(4))  << 4)  | \
-    (static_cast<uint32_t>((inputMask).testBit(5))  << 5)  | \
-    (static_cast<uint32_t>((inputMask).testBit(6))  << 6)  | \
-    (static_cast<uint32_t>((inputMask).testBit(7))  << 7)  | \
-    (static_cast<uint32_t>((inputMask).testBit(8))  << 8)  | \
-    (static_cast<uint32_t>((inputMask).testBit(9))  << 9)  | \
-    (static_cast<uint32_t>((inputMask).testBit(10)) << 10) | \
-    (static_cast<uint32_t>((inputMask).testBit(11)) << 11)   \
-)
-
 // ============================================================
-// Hotkey Macros
+// Hotkey Macros (Original - used inside UpdateInputState only)
 // ============================================================
 #if defined(_WIN32)
 #define MP_JOY_DOWN(id)      (emuInstance->joyHotkeyMask.testBit((id)))
 #define MP_JOY_PRESSED(id)   (emuInstance->joyHotkeyPress.testBit((id)))
 #define MP_JOY_RELEASED(id)  (emuInstance->joyHotkeyRelease.testBit((id)))
-#define MP_HK_DOWN(id)     ( (g_rawFilter && g_rawFilter->hotkeyDown((id)))     || MP_JOY_DOWN((id)) )
-#define MP_HK_PRESSED(id)  ( (g_rawFilter && g_rawFilter->hotkeyPressed((id)))  || MP_JOY_PRESSED((id)) )
-#define MP_HK_RELEASED(id) ( (g_rawFilter && g_rawFilter->hotkeyReleased((id))) || MP_JOY_RELEASED((id)) )
+#define MP_HK_DOWN_RAW(id)     ( (g_rawFilter && g_rawFilter->hotkeyDown((id)))     || MP_JOY_DOWN((id)) )
+#define MP_HK_PRESSED_RAW(id)  ( (g_rawFilter && g_rawFilter->hotkeyPressed((id)))  || MP_JOY_PRESSED((id)) )
 #else
-#define MP_HK_DOWN(id)     ( emuInstance->hotkeyMask.testBit((id)) )
-#define MP_HK_PRESSED(id)  ( emuInstance->hotkeyPress.testBit((id)) )
-#define MP_HK_RELEASED(id) ( emuInstance->hotkeyRelease.testBit((id)) )
+#define MP_HK_DOWN_RAW(id)     ( emuInstance->hotkeyMask.testBit((id)) )
+#define MP_HK_PRESSED_RAW(id)  ( emuInstance->hotkeyPress.testBit((id)) )
 #endif
 
-#define TOUCH_IF(PRESS, X, Y) \
-    if (MP_HK_PRESSED(PRESS)) { \
+// Helpers for Adventure Mode touches
+#define TOUCH_IF(PRESS_BIT, X, Y) \
+    if (IsPressed(PRESS_BIT)) { \
         emuInstance->getNDS()->ReleaseScreen(); \
         FrameAdvanceTwice(); \
         emuInstance->getNDS()->TouchScreen((X), (Y)); \
@@ -141,7 +111,7 @@ static inline void setAimBlock(uint32_t bitMask, bool enable) noexcept {
 }
 
 // ============================================================
-// Aim Adjust (Deadzone)
+// Aim Adjust & Sensitivity
 // ============================================================
 static float gAimAdjust = 0.5f;
 
@@ -154,21 +124,13 @@ static inline void applyAimAdjustSetting(Config::Table& cfg) noexcept {
 static inline void applyAimAdjustFloat(float& dx, float& dy) noexcept {
     const float a = gAimAdjust;
     if (a <= 0.0f) return;
-
     float avx = std::fabs(dx);
-    if (avx < a) dx = 0.0f;
-    else if (avx < 1.0f) dx = (dx >= 0.0f ? 1.0f : -1.0f);
-
+    if (avx < a) dx = 0.0f; else if (avx < 1.0f) dx = (dx >= 0.0f ? 1.0f : -1.0f);
     float avy = std::fabs(dy);
-    if (avy < a) dy = 0.0f;
-    else if (avy < 1.0f) dy = (dy >= 0.0f ? 1.0f : -1.0f);
+    if (avy < a) dy = 0.0f; else if (avy < 1.0f) dy = (dy >= 0.0f ? 1.0f : -1.0f);
 }
-
 #define AIM_ADJUST(dx, dy) applyAimAdjustFloat((dx), (dy))
 
-// ============================================================
-// Sensitivity Cache
-// ============================================================
 static float gAimSensiFactor = 0.01f;
 static float gAimCombinedY = 0.013333333f;
 
@@ -193,46 +155,28 @@ static const char* kWeaponNames[] = {
 };
 
 // ============================================================
-// Fast RAM Access Helpers
+// Fast RAM Access (SAFE VERSION - MASK RESTORED)
 // ============================================================
 namespace {
-    inline uint8_t FastRead8(const melonDS::u8* ram, melonDS::u32 addr) {
+    FORCE_INLINE uint8_t FastRead8(const melonDS::u8* ram, melonDS::u32 addr) {
         return ram[addr & 0x3FFFFF];
     }
-    inline uint16_t FastRead16(const melonDS::u8* ram, melonDS::u32 addr) {
+    FORCE_INLINE uint16_t FastRead16(const melonDS::u8* ram, melonDS::u32 addr) {
         return *reinterpret_cast<const uint16_t*>(&ram[addr & 0x3FFFFF]);
     }
-    inline uint32_t FastRead32(const melonDS::u8* ram, melonDS::u32 addr) {
+    FORCE_INLINE uint32_t FastRead32(const melonDS::u8* ram, melonDS::u32 addr) {
         return *reinterpret_cast<const uint32_t*>(&ram[addr & 0x3FFFFF]);
     }
-    inline void FastWrite8(melonDS::u8* ram, melonDS::u32 addr, uint8_t val) {
+    FORCE_INLINE void FastWrite8(melonDS::u8* ram, melonDS::u32 addr, uint8_t val) {
         ram[addr & 0x3FFFFF] = val;
     }
-    inline void FastWrite16(melonDS::u8* ram, melonDS::u32 addr, uint16_t val) {
+    FORCE_INLINE void FastWrite16(melonDS::u8* ram, melonDS::u32 addr, uint16_t val) {
         *reinterpret_cast<uint16_t*>(&ram[addr & 0x3FFFFF]) = val;
     }
 
-    // Movement LUT: input combination -> bits [7:4] = DOWN/UP/LEFT/RIGHT
-    // NDS bit layout: bit4=RIGHT, bit5=LEFT, bit6=UP, bit7=DOWN
-    // 0 = pressed, 1 = released
-    // Input: bit0=F, bit1=B, bit2=L, bit3=R
     alignas(64) static constexpr uint8_t MoveLUT[16] = {
-        0xF0, // 0000: nothing         -> all released
-        0xB0, // 0001: Forward         -> UP pressed    (bit6=0) = 0xB0
-        0x70, // 0010: Back            -> DOWN pressed  (bit7=0) = 0x70
-        0xF0, // 0011: F+B cancel      -> all released
-        0xD0, // 0100: Left            -> LEFT pressed  (bit5=0) = 0xD0
-        0x90, // 0101: F+L             -> UP+LEFT       (bit6=0,bit5=0) = 0x90
-        0x50, // 0110: B+L             -> DOWN+LEFT     (bit7=0,bit5=0) = 0x50
-        0xD0, // 0111: F+B+L           -> L only        = 0xD0
-        0xE0, // 1000: Right           -> RIGHT pressed (bit4=0) = 0xE0
-        0xA0, // 1001: F+R             -> UP+RIGHT      (bit6=0,bit4=0) = 0xA0
-        0x60, // 1010: B+R             -> DOWN+RIGHT    (bit7=0,bit4=0) = 0x60
-        0xE0, // 1011: F+B+R           -> R only        = 0xE0
-        0xF0, // 1100: L+R cancel      -> all released
-        0xB0, // 1101: F+L+R           -> F only (UP)   = 0xB0
-        0x70, // 1110: B+L+R           -> B only (DOWN) = 0x70
-        0xF0, // 1111: all cancel      -> all released
+        0xF0, 0xB0, 0x70, 0xF0, 0xD0, 0x90, 0x50, 0xD0,
+        0xE0, 0xA0, 0x60, 0xE0, 0xF0, 0xB0, 0x70, 0xF0,
     };
 }
 
@@ -331,6 +275,69 @@ void MelonPrimeCore::ApplyJoy2KeySupportAndQtFilter(bool enable, bool doReset)
             g_rawFilter->resetHotkeyEdges();
         }
     }
+#endif
+}
+
+// ============================================================
+// Input Cache Implementation (Plan 1)
+// ============================================================
+
+void MelonPrimeCore::UpdateInputState()
+{
+    // Reset cache
+    m_input.down = 0;
+    m_input.press = 0;
+    m_input.mouseX = 0;
+    m_input.mouseY = 0;
+
+    // --- Batch read inputs into cache ---
+    // Using macros once here reduces atomic overhead for the rest of the frame
+
+    // Movement
+    if (MP_HK_DOWN_RAW(HK_MetroidMoveForward)) m_input.down |= IB_MOVE_F;
+    if (MP_HK_DOWN_RAW(HK_MetroidMoveBack))    m_input.down |= IB_MOVE_B;
+    if (MP_HK_DOWN_RAW(HK_MetroidMoveLeft))    m_input.down |= IB_MOVE_L;
+    if (MP_HK_DOWN_RAW(HK_MetroidMoveRight))   m_input.down |= IB_MOVE_R;
+
+    // Actions
+    if (MP_HK_DOWN_RAW(HK_MetroidJump))        m_input.down |= IB_JUMP;
+    if (MP_HK_DOWN_RAW(HK_MetroidZoom))        m_input.down |= IB_ZOOM;
+    if (MP_HK_DOWN_RAW(HK_MetroidShootScan) || MP_HK_DOWN_RAW(HK_MetroidScanShoot)) m_input.down |= IB_SHOOT;
+    if (MP_HK_DOWN_RAW(HK_MetroidWeaponCheck)) m_input.down |= IB_WEAPON_CHECK;
+    if (MP_HK_DOWN_RAW(HK_MetroidHoldMorphBallBoost)) m_input.down |= IB_MORPH_BOOST;
+    if (MP_HK_DOWN_RAW(HK_MetroidMenu))        m_input.down |= IB_MENU;
+
+    // Pressed (Edges)
+    if (MP_HK_PRESSED_RAW(HK_MetroidMorphBall)) m_input.press |= IB_MORPH;
+    if (MP_HK_PRESSED_RAW(HK_MetroidScanVisor)) m_input.press |= IB_SCAN_VISOR;
+
+    // UI
+    if (MP_HK_PRESSED_RAW(HK_MetroidUIOk))    m_input.press |= IB_UI_OK;
+    if (MP_HK_PRESSED_RAW(HK_MetroidUILeft))  m_input.press |= IB_UI_LEFT;
+    if (MP_HK_PRESSED_RAW(HK_MetroidUIRight)) m_input.press |= IB_UI_RIGHT;
+    if (MP_HK_PRESSED_RAW(HK_MetroidUIYes))   m_input.press |= IB_UI_YES;
+    if (MP_HK_PRESSED_RAW(HK_MetroidUINo))    m_input.press |= IB_UI_NO;
+
+    // Weapons
+    if (MP_HK_PRESSED_RAW(HK_MetroidWeaponBeam))    m_input.press |= IB_WEAPON_BEAM;
+    if (MP_HK_PRESSED_RAW(HK_MetroidWeaponMissile)) m_input.press |= IB_WEAPON_MISSILE;
+    if (MP_HK_PRESSED_RAW(HK_MetroidWeapon1))       m_input.press |= IB_WEAPON_1;
+    if (MP_HK_PRESSED_RAW(HK_MetroidWeapon2))       m_input.press |= IB_WEAPON_2;
+    if (MP_HK_PRESSED_RAW(HK_MetroidWeapon3))       m_input.press |= IB_WEAPON_3;
+    if (MP_HK_PRESSED_RAW(HK_MetroidWeapon4))       m_input.press |= IB_WEAPON_4;
+    if (MP_HK_PRESSED_RAW(HK_MetroidWeapon5))       m_input.press |= IB_WEAPON_5;
+    if (MP_HK_PRESSED_RAW(HK_MetroidWeapon6))       m_input.press |= IB_WEAPON_6;
+    if (MP_HK_PRESSED_RAW(HK_MetroidWeaponSpecial)) m_input.press |= IB_WEAPON_SPECIAL;
+    if (MP_HK_PRESSED_RAW(HK_MetroidWeaponNext))    m_input.press |= IB_WEAPON_NEXT;
+    if (MP_HK_PRESSED_RAW(HK_MetroidWeaponPrevious)) m_input.press |= IB_WEAPON_PREV;
+
+    // Mouse Delta
+#if defined(_WIN32)
+    if (g_rawFilter) g_rawFilter->fetchMouseDelta(m_input.mouseX, m_input.mouseY);
+#else
+    const QPoint currentPos = QCursor::pos();
+    m_input.mouseX = currentPos.x() - aimData.centerX;
+    m_input.mouseY = currentPos.y() - aimData.centerY;
 #endif
 }
 
@@ -483,6 +490,9 @@ void MelonPrimeCore::DetectRomAndSetAddresses()
 
 void MelonPrimeCore::HandleGlobalHotkeys()
 {
+    // Global hotkeys are less frequent, so we can use direct access or check released logic here.
+    // For consistency with optimizing the game loop, we can leave these as direct checks
+    // since they aren't part of the "UpdateInputState" tight cache.
     int sensitivityChange = 0;
     if (emuInstance->hotkeyReleased(HK_MetroidIngameSensiUp)) sensitivityChange = 1;
     else if (emuInstance->hotkeyReleased(HK_MetroidIngameSensiDown)) sensitivityChange = -1;
@@ -511,12 +521,14 @@ void MelonPrimeCore::RunFrameHook()
 {
     static bool isRunningHook = false;
 
+    // Use safe RAM access again
     melonDS::u8* mainRAM = emuInstance->getNDS()->MainRAM;
 
-    if (isRunningHook) {
+    if (Q_UNLIKELY(isRunningHook)) {
         // Recursive call handling
+        // IMPORTANT: We do NOT call UpdateInputState() here to avoid thrashing inputs in recursive steps
         ProcessMoveInputFast();
-        INPUT_SET(INPUT_B, !MP_HK_DOWN(HK_MetroidJump));
+        INPUT_SET(INPUT_B, !IsDown(IB_JUMP));
 
         if (isStylusMode) {
             if (emuInstance->isTouching && !m_blockStylusAim) {
@@ -527,13 +539,17 @@ void MelonPrimeCore::RunFrameHook()
             ProcessAimInputMouse(mainRAM);
         }
 
-        bool isShoot = MP_HK_DOWN(HK_MetroidShootScan) || MP_HK_DOWN(HK_MetroidScanShoot);
+        bool isShoot = IsDown(IB_SHOOT);
         INPUT_SET(INPUT_L, !isShoot);
-        INPUT_SET(INPUT_R, !MP_HK_DOWN(HK_MetroidZoom));
+        INPUT_SET(INPUT_R, !IsDown(IB_ZOOM));
         return;
     }
 
     isRunningHook = true;
+
+    // --- Plan 1: Snapshot Input ---
+    // Only pay the Atomic cost ONCE per frame
+    UpdateInputState();
 
     // Reset at frame start
     INPUT_RESET();
@@ -611,7 +627,7 @@ void MelonPrimeCore::RunFrameHook()
                 else
                     emuInstance->getNDS()->ReleaseScreen();
             }
-            INPUT_SET(INPUT_START, !MP_HK_DOWN(HK_MetroidMenu));
+            INPUT_SET(INPUT_START, !IsDown(IB_MENU));
         }
         else {
 #ifdef _WIN32
@@ -635,7 +651,7 @@ void MelonPrimeCore::RunFrameHook()
 void MelonPrimeCore::HandleInGameLogic(melonDS::u8* mainRAM)
 {
     // 1. Transform
-    if (MP_HK_PRESSED(HK_MetroidMorphBall)) {
+    if (IsPressed(IB_MORPH)) {
         if (isStylusMode) m_blockStylusAim = true;
         emuInstance->getNDS()->ReleaseScreen();
         FrameAdvanceTwice();
@@ -652,7 +668,7 @@ void MelonPrimeCore::HandleInGameLogic(melonDS::u8* mainRAM)
 
     // 3. Weapon Check
     static bool isWeaponCheckActive = false;
-    if (emuInstance->hotkeyDown(HK_MetroidWeaponCheck)) {
+    if (IsDown(IB_WEAPON_CHECK)) {
         if (isStylusMode) m_blockStylusAim = true;
         if (!isWeaponCheckActive) {
             isWeaponCheckActive = true;
@@ -678,10 +694,10 @@ void MelonPrimeCore::HandleInGameLogic(melonDS::u8* mainRAM)
     ProcessMoveInputFast();
 
     // 6. Basic inputs
-    INPUT_SET(INPUT_B, !MP_HK_DOWN(HK_MetroidJump));
-    bool isShoot = MP_HK_DOWN(HK_MetroidShootScan) || MP_HK_DOWN(HK_MetroidScanShoot);
+    INPUT_SET(INPUT_B, !IsDown(IB_JUMP));
+    bool isShoot = IsDown(IB_SHOOT);
     INPUT_SET(INPUT_L, !isShoot);
-    INPUT_SET(INPUT_R, !MP_HK_DOWN(HK_MetroidZoom));
+    INPUT_SET(INPUT_R, !IsDown(IB_ZOOM));
 
     // 7. Morph Ball Boost
     HandleMorphBallBoost(mainRAM);
@@ -701,17 +717,17 @@ void MelonPrimeCore::HandleInGameLogic(melonDS::u8* mainRAM)
 }
 
 // ============================================================
-// Movement Input (Optimized with LUT + uint16_t)
+// Movement Input (Optimized with LUT + Cached Input)
 // ============================================================
 
 void MelonPrimeCore::ProcessMoveInputFast()
 {
     static uint16_t snapState = 0;
 
-    const uint32_t f = MP_HK_DOWN(HK_MetroidMoveForward) ? 1 : 0;
-    const uint32_t b = MP_HK_DOWN(HK_MetroidMoveBack) ? 1 : 0;
-    const uint32_t l = MP_HK_DOWN(HK_MetroidMoveLeft) ? 1 : 0;
-    const uint32_t r = MP_HK_DOWN(HK_MetroidMoveRight) ? 1 : 0;
+    const uint32_t f = IsDown(IB_MOVE_F) ? 1 : 0;
+    const uint32_t b = IsDown(IB_MOVE_B) ? 1 : 0;
+    const uint32_t l = IsDown(IB_MOVE_L) ? 1 : 0;
+    const uint32_t r = IsDown(IB_MOVE_R) ? 1 : 0;
     const uint32_t curr = f | (b << 1) | (l << 2) | (r << 3);
 
     uint32_t finalInput;
@@ -735,16 +751,15 @@ void MelonPrimeCore::ProcessMoveInputFast()
         finalInput = (curr & ~conflict) | (activePriority & conflict);
     }
 
-    // Apply LUT - directly set bits 4-7 in gInputMaskFast
+    // Apply LUT
     const uint8_t lutResult = MoveLUT[finalInput & 0xF];
     gInputMaskFast = (gInputMaskFast & 0xFF0Fu) | (static_cast<uint16_t>(lutResult) & 0x00F0u);
 }
 
-// Legacy function for compatibility (used in HandleAdventureMode loop)
+// Legacy function
 void MelonPrimeCore::ProcessMoveInput(QBitArray& mask)
 {
     ProcessMoveInputFast();
-    // Sync to QBitArray for SetKeyMask call
     mask.setBit(INPUT_UP, (gInputMaskFast >> INPUT_UP) & 1);
     mask.setBit(INPUT_DOWN, (gInputMaskFast >> INPUT_DOWN) & 1);
     mask.setBit(INPUT_LEFT, (gInputMaskFast >> INPUT_LEFT) & 1);
@@ -778,14 +793,9 @@ void MelonPrimeCore::ProcessAimInputMouse(melonDS::u8* mainRAM)
     }
 
     if (Q_LIKELY(wasLastFrameFocused)) {
-        int deltaX = 0, deltaY = 0;
-#if defined(_WIN32)
-        if (g_rawFilter) g_rawFilter->fetchMouseDelta(deltaX, deltaY);
-#else
-        const QPoint currentPos = QCursor::pos();
-        deltaX = currentPos.x() - aimData.centerX;
-        deltaY = currentPos.y() - aimData.centerY;
-#endif
+        // Use cached delta (Plan 1)
+        int deltaX = m_input.mouseX;
+        int deltaY = m_input.mouseY;
 
         if ((deltaX | deltaY) == 0) return;
         float scaledX = deltaX * gAimSensiFactor;
@@ -819,7 +829,7 @@ bool MelonPrimeCore::HandleMorphBallBoost(melonDS::u8* mainRAM)
 {
     if (!isSamus) return false;
 
-    if (MP_HK_DOWN(HK_MetroidHoldMorphBallBoost)) {
+    if (IsDown(IB_MORPH_BOOST)) {
         isAltForm = FastRead8(mainRAM, addr.isAltForm) == 0x02;
 
         if (isAltForm) {
@@ -829,7 +839,7 @@ bool MelonPrimeCore::HandleMorphBallBoost(melonDS::u8* mainRAM)
 
             setAimBlock(AIMBLK_MORPHBALL_BOOST, true);
 
-            if (!emuInstance->hotkeyDown(HK_MetroidWeaponCheck)) {
+            if (!IsDown(IB_WEAPON_CHECK)) {
                 emuInstance->getNDS()->ReleaseScreen();
             }
 
@@ -855,7 +865,7 @@ void MelonPrimeCore::HandleAdventureMode(melonDS::u8* mainRAM)
 {
     isPaused = FastRead8(mainRAM, addr.isMapOrUserActionPaused) == 0x1;
 
-    if (MP_HK_PRESSED(HK_MetroidScanVisor)) {
+    if (IsPressed(IB_SCAN_VISOR)) {
         if (isStylusMode) m_blockStylusAim = true;
 
         emuInstance->getNDS()->ReleaseScreen();
@@ -866,7 +876,10 @@ void MelonPrimeCore::HandleAdventureMode(melonDS::u8* mainRAM)
             FrameAdvanceTwice();
         }
         else {
+            // Important: FrameAdvance loop requires updated input!
             for (int i = 0; i < 30; i++) {
+                // Must update snapshot for each frame iteration since time is advancing
+                UpdateInputState();
                 ProcessMoveInputFast();
                 emuInstance->getNDS()->SetKeyMask(gInputMaskFast);
                 FrameAdvanceOnce();
@@ -876,11 +889,11 @@ void MelonPrimeCore::HandleAdventureMode(melonDS::u8* mainRAM)
         FrameAdvanceTwice();
     }
 
-    TOUCH_IF(HK_MetroidUIOk, 128, 142)
-        TOUCH_IF(HK_MetroidUILeft, 71, 141)
-        TOUCH_IF(HK_MetroidUIRight, 185, 141)
-        TOUCH_IF(HK_MetroidUIYes, 96, 142)
-        TOUCH_IF(HK_MetroidUINo, 160, 142)
+    TOUCH_IF(IB_UI_OK, 128, 142)
+        TOUCH_IF(IB_UI_LEFT, 71, 141)
+        TOUCH_IF(IB_UI_RIGHT, 185, 141)
+        TOUCH_IF(IB_UI_YES, 96, 142)
+        TOUCH_IF(IB_UI_NO, 160, 142)
 }
 
 // ============================================================
@@ -894,17 +907,20 @@ bool MelonPrimeCore::ProcessWeaponSwitch(melonDS::u8* mainRAM)
     static constexpr uint8_t  MIN_AMMO[] = { 0, 0x5, 0xA, 0x4, 0x14, 0x5, 0xA, 0xA, 0 };
     static constexpr uint8_t  WEAPON_INDEX_MAP[] = { 0, 7, 1, 6, 5, 4, 3, 2, 8 };
     static constexpr uint8_t  WEAPON_COUNT = 9;
-    static constexpr struct { int hotkey; uint8_t weapon; } HOTKEY_MAP[] = {
-        { HK_MetroidWeaponBeam,    0 }, { HK_MetroidWeaponMissile, 2 },
-        { HK_MetroidWeapon1,       7 }, { HK_MetroidWeapon2,       6 },
-        { HK_MetroidWeapon3,       5 }, { HK_MetroidWeapon4,       4 },
-        { HK_MetroidWeapon5,       3 }, { HK_MetroidWeapon6,       1 },
-        { HK_MetroidWeaponSpecial, 0xFF }
+
+    // Map bits to weapons: order corresponds to BIT_WEAPON_BEAM...
+    static constexpr uint64_t BIT_MAP[] = {
+        IB_WEAPON_BEAM, IB_WEAPON_MISSILE, IB_WEAPON_1, IB_WEAPON_2,
+        IB_WEAPON_3, IB_WEAPON_4, IB_WEAPON_5, IB_WEAPON_6, IB_WEAPON_SPECIAL
+    };
+    static constexpr uint8_t BIT_WEAPON_ID[] = {
+        0, 2, 7, 6, 5, 4, 3, 1, 0xFF
     };
 
     uint32_t hot = 0;
-    for (size_t i = 0; i < 9; ++i)
-        if (MP_HK_PRESSED(HOTKEY_MAP[i].hotkey)) hot |= (1u << i);
+    for (size_t i = 0; i < 9; ++i) {
+        if (IsPressed(BIT_MAP[i])) hot |= (1u << i);
+    }
 
     if (hot) {
         if (isStylusMode) m_blockStylusAim = true;
@@ -921,7 +937,7 @@ bool MelonPrimeCore::ProcessWeaponSwitch(melonDS::u8* mainRAM)
             return true;
         }
 
-        const uint8_t weaponID = HOTKEY_MAP[firstSet].weapon;
+        const uint8_t weaponID = BIT_WEAPON_ID[firstSet];
         const uint16_t having = FastRead16(mainRAM, addr.havingWeapons);
         const uint32_t ammoData = FastRead32(mainRAM, addr.weaponAmmo);
         const uint16_t weaponAmmo = static_cast<uint16_t>(ammoData & 0xFFFF);
@@ -954,8 +970,8 @@ bool MelonPrimeCore::ProcessWeaponSwitch(melonDS::u8* mainRAM)
     auto* panel = emuInstance->getMainWindow()->panel;
     if (!panel) return false;
     const int wheelDelta = panel->getDelta();
-    const bool nextKey = MP_HK_PRESSED(HK_MetroidWeaponNext);
-    const bool prevKey = MP_HK_PRESSED(HK_MetroidWeaponPrevious);
+    const bool nextKey = IsPressed(IB_WEAPON_NEXT);
+    const bool prevKey = IsPressed(IB_WEAPON_PREV);
     if (!wheelDelta && !nextKey && !prevKey) return false;
 
     if (isStylusMode) m_blockStylusAim = true;
@@ -1052,8 +1068,8 @@ void MelonPrimeCore::SwitchWeapon(melonDS::u8* mainRAM, int weaponIndex)
 
 void MelonPrimeCore::ApplyGameSettingsOnce()
 {
-    INPUT_SET(INPUT_L, !MP_HK_PRESSED(HK_MetroidUILeft));
-    INPUT_SET(INPUT_R, !MP_HK_PRESSED(HK_MetroidUIRight));
+    INPUT_SET(INPUT_L, !IsPressed(IB_UI_LEFT));
+    INPUT_SET(INPUT_R, !IsPressed(IB_UI_RIGHT));
 
     ApplyHeadphoneOnce(emuInstance->getNDS(), localCfg, addr.operationAndSound, isHeadphoneApplied);
     ApplyMphSensitivity(emuInstance->getNDS(), localCfg, addr.sensitivity, addr.inGameSensi, isInGameAndHasInitialized);
