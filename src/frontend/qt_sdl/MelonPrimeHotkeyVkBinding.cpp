@@ -176,6 +176,9 @@ namespace melonDS {
         BindOneHotkeyFromConfig(filter, instance, "Keyboard.HK_MetroidWeapon6", HK_MetroidWeapon6);
         BindOneHotkeyFromConfig(filter, instance, "Keyboard.HK_MetroidWeaponSpecial", HK_MetroidWeaponSpecial);
 
+        // 武器チェック
+        BindOneHotkeyFromConfig(filter, instance, "Keyboard.HK_MetroidWeaponCheck", HK_MetroidWeaponCheck);
+
         // Next / Previous
         BindOneHotkeyFromConfig(filter, instance, "Keyboard.HK_MetroidWeaponNext", HK_MetroidWeaponNext);
         BindOneHotkeyFromConfig(filter, instance, "Keyboard.HK_MetroidWeaponPrevious", HK_MetroidWeaponPrevious);
