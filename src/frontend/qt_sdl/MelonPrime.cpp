@@ -15,6 +15,8 @@
 
 #include <cmath>
 #include <algorithm>
+#include <array>
+#include <string_view>
 #include <QCoreApplication>
 #include <QCursor>
 
@@ -30,6 +32,19 @@ namespace MelonPrime {
         constexpr uint8_t AIM_ADDR_INC = 0x48;
         constexpr uint32_t VISOR_OFFSET = 0xABB;
         constexpr uint32_t RAM_MASK = 0x3FFFFF;
+
+        // Adventure Mode UI Coordinates
+        namespace UI {
+            constexpr QPoint SCAN_VISOR_BUTTON{ 128, 173 };
+            constexpr QPoint OK{ 128, 142 };
+            constexpr QPoint LEFT{ 71, 141 };
+            constexpr QPoint RIGHT{ 185, 141 };
+            constexpr QPoint YES{ 96, 142 };
+            constexpr QPoint NO{ 160, 142 };
+            constexpr QPoint CENTER_RESET{ 128, 88 };
+            constexpr QPoint WEAPON_CHECK_START{ 236, 30 };
+            constexpr QPoint MORPH_START{ 231, 167 };
+        }
     }
 
     enum InputBit : uint16_t {
@@ -38,12 +53,44 @@ namespace MelonPrime {
         INPUT_R = 8, INPUT_L = 9, INPUT_X = 10, INPUT_Y = 11,
     };
 
-    static const char* kWeaponNames[] = {
+    static constexpr std::array<std::string_view, 9> kWeaponNames = {
         "Power Beam", "Volt Driver", "Missile Launcher", "Battlehammer",
         "Imperialist", "Judicator", "Magmaul", "Shock Coil", "Omega Cannon"
     };
 
-    alignas(64) static constexpr uint8_t MoveLUT[16] = {
+    namespace WeaponData {
+        struct Info {
+            uint8_t id;
+            uint16_t mask;
+            uint8_t minAmmo;
+        };
+
+        // ID Mapping: 0:PB, 1:Shock, 2:Missile, 3:Magmaul, 4:Judicator, 5:Imperialist, 6:Battlehammer, 7:Volt, 8:Omega
+        constexpr std::array<Info, 9> ORDERED_WEAPONS = { {
+            {0, 0x001, 0},    // Power Beam
+            {2, 0x004, 0x5},  // Missile
+            {7, 0x080, 0xA},  // Volt Driver
+            {6, 0x040, 0x4},  // Battlehammer
+            {5, 0x020, 0x14}, // Imperialist
+            {4, 0x010, 0x5},  // Judicator
+            {3, 0x008, 0xA},  // Magmaul
+            {1, 0x002, 0xA},  // Shock Coil
+            {8, 0x100, 0}     // Omega Cannon
+        } };
+
+        constexpr uint64_t BIT_MAP[] = {
+            IB_WEAPON_BEAM, IB_WEAPON_MISSILE, IB_WEAPON_1, IB_WEAPON_2,
+            IB_WEAPON_3, IB_WEAPON_4, IB_WEAPON_5, IB_WEAPON_6, IB_WEAPON_SPECIAL
+        };
+        constexpr uint8_t BIT_WEAPON_ID[] = {
+            0, 2, 7, 6, 5, 4, 3, 1, 0xFF // 0xFF denotes Special
+        };
+
+        // Maps ID to Index in ORDERED_WEAPONS
+        constexpr uint8_t ID_TO_INDEX[] = { 0, 7, 1, 6, 5, 4, 3, 2, 8 };
+    }
+
+    alignas(64) static constexpr std::array<uint8_t, 16> MoveLUT = {
         0xF0, 0xB0, 0x70, 0xF0,
         0xD0, 0x90, 0x50, 0xD0,
         0xE0, 0xA0, 0x60, 0xE0,
@@ -73,15 +120,45 @@ namespace MelonPrime {
         *reinterpret_cast<uint16_t*>(&ram[addr & Consts::RAM_MASK]) = val;
     }
 
-#if defined(_WIN32)
-#define MP_JOY_DOWN(id)      (emuInstance->joyHotkeyMask.testBit((id)))
-#define MP_JOY_PRESSED(id)   (emuInstance->joyHotkeyPress.testBit((id)))
-#define MP_HK_DOWN_RAW(id)   ((m_rawFilter && m_rawFilter->hotkeyDown((id))) || MP_JOY_DOWN((id)))
-#define MP_HK_PRESSED_RAW(id) ((m_rawFilter && m_rawFilter->hotkeyPressed((id))) || MP_JOY_PRESSED((id)))
+    // ============================================================
+    // Inline Helper Implementations (Replaces Macros)
+    // ============================================================
+
+    FORCE_INLINE bool MelonPrimeCore::IsJoyDown(int id) const {
+#ifdef _WIN32
+        return emuInstance->joyHotkeyMask.testBit(id);
 #else
-#define MP_HK_DOWN_RAW(id)    (emuInstance->hotkeyMask.testBit((id)))
-#define MP_HK_PRESSED_RAW(id) (emuInstance->hotkeyPress.testBit((id)))
+        return false;
 #endif
+    }
+
+    FORCE_INLINE bool MelonPrimeCore::IsJoyPressed(int id) const {
+#ifdef _WIN32
+        return emuInstance->joyHotkeyPress.testBit(id);
+#else
+        return false;
+#endif
+    }
+
+    FORCE_INLINE bool MelonPrimeCore::IsHkDownRaw(int id) const {
+#ifdef _WIN32
+        return (m_rawFilter && m_rawFilter->hotkeyDown(id)) || IsJoyDown(id);
+#else
+        return emuInstance->hotkeyMask.testBit(id);
+#endif
+    }
+
+    FORCE_INLINE bool MelonPrimeCore::IsHkPressedRaw(int id) const {
+#ifdef _WIN32
+        return (m_rawFilter && m_rawFilter->hotkeyPressed(id)) || IsJoyPressed(id);
+#else
+        return emuInstance->hotkeyPress.testBit(id);
+#endif
+    }
+
+    // ============================================================
+    // MelonPrimeCore Implementation
+    // ============================================================
 
     MelonPrimeCore::MelonPrimeCore(EmuInstance* instance)
         : emuInstance(instance),
@@ -131,7 +208,7 @@ namespace MelonPrime {
                 hwnd = reinterpret_cast<HWND>(mw->winId());
             }
 
-            // シングルトン取得
+            // Singleton Acquisition (Manual)
             m_rawFilter = RawInputWinFilter::Acquire(m_flags.test(StateFlags::BIT_JOY2KEY), hwnd);
 
             ApplyJoy2KeySupportAndQtFilter(m_flags.test(StateFlags::BIT_JOY2KEY));
@@ -206,16 +283,12 @@ namespace MelonPrime {
         m_input.mouseY = 0;
         m_input.moveIndex = 0;
 
-        // ★修正: 外部(Screen.cpp等)で管理されている isFocused を信頼して使用する。
-        // GetForegroundWindowによる判定は削除。
-        // これにより、ScreenPanel::focusOutEvent で false にされたら、
-        // たとえウィンドウが前面にあっても入力を遮断できる。
 #ifdef _WIN32
         if (!isFocused) {
             return;
         }
 
-        // フォーカスがある場合のみ、自分をRawInputのターゲットに設定し、入力権を確保
+        // フォーカスがある場合のみ、自分をRawInputのターゲットに設定
         if (m_rawFilter) {
             HWND myHwnd = (HWND)emuInstance->getMainWindow()->winId();
             m_rawFilter->setRawInputTarget(myHwnd);
@@ -225,38 +298,39 @@ namespace MelonPrime {
         uint64_t down = 0;
         uint64_t press = 0;
 
-        down |= MP_HK_DOWN_RAW(HK_MetroidMoveForward) ? IB_MOVE_F : 0;
-        down |= MP_HK_DOWN_RAW(HK_MetroidMoveBack) ? IB_MOVE_B : 0;
-        down |= MP_HK_DOWN_RAW(HK_MetroidMoveLeft) ? IB_MOVE_L : 0;
-        down |= MP_HK_DOWN_RAW(HK_MetroidMoveRight) ? IB_MOVE_R : 0;
+        // Using inline member functions instead of macros
+        down |= IsHkDownRaw(HK_MetroidMoveForward) ? IB_MOVE_F : 0;
+        down |= IsHkDownRaw(HK_MetroidMoveBack) ? IB_MOVE_B : 0;
+        down |= IsHkDownRaw(HK_MetroidMoveLeft) ? IB_MOVE_L : 0;
+        down |= IsHkDownRaw(HK_MetroidMoveRight) ? IB_MOVE_R : 0;
 
-        down |= MP_HK_DOWN_RAW(HK_MetroidJump) ? IB_JUMP : 0;
-        down |= MP_HK_DOWN_RAW(HK_MetroidZoom) ? IB_ZOOM : 0;
-        down |= (MP_HK_DOWN_RAW(HK_MetroidShootScan) || MP_HK_DOWN_RAW(HK_MetroidScanShoot)) ? IB_SHOOT : 0;
-        down |= MP_HK_DOWN_RAW(HK_MetroidWeaponCheck) ? IB_WEAPON_CHECK : 0;
-        down |= MP_HK_DOWN_RAW(HK_MetroidHoldMorphBallBoost) ? IB_MORPH_BOOST : 0;
-        down |= MP_HK_DOWN_RAW(HK_MetroidMenu) ? IB_MENU : 0;
+        down |= IsHkDownRaw(HK_MetroidJump) ? IB_JUMP : 0;
+        down |= IsHkDownRaw(HK_MetroidZoom) ? IB_ZOOM : 0;
+        down |= (IsHkDownRaw(HK_MetroidShootScan) || IsHkDownRaw(HK_MetroidScanShoot)) ? IB_SHOOT : 0;
+        down |= IsHkDownRaw(HK_MetroidWeaponCheck) ? IB_WEAPON_CHECK : 0;
+        down |= IsHkDownRaw(HK_MetroidHoldMorphBallBoost) ? IB_MORPH_BOOST : 0;
+        down |= IsHkDownRaw(HK_MetroidMenu) ? IB_MENU : 0;
 
-        press |= MP_HK_PRESSED_RAW(HK_MetroidMorphBall) ? IB_MORPH : 0;
-        press |= MP_HK_PRESSED_RAW(HK_MetroidScanVisor) ? IB_SCAN_VISOR : 0;
+        press |= IsHkPressedRaw(HK_MetroidMorphBall) ? IB_MORPH : 0;
+        press |= IsHkPressedRaw(HK_MetroidScanVisor) ? IB_SCAN_VISOR : 0;
 
-        press |= MP_HK_PRESSED_RAW(HK_MetroidUIOk) ? IB_UI_OK : 0;
-        press |= MP_HK_PRESSED_RAW(HK_MetroidUILeft) ? IB_UI_LEFT : 0;
-        press |= MP_HK_PRESSED_RAW(HK_MetroidUIRight) ? IB_UI_RIGHT : 0;
-        press |= MP_HK_PRESSED_RAW(HK_MetroidUIYes) ? IB_UI_YES : 0;
-        press |= MP_HK_PRESSED_RAW(HK_MetroidUINo) ? IB_UI_NO : 0;
+        press |= IsHkPressedRaw(HK_MetroidUIOk) ? IB_UI_OK : 0;
+        press |= IsHkPressedRaw(HK_MetroidUILeft) ? IB_UI_LEFT : 0;
+        press |= IsHkPressedRaw(HK_MetroidUIRight) ? IB_UI_RIGHT : 0;
+        press |= IsHkPressedRaw(HK_MetroidUIYes) ? IB_UI_YES : 0;
+        press |= IsHkPressedRaw(HK_MetroidUINo) ? IB_UI_NO : 0;
 
-        press |= MP_HK_PRESSED_RAW(HK_MetroidWeaponBeam) ? IB_WEAPON_BEAM : 0;
-        press |= MP_HK_PRESSED_RAW(HK_MetroidWeaponMissile) ? IB_WEAPON_MISSILE : 0;
-        press |= MP_HK_PRESSED_RAW(HK_MetroidWeapon1) ? IB_WEAPON_1 : 0;
-        press |= MP_HK_PRESSED_RAW(HK_MetroidWeapon2) ? IB_WEAPON_2 : 0;
-        press |= MP_HK_PRESSED_RAW(HK_MetroidWeapon3) ? IB_WEAPON_3 : 0;
-        press |= MP_HK_PRESSED_RAW(HK_MetroidWeapon4) ? IB_WEAPON_4 : 0;
-        press |= MP_HK_PRESSED_RAW(HK_MetroidWeapon5) ? IB_WEAPON_5 : 0;
-        press |= MP_HK_PRESSED_RAW(HK_MetroidWeapon6) ? IB_WEAPON_6 : 0;
-        press |= MP_HK_PRESSED_RAW(HK_MetroidWeaponSpecial) ? IB_WEAPON_SPECIAL : 0;
-        press |= MP_HK_PRESSED_RAW(HK_MetroidWeaponNext) ? IB_WEAPON_NEXT : 0;
-        press |= MP_HK_PRESSED_RAW(HK_MetroidWeaponPrevious) ? IB_WEAPON_PREV : 0;
+        press |= IsHkPressedRaw(HK_MetroidWeaponBeam) ? IB_WEAPON_BEAM : 0;
+        press |= IsHkPressedRaw(HK_MetroidWeaponMissile) ? IB_WEAPON_MISSILE : 0;
+        press |= IsHkPressedRaw(HK_MetroidWeapon1) ? IB_WEAPON_1 : 0;
+        press |= IsHkPressedRaw(HK_MetroidWeapon2) ? IB_WEAPON_2 : 0;
+        press |= IsHkPressedRaw(HK_MetroidWeapon3) ? IB_WEAPON_3 : 0;
+        press |= IsHkPressedRaw(HK_MetroidWeapon4) ? IB_WEAPON_4 : 0;
+        press |= IsHkPressedRaw(HK_MetroidWeapon5) ? IB_WEAPON_5 : 0;
+        press |= IsHkPressedRaw(HK_MetroidWeapon6) ? IB_WEAPON_6 : 0;
+        press |= IsHkPressedRaw(HK_MetroidWeaponSpecial) ? IB_WEAPON_SPECIAL : 0;
+        press |= IsHkPressedRaw(HK_MetroidWeaponNext) ? IB_WEAPON_NEXT : 0;
+        press |= IsHkPressedRaw(HK_MetroidWeaponPrevious) ? IB_WEAPON_PREV : 0;
 
         m_input.down = down;
         m_input.press = press;
@@ -353,7 +427,7 @@ namespace MelonPrime {
             RomGroup group;
         };
 
-        static const RomInfo ROM_INFO_TABLE[] = {
+        static const std::array<RomInfo, 16> ROM_INFO_TABLE = { {
             {RomVersions::US1_1,           "US1.1",           GROUP_US1_1},
             {RomVersions::US1_1_ENCRYPTED, "US1.1 ENCRYPTED", GROUP_US1_1},
             {RomVersions::US1_0,           "US1.0",           GROUP_US1_0},
@@ -370,7 +444,7 @@ namespace MelonPrime {
             {RomVersions::JP1_1_ENCRYPTED, "JP1.1 ENCRYPTED", GROUP_JP1_1},
             {RomVersions::KR1_0,           "KR1.0",           GROUP_KR1_0},
             {RomVersions::KR1_0_ENCRYPTED, "KR1.0 ENCRYPTED", GROUP_KR1_0},
-        };
+        } };
 
         const RomInfo* romInfo = nullptr;
         for (const auto& info : ROM_INFO_TABLE) {
@@ -439,7 +513,6 @@ namespace MelonPrime {
         melonDS::u8* mainRAM = emuInstance->getNDS()->MainRAM;
 
         if (UNLIKELY(m_isRunningHook)) {
-            // Recursive protection using member var
             ProcessMoveInputFast();
             InputSetBranchless(INPUT_B, !IsDown(IB_JUMP));
 
@@ -464,8 +537,6 @@ namespace MelonPrime {
         m_flags.clear(StateFlags::BIT_BLOCK_STYLUS);
 
         HandleGlobalHotkeys();
-
-        // ★修正: StylusModeの強制フォーカスロジックを削除
 
         const bool wasDetected = m_flags.test(StateFlags::BIT_ROM_DETECTED);
         if (UNLIKELY(!wasDetected)) {
@@ -560,7 +631,8 @@ namespace MelonPrime {
             if (isStylusMode) m_flags.set(StateFlags::BIT_BLOCK_STYLUS);
             emuInstance->getNDS()->ReleaseScreen();
             FrameAdvanceTwice();
-            emuInstance->getNDS()->TouchScreen(231, 167);
+            using namespace Consts::UI;
+            emuInstance->getNDS()->TouchScreen(MORPH_START.x(), MORPH_START.y());
             FrameAdvanceTwice();
             emuInstance->getNDS()->ReleaseScreen();
             FrameAdvanceTwice();
@@ -581,7 +653,8 @@ namespace MelonPrime {
                 emuInstance->getNDS()->ReleaseScreen();
                 FrameAdvanceTwice();
             }
-            emuInstance->getNDS()->TouchScreen(236, 30);
+            using namespace Consts::UI;
+            emuInstance->getNDS()->TouchScreen(WEAPON_CHECK_START.x(), WEAPON_CHECK_START.y());
         }
         else if (UNLIKELY(isWeaponCheckActive)) {
             isWeaponCheckActive = false;
@@ -610,7 +683,8 @@ namespace MelonPrime {
         else {
             ProcessAimInputMouse(mainRAM);
             if (!m_flags.test(StateFlags::BIT_LAST_FOCUSED) || !m_isAimDisabled) {
-                emuInstance->getNDS()->TouchScreen(128, 88);
+                using namespace Consts::UI;
+                emuInstance->getNDS()->TouchScreen(CENTER_RESET.x(), CENTER_RESET.y());
             }
         }
     }
@@ -746,7 +820,8 @@ namespace MelonPrime {
 
             emuInstance->getNDS()->ReleaseScreen();
             FrameAdvanceTwice();
-            emuInstance->getNDS()->TouchScreen(128, 173);
+            using namespace Consts::UI;
+            emuInstance->getNDS()->TouchScreen(SCAN_VISOR_BUTTON.x(), SCAN_VISOR_BUTTON.y());
 
             if (FastRead8(mainRAM, m_addrHot.isInVisorOrMap) == 0x1) {
                 FrameAdvanceTwice();
@@ -763,37 +838,26 @@ namespace MelonPrime {
             FrameAdvanceTwice();
         }
 
-#define TOUCH_IF_PRESSED(BIT, X, Y) \
+#define TOUCH_IF_PRESSED(BIT, POINT) \
         if (IsPressed(BIT)) { \
             emuInstance->getNDS()->ReleaseScreen(); \
             FrameAdvanceTwice(); \
-            emuInstance->getNDS()->TouchScreen((X), (Y)); \
+            emuInstance->getNDS()->TouchScreen(POINT.x(), POINT.y()); \
             FrameAdvanceTwice(); \
         }
 
-        TOUCH_IF_PRESSED(IB_UI_OK, 128, 142)
-            TOUCH_IF_PRESSED(IB_UI_LEFT, 71, 141)
-            TOUCH_IF_PRESSED(IB_UI_RIGHT, 185, 141)
-            TOUCH_IF_PRESSED(IB_UI_YES, 96, 142)
-            TOUCH_IF_PRESSED(IB_UI_NO, 160, 142)
+        using namespace Consts::UI;
+        TOUCH_IF_PRESSED(IB_UI_OK, OK)
+            TOUCH_IF_PRESSED(IB_UI_LEFT, LEFT)
+            TOUCH_IF_PRESSED(IB_UI_RIGHT, RIGHT)
+            TOUCH_IF_PRESSED(IB_UI_YES, YES)
+            TOUCH_IF_PRESSED(IB_UI_NO, NO)
 #undef TOUCH_IF_PRESSED
     }
 
     HOT_FUNCTION bool MelonPrimeCore::ProcessWeaponSwitch(melonDS::u8* mainRAM)
     {
-        static constexpr uint8_t  WEAPON_ORDER[] = { 0, 2, 7, 6, 5, 4, 3, 1, 8 };
-        static constexpr uint16_t WEAPON_MASKS[] = { 0x001, 0x004, 0x080, 0x040, 0x020, 0x010, 0x008, 0x002, 0x100 };
-        static constexpr uint8_t  MIN_AMMO[] = { 0, 0x5, 0xA, 0x4, 0x14, 0x5, 0xA, 0xA, 0 };
-        static constexpr uint8_t  WEAPON_INDEX_MAP[] = { 0, 7, 1, 6, 5, 4, 3, 2, 8 };
-        static constexpr uint8_t  WEAPON_COUNT = 9;
-
-        static constexpr uint64_t BIT_MAP[] = {
-            IB_WEAPON_BEAM, IB_WEAPON_MISSILE, IB_WEAPON_1, IB_WEAPON_2,
-            IB_WEAPON_3, IB_WEAPON_4, IB_WEAPON_5, IB_WEAPON_6, IB_WEAPON_SPECIAL
-        };
-        static constexpr uint8_t BIT_WEAPON_ID[] = {
-            0, 2, 7, 6, 5, 4, 3, 1, 0xFF
-        };
+        using namespace WeaponData;
 
         if (LIKELY(!IsAnyPressed(IB_WEAPON_ANY))) {
             auto* panel = emuInstance->getMainWindow()->panel;
@@ -812,23 +876,28 @@ namespace MelonPrime {
             const uint32_t ammoData = FastRead32(mainRAM, m_addrHot.weaponAmmo);
             const uint16_t weaponAmmo = static_cast<uint16_t>(ammoData & 0xFFFF);
             const uint16_t missileAmmo = static_cast<uint16_t>(ammoData >> 16);
-
-            uint16_t available = 0;
             const bool isWeavel = m_flags.test(StateFlags::BIT_IS_WEAVEL);
 
-            for (int i = 0; i < WEAPON_COUNT; ++i) {
-                const uint8_t wid = WEAPON_ORDER[i];
-                const bool owned = (wid == 0 || wid == 2) || ((having & WEAPON_MASKS[i]) != 0);
-                if (!owned) continue;
+            auto isWeaponAvailable = [&](const Info& info) -> bool {
+                // Check Ownership
+                if (info.id != 0 && info.id != 2 && !(having & info.mask)) return false;
 
-                bool ok = true;
-                if (wid == 2) ok = (missileAmmo >= 0xA);
-                else if (wid != 0 && wid != 8) {
-                    uint8_t req = MIN_AMMO[wid];
-                    if (wid == 3 && isWeavel) req = 0x5;
-                    ok = (weaponAmmo >= req);
+                // Check Ammo
+                if (info.id == 2) return missileAmmo >= 0xA;
+                if (info.id != 0 && info.id != 8) {
+                    uint8_t req = info.minAmmo;
+                    if (info.id == 3 && isWeavel) req = 0x5;
+                    return weaponAmmo >= req;
                 }
-                if (ok) available |= (1u << i);
+                return true;
+                };
+
+            // Build available mask
+            uint16_t available = 0;
+            for (size_t i = 0; i < ORDERED_WEAPONS.size(); ++i) {
+                if (isWeaponAvailable(ORDERED_WEAPONS[i])) {
+                    available |= (1u << i);
+                }
             }
 
             if (!available) {
@@ -836,12 +905,15 @@ namespace MelonPrime {
                 return false;
             }
 
-            uint8_t idx = WEAPON_INDEX_MAP[curID];
-            for (int n = 0; n < WEAPON_COUNT; ++n) {
-                idx = forward ? static_cast<uint8_t>((idx + 1) % WEAPON_COUNT)
-                    : static_cast<uint8_t>((idx + WEAPON_COUNT - 1) % WEAPON_COUNT);
+            // Find next
+            uint8_t idx = ID_TO_INDEX[curID % 9]; // Safety modulo
+            const size_t count = ORDERED_WEAPONS.size();
+            for (size_t n = 0; n < count; ++n) {
+                idx = forward ? static_cast<uint8_t>((idx + 1) % count)
+                    : static_cast<uint8_t>((idx + count - 1) % count);
+
                 if (available & (1u << idx)) {
-                    SwitchWeapon(mainRAM, WEAPON_ORDER[idx]);
+                    SwitchWeapon(mainRAM, ORDERED_WEAPONS[idx].id);
                     return true;
                 }
             }
@@ -850,6 +922,7 @@ namespace MelonPrime {
             return false;
         }
 
+        // Direct Hotkey Handling
         if (isStylusMode) m_flags.set(StateFlags::BIT_BLOCK_STYLUS);
 
         uint32_t hot = 0;
@@ -859,6 +932,7 @@ namespace MelonPrime {
 
         const int firstSet = __builtin_ctz(hot);
 
+        // Special Weapon (Omega Cannon) logic
         if (UNLIKELY(firstSet == 8)) {
             const uint8_t loaded = FastRead8(mainRAM, m_addrHot.loadedSpecialWeapon);
             if (loaded == 0xFF) {
@@ -876,10 +950,23 @@ namespace MelonPrime {
         const uint16_t weaponAmmo = static_cast<uint16_t>(ammoData & 0xFFFF);
         const uint16_t missileAmmo = static_cast<uint16_t>(ammoData >> 16);
 
-        const bool owned = (weaponID == 0 || weaponID == 2) ||
-            ((having & WEAPON_MASKS[WEAPON_INDEX_MAP[weaponID]]) != 0);
+        // Map ID back to Info struct to reuse logic? 
+        // Or keep inline for "hot path" speed if needed? Keeping inline for now but cleaner.
+        // We need to find the Info struct for this ID.
+        const Info* info = nullptr;
+        for (const auto& w : ORDERED_WEAPONS) {
+            if (w.id == weaponID) { info = &w; break; }
+        }
+
+        if (!info) { // Should not happen given the arrays
+            m_flags.clear(StateFlags::BIT_BLOCK_STYLUS);
+            return false;
+        }
+
+        const bool owned = (weaponID == 0 || weaponID == 2) || ((having & info->mask) != 0);
+
         if (!owned) {
-            emuInstance->osdAddMessage(0, "Have not %s yet!", kWeaponNames[weaponID]);
+            emuInstance->osdAddMessage(0, "Have not %s yet!", kWeaponNames[weaponID].data());
             m_flags.clear(StateFlags::BIT_BLOCK_STYLUS);
             return false;
         }
@@ -889,13 +976,13 @@ namespace MelonPrime {
             hasAmmo = (missileAmmo >= 0xA);
         }
         else if (weaponID != 0 && weaponID != 8) {
-            uint8_t required = MIN_AMMO[weaponID];
+            uint8_t required = info->minAmmo;
             if (weaponID == 3 && m_flags.test(StateFlags::BIT_IS_WEAVEL)) required = 0x5;
             hasAmmo = (weaponAmmo >= required);
         }
 
         if (!hasAmmo) {
-            emuInstance->osdAddMessage(0, "Not enough Ammo for %s!", kWeaponNames[weaponID]);
+            emuInstance->osdAddMessage(0, "Not enough Ammo for %s!", kWeaponNames[weaponID].data());
             m_flags.clear(StateFlags::BIT_BLOCK_STYLUS);
             return false;
         }
@@ -935,7 +1022,8 @@ namespace MelonPrime {
         FrameAdvanceTwice();
 
         if (!isStylusMode) {
-            emuInstance->getNDS()->TouchScreen(128, 88);
+            using namespace Consts::UI;
+            emuInstance->getNDS()->TouchScreen(CENTER_RESET.x(), CENTER_RESET.y());
         }
         else if (emuInstance->isTouching) {
             emuInstance->getNDS()->TouchScreen(emuInstance->touchX, emuInstance->touchY);
@@ -1030,7 +1118,7 @@ namespace MelonPrime {
         if (!nds || !localCfg.GetBool("Metroid.HunterLicense.Color.Apply")) return false;
         int sel = localCfg.GetInt("Metroid.HunterLicense.Color.Selected");
         if (sel < 0 || sel > 2) return false;
-        constexpr uint8_t kColorBits[3] = { 0x00, 0x40, 0x80 };
+        constexpr std::array<uint8_t, 3> kColorBits = { 0x00, 0x40, 0x80 };
         uint8_t oldVal = nds->ARM9Read8(addr);
         uint8_t newVal = (oldVal & 0x3F) | kColorBits[sel];
         if (newVal == oldVal) return false;
@@ -1041,7 +1129,7 @@ namespace MelonPrime {
     bool MelonPrimeCore::ApplySelectedHunterStrict(melonDS::NDS* nds, Config::Table& localCfg, melonDS::u32 addr)
     {
         if (!nds || !localCfg.GetBool("Metroid.HunterLicense.Hunter.Apply")) return false;
-        constexpr uint8_t kHunterBits[7] = { 0x00, 0x08, 0x10, 0x18, 0x20, 0x28, 0x30 };
+        constexpr std::array<uint8_t, 7> kHunterBits = { 0x00, 0x08, 0x10, 0x18, 0x20, 0x28, 0x30 };
         int sel = localCfg.GetInt("Metroid.HunterLicense.Hunter.Selected");
         sel = std::clamp(sel, 0, 6);
         uint8_t oldVal = nds->ARM9Read8(addr);
