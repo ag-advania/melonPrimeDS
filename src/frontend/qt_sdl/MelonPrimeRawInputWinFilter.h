@@ -99,9 +99,13 @@ private:
         uint8_t _pad[7]; // 明示的パディング
     } m_state;
 
-    // 【変更】64bitパックを廃止し、個別のAtomic変数に変更
-    std::atomic<int32_t> m_mouseX{ 0 };
-    std::atomic<int32_t> m_mouseY{ 0 };
+    // 【最適化】 X(32bit) と Y(32bit) を 64bit変数にパッキング
+    // アトミック操作を1回で済ませるための共用体
+    union MouseDeltaPack {
+        struct { int32_t x; int32_t y; } s;
+        uint64_t combined;
+    };
+    std::atomic<uint64_t> m_mouseDeltaCombined{ 0 };
 
     // 【最適化】HotkeyMask構造体を64バイト境界にアライン
     struct alignas(8) HotkeyMask {
