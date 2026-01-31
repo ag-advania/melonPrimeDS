@@ -64,10 +64,7 @@ RawInputWinFilter::RawInputWinFilter(bool joy2KeySupport, HWND mainHwnd)
     // 初期化
     for (auto& a : m_state.vkDown) a.store(0);
     m_state.mouseButtons.store(0);
-
-    // 【変更】個別に初期化
-    m_mouseX.store(0);
-    m_mouseY.store(0);
+    m_mouseDeltaCombined.store(0);
 
     memset(m_hkMask.data(), 0, sizeof(m_hkMask));
     memset(m_hkPrev, 0, sizeof(m_hkPrev));
@@ -185,9 +182,18 @@ FORCE_INLINE void RawInputWinFilter::processRawInput(HRAWINPUT hRaw) noexcept
         if (!(m.usFlags & MOUSE_MOVE_ABSOLUTE)) {
             const LONG dx_ = m.lLastX;
             const LONG dy_ = m.lLastY;
-            // 【変更】CASループを廃止し、単純な fetch_add に変更
-            if (dx_) m_mouseX.fetch_add(dx_, std::memory_order_relaxed);
-            if (dy_) m_mouseY.fetch_add(dy_, std::memory_order_relaxed);
+            if (dx_ | dy_) {
+                // 64bit CASループで X,Y を一度に更新
+                uint64_t cur = m_mouseDeltaCombined.load(std::memory_order_relaxed);
+                uint64_t nxt;
+                do {
+                    MouseDeltaPack p;
+                    p.combined = cur;
+                    p.s.x += dx_;
+                    p.s.y += dy_;
+                    nxt = p.combined;
+                } while (!m_mouseDeltaCombined.compare_exchange_weak(cur, nxt, std::memory_order_relaxed));
+            }
         }
 
         // ボタン
@@ -296,9 +302,18 @@ void RawInputWinFilter::processRawInputBatched() noexcept
             ((raw->header.dwSize + sizeof(void*) - 1) & ~(sizeof(void*) - 1)));
     }
 
-    // 【変更】蓄積した移動量を適用 (CASループ廃止)
-    if (accumX) m_mouseX.fetch_add(accumX, std::memory_order_relaxed);
-    if (accumY) m_mouseY.fetch_add(accumY, std::memory_order_relaxed);
+    // Apply accumulated mouse delta (single atomic operation)
+    if (accumX | accumY) {
+        uint64_t cur = m_mouseDeltaCombined.load(std::memory_order_relaxed);
+        uint64_t nxt;
+        do {
+            MouseDeltaPack p;
+            p.combined = cur;
+            p.s.x += accumX;
+            p.s.y += accumY;
+            nxt = p.combined;
+        } while (!m_mouseDeltaCombined.compare_exchange_weak(cur, nxt, std::memory_order_relaxed));
+    }
 
     // Apply accumulated button changes
     if (btnDown | btnUp) {
@@ -489,15 +504,16 @@ bool RawInputWinFilter::hotkeyReleased(int hk) noexcept {
 }
 
 void RawInputWinFilter::fetchMouseDelta(int& outX, int& outY) {
-    // 【変更】個別に exchange(0) を呼び出して値を取得・リセット
-    outX = m_mouseX.exchange(0, std::memory_order_relaxed);
-    outY = m_mouseY.exchange(0, std::memory_order_relaxed);
+    // 【最適化】1回のアトミック交換でX, Y両方を取得・リセット
+    uint64_t val = m_mouseDeltaCombined.exchange(0, std::memory_order_relaxed);
+    MouseDeltaPack p;
+    p.combined = val;
+    outX = p.s.x;
+    outY = p.s.y;
 }
 
 void RawInputWinFilter::discardDeltas() {
-    // 【変更】個別にリセット
-    m_mouseX.store(0, std::memory_order_relaxed);
-    m_mouseY.store(0, std::memory_order_relaxed);
+    m_mouseDeltaCombined.store(0, std::memory_order_relaxed);
 }
 
 void RawInputWinFilter::resetAllKeys() {
