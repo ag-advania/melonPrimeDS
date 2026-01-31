@@ -40,8 +40,9 @@ jobs:
       with:
         msystem: ucrt64
         update: true
-        # vcpkgのビルドに必要なツール群 + cmake, ninja
-        pacboy: gcc:p cmake:p ninja:p make:p pkg-config:p git:p curl:p zip:p unzip:p
+        # ホスト側のツール(git, curl, zipなど)をMSYS2内でも使えるようにする
+        path-type: inherit
+        pacboy: gcc:p cmake:p ninja:p make:p pkg-config:p
 
     # --- vcpkg キャッシュ設定 ---
     
