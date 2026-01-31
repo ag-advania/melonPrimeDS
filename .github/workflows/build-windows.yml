@@ -1,7 +1,7 @@
 name: Windows
 
 on:
-  workflow_dispatch :
+  workflow_dispatch:
   pull_request:
     branches:
       - master
@@ -10,45 +10,95 @@ env:
   MELONDS_GIT_BRANCH: ${{ github.ref }}
   MELONDS_GIT_HASH: ${{ github.sha }}
   MELONDS_BUILD_PROVIDER: GitHub Actions
-#  MELONDS_VERSION_SUFFIX: " RC"
+  # vcpkgのルートディレクトリ指定
+  VCPKG_ROOT: ${{ github.workspace }}/vcpkg
+  # 【重要】vcpkgのバイナリキャッシュ設定 (ここが高速化の肝です)
+  VCPKG_BINARY_SOURCES: clear;files,${{ github.workspace }}/vcpkg_binary_cache,readwrite
 
 jobs:
   build:
+    # windows-2025はまだ一般的ではないため、利用できない場合は windows-latest に変更してください
     runs-on: windows-2025
     defaults:
       run:
         shell: msys2 {0}
-    env:
-      VCPKG_BINARY_SOURCES: clear;files,${{ github.workspace }}/vcpkg_cache,readwrite
+    
     steps:
     - name: Check out sources
-      uses: actions/checkout@v3
+      uses: actions/checkout@v4
+
+    # --- MSYS2 キャッシュ設定 ---
+    - name: Cache MSYS2 packages
+      uses: actions/cache@v4
+      with:
+        path: C:/msys64/var/cache/pacman/pkg
+        key: msys2-cache-${{ hashFiles('vcpkg.json') }}
+        restore-keys: msys2-cache-
+
     - name: Set up MSYS2
       uses: msys2/setup-msys2@v2
       with:
         msystem: ucrt64
         update: true
-        pacboy: gcc:p cmake:p ninja:p make:p
-    - name: Restore vcpkg cache
-      uses: actions/cache/restore@v4
+        # vcpkgのビルドに必要なツール群 + cmake, ninja
+        pacboy: gcc:p cmake:p ninja:p make:p pkg-config:p git:p curl:p zip:p unzip:p
+
+    # --- vcpkg キャッシュ設定 ---
+    
+    # 1. vcpkg本体(ツール)のキャッシュ
+    - name: Cache vcpkg tool
+      id: vcpkg_tool_cache
+      uses: actions/cache@v4
       with:
-        path: ${{ github.workspace }}/vcpkg_cache
-        key: vcpkg-x86_64-mingw-${{ hashFiles('vcpkg.json') }}
-        restore-keys: vcpkg-x86_64-mingw-
-    - name: Set up vcpkg
-      uses: lukka/run-vcpkg@v11
+        path: ${{ github.workspace }}/vcpkg
+        # vcpkgのコミットIDなどを固定していないため、OSごとにキャッシュキーを作成
+        key: ${{ runner.os }}-vcpkg-tool-core
+
+    # 2. インストール済みパッケージ と バイナリキャッシュ の保存
+    - name: Cache vcpkg installed & binaries
+      id: vcpkg_cache
+      uses: actions/cache@v4
       with:
-        vcpkgJsonGlob: vcpkg.json
+        path: |
+          ${{ github.workspace }}/vcpkg_installed
+          ${{ github.workspace }}/vcpkg_binary_cache
+        # vcpkg.json が変わった時だけキャッシュを作り直す
+        key: ${{ runner.os }}-vcpkg-install-${{ hashFiles('vcpkg.json') }}
+        restore-keys: |
+          ${{ runner.os }}-vcpkg-install-
+
+    - name: Ensure vcpkg binary cache directory exists
+      run: mkdir -p "${{ github.workspace }}/vcpkg_binary_cache"
+
+    # --- vcpkg セットアップ (参考ファイルを元に手動化) ---
+    - name: Setup vcpkg
+      run: |
+        if [ ! -d "$VCPKG_ROOT" ]; then
+          echo "Cloning vcpkg..."
+          git clone https://github.com/Microsoft/vcpkg.git "$VCPKG_ROOT"
+        fi
+        
+        # vcpkg.exe が無ければブートストラップ
+        if [ ! -f "$VCPKG_ROOT/vcpkg.exe" ]; then
+          echo "Bootstrapping vcpkg..."
+          "$VCPKG_ROOT/bootstrap-vcpkg.bat" -disableMetrics
+        fi
+        
+        "$VCPKG_ROOT/vcpkg.exe" version
+
+    # --- ビルド ---
     - name: Configure
-      run: cmake --preset=release-mingw-x86_64 -DMELONDS_EMBED_BUILD_INFO=ON
+      # 手動セットアップしたvcpkgを使うため、ツールチェーンファイルを明示的に指定
+      run: |
+        cmake --preset=release-mingw-x86_64 \
+          -DMELONDS_EMBED_BUILD_INFO=ON \
+          -DCMAKE_TOOLCHAIN_FILE="${VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake" \
+          -DVCPKG_INSTALLED_DIR="${{ github.workspace }}/vcpkg_installed"
+
     - name: Build
       run: cmake --build --preset=release-mingw-x86_64
+
     - uses: actions/upload-artifact@v4
       with:
         name: melonDS-windows-x86_64
-        path: .\build\release-mingw-x86_64\melonDS.exe
-    - name: Save vcpkg cache
-      uses: actions/cache/save@v4
-      with:
-        path: ${{ github.workspace }}/vcpkg_cache
-        key: vcpkg-x86_64-mingw-${{ hashFiles('vcpkg.json') }}
+        path: ./build/release-mingw-x86_64/melonDS.exe
