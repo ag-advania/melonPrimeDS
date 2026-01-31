@@ -51,15 +51,12 @@ EmuThread::EmuThread(EmuInstance* inst, QObject* parent) : QThread(parent)
     emuActive = false;
 
     // Initialize MelonPrime Logic
-    melonPrime = new MelonPrimeCore(inst);
+    melonPrime = std::make_unique<MelonPrime::MelonPrimeCore>(inst);
 }
 
 EmuThread::~EmuThread()
 {
-    if (melonPrime) {
-        delete melonPrime;
-        melonPrime = nullptr;
-    }
+
 }
 
 void EmuThread::attachWindow(MainWindow* window)

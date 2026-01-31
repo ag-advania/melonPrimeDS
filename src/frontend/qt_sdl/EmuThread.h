@@ -21,7 +21,7 @@
 #include "GBACart.h"
 
 // Forward declaration
-class MelonPrimeCore;
+namespace MelonPrime { class MelonPrimeCore; } // –¼‘O‹óŠÔ‚ðŽw’è
 
 namespace melonDS
 {
@@ -42,7 +42,7 @@ public:
     ~EmuThread();
 
     // Accessor for ScreenPanel to access MelonPrime state
-    MelonPrimeCore* GetMelonPrimeCore() { return melonPrime; }
+    MelonPrime::MelonPrimeCore* GetMelonPrimeCore() { return melonPrime.get(); }
 
     void attachWindow(MainWindow* window);
     void detachWindow(MainWindow* window);
@@ -175,7 +175,7 @@ private:
     EmuInstance* emuInstance;
 
     // --- MelonPrimeDS Integration ---
-    MelonPrimeCore* melonPrime;
+    std::unique_ptr<MelonPrime::MelonPrimeCore> melonPrime;
     // --------------------------------
 
     int autoScreenSizing;
