@@ -335,6 +335,29 @@ void EmuThread::run()
             nframes = 0;
             lastTime = SDL_GetPerformanceCounter() * perfCountsSec;
             lastMeasureTime = lastTime;
+
+            // ★★★ ここから修正: ポーズ中も入力を受け付けるようにコードを追加 ★★★
+
+            // 1. MPインターフェースと入力処理を実行
+            if (emuInstance->instanceID == 0)
+                MPInterface::Get().Process();
+
+            emuInstance->inputProcess();
+
+            // 2. グローバルホットキーの確認（ポーズ解除や終了などに必須）
+            if (emuInstance->hotkeyPressed(HK_FrameLimitToggle)) emit windowLimitFPSChange();
+
+            if (emuInstance->hotkeyPressed(HK_Pause)) emuTogglePause();
+            if (emuInstance->hotkeyPressed(HK_Reset)) emuReset();
+            if (emuInstance->hotkeyPressed(HK_FrameStep)) emuFrameStep();
+
+            if (emuInstance->hotkeyPressed(HK_FullscreenToggle)) emit windowFullscreenToggle();
+
+            if (emuInstance->hotkeyPressed(HK_SwapScreens)) emit swapScreensToggle();
+            if (emuInstance->hotkeyPressed(HK_SwapScreenEmphasis)) emit screenEmphasisToggle();
+
+            // ★★★ 追加ここまで ★★★
+
             emit windowUpdate();
             snprintf(melontitle, sizeof(melontitle), "melonDS " MELONDS_VERSION);
             changeWindowTitle(melontitle);
