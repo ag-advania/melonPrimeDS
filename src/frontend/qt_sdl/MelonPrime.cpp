@@ -1,5 +1,6 @@
 /*
     MelonPrimeDS Logic Implementation (REFACTORED & OPTIMIZED)
+    Updated for High-Precision Mouse Input
 */
 
 #include "MelonPrime.h"
@@ -356,6 +357,9 @@ namespace MelonPrime {
         m_flags.packed = StateFlags::BIT_LAYOUT_PENDING;
         m_isInGame = false;
         m_appliedFlags = 0;
+        // Reset residue on start
+        m_residueX = 0.0f;
+        m_residueY = 0.0f;
 
         m_flags.assign(StateFlags::BIT_SNAP_TAP, localCfg.GetBool("Metroid.Operation.SnapTap"));
         m_flags.assign(StateFlags::BIT_STYLUS_MODE, localCfg.GetBool("Metroid.Enable.stylusMode"));
@@ -391,6 +395,10 @@ namespace MelonPrime {
 
         RecalcAimSensitivityCache(localCfg);
         ApplyAimAdjustSetting(localCfg);
+
+        // Reset residue to avoid jump after unpause
+        m_residueX = 0.0f;
+        m_residueY = 0.0f;
 
 #ifdef _WIN32
         if (m_rawFilter) {
@@ -729,12 +737,15 @@ namespace MelonPrime {
         }
     }
 
+    // --- REWRITTEN FOR SUB-PIXEL PRECISION ---
     HOT_FUNCTION void MelonPrimeCore::ProcessAimInputMouse(melonDS::u8* mainRAM)
     {
         if (m_isAimDisabled) return;
 
         if (UNLIKELY(m_isLayoutChangePending)) {
             m_isLayoutChangePending = false;
+            m_residueX = 0.0f;
+            m_residueY = 0.0f;
 #ifdef _WIN32
             if (m_rawFilter) m_rawFilter->discardDeltas();
 #endif
@@ -745,16 +756,39 @@ namespace MelonPrime {
             const int deltaX = m_input.mouseX;
             const int deltaY = m_input.mouseY;
 
-            if ((deltaX | deltaY) == 0) return;
+            // If no input and no accumulated residue, return early
+            if (deltaX == 0 && deltaY == 0 && m_residueX == 0.0f && m_residueY == 0.0f) return;
 
-            float scaledX = deltaX * m_aimSensiFactor;
-            float scaledY = deltaY * m_aimCombinedY;
-            ApplyAimAdjustBranchless(scaledX, scaledY);
+            // 1. Calculate raw float delta including previous residue
+            float rawScaledX = (deltaX * m_aimSensiFactor) + m_residueX;
+            float rawScaledY = (deltaY * m_aimCombinedY) + m_residueY;
 
-            if (scaledX == 0.0f && scaledY == 0.0f) return;
+            // 2. Apply Aim Adjust (Deadzone/Curve)
+            // Passing copies to not mutate rawScaled for residue calculation later?
+            // Actually ApplyAimAdjustBranchless modifies the value in-place to apply the curve.
+            // We want the output to be the adjusted value, but we need to track what was *consumed*.
+            // Since the emulator expects integer coordinates, we output integers.
+            // The residue is (Input - Output).
 
-            FastWrite16(mainRAM, m_addrHot.aimX, static_cast<int16_t>(scaledX));
-            FastWrite16(mainRAM, m_addrHot.aimY, static_cast<int16_t>(scaledY));
+            float adjX = rawScaledX;
+            float adjY = rawScaledY;
+            ApplyAimAdjustBranchless(adjX, adjY);
+
+            // 3. Integer truncation for NDS input
+            int16_t outX = static_cast<int16_t>(adjX);
+            int16_t outY = static_cast<int16_t>(adjY);
+
+            // 4. Calculate new residue (Accumulate what wasn't used)
+            // If adjusted value was 0 due to deadzone, we might keep accumulating (standard behavior)
+            // or reset. Here we simply keep the difference between what we *wanted* to move 
+            // and what we *actually* moved.
+            m_residueX = rawScaledX - outX;
+            m_residueY = rawScaledY - outY;
+
+            if (outX == 0 && outY == 0) return;
+
+            FastWrite16(mainRAM, m_addrHot.aimX, outX);
+            FastWrite16(mainRAM, m_addrHot.aimY, outY);
 
 #if !defined(_WIN32)
             QCursor::setPos(m_aimData.centerX, m_aimData.centerY);
@@ -769,6 +803,8 @@ namespace MelonPrime {
         QCursor::setPos(center);
 #endif
         m_isLayoutChangePending = false;
+        m_residueX = 0.0f;
+        m_residueY = 0.0f;
     }
 
     HOT_FUNCTION bool MelonPrimeCore::HandleMorphBallBoost(melonDS::u8* mainRAM)
