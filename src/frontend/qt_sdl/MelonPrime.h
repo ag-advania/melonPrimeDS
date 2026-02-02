@@ -1,6 +1,7 @@
 /*
     MelonPrimeDS Logic Separation (REFACTORED & OPTIMIZED)
-    Updated for High-Precision Mouse Input
+    Updated for High-Precision Mouse Input & Raw Pointer Caching
+    (Sub-pixel Accumulation Removed)
 */
 
 #ifndef MELONPRIME_H
@@ -162,6 +163,27 @@ namespace MelonPrime {
     };
     static_assert(sizeof(GameAddressesHot) == 64, "GameAddressesHot must be 64 bytes");
 
+    // Raw Pointer Cache for Hot Path (Direct Access)
+    struct alignas(64) HotPointers {
+        uint8_t* isAltForm;
+        uint8_t* jumpFlag;
+        uint8_t* weaponChange;
+        uint8_t* selectedWeapon;
+        uint8_t* currentWeapon;
+        uint16_t* havingWeapons;
+        uint32_t* weaponAmmo;
+
+        uint8_t* boostGauge;
+        uint8_t* isBoosting;
+        uint8_t* loadedSpecialWeapon;
+
+        uint16_t* aimX;
+        uint16_t* aimY;
+
+        uint8_t* isInVisorOrMap;
+        uint8_t* isMapOrUserActionPaused;
+    };
+
     struct GameAddressesCold {
         melonDS::u32 chosenHunter;
         melonDS::u32 inGameSensi;
@@ -231,6 +253,7 @@ namespace MelonPrime {
     private:
         alignas(64) FrameInputState m_input{};
         GameAddressesHot m_addrHot{};
+        HotPointers m_ptrs{}; // Raw pointer cache
 
         uint16_t m_inputMaskFast = 0xFFFF;
         uint16_t m_snapState = 0;
@@ -238,11 +261,6 @@ namespace MelonPrime {
         float m_aimSensiFactor = 0.01f;
         float m_aimCombinedY = 0.013333333f;
         float m_aimAdjust = 0.5f;
-
-        // --- High Precision Aiming Accumulators ---
-        float m_residueX = 0.0f; // Sub-pixel residue X
-        float m_residueY = 0.0f; // Sub-pixel residue Y
-        // ------------------------------------------
 
         bool m_isAimDisabled = false;
         bool m_isRunningHook = false;
@@ -283,7 +301,6 @@ namespace MelonPrime {
         std::function<void()> m_frameAdvanceFunc;
 
 #ifdef _WIN32
-        // Raw Pointer maintained (Manual Acquire/Release)
         RawInputWinFilter* m_rawFilter = nullptr;
 #endif
 
@@ -323,7 +340,6 @@ namespace MelonPrime {
 
             const float avx = std::fabs(dx);
             const float avy = std::fabs(dy);
-
             const float signX = (dx >= 0.0f) ? 1.0f : -1.0f;
             const float signY = (dy >= 0.0f) ? 1.0f : -1.0f;
 
@@ -331,7 +347,12 @@ namespace MelonPrime {
             dy = (avy < a) ? 0.0f : ((avy < 1.0f) ? signY : dy);
         }
 
-        // --- Input Helper Functions (Replaces Macros) ---
+        // --- Raw Pointer Helper ---
+        template <typename T>
+        FORCE_INLINE T* GetRamPointer(melonDS::u8* ram, melonDS::u32 addr) {
+            return reinterpret_cast<T*>(&ram[addr & 0x3FFFFF]);
+        }
+
         FORCE_INLINE bool IsJoyDown(int id) const;
         FORCE_INLINE bool IsJoyPressed(int id) const;
         FORCE_INLINE bool IsHkDownRaw(int id) const;
@@ -344,21 +365,21 @@ namespace MelonPrime {
         FORCE_INLINE bool IsAnyDown(uint64_t mask) const { return (m_input.down & mask) != 0; }
         FORCE_INLINE bool IsAnyPressed(uint64_t mask) const { return (m_input.press & mask) != 0; }
 
-        HOT_FUNCTION void HandleInGameLogic(melonDS::u8* mainRAM);
+        HOT_FUNCTION void HandleInGameLogic();
         HOT_FUNCTION void ProcessMoveInputFast();
-        HOT_FUNCTION void ProcessAimInputMouse(melonDS::u8* mainRAM);
-        HOT_FUNCTION bool ProcessWeaponSwitch(melonDS::u8* mainRAM);
-        HOT_FUNCTION bool HandleMorphBallBoost(melonDS::u8* mainRAM);
+        HOT_FUNCTION void ProcessAimInputMouse();
+        HOT_FUNCTION bool ProcessWeaponSwitch();
+        HOT_FUNCTION bool HandleMorphBallBoost();
 
         COLD_FUNCTION void DetectRomAndSetAddresses();
         COLD_FUNCTION void ApplyGameSettingsOnce();
         void RecalcAimSensitivityCache(Config::Table& cfg);
         void ApplyAimAdjustSetting(Config::Table& cfg);
         void HandleGlobalHotkeys();
-        void HandleAdventureMode(melonDS::u8* mainRAM);
+        void HandleAdventureMode();
         void ProcessAimInputStylus();
         void ProcessMoveInput(QBitArray& inputMask);
-        void SwitchWeapon(melonDS::u8* mainRAM, int weaponIndex);
+        void SwitchWeapon(int weaponIndex);
         void ShowCursor(bool show);
         void FrameAdvanceTwice();
         void FrameAdvanceOnce();
