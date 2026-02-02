@@ -1072,14 +1072,14 @@ namespace MelonPrime {
         else {
             emuInstance->inputProcess();
             if (emuInstance->usesOpenGL()) emuInstance->makeCurrentGL();
-            if (emuInstance->getNDS()->GPU.GetRenderer3D().NeedsShaderCompile()) {
+            if (emuInstance->getNDS()->GPU.GetRenderer().NeedsShaderCompile()) {
                 int currentShader, shadersCount;
-                emuInstance->getNDS()->GPU.GetRenderer3D().ShaderCompileStep(currentShader, shadersCount);
+                emuInstance->getNDS()->GPU.GetRenderer().ShaderCompileStep(currentShader, shadersCount);
             }
             else {
                 emuInstance->getNDS()->RunFrame();
             }
-            if (emuInstance->usesOpenGL()) emuInstance->drawScreenGL();
+            if (emuInstance->usesOpenGL()) emuInstance->drawScreen();
         }
     }
 
