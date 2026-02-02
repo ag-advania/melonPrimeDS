@@ -32,9 +32,9 @@
 #include "RTC.h"
 #include "DSi.h"
 #include "DSi_I2C.h"
-#include "GPU3D_Soft.h"
-#include "GPU3D_OpenGL.h"
-#include "GPU3D_Compute.h"
+#include "GPU_Soft.h"
+#include "GPU_OpenGL.h"
+
 #include "Savestate.h"
 #include "EmuInstance.h"
 
@@ -257,11 +257,16 @@ void EmuThread::run()
             if (frameLimitError < -frametimeStep) frameLimitError = -frametimeStep;
             if (frameLimitError > frametimeStep) frameLimitError = frametimeStep;
 
-            if (round(frameLimitError * 1000.0) > 0.0) {
-                SDL_Delay(round(frameLimitError * 1000.0));
-                double timeBeforeSleep = curtime;
-                curtime = SDL_GetPerformanceCounter() * perfCountsSec;
-                frameLimitError -= curtime - timeBeforeSleep;
+            // emulate
+            u32 nlines;
+            if (emuInstance->nds->GPU.GetRenderer().NeedsShaderCompile())
+            {
+                compileShaders();
+                nlines = 1;
+            }
+            else
+            {
+                nlines = emuInstance->nds->RunFrame();
             }
             lastTime = curtime;
         }
@@ -289,6 +294,8 @@ void EmuThread::run()
     while (emuStatus != emuStatus_Exit)
     {
 
+            emuInstance->drawScreen();
+      
         // 1. MPインターフェースと入力処理を実行
         if (emuInstance->instanceID == 0)
             MPInterface::Get().Process();
@@ -344,7 +351,8 @@ void EmuThread::run()
             snprintf(melontitle, sizeof(melontitle), "melonDS " MELONDS_VERSION);
             changeWindowTitle(melontitle);
             SDL_Delay(75);
-            if (useOpenGL) emuInstance->drawScreenGL();
+
+            emuInstance->drawScreen();
         }
         handleMessages();
     }
@@ -741,41 +749,35 @@ void EmuThread::enableCheats(bool enable)
 
 void EmuThread::updateRenderer()
 {
+    auto nds = emuInstance->nds;
+
     if (videoRenderer != lastVideoRenderer)
     {
         switch (videoRenderer)
         {
-        case renderer3D_Software:
-            emuInstance->nds->GPU.SetRenderer3D(std::make_unique<SoftRenderer>());
-            break;
-        case renderer3D_OpenGL:
-            emuInstance->nds->GPU.SetRenderer3D(GLRenderer::New());
-            break;
-        case renderer3D_OpenGLCompute:
-            emuInstance->nds->GPU.SetRenderer3D(ComputeRenderer::New());
-            break;
-        default: __builtin_unreachable();
+            case renderer3D_Software:
+                nds->SetRenderer(std::make_unique<SoftRenderer>(*nds));
+                break;
+            case renderer3D_OpenGL:
+                nds->SetRenderer(std::make_unique<GLRenderer>(*nds, false));
+                break;
+            case renderer3D_OpenGLCompute:
+                nds->SetRenderer(std::make_unique<GLRenderer>(*nds, true));
+                break;
+            default: __builtin_unreachable();
         }
     }
     lastVideoRenderer = videoRenderer;
 
     auto& cfg = emuInstance->getGlobalConfig();
-    switch (videoRenderer)
-    {
-    case renderer3D_Software:
-        static_cast<SoftRenderer&>(emuInstance->nds->GPU.GetRenderer3D()).SetThreaded(
-            cfg.GetBool("3D.Soft.Threaded"), emuInstance->nds->GPU);
-        break;
-    case renderer3D_OpenGL:
-        static_cast<GLRenderer&>(emuInstance->nds->GPU.GetRenderer3D()).SetRenderSettings(
-            cfg.GetBool("3D.GL.BetterPolygons"), cfg.GetInt("3D.GL.ScaleFactor"));
-        break;
-    case renderer3D_OpenGLCompute:
-        static_cast<ComputeRenderer&>(emuInstance->nds->GPU.GetRenderer3D()).SetRenderSettings(
-            cfg.GetInt("3D.GL.ScaleFactor"), cfg.GetBool("3D.GL.HiresCoordinates"));
-        break;
-    default: __builtin_unreachable();
-    }
+    melonDS::RendererSettings settings = {
+        .ScaleFactor = cfg.GetInt("3D.GL.ScaleFactor"),
+        .Threaded = cfg.GetBool("3D.Soft.Threaded"),
+        .HiresCoordinates = cfg.GetBool("3D.GL.HiresCoordinates"),
+        .BetterPolygons = cfg.GetBool("3D.GL.BetterPolygons")
+    };
+
+    nds->GetRenderer().SetRenderSettings(settings);
 
     // MelonPrime Hook: Override VSync if needed
     melonPrime->UpdateRendererSettings();
@@ -783,11 +785,16 @@ void EmuThread::updateRenderer()
 
 void EmuThread::compileShaders()
 {
+    auto& renderer = emuInstance->nds->GPU.GetRenderer();
     int currentShader, shadersCount;
     u64 startTime = SDL_GetPerformanceCounter();
-    do {
-        emuInstance->nds->GPU.GetRenderer3D().ShaderCompileStep(currentShader, shadersCount);
-    } while (emuInstance->nds->GPU.GetRenderer3D().NeedsShaderCompile() &&
-        (SDL_GetPerformanceCounter() - startTime) * perfCountsSec < 1.0 / 6.0);
-    emuInstance->osdAddMessage(0, "Compiling shader %d/%d", currentShader + 1, shadersCount);
+    // kind of hacky to look at the wallclock, though it is easier than
+    // than disabling vsync
+    do
+    {
+        renderer.ShaderCompileStep(currentShader, shadersCount);
+    }
+    while (renderer.NeedsShaderCompile() &&
+             (SDL_GetPerformanceCounter() - startTime) * perfCountsSec < 1.0 / 6.0);
+    emuInstance->osdAddMessage(0, "Compiling shader %d/%d", currentShader+1, shadersCount);
 }

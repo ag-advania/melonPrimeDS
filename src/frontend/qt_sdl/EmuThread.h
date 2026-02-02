@@ -124,9 +124,6 @@ public:
     void updateVideoSettings() { videoSettingsDirty = true; }
     void updateVideoRenderer() { videoSettingsDirty = true; lastVideoRenderer = -1; }
 
-    int frontBuffer = 0;
-    QMutex frontBufferLock;
-
     QWaitCondition glBorrowCond;
     QMutex glBorrowMutex;
 

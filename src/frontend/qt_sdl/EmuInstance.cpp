@@ -429,12 +429,13 @@ void EmuInstance::releaseGL()
     }
 }
 
-void EmuInstance::drawScreenGL()
+
+void EmuInstance::drawScreen()
 {
     for (int i = 0; i < kMaxWindows; i++)
     {
         if (windowList[i])
-            windowList[i]->drawScreenGL();
+            windowList[i]->drawScreen();
     }
 }
 
@@ -1382,7 +1383,7 @@ bool EmuInstance::updateConsole() noexcept
 
         nds->Reset();
         loadRTCData();
-        //emuThread->updateVideoRenderer(); // not actually needed?
+        emuThread->updateVideoRenderer();
     }
     else
     {
