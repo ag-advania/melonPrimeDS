@@ -1,5 +1,6 @@
 /*
     MelonPrimeDS Logic Separation (REFACTORED & OPTIMIZED)
+    Updated for High-Precision Mouse Input
 */
 
 #ifndef MELONPRIME_H
@@ -237,6 +238,12 @@ namespace MelonPrime {
         float m_aimSensiFactor = 0.01f;
         float m_aimCombinedY = 0.013333333f;
         float m_aimAdjust = 0.5f;
+
+        // --- High Precision Aiming Accumulators ---
+        float m_residueX = 0.0f; // Sub-pixel residue X
+        float m_residueY = 0.0f; // Sub-pixel residue Y
+        // ------------------------------------------
+
         bool m_isAimDisabled = false;
         bool m_isRunningHook = false;
 
