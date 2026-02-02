@@ -19,10 +19,12 @@ typedef LONG(NTAPI* PFN_NtSetTimerResolution)(ULONG DesiredTime, BOOLEAN SetReso
 
 // ユーザー提供のNtUser API定義
 typedef UINT(WINAPI* NtUserGetRawInputData_t)(HRAWINPUT, UINT, LPVOID, PUINT, UINT);
-// typedef BOOL(WINAPI* NtUserPeekMessage_t)(LPMSG, HWND, UINT, UINT, UINT, BOOL); // ※安全性のため今回は未使用
+typedef UINT(WINAPI* NtUserGetRawInputBuffer_t)(PRAWINPUT, PUINT, UINT);
+typedef BOOL(WINAPI* NtUserPeekMessage_t)(LPMSG, HWND, UINT, UINT, UINT, BOOL);
 
-static NtUserGetRawInputData_t pNtGetRawInputData = nullptr;
-// static NtUserPeekMessage_t pNtPeekMessage = nullptr;
+static NtUserGetRawInputData_t   pNtGetRawInputData = nullptr;
+static NtUserGetRawInputBuffer_t pNtGetRawInputBuffer = nullptr;
+static NtUserPeekMessage_t       pNtPeekMessage = nullptr;
 
 static void LoadNtUserAPIs()
 {
@@ -34,8 +36,8 @@ static void LoadNtUserAPIs()
         if (!h) return;
 
         pNtGetRawInputData = (NtUserGetRawInputData_t)GetProcAddress(h, "NtUserGetRawInputData");
-
-        // pNtPeekMessage = (NtUserPeekMessage_t)GetProcAddress(h, "NtUserPeekMessage");
+        pNtGetRawInputBuffer = (NtUserGetRawInputBuffer_t)GetProcAddress(h, "NtUserGetRawInputBuffer");
+        pNtPeekMessage = (NtUserPeekMessage_t)GetProcAddress(h, "NtUserPeekMessage");
 
         // デバッグ出力: ロード成功確認
         // if (pNtGetRawInputData) OutputDebugStringA("[MelonPrime] NtUserGetRawInputData loaded.\n");
@@ -312,9 +314,15 @@ void RawInputWinFilter::processRawInputBatched() noexcept
 
     while (true) {
         UINT size = kBufferSize;
-        // Note: GetRawInputBuffer calls NtUserGetRawInputBuffer internally.
-        // Direct wrapping is complex due to buffer management, so we rely on standard API here.
-        UINT count = GetRawInputBuffer(reinterpret_cast<RAWINPUT*>(buffer), &size, sizeof(RAWINPUTHEADER));
+        UINT count;
+
+        // OPTIMIZED: Use NtUserGetRawInputBuffer if available
+        if (pNtGetRawInputBuffer) {
+            count = pNtGetRawInputBuffer(reinterpret_cast<RAWINPUT*>(buffer), &size, sizeof(RAWINPUTHEADER));
+        }
+        else {
+            count = GetRawInputBuffer(reinterpret_cast<RAWINPUT*>(buffer), &size, sizeof(RAWINPUTHEADER));
+        }
 
         if (count == 0 || count == (UINT)-1) {
             break;
@@ -472,7 +480,13 @@ void RawInputWinFilter::threadLoop()
     registerRawToTarget(m_hiddenWnd);
 
     MSG msg;
-    while (PeekMessage(&msg, nullptr, 0, 0, PM_REMOVE)) {}
+    // Initial flush using optimal available API
+    if (pNtPeekMessage) {
+        while (pNtPeekMessage(&msg, nullptr, 0, 0, PM_REMOVE, FALSE)) {}
+    }
+    else {
+        while (PeekMessage(&msg, nullptr, 0, 0, PM_REMOVE)) {}
+    }
 
     while (m_runThread.load(std::memory_order_relaxed))
     {
@@ -480,20 +494,38 @@ void RawInputWinFilter::threadLoop()
         processRawInputBatched();
 
         // 2. Peek for stragglers or non-buffered inputs
-        // Note: Using standard PeekMessage here to ensure message pump stability.
-        // NtUserPeekMessage is omitted due to signature uncertainty and risk of breaking dispatch logic.
-        while (PeekMessage(&msg, m_hiddenWnd, 0, 0, PM_REMOVE)) {
-            if (msg.message == WM_QUIT || msg.message == WM_CLOSE) {
-                goto cleanup;
-            }
+        // OPTIMIZED: Use NtUserPeekMessage if available
+        bool hasMsg = false;
+        if (pNtPeekMessage) {
+            // Note: 6th arg 'BOOL' typically controls yielding/internal state. FALSE is safe default.
+            while (pNtPeekMessage(&msg, m_hiddenWnd, 0, 0, PM_REMOVE, FALSE)) {
+                if (msg.message == WM_QUIT || msg.message == WM_CLOSE) {
+                    goto cleanup;
+                }
 
-            if (msg.message == WM_INPUT) {
-                // processRawInput internally uses NtUserGetRawInputData if available
-                processRawInput(reinterpret_cast<HRAWINPUT>(msg.lParam));
+                if (msg.message == WM_INPUT) {
+                    processRawInput(reinterpret_cast<HRAWINPUT>(msg.lParam));
+                }
+                else {
+                    TranslateMessage(&msg);
+                    DispatchMessage(&msg);
+                }
             }
-            else {
-                TranslateMessage(&msg);
-                DispatchMessage(&msg);
+        }
+        else {
+            // Fallback to standard User32 API
+            while (PeekMessage(&msg, m_hiddenWnd, 0, 0, PM_REMOVE)) {
+                if (msg.message == WM_QUIT || msg.message == WM_CLOSE) {
+                    goto cleanup;
+                }
+
+                if (msg.message == WM_INPUT) {
+                    processRawInput(reinterpret_cast<HRAWINPUT>(msg.lParam));
+                }
+                else {
+                    TranslateMessage(&msg);
+                    DispatchMessage(&msg);
+                }
             }
         }
 
