@@ -142,21 +142,6 @@ void EmuThread::run()
     // This allows MelonPrimeCore to drive the loop during Adventure Mode cutscenes
     // while maintaining correct emulation speed.
     auto frameAdvanceOnce = [&]() {
-        if (emuInstance->instanceID == 0)
-            MPInterface::Get().Process();
-
-        // 1. 標準入力処理 (キーボード/マウスの状態更新)
-        // これを先にやらないと、後続のフックで上書きした内容がリセットされてしまいます
-        emuInstance->inputProcess();
-
-        // Global hotkeys
-        if (emuInstance->hotkeyPressed(HK_FrameLimitToggle)) emit windowLimitFPSChange();
-        if (emuInstance->hotkeyPressed(HK_Pause)) emuTogglePause();
-        if (emuInstance->hotkeyPressed(HK_Reset)) emuReset();
-        if (emuInstance->hotkeyPressed(HK_FrameStep)) emuFrameStep();
-        if (emuInstance->hotkeyPressed(HK_FullscreenToggle)) emit windowFullscreenToggle();
-        if (emuInstance->hotkeyPressed(HK_SwapScreens)) emit swapScreensToggle();
-        if (emuInstance->hotkeyPressed(HK_SwapScreenEmphasis)) emit screenEmphasisToggle();
 
         // DSi Input Logic (Simplified for brevity, or keep original if needed)
         // ...
@@ -303,6 +288,26 @@ void EmuThread::run()
 
     while (emuStatus != emuStatus_Exit)
     {
+
+        // 1. MPインターフェースと入力処理を実行
+        if (emuInstance->instanceID == 0)
+            MPInterface::Get().Process();
+
+        emuInstance->inputProcess();
+
+        // 2. グローバルホットキーの確認（ポーズ解除や終了などに必須）
+        if (emuInstance->hotkeyPressed(HK_FrameLimitToggle)) emit windowLimitFPSChange();
+
+        if (emuInstance->hotkeyPressed(HK_Pause)) emuTogglePause();
+        if (emuInstance->hotkeyPressed(HK_Reset)) emuReset();
+        if (emuInstance->hotkeyPressed(HK_FrameStep)) emuFrameStep();
+
+        if (emuInstance->hotkeyPressed(HK_FullscreenToggle)) emit windowFullscreenToggle();
+
+        if (emuInstance->hotkeyPressed(HK_SwapScreens)) emit swapScreensToggle();
+        if (emuInstance->hotkeyPressed(HK_SwapScreenEmphasis)) emit screenEmphasisToggle();
+
+
         if (emuStatus == emuStatus_Running || emuStatus == emuStatus_FrameStep)
         {
             if (emuStatus == emuStatus_FrameStep) emuStatus = emuStatus_Paused;
