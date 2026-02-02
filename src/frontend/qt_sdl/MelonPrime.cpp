@@ -371,7 +371,7 @@ namespace MelonPrime {
 
     void MelonPrimeCore::OnEmuStop()
     {
-        m_flags.clear(StateFlags::BIT_IN_GAME | StateFlags::BIT_WAS_IN_GAME_RENDERER);
+        m_flags.clear(StateFlags::BIT_IN_GAME); // BIT_WAS_IN_GAME_RENDERER removed
         m_isInGame = false;
     }
 
@@ -542,20 +542,14 @@ namespace MelonPrime {
         if (UNLIKELY(!wasDetected)) {
             DetectRomAndSetAddresses();
         }
-        if (UNLIKELY(!wasDetected && m_flags.test(StateFlags::BIT_ROM_DETECTED))) {
-            emuInstance->getEmuThread()->updateVideoRenderer();
-        }
+        // Removed: updateVideoRenderer on ROM detection
 
         if (LIKELY(m_flags.test(StateFlags::BIT_ROM_DETECTED))) {
             const bool isInGame = FastRead16(mainRAM, m_addrHot.inGame) == 0x0001;
             m_flags.assign(StateFlags::BIT_IN_GAME, isInGame);
             m_isInGame = isInGame;
 
-            const bool wasInGameRenderer = m_flags.test(StateFlags::BIT_WAS_IN_GAME_RENDERER);
-            if (UNLIKELY(isInGame != wasInGameRenderer)) {
-                m_flags.assign(StateFlags::BIT_WAS_IN_GAME_RENDERER, isInGame);
-                emuInstance->getEmuThread()->updateVideoRenderer();
-            }
+            // Removed: updateVideoRenderer on in-game state change
 
             const bool isInAdventure = m_flags.test(StateFlags::BIT_IN_ADVENTURE);
             const bool isPaused = m_flags.test(StateFlags::BIT_PAUSED);
