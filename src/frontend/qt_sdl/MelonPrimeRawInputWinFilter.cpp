@@ -5,6 +5,9 @@
 #include <cassert>
 #include <cstdio>
 #include <process.h>
+#include <mmsystem.h> // For timeBeginPeriod
+
+#pragma comment(lib, "winmm.lib")
 
 RawInputWinFilter* RawInputWinFilter::s_instance = nullptr;
 int RawInputWinFilter::s_refCount = 0;
@@ -177,7 +180,8 @@ FORCE_INLINE void RawInputWinFilter::processRawInput(HRAWINPUT hRaw) noexcept
                     p.s.x += dx_;
                     p.s.y += dy_;
                     nxt = p.combined;
-                } while (!m_mouseDeltaCombined.compare_exchange_weak(cur, nxt, std::memory_order_relaxed));
+                    // OPTIMIZED: Use Release to ensure previous writes are visible to reader
+                } while (!m_mouseDeltaCombined.compare_exchange_weak(cur, nxt, std::memory_order_release, std::memory_order_relaxed));
             }
         }
         const USHORT f = m.usButtonFlags & 0x03FF;
@@ -283,7 +287,8 @@ void RawInputWinFilter::processRawInputBatched() noexcept
                 p.s.x += accumX;
                 p.s.y += accumY;
                 nxt = p.c;
-            } while (!m_mouseDeltaCombined.compare_exchange_weak(cur, nxt, std::memory_order_relaxed));
+                // OPTIMIZED: Use Release
+            } while (!m_mouseDeltaCombined.compare_exchange_weak(cur, nxt, std::memory_order_release, std::memory_order_relaxed));
         }
 
         if (btnDown | btnUp) {
@@ -340,7 +345,12 @@ void RawInputWinFilter::stopThreadIfRunning()
 
 DWORD WINAPI RawInputWinFilter::ThreadFunc(LPVOID param)
 {
+    // OPTIMIZED: Force 1ms timer precision
+    timeBeginPeriod(1);
+
     static_cast<RawInputWinFilter*>(param)->threadLoop();
+
+    timeEndPeriod(1);
     return 0;
 }
 
@@ -475,7 +485,8 @@ bool RawInputWinFilter::hotkeyReleased(int hk) noexcept {
 }
 
 void RawInputWinFilter::fetchMouseDelta(int& outX, int& outY) {
-    uint64_t val = m_mouseDeltaCombined.exchange(0, std::memory_order_relaxed);
+    // OPTIMIZED: Use Acquire to ensure visibility of release-store in thread loop
+    uint64_t val = m_mouseDeltaCombined.exchange(0, std::memory_order_acquire);
     MouseDeltaPack p;
     p.combined = val;
     outX = p.s.x;
