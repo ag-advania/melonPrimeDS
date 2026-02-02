@@ -5,20 +5,106 @@
 #include <cassert>
 #include <cstdio>
 #include <process.h>
-#include <mmsystem.h> // For timeBeginPeriod
+#include <mmsystem.h>
+#include <vector>
+#include <algorithm>
 
 #pragma comment(lib, "winmm.lib")
+
+// =====================================================
+// NT API Definitions & Loaders (Undocumented / Low Level)
+// =====================================================
+typedef LONG(NTAPI* PFN_NtQueryTimerResolution)(PULONG MaximumTime, PULONG MinimumTime, PULONG CurrentTime);
+typedef LONG(NTAPI* PFN_NtSetTimerResolution)(ULONG DesiredTime, BOOLEAN SetResolution, PULONG ActualTime);
+
+// ユーザー提供のNtUser API定義
+typedef UINT(WINAPI* NtUserGetRawInputData_t)(HRAWINPUT, UINT, LPVOID, PUINT, UINT);
+// typedef BOOL(WINAPI* NtUserPeekMessage_t)(LPMSG, HWND, UINT, UINT, UINT, BOOL); // ※安全性のため今回は未使用
+
+static NtUserGetRawInputData_t pNtGetRawInputData = nullptr;
+// static NtUserPeekMessage_t pNtPeekMessage = nullptr;
+
+static void LoadNtUserAPIs()
+{
+    // 一度だけロード
+    static std::once_flag flag;
+    std::call_once(flag, []() {
+        // win32u.dll は Windows 10/11 以降で syscall スタブを提供する
+        HMODULE h = LoadLibraryA("win32u.dll");
+        if (!h) return;
+
+        pNtGetRawInputData = (NtUserGetRawInputData_t)GetProcAddress(h, "NtUserGetRawInputData");
+
+        // pNtPeekMessage = (NtUserPeekMessage_t)GetProcAddress(h, "NtUserPeekMessage");
+
+        // デバッグ出力: ロード成功確認
+        // if (pNtGetRawInputData) OutputDebugStringA("[MelonPrime] NtUserGetRawInputData loaded.\n");
+        });
+}
+
+// =====================================================
+// High Resolution Timer Scope (0.5ms Target)
+// =====================================================
+class HighResTimerScope {
+public:
+    HighResTimerScope() {
+        HMODULE hNtDll = GetModuleHandleA("ntdll.dll");
+        if (hNtDll) {
+            auto NtQueryTimerResolution = (PFN_NtQueryTimerResolution)GetProcAddress(hNtDll, "NtQueryTimerResolution");
+            auto NtSetTimerResolution = (PFN_NtSetTimerResolution)GetProcAddress(hNtDll, "NtSetTimerResolution");
+
+            if (NtQueryTimerResolution && NtSetTimerResolution) {
+                ULONG minRes, maxRes, curRes;
+                if (NtQueryTimerResolution(&maxRes, &minRes, &curRes) == 0) {
+                    m_targetRes = maxRes; // 通常 5000 (0.5ms)
+                    if (NtSetTimerResolution(m_targetRes, TRUE, &m_currentRes) == 0) {
+                        m_usingNtApi = true;
+                        return;
+                    }
+                }
+            }
+        }
+        timeBeginPeriod(1);
+        m_usingNtApi = false;
+    }
+
+    ~HighResTimerScope() {
+        if (m_usingNtApi) {
+            HMODULE hNtDll = GetModuleHandleA("ntdll.dll");
+            if (hNtDll) {
+                auto NtSetTimerResolution = (PFN_NtSetTimerResolution)GetProcAddress(hNtDll, "NtSetTimerResolution");
+                if (NtSetTimerResolution) {
+                    ULONG temp;
+                    NtSetTimerResolution(m_targetRes, FALSE, &temp);
+                }
+            }
+        }
+        else {
+            timeEndPeriod(1);
+        }
+    }
+
+private:
+    bool m_usingNtApi = false;
+    ULONG m_targetRes = 0;
+    ULONG m_currentRes = 0;
+};
+
+// =====================================================
+// Static Members
+// =====================================================
 
 RawInputWinFilter* RawInputWinFilter::s_instance = nullptr;
 int RawInputWinFilter::s_refCount = 0;
 std::mutex RawInputWinFilter::s_mutex;
-std::once_flag RawInputWinFilter::s_initFlag; // 追加
+std::once_flag RawInputWinFilter::s_initFlag;
 
 RawInputWinFilter::BtnLutEntry RawInputWinFilter::s_btnLut[1024];
 RawInputWinFilter::VkRemapEntry RawInputWinFilter::s_vkRemap[256];
 
-// 初期化ロジックを関数に分離 (安全化)
 void RawInputWinFilter::initializeTables() {
+    LoadNtUserAPIs(); // APIロード
+
     for (int i = 0; i < 1024; ++i) {
         uint8_t d = 0, u = 0;
         if (i & RI_MOUSE_BUTTON_1_DOWN) d |= 0x01;
@@ -39,7 +125,7 @@ void RawInputWinFilter::initializeTables() {
 }
 
 // =====================================================
-// シングルトン管理
+// Singleton Management
 // =====================================================
 RawInputWinFilter* RawInputWinFilter::Acquire(bool joy2KeySupport, HWND mainHwnd)
 {
@@ -69,7 +155,6 @@ void RawInputWinFilter::Release()
 RawInputWinFilter::RawInputWinFilter(bool joy2KeySupport, HWND mainHwnd)
     : m_mainHwnd(mainHwnd)
 {
-    // コンストラクタで1回だけ確実に初期化
     std::call_once(s_initFlag, &RawInputWinFilter::initializeTables);
 
     for (auto& a : m_state.vkDown) a.store(0);
@@ -95,7 +180,7 @@ RawInputWinFilter::~RawInputWinFilter()
 }
 
 // =====================================================
-// メソッド
+// Methods
 // =====================================================
 
 void RawInputWinFilter::setJoy2KeySupport(bool enable)
@@ -157,9 +242,18 @@ FORCE_INLINE void RawInputWinFilter::processRawInput(HRAWINPUT hRaw) noexcept
 {
     constexpr UINT kBufSize = 1024;
     alignas(16) uint8_t rawBuf[kBufSize];
-
     UINT size = kBufSize;
-    if (GetRawInputData(hRaw, RID_INPUT, rawBuf, &size, sizeof(RAWINPUTHEADER)) == (UINT)-1) {
+    UINT result;
+
+    // OPTIMIZED: Use NtUserGetRawInputData (Syscall) if available to bypass User32 overhead
+    if (pNtGetRawInputData) {
+        result = pNtGetRawInputData(hRaw, RID_INPUT, rawBuf, &size, sizeof(RAWINPUTHEADER));
+    }
+    else {
+        result = GetRawInputData(hRaw, RID_INPUT, rawBuf, &size, sizeof(RAWINPUTHEADER));
+    }
+
+    if (result == (UINT)-1) {
         return;
     }
 
@@ -180,7 +274,6 @@ FORCE_INLINE void RawInputWinFilter::processRawInput(HRAWINPUT hRaw) noexcept
                     p.s.x += dx_;
                     p.s.y += dy_;
                     nxt = p.combined;
-                    // OPTIMIZED: Use Release to ensure previous writes are visible to reader
                 } while (!m_mouseDeltaCombined.compare_exchange_weak(cur, nxt, std::memory_order_release, std::memory_order_relaxed));
             }
         }
@@ -210,21 +303,21 @@ FORCE_INLINE void RawInputWinFilter::processRawInput(HRAWINPUT hRaw) noexcept
 }
 
 // =====================================================
-// バッチ処理 (Worker Thread) - ループ対応版
+// Batch Processing
 // =====================================================
 void RawInputWinFilter::processRawInputBatched() noexcept
 {
     constexpr UINT kBufferSize = 16384;
     alignas(16) uint8_t buffer[kBufferSize];
 
-    // 残っているデータがなくなるまでループで吸い出す
     while (true) {
         UINT size = kBufferSize;
-        // GetRawInputBuffer は読み取った分の WM_INPUT メッセージをキューから消去する
+        // Note: GetRawInputBuffer calls NtUserGetRawInputBuffer internally.
+        // Direct wrapping is complex due to buffer management, so we rely on standard API here.
         UINT count = GetRawInputBuffer(reinterpret_cast<RAWINPUT*>(buffer), &size, sizeof(RAWINPUTHEADER));
 
         if (count == 0 || count == (UINT)-1) {
-            break; // データなし、またはエラー
+            break;
         }
 
         int32_t accumX = 0, accumY = 0;
@@ -259,25 +352,23 @@ void RawInputWinFilter::processRawInputBatched() noexcept
                     const uint32_t widx = vk >> 6;
                     const uint64_t bit = 1ULL << (vk & 63);
 
-                    if (!(kb.Flags & RI_KEY_BREAK)) { // Down
+                    if (!(kb.Flags & RI_KEY_BREAK)) {
                         localVkDown[widx] |= bit;
                         localVkUp[widx] &= ~bit;
                     }
-                    else { // Up
+                    else {
                         localVkUp[widx] |= bit;
                         localVkDown[widx] &= ~bit;
                     }
                     hasKeyChanges = true;
                 }
             }
-            // 次のデータへ (アライメント調整)
             raw = reinterpret_cast<const RAWINPUT*>(
                 reinterpret_cast<const uint8_t*>(raw) +
                 ((raw->header.dwSize + sizeof(void*) - 1) & ~(sizeof(void*) - 1))
                 );
         }
 
-        // --- 結果反映 ---
         if (accumX | accumY) {
             uint64_t cur = m_mouseDeltaCombined.load(std::memory_order_relaxed);
             uint64_t nxt;
@@ -287,7 +378,6 @@ void RawInputWinFilter::processRawInputBatched() noexcept
                 p.s.x += accumX;
                 p.s.y += accumY;
                 nxt = p.c;
-                // OPTIMIZED: Use Release
             } while (!m_mouseDeltaCombined.compare_exchange_weak(cur, nxt, std::memory_order_release, std::memory_order_relaxed));
         }
 
@@ -319,9 +409,21 @@ void RawInputWinFilter::startThreadIfNeeded()
     m_hThread = CreateThread(nullptr, 0, ThreadFunc, this, 0, nullptr);
 
     if (m_hThread) {
-        // 【重要】最高優先度ではなく「リアルタイムクラスの最低」である TIME_CRITICAL に設定
-        // 入力遅延を最小化するため
         SetThreadPriority(m_hThread, THREAD_PRIORITY_TIME_CRITICAL);
+
+        // CPU Affinity (Last Core Optimization)
+        DWORD_PTR processAffinity, systemAffinity;
+        if (GetProcessAffinityMask(GetCurrentProcess(), &processAffinity, &systemAffinity)) {
+            DWORD_PTR mask = 1;
+            DWORD_PTR lastCore = 0;
+            for (int i = 0; i < 64; i++) {
+                if (processAffinity & mask) lastCore = mask;
+                mask <<= 1;
+            }
+            if (lastCore != 0) {
+                SetThreadAffinityMask(m_hThread, lastCore);
+            }
+        }
     }
 }
 
@@ -345,21 +447,15 @@ void RawInputWinFilter::stopThreadIfRunning()
 
 DWORD WINAPI RawInputWinFilter::ThreadFunc(LPVOID param)
 {
-    // OPTIMIZED: Force 1ms timer precision
-    timeBeginPeriod(1);
-
+    // High Precision Timer Scope
+    HighResTimerScope timerScope;
     static_cast<RawInputWinFilter*>(param)->threadLoop();
-
-    timeEndPeriod(1);
     return 0;
 }
 
-// =====================================================
-// スレッドループ (修正版: WM_INPUT取りこぼし防止)
-// =====================================================
 void RawInputWinFilter::threadLoop()
 {
-    const TCHAR* clsName = TEXT("MelonPrimeRawWorker_Singleton");
+    const TCHAR* clsName = TEXT("MelonPrimeRawWorker_NtHybrid");
 
     WNDCLASSEX wc = { 0 };
     wc.cbSize = sizeof(wc);
@@ -375,25 +471,24 @@ void RawInputWinFilter::threadLoop()
 
     registerRawToTarget(m_hiddenWnd);
 
-    // 開始前にキューを掃除
     MSG msg;
     while (PeekMessage(&msg, nullptr, 0, 0, PM_REMOVE)) {}
 
     while (m_runThread.load(std::memory_order_relaxed))
     {
-        // 1. バッチ処理でHIDバッファを吸い尽くす
+        // 1. Batch process (Buffer) - Clears queue efficiently
         processRawInputBatched();
 
-        // 2. メッセージキュー処理
-        // ここで WM_INPUT が見つかった場合、それは「バッチ処理の隙間に滑り込んだ新規データ」なので
-        // 絶対に捨てずに処理しなければならない。
+        // 2. Peek for stragglers or non-buffered inputs
+        // Note: Using standard PeekMessage here to ensure message pump stability.
+        // NtUserPeekMessage is omitted due to signature uncertainty and risk of breaking dispatch logic.
         while (PeekMessage(&msg, m_hiddenWnd, 0, 0, PM_REMOVE)) {
             if (msg.message == WM_QUIT || msg.message == WM_CLOSE) {
                 goto cleanup;
             }
 
             if (msg.message == WM_INPUT) {
-                // 【重要】捨てずに単発処理へ回す
+                // processRawInput internally uses NtUserGetRawInputData if available
                 processRawInput(reinterpret_cast<HRAWINPUT>(msg.lParam));
             }
             else {
@@ -402,7 +497,7 @@ void RawInputWinFilter::threadLoop()
             }
         }
 
-        // 3. 待機 (QS_RAWINPUTにより入力があれば即復帰)
+        // 3. Wait (0.5ms resolution capable)
         MsgWaitForMultipleObjects(0, nullptr, FALSE, INFINITE, QS_RAWINPUT | QS_POSTMESSAGE);
     }
 
@@ -413,7 +508,7 @@ cleanup:
 }
 
 // =====================================================
-// 以下、既存ロジック (変更なし)
+// (Existing logic unchanged)
 // =====================================================
 
 void RawInputWinFilter::setHotkeyVks(int id, const std::vector<UINT>& vks)
@@ -485,7 +580,6 @@ bool RawInputWinFilter::hotkeyReleased(int hk) noexcept {
 }
 
 void RawInputWinFilter::fetchMouseDelta(int& outX, int& outY) {
-    // OPTIMIZED: Use Acquire to ensure visibility of release-store in thread loop
     uint64_t val = m_mouseDeltaCombined.exchange(0, std::memory_order_acquire);
     MouseDeltaPack p;
     p.combined = val;
