@@ -62,9 +62,12 @@ public:
 
     void setMouseHide(bool enable, int delay);
 
-    QTimer* setupMouseTimer();
-    void updateMouseTimer();
-    QTimer* mouseTimer;
+    /*
+    * MelonPrimeDS CommentOut
+    //QTimer* setupMouseTimer();
+    //void updateMouseTimer();
+    //QTimer* mouseTimer;
+    */
     QSize screenGetMinSize(int factor);
 
     void osdSetEnabled(bool enabled);
@@ -72,6 +75,22 @@ public:
 
     virtual void drawScreen() {}// = 0;
 
+
+    /* MelonPrimeDS { */
+    void unfocus();
+
+    int getDelta() {
+        // Store and reset in one operation for optimal performance
+        int currentDelta = wheelDelta;
+        wheelDelta = 0;
+        return currentDelta;
+    }
+
+public slots:
+    void clipCursorCenter1px();
+    void unclip();
+    void updateClipIfNeeded();
+    /* MelonPrimeDS } */
 private slots:
     void onScreenLayoutChanged();
     void onAutoScreenSizingChanged(int sizing);
@@ -93,6 +112,8 @@ protected:
     int autoScreenSizing;
 
     ScreenLayout layout;
+    void focusOutEvent(QFocusEvent* event) override; // MelonPrimeDS
+	void moveEvent(QMoveEvent* event) override; // MelonPrimeDS
     float screenMatrix[kMaxScreenTransforms][6];
     int screenKind[kMaxScreenTransforms];
     int numScreens;
@@ -117,6 +138,13 @@ protected:
         int rainbowend;
     };
 
+    int wheelDelta = 0;  // melonPrimeDS
+
+    void wheelEvent(QWheelEvent* event) override { // melonPrimeDS
+        wheelDelta = (event->angleDelta().y() > 0) ? 1 : -1;
+        event->accept();
+    } // /melonPrimeDS
+
     QMutex osdMutex;
     bool osdEnabled;
     unsigned int osdID;
@@ -140,8 +168,6 @@ protected:
     void touchEvent(QTouchEvent* event);
     bool event(QEvent* event) override;
 
-    void showCursor();
-
     int osdFindBreakPoint(const char* text, int i);
     void osdLayoutText(const char* text, int* width, int* height, int* breaks);
     unsigned int osdRainbowColor(int inc);
@@ -152,6 +178,10 @@ protected:
     void osdUpdate();
 
     void calcSplashLayout();
+
+    private:
+        void setClipWanted(bool value);
+        bool getClipWanted();
 };
 
 
@@ -214,6 +244,7 @@ protected:
     QPaintEngine* paintEngine() const override;
 
 private:
+
     void setupScreenLayout() override;
 
     std::unique_ptr<GL::Context> glContext;
