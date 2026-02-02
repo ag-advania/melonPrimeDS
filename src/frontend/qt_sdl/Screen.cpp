@@ -1,6 +1,6 @@
 /*
     Copyright 2016-2025 melonDS team
-    ... (—ª) ...
+    ... (ç•¥) ...
 */
 
 #include <string.h>
@@ -48,7 +48,7 @@
 // MelonPrimeDS
 #ifdef _WIN32
 #include <windows.h>
-// ‰¼‘zƒfƒXƒNƒgƒbƒv‹éŒ`Žæ“¾—pƒwƒ‹ƒp[
+// ä»®æƒ³ãƒ‡ã‚¹ã‚¯ãƒˆãƒƒãƒ—çŸ©å½¢å–å¾—ç”¨ãƒ˜ãƒ«ãƒ‘ãƒ¼
 inline RECT getVirtualScreenRect() {
     const int vx = GetSystemMetrics(SM_XVIRTUALSCREEN);
     const int vy = GetSystemMetrics(SM_YVIRTUALSCREEN);
@@ -57,7 +57,7 @@ inline RECT getVirtualScreenRect() {
     return RECT{ vx, vy, vx + vw, vy + vh };
 }
 
-// •1px‚ÌƒNƒŠƒbƒvc‘Ñ‚ð¶¬
+// å¹…1pxã®ã‚¯ãƒªãƒƒãƒ—ç¸¦å¸¯ã‚’ç”Ÿæˆ
 static RECT computeCenter1pxClipRectSafe(HWND hwnd) {
     RECT rc; GetClientRect(hwnd, &rc);
     POINT tl{ rc.left, rc.top }, br{ rc.right, rc.bottom };
@@ -83,7 +83,7 @@ static RECT computeCenter1pxClipRectSafe(HWND hwnd) {
     return clip;
 }
 
-// ‚’¼’†‰›‚ðˆÛŽ‚µ‚ÄRECT‚Ì‚‚³‚ð1/2‚Ék¬
+// åž‚ç›´ä¸­å¤®ã‚’ç¶­æŒã—ã¦RECTã®é«˜ã•ã‚’1/2ã«ç¸®å°
 inline RECT shrinkRectHeightToHalfCentered(RECT r) {
     const LONG h = r.bottom - r.top;
     const LONG cy = (r.top + r.bottom) / 2;
@@ -343,7 +343,7 @@ void ScreenPanel::mousePressEvent(QMouseEvent* event)
         return;
     }
 
-    // šC³: ƒNƒŠƒbƒN‚ÅƒtƒH[ƒJƒXON‚É‚·‚éˆ—‚ð•œŠˆ
+    // â˜…ä¿®æ­£: ã‚¯ãƒªãƒƒã‚¯ã§ãƒ•ã‚©ãƒ¼ã‚«ã‚¹ONã«ã™ã‚‹å‡¦ç†ã‚’å¾©æ´»
     if (core) core->isFocused = true;
 
     emu->onMousePress(event);
@@ -351,19 +351,19 @@ void ScreenPanel::mousePressEvent(QMouseEvent* event)
     if (event->button() != Qt::LeftButton)
         return;
 
-    // ƒ}ƒEƒXƒGƒCƒ€ƒ‚[ƒhi!isStylusModej‚©‚ÂAƒQ[ƒ€’†‚Ìê‡
+    // ãƒžã‚¦ã‚¹ã‚¨ã‚¤ãƒ ãƒ¢ãƒ¼ãƒ‰ï¼ˆ!isStylusModeï¼‰ã‹ã¤ã€ã‚²ãƒ¼ãƒ ä¸­ã®å ´åˆ
     if (core && !core->isStylusMode && core->IsInGame())
     {
-        // ƒGƒCƒ€ƒ‚[ƒhi!isCursorModej‚ÌŽž‚ÍAƒNƒŠƒbƒN‚ðƒGƒCƒ€•œ‹AiƒNƒŠƒbƒvj‚Æ‚µ‚Äˆµ‚¢A
-        // ƒ^ƒbƒ`ƒpƒlƒ‹‚Ö‚Ì“ü—Í‚ðƒuƒƒbƒN‚µ‚Ä return ‚·‚éB
+        // ã‚¨ã‚¤ãƒ ãƒ¢ãƒ¼ãƒ‰ï¼ˆ!isCursorModeï¼‰ã®æ™‚ã¯ã€ã‚¯ãƒªãƒƒã‚¯ã‚’ã‚¨ã‚¤ãƒ å¾©å¸°ï¼ˆã‚¯ãƒªãƒƒãƒ—ï¼‰ã¨ã—ã¦æ‰±ã„ã€
+        // ã‚¿ãƒƒãƒãƒ‘ãƒãƒ«ã¸ã®å…¥åŠ›ã‚’ãƒ–ãƒ­ãƒƒã‚¯ã—ã¦ return ã™ã‚‹ã€‚
         if (!core->isCursorMode)
         {
             clipCursorCenter1px();
             return;
         }
 
-        // isCursorMode == true (ƒƒjƒ…[‰æ–Ê“™) ‚Ìê‡‚ÍA
-        // ‚±‚±‚Å return ‚¹‚¸A‰º‚Ìulayout.GetTouchCoordsv‚Öˆ—‚ð—¬‚·B
+        // isCursorMode == true (ãƒ¡ãƒ‹ãƒ¥ãƒ¼ç”»é¢ç­‰) ã®å ´åˆã¯ã€
+        // ã“ã“ã§ return ã›ãšã€ä¸‹ã®ã€Œlayout.GetTouchCoordsã€ã¸å‡¦ç†ã‚’æµã™ã€‚
     }
 
     const QPoint p = event->pos();
@@ -376,7 +376,7 @@ void ScreenPanel::mousePressEvent(QMouseEvent* event)
         emu->touchScreen(x, y);
     }
 
-    // ƒJ[ƒ\ƒ‹ƒ‚[ƒh‚È‚çƒNƒŠƒbƒv‚µ‚È‚¢
+    // ã‚«ãƒ¼ã‚½ãƒ«ãƒ¢ãƒ¼ãƒ‰ãªã‚‰ã‚¯ãƒªãƒƒãƒ—ã—ãªã„
     if (core && !core->isStylusMode && !core->isCursorMode)
     {
         clipCursorCenter1px();
@@ -391,7 +391,7 @@ void ScreenPanel::mouseReleaseEvent(QMouseEvent* event)
 
     emu->onMouseRelease(event); // MelonPrimeDS
 
-    // ”ñƒAƒNƒeƒBƒu‚È‚ç‰Ÿ‰ºó‘Ô‚ð•K‚¸‰ðœ
+    // éžã‚¢ã‚¯ãƒ†ã‚£ãƒ–ãªã‚‰æŠ¼ä¸‹çŠ¶æ…‹ã‚’å¿…ãšè§£é™¤
     if (Q_UNLIKELY(!emu->emuIsActive()))
     {
         touching = false;
@@ -414,7 +414,7 @@ void ScreenPanel::mouseMoveEvent(QMouseEvent* event)
 
     auto* const emu = emuInstance;
 
-    // ”ñƒAƒNƒeƒBƒu‚ÍƒzƒbƒgƒpƒX‚¶‚á‚È‚¢‘z’è
+    // éžã‚¢ã‚¯ãƒ†ã‚£ãƒ–ã¯ãƒ›ãƒƒãƒˆãƒ‘ã‚¹ã˜ã‚ƒãªã„æƒ³å®š
     if (Q_UNLIKELY(!emu->emuIsActive()))
         return;
 
@@ -856,6 +856,8 @@ void ScreenPanel::calcSplashLayout()
 
 ScreenPanelNative::ScreenPanelNative(QWidget * parent) : ScreenPanel(parent)
 {
+    hasBuffers = false;
+
     screen[0] = QImage(256, 192, QImage::Format_RGB32);
     screen[1] = QImage(256, 192, QImage::Format_RGB32);
 
@@ -880,31 +882,42 @@ void ScreenPanelNative::setupScreenLayout()
     }
 }
 
-void ScreenPanelNative::paintEvent(QPaintEvent * event)
+void ScreenPanelNative::drawScreen()
+{
+    auto emuThread = emuInstance->getEmuThread();
+    if (!emuThread->emuIsActive())
+    {
+        hasBuffers = false;
+        return;
+    }
+
+    auto nds = emuInstance->getNDS();
+    assert(nds != nullptr);
+
+    bufferLock.lock();
+    hasBuffers = nds->GPU.GetFramebuffers(&topBuffer, &bottomBuffer);
+    bufferLock.unlock();
+}
+
+void ScreenPanelNative::paintEvent(QPaintEvent* event)
 {
     QPainter painter(this);
 
     painter.fillRect(event->rect(), QColor::fromRgb(0, 0, 0));
 
     auto emuThread = emuInstance->getEmuThread();
-
+    
     if (emuThread->emuIsActive())
     {
         emuInstance->renderLock.lock();
-        auto nds = emuInstance->getNDS();
 
-        assert(nds != nullptr);
-        emuThread->frontBufferLock.lock();
-        int frontbuf = emuThread->frontBuffer;
-        if (!nds->GPU.Framebuffer[frontbuf][0] || !nds->GPU.Framebuffer[frontbuf][1])
+        bufferLock.lock();
+        if (hasBuffers)
         {
-            emuThread->frontBufferLock.unlock();
-            return;
+            memcpy(screen[0].scanLine(0), topBuffer, 256 * 192 * 4);
+            memcpy(screen[1].scanLine(0), bottomBuffer, 256 * 192 * 4);
         }
-
-        memcpy(screen[0].scanLine(0), nds->GPU.Framebuffer[frontbuf][0].get(), 256 * 192 * 4);
-        memcpy(screen[1].scanLine(0), nds->GPU.Framebuffer[frontbuf][1].get(), 256 * 192 * 4);
-        emuThread->frontBufferLock.unlock();
+        bufferLock.unlock();
 
         QRect screenrc(0, 0, 256, 192);
 
@@ -1018,29 +1031,27 @@ void ScreenPanelGL::initOpenGL()
         { {"oColor", 0} });
 
     glUseProgram(screenShaderProgram);
-    glUniform1i(glGetUniformLocation(screenShaderProgram, "ScreenTex"), 0);
+    glUniform1i(glGetUniformLocation(screenShaderProgram, "TopScreenTex"), 0);
+    glUniform1i(glGetUniformLocation(screenShaderProgram, "BottomScreenTex"), 1);
 
     screenShaderScreenSizeULoc = glGetUniformLocation(screenShaderProgram, "uScreenSize");
     screenShaderTransformULoc = glGetUniformLocation(screenShaderProgram, "uTransform");
 
-    const int paddedHeight = 192 * 2 + 2;
-    const float padPixels = 1.f / paddedHeight;
-
     const float vertices[] =
     {
-        0.f,   0.f,    0.f, 0.f,
-        0.f,   192.f,  0.f, 0.5f - padPixels,
-        256.f, 192.f,  1.f, 0.5f - padPixels,
-        0.f,   0.f,    0.f, 0.f,
-        256.f, 192.f,  1.f, 0.5f - padPixels,
-        256.f, 0.f,    1.f, 0.f,
+        0.f,   0.f,    0.f, 0.f, 0.f,
+        0.f,   192.f,  0.f, 1.f, 0.f,
+        256.f, 192.f,  1.f, 1.f, 0.f,
+        0.f,   0.f,    0.f, 0.f, 0.f,
+        256.f, 192.f,  1.f, 1.f, 0.f,
+        256.f, 0.f,    1.f, 0.f, 0.f,
 
-        0.f,   0.f,    0.f, 0.5f + padPixels,
-        0.f,   192.f,  0.f, 1.f,
-        256.f, 192.f,  1.f, 1.f,
-        0.f,   0.f,    0.f, 0.5f + padPixels,
-        256.f, 192.f,  1.f, 1.f,
-        256.f, 0.f,    1.f, 0.5f + padPixels
+        0.f,   0.f,    0.f, 0.f, 1.f,
+        0.f,   192.f,  0.f, 1.f, 1.f,
+        256.f, 192.f,  1.f, 1.f, 1.f,
+        0.f,   0.f,    0.f, 0.f, 1.f,
+        256.f, 192.f,  1.f, 1.f, 1.f,
+        256.f, 0.f,    1.f, 0.f, 1.f
     };
 
     glGenBuffers(1, &screenVertexBuffer);
@@ -1050,22 +1061,18 @@ void ScreenPanelGL::initOpenGL()
     glGenVertexArrays(1, &screenVertexArray);
     glBindVertexArray(screenVertexArray);
     glEnableVertexAttribArray(0); // position
-    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 4 * 4, (void*)(0));
+    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 5*4, (void*)(0));
     glEnableVertexAttribArray(1); // texcoord
-    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 4 * 4, (void*)(2 * 4));
+    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 5*4, (void*)(2*4));
 
     glGenTextures(1, &screenTexture);
     glActiveTexture(GL_TEXTURE0);
-    glBindTexture(GL_TEXTURE_2D, screenTexture);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, 256, paddedHeight, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
-
-    u8 zeroData[256 * 4 * 4];
-    memset(zeroData, 0, sizeof(zeroData));
-    glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 192, 256, 2, GL_RGBA, GL_UNSIGNED_BYTE, zeroData);
+    glBindTexture(GL_TEXTURE_2D_ARRAY, screenTexture);
+    glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glTexImage3D(GL_TEXTURE_2D_ARRAY, 0, GL_RGBA, 256, 192, 2, 0, GL_BGRA, GL_UNSIGNED_BYTE, nullptr);
 
 
     OpenGL::CompileVertexFragmentProgram(osdShader,
@@ -1195,7 +1202,7 @@ void ScreenPanelGL::osdDeleteItem(OSDItem * item)
     ScreenPanel::osdDeleteItem(item);
 }
 
-void ScreenPanelGL::drawScreenGL()
+void ScreenPanelGL::drawScreen()
 {
     if (!glContext) return;
 
@@ -1209,10 +1216,11 @@ void ScreenPanelGL::drawScreenGL()
 
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
     glDisable(GL_DEPTH_TEST);
-    glDepthMask(false);
+    glDepthMask(GL_FALSE);
     glDisable(GL_BLEND);
     glDisable(GL_SCISSOR_TEST);
     glDisable(GL_STENCIL_TEST);
+    glClearColor(0, 0, 0, 1);
     glClear(GL_COLOR_BUFFER_BIT);
 
     glViewport(0, 0, w, h);
@@ -1224,35 +1232,33 @@ void ScreenPanelGL::drawScreenGL()
         glUseProgram(screenShaderProgram);
         glUniform2f(screenShaderScreenSizeULoc, w / factor, h / factor);
 
-        int frontbuf = emuThread->frontBuffer;
-        glActiveTexture(GL_TEXTURE0);
-
-#ifdef OGLRENDERER_ENABLED
-        if (nds->GPU.GetRenderer3D().Accelerated)
+        void* topbuf; void* bottombuf;
+        if (nds->GPU.GetFramebuffers(&topbuf, &bottombuf))
         {
-            // hardware-accelerated render
-            nds->GPU.GetRenderer3D().BindOutputTexture(frontbuf);
+            // if we're doing a regular render, use the provided framebuffers
+            // otherwise, GetFramebuffers() will set up the required state
+
+            glActiveTexture(GL_TEXTURE0);
+            glBindTexture(GL_TEXTURE_2D_ARRAY, screenTexture);
+
+            glTexSubImage3D(GL_TEXTURE_2D_ARRAY, 0, 0, 0, 0, 256, 192, 1, GL_BGRA,
+                            GL_UNSIGNED_BYTE, topbuf);
+            glTexSubImage3D(GL_TEXTURE_2D_ARRAY, 0, 0, 0, 1, 256, 192, 1, GL_BGRA,
+                            GL_UNSIGNED_BYTE, bottombuf);
         }
         else
-#endif
         {
-            // regular render
-            glBindTexture(GL_TEXTURE_2D, screenTexture);
+            GLuint texid = *(GLuint*)topbuf;
 
-            if (nds->GPU.Framebuffer[frontbuf][0] && nds->GPU.Framebuffer[frontbuf][1])
-            {
-                glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, 256, 192, GL_RGBA,
-                    GL_UNSIGNED_BYTE, nds->GPU.Framebuffer[frontbuf][0].get());
-                glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 192 + 2, 256, 192, GL_RGBA,
-                    GL_UNSIGNED_BYTE, nds->GPU.Framebuffer[frontbuf][1].get());
-            }
+            glActiveTexture(GL_TEXTURE0);
+            glBindTexture(GL_TEXTURE_2D_ARRAY, texid);
         }
 
         screenSettingsLock.lock();
 
         GLint filter = this->filter ? GL_LINEAR : GL_NEAREST;
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, filter);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, filter);
+        glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MIN_FILTER, filter);
+        glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MAG_FILTER, filter);
 
         glBindBuffer(GL_ARRAY_BUFFER, screenVertexBuffer);
         glBindVertexArray(screenVertexArray);
@@ -1477,7 +1483,7 @@ void ScreenPanelGL::transferLayout()
 /* MelonPrimeDS */
 void ScreenPanel::unfocus()
 {
-    // š•œŠˆ: Core‚ÌisFocusedƒtƒ‰ƒO‚ðOFF‚É‚·‚é
+    // â˜…å¾©æ´»: Coreã®isFocusedãƒ•ãƒ©ã‚°ã‚’OFFã«ã™ã‚‹
     if (auto* core = emuInstance->getEmuThread()->GetMelonPrimeCore())
         core->isFocused = false;
 
@@ -1489,7 +1495,7 @@ void ScreenPanel::unfocus()
 
 void ScreenPanel::focusOutEvent(QFocusEvent * event)
 {
-    // š•œŠˆ: ”»’è‚È‚µ‚Å‹­§“I‚Éunfocus‚ðŒÄ‚Ño‚·
+    // â˜…å¾©æ´»: åˆ¤å®šãªã—ã§å¼·åˆ¶çš„ã«unfocusã‚’å‘¼ã³å‡ºã™
     /*
     if (emuInstance->getEmuThread()->GetMelonPrimeCore() && emuInstance->getEmuThread()->GetMelonPrimeCore()->isFocused) {
         return;
