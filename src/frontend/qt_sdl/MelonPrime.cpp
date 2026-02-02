@@ -1,6 +1,7 @@
 /*
     MelonPrimeDS Logic Implementation (REFACTORED & OPTIMIZED)
-    Updated for High-Precision Mouse Input
+    Updated for High-Precision Mouse Input & Raw Pointer Caching
+    (Sub-pixel Accumulation Removed)
 */
 
 #include "MelonPrime.h"
@@ -105,24 +106,27 @@ namespace MelonPrime {
         return static_cast<std::uint16_t>(std::min(static_cast<uint32_t>(std::llround(val)), 0xFFFFu));
     }
 
-    FORCE_INLINE uint8_t FastRead8(const melonDS::u8* ram, melonDS::u32 addr) {
+    // ============================================================
+    // Simple Memory Helpers (No Namespace)
+    // ============================================================
+    FORCE_INLINE uint8_t Read8(const melonDS::u8* ram, melonDS::u32 addr) {
         return ram[addr & Consts::RAM_MASK];
     }
-    FORCE_INLINE uint16_t FastRead16(const melonDS::u8* ram, melonDS::u32 addr) {
+    FORCE_INLINE uint16_t Read16(const melonDS::u8* ram, melonDS::u32 addr) {
         return *reinterpret_cast<const uint16_t*>(&ram[addr & Consts::RAM_MASK]);
     }
-    FORCE_INLINE uint32_t FastRead32(const melonDS::u8* ram, melonDS::u32 addr) {
+    FORCE_INLINE uint32_t Read32(const melonDS::u8* ram, melonDS::u32 addr) {
         return *reinterpret_cast<const uint32_t*>(&ram[addr & Consts::RAM_MASK]);
     }
-    FORCE_INLINE void FastWrite8(melonDS::u8* ram, melonDS::u32 addr, uint8_t val) {
+    FORCE_INLINE void Write8(melonDS::u8* ram, melonDS::u32 addr, uint8_t val) {
         ram[addr & Consts::RAM_MASK] = val;
     }
-    FORCE_INLINE void FastWrite16(melonDS::u8* ram, melonDS::u32 addr, uint16_t val) {
+    FORCE_INLINE void Write16(melonDS::u8* ram, melonDS::u32 addr, uint16_t val) {
         *reinterpret_cast<uint16_t*>(&ram[addr & Consts::RAM_MASK]) = val;
     }
 
     // ============================================================
-    // Inline Helper Implementations (Replaces Macros)
+    // Inline Helper Implementations
     // ============================================================
 
     FORCE_INLINE bool MelonPrimeCore::IsJoyDown(int id) const {
@@ -167,7 +171,6 @@ namespace MelonPrime {
         globalCfg(instance->getGlobalConfig())
     {
         m_flags.packed = 0;
-        // m_rawFilter is nullptr initialized
     }
 
     MelonPrimeCore::~MelonPrimeCore()
@@ -209,11 +212,8 @@ namespace MelonPrime {
                 hwnd = reinterpret_cast<HWND>(mw->winId());
             }
 
-            // Singleton Acquisition (Manual)
             m_rawFilter = RawInputWinFilter::Acquire(m_flags.test(StateFlags::BIT_JOY2KEY), hwnd);
-
             ApplyJoy2KeySupportAndQtFilter(m_flags.test(StateFlags::BIT_JOY2KEY));
-
             melonDS::BindMetroidHotkeysFromConfig(m_rawFilter, emuInstance->getInstanceID());
         }
 #endif
@@ -277,7 +277,6 @@ namespace MelonPrime {
 
     HOT_FUNCTION void MelonPrimeCore::UpdateInputState()
     {
-        // 全入力変数を初期化
         m_input.down = 0;
         m_input.press = 0;
         m_input.mouseX = 0;
@@ -289,7 +288,6 @@ namespace MelonPrime {
             return;
         }
 
-        // フォーカスがある場合のみ、自分をRawInputのターゲットに設定
         if (m_rawFilter) {
             HWND myHwnd = (HWND)emuInstance->getMainWindow()->winId();
             m_rawFilter->setRawInputTarget(myHwnd);
@@ -299,7 +297,6 @@ namespace MelonPrime {
         uint64_t down = 0;
         uint64_t press = 0;
 
-        // Using inline member functions instead of macros
         down |= IsHkDownRaw(HK_MetroidMoveForward) ? IB_MOVE_F : 0;
         down |= IsHkDownRaw(HK_MetroidMoveBack) ? IB_MOVE_B : 0;
         down |= IsHkDownRaw(HK_MetroidMoveLeft) ? IB_MOVE_L : 0;
@@ -357,9 +354,6 @@ namespace MelonPrime {
         m_flags.packed = StateFlags::BIT_LAYOUT_PENDING;
         m_isInGame = false;
         m_appliedFlags = 0;
-        // Reset residue on start
-        m_residueX = 0.0f;
-        m_residueY = 0.0f;
 
         m_flags.assign(StateFlags::BIT_SNAP_TAP, localCfg.GetBool("Metroid.Operation.SnapTap"));
         m_flags.assign(StateFlags::BIT_STYLUS_MODE, localCfg.GetBool("Metroid.Enable.stylusMode"));
@@ -375,7 +369,7 @@ namespace MelonPrime {
 
     void MelonPrimeCore::OnEmuStop()
     {
-        m_flags.clear(StateFlags::BIT_IN_GAME); // BIT_WAS_IN_GAME_RENDERER removed
+        m_flags.clear(StateFlags::BIT_IN_GAME);
         m_isInGame = false;
     }
 
@@ -396,10 +390,6 @@ namespace MelonPrime {
         RecalcAimSensitivityCache(localCfg);
         ApplyAimAdjustSetting(localCfg);
 
-        // Reset residue to avoid jump after unpause
-        m_residueX = 0.0f;
-        m_residueY = 0.0f;
-
 #ifdef _WIN32
         if (m_rawFilter) {
             melonDS::BindMetroidHotkeysFromConfig(m_rawFilter, emuInstance->getInstanceID());
@@ -409,8 +399,7 @@ namespace MelonPrime {
 
         if (m_flags.test(StateFlags::BIT_IN_GAME)) {
             UpdateRendererSettings();
-            ApplyMphSensitivity(emuInstance->getNDS(), localCfg, m_addrCold.sensitivity,
-                m_addrCold.inGameSensi, m_flags.test(StateFlags::BIT_IN_GAME_INIT));
+            m_flags.clear(StateFlags::BIT_IN_GAME_INIT);
         }
     }
 
@@ -530,7 +519,7 @@ namespace MelonPrime {
                 }
             }
             else {
-                ProcessAimInputMouse(mainRAM);
+                ProcessAimInputMouse();
             }
 
             InputSetBranchless(INPUT_L, !IsDown(IB_SHOOT));
@@ -550,51 +539,77 @@ namespace MelonPrime {
         if (UNLIKELY(!wasDetected)) {
             DetectRomAndSetAddresses();
         }
-        // Removed: updateVideoRenderer on ROM detection
 
         if (LIKELY(m_flags.test(StateFlags::BIT_ROM_DETECTED))) {
-            const bool isInGame = FastRead16(mainRAM, m_addrHot.inGame) == 0x0001;
+            const bool isInGame = Read16(mainRAM, m_addrHot.inGame) == 0x0001;
             m_flags.assign(StateFlags::BIT_IN_GAME, isInGame);
             m_isInGame = isInGame;
-
-            // Removed: updateVideoRenderer on in-game state change
 
             const bool isInAdventure = m_flags.test(StateFlags::BIT_IN_ADVENTURE);
             const bool isPaused = m_flags.test(StateFlags::BIT_PAUSED);
             const bool shouldBeCursorMode = !isInGame || (isInAdventure && isPaused);
 
+            // ==========================================
+            // Pointer Cache Calculation
+            // ==========================================
             if (isInGame && !m_flags.test(StateFlags::BIT_IN_GAME_INIT)) {
                 m_flags.set(StateFlags::BIT_IN_GAME_INIT);
 
-                m_playerPosition = FastRead8(mainRAM, m_addrCold.playerPos);
+                m_playerPosition = Read8(mainRAM, m_addrCold.playerPos);
 
                 using namespace Consts;
+
+                // 1. Calculate Offsets (Integer Math)
                 m_addrHot.isAltForm = CalculatePlayerAddress(m_addrCold.baseIsAltForm, m_playerPosition, PLAYER_ADDR_INC);
                 m_addrHot.loadedSpecialWeapon = CalculatePlayerAddress(m_addrCold.baseLoadedSpecialWeapon, m_playerPosition, PLAYER_ADDR_INC);
-                m_addrCold.chosenHunter = CalculatePlayerAddress(m_addrCold.baseChosenHunter, m_playerPosition, 0x01);
                 m_addrHot.weaponChange = CalculatePlayerAddress(m_addrCold.baseWeaponChange, m_playerPosition, PLAYER_ADDR_INC);
                 m_addrHot.selectedWeapon = CalculatePlayerAddress(m_addrCold.baseSelectedWeapon, m_playerPosition, PLAYER_ADDR_INC);
-                m_addrHot.currentWeapon = m_addrHot.selectedWeapon - 0x1;
-                m_addrHot.havingWeapons = m_addrHot.selectedWeapon + 0x3;
-                m_addrHot.weaponAmmo = m_addrHot.selectedWeapon - 0x383;
                 m_addrHot.jumpFlag = CalculatePlayerAddress(m_addrCold.baseJumpFlag, m_playerPosition, PLAYER_ADDR_INC);
-
-                const uint8_t hunterID = FastRead8(mainRAM, m_addrCold.chosenHunter);
-                m_flags.assign(StateFlags::BIT_IS_SAMUS, hunterID == 0x00);
-                m_flags.assign(StateFlags::BIT_IS_WEAVEL, hunterID == 0x06);
-
-                m_addrCold.inGameSensi = CalculatePlayerAddress(m_addrCold.baseInGameSensi, m_playerPosition, 0x04);
-                m_addrHot.boostGauge = m_addrHot.loadedSpecialWeapon - 0x12;
-                m_addrHot.isBoosting = m_addrHot.loadedSpecialWeapon - 0x10;
                 m_addrHot.aimX = CalculatePlayerAddress(m_addrCold.baseAimX, m_playerPosition, AIM_ADDR_INC);
                 m_addrHot.aimY = CalculatePlayerAddress(m_addrCold.baseAimY, m_playerPosition, AIM_ADDR_INC);
 
-                m_flags.assign(StateFlags::BIT_IN_ADVENTURE, FastRead8(mainRAM, m_addrCold.isInAdventure) == 0x02);
+                m_addrHot.currentWeapon = m_addrHot.selectedWeapon - 0x1;
+                m_addrHot.havingWeapons = m_addrHot.selectedWeapon + 0x3;
+                m_addrHot.weaponAmmo = m_addrHot.selectedWeapon - 0x383;
+                m_addrHot.boostGauge = m_addrHot.loadedSpecialWeapon - 0x12;
+                m_addrHot.isBoosting = m_addrHot.loadedSpecialWeapon - 0x10;
+
+                m_addrCold.chosenHunter = CalculatePlayerAddress(m_addrCold.baseChosenHunter, m_playerPosition, 0x01);
+                m_addrCold.inGameSensi = CalculatePlayerAddress(m_addrCold.baseInGameSensi, m_playerPosition, 0x04);
+
+                // 2. Cache Raw Pointers (Pointer Math)
+                m_ptrs.isAltForm = GetRamPointer<uint8_t>(mainRAM, m_addrHot.isAltForm);
+                m_ptrs.jumpFlag = GetRamPointer<uint8_t>(mainRAM, m_addrHot.jumpFlag);
+                m_ptrs.weaponChange = GetRamPointer<uint8_t>(mainRAM, m_addrHot.weaponChange);
+                m_ptrs.selectedWeapon = GetRamPointer<uint8_t>(mainRAM, m_addrHot.selectedWeapon);
+                m_ptrs.currentWeapon = GetRamPointer<uint8_t>(mainRAM, m_addrHot.currentWeapon);
+                m_ptrs.havingWeapons = GetRamPointer<uint16_t>(mainRAM, m_addrHot.havingWeapons);
+                m_ptrs.weaponAmmo = GetRamPointer<uint32_t>(mainRAM, m_addrHot.weaponAmmo);
+
+                m_ptrs.boostGauge = GetRamPointer<uint8_t>(mainRAM, m_addrHot.boostGauge);
+                m_ptrs.isBoosting = GetRamPointer<uint8_t>(mainRAM, m_addrHot.isBoosting);
+                m_ptrs.loadedSpecialWeapon = GetRamPointer<uint8_t>(mainRAM, m_addrHot.loadedSpecialWeapon);
+
+                m_ptrs.aimX = GetRamPointer<uint16_t>(mainRAM, m_addrHot.aimX);
+                m_ptrs.aimY = GetRamPointer<uint16_t>(mainRAM, m_addrHot.aimY);
+
+                m_ptrs.isInVisorOrMap = GetRamPointer<uint8_t>(mainRAM, m_addrHot.isInVisorOrMap);
+                m_ptrs.isMapOrUserActionPaused = GetRamPointer<uint8_t>(mainRAM, m_addrHot.isMapOrUserActionPaused);
+
+                // 3. Flags and Setup
+                const uint8_t hunterID = Read8(mainRAM, m_addrCold.chosenHunter);
+                m_flags.assign(StateFlags::BIT_IS_SAMUS, hunterID == 0x00);
+                m_flags.assign(StateFlags::BIT_IS_WEAVEL, hunterID == 0x06);
+
+                m_flags.assign(StateFlags::BIT_IN_ADVENTURE, Read8(mainRAM, m_addrCold.isInAdventure) == 0x02);
+
+                // InGameSensi Apply
+                ApplyMphSensitivity(emuInstance->getNDS(), localCfg, m_addrCold.sensitivity, m_addrCold.inGameSensi, true);
             }
 
             if (isFocused) {
                 if (LIKELY(isInGame)) {
-                    HandleInGameLogic(mainRAM);
+                    HandleInGameLogic();
                 }
                 else {
                     m_flags.clear(StateFlags::BIT_IN_ADVENTURE);
@@ -625,9 +640,10 @@ namespace MelonPrime {
         m_isRunningHook = false;
     }
 
-    HOT_FUNCTION void MelonPrimeCore::HandleInGameLogic(melonDS::u8* mainRAM)
+    HOT_FUNCTION void MelonPrimeCore::HandleInGameLogic()
     {
-        PREFETCH_READ(&mainRAM[m_addrHot.isAltForm & Consts::RAM_MASK]);
+        // Direct access via cached pointer
+        PREFETCH_READ(m_ptrs.isAltForm);
 
         if (UNLIKELY(IsPressed(IB_MORPH))) {
             if (isStylusMode) m_flags.set(StateFlags::BIT_BLOCK_STYLUS);
@@ -640,7 +656,7 @@ namespace MelonPrime {
             FrameAdvanceTwice();
         }
 
-        if (UNLIKELY(ProcessWeaponSwitch(mainRAM))) {
+        if (UNLIKELY(ProcessWeaponSwitch())) {
             if (isStylusMode) m_flags.set(StateFlags::BIT_BLOCK_STYLUS);
         }
 
@@ -666,7 +682,7 @@ namespace MelonPrime {
         }
 
         if (UNLIKELY(m_flags.test(StateFlags::BIT_IN_ADVENTURE))) {
-            HandleAdventureMode(mainRAM);
+            HandleAdventureMode();
         }
 
         ProcessMoveInputFast();
@@ -675,7 +691,7 @@ namespace MelonPrime {
         InputSetBranchless(INPUT_L, !IsDown(IB_SHOOT));
         InputSetBranchless(INPUT_R, !IsDown(IB_ZOOM));
 
-        HandleMorphBallBoost(mainRAM);
+        HandleMorphBallBoost();
 
         if (isStylusMode) {
             if (!m_flags.test(StateFlags::BIT_BLOCK_STYLUS)) {
@@ -683,7 +699,7 @@ namespace MelonPrime {
             }
         }
         else {
-            ProcessAimInputMouse(mainRAM);
+            ProcessAimInputMouse();
             if (!m_flags.test(StateFlags::BIT_LAST_FOCUSED) || !m_isAimDisabled) {
                 using namespace Consts::UI;
                 emuInstance->getNDS()->TouchScreen(CENTER_RESET.x(), CENTER_RESET.y());
@@ -737,15 +753,14 @@ namespace MelonPrime {
         }
     }
 
-    // --- REWRITTEN FOR SUB-PIXEL PRECISION ---
-    HOT_FUNCTION void MelonPrimeCore::ProcessAimInputMouse(melonDS::u8* mainRAM)
+    // --- REWRITTEN FOR SUB-PIXEL PRECISION & RAW POINTERS ---
+    // (Sub-pixel Accumulation Removed)
+    HOT_FUNCTION void MelonPrimeCore::ProcessAimInputMouse()
     {
         if (m_isAimDisabled) return;
 
         if (UNLIKELY(m_isLayoutChangePending)) {
             m_isLayoutChangePending = false;
-            m_residueX = 0.0f;
-            m_residueY = 0.0f;
 #ifdef _WIN32
             if (m_rawFilter) m_rawFilter->discardDeltas();
 #endif
@@ -756,39 +771,24 @@ namespace MelonPrime {
             const int deltaX = m_input.mouseX;
             const int deltaY = m_input.mouseY;
 
-            // If no input and no accumulated residue, return early
-            if (deltaX == 0 && deltaY == 0 && m_residueX == 0.0f && m_residueY == 0.0f) return;
+            if (deltaX == 0 && deltaY == 0) return;
 
-            // 1. Calculate raw float delta including previous residue
-            float rawScaledX = (deltaX * m_aimSensiFactor) + m_residueX;
-            float rawScaledY = (deltaY * m_aimCombinedY) + m_residueY;
-
-            // 2. Apply Aim Adjust (Deadzone/Curve)
-            // Passing copies to not mutate rawScaled for residue calculation later?
-            // Actually ApplyAimAdjustBranchless modifies the value in-place to apply the curve.
-            // We want the output to be the adjusted value, but we need to track what was *consumed*.
-            // Since the emulator expects integer coordinates, we output integers.
-            // The residue is (Input - Output).
+            // Direct calculation without residue
+            float rawScaledX = (deltaX * m_aimSensiFactor);
+            float rawScaledY = (deltaY * m_aimCombinedY);
 
             float adjX = rawScaledX;
             float adjY = rawScaledY;
             ApplyAimAdjustBranchless(adjX, adjY);
 
-            // 3. Integer truncation for NDS input
             int16_t outX = static_cast<int16_t>(adjX);
             int16_t outY = static_cast<int16_t>(adjY);
 
-            // 4. Calculate new residue (Accumulate what wasn't used)
-            // If adjusted value was 0 due to deadzone, we might keep accumulating (standard behavior)
-            // or reset. Here we simply keep the difference between what we *wanted* to move 
-            // and what we *actually* moved.
-            m_residueX = rawScaledX - outX;
-            m_residueY = rawScaledY - outY;
-
             if (outX == 0 && outY == 0) return;
 
-            FastWrite16(mainRAM, m_addrHot.aimX, outX);
-            FastWrite16(mainRAM, m_addrHot.aimY, outY);
+            // Direct pointer write
+            *m_ptrs.aimX = static_cast<uint16_t>(outX);
+            *m_ptrs.aimY = static_cast<uint16_t>(outY);
 
 #if !defined(_WIN32)
             QCursor::setPos(m_aimData.centerX, m_aimData.centerY);
@@ -803,21 +803,20 @@ namespace MelonPrime {
         QCursor::setPos(center);
 #endif
         m_isLayoutChangePending = false;
-        m_residueX = 0.0f;
-        m_residueY = 0.0f;
     }
 
-    HOT_FUNCTION bool MelonPrimeCore::HandleMorphBallBoost(melonDS::u8* mainRAM)
+    HOT_FUNCTION bool MelonPrimeCore::HandleMorphBallBoost()
     {
         if (!m_flags.test(StateFlags::BIT_IS_SAMUS)) return false;
 
         if (IsDown(IB_MORPH_BOOST)) {
-            const bool isAltForm = FastRead8(mainRAM, m_addrHot.isAltForm) == 0x02;
+            // Direct Pointer Read
+            const bool isAltForm = (*m_ptrs.isAltForm) == 0x02;
             m_flags.assign(StateFlags::BIT_IS_ALT_FORM, isAltForm);
 
             if (isAltForm) {
-                const uint8_t boostGaugeValue = FastRead8(mainRAM, m_addrHot.boostGauge);
-                const bool isBoosting = FastRead8(mainRAM, m_addrHot.isBoosting) != 0x00;
+                const uint8_t boostGaugeValue = *m_ptrs.boostGauge;
+                const bool isBoosting = (*m_ptrs.isBoosting) != 0x00;
                 const bool isBoostGaugeEnough = boostGaugeValue > 0x0A;
 
                 SetAimBlockBranchless(AIMBLK_MORPHBALL_BOOST, true);
@@ -840,9 +839,10 @@ namespace MelonPrime {
         return false;
     }
 
-    void MelonPrimeCore::HandleAdventureMode(melonDS::u8* mainRAM)
+    void MelonPrimeCore::HandleAdventureMode()
     {
-        const bool isPaused = FastRead8(mainRAM, m_addrHot.isMapOrUserActionPaused) == 0x1;
+        // Direct Pointer Read
+        const bool isPaused = (*m_ptrs.isMapOrUserActionPaused) == 0x1;
         m_flags.assign(StateFlags::BIT_PAUSED, isPaused);
 
         if (IsPressed(IB_SCAN_VISOR)) {
@@ -853,7 +853,8 @@ namespace MelonPrime {
             using namespace Consts::UI;
             emuInstance->getNDS()->TouchScreen(SCAN_VISOR_BUTTON.x(), SCAN_VISOR_BUTTON.y());
 
-            if (FastRead8(mainRAM, m_addrHot.isInVisorOrMap) == 0x1) {
+            // Direct Pointer Read
+            if ((*m_ptrs.isInVisorOrMap) == 0x1) {
                 FrameAdvanceTwice();
             }
             else {
@@ -885,7 +886,7 @@ namespace MelonPrime {
 #undef TOUCH_IF_PRESSED
     }
 
-    HOT_FUNCTION bool MelonPrimeCore::ProcessWeaponSwitch(melonDS::u8* mainRAM)
+    HOT_FUNCTION bool MelonPrimeCore::ProcessWeaponSwitch()
     {
         using namespace WeaponData;
 
@@ -901,18 +902,18 @@ namespace MelonPrime {
             if (isStylusMode) m_flags.set(StateFlags::BIT_BLOCK_STYLUS);
 
             const bool forward = (wheelDelta < 0) || nextKey;
-            const uint8_t curID = FastRead8(mainRAM, m_addrHot.currentWeapon);
-            const uint16_t having = FastRead16(mainRAM, m_addrHot.havingWeapons);
-            const uint32_t ammoData = FastRead32(mainRAM, m_addrHot.weaponAmmo);
+
+            // Direct Pointer Access
+            const uint8_t curID = *m_ptrs.currentWeapon;
+            const uint16_t having = *m_ptrs.havingWeapons;
+            const uint32_t ammoData = *m_ptrs.weaponAmmo;
+
             const uint16_t weaponAmmo = static_cast<uint16_t>(ammoData & 0xFFFF);
             const uint16_t missileAmmo = static_cast<uint16_t>(ammoData >> 16);
             const bool isWeavel = m_flags.test(StateFlags::BIT_IS_WEAVEL);
 
             auto isWeaponAvailable = [&](const Info& info) -> bool {
-                // Check Ownership
                 if (info.id != 0 && info.id != 2 && !(having & info.mask)) return false;
-
-                // Check Ammo
                 if (info.id == 2) return missileAmmo >= 0xA;
                 if (info.id != 0 && info.id != 8) {
                     uint8_t req = info.minAmmo;
@@ -922,7 +923,6 @@ namespace MelonPrime {
                 return true;
                 };
 
-            // Build available mask
             uint16_t available = 0;
             for (size_t i = 0; i < ORDERED_WEAPONS.size(); ++i) {
                 if (isWeaponAvailable(ORDERED_WEAPONS[i])) {
@@ -935,15 +935,14 @@ namespace MelonPrime {
                 return false;
             }
 
-            // Find next
-            uint8_t idx = ID_TO_INDEX[curID % 9]; // Safety modulo
+            uint8_t idx = ID_TO_INDEX[curID % 9];
             const size_t count = ORDERED_WEAPONS.size();
             for (size_t n = 0; n < count; ++n) {
                 idx = forward ? static_cast<uint8_t>((idx + 1) % count)
                     : static_cast<uint8_t>((idx + count - 1) % count);
 
                 if (available & (1u << idx)) {
-                    SwitchWeapon(mainRAM, ORDERED_WEAPONS[idx].id);
+                    SwitchWeapon(ORDERED_WEAPONS[idx].id);
                     return true;
                 }
             }
@@ -952,7 +951,6 @@ namespace MelonPrime {
             return false;
         }
 
-        // Direct Hotkey Handling
         if (isStylusMode) m_flags.set(StateFlags::BIT_BLOCK_STYLUS);
 
         uint32_t hot = 0;
@@ -962,33 +960,32 @@ namespace MelonPrime {
 
         const int firstSet = __builtin_ctz(hot);
 
-        // Special Weapon (Omega Cannon) logic
         if (UNLIKELY(firstSet == 8)) {
-            const uint8_t loaded = FastRead8(mainRAM, m_addrHot.loadedSpecialWeapon);
+            // Direct Pointer Read
+            const uint8_t loaded = *m_ptrs.loadedSpecialWeapon;
             if (loaded == 0xFF) {
                 emuInstance->osdAddMessage(0, "Have not Special Weapon yet!");
                 m_flags.clear(StateFlags::BIT_BLOCK_STYLUS);
                 return false;
             }
-            SwitchWeapon(mainRAM, loaded);
+            SwitchWeapon(loaded);
             return true;
         }
 
         const uint8_t weaponID = BIT_WEAPON_ID[firstSet];
-        const uint16_t having = FastRead16(mainRAM, m_addrHot.havingWeapons);
-        const uint32_t ammoData = FastRead32(mainRAM, m_addrHot.weaponAmmo);
+
+        // Direct Pointer Access
+        const uint16_t having = *m_ptrs.havingWeapons;
+        const uint32_t ammoData = *m_ptrs.weaponAmmo;
         const uint16_t weaponAmmo = static_cast<uint16_t>(ammoData & 0xFFFF);
         const uint16_t missileAmmo = static_cast<uint16_t>(ammoData >> 16);
 
-        // Map ID back to Info struct to reuse logic? 
-        // Or keep inline for "hot path" speed if needed? Keeping inline for now but cleaner.
-        // We need to find the Info struct for this ID.
         const Info* info = nullptr;
         for (const auto& w : ORDERED_WEAPONS) {
             if (w.id == weaponID) { info = &w; break; }
         }
 
-        if (!info) { // Should not happen given the arrays
+        if (!info) {
             m_flags.clear(StateFlags::BIT_BLOCK_STYLUS);
             return false;
         }
@@ -1017,37 +1014,41 @@ namespace MelonPrime {
             return false;
         }
 
-        SwitchWeapon(mainRAM, weaponID);
+        SwitchWeapon(weaponID);
         return true;
     }
 
-    void MelonPrimeCore::SwitchWeapon(melonDS::u8* mainRAM, int weaponIndex)
+    void MelonPrimeCore::SwitchWeapon(int weaponIndex)
     {
-        if (FastRead8(mainRAM, m_addrHot.selectedWeapon) == weaponIndex) return;
+        // Direct Pointer Access
+        if ((*m_ptrs.selectedWeapon) == weaponIndex) return;
 
         if (m_flags.test(StateFlags::BIT_IN_ADVENTURE)) {
             if (m_flags.test(StateFlags::BIT_PAUSED)) {
                 emuInstance->osdAddMessage(0, "You can't switch weapon now!");
                 return;
             }
-            if (FastRead8(mainRAM, m_addrHot.isInVisorOrMap) == 0x1) return;
+            if ((*m_ptrs.isInVisorOrMap) == 0x1) return;
         }
 
-        uint8_t currentJumpFlags = FastRead8(mainRAM, m_addrHot.jumpFlag);
+        uint8_t currentJumpFlags = *m_ptrs.jumpFlag;
         bool isTransforming = currentJumpFlags & 0x10;
         uint8_t jumpFlag = currentJumpFlags & 0x0F;
         bool isRestoreNeeded = false;
 
-        const bool isAltForm = FastRead8(mainRAM, m_addrHot.isAltForm) == 0x02;
+        const bool isAltForm = (*m_ptrs.isAltForm) == 0x02;
         m_flags.assign(StateFlags::BIT_IS_ALT_FORM, isAltForm);
 
         if (!isTransforming && jumpFlag == 0 && !isAltForm) {
-            FastWrite8(mainRAM, m_addrHot.jumpFlag, (currentJumpFlags & 0xF0) | 0x01);
+            // Direct Pointer Write
+            *m_ptrs.jumpFlag = (currentJumpFlags & 0xF0) | 0x01;
             isRestoreNeeded = true;
         }
 
-        FastWrite8(mainRAM, m_addrHot.weaponChange, (FastRead8(mainRAM, m_addrHot.weaponChange) & 0xF0) | 0x0B);
-        FastWrite8(mainRAM, m_addrHot.selectedWeapon, weaponIndex);
+        // Direct Pointer Read/Write
+        *m_ptrs.weaponChange = ((*m_ptrs.weaponChange) & 0xF0) | 0x0B;
+        *m_ptrs.selectedWeapon = weaponIndex;
+
         emuInstance->getNDS()->ReleaseScreen();
         FrameAdvanceTwice();
 
@@ -1061,8 +1062,8 @@ namespace MelonPrime {
         FrameAdvanceTwice();
 
         if (isRestoreNeeded) {
-            currentJumpFlags = FastRead8(mainRAM, m_addrHot.jumpFlag);
-            FastWrite8(mainRAM, m_addrHot.jumpFlag, (currentJumpFlags & 0xF0) | jumpFlag);
+            currentJumpFlags = *m_ptrs.jumpFlag;
+            *m_ptrs.jumpFlag = (currentJumpFlags & 0xF0) | jumpFlag;
         }
     }
 
@@ -1072,6 +1073,7 @@ namespace MelonPrime {
         InputSetBranchless(INPUT_R, !IsPressed(IB_UI_RIGHT));
 
         ApplyHeadphoneOnce(emuInstance->getNDS(), localCfg, m_addrCold.operationAndSound, m_appliedFlags, APPLIED_HEADPHONE);
+        // Note: ApplyMphSensitivity still needs the address for initialization
         ApplyMphSensitivity(emuInstance->getNDS(), localCfg, m_addrCold.sensitivity, m_addrCold.inGameSensi, m_flags.test(StateFlags::BIT_IN_GAME_INIT));
         ApplyUnlockHuntersMaps(emuInstance->getNDS(), localCfg, m_appliedFlags, APPLIED_UNLOCK,
             m_addrCold.unlockMapsHunters, m_addrCold.unlockMapsHunters2, m_addrCold.unlockMapsHunters3,
