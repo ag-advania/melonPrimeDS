@@ -150,11 +150,6 @@ void EmuThread::run()
             if (useOpenGL) {
                 // emuInstance->setVSyncGL(true);
                 videoRenderer = globalCfg.GetInt("3D.Renderer");
-
-                // MelonPrime Override: Force software in menus
-                if (melonPrime->ShouldForceSoftwareRenderer()) {
-                    videoRenderer = 0; // Software
-                }
             }
 #ifdef OGLRENDERER_ENABLED
             else
