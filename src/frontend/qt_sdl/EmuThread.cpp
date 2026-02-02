@@ -32,9 +32,9 @@
 #include "RTC.h"
 #include "DSi.h"
 #include "DSi_I2C.h"
-#include "GPU3D_Soft.h"
-#include "GPU3D_OpenGL.h"
-#include "GPU3D_Compute.h"
+#include "GPU_Soft.h"
+#include "GPU_OpenGL.h"
+
 #include "Savestate.h"
 #include "EmuInstance.h"
 
@@ -139,28 +139,22 @@ void EmuThread::run()
     emuInstance->slowmoToggled = false;
 
     // --- Frame Advance Lambda (Captures EmuThread context for FPS limiting) ---
-    // This allows MelonPrimeCore to drive the loop during Adventure Mode cutscenes
-    // while maintaining correct emulation speed.
     auto frameAdvanceOnce = [&]() {
-
-        // DSi Input Logic (Simplified for brevity, or keep original if needed)
-        // ...
 
         if (useOpenGL)
             emuInstance->makeCurrentGL();
 
+        // Update Render Settings
         if (videoSettingsDirty) {
             emuInstance->renderLock.lock();
             if (useOpenGL) {
-                // Standard Config Read
+                // emuInstance->setVSyncGL(true);
                 videoRenderer = globalCfg.GetInt("3D.Renderer");
-
-                // MelonPrime Override: Force software in menus
-                if (melonPrime->ShouldForceSoftwareRenderer()) {
-                    videoRenderer = 0; // Software
-                }
             }
-            else {
+#ifdef OGLRENDERER_ENABLED
+            else
+#endif
+            {
                 videoRenderer = 0;
             }
             updateRenderer();
@@ -172,21 +166,26 @@ void EmuThread::run()
             emuInstance->renderLock.unlock();
         }
 
-        // 2. MelonPrimeのロジック実行 (入力の上書き、メモリ書き込み、タッチ処理)
-        // inputProcess() の後に呼ぶことで、移動やエイムの入力を確定させます
-        melonPrime->RunFrameHook();
-
-        // 3. 確定したキー入力マスクをNDSコアに適用 (これが抜けていると移動できません)
-        // ★修正箇所: QBitArrayをu32ビットマスクに変換して渡す
-        emuInstance->nds->SetKeyMask(melonPrime->GetInputMaskFast());
-
         // emulate
         u32 nlines;
-        if (emuInstance->nds->GPU.GetRenderer3D().NeedsShaderCompile()) {
+        if (emuInstance->nds->GPU.GetRenderer().NeedsShaderCompile()) {
             compileShaders();
             nlines = 1;
         }
         else {
+
+
+            // ----------------------------------------------------------------------
+            // MelonPrime Hook
+            // ----------------------------------------------------------------------
+            // 2. MelonPrimeのロジック実行 (入力の上書き、メモリ書き込み、タッチ処理)
+            melonPrime->RunFrameHook();
+
+            // 3. 確定したキー入力マスクをNDSコアに適用 (これが抜けていると移動できません)
+            // ★修正箇所: QBitArrayをu32ビットマスクに変換して渡す
+            emuInstance->nds->SetKeyMask(melonPrime->GetInputMaskFast());
+            // ----------------------------------------------------------------------
+
             nlines = emuInstance->nds->RunFrame();
         }
 
@@ -194,36 +193,33 @@ void EmuThread::run()
         if (emuInstance->gbaSave) emuInstance->gbaSave->CheckFlush();
         if (emuInstance->firmwareSave) emuInstance->firmwareSave->CheckFlush();
 
-        if (!useOpenGL) {
-            frontBufferLock.lock();
-            frontBuffer = emuInstance->nds->GPU.FrontBuffer;
-            frontBufferLock.unlock();
-        }
-        else {
-            frontBuffer = emuInstance->nds->GPU.FrontBuffer;
-            emuInstance->drawScreenGL();
-        }
+        emuInstance->drawScreen();
 
 #ifdef MELONCAP
         MelonCap::Update();
 #endif
 
         winUpdateCount++;
-        if (winUpdateCount >= winUpdateFreq && !useOpenGL) {
+        if (winUpdateCount >= winUpdateFreq && !useOpenGL)
+        {
             emit windowUpdate();
             winUpdateCount = 0;
         }
 
         if (emuInstance->hotkeyPressed(HK_FastForwardToggle)) emuInstance->fastForwardToggled = !emuInstance->fastForwardToggled;
         if (emuInstance->hotkeyPressed(HK_SlowMoToggle)) emuInstance->slowmoToggled = !emuInstance->slowmoToggled;
+
         if (emuInstance->hotkeyPressed(HK_AudioMuteToggle)) emuInstance->toggleAudioMute();
 
         bool enablefastforward = emuInstance->hotkeyDown(HK_FastForward) | emuInstance->fastForwardToggled;
         bool enableslowmo = emuInstance->hotkeyDown(HK_SlowMo) | emuInstance->slowmoToggled;
 
-        if (useOpenGL) {
-            if ((enablefastforward || enableslowmo) && !(fastforward || slowmo)) emuInstance->setVSyncGL(false);
-            else if (!(enablefastforward || enableslowmo) && (fastforward || slowmo)) emuInstance->setVSyncGL(true);
+        if (useOpenGL)
+        {
+            if ((enablefastforward || enableslowmo) && !(fastforward || slowmo))
+                emuInstance->setVSyncGL(false);
+            else if (!(enablefastforward || enableslowmo) && (fastforward || slowmo))
+                emuInstance->setVSyncGL(true);
         }
 
         fastforward = enablefastforward;
@@ -235,10 +231,12 @@ void EmuThread::run()
         else if (!emuInstance->doLimitFPS && !emuInstance->doAudioSync) emuInstance->curFPS = 1000.0;
         else emuInstance->curFPS = emuInstance->targetFPS;
 
-        if (emuInstance->audioDSiVolumeSync && emuInstance->nds->ConsoleType == 1) {
+        if (emuInstance->audioDSiVolumeSync && emuInstance->nds->ConsoleType == 1)
+        {
             DSi* dsi = static_cast<DSi*>(emuInstance->nds);
             u8 volumeLevel = dsi->I2C.GetBPTWL()->GetVolumeLevel();
-            if (volumeLevel != dsiVolumeLevel) {
+            if (volumeLevel != dsiVolumeLevel)
+            {
                 dsiVolumeLevel = volumeLevel;
                 emit syncVolumeLevel();
             }
@@ -249,15 +247,19 @@ void EmuThread::run()
             emuInstance->audioSync();
 
         double frametimeStep = nlines / (emuInstance->curFPS * 263.0);
+
         if (frametimeStep < 0.001) frametimeStep = 0.001;
 
-        if (emuInstance->doLimitFPS) {
+        if (emuInstance->doLimitFPS)
+        {
             double curtime = SDL_GetPerformanceCounter() * perfCountsSec;
+
             frameLimitError += frametimeStep - (curtime - lastTime);
             if (frameLimitError < -frametimeStep) frameLimitError = -frametimeStep;
             if (frameLimitError > frametimeStep) frameLimitError = frametimeStep;
 
-            if (round(frameLimitError * 1000.0) > 0.0) {
+            if (round(frameLimitError * 1000.0) > 0.0)
+            {
                 SDL_Delay(round(frameLimitError * 1000.0));
                 double timeBeforeSleep = curtime;
                 curtime = SDL_GetPerformanceCounter() * perfCountsSec;
@@ -267,15 +269,20 @@ void EmuThread::run()
         }
 
         nframes++;
-        if (nframes >= 30) {
+        if (nframes >= 30)
+        {
             double time = SDL_GetPerformanceCounter() * perfCountsSec;
             double dt = time - lastMeasureTime;
             lastMeasureTime = time;
+
             u32 fps = round(nframes / dt);
             nframes = 0;
+
             float fpstarget = 1.0 / frametimeStep;
+
             winUpdateFreq = fps / (u32)round(fpstarget);
             if (winUpdateFreq < 1) winUpdateFreq = 1;
+
             double actualfps = (59.8261 * 263.0) / nlines;
             snprintf(melontitle, sizeof(melontitle), "[%d/%.0f] melonDS " MELONDS_VERSION, fps, actualfps);
             changeWindowTitle(melontitle);
@@ -288,14 +295,13 @@ void EmuThread::run()
 
     while (emuStatus != emuStatus_Exit)
     {
-
         // 1. MPインターフェースと入力処理を実行
         if (emuInstance->instanceID == 0)
             MPInterface::Get().Process();
 
         emuInstance->inputProcess();
 
-        // 2. グローバルホットキーの確認（ポーズ解除や終了などに必須）
+        // 2. グローバルホットキーの確認
         if (emuInstance->hotkeyPressed(HK_FrameLimitToggle)) emit windowLimitFPSChange();
 
         if (emuInstance->hotkeyPressed(HK_Pause)) emuTogglePause();
@@ -344,7 +350,8 @@ void EmuThread::run()
             snprintf(melontitle, sizeof(melontitle), "melonDS " MELONDS_VERSION);
             changeWindowTitle(melontitle);
             SDL_Delay(75);
-            if (useOpenGL) emuInstance->drawScreenGL();
+
+            emuInstance->drawScreen();
         }
         handleMessages();
     }
@@ -741,18 +748,20 @@ void EmuThread::enableCheats(bool enable)
 
 void EmuThread::updateRenderer()
 {
+    auto nds = emuInstance->nds;
+
     if (videoRenderer != lastVideoRenderer)
     {
         switch (videoRenderer)
         {
         case renderer3D_Software:
-            emuInstance->nds->GPU.SetRenderer3D(std::make_unique<SoftRenderer>());
+            nds->SetRenderer(std::make_unique<SoftRenderer>(*nds));
             break;
         case renderer3D_OpenGL:
-            emuInstance->nds->GPU.SetRenderer3D(GLRenderer::New());
+            nds->SetRenderer(std::make_unique<GLRenderer>(*nds, false));
             break;
         case renderer3D_OpenGLCompute:
-            emuInstance->nds->GPU.SetRenderer3D(ComputeRenderer::New());
+            nds->SetRenderer(std::make_unique<GLRenderer>(*nds, true));
             break;
         default: __builtin_unreachable();
         }
@@ -760,22 +769,14 @@ void EmuThread::updateRenderer()
     lastVideoRenderer = videoRenderer;
 
     auto& cfg = emuInstance->getGlobalConfig();
-    switch (videoRenderer)
-    {
-    case renderer3D_Software:
-        static_cast<SoftRenderer&>(emuInstance->nds->GPU.GetRenderer3D()).SetThreaded(
-            cfg.GetBool("3D.Soft.Threaded"), emuInstance->nds->GPU);
-        break;
-    case renderer3D_OpenGL:
-        static_cast<GLRenderer&>(emuInstance->nds->GPU.GetRenderer3D()).SetRenderSettings(
-            cfg.GetBool("3D.GL.BetterPolygons"), cfg.GetInt("3D.GL.ScaleFactor"));
-        break;
-    case renderer3D_OpenGLCompute:
-        static_cast<ComputeRenderer&>(emuInstance->nds->GPU.GetRenderer3D()).SetRenderSettings(
-            cfg.GetInt("3D.GL.ScaleFactor"), cfg.GetBool("3D.GL.HiresCoordinates"));
-        break;
-    default: __builtin_unreachable();
-    }
+    melonDS::RendererSettings settings = {
+        .ScaleFactor = cfg.GetInt("3D.GL.ScaleFactor"),
+        .Threaded = cfg.GetBool("3D.Soft.Threaded"),
+        .HiresCoordinates = cfg.GetBool("3D.GL.HiresCoordinates"),
+        .BetterPolygons = cfg.GetBool("3D.GL.BetterPolygons")
+    };
+
+    nds->GetRenderer().SetRenderSettings(settings);
 
     // MelonPrime Hook: Override VSync if needed
     melonPrime->UpdateRendererSettings();
@@ -783,11 +784,15 @@ void EmuThread::updateRenderer()
 
 void EmuThread::compileShaders()
 {
+    auto& renderer = emuInstance->nds->GPU.GetRenderer();
     int currentShader, shadersCount;
     u64 startTime = SDL_GetPerformanceCounter();
-    do {
-        emuInstance->nds->GPU.GetRenderer3D().ShaderCompileStep(currentShader, shadersCount);
-    } while (emuInstance->nds->GPU.GetRenderer3D().NeedsShaderCompile() &&
+    // kind of hacky to look at the wallclock, though it is easier than
+    // than disabling vsync
+    do
+    {
+        renderer.ShaderCompileStep(currentShader, shadersCount);
+    } while (renderer.NeedsShaderCompile() &&
         (SDL_GetPerformanceCounter() - startTime) * perfCountsSec < 1.0 / 6.0);
     emuInstance->osdAddMessage(0, "Compiling shader %d/%d", currentShader + 1, shadersCount);
 }
