@@ -122,6 +122,9 @@ void RawWorker::threadLoop() noexcept {
 
     // Cache function pointer for hot path
     const auto ntPeekMessage = WinInternal::fnNtUserPeekMessage;
+    // 追加: ntMsgWait をキャッシュ
+    const auto ntMsgWait = WinInternal::fnNtUserMsgWaitForMultipleObjectsEx;
+
     constexpr DWORD kWakeFlags = QS_RAWINPUT | QS_POSTMESSAGE;
 
     // Number of spin iterations before sleeping
@@ -166,7 +169,13 @@ void RawWorker::threadLoop() noexcept {
         }
 
         // Block until new input arrives (power efficient) if spin didn't catch anything
-        MsgWaitForMultipleObjectsEx(0, nullptr, INFINITE, kWakeFlags, MWMO_INPUTAVAILABLE);
+        // 修正: NT APIがあればそちらを使用
+        if (ntMsgWait) {
+            ntMsgWait(0, nullptr, INFINITE, kWakeFlags, MWMO_INPUTAVAILABLE);
+        }
+        else {
+            MsgWaitForMultipleObjectsEx(0, nullptr, INFINITE, kWakeFlags, MWMO_INPUTAVAILABLE);
+        }
     }
 
 cleanup:
