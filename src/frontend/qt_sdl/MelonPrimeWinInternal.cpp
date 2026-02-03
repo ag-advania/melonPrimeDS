@@ -8,6 +8,9 @@
 NtUserGetRawInputData_t   WinInternal::fnNtUserGetRawInputData = nullptr;
 NtUserGetRawInputBuffer_t WinInternal::fnNtUserGetRawInputBuffer = nullptr;
 NtUserPeekMessage_t       WinInternal::fnNtUserPeekMessage = nullptr;
+// í«â¡: èâä˙âª
+NtUserMsgWaitForMultipleObjectsEx_t WinInternal::fnNtUserMsgWaitForMultipleObjectsEx = nullptr;
+
 std::atomic<bool>         WinInternal::s_resolved{ false };
 
 // ============================================================================
@@ -35,6 +38,10 @@ void WinInternal::ResolveNtApis() noexcept {
 
         fnNtUserPeekMessage = reinterpret_cast<NtUserPeekMessage_t>(
             GetProcAddress(hModule, "NtUserPeekMessage"));
+
+        // í«â¡: ÉAÉhÉåÉXâåà
+        fnNtUserMsgWaitForMultipleObjectsEx = reinterpret_cast<NtUserMsgWaitForMultipleObjectsEx_t>(
+            GetProcAddress(hModule, "NtUserMsgWaitForMultipleObjectsEx"));
 
         // Note: We intentionally don't FreeLibrary here because we need
         // the function pointers to remain valid for the application lifetime

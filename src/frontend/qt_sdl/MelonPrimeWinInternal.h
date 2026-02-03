@@ -32,6 +32,15 @@ using NtUserPeekMessage_t = BOOL(WINAPI*)(
     BOOL bProcessSideEffects
     );
 
+// 追加: NtUserMsgWaitForMultipleObjectsEx の型定義
+using NtUserMsgWaitForMultipleObjectsEx_t = DWORD(WINAPI*)(
+    DWORD nCount,
+    const HANDLE* pHandles,
+    DWORD dwMilliseconds,
+    DWORD dwWakeMask,
+    DWORD dwFlags
+    );
+
 // ============================================================================
 // WinInternal - Low-level Windows API access
 // ============================================================================
@@ -55,6 +64,8 @@ public:
     static NtUserGetRawInputData_t   fnNtUserGetRawInputData;
     static NtUserGetRawInputBuffer_t fnNtUserGetRawInputBuffer;
     static NtUserPeekMessage_t       fnNtUserPeekMessage;
+    // 追加: 待機関数のポインタ
+    static NtUserMsgWaitForMultipleObjectsEx_t fnNtUserMsgWaitForMultipleObjectsEx;
 
 private:
     static std::atomic<bool> s_resolved;
