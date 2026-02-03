@@ -149,6 +149,8 @@ void EmuThread::run()
             emuInstance->renderLock.lock();
             if (useOpenGL) {
                 // emuInstance->setVSyncGL(true);
+                // MelonPrime Hook: Ensure VSync settings are applied
+                melonPrime->UpdateRendererSettings();
                 videoRenderer = globalCfg.GetInt("3D.Renderer");
             }
 #ifdef OGLRENDERER_ENABLED
@@ -157,10 +159,8 @@ void EmuThread::run()
             {
                 videoRenderer = 0;
             }
-            updateRenderer();
 
-            // MelonPrime Hook: Ensure VSync settings are applied
-            melonPrime->UpdateRendererSettings();
+            updateRenderer();
 
             videoSettingsDirty = false;
             emuInstance->renderLock.unlock();
@@ -775,7 +775,6 @@ void EmuThread::updateRenderer()
         .HiresCoordinates = cfg.GetBool("3D.GL.HiresCoordinates"),
         .BetterPolygons = cfg.GetBool("3D.GL.BetterPolygons")
     };
-
     nds->GetRenderer().SetRenderSettings(settings);
 
     // MelonPrime Hook: Override VSync if needed
