@@ -51,7 +51,9 @@ public:
     bool hotkeyReleased(int id) noexcept;
 
     void fetchMouseDelta(int& outX, int& outY);
+    void fetchMouseWheel(int& outV, int& outH);
     void discardDeltas();
+    void discardWheel();
     void resetAllKeys();
     void resetMouseButtons();
     void resetHotkeyEdges();
@@ -90,6 +92,7 @@ private:
 
     FORCE_INLINE void processRawInput(HRAWINPUT hRaw) noexcept;
     void processRawInputBatched() noexcept;
+    void processRawInputBatchedLimited(uint32_t maxLoops) noexcept;
 
     struct alignas(64) StateBits {
         std::atomic<uint64_t> vkDown[4];
@@ -102,6 +105,12 @@ private:
         uint64_t combined;
     };
     std::atomic<uint64_t> m_mouseDeltaCombined{ 0 };
+
+    union WheelDeltaPack {
+        struct { int32_t v; int32_t h; } s;
+        uint64_t combined;
+    };
+    std::atomic<uint64_t> m_wheelDeltaCombined{ 0 };
 
     struct alignas(8) HotkeyMask {
         uint64_t vkMask[4];
