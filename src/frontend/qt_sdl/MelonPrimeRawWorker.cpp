@@ -29,7 +29,8 @@ namespace MelonPrime {
         m_hThread = reinterpret_cast<HANDLE>(_beginthreadex(nullptr, 0, ThreadEntry, this, 0, nullptr));
 
         if (m_hThread) {
-            SetThreadPriority(m_hThread, THREAD_PRIORITY_TIME_CRITICAL);
+            // 遅延撲滅のため最高優先度
+            SetThreadPriority(m_hThread, THREAD_PRIORITY_HIGHEST);
         }
         else {
             m_runThread.store(false, std::memory_order_release);
@@ -88,47 +89,78 @@ namespace MelonPrime {
         RegisterRawDevices(m_hiddenWnd);
 
         MSG msg;
+        // 初期キューの掃除
         while (PeekMessageW(&msg, nullptr, 0, 0, PM_REMOVE)) {
-            if (msg.message == WM_INPUT) m_state.processRawInput(reinterpret_cast<HRAWINPUT>(msg.lParam));
+            if (msg.message == WM_INPUT) m_state.processRawInputBatched();
         }
 
         const auto ntPeekMessage = WinInternal::fnNtUserPeekMessage;
         const auto ntMsgWait = WinInternal::fnNtUserMsgWaitForMultipleObjectsEx;
+
         constexpr DWORD kWakeFlags = QS_RAWINPUT | QS_POSTMESSAGE;
         constexpr int kSpinCount = 4000;
 
         while (m_runThread.load(std::memory_order_relaxed)) {
+            // 1. バッファ一括処理 (メイン)
+            // 溜まっている入力をまとめて処理する
             m_state.processRawInputBatched();
 
-            if (ntPeekMessage) {
-                while (ntPeekMessage(&msg, nullptr, 0, 0, PM_REMOVE, FALSE)) {
-                    if (msg.message == WM_QUIT) goto cleanup;
-                    if (msg.message == WM_INPUT) m_state.processRawInput(reinterpret_cast<HRAWINPUT>(msg.lParam));
-                }
-            }
-            else {
-                while (PeekMessageW(&msg, nullptr, 0, 0, PM_REMOVE)) {
-                    if (msg.message == WM_QUIT) goto cleanup;
-                    if (msg.message == WM_INPUT) m_state.processRawInput(reinterpret_cast<HRAWINPUT>(msg.lParam));
-                }
-            }
+            // 2. メッセージキューの掃除 & 取りこぼし防止（修正版）
+            // メッセージを PM_REMOVE で消してしまうと、その入力データが GetRawInputBuffer から見えなくなる恐れがある。
+            // そのため、まずは PM_NOREMOVE で覗き見し、WM_INPUT があればバッファ処理を行ってから消す。
 
-            for (int i = 0; i < kSpinCount; ++i) {
-                _mm_pause();
+            // Note: ループ内で毎回 processRawInputBatched を呼んでも、
+            // データがなければ即座に返るためオーバーヘッドは最小限。
+
+            while (true) {
+                BOOL hasMsg = FALSE;
                 if (ntPeekMessage) {
-                    if (ntPeekMessage(&msg, nullptr, 0, 0, PM_NOREMOVE, FALSE)) break;
+                    hasMsg = ntPeekMessage(&msg, nullptr, 0, 0, PM_NOREMOVE, FALSE);
                 }
                 else {
-                    if (PeekMessageW(&msg, nullptr, 0, 0, PM_NOREMOVE)) break;
+                    hasMsg = PeekMessageW(&msg, nullptr, 0, 0, PM_NOREMOVE);
+                }
+
+                if (!hasMsg) break;
+
+                if (msg.message == WM_QUIT) {
+                    // Quitなら取り出して終了へ
+                    PeekMessageW(&msg, nullptr, 0, 0, PM_REMOVE);
+                    goto cleanup;
+                }
+
+                if (msg.message == WM_INPUT) {
+                    // 入力メッセージがある＝データがまだバッファに残っている、または新しく来た可能性がある
+                    // メッセージを消す前にデータを吸い出す！
+                    m_state.processRawInputBatched();
+
+                    // データ確保後にメッセージを削除
+                    PeekMessageW(&msg, nullptr, 0, 0, PM_REMOVE);
+                }
+                else {
+                    // その他のメッセージは普通に処理
+                    PeekMessageW(&msg, nullptr, 0, 0, PM_REMOVE);
+                    DispatchMessageW(&msg);
                 }
             }
 
+            // 3. スピンループ (最適化版)
+            for (int i = 0; i < kSpinCount; ++i) {
+                _mm_pause();
+                if (GetQueueStatus(kWakeFlags) >> 16) {
+                    goto process_next;
+                }
+            }
+
+            // 4. スピンで見つからなければスリープ待機
             if (ntMsgWait) {
                 ntMsgWait(0, nullptr, INFINITE, kWakeFlags, MWMO_INPUTAVAILABLE);
             }
             else {
                 MsgWaitForMultipleObjectsEx(0, nullptr, INFINITE, kWakeFlags, MWMO_INPUTAVAILABLE);
             }
+
+        process_next:;
         }
 
     cleanup:
