@@ -4,95 +4,65 @@
 #ifdef _WIN32
 #include <QAbstractNativeEventFilter>
 #include <QByteArray>
-#include <QtGlobal>
 #include <windows.h>
 #include <memory>
 #include <vector>
 #include <atomic>
 #include <mutex>
 
-class InputState;
-class RawWorker;
+namespace MelonPrime {
 
-/**
- * @brief Singleton filter for processing raw input on Windows.
- *
- * Two modes of operation:
- * - Joy2Key mode: Processes input on Qt's main thread via native event filter
- * - Worker mode: Dedicated high-priority thread for lowest latency
- */
-class RawInputWinFilter final : public QAbstractNativeEventFilter
-{
-public:
-    /**
-     * @brief Acquire reference to singleton instance.
-     * @param joy2KeySupport Enable Joy2Key compatibility mode
-     * @param mainHwnd Main window handle for raw input registration
-     * @return Pointer to singleton (never null on success)
-     */
-    [[nodiscard]] static RawInputWinFilter* Acquire(bool joy2KeySupport, HWND mainHwnd);
+    class InputState;
+    class RawWorker;
 
-    /**
-     * @brief Release reference. Destroys singleton when refcount reaches zero.
-     */
-    static void Release() noexcept;
+    class RawInputWinFilter final : public QAbstractNativeEventFilter
+    {
+    public:
+        static RawInputWinFilter* Acquire(bool joy2KeySupport, HWND mainHwnd);
+        static void Release() noexcept;
+        static int RefCount() noexcept;
 
-    /**
-     * @brief Get current reference count (for debugging).
-     */
-    [[nodiscard]] static int RefCount() noexcept;
+        bool nativeEventFilter(const QByteArray& eventType, void* message, qintptr* result) override;
 
-    // QAbstractNativeEventFilter
-    bool nativeEventFilter(const QByteArray& eventType, void* message, qintptr* result) override;
+        void setJoy2KeySupport(bool enable);
+        [[nodiscard]] bool getJoy2KeySupport() const noexcept;
+        void setRawInputTarget(HWND hwnd);
 
-    // Mode control
-    void setJoy2KeySupport(bool enable);
-    [[nodiscard]] bool getJoy2KeySupport() const noexcept;
-    void setRawInputTarget(HWND hwnd);
+        void clearAllBindings();
+        void setHotkeyVks(int id, const std::vector<UINT>& vks);
 
-    // Hotkey bindings
-    void clearAllBindings();
-    void setHotkeyVks(int id, const std::vector<UINT>& vks);
+        [[nodiscard]] bool hotkeyDown(int id) const noexcept;
+        [[nodiscard]] bool hotkeyPressed(int id) noexcept;
+        [[nodiscard]] bool hotkeyReleased(int id) noexcept;
 
-    // Hotkey state queries
-    [[nodiscard]] bool hotkeyDown(int id) const noexcept;
-    [[nodiscard]] bool hotkeyPressed(int id) noexcept;
-    [[nodiscard]] bool hotkeyReleased(int id) noexcept;
+        void fetchMouseDelta(int& outX, int& outY) noexcept;
+        void discardDeltas() noexcept;
 
-    // Mouse input
-    void fetchMouseDelta(int& outX, int& outY) noexcept;
-    void discardDeltas() noexcept;
+        void resetAllKeys() noexcept;
+        void resetMouseButtons() noexcept;
+        void resetHotkeyEdges() noexcept;
 
-    // State reset
-    void resetAllKeys() noexcept;
-    void resetMouseButtons() noexcept;
-    void resetHotkeyEdges() noexcept;
+    private:
+        RawInputWinFilter(bool joy2KeySupport, HWND mainHwnd);
+        ~RawInputWinFilter() override;
 
-private:
-    RawInputWinFilter(bool joy2KeySupport, HWND mainHwnd);
-    ~RawInputWinFilter() override;
+        RawInputWinFilter(const RawInputWinFilter&) = delete;
+        RawInputWinFilter& operator=(const RawInputWinFilter&) = delete;
 
-    // Non-copyable, non-movable
-    RawInputWinFilter(const RawInputWinFilter&) = delete;
-    RawInputWinFilter& operator=(const RawInputWinFilter&) = delete;
+        void switchMode(bool toJoy2Key);
+        static void RegisterRawDevices(HWND hwnd) noexcept;
 
-    void switchMode(bool toJoy2Key);
-    
-    static void RegisterRawDevices(HWND hwnd) noexcept;
+        static RawInputWinFilter* s_instance;
+        static std::atomic<int> s_refCount;
+        static std::once_flag s_initFlag;
 
-    // Singleton state
-    static RawInputWinFilter* s_instance;
-    static std::atomic<int> s_refCount;
-    static std::once_flag s_initFlag;
+        std::unique_ptr<InputState> m_state;
+        std::unique_ptr<RawWorker> m_worker;
 
-    // Components
-    std::unique_ptr<InputState> m_state;
-    std::unique_ptr<RawWorker> m_worker;
+        HWND m_mainHwnd = nullptr;
+        std::atomic<bool> m_joy2KeySupport{ false };
+    };
 
-    // Configuration
-    HWND m_mainHwnd = nullptr;
-    std::atomic<bool> m_joy2KeySupport{ false };
-};
-
+} // namespace MelonPrime
 #endif // _WIN32
 #endif // MELON_PRIME_RAW_INPUT_WIN_FILTER_H

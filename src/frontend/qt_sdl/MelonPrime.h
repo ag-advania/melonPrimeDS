@@ -1,26 +1,19 @@
-/*
-    MelonPrimeDS Logic Separation (REFACTORED & OPTIMIZED)
-    Updated for High-Precision Mouse Input & Raw Pointer Caching
-    (Sub-pixel Accumulation Removed)
-*/
-
 #ifndef MELONPRIME_H
 #define MELONPRIME_H
 
-#include <QObject>
-#include <QBitArray>
-#include <QPoint>
 #include <functional>
 #include <vector>
 #include <cstdint>
 #include <array>
 #include <string_view>
 #include <memory> 
+#include <cmath>
+
+class QBitArray;
+class QPoint;
 
 #include "types.h"
 #include "Config.h"
-
-// --- Compiler Optimization Macros ---
 
 #ifndef FORCE_INLINE
 #  if defined(_MSC_VER)
@@ -88,11 +81,11 @@
 class EmuInstance;
 namespace melonDS { class NDS; }
 
-#ifdef _WIN32
-class RawInputWinFilter;
-#endif
-
 namespace MelonPrime {
+
+#ifdef _WIN32
+    class RawInputWinFilter;
+#endif
 
     enum InputCacheBit : uint64_t {
         IB_JUMP = 1ULL << 0,
@@ -101,21 +94,17 @@ namespace MelonPrime {
         IB_MORPH = 1ULL << 3,
         IB_MORPH_BOOST = 1ULL << 4,
         IB_WEAPON_CHECK = 1ULL << 5,
-
         IB_MOVE_F = 1ULL << 6,
         IB_MOVE_B = 1ULL << 7,
         IB_MOVE_L = 1ULL << 8,
         IB_MOVE_R = 1ULL << 9,
-
         IB_MENU = 1ULL << 10,
         IB_SCAN_VISOR = 1ULL << 11,
-
         IB_UI_OK = 1ULL << 12,
         IB_UI_LEFT = 1ULL << 13,
         IB_UI_RIGHT = 1ULL << 14,
         IB_UI_YES = 1ULL << 15,
         IB_UI_NO = 1ULL << 16,
-
         IB_WEAPON_BEAM = 1ULL << 17,
         IB_WEAPON_MISSILE = 1ULL << 18,
         IB_WEAPON_1 = 1ULL << 19,
@@ -127,7 +116,6 @@ namespace MelonPrime {
         IB_WEAPON_SPECIAL = 1ULL << 25,
         IB_WEAPON_NEXT = 1ULL << 26,
         IB_WEAPON_PREV = 1ULL << 27,
-
         IB_MOVE_MASK = IB_MOVE_F | IB_MOVE_B | IB_MOVE_L | IB_MOVE_R,
         IB_WEAPON_ANY = IB_WEAPON_BEAM | IB_WEAPON_MISSILE | IB_WEAPON_1 | IB_WEAPON_2 |
         IB_WEAPON_3 | IB_WEAPON_4 | IB_WEAPON_5 | IB_WEAPON_6 | IB_WEAPON_SPECIAL,
@@ -163,7 +151,6 @@ namespace MelonPrime {
     };
     static_assert(sizeof(GameAddressesHot) == 64, "GameAddressesHot must be 64 bytes");
 
-    // Raw Pointer Cache for Hot Path (Direct Access)
     struct alignas(64) HotPointers {
         uint8_t* isAltForm;
         uint8_t* jumpFlag;
@@ -172,14 +159,11 @@ namespace MelonPrime {
         uint8_t* currentWeapon;
         uint16_t* havingWeapons;
         uint32_t* weaponAmmo;
-
         uint8_t* boostGauge;
         uint8_t* isBoosting;
         uint8_t* loadedSpecialWeapon;
-
         uint16_t* aimX;
         uint16_t* aimY;
-
         uint8_t* isInVisorOrMap;
         uint8_t* isMapOrUserActionPaused;
     };
@@ -201,7 +185,6 @@ namespace MelonPrime {
         melonDS::u32 dsNameFlagAndMicVolume;
         melonDS::u32 mainHunter;
         melonDS::u32 rankColor;
-
         melonDS::u32 baseIsAltForm;
         melonDS::u32 baseLoadedSpecialWeapon;
         melonDS::u32 baseWeaponChange;
@@ -218,6 +201,12 @@ namespace MelonPrime {
         AIMBLK_MORPHBALL_BOOST = 1u << 1,
         AIMBLK_CURSOR_MODE = 1u << 2,
     };
+
+#ifdef _WIN32
+    struct FilterDeleter {
+        void operator()(RawInputWinFilter* ptr);
+    };
+#endif
 
     class MelonPrimeCore
     {
@@ -237,7 +226,6 @@ namespace MelonPrime {
         void OnReset();
 
         void SetFrameAdvanceFunc(std::function<void()> func);
-        void UpdateRendererSettings();
 
         FORCE_INLINE bool IsInGame() const { return m_isInGame; }
         bool ShouldForceSoftwareRenderer() const;
@@ -253,7 +241,7 @@ namespace MelonPrime {
     private:
         alignas(64) FrameInputState m_input{};
         GameAddressesHot m_addrHot{};
-        HotPointers m_ptrs{}; // Raw pointer cache
+        HotPointers m_ptrs{};
 
         uint16_t m_inputMaskFast = 0xFFFF;
         uint16_t m_snapState = 0;
@@ -267,7 +255,6 @@ namespace MelonPrime {
 
         struct alignas(8) StateFlags {
             uint32_t packed;
-
             static constexpr uint32_t BIT_ROM_DETECTED = 1u << 0;
             static constexpr uint32_t BIT_IN_GAME = 1u << 1;
             static constexpr uint32_t BIT_IN_GAME_INIT = 1u << 2;
@@ -301,7 +288,7 @@ namespace MelonPrime {
         std::function<void()> m_frameAdvanceFunc;
 
 #ifdef _WIN32
-        RawInputWinFilter* m_rawFilter = nullptr;
+        std::unique_ptr<RawInputWinFilter, FilterDeleter> m_rawFilter;
 #endif
 
         GameAddressesCold m_addrCold{};
@@ -337,17 +324,14 @@ namespace MelonPrime {
         FORCE_INLINE void ApplyAimAdjustBranchless(float& dx, float& dy) noexcept {
             const float a = m_aimAdjust;
             if (UNLIKELY(a <= 0.0f)) return;
-
             const float avx = std::fabs(dx);
             const float avy = std::fabs(dy);
             const float signX = (dx >= 0.0f) ? 1.0f : -1.0f;
             const float signY = (dy >= 0.0f) ? 1.0f : -1.0f;
-
             dx = (avx < a) ? 0.0f : ((avx < 1.0f) ? signX : dx);
             dy = (avy < a) ? 0.0f : ((avy < 1.0f) ? signY : dy);
         }
 
-        // --- Raw Pointer Helper ---
         template <typename T>
         FORCE_INLINE T* GetRamPointer(melonDS::u8* ram, melonDS::u32 addr) {
             return reinterpret_cast<T*>(&ram[addr & 0x3FFFFF]);
