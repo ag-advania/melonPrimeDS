@@ -5,71 +5,65 @@
 #include <windows.h>
 #include <atomic>
 
-// ============================================================================
-// NT API function pointer types
-// ============================================================================
+namespace MelonPrime {
 
-using NtUserGetRawInputData_t = UINT(WINAPI*)(
-    HRAWINPUT hRawInput,
-    UINT uiCommand,
-    LPVOID pData,
-    PUINT pcbSize,
-    UINT cbSizeHeader
-    );
+    // ============================================================================
+    // NT API function pointer types
+    // ============================================================================
 
-using NtUserGetRawInputBuffer_t = UINT(WINAPI*)(
-    PRAWINPUT pData,
-    PUINT pcbSize,
-    UINT cbSizeHeader
-    );
+    using NtUserGetRawInputData_t = UINT(WINAPI*)(
+        HRAWINPUT hRawInput,
+        UINT uiCommand,
+        LPVOID pData,
+        PUINT pcbSize,
+        UINT cbSizeHeader
+        );
 
-using NtUserPeekMessage_t = BOOL(WINAPI*)(
-    LPMSG lpMsg,
-    HWND hWnd,
-    UINT wMsgFilterMin,
-    UINT wMsgFilterMax,
-    UINT wRemoveMsg,
-    BOOL bProcessSideEffects
-    );
+    using NtUserGetRawInputBuffer_t = UINT(WINAPI*)(
+        PRAWINPUT pData,
+        PUINT pcbSize,
+        UINT cbSizeHeader
+        );
 
-// 追加: NtUserMsgWaitForMultipleObjectsEx の型定義
-using NtUserMsgWaitForMultipleObjectsEx_t = DWORD(WINAPI*)(
-    DWORD nCount,
-    const HANDLE* pHandles,
-    DWORD dwMilliseconds,
-    DWORD dwWakeMask,
-    DWORD dwFlags
-    );
+    using NtUserPeekMessage_t = BOOL(WINAPI*)(
+        LPMSG lpMsg,
+        HWND hWnd,
+        UINT wMsgFilterMin,
+        UINT wMsgFilterMax,
+        UINT wRemoveMsg,
+        BOOL bProcessSideEffects
+        );
 
-// ============================================================================
-// WinInternal - Low-level Windows API access
-// ============================================================================
+    using NtUserMsgWaitForMultipleObjectsEx_t = DWORD(WINAPI*)(
+        DWORD nCount,
+        const HANDLE* pHandles,
+        DWORD dwMilliseconds,
+        DWORD dwWakeMask,
+        DWORD dwFlags
+        );
 
-class WinInternal {
-public:
-    /**
-     * @brief Resolve undocumented NT APIs for better performance.
-     * Thread-safe, idempotent. Call early in application startup.
-     */
-    static void ResolveNtApis() noexcept;
+    // ============================================================================
+    // WinInternal - Low-level Windows API access
+    // ============================================================================
 
-    /**
-     * @brief Check if NT APIs were successfully resolved.
-     */
-    [[nodiscard]] static bool IsResolved() noexcept {
-        return s_resolved.load(std::memory_order_acquire);
-    }
+    class WinInternal {
+    public:
+        static void ResolveNtApis() noexcept;
 
-    // Function pointers - nullptr if not available
-    static NtUserGetRawInputData_t   fnNtUserGetRawInputData;
-    static NtUserGetRawInputBuffer_t fnNtUserGetRawInputBuffer;
-    static NtUserPeekMessage_t       fnNtUserPeekMessage;
-    // 追加: 待機関数のポインタ
-    static NtUserMsgWaitForMultipleObjectsEx_t fnNtUserMsgWaitForMultipleObjectsEx;
+        [[nodiscard]] static bool IsResolved() noexcept {
+            return s_resolved.load(std::memory_order_acquire);
+        }
 
-private:
-    static std::atomic<bool> s_resolved;
-};
+        static NtUserGetRawInputData_t   fnNtUserGetRawInputData;
+        static NtUserGetRawInputBuffer_t fnNtUserGetRawInputBuffer;
+        static NtUserPeekMessage_t       fnNtUserPeekMessage;
+        static NtUserMsgWaitForMultipleObjectsEx_t fnNtUserMsgWaitForMultipleObjectsEx;
+
+    private:
+        static std::atomic<bool> s_resolved;
+    };
+
+} // namespace MelonPrime
 
 #endif // _WIN32
 #endif // MELON_PRIME_WIN_INTERNAL_H

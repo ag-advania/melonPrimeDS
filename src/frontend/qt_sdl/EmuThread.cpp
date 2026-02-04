@@ -149,8 +149,6 @@ void EmuThread::run()
             emuInstance->renderLock.lock();
             if (useOpenGL) {
                 // emuInstance->setVSyncGL(true);
-                // MelonPrime Hook: Ensure VSync settings are applied
-                melonPrime->UpdateRendererSettings();
                 videoRenderer = globalCfg.GetInt("3D.Renderer");
             }
 #ifdef OGLRENDERER_ENABLED
@@ -750,6 +748,12 @@ void EmuThread::updateRenderer()
 {
     auto nds = emuInstance->nds;
 
+
+    auto& cfg = emuInstance->getGlobalConfig();
+
+    bool vsyncFlag = cfg.GetBool("Screen.VSync"); // MelonPrimeDS
+    emuInstance->setVSyncGL(vsyncFlag); // MelonPrimeDS
+
     if (videoRenderer != lastVideoRenderer)
     {
         switch (videoRenderer)
@@ -768,7 +772,6 @@ void EmuThread::updateRenderer()
     }
     lastVideoRenderer = videoRenderer;
 
-    auto& cfg = emuInstance->getGlobalConfig();
     melonDS::RendererSettings settings = {
         .ScaleFactor = cfg.GetInt("3D.GL.ScaleFactor"),
         .Threaded = cfg.GetBool("3D.Soft.Threaded"),
@@ -777,8 +780,8 @@ void EmuThread::updateRenderer()
     };
     nds->GetRenderer().SetRenderSettings(settings);
 
-    // MelonPrime Hook: Override VSync if needed
-    melonPrime->UpdateRendererSettings();
+    emuInstance->setVSyncGL(vsyncFlag); // MelonPrimeDS
+
 }
 
 void EmuThread::compileShaders()
