@@ -34,6 +34,8 @@
 // MelonPrimeDS Integration
 #include "MelonPrime.h"
 
+
+
 // melonprimeds
 #if defined(_WIN32)
 
@@ -1362,6 +1364,9 @@ void ScreenPanelGL::drawScreen()
     }
 
     glContext->SwapBuffers();
+
+    glFinish(); // MelonPrimeDS
+
 }
 
 qreal ScreenPanelGL::devicePixelRatioFromScreen() const
