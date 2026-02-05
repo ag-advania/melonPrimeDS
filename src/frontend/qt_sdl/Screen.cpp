@@ -33,6 +33,10 @@
 
 // MelonPrimeDS Integration
 #include "MelonPrime.h"
+#ifdef _WIN32
+#include <dwmapi.h>
+#pragma comment(lib, "dwmapi.lib")
+#endif
 
 // melonprimeds
 #if defined(_WIN32)
@@ -1362,6 +1366,13 @@ void ScreenPanelGL::drawScreen()
     }
 
     glContext->SwapBuffers();
+
+    // ▼▼▼ 追加: DWMのバッファフラッシュを待機 ▼▼▼
+#ifdef _WIN32
+    // これにより、DWMが画面を更新するまでCPUがブロックされます
+    // 実質的に「レンダリング前フレーム」がDWMの管理下に置かれます
+    DwmFlush();
+#endif
 }
 
 qreal ScreenPanelGL::devicePixelRatioFromScreen() const
