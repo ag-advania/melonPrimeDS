@@ -1,170 +1,149 @@
 #ifdef _WIN32
 #include "MelonPrimeRawInputWinFilter.h"
 #include "MelonPrimeInputState.h"
-#include "MelonPrimeRawWorker.h"
+#include "MelonPrimeWinInternal.h"
+#include <QCoreApplication>
 
 namespace MelonPrime {
 
-    RawInputWinFilter* RawInputWinFilter::s_instance = nullptr;
     std::atomic<int> RawInputWinFilter::s_refCount{ 0 };
-    std::once_flag RawInputWinFilter::s_initFlag;
+    RawInputWinFilter* RawInputWinFilter::s_instance = nullptr;
 
-    // =========================================================================
-    // Acquire: 初期化中(-1)に別スレッドが来た場合の競合修正
-    // =========================================================================
-    RawInputWinFilter* RawInputWinFilter::Acquire(bool joy2KeySupport, HWND mainHwnd) {
-        for (;;) {
-            int count = s_refCount.load(std::memory_order_acquire);
-
-            if (count < 0) {
-                // 別スレッドが初期化中 → スピンウェイト
-                YieldProcessor();
-                continue;
-            }
-
-            if (count == 0) {
-                // 初期化を試みる (0 → -1 でロック)
-                int expected = 0;
-                if (s_refCount.compare_exchange_strong(expected, -1,
-                    std::memory_order_acq_rel, std::memory_order_acquire))
-                {
-                    try {
-                        s_instance = new RawInputWinFilter(joy2KeySupport, mainHwnd);
-                        s_refCount.store(1, std::memory_order_release);
-                        return s_instance;
-                    }
-                    catch (...) {
-                        s_refCount.store(0, std::memory_order_release);
-                        throw;
-                    }
-                }
-                continue;
-            }
-
-            // count > 0: 既存インスタンスの参照カウントを増やす
-            if (s_refCount.compare_exchange_weak(count, count + 1,
-                std::memory_order_acq_rel, std::memory_order_acquire))
-            {
-                while (!s_instance) YieldProcessor();
-                return s_instance;
-            }
+    RawInputWinFilter* RawInputWinFilter::Acquire(bool joy2KeySupport, void* windowHandle) {
+        if (s_refCount.fetch_add(1) == 0) {
+            s_instance = new RawInputWinFilter(joy2KeySupport, static_cast<HWND>(windowHandle));
         }
+        else if (s_instance) {
+            s_instance->setJoy2KeySupport(joy2KeySupport);
+            s_instance->setRawInputTarget(static_cast<HWND>(windowHandle));
+        }
+        return s_instance;
     }
 
-    void RawInputWinFilter::Release() noexcept {
-        if (s_refCount.fetch_sub(1, std::memory_order_acq_rel) == 1) {
-            RawInputWinFilter* ptr = s_instance;
+    void RawInputWinFilter::Release() {
+        if (s_refCount.fetch_sub(1) == 1) {
+            delete s_instance;
             s_instance = nullptr;
-            delete ptr;
         }
     }
 
-    int RawInputWinFilter::RefCount() noexcept {
-        int c = s_refCount.load(std::memory_order_acquire);
-        return (c < 0) ? 0 : c;
-    }
-
-    RawInputWinFilter::RawInputWinFilter(bool joy2KeySupport, HWND mainHwnd)
-        : m_mainHwnd(mainHwnd), m_joy2KeySupport(joy2KeySupport)
+    RawInputWinFilter::RawInputWinFilter(bool joy2KeySupport, HWND hwnd)
+        : m_state(std::make_unique<InputState>())
+        , m_hwndQtTarget(hwnd)
+        , m_hHiddenWnd(nullptr)
+        , m_joy2KeySupport(joy2KeySupport)
+        , m_isRegistered(false)
     {
-        std::call_once(s_initFlag, &InputState::InitializeTables);
-
-        m_state = std::make_unique<InputState>();
-        m_worker = std::make_unique<RawWorker>(*m_state);
-
-        if (m_joy2KeySupport) {
-            if (m_mainHwnd) RegisterRawDevices(m_mainHwnd);
-        }
-        else {
-            m_worker->start();
-        }
+        InputState::InitializeTables();
+        CreateHiddenWindow();
+        RegisterDevices();
     }
 
     RawInputWinFilter::~RawInputWinFilter() {
-        if (m_worker) m_worker->stop();
-        UnregisterRawDevices();
+        UnregisterDevices();
+        DestroyHiddenWindow();
+    }
+
+    void RawInputWinFilter::CreateHiddenWindow() {
+        WNDCLASSW wc = { 0 };
+        wc.lpfnWndProc = HiddenWndProc;
+        wc.hInstance = GetModuleHandle(nullptr);
+        wc.lpszClassName = L"MelonPrimeInputHost";
+        RegisterClassW(&wc);
+        m_hHiddenWnd = CreateWindowW(L"MelonPrimeInputHost", L"", 0, 0, 0, 0, 0,
+            HWND_MESSAGE, nullptr, wc.hInstance, this);
+    }
+
+    void RawInputWinFilter::DestroyHiddenWindow() {
+        if (m_hHiddenWnd) {
+            DestroyWindow(m_hHiddenWnd);
+            m_hHiddenWnd = nullptr;
+        }
+        UnregisterClassW(L"MelonPrimeInputHost", GetModuleHandle(nullptr));
+    }
+
+    LRESULT CALLBACK RawInputWinFilter::HiddenWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
+        return DefWindowProcW(hwnd, msg, wParam, lParam);
     }
 
     void RawInputWinFilter::setJoy2KeySupport(bool enable) {
-        if (m_joy2KeySupport.load(std::memory_order_acquire) == enable) return;
-        m_joy2KeySupport.store(enable, std::memory_order_release);
-        switchMode(enable);
-    }
-
-    bool RawInputWinFilter::getJoy2KeySupport() const noexcept {
-        return m_joy2KeySupport.load(std::memory_order_acquire);
+        if (m_joy2KeySupport != enable) {
+            m_joy2KeySupport = enable;
+            UnregisterDevices();
+            RegisterDevices();
+        }
     }
 
     void RawInputWinFilter::setRawInputTarget(HWND hwnd) {
-        if (m_mainHwnd == hwnd) return;
-        m_mainHwnd = hwnd;
-        if (m_joy2KeySupport.load(std::memory_order_acquire) && m_mainHwnd) {
-            RegisterRawDevices(m_mainHwnd);
+        if (m_hwndQtTarget != hwnd) {
+            m_hwndQtTarget = hwnd;
+            if (m_joy2KeySupport && m_isRegistered) {
+                UnregisterDevices();
+                RegisterDevices();
+            }
         }
     }
 
-    void RawInputWinFilter::switchMode(bool toJoy2Key) {
-        if (toJoy2Key) {
-            m_worker->stop();
-            if (m_mainHwnd) RegisterRawDevices(m_mainHwnd);
+    void RawInputWinFilter::RegisterDevices() {
+        if (m_isRegistered) return;
+        RAWINPUTDEVICE rid[2];
+        rid[0].usUsagePage = 0x01;
+        rid[0].usUsage = 0x02;
+        rid[1].usUsagePage = 0x01;
+        rid[1].usUsage = 0x06;
+
+        if (m_joy2KeySupport) {
+            rid[0].dwFlags = 0; rid[0].hwndTarget = m_hwndQtTarget;
+            rid[1].dwFlags = 0; rid[1].hwndTarget = m_hwndQtTarget;
         }
         else {
-            UnregisterRawDevices();
-            m_worker->start();
+            rid[0].dwFlags = RIDEV_INPUTSINK; rid[0].hwndTarget = m_hHiddenWnd;
+            rid[1].dwFlags = RIDEV_INPUTSINK; rid[1].hwndTarget = m_hHiddenWnd;
         }
-        m_state->resetAllKeys();
-        m_state->discardDeltas();
-    }
-
-    void RawInputWinFilter::RegisterRawDevices(HWND hwnd) noexcept {
-        if (!hwnd) return;
-        const RAWINPUTDEVICE rid[2] = {
-            { 0x01, 0x02, RIDEV_INPUTSINK, hwnd },
-            { 0x01, 0x06, RIDEV_INPUTSINK, hwnd }
-        };
         RegisterRawInputDevices(rid, 2, sizeof(RAWINPUTDEVICE));
+        m_isRegistered = true;
     }
 
-    void RawInputWinFilter::UnregisterRawDevices() noexcept {
-        const RAWINPUTDEVICE rid[2] = {
-            { 0x01, 0x02, RIDEV_REMOVE, nullptr },
-            { 0x01, 0x06, RIDEV_REMOVE, nullptr }
-        };
+    void RawInputWinFilter::UnregisterDevices() {
+        if (!m_isRegistered) return;
+        RAWINPUTDEVICE rid[2];
+        rid[0].usUsagePage = 0x01; rid[0].usUsage = 0x02;
+        rid[0].dwFlags = RIDEV_REMOVE; rid[0].hwndTarget = nullptr;
+        rid[1].usUsagePage = 0x01; rid[1].usUsage = 0x06;
+        rid[1].dwFlags = RIDEV_REMOVE; rid[1].hwndTarget = nullptr;
         RegisterRawInputDevices(rid, 2, sizeof(RAWINPUTDEVICE));
+        m_isRegistered = false;
     }
 
-    bool RawInputWinFilter::nativeEventFilter(const QByteArray&, void* message, qintptr*) {
-        const MSG* msg = static_cast<const MSG*>(message);
-        if (!msg) return false;
+    // =============================================================================
+    // Poll (Direct Polling) - 最速版
+    // =============================================================================
+    void RawInputWinFilter::poll() {
+        if (m_joy2KeySupport) return;
 
-        if (msg->message == WM_ACTIVATEAPP) {
-            if (msg->wParam == FALSE) {
-                m_state->resetAllKeys();
-                m_state->resetMouseButtons();
-                m_state->discardDeltas();
-            }
-            return false;
+        // NtUserGetRawInputBuffer を呼んだ時点で、
+        // 読み取られたメッセージはキューから「自動的に」削除されます。
+        // なので掃除処理(Drain)は不要です。
+        m_state->processRawInputBatched();
+    }
+
+    bool RawInputWinFilter::nativeEventFilter(const QByteArray& eventType, void* message, qintptr* result) {
+        if (!m_joy2KeySupport) return false;
+        MSG* msg = static_cast<MSG*>(message);
+        if (msg->message == WM_INPUT) {
+            HRAWINPUT hRaw = reinterpret_cast<HRAWINPUT>(msg->lParam);
+            m_state->processRawInput(hRaw);
         }
-
-        if (m_joy2KeySupport.load(std::memory_order_relaxed)) {
-            if (msg->message == WM_INPUT) {
-                m_state->processRawInput(reinterpret_cast<HRAWINPUT>(msg->lParam));
-            }
-        }
-
         return false;
     }
 
-    // デリゲート関数群
-    void RawInputWinFilter::fetchMouseDelta(int& outX, int& outY) noexcept { m_state->fetchMouseDelta(outX, outY); }
-    void RawInputWinFilter::discardDeltas() noexcept { m_state->discardDeltas(); }
-    void RawInputWinFilter::resetAllKeys() noexcept { m_state->resetAllKeys(); }
-    void RawInputWinFilter::resetMouseButtons() noexcept { m_state->resetMouseButtons(); }
-    void RawInputWinFilter::resetHotkeyEdges() noexcept { m_state->resetHotkeyEdges(); }
-    void RawInputWinFilter::clearAllBindings() { m_state->clearAllBindings(); }
+    void RawInputWinFilter::discardDeltas() { m_state->discardDeltas(); }
     void RawInputWinFilter::setHotkeyVks(int id, const std::vector<UINT>& vks) { m_state->setHotkeyVks(id, vks); }
-    void RawInputWinFilter::pollHotkeys(FrameHotkeyState& out) noexcept { m_state->pollHotkeys(out); }
-    bool RawInputWinFilter::hotkeyDown(int id) const noexcept { return m_state->hotkeyDown(id); }
+    void RawInputWinFilter::pollHotkeys(FrameHotkeyState& out) { m_state->pollHotkeys(out); }
+    void RawInputWinFilter::resetAllKeys() { m_state->resetAllKeys(); }
+    void RawInputWinFilter::resetMouseButtons() { m_state->resetMouseButtons(); }
+    void RawInputWinFilter::resetHotkeyEdges() { m_state->resetHotkeyEdges(); }
+    void RawInputWinFilter::fetchMouseDelta(int& outX, int& outY) { m_state->fetchMouseDelta(outX, outY); }
 
 } // namespace MelonPrime
 #endif

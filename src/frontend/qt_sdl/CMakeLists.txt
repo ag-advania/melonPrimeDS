@@ -69,7 +69,6 @@ set(SOURCES_QT_SDL
     #MelonPrimeDirectInputFilter.cpp
     #MelonPrimeDirectInputBinding.cpp
 
-    MelonPrimeRawWorker.cpp
     MelonPrimeInputState.cpp
     MelonPrimeWinInternal.cpp
     

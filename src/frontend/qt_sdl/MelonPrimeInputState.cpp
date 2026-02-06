@@ -51,16 +51,16 @@ namespace MelonPrime {
 
             std::fill(s_vkRemap.begin(), s_vkRemap.end(), VkRemapEntry{ 0, 0 });
             s_vkRemap[VK_CONTROL] = { VK_LCONTROL, VK_RCONTROL };
-            s_vkRemap[VK_MENU]    = { VK_LMENU,    VK_RMENU    };
-            s_vkRemap[VK_SHIFT]   = { VK_LSHIFT,   VK_RSHIFT   };
+            s_vkRemap[VK_MENU] = { VK_LMENU,    VK_RMENU };
+            s_vkRemap[VK_SHIFT] = { VK_LSHIFT,   VK_RSHIFT };
 
             s_scancodeLShift = static_cast<uint16_t>(MapVirtualKeyW(VK_LSHIFT, MAPVK_VK_TO_VSC));
             s_scancodeRShift = static_cast<uint16_t>(MapVirtualKeyW(VK_RSHIFT, MAPVK_VK_TO_VSC));
-        });
+            });
     }
 
     // ===================================================================
-    // 単発 Raw Input 処理 (Joy2Keyモード: メインスレッドから呼ばれる)
+    // 単発 Raw Input 処理 (Joy2Keyモード: メインスレッド(NativeEvent)から呼ばれる)
     // ===================================================================
     void InputState::processRawInput(HRAWINPUT hRaw) noexcept {
         alignas(16) uint8_t rawBuf[sizeof(RAWINPUT)];
@@ -124,7 +124,8 @@ namespace MelonPrime {
     }
 
     // ===================================================================
-    // バッチ Raw Input 処理 (ワーカースレッドモード)
+    // バッチ Raw Input 処理 (Direct Polling モード)
+    // メインループの更新直前に呼び出し、溜まっているイベントを一括処理する
     // ===================================================================
     void InputState::processRawInputBatched() noexcept {
         alignas(16) static thread_local uint8_t buffer[16384];
@@ -133,6 +134,7 @@ namespace MelonPrime {
             UINT size = sizeof(buffer);
             UINT count;
 
+            // バッファから一括取得
             if (LIKELY(WinInternal::fnNtUserGetRawInputBuffer != nullptr)) {
                 count = WinInternal::fnNtUserGetRawInputBuffer(
                     reinterpret_cast<PRAWINPUT>(buffer), &size, sizeof(RAWINPUTHEADER));
@@ -142,6 +144,7 @@ namespace MelonPrime {
                     reinterpret_cast<PRAWINPUT>(buffer), &size, sizeof(RAWINPUTHEADER));
             }
 
+            // データが無い(0)かエラー(-1)ならループ終了
             if (count == 0 || count == UINT(-1)) break;
 
             int32_t accX = 0, accY = 0;
@@ -164,7 +167,7 @@ namespace MelonPrime {
                     if (flags) {
                         const auto& lut = s_btnLut[flags];
                         btnDown = (btnDown & ~lut.upBits) | lut.downBits;
-                        btnUp   = (btnUp & ~lut.downBits) | lut.upBits;
+                        btnUp = (btnUp & ~lut.downBits) | lut.upBits;
                     }
                     break;
                 }
@@ -177,10 +180,10 @@ namespace MelonPrime {
                         const uint64_t bit = 1ULL << (vk & 63);
                         if (!(kb.Flags & RI_KEY_BREAK)) {
                             keyDelta[idx].down |= bit;
-                            keyDelta[idx].up   &= ~bit;
+                            keyDelta[idx].up &= ~bit;
                         }
                         else {
-                            keyDelta[idx].up   |= bit;
+                            keyDelta[idx].up |= bit;
                             keyDelta[idx].down &= ~bit;
                         }
                         hasKeyChanges = true;
@@ -190,6 +193,8 @@ namespace MelonPrime {
                 }
                 raw = NEXTRAWINPUTBLOCK(raw);
             }
+
+            // --- 状態更新 (Atomic CAS) ---
 
             if (accX | accY) {
                 MouseDeltaPack cur, nxt;
@@ -301,14 +306,6 @@ namespace MelonPrime {
 
     // =========================================================================
     // pollHotkeys: 一括ホットキー評価 (ホットパス)
-    //
-    // 1. アトミック状態を1回だけスナップショット (5ロード)
-    // 2. m_boundHotkeys のセットビットのみ走査
-    // 3. 各ホットキーをスナップショットに対して評価 (アトミックロードなし)
-    // 4. エッジ検出 (pressed) と m_hkPrev 更新
-    //
-    // 修正前: hotkeyDown() × ~30回 → 最大 150 アトミックロード/フレーム
-    // 修正後: 5 アトミックロード + ~30 整数比較/フレーム
     // =========================================================================
     void InputState::pollHotkeys(FrameHotkeyState& out) noexcept {
         // --- 1. スナップショット (全フレームでこの5回だけ) ---
@@ -361,11 +358,6 @@ namespace MelonPrime {
 
     // =========================================================================
     // hotkeyDown: 個別クエリ (コールドパス用)
-    //
-    // 複数VKは「左右バリアント」を表す (例: Shift → VK_LSHIFT | VK_RSHIFT)
-    // どちらか一方が押されていれば true を返す (OR ロジック)
-    //
-    // 注意: ホットパスでは pollHotkeys を使うこと
     // =========================================================================
     bool InputState::hotkeyDown(int id) const noexcept {
         if (UNLIKELY(static_cast<unsigned>(id) >= kMaxHotkeyId)) return false;
@@ -386,7 +378,7 @@ namespace MelonPrime {
     }
 
     // =========================================================================
-    // resetHotkeyEdges: バインド済みホットキーのみ走査
+    // resetHotkeyEdges
     // =========================================================================
     void InputState::resetHotkeyEdges() noexcept {
         uint64_t newPrev[2] = { 0, 0 };
