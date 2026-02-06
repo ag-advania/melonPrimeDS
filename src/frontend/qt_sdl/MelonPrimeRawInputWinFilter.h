@@ -1,71 +1,60 @@
-#pragma once
-#ifdef _WIN32
+#ifndef MELON_PRIME_RAW_INPUT_WIN_FILTER_H
+#define MELON_PRIME_RAW_INPUT_WIN_FILTER_H
 
-#include <QAbstractNativeEventFilter>
-#include <memory>
-#include <atomic>
-#include <vector>
-#include <mutex>
+#ifdef _WIN32
 #include <windows.h>
+#include <memory>
+#include <vector>
+#include <atomic>
+#include <QAbstractNativeEventFilter>
 
 namespace MelonPrime {
 
     class InputState;
-    class RawWorker;
-    struct FrameHotkeyState;
 
-    class RawInputWinFilter : public QAbstractNativeEventFilter
-    {
+    class RawInputWinFilter : public QAbstractNativeEventFilter {
     public:
-        // シングルトンパターン (Qtのイベントフィルタはグローバルな性質を持つため)
-        static RawInputWinFilter* Acquire(bool joy2KeySupport, HWND mainHwnd);
-        static void Release() noexcept;
-        static int RefCount() noexcept;
+        static RawInputWinFilter* Acquire(bool joy2KeySupport, void* windowHandle);
+        static void Release();
 
-        // 設定変更
-        void setJoy2KeySupport(bool enable);
-        bool getJoy2KeySupport() const noexcept;
-        void setRawInputTarget(HWND hwnd);
+        explicit RawInputWinFilter(bool joy2KeySupport, HWND mainHwnd);
+        ~RawInputWinFilter();
 
-        // Qt イベントフィルタ
         bool nativeEventFilter(const QByteArray& eventType, void* message, qintptr* result) override;
 
-        // InputState へのアクセサ (エミュレータコアが使用)
-        InputState* getState() const noexcept { return m_state.get(); }
+        void setJoy2KeySupport(bool enable);
+        void setRawInputTarget(HWND hwnd);
 
-        void fetchMouseDelta(int& outDx, int& outDy) noexcept;
-        void discardDeltas() noexcept;
-        void resetAllKeys() noexcept;
-        void resetMouseButtons() noexcept;
-        void resetHotkeyEdges() noexcept;
-        void clearAllBindings();
+        // --- Direct Polling Mode ---
+        void poll();
+        void discardDeltas();
+
         void setHotkeyVks(int id, const std::vector<UINT>& vks);
-
-        // 一括ホットキー評価 (ホットパス)
-        void pollHotkeys(FrameHotkeyState& out) noexcept;
-
-        // 個別クエリ (コールドパス)
-        bool hotkeyDown(int id) const noexcept;
+        void pollHotkeys(struct FrameHotkeyState& out);
+        void resetAllKeys();
+        void resetMouseButtons();
+        void resetHotkeyEdges();
+        void fetchMouseDelta(int& outX, int& outY);
 
     private:
-        RawInputWinFilter(bool joy2KeySupport, HWND mainHwnd);
-        ~RawInputWinFilter() override;
+        void CreateHiddenWindow();
+        void DestroyHiddenWindow();
+        void RegisterDevices();
+        void UnregisterDevices();
+        // void DrainHiddenQueue(); // 削除
 
-        void switchMode(bool toJoy2Key);
-        void RegisterRawDevices(HWND hwnd) noexcept;
-        void UnregisterRawDevices() noexcept;
+        static LRESULT CALLBACK HiddenWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
 
-        static RawInputWinFilter* s_instance;
         static std::atomic<int> s_refCount;
-        static std::once_flag s_initFlag;
+        static RawInputWinFilter* s_instance;
 
         std::unique_ptr<InputState> m_state;
-        std::unique_ptr<RawWorker> m_worker;
-
-        HWND m_mainHwnd = nullptr;
-        std::atomic<bool> m_joy2KeySupport{ false };
+        HWND m_hwndQtTarget;
+        HWND m_hHiddenWnd;
+        bool m_joy2KeySupport;
+        bool m_isRegistered;
     };
 
 } // namespace MelonPrime
-
 #endif // _WIN32
+#endif

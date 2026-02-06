@@ -196,29 +196,29 @@ namespace MelonPrime {
 
         static bool s_isInstalled = false;
 
+        // モード変更通知 (これでターゲットが切り替わる: QtWindow <-> HiddenWindow)
+        m_rawFilter->setJoy2KeySupport(enable);
+
         if (!enable) {
+            // Joy2Key OFF: 隠しウィンドウモード
+            // Qtフィルタは不要なので外す（隠しウィンドウ宛なのでQtには来ないが念のため）
             if (s_isInstalled) {
                 app->removeNativeEventFilter(m_rawFilter.get());
                 s_isInstalled = false;
             }
-            m_rawFilter->setJoy2KeySupport(false);
-            if (doReset) {
-                m_rawFilter->resetAllKeys();
-                m_rawFilter->resetMouseButtons();
-                m_rawFilter->resetHotkeyEdges();
-            }
         }
         else {
-            m_rawFilter->setJoy2KeySupport(true);
+            // Joy2Key ON: Qtフィルタモード
             if (!s_isInstalled) {
                 app->installNativeEventFilter(m_rawFilter.get());
                 s_isInstalled = true;
             }
-            if (doReset) {
-                m_rawFilter->resetAllKeys();
-                m_rawFilter->resetMouseButtons();
-                m_rawFilter->resetHotkeyEdges();
-            }
+        }
+
+        if (doReset) {
+            m_rawFilter->resetAllKeys();
+            m_rawFilter->resetMouseButtons();
+            m_rawFilter->resetHotkeyEdges();
         }
 #endif
     }
@@ -248,6 +248,12 @@ namespace MelonPrime {
         if (m_rawFilter) {
             HWND myHwnd = (HWND)emuInstance->getMainWindow()->winId();
             m_rawFilter->setRawInputTarget(myHwnd);
+
+            // Joy2Key OFFなら、メインスレッドPollingを実行！
+            // ここでNtUserGetRawInputBufferが炸裂し、隠しウィンドウ宛の入力を一括取得します
+            if (!m_flags.test(StateFlags::BIT_JOY2KEY)) {
+                m_rawFilter->poll();
+            }
         }
 #endif
 
@@ -256,10 +262,6 @@ namespace MelonPrime {
 
         // =================================================================
         // [最適化] pollHotkeys: スナップショット1回 + バインド済みのみ走査
-        //
-        // 修正前: IsHkDownRaw/IsHkPressedRaw を ~30回個別呼出
-        //   → 各 hotkeyDown() で最大5回のアトミックロード → 最大150回/フレーム
-        // 修正後: pollHotkeys で5回のアトミックロード + ~30回の整数比較
         // =================================================================
 #ifdef _WIN32
         FrameHotkeyState hk{};
@@ -269,17 +271,17 @@ namespace MelonPrime {
 
         auto hkDown = [&](int id) -> bool {
             return hk.isDown(id) || IsJoyDown(id);
-        };
+            };
         auto hkPressed = [&](int id) -> bool {
             return hk.isPressed(id) || IsJoyPressed(id);
-        };
+            };
 #else
         auto hkDown = [&](int id) -> bool {
             return emuInstance->hotkeyMask.testBit(id);
-        };
+            };
         auto hkPressed = [&](int id) -> bool {
             return emuInstance->hotkeyPress.testBit(id);
-        };
+            };
 #endif
 
         down |= hkDown(HK_MetroidMoveForward) ? IB_MOVE_F : 0;
