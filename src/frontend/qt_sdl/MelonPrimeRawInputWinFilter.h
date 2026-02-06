@@ -12,24 +12,25 @@ namespace MelonPrime {
 
     class InputState;
     class RawWorker;
+    struct FrameHotkeyState;
 
     class RawInputWinFilter : public QAbstractNativeEventFilter
     {
     public:
-        // シングルトンパターン（Qtのイベントフィルタはグローバルな性質を持つため）
+        // 繧ｷ繝ｳ繧ｰ繝ｫ繝医Φ繝代ち繝ｼ繝ｳ (Qt縺ｮ繧､繝吶Φ繝医ヵ繧｣繝ｫ繧ｿ縺ｯ繧ｰ繝ｭ繝ｼ繝舌Ν縺ｪ諤ｧ雉ｪ繧呈戟縺､縺溘ａ)
         static RawInputWinFilter* Acquire(bool joy2KeySupport, HWND mainHwnd);
         static void Release() noexcept;
         static int RefCount() noexcept;
 
-        // 設定変更
+        // 險ｭ螳壼､画峩
         void setJoy2KeySupport(bool enable);
         bool getJoy2KeySupport() const noexcept;
         void setRawInputTarget(HWND hwnd);
 
-        // Qt イベントフィルタ
+        // Qt 繧､繝吶Φ繝医ヵ繧｣繝ｫ繧ｿ
         bool nativeEventFilter(const QByteArray& eventType, void* message, qintptr* result) override;
 
-        // InputState へのアクセサ（エミュレータコアが使用）
+        // InputState 縺ｸ縺ｮ繧｢繧ｯ繧ｻ繧ｵ (繧ｨ繝溘Η繝ｬ繝ｼ繧ｿ繧ｳ繧｢縺御ｽｿ逕ｨ)
         InputState* getState() const noexcept { return m_state.get(); }
 
         void fetchMouseDelta(int& outDx, int& outDy) noexcept;
@@ -40,9 +41,11 @@ namespace MelonPrime {
         void clearAllBindings();
         void setHotkeyVks(int id, const std::vector<UINT>& vks);
 
+        // 荳諡ｬ繝帙ャ繝医く繝ｼ隧穂ｾ｡ (繝帙ャ繝医ヱ繧ｹ)
+        void pollHotkeys(FrameHotkeyState& out) noexcept;
+
+        // 蛟句挨繧ｯ繧ｨ繝ｪ (繧ｳ繝ｼ繝ｫ繝峨ヱ繧ｹ)
         bool hotkeyDown(int id) const noexcept;
-        bool hotkeyPressed(int id) noexcept;
-        bool hotkeyReleased(int id) noexcept;
 
     private:
         RawInputWinFilter(bool joy2KeySupport, HWND mainHwnd);

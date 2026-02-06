@@ -4,7 +4,7 @@
 #include <cstring>
 #include <algorithm>
 
-// MinGW�΍�
+// MinGW対策
 #ifndef QWORD
 typedef unsigned __int64 QWORD;
 #endif
@@ -26,6 +26,8 @@ namespace MelonPrime {
 
         std::memset(m_hkMask.data(), 0, sizeof(m_hkMask));
         std::fill(std::begin(m_hkPrev), std::end(m_hkPrev), 0);
+        m_boundHotkeys[0] = 0;
+        m_boundHotkeys[1] = 0;
     }
 
     void InputState::InitializeTables() noexcept {
@@ -49,14 +51,17 @@ namespace MelonPrime {
 
             std::fill(s_vkRemap.begin(), s_vkRemap.end(), VkRemapEntry{ 0, 0 });
             s_vkRemap[VK_CONTROL] = { VK_LCONTROL, VK_RCONTROL };
-            s_vkRemap[VK_MENU] = { VK_LMENU,    VK_RMENU };
-            s_vkRemap[VK_SHIFT] = { VK_LSHIFT,   VK_RSHIFT };
+            s_vkRemap[VK_MENU]    = { VK_LMENU,    VK_RMENU    };
+            s_vkRemap[VK_SHIFT]   = { VK_LSHIFT,   VK_RSHIFT   };
 
             s_scancodeLShift = static_cast<uint16_t>(MapVirtualKeyW(VK_LSHIFT, MAPVK_VK_TO_VSC));
             s_scancodeRShift = static_cast<uint16_t>(MapVirtualKeyW(VK_RSHIFT, MAPVK_VK_TO_VSC));
-            });
+        });
     }
 
+    // ===================================================================
+    // 単発 Raw Input 処理 (Joy2Keyモード: メインスレッドから呼ばれる)
+    // ===================================================================
     void InputState::processRawInput(HRAWINPUT hRaw) noexcept {
         alignas(16) uint8_t rawBuf[sizeof(RAWINPUT)];
         UINT size = sizeof(rawBuf);
@@ -76,6 +81,7 @@ namespace MelonPrime {
         switch (raw->header.dwType) {
         case RIM_TYPEMOUSE: {
             const RAWMOUSE& m = raw->data.mouse;
+
             if (!(m.usFlags & MOUSE_MOVE_ABSOLUTE)) {
                 const LONG dx = m.lLastX;
                 const LONG dy = m.lLastY;
@@ -89,6 +95,7 @@ namespace MelonPrime {
                         cur.combined, nxt.combined, std::memory_order_release, std::memory_order_relaxed)));
                 }
             }
+
             const USHORT flags = m.usButtonFlags & 0x03FF;
             if (flags) {
                 const auto& lut = s_btnLut[flags];
@@ -116,6 +123,9 @@ namespace MelonPrime {
         }
     }
 
+    // ===================================================================
+    // バッチ Raw Input 処理 (ワーカースレッドモード)
+    // ===================================================================
     void InputState::processRawInputBatched() noexcept {
         alignas(16) static thread_local uint8_t buffer[16384];
 
@@ -124,16 +134,19 @@ namespace MelonPrime {
             UINT count;
 
             if (LIKELY(WinInternal::fnNtUserGetRawInputBuffer != nullptr)) {
-                count = WinInternal::fnNtUserGetRawInputBuffer(reinterpret_cast<PRAWINPUT>(buffer), &size, sizeof(RAWINPUTHEADER));
+                count = WinInternal::fnNtUserGetRawInputBuffer(
+                    reinterpret_cast<PRAWINPUT>(buffer), &size, sizeof(RAWINPUTHEADER));
             }
             else {
-                count = GetRawInputBuffer(reinterpret_cast<PRAWINPUT>(buffer), &size, sizeof(RAWINPUTHEADER));
+                count = GetRawInputBuffer(
+                    reinterpret_cast<PRAWINPUT>(buffer), &size, sizeof(RAWINPUTHEADER));
             }
 
             if (count == 0 || count == UINT(-1)) break;
 
             int32_t accX = 0, accY = 0;
             uint8_t btnDown = 0, btnUp = 0;
+
             struct KeyDelta { uint64_t down = 0; uint64_t up = 0; } keyDelta[4];
             bool hasKeyChanges = false;
 
@@ -151,7 +164,7 @@ namespace MelonPrime {
                     if (flags) {
                         const auto& lut = s_btnLut[flags];
                         btnDown = (btnDown & ~lut.upBits) | lut.downBits;
-                        btnUp = (btnUp & ~lut.downBits) | lut.upBits;
+                        btnUp   = (btnUp & ~lut.downBits) | lut.upBits;
                     }
                     break;
                 }
@@ -164,10 +177,10 @@ namespace MelonPrime {
                         const uint64_t bit = 1ULL << (vk & 63);
                         if (!(kb.Flags & RI_KEY_BREAK)) {
                             keyDelta[idx].down |= bit;
-                            keyDelta[idx].up &= ~bit;
+                            keyDelta[idx].up   &= ~bit;
                         }
                         else {
-                            keyDelta[idx].up |= bit;
+                            keyDelta[idx].up   |= bit;
                             keyDelta[idx].down &= ~bit;
                         }
                         hasKeyChanges = true;
@@ -184,7 +197,8 @@ namespace MelonPrime {
                 do {
                     nxt.s.x = cur.s.x + accX;
                     nxt.s.y = cur.s.y + accY;
-                } while (UNLIKELY(!m_mouseDeltaCombined.compare_exchange_weak(cur.combined, nxt.combined, std::memory_order_release, std::memory_order_relaxed)));
+                } while (UNLIKELY(!m_mouseDeltaCombined.compare_exchange_weak(
+                    cur.combined, nxt.combined, std::memory_order_release, std::memory_order_relaxed)));
             }
 
             if (btnDown | btnUp) {
@@ -192,7 +206,8 @@ namespace MelonPrime {
                 uint8_t nxt;
                 do {
                     nxt = (cur | btnDown) & ~btnUp;
-                } while (cur != nxt && UNLIKELY(!m_mouseButtons.compare_exchange_weak(cur, nxt, std::memory_order_release, std::memory_order_relaxed)));
+                } while (cur != nxt && UNLIKELY(!m_mouseButtons.compare_exchange_weak(
+                    cur, nxt, std::memory_order_release, std::memory_order_relaxed)));
             }
 
             if (hasKeyChanges) {
@@ -202,13 +217,17 @@ namespace MelonPrime {
                         uint64_t nxt;
                         do {
                             nxt = (cur | keyDelta[i].down) & ~keyDelta[i].up;
-                        } while (cur != nxt && UNLIKELY(!m_vkDown[i].compare_exchange_weak(cur, nxt, std::memory_order_release, std::memory_order_relaxed)));
+                        } while (cur != nxt && UNLIKELY(!m_vkDown[i].compare_exchange_weak(
+                            cur, nxt, std::memory_order_release, std::memory_order_relaxed)));
                     }
                 }
             }
         }
     }
 
+    // ===================================================================
+    // マウスデルタ取得
+    // ===================================================================
     void InputState::fetchMouseDelta(int& outX, int& outY) noexcept {
         const uint64_t val = m_mouseDeltaCombined.exchange(0, std::memory_order_acquire);
         MouseDeltaPack p;
@@ -221,6 +240,9 @@ namespace MelonPrime {
         m_mouseDeltaCombined.store(0, std::memory_order_relaxed);
     }
 
+    // ===================================================================
+    // リセット系
+    // ===================================================================
     void InputState::resetAllKeys() noexcept {
         for (auto& vk : m_vkDown) {
             vk.store(0, std::memory_order_release);
@@ -233,16 +255,29 @@ namespace MelonPrime {
         m_mouseButtons.store(0, std::memory_order_release);
     }
 
+    // ===================================================================
+    // ホットキーバインディング
+    // ===================================================================
     void InputState::clearAllBindings() noexcept {
         std::memset(m_hkMask.data(), 0, sizeof(m_hkMask));
         std::fill(std::begin(m_hkPrev), std::end(m_hkPrev), 0);
+        m_boundHotkeys[0] = 0;
+        m_boundHotkeys[1] = 0;
     }
 
     void InputState::setHotkeyVks(int id, const std::vector<UINT>& vks) {
         if (UNLIKELY(id < 0 || static_cast<size_t>(id) >= kMaxHotkeyId)) return;
+
         HotkeyMask& mask = m_hkMask[id];
         std::memset(&mask, 0, sizeof(HotkeyMask));
-        if (vks.empty()) return;
+
+        const int bword = id >> 6;
+        const uint64_t bbit = 1ULL << (id & 63);
+
+        if (vks.empty()) {
+            m_boundHotkeys[bword] &= ~bbit;
+            return;
+        }
 
         for (const UINT vk : vks) {
             if (vk >= VK_LBUTTON && vk <= VK_XBUTTON2) {
@@ -261,12 +296,82 @@ namespace MelonPrime {
             }
         }
         mask.hasMask = true;
+        m_boundHotkeys[bword] |= bbit;
     }
 
+    // =========================================================================
+    // pollHotkeys: 一括ホットキー評価 (ホットパス)
+    //
+    // 1. アトミック状態を1回だけスナップショット (5ロード)
+    // 2. m_boundHotkeys のセットビットのみ走査
+    // 3. 各ホットキーをスナップショットに対して評価 (アトミックロードなし)
+    // 4. エッジ検出 (pressed) と m_hkPrev 更新
+    //
+    // 修正前: hotkeyDown() × ~30回 → 最大 150 アトミックロード/フレーム
+    // 修正後: 5 アトミックロード + ~30 整数比較/フレーム
+    // =========================================================================
+    void InputState::pollHotkeys(FrameHotkeyState& out) noexcept {
+        // --- 1. スナップショット (全フレームでこの5回だけ) ---
+        uint64_t snapVk[4];
+        for (int i = 0; i < 4; ++i)
+            snapVk[i] = m_vkDown[i].load(std::memory_order_acquire);
+        const uint8_t snapMouse = m_mouseButtons.load(std::memory_order_acquire);
+
+        out = {};
+
+        // --- 2. バインド済みホットキーのみ走査 ---
+        for (int w = 0; w < 2; ++w) {
+            uint64_t bound = m_boundHotkeys[w];
+            uint64_t newDown = 0;
+            uint64_t newPressed = 0;
+
+            while (bound) {
+#if defined(_MSC_VER) && !defined(__clang__)
+                unsigned long bitPos;
+                _BitScanForward64(&bitPos, bound);
+#else
+                const int bitPos = __builtin_ctzll(bound);
+#endif
+                const int id = (w << 6) | static_cast<int>(bitPos);
+                const uint64_t hbit = 1ULL << bitPos;
+                const HotkeyMask& mask = m_hkMask[id];
+
+                // --- 3. スナップショットに対して評価 (アトミックロードなし) ---
+                const bool isDown = testHotkeyMask(mask, snapVk, snapMouse);
+
+                if (isDown) newDown |= hbit;
+
+                // --- 4. エッジ検出 ---
+                const bool prev = (m_hkPrev[w] & hbit) != 0;
+                if (isDown && !prev) {
+                    newPressed |= hbit;
+                    m_hkPrev[w] |= hbit;
+                }
+                else if (!isDown && prev) {
+                    m_hkPrev[w] &= ~hbit;
+                }
+
+                bound &= bound - 1;
+            }
+
+            out.down[w] = newDown;
+            out.pressed[w] = newPressed;
+        }
+    }
+
+    // =========================================================================
+    // hotkeyDown: 個別クエリ (コールドパス用)
+    //
+    // 複数VKは「左右バリアント」を表す (例: Shift → VK_LSHIFT | VK_RSHIFT)
+    // どちらか一方が押されていれば true を返す (OR ロジック)
+    //
+    // 注意: ホットパスでは pollHotkeys を使うこと
+    // =========================================================================
     bool InputState::hotkeyDown(int id) const noexcept {
         if (UNLIKELY(static_cast<unsigned>(id) >= kMaxHotkeyId)) return false;
         const HotkeyMask& mask = m_hkMask[id];
         if (!mask.hasMask) return false;
+
         if (mask.mouseMask) {
             const uint8_t buttons = m_mouseButtons.load(std::memory_order_acquire);
             if (buttons & mask.mouseMask) return true;
@@ -280,39 +385,29 @@ namespace MelonPrime {
         return false;
     }
 
-    bool InputState::hotkeyPressed(int id) noexcept {
-        if (UNLIKELY(static_cast<unsigned>(id) >= kMaxHotkeyId)) return false;
-        const bool current = hotkeyDown(id);
-        const int word = id >> 6;
-        const uint64_t bit = 1ULL << (id & 63);
-        const bool previous = (m_hkPrev[word] & bit) != 0;
-        if (current != previous) {
-            if (current) m_hkPrev[word] |= bit;
-            else         m_hkPrev[word] &= ~bit;
-        }
-        return current && !previous;
-    }
-
-    bool InputState::hotkeyReleased(int id) noexcept {
-        if (UNLIKELY(static_cast<unsigned>(id) >= kMaxHotkeyId)) return false;
-        const bool current = hotkeyDown(id);
-        const int word = id >> 6;
-        const uint64_t bit = 1ULL << (id & 63);
-        const bool previous = (m_hkPrev[word] & bit) != 0;
-        if (current != previous) {
-            if (current) m_hkPrev[word] |= bit;
-            else         m_hkPrev[word] &= ~bit;
-        }
-        return !current && previous;
-    }
-
+    // =========================================================================
+    // resetHotkeyEdges: バインド済みホットキーのみ走査
+    // =========================================================================
     void InputState::resetHotkeyEdges() noexcept {
         uint64_t newPrev[2] = { 0, 0 };
-        for (size_t i = 0; i < kMaxHotkeyId; ++i) {
-            if (hotkeyDown(static_cast<int>(i))) {
-                newPrev[i >> 6] |= (1ULL << (i & 63));
+
+        for (int w = 0; w < 2; ++w) {
+            uint64_t bound = m_boundHotkeys[w];
+            while (bound) {
+#if defined(_MSC_VER) && !defined(__clang__)
+                unsigned long bitPos;
+                _BitScanForward64(&bitPos, bound);
+#else
+                const int bitPos = __builtin_ctzll(bound);
+#endif
+                const int id = (w << 6) | static_cast<int>(bitPos);
+                if (hotkeyDown(id)) {
+                    newPrev[w] |= (1ULL << bitPos);
+                }
+                bound &= bound - 1;
             }
         }
+
         m_hkPrev[0] = newPrev[0];
         m_hkPrev[1] = newPrev[1];
     }

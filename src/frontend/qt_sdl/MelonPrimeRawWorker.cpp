@@ -22,14 +22,15 @@ namespace MelonPrime {
 
     void RawWorker::start() {
         bool expected = false;
-        if (!m_runThread.compare_exchange_strong(expected, true, std::memory_order_acq_rel, std::memory_order_relaxed)) {
+        if (!m_runThread.compare_exchange_strong(expected, true,
+            std::memory_order_acq_rel, std::memory_order_relaxed)) {
             return;
         }
 
-        m_hThread = reinterpret_cast<HANDLE>(_beginthreadex(nullptr, 0, ThreadEntry, this, 0, nullptr));
+        m_hThread = reinterpret_cast<HANDLE>(
+            _beginthreadex(nullptr, 0, ThreadEntry, this, 0, nullptr));
 
         if (m_hThread) {
-            // ’x‰„–o–Å‚Ì‚½‚ßÅ‚—Dæ“x
             SetThreadPriority(m_hThread, THREAD_PRIORITY_HIGHEST);
         }
         else {
@@ -39,7 +40,8 @@ namespace MelonPrime {
 
     void RawWorker::stop() noexcept {
         bool expected = true;
-        if (!m_runThread.compare_exchange_strong(expected, false, std::memory_order_acq_rel, std::memory_order_relaxed)) {
+        if (!m_runThread.compare_exchange_strong(expected, false,
+            std::memory_order_acq_rel, std::memory_order_relaxed)) {
             return;
         }
 
@@ -60,14 +62,16 @@ namespace MelonPrime {
     void RawWorker::threadLoop() noexcept {
         const HINSTANCE hInstance = GetModuleHandleW(nullptr);
 
+        // ã‚¦ã‚£ãƒ³ãƒ‰ã‚¦ã‚¯ãƒ©ã‚¹ç™»éŒ² (å‚ç…§ã‚«ã‚¦ãƒ³ãƒˆä»˜ã)
         if (s_classRefCount.fetch_add(1, std::memory_order_acq_rel) == 0) {
             WNDCLASSEXW wc = { sizeof(WNDCLASSEXW) };
-            wc.lpfnWndProc = DefWindowProcW;
-            wc.hInstance = hInstance;
-            wc.lpszClassName = kWindowClassName;
+            wc.lpfnWndProc   = DefWindowProcW;
+            wc.hInstance      = hInstance;
+            wc.lpszClassName  = kWindowClassName;
             s_windowClass = RegisterClassExW(&wc);
         }
 
+        // åˆ¥ã‚¹ãƒ¬ãƒƒãƒ‰ãŒç™»éŒ²ä¸­ã®å ´åˆã¯ã‚¹ãƒ”ãƒ³ã‚¦ã‚§ã‚¤ãƒˆ
         while (!s_windowClass && s_classRefCount.load(std::memory_order_acquire) > 0) {
             YieldProcessor();
         }
@@ -77,7 +81,8 @@ namespace MelonPrime {
             return;
         }
 
-        m_hiddenWnd = CreateWindowExW(0, kWindowClassName, nullptr, 0, 0, 0, 0, 0, HWND_MESSAGE, nullptr, hInstance, nullptr);
+        m_hiddenWnd = CreateWindowExW(0, kWindowClassName, nullptr, 0,
+            0, 0, 0, 0, HWND_MESSAGE, nullptr, hInstance, nullptr);
         if (!m_hiddenWnd) {
             if (s_classRefCount.fetch_sub(1, std::memory_order_acq_rel) == 1) {
                 UnregisterClassW(kWindowClassName, hInstance);
@@ -88,30 +93,26 @@ namespace MelonPrime {
 
         RegisterRawDevices(m_hiddenWnd);
 
+        // åˆæœŸã‚­ãƒ¥ãƒ¼æƒé™¤
         MSG msg;
-        // ‰ŠúƒLƒ…[‚Ì‘|œ
         while (PeekMessageW(&msg, nullptr, 0, 0, PM_REMOVE)) {
             if (msg.message == WM_INPUT) m_state.processRawInputBatched();
         }
 
         const auto ntPeekMessage = WinInternal::fnNtUserPeekMessage;
-        const auto ntMsgWait = WinInternal::fnNtUserMsgWaitForMultipleObjectsEx;
+        const auto ntMsgWait     = WinInternal::fnNtUserMsgWaitForMultipleObjectsEx;
 
         constexpr DWORD kWakeFlags = QS_RAWINPUT | QS_POSTMESSAGE;
-        constexpr int kSpinCount = 4000;
+        constexpr int   kSpinCount = 4000;
 
         while (m_runThread.load(std::memory_order_relaxed)) {
-            // 1. ƒoƒbƒtƒ@ˆêŠ‡ˆ— (ƒƒCƒ“)
-            // —­‚Ü‚Á‚Ä‚¢‚é“ü—Í‚ğ‚Ü‚Æ‚ß‚Äˆ—‚·‚é
+
+            // 1. ãƒãƒƒãƒ•ã‚¡ä¸€æ‹¬å‡¦ç†
             m_state.processRawInputBatched();
 
-            // 2. ƒƒbƒZ[ƒWƒLƒ…[‚Ì‘|œ & æ‚è‚±‚Ú‚µ–h~iC³”Åj
-            // ƒƒbƒZ[ƒW‚ğ PM_REMOVE ‚ÅÁ‚µ‚Ä‚µ‚Ü‚¤‚ÆA‚»‚Ì“ü—Íƒf[ƒ^‚ª GetRawInputBuffer ‚©‚çŒ©‚¦‚È‚­‚È‚é‹°‚ê‚ª‚ ‚éB
-            // ‚»‚Ì‚½‚ßA‚Ü‚¸‚Í PM_NOREMOVE ‚Å”`‚«Œ©‚µAWM_INPUT ‚ª‚ ‚ê‚Îƒoƒbƒtƒ@ˆ—‚ğs‚Á‚Ä‚©‚çÁ‚·B
-
-            // Note: ƒ‹[ƒv“à‚Å–ˆ‰ñ processRawInputBatched ‚ğŒÄ‚ñ‚Å‚àA
-            // ƒf[ƒ^‚ª‚È‚¯‚ê‚Î‘¦À‚É•Ô‚é‚½‚ßƒI[ƒo[ƒwƒbƒh‚ÍÅ¬ŒÀB
-
+            // 2. ãƒ¡ãƒƒã‚»ãƒ¼ã‚¸ã‚­ãƒ¥ãƒ¼æƒé™¤
+            //    PM_NOREMOVE ã§è¦—ãè¦‹ â†’ WM_INPUT ãªã‚‰å…ˆã«ãƒãƒƒãƒ•ã‚¡å¸ã„å‡ºã— â†’ PM_REMOVE ã§æ¶ˆã™
+            //    ã“ã‚Œã«ã‚ˆã‚Š GetRawInputBuffer ã‹ã‚‰ãƒ‡ãƒ¼ã‚¿ãŒæ¶ˆãˆã‚‹å•é¡Œã‚’å›é¿
             while (true) {
                 BOOL hasMsg = FALSE;
                 if (ntPeekMessage) {
@@ -124,27 +125,22 @@ namespace MelonPrime {
                 if (!hasMsg) break;
 
                 if (msg.message == WM_QUIT) {
-                    // Quit‚È‚çæ‚èo‚µ‚ÄI—¹‚Ö
                     PeekMessageW(&msg, nullptr, 0, 0, PM_REMOVE);
                     goto cleanup;
                 }
 
                 if (msg.message == WM_INPUT) {
-                    // “ü—ÍƒƒbƒZ[ƒW‚ª‚ ‚éƒf[ƒ^‚ª‚Ü‚¾ƒoƒbƒtƒ@‚Éc‚Á‚Ä‚¢‚éA‚Ü‚½‚ÍV‚µ‚­—ˆ‚½‰Â”\«‚ª‚ ‚é
-                    // ƒƒbƒZ[ƒW‚ğÁ‚·‘O‚Éƒf[ƒ^‚ğ‹z‚¢o‚·I
+                    // ãƒ¡ãƒƒã‚»ãƒ¼ã‚¸ã‚’æ¶ˆã™å‰ã«ãƒ‡ãƒ¼ã‚¿ã‚’å¸ã„å‡ºã™
                     m_state.processRawInputBatched();
-
-                    // ƒf[ƒ^Šm•ÛŒã‚ÉƒƒbƒZ[ƒW‚ğíœ
                     PeekMessageW(&msg, nullptr, 0, 0, PM_REMOVE);
                 }
                 else {
-                    // ‚»‚Ì‘¼‚ÌƒƒbƒZ[ƒW‚Í•’Ê‚Éˆ—
                     PeekMessageW(&msg, nullptr, 0, 0, PM_REMOVE);
                     DispatchMessageW(&msg);
                 }
             }
 
-            // 3. ƒXƒsƒ“ƒ‹[ƒv (Å“K‰»”Å)
+            // 3. ã‚¹ãƒ”ãƒ³ãƒ«ãƒ¼ãƒ— (æ–°ã—ã„å…¥åŠ›ã‚’ä½ãƒ¬ã‚¤ãƒ†ãƒ³ã‚·ã§æ¤œå‡º)
             for (int i = 0; i < kSpinCount; ++i) {
                 _mm_pause();
                 if (GetQueueStatus(kWakeFlags) >> 16) {
@@ -152,7 +148,7 @@ namespace MelonPrime {
                 }
             }
 
-            // 4. ƒXƒsƒ“‚ÅŒ©‚Â‚©‚ç‚È‚¯‚ê‚ÎƒXƒŠ[ƒv‘Ò‹@
+            // 4. ã‚¹ãƒ”ãƒ³ã§è¦‹ã¤ã‹ã‚‰ãªã‘ã‚Œã°ã‚«ãƒ¼ãƒãƒ«å¾…æ©Ÿ
             if (ntMsgWait) {
                 ntMsgWait(0, nullptr, INFINITE, kWakeFlags, MWMO_INPUTAVAILABLE);
             }

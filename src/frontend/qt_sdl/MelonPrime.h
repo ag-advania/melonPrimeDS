@@ -252,6 +252,7 @@ namespace MelonPrime {
 
         bool m_isAimDisabled = false;
         bool m_isRunningHook = false;
+        bool m_isWeaponCheckActive = false;
 
         struct alignas(8) StateFlags {
             uint32_t packed;
@@ -339,8 +340,6 @@ namespace MelonPrime {
 
         FORCE_INLINE bool IsJoyDown(int id) const;
         FORCE_INLINE bool IsJoyPressed(int id) const;
-        FORCE_INLINE bool IsHkDownRaw(int id) const;
-        FORCE_INLINE bool IsHkPressedRaw(int id) const;
 
         HOT_FUNCTION void UpdateInputState();
 

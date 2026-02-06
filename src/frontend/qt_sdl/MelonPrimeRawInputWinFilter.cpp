@@ -9,12 +9,25 @@ namespace MelonPrime {
     std::atomic<int> RawInputWinFilter::s_refCount{ 0 };
     std::once_flag RawInputWinFilter::s_initFlag;
 
+    // =========================================================================
+    // Acquire: ÂàùÊúüÂåñ‰∏≠(-1)„Å´Âà•„Çπ„É¨„ÉÉ„Éâ„ÅåÊù•„ÅüÂ†¥Âêà„ÅÆÁ´∂Âêà‰øÆÊ≠£
+    // =========================================================================
     RawInputWinFilter* RawInputWinFilter::Acquire(bool joy2KeySupport, HWND mainHwnd) {
-        int count = s_refCount.load(std::memory_order_acquire);
-        while (count >= 0) {
+        for (;;) {
+            int count = s_refCount.load(std::memory_order_acquire);
+
+            if (count < 0) {
+                // Âà•„Çπ„É¨„ÉÉ„Éâ„ÅåÂàùÊúüÂåñ‰∏≠ ‚Üí „Çπ„Éî„É≥„Ç¶„Çß„Ç§„Éà
+                YieldProcessor();
+                continue;
+            }
+
             if (count == 0) {
+                // ÂàùÊúüÂåñ„ÇíË©¶„Åø„Çã (0 ‚Üí -1 „Åß„É≠„ÉÉ„ÇØ)
                 int expected = 0;
-                if (s_refCount.compare_exchange_strong(expected, -1, std::memory_order_acq_rel, std::memory_order_acquire)) {
+                if (s_refCount.compare_exchange_strong(expected, -1,
+                    std::memory_order_acq_rel, std::memory_order_acquire))
+                {
                     try {
                         s_instance = new RawInputWinFilter(joy2KeySupport, mainHwnd);
                         s_refCount.store(1, std::memory_order_release);
@@ -25,16 +38,17 @@ namespace MelonPrime {
                         throw;
                     }
                 }
-                count = s_refCount.load(std::memory_order_acquire);
+                continue;
             }
-            else {
-                if (s_refCount.compare_exchange_weak(count, count + 1, std::memory_order_acq_rel, std::memory_order_acquire)) {
-                    while (!s_instance) YieldProcessor();
-                    return s_instance;
-                }
+
+            // count > 0: Êó¢Â≠ò„Ç§„É≥„Çπ„Çø„É≥„Çπ„ÅÆÂèÇÁÖß„Ç´„Ç¶„É≥„Éà„ÇíÂ¢ó„ÇÑ„Åô
+            if (s_refCount.compare_exchange_weak(count, count + 1,
+                std::memory_order_acq_rel, std::memory_order_acquire))
+            {
+                while (!s_instance) YieldProcessor();
+                return s_instance;
             }
         }
-        return nullptr;
     }
 
     void RawInputWinFilter::Release() noexcept {
@@ -123,7 +137,6 @@ namespace MelonPrime {
         const MSG* msg = static_cast<const MSG*>(message);
         if (!msg) return false;
 
-        // ÉtÉHÅ[ÉJÉXëré∏éûÇÃÉäÉZÉbÉgèàóù
         if (msg->message == WM_ACTIVATEAPP) {
             if (msg->wParam == FALSE) {
                 m_state->resetAllKeys();
@@ -133,13 +146,8 @@ namespace MelonPrime {
             return false;
         }
 
-        // Joy2KeyÉÇÅ[ÉhÅiÉÅÉCÉìÉXÉåÉbÉhèàóùÅjÇÃéûÇæÇØèàóù
         if (m_joy2KeySupport.load(std::memory_order_relaxed)) {
             if (msg->message == WM_INPUT) {
-                // ÅyèCê≥ÅzGetRawInputBuffer Ç≈ÇÕÇ»Ç≠ÅAlParam ÇégÇ¡Çƒå¬ï Ç…èàóùÇ∑ÇÈ
-                // nativeEventFilter Ç…óàÇΩéûì_Ç≈ÉÅÉbÉZÅ[ÉWÇÕÉLÉÖÅ[Ç©ÇÁèoÇƒÇ¢ÇÈÇΩÇﬂÅA
-                // ÉoÉbÉtÉ@éÊìæAPI(GetRawInputBuffer)Ç≈ÇÕÇ±ÇÃì¸óÕÇéÊìæÇ≈Ç´Ç‹ÇπÇÒÅB
-                // ämé¿Ç… lParam (HRAWINPUT) ÇìnÇµÇƒèàóùÇ∑ÇÈïKóvÇ™Ç†ÇËÇ‹Ç∑ÅB
                 m_state->processRawInput(reinterpret_cast<HRAWINPUT>(msg->lParam));
             }
         }
@@ -147,6 +155,7 @@ namespace MelonPrime {
         return false;
     }
 
+    // „Éá„É™„Ç≤„Éº„ÉàÈñ¢Êï∞Áæ§
     void RawInputWinFilter::fetchMouseDelta(int& outX, int& outY) noexcept { m_state->fetchMouseDelta(outX, outY); }
     void RawInputWinFilter::discardDeltas() noexcept { m_state->discardDeltas(); }
     void RawInputWinFilter::resetAllKeys() noexcept { m_state->resetAllKeys(); }
@@ -154,9 +163,8 @@ namespace MelonPrime {
     void RawInputWinFilter::resetHotkeyEdges() noexcept { m_state->resetHotkeyEdges(); }
     void RawInputWinFilter::clearAllBindings() { m_state->clearAllBindings(); }
     void RawInputWinFilter::setHotkeyVks(int id, const std::vector<UINT>& vks) { m_state->setHotkeyVks(id, vks); }
+    void RawInputWinFilter::pollHotkeys(FrameHotkeyState& out) noexcept { m_state->pollHotkeys(out); }
     bool RawInputWinFilter::hotkeyDown(int id) const noexcept { return m_state->hotkeyDown(id); }
-    bool RawInputWinFilter::hotkeyPressed(int id) noexcept { return m_state->hotkeyPressed(id); }
-    bool RawInputWinFilter::hotkeyReleased(int id) noexcept { return m_state->hotkeyReleased(id); }
 
 } // namespace MelonPrime
 #endif
