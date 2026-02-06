@@ -17,6 +17,9 @@ namespace MelonPrime {
     uint16_t InputState::s_scancodeRShift = 0;
     std::once_flag InputState::s_initFlag;
 
+    // 初期値は標準API (user32.dll) に設定
+    NtUserGetRawInputBuffer_t InputState::s_fnBestGetRawInputBuffer = ::GetRawInputBuffer;
+
     InputState::InputState() noexcept {
         for (auto& vk : m_vkDown) {
             vk.store(0, std::memory_order_relaxed);
@@ -32,8 +35,17 @@ namespace MelonPrime {
 
     void InputState::InitializeTables() noexcept {
         std::call_once(s_initFlag, []() {
+            // 1. NT APIの解決を試みる
             WinInternal::ResolveNtApis();
 
+            // 2. 最適な関数を選択
+            // NtUserGetRawInputBuffer が使えるならカーネルバッファ直読みAPIを採用
+            if (WinInternal::fnNtUserGetRawInputBuffer) {
+                s_fnBestGetRawInputBuffer = WinInternal::fnNtUserGetRawInputBuffer;
+            }
+            // そうでなければ初期値(::GetRawInputBuffer)のまま
+
+            // 3. テーブル初期化
             for (int i = 0; i < 1024; ++i) {
                 uint8_t d = 0, u = 0;
                 if (i & RI_MOUSE_BUTTON_1_DOWN) d |= 0x01;
@@ -60,7 +72,7 @@ namespace MelonPrime {
     }
 
     // ===================================================================
-    // 単発 Raw Input 処理 (Joy2Keyモード: メインスレッド(NativeEvent)から呼ばれる)
+    // Joy2Key ON時 (単発)
     // ===================================================================
     void InputState::processRawInput(HRAWINPUT hRaw) noexcept {
         alignas(16) uint8_t rawBuf[sizeof(RAWINPUT)];
@@ -81,7 +93,6 @@ namespace MelonPrime {
         switch (raw->header.dwType) {
         case RIM_TYPEMOUSE: {
             const RAWMOUSE& m = raw->data.mouse;
-
             if (!(m.usFlags & MOUSE_MOVE_ABSOLUTE)) {
                 const LONG dx = m.lLastX;
                 const LONG dy = m.lLastY;
@@ -124,8 +135,8 @@ namespace MelonPrime {
     }
 
     // ===================================================================
-    // バッチ Raw Input 処理 (Direct Polling モード)
-    // メインループの更新直前に呼び出し、溜まっているイベントを一括処理する
+    // Joy2Key OFF時 (Direct Polling / Batch)
+    // ★ 最適化済み: 関数ポインタ経由でループ処理
     // ===================================================================
     void InputState::processRawInputBatched() noexcept {
         alignas(16) static thread_local uint8_t buffer[16384];
@@ -134,22 +145,17 @@ namespace MelonPrime {
             UINT size = sizeof(buffer);
             UINT count;
 
-            // バッファから一括取得
-            if (LIKELY(WinInternal::fnNtUserGetRawInputBuffer != nullptr)) {
-                count = WinInternal::fnNtUserGetRawInputBuffer(
-                    reinterpret_cast<PRAWINPUT>(buffer), &size, sizeof(RAWINPUTHEADER));
-            }
-            else {
-                count = GetRawInputBuffer(
-                    reinterpret_cast<PRAWINPUT>(buffer), &size, sizeof(RAWINPUTHEADER));
-            }
+            // ★ if判定無し。初期化時に決定した最速APIを叩く
+            count = s_fnBestGetRawInputBuffer(
+                reinterpret_cast<PRAWINPUT>(buffer),
+                &size,
+                sizeof(RAWINPUTHEADER)
+            );
 
-            // データが無い(0)かエラー(-1)ならループ終了
             if (count == 0 || count == UINT(-1)) break;
 
             int32_t accX = 0, accY = 0;
             uint8_t btnDown = 0, btnUp = 0;
-
             struct KeyDelta { uint64_t down = 0; uint64_t up = 0; } keyDelta[4];
             bool hasKeyChanges = false;
 
@@ -194,8 +200,7 @@ namespace MelonPrime {
                 raw = NEXTRAWINPUTBLOCK(raw);
             }
 
-            // --- 状態更新 (Atomic CAS) ---
-
+            // State Updates (Atomic)
             if (accX | accY) {
                 MouseDeltaPack cur, nxt;
                 cur.combined = m_mouseDeltaCombined.load(std::memory_order_relaxed);
@@ -205,7 +210,6 @@ namespace MelonPrime {
                 } while (UNLIKELY(!m_mouseDeltaCombined.compare_exchange_weak(
                     cur.combined, nxt.combined, std::memory_order_release, std::memory_order_relaxed)));
             }
-
             if (btnDown | btnUp) {
                 uint8_t cur = m_mouseButtons.load(std::memory_order_relaxed);
                 uint8_t nxt;
@@ -214,7 +218,6 @@ namespace MelonPrime {
                 } while (cur != nxt && UNLIKELY(!m_mouseButtons.compare_exchange_weak(
                     cur, nxt, std::memory_order_release, std::memory_order_relaxed)));
             }
-
             if (hasKeyChanges) {
                 for (int i = 0; i < 4; ++i) {
                     if (keyDelta[i].down | keyDelta[i].up) {
@@ -230,9 +233,6 @@ namespace MelonPrime {
         }
     }
 
-    // ===================================================================
-    // マウスデルタ取得
-    // ===================================================================
     void InputState::fetchMouseDelta(int& outX, int& outY) noexcept {
         const uint64_t val = m_mouseDeltaCombined.exchange(0, std::memory_order_acquire);
         MouseDeltaPack p;
@@ -245,9 +245,6 @@ namespace MelonPrime {
         m_mouseDeltaCombined.store(0, std::memory_order_relaxed);
     }
 
-    // ===================================================================
-    // リセット系
-    // ===================================================================
     void InputState::resetAllKeys() noexcept {
         for (auto& vk : m_vkDown) {
             vk.store(0, std::memory_order_release);
@@ -260,9 +257,6 @@ namespace MelonPrime {
         m_mouseButtons.store(0, std::memory_order_release);
     }
 
-    // ===================================================================
-    // ホットキーバインディング
-    // ===================================================================
     void InputState::clearAllBindings() noexcept {
         std::memset(m_hkMask.data(), 0, sizeof(m_hkMask));
         std::fill(std::begin(m_hkPrev), std::end(m_hkPrev), 0);
@@ -304,11 +298,7 @@ namespace MelonPrime {
         m_boundHotkeys[bword] |= bbit;
     }
 
-    // =========================================================================
-    // pollHotkeys: 一括ホットキー評価 (ホットパス)
-    // =========================================================================
     void InputState::pollHotkeys(FrameHotkeyState& out) noexcept {
-        // --- 1. スナップショット (全フレームでこの5回だけ) ---
         uint64_t snapVk[4];
         for (int i = 0; i < 4; ++i)
             snapVk[i] = m_vkDown[i].load(std::memory_order_acquire);
@@ -316,7 +306,6 @@ namespace MelonPrime {
 
         out = {};
 
-        // --- 2. バインド済みホットキーのみ走査 ---
         for (int w = 0; w < 2; ++w) {
             uint64_t bound = m_boundHotkeys[w];
             uint64_t newDown = 0;
@@ -333,12 +322,10 @@ namespace MelonPrime {
                 const uint64_t hbit = 1ULL << bitPos;
                 const HotkeyMask& mask = m_hkMask[id];
 
-                // --- 3. スナップショットに対して評価 (アトミックロードなし) ---
                 const bool isDown = testHotkeyMask(mask, snapVk, snapMouse);
 
                 if (isDown) newDown |= hbit;
 
-                // --- 4. エッジ検出 ---
                 const bool prev = (m_hkPrev[w] & hbit) != 0;
                 if (isDown && !prev) {
                     newPressed |= hbit;
@@ -350,15 +337,11 @@ namespace MelonPrime {
 
                 bound &= bound - 1;
             }
-
             out.down[w] = newDown;
             out.pressed[w] = newPressed;
         }
     }
 
-    // =========================================================================
-    // hotkeyDown: 個別クエリ (コールドパス用)
-    // =========================================================================
     bool InputState::hotkeyDown(int id) const noexcept {
         if (UNLIKELY(static_cast<unsigned>(id) >= kMaxHotkeyId)) return false;
         const HotkeyMask& mask = m_hkMask[id];
@@ -377,9 +360,6 @@ namespace MelonPrime {
         return false;
     }
 
-    // =========================================================================
-    // resetHotkeyEdges
-    // =========================================================================
     void InputState::resetHotkeyEdges() noexcept {
         uint64_t newPrev[2] = { 0, 0 };
 
@@ -399,10 +379,9 @@ namespace MelonPrime {
                 bound &= bound - 1;
             }
         }
-
         m_hkPrev[0] = newPrev[0];
         m_hkPrev[1] = newPrev[1];
     }
 
 } // namespace MelonPrime
-#endif // _WIN32
+#endif
