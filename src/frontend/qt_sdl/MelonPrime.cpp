@@ -19,6 +19,7 @@
 
 #ifdef _WIN32
 #include "MelonPrimeRawInputWinFilter.h"
+#include "MelonPrimeInputState.h"
 #include "MelonPrimeHotkeyVkBinding.h"
 
 namespace MelonPrime {
@@ -131,22 +132,6 @@ namespace MelonPrime {
 #endif
     }
 
-    FORCE_INLINE bool MelonPrimeCore::IsHkDownRaw(int id) const {
-#ifdef _WIN32
-        return (m_rawFilter && m_rawFilter->hotkeyDown(id)) || IsJoyDown(id);
-#else
-        return emuInstance->hotkeyMask.testBit(id);
-#endif
-    }
-
-    FORCE_INLINE bool MelonPrimeCore::IsHkPressedRaw(int id) const {
-#ifdef _WIN32
-        return (m_rawFilter && m_rawFilter->hotkeyPressed(id)) || IsJoyPressed(id);
-#else
-        return emuInstance->hotkeyPress.testBit(id);
-#endif
-    }
-
     MelonPrimeCore::MelonPrimeCore(EmuInstance* instance)
         : emuInstance(instance),
         localCfg(instance->getLocalConfig()),
@@ -211,29 +196,29 @@ namespace MelonPrime {
 
         static bool s_isInstalled = false;
 
+        // モード変更通知 (これでターゲットが切り替わる: QtWindow <-> HiddenWindow)
+        m_rawFilter->setJoy2KeySupport(enable);
+
         if (!enable) {
+            // Joy2Key OFF: 隠しウィンドウモード
+            // Qtフィルタは不要なので外す（隠しウィンドウ宛なのでQtには来ないが念のため）
             if (s_isInstalled) {
                 app->removeNativeEventFilter(m_rawFilter.get());
                 s_isInstalled = false;
             }
-            m_rawFilter->setJoy2KeySupport(false);
-            if (doReset) {
-                m_rawFilter->resetAllKeys();
-                m_rawFilter->resetMouseButtons();
-                m_rawFilter->resetHotkeyEdges();
-            }
         }
         else {
-            m_rawFilter->setJoy2KeySupport(true);
+            // Joy2Key ON: Qtフィルタモード
             if (!s_isInstalled) {
                 app->installNativeEventFilter(m_rawFilter.get());
                 s_isInstalled = true;
             }
-            if (doReset) {
-                m_rawFilter->resetAllKeys();
-                m_rawFilter->resetMouseButtons();
-                m_rawFilter->resetHotkeyEdges();
-            }
+        }
+
+        if (doReset) {
+            m_rawFilter->resetAllKeys();
+            m_rawFilter->resetMouseButtons();
+            m_rawFilter->resetHotkeyEdges();
         }
 #endif
     }
@@ -263,41 +248,71 @@ namespace MelonPrime {
         if (m_rawFilter) {
             HWND myHwnd = (HWND)emuInstance->getMainWindow()->winId();
             m_rawFilter->setRawInputTarget(myHwnd);
+
+            // Joy2Key OFFなら、メインスレッドPollingを実行！
+            // ここでNtUserGetRawInputBufferが炸裂し、隠しウィンドウ宛の入力を一括取得します
+            if (!m_flags.test(StateFlags::BIT_JOY2KEY)) {
+                m_rawFilter->poll();
+            }
         }
 #endif
 
         uint64_t down = 0;
         uint64_t press = 0;
 
-        down |= IsHkDownRaw(HK_MetroidMoveForward) ? IB_MOVE_F : 0;
-        down |= IsHkDownRaw(HK_MetroidMoveBack) ? IB_MOVE_B : 0;
-        down |= IsHkDownRaw(HK_MetroidMoveLeft) ? IB_MOVE_L : 0;
-        down |= IsHkDownRaw(HK_MetroidMoveRight) ? IB_MOVE_R : 0;
-        down |= IsHkDownRaw(HK_MetroidJump) ? IB_JUMP : 0;
-        down |= IsHkDownRaw(HK_MetroidZoom) ? IB_ZOOM : 0;
-        down |= (IsHkDownRaw(HK_MetroidShootScan) || IsHkDownRaw(HK_MetroidScanShoot)) ? IB_SHOOT : 0;
-        down |= IsHkDownRaw(HK_MetroidWeaponCheck) ? IB_WEAPON_CHECK : 0;
-        down |= IsHkDownRaw(HK_MetroidHoldMorphBallBoost) ? IB_MORPH_BOOST : 0;
-        down |= IsHkDownRaw(HK_MetroidMenu) ? IB_MENU : 0;
+        // =================================================================
+        // [最適化] pollHotkeys: スナップショット1回 + バインド済みのみ走査
+        // =================================================================
+#ifdef _WIN32
+        FrameHotkeyState hk{};
+        if (m_rawFilter) {
+            m_rawFilter->pollHotkeys(hk);
+        }
 
-        press |= IsHkPressedRaw(HK_MetroidMorphBall) ? IB_MORPH : 0;
-        press |= IsHkPressedRaw(HK_MetroidScanVisor) ? IB_SCAN_VISOR : 0;
-        press |= IsHkPressedRaw(HK_MetroidUIOk) ? IB_UI_OK : 0;
-        press |= IsHkPressedRaw(HK_MetroidUILeft) ? IB_UI_LEFT : 0;
-        press |= IsHkPressedRaw(HK_MetroidUIRight) ? IB_UI_RIGHT : 0;
-        press |= IsHkPressedRaw(HK_MetroidUIYes) ? IB_UI_YES : 0;
-        press |= IsHkPressedRaw(HK_MetroidUINo) ? IB_UI_NO : 0;
-        press |= IsHkPressedRaw(HK_MetroidWeaponBeam) ? IB_WEAPON_BEAM : 0;
-        press |= IsHkPressedRaw(HK_MetroidWeaponMissile) ? IB_WEAPON_MISSILE : 0;
-        press |= IsHkPressedRaw(HK_MetroidWeapon1) ? IB_WEAPON_1 : 0;
-        press |= IsHkPressedRaw(HK_MetroidWeapon2) ? IB_WEAPON_2 : 0;
-        press |= IsHkPressedRaw(HK_MetroidWeapon3) ? IB_WEAPON_3 : 0;
-        press |= IsHkPressedRaw(HK_MetroidWeapon4) ? IB_WEAPON_4 : 0;
-        press |= IsHkPressedRaw(HK_MetroidWeapon5) ? IB_WEAPON_5 : 0;
-        press |= IsHkPressedRaw(HK_MetroidWeapon6) ? IB_WEAPON_6 : 0;
-        press |= IsHkPressedRaw(HK_MetroidWeaponSpecial) ? IB_WEAPON_SPECIAL : 0;
-        press |= IsHkPressedRaw(HK_MetroidWeaponNext) ? IB_WEAPON_NEXT : 0;
-        press |= IsHkPressedRaw(HK_MetroidWeaponPrevious) ? IB_WEAPON_PREV : 0;
+        auto hkDown = [&](int id) -> bool {
+            return hk.isDown(id) || IsJoyDown(id);
+            };
+        auto hkPressed = [&](int id) -> bool {
+            return hk.isPressed(id) || IsJoyPressed(id);
+            };
+#else
+        auto hkDown = [&](int id) -> bool {
+            return emuInstance->hotkeyMask.testBit(id);
+            };
+        auto hkPressed = [&](int id) -> bool {
+            return emuInstance->hotkeyPress.testBit(id);
+            };
+#endif
+
+        down |= hkDown(HK_MetroidMoveForward) ? IB_MOVE_F : 0;
+        down |= hkDown(HK_MetroidMoveBack) ? IB_MOVE_B : 0;
+        down |= hkDown(HK_MetroidMoveLeft) ? IB_MOVE_L : 0;
+        down |= hkDown(HK_MetroidMoveRight) ? IB_MOVE_R : 0;
+        down |= hkDown(HK_MetroidJump) ? IB_JUMP : 0;
+        down |= hkDown(HK_MetroidZoom) ? IB_ZOOM : 0;
+        down |= (hkDown(HK_MetroidShootScan) || hkDown(HK_MetroidScanShoot)) ? IB_SHOOT : 0;
+        down |= hkDown(HK_MetroidWeaponCheck) ? IB_WEAPON_CHECK : 0;
+        down |= hkDown(HK_MetroidHoldMorphBallBoost) ? IB_MORPH_BOOST : 0;
+        down |= hkDown(HK_MetroidMenu) ? IB_MENU : 0;
+
+        press |= hkPressed(HK_MetroidMorphBall) ? IB_MORPH : 0;
+        press |= hkPressed(HK_MetroidScanVisor) ? IB_SCAN_VISOR : 0;
+        press |= hkPressed(HK_MetroidUIOk) ? IB_UI_OK : 0;
+        press |= hkPressed(HK_MetroidUILeft) ? IB_UI_LEFT : 0;
+        press |= hkPressed(HK_MetroidUIRight) ? IB_UI_RIGHT : 0;
+        press |= hkPressed(HK_MetroidUIYes) ? IB_UI_YES : 0;
+        press |= hkPressed(HK_MetroidUINo) ? IB_UI_NO : 0;
+        press |= hkPressed(HK_MetroidWeaponBeam) ? IB_WEAPON_BEAM : 0;
+        press |= hkPressed(HK_MetroidWeaponMissile) ? IB_WEAPON_MISSILE : 0;
+        press |= hkPressed(HK_MetroidWeapon1) ? IB_WEAPON_1 : 0;
+        press |= hkPressed(HK_MetroidWeapon2) ? IB_WEAPON_2 : 0;
+        press |= hkPressed(HK_MetroidWeapon3) ? IB_WEAPON_3 : 0;
+        press |= hkPressed(HK_MetroidWeapon4) ? IB_WEAPON_4 : 0;
+        press |= hkPressed(HK_MetroidWeapon5) ? IB_WEAPON_5 : 0;
+        press |= hkPressed(HK_MetroidWeapon6) ? IB_WEAPON_6 : 0;
+        press |= hkPressed(HK_MetroidWeaponSpecial) ? IB_WEAPON_SPECIAL : 0;
+        press |= hkPressed(HK_MetroidWeaponNext) ? IB_WEAPON_NEXT : 0;
+        press |= hkPressed(HK_MetroidWeaponPrevious) ? IB_WEAPON_PREV : 0;
 
         m_input.down = down;
         m_input.press = press;
@@ -328,6 +343,7 @@ namespace MelonPrime {
         m_flags.assign(StateFlags::BIT_JOY2KEY, localCfg.GetBool("Metroid.Apply.joy2KeySupport"));
         isStylusMode = m_flags.test(StateFlags::BIT_STYLUS_MODE);
         ApplyJoy2KeySupportAndQtFilter(m_flags.test(StateFlags::BIT_JOY2KEY));
+        m_isWeaponCheckActive = false;
         InputReset();
     }
 
@@ -612,13 +628,12 @@ namespace MelonPrime {
             if (isStylusMode) m_flags.set(StateFlags::BIT_BLOCK_STYLUS);
         }
 
-        static bool isWeaponCheckActive = false;
         const bool weaponCheckDown = IsDown(IB_WEAPON_CHECK);
 
         if (weaponCheckDown) {
             if (isStylusMode) m_flags.set(StateFlags::BIT_BLOCK_STYLUS);
-            if (!isWeaponCheckActive) {
-                isWeaponCheckActive = true;
+            if (!m_isWeaponCheckActive) {
+                m_isWeaponCheckActive = true;
                 SetAimBlockBranchless(AIMBLK_CHECK_WEAPON, true);
                 emuInstance->getNDS()->ReleaseScreen();
                 FrameAdvanceTwice();
@@ -626,8 +641,8 @@ namespace MelonPrime {
             using namespace Consts::UI;
             emuInstance->getNDS()->TouchScreen(WEAPON_CHECK_START.x(), WEAPON_CHECK_START.y());
         }
-        else if (UNLIKELY(isWeaponCheckActive)) {
-            isWeaponCheckActive = false;
+        else if (UNLIKELY(m_isWeaponCheckActive)) {
+            m_isWeaponCheckActive = false;
             emuInstance->getNDS()->ReleaseScreen();
             SetAimBlockBranchless(AIMBLK_CHECK_WEAPON, false);
             FrameAdvanceTwice();
@@ -895,7 +910,13 @@ namespace MelonPrime {
             if (IsPressed(BIT_MAP[i])) hot |= (1u << i);
         }
 
+#if defined(_MSC_VER) && !defined(__clang__)
+        unsigned long firstSetUL;
+        _BitScanForward(&firstSetUL, hot);
+        const int firstSet = static_cast<int>(firstSetUL);
+#else
         const int firstSet = __builtin_ctz(hot);
+#endif
 
         if (UNLIKELY(firstSet == 8)) {
             const uint8_t loaded = *m_ptrs.loadedSpecialWeapon;
