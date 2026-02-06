@@ -8,6 +8,7 @@
 #include <array>
 #include <cstdint>
 #include <mutex>
+#include "MelonPrimeWinInternal.h" // NtUserGetRawInputBuffer_t の定義用
 
 #ifndef FORCE_INLINE
 #  if defined(_MSC_VER)
@@ -56,7 +57,10 @@ namespace MelonPrime {
 
         static void InitializeTables() noexcept;
 
+        // Joy2Key ON時の単発処理
         void processRawInput(HRAWINPUT hRaw) noexcept;
+
+        // Joy2Key OFF時のバッチ処理 (Direct Polling)
         void processRawInputBatched() noexcept;
 
         void fetchMouseDelta(int& outX, int& outY) noexcept;
@@ -69,45 +73,35 @@ namespace MelonPrime {
         void clearAllBindings() noexcept;
         void setHotkeyVks(int id, const std::vector<UINT>& vks);
 
-        // =================================================================
-        // 一括ホットキー評価 (ホットパス用)
-        // =================================================================
         void pollHotkeys(FrameHotkeyState& out) noexcept;
-
-        // 個別クエリ (コールドパス用: resetHotkeyEdges 等)
         [[nodiscard]] bool hotkeyDown(int id) const noexcept;
-
         void resetHotkeyEdges() noexcept;
 
     private:
         // ===================================================================
-        // ホットパス: キャッシュライン境界を明確に分離
+        // データレイアウト
         // ===================================================================
 
-        // --- キャッシュライン 0: キーボード状態 ---
+        // Cache Line 0: Keyboard
         alignas(64) std::atomic<uint64_t> m_vkDown[4];
 
-        // --- キャッシュライン 1: マウスボタン + デルタ ---
+        // Cache Line 1: Mouse
         alignas(64) std::atomic<uint8_t> m_mouseButtons{ 0 };
         std::atomic<uint64_t> m_mouseDeltaCombined{ 0 };
 
-        // --- キャッシュライン 2+: ホットキーマスク (ほぼ読み取り専用) ---
+        // Cache Line 2+: Hotkey Masks (Read Mostly)
         struct alignas(8) HotkeyMask {
             uint64_t vkMask[4];
             uint8_t  mouseMask;
             bool     hasMask;
             uint8_t  _pad[6];
         };
-        static_assert(sizeof(HotkeyMask) == 40, "HotkeyMask size mismatch");
-
         alignas(64) std::array<HotkeyMask, kMaxHotkeyId> m_hkMask;
         uint64_t m_hkPrev[2];
-
-        // バインド済みホットキーのビットマスク
         uint64_t m_boundHotkeys[2]{ 0, 0 };
 
         // ===================================================================
-        // 静的テーブル
+        // 静的テーブル & 最適化用関数ポインタ
         // ===================================================================
         struct BtnLutEntry {
             uint8_t downBits;
@@ -125,8 +119,11 @@ namespace MelonPrime {
         static uint16_t s_scancodeRShift;
         static std::once_flag s_initFlag;
 
+        // ★ 最適化ポイント: 実行環境に合わせた最速APIを保持
+        static NtUserGetRawInputBuffer_t s_fnBestGetRawInputBuffer;
+
         // ===================================================================
-        // インライン関数
+        // Helper Functions
         // ===================================================================
 
         FORCE_INLINE void setVkBit(uint32_t vk, bool down) noexcept {
