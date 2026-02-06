@@ -1365,7 +1365,7 @@ void ScreenPanelGL::drawScreen()
 
     glContext->SwapBuffers();
 
-    glFinish(); // MelonPrimeDS
+    // glFinish(); // MelonPrimeDS
 
 }
 
