@@ -31,6 +31,21 @@
 
 namespace MelonPrime {
 
+    // =========================================================================
+    // フレーム単位のホットキー状態 (pollHotkeys の出力)
+    // =========================================================================
+    struct FrameHotkeyState {
+        uint64_t down[2]{};
+        uint64_t pressed[2]{};
+
+        FORCE_INLINE bool isDown(int id) const noexcept {
+            return (down[id >> 6] >> (id & 63)) & 1;
+        }
+        FORCE_INLINE bool isPressed(int id) const noexcept {
+            return (pressed[id >> 6] >> (id & 63)) & 1;
+        }
+    };
+
     class InputState {
     public:
         InputState() noexcept;
@@ -54,18 +69,29 @@ namespace MelonPrime {
         void clearAllBindings() noexcept;
         void setHotkeyVks(int id, const std::vector<UINT>& vks);
 
+        // =================================================================
+        // 一括ホットキー評価 (ホットパス用)
+        // =================================================================
+        void pollHotkeys(FrameHotkeyState& out) noexcept;
+
+        // 個別クエリ (コールドパス用: resetHotkeyEdges 等)
         [[nodiscard]] bool hotkeyDown(int id) const noexcept;
-        [[nodiscard]] bool hotkeyPressed(int id) noexcept;
-        [[nodiscard]] bool hotkeyReleased(int id) noexcept;
 
         void resetHotkeyEdges() noexcept;
 
     private:
-        alignas(64) std::atomic<uint64_t> m_vkDown[4];
-        std::atomic<uint8_t> m_mouseButtons{ 0 };
-        char m_cachePad[31];
-        alignas(64) std::atomic<uint64_t> m_mouseDeltaCombined{ 0 };
+        // ===================================================================
+        // ホットパス: キャッシュライン境界を明確に分離
+        // ===================================================================
 
+        // --- キャッシュライン 0: キーボード状態 ---
+        alignas(64) std::atomic<uint64_t> m_vkDown[4];
+
+        // --- キャッシュライン 1: マウスボタン + デルタ ---
+        alignas(64) std::atomic<uint8_t> m_mouseButtons{ 0 };
+        std::atomic<uint64_t> m_mouseDeltaCombined{ 0 };
+
+        // --- キャッシュライン 2+: ホットキーマスク (ほぼ読み取り専用) ---
         struct alignas(8) HotkeyMask {
             uint64_t vkMask[4];
             uint8_t  mouseMask;
@@ -77,6 +103,12 @@ namespace MelonPrime {
         alignas(64) std::array<HotkeyMask, kMaxHotkeyId> m_hkMask;
         uint64_t m_hkPrev[2];
 
+        // バインド済みホットキーのビットマスク
+        uint64_t m_boundHotkeys[2]{ 0, 0 };
+
+        // ===================================================================
+        // 静的テーブル
+        // ===================================================================
         struct BtnLutEntry {
             uint8_t downBits;
             uint8_t upBits;
@@ -92,6 +124,10 @@ namespace MelonPrime {
         static uint16_t s_scancodeLShift;
         static uint16_t s_scancodeRShift;
         static std::once_flag s_initFlag;
+
+        // ===================================================================
+        // インライン関数
+        // ===================================================================
 
         FORCE_INLINE void setVkBit(uint32_t vk, bool down) noexcept {
             if (UNLIKELY(vk >= 256)) return;
@@ -114,6 +150,18 @@ namespace MelonPrime {
                 return (flags & RI_KEY_E0) ? entry.extended : entry.normal;
             }
             return vk;
+        }
+
+        FORCE_INLINE bool testHotkeyMask(
+            const HotkeyMask& mask,
+            const uint64_t snapVk[4],
+            uint8_t snapMouse) const noexcept
+        {
+            if (mask.mouseMask && (snapMouse & mask.mouseMask)) return true;
+            for (int i = 0; i < 4; ++i) {
+                if (mask.vkMask[i] && (snapVk[i] & mask.vkMask[i])) return true;
+            }
+            return false;
         }
 
         union MouseDeltaPack {
