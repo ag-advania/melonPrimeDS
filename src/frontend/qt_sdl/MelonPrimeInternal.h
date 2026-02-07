@@ -2,6 +2,7 @@
 #define MELONPRIME_INTERNAL_H
 
 #include <cstdint>
+#include <cstring> // Required for std::memcpy
 #include <array>
 #include <string_view>
 #include <QPoint>
@@ -9,7 +10,7 @@
 #include "types.h"
 #include "MelonPrime.h"
 
-namespace MelonPrime {
+    namespace MelonPrime {
 
     namespace Consts {
         constexpr int32_t PLAYER_ADDR_INC = 0xF30;
@@ -36,20 +37,33 @@ namespace MelonPrime {
         INPUT_R = 8, INPUT_L = 9, INPUT_X = 10, INPUT_Y = 11,
     };
 
+    // Optimization: Use std::memcpy to avoid Strict Aliasing violations.
+    // Compilers optimize this to a single register load (MOV) instruction.
+
     FORCE_INLINE uint8_t Read8(const melonDS::u8* ram, melonDS::u32 addr) {
         return ram[addr & Consts::RAM_MASK];
     }
+
     FORCE_INLINE uint16_t Read16(const melonDS::u8* ram, melonDS::u32 addr) {
-        return *reinterpret_cast<const uint16_t*>(&ram[addr & Consts::RAM_MASK]);
+        uint16_t val;
+        std::memcpy(&val, &ram[addr & Consts::RAM_MASK], sizeof(uint16_t));
+        return val;
     }
+
     FORCE_INLINE uint32_t Read32(const melonDS::u8* ram, melonDS::u32 addr) {
-        return *reinterpret_cast<const uint32_t*>(&ram[addr & Consts::RAM_MASK]);
+        uint32_t val;
+        std::memcpy(&val, &ram[addr & Consts::RAM_MASK], sizeof(uint32_t));
+        return val;
     }
+
     FORCE_INLINE void Write8(melonDS::u8* ram, melonDS::u32 addr, uint8_t val) {
         ram[addr & Consts::RAM_MASK] = val;
     }
+
     FORCE_INLINE void Write16(melonDS::u8* ram, melonDS::u32 addr, uint16_t val) {
-        *reinterpret_cast<uint16_t*>(&ram[addr & Consts::RAM_MASK]) = val;
+        // memcpy handles potential unaligned access safely on all architectures
+        void* dest = &ram[addr & Consts::RAM_MASK];
+        std::memcpy(dest, &val, sizeof(uint16_t));
     }
 
 } // namespace MelonPrime
