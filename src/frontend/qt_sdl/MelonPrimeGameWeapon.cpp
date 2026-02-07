@@ -8,7 +8,7 @@
 #include <array>
 #include <string_view>
 
-namespace MelonPrime {
+    namespace MelonPrime {
 
     static constexpr std::array<std::string_view, 9> kWeaponNames = {
         "Power Beam", "Volt Driver", "Missile Launcher", "Battlehammer",
@@ -77,7 +77,9 @@ namespace MelonPrime {
                 };
 
             uint16_t available = 0;
-            for (size_t i = 0; i < ORDERED_WEAPONS.size(); ++i) {
+            const size_t count = ORDERED_WEAPONS.size(); // 9
+
+            for (size_t i = 0; i < count; ++i) {
                 if (isWeaponAvailable(ORDERED_WEAPONS[i])) available |= (1u << i);
             }
 
@@ -86,34 +88,31 @@ namespace MelonPrime {
                 return false;
             }
 
-            // Before:
-            // uint8_t idx = ID_TO_INDEX[curID % 9];
-
-            // After: curID は恐らく 0-8 だが、念の為チェックを入れるならブランチレスにするか、
-            // もしくはデータ構造側で curID が 9未満であることを保証する方が速い。
-            // ここでは % 9 を削除し、範囲外なら0にするなどの単純化を行う
             uint8_t safeID = (curID >= 9) ? 0 : curID;
-            uint8_t idx = ID_TO_INDEX[safeID];
-            const size_t count = ORDERED_WEAPONS.size();
-            for (size_t n = 0; n < count; ++n) {
+            uint8_t currentIdx = ID_TO_INDEX[safeID];
 
-                // Before:
-                // idx = forward ? static_cast<uint8_t>((idx + 1) % count) : static_cast<uint8_t>((idx + count - 1) % count);
+            // Optimization: Linear search from the next expected index.
+            // This avoids modulo (%) logic which is expensive in hot paths, 
+            // and simplifies wrapping logic.
 
-                // After: 除算命令(div/idiv)を回避し、条件付き移動(cmov)または単純な比較に置き換える
+            for (size_t offset = 1; offset < count; ++offset) {
+                size_t checkIdx;
+
                 if (forward) {
-                    idx++;
-                    if (idx >= count) idx = 0;
+                    checkIdx = currentIdx + offset;
+                    if (checkIdx >= count) checkIdx -= count;
                 }
                 else {
-                    // idxがunsigned(uint8_t)なので0から引くとラップアラウンドする性質を利用しても良いが
-                    // 読みやすさと安全性を重視して明示的に書く
-                    if (idx == 0) idx = static_cast<uint8_t>(count - 1);
-                    else idx--;
+                    // Reverse logic: Handle wrapping safely without signed modulo issues
+                    if (offset > currentIdx) checkIdx = count - (offset - currentIdx);
+                    else checkIdx = currentIdx - offset;
                 }
 
-                if (available & (1u << idx)) {
-                    SwitchWeapon(ORDERED_WEAPONS[idx].id);
+                // Safety clamp although logic above should prevent OOB
+                if (checkIdx >= count) checkIdx = 0;
+
+                if (available & (1u << checkIdx)) {
+                    SwitchWeapon(ORDERED_WEAPONS[checkIdx].id);
                     return true;
                 }
             }
@@ -125,6 +124,7 @@ namespace MelonPrime {
         if (isStylusMode) m_flags.set(StateFlags::BIT_BLOCK_STYLUS);
 
         uint32_t hot = 0;
+        // Optimization: Unroll loop or allow compiler to vectorise this simple check
         for (size_t i = 0; i < 9; ++i) {
             if (IsPressed(BIT_MAP[i])) hot |= (1u << i);
         }

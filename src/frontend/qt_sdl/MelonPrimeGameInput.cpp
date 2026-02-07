@@ -13,12 +13,52 @@
 #include "MelonPrimeRawInputState.h"
 #endif
 
-namespace MelonPrime {
+    namespace MelonPrime {
 
     alignas(64) static constexpr std::array<uint8_t, 16> MoveLUT = {
         0xF0, 0xB0, 0x70, 0xF0, 0xD0, 0x90, 0x50, 0xD0,
         0xE0, 0xA0, 0x60, 0xE0, 0xF0, 0xB0, 0x70, 0xF0,
     };
+
+    // Optimization: Define mappings in constexpr tables. 
+    // This allows the compiler to unroll loops effectively and improves instruction cache locality.
+    struct KeyMap {
+        int hkID;
+        uint64_t bit;
+    };
+
+    static constexpr std::array<KeyMap, 9> kDownMaps = { {
+        {HK_MetroidMoveForward, IB_MOVE_F},
+        {HK_MetroidMoveBack,    IB_MOVE_B},
+        {HK_MetroidMoveLeft,    IB_MOVE_L},
+        {HK_MetroidMoveRight,   IB_MOVE_R},
+        {HK_MetroidJump,        IB_JUMP},
+        {HK_MetroidZoom,        IB_ZOOM},
+        {HK_MetroidWeaponCheck, IB_WEAPON_CHECK},
+        {HK_MetroidHoldMorphBallBoost, IB_MORPH_BOOST},
+        {HK_MetroidMenu,        IB_MENU},
+    } };
+
+    static constexpr std::array<KeyMap, 18> kPressMaps = { {
+        {HK_MetroidMorphBall,      IB_MORPH},
+        {HK_MetroidScanVisor,      IB_SCAN_VISOR},
+        {HK_MetroidUIOk,           IB_UI_OK},
+        {HK_MetroidUILeft,         IB_UI_LEFT},
+        {HK_MetroidUIRight,        IB_UI_RIGHT},
+        {HK_MetroidUIYes,          IB_UI_YES},
+        {HK_MetroidUINo,           IB_UI_NO},
+        {HK_MetroidWeaponBeam,     IB_WEAPON_BEAM},
+        {HK_MetroidWeaponMissile,  IB_WEAPON_MISSILE},
+        {HK_MetroidWeapon1,        IB_WEAPON_1},
+        {HK_MetroidWeapon2,        IB_WEAPON_2},
+        {HK_MetroidWeapon3,        IB_WEAPON_3},
+        {HK_MetroidWeapon4,        IB_WEAPON_4},
+        {HK_MetroidWeapon5,        IB_WEAPON_5},
+        {HK_MetroidWeapon6,        IB_WEAPON_6},
+        {HK_MetroidWeaponSpecial,  IB_WEAPON_SPECIAL},
+        {HK_MetroidWeaponNext,     IB_WEAPON_NEXT},
+        {HK_MetroidWeaponPrevious, IB_WEAPON_PREV},
+    } };
 
     HOT_FUNCTION void MelonPrimeCore::UpdateInputState()
     {
@@ -49,50 +89,35 @@ namespace MelonPrime {
             m_rawFilter->pollHotkeys(hk);
         }
 
-        auto hkDown = [&](int id) -> bool {
+        // Using lambda references to avoid copying logic
+        const auto hkDown = [&](int id) -> bool {
             return hk.isDown(id) || IsJoyDown(id);
             };
-        auto hkPressed = [&](int id) -> bool {
+        const auto hkPressed = [&](int id) -> bool {
             return hk.isPressed(id) || IsJoyPressed(id);
             };
 #else
-        auto hkDown = [&](int id) -> bool {
+        const auto hkDown = [&](int id) -> bool {
             return emuInstance->hotkeyMask.testBit(id);
             };
-        auto hkPressed = [&](int id) -> bool {
+        const auto hkPressed = [&](int id) -> bool {
             return emuInstance->hotkeyPress.testBit(id);
             };
 #endif
 
-        down |= hkDown(HK_MetroidMoveForward) ? IB_MOVE_F : 0;
-        down |= hkDown(HK_MetroidMoveBack) ? IB_MOVE_B : 0;
-        down |= hkDown(HK_MetroidMoveLeft) ? IB_MOVE_L : 0;
-        down |= hkDown(HK_MetroidMoveRight) ? IB_MOVE_R : 0;
-        down |= hkDown(HK_MetroidJump) ? IB_JUMP : 0;
-        down |= hkDown(HK_MetroidZoom) ? IB_ZOOM : 0;
-        down |= (hkDown(HK_MetroidShootScan) || hkDown(HK_MetroidScanShoot)) ? IB_SHOOT : 0;
-        down |= hkDown(HK_MetroidWeaponCheck) ? IB_WEAPON_CHECK : 0;
-        down |= hkDown(HK_MetroidHoldMorphBallBoost) ? IB_MORPH_BOOST : 0;
-        down |= hkDown(HK_MetroidMenu) ? IB_MENU : 0;
+        // Process Table Mappings
+        for (const auto& map : kDownMaps) {
+            if (hkDown(map.hkID)) down |= map.bit;
+        }
 
-        press |= hkPressed(HK_MetroidMorphBall) ? IB_MORPH : 0;
-        press |= hkPressed(HK_MetroidScanVisor) ? IB_SCAN_VISOR : 0;
-        press |= hkPressed(HK_MetroidUIOk) ? IB_UI_OK : 0;
-        press |= hkPressed(HK_MetroidUILeft) ? IB_UI_LEFT : 0;
-        press |= hkPressed(HK_MetroidUIRight) ? IB_UI_RIGHT : 0;
-        press |= hkPressed(HK_MetroidUIYes) ? IB_UI_YES : 0;
-        press |= hkPressed(HK_MetroidUINo) ? IB_UI_NO : 0;
-        press |= hkPressed(HK_MetroidWeaponBeam) ? IB_WEAPON_BEAM : 0;
-        press |= hkPressed(HK_MetroidWeaponMissile) ? IB_WEAPON_MISSILE : 0;
-        press |= hkPressed(HK_MetroidWeapon1) ? IB_WEAPON_1 : 0;
-        press |= hkPressed(HK_MetroidWeapon2) ? IB_WEAPON_2 : 0;
-        press |= hkPressed(HK_MetroidWeapon3) ? IB_WEAPON_3 : 0;
-        press |= hkPressed(HK_MetroidWeapon4) ? IB_WEAPON_4 : 0;
-        press |= hkPressed(HK_MetroidWeapon5) ? IB_WEAPON_5 : 0;
-        press |= hkPressed(HK_MetroidWeapon6) ? IB_WEAPON_6 : 0;
-        press |= hkPressed(HK_MetroidWeaponSpecial) ? IB_WEAPON_SPECIAL : 0;
-        press |= hkPressed(HK_MetroidWeaponNext) ? IB_WEAPON_NEXT : 0;
-        press |= hkPressed(HK_MetroidWeaponPrevious) ? IB_WEAPON_PREV : 0;
+        // Special case: Scan/Shoot share a bit
+        if (hkDown(HK_MetroidShootScan) || hkDown(HK_MetroidScanShoot)) {
+            down |= IB_SHOOT;
+        }
+
+        for (const auto& map : kPressMaps) {
+            if (hkPressed(map.hkID)) press |= map.bit;
+        }
 
         m_input.down = down;
         m_input.press = press;
@@ -125,10 +150,17 @@ namespace MelonPrime {
             const uint32_t last = m_snapState & 0xFFu;
             const uint32_t priority = m_snapState >> 8;
             const uint32_t newPress = curr & ~last;
-            const uint32_t hConflict = ((curr & 0x3u) == 0x3u) ? 0x3u : 0u;
-            const uint32_t vConflict = ((curr & 0xCu) == 0xCu) ? 0xCu : 0u;
+
+            // Branchless optimization: Use multiplication instead of ternary 
+            // for hConflict/vConflict to ensure pipeline smoothness.
+            const uint32_t hConflict = ((curr & 0x3u) == 0x3u) * 0x3u;
+            const uint32_t vConflict = ((curr & 0xCu) == 0xCu) * 0xCu;
+
             const uint32_t conflict = vConflict | hConflict;
+
+            // Mask generation using arithmetic negation behavior (0 or 0xFFFFFFFF)
             const uint32_t updateMask = (newPress & conflict) ? ~0u : 0u;
+
             const uint32_t newPriority = (priority & ~(conflict & updateMask)) | (newPress & conflict & updateMask);
             const uint32_t activePriority = newPriority & curr;
             m_snapState = static_cast<uint16_t>((curr & 0xFFu) | ((activePriority & 0xFFu) << 8));
@@ -188,6 +220,7 @@ namespace MelonPrime {
 
             if (outX == 0 && outY == 0) return;
 
+            // Direct pointer access is good here
             *m_ptrs.aimX = static_cast<uint16_t>(outX);
             *m_ptrs.aimY = static_cast<uint16_t>(outY);
 
