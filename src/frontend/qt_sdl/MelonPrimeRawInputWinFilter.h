@@ -8,9 +8,10 @@
 #include <atomic>
 #include <QAbstractNativeEventFilter>
 
-namespace MelonPrime {
+    namespace MelonPrime {
 
     class InputState;
+    struct FrameHotkeyState;
 
     class RawInputWinFilter : public QAbstractNativeEventFilter {
     public:
@@ -41,7 +42,6 @@ namespace MelonPrime {
         void DestroyHiddenWindow();
         void RegisterDevices();
         void UnregisterDevices();
-        // void DrainHiddenQueue(); // 削除
 
         static LRESULT CALLBACK HiddenWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
 
