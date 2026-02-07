@@ -8,7 +8,7 @@
 #include <array>
 #include <cstdint>
 #include <mutex>
-#include "MelonPrimeWinInternal.h" // NtUserGetRawInputBuffer_t の定義用
+#include "MelonPrimeRawWinInternal.h" // NtUserGetRawInputBuffer_t の定義用
 
 #ifndef FORCE_INLINE
 #  if defined(_MSC_VER)
@@ -30,7 +30,7 @@
 #  endif
 #endif
 
-namespace MelonPrime {
+    namespace MelonPrime {
 
     // =========================================================================
     // フレーム単位のホットキー状態 (pollHotkeys の出力)
@@ -149,16 +149,45 @@ namespace MelonPrime {
             return vk;
         }
 
+        // Optimization: Branchless mask testing
         FORCE_INLINE bool testHotkeyMask(
             const HotkeyMask& mask,
             const uint64_t snapVk[4],
             uint8_t snapMouse) const noexcept
         {
-            if (mask.mouseMask && (snapMouse & mask.mouseMask)) return true;
-            for (int i = 0; i < 4; ++i) {
-                if (mask.vkMask[i] && (snapVk[i] & mask.vkMask[i])) return true;
-            }
-            return false;
+            // Mouse check: (0 & val) == 0, so no need to check 'if (mask.mouseMask)' explicitly
+            bool result = (mask.mouseMask & snapMouse) != 0;
+
+            // Keyboard check: Unrolled bitwise OR accumulation
+            // If any required key bit is set in snapVk, the AND result will be non-zero.
+            // Note: This logic assumes vkMask contains only ONE bit per VK if it's set.
+            // If vkMask represents "Key A OR Key B", this logic means "Is A or B pressed?".
+            // If the intention is "Are ALL keys in the mask pressed?", then the logic should be different.
+            // Based on 'setHotkeyVks', vkMask accumulates bits. Usually hotkeys are "Ctrl + A".
+            // However, 'm_vkDown' are individual bits.
+            // The original logic was: if (mask.vkMask[i] && (snapVk[i] & mask.vkMask[i])) return true;
+            // This implies ANY match in the mask triggers the hotkey?
+            // Wait, standard hotkey logic usually implies AND (all keys pressed).
+            // But 'setHotkeyVks' implementation simply ORs bits into the mask.
+            // The usage in 'pollHotkeys' with 'testHotkeyMask' implies:
+            // "If any bit in mask matches any bit in vkDown, return true?"
+            // Ah, looking at 'setHotkeyVks': it sets ONE bit for simple keys.
+            // If multiple keys are passed (e.g. combo), they are distinct calls?
+            // No, 'setHotkeyVks' takes 'std::vector<UINT>'.
+            // If vector has [CTRL, A], mask has bits for CTRL and A.
+            // Original logic:
+            // for (i=0..3) if (mask[i] && (snap[i] & mask[i])) return true;
+            // This means "OR" logic. Pressed(CTRL) OR Pressed(A) -> Active.
+            // If this is intended (e.g. alternative bindings), then my unrolled OR logic is correct.
+            // If it was meant to be AND (Combo), the original code was also OR.
+            // Assuming OR logic (Any binding in the list triggers the action).
+
+            uint64_t keyHit = (mask.vkMask[0] & snapVk[0]) |
+                (mask.vkMask[1] & snapVk[1]) |
+                (mask.vkMask[2] & snapVk[2]) |
+                (mask.vkMask[3] & snapVk[3]);
+
+            return result || (keyHit != 0);
         }
 
         union MouseDeltaPack {

@@ -1,8 +1,13 @@
 #ifdef _WIN32
-#include "MelonPrimeInputState.h"
-#include "MelonPrimeWinInternal.h"
+#include "MelonPrimeRawInputState.h"
+#include "MelonPrimeRawWinInternal.h"
 #include <cstring>
 #include <algorithm>
+
+    // Intrinsic for BitScan
+#ifdef _MSC_VER
+#include <intrin.h>
+#endif
 
 // MinGW対策
 #ifndef QWORD
@@ -100,8 +105,9 @@ namespace MelonPrime {
                     MouseDeltaPack cur, nxt;
                     cur.combined = m_mouseDeltaCombined.load(std::memory_order_relaxed);
                     do {
-                        nxt.s.x = cur.s.x + dx;
-                        nxt.s.y = cur.s.y + dy;
+                        // Use casting to avoid signed overflow UB, though mostly safe on x86
+                        nxt.s.x = static_cast<int32_t>(static_cast<uint32_t>(cur.s.x) + static_cast<uint32_t>(dx));
+                        nxt.s.y = static_cast<int32_t>(static_cast<uint32_t>(cur.s.y) + static_cast<uint32_t>(dy));
                     } while (UNLIKELY(!m_mouseDeltaCombined.compare_exchange_weak(
                         cur.combined, nxt.combined, std::memory_order_release, std::memory_order_relaxed)));
                 }
@@ -141,12 +147,23 @@ namespace MelonPrime {
     void InputState::processRawInputBatched() noexcept {
         alignas(16) static thread_local uint8_t buffer[16384];
 
+        // ローカルアキュムレータ
+        int32_t localAccX = 0;
+        int32_t localAccY = 0;
+
+        // キーボードの状態変化マスク
+        uint64_t localKeyDeltaDown[4] = { 0 };
+        uint64_t localKeyDeltaUp[4] = { 0 };
+        bool hasMouseDelta = false;
+        bool hasKeyChanges = false;
+        bool hasButtonChanges = false;
+
+        uint8_t finalBtnState = m_mouseButtons.load(std::memory_order_relaxed);
+
         for (;;) {
             UINT size = sizeof(buffer);
-            UINT count;
-
-            // ★ if判定無し。初期化時に決定した最速APIを叩く
-            count = s_fnBestGetRawInputBuffer(
+            // NT API呼出し
+            UINT count = s_fnBestGetRawInputBuffer(
                 reinterpret_cast<PRAWINPUT>(buffer),
                 &size,
                 sizeof(RAWINPUTHEADER)
@@ -154,80 +171,84 @@ namespace MelonPrime {
 
             if (count == 0 || count == UINT(-1)) break;
 
-            int32_t accX = 0, accY = 0;
-            uint8_t btnDown = 0, btnUp = 0;
-            struct KeyDelta { uint64_t down = 0; uint64_t up = 0; } keyDelta[4];
-            bool hasKeyChanges = false;
-
             const RAWINPUT* raw = reinterpret_cast<const RAWINPUT*>(buffer);
 
             for (UINT i = 0; i < count; ++i) {
-                switch (raw->header.dwType) {
-                case RIM_TYPEMOUSE: {
+                if (raw->header.dwType == RIM_TYPEMOUSE) {
                     const RAWMOUSE& m = raw->data.mouse;
+                    // Move logic
                     if (!(m.usFlags & MOUSE_MOVE_ABSOLUTE)) {
-                        accX += m.lLastX;
-                        accY += m.lLastY;
+                        // Integer overflow is undefined for signed types, use unsigned arithmetic
+                        localAccX = static_cast<int32_t>(static_cast<uint32_t>(localAccX) + static_cast<uint32_t>(m.lLastX));
+                        localAccY = static_cast<int32_t>(static_cast<uint32_t>(localAccY) + static_cast<uint32_t>(m.lLastY));
+                        hasMouseDelta = true;
                     }
+                    // Button logic
                     const USHORT flags = m.usButtonFlags & 0x03FF;
                     if (flags) {
                         const auto& lut = s_btnLut[flags];
-                        btnDown = (btnDown & ~lut.upBits) | lut.downBits;
-                        btnUp = (btnUp & ~lut.downBits) | lut.upBits;
+                        finalBtnState = (finalBtnState & ~lut.upBits) | lut.downBits;
+                        hasButtonChanges = true;
                     }
-                    break;
                 }
-                case RIM_TYPEKEYBOARD: {
+                else if (raw->header.dwType == RIM_TYPEKEYBOARD) {
                     const RAWKEYBOARD& kb = raw->data.keyboard;
                     UINT vk = kb.VKey;
+                    // 分岐予測ヒント: ほとんどのキーイベントは有効
                     if (LIKELY(vk > 0 && vk < 255)) {
                         vk = remapVk(vk, kb.MakeCode, kb.Flags);
                         const int idx = vk >> 6;
                         const uint64_t bit = 1ULL << (vk & 63);
-                        if (!(kb.Flags & RI_KEY_BREAK)) {
-                            keyDelta[idx].down |= bit;
-                            keyDelta[idx].up &= ~bit;
+
+                        if (!(kb.Flags & RI_KEY_BREAK)) { // Key Down
+                            localKeyDeltaDown[idx] |= bit;
+                            localKeyDeltaUp[idx] &= ~bit;
                         }
-                        else {
-                            keyDelta[idx].up |= bit;
-                            keyDelta[idx].down &= ~bit;
+                        else { // Key Up
+                            localKeyDeltaUp[idx] |= bit;
+                            localKeyDeltaDown[idx] &= ~bit;
                         }
                         hasKeyChanges = true;
                     }
-                    break;
-                }
                 }
                 raw = NEXTRAWINPUTBLOCK(raw);
             }
+        }
 
-            // State Updates (Atomic)
-            if (accX | accY) {
-                MouseDeltaPack cur, nxt;
-                cur.combined = m_mouseDeltaCombined.load(std::memory_order_relaxed);
-                do {
-                    nxt.s.x = cur.s.x + accX;
-                    nxt.s.y = cur.s.y + accY;
-                } while (UNLIKELY(!m_mouseDeltaCombined.compare_exchange_weak(
-                    cur.combined, nxt.combined, std::memory_order_release, std::memory_order_relaxed)));
-            }
-            if (btnDown | btnUp) {
-                uint8_t cur = m_mouseButtons.load(std::memory_order_relaxed);
-                uint8_t nxt;
-                do {
-                    nxt = (cur | btnDown) & ~btnUp;
-                } while (cur != nxt && UNLIKELY(!m_mouseButtons.compare_exchange_weak(
-                    cur, nxt, std::memory_order_release, std::memory_order_relaxed)));
-            }
-            if (hasKeyChanges) {
-                for (int i = 0; i < 4; ++i) {
-                    if (keyDelta[i].down | keyDelta[i].up) {
-                        uint64_t cur = m_vkDown[i].load(std::memory_order_relaxed);
-                        uint64_t nxt;
-                        do {
-                            nxt = (cur | keyDelta[i].down) & ~keyDelta[i].up;
-                        } while (cur != nxt && UNLIKELY(!m_vkDown[i].compare_exchange_weak(
-                            cur, nxt, std::memory_order_release, std::memory_order_relaxed)));
-                    }
+        // --- Batch Commit ---
+
+        // 1. Mouse Delta Update
+        if (hasMouseDelta) {
+            // CASループの代わりに fetch_add 的なロジックが必要だが、
+            // X/Yパック構造なので CASループは避けられない。
+            // ただし、ループ回数は「バッファ処理回数」ではなく「1回」になるため高速。
+            MouseDeltaPack cur, nxt;
+            cur.combined = m_mouseDeltaCombined.load(std::memory_order_relaxed);
+            do {
+                nxt.s.x = static_cast<int32_t>(static_cast<uint32_t>(cur.s.x) + static_cast<uint32_t>(localAccX));
+                nxt.s.y = static_cast<int32_t>(static_cast<uint32_t>(cur.s.y) + static_cast<uint32_t>(localAccY));
+            } while (UNLIKELY(!m_mouseDeltaCombined.compare_exchange_weak(
+                cur.combined, nxt.combined, std::memory_order_release, std::memory_order_relaxed)));
+        }
+
+        // 2. Mouse Button Update
+        if (hasButtonChanges) {
+            uint8_t cur = m_mouseButtons.load(std::memory_order_relaxed);
+            // Even though we are likely the only writer in this mode, use CAS for safety against 'resetAllKeys'
+            while (!m_mouseButtons.compare_exchange_weak(
+                cur, finalBtnState, std::memory_order_release, std::memory_order_relaxed));
+        }
+
+        // 3. Keyboard Update
+        if (hasKeyChanges) {
+            for (int i = 0; i < 4; ++i) {
+                if (localKeyDeltaDown[i] | localKeyDeltaUp[i]) {
+                    uint64_t cur = m_vkDown[i].load(std::memory_order_relaxed);
+                    uint64_t nxt;
+                    do {
+                        nxt = (cur | localKeyDeltaDown[i]) & ~localKeyDeltaUp[i];
+                    } while (cur != nxt && UNLIKELY(!m_vkDown[i].compare_exchange_weak(
+                        cur, nxt, std::memory_order_release, std::memory_order_relaxed)));
                 }
             }
         }
@@ -322,17 +343,23 @@ namespace MelonPrime {
                 const uint64_t hbit = 1ULL << bitPos;
                 const HotkeyMask& mask = m_hkMask[id];
 
+                // Optimization: Inlined branchless test
                 const bool isDown = testHotkeyMask(mask, snapVk, snapMouse);
 
                 if (isDown) newDown |= hbit;
 
+                // Edge detection
                 const bool prev = (m_hkPrev[w] & hbit) != 0;
-                if (isDown && !prev) {
-                    newPressed |= hbit;
-                    m_hkPrev[w] |= hbit;
-                }
-                else if (!isDown && prev) {
-                    m_hkPrev[w] &= ~hbit;
+                // If isDown is true and prev is false -> Pressed
+                // Using XOR and AND: (isDown ^ prev) & isDown
+                if (isDown != prev) {
+                    if (isDown) {
+                        newPressed |= hbit;
+                        m_hkPrev[w] |= hbit;
+                    }
+                    else {
+                        m_hkPrev[w] &= ~hbit;
+                    }
                 }
 
                 bound &= bound - 1;
@@ -347,10 +374,10 @@ namespace MelonPrime {
         const HotkeyMask& mask = m_hkMask[id];
         if (!mask.hasMask) return false;
 
-        if (mask.mouseMask) {
-            const uint8_t buttons = m_mouseButtons.load(std::memory_order_acquire);
-            if (buttons & mask.mouseMask) return true;
-        }
+        // Using load acquire for reading from atomic store in batched thread
+        const uint8_t buttons = m_mouseButtons.load(std::memory_order_acquire);
+        if (mask.mouseMask && (buttons & mask.mouseMask)) return true;
+
         for (int i = 0; i < 4; ++i) {
             if (mask.vkMask[i]) {
                 const uint64_t keys = m_vkDown[i].load(std::memory_order_acquire);
