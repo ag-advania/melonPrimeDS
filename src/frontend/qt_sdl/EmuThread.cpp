@@ -38,8 +38,9 @@
 #include "Savestate.h"
 #include "EmuInstance.h"
 
-// MelonPrimeDS Integration
+#ifdef MELONPRIME_DS
 #include "MelonPrime.h"
+#endif // MELONPRIME_DS
 
 using namespace melonDS;
 
@@ -50,8 +51,9 @@ EmuThread::EmuThread(EmuInstance* inst, QObject* parent) : QThread(parent)
     emuPauseStack = emuPauseStackRunning;
     emuActive = false;
 
-    // Initialize MelonPrime Logic
+#ifdef MELONPRIME_DS
     melonPrime = std::make_unique<MelonPrime::MelonPrimeCore>(inst);
+#endif // MELONPRIME_DS
 }
 
 EmuThread::~EmuThread()
@@ -95,13 +97,15 @@ void EmuThread::detachWindow(MainWindow* window)
     }
 }
 
+
 void EmuThread::run()
 {
     Config::Table& globalCfg = emuInstance->getGlobalConfig();
     u32 mainScreenPos[3];
 
-    // MelonPrime Initialization Hook
+#ifdef MELONPRIME_DS
     melonPrime->Initialize();
+#endif // MELONPRIME_DS
 
     mainScreenPos[0] = 0;
     mainScreenPos[1] = 0;
@@ -138,17 +142,21 @@ void EmuThread::run()
     emuInstance->fastForwardToggled = false;
     emuInstance->slowmoToggled = false;
 
-    // --- Frame Advance Lambda (Captures EmuThread context for FPS limiting) ---
+    // --- Frame Advance (lambda so MelonPrime can call it externally) ---
     auto frameAdvanceOnce = [&]() {
 
         if (useOpenGL)
             emuInstance->makeCurrentGL();
 
-        // Update Render Settings
-        if (videoSettingsDirty) {
+        // update render settings if needed
+        if (videoSettingsDirty)
+        {
             emuInstance->renderLock.lock();
-            if (useOpenGL) {
-                // emuInstance->setVSyncGL(true);
+            if (useOpenGL)
+            {
+#ifndef MELONPRIME_DS
+                emuInstance->setVSyncGL(true);
+#endif
                 videoRenderer = globalCfg.GetInt("3D.Renderer");
             }
 #ifdef OGLRENDERER_ENABLED
@@ -164,9 +172,27 @@ void EmuThread::run()
             emuInstance->renderLock.unlock();
         }
 
+#ifndef MELONPRIME_DS
+        // process input and hotkeys
+        emuInstance->nds->SetKeyMask(emuInstance->inputMask);
+
+        if (emuInstance->isTouching)
+            emuInstance->nds->TouchScreen(emuInstance->touchX, emuInstance->touchY);
+        else
+            emuInstance->nds->ReleaseScreen();
+
+        if (emuInstance->hotkeyPressed(HK_Lid))
+        {
+            bool lid = !emuInstance->nds->IsLidClosed();
+            emuInstance->nds->SetLidClosed(lid);
+            emuInstance->osdAddMessage(0, lid ? "Lid closed" : "Lid opened");
+        }
+#endif // MELONPRIME_DS
+
         // emulate
         u32 nlines;
-        if (emuInstance->nds->GPU.GetRenderer().NeedsShaderCompile()) {
+        if (emuInstance->nds->GPU.GetRenderer().NeedsShaderCompile())
+        {
             compileShaders();
             nlines = 1;
         }
@@ -195,7 +221,7 @@ void EmuThread::run()
 
 #ifdef MELONCAP
         MelonCap::Update();
-#endif
+#endif // MELONCAP
 
         winUpdateCount++;
         if (winUpdateCount >= winUpdateFreq && !useOpenGL)
@@ -238,6 +264,7 @@ void EmuThread::run()
                 dsiVolumeLevel = volumeLevel;
                 emit syncVolumeLevel();
             }
+
             emuInstance->audioVolume = volumeLevel * (256.0 / 31.0);
         }
 
@@ -253,8 +280,10 @@ void EmuThread::run()
             double curtime = SDL_GetPerformanceCounter() * perfCountsSec;
 
             frameLimitError += frametimeStep - (curtime - lastTime);
-            if (frameLimitError < -frametimeStep) frameLimitError = -frametimeStep;
-            if (frameLimitError > frametimeStep) frameLimitError = frametimeStep;
+            if (frameLimitError < -frametimeStep)
+                frameLimitError = -frametimeStep;
+            if (frameLimitError > frametimeStep)
+                frameLimitError = frametimeStep;
 
             if (round(frameLimitError * 1000.0) > 0.0)
             {
@@ -263,6 +292,7 @@ void EmuThread::run()
                 curtime = SDL_GetPerformanceCounter() * perfCountsSec;
                 frameLimitError -= curtime - timeBeforeSleep;
             }
+
             lastTime = curtime;
         }
 
@@ -279,27 +309,27 @@ void EmuThread::run()
             float fpstarget = 1.0 / frametimeStep;
 
             winUpdateFreq = fps / (u32)round(fpstarget);
-            if (winUpdateFreq < 1) winUpdateFreq = 1;
+            if (winUpdateFreq < 1)
+                winUpdateFreq = 1;
 
             double actualfps = (59.8261 * 263.0) / nlines;
             snprintf(melontitle, sizeof(melontitle), "[%d/%.0f] melonDS " MELONDS_VERSION, fps, actualfps);
             changeWindowTitle(melontitle);
         }
         };
-    // ----------------------------------------------------------------------
+    // --- End of frameAdvanceOnce ---
 
-    // Set callback to MelonPrimeCore
+#ifdef MELONPRIME_DS
     melonPrime->SetFrameAdvanceFunc(frameAdvanceOnce);
+#endif // MELONPRIME_DS
 
     while (emuStatus != emuStatus_Exit)
     {
-        // 1. MPインターフェースと入力処理を実行
         if (emuInstance->instanceID == 0)
             MPInterface::Get().Process();
 
         emuInstance->inputProcess();
 
-        // 2. グローバルホットキーの確認
         if (emuInstance->hotkeyPressed(HK_FrameLimitToggle)) emit windowLimitFPSChange();
 
         if (emuInstance->hotkeyPressed(HK_Pause)) emuTogglePause();
@@ -311,46 +341,114 @@ void EmuThread::run()
         if (emuInstance->hotkeyPressed(HK_SwapScreens)) emit swapScreensToggle();
         if (emuInstance->hotkeyPressed(HK_SwapScreenEmphasis)) emit screenEmphasisToggle();
 
-
         if (emuStatus == emuStatus_Running || emuStatus == emuStatus_FrameStep)
         {
             if (emuStatus == emuStatus_FrameStep) emuStatus = emuStatus_Paused;
+
+#ifndef MELONPRIME_DS
+            if (emuInstance->hotkeyPressed(HK_SolarSensorDecrease))
+            {
+                int level = emuInstance->nds->GBACartSlot.SetInput(GBACart::Input_SolarSensorDown, true);
+                if (level != -1)
+                {
+                    emuInstance->osdAddMessage(0, "Solar sensor level: %d", level);
+                }
+            }
+            if (emuInstance->hotkeyPressed(HK_SolarSensorIncrease))
+            {
+                int level = emuInstance->nds->GBACartSlot.SetInput(GBACart::Input_SolarSensorUp, true);
+                if (level != -1)
+                {
+                    emuInstance->osdAddMessage(0, "Solar sensor level: %d", level);
+                }
+            }
+
+            if (emuInstance->nds->ConsoleType == 1)
+            {
+                DSi* dsi = static_cast<DSi*>(emuInstance->nds);
+                double currentTime = SDL_GetPerformanceCounter() * perfCountsSec;
+
+                // Handle power button
+                if (emuInstance->hotkeyDown(HK_PowerButton))
+                {
+                    dsi->I2C.GetBPTWL()->SetPowerButtonHeld(currentTime);
+                }
+                else if (emuInstance->hotkeyReleased(HK_PowerButton))
+                {
+                    dsi->I2C.GetBPTWL()->SetPowerButtonReleased(currentTime);
+                }
+
+                // Handle volume buttons
+                if (emuInstance->hotkeyDown(HK_VolumeUp))
+                {
+                    dsi->I2C.GetBPTWL()->SetVolumeSwitchHeld(DSi_BPTWL::volumeKey_Up);
+                }
+                else if (emuInstance->hotkeyReleased(HK_VolumeUp))
+                {
+                    dsi->I2C.GetBPTWL()->SetVolumeSwitchReleased(DSi_BPTWL::volumeKey_Up);
+                }
+
+                if (emuInstance->hotkeyDown(HK_VolumeDown))
+                {
+                    dsi->I2C.GetBPTWL()->SetVolumeSwitchHeld(DSi_BPTWL::volumeKey_Down);
+                }
+                else if (emuInstance->hotkeyReleased(HK_VolumeDown))
+                {
+                    dsi->I2C.GetBPTWL()->SetVolumeSwitchReleased(DSi_BPTWL::volumeKey_Down);
+                }
+
+                dsi->I2C.GetBPTWL()->ProcessVolumeSwitchInput(currentTime);
+            }
+#endif // MELONPRIME_DS
 
             // auto screen layout
             {
                 mainScreenPos[2] = mainScreenPos[1];
                 mainScreenPos[1] = mainScreenPos[0];
                 mainScreenPos[0] = emuInstance->nds->PowerControl9 >> 15;
+
                 int guess;
-                if (mainScreenPos[0] == mainScreenPos[2] && mainScreenPos[0] != mainScreenPos[1]) {
+                if (mainScreenPos[0] == mainScreenPos[2] &&
+                    mainScreenPos[0] != mainScreenPos[1])
+                {
+                    // constant flickering, likely displaying 3D on both screens
+                    // TODO: when both screens are used for 2D only...???
                     guess = screenSizing_Even;
                 }
-                else {
-                    if (mainScreenPos[0] == 1) guess = screenSizing_EmphTop;
-                    else guess = screenSizing_EmphBot;
+                else
+                {
+                    if (mainScreenPos[0] == 1)
+                        guess = screenSizing_EmphTop;
+                    else
+                        guess = screenSizing_EmphBot;
                 }
-                if (guess != autoScreenSizing) {
+
+                if (guess != autoScreenSizing)
+                {
                     autoScreenSizing = guess;
                     emit autoScreenSizingChange(autoScreenSizing);
                 }
             }
 
-            // Run standard emulation loop (captured in lambda)
-            // Note: inputProcess and RunFrameHook are called INSIDE this lambda in correct order.
             frameAdvanceOnce();
         }
         else
         {
+            // paused
             nframes = 0;
             lastTime = SDL_GetPerformanceCounter() * perfCountsSec;
             lastMeasureTime = lastTime;
+
             emit windowUpdate();
+
             snprintf(melontitle, sizeof(melontitle), "melonDS " MELONDS_VERSION);
             changeWindowTitle(melontitle);
+
             SDL_Delay(75);
 
             emuInstance->drawScreen();
         }
+
         handleMessages();
     }
 }
@@ -391,7 +489,9 @@ void EmuThread::handleMessages()
             emuInstance->audioDisable();
             MPInterface::Get().End(emuInstance->instanceID);
 
+#ifdef MELONPRIME_DS
             melonPrime->OnEmuStop();
+#endif // MELONPRIME_DS
             break;
 
         case msg_EmuRun:
@@ -401,7 +501,9 @@ void EmuThread::handleMessages()
             emuInstance->audioEnable();
             emit windowEmuStart();
 
+#ifdef MELONPRIME_DS
             melonPrime->OnEmuStart();
+#endif // MELONPRIME_DS
             break;
 
         case msg_EmuPause:
@@ -414,7 +516,9 @@ void EmuThread::handleMessages()
                 emit windowEmuPause(true);
                 emuInstance->osdAddMessage(0, "Paused");
 
+#ifdef MELONPRIME_DS
                 melonPrime->OnEmuPause();
+#endif // MELONPRIME_DS
             }
             break;
 
@@ -428,7 +532,9 @@ void EmuThread::handleMessages()
                 emit windowEmuPause(false);
                 emuInstance->osdAddMessage(0, "Resumed");
 
+#ifdef MELONPRIME_DS
                 melonPrime->OnEmuUnpause();
+#endif // MELONPRIME_DS
             }
             break;
 
@@ -454,7 +560,9 @@ void EmuThread::handleMessages()
             emit windowEmuReset();
             emuInstance->osdAddMessage(0, "Reset");
 
+#ifdef MELONPRIME_DS
             melonPrime->OnReset();
+#endif // MELONPRIME_DS
             break;
 
         case msg_InitGL:
@@ -748,11 +856,12 @@ void EmuThread::updateRenderer()
 {
     auto nds = emuInstance->nds;
 
-
     auto& cfg = emuInstance->getGlobalConfig();
 
-    bool vsyncFlag = cfg.GetBool("Screen.VSync"); // MelonPrimeDS
-    emuInstance->setVSyncGL(vsyncFlag); // MelonPrimeDS
+#ifdef MELONPRIME_DS
+    bool vsyncFlag = cfg.GetBool("Screen.VSync");
+    emuInstance->setVSyncGL(vsyncFlag);
+#endif // MELONPRIME_DS
 
     if (videoRenderer != lastVideoRenderer)
     {
@@ -780,8 +889,9 @@ void EmuThread::updateRenderer()
     };
     nds->GetRenderer().SetRenderSettings(settings);
 
-    emuInstance->setVSyncGL(vsyncFlag); // MelonPrimeDS
-
+#ifdef MELONPRIME_DS
+    emuInstance->setVSyncGL(vsyncFlag);
+#endif // MELONPRIME_DS
 }
 
 void EmuThread::compileShaders()

@@ -94,6 +94,7 @@ static constexpr std::initializer_list<const char*> hk_general_labels =
 
 static_assert(hk_general.size() == hk_general_labels.size());
 
+#ifdef MELONPRIME_DS
 // MelonPrimeDS {
 static constexpr std::initializer_list<int> hk_tabAddonsMetroid =
 {
@@ -180,7 +181,7 @@ static constexpr std::initializer_list<const char*> hk_tabAddonsMetroid2_labels 
 
 static_assert(hk_tabAddonsMetroid2.size() == hk_tabAddonsMetroid2_labels.size());
 // } MelonPrimeDS
-
+#endif
 
 namespace Ui { class InputConfigDialog; }
 class InputConfigDialog;
@@ -214,23 +215,26 @@ public:
         currentDlg = nullptr;
     }
 
+#ifdef MELONPRIME_DS
     /* MelonPrimeDS { */
     void switchTabToAddons();
     void switchTabToMetroid(); // Tab Other Metroid Settings
     void switchTabToMetroid2(); // Tab Other Metroid Settings 2
     /* } MelonPrimeDS*/
+#endif
 
 private slots:
     void on_InputConfigDialog_accepted();
     void on_InputConfigDialog_rejected();
 
-    /*
-    * MelonPrimeDS remove DSKeypadConfig
+#ifndef MELONPRIME_DS
     void on_btnKeyMapSwitch_clicked();
     void on_btnJoyMapSwitch_clicked();
-    */
+#endif
+
     void on_cbxJoystick_currentIndexChanged(int id);
 
+#ifdef MELONPRIME_DS
     /* MelonPrimeDS { */
     void on_metroidResetSensitivityValues_clicked();
 
@@ -243,12 +247,16 @@ private slots:
     void on_cbMetroidApplyHeadphone_stateChanged(int state);
     void on_cbMetroidUseFirmwareName_stateChanged(int state);
     /* } MelonPrimeDS*/
+#endif
 
 private:
     void populatePage(QWidget* page,
         const std::initializer_list<const char*>& labels,
         int* keymap, int* joymap);
-    // void setupKeypadPage(); // MelonPrimeDS remove DSKeypadConfig
+
+#ifndef MELONPRIME_DS
+    void setupKeypadPage();
+#endif
 
     Ui::InputConfigDialog* ui;
 
@@ -256,8 +264,12 @@ private:
 
     int keypadKeyMap[12], keypadJoyMap[12];
     int addonsKeyMap[hk_addons.size()], addonsJoyMap[hk_addons.size()];
+
+#ifdef MELONPRIME_DS
     int addonsMetroidKeyMap[hk_tabAddonsMetroid.size()], addonsMetroidJoyMap[hk_tabAddonsMetroid.size()]; // MelonPrimeDS
     int addonsMetroid2KeyMap[hk_tabAddonsMetroid2.size()], addonsMetroid2JoyMap[hk_tabAddonsMetroid2.size()]; // MelonPrimeDS
+#endif
+
     int hkGeneralKeyMap[hk_general.size()], hkGeneralJoyMap[hk_general.size()];
     int joystickID;
 };
