@@ -1,6 +1,19 @@
 /*
     Copyright 2016-2025 melonDS team
-    ... (略) ...
+
+    This file is part of melonDS.
+
+    melonDS is free software: you can redistribute it and/or modify it under
+    the terms of the GNU General Public License as published by the Free
+    Software Foundation, either version 3 of the License, or (at your option)
+    any later version.
+
+    melonDS is distributed in the hope that it will be useful, but WITHOUT ANY
+    WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+    FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License along
+    with melonDS. If not, see http://www.gnu.org/licenses/.
 */
 
 #include <string.h>
@@ -32,24 +45,20 @@
 #include "version.h"
 
 // MelonPrimeDS Integration
+#ifdef MELONPRIME_DS
 #include "MelonPrime.h"
 
-
-
-// melonprimeds
-#if defined(_WIN32)
-
+#ifdef _WIN32
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
 #endif
 #include <windows.h>
-
-
 #endif
+#endif // MELONPRIME_DS
 
-// MelonPrimeDS
+
+#ifdef MELONPRIME_DS
 #ifdef _WIN32
-#include <windows.h>
 // 仮想デスクトップ矩形取得用ヘルパー
 inline RECT getVirtualScreenRect() {
     const int vx = GetSystemMetrics(SM_XVIRTUALSCREEN);
@@ -94,7 +103,8 @@ inline RECT shrinkRectHeightToHalfCentered(RECT r) {
     r.bottom = cy + quarter;
     return r;
 }
-#endif
+#endif // _WIN32
+#endif // MELONPRIME_DS
 
 using namespace melonDS;
 
@@ -110,7 +120,8 @@ using namespace QNativeInterface;
 const u32 kOSDMargin = 6;
 const int kLogoWidth = 192;
 
-void ScreenPanel::clipCursorCenter1px() { // MelonPrimeDS
+#ifdef MELONPRIME_DS
+void ScreenPanel::clipCursorCenter1px() {
     setClipWanted(true);
     setCursor(Qt::BlankCursor);
 
@@ -123,17 +134,18 @@ void ScreenPanel::clipCursorCenter1px() { // MelonPrimeDS
 #endif
 }
 
-void ScreenPanel::unclip() { // MelonPrimeDS
+void ScreenPanel::unclip() {
     setClipWanted(false);
 #ifdef _WIN32
     ClipCursor(nullptr);
 #endif
 }
 
-void ScreenPanel::updateClipIfNeeded() { // MelonPrimeDS
+void ScreenPanel::updateClipIfNeeded() {
     if (!getClipWanted()) return;
     clipCursorCenter1px();
 }
+#endif // MELONPRIME_DS
 
 
 ScreenPanel::ScreenPanel(QWidget* parent) : QWidget(parent)
@@ -187,8 +199,10 @@ ScreenPanel::ScreenPanel(QWidget* parent) : QWidget(parent)
 
 ScreenPanel::~ScreenPanel()
 {
+#ifdef MELONPRIME_DS
 #if defined(_WIN32)
-    unclip(); // MelonPrimeDS
+    unclip();
+#endif
 #endif
 }
 
@@ -255,10 +269,12 @@ void ScreenPanel::setupScreenLayout()
 
     calcSplashLayout();
 
-    // MelonPrimeDS: Notify layout change
+#ifdef MELONPRIME_DS
+    // Notify layout change
     if (auto* core = emuInstance->getEmuThread()->GetMelonPrimeCore()) {
         core->NotifyLayoutChange();
     }
+#endif
 }
 
 QSize ScreenPanel::screenGetMinSize(int factor = 1)
@@ -325,9 +341,10 @@ void ScreenPanel::onAutoScreenSizingChanged(int sizing)
 void ScreenPanel::resizeEvent(QResizeEvent* event)
 {
     setupScreenLayout();
+#ifdef MELONPRIME_DS
 #if defined(_WIN32)
-    // melonprimeds
     updateClipIfNeeded();
+#endif
 #endif
     QWidget::resizeEvent(event);
 }
@@ -336,8 +353,11 @@ void ScreenPanel::mousePressEvent(QMouseEvent* event)
 {
     event->accept();
     auto* const emu = emuInstance;
+
+#ifdef MELONPRIME_DS
     auto* const thr = emu->getEmuThread();
     auto* const core = thr->GetMelonPrimeCore();
+#endif
 
     if (Q_UNLIKELY(!emu->emuIsActive()))
     {
@@ -345,28 +365,29 @@ void ScreenPanel::mousePressEvent(QMouseEvent* event)
         return;
     }
 
-    // ★修正: クリックでフォーカスONにする処理を復活
+#ifdef MELONPRIME_DS
+    // Click sets focus
     if (core) core->isFocused = true;
 
     emu->onMousePress(event);
+#endif
 
     if (event->button() != Qt::LeftButton)
         return;
 
-    // マウスエイムモード（!isStylusMode）かつ、ゲーム中の場合
+#ifdef MELONPRIME_DS
+    // Mouse aim mode logic
     if (core && !core->isStylusMode && core->IsInGame())
     {
-        // エイムモード（!isCursorMode）の時は、クリックをエイム復帰（クリップ）として扱い、
-        // タッチパネルへの入力をブロックして return する。
+        // If not in cursor mode (aim mode), treat click as returning to aim (clip)
         if (!core->isCursorMode)
         {
             clipCursorCenter1px();
             return;
         }
-
-        // isCursorMode == true (メニュー画面等) の場合は、
-        // ここで return せず、下の「layout.GetTouchCoords」へ処理を流す。
+        // If isCursorMode == true, proceed to standard touch processing
     }
+#endif
 
     const QPoint p = event->pos();
     int x = p.x();
@@ -378,11 +399,13 @@ void ScreenPanel::mousePressEvent(QMouseEvent* event)
         emu->touchScreen(x, y);
     }
 
-    // カーソルモードならクリップしない
+#ifdef MELONPRIME_DS
+    // If not in cursor mode, re-clip
     if (core && !core->isStylusMode && !core->isCursorMode)
     {
         clipCursorCenter1px();
     }
+#endif
 }
 
 void ScreenPanel::mouseReleaseEvent(QMouseEvent* event)
@@ -391,9 +414,10 @@ void ScreenPanel::mouseReleaseEvent(QMouseEvent* event)
 
     auto* const emu = emuInstance;
 
-    emu->onMouseRelease(event); // MelonPrimeDS
+#ifdef MELONPRIME_DS
+    emu->onMouseRelease(event);
+#endif
 
-    // 非アクティブなら押下状態を必ず解除
     if (Q_UNLIKELY(!emu->emuIsActive()))
     {
         touching = false;
@@ -416,7 +440,6 @@ void ScreenPanel::mouseMoveEvent(QMouseEvent* event)
 
     auto* const emu = emuInstance;
 
-    // 非アクティブはホットパスじゃない想定
     if (Q_UNLIKELY(!emu->emuIsActive()))
         return;
 
@@ -901,14 +924,14 @@ void ScreenPanelNative::drawScreen()
     bufferLock.unlock();
 }
 
-void ScreenPanelNative::paintEvent(QPaintEvent* event)
+void ScreenPanelNative::paintEvent(QPaintEvent * event)
 {
     QPainter painter(this);
 
     painter.fillRect(event->rect(), QColor::fromRgb(0, 0, 0));
 
     auto emuThread = emuInstance->getEmuThread();
-    
+
     if (emuThread->emuIsActive())
     {
         emuInstance->renderLock.lock();
@@ -1063,9 +1086,9 @@ void ScreenPanelGL::initOpenGL()
     glGenVertexArrays(1, &screenVertexArray);
     glBindVertexArray(screenVertexArray);
     glEnableVertexAttribArray(0); // position
-    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 5*4, (void*)(0));
+    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 5 * 4, (void*)(0));
     glEnableVertexAttribArray(1); // texcoord
-    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 5*4, (void*)(2*4));
+    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 5 * 4, (void*)(2 * 4));
 
     glGenTextures(1, &screenTexture);
     glActiveTexture(GL_TEXTURE0);
@@ -1244,9 +1267,9 @@ void ScreenPanelGL::drawScreen()
             glBindTexture(GL_TEXTURE_2D_ARRAY, screenTexture);
 
             glTexSubImage3D(GL_TEXTURE_2D_ARRAY, 0, 0, 0, 0, 256, 192, 1, GL_BGRA,
-                            GL_UNSIGNED_BYTE, topbuf);
+                GL_UNSIGNED_BYTE, topbuf);
             glTexSubImage3D(GL_TEXTURE_2D_ARRAY, 0, 0, 0, 1, 256, 192, 1, GL_BGRA,
-                            GL_UNSIGNED_BYTE, bottombuf);
+                GL_UNSIGNED_BYTE, bottombuf);
         }
         else
         {
@@ -1365,8 +1388,9 @@ void ScreenPanelGL::drawScreen()
 
     glContext->SwapBuffers();
 
-    // glFinish(); // MelonPrimeDS
-
+#ifdef MELONPRIME_DS
+    // glFinish();
+#endif
 }
 
 qreal ScreenPanelGL::devicePixelRatioFromScreen() const
@@ -1485,33 +1509,28 @@ void ScreenPanelGL::transferLayout()
     }
 }
 
+#ifdef MELONPRIME_DS
 /* MelonPrimeDS */
 void ScreenPanel::unfocus()
 {
-    // ★復活: CoreのisFocusedフラグをOFFにする
     if (auto* core = emuInstance->getEmuThread()->GetMelonPrimeCore())
         core->isFocused = false;
 
     setCursor(Qt::ArrowCursor);
 #if defined(_WIN32)
-    unclip(); // MelonPrimeDS
+    unclip();
 #endif
 }
 
 void ScreenPanel::focusOutEvent(QFocusEvent * event)
 {
-    // ★復活: 判定なしで強制的にunfocusを呼び出す
-    /*
-    if (emuInstance->getEmuThread()->GetMelonPrimeCore() && emuInstance->getEmuThread()->GetMelonPrimeCore()->isFocused) {
-        return;
-    }
-    */
-
     unfocus();
 }
 
 void ScreenPanel::moveEvent(QMoveEvent * e) {
-    updateClipIfNeeded(); // MelonPrimeDS
+#if defined(_WIN32)
+    updateClipIfNeeded();
+#endif
     QWidget::moveEvent(e);
 }
 
@@ -1527,3 +1546,4 @@ __attribute__((always_inline)) inline bool ScreenPanel::getClipWanted()
     if (!emuInstance->getEmuThread()->GetMelonPrimeCore()) return false;
     return emuInstance->getEmuThread()->GetMelonPrimeCore()->isClipWanted;
 }
+#endif // MELONPRIME_DS
