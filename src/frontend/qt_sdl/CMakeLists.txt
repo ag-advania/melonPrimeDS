@@ -113,7 +113,7 @@ pkg_check_modules(Faad REQUIRED IMPORTED_TARGET faad2)
 fix_interface_includes(PkgConfig::SDL2 PkgConfig::LibArchive)
 
 add_compile_definitions(ARCHIVE_SUPPORT_ENABLED)
-
+add_compile_definitions(MELONPRIME_DS) # MelonPrimeDS
 
 if (WIN32)
     # windowsÇÃèúäOê›íËÇÕÇ∆Ç≠Ç…Ç»ÇµÅB
