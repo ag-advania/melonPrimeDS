@@ -185,10 +185,11 @@ private slots:
     void onFullscreenToggled();
     void onScreenEmphasisToggled();
 
-    /* MelonPrimeDS { */
+#ifdef MELONPRIME_DS
+    /* MelonPrimeDS */
     void onOpenMetroidInputSettings();
     void onOpenMetroidOtherSettings();
-    /* } MelonPrimeDS */
+#endif // MELONPRIME_DS
 
 private:
     virtual void closeEvent(QCloseEvent* event) override;
@@ -196,7 +197,7 @@ private:
     QStringList currentROM;
     QStringList currentGBAROM;
     QList<QString> recentFileList;
-    QMenu *recentMenu;
+    QMenu* recentMenu;
     void updateRecentFilesMenu();
 
     bool verifySetup();

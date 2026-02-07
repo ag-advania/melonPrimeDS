@@ -20,6 +20,12 @@
 #define MAPBUTTON_H
 
 #include <QPushButton>
+#include <QKeyEvent>
+
+#ifdef MELONPRIME_DS
+#include <QMouseEvent>
+#include <optional>
+#endif
 
 #include <SDL2/SDL.h>
 
@@ -57,42 +63,43 @@ protected:
         Log(melonDS::Platform::Debug, "KEY PRESSED = %08X %08X | %08X %08X %08X\n", event->key(), (int)event->modifiers(), event->nativeVirtualKey(), event->nativeModifiers(), event->nativeScanCode());
 
         int key = event->key();
-
         int mod = event->modifiers();
         bool ismod = (key == Qt::Key_Control ||
-                      key == Qt::Key_Alt ||
-                      key == Qt::Key_AltGr ||
-                      key == Qt::Key_Shift ||
-                      key == Qt::Key_Meta);
+            key == Qt::Key_Alt ||
+            key == Qt::Key_AltGr ||
+            key == Qt::Key_Shift ||
+            key == Qt::Key_Meta);
 
-        /* MelonPrimeDS CommentOuted
+#ifndef MELONPRIME_DS
+        // Original logic: Only allow Esc/Backspace if no modifiers are pressed
         if (!mod)
         {
-        */
-
+#endif
+            // In MelonPrimeDS, we allow these checks even if modifiers are present
             if (key == Qt::Key_Escape) { click(); return; }
             if (key == Qt::Key_Backspace) { *mapping = -1; click(); return; }
-        
-        /* MelonPrimeDS CommentOuted
+
+#ifndef MELONPRIME_DS
         }
 
+        // Original logic: specific hotkey handling
         if (isHotkey)
         {
             if (ismod)
                 return;
         }
+#endif
 
-        */
         if (!ismod)
             key |= mod;
         else if (isRightModKey(event))
-            key |= (1<<31);
+            key |= (1 << 31);
 
         *mapping = key;
         click();
     }
 
-    // MelonPrimeDS
+#ifdef MELONPRIME_DS
     void mousePressEvent(QMouseEvent* event) override {
         if (!isChecked()) return QPushButton::mousePressEvent(event);
 
@@ -101,6 +108,7 @@ protected:
         *mapping = (int)event->button() | 0xF0000000;
         click();
     }
+#endif
 
     void focusOutEvent(QFocusEvent* event) override
     {
@@ -135,7 +143,7 @@ private:
 
         if (key == -1) return "None";
 
-        /* MelonPrimeDS { */
+#ifdef MELONPRIME_DS
         auto getMouseButtonName = [](Qt::MouseButton button) -> std::optional<QString> {
             static const struct {
                 Qt::MouseButton button;
@@ -176,24 +184,17 @@ private:
             }
             return std::nullopt;
             };
+
         auto mouseButton = key & ~0xF0000000;
         if (auto name = getMouseButtonName(static_cast<Qt::MouseButton>(mouseButton))) {
             return *name;
         }
-        /*
-        auto mouseButton = key & ~0xF0000000;
-        if (mouseButton == Qt::LeftButton) return "Mouse Left";
-        if (mouseButton == Qt::MiddleButton) return "Mouse Middle";
-        if (mouseButton == Qt::RightButton) return "Mouse Right";
-        if (mouseButton == Qt::ExtraButton1) return "Mouse 4";
-        if (mouseButton == Qt::ExtraButton2) return "Mouse 5";
-        */
-        /* } MelonPrimeDS */
+#endif
 
-        QString isright = (key & (1<<31)) ? "Right " : "Left ";
-        key &= ~(1<<31);
+        QString isright = (key & (1 << 31)) ? "Right " : "Left ";
+        key &= ~(1 << 31);
 
-    #ifndef __APPLE__
+#ifndef __APPLE__
         switch (key)
         {
         case Qt::Key_Control: return isright + "Ctrl";
@@ -202,7 +203,7 @@ private:
         case Qt::Key_Shift:   return isright + "Shift";
         case Qt::Key_Meta:    return "Meta";
         }
-    #else
+#else
         switch (key)
         {
         case Qt::Key_Control: return isright + "⌘";
@@ -210,7 +211,7 @@ private:
         case Qt::Key_Shift:   return isright + "⇧";
         case Qt::Key_Meta:    return isright + "⌃";
         }
-    #endif
+#endif
 
         QKeySequence seq(key);
         QString ret = seq.toString(QKeySequence::NativeText);
@@ -320,7 +321,7 @@ protected:
             Uint8 blackhat = SDL_JoystickGetHat(joy, i);
             if (blackhat)
             {
-                if      (blackhat & 0x1) blackhat = 0x1;
+                if (blackhat & 0x1) blackhat = 0x1;
                 else if (blackhat & 0x2) blackhat = 0x2;
                 else if (blackhat & 0x4) blackhat = 0x4;
                 else                     blackhat = 0x8;
