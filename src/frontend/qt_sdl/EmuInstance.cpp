@@ -48,18 +48,14 @@
 #include "FreeBIOS.h"
 #include "main.h"
 
-/* melonPrimeDS { */
-// #include <QMessageBox>
+#ifdef MELONPRIME_DS
 #include "MelonPrimeDef.h"
 
-// Global variable definitions with initialization
-// Source: MelonPrimeDef.h
 namespace MelonPrime {
     uint32_t globalChecksum = 0;
     bool isRomDetected = false;
 }
-
-/* } melonPrimeDS */
+#endif // MELONPRIME_DS
 
 using std::make_unique;
 using std::pair;
@@ -1948,41 +1944,36 @@ bool EmuInstance::loadROM(QStringList filepath, bool reset, QString& errorstr)
         return false;
     }
 
-    // MelonPrimeDS {
-
-    // Define the instance of the global variable
+    // MelonPrimeDS: ROM checksum detection
+#ifdef MELONPRIME_DS
     MelonPrime::globalChecksum = cart->Checksum();
-
-    // newRomFlag ON
     MelonPrime::isRomDetected = false;
 
-    // ROM Check
     switch (MelonPrime::globalChecksum) {
-        case MelonPrime::RomVersions::US1_0:
-        case MelonPrime::RomVersions::US1_1:
-        case MelonPrime::RomVersions::EU1_0:
-        case MelonPrime::RomVersions::EU1_1:
-        case MelonPrime::RomVersions::JP1_0:
-        case MelonPrime::RomVersions::JP1_1:
-        case MelonPrime::RomVersions::KR1_0:
-        case MelonPrime::RomVersions::EU1_1_BALANCED:
-        case MelonPrime::RomVersions::EU1_1_RUSSIANED:
-        case MelonPrime::RomVersions::US1_0_ENCRYPTED:
-        case MelonPrime::RomVersions::US1_1_ENCRYPTED:
-        case MelonPrime::RomVersions::EU1_0_ENCRYPTED:
-        case MelonPrime::RomVersions::EU1_1_ENCRYPTED:
-        case MelonPrime::RomVersions::JP1_0_ENCRYPTED:
-        case MelonPrime::RomVersions::JP1_1_ENCRYPTED:
-        case MelonPrime::RomVersions::KR1_0_ENCRYPTED:
-            // Valid ROM
-            break;
-        default:
-            char message[256];
-            sprintf(message, "Unknown ROM (Checksum: 0x%08X). Please make sure to use the untrimmed and unmodified Metroid Prime Hunters ROM which is not encrypted.", MelonPrime::globalChecksum);
-            osdAddMessage(0xFFA0A0, message);
-            break;
+    case MelonPrime::RomVersions::US1_0:
+    case MelonPrime::RomVersions::US1_1:
+    case MelonPrime::RomVersions::EU1_0:
+    case MelonPrime::RomVersions::EU1_1:
+    case MelonPrime::RomVersions::JP1_0:
+    case MelonPrime::RomVersions::JP1_1:
+    case MelonPrime::RomVersions::KR1_0:
+    case MelonPrime::RomVersions::EU1_1_BALANCED:
+    case MelonPrime::RomVersions::EU1_1_RUSSIANED:
+    case MelonPrime::RomVersions::US1_0_ENCRYPTED:
+    case MelonPrime::RomVersions::US1_1_ENCRYPTED:
+    case MelonPrime::RomVersions::EU1_0_ENCRYPTED:
+    case MelonPrime::RomVersions::EU1_1_ENCRYPTED:
+    case MelonPrime::RomVersions::JP1_0_ENCRYPTED:
+    case MelonPrime::RomVersions::JP1_1_ENCRYPTED:
+    case MelonPrime::RomVersions::KR1_0_ENCRYPTED:
+        break;
+    default:
+        char message[256];
+        sprintf(message, "Unknown ROM (Checksum: 0x%08X). Please make sure to use the untrimmed and unmodified Metroid Prime Hunters ROM which is not encrypted.", MelonPrime::globalChecksum);
+        osdAddMessage(0xFFA0A0, message);
+        break;
     }
-    // } MelonPrimeDS
+#endif // MELONPRIME_DS
 
     if (reset)
     {
