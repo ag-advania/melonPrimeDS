@@ -1,7 +1,7 @@
 #ifdef _WIN32
 #include "MelonPrimeRawInputWinFilter.h"
-#include "MelonPrimeInputState.h"
-#include "MelonPrimeWinInternal.h"
+#include "MelonPrimeRawInputState.h"
+#include "MelonPrimeRawWinInternal.h"
 #include <QCoreApplication>
 
 namespace MelonPrime {
@@ -48,9 +48,9 @@ namespace MelonPrime {
         WNDCLASSW wc = { 0 };
         wc.lpfnWndProc = HiddenWndProc;
         wc.hInstance = GetModuleHandle(nullptr);
-        wc.lpszClassName = L"MelonPrimeInputHost";
+        wc.lpszClassName = L"MelonPrimeGameInputHost";
         RegisterClassW(&wc);
-        m_hHiddenWnd = CreateWindowW(L"MelonPrimeInputHost", L"", 0, 0, 0, 0, 0,
+        m_hHiddenWnd = CreateWindowW(L"MelonPrimeGameInputHost", L"", 0, 0, 0, 0, 0,
             HWND_MESSAGE, nullptr, wc.hInstance, this);
     }
 
@@ -59,7 +59,7 @@ namespace MelonPrime {
             DestroyWindow(m_hHiddenWnd);
             m_hHiddenWnd = nullptr;
         }
-        UnregisterClassW(L"MelonPrimeInputHost", GetModuleHandle(nullptr));
+        UnregisterClassW(L"MelonPrimeGameInputHost", GetModuleHandle(nullptr));
     }
 
     LRESULT CALLBACK RawInputWinFilter::HiddenWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {

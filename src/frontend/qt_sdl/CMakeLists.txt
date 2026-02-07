@@ -63,15 +63,22 @@ set(SOURCES_QT_SDL
     #rawinput/rawinput_common.c
     #RawInputThread.cpp
     MelonPrimeRawInputWinFilter.cpp
-    MelonPrimeHotkeyVkBinding.cpp
+    MelonPrimeRawHotkeyVkBinding.cpp
     #MelonPrimeXInputFilter.cpp
     #MelonPrimeXInputBinding.cpp
     #MelonPrimeDirectInputFilter.cpp
     #MelonPrimeDirectInputBinding.cpp
 
-    MelonPrimeInputState.cpp
-    MelonPrimeWinInternal.cpp
-    
+    MelonPrimeRawInputState.cpp
+    MelonPrimeRawWinInternal.cpp
+
+    MelonPrimeGameRomDetect.cpp
+    MelonPrimeInGame.cpp
+    MelonPrimeGameInput.cpp
+    MelonPrimeGameSettings.cpp
+    MelonPrimeGameWeapon.cpp
+
+
     MelonPrime.cpp
     
 
@@ -116,7 +123,7 @@ elseif (APPLE)
         #rawinput/rawinput_common.c
         #RawInputThread.cpp
         MelonPrimeRawInputWinFilter.cpp
-        MelonPrimeHotkeyVkBinding.cpp
+        MelonPrimeRawHotkeyVkBinding.cpp
         #MelonPrimeXInputFilter.cpp
         #MelonPrimeXInputBinding.cpp
         #MelonPrimeDirectInputFilter.cpp
@@ -128,7 +135,7 @@ else()
         #rawinput/rawinput_common.c
         #RawInputThread.cpp
         MelonPrimeRawInputWinFilter.cpp
-        MelonPrimeHotkeyVkBinding.cpp
+        MelonPrimeRawHotkeyVkBinding.cpp
         #MelonPrimeXInputFilter.cpp
         #MelonPrimeXInputBinding.cpp
         #MelonPrimeDirectInputFilter.cpp

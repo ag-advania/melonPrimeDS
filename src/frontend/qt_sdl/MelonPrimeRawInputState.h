@@ -8,7 +8,7 @@
 #include <array>
 #include <cstdint>
 #include <mutex>
-#include "MelonPrimeWinInternal.h" // NtUserGetRawInputBuffer_t の定義用
+#include "MelonPrimeRawWinInternal.h" // NtUserGetRawInputBuffer_t の定義用
 
 #ifndef FORCE_INLINE
 #  if defined(_MSC_VER)
