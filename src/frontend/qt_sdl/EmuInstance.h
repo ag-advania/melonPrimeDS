@@ -1,5 +1,5 @@
 /*
-    Copyright 2016-2024 melonDS team
+    Copyright 2016-2025 melonDS team
 
     This file is part of melonDS.
 
@@ -96,8 +96,7 @@ enum
 #endif // MELONPRIME_DS
 
     // HK_MAX should be last item.
-    HK_MAX,
-
+    HK_MAX
 };
 
 enum
@@ -317,7 +316,6 @@ private:
     bool hotkeyPressed(int id) { return hotkeyPress & (1 << id); }
     bool hotkeyReleased(int id) { return hotkeyRelease & (1 << id); }
 #endif // MELONPRIME_DS
-
 
     void loadRTCData();
     void saveRTCData();

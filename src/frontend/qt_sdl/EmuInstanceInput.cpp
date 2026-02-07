@@ -617,59 +617,6 @@ melonDS::u32 EmuInstance::getInputMask() {
 
     return mask;
     */
-
-#ifdef COMMENTOUTTTTTTTT
-    // ���ʃ}�X�N������(�S�r�b�gOFF�̏�ԂŊJ�n)
-    melonDS::u32 mask = 0;
-
-    // �e�r�b�g�ɑ΂��ď�Ԃ��m�F���č���(���[�v�����ōŏ�����)
-    mask |= static_cast<melonDS::u32>(inputMask.testBit(0)) << 0;  // Bit 0
-    mask |= static_cast<melonDS::u32>(inputMask.testBit(1)) << 1;  // Bit 1
-    mask |= static_cast<melonDS::u32>(inputMask.testBit(2)) << 2;  // Bit 2
-    mask |= static_cast<melonDS::u32>(inputMask.testBit(3)) << 3;  // Bit 3
-    mask |= static_cast<melonDS::u32>(inputMask.testBit(4)) << 4;  // Bit 4
-    mask |= static_cast<melonDS::u32>(inputMask.testBit(5)) << 5;  // Bit 5
-    mask |= static_cast<melonDS::u32>(inputMask.testBit(6)) << 6;  // Bit 6
-    mask |= static_cast<melonDS::u32>(inputMask.testBit(7)) << 7;  // Bit 7
-    mask |= static_cast<melonDS::u32>(inputMask.testBit(8)) << 8;  // Bit 8
-    mask |= static_cast<melonDS::u32>(inputMask.testBit(9)) << 9;  // Bit 9
-    mask |= static_cast<melonDS::u32>(inputMask.testBit(10)) << 10; // Bit 10
-    mask |= static_cast<melonDS::u32>(inputMask.testBit(11)) << 11; // Bit 11
-
-    // ���������}�X�N��ԋp
-    return mask;
-
-    /**
-     * ���̓r�b�g�}�X�N�擾 ������.
-     *
-     *
-     * @note QBitArray�̎Q�Ƃ������Ŏ󂯎��A�擪0�`11bit�������ɏW�񂷂�.
-     *       �T�C�Y�s�����݈̂��S�t�H�[���o�b�N��testBit���g�p.
-     * .
-     * @param m QBitArray�Q��.
-     * @return melonDS::u32 ����12bit�ɓ��͏�Ԃ��i�[�����}�X�N.
-     */
-    inline melonDS::u32 getInputMask12(const QBitArray & m) {
-        // �����p�X(�擪0�`11bit�A���O��)
-        if (__builtin_expect(m.size() >= 12, 1)) {
-            const unsigned char* p = reinterpret_cast<const unsigned char*>(m.bits());
-            melonDS::u32 w = static_cast<melonDS::u32>(p[0]) |
-                (static_cast<melonDS::u32>(p[1]) << 8);
-            return w & 0x0FFFu;
-        }
-        // �t�H�[���o�b�N(�T�C�Y�s����)
-        melonDS::u32 mask = 0;
-        const int n = m.size();
-        for (int i = 0; i < n; ++i)
-            mask |= static_cast<melonDS::u32>(m.testBit(i)) << i;
-        return mask;
-    }
-
-
-
-
-
-#endif
     return
         (static_cast<melonDS::u32>(inputMask.testBit(0)) << 0) |
         (static_cast<melonDS::u32>(inputMask.testBit(1)) << 1) |
