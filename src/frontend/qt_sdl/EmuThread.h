@@ -1,6 +1,19 @@
 /*
     Copyright 2016-2025 melonDS team
-    ... (License Header) ...
+
+    This file is part of melonDS.
+
+    melonDS is free software: you can redistribute it and/or modify it under
+    the terms of the GNU General Public License as published by the Free
+    Software Foundation, either version 3 of the License, or (at your option)
+    any later version.
+
+    melonDS is distributed in the hope that it will be useful, but WITHOUT ANY
+    WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+    FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License along
+    with melonDS. If not, see http://www.gnu.org/licenses/.
 */
 
 #ifndef EMUTHREAD_H
@@ -12,6 +25,7 @@
 #include <QWaitCondition>
 #include <QQueue>
 #include <QVariant>
+
 #include <atomic>
 #include <variant>
 #include <optional>
@@ -20,8 +34,10 @@
 #include "NDSCart.h"
 #include "GBACart.h"
 
+#ifdef MELONPRIME_DS
 // Forward declaration
-namespace MelonPrime { class MelonPrimeCore; } // –¼‘O‹óŠÔ‚ðŽw’è
+namespace MelonPrime { class MelonPrimeCore; }
+#endif
 
 namespace melonDS
 {
@@ -39,10 +55,12 @@ class EmuThread : public QThread
 
 public:
     explicit EmuThread(EmuInstance* inst, QObject* parent = nullptr);
+#ifdef MELONPRIME_DS
     ~EmuThread();
 
     // Accessor for ScreenPanel to access MelonPrime state
     MelonPrime::MelonPrimeCore* GetMelonPrimeCore() { return melonPrime.get(); }
+#endif
 
     void attachWindow(MainWindow* window);
     void detachWindow(MainWindow* window);
@@ -50,15 +68,18 @@ public:
     enum MessageType
     {
         msg_Exit,
+
         msg_EmuRun,
         msg_EmuPause,
         msg_EmuUnpause,
         msg_EmuStop,
         msg_EmuFrameStep,
         msg_EmuReset,
+
         msg_InitGL,
         msg_DeInitGL,
         msg_BorrowGL,
+
         msg_BootROM,
         msg_BootFirmware,
         msg_InsertCart,
@@ -66,10 +87,13 @@ public:
         msg_InsertGBACart,
         msg_InsertGBAAddon,
         msg_EjectGBACart,
+
         msg_LoadState,
         msg_SaveState,
         msg_UndoStateLoad,
+
         msg_ImportSavefile,
+
         msg_EnableCheats,
     };
 
@@ -130,19 +154,26 @@ public:
 signals:
     void windowUpdate();
     void windowTitleChange(QString title);
+
     void windowEmuStart();
     void windowEmuStop();
     void windowEmuPause(bool pause);
     void windowEmuReset();
+
     void windowLimitFPSChange();
+
     void autoScreenSizingChange(int sizing);
+
     void windowFullscreenToggle();
+
     void swapScreensToggle();
     void screenEmphasisToggle();
+
     void syncVolumeLevel();
 
 private:
     void handleMessages();
+
     void updateRenderer();
     void compileShaders();
 
@@ -171,13 +202,18 @@ private:
 
     EmuInstance* emuInstance;
 
+#ifdef MELONPRIME_DS
     // --- MelonPrimeDS Integration ---
     std::unique_ptr<MelonPrime::MelonPrimeCore> melonPrime;
     // --------------------------------
+#endif
 
     int autoScreenSizing;
+
     int lastVideoRenderer = -1;
+
     double perfCountsSec;
+
     bool useOpenGL;
     int videoRenderer;
     bool videoSettingsDirty;
