@@ -1,11 +1,11 @@
-#include "MelonPrimeHotkeyVkBinding.h"
+#include "MelonPrimeRawHotkeyVkBinding.h"
 #include "MelonPrimeRawInputWinFilter.h"
 #include "Config.h"
-#include "EmuInstance.h" // HK_Metroid... ’è”‚Ì’è‹`Œ³‚Æ‚µ‚Ä’Ç‰Á
+#include "EmuInstance.h"
 
 #if defined(_WIN32)
 
-namespace melonDS {
+namespace MelonPrime {
 
     static constexpr int kQtMouseMark = 0xF0000000;
 
@@ -47,7 +47,7 @@ namespace melonDS {
         return vks;
     }
 
-    void BindOneHotkeyFromConfig(MelonPrime::RawInputWinFilter* filter, int instance,
+    void BindOneHotkeyFromConfig(RawInputWinFilter* filter, int instance,
         const std::string& hkPath, int hkId) {
         if (!filter) return;
         auto tbl = Config::GetLocalTable(instance);
@@ -56,7 +56,7 @@ namespace melonDS {
         filter->setHotkeyVks(hkId, vks);
     }
 
-    void BindMetroidHotkeysFromConfig(MelonPrime::RawInputWinFilter* filter, int instance)
+    void BindMetroidHotkeysFromConfig(RawInputWinFilter* filter, int instance)
     {
         if (!filter || instance != 0) return;
 
@@ -98,5 +98,5 @@ namespace melonDS {
         BindOneHotkeyFromConfig(filter, instance, "Keyboard.HK_MetroidMenu", HK_MetroidMenu);
     }
 
-} // namespace melonDS
+} // namespace MelonPrime
 #endif

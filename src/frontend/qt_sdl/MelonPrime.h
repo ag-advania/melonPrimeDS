@@ -14,6 +14,7 @@ class QPoint;
 
 #include "types.h"
 #include "Config.h"
+#include "MelonPrimeGameSettings.h"
 
 #ifndef FORCE_INLINE
 #  if defined(_MSC_VER)
@@ -338,8 +339,10 @@ namespace MelonPrime {
             return reinterpret_cast<T*>(&ram[addr & 0x3FFFFF]);
         }
 
-        FORCE_INLINE bool IsJoyDown(int id) const;
-        FORCE_INLINE bool IsJoyPressed(int id) const;
+        // --- FIXED: Removed FORCE_INLINE ---
+        bool IsJoyDown(int id) const;
+        bool IsJoyPressed(int id) const;
+        // -----------------------------------
 
         HOT_FUNCTION void UpdateInputState();
 
@@ -367,17 +370,6 @@ namespace MelonPrime {
         void FrameAdvanceTwice();
         void FrameAdvanceOnce();
         QPoint GetAdjustedCenter();
-
-        static bool ApplyHeadphoneOnce(melonDS::NDS* nds, Config::Table& cfg, melonDS::u32 addr, uint8_t& flags, uint8_t bit);
-        static bool ApplySfxVolumeOnce(melonDS::NDS* nds, Config::Table& cfg, melonDS::u32 addr, uint8_t& flags, uint8_t bit);
-        static bool ApplyMusicVolumeOnce(melonDS::NDS* nds, Config::Table& cfg, melonDS::u32 addr, uint8_t& flags, uint8_t bit);
-        static bool ApplyLicenseColorStrict(melonDS::NDS* nds, Config::Table& cfg, melonDS::u32 addr);
-        static bool ApplySelectedHunterStrict(melonDS::NDS* nds, Config::Table& cfg, melonDS::u32 addr);
-        static bool UseDsName(melonDS::NDS* nds, Config::Table& cfg, melonDS::u32 addr);
-        static void ApplyMphSensitivity(melonDS::NDS* nds, Config::Table& cfg, melonDS::u32 addrSensi, melonDS::u32 addrInGame, bool inGameInit);
-        static bool ApplyUnlockHuntersMaps(melonDS::NDS* nds, Config::Table& cfg, uint8_t& flags, uint8_t bit,
-            melonDS::u32 a1, melonDS::u32 a2, melonDS::u32 a3, melonDS::u32 a4, melonDS::u32 a5);
-        static melonDS::u32 CalculatePlayerAddress(melonDS::u32 base, melonDS::u8 pos, int32_t inc);
 
         void SetupRawInput();
         void ApplyJoy2KeySupportAndQtFilter(bool enable, bool doReset = true);

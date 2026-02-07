@@ -1,4 +1,4 @@
-﻿#ifndef MELON_PRIME_ROM_ADDR_TABLE_H
+#ifndef MELON_PRIME_ROM_ADDR_TABLE_H
 #define MELON_PRIME_ROM_ADDR_TABLE_H
 
 #include <cstdint>
@@ -112,33 +112,6 @@ namespace MelonPrime {
     {
         assert(static_cast<int>(group) >= 0 && static_cast<int>(group) < static_cast<int>(RomGroup::COUNT));
         return kRomAddrTable[static_cast<size_t>(group)];
-    }
-
-    // 互換性ラッパー
-    static inline void detectRomAndSetAddresses_fast(
-        RomGroup group,
-        uint32_t& addrBaseChosenHunter_, uint32_t& addrInGame_, uint32_t& addrPlayerPos_,
-        uint32_t& addrBaseIsAltForm_, uint32_t& addrBaseWeaponChange_, uint32_t& addrBaseSelectedWeapon_,
-        uint32_t& addrBaseAimX_, uint32_t& addrBaseAimY_, uint32_t& addrIsInAdventure_,
-        uint32_t& addrIsMapOrUserActionPaused_, uint32_t& addrUnlockMapsHunters,
-        uint32_t& addrSensitivity, uint32_t& addrMainHunter, uint32_t& addrBaseLoadedSpecialWeapon
-    ) noexcept
-    {
-        const RomAddrs& a = getRomAddrs(group);
-        addrBaseChosenHunter_ = a.addrBaseChosenHunter;
-        addrInGame_ = a.addrInGame;
-        addrPlayerPos_ = a.addrPlayerPos;
-        addrBaseIsAltForm_ = a.addrBaseIsAltForm;
-        addrBaseWeaponChange_ = a.addrBaseWeaponChange;
-        addrBaseSelectedWeapon_ = a.addrBaseSelectedWeapon;
-        addrBaseAimX_ = a.addrBaseAimX;
-        addrBaseAimY_ = a.addrBaseAimY;
-        addrIsInAdventure_ = a.addrIsInAdventure;
-        addrIsMapOrUserActionPaused_ = a.addrIsMapOrUserActionPaused;
-        addrUnlockMapsHunters = a.addrUnlockMapsHunters;
-        addrSensitivity = a.addrSensitivity;
-        addrMainHunter = a.addrMainHunter;
-        addrBaseLoadedSpecialWeapon = a.addrBaseLoadedSpecialWeapon;
     }
 
 } // namespace MelonPrime
