@@ -20,6 +20,7 @@
 #include <QLabel>
 #include <QKeyEvent>
 #include <QDebug>
+#include <QTabWidget>
 
 #include <SDL2/SDL.h>
 
@@ -31,7 +32,7 @@
 #include "MapButton.h"
 
 #ifdef MELONPRIME_DS
-#include "VideoSettingsDialog.h"
+#include "MelonPrimeInputConfig.h"
 #endif
 
 using namespace melonDS;
@@ -89,69 +90,31 @@ InputConfigDialog::InputConfigDialog(QWidget* parent) : QDialog(parent), ui(new 
     populatePage(ui->tabHotkeysGeneral, hk_general_labels, hkGeneralKeyMap, hkGeneralJoyMap);
 
 #ifdef MELONPRIME_DS
-    // MelonPrimeDS { // load Config
+    // MelonPrimeDS {
+    // Initialize MelonPrime Config Logic & UI
+    // クラス名(MelonPrimeInputConfig)ではなく変数名(melonPrimeInputConfig)を使用
+    melonPrimeInputConfig = new MelonPrimeInputConfig(emuInstance, this);
 
-    // Addons ( Metroid ) Tab
-    //
-    // load key values from toml file
-    i = 0;
-    for (int hotkey : hk_tabAddonsMetroid)
+    // 【重要】コンテナ自体は表示しないように隠す（これがないと白い画面が被さる）
+    melonPrimeInputConfig->hide();
+
+    // オリジナルのタブ（DS keypad, Add-ons）を削除する
+    // これにより、InputConfigDialog.ui がオリジナルのままでもMelonPrimeDSでは表示されなくなります
+    int idxInput = ui->tabWidget->indexOf(ui->tabInput);
+    if (idxInput != -1) ui->tabWidget->removeTab(idxInput);
+
+    int idxAddons = ui->tabWidget->indexOf(ui->tabAddons);
+    if (idxAddons != -1) ui->tabWidget->removeTab(idxAddons);
+
+    // Inject MelonPrime tabs into the main TabWidget
+    QTabWidget* mTab = melonPrimeInputConfig->getTabWidget();
+    while (mTab->count() > 0)
     {
-        const char* btn = EmuInstance::hotkeyNames[hotkey];
-        addonsMetroidKeyMap[i] = keycfg.GetInt(btn);
-        addonsMetroidJoyMap[i] = joycfg.GetInt(btn);
-        i++;
+        QWidget* page = mTab->widget(0);
+        QString title = mTab->tabText(0);
+        mTab->removeTab(0);
+        ui->tabWidget->addTab(page, title);
     }
-
-    i = 0;
-    for (int hotkey : hk_tabAddonsMetroid2)
-    {
-        const char* btn = EmuInstance::hotkeyNames[hotkey];
-        addonsMetroid2KeyMap[i] = keycfg.GetInt(btn);
-        addonsMetroid2JoyMap[i] = joycfg.GetInt(btn);
-        i++;
-    }
-
-    // load labels
-    populatePage(ui->tabAddonsMetroid, hk_tabAddonsMetroid_labels, addonsMetroidKeyMap, addonsMetroidJoyMap);
-    populatePage(ui->tabAddonsMetroid2, hk_tabAddonsMetroid2_labels, addonsMetroid2KeyMap, addonsMetroid2JoyMap);
-
-    // Other Metroid Settings Tab
-
-    // Sensitivities
-    ui->metroidMphSensitvitySpinBox->setValue(instcfg.GetDouble("Metroid.Sensitivity.Mph"));
-    ui->metroidAimSensitvitySpinBox->setValue(instcfg.GetInt("Metroid.Sensitivity.Aim"));
-    ui->metroidAimYAxisScaleSpinBox->setValue(instcfg.GetDouble("Metroid.Sensitivity.AimYAxisScale"));
-    ui->metroidAimAdjustSpinBox->setValue(instcfg.GetDouble("Metroid.Aim.Adjust"));
-
-    ui->cbMetroidEnableSnapTap->setChecked(instcfg.GetBool("Metroid.Operation.SnapTap"));
-    ui->cbMetroidUnlockAll->setChecked(instcfg.GetBool("Metroid.Data.Unlock"));
-    ui->cbMetroidApplyHeadphone->setChecked(instcfg.GetBool("Metroid.Apply.Headphone"));
-    ui->cbMetroidUseFirmwareName->setChecked(instcfg.GetBool("Metroid.Use.Firmware.Name"));
-
-    // Hunter license
-    ui->cbMetroidApplyHunter->setChecked(instcfg.GetBool("Metroid.HunterLicense.Hunter.Apply"));
-    ui->comboMetroidSelectedHunter->setCurrentIndex(
-        instcfg.GetInt("Metroid.HunterLicense.Hunter.Selected"));
-
-    ui->cbMetroidApplyColor->setChecked(instcfg.GetBool("Metroid.HunterLicense.Color.Apply"));
-    ui->comboMetroidSelectedColor->setCurrentIndex(
-        instcfg.GetInt("Metroid.HunterLicense.Color.Selected"));
-
-
-    // Volume
-
-    ui->cbMetroidApplySfxVolume->setChecked(instcfg.GetBool("Metroid.Apply.SfxVolume"));
-    ui->spinMetroidVolumeSFX->setValue(instcfg.GetInt("Metroid.Volume.SFX"));
-
-    ui->cbMetroidApplyMusicVolume->setChecked(instcfg.GetBool("Metroid.Apply.MusicVolume"));
-    ui->spinMetroidVolumeMusic->setValue(instcfg.GetInt("Metroid.Volume.Music"));
-
-
-    // Other Metroid Settings 2 Tab
-    ui->cbMetroidApplyJoy2KeySupport->setChecked(instcfg.GetBool("Metroid.Apply.joy2KeySupport"));
-    ui->cbMetroidEnableStylusMode->setChecked(instcfg.GetBool("Metroid.Enable.stylusMode"));
-
     // } MelonPrimeDS
 #endif
 
@@ -304,65 +267,9 @@ void InputConfigDialog::on_InputConfigDialog_accepted()
 
 #ifdef MELONPRIME_DS
     // MelonPrimeDS { saveConfig
-
-    // set key values to toml file
-
-    i = 0;
-    for (int hotkey : hk_tabAddonsMetroid)
-    {
-        const char* btn = EmuInstance::hotkeyNames[hotkey];
-        keycfg.SetInt(btn, addonsMetroidKeyMap[i]);
-        joycfg.SetInt(btn, addonsMetroidJoyMap[i]);
-        i++;
+    if (melonPrimeInputConfig) {
+        melonPrimeInputConfig->saveConfig();
     }
-
-    i = 0;
-    for (int hotkey : hk_tabAddonsMetroid2)
-    {
-        const char* btn = EmuInstance::hotkeyNames[hotkey];
-        keycfg.SetInt(btn, addonsMetroid2KeyMap[i]);
-        joycfg.SetInt(btn, addonsMetroid2JoyMap[i]);
-        i++;
-    }
-
-
-    // Sensitivities
-    instcfg.SetInt("Metroid.Sensitivity.Aim", ui->metroidAimSensitvitySpinBox->value());
-    instcfg.SetDouble("Metroid.Sensitivity.Mph", ui->metroidMphSensitvitySpinBox->value());
-    instcfg.SetDouble("Metroid.Sensitivity.AimYAxisScale", ui->metroidAimYAxisScaleSpinBox->value());
-    instcfg.SetDouble("Metroid.Aim.Adjust", ui->metroidAimAdjustSpinBox->value());
-
-    // SnapTap
-    instcfg.SetBool("Metroid.Operation.SnapTap", ui->cbMetroidEnableSnapTap->checkState() == Qt::Checked);
-    instcfg.SetBool("Metroid.Data.Unlock", ui->cbMetroidUnlockAll->checkState() == Qt::Checked);
-    instcfg.SetBool("Metroid.Apply.Headphone", ui->cbMetroidApplyHeadphone->checkState() == Qt::Checked);
-    instcfg.SetBool("Metroid.Use.Firmware.Name", ui->cbMetroidUseFirmwareName->checkState() == Qt::Checked);
-
-    // Hunter license
-    instcfg.SetBool("Metroid.HunterLicense.Hunter.Apply",
-        ui->cbMetroidApplyHunter->checkState() == Qt::Checked);
-    instcfg.SetInt("Metroid.HunterLicense.Hunter.Selected",
-        ui->comboMetroidSelectedHunter->currentIndex());
-
-    instcfg.SetBool("Metroid.HunterLicense.Color.Apply",
-        ui->cbMetroidApplyColor->checkState() == Qt::Checked);
-    instcfg.SetInt("Metroid.HunterLicense.Color.Selected",
-        ui->comboMetroidSelectedColor->currentIndex());
-
-    // Volume
-    instcfg.SetBool("Metroid.Apply.SfxVolume",
-        ui->cbMetroidApplySfxVolume->checkState() == Qt::Checked);
-    instcfg.SetInt("Metroid.Volume.SFX", ui->spinMetroidVolumeSFX->value());
-    instcfg.SetBool("Metroid.Apply.MusicVolume",
-        ui->cbMetroidApplyMusicVolume->checkState() == Qt::Checked);
-    instcfg.SetInt("Metroid.Volume.Music", ui->spinMetroidVolumeMusic->value());
-
-    // Other Metroid Settings 2 Tab
-
-    instcfg.SetBool("Metroid.Apply.joy2KeySupport", ui->cbMetroidApplyJoy2KeySupport->checkState() == Qt::Checked);
-
-    instcfg.SetBool("Metroid.Enable.stylusMode", ui->cbMetroidEnableStylusMode->checkState() == Qt::Checked);
-
     // } MelonPrimeDS
 #endif
 
@@ -415,93 +322,19 @@ std::shared_ptr<SDL_mutex> InputConfigDialog::getJoyMutex()
 
 #ifdef MELONPRIME_DS
 /* MelonPrimeDS { */
-void InputConfigDialog::on_metroidResetSensitivityValues_clicked()
-{
-    ui->metroidMphSensitvitySpinBox->setValue(-3);
-    ui->metroidAimSensitvitySpinBox->setValue(63);
-    ui->metroidAimYAxisScaleSpinBox->setValue(1.500000);
-    ui->metroidAimAdjustSpinBox->setValue(0.010000);
-}
-
-void InputConfigDialog::on_metroidSetVideoQualityToLow_clicked()
-{
-    auto& cfg = emuInstance->getGlobalConfig();
-    cfg.SetBool("Screen.UseGL", true);
-    cfg.SetBool("Screen.VSync", false);
-    cfg.SetInt("Screen.VSyncInterval", 1);
-
-    cfg.SetInt("3D.Renderer", renderer3D_Software); // melonPrimeDS. renderer3D_Software  renderer3D_OpenGL  renderer3D_OpenGLCompute:
-    cfg.SetBool("3D.Soft.Threaded", true);
-
-    cfg.SetInt("3D.GL.ScaleFactor", 4); // 8 is too much 4 is enough
-    cfg.SetBool("3D.GL.BetterPolygons", true); // If you don't check the box to improve Polygon division, part of the sky will blink in Alinos Perch.
-}
-
-void InputConfigDialog::on_metroidSetVideoQualityToHigh_clicked()
-{
-    auto& cfg = emuInstance->getGlobalConfig();
-    cfg.SetBool("Screen.UseGL", true);
-    cfg.SetBool("Screen.VSync", false);
-    cfg.SetInt("Screen.VSyncInterval", 1);
-
-    cfg.SetInt("3D.Renderer", renderer3D_OpenGL); // melonPrimeDS. renderer3D_Software  renderer3D_OpenGL  renderer3D_OpenGLCompute:
-    cfg.SetBool("3D.Soft.Threaded", true);
-
-    cfg.SetInt("3D.GL.ScaleFactor", 4); // 8 is too much 4 is enough
-    cfg.SetBool("3D.GL.BetterPolygons", true); // If you don't check the box to improve Polygon division, part of the sky will blink in Alinos Perch.
-}
-
-
-void InputConfigDialog::on_metroidSetVideoQualityToHigh2_clicked()
-{
-    auto& cfg = emuInstance->getGlobalConfig();
-    cfg.SetBool("Screen.UseGL", true);
-    cfg.SetBool("Screen.VSync", false);
-    cfg.SetInt("Screen.VSyncInterval", 1);
-
-    cfg.SetInt("3D.Renderer", renderer3D_OpenGLCompute); // melonPrimeDS. renderer3D_Software  renderer3D_OpenGL  renderer3D_OpenGLCompute:
-    cfg.SetBool("3D.Soft.Threaded", true);
-
-    cfg.SetInt("3D.GL.ScaleFactor", 4); // 8 is too much 4 is enough
-    cfg.SetBool("3D.GL.BetterPolygons", true); // If you don't check the box to improve Polygon division, part of the sky will blink in Alinos Perch.
-}
-
 void InputConfigDialog::switchTabToAddons() {
-    ui->tabWidget->setCurrentWidget(ui->tabAddonsMetroid);
+    QWidget* tab = ui->tabWidget->findChild<QWidget*>("tabAddonsMetroid");
+    if (tab) ui->tabWidget->setCurrentWidget(tab);
 }
 
 void InputConfigDialog::switchTabToMetroid() {
-    ui->tabWidget->setCurrentWidget(ui->tabMetroid); // Tab Other Metroid Settings
+    QWidget* tab = ui->tabWidget->findChild<QWidget*>("tabMetroid");
+    if (tab) ui->tabWidget->setCurrentWidget(tab);
 }
 
 void InputConfigDialog::switchTabToMetroid2() {
-    ui->tabWidget->setCurrentWidget(ui->tabMetroid2); // Tab Other Metroid Settings 2
-}
-
-void InputConfigDialog::on_cbMetroidEnableSnapTap_stateChanged(int state)
-{
-    auto& cfg = emuInstance->getGlobalConfig();
-    cfg.SetBool("Metroid.Operation.SnapTap", state != 0);
-}
-
-
-void InputConfigDialog::on_cbMetroidUnlockAll_stateChanged(int state)
-{
-    auto& cfg = emuInstance->getGlobalConfig();
-    cfg.SetBool("Metroid.Data.Unlock", state != 0);
-}
-
-
-void InputConfigDialog::on_cbMetroidApplyHeadphone_stateChanged(int state)
-{
-    auto& cfg = emuInstance->getGlobalConfig();
-    cfg.SetBool("Metroid.Apply.Headphone", state != 0);
-}
-
-void InputConfigDialog::on_cbMetroidUseFirmwareName_stateChanged(int state)
-{
-    auto& cfg = emuInstance->getGlobalConfig();
-    cfg.SetBool("Metroid.Use.Firmware.Name", state != 0);
+    QWidget* tab = ui->tabWidget->findChild<QWidget*>("tabMetroid2");
+    if (tab) ui->tabWidget->setCurrentWidget(tab);
 }
 /* } MelonPrimeDS */
 #endif
