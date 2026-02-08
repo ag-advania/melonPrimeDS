@@ -10,6 +10,7 @@
 #include <mutex>
 #include <condition_variable>
 #include <QAbstractNativeEventFilter>
+#include "MelonPrimeRawWinInternal.h" // NtUserMsgWaitForMultipleObjectsEx_t ã®å®šç¾©ç”¨
 
 namespace MelonPrime {
 
@@ -24,14 +25,11 @@ namespace MelonPrime {
         explicit RawInputWinFilter(bool joy2KeySupport, HWND mainHwnd);
         ~RawInputWinFilter();
 
-        // Qt‚ÌƒCƒxƒ“ƒgƒtƒBƒ‹ƒ^ (Joy2Key ON‚Ì‚İ‹@”\)
         bool nativeEventFilter(const QByteArray& eventType, void* message, qintptr* result) override;
 
         void setJoy2KeySupport(bool enable);
         void setRawInputTarget(HWND hwnd);
 
-        // --- Direct Polling Mode (Threaded) ---
-        // ƒXƒŒƒbƒh‚ªŸè‚ÉXV‚·‚é‚½‚ßAƒƒCƒ“ƒXƒŒƒbƒh‚©‚ç‚Í‰½‚à‚µ‚È‚¢‚ªŒİŠ·«ˆÛ‚Ì‚½‚ßc‚·
         void poll();
 
         void discardDeltas();
@@ -43,13 +41,11 @@ namespace MelonPrime {
         void fetchMouseDelta(int& outX, int& outY);
 
     private:
-        // ƒXƒŒƒbƒhŠÖ˜A
         void StartWorkerThread();
         void StopWorkerThread();
-        void InputThreadProc(); // ƒXƒŒƒbƒh‚ÌƒGƒ“ƒgƒŠ[ƒ|ƒCƒ“ƒg
+        void InputThreadProc();
 
-        // “à•”ƒwƒ‹ƒp[
-        void CreateHiddenWindow(); // ƒXƒŒƒbƒh“à‚ÅŒÄ‚Ô‚±‚Æ
+        void CreateHiddenWindow();
         void DestroyHiddenWindow();
         void RegisterDevices(HWND target, bool isThreaded);
         void UnregisterDevices();
@@ -59,16 +55,27 @@ namespace MelonPrime {
         static std::atomic<int> s_refCount;
         static RawInputWinFilter* s_instance;
 
-        std::unique_ptr<InputState> m_state;
-        HWND m_hwndQtTarget;     // ƒƒCƒ“ƒEƒBƒ“ƒhƒE (Joy2Key—p)
-        HWND m_hHiddenWnd;       // ƒXƒŒƒbƒhê—pƒEƒBƒ“ƒhƒE (Direct—p)
+        // æœ€é©ãªå¾…æ©Ÿé–¢æ•°ã‚’ä¿æŒã™ã‚‹é–¢æ•°ãƒã‚¤ãƒ³ã‚¿
+        static NtUserMsgWaitForMultipleObjectsEx_t s_fnWait;
 
+        // æœ€é©ãª PeekMessage ã‚’ä¿æŒã™ã‚‹é–¢æ•°ãƒã‚¤ãƒ³ã‚¿
+        // PeekMessageW äº’æ›ã‚·ã‚°ãƒãƒãƒ£ (5å¼•æ•°) ã«çµ±ä¸€
+        using PeekMessageFunc_t = BOOL(WINAPI*)(LPMSG, HWND, UINT, UINT, UINT);
+        static PeekMessageFunc_t s_fnPeek;
+
+        static std::once_flag s_initFlag;
+        static void InitializeApiFuncs();
+
+        std::unique_ptr<InputState> m_state;
+        HWND m_hwndQtTarget;
+        HWND m_hHiddenWnd;
         bool m_joy2KeySupport;
         bool m_isRegistered;
 
-        // ƒXƒŒƒbƒh“¯Šú—p
         std::thread m_workerThread;
         std::atomic<bool> m_stopThread{ false };
+        HANDLE m_hStopEvent = nullptr;
+
         std::mutex m_startupMutex;
         std::condition_variable m_startupCv;
         bool m_threadInitialized = false;
