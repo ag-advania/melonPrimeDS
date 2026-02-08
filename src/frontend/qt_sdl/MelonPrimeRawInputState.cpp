@@ -16,7 +16,6 @@ typedef unsigned __int64 QWORD;
 
 namespace MelonPrime {
 
-    // (静的メンバの定義は変更なし。省略せずに元のコードを使用してください)
     std::array<InputState::BtnLutEntry, 1024> InputState::s_btnLut;
     std::array<InputState::VkRemapEntry, 256> InputState::s_vkRemap;
     uint16_t InputState::s_scancodeLShift = 0;
