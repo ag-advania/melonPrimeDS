@@ -274,13 +274,6 @@ namespace MelonPrime {
         m_mouseButtons.store(0, std::memory_order_release);
     }
 
-    void InputState::clearAllBindings() noexcept {
-        std::memset(m_hkMask.data(), 0, sizeof(m_hkMask));
-        std::fill(std::begin(m_hkPrev), std::end(m_hkPrev), 0);
-        m_boundHotkeys[0] = 0;
-        m_boundHotkeys[1] = 0;
-    }
-
     void InputState::setHotkeyVks(int id, const std::vector<UINT>& vks) {
         if (UNLIKELY(id < 0 || static_cast<size_t>(id) >= kMaxHotkeyId)) return;
 

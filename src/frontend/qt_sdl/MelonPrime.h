@@ -10,7 +10,6 @@
 #include <cmath>
 #include <cstring> // For memcpy
 
-    class QBitArray;
 class QPoint;
 
 #include "types.h"
@@ -308,8 +307,6 @@ namespace MelonPrime {
         static constexpr uint8_t APPLIED_VOL_SFX = 1u << 2;
         static constexpr uint8_t APPLIED_VOL_MUSIC = 1u << 3;
 
-        FORCE_INLINE void InputPress(uint16_t bit) { m_inputMaskFast &= ~(1u << bit); }
-        FORCE_INLINE void InputRelease(uint16_t bit) { m_inputMaskFast |= (1u << bit); }
         FORCE_INLINE void InputReset() { m_inputMaskFast = 0xFFFF; }
 
         FORCE_INLINE void InputSetBranchless(uint16_t bit, bool released) {
@@ -351,7 +348,6 @@ namespace MelonPrime {
 
         FORCE_INLINE bool IsDown(uint64_t bit) const { return (m_input.down & bit) != 0; }
         FORCE_INLINE bool IsPressed(uint64_t bit) const { return (m_input.press & bit) != 0; }
-        FORCE_INLINE bool IsAnyDown(uint64_t mask) const { return (m_input.down & mask) != 0; }
         FORCE_INLINE bool IsAnyPressed(uint64_t mask) const { return (m_input.press & mask) != 0; }
 
         HOT_FUNCTION void HandleInGameLogic();
@@ -367,7 +363,6 @@ namespace MelonPrime {
         void HandleGlobalHotkeys();
         void HandleAdventureMode();
         void ProcessAimInputStylus();
-        void ProcessMoveInput(QBitArray& inputMask);
         void SwitchWeapon(int weaponIndex);
         void ShowCursor(bool show);
         void FrameAdvanceTwice();
