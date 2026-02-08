@@ -197,7 +197,7 @@ private:
     QStringList currentROM;
     QStringList currentGBAROM;
     QList<QString> recentFileList;
-    QMenu* recentMenu;
+    QMenu *recentMenu;
     void updateRecentFilesMenu();
 
     bool verifySetup();

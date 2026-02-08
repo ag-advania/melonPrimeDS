@@ -307,7 +307,6 @@ int main(int argc, char** argv)
     argv = __argv;
 #endif
     MelonApplication melon(argc, argv);
-
     pathInit();
 
     CLI::CommandLineOptions* options = CLI::ManageArgs(melon);
