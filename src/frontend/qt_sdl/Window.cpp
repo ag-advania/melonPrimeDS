@@ -145,14 +145,14 @@ static bool FileExtensionInList(const QString& filename, const QStringList& exte
 {
     return std::any_of(extensions.cbegin(), extensions.cend(), [&](const auto& ext) {
         return filename.endsWith(ext, cs);
-        });
+    });
 }
 
 static bool MimeTypeInList(const QMimeType& mimetype, const QStringList& superTypeNames)
 {
     return std::any_of(superTypeNames.cbegin(), superTypeNames.cend(), [&](const auto& superTypeName) {
         return mimetype.inherits(superTypeName);
-        });
+    });
 }
 
 
@@ -215,7 +215,7 @@ static bool FileIsSupportedFiletype(const QString& filename, bool insideArchive 
 
 #ifndef _WIN32
 static int signalFd[2];
-QSocketNotifier* signalSn;
+QSocketNotifier *signalSn;
 
 static void signalHandler(int)
 {
@@ -235,7 +235,7 @@ MainWindow::MainWindow(int id, EmuInstance* inst, QWidget* parent) :
     emuInstance(inst),
     globalCfg(inst->globalCfg),
     localCfg(inst->localCfg),
-    windowCfg(localCfg.GetTable("Window" + std::to_string(id), "Window0")),
+    windowCfg(localCfg.GetTable("Window"+std::to_string(id), "Window0")),
     emuThread(inst->getEmuThread()),
     enabledSaved(false),
     focused(true)
@@ -280,9 +280,9 @@ MainWindow::MainWindow(int id, EmuInstance* inst, QWidget* parent) :
 
     if (hasMenu)
     {
-        QMenuBar* menubar = new QMenuBar();
+        QMenuBar *menubar = new QMenuBar();
         {
-            QMenu* menu = menubar->addMenu("File");
+            QMenu *menu = menubar->addMenu("File");
 
             actOpenROM = menu->addAction("Open ROM...");
             connect(actOpenROM, &QAction::triggered, this, &MainWindow::onOpenFile);
@@ -394,9 +394,9 @@ MainWindow::MainWindow(int id, EmuInstance* inst, QWidget* parent) :
             menu->addSeparator();
             actOpenConfig = menu->addAction("Open melonDS directory");
             connect(actOpenConfig, &QAction::triggered, this, [&]()
-                {
-                    QDesktopServices::openUrl(QUrl::fromLocalFile(emuDirectory));
-                });
+            {
+                QDesktopServices::openUrl(QUrl::fromLocalFile(emuDirectory));
+            });
 
             menu->addSeparator();
 
