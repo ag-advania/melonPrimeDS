@@ -44,35 +44,33 @@ namespace MelonPrime {
 
         if (!romInfo) return;
 
-        const auto& addr = getRomAddrs(romInfo->group);
+        // ★ポインタ取得
+        m_currentRom = getRomAddrsPtr(romInfo->group);
 
-        m_addrCold.baseChosenHunter = addr.addrBaseChosenHunter;
-        m_addrHot.inGame = addr.addrInGame;
-        m_addrCold.playerPos = addr.addrPlayerPos;
-        m_addrCold.baseIsAltForm = addr.addrBaseIsAltForm;
-        m_addrCold.baseWeaponChange = addr.addrBaseWeaponChange;
-        m_addrCold.baseSelectedWeapon = addr.addrBaseSelectedWeapon;
-        m_addrCold.baseAimX = addr.addrBaseAimX;
-        m_addrCold.baseAimY = addr.addrBaseAimY;
-        m_addrCold.isInAdventure = addr.addrIsInAdventure;
-        m_addrHot.isMapOrUserActionPaused = addr.addrIsMapOrUserActionPaused;
-        m_addrCold.unlockMapsHunters = addr.addrUnlockMapsHunters;
-        m_addrCold.sensitivity = addr.addrSensitivity;
-        m_addrCold.mainHunter = addr.addrMainHunter;
-        m_addrCold.baseLoadedSpecialWeapon = addr.addrBaseLoadedSpecialWeapon;
+        // --- Hotアドレスの初期化 ---
+        
+        m_addrHot.inGame = m_currentRom->inGame;
+        m_addrHot.isMapOrUserActionPaused = m_currentRom->isMapOrUserActionPaused;
 
-        m_addrHot.isInVisorOrMap = m_addrCold.playerPos - Consts::VISOR_OFFSET;
-        m_addrCold.baseJumpFlag = m_addrCold.baseSelectedWeapon - 0xA;
-        m_addrCold.volSfx8Bit = m_addrCold.unlockMapsHunters;
-        m_addrCold.volMusic8Bit = m_addrCold.volSfx8Bit + 0x1;
-        m_addrCold.operationAndSound = m_addrCold.unlockMapsHunters - 0x1;
-        m_addrCold.unlockMapsHunters2 = m_addrCold.unlockMapsHunters + 0x3;
-        m_addrCold.unlockMapsHunters3 = m_addrCold.unlockMapsHunters + 0x7;
-        m_addrCold.unlockMapsHunters4 = m_addrCold.unlockMapsHunters + 0xB;
-        m_addrCold.unlockMapsHunters5 = m_addrCold.unlockMapsHunters + 0xF;
-        m_addrCold.dsNameFlagAndMicVolume = m_addrCold.unlockMapsHunters5 + 0x1;
-        m_addrCold.baseInGameSensi = m_addrCold.sensitivity + 0xB4;
-        m_addrCold.rankColor = m_addrCold.mainHunter + 0x3;
+        // Player系 (初期値として P1 ベースを使用)
+        m_addrHot.isAltForm = m_currentRom->baseIsAltForm;
+        m_addrHot.jumpFlag = m_currentRom->baseJumpFlag;
+        m_addrHot.weaponChange = m_currentRom->baseWeaponChange;
+        m_addrHot.selectedWeapon = m_currentRom->baseSelectedWeapon;
+        m_addrHot.aimX = m_currentRom->baseAimX;
+        m_addrHot.aimY = m_currentRom->baseAimY;
+        m_addrHot.loadedSpecialWeapon = m_currentRom->baseLoadedSpecialWeapon;
+        m_addrHot.boostGauge = m_currentRom->boostGauge;
+        m_addrHot.isBoosting = m_currentRom->isBoosting;
+        m_addrHot.isInVisorOrMap = m_currentRom->isInVisorOrMap;
+        
+        m_addrHot.chosenHunter = m_currentRom->baseChosenHunter;
+        m_addrHot.inGameSensi = m_currentRom->baseInGameSensi;
+
+        // ★修正: オフセット計算を廃止し、テーブル値を使用
+        m_addrHot.currentWeapon = m_currentRom->baseCurrentWeapon;
+        m_addrHot.havingWeapons = m_currentRom->baseHavingWeapons;
+        m_addrHot.weaponAmmo = m_currentRom->baseWeaponAmmo;
 
         m_flags.set(StateFlags::BIT_ROM_DETECTED);
 
