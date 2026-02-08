@@ -65,10 +65,10 @@ protected:
         int key = event->key();
         int mod = event->modifiers();
         bool ismod = (key == Qt::Key_Control ||
-            key == Qt::Key_Alt ||
-            key == Qt::Key_AltGr ||
-            key == Qt::Key_Shift ||
-            key == Qt::Key_Meta);
+                      key == Qt::Key_Alt ||
+                      key == Qt::Key_AltGr ||
+                      key == Qt::Key_Shift ||
+                      key == Qt::Key_Meta);
 
 #ifndef MELONPRIME_DS
         // Original logic: Only allow Esc/Backspace if no modifiers are pressed
@@ -93,7 +93,7 @@ protected:
         if (!ismod)
             key |= mod;
         else if (isRightModKey(event))
-            key |= (1 << 31);
+            key |= (1<<31);
 
         *mapping = key;
         click();
@@ -321,7 +321,7 @@ protected:
             Uint8 blackhat = SDL_JoystickGetHat(joy, i);
             if (blackhat)
             {
-                if (blackhat & 0x1) blackhat = 0x1;
+                if      (blackhat & 0x1) blackhat = 0x1;
                 else if (blackhat & 0x2) blackhat = 0x2;
                 else if (blackhat & 0x4) blackhat = 0x4;
                 else                     blackhat = 0x8;

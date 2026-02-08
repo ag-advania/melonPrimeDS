@@ -153,15 +153,12 @@ target_link_libraries(melonDS PRIVATE net-utils)
 
 if (WIN32)
     target_link_libraries(melonDS PUBLIC opengl32)
-    #target_link_libraries(melonDS PRIVATE Xinput9_1_0) # MelonPrimeDS
-    #target_link_libraries(melonDS PRIVATE dinput8 dxguid)  # MelonPrimeDS
 
 
     target_sources(melonDS PRIVATE
         ../duckstation/gl/context_wgl.cpp
 
         ../glad/glad_wgl.c
-        #rawinput/rawinput_win32.c
     )
 
     if (MINGW AND CMAKE_HOST_SYSTEM_NAME STREQUAL "Linux")
@@ -183,7 +180,6 @@ elseif (APPLE)
     target_link_libraries(melonDS PRIVATE ${OPENGL_LIB})
     target_sources(melonDS PRIVATE
         ../duckstation/gl/context_agl.mm
-        #rawinput/rawinput_macos.c
     )
     set_source_files_properties(
         ../duckstation/gl/context_agl.mm
@@ -217,8 +213,7 @@ else()
         ../duckstation/gl/x11_window.cpp
 
         ../glad/glad_egl.c
-        ../glad/glad_glx.c
-        #rawinput/rawinput_linux.c
+        ../glad/glad_glx.c  
     )
     target_link_libraries(melonDS PRIVATE "${X11_LIBRARIES}" "${EGL_LIBRARIES}")
     target_include_directories(melonDS PRIVATE "${X11_INCLUDE_DIR}")

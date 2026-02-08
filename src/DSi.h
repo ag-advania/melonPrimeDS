@@ -184,10 +184,8 @@ public:
     u8 GPIO_WiFi;
 
     void SetDSPHLE(bool hle);
-
 private:
     bool FullBIOSBoot;
-
     void Set_SCFG_Clock9(u16 val);
     void Set_SCFG_MC(u32 val);
     void DecryptModcryptArea(u32 offset, u32 size, const u8* iv);

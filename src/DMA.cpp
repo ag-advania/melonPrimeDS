@@ -399,18 +399,6 @@ u32 DMA::UnitTimings7_16(bool burststart)
             {
                 MRAMBurstCount = 0;
 
-                /*
-                if (dst_rgn == Mem7_GBAROM || dst_rgn == Mem7_Wifi0 || dst_rgn == Mem7_Wifi1)
-                {
-                    if (dst_s == 4)
-                        MRAMBurstTable = DMATiming::MRAMRead16Bursts[1];
-                    else
-                        MRAMBurstTable = DMATiming::MRAMRead16Bursts[2];
-                }
-                else
-                    MRAMBurstTable = DMATiming::MRAMRead16Bursts[0];
-                */
-
                 if (dst_rgn == Mem7_GBAROM || dst_rgn == Mem7_Wifi0 || dst_rgn == Mem7_Wifi1)
                 {
                     if (dst_s == 4)
