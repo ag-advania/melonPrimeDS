@@ -78,6 +78,7 @@ set(SOURCES_QT_SDL
     MelonPrimeGameSettings.cpp
     MelonPrimeGameWeapon.cpp
 
+    InputConfig/MelonPrimeInputConfig.cpp
 
     MelonPrime.cpp
     
