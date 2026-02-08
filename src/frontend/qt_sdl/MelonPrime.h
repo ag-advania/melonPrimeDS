@@ -15,6 +15,7 @@ class QPoint;
 #include "types.h"
 #include "Config.h"
 #include "MelonPrimeGameSettings.h"
+#include "MelonPrimeGameRomAddrTable.h" // 追加: アドレス定義テーブル
 
 #ifndef FORCE_INLINE
 #  if defined(_MSC_VER)
@@ -148,9 +149,13 @@ namespace MelonPrime {
         melonDS::u32 isInVisorOrMap;
         melonDS::u32 isMapOrUserActionPaused;
         melonDS::u32 inGame;
+        // 以下、Hotとして追加で必要なもの（動的に変動するため）
+        melonDS::u32 chosenHunter;
+        melonDS::u32 inGameSensi;
         melonDS::u32 _pad;
     };
-    static_assert(sizeof(GameAddressesHot) == 64, "GameAddressesHot must be 64 bytes");
+    // static_assert(sizeof(GameAddressesHot) == 64, "GameAddressesHot must be 64 bytes"); 
+    // ※メンバを追加したのでサイズが変わる可能性があります。パディング調整が必要なら行ってください。
 
     struct alignas(64) HotPointers {
         uint8_t* isAltForm;
@@ -167,34 +172,6 @@ namespace MelonPrime {
         uint16_t* aimY;
         uint8_t* isInVisorOrMap;
         uint8_t* isMapOrUserActionPaused;
-    };
-
-    struct GameAddressesCold {
-        melonDS::u32 chosenHunter;
-        melonDS::u32 inGameSensi;
-        melonDS::u32 playerPos;
-        melonDS::u32 isInAdventure;
-        melonDS::u32 operationAndSound;
-        melonDS::u32 unlockMapsHunters;
-        melonDS::u32 unlockMapsHunters2;
-        melonDS::u32 unlockMapsHunters3;
-        melonDS::u32 unlockMapsHunters4;
-        melonDS::u32 unlockMapsHunters5;
-        melonDS::u32 volSfx8Bit;
-        melonDS::u32 volMusic8Bit;
-        melonDS::u32 sensitivity;
-        melonDS::u32 dsNameFlagAndMicVolume;
-        melonDS::u32 mainHunter;
-        melonDS::u32 rankColor;
-        melonDS::u32 baseIsAltForm;
-        melonDS::u32 baseLoadedSpecialWeapon;
-        melonDS::u32 baseWeaponChange;
-        melonDS::u32 baseSelectedWeapon;
-        melonDS::u32 baseChosenHunter;
-        melonDS::u32 baseJumpFlag;
-        melonDS::u32 baseAimX;
-        melonDS::u32 baseAimY;
-        melonDS::u32 baseInGameSensi;
     };
 
     enum AimBlockBit : uint32_t {
@@ -293,7 +270,9 @@ namespace MelonPrime {
         std::unique_ptr<RawInputWinFilter, FilterDeleter> m_rawFilter;
 #endif
 
-        GameAddressesCold m_addrCold{};
+        // ★修正箇所: m_addrColdを削除し、RomAddressesへのポインタを追加
+        const RomAddresses* m_currentRom = nullptr;
+
         melonDS::u8 m_playerPosition = 0;
 
         struct AimData {

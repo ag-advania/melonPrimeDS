@@ -5,6 +5,7 @@
 #include "main.h"
 #include "Screen.h"
 #include "MelonPrimeDef.h"
+#include "MelonPrimeGameRomAddrTable.h" // 追加
 
 namespace MelonPrime {
 
@@ -156,27 +157,30 @@ namespace MelonPrime {
         InputSetBranchless(INPUT_L, !IsPressed(IB_UI_LEFT));
         InputSetBranchless(INPUT_R, !IsPressed(IB_UI_RIGHT));
 
+        // ★以下、m_addrCold を m_currentRom-> に変更
+
         if (!(m_appliedFlags & APPLIED_HEADPHONE)) {
-            MelonPrimeGameSettings::ApplyHeadphoneOnce(emuInstance->getNDS(), localCfg, m_addrCold.operationAndSound, m_appliedFlags, APPLIED_HEADPHONE);
+            MelonPrimeGameSettings::ApplyHeadphoneOnce(emuInstance->getNDS(), localCfg, m_currentRom->operationAndSound, m_appliedFlags, APPLIED_HEADPHONE);
         }
 
-        MelonPrimeGameSettings::ApplyMphSensitivity(emuInstance->getNDS(), localCfg, m_addrCold.sensitivity, m_addrCold.inGameSensi, m_flags.test(StateFlags::BIT_IN_GAME_INIT));
+        // Sensitivity: 旧 m_addrCold.inGameSensi は P1ベースのアドレスとみなして baseInGameSensi を使用
+        MelonPrimeGameSettings::ApplyMphSensitivity(emuInstance->getNDS(), localCfg, m_currentRom->sensitivity, m_currentRom->baseInGameSensi, m_flags.test(StateFlags::BIT_IN_GAME_INIT));
 
         if (!(m_appliedFlags & APPLIED_UNLOCK)) {
             MelonPrimeGameSettings::ApplyUnlockHuntersMaps(emuInstance->getNDS(), localCfg, m_appliedFlags, APPLIED_UNLOCK,
-                m_addrCold.unlockMapsHunters, m_addrCold.unlockMapsHunters2, m_addrCold.unlockMapsHunters3,
-                m_addrCold.unlockMapsHunters4, m_addrCold.unlockMapsHunters5);
+                m_currentRom->unlockMapsHunters, m_currentRom->unlockMapsHunters2, m_currentRom->unlockMapsHunters3,
+                m_currentRom->unlockMapsHunters4, m_currentRom->unlockMapsHunters5);
         }
 
-        MelonPrimeGameSettings::UseDsName(emuInstance->getNDS(), localCfg, m_addrCold.dsNameFlagAndMicVolume);
-        MelonPrimeGameSettings::ApplySelectedHunterStrict(emuInstance->getNDS(), localCfg, m_addrCold.mainHunter);
-        MelonPrimeGameSettings::ApplyLicenseColorStrict(emuInstance->getNDS(), localCfg, m_addrCold.rankColor);
+        MelonPrimeGameSettings::UseDsName(emuInstance->getNDS(), localCfg, m_currentRom->dsNameFlagAndMicVolume);
+        MelonPrimeGameSettings::ApplySelectedHunterStrict(emuInstance->getNDS(), localCfg, m_currentRom->mainHunter);
+        MelonPrimeGameSettings::ApplyLicenseColorStrict(emuInstance->getNDS(), localCfg, m_currentRom->rankColor);
 
         if (!(m_appliedFlags & APPLIED_VOL_SFX)) {
-            MelonPrimeGameSettings::ApplySfxVolumeOnce(emuInstance->getNDS(), localCfg, m_addrCold.volSfx8Bit, m_appliedFlags, APPLIED_VOL_SFX);
+            MelonPrimeGameSettings::ApplySfxVolumeOnce(emuInstance->getNDS(), localCfg, m_currentRom->volSfx8Bit, m_appliedFlags, APPLIED_VOL_SFX);
         }
         if (!(m_appliedFlags & APPLIED_VOL_MUSIC)) {
-            MelonPrimeGameSettings::ApplyMusicVolumeOnce(emuInstance->getNDS(), localCfg, m_addrCold.volMusic8Bit, m_appliedFlags, APPLIED_VOL_MUSIC);
+            MelonPrimeGameSettings::ApplyMusicVolumeOnce(emuInstance->getNDS(), localCfg, m_currentRom->volMusic8Bit, m_appliedFlags, APPLIED_VOL_MUSIC);
         }
     }
 
