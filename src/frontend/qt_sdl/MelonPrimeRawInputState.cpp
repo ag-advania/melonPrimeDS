@@ -4,7 +4,7 @@
 #include <cstring>
 #include <algorithm>
 
-    // Intrinsic for BitScan
+// Intrinsic for BitScan
 #ifdef _MSC_VER
 #include <intrin.h>
 #endif
@@ -21,8 +21,6 @@ namespace MelonPrime {
     uint16_t InputState::s_scancodeLShift = 0;
     uint16_t InputState::s_scancodeRShift = 0;
     std::once_flag InputState::s_initFlag;
-
-    // 初期値は標準API (user32.dll) に設定
     NtUserGetRawInputBuffer_t InputState::s_fnBestGetRawInputBuffer = ::GetRawInputBuffer;
 
     InputState::InputState() noexcept {
@@ -76,9 +74,7 @@ namespace MelonPrime {
             });
     }
 
-    // ===================================================================
-    // Joy2Key ON時 (単発)
-    // ===================================================================
+    // Joy2Key ON時
     void InputState::processRawInput(HRAWINPUT hRaw) noexcept {
         alignas(16) uint8_t rawBuf[sizeof(RAWINPUT)];
         UINT size = sizeof(rawBuf);
@@ -92,7 +88,6 @@ namespace MelonPrime {
         }
 
         if (UNLIKELY(result == UINT(-1) || result == 0)) return;
-
         const RAWINPUT* raw = reinterpret_cast<const RAWINPUT*>(rawBuf);
 
         switch (raw->header.dwType) {
@@ -130,6 +125,12 @@ namespace MelonPrime {
         case RIM_TYPEKEYBOARD: {
             const RAWKEYBOARD& kb = raw->data.keyboard;
             UINT vk = kb.VKey;
+
+            // ★ FIX: VKeyが0の場合はスキャンコードから復元
+            if (UNLIKELY(vk == 0)) {
+                vk = MapVirtualKeyW(kb.MakeCode, MAPVK_VSC_TO_VK_EX);
+            }
+
             if (LIKELY(vk > 0 && vk < 255)) {
                 vk = remapVk(vk, kb.MakeCode, kb.Flags);
                 const bool isDown = !(kb.Flags & RI_KEY_BREAK);
@@ -140,10 +141,7 @@ namespace MelonPrime {
         }
     }
 
-    // ===================================================================
-    // Joy2Key OFF時 (Direct Polling / Batch)
-    // ★ 最適化済み: 関数ポインタ経由でループ処理
-    // ===================================================================
+    // Joy2Key OFF時 (Threaded)
     void InputState::processRawInputBatched() noexcept {
         alignas(16) static thread_local uint8_t buffer[16384];
 
@@ -157,18 +155,11 @@ namespace MelonPrime {
         bool hasMouseDelta = false;
         bool hasKeyChanges = false;
         bool hasButtonChanges = false;
-
         uint8_t finalBtnState = m_mouseButtons.load(std::memory_order_relaxed);
 
         for (;;) {
             UINT size = sizeof(buffer);
-            // NT API呼出し
-            UINT count = s_fnBestGetRawInputBuffer(
-                reinterpret_cast<PRAWINPUT>(buffer),
-                &size,
-                sizeof(RAWINPUTHEADER)
-            );
-
+            UINT count = s_fnBestGetRawInputBuffer(reinterpret_cast<PRAWINPUT>(buffer), &size, sizeof(RAWINPUTHEADER));
             if (count == 0 || count == UINT(-1)) break;
 
             const RAWINPUT* raw = reinterpret_cast<const RAWINPUT*>(buffer);
@@ -194,17 +185,22 @@ namespace MelonPrime {
                 else if (raw->header.dwType == RIM_TYPEKEYBOARD) {
                     const RAWKEYBOARD& kb = raw->data.keyboard;
                     UINT vk = kb.VKey;
-                    // 分岐予測ヒント: ほとんどのキーイベントは有効
+
+                    // ★ FIX: VKeyが0の場合はスキャンコードから復元
+                    if (UNLIKELY(vk == 0)) {
+                        vk = MapVirtualKeyW(kb.MakeCode, MAPVK_VSC_TO_VK_EX);
+                    }
+
                     if (LIKELY(vk > 0 && vk < 255)) {
                         vk = remapVk(vk, kb.MakeCode, kb.Flags);
                         const int idx = vk >> 6;
                         const uint64_t bit = 1ULL << (vk & 63);
 
-                        if (!(kb.Flags & RI_KEY_BREAK)) { // Key Down
+                        if (!(kb.Flags & RI_KEY_BREAK)) {
                             localKeyDeltaDown[idx] |= bit;
                             localKeyDeltaUp[idx] &= ~bit;
                         }
-                        else { // Key Up
+                        else {
                             localKeyDeltaUp[idx] |= bit;
                             localKeyDeltaDown[idx] &= ~bit;
                         }
