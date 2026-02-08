@@ -30,7 +30,7 @@
 #  endif
 #endif
 
-    namespace MelonPrime {
+namespace MelonPrime {
 
     // =========================================================================
     // フレーム単位のホットキー状態 (pollHotkeys の出力)
@@ -70,7 +70,6 @@
         void resetMouseButtons() noexcept;
 
         static constexpr size_t kMaxHotkeyId = 128;
-        void clearAllBindings() noexcept;
         void setHotkeyVks(int id, const std::vector<UINT>& vks);
 
         void pollHotkeys(FrameHotkeyState& out) noexcept;
