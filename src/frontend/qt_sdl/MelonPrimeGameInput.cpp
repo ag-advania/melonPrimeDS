@@ -6,14 +6,13 @@
 #include "MelonPrimeDef.h"
 
 #include <QCursor>
-#include <QBitArray>
 
 #ifdef _WIN32
 #include "MelonPrimeRawInputWinFilter.h"
 #include "MelonPrimeRawInputState.h"
 #endif
 
-    namespace MelonPrime {
+namespace MelonPrime {
 
     alignas(64) static constexpr std::array<uint8_t, 16> MoveLUT = {
         0xF0, 0xB0, 0x70, 0xF0, 0xD0, 0x90, 0x50, 0xD0,
@@ -73,10 +72,6 @@
         if (m_rawFilter) {
             HWND myHwnd = (HWND)emuInstance->getMainWindow()->winId();
             m_rawFilter->setRawInputTarget(myHwnd);
-
-            if (!m_flags.test(StateFlags::BIT_JOY2KEY)) {
-                m_rawFilter->poll();
-            }
         }
 #endif
 
@@ -169,15 +164,6 @@
 
         const uint8_t lutResult = MoveLUT[finalInput & 0xF];
         m_inputMaskFast = (m_inputMaskFast & 0xFF0Fu) | (static_cast<uint16_t>(lutResult) & 0x00F0u);
-    }
-
-    void MelonPrimeCore::ProcessMoveInput(QBitArray& mask)
-    {
-        ProcessMoveInputFast();
-        mask.setBit(INPUT_UP, (m_inputMaskFast >> INPUT_UP) & 1);
-        mask.setBit(INPUT_DOWN, (m_inputMaskFast >> INPUT_DOWN) & 1);
-        mask.setBit(INPUT_LEFT, (m_inputMaskFast >> INPUT_LEFT) & 1);
-        mask.setBit(INPUT_RIGHT, (m_inputMaskFast >> INPUT_RIGHT) & 1);
     }
 
     void MelonPrimeCore::ProcessAimInputStylus()

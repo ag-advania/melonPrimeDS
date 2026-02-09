@@ -18,8 +18,8 @@ namespace MelonPrime {
     // NtUserPeekMessage (6引数) → PeekMessageW 互換シグネチャ (5引数) の薄いラッパー
     // call_once で s_fnPeek に一度だけセットされ、以降は間接呼び出し1回のみ
     static BOOL WINAPI NtPeekMessageWrapper(LPMSG pMsg, HWND hWnd,
-                                            UINT wMsgFilterMin, UINT wMsgFilterMax,
-                                            UINT wRemoveMsg) {
+        UINT wMsgFilterMin, UINT wMsgFilterMax,
+        UINT wRemoveMsg) {
         return WinInternal::fnNtUserPeekMessage(pMsg, hWnd, wMsgFilterMin, wMsgFilterMax, wRemoveMsg, TRUE);
     }
 
@@ -84,7 +84,7 @@ namespace MelonPrime {
             if (WinInternal::fnNtUserPeekMessage) {
                 s_fnPeek = NtPeekMessageWrapper;
             }
-        });
+            });
     }
 
     void RawInputWinFilter::StartWorkerThread() {
@@ -240,8 +240,6 @@ namespace MelonPrime {
         RegisterRawInputDevices(rid, 2, sizeof(RAWINPUTDEVICE));
         m_isRegistered = false;
     }
-
-    void RawInputWinFilter::poll() {}
 
     bool RawInputWinFilter::nativeEventFilter(const QByteArray& eventType, void* message, qintptr* result) {
         if (!m_joy2KeySupport) return false;

@@ -30,8 +30,6 @@ namespace MelonPrime {
         void setJoy2KeySupport(bool enable);
         void setRawInputTarget(HWND hwnd);
 
-        void poll();
-
         void discardDeltas();
         void setHotkeyVks(int id, const std::vector<UINT>& vks);
         void pollHotkeys(struct FrameHotkeyState& out);
