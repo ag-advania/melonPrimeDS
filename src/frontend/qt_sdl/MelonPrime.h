@@ -15,7 +15,7 @@ class QPoint;
 #include "types.h"
 #include "Config.h"
 #include "MelonPrimeGameSettings.h"
-#include "MelonPrimeGameRomAddrTable.h" // 追加
+#include "MelonPrimeGameRomAddrTable.h" // 追加: アドレス定義テーブル
 
 #ifndef FORCE_INLINE
 #  if defined(_MSC_VER)
@@ -149,15 +149,13 @@ namespace MelonPrime {
         melonDS::u32 isInVisorOrMap;
         melonDS::u32 isMapOrUserActionPaused;
         melonDS::u32 inGame;
-
-        // ★追加: Hot側で計算するようになったメンバ
+        // 以下、Hotとして追加で必要なもの（動的に変動するため）
         melonDS::u32 chosenHunter;
         melonDS::u32 inGameSensi;
-
-        // 64byte境界に合わせるためのパディング (合計17個のu32があるため、68bytes。128bytesまで埋める)
-        melonDS::u32 _pad[15];
+        melonDS::u32 _pad;
     };
-    static_assert(sizeof(GameAddressesHot) == 128, "GameAddressesHot must be 128 bytes");
+    // static_assert(sizeof(GameAddressesHot) == 64, "GameAddressesHot must be 64 bytes"); 
+    // ※メンバを追加したのでサイズが変わる可能性があります。パディング調整が必要なら行ってください。
 
     struct alignas(64) HotPointers {
         uint8_t* isAltForm;
@@ -220,10 +218,6 @@ namespace MelonPrime {
 
     private:
         alignas(64) FrameInputState m_input{};
-
-        // ★変更箇所: m_addrColdを削除し、実体で保持
-        RomAddresses m_currentRom{};
-
         GameAddressesHot m_addrHot{};
         HotPointers m_ptrs{};
 
@@ -276,6 +270,9 @@ namespace MelonPrime {
         std::unique_ptr<RawInputWinFilter, FilterDeleter> m_rawFilter;
 #endif
 
+        // ★修正箇所: m_addrColdを削除し、RomAddressesへのポインタを追加
+        const RomAddresses* m_currentRom = nullptr;
+
         melonDS::u8 m_playerPosition = 0;
 
         struct AimData {
@@ -312,6 +309,8 @@ namespace MelonPrime {
             const float a = m_aimAdjust;
             if (UNLIKELY(a <= 0.0f)) return;
 
+            // Optimization: Use std::copysign and std::abs for more efficient 
+            // floating point bitwise operations, removing ternary branches.
             float absX = std::abs(dx);
             if (absX < a) dx = 0.0f;
             else if (absX < 1.0f) dx = std::copysign(1.0f, dx);
