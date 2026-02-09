@@ -19,14 +19,14 @@ namespace MelonPrime {
         0xE0, 0xA0, 0x60, 0xE0, 0xF0, 0xB0, 0x70, 0xF0,
     };
 
-    // Optimization: Define mappings in constexpr tables. 
-    // This allows the compiler to unroll loops effectively and improves instruction cache locality.
     struct KeyMap {
         int hkID;
         uint64_t bit;
     };
 
-    static constexpr std::array<KeyMap, 9> kDownMaps = { {
+    // ★ 改善4: ShootScan/ScanShoot を kDownMaps に統合
+    //   → ループ後の特殊分岐 if 文を排除
+    static constexpr std::array<KeyMap, 11> kDownMaps = { {
         {HK_MetroidMoveForward, IB_MOVE_F},
         {HK_MetroidMoveBack,    IB_MOVE_B},
         {HK_MetroidMoveLeft,    IB_MOVE_L},
@@ -36,6 +36,8 @@ namespace MelonPrime {
         {HK_MetroidWeaponCheck, IB_WEAPON_CHECK},
         {HK_MetroidHoldMorphBallBoost, IB_MORPH_BOOST},
         {HK_MetroidMenu,        IB_MENU},
+        {HK_MetroidShootScan,   IB_SHOOT},   // ★ 統合: 特殊分岐を排除
+        {HK_MetroidScanShoot,   IB_SHOOT},   // ★ 統合: 同上
     } };
 
     static constexpr std::array<KeyMap, 18> kPressMaps = { {
@@ -69,9 +71,9 @@ namespace MelonPrime {
 
 #ifdef _WIN32
         if (!isFocused) return;
+        // ★ 改善1: m_cachedHwnd を使用 (毎フレーム winId() 呼び出し排除)
         if (m_rawFilter) {
-            HWND myHwnd = (HWND)emuInstance->getMainWindow()->winId();
-            m_rawFilter->setRawInputTarget(myHwnd);
+            m_rawFilter->setRawInputTarget(static_cast<HWND>(m_cachedHwnd));
         }
 #endif
 
@@ -84,30 +86,26 @@ namespace MelonPrime {
             m_rawFilter->pollHotkeys(hk);
         }
 
-        // Using lambda references to avoid copying logic
+        // ★ 改善2: IsJoyDown/IsJoyPressed を直接インライン展開
+        //   別翻訳単位の非インライン関数呼び出しを排除 (ラムダ内で完結)
         const auto hkDown = [&](int id) -> bool {
-            return hk.isDown(id) || IsJoyDown(id);
-            };
+            return hk.isDown(id) || emuInstance->joyHotkeyMask.testBit(id);
+        };
         const auto hkPressed = [&](int id) -> bool {
-            return hk.isPressed(id) || IsJoyPressed(id);
-            };
+            return hk.isPressed(id) || emuInstance->joyHotkeyPress.testBit(id);
+        };
 #else
         const auto hkDown = [&](int id) -> bool {
             return emuInstance->hotkeyMask.testBit(id);
-            };
+        };
         const auto hkPressed = [&](int id) -> bool {
             return emuInstance->hotkeyPress.testBit(id);
-            };
+        };
 #endif
 
-        // Process Table Mappings
+        // ★ 改善4: ShootScan がテーブルに含まれるため、特殊分岐なし
         for (const auto& map : kDownMaps) {
             if (hkDown(map.hkID)) down |= map.bit;
-        }
-
-        // Special case: Scan/Shoot share a bit
-        if (hkDown(HK_MetroidShootScan) || hkDown(HK_MetroidScanShoot)) {
-            down |= IB_SHOOT;
         }
 
         for (const auto& map : kPressMaps) {
@@ -146,14 +144,11 @@ namespace MelonPrime {
             const uint32_t priority = m_snapState >> 8;
             const uint32_t newPress = curr & ~last;
 
-            // Branchless optimization: Use multiplication instead of ternary 
-            // for hConflict/vConflict to ensure pipeline smoothness.
             const uint32_t hConflict = ((curr & 0x3u) == 0x3u) * 0x3u;
             const uint32_t vConflict = ((curr & 0xCu) == 0xCu) * 0xCu;
 
             const uint32_t conflict = vConflict | hConflict;
 
-            // Mask generation using arithmetic negation behavior (0 or 0xFFFFFFFF)
             const uint32_t updateMask = (newPress & conflict) ? ~0u : 0u;
 
             const uint32_t newPriority = (priority & ~(conflict & updateMask)) | (newPress & conflict & updateMask);
@@ -206,7 +201,6 @@ namespace MelonPrime {
 
             if (outX == 0 && outY == 0) return;
 
-            // Direct pointer access is good here
             *m_ptrs.aimX = static_cast<uint16_t>(outX);
             *m_ptrs.aimY = static_cast<uint16_t>(outY);
 

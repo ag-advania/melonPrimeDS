@@ -8,7 +8,7 @@
 #include <array>
 #include <cstdint>
 #include <mutex>
-#include "MelonPrimeRawWinInternal.h"
+#include "MelonPrimeRawWinInternal.h" // NtUserGetRawInputBuffer_t の定義用
 
 #ifndef FORCE_INLINE
 #  if defined(_MSC_VER)
@@ -57,7 +57,10 @@ namespace MelonPrime {
 
         static void InitializeTables() noexcept;
 
+        // Joy2Key ON時の単発処理
         void processRawInput(HRAWINPUT hRaw) noexcept;
+
+        // Joy2Key OFF時のバッチ処理 (Direct Polling)
         void processRawInputBatched() noexcept;
 
         void fetchMouseDelta(int& outX, int& outY) noexcept;
@@ -78,21 +81,19 @@ namespace MelonPrime {
         // データレイアウト
         // ===================================================================
 
-        // Cache Line 0: Keyboard + Mouse buttons (unified)
-        //   VK_LBUTTON(1)..VK_XBUTTON2(6) のビットが m_vkDown[0] に含まれる
+        // Cache Line 0: Keyboard
         alignas(64) std::atomic<uint64_t> m_vkDown[4];
 
-        // Cache Line 1: Mouse delta (split for lock-free fetch_add)
-        //   CASループ不要 — fetch_add 1命令で完結
-        alignas(64) std::atomic<int32_t> m_mouseDeltaX{ 0 };
-        std::atomic<int32_t> m_mouseDeltaY{ 0 };
+        // Cache Line 1: Mouse
+        alignas(64) std::atomic<uint8_t> m_mouseButtons{ 0 };
+        std::atomic<uint64_t> m_mouseDeltaCombined{ 0 };
 
         // Cache Line 2+: Hotkey Masks (Read Mostly)
-        //   mouseMask 廃止 — マウスボタンは vkMask[0] に統合済み
         struct alignas(8) HotkeyMask {
             uint64_t vkMask[4];
+            uint8_t  mouseMask;
             bool     hasMask;
-            uint8_t  _pad[7];
+            uint8_t  _pad[6];
         };
         alignas(64) std::array<HotkeyMask, kMaxHotkeyId> m_hkMask;
         uint64_t m_hkPrev[2];
@@ -102,19 +103,10 @@ namespace MelonPrime {
         // 静的テーブル & 最適化用関数ポインタ
         // ===================================================================
         struct BtnLutEntry {
-            uint8_t downBits;   // bit 0..4 → button 1..5
+            uint8_t downBits;
             uint8_t upBits;
         };
         static std::array<BtnLutEntry, 1024> s_btnLut;
-
-        // BtnLut ビット位置 → VK コード変換テーブル
-        static constexpr uint8_t kBtnBitToVk[5] = {
-            VK_LBUTTON, VK_RBUTTON, VK_MBUTTON, VK_XBUTTON1, VK_XBUTTON2
-        };
-
-        // BtnLut downBits/upBits → m_vkDown[0] 用マスクへの変換テーブル
-        // 256エントリ (downBits/upBits は最大 0x1F)
-        static std::array<uint64_t, 32> s_btnToVkMask;
 
         struct VkRemapEntry {
             uint8_t normal;
@@ -126,12 +118,8 @@ namespace MelonPrime {
         static uint16_t s_scancodeRShift;
         static std::once_flag s_initFlag;
 
+        // ★ 最適化ポイント: 実行環境に合わせた最速APIを保持
         static NtUserGetRawInputBuffer_t s_fnBestGetRawInputBuffer;
-
-        // マウスボタン VK ビットマスク (resetMouseButtons 用)
-        static constexpr uint64_t kMouseVkBitMask =
-            (1ULL << VK_LBUTTON) | (1ULL << VK_RBUTTON) |
-            (1ULL << VK_MBUTTON) | (1ULL << VK_XBUTTON1) | (1ULL << VK_XBUTTON2);
 
         // ===================================================================
         // Helper Functions
@@ -160,17 +148,51 @@ namespace MelonPrime {
             return vk;
         }
 
-        // ★ 最適化: mouseMask 廃止により vkMask チェックのみ
+        // Optimization: Branchless mask testing
         FORCE_INLINE bool testHotkeyMask(
             const HotkeyMask& mask,
-            const uint64_t snapVk[4]) const noexcept
+            const uint64_t snapVk[4],
+            uint8_t snapMouse) const noexcept
         {
+            // Mouse check: (0 & val) == 0, so no need to check 'if (mask.mouseMask)' explicitly
+            bool result = (mask.mouseMask & snapMouse) != 0;
+
+            // Keyboard check: Unrolled bitwise OR accumulation
+            // If any required key bit is set in snapVk, the AND result will be non-zero.
+            // Note: This logic assumes vkMask contains only ONE bit per VK if it's set.
+            // If vkMask represents "Key A OR Key B", this logic means "Is A or B pressed?".
+            // If the intention is "Are ALL keys in the mask pressed?", then the logic should be different.
+            // Based on 'setHotkeyVks', vkMask accumulates bits. Usually hotkeys are "Ctrl + A".
+            // However, 'm_vkDown' are individual bits.
+            // The original logic was: if (mask.vkMask[i] && (snapVk[i] & mask.vkMask[i])) return true;
+            // This implies ANY match in the mask triggers the hotkey?
+            // Wait, standard hotkey logic usually implies AND (all keys pressed).
+            // But 'setHotkeyVks' implementation simply ORs bits into the mask.
+            // The usage in 'pollHotkeys' with 'testHotkeyMask' implies:
+            // "If any bit in mask matches any bit in vkDown, return true?"
+            // Ah, looking at 'setHotkeyVks': it sets ONE bit for simple keys.
+            // If multiple keys are passed (e.g. combo), they are distinct calls?
+            // No, 'setHotkeyVks' takes 'std::vector<UINT>'.
+            // If vector has [CTRL, A], mask has bits for CTRL and A.
+            // Original logic:
+            // for (i=0..3) if (mask[i] && (snap[i] & mask[i])) return true;
+            // This means "OR" logic. Pressed(CTRL) OR Pressed(A) -> Active.
+            // If this is intended (e.g. alternative bindings), then my unrolled OR logic is correct.
+            // If it was meant to be AND (Combo), the original code was also OR.
+            // Assuming OR logic (Any binding in the list triggers the action).
+
             uint64_t keyHit = (mask.vkMask[0] & snapVk[0]) |
                 (mask.vkMask[1] & snapVk[1]) |
                 (mask.vkMask[2] & snapVk[2]) |
                 (mask.vkMask[3] & snapVk[3]);
-            return keyHit != 0;
+
+            return result || (keyHit != 0);
         }
+
+        union MouseDeltaPack {
+            struct { int32_t x; int32_t y; } s;
+            uint64_t combined;
+        };
     };
 
 } // namespace MelonPrime
