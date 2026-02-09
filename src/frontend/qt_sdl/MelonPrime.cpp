@@ -8,7 +8,7 @@
 #include "Screen.h"
 #include "Platform.h"
 #include "MelonPrimeDef.h"
-#include "MelonPrimeGameRomAddrTable.h"
+#include "MelonPrimeGameRomAddrTable.h" // 追加
 
 #include <cmath>
 #include <algorithm>
@@ -29,6 +29,7 @@ namespace MelonPrime {
 
 namespace MelonPrime {
 
+    // --- FIXED: Removed FORCE_INLINE ---
     bool MelonPrimeCore::IsJoyDown(int id) const {
 #ifdef _WIN32
         return emuInstance->joyHotkeyMask.testBit(id);
@@ -44,6 +45,7 @@ namespace MelonPrime {
         return false;
 #endif
     }
+    // -----------------------------------
 
     MelonPrimeCore::MelonPrimeCore(EmuInstance* instance)
         : emuInstance(instance),
@@ -269,35 +271,40 @@ namespace MelonPrime {
             if (isInGame && !m_flags.test(StateFlags::BIT_IN_GAME_INIT)) {
                 m_flags.set(StateFlags::BIT_IN_GAME_INIT);
 
-                // ★修正: m_currentRom.playerPos
-                m_playerPosition = Read8(mainRAM, m_currentRom.playerPos);
+                // ★修正: ポインタ経由で読み込み
+                m_playerPosition = Read8(mainRAM, m_currentRom->playerPos);
 
                 using namespace Consts;
 
+                // ★リファクタリング: オフセットを事前に一括計算 (掛け算と関数呼び出しを削減)
+                // m_playerPosition * 0xF30
                 const uint32_t offsetPlayer = m_playerPosition * PLAYER_ADDR_INC;
+                // m_playerPosition * 0x48
                 const uint32_t offsetAim = m_playerPosition * AIM_ADDR_INC;
 
-                // ★修正: すべて m_currentRom-> を m_currentRom. に置換
-                m_addrHot.isAltForm = m_currentRom.baseIsAltForm + offsetPlayer;
-                m_addrHot.loadedSpecialWeapon = m_currentRom.baseLoadedSpecialWeapon + offsetPlayer;
-                m_addrHot.weaponChange = m_currentRom.baseWeaponChange + offsetPlayer;
-                m_addrHot.selectedWeapon = m_currentRom.baseSelectedWeapon + offsetPlayer;
-                m_addrHot.jumpFlag = m_currentRom.baseJumpFlag + offsetPlayer;
+                // --- 単純な足し算で適用 ---
+                m_addrHot.isAltForm = m_currentRom->baseIsAltForm + offsetPlayer;
+                m_addrHot.loadedSpecialWeapon = m_currentRom->baseLoadedSpecialWeapon + offsetPlayer;
+                m_addrHot.weaponChange = m_currentRom->baseWeaponChange + offsetPlayer;
+                m_addrHot.selectedWeapon = m_currentRom->baseSelectedWeapon + offsetPlayer;
+                m_addrHot.jumpFlag = m_currentRom->baseJumpFlag + offsetPlayer;
 
-                m_addrHot.aimX = m_currentRom.baseAimX + offsetAim;
-                m_addrHot.aimY = m_currentRom.baseAimY + offsetAim;
+                m_addrHot.aimX = m_currentRom->baseAimX + offsetAim;
+                m_addrHot.aimY = m_currentRom->baseAimY + offsetAim;
 
-                m_addrHot.currentWeapon = m_currentRom.baseCurrentWeapon + offsetPlayer;
-                m_addrHot.havingWeapons = m_currentRom.baseHavingWeapons + offsetPlayer;
-                m_addrHot.weaponAmmo = m_currentRom.baseWeaponAmmo + offsetPlayer;
+                m_addrHot.currentWeapon = m_currentRom->baseCurrentWeapon + offsetPlayer;
+                m_addrHot.havingWeapons = m_currentRom->baseHavingWeapons + offsetPlayer;
+                m_addrHot.weaponAmmo = m_currentRom->baseWeaponAmmo + offsetPlayer;
 
-                m_addrHot.boostGauge = m_currentRom.boostGauge + offsetPlayer;
-                m_addrHot.isBoosting = m_currentRom.isBoosting + offsetPlayer;
-                m_addrHot.isInVisorOrMap = m_currentRom.isInVisorOrMap + offsetPlayer;
+                m_addrHot.boostGauge = m_currentRom->boostGauge + offsetPlayer;
+                m_addrHot.isBoosting = m_currentRom->isBoosting + offsetPlayer;
+                m_addrHot.isInVisorOrMap = m_currentRom->isInVisorOrMap + offsetPlayer;
 
-                m_addrHot.chosenHunter = m_currentRom.baseChosenHunter + (m_playerPosition * 0x01);
-                m_addrHot.inGameSensi = m_currentRom.baseInGameSensi + (m_playerPosition * 0x04);
+                // 増分が異なるものも、ここだけなので直接計算でOK
+                m_addrHot.chosenHunter = m_currentRom->baseChosenHunter + (m_playerPosition * 0x01);
+                m_addrHot.inGameSensi = m_currentRom->baseInGameSensi + (m_playerPosition * 0x04);
 
+                // ポインタの更新
                 m_ptrs.isAltForm = GetRamPointer<uint8_t>(mainRAM, m_addrHot.isAltForm);
                 m_ptrs.jumpFlag = GetRamPointer<uint8_t>(mainRAM, m_addrHot.jumpFlag);
                 m_ptrs.weaponChange = GetRamPointer<uint8_t>(mainRAM, m_addrHot.weaponChange);
@@ -317,11 +324,10 @@ namespace MelonPrime {
                 m_flags.assign(StateFlags::BIT_IS_SAMUS, hunterID == 0x00);
                 m_flags.assign(StateFlags::BIT_IS_WEAVEL, hunterID == 0x06);
 
-                // ★修正: m_currentRom.isInAdventure
-                m_flags.assign(StateFlags::BIT_IN_ADVENTURE, Read8(mainRAM, m_currentRom.isInAdventure) == 0x02);
+                // ★修正: m_currentRom->isInAdventure を使用
+                m_flags.assign(StateFlags::BIT_IN_ADVENTURE, Read8(mainRAM, m_currentRom->isInAdventure) == 0x02);
 
-                // ★修正: m_currentRom.sensitivity
-                MelonPrimeGameSettings::ApplyMphSensitivity(emuInstance->getNDS(), localCfg, m_currentRom.sensitivity, m_addrHot.inGameSensi, true);
+                MelonPrimeGameSettings::ApplyMphSensitivity(emuInstance->getNDS(), localCfg, m_currentRom->sensitivity, m_addrHot.inGameSensi, true);
             }
 
             if (isFocused) {
