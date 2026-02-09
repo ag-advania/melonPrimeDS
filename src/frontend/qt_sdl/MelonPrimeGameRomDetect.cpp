@@ -44,33 +44,32 @@ namespace MelonPrime {
 
         if (!romInfo) return;
 
-        // ★ポインタ取得
-        m_currentRom = getRomAddrsPtr(romInfo->group);
+        // ★修正: ポインタをデリファレンスして実体にコピー
+        m_currentRom = *getRomAddrsPtr(romInfo->group);
 
         // --- Hotアドレスの初期化 ---
-        
-        m_addrHot.inGame = m_currentRom->inGame;
-        m_addrHot.isMapOrUserActionPaused = m_currentRom->isMapOrUserActionPaused;
+        // ★修正: アロー演算子(->) を ドット(.) に変更
+        m_addrHot.inGame = m_currentRom.inGame;
+        m_addrHot.isMapOrUserActionPaused = m_currentRom.isMapOrUserActionPaused;
 
-        // Player系 (初期値として P1 ベースを使用)
-        m_addrHot.isAltForm = m_currentRom->baseIsAltForm;
-        m_addrHot.jumpFlag = m_currentRom->baseJumpFlag;
-        m_addrHot.weaponChange = m_currentRom->baseWeaponChange;
-        m_addrHot.selectedWeapon = m_currentRom->baseSelectedWeapon;
-        m_addrHot.aimX = m_currentRom->baseAimX;
-        m_addrHot.aimY = m_currentRom->baseAimY;
-        m_addrHot.loadedSpecialWeapon = m_currentRom->baseLoadedSpecialWeapon;
-        m_addrHot.boostGauge = m_currentRom->boostGauge;
-        m_addrHot.isBoosting = m_currentRom->isBoosting;
-        m_addrHot.isInVisorOrMap = m_currentRom->isInVisorOrMap;
-        
-        m_addrHot.chosenHunter = m_currentRom->baseChosenHunter;
-        m_addrHot.inGameSensi = m_currentRom->baseInGameSensi;
+        // Player系 (初期値)
+        m_addrHot.isAltForm = m_currentRom.baseIsAltForm;
+        m_addrHot.jumpFlag = m_currentRom.baseJumpFlag;
+        m_addrHot.weaponChange = m_currentRom.baseWeaponChange;
+        m_addrHot.selectedWeapon = m_currentRom.baseSelectedWeapon;
+        m_addrHot.aimX = m_currentRom.baseAimX;
+        m_addrHot.aimY = m_currentRom.baseAimY;
+        m_addrHot.loadedSpecialWeapon = m_currentRom.baseLoadedSpecialWeapon;
+        m_addrHot.boostGauge = m_currentRom.boostGauge;
+        m_addrHot.isBoosting = m_currentRom.isBoosting;
+        m_addrHot.isInVisorOrMap = m_currentRom.isInVisorOrMap;
 
-        // ★修正: オフセット計算を廃止し、テーブル値を使用
-        m_addrHot.currentWeapon = m_currentRom->baseCurrentWeapon;
-        m_addrHot.havingWeapons = m_currentRom->baseHavingWeapons;
-        m_addrHot.weaponAmmo = m_currentRom->baseWeaponAmmo;
+        m_addrHot.chosenHunter = m_currentRom.baseChosenHunter;
+        m_addrHot.inGameSensi = m_currentRom.baseInGameSensi;
+
+        m_addrHot.currentWeapon = m_currentRom.baseCurrentWeapon;
+        m_addrHot.havingWeapons = m_currentRom.baseHavingWeapons;
+        m_addrHot.weaponAmmo = m_currentRom.baseWeaponAmmo;
 
         m_flags.set(StateFlags::BIT_ROM_DETECTED);
 
