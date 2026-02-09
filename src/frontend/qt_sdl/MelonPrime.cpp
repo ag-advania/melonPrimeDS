@@ -8,7 +8,7 @@
 #include "Screen.h"
 #include "Platform.h"
 #include "MelonPrimeDef.h"
-#include "MelonPrimeGameRomAddrTable.h" // ’Ç‰Á
+#include "MelonPrimeGameRomAddrTable.h"
 
 #include <cmath>
 #include <algorithm>
@@ -29,23 +29,8 @@ namespace MelonPrime {
 
 namespace MelonPrime {
 
-    // --- FIXED: Removed FORCE_INLINE ---
-    bool MelonPrimeCore::IsJoyDown(int id) const {
-#ifdef _WIN32
-        return emuInstance->joyHotkeyMask.testBit(id);
-#else
-        return false;
-#endif
-    }
-
-    bool MelonPrimeCore::IsJoyPressed(int id) const {
-#ifdef _WIN32
-        return emuInstance->joyHotkeyPress.testBit(id);
-#else
-        return false;
-#endif
-    }
-    // -----------------------------------
+    // â˜… æ”¹å–„2: IsJoyDown/IsJoyPressed å®šç¾©å‰Šé™¤
+    //   â†’ MelonPrimeGameInput.cpp ã® UpdateInputState å†…ã§ç›´æ¥ã‚¤ãƒ³ãƒ©ã‚¤ãƒ³å±•é–‹
 
     MelonPrimeCore::MelonPrimeCore(EmuInstance* instance)
         : emuInstance(instance),
@@ -74,20 +59,24 @@ namespace MelonPrime {
 #endif
     }
 
+    // â˜… æ”¹å–„3: std::function â†’ ãƒ¡ãƒ³ãƒé–¢æ•°ãƒã‚¤ãƒ³ã‚¿
     void MelonPrimeCore::SetFrameAdvanceFunc(std::function<void()> func)
     {
         m_frameAdvanceFunc = std::move(func);
+        m_fnAdvance = m_frameAdvanceFunc
+            ? &MelonPrimeCore::FrameAdvanceCustom
+            : &MelonPrimeCore::FrameAdvanceDefault;
     }
 
     void MelonPrimeCore::SetupRawInput()
     {
 #ifdef _WIN32
         if (!m_rawFilter) {
-            HWND hwnd = nullptr;
+            // â˜… æ”¹å–„1: HWND ã‚’ã‚­ãƒ£ãƒƒã‚·ãƒ¥
             if (auto* mw = emuInstance->getMainWindow()) {
-                hwnd = reinterpret_cast<HWND>(mw->winId());
+                m_cachedHwnd = reinterpret_cast<HWND>(mw->winId());
             }
-            m_rawFilter.reset(RawInputWinFilter::Acquire(m_flags.test(StateFlags::BIT_JOY2KEY), hwnd));
+            m_rawFilter.reset(RawInputWinFilter::Acquire(m_flags.test(StateFlags::BIT_JOY2KEY), m_cachedHwnd));
             ApplyJoy2KeySupportAndQtFilter(m_flags.test(StateFlags::BIT_JOY2KEY));
             BindMetroidHotkeysFromConfig(m_rawFilter.get(), emuInstance->getInstanceID());
         }
@@ -101,12 +90,12 @@ namespace MelonPrime {
         QCoreApplication* app = QCoreApplication::instance();
         if (!app) return;
 
-        HWND hwnd = nullptr;
+        // â˜… æ”¹å–„1: HWND ã‚’ã‚­ãƒ£ãƒƒã‚·ãƒ¥æ›´æ–°
         if (auto* mw = emuInstance->getMainWindow()) {
-            hwnd = reinterpret_cast<HWND>(mw->winId());
+            m_cachedHwnd = reinterpret_cast<HWND>(mw->winId());
         }
 
-        m_rawFilter->setRawInputTarget(hwnd);
+        m_rawFilter->setRawInputTarget(static_cast<HWND>(m_cachedHwnd));
         m_flags.assign(StateFlags::BIT_JOY2KEY, enable);
 
         static bool s_isInstalled = false;
@@ -271,18 +260,13 @@ namespace MelonPrime {
             if (isInGame && !m_flags.test(StateFlags::BIT_IN_GAME_INIT)) {
                 m_flags.set(StateFlags::BIT_IN_GAME_INIT);
 
-                // šC³: ƒ|ƒCƒ“ƒ^Œo—R‚Å“Ç‚İ‚İ
                 m_playerPosition = Read8(mainRAM, m_currentRom->playerPos);
 
                 using namespace Consts;
 
-                // šƒŠƒtƒ@ƒNƒ^ƒŠƒ“ƒO: ƒIƒtƒZƒbƒg‚ğ–‘O‚ÉˆêŠ‡ŒvZ (Š|‚¯Z‚ÆŠÖ”ŒÄ‚Ño‚µ‚ğíŒ¸)
-                // m_playerPosition * 0xF30
                 const uint32_t offsetPlayer = m_playerPosition * PLAYER_ADDR_INC;
-                // m_playerPosition * 0x48
                 const uint32_t offsetAim = m_playerPosition * AIM_ADDR_INC;
 
-                // --- ’Pƒ‚È‘«‚µZ‚Å“K—p ---
                 m_addrHot.isAltForm = m_currentRom->baseIsAltForm + offsetPlayer;
                 m_addrHot.loadedSpecialWeapon = m_currentRom->baseLoadedSpecialWeapon + offsetPlayer;
                 m_addrHot.weaponChange = m_currentRom->baseWeaponChange + offsetPlayer;
@@ -300,11 +284,9 @@ namespace MelonPrime {
                 m_addrHot.isBoosting = m_currentRom->isBoosting + offsetPlayer;
                 m_addrHot.isInVisorOrMap = m_currentRom->isInVisorOrMap + offsetPlayer;
 
-                // ‘•ª‚ªˆÙ‚È‚é‚à‚Ì‚àA‚±‚±‚¾‚¯‚È‚Ì‚Å’¼ÚŒvZ‚ÅOK
                 m_addrHot.chosenHunter = m_currentRom->baseChosenHunter + (m_playerPosition * 0x01);
                 m_addrHot.inGameSensi = m_currentRom->baseInGameSensi + (m_playerPosition * 0x04);
 
-                // ƒ|ƒCƒ“ƒ^‚ÌXV
                 m_ptrs.isAltForm = GetRamPointer<uint8_t>(mainRAM, m_addrHot.isAltForm);
                 m_ptrs.jumpFlag = GetRamPointer<uint8_t>(mainRAM, m_addrHot.jumpFlag);
                 m_ptrs.weaponChange = GetRamPointer<uint8_t>(mainRAM, m_addrHot.weaponChange);
@@ -324,7 +306,6 @@ namespace MelonPrime {
                 m_flags.assign(StateFlags::BIT_IS_SAMUS, hunterID == 0x00);
                 m_flags.assign(StateFlags::BIT_IS_WEAVEL, hunterID == 0x06);
 
-                // šC³: m_currentRom->isInAdventure ‚ğg—p
                 m_flags.assign(StateFlags::BIT_IN_ADVENTURE, Read8(mainRAM, m_currentRom->isInAdventure) == 0x02);
 
                 MelonPrimeGameSettings::ApplyMphSensitivity(emuInstance->getNDS(), localCfg, m_currentRom->sensitivity, m_addrHot.inGameSensi, true);
@@ -373,23 +354,25 @@ namespace MelonPrime {
             }, Qt::ConnectionType::QueuedConnection);
     }
 
-    void MelonPrimeCore::FrameAdvanceOnce()
+    // â˜… æ”¹å–„3: ã‚«ã‚¹ã‚¿ãƒ é–¢æ•°ãŒè¨­å®šã•ã‚Œã¦ã„ã‚‹å ´åˆ (åˆ†å²ãªã—)
+    void MelonPrimeCore::FrameAdvanceCustom()
     {
-        if (m_frameAdvanceFunc) {
-            m_frameAdvanceFunc();
+        m_frameAdvanceFunc();
+    }
+
+    // â˜… æ”¹å–„3: ãƒ‡ãƒ•ã‚©ãƒ«ãƒˆå®Ÿè£… (åˆ†å²ãªã—)
+    void MelonPrimeCore::FrameAdvanceDefault()
+    {
+        emuInstance->inputProcess();
+        if (emuInstance->usesOpenGL()) emuInstance->makeCurrentGL();
+        if (emuInstance->getNDS()->GPU.GetRenderer().NeedsShaderCompile()) {
+            int currentShader, shadersCount;
+            emuInstance->getNDS()->GPU.GetRenderer().ShaderCompileStep(currentShader, shadersCount);
         }
         else {
-            emuInstance->inputProcess();
-            if (emuInstance->usesOpenGL()) emuInstance->makeCurrentGL();
-            if (emuInstance->getNDS()->GPU.GetRenderer().NeedsShaderCompile()) {
-                int currentShader, shadersCount;
-                emuInstance->getNDS()->GPU.GetRenderer().ShaderCompileStep(currentShader, shadersCount);
-            }
-            else {
-                emuInstance->getNDS()->RunFrame();
-            }
-            if (emuInstance->usesOpenGL()) emuInstance->drawScreen();
+            emuInstance->getNDS()->RunFrame();
         }
+        if (emuInstance->usesOpenGL()) emuInstance->drawScreen();
     }
 
     void MelonPrimeCore::FrameAdvanceTwice()

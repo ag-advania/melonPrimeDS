@@ -15,7 +15,7 @@ class QPoint;
 #include "types.h"
 #include "Config.h"
 #include "MelonPrimeGameSettings.h"
-#include "MelonPrimeGameRomAddrTable.h" // ’Ç‰Á: ƒAƒhƒŒƒX’è‹`ƒe[ƒuƒ‹
+#include "MelonPrimeGameRomAddrTable.h"
 
 #ifndef FORCE_INLINE
 #  if defined(_MSC_VER)
@@ -149,13 +149,10 @@ namespace MelonPrime {
         melonDS::u32 isInVisorOrMap;
         melonDS::u32 isMapOrUserActionPaused;
         melonDS::u32 inGame;
-        // ˆÈ‰ºAHot‚Æ‚µ‚Ä’Ç‰Á‚Å•K—v‚È‚à‚Ìi“®“I‚É•Ï“®‚·‚é‚½‚ßj
         melonDS::u32 chosenHunter;
         melonDS::u32 inGameSensi;
         melonDS::u32 _pad;
     };
-    // static_assert(sizeof(GameAddressesHot) == 64, "GameAddressesHot must be 64 bytes"); 
-    // ¦ƒƒ“ƒo‚ğ’Ç‰Á‚µ‚½‚Ì‚ÅƒTƒCƒY‚ª•Ï‚í‚é‰Â”\«‚ª‚ ‚è‚Ü‚·BƒpƒfƒBƒ“ƒO’²®‚ª•K—v‚È‚çs‚Á‚Ä‚­‚¾‚³‚¢B
 
     struct alignas(64) HotPointers {
         uint8_t* isAltForm;
@@ -264,13 +261,20 @@ namespace MelonPrime {
         EmuInstance* emuInstance;
         Config::Table& localCfg;
         Config::Table& globalCfg;
+
+        // â˜… æ”¹å–„3: std::function â†’ ãƒ¡ãƒ³ãƒé–¢æ•°ãƒã‚¤ãƒ³ã‚¿ãƒ‡ã‚£ã‚¹ãƒ‘ãƒƒãƒ
+        //   FrameAdvanceOnce() ã®æ¯å‘¼ã³å‡ºã—ã§ std::function::operator bool() ã¨
+        //   å‹æ¶ˆå»ã•ã‚ŒãŸé–“æ¥å‘¼ã³å‡ºã—ã‚’æ’é™¤ã€‚ç›´æ¥ãƒ¡ãƒ³ãƒé–¢æ•°ãƒã‚¤ãƒ³ã‚¿1å›ã§å®Œçµã€‚
         std::function<void()> m_frameAdvanceFunc;
+        using AdvanceMethod = void(MelonPrimeCore::*)();
+        AdvanceMethod m_fnAdvance = &MelonPrimeCore::FrameAdvanceDefault;
 
 #ifdef _WIN32
         std::unique_ptr<RawInputWinFilter, FilterDeleter> m_rawFilter;
+        // â˜… æ”¹å–„1: æ¯ãƒ•ãƒ¬ãƒ¼ãƒ ã® winId() WinAPI å‘¼ã³å‡ºã—ã‚’æ’é™¤
+        void* m_cachedHwnd = nullptr;
 #endif
 
-        // šC³‰ÓŠ: m_addrCold‚ğíœ‚µARomAddresses‚Ö‚Ìƒ|ƒCƒ“ƒ^‚ğ’Ç‰Á
         const RomAddresses* m_currentRom = nullptr;
 
         melonDS::u8 m_playerPosition = 0;
@@ -309,8 +313,6 @@ namespace MelonPrime {
             const float a = m_aimAdjust;
             if (UNLIKELY(a <= 0.0f)) return;
 
-            // Optimization: Use std::copysign and std::abs for more efficient 
-            // floating point bitwise operations, removing ternary branches.
             float absX = std::abs(dx);
             if (absX < a) dx = 0.0f;
             else if (absX < 1.0f) dx = std::copysign(1.0f, dx);
@@ -320,8 +322,9 @@ namespace MelonPrime {
             else if (absY < 1.0f) dy = std::copysign(1.0f, dy);
         }
 
-        bool IsJoyDown(int id) const;
-        bool IsJoyPressed(int id) const;
+        // â˜… æ”¹å–„2: IsJoyDown/IsJoyPressed å®£è¨€å‰Šé™¤
+        //   â†’ UpdateInputState å†…ã§ãƒ©ãƒ ãƒ€ã«ç›´æ¥ã‚¤ãƒ³ãƒ©ã‚¤ãƒ³å±•é–‹
+        //   (åˆ¥ç¿»è¨³å˜ä½ã®éã‚¤ãƒ³ãƒ©ã‚¤ãƒ³é–¢æ•°å‘¼ã³å‡ºã—ã‚ªãƒ¼ãƒãƒ¼ãƒ˜ãƒƒãƒ‰ã‚’æ’é™¤)
 
         HOT_FUNCTION void UpdateInputState();
 
@@ -345,7 +348,10 @@ namespace MelonPrime {
         void SwitchWeapon(int weaponIndex);
         void ShowCursor(bool show);
         void FrameAdvanceTwice();
-        void FrameAdvanceOnce();
+        // â˜… æ”¹å–„3: FrameAdvanceOnce â†’ ãƒ‡ã‚£ã‚¹ãƒ‘ãƒƒãƒ + 2ã¤ã®å®Ÿè£…
+        FORCE_INLINE void FrameAdvanceOnce() { (this->*m_fnAdvance)(); }
+        void FrameAdvanceDefault();
+        void FrameAdvanceCustom();
         QPoint GetAdjustedCenter();
 
         void SetupRawInput();
