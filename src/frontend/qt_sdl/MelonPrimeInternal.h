@@ -10,12 +10,12 @@
 #include "types.h"
 #include "MelonPrime.h"
 
-    namespace MelonPrime {
+namespace MelonPrime {
 
     namespace Consts {
         constexpr int32_t PLAYER_ADDR_INC = 0xF30;
         constexpr uint8_t AIM_ADDR_INC = 0x48;
-        constexpr uint32_t VISOR_OFFSET = 0xABB;
+        // constexpr uint32_t VISOR_OFFSET = 0xABB; // ★削除: テーブル管理に移行したため不要
         constexpr uint32_t RAM_MASK = 0x3FFFFF;
 
         namespace UI {

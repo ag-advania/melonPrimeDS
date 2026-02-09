@@ -10,12 +10,12 @@
 #include <cmath>
 #include <cstring> // For memcpy
 
-    class QBitArray;
 class QPoint;
 
 #include "types.h"
 #include "Config.h"
 #include "MelonPrimeGameSettings.h"
+#include "MelonPrimeGameRomAddrTable.h" // 追加
 
 #ifndef FORCE_INLINE
 #  if defined(_MSC_VER)
@@ -149,9 +149,15 @@ namespace MelonPrime {
         melonDS::u32 isInVisorOrMap;
         melonDS::u32 isMapOrUserActionPaused;
         melonDS::u32 inGame;
-        melonDS::u32 _pad;
+
+        // ★追加: Hot側で計算するようになったメンバ
+        melonDS::u32 chosenHunter;
+        melonDS::u32 inGameSensi;
+
+        // 64byte境界に合わせるためのパディング (合計17個のu32があるため、68bytes。128bytesまで埋める)
+        melonDS::u32 _pad[15];
     };
-    static_assert(sizeof(GameAddressesHot) == 64, "GameAddressesHot must be 64 bytes");
+    static_assert(sizeof(GameAddressesHot) == 128, "GameAddressesHot must be 128 bytes");
 
     struct alignas(64) HotPointers {
         uint8_t* isAltForm;
@@ -168,34 +174,6 @@ namespace MelonPrime {
         uint16_t* aimY;
         uint8_t* isInVisorOrMap;
         uint8_t* isMapOrUserActionPaused;
-    };
-
-    struct GameAddressesCold {
-        melonDS::u32 chosenHunter;
-        melonDS::u32 inGameSensi;
-        melonDS::u32 playerPos;
-        melonDS::u32 isInAdventure;
-        melonDS::u32 operationAndSound;
-        melonDS::u32 unlockMapsHunters;
-        melonDS::u32 unlockMapsHunters2;
-        melonDS::u32 unlockMapsHunters3;
-        melonDS::u32 unlockMapsHunters4;
-        melonDS::u32 unlockMapsHunters5;
-        melonDS::u32 volSfx8Bit;
-        melonDS::u32 volMusic8Bit;
-        melonDS::u32 sensitivity;
-        melonDS::u32 dsNameFlagAndMicVolume;
-        melonDS::u32 mainHunter;
-        melonDS::u32 rankColor;
-        melonDS::u32 baseIsAltForm;
-        melonDS::u32 baseLoadedSpecialWeapon;
-        melonDS::u32 baseWeaponChange;
-        melonDS::u32 baseSelectedWeapon;
-        melonDS::u32 baseChosenHunter;
-        melonDS::u32 baseJumpFlag;
-        melonDS::u32 baseAimX;
-        melonDS::u32 baseAimY;
-        melonDS::u32 baseInGameSensi;
     };
 
     enum AimBlockBit : uint32_t {
@@ -242,6 +220,10 @@ namespace MelonPrime {
 
     private:
         alignas(64) FrameInputState m_input{};
+
+        // ★変更箇所: m_addrColdを削除し、実体で保持
+        RomAddresses m_currentRom{};
+
         GameAddressesHot m_addrHot{};
         HotPointers m_ptrs{};
 
@@ -294,7 +276,6 @@ namespace MelonPrime {
         std::unique_ptr<RawInputWinFilter, FilterDeleter> m_rawFilter;
 #endif
 
-        GameAddressesCold m_addrCold{};
         melonDS::u8 m_playerPosition = 0;
 
         struct AimData {
@@ -308,8 +289,6 @@ namespace MelonPrime {
         static constexpr uint8_t APPLIED_VOL_SFX = 1u << 2;
         static constexpr uint8_t APPLIED_VOL_MUSIC = 1u << 3;
 
-        FORCE_INLINE void InputPress(uint16_t bit) { m_inputMaskFast &= ~(1u << bit); }
-        FORCE_INLINE void InputRelease(uint16_t bit) { m_inputMaskFast |= (1u << bit); }
         FORCE_INLINE void InputReset() { m_inputMaskFast = 0xFFFF; }
 
         FORCE_INLINE void InputSetBranchless(uint16_t bit, bool released) {
@@ -333,8 +312,6 @@ namespace MelonPrime {
             const float a = m_aimAdjust;
             if (UNLIKELY(a <= 0.0f)) return;
 
-            // Optimization: Use std::copysign and std::abs for more efficient 
-            // floating point bitwise operations, removing ternary branches.
             float absX = std::abs(dx);
             if (absX < a) dx = 0.0f;
             else if (absX < 1.0f) dx = std::copysign(1.0f, dx);
@@ -351,7 +328,6 @@ namespace MelonPrime {
 
         FORCE_INLINE bool IsDown(uint64_t bit) const { return (m_input.down & bit) != 0; }
         FORCE_INLINE bool IsPressed(uint64_t bit) const { return (m_input.press & bit) != 0; }
-        FORCE_INLINE bool IsAnyDown(uint64_t mask) const { return (m_input.down & mask) != 0; }
         FORCE_INLINE bool IsAnyPressed(uint64_t mask) const { return (m_input.press & mask) != 0; }
 
         HOT_FUNCTION void HandleInGameLogic();
@@ -367,7 +343,6 @@ namespace MelonPrime {
         void HandleGlobalHotkeys();
         void HandleAdventureMode();
         void ProcessAimInputStylus();
-        void ProcessMoveInput(QBitArray& inputMask);
         void SwitchWeapon(int weaponIndex);
         void ShowCursor(bool show);
         void FrameAdvanceTwice();
