@@ -9,19 +9,16 @@ namespace MelonPrime {
     // =========================================================================
     // Static members
     // =========================================================================
-    std::atomic<int>          RawInputWinFilter::s_refCount{ 0 };
-    RawInputWinFilter*        RawInputWinFilter::s_instance = nullptr;
-    std::once_flag            RawInputWinFilter::s_initFlag;
-
-    NtUserMsgWaitForMultipleObjectsEx_t  RawInputWinFilter::s_fnWait = nullptr;
-    PeekMessageW_t                        RawInputWinFilter::s_fnPeek = nullptr;
+    std::atomic<int>    RawInputWinFilter::s_refCount{ 0 };
+    RawInputWinFilter*  RawInputWinFilter::s_instance = nullptr;
+    std::once_flag      RawInputWinFilter::s_initFlag;
+    PeekMessageW_t      RawInputWinFilter::s_fnPeek = nullptr;
 
     // =========================================================================
     // NtPeekAdapter — PeekMessageW-compatible thunk for NtUserPeekMessage
     //
     // Bakes in bProcessSideEffects=FALSE (6th arg) to skip message hooks.
-    // This eliminates per-call branching: s_fnPeek is either PeekMessageW
-    // or this adapter, decided once at init time.
+    // Resolved once at init — s_fnPeek points here or to PeekMessageW.
     // =========================================================================
     BOOL WINAPI RawInputWinFilter::NtPeekAdapter(
         LPMSG lpMsg, HWND hWnd, UINT wMsgFilterMin, UINT wMsgFilterMax, UINT wRemoveMsg)
@@ -30,19 +27,11 @@ namespace MelonPrime {
     }
 
     // =========================================================================
-    // One-time API resolution — decides the function pointers for the entire
-    // lifetime of the process. After this, the hot loop uses only indirect
-    // calls through s_fnWait and s_fnPeek — zero conditional branches.
+    // One-time API resolution
     // =========================================================================
     void RawInputWinFilter::InitializeApiFuncs() {
         std::call_once(s_initFlag, []() {
             WinInternal::ResolveNtApis();
-
-            // s_fnWait: prefer NtUserMsgWaitForMultipleObjectsEx (avoids user32 shim),
-            //           fall back to MsgWaitForMultipleObjectsEx (same signature).
-            s_fnWait = WinInternal::fnNtUserMsgWaitForMultipleObjectsEx
-                ? WinInternal::fnNtUserMsgWaitForMultipleObjectsEx
-                : reinterpret_cast<NtUserMsgWaitForMultipleObjectsEx_t>(&MsgWaitForMultipleObjectsEx);
 
             // s_fnPeek: prefer NtUserPeekMessage via adapter (skips hooks),
             //           fall back to PeekMessageW (same 5-arg signature).
@@ -92,132 +81,51 @@ namespace MelonPrime {
             RegisterDevices(m_hwndQtTarget, false);
         }
         else {
-            StartInputThread();
+            CreateHiddenWindow();
+            RegisterDevices(m_hHiddenWnd, true);
         }
     }
 
     RawInputWinFilter::~RawInputWinFilter() {
-        StopInputThread();
-        if (m_joy2KeySupport) {
-            UnregisterDevices();
-        }
-    }
-
-    // =========================================================================
-    // Dedicated Input Thread — Event-Driven (Joy2Key OFF)
-    //
-    // Latency chain:
-    //   HID device → OS raw input buffer → GetRawInputBuffer → atomic store
-    //   → (EmuThread atomic load) → game logic
-    //
-    // Hot loop invariant: ZERO conditional branches for API dispatch.
-    //   s_fnWait and s_fnPeek are pre-resolved function pointers.
-    //   The only branches are the wait result check and the peek drain loop.
-    // =========================================================================
-
-    void RawInputWinFilter::StartInputThread() {
-        if (m_inputThread.joinable()) return;
-
-        m_stopThread.store(false, std::memory_order_release);
-        m_threadReady.store(false, std::memory_order_release);
-
-        if (!m_hStopEvent) {
-            m_hStopEvent = CreateEventW(nullptr, TRUE, FALSE, nullptr);
-        }
-        else {
-            ResetEvent(m_hStopEvent);
-        }
-
-        m_inputThread = std::thread(&RawInputWinFilter::InputThreadProc, this);
-
-        // Spin-wait for thread init (sub-ms)
-        while (!m_threadReady.load(std::memory_order_acquire)) {
-            _mm_pause();
-        }
-    }
-
-    void RawInputWinFilter::StopInputThread() {
-        if (!m_inputThread.joinable()) return;
-
-        m_stopThread.store(true, std::memory_order_release);
-        if (m_hStopEvent) SetEvent(m_hStopEvent);
-
-        m_inputThread.join();
-
-        if (m_hStopEvent) {
-            CloseHandle(m_hStopEvent);
-            m_hStopEvent = nullptr;
-        }
-    }
-
-    void RawInputWinFilter::InputThreadProc() {
-        // --- Thread-local init ---
-        CreateHiddenWindow();
-        RegisterDevices(m_hHiddenWnd, true);  // RIDEV_INPUTSINK
-        m_threadReady.store(true, std::memory_order_release);
-
-        constexpr DWORD kWakeMask = QS_RAWINPUT;
-        MSG msg;
-
-        // =================================================================
-        // Hot loop — event-driven, 0% CPU when idle
-        //
-        //  s_fnWait : NtUserMsgWaitForMultipleObjectsEx or MsgWaitForMultipleObjectsEx
-        //  s_fnPeek : NtPeekAdapter (hook bypass) or PeekMessageW
-        //
-        //  Both resolved once at startup. No if/else in this loop.
-        // =================================================================
-        while (!m_stopThread.load(std::memory_order_relaxed)) {
-
-            // 1. Sleep until raw input arrives or stop event fires.
-            DWORD ret = s_fnWait(1, &m_hStopEvent, INFINITE, kWakeMask, MWMO_INPUTAVAILABLE);
-            if (ret == WAIT_OBJECT_0 || ret == WAIT_FAILED) {
-                break;
-            }
-
-            // 2. Batch read from OS raw input buffer (main harvest).
-            m_state->processRawInputBatched();
-
-            // 3. Drain WM_INPUT from message queue.
-            //    Data already consumed by step 2. Just remove messages to
-            //    prevent queue overflow. s_fnPeek resolved once — no branch.
-            while (s_fnPeek(&msg, m_hHiddenWnd, WM_INPUT, WM_INPUT, PM_REMOVE)) {}
-
-            // 4. WM_QUIT check.
-            if (s_fnPeek(&msg, nullptr, WM_QUIT, WM_QUIT, PM_REMOVE)) {
-                m_stopThread.store(true, std::memory_order_relaxed);
-                break;
-            }
-
-            // 5. Safety-net re-read.
-            //    New input may have arrived during step 3's queue drain.
-            //    processRawInputBatched is near-zero-cost on empty buffer.
-            m_state->processRawInputBatched();
-        }
-
         UnregisterDevices();
         DestroyHiddenWindow();
     }
 
     // =========================================================================
-    // Poll() — EmuThread entry point (every frame)
+    // Poll() — Frame-synchronous update (called from RunFrameHook)
+    //
+    // Hot path structure (Joy2Key OFF):
+    //
+    //   1. processRawInputBatched()
+    //      Main harvest — GetRawInputBuffer reads all pending raw input
+    //      directly from the OS kernel buffer. Fastest path available.
+    //
+    //   2. s_fnPeek drain WM_INPUT
+    //      The batch read consumed the data, but corresponding WM_INPUT
+    //      messages still sit in the message queue. Remove them to prevent
+    //      queue overflow. s_fnPeek is pre-resolved — no branch.
+    //      Filter range limited to WM_INPUT; DispatchMessageW avoided.
+    //
+    //   3. processRawInputBatched() (safety-net)
+    //      New input may have arrived during step 2's queue drain.
+    //      processRawInputBatched returns instantly on empty buffer
+    //      (single GetRawInputBuffer call returns 0 → early exit).
+    //
+    // Total API dispatch branches in hot path: ZERO.
+    // s_fnPeek resolved once at InitializeApiFuncs().
     // =========================================================================
     void RawInputWinFilter::Poll() {
         if (m_joy2KeySupport) return;
 
-        if (!CheckFocused()) {
-            m_state->discardDeltas();
-        }
-    }
+        // 1. Batch read (main harvest)
+        m_state->processRawInputBatched();
 
-    bool RawInputWinFilter::CheckFocused() const {
-        HWND foreground = ::GetForegroundWindow();
-        if (!foreground) return false;
-        if (foreground == m_hwndQtTarget) return true;
+        // 2. Drain WM_INPUT from queue (data already consumed above)
+        MSG msg;
+        while (s_fnPeek(&msg, m_hHiddenWnd, WM_INPUT, WM_INPUT, PM_REMOVE)) {}
 
-        HWND rootFg     = ::GetAncestor(foreground, GA_ROOTOWNER);
-        HWND rootTarget = ::GetAncestor(m_hwndQtTarget, GA_ROOTOWNER);
-        return (rootFg == rootTarget && rootTarget != nullptr);
+        // 3. Safety-net re-read (catches arrivals during drain)
+        m_state->processRawInputBatched();
     }
 
     // =========================================================================
@@ -226,15 +134,17 @@ namespace MelonPrime {
     void RawInputWinFilter::setJoy2KeySupport(bool enable) {
         if (m_joy2KeySupport == enable) return;
 
+        UnregisterDevices();
+
         if (enable) {
-            StopInputThread();
+            DestroyHiddenWindow();
             m_joy2KeySupport = true;
             RegisterDevices(m_hwndQtTarget, false);
         }
         else {
-            UnregisterDevices();
             m_joy2KeySupport = false;
-            StartInputThread();
+            CreateHiddenWindow();
+            RegisterDevices(m_hHiddenWnd, true);
         }
 
         m_state->resetAllKeys();
@@ -250,18 +160,18 @@ namespace MelonPrime {
     }
 
     // =========================================================================
-    // Hidden window
+    // Hidden window — message sink for RIDEV_INPUTSINK
     // =========================================================================
     void RawInputWinFilter::CreateHiddenWindow() {
         if (m_hHiddenWnd) return;
         WNDCLASSW wc = {};
         wc.lpfnWndProc   = HiddenWndProc;
         wc.hInstance      = GetModuleHandle(nullptr);
-        wc.lpszClassName  = L"MelonPrimeInputThread";
+        wc.lpszClassName  = L"MelonPrimeRawInputSink";
         RegisterClassW(&wc);
 
         m_hHiddenWnd = CreateWindowW(
-            L"MelonPrimeInputThread", L"", 0,
+            L"MelonPrimeRawInputSink", L"", 0,
             0, 0, 0, 0,
             HWND_MESSAGE, nullptr, wc.hInstance, this);
     }
@@ -271,7 +181,7 @@ namespace MelonPrime {
             DestroyWindow(m_hHiddenWnd);
             m_hHiddenWnd = nullptr;
         }
-        UnregisterClassW(L"MelonPrimeInputThread", GetModuleHandle(nullptr));
+        UnregisterClassW(L"MelonPrimeRawInputSink", GetModuleHandle(nullptr));
     }
 
     LRESULT CALLBACK RawInputWinFilter::HiddenWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
@@ -281,13 +191,13 @@ namespace MelonPrime {
     // =========================================================================
     // Device registration
     // =========================================================================
-    void RawInputWinFilter::RegisterDevices(HWND target, bool useInputSink) {
+    void RawInputWinFilter::RegisterDevices(HWND target, bool useHiddenWindow) {
         if (m_isRegistered) return;
         RAWINPUTDEVICE rid[2];
-        rid[0].usUsagePage = 0x01; rid[0].usUsage = 0x02;
-        rid[1].usUsagePage = 0x01; rid[1].usUsage = 0x06;
+        rid[0].usUsagePage = 0x01; rid[0].usUsage = 0x02; // Mouse
+        rid[1].usUsagePage = 0x01; rid[1].usUsage = 0x06; // Keyboard
 
-        const DWORD flags = useInputSink ? RIDEV_INPUTSINK : 0;
+        const DWORD flags = useHiddenWindow ? RIDEV_INPUTSINK : 0;
         rid[0].dwFlags = flags; rid[0].hwndTarget = target;
         rid[1].dwFlags = flags; rid[1].hwndTarget = target;
 

@@ -7,13 +7,8 @@
 #include <vector>
 #include <atomic>
 #include <mutex>
-#include <thread>
 #include <QAbstractNativeEventFilter>
 #include "MelonPrimeRawWinInternal.h"
-
-#ifndef QS_RAWINPUT
-#define QS_RAWINPUT 0x0400
-#endif
 
 namespace MelonPrime {
 
@@ -22,29 +17,28 @@ namespace MelonPrime {
 
     // =========================================================================
     // PeekMessageW-compatible function pointer type (5 args).
-    // Used as the unified s_fnPeek signature — either resolves to
-    // NtUserPeekMessage wrapper (bProcessSideEffects=FALSE, hook bypass)
-    // or falls back to PeekMessageW.
+    // Resolves once to either NtPeekAdapter (hook bypass) or PeekMessageW.
+    // Eliminates per-call branching in the Poll() hot path.
     // =========================================================================
     using PeekMessageW_t = BOOL(WINAPI*)(
         LPMSG lpMsg, HWND hWnd, UINT wMsgFilterMin, UINT wMsgFilterMax, UINT wRemoveMsg);
 
     // =========================================================================
-    // RawInputWinFilter — Low-latency raw input with two modes:
+    // RawInputWinFilter — Frame-synchronous raw input with two modes:
     //
     //   Joy2Key OFF (default):
-    //     Dedicated input thread sleeps at 0% CPU via MsgWaitForMultipleObjectsEx.
-    //     Wakes instantly on HID input, batch-reads via GetRawInputBuffer,
-    //     commits to lock-free atomics. EmuThread reads atomics only.
+    //     Poll() called every frame from EmuThread.
+    //     Batch-reads via GetRawInputBuffer, drains WM_INPUT via s_fnPeek,
+    //     safety-net re-read catches arrivals during drain.
+    //     All API dispatch is through pre-resolved function pointers (zero branches).
     //
     //   Joy2Key ON:
     //     Qt native event filter intercepts WM_INPUT on the main thread.
-    //     Required for compatibility with Joy2Key virtual key injection.
     //
-    // Hot-loop design:
-    //     s_fnWait / s_fnPeek are resolved once at startup (InitializeApiFuncs).
-    //     The loop body contains zero conditional branches for API dispatch —
-    //     only indirect calls through pre-resolved function pointers.
+    // Poll() hot path (Joy2Key OFF):
+    //   1. processRawInputBatched()      — main harvest from OS buffer
+    //   2. s_fnPeek drain WM_INPUT       — remove stale messages (branchless)
+    //   3. processRawInputBatched()      — safety-net re-read (near-zero on empty)
     // =========================================================================
     class RawInputWinFilter : public QAbstractNativeEventFilter {
     public:
@@ -60,9 +54,7 @@ namespace MelonPrime {
         void setJoy2KeySupport(bool enable);
         void setRawInputTarget(HWND hwnd);
 
-        // Called from EmuThread every frame.
-        //   Thread mode: focus-check + discard if unfocused.
-        //   Joy2Key mode: no-op.
+        // Frame-synchronous update — called from RunFrameHook every frame.
         void Poll();
 
         void discardDeltas();
@@ -77,25 +69,12 @@ namespace MelonPrime {
         // --- Hidden window management ---
         void CreateHiddenWindow();
         void DestroyHiddenWindow();
-        void RegisterDevices(HWND target, bool useInputSink);
+        void RegisterDevices(HWND target, bool useHiddenWindow);
         void UnregisterDevices();
         static LRESULT CALLBACK HiddenWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
 
-        // --- Dedicated input thread (Joy2Key OFF) ---
-        void StartInputThread();
-        void StopInputThread();
-        void InputThreadProc();
-        [[nodiscard]] bool CheckFocused() const;
-
-        std::thread          m_inputThread;
-        HANDLE               m_hStopEvent   = nullptr;
-        std::atomic<bool>    m_threadReady{ false };
-        std::atomic<bool>    m_stopThread{ false };
-
-        // --- Pre-resolved API function pointers (zero branches in hot loop) ---
-        //     Resolved once in InitializeApiFuncs(), never written again.
-        static NtUserMsgWaitForMultipleObjectsEx_t  s_fnWait;   // MsgWaitForMultipleObjectsEx
-        static PeekMessageW_t                        s_fnPeek;   // PeekMessageW or NtUserPeekMessage wrapper
+        // --- Pre-resolved API (zero branches in hot path) ---
+        static PeekMessageW_t  s_fnPeek;  // NtPeekAdapter or PeekMessageW
 
         // --- Singleton / ref-count ---
         static std::atomic<int>    s_refCount;
@@ -109,7 +88,7 @@ namespace MelonPrime {
         // --- Instance state ---
         std::unique_ptr<InputState> m_state;
         HWND  m_hwndQtTarget;      // Focus check target (Qt main window)
-        HWND  m_hHiddenWnd;        // Message sink window (owned by input thread)
+        HWND  m_hHiddenWnd;        // Message sink window
         bool  m_joy2KeySupport;
         bool  m_isRegistered;
     };
