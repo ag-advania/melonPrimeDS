@@ -260,32 +260,34 @@ namespace MelonPrime {
             if (isInGame && !m_flags.test(StateFlags::BIT_IN_GAME_INIT)) {
                 m_flags.set(StateFlags::BIT_IN_GAME_INIT);
 
-                m_playerPosition = Read8(mainRAM, m_currentRom->playerPos);
+                // šC³: m_currentRom.playerPos
+                m_playerPosition = Read8(mainRAM, m_currentRom.playerPos);
 
                 using namespace Consts;
 
                 const uint32_t offsetPlayer = m_playerPosition * PLAYER_ADDR_INC;
                 const uint32_t offsetAim = m_playerPosition * AIM_ADDR_INC;
 
-                m_addrHot.isAltForm = m_currentRom->baseIsAltForm + offsetPlayer;
-                m_addrHot.loadedSpecialWeapon = m_currentRom->baseLoadedSpecialWeapon + offsetPlayer;
-                m_addrHot.weaponChange = m_currentRom->baseWeaponChange + offsetPlayer;
-                m_addrHot.selectedWeapon = m_currentRom->baseSelectedWeapon + offsetPlayer;
-                m_addrHot.jumpFlag = m_currentRom->baseJumpFlag + offsetPlayer;
+                // šC³: ‚·‚×‚Ä m_currentRom-> ‚ð m_currentRom. ‚É’uŠ·
+                m_addrHot.isAltForm = m_currentRom.baseIsAltForm + offsetPlayer;
+                m_addrHot.loadedSpecialWeapon = m_currentRom.baseLoadedSpecialWeapon + offsetPlayer;
+                m_addrHot.weaponChange = m_currentRom.baseWeaponChange + offsetPlayer;
+                m_addrHot.selectedWeapon = m_currentRom.baseSelectedWeapon + offsetPlayer;
+                m_addrHot.jumpFlag = m_currentRom.baseJumpFlag + offsetPlayer;
 
-                m_addrHot.aimX = m_currentRom->baseAimX + offsetAim;
-                m_addrHot.aimY = m_currentRom->baseAimY + offsetAim;
+                m_addrHot.aimX = m_currentRom.baseAimX + offsetAim;
+                m_addrHot.aimY = m_currentRom.baseAimY + offsetAim;
 
-                m_addrHot.currentWeapon = m_currentRom->baseCurrentWeapon + offsetPlayer;
-                m_addrHot.havingWeapons = m_currentRom->baseHavingWeapons + offsetPlayer;
-                m_addrHot.weaponAmmo = m_currentRom->baseWeaponAmmo + offsetPlayer;
+                m_addrHot.currentWeapon = m_currentRom.baseCurrentWeapon + offsetPlayer;
+                m_addrHot.havingWeapons = m_currentRom.baseHavingWeapons + offsetPlayer;
+                m_addrHot.weaponAmmo = m_currentRom.baseWeaponAmmo + offsetPlayer;
 
-                m_addrHot.boostGauge = m_currentRom->boostGauge + offsetPlayer;
-                m_addrHot.isBoosting = m_currentRom->isBoosting + offsetPlayer;
-                m_addrHot.isInVisorOrMap = m_currentRom->isInVisorOrMap + offsetPlayer;
+                m_addrHot.boostGauge = m_currentRom.boostGauge + offsetPlayer;
+                m_addrHot.isBoosting = m_currentRom.isBoosting + offsetPlayer;
+                m_addrHot.isInVisorOrMap = m_currentRom.isInVisorOrMap + offsetPlayer;
 
-                m_addrHot.chosenHunter = m_currentRom->baseChosenHunter + (m_playerPosition * 0x01);
-                m_addrHot.inGameSensi = m_currentRom->baseInGameSensi + (m_playerPosition * 0x04);
+                m_addrHot.chosenHunter = m_currentRom.baseChosenHunter + (m_playerPosition * 0x01);
+                m_addrHot.inGameSensi = m_currentRom.baseInGameSensi + (m_playerPosition * 0x04);
 
                 m_ptrs.isAltForm = GetRamPointer<uint8_t>(mainRAM, m_addrHot.isAltForm);
                 m_ptrs.jumpFlag = GetRamPointer<uint8_t>(mainRAM, m_addrHot.jumpFlag);
@@ -306,9 +308,11 @@ namespace MelonPrime {
                 m_flags.assign(StateFlags::BIT_IS_SAMUS, hunterID == 0x00);
                 m_flags.assign(StateFlags::BIT_IS_WEAVEL, hunterID == 0x06);
 
-                m_flags.assign(StateFlags::BIT_IN_ADVENTURE, Read8(mainRAM, m_currentRom->isInAdventure) == 0x02);
+                // šC³: m_currentRom.isInAdventure
+                m_flags.assign(StateFlags::BIT_IN_ADVENTURE, Read8(mainRAM, m_currentRom.isInAdventure) == 0x02);
 
-                MelonPrimeGameSettings::ApplyMphSensitivity(emuInstance->getNDS(), localCfg, m_currentRom->sensitivity, m_addrHot.inGameSensi, true);
+                // šC³: m_currentRom.sensitivity
+                MelonPrimeGameSettings::ApplyMphSensitivity(emuInstance->getNDS(), localCfg, m_currentRom.sensitivity, m_addrHot.inGameSensi, true);
             }
 
             if (isFocused) {

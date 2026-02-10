@@ -15,7 +15,7 @@ class QPoint;
 #include "types.h"
 #include "Config.h"
 #include "MelonPrimeGameSettings.h"
-#include "MelonPrimeGameRomAddrTable.h"
+#include "MelonPrimeGameRomAddrTable.h" // ’Ç‰Á
 
 #ifndef FORCE_INLINE
 #  if defined(_MSC_VER)
@@ -149,10 +149,15 @@ namespace MelonPrime {
         melonDS::u32 isInVisorOrMap;
         melonDS::u32 isMapOrUserActionPaused;
         melonDS::u32 inGame;
+
+        // š’Ç‰Á: Hot‘¤‚ÅŒvZ‚·‚é‚æ‚¤‚É‚È‚Á‚½ƒƒ“ƒo
         melonDS::u32 chosenHunter;
         melonDS::u32 inGameSensi;
-        melonDS::u32 _pad;
+
+        // 64byte‹«ŠE‚É‡‚í‚¹‚é‚½‚ß‚ÌƒpƒfƒBƒ“ƒO (‡Œv17ŒÂ‚Ìu32‚ª‚ ‚é‚½‚ßA68bytesB128bytes‚Ü‚Å–„‚ß‚é)
+        melonDS::u32 _pad[15];
     };
+    static_assert(sizeof(GameAddressesHot) == 128, "GameAddressesHot must be 128 bytes");
 
     struct alignas(64) HotPointers {
         uint8_t* isAltForm;
@@ -215,6 +220,10 @@ namespace MelonPrime {
 
     private:
         alignas(64) FrameInputState m_input{};
+
+        // š•ÏX‰ÓŠ: m_addrCold‚ğíœ‚µAÀ‘Ì‚Å•Û
+        RomAddresses m_currentRom{};
+
         GameAddressesHot m_addrHot{};
         HotPointers m_ptrs{};
 
@@ -274,8 +283,6 @@ namespace MelonPrime {
         // â˜… æ”¹å–„1: æ¯ãƒ•ãƒ¬ãƒ¼ãƒ ã® winId() WinAPI å‘¼ã³å‡ºã—ã‚’æ’é™¤
         void* m_cachedHwnd = nullptr;
 #endif
-
-        const RomAddresses* m_currentRom = nullptr;
 
         melonDS::u8 m_playerPosition = 0;
 

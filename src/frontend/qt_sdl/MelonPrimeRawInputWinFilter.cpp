@@ -122,15 +122,14 @@ namespace MelonPrime {
         // 待機マスク: WM_INPUT (QS_RAWINPUT) + WM_QUIT (QS_POSTMESSAGE) のみ
         // QS_ALLINPUT だと WM_PAINT, WM_TIMER 等で無駄に起床してしまう
         constexpr DWORD kWakeMask = QS_RAWINPUT | QS_POSTMESSAGE;
-
         MSG msg;
 
         while (!m_stopThread.load(std::memory_order_relaxed)) {
             // 1. イベント待機 (CPU負荷 0%)
             //    - m_hStopEvent がシグナル → 終了
             //    - kWakeMask に該当するメッセージ到着 → 処理へ
+            // 1. Wait
             DWORD ret = s_fnWait(1, &m_hStopEvent, INFINITE, kWakeMask, MWMO_INPUTAVAILABLE);
-
             if (ret == WAIT_OBJECT_0 || ret == WAIT_FAILED) {
                 break;
             }
@@ -139,27 +138,20 @@ namespace MelonPrime {
             //    GetRawInputBuffer で溜まっているRawInputを最速回収
             m_state->processRawInputBatched();
 
-            // 3. WM_INPUT メッセージの消化
-            //    processRawInputBatched はバッファから直接読むため、
-            //    メッセージキューに残った WM_INPUT を除去する必要がある。
-            //    フィルタ範囲を WM_INPUT に限定し、DispatchMessageW を回避。
-            //    s_fnPeek は InitializeApiFuncs() で1回だけ解決済み (分岐なし)。
-            // データは processRawInputBatched で処理済み。
-            // PM_REMOVE でキューから WM_INPUT を排出するだけでよい。
-            while (s_fnPeek(&msg, m_hHiddenWnd, WM_INPUT, WM_INPUT, PM_REMOVE)) {}
+            // 3. Message Queue Cleanup (Optimized)
+            // バッファ読み出し後も WM_INPUT メッセージ自体はキューに残る可能性があるため除去が必要。
+            // しかし常にループで空にするのは高コスト。
+            // 1回だけチェックし、残っている場合のみループに入る。
+            // PM_NOYIELD で他スレッドへの譲渡を抑制し、スループット優先。
+            if (UNLIKELY(s_fnPeek(&msg, m_hHiddenWnd, WM_INPUT, WM_INPUT, PM_REMOVE | PM_NOYIELD))) {
+                while (s_fnPeek(&msg, m_hHiddenWnd, WM_INPUT, WM_INPUT, PM_REMOVE | PM_NOYIELD)) {}
+            }
 
-            // 4. WM_QUIT チェック
-            //    PostQuitMessage() による終了通知を検出
-            if (s_fnPeek(&msg, nullptr, WM_QUIT, WM_QUIT, PM_REMOVE)) {
+            // 4. Check for WM_QUIT
+            if (UNLIKELY(s_fnPeek(&msg, nullptr, WM_QUIT, WM_QUIT, PM_REMOVE | PM_NOYIELD))) {
                 m_stopThread.store(true, std::memory_order_relaxed);
                 break;
             }
-
-            // 5. 追っかけ読み取り (セーフティネット)
-            //    ステップ3のメッセージ消化中に新たな入力が到着した場合に備え、
-            //    もう一度バッファを確認する。
-            //    processRawInputBatched は空バッファ時にほぼノーコストなので常に呼ぶ。
-            m_state->processRawInputBatched();
         }
 
         UnregisterDevices();
