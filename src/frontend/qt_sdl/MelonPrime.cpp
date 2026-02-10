@@ -29,9 +29,6 @@ namespace MelonPrime {
 
 namespace MelonPrime {
 
-    // â˜… æ”¹å–„2: IsJoyDown/IsJoyPressed å®šç¾©å‰Šé™¤
-    //   â†’ MelonPrimeGameInput.cpp ã® UpdateInputState å†…ã§ç›´æ¥ã‚¤ãƒ³ãƒ©ã‚¤ãƒ³å±•é–‹
-
     MelonPrimeCore::MelonPrimeCore(EmuInstance* instance)
         : emuInstance(instance),
         localCfg(instance->getLocalConfig()),
@@ -59,7 +56,6 @@ namespace MelonPrime {
 #endif
     }
 
-    // â˜… æ”¹å–„3: std::function â†’ ãƒ¡ãƒ³ãƒé–¢æ•°ãƒã‚¤ãƒ³ã‚¿
     void MelonPrimeCore::SetFrameAdvanceFunc(std::function<void()> func)
     {
         m_frameAdvanceFunc = std::move(func);
@@ -72,11 +68,12 @@ namespace MelonPrime {
     {
 #ifdef _WIN32
         if (!m_rawFilter) {
-            // â˜… æ”¹å–„1: HWND ã‚’ã‚­ãƒ£ãƒƒã‚·ãƒ¥
             if (auto* mw = emuInstance->getMainWindow()) {
                 m_cachedHwnd = reinterpret_cast<HWND>(mw->winId());
             }
+            // ‰Šú‰»‚ÉJoy2Keyİ’è‚ÆHWND‚ğ“n‚µ‚ÄƒCƒ“ƒXƒ^ƒ“ƒXæ“¾
             m_rawFilter.reset(RawInputWinFilter::Acquire(m_flags.test(StateFlags::BIT_JOY2KEY), m_cachedHwnd));
+
             ApplyJoy2KeySupportAndQtFilter(m_flags.test(StateFlags::BIT_JOY2KEY));
             BindMetroidHotkeysFromConfig(m_rawFilter.get(), emuInstance->getInstanceID());
         }
@@ -90,7 +87,6 @@ namespace MelonPrime {
         QCoreApplication* app = QCoreApplication::instance();
         if (!app) return;
 
-        // â˜… æ”¹å–„1: HWND ã‚’ã‚­ãƒ£ãƒƒã‚·ãƒ¥æ›´æ–°
         if (auto* mw = emuInstance->getMainWindow()) {
             m_cachedHwnd = reinterpret_cast<HWND>(mw->winId());
         }
@@ -237,6 +233,14 @@ namespace MelonPrime {
 
         m_isRunningHook = true;
 
+        // ššš “¯ŠúRawInputƒ|[ƒŠƒ“ƒO ššš
+#ifdef _WIN32
+        if (m_rawFilter) {
+            // EmuThreadã‚ÅÀs‚³‚ê‚é‚½‚ßAÅ‚à’á’x‰„‚Èƒ^ƒCƒ~ƒ“ƒO‚ÅÅV‚Ì“ü—Í‚ğæ“¾
+            m_rawFilter->Poll();
+        }
+#endif
+
         UpdateInputState();
         InputReset();
         m_flags.clear(StateFlags::BIT_BLOCK_STYLUS);
@@ -260,7 +264,6 @@ namespace MelonPrime {
             if (isInGame && !m_flags.test(StateFlags::BIT_IN_GAME_INIT)) {
                 m_flags.set(StateFlags::BIT_IN_GAME_INIT);
 
-                // šC³: m_currentRom.playerPos
                 m_playerPosition = Read8(mainRAM, m_currentRom.playerPos);
 
                 using namespace Consts;
@@ -268,7 +271,6 @@ namespace MelonPrime {
                 const uint32_t offsetPlayer = m_playerPosition * PLAYER_ADDR_INC;
                 const uint32_t offsetAim = m_playerPosition * AIM_ADDR_INC;
 
-                // šC³: ‚·‚×‚Ä m_currentRom-> ‚ğ m_currentRom. ‚É’uŠ·
                 m_addrHot.isAltForm = m_currentRom.baseIsAltForm + offsetPlayer;
                 m_addrHot.loadedSpecialWeapon = m_currentRom.baseLoadedSpecialWeapon + offsetPlayer;
                 m_addrHot.weaponChange = m_currentRom.baseWeaponChange + offsetPlayer;
@@ -308,10 +310,8 @@ namespace MelonPrime {
                 m_flags.assign(StateFlags::BIT_IS_SAMUS, hunterID == 0x00);
                 m_flags.assign(StateFlags::BIT_IS_WEAVEL, hunterID == 0x06);
 
-                // šC³: m_currentRom.isInAdventure
                 m_flags.assign(StateFlags::BIT_IN_ADVENTURE, Read8(mainRAM, m_currentRom.isInAdventure) == 0x02);
 
-                // šC³: m_currentRom.sensitivity
                 MelonPrimeGameSettings::ApplyMphSensitivity(emuInstance->getNDS(), localCfg, m_currentRom.sensitivity, m_addrHot.inGameSensi, true);
             }
 
@@ -358,13 +358,11 @@ namespace MelonPrime {
             }, Qt::ConnectionType::QueuedConnection);
     }
 
-    // â˜… æ”¹å–„3: ã‚«ã‚¹ã‚¿ãƒ é–¢æ•°ãŒè¨­å®šã•ã‚Œã¦ã„ã‚‹å ´åˆ (åˆ†å²ãªã—)
     void MelonPrimeCore::FrameAdvanceCustom()
     {
         m_frameAdvanceFunc();
     }
 
-    // â˜… æ”¹å–„3: ãƒ‡ãƒ•ã‚©ãƒ«ãƒˆå®Ÿè£… (åˆ†å²ãªã—)
     void MelonPrimeCore::FrameAdvanceDefault()
     {
         emuInstance->inputProcess();

@@ -6,11 +6,9 @@
 #include <memory>
 #include <vector>
 #include <atomic>
-#include <thread>
 #include <mutex>
-#include <condition_variable>
 #include <QAbstractNativeEventFilter>
-#include "MelonPrimeRawWinInternal.h" // NtUserMsgWaitForMultipleObjectsEx_t の定義用
+#include "MelonPrimeRawWinInternal.h"
 
 namespace MelonPrime {
 
@@ -19,16 +17,21 @@ namespace MelonPrime {
 
     class RawInputWinFilter : public QAbstractNativeEventFilter {
     public:
+        // インスタンス管理
         static RawInputWinFilter* Acquire(bool joy2KeySupport, void* windowHandle);
         static void Release();
 
         explicit RawInputWinFilter(bool joy2KeySupport, HWND mainHwnd);
         ~RawInputWinFilter();
 
+        // Qtのイベントフィルタ (Joy2Key Support ON用)
         bool nativeEventFilter(const QByteArray& eventType, void* message, qintptr* result) override;
 
         void setJoy2KeySupport(bool enable);
         void setRawInputTarget(HWND hwnd);
+
+        // ★同期更新用メソッド (RunFrameHookから毎フレーム呼ぶ)
+        void Poll();
 
         void discardDeltas();
         void setHotkeyVks(int id, const std::vector<UINT>& vks);
@@ -39,13 +42,9 @@ namespace MelonPrime {
         void fetchMouseDelta(int& outX, int& outY);
 
     private:
-        void StartWorkerThread();
-        void StopWorkerThread();
-        void InputThreadProc();
-
         void CreateHiddenWindow();
         void DestroyHiddenWindow();
-        void RegisterDevices(HWND target, bool isThreaded);
+        void RegisterDevices(HWND target, bool useHiddenWindow);
         void UnregisterDevices();
 
         static LRESULT CALLBACK HiddenWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
@@ -53,30 +52,15 @@ namespace MelonPrime {
         static std::atomic<int> s_refCount;
         static RawInputWinFilter* s_instance;
 
-        // 最適な待機関数を保持する関数ポインタ
-        static NtUserMsgWaitForMultipleObjectsEx_t s_fnWait;
-
-        // 最適な PeekMessage を保持する関数ポインタ
-        // PeekMessageW 互換シグネチャ (5引数) に統一
-        using PeekMessageFunc_t = BOOL(WINAPI*)(LPMSG, HWND, UINT, UINT, UINT);
-        static PeekMessageFunc_t s_fnPeek;
-
+        static NtUserGetRawInputBuffer_t s_fnGetRawInputBuffer;
         static std::once_flag s_initFlag;
         static void InitializeApiFuncs();
 
         std::unique_ptr<InputState> m_state;
-        HWND m_hwndQtTarget;
-        HWND m_hHiddenWnd;
+        HWND m_hwndQtTarget; // フォーカス判定用のメインウィンドウハンドル
+        HWND m_hHiddenWnd;   // メッセージ受け取り用の隠しウィンドウ
         bool m_joy2KeySupport;
         bool m_isRegistered;
-
-        std::thread m_workerThread;
-        std::atomic<bool> m_stopThread{ false };
-        HANDLE m_hStopEvent = nullptr;
-
-        std::mutex m_startupMutex;
-        std::condition_variable m_startupCv;
-        bool m_threadInitialized = false;
     };
 
 } // namespace MelonPrime

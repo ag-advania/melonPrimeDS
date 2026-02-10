@@ -5,6 +5,7 @@
 #include "Screen.h"
 #include "MelonPrimeDef.h"
 
+#include <utility> // for std::index_sequence
 #include <QCursor>
 
 #ifdef _WIN32
@@ -24,8 +25,6 @@ namespace MelonPrime {
         uint64_t bit;
     };
 
-    // ★ 改善4: ShootScan/ScanShoot を kDownMaps に統合
-    //   → ループ後の特殊分岐 if 文を排除
     static constexpr std::array<KeyMap, 11> kDownMaps = { {
         {HK_MetroidMoveForward, IB_MOVE_F},
         {HK_MetroidMoveBack,    IB_MOVE_B},
@@ -36,8 +35,8 @@ namespace MelonPrime {
         {HK_MetroidWeaponCheck, IB_WEAPON_CHECK},
         {HK_MetroidHoldMorphBallBoost, IB_MORPH_BOOST},
         {HK_MetroidMenu,        IB_MENU},
-        {HK_MetroidShootScan,   IB_SHOOT},   // ★ 統合: 特殊分岐を排除
-        {HK_MetroidScanShoot,   IB_SHOOT},   // ★ 統合: 同上
+        {HK_MetroidShootScan,   IB_SHOOT},
+        {HK_MetroidScanShoot,   IB_SHOOT},
     } };
 
     static constexpr std::array<KeyMap, 18> kPressMaps = { {
@@ -61,6 +60,17 @@ namespace MelonPrime {
         {HK_MetroidWeaponPrevious, IB_WEAPON_PREV},
     } };
 
+    // FIX: Use typename Func instead of 'const auto&' for C++17 compatibility
+    template <typename Func, size_t... Is>
+    FORCE_INLINE void UnrollCheckDown(uint64_t& mask, Func&& checker, std::index_sequence<Is...>) {
+        ((checker(kDownMaps[Is].hkID) ? (mask |= kDownMaps[Is].bit) : 0), ...);
+    }
+
+    template <typename Func, size_t... Is>
+    FORCE_INLINE void UnrollCheckPress(uint64_t& mask, Func&& checker, std::index_sequence<Is...>) {
+        ((checker(kPressMaps[Is].hkID) ? (mask |= kPressMaps[Is].bit) : 0), ...);
+    }
+
     HOT_FUNCTION void MelonPrimeCore::UpdateInputState()
     {
         m_input.down = 0;
@@ -71,7 +81,6 @@ namespace MelonPrime {
 
 #ifdef _WIN32
         if (!isFocused) return;
-        // ★ 改善1: m_cachedHwnd を使用 (毎フレーム winId() 呼び出し排除)
         if (m_rawFilter) {
             m_rawFilter->setRawInputTarget(static_cast<HWND>(m_cachedHwnd));
         }
@@ -86,31 +95,26 @@ namespace MelonPrime {
             m_rawFilter->pollHotkeys(hk);
         }
 
-        // ★ 改善2: IsJoyDown/IsJoyPressed を直接インライン展開
-        //   別翻訳単位の非インライン関数呼び出しを排除 (ラムダ内で完結)
+        // FIX: Removed FORCE_INLINE macro from lambda declaration.
+        // It causes syntax errors in C++17 and is implicit for lambdas at -O3 anyway.
         const auto hkDown = [&](int id) -> bool {
             return hk.isDown(id) || emuInstance->joyHotkeyMask.testBit(id);
-        };
+            };
         const auto hkPressed = [&](int id) -> bool {
             return hk.isPressed(id) || emuInstance->joyHotkeyPress.testBit(id);
-        };
+            };
 #else
         const auto hkDown = [&](int id) -> bool {
             return emuInstance->hotkeyMask.testBit(id);
-        };
+            };
         const auto hkPressed = [&](int id) -> bool {
             return emuInstance->hotkeyPress.testBit(id);
-        };
+            };
 #endif
 
-        // ★ 改善4: ShootScan がテーブルに含まれるため、特殊分岐なし
-        for (const auto& map : kDownMaps) {
-            if (hkDown(map.hkID)) down |= map.bit;
-        }
-
-        for (const auto& map : kPressMaps) {
-            if (hkPressed(map.hkID)) press |= map.bit;
-        }
+        // Unrolled execution
+        UnrollCheckDown(down, hkDown, std::make_index_sequence<kDownMaps.size()>{});
+        UnrollCheckPress(press, hkPressed, std::make_index_sequence<kPressMaps.size()>{});
 
         m_input.down = down;
         m_input.press = press;
@@ -119,10 +123,6 @@ namespace MelonPrime {
 #if defined(_WIN32)
         if (m_rawFilter) {
             m_rawFilter->fetchMouseDelta(m_input.mouseX, m_input.mouseY);
-        }
-        else {
-            m_input.mouseX = 0;
-            m_input.mouseY = 0;
         }
 #else
         const QPoint currentPos = QCursor::pos();
@@ -143,16 +143,11 @@ namespace MelonPrime {
             const uint32_t last = m_snapState & 0xFFu;
             const uint32_t priority = m_snapState >> 8;
             const uint32_t newPress = curr & ~last;
-
-            const uint32_t hConflict = ((curr & 0x3u) == 0x3u) * 0x3u;
-            const uint32_t vConflict = ((curr & 0xCu) == 0xCu) * 0xCu;
-
-            const uint32_t conflict = vConflict | hConflict;
-
+            const uint32_t conflict = (((curr & 0x3u) == 0x3u) * 0x3u) | (((curr & 0xCu) == 0xCu) * 0xCu);
             const uint32_t updateMask = (newPress & conflict) ? ~0u : 0u;
-
             const uint32_t newPriority = (priority & ~(conflict & updateMask)) | (newPress & conflict & updateMask);
             const uint32_t activePriority = newPriority & curr;
+
             m_snapState = static_cast<uint16_t>((curr & 0xFFu) | ((activePriority & 0xFFu) << 8));
             finalInput = (curr & ~conflict) | (activePriority & conflict);
         }
@@ -189,11 +184,9 @@ namespace MelonPrime {
 
             if (deltaX == 0 && deltaY == 0) return;
 
-            float rawScaledX = (deltaX * m_aimSensiFactor);
-            float rawScaledY = (deltaY * m_aimCombinedY);
-
-            float adjX = rawScaledX;
-            float adjY = rawScaledY;
+            // Direct float calculation (CPU handles this very fast now)
+            float adjX = deltaX * m_aimSensiFactor;
+            float adjY = deltaY * m_aimCombinedY;
             ApplyAimAdjustBranchless(adjX, adjY);
 
             int16_t outX = static_cast<int16_t>(adjX);
