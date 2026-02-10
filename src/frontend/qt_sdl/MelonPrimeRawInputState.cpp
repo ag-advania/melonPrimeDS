@@ -33,8 +33,10 @@ namespace MelonPrime {
         m_lastReadMouseX = 0;
         m_lastReadMouseY = 0;
 
-        std::memset(m_hkMask.data(), 0, sizeof(m_hkMask));
+        // std::array::fill を使用して初期化を明確化
+        m_hkMask.fill(HotkeyMask{});
         std::fill(std::begin(m_hkPrev), std::end(m_hkPrev), 0);
+
         m_boundHotkeys[0] = 0;
         m_boundHotkeys[1] = 0;
     }
@@ -45,6 +47,8 @@ namespace MelonPrime {
             if (WinInternal::fnNtUserGetRawInputBuffer) {
                 s_fnBestGetRawInputBuffer = WinInternal::fnNtUserGetRawInputBuffer;
             }
+
+            // Mouse Button LUT Initialization
             for (int i = 0; i < 1024; ++i) {
                 uint8_t d = 0, u = 0;
                 if (i & RI_MOUSE_BUTTON_1_DOWN) d |= 0x01;
@@ -59,14 +63,27 @@ namespace MelonPrime {
                 if (i & RI_MOUSE_BUTTON_5_UP)   u |= 0x10;
                 s_btnLut[i] = { d, u };
             }
-            std::fill(s_vkRemap.begin(), s_vkRemap.end(), VkRemapEntry{ 0, 0 });
-            s_vkRemap[VK_CONTROL] = { VK_LCONTROL, VK_RCONTROL };
-            s_vkRemap[VK_MENU] = { VK_LMENU,    VK_RMENU };
-            s_vkRemap[VK_SHIFT] = { VK_LSHIFT,   VK_RSHIFT };
+
+            // Key Remap Table Initialization
+            s_vkRemap.fill(VkRemapEntry{ 0, 0 });
+
+            // Helper lambda for setting remaps
+            auto setRemap = [](int base, int l, int r) {
+                s_vkRemap[base] = { static_cast<uint8_t>(l), static_cast<uint8_t>(r) };
+                };
+            setRemap(VK_CONTROL, VK_LCONTROL, VK_RCONTROL);
+            setRemap(VK_MENU, VK_LMENU, VK_RMENU);
+            setRemap(VK_SHIFT, VK_LSHIFT, VK_RSHIFT);
+
             s_scancodeLShift = static_cast<uint16_t>(MapVirtualKeyW(VK_LSHIFT, MAPVK_VK_TO_VSC));
             s_scancodeRShift = static_cast<uint16_t>(MapVirtualKeyW(VK_RSHIFT, MAPVK_VK_TO_VSC));
             });
     }
+
+    // -----------------------------------------------------------------------
+    // High-Performance Hot Paths (Optimized for Latency)
+    // NOTE: Keep logic identical to original for performance guarantees.
+    // -----------------------------------------------------------------------
 
     // Joy2Key ON時 (Process Raw Input directly)
     void InputState::processRawInput(HRAWINPUT hRaw) noexcept {
@@ -88,7 +105,6 @@ namespace MelonPrime {
         case RIM_TYPEMOUSE: {
             const RAWMOUSE& m = raw->data.mouse;
             if (!(m.usFlags & MOUSE_MOVE_ABSOLUTE)) {
-                // Wait-Free Update (fetch_add)
                 if (m.lLastX) m_accumMouseX.fetch_add(m.lLastX, std::memory_order_release);
                 if (m.lLastY) m_accumMouseY.fetch_add(m.lLastY, std::memory_order_release);
             }
@@ -124,7 +140,6 @@ namespace MelonPrime {
 
     // Joy2Key OFF時 (Threaded Batch Processing)
     void InputState::processRawInputBatched() noexcept {
-        // alignas(64) でキャッシュライン汚染を防ぐ
         alignas(64) static thread_local uint8_t buffer[16384];
 
         int32_t localAccX = 0;
@@ -147,13 +162,10 @@ namespace MelonPrime {
             for (UINT i = 0; i < count; ++i) {
                 if (raw->header.dwType == RIM_TYPEMOUSE) {
                     const RAWMOUSE& m = raw->data.mouse;
-
-                    // 分岐予測ヒント: Absoluteは稀
                     if (UNLIKELY(m.usFlags & MOUSE_MOVE_ABSOLUTE)) {
-                        // ignore absolute mouse in this optimized path
+                        // ignore absolute
                     }
                     else {
-                        // 符号付きオーバーフローは未定義だが、unsignedキャストでラップアラウンド加算として安全に処理
                         localAccX = static_cast<int32_t>(static_cast<uint32_t>(localAccX) + static_cast<uint32_t>(m.lLastX));
                         localAccY = static_cast<int32_t>(static_cast<uint32_t>(localAccY) + static_cast<uint32_t>(m.lLastY));
                         hasMouseDelta = true;
@@ -191,23 +203,16 @@ namespace MelonPrime {
             }
         }
 
-        // --- Batch Commit (Wait-Free for Mouse) ---
-
-        // 1. Mouse Delta Update
+        // Commit (Wait-Free)
         if (hasMouseDelta) {
-            // LOCK XADD (Wait-Free)
             if (localAccX) m_accumMouseX.fetch_add(localAccX, std::memory_order_release);
             if (localAccY) m_accumMouseY.fetch_add(localAccY, std::memory_order_release);
         }
-
-        // 2. Mouse Button Update
         if (hasButtonChanges) {
             uint8_t cur = m_mouseButtons.load(std::memory_order_relaxed);
             while (!m_mouseButtons.compare_exchange_weak(
                 cur, finalBtnState, std::memory_order_release, std::memory_order_relaxed));
         }
-
-        // 3. Keyboard Update
         if (hasKeyChanges) {
             for (int i = 0; i < 4; ++i) {
                 if (localKeyDeltaDown[i] | localKeyDeltaUp[i]) {
@@ -223,21 +228,15 @@ namespace MelonPrime {
     }
 
     void InputState::fetchMouseDelta(int& outX, int& outY) noexcept {
-        // Snapshot方式: 現在の累積値を取得
         const int64_t curX = m_accumMouseX.load(std::memory_order_acquire);
         const int64_t curY = m_accumMouseY.load(std::memory_order_acquire);
-
-        // 前回との差分を計算 (2の補数表現によりオーバーフローしても差分は正しくなる)
         outX = static_cast<int>(curX - m_lastReadMouseX);
         outY = static_cast<int>(curY - m_lastReadMouseY);
-
-        // キャッシュ更新
         m_lastReadMouseX = curX;
         m_lastReadMouseY = curY;
     }
 
     void InputState::discardDeltas() noexcept {
-        // 現在値を読み込んで「読んだこと」にする
         m_lastReadMouseX = m_accumMouseX.load(std::memory_order_relaxed);
         m_lastReadMouseY = m_accumMouseY.load(std::memory_order_relaxed);
     }
