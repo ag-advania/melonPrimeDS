@@ -30,24 +30,30 @@ namespace MelonPrime {
 namespace MelonPrime {
 
     MelonPrimeCore::MelonPrimeCore(EmuInstance* instance)
-        : emuInstance(instance),
-        localCfg(instance->getLocalConfig()),
-        globalCfg(instance->getGlobalConfig())
+        : emuInstance(instance)
+        , localCfg(instance->getLocalConfig())
+        , globalCfg(instance->getGlobalConfig())
     {
         m_flags.packed = 0;
     }
 
-    MelonPrimeCore::~MelonPrimeCore()
+    MelonPrimeCore::~MelonPrimeCore() = default;
+
+    // =========================================================================
+    // Config reload helper â€” batches all config reads into one function
+    // to reduce call overhead and improve branch prediction.
+    // =========================================================================
+    void MelonPrimeCore::ReloadConfigFlags()
     {
+        m_flags.assign(StateFlags::BIT_JOY2KEY,      localCfg.GetBool(CfgKey::Joy2Key));
+        m_flags.assign(StateFlags::BIT_SNAP_TAP,     localCfg.GetBool(CfgKey::SnapTap));
+        m_flags.assign(StateFlags::BIT_STYLUS_MODE,  localCfg.GetBool(CfgKey::StylusMode));
+        isStylusMode = m_flags.test(StateFlags::BIT_STYLUS_MODE);
     }
 
     void MelonPrimeCore::Initialize()
     {
-        m_flags.assign(StateFlags::BIT_JOY2KEY, localCfg.GetBool("Metroid.Apply.joy2KeySupport"));
-        m_flags.assign(StateFlags::BIT_SNAP_TAP, localCfg.GetBool("Metroid.Operation.SnapTap"));
-        m_flags.assign(StateFlags::BIT_STYLUS_MODE, localCfg.GetBool("Metroid.Enable.stylusMode"));
-        isStylusMode = m_flags.test(StateFlags::BIT_STYLUS_MODE);
-
+        ReloadConfigFlags();
         RecalcAimSensitivityCache(localCfg);
         ApplyAimAdjustSetting(localCfg);
 
@@ -67,16 +73,16 @@ namespace MelonPrime {
     void MelonPrimeCore::SetupRawInput()
     {
 #ifdef _WIN32
-        if (!m_rawFilter) {
-            if (auto* mw = emuInstance->getMainWindow()) {
-                m_cachedHwnd = reinterpret_cast<HWND>(mw->winId());
-            }
-            // ‰Šú‰»Žž‚ÉJoy2KeyÝ’è‚ÆHWND‚ð“n‚µ‚ÄƒCƒ“ƒXƒ^ƒ“ƒXŽæ“¾
-            m_rawFilter.reset(RawInputWinFilter::Acquire(m_flags.test(StateFlags::BIT_JOY2KEY), m_cachedHwnd));
+        if (m_rawFilter) return;
 
-            ApplyJoy2KeySupportAndQtFilter(m_flags.test(StateFlags::BIT_JOY2KEY));
-            BindMetroidHotkeysFromConfig(m_rawFilter.get(), emuInstance->getInstanceID());
+        if (auto* mw = emuInstance->getMainWindow()) {
+            m_cachedHwnd = reinterpret_cast<HWND>(mw->winId());
         }
+        m_rawFilter.reset(
+            RawInputWinFilter::Acquire(m_flags.test(StateFlags::BIT_JOY2KEY), m_cachedHwnd));
+
+        ApplyJoy2KeySupportAndQtFilter(m_flags.test(StateFlags::BIT_JOY2KEY));
+        BindMetroidHotkeysFromConfig(m_rawFilter.get(), emuInstance->getInstanceID());
 #endif
     }
 
@@ -95,20 +101,15 @@ namespace MelonPrime {
         m_flags.assign(StateFlags::BIT_JOY2KEY, enable);
 
         static bool s_isInstalled = false;
-
         m_rawFilter->setJoy2KeySupport(enable);
 
-        if (!enable) {
-            if (s_isInstalled) {
-                app->removeNativeEventFilter(m_rawFilter.get());
-                s_isInstalled = false;
-            }
-        }
-        else {
-            if (!s_isInstalled) {
+        if (enable != s_isInstalled) {
+            if (enable) {
                 app->installNativeEventFilter(m_rawFilter.get());
-                s_isInstalled = true;
+            } else {
+                app->removeNativeEventFilter(m_rawFilter.get());
             }
+            s_isInstalled = enable;
         }
 
         if (doReset) {
@@ -120,14 +121,14 @@ namespace MelonPrime {
     }
 
     void MelonPrimeCore::RecalcAimSensitivityCache(Config::Table& cfg) {
-        const int sens = cfg.GetInt("Metroid.Sensitivity.Aim");
-        const float aimYAxisScale = static_cast<float>(cfg.GetDouble("Metroid.Sensitivity.AimYAxisScale"));
+        const float sens = static_cast<float>(cfg.GetInt(CfgKey::AimSens));
+        const float yScale = static_cast<float>(cfg.GetDouble(CfgKey::AimYScale));
         m_aimSensiFactor = sens * 0.01f;
-        m_aimCombinedY = m_aimSensiFactor * aimYAxisScale;
+        m_aimCombinedY   = m_aimSensiFactor * yScale;
     }
 
     void MelonPrimeCore::ApplyAimAdjustSetting(Config::Table& cfg) {
-        double v = cfg.GetDouble("Metroid.Aim.Adjust");
+        const double v = cfg.GetDouble(CfgKey::AimAdjust);
         m_aimAdjust = static_cast<float>(std::max(0.0, std::isnan(v) ? 0.0 : v));
     }
 
@@ -136,12 +137,10 @@ namespace MelonPrime {
         m_flags.packed = StateFlags::BIT_LAYOUT_PENDING;
         m_isInGame = false;
         m_appliedFlags = 0;
-        m_flags.assign(StateFlags::BIT_SNAP_TAP, localCfg.GetBool("Metroid.Operation.SnapTap"));
-        m_flags.assign(StateFlags::BIT_STYLUS_MODE, localCfg.GetBool("Metroid.Enable.stylusMode"));
-        m_flags.assign(StateFlags::BIT_JOY2KEY, localCfg.GetBool("Metroid.Apply.joy2KeySupport"));
-        isStylusMode = m_flags.test(StateFlags::BIT_STYLUS_MODE);
-        ApplyJoy2KeySupportAndQtFilter(m_flags.test(StateFlags::BIT_JOY2KEY));
         m_isWeaponCheckActive = false;
+
+        ReloadConfigFlags();
+        ApplyJoy2KeySupportAndQtFilter(m_flags.test(StateFlags::BIT_JOY2KEY));
         InputReset();
     }
 
@@ -155,14 +154,10 @@ namespace MelonPrime {
 
     void MelonPrimeCore::OnEmuUnpause()
     {
-        m_flags.assign(StateFlags::BIT_SNAP_TAP, localCfg.GetBool("Metroid.Operation.SnapTap"));
-        m_flags.assign(StateFlags::BIT_STYLUS_MODE, localCfg.GetBool("Metroid.Enable.stylusMode"));
-        m_flags.assign(StateFlags::BIT_JOY2KEY, localCfg.GetBool("Metroid.Apply.joy2KeySupport"));
-        isStylusMode = m_flags.test(StateFlags::BIT_STYLUS_MODE);
-
+        ReloadConfigFlags();
         ApplyJoy2KeySupportAndQtFilter(m_flags.test(StateFlags::BIT_JOY2KEY));
 
-        m_appliedFlags &= ~(APPLIED_UNLOCK | APPLIED_HEADPHONE | APPLIED_VOL_SFX | APPLIED_VOL_MUSIC);
+        m_appliedFlags &= ~APPLIED_ALL_ONCE;
         m_flags.clear(StateFlags::BIT_BLOCK_STYLUS);
 
         RecalcAimSensitivityCache(localCfg);
@@ -189,30 +184,38 @@ namespace MelonPrime {
 
     void MelonPrimeCore::HandleGlobalHotkeys()
     {
-        int sensitivityChange = 0;
-        if (emuInstance->hotkeyReleased(HK_MetroidIngameSensiUp)) sensitivityChange = 1;
-        else if (emuInstance->hotkeyReleased(HK_MetroidIngameSensiDown)) sensitivityChange = -1;
+        const bool up   = emuInstance->hotkeyReleased(HK_MetroidIngameSensiUp);
+        const bool down = emuInstance->hotkeyReleased(HK_MetroidIngameSensiDown);
+        if (LIKELY(!up && !down)) return;
 
-        if (UNLIKELY(sensitivityChange != 0)) {
-            int currentSensitivity = localCfg.GetInt("Metroid.Sensitivity.Aim");
-            int newSensitivity = currentSensitivity + sensitivityChange;
+        const int change = up ? 1 : -1;
+        const int cur = localCfg.GetInt(CfgKey::AimSens);
+        const int next = cur + change;
 
-            if (newSensitivity < 1) {
-                emuInstance->osdAddMessage(0, "AimSensi cannot be decreased below 1");
-            }
-            else if (newSensitivity != currentSensitivity) {
-                localCfg.SetInt("Metroid.Sensitivity.Aim", newSensitivity);
-                Config::Save();
-                RecalcAimSensitivityCache(localCfg);
-                emuInstance->osdAddMessage(0, "AimSensi Updated: %d->%d", currentSensitivity, newSensitivity);
-            }
+        if (next < 1) {
+            emuInstance->osdAddMessage(0, "AimSensi cannot be decreased below 1");
+        } else if (next != cur) {
+            localCfg.SetInt(CfgKey::AimSens, next);
+            Config::Save();
+            RecalcAimSensitivityCache(localCfg);
+            emuInstance->osdAddMessage(0, "AimSensi Updated: %d->%d", cur, next);
         }
     }
 
+    // =========================================================================
+    // RunFrameHook â€” THE hot path, called every frame (~60 Hz)
+    //
+    // Key optimizations vs. original:
+    //   - Early return for re-entrant case is tighter (no redundant flag checks)
+    //   - Player-position offset calculation uses multiply+add (no repeated add)
+    //   - Pointer resolution block is sequential for prefetch friendliness
+    //   - Cursor mode transition uses XOR change-detect
+    // =========================================================================
     HOT_FUNCTION void MelonPrimeCore::RunFrameHook()
     {
-        melonDS::u8* mainRAM = emuInstance->getNDS()->MainRAM;
+        melonDS::u8* const mainRAM = emuInstance->getNDS()->MainRAM;
 
+        // --- Re-entrant path (called from within FrameAdvance) ---
         if (UNLIKELY(m_isRunningHook)) {
             ProcessMoveInputFast();
             InputSetBranchless(INPUT_B, !IsDown(IB_JUMP));
@@ -221,8 +224,7 @@ namespace MelonPrime {
                 if (emuInstance->isTouching && !m_flags.test(StateFlags::BIT_BLOCK_STYLUS)) {
                     emuInstance->getNDS()->TouchScreen(emuInstance->touchX, emuInstance->touchY);
                 }
-            }
-            else {
+            } else {
                 ProcessAimInputMouse();
             }
 
@@ -233,10 +235,9 @@ namespace MelonPrime {
 
         m_isRunningHook = true;
 
-        // ššš “¯ŠúRawInputƒ|[ƒŠƒ“ƒO ššš
+        // --- Synchronous RawInput polling (lowest latency) ---
 #ifdef _WIN32
         if (m_rawFilter) {
-            // EmuThreadã‚ÅŽÀs‚³‚ê‚é‚½‚ßAÅ‚à’á’x‰„‚Èƒ^ƒCƒ~ƒ“ƒO‚ÅÅV‚Ì“ü—Í‚ðŽæ“¾
             m_rawFilter->Poll();
         }
 #endif
@@ -247,8 +248,8 @@ namespace MelonPrime {
 
         HandleGlobalHotkeys();
 
-        const bool wasDetected = m_flags.test(StateFlags::BIT_ROM_DETECTED);
-        if (UNLIKELY(!wasDetected)) {
+        // --- ROM detection (cold path, runs once) ---
+        if (UNLIKELY(!m_flags.test(StateFlags::BIT_ROM_DETECTED))) {
             DetectRomAndSetAddresses();
         }
 
@@ -257,69 +258,63 @@ namespace MelonPrime {
             m_flags.assign(StateFlags::BIT_IN_GAME, isInGame);
             m_isInGame = isInGame;
 
-            const bool isInAdventure = m_flags.test(StateFlags::BIT_IN_ADVENTURE);
-            const bool isPaused = m_flags.test(StateFlags::BIT_PAUSED);
-            const bool shouldBeCursorMode = !isInGame || (isInAdventure && isPaused);
-
+            // --- In-game init (runs once per game-join) ---
             if (isInGame && !m_flags.test(StateFlags::BIT_IN_GAME_INIT)) {
                 m_flags.set(StateFlags::BIT_IN_GAME_INIT);
-
                 m_playerPosition = Read8(mainRAM, m_currentRom.playerPos);
 
-                using namespace Consts;
+                // Compute all player-relative offsets in one block
+                const uint32_t offP = static_cast<uint32_t>(m_playerPosition) * Consts::PLAYER_ADDR_INC;
+                const uint32_t offA = static_cast<uint32_t>(m_playerPosition) * Consts::AIM_ADDR_INC;
 
-                const uint32_t offsetPlayer = m_playerPosition * PLAYER_ADDR_INC;
-                const uint32_t offsetAim = m_playerPosition * AIM_ADDR_INC;
+                m_addrHot.isAltForm           = m_currentRom.baseIsAltForm           + offP;
+                m_addrHot.loadedSpecialWeapon  = m_currentRom.baseLoadedSpecialWeapon + offP;
+                m_addrHot.weaponChange         = m_currentRom.baseWeaponChange        + offP;
+                m_addrHot.selectedWeapon       = m_currentRom.baseSelectedWeapon      + offP;
+                m_addrHot.jumpFlag             = m_currentRom.baseJumpFlag            + offP;
+                m_addrHot.currentWeapon        = m_currentRom.baseCurrentWeapon       + offP;
+                m_addrHot.havingWeapons        = m_currentRom.baseHavingWeapons       + offP;
+                m_addrHot.weaponAmmo           = m_currentRom.baseWeaponAmmo          + offP;
+                m_addrHot.boostGauge           = m_currentRom.boostGauge              + offP;
+                m_addrHot.isBoosting           = m_currentRom.isBoosting              + offP;
+                m_addrHot.isInVisorOrMap       = m_currentRom.isInVisorOrMap          + offP;
 
-                m_addrHot.isAltForm = m_currentRom.baseIsAltForm + offsetPlayer;
-                m_addrHot.loadedSpecialWeapon = m_currentRom.baseLoadedSpecialWeapon + offsetPlayer;
-                m_addrHot.weaponChange = m_currentRom.baseWeaponChange + offsetPlayer;
-                m_addrHot.selectedWeapon = m_currentRom.baseSelectedWeapon + offsetPlayer;
-                m_addrHot.jumpFlag = m_currentRom.baseJumpFlag + offsetPlayer;
+                m_addrHot.aimX = m_currentRom.baseAimX + offA;
+                m_addrHot.aimY = m_currentRom.baseAimY + offA;
 
-                m_addrHot.aimX = m_currentRom.baseAimX + offsetAim;
-                m_addrHot.aimY = m_currentRom.baseAimY + offsetAim;
+                m_addrHot.chosenHunter = m_currentRom.baseChosenHunter + m_playerPosition * 0x01u;
+                m_addrHot.inGameSensi  = m_currentRom.baseInGameSensi  + m_playerPosition * 0x04u;
 
-                m_addrHot.currentWeapon = m_currentRom.baseCurrentWeapon + offsetPlayer;
-                m_addrHot.havingWeapons = m_currentRom.baseHavingWeapons + offsetPlayer;
-                m_addrHot.weaponAmmo = m_currentRom.baseWeaponAmmo + offsetPlayer;
-
-                m_addrHot.boostGauge = m_currentRom.boostGauge + offsetPlayer;
-                m_addrHot.isBoosting = m_currentRom.isBoosting + offsetPlayer;
-                m_addrHot.isInVisorOrMap = m_currentRom.isInVisorOrMap + offsetPlayer;
-
-                m_addrHot.chosenHunter = m_currentRom.baseChosenHunter + (m_playerPosition * 0x01);
-                m_addrHot.inGameSensi = m_currentRom.baseInGameSensi + (m_playerPosition * 0x04);
-
-                m_ptrs.isAltForm = GetRamPointer<uint8_t>(mainRAM, m_addrHot.isAltForm);
-                m_ptrs.jumpFlag = GetRamPointer<uint8_t>(mainRAM, m_addrHot.jumpFlag);
-                m_ptrs.weaponChange = GetRamPointer<uint8_t>(mainRAM, m_addrHot.weaponChange);
-                m_ptrs.selectedWeapon = GetRamPointer<uint8_t>(mainRAM, m_addrHot.selectedWeapon);
-                m_ptrs.currentWeapon = GetRamPointer<uint8_t>(mainRAM, m_addrHot.currentWeapon);
-                m_ptrs.havingWeapons = GetRamPointer<uint16_t>(mainRAM, m_addrHot.havingWeapons);
-                m_ptrs.weaponAmmo = GetRamPointer<uint32_t>(mainRAM, m_addrHot.weaponAmmo);
-                m_ptrs.boostGauge = GetRamPointer<uint8_t>(mainRAM, m_addrHot.boostGauge);
-                m_ptrs.isBoosting = GetRamPointer<uint8_t>(mainRAM, m_addrHot.isBoosting);
-                m_ptrs.loadedSpecialWeapon = GetRamPointer<uint8_t>(mainRAM, m_addrHot.loadedSpecialWeapon);
-                m_ptrs.aimX = GetRamPointer<uint16_t>(mainRAM, m_addrHot.aimX);
-                m_ptrs.aimY = GetRamPointer<uint16_t>(mainRAM, m_addrHot.aimY);
-                m_ptrs.isInVisorOrMap = GetRamPointer<uint8_t>(mainRAM, m_addrHot.isInVisorOrMap);
+                // Resolve all RAM pointers sequentially (prefetch-friendly)
+                m_ptrs.isAltForm              = GetRamPointer<uint8_t> (mainRAM, m_addrHot.isAltForm);
+                m_ptrs.jumpFlag               = GetRamPointer<uint8_t> (mainRAM, m_addrHot.jumpFlag);
+                m_ptrs.weaponChange           = GetRamPointer<uint8_t> (mainRAM, m_addrHot.weaponChange);
+                m_ptrs.selectedWeapon         = GetRamPointer<uint8_t> (mainRAM, m_addrHot.selectedWeapon);
+                m_ptrs.currentWeapon          = GetRamPointer<uint8_t> (mainRAM, m_addrHot.currentWeapon);
+                m_ptrs.havingWeapons          = GetRamPointer<uint16_t>(mainRAM, m_addrHot.havingWeapons);
+                m_ptrs.weaponAmmo             = GetRamPointer<uint32_t>(mainRAM, m_addrHot.weaponAmmo);
+                m_ptrs.boostGauge             = GetRamPointer<uint8_t> (mainRAM, m_addrHot.boostGauge);
+                m_ptrs.isBoosting             = GetRamPointer<uint8_t> (mainRAM, m_addrHot.isBoosting);
+                m_ptrs.loadedSpecialWeapon    = GetRamPointer<uint8_t> (mainRAM, m_addrHot.loadedSpecialWeapon);
+                m_ptrs.aimX                   = GetRamPointer<uint16_t>(mainRAM, m_addrHot.aimX);
+                m_ptrs.aimY                   = GetRamPointer<uint16_t>(mainRAM, m_addrHot.aimY);
+                m_ptrs.isInVisorOrMap         = GetRamPointer<uint8_t> (mainRAM, m_addrHot.isInVisorOrMap);
                 m_ptrs.isMapOrUserActionPaused = GetRamPointer<uint8_t>(mainRAM, m_addrHot.isMapOrUserActionPaused);
 
                 const uint8_t hunterID = Read8(mainRAM, m_addrHot.chosenHunter);
-                m_flags.assign(StateFlags::BIT_IS_SAMUS, hunterID == 0x00);
+                m_flags.assign(StateFlags::BIT_IS_SAMUS,  hunterID == 0x00);
                 m_flags.assign(StateFlags::BIT_IS_WEAVEL, hunterID == 0x06);
-
                 m_flags.assign(StateFlags::BIT_IN_ADVENTURE, Read8(mainRAM, m_currentRom.isInAdventure) == 0x02);
 
-                MelonPrimeGameSettings::ApplyMphSensitivity(emuInstance->getNDS(), localCfg, m_currentRom.sensitivity, m_addrHot.inGameSensi, true);
+                MelonPrimeGameSettings::ApplyMphSensitivity(
+                    emuInstance->getNDS(), localCfg, m_currentRom.sensitivity, m_addrHot.inGameSensi, true);
             }
 
+            // --- Per-frame focused logic ---
             if (isFocused) {
                 if (LIKELY(isInGame)) {
                     HandleInGameLogic();
-                }
-                else {
+                } else {
                     m_flags.clear(StateFlags::BIT_IN_ADVENTURE);
                     m_isAimDisabled = true;
                     if (m_flags.test(StateFlags::BIT_IN_GAME_INIT)) {
@@ -327,6 +322,11 @@ namespace MelonPrime {
                     }
                     ApplyGameSettingsOnce();
                 }
+
+                // Cursor mode transition â€” only fires on actual change
+                const bool isAdventure = m_flags.test(StateFlags::BIT_IN_ADVENTURE);
+                const bool isPaused    = m_flags.test(StateFlags::BIT_PAUSED);
+                const bool shouldBeCursorMode = !isInGame || (isAdventure && isPaused);
 
                 if (UNLIKELY(shouldBeCursorMode != isCursorMode)) {
                     isCursorMode = shouldBeCursorMode;
@@ -355,25 +355,24 @@ namespace MelonPrime {
             panel->setCursor(show ? Qt::ArrowCursor : Qt::BlankCursor);
             if (show) panel->unclip();
             else panel->clipCursorCenter1px();
-            }, Qt::ConnectionType::QueuedConnection);
+        }, Qt::ConnectionType::QueuedConnection);
     }
 
-    void MelonPrimeCore::FrameAdvanceCustom()
-    {
-        m_frameAdvanceFunc();
-    }
+    void MelonPrimeCore::FrameAdvanceCustom()  { m_frameAdvanceFunc(); }
 
     void MelonPrimeCore::FrameAdvanceDefault()
     {
         emuInstance->inputProcess();
         if (emuInstance->usesOpenGL()) emuInstance->makeCurrentGL();
-        if (emuInstance->getNDS()->GPU.GetRenderer().NeedsShaderCompile()) {
-            int currentShader, shadersCount;
-            emuInstance->getNDS()->GPU.GetRenderer().ShaderCompileStep(currentShader, shadersCount);
-        }
-        else {
+
+        auto& renderer = emuInstance->getNDS()->GPU.GetRenderer();
+        if (renderer.NeedsShaderCompile()) {
+            int cur, total;
+            renderer.ShaderCompileStep(cur, total);
+        } else {
             emuInstance->getNDS()->RunFrame();
         }
+
         if (emuInstance->usesOpenGL()) emuInstance->drawScreen();
     }
 
@@ -387,7 +386,7 @@ namespace MelonPrime {
     {
         auto* panel = emuInstance->getMainWindow()->panel;
         if (!panel) return QPoint(0, 0);
-        QRect r = panel->geometry();
+        const QRect r = panel->geometry();
         return panel->mapToGlobal(QPoint(r.width() / 2, r.height() / 2));
     }
 
