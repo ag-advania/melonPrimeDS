@@ -27,6 +27,7 @@ namespace MelonPrime {
         PREFETCH_READ(m_ptrs.isAltForm);
 
         // --- Morph ball toggle (edge-triggered, cold path) ---
+        // 【最適化】モーフボールは頻度が低いため、UNLIKELYヒントで分岐予測を最適化
         if (UNLIKELY(IsPressed(IB_MORPH))) {
             if (isStylusMode) m_flags.set(StateFlags::BIT_BLOCK_STYLUS);
             auto* nds = emuInstance->getNDS();
@@ -40,8 +41,23 @@ namespace MelonPrime {
         }
 
         // --- Weapon switch (edge-triggered) ---
+        // Mouse Wheelによる変更も含まれるため、キー入力有無に関わらず呼び出す必要があるが、
+        // 関数内での早期リターンとインライン展開に期待する。
         if (UNLIKELY(ProcessWeaponSwitch())) {
             if (isStylusMode) m_flags.set(StateFlags::BIT_BLOCK_STYLUS);
+        }
+
+        // --- Adventure mode (conditional) ---
+        // 【最適化】Adventureモードかつ関連キーが押されている場合のみ重い処理を呼び出す。
+        if (UNLIKELY(m_flags.test(StateFlags::BIT_IN_ADVENTURE))) {
+            // ポーズ状態の更新は毎フレーム必要だが、メモリ読み取りだけなのでインライン化
+            const bool isPaused = (*m_ptrs.isMapOrUserActionPaused) == 0x1;
+            m_flags.assign(StateFlags::BIT_PAUSED, isPaused);
+
+            // スキャンバイザーまたはUIボタンが押されている場合のみ関数呼び出し
+            if (IsAnyPressed(IB_SCAN_VISOR | IB_UI_ANY)) {
+                HandleAdventureMode();
+            }
         }
 
         // --- Weapon check hold ---
@@ -57,16 +73,12 @@ namespace MelonPrime {
             }
             using namespace Consts::UI;
             emuInstance->getNDS()->TouchScreen(WEAPON_CHECK_START.x(), WEAPON_CHECK_START.y());
-        } else if (UNLIKELY(m_isWeaponCheckActive)) {
+        }
+        else if (UNLIKELY(m_isWeaponCheckActive)) {
             m_isWeaponCheckActive = false;
             emuInstance->getNDS()->ReleaseScreen();
             SetAimBlockBranchless(AIMBLK_CHECK_WEAPON, false);
             FrameAdvanceTwice();
-        }
-
-        // --- Adventure mode (conditional) ---
-        if (UNLIKELY(m_flags.test(StateFlags::BIT_IN_ADVENTURE))) {
-            HandleAdventureMode();
         }
 
         // --- Movement + buttons (every frame) ---
@@ -84,7 +96,8 @@ namespace MelonPrime {
             if (!m_flags.test(StateFlags::BIT_BLOCK_STYLUS)) {
                 ProcessAimInputStylus();
             }
-        } else {
+        }
+        else {
             ProcessAimInputMouse();
             if (!m_flags.test(StateFlags::BIT_LAST_FOCUSED) || !m_isAimDisabled) {
                 using namespace Consts::UI;
@@ -98,8 +111,7 @@ namespace MelonPrime {
     // =========================================================================
     void MelonPrimeCore::HandleAdventureMode()
     {
-        const bool isPaused = (*m_ptrs.isMapOrUserActionPaused) == 0x1;
-        m_flags.assign(StateFlags::BIT_PAUSED, isPaused);
+        // Note: isMapOrUserActionPaused の更新は呼び出し元で行っているため削除
 
         auto* nds = emuInstance->getNDS();
 
@@ -113,7 +125,8 @@ namespace MelonPrime {
 
             if ((*m_ptrs.isInVisorOrMap) == 0x1) {
                 FrameAdvanceTwice();
-            } else {
+            }
+            else {
                 // Hold movement during visor activation animation
                 for (int i = 0; i < 30; ++i) {
                     UpdateInputState();
@@ -126,22 +139,26 @@ namespace MelonPrime {
             FrameAdvanceTwice();
         }
 
-        // UI touch buttons — macro to reduce boilerplate
+        // UI touch buttons — combined mask early-out
+        // 呼び出し元でチェック済みだが、念のためIB_UI_ANYチェックは残すか、
+        // 個別のIsPressedだけにする。ここは安全策で個別のまま（Anyチェックは呼び出し元で担保）
+        if (IsAnyPressed(IB_UI_ANY)) {
 #define TOUCH_IF_PRESSED(BIT, POINT) \
-        if (IsPressed(BIT)) { \
-            nds->ReleaseScreen(); \
-            FrameAdvanceTwice(); \
-            nds->TouchScreen(POINT.x(), POINT.y()); \
-            FrameAdvanceTwice(); \
-        }
+            if (IsPressed(BIT)) { \
+                nds->ReleaseScreen(); \
+                FrameAdvanceTwice(); \
+                nds->TouchScreen(POINT.x(), POINT.y()); \
+                FrameAdvanceTwice(); \
+            }
 
-        using namespace Consts::UI;
-        TOUCH_IF_PRESSED(IB_UI_OK,    OK)
-        TOUCH_IF_PRESSED(IB_UI_LEFT,  LEFT)
-        TOUCH_IF_PRESSED(IB_UI_RIGHT, RIGHT)
-        TOUCH_IF_PRESSED(IB_UI_YES,   YES)
-        TOUCH_IF_PRESSED(IB_UI_NO,    NO)
+            using namespace Consts::UI;
+            TOUCH_IF_PRESSED(IB_UI_OK, OK)
+                TOUCH_IF_PRESSED(IB_UI_LEFT, LEFT)
+                TOUCH_IF_PRESSED(IB_UI_RIGHT, RIGHT)
+                TOUCH_IF_PRESSED(IB_UI_YES, YES)
+                TOUCH_IF_PRESSED(IB_UI_NO, NO)
 #undef TOUCH_IF_PRESSED
+        }
     }
 
     // =========================================================================
@@ -157,8 +174,8 @@ namespace MelonPrime {
 
             if (isAltForm) {
                 const uint8_t boostGauge = *m_ptrs.boostGauge;
-                const bool isBoosting    = (*m_ptrs.isBoosting) != 0x00;
-                const bool gaugeEnough   = boostGauge > 0x0A;
+                const bool isBoosting = (*m_ptrs.isBoosting) != 0x00;
+                const bool gaugeEnough = boostGauge > 0x0A;
 
                 SetAimBlockBranchless(AIMBLK_MORPHBALL_BOOST, true);
 
@@ -174,7 +191,8 @@ namespace MelonPrime {
                 }
                 return true;
             }
-        } else {
+        }
+        else {
             SetAimBlockBranchless(AIMBLK_MORPHBALL_BOOST, false);
         }
         return false;
@@ -202,7 +220,7 @@ namespace MelonPrime {
         if (!(m_appliedFlags & APPLIED_UNLOCK)) {
             MelonPrimeGameSettings::ApplyUnlockHuntersMaps(
                 nds, localCfg, m_appliedFlags, APPLIED_UNLOCK,
-                m_currentRom.unlockMapsHunters,  m_currentRom.unlockMapsHunters2,
+                m_currentRom.unlockMapsHunters, m_currentRom.unlockMapsHunters2,
                 m_currentRom.unlockMapsHunters3, m_currentRom.unlockMapsHunters4,
                 m_currentRom.unlockMapsHunters5);
         }
