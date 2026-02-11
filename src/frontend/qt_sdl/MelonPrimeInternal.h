@@ -10,6 +10,10 @@
 #include "types.h"
 #include "MelonPrime.h"
 
+#if defined(_MSC_VER) && !defined(__clang__)
+#include <intrin.h>
+#endif
+
 namespace MelonPrime {
 
     namespace Consts {
@@ -35,6 +39,31 @@ namespace MelonPrime {
         INPUT_RIGHT = 4, INPUT_LEFT = 5, INPUT_UP = 6, INPUT_DOWN = 7,
         INPUT_R = 8, INPUT_L = 9, INPUT_X = 10, INPUT_Y = 11,
     };
+
+    // =================================================================
+    // Bit-scan wrappers — BSF/BSR on MSVC, CTZ/CLZ on GCC/Clang.
+    // Caller must guarantee v != 0.
+    // =================================================================
+
+    [[nodiscard]] FORCE_INLINE uint32_t BitScanFwd(uint32_t v) noexcept {
+#if defined(_MSC_VER) && !defined(__clang__)
+        unsigned long idx;
+        _BitScanForward(&idx, v);
+        return static_cast<uint32_t>(idx);
+#else
+        return static_cast<uint32_t>(__builtin_ctz(v));
+#endif
+    }
+
+    [[nodiscard]] FORCE_INLINE uint32_t BitScanRev(uint32_t v) noexcept {
+#if defined(_MSC_VER) && !defined(__clang__)
+        unsigned long idx;
+        _BitScanReverse(&idx, v);
+        return static_cast<uint32_t>(idx);
+#else
+        return static_cast<uint32_t>(31 - __builtin_clz(v));
+#endif
+    }
 
     // Strict-aliasing safe RAM accessors.
     // Compilers optimize memcpy to a single MOV on aligned accesses.

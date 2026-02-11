@@ -18,7 +18,6 @@ namespace MelonPrime {
         PREFETCH_READ(m_ptrs.isAltForm);
 
         // --- Rare Actions (Morph, Weapon Switch) ---
-        // UNLIKELY hint pushes these calls to the end of the function block assembly.
         if (UNLIKELY(IsPressed(IB_MORPH))) {
             HandleRareMorph();
         }
@@ -52,17 +51,30 @@ namespace MelonPrime {
         // --- Movement & Buttons (Hot Path) ---
         ProcessMoveInputFast();
 
-        // Optimized register-batch update for buttons
+        // OPT: Branchless batched button mask update.
+        //
+        // Previous code: 3 conditional ternaries → 3 separate RMW on m_inputMaskFast.
+        //   mask |= (!IsDown(IB_JUMP))  ? (1u << INPUT_B) : 0;
+        //   mask |= (!IsDown(IB_SHOOT)) ? (1u << INPUT_L) : 0;
+        //   mask |= (!IsDown(IB_ZOOM))  ? (1u << INPUT_R) : 0;
+        //
+        // Each ternary generates a test+cmov or test+branch. Even with good prediction,
+        // the 3 sequential RMW ops create a dependency chain on m_inputMaskFast.
+        //
+        // New code: extract inverted bits from m_input.down (already in L1),
+        // shift each to its target position, OR together in one write.
+        // Generates: NOT + 3×(SHR+AND+SHL) + 3×OR + 1 masked store.
+        // Zero branches, single write to m_inputMaskFast, no dependency chain.
         {
-            uint16_t mask = m_inputMaskFast;
             constexpr uint16_t kModBits = (1u << INPUT_B) | (1u << INPUT_L) | (1u << INPUT_R);
-
-            mask &= ~kModBits;
-            mask |= (!IsDown(IB_JUMP)) ? (1u << INPUT_B) : 0;
-            mask |= (!IsDown(IB_SHOOT)) ? (1u << INPUT_L) : 0;
-            mask |= (!IsDown(IB_ZOOM)) ? (1u << INPUT_R) : 0;
-
-            m_inputMaskFast = mask;
+            const uint64_t nd = ~m_input.down;
+            // IB_JUMP  = bit 0 → INPUT_B = bit 1
+            // IB_SHOOT = bit 1 → INPUT_L = bit 9
+            // IB_ZOOM  = bit 2 → INPUT_R = bit 8
+            const uint16_t bBit = static_cast<uint16_t>(((nd >> 0) & 1u) << INPUT_B);
+            const uint16_t lBit = static_cast<uint16_t>(((nd >> 1) & 1u) << INPUT_L);
+            const uint16_t rBit = static_cast<uint16_t>(((nd >> 2) & 1u) << INPUT_R);
+            m_inputMaskFast = (m_inputMaskFast & ~kModBits) | bBit | lBit | rBit;
         }
 
         // --- Morph Boost & Aim (Hot Path) ---

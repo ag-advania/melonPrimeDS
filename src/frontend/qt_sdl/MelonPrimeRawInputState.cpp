@@ -77,11 +77,6 @@ namespace MelonPrime {
 
     // =========================================================================
     // processRawInput — Joy2Key ON mode (per-message from Qt event filter)
-    //
-    // OPT: Single-writer guarantee → no CAS / locked RMW needed.
-    //      Mouse buttons: load-relaxed + store-release (was CAS loop)
-    //      Mouse accum:   load-relaxed + store-release (was fetch_add / LOCK XADD)
-    //      VK bits:       load-relaxed + store-release (was fetch_or/fetch_and)
     // =========================================================================
     void InputState::processRawInput(HRAWINPUT hRaw) noexcept {
         alignas(16) uint8_t rawBuf[sizeof(RAWINPUT)];
@@ -102,8 +97,6 @@ namespace MelonPrime {
         case RIM_TYPEMOUSE: {
             const RAWMOUSE& m = raw->data.mouse;
             if (!(m.usFlags & MOUSE_MOVE_ABSOLUTE)) {
-                // OPT: Single-writer store replaces LOCK XADD (fetch_add).
-                //      ~20 cyc → ~1 cyc per axis.
                 if (m.lLastX) {
                     const int64_t cur = m_accumMouseX.load(std::memory_order_relaxed);
                     m_accumMouseX.store(cur + m.lLastX, std::memory_order_release);
@@ -117,7 +110,6 @@ namespace MelonPrime {
             if (flags) {
                 const auto& lut = s_btnLut[flags];
                 if (lut.downBits | lut.upBits) {
-                    // OPT: Single-writer store replaces CAS loop.
                     const uint8_t cur = m_mouseButtons.load(std::memory_order_relaxed);
                     m_mouseButtons.store(
                         (cur | lut.downBits) & ~lut.upBits,
@@ -132,7 +124,6 @@ namespace MelonPrime {
             if (UNLIKELY(vk == 0)) vk = MapVirtualKeyW(kb.MakeCode, MAPVK_VSC_TO_VK_EX);
             if (LIKELY(vk > 0 && vk < 255)) {
                 vk = remapVk(vk, kb.MakeCode, kb.Flags);
-                // OPT: setVkBit now uses load+store (see header).
                 setVkBit(vk, !(kb.Flags & RI_KEY_BREAK));
             }
             break;
@@ -142,10 +133,6 @@ namespace MelonPrime {
 
     // =========================================================================
     // processRawInputBatched — Joy2Key OFF mode (batch from hidden window)
-    //
-    // OPT 1: Commit phase uses single-writer store (no CAS loops).
-    //         Saves multiple LOCK CMPXCHG instructions (~20-40 cyc each).
-    // OPT 2: Mouse accum uses load+store (no LOCK XADD).
     // =========================================================================
     void InputState::processRawInputBatched() noexcept {
         alignas(64) static thread_local uint8_t buffer[16384];
@@ -204,8 +191,6 @@ namespace MelonPrime {
         }
 
         // --- Commit phase (single-writer, wait-free) ---
-
-        // OPT 2: Mouse accum — load+store replaces LOCK XADD (fetch_add).
         if (hasMouseDelta) {
             if (localAccX) {
                 const int64_t cur = m_accumMouseX.load(std::memory_order_relaxed);
@@ -217,12 +202,10 @@ namespace MelonPrime {
             }
         }
 
-        // OPT 1: Mouse buttons — direct store replaces CAS loop.
         if (hasButtonChanges) {
             m_mouseButtons.store(finalBtnState, std::memory_order_release);
         }
 
-        // OPT 1: VK bits — load+store replaces CAS loop.
         if (hasKeyChanges) {
             for (int i = 0; i < 4; ++i) {
                 if (localKeyDeltaDown[i] | localKeyDeltaUp[i]) {
@@ -296,24 +279,28 @@ namespace MelonPrime {
     // =========================================================================
     // pollHotkeys
     //
-    // OPT: Fence coalescing — 5 acquire loads → 5 relaxed loads + 1 fence.
-    //      Saves 4 redundant acquire barriers on weakly-ordered archs.
-    //      On x86 acquire loads are free (MOV), but the single fence pattern
-    //      is still preferable: it documents intent and is correct on ARM/etc.
+    // OPT 1: Fence coalescing — 5 acquire loads → 5 relaxed loads + 1 fence.
+    //
+    // OPT 2: Bulk edge detection — per-bit branching eliminated.
+    //   Old: 2 branches per hotkey (isDown!=prev → isDown → set/clear m_hkPrev)
+    //        → ~58 conditional branches for 29 hotkeys
+    //   New: After bit-scan loop, compute pressed = newDown & ~prev (bitwise AND).
+    //        Update prev = newDown (single store). Zero branches for edge logic.
+    //
+    //   The inner loop body is now: testHotkeyMask + conditional OR.
+    //   m_hkPrev is not touched until after the loop completes.
     // =========================================================================
     void InputState::pollHotkeys(FrameHotkeyState& out) noexcept {
         uint64_t snapVk[4];
         for (int i = 0; i < 4; ++i)
             snapVk[i] = m_vkDown[i].load(std::memory_order_relaxed);
         const uint8_t snapMouse = m_mouseButtons.load(std::memory_order_relaxed);
-        // Single acquire fence ensures all prior relaxed loads are visible.
         std::atomic_thread_fence(std::memory_order_acquire);
 
         out = {};
         for (int w = 0; w < 2; ++w) {
             uint64_t bound = m_boundHotkeys[w];
             uint64_t newDown = 0;
-            uint64_t newPressed = 0;
 
             while (bound) {
 #if defined(_MSC_VER) && !defined(__clang__)
@@ -323,44 +310,61 @@ namespace MelonPrime {
                 const int bitPos = __builtin_ctzll(bound);
 #endif
                 const int id = (w << 6) | static_cast<int>(bitPos);
-                const uint64_t hbit = 1ULL << bitPos;
-                const bool isDown = testHotkeyMask(m_hkMask[id], snapVk, snapMouse);
 
-                if (isDown) newDown |= hbit;
+                if (testHotkeyMask(m_hkMask[id], snapVk, snapMouse))
+                    newDown |= 1ULL << bitPos;
 
-                const bool prev = (m_hkPrev[w] & hbit) != 0;
-                if (isDown != prev) {
-                    if (isDown) {
-                        newPressed |= hbit;
-                        m_hkPrev[w] |= hbit;
-                    }
-                    else {
-                        m_hkPrev[w] &= ~hbit;
-                    }
-                }
-                bound &= bound - 1; // clear lowest set bit
+                bound &= bound - 1;
             }
-            out.down[w] = newDown;
-            out.pressed[w] = newPressed;
+
+            // OPT 2: Bulk edge detection — pure bitwise, no per-hotkey branches.
+            //   pressed = rising edges = down now AND was not down before.
+            out.down[w]    = newDown;
+            out.pressed[w] = newDown & ~m_hkPrev[w];
+            m_hkPrev[w]    = newDown;
         }
     }
 
+    // =========================================================================
+    // hotkeyDown
+    //
+    // OPT: Fence coalescing + testHotkeyMask reuse.
+    //   Old: Up to 5 individual acquire loads with per-word early exit.
+    //   New: 5 relaxed loads + 1 fence + single testHotkeyMask call.
+    //        Eliminates 4 redundant barriers on ARM/RISC-V.
+    //        On x86 acquire=MOV so perf is equivalent, but code is simpler
+    //        and consistent with pollHotkeys pattern.
+    // =========================================================================
     bool InputState::hotkeyDown(int id) const noexcept {
         if (UNLIKELY(static_cast<unsigned>(id) >= kMaxHotkeyId)) return false;
         const HotkeyMask& mask = m_hkMask[id];
         if (!mask.hasMask) return false;
 
-        const uint8_t buttons = m_mouseButtons.load(std::memory_order_acquire);
-        if (mask.mouseMask && (buttons & mask.mouseMask)) return true;
+        const uint8_t buttons = m_mouseButtons.load(std::memory_order_relaxed);
+        uint64_t snapVk[4];
+        for (int i = 0; i < 4; ++i)
+            snapVk[i] = m_vkDown[i].load(std::memory_order_relaxed);
+        std::atomic_thread_fence(std::memory_order_acquire);
 
-        for (int i = 0; i < 4; ++i) {
-            if (mask.vkMask[i] && (m_vkDown[i].load(std::memory_order_acquire) & mask.vkMask[i]))
-                return true;
-        }
-        return false;
+        return testHotkeyMask(mask, snapVk, buttons);
     }
 
+    // =========================================================================
+    // resetHotkeyEdges
+    //
+    // OPT: Snapshot atomics once, reuse for all hotkey tests.
+    //   Old: Called hotkeyDown(id) per bound hotkey. Each hotkeyDown did
+    //        up to 5 acquire loads → ~145 acquire loads for 29 hotkeys.
+    //   New: 5 relaxed loads + 1 fence (total), then testHotkeyMask (pure ALU)
+    //        per hotkey. ~96% reduction in atomic load operations.
+    // =========================================================================
     void InputState::resetHotkeyEdges() noexcept {
+        uint64_t snapVk[4];
+        for (int i = 0; i < 4; ++i)
+            snapVk[i] = m_vkDown[i].load(std::memory_order_relaxed);
+        const uint8_t snapMouse = m_mouseButtons.load(std::memory_order_relaxed);
+        std::atomic_thread_fence(std::memory_order_acquire);
+
         uint64_t newPrev[2] = {};
         for (int w = 0; w < 2; ++w) {
             uint64_t bound = m_boundHotkeys[w];
@@ -372,7 +376,8 @@ namespace MelonPrime {
                 const int bitPos = __builtin_ctzll(bound);
 #endif
                 const int id = (w << 6) | static_cast<int>(bitPos);
-                if (hotkeyDown(id)) newPrev[w] |= (1ULL << bitPos);
+                if (testHotkeyMask(m_hkMask[id], snapVk, snapMouse))
+                    newPrev[w] |= (1ULL << bitPos);
                 bound &= bound - 1;
             }
         }
