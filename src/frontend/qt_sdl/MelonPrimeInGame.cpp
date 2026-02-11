@@ -84,9 +84,23 @@ namespace MelonPrime {
         // --- Movement + buttons (every frame) ---
         ProcessMoveInputFast();
 
-        InputSetBranchless(INPUT_B, !IsDown(IB_JUMP));
-        InputSetBranchless(INPUT_L, !IsDown(IB_SHOOT));
-        InputSetBranchless(INPUT_R, !IsDown(IB_ZOOM));
+        // 【最適化】InputSetBranchlessの連続呼び出しを廃止し、レジスタ上で計算して一括更新。
+        // これにより "Read-Modify-Write" の依存連鎖を断ち切り、メモリ書き込みを1回にする。
+        {
+            uint16_t mask = m_inputMaskFast;
+            constexpr uint16_t kModBits = (1u << INPUT_B) | (1u << INPUT_L) | (1u << INPUT_R);
+
+            // 対象ビットを一度にクリア
+            mask &= ~kModBits;
+
+            // 条件判定とビットセット（分岐なし）
+            // IsDownはメモリ参照だが、mask計算はレジスタ内で完結するため並列実行されやすい
+            mask |= (!IsDown(IB_JUMP)) ? (1u << INPUT_B) : 0;
+            mask |= (!IsDown(IB_SHOOT)) ? (1u << INPUT_L) : 0;
+            mask |= (!IsDown(IB_ZOOM)) ? (1u << INPUT_R) : 0;
+
+            m_inputMaskFast = mask; // 最終結果を1回だけ書き込み
+        }
 
         // --- Morph ball boost ---
         HandleMorphBallBoost();
@@ -111,8 +125,6 @@ namespace MelonPrime {
     // =========================================================================
     void MelonPrimeCore::HandleAdventureMode()
     {
-        // Note: isMapOrUserActionPaused の更新は呼び出し元で行っているため削除
-
         auto* nds = emuInstance->getNDS();
 
         if (IsPressed(IB_SCAN_VISOR)) {
@@ -139,9 +151,7 @@ namespace MelonPrime {
             FrameAdvanceTwice();
         }
 
-        // UI touch buttons — combined mask early-out
-        // 呼び出し元でチェック済みだが、念のためIB_UI_ANYチェックは残すか、
-        // 個別のIsPressedだけにする。ここは安全策で個別のまま（Anyチェックは呼び出し元で担保）
+        // UI touch buttons
         if (IsAnyPressed(IB_UI_ANY)) {
 #define TOUCH_IF_PRESSED(BIT, POINT) \
             if (IsPressed(BIT)) { \

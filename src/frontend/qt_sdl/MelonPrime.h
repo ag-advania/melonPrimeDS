@@ -175,27 +175,28 @@ namespace MelonPrime {
     // Hot pointers — pre-resolved RAM pointers, avoid per-access masking
     // =========================================================================
     struct alignas(64) HotPointers {
-        // Aim (every frame)
-        uint16_t* aimX;
-        uint16_t* aimY;
+        // 【最適化】アクセス頻度が高い順に再配置 (Cache Locality)
+        // [Tier 1: Every Frame (Always)] Aiming & Basic Combat
+        uint16_t* aimX;             // 8 bytes
+        uint16_t* aimY;             // 8 bytes
+        uint8_t* isAltForm;        // 8 bytes
+        uint8_t* jumpFlag;         // 8 bytes
+        uint32_t* weaponAmmo;       // 8 bytes (Used in loop)
 
-        // Combat (every frame when in-game)
-        uint8_t* isAltForm;
-        uint8_t* jumpFlag;
-        uint8_t* weaponChange;
+        // [Tier 2: Every Frame (Often)] Weapon State
+        uint16_t* havingWeapons;    // 8 bytes
+        uint8_t* currentWeapon;    // 8 bytes
+        uint8_t* weaponChange;     // 8 bytes
+
+        // -- Cache Line Boundary likely here (64 bytes) --
+
+        // [Tier 3: Conditional / Rare]
         uint8_t* selectedWeapon;
-        uint8_t* currentWeapon;
-        uint16_t* havingWeapons;
-        uint32_t* weaponAmmo;
         uint8_t* loadedSpecialWeapon;
-
-        // Boost (conditional per frame)
-        uint8_t* boostGauge;
-        uint8_t* isBoosting;
-
-        // Adventure mode
-        uint8_t* isInVisorOrMap;
-        uint8_t* isMapOrUserActionPaused;
+        uint8_t* boostGauge;       // Only if Morph
+        uint8_t* isBoosting;       // Only if Morph
+        uint8_t* isInVisorOrMap;   // Adventure only
+        uint8_t* isMapOrUserActionPaused; // Adventure only
     };
 
     // =========================================================================
