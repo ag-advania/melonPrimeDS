@@ -44,6 +44,19 @@ namespace MelonPrime {
         }
     };
 
+    // =========================================================================
+    // InputState — Lock-free input accumulator
+    //
+    // Threading contract (enables single-writer optimizations):
+    //   Joy2Key ON:  Qt main thread is sole writer (nativeEventFilter)
+    //   Joy2Key OFF: Emu thread is sole writer (Poll → processRawInputBatched)
+    //   Reader:      Emu thread (pollHotkeys, fetchMouseDelta)
+    //
+    // Since exactly one thread writes at any time, all atomic writes use
+    // relaxed-load + release-store instead of locked RMW (fetch_or, fetch_and,
+    // compare_exchange). This eliminates LOCK-prefixed instructions on x86
+    // (~20-40 cyc → ~1-5 cyc per operation).
+    // =========================================================================
     class InputState {
     public:
         InputState() noexcept;
@@ -54,9 +67,9 @@ namespace MelonPrime {
 
         static void InitializeTables() noexcept;
 
-        // Joy2Key ON: process single WM_INPUT message
+        // Joy2Key ON: process single WM_INPUT message (Qt main thread)
         void processRawInput(HRAWINPUT hRaw) noexcept;
-        // Joy2Key OFF: batch process via GetRawInputBuffer
+        // Joy2Key OFF: batch process via GetRawInputBuffer (emu thread)
         void processRawInputBatched() noexcept;
 
         void fetchMouseDelta(int& outX, int& outY) noexcept;
@@ -122,12 +135,17 @@ namespace MelonPrime {
         // Inline Helpers
         // =================================================================
 
+        // Single-writer VK bit set: relaxed load + release store.
+        // Eliminates LOCK OR / LOCK AND (fetch_or / fetch_and).
+        // SAFETY: Exactly one thread calls this at any time.
         FORCE_INLINE void setVkBit(uint32_t vk, bool down) noexcept {
             if (UNLIKELY(vk >= 256)) return;
             const uint32_t widx = vk >> 6;
             const uint64_t bit  = 1ULL << (vk & 63);
-            if (down) m_vkDown[widx].fetch_or(bit, std::memory_order_release);
-            else      m_vkDown[widx].fetch_and(~bit, std::memory_order_release);
+            const uint64_t cur  = m_vkDown[widx].load(std::memory_order_relaxed);
+            m_vkDown[widx].store(
+                down ? (cur | bit) : (cur & ~bit),
+                std::memory_order_release);
         }
 
         FORCE_INLINE uint32_t remapVk(uint32_t vk, USHORT makeCode, USHORT flags) const noexcept {

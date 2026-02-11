@@ -65,18 +65,23 @@ namespace MelonPrime {
             s_vkRemap.fill(VkRemapEntry{ 0, 0 });
             auto setRemap = [](int base, int l, int r) {
                 s_vkRemap[base] = { static_cast<uint8_t>(l), static_cast<uint8_t>(r) };
-            };
+                };
             setRemap(VK_CONTROL, VK_LCONTROL, VK_RCONTROL);
-            setRemap(VK_MENU,    VK_LMENU,    VK_RMENU);
-            setRemap(VK_SHIFT,   VK_LSHIFT,   VK_RSHIFT);
+            setRemap(VK_MENU, VK_LMENU, VK_RMENU);
+            setRemap(VK_SHIFT, VK_LSHIFT, VK_RSHIFT);
 
             s_scancodeLShift = static_cast<uint16_t>(MapVirtualKeyW(VK_LSHIFT, MAPVK_VK_TO_VSC));
             s_scancodeRShift = static_cast<uint16_t>(MapVirtualKeyW(VK_RSHIFT, MAPVK_VK_TO_VSC));
-        });
+            });
     }
 
     // =========================================================================
     // processRawInput — Joy2Key ON mode (per-message from Qt event filter)
+    //
+    // OPT: Single-writer guarantee → no CAS / locked RMW needed.
+    //      Mouse buttons: load-relaxed + store-release (was CAS loop)
+    //      Mouse accum:   load-relaxed + store-release (was fetch_add / LOCK XADD)
+    //      VK bits:       load-relaxed + store-release (was fetch_or/fetch_and)
     // =========================================================================
     void InputState::processRawInput(HRAWINPUT hRaw) noexcept {
         alignas(16) uint8_t rawBuf[sizeof(RAWINPUT)];
@@ -85,7 +90,8 @@ namespace MelonPrime {
 
         if (LIKELY(WinInternal::fnNtUserGetRawInputData != nullptr)) {
             result = WinInternal::fnNtUserGetRawInputData(hRaw, RID_INPUT, rawBuf, &size, sizeof(RAWINPUTHEADER));
-        } else {
+        }
+        else {
             result = GetRawInputData(hRaw, RID_INPUT, rawBuf, &size, sizeof(RAWINPUTHEADER));
         }
 
@@ -96,19 +102,26 @@ namespace MelonPrime {
         case RIM_TYPEMOUSE: {
             const RAWMOUSE& m = raw->data.mouse;
             if (!(m.usFlags & MOUSE_MOVE_ABSOLUTE)) {
-                if (m.lLastX) m_accumMouseX.fetch_add(m.lLastX, std::memory_order_release);
-                if (m.lLastY) m_accumMouseY.fetch_add(m.lLastY, std::memory_order_release);
+                // OPT: Single-writer store replaces LOCK XADD (fetch_add).
+                //      ~20 cyc → ~1 cyc per axis.
+                if (m.lLastX) {
+                    const int64_t cur = m_accumMouseX.load(std::memory_order_relaxed);
+                    m_accumMouseX.store(cur + m.lLastX, std::memory_order_release);
+                }
+                if (m.lLastY) {
+                    const int64_t cur = m_accumMouseY.load(std::memory_order_relaxed);
+                    m_accumMouseY.store(cur + m.lLastY, std::memory_order_release);
+                }
             }
             const USHORT flags = m.usButtonFlags & 0x03FF;
             if (flags) {
                 const auto& lut = s_btnLut[flags];
                 if (lut.downBits | lut.upBits) {
-                    uint8_t cur = m_mouseButtons.load(std::memory_order_relaxed);
-                    uint8_t nxt;
-                    do {
-                        nxt = (cur | lut.downBits) & ~lut.upBits;
-                    } while (cur != nxt && UNLIKELY(!m_mouseButtons.compare_exchange_weak(
-                        cur, nxt, std::memory_order_release, std::memory_order_relaxed)));
+                    // OPT: Single-writer store replaces CAS loop.
+                    const uint8_t cur = m_mouseButtons.load(std::memory_order_relaxed);
+                    m_mouseButtons.store(
+                        (cur | lut.downBits) & ~lut.upBits,
+                        std::memory_order_release);
                 }
             }
             break;
@@ -119,6 +132,7 @@ namespace MelonPrime {
             if (UNLIKELY(vk == 0)) vk = MapVirtualKeyW(kb.MakeCode, MAPVK_VSC_TO_VK_EX);
             if (LIKELY(vk > 0 && vk < 255)) {
                 vk = remapVk(vk, kb.MakeCode, kb.Flags);
+                // OPT: setVkBit now uses load+store (see header).
                 setVkBit(vk, !(kb.Flags & RI_KEY_BREAK));
             }
             break;
@@ -129,22 +143,23 @@ namespace MelonPrime {
     // =========================================================================
     // processRawInputBatched — Joy2Key OFF mode (batch from hidden window)
     //
-    // Accumulates all pending input events into local state, then commits
-    // to atomics in a single pass (wait-free).
+    // OPT 1: Commit phase uses single-writer store (no CAS loops).
+    //         Saves multiple LOCK CMPXCHG instructions (~20-40 cyc each).
+    // OPT 2: Mouse accum uses load+store (no LOCK XADD).
     // =========================================================================
     void InputState::processRawInputBatched() noexcept {
         alignas(64) static thread_local uint8_t buffer[16384];
 
         int32_t localAccX = 0, localAccY = 0;
         uint64_t localKeyDeltaDown[4] = {};
-        uint64_t localKeyDeltaUp[4]   = {};
-        bool hasMouseDelta    = false;
-        bool hasKeyChanges    = false;
+        uint64_t localKeyDeltaUp[4] = {};
+        bool hasMouseDelta = false;
+        bool hasKeyChanges = false;
         bool hasButtonChanges = false;
         uint8_t finalBtnState = m_mouseButtons.load(std::memory_order_relaxed);
 
         for (;;) {
-            UINT size  = sizeof(buffer);
+            UINT size = sizeof(buffer);
             UINT count = s_fnBestGetRawInputBuffer(
                 reinterpret_cast<PRAWINPUT>(buffer), &size, sizeof(RAWINPUTHEADER));
             if (count == 0 || count == UINT(-1)) break;
@@ -164,19 +179,21 @@ namespace MelonPrime {
                         finalBtnState = (finalBtnState & ~lut.upBits) | lut.downBits;
                         hasButtonChanges = true;
                     }
-                } else if (raw->header.dwType == RIM_TYPEKEYBOARD) {
+                }
+                else if (raw->header.dwType == RIM_TYPEKEYBOARD) {
                     const RAWKEYBOARD& kb = raw->data.keyboard;
                     UINT vk = kb.VKey;
                     if (UNLIKELY(vk == 0)) vk = MapVirtualKeyW(kb.MakeCode, MAPVK_VSC_TO_VK_EX);
                     if (LIKELY(vk > 0 && vk < 255)) {
                         vk = remapVk(vk, kb.MakeCode, kb.Flags);
-                        const int idx      = vk >> 6;
+                        const int idx = vk >> 6;
                         const uint64_t bit = 1ULL << (vk & 63);
                         if (!(kb.Flags & RI_KEY_BREAK)) {
                             localKeyDeltaDown[idx] |= bit;
-                            localKeyDeltaUp[idx]   &= ~bit;
-                        } else {
-                            localKeyDeltaUp[idx]   |= bit;
+                            localKeyDeltaUp[idx] &= ~bit;
+                        }
+                        else {
+                            localKeyDeltaUp[idx] |= bit;
                             localKeyDeltaDown[idx] &= ~bit;
                         }
                         hasKeyChanges = true;
@@ -186,25 +203,33 @@ namespace MelonPrime {
             }
         }
 
-        // --- Commit phase (wait-free) ---
+        // --- Commit phase (single-writer, wait-free) ---
+
+        // OPT 2: Mouse accum — load+store replaces LOCK XADD (fetch_add).
         if (hasMouseDelta) {
-            if (localAccX) m_accumMouseX.fetch_add(localAccX, std::memory_order_release);
-            if (localAccY) m_accumMouseY.fetch_add(localAccY, std::memory_order_release);
+            if (localAccX) {
+                const int64_t cur = m_accumMouseX.load(std::memory_order_relaxed);
+                m_accumMouseX.store(cur + localAccX, std::memory_order_release);
+            }
+            if (localAccY) {
+                const int64_t cur = m_accumMouseY.load(std::memory_order_relaxed);
+                m_accumMouseY.store(cur + localAccY, std::memory_order_release);
+            }
         }
+
+        // OPT 1: Mouse buttons — direct store replaces CAS loop.
         if (hasButtonChanges) {
-            uint8_t cur = m_mouseButtons.load(std::memory_order_relaxed);
-            while (!m_mouseButtons.compare_exchange_weak(
-                cur, finalBtnState, std::memory_order_release, std::memory_order_relaxed));
+            m_mouseButtons.store(finalBtnState, std::memory_order_release);
         }
+
+        // OPT 1: VK bits — load+store replaces CAS loop.
         if (hasKeyChanges) {
             for (int i = 0; i < 4; ++i) {
                 if (localKeyDeltaDown[i] | localKeyDeltaUp[i]) {
-                    uint64_t cur = m_vkDown[i].load(std::memory_order_relaxed);
-                    uint64_t nxt;
-                    do {
-                        nxt = (cur | localKeyDeltaDown[i]) & ~localKeyDeltaUp[i];
-                    } while (cur != nxt && UNLIKELY(!m_vkDown[i].compare_exchange_weak(
-                        cur, nxt, std::memory_order_release, std::memory_order_relaxed)));
+                    const uint64_t cur = m_vkDown[i].load(std::memory_order_relaxed);
+                    m_vkDown[i].store(
+                        (cur | localKeyDeltaDown[i]) & ~localKeyDeltaUp[i],
+                        std::memory_order_release);
                 }
             }
         }
@@ -240,7 +265,7 @@ namespace MelonPrime {
         HotkeyMask& mask = m_hkMask[id];
         std::memset(&mask, 0, sizeof(HotkeyMask));
 
-        const int bword     = id >> 6;
+        const int bword = id >> 6;
         const uint64_t bbit = 1ULL << (id & 63);
 
         if (vks.empty()) {
@@ -259,7 +284,8 @@ namespace MelonPrime {
                 case VK_XBUTTON2: bit = 4; break;
                 }
                 if (bit >= 0) mask.mouseMask |= static_cast<uint8_t>(1 << bit);
-            } else if (vk < 256) {
+            }
+            else if (vk < 256) {
                 mask.vkMask[vk >> 6] |= (1ULL << (vk & 63));
             }
         }
@@ -267,16 +293,26 @@ namespace MelonPrime {
         m_boundHotkeys[bword] |= bbit;
     }
 
+    // =========================================================================
+    // pollHotkeys
+    //
+    // OPT: Fence coalescing — 5 acquire loads → 5 relaxed loads + 1 fence.
+    //      Saves 4 redundant acquire barriers on weakly-ordered archs.
+    //      On x86 acquire loads are free (MOV), but the single fence pattern
+    //      is still preferable: it documents intent and is correct on ARM/etc.
+    // =========================================================================
     void InputState::pollHotkeys(FrameHotkeyState& out) noexcept {
         uint64_t snapVk[4];
         for (int i = 0; i < 4; ++i)
-            snapVk[i] = m_vkDown[i].load(std::memory_order_acquire);
-        const uint8_t snapMouse = m_mouseButtons.load(std::memory_order_acquire);
+            snapVk[i] = m_vkDown[i].load(std::memory_order_relaxed);
+        const uint8_t snapMouse = m_mouseButtons.load(std::memory_order_relaxed);
+        // Single acquire fence ensures all prior relaxed loads are visible.
+        std::atomic_thread_fence(std::memory_order_acquire);
 
         out = {};
         for (int w = 0; w < 2; ++w) {
             uint64_t bound = m_boundHotkeys[w];
-            uint64_t newDown    = 0;
+            uint64_t newDown = 0;
             uint64_t newPressed = 0;
 
             while (bound) {
@@ -286,24 +322,25 @@ namespace MelonPrime {
 #else
                 const int bitPos = __builtin_ctzll(bound);
 #endif
-                const int id        = (w << 6) | static_cast<int>(bitPos);
+                const int id = (w << 6) | static_cast<int>(bitPos);
                 const uint64_t hbit = 1ULL << bitPos;
-                const bool isDown   = testHotkeyMask(m_hkMask[id], snapVk, snapMouse);
+                const bool isDown = testHotkeyMask(m_hkMask[id], snapVk, snapMouse);
 
                 if (isDown) newDown |= hbit;
 
                 const bool prev = (m_hkPrev[w] & hbit) != 0;
                 if (isDown != prev) {
                     if (isDown) {
-                        newPressed   |= hbit;
-                        m_hkPrev[w]  |= hbit;
-                    } else {
+                        newPressed |= hbit;
+                        m_hkPrev[w] |= hbit;
+                    }
+                    else {
                         m_hkPrev[w] &= ~hbit;
                     }
                 }
                 bound &= bound - 1; // clear lowest set bit
             }
-            out.down[w]    = newDown;
+            out.down[w] = newDown;
             out.pressed[w] = newPressed;
         }
     }
