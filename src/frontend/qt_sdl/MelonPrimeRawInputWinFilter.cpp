@@ -10,7 +10,7 @@ namespace MelonPrime {
     // Static members
     // =========================================================================
     std::atomic<int>    RawInputWinFilter::s_refCount{ 0 };
-    RawInputWinFilter*  RawInputWinFilter::s_instance = nullptr;
+    RawInputWinFilter* RawInputWinFilter::s_instance = nullptr;
     std::once_flag      RawInputWinFilter::s_initFlag;
     PeekMessageW_t      RawInputWinFilter::s_fnPeek = nullptr;
 
@@ -38,7 +38,7 @@ namespace MelonPrime {
             s_fnPeek = WinInternal::fnNtUserPeekMessage
                 ? &NtPeekAdapter
                 : reinterpret_cast<PeekMessageW_t>(&PeekMessageW);
-        });
+            });
     }
 
     // =========================================================================
@@ -165,9 +165,9 @@ namespace MelonPrime {
     void RawInputWinFilter::CreateHiddenWindow() {
         if (m_hHiddenWnd) return;
         WNDCLASSW wc = {};
-        wc.lpfnWndProc   = HiddenWndProc;
-        wc.hInstance      = GetModuleHandle(nullptr);
-        wc.lpszClassName  = L"MelonPrimeRawInputSink";
+        wc.lpfnWndProc = HiddenWndProc;
+        wc.hInstance = GetModuleHandle(nullptr);
+        wc.lpszClassName = L"MelonPrimeRawInputSink";
         RegisterClassW(&wc);
 
         m_hHiddenWnd = CreateWindowW(
@@ -230,13 +230,13 @@ namespace MelonPrime {
     // =========================================================================
     // Delegated InputState methods
     // =========================================================================
-    void RawInputWinFilter::discardDeltas()                           { m_state->discardDeltas(); }
+    void RawInputWinFilter::discardDeltas() { m_state->discardDeltas(); }
     void RawInputWinFilter::setHotkeyVks(int id, const std::vector<UINT>& vks) { m_state->setHotkeyVks(id, vks); }
-    void RawInputWinFilter::pollHotkeys(FrameHotkeyState& out)       { m_state->pollHotkeys(out); }
-    void RawInputWinFilter::resetAllKeys()                            { m_state->resetAllKeys(); }
-    void RawInputWinFilter::resetMouseButtons()                       { m_state->resetMouseButtons(); }
-    void RawInputWinFilter::resetHotkeyEdges()                        { m_state->resetHotkeyEdges(); }
-    void RawInputWinFilter::fetchMouseDelta(int& outX, int& outY)    { m_state->fetchMouseDelta(outX, outY); }
+    void RawInputWinFilter::pollHotkeys(FrameHotkeyState& out) { m_state->pollHotkeys(out); }
+    void RawInputWinFilter::resetAllKeys() { m_state->resetAllKeys(); }
+    void RawInputWinFilter::resetMouseButtons() { m_state->resetMouseButtons(); }
+    void RawInputWinFilter::resetHotkeyEdges() { m_state->resetHotkeyEdges(); }
+    void RawInputWinFilter::fetchMouseDelta(int& outX, int& outY) { m_state->fetchMouseDelta(outX, outY); }
 
 } // namespace MelonPrime
 #endif
