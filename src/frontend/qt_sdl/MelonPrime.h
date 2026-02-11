@@ -18,7 +18,7 @@ class QPoint;
 #include "MelonPrimeGameRomAddrTable.h"
 
 // =========================================================================
-// Compiler hint macros (deduplicated, defined once)
+// Compiler hint macros
 // =========================================================================
 #ifndef FORCE_INLINE
 #  if defined(_MSC_VER)
@@ -89,9 +89,6 @@ namespace MelonPrime {
     class RawInputWinFilter;
 #endif
 
-    // =========================================================================
-    // Input cache bits — one-hot encoded for branchless mask operations
-    // =========================================================================
     enum InputCacheBit : uint64_t {
         IB_JUMP = 1ULL << 0,
         IB_SHOOT = 1ULL << 1,
@@ -130,9 +127,6 @@ namespace MelonPrime {
         IB_UI_ANY = IB_UI_OK | IB_UI_LEFT | IB_UI_RIGHT | IB_UI_YES | IB_UI_NO,
     };
 
-    // =========================================================================
-    // Per-frame input snapshot — one cache line, tight packing
-    // =========================================================================
     struct alignas(64) FrameInputState {
         uint64_t down;
         uint64_t press;
@@ -143,13 +137,7 @@ namespace MelonPrime {
     };
     static_assert(sizeof(FrameInputState) == 64);
 
-    // =========================================================================
-    // Hot game addresses — addresses recomputed on player-position change
-    //   Reduced from 128 → 76 bytes (no wasteful 60-byte padding).
-    //   Fits in 2 cache lines.  Fields ordered by access frequency.
-    // =========================================================================
     struct alignas(64) GameAddressesHot {
-        // ---- Most-accessed (every frame in-game) ----
         melonDS::u32 isAltForm;
         melonDS::u32 jumpFlag;
         melonDS::u32 weaponChange;
@@ -165,52 +153,38 @@ namespace MelonPrime {
         melonDS::u32 isInVisorOrMap;
         melonDS::u32 isMapOrUserActionPaused;
         melonDS::u32 inGame;
-
-        // ---- Accessed on init / hunter change ----
         melonDS::u32 chosenHunter;
         melonDS::u32 inGameSensi;
     };
 
-    // =========================================================================
-    // Hot pointers — pre-resolved RAM pointers, avoid per-access masking
-    // =========================================================================
     struct alignas(64) HotPointers {
-        // 【最適化】アクセス頻度が高い順に再配置 (Cache Locality)
-        // [Tier 1: Every Frame (Always)] Aiming & Basic Combat
-        uint16_t* aimX;             // 8 bytes
-        uint16_t* aimY;             // 8 bytes
-        uint8_t* isAltForm;        // 8 bytes
-        uint8_t* jumpFlag;         // 8 bytes
-        uint32_t* weaponAmmo;       // 8 bytes (Used in loop)
+        // [Tier 1: Every Frame (Always)]
+        uint16_t* aimX;
+        uint16_t* aimY;
+        uint8_t* isAltForm;
+        uint8_t* jumpFlag;
+        uint32_t* weaponAmmo;
 
-        // [Tier 2: Every Frame (Often)] Weapon State
-        uint16_t* havingWeapons;    // 8 bytes
-        uint8_t* currentWeapon;    // 8 bytes
-        uint8_t* weaponChange;     // 8 bytes
-
-        // -- Cache Line Boundary likely here (64 bytes) --
+        // [Tier 2: Every Frame (Often)]
+        uint16_t* havingWeapons;
+        uint8_t* currentWeapon;
+        uint8_t* weaponChange;
 
         // [Tier 3: Conditional / Rare]
         uint8_t* selectedWeapon;
         uint8_t* loadedSpecialWeapon;
-        uint8_t* boostGauge;       // Only if Morph
-        uint8_t* isBoosting;       // Only if Morph
-        uint8_t* isInVisorOrMap;   // Adventure only
-        uint8_t* isMapOrUserActionPaused; // Adventure only
+        uint8_t* boostGauge;
+        uint8_t* isBoosting;
+        uint8_t* isInVisorOrMap;
+        uint8_t* isMapOrUserActionPaused;
     };
 
-    // =========================================================================
-    // Aim block reason bits
-    // =========================================================================
     enum AimBlockBit : uint32_t {
         AIMBLK_CHECK_WEAPON = 1u << 0,
         AIMBLK_MORPHBALL_BOOST = 1u << 1,
         AIMBLK_CURSOR_MODE = 1u << 2,
     };
 
-    // =========================================================================
-    // Applied-once setting flags
-    // =========================================================================
     enum AppliedFlag : uint8_t {
         APPLIED_HEADPHONE = 1u << 0,
         APPLIED_UNLOCK = 1u << 1,
@@ -225,9 +199,6 @@ namespace MelonPrime {
     };
 #endif
 
-    // =========================================================================
-    // Core class
-    // =========================================================================
     class MelonPrimeCore
     {
     public:
@@ -259,18 +230,10 @@ namespace MelonPrime {
         void NotifyLayoutChange() { m_isLayoutChangePending = true; }
 
     private:
-        // =================================================================
-        // Data layout — ordered by access frequency & cache line grouping
-        // =================================================================
-
-        // [Cache Line 0: Per-frame input]
         alignas(64) FrameInputState m_input{};
-
-        // [Cache Lines 1-2: Hot addresses + pointers — accessed every in-game frame]
         GameAddressesHot m_addrHot{};
         HotPointers      m_ptrs{};
 
-        // [Cache Line 3: Per-frame scalars — fits in one line]
         uint16_t m_inputMaskFast = 0xFFFF;
         uint16_t m_snapState = 0;
         uint32_t m_aimBlockBits = 0;
@@ -283,10 +246,8 @@ namespace MelonPrime {
         bool     m_isInGame = false;
         bool     m_isLayoutChangePending = true;
 
-        // [State flags — packed bitfield for single-compare branching]
         struct alignas(4) StateFlags {
             uint32_t packed = 0;
-
             static constexpr uint32_t BIT_ROM_DETECTED = 1u << 0;
             static constexpr uint32_t BIT_IN_GAME = 1u << 1;
             static constexpr uint32_t BIT_IN_GAME_INIT = 1u << 2;
@@ -309,7 +270,6 @@ namespace MelonPrime {
             [[nodiscard]] FORCE_INLINE bool test(uint32_t bit) const { return (packed & bit) != 0; }
         } m_flags{};
 
-        // [Cold / infrequently accessed]
         RomAddresses m_currentRom{};
         uint8_t      m_appliedFlags = 0;
         melonDS::u8  m_playerPosition = 0;
@@ -318,8 +278,6 @@ namespace MelonPrime {
         Config::Table& localCfg;
         Config::Table& globalCfg;
 
-        // Frame-advance dispatch — member-function pointer avoids
-        // std::function's type-erased indirect call on every FrameAdvanceOnce().
         std::function<void()> m_frameAdvanceFunc;
         using AdvanceMethod = void (MelonPrimeCore::*)();
         AdvanceMethod m_fnAdvance = &MelonPrimeCore::FrameAdvanceDefault;
@@ -335,9 +293,8 @@ namespace MelonPrime {
         } m_aimData;
 
         // =================================================================
-        // Inline helpers — keep in header for inlining
+        // Inline helpers
         // =================================================================
-
         FORCE_INLINE void InputReset() { m_inputMaskFast = 0xFFFF; }
 
         FORCE_INLINE void InputSetBranchless(uint16_t bit, bool released) {
@@ -346,7 +303,6 @@ namespace MelonPrime {
         }
 
         FORCE_INLINE void SetAimBlockBranchless(uint32_t bitMask, bool enable) noexcept {
-            // Branchless set/clear: avoids branch on enable for hot-path usage
             m_aimBlockBits = (m_aimBlockBits & ~bitMask) | (enable ? bitMask : 0u);
             m_isAimDisabled = (m_aimBlockBits != 0);
         }
@@ -359,10 +315,8 @@ namespace MelonPrime {
         FORCE_INLINE void ApplyAimAdjustBranchless(float& dx, float& dy) noexcept {
             const float a = m_aimAdjust;
             if (UNLIKELY(a <= 0.0f)) return;
-
             const float absX = std::abs(dx);
             dx = (absX < a) ? 0.0f : (absX < 1.0f) ? std::copysign(1.0f, dx) : dx;
-
             const float absY = std::abs(dy);
             dy = (absY < a) ? 0.0f : (absY < 1.0f) ? std::copysign(1.0f, dy) : dy;
         }
@@ -372,7 +326,7 @@ namespace MelonPrime {
         [[nodiscard]] FORCE_INLINE bool IsAnyPressed(uint64_t mask) const { return (m_input.press & mask) != 0; }
 
         // =================================================================
-        // Method declarations
+        // Methods
         // =================================================================
         HOT_FUNCTION void UpdateInputState();
         HOT_FUNCTION void HandleInGameLogic();
@@ -381,12 +335,19 @@ namespace MelonPrime {
         HOT_FUNCTION bool ProcessWeaponSwitch();
         HOT_FUNCTION bool HandleMorphBallBoost();
 
+        // --- Cold Path Handlers (Outlined) ---
+        COLD_FUNCTION void HandleRareMorph();
+        COLD_FUNCTION void HandleRareWeaponSwitch();
+        COLD_FUNCTION void HandleRareWeaponCheckStart();
+        COLD_FUNCTION void HandleRareWeaponCheckEnd();
+        COLD_FUNCTION void HandleAdventureMode(); // Already existed, marked cold now
+
         COLD_FUNCTION void DetectRomAndSetAddresses();
         COLD_FUNCTION void ApplyGameSettingsOnce();
+
         void RecalcAimSensitivityCache(Config::Table& cfg);
         void ApplyAimAdjustSetting(Config::Table& cfg);
         void HandleGlobalHotkeys();
-        void HandleAdventureMode();
         void ProcessAimInputStylus();
         void SwitchWeapon(int weaponIndex);
         void ShowCursor(bool show);
@@ -398,8 +359,6 @@ namespace MelonPrime {
 
         void SetupRawInput();
         void ApplyJoy2KeySupportAndQtFilter(bool enable, bool doReset = true);
-
-        // Helper: bulk config re-read (called on unpause/start)
         void ReloadConfigFlags();
     };
 

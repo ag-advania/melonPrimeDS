@@ -11,101 +11,63 @@ namespace MelonPrime {
 
     // =========================================================================
     // HandleInGameLogic — per-frame in-game update
-    //
-    // Ordering is deliberate:
-    //   1. Morph ball toggle (edge-triggered, rare)
-    //   2. Weapon switch (edge-triggered, rare)
-    //   3. Weapon check hold (continuous)
-    //   4. Adventure mode (conditional)
-    //   5. Movement (every frame)
-    //   6. Button mapping (every frame)
-    //   7. Morph ball boost (conditional)
-    //   8. Aim input (every frame)
+    // Optimized with Hot/Cold splitting to minimize instruction cache pressure.
     // =========================================================================
     HOT_FUNCTION void MelonPrimeCore::HandleInGameLogic()
     {
         PREFETCH_READ(m_ptrs.isAltForm);
 
-        // --- Morph ball toggle (edge-triggered, cold path) ---
-        // 【最適化】モーフボールは頻度が低いため、UNLIKELYヒントで分岐予測を最適化
+        // --- Rare Actions (Morph, Weapon Switch) ---
+        // UNLIKELY hint pushes these calls to the end of the function block assembly.
         if (UNLIKELY(IsPressed(IB_MORPH))) {
-            if (isStylusMode) m_flags.set(StateFlags::BIT_BLOCK_STYLUS);
-            auto* nds = emuInstance->getNDS();
-            nds->ReleaseScreen();
-            FrameAdvanceTwice();
-            using namespace Consts::UI;
-            nds->TouchScreen(MORPH_START.x(), MORPH_START.y());
-            FrameAdvanceTwice();
-            nds->ReleaseScreen();
-            FrameAdvanceTwice();
+            HandleRareMorph();
         }
 
-        // --- Weapon switch (edge-triggered) ---
-        // Mouse Wheelによる変更も含まれるため、キー入力有無に関わらず呼び出す必要があるが、
-        // 関数内での早期リターンとインライン展開に期待する。
         if (UNLIKELY(ProcessWeaponSwitch())) {
-            if (isStylusMode) m_flags.set(StateFlags::BIT_BLOCK_STYLUS);
+            HandleRareWeaponSwitch();
         }
 
-        // --- Adventure mode (conditional) ---
-        // 【最適化】Adventureモードかつ関連キーが押されている場合のみ重い処理を呼び出す。
+        // --- Adventure Mode ---
         if (UNLIKELY(m_flags.test(StateFlags::BIT_IN_ADVENTURE))) {
-            // ポーズ状態の更新は毎フレーム必要だが、メモリ読み取りだけなのでインライン化
             const bool isPaused = (*m_ptrs.isMapOrUserActionPaused) == 0x1;
             m_flags.assign(StateFlags::BIT_PAUSED, isPaused);
 
-            // スキャンバイザーまたはUIボタンが押されている場合のみ関数呼び出し
             if (IsAnyPressed(IB_SCAN_VISOR | IB_UI_ANY)) {
                 HandleAdventureMode();
             }
         }
 
-        // --- Weapon check hold ---
-        const bool weaponCheckDown = IsDown(IB_WEAPON_CHECK);
-
-        if (weaponCheckDown) {
-            if (isStylusMode) m_flags.set(StateFlags::BIT_BLOCK_STYLUS);
+        // --- Weapon Check ---
+        if (IsDown(IB_WEAPON_CHECK)) {
             if (!m_isWeaponCheckActive) {
-                m_isWeaponCheckActive = true;
-                SetAimBlockBranchless(AIMBLK_CHECK_WEAPON, true);
-                emuInstance->getNDS()->ReleaseScreen();
-                FrameAdvanceTwice();
+                HandleRareWeaponCheckStart();
             }
             using namespace Consts::UI;
             emuInstance->getNDS()->TouchScreen(WEAPON_CHECK_START.x(), WEAPON_CHECK_START.y());
         }
         else if (UNLIKELY(m_isWeaponCheckActive)) {
-            m_isWeaponCheckActive = false;
-            emuInstance->getNDS()->ReleaseScreen();
-            SetAimBlockBranchless(AIMBLK_CHECK_WEAPON, false);
-            FrameAdvanceTwice();
+            HandleRareWeaponCheckEnd();
         }
 
-        // --- Movement + buttons (every frame) ---
+        // --- Movement & Buttons (Hot Path) ---
         ProcessMoveInputFast();
 
-        // 【最適化】InputSetBranchlessの連続呼び出しを廃止し、レジスタ上で計算して一括更新。
-        // これにより "Read-Modify-Write" の依存連鎖を断ち切り、メモリ書き込みを1回にする。
+        // Optimized register-batch update for buttons
         {
             uint16_t mask = m_inputMaskFast;
             constexpr uint16_t kModBits = (1u << INPUT_B) | (1u << INPUT_L) | (1u << INPUT_R);
 
-            // 対象ビットを一度にクリア
             mask &= ~kModBits;
-
-            // 条件判定とビットセット（分岐なし）
-            // IsDownはメモリ参照だが、mask計算はレジスタ内で完結するため並列実行されやすい
             mask |= (!IsDown(IB_JUMP)) ? (1u << INPUT_B) : 0;
             mask |= (!IsDown(IB_SHOOT)) ? (1u << INPUT_L) : 0;
             mask |= (!IsDown(IB_ZOOM)) ? (1u << INPUT_R) : 0;
 
-            m_inputMaskFast = mask; // 最終結果を1回だけ書き込み
+            m_inputMaskFast = mask;
         }
 
-        // --- Morph ball boost ---
+        // --- Morph Boost & Aim (Hot Path) ---
         HandleMorphBallBoost();
 
-        // --- Aim input ---
         if (isStylusMode) {
             if (!m_flags.test(StateFlags::BIT_BLOCK_STYLUS)) {
                 ProcessAimInputStylus();
@@ -121,9 +83,45 @@ namespace MelonPrime {
     }
 
     // =========================================================================
-    // HandleAdventureMode — adventure-specific logic (scan visor, UI buttons)
+    // Outlined Cold Paths
     // =========================================================================
-    void MelonPrimeCore::HandleAdventureMode()
+
+    COLD_FUNCTION void MelonPrimeCore::HandleRareMorph()
+    {
+        if (isStylusMode) m_flags.set(StateFlags::BIT_BLOCK_STYLUS);
+        auto* nds = emuInstance->getNDS();
+        nds->ReleaseScreen();
+        FrameAdvanceTwice();
+        using namespace Consts::UI;
+        nds->TouchScreen(MORPH_START.x(), MORPH_START.y());
+        FrameAdvanceTwice();
+        nds->ReleaseScreen();
+        FrameAdvanceTwice();
+    }
+
+    COLD_FUNCTION void MelonPrimeCore::HandleRareWeaponSwitch()
+    {
+        if (isStylusMode) m_flags.set(StateFlags::BIT_BLOCK_STYLUS);
+    }
+
+    COLD_FUNCTION void MelonPrimeCore::HandleRareWeaponCheckStart()
+    {
+        if (isStylusMode) m_flags.set(StateFlags::BIT_BLOCK_STYLUS);
+        m_isWeaponCheckActive = true;
+        SetAimBlockBranchless(AIMBLK_CHECK_WEAPON, true);
+        emuInstance->getNDS()->ReleaseScreen();
+        FrameAdvanceTwice();
+    }
+
+    COLD_FUNCTION void MelonPrimeCore::HandleRareWeaponCheckEnd()
+    {
+        m_isWeaponCheckActive = false;
+        emuInstance->getNDS()->ReleaseScreen();
+        SetAimBlockBranchless(AIMBLK_CHECK_WEAPON, false);
+        FrameAdvanceTwice();
+    }
+
+    COLD_FUNCTION void MelonPrimeCore::HandleAdventureMode()
     {
         auto* nds = emuInstance->getNDS();
 
@@ -139,7 +137,6 @@ namespace MelonPrime {
                 FrameAdvanceTwice();
             }
             else {
-                // Hold movement during visor activation animation
                 for (int i = 0; i < 30; ++i) {
                     UpdateInputState();
                     ProcessMoveInputFast();
@@ -172,8 +169,9 @@ namespace MelonPrime {
     }
 
     // =========================================================================
-    // HandleMorphBallBoost — Samus-only morph ball boost logic
+    // Hot Helpers
     // =========================================================================
+
     HOT_FUNCTION bool MelonPrimeCore::HandleMorphBallBoost()
     {
         if (!m_flags.test(StateFlags::BIT_IS_SAMUS)) return false;
@@ -193,7 +191,6 @@ namespace MelonPrime {
                     emuInstance->getNDS()->ReleaseScreen();
                 }
 
-                // R button: trigger boost only when gauge sufficient and not already boosting
                 InputSetBranchless(INPUT_R, !isBoosting && gaugeEnough);
 
                 if (isBoosting) {
@@ -208,9 +205,6 @@ namespace MelonPrime {
         return false;
     }
 
-    // =========================================================================
-    // ApplyGameSettingsOnce — applies one-time game settings when out of game
-    // =========================================================================
     COLD_FUNCTION void MelonPrimeCore::ApplyGameSettingsOnce()
     {
         InputSetBranchless(INPUT_L, !IsPressed(IB_UI_LEFT));

@@ -15,18 +15,11 @@
 
 namespace MelonPrime {
 
-    // =========================================================================
-    // Movement direction LUT — 4-bit index from [F,B,L,R] → D-pad mask byte
-    // Aligned to cache line to avoid false sharing.
-    // =========================================================================
     alignas(64) static constexpr std::array<uint8_t, 16> MoveLUT = {
         0xF0, 0xB0, 0x70, 0xF0,  0xD0, 0x90, 0x50, 0xD0,
         0xE0, 0xA0, 0x60, 0xE0,  0xF0, 0xB0, 0x70, 0xF0,
     };
 
-    // =========================================================================
-    // Key mapping tables — separate held (down) vs. edge-triggered (pressed)
-    // =========================================================================
     struct KeyMap {
         int      hkID;
         uint64_t bit;
@@ -67,9 +60,6 @@ namespace MelonPrime {
         { HK_MetroidWeaponPrevious,IB_WEAPON_PREV },
     } };
 
-    // =========================================================================
-    // Compile-time unrolled hotkey checks via fold expressions
-    // =========================================================================
     template <typename Func, size_t... Is>
     FORCE_INLINE void UnrollCheckDown(uint64_t& mask, Func&& checker, std::index_sequence<Is...>) {
         ((checker(kDownMaps[Is].hkID) ? (mask |= kDownMaps[Is].bit) : 0), ...);
@@ -80,20 +70,9 @@ namespace MelonPrime {
         ((checker(kPressMaps[Is].hkID) ? (mask |= kPressMaps[Is].bit) : 0), ...);
     }
 
-    // =========================================================================
-    // UpdateInputState — called once per frame, gathers all input sources
-    //
-    // Optimizations:
-    //   - Removed global memset (zero only needed fields)
-    //   - Fold-expression unroll eliminates per-key function-call overhead
-    //   - Mouse delta fetch is a single atomic load pair
-    // =========================================================================
     HOT_FUNCTION void MelonPrimeCore::UpdateInputState()
     {
-        // 【最適化】構造体全体のゼロクリア(memset)を廃止。
-        // m_input = {}; 
-        // 必要なメンバはローカル変数で構築後に一括代入する。
-
+        // Removed global memset
 #ifdef _WIN32
         if (!isFocused) return;
         if (m_rawFilter) {
@@ -110,7 +89,6 @@ namespace MelonPrime {
             m_rawFilter->pollHotkeys(hk);
         }
 
-        // Unified checker: RawInput ∪ Joypad
         const auto hkDown = [&](int id) -> bool {
             return hk.isDown(id) || emuInstance->joyHotkeyMask.testBit(id);
             };
@@ -126,7 +104,6 @@ namespace MelonPrime {
             };
 #endif
 
-        // Compile-time unrolled: no loop overhead, no branch misprediction
         UnrollCheckDown(down, hkDown, std::make_index_sequence<kDownMaps.size()>{});
         UnrollCheckPress(press, hkPressed, std::make_index_sequence<kPressMaps.size()>{});
 
@@ -145,12 +122,6 @@ namespace MelonPrime {
 #endif
     }
 
-    // =========================================================================
-    // ProcessMoveInputFast — converts WASD bits into D-pad mask via LUT
-    //
-    // Snap-tap logic: when opposing directions are held simultaneously,
-    // the most recently pressed direction wins.
-    // =========================================================================
     HOT_FUNCTION void MelonPrimeCore::ProcessMoveInputFast()
     {
         const uint32_t curr = m_input.moveIndex;
@@ -164,7 +135,6 @@ namespace MelonPrime {
             const uint32_t priority = m_snapState >> 8;
             const uint32_t newPress = curr & ~last;
 
-            // Detect conflicts on FB (bits 0-1) and LR (bits 2-3) axes
             const uint32_t conflictFB = ((curr & 0x3u) == 0x3u) ? 0x3u : 0u;
             const uint32_t conflictLR = ((curr & 0xCu) == 0xCu) ? 0xCu : 0u;
             const uint32_t conflict = conflictFB | conflictLR;
@@ -183,9 +153,6 @@ namespace MelonPrime {
         m_inputMaskFast = (m_inputMaskFast & 0xFF0Fu) | (static_cast<uint16_t>(lutResult) & 0x00F0u);
     }
 
-    // =========================================================================
-    // ProcessAimInputStylus — pass-through touch input
-    // =========================================================================
     void MelonPrimeCore::ProcessAimInputStylus()
     {
         if (LIKELY(emuInstance->isTouching)) {
@@ -196,15 +163,6 @@ namespace MelonPrime {
         }
     }
 
-    // =========================================================================
-    // ProcessAimInputMouse — converts raw mouse delta into game aim values
-    //
-    // Optimizations:
-    //   - Early-out on zero delta avoids all float math
-    //   - Combined X/Y sensitivity pre-computed in RecalcAimSensitivityCache
-    //   - AimAdjust applied branchlessly via ternary chain
-    //   - No cursor repositioning needed on Win32 (raw input is relative)
-    // =========================================================================
     HOT_FUNCTION void MelonPrimeCore::ProcessAimInputMouse()
     {
         if (m_isAimDisabled) return;
@@ -221,7 +179,6 @@ namespace MelonPrime {
             const int deltaX = m_input.mouseX;
             const int deltaY = m_input.mouseY;
 
-            // Common case: no mouse movement → skip all float math
             if ((deltaX | deltaY) == 0) return;
 
             float adjX = static_cast<float>(deltaX) * m_aimSensiFactor;
@@ -242,7 +199,6 @@ namespace MelonPrime {
             return;
         }
 
-        // First frame after gaining focus: establish center position
 #if !defined(_WIN32)
         const QPoint center = GetAdjustedCenter();
         m_aimData.centerX = center.x();
