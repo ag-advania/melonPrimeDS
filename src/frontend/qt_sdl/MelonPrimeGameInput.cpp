@@ -130,7 +130,6 @@ namespace MelonPrime {
         UnrollCheckDown(down, hkDown, std::make_index_sequence<kDownMaps.size()>{});
         UnrollCheckPress(press, hkPressed, std::make_index_sequence<kPressMaps.size()>{});
 
-        // 構造体への書き込み（MoveIndex, MouseX, MouseYもここで確定させる）
         m_input.down = down;
         m_input.press = press;
         m_input.moveIndex = static_cast<uint32_t>((down >> 6) & 0xF);
