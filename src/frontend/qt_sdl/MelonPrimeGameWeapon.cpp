@@ -17,16 +17,18 @@ namespace MelonPrime {
             POWER_BEAM   = 0,
             VOLT_DRIVER  = 1,
             MISSILE      = 2,
-            MAGMAUL      = 3,
-            JUDICATOR    = 4,
-            IMPERIALIST  = 5,
-            BATTLEHAMMER = 6,
+            BATTLEHAMMER = 3,
+            IMPERIALIST  = 4,
+            JUDICATOR    = 5,
+            MAGMAUL      = 6,
             SHOCK_COIL   = 7,
             OMEGA_CANNON = 8,
             NONE         = 0xFF
         };
 
-        // Display names indexed by weapon ID (0-8)
+        // Display names indexed by game-internal weapon ID (0-8).
+        // NOTE: Game-internal IDs differ from the enum label names.
+        //       e.g. internal ID 3 = Battlehammer, not Magmaul.
         static constexpr std::array<std::string_view, 9> kNames = {
             "Power Beam", "Volt Driver", "Missile Launcher", "Battlehammer",
             "Imperialist", "Judicator", "Magmaul", "Shock Coil", "Omega Cannon"
@@ -38,15 +40,15 @@ namespace MelonPrime {
             uint8_t  minAmmo;
         };
 
-        // Weapon cycle order: Beam → Missile → ShockCoil → BH → Imp → Jud → Mag → Volt → Omega
+        // Weapon cycle order: Beam → Missile → ShockCoil → Mag → Jud → Imp → BH → Volt → Omega
         constexpr std::array<Info, 9> ORDERED_WEAPONS = { {
             { POWER_BEAM,    0x001, 0    },
             { MISSILE,       0x004, 0x5  },
             { SHOCK_COIL,    0x080, 0xA  },
-            { BATTLEHAMMER,  0x040, 0x4  },
-            { IMPERIALIST,   0x020, 0x14 },
-            { JUDICATOR,     0x010, 0x5  },
-            { MAGMAUL,       0x008, 0xA  },
+            { MAGMAUL,       0x040, 0x4  },
+            { JUDICATOR,     0x020, 0x14 },
+            { IMPERIALIST,   0x010, 0x5  },
+            { BATTLEHAMMER,  0x008, 0xA  },
             { VOLT_DRIVER,   0x002, 0xA  },
             { OMEGA_CANNON,  0x100, 0    }
         } };
@@ -58,22 +60,17 @@ namespace MelonPrime {
         };
 
         constexpr uint8_t HOTKEY_TO_ID[] = {
-            POWER_BEAM, MISSILE, SHOCK_COIL, BATTLEHAMMER, IMPERIALIST,
-            JUDICATOR,  MAGMAUL, VOLT_DRIVER, NONE
+            POWER_BEAM, MISSILE, SHOCK_COIL, MAGMAUL, JUDICATOR,
+            IMPERIALIST, BATTLEHAMMER, VOLT_DRIVER, NONE
         };
 
         // Weapon ID → position in ORDERED_WEAPONS (constexpr LUT)
-        // Maps weapon ID (0-8) to its index in ORDERED_WEAPONS
         constexpr std::array<uint8_t, 9> ID_TO_ORDERED_IDX = { 0, 7, 1, 6, 5, 4, 3, 2, 8 };
 
     } // namespace WeaponData
 
     // =========================================================================
-    // Weapon availability check — fold-expression based (replaces recursive template)
-    //
-    // Generates one bit per weapon in ORDERED_WEAPONS order.
-    // Each weapon's availability is checked at compile-time where possible
-    // (PowerBeam is always available, etc.)
+    // Weapon availability check — fold-expression based
     // =========================================================================
     template <size_t I>
     FORCE_INLINE uint16_t CheckOneWeapon(
@@ -94,7 +91,7 @@ namespace MelonPrime {
         else {
             if (!(having & info.mask)) return 0;
             uint8_t req = info.minAmmo;
-            if constexpr (info.id == MAGMAUL) {
+            if constexpr (info.id == BATTLEHAMMER) {
                 if (isWeavel) req = 0x5;
             }
             return (weaponAmmo >= req) ? (1u << I) : 0;
@@ -106,12 +103,48 @@ namespace MelonPrime {
         uint16_t having, uint16_t weaponAmmo, uint16_t missileAmmo, bool isWeavel,
         std::index_sequence<Is...>)
     {
-        // Fold expression: OR together all individual weapon availability bits
         return (CheckOneWeapon<Is>(having, weaponAmmo, missileAmmo, isWeavel) | ...);
     }
 
     // =========================================================================
+    // Hotkey mask builder — fold-expression (replaces runtime loop)
+    //
+    // OPT: The previous `for (size_t i = 0; i < 9; ++i)` loop was likely
+    //      unrolled by the compiler, but the fold expression makes it explicit
+    //      and consistent with the codebase style (cf. UnrollCheckDown/Press).
+    //      Also avoids potential loop overhead on debug builds.
+    // =========================================================================
+    template <size_t... Is>
+    FORCE_INLINE uint32_t BuildHotkeyMask(uint64_t press, std::index_sequence<Is...>)
+    {
+        using namespace WeaponData;
+        return (((press & HOTKEY_BITS[Is]) ? (1u << Is) : 0u) | ...);
+    }
+
+    // =========================================================================
+    // Common weapon state — read once, reuse in both cycle and hotkey paths
+    // =========================================================================
+    struct WeaponState {
+        uint16_t having;
+        uint16_t weaponAmmo;
+        uint16_t missileAmmo;
+
+        FORCE_INLINE WeaponState(const uint16_t* havingPtr, const uint32_t* ammoPtr)
+            : having(*havingPtr)
+        {
+            const uint32_t ammoData = *ammoPtr;
+            weaponAmmo  = static_cast<uint16_t>(ammoData & 0xFFFF);
+            missileAmmo = static_cast<uint16_t>(ammoData >> 16);
+        }
+    };
+
+    // =========================================================================
     // ProcessWeaponSwitch — handles wheel/next/prev and direct hotkey selection
+    //
+    // OPT vs previous version:
+    //   1. Weapon cycling uses O(1) bit-scan instead of O(n) loop
+    //   2. Direct hotkey mask uses fold expression instead of runtime loop
+    //   3. Common WeaponState struct eliminates duplicate RAM reads
     // =========================================================================
     HOT_FUNCTION bool MelonPrimeCore::ProcessWeaponSwitch()
     {
@@ -132,16 +165,11 @@ namespace MelonPrime {
 
             const bool forward = (wheelDelta < 0) || nextKey;
 
-            // Read weapon state once
-            const uint16_t having     = *m_ptrs.havingWeapons;
-            const uint32_t ammoData   = *m_ptrs.weaponAmmo;
-            const uint16_t weaponAmmo = static_cast<uint16_t>(ammoData & 0xFFFF);
-            const uint16_t missileAmmo = static_cast<uint16_t>(ammoData >> 16);
+            const WeaponState ws(m_ptrs.havingWeapons, m_ptrs.weaponAmmo);
             const bool isWeavel = m_flags.test(StateFlags::BIT_IS_WEAVEL);
 
-            // Compile-time unrolled availability check
             const uint16_t availableBits = CheckAllWeapons(
-                having, weaponAmmo, missileAmmo, isWeavel,
+                ws.having, ws.weaponAmmo, ws.missileAmmo, isWeavel,
                 std::make_index_sequence<ORDERED_WEAPONS.size()>{});
 
             if (!availableBits) {
@@ -152,47 +180,46 @@ namespace MelonPrime {
             const uint8_t curID = *m_ptrs.currentWeapon;
             const uint8_t safeID = (curID >= 9) ? 0 : curID;
             const uint8_t currentIdx = ID_TO_ORDERED_IDX[safeID];
-            constexpr size_t count = ORDERED_WEAPONS.size();
 
-            // Cycle through weapons in the desired direction
-            for (size_t offset = 1; offset < count; ++offset) {
-                size_t checkIdx;
-                if (forward) {
-                    checkIdx = currentIdx + offset;
-                    if (checkIdx >= count) checkIdx -= count;
-                } else {
-                    checkIdx = (offset > currentIdx)
-                        ? count - (offset - currentIdx)
-                        : currentIdx - offset;
-                }
-
-                if (availableBits & (1u << checkIdx)) {
-                    SwitchWeapon(ORDERED_WEAPONS[checkIdx].id);
-                    return true;
-                }
+            // OPT: O(1) weapon cycling via bit-scan.
+            //
+            // Previous code used a loop iterating up to 8 times with modular
+            // arithmetic per iteration. The new approach:
+            //   Forward:  find lowest set bit ABOVE currentIdx, else wrap to lowest overall
+            //   Backward: find highest set bit BELOW currentIdx, else wrap to highest overall
+            //
+            // This replaces up to 8 iterations × (branch + mod) with 2-3 bit ops.
+            // Latency-sensitive because weapon switch triggers FrameAdvanceTwice
+            // immediately after, so every µs here is added to input-to-action delay.
+            const uint16_t candidates = availableBits & ~(1u << currentIdx);
+            if (!candidates) {
+                m_flags.clear(StateFlags::BIT_BLOCK_STYLUS);
+                return false;
             }
 
-            m_flags.clear(StateFlags::BIT_BLOCK_STYLUS);
-            return false;
+            size_t targetIdx;
+            if (forward) {
+                // Mask bits strictly above currentIdx
+                const uint16_t upper = candidates & ~((1u << (currentIdx + 1)) - 1);
+                targetIdx = upper ? BitScanFwd(upper) : BitScanFwd(candidates);
+            } else {
+                // Mask bits strictly below currentIdx
+                const uint16_t lower = candidates & ((1u << currentIdx) - 1);
+                targetIdx = lower ? BitScanRev(lower) : BitScanRev(candidates);
+            }
+
+            SwitchWeapon(ORDERED_WEAPONS[targetIdx].id);
+            return true;
         }
 
         // --- Case 2: Direct Weapon Hotkeys ---
         if (isStylusMode) m_flags.set(StateFlags::BIT_BLOCK_STYLUS);
 
-        // Build bitmask of pressed weapon hotkeys
-        uint32_t hot = 0;
-        for (size_t i = 0; i < 9; ++i) {
-            if (IsPressed(HOTKEY_BITS[i])) hot |= (1u << i);
-        }
+        // OPT: fold expression replaces runtime loop
+        const uint32_t hot = BuildHotkeyMask(
+            m_input.press, std::make_index_sequence<9>{});
 
-        // Find first set bit (lowest-numbered hotkey wins)
-#if defined(_MSC_VER) && !defined(__clang__)
-        unsigned long firstSetUL;
-        _BitScanForward(&firstSetUL, hot);
-        const int firstSet = static_cast<int>(firstSetUL);
-#else
-        const int firstSet = __builtin_ctz(hot);
-#endif
+        const int firstSet = static_cast<int>(BitScanFwd(hot));
 
         // Special Weapon (Affinity) — index 8
         if (UNLIKELY(firstSet == 8)) {
@@ -207,19 +234,15 @@ namespace MelonPrime {
         }
 
         const uint8_t weaponID = HOTKEY_TO_ID[firstSet];
-
-        // Use constexpr LUT to find the Info entry directly (no linear scan)
         const uint8_t orderedIdx = ID_TO_ORDERED_IDX[weaponID];
         const Info& info = ORDERED_WEAPONS[orderedIdx];
 
-        const uint16_t having      = *m_ptrs.havingWeapons;
-        const uint32_t ammoData    = *m_ptrs.weaponAmmo;
-        const uint16_t weaponAmmo  = static_cast<uint16_t>(ammoData & 0xFFFF);
-        const uint16_t missileAmmo = static_cast<uint16_t>(ammoData >> 16);
+        // OPT: single WeaponState read (was duplicated between Case 1 and Case 2)
+        const WeaponState ws(m_ptrs.havingWeapons, m_ptrs.weaponAmmo);
 
         // Ownership check
         const bool owned = (weaponID == POWER_BEAM || weaponID == MISSILE)
-                         || ((having & info.mask) != 0);
+                         || ((ws.having & info.mask) != 0);
 
         if (!owned) {
             emuInstance->osdAddMessage(0, "Have not %s yet!", kNames[weaponID].data());
@@ -230,11 +253,11 @@ namespace MelonPrime {
         // Ammo check
         bool hasAmmo = true;
         if (weaponID == MISSILE) {
-            hasAmmo = (missileAmmo >= 0xA);
+            hasAmmo = (ws.missileAmmo >= 0xA);
         } else if (weaponID != POWER_BEAM && weaponID != OMEGA_CANNON) {
             uint8_t required = info.minAmmo;
-            if (weaponID == MAGMAUL && m_flags.test(StateFlags::BIT_IS_WEAVEL)) required = 0x5;
-            hasAmmo = (weaponAmmo >= required);
+            if (weaponID == BATTLEHAMMER && m_flags.test(StateFlags::BIT_IS_WEAVEL)) required = 0x5;
+            hasAmmo = (ws.weaponAmmo >= required);
         }
 
         if (!hasAmmo) {
