@@ -84,14 +84,15 @@ namespace MelonPrime {
     // UpdateInputState — called once per frame, gathers all input sources
     //
     // Optimizations:
-    //   - Single RawInput target set per frame (moved setRawInputTarget here)
+    //   - Removed global memset (zero only needed fields)
     //   - Fold-expression unroll eliminates per-key function-call overhead
     //   - Mouse delta fetch is a single atomic load pair
     // =========================================================================
     HOT_FUNCTION void MelonPrimeCore::UpdateInputState()
     {
-        // Zero the entire struct in one go (64 bytes, compiler uses SIMD or REP STOS)
-        m_input = {};
+        // 【最適化】構造体全体のゼロクリア(memset)を廃止。
+        // m_input = {}; 
+        // 必要なメンバはローカル変数で構築後に一括代入する。
 
 #ifdef _WIN32
         if (!isFocused) return;
@@ -100,7 +101,7 @@ namespace MelonPrime {
         }
 #endif
 
-        uint64_t down  = 0;
+        uint64_t down = 0;
         uint64_t press = 0;
 
 #ifdef _WIN32
@@ -112,25 +113,26 @@ namespace MelonPrime {
         // Unified checker: RawInput ∪ Joypad
         const auto hkDown = [&](int id) -> bool {
             return hk.isDown(id) || emuInstance->joyHotkeyMask.testBit(id);
-        };
+            };
         const auto hkPressed = [&](int id) -> bool {
             return hk.isPressed(id) || emuInstance->joyHotkeyPress.testBit(id);
-        };
+            };
 #else
         const auto hkDown = [&](int id) -> bool {
             return emuInstance->hotkeyMask.testBit(id);
-        };
+            };
         const auto hkPressed = [&](int id) -> bool {
             return emuInstance->hotkeyPress.testBit(id);
-        };
+            };
 #endif
 
         // Compile-time unrolled: no loop overhead, no branch misprediction
-        UnrollCheckDown (down,  hkDown,    std::make_index_sequence<kDownMaps.size()>{});
+        UnrollCheckDown(down, hkDown, std::make_index_sequence<kDownMaps.size()>{});
         UnrollCheckPress(press, hkPressed, std::make_index_sequence<kPressMaps.size()>{});
 
-        m_input.down      = down;
-        m_input.press     = press;
+        // 構造体への書き込み（MoveIndex, MouseX, MouseYもここで確定させる）
+        m_input.down = down;
+        m_input.press = press;
         m_input.moveIndex = static_cast<uint32_t>((down >> 6) & 0xF);
 
 #if defined(_WIN32)
@@ -157,24 +159,25 @@ namespace MelonPrime {
 
         if (LIKELY(!m_flags.test(StateFlags::BIT_SNAP_TAP))) {
             finalInput = curr;
-        } else {
-            const uint32_t last     = m_snapState & 0xFFu;
+        }
+        else {
+            const uint32_t last = m_snapState & 0xFFu;
             const uint32_t priority = m_snapState >> 8;
             const uint32_t newPress = curr & ~last;
 
             // Detect conflicts on FB (bits 0-1) and LR (bits 2-3) axes
             const uint32_t conflictFB = ((curr & 0x3u) == 0x3u) ? 0x3u : 0u;
             const uint32_t conflictLR = ((curr & 0xCu) == 0xCu) ? 0xCu : 0u;
-            const uint32_t conflict   = conflictFB | conflictLR;
+            const uint32_t conflict = conflictFB | conflictLR;
 
             const bool hasNewConflict = (newPress & conflict) != 0;
             const uint32_t updateMask = hasNewConflict ? ~0u : 0u;
 
-            const uint32_t newPriority    = (priority & ~(conflict & updateMask)) | (newPress & conflict & updateMask);
+            const uint32_t newPriority = (priority & ~(conflict & updateMask)) | (newPress & conflict & updateMask);
             const uint32_t activePriority = newPriority & curr;
 
             m_snapState = static_cast<uint16_t>((curr & 0xFFu) | ((activePriority & 0xFFu) << 8));
-            finalInput  = (curr & ~conflict) | (activePriority & conflict);
+            finalInput = (curr & ~conflict) | (activePriority & conflict);
         }
 
         const uint8_t lutResult = MoveLUT[finalInput & 0xF];
@@ -188,7 +191,8 @@ namespace MelonPrime {
     {
         if (LIKELY(emuInstance->isTouching)) {
             emuInstance->getNDS()->TouchScreen(emuInstance->touchX, emuInstance->touchY);
-        } else {
+        }
+        else {
             emuInstance->getNDS()->ReleaseScreen();
         }
     }

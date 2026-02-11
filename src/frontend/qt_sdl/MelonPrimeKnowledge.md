@@ -1,8 +1,9 @@
-# MelonPrime Raw Input 最適化ナレッジ
+# MelonPrime 最適化ナレッジ
 
 ## 対象モジュール
 
-`MelonPrimeRawInputState` / `MelonPrimeRawInputWinFilter`
+- Raw Input 層: `MelonPrimeRawInputState` / `MelonPrimeRawInputWinFilter`
+- ゲームロジック層: `MelonPrime.h` / `MelonPrimeInGame.cpp` / `MelonPrimeGameWeapon.cpp`
 
 ---
 
@@ -75,6 +76,169 @@ x86 では acquire load は `MOV` なので実質同等だが、ARM/RISC-V で�
 - 512 の上限では安全マージンが小さい
 - 現時点で問題は発生していない
 - `GetRawInputBuffer` がデータを消費済みなので、ドレインはメッセージの削除のみ（データコピーなし）で高速
+
+---
+
+## ゲームロジック層の最適化
+
+### 3. `setRawInputTarget` HWND ガード
+
+`UpdateInputState` から毎フレーム呼ばれるが、HWND は通常変わらない。
+先頭に `if (m_hwndQtTarget == hwnd) return;` を追加し、不要な書き込みと Joy2Key ON 時の Unregister/Register を排除。
+
+### 4. `HandleAdventureMode` UI ボタン早期脱出
+
+UI ボタン5個（OK, LEFT, RIGHT, YES, NO）の `IsPressed` を個別にチェックしていたのを、`IB_UI_ANY` 合成マスクで1回のビットテストに集約。99%以上のフレームでは UI ボタンは押されないため、5回の関数呼び出しを1回に削減。
+
+### 5. WeaponData 重複 LUT 統合
+
+`ID_TO_ORDER_INDEX[]`（C配列）と `ID_TO_ORDERED_IDX`（`std::array`）が完全に同一内容だった。`ID_TO_ORDERED_IDX` に統合し、参照箇所を修正。
+
+### 6. 再入パスへの Fresh Poll 追加（エイムレイテンシ修正）
+
+**発見した問題:**
+
+`RunFrameHook` のフレームパイプラインをトレースした結果、**武器切替・モーフ中にエイムデータが 66ms stale になる**ことが判明。
+
+```
+通常フレーム（問題なし）:
+  Poll()                    [T+0.0ms]  入力収穫
+  UpdateInputState()        [T+0.01ms] デルタ確定
+  HandleInGameLogic()
+    ProcessAimInputMouse()  [T+0.03ms] aim書込
+  NDS::RunFrame()           [T+0.05ms] ゲーム読み取り
+  → Poll〜aim: ~30μs
+
+武器切替時（問題あり - 修正前）:
+  Poll()                    [T+0.0ms]  入力収穫
+  UpdateInputState()        [T+0.01ms] デルタ確定
+  HandleInGameLogic()
+    FrameAdvanceTwice() ×2  [T+0.1ms]  NDS 4フレーム実行
+      ↳ 再入 RunFrameHook() ×4
+        Poll なし! UpdateInputState なし!
+        ProcessAimInputMouse() ← 66ms前のデルタを使用
+  → 4フレーム全てが stale aim
+```
+
+**修正:** 再入パスの先頭に `Poll()` + `UpdateInputState()` を追加。
+
+```cpp
+if (UNLIKELY(m_isRunningHook)) {
+    // NEW: 再入フレームでも fresh input を取得
+    if (m_rawFilter) m_rawFilter->Poll();
+    UpdateInputState();
+    // ... 以下既存コード
+}
+```
+
+8000Hz マウスの場合、サブフレーム間（~4ms）に ~32 イベントが到着する。
+修正前はこれが全て無視されていた。修正後は各サブフレームで最新のデルタを使用。
+
+**コスト:** サブフレームあたり Poll() 1回（pending ~2-4 メッセージ、数μs）。
+
+---
+
+## フレームパイプライン分析
+
+### レイテンシチェーン全体
+
+```
+マウス物理移動
+  → USB ポール (125μs @ 8000Hz)
+  → OS raw input バッファ
+  → Poll() → GetRawInputBuffer (atomic 書込)
+  → UpdateInputState() → fetchMouseDelta (atomic 読取)
+  → ProcessAimInputMouse() → float計算 → game RAM 書込
+  → NDS::RunFrame() → ゲームが aim 読取
+  → GPU レンダリング
+  → ディスプレイ表示
+```
+
+### 制御可能な区間
+
+| 区間 | 現状 | 最適化後 |
+|---|---|---|
+| Poll〜aim書込（通常） | ~30μs | 変更不要 |
+| Poll〜aim書込（武器切替） | ~66ms (stale) | ~4ms/サブフレーム |
+| aim書込〜ゲーム読取 | ~0（直前に書込） | 変更不要 |
+
+### マルチスレッド化の評価
+
+**ゲームロジックの並列化: 不可**
+
+- `HandleInGameLogic` 内の全操作（morph, weapon, boost, aim）が NDS mainRAM に読み書きする
+- NDS::RunFrame() はスレッドセーフではない
+- 操作間に依存関係がある（武器切替: 状態読取 → RAM書込 → RunFrame → 状態読取）
+- 並列化しても書込先が同一バッファなので効果がない
+
+**バックグラウンド入力収穫スレッド: 検討の余地あり**
+
+現状（Joy2Key OFF）: Emu スレッドが `Poll()` で同期的に収穫。Poll 間（~16ms）は OS バッファに滞留。
+
+提案アーキテクチャ:
+```
+[入力スレッド]                    [Emu スレッド]
+  hidden window 所有                atomic 読取のみ
+  ↓                                ↓
+  MsgWait(QS_RAWINPUT)            pollHotkeys()
+  → 起床 (~125μs毎)              fetchMouseDelta()
+  processRawInputBatched()        → 常に最新データ
+  → atomic 書込
+  PeekMessage ドレイン
+  → スリープ
+```
+
+メリット:
+- 入力アトミクスが常に最新（~125μs 以内）
+- Emu スレッドが重い処理中でも入力が滞留しない
+- Poll() 呼び出し不要（Emu スレッドは atomic 読取のみ）
+
+デメリット:
+- hidden window の所有スレッド変更が必要
+- スレッドライフサイクル管理の複雑化
+- **通常フレームでの改善は ~30μs → ~0μs で体感できない可能性が高い**
+- Joy2Key ON モードには不要（Qt event filter が既にメインスレッドで動作）
+
+**結論:** 再入 Poll 修正で最大の実用的改善は達成済み。バックグラウンドスレッドは、シェーダコンパイル中のカクつき等が問題になった場合に再検討。
+
+---
+
+## 適用しなかった / 取り消した変更（ゲームロジック層）
+
+### ❌ `ApplyAimAdjustBranchless` max+copysign 変換（リバート済み）
+
+**当初の意図:** 軸あたり chained ternary（2分岐）→ `std::max(MAXSS)` + `std::copysign(ANDPS/ORPS)` で1分岐に削減。
+
+**実際の問題:**
+
+元のコード:
+```cpp
+dx = (absX < a) ? 0.0f : (absX < 1.0f) ? std::copysign(1.0f, dx) : dx;
+```
+
+エイムを速く振る（ホットケース）時、`abs(delta) >> 1.0` なので:
+- `absX < a` → false（予測的中）
+- `absX < 1.0` → false（予測的中）
+- **dx をそのまま返す。計算ゼロ。**
+
+変更後のコード:
+```cpp
+return std::copysign(std::max(av, 1.0f), val);
+```
+
+同じホットケースで:
+- `av < a` → false（予測的中）
+- `std::max(av, 1.0f)` → MAXSS 常に実行（結果は av のまま）
+- `std::copysign(...)` → ANDPS+ORPS 常に実行（結果は val のまま）
+- **同じ値を返すのに、毎回2命令余計に走る。**
+
+フレームあたり2回（X,Y）×毎フレーム×8000Hz マウスの高頻度デルタで体感に出た。
+
+**教訓: 「分岐数を減らす ≠ 常に速い」**
+
+分岐予測が安定的に的中するホットパスでは、分岐コスト ≈ 0。
+分岐を減らすために追加した ALU 命令は、ホットケースで**無駄な計算**になる。
+最適化の判断は「最頻ケースで何が実行されるか」を基準にすべき。
 
 ---
 

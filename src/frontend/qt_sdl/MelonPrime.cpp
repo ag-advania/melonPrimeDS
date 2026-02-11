@@ -45,9 +45,9 @@ namespace MelonPrime {
     // =========================================================================
     void MelonPrimeCore::ReloadConfigFlags()
     {
-        m_flags.assign(StateFlags::BIT_JOY2KEY,      localCfg.GetBool(CfgKey::Joy2Key));
-        m_flags.assign(StateFlags::BIT_SNAP_TAP,     localCfg.GetBool(CfgKey::SnapTap));
-        m_flags.assign(StateFlags::BIT_STYLUS_MODE,  localCfg.GetBool(CfgKey::StylusMode));
+        m_flags.assign(StateFlags::BIT_JOY2KEY, localCfg.GetBool(CfgKey::Joy2Key));
+        m_flags.assign(StateFlags::BIT_SNAP_TAP, localCfg.GetBool(CfgKey::SnapTap));
+        m_flags.assign(StateFlags::BIT_STYLUS_MODE, localCfg.GetBool(CfgKey::StylusMode));
         isStylusMode = m_flags.test(StateFlags::BIT_STYLUS_MODE);
     }
 
@@ -106,7 +106,8 @@ namespace MelonPrime {
         if (enable != s_isInstalled) {
             if (enable) {
                 app->installNativeEventFilter(m_rawFilter.get());
-            } else {
+            }
+            else {
                 app->removeNativeEventFilter(m_rawFilter.get());
             }
             s_isInstalled = enable;
@@ -124,7 +125,7 @@ namespace MelonPrime {
         const float sens = static_cast<float>(cfg.GetInt(CfgKey::AimSens));
         const float yScale = static_cast<float>(cfg.GetDouble(CfgKey::AimYScale));
         m_aimSensiFactor = sens * 0.01f;
-        m_aimCombinedY   = m_aimSensiFactor * yScale;
+        m_aimCombinedY = m_aimSensiFactor * yScale;
     }
 
     void MelonPrimeCore::ApplyAimAdjustSetting(Config::Table& cfg) {
@@ -184,7 +185,7 @@ namespace MelonPrime {
 
     void MelonPrimeCore::HandleGlobalHotkeys()
     {
-        const bool up   = emuInstance->hotkeyReleased(HK_MetroidIngameSensiUp);
+        const bool up = emuInstance->hotkeyReleased(HK_MetroidIngameSensiUp);
         const bool down = emuInstance->hotkeyReleased(HK_MetroidIngameSensiDown);
         if (LIKELY(!up && !down)) return;
 
@@ -194,7 +195,8 @@ namespace MelonPrime {
 
         if (next < 1) {
             emuInstance->osdAddMessage(0, "AimSensi cannot be decreased below 1");
-        } else if (next != cur) {
+        }
+        else if (next != cur) {
             localCfg.SetInt(CfgKey::AimSens, next);
             Config::Save();
             RecalcAimSensitivityCache(localCfg);
@@ -216,7 +218,19 @@ namespace MelonPrime {
         melonDS::u8* const mainRAM = emuInstance->getNDS()->MainRAM;
 
         // --- Re-entrant path (called from within FrameAdvance) ---
+        // OPT: Fresh Poll + UpdateInputState on every re-entrant frame.
+        //      Without this, weapon-switch / morph-toggle trigger 2-4 NDS frames
+        //      that all use the SAME stale mouse delta from the parent frame's
+        //      initial Poll(). With 8000Hz mouse, ~16 events arrive per sub-frame
+        //      that would otherwise be ignored. Cost: ~1 Poll per sub-frame (trivial).
         if (UNLIKELY(m_isRunningHook)) {
+#ifdef _WIN32
+            if (m_rawFilter) {
+                m_rawFilter->Poll();
+            }
+#endif
+            UpdateInputState();
+
             ProcessMoveInputFast();
             InputSetBranchless(INPUT_B, !IsDown(IB_JUMP));
 
@@ -224,7 +238,8 @@ namespace MelonPrime {
                 if (emuInstance->isTouching && !m_flags.test(StateFlags::BIT_BLOCK_STYLUS)) {
                     emuInstance->getNDS()->TouchScreen(emuInstance->touchX, emuInstance->touchY);
                 }
-            } else {
+            }
+            else {
                 ProcessAimInputMouse();
             }
 
@@ -267,42 +282,42 @@ namespace MelonPrime {
                 const uint32_t offP = static_cast<uint32_t>(m_playerPosition) * Consts::PLAYER_ADDR_INC;
                 const uint32_t offA = static_cast<uint32_t>(m_playerPosition) * Consts::AIM_ADDR_INC;
 
-                m_addrHot.isAltForm           = m_currentRom.baseIsAltForm           + offP;
-                m_addrHot.loadedSpecialWeapon  = m_currentRom.baseLoadedSpecialWeapon + offP;
-                m_addrHot.weaponChange         = m_currentRom.baseWeaponChange        + offP;
-                m_addrHot.selectedWeapon       = m_currentRom.baseSelectedWeapon      + offP;
-                m_addrHot.jumpFlag             = m_currentRom.baseJumpFlag            + offP;
-                m_addrHot.currentWeapon        = m_currentRom.baseCurrentWeapon       + offP;
-                m_addrHot.havingWeapons        = m_currentRom.baseHavingWeapons       + offP;
-                m_addrHot.weaponAmmo           = m_currentRom.baseWeaponAmmo          + offP;
-                m_addrHot.boostGauge           = m_currentRom.boostGauge              + offP;
-                m_addrHot.isBoosting           = m_currentRom.isBoosting              + offP;
-                m_addrHot.isInVisorOrMap       = m_currentRom.isInVisorOrMap          + offP;
+                m_addrHot.isAltForm = m_currentRom.baseIsAltForm + offP;
+                m_addrHot.loadedSpecialWeapon = m_currentRom.baseLoadedSpecialWeapon + offP;
+                m_addrHot.weaponChange = m_currentRom.baseWeaponChange + offP;
+                m_addrHot.selectedWeapon = m_currentRom.baseSelectedWeapon + offP;
+                m_addrHot.jumpFlag = m_currentRom.baseJumpFlag + offP;
+                m_addrHot.currentWeapon = m_currentRom.baseCurrentWeapon + offP;
+                m_addrHot.havingWeapons = m_currentRom.baseHavingWeapons + offP;
+                m_addrHot.weaponAmmo = m_currentRom.baseWeaponAmmo + offP;
+                m_addrHot.boostGauge = m_currentRom.boostGauge + offP;
+                m_addrHot.isBoosting = m_currentRom.isBoosting + offP;
+                m_addrHot.isInVisorOrMap = m_currentRom.isInVisorOrMap + offP;
 
                 m_addrHot.aimX = m_currentRom.baseAimX + offA;
                 m_addrHot.aimY = m_currentRom.baseAimY + offA;
 
                 m_addrHot.chosenHunter = m_currentRom.baseChosenHunter + m_playerPosition * 0x01u;
-                m_addrHot.inGameSensi  = m_currentRom.baseInGameSensi  + m_playerPosition * 0x04u;
+                m_addrHot.inGameSensi = m_currentRom.baseInGameSensi + m_playerPosition * 0x04u;
 
                 // Resolve all RAM pointers sequentially (prefetch-friendly)
-                m_ptrs.isAltForm              = GetRamPointer<uint8_t> (mainRAM, m_addrHot.isAltForm);
-                m_ptrs.jumpFlag               = GetRamPointer<uint8_t> (mainRAM, m_addrHot.jumpFlag);
-                m_ptrs.weaponChange           = GetRamPointer<uint8_t> (mainRAM, m_addrHot.weaponChange);
-                m_ptrs.selectedWeapon         = GetRamPointer<uint8_t> (mainRAM, m_addrHot.selectedWeapon);
-                m_ptrs.currentWeapon          = GetRamPointer<uint8_t> (mainRAM, m_addrHot.currentWeapon);
-                m_ptrs.havingWeapons          = GetRamPointer<uint16_t>(mainRAM, m_addrHot.havingWeapons);
-                m_ptrs.weaponAmmo             = GetRamPointer<uint32_t>(mainRAM, m_addrHot.weaponAmmo);
-                m_ptrs.boostGauge             = GetRamPointer<uint8_t> (mainRAM, m_addrHot.boostGauge);
-                m_ptrs.isBoosting             = GetRamPointer<uint8_t> (mainRAM, m_addrHot.isBoosting);
-                m_ptrs.loadedSpecialWeapon    = GetRamPointer<uint8_t> (mainRAM, m_addrHot.loadedSpecialWeapon);
-                m_ptrs.aimX                   = GetRamPointer<uint16_t>(mainRAM, m_addrHot.aimX);
-                m_ptrs.aimY                   = GetRamPointer<uint16_t>(mainRAM, m_addrHot.aimY);
-                m_ptrs.isInVisorOrMap         = GetRamPointer<uint8_t> (mainRAM, m_addrHot.isInVisorOrMap);
+                m_ptrs.isAltForm = GetRamPointer<uint8_t>(mainRAM, m_addrHot.isAltForm);
+                m_ptrs.jumpFlag = GetRamPointer<uint8_t>(mainRAM, m_addrHot.jumpFlag);
+                m_ptrs.weaponChange = GetRamPointer<uint8_t>(mainRAM, m_addrHot.weaponChange);
+                m_ptrs.selectedWeapon = GetRamPointer<uint8_t>(mainRAM, m_addrHot.selectedWeapon);
+                m_ptrs.currentWeapon = GetRamPointer<uint8_t>(mainRAM, m_addrHot.currentWeapon);
+                m_ptrs.havingWeapons = GetRamPointer<uint16_t>(mainRAM, m_addrHot.havingWeapons);
+                m_ptrs.weaponAmmo = GetRamPointer<uint32_t>(mainRAM, m_addrHot.weaponAmmo);
+                m_ptrs.boostGauge = GetRamPointer<uint8_t>(mainRAM, m_addrHot.boostGauge);
+                m_ptrs.isBoosting = GetRamPointer<uint8_t>(mainRAM, m_addrHot.isBoosting);
+                m_ptrs.loadedSpecialWeapon = GetRamPointer<uint8_t>(mainRAM, m_addrHot.loadedSpecialWeapon);
+                m_ptrs.aimX = GetRamPointer<uint16_t>(mainRAM, m_addrHot.aimX);
+                m_ptrs.aimY = GetRamPointer<uint16_t>(mainRAM, m_addrHot.aimY);
+                m_ptrs.isInVisorOrMap = GetRamPointer<uint8_t>(mainRAM, m_addrHot.isInVisorOrMap);
                 m_ptrs.isMapOrUserActionPaused = GetRamPointer<uint8_t>(mainRAM, m_addrHot.isMapOrUserActionPaused);
 
                 const uint8_t hunterID = Read8(mainRAM, m_addrHot.chosenHunter);
-                m_flags.assign(StateFlags::BIT_IS_SAMUS,  hunterID == 0x00);
+                m_flags.assign(StateFlags::BIT_IS_SAMUS, hunterID == 0x00);
                 m_flags.assign(StateFlags::BIT_IS_WEAVEL, hunterID == 0x06);
                 m_flags.assign(StateFlags::BIT_IN_ADVENTURE, Read8(mainRAM, m_currentRom.isInAdventure) == 0x02);
 
@@ -314,7 +329,8 @@ namespace MelonPrime {
             if (isFocused) {
                 if (LIKELY(isInGame)) {
                     HandleInGameLogic();
-                } else {
+                }
+                else {
                     m_flags.clear(StateFlags::BIT_IN_ADVENTURE);
                     m_isAimDisabled = true;
                     if (m_flags.test(StateFlags::BIT_IN_GAME_INIT)) {
@@ -325,7 +341,7 @@ namespace MelonPrime {
 
                 // Cursor mode transition — only fires on actual change
                 const bool isAdventure = m_flags.test(StateFlags::BIT_IN_ADVENTURE);
-                const bool isPaused    = m_flags.test(StateFlags::BIT_PAUSED);
+                const bool isPaused = m_flags.test(StateFlags::BIT_PAUSED);
                 const bool shouldBeCursorMode = !isInGame || (isAdventure && isPaused);
 
                 if (UNLIKELY(shouldBeCursorMode != isCursorMode)) {
@@ -355,10 +371,10 @@ namespace MelonPrime {
             panel->setCursor(show ? Qt::ArrowCursor : Qt::BlankCursor);
             if (show) panel->unclip();
             else panel->clipCursorCenter1px();
-        }, Qt::ConnectionType::QueuedConnection);
+            }, Qt::ConnectionType::QueuedConnection);
     }
 
-    void MelonPrimeCore::FrameAdvanceCustom()  { m_frameAdvanceFunc(); }
+    void MelonPrimeCore::FrameAdvanceCustom() { m_frameAdvanceFunc(); }
 
     void MelonPrimeCore::FrameAdvanceDefault()
     {
@@ -369,7 +385,8 @@ namespace MelonPrime {
         if (renderer.NeedsShaderCompile()) {
             int cur, total;
             renderer.ShaderCompileStep(cur, total);
-        } else {
+        }
+        else {
             emuInstance->getNDS()->RunFrame();
         }
 

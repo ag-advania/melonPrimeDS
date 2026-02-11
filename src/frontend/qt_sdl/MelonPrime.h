@@ -93,40 +93,41 @@ namespace MelonPrime {
     // Input cache bits — one-hot encoded for branchless mask operations
     // =========================================================================
     enum InputCacheBit : uint64_t {
-        IB_JUMP             = 1ULL << 0,
-        IB_SHOOT            = 1ULL << 1,
-        IB_ZOOM             = 1ULL << 2,
-        IB_MORPH            = 1ULL << 3,
-        IB_MORPH_BOOST      = 1ULL << 4,
-        IB_WEAPON_CHECK     = 1ULL << 5,
-        IB_MOVE_F           = 1ULL << 6,
-        IB_MOVE_B           = 1ULL << 7,
-        IB_MOVE_L           = 1ULL << 8,
-        IB_MOVE_R           = 1ULL << 9,
-        IB_MENU             = 1ULL << 10,
-        IB_SCAN_VISOR       = 1ULL << 11,
-        IB_UI_OK            = 1ULL << 12,
-        IB_UI_LEFT          = 1ULL << 13,
-        IB_UI_RIGHT         = 1ULL << 14,
-        IB_UI_YES           = 1ULL << 15,
-        IB_UI_NO            = 1ULL << 16,
-        IB_WEAPON_BEAM      = 1ULL << 17,
-        IB_WEAPON_MISSILE   = 1ULL << 18,
-        IB_WEAPON_1         = 1ULL << 19,
-        IB_WEAPON_2         = 1ULL << 20,
-        IB_WEAPON_3         = 1ULL << 21,
-        IB_WEAPON_4         = 1ULL << 22,
-        IB_WEAPON_5         = 1ULL << 23,
-        IB_WEAPON_6         = 1ULL << 24,
-        IB_WEAPON_SPECIAL   = 1ULL << 25,
-        IB_WEAPON_NEXT      = 1ULL << 26,
-        IB_WEAPON_PREV      = 1ULL << 27,
+        IB_JUMP = 1ULL << 0,
+        IB_SHOOT = 1ULL << 1,
+        IB_ZOOM = 1ULL << 2,
+        IB_MORPH = 1ULL << 3,
+        IB_MORPH_BOOST = 1ULL << 4,
+        IB_WEAPON_CHECK = 1ULL << 5,
+        IB_MOVE_F = 1ULL << 6,
+        IB_MOVE_B = 1ULL << 7,
+        IB_MOVE_L = 1ULL << 8,
+        IB_MOVE_R = 1ULL << 9,
+        IB_MENU = 1ULL << 10,
+        IB_SCAN_VISOR = 1ULL << 11,
+        IB_UI_OK = 1ULL << 12,
+        IB_UI_LEFT = 1ULL << 13,
+        IB_UI_RIGHT = 1ULL << 14,
+        IB_UI_YES = 1ULL << 15,
+        IB_UI_NO = 1ULL << 16,
+        IB_WEAPON_BEAM = 1ULL << 17,
+        IB_WEAPON_MISSILE = 1ULL << 18,
+        IB_WEAPON_1 = 1ULL << 19,
+        IB_WEAPON_2 = 1ULL << 20,
+        IB_WEAPON_3 = 1ULL << 21,
+        IB_WEAPON_4 = 1ULL << 22,
+        IB_WEAPON_5 = 1ULL << 23,
+        IB_WEAPON_6 = 1ULL << 24,
+        IB_WEAPON_SPECIAL = 1ULL << 25,
+        IB_WEAPON_NEXT = 1ULL << 26,
+        IB_WEAPON_PREV = 1ULL << 27,
 
-        IB_MOVE_MASK  = IB_MOVE_F | IB_MOVE_B | IB_MOVE_L | IB_MOVE_R,
+        IB_MOVE_MASK = IB_MOVE_F | IB_MOVE_B | IB_MOVE_L | IB_MOVE_R,
         IB_WEAPON_ANY = IB_WEAPON_BEAM | IB_WEAPON_MISSILE |
-                         IB_WEAPON_1 | IB_WEAPON_2 | IB_WEAPON_3 |
-                         IB_WEAPON_4 | IB_WEAPON_5 | IB_WEAPON_6 |
-                         IB_WEAPON_SPECIAL,
+        IB_WEAPON_1 | IB_WEAPON_2 | IB_WEAPON_3 |
+        IB_WEAPON_4 | IB_WEAPON_5 | IB_WEAPON_6 |
+        IB_WEAPON_SPECIAL,
+        IB_UI_ANY = IB_UI_OK | IB_UI_LEFT | IB_UI_RIGHT | IB_UI_YES | IB_UI_NO,
     };
 
     // =========================================================================
@@ -179,42 +180,42 @@ namespace MelonPrime {
         uint16_t* aimY;
 
         // Combat (every frame when in-game)
-        uint8_t*  isAltForm;
-        uint8_t*  jumpFlag;
-        uint8_t*  weaponChange;
-        uint8_t*  selectedWeapon;
-        uint8_t*  currentWeapon;
+        uint8_t* isAltForm;
+        uint8_t* jumpFlag;
+        uint8_t* weaponChange;
+        uint8_t* selectedWeapon;
+        uint8_t* currentWeapon;
         uint16_t* havingWeapons;
         uint32_t* weaponAmmo;
-        uint8_t*  loadedSpecialWeapon;
+        uint8_t* loadedSpecialWeapon;
 
         // Boost (conditional per frame)
-        uint8_t*  boostGauge;
-        uint8_t*  isBoosting;
+        uint8_t* boostGauge;
+        uint8_t* isBoosting;
 
         // Adventure mode
-        uint8_t*  isInVisorOrMap;
-        uint8_t*  isMapOrUserActionPaused;
+        uint8_t* isInVisorOrMap;
+        uint8_t* isMapOrUserActionPaused;
     };
 
     // =========================================================================
     // Aim block reason bits
     // =========================================================================
     enum AimBlockBit : uint32_t {
-        AIMBLK_CHECK_WEAPON    = 1u << 0,
+        AIMBLK_CHECK_WEAPON = 1u << 0,
         AIMBLK_MORPHBALL_BOOST = 1u << 1,
-        AIMBLK_CURSOR_MODE     = 1u << 2,
+        AIMBLK_CURSOR_MODE = 1u << 2,
     };
 
     // =========================================================================
     // Applied-once setting flags
     // =========================================================================
     enum AppliedFlag : uint8_t {
-        APPLIED_HEADPHONE  = 1u << 0,
-        APPLIED_UNLOCK     = 1u << 1,
-        APPLIED_VOL_SFX    = 1u << 2,
-        APPLIED_VOL_MUSIC  = 1u << 3,
-        APPLIED_ALL_ONCE   = APPLIED_HEADPHONE | APPLIED_UNLOCK | APPLIED_VOL_SFX | APPLIED_VOL_MUSIC,
+        APPLIED_HEADPHONE = 1u << 0,
+        APPLIED_UNLOCK = 1u << 1,
+        APPLIED_VOL_SFX = 1u << 2,
+        APPLIED_VOL_MUSIC = 1u << 3,
+        APPLIED_ALL_ONCE = APPLIED_HEADPHONE | APPLIED_UNLOCK | APPLIED_VOL_SFX | APPLIED_VOL_MUSIC,
     };
 
 #ifdef _WIN32
@@ -250,7 +251,7 @@ namespace MelonPrime {
         [[nodiscard]] uint16_t GetInputMaskFast() const { return m_inputMaskFast; }
 
         bool isCursorMode = true;
-        bool isFocused    = false;
+        bool isFocused = false;
         bool isClipWanted = false;
         bool isStylusMode = false;
 
@@ -270,49 +271,49 @@ namespace MelonPrime {
 
         // [Cache Line 3: Per-frame scalars — fits in one line]
         uint16_t m_inputMaskFast = 0xFFFF;
-        uint16_t m_snapState     = 0;
-        uint32_t m_aimBlockBits  = 0;
-        float    m_aimSensiFactor  = 0.01f;
-        float    m_aimCombinedY    = 0.013333333f;
-        float    m_aimAdjust       = 0.5f;
-        bool     m_isAimDisabled        = false;
-        bool     m_isRunningHook        = false;
-        bool     m_isWeaponCheckActive  = false;
-        bool     m_isInGame             = false;
+        uint16_t m_snapState = 0;
+        uint32_t m_aimBlockBits = 0;
+        float    m_aimSensiFactor = 0.01f;
+        float    m_aimCombinedY = 0.013333333f;
+        float    m_aimAdjust = 0.5f;
+        bool     m_isAimDisabled = false;
+        bool     m_isRunningHook = false;
+        bool     m_isWeaponCheckActive = false;
+        bool     m_isInGame = false;
         bool     m_isLayoutChangePending = true;
 
         // [State flags — packed bitfield for single-compare branching]
         struct alignas(4) StateFlags {
             uint32_t packed = 0;
 
-            static constexpr uint32_t BIT_ROM_DETECTED         = 1u << 0;
-            static constexpr uint32_t BIT_IN_GAME              = 1u << 1;
-            static constexpr uint32_t BIT_IN_GAME_INIT         = 1u << 2;
-            static constexpr uint32_t BIT_PAUSED               = 1u << 3;
-            static constexpr uint32_t BIT_IN_ADVENTURE         = 1u << 4;
+            static constexpr uint32_t BIT_ROM_DETECTED = 1u << 0;
+            static constexpr uint32_t BIT_IN_GAME = 1u << 1;
+            static constexpr uint32_t BIT_IN_GAME_INIT = 1u << 2;
+            static constexpr uint32_t BIT_PAUSED = 1u << 3;
+            static constexpr uint32_t BIT_IN_ADVENTURE = 1u << 4;
             static constexpr uint32_t BIT_WAS_IN_GAME_RENDERER = 1u << 5;
-            static constexpr uint32_t BIT_IS_SAMUS             = 1u << 6;
-            static constexpr uint32_t BIT_IS_WEAVEL            = 1u << 7;
-            static constexpr uint32_t BIT_IS_ALT_FORM          = 1u << 8;
-            static constexpr uint32_t BIT_SNAP_TAP             = 1u << 9;
-            static constexpr uint32_t BIT_JOY2KEY              = 1u << 10;
-            static constexpr uint32_t BIT_STYLUS_MODE          = 1u << 11;
-            static constexpr uint32_t BIT_LAYOUT_PENDING       = 1u << 12;
-            static constexpr uint32_t BIT_LAST_FOCUSED         = 1u << 13;
-            static constexpr uint32_t BIT_BLOCK_STYLUS         = 1u << 14;
+            static constexpr uint32_t BIT_IS_SAMUS = 1u << 6;
+            static constexpr uint32_t BIT_IS_WEAVEL = 1u << 7;
+            static constexpr uint32_t BIT_IS_ALT_FORM = 1u << 8;
+            static constexpr uint32_t BIT_SNAP_TAP = 1u << 9;
+            static constexpr uint32_t BIT_JOY2KEY = 1u << 10;
+            static constexpr uint32_t BIT_STYLUS_MODE = 1u << 11;
+            static constexpr uint32_t BIT_LAYOUT_PENDING = 1u << 12;
+            static constexpr uint32_t BIT_LAST_FOCUSED = 1u << 13;
+            static constexpr uint32_t BIT_BLOCK_STYLUS = 1u << 14;
 
-            FORCE_INLINE void set(uint32_t bit)                  { packed |= bit; }
-            FORCE_INLINE void clear(uint32_t bit)                { packed &= ~bit; }
-            FORCE_INLINE void assign(uint32_t bit, bool val)     { packed = (packed & ~bit) | (val ? bit : 0u); }
+            FORCE_INLINE void set(uint32_t bit) { packed |= bit; }
+            FORCE_INLINE void clear(uint32_t bit) { packed &= ~bit; }
+            FORCE_INLINE void assign(uint32_t bit, bool val) { packed = (packed & ~bit) | (val ? bit : 0u); }
             [[nodiscard]] FORCE_INLINE bool test(uint32_t bit) const { return (packed & bit) != 0; }
         } m_flags{};
 
         // [Cold / infrequently accessed]
         RomAddresses m_currentRom{};
-        uint8_t      m_appliedFlags  = 0;
+        uint8_t      m_appliedFlags = 0;
         melonDS::u8  m_playerPosition = 0;
 
-        EmuInstance*  emuInstance;
+        EmuInstance* emuInstance;
         Config::Table& localCfg;
         Config::Table& globalCfg;
 
@@ -365,7 +366,7 @@ namespace MelonPrime {
             dy = (absY < a) ? 0.0f : (absY < 1.0f) ? std::copysign(1.0f, dy) : dy;
         }
 
-        [[nodiscard]] FORCE_INLINE bool IsDown(uint64_t bit) const    { return (m_input.down  & bit) != 0; }
+        [[nodiscard]] FORCE_INLINE bool IsDown(uint64_t bit) const { return (m_input.down & bit) != 0; }
         [[nodiscard]] FORCE_INLINE bool IsPressed(uint64_t bit) const { return (m_input.press & bit) != 0; }
         [[nodiscard]] FORCE_INLINE bool IsAnyPressed(uint64_t mask) const { return (m_input.press & mask) != 0; }
 

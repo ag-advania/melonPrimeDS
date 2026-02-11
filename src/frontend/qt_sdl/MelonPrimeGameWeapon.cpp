@@ -63,9 +63,6 @@ namespace MelonPrime {
         };
 
         // Weapon ID → position in ORDERED_WEAPONS (constexpr LUT)
-        constexpr uint8_t ID_TO_ORDER_INDEX[] = { 0, 7, 1, 6, 5, 4, 3, 2, 8 };
-
-        // Direct lookup: weapon ID → Info pointer (avoids linear scan)
         // Maps weapon ID (0-8) to its index in ORDERED_WEAPONS
         constexpr std::array<uint8_t, 9> ID_TO_ORDERED_IDX = { 0, 7, 1, 6, 5, 4, 3, 2, 8 };
 
@@ -154,7 +151,7 @@ namespace MelonPrime {
 
             const uint8_t curID = *m_ptrs.currentWeapon;
             const uint8_t safeID = (curID >= 9) ? 0 : curID;
-            const uint8_t currentIdx = ID_TO_ORDER_INDEX[safeID];
+            const uint8_t currentIdx = ID_TO_ORDERED_IDX[safeID];
             constexpr size_t count = ORDERED_WEAPONS.size();
 
             // Cycle through weapons in the desired direction
