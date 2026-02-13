@@ -40,7 +40,7 @@ namespace MelonPrime {
             uint8_t  minAmmo;
         };
 
-        // Weapon cycle order: Beam → Missile → ShockCoil → Mag → Jud → Imp → BH → Volt → Omega
+        // Weapon cycle order: Beam â†’ Missile â†’ ShockCoil â†’ Mag â†’ Jud â†’ Imp â†’ BH â†’ Volt â†’ Omega
         constexpr std::array<Info, 9> ORDERED_WEAPONS = { {
             { POWER_BEAM,    0x001, 0    },
             { MISSILE,       0x004, 0x5  },
@@ -64,13 +64,13 @@ namespace MelonPrime {
             IMPERIALIST, BATTLEHAMMER, VOLT_DRIVER, NONE
         };
 
-        // Weapon ID → position in ORDERED_WEAPONS (constexpr LUT)
+        // Weapon ID â†’ position in ORDERED_WEAPONS (constexpr LUT)
         constexpr std::array<uint8_t, 9> ID_TO_ORDERED_IDX = { 0, 7, 1, 6, 5, 4, 3, 2, 8 };
 
     } // namespace WeaponData
 
     // =========================================================================
-    // Weapon availability check — fold-expression based
+    // Weapon availability check â€” fold-expression based
     // =========================================================================
     template <size_t I>
     FORCE_INLINE uint16_t CheckOneWeapon(
@@ -107,7 +107,7 @@ namespace MelonPrime {
     }
 
     // =========================================================================
-    // Hotkey mask builder — fold-expression (replaces runtime loop)
+    // Hotkey mask builder â€” fold-expression (replaces runtime loop)
     //
     // OPT: The previous `for (size_t i = 0; i < 9; ++i)` loop was likely
     //      unrolled by the compiler, but the fold expression makes it explicit
@@ -122,7 +122,7 @@ namespace MelonPrime {
     }
 
     // =========================================================================
-    // Common weapon state — read once, reuse in both cycle and hotkey paths
+    // Common weapon state â€” read once, reuse in both cycle and hotkey paths
     // =========================================================================
     struct WeaponState {
         uint16_t having;
@@ -139,7 +139,7 @@ namespace MelonPrime {
     };
 
     // =========================================================================
-    // ProcessWeaponSwitch — handles wheel/next/prev and direct hotkey selection
+    // ProcessWeaponSwitch â€” handles wheel/next/prev and direct hotkey selection
     //
     // OPT vs previous version:
     //   1. Weapon cycling uses O(1) bit-scan instead of O(n) loop
@@ -152,10 +152,11 @@ namespace MelonPrime {
 
         // --- Case 1: Mouse Wheel / Next / Prev ---
         if (LIKELY(!IsAnyPressed(IB_WEAPON_ANY))) {
-            auto* panel = emuInstance->getMainWindow()->panel;
-            if (!panel) return false;
-
-            const int wheelDelta = panel->getDelta();
+            // OPT-A: wheelDelta is now pre-fetched by UpdateInputState into m_input.
+            //   Eliminates: emuInstance→getMainWindow()→panel→getDelta() (~18-28 cyc)
+            //   The caller (HandleInGameLogic) already gates on hasWeaponInput,
+            //   so this path only executes when wheel/next/prev is active.
+            const int wheelDelta = m_input.wheelDelta;
             const bool nextKey = IsPressed(IB_WEAPON_NEXT);
             const bool prevKey = IsPressed(IB_WEAPON_PREV);
 
@@ -188,9 +189,9 @@ namespace MelonPrime {
             //   Forward:  find lowest set bit ABOVE currentIdx, else wrap to lowest overall
             //   Backward: find highest set bit BELOW currentIdx, else wrap to highest overall
             //
-            // This replaces up to 8 iterations × (branch + mod) with 2-3 bit ops.
+            // This replaces up to 8 iterations Ã— (branch + mod) with 2-3 bit ops.
             // Latency-sensitive because weapon switch triggers FrameAdvanceTwice
-            // immediately after, so every µs here is added to input-to-action delay.
+            // immediately after, so every Âµs here is added to input-to-action delay.
             const uint16_t candidates = availableBits & ~(1u << currentIdx);
             if (!candidates) {
                 m_flags.clear(StateFlags::BIT_BLOCK_STYLUS);
@@ -221,7 +222,7 @@ namespace MelonPrime {
 
         const int firstSet = static_cast<int>(BitScanFwd(hot));
 
-        // Special Weapon (Affinity) — index 8
+        // Special Weapon (Affinity) â€” index 8
         if (UNLIKELY(firstSet == 8)) {
             const uint8_t loaded = *m_ptrs.loadedSpecialWeapon;
             if (loaded == 0xFF) {
@@ -271,7 +272,7 @@ namespace MelonPrime {
     }
 
     // =========================================================================
-    // SwitchWeapon — executes the weapon change by manipulating game RAM
+    // SwitchWeapon â€” executes the weapon change by manipulating game RAM
     // =========================================================================
     void MelonPrimeCore::SwitchWeapon(int weaponIndex)
     {

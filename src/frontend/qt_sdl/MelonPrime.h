@@ -132,8 +132,9 @@ namespace MelonPrime {
         uint64_t press;
         int32_t  mouseX;
         int32_t  mouseY;
+        int32_t  wheelDelta;  // OPT-A: Fetched once in UpdateInputState, avoids per-frame panel pointer chase
         uint32_t moveIndex;
-        uint32_t _pad[3];
+        uint32_t _pad[2];
     };
     static_assert(sizeof(FrameInputState) == 64);
 
@@ -183,6 +184,7 @@ namespace MelonPrime {
         AIMBLK_CHECK_WEAPON = 1u << 0,
         AIMBLK_MORPHBALL_BOOST = 1u << 1,
         AIMBLK_CURSOR_MODE = 1u << 2,
+        AIMBLK_NOT_IN_GAME = 1u << 3,  // OPT-G: Replaces standalone m_isAimDisabled
     };
 
     enum AppliedFlag : uint8_t {
@@ -218,7 +220,8 @@ namespace MelonPrime {
 
         void SetFrameAdvanceFunc(std::function<void()> func);
 
-        [[nodiscard]] FORCE_INLINE bool IsInGame() const { return m_isInGame; }
+        // OPT-D: Unified with BIT_IN_GAME flag, eliminating redundant m_isInGame store.
+        [[nodiscard]] FORCE_INLINE bool IsInGame() const { return m_flags.test(StateFlags::BIT_IN_GAME); }
         [[nodiscard]] bool ShouldForceSoftwareRenderer() const;
         [[nodiscard]] uint16_t GetInputMaskFast() const { return m_inputMaskFast; }
 
@@ -230,9 +233,25 @@ namespace MelonPrime {
         void NotifyLayoutChange() { m_isLayoutChangePending = true; }
 
     private:
+        // =================================================================
+        // OPT-C: Cache-optimized member layout
+        //   CL0:  m_input         (R/W every frame, 64B)
+        //   CL1+: m_ptrs          (R every frame, was after cold m_addrHot)
+        //   Hot scalars + emuInstance (R/W every frame, same CL cluster)
+        //   Warm: fnAdvance, frameAdvanceFunc, rawFilter
+        //   Cold: m_addrHot, m_currentRom (init-only, pushed to end)
+        // =================================================================
+
+        // ─── CL0: Input State (R/W every frame) ───
         alignas(64) FrameInputState m_input{};
-        GameAddressesHot m_addrHot{};
-        HotPointers      m_ptrs{};
+
+        // ─── CL1+: RAM Pointers (R every frame) ───
+        alignas(64) HotPointers m_ptrs{};
+
+        // ─── Hot Scalars + Core Pointers (R/W every frame) ───
+        EmuInstance* emuInstance;
+        Config::Table& localCfg;
+        Config::Table& globalCfg;
 
         uint16_t m_inputMaskFast = 0xFFFF;
         uint16_t m_snapState = 0;
@@ -240,10 +259,17 @@ namespace MelonPrime {
         float    m_aimSensiFactor = 0.01f;
         float    m_aimCombinedY = 0.013333333f;
         float    m_aimAdjust = 0.5f;
-        bool     m_isAimDisabled = false;
+        // OPT-F: Precomputed integer thresholds for skipping float conversion.
+        //   If |deltaX| < thresholdX AND |deltaY| < thresholdY, the scaled result
+        //   will truncate to 0, so we can skip float math entirely.
+        //   Updated by RecalcAimThresholds() when sensitivity or aimAdjust changes.
+        int32_t  m_aimMinDeltaX = 1;
+        int32_t  m_aimMinDeltaY = 1;
+        // OPT-G: m_isAimDisabled removed — unified with m_aimBlockBits.
+        //   Test via `if (m_aimBlockBits)` instead.
         bool     m_isRunningHook = false;
         bool     m_isWeaponCheckActive = false;
-        bool     m_isInGame = false;
+        // OPT-D: m_isInGame removed — unified with BIT_IN_GAME flag
         bool     m_isLayoutChangePending = true;
 
         struct alignas(4) StateFlags {
@@ -270,14 +296,7 @@ namespace MelonPrime {
             [[nodiscard]] FORCE_INLINE bool test(uint32_t bit) const { return (packed & bit) != 0; }
         } m_flags{};
 
-        RomAddresses m_currentRom{};
-        uint8_t      m_appliedFlags = 0;
-        melonDS::u8  m_playerPosition = 0;
-
-        EmuInstance* emuInstance;
-        Config::Table& localCfg;
-        Config::Table& globalCfg;
-
+        // ─── Warm: Frame advance + platform ───
         std::function<void()> m_frameAdvanceFunc;
         using AdvanceMethod = void (MelonPrimeCore::*)();
         AdvanceMethod m_fnAdvance = &MelonPrimeCore::FrameAdvanceDefault;
@@ -292,6 +311,12 @@ namespace MelonPrime {
             int centerY = 0;
         } m_aimData;
 
+        // ─── Cold: Init-only data (pushed to end) ───
+        GameAddressesHot m_addrHot{};
+        RomAddresses m_currentRom{};
+        uint8_t      m_appliedFlags = 0;
+        melonDS::u8  m_playerPosition = 0;
+
         // =================================================================
         // Inline helpers
         // =================================================================
@@ -302,9 +327,10 @@ namespace MelonPrime {
             m_inputMaskFast = (m_inputMaskFast & ~mask) | (static_cast<uint16_t>(released) * mask);
         }
 
+        // OPT-G: Single store — m_isAimDisabled eliminated.
+        //   Callers test `m_aimBlockBits` directly (TEST reg,reg ≡ same cost).
         FORCE_INLINE void SetAimBlockBranchless(uint32_t bitMask, bool enable) noexcept {
             m_aimBlockBits = (m_aimBlockBits & ~bitMask) | (enable ? bitMask : 0u);
-            m_isAimDisabled = (m_aimBlockBits != 0);
         }
 
         template <typename T>
@@ -347,6 +373,7 @@ namespace MelonPrime {
 
         void RecalcAimSensitivityCache(Config::Table& cfg);
         void ApplyAimAdjustSetting(Config::Table& cfg);
+        void RecalcAimThresholds();  // OPT-F: Update integer skip-thresholds
         void HandleGlobalHotkeys();
         void ProcessAimInputStylus();
         void SwitchWeapon(int weaponIndex);

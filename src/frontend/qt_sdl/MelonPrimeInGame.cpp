@@ -10,7 +10,7 @@
 namespace MelonPrime {
 
     // =========================================================================
-    // HandleInGameLogic — per-frame in-game update
+    // HandleInGameLogic â€” per-frame in-game update
     // Optimized with Hot/Cold splitting to minimize instruction cache pressure.
     // =========================================================================
     HOT_FUNCTION void MelonPrimeCore::HandleInGameLogic()
@@ -22,8 +22,18 @@ namespace MelonPrime {
             HandleRareMorph();
         }
 
-        if (UNLIKELY(ProcessWeaponSwitch())) {
-            HandleRareWeaponSwitch();
+        // OPT-A: Combined weapon input gate.
+        //   Old: ProcessWeaponSwitch called every frame, chased panel pointer for wheelDelta.
+        //   New: Single bitmask test + wheelDelta check skips call entirely on 99%+ frames.
+        //        wheelDelta is now pre-fetched into m_input by UpdateInputState.
+        {
+            constexpr uint64_t IB_WEAPON_ALL_TRIGGERS =
+                IB_WEAPON_ANY | IB_WEAPON_NEXT | IB_WEAPON_PREV;
+            const bool hasWeaponInput =
+                (m_input.press & IB_WEAPON_ALL_TRIGGERS) || m_input.wheelDelta;
+            if (UNLIKELY(hasWeaponInput && ProcessWeaponSwitch())) {
+                HandleRareWeaponSwitch();
+            }
         }
 
         // --- Adventure Mode ---
@@ -53,7 +63,7 @@ namespace MelonPrime {
 
         // OPT: Branchless batched button mask update.
         //
-        // Previous code: 3 conditional ternaries → 3 separate RMW on m_inputMaskFast.
+        // Previous code: 3 conditional ternaries â†’ 3 separate RMW on m_inputMaskFast.
         //   mask |= (!IsDown(IB_JUMP))  ? (1u << INPUT_B) : 0;
         //   mask |= (!IsDown(IB_SHOOT)) ? (1u << INPUT_L) : 0;
         //   mask |= (!IsDown(IB_ZOOM))  ? (1u << INPUT_R) : 0;
@@ -63,14 +73,14 @@ namespace MelonPrime {
         //
         // New code: extract inverted bits from m_input.down (already in L1),
         // shift each to its target position, OR together in one write.
-        // Generates: NOT + 3×(SHR+AND+SHL) + 3×OR + 1 masked store.
+        // Generates: NOT + 3Ã—(SHR+AND+SHL) + 3Ã—OR + 1 masked store.
         // Zero branches, single write to m_inputMaskFast, no dependency chain.
         {
             constexpr uint16_t kModBits = (1u << INPUT_B) | (1u << INPUT_L) | (1u << INPUT_R);
             const uint64_t nd = ~m_input.down;
-            // IB_JUMP  = bit 0 → INPUT_B = bit 1
-            // IB_SHOOT = bit 1 → INPUT_L = bit 9
-            // IB_ZOOM  = bit 2 → INPUT_R = bit 8
+            // IB_JUMP  = bit 0 â†’ INPUT_B = bit 1
+            // IB_SHOOT = bit 1 â†’ INPUT_L = bit 9
+            // IB_ZOOM  = bit 2 â†’ INPUT_R = bit 8
             const uint16_t bBit = static_cast<uint16_t>(((nd >> 0) & 1u) << INPUT_B);
             const uint16_t lBit = static_cast<uint16_t>(((nd >> 1) & 1u) << INPUT_L);
             const uint16_t rBit = static_cast<uint16_t>(((nd >> 2) & 1u) << INPUT_R);
@@ -87,7 +97,8 @@ namespace MelonPrime {
         }
         else {
             ProcessAimInputMouse();
-            if (!m_flags.test(StateFlags::BIT_LAST_FOCUSED) || !m_isAimDisabled) {
+            // OPT-G: m_aimBlockBits replaces m_isAimDisabled (same semantics: != 0)
+            if (!m_flags.test(StateFlags::BIT_LAST_FOCUSED) || !m_aimBlockBits) {
                 using namespace Consts::UI;
                 emuInstance->getNDS()->TouchScreen(CENTER_RESET.x(), CENTER_RESET.y());
             }
@@ -212,7 +223,11 @@ namespace MelonPrime {
             }
         }
         else {
-            SetAimBlockBranchless(AIMBLK_MORPHBALL_BOOST, false);
+            // OPT-B: Guard redundant store — 99%+ of frames this bit is already 0.
+            //   Avoids dirtying the cache line with an identical value.
+            if (UNLIKELY(m_aimBlockBits & AIMBLK_MORPHBALL_BOOST)) {
+                SetAimBlockBranchless(AIMBLK_MORPHBALL_BOOST, false);
+            }
         }
         return false;
     }

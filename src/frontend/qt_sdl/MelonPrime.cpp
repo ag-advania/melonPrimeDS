@@ -40,7 +40,7 @@ namespace MelonPrime {
     MelonPrimeCore::~MelonPrimeCore() = default;
 
     // =========================================================================
-    // Config reload helper — batches all config reads into one function
+    // Config reload helper â€” batches all config reads into one function
     // to reduce call overhead and improve branch prediction.
     // =========================================================================
     void MelonPrimeCore::ReloadConfigFlags()
@@ -126,17 +126,48 @@ namespace MelonPrime {
         const float yScale = static_cast<float>(cfg.GetDouble(CfgKey::AimYScale));
         m_aimSensiFactor = sens * 0.01f;
         m_aimCombinedY = m_aimSensiFactor * yScale;
+        RecalcAimThresholds();
     }
 
     void MelonPrimeCore::ApplyAimAdjustSetting(Config::Table& cfg) {
         const double v = cfg.GetDouble(CfgKey::AimAdjust);
         m_aimAdjust = static_cast<float>(std::max(0.0, std::isnan(v) ? 0.0 : v));
+        RecalcAimThresholds();
+    }
+
+    // OPT-F: Precompute integer thresholds for skipping float conversion.
+    //
+    // When |delta| < threshold, the float pipeline (CVTSI2SS + MULSS + AimAdjust
+    // + CVTTSS2SI) would produce 0 after truncation. We can detect this with a
+    // cheap integer comparison and skip ~14-20 cyc of float work.
+    //
+    // Derivation:
+    //   AimAdjust OFF (a ≤ 0): outX=0 when |deltaX * factor| < 1.0
+    //                           → |deltaX| < 1/factor = threshold
+    //   AimAdjust ON  (a > 0): outX=0 when |deltaX * factor| < a
+    //                           → |deltaX| < a/factor = threshold
+    //
+    // At high sensitivity, thresholds approach 1 (≡ existing zero check).
+    // At low sensitivity, thresholds are large and skip most frames.
+    void MelonPrimeCore::RecalcAimThresholds()
+    {
+        const float effMin = (m_aimAdjust > 0.0f) ? m_aimAdjust : 1.0f;
+        // Guard against zero/degenerate sensitivity
+        m_aimMinDeltaX = (m_aimSensiFactor > 0.0f)
+            ? static_cast<int32_t>(std::ceil(effMin / m_aimSensiFactor))
+            : 1;
+        m_aimMinDeltaY = (m_aimCombinedY > 0.0f)
+            ? static_cast<int32_t>(std::ceil(effMin / m_aimCombinedY))
+            : 1;
+        // Minimum threshold is 1 (same as existing (dx|dy)==0 check)
+        if (m_aimMinDeltaX < 1) m_aimMinDeltaX = 1;
+        if (m_aimMinDeltaY < 1) m_aimMinDeltaY = 1;
     }
 
     void MelonPrimeCore::OnEmuStart()
     {
         m_flags.packed = StateFlags::BIT_LAYOUT_PENDING;
-        m_isInGame = false;
+        // OPT-D: m_isInGame removed — BIT_IN_GAME is cleared by packed reset above
         m_appliedFlags = 0;
         m_isWeaponCheckActive = false;
 
@@ -148,7 +179,7 @@ namespace MelonPrime {
     void MelonPrimeCore::OnEmuStop()
     {
         m_flags.clear(StateFlags::BIT_IN_GAME);
-        m_isInGame = false;
+        // OPT-D: m_isInGame removed — unified with BIT_IN_GAME
     }
 
     void MelonPrimeCore::OnEmuPause() {}
@@ -205,7 +236,7 @@ namespace MelonPrime {
     }
 
     // =========================================================================
-    // RunFrameHook — THE hot path, called every frame (~60 Hz)
+    // RunFrameHook â€” THE hot path, called every frame (~60 Hz)
     //
     // Key optimizations vs. original:
     //   - Early return for re-entrant case is tighter (no redundant flag checks)
@@ -232,7 +263,18 @@ namespace MelonPrime {
             UpdateInputState();
 
             ProcessMoveInputFast();
-            InputSetBranchless(INPUT_B, !IsDown(IB_JUMP));
+
+            // OPT-E: Batched button mask update (mirrors main path).
+            //   Old: 3 sequential InputSetBranchless calls → 3 RMW dependency chain.
+            //   New: Single RMW with parallel bit extraction.
+            {
+                constexpr uint16_t kModBits = (1u << INPUT_B) | (1u << INPUT_L) | (1u << INPUT_R);
+                const uint64_t nd = ~m_input.down;
+                const uint16_t bBit = static_cast<uint16_t>(((nd >> 0) & 1u) << INPUT_B);
+                const uint16_t lBit = static_cast<uint16_t>(((nd >> 1) & 1u) << INPUT_L);
+                const uint16_t rBit = static_cast<uint16_t>(((nd >> 2) & 1u) << INPUT_R);
+                m_inputMaskFast = (m_inputMaskFast & ~kModBits) | bBit | lBit | rBit;
+            }
 
             if (isStylusMode) {
                 if (emuInstance->isTouching && !m_flags.test(StateFlags::BIT_BLOCK_STYLUS)) {
@@ -242,9 +284,6 @@ namespace MelonPrime {
             else {
                 ProcessAimInputMouse();
             }
-
-            InputSetBranchless(INPUT_L, !IsDown(IB_SHOOT));
-            InputSetBranchless(INPUT_R, !IsDown(IB_ZOOM));
             return;
         }
 
@@ -271,7 +310,7 @@ namespace MelonPrime {
         if (LIKELY(m_flags.test(StateFlags::BIT_ROM_DETECTED))) {
             const bool isInGame = Read16(mainRAM, m_addrHot.inGame) == 0x0001;
             m_flags.assign(StateFlags::BIT_IN_GAME, isInGame);
-            m_isInGame = isInGame;
+            // OPT-D: m_isInGame removed — IsInGame() now reads BIT_IN_GAME directly
 
             // --- In-game init (runs once per game-join) ---
             if (isInGame && !m_flags.test(StateFlags::BIT_IN_GAME_INIT)) {
@@ -328,18 +367,24 @@ namespace MelonPrime {
             // --- Per-frame focused logic ---
             if (isFocused) {
                 if (LIKELY(isInGame)) {
+                    // OPT-G: Clear not-in-game aim block on transition back to gameplay.
+                    //   Only fires on the single frame of menu→game transition.
+                    if (UNLIKELY(m_aimBlockBits & AIMBLK_NOT_IN_GAME)) {
+                        SetAimBlockBranchless(AIMBLK_NOT_IN_GAME, false);
+                    }
                     HandleInGameLogic();
                 }
                 else {
                     m_flags.clear(StateFlags::BIT_IN_ADVENTURE);
-                    m_isAimDisabled = true;
+                    // OPT-G: Use unified aimBlockBits instead of standalone bool
+                    SetAimBlockBranchless(AIMBLK_NOT_IN_GAME, true);
                     if (m_flags.test(StateFlags::BIT_IN_GAME_INIT)) {
                         m_flags.clear(StateFlags::BIT_IN_GAME_INIT);
                     }
                     ApplyGameSettingsOnce();
                 }
 
-                // Cursor mode transition — only fires on actual change
+                // Cursor mode transition â€” only fires on actual change
                 const bool isAdventure = m_flags.test(StateFlags::BIT_IN_ADVENTURE);
                 const bool isPaused = m_flags.test(StateFlags::BIT_PAUSED);
                 const bool shouldBeCursorMode = !isInGame || (isAdventure && isPaused);
