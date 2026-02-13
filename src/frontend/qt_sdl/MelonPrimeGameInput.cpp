@@ -120,6 +120,14 @@ namespace MelonPrime {
         m_input.mouseX = currentPos.x() - m_aimData.centerX;
         m_input.mouseY = currentPos.y() - m_aimData.centerY;
 #endif
+
+        // OPT-A: Pre-fetch wheel delta into FrameInputState.
+        //   Eliminates per-frame emuInstance→getMainWindow()→panel pointer chase
+        //   from ProcessWeaponSwitch's LIKELY (no-op) path.
+        {
+            auto* panel = emuInstance->getMainWindow()->panel;
+            m_input.wheelDelta = panel ? panel->getDelta() : 0;
+        }
     }
 
     HOT_FUNCTION void MelonPrimeCore::ProcessMoveInputFast()
@@ -165,7 +173,8 @@ namespace MelonPrime {
 
     HOT_FUNCTION void MelonPrimeCore::ProcessAimInputMouse()
     {
-        if (m_isAimDisabled) return;
+        // OPT-G: Unified aim-disable check via m_aimBlockBits
+        if (m_aimBlockBits) return;
 
         if (UNLIKELY(m_isLayoutChangePending)) {
             m_isLayoutChangePending = false;
@@ -180,6 +189,28 @@ namespace MelonPrime {
             const int deltaY = m_input.mouseY;
 
             if ((deltaX | deltaY) == 0) return;
+
+            // OPT-F: Integer threshold check — skip float conversion for tiny deltas.
+            //   When both |delta| are below their precomputed thresholds, the scaled
+            //   float values will truncate to 0 after int16 cast. This eliminates
+            //   CVTSI2SS ×2 + MULSS ×2 + AimAdjust + CVTTSS2SI ×2 (~14-20 cyc).
+            //   At high sensitivity thresholds approach 1, matching the (dx|dy)==0 check.
+            //
+            //   Unsigned comparison trick: (uint32_t)|x| is equivalent to abs(x) for
+            //   the purpose of < comparison against a positive threshold.
+            {
+                const auto adx = static_cast<uint32_t>(deltaX >= 0 ? deltaX : -deltaX);
+                const auto ady = static_cast<uint32_t>(deltaY >= 0 ? deltaY : -deltaY);
+                if (adx < static_cast<uint32_t>(m_aimMinDeltaX) &&
+                    ady < static_cast<uint32_t>(m_aimMinDeltaY))
+                    return;
+            }
+
+            // OPT-H: Prefetch aim write targets.
+            //   m_ptrs.aimX/Y point into NDS mainRAM (4MB). After cache-disruptive
+            //   events (weapon switch, shader compile) this line may be in L2/L3.
+            //   ~20 cyc of float math below gives the prefetch time to complete.
+            PREFETCH_WRITE(m_ptrs.aimX);
 
             float adjX = static_cast<float>(deltaX) * m_aimSensiFactor;
             float adjY = static_cast<float>(deltaY) * m_aimCombinedY;
