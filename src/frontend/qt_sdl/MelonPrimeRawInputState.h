@@ -45,17 +45,17 @@ namespace MelonPrime {
     };
 
     // =========================================================================
-    // InputState — Lock-free input accumulator
+    // InputState â€” Lock-free input accumulator
     //
     // Threading contract (enables single-writer optimizations):
     //   Joy2Key ON:  Qt main thread is sole writer (nativeEventFilter)
-    //   Joy2Key OFF: Emu thread is sole writer (Poll → processRawInputBatched)
+    //   Joy2Key OFF: Emu thread is sole writer (Poll â†’ processRawInputBatched)
     //   Reader:      Emu thread (pollHotkeys, fetchMouseDelta)
     //
     // Since exactly one thread writes at any time, all atomic writes use
     // relaxed-load + release-store instead of locked RMW (fetch_or, fetch_and,
     // compare_exchange). This eliminates LOCK-prefixed instructions on x86
-    // (~20-40 cyc → ~1-5 cyc per operation).
+    // (~20-40 cyc â†’ ~1-5 cyc per operation).
     // =========================================================================
     class InputState {
     public:
@@ -82,6 +82,10 @@ namespace MelonPrime {
         void setHotkeyVks(int id, const std::vector<UINT>& vks);
 
         void pollHotkeys(FrameHotkeyState& out) noexcept;
+        // OPT-S: Fused hotkey poll + mouse delta fetch — shares a single
+        //   acquire fence instead of pollHotkeys' fence + fetchMouseDelta's
+        //   2 acquire loads. Eliminates 1 redundant barrier + 1 call overhead.
+        void snapshotInputFrame(FrameHotkeyState& outHk, int& outMouseX, int& outMouseY) noexcept;
         [[nodiscard]] bool hotkeyDown(int id) const noexcept;
         void resetHotkeyEdges() noexcept;
 
@@ -162,7 +166,7 @@ namespace MelonPrime {
         FORCE_INLINE bool testHotkeyMask(
             const HotkeyMask& mask, const uint64_t snapVk[4], uint8_t snapMouse) const noexcept
         {
-            // OR mouse and all 4 VK words together — single branch
+            // OR mouse and all 4 VK words together â€” single branch
             const uint64_t keyHit =
                 (mask.vkMask[0] & snapVk[0]) | (mask.vkMask[1] & snapVk[1]) |
                 (mask.vkMask[2] & snapVk[2]) | (mask.vkMask[3] & snapVk[3]);

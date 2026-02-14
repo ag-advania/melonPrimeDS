@@ -24,7 +24,7 @@ namespace MelonPrime {
         LPMSG lpMsg, HWND hWnd, UINT wMsgFilterMin, UINT wMsgFilterMax, UINT wRemoveMsg);
 
     // =========================================================================
-    // RawInputWinFilter — Frame-synchronous raw input with two modes:
+    // RawInputWinFilter â€” Frame-synchronous raw input with two modes:
     //
     //   Joy2Key OFF (default):
     //     Poll() called every frame from EmuThread.
@@ -36,9 +36,9 @@ namespace MelonPrime {
     //     Qt native event filter intercepts WM_INPUT on the main thread.
     //
     // Poll() hot path (Joy2Key OFF):
-    //   1. processRawInputBatched()      — main harvest from OS buffer
-    //   2. s_fnPeek drain WM_INPUT       — remove stale messages (branchless)
-    //   3. processRawInputBatched()      — safety-net re-read (near-zero on empty)
+    //   1. processRawInputBatched()      â€” main harvest from OS buffer
+    //   2. s_fnPeek drain WM_INPUT       â€” remove stale messages (branchless)
+    //   3. processRawInputBatched()      â€” safety-net re-read (near-zero on empty)
     // =========================================================================
     class RawInputWinFilter : public QAbstractNativeEventFilter {
     public:
@@ -54,12 +54,14 @@ namespace MelonPrime {
         void setJoy2KeySupport(bool enable);
         void setRawInputTarget(HWND hwnd);
 
-        // Frame-synchronous update — called from RunFrameHook every frame.
+        // Frame-synchronous update â€” called from RunFrameHook every frame.
         void Poll();
 
         void discardDeltas();
         void setHotkeyVks(int id, const std::vector<UINT>& vks);
         void pollHotkeys(FrameHotkeyState& out);
+        // OPT-S: Fused hotkey poll + mouse delta — single call, shared fence.
+        void snapshotInputFrame(FrameHotkeyState& outHk, int& outMouseX, int& outMouseY);
         void resetAllKeys();
         void resetMouseButtons();
         void resetHotkeyEdges();
@@ -82,7 +84,7 @@ namespace MelonPrime {
         static std::once_flag      s_initFlag;
         static void InitializeApiFuncs();
 
-        // NtUserPeekMessage → PeekMessageW adapter (bProcessSideEffects=FALSE baked in)
+        // NtUserPeekMessage â†’ PeekMessageW adapter (bProcessSideEffects=FALSE baked in)
         static BOOL WINAPI NtPeekAdapter(LPMSG lpMsg, HWND hWnd, UINT wMsgFilterMin, UINT wMsgFilterMax, UINT wRemoveMsg);
 
         // --- Instance state ---

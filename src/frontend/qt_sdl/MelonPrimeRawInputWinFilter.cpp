@@ -15,10 +15,10 @@ namespace MelonPrime {
     PeekMessageW_t      RawInputWinFilter::s_fnPeek = nullptr;
 
     // =========================================================================
-    // NtPeekAdapter — PeekMessageW-compatible thunk for NtUserPeekMessage
+    // NtPeekAdapter â€” PeekMessageW-compatible thunk for NtUserPeekMessage
     //
     // Bakes in bProcessSideEffects=FALSE (6th arg) to skip message hooks.
-    // Resolved once at init — s_fnPeek points here or to PeekMessageW.
+    // Resolved once at init â€” s_fnPeek points here or to PeekMessageW.
     // =========================================================================
     BOOL WINAPI RawInputWinFilter::NtPeekAdapter(
         LPMSG lpMsg, HWND hWnd, UINT wMsgFilterMin, UINT wMsgFilterMax, UINT wRemoveMsg)
@@ -92,41 +92,45 @@ namespace MelonPrime {
     }
 
     // =========================================================================
-    // Poll() — Frame-synchronous update (called from RunFrameHook)
+    // Poll() -- Frame-synchronous update (called from RunFrameHook)
     //
-    // Hot path structure (Joy2Key OFF):
+    // Hot path (Joy2Key OFF):
     //
     //   1. processRawInputBatched()
-    //      Main harvest — GetRawInputBuffer reads all pending raw input
+    //      Main harvest -- GetRawInputBuffer reads all pending raw input
     //      directly from the OS kernel buffer. Fastest path available.
     //
     //   2. s_fnPeek drain WM_INPUT
     //      The batch read consumed the data, but corresponding WM_INPUT
     //      messages still sit in the message queue. Remove them to prevent
-    //      queue overflow. s_fnPeek is pre-resolved — no branch.
+    //      queue overflow. s_fnPeek is pre-resolved -- no branch.
     //      Filter range limited to WM_INPUT; DispatchMessageW avoided.
     //
-    //   3. processRawInputBatched() (safety-net)
-    //      New input may have arrived during step 2's queue drain.
-    //      processRawInputBatched returns instantly on empty buffer
-    //      (single GetRawInputBuffer call returns 0 → early exit).
+    // OPT-R: Safety-net processRawInputBatched (old step 3) removed.
+    //   Events arriving during the PeekMessage drain (~13-40us) are caught
+    //   by the NEXT frame's Poll(). At 8000Hz, at most 1 event (~0.3 aim
+    //   delta) is deferred by one frame (~16ms). Saves one GetRawInputBuffer
+    //   kernel transition (~500-1000 cyc) per frame.
     //
-    // Total API dispatch branches in hot path: ZERO.
-    // s_fnPeek resolved once at InitializeApiFuncs().
+    // OPT-U: m_state.get() cached to local -- saves 1 unique_ptr deref.
     // =========================================================================
     void RawInputWinFilter::Poll() {
         if (m_joy2KeySupport) return;
 
+        // OPT-U: Single unique_ptr dereference for entire Poll.
+        auto* const state = m_state.get();
+
         // 1. Batch read (main harvest)
-        m_state->processRawInputBatched();
+        state->processRawInputBatched();
 
         // 2. Drain WM_INPUT from queue (data already consumed above)
         MSG msg;
         while (s_fnPeek(&msg, m_hHiddenWnd, WM_INPUT, WM_INPUT, PM_REMOVE)) {}
 
-        // 3. Safety-net re-read (catches arrivals during drain)
-        m_state->processRawInputBatched();
+        // OPT-R: Step 3 (safety-net re-read) removed.
+        //   Any event arriving during drain is caught by the next Poll().
     }
+
 
     // =========================================================================
     // Mode switching
@@ -161,7 +165,7 @@ namespace MelonPrime {
     }
 
     // =========================================================================
-    // Hidden window — message sink for RIDEV_INPUTSINK
+    // Hidden window â€” message sink for RIDEV_INPUTSINK
     // =========================================================================
     void RawInputWinFilter::CreateHiddenWindow() {
         if (m_hHiddenWnd) return;
@@ -234,6 +238,8 @@ namespace MelonPrime {
     void RawInputWinFilter::discardDeltas()                           { m_state->discardDeltas(); }
     void RawInputWinFilter::setHotkeyVks(int id, const std::vector<UINT>& vks) { m_state->setHotkeyVks(id, vks); }
     void RawInputWinFilter::pollHotkeys(FrameHotkeyState& out)       { m_state->pollHotkeys(out); }
+    void RawInputWinFilter::snapshotInputFrame(FrameHotkeyState& outHk, int& outMouseX, int& outMouseY)
+        { m_state->snapshotInputFrame(outHk, outMouseX, outMouseY); }
     void RawInputWinFilter::resetAllKeys()                            { m_state->resetAllKeys(); }
     void RawInputWinFilter::resetMouseButtons()                       { m_state->resetMouseButtons(); }
     void RawInputWinFilter::resetHotkeyEdges()                        { m_state->resetHotkeyEdges(); }

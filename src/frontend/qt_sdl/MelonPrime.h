@@ -259,17 +259,38 @@ namespace MelonPrime {
         uint16_t m_inputMaskFast = 0xFFFF;
         uint16_t m_snapState = 0;
         uint32_t m_aimBlockBits = 0;
+
+        // =============================================================
+        // OPT-O: Fixed-point aim pipeline (Q14 = 14-bit fractional).
+        //
+        // Replaces the hot-path float sequence:
+        //   CVTSI2SS ×2 → MULSS ×2 → float AimAdjust → CVTTSS2SI ×2
+        //   (~29 cyc total: 4 int↔float domain crossings + 2 float multiplies)
+        //
+        // With pure integer:
+        //   IMUL ×2 → integer AimAdjust (CMP) → SAR ×2
+        //   (~15 cyc total: no domain crossings)
+        //
+        // All values precomputed at config-change time by RecalcAimFixedPoint().
+        // =============================================================
+        static constexpr int AIM_FRAC_BITS = 14;
+        static constexpr int64_t AIM_ONE_FP = 1LL << AIM_FRAC_BITS;  // 16384
+
+        int32_t  m_aimFixedScaleX = 164;          // sensiFactor × 2^14
+        int32_t  m_aimFixedScaleY = 218;          // combinedY  × 2^14
+        int64_t  m_aimFixedAdjust = 8192;         // aimAdjust  × 2^14 (0 = disabled)
+        int64_t  m_aimFixedSnapThresh = AIM_ONE_FP; // AIM_ONE_FP when adjust on, 0 when off
+
+        // OPT-F: Pre-check thresholds — skip pipeline when both deltas too small.
+        int32_t  m_aimMinDeltaX = 1;
+        int32_t  m_aimMinDeltaY = 1;
+
+        // Float intermediates — cold path only (config change).
         float    m_aimSensiFactor = 0.01f;
         float    m_aimCombinedY = 0.013333333f;
         float    m_aimAdjust = 0.5f;
-        // OPT-F: Precomputed integer thresholds for skipping float conversion.
-        //   If |deltaX| < thresholdX AND |deltaY| < thresholdY, the scaled result
-        //   will truncate to 0, so we can skip float math entirely.
-        //   Updated by RecalcAimThresholds() when sensitivity or aimAdjust changes.
-        int32_t  m_aimMinDeltaX = 1;
-        int32_t  m_aimMinDeltaY = 1;
+
         // OPT-G: m_isAimDisabled removed — unified with m_aimBlockBits.
-        //   Test via `if (m_aimBlockBits)` instead.
         bool     m_isRunningHook = false;
         bool     m_isWeaponCheckActive = false;
         // OPT-D: m_isInGame removed — unified with BIT_IN_GAME flag
@@ -342,14 +363,9 @@ namespace MelonPrime {
             return reinterpret_cast<T*>(&ram[addr & 0x3FFFFF]);
         }
 
-        FORCE_INLINE void ApplyAimAdjustBranchless(float& dx, float& dy) noexcept {
-            const float a = m_aimAdjust;
-            if (UNLIKELY(a <= 0.0f)) return;
-            const float absX = std::abs(dx);
-            dx = (absX < a) ? 0.0f : (absX < 1.0f) ? std::copysign(1.0f, dx) : dx;
-            const float absY = std::abs(dy);
-            dy = (absY < a) ? 0.0f : (absY < 1.0f) ? std::copysign(1.0f, dy) : dy;
-        }
+        // OPT-O: ApplyAimAdjustBranchless (float version) removed.
+        //   Replaced by inline fixed-point logic in ProcessAimInputMouse:
+        //   Q14 multiply → integer deadzone/snap comparisons → SAR shift.
 
         [[nodiscard]] FORCE_INLINE bool IsDown(uint64_t bit) const { return (m_input.down & bit) != 0; }
         [[nodiscard]] FORCE_INLINE bool IsPressed(uint64_t bit) const { return (m_input.press & bit) != 0; }
@@ -377,7 +393,7 @@ namespace MelonPrime {
 
         void RecalcAimSensitivityCache(Config::Table& cfg);
         void ApplyAimAdjustSetting(Config::Table& cfg);
-        void RecalcAimThresholds();  // OPT-F: Update integer skip-thresholds
+        void RecalcAimFixedPoint();  // OPT-O/F: Recompute all fixed-point aim parameters
         void HandleGlobalHotkeys();
         void ProcessAimInputStylus();
         void SwitchWeapon(int weaponIndex);
