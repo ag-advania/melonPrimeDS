@@ -7,43 +7,73 @@
 
 namespace MelonPrime {
 
-    static constexpr int kQtMouseMark = 0xF0000000;
+    // ------------------------------------------------------------------------
+    // Constants for Qt Key Codes
+    // ------------------------------------------------------------------------
+    namespace {
+        constexpr int kQtKey_Shift = 0x01000020;
+        constexpr int kQtKey_Control = 0x01000021;
+        constexpr int kQtKey_Alt = 0x01000023;
+        constexpr int kQtKey_Tab = 0x01000001;
+        constexpr int kQtKey_PageUp = 0x01000016;
+        constexpr int kQtKey_PageDown = 0x01000017;
+        constexpr int kQtKey_Space = 0x20;
+        constexpr int kQtKey_F1 = 0x01000030;
+        constexpr int kQtKey_F35 = 0x0100004F;
 
-    static inline bool ConvertSpecialQtKeyToVk(int qt, std::vector<UINT>& out) {
-        out.clear();
+        constexpr int kQtMouseMark = 0xF0000000;
+    }
+
+    // ------------------------------------------------------------------------
+    // Helper Functions
+    // ------------------------------------------------------------------------
+
+    static inline bool TryAppendSpecialKey(int qt, std::vector<UINT>& out) {
         switch (qt) {
-        case 0x01000020: out.push_back(VK_LSHIFT); out.push_back(VK_RSHIFT); return true;
-        case 0x01000021: out.push_back(VK_LCONTROL); out.push_back(VK_RCONTROL); return true;
-        case 0x01000023: out.push_back(VK_LMENU); out.push_back(VK_RMENU); return true;
-        case 0x01000001: out.push_back(VK_TAB); return true;
-        case 0x01000016: out.push_back(VK_PRIOR); return true;
-        case 0x01000017: out.push_back(VK_NEXT); return true;
-        case 0x20:       out.push_back(VK_SPACE); return true;
+        case kQtKey_Shift:    out.push_back(VK_LSHIFT);   out.push_back(VK_RSHIFT);   return true;
+        case kQtKey_Control:  out.push_back(VK_LCONTROL); out.push_back(VK_RCONTROL); return true;
+        case kQtKey_Alt:      out.push_back(VK_LMENU);    out.push_back(VK_RMENU);    return true;
+        case kQtKey_Tab:      out.push_back(VK_TAB);      return true;
+        case kQtKey_PageUp:   out.push_back(VK_PRIOR);    return true;
+        case kQtKey_PageDown: out.push_back(VK_NEXT);     return true;
+        case kQtKey_Space:    out.push_back(VK_SPACE);    return true;
         default: return false;
         }
     }
 
     std::vector<UINT> MapQtKeyIntToVks(int qtKey) {
         std::vector<UINT> vks;
+        vks.reserve(2); // ‚Ù‚Æ‚ñ‚Ç‚Ìê‡‚Í1‚Â‚©2‚Â‚È‚Ì‚ÅŠm•Û‚µ‚Ä‚¨‚­
+
+        // Mouse Buttons
         if ((qtKey & kQtMouseMark) == kQtMouseMark) {
             const int btn = (qtKey & ~kQtMouseMark);
-            if (btn == 0x01) vks.push_back(VK_LBUTTON);
-            else if (btn == 0x02) vks.push_back(VK_RBUTTON);
-            else if (btn == 0x04) vks.push_back(VK_MBUTTON);
-            else if (btn == 0x08) vks.push_back(VK_XBUTTON1);
-            else if (btn == 0x10) vks.push_back(VK_XBUTTON2);
+            switch (btn) {
+            case 0x01: vks.push_back(VK_LBUTTON);  break;
+            case 0x02: vks.push_back(VK_RBUTTON);  break;
+            case 0x04: vks.push_back(VK_MBUTTON);  break;
+            case 0x08: vks.push_back(VK_XBUTTON1); break;
+            case 0x10: vks.push_back(VK_XBUTTON2); break;
+            }
             return vks;
         }
-        if (ConvertSpecialQtKeyToVk(qtKey, vks)) return vks;
+
+        // Special Keys (Shift, Ctrl, Alt, etc.)
+        if (TryAppendSpecialKey(qtKey, vks)) return vks;
+
+        // ASCII Alphanumeric (0-9, A-Z)
         if ((qtKey >= '0' && qtKey <= '9') || (qtKey >= 'A' && qtKey <= 'Z')) {
             vks.push_back(static_cast<UINT>(qtKey));
             return vks;
         }
-        if (qtKey >= 0x01000030 && qtKey <= 0x0100004F) { // F1-F35
-            const int idx = (qtKey - 0x01000030) + 1;
-            vks.push_back(static_cast<UINT>(VK_F1 + (idx - 1)));
+
+        // F-Keys (F1 - F35)
+        if (qtKey >= kQtKey_F1 && qtKey <= kQtKey_F35) {
+            const int idx = (qtKey - kQtKey_F1);
+            vks.push_back(static_cast<UINT>(VK_F1 + idx));
             return vks;
         }
+
         return vks;
     }
 
@@ -60,42 +90,53 @@ namespace MelonPrime {
     {
         if (!filter || instance != 0) return;
 
-        BindOneHotkeyFromConfig(filter, instance, "Keyboard.HK_MetroidShootScan", HK_MetroidShootScan);
-        BindOneHotkeyFromConfig(filter, instance, "Keyboard.HK_MetroidScanShoot", HK_MetroidScanShoot);
-        BindOneHotkeyFromConfig(filter, instance, "Keyboard.HK_MetroidZoom", HK_MetroidZoom);
+        // Binding Definition Table
+        struct BindingDef {
+            const char* configKey;
+            int actionId;
+        };
 
-        BindOneHotkeyFromConfig(filter, instance, "Keyboard.HK_MetroidMoveForward", HK_MetroidMoveForward);
-        BindOneHotkeyFromConfig(filter, instance, "Keyboard.HK_MetroidMoveBack", HK_MetroidMoveBack);
-        BindOneHotkeyFromConfig(filter, instance, "Keyboard.HK_MetroidMoveLeft", HK_MetroidMoveLeft);
-        BindOneHotkeyFromConfig(filter, instance, "Keyboard.HK_MetroidMoveRight", HK_MetroidMoveRight);
+        static const BindingDef kBindings[] = {
+            // Camera / Movement / Basic Actions
+            { "Keyboard.HK_MetroidShootScan",          HK_MetroidShootScan },
+            { "Keyboard.HK_MetroidScanShoot",          HK_MetroidScanShoot },
+            { "Keyboard.HK_MetroidZoom",               HK_MetroidZoom },
+            { "Keyboard.HK_MetroidMoveForward",        HK_MetroidMoveForward },
+            { "Keyboard.HK_MetroidMoveBack",           HK_MetroidMoveBack },
+            { "Keyboard.HK_MetroidMoveLeft",           HK_MetroidMoveLeft },
+            { "Keyboard.HK_MetroidMoveRight",          HK_MetroidMoveRight },
+            { "Keyboard.HK_MetroidJump",               HK_MetroidJump },
+            { "Keyboard.HK_MetroidMorphBall",          HK_MetroidMorphBall },
+            { "Keyboard.HK_MetroidHoldMorphBallBoost", HK_MetroidHoldMorphBallBoost },
+            { "Keyboard.HK_MetroidScanVisor",          HK_MetroidScanVisor },
 
-        BindOneHotkeyFromConfig(filter, instance, "Keyboard.HK_MetroidJump", HK_MetroidJump);
-        BindOneHotkeyFromConfig(filter, instance, "Keyboard.HK_MetroidMorphBall", HK_MetroidMorphBall);
-        BindOneHotkeyFromConfig(filter, instance, "Keyboard.HK_MetroidHoldMorphBallBoost", HK_MetroidHoldMorphBallBoost);
-        BindOneHotkeyFromConfig(filter, instance, "Keyboard.HK_MetroidScanVisor", HK_MetroidScanVisor);
+            // Weapons
+            { "Keyboard.HK_MetroidWeaponBeam",         HK_MetroidWeaponBeam },
+            { "Keyboard.HK_MetroidWeaponMissile",      HK_MetroidWeaponMissile },
+            { "Keyboard.HK_MetroidWeapon1",            HK_MetroidWeapon1 },
+            { "Keyboard.HK_MetroidWeapon2",            HK_MetroidWeapon2 },
+            { "Keyboard.HK_MetroidWeapon3",            HK_MetroidWeapon3 },
+            { "Keyboard.HK_MetroidWeapon4",            HK_MetroidWeapon4 },
+            { "Keyboard.HK_MetroidWeapon5",            HK_MetroidWeapon5 },
+            { "Keyboard.HK_MetroidWeapon6",            HK_MetroidWeapon6 },
+            { "Keyboard.HK_MetroidWeaponSpecial",      HK_MetroidWeaponSpecial },
+            { "Keyboard.HK_MetroidWeaponCheck",        HK_MetroidWeaponCheck },
+            { "Keyboard.HK_MetroidWeaponNext",         HK_MetroidWeaponNext },
+            { "Keyboard.HK_MetroidWeaponPrevious",     HK_MetroidWeaponPrevious },
 
-        BindOneHotkeyFromConfig(filter, instance, "Keyboard.HK_MetroidWeaponBeam", HK_MetroidWeaponBeam);
-        BindOneHotkeyFromConfig(filter, instance, "Keyboard.HK_MetroidWeaponMissile", HK_MetroidWeaponMissile);
-        BindOneHotkeyFromConfig(filter, instance, "Keyboard.HK_MetroidWeapon1", HK_MetroidWeapon1);
-        BindOneHotkeyFromConfig(filter, instance, "Keyboard.HK_MetroidWeapon2", HK_MetroidWeapon2);
-        BindOneHotkeyFromConfig(filter, instance, "Keyboard.HK_MetroidWeapon3", HK_MetroidWeapon3);
-        BindOneHotkeyFromConfig(filter, instance, "Keyboard.HK_MetroidWeapon4", HK_MetroidWeapon4);
-        BindOneHotkeyFromConfig(filter, instance, "Keyboard.HK_MetroidWeapon5", HK_MetroidWeapon5);
-        BindOneHotkeyFromConfig(filter, instance, "Keyboard.HK_MetroidWeapon6", HK_MetroidWeapon6);
-        BindOneHotkeyFromConfig(filter, instance, "Keyboard.HK_MetroidWeaponSpecial", HK_MetroidWeaponSpecial);
+            // UI / Menu
+            { "Keyboard.HK_MetroidUIOk",               HK_MetroidUIOk },
+            { "Keyboard.HK_MetroidUILeft",             HK_MetroidUILeft },
+            { "Keyboard.HK_MetroidUIRight",            HK_MetroidUIRight },
+            { "Keyboard.HK_MetroidUIYes",              HK_MetroidUIYes },
+            { "Keyboard.HK_MetroidUINo",               HK_MetroidUINo },
+            { "Keyboard.HK_MetroidMenu",               HK_MetroidMenu },
+        };
 
-        BindOneHotkeyFromConfig(filter, instance, "Keyboard.HK_MetroidWeaponCheck", HK_MetroidWeaponCheck);
-
-        BindOneHotkeyFromConfig(filter, instance, "Keyboard.HK_MetroidWeaponNext", HK_MetroidWeaponNext);
-        BindOneHotkeyFromConfig(filter, instance, "Keyboard.HK_MetroidWeaponPrevious", HK_MetroidWeaponPrevious);
-
-        BindOneHotkeyFromConfig(filter, instance, "Keyboard.HK_MetroidUIOk", HK_MetroidUIOk);
-        BindOneHotkeyFromConfig(filter, instance, "Keyboard.HK_MetroidUILeft", HK_MetroidUILeft);
-        BindOneHotkeyFromConfig(filter, instance, "Keyboard.HK_MetroidUIRight", HK_MetroidUIRight);
-        BindOneHotkeyFromConfig(filter, instance, "Keyboard.HK_MetroidUIYes", HK_MetroidUIYes);
-        BindOneHotkeyFromConfig(filter, instance, "Keyboard.HK_MetroidUINo", HK_MetroidUINo);
-
-        BindOneHotkeyFromConfig(filter, instance, "Keyboard.HK_MetroidMenu", HK_MetroidMenu);
+        // Batch processing
+        for (const auto& bind : kBindings) {
+            BindOneHotkeyFromConfig(filter, instance, bind.configKey, bind.actionId);
+        }
     }
 
 } // namespace MelonPrime
