@@ -61,7 +61,7 @@ namespace MelonPrime {
                 s_btnLut[i] = { d, u };
             }
 
-            // VK remap table: Ctrl/Alt/Shift → Left/Right variants
+            // VK remap table: Ctrl/Alt/Shift â†’ Left/Right variants
             s_vkRemap.fill(VkRemapEntry{ 0, 0 });
             auto setRemap = [](int base, int l, int r) {
                 s_vkRemap[base] = { static_cast<uint8_t>(l), static_cast<uint8_t>(r) };
@@ -76,7 +76,7 @@ namespace MelonPrime {
     }
 
     // =========================================================================
-    // processRawInput — Joy2Key ON mode (per-message from Qt event filter)
+    // processRawInput â€” Joy2Key ON mode (per-message from Qt event filter)
     // =========================================================================
     void InputState::processRawInput(HRAWINPUT hRaw) noexcept {
         alignas(16) uint8_t rawBuf[sizeof(RAWINPUT)];
@@ -132,7 +132,18 @@ namespace MelonPrime {
     }
 
     // =========================================================================
-    // processRawInputBatched — Joy2Key OFF mode (batch from hidden window)
+    // processRawInputBatched â€” Joy2Key OFF mode (batch from hidden window)
+    // =========================================================================
+    // =========================================================================
+    // processRawInputBatched -- Joy2Key OFF mode (batch from hidden window)
+    //
+    // OPT-T: hasMouseDelta / hasButtonChanges bools removed from inner loop.
+    //   Old: Per mouse-event `hasMouseDelta = true` store (redundant after 1st).
+    //        Per button-event `hasButtonChanges = true` store.
+    //   New: Commit guards use direct value checks:
+    //        Mouse: `if (localAccX | localAccY)` -- zero iff no relative movement.
+    //        Buttons: `if (finalBtnState != initialBtnState)` -- compare to snapshot.
+    //   Eliminates ~1 store/event from the hottest inner loop (~133 events/frame).
     // =========================================================================
     void InputState::processRawInputBatched() noexcept {
         alignas(64) static thread_local uint8_t buffer[16384];
@@ -140,10 +151,9 @@ namespace MelonPrime {
         int32_t localAccX = 0, localAccY = 0;
         uint64_t localKeyDeltaDown[4] = {};
         uint64_t localKeyDeltaUp[4] = {};
-        bool hasMouseDelta = false;
         bool hasKeyChanges = false;
-        bool hasButtonChanges = false;
-        uint8_t finalBtnState = m_mouseButtons.load(std::memory_order_relaxed);
+        const uint8_t initialBtnState = m_mouseButtons.load(std::memory_order_relaxed);
+        uint8_t finalBtnState = initialBtnState;
 
         for (;;) {
             UINT size = sizeof(buffer);
@@ -158,13 +168,13 @@ namespace MelonPrime {
                     if (!(m.usFlags & MOUSE_MOVE_ABSOLUTE)) {
                         localAccX += m.lLastX;
                         localAccY += m.lLastY;
-                        hasMouseDelta = true;
+                        // OPT-T: hasMouseDelta removed -- localAccX|Y checked at commit.
                     }
                     const USHORT flags = m.usButtonFlags & 0x03FF;
                     if (flags) {
                         const auto& lut = s_btnLut[flags];
                         finalBtnState = (finalBtnState & ~lut.upBits) | lut.downBits;
-                        hasButtonChanges = true;
+                        // OPT-T: hasButtonChanges removed -- finalBtnState compared at commit.
                     }
                 }
                 else if (raw->header.dwType == RIM_TYPEKEYBOARD) {
@@ -191,18 +201,17 @@ namespace MelonPrime {
         }
 
         // --- Commit phase (single-writer, wait-free) ---
-        if (hasMouseDelta) {
-            if (localAccX) {
-                const int64_t cur = m_accumMouseX.load(std::memory_order_relaxed);
-                m_accumMouseX.store(cur + localAccX, std::memory_order_release);
-            }
-            if (localAccY) {
-                const int64_t cur = m_accumMouseY.load(std::memory_order_relaxed);
-                m_accumMouseY.store(cur + localAccY, std::memory_order_release);
-            }
+        // OPT-T: Direct value checks replace bool guards.
+        if (localAccX) {
+            const int64_t cur = m_accumMouseX.load(std::memory_order_relaxed);
+            m_accumMouseX.store(cur + localAccX, std::memory_order_release);
+        }
+        if (localAccY) {
+            const int64_t cur = m_accumMouseY.load(std::memory_order_relaxed);
+            m_accumMouseY.store(cur + localAccY, std::memory_order_release);
         }
 
-        if (hasButtonChanges) {
+        if (finalBtnState != initialBtnState) {
             m_mouseButtons.store(finalBtnState, std::memory_order_release);
         }
 
@@ -279,11 +288,11 @@ namespace MelonPrime {
     // =========================================================================
     // pollHotkeys
     //
-    // OPT 1: Fence coalescing — 5 acquire loads → 5 relaxed loads + 1 fence.
+    // OPT 1: Fence coalescing â€” 5 acquire loads â†’ 5 relaxed loads + 1 fence.
     //
-    // OPT 2: Bulk edge detection — per-bit branching eliminated.
-    //   Old: 2 branches per hotkey (isDown!=prev → isDown → set/clear m_hkPrev)
-    //        → ~58 conditional branches for 29 hotkeys
+    // OPT 2: Bulk edge detection â€” per-bit branching eliminated.
+    //   Old: 2 branches per hotkey (isDown!=prev â†’ isDown â†’ set/clear m_hkPrev)
+    //        â†’ ~58 conditional branches for 29 hotkeys
     //   New: After bit-scan loop, compute pressed = newDown & ~prev (bitwise AND).
     //        Update prev = newDown (single store). Zero branches for edge logic.
     //
@@ -317,11 +326,69 @@ namespace MelonPrime {
                 bound &= bound - 1;
             }
 
-            // OPT 2: Bulk edge detection — pure bitwise, no per-hotkey branches.
+            // OPT 2: Bulk edge detection â€” pure bitwise, no per-hotkey branches.
             //   pressed = rising edges = down now AND was not down before.
             out.down[w]    = newDown;
             out.pressed[w] = newDown & ~m_hkPrev[w];
             m_hkPrev[w]    = newDown;
+        }
+    }
+
+    // =========================================================================
+    // snapshotInputFrame
+    //
+    // OPT-S: Fused pollHotkeys + fetchMouseDelta in one call.
+    //
+    //   Old path (two separate calls):
+    //     pollHotkeys:    4 relaxed VK loads + 1 relaxed mouse load + 1 fence
+    //     fetchMouseDelta: 2 acquire loads (each is relaxed+fence on ARM)
+    //     = 7 atomic loads + 2-3 fences
+    //
+    //   New path (single call):
+    //     7 relaxed loads + 1 fence
+    //     = 7 atomic loads + 1 fence
+    //
+    //   Saves: 1-2 fences (significant on ARM), 1 function call overhead,
+    //          1 m_rawFilter→m_state indirection in the caller.
+    // =========================================================================
+    void InputState::snapshotInputFrame(FrameHotkeyState& outHk, int& outMouseX, int& outMouseY) noexcept {
+        // --- Single snapshot of all atomics ---
+        uint64_t snapVk[4];
+        for (int i = 0; i < 4; ++i)
+            snapVk[i] = m_vkDown[i].load(std::memory_order_relaxed);
+        const uint8_t snapMouse = m_mouseButtons.load(std::memory_order_relaxed);
+        const int64_t curX = m_accumMouseX.load(std::memory_order_relaxed);
+        const int64_t curY = m_accumMouseY.load(std::memory_order_relaxed);
+        std::atomic_thread_fence(std::memory_order_acquire);
+
+        // --- Mouse delta (was fetchMouseDelta) ---
+        outMouseX = static_cast<int>(curX - m_lastReadMouseX);
+        outMouseY = static_cast<int>(curY - m_lastReadMouseY);
+        m_lastReadMouseX = curX;
+        m_lastReadMouseY = curY;
+
+        // --- Hotkey scan (was pollHotkeys) ---
+        outHk = {};
+        for (int w = 0; w < 2; ++w) {
+            uint64_t bound = m_boundHotkeys[w];
+            uint64_t newDown = 0;
+
+            while (bound) {
+#if defined(_MSC_VER) && !defined(__clang__)
+                unsigned long bitPos;
+                _BitScanForward64(&bitPos, bound);
+#else
+                const int bitPos = __builtin_ctzll(bound);
+#endif
+                const int id = (w << 6) | static_cast<int>(bitPos);
+                if (testHotkeyMask(m_hkMask[id], snapVk, snapMouse))
+                    newDown |= 1ULL << bitPos;
+                bound &= bound - 1;
+            }
+
+            outHk.down[w]    = newDown;
+            outHk.pressed[w] = newDown & ~m_hkPrev[w];
+            m_hkPrev[w]      = newDown;
         }
     }
 
@@ -331,9 +398,6 @@ namespace MelonPrime {
     // OPT: Fence coalescing + testHotkeyMask reuse.
     //   Old: Up to 5 individual acquire loads with per-word early exit.
     //   New: 5 relaxed loads + 1 fence + single testHotkeyMask call.
-    //        Eliminates 4 redundant barriers on ARM/RISC-V.
-    //        On x86 acquire=MOV so perf is equivalent, but code is simpler
-    //        and consistent with pollHotkeys pattern.
     // =========================================================================
     bool InputState::hotkeyDown(int id) const noexcept {
         if (UNLIKELY(static_cast<unsigned>(id) >= kMaxHotkeyId)) return false;
@@ -354,7 +418,7 @@ namespace MelonPrime {
     //
     // OPT: Snapshot atomics once, reuse for all hotkey tests.
     //   Old: Called hotkeyDown(id) per bound hotkey. Each hotkeyDown did
-    //        up to 5 acquire loads → ~145 acquire loads for 29 hotkeys.
+    //        up to 5 acquire loads â†’ ~145 acquire loads for 29 hotkeys.
     //   New: 5 relaxed loads + 1 fence (total), then testHotkeyMask (pure ALU)
     //        per hotkey. ~96% reduction in atomic load operations.
     // =========================================================================

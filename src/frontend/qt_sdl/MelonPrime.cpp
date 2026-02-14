@@ -126,40 +126,50 @@ namespace MelonPrime {
         const float yScale = static_cast<float>(cfg.GetDouble(CfgKey::AimYScale));
         m_aimSensiFactor = sens * 0.01f;
         m_aimCombinedY = m_aimSensiFactor * yScale;
-        RecalcAimThresholds();
+        RecalcAimFixedPoint();
     }
 
     void MelonPrimeCore::ApplyAimAdjustSetting(Config::Table& cfg) {
         const double v = cfg.GetDouble(CfgKey::AimAdjust);
         m_aimAdjust = static_cast<float>(std::max(0.0, std::isnan(v) ? 0.0 : v));
-        RecalcAimThresholds();
+        RecalcAimFixedPoint();
     }
 
-    // OPT-F: Precompute integer thresholds for skipping float conversion.
+    // OPT-O/F: Recompute all fixed-point aim parameters.
     //
-    // When |delta| < threshold, the float pipeline (CVTSI2SS + MULSS + AimAdjust
-    // + CVTTSS2SI) would produce 0 after truncation. We can detect this with a
-    // cheap integer comparison and skip ~14-20 cyc of float work.
+    // Called only on config change (cold path). Derives:
+    //   - Q14 scale factors for X/Y axes
+    //   - Q14 AimAdjust deadzone + snap-to-1 thresholds
+    //   - Integer delta skip thresholds (OPT-F)
     //
-    // Derivation:
-    //   AimAdjust OFF (a ≤ 0): outX=0 when |deltaX * factor| < 1.0
-    //                           → |deltaX| < 1/factor = threshold
-    //   AimAdjust ON  (a > 0): outX=0 when |deltaX * factor| < a
-    //                           → |deltaX| < a/factor = threshold
-    //
-    // At high sensitivity, thresholds approach 1 (≡ existing zero check).
-    // At low sensitivity, thresholds are large and skip most frames.
-    void MelonPrimeCore::RecalcAimThresholds()
+    // When AimAdjust is disabled (≤ 0):
+    //   adjThresh = 0, snapThresh = 0 → both Q14 comparisons always fail
+    //   → hot path reduces to IMUL + SAR only (no AimAdjust branches).
+    void MelonPrimeCore::RecalcAimFixedPoint()
     {
+        // --- Q14 scale factors ---
+        m_aimFixedScaleX = static_cast<int32_t>(m_aimSensiFactor * AIM_ONE_FP + 0.5f);
+        m_aimFixedScaleY = static_cast<int32_t>(m_aimCombinedY * AIM_ONE_FP + 0.5f);
+
+        // --- Q14 AimAdjust thresholds ---
+        if (m_aimAdjust > 0.0f) {
+            m_aimFixedAdjust = static_cast<int64_t>(m_aimAdjust * AIM_ONE_FP + 0.5f);
+            m_aimFixedSnapThresh = AIM_ONE_FP;
+        } else {
+            m_aimFixedAdjust = 0;
+            m_aimFixedSnapThresh = 0;
+        }
+
+        // --- Delta skip thresholds (OPT-F) ---
+        //   When adjust ON:  skip when |delta * scale| < adjust → |delta| < adjust/scale
+        //   When adjust OFF: skip when |delta * scale| < 1.0   → |delta| < 1.0/scale
         const float effMin = (m_aimAdjust > 0.0f) ? m_aimAdjust : 1.0f;
-        // Guard against zero/degenerate sensitivity
         m_aimMinDeltaX = (m_aimSensiFactor > 0.0f)
             ? static_cast<int32_t>(std::ceil(effMin / m_aimSensiFactor))
             : 1;
         m_aimMinDeltaY = (m_aimCombinedY > 0.0f)
             ? static_cast<int32_t>(std::ceil(effMin / m_aimCombinedY))
             : 1;
-        // Minimum threshold is 1 (same as existing (dx|dy)==0 check)
         if (m_aimMinDeltaX < 1) m_aimMinDeltaX = 1;
         if (m_aimMinDeltaY < 1) m_aimMinDeltaY = 1;
     }
