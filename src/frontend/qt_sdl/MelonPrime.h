@@ -159,6 +159,9 @@ namespace MelonPrime {
     };
 
     struct alignas(64) HotPointers {
+        // [Tier 0: Every Frame (Always) — frame gate check]
+        uint16_t* inGame;       // OPT-L: Promoted from cold m_addrHot to avoid per-frame CL miss
+
         // [Tier 1: Every Frame (Always)]
         uint16_t* aimX;
         uint16_t* aimY;
@@ -286,9 +289,10 @@ namespace MelonPrime {
             static constexpr uint32_t BIT_SNAP_TAP = 1u << 9;
             static constexpr uint32_t BIT_JOY2KEY = 1u << 10;
             static constexpr uint32_t BIT_STYLUS_MODE = 1u << 11;
-            static constexpr uint32_t BIT_LAYOUT_PENDING = 1u << 12;
             static constexpr uint32_t BIT_LAST_FOCUSED = 1u << 13;
             static constexpr uint32_t BIT_BLOCK_STYLUS = 1u << 14;
+            // OPT-N: BIT_LAYOUT_PENDING (was bit 12) removed — was never tested.
+            //   Actual layout-change detection uses standalone bool m_isLayoutChangePending.
 
             FORCE_INLINE void set(uint32_t bit) { packed |= bit; }
             FORCE_INLINE void clear(uint32_t bit) { packed &= ~bit; }

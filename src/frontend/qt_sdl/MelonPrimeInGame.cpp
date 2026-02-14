@@ -16,6 +16,8 @@ namespace MelonPrime {
     HOT_FUNCTION void MelonPrimeCore::HandleInGameLogic()
     {
         PREFETCH_READ(m_ptrs.isAltForm);
+        // OPT-J: Cache NDS pointer — avoids repeated emuInstance→getNDS() pointer chase.
+        auto* const nds = emuInstance->getNDS();
 
         // --- Rare Actions (Morph, Weapon Switch) ---
         if (UNLIKELY(IsPressed(IB_MORPH))) {
@@ -52,7 +54,7 @@ namespace MelonPrime {
                 HandleRareWeaponCheckStart();
             }
             using namespace Consts::UI;
-            emuInstance->getNDS()->TouchScreen(WEAPON_CHECK_START.x(), WEAPON_CHECK_START.y());
+            nds->TouchScreen(WEAPON_CHECK_START.x(), WEAPON_CHECK_START.y());
         }
         else if (UNLIKELY(m_isWeaponCheckActive)) {
             HandleRareWeaponCheckEnd();
@@ -100,7 +102,7 @@ namespace MelonPrime {
             // OPT-G: m_aimBlockBits replaces m_isAimDisabled (same semantics: != 0)
             if (!m_flags.test(StateFlags::BIT_LAST_FOCUSED) || !m_aimBlockBits) {
                 using namespace Consts::UI;
-                emuInstance->getNDS()->TouchScreen(CENTER_RESET.x(), CENTER_RESET.y());
+                nds->TouchScreen(CENTER_RESET.x(), CENTER_RESET.y());
             }
         }
     }
