@@ -8,7 +8,7 @@
 #include <array>
 #include <cstdint>
 #include <mutex>
-#include "MelonPrimeRawWinInternal.h" // NtUserGetRawInputBuffer_t の定義用
+#include "MelonPrimeRawWinInternal.h"
 
 #ifndef FORCE_INLINE
 #  if defined(_MSC_VER)
@@ -32,21 +32,31 @@
 
 namespace MelonPrime {
 
-    // =========================================================================
-    // フレーム単位のホットキー状態 (pollHotkeys の出力)
-    // =========================================================================
     struct FrameHotkeyState {
         uint64_t down[2]{};
         uint64_t pressed[2]{};
 
-        FORCE_INLINE bool isDown(int id) const noexcept {
+        [[nodiscard]] FORCE_INLINE bool isDown(int id) const noexcept {
             return (down[id >> 6] >> (id & 63)) & 1;
         }
-        FORCE_INLINE bool isPressed(int id) const noexcept {
+        [[nodiscard]] FORCE_INLINE bool isPressed(int id) const noexcept {
             return (pressed[id >> 6] >> (id & 63)) & 1;
         }
     };
 
+    // =========================================================================
+    // InputState â€” Lock-free input accumulator
+    //
+    // Threading contract (enables single-writer optimizations):
+    //   Joy2Key ON:  Qt main thread is sole writer (nativeEventFilter)
+    //   Joy2Key OFF: Emu thread is sole writer (Poll â†’ processRawInputBatched)
+    //   Reader:      Emu thread (pollHotkeys, fetchMouseDelta)
+    //
+    // Since exactly one thread writes at any time, all atomic writes use
+    // relaxed-load + release-store instead of locked RMW (fetch_or, fetch_and,
+    // compare_exchange). This eliminates LOCK-prefixed instructions on x86
+    // (~20-40 cyc â†’ ~1-5 cyc per operation).
+    // =========================================================================
     class InputState {
     public:
         InputState() noexcept;
@@ -57,10 +67,9 @@ namespace MelonPrime {
 
         static void InitializeTables() noexcept;
 
-        // Joy2Key ON時の単発処理
+        // Joy2Key ON: process single WM_INPUT message (Qt main thread)
         void processRawInput(HRAWINPUT hRaw) noexcept;
-
-        // Joy2Key OFF時のバッチ処理 (Direct Polling)
+        // Joy2Key OFF: batch process via GetRawInputBuffer (emu thread)
         void processRawInputBatched() noexcept;
 
         void fetchMouseDelta(int& outX, int& outY) noexcept;
@@ -73,126 +82,96 @@ namespace MelonPrime {
         void setHotkeyVks(int id, const std::vector<UINT>& vks);
 
         void pollHotkeys(FrameHotkeyState& out) noexcept;
+        // OPT-S: Fused hotkey poll + mouse delta fetch — shares a single
+        //   acquire fence instead of pollHotkeys' fence + fetchMouseDelta's
+        //   2 acquire loads. Eliminates 1 redundant barrier + 1 call overhead.
+        void snapshotInputFrame(FrameHotkeyState& outHk, int& outMouseX, int& outMouseY) noexcept;
         [[nodiscard]] bool hotkeyDown(int id) const noexcept;
         void resetHotkeyEdges() noexcept;
 
     private:
-        // ===================================================================
-        // データレイアウト
-        // ===================================================================
-
-        // Cache Line 0: Keyboard
+        // =================================================================
+        // Cache Line 0: Write-Heavy (Input Thread)
+        //   Atomics written by the input producer at high frequency.
+        //   Mouse coordinates use monotonic 64-bit counters to avoid CAS.
+        // =================================================================
         alignas(64) std::atomic<uint64_t> m_vkDown[4];
 
-        // Cache Line 1: Mouse
-        alignas(64) std::atomic<uint8_t> m_mouseButtons{ 0 };
-        std::atomic<uint64_t> m_mouseDeltaCombined{ 0 };
+        std::atomic<int64_t>  m_accumMouseX{ 0 };
+        std::atomic<int64_t>  m_accumMouseY{ 0 };
+        std::atomic<uint8_t>  m_mouseButtons{ 0 };
 
-        // Cache Line 2+: Hotkey Masks (Read Mostly)
-        struct alignas(8) HotkeyMask {
+        // =================================================================
+        // Cache Line 1+: Read-Mostly / Consumer State
+        //   Hotkey masks and state managed by the main thread.
+        //   Separated from write-heavy line to avoid false sharing.
+        // =================================================================
+        struct alignas(64) HotkeyMask {
             uint64_t vkMask[4];
             uint8_t  mouseMask;
             bool     hasMask;
             uint8_t  _pad[6];
         };
-        alignas(64) std::array<HotkeyMask, kMaxHotkeyId> m_hkMask;
+        std::array<HotkeyMask, kMaxHotkeyId> m_hkMask;
+
         uint64_t m_hkPrev[2];
         uint64_t m_boundHotkeys[2]{ 0, 0 };
 
-        // ===================================================================
-        // 静的テーブル & 最適化用関数ポインタ
-        // ===================================================================
-        struct BtnLutEntry {
-            uint8_t downBits;
-            uint8_t upBits;
-        };
+        // Consumer thread's last-read position cache
+        int64_t m_lastReadMouseX{ 0 };
+        int64_t m_lastReadMouseY{ 0 };
+
+        // =================================================================
+        // Static Tables (shared across all instances)
+        // =================================================================
+        struct BtnLutEntry { uint8_t downBits; uint8_t upBits; };
         static std::array<BtnLutEntry, 1024> s_btnLut;
 
-        struct VkRemapEntry {
-            uint8_t normal;
-            uint8_t extended;
-        };
+        struct VkRemapEntry { uint8_t normal; uint8_t extended; };
         static std::array<VkRemapEntry, 256> s_vkRemap;
 
         static uint16_t s_scancodeLShift;
         static uint16_t s_scancodeRShift;
         static std::once_flag s_initFlag;
-
-        // ★ 最適化ポイント: 実行環境に合わせた最速APIを保持
         static NtUserGetRawInputBuffer_t s_fnBestGetRawInputBuffer;
 
-        // ===================================================================
-        // Helper Functions
-        // ===================================================================
+        // =================================================================
+        // Inline Helpers
+        // =================================================================
 
+        // Single-writer VK bit set: relaxed load + release store.
+        // Eliminates LOCK OR / LOCK AND (fetch_or / fetch_and).
+        // SAFETY: Exactly one thread calls this at any time.
         FORCE_INLINE void setVkBit(uint32_t vk, bool down) noexcept {
             if (UNLIKELY(vk >= 256)) return;
             const uint32_t widx = vk >> 6;
-            const uint64_t bit = 1ULL << (vk & 63);
-            if (down) {
-                m_vkDown[widx].fetch_or(bit, std::memory_order_release);
-            }
-            else {
-                m_vkDown[widx].fetch_and(~bit, std::memory_order_release);
-            }
+            const uint64_t bit  = 1ULL << (vk & 63);
+            const uint64_t cur  = m_vkDown[widx].load(std::memory_order_relaxed);
+            m_vkDown[widx].store(
+                down ? (cur | bit) : (cur & ~bit),
+                std::memory_order_release);
         }
 
         FORCE_INLINE uint32_t remapVk(uint32_t vk, USHORT makeCode, USHORT flags) const noexcept {
             if (UNLIKELY(vk == VK_SHIFT)) {
                 return (makeCode == s_scancodeLShift) ? VK_LSHIFT : VK_RSHIFT;
             }
-            const VkRemapEntry& entry = s_vkRemap[vk];
+            const auto& entry = s_vkRemap[vk];
             if (entry.normal != 0) {
                 return (flags & RI_KEY_E0) ? entry.extended : entry.normal;
             }
             return vk;
         }
 
-        // Optimization: Branchless mask testing
         FORCE_INLINE bool testHotkeyMask(
-            const HotkeyMask& mask,
-            const uint64_t snapVk[4],
-            uint8_t snapMouse) const noexcept
+            const HotkeyMask& mask, const uint64_t snapVk[4], uint8_t snapMouse) const noexcept
         {
-            // Mouse check: (0 & val) == 0, so no need to check 'if (mask.mouseMask)' explicitly
-            bool result = (mask.mouseMask & snapMouse) != 0;
-
-            // Keyboard check: Unrolled bitwise OR accumulation
-            // If any required key bit is set in snapVk, the AND result will be non-zero.
-            // Note: This logic assumes vkMask contains only ONE bit per VK if it's set.
-            // If vkMask represents "Key A OR Key B", this logic means "Is A or B pressed?".
-            // If the intention is "Are ALL keys in the mask pressed?", then the logic should be different.
-            // Based on 'setHotkeyVks', vkMask accumulates bits. Usually hotkeys are "Ctrl + A".
-            // However, 'm_vkDown' are individual bits.
-            // The original logic was: if (mask.vkMask[i] && (snapVk[i] & mask.vkMask[i])) return true;
-            // This implies ANY match in the mask triggers the hotkey?
-            // Wait, standard hotkey logic usually implies AND (all keys pressed).
-            // But 'setHotkeyVks' implementation simply ORs bits into the mask.
-            // The usage in 'pollHotkeys' with 'testHotkeyMask' implies:
-            // "If any bit in mask matches any bit in vkDown, return true?"
-            // Ah, looking at 'setHotkeyVks': it sets ONE bit for simple keys.
-            // If multiple keys are passed (e.g. combo), they are distinct calls?
-            // No, 'setHotkeyVks' takes 'std::vector<UINT>'.
-            // If vector has [CTRL, A], mask has bits for CTRL and A.
-            // Original logic:
-            // for (i=0..3) if (mask[i] && (snap[i] & mask[i])) return true;
-            // This means "OR" logic. Pressed(CTRL) OR Pressed(A) -> Active.
-            // If this is intended (e.g. alternative bindings), then my unrolled OR logic is correct.
-            // If it was meant to be AND (Combo), the original code was also OR.
-            // Assuming OR logic (Any binding in the list triggers the action).
-
-            uint64_t keyHit = (mask.vkMask[0] & snapVk[0]) |
-                (mask.vkMask[1] & snapVk[1]) |
-                (mask.vkMask[2] & snapVk[2]) |
-                (mask.vkMask[3] & snapVk[3]);
-
-            return result || (keyHit != 0);
+            // OR mouse and all 4 VK words together â€” single branch
+            const uint64_t keyHit =
+                (mask.vkMask[0] & snapVk[0]) | (mask.vkMask[1] & snapVk[1]) |
+                (mask.vkMask[2] & snapVk[2]) | (mask.vkMask[3] & snapVk[3]);
+            return ((mask.mouseMask & snapMouse) | keyHit) != 0;
         }
-
-        union MouseDeltaPack {
-            struct { int32_t x; int32_t y; } s;
-            uint64_t combined;
-        };
     };
 
 } // namespace MelonPrime

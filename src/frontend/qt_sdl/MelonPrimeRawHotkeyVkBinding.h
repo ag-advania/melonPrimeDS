@@ -2,8 +2,8 @@
 #define MELON_PRIME_HOTKEY_VK_BINDING_H
 
 #ifdef _WIN32
-#include <string>
 #include <vector>
+#include <string>
 #include <windows.h>
 
 namespace MelonPrime {

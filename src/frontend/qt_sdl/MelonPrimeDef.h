@@ -5,9 +5,33 @@
 
 namespace MelonPrime {
 
-    // グローバル状態（EmuInstance側で設定）
+    // Global state (set by EmuInstance)
     extern uint32_t globalChecksum;
     extern bool isRomDetected;
+
+    // =========================================================================
+    // Config key string constants — avoid repeated string construction per frame
+    // =========================================================================
+    namespace CfgKey {
+        inline constexpr const char* Joy2Key        = "Metroid.Apply.joy2KeySupport";
+        inline constexpr const char* SnapTap         = "Metroid.Operation.SnapTap";
+        inline constexpr const char* StylusMode      = "Metroid.Enable.stylusMode";
+        inline constexpr const char* AimSens         = "Metroid.Sensitivity.Aim";
+        inline constexpr const char* AimYScale       = "Metroid.Sensitivity.AimYAxisScale";
+        inline constexpr const char* AimAdjust       = "Metroid.Aim.Adjust";
+        inline constexpr const char* MphSens         = "Metroid.Sensitivity.Mph";
+        inline constexpr const char* Headphone       = "Metroid.Apply.Headphone";
+        inline constexpr const char* SfxVolApply     = "Metroid.Apply.SfxVolume";
+        inline constexpr const char* SfxVol          = "Metroid.Volume.SFX";
+        inline constexpr const char* MusicVolApply   = "Metroid.Apply.MusicVolume";
+        inline constexpr const char* MusicVol        = "Metroid.Volume.Music";
+        inline constexpr const char* LicColorApply   = "Metroid.HunterLicense.Color.Apply";
+        inline constexpr const char* LicColorSel     = "Metroid.HunterLicense.Color.Selected";
+        inline constexpr const char* HunterApply     = "Metroid.HunterLicense.Hunter.Apply";
+        inline constexpr const char* HunterSel       = "Metroid.HunterLicense.Hunter.Selected";
+        inline constexpr const char* UseFwName       = "Metroid.Use.Firmware.Name";
+        inline constexpr const char* DataUnlock      = "Metroid.Data.Unlock";
+    }
 
     namespace RomVersions {
         constexpr uint32_t US1_0           = 0x218DA42C;
