@@ -1,5 +1,6 @@
 #include "MelonPrimeInternal.h"
 #include "EmuInstance.h"
+#include "NDS.h"
 #include "MelonPrimeDef.h"
 #include "MelonPrimeGameRomAddrTable.h"
 
@@ -72,6 +73,15 @@ namespace MelonPrime {
         hot.weaponAmmo          = rom.baseWeaponAmmo;
 
         m_flags.set(StateFlags::BIT_ROM_DETECTED);
+
+        // OPT-L: Resolve inGame pointer immediately — it's read every frame
+        //   before the in-game init block runs, so it must be available as soon
+        //   as BIT_ROM_DETECTED is set. Other m_ptrs.* are resolved later in
+        //   the per-game-join init block (player-position dependent).
+        {
+            melonDS::u8* ram = emuInstance->getNDS()->MainRAM;
+            m_ptrs.inGame = GetRamPointer<uint16_t>(ram, m_addrHot.inGame);
+        }
 
         char message[256];
         snprintf(message, sizeof(message), "MPH Rom Detected: %s", romInfo->name);

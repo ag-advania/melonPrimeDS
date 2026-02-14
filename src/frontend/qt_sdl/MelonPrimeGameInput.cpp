@@ -75,9 +75,10 @@ namespace MelonPrime {
         // Removed global memset
 #ifdef _WIN32
         if (!isFocused) return;
-        if (m_rawFilter) {
-            m_rawFilter->setRawInputTarget(static_cast<HWND>(m_cachedHwnd));
-        }
+        // OPT-I: setRawInputTarget removed from per-frame path (~8 cyc saved).
+        //   HWND is synchronized by ApplyJoy2KeySupportAndQtFilter (start/unpause).
+        // OPT-M: Single pointer load — subsequent uses via register.
+        auto* const rawFilter = m_rawFilter.get();
 #endif
 
         uint64_t down = 0;
@@ -85,8 +86,8 @@ namespace MelonPrime {
 
 #ifdef _WIN32
         FrameHotkeyState hk{};
-        if (m_rawFilter) {
-            m_rawFilter->pollHotkeys(hk);
+        if (rawFilter) {
+            rawFilter->pollHotkeys(hk);
         }
 
         const auto hkDown = [&](int id) -> bool {
@@ -112,8 +113,8 @@ namespace MelonPrime {
         m_input.moveIndex = static_cast<uint32_t>((down >> 6) & 0xF);
 
 #if defined(_WIN32)
-        if (m_rawFilter) {
-            m_rawFilter->fetchMouseDelta(m_input.mouseX, m_input.mouseY);
+        if (rawFilter) {
+            rawFilter->fetchMouseDelta(m_input.mouseX, m_input.mouseY);
         }
 #else
         const QPoint currentPos = QCursor::pos();

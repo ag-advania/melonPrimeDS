@@ -166,7 +166,10 @@ namespace MelonPrime {
 
     void MelonPrimeCore::OnEmuStart()
     {
-        m_flags.packed = StateFlags::BIT_LAYOUT_PENDING;
+        // OPT-N: packed reset to 0 (BIT_LAYOUT_PENDING was dead).
+        //   m_isLayoutChangePending is set explicitly below.
+        m_flags.packed = 0;
+        m_isLayoutChangePending = true;
         // OPT-D: m_isInGame removed — BIT_IN_GAME is cleared by packed reset above
         m_appliedFlags = 0;
         m_isWeaponCheckActive = false;
@@ -256,8 +259,10 @@ namespace MelonPrime {
         //      that would otherwise be ignored. Cost: ~1 Poll per sub-frame (trivial).
         if (UNLIKELY(m_isRunningHook)) {
 #ifdef _WIN32
-            if (m_rawFilter) {
-                m_rawFilter->Poll();
+            // OPT-M: Single pointer load — subsequent uses via register.
+            auto* const rawFilter = m_rawFilter.get();
+            if (rawFilter) {
+                rawFilter->Poll();
             }
 #endif
             UpdateInputState();
@@ -291,8 +296,10 @@ namespace MelonPrime {
 
         // --- Synchronous RawInput polling (lowest latency) ---
 #ifdef _WIN32
-        if (m_rawFilter) {
-            m_rawFilter->Poll();
+        // OPT-M: Single pointer load for the entire main path.
+        auto* const rawFilter = m_rawFilter.get();
+        if (rawFilter) {
+            rawFilter->Poll();
         }
 #endif
 
@@ -308,7 +315,9 @@ namespace MelonPrime {
         }
 
         if (LIKELY(m_flags.test(StateFlags::BIT_ROM_DETECTED))) {
-            const bool isInGame = Read16(mainRAM, m_addrHot.inGame) == 0x0001;
+            // OPT-L: m_ptrs.inGame is in the hot cache line (HotPointers CL1+),
+            //   avoiding a load from cold m_addrHot every frame.
+            const bool isInGame = (*m_ptrs.inGame) == 0x0001;
             m_flags.assign(StateFlags::BIT_IN_GAME, isInGame);
             // OPT-D: m_isInGame removed — IsInGame() now reads BIT_IN_GAME directly
 
@@ -403,7 +412,12 @@ namespace MelonPrime {
                 }
                 InputSetBranchless(INPUT_START, !IsDown(IB_MENU));
             }
-            m_flags.assign(StateFlags::BIT_LAST_FOCUSED, isFocused);
+            // OPT-K: Skip store when focus state unchanged (99.99% of frames).
+            //   During gameplay, isFocused is persistently true; this guard avoids
+            //   a read-modify-write to m_flags.packed on every frame.
+            if (UNLIKELY(m_flags.test(StateFlags::BIT_LAST_FOCUSED) != isFocused)) {
+                m_flags.assign(StateFlags::BIT_LAST_FOCUSED, isFocused);
+            }
         }
         m_isRunningHook = false;
     }
