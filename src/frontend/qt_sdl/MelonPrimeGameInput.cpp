@@ -162,12 +162,9 @@ namespace MelonPrime {
     }
 
     // =========================================================================
-        // ProcessAimInputMouse — THE HOTTEST INNER LOOP
-        //
-        // Extreme Branchless Aim Pipeline (100% ALU):
-        // 既存の if/else 構造を廃止し、ビット演算を用いた算術パイプラインに変更。
-        // 分岐予測ミスを完全排除し、エイム計算を毎フレーム等速（超低レイテンシ）で完了させます。
-        // =========================================================================
+    // ProcessAimInputMouse
+    // Extreme Branchless Aim Pipeline + (Optional) Anti-Smoothing
+    // =========================================================================
     HOT_FUNCTION void MelonPrimeCore::ProcessAimInputMouse()
     {
         if (m_aimBlockBits) return;
@@ -202,19 +199,15 @@ namespace MelonPrime {
 
             // --- 0-Branch Mathematical Deadzone & Snap Filter ---
             auto apply_aim = [adjT, snapT](int64_t raw) -> int16_t {
-                // 1. Compute absolute value branchlessly
                 const int64_t sign = raw >> 63;
                 const int64_t absRaw = (raw ^ sign) - sign;
 
-                // 2. Generate boolean masks (-1 if true, 0 if false)
                 const int64_t isDeadzone = (absRaw - adjT) >> 63;
                 const int64_t isSnap = (absRaw - snapT) >> 63;
 
-                // 3. Compute the two possible outcomes
-                const int64_t snapVal = (1LL ^ sign) - sign;  // 1 or -1
-                const int64_t normVal = raw >> AIM_FRAC_BITS; // scale down
+                const int64_t snapVal = (1LL ^ sign) - sign;  // +1 or -1
+                const int64_t normVal = raw >> AIM_FRAC_BITS; // スケールダウン
 
-                // 4. Select outcome using bitwise logic (No CMOV or Branches)
                 return static_cast<int16_t>(
                     (~isDeadzone & isSnap & snapVal) |
                     (~isSnap & normVal)
@@ -228,6 +221,19 @@ namespace MelonPrime {
 
             *m_ptrs.aimX = static_cast<uint16_t>(outX);
             *m_ptrs.aimY = static_cast<uint16_t>(outY);
+
+            // --- 追加: ユーザー設定に基づく Anti-Smoothing 処理 ---
+            if (UNLIKELY(m_disableMphAimSmoothing)) {
+                // 過去3フレーム分のスロットにも同じ値を強制上書きし、
+                // DS側の「(X1+X2+X3+X4)/4」という移動平均フィルタを無効化する。
+                m_ptrs.aimX[-3] = static_cast<uint16_t>(outX);
+                m_ptrs.aimX[-2] = static_cast<uint16_t>(outX);
+                m_ptrs.aimX[-1] = static_cast<uint16_t>(outX);
+
+                m_ptrs.aimY[-3] = static_cast<uint16_t>(outY);
+                m_ptrs.aimY[-2] = static_cast<uint16_t>(outY);
+                m_ptrs.aimY[-1] = static_cast<uint16_t>(outY);
+            }
 
 #if !defined(_WIN32)
             QCursor::setPos(m_aimData.centerX, m_aimData.centerY);
