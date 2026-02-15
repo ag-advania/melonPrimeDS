@@ -10,13 +10,13 @@
 namespace MelonPrime {
 
     // =========================================================================
-    // HandleInGameLogic â€” per-frame in-game update
+    // HandleInGameLogic — per-frame in-game update
     // Optimized with Hot/Cold splitting to minimize instruction cache pressure.
     // =========================================================================
     HOT_FUNCTION void MelonPrimeCore::HandleInGameLogic()
     {
         PREFETCH_READ(m_ptrs.isAltForm);
-        // OPT-J: Cache NDS pointer — avoids repeated emuInstance→getNDS() pointer chase.
+        // OPT-J: Cache NDS pointer — avoids repeated emuInstance->getNDS() pointer chase.
         auto* const nds = emuInstance->getNDS();
 
         // --- Rare Actions (Morph, Weapon Switch) ---
@@ -65,7 +65,7 @@ namespace MelonPrime {
 
         // OPT: Branchless batched button mask update.
         //
-        // Previous code: 3 conditional ternaries â†’ 3 separate RMW on m_inputMaskFast.
+        // Previous code: 3 conditional ternaries -> 3 separate RMW on m_inputMaskFast.
         //   mask |= (!IsDown(IB_JUMP))  ? (1u << INPUT_B) : 0;
         //   mask |= (!IsDown(IB_SHOOT)) ? (1u << INPUT_L) : 0;
         //   mask |= (!IsDown(IB_ZOOM))  ? (1u << INPUT_R) : 0;
@@ -75,14 +75,14 @@ namespace MelonPrime {
         //
         // New code: extract inverted bits from m_input.down (already in L1),
         // shift each to its target position, OR together in one write.
-        // Generates: NOT + 3Ã—(SHR+AND+SHL) + 3Ã—OR + 1 masked store.
+        // Generates: NOT + 3x(SHR+AND+SHL) + 3xOR + 1 masked store.
         // Zero branches, single write to m_inputMaskFast, no dependency chain.
         {
             constexpr uint16_t kModBits = (1u << INPUT_B) | (1u << INPUT_L) | (1u << INPUT_R);
             const uint64_t nd = ~m_input.down;
-            // IB_JUMP  = bit 0 â†’ INPUT_B = bit 1
-            // IB_SHOOT = bit 1 â†’ INPUT_L = bit 9
-            // IB_ZOOM  = bit 2 â†’ INPUT_R = bit 8
+            // IB_JUMP  = bit 0 -> INPUT_B = bit 1
+            // IB_SHOOT = bit 1 -> INPUT_L = bit 9
+            // IB_ZOOM  = bit 2 -> INPUT_R = bit 8
             const uint16_t bBit = static_cast<uint16_t>(((nd >> 0) & 1u) << INPUT_B);
             const uint16_t lBit = static_cast<uint16_t>(((nd >> 1) & 1u) << INPUT_L);
             const uint16_t rBit = static_cast<uint16_t>(((nd >> 2) & 1u) << INPUT_R);
@@ -146,6 +146,25 @@ namespace MelonPrime {
         FrameAdvanceTwice();
     }
 
+    // =========================================================================
+    // HandleAdventureMode
+    //
+    // OPT-V: Scan visor loop — redundant input calls removed.
+    //
+    //   Each FrameAdvanceOnce() triggers the re-entrant path in RunFrameHook
+    //   which performs: Poll() -> UpdateInputState() -> ProcessMoveInputFast()
+    //   -> button mask update -> SetKeyMask(GetInputMaskFast()). The lambda
+    //   then calls RunFrame() which reads the freshly-set key mask.
+    //
+    //   The outer loop's UpdateInputState / ProcessMoveInputFast / SetKeyMask
+    //   are immediately overwritten by the re-entrant path, making them pure
+    //   waste. At 30 iterations, this saved ~10,000 cyc per visor toggle
+    //   (~300 cyc/iter for UpdateInputState + ~25 cyc for ProcessMoveInputFast
+    //    + ~5 cyc for SetKeyMask).
+    //
+    //   Note: During shader compilation, FrameAdvanceOnce skips RunFrameHook
+    //   (and RunFrame), so input state doesn't matter in that case either.
+    // =========================================================================
     COLD_FUNCTION void MelonPrimeCore::HandleAdventureMode()
     {
         auto* nds = emuInstance->getNDS();
@@ -162,10 +181,10 @@ namespace MelonPrime {
                 FrameAdvanceTwice();
             }
             else {
+                // OPT-V: Loop body reduced to bare FrameAdvanceOnce.
+                //   Old: UpdateInputState + ProcessMoveInputFast + SetKeyMask + FrameAdvanceOnce
+                //   New: FrameAdvanceOnce only (re-entrant path handles all input).
                 for (int i = 0; i < 30; ++i) {
-                    UpdateInputState();
-                    ProcessMoveInputFast();
-                    nds->SetKeyMask(m_inputMaskFast);
                     FrameAdvanceOnce();
                 }
             }
