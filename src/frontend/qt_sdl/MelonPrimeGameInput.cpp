@@ -162,7 +162,7 @@ namespace MelonPrime {
     }
 
     // =========================================================================
-    // ProcessAimInputMouse
+    // ProcessAimInputMouse — ULTIMATE OPTIMIZATION
     // Extreme Branchless Aim Pipeline + (Optional) Anti-Smoothing
     // =========================================================================
     HOT_FUNCTION void MelonPrimeCore::ProcessAimInputMouse()
@@ -182,14 +182,20 @@ namespace MelonPrime {
             const int32_t deltaY = m_input.mouseY;
 
             {
-                const auto adx = static_cast<uint32_t>(deltaX >= 0 ? deltaX : -deltaX);
-                const auto ady = static_cast<uint32_t>(deltaY >= 0 ? deltaY : -deltaY);
+                // OPT-B: 完全ブランチレスな絶対値計算 (Bitwise Absolute)
+                const int32_t signX = deltaX >> 31;
+                const int32_t signY = deltaY >> 31;
+                const uint32_t adx = static_cast<uint32_t>((deltaX ^ signX) - signX);
+                const uint32_t ady = static_cast<uint32_t>((deltaY ^ signY) - signY);
+
                 if (adx < static_cast<uint32_t>(m_aimMinDeltaX) &&
                     ady < static_cast<uint32_t>(m_aimMinDeltaY))
                     return;
             }
 
+            // アウトオブオーダー実行の効率化のため早期にプリフェッチ
             PREFETCH_WRITE(m_ptrs.aimX);
+            PREFETCH_WRITE(m_ptrs.aimY);
 
             const int64_t rawX = static_cast<int64_t>(deltaX) * m_aimFixedScaleX;
             const int64_t rawY = static_cast<int64_t>(deltaY) * m_aimFixedScaleY;
@@ -197,7 +203,8 @@ namespace MelonPrime {
             const int64_t adjT = m_aimFixedAdjust;
             const int64_t snapT = m_aimFixedSnapThresh;
 
-            // --- 0-Branch Mathematical Deadzone & Snap Filter ---
+            // 0-Branch Mathematical Deadzone & Snap Filter
+            // エラーを解消するためマクロを除去（-O3指定によりコンパイラが自動的にインライン化します）
             auto apply_aim = [adjT, snapT](int64_t raw) -> int16_t {
                 const int64_t sign = raw >> 63;
                 const int64_t absRaw = (raw ^ sign) - sign;
@@ -219,20 +226,21 @@ namespace MelonPrime {
 
             if ((outX | outY) == 0) return;
 
-            *m_ptrs.aimX = static_cast<uint16_t>(outX);
-            *m_ptrs.aimY = static_cast<uint16_t>(outY);
+            *m_ptrs.aimX = outX;
+            *m_ptrs.aimY = outY;
 
-            // --- 追加: ユーザー設定に基づく Anti-Smoothing 処理 ---
+            // --- ユーザー設定に基づく Anti-Smoothing (履歴バッファ破壊) ---
             if (UNLIKELY(m_disableMphAimSmoothing)) {
-                // 過去3フレーム分のスロットにも同じ値を強制上書きし、
-                // DS側の「(X1+X2+X3+X4)/4」という移動平均フィルタを無効化する。
-                m_ptrs.aimX[-3] = static_cast<uint16_t>(outX);
-                m_ptrs.aimX[-2] = static_cast<uint16_t>(outX);
-                m_ptrs.aimX[-1] = static_cast<uint16_t>(outX);
+                // OPT-C: メモリ書き込みの局所化 (Write Coalescing)
+                // コンパイラがこれを64ビット(または32ビット×2)のSIMDストア命令に
+                // 最適化しやすいよう、同じ型の連続したメモリアドレスへ一気に書き込む
+                m_ptrs.aimX[-3] = outX;
+                m_ptrs.aimX[-2] = outX;
+                m_ptrs.aimX[-1] = outX;
 
-                m_ptrs.aimY[-3] = static_cast<uint16_t>(outY);
-                m_ptrs.aimY[-2] = static_cast<uint16_t>(outY);
-                m_ptrs.aimY[-1] = static_cast<uint16_t>(outY);
+                m_ptrs.aimY[-3] = outY;
+                m_ptrs.aimY[-2] = outY;
+                m_ptrs.aimY[-1] = outY;
             }
 
 #if !defined(_WIN32)
