@@ -249,7 +249,7 @@ namespace MelonPrime {
         alignas(64) FrameInputState m_input{};
 
         // ─── CL1+: RAM Pointers (R every frame) ───
-        alignas(64) HotPointers m_ptrs{};
+        alignas(64) HotPointers m_ptrs {};
 
         // ─── Hot Scalars + Core Pointers (R/W every frame) ───
         EmuInstance* emuInstance;
@@ -295,6 +295,7 @@ namespace MelonPrime {
         bool     m_isWeaponCheckActive = false;
         // OPT-D: m_isInGame removed — unified with BIT_IN_GAME flag
         bool     m_isLayoutChangePending = true;
+        bool     m_disableMphAimSmoothing = false; // <-- ユーザー設定フラグ
 
         struct alignas(4) StateFlags {
             uint32_t packed = 0;

@@ -530,7 +530,14 @@
 										<item row="1" column="0">
 											<widget class="QCheckBox" name="cbMetroidEnableStylusMode">
 												<property name="text">
-													<string>Enable Stylus Mode</string>
+													<string>Enable Stylus Mode (Leave this unchecked unless you want to play with the stylus)</string>
+												</property>
+											</widget>
+										</item>
+										<item row="2" column="0">
+											<widget class="QCheckBox" name="cbMetroidDisableMphAimSmoothing">
+												<property name="text">
+													<string>Disable MPH Aim Smoothing (Disable the in-game aim smoothing)</string>
 												</property>
 											</widget>
 										</item>
