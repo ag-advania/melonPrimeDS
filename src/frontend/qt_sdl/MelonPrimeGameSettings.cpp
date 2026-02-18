@@ -1,5 +1,6 @@
 #include "MelonPrimeGameSettings.h"
 #include "MelonPrimeDef.h"
+#include "MelonPrimeGameRomAddrTable.h"
 #include "NDS.h"
 
 namespace MelonPrime {
@@ -137,6 +138,51 @@ namespace MelonPrime {
         const int64_t result = static_cast<int64_t>(base) + (static_cast<int64_t>(pos) * inc);
         if (result < 0 || result > UINT32_MAX) return base;
         return static_cast<melonDS::u32>(result);
+    }
+
+    // =========================================================================
+    // Safe Anti-Smoothing ASM Memory Patcher
+    //
+    // This safely extracts C++ injected data by shifting the read instruction
+    // to +0x3C / +0x44 (which avoids the game's zero-overwrite mechanism),
+    // and then skips the 4-frame moving average.
+    // It verifies the exact expected assembly instructions exist before patching.
+    // =========================================================================
+    void MelonPrimeGameSettings::ApplyAimSmoothingPatch(melonDS::NDS* nds, const RomAddresses& rom, bool enable)
+    {
+        if (!nds || rom.aimPatchAddrX == 0) return;
+
+        // "b +0x18" : Jumps exactly to the final strh instruction, skipping all smoothing
+        constexpr uint32_t JUMP_INSTR = 0xEA000006;
+
+        if (enable) {
+            // Apply X patch if original instructions perfectly match (Crash Prevention Guard)
+            if (nds->ARM9Read32(rom.aimPatchAddrX) == rom.aimPatchOrigX1 &&
+                nds->ARM9Read32(rom.aimPatchAddrX + 4) == rom.aimPatchOrigX2) {
+                nds->ARM9Write32(rom.aimPatchAddrX, rom.aimPatchX1);
+                nds->ARM9Write32(rom.aimPatchAddrX + 4, JUMP_INSTR);
+            }
+            // Apply Y patch if original instructions perfectly match
+            if (nds->ARM9Read32(rom.aimPatchAddrY) == rom.aimPatchOrigY1 &&
+                nds->ARM9Read32(rom.aimPatchAddrY + 4) == rom.aimPatchOrigY2) {
+                nds->ARM9Write32(rom.aimPatchAddrY, rom.aimPatchY1);
+                nds->ARM9Write32(rom.aimPatchAddrY + 4, JUMP_INSTR);
+            }
+        }
+        else {
+            // Restore X patch if it was previously patched by us
+            if (nds->ARM9Read32(rom.aimPatchAddrX) == rom.aimPatchX1 &&
+                nds->ARM9Read32(rom.aimPatchAddrX + 4) == JUMP_INSTR) {
+                nds->ARM9Write32(rom.aimPatchAddrX, rom.aimPatchOrigX1);
+                nds->ARM9Write32(rom.aimPatchAddrX + 4, rom.aimPatchOrigX2);
+            }
+            // Restore Y patch if it was previously patched by us
+            if (nds->ARM9Read32(rom.aimPatchAddrY) == rom.aimPatchY1 &&
+                nds->ARM9Read32(rom.aimPatchAddrY + 4) == JUMP_INSTR) {
+                nds->ARM9Write32(rom.aimPatchAddrY, rom.aimPatchOrigY1);
+                nds->ARM9Write32(rom.aimPatchAddrY + 4, rom.aimPatchOrigY2);
+            }
+        }
     }
 
 } // namespace MelonPrime
