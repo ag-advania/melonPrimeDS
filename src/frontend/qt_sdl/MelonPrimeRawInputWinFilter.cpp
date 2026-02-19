@@ -62,8 +62,8 @@ namespace MelonPrime {
 
     // =========================================================================
     // Poll() — Zero-Indirection Sync Polling
-    // EmuThreadのフレーム進行直前に呼ばれる、最も安全で即時反映される最速パス。
-    // 関数ポインタを使わず、Nt APIを直接叩くことでオーバーヘッドをゼロ化。
+    // EmuThread のフレーム進行直前に呼ばれる最速パス。
+    // Nt API を直接叩くことでオーバーヘッドをゼロ化。
     // =========================================================================
     void RawInputWinFilter::Poll() {
         if (m_joy2KeySupport) return;
@@ -71,6 +71,10 @@ namespace MelonPrime {
         auto* const state = m_state.get();
         state->processRawInputBatched();
 
+        // WM_INPUT メッセージキューのドレイン。
+        // [FIX-1] により HiddenWndProc は WM_INPUT を DefWindowProc に渡さないため、
+        // 万一この除去前にメッセージがディスパッチされても raw input データは破棄されない。
+        // ただしキュー溢れ防止のため除去自体は引き続き必要。
         MSG msg;
         if (LIKELY(WinInternal::fnNtUserPeekMessage != nullptr)) {
             while (WinInternal::fnNtUserPeekMessage(&msg, m_hHiddenWnd, WM_INPUT, WM_INPUT, PM_REMOVE, FALSE)) {}
@@ -131,7 +135,14 @@ namespace MelonPrime {
         UnregisterClassW(L"MelonPrimeRawInputSink", GetModuleHandle(nullptr));
     }
 
+    // [FIX-1] WM_INPUT を DefWindowProc に渡さない。
+    // DefWindowProc → DefRawInputProc がカーネルの raw input バッファからデータを破棄するため、
+    // Poll() 間に EmuThread 上の Win32 API (wglMakeCurrent, SwapBuffers, SDL 内部等) が
+    // 暗黙のメッセージポンプを実行すると、GetRawInputBuffer で key-up が欠損 → stuck。
+    // Joy2Key ON では nativeEventFilter が先にデータを消費するためこの問題は起きない。
+    // → 関連: [FIX-2] UpdateInputState, [FIX-3] RunFrameHook フォーカス遷移リセット
     LRESULT CALLBACK RawInputWinFilter::HiddenWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
+        if (msg == WM_INPUT) return 0;
         return DefWindowProcW(hwnd, msg, wParam, lParam);
     }
 

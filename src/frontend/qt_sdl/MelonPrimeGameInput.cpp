@@ -73,7 +73,19 @@ namespace MelonPrime {
     HOT_FUNCTION void MelonPrimeCore::UpdateInputState()
     {
 #ifdef _WIN32
-        if (!isFocused) return;
+        // [FIX-2] フォーカス喪失時は入力を全クリアして返す。
+        // 旧コードは単に return していたため m_input.down が stale のまま残り、
+        // 再入パス (m_isRunningHook==true) で stale なキーマスクが NDS に渡って stuck していた。
+        // → 関連: [FIX-3] RunFrameHook フォーカス遷移時に raw input 層もリセット
+        if (!isFocused) {
+            m_input.down = 0;
+            m_input.press = 0;
+            m_input.moveIndex = 0;
+            m_input.mouseX = 0;
+            m_input.mouseY = 0;
+            m_input.wheelDelta = 0;
+            return;
+        }
         auto* const rawFilter = m_rawFilter.get();
 #endif
 

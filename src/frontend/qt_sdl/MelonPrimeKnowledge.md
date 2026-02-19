@@ -19,6 +19,130 @@ MelonPrime の Raw Input 層は2つのモードを持ち、いずれも **書き
 
 この Single-Writer 保証が、以下の最適化の正当性の根拠となる。
 
+### ON / OFF モード構造差（入力 stuck 問題の背景）
+
+| 項目 | ON (Joy2Key) | OFF (Joy2Key Off) |
+|---|---|---|
+| ライタースレッド | Qt メインスレッド | Emu スレッド |
+| 入力経路 | `nativeEventFilter` → `processRawInput(HRAWINPUT)` | `Poll()` → `GetRawInputBuffer` (バッチ) |
+| WM_INPUT 受信先 | Qt ウィンドウ (flags=0) | 隠しウィンドウ (`RIDEV_INPUTSINK`) |
+| イベント読取 | `GetRawInputData` (1件ずつ) | `GetRawInputBuffer` (バッチ一括) |
+| 読取タイミング | WM_INPUT 到着即時 | フレーム先頭の `Poll()` で一括 |
+| フォーカス喪失時 | WM_INPUT 自体が来なくなる → 安全 | `RIDEV_INPUTSINK` で**受信し続ける** |
+| DefWindowProc 耐性 | `nativeEventFilter` が先にデータ消費 → 安全 | `DefWindowProc` でデータ破棄リスクあり |
+
+**ON では key stuck が発生しない理由:**
+1. `nativeEventFilter` は `DispatchMessage` の**前**に `GetRawInputData` でデータを消費する。後で `DefWindowProc` が処理しても既にデータは読取済。
+2. フォーカス喪失時、Qt ウィンドウには WM_INPUT が届かなくなるため stale データが残らない。
+
+---
+
+## 既知の不具合と修正
+
+### [FIX-1] HiddenWndProc の WM_INPUT データ破棄（根本原因）
+
+**事象:** Joy2Key OFF 時にキーやクリックが押しっぱなしになる。ON では発生しない。
+
+**原因:**
+Joy2Key OFF モードの隠しウィンドウの `WndProc` が `DefWindowProcW` に全メッセージを委譲していた。
+Windows の仕様上、`DefWindowProc` は `WM_INPUT` を受けると内部で `DefRawInputProc` を呼び出し、
+カーネルの raw input バッファからデータを**破棄**する。
+
+通常は `Poll()` が `GetRawInputBuffer` で先に読み取り、`PeekMessage(PM_REMOVE)` で除去するため
+`DefWindowProc` には到達しない。しかし `Poll()` 間に EmuThread 上の Win32 API が
+暗黙のメッセージポンプを実行すると、隠しウィンドウ宛の WM_INPUT がディスパッチされる:
+
+```
+[メッセージポンプを実行しうる API]
+  wglMakeCurrent / SwapBuffers（一部GPUドライバ）
+  SDL 内部の COM 呼出し（DirectInput / XInput）
+  SDL_Delay → Sleep 中の SentMessage 処理
+```
+
+→ `HiddenWndProc` → `DefWindowProcW` → `DefRawInputProc` → データ破棄
+→ 次の `GetRawInputBuffer` で key-up が欠損 → stuck
+
+**修正 (`MelonPrimeRawInputWinFilter.cpp`):**
+
+```cpp
+LRESULT CALLBACK RawInputWinFilter::HiddenWndProc(...) {
+    if (msg == WM_INPUT) return 0;   // ← 追加
+    return DefWindowProcW(hwnd, msg, wParam, lParam);
+}
+```
+
+WM_INPUT のみ自前で消費（return 0）し、`DefRawInputProc` によるデータ破棄を遮断。
+`Poll()` の `GetRawInputBuffer` が唯一の読取経路として機能し続ける。
+
+`Poll()` 内の PeekMessage ドレインは引き続き必要（キュー溢れ防止）。ただし FIX-1 により、
+仮にドレイン前にメッセージがディスパッチされても raw input データは安全。
+
+### [FIX-2] UpdateInputState の !isFocused 時 stale 入力
+
+**事象:** サブフレーム進行中にフォーカスが外れると、キーマスクが stale のまま NDS に渡る。
+
+**原因:**
+`UpdateInputState()` は `!isFocused` 時に即 `return` していた。
+しかし `m_input.down` が前フレームの値を保持したまま残るため、
+再入パス (`m_isRunningHook==true`) で `~m_input.down` が stale なキーマスクを生成 →
+`SetKeyMask` に渡される。
+
+**修正 (`MelonPrimeGameInput.cpp`):**
+
+```cpp
+if (!isFocused) {
+    m_input.down = 0;
+    m_input.press = 0;
+    m_input.moveIndex = 0;
+    m_input.mouseX = 0;
+    m_input.mouseY = 0;
+    m_input.wheelDelta = 0;
+    return;
+}
+```
+
+### [FIX-3] フォーカス遷移時の raw input リセット
+
+**事象:** フォーカス喪失→復帰間に stale キーが残りうる。
+
+**原因:**
+`BIT_LAST_FOCUSED` 遷移検出時に `m_input` と raw input 状態をクリアしていなかったため、
+unfocus → refocus 間に残った stale データが次フレームに影響する。
+
+**修正 (`MelonPrime.cpp` - `RunFrameHook`):**
+
+```cpp
+if (UNLIKELY(m_flags.test(StateFlags::BIT_LAST_FOCUSED) != isFocused)) {
+    m_flags.assign(StateFlags::BIT_LAST_FOCUSED, isFocused);
+    if (!isFocused) {
+        m_input.down = 0;
+        m_input.press = 0;
+        m_input.moveIndex = 0;
+        if (m_rawFilter) {
+            m_rawFilter->resetAllKeys();
+            m_rawFilter->resetMouseButtons();
+        }
+    }
+}
+```
+
+FIX-2 と FIX-3 は多重防御の関係:
+- FIX-2: 再入パスの `UpdateInputState` 内で毎フレーム即座にクリア
+- FIX-3: メインパスのフレーム末尾で遷移を検出し、raw input 層含め包括クリア
+
+### リファクタリングで発見: OnEmuUnpause のリセットは既に十分
+
+初回分析で「`OnEmuUnpause()` に `resetAllKeys + resetMouseButtons` が不足」と判断し追加したが、
+リファクタリング時に `ApplyJoy2KeySupportAndQtFilter(enable, doReset=true)` が
+OnEmuUnpause の先頭で呼ばれていることを確認。`doReset=true`（デフォルト）により
+`resetAllKeys + resetMouseButtons + resetHotkeyEdges` は**既に実行済み**だった。
+
+追加の `#ifdef _WIN32` ブロック内で必要なのは:
+1. `BindMetroidHotkeysFromConfig()` — VK バインドの再読込
+2. `resetHotkeyEdges()` — バインド変更後のエッジ状態再同期
+
+冗長な `resetAllKeys + resetMouseButtons` は除去した。
+
 ---
 
 ## 適用した最適化一覧
@@ -48,6 +172,7 @@ MelonPrime の Raw Input 層は2つのモードを持ち、いずれも **書き
 | S | pollHotkeys + fetchMouseDelta 融合 | ~8-15 cyc | RawInput |
 | T | hasMouseDelta / hasButtonChanges 除去 | ~0-133 cyc | RawInput |
 | U | Poll() 内 m_state キャッシュ | ~2-3 cyc | RawInput |
+| W | BIT_IN_GAME_INIT ブロック外出し | icache ~300-400 byte 削減 | icache/レジスタ |
 
 ---
 
@@ -124,6 +249,7 @@ ARM/RISC-V で fence 1-2回削減。x86 でも関数呼び出し1回 + `m_state`
 
 **注: PeekMessage ドレイン（~40000 cyc/frame @ 8000Hz）は OS API 制約上回避不可。**
 WM_INPUT メッセージはキュー溢れ防止のため除去が必須であり、バッチ除去 API は Windows に存在しない。
+ただし [FIX-1] により、ドレイン前にメッセージがディスパッチされても raw input データの安全性は保証される。
 
 ---
 
@@ -249,6 +375,43 @@ AimAdjust 無効時は両閾値 = 0 で比較が自動的にフォールスル�
 
 `(deltaX | deltaY) == 0` チェックは OPT-F の閾値チェック（閾値 ≥ 1）に完全包含。1分岐削減。
 
+### OPT-W: BIT_IN_GAME_INIT ブロック外出し（icache ~300-400 byte 削減）
+
+`RunFrameHook` (HOT_FUNCTION) 内にインラインされていたゲーム参加時の初期化ブロック
+（~50行: アドレス計算 + ポインタ解決 + 設定適用）を `HandleGameJoinInit` (COLD_FUNCTION) に抽出。
+
+**問題:**
+```
+RunFrameHook (HOT_FUNCTION) の機械語サイズ:
+  ホットパス:  ~200-300 byte (毎フレーム)
+  initブロック: ~300-400 byte (ゲーム参加時のみ = 数十秒に1回)
+  合計:         ~500-700 byte → L1i 32KB の ~1.5-2.2%
+```
+
+initブロックは数十秒に1回しか実行されないにもかかわらず:
+1. RunFrameHook 全体の icache フットプリントを膨張させる
+2. コンパイラがホットパスのレジスタ割当に initブロックのローカル変数（offP, offA 等）を考慮する
+3. 武器切替時の FrameAdvanceTwice → 再帰 RunFrameHook 呼出しで icache miss 確率が上がる
+
+**修正:**
+```cpp
+// 旧: RunFrameHook 内にインライン
+if (isInGame && !m_flags.test(BIT_IN_GAME_INIT)) {
+    m_flags.set(BIT_IN_GAME_INIT);
+    // ~50行のアドレス計算 + ポインタ解決 + 設定適用
+}
+
+// 新: COLD_FUNCTION に抽出
+if (isInGame && !m_flags.test(BIT_IN_GAME_INIT)) {
+    HandleGameJoinInit(mainRAM);  // COLD_FUNCTION → .text.unlikely
+}
+```
+
+COLD_FUNCTION の効果:
+1. `.text.unlikely` セクションに配置 → ホットパスの icache 占有を削減
+2. コンパイラが RunFrameHook のレジスタ割当を initブロック無しで最適化
+3. NOINLINE が暗黙適用 → コンパイラが再インライン化しない
+
 ### 既存（プロジェクト開始前）: `setRawInputTarget` HWND ガード
 
 `setRawInputTarget()` 先頭に `if (m_hwndQtTarget == hwnd) return;` を追加。
@@ -332,6 +495,7 @@ TOTAL:                            ~42000-44000 cyc/frame
 
 PeekMessage ドレインが ~90% を占めるが、WM_INPUT のキュー溢れ防止のため除去不可。
 バッチ除去 API は Windows に存在しない。
+[FIX-1] によりドレイン前のデータ安全性は保証されるが、キュー溢れ防止は別の問題。
 
 ### マルチスレッド化の評価
 
@@ -389,6 +553,17 @@ PeekMessage ドレインが ~90% を占めるが、WM_INPUT のキュー溢れ�
 追加ALU命令はホットケースで無駄な計算になる。
 ※ なお OPT-O で float パイプライン自体が固定小数点に置換されたため、この問題は根本的に解消。
 
+### ❌ OnEmuUnpause への resetAllKeys/resetMouseButtons 追加（冗長、除去済み）
+
+**当初の意図:** ポーズ中に失われた key-up の stale ビットをクリア。
+
+**実際の問題:** `ApplyJoy2KeySupportAndQtFilter(enable, doReset=true)` が OnEmuUnpause の
+先頭で呼ばれており、`doReset=true`（デフォルト）により `resetAllKeys + resetMouseButtons +
+resetHotkeyEdges` は**既に実行済み**。追加の呼び出しは完全に冗長だった。
+
+**教訓:** 修正を追加する前に、既存のコールチェーンを完全にトレースすべき。
+デフォルト引数 (`doReset=true`) が暗黙の動作を隠蔽していた。
+
 ### ❌ その他の検討・却下項目
 
 | 項目 | 却下理由 |
@@ -423,15 +598,15 @@ PeekMessage ドレインが ~90% を占めるが、WM_INPUT のキュー溢れ�
 
 ## 変更ファイル一覧
 
-| ファイル | 適用 OPT |
+| ファイル | 適用 OPT / FIX |
 |---------|---------|
-| MelonPrime.h | A, C, D, F, G, L, M, N, O, P |
-| MelonPrime.cpp | D, E, F, K, L, M, N, O |
+| MelonPrime.h | A, C, D, F, G, L, M, N, O, P, W |
+| MelonPrime.cpp | D, E, F, K, L, M, N, O, W, FIX-3 |
 | MelonPrimeInGame.cpp | A, B, G, H, J |
-| MelonPrimeGameInput.cpp | A, F, G, I, M, O, P, Q, S |
+| MelonPrimeGameInput.cpp | A, F, G, I, M, O, P, Q, S, FIX-2 |
 | MelonPrimeGameWeapon.cpp | A |
 | MelonPrimeGameRomDetect.cpp | L |
 | MelonPrimeRawInputState.h | S |
 | MelonPrimeRawInputState.cpp | S, T |
 | MelonPrimeRawInputWinFilter.h | S |
-| MelonPrimeRawInputWinFilter.cpp | R, U, S |
+| MelonPrimeRawInputWinFilter.cpp | R, U, S, FIX-1 |

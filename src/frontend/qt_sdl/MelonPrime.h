@@ -159,7 +159,7 @@ namespace MelonPrime {
     };
 
     struct alignas(64) HotPointers {
-        // [Tier 0: Every Frame (Always) — frame gate check]
+        // [Tier 0: Every Frame (Always) â€” frame gate check]
         uint16_t* inGame;       // OPT-L: Promoted from cold m_addrHot to avoid per-frame CL miss
 
         // [Tier 1: Every Frame (Always)]
@@ -245,13 +245,13 @@ namespace MelonPrime {
         //   Cold: m_addrHot, m_currentRom (init-only, pushed to end)
         // =================================================================
 
-        // ─── CL0: Input State (R/W every frame) ───
+        // â”€â”€â”€ CL0: Input State (R/W every frame) â”€â”€â”€
         alignas(64) FrameInputState m_input{};
 
-        // ─── CL1+: RAM Pointers (R every frame) ───
+        // â”€â”€â”€ CL1+: RAM Pointers (R every frame) â”€â”€â”€
         alignas(64) HotPointers m_ptrs {};
 
-        // ─── Hot Scalars + Core Pointers (R/W every frame) ───
+        // â”€â”€â”€ Hot Scalars + Core Pointers (R/W every frame) â”€â”€â”€
         EmuInstance* emuInstance;
         Config::Table& localCfg;
         Config::Table& globalCfg;
@@ -264,11 +264,11 @@ namespace MelonPrime {
         // OPT-O: Fixed-point aim pipeline (Q14 = 14-bit fractional).
         //
         // Replaces the hot-path float sequence:
-        //   CVTSI2SS ×2 → MULSS ×2 → float AimAdjust → CVTTSS2SI ×2
-        //   (~29 cyc total: 4 int↔float domain crossings + 2 float multiplies)
+        //   CVTSI2SS Ã—2 â†’ MULSS Ã—2 â†’ float AimAdjust â†’ CVTTSS2SI Ã—2
+        //   (~29 cyc total: 4 intâ†”float domain crossings + 2 float multiplies)
         //
         // With pure integer:
-        //   IMUL ×2 → integer AimAdjust (CMP) → SAR ×2
+        //   IMUL Ã—2 â†’ integer AimAdjust (CMP) â†’ SAR Ã—2
         //   (~15 cyc total: no domain crossings)
         //
         // All values precomputed at config-change time by RecalcAimFixedPoint().
@@ -276,26 +276,26 @@ namespace MelonPrime {
         static constexpr int AIM_FRAC_BITS = 14;
         static constexpr int64_t AIM_ONE_FP = 1LL << AIM_FRAC_BITS;  // 16384
 
-        int32_t  m_aimFixedScaleX = 164;          // sensiFactor × 2^14
-        int32_t  m_aimFixedScaleY = 218;          // combinedY  × 2^14
-        int64_t  m_aimFixedAdjust = 8192;         // aimAdjust  × 2^14 (0 = disabled)
+        int32_t  m_aimFixedScaleX = 164;          // sensiFactor Ã— 2^14
+        int32_t  m_aimFixedScaleY = 218;          // combinedY  Ã— 2^14
+        int64_t  m_aimFixedAdjust = 8192;         // aimAdjust  Ã— 2^14 (0 = disabled)
         int64_t  m_aimFixedSnapThresh = AIM_ONE_FP; // AIM_ONE_FP when adjust on, 0 when off
 
-        // OPT-F: Pre-check thresholds — skip pipeline when both deltas too small.
+        // OPT-F: Pre-check thresholds â€” skip pipeline when both deltas too small.
         int32_t  m_aimMinDeltaX = 1;
         int32_t  m_aimMinDeltaY = 1;
 
-        // Float intermediates — cold path only (config change).
+        // Float intermediates â€” cold path only (config change).
         float    m_aimSensiFactor = 0.01f;
         float    m_aimCombinedY = 0.013333333f;
         float    m_aimAdjust = 0.5f;
 
-        // OPT-G: m_isAimDisabled removed — unified with m_aimBlockBits.
+        // OPT-G: m_isAimDisabled removed â€” unified with m_aimBlockBits.
         bool     m_isRunningHook = false;
         bool     m_isWeaponCheckActive = false;
-        // OPT-D: m_isInGame removed — unified with BIT_IN_GAME flag
+        // OPT-D: m_isInGame removed â€” unified with BIT_IN_GAME flag
         bool     m_isLayoutChangePending = true;
-        bool     m_disableMphAimSmoothing = false; // <-- ユーザー設定フラグ
+        bool     m_disableMphAimSmoothing = false; // <-- ãƒ¦ãƒ¼ã‚¶ãƒ¼è¨­å®šãƒ•ãƒ©ã‚°
 
         struct alignas(4) StateFlags {
             uint32_t packed = 0;
@@ -313,7 +313,7 @@ namespace MelonPrime {
             static constexpr uint32_t BIT_STYLUS_MODE = 1u << 11;
             static constexpr uint32_t BIT_LAST_FOCUSED = 1u << 13;
             static constexpr uint32_t BIT_BLOCK_STYLUS = 1u << 14;
-            // OPT-N: BIT_LAYOUT_PENDING (was bit 12) removed — was never tested.
+            // OPT-N: BIT_LAYOUT_PENDING (was bit 12) removed â€” was never tested.
             //   Actual layout-change detection uses standalone bool m_isLayoutChangePending.
 
             FORCE_INLINE void set(uint32_t bit) { packed |= bit; }
@@ -322,7 +322,7 @@ namespace MelonPrime {
             [[nodiscard]] FORCE_INLINE bool test(uint32_t bit) const { return (packed & bit) != 0; }
         } m_flags{};
 
-        // ─── Warm: Frame advance + platform ───
+        // â”€â”€â”€ Warm: Frame advance + platform â”€â”€â”€
         std::function<void()> m_frameAdvanceFunc;
         using AdvanceMethod = void (MelonPrimeCore::*)();
         AdvanceMethod m_fnAdvance = &MelonPrimeCore::FrameAdvanceDefault;
@@ -337,7 +337,7 @@ namespace MelonPrime {
             int centerY = 0;
         } m_aimData;
 
-        // ─── Cold: Init-only data (pushed to end) ───
+        // â”€â”€â”€ Cold: Init-only data (pushed to end) â”€â”€â”€
         GameAddressesHot m_addrHot{};
         RomAddresses m_currentRom{};
         uint8_t      m_appliedFlags = 0;
@@ -353,8 +353,8 @@ namespace MelonPrime {
             m_inputMaskFast = (m_inputMaskFast & ~mask) | (static_cast<uint16_t>(released) * mask);
         }
 
-        // OPT-G: Single store — m_isAimDisabled eliminated.
-        //   Callers test `m_aimBlockBits` directly (TEST reg,reg ≡ same cost).
+        // OPT-G: Single store â€” m_isAimDisabled eliminated.
+        //   Callers test `m_aimBlockBits` directly (TEST reg,reg â‰¡ same cost).
         FORCE_INLINE void SetAimBlockBranchless(uint32_t bitMask, bool enable) noexcept {
             m_aimBlockBits = (m_aimBlockBits & ~bitMask) | (enable ? bitMask : 0u);
         }
@@ -366,7 +366,7 @@ namespace MelonPrime {
 
         // OPT-O: ApplyAimAdjustBranchless (float version) removed.
         //   Replaced by inline fixed-point logic in ProcessAimInputMouse:
-        //   Q14 multiply → integer deadzone/snap comparisons → SAR shift.
+        //   Q14 multiply â†’ integer deadzone/snap comparisons â†’ SAR shift.
 
         [[nodiscard]] FORCE_INLINE bool IsDown(uint64_t bit) const { return (m_input.down & bit) != 0; }
         [[nodiscard]] FORCE_INLINE bool IsPressed(uint64_t bit) const { return (m_input.press & bit) != 0; }
@@ -389,6 +389,7 @@ namespace MelonPrime {
         COLD_FUNCTION void HandleRareWeaponCheckEnd();
         COLD_FUNCTION void HandleAdventureMode(); // Already existed, marked cold now
 
+        COLD_FUNCTION void HandleGameJoinInit(melonDS::u8* mainRAM); // OPT-W: Outlined from RunFrameHook
         COLD_FUNCTION void DetectRomAndSetAddresses();
         COLD_FUNCTION void ApplyGameSettingsOnce();
 
