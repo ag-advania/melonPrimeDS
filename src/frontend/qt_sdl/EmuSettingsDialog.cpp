@@ -1,5 +1,5 @@
 /*
-    Copyright 2016-2026 melonDS team
+    Copyright 2016-2025 melonDS team
 
     This file is part of melonDS.
 
@@ -111,7 +111,7 @@ EmuSettingsDialog::EmuSettingsDialog(QWidget* parent) : QDialog(parent), ui(new 
     on_chkExternalBIOS_toggled();
     on_chkDSiExternalBIOS_toggled();
 
-    const int imgsizes[] = {256, 512, 1024, 2048, 4096, 0};
+    const int imgsizes[] = { 256, 512, 1024, 2048, 4096, 0 };
 
     ui->cbxDLDISize->addItem("Auto");
     ui->cbxDSiSDSize->addItem("Auto");
@@ -205,10 +205,10 @@ void EmuSettingsDialog::verifyFirmware()
     if (!memcmp(chk1, chk2, 0x180))
     {
         QMessageBox::warning((QWidget*)this->parent(),
-                      "Problematic firmware dump",
-                      "You are using an old hacked firmware dump.\n"
-                      "Firmware boot will stop working if you run any game that alters WFC settings.\n\n"
-                      "Note that the issue is not from melonDS, it would also happen on an actual DS.");
+            "Problematic firmware dump",
+            "You are using an old hacked firmware dump.\n"
+            "Firmware boot will stop working if you run any game that alters WFC settings.\n\n"
+            "Note that the issue is not from melonDS, it would also happen on an actual DS.");
     }
 }
 
@@ -318,9 +318,9 @@ void EmuSettingsDialog::done(int r)
 void EmuSettingsDialog::on_btnBIOS9Browse_clicked()
 {
     QString file = QFileDialog::getOpenFileName(this,
-                                                "Select DS-mode ARM9 BIOS...",
-                                                lastBIOSFolder,
-                                                "BIOS files (*.bin *.rom);;Any file (*.*)");
+        "Select DS-mode ARM9 BIOS...",
+        lastBIOSFolder,
+        "BIOS files (*.bin *.rom);;Any file (*.*)");
 
     if (file.isEmpty()) return;
 
@@ -332,9 +332,9 @@ void EmuSettingsDialog::on_btnBIOS9Browse_clicked()
 void EmuSettingsDialog::on_btnBIOS7Browse_clicked()
 {
     QString file = QFileDialog::getOpenFileName(this,
-                                                "Select DS-mode ARM7 BIOS...",
-                                                lastBIOSFolder,
-                                                "BIOS files (*.bin *.rom);;Any file (*.*)");
+        "Select DS-mode ARM7 BIOS...",
+        lastBIOSFolder,
+        "BIOS files (*.bin *.rom);;Any file (*.*)");
 
     if (file.isEmpty()) return;
 
@@ -346,9 +346,9 @@ void EmuSettingsDialog::on_btnBIOS7Browse_clicked()
 void EmuSettingsDialog::on_btnFirmwareBrowse_clicked()
 {
     QString file = QFileDialog::getOpenFileName(this,
-                                                "Select DS-mode firmware...",
-                                                lastBIOSFolder,
-                                                "Firmware files (*.bin *.rom);;Any file (*.*)");
+        "Select DS-mode firmware...",
+        lastBIOSFolder,
+        "Firmware files (*.bin *.rom);;Any file (*.*)");
 
     if (file.isEmpty()) return;
 
@@ -366,9 +366,9 @@ void EmuSettingsDialog::on_btnFirmwareBrowse_clicked()
 void EmuSettingsDialog::on_btnDSiBIOS9Browse_clicked()
 {
     QString file = QFileDialog::getOpenFileName(this,
-                                                "Select DSi-mode ARM9 BIOS...",
-                                                lastBIOSFolder,
-                                                "BIOS files (*.bin *.rom);;Any file (*.*)");
+        "Select DSi-mode ARM9 BIOS...",
+        lastBIOSFolder,
+        "BIOS files (*.bin *.rom);;Any file (*.*)");
 
     if (file.isEmpty()) return;
 
@@ -380,9 +380,9 @@ void EmuSettingsDialog::on_btnDSiBIOS9Browse_clicked()
 void EmuSettingsDialog::on_btnDSiBIOS7Browse_clicked()
 {
     QString file = QFileDialog::getOpenFileName(this,
-                                                "Select DSi-mode ARM7 BIOS...",
-                                                lastBIOSFolder,
-                                                "BIOS files (*.bin *.rom);;Any file (*.*)");
+        "Select DSi-mode ARM7 BIOS...",
+        lastBIOSFolder,
+        "BIOS files (*.bin *.rom);;Any file (*.*)");
 
     if (file.isEmpty()) return;
 
@@ -408,9 +408,9 @@ void EmuSettingsDialog::on_cbDLDIEnable_toggled()
 void EmuSettingsDialog::on_btnDLDISDBrowse_clicked()
 {
     QString file = QFileDialog::getOpenFileName(this,
-                                                "Select DLDI SD image...",
-                                                lastBIOSFolder,
-                                                "Image files (*.bin *.rom *.img *.dmg);;Any file (*.*)");
+        "Select DLDI SD image...",
+        lastBIOSFolder,
+        "Image files (*.bin *.rom *.img *.dmg);;Any file (*.*)");
 
     if (file.isEmpty()) return;
 
@@ -435,8 +435,8 @@ void EmuSettingsDialog::on_cbDLDIFolder_toggled()
 void EmuSettingsDialog::on_btnDLDIFolderBrowse_clicked()
 {
     QString dir = QFileDialog::getExistingDirectory(this,
-                                                     "Select DLDI SD folder...",
-                                                     lastBIOSFolder);
+        "Select DLDI SD folder...",
+        lastBIOSFolder);
 
     if (dir.isEmpty()) return;
 
@@ -446,9 +446,9 @@ void EmuSettingsDialog::on_btnDLDIFolderBrowse_clicked()
 void EmuSettingsDialog::on_btnDSiFirmwareBrowse_clicked()
 {
     QString file = QFileDialog::getOpenFileName(this,
-                                                "Select DSi DS-mode firmware...",
-                                                lastBIOSFolder,
-                                                "Firmware files (*.bin *.rom);;Any file (*.*)");
+        "Select DSi DS-mode firmware...",
+        lastBIOSFolder,
+        "Firmware files (*.bin *.rom);;Any file (*.*)");
 
     if (file.isEmpty()) return;
 
@@ -467,9 +467,9 @@ void EmuSettingsDialog::on_btnDSiFirmwareBrowse_clicked()
 void EmuSettingsDialog::on_btnDSiNANDBrowse_clicked()
 {
     QString file = QFileDialog::getOpenFileName(this,
-                                                "Select DSi NAND...",
-                                                lastBIOSFolder,
-                                                "NAND files (*.bin *.mmc *.rom);;Any file (*.*)");
+        "Select DSi NAND...",
+        lastBIOSFolder,
+        "NAND files (*.bin *.mmc *.rom);;Any file (*.*)");
 
     if (file.isEmpty()) return;
 
@@ -502,9 +502,9 @@ void EmuSettingsDialog::on_cbDSiSDEnable_toggled()
 void EmuSettingsDialog::on_btnDSiSDBrowse_clicked()
 {
     QString file = QFileDialog::getOpenFileName(this,
-                                                "Select DSi SD image...",
-                                                lastBIOSFolder,
-                                                "Image files (*.bin *.rom *.img *.sd *.dmg);;Any file (*.*)");
+        "Select DSi SD image...",
+        lastBIOSFolder,
+        "Image files (*.bin *.rom *.img *.sd *.dmg);;Any file (*.*)");
 
     if (file.isEmpty()) return;
 
@@ -529,8 +529,8 @@ void EmuSettingsDialog::on_cbDSiSDFolder_toggled()
 void EmuSettingsDialog::on_btnDSiSDFolderBrowse_clicked()
 {
     QString dir = QFileDialog::getExistingDirectory(this,
-                                                     "Select DSi SD folder...",
-                                                     lastBIOSFolder);
+        "Select DSi SD folder...",
+        lastBIOSFolder);
 
     if (dir.isEmpty()) return;
 
