@@ -77,6 +77,14 @@ namespace MelonPrime {
             });
     }
 
+    // =========================================================================
+    // R2: processRawInput — fetch_add for mouse accumulators
+    //
+    // Changed load(relaxed)+store(cur+delta, release) to fetch_add(delta, release).
+    // Semantically cleaner single atomic RMW. On x86, produces `lock xadd`
+    // which is equivalent or better than separate load+store.
+    // Also future-proofs for potential multi-source input scenarios.
+    // =========================================================================
     void InputState::processRawInput(HRAWINPUT hRaw) noexcept {
         alignas(16) uint8_t rawBuf[sizeof(RAWINPUT)];
         UINT size = sizeof(rawBuf);
@@ -96,14 +104,8 @@ namespace MelonPrime {
         case RIM_TYPEMOUSE: {
             const RAWMOUSE& m = raw->data.mouse;
             if (!(m.usFlags & MOUSE_MOVE_ABSOLUTE)) {
-                if (m.lLastX) {
-                    const int64_t cur = m_accumMouseX.load(std::memory_order_relaxed);
-                    m_accumMouseX.store(cur + m.lLastX, std::memory_order_release);
-                }
-                if (m.lLastY) {
-                    const int64_t cur = m_accumMouseY.load(std::memory_order_relaxed);
-                    m_accumMouseY.store(cur + m.lLastY, std::memory_order_release);
-                }
+                if (m.lLastX) m_accumMouseX.fetch_add(m.lLastX, std::memory_order_release);
+                if (m.lLastY) m_accumMouseY.fetch_add(m.lLastY, std::memory_order_release);
             }
             const USHORT flags = m.usButtonFlags & 0x03FF;
             if (flags) {
@@ -136,6 +138,19 @@ namespace MelonPrime {
         }
     }
 
+    // =========================================================================
+    // R2 BUG FIX: processRawInputBatched — button precedence consistency
+    //
+    // Previously: finalBtnState = (finalBtnState & ~lut.upBits) | lut.downBits
+    //   -> DOWN wins when both DOWN and UP are set for the same button
+    //
+    // Fixed:      finalBtnState = (finalBtnState | lut.downBits) & ~lut.upBits
+    //   -> UP wins (consistent with processRawInput single-event path)
+    //
+    // When a RAWINPUT message has both BUTTON_DOWN and BUTTON_UP for the same
+    // button (coalesced input), the final state should be "released" (UP wins).
+    // This matches the convention in processRawInput and Windows input handling.
+    // =========================================================================
     void InputState::processRawInputBatched() noexcept {
         alignas(64) static thread_local uint8_t buffer[16384];
 
@@ -164,7 +179,8 @@ namespace MelonPrime {
                     const USHORT flags = m.usButtonFlags & 0x03FF;
                     if (flags) {
                         const auto& lut = s_btnLut[flags];
-                        finalBtnState = (finalBtnState & ~lut.upBits) | lut.downBits;
+                        // R2 FIX: UP wins (was: DOWN wins). See header comment.
+                        finalBtnState = (finalBtnState | lut.downBits) & ~lut.upBits;
                     }
                 }
                 else if (raw->header.dwType == RIM_TYPEKEYBOARD) {
@@ -248,49 +264,53 @@ namespace MelonPrime {
         m_mouseButtons.store(0, std::memory_order_release);
     }
 
-    void InputState::setHotkeyVks(int id, const std::vector<UINT>& vks) {
+    // =========================================================================
+    // R2: setHotkeyVks — pointer+count interface + mouse button LUT
+    //
+    // Changes:
+    //   1. Primary interface now takes (const UINT*, size_t) to allow
+    //      zero-allocation calls from SmallVkList (was std::vector only).
+    //   2. Mouse button VK mapping uses constexpr LUT instead of switch.
+    //   3. Removed hasMask[] write (hasMask eliminated in R2).
+    // =========================================================================
+    void InputState::setHotkeyVks(int id, const UINT* vks, size_t count) {
         if (UNLIKELY(id < 0 || static_cast<size_t>(id) >= kMaxHotkeyId)) return;
 
         std::memset(m_hkMasks.vkMask[id], 0, sizeof(uint64_t) * 4);
         m_hkMasks.mouseMask[id] = 0;
-        m_hkMasks.hasMask[id] = false;
 
         const uint64_t bbit = 1ULL << id;
 
-        if (vks.empty()) {
+        if (count == 0) {
             m_boundHotkeys &= ~bbit;
             return;
         }
 
-        for (const UINT vk : vks) {
+        // R2: constexpr LUT replaces 5-case switch for mouse VK -> bit position.
+        // VK_LBUTTON=1, VK_RBUTTON=2, VK_CANCEL=3, VK_MBUTTON=4, VK_XBUTTON1=5, VK_XBUTTON2=6
+        // Mapping: 1->0, 2->1, 3->0xFF(skip), 4->2, 5->3, 6->4
+        static constexpr uint8_t kMouseVkToBit[7] = { 0xFF, 0, 1, 0xFF, 2, 3, 4 };
+
+        for (size_t i = 0; i < count; ++i) {
+            const UINT vk = vks[i];
             if (vk >= VK_LBUTTON && vk <= VK_XBUTTON2) {
-                int bit = -1;
-                switch (vk) {
-                case VK_LBUTTON:  bit = 0; break;
-                case VK_RBUTTON:  bit = 1; break;
-                case VK_MBUTTON:  bit = 2; break;
-                case VK_XBUTTON1: bit = 3; break;
-                case VK_XBUTTON2: bit = 4; break;
-                }
-                if (bit >= 0) m_hkMasks.mouseMask[id] |= static_cast<uint8_t>(1 << bit);
+                const uint8_t bit = kMouseVkToBit[vk];
+                if (bit != 0xFF)
+                    m_hkMasks.mouseMask[id] |= static_cast<uint8_t>(1u << bit);
             }
             else if (vk < 256) {
                 m_hkMasks.vkMask[id][vk >> 6] |= (1ULL << (vk & 63));
             }
         }
-        m_hkMasks.hasMask[id] = true;
         m_boundHotkeys |= bbit;
     }
 
     // =========================================================================
-    // REFACTORED: pollHotkeys / snapshotInputFrame / resetHotkeyEdges / hotkeyDown
+    // REFACTORED (R1): pollHotkeys / snapshotInputFrame / resetHotkeyEdges / hotkeyDown
     //
-    // Previously each function duplicated the full VK snapshot load (4 atomic
-    // loads + 1 mouse load + acquire fence) and the BSF scan loop (~15 lines).
-    // Now uses takeSnapshot() + scanBoundHotkeys() from the header.
-    //
+    // Uses takeSnapshot() + scanBoundHotkeys() from the header.
     // Code reduction: ~60 lines -> ~25 lines (4 functions combined).
-    // Performance: identical — inlined helpers produce the same machine code.
+    // Performance: identical -- inlined helpers produce the same machine code.
     // =========================================================================
 
     void InputState::pollHotkeys(FrameHotkeyState& out) noexcept {
@@ -322,9 +342,12 @@ namespace MelonPrime {
         m_hkPrev = newDown;
     }
 
+    // =========================================================================
+    // R2: hotkeyDown — uses m_boundHotkeys instead of removed hasMask[]
+    // =========================================================================
     bool InputState::hotkeyDown(int id) const noexcept {
         if (UNLIKELY(static_cast<unsigned>(id) >= kMaxHotkeyId)) return false;
-        if (!m_hkMasks.hasMask[id]) return false;
+        if (!(m_boundHotkeys & (1ULL << id))) return false;
 
         const auto snap = takeSnapshot();
         return testHotkeyMask(id, snap.vk, snap.mouse);

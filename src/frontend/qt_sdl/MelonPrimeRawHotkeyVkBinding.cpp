@@ -76,26 +76,31 @@ namespace MelonPrime {
         return vks;
     }
 
+    // =========================================================================
+    // R2: BindOneHotkeyFromConfig — now zero heap allocations.
+    //
+    // Uses the pointer+count setHotkeyVks overload introduced in R2,
+    // passing SmallVkList's data directly instead of constructing a
+    // temporary std::vector. Eliminates the last remaining heap allocation
+    // in the hotkey binding path.
+    // =========================================================================
     void BindOneHotkeyFromConfig(RawInputWinFilter* filter, int instance,
         const std::string& hkPath, int hkId) {
         if (!filter) return;
         auto tbl = Config::GetLocalTable(instance);
         const int qt = tbl.GetInt(hkPath);
         SmallVkList vks = MapQtKeyIntToVks(qt);
-        // Bridge to setHotkeyVks which still takes std::vector<UINT>.
-        // When the interface is updated, this can pass SmallVkList directly.
-        filter->setHotkeyVks(hkId, std::vector<UINT>(vks.begin(), vks.end()));
+        filter->setHotkeyVks(hkId, vks.begin(), vks.size());
     }
 
     // =========================================================================
-    // REFACTORED: BindMetroidHotkeysFromConfig
+    // REFACTORED (R1 + R2): BindMetroidHotkeysFromConfig
     //
-    // Changes:
-    //   1. Config table acquired once (was per-hotkey via BindOneHotkeyFromConfig)
-    //   2. VK mapping uses SmallVkList (stack) instead of std::vector (heap)
-    //   3. Inlined the bind logic to avoid 28x function call overhead
+    // R1: Config table acquired once (was per-hotkey), SmallVkList for mapping
+    // R2: Eliminated std::vector bridge — passes SmallVkList pointers directly
+    //     to setHotkeyVks(int, const UINT*, size_t).
     //
-    // Result: 0 heap allocations, 1 config table lookup (was 28).
+    // Result: 0 heap allocations, 1 config table lookup (was 28 + 28 vectors).
     // =========================================================================
     void BindMetroidHotkeysFromConfig(RawInputWinFilter* filter, int instance)
     {
@@ -149,7 +154,8 @@ namespace MelonPrime {
         for (const auto& bind : kBindings) {
             const int qt = tbl.GetInt(bind.configKey);
             SmallVkList vks = MapQtKeyIntToVks(qt);
-            filter->setHotkeyVks(bind.actionId, std::vector<UINT>(vks.begin(), vks.end()));
+            // R2: Direct pointer pass — no std::vector construction
+            filter->setHotkeyVks(bind.actionId, vks.begin(), vks.size());
         }
     }
 

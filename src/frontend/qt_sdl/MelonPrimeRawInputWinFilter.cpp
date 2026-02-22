@@ -61,14 +61,7 @@ namespace MelonPrime {
     }
 
     // =========================================================================
-    // REFACTORED: drainPendingMessages — extracted from Poll() and PollAndSnapshot().
-    //
-    // Previously the PeekMessage loop was copy-pasted in both Poll() and
-    // PollAndSnapshot(), with identical logic and identical NtUser fast-path.
-    // Now a single private helper, called from both sites.
-    //
-    // The compiler will inline this into both callers (small body, hot path),
-    // producing identical codegen to the original copy-paste.
+    // REFACTORED (R1): drainPendingMessages -- extracted from Poll()/PollAndSnapshot()
     // =========================================================================
     void RawInputWinFilter::drainPendingMessages() noexcept {
         MSG msg;
@@ -188,8 +181,18 @@ namespace MelonPrime {
         return false;
     }
 
+    // =========================================================================
+    // R2: setHotkeyVks — added pointer+count overload for zero-allocation path.
+    // =========================================================================
+    void RawInputWinFilter::setHotkeyVks(int id, const UINT* vks, size_t count) {
+        m_state->setHotkeyVks(id, vks, count);
+    }
+
+    void RawInputWinFilter::setHotkeyVks(int id, const std::vector<UINT>& vks) {
+        m_state->setHotkeyVks(id, vks.data(), vks.size());
+    }
+
     void RawInputWinFilter::discardDeltas() { m_state->discardDeltas(); }
-    void RawInputWinFilter::setHotkeyVks(int id, const std::vector<UINT>& vks) { m_state->setHotkeyVks(id, vks); }
     void RawInputWinFilter::pollHotkeys(FrameHotkeyState& out) { m_state->pollHotkeys(out); }
     void RawInputWinFilter::snapshotInputFrame(FrameHotkeyState& outHk, int& outMouseX, int& outMouseY)
     {
