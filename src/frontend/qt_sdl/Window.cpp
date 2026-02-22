@@ -656,14 +656,6 @@ MainWindow::MainWindow(int id, EmuInstance* inst, QWidget* parent) :
             actPathSettings = menu->addAction("Path settings");
             connect(actPathSettings, &QAction::triggered, this, &MainWindow::onOpenPathSettings);
 
-            {
-                QMenu* submenu = menu->addMenu("Savestate settings");
-
-                actSavestateSRAMReloc = submenu->addAction("Separate savefiles");
-                actSavestateSRAMReloc->setCheckable(true);
-                connect(actSavestateSRAMReloc, &QAction::triggered, this, &MainWindow::onChangeSavestateSRAMReloc);
-            }
-
             menu->addSeparator();
 
             actLimitFramerate = menu->addAction("Limit framerate");
