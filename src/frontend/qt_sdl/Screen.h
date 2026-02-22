@@ -42,10 +42,12 @@ class EmuInstance;
 const struct { int id; float ratio; const char* label; } aspectRatios[] =
 {
     { 0, 1,                       "4:3 (native)" },
-    { 4, (5.f  / 3) / (4.f / 3), "5:3 (3DS)"},
+    { 4, (5.f / 3) / (4.f / 3), "5:3 (3DS)"},
     { 1, (16.f / 9) / (4.f / 3),  "16:9" },
+#ifdef MELONPRIME_DS
     { 2, (21.f / 9) / (4.f / 3),  "21:9" },
     { 3, 0,                       "window" }
+#endif
 };
 constexpr int AspectRatiosNum = sizeof(aspectRatios) / sizeof(aspectRatios[0]);
 
@@ -62,15 +64,34 @@ public:
 
     void setMouseHide(bool enable, int delay);
 
+#ifndef MELONPRIME_DS
     QTimer* setupMouseTimer();
     void updateMouseTimer();
     QTimer* mouseTimer;
+#endif
+
     QSize screenGetMinSize(int factor);
 
     void osdSetEnabled(bool enabled);
     void osdAddMessage(unsigned int color, const char* msg);
 
     virtual void drawScreen() {}// = 0;
+
+#ifdef MELONPRIME_DS
+    void unfocus();
+
+    int getDelta() {
+        // Store and reset in one operation for optimal performance
+        int currentDelta = wheelDelta;
+        wheelDelta = 0;
+        return currentDelta;
+    }
+
+public slots:
+    void clipCursorCenter1px();
+    void unclip();
+    void updateClipIfNeeded();
+#endif // MELONPRIME_DS
 
 private slots:
     void onScreenLayoutChanged();
@@ -93,6 +114,12 @@ protected:
     int autoScreenSizing;
 
     ScreenLayout layout;
+
+#ifdef MELONPRIME_DS
+    void focusOutEvent(QFocusEvent* event) override;
+    void moveEvent(QMoveEvent* event) override;
+#endif
+
     float screenMatrix[kMaxScreenTransforms][6];
     int screenKind[kMaxScreenTransforms];
     int numScreens;
@@ -117,6 +144,14 @@ protected:
         int rainbowend;
     };
 
+#ifdef MELONPRIME_DS
+    int wheelDelta = 0;
+    void wheelEvent(QWheelEvent* event) override {
+        wheelDelta = (event->angleDelta().y() > 0) ? 1 : -1;
+        event->accept();
+    }
+#endif
+
     QMutex osdMutex;
     bool osdEnabled;
     unsigned int osdID;
@@ -140,7 +175,9 @@ protected:
     void touchEvent(QTouchEvent* event);
     bool event(QEvent* event) override;
 
+#ifndef MELONPRIME_DS
     void showCursor();
+#endif
 
     int osdFindBreakPoint(const char* text, int i);
     void osdLayoutText(const char* text, int* width, int* height, int* breaks);
@@ -152,6 +189,12 @@ protected:
     void osdUpdate();
 
     void calcSplashLayout();
+
+#ifdef MELONPRIME_DS
+private:
+    void setClipWanted(bool value);
+    bool getClipWanted();
+#endif
 };
 
 
@@ -244,4 +287,3 @@ private:
 };
 
 #endif // SCREEN_H
-

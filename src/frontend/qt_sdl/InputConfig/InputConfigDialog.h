@@ -26,6 +26,10 @@
 #include "Config.h"
 #include "EmuInstance.h"
 
+#ifdef MELONPRIME_DS
+#include "MelonPrimeInputConfig.h"
+#endif
+
 static constexpr int keypad_num = 12;
 
 static constexpr std::initializer_list<int> hk_addons =
@@ -94,7 +98,6 @@ static constexpr std::initializer_list<const char*> hk_general_labels =
 
 static_assert(hk_general.size() == hk_general_labels.size());
 
-
 namespace Ui { class InputConfigDialog; }
 class InputConfigDialog;
 
@@ -127,19 +130,33 @@ public:
         currentDlg = nullptr;
     }
 
+#ifdef MELONPRIME_DS
+    /* MelonPrimeDS { */
+    void switchTabToAddons();
+    void switchTabToMetroid();
+    void switchTabToMetroid2();
+    /* } MelonPrimeDS*/
+#endif
+
 private slots:
     void on_InputConfigDialog_accepted();
     void on_InputConfigDialog_rejected();
 
+#ifndef MELONPRIME_DS
     void on_btnKeyMapSwitch_clicked();
     void on_btnJoyMapSwitch_clicked();
+#endif
+
     void on_cbxJoystick_currentIndexChanged(int id);
 
 private:
     void populatePage(QWidget* page,
         const std::initializer_list<const char*>& labels,
         int* keymap, int* joymap);
+
+#ifndef MELONPRIME_DS
     void setupKeypadPage();
+#endif
 
     Ui::InputConfigDialog* ui;
 
@@ -147,9 +164,14 @@ private:
 
     int keypadKeyMap[12], keypadJoyMap[12];
     int addonsKeyMap[hk_addons.size()], addonsJoyMap[hk_addons.size()];
+
     int hkGeneralKeyMap[hk_general.size()], hkGeneralJoyMap[hk_general.size()];
     int joystickID;
-};
 
+#ifdef MELONPRIME_DS
+    // ïœêîñºÇÕêÊì™è¨ï∂éöÇ…ÇµÇƒÉNÉâÉXñºÇ∆ãÊï Ç∑ÇÈ
+    MelonPrimeInputConfig* melonPrimeInputConfig;
+#endif
+};
 
 #endif // INPUTCONFIGDIALOG_H

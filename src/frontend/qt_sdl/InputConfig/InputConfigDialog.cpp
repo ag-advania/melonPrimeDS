@@ -20,6 +20,7 @@
 #include <QLabel>
 #include <QKeyEvent>
 #include <QDebug>
+#include <QTabWidget>
 
 #include <SDL2/SDL.h>
 
@@ -30,6 +31,9 @@
 #include "ui_InputConfigDialog.h"
 #include "MapButton.h"
 
+#ifdef MELONPRIME_DS
+#include "MelonPrimeInputConfig.h"
+#endif
 
 using namespace melonDS;
 InputConfigDialog* InputConfigDialog::currentDlg = nullptr;
@@ -48,14 +52,19 @@ InputConfigDialog::InputConfigDialog(QWidget* parent) : QDialog(parent), ui(new 
     Config::Table keycfg = instcfg.GetTable("Keyboard");
     Config::Table joycfg = instcfg.GetTable("Joystick");
 
+#ifndef MELONPRIME_DS
+    // Standard DS Keypad config
     for (int i = 0; i < keypad_num; i++)
     {
         const char* btn = EmuInstance::buttonNames[dskeyorder[i]];
         keypadKeyMap[i] = keycfg.GetInt(btn);
         keypadJoyMap[i] = joycfg.GetInt(btn);
     }
+#endif
 
     int i = 0;
+#ifndef MELONPRIME_DS
+    // Standard Addons (Solar, Guitar Grip)
     for (int hotkey : hk_addons)
     {
         const char* btn = EmuInstance::hotkeyNames[hotkey];
@@ -63,6 +72,7 @@ InputConfigDialog::InputConfigDialog(QWidget* parent) : QDialog(parent), ui(new 
         addonsJoyMap[i] = joycfg.GetInt(btn);
         i++;
     }
+#endif
 
     i = 0;
     for (int hotkey : hk_general)
@@ -73,8 +83,40 @@ InputConfigDialog::InputConfigDialog(QWidget* parent) : QDialog(parent), ui(new 
         i++;
     }
 
+#ifndef MELONPRIME_DS
     populatePage(ui->tabAddons, hk_addons_labels, addonsKeyMap, addonsJoyMap);
+#endif
+
     populatePage(ui->tabHotkeysGeneral, hk_general_labels, hkGeneralKeyMap, hkGeneralJoyMap);
+
+#ifdef MELONPRIME_DS
+    // MelonPrimeDS {
+    // Initialize MelonPrime Config Logic & UI
+    // クラス名(MelonPrimeInputConfig)ではなく変数名(melonPrimeInputConfig)を使用
+    melonPrimeInputConfig = new MelonPrimeInputConfig(emuInstance, this);
+
+    // 【重要】コンテナ自体は表示しないように隠す（これがないと白い画面が被さる）
+    melonPrimeInputConfig->hide();
+
+    // オリジナルのタブ（DS keypad, Add-ons）を削除する
+    // これにより、InputConfigDialog.ui がオリジナルのままでもMelonPrimeDSでは表示されなくなります
+    int idxInput = ui->tabWidget->indexOf(ui->tabInput);
+    if (idxInput != -1) ui->tabWidget->removeTab(idxInput);
+
+    int idxAddons = ui->tabWidget->indexOf(ui->tabAddons);
+    if (idxAddons != -1) ui->tabWidget->removeTab(idxAddons);
+
+    // Inject MelonPrime tabs into the main TabWidget
+    QTabWidget* mTab = melonPrimeInputConfig->getTabWidget();
+    while (mTab->count() > 0)
+    {
+        QWidget* page = mTab->widget(0);
+        QString title = mTab->tabText(0);
+        mTab->removeTab(0);
+        ui->tabWidget->addTab(page, title);
+    }
+    // } MelonPrimeDS
+#endif
 
     joystickID = instcfg.GetInt("JoystickID");
 
@@ -94,11 +136,13 @@ InputConfigDialog::InputConfigDialog(QWidget* parent) : QDialog(parent), ui(new 
         ui->cbxJoystick->setEnabled(false);
     }
 
+#ifndef MELONPRIME_DS
     setupKeypadPage();
+#endif
 
     int inst = emuInstance->getInstanceID();
     if (inst > 0)
-        ui->lblInstanceNum->setText(QString("Configuring mappings for instance %1").arg(inst+1));
+        ui->lblInstanceNum->setText(QString("Configuring mappings for instance %1").arg(inst + 1));
     else
         ui->lblInstanceNum->hide();
 }
@@ -108,6 +152,7 @@ InputConfigDialog::~InputConfigDialog()
     delete ui;
 }
 
+#ifndef MELONPRIME_DS
 void InputConfigDialog::setupKeypadPage()
 {
     for (int i = 0; i < keypad_num; i++)
@@ -130,13 +175,18 @@ void InputConfigDialog::setupKeypadPage()
         }
     }
 }
+#endif
 
 void InputConfigDialog::populatePage(QWidget* page,
     const std::initializer_list<const char*>& labels,
     int* keymap, int* joymap)
 {
+#ifndef MELONPRIME_DS
     // kind of a hack
     bool ishotkey = (page != ui->tabInput);
+#else
+    bool ishotkey = true;
+#endif
 
     QHBoxLayout* main_layout = new QHBoxLayout();
 
@@ -150,7 +200,7 @@ void InputConfigDialog::populatePage(QWidget* page,
     int i = 0;
     for (const char* labelStr : labels)
     {
-        QLabel* label = new QLabel(QString(labelStr)+":");
+        QLabel* label = new QLabel(QString(labelStr) + ":");
         KeyMapButton* btn = new KeyMapButton(&keymap[i], ishotkey);
 
         group_layout->addWidget(label, i, 0);
@@ -168,7 +218,7 @@ void InputConfigDialog::populatePage(QWidget* page,
     i = 0;
     for (const char* labelStr : labels)
     {
-        QLabel* label = new QLabel(QString(labelStr)+":");
+        QLabel* label = new QLabel(QString(labelStr) + ":");
         JoyMapButton* btn = new JoyMapButton(&joymap[i], ishotkey);
 
         group_layout->addWidget(label, i, 0);
@@ -188,6 +238,7 @@ void InputConfigDialog::on_InputConfigDialog_accepted()
     Config::Table keycfg = instcfg.GetTable("Keyboard");
     Config::Table joycfg = instcfg.GetTable("Joystick");
 
+#ifndef MELONPRIME_DS
     for (int i = 0; i < keypad_num; i++)
     {
         const char* btn = EmuInstance::buttonNames[dskeyorder[i]];
@@ -203,8 +254,9 @@ void InputConfigDialog::on_InputConfigDialog_accepted()
         joycfg.SetInt(btn, addonsJoyMap[i]);
         i++;
     }
+#endif
 
-    i = 0;
+    int i = 0;
     for (int hotkey : hk_general)
     {
         const char* btn = EmuInstance::hotkeyNames[hotkey];
@@ -212,6 +264,14 @@ void InputConfigDialog::on_InputConfigDialog_accepted()
         joycfg.SetInt(btn, hkGeneralJoyMap[i]);
         i++;
     }
+
+#ifdef MELONPRIME_DS
+    // MelonPrimeDS { saveConfig
+    if (melonPrimeInputConfig) {
+        melonPrimeInputConfig->saveConfig();
+    }
+    // } MelonPrimeDS
+#endif
 
     instcfg.SetInt("JoystickID", joystickID);
     Config::Save();
@@ -229,6 +289,7 @@ void InputConfigDialog::on_InputConfigDialog_rejected()
     closeDlg();
 }
 
+#ifndef MELONPRIME_DS
 void InputConfigDialog::on_btnKeyMapSwitch_clicked()
 {
     ui->stackMapping->setCurrentIndex(0);
@@ -238,6 +299,7 @@ void InputConfigDialog::on_btnJoyMapSwitch_clicked()
 {
     ui->stackMapping->setCurrentIndex(1);
 }
+#endif
 
 void InputConfigDialog::on_cbxJoystick_currentIndexChanged(int id)
 {
@@ -257,3 +319,22 @@ std::shared_ptr<SDL_mutex> InputConfigDialog::getJoyMutex()
 {
     return emuInstance->getJoyMutex();
 }
+
+#ifdef MELONPRIME_DS
+/* MelonPrimeDS { */
+void InputConfigDialog::switchTabToAddons() {
+    QWidget* tab = ui->tabWidget->findChild<QWidget*>("tabAddonsMetroid");
+    if (tab) ui->tabWidget->setCurrentWidget(tab);
+}
+
+void InputConfigDialog::switchTabToMetroid() {
+    QWidget* tab = ui->tabWidget->findChild<QWidget*>("tabMetroid");
+    if (tab) ui->tabWidget->setCurrentWidget(tab);
+}
+
+void InputConfigDialog::switchTabToMetroid2() {
+    QWidget* tab = ui->tabWidget->findChild<QWidget*>("tabMetroid2");
+    if (tab) ui->tabWidget->setCurrentWidget(tab);
+}
+/* } MelonPrimeDS */
+#endif
