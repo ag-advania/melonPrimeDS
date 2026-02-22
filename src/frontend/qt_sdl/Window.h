@@ -184,6 +184,12 @@ private slots:
     void onFullscreenToggled();
     void onScreenEmphasisToggled();
 
+#ifdef MELONPRIME_DS
+    /* MelonPrimeDS */
+    void onOpenMetroidInputSettings();
+    void onOpenMetroidOtherSettings();
+#endif // MELONPRIME_DS
+
 private:
     virtual void closeEvent(QCloseEvent* event) override;
 
