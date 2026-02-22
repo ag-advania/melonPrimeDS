@@ -230,8 +230,10 @@
          </property>
         </widget>
        </item>
-       <item row="13" column="2">
-        <widget class="QPushButton" name="btnDSiSDFolderBrowse">
+
+       <item row="2" column="2">
+        <widget class="QPushButton" name="btnDSiBIOS7Browse">
+
          <property name="text">
           <string>Browse...</string>
          </property>
@@ -241,9 +243,6 @@
         <widget class="QCheckBox" name="cbDSiSDFolder">
          <property name="whatsThis">
           <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Sync the emulated SD card to the given folder. The folder's contents will be copied to the SD image, and any change made to the SD image will be reflected to the folder.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
-         </property>
-         <property name="text">
-          <string>Sync SD to folder:</string>
          </property>
         </widget>
        </item>
@@ -295,7 +294,7 @@
        <item row="11" column="0">
         <widget class="QLabel" name="label_13">
          <property name="text">
-          <string>Image size:</string>
+          <string>Browse...</string>
          </property>
         </widget>
        </item>
@@ -337,7 +336,7 @@
        <item row="2" column="2">
         <widget class="QPushButton" name="btnDSiBIOS7Browse">
          <property name="text">
-          <string>Browse...</string>
+          <string>Sync SD to folder:</string>
          </property>
         </widget>
        </item>
@@ -362,10 +361,10 @@
          </property>
         </widget>
        </item>
-       <item row="1" column="0">
-        <widget class="QLabel" name="label_5">
+       <item row="11" column="0">
+        <widget class="QLabel" name="label_13">
          <property name="text">
-          <string>DSi ARM9 BIOS:</string>
+          <string>Image size:</string>
          </property>
         </widget>
        </item>
@@ -379,7 +378,7 @@
        <item row="7" column="0" colspan="2">
         <widget class="QCheckBox" name="cbDSPHLE">
          <property name="text">
-          <string>DSP HLE</string>
+          <string>Browse...</string>
          </property>
         </widget>
        </item>
@@ -704,8 +703,6 @@
   <tabstop>btnDSiBIOS7Browse</tabstop>
   <tabstop>txtDSiFirmwarePath</tabstop>
   <tabstop>btnDSiFirmwareBrowse</tabstop>
-  <tabstop>txtDSiNANDPath</tabstop>
-  <tabstop>btnDSiNANDBrowse</tabstop>
   <tabstop>cbDSiSDEnable</tabstop>
   <tabstop>txtDSiSDPath</tabstop>
   <tabstop>btnDSiSDBrowse</tabstop>
