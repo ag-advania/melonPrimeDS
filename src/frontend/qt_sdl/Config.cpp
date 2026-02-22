@@ -1,5 +1,5 @@
 /*
-    Copyright 2016-2025 melonDS team
+    Copyright 2016-2026 melonDS team
 
     This file is part of melonDS.
 
@@ -192,7 +192,7 @@ namespace Config
         {"DSi.SD.ImagePath",                "dsisd.bin"},
         {"Instance*.Firmware.Username",     "melonDS"}
     };
-
+  
     DefaultList<double> DefaultDoubles =
     {
         {"TargetFPS", 60.0},
@@ -422,7 +422,7 @@ namespace Config
         {"BIOS9Path", 2, "DS.BIOS9Path", false},
         {"BIOS7Path", 2, "DS.BIOS7Path", false},
         {"FirmwarePath", 2, "DS.FirmwarePath", false},
-
+        {"DSiExternalBIOSEnable", 1, "DSi.ExternalBIOSEnable", false},
         {"DSiBIOS9Path", 2, "DSi.BIOS9Path", false},
         {"DSiBIOS7Path", 2, "DSi.BIOS7Path", false},
         {"DSiFirmwarePath", 2, "DSi.FirmwarePath", false},
