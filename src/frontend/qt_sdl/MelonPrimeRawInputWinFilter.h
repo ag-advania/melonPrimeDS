@@ -35,7 +35,13 @@ namespace MelonPrime {
         void PollAndSnapshot(FrameHotkeyState& outHk, int& outMouseX, int& outMouseY);
 
         void discardDeltas();
+
+        // R2: Primary interface -- zero-allocation path from SmallVkList
+        void setHotkeyVks(int id, const UINT* vks, size_t count);
+
+        // Compatibility overload (delegates to pointer+count)
         void setHotkeyVks(int id, const std::vector<UINT>& vks);
+
         void pollHotkeys(FrameHotkeyState& out);
         void snapshotInputFrame(FrameHotkeyState& outHk, int& outMouseX, int& outMouseY);
         void resetAllKeys();

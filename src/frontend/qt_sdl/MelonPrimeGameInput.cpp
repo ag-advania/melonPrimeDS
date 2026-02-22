@@ -75,7 +75,7 @@ namespace MelonPrime {
 #ifdef _WIN32
         auto* const rawFilter = m_rawFilter.get();
 
-        // OPT-Z3: PollAndSnapshot — merged Poll + snapshot into single call.
+        // OPT-Z3: PollAndSnapshot -- merged Poll + snapshot into single call.
         // Always runs to drain WM_INPUT messages even when unfocused,
         // preventing message buildup and stale delta accumulation.
         FrameHotkeyState hk{};
@@ -242,8 +242,8 @@ namespace MelonPrime {
 
             if ((outX | outY) == 0) return;
 
-            // DSã‚¨ãƒ³ã‚¸ãƒ³ã«ã‚ˆã‚‹ã‚¼ãƒ­ã‚¯ãƒªã‚¢ã®ç›´å‰ã«ã€æœ€æ–°ã‚¹ãƒ­ãƒƒãƒˆã®ã¿æ›¸ãè¾¼ã‚€ã€‚
-            // (ASMãƒ‘ãƒƒãƒå´ã§ã€é€€é¿å…ˆã§ã‚ã‚‹ +0x3C / +0x44 ã‚’æ¨ªå–ã‚Šã™ã‚‹ãŸã‚ã€ã“ã‚Œã§1:1ã«ãªã‚‹)
+            // Write only the latest slot, just before the DS engine's zero-clear.
+            // (The ASM patch side reads from +0x3C / +0x44 bypass, so this is 1:1)
             *m_ptrs.aimX = static_cast<uint16_t>(outX);
             *m_ptrs.aimY = static_cast<uint16_t>(outY);
 

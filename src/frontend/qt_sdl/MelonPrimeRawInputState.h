@@ -45,7 +45,14 @@ namespace MelonPrime {
         void resetMouseButtons() noexcept;
 
         static constexpr size_t kMaxHotkeyId = 64;
-        void setHotkeyVks(int id, const std::vector<UINT>& vks);
+
+        // Primary interface: pointer + count (zero-allocation path)
+        void setHotkeyVks(int id, const UINT* vks, size_t count);
+
+        // Compatibility overload: delegates to pointer + count
+        void setHotkeyVks(int id, const std::vector<UINT>& vks) {
+            setHotkeyVks(id, vks.data(), vks.size());
+        }
 
         void pollHotkeys(FrameHotkeyState& out) noexcept;
         void snapshotInputFrame(FrameHotkeyState& outHk,
@@ -55,7 +62,7 @@ namespace MelonPrime {
 
     private:
         // =================================================================
-        // VK Snapshot — captured once, reused by hotkey scan + mouse delta.
+        // VK Snapshot -- captured once, reused by hotkey scan + mouse delta.
         // Eliminates 4x duplication of the load-4-atomics-then-fence pattern.
         // =================================================================
         struct VkSnapshot {
@@ -104,10 +111,16 @@ namespace MelonPrime {
         // =================================================================
         // Cache Line 1+: Read-Mostly / Consumer State
         // =================================================================
+        // -----------------------------------------------------------------
+        // R2: Removed hasMask[64] array.
+        //
+        // hasMask was only checked in hotkeyDown(), and is logically
+        // equivalent to (m_boundHotkeys & (1ULL << id)) != 0.
+        // Saves 64 bytes and one indirection per hotkeyDown() call.
+        // -----------------------------------------------------------------
         struct HotkeyMasks {
             alignas(32) uint64_t vkMask[kMaxHotkeyId][4];
             uint8_t  mouseMask[kMaxHotkeyId];
-            bool     hasMask[kMaxHotkeyId];
         } m_hkMasks;
 
         uint64_t m_hkPrev{};
