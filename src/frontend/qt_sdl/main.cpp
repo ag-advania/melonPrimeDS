@@ -1,4 +1,4 @@
-/*
+ï»¿/*
     Copyright 2016-2025 melonDS team
 
     This file is part of melonDS.
@@ -276,13 +276,13 @@ int main(int argc, char** argv)
 
     qputenv("QT_SCALE_FACTOR", "1");
 
-    // D3D12ƒoƒbƒNƒGƒ“ƒhŽw’è(Qt Quick‚ÌRHI‚ðDirect3D12‚ÉŒÅ’è‚·‚é‚½‚ß)
+    // D3D12ãƒãƒƒã‚¯ã‚¨ãƒ³ãƒ‰æŒ‡å®š(Qt Quickã®RHIã‚’Direct3D12ã«å›ºå®šã™ã‚‹ãŸã‚)
     qputenv("QSG_RHI_BACKEND", "d3d12"); // MelonPrimeDS
-	// Vsync–³Œø‰»(Qt Quick‚ÌRHI‚Å‚’¼“¯Šú‚ð–³Œø‰»‚·‚é‚½‚ß)
+	// Vsyncç„¡åŠ¹åŒ–(Qt Quickã®RHIã§åž‚ç›´åŒæœŸã‚’ç„¡åŠ¹åŒ–ã™ã‚‹ãŸã‚)
     qputenv("QSG_NO_VSYNC", "1"); // MelonPrimeDS
-	// ‚DPIƒXƒP[ƒŠƒ“ƒO–³Œø‰» ’á’x‰„‚É‚È‚Á‚½B
+	// é«˜DPIã‚¹ã‚±ãƒ¼ãƒªãƒ³ã‚°ç„¡åŠ¹åŒ– ä½Žé…å»¶ã«ãªã£ãŸã€‚
     qputenv("QT_ENABLE_HIGHDPI_SCALING", "0");
-	// ƒAƒ“ƒ`ƒGƒCƒŠƒAƒX–³Œø‰»
+	// ã‚¢ãƒ³ãƒã‚¨ã‚¤ãƒªã‚¢ã‚¹ç„¡åŠ¹åŒ–
     qputenv("QT_NO_ANTIALIASING", "1");
     
 

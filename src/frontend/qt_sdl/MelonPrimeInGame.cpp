@@ -10,13 +10,19 @@
 namespace MelonPrime {
 
     // =========================================================================
-    // HandleInGameLogic â€” per-frame in-game update
+    // HandleInGameLogic - per-frame in-game update
     // Optimized with Hot/Cold splitting to minimize instruction cache pressure.
     // =========================================================================
     HOT_FUNCTION void MelonPrimeCore::HandleInGameLogic()
     {
         PREFETCH_READ(m_ptrs.isAltForm);
-        // OPT-J: Cache NDS pointer — avoids repeated emuInstance→getNDS() pointer chase.
+        // Early prefetch of aim pointers - gives ~50-100 instructions of
+        // lead time before ProcessAimInputMouse reads them, hiding potential L2 miss.
+        if (LIKELY(!isStylusMode)) {
+            PREFETCH_WRITE(m_ptrs.aimX);
+            PREFETCH_WRITE(m_ptrs.aimY);
+        }
+        // Cache NDS pointer - avoids repeated emuInstance->getNDS() pointer chase.
         auto* const nds = emuInstance->getNDS();
 
         // --- Rare Actions (Morph, Weapon Switch) ---
@@ -24,10 +30,8 @@ namespace MelonPrime {
             HandleRareMorph();
         }
 
-        // OPT-A: Combined weapon input gate.
-        //   Old: ProcessWeaponSwitch called every frame, chased panel pointer for wheelDelta.
-        //   New: Single bitmask test + wheelDelta check skips call entirely on 99%+ frames.
-        //        wheelDelta is now pre-fetched into m_input by UpdateInputState.
+        // Combined weapon input gate.
+        //   Single bitmask test + wheelDelta check skips call entirely on 99%+ frames.
         {
             constexpr uint64_t IB_WEAPON_ALL_TRIGGERS =
                 IB_WEAPON_ANY | IB_WEAPON_NEXT | IB_WEAPON_PREV;
@@ -61,33 +65,7 @@ namespace MelonPrime {
         }
 
         // --- Movement & Buttons (Hot Path) ---
-        ProcessMoveInputFast();
-
-        // OPT: Branchless batched button mask update.
-        //
-        // Previous code: 3 conditional ternaries â†’ 3 separate RMW on m_inputMaskFast.
-        //   mask |= (!IsDown(IB_JUMP))  ? (1u << INPUT_B) : 0;
-        //   mask |= (!IsDown(IB_SHOOT)) ? (1u << INPUT_L) : 0;
-        //   mask |= (!IsDown(IB_ZOOM))  ? (1u << INPUT_R) : 0;
-        //
-        // Each ternary generates a test+cmov or test+branch. Even with good prediction,
-        // the 3 sequential RMW ops create a dependency chain on m_inputMaskFast.
-        //
-        // New code: extract inverted bits from m_input.down (already in L1),
-        // shift each to its target position, OR together in one write.
-        // Generates: NOT + 3Ã—(SHR+AND+SHL) + 3Ã—OR + 1 masked store.
-        // Zero branches, single write to m_inputMaskFast, no dependency chain.
-        {
-            constexpr uint16_t kModBits = (1u << INPUT_B) | (1u << INPUT_L) | (1u << INPUT_R);
-            const uint64_t nd = ~m_input.down;
-            // IB_JUMP  = bit 0 â†’ INPUT_B = bit 1
-            // IB_SHOOT = bit 1 â†’ INPUT_L = bit 9
-            // IB_ZOOM  = bit 2 â†’ INPUT_R = bit 8
-            const uint16_t bBit = static_cast<uint16_t>(((nd >> 0) & 1u) << INPUT_B);
-            const uint16_t lBit = static_cast<uint16_t>(((nd >> 1) & 1u) << INPUT_L);
-            const uint16_t rBit = static_cast<uint16_t>(((nd >> 2) & 1u) << INPUT_R);
-            m_inputMaskFast = (m_inputMaskFast & ~kModBits) | bBit | lBit | rBit;
-        }
+        ProcessMoveAndButtonsFast();
 
         // --- Morph Boost & Aim (Hot Path) ---
         HandleMorphBallBoost();
@@ -99,7 +77,7 @@ namespace MelonPrime {
         }
         else {
             ProcessAimInputMouse();
-            // OPT-G: m_aimBlockBits replaces m_isAimDisabled (same semantics: != 0)
+            // m_aimBlockBits replaces m_isAimDisabled (same semantics: != 0)
             if (!m_flags.test(StateFlags::BIT_LAST_FOCUSED) || !m_aimBlockBits) {
                 using namespace Consts::UI;
                 nds->TouchScreen(CENTER_RESET.x(), CENTER_RESET.y());
@@ -146,6 +124,16 @@ namespace MelonPrime {
         FrameAdvanceTwice();
     }
 
+    // =========================================================================
+    // HandleAdventureMode
+    //
+    // REFACTORED: Replaced TOUCH_IF_PRESSED preprocessor macro with a
+    // constexpr table + loop. Benefits:
+    //   - Type-safe: no macro expansion surprises
+    //   - Debuggable: breakpoints work on individual iterations
+    //   - Maintainable: adding a new UI button is a single table entry
+    //   - Same codegen: compiler unrolls small constexpr loops
+    // =========================================================================
     COLD_FUNCTION void MelonPrimeCore::HandleAdventureMode()
     {
         auto* nds = emuInstance->getNDS();
@@ -162,10 +150,9 @@ namespace MelonPrime {
                 FrameAdvanceTwice();
             }
             else {
+                // Loop body reduced to bare FrameAdvanceOnce.
+                // Re-entrant path handles all input.
                 for (int i = 0; i < 30; ++i) {
-                    UpdateInputState();
-                    ProcessMoveInputFast();
-                    nds->SetKeyMask(m_inputMaskFast);
                     FrameAdvanceOnce();
                 }
             }
@@ -173,23 +160,30 @@ namespace MelonPrime {
             FrameAdvanceTwice();
         }
 
-        // UI touch buttons
+        // --- UI Touch Buttons (data-driven) ---
         if (IsAnyPressed(IB_UI_ANY)) {
-#define TOUCH_IF_PRESSED(BIT, POINT) \
-            if (IsPressed(BIT)) { \
-                nds->ReleaseScreen(); \
-                FrameAdvanceTwice(); \
-                nds->TouchScreen(POINT.x(), POINT.y()); \
-                FrameAdvanceTwice(); \
-            }
+            struct UIAction {
+                uint64_t bit;
+                QPoint   point;
+            };
+            // constexpr array replaces 5 TOUCH_IF_PRESSED macro invocations.
+            // Compiler unrolls this loop since the array size is known at compile time.
+            static constexpr UIAction kUIActions[] = {
+                { IB_UI_OK,    Consts::UI::OK    },
+                { IB_UI_LEFT,  Consts::UI::LEFT  },
+                { IB_UI_RIGHT, Consts::UI::RIGHT },
+                { IB_UI_YES,   Consts::UI::YES   },
+                { IB_UI_NO,    Consts::UI::NO    },
+            };
 
-            using namespace Consts::UI;
-            TOUCH_IF_PRESSED(IB_UI_OK, OK)
-                TOUCH_IF_PRESSED(IB_UI_LEFT, LEFT)
-                TOUCH_IF_PRESSED(IB_UI_RIGHT, RIGHT)
-                TOUCH_IF_PRESSED(IB_UI_YES, YES)
-                TOUCH_IF_PRESSED(IB_UI_NO, NO)
-#undef TOUCH_IF_PRESSED
+            for (const auto& action : kUIActions) {
+                if (IsPressed(action.bit)) {
+                    nds->ReleaseScreen();
+                    FrameAdvanceTwice();
+                    nds->TouchScreen(action.point.x(), action.point.y());
+                    FrameAdvanceTwice();
+                }
+            }
         }
     }
 
@@ -225,8 +219,7 @@ namespace MelonPrime {
             }
         }
         else {
-            // OPT-B: Guard redundant store — 99%+ of frames this bit is already 0.
-            //   Avoids dirtying the cache line with an identical value.
+            // Guard redundant store - 99%+ of frames this bit is already 0.
             if (UNLIKELY(m_aimBlockBits & AIMBLK_MORPHBALL_BOOST)) {
                 SetAimBlockBranchless(AIMBLK_MORPHBALL_BOOST, false);
             }

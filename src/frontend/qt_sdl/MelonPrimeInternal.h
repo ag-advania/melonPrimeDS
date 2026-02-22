@@ -41,7 +41,7 @@ namespace MelonPrime {
     };
 
     // =================================================================
-    // Bit-scan wrappers — BSF/BSR on MSVC, CTZ/CLZ on GCC/Clang.
+    // Bit-scan wrappers - BSF/BSR on MSVC, CTZ/CLZ on GCC/Clang.
     // Caller must guarantee v != 0.
     // =================================================================
 
