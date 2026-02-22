@@ -377,7 +377,7 @@ namespace MelonPrime {
         // =================================================================
         HOT_FUNCTION void UpdateInputState();
         HOT_FUNCTION void HandleInGameLogic();
-        HOT_FUNCTION void ProcessMoveInputFast();
+        HOT_FUNCTION void ProcessMoveAndButtonsFast(); // OPT-Z2: Move + Button in single pass
         HOT_FUNCTION void ProcessAimInputMouse();
         HOT_FUNCTION bool ProcessWeaponSwitch();
         HOT_FUNCTION bool HandleMorphBallBoost();
@@ -389,14 +389,14 @@ namespace MelonPrime {
         COLD_FUNCTION void HandleRareWeaponCheckEnd();
         COLD_FUNCTION void HandleAdventureMode(); // Already existed, marked cold now
 
-        COLD_FUNCTION void HandleGameJoinInit(melonDS::u8* mainRAM); // OPT-W: Outlined from RunFrameHook
+        COLD_FUNCTION void HandleGameJoinInit(); // OPT-W+Z1: Outlined, self-fetches mainRAM
         COLD_FUNCTION void DetectRomAndSetAddresses();
         COLD_FUNCTION void ApplyGameSettingsOnce();
 
         void RecalcAimSensitivityCache(Config::Table& cfg);
         void ApplyAimAdjustSetting(Config::Table& cfg);
         void RecalcAimFixedPoint();  // OPT-O/F: Recompute all fixed-point aim parameters
-        void HandleGlobalHotkeys();
+        FORCE_INLINE void HandleGlobalHotkeys(); // OPT-Z4: Inlined — 99%+ frames early-return
         void ProcessAimInputStylus();
         void SwitchWeapon(int weaponIndex);
         void ShowCursor(bool show);

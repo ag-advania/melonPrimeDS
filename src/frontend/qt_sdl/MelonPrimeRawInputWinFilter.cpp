@@ -61,9 +61,9 @@ namespace MelonPrime {
     }
 
     // =========================================================================
-    // Poll() — Zero-Indirection Sync Polling
-    // EmuThread のフレーム進行直前に呼ばれる最速パス。
-    // Nt API を直接叩くことでオーバーヘッドをゼロ化。
+    // Poll() â€” Zero-Indirection Sync Polling
+    // EmuThreadã®ãƒ•ãƒ¬ãƒ¼ãƒ é€²è¡Œç›´å‰ã«å‘¼ã°ã‚Œã‚‹ã€æœ€ã‚‚å®‰å…¨ã§å³æ™‚åæ˜ ã•ã‚Œã‚‹æœ€é€Ÿãƒ‘ã‚¹ã€‚
+    // é–¢æ•°ãƒã‚¤ãƒ³ã‚¿ã‚’ä½¿ã‚ãšã€Nt APIã‚’ç›´æŽ¥å©ãã“ã¨ã§ã‚ªãƒ¼ãƒãƒ¼ãƒ˜ãƒƒãƒ‰ã‚’ã‚¼ãƒ­åŒ–ã€‚
     // =========================================================================
     void RawInputWinFilter::Poll() {
         if (m_joy2KeySupport) return;
@@ -71,10 +71,6 @@ namespace MelonPrime {
         auto* const state = m_state.get();
         state->processRawInputBatched();
 
-        // WM_INPUT メッセージキューのドレイン。
-        // [FIX-1] により HiddenWndProc は WM_INPUT を DefWindowProc に渡さないため、
-        // 万一この除去前にメッセージがディスパッチされても raw input データは破棄されない。
-        // ただしキュー溢れ防止のため除去自体は引き続き必要。
         MSG msg;
         if (LIKELY(WinInternal::fnNtUserPeekMessage != nullptr)) {
             while (WinInternal::fnNtUserPeekMessage(&msg, m_hHiddenWnd, WM_INPUT, WM_INPUT, PM_REMOVE, FALSE)) {}
@@ -82,6 +78,34 @@ namespace MelonPrime {
         else {
             while (PeekMessageW(&msg, m_hHiddenWnd, WM_INPUT, WM_INPUT, PM_REMOVE)) {}
         }
+    }
+
+    // =========================================================================
+    // OPT-Z3: PollAndSnapshot — merged Poll + snapshot in single call.
+    //
+    // Eliminates two separate wrapper calls per frame (Poll → state→process,
+    // snapshotInputFrame → state→snapshot) and the redundant m_state.get()
+    // in between. Also guarantees no interleaving between batch processing
+    // and snapshot — the snapshot reads immediately after processing.
+    // =========================================================================
+    void RawInputWinFilter::PollAndSnapshot(
+        FrameHotkeyState& outHk, int& outMouseX, int& outMouseY)
+    {
+        auto* const state = m_state.get();
+
+        if (!m_joy2KeySupport) {
+            state->processRawInputBatched();
+
+            MSG msg;
+            if (LIKELY(WinInternal::fnNtUserPeekMessage != nullptr)) {
+                while (WinInternal::fnNtUserPeekMessage(&msg, m_hHiddenWnd, WM_INPUT, WM_INPUT, PM_REMOVE, FALSE)) {}
+            }
+            else {
+                while (PeekMessageW(&msg, m_hHiddenWnd, WM_INPUT, WM_INPUT, PM_REMOVE)) {}
+            }
+        }
+
+        state->snapshotInputFrame(outHk, outMouseX, outMouseY);
     }
 
     void RawInputWinFilter::setJoy2KeySupport(bool enable) {
@@ -135,14 +159,7 @@ namespace MelonPrime {
         UnregisterClassW(L"MelonPrimeRawInputSink", GetModuleHandle(nullptr));
     }
 
-    // [FIX-1] WM_INPUT を DefWindowProc に渡さない。
-    // DefWindowProc → DefRawInputProc がカーネルの raw input バッファからデータを破棄するため、
-    // Poll() 間に EmuThread 上の Win32 API (wglMakeCurrent, SwapBuffers, SDL 内部等) が
-    // 暗黙のメッセージポンプを実行すると、GetRawInputBuffer で key-up が欠損 → stuck。
-    // Joy2Key ON では nativeEventFilter が先にデータを消費するためこの問題は起きない。
-    // → 関連: [FIX-2] UpdateInputState, [FIX-3] RunFrameHook フォーカス遷移リセット
     LRESULT CALLBACK RawInputWinFilter::HiddenWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
-        if (msg == WM_INPUT) return 0;
         return DefWindowProcW(hwnd, msg, wParam, lParam);
     }
 

@@ -1,4 +1,4 @@
-#include "MelonPrimeRawHotkeyVkBinding.h"
+﻿#include "MelonPrimeRawHotkeyVkBinding.h"
 #include "MelonPrimeRawInputWinFilter.h"
 #include "Config.h"
 #include "EmuInstance.h"
@@ -43,7 +43,7 @@ namespace MelonPrime {
 
     std::vector<UINT> MapQtKeyIntToVks(int qtKey) {
         std::vector<UINT> vks;
-        vks.reserve(2); // �قƂ�ǂ̏ꍇ��1��2�Ȃ̂Ŋm�ۂ��Ă���
+        vks.reserve(2); // ほとんどの場合は1つか2つなので確保しておく
 
         // Mouse Buttons
         if ((qtKey & kQtMouseMark) == kQtMouseMark) {
