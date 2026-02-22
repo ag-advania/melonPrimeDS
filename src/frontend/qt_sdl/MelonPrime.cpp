@@ -84,6 +84,19 @@ namespace MelonPrime {
 #endif
     }
 
+    // =========================================================================
+    // REFACTORED: ApplyJoy2KeySupportAndQtFilter
+    //
+    // Changed: `static bool s_isInstalled` -> member `m_isNativeFilterInstalled`.
+    //
+    // The static local was shared across all MelonPrimeCore instances.
+    // While currently only one instance exists, this was a latent bug:
+    //   - Multiple instances would corrupt each other's filter install state
+    //   - Not resilient to future multi-instance support
+    //   - Static locals in member functions are a code smell
+    //
+    // Member variable is initialised to false in the header, reset in OnEmuStart.
+    // =========================================================================
     void MelonPrimeCore::ApplyJoy2KeySupportAndQtFilter(bool enable, bool doReset)
     {
 #ifdef _WIN32
@@ -98,17 +111,16 @@ namespace MelonPrime {
         m_rawFilter->setRawInputTarget(static_cast<HWND>(m_cachedHwnd));
         m_flags.assign(StateFlags::BIT_JOY2KEY, enable);
 
-        static bool s_isInstalled = false;
         m_rawFilter->setJoy2KeySupport(enable);
 
-        if (enable != s_isInstalled) {
+        if (enable != m_isNativeFilterInstalled) {
             if (enable) {
                 app->installNativeEventFilter(m_rawFilter.get());
             }
             else {
                 app->removeNativeEventFilter(m_rawFilter.get());
             }
-            s_isInstalled = enable;
+            m_isNativeFilterInstalled = enable;
         }
 
         if (doReset) {
@@ -164,6 +176,9 @@ namespace MelonPrime {
         m_isLayoutChangePending = true;
         m_appliedFlags = 0;
         m_isWeaponCheckActive = false;
+#ifdef _WIN32
+        m_isNativeFilterInstalled = false;
+#endif
 
         ReloadConfigFlags();
         ApplyJoy2KeySupportAndQtFilter(m_flags.test(StateFlags::BIT_JOY2KEY));
@@ -179,9 +194,9 @@ namespace MelonPrime {
 
     void MelonPrimeCore::OnEmuUnpause()
     {
-        // ApplyJoy2KeySupportAndQtFilter は doReset=true (デフォルト) で呼ばれるため、
-        // 内部で resetAllKeys + resetMouseButtons + resetHotkeyEdges が実行される。
-        // ポーズ中に失われた key-up イベントの stale ビットはここでクリアされる。
+        // ApplyJoy2KeySupportAndQtFilter runs with doReset=true (default),
+        // executing resetAllKeys + resetMouseButtons + resetHotkeyEdges internally.
+        // This clears stale bits from key-up events lost during pause.
         ReloadConfigFlags();
         ApplyJoy2KeySupportAndQtFilter(m_flags.test(StateFlags::BIT_JOY2KEY));
 
@@ -193,8 +208,7 @@ namespace MelonPrime {
 
 #ifdef _WIN32
         if (m_rawFilter) {
-            // ホットキーの VK バインドを設定から再読込。
-            // バインド変更後のエッジ状態を再同期するため resetHotkeyEdges が必要。
+            // Reload VK bindings from config, then re-sync edge state.
             BindMetroidHotkeysFromConfig(m_rawFilter.get(), emuInstance->getInstanceID());
             m_rawFilter->resetHotkeyEdges();
         }
@@ -212,8 +226,7 @@ namespace MelonPrime {
         return m_flags.test(StateFlags::BIT_ROM_DETECTED) && !m_flags.test(StateFlags::BIT_IN_GAME);
     }
 
-    // OPT-Z4: FORCE_INLINE — 99%+ frames hit the early return (2 bit tests + branch).
-    //   Avoids ~5 cyc call/ret overhead per frame.
+    // 99%+ frames hit the early return (2 bit tests + branch).
     FORCE_INLINE void MelonPrimeCore::HandleGlobalHotkeys()
     {
         const bool up = emuInstance->hotkeyReleased(HK_MetroidIngameSensiUp);
@@ -237,13 +250,11 @@ namespace MelonPrime {
 
     HOT_FUNCTION void MelonPrimeCore::RunFrameHook()
     {
-        // OPT-Z1: mainRAM removed — HandleGameJoinInit self-fetches (cold path only)
+        // mainRAM removed - HandleGameJoinInit self-fetches (cold path only)
 
         if (UNLIKELY(m_isRunningHook)) {
-            // OPT-Z3: Poll moved into UpdateInputState via PollAndSnapshot
+            // Re-entrant path (called during FrameAdvanceOnce within weapon switch, morph, etc.)
             UpdateInputState();
-
-            // OPT-Z2: Unified move + button update
             ProcessMoveAndButtonsFast();
 
             if (isStylusMode) {
@@ -259,7 +270,7 @@ namespace MelonPrime {
 
         m_isRunningHook = true;
 
-        // OPT-Z3: Poll moved into UpdateInputState via PollAndSnapshot
+        // Poll moved into UpdateInputState via PollAndSnapshot
         UpdateInputState();
         InputReset();
         m_flags.clear(StateFlags::BIT_BLOCK_STYLUS);
@@ -275,7 +286,7 @@ namespace MelonPrime {
             m_flags.assign(StateFlags::BIT_IN_GAME, isInGame);
 
             if (isInGame && !m_flags.test(StateFlags::BIT_IN_GAME_INIT)) {
-                HandleGameJoinInit();  // OPT-Z1: no mainRAM arg
+                HandleGameJoinInit();
             }
 
             if (isFocused) {
@@ -313,11 +324,8 @@ namespace MelonPrime {
                 InputSetBranchless(INPUT_START, !IsDown(IB_MENU));
             }
 
-            // [FIX-3] フォーカス遷移時に入力状態と raw input 層を安全にリセット。
-            // m_input のクリアは [FIX-2] (UpdateInputState) と多重防御の関係にある:
-            //   FIX-2: 再入パスの UpdateInputState 内で毎フレーム即座にクリア
-            //   FIX-3: メインパスのフレーム末尾で遷移を検出し、raw input 層含め包括クリア
-            // → 関連: [FIX-1] HiddenWndProc の WM_INPUT 遮断（根本原因の修正）
+            // Focus transition: reset input state + raw input layer.
+            // Multi-layer defense with FIX-2 (UpdateInputState) and FIX-1 (HiddenWndProc).
             if (UNLIKELY(m_flags.test(StateFlags::BIT_LAST_FOCUSED) != isFocused)) {
                 m_flags.assign(StateFlags::BIT_LAST_FOCUSED, isFocused);
                 if (!isFocused) {
@@ -337,21 +345,14 @@ namespace MelonPrime {
     }
 
     // =========================================================================
-    // OPT-W: HandleGameJoinInit — outlined from RunFrameHook
+    // HandleGameJoinInit - outlined from RunFrameHook
     //
-    // This block executes once per game-join (every ~tens of seconds).
-    // Inlining ~50 lines of address calculation + pointer resolution into
-    // the HOT_FUNCTION RunFrameHook inflated its icache footprint by
-    // ~300-400 bytes, degrading register allocation for the hot path.
-    //
-    // COLD_FUNCTION ensures the compiler:
-    //   1. Places this code in a separate text section (.text.unlikely)
-    //   2. Doesn't pollute RunFrameHook's register allocator with cold locals
-    //   3. Doesn't inline it back (NOINLINE implied by cold attribute)
+    // Executes once per game-join (every ~tens of seconds).
+    // COLD_FUNCTION ensures separate text section, no register pollution.
     // =========================================================================
     COLD_FUNCTION void MelonPrimeCore::HandleGameJoinInit()
     {
-        // OPT-Z1: mainRAM fetched here (cold path) instead of every frame in RunFrameHook
+        // mainRAM fetched here (cold path) instead of every frame in RunFrameHook
         melonDS::u8* const mainRAM = emuInstance->getNDS()->MainRAM;
         m_flags.set(StateFlags::BIT_IN_GAME_INIT);
         m_playerPosition = Read8(mainRAM, m_currentRom.playerPos);
