@@ -8,27 +8,8 @@
 #include <array>
 #include <cstdint>
 #include <mutex>
+#include "MelonPrimeCompilerHints.h"   // Shared macros (was duplicated inline)
 #include "MelonPrimeRawWinInternal.h"
-
-#ifndef FORCE_INLINE
-#  if defined(_MSC_VER)
-#    define FORCE_INLINE __forceinline
-#  elif defined(__GNUC__) || defined(__clang__)
-#    define FORCE_INLINE __attribute__((always_inline)) inline
-#  else
-#    define FORCE_INLINE inline
-#  endif
-#endif
-
-#ifndef UNLIKELY
-#  if defined(__GNUC__) || defined(__clang__)
-#    define UNLIKELY(x) __builtin_expect(!!(x), 0)
-#    define LIKELY(x)   __builtin_expect(!!(x), 1)
-#  else
-#    define UNLIKELY(x) (x)
-#    define LIKELY(x)   (x)
-#  endif
-#endif
 
 namespace MelonPrime {
 
@@ -74,6 +55,44 @@ namespace MelonPrime {
 
     private:
         // =================================================================
+        // VK Snapshot — captured once, reused by hotkey scan + mouse delta.
+        // Eliminates 4x duplication of the load-4-atomics-then-fence pattern.
+        // =================================================================
+        struct VkSnapshot {
+            uint64_t vk[4];
+            uint8_t  mouse;
+        };
+
+        /// Take a consistent snapshot of all VK + mouse button state (acquire fence).
+        [[nodiscard]] FORCE_INLINE VkSnapshot takeSnapshot() const noexcept {
+            VkSnapshot snap;
+            for (int i = 0; i < 4; ++i)
+                snap.vk[i] = m_vkDown[i].load(std::memory_order_relaxed);
+            snap.mouse = m_mouseButtons.load(std::memory_order_relaxed);
+            std::atomic_thread_fence(std::memory_order_acquire);
+            return snap;
+        }
+
+        /// Scan all bound hotkeys against a VkSnapshot and return the combined bitmask.
+        /// Extracted from pollHotkeys / snapshotInputFrame / resetHotkeyEdges / hotkeyDown.
+        [[nodiscard]] FORCE_INLINE uint64_t scanBoundHotkeys(const VkSnapshot& snap) const noexcept {
+            uint64_t bound = m_boundHotkeys;
+            uint64_t result = 0;
+            while (bound) {
+#if defined(_MSC_VER) && !defined(__clang__)
+                unsigned long bitPos;
+                _BitScanForward64(&bitPos, bound);
+#else
+                const int bitPos = __builtin_ctzll(bound);
+#endif
+                if (testHotkeyMask(bitPos, snap.vk, snap.mouse))
+                    result |= 1ULL << bitPos;
+                bound &= bound - 1;
+            }
+            return result;
+        }
+
+        // =================================================================
         // Cache Line 0: Write-Heavy (Input Thread)
         // =================================================================
         alignas(64) std::atomic<uint64_t> m_vkDown[4];
@@ -85,10 +104,6 @@ namespace MelonPrime {
         // =================================================================
         // Cache Line 1+: Read-Mostly / Consumer State
         // =================================================================
-
-        // OPT-S: SoA (Structure of Arrays) layout for Hotkeys.
-        //   高密度な独立配列に変更し、BSFスキャンループ時のSIMD的アクセスと
-        //   キャッシュヒット率を最大化。
         struct HotkeyMasks {
             alignas(32) uint64_t vkMask[kMaxHotkeyId][4];
             uint8_t  mouseMask[kMaxHotkeyId];
@@ -110,7 +125,6 @@ namespace MelonPrime {
         struct VkRemapEntry { uint8_t normal; uint8_t extended; };
         static std::array<VkRemapEntry, 256> s_vkRemap;
 
-        // OPT-L: MapVirtualKeyのキャッシュLUT (Kernel-Transition Elimination)
         static std::array<uint16_t, 512> s_makeCodeLut;
 
         static uint16_t s_scancodeLShift;
@@ -126,7 +140,6 @@ namespace MelonPrime {
             const uint32_t widx = vk >> 6;
             const uint64_t bit = 1ULL << (vk & 63);
             const uint64_t cur = m_vkDown[widx].load(std::memory_order_relaxed);
-            // OPT-F: Store is relaxed here, synchronizes via explicit fence later
             m_vkDown[widx].store(
                 down ? (cur | bit) : (cur & ~bit),
                 std::memory_order_relaxed);

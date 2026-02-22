@@ -31,7 +31,7 @@ namespace MelonPrime {
         // Frame-synchronous update
         void Poll();
 
-        // OPT-Z3: Merged Poll + snapshot in single call — eliminates 2 wrapper calls per frame
+        // Merged Poll + snapshot in single call
         void PollAndSnapshot(FrameHotkeyState& outHk, int& outMouseX, int& outMouseY);
 
         void discardDeltas();
@@ -49,6 +49,10 @@ namespace MelonPrime {
         void RegisterDevices(HWND target, bool useHiddenWindow);
         void UnregisterDevices();
         static LRESULT CALLBACK HiddenWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
+
+        /// Drain pending WM_INPUT messages from the hidden window queue.
+        /// Shared between Poll() and PollAndSnapshot() to eliminate duplication.
+        void drainPendingMessages() noexcept;
 
         static std::atomic<int>    s_refCount;
         static RawInputWinFilter* s_instance;

@@ -61,16 +61,16 @@ namespace MelonPrime {
     }
 
     // =========================================================================
-    // Poll() â€” Zero-Indirection Sync Polling
-    // EmuThreadã®ãƒ•ãƒ¬ãƒ¼ãƒ é€²è¡Œç›´å‰ã«å‘¼ã°ã‚Œã‚‹ã€æœ€ã‚‚å®‰å…¨ã§å³æ™‚åæ˜ ã•ã‚Œã‚‹æœ€é€Ÿãƒ‘ã‚¹ã€‚
-    // é–¢æ•°ãƒã‚¤ãƒ³ã‚¿ã‚’ä½¿ã‚ãšã€Nt APIã‚’ç›´æŽ¥å©ãã“ã¨ã§ã‚ªãƒ¼ãƒãƒ¼ãƒ˜ãƒƒãƒ‰ã‚’ã‚¼ãƒ­åŒ–ã€‚
+    // REFACTORED: drainPendingMessages — extracted from Poll() and PollAndSnapshot().
+    //
+    // Previously the PeekMessage loop was copy-pasted in both Poll() and
+    // PollAndSnapshot(), with identical logic and identical NtUser fast-path.
+    // Now a single private helper, called from both sites.
+    //
+    // The compiler will inline this into both callers (small body, hot path),
+    // producing identical codegen to the original copy-paste.
     // =========================================================================
-    void RawInputWinFilter::Poll() {
-        if (m_joy2KeySupport) return;
-
-        auto* const state = m_state.get();
-        state->processRawInputBatched();
-
+    void RawInputWinFilter::drainPendingMessages() noexcept {
         MSG msg;
         if (LIKELY(WinInternal::fnNtUserPeekMessage != nullptr)) {
             while (WinInternal::fnNtUserPeekMessage(&msg, m_hHiddenWnd, WM_INPUT, WM_INPUT, PM_REMOVE, FALSE)) {}
@@ -80,14 +80,13 @@ namespace MelonPrime {
         }
     }
 
-    // =========================================================================
-    // OPT-Z3: PollAndSnapshot — merged Poll + snapshot in single call.
-    //
-    // Eliminates two separate wrapper calls per frame (Poll → state→process,
-    // snapshotInputFrame → state→snapshot) and the redundant m_state.get()
-    // in between. Also guarantees no interleaving between batch processing
-    // and snapshot — the snapshot reads immediately after processing.
-    // =========================================================================
+    void RawInputWinFilter::Poll() {
+        if (m_joy2KeySupport) return;
+
+        m_state->processRawInputBatched();
+        drainPendingMessages();
+    }
+
     void RawInputWinFilter::PollAndSnapshot(
         FrameHotkeyState& outHk, int& outMouseX, int& outMouseY)
     {
@@ -95,14 +94,7 @@ namespace MelonPrime {
 
         if (!m_joy2KeySupport) {
             state->processRawInputBatched();
-
-            MSG msg;
-            if (LIKELY(WinInternal::fnNtUserPeekMessage != nullptr)) {
-                while (WinInternal::fnNtUserPeekMessage(&msg, m_hHiddenWnd, WM_INPUT, WM_INPUT, PM_REMOVE, FALSE)) {}
-            }
-            else {
-                while (PeekMessageW(&msg, m_hHiddenWnd, WM_INPUT, WM_INPUT, PM_REMOVE)) {}
-            }
+            drainPendingMessages();
         }
 
         state->snapshotInputFrame(outHk, outMouseX, outMouseY);
