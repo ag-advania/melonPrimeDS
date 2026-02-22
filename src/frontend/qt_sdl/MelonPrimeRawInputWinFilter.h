@@ -31,6 +31,9 @@ namespace MelonPrime {
         // Frame-synchronous update
         void Poll();
 
+        // OPT-Z3: Merged Poll + snapshot in single call — eliminates 2 wrapper calls per frame
+        void PollAndSnapshot(FrameHotkeyState& outHk, int& outMouseX, int& outMouseY);
+
         void discardDeltas();
         void setHotkeyVks(int id, const std::vector<UINT>& vks);
         void pollHotkeys(FrameHotkeyState& out);

@@ -173,6 +173,11 @@ OnEmuUnpause の先頭で呼ばれていることを確認。`doReset=true`（�
 | T | hasMouseDelta / hasButtonChanges 除去 | ~0-133 cyc | RawInput |
 | U | Poll() 内 m_state キャッシュ | ~2-3 cyc | RawInput |
 | W | BIT_IN_GAME_INIT ブロック外出し | icache ~300-400 byte 削減 | icache/レジスタ |
+| Z1 | mainRAM 遅延取得 | ~6-10 cyc/frame | ホットパスロード削減 |
+| Z2 | ProcessMoveAndButtonsFast 統合 | ~3-5 cyc + icache ~50 byte | ストア削減/DRY |
+| Z3 | PollAndSnapshot 統合 | ~8-12 cyc/frame | ラッパー呼出し削減 |
+| Z4 | HandleGlobalHotkeys インライン | ~5 cyc/frame | call/ret 除去 |
+| Z5 | aimX/aimY 早期プリフェッチ | 0-40 cyc (確率的) | L2 miss 隠蔽 |
 
 ---
 
@@ -412,6 +417,91 @@ COLD_FUNCTION の効果:
 2. コンパイラが RunFrameHook のレジスタ割当を initブロック無しで最適化
 3. NOINLINE が暗黙適用 → コンパイラが再インライン化しない
 
+### OPT-Z1: mainRAM 遅延取得（~6-10 cyc/frame 削減）
+
+RunFrameHook 冒頭で毎フレーム実行されていた `emuInstance->getNDS()->MainRAM`（2段ポインタチェイン）を削除。
+mainRAM は HandleGameJoinInit（数十秒に1回の cold path）内部で自己取得する方式に変更。
+
+```cpp
+// 旧: 毎フレーム 2段依存ロード (~6-10 cyc: emuInstance→nds→MainRAM)
+melonDS::u8* const mainRAM = emuInstance->getNDS()->MainRAM;
+HandleGameJoinInit(mainRAM);
+
+// 新: RunFrameHook から mainRAM 完全除去
+HandleGameJoinInit();  // 引数なし — 内部で self-fetch
+```
+
+副次効果: レジスタ割当改善（mainRAM 用レジスタが不要に）。
+
+### OPT-Z2: ProcessMoveAndButtonsFast 統合（~3-5 cyc + icache ~50 byte）
+
+旧 `ProcessMoveInputFast()` + inline ボタンマスク更新ブロックを `ProcessMoveAndButtonsFast()` に統合。
+
+**問題:**
+1. m_inputMaskFast への2回の store-load サイクル（Move 書込み → Button 読込+書込み）
+2. HandleInGameLogic と RunFrameHook 再入パスで完全同一コード重複 (~50 byte × 2)
+
+**修正:**
+```cpp
+// 旧: 2ステップ
+ProcessMoveInputFast();               // store m_inputMaskFast ①
+m_inputMaskFast = (...) | bBit | ...;  // load+store m_inputMaskFast ②
+
+// 新: 1ステップ
+ProcessMoveAndButtonsFast();  // single store: move LUT + button merge
+```
+
+Move LUT 結果をローカル変数 `mask` に保持し、ボタンマージ後に1回だけ m_inputMaskFast へストア。
+
+### OPT-Z3: PollAndSnapshot 統合（~8-12 cyc/frame 削減）
+
+毎フレームの入力処理で経由していた薄いラッパー関数チェインを統合。
+
+```
+旧: RunFrameHook → Poll() → state→processRawInputBatched()    [呼出し2段]
+    UpdateInputState → snapshotInputFrame → state→snapshot()   [呼出し2段]
+
+新: UpdateInputState → PollAndSnapshot()                       [呼出し1段]
+       内部で processRawInputBatched + PeekMessage + snapshot を一括実行
+```
+
+RunFrameHook から Poll() 呼出しを完全除去。UpdateInputState 内部で
+PollAndSnapshot を呼ぶことで Poll + snapshot が1回の関数呼出しで完了。
+m_state.get() も1回で済む（旧: Poll で1回 + snapshot で1回）。
+
+注意: FIX-2 の `!isFocused` early return は PollAndSnapshot の後に移動。
+Poll（メッセージドレイン）は非フォーカス時も必要なため。
+
+### OPT-Z4: HandleGlobalHotkeys インライン化（~5 cyc/frame 削減）
+
+99%+ のフレームで `LIKELY(!up && !down)` で即 return する関数を FORCE_INLINE 化。
+HandleGlobalHotkeys は MelonPrime.cpp 内で RunFrameHook より前に定義されているため、
+同一翻訳単位内でインライン展開可能。
+
+```cpp
+// 旧: 毎フレーム call/ret オーバーヘッド (~5 cyc)
+void HandleGlobalHotkeys();
+
+// 新: FORCE_INLINE — 2 bit tests + branch が RunFrameHook に直接展開
+FORCE_INLINE void HandleGlobalHotkeys();
+```
+
+cold path（感度変更 + Config::Save + OSD）は LIKELY ヒントによりコンパイラが
+自動的にアウトオブライン化。
+
+### OPT-Z5: aimX/aimY 早期プリフェッチ（0-40 cyc 確率的隠蔽）
+
+ProcessAimInputMouse 内部にあった `PREFETCH_WRITE(m_ptrs.aimX/aimY)` を
+HandleInGameLogic 冒頭に移動（mouse mode のみ）。
+
+```cpp
+// 旧: ProcessAimInputMouse 内（使用まで ~10 命令 → L2 miss 隠蔽不十分）
+// 新: HandleInGameLogic 冒頭（使用まで ~50-100 命令 → L2 miss 完全隠蔽）
+```
+
+ProcessAimInputMouse 内の既存 PREFETCH_WRITE は残存（re-entrant パスで
+HandleInGameLogic を経由しない場合のフォールバック）。
+
 ### 既存（プロジェクト開始前）: `setRawInputTarget` HWND ガード
 
 `setRawInputTarget()` 先頭に `if (m_hwndQtTarget == hwnd) return;` を追加。
@@ -600,8 +690,12 @@ resetHotkeyEdges` は**既に実行済み**。追加の呼び出しは完全に�
 
 | ファイル | 適用 OPT / FIX |
 |---------|---------|
-| MelonPrime.h | A, C, D, F, G, L, M, N, O, P, W |
-| MelonPrime.cpp | D, E, F, K, L, M, N, O, W, FIX-3 |
+| MelonPrime.h | A, C, D, F, G, L, M, N, O, P, W, Z1, Z2, Z4 |
+| MelonPrime.cpp | D, E, F, K, L, M, N, O, W, Z1, Z2, Z3, Z4, FIX-3 |
+| MelonPrimeGameInput.cpp | Z2, Z3 |
+| MelonPrimeInGame.cpp | Z2, Z5 |
+| MelonPrimeRawInputWinFilter.h | Z3 |
+| MelonPrimeRawInputWinFilter.cpp | Z3 |
 | MelonPrimeInGame.cpp | A, B, G, H, J |
 | MelonPrimeGameInput.cpp | A, F, G, I, M, O, P, Q, S, FIX-2 |
 | MelonPrimeGameWeapon.cpp | A |

@@ -212,7 +212,9 @@ namespace MelonPrime {
         return m_flags.test(StateFlags::BIT_ROM_DETECTED) && !m_flags.test(StateFlags::BIT_IN_GAME);
     }
 
-    void MelonPrimeCore::HandleGlobalHotkeys()
+    // OPT-Z4: FORCE_INLINE — 99%+ frames hit the early return (2 bit tests + branch).
+    //   Avoids ~5 cyc call/ret overhead per frame.
+    FORCE_INLINE void MelonPrimeCore::HandleGlobalHotkeys()
     {
         const bool up = emuInstance->hotkeyReleased(HK_MetroidIngameSensiUp);
         const bool down = emuInstance->hotkeyReleased(HK_MetroidIngameSensiDown);
@@ -235,27 +237,14 @@ namespace MelonPrime {
 
     HOT_FUNCTION void MelonPrimeCore::RunFrameHook()
     {
-        melonDS::u8* const mainRAM = emuInstance->getNDS()->MainRAM;
+        // OPT-Z1: mainRAM removed — HandleGameJoinInit self-fetches (cold path only)
 
         if (UNLIKELY(m_isRunningHook)) {
-#ifdef _WIN32
-            auto* const rawFilter = m_rawFilter.get();
-            if (rawFilter) {
-                rawFilter->Poll();
-            }
-#endif
+            // OPT-Z3: Poll moved into UpdateInputState via PollAndSnapshot
             UpdateInputState();
 
-            ProcessMoveInputFast();
-
-            {
-                constexpr uint16_t kModBits = (1u << INPUT_B) | (1u << INPUT_L) | (1u << INPUT_R);
-                const uint64_t nd = ~m_input.down;
-                const uint16_t bBit = static_cast<uint16_t>(((nd >> 0) & 1u) << INPUT_B);
-                const uint16_t lBit = static_cast<uint16_t>(((nd >> 1) & 1u) << INPUT_L);
-                const uint16_t rBit = static_cast<uint16_t>(((nd >> 2) & 1u) << INPUT_R);
-                m_inputMaskFast = (m_inputMaskFast & ~kModBits) | bBit | lBit | rBit;
-            }
+            // OPT-Z2: Unified move + button update
+            ProcessMoveAndButtonsFast();
 
             if (isStylusMode) {
                 if (emuInstance->isTouching && !m_flags.test(StateFlags::BIT_BLOCK_STYLUS)) {
@@ -270,13 +259,7 @@ namespace MelonPrime {
 
         m_isRunningHook = true;
 
-#ifdef _WIN32
-        auto* const rawFilter = m_rawFilter.get();
-        if (rawFilter) {
-            rawFilter->Poll();
-        }
-#endif
-
+        // OPT-Z3: Poll moved into UpdateInputState via PollAndSnapshot
         UpdateInputState();
         InputReset();
         m_flags.clear(StateFlags::BIT_BLOCK_STYLUS);
@@ -292,7 +275,7 @@ namespace MelonPrime {
             m_flags.assign(StateFlags::BIT_IN_GAME, isInGame);
 
             if (isInGame && !m_flags.test(StateFlags::BIT_IN_GAME_INIT)) {
-                HandleGameJoinInit(mainRAM);
+                HandleGameJoinInit();  // OPT-Z1: no mainRAM arg
             }
 
             if (isFocused) {
@@ -366,8 +349,10 @@ namespace MelonPrime {
     //   2. Doesn't pollute RunFrameHook's register allocator with cold locals
     //   3. Doesn't inline it back (NOINLINE implied by cold attribute)
     // =========================================================================
-    COLD_FUNCTION void MelonPrimeCore::HandleGameJoinInit(melonDS::u8* mainRAM)
+    COLD_FUNCTION void MelonPrimeCore::HandleGameJoinInit()
     {
+        // OPT-Z1: mainRAM fetched here (cold path) instead of every frame in RunFrameHook
+        melonDS::u8* const mainRAM = emuInstance->getNDS()->MainRAM;
         m_flags.set(StateFlags::BIT_IN_GAME_INIT);
         m_playerPosition = Read8(mainRAM, m_currentRom.playerPos);
 

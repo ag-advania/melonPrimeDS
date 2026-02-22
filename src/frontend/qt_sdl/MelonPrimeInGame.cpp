@@ -10,13 +10,19 @@
 namespace MelonPrime {
 
     // =========================================================================
-    // HandleInGameLogic — per-frame in-game update
+    // HandleInGameLogic â€” per-frame in-game update
     // Optimized with Hot/Cold splitting to minimize instruction cache pressure.
     // =========================================================================
     HOT_FUNCTION void MelonPrimeCore::HandleInGameLogic()
     {
         PREFETCH_READ(m_ptrs.isAltForm);
-        // OPT-J: Cache NDS pointer — avoids repeated emuInstance->getNDS() pointer chase.
+        // OPT-Z5: Early prefetch of aim pointers — gives ~50-100 instructions of
+        //   lead time before ProcessAimInputMouse reads them, hiding potential L2 miss.
+        if (LIKELY(!isStylusMode)) {
+            PREFETCH_WRITE(m_ptrs.aimX);
+            PREFETCH_WRITE(m_ptrs.aimY);
+        }
+        // OPT-J: Cache NDS pointer â€” avoids repeated emuInstance->getNDS() pointer chase.
         auto* const nds = emuInstance->getNDS();
 
         // --- Rare Actions (Morph, Weapon Switch) ---
@@ -61,33 +67,8 @@ namespace MelonPrime {
         }
 
         // --- Movement & Buttons (Hot Path) ---
-        ProcessMoveInputFast();
-
-        // OPT: Branchless batched button mask update.
-        //
-        // Previous code: 3 conditional ternaries -> 3 separate RMW on m_inputMaskFast.
-        //   mask |= (!IsDown(IB_JUMP))  ? (1u << INPUT_B) : 0;
-        //   mask |= (!IsDown(IB_SHOOT)) ? (1u << INPUT_L) : 0;
-        //   mask |= (!IsDown(IB_ZOOM))  ? (1u << INPUT_R) : 0;
-        //
-        // Each ternary generates a test+cmov or test+branch. Even with good prediction,
-        // the 3 sequential RMW ops create a dependency chain on m_inputMaskFast.
-        //
-        // New code: extract inverted bits from m_input.down (already in L1),
-        // shift each to its target position, OR together in one write.
-        // Generates: NOT + 3x(SHR+AND+SHL) + 3xOR + 1 masked store.
-        // Zero branches, single write to m_inputMaskFast, no dependency chain.
-        {
-            constexpr uint16_t kModBits = (1u << INPUT_B) | (1u << INPUT_L) | (1u << INPUT_R);
-            const uint64_t nd = ~m_input.down;
-            // IB_JUMP  = bit 0 -> INPUT_B = bit 1
-            // IB_SHOOT = bit 1 -> INPUT_L = bit 9
-            // IB_ZOOM  = bit 2 -> INPUT_R = bit 8
-            const uint16_t bBit = static_cast<uint16_t>(((nd >> 0) & 1u) << INPUT_B);
-            const uint16_t lBit = static_cast<uint16_t>(((nd >> 1) & 1u) << INPUT_L);
-            const uint16_t rBit = static_cast<uint16_t>(((nd >> 2) & 1u) << INPUT_R);
-            m_inputMaskFast = (m_inputMaskFast & ~kModBits) | bBit | lBit | rBit;
-        }
+        // OPT-Z2: Unified move + button in single pass, single store to m_inputMaskFast.
+        ProcessMoveAndButtonsFast();
 
         // --- Morph Boost & Aim (Hot Path) ---
         HandleMorphBallBoost();
@@ -149,7 +130,7 @@ namespace MelonPrime {
     // =========================================================================
     // HandleAdventureMode
     //
-    // OPT-V: Scan visor loop — redundant input calls removed.
+    // OPT-V: Scan visor loop â€” redundant input calls removed.
     //
     //   Each FrameAdvanceOnce() triggers the re-entrant path in RunFrameHook
     //   which performs: Poll() -> UpdateInputState() -> ProcessMoveInputFast()
@@ -244,7 +225,7 @@ namespace MelonPrime {
             }
         }
         else {
-            // OPT-B: Guard redundant store — 99%+ of frames this bit is already 0.
+            // OPT-B: Guard redundant store â€” 99%+ of frames this bit is already 0.
             //   Avoids dirtying the cache line with an identical value.
             if (UNLIKELY(m_aimBlockBits & AIMBLK_MORPHBALL_BOOST)) {
                 SetAimBlockBranchless(AIMBLK_MORPHBALL_BOOST, false);

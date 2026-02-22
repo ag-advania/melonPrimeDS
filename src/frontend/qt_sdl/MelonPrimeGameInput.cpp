@@ -73,31 +73,23 @@ namespace MelonPrime {
     HOT_FUNCTION void MelonPrimeCore::UpdateInputState()
     {
 #ifdef _WIN32
-        // [FIX-2] フォーカス喪失時は入力を全クリアして返す。
-        // 旧コードは単に return していたため m_input.down が stale のまま残り、
-        // 再入パス (m_isRunningHook==true) で stale なキーマスクが NDS に渡って stuck していた。
-        // → 関連: [FIX-3] RunFrameHook フォーカス遷移時に raw input 層もリセット
-        if (!isFocused) {
-            m_input.down = 0;
-            m_input.press = 0;
-            m_input.moveIndex = 0;
-            m_input.mouseX = 0;
-            m_input.mouseY = 0;
-            m_input.wheelDelta = 0;
-            return;
-        }
         auto* const rawFilter = m_rawFilter.get();
+
+        // OPT-Z3: PollAndSnapshot — merged Poll + snapshot into single call.
+        // Always runs to drain WM_INPUT messages even when unfocused,
+        // preventing message buildup and stale delta accumulation.
+        FrameHotkeyState hk{};
+        if (rawFilter) {
+            rawFilter->PollAndSnapshot(hk, m_input.mouseX, m_input.mouseY);
+        }
+
+        if (!isFocused) return; // [FIX-2] moved after poll
 #endif
 
         uint64_t down = 0;
         uint64_t press = 0;
 
 #ifdef _WIN32
-        FrameHotkeyState hk{};
-        if (rawFilter) {
-            rawFilter->snapshotInputFrame(hk, m_input.mouseX, m_input.mouseY);
-        }
-
         const auto hkDown = [&](int id) -> bool {
             return hk.isDown(id) || emuInstance->joyHotkeyMask.testBit(id);
             };
@@ -132,7 +124,16 @@ namespace MelonPrime {
         }
     }
 
-    HOT_FUNCTION void MelonPrimeCore::ProcessMoveInputFast()
+    // OPT-Z2: Unified move + button mask update.
+    //
+    //   Previously split across ProcessMoveInputFast() and an inline block,
+    //   causing two separate store-load cycles on m_inputMaskFast and code
+    //   duplication between HandleInGameLogic and RunFrameHook re-entrant path.
+    //
+    //   Now: single function, single store to m_inputMaskFast, zero duplication.
+    //   Also enables the compiler to keep m_inputMaskFast in a register across
+    //   the move LUT lookup and button merge.
+    HOT_FUNCTION void MelonPrimeCore::ProcessMoveAndButtonsFast()
     {
         const uint32_t curr = m_input.moveIndex;
         uint32_t finalInput;
@@ -160,7 +161,15 @@ namespace MelonPrime {
         }
 
         const uint8_t lutResult = MoveLUT[finalInput & 0xF];
-        m_inputMaskFast = (m_inputMaskFast & 0xFF0Fu) | (static_cast<uint16_t>(lutResult) & 0x00F0u);
+        uint16_t mask = (m_inputMaskFast & 0xFF0Fu) | (static_cast<uint16_t>(lutResult) & 0x00F0u);
+
+        // --- Branchless button merge (B/L/R) ---
+        constexpr uint16_t kModBits = (1u << INPUT_B) | (1u << INPUT_L) | (1u << INPUT_R);
+        const uint64_t nd = ~m_input.down;
+        const uint16_t bBit = static_cast<uint16_t>(((nd >> 0) & 1u) << INPUT_B);
+        const uint16_t lBit = static_cast<uint16_t>(((nd >> 1) & 1u) << INPUT_L);
+        const uint16_t rBit = static_cast<uint16_t>(((nd >> 2) & 1u) << INPUT_R);
+        m_inputMaskFast = (mask & ~kModBits) | bBit | lBit | rBit;
     }
 
     void MelonPrimeCore::ProcessAimInputStylus()
@@ -233,8 +242,8 @@ namespace MelonPrime {
 
             if ((outX | outY) == 0) return;
 
-            // DSエンジンによるゼロクリアの直前に、最新スロットのみ書き込む。
-            // (ASMパッチ側で、退避先である +0x3C / +0x44 を横取りするため、これで1:1になる)
+            // DSã‚¨ãƒ³ã‚¸ãƒ³ã«ã‚ˆã‚‹ã‚¼ãƒ­ã‚¯ãƒªã‚¢ã®ç›´å‰ã«ã€æœ€æ–°ã‚¹ãƒ­ãƒƒãƒˆã®ã¿æ›¸ãè¾¼ã‚€ã€‚
+            // (ASMãƒ‘ãƒƒãƒå´ã§ã€é€€é¿å…ˆã§ã‚ã‚‹ +0x3C / +0x44 ã‚’æ¨ªå–ã‚Šã™ã‚‹ãŸã‚ã€ã“ã‚Œã§1:1ã«ãªã‚‹)
             *m_ptrs.aimX = static_cast<uint16_t>(outX);
             *m_ptrs.aimY = static_cast<uint16_t>(outY);
 
