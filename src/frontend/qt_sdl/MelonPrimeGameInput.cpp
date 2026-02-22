@@ -72,25 +72,24 @@ namespace MelonPrime {
 
     HOT_FUNCTION void MelonPrimeCore::UpdateInputState()
     {
-        // Removed global memset
 #ifdef _WIN32
-        if (!isFocused) return;
-        // OPT-I: setRawInputTarget removed from per-frame path (~8 cyc saved).
-        // OPT-M: Single pointer load — subsequent uses via register.
         auto* const rawFilter = m_rawFilter.get();
+
+        // OPT-Z3: PollAndSnapshot -- merged Poll + snapshot into single call.
+        // Always runs to drain WM_INPUT messages even when unfocused,
+        // preventing message buildup and stale delta accumulation.
+        FrameHotkeyState hk{};
+        if (rawFilter) {
+            rawFilter->PollAndSnapshot(hk, m_input.mouseX, m_input.mouseY);
+        }
+
+        if (!isFocused) return; // [FIX-2] moved after poll
 #endif
 
         uint64_t down = 0;
         uint64_t press = 0;
 
 #ifdef _WIN32
-        FrameHotkeyState hk{};
-        if (rawFilter) {
-            // OPT-S: Fused snapshot — shares one acquire fence for both
-            //   hotkey state and mouse delta (was 2 separate calls + 2 fences).
-            rawFilter->snapshotInputFrame(hk, m_input.mouseX, m_input.mouseY);
-        }
-
         const auto hkDown = [&](int id) -> bool {
             return hk.isDown(id) || emuInstance->joyHotkeyMask.testBit(id);
             };
@@ -119,16 +118,22 @@ namespace MelonPrime {
         m_input.mouseY = currentPos.y() - m_aimData.centerY;
 #endif
 
-        // OPT-A: Pre-fetch wheel delta into FrameInputState.
-        //   Eliminates per-frame emuInstance→getMainWindow()→panel pointer chase
-        //   from ProcessWeaponSwitch's LIKELY (no-op) path.
         {
             auto* panel = emuInstance->getMainWindow()->panel;
             m_input.wheelDelta = panel ? panel->getDelta() : 0;
         }
     }
 
-    HOT_FUNCTION void MelonPrimeCore::ProcessMoveInputFast()
+    // OPT-Z2: Unified move + button mask update.
+    //
+    //   Previously split across ProcessMoveInputFast() and an inline block,
+    //   causing two separate store-load cycles on m_inputMaskFast and code
+    //   duplication between HandleInGameLogic and RunFrameHook re-entrant path.
+    //
+    //   Now: single function, single store to m_inputMaskFast, zero duplication.
+    //   Also enables the compiler to keep m_inputMaskFast in a register across
+    //   the move LUT lookup and button merge.
+    HOT_FUNCTION void MelonPrimeCore::ProcessMoveAndButtonsFast()
     {
         const uint32_t curr = m_input.moveIndex;
         uint32_t finalInput;
@@ -156,7 +161,15 @@ namespace MelonPrime {
         }
 
         const uint8_t lutResult = MoveLUT[finalInput & 0xF];
-        m_inputMaskFast = (m_inputMaskFast & 0xFF0Fu) | (static_cast<uint16_t>(lutResult) & 0x00F0u);
+        uint16_t mask = (m_inputMaskFast & 0xFF0Fu) | (static_cast<uint16_t>(lutResult) & 0x00F0u);
+
+        // --- Branchless button merge (B/L/R) ---
+        constexpr uint16_t kModBits = (1u << INPUT_B) | (1u << INPUT_L) | (1u << INPUT_R);
+        const uint64_t nd = ~m_input.down;
+        const uint16_t bBit = static_cast<uint16_t>(((nd >> 0) & 1u) << INPUT_B);
+        const uint16_t lBit = static_cast<uint16_t>(((nd >> 1) & 1u) << INPUT_L);
+        const uint16_t rBit = static_cast<uint16_t>(((nd >> 2) & 1u) << INPUT_R);
+        m_inputMaskFast = (mask & ~kModBits) | bBit | lBit | rBit;
     }
 
     void MelonPrimeCore::ProcessAimInputStylus()
@@ -170,24 +183,10 @@ namespace MelonPrime {
     }
 
     // =========================================================================
-    // ProcessAimInputMouse — per-frame aim computation (THE hottest inner loop)
-    //
-    // OPT-O: Fixed-point Q14 pipeline.
-    //   Old: CVTSI2SS×2 + MULSS×2 + float AimAdjust + CVTTSS2SI×2 (~29 cyc)
-    //   New: IMUL×2 + integer AimAdjust (CMP) + SAR×2 (~15 cyc)
-    //   Eliminates all int↔float domain crossings (4× CVTSI2SS/CVTTSS2SI).
-    //
-    // OPT-P: Fused scale + AimAdjust.
-    //   Deadzone/snap thresholds precomputed in Q14 space.
-    //   When adjust disabled: thresholds = 0 → comparisons always fail → SAR-only path.
-    //   Hot case (fast aim): |scaled| >> snap threshold → 2 predicted-false branches + SAR.
-    //
-    // OPT-Q: Redundant zero check removed.
-    //   `(deltaX | deltaY) == 0` is subsumed by OPT-F threshold (thresholds ≥ 1).
+    // ProcessAimInputMouse
     // =========================================================================
     HOT_FUNCTION void MelonPrimeCore::ProcessAimInputMouse()
     {
-        // OPT-G: Unified aim-disable check via m_aimBlockBits
         if (m_aimBlockBits) return;
 
         if (UNLIKELY(m_isLayoutChangePending)) {
@@ -202,61 +201,49 @@ namespace MelonPrime {
             const int32_t deltaX = m_input.mouseX;
             const int32_t deltaY = m_input.mouseY;
 
-            // OPT-F: Integer threshold skip — both axes below deadzone → output is 0.
-            //   Thresholds ≥ 1, so (deltaX|deltaY)==0 is a strict subset (OPT-Q).
             {
-                const auto adx = static_cast<uint32_t>(deltaX >= 0 ? deltaX : -deltaX);
-                const auto ady = static_cast<uint32_t>(deltaY >= 0 ? deltaY : -deltaY);
+                const int32_t signX = deltaX >> 31;
+                const int32_t signY = deltaY >> 31;
+                const uint32_t adx = static_cast<uint32_t>((deltaX ^ signX) - signX);
+                const uint32_t ady = static_cast<uint32_t>((deltaY ^ signY) - signY);
+
                 if (adx < static_cast<uint32_t>(m_aimMinDeltaX) &&
                     ady < static_cast<uint32_t>(m_aimMinDeltaY))
                     return;
             }
 
-            // OPT-H: Prefetch aim write targets (aimX/Y are 8 bytes apart → same CL).
             PREFETCH_WRITE(m_ptrs.aimX);
+            PREFETCH_WRITE(m_ptrs.aimY);
 
-            // OPT-O: Fixed-point multiply — Q14 intermediate.
-            //   int64 multiply avoids overflow at any realistic sensitivity × delta.
-            //   IMUL r64 on x86-64 has same latency (~3 cyc) as IMUL r32.
             const int64_t rawX = static_cast<int64_t>(deltaX) * m_aimFixedScaleX;
             const int64_t rawY = static_cast<int64_t>(deltaY) * m_aimFixedScaleY;
 
-            // OPT-P: Fused AimAdjust — integer comparisons in Q14 space.
-            //
-            // Per-axis three-way check:
-            //   |scaled| < adjThresh   → 0       (deadzone)
-            //   |scaled| < snapThresh  → ±1      (snap to minimum movement)
-            //   otherwise              → SAR 14   (normal scale-down)
-            //
-            // When adjust disabled: adjThresh=0, snapThresh=0.
-            //   Both `< 0` checks are always false → straight to SAR.
-            //   This matches the original UNLIKELY(a ≤ 0) early-return behavior
-            //   WITHOUT an extra branch — the comparisons simply fall through.
-            //
-            // Hot case (fast aim, |scaled| >> ONE):
-            //   Two false-predicted branches per axis + SAR. ~4 cyc/axis.
-            //   Same branch pattern as the original float ternaries, but without
-            //   CVTSI2SS/MULSS/CVTTSS2SI overhead.
             const int64_t adjT = m_aimFixedAdjust;
             const int64_t snapT = m_aimFixedSnapThresh;
 
-            int16_t outX, outY;
+            auto apply_aim = [adjT, snapT](int64_t raw) -> int16_t {
+                const int64_t sign = raw >> 63;
+                const int64_t absRaw = (raw ^ sign) - sign;
 
-            {
-                const int64_t ax = rawX >= 0 ? rawX : -rawX;
-                if (ax < adjT)       outX = 0;
-                else if (ax < snapT) outX = static_cast<int16_t>(rawX >= 0 ? 1 : -1);
-                else                 outX = static_cast<int16_t>(rawX >> AIM_FRAC_BITS);
-            }
-            {
-                const int64_t ay = rawY >= 0 ? rawY : -rawY;
-                if (ay < adjT)       outY = 0;
-                else if (ay < snapT) outY = static_cast<int16_t>(rawY >= 0 ? 1 : -1);
-                else                 outY = static_cast<int16_t>(rawY >> AIM_FRAC_BITS);
-            }
+                const int64_t isDeadzone = (absRaw - adjT) >> 63;
+                const int64_t isSnap = (absRaw - snapT) >> 63;
+
+                const int64_t snapVal = (1LL ^ sign) - sign;
+                const int64_t normVal = raw >> AIM_FRAC_BITS;
+
+                return static_cast<int16_t>(
+                    (~isDeadzone & isSnap & snapVal) |
+                    (~isSnap & normVal)
+                    );
+                };
+
+            const int16_t outX = apply_aim(rawX);
+            const int16_t outY = apply_aim(rawY);
 
             if ((outX | outY) == 0) return;
 
+            // Write only the latest slot, just before the DS engine's zero-clear.
+            // (The ASM patch side reads from +0x3C / +0x44 bypass, so this is 1:1)
             *m_ptrs.aimX = static_cast<uint16_t>(outX);
             *m_ptrs.aimY = static_cast<uint16_t>(outY);
 

@@ -8,55 +8,23 @@
 #include <array>
 #include <cstdint>
 #include <mutex>
+#include "MelonPrimeCompilerHints.h"   // Shared macros (was duplicated inline)
 #include "MelonPrimeRawWinInternal.h"
-
-#ifndef FORCE_INLINE
-#  if defined(_MSC_VER)
-#    define FORCE_INLINE __forceinline
-#  elif defined(__GNUC__) || defined(__clang__)
-#    define FORCE_INLINE __attribute__((always_inline)) inline
-#  else
-#    define FORCE_INLINE inline
-#  endif
-#endif
-
-#ifndef UNLIKELY
-#  if defined(__GNUC__) || defined(__clang__)
-#    define UNLIKELY(x) __builtin_expect(!!(x), 0)
-#    define LIKELY(x)   __builtin_expect(!!(x), 1)
-#  else
-#    define UNLIKELY(x) (x)
-#    define LIKELY(x)   (x)
-#  endif
-#endif
 
 namespace MelonPrime {
 
     struct FrameHotkeyState {
-        uint64_t down[2]{};
-        uint64_t pressed[2]{};
+        uint64_t down{};
+        uint64_t pressed{};
 
         [[nodiscard]] FORCE_INLINE bool isDown(int id) const noexcept {
-            return (down[id >> 6] >> (id & 63)) & 1;
+            return (down >> id) & 1;
         }
         [[nodiscard]] FORCE_INLINE bool isPressed(int id) const noexcept {
-            return (pressed[id >> 6] >> (id & 63)) & 1;
+            return (pressed >> id) & 1;
         }
     };
 
-    // =========================================================================
-    // InputState â€” Lock-free input accumulator
-    //
-    // Threading contract (enables single-writer optimizations):
-    //   Joy2Key ON:  Qt main thread is sole writer (nativeEventFilter)
-    //   Joy2Key OFF: Emu thread is sole writer (Poll â†’ processRawInputBatched)
-    //   Reader:      Emu thread (pollHotkeys, fetchMouseDelta)
-    //
-    // Since exactly one thread writes at any time, all atomic writes use
-    // relaxed-load + release-store instead of locked RMW (fetch_or, fetch_and,
-    // compare_exchange). This eliminates LOCK-prefixed instructions on x86
-    // (~20-40 cyc â†’ ~1-5 cyc per operation).
-    // =========================================================================
     class InputState {
     public:
         InputState() noexcept;
@@ -67,9 +35,7 @@ namespace MelonPrime {
 
         static void InitializeTables() noexcept;
 
-        // Joy2Key ON: process single WM_INPUT message (Qt main thread)
         void processRawInput(HRAWINPUT hRaw) noexcept;
-        // Joy2Key OFF: batch process via GetRawInputBuffer (emu thread)
         void processRawInputBatched() noexcept;
 
         void fetchMouseDelta(int& outX, int& outY) noexcept;
@@ -78,22 +44,63 @@ namespace MelonPrime {
         void resetAllKeys() noexcept;
         void resetMouseButtons() noexcept;
 
-        static constexpr size_t kMaxHotkeyId = 128;
-        void setHotkeyVks(int id, const std::vector<UINT>& vks);
+        static constexpr size_t kMaxHotkeyId = 64;
+
+        // Primary interface: pointer + count (zero-allocation path)
+        void setHotkeyVks(int id, const UINT* vks, size_t count);
+
+        // Compatibility overload: delegates to pointer + count
+        void setHotkeyVks(int id, const std::vector<UINT>& vks) {
+            setHotkeyVks(id, vks.data(), vks.size());
+        }
 
         void pollHotkeys(FrameHotkeyState& out) noexcept;
-        // OPT-S: Fused hotkey poll + mouse delta fetch — shares a single
-        //   acquire fence instead of pollHotkeys' fence + fetchMouseDelta's
-        //   2 acquire loads. Eliminates 1 redundant barrier + 1 call overhead.
-        void snapshotInputFrame(FrameHotkeyState& outHk, int& outMouseX, int& outMouseY) noexcept;
+        void snapshotInputFrame(FrameHotkeyState& outHk,
+            int& outMouseX, int& outMouseY) noexcept;
         [[nodiscard]] bool hotkeyDown(int id) const noexcept;
         void resetHotkeyEdges() noexcept;
 
     private:
         // =================================================================
+        // VK Snapshot -- captured once, reused by hotkey scan + mouse delta.
+        // Eliminates 4x duplication of the load-4-atomics-then-fence pattern.
+        // =================================================================
+        struct VkSnapshot {
+            uint64_t vk[4];
+            uint8_t  mouse;
+        };
+
+        /// Take a consistent snapshot of all VK + mouse button state (acquire fence).
+        [[nodiscard]] FORCE_INLINE VkSnapshot takeSnapshot() const noexcept {
+            VkSnapshot snap;
+            for (int i = 0; i < 4; ++i)
+                snap.vk[i] = m_vkDown[i].load(std::memory_order_relaxed);
+            snap.mouse = m_mouseButtons.load(std::memory_order_relaxed);
+            std::atomic_thread_fence(std::memory_order_acquire);
+            return snap;
+        }
+
+        /// Scan all bound hotkeys against a VkSnapshot and return the combined bitmask.
+        /// Extracted from pollHotkeys / snapshotInputFrame / resetHotkeyEdges / hotkeyDown.
+        [[nodiscard]] FORCE_INLINE uint64_t scanBoundHotkeys(const VkSnapshot& snap) const noexcept {
+            uint64_t bound = m_boundHotkeys;
+            uint64_t result = 0;
+            while (bound) {
+#if defined(_MSC_VER) && !defined(__clang__)
+                unsigned long bitPos;
+                _BitScanForward64(&bitPos, bound);
+#else
+                const int bitPos = __builtin_ctzll(bound);
+#endif
+                if (testHotkeyMask(bitPos, snap.vk, snap.mouse))
+                    result |= 1ULL << bitPos;
+                bound &= bound - 1;
+            }
+            return result;
+        }
+
+        // =================================================================
         // Cache Line 0: Write-Heavy (Input Thread)
-        //   Atomics written by the input producer at high frequency.
-        //   Mouse coordinates use monotonic 64-bit counters to avoid CAS.
         // =================================================================
         alignas(64) std::atomic<uint64_t> m_vkDown[4];
 
@@ -103,32 +110,35 @@ namespace MelonPrime {
 
         // =================================================================
         // Cache Line 1+: Read-Mostly / Consumer State
-        //   Hotkey masks and state managed by the main thread.
-        //   Separated from write-heavy line to avoid false sharing.
         // =================================================================
-        struct alignas(64) HotkeyMask {
-            uint64_t vkMask[4];
-            uint8_t  mouseMask;
-            bool     hasMask;
-            uint8_t  _pad[6];
-        };
-        std::array<HotkeyMask, kMaxHotkeyId> m_hkMask;
+        // -----------------------------------------------------------------
+        // R2: Removed hasMask[64] array.
+        //
+        // hasMask was only checked in hotkeyDown(), and is logically
+        // equivalent to (m_boundHotkeys & (1ULL << id)) != 0.
+        // Saves 64 bytes and one indirection per hotkeyDown() call.
+        // -----------------------------------------------------------------
+        struct HotkeyMasks {
+            alignas(32) uint64_t vkMask[kMaxHotkeyId][4];
+            uint8_t  mouseMask[kMaxHotkeyId];
+        } m_hkMasks;
 
-        uint64_t m_hkPrev[2];
-        uint64_t m_boundHotkeys[2]{ 0, 0 };
+        uint64_t m_hkPrev{};
+        uint64_t m_boundHotkeys{};
 
-        // Consumer thread's last-read position cache
         int64_t m_lastReadMouseX{ 0 };
         int64_t m_lastReadMouseY{ 0 };
 
         // =================================================================
-        // Static Tables (shared across all instances)
+        // Static Tables
         // =================================================================
         struct BtnLutEntry { uint8_t downBits; uint8_t upBits; };
         static std::array<BtnLutEntry, 1024> s_btnLut;
 
         struct VkRemapEntry { uint8_t normal; uint8_t extended; };
         static std::array<VkRemapEntry, 256> s_vkRemap;
+
+        static std::array<uint16_t, 512> s_makeCodeLut;
 
         static uint16_t s_scancodeLShift;
         static uint16_t s_scancodeRShift;
@@ -138,18 +148,14 @@ namespace MelonPrime {
         // =================================================================
         // Inline Helpers
         // =================================================================
-
-        // Single-writer VK bit set: relaxed load + release store.
-        // Eliminates LOCK OR / LOCK AND (fetch_or / fetch_and).
-        // SAFETY: Exactly one thread calls this at any time.
         FORCE_INLINE void setVkBit(uint32_t vk, bool down) noexcept {
             if (UNLIKELY(vk >= 256)) return;
             const uint32_t widx = vk >> 6;
-            const uint64_t bit  = 1ULL << (vk & 63);
-            const uint64_t cur  = m_vkDown[widx].load(std::memory_order_relaxed);
+            const uint64_t bit = 1ULL << (vk & 63);
+            const uint64_t cur = m_vkDown[widx].load(std::memory_order_relaxed);
             m_vkDown[widx].store(
                 down ? (cur | bit) : (cur & ~bit),
-                std::memory_order_release);
+                std::memory_order_relaxed);
         }
 
         FORCE_INLINE uint32_t remapVk(uint32_t vk, USHORT makeCode, USHORT flags) const noexcept {
@@ -164,13 +170,12 @@ namespace MelonPrime {
         }
 
         FORCE_INLINE bool testHotkeyMask(
-            const HotkeyMask& mask, const uint64_t snapVk[4], uint8_t snapMouse) const noexcept
+            int id, const uint64_t snapVk[4], uint8_t snapMouse) const noexcept
         {
-            // OR mouse and all 4 VK words together â€” single branch
             const uint64_t keyHit =
-                (mask.vkMask[0] & snapVk[0]) | (mask.vkMask[1] & snapVk[1]) |
-                (mask.vkMask[2] & snapVk[2]) | (mask.vkMask[3] & snapVk[3]);
-            return ((mask.mouseMask & snapMouse) | keyHit) != 0;
+                (m_hkMasks.vkMask[id][0] & snapVk[0]) | (m_hkMasks.vkMask[id][1] & snapVk[1]) |
+                (m_hkMasks.vkMask[id][2] & snapVk[2]) | (m_hkMasks.vkMask[id][3] & snapVk[3]);
+            return ((m_hkMasks.mouseMask[id] & snapMouse) | keyHit) != 0;
         }
     };
 
