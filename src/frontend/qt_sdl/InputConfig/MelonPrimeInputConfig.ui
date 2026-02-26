@@ -537,7 +537,7 @@
 										<item row="2" column="0">
 											<widget class="QCheckBox" name="cbMetroidDisableMphAimSmoothing">
 												<property name="text">
-													<string>Disable MPH Aim Smoothing (Disable the in-game aim smoothing. Sensitivity will be reduced to 25%.)</string>
+													<string>Disable MPH Aim Smoothing (Disable the in-game aim smoothing)</string>
 												</property>
 											</widget>
 										</item>

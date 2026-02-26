@@ -1,4 +1,4 @@
-#include "MelonPrimeInternal.h"
+﻿#include "MelonPrimeInternal.h"
 #include "EmuInstance.h"
 #include "NDS.h"
 #include "main.h"
@@ -244,8 +244,14 @@ namespace MelonPrime {
 
             // Write only the latest slot, just before the DS engine's zero-clear.
             // (The ASM patch side reads from +0x3C / +0x44 bypass, so this is 1:1)
-            *m_ptrs.aimX = static_cast<uint16_t>(outX);
-            *m_ptrs.aimY = static_cast<uint16_t>(outY);
+            // --- 感度統一 & デッドゾーン突破 (Pre-amplification) ---
+            // ASMパッチでDS側の加算処理（4倍増幅）をスキップしている場合、
+            // C++側で予め値を4倍（<< 2）にして渡すことで感度を一致させつつ、
+            // DS内部のデッドゾーン(±3)を確定で突破する。
+            const uint32_t ampShift = m_disableMphAimSmoothing ? 2 : 0;
+
+            *m_ptrs.aimX = static_cast<uint16_t>(outX << ampShift);
+            *m_ptrs.aimY = static_cast<uint16_t>(outY << ampShift);
 
 #if !defined(_WIN32)
             QCursor::setPos(m_aimData.centerX, m_aimData.centerY);
