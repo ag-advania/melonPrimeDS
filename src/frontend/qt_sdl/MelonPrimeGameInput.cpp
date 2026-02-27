@@ -1,4 +1,4 @@
-﻿#include "MelonPrimeInternal.h"
+#include "MelonPrimeInternal.h"
 #include "EmuInstance.h"
 #include "NDS.h"
 #include "main.h"
@@ -91,17 +91,17 @@ namespace MelonPrime {
 
 #ifdef _WIN32
         const auto hkDown = [&](int id) -> bool {
-            return hk.isDown(id) || emuInstance->joyHotkeyMask.testBit(id);
+            return hk.isDown(id) || ((emuInstance->joyHotkeyMask >> id) & 1);
             };
         const auto hkPressed = [&](int id) -> bool {
-            return hk.isPressed(id) || emuInstance->joyHotkeyPress.testBit(id);
+            return hk.isPressed(id) || ((emuInstance->joyHotkeyPress >> id) & 1);
             };
 #else
         const auto hkDown = [&](int id) -> bool {
-            return emuInstance->hotkeyMask.testBit(id);
+            return (emuInstance->hotkeyMask >> id) & 1;
             };
         const auto hkPressed = [&](int id) -> bool {
-            return emuInstance->hotkeyPress.testBit(id);
+            return (emuInstance->hotkeyPress >> id) & 1;
             };
 #endif
 

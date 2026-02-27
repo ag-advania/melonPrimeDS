@@ -29,7 +29,7 @@
 #include "Config.h"
 #include "SaveManager.h"
 #ifdef MELONPRIME_DS
-#include <QBitArray>
+#include <cstdint>
 namespace MelonPrime { class MelonPrimeCore; }
 #endif // MELONPRIME_DS
 
@@ -308,9 +308,9 @@ private:
     void inputProcess();
 
 #ifdef MELONPRIME_DS
-    bool hotkeyDown(int id) { return hotkeyMask.at(id); }
-    bool hotkeyPressed(int id) { return hotkeyPress.at(id); }
-    bool hotkeyReleased(int id) { return hotkeyRelease.at(id); }
+    bool hotkeyDown(int id) { return (hotkeyMask >> id) & 1; }
+    bool hotkeyPressed(int id) { return (hotkeyPress >> id) & 1; }
+    bool hotkeyReleased(int id) { return (hotkeyRelease >> id) & 1; }
 #else
     bool hotkeyDown(int id) { return hotkeyMask & (1 << id); }
     bool hotkeyPressed(int id) { return hotkeyPress & (1 << id); }
@@ -429,14 +429,20 @@ private:
     std::shared_ptr<SDL_mutex> joyMutex;
 
 #ifdef MELONPRIME_DS
-    QBitArray keyInputMask, joyInputMask;
-    QBitArray keyHotkeyMask, joyHotkeyMask;
-    QBitArray hotkeyMask, lastHotkeyMask;
-    QBitArray hotkeyPress, hotkeyRelease;
-    QBitArray joyHotkeyPress;
-    QBitArray joyHotkeyRelease;
-    QBitArray lastJoyHotkeyMask;
-    QBitArray inputMask;
+    // OPT: QBitArray -> native integers.
+    // QBitArray involves heap allocation, reference counting, byte-level iteration,
+    // and bounds checking per operation. With only 12 input bits and ~53 hotkey bits,
+    // uint16_t / uint64_t provide single-instruction bitwise ops with zero overhead.
+    // Estimated saving: ~1400-2400 cyc/frame in inputProcess() alone.
+    uint16_t keyInputMask, joyInputMask;
+    uint16_t inputMask;
+
+    uint64_t keyHotkeyMask, joyHotkeyMask;
+    uint64_t hotkeyMask, lastHotkeyMask;
+    uint64_t hotkeyPress, hotkeyRelease;
+    uint64_t joyHotkeyPress;
+    uint64_t joyHotkeyRelease;
+    uint64_t lastJoyHotkeyMask;
 #else
     melonDS::u32 keyInputMask, joyInputMask;
     melonDS::u32 keyHotkeyMask, joyHotkeyMask;
