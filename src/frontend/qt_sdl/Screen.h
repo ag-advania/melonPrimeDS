@@ -157,6 +157,11 @@ protected:
     unsigned int osdID;
     std::deque<OSDItem> osdItems;
 
+#ifdef MELONPRIME_DS
+    // OPT-OSD1: Skip osdUpdate mutex + syscall when no OSD items and splash rendered.
+    bool m_splashRendered = false;
+#endif
+
     QPixmap splashLogo;
     OSDItem splashText[3];
     QPoint splashPos[4];
@@ -271,6 +276,12 @@ private:
     WindowInfo windowInfo;
 
     int lastScreenWidth = -1, lastScreenHeight = -1;
+
+#ifdef MELONPRIME_DS
+    // OPT-GL1: Cache GL texture filter to skip redundant glTexParameteri calls.
+    // Safe: texture parameters are per-texture, not global GL state.
+    GLint lastFilter = -1;
+#endif
 
     GLuint osdShader;
     GLint osdScreenSizeULoc, osdPosULoc, osdSizeULoc;

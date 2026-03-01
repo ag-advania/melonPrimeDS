@@ -789,6 +789,13 @@ void ScreenPanel::osdAddMessage(unsigned int color, const char* text)
 
 void ScreenPanel::osdUpdate()
 {
+#ifdef MELONPRIME_DS
+    // OPT-OSD1: During normal gameplay, 99%+ of frames have zero OSD items and
+    // splash texts are already rendered. Skip the mutex lock + syscall
+    // (QDateTime::currentMSecsSinceEpoch) entirely in this case.
+    if (m_splashRendered && osdItems.empty()) return;
+#endif
+
     osdMutex.lock();
 
     qint64 tick_now = QDateTime::currentMSecsSinceEpoch();
@@ -828,6 +835,12 @@ void ScreenPanel::osdUpdate()
             needrecalc = true;
         }
     }
+
+#ifdef MELONPRIME_DS
+    // OPT-OSD1: Once all 3 splash texts are rendered, enable early-exit fast path.
+    if (!m_splashRendered && !needrecalc)
+        m_splashRendered = true;
+#endif
 
     osdMutex.unlock();
 
@@ -1282,8 +1295,19 @@ void ScreenPanelGL::drawScreen()
         screenSettingsLock.lock();
 
         GLint filter = this->filter ? GL_LINEAR : GL_NEAREST;
-        glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MIN_FILTER, filter);
-        glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MAG_FILTER, filter);
+#ifdef MELONPRIME_DS
+        // OPT-GL1: glTexParameteri internally validates texture state even for no-ops
+        // (~100-200 cyc per call on NVIDIA/AMD). Filter only changes when user
+        // toggles it in settings, so cache and skip redundant calls.
+        // Safe: texture parameters are per-texture object, not affected by 3D renderer.
+        if (filter != lastFilter) {
+            lastFilter = filter;
+#endif
+            glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MIN_FILTER, filter);
+            glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MAG_FILTER, filter);
+#ifdef MELONPRIME_DS
+        }
+#endif
 
         glBindBuffer(GL_ARRAY_BUFFER, screenVertexBuffer);
         glBindVertexArray(screenVertexArray);
@@ -1344,7 +1368,15 @@ void ScreenPanelGL::drawScreen()
         osdMutex.unlock();
     }
 
+#ifdef MELONPRIME_DS
+    // OPT-OSD2: Skip entire GL state setup + mutex when no OSD items to draw.
+    // During normal gameplay 99%+ of frames have zero items, avoiding:
+    //   osdMutex lock/unlock + glUseProgram + 3x glUniform + 2x glBind
+    //   + glEnable/Disable BLEND = ~500-900 cyc waste
+    if (osdEnabled && !osdItems.empty())
+#else
     if (osdEnabled)
+#endif
     {
         osdMutex.lock();
 
