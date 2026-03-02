@@ -118,10 +118,8 @@ namespace MelonPrime {
         m_input.mouseY = currentPos.y() - m_aimData.centerY;
 #endif
 
-        {
-            auto* panel = emuInstance->getMainWindow()->panel;
-            m_input.wheelDelta = panel ? panel->getDelta() : 0;
-        }
+        // P-3: Use cached panel pointer (was: emuInstance->getMainWindow()->panel)
+        m_input.wheelDelta = m_cachedPanel ? m_cachedPanel->getDelta() : 0;
     }
 
     // OPT-Z2: Unified move + button mask update.

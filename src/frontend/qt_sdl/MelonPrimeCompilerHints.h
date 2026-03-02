@@ -40,6 +40,8 @@
 #ifndef COLD_FUNCTION
 #  if defined(__GNUC__) || defined(__clang__)
 #    define COLD_FUNCTION __attribute__((cold))
+#  elif defined(_MSC_VER)
+#    define COLD_FUNCTION __declspec(noinline)  // P-5: prevent cold code inlining on MSVC
 #  else
 #    define COLD_FUNCTION
 #  endif

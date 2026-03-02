@@ -52,6 +52,33 @@
 #include "MelonPrime.h"
 #endif // MELONPRIME_DS
 
+// =========================================================================
+// P-11: Windows Timer Resolution (MelonPrime latency optimization)
+//
+// Windows default timer resolution is 15.625ms (64Hz). SDL_Delay(1)
+// can sleep up to 15.6ms without timeBeginPeriod(1). This is the
+// single largest source of frame timing jitter.
+//
+// Dynamic load avoids requiring winmm.lib in the link step.
+// =========================================================================
+#if defined(_WIN32) && defined(MELONPRIME_DS)
+namespace {
+    void SetHighTimerResolution() {
+        // timeBeginPeriod(1) sets minimum Sleep/SDL_Delay granularity to ~1ms.
+        // This is standard practice for low-latency applications.
+        // Dynamic load avoids requiring winmm.lib or mmsystem.h.
+        HMODULE hWinmm = LoadLibraryW(L"winmm.dll");
+        if (hWinmm) {
+            using TimeBeginPeriod_t = UINT(WINAPI*)(UINT);
+            auto fn = reinterpret_cast<TimeBeginPeriod_t>(
+                GetProcAddress(hWinmm, "timeBeginPeriod"));
+            if (fn) fn(1);
+            // Keep loaded — resolution stays active for process lifetime
+        }
+    }
+}
+#endif
+
 using namespace melonDS;
 
 EmuThread::EmuThread(EmuInstance* inst, QObject* parent) : QThread(parent)
@@ -115,6 +142,9 @@ void EmuThread::run()
 
 #ifdef MELONPRIME_DS
     melonPrime->Initialize();
+    // P-11: Set 1ms timer resolution for precision frame pacing.
+    // Must be called before frame loop. Without this, SDL_Delay(1) ≈ 15.6ms.
+    SetHighTimerResolution();
 #endif // MELONPRIME_DS
 
     mainScreenPos[0] = 0;
@@ -152,8 +182,79 @@ void EmuThread::run()
     emuInstance->fastForwardToggled = false;
     emuInstance->slowmoToggled = false;
 
+#ifdef MELONPRIME_DS
+    // P-13: Late-poll state.
+    // storedFrametimeStep carries the previous frame's timing for the
+    // early limiter. This enables sleeping BEFORE input polling so raw
+    // input is sampled as close to RunFrame as possible.
+    double storedFrametimeStep = 1.0 / 60.0;
+    bool isFirstLimiterFrame = true;
+#endif
+
     // --- Frame Advance (lambda so MelonPrime can call it externally) ---
     auto frameAdvanceOnce = [&]() {
+
+#ifdef MELONPRIME_DS
+        // =================================================================
+        // P-13: Late-Poll Frame Limiter — sleep BEFORE input, not after.
+        //
+        // Original order: Poll → RunFrame → Render → Sleep
+        // New order:      Sleep → Poll → RunFrame → Render
+        //
+        // Why: raw input (mouse/kb) is polled in RunFrameHook, which now
+        // runs immediately after the sleep. This means input is the freshest
+        // possible before RunFrame consumes it. With the old order, input
+        // polled before sleep would sit for 0-11ms during the sleep.
+        //
+        // With VSync OFF: Render happens near the end of the frame period,
+        // aligning with the next display refresh — reducing display latency
+        // by up to 11ms compared to rendering early and waiting.
+        //
+        // P-12: Precision Hybrid Sleep+Spin Limiter
+        // SDL_Delay has ±1-15ms jitter (depending on timer resolution).
+        // Hybrid: SDL_Delay for bulk wait, then QPC spin for sub-ms precision.
+        // Combined with P-11 (timeBeginPeriod(1)): jitter drops from
+        // ±15ms to ±0.05ms.
+        // =================================================================
+        if (emuInstance->doLimitFPS && !isFirstLimiterFrame)
+        {
+            double curtime = SDL_GetPerformanceCounter() * perfCountsSec;
+            double elapsed = curtime - lastTime;
+
+            frameLimitError += storedFrametimeStep - elapsed;
+            if (frameLimitError < -storedFrametimeStep)
+                frameLimitError = -storedFrametimeStep;
+            if (frameLimitError > storedFrametimeStep)
+                frameLimitError = storedFrametimeStep;
+
+            if (frameLimitError > 0.0001)   // > 0.1ms
+            {
+                double targetTime = curtime + frameLimitError;
+
+                // Coarse sleep: SDL_Delay with 1.5ms safety margin for spin
+                double coarseMs = frameLimitError * 1000.0 - 1.5;
+                if (coarseMs > 0.5)
+                    SDL_Delay(static_cast<Uint32>(coarseMs));
+
+                // Precision spin-wait for final sub-millisecond alignment
+                while (SDL_GetPerformanceCounter() * perfCountsSec < targetTime) {
+#ifdef _WIN32
+                    YieldProcessor();
+#endif
+                }
+
+                curtime = SDL_GetPerformanceCounter() * perfCountsSec;
+                frameLimitError = targetTime - curtime;  // residual overshoot
+            }
+
+            lastTime = curtime;
+        }
+        else
+        {
+            lastTime = SDL_GetPerformanceCounter() * perfCountsSec;
+            isFirstLimiterFrame = false;
+        }
+#endif // MELONPRIME_DS
 
         if (useOpenGL)
             emuInstance->makeCurrentGL();
@@ -285,6 +386,11 @@ void EmuThread::run()
 
         if (frametimeStep < 0.001) frametimeStep = 0.001;
 
+#ifdef MELONPRIME_DS
+        // P-13: Store frametimeStep for next frame's early limiter.
+        // The limiter at the top of this lambda uses this value.
+        storedFrametimeStep = frametimeStep;
+#else
         if (emuInstance->doLimitFPS)
         {
             double curtime = SDL_GetPerformanceCounter() * perfCountsSec;
@@ -305,6 +411,7 @@ void EmuThread::run()
 
             lastTime = curtime;
         }
+#endif // MELONPRIME_DS
 
         nframes++;
         if (nframes >= 30)
