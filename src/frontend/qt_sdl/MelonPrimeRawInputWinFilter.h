@@ -46,6 +46,7 @@ namespace MelonPrime {
         void snapshotInputFrame(FrameHotkeyState& outHk, int& outMouseX, int& outMouseY);
         void resetAllKeys();
         void resetMouseButtons();
+        void resetAll();  // P-9: combined reset (single fence)
         void resetHotkeyEdges();
         void fetchMouseDelta(int& outX, int& outY);
 

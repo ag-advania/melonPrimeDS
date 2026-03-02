@@ -183,11 +183,23 @@ namespace MelonPrime {
         ReloadConfigFlags();
         ApplyJoy2KeySupportAndQtFilter(m_flags.test(StateFlags::BIT_JOY2KEY));
         InputReset();
+
+        // P-3: Cache panel pointer (avoids 3-level pointer chase every frame)
+        if (auto* mw = emuInstance->getMainWindow())
+            m_cachedPanel = mw->panel;
     }
 
     void MelonPrimeCore::OnEmuStop()
     {
         m_flags.clear(StateFlags::BIT_IN_GAME);
+    }
+
+    // P-3: Moved from header -- requires complete EmuInstance type
+    void MelonPrimeCore::NotifyLayoutChange()
+    {
+        m_isLayoutChangePending = true;
+        if (auto* mw = emuInstance->getMainWindow())
+            m_cachedPanel = mw->panel;
     }
 
     void MelonPrimeCore::OnEmuPause() {}
@@ -333,9 +345,10 @@ namespace MelonPrime {
                     m_input.press = 0;
                     m_input.moveIndex = 0;
 #ifdef _WIN32
+                    // P-9: Single call replaces resetAllKeys + resetMouseButtons
+                    // (one fence instead of two)
                     if (m_rawFilter) {
-                        m_rawFilter->resetAllKeys();
-                        m_rawFilter->resetMouseButtons();
+                        m_rawFilter->resetAll();
                     }
 #endif
                 }

@@ -44,6 +44,9 @@ namespace MelonPrime {
         void resetAllKeys() noexcept;
         void resetMouseButtons() noexcept;
 
+        // P-9: Combined reset (single fence instead of two separate calls)
+        void resetAll() noexcept;
+
         static constexpr size_t kMaxHotkeyId = 64;
 
         // Primary interface: pointer + count (zero-allocation path)

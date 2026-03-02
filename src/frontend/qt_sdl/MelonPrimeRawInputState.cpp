@@ -170,7 +170,8 @@ namespace MelonPrime {
 
             const RAWINPUT* raw = reinterpret_cast<const RAWINPUT*>(buffer);
             for (UINT i = 0; i < count; ++i) {
-                if (raw->header.dwType == RIM_TYPEMOUSE) {
+                // P-6: LIKELY -- 8000Hz mouse generates ~133 events/frame vs 0-2 keyboard
+                if (LIKELY(raw->header.dwType == RIM_TYPEMOUSE)) {
                     const RAWMOUSE& m = raw->data.mouse;
                     if (!(m.usFlags & MOUSE_MOVE_ABSOLUTE)) {
                         localAccX += m.lLastX;
@@ -265,6 +266,21 @@ namespace MelonPrime {
     }
 
     // =========================================================================
+    // P-9: resetAll — combined reset with single fence.
+    //
+    // Replaces separate resetAllKeys() + resetMouseButtons() calls.
+    // resetAllKeys does 4 stores + fence + m_hkPrev=0.
+    // resetMouseButtons does 1 store(release).
+    // Combined: 5 stores(relaxed) + 1 fence. Saves one redundant fence.
+    // =========================================================================
+    void InputState::resetAll() noexcept {
+        for (auto& vk : m_vkDown) vk.store(0, std::memory_order_relaxed);
+        m_mouseButtons.store(0, std::memory_order_relaxed);
+        std::atomic_thread_fence(std::memory_order_release);
+        m_hkPrev = 0;
+    }
+
+    // =========================================================================
     // R2: setHotkeyVks — pointer+count interface + mouse button LUT
     //
     // Changes:
@@ -321,15 +337,27 @@ namespace MelonPrime {
         m_hkPrev = newDown;
     }
 
+    // =========================================================================
+    // P-1 FIX: Memory ordering correction.
+    //
+    // Previously, mouse accumulator loads were sequenced BEFORE the acquire
+    // fence inside takeSnapshot(). On weakly-ordered architectures (ARM,
+    // RISC-V), the CPU could reorder these loads after the VK loads,
+    // producing an inconsistent snapshot.
+    //
+    // Fix: move mouse loads AFTER takeSnapshot() so the acquire fence
+    // covers them. On x86 (TSO) this is a no-op; on ARM it prevents
+    // load-load reordering.
+    // =========================================================================
     void InputState::snapshotInputFrame(FrameHotkeyState& outHk,
         int& outMouseX, int& outMouseY) noexcept
     {
-        // Load mouse accumulators within the same snapshot window.
-        // The acquire fence inside takeSnapshot() covers these loads as well,
-        // since they are sequenced before it returns.
+        const auto snap = takeSnapshot();  // acquire fence inside
+
+        // Mouse loads are now sequenced after the acquire fence,
+        // guaranteeing consistency with the VK snapshot.
         const int64_t curX = m_accumMouseX.load(std::memory_order_relaxed);
         const int64_t curY = m_accumMouseY.load(std::memory_order_relaxed);
-        const auto snap = takeSnapshot();
 
         outMouseX = static_cast<int>(curX - m_lastReadMouseX);
         outMouseY = static_cast<int>(curY - m_lastReadMouseY);

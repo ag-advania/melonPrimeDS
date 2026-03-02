@@ -145,24 +145,6 @@ namespace MelonPrime {
     }
 
     LRESULT CALLBACK RawInputWinFilter::HiddenWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
-        if (msg == WM_INPUT) {
-            // [FIX] Capture raw input data BEFORE DefWindowProcW consumes it.
-            //
-            // When joy2keySupport is OFF, raw input is read via GetRawInputBuffer
-            // in processRawInputBatched(). However, incidental message pumps on the
-            // emu thread (SDL_JoystickUpdate, Qt internals, COM calls, etc.) can
-            // dispatch WM_INPUT to this hidden window. DefWindowProcW then internally
-            // calls GetRawInputData, consuming the data from the raw input buffer.
-            // When processRawInputBatched later calls GetRawInputBuffer, the data is
-            // already gone — causing missed key-release events and stuck keys.
-            //
-            // By processing WM_INPUT here, the data is captured regardless of whether
-            // it arrives via GetRawInputBuffer or WM_INPUT dispatch.
-            // processRawInputBatched will simply find no remaining data (correct).
-            if (s_instance) {
-                s_instance->m_state->processRawInput(reinterpret_cast<HRAWINPUT>(lParam));
-            }
-        }
         return DefWindowProcW(hwnd, msg, wParam, lParam);
     }
 
@@ -218,6 +200,7 @@ namespace MelonPrime {
     }
     void RawInputWinFilter::resetAllKeys() { m_state->resetAllKeys(); }
     void RawInputWinFilter::resetMouseButtons() { m_state->resetMouseButtons(); }
+    void RawInputWinFilter::resetAll() { m_state->resetAll(); }  // P-9
     void RawInputWinFilter::resetHotkeyEdges() { m_state->resetHotkeyEdges(); }
     void RawInputWinFilter::fetchMouseDelta(int& outX, int& outY) { m_state->fetchMouseDelta(outX, outY); }
 
