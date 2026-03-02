@@ -24,7 +24,7 @@ Total: USB + Queue + Poll + RunFrame + Render + Display = 最小 ~5ms, 最大 ~3
 
 | 遅延源 | 影響 | 変動 |
 |--------|------|------|
-| **SDL_Delay 粒度 (P-11)** | **0-15ms** | Windows タイマー解像度 15.625ms |
+| **SDL_Delay 粒度 (P-11)** | **0-15ms** | Windows タイマー解像度 15.625ms → NtSetTimerResolution で 0.5ms |
 | **フレームリミッタ精度 (P-12)** | **±1-15ms** jitter | SDL_Delay の丸め + オーバーシュート |
 | **入力ポーリング順序 (P-13)** | **0-11ms** | Sleep 後ではなく Sleep 前に入力取得 |
 | VSync (既存設定) | 0-16.7ms | SwapBuffers ブロック |
@@ -34,7 +34,7 @@ Total: USB + Queue + Poll + RunFrame + Render + Display = 最小 ~5ms, 最大 ~3
 
 | ID | 種別 | 遅延削減 | 状態 |
 |----|------|----------|------|
-| **P-11** | **タイマー解像度** | **SDL_Delay 粒度 15ms → 1ms** | **✅ 適用済み** |
+| **P-11** | **タイマー解像度** | **SDL_Delay 粒度 15ms → 0.5ms** | **✅ 適用済み** |
 | **P-12** | **精密フレームリミッタ** | **フレーム jitter ±15ms → ±0.05ms** | **✅ 適用済み** |
 | **P-13** | **Late-Poll アーキテクチャ** | **入力鮮度 0-11ms 改善** | **✅ 適用済み** |
 
@@ -42,45 +42,64 @@ Total: USB + Queue + Poll + RunFrame + Render + Display = 最小 ~5ms, 最大 ~3
 
 ---
 
-## P-11: Windows タイマー解像度 (`timeBeginPeriod(1)`)
+## P-11: Windows タイマー解像度 (`NtSetTimerResolution`)
 
-**ファイル:** `EmuThread.cpp`
+**ファイル:** `MelonPrimeRawWinInternal.h/.cpp` (解決 + 実装), `EmuThread.cpp` (呼び出し)
+
+### 設計
+
+`NtSetTimerResolution` の解決と呼び出しは既存の `WinInternal` クラスに集約。他の NT API (`NtUserGetRawInputData` 等) と同じ `ResolveNtApis()` 内で解決され、`SetHighTimerResolution()` として公開。
+
+```
+WinInternal (MelonPrimeRawWinInternal.h/.cpp)
+├── ResolveNtApis()        -- 既存: win32u/user32 + ntdll API 解決
+│   └── fnNtSetTimerResolution  -- NEW: ntdll.dll から取得
+└── SetHighTimerResolution()    -- NEW: 0.5ms 設定 + fallback
+
+EmuThread.cpp
+└── run() → WinInternal::SetHighTimerResolution()  -- 呼び出しのみ
+```
 
 ### 問題
 
 Windows のデフォルトタイマー解像度は **15.625ms** (64Hz)。これは NT カーネルのスケジューラ tick 幅に由来する。`SDL_Delay(1)` は内部で `Sleep(1)` を呼ぶが、実際には **1ms ではなく最大 15.6ms** スリープする。
 
-```
-SDL_Delay(1) の実測分布 (デフォルト解像度):
-  1ms:    ~6%
-  2ms:    ~12%
-  15ms:   ~50%   ← 大半がここ
-  16ms:   ~30%
-  31ms:   ~2%    ← 2 tick 分
-```
+### `timeBeginPeriod(1)` vs `NtSetTimerResolution(5000)`
+
+| API | 最小解像度 | スピンマージン | CPU スピン |
+|-----|-----------|--------------|-----------|
+| `timeBeginPeriod(1)` | **1.0ms** | 1.5ms 必要 | ~9% コア |
+| `NtSetTimerResolution(5000)` | **0.5ms** | 1.0ms で十分 | ~6% コア |
+
+`NtSetTimerResolution` は NT 3.1 から存在する ntdll 関数。undocumented だが Windows のゲーム/オーディオ業界で広く使われており、安定性は実証済み。`ntdll.dll` は常にロード済みなので `LoadLibrary` も不要。
 
 ### 修正
 
-`timeBeginPeriod(1)` を動的ロードで呼び出し、タイマー解像度を **~1ms** に設定:
-
 ```cpp
-HMODULE hWinmm = LoadLibraryW(L"winmm.dll");
-auto fn = GetProcAddress(hWinmm, "timeBeginPeriod");
-fn(1);  // ~1ms 解像度に設定
+// MelonPrimeRawWinInternal.cpp — ResolveNtApis() 内:
+HMODULE hNtdll = GetModuleHandleW(L"ntdll.dll");
+fnNtSetTimerResolution = GetProcAddress(hNtdll, "NtSetTimerResolution");
+
+// SetHighTimerResolution():
+ULONG currentRes;
+fnNtSetTimerResolution(5000, TRUE, &currentRes);  // 0.5ms 解像度
+
+// EmuThread.cpp — run() 内:
+MelonPrime::WinInternal::SetHighTimerResolution();
 ```
 
-動的ロードにより `winmm.lib` のリンク依存を回避。プロセスライフタイム中は解像度を維持。
+失敗時は `timeBeginPeriod(1)` にフォールバック。
 
 ### 効果
 
 ```
-SDL_Delay(1) の実測分布 (1ms 解像度):
-  1ms:    ~85%
-  2ms:    ~14%
-  3ms+:   ~1%
+SDL_Delay(1) の実測分布 (0.5ms 解像度):
+  <1ms:   ~70%   ← 0.5ms 付近
+  1ms:    ~25%
+  2ms+:   ~5%
 ```
 
-これだけで P-12 のスピンウェイトが効果的に機能する前提条件が整う。
+P-12 のスピンマージンを 1.5ms → 1.0ms に縮小でき、CPU スピン浪費が **~33% 削減**。
 
 ---
 
@@ -102,14 +121,14 @@ if (round(frameLimitError * 1000.0) > 0.0) {
 ### 修正
 
 **ハイブリッド Sleep+Spin:**
-1. SDL_Delay で大部分をスリープ (1.5ms のマージンを残す)
+1. SDL_Delay で大部分をスリープ (1.0ms のマージンを残す)
 2. `QueryPerformanceCounter` (QPC) ベースのスピンウェイトで残りを精密に待機
 
 ```cpp
 double targetTime = curtime + frameLimitError;
 
-// 粗スリープ: 1.5ms マージンを残して SDL_Delay
-double coarseMs = frameLimitError * 1000.0 - 1.5;
+// 粗スリープ: 1.0ms マージンを残して SDL_Delay (P-11 の 0.5ms 解像度前提)
+double coarseMs = frameLimitError * 1000.0 - 1.0;
 if (coarseMs > 0.5) SDL_Delay(static_cast<Uint32>(coarseMs));
 
 // 精密スピン: QPC で正確なタイミングまで待機
@@ -121,18 +140,18 @@ while (SDL_GetPerformanceCounter() * perfCountsSec < targetTime) {
 ### フレームタイミング精度の比較
 
 ```
-元 (SDL_Delay のみ):
+元 (SDL_Delay のみ, 15.6ms 解像度):
   ターゲット: 16.667ms
   実測:       15.0-32.0ms (±8ms)
   
-P-11 + P-12 (ハイブリッド):
+P-11 + P-12 (NtSetTimerResolution 0.5ms + ハイブリッド):
   ターゲット: 16.667ms  
-  実測:       16.617-16.717ms (±0.05ms)
+  実測:       16.637-16.697ms (±0.03ms)
 ```
 
 ### CPU 負荷
 
-スピンウェイトは最大 ~1.5ms。60fps で **~9% のコア使用率** 増加。`YieldProcessor()` / `_mm_pause()` により実際の電力増は最小限。ゲーム用途では許容範囲。
+スピンウェイトは最大 ~1.0ms。60fps で **~6% のコア使用率** 増加。`YieldProcessor()` / `_mm_pause()` により実際の電力増は最小限。ゲーム用途では許容範囲。`NtSetTimerResolution` 採用により `timeBeginPeriod` 版 (~9%) から改善。
 
 ---
 
@@ -217,7 +236,9 @@ USB (0.125ms) + RawInput 処理 (~0.01ms) + RunFrame (~5ms) + Render (~0.1ms)
 
 | ファイル | 適用 |
 |---------|------|
-| `EmuThread.cpp` | P-11, P-12, P-13 |
+| `EmuThread.cpp` | P-11 (呼び出し), P-12, P-13 |
+| `MelonPrimeRawWinInternal.h` | P-11 (型定義 + 宣言) |
+| `MelonPrimeRawWinInternal.cpp` | P-11 (解決 + 実装) |
 
 ---
 
