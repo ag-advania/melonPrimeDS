@@ -50,34 +50,10 @@
 
 #ifdef MELONPRIME_DS
 #include "MelonPrime.h"
-#endif // MELONPRIME_DS
-
-// =========================================================================
-// P-11: Windows Timer Resolution (MelonPrime latency optimization)
-//
-// Windows default timer resolution is 15.625ms (64Hz). SDL_Delay(1)
-// can sleep up to 15.6ms without timeBeginPeriod(1). This is the
-// single largest source of frame timing jitter.
-//
-// Dynamic load avoids requiring winmm.lib in the link step.
-// =========================================================================
-#if defined(_WIN32) && defined(MELONPRIME_DS)
-namespace {
-    void SetHighTimerResolution() {
-        // timeBeginPeriod(1) sets minimum Sleep/SDL_Delay granularity to ~1ms.
-        // This is standard practice for low-latency applications.
-        // Dynamic load avoids requiring winmm.lib or mmsystem.h.
-        HMODULE hWinmm = LoadLibraryW(L"winmm.dll");
-        if (hWinmm) {
-            using TimeBeginPeriod_t = UINT(WINAPI*)(UINT);
-            auto fn = reinterpret_cast<TimeBeginPeriod_t>(
-                GetProcAddress(hWinmm, "timeBeginPeriod"));
-            if (fn) fn(1);
-            // Keep loaded — resolution stays active for process lifetime
-        }
-    }
-}
+#ifdef _WIN32
+#include "MelonPrimeRawWinInternal.h"  // P-11: WinInternal::SetHighTimerResolution()
 #endif
+#endif // MELONPRIME_DS
 
 using namespace melonDS;
 
@@ -142,9 +118,11 @@ void EmuThread::run()
 
 #ifdef MELONPRIME_DS
     melonPrime->Initialize();
-    // P-11: Set 1ms timer resolution for precision frame pacing.
+    // P-11: Set 0.5ms timer resolution for precision frame pacing.
     // Must be called before frame loop. Without this, SDL_Delay(1) ≈ 15.6ms.
-    SetHighTimerResolution();
+#ifdef _WIN32
+    MelonPrime::WinInternal::SetHighTimerResolution();
+#endif
 #endif // MELONPRIME_DS
 
     mainScreenPos[0] = 0;
@@ -213,8 +191,8 @@ void EmuThread::run()
         // P-12: Precision Hybrid Sleep+Spin Limiter
         // SDL_Delay has ±1-15ms jitter (depending on timer resolution).
         // Hybrid: SDL_Delay for bulk wait, then QPC spin for sub-ms precision.
-        // Combined with P-11 (timeBeginPeriod(1)): jitter drops from
-        // ±15ms to ±0.05ms.
+        // Combined with P-11 (NtSetTimerResolution 0.5ms): jitter drops from
+        // ±15ms to ±0.03ms.
         // =================================================================
         if (emuInstance->doLimitFPS && !isFirstLimiterFrame)
         {
@@ -231,8 +209,10 @@ void EmuThread::run()
             {
                 double targetTime = curtime + frameLimitError;
 
-                // Coarse sleep: SDL_Delay with 1.5ms safety margin for spin
-                double coarseMs = frameLimitError * 1000.0 - 1.5;
+                // Coarse sleep: SDL_Delay with 1.0ms safety margin for spin.
+                // P-11's NtSetTimerResolution(0.5ms) makes this tight margin safe.
+                // (Was 1.5ms with timeBeginPeriod(1ms).)
+                double coarseMs = frameLimitError * 1000.0 - 1.0;
                 if (coarseMs > 0.5)
                     SDL_Delay(static_cast<Uint32>(coarseMs));
 
