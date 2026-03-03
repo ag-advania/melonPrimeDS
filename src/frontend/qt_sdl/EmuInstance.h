@@ -308,6 +308,13 @@ private:
     void inputProcess();
 
 #ifdef MELONPRIME_DS
+    // P-15: Lightweight joystick re-poll after Sleep.
+    // Refreshes joyInputMask/joyHotkeyMask/inputMask/hotkeyMask
+    // WITHOUT touching edge detection (lastHotkeyMask, hotkeyPress, etc.)
+    void inputRefreshJoystickState();
+#endif
+
+#ifdef MELONPRIME_DS
     bool hotkeyDown(int id) { return (hotkeyMask >> id) & 1; }
     bool hotkeyPressed(int id) { return (hotkeyPress >> id) & 1; }
     bool hotkeyReleased(int id) { return (hotkeyRelease >> id) & 1; }
