@@ -118,21 +118,20 @@ void EmuInstance::inputInit()
     joyMutex = joyMutexGlobal;
 
 #ifdef MELONPRIME_DS
-    keyInputMask.fill(true, 12);
-    joyInputMask.fill(true, 12);
-    inputMask.fill(true, 12);
+    static_assert(HK_MAX <= 64, "HK_MAX exceeds uint64_t capacity");
 
-    keyHotkeyMask.fill(false, HK_MAX);
-    joyHotkeyMask.fill(false, HK_MAX);
-    hotkeyMask.fill(false, HK_MAX);
-    lastHotkeyMask.fill(false, HK_MAX);
+    keyInputMask = 0xFFF;
+    joyInputMask = 0xFFF;
+    inputMask = 0xFFF;
 
-    joyHotkeyPress.resize(HK_MAX);
-    joyHotkeyRelease.resize(HK_MAX);
-    lastJoyHotkeyMask.resize(HK_MAX);
-    joyHotkeyPress.fill(false);
-    joyHotkeyRelease.fill(false);
-    lastJoyHotkeyMask.fill(false);
+    keyHotkeyMask = 0;
+    joyHotkeyMask = 0;
+    hotkeyMask = 0;
+    lastHotkeyMask = 0;
+
+    joyHotkeyPress = 0;
+    joyHotkeyRelease = 0;
+    lastJoyHotkeyMask = 0;
 #else
     keyInputMask = 0xFFF;
     joyInputMask = 0xFFF;
@@ -378,10 +377,10 @@ void EmuInstance::onKeyPress(QKeyEvent* event)
     int key = event->key();
     for (int i = 0; i < 12; i++)
         if (key == hkKeyMapping[i])
-            keyInputMask.setBit(i, false);
+            keyInputMask &= ~(1u << i);
     for (int i = 0; i < HK_MAX; i++)
         if (key == hkKeyMapping[i])
-            keyHotkeyMask.setBit(i, true);
+            keyHotkeyMask |= (1ULL << i);
 #else
     int keyHK = getEventKeyVal(event);
     int keyKP = keyHK;
@@ -405,11 +404,11 @@ void EmuInstance::onKeyRelease(QKeyEvent* event)
 
     for (int i = 0; i < 12; i++)
         if (key == hkKeyMapping[i])
-            keyInputMask.setBit(i, true);
+            keyInputMask |= (1u << i);
 
     for (int i = 0; i < HK_MAX; i++)
         if (key == hkKeyMapping[i])
-            keyHotkeyMask.setBit(i, false);
+            keyHotkeyMask &= ~(1ULL << i);
 #else
     int keyHK = getEventKeyVal(event);
     int keyKP = keyHK;
@@ -433,11 +432,11 @@ void EmuInstance::onMousePress(QMouseEvent* event)
 
     for (int i = 0; i < 12; i++)
         if (key == hkKeyMapping[i])
-            keyInputMask.setBit(i, false);
+            keyInputMask &= ~(1u << i);
 
     for (int i = 0; i < HK_MAX; i++)
         if (key == hkKeyMapping[i])
-            keyHotkeyMask.setBit(i, true);
+            keyHotkeyMask |= (1ULL << i);
 }
 
 void EmuInstance::onMouseRelease(QMouseEvent* event)
@@ -446,19 +445,19 @@ void EmuInstance::onMouseRelease(QMouseEvent* event)
 
     for (int i = 0; i < 12; i++)
         if (key == hkKeyMapping[i])
-            keyInputMask.setBit(i, true);
+            keyInputMask |= (1u << i);
 
     for (int i = 0; i < HK_MAX; i++)
         if (key == hkKeyMapping[i])
-            keyHotkeyMask.setBit(i, false);
+            keyHotkeyMask &= ~(1ULL << i);
 }
 #endif // MELONPRIME_DS
 
 void EmuInstance::keyReleaseAll()
 {
 #ifdef MELONPRIME_DS
-    keyInputMask.fill(true, 12);
-    keyHotkeyMask.fill(false, HK_MAX);
+    keyInputMask = 0xFFF;
+    keyHotkeyMask = 0;
 #else
     keyInputMask = 0xFFF;
     keyHotkeyMask = 0;
@@ -540,12 +539,12 @@ void EmuInstance::inputProcess()
     }
 
 #ifdef MELONPRIME_DS
-    joyInputMask.fill(true, 12);
+    joyInputMask = 0xFFF;
     if (joystick)
     {
         for (int i = 0; i < 12; i++)
             if (joystickButtonDown(joyMapping[i]))
-                joyInputMask.setBit(i, false);
+                joyInputMask &= ~(1u << i);
     }
 #else
     joyInputMask = 0xFFF;
@@ -560,12 +559,12 @@ void EmuInstance::inputProcess()
     inputMask = keyInputMask & joyInputMask;                         
 
 #ifdef MELONPRIME_DS
-    joyHotkeyMask.fill(false, HK_MAX);
+    joyHotkeyMask = 0;
     if (joystick)
     {
         for (int i = 0; i < HK_MAX; i++)
             if (joystickButtonDown(hkJoyMapping[i]))
-                joyHotkeyMask.setBit(i, true);
+                joyHotkeyMask |= (1ULL << i);
     }
 
     joyHotkeyPress = joyHotkeyMask & ~lastJoyHotkeyMask;
@@ -617,18 +616,6 @@ float EmuInstance::hotkeyAnalogueValue(int id) {
 }
 
 melonDS::u32 EmuInstance::getInputMask() {
-    return
-        (static_cast<melonDS::u32>(inputMask.testBit(0)) << 0) |
-        (static_cast<melonDS::u32>(inputMask.testBit(1)) << 1) |
-        (static_cast<melonDS::u32>(inputMask.testBit(2)) << 2) |
-        (static_cast<melonDS::u32>(inputMask.testBit(3)) << 3) |
-        (static_cast<melonDS::u32>(inputMask.testBit(4)) << 4) |
-        (static_cast<melonDS::u32>(inputMask.testBit(5)) << 5) |
-        (static_cast<melonDS::u32>(inputMask.testBit(6)) << 6) |
-        (static_cast<melonDS::u32>(inputMask.testBit(7)) << 7) |
-        (static_cast<melonDS::u32>(inputMask.testBit(8)) << 8) |
-        (static_cast<melonDS::u32>(inputMask.testBit(9)) << 9) |
-        (static_cast<melonDS::u32>(inputMask.testBit(10)) << 10) |
-        (static_cast<melonDS::u32>(inputMask.testBit(11)) << 11);
+    return static_cast<melonDS::u32>(inputMask) & 0xFFF;
 }
 #endif // MELONPRIME_DS
