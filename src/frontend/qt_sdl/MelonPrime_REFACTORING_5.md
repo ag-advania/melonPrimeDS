@@ -27,6 +27,7 @@ Total: USB + Queue + Poll + RunFrame + Render + Display = 最小 ~5ms, 最大 ~3
 | **SDL_Delay 粒度 (P-11)** | **0-15ms** | Windows タイマー解像度 15.625ms → NtSetTimerResolution で 0.5ms |
 | **フレームリミッタ精度 (P-12)** | **±1-15ms** jitter | SDL_Delay の丸め + オーバーシュート |
 | **入力ポーリング順序 (P-13)** | **0-11ms** | Sleep 後ではなく Sleep 前に入力取得 |
+| **ジョイスティック鮮度 (P-15)** | **0-16ms** | Sleep 後にジョイスティック再ポーリング |
 | **WM_INPUT 消費レース (P-14)** | **Stuck keys** | SDL がバッチ読み前にデータ消費 |
 | VSync (既存設定) | 0-16.7ms | SwapBuffers ブロック |
 | Audio Sync (既存) | 0-5ms | バッファフル時ブロック |
@@ -39,6 +40,7 @@ Total: USB + Queue + Poll + RunFrame + Render + Display = 最小 ~5ms, 最大 ~3
 | **P-12** | **精密フレームリミッタ** | **フレーム jitter ±15ms → ±0.03ms** | **✅ 適用済み** |
 | **P-13** | **Late-Poll アーキテクチャ** | **入力鮮度 0-11ms 改善** | **✅ 適用済み** |
 | **P-14** | **PrePoll バッチドレイン** | **Stuck keys 修正 + batch 維持** | **✅ 適用済み** |
+| **P-15** | **Late-Poll ジョイスティック** | **ジョイスティック入力鮮度 0-16ms 改善** | **✅ 適用済み** |
 
 推定合計: VSync OFF 時 **最大 ~26ms の入力遅延削減** (最悪ケース比較)
 
@@ -267,6 +269,71 @@ PrePollRawInput と inputProcess の間 (マイクロ秒) に新 WM_INPUT が到
 
 ---
 
+## P-15: Late-Poll ジョイスティック
+
+**ファイル:** `EmuInstance.h`, `EmuInstanceInput.cpp`, `EmuThread.cpp`
+
+### 問題
+
+P-13 でフレームリミッタ (Sleep) をラムダ先頭に移動したが、`inputProcess()` (SDL_JoystickUpdate) はメインループの先頭に残っていた。Sleep 中にジョイスティック状態が古くなる。
+
+### なぜ `inputProcess()` の二重呼び出しが壊れるか
+
+`inputProcess()` は **エッジ検出** (`hotkeyPress = hotkeyMask & ~lastHotkeyMask`) と **状態更新** (`lastHotkeyMask = hotkeyMask`) を同時に行う。
+
+```
+バグった設計 (inputProcess × 2):
+  Call 1 (メインループ): edge 計算 → lastHotkeyMask 更新
+  UI checks: hotkeyPressed(HK_Reset) → Call 1 のエッジ消費 ✓
+  Call 2 (Sleep 後):     edge 再計算 → lastHotkeyMask 再更新
+  → Call 2 のエッジが次イテレーション Call 1 に残る → 二重発火!
+```
+
+`hotkeyPress` は「前回の `lastHotkeyMask` からの差分」。Call 2 が `lastHotkeyMask` を上書きすると、Call 1 のベースラインが変わり、エッジの一貫性が崩れる。
+
+### 解決: `inputRefreshJoystickState()`
+
+`inputProcess()` から **エッジ検出を除外** した軽量関数を新設:
+
+```cpp
+void EmuInstance::inputRefreshJoystickState()
+{
+    SDL_JoystickUpdate();                    // SDL ハードウェア再ポーリング
+    // joyInputMask, joyHotkeyMask 再計算
+    inputMask = keyInputMask & joyInputMask; // 合成マスク更新
+    hotkeyMask = keyHotkeyMask | joyHotkeyMask;
+    // lastHotkeyMask, hotkeyPress, hotkeyRelease は触らない!
+}
+```
+
+### フレームループ構造
+
+```
+メインループ:
+  PrePollRawInput()              ← P-14: raw input ドレイン
+  inputProcess()                 ← エッジ検出 + lastHotkeyMask 更新 (1 回のみ)
+  hotkeyPressed(HK_Reset) etc.   ← エッジを消費 (即時反応)
+  
+  frameAdvanceOnce() {
+    Sleep 0-16ms                 ← P-12/P-13
+    PrePollRawInput()            ← P-14
+    inputRefreshJoystickState()  ← P-15: 状態のみ更新 (エッジ不変)
+    RunFrameHook()               ← 最新の joyHotkeyMask/inputMask を使用
+    RunFrame → Render
+  }
+```
+
+### 全入力源の Late-Poll 状態
+
+| 入力源 | ポーリング位置 | Sleep からの距離 |
+|--------|---------------|----------------|
+| マウス (Raw Input) | `PollAndSnapshot` (RunFrameHook 内) | ~0.01ms |
+| キーボード (Raw Input) | `PollAndSnapshot` (RunFrameHook 内) | ~0.01ms |
+| ジョイスティック (SDL) | `inputRefreshJoystickState` (Sleep 直後) | ~0.05ms |
+| UI ホットキー (エッジ) | `inputProcess` (メインループ上) | 即時 |
+
+---
+
 ## 推奨設定 (最小遅延)
 
 | 設定 | 値 | 理由 |
@@ -287,7 +354,9 @@ USB (0.125ms) + RawInput 処理 (~0.01ms) + RunFrame (~5ms) + Render (~0.1ms)
 
 | ファイル | 適用 |
 |---------|------|
-| `EmuThread.cpp` | P-11 (呼び出し), P-12, P-13, P-14 (PrePoll 呼び出し) |
+| `EmuThread.cpp` | P-11 (呼び出し), P-12, P-13, P-14 (PrePoll 呼び出し), P-15 (Late-Poll 呼び出し) |
+| `EmuInstance.h` | P-15 (inputRefreshJoystickState 宣言) |
+| `EmuInstanceInput.cpp` | P-15 (inputRefreshJoystickState 実装) |
 | `MelonPrimeRawWinInternal.h` | P-11 (型定義 + 宣言) |
 | `MelonPrimeRawWinInternal.cpp` | P-11 (解決 + 実装) |
 | `MelonPrime.h` | P-14 (PrePollRawInput 宣言) |

@@ -236,6 +236,21 @@ void EmuThread::run()
         }
 #endif // MELONPRIME_DS
 
+#ifdef MELONPRIME_DS
+        // =================================================================
+        // P-15: Late-Poll Joystick — refresh SDL state after Sleep.
+        //
+        // inputProcess() already ran at the main loop top (for edge
+        // detection: hotkeyPress/Release). This lightweight refresh
+        // re-polls joystick axes/buttons so RunFrameHook sees fresh
+        // joyHotkeyMask and inputMask. Edge detection is untouched.
+        //
+        // P-14: PrePollRawInput drains raw input before SDL_JoystickUpdate.
+        // =================================================================
+        melonPrime->PrePollRawInput();
+        emuInstance->inputRefreshJoystickState();
+#endif
+
         if (useOpenGL)
             emuInstance->makeCurrentGL();
 
@@ -426,10 +441,7 @@ void EmuThread::run()
             MPInterface::Get().Process();
 
 #ifdef MELONPRIME_DS
-        // P-14: Drain raw input batch BEFORE SDL's message pump.
-        // SDL_JoystickUpdate (inside inputProcess) calls PeekMessage(NULL,...)
-        // which dispatches WM_INPUT to the hidden window. By reading the raw
-        // input buffer first, SDL finds no WM_INPUT to dispatch.
+        // P-14: Drain raw input before SDL_JoystickUpdate's message pump.
         melonPrime->PrePollRawInput();
 #endif
         emuInstance->inputProcess();
