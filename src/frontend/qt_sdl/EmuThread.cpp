@@ -425,6 +425,13 @@ void EmuThread::run()
         if (emuInstance->instanceID == 0)
             MPInterface::Get().Process();
 
+#ifdef MELONPRIME_DS
+        // P-14: Drain raw input batch BEFORE SDL's message pump.
+        // SDL_JoystickUpdate (inside inputProcess) calls PeekMessage(NULL,...)
+        // which dispatches WM_INPUT to the hidden window. By reading the raw
+        // input buffer first, SDL finds no WM_INPUT to dispatch.
+        melonPrime->PrePollRawInput();
+#endif
         emuInstance->inputProcess();
 
         if (emuInstance->hotkeyPressed(HK_FrameLimitToggle)) emit windowLimitFPSChange();

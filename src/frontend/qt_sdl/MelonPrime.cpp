@@ -202,6 +202,34 @@ namespace MelonPrime {
             m_cachedPanel = mw->panel;
     }
 
+    // =========================================================================
+    // P-14: PrePollRawInput — drain raw input before SDL's message pump
+    //
+    // SDL_JoystickUpdate() calls PeekMessage(NULL, ...) which dispatches ALL
+    // messages on the emu thread, including WM_INPUT for the hidden window.
+    // DefWindowProcW then internally calls GetRawInputData, consuming the data.
+    // When processRawInputBatched later calls GetRawInputBuffer, the data is
+    // already gone → missed key-release events → stuck keys.
+    //
+    // Solution: call Poll() (= processRawInputBatched + drainPendingMessages)
+    // BEFORE inputProcess(). This reads all pending data via the fast batch
+    // path (1-2 syscalls for 100+ messages) and removes WM_INPUT from the
+    // queue so SDL's pump finds nothing to dispatch.
+    //
+    // Performance vs WndProc approach:
+    //   WndProc:    133 GetRawInputData syscalls/frame (8kHz mouse)
+    //   PrePoll:    2-4 GetRawInputBuffer syscalls/frame (batch)
+    //   Speedup:    ~30-60x fewer kernel transitions
+    // =========================================================================
+    void MelonPrimeCore::PrePollRawInput()
+    {
+#ifdef _WIN32
+        if (m_rawFilter) {
+            m_rawFilter->Poll();
+        }
+#endif
+    }
+
     void MelonPrimeCore::OnEmuPause() {}
 
     void MelonPrimeCore::OnEmuUnpause()
