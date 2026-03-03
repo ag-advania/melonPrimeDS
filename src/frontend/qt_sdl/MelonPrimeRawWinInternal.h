@@ -23,6 +23,10 @@ namespace MelonPrime {
     using NtUserMsgWaitForMultipleObjectsEx_t = DWORD(WINAPI*)(
         DWORD nCount, const HANDLE* pHandles, DWORD dwMilliseconds, DWORD dwWakeMask, DWORD dwFlags);
 
+    // P-11: NT timer resolution — 0.5ms floor (below timeBeginPeriod's 1.0ms limit)
+    using NtSetTimerResolution_t = LONG(__stdcall*)(
+        ULONG DesiredResolution, BOOLEAN SetResolution, ULONG* CurrentResolution);
+
     // =========================================================================
     // WinInternal — low-level Windows API access with lazy resolution
     // =========================================================================
@@ -38,6 +42,11 @@ namespace MelonPrime {
         static NtUserGetRawInputBuffer_t             fnNtUserGetRawInputBuffer;
         static NtUserPeekMessage_t                   fnNtUserPeekMessage;
         static NtUserMsgWaitForMultipleObjectsEx_t   fnNtUserMsgWaitForMultipleObjectsEx;
+        static NtSetTimerResolution_t                fnNtSetTimerResolution;
+
+        // P-11: Set 0.5ms timer resolution for precision frame pacing.
+        // Falls back to timeBeginPeriod(1) if NtSetTimerResolution unavailable.
+        static void SetHighTimerResolution() noexcept;
 
     private:
         static std::atomic<bool> s_resolved;
