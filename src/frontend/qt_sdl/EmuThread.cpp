@@ -260,7 +260,10 @@ void EmuThread::run()
             emuInstance->renderLock.lock();
             if (useOpenGL)
             {
-#ifndef MELONPRIME_DS
+#ifdef MELONPRIME_DS
+                bool vsyncSetting = emuInstance->getGlobalConfig().GetBool("Screen.VSync");
+                emuInstance->setVSyncGL(vsyncSetting);
+#else
                 emuInstance->setVSyncGL(true);
 #endif
                 videoRenderer = globalCfg.GetInt("3D.Renderer");
@@ -349,7 +352,17 @@ void EmuThread::run()
             if ((enablefastforward || enableslowmo) && !(fastforward || slowmo))
                 emuInstance->setVSyncGL(false);
             else if (!(enablefastforward || enableslowmo) && (fastforward || slowmo))
+            {
+#ifdef MELONPRIME_DS
+                // P-16: Restore VSync to user's configured setting, not hardcoded true.
+                // MelonPrime disables VSync for minimum latency; the original code
+                // unconditionally re-enabled it here, undoing the user's preference.
+                bool vsyncSetting = emuInstance->getGlobalConfig().GetBool("Screen.VSync");
+                emuInstance->setVSyncGL(vsyncSetting);
+#else
                 emuInstance->setVSyncGL(true);
+#endif
+            }
         }
 
         fastforward = enablefastforward;
