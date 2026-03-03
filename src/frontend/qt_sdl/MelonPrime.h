@@ -177,6 +177,11 @@ namespace MelonPrime {
 
         void NotifyLayoutChange();  // P-3: impl in .cpp (needs complete EmuInstance type)
 
+        // P-14: Pre-drain raw input buffer before SDL's message pump.
+        // Prevents SDL_JoystickUpdate from dispatching WM_INPUT → DefWindowProcW,
+        // which would consume raw input data before processRawInputBatched reads it.
+        void PrePollRawInput();
+
     private:
         // =================================================================
         // Cache-optimized member layout

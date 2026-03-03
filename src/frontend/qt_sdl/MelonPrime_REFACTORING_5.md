@@ -27,6 +27,7 @@ Total: USB + Queue + Poll + RunFrame + Render + Display = 最小 ~5ms, 最大 ~3
 | **SDL_Delay 粒度 (P-11)** | **0-15ms** | Windows タイマー解像度 15.625ms → NtSetTimerResolution で 0.5ms |
 | **フレームリミッタ精度 (P-12)** | **±1-15ms** jitter | SDL_Delay の丸め + オーバーシュート |
 | **入力ポーリング順序 (P-13)** | **0-11ms** | Sleep 後ではなく Sleep 前に入力取得 |
+| **WM_INPUT 消費レース (P-14)** | **Stuck keys** | SDL がバッチ読み前にデータ消費 |
 | VSync (既存設定) | 0-16.7ms | SwapBuffers ブロック |
 | Audio Sync (既存) | 0-5ms | バッファフル時ブロック |
 
@@ -35,8 +36,9 @@ Total: USB + Queue + Poll + RunFrame + Render + Display = 最小 ~5ms, 最大 ~3
 | ID | 種別 | 遅延削減 | 状態 |
 |----|------|----------|------|
 | **P-11** | **タイマー解像度** | **SDL_Delay 粒度 15ms → 0.5ms** | **✅ 適用済み** |
-| **P-12** | **精密フレームリミッタ** | **フレーム jitter ±15ms → ±0.05ms** | **✅ 適用済み** |
+| **P-12** | **精密フレームリミッタ** | **フレーム jitter ±15ms → ±0.03ms** | **✅ 適用済み** |
 | **P-13** | **Late-Poll アーキテクチャ** | **入力鮮度 0-11ms 改善** | **✅ 適用済み** |
+| **P-14** | **PrePoll バッチドレイン** | **Stuck keys 修正 + batch 維持** | **✅ 適用済み** |
 
 推定合計: VSync OFF 時 **最大 ~26ms の入力遅延削減** (最悪ケース比較)
 
@@ -216,6 +218,55 @@ Late-Poll 順序:
 
 ---
 
+## P-14: PrePoll バッチドレイン (Stuck Keys 修正)
+
+**ファイル:** `MelonPrime.h/.cpp`, `EmuThread.cpp`, `MelonPrimeRawInputWinFilter.cpp`
+
+### 問題
+
+`joy2KeySupport = false` 時、raw input は hidden window (HWND_MESSAGE) に送られる。メインパスは `GetRawInputBuffer` でバッチ読み (1-2 syscall で 100+ イベント処理)。
+
+しかし `SDL_JoystickUpdate()` が `PeekMessage(NULL, 0, 0, PM_REMOVE)` を内部で呼び、emu thread の **全ウィンドウ** の WM_INPUT を dispatch。`DefWindowProcW` が内部で `GetRawInputData` を呼んでデータを消費。→ キーリリース消失 → 押しっぱなし。
+
+P-13 の Late-Poll で Sleep がフレーム先頭に移動したことで、`SDL_JoystickUpdate` と `PollAndSnapshot` の間隔が広がり発生確率が上昇。
+
+### 過去のアプローチ (重い)
+
+`HiddenWndProc` で WM_INPUT をキャプチャ:
+```cpp
+// WndProc: 133回/フレームの GetRawInputData syscall
+if (msg == WM_INPUT) {
+    s_instance->m_state->processRawInput(reinterpret_cast<HRAWINPUT>(lParam));
+}
+```
+
+8000Hz マウスで **133 syscall/フレーム** → 顕著なパフォーマンス低下。
+
+### 新アプローチ: PrePoll バッチドレイン
+
+`inputProcess()` (SDL_JoystickUpdate) の **直前** にバッチ読みを実行:
+
+```
+[PrePollRawInput]  ← GetRawInputBuffer (1-2 syscall) + drain queue
+[inputProcess]     ← SDL pumps messages → WM_INPUT queue は空 → dispatch なし
+[Sleep]            ← 新メッセージ蓄積
+[PollAndSnapshot]  ← GetRawInputBuffer (1-2 syscall) で残り読み取り
+```
+
+### パフォーマンス比較
+
+| アプローチ | syscall/frame | キャッシュ | 備考 |
+|-----------|--------------|----------|------|
+| WndProc キャプチャ | **133+** | 悪い (SDL コードと交互) | 押しっぱなし修正 ✓、重い |
+| PrePoll バッチ | **2-4** | 良い (シーケンシャル) | 押しっぱなし修正 ✓、軽い |
+| 何もしない | **1-2** | 最良 | 押しっぱなし発生 ✗ |
+
+### 残存リスク
+
+PrePollRawInput と inputProcess の間 (マイクロ秒) に新 WM_INPUT が到着して SDL に dispatch される可能性がある。8000Hz マウスでも 0-1 イベント/フレーム。1 マウス tick の消失は知覚不可能。キーボードリリースがこの隙間に入る確率は実質ゼロ (キーボードは ~1000Hz)。
+
+---
+
 ## 推奨設定 (最小遅延)
 
 | 設定 | 値 | 理由 |
@@ -236,9 +287,12 @@ USB (0.125ms) + RawInput 処理 (~0.01ms) + RunFrame (~5ms) + Render (~0.1ms)
 
 | ファイル | 適用 |
 |---------|------|
-| `EmuThread.cpp` | P-11 (呼び出し), P-12, P-13 |
+| `EmuThread.cpp` | P-11 (呼び出し), P-12, P-13, P-14 (PrePoll 呼び出し) |
 | `MelonPrimeRawWinInternal.h` | P-11 (型定義 + 宣言) |
 | `MelonPrimeRawWinInternal.cpp` | P-11 (解決 + 実装) |
+| `MelonPrime.h` | P-14 (PrePollRawInput 宣言) |
+| `MelonPrime.cpp` | P-14 (PrePollRawInput 実装) |
+| `MelonPrimeRawInputWinFilter.cpp` | P-14 (WndProc 簡素化) |
 
 ---
 
