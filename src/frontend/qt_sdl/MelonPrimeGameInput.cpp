@@ -221,34 +221,18 @@ namespace MelonPrime {
             const int32_t deltaX = m_input.mouseX;
             const int32_t deltaY = m_input.mouseY;
 
-            // P-17: Accumulate into residual (Q14 fixed-point).
             m_aimResidualX += static_cast<int64_t>(deltaX) * m_aimFixedScaleX;
             m_aimResidualY += static_cast<int64_t>(deltaY) * m_aimFixedScaleY;
 
-            // P-18c: Clamp residual to prevent wind-up.
-            // Without this, rapid reversals or aim-blocked frames could
-            // let the residual grow unbounded, causing a sudden jump.
-            if (UNLIKELY(m_aimResidualX > AIM_MAX_RESIDUAL))  m_aimResidualX = AIM_MAX_RESIDUAL;
-            if (UNLIKELY(m_aimResidualX < -AIM_MAX_RESIDUAL)) m_aimResidualX = -AIM_MAX_RESIDUAL;
-            if (UNLIKELY(m_aimResidualY > AIM_MAX_RESIDUAL))  m_aimResidualY = AIM_MAX_RESIDUAL;
-            if (UNLIKELY(m_aimResidualY < -AIM_MAX_RESIDUAL)) m_aimResidualY = -AIM_MAX_RESIDUAL;
-
             if (m_disableMphAimSmoothing) {
-                // =========================================================
-                // P-18a+b: Direct path (ASM patch enabled)
-                //
-                // >> 12 = >> 14 then << 2, but in one operation.
-                // This preserves 2 extra fractional bits that >> 14 discards,
-                // giving 4x finer resolution (minimum output ±1 vs ±4).
-                //
-                // No deadzone: mouse raw input has zero noise at rest
-                // (delta=0 → residual unchanged → output 0).
-                // DS-side deadzone is also bypassed by the ASM patch.
-                // =========================================================
-                const int16_t outX = static_cast<int16_t>(m_aimResidualX >> AIM_DIRECT_BITS);
-                const int16_t outY = static_cast<int16_t>(m_aimResidualY >> AIM_DIRECT_BITS);
+                // 【超高速化】割り算を除去し、ビット演算だけで「ゼロ方向への丸め（除算）」を再現
+                const int64_t signX = m_aimResidualX >> 63;
+                const int64_t signY = m_aimResidualY >> 63;
+                const int64_t maskDirect = (1LL << AIM_DIRECT_BITS) - 1;
 
-                // Subtract consumed integer portion; fractional remainder carries over.
+                const int16_t outX = static_cast<int16_t>((m_aimResidualX + (signX & maskDirect)) >> AIM_DIRECT_BITS);
+                const int16_t outY = static_cast<int16_t>((m_aimResidualY + (signY & maskDirect)) >> AIM_DIRECT_BITS);
+
                 m_aimResidualX -= static_cast<int64_t>(outX) << AIM_DIRECT_BITS;
                 m_aimResidualY -= static_cast<int64_t>(outY) << AIM_DIRECT_BITS;
 
@@ -257,20 +241,11 @@ namespace MelonPrime {
                 PREFETCH_WRITE(m_ptrs.aimX);
                 PREFETCH_WRITE(m_ptrs.aimY);
 
-                // Direct write — no << ampShift needed.
-                // >> 12 already produces the same scale as the old >> 14 << 2.
                 *m_ptrs.aimX = static_cast<uint16_t>(outX);
                 *m_ptrs.aimY = static_cast<uint16_t>(outY);
             }
             else {
-                // =========================================================
-                // Legacy path (DS-side smoothing active)
-                //
-                // Deadzone + snap + P-17 residual accumulation.
-                // ampShift = 0 (DS handles amplification internally).
-                // =========================================================
-
-                // Early exit if both residuals are in deadzone.
+                // Legacy path
                 {
                     const int64_t absResX = m_aimResidualX < 0 ? -m_aimResidualX : m_aimResidualX;
                     const int64_t absResY = m_aimResidualY < 0 ? -m_aimResidualY : m_aimResidualY;
@@ -292,7 +267,10 @@ namespace MelonPrime {
                     const int64_t isSnap = (absRaw - snapT) >> 63;
 
                     const int64_t snapVal = (1LL ^ sign) - sign;
-                    const int64_t normVal = raw >> AIM_FRAC_BITS;
+
+                    // 【超高速化】ここもビット演算による丸め補正付きシフトに変更
+                    const int64_t maskFrac = (1LL << AIM_FRAC_BITS) - 1;
+                    const int64_t normVal = (raw + (sign & maskFrac)) >> AIM_FRAC_BITS;
 
                     return static_cast<int16_t>(
                         (~isDeadzone & isSnap & snapVal) |
@@ -328,5 +306,4 @@ namespace MelonPrime {
         m_aimResidualX = 0;
         m_aimResidualY = 0;
     }
-
 } // namespace MelonPrime
