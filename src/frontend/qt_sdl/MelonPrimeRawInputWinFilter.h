@@ -33,7 +33,7 @@ namespace MelonPrime {
 
         // Merged Poll + snapshot in single call
         void PollAndSnapshot(FrameHotkeyState& outHk, int& outMouseX, int& outMouseY);
-
+        void DeferredDrain();
         void discardDeltas();
 
         // R2: Primary interface -- zero-allocation path from SmallVkList

@@ -73,6 +73,13 @@ namespace MelonPrime {
         }
     }
 
+    void RawInputWinFilter::DeferredDrain() {
+        if (!m_joy2KeySupport) {
+            m_state->processRawInputBatched(); // 先にデータを救出！
+        }
+        drainPendingMessages();
+    }
+
     void RawInputWinFilter::Poll() {
         if (m_joy2KeySupport) return;
 
@@ -144,10 +151,26 @@ namespace MelonPrime {
         UnregisterClassW(L"MelonPrimeRawInputSink", GetModuleHandle(nullptr));
     }
 
+    // =========================================================================
+    // P-19: HiddenWndProc — return 0 for WM_INPUT (do NOT call DefWindowProcW).
+    //
+    // DefWindowProcW internally calls GetRawInputData when it handles WM_INPUT,
+    // which CONSUMES the raw input data from the buffer. If SDL_JoystickUpdate's
+    // PeekMessage(NULL, ...) dispatches a WM_INPUT between PrePollRawInput and
+    // PollAndSnapshot, DefWindowProcW eats the data before GetRawInputBuffer
+    // can read it → missed key-release → stuck key.
+    //
+    // By returning 0, the WM_INPUT message is acknowledged (removed from queue
+    // by PeekMessage PM_REMOVE) but the raw input data stays in the buffer,
+    // safe for GetRawInputBuffer to read.
+    //
+    // This eliminates the race condition entirely:
+    //   - No syscall overhead (return 0 vs GetRawInputData)
+    //   - No data loss regardless of SDL message pump timing
+    //   - processRawInputBatched always sees all pending data
+    // =========================================================================
     LRESULT CALLBACK RawInputWinFilter::HiddenWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
-        // P-14: WM_INPUT processing moved to PrePollRawInput() (batch path).
-        // DefWindowProcW may consume stray WM_INPUT dispatched between pre-drain
-        // and processRawInputBatched, but at most 0-1 messages (microsecond gap).
+        if (msg == WM_INPUT) return 0;
         return DefWindowProcW(hwnd, msg, wParam, lParam);
     }
 
@@ -203,7 +226,11 @@ namespace MelonPrime {
     }
     void RawInputWinFilter::resetAllKeys() { m_state->resetAllKeys(); }
     void RawInputWinFilter::resetMouseButtons() { m_state->resetMouseButtons(); }
-    void RawInputWinFilter::resetAll() { m_state->resetAll(); }  // P-9
+
+    // P-9: Combined reset — single call replaces resetAllKeys + resetMouseButtons.
+    // InputState::resetAllKeys already resets both VK state AND mouse buttons
+    // (with one fence instead of two).
+    void RawInputWinFilter::resetAll() { m_state->resetAllKeys(); }
     void RawInputWinFilter::resetHotkeyEdges() { m_state->resetHotkeyEdges(); }
     void RawInputWinFilter::fetchMouseDelta(int& outX, int& outY) { m_state->fetchMouseDelta(outX, outY); }
 

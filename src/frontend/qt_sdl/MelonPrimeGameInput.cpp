@@ -118,8 +118,10 @@ namespace MelonPrime {
         m_input.mouseY = currentPos.y() - m_aimData.centerY;
 #endif
 
-        // P-3: Use cached panel pointer (was: emuInstance->getMainWindow()->panel)
-        m_input.wheelDelta = m_cachedPanel ? m_cachedPanel->getDelta() : 0;
+        {
+            // P-3: Use cached panel pointer (avoids emuInstance->getMainWindow()->panel chase)
+            m_input.wheelDelta = m_cachedPanel ? m_cachedPanel->getDelta() : 0;
+        }
     }
 
     // OPT-Z2: Unified move + button mask update.
@@ -182,13 +184,33 @@ namespace MelonPrime {
 
     // =========================================================================
     // ProcessAimInputMouse
+    //
+    // P-17: Sub-pixel residual accumulation.
+    // P-18: Dual-path aim pipeline.
+    //
+    //   Direct path (m_disableMphAimSmoothing = true, ASM patch active):
+    //     - No deadzone (DS-side also bypassed by ASM patch)
+    //     - >> 12 direct output (4x resolution vs >> 14 << 2)
+    //     - Every frame with mouse movement produces output
+    //     - ~8 instructions (SAR ×2 + SUB ×2 + test + store ×2)
+    //
+    //   Legacy path (m_disableMphAimSmoothing = false):
+    //     - Deadzone/snap for DS-side compatibility
+    //     - P-17 residual accumulation with apply_aim branchless logic
+    //     - ampShift = 0 (DS handles amplification internally)
     // =========================================================================
     HOT_FUNCTION void MelonPrimeCore::ProcessAimInputMouse()
     {
-        if (m_aimBlockBits) return;
+        if (m_aimBlockBits) {
+            m_aimResidualX = 0;
+            m_aimResidualY = 0;
+            return;
+        }
 
         if (UNLIKELY(m_isLayoutChangePending)) {
             m_isLayoutChangePending = false;
+            m_aimResidualX = 0;
+            m_aimResidualY = 0;
 #ifdef _WIN32
             if (m_rawFilter) m_rawFilter->discardDeltas();
 #endif
@@ -199,57 +221,74 @@ namespace MelonPrime {
             const int32_t deltaX = m_input.mouseX;
             const int32_t deltaY = m_input.mouseY;
 
-            {
-                const int32_t signX = deltaX >> 31;
-                const int32_t signY = deltaY >> 31;
-                const uint32_t adx = static_cast<uint32_t>((deltaX ^ signX) - signX);
-                const uint32_t ady = static_cast<uint32_t>((deltaY ^ signY) - signY);
+            m_aimResidualX += static_cast<int64_t>(deltaX) * m_aimFixedScaleX;
+            m_aimResidualY += static_cast<int64_t>(deltaY) * m_aimFixedScaleY;
 
-                if (adx < static_cast<uint32_t>(m_aimMinDeltaX) &&
-                    ady < static_cast<uint32_t>(m_aimMinDeltaY))
-                    return;
+            if (m_disableMphAimSmoothing) {
+                // 【超高速化】割り算を除去し、ビット演算だけで「ゼロ方向への丸め（除算）」を再現
+                const int64_t signX = m_aimResidualX >> 63;
+                const int64_t signY = m_aimResidualY >> 63;
+                const int64_t maskDirect = (1LL << AIM_DIRECT_BITS) - 1;
+
+                const int16_t outX = static_cast<int16_t>((m_aimResidualX + (signX & maskDirect)) >> AIM_DIRECT_BITS);
+                const int16_t outY = static_cast<int16_t>((m_aimResidualY + (signY & maskDirect)) >> AIM_DIRECT_BITS);
+
+                m_aimResidualX -= static_cast<int64_t>(outX) << AIM_DIRECT_BITS;
+                m_aimResidualY -= static_cast<int64_t>(outY) << AIM_DIRECT_BITS;
+
+                if ((outX | outY) == 0) return;
+
+                PREFETCH_WRITE(m_ptrs.aimX);
+                PREFETCH_WRITE(m_ptrs.aimY);
+
+                *m_ptrs.aimX = static_cast<uint16_t>(outX);
+                *m_ptrs.aimY = static_cast<uint16_t>(outY);
             }
+            else {
+                // Legacy path
+                {
+                    const int64_t absResX = m_aimResidualX < 0 ? -m_aimResidualX : m_aimResidualX;
+                    const int64_t absResY = m_aimResidualY < 0 ? -m_aimResidualY : m_aimResidualY;
+                    if (absResX < m_aimFixedAdjust && absResY < m_aimFixedAdjust)
+                        return;
+                }
 
-            PREFETCH_WRITE(m_ptrs.aimX);
-            PREFETCH_WRITE(m_ptrs.aimY);
+                PREFETCH_WRITE(m_ptrs.aimX);
+                PREFETCH_WRITE(m_ptrs.aimY);
 
-            const int64_t rawX = static_cast<int64_t>(deltaX) * m_aimFixedScaleX;
-            const int64_t rawY = static_cast<int64_t>(deltaY) * m_aimFixedScaleY;
+                const int64_t adjT = m_aimFixedAdjust;
+                const int64_t snapT = m_aimFixedSnapThresh;
 
-            const int64_t adjT = m_aimFixedAdjust;
-            const int64_t snapT = m_aimFixedSnapThresh;
+                auto apply_aim = [adjT, snapT](int64_t raw) -> int16_t {
+                    const int64_t sign = raw >> 63;
+                    const int64_t absRaw = (raw ^ sign) - sign;
 
-            auto apply_aim = [adjT, snapT](int64_t raw) -> int16_t {
-                const int64_t sign = raw >> 63;
-                const int64_t absRaw = (raw ^ sign) - sign;
+                    const int64_t isDeadzone = (absRaw - adjT) >> 63;
+                    const int64_t isSnap = (absRaw - snapT) >> 63;
 
-                const int64_t isDeadzone = (absRaw - adjT) >> 63;
-                const int64_t isSnap = (absRaw - snapT) >> 63;
+                    const int64_t snapVal = (1LL ^ sign) - sign;
 
-                const int64_t snapVal = (1LL ^ sign) - sign;
-                const int64_t normVal = raw >> AIM_FRAC_BITS;
+                    // 【超高速化】ここもビット演算による丸め補正付きシフトに変更
+                    const int64_t maskFrac = (1LL << AIM_FRAC_BITS) - 1;
+                    const int64_t normVal = (raw + (sign & maskFrac)) >> AIM_FRAC_BITS;
 
-                return static_cast<int16_t>(
-                    (~isDeadzone & isSnap & snapVal) |
-                    (~isSnap & normVal)
-                    );
-                };
+                    return static_cast<int16_t>(
+                        (~isDeadzone & isSnap & snapVal) |
+                        (~isSnap & normVal)
+                        );
+                    };
 
-            const int16_t outX = apply_aim(rawX);
-            const int16_t outY = apply_aim(rawY);
+                const int16_t outX = apply_aim(m_aimResidualX);
+                const int16_t outY = apply_aim(m_aimResidualY);
 
-            if ((outX | outY) == 0) return;
+                m_aimResidualX -= static_cast<int64_t>(outX) << AIM_FRAC_BITS;
+                m_aimResidualY -= static_cast<int64_t>(outY) << AIM_FRAC_BITS;
 
-            // Write only the latest slot, just before the DS engine's zero-clear.
-            // (The ASM patch side reads from +0x3C / +0x44 bypass, so this is 1:1)
-            // --- 感度統一 & デッドゾーン突破 (Pre-amplification) ---
-            // ASMパッチでDS側の加算処理（4倍増幅）をスキップしている場合、
-            // C++側で予め値を4倍（<< 2）にして渡すことで感度を一致させつつ、
-            // DS内部のデッドゾーン(±3)を確定で突破する。
-            const uint32_t ampShift = m_disableMphAimSmoothing ? 2 : 0;
+                if ((outX | outY) == 0) return;
 
-            *m_ptrs.aimX = static_cast<uint16_t>(outX << ampShift);
-            *m_ptrs.aimY = static_cast<uint16_t>(outY << ampShift);
+                *m_ptrs.aimX = static_cast<uint16_t>(outX);
+                *m_ptrs.aimY = static_cast<uint16_t>(outY);
+            }
 
 #if !defined(_WIN32)
             QCursor::setPos(m_aimData.centerX, m_aimData.centerY);
@@ -264,6 +303,7 @@ namespace MelonPrime {
         QCursor::setPos(center);
 #endif
         m_isLayoutChangePending = false;
+        m_aimResidualX = 0;
+        m_aimResidualY = 0;
     }
-
 } // namespace MelonPrime
