@@ -168,6 +168,11 @@ namespace MelonPrime {
             : 1;
         if (m_aimMinDeltaX < 1) m_aimMinDeltaX = 1;
         if (m_aimMinDeltaY < 1) m_aimMinDeltaY = 1;
+
+        // P-17: Reset sub-pixel accumulators when scale changes.
+        // Old residuals were computed with previous scale factors.
+        m_aimResidualX = 0;
+        m_aimResidualY = 0;
     }
 
     void MelonPrimeCore::OnEmuStart()
@@ -183,6 +188,8 @@ namespace MelonPrime {
         ReloadConfigFlags();
         ApplyJoy2KeySupportAndQtFilter(m_flags.test(StateFlags::BIT_JOY2KEY));
         InputReset();
+        m_aimResidualX = 0;
+        m_aimResidualY = 0;
 
         // P-3: Cache panel pointer (avoids 3-level pointer chase every frame)
         if (auto* mw = emuInstance->getMainWindow())
@@ -203,29 +210,27 @@ namespace MelonPrime {
     }
 
     // =========================================================================
-    // P-14: PrePollRawInput — drain raw input before SDL's message pump
+    // P-22→P-26: DeferredDrain — throttled to every 8 frames.
     //
-    // SDL_JoystickUpdate() calls PeekMessage(NULL, ...) which dispatches ALL
-    // messages on the emu thread, including WM_INPUT for the hidden window.
-    // DefWindowProcW then internally calls GetRawInputData, consuming the data.
-    // When processRawInputBatched later calls GetRawInputBuffer, the data is
-    // already gone → missed key-release events → stuck keys.
+    // With P-19 (HiddenWndProc returns 0), WM_INPUT messages are harmless —
+    // they just sit in the queue, and GetRawInputBuffer reads from a separate
+    // raw input buffer regardless. Draining prevents unbounded queue growth.
     //
-    // Solution: call Poll() (= processRawInputBatched + drainPendingMessages)
-    // BEFORE inputProcess(). This reads all pending data via the fast batch
-    // path (1-2 syscalls for 100+ messages) and removes WM_INPUT from the
-    // queue so SDL's pump finds nothing to dispatch.
+    // At 8kHz mouse / 60 FPS: ~133 WM_INPUT messages/frame.
+    // Drain every 8 frames = ~1064 messages accumulated. Windows default
+    // queue limit is 10,000 — well within bounds.
     //
-    // Performance vs WndProc approach:
-    //   WndProc:    133 GetRawInputData syscalls/frame (8kHz mouse)
-    //   PrePoll:    2-4 GetRawInputBuffer syscalls/frame (batch)
-    //   Speedup:    ~30-60x fewer kernel transitions
-    // =========================================================================
-    void MelonPrimeCore::PrePollRawInput()
+    // Saves: ~133 PeekMessage syscalls × 7/8 frames ≈ 116 syscalls/frame avg.
+    // Each PeekMessage ≈ 1μs → saves ~116μs/frame (~0.7% of 16.7ms budget).
+    void MelonPrimeCore::DeferredDrainInput()
     {
 #ifdef _WIN32
         if (m_rawFilter) {
-            m_rawFilter->Poll();
+            static uint8_t s_drainCounter = 0;
+            if (UNLIKELY(++s_drainCounter >= 8)) {
+                s_drainCounter = 0;
+                m_rawFilter->DeferredDrain();
+            }
         }
 #endif
     }
@@ -480,6 +485,16 @@ namespace MelonPrime {
     {
         FrameAdvanceOnce();
         FrameAdvanceOnce();
+    }
+
+    // 追加
+    void MelonPrimeCore::PrePollRawInput()
+    {
+#ifdef _WIN32
+        if (m_rawFilter) {
+            m_rawFilter->Poll(); // Poll() はバッチ読み取り＋ドレインを両方やってくれます
+        }
+#endif
     }
 
     QPoint MelonPrimeCore::GetAdjustedCenter()

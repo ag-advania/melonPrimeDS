@@ -175,6 +175,7 @@ namespace MelonPrime {
         bool isClipWanted = false;
         bool isStylusMode = false;
 
+        void DeferredDrainInput();
         void NotifyLayoutChange();  // P-3: impl in .cpp (needs complete EmuInstance type)
 
         // P-14: Pre-drain raw input buffer before SDL's message pump.
@@ -215,6 +216,14 @@ namespace MelonPrime {
         static constexpr int AIM_FRAC_BITS = 14;
         static constexpr int64_t AIM_ONE_FP = 1LL << AIM_FRAC_BITS;
 
+        // P-18: Direct path uses >> 12 instead of >> 14 then << 2.
+        // This preserves 2 extra fractional bits, giving 4x resolution (±1 vs ±4).
+        static constexpr int AIM_DIRECT_BITS = AIM_FRAC_BITS - 2;  // 12
+
+        // P-18c: Residual clamp prevents wind-up during rapid direction changes.
+        // 128 DS-units at Q14 = a large but bounded rotation.
+        static constexpr int64_t AIM_MAX_RESIDUAL = 128LL << AIM_FRAC_BITS;
+
         int32_t  m_aimFixedScaleX = 164;
         int32_t  m_aimFixedScaleY = 218;
         int64_t  m_aimFixedAdjust = 8192;
@@ -222,6 +231,11 @@ namespace MelonPrime {
 
         int32_t  m_aimMinDeltaX = 1;
         int32_t  m_aimMinDeltaY = 1;
+
+        // P-17: Sub-pixel residual accumulators (Q14 fixed-point).
+        // Carry fractional remainder across frames for smooth slow-speed aiming.
+        int64_t  m_aimResidualX = 0;
+        int64_t  m_aimResidualY = 0;
 
         // Float intermediates - cold path only (config change)
         float    m_aimSensiFactor = 0.01f;
@@ -281,7 +295,22 @@ namespace MelonPrime {
         // =================================================================
         // Inline helpers
         // =================================================================
-        FORCE_INLINE void InputReset() { m_inputMaskFast = 0xFFFF; }
+        // InputReset: clears DS input mask for fresh per-frame rebuild.
+        // Called every frame at the top of RunFrameHook.
+        //
+        // NOTE: m_aimResidualX/Y must NOT be zeroed here!
+        // Residuals accumulate across frames (P-17/P-18). Zeroing them here
+        // would defeat sub-pixel accumulation entirely — every frame would
+        // start from 0, making P-17/P-18 non-functional.
+        //
+        // Residuals are only zeroed on actual state resets:
+        //   - OnEmuStart/InputReset → OnEmuStart calls its own reset
+        //   - RecalcAimFixedPoint  → sensitivity change invalidates old residuals
+        //   - Layout change        → coordinate system reset
+        //   - Aim block / focus loss → stale residuals would cause jump
+        FORCE_INLINE void InputReset() {
+            m_inputMaskFast = 0xFFFF;
+        }
 
         FORCE_INLINE void InputSetBranchless(uint16_t bit, bool released) {
             const uint16_t mask = 1u << bit;

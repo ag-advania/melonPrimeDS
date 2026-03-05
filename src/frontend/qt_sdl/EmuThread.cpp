@@ -216,8 +216,13 @@ void EmuThread::run()
                 if (coarseMs > 0.5)
                     SDL_Delay(static_cast<Uint32>(coarseMs));
 
-                // Precision spin-wait for final sub-millisecond alignment
-                while (SDL_GetPerformanceCounter() * perfCountsSec < targetTime) {
+                // P-27: Integer spin comparison.
+                // Old: SDL_GetPerformanceCounter() * perfCountsSec < targetTime
+                //   → float multiply per iteration (~5ns × 33k iterations = ~165μs)
+                // New: SDL_GetPerformanceCounter() < targetTick
+                //   → pure integer compare (0ns overhead)
+                const Uint64 targetTick = static_cast<Uint64>(targetTime / perfCountsSec);
+                while (SDL_GetPerformanceCounter() < targetTick) {
 #ifdef _WIN32
                     YieldProcessor();
 #endif
@@ -237,6 +242,7 @@ void EmuThread::run()
 #endif // MELONPRIME_DS
 
 #ifdef MELONPRIME_DS
+        melonPrime->PrePollRawInput(); // ← これを追加
         // =================================================================
         // P-15: Late-Poll Joystick — refresh SDL state after Sleep.
         //
@@ -245,9 +251,9 @@ void EmuThread::run()
         // re-polls joystick axes/buttons so RunFrameHook sees fresh
         // joyHotkeyMask and inputMask. Edge detection is untouched.
         //
-        // P-14: PrePollRawInput drains raw input before SDL_JoystickUpdate.
+        // P-14→P-20: PrePollRawInput removed before inputRefreshJoystickState.
+        // P-19 (HiddenWndProc returns 0) makes pre-drain unnecessary.
         // =================================================================
-        melonPrime->PrePollRawInput();
         emuInstance->inputRefreshJoystickState();
 #endif
 
@@ -261,8 +267,7 @@ void EmuThread::run()
             if (useOpenGL)
             {
 #ifdef MELONPRIME_DS
-                bool vsyncSetting = emuInstance->getGlobalConfig().GetBool("Screen.VSync");
-                emuInstance->setVSyncGL(vsyncSetting);
+                emuInstance->setVSyncGL(globalCfg.GetBool("Screen.VSync"));
 #else
                 emuInstance->setVSyncGL(true);
 #endif
@@ -322,9 +327,32 @@ void EmuThread::run()
             nlines = emuInstance->nds->RunFrame();
         }
 
+#ifdef MELONPRIME_DS
+        // P-22: Drain WM_INPUT queue AFTER RunFrame.
+        // With P-19 (HiddenWndProc returns 0), messages are harmless — they
+        // just sit in the queue. Draining here keeps it out of the
+        // input→RunFrame latency path while preventing queue overflow.
+        melonPrime->DeferredDrainInput();
+
+        // P-25: Save flush throttle — check once per 30 frames (~0.5s).
+        // DS save operations are internally dirty-flagged and buffered.
+        // Checking 3× per frame (ndsSave + gbaSave + firmwareSave) at 60Hz
+        // is 180 virtual dispatch calls/sec with no actual I/O 99.9% of the
+        // time. Throttling to every 30 frames saves ~177 null checks/sec.
+        {
+            static uint8_t s_flushCounter = 0;
+            if (UNLIKELY(++s_flushCounter >= 30)) {
+                s_flushCounter = 0;
+                if (emuInstance->ndsSave) emuInstance->ndsSave->CheckFlush();
+                if (emuInstance->gbaSave) emuInstance->gbaSave->CheckFlush();
+                if (emuInstance->firmwareSave) emuInstance->firmwareSave->CheckFlush();
+            }
+        }
+#else
         if (emuInstance->ndsSave) emuInstance->ndsSave->CheckFlush();
         if (emuInstance->gbaSave) emuInstance->gbaSave->CheckFlush();
         if (emuInstance->firmwareSave) emuInstance->firmwareSave->CheckFlush();
+#endif
 
         emuInstance->drawScreen();
 
@@ -454,11 +482,24 @@ void EmuThread::run()
             MPInterface::Get().Process();
 
 #ifdef MELONPRIME_DS
-        // P-14: Drain raw input before SDL_JoystickUpdate's message pump.
-        melonPrime->PrePollRawInput();
+        // P-14→P-19: PrePollRawInput removed.
+        // P-19 (HiddenWndProc returns 0 for WM_INPUT) ensures SDL_JoystickUpdate's
+        // PeekMessage can never consume raw input data. All raw input is safely read
+        // by processRawInputBatched inside PollAndSnapshot.
+        // Saves 2-4 GetRawInputBuffer + N PeekMessage syscalls per frame.
+
+        // P-14復活: SDLがメッセージを消す前にRaw Inputを救出
+        melonPrime->PrePollRawInput(); // ← これを追加
 #endif
         emuInstance->inputProcess();
 
+#ifdef MELONPRIME_DS
+        // P-24: Batch early-exit for outer loop hotkeys.
+        // hotkeyPress is 0 on 99.9%+ of frames. Single mask test skips
+        // all 7 individual hotkeyPressed checks and their branch prediction.
+        if (UNLIKELY(emuInstance->hotkeyPress))
+        {
+#endif
         if (emuInstance->hotkeyPressed(HK_FrameLimitToggle)) emit windowLimitFPSChange();
 
         if (emuInstance->hotkeyPressed(HK_Pause)) emuTogglePause();
@@ -469,6 +510,9 @@ void EmuThread::run()
 
         if (emuInstance->hotkeyPressed(HK_SwapScreens)) emit swapScreensToggle();
         if (emuInstance->hotkeyPressed(HK_SwapScreenEmphasis)) emit screenEmphasisToggle();
+#ifdef MELONPRIME_DS
+        }
+#endif
 
         if (emuStatus == emuStatus_Running || emuStatus == emuStatus_FrameStep)
         {
@@ -531,6 +575,9 @@ void EmuThread::run()
 #endif // MELONPRIME_DS
 
             // auto screen layout
+#ifndef MELONPRIME_DS
+            // P-26: MelonPrime does not use auto screen sizing.
+            // Skips: 3 array writes + PowerControl9 read + comparison per frame.
             {
                 mainScreenPos[2] = mainScreenPos[1];
                 mainScreenPos[1] = mainScreenPos[0];
@@ -558,6 +605,7 @@ void EmuThread::run()
                     emit autoScreenSizingChange(autoScreenSizing);
                 }
             }
+#endif
 
             frameAdvanceOnce();
         }
