@@ -61,9 +61,14 @@ namespace MelonPrime {
     }
 
     // =========================================================================
-    // REFACTORED (R1): drainPendingMessages -- extracted from Poll()/PollAndSnapshot()
-    // =========================================================================
+        // REFACTORED (R1): drainPendingMessages -- extracted from Poll()/PollAndSnapshot()
+        // =========================================================================
     void RawInputWinFilter::drainPendingMessages() noexcept {
+        // 【完全防御】PeekMessage でキューを掃除する前に、必ず未読の Raw Input を救出する
+        if (m_state && !m_joy2KeySupport) {
+            m_state->processRawInputBatched();
+        }
+
         MSG msg;
         if (LIKELY(WinInternal::fnNtUserPeekMessage != nullptr)) {
             while (WinInternal::fnNtUserPeekMessage(&msg, m_hHiddenWnd, WM_INPUT, WM_INPUT, PM_REMOVE, FALSE)) {}
