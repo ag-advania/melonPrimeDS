@@ -39,8 +39,8 @@ namespace MelonPrime {
     inline constexpr RomTable<uint32_t> LIST_BaseWeaponAmmo = { 0x020DC720, 0x020DC6E0, 0x020DA860, 0x020DB0E0, 0x020DB100, 0x020DB180, 0x020D3F2C };
 
     inline constexpr RomTable<uint32_t> LIST_WeaponDataCurrent = { 0x020DCE2C, 0x020DCDEC, 0x020DAF6C, 0x020DB7EC, 0x020DB80C, 0x020DB88C, 0x020D4638 };
-    inline constexpr RomTable<uint32_t> LIST_BaseAimX = { 0x020E03E6, 0x020E03A6, 0x020DE526, 0x020DEDA6, 0x020DEDC6, 0x020DEE46, 0x020D7C0E };
-    inline constexpr RomTable<uint32_t> LIST_BaseAimY = { 0x020E03EE, 0x020E03AE, 0x020DE52E, 0x020DEDAE, 0x020DEDCE, 0x020DEE4E, 0x020D7C16 };
+    inline constexpr RomTable<uint32_t> LIST_BaseAimX = { 0x020E03D2, 0x020E0392, 0x020DE512, 0x020DED92, 0x020DEDB2, 0x020DEE32, 0x020D7BFA };
+    inline constexpr RomTable<uint32_t> LIST_BaseAimY = { 0x020E03D4, 0x020E0394, 0x020DE514, 0x020DED94, 0x020DEDB4, 0x020DEE34, 0x020D7BFC };
 
     inline constexpr RomTable<uint32_t> LIST_BaseChosenHunter = { 0x020CD358, 0x020CD318, 0x020CB51C, 0x020CBDA4, 0x020CBDC4, 0x020CBE44, 0x020C4B88 };
     inline constexpr RomTable<uint32_t> LIST_InGame = { 0x020F0BB0, 0x020F0B70, 0x020EEA70, 0x020EF530, 0x020EF550, 0x020EF5D0, 0x020E81B4 };
