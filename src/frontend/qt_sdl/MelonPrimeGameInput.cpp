@@ -133,6 +133,58 @@ namespace MelonPrime {
         }
     }
 
+    HOT_FUNCTION void MelonPrimeCore::UpdateInputStateReentrant()
+    {
+#ifdef _WIN32
+        auto* const rawFilter = m_rawFilter.get();
+
+        // Re-entrant path only needs fresh down-state + mouse deltas.
+        // Press-edge bookkeeping still advances inside PollAndSnapshot, but we
+        // intentionally skip the expensive press-map expansion below.
+        FrameHotkeyState hk{};
+        if (rawFilter) {
+            rawFilter->PollAndSnapshot(hk, m_input.mouseX, m_input.mouseY);
+        }
+
+        if (!isFocused) {
+            m_input.down = 0;
+            m_input.press = 0;
+            m_input.moveIndex = 0;
+            m_input.mouseX = 0;
+            m_input.mouseY = 0;
+            m_input.wheelDelta = 0;
+            return;
+        }
+#endif
+
+        uint64_t down = 0;
+
+#ifdef _WIN32
+        const auto hkDown = [&](int id) -> bool {
+            return hk.isDown(id) || ((emuInstance->joyHotkeyMask >> id) & 1);
+            };
+#else
+        const auto hkDown = [&](int id) -> bool {
+            return (emuInstance->hotkeyMask >> id) & 1;
+            };
+#endif
+
+        UnrollCheckDown(down, hkDown, std::make_index_sequence<kDownMaps.size()>{});
+
+        m_input.down = down;
+        m_input.press = 0;
+        m_input.moveIndex = static_cast<uint32_t>((down >> 6) & 0xF);
+
+#if !defined(_WIN32)
+        const QPoint currentPos = QCursor::pos();
+        m_input.mouseX = currentPos.x() - m_aimData.centerX;
+        m_input.mouseY = currentPos.y() - m_aimData.centerY;
+#endif
+
+        // Re-entrant path never consumes wheel / press-triggered UI actions.
+        m_input.wheelDelta = 0;
+    }
+
     // OPT-Z2: Unified move + button mask update.
     //
     //   Previously split across ProcessMoveInputFast() and an inline block,

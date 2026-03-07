@@ -114,14 +114,11 @@ namespace MelonPrime {
     }
 
     // =========================================================================
-    // P-22: DeferredDrain — drain WM_INPUT queue AFTER RunFrame.
+    // P-22 / P-32: DeferredDrain — drain WM_INPUT queue AFTER RunFrame.
     //
     // PeekMessage(PM_REMOVE) dispatches each WM_INPUT to HiddenWndProc,
     // which calls processRawInput (P-19) — so data is captured, not lost.
-    // This just prevents unbounded message queue growth.
-    //
-    // With P-26 throttle (every 8 frames): 8kHz × 8 frames ≈ 1064 messages,
-    // well under Windows' 10,000 message queue limit.
+    // Current path drains every frame; the old throttle experiment was retired.
     // =========================================================================
     void RawInputWinFilter::DeferredDrain() noexcept {
         if (!m_joy2KeySupport) {
@@ -264,9 +261,8 @@ namespace MelonPrime {
     void RawInputWinFilter::resetMouseButtons() { m_state->resetMouseButtons(); }
 
     // P-9: Combined reset — single call replaces resetAllKeys + resetMouseButtons.
-    // InputState::resetAllKeys already resets both VK state AND mouse buttons
-    // (with one fence instead of two).
-    void RawInputWinFilter::resetAll() { m_state->resetAllKeys(); }
+    // Route to InputState::resetAll() so the implementation and comment stay aligned.
+    void RawInputWinFilter::resetAll() { m_state->resetAll(); }
     void RawInputWinFilter::resetHotkeyEdges() { m_state->resetHotkeyEdges(); }
     void RawInputWinFilter::fetchMouseDelta(int& outX, int& outY) { m_state->fetchMouseDelta(outX, outY); }
 

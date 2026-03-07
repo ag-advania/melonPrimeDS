@@ -125,8 +125,8 @@ namespace MelonPrime {
         }
 
         if (doReset) {
-            m_rawFilter->resetAllKeys();
-            m_rawFilter->resetMouseButtons();
+            // P-9 / resetAll: combined reset keeps the same semantics with one fence.
+            m_rawFilter->resetAll();
             m_rawFilter->resetHotkeyEdges();
         }
 #endif
@@ -211,24 +211,19 @@ namespace MelonPrime {
     }
 
     // =========================================================================
-    // P-14: PrePollRawInput — drain raw input buffer before SDL's message pump.
+    // P-14 (historical): PrePollRawInput
     //
-    // GetRawInputBuffer reads pending raw input BEFORE SDL_JoystickUpdate can
-    // dispatch WM_INPUT via PeekMessage. This ensures data is captured even if
-    // GetRawInputBuffer and GetRawInputData have shared-buffer semantics that
-    // could cause data loss.
+    // Retained as a compatibility shim so older comments / call sites still map
+    // to the same symbol name. The current low-latency path relies on:
+    //   - PollAndSnapshot() immediately before RunFrame
+    //   - HiddenWndProc/processRawInput (P-19) for dispatched WM_INPUT
+    //   - DeferredDrain() after RunFrame
     //
-    // P-19 (HiddenWndProc processRawInput) provides a secondary safety net:
-    // any WM_INPUT dispatched by SDL between PrePoll and PollAndSnapshot is
-    // captured by processRawInput. Belt-and-suspenders approach.
+    // That makes the extra pre-poll drain redundant on the hot path, so this is
+    // now intentionally a no-op.
     // =========================================================================
     void MelonPrimeCore::PrePollRawInput()
     {
-#ifdef _WIN32
-        if (m_rawFilter) {
-            m_rawFilter->Poll();
-        }
-#endif
     }
 
     // =========================================================================
@@ -311,7 +306,8 @@ namespace MelonPrime {
 
         if (UNLIKELY(m_isRunningHook)) {
             // Re-entrant path (called during FrameAdvanceOnce within weapon switch, morph, etc.)
-            UpdateInputState();
+            // Use the lean updater: no press-map scan, no wheel fetch.
+            UpdateInputStateReentrant();
             ProcessMoveAndButtonsFast();
 
             if (isStylusMode) {
