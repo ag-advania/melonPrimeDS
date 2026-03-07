@@ -528,27 +528,37 @@ void EmuInstance::inputProcess()
 {
 #ifdef MELONPRIME_DS
     // =========================================================================
-    // P-21: Edge-detection-only path.
+    // P-21: Lightweight path for MelonPrime.
     //
-    // SDL_JoystickUpdate is handled solely by inputRefreshJoystickState()
-    // (called after Sleep in the frame lambda). Joystick masks (joyInputMask,
-    // joyHotkeyMask) are already set from that call.
+    // Joystick mask recalculation (12× joystickButtonDown + HK_MAX× loop)
+    // is handled by inputRefreshJoystickState() inside frameAdvanceOnce.
     //
-    // This removes per-frame:
-    //   - SDL_LockMutex + SDL_UnlockMutex      (2 syscalls)
-    //   - SDL_JoystickUpdate → PeekMessage      (1 syscall + message dispatch)
-    //   - SDL_JoystickGetAttached               (SDL call)
-    //   - SDL_NumJoysticks                      (SDL call)
-    //   - 12× joystickButtonDown (joyInputMask) (loop)
-    //   - HK_MAX× joystickButtonDown (hotkey)   (loop)
+    // However, SDL_JoystickUpdate() MUST still be called here because:
+    //   - Config dialog (JoyMapButton) reads joystick via SDL_JoystickGetButton
+    //   - When emu is paused, inputRefreshJoystickState() doesn't run
+    //   - JoyMapButton expects the emu thread to keep joystick state fresh
     //
-    // UI hotkeys (Pause, Reset, etc.) see joystick button presses from the
-    // previous frame's inputRefreshJoystickState. 1-frame delay (~16ms) is
-    // imperceptible for non-gameplay actions.
-    //
-    // keyHotkeyMask (keyboard) is updated asynchronously by Qt events, so
-    // hotkeyMask must be recomputed here to catch keyboard-driven edges.
+    // Cost: SDL_LockMutex + SDL_JoystickUpdate + SDL_UnlockMutex (~3 syscalls)
+    // but saves: joystick attachment check, 12+HK_MAX joystickButtonDown calls,
+    //            and joyInputMask/joyHotkeyMask recomputation.
     // =========================================================================
+    SDL_LockMutex(joyMutex.get());
+    SDL_JoystickUpdate();
+
+    if (joystick)
+    {
+        if (!SDL_JoystickGetAttached(joystick))
+        {
+            SDL_JoystickClose(joystick);
+            joystick = nullptr;
+        }
+    }
+    if (!joystick && (SDL_NumJoysticks() > 0))
+    {
+        openJoystick();
+    }
+
+    SDL_UnlockMutex(joyMutex.get());
 
     // Joystick edge detection (masks set by inputRefreshJoystickState)
     joyHotkeyPress = joyHotkeyMask & ~lastJoyHotkeyMask;

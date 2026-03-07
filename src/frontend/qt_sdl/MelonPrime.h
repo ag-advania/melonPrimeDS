@@ -238,16 +238,20 @@ namespace MelonPrime {
         int64_t  m_aimResidualX = 0;
         int64_t  m_aimResidualY = 0;
 
-        // Float intermediates - cold path only (config change)
-        float    m_aimSensiFactor = 0.01f;
-        float    m_aimCombinedY = 0.013333333f;
-        float    m_aimAdjust = 0.5f;
+        // P-30: Hot bools grouped with residuals (same cache line fetch).
+        // ProcessAimInputMouse reads these every frame right after residuals.
+        bool     m_disableMphAimSmoothing = false;
+        bool     m_enableAimAccumulator = false;
 
+        // Warm scalars (checked per frame but not in aim hot path)
         bool     m_isRunningHook = false;
         bool     m_isWeaponCheckActive = false;
         bool     m_isLayoutChangePending = true;
-        bool     m_disableMphAimSmoothing = false;
-        bool     m_enableAimAccumulator = false;
+
+        // Cold: float intermediates (config change only)
+        float    m_aimSensiFactor = 0.01f;
+        float    m_aimCombinedY = 0.013333333f;
+        float    m_aimAdjust = 0.5f;
 
         struct alignas(4) StateFlags {
             uint32_t packed = 0;
@@ -347,6 +351,7 @@ namespace MelonPrime {
         COLD_FUNCTION void HandleRareWeaponSwitch();
         COLD_FUNCTION void HandleRareWeaponCheckStart();
         COLD_FUNCTION void HandleRareWeaponCheckEnd();
+        COLD_FUNCTION void HandleAimEarlyReset();  // P-29b
         COLD_FUNCTION void HandleAdventureMode();
 
         COLD_FUNCTION void HandleGameJoinInit();

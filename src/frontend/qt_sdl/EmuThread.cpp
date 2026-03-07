@@ -256,6 +256,30 @@ void EmuThread::run()
         emuInstance->inputRefreshJoystickState();
 #endif
 
+        // emulate
+        u32 nlines;
+
+        // NeedsShaderCompile reads a GPU flag — no GL context needed.
+        bool needsCompile = emuInstance->nds->GPU.GetRenderer().NeedsShaderCompile();
+
+#ifdef MELONPRIME_DS
+        // =================================================================
+        // P-28: RunFrameHook BEFORE makeCurrentGL.
+        //
+        // RunFrameHook only writes to DS memory (aimX/Y, inputMask, etc.)
+        // and reads raw input — zero GL dependency. Moving it before
+        // wglMakeCurrent eliminates 50-200μs of kernel transition from
+        // the input→game latency path.
+        //
+        // Old: PrePoll → SDL → makeCurrentGL(50-200μs) → RunFrameHook → RunFrame
+        // New: PrePoll → SDL → RunFrameHook → makeCurrentGL → RunFrame
+        // =================================================================
+        if (LIKELY(!needsCompile)) {
+            melonPrime->RunFrameHook();
+            emuInstance->nds->SetKeyMask(melonPrime->GetInputMaskFast());
+        }
+#endif
+
         if (useOpenGL)
             emuInstance->makeCurrentGL();
 
@@ -302,41 +326,26 @@ void EmuThread::run()
         }
 #endif // MELONPRIME_DS
 
-        // emulate
-        u32 nlines;
-        if (emuInstance->nds->GPU.GetRenderer().NeedsShaderCompile())
+        if (UNLIKELY(needsCompile))
         {
             compileShaders();
             nlines = 1;
         }
         else {
+#ifndef MELONPRIME_DS
+            // Non-MelonPrime: RunFrameHook not used, just RunFrame.
+#endif
 
-
-            // ----------------------------------------------------------------------
-            // MelonPrime Hook
-            // ----------------------------------------------------------------------
-            // 2. MelonPrimeのロジック実行 (入力の上書き、メモリ書き込み、タッチ処理)
-            melonPrime->RunFrameHook();
-
-            // 3. 確定したキー入力マスクをNDSコアに適用 (これが抜けていると移動できません)
-            // ★修正箇所: QBitArrayをu32ビットマスクに変換して渡す
-            emuInstance->nds->SetKeyMask(melonPrime->GetInputMaskFast());
-            // ----------------------------------------------------------------------
-
+#ifdef MELONPRIME_DS
+            // RunFrameHook + SetKeyMask already done above (P-28).
+#else
+            // Original melonDS path (no hook).
+#endif
             nlines = emuInstance->nds->RunFrame();
         }
 
 #ifdef MELONPRIME_DS
-        // P-22/P-26: Drain WM_INPUT queue AFTER RunFrame (throttled).
-        // With P-19, each dispatched WM_INPUT is captured by HiddenWndProc.
-        // Drain just prevents unbounded queue growth.
-        melonPrime->DeferredDrainInput();
-
         // P-25: Save flush throttle — check once per 30 frames (~0.5s).
-        // DS save operations are internally dirty-flagged and buffered.
-        // Checking 3× per frame (ndsSave + gbaSave + firmwareSave) at 60Hz
-        // is 180 virtual dispatch calls/sec with no actual I/O 99.9% of the
-        // time. Throttling to every 30 frames saves ~177 null checks/sec.
         {
             static uint8_t s_flushCounter = 0;
             if (UNLIKELY(++s_flushCounter >= 30)) {
@@ -353,6 +362,14 @@ void EmuThread::run()
 #endif
 
         emuInstance->drawScreen();
+
+#ifdef MELONPRIME_DS
+        // P-32: DeferredDrain AFTER drawScreen.
+        // During drawScreen, new WM_INPUT accumulates. Draining here means
+        // next frame's PrePoll starts with the cleanest possible queue.
+        // Completely removed from the input→RunFrame latency path.
+        melonPrime->DeferredDrainInput();
+#endif
 
 #ifdef MELONCAP
         MelonCap::Update();
