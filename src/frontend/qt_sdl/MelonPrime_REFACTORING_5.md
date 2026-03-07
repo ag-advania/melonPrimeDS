@@ -32,7 +32,7 @@ Total: USB + Queue + Poll + RunFrame + Render + Display = 最小 ~5ms, 最大 ~3
 | **Drain syscall (P-26)** | **~116μs/frame** | 8フレーム毎のドレインで 87% 削減 |
 | **スピン精度 (P-27)** | **~165μs/frame** | float 乗算除去で整数比較に |
 | **syscall 削減 (P-20)** | **6-18 syscall/frame** | PrePollRawInput ×2 除去 |
-| **WM_INPUT 消費レース (P-14)** | **Stuck keys** | SDL がバッチ読み前にデータ消費 |
+| **WM_INPUT 消費レース (P-19)** | **Stuck keys** | HiddenWndProc で dispatch 時にデータ救出 |
 | VSync (既存設定) | 0-16.7ms | SwapBuffers ブロック |
 | Audio Sync (既存) | 0-5ms | バッファフル時ブロック |
 
@@ -48,7 +48,7 @@ Total: USB + Queue + Poll + RunFrame + Render + Display = 最小 ~5ms, 最大 ~3
 | **P-16** | **VSync 復帰バグ修正** | **FastForward 解除後の VSync 強制 ON を修正** | **✅ 適用済み** |
 | **P-17** | **サブピクセルエイム蓄積** | **低〜中速エイムのスムーズ化** | **✅ 適用済み** |
 | **P-18** | **Dual-Path エイムパイプライン** | **4x 分解能 + デッドゾーン除去 + 残差クランプ** | **✅ 適用済み** |
-| **P-19** | **Stuck keys レース修正** | **HiddenWndProc で WM_INPUT を DefWindowProcW に渡さない** | **✅ 適用済み** |
+| **P-19** | **Stuck keys 根本修正** | **HiddenWndProc で processRawInput → PrePoll 不要化** | **✅ 適用済み** |
 | **P-26** | **DeferredDrain スロットル** | **8フレーム毎のドレインで PeekMessage syscall 87% 削減** | **✅ 適用済み** |
 | **P-27** | **整数スピン比較** | **スピンループの float 乗算除去 (~165μs/frame 節約)** | **✅ 適用済み** |
 | **P-23** | **ジョイスティック不在時高速パス** | **KB+M 時 SDL mutex 2回 + JoystickUpdate 省略** | **✅ 適用済み** |
@@ -238,9 +238,11 @@ Late-Poll 順序:
 
 ---
 
-## P-14: PrePoll バッチドレイン (Stuck Keys 修正)
+## P-14: PrePoll バッチドレイン (Stuck Keys 修正) → P-19 で代替
 
 **ファイル:** `MelonPrime.h/.cpp`, `EmuThread.cpp`, `MelonPrimeRawInputWinFilter.cpp`
+
+**注: P-14 は P-19 で代替された。以下は歴史的経緯の記録。**
 
 ### 問題
 
@@ -248,21 +250,7 @@ Late-Poll 順序:
 
 しかし `SDL_JoystickUpdate()` が `PeekMessage(NULL, 0, 0, PM_REMOVE)` を内部で呼び、emu thread の **全ウィンドウ** の WM_INPUT を dispatch。`DefWindowProcW` が内部で `GetRawInputData` を呼んでデータを消費。→ キーリリース消失 → 押しっぱなし。
 
-P-13 の Late-Poll で Sleep がフレーム先頭に移動したことで、`SDL_JoystickUpdate` と `PollAndSnapshot` の間隔が広がり発生確率が上昇。
-
-### 過去のアプローチ (重い)
-
-`HiddenWndProc` で WM_INPUT をキャプチャ:
-```cpp
-// WndProc: 133回/フレームの GetRawInputData syscall
-if (msg == WM_INPUT) {
-    s_instance->m_state->processRawInput(reinterpret_cast<HRAWINPUT>(lParam));
-}
-```
-
-8000Hz マウスで **133 syscall/フレーム** → 顕著なパフォーマンス低下。
-
-### 新アプローチ: PrePoll バッチドレイン
+### P-14 のアプローチ: PrePoll バッチドレイン
 
 `inputProcess()` (SDL_JoystickUpdate) の **直前** にバッチ読みを実行:
 
@@ -273,17 +261,13 @@ if (msg == WM_INPUT) {
 [PollAndSnapshot]  ← GetRawInputBuffer (1-2 syscall) で残り読み取り
 ```
 
-### パフォーマンス比較
+### 限界
 
-| アプローチ | syscall/frame | キャッシュ | 備考 |
-|-----------|--------------|----------|------|
-| WndProc キャプチャ | **133+** | 悪い (SDL コードと交互) | 押しっぱなし修正 ✓、重い |
-| PrePoll バッチ | **2-4** | 良い (シーケンシャル) | 押しっぱなし修正 ✓、軽い |
-| 何もしない | **1-2** | 最良 | 押しっぱなし発生 ✗ |
+PrePollRawInput と inputProcess の間 (マイクロ秒) に新 WM_INPUT が到着して SDL に dispatch される可能性がある。P-15 で SDL_JoystickUpdate が 2 回/frame になりレース確率が倍増。
 
-### 残存リスク
+### P-19 による代替
 
-PrePollRawInput と inputProcess の間 (マイクロ秒) に新 WM_INPUT が到着して SDL に dispatch される可能性がある。8000Hz マウスでも 0-1 イベント/フレーム。1 マウス tick の消失は知覚不可能。キーボードリリースがこの隙間に入る確率は実質ゼロ (キーボードは ~1000Hz)。
+P-19 で `HiddenWndProc` が WM_INPUT を `processRawInput` で処理するようになったため、SDL がいつ PeekMessage しても安全。PrePollRawInput は除去され、syscall が 6-18/frame 削減。
 
 ---
 
@@ -328,16 +312,15 @@ void EmuInstance::inputRefreshJoystickState()
 
 ```
 メインループ:
-  PrePollRawInput()              ← P-14: raw input ドレイン
   inputProcess()                 ← エッジ検出 + lastHotkeyMask 更新 (1 回のみ)
   hotkeyPressed(HK_Reset) etc.   ← エッジを消費 (即時反応)
   
   frameAdvanceOnce() {
     Sleep 0-16ms                 ← P-12/P-13
-    PrePollRawInput()            ← P-14
     inputRefreshJoystickState()  ← P-15: 状態のみ更新 (エッジ不変)
     RunFrameHook()               ← 最新の joyHotkeyMask/inputMask を使用
     RunFrame → Render
+    DeferredDrainInput()         ← P-22/P-26: WM_INPUT キュー整理
   }
 ```
 
@@ -637,70 +620,75 @@ static constexpr int64_t AIM_MAX_RESIDUAL = 128LL << AIM_FRAC_BITS;
 
 ---
 
-## P-19: Stuck keys レース修正
+## P-19: Stuck keys 根本修正 — HiddenWndProc processRawInput
 
 **ファイル:** `MelonPrimeRawInputWinFilter.cpp`
 
 ### 問題
 
-P-15 で `SDL_JoystickUpdate` が 2 回/frame になった (メインループ + ラムダ) ことで、以下のレース確率が倍増:
+`SDL_JoystickUpdate()` の `PeekMessage(NULL, ..., PM_REMOVE)` が hidden window 宛の WM_INPUT を dispatch。`DefWindowProcW` がデータを消費し、次の `GetRawInputBuffer` で key-up が欠損 → stuck key。
 
-```
-PrePollRawInput():
-  processRawInputBatched()    ← GetRawInputBuffer でデータ読み取り
-  drainPendingMessages()      ← WM_INPUT をキューから除去
+P-14 (PrePoll) はレースウィンドウを縮小するアプローチだったが、P-15 で SDL_JoystickUpdate が 2 回/frame に増えて再発。
 
-  ────── レースウィンドウ (1-2μs) ──────
-  新しい WM_INPUT が到着 (8kHz マウス = 125μs 間隔、確率 ~1-2%)
+### Windows Raw Input の仕様 (重要)
 
-SDL_JoystickUpdate():
-  PeekMessage(NULL, ...)      ← 全メッセージを dispatch
-  → WM_INPUT を HiddenWndProc に dispatch
-  → DefWindowProcW(WM_INPUT)
-  → 内部で GetRawInputData 呼び出し
-  → raw input データが消費される!!
+1. `PeekMessage(PM_REMOVE)` は WM_INPUT をキューから**除去**し WndProc に dispatch
+2. この時点で `GetRawInputBuffer` からは**不可視**になる (return 0 しても同じ)
+3. ただし WndProc の `lParam` に渡された `HRAWINPUT` ハンドルは `GetRawInputData` で読める
+4. `DefWindowProcW(WM_INPUT)` は内部で `GetRawInputData` を呼びデータを**消費**する
 
-PollAndSnapshot():
-  processRawInputBatched()    ← GetRawInputBuffer: データ消失 → key release ロスト
+**誤ったアプローチ (以前の P-19):**
+```cpp
+if (msg == WM_INPUT) return 0;  // ← データロスト!
+// PeekMessage がキューから除去済み → GetRawInputBuffer で読めない
+// return 0 では GetRawInputData も呼ばない → データ永久消失
 ```
 
-### なぜ P-14 で直らなかったか
-
-P-14 の PrePollRawInput はレースウィンドウを「小さくする」設計だった。P-15 以前は SDL_JoystickUpdate が 1 回/frame で確率が低かったが、2 回/frame で体感可能なレベルに上昇。
-
-### 修正: HiddenWndProc で WM_INPUT を遮断
+### 正しい修正: dispatch 時に processRawInput で即座にデータを読む
 
 ```cpp
 LRESULT CALLBACK HiddenWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
-    if (msg == WM_INPUT) return 0;  // DefWindowProcW に渡さない
+    if (msg == WM_INPUT) {
+        if (s_instance && s_instance->m_state)
+            s_instance->m_state->processRawInput(reinterpret_cast<HRAWINPUT>(lParam));
+        return 0;  // DefWindowProcW は呼ばない (二重消費防止)
+    }
     return DefWindowProcW(hwnd, msg, wParam, lParam);
 }
 ```
 
-### なぜこれで完全に修正されるか
+### なぜこれでデータロストがゼロになるか
 
-| イベント | DefWindowProcW (旧) | return 0 (新) |
-|---------|---------------------|---------------|
-| WM_INPUT dispatch | GetRawInputData → データ消費 | 何もしない → データ残存 |
-| raw input バッファ | データ消失 | processRawInputBatched が読める |
-| メッセージキュー | PM_REMOVE で除去済み | PM_REMOVE で除去済み |
-| リソースリーク | なし (DefWindowProc がクリーンアップ) | なし (GetRawInputBuffer がクリーンアップ) |
+raw input データの読み取りには 2 つの経路がある:
 
-SDL_JoystickUpdate が **いつ** PeekMessage しても、WM_INPUT は return 0 で処理される。DefWindowProcW が呼ばれないので GetRawInputData も呼ばれない。raw input データは常にバッファに残り、次の processRawInputBatched で確実に読まれる。
+| 経路 | API | タイミング |
+|------|-----|----------|
+| バッチ読み | `GetRawInputBuffer` (processRawInputBatched) | PollAndSnapshot で明示的に呼ぶ |
+| 個別読み | `GetRawInputData` (processRawInput) | HiddenWndProc 内で WM_INPUT dispatch 時 |
 
-**レースウィンドウ: 完全に消滅。**
+```
+シナリオ A (通常 — 99%+):
+  processRawInputBatched()  ← GetRawInputBuffer で先に読む → 成功
+  → PeekMessage dispatch → WM_INPUT はもうない → HiddenWndProc 呼ばれない
 
----
+シナリオ B (レース — SDL が先に dispatch):
+  SDL_JoystickUpdate()
+    → PeekMessage(PM_REMOVE) → WM_INPUT dispatch
+    → HiddenWndProc → processRawInput(lParam) ← GetRawInputData で即座に読む → 成功
+  processRawInputBatched()  ← GetRawInputBuffer: 既に処理済み → 0 件 → 無害
+```
 
-## P-20: PrePollRawInput 除去 + InputReset バグ修正 + P-3 適用漏れ
+両方のシナリオでデータが atomic 変数に書き込まれる。二重読みは atomic store の冪等性で無害。
 
-**ファイル:** `EmuThread.cpp`, `MelonPrime.h`, `MelonPrime.cpp`, `MelonPrimeGameInput.cpp`
+### パフォーマンス影響
 
-### P-20a: PrePollRawInput 除去
+P-14 の「WndProc キャプチャは 133 syscall/frame で重い」という懸念は、**通常時 (シナリオ A)** では HiddenWndProc が WM_INPUT に対して呼ばれないため発生しない。processRawInputBatched が先にバッファを空にするため。
 
-P-19 で `HiddenWndProc` が `WM_INPUT` を `return 0` で処理するようになったため、`SDL_JoystickUpdate` の `PeekMessage` が raw input データを消費するリスクは完全にゼロ。
+レース時 (シナリオ B) のみ数件の processRawInput が走るが、これは P-14 の PrePoll でも防げなかったデータの救出であり、純粋なメリット。
 
-P-14 の `PrePollRawInput` (= processRawInputBatched + drainPendingMessages) は不要に。
+### PrePollRawInput 除去
+
+P-19 により SDL がいつ PeekMessage しても安全。PrePollRawInput は完全に不要に:
 
 ```
 旧 (毎フレーム 3 回 processRawInputBatched):
@@ -715,7 +703,7 @@ P-14 の `PrePollRawInput` (= processRawInputBatched + drainPendingMessages) は
 | 項目 | 旧 | 新 |
 |------|-----|-----|
 | GetRawInputBuffer 呼び出し | 6-12/frame | 2-4/frame |
-| PeekMessage (drain) | 4-20/frame | 2-10/frame |
+| PeekMessage (drain) | 4-20/frame | 0/frame (P-22 で deferred) |
 | 合計 syscall 削減 | — | **~6-18/frame** |
 
 ### P-20b: InputReset バグ修正 (P-17/P-18 が無効化されていた)
@@ -756,12 +744,15 @@ m_input.wheelDelta = m_cachedPanel ? m_cachedPanel->getDelta() : 0;
 P-22 で `PollAndSnapshot` から `drainPendingMessages()` を分離し `DeferredDrain()` として実装したが、
 `EmuThread.cpp` の `frameAdvanceOnce` 内に呼び出しを追加し忘れていた。
 
-WM_INPUT メッセージがキューに永久に蓄積し続けるバグ。修正:
+P-19 により、ドレイン時に PeekMessage が dispatch する WM_INPUT は `processRawInput` で
+データ捕捉されるため、ドレインはデータ処理の役割も兼ねる。修正:
 
 ```cpp
 // RunFrame の直後、セーブフラッシュの前に呼び出し
 melonPrime->DeferredDrainInput();
 ```
+
+P-26 でさらに 8 フレーム毎にスロットル化。
 
 ---
 
@@ -898,7 +889,7 @@ if (UNLIKELY(++s_drainCounter >= 8)) {
 }
 ```
 
-P-19 (HiddenWndProc returns 0) により WM_INPUT メッセージは完全に無害。
+P-19 (HiddenWndProc が processRawInput を呼ぶ) により、ドレイン時の WM_INPUT dispatch もデータ捕捉される。
 GetRawInputBuffer はメッセージキューとは独立した raw input バッファから読み取る。
 
 | 項目 | 旧 | 新 |
@@ -973,7 +964,7 @@ USB (0.125ms) + RawInput 処理 (~0.01ms) + RunFrame (~5ms) + Render (~0.1ms)
 | `MelonPrimeGameInput.cpp` | P-17 + P-18 (ProcessAimInputMouse dual-path) |
 | `MelonPrimeRawWinInternal.h` | P-11 (型定義 + 宣言) |
 | `MelonPrimeRawWinInternal.cpp` | P-11 (解決 + 実装) |
-| `MelonPrimeRawInputWinFilter.cpp` | P-19 (WM_INPUT遮断), P-22 (DeferredDrain), resetAll追加 |
+| `MelonPrimeRawInputWinFilter.cpp` | P-19 (WM_INPUT processRawInput), P-22 (DeferredDrain), resetAll追加 |
 
 ---
 

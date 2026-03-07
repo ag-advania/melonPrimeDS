@@ -61,10 +61,14 @@ namespace MelonPrime {
     }
 
     // =========================================================================
-        // REFACTORED (R1): drainPendingMessages -- extracted from Poll()/PollAndSnapshot()
-        // =========================================================================
+    // REFACTORED (R1): drainPendingMessages -- extracted from Poll()/PollAndSnapshot()
+    // =========================================================================
     void RawInputWinFilter::drainPendingMessages() noexcept {
-        // 【完全防御】PeekMessage でキューを掃除する前に、必ず未読の Raw Input を救出する
+        // Safeguard: Always rescue pending raw input data BEFORE PeekMessage
+        // removes WM_INPUT from the queue. PeekMessage(PM_REMOVE) makes messages
+        // invisible to GetRawInputBuffer — if we don't read first, data is lost.
+        // When called after processRawInputBatched already ran (e.g. from Poll()),
+        // this returns 0 events and costs only one syscall.
         if (m_state && !m_joy2KeySupport) {
             m_state->processRawInputBatched();
         }
@@ -76,20 +80,6 @@ namespace MelonPrime {
         else {
             while (PeekMessageW(&msg, m_hHiddenWnd, WM_INPUT, WM_INPUT, PM_REMOVE)) {}
         }
-
-        // FIX-5: Rescue events that arrived during PeekMessage(PM_REMOVE).
-        // At 8000Hz mouse, new WM_INPUT can land mid-drain; the corresponding
-        // raw input buffer entry may be orphaned if not read before next frame.
-        if (m_state && !m_joy2KeySupport) {
-            m_state->processRawInputBatched();
-        }
-    }
-
-    void RawInputWinFilter::DeferredDrain() {
-        if (!m_joy2KeySupport) {
-            m_state->processRawInputBatched(); // 先にデータを救出！
-        }
-        drainPendingMessages();
     }
 
     void RawInputWinFilter::Poll() {
@@ -99,6 +89,17 @@ namespace MelonPrime {
         drainPendingMessages();
     }
 
+    // =========================================================================
+    // P-22: PollAndSnapshot — drain deferred to DeferredDrain().
+    //
+    // processRawInputBatched (GetRawInputBuffer) reads pending raw input
+    // in batch. Any WM_INPUT dispatched later (by SDL or drain) is caught
+    // by HiddenWndProc → processRawInput (P-19). So data is never lost
+    // regardless of when draining happens.
+    //
+    // Deferring the drain removes 2-10 PeekMessage syscalls from the
+    // latency-critical input→RunFrame path.
+    // =========================================================================
     void RawInputWinFilter::PollAndSnapshot(
         FrameHotkeyState& outHk, int& outMouseX, int& outMouseY)
     {
@@ -106,10 +107,26 @@ namespace MelonPrime {
 
         if (!m_joy2KeySupport) {
             state->processRawInputBatched();
-            drainPendingMessages();
+            // Drain deferred — see DeferredDrain()
         }
 
         state->snapshotInputFrame(outHk, outMouseX, outMouseY);
+    }
+
+    // =========================================================================
+    // P-22: DeferredDrain — drain WM_INPUT queue AFTER RunFrame.
+    //
+    // PeekMessage(PM_REMOVE) dispatches each WM_INPUT to HiddenWndProc,
+    // which calls processRawInput (P-19) — so data is captured, not lost.
+    // This just prevents unbounded message queue growth.
+    //
+    // With P-26 throttle (every 8 frames): 8kHz × 8 frames ≈ 1064 messages,
+    // well under Windows' 10,000 message queue limit.
+    // =========================================================================
+    void RawInputWinFilter::DeferredDrain() noexcept {
+        if (!m_joy2KeySupport) {
+            drainPendingMessages();
+        }
     }
 
     void RawInputWinFilter::setJoy2KeySupport(bool enable) {
@@ -164,25 +181,32 @@ namespace MelonPrime {
     }
 
     // =========================================================================
-    // P-19: HiddenWndProc — return 0 for WM_INPUT (do NOT call DefWindowProcW).
+    // P-19: HiddenWndProc — process raw input on dispatch.
     //
-    // DefWindowProcW internally calls GetRawInputData when it handles WM_INPUT,
-    // which CONSUMES the raw input data from the buffer. If SDL_JoystickUpdate's
-    // PeekMessage(NULL, ...) dispatches a WM_INPUT between PrePollRawInput and
-    // PollAndSnapshot, DefWindowProcW eats the data before GetRawInputBuffer
-    // can read it → missed key-release → stuck key.
+    // Problem: SDL_JoystickUpdate calls PeekMessage(NULL, ..., PM_REMOVE)
+    // which dispatches ALL pending messages including WM_INPUT. Once dispatched,
+    // the message is REMOVED from the queue — GetRawInputBuffer can never see it.
     //
-    // By returning 0, the WM_INPUT message is acknowledged (removed from queue
-    // by PeekMessage PM_REMOVE) but the raw input data stays in the buffer,
-    // safe for GetRawInputBuffer to read.
+    // Old approach (return 0): Data lost. PeekMessage already consumed the message.
     //
-    // This eliminates the race condition entirely:
-    //   - No syscall overhead (return 0 vs GetRawInputData)
-    //   - No data loss regardless of SDL message pump timing
-    //   - processRawInputBatched always sees all pending data
+    // Correct approach: Read the raw input data via processRawInput(HRAWINPUT)
+    // before returning. This captures the data that would otherwise be lost.
+    // DefWindowProcW is NOT called, so there's no double-read.
+    //
+    // No race condition:
+    //   - GetRawInputBuffer reads first → message gone → PeekMessage skips it
+    //   - PeekMessage dispatches first → processRawInput reads it → safe
+    //
+    // Both paths run on the emu thread (hidden window owned by emu thread),
+    // so they serialize naturally — no concurrent access issue.
     // =========================================================================
     LRESULT CALLBACK RawInputWinFilter::HiddenWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
-        if (msg == WM_INPUT) return 0;
+        if (msg == WM_INPUT) {
+            if (s_instance && s_instance->m_state) {
+                s_instance->m_state->processRawInput(reinterpret_cast<HRAWINPUT>(lParam));
+            }
+            return 0;
+        }
         return DefWindowProcW(hwnd, msg, wParam, lParam);
     }
 
