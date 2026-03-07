@@ -99,18 +99,22 @@ namespace MelonPrime {
         uint64_t press = 0;
 
 #ifdef _WIN32
+        const uint64_t joyMask = emuInstance->joyHotkeyMask;
+        const uint64_t joyPress = emuInstance->joyHotkeyPress;
         const auto hkDown = [&](int id) -> bool {
-            return hk.isDown(id) || ((emuInstance->joyHotkeyMask >> id) & 1);
+            return hk.isDown(id) || ((joyMask >> id) & 1);
             };
         const auto hkPressed = [&](int id) -> bool {
-            return hk.isPressed(id) || ((emuInstance->joyHotkeyPress >> id) & 1);
+            return hk.isPressed(id) || ((joyPress >> id) & 1);
             };
 #else
+        const uint64_t hotkeyMask = emuInstance->hotkeyMask;
+        const uint64_t hotkeyPress = emuInstance->hotkeyPress;
         const auto hkDown = [&](int id) -> bool {
-            return (emuInstance->hotkeyMask >> id) & 1;
+            return (hotkeyMask >> id) & 1;
             };
         const auto hkPressed = [&](int id) -> bool {
-            return (emuInstance->hotkeyPress >> id) & 1;
+            return (hotkeyPress >> id) & 1;
             };
 #endif
 
@@ -138,12 +142,11 @@ namespace MelonPrime {
 #ifdef _WIN32
         auto* const rawFilter = m_rawFilter.get();
 
-        // Re-entrant path only needs fresh down-state + mouse deltas.
-        // Press-edge bookkeeping still advances inside PollAndSnapshot, but we
-        // intentionally skip the expensive press-map expansion below.
+        // Re-entrant path only needs current down-state + mouse deltas.
+        // Use the no-edge snapshot so outer-frame press detection is preserved.
         FrameHotkeyState hk{};
         if (rawFilter) {
-            rawFilter->PollAndSnapshot(hk, m_input.mouseX, m_input.mouseY);
+            rawFilter->PollAndSnapshotNoEdges(hk, m_input.mouseX, m_input.mouseY);
         }
 
         if (!isFocused) {
@@ -160,12 +163,14 @@ namespace MelonPrime {
         uint64_t down = 0;
 
 #ifdef _WIN32
+        const uint64_t joyMask = emuInstance->joyHotkeyMask;
         const auto hkDown = [&](int id) -> bool {
-            return hk.isDown(id) || ((emuInstance->joyHotkeyMask >> id) & 1);
+            return hk.isDown(id) || ((joyMask >> id) & 1);
             };
 #else
+        const uint64_t hotkeyMask = emuInstance->hotkeyMask;
         const auto hkDown = [&](int id) -> bool {
-            return (emuInstance->hotkeyMask >> id) & 1;
+            return (hotkeyMask >> id) & 1;
             };
 #endif
 

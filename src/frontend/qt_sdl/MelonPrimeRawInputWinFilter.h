@@ -34,6 +34,9 @@ namespace MelonPrime {
         // Merged Poll + snapshot in single call
         void PollAndSnapshot(FrameHotkeyState& outHk, int& outMouseX, int& outMouseY);
 
+        // Re-entrant path: same as PollAndSnapshot but does not advance hkPrev.
+        void PollAndSnapshotNoEdges(FrameHotkeyState& outHk, int& outMouseX, int& outMouseY);
+
         // P-22: Drain WM_INPUT queue after RunFrame (non-latency-critical).
         void DeferredDrain() noexcept;
 
@@ -47,6 +50,7 @@ namespace MelonPrime {
 
         void pollHotkeys(FrameHotkeyState& out);
         void snapshotInputFrame(FrameHotkeyState& outHk, int& outMouseX, int& outMouseY);
+        void snapshotInputFrameNoEdges(FrameHotkeyState& outHk, int& outMouseX, int& outMouseY);
         void resetAllKeys();
         void resetAll();  // P-9: combined reset (single fence)
         void resetMouseButtons();
