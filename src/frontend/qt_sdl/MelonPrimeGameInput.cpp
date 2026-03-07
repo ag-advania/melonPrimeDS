@@ -6,6 +6,7 @@
 #include "MelonPrimeDef.h"
 
 #include <utility>
+#include <algorithm>  // std::clamp (P-29a)
 #include <QCursor>
 
 #ifdef _WIN32
@@ -190,6 +191,21 @@ namespace MelonPrime {
         }
     }
 
+    // P-29b: Cold path for aim reset (aimBlock or layout change).
+    // Outlined from ProcessAimInputMouse to keep the hot path branch-free.
+    COLD_FUNCTION void MelonPrimeCore::HandleAimEarlyReset()
+    {
+        m_aimResidualX = 0;
+        m_aimResidualY = 0;
+
+        if (m_isLayoutChangePending) {
+            m_isLayoutChangePending = false;
+#ifdef _WIN32
+            if (m_rawFilter) m_rawFilter->discardDeltas();
+#endif
+        }
+    }
+
     // =========================================================================
     // ProcessAimInputMouse
     //
@@ -209,19 +225,11 @@ namespace MelonPrime {
     // =========================================================================
     HOT_FUNCTION void MelonPrimeCore::ProcessAimInputMouse()
     {
-        if (m_aimBlockBits) {
-            m_aimResidualX = 0;
-            m_aimResidualY = 0;
-            return;
-        }
-
-        if (UNLIKELY(m_isLayoutChangePending)) {
-            m_isLayoutChangePending = false;
-            m_aimResidualX = 0;
-            m_aimResidualY = 0;
-#ifdef _WIN32
-            if (m_rawFilter) m_rawFilter->discardDeltas();
-#endif
+        // P-29b: Combined early-exit gate.
+        // Single branch covers both aimBlock (morph/weapon) and layout change.
+        // Cold path handles the specifics.
+        if (UNLIKELY(m_aimBlockBits | static_cast<uint32_t>(m_isLayoutChangePending))) {
+            HandleAimEarlyReset();
             return;
         }
 
@@ -233,13 +241,10 @@ namespace MelonPrime {
             m_aimResidualX += static_cast<int64_t>(deltaX) * m_aimFixedScaleX;
             m_aimResidualY += static_cast<int64_t>(deltaY) * m_aimFixedScaleY;
 
-            // P-18c: Clamp residual to prevent wind-up.
-            // Without this, rapid reversals or aim-blocked frames could
-            // let the residual grow unbounded, causing a sudden jump.
-            if (UNLIKELY(m_aimResidualX > AIM_MAX_RESIDUAL))  m_aimResidualX = AIM_MAX_RESIDUAL;
-            if (UNLIKELY(m_aimResidualX < -AIM_MAX_RESIDUAL)) m_aimResidualX = -AIM_MAX_RESIDUAL;
-            if (UNLIKELY(m_aimResidualY > AIM_MAX_RESIDUAL))  m_aimResidualY = AIM_MAX_RESIDUAL;
-            if (UNLIKELY(m_aimResidualY < -AIM_MAX_RESIDUAL)) m_aimResidualY = -AIM_MAX_RESIDUAL;
+            // P-29a: Branchless residual clamp (CMOV on x86, CSEL on ARM).
+            // Replaces 4 conditional branches with branchless min/max.
+            m_aimResidualX = std::clamp(m_aimResidualX, -AIM_MAX_RESIDUAL, AIM_MAX_RESIDUAL);
+            m_aimResidualY = std::clamp(m_aimResidualY, -AIM_MAX_RESIDUAL, AIM_MAX_RESIDUAL);
 
             if (m_disableMphAimSmoothing) {
                 // =========================================================
