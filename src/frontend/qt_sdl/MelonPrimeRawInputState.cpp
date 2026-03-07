@@ -383,6 +383,30 @@ namespace MelonPrime {
     }
 
     // =========================================================================
+    // V2: snapshotInputFrameNoEdges — re-entrant snapshot without edge advance.
+    //
+    // Use this for nested RunFrameHook paths that only need current down-state
+    // and mouse deltas. It deliberately does NOT update m_hkPrev, so press-edge
+    // detection for the next outer frame is preserved.
+    // =========================================================================
+    void InputState::snapshotInputFrameNoEdges(FrameHotkeyState& outHk,
+        int& outMouseX, int& outMouseY) noexcept
+    {
+        const auto snap = takeSnapshot();  // acquire fence inside
+
+        const int64_t curX = m_accumMouseX.load(std::memory_order_relaxed);
+        const int64_t curY = m_accumMouseY.load(std::memory_order_relaxed);
+
+        outMouseX = static_cast<int>(curX - m_lastReadMouseX);
+        outMouseY = static_cast<int>(curY - m_lastReadMouseY);
+        m_lastReadMouseX = curX;
+        m_lastReadMouseY = curY;
+
+        outHk.down = scanBoundHotkeys(snap);
+        outHk.pressed = 0;
+    }
+
+    // =========================================================================
     // R2: hotkeyDown — uses m_boundHotkeys instead of removed hasMask[]
     // =========================================================================
     bool InputState::hotkeyDown(int id) const noexcept {

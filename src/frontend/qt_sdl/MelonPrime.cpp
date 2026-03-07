@@ -211,19 +211,24 @@ namespace MelonPrime {
     }
 
     // =========================================================================
-    // P-14 (historical): PrePollRawInput
+    // P-14: PrePollRawInput — drain raw input buffer before SDL's message pump.
     //
-    // Retained as a compatibility shim so older comments / call sites still map
-    // to the same symbol name. The current low-latency path relies on:
-    //   - PollAndSnapshot() immediately before RunFrame
-    //   - HiddenWndProc/processRawInput (P-19) for dispatched WM_INPUT
-    //   - DeferredDrain() after RunFrame
+    // GetRawInputBuffer reads pending raw input BEFORE SDL_JoystickUpdate can
+    // dispatch WM_INPUT via PeekMessage. This ensures data is captured even if
+    // GetRawInputBuffer and GetRawInputData have shared-buffer semantics that
+    // could cause data loss.
     //
-    // That makes the extra pre-poll drain redundant on the hot path, so this is
-    // now intentionally a no-op.
+    // P-19 (HiddenWndProc processRawInput) provides a secondary safety net:
+    // any WM_INPUT dispatched by SDL between PrePoll and PollAndSnapshot is
+    // captured by processRawInput. Belt-and-suspenders approach.
     // =========================================================================
     void MelonPrimeCore::PrePollRawInput()
     {
+#ifdef _WIN32
+        if (m_rawFilter) {
+            m_rawFilter->Poll();
+        }
+#endif
     }
 
     // =========================================================================
