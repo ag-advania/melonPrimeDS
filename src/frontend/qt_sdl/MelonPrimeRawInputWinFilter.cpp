@@ -145,8 +145,8 @@ namespace MelonPrime {
             RegisterDevices(m_hHiddenWnd, true);
         }
 
-        m_state->resetAllKeys();
-        m_state->resetMouseButtons();
+        m_state->resetAllKeys();         // VK + mouse buttons + hkPrev (single fence)
+        m_state->resetHotkeyEdges();     // Re-sync edge detection after mode switch
     }
 
     void RawInputWinFilter::setRawInputTarget(HWND hwnd) {
