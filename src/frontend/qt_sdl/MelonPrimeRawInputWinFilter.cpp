@@ -76,6 +76,13 @@ namespace MelonPrime {
         else {
             while (PeekMessageW(&msg, m_hHiddenWnd, WM_INPUT, WM_INPUT, PM_REMOVE)) {}
         }
+
+        // FIX-5: Rescue events that arrived during PeekMessage(PM_REMOVE).
+        // At 8000Hz mouse, new WM_INPUT can land mid-drain; the corresponding
+        // raw input buffer entry may be orphaned if not read before next frame.
+        if (m_state && !m_joy2KeySupport) {
+            m_state->processRawInputBatched();
+        }
     }
 
     void RawInputWinFilter::DeferredDrain() {

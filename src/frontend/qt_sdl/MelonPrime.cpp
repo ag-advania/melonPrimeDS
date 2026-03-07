@@ -47,6 +47,7 @@ namespace MelonPrime {
         isStylusMode = m_flags.test(StateFlags::BIT_STYLUS_MODE);
 
         m_disableMphAimSmoothing = localCfg.GetBool(CfgKey::DisableMphAimSmoothing);
+        m_enableAimAccumulator = localCfg.GetBool(CfgKey::AimAccumulator);
     }
 
     void MelonPrimeCore::Initialize()

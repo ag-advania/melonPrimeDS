@@ -210,6 +210,12 @@ namespace MelonPrime {
                 }
                 raw = NEXTRAWINPUTBLOCK(raw);
             }
+
+            // FIX-4: MSDN contract — call DefRawInputProc after GetRawInputBuffer.
+            // Without this, Windows may fail to retire internal buffer entries,
+            // causing sporadic event loss (key-up / button-up drops → stuck keys).
+            PRAWINPUT pri = reinterpret_cast<PRAWINPUT>(buffer);
+            DefRawInputProc(&pri, static_cast<INT>(count), sizeof(RAWINPUTHEADER));
         }
 
         // --- Commit phase (single-writer, wait-free) ---

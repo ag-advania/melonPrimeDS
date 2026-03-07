@@ -83,7 +83,15 @@ namespace MelonPrime {
             rawFilter->PollAndSnapshot(hk, m_input.mouseX, m_input.mouseY);
         }
 
-        if (!isFocused) return; // [FIX-2] moved after poll
+        if (!isFocused) { // [FIX-2] moved after poll + clear stale state
+            m_input.down = 0;
+            m_input.press = 0;
+            m_input.moveIndex = 0;
+            m_input.mouseX = 0;
+            m_input.mouseY = 0;
+            m_input.wheelDelta = 0;
+            return;
+        }
 #endif
 
         uint64_t down = 0;
@@ -288,6 +296,13 @@ namespace MelonPrime {
 
                 *m_ptrs.aimX = static_cast<uint16_t>(outX);
                 *m_ptrs.aimY = static_cast<uint16_t>(outY);
+            }
+
+            // Discard sub-pixel residuals when accumulator is off.
+            // Fractional remainder won't carry to the next frame.
+            if (UNLIKELY(!m_enableAimAccumulator)) {
+                m_aimResidualX = 0;
+                m_aimResidualY = 0;
             }
 
 #if !defined(_WIN32)

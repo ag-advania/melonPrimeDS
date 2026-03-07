@@ -246,6 +246,7 @@ namespace MelonPrime {
         bool     m_isWeaponCheckActive = false;
         bool     m_isLayoutChangePending = true;
         bool     m_disableMphAimSmoothing = false;
+        bool     m_enableAimAccumulator = false;
 
         struct alignas(4) StateFlags {
             uint32_t packed = 0;
