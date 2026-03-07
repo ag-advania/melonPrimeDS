@@ -21,54 +21,49 @@ namespace MelonPrime {
         0xE0, 0xA0, 0x60, 0xE0,  0xF0, 0xB0, 0x70, 0xF0,
     };
 
-    struct KeyMap {
-        int      hkID;
-        uint64_t bit;
-    };
-
-    static constexpr std::array<KeyMap, 11> kDownMaps = { {
-        { HK_MetroidMoveForward,        IB_MOVE_F },
-        { HK_MetroidMoveBack,           IB_MOVE_B },
-        { HK_MetroidMoveLeft,           IB_MOVE_L },
-        { HK_MetroidMoveRight,          IB_MOVE_R },
-        { HK_MetroidJump,               IB_JUMP },
-        { HK_MetroidZoom,               IB_ZOOM },
-        { HK_MetroidWeaponCheck,        IB_WEAPON_CHECK },
-        { HK_MetroidHoldMorphBallBoost, IB_MORPH_BOOST },
-        { HK_MetroidMenu,               IB_MENU },
-        { HK_MetroidShootScan,          IB_SHOOT },
-        { HK_MetroidScanShoot,          IB_SHOOT },
-    } };
-
-    static constexpr std::array<KeyMap, 18> kPressMaps = { {
-        { HK_MetroidMorphBall,     IB_MORPH },
-        { HK_MetroidScanVisor,     IB_SCAN_VISOR },
-        { HK_MetroidUIOk,          IB_UI_OK },
-        { HK_MetroidUILeft,        IB_UI_LEFT },
-        { HK_MetroidUIRight,       IB_UI_RIGHT },
-        { HK_MetroidUIYes,         IB_UI_YES },
-        { HK_MetroidUINo,          IB_UI_NO },
-        { HK_MetroidWeaponBeam,    IB_WEAPON_BEAM },
-        { HK_MetroidWeaponMissile, IB_WEAPON_MISSILE },
-        { HK_MetroidWeapon1,       IB_WEAPON_1 },
-        { HK_MetroidWeapon2,       IB_WEAPON_2 },
-        { HK_MetroidWeapon3,       IB_WEAPON_3 },
-        { HK_MetroidWeapon4,       IB_WEAPON_4 },
-        { HK_MetroidWeapon5,       IB_WEAPON_5 },
-        { HK_MetroidWeapon6,       IB_WEAPON_6 },
-        { HK_MetroidWeaponSpecial, IB_WEAPON_SPECIAL },
-        { HK_MetroidWeaponNext,    IB_WEAPON_NEXT },
-        { HK_MetroidWeaponPrevious,IB_WEAPON_PREV },
-    } };
-
-    template <typename Func, size_t... Is>
-    FORCE_INLINE void UnrollCheckDown(uint64_t& mask, Func&& checker, std::index_sequence<Is...>) {
-        ((checker(kDownMaps[Is].hkID) ? (mask |= kDownMaps[Is].bit) : 0), ...);
+    // V6: Direct hotkey-bit projection.
+    //
+    // UpdateInputState() runs every frame, so avoid generic lambda + table walks
+    // when the relevant Metroid hotkey IDs are compile-time constants.
+    // We first merge RawInput/joy masks into one uint64_t, then project that
+    // bitset directly into IB_* bits with branchless 0/1 multipliers.
+    [[nodiscard]] FORCE_INLINE uint64_t ProjectDownMask(const uint64_t hotMask) noexcept {
+        uint64_t down = 0;
+        down |= ((hotMask >> HK_MetroidMoveForward)        & 1ULL) * IB_MOVE_F;
+        down |= ((hotMask >> HK_MetroidMoveBack)           & 1ULL) * IB_MOVE_B;
+        down |= ((hotMask >> HK_MetroidMoveLeft)           & 1ULL) * IB_MOVE_L;
+        down |= ((hotMask >> HK_MetroidMoveRight)          & 1ULL) * IB_MOVE_R;
+        down |= ((hotMask >> HK_MetroidJump)               & 1ULL) * IB_JUMP;
+        down |= ((hotMask >> HK_MetroidZoom)               & 1ULL) * IB_ZOOM;
+        down |= ((hotMask >> HK_MetroidWeaponCheck)        & 1ULL) * IB_WEAPON_CHECK;
+        down |= ((hotMask >> HK_MetroidHoldMorphBallBoost) & 1ULL) * IB_MORPH_BOOST;
+        down |= ((hotMask >> HK_MetroidMenu)               & 1ULL) * IB_MENU;
+        down |= ((((hotMask >> HK_MetroidShootScan) |
+                   (hotMask >> HK_MetroidScanShoot))       & 1ULL) * IB_SHOOT);
+        return down;
     }
 
-    template <typename Func, size_t... Is>
-    FORCE_INLINE void UnrollCheckPress(uint64_t& mask, Func&& checker, std::index_sequence<Is...>) {
-        ((checker(kPressMaps[Is].hkID) ? (mask |= kPressMaps[Is].bit) : 0), ...);
+    [[nodiscard]] FORCE_INLINE uint64_t ProjectPressMask(const uint64_t hotMask) noexcept {
+        uint64_t press = 0;
+        press |= ((hotMask >> HK_MetroidMorphBall)      & 1ULL) * IB_MORPH;
+        press |= ((hotMask >> HK_MetroidScanVisor)      & 1ULL) * IB_SCAN_VISOR;
+        press |= ((hotMask >> HK_MetroidUIOk)           & 1ULL) * IB_UI_OK;
+        press |= ((hotMask >> HK_MetroidUILeft)         & 1ULL) * IB_UI_LEFT;
+        press |= ((hotMask >> HK_MetroidUIRight)        & 1ULL) * IB_UI_RIGHT;
+        press |= ((hotMask >> HK_MetroidUIYes)          & 1ULL) * IB_UI_YES;
+        press |= ((hotMask >> HK_MetroidUINo)           & 1ULL) * IB_UI_NO;
+        press |= ((hotMask >> HK_MetroidWeaponBeam)     & 1ULL) * IB_WEAPON_BEAM;
+        press |= ((hotMask >> HK_MetroidWeaponMissile)  & 1ULL) * IB_WEAPON_MISSILE;
+        press |= ((hotMask >> HK_MetroidWeapon1)        & 1ULL) * IB_WEAPON_1;
+        press |= ((hotMask >> HK_MetroidWeapon2)        & 1ULL) * IB_WEAPON_2;
+        press |= ((hotMask >> HK_MetroidWeapon3)        & 1ULL) * IB_WEAPON_3;
+        press |= ((hotMask >> HK_MetroidWeapon4)        & 1ULL) * IB_WEAPON_4;
+        press |= ((hotMask >> HK_MetroidWeapon5)        & 1ULL) * IB_WEAPON_5;
+        press |= ((hotMask >> HK_MetroidWeapon6)        & 1ULL) * IB_WEAPON_6;
+        press |= ((hotMask >> HK_MetroidWeaponSpecial)  & 1ULL) * IB_WEAPON_SPECIAL;
+        press |= ((hotMask >> HK_MetroidWeaponNext)     & 1ULL) * IB_WEAPON_NEXT;
+        press |= ((hotMask >> HK_MetroidWeaponPrevious) & 1ULL) * IB_WEAPON_PREV;
+        return press;
     }
 
     HOT_FUNCTION void MelonPrimeCore::UpdateInputState()
@@ -95,31 +90,16 @@ namespace MelonPrime {
         }
 #endif
 
-        uint64_t down = 0;
-        uint64_t press = 0;
-
 #ifdef _WIN32
-        const uint64_t joyMask = emuInstance->joyHotkeyMask;
-        const uint64_t joyPress = emuInstance->joyHotkeyPress;
-        const auto hkDown = [&](int id) -> bool {
-            return hk.isDown(id) || ((joyMask >> id) & 1);
-            };
-        const auto hkPressed = [&](int id) -> bool {
-            return hk.isPressed(id) || ((joyPress >> id) & 1);
-            };
+        const uint64_t hotDownMask = hk.down | emuInstance->joyHotkeyMask;
+        const uint64_t hotPressMask = hk.pressed | emuInstance->joyHotkeyPress;
 #else
-        const uint64_t hotkeyMask = emuInstance->hotkeyMask;
-        const uint64_t hotkeyPress = emuInstance->hotkeyPress;
-        const auto hkDown = [&](int id) -> bool {
-            return (hotkeyMask >> id) & 1;
-            };
-        const auto hkPressed = [&](int id) -> bool {
-            return (hotkeyPress >> id) & 1;
-            };
+        const uint64_t hotDownMask = emuInstance->hotkeyMask;
+        const uint64_t hotPressMask = emuInstance->hotkeyPress;
 #endif
 
-        UnrollCheckDown(down, hkDown, std::make_index_sequence<kDownMaps.size()>{});
-        UnrollCheckPress(press, hkPressed, std::make_index_sequence<kPressMaps.size()>{});
+        const uint64_t down = ProjectDownMask(hotDownMask);
+        const uint64_t press = ProjectPressMask(hotPressMask);
 
         m_input.down = down;
         m_input.press = press;
@@ -160,21 +140,13 @@ namespace MelonPrime {
         }
 #endif
 
-        uint64_t down = 0;
-
 #ifdef _WIN32
-        const uint64_t joyMask = emuInstance->joyHotkeyMask;
-        const auto hkDown = [&](int id) -> bool {
-            return hk.isDown(id) || ((joyMask >> id) & 1);
-            };
+        const uint64_t hotDownMask = hk.down | emuInstance->joyHotkeyMask;
 #else
-        const uint64_t hotkeyMask = emuInstance->hotkeyMask;
-        const auto hkDown = [&](int id) -> bool {
-            return (hotkeyMask >> id) & 1;
-            };
+        const uint64_t hotDownMask = emuInstance->hotkeyMask;
 #endif
 
-        UnrollCheckDown(down, hkDown, std::make_index_sequence<kDownMaps.size()>{});
+        const uint64_t down = ProjectDownMask(hotDownMask);
 
         m_input.down = down;
         m_input.press = 0;
