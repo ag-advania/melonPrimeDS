@@ -175,13 +175,14 @@ namespace MelonPrime {
         bool isClipWanted = false;
         bool isStylusMode = false;
 
-        void DeferredDrainInput();
         void NotifyLayoutChange();  // P-3: impl in .cpp (needs complete EmuInstance type)
 
         // P-14: Pre-drain raw input buffer before SDL's message pump.
-        // Prevents SDL_JoystickUpdate from dispatching WM_INPUT → DefWindowProcW,
-        // which would consume raw input data before processRawInputBatched reads it.
+        // Belt-and-suspenders with P-19 (HiddenWndProc processRawInput).
         void PrePollRawInput();
+
+        // P-22: Drain WM_INPUT queue after RunFrame.
+        void DeferredDrainInput();
 
     private:
         // =================================================================

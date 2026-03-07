@@ -211,27 +211,38 @@ namespace MelonPrime {
     }
 
     // =========================================================================
-    // P-22→P-26: DeferredDrain — throttled to every 8 frames.
+    // P-14: PrePollRawInput — drain raw input buffer before SDL's message pump.
     //
-    // With P-19 (HiddenWndProc returns 0), WM_INPUT messages are harmless —
-    // they just sit in the queue, and GetRawInputBuffer reads from a separate
-    // raw input buffer regardless. Draining prevents unbounded queue growth.
+    // GetRawInputBuffer reads pending raw input BEFORE SDL_JoystickUpdate can
+    // dispatch WM_INPUT via PeekMessage. This ensures data is captured even if
+    // GetRawInputBuffer and GetRawInputData have shared-buffer semantics that
+    // could cause data loss.
     //
-    // At 8kHz mouse / 60 FPS: ~133 WM_INPUT messages/frame.
-    // Drain every 8 frames = ~1064 messages accumulated. Windows default
-    // queue limit is 10,000 — well within bounds.
+    // P-19 (HiddenWndProc processRawInput) provides a secondary safety net:
+    // any WM_INPUT dispatched by SDL between PrePoll and PollAndSnapshot is
+    // captured by processRawInput. Belt-and-suspenders approach.
+    // =========================================================================
+    void MelonPrimeCore::PrePollRawInput()
+    {
+#ifdef _WIN32
+        if (m_rawFilter) {
+            m_rawFilter->Poll();
+        }
+#endif
+    }
+
+    // =========================================================================
+    // P-22: DeferredDrainInput — drain WM_INPUT queue after RunFrame.
     //
-    // Saves: ~133 PeekMessage syscalls × 7/8 frames ≈ 116 syscalls/frame avg.
-    // Each PeekMessage ≈ 1μs → saves ~116μs/frame (~0.7% of 16.7ms budget).
+    // With P-19, each dispatched WM_INPUT triggers processRawInput in
+    // HiddenWndProc, so draining also captures any straggler events.
+    // Runs every frame to keep the queue clean.
+    // =========================================================================
     void MelonPrimeCore::DeferredDrainInput()
     {
 #ifdef _WIN32
         if (m_rawFilter) {
-            static uint8_t s_drainCounter = 0;
-            if (UNLIKELY(++s_drainCounter >= 8)) {
-                s_drainCounter = 0;
-                m_rawFilter->DeferredDrain();
-            }
+            m_rawFilter->DeferredDrain();
         }
 #endif
     }
@@ -486,16 +497,6 @@ namespace MelonPrime {
     {
         FrameAdvanceOnce();
         FrameAdvanceOnce();
-    }
-
-    // 追加
-    void MelonPrimeCore::PrePollRawInput()
-    {
-#ifdef _WIN32
-        if (m_rawFilter) {
-            m_rawFilter->Poll(); // Poll() はバッチ読み取り＋ドレインを両方やってくれます
-        }
-#endif
     }
 
     QPoint MelonPrimeCore::GetAdjustedCenter()

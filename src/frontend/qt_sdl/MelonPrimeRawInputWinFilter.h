@@ -33,7 +33,10 @@ namespace MelonPrime {
 
         // Merged Poll + snapshot in single call
         void PollAndSnapshot(FrameHotkeyState& outHk, int& outMouseX, int& outMouseY);
-        void DeferredDrain();
+
+        // P-22: Drain WM_INPUT queue after RunFrame (non-latency-critical).
+        void DeferredDrain() noexcept;
+
         void discardDeltas();
 
         // R2: Primary interface -- zero-allocation path from SmallVkList
@@ -45,8 +48,8 @@ namespace MelonPrime {
         void pollHotkeys(FrameHotkeyState& out);
         void snapshotInputFrame(FrameHotkeyState& outHk, int& outMouseX, int& outMouseY);
         void resetAllKeys();
-        void resetMouseButtons();
         void resetAll();  // P-9: combined reset (single fence)
+        void resetMouseButtons();
         void resetHotkeyEdges();
         void fetchMouseDelta(int& outX, int& outY);
 

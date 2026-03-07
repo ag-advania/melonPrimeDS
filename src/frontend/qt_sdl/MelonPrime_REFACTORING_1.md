@@ -39,14 +39,14 @@ MelonPrime の Raw Input 層は2つのモードを持ち、いずれも **書き
 
 ## 既知の不具合と修正
 
-### [FIX-1] HiddenWndProc の WM_INPUT データ破棄（根本原因）
+### [FIX-1] HiddenWndProc の WM_INPUT データ消失（根本原因）
 
 **事象:** Joy2Key OFF 時にキーやクリックが押しっぱなしになる。ON では発生しない。
 
 **原因:**
 Joy2Key OFF モードの隠しウィンドウの `WndProc` が `DefWindowProcW` に全メッセージを委譲していた。
-Windows の仕様上、`DefWindowProc` は `WM_INPUT` を受けると内部で `DefRawInputProc` を呼び出し、
-カーネルの raw input バッファからデータを**破棄**する。
+Windows の仕様上、`DefWindowProc` は `WM_INPUT` を受けると内部で `GetRawInputData` を呼び出し、
+カーネルの raw input バッファからデータを**消費**する。
 
 通常は `Poll()` が `GetRawInputBuffer` で先に読み取り、`PeekMessage(PM_REMOVE)` で除去するため
 `DefWindowProc` には到達しない。しかし `Poll()` 間に EmuThread 上の Win32 API が
@@ -59,23 +59,34 @@ Windows の仕様上、`DefWindowProc` は `WM_INPUT` を受けると内部で `
   SDL_Delay → Sleep 中の SentMessage 処理
 ```
 
-→ `HiddenWndProc` → `DefWindowProcW` → `DefRawInputProc` → データ破棄
+→ `PeekMessage(PM_REMOVE)` で WM_INPUT がキューから消滅
+→ `HiddenWndProc` → `DefWindowProcW` → データ消費 (二重消費)
 → 次の `GetRawInputBuffer` で key-up が欠損 → stuck
+
+**注意:** `return 0` だけでは不十分。`PeekMessage(PM_REMOVE)` がメッセージをキューから
+取り除いた時点で、`GetRawInputBuffer` の読み取り対象から外れる。データを救出するには
+`HiddenWndProc` 内で `processRawInput(HRAWINPUT)` を呼ぶ必要がある。
 
 **修正 (`MelonPrimeRawInputWinFilter.cpp`):**
 
 ```cpp
 LRESULT CALLBACK RawInputWinFilter::HiddenWndProc(...) {
-    if (msg == WM_INPUT) return 0;   // ← 追加
+    if (msg == WM_INPUT) {
+        if (s_instance && s_instance->m_state)
+            s_instance->m_state->processRawInput(reinterpret_cast<HRAWINPUT>(lParam));
+        return 0;
+    }
     return DefWindowProcW(hwnd, msg, wParam, lParam);
 }
 ```
 
-WM_INPUT のみ自前で消費（return 0）し、`DefRawInputProc` によるデータ破棄を遮断。
-`Poll()` の `GetRawInputBuffer` が唯一の読取経路として機能し続ける。
+WM_INPUT を受けたら `processRawInput` でデータを即座に読み取り (GetRawInputData)、
+InputState の atomic 変数に書き込む。`DefWindowProcW` は呼ばないので二重消費なし。
+これにより、`GetRawInputBuffer` (バッチ) と `processRawInput` (個別) の**二重経路**で
+データを捕捉し、どちらが先に実行されてもデータロストしない。
 
-`Poll()` 内の PeekMessage ドレインは引き続き必要（キュー溢れ防止）。ただし FIX-1 により、
-仮にドレイン前にメッセージがディスパッチされても raw input データは安全。
+`Poll()` 内の PeekMessage ドレインは引き続き必要（キュー溢れ防止）。
+ドレイン時にディスパッチされた WM_INPUT も `processRawInput` で捕捉されるため安全。
 
 ### [FIX-2] UpdateInputState の !isFocused 時 stale 入力
 
