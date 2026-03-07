@@ -1,6 +1,11 @@
-# MelonPrime リファクタリング統合ドキュメント (UNIFIED 1～5)
+# MelonPrime リファクタリング統合ドキュメント
 
 **統合対象:** `MelonPrime_REFACTORING_1.md` ～ `MelonPrime_REFACTORING_5.md`  
+**文書種別:** 最終統合版 / 参照用正本  
+**推奨ファイル名:** `MelonPrime_REFACTORING_UNIFIED_FINAL.md`  
+**旧統合版名:** `MelonPrime_REFACTORING_UNIFIED.md`, `MelonPrime_REFACTORING_UNIFIED_1_TO_5.md`, `MelonPrime_REFACTORING_UNIFIED_1_TO_5_aliases_v2.md`, `MelonPrime_REFACTORING_UNIFIED_1_TO_5_aliases_v3_audited.md`  
+**位置づけ:** 1～5 の内容、旧名対応、情報源監査をすべて反映した最終版。ソースコメントや作業メモから逆引きできることを重視する。
+
 **統合目的:** 1～5 に分散していた知見、適用済み最適化、正確性修正、リファクタリング、入力遅延最適化、却下・撤回事項を、**重複を整理したうえで漏れなく 1 本化**する。  
 **この文書の立場:**  
 - 1 は「既存知見 + FIX + OPT A～Z5」の土台  
@@ -866,6 +871,9 @@ Round 5 文書上の到達点:
 ---
 
 ## 14. まとめ
+
+この文書を **今後の正本** とし、旧版は履歴参照用として扱う。
+
 
 1～5 を統合すると、MelonPrime の流れは次のように整理できる。
 
