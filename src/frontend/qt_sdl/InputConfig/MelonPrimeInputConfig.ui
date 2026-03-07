@@ -541,6 +541,13 @@
 												</property>
 											</widget>
 										</item>
+										<item row="3" column="0">
+											<widget class="QCheckBox" name="cbMetroidEnableAimAccumulator">
+												<property name="text">
+													<string>Enable Aim Sub-pixel Accumulator (Carry fractional mouse movement across frames. Enable for smoother low-sensitivity aiming)</string>
+												</property>
+											</widget>
+										</item>
 									</layout>
 								</widget>
 							</item>
