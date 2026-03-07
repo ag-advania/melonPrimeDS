@@ -242,7 +242,6 @@ void EmuThread::run()
 #endif // MELONPRIME_DS
 
 #ifdef MELONPRIME_DS
-        melonPrime->PrePollRawInput(); // ← これを追加
         // =================================================================
         // P-15: Late-Poll Joystick — refresh SDL state after Sleep.
         //
@@ -251,9 +250,9 @@ void EmuThread::run()
         // re-polls joystick axes/buttons so RunFrameHook sees fresh
         // joyHotkeyMask and inputMask. Edge detection is untouched.
         //
-        // P-14→P-20: PrePollRawInput removed before inputRefreshJoystickState.
-        // P-19 (HiddenWndProc returns 0) makes pre-drain unnecessary.
-        // =================================================================
+        // P-14: Pre-drain raw input before SDL's message pump.
+        melonPrime->PrePollRawInput();
+        // P-15: Late-Poll Joystick — refresh SDL state after Sleep.
         emuInstance->inputRefreshJoystickState();
 #endif
 
@@ -328,10 +327,9 @@ void EmuThread::run()
         }
 
 #ifdef MELONPRIME_DS
-        // P-22: Drain WM_INPUT queue AFTER RunFrame.
-        // With P-19 (HiddenWndProc returns 0), messages are harmless — they
-        // just sit in the queue. Draining here keeps it out of the
-        // input→RunFrame latency path while preventing queue overflow.
+        // P-22/P-26: Drain WM_INPUT queue AFTER RunFrame (throttled).
+        // With P-19, each dispatched WM_INPUT is captured by HiddenWndProc.
+        // Drain just prevents unbounded queue growth.
         melonPrime->DeferredDrainInput();
 
         // P-25: Save flush throttle — check once per 30 frames (~0.5s).
@@ -482,14 +480,9 @@ void EmuThread::run()
             MPInterface::Get().Process();
 
 #ifdef MELONPRIME_DS
-        // P-14→P-19: PrePollRawInput removed.
-        // P-19 (HiddenWndProc returns 0 for WM_INPUT) ensures SDL_JoystickUpdate's
-        // PeekMessage can never consume raw input data. All raw input is safely read
-        // by processRawInputBatched inside PollAndSnapshot.
-        // Saves 2-4 GetRawInputBuffer + N PeekMessage syscalls per frame.
-
-        // P-14復活: SDLがメッセージを消す前にRaw Inputを救出
-        melonPrime->PrePollRawInput(); // ← これを追加
+        // P-14: Pre-drain raw input before SDL's message pump (inputProcess).
+        // P-19: HiddenWndProc also captures any WM_INPUT dispatched by SDL.
+        melonPrime->PrePollRawInput();
 #endif
         emuInstance->inputProcess();
 
