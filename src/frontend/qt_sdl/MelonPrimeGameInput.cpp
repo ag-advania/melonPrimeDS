@@ -21,48 +21,71 @@ namespace MelonPrime {
         0xE0, 0xA0, 0x60, 0xE0,  0xF0, 0xB0, 0x70, 0xF0,
     };
 
-    // V6: Direct hotkey-bit projection.
+    // V7: Grouped bit projection.
     //
-    // UpdateInputState() runs every frame, so avoid generic lambda + table walks
-    // when the relevant Metroid hotkey IDs are compile-time constants.
-    // We first merge RawInput/joy masks into one uint64_t, then project that
-    // bitset directly into IB_* bits with branchless 0/1 multipliers.
-    [[nodiscard]] FORCE_INLINE uint64_t ProjectDownMask(const uint64_t hotMask) noexcept {
-        uint64_t down = 0;
-        down |= ((hotMask >> HK_MetroidMoveForward)        & 1ULL) * IB_MOVE_F;
-        down |= ((hotMask >> HK_MetroidMoveBack)           & 1ULL) * IB_MOVE_B;
-        down |= ((hotMask >> HK_MetroidMoveLeft)           & 1ULL) * IB_MOVE_L;
-        down |= ((hotMask >> HK_MetroidMoveRight)          & 1ULL) * IB_MOVE_R;
-        down |= ((hotMask >> HK_MetroidJump)               & 1ULL) * IB_JUMP;
-        down |= ((hotMask >> HK_MetroidZoom)               & 1ULL) * IB_ZOOM;
-        down |= ((hotMask >> HK_MetroidWeaponCheck)        & 1ULL) * IB_WEAPON_CHECK;
-        down |= ((hotMask >> HK_MetroidHoldMorphBallBoost) & 1ULL) * IB_MORPH_BOOST;
-        down |= ((hotMask >> HK_MetroidMenu)               & 1ULL) * IB_MENU;
+    // V6 already removed the generic table walk. This version goes one step
+    // further and exploits contiguous hotkey ranges so the compiler can emit a
+    // few shifts / masks instead of many independent high-bit tests.
+    //
+    // The assumptions are guarded with static_assert so future enum reordering
+    // cannot silently break the packed projections.
+    static_assert(HK_MetroidMoveBack        == HK_MetroidMoveForward + 1, "Move group must stay contiguous");
+    static_assert(HK_MetroidMoveLeft        == HK_MetroidMoveForward + 2, "Move group must stay contiguous");
+    static_assert(HK_MetroidMoveRight       == HK_MetroidMoveForward + 3, "Move group must stay contiguous");
+    static_assert(HK_MetroidUILeft          == HK_MetroidScanVisor + 1,   "UI group layout changed");
+    static_assert(HK_MetroidUIRight         == HK_MetroidScanVisor + 2,   "UI group layout changed");
+    static_assert(HK_MetroidUIOk            == HK_MetroidScanVisor + 3,   "UI group layout changed");
+    static_assert(HK_MetroidUIYes           == HK_MetroidScanVisor + 4,   "UI group layout changed");
+    static_assert(HK_MetroidUINo            == HK_MetroidScanVisor + 5,   "UI group layout changed");
+    static_assert(HK_MetroidWeaponMissile   == HK_MetroidWeaponBeam + 1,  "Weapon group layout changed");
+    static_assert(HK_MetroidWeaponSpecial   == HK_MetroidWeaponBeam + 2,  "Weapon group layout changed");
+    static_assert(HK_MetroidWeaponNext      == HK_MetroidWeaponBeam + 3,  "Weapon group layout changed");
+    static_assert(HK_MetroidWeaponPrevious  == HK_MetroidWeaponBeam + 4,  "Weapon group layout changed");
+    static_assert(HK_MetroidWeapon1         == HK_MetroidWeaponBeam + 5,  "Weapon group layout changed");
+    static_assert(HK_MetroidWeapon6         == HK_MetroidWeaponBeam + 10, "Weapon group layout changed");
+
+    struct ProjectedDownState {
+        uint64_t mask;
+        uint32_t moveIndex;
+    };
+
+    [[nodiscard]] FORCE_INLINE ProjectedDownState ProjectDownState(const uint64_t hotMask) noexcept {
+        const uint32_t moveBits = static_cast<uint32_t>((hotMask >> HK_MetroidMoveForward) & 0xFULL);
+        uint64_t down = static_cast<uint64_t>(moveBits) << 6;
+
+        down |= ((hotMask >> HK_MetroidJump)               & 1ULL) << 0;
         down |= ((((hotMask >> HK_MetroidShootScan) |
-                   (hotMask >> HK_MetroidScanShoot))       & 1ULL) * IB_SHOOT);
-        return down;
+                   (hotMask >> HK_MetroidScanShoot))       & 1ULL) << 1);
+        down |= ((hotMask >> HK_MetroidZoom)               & 1ULL) << 2;
+        down |= ((hotMask >> HK_MetroidHoldMorphBallBoost) & 1ULL) << 4;
+        down |= ((hotMask >> HK_MetroidWeaponCheck)        & 1ULL) << 5;
+        down |= ((hotMask >> HK_MetroidMenu)               & 1ULL) << 10;
+
+        return { down, moveBits };
     }
 
     [[nodiscard]] FORCE_INLINE uint64_t ProjectPressMask(const uint64_t hotMask) noexcept {
+        const uint64_t uiBits = (hotMask >> HK_MetroidUILeft) & 0x1FULL;
+        const uint64_t weaponBits = (hotMask >> HK_MetroidWeaponBeam) & 0x7FFULL;
+
         uint64_t press = 0;
-        press |= ((hotMask >> HK_MetroidMorphBall)      & 1ULL) * IB_MORPH;
-        press |= ((hotMask >> HK_MetroidScanVisor)      & 1ULL) * IB_SCAN_VISOR;
-        press |= ((hotMask >> HK_MetroidUIOk)           & 1ULL) * IB_UI_OK;
-        press |= ((hotMask >> HK_MetroidUILeft)         & 1ULL) * IB_UI_LEFT;
-        press |= ((hotMask >> HK_MetroidUIRight)        & 1ULL) * IB_UI_RIGHT;
-        press |= ((hotMask >> HK_MetroidUIYes)          & 1ULL) * IB_UI_YES;
-        press |= ((hotMask >> HK_MetroidUINo)           & 1ULL) * IB_UI_NO;
-        press |= ((hotMask >> HK_MetroidWeaponBeam)     & 1ULL) * IB_WEAPON_BEAM;
-        press |= ((hotMask >> HK_MetroidWeaponMissile)  & 1ULL) * IB_WEAPON_MISSILE;
-        press |= ((hotMask >> HK_MetroidWeapon1)        & 1ULL) * IB_WEAPON_1;
-        press |= ((hotMask >> HK_MetroidWeapon2)        & 1ULL) * IB_WEAPON_2;
-        press |= ((hotMask >> HK_MetroidWeapon3)        & 1ULL) * IB_WEAPON_3;
-        press |= ((hotMask >> HK_MetroidWeapon4)        & 1ULL) * IB_WEAPON_4;
-        press |= ((hotMask >> HK_MetroidWeapon5)        & 1ULL) * IB_WEAPON_5;
-        press |= ((hotMask >> HK_MetroidWeapon6)        & 1ULL) * IB_WEAPON_6;
-        press |= ((hotMask >> HK_MetroidWeaponSpecial)  & 1ULL) * IB_WEAPON_SPECIAL;
-        press |= ((hotMask >> HK_MetroidWeaponNext)     & 1ULL) * IB_WEAPON_NEXT;
-        press |= ((hotMask >> HK_MetroidWeaponPrevious) & 1ULL) * IB_WEAPON_PREV;
+        press |= ((hotMask >> HK_MetroidMorphBall) & 1ULL) << 3;
+        press |= ((hotMask >> HK_MetroidScanVisor) & 1ULL) << 11;
+
+        // UI order in hotkeys: Left Right Ok Yes No
+        // UI order in IB bits : Ok(12) Left(13) Right(14) Yes(15) No(16)
+        press |= (uiBits & 0x3ULL) << 13;         // Left / Right
+        press |= ((uiBits >> 2) & 0x1ULL) << 12;  // Ok
+        press |= ((uiBits >> 3) & 0x3ULL) << 15;  // Yes / No
+
+        // Weapon order in hotkeys:
+        //   Beam Missile Special Next Prev 1 2 3 4 5 6
+        // Weapon order in IB bits:
+        //   17   18      25      26   27  19..24
+        press |= (weaponBits & 0x3ULL) << 17;          // Beam / Missile
+        press |= ((weaponBits >> 5) & 0x3FULL) << 19;  // Weapon1..6
+        press |= ((weaponBits >> 2) & 0x1ULL) << 25;   // Special
+        press |= ((weaponBits >> 3) & 0x3ULL) << 26;   // Next / Prev
         return press;
     }
 
@@ -98,12 +121,12 @@ namespace MelonPrime {
         const uint64_t hotPressMask = emuInstance->hotkeyPress;
 #endif
 
-        const uint64_t down = ProjectDownMask(hotDownMask);
+        const ProjectedDownState downState = ProjectDownState(hotDownMask);
         const uint64_t press = ProjectPressMask(hotPressMask);
 
-        m_input.down = down;
+        m_input.down = downState.mask;
         m_input.press = press;
-        m_input.moveIndex = static_cast<uint32_t>((down >> 6) & 0xF);
+        m_input.moveIndex = downState.moveIndex;
 
 #if !defined(_WIN32)
         const QPoint currentPos = QCursor::pos();
@@ -146,11 +169,11 @@ namespace MelonPrime {
         const uint64_t hotDownMask = emuInstance->hotkeyMask;
 #endif
 
-        const uint64_t down = ProjectDownMask(hotDownMask);
+        const ProjectedDownState downState = ProjectDownState(hotDownMask);
 
-        m_input.down = down;
+        m_input.down = downState.mask;
         m_input.press = 0;
-        m_input.moveIndex = static_cast<uint32_t>((down >> 6) & 0xF);
+        m_input.moveIndex = downState.moveIndex;
 
 #if !defined(_WIN32)
         const QPoint currentPos = QCursor::pos();
