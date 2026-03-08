@@ -78,12 +78,11 @@ namespace MelonPrime {
     }
 
     // =========================================================================
-    // R2: processRawInput — fetch_add for mouse accumulators
+    // R3: processRawInput — single-writer mouse accumulation
     //
-    // Changed load(relaxed)+store(cur+delta, release) to fetch_add(delta, release).
-    // Semantically cleaner single atomic RMW. On x86, produces `lock xadd`
-    // which is equivalent or better than separate load+store.
-    // Also future-proofs for potential multi-source input scenarios.
+    // HiddenWndProc / nativeEventFilter act as the sole writer in each mode, so
+    // we keep the original load(relaxed)+store(release) pattern here. This avoids
+    // `lock xadd` on x86 while preserving release ordering for the consumer.
     // =========================================================================
     void InputState::processRawInput(HRAWINPUT hRaw) noexcept {
         alignas(16) uint8_t rawBuf[sizeof(RAWINPUT)];
@@ -104,8 +103,14 @@ namespace MelonPrime {
         case RIM_TYPEMOUSE: {
             const RAWMOUSE& m = raw->data.mouse;
             if (!(m.usFlags & MOUSE_MOVE_ABSOLUTE)) {
-                if (m.lLastX) m_accumMouseX.fetch_add(m.lLastX, std::memory_order_release);
-                if (m.lLastY) m_accumMouseY.fetch_add(m.lLastY, std::memory_order_release);
+                if (m.lLastX) {
+                    const int64_t curX = m_accumMouseX.load(std::memory_order_relaxed);
+                    m_accumMouseX.store(curX + m.lLastX, std::memory_order_release);
+                }
+                if (m.lLastY) {
+                    const int64_t curY = m_accumMouseY.load(std::memory_order_relaxed);
+                    m_accumMouseY.store(curY + m.lLastY, std::memory_order_release);
+                }
             }
             const USHORT flags = m.usButtonFlags & 0x03FF;
             if (flags) {
@@ -375,6 +380,30 @@ namespace MelonPrime {
         outHk.down = newDown;
         outHk.pressed = newDown & ~m_hkPrev;
         m_hkPrev = newDown;
+    }
+
+    // =========================================================================
+    // V2: snapshotInputFrameNoEdges — re-entrant snapshot without edge advance.
+    //
+    // Use this for nested RunFrameHook paths that only need current down-state
+    // and mouse deltas. It deliberately does NOT update m_hkPrev, so press-edge
+    // detection for the next outer frame is preserved.
+    // =========================================================================
+    void InputState::snapshotInputFrameNoEdges(FrameHotkeyState& outHk,
+        int& outMouseX, int& outMouseY) noexcept
+    {
+        const auto snap = takeSnapshot();  // acquire fence inside
+
+        const int64_t curX = m_accumMouseX.load(std::memory_order_relaxed);
+        const int64_t curY = m_accumMouseY.load(std::memory_order_relaxed);
+
+        outMouseX = static_cast<int>(curX - m_lastReadMouseX);
+        outMouseY = static_cast<int>(curY - m_lastReadMouseY);
+        m_lastReadMouseX = curX;
+        m_lastReadMouseY = curY;
+
+        outHk.down = scanBoundHotkeys(snap);
+        outHk.pressed = 0;
     }
 
     // =========================================================================

@@ -125,8 +125,8 @@ namespace MelonPrime {
         }
 
         if (doReset) {
-            m_rawFilter->resetAllKeys();
-            m_rawFilter->resetMouseButtons();
+            // P-9 / resetAll: combined reset keeps the same semantics with one fence.
+            m_rawFilter->resetAll();
             m_rawFilter->resetHotkeyEdges();
         }
 #endif
@@ -311,7 +311,8 @@ namespace MelonPrime {
 
         if (UNLIKELY(m_isRunningHook)) {
             // Re-entrant path (called during FrameAdvanceOnce within weapon switch, morph, etc.)
-            UpdateInputState();
+            // Use the lean updater: no press-map scan, no wheel fetch.
+            UpdateInputStateReentrant();
             ProcessMoveAndButtonsFast();
 
             if (isStylusMode) {

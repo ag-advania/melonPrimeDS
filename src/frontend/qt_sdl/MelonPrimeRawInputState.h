@@ -60,6 +60,8 @@ namespace MelonPrime {
         void pollHotkeys(FrameHotkeyState& out) noexcept;
         void snapshotInputFrame(FrameHotkeyState& outHk,
             int& outMouseX, int& outMouseY) noexcept;
+        void snapshotInputFrameNoEdges(FrameHotkeyState& outHk,
+            int& outMouseX, int& outMouseY) noexcept;
         [[nodiscard]] bool hotkeyDown(int id) const noexcept;
         void resetHotkeyEdges() noexcept;
 

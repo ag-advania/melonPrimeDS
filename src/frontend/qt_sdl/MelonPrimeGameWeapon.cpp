@@ -222,8 +222,18 @@ namespace MelonPrime {
 
         const int firstSet = static_cast<int>(BitScanFwd(hot));
 
-        // Special Weapon (Affinity) -- index 8
+        // Special Weapon (Affinity / Omega priority) -- index 8
         if (UNLIKELY(firstSet == 8)) {
+            // Keep the existing Loaded Special Weapon behavior, but if the
+            // Omega Cannon ownership flag is already set, prioritize Omega.
+            // This matches the requested behavior for the Loaded Special Weapon
+            // hotkey without affecting the normal direct-weapon hotkeys.
+            const uint16_t having = *m_ptrs.havingWeapons;
+            if (having & ORDERED_WEAPONS[ID_TO_ORDERED_IDX[OMEGA_CANNON]].mask) {
+                SwitchWeapon(OMEGA_CANNON);
+                return true;
+            }
+
             const uint8_t loaded = *m_ptrs.loadedSpecialWeapon;
             if (loaded == 0xFF) {
                 emuInstance->osdAddMessage(0, "Have not Special Weapon yet!");
