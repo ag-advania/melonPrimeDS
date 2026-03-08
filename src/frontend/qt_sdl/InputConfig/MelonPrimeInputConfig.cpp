@@ -275,4 +275,4 @@ void MelonPrimeInputConfig::on_cbMetroidUseFirmwareName_stateChanged(int state)
 {
     auto& cfg = emuInstance->getGlobalConfig();
     cfg.SetBool("Metroid.Use.Firmware.Name", state != 0);
-}
+}

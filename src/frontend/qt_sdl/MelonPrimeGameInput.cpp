@@ -70,6 +70,7 @@ namespace MelonPrime {
 
         uint64_t press = 0;
         press |= ((hotMask >> HK_MetroidMorphBall) & 1ULL) << 3;
+        press |= ((hotMask >> HK_MetroidWeaponCheck) & 1ULL) << 5;
         press |= ((hotMask >> HK_MetroidScanVisor) & 1ULL) << 11;
 
         // UI order in hotkeys: Left Right Ok Yes No
