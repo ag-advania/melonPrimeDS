@@ -340,6 +340,7 @@ namespace MelonPrime {
         // Methods
         // =================================================================
         HOT_FUNCTION void UpdateInputState();
+        HOT_FUNCTION void UpdateInputStateReentrant();  // re-entrant FrameAdvance path
         HOT_FUNCTION void HandleInGameLogic();
         HOT_FUNCTION void ProcessMoveAndButtonsFast();
         HOT_FUNCTION void ProcessAimInputMouse();

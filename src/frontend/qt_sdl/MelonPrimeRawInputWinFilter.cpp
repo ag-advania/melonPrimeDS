@@ -114,14 +114,30 @@ namespace MelonPrime {
     }
 
     // =========================================================================
-    // P-22: DeferredDrain — drain WM_INPUT queue AFTER RunFrame.
+    // V2: PollAndSnapshotNoEdges — re-entrant path helper.
+    //
+    // Same drain/capture semantics as PollAndSnapshot, but preserves hkPrev so
+    // the next outer frame still sees press edges correctly.
+    // =========================================================================
+    void RawInputWinFilter::PollAndSnapshotNoEdges(
+        FrameHotkeyState& outHk, int& outMouseX, int& outMouseY)
+    {
+        auto* const state = m_state.get();
+
+        if (!m_joy2KeySupport) {
+            state->processRawInputBatched();
+            // Drain deferred — see DeferredDrain()
+        }
+
+        state->snapshotInputFrameNoEdges(outHk, outMouseX, outMouseY);
+    }
+
+    // =========================================================================
+    // P-22 / P-32: DeferredDrain — drain WM_INPUT queue AFTER RunFrame.
     //
     // PeekMessage(PM_REMOVE) dispatches each WM_INPUT to HiddenWndProc,
     // which calls processRawInput (P-19) — so data is captured, not lost.
-    // This just prevents unbounded message queue growth.
-    //
-    // With P-26 throttle (every 8 frames): 8kHz × 8 frames ≈ 1064 messages,
-    // well under Windows' 10,000 message queue limit.
+    // Current path drains every frame; the old throttle experiment was retired.
     // =========================================================================
     void RawInputWinFilter::DeferredDrain() noexcept {
         if (!m_joy2KeySupport) {
@@ -145,7 +161,7 @@ namespace MelonPrime {
             RegisterDevices(m_hHiddenWnd, true);
         }
 
-        m_state->resetAllKeys();         // VK + mouse buttons + hkPrev (single fence)
+        m_state->resetAll();             // VK + mouse buttons + hkPrev (single fence)
         m_state->resetHotkeyEdges();     // Re-sync edge detection after mode switch
     }
 
@@ -260,13 +276,16 @@ namespace MelonPrime {
     {
         m_state->snapshotInputFrame(outHk, outMouseX, outMouseY);
     }
+    void RawInputWinFilter::snapshotInputFrameNoEdges(FrameHotkeyState& outHk, int& outMouseX, int& outMouseY)
+    {
+        m_state->snapshotInputFrameNoEdges(outHk, outMouseX, outMouseY);
+    }
     void RawInputWinFilter::resetAllKeys() { m_state->resetAllKeys(); }
     void RawInputWinFilter::resetMouseButtons() { m_state->resetMouseButtons(); }
 
     // P-9: Combined reset — single call replaces resetAllKeys + resetMouseButtons.
-    // InputState::resetAllKeys already resets both VK state AND mouse buttons
-    // (with one fence instead of two).
-    void RawInputWinFilter::resetAll() { m_state->resetAllKeys(); }
+    // Route to InputState::resetAll() so the implementation and comment stay aligned.
+    void RawInputWinFilter::resetAll() { m_state->resetAll(); }
     void RawInputWinFilter::resetHotkeyEdges() { m_state->resetHotkeyEdges(); }
     void RawInputWinFilter::fetchMouseDelta(int& outX, int& outY) { m_state->fetchMouseDelta(outX, outY); }
 
