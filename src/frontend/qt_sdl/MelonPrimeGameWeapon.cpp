@@ -40,17 +40,24 @@ namespace MelonPrime {
             uint8_t  minAmmo;
         };
 
-        // Weapon cycle order: Beam -> Missile -> ShockCoil -> Mag -> Jud -> Imp -> BH -> Volt -> Omega
+        // Weapon cycle order: Beam -> Missile -> ShockCoil -> Magmaul -> Judicator
+        //                  -> Imperialist -> Battlehammer -> Volt Driver -> Omega
+        //
+        // NOTE:
+        //   minAmmo must follow the old MIN_AMMO[weaponID] mapping from the legacy
+        //   implementation, not the ordered-slot index. The previous refactor kept
+        //   the masks/order correct but mismatched several minAmmo values, which
+        //   changed the available-weapon set used by wheel / next / prev switching.
         constexpr std::array<Info, 9> ORDERED_WEAPONS = { {
-            { POWER_BEAM,    0x001, 0    },
-            { MISSILE,       0x004, 0x5  },
-            { SHOCK_COIL,    0x080, 0xA  },
-            { MAGMAUL,       0x040, 0x4  },
-            { JUDICATOR,     0x020, 0x14 },
-            { IMPERIALIST,   0x010, 0x5  },
-            { BATTLEHAMMER,  0x008, 0xA  },
-            { VOLT_DRIVER,   0x002, 0xA  },
-            { OMEGA_CANNON,  0x100, 0    }
+            { POWER_BEAM,    0x001, 0x00 }, // MIN_AMMO[0] = 0x00
+            { MISSILE,       0x004, 0x0A }, // MIN_AMMO[2] = 0x0A
+            { SHOCK_COIL,    0x080, 0x0A }, // MIN_AMMO[7] = 0x0A
+            { MAGMAUL,       0x040, 0x0A }, // MIN_AMMO[6] = 0x0A
+            { JUDICATOR,     0x020, 0x05 }, // MIN_AMMO[5] = 0x05
+            { IMPERIALIST,   0x010, 0x14 }, // MIN_AMMO[4] = 0x14
+            { BATTLEHAMMER,  0x008, 0x04 }, // MIN_AMMO[3] = 0x04 (Weavel: 0x05)
+            { VOLT_DRIVER,   0x002, 0x05 }, // MIN_AMMO[1] = 0x05
+            { OMEGA_CANNON,  0x100, 0x00 }  // MIN_AMMO[8] = 0x00
         } };
 
         constexpr uint64_t HOTKEY_BITS[] = {
@@ -67,7 +74,31 @@ namespace MelonPrime {
         // Weapon ID -> position in ORDERED_WEAPONS (constexpr LUT)
         constexpr std::array<uint8_t, 9> ID_TO_ORDERED_IDX = { 0, 7, 1, 6, 5, 4, 3, 2, 8 };
 
+        constexpr uint16_t kOmegaCannonOwnedBitMask = WeaponMask::OmegaCannon;
+        constexpr uint16_t kOmegaRestrictedCycleBits =
+            static_cast<uint16_t>((1u << ID_TO_ORDERED_IDX[POWER_BEAM]) |
+                                  (1u << ID_TO_ORDERED_IDX[MISSILE]) |
+                                  (1u << ID_TO_ORDERED_IDX[OMEGA_CANNON]));
+
     } // namespace WeaponData
+
+
+
+    FORCE_INLINE bool HasOmegaCannonFlag(uint16_t ownedWeaponBits)
+    {
+        return (ownedWeaponBits & WeaponData::kOmegaCannonOwnedBitMask) != 0;
+    }
+
+    FORCE_INLINE bool IsWeaponAllowedWhileOmegaCannonActive(uint8_t weaponId)
+    {
+        using namespace WeaponData;
+        return weaponId == POWER_BEAM || weaponId == MISSILE || weaponId == OMEGA_CANNON;
+    }
+
+    COLD_FUNCTION void ShowOmegaWeaponSwitchBlockedMessage(EmuInstance* emuInstance)
+    {
+        emuInstance->osdAddMessage(0, "You can't switch to that weapon while Omega Cannon is active!");
+    }
 
     // =========================================================================
     // Weapon availability check -- fold-expression based
@@ -169,9 +200,13 @@ namespace MelonPrime {
             const WeaponState ws(m_ptrs.havingWeapons, m_ptrs.weaponAmmo);
             const bool isWeavel = m_flags.test(StateFlags::BIT_IS_WEAVEL);
 
-            const uint16_t availableBits = CheckAllWeapons(
+            uint16_t availableBits = CheckAllWeapons(
                 ws.having, ws.weaponAmmo, ws.missileAmmo, isWeavel,
                 std::make_index_sequence<ORDERED_WEAPONS.size()>{});
+
+            if (UNLIKELY(HasOmegaCannonFlag(ws.having))) {
+                availableBits &= kOmegaRestrictedCycleBits;
+            }
 
             if (!availableBits) {
                 m_flags.clear(StateFlags::BIT_BLOCK_STYLUS);
@@ -222,14 +257,12 @@ namespace MelonPrime {
 
         const int firstSet = static_cast<int>(BitScanFwd(hot));
 
-        // Special Weapon (Affinity / Omega priority) -- index 8
+        const WeaponState ws(m_ptrs.havingWeapons, m_ptrs.weaponAmmo);
+        const bool isOmegaCannonFlagActive = HasOmegaCannonFlag(ws.having);
+
+        // Special Weapon (Affinity) -- index 8
         if (UNLIKELY(firstSet == 8)) {
-            // Keep the existing Loaded Special Weapon behavior, but if the
-            // Omega Cannon ownership flag is already set, prioritize Omega.
-            // This matches the requested behavior for the Loaded Special Weapon
-            // hotkey without affecting the normal direct-weapon hotkeys.
-            const uint16_t having = *m_ptrs.havingWeapons;
-            if (having & ORDERED_WEAPONS[ID_TO_ORDERED_IDX[OMEGA_CANNON]].mask) {
+            if (isOmegaCannonFlagActive) {
                 SwitchWeapon(OMEGA_CANNON);
                 return true;
             }
@@ -248,8 +281,11 @@ namespace MelonPrime {
         const uint8_t orderedIdx = ID_TO_ORDERED_IDX[weaponID];
         const Info& info = ORDERED_WEAPONS[orderedIdx];
 
-        // OPT: single WeaponState read (was duplicated between Case 1 and Case 2)
-        const WeaponState ws(m_ptrs.havingWeapons, m_ptrs.weaponAmmo);
+        if (UNLIKELY(isOmegaCannonFlagActive && !IsWeaponAllowedWhileOmegaCannonActive(weaponID))) {
+            ShowOmegaWeaponSwitchBlockedMessage(emuInstance);
+            m_flags.clear(StateFlags::BIT_BLOCK_STYLUS);
+            return false;
+        }
 
         // Ownership check
         const bool owned = (weaponID == POWER_BEAM || weaponID == MISSILE)
@@ -289,6 +325,14 @@ namespace MelonPrime {
     // =========================================================================
     void MelonPrimeCore::SwitchWeapon(int weaponIndex)
     {
+        const uint8_t targetWeaponId = static_cast<uint8_t>(weaponIndex);
+
+        if (UNLIKELY(HasOmegaCannonFlag(*m_ptrs.havingWeapons)
+            && !IsWeaponAllowedWhileOmegaCannonActive(targetWeaponId))) {
+            ShowOmegaWeaponSwitchBlockedMessage(emuInstance);
+            return;
+        }
+
         if ((*m_ptrs.selectedWeapon) == weaponIndex) return;
 
         if (m_flags.test(StateFlags::BIT_IN_ADVENTURE)) {

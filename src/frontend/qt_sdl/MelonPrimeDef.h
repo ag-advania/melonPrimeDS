@@ -35,6 +35,31 @@ namespace MelonPrime {
         inline constexpr const char* DataUnlock      = "Metroid.Data.Unlock";
     }
 
+
+    namespace WeaponId {
+        inline constexpr uint8_t PowerBeam   = 0;
+        inline constexpr uint8_t VoltDriver  = 1;
+        inline constexpr uint8_t Missile     = 2;
+        inline constexpr uint8_t Battlehammer= 3;
+        inline constexpr uint8_t Imperialist = 4;
+        inline constexpr uint8_t Judicator   = 5;
+        inline constexpr uint8_t Magmaul     = 6;
+        inline constexpr uint8_t ShockCoil   = 7;
+        inline constexpr uint8_t OmegaCannon = 8;
+    }
+
+    namespace WeaponMask {
+        inline constexpr uint16_t PowerBeam    = static_cast<uint16_t>(1u << WeaponId::PowerBeam);
+        inline constexpr uint16_t VoltDriver   = static_cast<uint16_t>(1u << WeaponId::VoltDriver);
+        inline constexpr uint16_t Missile      = static_cast<uint16_t>(1u << WeaponId::Missile);
+        inline constexpr uint16_t Battlehammer = static_cast<uint16_t>(1u << WeaponId::Battlehammer);
+        inline constexpr uint16_t Imperialist  = static_cast<uint16_t>(1u << WeaponId::Imperialist);
+        inline constexpr uint16_t Judicator    = static_cast<uint16_t>(1u << WeaponId::Judicator);
+        inline constexpr uint16_t Magmaul      = static_cast<uint16_t>(1u << WeaponId::Magmaul);
+        inline constexpr uint16_t ShockCoil    = static_cast<uint16_t>(1u << WeaponId::ShockCoil);
+        inline constexpr uint16_t OmegaCannon  = static_cast<uint16_t>(1u << WeaponId::OmegaCannon);
+    }
+
     namespace RomVersions {
         constexpr uint32_t US1_0           = 0x218DA42C;
         constexpr uint32_t US1_1           = 0x91B46577;

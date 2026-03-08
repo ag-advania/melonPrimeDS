@@ -54,11 +54,24 @@ namespace MelonPrime {
 
         // --- Weapon Check ---
         if (IsDown(IB_WEAPON_CHECK)) {
-            if (!m_isWeaponCheckActive) {
-                HandleRareWeaponCheckStart();
+            const bool isOmegaCannonFlagActive =
+                ((*m_ptrs.havingWeapons & WeaponMask::OmegaCannon) != 0);
+
+            if (UNLIKELY(isOmegaCannonFlagActive)) {
+                if (UNLIKELY(m_isWeaponCheckActive)) {
+                    HandleRareWeaponCheckEnd();
+                }
+                if (IsPressed(IB_WEAPON_CHECK)) {
+                    emuInstance->osdAddMessage(0, "Weapon Check is unavailable while Omega Cannon is active!");
+                }
             }
-            using namespace Consts::UI;
-            nds->TouchScreen(WEAPON_CHECK_START.x(), WEAPON_CHECK_START.y());
+            else {
+                if (!m_isWeaponCheckActive) {
+                    HandleRareWeaponCheckStart();
+                }
+                using namespace Consts::UI;
+                nds->TouchScreen(WEAPON_CHECK_START.x(), WEAPON_CHECK_START.y());
+            }
         }
         else if (UNLIKELY(m_isWeaponCheckActive)) {
             HandleRareWeaponCheckEnd();
