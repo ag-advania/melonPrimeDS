@@ -146,6 +146,10 @@ void EmuThread::run()
 
     u32 nframes = 0;
     double perfCountsSec = 1.0 / SDL_GetPerformanceFrequency();
+    // P-40: Store frequency directly for tick conversion (multiplication vs division).
+    // targetTime / perfCountsSec = targetTime * perfCountsFreq.
+    // DIVSD (~20-35 cyc) → MULSD (~3-5 cyc) in the frame limiter spin setup.
+    double perfCountsFreq = static_cast<double>(SDL_GetPerformanceFrequency());
     double lastTime = SDL_GetPerformanceCounter() * perfCountsSec;
     double frameLimitError = 0.0;
     double lastMeasureTime = lastTime;
@@ -167,6 +171,9 @@ void EmuThread::run()
     // input is sampled as close to RunFrame as possible.
     double storedFrametimeStep = 1.0 / 60.0;
     bool isFirstLimiterFrame = true;
+    // P-39: Once shaders finish compiling, NeedsShaderCompile() always returns
+    // false. Cache this to skip the virtual dispatch (~15-25 cyc) every frame.
+    bool shadersReady = false;
 #endif
 
     // --- Frame Advance (lambda so MelonPrime can call it externally) ---
@@ -221,7 +228,10 @@ void EmuThread::run()
                 //   → float multiply per iteration (~5ns × 33k iterations = ~165μs)
                 // New: SDL_GetPerformanceCounter() < targetTick
                 //   → pure integer compare (0ns overhead)
-                const Uint64 targetTick = static_cast<Uint64>(targetTime / perfCountsSec);
+                //
+                // P-40: targetTime / perfCountsSec → targetTime * perfCountsFreq.
+                // DIVSD (~20-35 cyc) → MULSD (~3-5 cyc).
+                const Uint64 targetTick = static_cast<Uint64>(targetTime * perfCountsFreq);
                 while (SDL_GetPerformanceCounter() < targetTick) {
 #ifdef _WIN32
                     YieldProcessor();
@@ -258,8 +268,16 @@ void EmuThread::run()
         // emulate
         u32 nlines;
 
+#ifdef MELONPRIME_DS
+        // P-39: Skip NeedsShaderCompile virtual dispatch once shaders are ready.
+        // GetRenderer().NeedsShaderCompile() is a vtable lookup + indirect call
+        // (~15-25 cyc) that returns false 100% of the time after initial compile.
+        bool needsCompile = UNLIKELY(!shadersReady)
+            && emuInstance->nds->GPU.GetRenderer().NeedsShaderCompile();
+#else
         // NeedsShaderCompile reads a GPU flag — no GL context needed.
         bool needsCompile = emuInstance->nds->GPU.GetRenderer().NeedsShaderCompile();
+#endif
 
 #ifdef MELONPRIME_DS
         // =================================================================
@@ -329,6 +347,11 @@ void EmuThread::run()
         {
             compileShaders();
             nlines = 1;
+#ifdef MELONPRIME_DS
+            // P-39: Once shaders finish, set flag to skip future virtual calls.
+            if (!emuInstance->nds->GPU.GetRenderer().NeedsShaderCompile())
+                shadersReady = true;
+#endif
         }
         else {
 #ifndef MELONPRIME_DS
@@ -381,10 +404,15 @@ void EmuThread::run()
             winUpdateCount = 0;
         }
 
-        if (emuInstance->hotkeyPressed(HK_FastForwardToggle)) emuInstance->fastForwardToggled = !emuInstance->fastForwardToggled;
-        if (emuInstance->hotkeyPressed(HK_SlowMoToggle)) emuInstance->slowmoToggled = !emuInstance->slowmoToggled;
+        // P-38: Batch early-exit for inner-loop hotkeys.
+        // Same pattern as P-24 for the outer loop. hotkeyPress is 0 on 99.9%+
+        // of frames, so the 3 individual hotkeyPressed checks are skipped.
+        if (UNLIKELY(emuInstance->hotkeyPress)) {
+            if (emuInstance->hotkeyPressed(HK_FastForwardToggle)) emuInstance->fastForwardToggled = !emuInstance->fastForwardToggled;
+            if (emuInstance->hotkeyPressed(HK_SlowMoToggle)) emuInstance->slowmoToggled = !emuInstance->slowmoToggled;
 
-        if (emuInstance->hotkeyPressed(HK_AudioMuteToggle)) emuInstance->toggleAudioMute();
+            if (emuInstance->hotkeyPressed(HK_AudioMuteToggle)) emuInstance->toggleAudioMute();
+        }
 
         bool enablefastforward = emuInstance->hotkeyDown(HK_FastForward) | emuInstance->fastForwardToggled;
         bool enableslowmo = emuInstance->hotkeyDown(HK_SlowMo) | emuInstance->slowmoToggled;
@@ -416,6 +444,10 @@ void EmuThread::run()
         else if (!emuInstance->doLimitFPS && !emuInstance->doAudioSync) emuInstance->curFPS = 1000.0;
         else emuInstance->curFPS = emuInstance->targetFPS;
 
+#ifndef MELONPRIME_DS
+        // P-41: MelonPrime targets NDS (ConsoleType == 0) exclusively.
+        // DSi volume sync is unreachable — skip the branch, pointer chase,
+        // and I2C read entirely. Saves ~10-20 cyc/frame.
         if (emuInstance->audioDSiVolumeSync && emuInstance->nds->ConsoleType == 1)
         {
             DSi* dsi = static_cast<DSi*>(emuInstance->nds);
@@ -428,6 +460,7 @@ void EmuThread::run()
 
             emuInstance->audioVolume = volumeLevel * (256.0 / 31.0);
         }
+#endif
 
         if (emuInstance->doAudioSync && !(fastforward || slowmo))
             emuInstance->audioSync();
