@@ -206,37 +206,41 @@ namespace MelonPrime {
 
     HOT_FUNCTION bool MelonPrimeCore::HandleMorphBallBoost()
     {
-        if (!m_flags.test(StateFlags::BIT_IS_SAMUS)) return false;
-
-        if (IsDown(IB_MORPH_BOOST)) {
-            const bool isAltForm = (*m_ptrs.isAltForm) == 0x02;
-            m_flags.assign(StateFlags::BIT_IS_ALT_FORM, isAltForm);
-
-            if (isAltForm) {
-                const uint8_t boostGauge = *m_ptrs.boostGauge;
-                const bool isBoosting = (*m_ptrs.isBoosting) != 0x00;
-                const bool gaugeEnough = boostGauge > 0x0A;
-
-                SetAimBlockBranchless(AIMBLK_MORPHBALL_BOOST, true);
-
-                if (!IsDown(IB_WEAPON_CHECK)) {
-                    emuInstance->getNDS()->ReleaseScreen();
-                }
-
-                InputSetBranchless(INPUT_R, !isBoosting && gaugeEnough);
-
-                if (isBoosting) {
-                    SetAimBlockBranchless(AIMBLK_MORPHBALL_BOOST, false);
-                }
-                return true;
-            }
-        }
-        else {
+        // P-36: Combined early exit — skip both samus check AND boost-down check
+        // in a single branch. ~70%+ of frames hit this (non-Samus or no boost key).
+        // Original had nested if/else with the aimBlock cleanup duplicated in the
+        // else branch; now the common fast path (no boost) is a single LIKELY test.
+        if (LIKELY(!m_flags.test(StateFlags::BIT_IS_SAMUS) || !IsDown(IB_MORPH_BOOST))) {
             // Guard redundant store - 99%+ of frames this bit is already 0.
             if (UNLIKELY(m_aimBlockBits & AIMBLK_MORPHBALL_BOOST)) {
                 SetAimBlockBranchless(AIMBLK_MORPHBALL_BOOST, false);
             }
+            return false;
         }
+
+        // Samus + boost key held — full logic (rare path)
+        const bool isAltForm = (*m_ptrs.isAltForm) == 0x02;
+        m_flags.assign(StateFlags::BIT_IS_ALT_FORM, isAltForm);
+
+        if (isAltForm) {
+            const uint8_t boostGauge = *m_ptrs.boostGauge;
+            const bool isBoosting = (*m_ptrs.isBoosting) != 0x00;
+            const bool gaugeEnough = boostGauge > 0x0A;
+
+            SetAimBlockBranchless(AIMBLK_MORPHBALL_BOOST, true);
+
+            if (!IsDown(IB_WEAPON_CHECK)) {
+                emuInstance->getNDS()->ReleaseScreen();
+            }
+
+            InputSetBranchless(INPUT_R, !isBoosting && gaugeEnough);
+
+            if (isBoosting) {
+                SetAimBlockBranchless(AIMBLK_MORPHBALL_BOOST, false);
+            }
+            return true;
+        }
+
         return false;
     }
 
