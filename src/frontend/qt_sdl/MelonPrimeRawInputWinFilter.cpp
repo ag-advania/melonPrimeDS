@@ -61,18 +61,18 @@ namespace MelonPrime {
     }
 
     // =========================================================================
-    // REFACTORED (R1): drainPendingMessages -- extracted from Poll()/PollAndSnapshot()
+    // drainMessagesOnly — PeekMessage loop without GetRawInputBuffer.
+    //
+    // WARNING: Do NOT use this in DeferredDrain. P-35 attempted to use this
+    // there but was reverted because GetRawInputBuffer and GetRawInputData
+    // share internal buffer state (FIX-1). Without the prior GetRawInputBuffer
+    // call from drainPendingMessages, PeekMessage dispatch can invalidate
+    // HRAWINPUT handles → key-up events lost → stuck keys.
+    //
+    // This function is only safe where the caller ALREADY captured all pending
+    // raw input via GetRawInputBuffer, or where data loss is acceptable.
     // =========================================================================
-    void RawInputWinFilter::drainPendingMessages() noexcept {
-        // Safeguard: Always rescue pending raw input data BEFORE PeekMessage
-        // removes WM_INPUT from the queue. PeekMessage(PM_REMOVE) makes messages
-        // invisible to GetRawInputBuffer — if we don't read first, data is lost.
-        // When called after processRawInputBatched already ran (e.g. from Poll()),
-        // this returns 0 events and costs only one syscall.
-        if (m_state && !m_joy2KeySupport) {
-            m_state->processRawInputBatched();
-        }
-
+    void RawInputWinFilter::drainMessagesOnly() noexcept {
         MSG msg;
         if (LIKELY(WinInternal::fnNtUserPeekMessage != nullptr)) {
             while (WinInternal::fnNtUserPeekMessage(&msg, m_hHiddenWnd, WM_INPUT, WM_INPUT, PM_REMOVE, FALSE)) {}
@@ -80,6 +80,17 @@ namespace MelonPrime {
         else {
             while (PeekMessageW(&msg, m_hHiddenWnd, WM_INPUT, WM_INPUT, PM_REMOVE)) {}
         }
+    }
+
+    // =========================================================================
+    // REFACTORED (R1): drainPendingMessages -- extracted from Poll()/PollAndSnapshot()
+    // Retained with full GetRawInputBuffer for Poll() backward compatibility.
+    // =========================================================================
+    void RawInputWinFilter::drainPendingMessages() noexcept {
+        if (m_state && !m_joy2KeySupport) {
+            m_state->processRawInputBatched();
+        }
+        drainMessagesOnly();
     }
 
     void RawInputWinFilter::Poll() {
@@ -133,11 +144,25 @@ namespace MelonPrime {
     }
 
     // =========================================================================
-    // P-22 / P-32: DeferredDrain — drain WM_INPUT queue AFTER RunFrame.
+    // P-22 / P-32: DeferredDrain — drain WM_INPUT queue AFTER drawScreen.
     //
-    // PeekMessage(PM_REMOVE) dispatches each WM_INPUT to HiddenWndProc,
-    // which calls processRawInput (P-19) — so data is captured, not lost.
-    // Current path drains every frame; the old throttle experiment was retired.
+    // CRITICAL: drainPendingMessages (not drainMessagesOnly) is required here.
+    //
+    // GetRawInputBuffer and GetRawInputData may share an internal buffer
+    // (FIX-1 "shared-buffer semantics"). When PeekMessage(PM_REMOVE) dispatches
+    // WM_INPUT, the corresponding raw data becomes invisible to GetRawInputBuffer
+    // and GetRawInputData may also fail if the buffer was already consumed by a
+    // prior GetRawInputBuffer call.
+    //
+    // processRawInputBatched (GetRawInputBuffer) inside drainPendingMessages
+    // rescues any raw input that arrived since PollAndSnapshot, BEFORE
+    // PeekMessage can dispatch and potentially invalidate the data.
+    // Without this safety net, key-up events can be lost → stuck keys.
+    //
+    // P-35 attempted to remove this call but was REVERTED because it caused
+    // stuck keys under the shared-buffer scenario described in FIX-1.
+    // The "extra" GetRawInputBuffer is the essential belt-and-suspenders
+    // guard against data loss.
     // =========================================================================
     void RawInputWinFilter::DeferredDrain() noexcept {
         if (!m_joy2KeySupport) {
