@@ -210,26 +210,9 @@ namespace MelonPrime {
             m_cachedPanel = mw->panel;
     }
 
-    // =========================================================================
-    // P-14: PrePollRawInput — drain raw input buffer before SDL's message pump.
-    //
-    // GetRawInputBuffer reads pending raw input BEFORE SDL_JoystickUpdate can
-    // dispatch WM_INPUT via PeekMessage. This ensures data is captured even if
-    // GetRawInputBuffer and GetRawInputData have shared-buffer semantics that
-    // could cause data loss.
-    //
-    // P-19 (HiddenWndProc processRawInput) provides a secondary safety net:
-    // any WM_INPUT dispatched by SDL between PrePoll and PollAndSnapshot is
-    // captured by processRawInput. Belt-and-suspenders approach.
-    // =========================================================================
-    void MelonPrimeCore::PrePollRawInput()
-    {
-#ifdef _WIN32
-        if (m_rawFilter) {
-            m_rawFilter->Poll();
-        }
-#endif
-    }
+    // P-33: PrePollRawInput implementation removed.
+    // P-19 (HiddenWndProc processRawInput) captures all WM_INPUT at dispatch.
+    // The function is now an empty inline in MelonPrime.h for source compat.
 
     // =========================================================================
     // P-22: DeferredDrainInput — drain WM_INPUT queue after RunFrame.

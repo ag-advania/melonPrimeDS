@@ -68,6 +68,11 @@ namespace MelonPrime {
         /// Shared between Poll() and PollAndSnapshot() to eliminate duplication.
         void drainPendingMessages() noexcept;
 
+        /// P-35 (REVERTED): PeekMessage-only drain (no GetRawInputBuffer).
+        /// WARNING: Not safe for DeferredDrain — shared-buffer semantics
+        /// require GetRawInputBuffer before PeekMessage. See FIX-1.
+        void drainMessagesOnly() noexcept;
+
         static std::atomic<int>    s_refCount;
         static RawInputWinFilter* s_instance;
         static std::once_flag      s_initFlag;
