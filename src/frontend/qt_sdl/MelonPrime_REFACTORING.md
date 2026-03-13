@@ -14,6 +14,7 @@
 - 4 は **Round 4: P-1～P-10 の提案・採否**  
 - 5 は **Round 5: P-11～P-27 の入力遅延 / フレームペーシング最適化**  
 - 6 は **Round 6: P-33～P-37 の syscall 削減 / ホットパス改善**  
+- 7 は **Round 7: P-38～P-41 のフレームループ最適化**  
 - 重複する項目は統合し、**履歴として重要な「一度採用されたが後で代替・撤回されたもの」も残す**
 
 ---
@@ -28,6 +29,7 @@
 | `MelonPrime_REFACTORING_4.md` | Round 4 | P-1～P-10 の詳細分析、適用済み / 却下 / リバートの整理 |
 | `MelonPrime_REFACTORING_5.md` | Round 5 | P-11～P-27 の入力遅延最適化、フレームペーシング改善、最終レイテンシ観点の整理 |
 | `MelonPrime_PERF_ROUND6.md` | Round 6 | P-33～P-37: PrePollRawInput 除去、SDL スキップ、DeferredDrain 軽量化、ホットパス分岐改善 |
+| (本文書 §16) | Round 7 | P-38～P-41: フレームループ内 hotkey ゲート、NeedsShaderCompile キャッシュ、除算→乗算、DSi sync 除去 |
 
 ---
 
@@ -40,6 +42,7 @@
 - `MelonPrime_REFACTORING_4.md` を **Round 4**
 - `MelonPrime_REFACTORING_5.md` を **Round 5**
 - `MelonPrime_PERF_ROUND6.md` を **Round 6**
+- (本文書 §16) を **Round 7**
 
 として扱う。
 
@@ -862,7 +865,7 @@ Round 5 文書上の到達点:
 | `MelonPrimeRawHotkeyVkBinding.h` | R1 `SmallVkList` |
 | `MelonPrimeRawHotkeyVkBinding.cpp` | R1/R2 ヒープ排除完全化 |
 | `MelonPrimeRawWinInternal.h/.cpp` | P-11 `NtSetTimerResolution` |
-| `EmuThread.cpp` | P-11、P-12、P-13、P-14、P-15、P-16、P-22、P-24、P-25、P-26a、P-27、P-32 相当の後続配置変更、P-33 (PrePollRawInput 呼び出し除去 ×2) |
+| `EmuThread.cpp` | P-11、P-12、P-13、P-14、P-15、P-16、P-22、P-24、P-25、P-26a、P-27、P-32 相当の後続配置変更、P-33 (PrePollRawInput 呼び出し除去 ×2)、P-38 (内側 hotkey 一括ゲート)、P-39 (NeedsShaderCompile キャッシュ)、P-40 (除算→乗算)、P-41 (DSi volume sync 除去) |
 | `EmuInstance.h` | P-15 / P-21 |
 | `EmuInstanceInput.cpp` | P-15、P-21、P-23、P-34 (`inputProcess` ジョイスティック不在時 SDL スキップ) |
 
@@ -893,6 +896,7 @@ Round 5 文書上の到達点:
 4. **4** で、微細最適化の採否が精査され、P-1 / P-3 / P-5 / P-6 / P-9 が採用された  
 5. **5** で、入力遅延、フレーム順序、VSync 復帰、サブピクセル蓄積、stuck keys 根本修正、syscall 削減までを含む**パイプライン再設計案とその適用履歴**が整理された  
 6. **6** で、P-20 (PrePollRawInput 除去) が完了し、inputProcess の SDL 不在時スキップ、DeferredDrain 軽量化、ホットパス分岐改善が適用された  
+7. **7** で、フレームループ内の定常コスト（仮想ディスパッチ、浮動小数点除算、デッドコード、hotkey 分岐）が削減された
 
 つまりこの 1～6 の統合結果は、単なる「速くするための断片集」ではなく、
 
@@ -1044,5 +1048,110 @@ Round 6 適用後の到達点:
       drawScreen()
 
       DeferredDrainInput()           ← P-22 (drainPendingMessages, P-35 リバート済み)
+    }
+```
+
+---
+
+## 16. Round 7: P-38～P-41 のフレームループ最適化
+
+## 16.1 Round 7 の中心テーマ
+
+Round 6 が入力パイプラインの syscall 削減に焦点を当てたのに対し、Round 7 は **フレームループ自体の定常コスト** を削減する。対象はすべて `EmuThread.cpp` の `frameAdvanceOnce` ラムダ内である。
+
+## 16.2 ステータス一覧
+
+| ID | 種別 | 状態 | 内容 | 推定効果 |
+|---|---|---|---|---|
+| P-38 | 分岐削減 | ✅ | 内側ループ hotkey 一括ゲート (P-24 の拡張) | ~5–10 cyc/frame |
+| P-39 | 仮想ディスパッチ削減 | ✅ | NeedsShaderCompile キャッシュ | ~15–25 cyc/frame |
+| P-40 | 浮動小数点演算改善 | ✅ | targetTick 算出の除算→乗算変換 | ~15–30 cyc/frame |
+| P-41 | デッドコード除去 | ✅ | DSi ボリューム同期スキップ (NDS 専用) | ~10–20 cyc/frame |
+
+## 16.3 P-38: 内側ループ hotkey 一括ゲート
+
+P-24 がメインループの 7 個の `hotkeyPressed()` チェックを `hotkeyPress == 0` で一括ゲートしたのと同じパターンを、`frameAdvanceOnce` 内の 3 個のチェック (FastForwardToggle, SlowMoToggle, AudioMuteToggle) にも適用。
+
+99.9%+ のフレームで `hotkeyPress == 0` なので、3 回の bit test + 分岐がスキップされる。
+
+## 16.4 P-39: NeedsShaderCompile 仮想ディスパッチ削減
+
+`GPU.GetRenderer().NeedsShaderCompile()` は vtable lookup + indirect call (~15–25 cyc) だが、シェーダーコンパイル完了後は 100% `false` を返す。
+
+`shadersReady` フラグを導入し、コンパイル完了後は仮想ディスパッチ自体をスキップ:
+
+```cpp
+bool needsCompile = UNLIKELY(!shadersReady)
+    && emuInstance->nds->GPU.GetRenderer().NeedsShaderCompile();
+```
+
+短絡評価により、`shadersReady == true` ならば右辺は評価されない。
+
+## 16.5 P-40: targetTick 算出の除算→乗算変換
+
+P-27 で導入されたスピンループの整数比較では `targetTime / perfCountsSec` で tick に変換していた。
+`perfCountsSec = 1.0 / frequency` なので、この式は `targetTime * frequency` と等価。
+
+```cpp
+// 変更前: DIVSD (~20-35 cyc)
+const Uint64 targetTick = static_cast<Uint64>(targetTime / perfCountsSec);
+
+// 変更後: MULSD (~3-5 cyc)
+const Uint64 targetTick = static_cast<Uint64>(targetTime * perfCountsFreq);
+```
+
+`perfCountsFreq` はループ前に一度だけ計算し、ラムダキャプチャで参照。
+
+## 16.6 P-41: DSi ボリューム同期スキップ
+
+MelonPrime は NDS (ConsoleType == 0) 専用のため、DSi 固有のボリューム同期コードは到達不能。コンパイル時に `#ifndef MELONPRIME_DS` で除外し:
+
+- `audioDSiVolumeSync` の bool テスト
+- `nds->ConsoleType` のメンバアクセス
+- `DSi*` キャスト + I2C ポインタ追跡の可能性
+
+を毎フレーム除去。
+
+## 16.7 Round 7 合計推定効果
+
+| 環境 | 削減 (cyc/frame) | 備考 |
+|---|---|---|
+| 全環境共通 | ~45–85 | P-38 + P-39 + P-40 + P-41 |
+
+Round 6 (P-33/P-34) の syscall 削減と比べると 1 桁小さいが、全環境で均等に効く定常改善。
+
+## 16.8 Round 6 + 7 統合後のフレームパイプライン
+
+```text
+Round 7 適用後の到達点:
+  メインループ:
+    inputProcess()                   ← P-34: no-joystick 時 SDL スキップ
+    if (hotkeyPress)                 ← P-24: 一括ゲート (7 チェック)
+    { ... }
+
+    frameAdvanceOnce() {
+      Sleep / HybridLimiter          ← P-11, P-12, P-40 (mul)
+      inputRefreshJoystickState()    ← P-15, P-21
+
+      NeedsShaderCompile             ← P-39: shadersReady で vtable スキップ
+      RunFrameHook() {
+        PollAndSnapshot()            ← Z3 + P-19
+        UpdateInputState()
+        HandleInGameLogic()
+          HandleMorphBallBoost()     ← P-36: 分岐統合
+          ProcessMoveAndButtonsFast()
+          ProcessAimInputMouse()     ← OPT-O + P-17 + P-18
+      }
+
+      SetKeyMask()
+      makeCurrentGL()
+      RunFrame()
+      drawScreen()
+
+      DeferredDrainInput()           ← P-22
+
+      if (hotkeyPress)               ← P-38: 一括ゲート (3 チェック)
+      { FF / SlowMo / Mute }
+                                     ← P-41: DSi volume sync 除去
     }
 ```
