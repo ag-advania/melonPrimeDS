@@ -290,14 +290,23 @@ namespace MelonPrime {
             const int32_t deltaX = m_input.mouseX;
             const int32_t deltaY = m_input.mouseY;
 
-            // P-17: Accumulate into residual (Q14 fixed-point).
-            m_aimResidualX += static_cast<int64_t>(deltaX) * m_aimFixedScaleX;
-            m_aimResidualY += static_cast<int64_t>(deltaY) * m_aimFixedScaleY;
+            // P-44: Skip IMUL + clamp when mouse is completely at rest.
+            // With 8kHz mouse this is rarely zero, but at standard poll rates
+            // or when idling, it saves 2 IMUL (~6 cyc) + 2 clamp (~4 cyc).
+            // The direct path's (outX|outY)==0 exit handles the "no output" case,
+            // but skipping accumulation avoids touching the residual accumulators.
+            if (LIKELY(deltaX | deltaY)) {
+                // P-17: Accumulate into residual (Q14 fixed-point).
+                m_aimResidualX += static_cast<int64_t>(deltaX) * m_aimFixedScaleX;
+                m_aimResidualY += static_cast<int64_t>(deltaY) * m_aimFixedScaleY;
 
-            // P-29a: Branchless residual clamp (CMOV on x86, CSEL on ARM).
-            // Replaces 4 conditional branches with branchless min/max.
-            m_aimResidualX = std::clamp(m_aimResidualX, -AIM_MAX_RESIDUAL, AIM_MAX_RESIDUAL);
-            m_aimResidualY = std::clamp(m_aimResidualY, -AIM_MAX_RESIDUAL, AIM_MAX_RESIDUAL);
+                // P-29a: Branchless residual clamp (CMOV on x86, CSEL on ARM).
+                m_aimResidualX = std::clamp(m_aimResidualX, -AIM_MAX_RESIDUAL, AIM_MAX_RESIDUAL);
+                m_aimResidualY = std::clamp(m_aimResidualY, -AIM_MAX_RESIDUAL, AIM_MAX_RESIDUAL);
+            } else if (LIKELY((m_aimResidualX | m_aimResidualY) == 0)) {
+                // No delta AND no residual → nothing to output. Skip everything.
+                return;
+            }
 
             if (m_disableMphAimSmoothing) {
                 // =========================================================

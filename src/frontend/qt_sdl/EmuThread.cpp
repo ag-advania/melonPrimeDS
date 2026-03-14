@@ -437,6 +437,7 @@ void EmuThread::run()
 
         fastforward = enablefastforward;
         slowmo = enableslowmo;
+        melonPrime->isFastForward = fastforward | slowmo;
         emuInstance->updateFastForwardMute(fastforward);
 
         if (slowmo) emuInstance->curFPS = emuInstance->slowmoFPS;
