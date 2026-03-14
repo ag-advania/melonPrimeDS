@@ -174,6 +174,8 @@ namespace MelonPrime {
         bool isFocused = false;
         bool isClipWanted = false;
         bool isStylusMode = false;
+        bool isFastForward = false;     // Set by EmuThread; Screen Sync skips when true
+        int  screenSyncMode = 0;       // 0=Off, 1=glFinish, 2=DwmFlush
 
         void NotifyLayoutChange();  // P-3: impl in .cpp (needs complete EmuInstance type)
 

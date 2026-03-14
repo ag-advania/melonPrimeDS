@@ -48,6 +48,8 @@ namespace MelonPrime {
 
         m_disableMphAimSmoothing = localCfg.GetBool(CfgKey::DisableMphAimSmoothing);
         m_enableAimAccumulator = localCfg.GetBool(CfgKey::AimAccumulator);
+
+        screenSyncMode = localCfg.GetInt(CfgKey::ScreenSyncMode);
     }
 
     void MelonPrimeCore::Initialize()
