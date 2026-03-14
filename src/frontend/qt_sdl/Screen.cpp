@@ -53,6 +53,8 @@
 #define WIN32_LEAN_AND_MEAN
 #endif
 #include <windows.h>
+#include <dwmapi.h>
+#pragma comment(lib, "dwmapi.lib")
 #endif
 #endif // MELONPRIME_DS
 
@@ -1421,7 +1423,21 @@ void ScreenPanelGL::drawScreen()
     glContext->SwapBuffers();
 
 #ifdef MELONPRIME_DS
-    // glFinish();
+    // Screen Sync: default Off (0). Effectively free when Off:
+    //   - emuThread already local, GetMelonPrimeCore() is inline .get()
+    //   - UNLIKELY ensures branch predictor skips the block when Off
+    //   - Runs after SwapBuffers (heavy sync point), so no pipeline impact
+    //   - Forced off during FastForward/SlowMo (isFastForward set by EmuThread)
+    if (auto* core = emuThread->GetMelonPrimeCore();
+        core && UNLIKELY(core->screenSyncMode != 0) && !core->isFastForward)
+    {
+        if (core->screenSyncMode == 1)
+            glFinish();
+#ifdef _WIN32
+        else if (core->screenSyncMode == 2)
+            DwmFlush();
+#endif
+    }
 #endif
 }
 

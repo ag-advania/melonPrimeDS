@@ -311,6 +311,7 @@ namespace MelonPrime {
 
         if (count == 0) {
             m_boundHotkeys &= ~bbit;
+            m_hkFastWord[id] = 5;
             return;
         }
 
@@ -331,6 +332,29 @@ namespace MelonPrime {
             }
         }
         m_boundHotkeys |= bbit;
+
+        // P-42: Precompute fast-check word index.
+        // If this hotkey uses exactly one vkMask word and no mouse bits,
+        // scanBoundHotkeys can do 1 AND instead of 4 AND + 3 OR.
+        {
+            const bool hasMouse = (m_hkMasks.mouseMask[id] != 0);
+            uint8_t activeWords = 0;
+            uint8_t lastWord = 0;
+            for (int w = 0; w < 4; ++w) {
+                if (m_hkMasks.vkMask[id][w]) {
+                    activeWords++;
+                    lastWord = static_cast<uint8_t>(w);
+                }
+            }
+            if (activeWords == 0 && hasMouse) {
+                m_hkFastWord[id] = 4;  // mouse-only
+            } else if (activeWords <= 1 && !hasMouse) {
+                // 0 active words (shouldn't happen with count>0 + vk<256) or 1 word
+                m_hkFastWord[id] = lastWord;  // single word fast path
+            } else {
+                m_hkFastWord[id] = 5;  // multi-word or mixed → full check
+            }
+        }
     }
 
     // =========================================================================
