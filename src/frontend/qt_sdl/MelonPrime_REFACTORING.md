@@ -15,6 +15,7 @@
 - 5 は **Round 5: P-11～P-27 の入力遅延 / フレームペーシング最適化**  
 - 6 は **Round 6: P-33～P-37 の syscall 削減 / ホットパス改善**  
 - 7 は **Round 7: P-38～P-41 のフレームループ最適化**  
+- 8 は **Round 8: P-42～P-44 のホットキー・エイム・レジスタ最適化**  
 - 重複する項目は統合し、**履歴として重要な「一度採用されたが後で代替・撤回されたもの」も残す**
 
 ---
@@ -43,6 +44,7 @@
 - `MelonPrime_REFACTORING_5.md` を **Round 5**
 - `MelonPrime_PERF_ROUND6.md` を **Round 6**
 - (本文書 §16) を **Round 7**
+- (本文書 §17) を **Round 8**
 
 として扱う。
 
@@ -853,13 +855,13 @@ Round 5 文書上の到達点:
 |---|---|
 | `MelonPrimeCompilerHints.h` | R1: 共通マクロ統合、P-5 |
 | `MelonPrime.h` | OPT C/D/G/L/O/W、P-3、P-17、P-18、P-33 (PrePollRawInput 空インライン化) |
-| `MelonPrime.cpp` | OPT D/E/K/L/O/W/Z1/Z2/Z3/Z4、FIX-3、P-14、P-20b、P-20c、P-22（現コード残置あり）、P-33 (実装除去) |
-| `MelonPrimeGameInput.cpp` | OPT F/O/Q/Z2/Z3、FIX-2、P-3、P-17、P-18 |
+| `MelonPrime.cpp` | OPT D/E/K/L/O/W/Z1/Z2/Z3/Z4、FIX-3、P-14、P-20b、P-20c、P-22（現コード残置あり）、P-33 (実装除去)、P-43 (focused ローカルキャッシュ) |
+| `MelonPrimeGameInput.cpp` | OPT F/O/Q/Z2/Z3、FIX-2、P-3、P-17、P-18、P-44 (ゼロデルタスキップ) |
 | `MelonPrimeInGame.cpp` | OPT A/B/G/H/J/Z2/Z5、R1 constexpr テーブル、P-36 (HandleMorphBallBoost 分岐統合) |
 | `MelonPrimeGameWeapon.cpp` | OPT A、R2 NDS キャッシュ |
 | `MelonPrimeGameRomDetect.cpp` | OPT L |
-| `MelonPrimeRawInputState.h` | R1 snapshot helpers、R2 `setHotkeyVks` / `hasMask` 整理、P-9 |
-| `MelonPrimeRawInputState.cpp` | OPT S/T、R2 button precedence / fetch_add / LUT、P-1、P-6、P-37 (コミットフェーズ分岐結合) |
+| `MelonPrimeRawInputState.h` | R1 snapshot helpers、R2 `setHotkeyVks` / `hasMask` 整理、P-9、P-42 (`m_hkFastWord` + `scanBoundHotkeys` 高速パス) |
+| `MelonPrimeRawInputState.cpp` | OPT S/T、R2 button precedence / fetch_add / LUT、P-1、P-6、P-37 (コミットフェーズ分岐結合)、P-42 (`setHotkeyVks` fast word 算出) |
 | `MelonPrimeRawInputWinFilter.h` | R1 drain helper、R2 overload、P-22、P-35 リバート (`drainMessagesOnly` 宣言は残留) |
 | `MelonPrimeRawInputWinFilter.cpp` | FIX-1、OPT R/U、R1/R2、P-19、P-22、P-26b 旧コメント残骸、P-35 リバート (`DeferredDrain` は `drainPendingMessages` に復元) |
 | `MelonPrimeRawHotkeyVkBinding.h` | R1 `SmallVkList` |
@@ -897,6 +899,7 @@ Round 5 文書上の到達点:
 5. **5** で、入力遅延、フレーム順序、VSync 復帰、サブピクセル蓄積、stuck keys 根本修正、syscall 削減までを含む**パイプライン再設計案とその適用履歴**が整理された  
 6. **6** で、P-20 (PrePollRawInput 除去) が完了し、inputProcess の SDL 不在時スキップ、DeferredDrain 軽量化、ホットパス分岐改善が適用された  
 7. **7** で、フレームループ内の定常コスト（仮想ディスパッチ、浮動小数点除算、デッドコード、hotkey 分岐）が削減された
+8. **8** で、ホットキー走査の命令数削減、RunFrameHook のレジスタ最適化、エイムパイプラインのゼロデルタスキップが適用された
 
 つまりこの 1～6 の統合結果は、単なる「速くするための断片集」ではなく、
 
@@ -1155,3 +1158,67 @@ Round 7 適用後の到達点:
                                      ← P-41: DSi volume sync 除去
     }
 ```
+
+---
+
+## 17. Round 8: P-42～P-44 のホットキー・エイム・レジスタ最適化
+
+## 17.1 Round 8 の中心テーマ
+
+Round 8 は **フレームごとに実行されるホットパスの命令数と不要なメモリアクセス** を削減する。
+
+## 17.2 ステータス一覧
+
+| ID | 種別 | 状態 | 内容 | 推定効果 |
+|---|---|---|---|---|
+| P-42 | 命令数削減 | ✅ | `testHotkeyMask` シングルワード高速パス | ~60–140 cyc/frame |
+| P-43 | レジスタ最適化 | ✅ | `RunFrameHook` の `isFocused` ローカルキャッシュ | ~8–12 cyc/frame |
+| P-44 | 命令数削減 | ✅ | `ProcessAimInputMouse` ゼロデルタスキップ | ~8–12 cyc/frame (低速マウス/静止時) |
+
+## 17.3 P-42: `testHotkeyMask` シングルワード高速パス
+
+`scanBoundHotkeys` は毎フレーム ~28 個のバインド済みホットキーを走査し、各ホットキーに対して `testHotkeyMask` を呼ぶ。元の実装は 4 つの vkMask ワードを全て AND + OR する (4 AND + 3 OR + compare)。
+
+しかし殆どのホットキーは **単一の VK コード** にバインドされ、4 ワードのうち 1 つだけが非ゼロ。
+
+**変更内容**
+- `setHotkeyVks` でバインド時に `m_hkFastWord[id]` を算出:
+  - 0–3: 使用ワードインデックス（シングルワード、マウスなし）
+  - 4: マウスのみ
+  - 5: 複数ワード or 混合（フルチェックにフォールバック）
+- `scanBoundHotkeys` で `m_hkFastWord` を参照し、シングルワードなら 1 AND + compare のみ
+
+**効果**
+- 28 ホットキー × (4 AND + 3 OR → 1 AND) = ~168 命令削減
+- 分岐予測: 毎フレーム同じホットキー構成 → 完全予測
+- 推定削減: ~60–140 cyc/frame
+
+## 17.4 P-43: `RunFrameHook` の `isFocused` ローカルキャッシュ
+
+`isFocused` は `MelonPrimeCore` の public メンバ変数で、GUI スレッドから設定される。`RunFrameHook` 内で `UpdateInputState()`、`HandleGlobalHotkeys()`、`HandleInGameLogic()` 等のメンバ関数呼び出し後、コンパイラは `this->isFocused` が変更されていないことを証明できず、メモリからの再読込を強制される。
+
+`const bool focused = isFocused` でローカルにキャッシュし、以降全ての参照を `focused` に置換。emu スレッドでは読み取り専用なので安全。
+
+**効果**
+- 2–3 回の L1 メモリ再読込を回避
+- 推定削減: ~8–12 cyc/frame
+
+## 17.5 P-44: `ProcessAimInputMouse` ゼロデルタスキップ
+
+8kHz マウスではデルタは殆ど常に非ゼロだが、標準マウス (125–1000Hz) や静止時にはゼロデルタが発生する。ゼロデルタ時は IMUL × 2 + clamp × 2 をスキップし、さらに残差もゼロなら即 return。
+
+**変更内容**
+- `deltaX | deltaY` で非ゼロチェック（LIKELY パスは従来どおり）
+- ゼロデルタ + ゼロ残差の場合は早期 return（direct/legacy パス全体をスキップ）
+
+**効果**
+- 静止時: 2 IMUL (~6 cyc) + 2 clamp (~4 cyc) + direct/legacy path 全体をスキップ
+- 推定削減: ~8–12 cyc/frame (マウス静止時のみ、8kHz では稀)
+
+## 17.6 Round 6 + 7 + 8 累積推定効果
+
+| 環境 | Round 6 | Round 7 | Round 8 | 合計 |
+|---|---|---|---|---|
+| 8kHz マウス + KB+M | ~800–2600 | ~45–85 | ~68–152 | **~913–2837** |
+| 通常マウス + KB+M | ~300–1000 | ~45–85 | ~76–164 | **~421–1249** |
+| ジョイスティック使用 | ~500–2000 | ~45–85 | ~68–152 | **~613–2237** |

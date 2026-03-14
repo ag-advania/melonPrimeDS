@@ -86,7 +86,8 @@ namespace MelonPrime {
         }
 
         /// Scan all bound hotkeys against a VkSnapshot and return the combined bitmask.
-        /// Extracted from pollHotkeys / snapshotInputFrame / resetHotkeyEdges / hotkeyDown.
+        /// P-42: Per-hotkey fast path — most hotkeys bind to a single VK word.
+        /// For those, a single AND + compare replaces 4 ANDs + 3 ORs + compare.
         [[nodiscard]] FORCE_INLINE uint64_t scanBoundHotkeys(const VkSnapshot& snap) const noexcept {
             uint64_t bound = m_boundHotkeys;
             uint64_t result = 0;
@@ -97,8 +98,17 @@ namespace MelonPrime {
 #else
                 const int bitPos = __builtin_ctzll(bound);
 #endif
-                if (testHotkeyMask(bitPos, snap.vk, snap.mouse))
-                    result |= 1ULL << bitPos;
+                const uint8_t fw = m_hkFastWord[bitPos];
+                bool hit;
+                if (LIKELY(fw <= 3)) {
+                    // P-42: Single-word fast path — 1 AND instead of 4 AND + 3 OR.
+                    // ~26-28 of 28 hotkeys hit this path (single VK, no mouse).
+                    hit = (m_hkMasks.vkMask[bitPos][fw] & snap.vk[fw]) != 0;
+                } else {
+                    // Fallback: mouse-only (4) or multi-word (5).
+                    hit = testHotkeyMask(bitPos, snap.vk, snap.mouse);
+                }
+                if (hit) result |= 1ULL << bitPos;
                 bound &= bound - 1;
             }
             return result;
@@ -127,6 +137,14 @@ namespace MelonPrime {
             alignas(32) uint64_t vkMask[kMaxHotkeyId][4];
             uint8_t  mouseMask[kMaxHotkeyId];
         } m_hkMasks;
+
+        // P-42: Per-hotkey fast-check metadata.
+        // Most hotkeys bind to a single VK in one word.
+        // Stores which word to check, avoiding 3 redundant ANDs per hotkey.
+        //   0-3 = single vkMask word index (no mouse)
+        //   4   = mouse-only
+        //   5   = multi-word or mixed (fallback to full check)
+        uint8_t m_hkFastWord[kMaxHotkeyId] = {};
 
         uint64_t m_hkPrev{};
         uint64_t m_boundHotkeys{};
