@@ -548,6 +548,59 @@
 												</property>
 											</widget>
 										</item>
+										<item row="4" column="0">
+											<layout class="QVBoxLayout" name="vboxScreenSync">
+												<item>
+													<layout class="QHBoxLayout" name="hboxScreenSync">
+														<item>
+															<widget class="QComboBox" name="comboMetroidScreenSyncMode">
+																<property name="toolTip">
+																	<string>Screen Sync Mode: Off = no sync call, glFinish = wait for GL commands to complete, DwmFlush = wait for DWM compositor (Windows only)</string>
+																</property>
+																<item>
+																	<property name="text">
+																		<string>Off</string>
+																	</property>
+																</item>
+																<item>
+																	<property name="text">
+																		<string>glFinish</string>
+																	</property>
+																</item>
+																<item>
+																	<property name="text">
+																		<string>DwmFlush</string>
+																	</property>
+																</item>
+																<property name="currentIndex">
+																	<number>0</number>
+																</property>
+															</widget>
+														</item>
+														<item>
+															<widget class="QLabel" name="labelMetroidScreenSyncMode">
+																<property name="text">
+																	<string>Screen Sync Mode — Default: Off</string>
+																</property>
+															</widget>
+														</item>
+													</layout>
+												</item>
+												<item>
+													<widget class="QLabel" name="labelMetroidScreenSyncDesc">
+														<property name="text">
+															<string>Off: No sync (lowest latency, but the display may look choppy). glFinish: Smoother display by waiting for rendering to fully complete each frame. DwmFlush: Smoother display by syncing with the Windows compositor (Windows only). Try glFinish or DwmFlush if the screen looks choppy or flickery. Automatically disabled during FastForward/SlowMo.</string>
+														</property>
+														<property name="wordWrap">
+															<bool>true</bool>
+														</property>
+														<property name="indent">
+															<number>20</number>
+														</property>
+													</widget>
+												</item>
+											</layout>
+										</item>
 									</layout>
 								</widget>
 							</item>
