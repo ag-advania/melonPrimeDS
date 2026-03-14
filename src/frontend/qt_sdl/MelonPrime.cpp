@@ -311,6 +311,13 @@ namespace MelonPrime {
 
         m_isRunningHook = true;
 
+        // P-43: Cache isFocused in local variable.
+        // After UpdateInputState / HandleGlobalHotkeys / HandleInGameLogic
+        // (member function calls), the compiler must assume any member could
+        // have changed, forcing a reload from memory. isFocused is set by the
+        // GUI thread and never modified on the emu thread, so caching is safe.
+        const bool focused = isFocused;
+
         // Poll moved into UpdateInputState via PollAndSnapshot
         UpdateInputState();
         InputReset();
@@ -330,7 +337,7 @@ namespace MelonPrime {
                 HandleGameJoinInit();
             }
 
-            if (isFocused) {
+            if (focused) {
                 if (LIKELY(isInGame)) {
                     if (UNLIKELY(m_aimBlockBits & AIMBLK_NOT_IN_GAME)) {
                         SetAimBlockBranchless(AIMBLK_NOT_IN_GAME, false);
@@ -367,9 +374,9 @@ namespace MelonPrime {
 
             // Focus transition: reset input state + raw input layer.
             // Multi-layer defense with FIX-2 (UpdateInputState) and FIX-1 (HiddenWndProc).
-            if (UNLIKELY(m_flags.test(StateFlags::BIT_LAST_FOCUSED) != isFocused)) {
-                m_flags.assign(StateFlags::BIT_LAST_FOCUSED, isFocused);
-                if (!isFocused) {
+            if (UNLIKELY(m_flags.test(StateFlags::BIT_LAST_FOCUSED) != focused)) {
+                m_flags.assign(StateFlags::BIT_LAST_FOCUSED, focused);
+                if (!focused) {
                     m_input.down = 0;
                     m_input.press = 0;
                     m_input.moveIndex = 0;
