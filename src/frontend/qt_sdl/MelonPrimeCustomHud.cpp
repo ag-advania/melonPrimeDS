@@ -52,6 +52,94 @@ bool CustomHud_IsEnabled(Config::Table& localCfg)
 }
 
 // =========================================================================
+//  NoHUD Patch Data — per ROM version
+//
+//  17 ARM instructions are NOP'd (E1A00000) to disable the game's HUD
+//  rendering functions. Restore writes back the original STR instructions.
+//  The 18th entry (addrHudToggle) is handled separately via Write8.
+// =========================================================================
+static constexpr int NOHUD_PATCH_COUNT = 17;
+static constexpr uint32_t ARM_NOP = 0xE1A00000;
+
+struct HudPatchEntry {
+    uint32_t addr;
+    uint32_t restoreValue;
+};
+
+// Index matches RomGroup enum: JP1.0=0, JP1.1=1, US1.0=2, US1.1=3, EU1.0=4, EU1.1=5, KR1.0=6
+static constexpr HudPatchEntry kHudPatch[7][NOHUD_PATCH_COUNT] = {
+    // JP1.0
+    { {0x02008E78,0xE5840018},{0x02008F0C,0xE5840018},{0x0202A494,0xE5841000},{0x0202A554,0xE584C000},
+      {0x0202A5FC,0xE584C000},{0x0202A6AC,0xE5840000},{0x0202A6B4,0xE5840000},{0x0202F7B4,0xE5801000},
+      {0x0202F814,0xE5801000},{0x0202F870,0xE5801000},{0x0202F938,0xE5823000},{0x02030E58,0xE5812000},
+      {0x020311F8,0xE5801000},{0x020565F8,0xE5801000},{0x020568C4,0xE5801000},{0x02058C50,0xE5801000},
+      {0x0205A958,0xE5813000} },
+    // JP1.1
+    { {0x02008E78,0xE5840018},{0x02008F0C,0xE5840018},{0x0202A494,0xE5841000},{0x0202A554,0xE584C000},
+      {0x0202A5FC,0xE584C000},{0x0202A6AC,0xE5840000},{0x0202A6B4,0xE5840000},{0x0202F7B4,0xE5801000},
+      {0x0202F814,0xE5801000},{0x0202F870,0xE5801000},{0x0202F938,0xE5823000},{0x02030E58,0xE5812000},
+      {0x020311F8,0xE5801000},{0x020565F8,0xE5801000},{0x020568C4,0xE5801000},{0x02058C50,0xE5801000},
+      {0x0205A958,0xE5813000} },
+    // US1.0
+    { {0x02008E78,0xE5840018},{0x02008F0C,0xE5840018},{0x0202A4B8,0xE5841000},{0x0202A578,0xE584C000},
+      {0x0202A620,0xE584C000},{0x0202A6D0,0xE5840000},{0x0202A6D8,0xE5840000},{0x0202F79C,0xE5801000},
+      {0x0202F7FC,0xE5801000},{0x0202F858,0xE5801000},{0x0202F920,0xE5823000},{0x02030E40,0xE5812000},
+      {0x0203111C,0xE5801000},{0x02054BA8,0xE5801000},{0x02054E74,0xE5801000},{0x020571AC,0xE5801000},
+      {0x02058D20,0xE5813000} },
+    // US1.1
+    { {0x02008E78,0xE5840018},{0x02008F0C,0xE5840018},{0x0202A4B8,0xE5841000},{0x0202A578,0xE584C000},
+      {0x0202A620,0xE584C000},{0x0202A6D0,0xE5840000},{0x0202A6D8,0xE5840000},{0x0202F76C,0xE5801000},
+      {0x0202F7CC,0xE5801000},{0x0202F828,0xE5801000},{0x0202F8F0,0xE5823000},{0x02030E0C,0xE5812000},
+      {0x020310E8,0xE5801000},{0x020553C8,0xE5801000},{0x02055694,0xE5801000},{0x020579C0,0xE5801000},
+      {0x02059534,0xE5813000} },
+    // EU1.0
+    { {0x02008E7C,0xE5840018},{0x02008F10,0xE5840018},{0x0202A4B0,0xE5841000},{0x0202A570,0xE584C000},
+      {0x0202A618,0xE584C000},{0x0202A6C8,0xE5840000},{0x0202A6D0,0xE5840000},{0x0202F764,0xE5801000},
+      {0x0202F7C4,0xE5801000},{0x0202F820,0xE5801000},{0x0202F8E8,0xE5823000},{0x02030E04,0xE5812000},
+      {0x020310E0,0xE5801000},{0x0205539C,0xE5801000},{0x02055668,0xE5801000},{0x02057994,0xE5801000},
+      {0x020594E8,0xE5813000} },
+    // EU1.1
+    { {0x02008E78,0xE5840018},{0x02008F0C,0xE5840018},{0x0202A4B8,0xE5841000},{0x0202A578,0xE584C000},
+      {0x0202A620,0xE584C000},{0x0202A6D0,0xE5840000},{0x0202A6D8,0xE5840000},{0x0202F76C,0xE5801000},
+      {0x0202F7CC,0xE5801000},{0x0202F828,0xE5801000},{0x0202F8F0,0xE5823000},{0x02030E0C,0xE5812000},
+      {0x020310E8,0xE5801000},{0x020553C8,0xE5801000},{0x02055694,0xE5801000},{0x020579C0,0xE5801000},
+      {0x02059534,0xE5813000} },
+    // KR1.0
+    { {0x0203302C,0xE5801000},{0x0203336C,0xE5812000},{0x020345F8,0xE5801000},{0x0203472C,0xE5801000},
+      {0x02034788,0xE5801000},{0x020347DC,0xE5801000},{0x02034800,0xE5801000},{0x0203487C,0xE5812000},
+      {0x0203489C,0xE5823000},{0x02038FB8,0xE5841000},{0x02039054,0xE584C000},{0x02039100,0xE584C000},
+      {0x020391BC,0xE5840000},{0x02050764,0xE5801000},{0x02050A24,0xE5801000},{0x02053F54,0xE5803000},
+      {0x02054DCC,0xE5801000} },
+};
+
+// Patch state tracking
+static bool s_hudPatchApplied = false;
+
+static void ApplyNoHudPatch(melonDS::NDS* nds, uint8_t romGroup)
+{
+    if (s_hudPatchApplied) return;
+    for (int i = 0; i < NOHUD_PATCH_COUNT; i++) {
+        nds->ARM9Write32(kHudPatch[romGroup][i].addr, ARM_NOP);
+    }
+    s_hudPatchApplied = true;
+}
+
+static void RestoreHudPatch(melonDS::NDS* nds, uint8_t romGroup)
+{
+    if (!s_hudPatchApplied) return;
+    for (int i = 0; i < NOHUD_PATCH_COUNT; i++) {
+        nds->ARM9Write32(kHudPatch[romGroup][i].addr, kHudPatch[romGroup][i].restoreValue);
+    }
+    s_hudPatchApplied = false;
+}
+
+// Called on emu stop/reset to ensure clean state
+void CustomHud_ResetPatchState()
+{
+    s_hudPatchApplied = false;
+}
+
+// =========================================================================
 //  Internal helpers
 // =========================================================================
 static inline QImage LoadIcon(const char* resource)
@@ -59,12 +147,6 @@ static inline QImage LoadIcon(const char* resource)
     QImage img(resource);
     if (img.isNull()) return img;
     return img.convertToFormat(QImage::Format_ARGB32_Premultiplied);
-}
-
-static inline void UpdateHudToggle(melonDS::u8* ram,
-                                   uint32_t addrHudToggle, bool isStartPressed)
-{
-    Write8(ram, addrHudToggle, isStartPressed ? 0x11 : 0x01);
 }
 
 static inline void DrawHP(QPainter* p, uint16_t hp)
@@ -154,7 +236,6 @@ static void DrawLineGroup(QPainter* p, int cx, int cy,
     if (!lg.show || lg.length <= 0) return;
     int o = lg.offset, l = lg.length, t = lg.thickness;
 
-    // Apply line group opacity to base color
     QColor color = baseColor;
     color.setAlphaF(lg.opacity);
 
@@ -166,13 +247,12 @@ static void DrawLineGroup(QPainter* p, int cx, int cy,
 }
 
 static void DrawCrosshair(QPainter* p, melonDS::u8* ram,
-                          const GameAddressesHot& addrHot,
+                          const RomAddresses& rom,
                           const CrosshairSettings& cs)
 {
-    float chX = static_cast<float>(Read8(ram, addrHot.aimX + 0x27E));
-    float chY = static_cast<float>(Read8(ram, addrHot.aimX + 0x280));
-    chX = (chX < 0) ? chX + 254 : chX;
-    int cx = static_cast<int>(chX), cy = static_cast<int>(chY);
+    // Read crosshair screen position from dedicated addresses
+    int cx = static_cast<int>(Read16(ram, rom.crosshairPosX));
+    int cy = static_cast<int>(Read16(ram, rom.crosshairPosY));
 
     // Outer lines (behind)
     DrawLineGroup(p, cx, cy, cs.outer, cs.color,
@@ -260,20 +340,32 @@ void CustomHud_Render(
     melonDS::NDS* nds = emu->getNDS();
     melonDS::u8* ram = nds->MainRAM;
     const uint32_t offP = static_cast<uint32_t>(playerPosition) * Consts::PLAYER_ADDR_INC;
+    const uint8_t romGroup = rom.romGroupIndex;
 
+    // --- If CustomHUD is disabled, restore patches and bail ---
     if (!CustomHud_IsEnabled(localCfg)) {
-        uint8_t vm = Read8(ram, rom.baseViewMode + offP);
-        Write8(ram, rom.hudToggle, (vm == 0x00) ? 0x1F : 0x11);
+        if (s_hudPatchApplied) {
+            RestoreHudPatch(nds, romGroup);
+            // Restore HudToggle: 0x1F for first-person, 0x11 for transform/camera
+            uint8_t vm = Read8(ram, rom.baseViewMode + offP);
+            Write8(ram, rom.hudToggle, (vm == 0x00) ? 0x1F : 0x11);
+        }
         return;
     }
 
+    // --- Apply NoHUD patch (only once) ---
+    ApplyNoHudPatch(nds, romGroup);
+
+    // --- Resolve player-relative addresses ---
     const uint32_t addrAmmoSpecial = rom.currentAmmoSpecial + offP;
     const uint32_t addrAmmoMissile = rom.currentAmmoMissile + offP;
 
+    // --- Write HudToggle: 0x01 = custom HUD active mode ---
     bool isStartPressed = Read8(ram, rom.startPressed) == 0x01;
-    UpdateHudToggle(ram, rom.hudToggle, isStartPressed);
+    Write8(ram, rom.hudToggle, isStartPressed ? 0x11 : 0x01);
 
-    // bool isGameOver = Read8(ram, rom.gameOver) != 0x00;
+    // --- Visibility checks ---
+    // bool isGameOver = Read8(ram, rom.gameOver) != 0x00;  // Not needed: exits first-person
     uint16_t currentHP = Read16(ram, rom.playerHP + offP);
     bool isDead        = (currentHP == 0);
     uint8_t viewMode   = Read8(ram, rom.baseViewMode + offP);
@@ -281,16 +373,25 @@ void CustomHud_Render(
 
     if (isStartPressed || isDead || !isFirstPerson) return;
 
+    // =====================================================================
+    //  HP
+    // =====================================================================
     DrawHP(topPaint, currentHP);
 
+    // =====================================================================
+    //  Weapon + Ammo
+    // =====================================================================
     uint8_t currentWeapon = Read8(ram, addrHot.currentWeapon);
     DrawWeaponAmmo(topPaint, ram, currentWeapon, Read16(ram, addrAmmoSpecial), addrAmmoMissile);
 
+    // =====================================================================
+    //  Crosshair
+    // =====================================================================
     bool isAlt   = Read8(ram, addrHot.isAltForm) == 0x02;
     bool isTrans = (Read8(ram, addrHot.jumpFlag) & 0x10) != 0;
     if (!isTrans && !isAlt) {
         CrosshairSettings cs = ReadCrosshairConfig(localCfg);
-        DrawCrosshair(topPaint, ram, addrHot, cs);
+        DrawCrosshair(topPaint, ram, rom, cs);
     }
 }
 
