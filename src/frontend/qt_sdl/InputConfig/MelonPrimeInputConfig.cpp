@@ -104,7 +104,6 @@ MelonPrimeInputConfig::MelonPrimeInputConfig(EmuInstance* emu, QWidget* parent) 
     int chR = instcfg.GetInt("Metroid.Visual.CrosshairColorR");
     int chG = instcfg.GetInt("Metroid.Visual.CrosshairColorG");
     int chB = instcfg.GetInt("Metroid.Visual.CrosshairColorB");
-    if (chR == 0 && chG == 0 && chB == 0) { chR = 255; chG = 255; chB = 255; }
     ui->spinMetroidCrosshairR->setValue(chR);
     ui->spinMetroidCrosshairG->setValue(chG);
     ui->spinMetroidCrosshairB->setValue(chB);
@@ -150,23 +149,57 @@ MelonPrimeInputConfig::MelonPrimeInputConfig(EmuInstance* emu, QWidget* parent) 
     // Crosshair — Inner Lines
     ui->cbMetroidCrosshairInnerShow->setChecked(instcfg.GetBool("Metroid.Visual.CrosshairInnerShow"));
     ui->spinMetroidCrosshairInnerOpacity->setValue(instcfg.GetDouble("Metroid.Visual.CrosshairInnerOpacity"));
-    ui->spinMetroidCrosshairInnerLength->setValue(instcfg.GetInt("Metroid.Visual.CrosshairInnerLength"));
+    ui->spinMetroidCrosshairInnerLengthX->setValue(instcfg.GetInt("Metroid.Visual.CrosshairInnerLengthX"));
+    ui->spinMetroidCrosshairInnerLengthY->setValue(instcfg.GetInt("Metroid.Visual.CrosshairInnerLengthY"));
     int innerThick = instcfg.GetInt("Metroid.Visual.CrosshairInnerThickness");
     ui->spinMetroidCrosshairInnerThickness->setValue(innerThick > 0 ? innerThick : 1);
     ui->spinMetroidCrosshairInnerOffset->setValue(instcfg.GetInt("Metroid.Visual.CrosshairInnerOffset"));
+    ui->cbMetroidCrosshairInnerLinkXY->setChecked(instcfg.GetBool("Metroid.Visual.CrosshairInnerLinkXY"));
 
     // Crosshair — Outer Lines
     ui->cbMetroidCrosshairOuterShow->setChecked(instcfg.GetBool("Metroid.Visual.CrosshairOuterShow"));
     ui->spinMetroidCrosshairOuterOpacity->setValue(instcfg.GetDouble("Metroid.Visual.CrosshairOuterOpacity"));
-    ui->spinMetroidCrosshairOuterLength->setValue(instcfg.GetInt("Metroid.Visual.CrosshairOuterLength"));
+    ui->spinMetroidCrosshairOuterLengthX->setValue(instcfg.GetInt("Metroid.Visual.CrosshairOuterLengthX"));
+    ui->spinMetroidCrosshairOuterLengthY->setValue(instcfg.GetInt("Metroid.Visual.CrosshairOuterLengthY"));
     int outerThick = instcfg.GetInt("Metroid.Visual.CrosshairOuterThickness");
     ui->spinMetroidCrosshairOuterThickness->setValue(outerThick > 0 ? outerThick : 1);
     ui->spinMetroidCrosshairOuterOffset->setValue(instcfg.GetInt("Metroid.Visual.CrosshairOuterOffset"));
+    ui->cbMetroidCrosshairOuterLinkXY->setChecked(instcfg.GetBool("Metroid.Visual.CrosshairOuterLinkXY"));
 
     // Color code <-> RGB sync
     connect(ui->spinMetroidCrosshairR, QOverload<int>::of(&QSpinBox::valueChanged), this, &MelonPrimeInputConfig::onCrosshairColorSpinChanged);
     connect(ui->spinMetroidCrosshairG, QOverload<int>::of(&QSpinBox::valueChanged), this, &MelonPrimeInputConfig::onCrosshairColorSpinChanged);
     connect(ui->spinMetroidCrosshairB, QOverload<int>::of(&QSpinBox::valueChanged), this, &MelonPrimeInputConfig::onCrosshairColorSpinChanged);
+
+    // Link X/Y sync: when linked, changing X updates Y and vice versa
+    connect(ui->spinMetroidCrosshairInnerLengthX, QOverload<int>::of(&QSpinBox::valueChanged), this, [this](int val) {
+        if (ui->cbMetroidCrosshairInnerLinkXY->isChecked()) {
+            ui->spinMetroidCrosshairInnerLengthY->blockSignals(true);
+            ui->spinMetroidCrosshairInnerLengthY->setValue(val);
+            ui->spinMetroidCrosshairInnerLengthY->blockSignals(false);
+        }
+    });
+    connect(ui->spinMetroidCrosshairInnerLengthY, QOverload<int>::of(&QSpinBox::valueChanged), this, [this](int val) {
+        if (ui->cbMetroidCrosshairInnerLinkXY->isChecked()) {
+            ui->spinMetroidCrosshairInnerLengthX->blockSignals(true);
+            ui->spinMetroidCrosshairInnerLengthX->setValue(val);
+            ui->spinMetroidCrosshairInnerLengthX->blockSignals(false);
+        }
+    });
+    connect(ui->spinMetroidCrosshairOuterLengthX, QOverload<int>::of(&QSpinBox::valueChanged), this, [this](int val) {
+        if (ui->cbMetroidCrosshairOuterLinkXY->isChecked()) {
+            ui->spinMetroidCrosshairOuterLengthY->blockSignals(true);
+            ui->spinMetroidCrosshairOuterLengthY->setValue(val);
+            ui->spinMetroidCrosshairOuterLengthY->blockSignals(false);
+        }
+    });
+    connect(ui->spinMetroidCrosshairOuterLengthY, QOverload<int>::of(&QSpinBox::valueChanged), this, [this](int val) {
+        if (ui->cbMetroidCrosshairOuterLinkXY->isChecked()) {
+            ui->spinMetroidCrosshairOuterLengthX->blockSignals(true);
+            ui->spinMetroidCrosshairOuterLengthX->setValue(val);
+            ui->spinMetroidCrosshairOuterLengthX->blockSignals(false);
+        }
+    });
 
 }
 
@@ -307,16 +340,20 @@ void MelonPrimeInputConfig::saveConfig()
     // Crosshair — Inner Lines
     instcfg.SetBool("Metroid.Visual.CrosshairInnerShow", ui->cbMetroidCrosshairInnerShow->checkState() == Qt::Checked);
     instcfg.SetDouble("Metroid.Visual.CrosshairInnerOpacity", ui->spinMetroidCrosshairInnerOpacity->value());
-    instcfg.SetInt("Metroid.Visual.CrosshairInnerLength", ui->spinMetroidCrosshairInnerLength->value());
+    instcfg.SetInt("Metroid.Visual.CrosshairInnerLengthX", ui->spinMetroidCrosshairInnerLengthX->value());
+    instcfg.SetInt("Metroid.Visual.CrosshairInnerLengthY", ui->spinMetroidCrosshairInnerLengthY->value());
     instcfg.SetInt("Metroid.Visual.CrosshairInnerThickness", ui->spinMetroidCrosshairInnerThickness->value());
     instcfg.SetInt("Metroid.Visual.CrosshairInnerOffset", ui->spinMetroidCrosshairInnerOffset->value());
+    instcfg.SetBool("Metroid.Visual.CrosshairInnerLinkXY", ui->cbMetroidCrosshairInnerLinkXY->checkState() == Qt::Checked);
 
     // Crosshair — Outer Lines
     instcfg.SetBool("Metroid.Visual.CrosshairOuterShow", ui->cbMetroidCrosshairOuterShow->checkState() == Qt::Checked);
     instcfg.SetDouble("Metroid.Visual.CrosshairOuterOpacity", ui->spinMetroidCrosshairOuterOpacity->value());
-    instcfg.SetInt("Metroid.Visual.CrosshairOuterLength", ui->spinMetroidCrosshairOuterLength->value());
+    instcfg.SetInt("Metroid.Visual.CrosshairOuterLengthX", ui->spinMetroidCrosshairOuterLengthX->value());
+    instcfg.SetInt("Metroid.Visual.CrosshairOuterLengthY", ui->spinMetroidCrosshairOuterLengthY->value());
     instcfg.SetInt("Metroid.Visual.CrosshairOuterThickness", ui->spinMetroidCrosshairOuterThickness->value());
     instcfg.SetInt("Metroid.Visual.CrosshairOuterOffset", ui->spinMetroidCrosshairOuterOffset->value());
+    instcfg.SetBool("Metroid.Visual.CrosshairOuterLinkXY", ui->cbMetroidCrosshairOuterLinkXY->checkState() == Qt::Checked);
 
     
 }
