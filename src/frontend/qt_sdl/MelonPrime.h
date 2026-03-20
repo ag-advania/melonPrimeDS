@@ -170,6 +170,13 @@ namespace MelonPrime {
         [[nodiscard]] bool ShouldForceSoftwareRenderer() const;
         [[nodiscard]] uint16_t GetInputMaskFast() const { return m_inputMaskFast; }
 
+#ifdef MELONPRIME_CUSTOM_HUD
+        [[nodiscard]] const RomAddresses& GetCurrentRom() const { return m_currentRom; }
+        [[nodiscard]] const GameAddressesHot& GetAddrHot() const { return m_addrHot; }
+        [[nodiscard]] uint8_t GetPlayerPosition() const { return m_playerPosition; }
+        [[nodiscard]] bool IsRomDetected() const { return m_flags.test(StateFlags::BIT_ROM_DETECTED); }
+#endif
+
         bool isCursorMode = true;
         bool isFocused = false;
         bool isClipWanted = false;

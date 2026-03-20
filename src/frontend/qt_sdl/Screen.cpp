@@ -48,6 +48,11 @@
 #ifdef MELONPRIME_DS
 #include "MelonPrime.h"
 
+#ifdef MELONPRIME_CUSTOM_HUD
+#include "MelonPrimeCustomHud.h"
+#include <QFontDatabase>
+#endif
+
 #ifdef _WIN32
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
@@ -171,6 +176,24 @@ ScreenPanel::ScreenPanel(QWidget* parent) : QWidget(parent)
 
     osdEnabled = false;
     osdID = 1;
+
+#ifdef MELONPRIME_CUSTOM_HUD
+    Overlay[0] = QImage(256, 192, QImage::Format_ARGB32_Premultiplied);
+    Overlay[1] = QImage(256, 192, QImage::Format_ARGB32_Premultiplied);
+    Overlay[0].fill(0x00000000);
+    Overlay[1].fill(0x00000000);
+    // Load custom font for HUD text — disable anti-aliasing for crisp pixels
+    {
+        int fontId = QFontDatabase::addApplicationFont(":/mph-font");
+        if (fontId >= 0) {
+            QFontDatabase fontDB;
+            QString family = fontDB.applicationFontFamilies(fontId).at(0);
+            overlayFont = QFont(family, 6);
+            overlayFont.setStyleStrategy(QFont::NoAntialias);
+            overlayFont.setHintingPreference(QFont::PreferFullHinting);
+        }
+    }
+#endif
 
     loadConfig();
     setFilter(mainWindow->getWindowConfig().GetBool("ScreenFilter"));
@@ -966,6 +989,42 @@ void ScreenPanelNative::paintEvent(QPaintEvent * event)
             painter.setTransform(screenTrans[i]);
             painter.drawImage(screenrc, screen[screenKind[i]]);
         }
+
+#ifdef MELONPRIME_CUSTOM_HUD
+        {
+            auto* mp = emuThread->GetMelonPrimeCore();
+            auto& instcfg = emuInstance->getLocalConfig();
+            if (mp && mp->IsRomDetected() && mp->IsInGame())
+            {
+                // Clear overlay buffers BEFORE creating painters
+                Overlay[0].fill(Qt::transparent);
+                Overlay[1].fill(Qt::transparent);
+
+                // Per-frame painters (must end before reading image)
+                {
+                    QPainter topP(&Overlay[0]);
+                    QPainter btmP(&Overlay[1]);
+                    topP.setFont(overlayFont);
+                    btmP.setFont(overlayFont);
+                    MelonPrime::CustomHud_Render(
+                        emuInstance, instcfg,
+                        mp->GetCurrentRom(), mp->GetAddrHot(),
+                        mp->GetPlayerPosition(),
+                        &topP, &btmP,
+                        &Overlay[0], &Overlay[1],
+                        mp->IsInGame());
+                } // painters end here — safe to read images
+
+                // Composite overlays on top of screens
+                for (int i = 0; i < numScreens; i++)
+                {
+                    painter.setTransform(screenTrans[i]);
+                    painter.drawImage(screenrc, Overlay[screenKind[i]]);
+                }
+            }
+        }
+#endif
+
         emuInstance->renderLock.unlock();
     }
 
@@ -1161,6 +1220,19 @@ void ScreenPanelGL::initOpenGL()
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, logo.width(), logo.height(), 0, GL_RGBA, GL_UNSIGNED_BYTE, logo.bits());
     logoTexture = tex;
 
+#ifdef MELONPRIME_CUSTOM_HUD
+    // Create 2 overlay textures (GL_TEXTURE_2D, 256x192 each, one per screen)
+    glGenTextures(2, overlayTextures);
+    for (int i = 0; i < 2; i++) {
+        glBindTexture(GL_TEXTURE_2D, overlayTextures[i]);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, 256, 192, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+    }
+#endif
+
     transferLayout();
     glInited = true;
 }
@@ -1190,6 +1262,10 @@ void ScreenPanelGL::deinitOpenGL()
     glDeleteBuffers(1, &osdVertexBuffer);
 
     glDeleteTextures(1, &logoTexture);
+
+#ifdef MELONPRIME_CUSTOM_HUD
+    glDeleteTextures(2, overlayTextures);
+#endif
 
     glDeleteProgram(osdShader);
 
@@ -1319,6 +1395,80 @@ void ScreenPanelGL::drawScreen()
             glUniformMatrix2x3fv(screenShaderTransformULoc, 1, GL_TRUE, screenMatrix[i]);
             glDrawArrays(GL_TRIANGLES, screenKind[i] == 0 ? 0 : 2 * 3, 2 * 3);
         }
+
+#ifdef MELONPRIME_CUSTOM_HUD
+        // --- Custom HUD Overlay (uses OSD shader for proper alpha blending) ---
+        {
+            auto* mp = emuThread->GetMelonPrimeCore();
+            auto& instcfg = emuInstance->getLocalConfig();
+            if (mp && mp->IsRomDetected() && mp->IsInGame())
+            {
+                // Clear overlay buffers BEFORE creating painters
+                Overlay[0].fill(Qt::transparent);
+                Overlay[1].fill(Qt::transparent);
+
+                // Per-frame painters (must end before GL upload reads image bits)
+                {
+                    QPainter topP(&Overlay[0]);
+                    QPainter btmP(&Overlay[1]);
+                    topP.setFont(overlayFont);
+                    btmP.setFont(overlayFont);
+                    MelonPrime::CustomHud_Render(
+                        emuInstance, instcfg,
+                        mp->GetCurrentRom(), mp->GetAddrHot(),
+                        mp->GetPlayerPosition(),
+                        &topP, &btmP,
+                        &Overlay[0], &Overlay[1],
+                        mp->IsInGame());
+                } // painters end here — safe to read constBits()
+
+                // Switch to OSD shader (supports alpha via texelFetch + BGRA swizzle)
+                glUseProgram(osdShader);
+                glUniform2f(osdScreenSizeULoc, w, h);
+                glUniform1f(osdScaleFactorULoc, factor);
+
+                glBindBuffer(GL_ARRAY_BUFFER, osdVertexBuffer);
+                glBindVertexArray(osdVertexArray);
+                glActiveTexture(GL_TEXTURE0);
+
+                glEnable(GL_BLEND);
+                glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
+
+                for (int i = 0; i < numScreens; i++)
+                {
+                    int screenType = screenKind[i]; // 0=top, 1=bottom
+                    float* mtx = screenMatrix[i];
+
+                    // Compute display size from transform matrix
+                    float displayW = mtx[0] * 256.0f;
+                    float displayH = mtx[3] * 192.0f;
+                    if (displayW <= 0 || displayH <= 0) continue;
+
+                    // texScale maps display size back to 256x192 texture coords
+                    float texScale = 256.0f / displayW;
+
+                    // Upload overlay image
+                    glBindTexture(GL_TEXTURE_2D, overlayTextures[screenType]);
+                    glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, 256, 192,
+                        GL_RGBA, GL_UNSIGNED_BYTE, Overlay[screenType].constBits());
+
+                    glUniform2i(osdPosULoc, (int)mtx[4], (int)mtx[5]);
+                    glUniform2i(osdSizeULoc, (int)displayW, (int)displayH);
+                    glUniform1f(osdTexScaleULoc, texScale);
+
+                    glDrawArrays(GL_TRIANGLES, 0, 2 * 3);
+                }
+
+                glDisable(GL_BLEND);
+
+                // Restore screen shader state
+                glUseProgram(screenShaderProgram);
+                glBindBuffer(GL_ARRAY_BUFFER, screenVertexBuffer);
+                glBindVertexArray(screenVertexArray);
+                glBindTexture(GL_TEXTURE_2D_ARRAY, screenTexture);
+            }
+        }
+#endif
 
         screenSettingsLock.unlock();
     }
