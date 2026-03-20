@@ -118,6 +118,10 @@ private slots:
     void on_cbMetroidUnlockAll_stateChanged(int state);
     void on_cbMetroidApplyHeadphone_stateChanged(int state);
     void on_cbMetroidUseFirmwareName_stateChanged(int state);
+    void on_cbMetroidEnableCustomHud_stateChanged(int state);
+    void on_leMetroidCrosshairColorCode_editingFinished();
+    void on_comboMetroidCrosshairColor_currentIndexChanged(int index);
+    void onCrosshairColorSpinChanged();
 
 private:
     Ui::MelonPrimeInputConfig* ui;
