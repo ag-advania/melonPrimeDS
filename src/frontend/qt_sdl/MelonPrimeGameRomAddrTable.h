@@ -60,6 +60,16 @@ namespace MelonPrime {
     inline constexpr RomTable<uint32_t> LIST_MainHunter = { 0x020ECF40, 0x020ECF00, 0x020EAE00, 0x020EB8C0, 0x020EB8E0, 0x020EB960, 0x020E44BC };
     inline constexpr RomTable<uint32_t> LIST_RankColor = { 0x020ECF43, 0x020ECF03, 0x020EAE03, 0x020EB8C3, 0x020EB8E3, 0x020EB963, 0x020E44BF };
 
+#ifdef MELONPRIME_CUSTOM_HUD
+    // Custom HUD addresses
+    inline constexpr RomTable<uint32_t> LIST_HudToggle        = { 0x020DB090, 0x020DB050, 0x020D91D0, 0x020D9A50, 0x020D9A70, 0x020D9AF0, 0x020D31C0 };
+    inline constexpr RomTable<uint32_t> LIST_CurrentAmmoSpecial = { 0x020DC720, 0x020DC6E0, 0x020DA860, 0x020DB0E0, 0x020DB100, 0x020DB180, 0x020D3F2C }; // player struct relative (+0xF30)
+    inline constexpr RomTable<uint32_t> LIST_CurrentAmmoMissile = { 0x020DC722, 0x020DC6E2, 0x020DA862, 0x020DB0E2, 0x020DB102, 0x020DB182, 0x020D3F2E }; // player struct relative (+0xF30)
+    inline constexpr RomTable<uint32_t> LIST_StartPressed      = { 0x020E0538, 0x020E04F8, 0x020DE634, 0x020DEEB4, 0x020DEED4, 0x020DEF54, 0x020D7D29 };
+    inline constexpr RomTable<uint32_t> LIST_GameOver          = { 0x020E6B48, 0x020E6B08, 0x020E4A1C, 0x020E54E4, 0x020E5504, 0x020E5584, 0x020DE330 };
+    inline constexpr RomTable<uint32_t> LIST_BaseViewMode      = { 0x020DCAAA, 0x020DCA6A, 0x020DABEA, 0x020DB46A, 0x020DB48A, 0x020DB50A, 0x020D42B6 }; // player struct relative (+0xF30)
+#endif
+
     // =========================================================================
     //  Aim Smoothing Patch Target Addresses & Original Instructions
     // =========================================================================
@@ -112,6 +122,15 @@ namespace MelonPrime {
         uint32_t mainHunter;
         uint32_t rankColor;
 
+#ifdef MELONPRIME_CUSTOM_HUD
+        uint32_t hudToggle;
+        uint32_t currentAmmoSpecial;  // player struct relative (+0xF30)
+        uint32_t currentAmmoMissile;  // player struct relative (+0xF30)
+        uint32_t startPressed;
+        uint32_t gameOver;
+        uint32_t baseViewMode;        // player struct relative (+0xF30)
+#endif
+
         uint32_t aimPatchAddrX;
         uint32_t aimPatchOrigX1;
         uint32_t aimPatchOrigX2;
@@ -141,6 +160,12 @@ namespace MelonPrime {
             LIST_UnlockMapsHunters4[i], LIST_UnlockMapsHunters5[i],
             LIST_DsNameFlagAndMicVolume[i], LIST_Sensitivity[i],
             LIST_BaseInGameSensi[i], LIST_MainHunter[i], LIST_RankColor[i],
+
+#ifdef MELONPRIME_CUSTOM_HUD
+            LIST_HudToggle[i], LIST_CurrentAmmoSpecial[i],
+            LIST_CurrentAmmoMissile[i], LIST_StartPressed[i],
+            LIST_GameOver[i], LIST_BaseViewMode[i],
+#endif
 
             LIST_AimPatchAddrX[i], LIST_AimPatchOrigX1[i], LIST_AimPatchOrigX2[i], LIST_AimPatchX1[i],
             LIST_AimPatchAddrY[i], LIST_AimPatchOrigY1[i], LIST_AimPatchOrigY2[i], LIST_AimPatchY1[i]

@@ -29,6 +29,7 @@
 #include <QScreen>
 #include <QCloseEvent>
 #include <QTimer>
+#include <QFont>
 
 #include "glad/glad.h"
 #include "ScreenLayout.h"
@@ -156,6 +157,11 @@ protected:
     bool osdEnabled;
     unsigned int osdID;
     std::deque<OSDItem> osdItems;
+
+#ifdef MELONPRIME_CUSTOM_HUD
+    QImage Overlay[2];       // [0]=Top, [1]=Bottom — ARGB32_Premultiplied, 256x192
+    QFont overlayFont;
+#endif
 
 #ifdef MELONPRIME_DS
     // OPT-OSD1: Skip osdUpdate mutex + syscall when no OSD items and splash rendered.
@@ -290,6 +296,10 @@ private:
     GLuint osdVertexArray;
     GLuint osdVertexBuffer;
     std::map<unsigned int, GLuint> osdTextures;
+
+#ifdef MELONPRIME_CUSTOM_HUD
+    GLuint overlayTextures[2];  // GL_TEXTURE_2D per screen (top/bottom)
+#endif
 
     GLuint logoTexture;
 
