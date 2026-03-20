@@ -611,7 +611,7 @@
 
 					<widget class="QWidget" name="tabCrosshair">
 						<attribute name="title">
-							<string>Crosshair</string>
+							<string>Custom HUD</string>
 						</attribute>
 						<layout class="QVBoxLayout" name="crosshairVLayout">
 
