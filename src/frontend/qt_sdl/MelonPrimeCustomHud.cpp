@@ -35,14 +35,16 @@ static constexpr const char* kCfgChTStyle           = "Metroid.Visual.CrosshairT
 // Crosshair — Inner Lines
 static constexpr const char* kCfgChInnerShow      = "Metroid.Visual.CrosshairInnerShow";
 static constexpr const char* kCfgChInnerOpacity   = "Metroid.Visual.CrosshairInnerOpacity";
-static constexpr const char* kCfgChInnerLength    = "Metroid.Visual.CrosshairInnerLength";
+static constexpr const char* kCfgChInnerLengthX   = "Metroid.Visual.CrosshairInnerLengthX";
+static constexpr const char* kCfgChInnerLengthY   = "Metroid.Visual.CrosshairInnerLengthY";
 static constexpr const char* kCfgChInnerThickness = "Metroid.Visual.CrosshairInnerThickness";
 static constexpr const char* kCfgChInnerOffset    = "Metroid.Visual.CrosshairInnerOffset";
 
 // Crosshair — Outer Lines
 static constexpr const char* kCfgChOuterShow      = "Metroid.Visual.CrosshairOuterShow";
 static constexpr const char* kCfgChOuterOpacity   = "Metroid.Visual.CrosshairOuterOpacity";
-static constexpr const char* kCfgChOuterLength    = "Metroid.Visual.CrosshairOuterLength";
+static constexpr const char* kCfgChOuterLengthX   = "Metroid.Visual.CrosshairOuterLengthX";
+static constexpr const char* kCfgChOuterLengthY   = "Metroid.Visual.CrosshairOuterLengthY";
 static constexpr const char* kCfgChOuterThickness = "Metroid.Visual.CrosshairOuterThickness";
 static constexpr const char* kCfgChOuterOffset    = "Metroid.Visual.CrosshairOuterOffset";
 
@@ -193,7 +195,8 @@ static void DrawWeaponAmmo(QPainter* p, melonDS::u8* ram,
 struct LineGroup {
     bool   show;
     double opacity;
-    int    length;
+    int    lengthX;
+    int    lengthY;
     int    thickness;
     int    offset;
 };
@@ -233,17 +236,26 @@ static void DrawLineGroup(QPainter* p, int cx, int cy,
                           const LineGroup& lg, const QColor& baseColor,
                           bool outline, double outlineOpacity, int olThickness, bool tStyle)
 {
-    if (!lg.show || lg.length <= 0) return;
-    int o = lg.offset, l = lg.length, t = lg.thickness;
+    if (!lg.show || (lg.lengthX <= 0 && lg.lengthY <= 0)) return;
+    int o = lg.offset, lx = lg.lengthX, ly = lg.lengthY, t = lg.thickness;
 
     QColor color = baseColor;
     color.setAlphaF(lg.opacity);
 
-    DrawArm(p, cx - o - l, cy, cx - o, cy, t, color, outline, outlineOpacity, olThickness);
-    DrawArm(p, cx + o, cy, cx + o + l, cy, t, color, outline, outlineOpacity, olThickness);
-    DrawArm(p, cx, cy + o, cx, cy + o + l, t, color, outline, outlineOpacity, olThickness);
-    if (!tStyle)
-        DrawArm(p, cx, cy - o - l, cx, cy - o, t, color, outline, outlineOpacity, olThickness);
+    // NOTE: QPainter::drawLine is endpoint-inclusive, so a line from A to B
+    // draws |B-A|+1 pixels. To draw exactly N pixels, use end = start + N - 1.
+
+    // Horizontal arms (use lengthX)
+    if (lx > 0) {
+        DrawArm(p, cx - o - lx, cy, cx - o - 1, cy, t, color, outline, outlineOpacity, olThickness);  // Left
+        DrawArm(p, cx + o + 1, cy, cx + o + lx, cy, t, color, outline, outlineOpacity, olThickness);   // Right
+    }
+    // Vertical arms (use lengthY)
+    if (ly > 0) {
+        DrawArm(p, cx, cy + o + 1, cx, cy + o + ly, t, color, outline, outlineOpacity, olThickness);   // Bottom
+        if (!tStyle)
+            DrawArm(p, cx, cy - o - ly, cx, cy - o - 1, t, color, outline, outlineOpacity, olThickness); // Top
+    }
 }
 
 static void DrawCrosshair(QPainter* p, melonDS::u8* ram,
@@ -288,18 +300,15 @@ static CrosshairSettings ReadCrosshairConfig(Config::Table& cfg)
     int r = cfg.GetInt(kCfgChColorR);
     int g = cfg.GetInt(kCfgChColorG);
     int b = cfg.GetInt(kCfgChColorB);
-    if (r == 0 && g == 0 && b == 0) { r = 255; g = 255; b = 255; }
     cs.color = QColor(r, g, b);
 
     cs.outline          = cfg.GetBool(kCfgChOutline);
     cs.outlineOpacity   = cfg.GetDouble(kCfgChOutlineOpacity);
-    if (cs.outlineOpacity <= 0.0) cs.outlineOpacity = 0.5;
     cs.outlineThickness = cfg.GetInt(kCfgChOutlineThickness);
     if (cs.outlineThickness <= 0) cs.outlineThickness = 1;
 
     cs.centerDot    = cfg.GetBool(kCfgChCenterDot);
     cs.dotOpacity   = cfg.GetDouble(kCfgChDotOpacity);
-    if (cs.dotOpacity <= 0.0) cs.dotOpacity = 1.0;
     cs.dotThickness = cfg.GetInt(kCfgChDotThickness);
     if (cs.dotThickness <= 0) cs.dotThickness = 1;
 
@@ -307,16 +316,16 @@ static CrosshairSettings ReadCrosshairConfig(Config::Table& cfg)
 
     cs.inner.show      = cfg.GetBool(kCfgChInnerShow);
     cs.inner.opacity   = cfg.GetDouble(kCfgChInnerOpacity);
-    if (cs.inner.opacity <= 0.0) cs.inner.opacity = 0.8;
-    cs.inner.length    = cfg.GetInt(kCfgChInnerLength);
+    cs.inner.lengthX   = cfg.GetInt(kCfgChInnerLengthX);
+    cs.inner.lengthY   = cfg.GetInt(kCfgChInnerLengthY);
     cs.inner.thickness = cfg.GetInt(kCfgChInnerThickness);
     if (cs.inner.thickness <= 0) cs.inner.thickness = 1;
     cs.inner.offset    = cfg.GetInt(kCfgChInnerOffset);
 
     cs.outer.show      = cfg.GetBool(kCfgChOuterShow);
     cs.outer.opacity   = cfg.GetDouble(kCfgChOuterOpacity);
-    if (cs.outer.opacity <= 0.0) cs.outer.opacity = 0.35;
-    cs.outer.length    = cfg.GetInt(kCfgChOuterLength);
+    cs.outer.lengthX   = cfg.GetInt(kCfgChOuterLengthX);
+    cs.outer.lengthY   = cfg.GetInt(kCfgChOuterLengthY);
     cs.outer.thickness = cfg.GetInt(kCfgChOuterThickness);
     if (cs.outer.thickness <= 0) cs.outer.thickness = 1;
     cs.outer.offset    = cfg.GetInt(kCfgChOuterOffset);
