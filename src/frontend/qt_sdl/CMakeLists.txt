@@ -81,6 +81,7 @@ set(SOURCES_QT_SDL
     InputConfig/MelonPrimeInputConfig.cpp
 
     MelonPrime.cpp
+    MelonPrimeCustomHud.cpp
     
 
 )
@@ -115,6 +116,7 @@ fix_interface_includes(PkgConfig::SDL2 PkgConfig::LibArchive)
 
 add_compile_definitions(ARCHIVE_SUPPORT_ENABLED)
 add_compile_definitions(MELONPRIME_DS) # MelonPrimeDS
+add_compile_definitions(MELONPRIME_CUSTOM_HUD ) # MelonPrimeDS
 
 if (WIN32)
     # windowsÇÃèúäOê›íËÇÕÇ∆Ç≠Ç…Ç»ÇµÅB
