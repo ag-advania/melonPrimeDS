@@ -68,6 +68,8 @@ namespace MelonPrime {
     inline constexpr RomTable<uint32_t> LIST_StartPressed      = { 0x020E0538, 0x020E04F8, 0x020DE634, 0x020DEEB4, 0x020DEED4, 0x020DEF54, 0x020D7D29 };
     inline constexpr RomTable<uint32_t> LIST_GameOver          = { 0x020E6B48, 0x020E6B08, 0x020E4A1C, 0x020E54E4, 0x020E5504, 0x020E5584, 0x020DE330 };
     inline constexpr RomTable<uint32_t> LIST_BaseViewMode      = { 0x020DCAAA, 0x020DCA6A, 0x020DABEA, 0x020DB46A, 0x020DB48A, 0x020DB50A, 0x020D42B6 }; // player struct relative (+0xF30)
+    inline constexpr RomTable<uint32_t> LIST_CrosshairPosX     = { 0x020E05C0, 0x020E0580, 0x020DE7A4, 0x020DF024, 0x020DF044, 0x020DF0C4, 0x020D7D7C };
+    inline constexpr RomTable<uint32_t> LIST_CrosshairPosY     = { 0x020E05C2, 0x020E0582, 0x020DE7A6, 0x020DF026, 0x020DF046, 0x020DF0C6, 0x020D7D7E };
 #endif
 
     // =========================================================================
@@ -87,6 +89,7 @@ namespace MelonPrime {
     //  Struct + constexpr builder
     // =========================================================================
     struct RomAddresses {
+        uint8_t  romGroupIndex;  // index into RomGroup enum (for patch tables etc.)
         uint32_t playerStructStart;
         uint32_t playerPos;
         uint32_t isInVisorOrMap;
@@ -129,6 +132,8 @@ namespace MelonPrime {
         uint32_t startPressed;
         uint32_t gameOver;
         uint32_t baseViewMode;        // player struct relative (+0xF30)
+        uint32_t crosshairPosX;
+        uint32_t crosshairPosY;
 #endif
 
         uint32_t aimPatchAddrX;
@@ -143,6 +148,7 @@ namespace MelonPrime {
 
     constexpr RomAddresses CreateRomAddress(size_t i) {
         return {
+            static_cast<uint8_t>(i),
             LIST_PlayerStructStart[i], LIST_PlayerPos[i],
             LIST_IsInVisorOrMap[i], LIST_PlayerHP[i],
             LIST_BaseIsAltForm[i], LIST_BoostGauge[i],
@@ -165,6 +171,7 @@ namespace MelonPrime {
             LIST_HudToggle[i], LIST_CurrentAmmoSpecial[i],
             LIST_CurrentAmmoMissile[i], LIST_StartPressed[i],
             LIST_GameOver[i], LIST_BaseViewMode[i],
+            LIST_CrosshairPosX[i], LIST_CrosshairPosY[i],
 #endif
 
             LIST_AimPatchAddrX[i], LIST_AimPatchOrigX1[i], LIST_AimPatchOrigX2[i], LIST_AimPatchX1[i],

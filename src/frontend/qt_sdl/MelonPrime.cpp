@@ -10,6 +10,10 @@
 #include "MelonPrimeDef.h"
 #include "MelonPrimeGameRomAddrTable.h"
 
+#ifdef MELONPRIME_CUSTOM_HUD
+#include "MelonPrimeCustomHud.h"
+#endif
+
 #include <cmath>
 #include <algorithm>
 #include <QCoreApplication>
@@ -188,6 +192,10 @@ namespace MelonPrime {
         m_isNativeFilterInstalled = false;
 #endif
 
+#ifdef MELONPRIME_CUSTOM_HUD
+        CustomHud_ResetPatchState();
+#endif
+
         ReloadConfigFlags();
         ApplyJoy2KeySupportAndQtFilter(m_flags.test(StateFlags::BIT_JOY2KEY));
         InputReset();
@@ -202,6 +210,9 @@ namespace MelonPrime {
     void MelonPrimeCore::OnEmuStop()
     {
         m_flags.clear(StateFlags::BIT_IN_GAME);
+#ifdef MELONPRIME_CUSTOM_HUD
+        CustomHud_ResetPatchState();
+#endif
     }
 
     // P-3: Moved from header -- requires complete EmuInstance type
