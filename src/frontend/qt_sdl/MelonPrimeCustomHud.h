@@ -50,6 +50,9 @@ namespace MelonPrime {
     // Returns true if the custom HUD setting is enabled in config.
     bool CustomHud_IsEnabled(Config::Table& localCfg);
 
+    // Reset patch tracking state (call on emu stop/reset).
+    void CustomHud_ResetPatchState();
+
 } // namespace MelonPrime
 
 #endif // MELONPRIME_CUSTOM_HUD
