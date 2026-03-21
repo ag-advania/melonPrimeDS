@@ -214,82 +214,137 @@ struct CrosshairSettings {
     LineGroup outer;
 };
 
-static void DrawArm(QPainter* p, int x1, int y1, int x2, int y2,
-                    int thickness, const QColor& color,
-                    bool outline, double outlineOpacity, int olThickness)
+// ---- Low-level draw helpers ----
+
+static void DrawArmFill(QPainter* p, int x1, int y1, int x2, int y2,
+                        int thickness, const QColor& color)
 {
-    if (outline) {
-        QColor olColor(0, 0, 0);
-        olColor.setAlphaF(outlineOpacity);
-        QPen olPen(olColor);
-        olPen.setWidth(thickness + olThickness * 2);
-        p->setPen(olPen);
-        p->drawLine(x1, y1, x2, y2);
-    }
     QPen pen(color);
     pen.setWidth(thickness);
     p->setPen(pen);
     p->drawLine(x1, y1, x2, y2);
 }
 
-static void DrawLineGroup(QPainter* p, int cx, int cy,
-                          const LineGroup& lg, const QColor& baseColor,
-                          bool outline, double outlineOpacity, int olThickness, bool tStyle)
+// ---- Arm coordinate collector ----
+// NOTE: QPainter::drawLine is endpoint-inclusive, so a line from A to B
+// draws |B-A|+1 pixels. To draw exactly N pixels, use end = start + N - 1.
+
+struct ArmCoords { int x1, y1, x2, y2; };
+
+static int CollectArms(ArmCoords* out, int cx, int cy,
+                       const LineGroup& lg, bool tStyle)
 {
-    if (!lg.show || (lg.lengthX <= 0 && lg.lengthY <= 0)) return;
-    int o = lg.offset, lx = lg.lengthX, ly = lg.lengthY, t = lg.thickness;
-
-    QColor color = baseColor;
-    color.setAlphaF(lg.opacity);
-
-    // NOTE: QPainter::drawLine is endpoint-inclusive, so a line from A to B
-    // draws |B-A|+1 pixels. To draw exactly N pixels, use end = start + N - 1.
-
-    // Horizontal arms (use lengthX)
+    int n = 0, o = lg.offset, lx = lg.lengthX, ly = lg.lengthY;
     if (lx > 0) {
-        DrawArm(p, cx - o - lx, cy, cx - o - 1, cy, t, color, outline, outlineOpacity, olThickness);  // Left
-        DrawArm(p, cx + o + 1, cy, cx + o + lx, cy, t, color, outline, outlineOpacity, olThickness);   // Right
+        out[n++] = { cx - o - lx, cy, cx - o - 1, cy };  // Left
+        out[n++] = { cx + o + 1,  cy, cx + o + lx, cy };  // Right
     }
-    // Vertical arms (use lengthY)
     if (ly > 0) {
-        DrawArm(p, cx, cy + o + 1, cx, cy + o + ly, t, color, outline, outlineOpacity, olThickness);   // Bottom
+        out[n++] = { cx, cy + o + 1,  cx, cy + o + ly };  // Bottom
         if (!tStyle)
-            DrawArm(p, cx, cy - o - ly, cx, cy - o - 1, t, color, outline, outlineOpacity, olThickness); // Top
+            out[n++] = { cx, cy - o - ly, cx, cy - o - 1 }; // Top
     }
+    return n;
 }
+
+// ---- Main crosshair draw: 4-pass layered rendering ----
+//
+//  Layer order (bottom to top):
+//    Pass 1 — Outline (all elements rendered as one flat layer via off-screen buffer)
+//    Pass 2 — Center dot fill
+//    Pass 3 — Inner line fills
+//    Pass 4 — Outer line fills (topmost)
 
 static void DrawCrosshair(QPainter* p, melonDS::u8* ram,
                           const RomAddresses& rom,
                           const CrosshairSettings& cs)
 {
-    // Read crosshair screen position from dedicated addresses
     int cx = static_cast<int>(Read16(ram, rom.crosshairPosX));
     int cy = static_cast<int>(Read16(ram, rom.crosshairPosY));
 
-    // Outer lines (behind)
-    DrawLineGroup(p, cx, cy, cs.outer, cs.color,
-                  cs.outline, cs.outlineOpacity, cs.outlineThickness, cs.tStyle);
-    // Inner lines
-    DrawLineGroup(p, cx, cy, cs.inner, cs.color,
-                  cs.outline, cs.outlineOpacity, cs.outlineThickness, cs.tStyle);
+    // Collect arm coordinates
+    ArmCoords innerArms[4], outerArms[4];
+    int nInner = 0, nOuter = 0;
+    if (cs.inner.show)
+        nInner = CollectArms(innerArms, cx, cy, cs.inner, cs.tStyle);
+    if (cs.outer.show)
+        nOuter = CollectArms(outerArms, cx, cy, cs.outer, cs.tStyle);
 
-    // Center dot
+    int dotHalf = cs.dotThickness / 2;
+
+    // === Pass 1: ALL outlines as one flat layer ===
+    // Render all outlines to an off-screen buffer as opaque black,
+    // then composite the buffer onto the main painter at outlineOpacity.
+    // This prevents overlapping outlines from doubling up in darkness.
+    if (cs.outline && cs.outlineOpacity > 0.0) {
+        // Use the overlay size (256x192 for DS top screen)
+        QImage olBuf(256, 192, QImage::Format_ARGB32_Premultiplied);
+        olBuf.fill(Qt::transparent);
+        {
+            QPainter olP(&olBuf);
+            olP.setRenderHint(QPainter::Antialiasing, false);
+            QColor solidBlack(0, 0, 0, 255);
+
+            // Dot outline
+            if (cs.centerDot) {
+                olP.setPen(Qt::NoPen);
+                olP.setBrush(solidBlack);
+                int oh = dotHalf + cs.outlineThickness;
+                olP.drawRect(cx - oh, cy - oh, oh * 2 + 1, oh * 2 + 1);
+                olP.setBrush(Qt::NoBrush);
+            }
+            // Inner line outlines
+            for (int i = 0; i < nInner; i++) {
+                QPen pen(solidBlack);
+                pen.setWidth(cs.inner.thickness + cs.outlineThickness * 2);
+                olP.setPen(pen);
+                olP.drawLine(innerArms[i].x1, innerArms[i].y1,
+                             innerArms[i].x2, innerArms[i].y2);
+            }
+            // Outer line outlines
+            for (int i = 0; i < nOuter; i++) {
+                QPen pen(solidBlack);
+                pen.setWidth(cs.outer.thickness + cs.outlineThickness * 2);
+                olP.setPen(pen);
+                olP.drawLine(outerArms[i].x1, outerArms[i].y1,
+                             outerArms[i].x2, outerArms[i].y2);
+            }
+        } // olP destroyed — safe to read olBuf
+
+        // Composite the outline buffer at the desired opacity
+        p->setOpacity(cs.outlineOpacity);
+        p->drawImage(0, 0, olBuf);
+        p->setOpacity(1.0);
+    }
+
+    // === Pass 2: Center dot fill ===
     if (cs.centerDot) {
-        int dh = cs.dotThickness / 2;
-        if (cs.outline) {
-            p->setPen(Qt::NoPen);
-            QColor olColor(0, 0, 0);
-            olColor.setAlphaF(cs.outlineOpacity);
-            p->setBrush(olColor);
-            int oh = dh + cs.outlineThickness;
-            p->drawRect(cx - oh, cy - oh, oh * 2 + 1, oh * 2 + 1);
-        }
         p->setPen(Qt::NoPen);
         QColor dotColor = cs.color;
         dotColor.setAlphaF(cs.dotOpacity);
         p->setBrush(dotColor);
-        p->drawRect(cx - dh, cy - dh, dh * 2 + 1, dh * 2 + 1);
+        p->drawRect(cx - dotHalf, cy - dotHalf, dotHalf * 2 + 1, dotHalf * 2 + 1);
         p->setBrush(Qt::NoBrush);
+    }
+
+    // === Pass 3: Inner line fills ===
+    if (nInner > 0) {
+        QColor innerColor = cs.color;
+        innerColor.setAlphaF(cs.inner.opacity);
+        for (int i = 0; i < nInner; i++)
+            DrawArmFill(p, innerArms[i].x1, innerArms[i].y1,
+                        innerArms[i].x2, innerArms[i].y2,
+                        cs.inner.thickness, innerColor);
+    }
+
+    // === Pass 4: Outer line fills (topmost layer) ===
+    if (nOuter > 0) {
+        QColor outerColor = cs.color;
+        outerColor.setAlphaF(cs.outer.opacity);
+        for (int i = 0; i < nOuter; i++)
+            DrawArmFill(p, outerArms[i].x1, outerArms[i].y1,
+                        outerArms[i].x2, outerArms[i].y2,
+                        cs.outer.thickness, outerColor);
     }
 }
 
