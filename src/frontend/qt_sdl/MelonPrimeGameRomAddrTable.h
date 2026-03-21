@@ -70,6 +70,9 @@ namespace MelonPrime {
     inline constexpr RomTable<uint32_t> LIST_BaseViewMode      = { 0x020DCAAA, 0x020DCA6A, 0x020DABEA, 0x020DB46A, 0x020DB48A, 0x020DB50A, 0x020D42B6 }; // player struct relative (+0xF30)
     inline constexpr RomTable<uint32_t> LIST_CrosshairPosX     = { 0x020E05C0, 0x020E0580, 0x020DE7A4, 0x020DF024, 0x020DF044, 0x020DF0C4, 0x020D7D7C };
     inline constexpr RomTable<uint32_t> LIST_CrosshairPosY     = { 0x020E05C2, 0x020E0582, 0x020DE7A6, 0x020DF026, 0x020DF046, 0x020DF0C6, 0x020D7D7E };
+    inline constexpr RomTable<uint32_t> LIST_MaxHP             = { 0x020DC6B0, 0x020DC670, 0x020DA7F0, 0x020DB070, 0x020DB090, 0x020DB110, 0x020D3EBC }; // player struct relative (+0xF30)
+    inline constexpr RomTable<uint32_t> LIST_MaxAmmoSpecial    = { 0x020DC724, 0x020DC6E4, 0x020DA864, 0x020DB0E4, 0x020DB104, 0x020DB184, 0x020D3F30 }; // player struct relative (+0xF30)
+    inline constexpr RomTable<uint32_t> LIST_MaxAmmoMissile    = { 0x020DC726, 0x020DC6E6, 0x020DA866, 0x020DB0E6, 0x020DB106, 0x020DB186, 0x020D3F32 }; // player struct relative (+0xF30)
 #endif
 
     // =========================================================================
@@ -134,6 +137,9 @@ namespace MelonPrime {
         uint32_t baseViewMode;        // player struct relative (+0xF30)
         uint32_t crosshairPosX;
         uint32_t crosshairPosY;
+        uint32_t maxHP;             // player struct relative (+0xF30)
+        uint32_t maxAmmoSpecial;    // player struct relative (+0xF30)
+        uint32_t maxAmmoMissile;    // player struct relative (+0xF30)
 #endif
 
         uint32_t aimPatchAddrX;
@@ -172,6 +178,7 @@ namespace MelonPrime {
             LIST_CurrentAmmoMissile[i], LIST_StartPressed[i],
             LIST_GameOver[i], LIST_BaseViewMode[i],
             LIST_CrosshairPosX[i], LIST_CrosshairPosY[i],
+            LIST_MaxHP[i], LIST_MaxAmmoSpecial[i], LIST_MaxAmmoMissile[i],
 #endif
 
             LIST_AimPatchAddrX[i], LIST_AimPatchOrigX1[i], LIST_AimPatchOrigX2[i], LIST_AimPatchX1[i],

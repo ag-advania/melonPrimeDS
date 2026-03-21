@@ -110,15 +110,122 @@ MelonPrimeInputConfig::MelonPrimeInputConfig(EmuInstance* emu, QWidget* parent) 
     ui->spinMetroidHudWeaponY->setValue(instcfg.GetInt("Metroid.Visual.HudWeaponY"));
     ui->comboMetroidHudWeaponLayout->setCurrentIndex(instcfg.GetInt("Metroid.Visual.HudWeaponLayout"));
 
+    // Gauge settings — HP
+    ui->cbMetroidHudHpGauge->setChecked(instcfg.GetBool("Metroid.Visual.HudHpGauge"));
+    ui->comboMetroidHudHpGaugeOrientation->setCurrentIndex(instcfg.GetInt("Metroid.Visual.HudHpGaugeOrientation"));
+    ui->spinMetroidHudHpGaugeLength->setValue(instcfg.GetInt("Metroid.Visual.HudHpGaugeLength"));
+    ui->spinMetroidHudHpGaugeWidth->setValue(instcfg.GetInt("Metroid.Visual.HudHpGaugeWidth"));
+    ui->spinMetroidHudHpGaugeOffsetX->setValue(instcfg.GetInt("Metroid.Visual.HudHpGaugeOffsetX"));
+    ui->spinMetroidHudHpGaugeOffsetY->setValue(instcfg.GetInt("Metroid.Visual.HudHpGaugeOffsetY"));
+    ui->comboMetroidHudHpGaugeAnchor->setCurrentIndex(instcfg.GetInt("Metroid.Visual.HudHpGaugeAnchor"));
+    ui->cbMetroidHudHpGaugeAutoColor->setChecked(instcfg.GetBool("Metroid.Visual.HudHpGaugeAutoColor"));
+    ui->spinMetroidHudHpGaugeColorR->setValue(instcfg.GetInt("Metroid.Visual.HudHpGaugeColorR"));
+    ui->spinMetroidHudHpGaugeColorG->setValue(instcfg.GetInt("Metroid.Visual.HudHpGaugeColorG"));
+    ui->spinMetroidHudHpGaugeColorB->setValue(instcfg.GetInt("Metroid.Visual.HudHpGaugeColorB"));
+
+    // HP gauge color preset detection
+    {
+        struct Clr { int r, g, b; };
+        static const Clr presets[] = {
+            {0,255,0}, {255,0,0}, {255,165,0}, {255,255,0}, {0,200,255}, {255,255,255}
+        };
+        int r = ui->spinMetroidHudHpGaugeColorR->value();
+        int g = ui->spinMetroidHudHpGaugeColorG->value();
+        int b = ui->spinMetroidHudHpGaugeColorB->value();
+        int idx = 6; // Custom
+        for (int i = 0; i < 6; i++) {
+            if (r == presets[i].r && g == presets[i].g && b == presets[i].b) { idx = i; break; }
+        }
+        ui->comboMetroidHudHpGaugeColor->setCurrentIndex(idx);
+    }
+    // HP gauge color preset → RGB
+    connect(ui->comboMetroidHudHpGaugeColor, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this](int idx) {
+        struct Clr { int r, g, b; };
+        static const Clr presets[] = {
+            {0,255,0}, {255,0,0}, {255,165,0}, {255,255,0}, {0,200,255}, {255,255,255}
+        };
+        if (idx < 0 || idx >= 6) return;
+        ui->spinMetroidHudHpGaugeColorR->blockSignals(true);
+        ui->spinMetroidHudHpGaugeColorG->blockSignals(true);
+        ui->spinMetroidHudHpGaugeColorB->blockSignals(true);
+        ui->spinMetroidHudHpGaugeColorR->setValue(presets[idx].r);
+        ui->spinMetroidHudHpGaugeColorG->setValue(presets[idx].g);
+        ui->spinMetroidHudHpGaugeColorB->setValue(presets[idx].b);
+        ui->spinMetroidHudHpGaugeColorR->blockSignals(false);
+        ui->spinMetroidHudHpGaugeColorG->blockSignals(false);
+        ui->spinMetroidHudHpGaugeColorB->blockSignals(false);
+    });
+    auto hpGaugeColorToCustom = [this]() {
+        ui->comboMetroidHudHpGaugeColor->blockSignals(true);
+        ui->comboMetroidHudHpGaugeColor->setCurrentIndex(6);
+        ui->comboMetroidHudHpGaugeColor->blockSignals(false);
+    };
+    connect(ui->spinMetroidHudHpGaugeColorR, QOverload<int>::of(&QSpinBox::valueChanged), this, hpGaugeColorToCustom);
+    connect(ui->spinMetroidHudHpGaugeColorG, QOverload<int>::of(&QSpinBox::valueChanged), this, hpGaugeColorToCustom);
+    connect(ui->spinMetroidHudHpGaugeColorB, QOverload<int>::of(&QSpinBox::valueChanged), this, hpGaugeColorToCustom);
+
+    // Gauge settings — Ammo
+    ui->cbMetroidHudAmmoGauge->setChecked(instcfg.GetBool("Metroid.Visual.HudAmmoGauge"));
+    ui->comboMetroidHudAmmoGaugeOrientation->setCurrentIndex(instcfg.GetInt("Metroid.Visual.HudAmmoGaugeOrientation"));
+    ui->spinMetroidHudAmmoGaugeLength->setValue(instcfg.GetInt("Metroid.Visual.HudAmmoGaugeLength"));
+    ui->spinMetroidHudAmmoGaugeWidth->setValue(instcfg.GetInt("Metroid.Visual.HudAmmoGaugeWidth"));
+    ui->spinMetroidHudAmmoGaugeOffsetX->setValue(instcfg.GetInt("Metroid.Visual.HudAmmoGaugeOffsetX"));
+    ui->spinMetroidHudAmmoGaugeOffsetY->setValue(instcfg.GetInt("Metroid.Visual.HudAmmoGaugeOffsetY"));
+    ui->comboMetroidHudAmmoGaugeAnchor->setCurrentIndex(instcfg.GetInt("Metroid.Visual.HudAmmoGaugeAnchor"));
+    ui->spinMetroidHudAmmoGaugeColorR->setValue(instcfg.GetInt("Metroid.Visual.HudAmmoGaugeColorR"));
+    ui->spinMetroidHudAmmoGaugeColorG->setValue(instcfg.GetInt("Metroid.Visual.HudAmmoGaugeColorG"));
+    ui->spinMetroidHudAmmoGaugeColorB->setValue(instcfg.GetInt("Metroid.Visual.HudAmmoGaugeColorB"));
+
+    // Ammo gauge color preset detection (Cyan first in list)
+    {
+        struct Clr { int r, g, b; };
+        static const Clr presets[] = {
+            {0,200,255}, {0,255,0}, {255,0,0}, {255,165,0}, {255,255,0}, {255,255,255}
+        };
+        int r = ui->spinMetroidHudAmmoGaugeColorR->value();
+        int g = ui->spinMetroidHudAmmoGaugeColorG->value();
+        int b = ui->spinMetroidHudAmmoGaugeColorB->value();
+        int idx = 6; // Custom
+        for (int i = 0; i < 6; i++) {
+            if (r == presets[i].r && g == presets[i].g && b == presets[i].b) { idx = i; break; }
+        }
+        ui->comboMetroidHudAmmoGaugeColor->setCurrentIndex(idx);
+    }
+    // Ammo gauge color preset → RGB
+    connect(ui->comboMetroidHudAmmoGaugeColor, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this](int idx) {
+        struct Clr { int r, g, b; };
+        static const Clr presets[] = {
+            {0,200,255}, {0,255,0}, {255,0,0}, {255,165,0}, {255,255,0}, {255,255,255}
+        };
+        if (idx < 0 || idx >= 6) return;
+        ui->spinMetroidHudAmmoGaugeColorR->blockSignals(true);
+        ui->spinMetroidHudAmmoGaugeColorG->blockSignals(true);
+        ui->spinMetroidHudAmmoGaugeColorB->blockSignals(true);
+        ui->spinMetroidHudAmmoGaugeColorR->setValue(presets[idx].r);
+        ui->spinMetroidHudAmmoGaugeColorG->setValue(presets[idx].g);
+        ui->spinMetroidHudAmmoGaugeColorB->setValue(presets[idx].b);
+        ui->spinMetroidHudAmmoGaugeColorR->blockSignals(false);
+        ui->spinMetroidHudAmmoGaugeColorG->blockSignals(false);
+        ui->spinMetroidHudAmmoGaugeColorB->blockSignals(false);
+    });
+    auto ammoGaugeColorToCustom = [this]() {
+        ui->comboMetroidHudAmmoGaugeColor->blockSignals(true);
+        ui->comboMetroidHudAmmoGaugeColor->setCurrentIndex(6);
+        ui->comboMetroidHudAmmoGaugeColor->blockSignals(false);
+    };
+    connect(ui->spinMetroidHudAmmoGaugeColorR, QOverload<int>::of(&QSpinBox::valueChanged), this, ammoGaugeColorToCustom);
+    connect(ui->spinMetroidHudAmmoGaugeColorG, QOverload<int>::of(&QSpinBox::valueChanged), this, ammoGaugeColorToCustom);
+    connect(ui->spinMetroidHudAmmoGaugeColorB, QOverload<int>::of(&QSpinBox::valueChanged), this, ammoGaugeColorToCustom);
+
     // HUD position presets: detect current preset from X/Y values
     // 0=TopLeft 1=TopCenter 2=TopRight 3=Right 4=BottomRight 5=BottomCenter 6=BottomLeft 7=Left 8=Custom
     {
         struct Pos { int x, y; };
         static const Pos hpPresets[] = {
-            {4,8}, {120,8}, {232,8}, {248,96}, {232,188}, {120,188}, {4,188}, {4,96}
+            {4,8}, {120,8}, {220,8}, {220,96}, {220,188}, {120,188}, {4,188}, {4,96}
         };
         static const Pos wpnPresets[] = {
-            {4,2}, {120,2}, {238,2}, {238,82}, {238,164}, {120,164}, {4,164}, {4,82}
+            {4,2}, {120,2}, {226,2}, {226,82}, {226,164}, {120,164}, {4,164}, {4,82}
         };
         int hpIdx = 8, wpnIdx = 8;
         int hpX = ui->spinMetroidHudHpX->value(), hpY = ui->spinMetroidHudHpY->value();
@@ -135,7 +242,7 @@ MelonPrimeInputConfig::MelonPrimeInputConfig(EmuInstance* emu, QWidget* parent) 
     connect(ui->comboMetroidHudHpPosition, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this](int idx) {
         struct Pos { int x, y; };
         static const Pos presets[] = {
-            {4,8}, {120,8}, {232,8}, {248,96}, {232,188}, {120,188}, {4,188}, {4,96}
+            {4,8}, {120,8}, {220,8}, {220,96}, {220,188}, {120,188}, {4,188}, {4,96}
         };
         if (idx < 0 || idx >= 8) return;
         ui->spinMetroidHudHpX->blockSignals(true);
@@ -161,7 +268,7 @@ MelonPrimeInputConfig::MelonPrimeInputConfig(EmuInstance* emu, QWidget* parent) 
     connect(ui->comboMetroidHudWeaponPosition, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this](int idx) {
         struct Pos { int x, y; };
         static const Pos presets[] = {
-            {4,2}, {120,2}, {238,2}, {238,82}, {238,164}, {120,164}, {4,164}, {4,82}
+            {4,2}, {120,2}, {226,2}, {226,82}, {226,164}, {120,164}, {4,164}, {4,82}
         };
         if (idx < 0 || idx >= 8) return;
         ui->spinMetroidHudWeaponX->blockSignals(true);
@@ -414,6 +521,31 @@ void MelonPrimeInputConfig::saveConfig()
     instcfg.SetInt("Metroid.Visual.HudWeaponX", ui->spinMetroidHudWeaponX->value());
     instcfg.SetInt("Metroid.Visual.HudWeaponY", ui->spinMetroidHudWeaponY->value());
     instcfg.SetInt("Metroid.Visual.HudWeaponLayout", ui->comboMetroidHudWeaponLayout->currentIndex());
+
+    // Gauge settings — HP
+    instcfg.SetBool("Metroid.Visual.HudHpGauge", ui->cbMetroidHudHpGauge->checkState() == Qt::Checked);
+    instcfg.SetInt("Metroid.Visual.HudHpGaugeOrientation", ui->comboMetroidHudHpGaugeOrientation->currentIndex());
+    instcfg.SetInt("Metroid.Visual.HudHpGaugeLength", ui->spinMetroidHudHpGaugeLength->value());
+    instcfg.SetInt("Metroid.Visual.HudHpGaugeWidth", ui->spinMetroidHudHpGaugeWidth->value());
+    instcfg.SetInt("Metroid.Visual.HudHpGaugeOffsetX", ui->spinMetroidHudHpGaugeOffsetX->value());
+    instcfg.SetInt("Metroid.Visual.HudHpGaugeOffsetY", ui->spinMetroidHudHpGaugeOffsetY->value());
+    instcfg.SetInt("Metroid.Visual.HudHpGaugeAnchor", ui->comboMetroidHudHpGaugeAnchor->currentIndex());
+    instcfg.SetBool("Metroid.Visual.HudHpGaugeAutoColor", ui->cbMetroidHudHpGaugeAutoColor->checkState() == Qt::Checked);
+    instcfg.SetInt("Metroid.Visual.HudHpGaugeColorR", ui->spinMetroidHudHpGaugeColorR->value());
+    instcfg.SetInt("Metroid.Visual.HudHpGaugeColorG", ui->spinMetroidHudHpGaugeColorG->value());
+    instcfg.SetInt("Metroid.Visual.HudHpGaugeColorB", ui->spinMetroidHudHpGaugeColorB->value());
+
+    // Gauge settings — Ammo
+    instcfg.SetBool("Metroid.Visual.HudAmmoGauge", ui->cbMetroidHudAmmoGauge->checkState() == Qt::Checked);
+    instcfg.SetInt("Metroid.Visual.HudAmmoGaugeOrientation", ui->comboMetroidHudAmmoGaugeOrientation->currentIndex());
+    instcfg.SetInt("Metroid.Visual.HudAmmoGaugeLength", ui->spinMetroidHudAmmoGaugeLength->value());
+    instcfg.SetInt("Metroid.Visual.HudAmmoGaugeWidth", ui->spinMetroidHudAmmoGaugeWidth->value());
+    instcfg.SetInt("Metroid.Visual.HudAmmoGaugeOffsetX", ui->spinMetroidHudAmmoGaugeOffsetX->value());
+    instcfg.SetInt("Metroid.Visual.HudAmmoGaugeOffsetY", ui->spinMetroidHudAmmoGaugeOffsetY->value());
+    instcfg.SetInt("Metroid.Visual.HudAmmoGaugeAnchor", ui->comboMetroidHudAmmoGaugeAnchor->currentIndex());
+    instcfg.SetInt("Metroid.Visual.HudAmmoGaugeColorR", ui->spinMetroidHudAmmoGaugeColorR->value());
+    instcfg.SetInt("Metroid.Visual.HudAmmoGaugeColorG", ui->spinMetroidHudAmmoGaugeColorG->value());
+    instcfg.SetInt("Metroid.Visual.HudAmmoGaugeColorB", ui->spinMetroidHudAmmoGaugeColorB->value());
 
     // Crosshair — Color (continued)
     instcfg.SetInt("Metroid.Visual.CrosshairColorG", ui->spinMetroidCrosshairG->value());
