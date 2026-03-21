@@ -126,11 +126,11 @@ namespace Config
         {"Instance*.Metroid.Visual.CrosshairInnerLengthX",     2},
         {"Instance*.Metroid.Visual.CrosshairInnerLengthY",     2},
         {"Instance*.Metroid.Visual.CrosshairInnerThickness",   1},
-        {"Instance*.Metroid.Visual.CrosshairInnerOffset",      1},
+        {"Instance*.Metroid.Visual.CrosshairInnerOffset",      2},
         {"Instance*.Metroid.Visual.CrosshairOuterLengthX",     1},
         {"Instance*.Metroid.Visual.CrosshairOuterLengthY",     1},
         {"Instance*.Metroid.Visual.CrosshairOuterThickness",   1},
-        {"Instance*.Metroid.Visual.CrosshairOuterOffset",      3},
+        {"Instance*.Metroid.Visual.CrosshairOuterOffset",      4},
         /* MelonPrimeDS Custom HUD Crosshair defaults } */
     #endif
     };
