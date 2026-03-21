@@ -122,7 +122,11 @@ namespace Config
         {"Instance*.Metroid.Visual.HudHpY",                8},
         {"Instance*.Metroid.Visual.HudWeaponX",          226},
         {"Instance*.Metroid.Visual.HudWeaponY",          164},
-        {"Instance*.Metroid.Visual.HudWeaponLayout",       0},
+        {"Instance*.Metroid.Visual.HudWeaponIconOffsetX",  0},
+        {"Instance*.Metroid.Visual.HudWeaponIconOffsetY", 10},
+        {"Instance*.Metroid.Visual.HudWeaponIconMode",     0},
+        {"Instance*.Metroid.Visual.HudWeaponIconPosX",   226},
+        {"Instance*.Metroid.Visual.HudWeaponIconPosY",   174},
         {"Instance*.Metroid.Visual.HudHpGaugeOrientation",   0},
         {"Instance*.Metroid.Visual.HudHpGaugeLength",       28},
         {"Instance*.Metroid.Visual.HudHpGaugeWidth",         3},
@@ -232,6 +236,7 @@ namespace Config
         {"Instance*.Metroid.Visual.CrosshairOuterLinkXY", true},
         {"Instance*.Metroid.Visual.HudHpGauge", true},
         {"Instance*.Metroid.Visual.HudHpGaugeAutoColor", true},
+        {"Instance*.Metroid.Visual.HudWeaponIconShow", true},
         {"Instance*.Metroid.Visual.HudAmmoGauge", true},
         /* MelonPrimeDS Crosshair bools } */
         /* MelonPrimeDS } */

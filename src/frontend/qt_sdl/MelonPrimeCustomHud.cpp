@@ -36,7 +36,12 @@ static constexpr const char* kCfgHudHpX       = "Metroid.Visual.HudHpX";
 static constexpr const char* kCfgHudHpY       = "Metroid.Visual.HudHpY";
 static constexpr const char* kCfgHudWeaponX   = "Metroid.Visual.HudWeaponX";
 static constexpr const char* kCfgHudWeaponY   = "Metroid.Visual.HudWeaponY";
-static constexpr const char* kCfgHudWeaponLayout = "Metroid.Visual.HudWeaponLayout";
+static constexpr const char* kCfgHudWeaponIconShow    = "Metroid.Visual.HudWeaponIconShow";
+static constexpr const char* kCfgHudWeaponIconMode    = "Metroid.Visual.HudWeaponIconMode"; // 0=offset, 1=independent
+static constexpr const char* kCfgHudWeaponIconOffsetX = "Metroid.Visual.HudWeaponIconOffsetX";
+static constexpr const char* kCfgHudWeaponIconOffsetY = "Metroid.Visual.HudWeaponIconOffsetY";
+static constexpr const char* kCfgHudWeaponIconPosX    = "Metroid.Visual.HudWeaponIconPosX";
+static constexpr const char* kCfgHudWeaponIconPosY    = "Metroid.Visual.HudWeaponIconPosY";
 
 // Gauge settings
 static constexpr const char* kCfgHudHpGauge            = "Metroid.Visual.HudHpGauge";
@@ -285,7 +290,10 @@ static inline void DrawHP(QPainter* p, uint16_t hp, uint16_t maxHP, int x, int y
 static void DrawWeaponAmmo(QPainter* p, melonDS::u8* ram,
                            uint8_t weapon, uint16_t ammoSpecial, uint32_t addrMissile,
                            uint16_t maxAmmoSpecial, uint16_t maxAmmoMissile,
-                           int baseX, int baseY, int layout,
+                           int baseX, int baseY,
+                           bool showIcon, int iconMode,
+                           int iconOfsX, int iconOfsY,
+                           int iconPosX, int iconPosY,
                            bool showGauge, int gaugeOri, int gaugeLen, int gaugeWid,
                            int gaugeOfsX, int gaugeOfsY, int gaugeAnchor,
                            const QColor& gaugeColor)
@@ -331,19 +339,17 @@ static void DrawWeaponAmmo(QPainter* p, melonDS::u8* ram,
         }
     }
 
-    // Text position for anchor calculation
+    // Ammo text always at baseX, baseY+8 (baseline)
     int textX = baseX, textY = baseY + 8;
-    if (layout == 0) {
-        if (hasAmmo)
-            p->drawText(QPoint(baseX, baseY + 8), std::to_string(ammo).c_str());
-        p->drawImage(QPoint(baseX, baseY + 10), icon);
-    } else {
-        p->drawImage(QPoint(baseX, baseY), icon);
-        if (hasAmmo) {
-            textX = baseX + 16;
-            textY = baseY + 8;
-            p->drawText(QPoint(textX, textY), std::to_string(ammo).c_str());
-        }
+    if (hasAmmo)
+        p->drawText(QPoint(textX, textY), std::to_string(ammo).c_str());
+
+    // Icon position: offset mode (relative to ammo text) or independent (absolute)
+    if (showIcon) {
+        if (iconMode == 0)
+            p->drawImage(QPoint(baseX + iconOfsX, baseY + iconOfsY), icon);
+        else
+            p->drawImage(QPoint(iconPosX, iconPosY), icon);
     }
 
     if (showGauge && hasAmmo && maxAmmo > 0) {
@@ -644,7 +650,12 @@ void CustomHud_Render(
 
     int wpnX = localCfg.GetInt(kCfgHudWeaponX);
     int wpnY = localCfg.GetInt(kCfgHudWeaponY);
-    int wpnLayout    = localCfg.GetInt(kCfgHudWeaponLayout);
+    bool iconShow    = localCfg.GetBool(kCfgHudWeaponIconShow);
+    int  iconMode    = localCfg.GetInt(kCfgHudWeaponIconMode);
+    int  iconOfsX    = localCfg.GetInt(kCfgHudWeaponIconOffsetX);
+    int  iconOfsY    = localCfg.GetInt(kCfgHudWeaponIconOffsetY);
+    int  iconPosX    = localCfg.GetInt(kCfgHudWeaponIconPosX);
+    int  iconPosY    = localCfg.GetInt(kCfgHudWeaponIconPosY);
     bool ammoGauge   = localCfg.GetBool(kCfgHudAmmoGauge);
     int  ammoGaugeOri = localCfg.GetInt(kCfgHudAmmoGaugeOrientation);
     int  ammoGaugeLen = localCfg.GetInt(kCfgHudAmmoGaugeLength);
@@ -658,7 +669,8 @@ void CustomHud_Render(
     uint8_t currentWeapon = Read8(ram, addrHot.currentWeapon);
     DrawWeaponAmmo(topPaint, ram, currentWeapon, Read16(ram, addrAmmoSpecial), addrAmmoMissile,
                    maxAmmoSpecial, maxAmmoMissile,
-                   wpnX, wpnY, wpnLayout,
+                   wpnX, wpnY,
+                   iconShow, iconMode, iconOfsX, iconOfsY, iconPosX, iconPosY,
                    ammoGauge, ammoGaugeOri, ammoGaugeLen, ammoGaugeWid,
                    ammoGaugeOX, ammoGaugeOY, ammoGaugeAnc, ammoGaugeClr);
 
