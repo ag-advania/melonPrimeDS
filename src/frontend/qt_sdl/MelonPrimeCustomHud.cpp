@@ -12,8 +12,16 @@
 #include <QColor>
 #include <QPoint>
 #include <string>
+#include <cmath>
 
 namespace MelonPrime {
+
+// Remap X coordinate from DS center (128) for widescreen stretch
+static inline int RemapXFromCenter(int x, float stretchX)
+{
+    constexpr float kCenterX = 128.0f;
+    return static_cast<int>(std::lround(kCenterX + (static_cast<float>(x) - kCenterX) * stretchX));
+}
 
 // =========================================================================
 //  Config keys
@@ -22,6 +30,14 @@ static constexpr const char* kCfgCustomHud = "Metroid.Visual.CustomHUD";
 
 // Crosshair — General
 static constexpr const char* kCfgChColorR           = "Metroid.Visual.CrosshairColorR";
+
+// HUD element positions
+static constexpr const char* kCfgHudHpX     = "Metroid.Visual.HudHpX";
+static constexpr const char* kCfgHudHpY     = "Metroid.Visual.HudHpY";
+static constexpr const char* kCfgHudWeaponX = "Metroid.Visual.HudWeaponX";
+static constexpr const char* kCfgHudWeaponY = "Metroid.Visual.HudWeaponY";
+
+// Crosshair — General (continued)
 static constexpr const char* kCfgChColorG           = "Metroid.Visual.CrosshairColorG";
 static constexpr const char* kCfgChColorB           = "Metroid.Visual.CrosshairColorB";
 static constexpr const char* kCfgChOutline          = "Metroid.Visual.CrosshairOutline";
@@ -151,29 +167,34 @@ static inline QImage LoadIcon(const char* resource)
     return img.convertToFormat(QImage::Format_ARGB32_Premultiplied);
 }
 
-static inline void DrawHP(QPainter* p, uint16_t hp)
+static inline void DrawHP(QPainter* p, uint16_t hp, int x, int y)
 {
     if (hp <= 25)       p->setPen(QColor(255, 0, 0));
     else if (hp <= 50)  p->setPen(QColor(255, 165, 0));
     else                p->setPen(QColor(255, 255, 255));
-    p->drawText(QPoint(4, 188), (std::string("hp ") + std::to_string(hp)).c_str());
+    p->drawText(QPoint(x, y), (std::string("hp ") + std::to_string(hp)).c_str());
 }
 
 static void DrawWeaponAmmo(QPainter* p, melonDS::u8* ram,
-                           uint8_t weapon, uint16_t ammoSpecial, uint32_t addrMissile)
+                           uint8_t weapon, uint16_t ammoSpecial, uint32_t addrMissile,
+                           int baseX, int baseY)
 {
     p->setPen(Qt::white);
-    uint16_t ammo = ammoSpecial;
+    uint16_t ammo = 0;
+    bool hasAmmo = true;
     QImage icon;
+
     switch (weapon) {
-    case 0: ammo = ammoSpecial;        icon = LoadIcon(":/mph-icon-pb"); break;
+    case 0: // Power Beam — no ammo display, icon only
+        hasAmmo = false;
+        icon = LoadIcon(":/mph-icon-pb");
+        break;
     case 1: ammo = ammoSpecial / 0x5;  icon = LoadIcon(":/mph-icon-volt"); break;
-    case 2: {
+    case 2: { // Missiles — reads from separate address
         icon = LoadIcon(":/mph-icon-missile");
         uint16_t m = Read16(ram, addrMissile);
-        p->drawText(QPoint(15, 173), std::to_string(m / 0x0A).c_str());
-        p->drawImage(QPoint(4, 165), icon);
-        return;
+        ammo = m / 0x0A;
+        break;
     }
     case 3: ammo = ammoSpecial / 0x4;  icon = LoadIcon(":/mph-icon-battlehammer"); break;
     case 4: ammo = ammoSpecial / 0x14; icon = LoadIcon(":/mph-icon-imperialist"); break;
@@ -181,11 +202,16 @@ static void DrawWeaponAmmo(QPainter* p, melonDS::u8* ram,
     case 6: ammo = ammoSpecial / 0xA;  icon = LoadIcon(":/mph-icon-magmaul"); break;
     case 7: ammo = ammoSpecial / 0xA;  icon = LoadIcon(":/mph-icon-shock"); break;
     case 8: ammo = 1;                  icon = LoadIcon(":/mph-icon-omega"); break;
-    default: break;
+    default: return;
     }
-    if (weapon != 0) {
-        p->drawText(QPoint(15, 173), std::to_string(ammo).c_str());
-        p->drawImage(QPoint(5, 165), icon);
+
+    // Layout: ammo text on top, weapon icon below
+    if (hasAmmo) {
+        p->drawText(QPoint(baseX, baseY + 8), std::to_string(ammo).c_str());
+        p->drawImage(QPoint(baseX, baseY + 10), icon);
+    } else {
+        // Power Beam: icon only (no ammo text), same position as other weapons
+        p->drawImage(QPoint(baseX, baseY + 10), icon);
     }
 }
 
@@ -257,10 +283,19 @@ static int CollectArms(ArmCoords* out, int cx, int cy,
 
 static void DrawCrosshair(QPainter* p, melonDS::u8* ram,
                           const RomAddresses& rom,
-                          const CrosshairSettings& cs)
+                          const CrosshairSettings& cs,
+                          float stretchX)
 {
-    int cx = static_cast<int>(Read16(ram, rom.crosshairPosX));
-    int cy = static_cast<int>(Read16(ram, rom.crosshairPosY));
+    int cx = static_cast<int>(Read8(ram, rom.crosshairPosX));
+    int cy = static_cast<int>(Read8(ram, rom.crosshairPosY));
+
+    // Widescreen X correction: the widescreen hack widens the 3D horizontal
+    // FOV by stretchX, compressing objects toward center. The game's aim
+    // system still calculates in 4:3 space, so divide X displacement by
+    // stretchX to match the actual 3D scene projection.
+    if (stretchX > 1.0f) {
+        cx = static_cast<int>(std::lround(128.0f + (cx - 128.0f) / stretchX));
+    }
 
     // Collect arm coordinates
     ArmCoords innerArms[4], outerArms[4];
@@ -397,7 +432,8 @@ void CustomHud_Render(
     uint8_t playerPosition,
     QPainter* topPaint, QPainter* btmPaint,
     QImage* topBuffer, QImage* btmBuffer,
-    bool isInGame)
+    bool isInGame,
+    float topStretchX)
 {
     if (!isInGame) return;
 
@@ -429,33 +465,36 @@ void CustomHud_Render(
     Write8(ram, rom.hudToggle, isStartPressed ? 0x11 : 0x01);
 
     // --- Visibility checks ---
-    // bool isGameOver = Read8(ram, rom.gameOver) != 0x00;  // Not needed: exits first-person
     uint16_t currentHP = Read16(ram, rom.playerHP + offP);
     bool isDead        = (currentHP == 0);
+    bool isGameOver    = Read8(ram, rom.gameOver) != 0x00;
     uint8_t viewMode   = Read8(ram, rom.baseViewMode + offP);
     bool isFirstPerson = (viewMode == 0x00);
 
-    if (isStartPressed || isDead || !isFirstPerson) return;
+    if (isStartPressed || isDead || isGameOver) return;
 
     // =====================================================================
-    //  HP
+    //  HP — always visible when alive (including altForm/transform)
     // =====================================================================
-    DrawHP(topPaint, currentHP);
+    int hpX = localCfg.GetInt(kCfgHudHpX);
+    int hpY = localCfg.GetInt(kCfgHudHpY);
+    DrawHP(topPaint, currentHP, hpX, hpY);
 
     // =====================================================================
-    //  Weapon + Ammo
+    //  Weapon/Ammo + Crosshair — first-person only
     // =====================================================================
+    if (!isFirstPerson) return;
+
+    int wpnX = localCfg.GetInt(kCfgHudWeaponX);
+    int wpnY = localCfg.GetInt(kCfgHudWeaponY);
     uint8_t currentWeapon = Read8(ram, addrHot.currentWeapon);
-    DrawWeaponAmmo(topPaint, ram, currentWeapon, Read16(ram, addrAmmoSpecial), addrAmmoMissile);
+    DrawWeaponAmmo(topPaint, ram, currentWeapon, Read16(ram, addrAmmoSpecial), addrAmmoMissile, wpnX, wpnY);
 
-    // =====================================================================
-    //  Crosshair
-    // =====================================================================
     bool isAlt   = Read8(ram, addrHot.isAltForm) == 0x02;
     bool isTrans = (Read8(ram, addrHot.jumpFlag) & 0x10) != 0;
     if (!isTrans && !isAlt) {
         CrosshairSettings cs = ReadCrosshairConfig(localCfg);
-        DrawCrosshair(topPaint, ram, rom, cs);
+        DrawCrosshair(topPaint, ram, rom, cs, topStretchX);
     }
 }
 

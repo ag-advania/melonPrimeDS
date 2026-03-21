@@ -102,6 +102,87 @@ MelonPrimeInputConfig::MelonPrimeInputConfig(EmuInstance* emu, QWidget* parent) 
 
     // Crosshair — Color
     int chR = instcfg.GetInt("Metroid.Visual.CrosshairColorR");
+
+    // HUD element positions
+    ui->spinMetroidHudHpX->setValue(instcfg.GetInt("Metroid.Visual.HudHpX"));
+    ui->spinMetroidHudHpY->setValue(instcfg.GetInt("Metroid.Visual.HudHpY"));
+    ui->spinMetroidHudWeaponX->setValue(instcfg.GetInt("Metroid.Visual.HudWeaponX"));
+    ui->spinMetroidHudWeaponY->setValue(instcfg.GetInt("Metroid.Visual.HudWeaponY"));
+
+    // HUD position presets: detect current preset from X/Y values
+    // 0=TopLeft 1=TopCenter 2=TopRight 3=Right 4=BottomRight 5=BottomCenter 6=BottomLeft 7=Left 8=Custom
+    {
+        struct Pos { int x, y; };
+        static const Pos hpPresets[] = {
+            {4,8}, {120,8}, {232,8}, {248,96}, {232,188}, {120,188}, {4,188}, {4,96}
+        };
+        static const Pos wpnPresets[] = {
+            {4,2}, {120,2}, {232,2}, {248,86}, {232,170}, {120,170}, {4,170}, {4,86}
+        };
+        int hpIdx = 8, wpnIdx = 8;
+        int hpX = ui->spinMetroidHudHpX->value(), hpY = ui->spinMetroidHudHpY->value();
+        int wpnX = ui->spinMetroidHudWeaponX->value(), wpnY = ui->spinMetroidHudWeaponY->value();
+        for (int i = 0; i < 8; i++) {
+            if (hpX == hpPresets[i].x && hpY == hpPresets[i].y) hpIdx = i;
+            if (wpnX == wpnPresets[i].x && wpnY == wpnPresets[i].y) wpnIdx = i;
+        }
+        ui->comboMetroidHudHpPosition->setCurrentIndex(hpIdx);
+        ui->comboMetroidHudWeaponPosition->setCurrentIndex(wpnIdx);
+    }
+
+    // HP position preset → update X/Y
+    connect(ui->comboMetroidHudHpPosition, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this](int idx) {
+        struct Pos { int x, y; };
+        static const Pos presets[] = {
+            {4,8}, {120,8}, {232,8}, {248,96}, {232,188}, {120,188}, {4,188}, {4,96}
+        };
+        if (idx < 0 || idx >= 8) return;
+        ui->spinMetroidHudHpX->blockSignals(true);
+        ui->spinMetroidHudHpY->blockSignals(true);
+        ui->spinMetroidHudHpX->setValue(presets[idx].x);
+        ui->spinMetroidHudHpY->setValue(presets[idx].y);
+        ui->spinMetroidHudHpX->blockSignals(false);
+        ui->spinMetroidHudHpY->blockSignals(false);
+    });
+    // HP X/Y manual change → switch to Custom
+    connect(ui->spinMetroidHudHpX, QOverload<int>::of(&QSpinBox::valueChanged), this, [this]() {
+        ui->comboMetroidHudHpPosition->blockSignals(true);
+        ui->comboMetroidHudHpPosition->setCurrentIndex(8);
+        ui->comboMetroidHudHpPosition->blockSignals(false);
+    });
+    connect(ui->spinMetroidHudHpY, QOverload<int>::of(&QSpinBox::valueChanged), this, [this]() {
+        ui->comboMetroidHudHpPosition->blockSignals(true);
+        ui->comboMetroidHudHpPosition->setCurrentIndex(8);
+        ui->comboMetroidHudHpPosition->blockSignals(false);
+    });
+
+    // Weapon position preset → update X/Y
+    connect(ui->comboMetroidHudWeaponPosition, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this](int idx) {
+        struct Pos { int x, y; };
+        static const Pos presets[] = {
+            {4,2}, {120,2}, {232,2}, {248,86}, {232,170}, {120,170}, {4,170}, {4,86}
+        };
+        if (idx < 0 || idx >= 8) return;
+        ui->spinMetroidHudWeaponX->blockSignals(true);
+        ui->spinMetroidHudWeaponY->blockSignals(true);
+        ui->spinMetroidHudWeaponX->setValue(presets[idx].x);
+        ui->spinMetroidHudWeaponY->setValue(presets[idx].y);
+        ui->spinMetroidHudWeaponX->blockSignals(false);
+        ui->spinMetroidHudWeaponY->blockSignals(false);
+    });
+    // Weapon X/Y manual change → switch to Custom
+    connect(ui->spinMetroidHudWeaponX, QOverload<int>::of(&QSpinBox::valueChanged), this, [this]() {
+        ui->comboMetroidHudWeaponPosition->blockSignals(true);
+        ui->comboMetroidHudWeaponPosition->setCurrentIndex(8);
+        ui->comboMetroidHudWeaponPosition->blockSignals(false);
+    });
+    connect(ui->spinMetroidHudWeaponY, QOverload<int>::of(&QSpinBox::valueChanged), this, [this]() {
+        ui->comboMetroidHudWeaponPosition->blockSignals(true);
+        ui->comboMetroidHudWeaponPosition->setCurrentIndex(8);
+        ui->comboMetroidHudWeaponPosition->blockSignals(false);
+    });
+
+    // Crosshair — Color (continued)
     int chG = instcfg.GetInt("Metroid.Visual.CrosshairColorG");
     int chB = instcfg.GetInt("Metroid.Visual.CrosshairColorB");
     ui->spinMetroidCrosshairR->setValue(chR);
@@ -325,6 +406,14 @@ void MelonPrimeInputConfig::saveConfig()
 
     // Crosshair — Color
     instcfg.SetInt("Metroid.Visual.CrosshairColorR", ui->spinMetroidCrosshairR->value());
+
+    // HUD element positions
+    instcfg.SetInt("Metroid.Visual.HudHpX", ui->spinMetroidHudHpX->value());
+    instcfg.SetInt("Metroid.Visual.HudHpY", ui->spinMetroidHudHpY->value());
+    instcfg.SetInt("Metroid.Visual.HudWeaponX", ui->spinMetroidHudWeaponX->value());
+    instcfg.SetInt("Metroid.Visual.HudWeaponY", ui->spinMetroidHudWeaponY->value());
+
+    // Crosshair — Color (continued)
     instcfg.SetInt("Metroid.Visual.CrosshairColorG", ui->spinMetroidCrosshairG->value());
     instcfg.SetInt("Metroid.Visual.CrosshairColorB", ui->spinMetroidCrosshairB->value());
 
