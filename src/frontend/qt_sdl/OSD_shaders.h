@@ -19,6 +19,37 @@
 #ifndef OSD_SHADERS_H
 #define OSD_SHADERS_H
 
+#ifdef MELONPRIME_DS
+const char* kScreenVS_OSD = R"(#version 140
+
+uniform vec2 uScreenSize;
+
+uniform ivec2 uOSDPos;
+uniform ivec2 uOSDSize;
+uniform float uScaleFactor;
+uniform vec2 uTexScale;
+
+in vec2 vPosition;
+
+smooth out vec2 fTexcoord;
+
+void main()
+{
+    vec4 fpos;
+
+    vec2 osdpos = (vPosition * vec2(uOSDSize));
+    fTexcoord = osdpos * uTexScale;
+    osdpos += uOSDPos;
+
+    fpos.xy = ((osdpos * 2.0) / uScreenSize * uScaleFactor) - 1.0;
+    fpos.y *= -1;
+    fpos.z = 0.0;
+    fpos.w = 1.0;
+
+    gl_Position = fpos;
+}
+)";
+#else
 const char* kScreenVS_OSD = R"(#version 140
 
 uniform vec2 uScreenSize;
@@ -48,7 +79,7 @@ void main()
     gl_Position = fpos;
 }
 )";
-
+#endif
 const char* kScreenFS_OSD = R"(#version 140
 
 uniform sampler2D OSDTex;
