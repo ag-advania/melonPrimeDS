@@ -32,10 +32,11 @@ static constexpr const char* kCfgCustomHud = "Metroid.Visual.CustomHUD";
 static constexpr const char* kCfgChColorR           = "Metroid.Visual.CrosshairColorR";
 
 // HUD element positions
-static constexpr const char* kCfgHudHpX     = "Metroid.Visual.HudHpX";
-static constexpr const char* kCfgHudHpY     = "Metroid.Visual.HudHpY";
-static constexpr const char* kCfgHudWeaponX = "Metroid.Visual.HudWeaponX";
-static constexpr const char* kCfgHudWeaponY = "Metroid.Visual.HudWeaponY";
+static constexpr const char* kCfgHudHpX       = "Metroid.Visual.HudHpX";
+static constexpr const char* kCfgHudHpY       = "Metroid.Visual.HudHpY";
+static constexpr const char* kCfgHudWeaponX   = "Metroid.Visual.HudWeaponX";
+static constexpr const char* kCfgHudWeaponY   = "Metroid.Visual.HudWeaponY";
+static constexpr const char* kCfgHudWeaponLayout = "Metroid.Visual.HudWeaponLayout"; // 0=icon below, 1=icon left
 
 // Crosshair — General (continued)
 static constexpr const char* kCfgChColorG           = "Metroid.Visual.CrosshairColorG";
@@ -177,7 +178,7 @@ static inline void DrawHP(QPainter* p, uint16_t hp, int x, int y)
 
 static void DrawWeaponAmmo(QPainter* p, melonDS::u8* ram,
                            uint8_t weapon, uint16_t ammoSpecial, uint32_t addrMissile,
-                           int baseX, int baseY)
+                           int baseX, int baseY, int layout)
 {
     p->setPen(Qt::white);
     uint16_t ammo = 0;
@@ -205,13 +206,18 @@ static void DrawWeaponAmmo(QPainter* p, melonDS::u8* ram,
     default: return;
     }
 
-    // Layout: ammo text on top, weapon icon below
-    if (hasAmmo) {
-        p->drawText(QPoint(baseX, baseY + 8), std::to_string(ammo).c_str());
+    if (layout == 0) {
+        // Icon Below: ammo text at top, icon below
+        if (hasAmmo) {
+            p->drawText(QPoint(baseX, baseY + 8), std::to_string(ammo).c_str());
+        }
         p->drawImage(QPoint(baseX, baseY + 10), icon);
     } else {
-        // Power Beam: icon only (no ammo text), same position as other weapons
-        p->drawImage(QPoint(baseX, baseY + 10), icon);
+        // Icon Left: icon on left, ammo text to the right
+        p->drawImage(QPoint(baseX, baseY), icon);
+        if (hasAmmo) {
+            p->drawText(QPoint(baseX + 16, baseY + 8), std::to_string(ammo).c_str());
+        }
     }
 }
 
@@ -487,8 +493,9 @@ void CustomHud_Render(
 
     int wpnX = localCfg.GetInt(kCfgHudWeaponX);
     int wpnY = localCfg.GetInt(kCfgHudWeaponY);
+    int wpnLayout = localCfg.GetInt(kCfgHudWeaponLayout);
     uint8_t currentWeapon = Read8(ram, addrHot.currentWeapon);
-    DrawWeaponAmmo(topPaint, ram, currentWeapon, Read16(ram, addrAmmoSpecial), addrAmmoMissile, wpnX, wpnY);
+    DrawWeaponAmmo(topPaint, ram, currentWeapon, Read16(ram, addrAmmoSpecial), addrAmmoMissile, wpnX, wpnY, wpnLayout);
 
     bool isAlt   = Read8(ram, addrHot.isAltForm) == 0x02;
     bool isTrans = (Read8(ram, addrHot.jumpFlag) & 0x10) != 0;

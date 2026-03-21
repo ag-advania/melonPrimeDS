@@ -108,6 +108,7 @@ MelonPrimeInputConfig::MelonPrimeInputConfig(EmuInstance* emu, QWidget* parent) 
     ui->spinMetroidHudHpY->setValue(instcfg.GetInt("Metroid.Visual.HudHpY"));
     ui->spinMetroidHudWeaponX->setValue(instcfg.GetInt("Metroid.Visual.HudWeaponX"));
     ui->spinMetroidHudWeaponY->setValue(instcfg.GetInt("Metroid.Visual.HudWeaponY"));
+    ui->comboMetroidHudWeaponLayout->setCurrentIndex(instcfg.GetInt("Metroid.Visual.HudWeaponLayout"));
 
     // HUD position presets: detect current preset from X/Y values
     // 0=TopLeft 1=TopCenter 2=TopRight 3=Right 4=BottomRight 5=BottomCenter 6=BottomLeft 7=Left 8=Custom
@@ -117,7 +118,7 @@ MelonPrimeInputConfig::MelonPrimeInputConfig(EmuInstance* emu, QWidget* parent) 
             {4,8}, {120,8}, {232,8}, {248,96}, {232,188}, {120,188}, {4,188}, {4,96}
         };
         static const Pos wpnPresets[] = {
-            {4,2}, {120,2}, {232,2}, {248,86}, {232,170}, {120,170}, {4,170}, {4,86}
+            {4,2}, {120,2}, {238,2}, {238,82}, {238,164}, {120,164}, {4,164}, {4,82}
         };
         int hpIdx = 8, wpnIdx = 8;
         int hpX = ui->spinMetroidHudHpX->value(), hpY = ui->spinMetroidHudHpY->value();
@@ -160,7 +161,7 @@ MelonPrimeInputConfig::MelonPrimeInputConfig(EmuInstance* emu, QWidget* parent) 
     connect(ui->comboMetroidHudWeaponPosition, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this](int idx) {
         struct Pos { int x, y; };
         static const Pos presets[] = {
-            {4,2}, {120,2}, {232,2}, {248,86}, {232,170}, {120,170}, {4,170}, {4,86}
+            {4,2}, {120,2}, {238,2}, {238,82}, {238,164}, {120,164}, {4,164}, {4,82}
         };
         if (idx < 0 || idx >= 8) return;
         ui->spinMetroidHudWeaponX->blockSignals(true);
@@ -412,6 +413,7 @@ void MelonPrimeInputConfig::saveConfig()
     instcfg.SetInt("Metroid.Visual.HudHpY", ui->spinMetroidHudHpY->value());
     instcfg.SetInt("Metroid.Visual.HudWeaponX", ui->spinMetroidHudWeaponX->value());
     instcfg.SetInt("Metroid.Visual.HudWeaponY", ui->spinMetroidHudWeaponY->value());
+    instcfg.SetInt("Metroid.Visual.HudWeaponLayout", ui->comboMetroidHudWeaponLayout->currentIndex());
 
     // Crosshair — Color (continued)
     instcfg.SetInt("Metroid.Visual.CrosshairColorG", ui->spinMetroidCrosshairG->value());

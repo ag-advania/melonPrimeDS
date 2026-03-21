@@ -618,6 +618,7 @@
 							<!-- Enable Custom HUD (moved here from tabMetroid2) -->
 							<item>
 								<widget class="QCheckBox" name="cbMetroidEnableCustomHud">
+									<property name="checked"><bool>true</bool></property>
 									<property name="text">
 										<string>Enable Custom HUD (Replaces the in-game HUD with a custom overlay showing HP, ammo, weapon icons and crosshair)</string>
 									</property>
@@ -650,10 +651,10 @@
 									</item>
 
 									<item row="1" column="0"><widget class="QLabel"><property name="text"><string>HP Position X</string></property></widget></item>
-									<item row="1" column="1"><widget class="QSpinBox" name="spinMetroidHudHpX"><property name="minimum"><number>0</number></property><property name="maximum"><number>255</number></property><property name="value"><number>4</number></property></widget></item>
+									<item row="1" column="1"><widget class="QSpinBox" name="spinMetroidHudHpX"><property name="minimum"><number>0</number></property><property name="maximum"><number>255</number></property><property name="value"><number>120</number></property></widget></item>
 
 									<item row="2" column="0"><widget class="QLabel"><property name="text"><string>HP Position Y</string></property></widget></item>
-									<item row="2" column="1"><widget class="QSpinBox" name="spinMetroidHudHpY"><property name="minimum"><number>0</number></property><property name="maximum"><number>191</number></property><property name="value"><number>188</number></property></widget></item>
+									<item row="2" column="1"><widget class="QSpinBox" name="spinMetroidHudHpY"><property name="minimum"><number>0</number></property><property name="maximum"><number>191</number></property><property name="value"><number>8</number></property></widget></item>
 
 									<item row="3" column="0"><widget class="QLabel"><property name="text"><string>Weapon Position</string></property></widget></item>
 									<item row="3" column="1">
@@ -671,11 +672,20 @@
 									</item>
 
 									<item row="4" column="0"><widget class="QLabel"><property name="text"><string>Weapon Position X</string></property></widget></item>
-									<item row="4" column="1"><widget class="QSpinBox" name="spinMetroidHudWeaponX"><property name="minimum"><number>0</number></property><property name="maximum"><number>255</number></property><property name="value"><number>232</number></property></widget></item>
+									<item row="4" column="1"><widget class="QSpinBox" name="spinMetroidHudWeaponX"><property name="minimum"><number>0</number></property><property name="maximum"><number>255</number></property><property name="value"><number>238</number></property></widget></item>
 
 									<item row="5" column="0"><widget class="QLabel"><property name="text"><string>Weapon Position Y</string></property></widget></item>
-									<item row="5" column="1"><widget class="QSpinBox" name="spinMetroidHudWeaponY"><property name="minimum"><number>0</number></property><property name="maximum"><number>191</number></property><property name="value"><number>170</number></property></widget></item>
+									<item row="5" column="1"><widget class="QSpinBox" name="spinMetroidHudWeaponY"><property name="minimum"><number>0</number></property><property name="maximum"><number>191</number></property><property name="value"><number>164</number></property></widget></item>
 
+
+
+									<item row="6" column="0"><widget class="QLabel"><property name="text"><string>Weapon Icon Layout</string></property></widget></item>
+									<item row="6" column="1">
+										<widget class="QComboBox" name="comboMetroidHudWeaponLayout">
+											<item><property name="text"><string>Icon Below Ammo</string></property></item>
+											<item><property name="text"><string>Icon Left of Ammo</string></property></item>
+										</widget>
+									</item>
 								</layout>
 							</item>
 
@@ -707,9 +717,9 @@
 									<item row="1" column="0"><widget class="QLabel"><property name="text"><string>Crosshair Color Code</string></property></widget></item>
 									<item row="1" column="1">
 										<layout class="QHBoxLayout">
-											<item><widget class="QLineEdit" name="leMetroidCrosshairColorCode"><property name="text"><string>#FFFFFF</string></property><property name="maxLength"><number>7</number></property></widget></item>
+											<item><widget class="QLineEdit" name="leMetroidCrosshairColorCode"><property name="text"><string>#FF0000</string></property><property name="maxLength"><number>7</number></property></widget></item>
 											<item><widget class="QSpinBox" name="spinMetroidCrosshairR"><property name="minimum"><number>0</number></property><property name="maximum"><number>255</number></property><property name="value"><number>255</number></property><property name="prefix"><string>R:</string></property></widget></item>
-											<item><widget class="QSpinBox" name="spinMetroidCrosshairG"><property name="minimum"><number>0</number></property><property name="maximum"><number>255</number></property><property name="value"><number>255</number></property><property name="prefix"><string>G:</string></property></widget></item>
+											<item><widget class="QSpinBox" name="spinMetroidCrosshairG"><property name="minimum"><number>0</number></property><property name="maximum"><number>255</number></property><property name="value"><number>0</number></property><property name="prefix"><string>G:</string></property></widget></item>
 											<item><widget class="QSpinBox" name="spinMetroidCrosshairB"><property name="minimum"><number>0</number></property><property name="maximum"><number>255</number></property><property name="value"><number>255</number></property><property name="prefix"><string>B:</string></property></widget></item>
 										</layout>
 									</item>
@@ -733,7 +743,7 @@
 									<item row="7" column="1"><widget class="QSpinBox" name="spinMetroidCrosshairDotThickness"><property name="minimum"><number>1</number></property><property name="maximum"><number>6</number></property><property name="value"><number>2</number></property></widget></item>
 
 									<item row="8" column="0"><widget class="QLabel"><property name="text"><string>T-Style</string></property></widget></item>
-									<item row="8" column="1"><widget class="QCheckBox" name="cbMetroidCrosshairTStyle"><property name="text"><string>(no top line)</string></property></widget></item>
+									<item row="8" column="1"><widget class="QCheckBox" name="cbMetroidCrosshairTStyle"><property name="text"><string>(no top line)</string></property><property name="checked"><bool>true</bool></property></widget></item>
 
 								</layout>
 							</item>
@@ -755,19 +765,19 @@
 									<item row="1" column="1"><widget class="QDoubleSpinBox" name="spinMetroidCrosshairInnerOpacity"><property name="minimum"><double>0.0</double></property><property name="maximum"><double>1.0</double></property><property name="singleStep"><double>0.05</double></property><property name="value"><double>0.8</double></property><property name="decimals"><number>2</number></property></widget></item>
 
 									<item row="2" column="0"><widget class="QLabel"><property name="text"><string>Inner Line Length X</string></property></widget></item>
-									<item row="2" column="1"><widget class="QSpinBox" name="spinMetroidCrosshairInnerLengthX"><property name="minimum"><number>0</number></property><property name="maximum"><number>20</number></property><property name="value"><number>6</number></property></widget></item>
+									<item row="2" column="1"><widget class="QSpinBox" name="spinMetroidCrosshairInnerLengthX"><property name="minimum"><number>0</number></property><property name="maximum"><number>20</number></property><property name="value"><number>2</number></property></widget></item>
 
 									<item row="3" column="0"><widget class="QLabel"><property name="text"><string>Inner Line Length Y</string></property></widget></item>
-									<item row="3" column="1"><widget class="QSpinBox" name="spinMetroidCrosshairInnerLengthY"><property name="minimum"><number>0</number></property><property name="maximum"><number>20</number></property><property name="value"><number>6</number></property></widget></item>
+									<item row="3" column="1"><widget class="QSpinBox" name="spinMetroidCrosshairInnerLengthY"><property name="minimum"><number>0</number></property><property name="maximum"><number>20</number></property><property name="value"><number>2</number></property></widget></item>
 
 									<item row="4" column="0"><widget class="QLabel"><property name="text"><string>Link X/Y</string></property></widget></item>
 									<item row="4" column="1"><widget class="QCheckBox" name="cbMetroidCrosshairInnerLinkXY"><property name="text"><string></string></property><property name="checked"><bool>true</bool></property></widget></item>
 
 									<item row="5" column="0"><widget class="QLabel"><property name="text"><string>Inner Line Thickness</string></property></widget></item>
-									<item row="5" column="1"><widget class="QSpinBox" name="spinMetroidCrosshairInnerThickness"><property name="minimum"><number>1</number></property><property name="maximum"><number>10</number></property><property name="value"><number>2</number></property></widget></item>
+									<item row="5" column="1"><widget class="QSpinBox" name="spinMetroidCrosshairInnerThickness"><property name="minimum"><number>1</number></property><property name="maximum"><number>10</number></property><property name="value"><number>1</number></property></widget></item>
 
 									<item row="6" column="0"><widget class="QLabel"><property name="text"><string>Inner Line Offset</string></property></widget></item>
-									<item row="6" column="1"><widget class="QSpinBox" name="spinMetroidCrosshairInnerOffset"><property name="minimum"><number>0</number></property><property name="maximum"><number>20</number></property><property name="value"><number>3</number></property></widget></item>
+									<item row="6" column="1"><widget class="QSpinBox" name="spinMetroidCrosshairInnerOffset"><property name="minimum"><number>0</number></property><property name="maximum"><number>20</number></property><property name="value"><number>2</number></property></widget></item>
 
 								</layout>
 							</item>
@@ -786,22 +796,22 @@
 									<item row="0" column="1"><widget class="QCheckBox" name="cbMetroidCrosshairOuterShow"><property name="text"><string></string></property></widget></item>
 
 									<item row="1" column="0"><widget class="QLabel"><property name="text"><string>Outer Line Opacity</string></property></widget></item>
-									<item row="1" column="1"><widget class="QDoubleSpinBox" name="spinMetroidCrosshairOuterOpacity"><property name="minimum"><double>0.0</double></property><property name="maximum"><double>1.0</double></property><property name="singleStep"><double>0.05</double></property><property name="value"><double>0.35</double></property><property name="decimals"><number>2</number></property></widget></item>
+									<item row="1" column="1"><widget class="QDoubleSpinBox" name="spinMetroidCrosshairOuterOpacity"><property name="minimum"><double>0.0</double></property><property name="maximum"><double>1.0</double></property><property name="singleStep"><double>0.05</double></property><property name="value"><double>0.4</double></property><property name="decimals"><number>2</number></property></widget></item>
 
 									<item row="2" column="0"><widget class="QLabel"><property name="text"><string>Outer Line Length X</string></property></widget></item>
-									<item row="2" column="1"><widget class="QSpinBox" name="spinMetroidCrosshairOuterLengthX"><property name="minimum"><number>0</number></property><property name="maximum"><number>10</number></property><property name="value"><number>2</number></property></widget></item>
+									<item row="2" column="1"><widget class="QSpinBox" name="spinMetroidCrosshairOuterLengthX"><property name="minimum"><number>0</number></property><property name="maximum"><number>10</number></property><property name="value"><number>1</number></property></widget></item>
 
 									<item row="3" column="0"><widget class="QLabel"><property name="text"><string>Outer Line Length Y</string></property></widget></item>
-									<item row="3" column="1"><widget class="QSpinBox" name="spinMetroidCrosshairOuterLengthY"><property name="minimum"><number>0</number></property><property name="maximum"><number>10</number></property><property name="value"><number>2</number></property></widget></item>
+									<item row="3" column="1"><widget class="QSpinBox" name="spinMetroidCrosshairOuterLengthY"><property name="minimum"><number>0</number></property><property name="maximum"><number>10</number></property><property name="value"><number>1</number></property></widget></item>
 
 									<item row="4" column="0"><widget class="QLabel"><property name="text"><string>Link X/Y</string></property></widget></item>
 									<item row="4" column="1"><widget class="QCheckBox" name="cbMetroidCrosshairOuterLinkXY"><property name="text"><string></string></property><property name="checked"><bool>true</bool></property></widget></item>
 
 									<item row="5" column="0"><widget class="QLabel"><property name="text"><string>Outer Line Thickness</string></property></widget></item>
-									<item row="5" column="1"><widget class="QSpinBox" name="spinMetroidCrosshairOuterThickness"><property name="minimum"><number>1</number></property><property name="maximum"><number>10</number></property><property name="value"><number>2</number></property></widget></item>
+									<item row="5" column="1"><widget class="QSpinBox" name="spinMetroidCrosshairOuterThickness"><property name="minimum"><number>1</number></property><property name="maximum"><number>10</number></property><property name="value"><number>1</number></property></widget></item>
 
 									<item row="6" column="0"><widget class="QLabel"><property name="text"><string>Outer Line Offset</string></property></widget></item>
-									<item row="6" column="1"><widget class="QSpinBox" name="spinMetroidCrosshairOuterOffset"><property name="minimum"><number>0</number></property><property name="maximum"><number>40</number></property><property name="value"><number>10</number></property></widget></item>
+									<item row="6" column="1"><widget class="QSpinBox" name="spinMetroidCrosshairOuterOffset"><property name="minimum"><number>0</number></property><property name="maximum"><number>40</number></property><property name="value"><number>4</number></property></widget></item>
 
 								</layout>
 							</item>
