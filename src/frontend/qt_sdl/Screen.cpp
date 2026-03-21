@@ -20,6 +20,7 @@
 
 #include <optional>
 #include <cmath>
+#include <algorithm>
 
 #include <QPaintEvent>
 #include <QPainter>
@@ -996,6 +997,22 @@ void ScreenPanelNative::paintEvent(QPaintEvent * event)
             auto& instcfg = emuInstance->getLocalConfig();
             if (mp && mp->IsRomDetected() && mp->IsInGame())
             {
+                // Compute widescreen stretch factor from top screen transform
+                float topStretchX = 1.0f;
+                for (int i = 0; i < numScreens; i++)
+                {
+                    if (screenKind[i] != 0) continue; // 0 = top screen
+                    const float* mtx = screenMatrix[i];
+                    const float scaleX = std::sqrt((mtx[0] * mtx[0]) + (mtx[1] * mtx[1]));
+                    const float scaleY = std::sqrt((mtx[2] * mtx[2]) + (mtx[3] * mtx[3]));
+                    if (scaleX > 0.0f && scaleY > 0.0f) {
+                        const float baseScale = std::min(scaleX, scaleY);
+                        if (baseScale > 0.0f)
+                            topStretchX = scaleX / baseScale;
+                    }
+                    break;
+                }
+
                 // Clear overlay buffers BEFORE creating painters
                 Overlay[0].fill(Qt::transparent);
                 Overlay[1].fill(Qt::transparent);
@@ -1012,7 +1029,8 @@ void ScreenPanelNative::paintEvent(QPaintEvent * event)
                         mp->GetPlayerPosition(),
                         &topP, &btmP,
                         &Overlay[0], &Overlay[1],
-                        mp->IsInGame());
+                        mp->IsInGame(),
+                        topStretchX);
                 } // painters end here — safe to read images
 
                 // Composite overlays on top of screens
@@ -1403,6 +1421,22 @@ void ScreenPanelGL::drawScreen()
             auto& instcfg = emuInstance->getLocalConfig();
             if (mp && mp->IsRomDetected() && mp->IsInGame())
             {
+                // Compute widescreen stretch factor from top screen transform
+                float topStretchX = 1.0f;
+                for (int i = 0; i < numScreens; i++)
+                {
+                    if (screenKind[i] != 0) continue; // 0 = top screen
+                    const float* mtx = screenMatrix[i];
+                    const float scaleX = std::sqrt((mtx[0] * mtx[0]) + (mtx[1] * mtx[1]));
+                    const float scaleY = std::sqrt((mtx[2] * mtx[2]) + (mtx[3] * mtx[3]));
+                    if (scaleX > 0.0f && scaleY > 0.0f) {
+                        const float baseScale = std::min(scaleX, scaleY);
+                        if (baseScale > 0.0f)
+                            topStretchX = scaleX / baseScale;
+                    }
+                    break;
+                }
+
                 // Clear overlay buffers BEFORE creating painters
                 Overlay[0].fill(Qt::transparent);
                 Overlay[1].fill(Qt::transparent);
@@ -1419,7 +1453,8 @@ void ScreenPanelGL::drawScreen()
                         mp->GetPlayerPosition(),
                         &topP, &btmP,
                         &Overlay[0], &Overlay[1],
-                        mp->IsInGame());
+                        mp->IsInGame(),
+                        topStretchX);
                 } // painters end here — safe to read constBits()
 
                 // Switch to OSD shader (supports alpha via texelFetch + BGRA swizzle)
@@ -1436,25 +1471,31 @@ void ScreenPanelGL::drawScreen()
 
                 for (int i = 0; i < numScreens; i++)
                 {
-                    int screenType = screenKind[i]; // 0=top, 1=bottom
-                    float* mtx = screenMatrix[i];
+                    const int screenType = screenKind[i];
+                    const float* mtx = screenMatrix[i];
 
-                    // Compute display size from transform matrix
-                    float displayW = mtx[0] * 256.0f;
-                    float displayH = mtx[3] * 192.0f;
-                    if (displayW <= 0 || displayH <= 0) continue;
+                    // Extract true scale from matrix (rotation-safe)
+                    const float scaleX = std::sqrt((mtx[0] * mtx[0]) + (mtx[1] * mtx[1]));
+                    const float scaleY = std::sqrt((mtx[2] * mtx[2]) + (mtx[3] * mtx[3]));
+                    if (scaleX <= 0.0f || scaleY <= 0.0f) continue;
 
-                    // texScale maps display size back to 256x192 texture coords
-                    float texScale = 256.0f / displayW;
+                    const float displayW = scaleX * 256.0f;
+                    const float displayH = scaleY * 192.0f;
 
-                    // Upload overlay image
+                    // Separate X/Y tex scales: map full display to full 256x192 overlay.
+                    // This correctly handles widescreen — the 4:3 overlay is stretched
+                    // non-uniformly to fill the display, matching how the 3D scene is
+                    // rendered with wider horizontal FOV.
+                    const float texScaleX = 256.0f / displayW;
+                    const float texScaleY = 192.0f / displayH;
+
                     glBindTexture(GL_TEXTURE_2D, overlayTextures[screenType]);
                     glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, 256, 192,
                         GL_RGBA, GL_UNSIGNED_BYTE, Overlay[screenType].constBits());
 
-                    glUniform2i(osdPosULoc, (int)mtx[4], (int)mtx[5]);
-                    glUniform2i(osdSizeULoc, (int)displayW, (int)displayH);
-                    glUniform1f(osdTexScaleULoc, texScale);
+                    glUniform2i(osdPosULoc, static_cast<int>(mtx[4]), static_cast<int>(mtx[5]));
+                    glUniform2i(osdSizeULoc, static_cast<int>(displayW), static_cast<int>(displayH));
+                    glUniform2f(osdTexScaleULoc, texScaleX, texScaleY);
 
                     glDrawArrays(GL_TRIANGLES, 0, 2 * 3);
                 }
@@ -1484,7 +1525,11 @@ void ScreenPanelGL::drawScreen()
 
         glUniform2f(osdScreenSizeULoc, w, h);
         glUniform1f(osdScaleFactorULoc, factor);
+#ifdef MELONPRIME_DS
+        glUniform2f(osdTexScaleULoc, 2.0f, 2.0f);
+#else
         glUniform1f(osdTexScaleULoc, 2.0);
+#endif
 
         glBindBuffer(GL_ARRAY_BUFFER, osdVertexBuffer);
         glBindVertexArray(osdVertexArray);
@@ -1499,7 +1544,11 @@ void ScreenPanelGL::drawScreen()
         glUniform2i(osdSizeULoc, kLogoWidth, kLogoWidth);
         glDrawArrays(GL_TRIANGLES, 0, 2 * 3);
 
+#ifdef MELONPRIME_DS
+        glUniform2f(osdTexScaleULoc, 1.0f, 1.0f);
+#else
         glUniform1f(osdTexScaleULoc, 1.0);
+#endif
 
         for (int i = 0; i < 3; i++)
         {
@@ -1538,7 +1587,11 @@ void ScreenPanelGL::drawScreen()
 
         glUniform2f(osdScreenSizeULoc, w, h);
         glUniform1f(osdScaleFactorULoc, factor);
+#ifdef MELONPRIME_DS
+        glUniform2f(osdTexScaleULoc, 1.0f, 1.0f);
+#else
         glUniform1f(osdTexScaleULoc, 1.0);
+#endif
 
         glBindBuffer(GL_ARRAY_BUFFER, osdVertexBuffer);
         glBindVertexArray(osdVertexArray);
