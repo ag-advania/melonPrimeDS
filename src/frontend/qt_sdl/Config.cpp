@@ -118,23 +118,24 @@ namespace Config
         /* MelonPrimeDS } */
 
         /* MelonPrimeDS Custom HUD Crosshair defaults { */
-        {"Instance*.Metroid.Visual.HudHpX",              4},
-        {"Instance*.Metroid.Visual.HudHpY",            188},
-        {"Instance*.Metroid.Visual.HudWeaponX",        232},
-        {"Instance*.Metroid.Visual.HudWeaponY",        180},
-        {"Instance*.Metroid.Visual.CrosshairColorR",          0},
-        {"Instance*.Metroid.Visual.CrosshairColorG",          255},
-        {"Instance*.Metroid.Visual.CrosshairColorB",          0},
+        {"Instance*.Metroid.Visual.HudHpX",              120},
+        {"Instance*.Metroid.Visual.HudHpY",                8},
+        {"Instance*.Metroid.Visual.HudWeaponX",          238},
+        {"Instance*.Metroid.Visual.HudWeaponY",          164},
+        {"Instance*.Metroid.Visual.HudWeaponLayout",       0},
+        {"Instance*.Metroid.Visual.CrosshairColorR",     255},
+        {"Instance*.Metroid.Visual.CrosshairColorG",       0},
+        {"Instance*.Metroid.Visual.CrosshairColorB",       0},
         {"Instance*.Metroid.Visual.CrosshairOutlineThickness", 1},
         {"Instance*.Metroid.Visual.CrosshairDotThickness",     1},
-        {"Instance*.Metroid.Visual.CrosshairInnerLengthX",     6},
-        {"Instance*.Metroid.Visual.CrosshairInnerLengthY",     6},
+        {"Instance*.Metroid.Visual.CrosshairInnerLengthX",     2},
+        {"Instance*.Metroid.Visual.CrosshairInnerLengthY",     2},
         {"Instance*.Metroid.Visual.CrosshairInnerThickness",   1},
-        {"Instance*.Metroid.Visual.CrosshairInnerOffset",      3},
-        {"Instance*.Metroid.Visual.CrosshairOuterLengthX",     2},
-        {"Instance*.Metroid.Visual.CrosshairOuterLengthY",     2},
+        {"Instance*.Metroid.Visual.CrosshairInnerOffset",      2},
+        {"Instance*.Metroid.Visual.CrosshairOuterLengthX",     1},
+        {"Instance*.Metroid.Visual.CrosshairOuterLengthY",     1},
         {"Instance*.Metroid.Visual.CrosshairOuterThickness",   1},
-        {"Instance*.Metroid.Visual.CrosshairOuterOffset",      10},
+        {"Instance*.Metroid.Visual.CrosshairOuterOffset",      4},
         /* MelonPrimeDS Custom HUD Crosshair defaults } */
     #endif
     };
@@ -203,10 +204,10 @@ namespace Config
         {"Instance*.Metroid.Apply.joy2KeySupport", true},
         {"Instance*.Metroid.Enable.stylusMode", false},
         /* MelonPrimeDS Crosshair bools { */
-        {"Instance*.Metroid.Visual.CustomHUD", false},
+        {"Instance*.Metroid.Visual.CustomHUD", true},
         {"Instance*.Metroid.Visual.CrosshairOutline", true},
         {"Instance*.Metroid.Visual.CrosshairCenterDot", true},
-        {"Instance*.Metroid.Visual.CrosshairTStyle", false},
+        {"Instance*.Metroid.Visual.CrosshairTStyle", true},
         {"Instance*.Metroid.Visual.CrosshairInnerShow", true},
         {"Instance*.Metroid.Visual.CrosshairInnerLinkXY", true},
         {"Instance*.Metroid.Visual.CrosshairOuterShow", true},
@@ -236,7 +237,7 @@ namespace Config
         {"Instance*.Metroid.Visual.CrosshairOutlineOpacity", 0.50},
         {"Instance*.Metroid.Visual.CrosshairDotOpacity",     1.00},
         {"Instance*.Metroid.Visual.CrosshairInnerOpacity",   0.80},
-        {"Instance*.Metroid.Visual.CrosshairOuterOpacity",   0.35},
+        {"Instance*.Metroid.Visual.CrosshairOuterOpacity",   0.40},
         /* MelonPrimeDS Crosshair opacities } */
     #endif
     };
