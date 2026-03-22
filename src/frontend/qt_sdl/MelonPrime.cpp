@@ -12,6 +12,7 @@
 
 #ifdef MELONPRIME_CUSTOM_HUD
 #include "MelonPrimeCustomHud.h"
+#include "MelonPrimePatch.h"
 #endif
 
 #include <cmath>
@@ -195,6 +196,9 @@ namespace MelonPrime {
 #ifdef MELONPRIME_CUSTOM_HUD
         CustomHud_ResetPatchState();
 #endif
+#ifdef MELONPRIME_INGAME_SCALING
+        InGameScaling_ResetPatchState();
+#endif
 
         ReloadConfigFlags();
         ApplyJoy2KeySupportAndQtFilter(m_flags.test(StateFlags::BIT_JOY2KEY));
@@ -212,6 +216,9 @@ namespace MelonPrime {
         m_flags.clear(StateFlags::BIT_IN_GAME);
 #ifdef MELONPRIME_CUSTOM_HUD
         CustomHud_ResetPatchState();
+#endif
+#ifdef MELONPRIME_INGAME_SCALING
+        InGameScaling_ResetPatchState();
 #endif
     }
 
