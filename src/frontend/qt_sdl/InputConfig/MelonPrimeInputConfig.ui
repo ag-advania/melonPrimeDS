@@ -546,7 +546,7 @@
 								<layout class="QVBoxLayout">
 									<item>
 										<widget class="QLabel">
-											<property name="text"><string>When playing with an Aspect Ratio other than 4:3 (Native), apply this to change the in-game 3D aspect ratio to match. A game restart is required for changes to take effect.</string></property>
+											<property name="text"><string>When playing with an Aspect Ratio other than 4:3 (Native), apply this to change the in-game 3D aspect ratio to match. Changes are applied at the start of each match.</string></property>
 											<property name="wordWrap"><bool>true</bool></property>
 										</widget>
 									</item>
