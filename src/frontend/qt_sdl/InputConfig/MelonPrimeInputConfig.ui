@@ -533,9 +533,9 @@
 								</widget>
 							</item>
 
-							<!-- IN-GAME SCALING toggle -->
+							<!-- IN-GAME ASPECT RATIO toggle -->
 							<item><widget class="QPushButton" name="btnToggleInGameScaling">
-								<property name="text"><string>▶ IN-GAME SCALING</string></property>
+								<property name="text"><string>▶ IN-GAME ASPECT RATIO</string></property>
 								<property name="checkable"><bool>true</bool></property>
 								<property name="checked"><bool>false</bool></property>
 								<property name="flat"><bool>true</bool></property>
@@ -546,17 +546,18 @@
 								<layout class="QVBoxLayout">
 									<item>
 										<widget class="QLabel">
-											<property name="text"><string>When playing with an Aspect Ratio other than 4:3 (Native), apply this to change the in-game 3D projection to match that scale. A game restart is required for changes to take effect.</string></property>
+											<property name="text"><string>When playing with an Aspect Ratio other than 4:3 (Native), apply this to change the in-game 3D aspect ratio to match. A game restart is required for changes to take effect.</string></property>
 											<property name="wordWrap"><bool>true</bool></property>
 										</widget>
 									</item>
 									<item>
 										<layout class="QFormLayout" name="formInGameScaling">
-											<item row="0" column="0"><widget class="QLabel"><property name="text"><string>Enable In-Game Scaling</string></property></widget></item>
+											<item row="0" column="0"><widget class="QLabel"><property name="text"><string>Enable In-Game Aspect Ratio</string></property></widget></item>
 											<item row="0" column="1"><widget class="QCheckBox" name="cbMetroidInGameScaling"><property name="text"><string></string></property></widget></item>
-											<item row="1" column="0"><widget class="QLabel"><property name="text"><string>Scaling Mode</string></property></widget></item>
+											<item row="1" column="0"><widget class="QLabel"><property name="text"><string>Aspect Ratio Mode</string></property></widget></item>
 											<item row="1" column="1">
 												<widget class="QComboBox" name="comboMetroidInGameScalingMode">
+													<item><property name="text"><string>Auto (match Aspect Ratio)</string></property></item>
 													<item><property name="text"><string>5:3 (3DS)</string></property></item>
 													<item><property name="text"><string>16:10 (3DS)</string></property></item>
 													<item><property name="text"><string>16:9</string></property></item>
@@ -564,6 +565,13 @@
 												</widget>
 											</item>
 										</layout>
+									</item>
+									<item>
+										<widget class="QLabel" name="labelInGameScalingAutoDesc">
+											<property name="text"><string>Auto: Automatically applies the aspect ratio patch to match the current Aspect Ratio setting (4:3 = off, 5:3/16:9/21:9 = auto-applied, window = off).</string></property>
+											<property name="wordWrap"><bool>true</bool></property>
+											<property name="indent"><number>20</number></property>
+										</widget>
 									</item>
 								</layout>
 								</widget>
