@@ -55,6 +55,9 @@ namespace MelonPrime {
     // Reset patch tracking state (call on emu stop/reset).
     void CustomHud_ResetPatchState();
 
+    // Invalidate cached config (call when settings are saved).
+    void CustomHud_InvalidateConfigCache();
+
 } // namespace MelonPrime
 
 #endif // MELONPRIME_CUSTOM_HUD

@@ -4,6 +4,7 @@
 #include "MelonPrimeInternal.h"
 #include "MelonPrimeGameRomAddrTable.h"
 #include "EmuInstance.h"
+#include "Window.h"
 #include "NDS.h"
 
 namespace MelonPrime {
@@ -49,13 +50,17 @@ static void ApplyScalingPatch(melonDS::NDS* nds, const RomAddresses& rom, int mo
     if (mode < 0 || mode > 3) return;
     melonDS::u8* ram = nds->MainRAM;
 
-    // ARM instruction patches (32-bit writes)
-    uint32_t instr = kScalePatchInstr[mode];
-    Write32(ram, rom.scalePatchAddr1, instr);
-    Write32(ram, rom.scalePatchAddr2, instr);
+    // AR-style conditional write: only patch if current value matches original
+    // (5xxxxxxx = "if 32-bit value at addr == expected, execute next line")
+    if (Read32(ram, rom.scalePatchAddr1) == kScaleOrig1)
+        Write32(ram, rom.scalePatchAddr1, kScalePatchInstr[mode]);
 
-    // Aspect ratio value (16-bit write, game may reset this each frame)
-    Write16(ram, rom.scaleValueAddr, kScalePatchVal[mode]);
+    if (Read32(ram, rom.scalePatchAddr2) == kScaleOrig2)
+        Write32(ram, rom.scalePatchAddr2, kScalePatchInstr[mode]);
+
+    // (9xxxxxxx = "if 16-bit value at addr == expected, execute next line")
+    if (Read16(ram, rom.scaleValueAddr) == kScaleOrigVal)
+        Write16(ram, rom.scaleValueAddr, kScalePatchVal[mode]);
 
     s_scalePatchApplied = true;
 }
@@ -78,45 +83,35 @@ void InGameAspectRatio_ResetPatchState()
 }
 
 // Map Screen.h aspectRatio id → scaling patch mode.
-// Returns -1 if no patch should be applied (4:3 native or unknown).
+// Returns -1 if no patch needed (4:3 native, window, or unknown).
 static int AspectIdToScaleMode(int aspectId)
 {
     switch (aspectId) {
     case 4: return 0;  // 5:3 (3DS)
     case 1: return 2;  // 16:9
     case 2: return 3;  // 21:9
-    default: return -1; // 4:3 (id=0), window (id=3), or unknown
+    default: return -1;
     }
 }
 
-void InGameAspectRatio_Tick(EmuInstance* emu, Config::Table& localCfg,
-                        const RomAddresses& rom, bool isInGame,
-                        int screenAspectId)
+void InGameAspectRatio_ApplyOnce(EmuInstance* emu, Config::Table& localCfg,
+                                  const RomAddresses& rom)
 {
-    if (!isInGame) return;
-
     bool enabled = localCfg.GetBool(kCfgAspectRatioEnabled);
-    if (!enabled) {
-        if (s_scalePatchApplied)
-            RestoreScalingPatch(emu->getNDS(), rom);
-        return;
-    }
+    if (!enabled) return;
 
     int comboMode = localCfg.GetInt(kCfgAspectRatioMode);
     // Combo: 0=Auto, 1=5:3, 2=16:10, 3=16:9, 4=21:9
 
     int patchMode;
     if (comboMode == 0) {
-        // Auto: derive from current Aspect Ratio setting
-        patchMode = AspectIdToScaleMode(screenAspectId);
-        if (patchMode < 0) {
-            // 4:3 or window → no patch needed
-            if (s_scalePatchApplied)
-                RestoreScalingPatch(emu->getNDS(), rom);
-            return;
-        }
+        // Auto: read current aspect ratio from window config
+        auto* mw = emu->getMainWindow();
+        if (!mw) return;
+        int aspectId = mw->getWindowConfig().GetInt("ScreenAspectTop");
+        patchMode = AspectIdToScaleMode(aspectId);
+        if (patchMode < 0) return; // 4:3 or window → no patch
     } else {
-        // Manual: combo index 1-4 → patch mode 0-3
         patchMode = comboMode - 1;
     }
 
