@@ -19,7 +19,7 @@ namespace MelonPrime {
 // Config keys
 static constexpr const char* kCfgScalingEnabled = "Metroid.Visual.InGameScaling";
 static constexpr const char* kCfgScalingMode    = "Metroid.Visual.InGameScalingMode";
-// Mode: 0=5:3(3DS), 1=16:10(3DS), 2=16:9, 3=21:9
+// Combo: 0=Auto, 1=5:3(3DS), 2=16:10(3DS), 3=16:9, 4=21:9
 
 // Original ARM instructions (restored when patch is disabled)
 static constexpr uint32_t kScaleOrig1  = 0xE5991664; // LDR r1,[r9,#0x664]
@@ -77,22 +77,50 @@ void InGameScaling_ResetPatchState()
     s_scalePatchApplied = false;
 }
 
+// Map Screen.h aspectRatio id → scaling patch mode.
+// Returns -1 if no patch should be applied (4:3 native or unknown).
+static int AspectIdToScaleMode(int aspectId)
+{
+    switch (aspectId) {
+    case 4: return 0;  // 5:3 (3DS)
+    case 1: return 2;  // 16:9
+    case 2: return 3;  // 21:9
+    default: return -1; // 4:3 (id=0), window (id=3), or unknown
+    }
+}
+
 void InGameScaling_Tick(EmuInstance* emu, Config::Table& localCfg,
-                        const RomAddresses& rom, bool isInGame)
+                        const RomAddresses& rom, bool isInGame,
+                        int screenAspectId)
 {
     if (!isInGame) return;
 
     bool enabled = localCfg.GetBool(kCfgScalingEnabled);
     if (!enabled) {
-        if (s_scalePatchApplied) {
+        if (s_scalePatchApplied)
             RestoreScalingPatch(emu->getNDS(), rom);
-        }
         return;
     }
 
-    int mode = localCfg.GetInt(kCfgScalingMode);
-    // Write every frame (game may reset the 16-bit value)
-    ApplyScalingPatch(emu->getNDS(), rom, mode);
+    int comboMode = localCfg.GetInt(kCfgScalingMode);
+    // Combo: 0=Auto, 1=5:3, 2=16:10, 3=16:9, 4=21:9
+
+    int patchMode;
+    if (comboMode == 0) {
+        // Auto: derive from current Aspect Ratio setting
+        patchMode = AspectIdToScaleMode(screenAspectId);
+        if (patchMode < 0) {
+            // 4:3 or window → no patch needed
+            if (s_scalePatchApplied)
+                RestoreScalingPatch(emu->getNDS(), rom);
+            return;
+        }
+    } else {
+        // Manual: combo index 1-4 → patch mode 0-3
+        patchMode = comboMode - 1;
+    }
+
+    ApplyScalingPatch(emu->getNDS(), rom, patchMode);
 }
 
 } // namespace MelonPrime
