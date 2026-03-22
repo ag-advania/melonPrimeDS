@@ -7,13 +7,12 @@ on:
       - master
 
 env:
+  VCPKG_COMMIT: 55fab67aea1027f7179ae6b5c54a5ba9091c16aa
   MELONDS_GIT_BRANCH: ${{ github.ref }}
   MELONDS_GIT_HASH: ${{ github.sha }}
   MELONDS_BUILD_PROVIDER: GitHub Actions
-
-  VCPKG_ROOT: ${{ github.workspace }}/vcpkg
-  VCPKG_DOWNLOADS: ${{ github.workspace }}/vcpkg_downloads
-  VCPKG_DISABLE_METRICS: 1
+  VCPKG_MAX_CONCURRENCY: 8
+  CMAKE_BUILD_PARALLEL_LEVEL: 8
   VCPKG_BINARY_SOURCES: clear;files,${{ github.workspace }}/vcpkg_binary_cache,readwrite
 
 jobs:
@@ -33,10 +32,14 @@ jobs:
     - name: Cache MSYS2 packages
       uses: actions/cache@v4
       with:
-        path: C:/msys64/var/cache/pacman/pkg
-        key: msys2-cache-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json') }}
+        path: |
+          C:/msys64/var/cache/pacman/pkg
+          C:/msys64/etc/pacman.d/gnupg
+          D:/a/_temp/msys64/var/cache/pacman/pkg
+          ${{ github.workspace }}/vcpkg/downloads/tools/msys2
+        key: ${{ runner.os }}-msys2-pacman-${{ hashFiles('CMakeLists.txt', 'cmake/**', 'vcpkg.json') }}
         restore-keys: |
-          msys2-cache-
+          ${{ runner.os }}-msys2-pacman-
 
     - name: Set up MSYS2
       uses: msys2/setup-msys2@v2
@@ -51,64 +54,52 @@ jobs:
           make:p
           pkgconf:p
 
-    - name: Ensure cache directories exist
+    - name: Ensure binary cache directory exists
       run: |
         mkdir -p "${{ github.workspace }}/vcpkg_binary_cache"
-        mkdir -p "${{ github.workspace }}/vcpkg_installed"
-        mkdir -p "${{ github.workspace }}/vcpkg_downloads"
 
-    - name: Restore vcpkg downloads, installed, and binaries
-      id: vcpkg_cache_restore
-      uses: actions/cache/restore@v4
+    - name: Cache vcpkg
+      uses: actions/cache@v4
       with:
         path: |
-          ${{ github.workspace }}/vcpkg_downloads
+          ${{ github.workspace }}/vcpkg
           ${{ github.workspace }}/vcpkg_installed
+          ${{ github.workspace }}/vcpkg/buildtrees
+          ${{ github.workspace }}/vcpkg/downloads
+          ${{ github.workspace }}/vcpkg/packages
           ${{ github.workspace }}/vcpkg_binary_cache
-        key: ${{ runner.os }}-vcpkg-ucrt64-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json', 'CMakePresets.json', 'cmake/overlay-triplets/**', 'cmake/overlay-ports/**') }}
+        key: ${{ runner.os }}-vcpkg-${{ env.VCPKG_COMMIT }}-${{ hashFiles('CMakeLists.txt', 'cmake/**', 'cmake/overlay-triplets/*.cmake', 'cmake/overlay-ports/**', 'vcpkg.json', 'CMakePresets.json') }}
         restore-keys: |
-          ${{ runner.os }}-vcpkg-ucrt64-
+          ${{ runner.os }}-vcpkg-${{ env.VCPKG_COMMIT }}-${{ hashFiles('CMakeLists.txt', 'cmake/**', 'vcpkg.json') }}
+          ${{ runner.os }}-vcpkg-${{ env.VCPKG_COMMIT }}-
 
-    - name: Setup vcpkg
-      run: |
-        if [ -d "$VCPKG_ROOT" ] && [ ! -d "$VCPKG_ROOT/.git" ]; then
-          echo "Removing stale non-git vcpkg directory..."
-          rm -rf "$VCPKG_ROOT"
-        fi
+    - name: Set up vcpkg
+      uses: lukka/run-vcpkg@v11
+      with:
+        vcpkgGitCommitId: ${{ env.VCPKG_COMMIT }}
 
-        if [ ! -d "$VCPKG_ROOT/.git" ]; then
-          echo "Cloning vcpkg..."
-          git clone --depth 1 https://github.com/Microsoft/vcpkg.git "$VCPKG_ROOT"
-        fi
-
-        if [ ! -f "$VCPKG_ROOT/vcpkg.exe" ]; then
-          echo "Bootstrapping vcpkg..."
-          "$VCPKG_ROOT/bootstrap-vcpkg.bat" -disableMetrics
-        fi
-
-        "$VCPKG_ROOT/vcpkg.exe" version
+    - name: Cache CMake build directory
+      uses: actions/cache@v4
+      with:
+        path: ${{ github.workspace }}/build
+        key: ${{ runner.os }}-cmake-build-${{ hashFiles('CMakeLists.txt', 'src/**', 'include/**', 'cmake/**', 'CMakePresets.json') }}
+        restore-keys: |
+          ${{ runner.os }}-cmake-build-${{ hashFiles('CMakeLists.txt') }}
+          ${{ runner.os }}-cmake-build-
 
     - name: Configure
       run: |
         cmake --preset=release-mingw-x86_64 \
           -DMELONDS_EMBED_BUILD_INFO=ON \
-          -DCMAKE_TOOLCHAIN_FILE="${VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake" \
-          -DVCPKG_INSTALLED_DIR="${{ github.workspace }}/vcpkg_installed" \
-          -DVCPKG_DOWNLOADS="${{ github.workspace }}/vcpkg_downloads"
-
-    - name: Save vcpkg downloads, installed, and binaries
-      if: always()
-      uses: actions/cache/save@v4
-      with:
-        path: |
-          ${{ github.workspace }}/vcpkg_downloads
-          ${{ github.workspace }}/vcpkg_installed
-          ${{ github.workspace }}/vcpkg_binary_cache
-        key: ${{ runner.os }}-vcpkg-ucrt64-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json', 'CMakePresets.json', 'cmake/overlay-triplets/**', 'cmake/overlay-ports/**') }}
+          -DCMAKE_BUILD_PARALLEL_LEVEL=${{ env.CMAKE_BUILD_PARALLEL_LEVEL }}
+      env:
+        NINJA_STATUS: "[%f/%t %o/s %es] "
 
     - name: Build
       run: |
-        cmake --build --preset=release-mingw-x86_64 --parallel
+        cmake --build --preset=release-mingw-x86_64 --parallel ${{ env.CMAKE_BUILD_PARALLEL_LEVEL }}
+      env:
+        NINJA_STATUS: "[%f/%t %o/s %es] "
 
     - name: Upload artifact
       uses: actions/upload-artifact@v4
