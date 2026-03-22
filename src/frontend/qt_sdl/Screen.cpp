@@ -53,6 +53,9 @@
 #include "MelonPrimeCustomHud.h"
 #include <QFontDatabase>
 #endif
+#ifdef MELONPRIME_INGAME_SCALING
+#include "MelonPrimePatch.h"
+#endif
 
 #ifdef _WIN32
 #ifndef WIN32_LEAN_AND_MEAN
@@ -1043,6 +1046,15 @@ void ScreenPanelNative::paintEvent(QPaintEvent * event)
         }
 #endif
 
+#ifdef MELONPRIME_INGAME_SCALING
+        {
+            auto* mp = emuThread->GetMelonPrimeCore();
+            auto& instcfg = emuInstance->getLocalConfig();
+            if (mp && mp->IsRomDetected())
+                MelonPrime::InGameScaling_Tick(emuInstance, instcfg, mp->GetCurrentRom(), mp->IsInGame());
+        }
+#endif
+
         emuInstance->renderLock.unlock();
     }
 
@@ -1508,6 +1520,15 @@ void ScreenPanelGL::drawScreen()
                 glBindVertexArray(screenVertexArray);
                 glBindTexture(GL_TEXTURE_2D_ARRAY, screenTexture);
             }
+        }
+#endif
+
+#ifdef MELONPRIME_INGAME_SCALING
+        {
+            auto* mp = emuThread->GetMelonPrimeCore();
+            auto& instcfg = emuInstance->getLocalConfig();
+            if (mp && mp->IsRomDetected())
+                MelonPrime::InGameScaling_Tick(emuInstance, instcfg, mp->GetCurrentRom(), mp->IsInGame());
         }
 #endif
 

@@ -35,6 +35,7 @@ static constexpr const char* kCfgChColorR           = "Metroid.Visual.CrosshairC
 // HUD element positions
 static constexpr const char* kCfgHudHpX       = "Metroid.Visual.HudHpX";
 static constexpr const char* kCfgHudHpY       = "Metroid.Visual.HudHpY";
+static constexpr const char* kCfgHudFontSize  = "Metroid.Visual.HudFontSize";
 static constexpr const char* kCfgHudHpPrefix  = "Metroid.Visual.HudHpPrefix";
 static constexpr const char* kCfgHudWeaponX   = "Metroid.Visual.HudWeaponX";
 static constexpr const char* kCfgHudWeaponY   = "Metroid.Visual.HudWeaponY";
@@ -232,7 +233,7 @@ static inline QColor HpGaugeColor(uint16_t hp)
 {
     if (hp <= 25)      return QColor(255, 0, 0);
     else if (hp <= 50) return QColor(255, 165, 0);
-    else               return QColor(0, 255, 0);
+    else               return QColor(56, 192, 8); // Sylux Hud Color
 }
 
 // Anchor: 0=below, 1=above, 2=right, 3=left, 4=center
@@ -630,6 +631,16 @@ void CustomHud_Render(
     bool isFirstPerson = (viewMode == 0x00);
 
     if (isStartPressed || isDead || isGameOver) return;
+
+    // =====================================================================
+    //  Font size — shared for HP and Ammo
+    // =====================================================================
+    int hudFontSize = localCfg.GetInt(kCfgHudFontSize);
+    if (hudFontSize > 0) {
+        QFont f = topPaint->font();
+        f.setPixelSize(hudFontSize);
+        topPaint->setFont(f);
+    }
 
     // =====================================================================
     //  HP — always visible when alive (including altForm/transform)

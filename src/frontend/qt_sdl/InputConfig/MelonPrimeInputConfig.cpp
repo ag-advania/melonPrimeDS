@@ -97,8 +97,13 @@ MelonPrimeInputConfig::MelonPrimeInputConfig(EmuInstance* emu, QWidget* parent) 
     // Screen Sync Mode
     ui->comboMetroidScreenSyncMode->setCurrentIndex(instcfg.GetInt("Metroid.Screen.SyncMode"));
 
+    // In-game scaling
+    ui->cbMetroidInGameScaling->setChecked(instcfg.GetBool("Metroid.Visual.InGameScaling"));
+    ui->comboMetroidInGameScalingMode->setCurrentIndex(instcfg.GetInt("Metroid.Visual.InGameScalingMode"));
+
     // Custom HUD
     ui->cbMetroidEnableCustomHud->setChecked(instcfg.GetBool("Metroid.Visual.CustomHUD"));
+    ui->spinMetroidHudFontSize->setValue(instcfg.GetInt("Metroid.Visual.HudFontSize"));
 
     // --- Collapsible sections: default hidden, toggle with arrow buttons ---
     auto setupToggle = [](QPushButton* btn, QWidget* section, const QString& label) {
@@ -115,13 +120,14 @@ MelonPrimeInputConfig::MelonPrimeInputConfig(EmuInstance* emu, QWidget* parent) 
     setupToggle(ui->btnToggleOuter,     ui->sectionOuter,     "OUTER LINES");
     // HP & Ammo tab
     setupToggle(ui->btnToggleHpPos,     ui->sectionHpPos,     "HP POSITION");
-    setupToggle(ui->btnToggleWpnPos,    ui->sectionWpnPos,    "WEAPON POSITION");
+    setupToggle(ui->btnToggleWpnPos,    ui->sectionWpnPos,    "AMMO POSITION");
     setupToggle(ui->btnToggleWpnIcon,   ui->sectionWpnIcon,   "WEAPON ICON");
     setupToggle(ui->btnToggleHpGauge,   ui->sectionHpGauge,   "HP GAUGE");
     setupToggle(ui->btnToggleAmmoGauge, ui->sectionAmmoGauge, "AMMO GAUGE");
     // Other Metroid Settings 2 tab
     setupToggle(ui->btnToggleInputSettings, ui->sectionInputSettings, "INPUT SETTINGS");
     setupToggle(ui->btnToggleScreenSync,    ui->sectionScreenSync,    "SCREEN SYNC");
+    setupToggle(ui->btnToggleInGameScaling, ui->sectionInGameScaling, "IN-GAME SCALING");
     // Other Metroid Settings tab
     setupToggle(ui->btnToggleSensitivity, ui->sectionSensitivity, "SENSITIVITY");
     setupToggle(ui->btnToggleGameplay,    ui->sectionGameplay,    "GAMEPLAY TOGGLES");
@@ -206,13 +212,13 @@ MelonPrimeInputConfig::MelonPrimeInputConfig(EmuInstance* emu, QWidget* parent) 
     {
         struct Clr { int r, g, b; };
         static const Clr presets[] = {
-            {0,255,0}, {255,0,0}, {255,165,0}, {255,255,0}, {0,200,255}, {255,255,255}
+            {0,255,0}, {255,0,0}, {255,165,0}, {255,255,0}, {0,200,255}, {255,255,255}, {56,192,8}, {88,224,40}, {88,224,40}
         };
         int r = ui->spinMetroidHudHpGaugeColorR->value();
         int g = ui->spinMetroidHudHpGaugeColorG->value();
         int b = ui->spinMetroidHudHpGaugeColorB->value();
-        int idx = 6; // Custom
-        for (int i = 0; i < 6; i++) {
+        int idx = 8; // Custom
+        for (int i = 0; i < 8; i++) {
             if (r == presets[i].r && g == presets[i].g && b == presets[i].b) { idx = i; break; }
         }
         ui->comboMetroidHudHpGaugeColor->setCurrentIndex(idx);
@@ -221,9 +227,9 @@ MelonPrimeInputConfig::MelonPrimeInputConfig(EmuInstance* emu, QWidget* parent) 
     connect(ui->comboMetroidHudHpGaugeColor, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this](int idx) {
         struct Clr { int r, g, b; };
         static const Clr presets[] = {
-            {0,255,0}, {255,0,0}, {255,165,0}, {255,255,0}, {0,200,255}, {255,255,255}
+            {0,255,0}, {255,0,0}, {255,165,0}, {255,255,0}, {0,200,255}, {255,255,255}, {56,192,8}, {88,224,40}, {88,224,40}
         };
-        if (idx < 0 || idx >= 6) return;
+        if (idx < 0 || idx >= 8) return;
         ui->spinMetroidHudHpGaugeColorR->blockSignals(true);
         ui->spinMetroidHudHpGaugeColorG->blockSignals(true);
         ui->spinMetroidHudHpGaugeColorB->blockSignals(true);
@@ -239,7 +245,7 @@ MelonPrimeInputConfig::MelonPrimeInputConfig(EmuInstance* emu, QWidget* parent) 
     // HP gauge RGB spin → hex + Custom
     auto hpGaugeRgbChanged = [this]() {
         ui->comboMetroidHudHpGaugeColor->blockSignals(true);
-        ui->comboMetroidHudHpGaugeColor->setCurrentIndex(6);
+        ui->comboMetroidHudHpGaugeColor->setCurrentIndex(8);
         ui->comboMetroidHudHpGaugeColor->blockSignals(false);
         ui->leMetroidHudHpGaugeColorCode->setText(
             QString("#%1%2%3")
@@ -261,7 +267,7 @@ MelonPrimeInputConfig::MelonPrimeInputConfig(EmuInstance* emu, QWidget* parent) 
         ui->spinMetroidHudHpGaugeColorG->setValue(c.green());
         ui->spinMetroidHudHpGaugeColorB->setValue(c.blue());
         ui->comboMetroidHudHpGaugeColor->blockSignals(true);
-        ui->comboMetroidHudHpGaugeColor->setCurrentIndex(6);
+        ui->comboMetroidHudHpGaugeColor->setCurrentIndex(8);
         ui->comboMetroidHudHpGaugeColor->blockSignals(false);
         ui->spinMetroidHudHpGaugeColorR->blockSignals(false);
         ui->spinMetroidHudHpGaugeColorG->blockSignals(false);
@@ -289,13 +295,13 @@ MelonPrimeInputConfig::MelonPrimeInputConfig(EmuInstance* emu, QWidget* parent) 
     {
         struct Clr { int r, g, b; };
         static const Clr presets[] = {
-            {0,200,255}, {0,255,0}, {255,0,0}, {255,165,0}, {255,255,0}, {255,255,255}
+            {0,200,255}, {0,255,0}, {255,0,0}, {255,165,0}, {255,255,0}, {255,255,255}, {56,192,8}, {88,224,40}, {88,224,40}
         };
         int r = ui->spinMetroidHudAmmoGaugeColorR->value();
         int g = ui->spinMetroidHudAmmoGaugeColorG->value();
         int b = ui->spinMetroidHudAmmoGaugeColorB->value();
-        int idx = 6; // Custom
-        for (int i = 0; i < 6; i++) {
+        int idx = 8; // Custom
+        for (int i = 0; i < 8; i++) {
             if (r == presets[i].r && g == presets[i].g && b == presets[i].b) { idx = i; break; }
         }
         ui->comboMetroidHudAmmoGaugeColor->setCurrentIndex(idx);
@@ -304,9 +310,9 @@ MelonPrimeInputConfig::MelonPrimeInputConfig(EmuInstance* emu, QWidget* parent) 
     connect(ui->comboMetroidHudAmmoGaugeColor, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this](int idx) {
         struct Clr { int r, g, b; };
         static const Clr presets[] = {
-            {0,200,255}, {0,255,0}, {255,0,0}, {255,165,0}, {255,255,0}, {255,255,255}
+            {0,200,255}, {0,255,0}, {255,0,0}, {255,165,0}, {255,255,0}, {255,255,255}, {56,192,8}, {88,224,40}, {88,224,40}
         };
-        if (idx < 0 || idx >= 6) return;
+        if (idx < 0 || idx >= 8) return;
         ui->spinMetroidHudAmmoGaugeColorR->blockSignals(true);
         ui->spinMetroidHudAmmoGaugeColorG->blockSignals(true);
         ui->spinMetroidHudAmmoGaugeColorB->blockSignals(true);
@@ -322,7 +328,7 @@ MelonPrimeInputConfig::MelonPrimeInputConfig(EmuInstance* emu, QWidget* parent) 
     // Ammo gauge RGB spin → hex + Custom
     auto ammoGaugeRgbChanged = [this]() {
         ui->comboMetroidHudAmmoGaugeColor->blockSignals(true);
-        ui->comboMetroidHudAmmoGaugeColor->setCurrentIndex(6);
+        ui->comboMetroidHudAmmoGaugeColor->setCurrentIndex(8);
         ui->comboMetroidHudAmmoGaugeColor->blockSignals(false);
         ui->leMetroidHudAmmoGaugeColorCode->setText(
             QString("#%1%2%3")
@@ -344,7 +350,7 @@ MelonPrimeInputConfig::MelonPrimeInputConfig(EmuInstance* emu, QWidget* parent) 
         ui->spinMetroidHudAmmoGaugeColorG->setValue(c.green());
         ui->spinMetroidHudAmmoGaugeColorB->setValue(c.blue());
         ui->comboMetroidHudAmmoGaugeColor->blockSignals(true);
-        ui->comboMetroidHudAmmoGaugeColor->setCurrentIndex(6);
+        ui->comboMetroidHudAmmoGaugeColor->setCurrentIndex(8);
         ui->comboMetroidHudAmmoGaugeColor->blockSignals(false);
         ui->spinMetroidHudAmmoGaugeColorR->blockSignals(false);
         ui->spinMetroidHudAmmoGaugeColorG->blockSignals(false);
@@ -448,9 +454,11 @@ MelonPrimeInputConfig::MelonPrimeInputConfig(EmuInstance* emu, QWidget* parent) 
             {0,255,255},   // 5: Cyan
             {255,105,180}, // 6: Pink
             {255,0,0},     // 7: Red
+            {56,192,8},    // 8: Sylux Hud Color
+            {88,224,40},   // 9: Sylux Crosshair Color
         };
-        int presetIdx = 8; // Custom
-        for (int i = 0; i < 8; i++) {
+        int presetIdx = 10; // Custom
+        for (int i = 0; i < 10; i++) {
             if (chR == presets[i].r && chG == presets[i].g && chB == presets[i].b) {
                 presetIdx = i; break;
             }
@@ -643,8 +651,13 @@ void MelonPrimeInputConfig::saveConfig()
     // Screen Sync Mode
     instcfg.SetInt("Metroid.Screen.SyncMode", ui->comboMetroidScreenSyncMode->currentIndex());
 
+    // In-game scaling
+    instcfg.SetBool("Metroid.Visual.InGameScaling", ui->cbMetroidInGameScaling->checkState() == Qt::Checked);
+    instcfg.SetInt("Metroid.Visual.InGameScalingMode", ui->comboMetroidInGameScalingMode->currentIndex());
+
     // Custom HUD
     instcfg.SetBool("Metroid.Visual.CustomHUD", ui->cbMetroidEnableCustomHud->checkState() == Qt::Checked);
+    instcfg.SetInt("Metroid.Visual.HudFontSize", ui->spinMetroidHudFontSize->value());
 
     // Crosshair — Color
     instcfg.SetInt("Metroid.Visual.CrosshairColorR", ui->spinMetroidCrosshairR->value());
@@ -809,7 +822,7 @@ void MelonPrimeInputConfig::onCrosshairColorSpinChanged()
 
     // Switch to Custom if user manually tweaked RGB
     ui->comboMetroidCrosshairColor->blockSignals(true);
-    ui->comboMetroidCrosshairColor->setCurrentIndex(8);
+    ui->comboMetroidCrosshairColor->setCurrentIndex(10);
     ui->comboMetroidCrosshairColor->blockSignals(false);
 }
 
@@ -837,7 +850,7 @@ void MelonPrimeInputConfig::on_leMetroidCrosshairColorCode_editingFinished()
 
     // Switch combo to Custom since user typed a code
     ui->comboMetroidCrosshairColor->blockSignals(true);
-    ui->comboMetroidCrosshairColor->setCurrentIndex(8);
+    ui->comboMetroidCrosshairColor->setCurrentIndex(10);
     ui->comboMetroidCrosshairColor->blockSignals(false);
 }
 
@@ -854,8 +867,10 @@ void MelonPrimeInputConfig::on_comboMetroidCrosshairColor_currentIndexChanged(in
         {0,255,255},   // 5: Cyan
         {255,105,180}, // 6: Pink
         {255,0,0},     // 7: Red
+        {56,192,8},    // 8: Sylux Hud Color
+            {88,224,40},   // 9: Sylux Crosshair Color
     };
-    if (index < 0 || index >= 8) return; // Custom (8) = don't change
+    if (index < 0 || index >= 10) return; // Custom (9) = don't change
 
     ui->spinMetroidCrosshairR->blockSignals(true);
     ui->spinMetroidCrosshairG->blockSignals(true);
