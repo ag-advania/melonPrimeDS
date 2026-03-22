@@ -618,7 +618,7 @@
 									<item row="6" column="0"><widget class="QLabel"><property name="text"><string>Center Dot Opacity</string></property></widget></item>
 									<item row="6" column="1"><widget class="QDoubleSpinBox" name="spinMetroidCrosshairDotOpacity"><property name="minimum"><double>0.0</double></property><property name="maximum"><double>1.0</double></property><property name="singleStep"><double>0.05</double></property><property name="value"><double>1.0</double></property><property name="decimals"><number>2</number></property></widget></item>
 									<item row="7" column="0"><widget class="QLabel"><property name="text"><string>Center Dot Thickness</string></property></widget></item>
-									<item row="7" column="1"><widget class="QSpinBox" name="spinMetroidCrosshairDotThickness"><property name="minimum"><number>1</number></property><property name="maximum"><number>6</number></property><property name="value"><number>2</number></property></widget></item>
+									<item row="7" column="1"><widget class="QSpinBox" name="spinMetroidCrosshairDotThickness"><property name="minimum"><number>1</number></property><property name="maximum"><number>6</number></property><property name="value"><number>1</number></property></widget></item>
 									<item row="8" column="0"><widget class="QLabel"><property name="text"><string>T-Style</string></property></widget></item>
 									<item row="8" column="1"><widget class="QCheckBox" name="cbMetroidCrosshairTStyle"><property name="text"><string>(no top line)</string></property><property name="checked"><bool>true</bool></property></widget></item>
 								</layout>

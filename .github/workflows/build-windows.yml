@@ -10,6 +10,7 @@ env:
   MELONDS_GIT_BRANCH: ${{ github.ref }}
   MELONDS_GIT_HASH: ${{ github.sha }}
   MELONDS_BUILD_PROVIDER: GitHub Actions
+
   VCPKG_ROOT: ${{ github.workspace }}/vcpkg
   VCPKG_DOWNLOADS: ${{ github.workspace }}/vcpkg_downloads
   VCPKG_DISABLE_METRICS: 1
@@ -34,7 +35,8 @@ jobs:
       with:
         path: C:/msys64/var/cache/pacman/pkg
         key: msys2-cache-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json') }}
-        restore-keys: msys2-cache-
+        restore-keys: |
+          msys2-cache-
 
     - name: Set up MSYS2
       uses: msys2/setup-msys2@v2
@@ -55,9 +57,9 @@ jobs:
         mkdir -p "${{ github.workspace }}/vcpkg_installed"
         mkdir -p "${{ github.workspace }}/vcpkg_downloads"
 
-    - name: Cache vcpkg downloads, installed, and binaries
-      id: vcpkg_cache
-      uses: actions/cache@v4
+    - name: Restore vcpkg downloads, installed, and binaries
+      id: vcpkg_cache_restore
+      uses: actions/cache/restore@v4
       with:
         path: |
           ${{ github.workspace }}/vcpkg_downloads
@@ -94,11 +96,22 @@ jobs:
           -DVCPKG_INSTALLED_DIR="${{ github.workspace }}/vcpkg_installed" \
           -DVCPKG_DOWNLOADS="${{ github.workspace }}/vcpkg_downloads"
 
+    - name: Save vcpkg downloads, installed, and binaries
+      if: always()
+      uses: actions/cache/save@v4
+      with:
+        path: |
+          ${{ github.workspace }}/vcpkg_downloads
+          ${{ github.workspace }}/vcpkg_installed
+          ${{ github.workspace }}/vcpkg_binary_cache
+        key: ${{ runner.os }}-vcpkg-ucrt64-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json', 'CMakePresets.json', 'cmake/overlay-triplets/**', 'cmake/overlay-ports/**') }}
+
     - name: Build
       run: |
         cmake --build --preset=release-mingw-x86_64 --parallel
 
-    - uses: actions/upload-artifact@v4
+    - name: Upload artifact
+      uses: actions/upload-artifact@v4
       with:
         name: melonDS-windows-x86_64
         path: ./build/release-mingw-x86_64/melonDS.exe
