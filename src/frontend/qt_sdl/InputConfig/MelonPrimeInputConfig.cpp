@@ -105,35 +105,37 @@ MelonPrimeInputConfig::MelonPrimeInputConfig(EmuInstance* emu, QWidget* parent) 
     ui->cbMetroidEnableCustomHud->setChecked(instcfg.GetBool("Metroid.Visual.CustomHUD"));
     ui->spinMetroidHudFontSize->setValue(instcfg.GetInt("Metroid.Visual.HudFontSize"));
 
-    // --- Collapsible sections: default hidden, toggle with arrow buttons ---
-    auto setupToggle = [](QPushButton* btn, QWidget* section, const QString& label) {
-        section->setVisible(false);
-        btn->setText(QString::fromUtf8("▶ ") + label);
+    // --- Collapsible sections: remember expand/collapse state ---
+    auto setupToggle = [&instcfg](QPushButton* btn, QWidget* section, const QString& label, const char* cfgKey) {
+        bool expanded = instcfg.GetBool(cfgKey);
+        section->setVisible(expanded);
+        btn->setChecked(expanded);
+        btn->setText((expanded ? QString::fromUtf8("▼ ") : QString::fromUtf8("▶ ")) + label);
         QObject::connect(btn, &QPushButton::toggled, [btn, section, label](bool checked) {
             section->setVisible(checked);
             btn->setText((checked ? QString::fromUtf8("▼ ") : QString::fromUtf8("▶ ")) + label);
         });
     };
     // Custom HUD tab
-    setupToggle(ui->btnToggleCrosshair, ui->sectionCrosshair, "CROSSHAIR");
-    setupToggle(ui->btnToggleInner,     ui->sectionInner,     "INNER LINES");
-    setupToggle(ui->btnToggleOuter,     ui->sectionOuter,     "OUTER LINES");
+    setupToggle(ui->btnToggleCrosshair, ui->sectionCrosshair, "CROSSHAIR",      "Metroid.UI.SectionCrosshair");
+    setupToggle(ui->btnToggleInner,     ui->sectionInner,     "INNER LINES",    "Metroid.UI.SectionInner");
+    setupToggle(ui->btnToggleOuter,     ui->sectionOuter,     "OUTER LINES",    "Metroid.UI.SectionOuter");
     // HP & Ammo tab
-    setupToggle(ui->btnToggleHpPos,     ui->sectionHpPos,     "HP POSITION");
-    setupToggle(ui->btnToggleWpnPos,    ui->sectionWpnPos,    "AMMO POSITION");
-    setupToggle(ui->btnToggleWpnIcon,   ui->sectionWpnIcon,   "WEAPON ICON");
-    setupToggle(ui->btnToggleHpGauge,   ui->sectionHpGauge,   "HP GAUGE");
-    setupToggle(ui->btnToggleAmmoGauge, ui->sectionAmmoGauge, "AMMO GAUGE");
+    setupToggle(ui->btnToggleHpPos,     ui->sectionHpPos,     "HP POSITION",    "Metroid.UI.SectionHpPos");
+    setupToggle(ui->btnToggleWpnPos,    ui->sectionWpnPos,    "AMMO POSITION",  "Metroid.UI.SectionWpnPos");
+    setupToggle(ui->btnToggleWpnIcon,   ui->sectionWpnIcon,   "WEAPON ICON",    "Metroid.UI.SectionWpnIcon");
+    setupToggle(ui->btnToggleHpGauge,   ui->sectionHpGauge,   "HP GAUGE",       "Metroid.UI.SectionHpGauge");
+    setupToggle(ui->btnToggleAmmoGauge, ui->sectionAmmoGauge, "AMMO GAUGE",     "Metroid.UI.SectionAmmoGauge");
     // Other Metroid Settings 2 tab
-    setupToggle(ui->btnToggleInputSettings, ui->sectionInputSettings, "INPUT SETTINGS");
-    setupToggle(ui->btnToggleScreenSync,    ui->sectionScreenSync,    "SCREEN SYNC");
-    setupToggle(ui->btnToggleInGameScaling, ui->sectionInGameScaling, "IN-GAME SCALING");
+    setupToggle(ui->btnToggleInputSettings, ui->sectionInputSettings, "INPUT SETTINGS",   "Metroid.UI.SectionInputSettings");
+    setupToggle(ui->btnToggleScreenSync,    ui->sectionScreenSync,    "SCREEN SYNC",      "Metroid.UI.SectionScreenSync");
+    setupToggle(ui->btnToggleInGameScaling, ui->sectionInGameScaling, "IN-GAME SCALING",  "Metroid.UI.SectionInGameScaling");
     // Other Metroid Settings tab
-    setupToggle(ui->btnToggleSensitivity, ui->sectionSensitivity, "SENSITIVITY");
-    setupToggle(ui->btnToggleGameplay,    ui->sectionGameplay,    "GAMEPLAY TOGGLES");
-    setupToggle(ui->btnToggleVideo,       ui->sectionVideo,       "VIDEO QUALITY");
-    setupToggle(ui->btnToggleVolume,      ui->sectionVolume,      "VOLUME");
-    setupToggle(ui->btnToggleLicense,     ui->sectionLicense,     "LICENSE APPLY");
+    setupToggle(ui->btnToggleSensitivity, ui->sectionSensitivity, "SENSITIVITY",      "Metroid.UI.SectionSensitivity");
+    setupToggle(ui->btnToggleGameplay,    ui->sectionGameplay,    "GAMEPLAY TOGGLES", "Metroid.UI.SectionGameplay");
+    setupToggle(ui->btnToggleVideo,       ui->sectionVideo,       "VIDEO QUALITY",    "Metroid.UI.SectionVideo");
+    setupToggle(ui->btnToggleVolume,      ui->sectionVolume,      "VOLUME",           "Metroid.UI.SectionVolume");
+    setupToggle(ui->btnToggleLicense,     ui->sectionLicense,     "LICENSE APPLY",    "Metroid.UI.SectionLicense");
 
     // Crosshair — Color
     int chR = instcfg.GetInt("Metroid.Visual.CrosshairColorR");
@@ -658,6 +660,24 @@ void MelonPrimeInputConfig::saveConfig()
     // Custom HUD
     instcfg.SetBool("Metroid.Visual.CustomHUD", ui->cbMetroidEnableCustomHud->checkState() == Qt::Checked);
     instcfg.SetInt("Metroid.Visual.HudFontSize", ui->spinMetroidHudFontSize->value());
+
+    // Section toggle states
+    instcfg.SetBool("Metroid.UI.SectionCrosshair",      ui->btnToggleCrosshair->isChecked());
+    instcfg.SetBool("Metroid.UI.SectionInner",          ui->btnToggleInner->isChecked());
+    instcfg.SetBool("Metroid.UI.SectionOuter",          ui->btnToggleOuter->isChecked());
+    instcfg.SetBool("Metroid.UI.SectionHpPos",          ui->btnToggleHpPos->isChecked());
+    instcfg.SetBool("Metroid.UI.SectionWpnPos",         ui->btnToggleWpnPos->isChecked());
+    instcfg.SetBool("Metroid.UI.SectionWpnIcon",        ui->btnToggleWpnIcon->isChecked());
+    instcfg.SetBool("Metroid.UI.SectionHpGauge",        ui->btnToggleHpGauge->isChecked());
+    instcfg.SetBool("Metroid.UI.SectionAmmoGauge",      ui->btnToggleAmmoGauge->isChecked());
+    instcfg.SetBool("Metroid.UI.SectionInputSettings",  ui->btnToggleInputSettings->isChecked());
+    instcfg.SetBool("Metroid.UI.SectionScreenSync",     ui->btnToggleScreenSync->isChecked());
+    instcfg.SetBool("Metroid.UI.SectionInGameScaling",  ui->btnToggleInGameScaling->isChecked());
+    instcfg.SetBool("Metroid.UI.SectionSensitivity",    ui->btnToggleSensitivity->isChecked());
+    instcfg.SetBool("Metroid.UI.SectionGameplay",       ui->btnToggleGameplay->isChecked());
+    instcfg.SetBool("Metroid.UI.SectionVideo",          ui->btnToggleVideo->isChecked());
+    instcfg.SetBool("Metroid.UI.SectionVolume",         ui->btnToggleVolume->isChecked());
+    instcfg.SetBool("Metroid.UI.SectionLicense",        ui->btnToggleLicense->isChecked());
 
     // Crosshair — Color
     instcfg.SetInt("Metroid.Visual.CrosshairColorR", ui->spinMetroidCrosshairR->value());
