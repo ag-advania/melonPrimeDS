@@ -464,11 +464,7 @@ static void DrawCrosshair(QPainter* p, melonDS::u8* ram,
     int dotHalf = cs.dotThickness / 2;
 
     // === Pass 1: ALL outlines as one flat layer ===
-    // Render all outlines to an off-screen buffer as opaque black,
-    // then composite the buffer onto the main painter at outlineOpacity.
-    // This prevents overlapping outlines from doubling up in darkness.
     if (cs.outline && cs.outlineOpacity > 0.0) {
-        // Use the overlay size (256x192 for DS top screen)
         QImage olBuf(256, 192, QImage::Format_ARGB32_Premultiplied);
         olBuf.fill(Qt::transparent);
         {
@@ -500,9 +496,8 @@ static void DrawCrosshair(QPainter* p, melonDS::u8* ram,
                 olP.drawLine(outerArms[i].x1, outerArms[i].y1,
                              outerArms[i].x2, outerArms[i].y2);
             }
-        } // olP destroyed — safe to read olBuf
+        }
 
-        // Composite the outline buffer at the desired opacity
         p->setOpacity(cs.outlineOpacity);
         p->drawImage(0, 0, olBuf);
         p->setOpacity(1.0);
