@@ -47,7 +47,7 @@ static bool s_scalePatchApplied = false;
 static void ApplyScalingPatch(melonDS::NDS* nds, const RomAddresses& rom, int mode)
 {
     if (mode < 0 || mode > 3) return;
-    melonDS::u8* ram = nds->MainRAM();
+    melonDS::u8* ram = nds->MainRAM;
 
     // ARM instruction patches (32-bit writes)
     uint32_t instr = kScalePatchInstr[mode];
@@ -63,7 +63,7 @@ static void ApplyScalingPatch(melonDS::NDS* nds, const RomAddresses& rom, int mo
 static void RestoreScalingPatch(melonDS::NDS* nds, const RomAddresses& rom)
 {
     if (!s_scalePatchApplied) return;
-    melonDS::u8* ram = nds->MainRAM();
+    melonDS::u8* ram = nds->MainRAM;
 
     Write32(ram, rom.scalePatchAddr1, kScaleOrig1);
     Write32(ram, rom.scalePatchAddr2, kScaleOrig2);
