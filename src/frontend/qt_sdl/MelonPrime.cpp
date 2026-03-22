@@ -196,8 +196,8 @@ namespace MelonPrime {
 #ifdef MELONPRIME_CUSTOM_HUD
         CustomHud_ResetPatchState();
 #endif
-#ifdef MELONPRIME_INGAME_SCALING
-        InGameScaling_ResetPatchState();
+#ifdef MELONPRIME_DS
+        InGameAspectRatio_ResetPatchState();
 #endif
 
         ReloadConfigFlags();
@@ -217,8 +217,8 @@ namespace MelonPrime {
 #ifdef MELONPRIME_CUSTOM_HUD
         CustomHud_ResetPatchState();
 #endif
-#ifdef MELONPRIME_INGAME_SCALING
-        InGameScaling_ResetPatchState();
+#ifdef MELONPRIME_DS
+        InGameAspectRatio_ResetPatchState();
 #endif
     }
 
