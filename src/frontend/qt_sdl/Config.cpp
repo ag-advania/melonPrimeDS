@@ -241,6 +241,22 @@ namespace Config
         {"Instance*.Metroid.Visual.HudWeaponIconShow", true},
         {"Instance*.Metroid.Visual.HudAmmoGauge", true},
         {"Instance*.Metroid.Visual.InGameScaling", false},
+        {"Instance*.Metroid.UI.SectionCrosshair",      false},
+        {"Instance*.Metroid.UI.SectionInner",          false},
+        {"Instance*.Metroid.UI.SectionOuter",          false},
+        {"Instance*.Metroid.UI.SectionHpPos",          false},
+        {"Instance*.Metroid.UI.SectionWpnPos",         false},
+        {"Instance*.Metroid.UI.SectionWpnIcon",        false},
+        {"Instance*.Metroid.UI.SectionHpGauge",        false},
+        {"Instance*.Metroid.UI.SectionAmmoGauge",      false},
+        {"Instance*.Metroid.UI.SectionInputSettings",  false},
+        {"Instance*.Metroid.UI.SectionScreenSync",     false},
+        {"Instance*.Metroid.UI.SectionInGameScaling",  false},
+        {"Instance*.Metroid.UI.SectionSensitivity",    false},
+        {"Instance*.Metroid.UI.SectionGameplay",       false},
+        {"Instance*.Metroid.UI.SectionVideo",          false},
+        {"Instance*.Metroid.UI.SectionVolume",         false},
+        {"Instance*.Metroid.UI.SectionLicense",        false},
         /* MelonPrimeDS Crosshair bools } */
         /* MelonPrimeDS } */
     #endif
