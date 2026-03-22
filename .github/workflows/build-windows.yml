@@ -12,7 +12,6 @@ env:
   MELONDS_BUILD_PROVIDER: GitHub Actions
 
   VCPKG_ROOT: ${{ github.workspace }}/vcpkg
-  VCPKG_COMMIT: 44bb3ce006467fc13ba37ca099f64077b8bbf84d
   VCPKG_DISABLE_METRICS: 1
   VCPKG_BINARY_SOURCES: clear;files,${{ github.workspace }}/vcpkg_binary_cache,readwrite
 
@@ -43,38 +42,36 @@ jobs:
             make:p
             pkgconf:p
 
-      - name: Setup pinned vcpkg
-        run: |
-          if [ ! -d "$VCPKG_ROOT/.git" ]; then
-            git clone https://github.com/Microsoft/vcpkg.git "$VCPKG_ROOT"
-          fi
-
-          cd "$VCPKG_ROOT"
-          git fetch --depth 1 origin "$VCPKG_COMMIT"
-          git checkout --force "$VCPKG_COMMIT"
-
-          if [ ! -f "$VCPKG_ROOT/vcpkg.exe" ]; then
-            "$VCPKG_ROOT/bootstrap-vcpkg.bat" -disableMetrics
-          fi
-
-          "$VCPKG_ROOT/vcpkg.exe" version
-
       - name: Ensure cache directories exist
         run: |
           mkdir -p "${{ github.workspace }}/vcpkg_binary_cache"
           mkdir -p "${{ github.workspace }}/vcpkg_installed"
-          mkdir -p "$VCPKG_ROOT/downloads"
 
       - name: Cache vcpkg downloads, installed, and binaries
+        id: vcpkg_cache
         uses: actions/cache@v4
         with:
           path: |
             ${{ github.workspace }}/vcpkg/downloads
             ${{ github.workspace }}/vcpkg_installed
             ${{ github.workspace }}/vcpkg_binary_cache
-          key: ${{ runner.os }}-ucrt64-vcpkg-${{ env.VCPKG_COMMIT }}-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json', 'CMakePresets.json', 'cmake/overlay-triplets/**', 'cmake/overlay-ports/**') }}
+          key: ${{ runner.os }}-vcpkg-ucrt64-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json', 'CMakePresets.json', 'cmake/overlay-triplets/**', 'cmake/overlay-ports/**') }}
           restore-keys: |
-            ${{ runner.os }}-ucrt64-vcpkg-${{ env.VCPKG_COMMIT }}-
+            ${{ runner.os }}-vcpkg-ucrt64-
+
+      - name: Setup vcpkg
+        run: |
+          if [ ! -d "$VCPKG_ROOT/.git" ]; then
+            echo "Cloning vcpkg..."
+            git clone --depth 1 https://github.com/Microsoft/vcpkg.git "$VCPKG_ROOT"
+          fi
+
+          if [ ! -f "$VCPKG_ROOT/vcpkg.exe" ]; then
+            echo "Bootstrapping vcpkg..."
+            "$VCPKG_ROOT/bootstrap-vcpkg.bat" -disableMetrics
+          fi
+
+          "$VCPKG_ROOT/vcpkg.exe" version
 
       - name: Configure
         run: |
