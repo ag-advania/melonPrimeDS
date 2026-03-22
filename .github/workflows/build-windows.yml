@@ -35,11 +35,17 @@ jobs:
         path: |
           C:/msys64/var/cache/pacman/pkg
           C:/msys64/etc/pacman.d/gnupg
-          D:/a/_temp/msys64/var/cache/pacman/pkg
           ${{ github.workspace }}/vcpkg/downloads/tools/msys2
         key: ${{ runner.os }}-msys2-pacman-${{ hashFiles('CMakeLists.txt', 'cmake/**', 'vcpkg.json') }}
         restore-keys: |
           ${{ runner.os }}-msys2-pacman-
+
+    - name: Remove stale MSYS2 temp directory
+      shell: pwsh
+      run: |
+        if (Test-Path 'D:\a\_temp\msys64') {
+          Remove-Item 'D:\a\_temp\msys64' -Recurse -Force
+        }
 
     - name: Set up MSYS2
       uses: msys2/setup-msys2@v2
