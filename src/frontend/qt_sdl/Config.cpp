@@ -149,16 +149,16 @@ namespace Config
         {"Instance*.Metroid.Visual.CrosshairColorR",     255},
         {"Instance*.Metroid.Visual.CrosshairColorG",       0},
         {"Instance*.Metroid.Visual.CrosshairColorB",       0},
-        {"Instance*.Metroid.Visual.CrosshairOutlineThickness", 1},
-        {"Instance*.Metroid.Visual.CrosshairDotThickness",     1},
         {"Instance*.Metroid.Visual.CrosshairInnerLengthX",     2},
         {"Instance*.Metroid.Visual.CrosshairInnerLengthY",     2},
-        {"Instance*.Metroid.Visual.CrosshairInnerThickness",   1},
         {"Instance*.Metroid.Visual.CrosshairInnerOffset",      2},
         {"Instance*.Metroid.Visual.CrosshairOuterLengthX",     1},
         {"Instance*.Metroid.Visual.CrosshairOuterLengthY",     1},
-        {"Instance*.Metroid.Visual.CrosshairOuterThickness",   1},
         {"Instance*.Metroid.Visual.CrosshairOuterOffset",      4},
+        {"Instance*.Metroid.Visual.CrosshairOutlineThickness", 1},
+        {"Instance*.Metroid.Visual.CrosshairDotThickness",     1},
+        {"Instance*.Metroid.Visual.CrosshairInnerThickness",   1},
+        {"Instance*.Metroid.Visual.CrosshairOuterThickness",   1},
         {"Instance*.Metroid.Visual.InGameScalingMode",         2},
         /* MelonPrimeDS Custom HUD Crosshair defaults } */
     #endif
@@ -252,11 +252,11 @@ namespace Config
         {"Instance*.Metroid.UI.SectionInputSettings",  false},
         {"Instance*.Metroid.UI.SectionScreenSync",     false},
         {"Instance*.Metroid.UI.SectionInGameScaling",  false},
-        {"Instance*.Metroid.UI.SectionSensitivity",    false},
-        {"Instance*.Metroid.UI.SectionGameplay",       false},
-        {"Instance*.Metroid.UI.SectionVideo",          false},
-        {"Instance*.Metroid.UI.SectionVolume",         false},
-        {"Instance*.Metroid.UI.SectionLicense",        false},
+        {"Instance*.Metroid.UI.SectionSensitivity",    true},
+        {"Instance*.Metroid.UI.SectionGameplay",       true},
+        {"Instance*.Metroid.UI.SectionVideo",          true},
+        {"Instance*.Metroid.UI.SectionVolume",         true},
+        {"Instance*.Metroid.UI.SectionLicense",        true},
         /* MelonPrimeDS Crosshair bools } */
         /* MelonPrimeDS } */
     #endif
