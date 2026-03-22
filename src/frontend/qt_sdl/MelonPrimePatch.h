@@ -16,7 +16,8 @@ namespace MelonPrime {
     // Applies or restores the in-game aspect ratio scaling patch
     // based on config settings.
     void InGameScaling_Tick(EmuInstance* emu, Config::Table& localCfg,
-                            const RomAddresses& rom, bool isInGame);
+                            const RomAddresses& rom, bool isInGame,
+                            int screenAspectId);
 
     // Reset patch tracking state (call on emu stop/reset).
     void InGameScaling_ResetPatchState();

@@ -1051,7 +1051,7 @@ void ScreenPanelNative::paintEvent(QPaintEvent * event)
             auto* mp = emuThread->GetMelonPrimeCore();
             auto& instcfg = emuInstance->getLocalConfig();
             if (mp && mp->IsRomDetected())
-                MelonPrime::InGameScaling_Tick(emuInstance, instcfg, mp->GetCurrentRom(), mp->IsInGame());
+                MelonPrime::InGameScaling_Tick(emuInstance, instcfg, mp->GetCurrentRom(), mp->IsInGame(), screenAspectTop);
         }
 #endif
 
@@ -1528,7 +1528,7 @@ void ScreenPanelGL::drawScreen()
             auto* mp = emuThread->GetMelonPrimeCore();
             auto& instcfg = emuInstance->getLocalConfig();
             if (mp && mp->IsRomDetected())
-                MelonPrime::InGameScaling_Tick(emuInstance, instcfg, mp->GetCurrentRom(), mp->IsInGame());
+                MelonPrime::InGameScaling_Tick(emuInstance, instcfg, mp->GetCurrentRom(), mp->IsInGame(), screenAspectTop);
         }
 #endif
 
