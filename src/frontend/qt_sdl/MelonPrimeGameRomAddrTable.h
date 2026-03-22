@@ -75,6 +75,13 @@ namespace MelonPrime {
     inline constexpr RomTable<uint32_t> LIST_MaxAmmoMissile    = { 0x020DC726, 0x020DC6E6, 0x020DA866, 0x020DB0E6, 0x020DB106, 0x020DB186, 0x020D3F32 }; // player struct relative (+0xF30)
 #endif
 
+#ifdef MELONPRIME_INGAME_SCALING
+    // In-game aspect ratio scaling patch addresses
+    inline constexpr RomTable<uint32_t> LIST_ScalePatchAddr1   = { 0x0211313C, 0x021130FC, 0x02110FFC, 0x02111ABC, 0x02111ADC, 0x02111B5C, 0x02109B64 };
+    inline constexpr RomTable<uint32_t> LIST_ScalePatchAddr2   = { 0x0211E7E8, 0x0211E7A8, 0x0211C638, 0x0211D168, 0x0211D114, 0x0211D208, 0x02114838 };
+    inline constexpr RomTable<uint32_t> LIST_ScaleValueAddr    = { 0x02112960, 0x02112920, 0x02110820, 0x021112E0, 0x02111300, 0x02111380, 0x021091A4 }; // 16-bit
+#endif
+
     // =========================================================================
     //  Aim Smoothing Patch Target Addresses & Original Instructions
     // =========================================================================
@@ -141,6 +148,11 @@ namespace MelonPrime {
         uint32_t maxAmmoSpecial;    // player struct relative (+0xF30)
         uint32_t maxAmmoMissile;    // player struct relative (+0xF30)
 #endif
+#ifdef MELONPRIME_INGAME_SCALING
+        uint32_t scalePatchAddr1;
+        uint32_t scalePatchAddr2;
+        uint32_t scaleValueAddr;   // 16-bit write target
+#endif
 
         uint32_t aimPatchAddrX;
         uint32_t aimPatchOrigX1;
@@ -179,6 +191,9 @@ namespace MelonPrime {
             LIST_GameOver[i], LIST_BaseViewMode[i],
             LIST_CrosshairPosX[i], LIST_CrosshairPosY[i],
             LIST_MaxHP[i], LIST_MaxAmmoSpecial[i], LIST_MaxAmmoMissile[i],
+#endif
+#ifdef MELONPRIME_INGAME_SCALING
+            LIST_ScalePatchAddr1[i], LIST_ScalePatchAddr2[i], LIST_ScaleValueAddr[i],
 #endif
 
             LIST_AimPatchAddrX[i], LIST_AimPatchOrigX1[i], LIST_AimPatchOrigX2[i], LIST_AimPatchX1[i],

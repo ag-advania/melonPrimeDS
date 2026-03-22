@@ -120,6 +120,7 @@ namespace Config
         /* MelonPrimeDS Custom HUD Crosshair defaults { */
         {"Instance*.Metroid.Visual.HudHpX",               12},
         {"Instance*.Metroid.Visual.HudHpY",               96},
+        {"Instance*.Metroid.Visual.HudFontSize",            8},
         {"Instance*.Metroid.Visual.HudWeaponX",          226},
         {"Instance*.Metroid.Visual.HudWeaponY",           82},
         {"Instance*.Metroid.Visual.HudWeaponIconOffsetX",  0},
@@ -132,18 +133,18 @@ namespace Config
         {"Instance*.Metroid.Visual.HudHpGaugeWidth",         3},
         {"Instance*.Metroid.Visual.HudHpGaugeOffsetX",      -4},
         {"Instance*.Metroid.Visual.HudHpGaugeOffsetY",       0},
-        {"Instance*.Metroid.Visual.HudHpGaugeColorR",        0},
-        {"Instance*.Metroid.Visual.HudHpGaugeColorG",      255},
-        {"Instance*.Metroid.Visual.HudHpGaugeColorB",        0},
+        {"Instance*.Metroid.Visual.HudHpGaugeColorR",       56},
+        {"Instance*.Metroid.Visual.HudHpGaugeColorG",      192},
+        {"Instance*.Metroid.Visual.HudHpGaugeColorB",        8},
         {"Instance*.Metroid.Visual.HudHpGaugeAnchor",        3},
         {"Instance*.Metroid.Visual.HudAmmoGaugeOrientation", 1},
         {"Instance*.Metroid.Visual.HudAmmoGaugeLength",     80},
         {"Instance*.Metroid.Visual.HudAmmoGaugeWidth",       3},
         {"Instance*.Metroid.Visual.HudAmmoGaugeOffsetX",   -10},
         {"Instance*.Metroid.Visual.HudAmmoGaugeOffsetY",     0},
-        {"Instance*.Metroid.Visual.HudAmmoGaugeColorR",      0},
-        {"Instance*.Metroid.Visual.HudAmmoGaugeColorG",    255},
-        {"Instance*.Metroid.Visual.HudAmmoGaugeColorB",      0},
+        {"Instance*.Metroid.Visual.HudAmmoGaugeColorR",     56},
+        {"Instance*.Metroid.Visual.HudAmmoGaugeColorG",    192},
+        {"Instance*.Metroid.Visual.HudAmmoGaugeColorB",      8},
         {"Instance*.Metroid.Visual.HudAmmoGaugeAnchor",      2},
         {"Instance*.Metroid.Visual.CrosshairColorR",     255},
         {"Instance*.Metroid.Visual.CrosshairColorG",       0},
@@ -158,6 +159,7 @@ namespace Config
         {"Instance*.Metroid.Visual.CrosshairOuterLengthY",     1},
         {"Instance*.Metroid.Visual.CrosshairOuterThickness",   1},
         {"Instance*.Metroid.Visual.CrosshairOuterOffset",      4},
+        {"Instance*.Metroid.Visual.InGameScalingMode",         2},
         /* MelonPrimeDS Custom HUD Crosshair defaults } */
     #endif
     };
@@ -238,6 +240,7 @@ namespace Config
         {"Instance*.Metroid.Visual.HudHpGaugeAutoColor", true},
         {"Instance*.Metroid.Visual.HudWeaponIconShow", true},
         {"Instance*.Metroid.Visual.HudAmmoGauge", true},
+        {"Instance*.Metroid.Visual.InGameScaling", false},
         /* MelonPrimeDS Crosshair bools } */
         /* MelonPrimeDS } */
     #endif
