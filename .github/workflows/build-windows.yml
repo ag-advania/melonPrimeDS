@@ -17,7 +17,7 @@ env:
 
 jobs:
   build:
-    runs-on: windows-latest
+    runs-on: windows-2025
 
     defaults:
       run:
@@ -37,7 +37,7 @@ jobs:
           C:/msys64/etc/pacman.d/gnupg
           D:/a/_temp/msys64/var/cache/pacman/pkg
           ${{ github.workspace }}/vcpkg/downloads/tools/msys2
-        key: ${{ runner.os }}-msys2-pacman-${{ hashFiles('CMakeLists.txt', 'cmake/**', 'vcpkg.json', 'vcpkg-configuration.json') }}
+        key: ${{ runner.os }}-msys2-pacman-${{ hashFiles('CMakeLists.txt', 'cmake/**', 'vcpkg.json') }}
         restore-keys: |
           ${{ runner.os }}-msys2-pacman-
 
@@ -68,9 +68,9 @@ jobs:
           ${{ github.workspace }}/vcpkg/downloads
           ${{ github.workspace }}/vcpkg/packages
           ${{ github.workspace }}/vcpkg_binary_cache
-        key: ${{ runner.os }}-vcpkg-${{ env.VCPKG_COMMIT }}-${{ hashFiles('CMakeLists.txt', 'cmake/**', 'cmake/overlay-triplets/*.cmake', 'cmake/overlay-ports/**', 'vcpkg.json', 'vcpkg-configuration.json', 'CMakePresets.json') }}
+        key: ${{ runner.os }}-vcpkg-${{ env.VCPKG_COMMIT }}-${{ hashFiles('CMakeLists.txt', 'cmake/**', 'cmake/overlay-triplets/*.cmake', 'cmake/overlay-ports/**', 'vcpkg.json', 'CMakePresets.json') }}
         restore-keys: |
-          ${{ runner.os }}-vcpkg-${{ env.VCPKG_COMMIT }}-${{ hashFiles('CMakeLists.txt', 'cmake/**', 'vcpkg.json', 'vcpkg-configuration.json') }}
+          ${{ runner.os }}-vcpkg-${{ env.VCPKG_COMMIT }}-${{ hashFiles('CMakeLists.txt', 'cmake/**', 'vcpkg.json') }}
           ${{ runner.os }}-vcpkg-${{ env.VCPKG_COMMIT }}-
 
     - name: Set up vcpkg
@@ -92,10 +92,14 @@ jobs:
         cmake --preset=release-mingw-x86_64 \
           -DMELONDS_EMBED_BUILD_INFO=ON \
           -DCMAKE_BUILD_PARALLEL_LEVEL=${{ env.CMAKE_BUILD_PARALLEL_LEVEL }}
+      env:
+        NINJA_STATUS: "[%f/%t %o/s %es] "
 
     - name: Build
       run: |
         cmake --build --preset=release-mingw-x86_64 --parallel ${{ env.CMAKE_BUILD_PARALLEL_LEVEL }}
+      env:
+        NINJA_STATUS: "[%f/%t %o/s %es] "
 
     - name: Upload artifact
       uses: actions/upload-artifact@v4
