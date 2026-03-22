@@ -100,6 +100,35 @@ MelonPrimeInputConfig::MelonPrimeInputConfig(EmuInstance* emu, QWidget* parent) 
     // Custom HUD
     ui->cbMetroidEnableCustomHud->setChecked(instcfg.GetBool("Metroid.Visual.CustomHUD"));
 
+    // --- Collapsible sections: default hidden, toggle with arrow buttons ---
+    auto setupToggle = [](QPushButton* btn, QWidget* section, const QString& label) {
+        section->setVisible(false);
+        btn->setText(QString::fromUtf8("▶ ") + label);
+        QObject::connect(btn, &QPushButton::toggled, [btn, section, label](bool checked) {
+            section->setVisible(checked);
+            btn->setText((checked ? QString::fromUtf8("▼ ") : QString::fromUtf8("▶ ")) + label);
+        });
+    };
+    // Custom HUD tab
+    setupToggle(ui->btnToggleCrosshair, ui->sectionCrosshair, "CROSSHAIR");
+    setupToggle(ui->btnToggleInner,     ui->sectionInner,     "INNER LINES");
+    setupToggle(ui->btnToggleOuter,     ui->sectionOuter,     "OUTER LINES");
+    // HP & Ammo tab
+    setupToggle(ui->btnToggleHpPos,     ui->sectionHpPos,     "HP POSITION");
+    setupToggle(ui->btnToggleWpnPos,    ui->sectionWpnPos,    "WEAPON POSITION");
+    setupToggle(ui->btnToggleWpnIcon,   ui->sectionWpnIcon,   "WEAPON ICON");
+    setupToggle(ui->btnToggleHpGauge,   ui->sectionHpGauge,   "HP GAUGE");
+    setupToggle(ui->btnToggleAmmoGauge, ui->sectionAmmoGauge, "AMMO GAUGE");
+    // Other Metroid Settings 2 tab
+    setupToggle(ui->btnToggleInputSettings, ui->sectionInputSettings, "INPUT SETTINGS");
+    setupToggle(ui->btnToggleScreenSync,    ui->sectionScreenSync,    "SCREEN SYNC");
+    // Other Metroid Settings tab
+    setupToggle(ui->btnToggleSensitivity, ui->sectionSensitivity, "SENSITIVITY");
+    setupToggle(ui->btnToggleGameplay,    ui->sectionGameplay,    "GAMEPLAY TOGGLES");
+    setupToggle(ui->btnToggleVideo,       ui->sectionVideo,       "VIDEO QUALITY");
+    setupToggle(ui->btnToggleVolume,      ui->sectionVolume,      "VOLUME");
+    setupToggle(ui->btnToggleLicense,     ui->sectionLicense,     "LICENSE APPLY");
+
     // Crosshair — Color
     int chR = instcfg.GetInt("Metroid.Visual.CrosshairColorR");
 

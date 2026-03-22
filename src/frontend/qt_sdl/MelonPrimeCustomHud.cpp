@@ -13,6 +13,7 @@
 #include <QPoint>
 #include <string>
 #include <cmath>
+#include <cstdio>
 
 namespace MelonPrime {
 
@@ -339,10 +340,13 @@ static void DrawWeaponAmmo(QPainter* p, melonDS::u8* ram,
         }
     }
 
-    // Ammo text always at baseX, baseY+8 (baseline)
+    // Ammo text always at baseX, baseY+8 (baseline), zero-padded to min 2 digits
     int textX = baseX, textY = baseY + 8;
-    if (hasAmmo)
-        p->drawText(QPoint(textX, textY), std::to_string(ammo).c_str());
+    if (hasAmmo) {
+        char buf[8];
+        std::snprintf(buf, sizeof(buf), "%02d", ammo);
+        p->drawText(QPoint(textX, textY), buf);
+    }
 
     // Icon position: offset mode (relative to ammo text) or independent (absolute)
     if (showIcon) {
