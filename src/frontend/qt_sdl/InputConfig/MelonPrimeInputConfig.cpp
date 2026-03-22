@@ -97,7 +97,7 @@ MelonPrimeInputConfig::MelonPrimeInputConfig(EmuInstance* emu, QWidget* parent) 
     // Screen Sync Mode
     ui->comboMetroidScreenSyncMode->setCurrentIndex(instcfg.GetInt("Metroid.Screen.SyncMode"));
 
-    // In-game scaling
+    // In-game scaling (mode 0=Auto, 1=5:3, 2=16:10, 3=16:9, 4=21:9)
     ui->cbMetroidInGameScaling->setChecked(instcfg.GetBool("Metroid.Visual.InGameScaling"));
     ui->comboMetroidInGameScalingMode->setCurrentIndex(instcfg.GetInt("Metroid.Visual.InGameScalingMode"));
 
@@ -129,7 +129,7 @@ MelonPrimeInputConfig::MelonPrimeInputConfig(EmuInstance* emu, QWidget* parent) 
     // Other Metroid Settings 2 tab
     setupToggle(ui->btnToggleInputSettings, ui->sectionInputSettings, "INPUT SETTINGS",   "Metroid.UI.SectionInputSettings");
     setupToggle(ui->btnToggleScreenSync,    ui->sectionScreenSync,    "SCREEN SYNC",      "Metroid.UI.SectionScreenSync");
-    setupToggle(ui->btnToggleInGameScaling, ui->sectionInGameScaling, "IN-GAME SCALING",  "Metroid.UI.SectionInGameScaling");
+    setupToggle(ui->btnToggleInGameScaling, ui->sectionInGameScaling, "IN-GAME ASPECT RATIO",  "Metroid.UI.SectionInGameScaling");
     // Other Metroid Settings tab
     setupToggle(ui->btnToggleSensitivity, ui->sectionSensitivity, "SENSITIVITY",      "Metroid.UI.SectionSensitivity");
     setupToggle(ui->btnToggleGameplay,    ui->sectionGameplay,    "GAMEPLAY TOGGLES", "Metroid.UI.SectionGameplay");
