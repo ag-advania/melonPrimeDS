@@ -1,4 +1,4 @@
-#ifdef MELONPRIME_INGAME_SCALING
+#ifdef MELONPRIME_DS
 
 #include "MelonPrimePatch.h"
 #include "MelonPrimeInternal.h"
@@ -17,8 +17,8 @@ namespace MelonPrime {
 // =========================================================================
 
 // Config keys
-static constexpr const char* kCfgScalingEnabled = "Metroid.Visual.InGameScaling";
-static constexpr const char* kCfgScalingMode    = "Metroid.Visual.InGameScalingMode";
+static constexpr const char* kCfgAspectRatioEnabled = "Metroid.Visual.InGameAspectRatio";
+static constexpr const char* kCfgAspectRatioMode    = "Metroid.Visual.InGameAspectRatioMode";
 // Combo: 0=Auto, 1=5:3(3DS), 2=16:10(3DS), 3=16:9, 4=21:9
 
 // Original ARM instructions (restored when patch is disabled)
@@ -47,7 +47,7 @@ static bool s_scalePatchApplied = false;
 static void ApplyScalingPatch(melonDS::NDS* nds, const RomAddresses& rom, int mode)
 {
     if (mode < 0 || mode > 3) return;
-    melonDS::u8* ram = nds->MainRAM();
+    melonDS::u8* ram = nds->MainRAM;
 
     // ARM instruction patches (32-bit writes)
     uint32_t instr = kScalePatchInstr[mode];
@@ -63,7 +63,7 @@ static void ApplyScalingPatch(melonDS::NDS* nds, const RomAddresses& rom, int mo
 static void RestoreScalingPatch(melonDS::NDS* nds, const RomAddresses& rom)
 {
     if (!s_scalePatchApplied) return;
-    melonDS::u8* ram = nds->MainRAM();
+    melonDS::u8* ram = nds->MainRAM;
 
     Write32(ram, rom.scalePatchAddr1, kScaleOrig1);
     Write32(ram, rom.scalePatchAddr2, kScaleOrig2);
@@ -72,7 +72,7 @@ static void RestoreScalingPatch(melonDS::NDS* nds, const RomAddresses& rom)
     s_scalePatchApplied = false;
 }
 
-void InGameScaling_ResetPatchState()
+void InGameAspectRatio_ResetPatchState()
 {
     s_scalePatchApplied = false;
 }
@@ -89,20 +89,20 @@ static int AspectIdToScaleMode(int aspectId)
     }
 }
 
-void InGameScaling_Tick(EmuInstance* emu, Config::Table& localCfg,
+void InGameAspectRatio_Tick(EmuInstance* emu, Config::Table& localCfg,
                         const RomAddresses& rom, bool isInGame,
                         int screenAspectId)
 {
     if (!isInGame) return;
 
-    bool enabled = localCfg.GetBool(kCfgScalingEnabled);
+    bool enabled = localCfg.GetBool(kCfgAspectRatioEnabled);
     if (!enabled) {
         if (s_scalePatchApplied)
             RestoreScalingPatch(emu->getNDS(), rom);
         return;
     }
 
-    int comboMode = localCfg.GetInt(kCfgScalingMode);
+    int comboMode = localCfg.GetInt(kCfgAspectRatioMode);
     // Combo: 0=Auto, 1=5:3, 2=16:10, 3=16:9, 4=21:9
 
     int patchMode;
@@ -125,4 +125,4 @@ void InGameScaling_Tick(EmuInstance* emu, Config::Table& localCfg,
 
 } // namespace MelonPrime
 
-#endif // MELONPRIME_INGAME_SCALING
+#endif // MELONPRIME_DS
