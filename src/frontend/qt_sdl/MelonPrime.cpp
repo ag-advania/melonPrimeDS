@@ -472,6 +472,11 @@ namespace MelonPrime {
 
         MelonPrimeGameSettings::ApplyAimSmoothingPatch(
             emuInstance->getNDS(), m_currentRom, m_disableMphAimSmoothing);
+
+#ifdef MELONPRIME_DS
+        // Apply aspect ratio patch once per game join
+        InGameAspectRatio_ApplyOnce(emuInstance, localCfg, m_currentRom);
+#endif
     }
 
     void MelonPrimeCore::ShowCursor(bool show)
