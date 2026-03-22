@@ -23,6 +23,9 @@
 #include "MapButton.h"
 #include "Platform.h"
 #include "VideoSettingsDialog.h"
+#ifdef MELONPRIME_CUSTOM_HUD
+#include "MelonPrimeCustomHud.h"
+#endif
 
 using namespace melonDS;
 
@@ -752,7 +755,8 @@ void MelonPrimeInputConfig::saveConfig()
     instcfg.SetInt("Metroid.Visual.CrosshairOuterOffset", ui->spinMetroidCrosshairOuterOffset->value());
     instcfg.SetBool("Metroid.Visual.CrosshairOuterLinkXY", ui->cbMetroidCrosshairOuterLinkXY->checkState() == Qt::Checked);
 
-    
+    // P-3: Invalidate cached config so next frame re-reads all values
+    MelonPrime::CustomHud_InvalidateConfigCache();
 }
 
 void MelonPrimeInputConfig::on_metroidResetSensitivityValues_clicked()
