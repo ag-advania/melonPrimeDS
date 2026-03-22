@@ -159,7 +159,7 @@ namespace Config
         {"Instance*.Metroid.Visual.CrosshairDotThickness",     1},
         {"Instance*.Metroid.Visual.CrosshairInnerThickness",   1},
         {"Instance*.Metroid.Visual.CrosshairOuterThickness",   1},
-        {"Instance*.Metroid.Visual.InGameScalingMode",         0},
+        {"Instance*.Metroid.Visual.InGameAspectRatioMode",         0},
         /* MelonPrimeDS Custom HUD Crosshair defaults } */
     #endif
     };
@@ -240,7 +240,7 @@ namespace Config
         {"Instance*.Metroid.Visual.HudHpGaugeAutoColor", true},
         {"Instance*.Metroid.Visual.HudWeaponIconShow", true},
         {"Instance*.Metroid.Visual.HudAmmoGauge", true},
-        {"Instance*.Metroid.Visual.InGameScaling", false},
+        {"Instance*.Metroid.Visual.InGameAspectRatio", false},
         {"Instance*.Metroid.UI.SectionCrosshair",      false},
         {"Instance*.Metroid.UI.SectionInner",          false},
         {"Instance*.Metroid.UI.SectionOuter",          false},
@@ -251,7 +251,7 @@ namespace Config
         {"Instance*.Metroid.UI.SectionAmmoGauge",      false},
         {"Instance*.Metroid.UI.SectionInputSettings",  false},
         {"Instance*.Metroid.UI.SectionScreenSync",     false},
-        {"Instance*.Metroid.UI.SectionInGameScaling",  false},
+        {"Instance*.Metroid.UI.SectionInGameAspectRatio",  false},
         {"Instance*.Metroid.UI.SectionSensitivity",    true},
         {"Instance*.Metroid.UI.SectionGameplay",       true},
         {"Instance*.Metroid.UI.SectionVideo",          true},

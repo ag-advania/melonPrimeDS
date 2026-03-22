@@ -92,6 +92,10 @@ namespace MelonPrime {
         std::memcpy(&ram[addr & Consts::RAM_MASK], &val, sizeof(uint16_t));
     }
 
+    FORCE_INLINE void Write32(melonDS::u8* ram, melonDS::u32 addr, uint32_t val) {
+        std::memcpy(&ram[addr & Consts::RAM_MASK], &val, sizeof(uint32_t));
+    }
+
 } // namespace MelonPrime
 
 #endif // MELONPRIME_INTERNAL_H

@@ -53,7 +53,7 @@
 #include "MelonPrimeCustomHud.h"
 #include <QFontDatabase>
 #endif
-#ifdef MELONPRIME_INGAME_SCALING
+#ifdef MELONPRIME_DS
 #include "MelonPrimePatch.h"
 #endif
 
@@ -1046,12 +1046,12 @@ void ScreenPanelNative::paintEvent(QPaintEvent * event)
         }
 #endif
 
-#ifdef MELONPRIME_INGAME_SCALING
+#ifdef MELONPRIME_DS
         {
             auto* mp = emuThread->GetMelonPrimeCore();
             auto& instcfg = emuInstance->getLocalConfig();
             if (mp && mp->IsRomDetected())
-                MelonPrime::InGameScaling_Tick(emuInstance, instcfg, mp->GetCurrentRom(), mp->IsInGame(), screenAspectTop);
+                MelonPrime::InGameAspectRatio_Tick(emuInstance, instcfg, mp->GetCurrentRom(), mp->IsInGame(), screenAspectTop);
         }
 #endif
 
@@ -1523,12 +1523,12 @@ void ScreenPanelGL::drawScreen()
         }
 #endif
 
-#ifdef MELONPRIME_INGAME_SCALING
+#ifdef MELONPRIME_DS
         {
             auto* mp = emuThread->GetMelonPrimeCore();
             auto& instcfg = emuInstance->getLocalConfig();
             if (mp && mp->IsRomDetected())
-                MelonPrime::InGameScaling_Tick(emuInstance, instcfg, mp->GetCurrentRom(), mp->IsInGame(), screenAspectTop);
+                MelonPrime::InGameAspectRatio_Tick(emuInstance, instcfg, mp->GetCurrentRom(), mp->IsInGame(), screenAspectTop);
         }
 #endif
 
