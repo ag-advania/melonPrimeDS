@@ -13,6 +13,7 @@
 #include <QPoint>
 #include <string>
 #include <cmath>
+#include <cstdio>
 
 namespace MelonPrime {
 
@@ -32,10 +33,43 @@ static constexpr const char* kCfgCustomHud = "Metroid.Visual.CustomHUD";
 static constexpr const char* kCfgChColorR           = "Metroid.Visual.CrosshairColorR";
 
 // HUD element positions
-static constexpr const char* kCfgHudHpX     = "Metroid.Visual.HudHpX";
-static constexpr const char* kCfgHudHpY     = "Metroid.Visual.HudHpY";
-static constexpr const char* kCfgHudWeaponX = "Metroid.Visual.HudWeaponX";
-static constexpr const char* kCfgHudWeaponY = "Metroid.Visual.HudWeaponY";
+static constexpr const char* kCfgHudHpX       = "Metroid.Visual.HudHpX";
+static constexpr const char* kCfgHudHpY       = "Metroid.Visual.HudHpY";
+static constexpr const char* kCfgHudFontSize  = "Metroid.Visual.HudFontSize";
+static constexpr const char* kCfgHudHpPrefix  = "Metroid.Visual.HudHpPrefix";
+static constexpr const char* kCfgHudWeaponX   = "Metroid.Visual.HudWeaponX";
+static constexpr const char* kCfgHudWeaponY   = "Metroid.Visual.HudWeaponY";
+static constexpr const char* kCfgHudAmmoPrefix = "Metroid.Visual.HudAmmoPrefix";
+static constexpr const char* kCfgHudWeaponIconShow    = "Metroid.Visual.HudWeaponIconShow";
+static constexpr const char* kCfgHudWeaponIconMode    = "Metroid.Visual.HudWeaponIconMode"; // 0=offset, 1=independent
+static constexpr const char* kCfgHudWeaponIconOffsetX = "Metroid.Visual.HudWeaponIconOffsetX";
+static constexpr const char* kCfgHudWeaponIconOffsetY = "Metroid.Visual.HudWeaponIconOffsetY";
+static constexpr const char* kCfgHudWeaponIconPosX    = "Metroid.Visual.HudWeaponIconPosX";
+static constexpr const char* kCfgHudWeaponIconPosY    = "Metroid.Visual.HudWeaponIconPosY";
+
+// Gauge settings
+static constexpr const char* kCfgHudHpGauge            = "Metroid.Visual.HudHpGauge";
+static constexpr const char* kCfgHudHpGaugeOrientation = "Metroid.Visual.HudHpGaugeOrientation";
+static constexpr const char* kCfgHudHpGaugeLength      = "Metroid.Visual.HudHpGaugeLength";
+static constexpr const char* kCfgHudHpGaugeWidth       = "Metroid.Visual.HudHpGaugeWidth";
+static constexpr const char* kCfgHudHpGaugeOffsetX     = "Metroid.Visual.HudHpGaugeOffsetX";
+static constexpr const char* kCfgHudHpGaugeOffsetY     = "Metroid.Visual.HudHpGaugeOffsetY";
+static constexpr const char* kCfgHudHpGaugeAutoColor   = "Metroid.Visual.HudHpGaugeAutoColor";
+static constexpr const char* kCfgHudHpGaugeColorR      = "Metroid.Visual.HudHpGaugeColorR";
+static constexpr const char* kCfgHudHpGaugeColorG      = "Metroid.Visual.HudHpGaugeColorG";
+static constexpr const char* kCfgHudHpGaugeColorB      = "Metroid.Visual.HudHpGaugeColorB";
+static constexpr const char* kCfgHudHpGaugeAnchor      = "Metroid.Visual.HudHpGaugeAnchor"; // 0=below, 1=above, 2=right, 3=left
+
+static constexpr const char* kCfgHudAmmoGauge            = "Metroid.Visual.HudAmmoGauge";
+static constexpr const char* kCfgHudAmmoGaugeOrientation = "Metroid.Visual.HudAmmoGaugeOrientation";
+static constexpr const char* kCfgHudAmmoGaugeLength      = "Metroid.Visual.HudAmmoGaugeLength";
+static constexpr const char* kCfgHudAmmoGaugeWidth       = "Metroid.Visual.HudAmmoGaugeWidth";
+static constexpr const char* kCfgHudAmmoGaugeOffsetX     = "Metroid.Visual.HudAmmoGaugeOffsetX";
+static constexpr const char* kCfgHudAmmoGaugeOffsetY     = "Metroid.Visual.HudAmmoGaugeOffsetY";
+static constexpr const char* kCfgHudAmmoGaugeColorR      = "Metroid.Visual.HudAmmoGaugeColorR";
+static constexpr const char* kCfgHudAmmoGaugeColorG      = "Metroid.Visual.HudAmmoGaugeColorG";
+static constexpr const char* kCfgHudAmmoGaugeColorB      = "Metroid.Visual.HudAmmoGaugeColorB";
+static constexpr const char* kCfgHudAmmoGaugeAnchor      = "Metroid.Visual.HudAmmoGaugeAnchor";
 
 // Crosshair — General (continued)
 static constexpr const char* kCfgChColorG           = "Metroid.Visual.CrosshairColorG";
@@ -167,17 +201,108 @@ static inline QImage LoadIcon(const char* resource)
     return img.convertToFormat(QImage::Format_ARGB32_Premultiplied);
 }
 
-static inline void DrawHP(QPainter* p, uint16_t hp, int x, int y)
+// =========================================================================
+//  Gauge drawing — horizontal or vertical bar
+//  orientation: 0=horizontal, 1=vertical
+// =========================================================================
+static void DrawGauge(QPainter* p, int x, int y, float ratio,
+                      const QColor& fillColor, int orientation,
+                      int barLength, int barWidth)
+{
+    if (ratio < 0.0f) ratio = 0.0f;
+    if (ratio > 1.0f) ratio = 1.0f;
+    if (barLength <= 0) barLength = 28;
+    if (barWidth  <= 0) barWidth  = 3;
+
+    QColor bgColor(0, 0, 0, 128);
+
+    if (orientation == 0) {
+        // Horizontal bar
+        p->fillRect(x, y, barLength, barWidth, bgColor);
+        int fillW = static_cast<int>(barLength * ratio);
+        if (fillW > 0) p->fillRect(x, y, fillW, barWidth, fillColor);
+    } else {
+        // Vertical bar (fills bottom to top)
+        p->fillRect(x, y, barWidth, barLength, bgColor);
+        int fillH = static_cast<int>(barLength * ratio);
+        if (fillH > 0) p->fillRect(x, y + barLength - fillH, barWidth, fillH, fillColor);
+    }
+}
+
+static inline QColor HpGaugeColor(uint16_t hp)
+{
+    if (hp <= 25)      return QColor(255, 0, 0);
+    else if (hp <= 50) return QColor(255, 165, 0);
+    else               return QColor(56, 192, 8); // Sylux Hud Color
+}
+
+// Anchor: 0=below, 1=above, 2=right, 3=left, 4=center
+// Computes gauge base position relative to text, then adds user offset.
+static void CalcGaugePos(int textX, int textY, int anchor,
+                         int ofsX, int ofsY, int gaugeLen, int gaugeWid, int ori,
+                         int& outX, int& outY)
+{
+    // Text metrics approximate: ~30px wide, baseline at y, ascent ~8px
+    constexpr int kTextW = 30, kTextH = 8;
+    switch (anchor) {
+    case 0: // Below
+        outX = textX + ofsX;
+        outY = textY + 2 + ofsY;
+        break;
+    case 1: // Above
+        outX = textX + ofsX;
+        outY = textY - kTextH - (ori == 0 ? gaugeWid : gaugeLen) + ofsY;
+        break;
+    case 2: // Right
+        outX = textX + kTextW + ofsX;
+        outY = textY - kTextH / 2 - (ori == 0 ? gaugeWid : gaugeLen) / 2 + ofsY;
+        break;
+    case 3: // Left
+        outX = textX - (ori == 0 ? gaugeLen : gaugeWid) + ofsX;
+        outY = textY - kTextH / 2 - (ori == 0 ? gaugeWid : gaugeLen) / 2 + ofsY;
+        break;
+    case 4: // Center (overlaps text center)
+        outX = textX + kTextW / 2 - (ori == 0 ? gaugeLen : gaugeWid) / 2 + ofsX;
+        outY = textY - kTextH / 2 - (ori == 0 ? gaugeWid : gaugeLen) / 2 + ofsY;
+        break;
+    default:
+        outX = textX + ofsX;
+        outY = textY + 2 + ofsY;
+        break;
+    }
+}
+
+static inline void DrawHP(QPainter* p, uint16_t hp, uint16_t maxHP, int x, int y,
+                           const std::string& prefix,
+                           bool showGauge, int gaugeOri, int gaugeLen, int gaugeWid,
+                           int gaugeOfsX, int gaugeOfsY, int gaugeAnchor,
+                           bool autoColor, const QColor& gaugeColor)
 {
     if (hp <= 25)       p->setPen(QColor(255, 0, 0));
     else if (hp <= 50)  p->setPen(QColor(255, 165, 0));
     else                p->setPen(QColor(255, 255, 255));
-    p->drawText(QPoint(x, y), (std::string("hp ") + std::to_string(hp)).c_str());
+    p->drawText(QPoint(x, y), (prefix + std::to_string(hp)).c_str());
+
+    if (showGauge && maxHP > 0) {
+        float ratio = static_cast<float>(hp) / static_cast<float>(maxHP);
+        QColor gc = autoColor ? HpGaugeColor(hp) : gaugeColor;
+        int gx, gy;
+        CalcGaugePos(x, y, gaugeAnchor, gaugeOfsX, gaugeOfsY, gaugeLen, gaugeWid, gaugeOri, gx, gy);
+        DrawGauge(p, gx, gy, ratio, gc, gaugeOri, gaugeLen, gaugeWid);
+    }
 }
 
 static void DrawWeaponAmmo(QPainter* p, melonDS::u8* ram,
                            uint8_t weapon, uint16_t ammoSpecial, uint32_t addrMissile,
-                           int baseX, int baseY)
+                           uint16_t maxAmmoSpecial, uint16_t maxAmmoMissile,
+                           int baseX, int baseY,
+                           const std::string& ammoPrefix,
+                           bool showIcon, int iconMode,
+                           int iconOfsX, int iconOfsY,
+                           int iconPosX, int iconPosY,
+                           bool showGauge, int gaugeOri, int gaugeLen, int gaugeWid,
+                           int gaugeOfsX, int gaugeOfsY, int gaugeAnchor,
+                           const QColor& gaugeColor)
 {
     p->setPen(Qt::white);
     uint16_t ammo = 0;
@@ -185,12 +310,12 @@ static void DrawWeaponAmmo(QPainter* p, melonDS::u8* ram,
     QImage icon;
 
     switch (weapon) {
-    case 0: // Power Beam — no ammo display, icon only
+    case 0:
         hasAmmo = false;
         icon = LoadIcon(":/mph-icon-pb");
         break;
     case 1: ammo = ammoSpecial / 0x5;  icon = LoadIcon(":/mph-icon-volt"); break;
-    case 2: { // Missiles — reads from separate address
+    case 2: {
         icon = LoadIcon(":/mph-icon-missile");
         uint16_t m = Read16(ram, addrMissile);
         ammo = m / 0x0A;
@@ -205,15 +330,46 @@ static void DrawWeaponAmmo(QPainter* p, melonDS::u8* ram,
     default: return;
     }
 
-    // Layout: ammo text on top, weapon icon below
+    uint16_t maxAmmo = 0;
     if (hasAmmo) {
-        p->drawText(QPoint(baseX, baseY + 8), std::to_string(ammo).c_str());
-        p->drawImage(QPoint(baseX, baseY + 10), icon);
-    } else {
-        // Power Beam: icon only (no ammo text), same position as other weapons
-        p->drawImage(QPoint(baseX, baseY + 10), icon);
+        switch (weapon) {
+        case 1: maxAmmo = maxAmmoSpecial / 0x5;  break;
+        case 2: maxAmmo = maxAmmoMissile / 0x0A; break;
+        case 3: maxAmmo = maxAmmoSpecial / 0x4;  break;
+        case 4: maxAmmo = maxAmmoSpecial / 0x14; break;
+        case 5: maxAmmo = maxAmmoSpecial / 0x5;  break;
+        case 6: maxAmmo = maxAmmoSpecial / 0xA;  break;
+        case 7: maxAmmo = maxAmmoSpecial / 0xA;  break;
+        case 8: maxAmmo = 1; break;
+        default: break;
+        }
+    }
+
+    // Ammo text always at baseX, baseY+8 (baseline), zero-padded to min 2 digits
+    int textX = baseX, textY = baseY + 8;
+    if (hasAmmo) {
+        char buf[8];
+        std::snprintf(buf, sizeof(buf), "%02d", ammo);
+        p->drawText(QPoint(textX, textY), (ammoPrefix + buf).c_str());
+    }
+
+    // Icon position: offset mode (relative to ammo text) or independent (absolute)
+    if (showIcon) {
+        if (iconMode == 0)
+            p->drawImage(QPoint(baseX + iconOfsX, baseY + iconOfsY), icon);
+        else
+            p->drawImage(QPoint(iconPosX, iconPosY), icon);
+    }
+
+    if (showGauge && hasAmmo && maxAmmo > 0) {
+        float ratio = static_cast<float>(ammo) / static_cast<float>(maxAmmo);
+        int gx, gy;
+        CalcGaugePos(textX, textY, gaugeAnchor, gaugeOfsX, gaugeOfsY, gaugeLen, gaugeWid, gaugeOri, gx, gy);
+        DrawGauge(p, gx, gy, ratio, gaugeColor, gaugeOri, gaugeLen, gaugeWid);
     }
 }
+
+
 
 // =========================================================================
 //  Crosshair — Valorant/CSGO style: Inner Lines + Outer Lines
@@ -459,6 +615,9 @@ void CustomHud_Render(
     // --- Resolve player-relative addresses ---
     const uint32_t addrAmmoSpecial = rom.currentAmmoSpecial + offP;
     const uint32_t addrAmmoMissile = rom.currentAmmoMissile + offP;
+    const uint16_t maxHP           = Read16(ram, rom.maxHP + offP);
+    const uint16_t maxAmmoSpecial  = Read16(ram, rom.maxAmmoSpecial + offP);
+    const uint16_t maxAmmoMissile  = Read16(ram, rom.maxAmmoMissile + offP);
 
     // --- Write HudToggle: 0x01 = custom HUD active mode ---
     bool isStartPressed = Read8(ram, rom.startPressed) == 0x01;
@@ -474,11 +633,35 @@ void CustomHud_Render(
     if (isStartPressed || isDead || isGameOver) return;
 
     // =====================================================================
+    //  Font size — shared for HP and Ammo
+    // =====================================================================
+    int hudFontSize = localCfg.GetInt(kCfgHudFontSize);
+    if (hudFontSize > 0) {
+        QFont f = topPaint->font();
+        f.setPixelSize(hudFontSize);
+        topPaint->setFont(f);
+    }
+
+    // =====================================================================
     //  HP — always visible when alive (including altForm/transform)
     // =====================================================================
     int hpX = localCfg.GetInt(kCfgHudHpX);
     int hpY = localCfg.GetInt(kCfgHudHpY);
-    DrawHP(topPaint, currentHP, hpX, hpY);
+    std::string hpPrefix = localCfg.GetString(kCfgHudHpPrefix);
+    bool hpGauge    = localCfg.GetBool(kCfgHudHpGauge);
+    int  hpGaugeOri = localCfg.GetInt(kCfgHudHpGaugeOrientation);
+    int  hpGaugeLen = localCfg.GetInt(kCfgHudHpGaugeLength);
+    int  hpGaugeWid = localCfg.GetInt(kCfgHudHpGaugeWidth);
+    int  hpGaugeOX  = localCfg.GetInt(kCfgHudHpGaugeOffsetX);
+    int  hpGaugeOY  = localCfg.GetInt(kCfgHudHpGaugeOffsetY);
+    int  hpGaugeAnc = localCfg.GetInt(kCfgHudHpGaugeAnchor);
+    bool hpAutoClr  = localCfg.GetBool(kCfgHudHpGaugeAutoColor);
+    QColor hpGaugeClr(localCfg.GetInt(kCfgHudHpGaugeColorR),
+                      localCfg.GetInt(kCfgHudHpGaugeColorG),
+                      localCfg.GetInt(kCfgHudHpGaugeColorB));
+    DrawHP(topPaint, currentHP, maxHP, hpX, hpY, hpPrefix,
+           hpGauge, hpGaugeOri, hpGaugeLen, hpGaugeWid,
+           hpGaugeOX, hpGaugeOY, hpGaugeAnc, hpAutoClr, hpGaugeClr);
 
     // =====================================================================
     //  Weapon/Ammo + Crosshair — first-person only
@@ -487,8 +670,30 @@ void CustomHud_Render(
 
     int wpnX = localCfg.GetInt(kCfgHudWeaponX);
     int wpnY = localCfg.GetInt(kCfgHudWeaponY);
+    std::string ammoPrefix = localCfg.GetString(kCfgHudAmmoPrefix);
+    bool iconShow    = localCfg.GetBool(kCfgHudWeaponIconShow);
+    int  iconMode    = localCfg.GetInt(kCfgHudWeaponIconMode);
+    int  iconOfsX    = localCfg.GetInt(kCfgHudWeaponIconOffsetX);
+    int  iconOfsY    = localCfg.GetInt(kCfgHudWeaponIconOffsetY);
+    int  iconPosX    = localCfg.GetInt(kCfgHudWeaponIconPosX);
+    int  iconPosY    = localCfg.GetInt(kCfgHudWeaponIconPosY);
+    bool ammoGauge   = localCfg.GetBool(kCfgHudAmmoGauge);
+    int  ammoGaugeOri = localCfg.GetInt(kCfgHudAmmoGaugeOrientation);
+    int  ammoGaugeLen = localCfg.GetInt(kCfgHudAmmoGaugeLength);
+    int  ammoGaugeWid = localCfg.GetInt(kCfgHudAmmoGaugeWidth);
+    int  ammoGaugeOX  = localCfg.GetInt(kCfgHudAmmoGaugeOffsetX);
+    int  ammoGaugeOY  = localCfg.GetInt(kCfgHudAmmoGaugeOffsetY);
+    int  ammoGaugeAnc = localCfg.GetInt(kCfgHudAmmoGaugeAnchor);
+    QColor ammoGaugeClr(localCfg.GetInt(kCfgHudAmmoGaugeColorR),
+                        localCfg.GetInt(kCfgHudAmmoGaugeColorG),
+                        localCfg.GetInt(kCfgHudAmmoGaugeColorB));
     uint8_t currentWeapon = Read8(ram, addrHot.currentWeapon);
-    DrawWeaponAmmo(topPaint, ram, currentWeapon, Read16(ram, addrAmmoSpecial), addrAmmoMissile, wpnX, wpnY);
+    DrawWeaponAmmo(topPaint, ram, currentWeapon, Read16(ram, addrAmmoSpecial), addrAmmoMissile,
+                   maxAmmoSpecial, maxAmmoMissile,
+                   wpnX, wpnY, ammoPrefix,
+                   iconShow, iconMode, iconOfsX, iconOfsY, iconPosX, iconPosY,
+                   ammoGauge, ammoGaugeOri, ammoGaugeLen, ammoGaugeWid,
+                   ammoGaugeOX, ammoGaugeOY, ammoGaugeAnc, ammoGaugeClr);
 
     bool isAlt   = Read8(ram, addrHot.isAltForm) == 0x02;
     bool isTrans = (Read8(ram, addrHot.jumpFlag) & 0x10) != 0;

@@ -33,7 +33,7 @@ namespace MelonPrime {
     //    topBuffer      — QImage backing the top overlay (cleared inside)
     //    btmBuffer      — QImage backing the bottom overlay (cleared inside)
     //    isInGame       — whether the game is currently in a match
-    //    topStretchX    — top-screen horizontal stretch ratio vs native 4:3
+    //    topStretchX    — widescreen X stretch factor (1.0=4:3, >1.0=wide)
     // =========================================================================
     void CustomHud_Render(
         EmuInstance* emu,
@@ -46,7 +46,7 @@ namespace MelonPrime {
         QImage* topBuffer,
         QImage* btmBuffer,
         bool isInGame,
-        float topStretchX
+        float topStretchX = 1.0f
     );
 
     // Returns true if the custom HUD setting is enabled in config.
