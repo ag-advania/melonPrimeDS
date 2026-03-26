@@ -110,6 +110,9 @@ public:
 
 private slots:
     void on_metroidResetSensitivityValues_clicked();
+    void resetCrosshairDefaults();
+    void resetHpAmmoDefaults();
+    void resetMatchStatusDefaults();
     void on_metroidSetVideoQualityToLow_clicked();
     void on_metroidSetVideoQualityToHigh_clicked();
     void on_metroidSetVideoQualityToHigh2_clicked();
