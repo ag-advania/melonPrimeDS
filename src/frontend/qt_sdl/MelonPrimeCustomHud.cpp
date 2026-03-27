@@ -12,6 +12,7 @@
 #include <QImage>
 #include <QColor>
 #include <QPoint>
+#include <QRect>
 #include <string>
 #include <cmath>
 #include <cstdio>
@@ -364,6 +365,7 @@ static void FormatTime(char* buf, int bufSize, int seconds)
 // =========================================================================
 struct BattleMatchState {
     uint8_t  mode;
+    uint8_t  keyXX;
     int      goalValue;
     bool     isTimeMode;
     bool     valid;
@@ -384,6 +386,7 @@ void CustomHud_OnMatchJoin(melonDS::u8* ram, const RomAddresses& rom)
 
     uint32_t settings = Read32(ram, rom.battleSettings);
     uint8_t xx = (settings >> 20) & 0xFE; // bit 0 is a flag bit, mask it out
+    b.keyXX = xx;
 
     switch (b.mode) {
     case MODE_BATTLE:
@@ -434,43 +437,59 @@ static void DrawMatchStatusHud(QPainter* p, melonDS::u8* ram,
     const QFontMetrics fm = p->fontMetrics();
     const int fontPixelSize = p->font().pixelSize();
 
-    uint8_t mode = Read8(ram, rom.battleMode);
+    const BattleMatchState* match = s_battleState.valid ? &s_battleState : nullptr;
+    uint8_t mode = match ? match->mode : Read8(ram, rom.battleMode);
     if (mode < MODE_BATTLE || mode > MODE_SURVIVAL) return;
 
     uint32_t playerOfs = static_cast<uint32_t>(playerPos) * 4;
     int currentValue = 0;
-    int goalValue = 0;
-    bool isTimeMode = false;
-
-    uint32_t settings = Read32(ram, rom.battleSettings);
-    uint8_t xx = (settings >> 20) & 0xFE;
+    int goalValue = match ? match->goalValue : 0;
+    bool isTimeMode = match ? match->isTimeMode : false;
+    uint8_t xx = match ? match->keyXX : 0;
 
     switch (mode) {
     case MODE_BATTLE:
     case MODE_NODES:
-        currentValue = static_cast<int>(Read32(ram, rom.basePoint + playerOfs));
-        goalValue = LookupGoal(mode, xx);
-        break;
     case MODE_BOUNTY:
     case MODE_CAPTURE:
         currentValue = static_cast<int>(Read32(ram, rom.basePoint + playerOfs));
-        goalValue = LookupGoal(mode, xx);
         break;
     case MODE_SURVIVAL:
         currentValue = static_cast<int>(Read32(ram, rom.basePoint - 0xB0 + playerOfs));
-        goalValue = LookupGoal(mode, xx);
         break;
     case MODE_DEFENDER:
-    case MODE_PRIME_HUNTER: {
+    case MODE_PRIME_HUNTER:
         currentValue = static_cast<int>(Read32(ram, rom.basePoint - 0x180 + playerOfs)) / 60;
-        uint32_t timeSetting = Read32(ram, rom.battleSettings + 4);
-        uint8_t timeGoalRaw = (timeSetting >> 4) & 0x1F;
-        goalValue = LookupTimeGoalSec(timeGoalRaw);
-        isTimeMode = true;
         break;
-    }
     default:
         return;
+    }
+
+    if (!match) {
+        uint32_t settings = Read32(ram, rom.battleSettings);
+        xx = (settings >> 20) & 0xFE;
+
+        switch (mode) {
+        case MODE_BATTLE:
+        case MODE_NODES:
+        case MODE_BOUNTY:
+        case MODE_CAPTURE:
+            goalValue = LookupGoal(mode, xx);
+            break;
+        case MODE_SURVIVAL:
+            goalValue = LookupGoal(mode, xx);
+            break;
+        case MODE_DEFENDER:
+        case MODE_PRIME_HUNTER: {
+            uint32_t timeSetting = Read32(ram, rom.battleSettings + 4);
+            uint8_t timeGoalRaw = (timeSetting >> 4) & 0x1F;
+            goalValue = LookupTimeGoalSec(timeGoalRaw);
+            isTimeMode = true;
+            break;
+        }
+        default:
+            return;
+        }
     }
 
     if (mode == MODE_SURVIVAL && goalValue > 0) {
@@ -851,13 +870,44 @@ static void DrawCrosshair(QPainter* p, melonDS::u8* ram,
 
     int dotHalf = c.chDotThickness / 2;
 
-    // === Pass 1: Outline (reused buffer) ===
     if (c.chOutline && c.chOutlineOpacity > 0.0) {
+        int minX = cx, maxX = cx, minY = cy, maxY = cy;
+        auto expandBounds = [&](int x, int y, int pad) {
+            if (x - pad < minX) minX = x - pad;
+            if (x + pad > maxX) maxX = x + pad;
+            if (y - pad < minY) minY = y - pad;
+            if (y + pad > maxY) maxY = y + pad;
+        };
+
+        if (c.chCenterDot) {
+            expandBounds(cx, cy, dotHalf + c.chOutlineThickness);
+        }
+        for (int i = 0; i < nInner; i++) {
+            int pad = (c.chInnerThickness + c.chOutlineThickness * 2 + 1) / 2;
+            expandBounds(innerArms[i].x1, innerArms[i].y1, pad);
+            expandBounds(innerArms[i].x2, innerArms[i].y2, pad);
+        }
+        for (int i = 0; i < nOuter; i++) {
+            int pad = (c.chOuterThickness + c.chOutlineThickness * 2 + 1) / 2;
+            expandBounds(outerArms[i].x1, outerArms[i].y1, pad);
+            expandBounds(outerArms[i].x2, outerArms[i].y2, pad);
+        }
+
         QImage& olBuf = GetOutlineBuffer();
-        olBuf.fill(Qt::transparent);
+        const int bufMaxX = olBuf.width() - 1;
+        const int bufMaxY = olBuf.height() - 1;
+        if (minX < 0) minX = 0;
+        if (minY < 0) minY = 0;
+        if (maxX > bufMaxX) maxX = bufMaxX;
+        if (maxY > bufMaxY) maxY = bufMaxY;
+        QRect dirtyRect(minX, minY, maxX - minX + 1, maxY - minY + 1);
+
         {
             QPainter olP(&olBuf);
             olP.setRenderHint(QPainter::Antialiasing, false);
+            olP.setCompositionMode(QPainter::CompositionMode_Source);
+            olP.fillRect(dirtyRect, Qt::transparent);
+            olP.setCompositionMode(QPainter::CompositionMode_SourceOver);
             static const QColor solidBlack(0, 0, 0, 255);
 
             if (c.chCenterDot) {
@@ -883,11 +933,10 @@ static void DrawCrosshair(QPainter* p, melonDS::u8* ram,
             }
         }
         p->setOpacity(c.chOutlineOpacity);
-        p->drawImage(0, 0, olBuf);
+        p->drawImage(dirtyRect.topLeft(), olBuf, dirtyRect);
         p->setOpacity(1.0);
     }
 
-    // === Pass 2: Center dot ===
     if (c.chCenterDot) {
         p->setPen(Qt::NoPen);
         QColor dotColor = c.chColor;
@@ -897,7 +946,6 @@ static void DrawCrosshair(QPainter* p, melonDS::u8* ram,
         p->setBrush(Qt::NoBrush);
     }
 
-    // === Pass 3: Inner fills (one setPen) ===
     if (nInner > 0) {
         QColor clr = c.chColor; clr.setAlphaF(c.chInnerOpacity);
         QPen pen(clr); pen.setWidth(c.chInnerThickness); p->setPen(pen);
@@ -905,7 +953,6 @@ static void DrawCrosshair(QPainter* p, melonDS::u8* ram,
             p->drawLine(innerArms[i].x1, innerArms[i].y1, innerArms[i].x2, innerArms[i].y2);
     }
 
-    // === Pass 4: Outer fills (one setPen) ===
     if (nOuter > 0) {
         QColor clr = c.chColor; clr.setAlphaF(c.chOuterOpacity);
         QPen pen(clr); pen.setWidth(c.chOuterThickness); p->setPen(pen);
@@ -969,7 +1016,7 @@ HOT_FUNCTION void CustomHud_Render(
 
     if (isStartPressed || isDead || isGameOver) return;
 
-    if (c.hudFontSize > 0) {
+    if (c.hudFontSize > 0 && topPaint->font().pixelSize() != c.hudFontSize) {
         QFont f = topPaint->font();
         f.setPixelSize(c.hudFontSize);
         topPaint->setFont(f);
@@ -999,5 +1046,3 @@ HOT_FUNCTION void CustomHud_Render(
 } // namespace MelonPrime
 
 #endif // MELONPRIME_CUSTOM_HUD
-
-
