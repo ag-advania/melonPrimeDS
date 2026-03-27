@@ -327,8 +327,8 @@ MelonPrimeInputConfig::MelonPrimeInputConfig(EmuInstance* emu, QWidget* parent) 
     setupToggle(ui->btnToggleInner,     ui->sectionInner,     "INNER LINES",    "Metroid.UI.SectionInner");
     setupToggle(ui->btnToggleOuter,     ui->sectionOuter,     "OUTER LINES",    "Metroid.UI.SectionOuter");
     // HP & Ammo tab
-    setupToggle(ui->btnToggleHpPos,     ui->sectionHpPos,     "HP POSITION",    "Metroid.UI.SectionHpPos");
-    setupToggle(ui->btnToggleWpnPos,    ui->sectionWpnPos,    "AMMO POSITION",  "Metroid.UI.SectionWpnPos");
+    setupToggle(ui->btnToggleHpPos,     ui->sectionHpPos,     "HP NUMBER POSITION",    "Metroid.UI.SectionHpPos");
+    setupToggle(ui->btnToggleWpnPos,    ui->sectionWpnPos,    "AMMO NUMBER POSITION",  "Metroid.UI.SectionWpnPos");
     setupToggle(ui->btnToggleWpnIcon,   ui->sectionWpnIcon,   "WEAPON ICON",    "Metroid.UI.SectionWpnIcon");
     setupToggle(ui->btnToggleHpGauge,   ui->sectionHpGauge,   "HP GAUGE",       "Metroid.UI.SectionHpGauge");
     setupToggle(ui->btnToggleAmmoGauge, ui->sectionAmmoGauge, "AMMO GAUGE",     "Metroid.UI.SectionAmmoGauge");
@@ -600,6 +600,46 @@ MelonPrimeInputConfig::MelonPrimeInputConfig(EmuInstance* emu, QWidget* parent) 
         ui->comboMetroidHudHpPosition->setCurrentIndex(hpIdx);
         ui->comboMetroidHudWeaponPosition->setCurrentIndex(wpnIdx);
     }
+
+    auto updateWeaponIconModeUi = [this]() {
+        const bool independent = (ui->comboMetroidHudWeaponIconMode->currentIndex() == 1);
+        ui->spinMetroidHudWeaponIconOffsetX->setEnabled(!independent);
+        ui->spinMetroidHudWeaponIconOffsetY->setEnabled(!independent);
+        ui->comboMetroidHudWeaponIconPosition->setEnabled(independent);
+        ui->spinMetroidHudWeaponIconPosX->setEnabled(independent);
+        ui->spinMetroidHudWeaponIconPosY->setEnabled(independent);
+        ui->comboMetroidHudWeaponIconAnchorX->setEnabled(independent);
+        ui->comboMetroidHudWeaponIconAnchorY->setEnabled(independent);
+    };
+    connect(ui->comboMetroidHudWeaponIconMode, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [updateWeaponIconModeUi](int) {
+        updateWeaponIconModeUi();
+    });
+    updateWeaponIconModeUi();
+    auto updateHpGaugeModeUi = [this]() {
+        const bool independent = (ui->comboMetroidHudHpGaugePosMode->currentIndex() == 1);
+        ui->spinMetroidHudHpGaugeOffsetX->setEnabled(!independent);
+        ui->spinMetroidHudHpGaugeOffsetY->setEnabled(!independent);
+        ui->comboMetroidHudHpGaugeAnchor->setEnabled(!independent);
+        ui->spinMetroidHudHpGaugePosX->setEnabled(independent);
+        ui->spinMetroidHudHpGaugePosY->setEnabled(independent);
+    };
+    connect(ui->comboMetroidHudHpGaugePosMode, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [updateHpGaugeModeUi](int) {
+        updateHpGaugeModeUi();
+    });
+    updateHpGaugeModeUi();
+
+    auto updateAmmoGaugeModeUi = [this]() {
+        const bool independent = (ui->comboMetroidHudAmmoGaugePosMode->currentIndex() == 1);
+        ui->spinMetroidHudAmmoGaugeOffsetX->setEnabled(!independent);
+        ui->spinMetroidHudAmmoGaugeOffsetY->setEnabled(!independent);
+        ui->comboMetroidHudAmmoGaugeAnchor->setEnabled(!independent);
+        ui->spinMetroidHudAmmoGaugePosX->setEnabled(independent);
+        ui->spinMetroidHudAmmoGaugePosY->setEnabled(independent);
+    };
+    connect(ui->comboMetroidHudAmmoGaugePosMode, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [updateAmmoGaugeModeUi](int) {
+        updateAmmoGaugeModeUi();
+    });
+    updateAmmoGaugeModeUi();
 
     // HP position preset → update X/Y
     connect(ui->comboMetroidHudHpPosition, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this](int idx) {
