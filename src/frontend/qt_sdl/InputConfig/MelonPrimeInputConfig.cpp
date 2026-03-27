@@ -1680,8 +1680,10 @@ void MelonPrimeInputConfig::on_comboMetroidCrosshairColor_currentIndexChanged(in
 
 void MelonPrimeInputConfig::resetCrosshairDefaults()
 {
+
     // Color: Red (#FF0000) = preset index 7
     ui->comboMetroidCrosshairColor->setCurrentIndex(7); // triggers RGB update
+
     // General
     ui->cbMetroidCrosshairOutline->setChecked(true);
     ui->spinMetroidCrosshairOutlineOpacity->setValue(0.50);
@@ -1690,6 +1692,7 @@ void MelonPrimeInputConfig::resetCrosshairDefaults()
     ui->spinMetroidCrosshairDotOpacity->setValue(1.00);
     ui->spinMetroidCrosshairDotThickness->setValue(1);
     ui->cbMetroidCrosshairTStyle->setChecked(true);
+
     // Inner
     ui->cbMetroidCrosshairInnerShow->setChecked(true);
     ui->spinMetroidCrosshairInnerOpacity->setValue(0.80);
@@ -1698,6 +1701,7 @@ void MelonPrimeInputConfig::resetCrosshairDefaults()
     ui->cbMetroidCrosshairInnerLinkXY->setChecked(true);
     ui->spinMetroidCrosshairInnerThickness->setValue(1);
     ui->spinMetroidCrosshairInnerOffset->setValue(2);
+
     // Outer
     ui->cbMetroidCrosshairOuterShow->setChecked(true);
     ui->spinMetroidCrosshairOuterOpacity->setValue(0.40);
@@ -1706,63 +1710,67 @@ void MelonPrimeInputConfig::resetCrosshairDefaults()
     ui->cbMetroidCrosshairOuterLinkXY->setChecked(true);
     ui->spinMetroidCrosshairOuterThickness->setValue(1);
     ui->spinMetroidCrosshairOuterOffset->setValue(4);
+
     // Font size
     ui->spinMetroidHudFontSize->setValue(8);
 }
 
 void MelonPrimeInputConfig::resetHpAmmoDefaults()
 {
-    // HP Position: Left preset (index 7), X=12, Y=96
-    ui->comboMetroidHudHpPosition->setCurrentIndex(8); // Custom (manual set below)
-    ui->spinMetroidHudHpX->setValue(12);
-    ui->spinMetroidHudHpY->setValue(96);
+
+    // HP Position
+    ui->comboMetroidHudHpPosition->setCurrentIndex(8); // Custom
+    ui->spinMetroidHudHpX->setValue(31);
+    ui->spinMetroidHudHpY->setValue(99);
     ui->leMetroidHudHpPrefix->setText("");
-    // Weapon Position: Right preset (index 3)
+
+    // Weapon Position
     ui->comboMetroidHudWeaponPosition->setCurrentIndex(8); // Custom
-    ui->spinMetroidHudWeaponX->setValue(226);
-    ui->spinMetroidHudWeaponY->setValue(82);
+    ui->spinMetroidHudWeaponX->setValue(216);
+    ui->spinMetroidHudWeaponY->setValue(99);
     ui->leMetroidHudAmmoPrefix->setText("");
+
     // Weapon Icon
     ui->cbMetroidHudWeaponIconShow->setChecked(true);
     ui->comboMetroidHudWeaponIconMode->setCurrentIndex(1); // Independent
     ui->spinMetroidHudWeaponIconOffsetX->setValue(0);
     ui->spinMetroidHudWeaponIconOffsetY->setValue(10);
     ui->comboMetroidHudWeaponIconPosition->setCurrentIndex(8); // Custom
-    ui->spinMetroidHudWeaponIconPosX->setValue(230);
-    ui->spinMetroidHudWeaponIconPosY->setValue(135);
-    ui->comboMetroidHudWeaponIconAnchorX->setCurrentIndex(0); // Left
-    ui->comboMetroidHudWeaponIconAnchorY->setCurrentIndex(0); // Top
+    ui->spinMetroidHudWeaponIconPosX->setValue(239);
+    ui->spinMetroidHudWeaponIconPosY->setValue(149);
+    ui->comboMetroidHudWeaponIconAnchorX->setCurrentIndex(1);
+    ui->comboMetroidHudWeaponIconAnchorY->setCurrentIndex(1);
+
     // HP Gauge
     ui->cbMetroidHudHpGauge->setChecked(true);
     ui->comboMetroidHudHpGaugeOrientation->setCurrentIndex(1); // Vertical
     ui->spinMetroidHudHpGaugeLength->setValue(80);
     ui->spinMetroidHudHpGaugeWidth->setValue(3);
-    ui->spinMetroidHudHpGaugeOffsetX->setValue(-5);
-    ui->spinMetroidHudHpGaugeOffsetY->setValue(-1);
-    ui->comboMetroidHudHpGaugeAnchor->setCurrentIndex(3); // Left
-    ui->comboMetroidHudHpGaugePosMode->setCurrentIndex(0); // Anchor from Text
-    ui->spinMetroidHudHpGaugePosX->setValue(0);
-    ui->spinMetroidHudHpGaugePosY->setValue(96);
+    ui->spinMetroidHudHpGaugeOffsetX->setValue(-14);
+    ui->spinMetroidHudHpGaugeOffsetY->setValue(1);
+    ui->comboMetroidHudHpGaugeAnchor->setCurrentIndex(3);
+    ui->comboMetroidHudHpGaugePosMode->setCurrentIndex(1);
+    ui->spinMetroidHudHpGaugePosX->setValue(14);
+    ui->spinMetroidHudHpGaugePosY->setValue(56);
     ui->cbMetroidHudHpGaugeAutoColor->setChecked(true);
     ui->comboMetroidHudHpGaugeColor->setCurrentIndex(6); // Sylux Hud Color
-    // HP Gauge Color: Sylux Hud Color (#38C008)
     ui->spinMetroidHudHpGaugeColorR->setValue(56);
     ui->spinMetroidHudHpGaugeColorG->setValue(192);
     ui->spinMetroidHudHpGaugeColorB->setValue(8);
     ui->leMetroidHudHpGaugeColorCode->setText("#38C008");
+
     // Ammo Gauge
     ui->cbMetroidHudAmmoGauge->setChecked(true);
     ui->comboMetroidHudAmmoGaugeOrientation->setCurrentIndex(1); // Vertical
     ui->spinMetroidHudAmmoGaugeLength->setValue(80);
     ui->spinMetroidHudAmmoGaugeWidth->setValue(3);
-    ui->spinMetroidHudAmmoGaugeOffsetX->setValue(-10);
-    ui->spinMetroidHudAmmoGaugeOffsetY->setValue(0);
-    ui->comboMetroidHudAmmoGaugeAnchor->setCurrentIndex(2); // Right
-    ui->comboMetroidHudAmmoGaugePosMode->setCurrentIndex(0); // Anchor from Text
-    ui->spinMetroidHudAmmoGaugePosX->setValue(240);
-    ui->spinMetroidHudAmmoGaugePosY->setValue(82);
+    ui->spinMetroidHudAmmoGaugeOffsetX->setValue(-7);
+    ui->spinMetroidHudAmmoGaugeOffsetY->setValue(1);
+    ui->comboMetroidHudAmmoGaugeAnchor->setCurrentIndex(2);
+    ui->comboMetroidHudAmmoGaugePosMode->setCurrentIndex(0);
+    ui->spinMetroidHudAmmoGaugePosX->setValue(239);
+    ui->spinMetroidHudAmmoGaugePosY->setValue(56);
     ui->comboMetroidHudAmmoGaugeColor->setCurrentIndex(6); // Sylux Hud Color
-    // Ammo Gauge Color: Sylux Hud Color (#38C008)
     ui->spinMetroidHudAmmoGaugeColorR->setValue(56);
     ui->spinMetroidHudAmmoGaugeColorG->setValue(192);
     ui->spinMetroidHudAmmoGaugeColorB->setValue(8);
@@ -1771,23 +1779,26 @@ void MelonPrimeInputConfig::resetHpAmmoDefaults()
 
 void MelonPrimeInputConfig::resetMatchStatusDefaults()
 {
+
     ui->cbMetroidHudMatchStatusShow->setChecked(true);
-    ui->spinMetroidHudMatchStatusX->setValue(4);
-    ui->spinMetroidHudMatchStatusY->setValue(16);
+    ui->spinMetroidHudMatchStatusX->setValue(20);
+    ui->spinMetroidHudMatchStatusY->setValue(19);
     ui->comboMetroidHudMatchStatusLabelPos->setCurrentIndex(0); // Above
     ui->spinMetroidHudMatchStatusLabelOfsX->setValue(0);
-    ui->spinMetroidHudMatchStatusLabelOfsY->setValue(0);
+    ui->spinMetroidHudMatchStatusLabelOfsY->setValue(1);
     ui->leMetroidHudMatchStatusLabelPoints->setText("points");
     ui->leMetroidHudMatchStatusLabelOctoliths->setText("octoliths");
     ui->leMetroidHudMatchStatusLabelLives->setText("lives left");
     ui->leMetroidHudMatchStatusLabelRingTime->setText("ring time");
     ui->leMetroidHudMatchStatusLabelPrimeTime->setText("prime time");
+
     // Overall color: White
     ui->comboMetroidHudMatchStatusColor->setCurrentIndex(0);
     ui->spinMetroidHudMatchStatusColorR->setValue(255);
     ui->spinMetroidHudMatchStatusColorG->setValue(255);
     ui->spinMetroidHudMatchStatusColorB->setValue(255);
     ui->leMetroidHudMatchStatusColorCode->setText("#FFFFFF");
+
     // Sub-colors: all Overall
     ui->comboMetroidHudMatchStatusLabelColor->setCurrentIndex(0);
     ui->comboMetroidHudMatchStatusValueColor->setCurrentIndex(0);
