@@ -216,6 +216,8 @@ private:
     bool getClipWanted() const;
     bool m_lastClipInGameState = false;
     bool m_hasLastClipInGameState = false;
+    bool m_lastClipFocusedState = false;
+    bool m_hasLastClipFocusedState = false;
 #endif
 };
 
