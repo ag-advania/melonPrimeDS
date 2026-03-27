@@ -214,51 +214,77 @@ enum BattleMode : uint8_t {
     MODE_SURVIVAL      = 8,
 };
 
-// XX → goal lookup tables
-static constexpr int kBattleGoals[]  = {1,5,7,10,15,20,25,30,40,50,60,70,80,90,100};
-static constexpr int kSurvivalGoals[] = {0,1,2,3,4,5,6,7,8,9,10};
-static constexpr int kOctoGoals[]    = {1,2,3,4,5,6,7,8,9,10,15,20,25};
-static constexpr int kNodeGoals[]    = {40,50,60,70,80,90,100,120,140,160,180,190,200,250};
-
-// Defender/Prime Hunter time goal (in seconds): XY/2 index → seconds
-static constexpr int kTimeGoalSec[] = {60,90,120,150,180,210,240,270,300,360,420,480,540,600};
-
-static int LookupGoal(uint8_t mode, uint8_t xx)
+// XX → goal: direct map from document (no index calculation)
+static int LookupBattleGoal(uint8_t xx)
 {
-    int idx;
-    switch (mode) {
-    case MODE_BATTLE:
-        idx = xx / 4;
-        if (idx >= 0 && idx < (int)(sizeof(kBattleGoals)/sizeof(kBattleGoals[0])))
-            return kBattleGoals[idx];
-        return 0;
-    case MODE_SURVIVAL:
-        idx = (xx - 1) / 4;
-        if (idx >= 0 && idx < (int)(sizeof(kSurvivalGoals)/sizeof(kSurvivalGoals[0])))
-            return kSurvivalGoals[idx];
-        return 0;
-    case MODE_BOUNTY:
-    case MODE_CAPTURE:
-        idx = (xx - 1) / 4;
-        if (idx >= 0 && idx < (int)(sizeof(kOctoGoals)/sizeof(kOctoGoals[0])))
-            return kOctoGoals[idx];
-        return 0;
-    case MODE_NODES:
-        idx = (xx - 1) / 4;
-        if (idx >= 0 && idx < (int)(sizeof(kNodeGoals)/sizeof(kNodeGoals[0])))
-            return kNodeGoals[idx];
-        return 0;
-    default:
-        return 0;
+    switch (xx) {
+    case 0x00: return 1;   case 0x04: return 5;   case 0x08: return 7;
+    case 0x0C: return 10;  case 0x10: return 15;  case 0x14: return 20;
+    case 0x18: return 25;  case 0x1C: return 30;  case 0x20: return 40;
+    case 0x24: return 50;  case 0x28: return 60;  case 0x2C: return 70;
+    case 0x30: return 80;  case 0x34: return 90;  case 0x38: return 100;
+    default: return 0;
     }
 }
 
+static int LookupSurvivalGoal(uint8_t xx)
+{
+    switch (xx) {
+    case 0x00: return 0;  case 0x04: return 1;  case 0x08: return 2;
+    case 0x0C: return 3;  case 0x10: return 4;  case 0x14: return 5;
+    case 0x18: return 6;  case 0x1C: return 7;  case 0x20: return 8;
+    case 0x24: return 9;  case 0x28: return 10;
+    default: return 0;
+    }
+}
+
+static int LookupOctoGoal(uint8_t xx)
+{
+    switch (xx) {
+    case 0x00: return 1;  case 0x04: return 2;  case 0x08: return 3;
+    case 0x0C: return 4;  case 0x10: return 5;  case 0x14: return 6;
+    case 0x18: return 7;  case 0x1C: return 8;  case 0x20: return 9;
+    case 0x24: return 10; case 0x28: return 15; case 0x2C: return 20;
+    case 0x30: return 25;
+    default: return 0;
+    }
+}
+
+static int LookupNodeGoal(uint8_t xx)
+{
+    switch (xx) {
+    case 0x00: return 40;  case 0x04: return 50;  case 0x08: return 60;
+    case 0x0C: return 70;  case 0x10: return 80;  case 0x14: return 90;
+    case 0x18: return 100; case 0x1C: return 120; case 0x20: return 140;
+    case 0x24: return 160; case 0x28: return 180; case 0x2C: return 190;
+    case 0x30: return 200; case 0x34: return 250;
+    default: return 0;
+    }
+}
+
+// Defender/Prime Hunter time goal XY→seconds (from battleSettings+4)
 static int LookupTimeGoalSec(uint8_t xy)
 {
-    int idx = xy / 2;
-    if (idx >= 0 && idx < (int)(sizeof(kTimeGoalSec)/sizeof(kTimeGoalSec[0])))
-        return kTimeGoalSec[idx];
-    return 0;
+    switch (xy) {
+    case 0x00: return 60;  case 0x02: return 90;  case 0x04: return 120;
+    case 0x06: return 150; case 0x08: return 180; case 0x0A: return 210;
+    case 0x0C: return 240; case 0x0E: return 270; case 0x10: return 300;
+    case 0x12: return 360; case 0x14: return 420; case 0x16: return 480;
+    case 0x18: return 540; case 0x1A: return 600;
+    default: return 0;
+    }
+}
+
+static int LookupGoal(uint8_t mode, uint8_t xx)
+{
+    switch (mode) {
+    case MODE_BATTLE:       return LookupBattleGoal(xx);
+    case MODE_SURVIVAL:     return LookupSurvivalGoal(xx);
+    case MODE_BOUNTY:
+    case MODE_CAPTURE:      return LookupOctoGoal(xx);
+    case MODE_NODES:        return LookupNodeGoal(xx);
+    default:                return 0;
+    }
 }
 
 static void FormatTime(char* buf, int bufSize, int seconds)
@@ -292,15 +318,17 @@ void CustomHud_OnMatchJoin(melonDS::u8* ram, const RomAddresses& rom)
     }
 
     uint32_t settings = Read32(ram, rom.battleSettings);
-    uint8_t xx = (settings >> 20) & 0xFF;
+    uint8_t xx = (settings >> 20) & 0xFE; // bit 0 is a flag bit, mask it out
 
     switch (b.mode) {
     case MODE_BATTLE:
     case MODE_NODES:
     case MODE_BOUNTY:
     case MODE_CAPTURE:
-    case MODE_SURVIVAL:
         b.goalValue = LookupGoal(b.mode, xx);
+        break;
+    case MODE_SURVIVAL:
+        b.goalValue = LookupGoal(b.mode, xx) + 1; // table = max deaths, lives = deaths + 1
         break;
     case MODE_DEFENDER:
     case MODE_PRIME_HUNTER: {
@@ -344,9 +372,9 @@ static void DrawMatchStatusHud(QPainter* p, melonDS::u8* ram,
     bool isTimeMode = false;
 
     // Battle settings: QXXV00Z0 format (each char = 1 hex digit)
-    // XX is at bits 27-20
+    // XX is at bits 27-20; bit 0 of the full word is a flag bit, mask it out
     uint32_t settings = Read32(ram, rom.battleSettings);
-    uint8_t xx = (settings >> 20) & 0xFF;
+    uint8_t xx = (settings >> 20) & 0xFE; // bit 0 is a flag bit, not part of XX
 
     switch (mode) {
     case MODE_BATTLE:
@@ -361,7 +389,7 @@ static void DrawMatchStatusHud(QPainter* p, melonDS::u8* ram,
         break;
     case MODE_SURVIVAL:
         currentValue = static_cast<int>(Read32(ram, rom.basePoint - 0xB0 + playerOfs));
-        goalValue = LookupGoal(mode, xx);
+        goalValue = LookupGoal(mode, xx); 
         break;
     case MODE_DEFENDER:
     case MODE_PRIME_HUNTER: {
@@ -385,15 +413,18 @@ static void DrawMatchStatusHud(QPainter* p, melonDS::u8* ram,
         if (currentValue < 0) currentValue = 0;
     }
 
-    // Format value string — always show "current / goal"
-    char buf[32];
+    // Format value string
+    char buf[48];
     if (isTimeMode) {
         char curBuf[16], goalBuf[16];
         FormatTime(curBuf, sizeof(curBuf), currentValue);
         FormatTime(goalBuf, sizeof(goalBuf), goalValue);
         std::snprintf(buf, sizeof(buf), "%s / %s", curBuf, goalBuf);
-    } else {
+    } else if (goalValue > 0) {
         std::snprintf(buf, sizeof(buf), "%d / %d", currentValue, goalValue);
+    } else {
+        // Goal lookup failed — show raw XX for debugging
+        std::snprintf(buf, sizeof(buf), "%d (XX=0x%02X)", currentValue, xx);
     }
 
     // Draw value at base position
