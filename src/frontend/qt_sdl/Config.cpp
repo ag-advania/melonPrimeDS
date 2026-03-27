@@ -139,7 +139,7 @@ namespace Config
         {"Instance*.Metroid.Visual.HudWeaponIconPosY",   149},
         {"Instance*.Metroid.Visual.HudWeaponIconAnchorX",  1},
         {"Instance*.Metroid.Visual.HudWeaponIconAnchorY",  1},
-        {"Instance*.Metroid.Visual.HudWeaponIconColorOverlay", true},
+        {"Instance*.Metroid.Visual.HudWeaponIconColorOverlay", false},
         {"Instance*.Metroid.Visual.HudHpGaugeOrientation",   1},
         {"Instance*.Metroid.Visual.HudHpGaugeLength",       80},
         {"Instance*.Metroid.Visual.HudHpGaugeWidth",         3},
@@ -161,7 +161,7 @@ namespace Config
         {"Instance*.Metroid.Visual.HudAmmoGaugeColorG",    192},
         {"Instance*.Metroid.Visual.HudAmmoGaugeColorB",      8},
         {"Instance*.Metroid.Visual.HudAmmoGaugeAnchor",      2},
-        {"Instance*.Metroid.Visual.HudAmmoGaugePosMode",     0},
+        {"Instance*.Metroid.Visual.HudAmmoGaugePosMode",     1},
         {"Instance*.Metroid.Visual.HudAmmoGaugePosX",      239},
         {"Instance*.Metroid.Visual.HudAmmoGaugePosY",       56},
         /* Battle HUD */
