@@ -120,9 +120,11 @@ namespace Config
         /* MelonPrimeDS Custom HUD Crosshair defaults { */
         {"Instance*.Metroid.Visual.HudHpX",               31},
         {"Instance*.Metroid.Visual.HudHpY",               99},
+        {"Instance*.Metroid.Visual.HudHpAlign",            2},
         {"Instance*.Metroid.Visual.HudFontSize",            8},
         {"Instance*.Metroid.Visual.HudWeaponX",          216},
         {"Instance*.Metroid.Visual.HudWeaponY",           99},
+        {"Instance*.Metroid.Visual.HudAmmoAlign",          2},
         {"Instance*.Metroid.Visual.HudWeaponLayout",       0},
         {"Instance*.Metroid.Visual.HudWeaponIconOffsetX",  0},
         {"Instance*.Metroid.Visual.HudWeaponIconOffsetY", 10},
@@ -1162,3 +1164,4 @@ namespace Config
     }
 
 }
+
