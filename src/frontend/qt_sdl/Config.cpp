@@ -118,11 +118,11 @@ namespace Config
         /* MelonPrimeDS } */
 
         /* MelonPrimeDS Custom HUD Crosshair defaults { */
-        {"Instance*.Metroid.Visual.HudHpX",               31},
+        {"Instance*.Metroid.Visual.HudHpX",               45},
         {"Instance*.Metroid.Visual.HudHpY",               99},
         {"Instance*.Metroid.Visual.HudHpAlign",            2},
         {"Instance*.Metroid.Visual.HudFontSize",            6},
-        {"Instance*.Metroid.Visual.HudWeaponX",          216},
+        {"Instance*.Metroid.Visual.HudWeaponX",          230},
         {"Instance*.Metroid.Visual.HudWeaponY",           99},
         {"Instance*.Metroid.Visual.HudAmmoAlign",          2},
         {"Instance*.Metroid.Visual.HudWeaponLayout",       0},
@@ -148,8 +148,8 @@ namespace Config
         {"Instance*.Metroid.Visual.HudAmmoGaugeOrientation", 1},
         {"Instance*.Metroid.Visual.HudAmmoGaugeLength",     80},
         {"Instance*.Metroid.Visual.HudAmmoGaugeWidth",       3},
-        {"Instance*.Metroid.Visual.HudAmmoGaugeOffsetX",    -7},
-        {"Instance*.Metroid.Visual.HudAmmoGaugeOffsetY",     1},
+        {"Instance*.Metroid.Visual.HudAmmoGaugeOffsetX",     9},
+        {"Instance*.Metroid.Visual.HudAmmoGaugeOffsetY",     2},
         {"Instance*.Metroid.Visual.HudAmmoGaugeColorR",     56},
         {"Instance*.Metroid.Visual.HudAmmoGaugeColorG",    192},
         {"Instance*.Metroid.Visual.HudAmmoGaugeColorB",      8},
@@ -158,11 +158,6 @@ namespace Config
         {"Instance*.Metroid.Visual.HudAmmoGaugePosX",      239},
         {"Instance*.Metroid.Visual.HudAmmoGaugePosY",       56},
         /* Battle HUD */
-        {"Instance*.Metroid.Visual.HudBattleX",             55},
-        {"Instance*.Metroid.Visual.HudBattleY",             55},
-        {"Instance*.Metroid.Visual.HudBattleLabelOfsX",      0},
-        {"Instance*.Metroid.Visual.HudBattleLabelOfsY",      0},
-        {"Instance*.Metroid.Visual.HudBattleLabelPos",       0},
         {"Instance*.Metroid.Visual.HudMatchStatusX",        20},
         {"Instance*.Metroid.Visual.HudMatchStatusY",        19},
         {"Instance*.Metroid.Visual.HudMatchStatusLabelOfsX", 0},
@@ -283,7 +278,6 @@ namespace Config
         {"Instance*.Metroid.Visual.HudHpGaugeAutoColor", true},
         {"Instance*.Metroid.Visual.HudWeaponIconShow", true},
         {"Instance*.Metroid.Visual.HudAmmoGauge", true},
-        {"Instance*.Metroid.Visual.HudBattleShow", true},
         {"Instance*.Metroid.Visual.HudMatchStatusShow", true},
         {"Instance*.Metroid.Visual.HudMatchStatusLabelColorOverall", true},
         {"Instance*.Metroid.Visual.HudMatchStatusValueColorOverall", true},
@@ -321,11 +315,6 @@ namespace Config
     #ifdef MELONPRIME_DS
         {"Instance*.Metroid.Visual.HudHpPrefix", ""},
         {"Instance*.Metroid.Visual.HudAmmoPrefix", ""},
-        {"Instance*.Metroid.Visual.HudBattleLabelPoints",    "points"},
-        {"Instance*.Metroid.Visual.HudBattleLabelOctoliths", "octoliths"},
-        {"Instance*.Metroid.Visual.HudBattleLabelLives",     "lives left"},
-        {"Instance*.Metroid.Visual.HudBattleLabelRingTime",  "ring time"},
-        {"Instance*.Metroid.Visual.HudBattleLabelPrimeTime", "prime time"},
         {"Instance*.Metroid.Visual.HudMatchStatusLabelPoints",    "points"},
         {"Instance*.Metroid.Visual.HudMatchStatusLabelOctoliths", "octoliths"},
         {"Instance*.Metroid.Visual.HudMatchStatusLabelLives",     "lives left"},
@@ -1164,5 +1153,7 @@ namespace Config
     }
 
 }
+
+
 
 

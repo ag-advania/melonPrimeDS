@@ -1730,14 +1730,14 @@ void MelonPrimeInputConfig::resetHpAmmoDefaults()
 
     // HP Position
     ui->comboMetroidHudHpPosition->setCurrentIndex(8); // Custom
-    ui->spinMetroidHudHpX->setValue(31);
+    ui->spinMetroidHudHpX->setValue(45);
     ui->spinMetroidHudHpY->setValue(99);
     ui->leMetroidHudHpPrefix->setText("");
     ui->comboMetroidHudHpAlign->setCurrentIndex(2); // Right
 
     // Weapon Position
     ui->comboMetroidHudWeaponPosition->setCurrentIndex(8); // Custom
-    ui->spinMetroidHudWeaponX->setValue(216);
+    ui->spinMetroidHudWeaponX->setValue(230);
     ui->spinMetroidHudWeaponY->setValue(99);
     ui->leMetroidHudAmmoPrefix->setText("");
     ui->comboMetroidHudAmmoAlign->setCurrentIndex(2); // Right
@@ -1776,8 +1776,8 @@ void MelonPrimeInputConfig::resetHpAmmoDefaults()
     ui->comboMetroidHudAmmoGaugeOrientation->setCurrentIndex(1); // Vertical
     ui->spinMetroidHudAmmoGaugeLength->setValue(80);
     ui->spinMetroidHudAmmoGaugeWidth->setValue(3);
-    ui->spinMetroidHudAmmoGaugeOffsetX->setValue(-7);
-    ui->spinMetroidHudAmmoGaugeOffsetY->setValue(1);
+    ui->spinMetroidHudAmmoGaugeOffsetX->setValue(9);
+    ui->spinMetroidHudAmmoGaugeOffsetY->setValue(2);
     ui->comboMetroidHudAmmoGaugeAnchor->setCurrentIndex(2);
     ui->comboMetroidHudAmmoGaugePosMode->setCurrentIndex(0);
     ui->spinMetroidHudAmmoGaugePosX->setValue(239);
@@ -1817,6 +1817,7 @@ void MelonPrimeInputConfig::resetMatchStatusDefaults()
     ui->comboMetroidHudMatchStatusSepColor->setCurrentIndex(0);
     ui->comboMetroidHudMatchStatusGoalColor->setCurrentIndex(0);
 }
+
 
 
 
