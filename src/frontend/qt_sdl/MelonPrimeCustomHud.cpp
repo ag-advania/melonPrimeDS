@@ -683,11 +683,11 @@ static void DrawGauge(QPainter* p, int x, int y, float ratio,
     }
 }
 
-static inline QColor HpGaugeColor(uint16_t hp)
+static inline QColor HpGaugeColor(uint16_t hp, const QColor& safeColor)
 {
     if (hp <= 25)      return QColor(255, 0, 0);
     else if (hp <= 50) return QColor(255, 165, 0);
-    else               return QColor(56, 192, 8);
+    else               return safeColor;
 }
 
 static int CalcAlignedTextX(int anchorX, int align, int textW)
@@ -736,7 +736,7 @@ static inline void DrawHP(QPainter* p, uint16_t hp, uint16_t maxHP,
 
     if (c.hpGauge && maxHP > 0) {
         float ratio = static_cast<float>(hp) / static_cast<float>(maxHP);
-        QColor gc = c.hpAutoColor ? HpGaugeColor(hp) : c.hpGaugeColor;
+        QColor gc = c.hpAutoColor ? HpGaugeColor(hp, c.hpGaugeColor) : c.hpGaugeColor;
         int gx, gy;
         if (c.hpGaugePosMode == 1) {
             gx = c.hpGaugePosX;

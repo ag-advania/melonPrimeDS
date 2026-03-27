@@ -132,13 +132,13 @@ MelonPrimeInputConfig::MelonPrimeInputConfig(EmuInstance* emu, QWidget* parent) 
         struct Clr { int r, g, b; };
         static const Clr presets[] = {
             {255,255,255}, {0,255,0}, {127,255,0}, {255,255,0},
-            {0,200,255}, {255,105,180}, {255,0,0}, {56,192,8}, {88,224,40}
+            {0,200,255}, {255,105,180}, {255,0,0}, {56,192,8}, {248,248,88}, {120,240,64}, {40,152,80}, {248,176,24}, {200,80,40}, {248,40,40}, {80,152,208}, {40,104,152}, {208,152,56}, {248,224,128}, {76,0,252}, {88,224,40}
         };
         int r = ui->spinMetroidHudMatchStatusColorR->value();
         int g = ui->spinMetroidHudMatchStatusColorG->value();
         int b = ui->spinMetroidHudMatchStatusColorB->value();
-        int idx = 9; // Custom
-        for (int i = 0; i < 9; i++) {
+        int idx = 21; // Custom
+        for (int i = 0; i < 21; i++) {
             if (r == presets[i].r && g == presets[i].g && b == presets[i].b) { idx = i; break; }
         }
         ui->comboMetroidHudMatchStatusColor->setCurrentIndex(idx);
@@ -148,9 +148,9 @@ MelonPrimeInputConfig::MelonPrimeInputConfig(EmuInstance* emu, QWidget* parent) 
         struct Clr { int r, g, b; };
         static const Clr presets[] = {
             {255,255,255}, {0,255,0}, {127,255,0}, {255,255,0},
-            {0,200,255}, {255,105,180}, {255,0,0}, {56,192,8}, {88,224,40}
+            {0,200,255}, {255,105,180}, {255,0,0}, {56,192,8}, {248,248,88}, {120,240,64}, {40,152,80}, {248,176,24}, {200,80,40}, {248,40,40}, {80,152,208}, {40,104,152}, {208,152,56}, {248,224,128}, {76,0,252}, {88,224,40}
         };
-        if (idx < 0 || idx >= 9) return;
+        if (idx < 0 || idx >= 19) return;
         ui->spinMetroidHudMatchStatusColorR->blockSignals(true);
         ui->spinMetroidHudMatchStatusColorG->blockSignals(true);
         ui->spinMetroidHudMatchStatusColorB->blockSignals(true);
@@ -166,7 +166,7 @@ MelonPrimeInputConfig::MelonPrimeInputConfig(EmuInstance* emu, QWidget* parent) 
     // Match Status RGB spin → hex + Custom
     auto matchStatusRgbChanged = [this]() {
         ui->comboMetroidHudMatchStatusColor->blockSignals(true);
-        ui->comboMetroidHudMatchStatusColor->setCurrentIndex(9);
+        ui->comboMetroidHudMatchStatusColor->setCurrentIndex(20);
         ui->comboMetroidHudMatchStatusColor->blockSignals(false);
         ui->leMetroidHudMatchStatusColorCode->setText(
             QString("#%1%2%3")
@@ -188,7 +188,7 @@ MelonPrimeInputConfig::MelonPrimeInputConfig(EmuInstance* emu, QWidget* parent) 
         ui->spinMetroidHudMatchStatusColorG->setValue(c.green());
         ui->spinMetroidHudMatchStatusColorB->setValue(c.blue());
         ui->comboMetroidHudMatchStatusColor->blockSignals(true);
-        ui->comboMetroidHudMatchStatusColor->setCurrentIndex(9);
+        ui->comboMetroidHudMatchStatusColor->setCurrentIndex(20);
         ui->comboMetroidHudMatchStatusColor->blockSignals(false);
         ui->spinMetroidHudMatchStatusColorR->blockSignals(false);
         ui->spinMetroidHudMatchStatusColorG->blockSignals(false);
@@ -196,11 +196,13 @@ MelonPrimeInputConfig::MelonPrimeInputConfig(EmuInstance* emu, QWidget* parent) 
     });
 
     // Sub-color helper: sets up load, combo↔RGB sync, and enable/disable for one part
-    // comboIdx 0 = "Overall" (useOverall=true); 1..9 = presets; 10 = Custom
+    // comboIdx 0 = "Overall" (useOverall=true); 1..20 = presets; 21 = Custom
     struct SubColorPreset { int r, g, b; };
     static const SubColorPreset kSubPresets[] = {
         {255,255,255}, {0,255,0}, {127,255,0}, {255,255,0},
-        {0,200,255}, {255,105,180}, {255,0,0}, {56,192,8}, {88,224,40}
+        {0,200,255}, {255,105,180}, {255,0,0}, {56,192,8}, {248,248,88}, {120,240,64},
+        {40,152,80}, {248,176,24}, {200,80,40}, {248,40,40}, {80,152,208}, {40,104,152},
+        {208,152,56}, {248,224,128}, {76,0,252}, {88,224,40}
     };
     auto setupSubColor = [&](
         QComboBox* combo, QLineEdit* le,
@@ -216,11 +218,11 @@ MelonPrimeInputConfig::MelonPrimeInputConfig(EmuInstance* emu, QWidget* parent) 
         le->setText(QString("#%1%2%3")
             .arg(cfgR,2,16,QChar('0')).arg(cfgG,2,16,QChar('0')).arg(cfgB,2,16,QChar('0')).toUpper());
         // Detect preset index (offset +1 for "Overall" at 0)
-        int idx = 10; // Custom
+        int idx = 20; // Custom
         if (useOverall) {
             idx = 0;
         } else {
-            for (int i = 0; i < 9; i++) {
+            for (int i = 0; i < 20; i++) {
                 if (cfgR == kSubPresets[i].r && cfgG == kSubPresets[i].g && cfgB == kSubPresets[i].b)
                     { idx = i + 1; break; }
             }
@@ -231,7 +233,7 @@ MelonPrimeInputConfig::MelonPrimeInputConfig(EmuInstance* emu, QWidget* parent) 
         // Combo → RGB + hex + enable/disable
         QObject::connect(combo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [=](int i) {
             setEnabled(i != 0);
-            if (i <= 0 || i > 9) return; // Overall or Custom: don't change RGB
+            if (i <= 0 || i > 20) return; // Overall or Custom: don't change RGB
             spR->blockSignals(true); spG->blockSignals(true); spB->blockSignals(true);
             spR->setValue(kSubPresets[i-1].r);
             spG->setValue(kSubPresets[i-1].g);
@@ -244,7 +246,7 @@ MelonPrimeInputConfig::MelonPrimeInputConfig(EmuInstance* emu, QWidget* parent) 
         });
         // RGB → hex + switch to Custom
         auto rgbChanged = [=]() {
-            combo->blockSignals(true); combo->setCurrentIndex(10); combo->blockSignals(false);
+            combo->blockSignals(true); combo->setCurrentIndex(21); combo->blockSignals(false);
             le->setText(QString("#%1%2%3")
                 .arg(spR->value(),2,16,QChar('0'))
                 .arg(spG->value(),2,16,QChar('0'))
@@ -259,7 +261,7 @@ MelonPrimeInputConfig::MelonPrimeInputConfig(EmuInstance* emu, QWidget* parent) 
             if (!c.isValid()) return;
             spR->blockSignals(true); spG->blockSignals(true); spB->blockSignals(true);
             spR->setValue(c.red()); spG->setValue(c.green()); spB->setValue(c.blue());
-            combo->blockSignals(true); combo->setCurrentIndex(10); combo->blockSignals(false);
+            combo->blockSignals(true); combo->setCurrentIndex(21); combo->blockSignals(false);
             spR->blockSignals(false); spG->blockSignals(false); spB->blockSignals(false);
         });
     };
@@ -388,7 +390,7 @@ MelonPrimeInputConfig::MelonPrimeInputConfig(EmuInstance* emu, QWidget* parent) 
         static const Pos presets[] = {
             {4,2}, {120,2}, {226,2}, {226,82}, {226,174}, {120,174}, {4,174}, {4,82}
         };
-        if (idx < 0 || idx >= 8) return;
+        if (idx < 0 || idx >= 19) return;
         ui->spinMetroidHudWeaponIconPosX->blockSignals(true);
         ui->spinMetroidHudWeaponIconPosY->blockSignals(true);
         ui->spinMetroidHudWeaponIconPosX->setValue(presets[idx].x);
@@ -432,13 +434,13 @@ MelonPrimeInputConfig::MelonPrimeInputConfig(EmuInstance* emu, QWidget* parent) 
     {
         struct Clr { int r, g, b; };
         static const Clr presets[] = {
-            {0,255,0}, {255,0,0}, {255,165,0}, {255,255,0}, {0,200,255}, {255,255,255}, {56,192,8}, {88,224,40}, {88,224,40}
+            {0,255,0}, {255,0,0}, {255,165,0}, {255,255,0}, {0,200,255}, {255,255,255}, {56,192,8}, {248,248,88}, {120,240,64}, {40,152,80}, {248,176,24}, {200,80,40}, {248,40,40}, {80,152,208}, {40,104,152}, {208,152,56}, {248,224,128}, {76,0,252}, {88,224,40}
         };
         int r = ui->spinMetroidHudHpGaugeColorR->value();
         int g = ui->spinMetroidHudHpGaugeColorG->value();
         int b = ui->spinMetroidHudHpGaugeColorB->value();
-        int idx = 8; // Custom
-        for (int i = 0; i < 8; i++) {
+        int idx = 19; // Custom
+        for (int i = 0; i < 19; i++) {
             if (r == presets[i].r && g == presets[i].g && b == presets[i].b) { idx = i; break; }
         }
         ui->comboMetroidHudHpGaugeColor->setCurrentIndex(idx);
@@ -447,9 +449,9 @@ MelonPrimeInputConfig::MelonPrimeInputConfig(EmuInstance* emu, QWidget* parent) 
     connect(ui->comboMetroidHudHpGaugeColor, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this](int idx) {
         struct Clr { int r, g, b; };
         static const Clr presets[] = {
-            {0,255,0}, {255,0,0}, {255,165,0}, {255,255,0}, {0,200,255}, {255,255,255}, {56,192,8}, {88,224,40}, {88,224,40}
+            {0,255,0}, {255,0,0}, {255,165,0}, {255,255,0}, {0,200,255}, {255,255,255}, {56,192,8}, {248,248,88}, {120,240,64}, {40,152,80}, {248,176,24}, {200,80,40}, {248,40,40}, {80,152,208}, {40,104,152}, {208,152,56}, {248,224,128}, {76,0,252}, {88,224,40}
         };
-        if (idx < 0 || idx >= 8) return;
+        if (idx < 0 || idx >= 19) return;
         ui->spinMetroidHudHpGaugeColorR->blockSignals(true);
         ui->spinMetroidHudHpGaugeColorG->blockSignals(true);
         ui->spinMetroidHudHpGaugeColorB->blockSignals(true);
@@ -465,7 +467,7 @@ MelonPrimeInputConfig::MelonPrimeInputConfig(EmuInstance* emu, QWidget* parent) 
     // HP gauge RGB spin → hex + Custom
     auto hpGaugeRgbChanged = [this]() {
         ui->comboMetroidHudHpGaugeColor->blockSignals(true);
-        ui->comboMetroidHudHpGaugeColor->setCurrentIndex(8);
+        ui->comboMetroidHudHpGaugeColor->setCurrentIndex(19);
         ui->comboMetroidHudHpGaugeColor->blockSignals(false);
         ui->leMetroidHudHpGaugeColorCode->setText(
             QString("#%1%2%3")
@@ -487,7 +489,7 @@ MelonPrimeInputConfig::MelonPrimeInputConfig(EmuInstance* emu, QWidget* parent) 
         ui->spinMetroidHudHpGaugeColorG->setValue(c.green());
         ui->spinMetroidHudHpGaugeColorB->setValue(c.blue());
         ui->comboMetroidHudHpGaugeColor->blockSignals(true);
-        ui->comboMetroidHudHpGaugeColor->setCurrentIndex(8);
+        ui->comboMetroidHudHpGaugeColor->setCurrentIndex(19);
         ui->comboMetroidHudHpGaugeColor->blockSignals(false);
         ui->spinMetroidHudHpGaugeColorR->blockSignals(false);
         ui->spinMetroidHudHpGaugeColorG->blockSignals(false);
@@ -518,13 +520,13 @@ MelonPrimeInputConfig::MelonPrimeInputConfig(EmuInstance* emu, QWidget* parent) 
     {
         struct Clr { int r, g, b; };
         static const Clr presets[] = {
-            {0,200,255}, {0,255,0}, {255,0,0}, {255,165,0}, {255,255,0}, {255,255,255}, {56,192,8}, {88,224,40}, {88,224,40}
+            {0,200,255}, {0,255,0}, {255,0,0}, {255,165,0}, {255,255,0}, {255,255,255}, {56,192,8}, {248,248,88}, {120,240,64}, {40,152,80}, {248,176,24}, {200,80,40}, {248,40,40}, {80,152,208}, {40,104,152}, {208,152,56}, {248,224,128}, {76,0,252}, {88,224,40}
         };
         int r = ui->spinMetroidHudAmmoGaugeColorR->value();
         int g = ui->spinMetroidHudAmmoGaugeColorG->value();
         int b = ui->spinMetroidHudAmmoGaugeColorB->value();
-        int idx = 8; // Custom
-        for (int i = 0; i < 8; i++) {
+        int idx = 19; // Custom
+        for (int i = 0; i < 19; i++) {
             if (r == presets[i].r && g == presets[i].g && b == presets[i].b) { idx = i; break; }
         }
         ui->comboMetroidHudAmmoGaugeColor->setCurrentIndex(idx);
@@ -533,9 +535,9 @@ MelonPrimeInputConfig::MelonPrimeInputConfig(EmuInstance* emu, QWidget* parent) 
     connect(ui->comboMetroidHudAmmoGaugeColor, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this](int idx) {
         struct Clr { int r, g, b; };
         static const Clr presets[] = {
-            {0,200,255}, {0,255,0}, {255,0,0}, {255,165,0}, {255,255,0}, {255,255,255}, {56,192,8}, {88,224,40}, {88,224,40}
+            {0,200,255}, {0,255,0}, {255,0,0}, {255,165,0}, {255,255,0}, {255,255,255}, {56,192,8}, {248,248,88}, {120,240,64}, {40,152,80}, {248,176,24}, {200,80,40}, {248,40,40}, {80,152,208}, {40,104,152}, {208,152,56}, {248,224,128}, {76,0,252}, {88,224,40}
         };
-        if (idx < 0 || idx >= 8) return;
+        if (idx < 0 || idx >= 19) return;
         ui->spinMetroidHudAmmoGaugeColorR->blockSignals(true);
         ui->spinMetroidHudAmmoGaugeColorG->blockSignals(true);
         ui->spinMetroidHudAmmoGaugeColorB->blockSignals(true);
@@ -551,7 +553,7 @@ MelonPrimeInputConfig::MelonPrimeInputConfig(EmuInstance* emu, QWidget* parent) 
     // Ammo gauge RGB spin → hex + Custom
     auto ammoGaugeRgbChanged = [this]() {
         ui->comboMetroidHudAmmoGaugeColor->blockSignals(true);
-        ui->comboMetroidHudAmmoGaugeColor->setCurrentIndex(8);
+        ui->comboMetroidHudAmmoGaugeColor->setCurrentIndex(19);
         ui->comboMetroidHudAmmoGaugeColor->blockSignals(false);
         ui->leMetroidHudAmmoGaugeColorCode->setText(
             QString("#%1%2%3")
@@ -573,7 +575,7 @@ MelonPrimeInputConfig::MelonPrimeInputConfig(EmuInstance* emu, QWidget* parent) 
         ui->spinMetroidHudAmmoGaugeColorG->setValue(c.green());
         ui->spinMetroidHudAmmoGaugeColorB->setValue(c.blue());
         ui->comboMetroidHudAmmoGaugeColor->blockSignals(true);
-        ui->comboMetroidHudAmmoGaugeColor->setCurrentIndex(8);
+        ui->comboMetroidHudAmmoGaugeColor->setCurrentIndex(19);
         ui->comboMetroidHudAmmoGaugeColor->blockSignals(false);
         ui->spinMetroidHudAmmoGaugeColorR->blockSignals(false);
         ui->spinMetroidHudAmmoGaugeColorG->blockSignals(false);
@@ -647,7 +649,7 @@ MelonPrimeInputConfig::MelonPrimeInputConfig(EmuInstance* emu, QWidget* parent) 
         static const Pos presets[] = {
             {4,8}, {120,8}, {220,8}, {220,96}, {220,188}, {120,188}, {4,188}, {4,96}
         };
-        if (idx < 0 || idx >= 8) return;
+        if (idx < 0 || idx >= 9) return;
         ui->spinMetroidHudHpX->blockSignals(true);
         ui->spinMetroidHudHpY->blockSignals(true);
         ui->spinMetroidHudHpX->setValue(presets[idx].x);
@@ -673,7 +675,7 @@ MelonPrimeInputConfig::MelonPrimeInputConfig(EmuInstance* emu, QWidget* parent) 
         static const Pos presets[] = {
             {4,2}, {120,2}, {226,2}, {226,82}, {226,164}, {120,164}, {4,164}, {4,82}
         };
-        if (idx < 0 || idx >= 8) return;
+        if (idx < 0 || idx >= 9) return;
         ui->spinMetroidHudWeaponX->blockSignals(true);
         ui->spinMetroidHudWeaponY->blockSignals(true);
         ui->spinMetroidHudWeaponX->setValue(presets[idx].x);
@@ -705,7 +707,7 @@ MelonPrimeInputConfig::MelonPrimeInputConfig(EmuInstance* emu, QWidget* parent) 
             .arg(chG, 2, 16, QChar('0'))
             .arg(chB, 2, 16, QChar('0')).toUpper());
 
-    // Detect color preset (match against known presets, else Custom=8)
+    // Detect color preset (match against known presets, else Custom)
     {
         struct Preset { int r, g, b; };
         static const Preset presets[] = {
@@ -718,10 +720,21 @@ MelonPrimeInputConfig::MelonPrimeInputConfig(EmuInstance* emu, QWidget* parent) 
             {255,105,180}, // 6: Pink
             {255,0,0},     // 7: Red
             {56,192,8},    // 8: Sylux Hud Color
-            {88,224,40},   // 9: Sylux Crosshair Color
+            {248,248,88},  // 9: Kanden HUD Color
+            {120,240,64},  // 10: Samus HUD
+            {40,152,80},   // 11: Samus HUD Outline
+            {248,176,24},  // 12: Spire HUD
+            {200,80,40},   // 13: Spire HUD Outline
+            {248,40,40},   // 14: Trace HUD
+            {80,152,208},  // 15: Noxus HUD
+            {40,104,152},  // 16: Noxus HUD Outline
+            {208,152,56},  // 17: Weavel HUD
+            {248,224,128}, // 18: Weavel HUD Outline
+            {76,0,252},    // 19: Avium Purple
+            {88,224,40},   // 20: Sylux Crosshair Color
         };
-        int presetIdx = 10; // Custom
-        for (int i = 0; i < 10; i++) {
+        int presetIdx = 21; // Custom
+        for (int i = 0; i < 20; i++) {
             if (chR == presets[i].r && chG == presets[i].g && chB == presets[i].b) {
                 presetIdx = i; break;
             }
@@ -1657,7 +1670,7 @@ void MelonPrimeInputConfig::onCrosshairColorSpinChanged()
 
     // Switch to Custom if user manually tweaked RGB
     ui->comboMetroidCrosshairColor->blockSignals(true);
-    ui->comboMetroidCrosshairColor->setCurrentIndex(10);
+    ui->comboMetroidCrosshairColor->setCurrentIndex(21);
     ui->comboMetroidCrosshairColor->blockSignals(false);
 }
 
@@ -1685,7 +1698,7 @@ void MelonPrimeInputConfig::on_leMetroidCrosshairColorCode_editingFinished()
 
     // Switch combo to Custom since user typed a code
     ui->comboMetroidCrosshairColor->blockSignals(true);
-    ui->comboMetroidCrosshairColor->setCurrentIndex(10);
+    ui->comboMetroidCrosshairColor->setCurrentIndex(21);
     ui->comboMetroidCrosshairColor->blockSignals(false);
 }
 
@@ -1703,9 +1716,20 @@ void MelonPrimeInputConfig::on_comboMetroidCrosshairColor_currentIndexChanged(in
         {255,105,180}, // 6: Pink
         {255,0,0},     // 7: Red
         {56,192,8},    // 8: Sylux Hud Color
-            {88,224,40},   // 9: Sylux Crosshair Color
+        {248,248,88},  // 9: Kanden HUD Color
+        {120,240,64},  // 10: Samus HUD
+        {40,152,80},   // 11: Samus HUD Outline
+        {248,176,24},  // 12: Spire HUD
+        {200,80,40},   // 13: Spire HUD Outline
+        {248,40,40},   // 14: Trace HUD
+        {80,152,208},  // 15: Noxus HUD
+        {40,104,152},  // 16: Noxus HUD Outline
+        {208,152,56},  // 17: Weavel HUD
+        {248,224,128}, // 18: Weavel HUD Outline
+        {76,0,252},    // 19: Avium Purple
+        {88,224,40},   // 20: Sylux Crosshair Color
     };
-    if (index < 0 || index >= 10) return; // Custom (9) = don't change
+    if (index < 0 || index >= 21) return; // Custom = don't change
 
     ui->spinMetroidCrosshairR->blockSignals(true);
     ui->spinMetroidCrosshairG->blockSignals(true);
