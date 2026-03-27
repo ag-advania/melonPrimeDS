@@ -32,3 +32,4 @@ vcpkg.json.bak
 .settings/.jsdtscope
 .settings/org.eclipse.wst.jsdt.ui.superType.container
 .settings/org.eclipse.wst.jsdt.ui.superType.name
+.claude/settings.local.json
