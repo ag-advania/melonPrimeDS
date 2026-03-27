@@ -241,6 +241,13 @@ void ScreenPanel::unclip() {
 }
 
 void ScreenPanel::updateClipIfNeeded() {
+    auto* core = emuInstance->getEmuThread()->GetMelonPrimeCore();
+    if (core && !core->isFocused) {
+        setCursor(Qt::ArrowCursor);
+        unclip();
+        return;
+    }
+
     if (getClipWanted()) {
         clipCursorCenter1px();
         return;
