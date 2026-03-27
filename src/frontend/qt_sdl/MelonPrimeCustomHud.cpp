@@ -61,7 +61,7 @@ static QImage& GetOutlineBuffer()
 // =========================================================================
 struct CachedHudConfig {
     // HP
-    int    hpX, hpY, hudFontSize;
+    int    hpX, hpY, hpAlign, hudFontSize;
     char   hpPrefix[12];
     bool   hpGauge, hpAutoColor;
     int    hpGaugeOri, hpGaugeLen, hpGaugeWid;
@@ -69,7 +69,7 @@ struct CachedHudConfig {
     int    hpGaugePosMode, hpGaugePosX, hpGaugePosY;
     QColor hpGaugeColor;
     // Weapon / Ammo
-    int    wpnX, wpnY;
+    int    wpnX, wpnY, ammoAlign;
     char   ammoPrefix[12];
     bool   iconShow, ammoGauge;
     int    iconMode, iconOfsX, iconOfsY, iconPosX, iconPosY;
@@ -115,6 +115,7 @@ static void RefreshCachedConfig(Config::Table& cfg)
     // HP
     c.hpX = cfg.GetInt("Metroid.Visual.HudHpX");
     c.hpY = cfg.GetInt("Metroid.Visual.HudHpY");
+    c.hpAlign = cfg.GetInt("Metroid.Visual.HudHpAlign");
     c.hudFontSize = cfg.GetInt("Metroid.Visual.HudFontSize");
     { auto s = cfg.GetString("Metroid.Visual.HudHpPrefix");
       std::strncpy(c.hpPrefix, s.c_str(), sizeof(c.hpPrefix)-1);
@@ -136,6 +137,7 @@ static void RefreshCachedConfig(Config::Table& cfg)
     // Weapon / Ammo
     c.wpnX = cfg.GetInt("Metroid.Visual.HudWeaponX");
     c.wpnY = cfg.GetInt("Metroid.Visual.HudWeaponY");
+    c.ammoAlign = cfg.GetInt("Metroid.Visual.HudAmmoAlign");
     { auto s = cfg.GetString("Metroid.Visual.HudAmmoPrefix");
       std::strncpy(c.ammoPrefix, s.c_str(), sizeof(c.ammoPrefix)-1);
       c.ammoPrefix[sizeof(c.ammoPrefix)-1] = '\0'; }
@@ -645,17 +647,33 @@ static inline QColor HpGaugeColor(uint16_t hp)
     else               return QColor(56, 192, 8);
 }
 
-static void CalcGaugePos(int textX, int textY, int anchor,
+static int CalcAlignedTextX(QPainter* p, int anchorX, int align, const char* text,
+                            int* textW = nullptr, int* textH = nullptr)
+{
+    const QFontMetrics fm = p->fontMetrics();
+    const int width = fm.horizontalAdvance(QString::fromLatin1(text));
+    const int height = fm.height();
+
+    if (textW) *textW = width;
+    if (textH) *textH = height;
+
+    switch (align) {
+    case 1: return anchorX - width / 2;
+    case 2: return anchorX - width;
+    default: return anchorX;
+    }
+}
+
+static void CalcGaugePos(int textX, int textY, int textW, int textH, int anchor,
                          int ofsX, int ofsY, int gaugeLen, int gaugeWid, int ori,
                          int& outX, int& outY)
 {
-    constexpr int kTextW = 30, kTextH = 8;
     switch (anchor) {
     case 0: outX = textX + ofsX;           outY = textY + 2 + ofsY; break;
-    case 1: outX = textX + ofsX;           outY = textY - kTextH - (ori==0?gaugeWid:gaugeLen) + ofsY; break;
-    case 2: outX = textX + kTextW + ofsX;  outY = textY - kTextH/2 - (ori==0?gaugeWid:gaugeLen)/2 + ofsY; break;
-    case 3: outX = textX - (ori==0?gaugeLen:gaugeWid) + ofsX; outY = textY - kTextH/2 - (ori==0?gaugeWid:gaugeLen)/2 + ofsY; break;
-    case 4: outX = textX + kTextW/2 - (ori==0?gaugeLen:gaugeWid)/2 + ofsX; outY = textY - kTextH/2 - (ori==0?gaugeWid:gaugeLen)/2 + ofsY; break;
+    case 1: outX = textX + ofsX;           outY = textY - textH - (ori==0?gaugeWid:gaugeLen) + ofsY; break;
+    case 2: outX = textX + textW + ofsX;   outY = textY - textH/2 - (ori==0?gaugeWid:gaugeLen)/2 + ofsY; break;
+    case 3: outX = textX - (ori==0?gaugeLen:gaugeWid) + ofsX; outY = textY - textH/2 - (ori==0?gaugeWid:gaugeLen)/2 + ofsY; break;
+    case 4: outX = textX + textW/2 - (ori==0?gaugeLen:gaugeWid)/2 + ofsX; outY = textY - textH/2 - (ori==0?gaugeWid:gaugeLen)/2 + ofsY; break;
     default: outX = textX + ofsX;          outY = textY + 2 + ofsY; break;
     }
 }
@@ -672,7 +690,9 @@ static inline void DrawHP(QPainter* p, uint16_t hp, uint16_t maxHP,
 
     char buf[24];
     std::snprintf(buf, sizeof(buf), "%s%u", c.hpPrefix, hp);
-    p->drawText(QPoint(c.hpX, c.hpY), buf);
+    int textW = 0, textH = 0;
+    const int textX = CalcAlignedTextX(p, c.hpX, c.hpAlign, buf, &textW, &textH);
+    p->drawText(QPoint(textX, c.hpY), buf);
 
     if (c.hpGauge && maxHP > 0) {
         float ratio = static_cast<float>(hp) / static_cast<float>(maxHP);
@@ -682,7 +702,7 @@ static inline void DrawHP(QPainter* p, uint16_t hp, uint16_t maxHP,
             gx = c.hpGaugePosX;
             gy = c.hpGaugePosY;
         } else {
-            CalcGaugePos(c.hpX, c.hpY, c.hpGaugeAnchor, c.hpGaugeOfsX, c.hpGaugeOfsY,
+            CalcGaugePos(textX, c.hpY, textW, textH, c.hpGaugeAnchor, c.hpGaugeOfsX, c.hpGaugeOfsY,
                          c.hpGaugeLen, c.hpGaugeWid, c.hpGaugeOri, gx, gy);
         }
         DrawGauge(p, gx, gy, ratio, gc, c.hpGaugeOri, c.hpGaugeLen, c.hpGaugeWid);
@@ -730,9 +750,11 @@ static void DrawWeaponAmmo(QPainter* p, melonDS::u8* ram,
     }
 
     int textX = c.wpnX, textY = c.wpnY;
+    int textW = 0, textH = p->fontMetrics().height();
     if (hasAmmo) {
         char buf[24];
-        std::snprintf(buf, sizeof(buf), "%s%02d", c.ammoPrefix, ammo);
+        std::snprintf(buf, sizeof(buf), "%s%02u", c.ammoPrefix, ammo);
+        textX = CalcAlignedTextX(p, c.wpnX, c.ammoAlign, buf, &textW, &textH);
         p->drawText(QPoint(textX, textY), buf);
     }
 
@@ -753,7 +775,7 @@ static void DrawWeaponAmmo(QPainter* p, melonDS::u8* ram,
             gx = c.ammoGaugePosX;
             gy = c.ammoGaugePosY;
         } else {
-            CalcGaugePos(textX, textY, c.ammoGaugeAnchor, c.ammoGaugeOfsX, c.ammoGaugeOfsY,
+            CalcGaugePos(textX, textY, textW, textH, c.ammoGaugeAnchor, c.ammoGaugeOfsX, c.ammoGaugeOfsY,
                          c.ammoGaugeLen, c.ammoGaugeWid, c.ammoGaugeOri, gx, gy);
         }
         DrawGauge(p, gx, gy, ratio, c.ammoGaugeColor, c.ammoGaugeOri, c.ammoGaugeLen, c.ammoGaugeWid);
@@ -951,3 +973,4 @@ HOT_FUNCTION void CustomHud_Render(
 } // namespace MelonPrime
 
 #endif // MELONPRIME_CUSTOM_HUD
+
