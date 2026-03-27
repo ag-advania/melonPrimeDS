@@ -1722,7 +1722,7 @@ void MelonPrimeInputConfig::resetCrosshairDefaults()
     ui->spinMetroidCrosshairOuterOffset->setValue(4);
 
     // Font size
-    ui->spinMetroidHudFontSize->setValue(8);
+    ui->spinMetroidHudFontSize->setValue(6);
 }
 
 void MelonPrimeInputConfig::resetHpAmmoDefaults()
@@ -1817,5 +1817,6 @@ void MelonPrimeInputConfig::resetMatchStatusDefaults()
     ui->comboMetroidHudMatchStatusSepColor->setCurrentIndex(0);
     ui->comboMetroidHudMatchStatusGoalColor->setCurrentIndex(0);
 }
+
 
 
