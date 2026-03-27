@@ -116,7 +116,9 @@ if (ENABLE_JIT)
     if (WIN32)
         # Required for memory mapping-related functions introduced in Windows 8
         target_compile_definitions(core PRIVATE -D_WIN32_WINNT=_WIN32_WINNT_WIN8)
-        target_link_libraries(core PRIVATE onecore)
+        if (NOT MINGW)
+            target_link_libraries(core PRIVATE onecore)
+        endif()
     endif()
 
     if (CMAKE_SYSTEM_NAME STREQUAL "OpenBSD")
