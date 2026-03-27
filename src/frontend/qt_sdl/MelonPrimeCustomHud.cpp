@@ -1129,6 +1129,41 @@ HOT_FUNCTION void CustomHud_Render(
     bool isTrans = (Read8(ram, addrHot.jumpFlag) & 0x10) != 0;
     if (!isTrans && !isAlt)
         DrawCrosshair(topPaint, ram, rom, c, topStretchX);
+
+    // Draw bottom screen overlay on top screen
+    DrawBottomScreenOverlay(localCfg, topPaint, btmBuffer);
+}
+
+void DrawBottomScreenOverlay(Config::Table& localCfg, QPainter* topPaint, QImage* btmBuffer)
+{
+    if (!localCfg.GetBool("Metroid.Visual.BtmOverlayEnable")) return;
+    if (!topPaint || !btmBuffer || btmBuffer->isNull()) return;
+
+    int srcX = localCfg.GetInt("Metroid.Visual.BtmOverlaySrcX");
+    int srcY = localCfg.GetInt("Metroid.Visual.BtmOverlaySrcY");
+    int srcW = localCfg.GetInt("Metroid.Visual.BtmOverlaySrcW");
+    int srcH = localCfg.GetInt("Metroid.Visual.BtmOverlaySrcH");
+    int dstX = localCfg.GetInt("Metroid.Visual.BtmOverlayDstX");
+    int dstY = localCfg.GetInt("Metroid.Visual.BtmOverlayDstY");
+    int dstW = localCfg.GetInt("Metroid.Visual.BtmOverlayDstW");
+    int dstH = localCfg.GetInt("Metroid.Visual.BtmOverlayDstH");
+    double opacity = localCfg.GetDouble("Metroid.Visual.BtmOverlayOpacity");
+
+    // Clamp to valid ranges
+    srcX = std::clamp(srcX, 0, 255);
+    srcY = std::clamp(srcY, 0, 191);
+    srcW = std::clamp(srcW, 1, 256 - srcX);
+    srcH = std::clamp(srcH, 1, 192 - srcY);
+    dstW = std::max(dstW, 1);
+    dstH = std::max(dstH, 1);
+
+    QRect srcRect(srcX, srcY, srcW, srcH);
+    QRect dstRect(dstX, dstY, dstW, dstH);
+
+    topPaint->save();
+    topPaint->setOpacity(std::clamp(opacity, 0.0, 1.0));
+    topPaint->drawImage(dstRect, *btmBuffer, srcRect);
+    topPaint->restore();
 }
 
 } // namespace MelonPrime

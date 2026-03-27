@@ -993,6 +993,18 @@ MelonPrimeInputConfig::MelonPrimeInputConfig(EmuInstance* emu, QWidget* parent) 
     prvI(ui->spinMetroidCrosshairOuterThickness); prvI(ui->spinMetroidCrosshairOuterOffset);
     prvB(ui->cbMetroidCrosshairOuterLinkXY);
 
+    // Bottom Screen Overlay
+    ui->cbMetroidBtmOverlayEnable->setChecked(instcfg.GetBool("Metroid.Visual.BtmOverlayEnable"));
+    ui->spinMetroidBtmOverlaySrcX->setValue(instcfg.GetInt("Metroid.Visual.BtmOverlaySrcX"));
+    ui->spinMetroidBtmOverlaySrcY->setValue(instcfg.GetInt("Metroid.Visual.BtmOverlaySrcY"));
+    ui->spinMetroidBtmOverlaySrcW->setValue(instcfg.GetInt("Metroid.Visual.BtmOverlaySrcW"));
+    ui->spinMetroidBtmOverlaySrcH->setValue(instcfg.GetInt("Metroid.Visual.BtmOverlaySrcH"));
+    ui->spinMetroidBtmOverlayDstX->setValue(instcfg.GetInt("Metroid.Visual.BtmOverlayDstX"));
+    ui->spinMetroidBtmOverlayDstY->setValue(instcfg.GetInt("Metroid.Visual.BtmOverlayDstY"));
+    ui->spinMetroidBtmOverlayDstW->setValue(instcfg.GetInt("Metroid.Visual.BtmOverlayDstW"));
+    ui->spinMetroidBtmOverlayDstH->setValue(instcfg.GetInt("Metroid.Visual.BtmOverlayDstH"));
+    ui->spinMetroidBtmOverlayOpacity->setValue(instcfg.GetDouble("Metroid.Visual.BtmOverlayOpacity"));
+
     m_applyPreviewEnabled = true;
 }
 
@@ -1504,6 +1516,18 @@ void MelonPrimeInputConfig::applyVisualPreview()
     instcfg.SetInt ("Metroid.Visual.CrosshairOuterOffset",     ui->spinMetroidCrosshairOuterOffset->value());
     instcfg.SetBool("Metroid.Visual.CrosshairOuterLinkXY",     ui->cbMetroidCrosshairOuterLinkXY->isChecked());
 
+    // Bottom Screen Overlay
+    instcfg.SetBool  ("Metroid.Visual.BtmOverlayEnable",  ui->cbMetroidBtmOverlayEnable->isChecked());
+    instcfg.SetInt   ("Metroid.Visual.BtmOverlaySrcX",    ui->spinMetroidBtmOverlaySrcX->value());
+    instcfg.SetInt   ("Metroid.Visual.BtmOverlaySrcY",    ui->spinMetroidBtmOverlaySrcY->value());
+    instcfg.SetInt   ("Metroid.Visual.BtmOverlaySrcW",    ui->spinMetroidBtmOverlaySrcW->value());
+    instcfg.SetInt   ("Metroid.Visual.BtmOverlaySrcH",    ui->spinMetroidBtmOverlaySrcH->value());
+    instcfg.SetInt   ("Metroid.Visual.BtmOverlayDstX",    ui->spinMetroidBtmOverlayDstX->value());
+    instcfg.SetInt   ("Metroid.Visual.BtmOverlayDstY",    ui->spinMetroidBtmOverlayDstY->value());
+    instcfg.SetInt   ("Metroid.Visual.BtmOverlayDstW",    ui->spinMetroidBtmOverlayDstW->value());
+    instcfg.SetInt   ("Metroid.Visual.BtmOverlayDstH",    ui->spinMetroidBtmOverlayDstH->value());
+    instcfg.SetDouble("Metroid.Visual.BtmOverlayOpacity", ui->spinMetroidBtmOverlayOpacity->value());
+
     MelonPrime::CustomHud_InvalidateConfigCache();
 #endif
 }
@@ -1716,6 +1740,18 @@ void MelonPrimeInputConfig::saveConfig()
     instcfg.SetInt("Metroid.Visual.CrosshairOuterThickness", ui->spinMetroidCrosshairOuterThickness->value());
     instcfg.SetInt("Metroid.Visual.CrosshairOuterOffset", ui->spinMetroidCrosshairOuterOffset->value());
     instcfg.SetBool("Metroid.Visual.CrosshairOuterLinkXY", ui->cbMetroidCrosshairOuterLinkXY->checkState() == Qt::Checked);
+
+    // Bottom Screen Overlay
+    instcfg.SetBool  ("Metroid.Visual.BtmOverlayEnable",  ui->cbMetroidBtmOverlayEnable->checkState() == Qt::Checked);
+    instcfg.SetInt   ("Metroid.Visual.BtmOverlaySrcX",    ui->spinMetroidBtmOverlaySrcX->value());
+    instcfg.SetInt   ("Metroid.Visual.BtmOverlaySrcY",    ui->spinMetroidBtmOverlaySrcY->value());
+    instcfg.SetInt   ("Metroid.Visual.BtmOverlaySrcW",    ui->spinMetroidBtmOverlaySrcW->value());
+    instcfg.SetInt   ("Metroid.Visual.BtmOverlaySrcH",    ui->spinMetroidBtmOverlaySrcH->value());
+    instcfg.SetInt   ("Metroid.Visual.BtmOverlayDstX",    ui->spinMetroidBtmOverlayDstX->value());
+    instcfg.SetInt   ("Metroid.Visual.BtmOverlayDstY",    ui->spinMetroidBtmOverlayDstY->value());
+    instcfg.SetInt   ("Metroid.Visual.BtmOverlayDstW",    ui->spinMetroidBtmOverlayDstW->value());
+    instcfg.SetInt   ("Metroid.Visual.BtmOverlayDstH",    ui->spinMetroidBtmOverlayDstH->value());
+    instcfg.SetDouble("Metroid.Visual.BtmOverlayOpacity", ui->spinMetroidBtmOverlayOpacity->value());
 
     // P-3: Invalidate cached config so next frame re-reads all values
     MelonPrime::CustomHud_InvalidateConfigCache();

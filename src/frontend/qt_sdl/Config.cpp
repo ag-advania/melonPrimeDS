@@ -205,6 +205,16 @@ namespace Config
         {"Instance*.Metroid.Visual.CrosshairOuterThickness",   1},
         {"Instance*.Metroid.Visual.InGameAspectRatioMode",     0},
         {"Instance*.Metroid.Visual.InGameScalingMode",         0},
+        /* MelonPrimeDS Bottom Screen Overlay defaults { */
+        {"Instance*.Metroid.Visual.BtmOverlaySrcX",            0},
+        {"Instance*.Metroid.Visual.BtmOverlaySrcY",            0},
+        {"Instance*.Metroid.Visual.BtmOverlaySrcW",            256},
+        {"Instance*.Metroid.Visual.BtmOverlaySrcH",            192},
+        {"Instance*.Metroid.Visual.BtmOverlayDstX",            190},
+        {"Instance*.Metroid.Visual.BtmOverlayDstY",            0},
+        {"Instance*.Metroid.Visual.BtmOverlayDstW",            64},
+        {"Instance*.Metroid.Visual.BtmOverlayDstH",            48},
+        /* MelonPrimeDS Bottom Screen Overlay defaults } */
         /* MelonPrimeDS Custom HUD Crosshair defaults } */
     #endif
     };
@@ -311,6 +321,9 @@ namespace Config
         {"Instance*.Metroid.UI.SectionVideo",          true},
         {"Instance*.Metroid.UI.SectionVolume",         true},
         {"Instance*.Metroid.UI.SectionLicense",        true},
+        /* MelonPrimeDS Bottom Screen Overlay bool { */
+        {"Instance*.Metroid.Visual.BtmOverlayEnable", false},
+        /* MelonPrimeDS Bottom Screen Overlay bool } */
         /* MelonPrimeDS Crosshair bools } */
         /* MelonPrimeDS } */
     #endif
@@ -347,6 +360,9 @@ namespace Config
         {"Instance*.Metroid.Visual.CrosshairInnerOpacity",   0.80},
         {"Instance*.Metroid.Visual.CrosshairOuterOpacity",   0.40},
         /* MelonPrimeDS Crosshair opacities } */
+        /* MelonPrimeDS Bottom Screen Overlay opacity { */
+        {"Instance*.Metroid.Visual.BtmOverlayOpacity", 0.85},
+        /* MelonPrimeDS Bottom Screen Overlay opacity } */
     #endif
     };
 
