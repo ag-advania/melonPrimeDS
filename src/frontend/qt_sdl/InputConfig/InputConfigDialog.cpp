@@ -92,14 +92,14 @@ InputConfigDialog::InputConfigDialog(QWidget* parent) : QDialog(parent), ui(new 
 #ifdef MELONPRIME_DS
     // MelonPrimeDS {
     // Initialize MelonPrime Config Logic & UI
-    // ƒNƒ‰ƒX–¼(MelonPrimeInputConfig)‚Å‚Í‚È‚­•Ï”–¼(melonPrimeInputConfig)‚ðŽg—p
+    // ï¿½Nï¿½ï¿½ï¿½Xï¿½ï¿½(MelonPrimeInputConfig)ï¿½Å‚Í‚È‚ï¿½ï¿½Ïï¿½ï¿½ï¿½(melonPrimeInputConfig)ï¿½ï¿½ï¿½gï¿½p
     melonPrimeInputConfig = new MelonPrimeInputConfig(emuInstance, this);
 
-    // yd—vzƒRƒ“ƒeƒiŽ©‘Ì‚Í•\Ž¦‚µ‚È‚¢‚æ‚¤‚É‰B‚·i‚±‚ê‚ª‚È‚¢‚Æ”’‚¢‰æ–Ê‚ª”í‚³‚éj
+    // ï¿½yï¿½dï¿½vï¿½zï¿½Rï¿½ï¿½ï¿½eï¿½iï¿½ï¿½ï¿½Ì‚Í•\ï¿½ï¿½ï¿½ï¿½ï¿½È‚ï¿½ï¿½æ‚¤ï¿½É‰Bï¿½ï¿½ï¿½iï¿½ï¿½ï¿½ê‚ªï¿½È‚ï¿½ï¿½Æ”ï¿½ï¿½ï¿½ï¿½ï¿½Ê‚ï¿½ï¿½í‚³ï¿½ï¿½j
     melonPrimeInputConfig->hide();
 
-    // ƒIƒŠƒWƒiƒ‹‚Ìƒ^ƒuiDS keypad, Add-onsj‚ðíœ‚·‚é
-    // ‚±‚ê‚É‚æ‚èAInputConfigDialog.ui ‚ªƒIƒŠƒWƒiƒ‹‚Ì‚Ü‚Ü‚Å‚àMelonPrimeDS‚Å‚Í•\Ž¦‚³‚ê‚È‚­‚È‚è‚Ü‚·
+    // ï¿½Iï¿½ï¿½ï¿½Wï¿½iï¿½ï¿½ï¿½Ìƒ^ï¿½uï¿½iDS keypad, Add-onsï¿½jï¿½ï¿½ï¿½íœï¿½ï¿½ï¿½ï¿½
+    // ï¿½ï¿½ï¿½ï¿½É‚ï¿½ï¿½AInputConfigDialog.ui ï¿½ï¿½ï¿½Iï¿½ï¿½ï¿½Wï¿½iï¿½ï¿½ï¿½Ì‚Ü‚Ü‚Å‚ï¿½MelonPrimeDSï¿½Å‚Í•\ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½È‚ï¿½ï¿½È‚ï¿½Ü‚ï¿½
     int idxInput = ui->tabWidget->indexOf(ui->tabInput);
     if (idxInput != -1) ui->tabWidget->removeTab(idxInput);
 
@@ -285,6 +285,11 @@ void InputConfigDialog::on_InputConfigDialog_rejected()
 {
     Config::Table& instcfg = emuInstance->getLocalConfig();
     emuInstance->setJoystick(instcfg.GetInt("JoystickID"));
+
+#ifdef MELONPRIME_DS
+    if (melonPrimeInputConfig)
+        melonPrimeInputConfig->restoreVisualSnapshot();
+#endif
 
     closeDlg();
 }
