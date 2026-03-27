@@ -99,6 +99,7 @@ MelonPrimeInputConfig::MelonPrimeInputConfig(EmuInstance* emu, QWidget* parent) 
 
     // Screen Sync Mode
     ui->comboMetroidScreenSyncMode->setCurrentIndex(instcfg.GetInt("Metroid.Screen.SyncMode"));
+    ui->cbMetroidClipCursorToBottomScreenWhenNotInGame->setChecked(instcfg.GetBool("Metroid.Visual.ClipCursorToBottomScreenWhenNotInGame"));
 
     // In-game scaling (mode 0=Auto, 1=5:3, 2=16:10, 3=16:9, 4=21:9)
     ui->cbMetroidInGameAspectRatio->setChecked(instcfg.GetBool("Metroid.Visual.InGameAspectRatio"));
@@ -309,7 +310,6 @@ MelonPrimeInputConfig::MelonPrimeInputConfig(EmuInstance* emu, QWidget* parent) 
 
     // Custom HUD
     ui->cbMetroidEnableCustomHud->setChecked(instcfg.GetBool("Metroid.Visual.CustomHUD"));
-    ui->spinMetroidHudFontSize->setValue(instcfg.GetInt("Metroid.Visual.HudFontSize"));
 
     // --- Collapsible sections: remember expand/collapse state ---
     auto setupToggle = [&instcfg](QPushButton* btn, QWidget* section, const QString& label, const char* cfgKey) {
@@ -327,14 +327,15 @@ MelonPrimeInputConfig::MelonPrimeInputConfig(EmuInstance* emu, QWidget* parent) 
     setupToggle(ui->btnToggleInner,     ui->sectionInner,     "INNER LINES",    "Metroid.UI.SectionInner");
     setupToggle(ui->btnToggleOuter,     ui->sectionOuter,     "OUTER LINES",    "Metroid.UI.SectionOuter");
     // HP & Ammo tab
-    setupToggle(ui->btnToggleHpPos,     ui->sectionHpPos,     "HP POSITION",    "Metroid.UI.SectionHpPos");
-    setupToggle(ui->btnToggleWpnPos,    ui->sectionWpnPos,    "AMMO POSITION",  "Metroid.UI.SectionWpnPos");
+    setupToggle(ui->btnToggleHpPos,     ui->sectionHpPos,     "HP NUMBER POSITION",    "Metroid.UI.SectionHpPos");
+    setupToggle(ui->btnToggleWpnPos,    ui->sectionWpnPos,    "AMMO NUMBER POSITION",  "Metroid.UI.SectionWpnPos");
     setupToggle(ui->btnToggleWpnIcon,   ui->sectionWpnIcon,   "WEAPON ICON",    "Metroid.UI.SectionWpnIcon");
     setupToggle(ui->btnToggleHpGauge,   ui->sectionHpGauge,   "HP GAUGE",       "Metroid.UI.SectionHpGauge");
     setupToggle(ui->btnToggleAmmoGauge, ui->sectionAmmoGauge, "AMMO GAUGE",     "Metroid.UI.SectionAmmoGauge");
     // Other Metroid Settings 2 tab
     setupToggle(ui->btnToggleInputSettings, ui->sectionInputSettings, "INPUT SETTINGS",   "Metroid.UI.SectionInputSettings");
     setupToggle(ui->btnToggleScreenSync,    ui->sectionScreenSync,    "SCREEN SYNC",      "Metroid.UI.SectionScreenSync");
+    setupToggle(ui->btnToggleCursorClipSettings, ui->sectionCursorClipSettings, "CURSOR CLIP SETTINGS",  "Metroid.UI.SectionCursorClipSettings");
     setupToggle(ui->btnToggleInGameAspectRatio, ui->sectionInGameAspectRatio, "IN-GAME ASPECT RATIO",  "Metroid.UI.SectionInGameAspectRatio");
     // Other Metroid Settings tab
     setupToggle(ui->btnToggleSensitivity, ui->sectionSensitivity, "SENSITIVITY",      "Metroid.UI.SectionSensitivity");
@@ -600,6 +601,46 @@ MelonPrimeInputConfig::MelonPrimeInputConfig(EmuInstance* emu, QWidget* parent) 
         ui->comboMetroidHudWeaponPosition->setCurrentIndex(wpnIdx);
     }
 
+    auto updateWeaponIconModeUi = [this]() {
+        const bool independent = (ui->comboMetroidHudWeaponIconMode->currentIndex() == 1);
+        ui->spinMetroidHudWeaponIconOffsetX->setEnabled(!independent);
+        ui->spinMetroidHudWeaponIconOffsetY->setEnabled(!independent);
+        ui->comboMetroidHudWeaponIconPosition->setEnabled(independent);
+        ui->spinMetroidHudWeaponIconPosX->setEnabled(independent);
+        ui->spinMetroidHudWeaponIconPosY->setEnabled(independent);
+        ui->comboMetroidHudWeaponIconAnchorX->setEnabled(independent);
+        ui->comboMetroidHudWeaponIconAnchorY->setEnabled(independent);
+    };
+    connect(ui->comboMetroidHudWeaponIconMode, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [updateWeaponIconModeUi](int) {
+        updateWeaponIconModeUi();
+    });
+    updateWeaponIconModeUi();
+    auto updateHpGaugeModeUi = [this]() {
+        const bool independent = (ui->comboMetroidHudHpGaugePosMode->currentIndex() == 1);
+        ui->spinMetroidHudHpGaugeOffsetX->setEnabled(!independent);
+        ui->spinMetroidHudHpGaugeOffsetY->setEnabled(!independent);
+        ui->comboMetroidHudHpGaugeAnchor->setEnabled(!independent);
+        ui->spinMetroidHudHpGaugePosX->setEnabled(independent);
+        ui->spinMetroidHudHpGaugePosY->setEnabled(independent);
+    };
+    connect(ui->comboMetroidHudHpGaugePosMode, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [updateHpGaugeModeUi](int) {
+        updateHpGaugeModeUi();
+    });
+    updateHpGaugeModeUi();
+
+    auto updateAmmoGaugeModeUi = [this]() {
+        const bool independent = (ui->comboMetroidHudAmmoGaugePosMode->currentIndex() == 1);
+        ui->spinMetroidHudAmmoGaugeOffsetX->setEnabled(!independent);
+        ui->spinMetroidHudAmmoGaugeOffsetY->setEnabled(!independent);
+        ui->comboMetroidHudAmmoGaugeAnchor->setEnabled(!independent);
+        ui->spinMetroidHudAmmoGaugePosX->setEnabled(independent);
+        ui->spinMetroidHudAmmoGaugePosY->setEnabled(independent);
+    };
+    connect(ui->comboMetroidHudAmmoGaugePosMode, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [updateAmmoGaugeModeUi](int) {
+        updateAmmoGaugeModeUi();
+    });
+    updateAmmoGaugeModeUi();
+
     // HP position preset → update X/Y
     connect(ui->comboMetroidHudHpPosition, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this](int idx) {
         struct Pos { int x, y; };
@@ -774,7 +815,6 @@ MelonPrimeInputConfig::MelonPrimeInputConfig(EmuInstance* emu, QWidget* parent) 
     };
 
     prvB(ui->cbMetroidEnableCustomHud);
-    prvI(ui->spinMetroidHudFontSize);
     prvB(ui->cbMetroidInGameAspectRatio);
     prvC(ui->comboMetroidInGameAspectRatioMode);
     // Match Status
@@ -912,7 +952,6 @@ void MelonPrimeInputConfig::snapshotVisualConfig()
     auto sE = [&](const char* k, QLineEdit* w)       { s[k] = w->text(); };
 
     sB("cCustomHud",       ui->cbMetroidEnableCustomHud);
-    sI("sFontSize",        ui->spinMetroidHudFontSize);
     sB("cAspectRatio",     ui->cbMetroidInGameAspectRatio);
     sC("cAspectRatioMode", ui->comboMetroidInGameAspectRatioMode);
     // Match Status
@@ -1052,7 +1091,6 @@ void MelonPrimeInputConfig::restoreVisualSnapshot()
     };
 
     rB("cCustomHud",       ui->cbMetroidEnableCustomHud);
-    rI("sFontSize",        ui->spinMetroidHudFontSize);
     rB("cAspectRatio",     ui->cbMetroidInGameAspectRatio);
     rC("cAspectRatioMode", ui->comboMetroidInGameAspectRatioMode);
     // Match Status
@@ -1217,9 +1255,9 @@ void MelonPrimeInputConfig::applyVisualPreview()
     Config::Table& instcfg = emuInstance->getLocalConfig();
 
     instcfg.SetBool("Metroid.Visual.CustomHUD",              ui->cbMetroidEnableCustomHud->isChecked());
-    instcfg.SetInt ("Metroid.Visual.HudFontSize",            ui->spinMetroidHudFontSize->value());
     instcfg.SetBool("Metroid.Visual.InGameAspectRatio",      ui->cbMetroidInGameAspectRatio->isChecked());
     instcfg.SetInt ("Metroid.Visual.InGameAspectRatioMode",  ui->comboMetroidInGameAspectRatioMode->currentIndex());
+    instcfg.SetBool("Metroid.Visual.ClipCursorToBottomScreenWhenNotInGame", ui->cbMetroidClipCursorToBottomScreenWhenNotInGame->isChecked());
 
     instcfg.SetBool("Metroid.Visual.HudMatchStatusShow",     ui->cbMetroidHudMatchStatusShow->isChecked());
     instcfg.SetInt ("Metroid.Visual.HudMatchStatusX",        ui->spinMetroidHudMatchStatusX->value());
@@ -1388,6 +1426,7 @@ void MelonPrimeInputConfig::saveConfig()
     // In-game scaling
     instcfg.SetBool("Metroid.Visual.InGameAspectRatio", ui->cbMetroidInGameAspectRatio->checkState() == Qt::Checked);
     instcfg.SetInt("Metroid.Visual.InGameAspectRatioMode", ui->comboMetroidInGameAspectRatioMode->currentIndex());
+    instcfg.SetBool("Metroid.Visual.ClipCursorToBottomScreenWhenNotInGame", ui->cbMetroidClipCursorToBottomScreenWhenNotInGame->checkState() == Qt::Checked);
 
     // Battle HUD
     instcfg.SetBool("Metroid.Visual.HudMatchStatusShow", ui->cbMetroidHudMatchStatusShow->checkState() == Qt::Checked);
@@ -1424,7 +1463,6 @@ void MelonPrimeInputConfig::saveConfig()
 
     // Custom HUD
     instcfg.SetBool("Metroid.Visual.CustomHUD", ui->cbMetroidEnableCustomHud->checkState() == Qt::Checked);
-    instcfg.SetInt("Metroid.Visual.HudFontSize", ui->spinMetroidHudFontSize->value());
 
     // Section toggle states
     instcfg.SetBool("Metroid.UI.SectionCrosshair",      ui->btnToggleCrosshair->isChecked());
@@ -1437,6 +1475,7 @@ void MelonPrimeInputConfig::saveConfig()
     instcfg.SetBool("Metroid.UI.SectionAmmoGauge",      ui->btnToggleAmmoGauge->isChecked());
     instcfg.SetBool("Metroid.UI.SectionInputSettings",  ui->btnToggleInputSettings->isChecked());
     instcfg.SetBool("Metroid.UI.SectionScreenSync",     ui->btnToggleScreenSync->isChecked());
+    instcfg.SetBool("Metroid.UI.SectionCursorClipSettings",  ui->btnToggleCursorClipSettings->isChecked());
     instcfg.SetBool("Metroid.UI.SectionInGameAspectRatio",  ui->btnToggleInGameAspectRatio->isChecked());
     instcfg.SetBool("Metroid.UI.SectionSensitivity",    ui->btnToggleSensitivity->isChecked());
     instcfg.SetBool("Metroid.UI.SectionGameplay",       ui->btnToggleGameplay->isChecked());
@@ -1722,7 +1761,6 @@ void MelonPrimeInputConfig::resetCrosshairDefaults()
     ui->spinMetroidCrosshairOuterOffset->setValue(4);
 
     // Font size
-    ui->spinMetroidHudFontSize->setValue(6);
 }
 
 void MelonPrimeInputConfig::resetHpAmmoDefaults()
@@ -1817,7 +1855,3 @@ void MelonPrimeInputConfig::resetMatchStatusDefaults()
     ui->comboMetroidHudMatchStatusSepColor->setCurrentIndex(0);
     ui->comboMetroidHudMatchStatusGoalColor->setCurrentIndex(0);
 }
-
-
-
-
