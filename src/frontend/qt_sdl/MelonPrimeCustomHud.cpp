@@ -66,14 +66,17 @@ struct CachedHudConfig {
     bool   hpGauge, hpAutoColor;
     int    hpGaugeOri, hpGaugeLen, hpGaugeWid;
     int    hpGaugeOfsX, hpGaugeOfsY, hpGaugeAnchor;
+    int    hpGaugePosMode, hpGaugePosX, hpGaugePosY;
     QColor hpGaugeColor;
     // Weapon / Ammo
     int    wpnX, wpnY;
     char   ammoPrefix[12];
     bool   iconShow, ammoGauge;
     int    iconMode, iconOfsX, iconOfsY, iconPosX, iconPosY;
+    int    iconAnchorX, iconAnchorY; // 0=Left/Top  1=Center  2=Right/Bottom
     int    ammoGaugeOri, ammoGaugeLen, ammoGaugeWid;
     int    ammoGaugeOfsX, ammoGaugeOfsY, ammoGaugeAnchor;
+    int    ammoGaugePosMode, ammoGaugePosX, ammoGaugePosY;
     QColor ammoGaugeColor;
     // Crosshair — general
     QColor chColor;
@@ -88,6 +91,18 @@ struct CachedHudConfig {
     bool   chOuterShow;
     double chOuterOpacity;
     int    chOuterLengthX, chOuterLengthY, chOuterThickness, chOuterOffset;
+    // Battle HUD
+    bool   battleShow;
+    int    battleX, battleY;
+    int    battleLabelOfsX, battleLabelOfsY;
+    int    battleLabelPos; // 0=Above,1=Below,2=Left,3=Right,4=Center
+    char   labelPoints[17], labelOctoliths[17], labelLives[17];
+    char   labelRingTime[17], labelPrimeTime[17];
+    QColor battleColor;       // overall (fallback)
+    QColor battleLabelColor;  // invalid = use battleColor
+    QColor battleValueColor;  // invalid = use battleColor
+    QColor battleSepColor;    // invalid = use battleColor
+    QColor battleGoalColor;   // invalid = use battleColor
     // Cache invalidation
     bool valid;
 };
@@ -111,6 +126,9 @@ static void RefreshCachedConfig(Config::Table& cfg)
     c.hpGaugeOfsX  = cfg.GetInt("Metroid.Visual.HudHpGaugeOffsetX");
     c.hpGaugeOfsY  = cfg.GetInt("Metroid.Visual.HudHpGaugeOffsetY");
     c.hpGaugeAnchor = cfg.GetInt("Metroid.Visual.HudHpGaugeAnchor");
+    c.hpGaugePosMode = cfg.GetInt("Metroid.Visual.HudHpGaugePosMode");
+    c.hpGaugePosX  = cfg.GetInt("Metroid.Visual.HudHpGaugePosX");
+    c.hpGaugePosY  = cfg.GetInt("Metroid.Visual.HudHpGaugePosY");
     c.hpAutoColor  = cfg.GetBool("Metroid.Visual.HudHpGaugeAutoColor");
     c.hpGaugeColor = QColor(cfg.GetInt("Metroid.Visual.HudHpGaugeColorR"),
                             cfg.GetInt("Metroid.Visual.HudHpGaugeColorG"),
@@ -125,8 +143,10 @@ static void RefreshCachedConfig(Config::Table& cfg)
     c.iconMode = cfg.GetInt("Metroid.Visual.HudWeaponIconMode");
     c.iconOfsX = cfg.GetInt("Metroid.Visual.HudWeaponIconOffsetX");
     c.iconOfsY = cfg.GetInt("Metroid.Visual.HudWeaponIconOffsetY");
-    c.iconPosX = cfg.GetInt("Metroid.Visual.HudWeaponIconPosX");
-    c.iconPosY = cfg.GetInt("Metroid.Visual.HudWeaponIconPosY");
+    c.iconPosX    = cfg.GetInt("Metroid.Visual.HudWeaponIconPosX");
+    c.iconPosY    = cfg.GetInt("Metroid.Visual.HudWeaponIconPosY");
+    c.iconAnchorX = cfg.GetInt("Metroid.Visual.HudWeaponIconAnchorX");
+    c.iconAnchorY = cfg.GetInt("Metroid.Visual.HudWeaponIconAnchorY");
     c.ammoGauge     = cfg.GetBool("Metroid.Visual.HudAmmoGauge");
     c.ammoGaugeOri  = cfg.GetInt("Metroid.Visual.HudAmmoGaugeOrientation");
     c.ammoGaugeLen  = cfg.GetInt("Metroid.Visual.HudAmmoGaugeLength");
@@ -134,6 +154,9 @@ static void RefreshCachedConfig(Config::Table& cfg)
     c.ammoGaugeOfsX = cfg.GetInt("Metroid.Visual.HudAmmoGaugeOffsetX");
     c.ammoGaugeOfsY = cfg.GetInt("Metroid.Visual.HudAmmoGaugeOffsetY");
     c.ammoGaugeAnchor = cfg.GetInt("Metroid.Visual.HudAmmoGaugeAnchor");
+    c.ammoGaugePosMode = cfg.GetInt("Metroid.Visual.HudAmmoGaugePosMode");
+    c.ammoGaugePosX  = cfg.GetInt("Metroid.Visual.HudAmmoGaugePosX");
+    c.ammoGaugePosY  = cfg.GetInt("Metroid.Visual.HudAmmoGaugePosY");
     c.ammoGaugeColor = QColor(cfg.GetInt("Metroid.Visual.HudAmmoGaugeColorR"),
                               cfg.GetInt("Metroid.Visual.HudAmmoGaugeColorG"),
                               cfg.GetInt("Metroid.Visual.HudAmmoGaugeColorB"));
@@ -166,6 +189,342 @@ static void RefreshCachedConfig(Config::Table& cfg)
     c.chOuterThickness = cfg.GetInt("Metroid.Visual.CrosshairOuterThickness");
     if (c.chOuterThickness <= 0) c.chOuterThickness = 1;
     c.chOuterOffset  = cfg.GetInt("Metroid.Visual.CrosshairOuterOffset");
+    // Battle HUD
+    c.battleShow     = cfg.GetBool("Metroid.Visual.HudMatchStatusShow");
+    c.battleX        = cfg.GetInt("Metroid.Visual.HudMatchStatusX");
+    c.battleY        = cfg.GetInt("Metroid.Visual.HudMatchStatusY");
+    c.battleLabelOfsX = cfg.GetInt("Metroid.Visual.HudMatchStatusLabelOfsX");
+    c.battleLabelOfsY = cfg.GetInt("Metroid.Visual.HudMatchStatusLabelOfsY");
+    c.battleLabelPos  = cfg.GetInt("Metroid.Visual.HudMatchStatusLabelPos");
+    // Per-mode label strings
+    auto copyLabel = [](char* dst, size_t sz, const std::string& s) {
+        std::strncpy(dst, s.c_str(), sz - 1); dst[sz - 1] = '\0';
+    };
+    copyLabel(c.labelPoints,    sizeof(c.labelPoints),    cfg.GetString("Metroid.Visual.HudMatchStatusLabelPoints"));
+    copyLabel(c.labelOctoliths, sizeof(c.labelOctoliths), cfg.GetString("Metroid.Visual.HudMatchStatusLabelOctoliths"));
+    copyLabel(c.labelLives,     sizeof(c.labelLives),     cfg.GetString("Metroid.Visual.HudMatchStatusLabelLives"));
+    copyLabel(c.labelRingTime,  sizeof(c.labelRingTime),  cfg.GetString("Metroid.Visual.HudMatchStatusLabelRingTime"));
+    copyLabel(c.labelPrimeTime, sizeof(c.labelPrimeTime), cfg.GetString("Metroid.Visual.HudMatchStatusLabelPrimeTime"));
+    c.battleColor = QColor(cfg.GetInt("Metroid.Visual.HudMatchStatusColorR"),
+                           cfg.GetInt("Metroid.Visual.HudMatchStatusColorG"),
+                           cfg.GetInt("Metroid.Visual.HudMatchStatusColorB"));
+    // Sub-colors: invalid QColor means "use overall battleColor"
+    auto readSubColor = [&](const char* keyOverall,
+                            const char* keyR, const char* keyG, const char* keyB) -> QColor {
+        if (cfg.GetBool(keyOverall)) return QColor(); // invalid = inherit
+        return QColor(cfg.GetInt(keyR), cfg.GetInt(keyG), cfg.GetInt(keyB));
+    };
+    c.battleLabelColor = readSubColor(
+        "Metroid.Visual.HudMatchStatusLabelColorOverall",
+        "Metroid.Visual.HudMatchStatusLabelColorR",
+        "Metroid.Visual.HudMatchStatusLabelColorG",
+        "Metroid.Visual.HudMatchStatusLabelColorB");
+    c.battleValueColor = readSubColor(
+        "Metroid.Visual.HudMatchStatusValueColorOverall",
+        "Metroid.Visual.HudMatchStatusValueColorR",
+        "Metroid.Visual.HudMatchStatusValueColorG",
+        "Metroid.Visual.HudMatchStatusValueColorB");
+    c.battleSepColor = readSubColor(
+        "Metroid.Visual.HudMatchStatusSepColorOverall",
+        "Metroid.Visual.HudMatchStatusSepColorR",
+        "Metroid.Visual.HudMatchStatusSepColorG",
+        "Metroid.Visual.HudMatchStatusSepColorB");
+    c.battleGoalColor = readSubColor(
+        "Metroid.Visual.HudMatchStatusGoalColorOverall",
+        "Metroid.Visual.HudMatchStatusGoalColorR",
+        "Metroid.Visual.HudMatchStatusGoalColorG",
+        "Metroid.Visual.HudMatchStatusGoalColorB");
+}
+
+// =========================================================================
+//  Battle HUD — mode-specific score/time display
+// =========================================================================
+
+// Battle modes (8-bit read from addrBattleMode)
+enum BattleMode : uint8_t {
+    MODE_BATTLE        = 2,
+    MODE_BOUNTY        = 3,
+    MODE_CAPTURE       = 4,
+    MODE_DEFENDER      = 5,
+    MODE_NODES         = 6,
+    MODE_PRIME_HUNTER  = 7,
+    MODE_SURVIVAL      = 8,
+};
+
+// XX → goal: direct map from document (no index calculation)
+static int LookupBattleGoal(uint8_t xx)
+{
+    switch (xx) {
+    case 0x00: return 1;   case 0x04: return 5;   case 0x08: return 7;
+    case 0x0C: return 10;  case 0x10: return 15;  case 0x14: return 20;
+    case 0x18: return 25;  case 0x1C: return 30;  case 0x20: return 40;
+    case 0x24: return 50;  case 0x28: return 60;  case 0x2C: return 70;
+    case 0x30: return 80;  case 0x34: return 90;  case 0x38: return 100;
+    default: return 0;
+    }
+}
+
+static int LookupSurvivalGoal(uint8_t xx)
+{
+    switch (xx) {
+    case 0x00: return 0;  case 0x04: return 1;  case 0x08: return 2;
+    case 0x0C: return 3;  case 0x10: return 4;  case 0x14: return 5;
+    case 0x18: return 6;  case 0x1C: return 7;  case 0x20: return 8;
+    case 0x24: return 9;  case 0x28: return 10;
+    default: return 0;
+    }
+}
+
+static int LookupOctoGoal(uint8_t xx)
+{
+    switch (xx) {
+    case 0x00: return 1;  case 0x04: return 2;  case 0x08: return 3;
+    case 0x0C: return 4;  case 0x10: return 5;  case 0x14: return 6;
+    case 0x18: return 7;  case 0x1C: return 8;  case 0x20: return 9;
+    case 0x24: return 10; case 0x28: return 15; case 0x2C: return 20;
+    case 0x30: return 25;
+    default: return 0;
+    }
+}
+
+static int LookupNodeGoal(uint8_t xx)
+{
+    switch (xx) {
+    case 0x00: return 40;  case 0x04: return 50;  case 0x08: return 60;
+    case 0x0C: return 70;  case 0x10: return 80;  case 0x14: return 90;
+    case 0x18: return 100; case 0x1C: return 120; case 0x20: return 140;
+    case 0x24: return 160; case 0x28: return 180; case 0x2C: return 190;
+    case 0x30: return 200; case 0x34: return 250;
+    default: return 0;
+    }
+}
+
+// Defender/Prime Hunter time goal XY→seconds (from battleSettings+4)
+static int LookupTimeGoalSec(uint8_t xy)
+{
+    switch (xy) {
+    case 0x00: return 60;  case 0x02: return 90;  case 0x04: return 120;
+    case 0x06: return 150; case 0x08: return 180; case 0x0A: return 210;
+    case 0x0C: return 240; case 0x0E: return 270; case 0x10: return 300;
+    case 0x12: return 360; case 0x14: return 420; case 0x16: return 480;
+    case 0x18: return 540; case 0x1A: return 600;
+    default: return 0;
+    }
+}
+
+static int LookupGoal(uint8_t mode, uint8_t xx)
+{
+    switch (mode) {
+    case MODE_BATTLE:       return LookupBattleGoal(xx);
+    case MODE_SURVIVAL:     return LookupSurvivalGoal(xx);
+    case MODE_BOUNTY:
+    case MODE_CAPTURE:      return LookupOctoGoal(xx);
+    case MODE_NODES:        return LookupNodeGoal(xx);
+    default:                return 0;
+    }
+}
+
+static void FormatTime(char* buf, int bufSize, int seconds)
+{
+    int m = seconds / 60;
+    int s = seconds % 60;
+    std::snprintf(buf, bufSize, "%d:%02d", m, s);
+}
+
+// =========================================================================
+//  Battle match cache — read once at match join, reused every frame
+// =========================================================================
+struct BattleMatchState {
+    uint8_t  mode;
+    int      goalValue;
+    bool     isTimeMode;
+    bool     valid;
+};
+static BattleMatchState s_battleState = { .valid = false };
+
+void CustomHud_OnMatchJoin(melonDS::u8* ram, const RomAddresses& rom)
+{
+    auto& b = s_battleState;
+    b.mode = Read8(ram, rom.battleMode);
+    b.isTimeMode = false;
+    b.goalValue = 0;
+
+    if (b.mode < MODE_BATTLE || b.mode > MODE_SURVIVAL) {
+        b.valid = false;
+        return;
+    }
+
+    uint32_t settings = Read32(ram, rom.battleSettings);
+    uint8_t xx = (settings >> 20) & 0xFE; // bit 0 is a flag bit, mask it out
+
+    switch (b.mode) {
+    case MODE_BATTLE:
+    case MODE_NODES:
+    case MODE_BOUNTY:
+    case MODE_CAPTURE:
+        b.goalValue = LookupGoal(b.mode, xx);
+        break;
+    case MODE_SURVIVAL:
+        b.goalValue = LookupGoal(b.mode, xx) + 1; // table = max deaths, lives = deaths + 1
+        break;
+    case MODE_DEFENDER:
+    case MODE_PRIME_HUNTER: {
+        uint32_t timeSetting = Read32(ram, rom.battleSettings + 4);
+        uint8_t timeGoalRaw = (timeSetting >> 4) & 0x1F;
+        b.goalValue = LookupTimeGoalSec(timeGoalRaw);
+        b.isTimeMode = true;
+        break;
+    }
+    }
+
+    b.valid = true;
+}
+
+static const char* ResolveBattleLabel(uint8_t mode, const CachedHudConfig& c)
+{
+    switch (mode) {
+    case MODE_BATTLE:
+    case MODE_NODES:        return c.labelPoints;
+    case MODE_BOUNTY:
+    case MODE_CAPTURE:      return c.labelOctoliths;
+    case MODE_SURVIVAL:     return c.labelLives;
+    case MODE_DEFENDER:     return c.labelRingTime;
+    case MODE_PRIME_HUNTER: return c.labelPrimeTime;
+    default:                return "";
+    }
+}
+
+static void DrawMatchStatusHud(QPainter* p, melonDS::u8* ram,
+                                const RomAddresses& rom, uint8_t playerPos,
+                                bool isAdventure, const CachedHudConfig& c)
+{
+    if (!c.battleShow || isAdventure) return;
+
+    uint8_t mode = Read8(ram, rom.battleMode);
+    if (mode < MODE_BATTLE || mode > MODE_SURVIVAL) return;
+
+    // Read current value + goal every frame (no cache dependency)
+    uint32_t playerOfs = static_cast<uint32_t>(playerPos) * 4;
+    int currentValue = 0;
+    int goalValue = 0;
+    bool isTimeMode = false;
+
+    // Battle settings: QXXV00Z0 format (each char = 1 hex digit)
+    // XX is at bits 27-20; bit 0 of the full word is a flag bit, mask it out
+    uint32_t settings = Read32(ram, rom.battleSettings);
+    uint8_t xx = (settings >> 20) & 0xFE; // bit 0 is a flag bit, not part of XX
+
+    switch (mode) {
+    case MODE_BATTLE:
+    case MODE_NODES:
+        currentValue = static_cast<int>(Read32(ram, rom.basePoint + playerOfs));
+        goalValue = LookupGoal(mode, xx);
+        break;
+    case MODE_BOUNTY:
+    case MODE_CAPTURE:
+        currentValue = static_cast<int>(Read32(ram, rom.basePoint + playerOfs));
+        goalValue = LookupGoal(mode, xx);
+        break;
+    case MODE_SURVIVAL:
+        currentValue = static_cast<int>(Read32(ram, rom.basePoint - 0xB0 + playerOfs));
+        goalValue = LookupGoal(mode, xx); 
+        break;
+    case MODE_DEFENDER:
+    case MODE_PRIME_HUNTER: {
+        currentValue = static_cast<int>(Read32(ram, rom.basePoint - 0x180 + playerOfs)) / 60;
+        // Time goal from battleSettings+4: format 0000XXYZ
+        // XXY (12 bits) = (timeLimitValue << 4) + timeGoalValue
+        // timeGoalRaw = XXY & 0x1F (lower 5 bits), index = raw / 2
+        uint32_t timeSetting = Read32(ram, rom.battleSettings + 4);
+        uint8_t timeGoalRaw = (timeSetting >> 4) & 0x1F;
+        goalValue = LookupTimeGoalSec(timeGoalRaw);
+        isTimeMode = true;
+        break;
+    }
+    default:
+        return;
+    }
+
+    // Survival: RAM stores death count, display remaining lives
+    if (mode == MODE_SURVIVAL && goalValue > 0) {
+        currentValue = goalValue - currentValue;
+        if (currentValue < 0) currentValue = 0;
+    }
+
+    // Build per-part strings
+    char curBuf[24] = {}, sepBuf[4] = {}, goalBuf[24] = {};
+    bool hasGoal = false;
+    if (isTimeMode) {
+        FormatTime(curBuf, sizeof(curBuf), currentValue);
+        FormatTime(goalBuf, sizeof(goalBuf), goalValue);
+        std::strncpy(sepBuf, " / ", sizeof(sepBuf));
+        hasGoal = true;
+    } else if (goalValue > 0) {
+        std::snprintf(curBuf, sizeof(curBuf), "%d", currentValue);
+        std::snprintf(goalBuf, sizeof(goalBuf), "%d", goalValue);
+        std::strncpy(sepBuf, " / ", sizeof(sepBuf));
+        hasGoal = true;
+    } else {
+        // Goal lookup failed — show raw XX for debugging
+        std::snprintf(curBuf, sizeof(curBuf), "%d (XX=0x%02X)", currentValue, xx);
+    }
+
+    // Helper: pick sub-color or fall back to overall
+    auto eff = [&](const QColor& sub) -> const QColor& {
+        return sub.isValid() ? sub : c.battleColor;
+    };
+
+    // Draw value parts at base position
+    int vx = c.battleX;
+    int vy = c.battleY;
+    QFontMetrics fm = p->fontMetrics();
+
+    p->setPen(eff(c.battleValueColor));
+    p->drawText(QPoint(vx, vy), curBuf);
+
+    if (hasGoal) {
+        int x = vx + fm.horizontalAdvance(curBuf);
+        p->setPen(eff(c.battleSepColor));
+        p->drawText(QPoint(x, vy), sepBuf);
+        x += fm.horizontalAdvance(sepBuf);
+        p->setPen(eff(c.battleGoalColor));
+        p->drawText(QPoint(x, vy), goalBuf);
+    }
+
+    // Draw label
+    const char* label = ResolveBattleLabel(mode, c);
+    if (label[0] == '\0') return;
+
+    // labelPos: 0=Above, 1=Below, 2=Left, 3=Right, 4=Center
+    int lx, ly;
+    switch (c.battleLabelPos) {
+    default:
+    case 0: // Above
+        lx = vx;
+        ly = vy - 10;
+        break;
+    case 1: // Below
+        lx = vx;
+        ly = vy + 10;
+        break;
+    case 2: // Left
+        lx = vx - 50;
+        ly = vy;
+        break;
+    case 3: // Right
+        lx = vx + 50;
+        ly = vy;
+        break;
+    case 4: // Center (overlaps value)
+        lx = vx;
+        ly = vy;
+        break;
+    }
+    lx += c.battleLabelOfsX;
+    ly += c.battleLabelOfsY;
+
+    p->setPen(eff(c.battleLabelColor));
+    p->drawText(QPoint(lx, ly), label);
 }
 
 // =========================================================================
@@ -246,6 +605,7 @@ void CustomHud_ResetPatchState()
 {
     s_hudPatchApplied = false;
     s_cache.valid = false;
+    s_battleState.valid = false;
 }
 
 // P-3: Called from settings dialog save to trigger config re-read next frame
@@ -318,8 +678,13 @@ static inline void DrawHP(QPainter* p, uint16_t hp, uint16_t maxHP,
         float ratio = static_cast<float>(hp) / static_cast<float>(maxHP);
         QColor gc = c.hpAutoColor ? HpGaugeColor(hp) : c.hpGaugeColor;
         int gx, gy;
-        CalcGaugePos(c.hpX, c.hpY, c.hpGaugeAnchor, c.hpGaugeOfsX, c.hpGaugeOfsY,
-                     c.hpGaugeLen, c.hpGaugeWid, c.hpGaugeOri, gx, gy);
+        if (c.hpGaugePosMode == 1) {
+            gx = c.hpGaugePosX;
+            gy = c.hpGaugePosY;
+        } else {
+            CalcGaugePos(c.hpX, c.hpY, c.hpGaugeAnchor, c.hpGaugeOfsX, c.hpGaugeOfsY,
+                         c.hpGaugeLen, c.hpGaugeWid, c.hpGaugeOri, gx, gy);
+        }
         DrawGauge(p, gx, gy, ratio, gc, c.hpGaugeOri, c.hpGaugeLen, c.hpGaugeWid);
     }
 }
@@ -364,7 +729,7 @@ static void DrawWeaponAmmo(QPainter* p, melonDS::u8* ram,
         }
     }
 
-    int textX = c.wpnX, textY = c.wpnY + 8;
+    int textX = c.wpnX, textY = c.wpnY;
     if (hasAmmo) {
         char buf[24];
         std::snprintf(buf, sizeof(buf), "%s%02d", c.ammoPrefix, ammo);
@@ -372,17 +737,25 @@ static void DrawWeaponAmmo(QPainter* p, melonDS::u8* ram,
     }
 
     if (c.iconShow && !icon.isNull()) {
-        if (c.iconMode == 0)
-            p->drawImage(QPoint(c.wpnX + c.iconOfsX, c.wpnY + c.iconOfsY), icon);
-        else
-            p->drawImage(QPoint(c.iconPosX, c.iconPosY), icon);
+        int ix = (c.iconMode == 0) ? c.wpnX + c.iconOfsX : c.iconPosX;
+        int iy = (c.iconMode == 0) ? c.wpnY + c.iconOfsY : c.iconPosY;
+        if (c.iconAnchorX == 1) ix -= icon.width() / 2;
+        else if (c.iconAnchorX == 2) ix -= icon.width();
+        if (c.iconAnchorY == 1) iy -= icon.height() / 2;
+        else if (c.iconAnchorY == 2) iy -= icon.height();
+        p->drawImage(QPoint(ix, iy), icon);
     }
 
     if (c.ammoGauge && hasAmmo && maxAmmo > 0) {
         float ratio = static_cast<float>(ammo) / static_cast<float>(maxAmmo);
         int gx, gy;
-        CalcGaugePos(textX, textY, c.ammoGaugeAnchor, c.ammoGaugeOfsX, c.ammoGaugeOfsY,
-                     c.ammoGaugeLen, c.ammoGaugeWid, c.ammoGaugeOri, gx, gy);
+        if (c.ammoGaugePosMode == 1) {
+            gx = c.ammoGaugePosX;
+            gy = c.ammoGaugePosY;
+        } else {
+            CalcGaugePos(textX, textY, c.ammoGaugeAnchor, c.ammoGaugeOfsX, c.ammoGaugeOfsY,
+                         c.ammoGaugeLen, c.ammoGaugeWid, c.ammoGaugeOri, gx, gy);
+        }
         DrawGauge(p, gx, gy, ratio, c.ammoGaugeColor, c.ammoGaugeOri, c.ammoGaugeLen, c.ammoGaugeWid);
     }
 }
@@ -555,6 +928,12 @@ HOT_FUNCTION void CustomHud_Render(
     }
 
     DrawHP(topPaint, currentHP, maxHP, c);
+
+    // Battle HUD (non-adventure only, visible in all camera modes)
+    {
+        bool isAdventure = Read8(ram, rom.isInAdventure) == 0x02;
+        DrawMatchStatusHud(topPaint, ram, rom, playerPosition, isAdventure, c);
+    }
 
     if (!isFirstPerson) return;
 

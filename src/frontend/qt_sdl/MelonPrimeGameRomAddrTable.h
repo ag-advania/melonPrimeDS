@@ -82,6 +82,14 @@ namespace MelonPrime {
     inline constexpr RomTable<uint32_t> LIST_ScaleValueAddr    = { 0x02112960, 0x02112920, 0x02110820, 0x021112E0, 0x02111300, 0x02111380, 0x021091A4 }; // 16-bit
 #endif
 
+#ifdef MELONPRIME_DS
+    // Battle mode HUD addresses
+    inline constexpr RomTable<uint32_t> LIST_BattleMode       = { 0x020CD344, 0x020CD304, 0x020CB508, 0x020CBD90, 0x020CBDB0, 0x020CBE30, 0x020C4B74 };
+    inline constexpr RomTable<uint32_t> LIST_BattleSettings    = { 0x020CD3B8, 0x020CD378, 0x020CB57C, 0x020CBE04, 0x020CBE24, 0x020CBEA4, 0x020C4BE8 };
+    inline constexpr RomTable<uint32_t> LIST_BasePoint         = { 0x020E9C6C, 0x020E9C2C, 0x020E7B2C, 0x020E85EC, 0x020E860C, 0x020E868C, 0x020E1428 };
+    // Lives offset = basePoint - 0xB0, Time offset = basePoint - 0x180 (per-player: +4 * playerIdx)
+#endif
+
     // =========================================================================
     //  Aim Smoothing Patch Target Addresses & Original Instructions
     // =========================================================================
@@ -153,6 +161,11 @@ namespace MelonPrime {
         uint32_t scalePatchAddr2;
         uint32_t scaleValueAddr;   // 16-bit write target
 #endif
+#ifdef MELONPRIME_DS
+        uint32_t battleMode;
+        uint32_t battleSettings;   // +4 = time limit settings
+        uint32_t basePoint;        // -0xB0 = lives, -0x180 = time
+#endif
 
         uint32_t aimPatchAddrX;
         uint32_t aimPatchOrigX1;
@@ -194,6 +207,9 @@ namespace MelonPrime {
 #endif
 #ifdef MELONPRIME_DS
             LIST_ScalePatchAddr1[i], LIST_ScalePatchAddr2[i], LIST_ScaleValueAddr[i],
+#endif
+#ifdef MELONPRIME_DS
+            LIST_BattleMode[i], LIST_BattleSettings[i], LIST_BasePoint[i],
 #endif
 
             LIST_AimPatchAddrX[i], LIST_AimPatchOrigX1[i], LIST_AimPatchOrigX2[i], LIST_AimPatchX1[i],

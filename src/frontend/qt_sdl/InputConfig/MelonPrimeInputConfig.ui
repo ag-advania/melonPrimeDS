@@ -553,7 +553,7 @@
 									<item>
 										<layout class="QFormLayout" name="formInGameAspectRatio">
 											<item row="0" column="0"><widget class="QLabel"><property name="text"><string>Enable In-Game Aspect Ratio</string></property></widget></item>
-											<item row="0" column="1"><widget class="QCheckBox" name="cbMetroidInGameAspectRatio"><property name="text"><string></string></property></widget></item>
+											<item row="0" column="1"><widget class="QCheckBox" name="cbMetroidInGameAspectRatio"><property name="text"><string></string></property><property name="checked"><bool>true</bool></property></widget></item>
 											<item row="1" column="0"><widget class="QLabel"><property name="text"><string>Aspect Ratio Mode</string></property></widget></item>
 											<item row="1" column="1">
 												<widget class="QComboBox" name="comboMetroidInGameAspectRatioMode">
@@ -592,7 +592,7 @@
 
 							<!-- Enable Custom HUD -->
 							<item>
-								<widget class="QCheckBox" name="cbMetroidEnableCustomHud"><property name="text"><string>Enable Custom HUD (Replaces the in-game HUD with a custom overlay showing HP, ammo, weapon icons and crosshair)</string></property><property name="checked"><bool>true</bool></property></widget>
+								<widget class="QCheckBox" name="cbMetroidEnableCustomHud"><property name="text"><string>Enable Custom HUD (Replaces the in-game HUD with a custom overlay showing HP, ammo, weapon icons and crosshair)</string></property></widget>
 							</item>
 
 							<!-- CROSSHAIR toggle -->
@@ -692,6 +692,12 @@
 							</item>
 
 							<item>
+								<widget class="QPushButton" name="btnResetCrosshairDefaults">
+									<property name="text"><string>Reset Crosshair to Defaults</string></property>
+								</widget>
+							</item>
+
+							<item>
 								<spacer name="crosshairSpacer"><property name="orientation"><enum>Qt::Vertical</enum></property><property name="sizeHint" stdset="0"><size><width>20</width><height>40</height></size></property></spacer>
 							</item>
 
@@ -726,7 +732,7 @@
 									<item row="2" column="0"><widget class="QLabel"><property name="text"><string>HP Position Y</string></property></widget></item>
 									<item row="2" column="1"><widget class="QSpinBox" name="spinMetroidHudHpY"><property name="minimum"><number>0</number></property><property name="maximum"><number>191</number></property><property name="value"><number>8</number></property></widget></item>
 									<item row="3" column="0"><widget class="QLabel"><property name="text"><string>HP Prefix</string></property></widget></item>
-									<item row="3" column="1"><widget class="QLineEdit" name="leMetroidHudHpPrefix"><property name="text"><string>hp </string></property><property name="maxLength"><number>8</number></property><property name="toolTip"><string>Text before HP number (e.g. "hp " → "hp 99"). Leave empty to show number only.</string></property></widget></item>
+									<item row="3" column="1"><widget class="QLineEdit" name="leMetroidHudHpPrefix"><property name="text"><string></string></property><property name="maxLength"><number>8</number></property><property name="toolTip"><string>Text before HP number (e.g. "hp " → "hp 99"). Leave empty to show number only.</string></property></widget></item>
 
 								</layout>
 								</widget>
@@ -781,6 +787,10 @@
 									<item row="5" column="1"><widget class="QSpinBox" name="spinMetroidHudWeaponIconPosX"><property name="minimum"><number>0</number></property><property name="maximum"><number>255</number></property><property name="value"><number>226</number></property></widget></item>
 									<item row="6" column="0"><widget class="QLabel"><property name="text"><string>Icon Position Y</string></property></widget></item>
 									<item row="6" column="1"><widget class="QSpinBox" name="spinMetroidHudWeaponIconPosY"><property name="minimum"><number>0</number></property><property name="maximum"><number>191</number></property><property name="value"><number>174</number></property></widget></item>
+									<item row="7" column="0"><widget class="QLabel"><property name="text"><string>Icon Anchor X</string></property></widget></item>
+									<item row="7" column="1"><widget class="QComboBox" name="comboMetroidHudWeaponIconAnchorX"><item><property name="text"><string>Left</string></property></item><item><property name="text"><string>Center</string></property></item><item><property name="text"><string>Right</string></property></item></widget></item>
+									<item row="8" column="0"><widget class="QLabel"><property name="text"><string>Icon Anchor Y</string></property></widget></item>
+									<item row="8" column="1"><widget class="QComboBox" name="comboMetroidHudWeaponIconAnchorY"><item><property name="text"><string>Top</string></property></item><item><property name="text"><string>Center</string></property></item><item><property name="text"><string>Bottom</string></property></item></widget></item>
 								</layout>
 								</widget>
 							</item>
@@ -810,12 +820,18 @@
 									<item row="5" column="1"><widget class="QSpinBox" name="spinMetroidHudHpGaugeOffsetY"><property name="minimum"><number>-96</number></property><property name="maximum"><number>96</number></property><property name="value"><number>2</number></property></widget></item>
 									<item row="6" column="0"><widget class="QLabel"><property name="text"><string>HP Gauge Anchor</string></property></widget></item>
 									<item row="6" column="1"><widget class="QComboBox" name="comboMetroidHudHpGaugeAnchor"><item><property name="text"><string>Below</string></property></item><item><property name="text"><string>Above</string></property></item><item><property name="text"><string>Right</string></property></item><item><property name="text"><string>Left</string></property></item><item><property name="text"><string>Center</string></property></item></widget></item>
-									<item row="7" column="0"><widget class="QLabel"><property name="text"><string>HP Gauge Auto Color</string></property></widget></item>
-									<item row="7" column="1"><widget class="QCheckBox" name="cbMetroidHudHpGaugeAutoColor"><property name="text"><string>(changes with HP level)</string></property><property name="checked"><bool>true</bool></property></widget></item>
-									<item row="8" column="0"><widget class="QLabel"><property name="text"><string>HP Gauge Color</string></property></widget></item>
-									<item row="8" column="1"><widget class="QComboBox" name="comboMetroidHudHpGaugeColor"><item><property name="text"><string>Green</string></property></item><item><property name="text"><string>Red</string></property></item><item><property name="text"><string>Orange</string></property></item><item><property name="text"><string>Yellow</string></property></item><item><property name="text"><string>Cyan</string></property></item><item><property name="text"><string>White</string></property></item><item><property name="text"><string>Sylux Hud Color</string></property></item><item><property name="text"><string>Sylux Crosshair Color</string></property></item><item><property name="text"><string>Custom</string></property></item></widget></item>
-									<item row="9" column="0"><widget class="QLabel"><property name="text"><string>HP Gauge Color Code</string></property></widget></item>
-									<item row="9" column="1"><layout class="QHBoxLayout">
+									<item row="7" column="0"><widget class="QLabel"><property name="text"><string>HP Gauge Position Mode</string></property></widget></item>
+									<item row="7" column="1"><widget class="QComboBox" name="comboMetroidHudHpGaugePosMode"><item><property name="text"><string>Anchor from Text</string></property></item><item><property name="text"><string>Independent Position</string></property></item></widget></item>
+									<item row="8" column="0"><widget class="QLabel"><property name="text"><string>HP Gauge Position X</string></property></widget></item>
+									<item row="8" column="1"><widget class="QSpinBox" name="spinMetroidHudHpGaugePosX"><property name="minimum"><number>0</number></property><property name="maximum"><number>255</number></property><property name="value"><number>0</number></property></widget></item>
+									<item row="9" column="0"><widget class="QLabel"><property name="text"><string>HP Gauge Position Y</string></property></widget></item>
+									<item row="9" column="1"><widget class="QSpinBox" name="spinMetroidHudHpGaugePosY"><property name="minimum"><number>0</number></property><property name="maximum"><number>191</number></property><property name="value"><number>96</number></property></widget></item>
+									<item row="10" column="0"><widget class="QLabel"><property name="text"><string>HP Gauge Auto Color</string></property></widget></item>
+									<item row="10" column="1"><widget class="QCheckBox" name="cbMetroidHudHpGaugeAutoColor"><property name="text"><string>(changes with HP level)</string></property><property name="checked"><bool>true</bool></property></widget></item>
+									<item row="11" column="0"><widget class="QLabel"><property name="text"><string>HP Gauge Color</string></property></widget></item>
+									<item row="11" column="1"><widget class="QComboBox" name="comboMetroidHudHpGaugeColor"><item><property name="text"><string>Green</string></property></item><item><property name="text"><string>Red</string></property></item><item><property name="text"><string>Orange</string></property></item><item><property name="text"><string>Yellow</string></property></item><item><property name="text"><string>Cyan</string></property></item><item><property name="text"><string>White</string></property></item><item><property name="text"><string>Sylux Hud Color</string></property></item><item><property name="text"><string>Sylux Crosshair Color</string></property></item><item><property name="text"><string>Custom</string></property></item></widget></item>
+									<item row="12" column="0"><widget class="QLabel"><property name="text"><string>HP Gauge Color Code</string></property></widget></item>
+									<item row="12" column="1"><layout class="QHBoxLayout">
 										<item><widget class="QLineEdit" name="leMetroidHudHpGaugeColorCode"><property name="text"><string>#38C008</string></property><property name="maxLength"><number>7</number></property></widget></item>
 										<item><widget class="QSpinBox" name="spinMetroidHudHpGaugeColorR"><property name="minimum"><number>0</number></property><property name="maximum"><number>255</number></property><property name="value"><number>56</number></property><property name="prefix"><string>R:</string></property></widget></item>
 										<item><widget class="QSpinBox" name="spinMetroidHudHpGaugeColorG"><property name="minimum"><number>0</number></property><property name="maximum"><number>255</number></property><property name="value"><number>192</number></property><property name="prefix"><string>G:</string></property></widget></item>
@@ -850,10 +866,16 @@
 									<item row="5" column="1"><widget class="QSpinBox" name="spinMetroidHudAmmoGaugeOffsetY"><property name="minimum"><number>-96</number></property><property name="maximum"><number>96</number></property><property name="value"><number>28</number></property></widget></item>
 									<item row="6" column="0"><widget class="QLabel"><property name="text"><string>Ammo Gauge Anchor</string></property></widget></item>
 									<item row="6" column="1"><widget class="QComboBox" name="comboMetroidHudAmmoGaugeAnchor"><item><property name="text"><string>Below</string></property></item><item><property name="text"><string>Above</string></property></item><item><property name="text"><string>Right</string></property></item><item><property name="text"><string>Left</string></property></item><item><property name="text"><string>Center</string></property></item></widget></item>
-									<item row="7" column="0"><widget class="QLabel"><property name="text"><string>Ammo Gauge Color</string></property></widget></item>
-									<item row="7" column="1"><widget class="QComboBox" name="comboMetroidHudAmmoGaugeColor"><item><property name="text"><string>Cyan</string></property></item><item><property name="text"><string>Green</string></property></item><item><property name="text"><string>Red</string></property></item><item><property name="text"><string>Orange</string></property></item><item><property name="text"><string>Yellow</string></property></item><item><property name="text"><string>White</string></property></item><item><property name="text"><string>Sylux Hud Color</string></property></item><item><property name="text"><string>Sylux Crosshair Color</string></property></item><item><property name="text"><string>Custom</string></property></item></widget></item>
-									<item row="8" column="0"><widget class="QLabel"><property name="text"><string>Ammo Gauge Color Code</string></property></widget></item>
-									<item row="8" column="1"><layout class="QHBoxLayout">
+									<item row="7" column="0"><widget class="QLabel"><property name="text"><string>Ammo Gauge Position Mode</string></property></widget></item>
+									<item row="7" column="1"><widget class="QComboBox" name="comboMetroidHudAmmoGaugePosMode"><item><property name="text"><string>Anchor from Text</string></property></item><item><property name="text"><string>Independent Position</string></property></item></widget></item>
+									<item row="8" column="0"><widget class="QLabel"><property name="text"><string>Ammo Gauge Position X</string></property></widget></item>
+									<item row="8" column="1"><widget class="QSpinBox" name="spinMetroidHudAmmoGaugePosX"><property name="minimum"><number>0</number></property><property name="maximum"><number>255</number></property><property name="value"><number>240</number></property></widget></item>
+									<item row="9" column="0"><widget class="QLabel"><property name="text"><string>Ammo Gauge Position Y</string></property></widget></item>
+									<item row="9" column="1"><widget class="QSpinBox" name="spinMetroidHudAmmoGaugePosY"><property name="minimum"><number>0</number></property><property name="maximum"><number>191</number></property><property name="value"><number>82</number></property></widget></item>
+									<item row="10" column="0"><widget class="QLabel"><property name="text"><string>Ammo Gauge Color</string></property></widget></item>
+									<item row="10" column="1"><widget class="QComboBox" name="comboMetroidHudAmmoGaugeColor"><item><property name="text"><string>Cyan</string></property></item><item><property name="text"><string>Green</string></property></item><item><property name="text"><string>Red</string></property></item><item><property name="text"><string>Orange</string></property></item><item><property name="text"><string>Yellow</string></property></item><item><property name="text"><string>White</string></property></item><item><property name="text"><string>Sylux Hud Color</string></property></item><item><property name="text"><string>Sylux Crosshair Color</string></property></item><item><property name="text"><string>Custom</string></property></item></widget></item>
+									<item row="11" column="0"><widget class="QLabel"><property name="text"><string>Ammo Gauge Color Code</string></property></widget></item>
+									<item row="11" column="1"><layout class="QHBoxLayout">
 										<item><widget class="QLineEdit" name="leMetroidHudAmmoGaugeColorCode"><property name="text"><string>#38C008</string></property><property name="maxLength"><number>7</number></property></widget></item>
 										<item><widget class="QSpinBox" name="spinMetroidHudAmmoGaugeColorR"><property name="minimum"><number>0</number></property><property name="maximum"><number>255</number></property><property name="value"><number>56</number></property><property name="prefix"><string>R:</string></property></widget></item>
 										<item><widget class="QSpinBox" name="spinMetroidHudAmmoGaugeColorG"><property name="minimum"><number>0</number></property><property name="maximum"><number>255</number></property><property name="value"><number>192</number></property><property name="prefix"><string>G:</string></property></widget></item>
@@ -864,7 +886,114 @@
 							</item>
 
 							<item>
+								<widget class="QPushButton" name="btnResetHpAmmoDefaults">
+									<property name="text"><string>Reset HP &amp; Ammo to Defaults</string></property>
+								</widget>
+							</item>
+
+							<item>
 								<spacer name="hpAmmoSpacer"><property name="orientation"><enum>Qt::Vertical</enum></property><property name="sizeHint" stdset="0"><size><width>20</width><height>40</height></size></property></spacer>
+							</item>
+
+						</layout>
+					</widget>
+
+					<widget class="QWidget" name="tabBattle">
+						<attribute name="title"><string>Match Status HUD</string></attribute>
+						<layout class="QVBoxLayout" name="battleVLayout">
+
+							<item>
+								<layout class="QFormLayout" name="formBattle">
+									<item row="0" column="0"><widget class="QLabel"><property name="text"><string>Show Match Status HUD</string></property></widget></item>
+									<item row="0" column="1"><widget class="QCheckBox" name="cbMetroidHudMatchStatusShow"><property name="text"><string></string></property><property name="checked"><bool>true</bool></property></widget></item>
+									<item row="1" column="0"><widget class="QLabel"><property name="text"><string>Position X</string></property></widget></item>
+									<item row="1" column="1"><widget class="QSpinBox" name="spinMetroidHudMatchStatusX"><property name="minimum"><number>0</number></property><property name="maximum"><number>255</number></property><property name="value"><number>4</number></property></widget></item>
+									<item row="2" column="0"><widget class="QLabel"><property name="text"><string>Position Y</string></property></widget></item>
+									<item row="2" column="1"><widget class="QSpinBox" name="spinMetroidHudMatchStatusY"><property name="minimum"><number>0</number></property><property name="maximum"><number>191</number></property><property name="value"><number>16</number></property></widget></item>
+									<item row="3" column="0"><widget class="QLabel"><property name="text"><string>Label Position</string></property></widget></item>
+									<item row="3" column="1"><widget class="QComboBox" name="comboMetroidHudMatchStatusLabelPos"><item><property name="text"><string>Above</string></property></item><item><property name="text"><string>Below</string></property></item><item><property name="text"><string>Left</string></property></item><item><property name="text"><string>Right</string></property></item><item><property name="text"><string>Center</string></property></item></widget></item>
+									<item row="4" column="0"><widget class="QLabel"><property name="text"><string>Label Offset X</string></property></widget></item>
+									<item row="4" column="1"><widget class="QSpinBox" name="spinMetroidHudMatchStatusLabelOfsX"><property name="minimum"><number>-128</number></property><property name="maximum"><number>128</number></property><property name="value"><number>0</number></property></widget></item>
+									<item row="5" column="0"><widget class="QLabel"><property name="text"><string>Label Offset Y</string></property></widget></item>
+									<item row="5" column="1"><widget class="QSpinBox" name="spinMetroidHudMatchStatusLabelOfsY"><property name="minimum"><number>-96</number></property><property name="maximum"><number>96</number></property><property name="value"><number>0</number></property></widget></item>
+									<item row="6" column="0"><widget class="QLabel"><property name="text"><string>Text Color</string></property></widget></item>
+									<item row="6" column="1"><widget class="QComboBox" name="comboMetroidHudMatchStatusColor"><item><property name="text"><string>White</string></property></item><item><property name="text"><string>Green</string></property></item><item><property name="text"><string>Yellow Green</string></property></item><item><property name="text"><string>Yellow</string></property></item><item><property name="text"><string>Cyan</string></property></item><item><property name="text"><string>Pink</string></property></item><item><property name="text"><string>Red</string></property></item><item><property name="text"><string>Sylux Hud Color</string></property></item><item><property name="text"><string>Sylux Crosshair Color</string></property></item><item><property name="text"><string>Custom</string></property></item></widget></item>
+									<item row="7" column="0"><widget class="QLabel"><property name="text"><string>Color Code</string></property></widget></item>
+									<item row="7" column="1"><layout class="QHBoxLayout">
+										<item><widget class="QLineEdit" name="leMetroidHudMatchStatusColorCode"><property name="text"><string>#FFFFFF</string></property><property name="maxLength"><number>7</number></property></widget></item>
+										<item><widget class="QSpinBox" name="spinMetroidHudMatchStatusColorR"><property name="minimum"><number>0</number></property><property name="maximum"><number>255</number></property><property name="value"><number>255</number></property><property name="prefix"><string>R:</string></property></widget></item>
+										<item><widget class="QSpinBox" name="spinMetroidHudMatchStatusColorG"><property name="minimum"><number>0</number></property><property name="maximum"><number>255</number></property><property name="value"><number>255</number></property><property name="prefix"><string>G:</string></property></widget></item>
+										<item><widget class="QSpinBox" name="spinMetroidHudMatchStatusColorB"><property name="minimum"><number>0</number></property><property name="maximum"><number>255</number></property><property name="value"><number>255</number></property><property name="prefix"><string>B:</string></property></widget></item>
+									</layout></item>
+								<item row="8" column="0" colspan="2"><widget class="QLabel"><property name="text"><string><![CDATA[<b>Individual Part Colors</b> (Overall = use Text Color above)]]></string></property></widget></item>
+								<item row="9" column="0"><widget class="QLabel"><property name="text"><string>Label Color</string></property></widget></item>
+								<item row="9" column="1"><widget class="QComboBox" name="comboMetroidHudMatchStatusLabelColor"><item><property name="text"><string>Overall</string></property></item><item><property name="text"><string>White</string></property></item><item><property name="text"><string>Green</string></property></item><item><property name="text"><string>Yellow Green</string></property></item><item><property name="text"><string>Yellow</string></property></item><item><property name="text"><string>Cyan</string></property></item><item><property name="text"><string>Pink</string></property></item><item><property name="text"><string>Red</string></property></item><item><property name="text"><string>Sylux Hud Color</string></property></item><item><property name="text"><string>Sylux Crosshair Color</string></property></item><item><property name="text"><string>Custom</string></property></item></widget></item>
+								<item row="10" column="0"><widget class="QLabel"><property name="text"><string>Label Color Code</string></property></widget></item>
+								<item row="10" column="1"><layout class="QHBoxLayout">
+									<item><widget class="QLineEdit" name="leMetroidHudMatchStatusLabelColorCode"><property name="text"><string>#FFFFFF</string></property><property name="maxLength"><number>7</number></property></widget></item>
+									<item><widget class="QSpinBox" name="spinMetroidHudMatchStatusLabelColorR"><property name="minimum"><number>0</number></property><property name="maximum"><number>255</number></property><property name="value"><number>255</number></property><property name="prefix"><string>R:</string></property></widget></item>
+									<item><widget class="QSpinBox" name="spinMetroidHudMatchStatusLabelColorG"><property name="minimum"><number>0</number></property><property name="maximum"><number>255</number></property><property name="value"><number>255</number></property><property name="prefix"><string>G:</string></property></widget></item>
+									<item><widget class="QSpinBox" name="spinMetroidHudMatchStatusLabelColorB"><property name="minimum"><number>0</number></property><property name="maximum"><number>255</number></property><property name="value"><number>255</number></property><property name="prefix"><string>B:</string></property></widget></item>
+								</layout></item>
+								<item row="11" column="0"><widget class="QLabel"><property name="text"><string>Value Color</string></property></widget></item>
+								<item row="11" column="1"><widget class="QComboBox" name="comboMetroidHudMatchStatusValueColor"><item><property name="text"><string>Overall</string></property></item><item><property name="text"><string>White</string></property></item><item><property name="text"><string>Green</string></property></item><item><property name="text"><string>Yellow Green</string></property></item><item><property name="text"><string>Yellow</string></property></item><item><property name="text"><string>Cyan</string></property></item><item><property name="text"><string>Pink</string></property></item><item><property name="text"><string>Red</string></property></item><item><property name="text"><string>Sylux Hud Color</string></property></item><item><property name="text"><string>Sylux Crosshair Color</string></property></item><item><property name="text"><string>Custom</string></property></item></widget></item>
+								<item row="12" column="0"><widget class="QLabel"><property name="text"><string>Value Color Code</string></property></widget></item>
+								<item row="12" column="1"><layout class="QHBoxLayout">
+									<item><widget class="QLineEdit" name="leMetroidHudMatchStatusValueColorCode"><property name="text"><string>#FFFFFF</string></property><property name="maxLength"><number>7</number></property></widget></item>
+									<item><widget class="QSpinBox" name="spinMetroidHudMatchStatusValueColorR"><property name="minimum"><number>0</number></property><property name="maximum"><number>255</number></property><property name="value"><number>255</number></property><property name="prefix"><string>R:</string></property></widget></item>
+									<item><widget class="QSpinBox" name="spinMetroidHudMatchStatusValueColorG"><property name="minimum"><number>0</number></property><property name="maximum"><number>255</number></property><property name="value"><number>255</number></property><property name="prefix"><string>G:</string></property></widget></item>
+									<item><widget class="QSpinBox" name="spinMetroidHudMatchStatusValueColorB"><property name="minimum"><number>0</number></property><property name="maximum"><number>255</number></property><property name="value"><number>255</number></property><property name="prefix"><string>B:</string></property></widget></item>
+								</layout></item>
+								<item row="13" column="0"><widget class="QLabel"><property name="text"><string>/ Color</string></property></widget></item>
+								<item row="13" column="1"><widget class="QComboBox" name="comboMetroidHudMatchStatusSepColor"><item><property name="text"><string>Overall</string></property></item><item><property name="text"><string>White</string></property></item><item><property name="text"><string>Green</string></property></item><item><property name="text"><string>Yellow Green</string></property></item><item><property name="text"><string>Yellow</string></property></item><item><property name="text"><string>Cyan</string></property></item><item><property name="text"><string>Pink</string></property></item><item><property name="text"><string>Red</string></property></item><item><property name="text"><string>Sylux Hud Color</string></property></item><item><property name="text"><string>Sylux Crosshair Color</string></property></item><item><property name="text"><string>Custom</string></property></item></widget></item>
+								<item row="14" column="0"><widget class="QLabel"><property name="text"><string>/ Color Code</string></property></widget></item>
+								<item row="14" column="1"><layout class="QHBoxLayout">
+									<item><widget class="QLineEdit" name="leMetroidHudMatchStatusSepColorCode"><property name="text"><string>#FFFFFF</string></property><property name="maxLength"><number>7</number></property></widget></item>
+									<item><widget class="QSpinBox" name="spinMetroidHudMatchStatusSepColorR"><property name="minimum"><number>0</number></property><property name="maximum"><number>255</number></property><property name="value"><number>255</number></property><property name="prefix"><string>R:</string></property></widget></item>
+									<item><widget class="QSpinBox" name="spinMetroidHudMatchStatusSepColorG"><property name="minimum"><number>0</number></property><property name="maximum"><number>255</number></property><property name="value"><number>255</number></property><property name="prefix"><string>G:</string></property></widget></item>
+									<item><widget class="QSpinBox" name="spinMetroidHudMatchStatusSepColorB"><property name="minimum"><number>0</number></property><property name="maximum"><number>255</number></property><property name="value"><number>255</number></property><property name="prefix"><string>B:</string></property></widget></item>
+								</layout></item>
+								<item row="15" column="0"><widget class="QLabel"><property name="text"><string>Goal Color</string></property></widget></item>
+								<item row="15" column="1"><widget class="QComboBox" name="comboMetroidHudMatchStatusGoalColor"><item><property name="text"><string>Overall</string></property></item><item><property name="text"><string>White</string></property></item><item><property name="text"><string>Green</string></property></item><item><property name="text"><string>Yellow Green</string></property></item><item><property name="text"><string>Yellow</string></property></item><item><property name="text"><string>Cyan</string></property></item><item><property name="text"><string>Pink</string></property></item><item><property name="text"><string>Red</string></property></item><item><property name="text"><string>Sylux Hud Color</string></property></item><item><property name="text"><string>Sylux Crosshair Color</string></property></item><item><property name="text"><string>Custom</string></property></item></widget></item>
+								<item row="16" column="0"><widget class="QLabel"><property name="text"><string>Goal Color Code</string></property></widget></item>
+								<item row="16" column="1"><layout class="QHBoxLayout">
+									<item><widget class="QLineEdit" name="leMetroidHudMatchStatusGoalColorCode"><property name="text"><string>#FFFFFF</string></property><property name="maxLength"><number>7</number></property></widget></item>
+									<item><widget class="QSpinBox" name="spinMetroidHudMatchStatusGoalColorR"><property name="minimum"><number>0</number></property><property name="maximum"><number>255</number></property><property name="value"><number>255</number></property><property name="prefix"><string>R:</string></property></widget></item>
+									<item><widget class="QSpinBox" name="spinMetroidHudMatchStatusGoalColorG"><property name="minimum"><number>0</number></property><property name="maximum"><number>255</number></property><property name="value"><number>255</number></property><property name="prefix"><string>G:</string></property></widget></item>
+									<item><widget class="QSpinBox" name="spinMetroidHudMatchStatusGoalColorB"><property name="minimum"><number>0</number></property><property name="maximum"><number>255</number></property><property name="value"><number>255</number></property><property name="prefix"><string>B:</string></property></widget></item>
+								</layout></item>
+							</layout>
+							</item>
+							<item>
+								<widget class="QLabel"><property name="text"><string><![CDATA[<b>Mode Labels</b> (customize the label text shown for each game mode)]]></string></property></widget>
+							</item>
+							<item>
+								<layout class="QFormLayout" name="formBattleLabels">
+									<item row="0" column="0"><widget class="QLabel"><property name="text"><string>Battle / Nodes</string></property></widget></item>
+									<item row="0" column="1"><widget class="QLineEdit" name="leMetroidHudMatchStatusLabelPoints"><property name="text"><string>points</string></property><property name="maxLength"><number>16</number></property></widget></item>
+									<item row="1" column="0"><widget class="QLabel"><property name="text"><string>Bounty / Capture</string></property></widget></item>
+									<item row="1" column="1"><widget class="QLineEdit" name="leMetroidHudMatchStatusLabelOctoliths"><property name="text"><string>octoliths</string></property><property name="maxLength"><number>16</number></property></widget></item>
+									<item row="2" column="0"><widget class="QLabel"><property name="text"><string>Survival</string></property></widget></item>
+									<item row="2" column="1"><widget class="QLineEdit" name="leMetroidHudMatchStatusLabelLives"><property name="text"><string>lives left</string></property><property name="maxLength"><number>16</number></property></widget></item>
+									<item row="3" column="0"><widget class="QLabel"><property name="text"><string>Defender</string></property></widget></item>
+									<item row="3" column="1"><widget class="QLineEdit" name="leMetroidHudMatchStatusLabelRingTime"><property name="text"><string>ring time</string></property><property name="maxLength"><number>16</number></property></widget></item>
+									<item row="4" column="0"><widget class="QLabel"><property name="text"><string>Prime Hunter</string></property></widget></item>
+									<item row="4" column="1"><widget class="QLineEdit" name="leMetroidHudMatchStatusLabelPrimeTime"><property name="text"><string>prime time</string></property><property name="maxLength"><number>16</number></property></widget></item>
+								</layout>
+							</item>
+							<item>
+								<widget class="QLabel">
+									<property name="text"><string>Displays the current match status (score, octolith count, lives, or time) for the active game mode. Hidden during Adventure mode.</string></property>
+									<property name="wordWrap"><bool>true</bool></property>
+								</widget>
+							</item>
+							<item>
+								<widget class="QPushButton" name="btnResetMatchStatusDefaults">
+									<property name="text"><string>Reset Match Status HUD to Defaults</string></property>
+								</widget>
+							</item>
+							<item>
+								<spacer name="battleSpacer"><property name="orientation"><enum>Qt::Vertical</enum></property><property name="sizeHint" stdset="0"><size><width>20</width><height>40</height></size></property></spacer>
 							</item>
 
 						</layout>
