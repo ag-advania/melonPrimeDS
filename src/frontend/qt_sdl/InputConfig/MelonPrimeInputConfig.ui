@@ -529,6 +529,27 @@
 											<property name="indent"><number>20</number></property>
 										</widget>
 									</item>
+
+								</layout>
+								</widget>
+							</item>
+
+							<item><widget class="QPushButton" name="btnToggleCursorClipSettings">
+								<property name="text"><string>▶ CURSOR CLIP SETTINGS</string></property>
+								<property name="checkable"><bool>true</bool></property>
+								<property name="checked"><bool>false</bool></property>
+								<property name="flat"><bool>true</bool></property>
+								<property name="styleSheet"><string>QPushButton { text-align: left; font-weight: bold; padding: 4px; } QPushButton::checked { font-weight: bold; }</string></property>
+							</widget></item>
+							<item>
+								<widget class="QWidget" name="sectionCursorClipSettings">
+								<layout class="QVBoxLayout" name="vboxCursorClipSettings">
+									<item>
+										<widget class="QCheckBox" name="cbMetroidClipCursorToBottomScreenWhenNotInGame">
+											<property name="text"><string>When not in-game and the bottom screen is visible, confine the mouse cursor to the bottom screen area. Press ESC to release the cursor.</string></property>
+											<property name="toolTip"><string>Windows only. Applies only while the bottom screen is actually being drawn. Press ESC to release the cursor.</string></property>
+										</widget>
+									</item>
 								</layout>
 								</widget>
 							</item>
@@ -707,16 +728,10 @@
 						<attribute name="title"><string>HP &amp; Ammo</string></attribute>
 						<layout class="QVBoxLayout" name="hpAmmoVLayout">
 
-							<item>
-								<layout class="QFormLayout">
-									<item row="0" column="0"><widget class="QLabel"><property name="text"><string>HUD Font Size</string></property></widget></item>
-									<item row="0" column="1"><widget class="QSpinBox" name="spinMetroidHudFontSize"><property name="minimum"><number>1</number></property><property name="maximum"><number>32</number></property><property name="value"><number>8</number></property><property name="toolTip"><string>Font size in pixels for HP and Ammo text (default: 8)</string></property></widget></item>
-								</layout>
-							</item>
 
-							<!-- HP POSITION toggle -->
+							<!-- HP NUMBER POSITION toggle -->
 							<item><widget class="QPushButton" name="btnToggleHpPos">
-								<property name="text"><string>▶ HP POSITION</string></property>
+								<property name="text"><string>▶ HP NUMBER POSITION</string></property>
 								<property name="checkable"><bool>true</bool></property>
 								<property name="checked"><bool>false</bool></property>
 								<property name="flat"><bool>true</bool></property>
@@ -725,15 +740,15 @@
 							<item>
 								<widget class="QWidget" name="sectionHpPos">
 								<layout class="QFormLayout" name="formHudHpPos">
-									<item row="0" column="0"><widget class="QLabel"><property name="text"><string>HP Position</string></property></widget></item>
+									<item row="0" column="0"><widget class="QLabel"><property name="text"><string>HP Number Position</string></property></widget></item>
 									<item row="0" column="1"><widget class="QComboBox" name="comboMetroidHudHpPosition"><item><property name="text"><string>Top Left</string></property></item><item><property name="text"><string>Top Center</string></property></item><item><property name="text"><string>Top Right</string></property></item><item><property name="text"><string>Right</string></property></item><item><property name="text"><string>Bottom Right</string></property></item><item><property name="text"><string>Bottom Center</string></property></item><item><property name="text"><string>Bottom Left</string></property></item><item><property name="text"><string>Left</string></property></item><item><property name="text"><string>Custom</string></property></item></widget></item>
-									<item row="1" column="0"><widget class="QLabel"><property name="text"><string>HP Position X</string></property></widget></item>
+									<item row="1" column="0"><widget class="QLabel"><property name="text"><string>HP Number Position X</string></property></widget></item>
 									<item row="1" column="1"><widget class="QSpinBox" name="spinMetroidHudHpX"><property name="minimum"><number>0</number></property><property name="maximum"><number>255</number></property><property name="value"><number>120</number></property></widget></item>
-									<item row="2" column="0"><widget class="QLabel"><property name="text"><string>HP Position Y</string></property></widget></item>
+									<item row="2" column="0"><widget class="QLabel"><property name="text"><string>HP Number Position Y</string></property></widget></item>
 									<item row="2" column="1"><widget class="QSpinBox" name="spinMetroidHudHpY"><property name="minimum"><number>0</number></property><property name="maximum"><number>191</number></property><property name="value"><number>8</number></property></widget></item>
 									<item row="3" column="0"><widget class="QLabel"><property name="text"><string>HP Prefix</string></property></widget></item>
 									<item row="3" column="1"><widget class="QLineEdit" name="leMetroidHudHpPrefix"><property name="text"><string></string></property><property name="maxLength"><number>8</number></property><property name="toolTip"><string>Text before HP number (e.g. "hp " → "hp 99"). Leave empty to show number only.</string></property></widget></item>
-									<item row="4" column="0"><widget class="QLabel"><property name="text"><string>HP Anchor</string></property></widget></item>
+									<item row="4" column="0"><widget class="QLabel"><property name="text"><string>HP Align</string></property></widget></item>
 									<item row="4" column="1"><widget class="QComboBox" name="comboMetroidHudHpAlign"><property name="toolTip"><string>How the HP text is aligned around the X position. Right keeps the last digit fixed when the value changes.</string></property><item><property name="text"><string>Left</string></property></item><item><property name="text"><string>Center</string></property></item><item><property name="text"><string>Right</string></property></item></widget></item>
 
 								</layout>
@@ -742,7 +757,7 @@
 
 							<!-- WEAPON POSITION toggle -->
 							<item><widget class="QPushButton" name="btnToggleWpnPos">
-								<property name="text"><string>▶ AMMO POSITION</string></property>
+								<property name="text"><string>▶ AMMO NUMBER POSITION</string></property>
 								<property name="checkable"><bool>true</bool></property>
 								<property name="checked"><bool>false</bool></property>
 								<property name="flat"><bool>true</bool></property>
@@ -751,15 +766,15 @@
 							<item>
 								<widget class="QWidget" name="sectionWpnPos">
 								<layout class="QFormLayout" name="formHudWpnPos">
-									<item row="0" column="0"><widget class="QLabel"><property name="text"><string>Ammo Position</string></property></widget></item>
+									<item row="0" column="0"><widget class="QLabel"><property name="text"><string>Ammo Number Position</string></property></widget></item>
 									<item row="0" column="1"><widget class="QComboBox" name="comboMetroidHudWeaponPosition"><item><property name="text"><string>Top Left</string></property></item><item><property name="text"><string>Top Center</string></property></item><item><property name="text"><string>Top Right</string></property></item><item><property name="text"><string>Right</string></property></item><item><property name="text"><string>Bottom Right</string></property></item><item><property name="text"><string>Bottom Center</string></property></item><item><property name="text"><string>Bottom Left</string></property></item><item><property name="text"><string>Left</string></property></item><item><property name="text"><string>Custom</string></property></item></widget></item>
-									<item row="1" column="0"><widget class="QLabel"><property name="text"><string>Ammo Position X</string></property></widget></item>
+									<item row="1" column="0"><widget class="QLabel"><property name="text"><string>Ammo Number Position X</string></property></widget></item>
 									<item row="1" column="1"><widget class="QSpinBox" name="spinMetroidHudWeaponX"><property name="minimum"><number>0</number></property><property name="maximum"><number>255</number></property><property name="value"><number>226</number></property></widget></item>
-									<item row="2" column="0"><widget class="QLabel"><property name="text"><string>Ammo Position Y</string></property></widget></item>
+									<item row="2" column="0"><widget class="QLabel"><property name="text"><string>Ammo Number Position Y</string></property></widget></item>
 									<item row="2" column="1"><widget class="QSpinBox" name="spinMetroidHudWeaponY"><property name="minimum"><number>0</number></property><property name="maximum"><number>191</number></property><property name="value"><number>164</number></property></widget></item>
 									<item row="3" column="0"><widget class="QLabel"><property name="text"><string>Ammo Prefix</string></property></widget></item>
 									<item row="3" column="1"><widget class="QLineEdit" name="leMetroidHudAmmoPrefix"><property name="text"><string></string></property><property name="maxLength"><number>8</number></property><property name="toolTip"><string>Text before ammo number (e.g. "x" → "x07"). Leave empty to show number only.</string></property></widget></item>
-									<item row="4" column="0"><widget class="QLabel"><property name="text"><string>Ammo Anchor</string></property></widget></item>
+									<item row="4" column="0"><widget class="QLabel"><property name="text"><string>Ammo Align</string></property></widget></item>
 									<item row="4" column="1"><widget class="QComboBox" name="comboMetroidHudAmmoAlign"><property name="toolTip"><string>How the ammo text is aligned around the X position. Right keeps the last digit fixed when the value changes.</string></property><item><property name="text"><string>Left</string></property></item><item><property name="text"><string>Center</string></property></item><item><property name="text"><string>Right</string></property></item></widget></item>
 
 								</layout>
@@ -791,9 +806,9 @@
 									<item row="5" column="1"><widget class="QSpinBox" name="spinMetroidHudWeaponIconPosX"><property name="minimum"><number>0</number></property><property name="maximum"><number>255</number></property><property name="value"><number>226</number></property></widget></item>
 									<item row="6" column="0"><widget class="QLabel"><property name="text"><string>Icon Position Y</string></property></widget></item>
 									<item row="6" column="1"><widget class="QSpinBox" name="spinMetroidHudWeaponIconPosY"><property name="minimum"><number>0</number></property><property name="maximum"><number>191</number></property><property name="value"><number>174</number></property></widget></item>
-									<item row="7" column="0"><widget class="QLabel"><property name="text"><string>Icon Anchor X</string></property></widget></item>
+									<item row="7" column="0"><widget class="QLabel"><property name="text"><string>Icon Align X</string></property></widget></item>
 									<item row="7" column="1"><widget class="QComboBox" name="comboMetroidHudWeaponIconAnchorX"><item><property name="text"><string>Left</string></property></item><item><property name="text"><string>Center</string></property></item><item><property name="text"><string>Right</string></property></item></widget></item>
-									<item row="8" column="0"><widget class="QLabel"><property name="text"><string>Icon Anchor Y</string></property></widget></item>
+									<item row="8" column="0"><widget class="QLabel"><property name="text"><string>Icon Align Y</string></property></widget></item>
 									<item row="8" column="1"><widget class="QComboBox" name="comboMetroidHudWeaponIconAnchorY"><item><property name="text"><string>Top</string></property></item><item><property name="text"><string>Center</string></property></item><item><property name="text"><string>Bottom</string></property></item></widget></item>
 								</layout>
 								</widget>
@@ -1015,4 +1030,3 @@
 	<connections>
 	</connections>
 </ui>
-

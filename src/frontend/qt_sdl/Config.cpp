@@ -121,7 +121,6 @@ namespace Config
         {"Instance*.Metroid.Visual.HudHpX",               45},
         {"Instance*.Metroid.Visual.HudHpY",               99},
         {"Instance*.Metroid.Visual.HudHpAlign",            2},
-        {"Instance*.Metroid.Visual.HudFontSize",            6},
         {"Instance*.Metroid.Visual.HudWeaponX",          230},
         {"Instance*.Metroid.Visual.HudWeaponY",           99},
         {"Instance*.Metroid.Visual.HudAmmoAlign",          2},
@@ -284,6 +283,7 @@ namespace Config
         {"Instance*.Metroid.Visual.HudMatchStatusSepColorOverall",   true},
         {"Instance*.Metroid.Visual.HudMatchStatusGoalColorOverall",  true},
         {"Instance*.Metroid.Visual.InGameAspectRatio", true},
+        {"Instance*.Metroid.Visual.ClipCursorToBottomScreenWhenNotInGame", false},
         {"Instance*.Metroid.Visual.InGameScaling", true},
         {"Instance*.Metroid.Visual.InGameScalingAuto", true},
         {"Instance*.Metroid.UI.SectionCrosshair",      false},
@@ -296,6 +296,7 @@ namespace Config
         {"Instance*.Metroid.UI.SectionAmmoGauge",      false},
         {"Instance*.Metroid.UI.SectionInputSettings",  false},
         {"Instance*.Metroid.UI.SectionScreenSync",     false},
+        {"Instance*.Metroid.UI.SectionCursorClipSettings",  false},
         {"Instance*.Metroid.UI.SectionInGameAspectRatio",  false},
         {"Instance*.Metroid.UI.SectionSensitivity",    true},
         {"Instance*.Metroid.UI.SectionGameplay",       true},
@@ -1153,7 +1154,3 @@ namespace Config
     }
 
 }
-
-
-
-

@@ -4,6 +4,7 @@
 #include "MelonPrimeInternal.h"
 #include "MelonPrimeGameRomAddrTable.h"
 #include "MelonPrimeCompilerHints.h"
+#include "MelonPrimeConstants.h"
 #include "EmuInstance.h"
 #include "NDS.h"
 #include "Config.h"
@@ -88,7 +89,7 @@ static inline void MeasureTextCached(const QFontMetrics& fm, int fontPixelSize,
 // =========================================================================
 struct CachedHudConfig {
     // HP
-    int    hpX, hpY, hpAlign, hudFontSize;
+    int    hpX, hpY, hpAlign;
     char   hpPrefix[12];
     bool   hpGauge, hpAutoColor;
     int    hpGaugeOri, hpGaugeLen, hpGaugeWid;
@@ -143,7 +144,6 @@ static void RefreshCachedConfig(Config::Table& cfg)
     c.hpX = cfg.GetInt("Metroid.Visual.HudHpX");
     c.hpY = cfg.GetInt("Metroid.Visual.HudHpY");
     c.hpAlign = cfg.GetInt("Metroid.Visual.HudHpAlign");
-    c.hudFontSize = cfg.GetInt("Metroid.Visual.HudFontSize");
     { auto s = cfg.GetString("Metroid.Visual.HudHpPrefix");
       std::strncpy(c.hpPrefix, s.c_str(), sizeof(c.hpPrefix)-1);
       c.hpPrefix[sizeof(c.hpPrefix)-1] = '\0'; }
@@ -1016,9 +1016,9 @@ HOT_FUNCTION void CustomHud_Render(
 
     if (isStartPressed || isDead || isGameOver) return;
 
-    if (c.hudFontSize > 0 && topPaint->font().pixelSize() != c.hudFontSize) {
+    if (topPaint->font().pixelSize() != kCustomHudFontSize) {
         QFont f = topPaint->font();
-        f.setPixelSize(c.hudFontSize);
+        f.setPixelSize(kCustomHudFontSize);
         topPaint->setFont(f);
     }
 
