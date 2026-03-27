@@ -748,7 +748,7 @@
 									<item row="2" column="1"><widget class="QSpinBox" name="spinMetroidHudHpY"><property name="minimum"><number>0</number></property><property name="maximum"><number>191</number></property><property name="value"><number>8</number></property></widget></item>
 									<item row="3" column="0"><widget class="QLabel"><property name="text"><string>HP Prefix</string></property></widget></item>
 									<item row="3" column="1"><widget class="QLineEdit" name="leMetroidHudHpPrefix"><property name="text"><string></string></property><property name="maxLength"><number>8</number></property><property name="toolTip"><string>Text before HP number (e.g. "hp " → "hp 99"). Leave empty to show number only.</string></property></widget></item>
-									<item row="4" column="0"><widget class="QLabel"><property name="text"><string>HP Anchor</string></property></widget></item>
+									<item row="4" column="0"><widget class="QLabel"><property name="text"><string>HP Align</string></property></widget></item>
 									<item row="4" column="1"><widget class="QComboBox" name="comboMetroidHudHpAlign"><property name="toolTip"><string>How the HP text is aligned around the X position. Right keeps the last digit fixed when the value changes.</string></property><item><property name="text"><string>Left</string></property></item><item><property name="text"><string>Center</string></property></item><item><property name="text"><string>Right</string></property></item></widget></item>
 
 								</layout>
@@ -774,7 +774,7 @@
 									<item row="2" column="1"><widget class="QSpinBox" name="spinMetroidHudWeaponY"><property name="minimum"><number>0</number></property><property name="maximum"><number>191</number></property><property name="value"><number>164</number></property></widget></item>
 									<item row="3" column="0"><widget class="QLabel"><property name="text"><string>Ammo Prefix</string></property></widget></item>
 									<item row="3" column="1"><widget class="QLineEdit" name="leMetroidHudAmmoPrefix"><property name="text"><string></string></property><property name="maxLength"><number>8</number></property><property name="toolTip"><string>Text before ammo number (e.g. "x" → "x07"). Leave empty to show number only.</string></property></widget></item>
-									<item row="4" column="0"><widget class="QLabel"><property name="text"><string>Ammo Anchor</string></property></widget></item>
+									<item row="4" column="0"><widget class="QLabel"><property name="text"><string>Ammo Align</string></property></widget></item>
 									<item row="4" column="1"><widget class="QComboBox" name="comboMetroidHudAmmoAlign"><property name="toolTip"><string>How the ammo text is aligned around the X position. Right keeps the last digit fixed when the value changes.</string></property><item><property name="text"><string>Left</string></property></item><item><property name="text"><string>Center</string></property></item><item><property name="text"><string>Right</string></property></item></widget></item>
 
 								</layout>
@@ -806,9 +806,9 @@
 									<item row="5" column="1"><widget class="QSpinBox" name="spinMetroidHudWeaponIconPosX"><property name="minimum"><number>0</number></property><property name="maximum"><number>255</number></property><property name="value"><number>226</number></property></widget></item>
 									<item row="6" column="0"><widget class="QLabel"><property name="text"><string>Icon Position Y</string></property></widget></item>
 									<item row="6" column="1"><widget class="QSpinBox" name="spinMetroidHudWeaponIconPosY"><property name="minimum"><number>0</number></property><property name="maximum"><number>191</number></property><property name="value"><number>174</number></property></widget></item>
-									<item row="7" column="0"><widget class="QLabel"><property name="text"><string>Icon Anchor X</string></property></widget></item>
+									<item row="7" column="0"><widget class="QLabel"><property name="text"><string>Icon Align X</string></property></widget></item>
 									<item row="7" column="1"><widget class="QComboBox" name="comboMetroidHudWeaponIconAnchorX"><item><property name="text"><string>Left</string></property></item><item><property name="text"><string>Center</string></property></item><item><property name="text"><string>Right</string></property></item></widget></item>
-									<item row="8" column="0"><widget class="QLabel"><property name="text"><string>Icon Anchor Y</string></property></widget></item>
+									<item row="8" column="0"><widget class="QLabel"><property name="text"><string>Icon Align Y</string></property></widget></item>
 									<item row="8" column="1"><widget class="QComboBox" name="comboMetroidHudWeaponIconAnchorY"><item><property name="text"><string>Top</string></property></item><item><property name="text"><string>Center</string></property></item><item><property name="text"><string>Bottom</string></property></item></widget></item>
 								</layout>
 								</widget>
