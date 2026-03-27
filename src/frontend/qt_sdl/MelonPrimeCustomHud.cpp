@@ -73,6 +73,7 @@ struct CachedHudConfig {
     char   ammoPrefix[12];
     bool   iconShow, ammoGauge;
     int    iconMode, iconOfsX, iconOfsY, iconPosX, iconPosY;
+    int    iconAnchorX, iconAnchorY; // 0=Left/Top  1=Center  2=Right/Bottom
     int    ammoGaugeOri, ammoGaugeLen, ammoGaugeWid;
     int    ammoGaugeOfsX, ammoGaugeOfsY, ammoGaugeAnchor;
     int    ammoGaugePosMode, ammoGaugePosX, ammoGaugePosY;
@@ -142,8 +143,10 @@ static void RefreshCachedConfig(Config::Table& cfg)
     c.iconMode = cfg.GetInt("Metroid.Visual.HudWeaponIconMode");
     c.iconOfsX = cfg.GetInt("Metroid.Visual.HudWeaponIconOffsetX");
     c.iconOfsY = cfg.GetInt("Metroid.Visual.HudWeaponIconOffsetY");
-    c.iconPosX = cfg.GetInt("Metroid.Visual.HudWeaponIconPosX");
-    c.iconPosY = cfg.GetInt("Metroid.Visual.HudWeaponIconPosY");
+    c.iconPosX    = cfg.GetInt("Metroid.Visual.HudWeaponIconPosX");
+    c.iconPosY    = cfg.GetInt("Metroid.Visual.HudWeaponIconPosY");
+    c.iconAnchorX = cfg.GetInt("Metroid.Visual.HudWeaponIconAnchorX");
+    c.iconAnchorY = cfg.GetInt("Metroid.Visual.HudWeaponIconAnchorY");
     c.ammoGauge     = cfg.GetBool("Metroid.Visual.HudAmmoGauge");
     c.ammoGaugeOri  = cfg.GetInt("Metroid.Visual.HudAmmoGaugeOrientation");
     c.ammoGaugeLen  = cfg.GetInt("Metroid.Visual.HudAmmoGaugeLength");
@@ -734,10 +737,13 @@ static void DrawWeaponAmmo(QPainter* p, melonDS::u8* ram,
     }
 
     if (c.iconShow && !icon.isNull()) {
-        if (c.iconMode == 0)
-            p->drawImage(QPoint(c.wpnX + c.iconOfsX, c.wpnY + c.iconOfsY), icon);
-        else
-            p->drawImage(QPoint(c.iconPosX, c.iconPosY), icon);
+        int ix = (c.iconMode == 0) ? c.wpnX + c.iconOfsX : c.iconPosX;
+        int iy = (c.iconMode == 0) ? c.wpnY + c.iconOfsY : c.iconPosY;
+        if (c.iconAnchorX == 1) ix -= icon.width() / 2;
+        else if (c.iconAnchorX == 2) ix -= icon.width();
+        if (c.iconAnchorY == 1) iy -= icon.height() / 2;
+        else if (c.iconAnchorY == 2) iy -= icon.height();
+        p->drawImage(QPoint(ix, iy), icon);
     }
 
     if (c.ammoGauge && hasAmmo && maxAmmo > 0) {
