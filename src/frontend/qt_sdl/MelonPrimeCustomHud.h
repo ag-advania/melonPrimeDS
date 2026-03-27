@@ -61,6 +61,19 @@ namespace MelonPrime {
     // Cache battle settings at match join (call from HandleGameJoinInit).
     void CustomHud_OnMatchJoin(uint8_t* ram, const RomAddresses& rom);
 
+    // =========================================================================
+    //  DrawBottomScreenOverlay
+    //
+    //  Render a region of the bottom DS screen onto the top-screen overlay.
+    //  Controlled by Metroid.Visual.BtmOverlay* config keys.
+    //
+    //  Parameters:
+    //    localCfg — config table
+    //    topPaint — QPainter for the top-screen overlay
+    //    btmBuffer — QImage of bottom screen (256x192 ARGB)
+    // =========================================================================
+    void DrawBottomScreenOverlay(Config::Table& localCfg, QPainter* topPaint, QImage* btmBuffer);
+
 } // namespace MelonPrime
 
 #endif // MELONPRIME_CUSTOM_HUD
