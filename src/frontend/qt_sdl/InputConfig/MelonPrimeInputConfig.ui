@@ -787,6 +787,10 @@
 									<item row="5" column="1"><widget class="QSpinBox" name="spinMetroidHudWeaponIconPosX"><property name="minimum"><number>0</number></property><property name="maximum"><number>255</number></property><property name="value"><number>226</number></property></widget></item>
 									<item row="6" column="0"><widget class="QLabel"><property name="text"><string>Icon Position Y</string></property></widget></item>
 									<item row="6" column="1"><widget class="QSpinBox" name="spinMetroidHudWeaponIconPosY"><property name="minimum"><number>0</number></property><property name="maximum"><number>191</number></property><property name="value"><number>174</number></property></widget></item>
+									<item row="7" column="0"><widget class="QLabel"><property name="text"><string>Icon Anchor X</string></property></widget></item>
+									<item row="7" column="1"><widget class="QComboBox" name="comboMetroidHudWeaponIconAnchorX"><item><property name="text"><string>Left</string></property></item><item><property name="text"><string>Center</string></property></item><item><property name="text"><string>Right</string></property></item></widget></item>
+									<item row="8" column="0"><widget class="QLabel"><property name="text"><string>Icon Anchor Y</string></property></widget></item>
+									<item row="8" column="1"><widget class="QComboBox" name="comboMetroidHudWeaponIconAnchorY"><item><property name="text"><string>Top</string></property></item><item><property name="text"><string>Center</string></property></item><item><property name="text"><string>Bottom</string></property></item></widget></item>
 								</layout>
 								</widget>
 							</item>

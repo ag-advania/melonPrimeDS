@@ -363,6 +363,8 @@ MelonPrimeInputConfig::MelonPrimeInputConfig(EmuInstance* emu, QWidget* parent) 
     ui->spinMetroidHudWeaponIconOffsetY->setValue(instcfg.GetInt("Metroid.Visual.HudWeaponIconOffsetY"));
     ui->spinMetroidHudWeaponIconPosX->setValue(instcfg.GetInt("Metroid.Visual.HudWeaponIconPosX"));
     ui->spinMetroidHudWeaponIconPosY->setValue(instcfg.GetInt("Metroid.Visual.HudWeaponIconPosY"));
+    ui->comboMetroidHudWeaponIconAnchorX->setCurrentIndex(instcfg.GetInt("Metroid.Visual.HudWeaponIconAnchorX"));
+    ui->comboMetroidHudWeaponIconAnchorY->setCurrentIndex(instcfg.GetInt("Metroid.Visual.HudWeaponIconAnchorY"));
 
     // Icon independent position preset detection
     {
@@ -797,6 +799,7 @@ MelonPrimeInputConfig::MelonPrimeInputConfig(EmuInstance* emu, QWidget* parent) 
     prvB(ui->cbMetroidHudWeaponIconShow);  prvC(ui->comboMetroidHudWeaponIconMode);
     prvI(ui->spinMetroidHudWeaponIconOffsetX); prvI(ui->spinMetroidHudWeaponIconOffsetY);
     prvI(ui->spinMetroidHudWeaponIconPosX);   prvI(ui->spinMetroidHudWeaponIconPosY);
+    prvC(ui->comboMetroidHudWeaponIconAnchorX); prvC(ui->comboMetroidHudWeaponIconAnchorY);
     // HP Gauge
     prvB(ui->cbMetroidHudHpGauge);
     prvC(ui->comboMetroidHudHpGaugeOrientation);
@@ -953,9 +956,11 @@ void MelonPrimeInputConfig::snapshotVisualConfig()
     sC("cWpnIconMode",  ui->comboMetroidHudWeaponIconMode);
     sI("sWpnIconOfsX",  ui->spinMetroidHudWeaponIconOffsetX);
     sI("sWpnIconOfsY",  ui->spinMetroidHudWeaponIconOffsetY);
-    sI("sWpnIconPosX",  ui->spinMetroidHudWeaponIconPosX);
-    sI("sWpnIconPosY",  ui->spinMetroidHudWeaponIconPosY);
-    sC("cWpnIconPos",   ui->comboMetroidHudWeaponIconPosition);
+    sI("sWpnIconPosX",   ui->spinMetroidHudWeaponIconPosX);
+    sI("sWpnIconPosY",   ui->spinMetroidHudWeaponIconPosY);
+    sC("cWpnIconPos",    ui->comboMetroidHudWeaponIconPosition);
+    sC("cWpnIconAnchX",  ui->comboMetroidHudWeaponIconAnchorX);
+    sC("cWpnIconAnchY",  ui->comboMetroidHudWeaponIconAnchorY);
     // HP Gauge
     sB("cHpGauge",       ui->cbMetroidHudHpGauge);
     sC("cHpGaugeOrient", ui->comboMetroidHudHpGaugeOrientation);
@@ -1089,9 +1094,11 @@ void MelonPrimeInputConfig::restoreVisualSnapshot()
     rC("cWpnIconMode",  ui->comboMetroidHudWeaponIconMode);
     rI("sWpnIconOfsX",  ui->spinMetroidHudWeaponIconOffsetX);
     rI("sWpnIconOfsY",  ui->spinMetroidHudWeaponIconOffsetY);
-    rI("sWpnIconPosX",  ui->spinMetroidHudWeaponIconPosX);
-    rI("sWpnIconPosY",  ui->spinMetroidHudWeaponIconPosY);
-    rC("cWpnIconPos",   ui->comboMetroidHudWeaponIconPosition);
+    rI("sWpnIconPosX",   ui->spinMetroidHudWeaponIconPosX);
+    rI("sWpnIconPosY",   ui->spinMetroidHudWeaponIconPosY);
+    rC("cWpnIconPos",    ui->comboMetroidHudWeaponIconPosition);
+    rC("cWpnIconAnchX",  ui->comboMetroidHudWeaponIconAnchorX);
+    rC("cWpnIconAnchY",  ui->comboMetroidHudWeaponIconAnchorY);
     // HP Gauge
     rB("cHpGauge",       ui->cbMetroidHudHpGauge);
     rC("cHpGaugeOrient", ui->comboMetroidHudHpGaugeOrientation);
@@ -1249,8 +1256,10 @@ void MelonPrimeInputConfig::applyVisualPreview()
     instcfg.SetInt ("Metroid.Visual.HudWeaponIconMode",   ui->comboMetroidHudWeaponIconMode->currentIndex());
     instcfg.SetInt ("Metroid.Visual.HudWeaponIconOffsetX",ui->spinMetroidHudWeaponIconOffsetX->value());
     instcfg.SetInt ("Metroid.Visual.HudWeaponIconOffsetY",ui->spinMetroidHudWeaponIconOffsetY->value());
-    instcfg.SetInt ("Metroid.Visual.HudWeaponIconPosX",   ui->spinMetroidHudWeaponIconPosX->value());
-    instcfg.SetInt ("Metroid.Visual.HudWeaponIconPosY",   ui->spinMetroidHudWeaponIconPosY->value());
+    instcfg.SetInt ("Metroid.Visual.HudWeaponIconPosX",     ui->spinMetroidHudWeaponIconPosX->value());
+    instcfg.SetInt ("Metroid.Visual.HudWeaponIconPosY",     ui->spinMetroidHudWeaponIconPosY->value());
+    instcfg.SetInt ("Metroid.Visual.HudWeaponIconAnchorX",  ui->comboMetroidHudWeaponIconAnchorX->currentIndex());
+    instcfg.SetInt ("Metroid.Visual.HudWeaponIconAnchorY",  ui->comboMetroidHudWeaponIconAnchorY->currentIndex());
 
     instcfg.SetBool("Metroid.Visual.HudHpGauge",               ui->cbMetroidHudHpGauge->isChecked());
     instcfg.SetInt ("Metroid.Visual.HudHpGaugeOrientation",    ui->comboMetroidHudHpGaugeOrientation->currentIndex());
@@ -1441,8 +1450,10 @@ void MelonPrimeInputConfig::saveConfig()
     instcfg.SetInt("Metroid.Visual.HudWeaponIconMode", ui->comboMetroidHudWeaponIconMode->currentIndex());
     instcfg.SetInt("Metroid.Visual.HudWeaponIconOffsetX", ui->spinMetroidHudWeaponIconOffsetX->value());
     instcfg.SetInt("Metroid.Visual.HudWeaponIconOffsetY", ui->spinMetroidHudWeaponIconOffsetY->value());
-    instcfg.SetInt("Metroid.Visual.HudWeaponIconPosX", ui->spinMetroidHudWeaponIconPosX->value());
-    instcfg.SetInt("Metroid.Visual.HudWeaponIconPosY", ui->spinMetroidHudWeaponIconPosY->value());
+    instcfg.SetInt("Metroid.Visual.HudWeaponIconPosX",    ui->spinMetroidHudWeaponIconPosX->value());
+    instcfg.SetInt("Metroid.Visual.HudWeaponIconPosY",    ui->spinMetroidHudWeaponIconPosY->value());
+    instcfg.SetInt("Metroid.Visual.HudWeaponIconAnchorX", ui->comboMetroidHudWeaponIconAnchorX->currentIndex());
+    instcfg.SetInt("Metroid.Visual.HudWeaponIconAnchorY", ui->comboMetroidHudWeaponIconAnchorY->currentIndex());
 
     // Gauge settings — HP
     instcfg.SetBool("Metroid.Visual.HudHpGauge", ui->cbMetroidHudHpGauge->checkState() == Qt::Checked);
@@ -1719,6 +1730,8 @@ void MelonPrimeInputConfig::resetHpAmmoDefaults()
     ui->comboMetroidHudWeaponIconPosition->setCurrentIndex(8); // Custom
     ui->spinMetroidHudWeaponIconPosX->setValue(230);
     ui->spinMetroidHudWeaponIconPosY->setValue(135);
+    ui->comboMetroidHudWeaponIconAnchorX->setCurrentIndex(0); // Left
+    ui->comboMetroidHudWeaponIconAnchorY->setCurrentIndex(0); // Top
     // HP Gauge
     ui->cbMetroidHudHpGauge->setChecked(true);
     ui->comboMetroidHudHpGaugeOrientation->setCurrentIndex(1); // Vertical
