@@ -284,6 +284,7 @@ namespace Config
         {"Instance*.Metroid.Visual.HudMatchStatusSepColorOverall",   true},
         {"Instance*.Metroid.Visual.HudMatchStatusGoalColorOverall",  true},
         {"Instance*.Metroid.Visual.InGameAspectRatio", true},
+        {"Instance*.Metroid.Visual.ClipCursorToBottomScreenWhenNotInGame", false},
         {"Instance*.Metroid.Visual.InGameScaling", true},
         {"Instance*.Metroid.Visual.InGameScalingAuto", true},
         {"Instance*.Metroid.UI.SectionCrosshair",      false},
@@ -296,6 +297,7 @@ namespace Config
         {"Instance*.Metroid.UI.SectionAmmoGauge",      false},
         {"Instance*.Metroid.UI.SectionInputSettings",  false},
         {"Instance*.Metroid.UI.SectionScreenSync",     false},
+        {"Instance*.Metroid.UI.SectionCursorClipSettings",  false},
         {"Instance*.Metroid.UI.SectionInGameAspectRatio",  false},
         {"Instance*.Metroid.UI.SectionSensitivity",    true},
         {"Instance*.Metroid.UI.SectionGameplay",       true},
@@ -1153,7 +1155,4 @@ namespace Config
     }
 
 }
-
-
-
 
