@@ -97,6 +97,11 @@ struct CachedHudConfig {
     int    battleLabelPos; // 0=Above,1=Below,2=Left,3=Right,4=Center
     char   labelPoints[17], labelOctoliths[17], labelLives[17];
     char   labelRingTime[17], labelPrimeTime[17];
+    QColor battleColor;       // overall (fallback)
+    QColor battleLabelColor;  // invalid = use battleColor
+    QColor battleValueColor;  // invalid = use battleColor
+    QColor battleSepColor;    // invalid = use battleColor
+    QColor battleGoalColor;   // invalid = use battleColor
     // Cache invalidation
     bool valid;
 };
@@ -197,6 +202,35 @@ static void RefreshCachedConfig(Config::Table& cfg)
     copyLabel(c.labelLives,     sizeof(c.labelLives),     cfg.GetString("Metroid.Visual.HudMatchStatusLabelLives"));
     copyLabel(c.labelRingTime,  sizeof(c.labelRingTime),  cfg.GetString("Metroid.Visual.HudMatchStatusLabelRingTime"));
     copyLabel(c.labelPrimeTime, sizeof(c.labelPrimeTime), cfg.GetString("Metroid.Visual.HudMatchStatusLabelPrimeTime"));
+    c.battleColor = QColor(cfg.GetInt("Metroid.Visual.HudMatchStatusColorR"),
+                           cfg.GetInt("Metroid.Visual.HudMatchStatusColorG"),
+                           cfg.GetInt("Metroid.Visual.HudMatchStatusColorB"));
+    // Sub-colors: invalid QColor means "use overall battleColor"
+    auto readSubColor = [&](const char* keyOverall,
+                            const char* keyR, const char* keyG, const char* keyB) -> QColor {
+        if (cfg.GetBool(keyOverall)) return QColor(); // invalid = inherit
+        return QColor(cfg.GetInt(keyR), cfg.GetInt(keyG), cfg.GetInt(keyB));
+    };
+    c.battleLabelColor = readSubColor(
+        "Metroid.Visual.HudMatchStatusLabelColorOverall",
+        "Metroid.Visual.HudMatchStatusLabelColorR",
+        "Metroid.Visual.HudMatchStatusLabelColorG",
+        "Metroid.Visual.HudMatchStatusLabelColorB");
+    c.battleValueColor = readSubColor(
+        "Metroid.Visual.HudMatchStatusValueColorOverall",
+        "Metroid.Visual.HudMatchStatusValueColorR",
+        "Metroid.Visual.HudMatchStatusValueColorG",
+        "Metroid.Visual.HudMatchStatusValueColorB");
+    c.battleSepColor = readSubColor(
+        "Metroid.Visual.HudMatchStatusSepColorOverall",
+        "Metroid.Visual.HudMatchStatusSepColorR",
+        "Metroid.Visual.HudMatchStatusSepColorG",
+        "Metroid.Visual.HudMatchStatusSepColorB");
+    c.battleGoalColor = readSubColor(
+        "Metroid.Visual.HudMatchStatusGoalColorOverall",
+        "Metroid.Visual.HudMatchStatusGoalColorR",
+        "Metroid.Visual.HudMatchStatusGoalColorG",
+        "Metroid.Visual.HudMatchStatusGoalColorB");
 }
 
 // =========================================================================
@@ -298,10 +332,10 @@ static void FormatTime(char* buf, int bufSize, int seconds)
 //  Battle match cache — read once at match join, reused every frame
 // =========================================================================
 struct BattleMatchState {
-    uint8_t mode;
-    int     goalValue;
-    bool    isTimeMode;
-    bool    valid;
+    uint8_t  mode;
+    int      goalValue;
+    bool     isTimeMode;
+    bool     valid;
 };
 static BattleMatchState s_battleState = { .valid = false };
 
@@ -339,6 +373,7 @@ void CustomHud_OnMatchJoin(melonDS::u8* ram, const RomAddresses& rom)
         break;
     }
     }
+
     b.valid = true;
 }
 
@@ -413,25 +448,45 @@ static void DrawMatchStatusHud(QPainter* p, melonDS::u8* ram,
         if (currentValue < 0) currentValue = 0;
     }
 
-    // Format value string
-    char buf[48];
+    // Build per-part strings
+    char curBuf[24] = {}, sepBuf[4] = {}, goalBuf[24] = {};
+    bool hasGoal = false;
     if (isTimeMode) {
-        char curBuf[16], goalBuf[16];
         FormatTime(curBuf, sizeof(curBuf), currentValue);
         FormatTime(goalBuf, sizeof(goalBuf), goalValue);
-        std::snprintf(buf, sizeof(buf), "%s / %s", curBuf, goalBuf);
+        std::strncpy(sepBuf, " / ", sizeof(sepBuf));
+        hasGoal = true;
     } else if (goalValue > 0) {
-        std::snprintf(buf, sizeof(buf), "%d / %d", currentValue, goalValue);
+        std::snprintf(curBuf, sizeof(curBuf), "%d", currentValue);
+        std::snprintf(goalBuf, sizeof(goalBuf), "%d", goalValue);
+        std::strncpy(sepBuf, " / ", sizeof(sepBuf));
+        hasGoal = true;
     } else {
         // Goal lookup failed — show raw XX for debugging
-        std::snprintf(buf, sizeof(buf), "%d (XX=0x%02X)", currentValue, xx);
+        std::snprintf(curBuf, sizeof(curBuf), "%d (XX=0x%02X)", currentValue, xx);
     }
 
-    // Draw value at base position
+    // Helper: pick sub-color or fall back to overall
+    auto eff = [&](const QColor& sub) -> const QColor& {
+        return sub.isValid() ? sub : c.battleColor;
+    };
+
+    // Draw value parts at base position
     int vx = c.battleX;
     int vy = c.battleY;
-    p->setPen(Qt::white);
-    p->drawText(QPoint(vx, vy), buf);
+    QFontMetrics fm = p->fontMetrics();
+
+    p->setPen(eff(c.battleValueColor));
+    p->drawText(QPoint(vx, vy), curBuf);
+
+    if (hasGoal) {
+        int x = vx + fm.horizontalAdvance(curBuf);
+        p->setPen(eff(c.battleSepColor));
+        p->drawText(QPoint(x, vy), sepBuf);
+        x += fm.horizontalAdvance(sepBuf);
+        p->setPen(eff(c.battleGoalColor));
+        p->drawText(QPoint(x, vy), goalBuf);
+    }
 
     // Draw label
     const char* label = ResolveBattleLabel(mode, c);
@@ -465,7 +520,7 @@ static void DrawMatchStatusHud(QPainter* p, melonDS::u8* ram,
     lx += c.battleLabelOfsX;
     ly += c.battleLabelOfsY;
 
-    p->setPen(QColor(200, 200, 200));
+    p->setPen(eff(c.battleLabelColor));
     p->drawText(QPoint(lx, ly), label);
 }
 
