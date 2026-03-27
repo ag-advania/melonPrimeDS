@@ -26,7 +26,38 @@ namespace MelonPrime {
 //       Eliminates QImage resource I/O + format conversion from hot path.
 // =========================================================================
 static QImage s_weaponIcons[9];
+static QImage s_weaponTintedIcons[9];
+static QColor s_weaponTintColor;
 static bool   s_iconsLoaded = false;
+static bool   s_weaponTintCacheValid = false;
+
+static const QImage& GetWeaponIconForDraw(uint8_t weapon, bool useOverlay, const QColor& overlayColor)
+{
+    if (!useOverlay || (weapon != 0 && weapon != 2))
+        return s_weaponIcons[weapon];
+
+    if (!s_weaponTintCacheValid || s_weaponTintColor != overlayColor) {
+        for (int i = 0; i < 9; i++)
+            s_weaponTintedIcons[i] = s_weaponIcons[i];
+
+        for (uint8_t idx : { static_cast<uint8_t>(0), static_cast<uint8_t>(2) }) {
+            if (s_weaponIcons[idx].isNull())
+                continue;
+
+            QImage tinted = s_weaponIcons[idx].copy();
+            QPainter tintPainter(&tinted);
+            tintPainter.setCompositionMode(QPainter::CompositionMode_SourceIn);
+            tintPainter.fillRect(tinted.rect(), overlayColor);
+            tintPainter.end();
+            s_weaponTintedIcons[idx] = std::move(tinted);
+        }
+
+        s_weaponTintColor = overlayColor;
+        s_weaponTintCacheValid = true;
+    }
+
+    return s_weaponTintedIcons[weapon];
+}
 
 static void EnsureIconsLoaded()
 {
@@ -41,7 +72,9 @@ static void EnsureIconsLoaded()
         QImage img(kIconPaths[i]);
         s_weaponIcons[i] = img.isNull() ? img
             : img.convertToFormat(QImage::Format_ARGB32_Premultiplied);
+        s_weaponTintedIcons[i] = s_weaponIcons[i];
     }
+    s_weaponTintCacheValid = false;
     s_iconsLoaded = true;
 }
 
@@ -91,7 +124,8 @@ struct CachedHudConfig {
     // HP
     int    hpX, hpY, hpAlign;
     char   hpPrefix[12];
-    bool   hpGauge, hpAutoColor;
+    bool   hpTextAutoColor, hpGauge, hpAutoColor;
+    QColor hpTextColor;
     int    hpGaugeOri, hpGaugeLen, hpGaugeWid;
     int    hpGaugeOfsX, hpGaugeOfsY, hpGaugeAnchor;
     int    hpGaugePosMode, hpGaugePosX, hpGaugePosY;
@@ -99,7 +133,8 @@ struct CachedHudConfig {
     // Weapon / Ammo
     int    wpnX, wpnY, ammoAlign;
     char   ammoPrefix[12];
-    bool   iconShow, ammoGauge;
+    QColor ammoTextColor;
+    bool   iconShow, iconColorOverlay, ammoGauge;
     int    iconMode, iconOfsX, iconOfsY, iconPosX, iconPosY;
     int    iconAnchorX, iconAnchorY; // 0=Left/Top  1=Center  2=Right/Bottom
     int    ammoGaugeOri, ammoGaugeLen, ammoGaugeWid;
@@ -147,6 +182,10 @@ static void RefreshCachedConfig(Config::Table& cfg)
     { auto s = cfg.GetString("Metroid.Visual.HudHpPrefix");
       std::strncpy(c.hpPrefix, s.c_str(), sizeof(c.hpPrefix)-1);
       c.hpPrefix[sizeof(c.hpPrefix)-1] = '\0'; }
+    c.hpTextAutoColor = cfg.GetBool("Metroid.Visual.HudHpTextAutoColor");
+    c.hpTextColor = QColor(cfg.GetInt("Metroid.Visual.HudHpTextColorR"),
+                           cfg.GetInt("Metroid.Visual.HudHpTextColorG"),
+                           cfg.GetInt("Metroid.Visual.HudHpTextColorB"));
     c.hpGauge      = cfg.GetBool("Metroid.Visual.HudHpGauge");
     c.hpGaugeOri   = cfg.GetInt("Metroid.Visual.HudHpGaugeOrientation");
     c.hpGaugeLen   = cfg.GetInt("Metroid.Visual.HudHpGaugeLength");
@@ -168,7 +207,11 @@ static void RefreshCachedConfig(Config::Table& cfg)
     { auto s = cfg.GetString("Metroid.Visual.HudAmmoPrefix");
       std::strncpy(c.ammoPrefix, s.c_str(), sizeof(c.ammoPrefix)-1);
       c.ammoPrefix[sizeof(c.ammoPrefix)-1] = '\0'; }
+    c.ammoTextColor = QColor(cfg.GetInt("Metroid.Visual.HudAmmoTextColorR"),
+                              cfg.GetInt("Metroid.Visual.HudAmmoTextColorG"),
+                              cfg.GetInt("Metroid.Visual.HudAmmoTextColorB"));
     c.iconShow = cfg.GetBool("Metroid.Visual.HudWeaponIconShow");
+    c.iconColorOverlay = cfg.GetBool("Metroid.Visual.HudWeaponIconColorOverlay");
     c.iconMode = cfg.GetInt("Metroid.Visual.HudWeaponIconMode");
     c.iconOfsX = cfg.GetInt("Metroid.Visual.HudWeaponIconOffsetX");
     c.iconOfsY = cfg.GetInt("Metroid.Visual.HudWeaponIconOffsetY");
@@ -719,9 +762,7 @@ static void CalcGaugePos(int textX, int textY, int textW, int textH, int anchor,
 static inline void DrawHP(QPainter* p, uint16_t hp, uint16_t maxHP,
                            const CachedHudConfig& c)
 {
-    if (hp <= 25)       p->setPen(QColor(255, 0, 0));
-    else if (hp <= 50)  p->setPen(QColor(255, 165, 0));
-    else                p->setPen(QColor(255, 255, 255));
+    p->setPen(c.hpTextAutoColor ? HpGaugeColor(hp, c.hpTextColor) : c.hpTextColor);
 
     static TextMeasureCache s_hpTextCache = { 0, "", 0, 0, false };
     const QFontMetrics fm = p->fontMetrics();
@@ -769,14 +810,14 @@ static void DrawWeaponAmmo(QPainter* p, melonDS::u8* ram,
                            const CachedHudConfig& c)
 {
     if (weapon > 8) return;
-    p->setPen(Qt::white);
+    p->setPen(c.ammoTextColor);
 
     static TextMeasureCache s_ammoTextCache = { 0, "", 0, 0, false };
     const QFontMetrics fm = p->fontMetrics();
     const int fontPixelSize = p->font().pixelSize();
 
     const WeaponInfo& wi = kWeaponTable[weapon];
-    const QImage& icon = s_weaponIcons[weapon]; // P-1
+    const QImage& icon = GetWeaponIconForDraw(weapon, c.iconColorOverlay, c.ammoGaugeColor); // P-1
 
     uint16_t ammo = 0, maxAmmo = 0;
     bool hasAmmo = (wi.divisor > 0);
