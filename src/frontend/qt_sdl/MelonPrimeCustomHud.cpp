@@ -726,7 +726,7 @@ static void DrawWeaponAmmo(QPainter* p, melonDS::u8* ram,
         }
     }
 
-    int textX = c.wpnX, textY = c.wpnY + 8;
+    int textX = c.wpnX, textY = c.wpnY;
     if (hasAmmo) {
         char buf[24];
         std::snprintf(buf, sizeof(buf), "%s%02d", c.ammoPrefix, ammo);
