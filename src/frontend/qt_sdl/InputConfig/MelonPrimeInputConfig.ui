@@ -529,6 +529,27 @@
 											<property name="indent"><number>20</number></property>
 										</widget>
 									</item>
+
+								</layout>
+								</widget>
+							</item>
+
+							<item><widget class="QPushButton" name="btnToggleCursorClipSettings">
+								<property name="text"><string>▶ CURSOR CLIP SETTINGS</string></property>
+								<property name="checkable"><bool>true</bool></property>
+								<property name="checked"><bool>false</bool></property>
+								<property name="flat"><bool>true</bool></property>
+								<property name="styleSheet"><string>QPushButton { text-align: left; font-weight: bold; padding: 4px; } QPushButton::checked { font-weight: bold; }</string></property>
+							</widget></item>
+							<item>
+								<widget class="QWidget" name="sectionCursorClipSettings">
+								<layout class="QVBoxLayout" name="vboxCursorClipSettings">
+									<item>
+										<widget class="QCheckBox" name="cbMetroidClipCursorToBottomScreenWhenNotInGame">
+											<property name="text"><string>When not in-game and the bottom screen is visible, confine the mouse cursor to the bottom screen area. Press ESC to release the cursor.</string></property>
+											<property name="toolTip"><string>Windows only. Applies only while the bottom screen is actually being drawn. Press ESC to release the cursor.</string></property>
+										</widget>
+									</item>
 								</layout>
 								</widget>
 							</item>

@@ -102,6 +102,23 @@ static RECT computeCenter1pxClipRectSafe(HWND hwnd) {
     return clip;
 }
 
+static RECT computeWidgetClipRectSafe(HWND hwnd, const QRect& widgetRect) {
+    POINT tl{ widgetRect.left(), widgetRect.top() };
+    POINT br{ widgetRect.right() + 1, widgetRect.bottom() + 1 };
+    ClientToScreen(hwnd, &tl);
+    ClientToScreen(hwnd, &br);
+
+    RECT clip{ tl.x, tl.y, br.x, br.y };
+    const RECT vs = getVirtualScreenRect();
+
+    clip.left = std::clamp<LONG>(clip.left, vs.left, vs.right - 1);
+    clip.right = std::clamp<LONG>(clip.right, clip.left + 1, vs.right);
+    clip.top = std::clamp<LONG>(clip.top, vs.top, vs.bottom - 1);
+    clip.bottom = std::clamp<LONG>(clip.bottom, clip.top + 1, vs.bottom);
+
+    return clip;
+}
+
 // 垂直中央を維持してRECTの高さを1/2に縮小
 inline RECT shrinkRectHeightToHalfCentered(RECT r) {
     const LONG h = r.bottom - r.top;
@@ -129,6 +146,74 @@ const u32 kOSDMargin = 6;
 const int kLogoWidth = 192;
 
 #ifdef MELONPRIME_DS
+void ScreenPanel::refreshClipForGameStateChange()
+{
+    auto* core = emuInstance->getEmuThread()->GetMelonPrimeCore();
+    const bool hasState = (core != nullptr);
+    const bool isInGame = hasState && core->IsInGame();
+
+    if (m_hasLastClipInGameState == hasState && (!hasState || m_lastClipInGameState == isInGame))
+        return;
+
+    m_hasLastClipInGameState = hasState;
+    m_lastClipInGameState = isInGame;
+
+#if defined(_WIN32)
+    updateClipIfNeeded();
+#endif
+}
+
+bool ScreenPanel::shouldConfineCursorToBottomScreen() const
+{
+    auto* core = emuInstance->getEmuThread()->GetMelonPrimeCore();
+    if (!core) return false;
+    if (!core->IsRomDetected()) return false;
+    if (getClipWanted()) return false;
+    if (core->IsInGame()) return false;
+    return emuInstance->getLocalConfig().GetBool("Metroid.Visual.ClipCursorToBottomScreenWhenNotInGame");
+}
+
+std::optional<QRect> ScreenPanel::getBottomScreenWidgetRect() const
+{
+    QRectF bounds;
+    bool found = false;
+    const QRectF screenRect(0.0, 0.0, 256.0, 192.0);
+
+    for (int i = 0; i < numScreens; i++) {
+        if (screenKind[i] != 1) continue;
+        const float* mtx = screenMatrix[i];
+        QTransform transform(mtx[0], mtx[1], 0.0,
+                             mtx[2], mtx[3], 0.0,
+                             mtx[4], mtx[5], 1.0);
+        QRectF mapped = transform.mapRect(screenRect);
+        bounds = found ? bounds.united(mapped) : mapped;
+        found = true;
+    }
+
+    if (!found) return std::nullopt;
+
+    QRect rect(static_cast<int>(std::floor(bounds.left())),
+               static_cast<int>(std::floor(bounds.top())),
+               static_cast<int>(std::ceil(bounds.right())) - static_cast<int>(std::floor(bounds.left())),
+               static_cast<int>(std::ceil(bounds.bottom())) - static_cast<int>(std::floor(bounds.top())));
+    rect = rect.intersected(this->rect());
+    if (rect.isEmpty()) return std::nullopt;
+    return rect;
+}
+
+void ScreenPanel::clipCursorToBottomScreen() {
+    setCursor(Qt::ArrowCursor);
+#ifdef _WIN32
+    if (!isVisible() || !window() || !window()->isActiveWindow()) return;
+    auto bottomRect = getBottomScreenWidgetRect();
+    if (!bottomRect.has_value()) { unclip(); return; }
+    const HWND hwnd = reinterpret_cast<HWND>(winId());
+    RECT clip = computeWidgetClipRectSafe(hwnd, *bottomRect);
+    if (clip.left >= clip.right || clip.top >= clip.bottom) { unclip(); return; }
+    ClipCursor(&clip);
+#endif
+}
+
 void ScreenPanel::clipCursorCenter1px() {
     setClipWanted(true);
     setCursor(Qt::BlankCursor);
@@ -150,8 +235,18 @@ void ScreenPanel::unclip() {
 }
 
 void ScreenPanel::updateClipIfNeeded() {
-    if (!getClipWanted()) return;
-    clipCursorCenter1px();
+    if (getClipWanted()) {
+        clipCursorCenter1px();
+        return;
+    }
+
+    if (shouldConfineCursorToBottomScreen()) {
+        clipCursorToBottomScreen();
+        return;
+    }
+
+    setCursor(Qt::ArrowCursor);
+    unclip();
 }
 #endif // MELONPRIME_DS
 
@@ -300,6 +395,9 @@ void ScreenPanel::setupScreenLayout()
     if (auto* core = emuInstance->getEmuThread()->GetMelonPrimeCore()) {
         core->NotifyLayoutChange();
     }
+#if defined(_WIN32)
+    updateClipIfNeeded();
+#endif
 #endif
 }
 
@@ -948,6 +1046,8 @@ void ScreenPanelNative::setupScreenLayout()
 
 void ScreenPanelNative::drawScreen()
 {
+    refreshClipForGameStateChange();
+
     auto emuThread = emuInstance->getEmuThread();
     if (!emuThread->emuIsActive())
     {
@@ -1338,6 +1438,8 @@ void ScreenPanelGL::osdDeleteItem(OSDItem * item)
 
 void ScreenPanelGL::drawScreen()
 {
+    refreshClipForGameStateChange();
+
     if (!glContext) return;
 
     auto emuThread = emuInstance->getEmuThread();
@@ -1773,9 +1875,25 @@ void ScreenPanel::unfocus()
 #endif
 }
 
+void ScreenPanel::focusInEvent(QFocusEvent * event)
+{
+#if defined(_WIN32)
+    updateClipIfNeeded();
+#endif
+    QWidget::focusInEvent(event);
+}
+
 void ScreenPanel::focusOutEvent(QFocusEvent * event)
 {
     unfocus();
+}
+
+void ScreenPanel::enterEvent(QEnterEvent * event)
+{
+#if defined(_WIN32)
+    updateClipIfNeeded();
+#endif
+    QWidget::enterEvent(event);
 }
 
 void ScreenPanel::moveEvent(QMoveEvent * e) {
@@ -1792,7 +1910,7 @@ __attribute__((always_inline)) inline void ScreenPanel::setClipWanted(bool value
         emuInstance->getEmuThread()->GetMelonPrimeCore()->isClipWanted = value;
 }
 
-__attribute__((always_inline)) inline bool ScreenPanel::getClipWanted()
+__attribute__((always_inline)) inline bool ScreenPanel::getClipWanted() const
 {
     if (!emuInstance->getEmuThread()->GetMelonPrimeCore()) return false;
     return emuInstance->getEmuThread()->GetMelonPrimeCore()->isClipWanted;
