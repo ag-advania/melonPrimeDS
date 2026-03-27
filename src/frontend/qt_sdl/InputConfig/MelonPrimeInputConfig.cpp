@@ -310,7 +310,6 @@ MelonPrimeInputConfig::MelonPrimeInputConfig(EmuInstance* emu, QWidget* parent) 
 
     // Custom HUD
     ui->cbMetroidEnableCustomHud->setChecked(instcfg.GetBool("Metroid.Visual.CustomHUD"));
-    ui->spinMetroidHudFontSize->setValue(instcfg.GetInt("Metroid.Visual.HudFontSize"));
 
     // --- Collapsible sections: remember expand/collapse state ---
     auto setupToggle = [&instcfg](QPushButton* btn, QWidget* section, const QString& label, const char* cfgKey) {
@@ -776,7 +775,6 @@ MelonPrimeInputConfig::MelonPrimeInputConfig(EmuInstance* emu, QWidget* parent) 
     };
 
     prvB(ui->cbMetroidEnableCustomHud);
-    prvI(ui->spinMetroidHudFontSize);
     prvB(ui->cbMetroidInGameAspectRatio);
     prvC(ui->comboMetroidInGameAspectRatioMode);
     // Match Status
@@ -914,7 +912,6 @@ void MelonPrimeInputConfig::snapshotVisualConfig()
     auto sE = [&](const char* k, QLineEdit* w)       { s[k] = w->text(); };
 
     sB("cCustomHud",       ui->cbMetroidEnableCustomHud);
-    sI("sFontSize",        ui->spinMetroidHudFontSize);
     sB("cAspectRatio",     ui->cbMetroidInGameAspectRatio);
     sC("cAspectRatioMode", ui->comboMetroidInGameAspectRatioMode);
     // Match Status
@@ -1054,7 +1051,6 @@ void MelonPrimeInputConfig::restoreVisualSnapshot()
     };
 
     rB("cCustomHud",       ui->cbMetroidEnableCustomHud);
-    rI("sFontSize",        ui->spinMetroidHudFontSize);
     rB("cAspectRatio",     ui->cbMetroidInGameAspectRatio);
     rC("cAspectRatioMode", ui->comboMetroidInGameAspectRatioMode);
     // Match Status
@@ -1219,7 +1215,6 @@ void MelonPrimeInputConfig::applyVisualPreview()
     Config::Table& instcfg = emuInstance->getLocalConfig();
 
     instcfg.SetBool("Metroid.Visual.CustomHUD",              ui->cbMetroidEnableCustomHud->isChecked());
-    instcfg.SetInt ("Metroid.Visual.HudFontSize",            ui->spinMetroidHudFontSize->value());
     instcfg.SetBool("Metroid.Visual.InGameAspectRatio",      ui->cbMetroidInGameAspectRatio->isChecked());
     instcfg.SetInt ("Metroid.Visual.InGameAspectRatioMode",  ui->comboMetroidInGameAspectRatioMode->currentIndex());
     instcfg.SetBool("Metroid.Visual.ClipCursorToBottomScreenWhenNotInGame", ui->cbMetroidClipCursorToBottomScreenWhenNotInGame->isChecked());
@@ -1428,7 +1423,6 @@ void MelonPrimeInputConfig::saveConfig()
 
     // Custom HUD
     instcfg.SetBool("Metroid.Visual.CustomHUD", ui->cbMetroidEnableCustomHud->checkState() == Qt::Checked);
-    instcfg.SetInt("Metroid.Visual.HudFontSize", ui->spinMetroidHudFontSize->value());
 
     // Section toggle states
     instcfg.SetBool("Metroid.UI.SectionCrosshair",      ui->btnToggleCrosshair->isChecked());
@@ -1727,7 +1721,6 @@ void MelonPrimeInputConfig::resetCrosshairDefaults()
     ui->spinMetroidCrosshairOuterOffset->setValue(4);
 
     // Font size
-    ui->spinMetroidHudFontSize->setValue(6);
 }
 
 void MelonPrimeInputConfig::resetHpAmmoDefaults()
@@ -1822,4 +1815,3 @@ void MelonPrimeInputConfig::resetMatchStatusDefaults()
     ui->comboMetroidHudMatchStatusSepColor->setCurrentIndex(0);
     ui->comboMetroidHudMatchStatusGoalColor->setCurrentIndex(0);
 }
-
