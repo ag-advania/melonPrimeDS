@@ -151,12 +151,18 @@ void ScreenPanel::refreshClipForGameStateChange()
     auto* core = emuInstance->getEmuThread()->GetMelonPrimeCore();
     const bool hasState = (core != nullptr);
     const bool isInGame = hasState && core->IsInGame();
+    const bool isFocused = hasState && core->isFocused;
 
-    if (m_hasLastClipInGameState == hasState && (!hasState || m_lastClipInGameState == isInGame))
+    if (m_hasLastClipInGameState == hasState
+        && (!hasState || m_lastClipInGameState == isInGame)
+        && m_hasLastClipFocusedState == hasState
+        && (!hasState || m_lastClipFocusedState == isFocused))
         return;
 
     m_hasLastClipInGameState = hasState;
     m_lastClipInGameState = isInGame;
+    m_hasLastClipFocusedState = hasState;
+    m_lastClipFocusedState = isFocused;
 
 #if defined(_WIN32)
     updateClipIfNeeded();
@@ -1095,7 +1101,7 @@ void ScreenPanelNative::paintEvent(QPaintEvent * event)
         {
             auto* mp = emuThread->GetMelonPrimeCore();
             auto& instcfg = emuInstance->getLocalConfig();
-            if (mp && mp->IsRomDetected() && mp->IsInGame())
+            if (mp && mp->IsRomDetected() && mp->IsInGame() && MelonPrime::CustomHud_IsEnabled(instcfg))
             {
                 // Compute widescreen stretch factor from top screen transform
                 float topStretchX = 1.0f;
@@ -1113,31 +1119,29 @@ void ScreenPanelNative::paintEvent(QPaintEvent * event)
                     break;
                 }
 
-                // Clear overlay buffers BEFORE creating painters
+                // Custom HUD currently renders only to the top overlay.
                 Overlay[0].fill(Qt::transparent);
-                Overlay[1].fill(Qt::transparent);
 
-                // Per-frame painters (must end before reading image)
+                // Per-frame painter (must end before reading image)
                 {
                     QPainter topP(&Overlay[0]);
-                    QPainter btmP(&Overlay[1]);
                     topP.setFont(overlayFont);
-                    btmP.setFont(overlayFont);
                     MelonPrime::CustomHud_Render(
                         emuInstance, instcfg,
                         mp->GetCurrentRom(), mp->GetAddrHot(),
                         mp->GetPlayerPosition(),
-                        &topP, &btmP,
-                        &Overlay[0], &Overlay[1],
+                        &topP, nullptr,
+                        &Overlay[0], nullptr,
                         mp->IsInGame(),
                         topStretchX);
-                } // painters end here — safe to read images
+                } // painter ends here — safe to read image
 
-                // Composite overlays on top of screens
+                // Composite top overlay only on the top screen.
                 for (int i = 0; i < numScreens; i++)
                 {
+                    if (screenKind[i] != 0) continue;
                     painter.setTransform(screenTrans[i]);
-                    painter.drawImage(screenrc, Overlay[screenKind[i]]);
+                    painter.drawImage(screenrc, Overlay[0]);
                 }
             }
         }
@@ -1521,7 +1525,7 @@ void ScreenPanelGL::drawScreen()
         {
             auto* mp = emuThread->GetMelonPrimeCore();
             auto& instcfg = emuInstance->getLocalConfig();
-            if (mp && mp->IsRomDetected() && mp->IsInGame())
+            if (mp && mp->IsRomDetected() && mp->IsInGame() && MelonPrime::CustomHud_IsEnabled(instcfg))
             {
                 // Compute widescreen stretch factor from top screen transform
                 float topStretchX = 1.0f;
@@ -1539,25 +1543,27 @@ void ScreenPanelGL::drawScreen()
                     break;
                 }
 
-                // Clear overlay buffers BEFORE creating painters
+                // Custom HUD currently renders only to the top overlay.
                 Overlay[0].fill(Qt::transparent);
-                Overlay[1].fill(Qt::transparent);
 
-                // Per-frame painters (must end before GL upload reads image bits)
+                // Per-frame painter (must end before GL upload reads image bits)
                 {
                     QPainter topP(&Overlay[0]);
-                    QPainter btmP(&Overlay[1]);
                     topP.setFont(overlayFont);
-                    btmP.setFont(overlayFont);
                     MelonPrime::CustomHud_Render(
                         emuInstance, instcfg,
                         mp->GetCurrentRom(), mp->GetAddrHot(),
                         mp->GetPlayerPosition(),
-                        &topP, &btmP,
-                        &Overlay[0], &Overlay[1],
+                        &topP, nullptr,
+                        &Overlay[0], nullptr,
                         mp->IsInGame(),
                         topStretchX);
-                } // painters end here — safe to read constBits()
+                } // painter ends here — safe to read constBits()
+
+                glBindTexture(GL_TEXTURE_2D, overlayTextures[0]);
+                glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, 256, 192,
+                    GL_RGBA, GL_UNSIGNED_BYTE, Overlay[0].constBits());
+
 
                 // Switch to OSD shader (supports alpha via texelFetch + BGRA swizzle)
                 glUseProgram(osdShader);
@@ -1567,13 +1573,12 @@ void ScreenPanelGL::drawScreen()
                 glBindBuffer(GL_ARRAY_BUFFER, osdVertexBuffer);
                 glBindVertexArray(osdVertexArray);
                 glActiveTexture(GL_TEXTURE0);
-
                 glEnable(GL_BLEND);
                 glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
 
                 for (int i = 0; i < numScreens; i++)
                 {
-                    const int screenType = screenKind[i];
+                    if (screenKind[i] != 0) continue;
                     const float* mtx = screenMatrix[i];
 
                     // Extract true scale from matrix (rotation-safe)
@@ -1591,10 +1596,6 @@ void ScreenPanelGL::drawScreen()
                     const float texScaleX = 256.0f / displayW;
                     const float texScaleY = 192.0f / displayH;
 
-                    glBindTexture(GL_TEXTURE_2D, overlayTextures[screenType]);
-                    glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, 256, 192,
-                        GL_RGBA, GL_UNSIGNED_BYTE, Overlay[screenType].constBits());
-
                     glUniform2i(osdPosULoc, static_cast<int>(mtx[4]), static_cast<int>(mtx[5]));
                     glUniform2i(osdSizeULoc, static_cast<int>(displayW), static_cast<int>(displayH));
                     glUniform2f(osdTexScaleULoc, texScaleX, texScaleY);
@@ -1603,6 +1604,7 @@ void ScreenPanelGL::drawScreen()
                 }
 
                 glDisable(GL_BLEND);
+
 
                 // Restore screen shader state
                 glUseProgram(screenShaderProgram);
