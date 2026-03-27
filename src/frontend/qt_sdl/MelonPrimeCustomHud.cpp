@@ -91,18 +91,18 @@ struct CachedHudConfig {
     bool   chOuterShow;
     double chOuterOpacity;
     int    chOuterLengthX, chOuterLengthY, chOuterThickness, chOuterOffset;
-    // Battle HUD
-    bool   battleShow;
-    int    battleX, battleY;
-    int    battleLabelOfsX, battleLabelOfsY;
-    int    battleLabelPos; // 0=Above,1=Below,2=Left,3=Right,4=Center
-    char   labelPoints[17], labelOctoliths[17], labelLives[17];
-    char   labelRingTime[17], labelPrimeTime[17];
-    QColor battleColor;       // overall (fallback)
-    QColor battleLabelColor;  // invalid = use battleColor
-    QColor battleValueColor;  // invalid = use battleColor
-    QColor battleSepColor;    // invalid = use battleColor
-    QColor battleGoalColor;   // invalid = use battleColor
+    // Match Status HUD
+    bool   matchStatusShow;
+    int    matchStatusX, matchStatusY;
+    int    matchStatusLabelOfsX, matchStatusLabelOfsY;
+    int    matchStatusLabelPos; // 0=Above,1=Below,2=Left,3=Right,4=Center
+    char   matchStatusLabelPoints[17], matchStatusLabelOctoliths[17], matchStatusLabelLives[17];
+    char   matchStatusLabelRingTime[17], matchStatusLabelPrimeTime[17];
+    QColor matchStatusColor;       // overall (fallback)
+    QColor matchStatusLabelColor;  // invalid = use matchStatusColor
+    QColor matchStatusValueColor;  // invalid = use matchStatusColor
+    QColor matchStatusSepColor;    // invalid = use matchStatusColor
+    QColor matchStatusGoalColor;   // invalid = use matchStatusColor
     // Cache invalidation
     bool valid;
 };
@@ -191,47 +191,47 @@ static void RefreshCachedConfig(Config::Table& cfg)
     c.chOuterThickness = cfg.GetInt("Metroid.Visual.CrosshairOuterThickness");
     if (c.chOuterThickness <= 0) c.chOuterThickness = 1;
     c.chOuterOffset  = cfg.GetInt("Metroid.Visual.CrosshairOuterOffset");
-    // Battle HUD
-    c.battleShow     = cfg.GetBool("Metroid.Visual.HudMatchStatusShow");
-    c.battleX        = cfg.GetInt("Metroid.Visual.HudMatchStatusX");
-    c.battleY        = cfg.GetInt("Metroid.Visual.HudMatchStatusY");
-    c.battleLabelOfsX = cfg.GetInt("Metroid.Visual.HudMatchStatusLabelOfsX");
-    c.battleLabelOfsY = cfg.GetInt("Metroid.Visual.HudMatchStatusLabelOfsY");
-    c.battleLabelPos  = cfg.GetInt("Metroid.Visual.HudMatchStatusLabelPos");
+    // Match Status HUD
+    c.matchStatusShow     = cfg.GetBool("Metroid.Visual.HudMatchStatusShow");
+    c.matchStatusX        = cfg.GetInt("Metroid.Visual.HudMatchStatusX");
+    c.matchStatusY        = cfg.GetInt("Metroid.Visual.HudMatchStatusY");
+    c.matchStatusLabelOfsX = cfg.GetInt("Metroid.Visual.HudMatchStatusLabelOfsX");
+    c.matchStatusLabelOfsY = cfg.GetInt("Metroid.Visual.HudMatchStatusLabelOfsY");
+    c.matchStatusLabelPos  = cfg.GetInt("Metroid.Visual.HudMatchStatusLabelPos");
     // Per-mode label strings
     auto copyLabel = [](char* dst, size_t sz, const std::string& s) {
         std::strncpy(dst, s.c_str(), sz - 1); dst[sz - 1] = '\0';
     };
-    copyLabel(c.labelPoints,    sizeof(c.labelPoints),    cfg.GetString("Metroid.Visual.HudMatchStatusLabelPoints"));
-    copyLabel(c.labelOctoliths, sizeof(c.labelOctoliths), cfg.GetString("Metroid.Visual.HudMatchStatusLabelOctoliths"));
-    copyLabel(c.labelLives,     sizeof(c.labelLives),     cfg.GetString("Metroid.Visual.HudMatchStatusLabelLives"));
-    copyLabel(c.labelRingTime,  sizeof(c.labelRingTime),  cfg.GetString("Metroid.Visual.HudMatchStatusLabelRingTime"));
-    copyLabel(c.labelPrimeTime, sizeof(c.labelPrimeTime), cfg.GetString("Metroid.Visual.HudMatchStatusLabelPrimeTime"));
-    c.battleColor = QColor(cfg.GetInt("Metroid.Visual.HudMatchStatusColorR"),
+    copyLabel(c.matchStatusLabelPoints,    sizeof(c.matchStatusLabelPoints),    cfg.GetString("Metroid.Visual.HudMatchStatusLabelPoints"));
+    copyLabel(c.matchStatusLabelOctoliths, sizeof(c.matchStatusLabelOctoliths), cfg.GetString("Metroid.Visual.HudMatchStatusLabelOctoliths"));
+    copyLabel(c.matchStatusLabelLives,     sizeof(c.matchStatusLabelLives),     cfg.GetString("Metroid.Visual.HudMatchStatusLabelLives"));
+    copyLabel(c.matchStatusLabelRingTime,  sizeof(c.matchStatusLabelRingTime),  cfg.GetString("Metroid.Visual.HudMatchStatusLabelRingTime"));
+    copyLabel(c.matchStatusLabelPrimeTime, sizeof(c.matchStatusLabelPrimeTime), cfg.GetString("Metroid.Visual.HudMatchStatusLabelPrimeTime"));
+    c.matchStatusColor = QColor(cfg.GetInt("Metroid.Visual.HudMatchStatusColorR"),
                            cfg.GetInt("Metroid.Visual.HudMatchStatusColorG"),
                            cfg.GetInt("Metroid.Visual.HudMatchStatusColorB"));
-    // Sub-colors: invalid QColor means "use overall battleColor"
+    // Sub-colors: invalid QColor means "use overall matchStatusColor"
     auto readSubColor = [&](const char* keyOverall,
                             const char* keyR, const char* keyG, const char* keyB) -> QColor {
         if (cfg.GetBool(keyOverall)) return QColor(); // invalid = inherit
         return QColor(cfg.GetInt(keyR), cfg.GetInt(keyG), cfg.GetInt(keyB));
     };
-    c.battleLabelColor = readSubColor(
+    c.matchStatusLabelColor = readSubColor(
         "Metroid.Visual.HudMatchStatusLabelColorOverall",
         "Metroid.Visual.HudMatchStatusLabelColorR",
         "Metroid.Visual.HudMatchStatusLabelColorG",
         "Metroid.Visual.HudMatchStatusLabelColorB");
-    c.battleValueColor = readSubColor(
+    c.matchStatusValueColor = readSubColor(
         "Metroid.Visual.HudMatchStatusValueColorOverall",
         "Metroid.Visual.HudMatchStatusValueColorR",
         "Metroid.Visual.HudMatchStatusValueColorG",
         "Metroid.Visual.HudMatchStatusValueColorB");
-    c.battleSepColor = readSubColor(
+    c.matchStatusSepColor = readSubColor(
         "Metroid.Visual.HudMatchStatusSepColorOverall",
         "Metroid.Visual.HudMatchStatusSepColorR",
         "Metroid.Visual.HudMatchStatusSepColorG",
         "Metroid.Visual.HudMatchStatusSepColorB");
-    c.battleGoalColor = readSubColor(
+    c.matchStatusGoalColor = readSubColor(
         "Metroid.Visual.HudMatchStatusGoalColorOverall",
         "Metroid.Visual.HudMatchStatusGoalColorR",
         "Metroid.Visual.HudMatchStatusGoalColorG",
@@ -382,16 +382,16 @@ void CustomHud_OnMatchJoin(melonDS::u8* ram, const RomAddresses& rom)
     b.valid = true;
 }
 
-static const char* ResolveBattleLabel(uint8_t mode, const CachedHudConfig& c)
+static const char* ResolveMatchStatusLabel(uint8_t mode, const CachedHudConfig& c)
 {
     switch (mode) {
     case MODE_BATTLE:
-    case MODE_NODES:        return c.labelPoints;
+    case MODE_NODES:        return c.matchStatusLabelPoints;
     case MODE_BOUNTY:
-    case MODE_CAPTURE:      return c.labelOctoliths;
-    case MODE_SURVIVAL:     return c.labelLives;
-    case MODE_DEFENDER:     return c.labelRingTime;
-    case MODE_PRIME_HUNTER: return c.labelPrimeTime;
+    case MODE_CAPTURE:      return c.matchStatusLabelOctoliths;
+    case MODE_SURVIVAL:     return c.matchStatusLabelLives;
+    case MODE_DEFENDER:     return c.matchStatusLabelRingTime;
+    case MODE_PRIME_HUNTER: return c.matchStatusLabelPrimeTime;
     default:                return "";
     }
 }
@@ -400,7 +400,7 @@ static void DrawMatchStatusHud(QPainter* p, melonDS::u8* ram,
                                 const RomAddresses& rom, uint8_t playerPos,
                                 bool isAdventure, const CachedHudConfig& c)
 {
-    if (!c.battleShow || isAdventure) return;
+    if (!c.matchStatusShow || isAdventure) return;
 
     uint8_t mode = Read8(ram, rom.battleMode);
     if (mode < MODE_BATTLE || mode > MODE_SURVIVAL) return;
@@ -459,7 +459,7 @@ static void DrawMatchStatusHud(QPainter* p, melonDS::u8* ram,
     if (isTimeMode) {
         FormatTime(curBuf, sizeof(curBuf), currentValue);
         FormatTime(goalBuf, sizeof(goalBuf), goalValue);
-        std::strncpy(sepBuf, " / ", sizeof(sepBuf));
+        std::strncpy(sepBuf, "/", sizeof(sepBuf));
         hasGoal = true;
     } else if (goalValue > 0) {
         std::snprintf(curBuf, sizeof(curBuf), "%d", currentValue);
@@ -473,33 +473,33 @@ static void DrawMatchStatusHud(QPainter* p, melonDS::u8* ram,
 
     // Helper: pick sub-color or fall back to overall
     auto eff = [&](const QColor& sub) -> const QColor& {
-        return sub.isValid() ? sub : c.battleColor;
+        return sub.isValid() ? sub : c.matchStatusColor;
     };
 
     // Draw value parts at base position
-    int vx = c.battleX;
-    int vy = c.battleY;
+    int vx = c.matchStatusX;
+    int vy = c.matchStatusY;
     QFontMetrics fm = p->fontMetrics();
 
-    p->setPen(eff(c.battleValueColor));
+    p->setPen(eff(c.matchStatusValueColor));
     p->drawText(QPoint(vx, vy), curBuf);
 
     if (hasGoal) {
         int x = vx + fm.horizontalAdvance(curBuf);
-        p->setPen(eff(c.battleSepColor));
+        p->setPen(eff(c.matchStatusSepColor));
         p->drawText(QPoint(x, vy), sepBuf);
         x += fm.horizontalAdvance(sepBuf);
-        p->setPen(eff(c.battleGoalColor));
+        p->setPen(eff(c.matchStatusGoalColor));
         p->drawText(QPoint(x, vy), goalBuf);
     }
 
     // Draw label
-    const char* label = ResolveBattleLabel(mode, c);
+    const char* label = ResolveMatchStatusLabel(mode, c);
     if (label[0] == '\0') return;
 
     // labelPos: 0=Above, 1=Below, 2=Left, 3=Right, 4=Center
     int lx, ly;
-    switch (c.battleLabelPos) {
+    switch (c.matchStatusLabelPos) {
     default:
     case 0: // Above
         lx = vx;
@@ -522,10 +522,10 @@ static void DrawMatchStatusHud(QPainter* p, melonDS::u8* ram,
         ly = vy;
         break;
     }
-    lx += c.battleLabelOfsX;
-    ly += c.battleLabelOfsY;
+    lx += c.matchStatusLabelOfsX;
+    ly += c.matchStatusLabelOfsY;
 
-    p->setPen(eff(c.battleLabelColor));
+    p->setPen(eff(c.matchStatusLabelColor));
     p->drawText(QPoint(lx, ly), label);
 }
 
@@ -951,7 +951,7 @@ HOT_FUNCTION void CustomHud_Render(
 
     DrawHP(topPaint, currentHP, maxHP, c);
 
-    // Battle HUD (non-adventure only, visible in all camera modes)
+    // Match Status HUD (non-adventure only, visible in all camera modes)
     {
         bool isAdventure = Read8(ram, rom.isInAdventure) == 0x02;
         DrawMatchStatusHud(topPaint, ram, rom, playerPosition, isAdventure, c);
@@ -973,4 +973,5 @@ HOT_FUNCTION void CustomHud_Render(
 } // namespace MelonPrime
 
 #endif // MELONPRIME_CUSTOM_HUD
+
 
