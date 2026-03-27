@@ -966,15 +966,15 @@
 							<item>
 								<layout class="QFormLayout" name="formBattleLabels">
 									<item row="0" column="0"><widget class="QLabel"><property name="text"><string>Battle / Nodes</string></property></widget></item>
-									<item row="0" column="1"><widget class="QLineEdit" name="leMetroidHudMatchStatusLabelPoints"><property name="text"><string>POINTS</string></property><property name="maxLength"><number>16</number></property></widget></item>
+									<item row="0" column="1"><widget class="QLineEdit" name="leMetroidHudMatchStatusLabelPoints"><property name="text"><string>points</string></property><property name="maxLength"><number>16</number></property></widget></item>
 									<item row="1" column="0"><widget class="QLabel"><property name="text"><string>Bounty / Capture</string></property></widget></item>
-									<item row="1" column="1"><widget class="QLineEdit" name="leMetroidHudMatchStatusLabelOctoliths"><property name="text"><string>OCTOLITHS</string></property><property name="maxLength"><number>16</number></property></widget></item>
+									<item row="1" column="1"><widget class="QLineEdit" name="leMetroidHudMatchStatusLabelOctoliths"><property name="text"><string>octoliths</string></property><property name="maxLength"><number>16</number></property></widget></item>
 									<item row="2" column="0"><widget class="QLabel"><property name="text"><string>Survival</string></property></widget></item>
-									<item row="2" column="1"><widget class="QLineEdit" name="leMetroidHudMatchStatusLabelLives"><property name="text"><string>LIVES LEFT</string></property><property name="maxLength"><number>16</number></property></widget></item>
+									<item row="2" column="1"><widget class="QLineEdit" name="leMetroidHudMatchStatusLabelLives"><property name="text"><string>lives left</string></property><property name="maxLength"><number>16</number></property></widget></item>
 									<item row="3" column="0"><widget class="QLabel"><property name="text"><string>Defender</string></property></widget></item>
-									<item row="3" column="1"><widget class="QLineEdit" name="leMetroidHudMatchStatusLabelRingTime"><property name="text"><string>RING TIME</string></property><property name="maxLength"><number>16</number></property></widget></item>
+									<item row="3" column="1"><widget class="QLineEdit" name="leMetroidHudMatchStatusLabelRingTime"><property name="text"><string>ring time</string></property><property name="maxLength"><number>16</number></property></widget></item>
 									<item row="4" column="0"><widget class="QLabel"><property name="text"><string>Prime Hunter</string></property></widget></item>
-									<item row="4" column="1"><widget class="QLineEdit" name="leMetroidHudMatchStatusLabelPrimeTime"><property name="text"><string>PRIME TIME</string></property><property name="maxLength"><number>16</number></property></widget></item>
+									<item row="4" column="1"><widget class="QLineEdit" name="leMetroidHudMatchStatusLabelPrimeTime"><property name="text"><string>prime time</string></property><property name="maxLength"><number>16</number></property></widget></item>
 								</layout>
 							</item>
 							<item>

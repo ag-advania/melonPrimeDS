@@ -1265,11 +1265,11 @@ void MelonPrimeInputConfig::resetMatchStatusDefaults()
     ui->comboMetroidHudMatchStatusLabelPos->setCurrentIndex(0); // Above
     ui->spinMetroidHudMatchStatusLabelOfsX->setValue(0);
     ui->spinMetroidHudMatchStatusLabelOfsY->setValue(0);
-    ui->leMetroidHudMatchStatusLabelPoints->setText("POINTS");
-    ui->leMetroidHudMatchStatusLabelOctoliths->setText("OCTOLITHS");
-    ui->leMetroidHudMatchStatusLabelLives->setText("LIVES LEFT");
-    ui->leMetroidHudMatchStatusLabelRingTime->setText("RING TIME");
-    ui->leMetroidHudMatchStatusLabelPrimeTime->setText("PRIME TIME");
+    ui->leMetroidHudMatchStatusLabelPoints->setText("points");
+    ui->leMetroidHudMatchStatusLabelOctoliths->setText("octoliths");
+    ui->leMetroidHudMatchStatusLabelLives->setText("lives left");
+    ui->leMetroidHudMatchStatusLabelRingTime->setText("ring time");
+    ui->leMetroidHudMatchStatusLabelPrimeTime->setText("prime time");
     // Overall color: White
     ui->comboMetroidHudMatchStatusColor->setCurrentIndex(0);
     ui->spinMetroidHudMatchStatusColorR->setValue(255);
