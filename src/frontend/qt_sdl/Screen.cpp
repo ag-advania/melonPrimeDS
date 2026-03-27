@@ -151,12 +151,18 @@ void ScreenPanel::refreshClipForGameStateChange()
     auto* core = emuInstance->getEmuThread()->GetMelonPrimeCore();
     const bool hasState = (core != nullptr);
     const bool isInGame = hasState && core->IsInGame();
+    const bool isFocused = hasState && core->isFocused;
 
-    if (m_hasLastClipInGameState == hasState && (!hasState || m_lastClipInGameState == isInGame))
+    if (m_hasLastClipInGameState == hasState
+        && (!hasState || m_lastClipInGameState == isInGame)
+        && m_hasLastClipFocusedState == hasState
+        && (!hasState || m_lastClipFocusedState == isFocused))
         return;
 
     m_hasLastClipInGameState = hasState;
     m_lastClipInGameState = isInGame;
+    m_hasLastClipFocusedState = hasState;
+    m_lastClipFocusedState = isFocused;
 
 #if defined(_WIN32)
     updateClipIfNeeded();
