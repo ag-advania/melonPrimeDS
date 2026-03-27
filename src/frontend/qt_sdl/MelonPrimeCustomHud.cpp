@@ -15,6 +15,7 @@
 #include <string>
 #include <cmath>
 #include <cstdio>
+#include <cstring>
 
 namespace MelonPrime {
 
@@ -53,6 +54,31 @@ static QImage& GetOutlineBuffer()
     if (UNLIKELY(s_outlineBuf.isNull()))
         s_outlineBuf = QImage(256, 192, QImage::Format_ARGB32_Premultiplied);
     return s_outlineBuf;
+}
+
+struct TextMeasureCache {
+    int  fontPixelSize;
+    char text[32];
+    int  width;
+    int  height;
+    bool valid;
+};
+
+static inline void MeasureTextCached(const QFontMetrics& fm, int fontPixelSize,
+                                     TextMeasureCache& cache, const char* text,
+                                     int& outW, int& outH)
+{
+    if (!cache.valid || cache.fontPixelSize != fontPixelSize || std::strcmp(cache.text, text) != 0) {
+        cache.width = fm.horizontalAdvance(QString::fromLatin1(text));
+        cache.height = fm.height();
+        std::strncpy(cache.text, text, sizeof(cache.text) - 1);
+        cache.text[sizeof(cache.text) - 1] = '\0';
+        cache.fontPixelSize = fontPixelSize;
+        cache.valid = true;
+    }
+
+    outW = cache.width;
+    outH = cache.height;
 }
 
 // =========================================================================
@@ -402,19 +428,22 @@ static void DrawMatchStatusHud(QPainter* p, melonDS::u8* ram,
 {
     if (!c.matchStatusShow || isAdventure) return;
 
+    static TextMeasureCache s_curTextCache  = { 0, "", 0, 0, false };
+    static TextMeasureCache s_sepTextCache  = { 0, "", 0, 0, false };
+    static TextMeasureCache s_goalTextCache = { 0, "", 0, 0, false };
+    const QFontMetrics fm = p->fontMetrics();
+    const int fontPixelSize = p->font().pixelSize();
+
     uint8_t mode = Read8(ram, rom.battleMode);
     if (mode < MODE_BATTLE || mode > MODE_SURVIVAL) return;
 
-    // Read current value + goal every frame (no cache dependency)
     uint32_t playerOfs = static_cast<uint32_t>(playerPos) * 4;
     int currentValue = 0;
     int goalValue = 0;
     bool isTimeMode = false;
 
-    // Battle settings: QXXV00Z0 format (each char = 1 hex digit)
-    // XX is at bits 27-20; bit 0 of the full word is a flag bit, mask it out
     uint32_t settings = Read32(ram, rom.battleSettings);
-    uint8_t xx = (settings >> 20) & 0xFE; // bit 0 is a flag bit, not part of XX
+    uint8_t xx = (settings >> 20) & 0xFE;
 
     switch (mode) {
     case MODE_BATTLE:
@@ -429,14 +458,11 @@ static void DrawMatchStatusHud(QPainter* p, melonDS::u8* ram,
         break;
     case MODE_SURVIVAL:
         currentValue = static_cast<int>(Read32(ram, rom.basePoint - 0xB0 + playerOfs));
-        goalValue = LookupGoal(mode, xx); 
+        goalValue = LookupGoal(mode, xx);
         break;
     case MODE_DEFENDER:
     case MODE_PRIME_HUNTER: {
         currentValue = static_cast<int>(Read32(ram, rom.basePoint - 0x180 + playerOfs)) / 60;
-        // Time goal from battleSettings+4: format 0000XXYZ
-        // XXY (12 bits) = (timeLimitValue << 4) + timeGoalValue
-        // timeGoalRaw = XXY & 0x1F (lower 5 bits), index = raw / 2
         uint32_t timeSetting = Read32(ram, rom.battleSettings + 4);
         uint8_t timeGoalRaw = (timeSetting >> 4) & 0x1F;
         goalValue = LookupTimeGoalSec(timeGoalRaw);
@@ -447,13 +473,11 @@ static void DrawMatchStatusHud(QPainter* p, melonDS::u8* ram,
         return;
     }
 
-    // Survival: RAM stores death count, display remaining lives
     if (mode == MODE_SURVIVAL && goalValue > 0) {
         currentValue = goalValue - currentValue;
         if (currentValue < 0) currentValue = 0;
     }
 
-    // Build per-part strings
     char curBuf[24] = {}, sepBuf[4] = {}, goalBuf[24] = {};
     bool hasGoal = false;
     if (isTimeMode) {
@@ -467,57 +491,57 @@ static void DrawMatchStatusHud(QPainter* p, melonDS::u8* ram,
         std::strncpy(sepBuf, " / ", sizeof(sepBuf));
         hasGoal = true;
     } else {
-        // Goal lookup failed — show raw XX for debugging
         std::snprintf(curBuf, sizeof(curBuf), "%d (XX=0x%02X)", currentValue, xx);
     }
 
-    // Helper: pick sub-color or fall back to overall
     auto eff = [&](const QColor& sub) -> const QColor& {
         return sub.isValid() ? sub : c.matchStatusColor;
     };
 
-    // Draw value parts at base position
     int vx = c.matchStatusX;
     int vy = c.matchStatusY;
-    QFontMetrics fm = p->fontMetrics();
+    int curW = 0, curH = 0;
+    MeasureTextCached(fm, fontPixelSize, s_curTextCache, curBuf, curW, curH);
 
     p->setPen(eff(c.matchStatusValueColor));
     p->drawText(QPoint(vx, vy), curBuf);
 
     if (hasGoal) {
-        int x = vx + fm.horizontalAdvance(curBuf);
+        int sepW = 0, sepH = 0, goalW = 0, goalH = 0;
+        MeasureTextCached(fm, fontPixelSize, s_sepTextCache, sepBuf, sepW, sepH);
+        MeasureTextCached(fm, fontPixelSize, s_goalTextCache, goalBuf, goalW, goalH);
+
+        int x = vx + curW;
         p->setPen(eff(c.matchStatusSepColor));
         p->drawText(QPoint(x, vy), sepBuf);
-        x += fm.horizontalAdvance(sepBuf);
+        x += sepW;
         p->setPen(eff(c.matchStatusGoalColor));
         p->drawText(QPoint(x, vy), goalBuf);
     }
 
-    // Draw label
     const char* label = ResolveMatchStatusLabel(mode, c);
     if (label[0] == '\0') return;
 
-    // labelPos: 0=Above, 1=Below, 2=Left, 3=Right, 4=Center
     int lx, ly;
     switch (c.matchStatusLabelPos) {
     default:
-    case 0: // Above
+    case 0:
         lx = vx;
         ly = vy - 10;
         break;
-    case 1: // Below
+    case 1:
         lx = vx;
         ly = vy + 10;
         break;
-    case 2: // Left
+    case 2:
         lx = vx - 50;
         ly = vy;
         break;
-    case 3: // Right
+    case 3:
         lx = vx + 50;
         ly = vy;
         break;
-    case 4: // Center (overlaps value)
+    case 4:
         lx = vx;
         ly = vy;
         break;
@@ -647,19 +671,11 @@ static inline QColor HpGaugeColor(uint16_t hp)
     else               return QColor(56, 192, 8);
 }
 
-static int CalcAlignedTextX(QPainter* p, int anchorX, int align, const char* text,
-                            int* textW = nullptr, int* textH = nullptr)
+static int CalcAlignedTextX(int anchorX, int align, int textW)
 {
-    const QFontMetrics fm = p->fontMetrics();
-    const int width = fm.horizontalAdvance(QString::fromLatin1(text));
-    const int height = fm.height();
-
-    if (textW) *textW = width;
-    if (textH) *textH = height;
-
     switch (align) {
-    case 1: return anchorX - width / 2;
-    case 2: return anchorX - width;
+    case 1: return anchorX - textW / 2;
+    case 2: return anchorX - textW;
     default: return anchorX;
     }
 }
@@ -688,10 +704,15 @@ static inline void DrawHP(QPainter* p, uint16_t hp, uint16_t maxHP,
     else if (hp <= 50)  p->setPen(QColor(255, 165, 0));
     else                p->setPen(QColor(255, 255, 255));
 
+    static TextMeasureCache s_hpTextCache = { 0, "", 0, 0, false };
+    const QFontMetrics fm = p->fontMetrics();
+    const int fontPixelSize = p->font().pixelSize();
+
     char buf[24];
     std::snprintf(buf, sizeof(buf), "%s%u", c.hpPrefix, hp);
     int textW = 0, textH = 0;
-    const int textX = CalcAlignedTextX(p, c.hpX, c.hpAlign, buf, &textW, &textH);
+    MeasureTextCached(fm, fontPixelSize, s_hpTextCache, buf, textW, textH);
+    const int textX = CalcAlignedTextX(c.hpX, c.hpAlign, textW);
     p->drawText(QPoint(textX, c.hpY), buf);
 
     if (c.hpGauge && maxHP > 0) {
@@ -731,6 +752,10 @@ static void DrawWeaponAmmo(QPainter* p, melonDS::u8* ram,
     if (weapon > 8) return;
     p->setPen(Qt::white);
 
+    static TextMeasureCache s_ammoTextCache = { 0, "", 0, 0, false };
+    const QFontMetrics fm = p->fontMetrics();
+    const int fontPixelSize = p->font().pixelSize();
+
     const WeaponInfo& wi = kWeaponTable[weapon];
     const QImage& icon = s_weaponIcons[weapon]; // P-1
 
@@ -750,11 +775,12 @@ static void DrawWeaponAmmo(QPainter* p, melonDS::u8* ram,
     }
 
     int textX = c.wpnX, textY = c.wpnY;
-    int textW = 0, textH = p->fontMetrics().height();
+    int textW = 0, textH = fm.height();
     if (hasAmmo) {
         char buf[24];
         std::snprintf(buf, sizeof(buf), "%s%02u", c.ammoPrefix, ammo);
-        textX = CalcAlignedTextX(p, c.wpnX, c.ammoAlign, buf, &textW, &textH);
+        MeasureTextCached(fm, fontPixelSize, s_ammoTextCache, buf, textW, textH);
+        textX = CalcAlignedTextX(c.wpnX, c.ammoAlign, textW);
         p->drawText(QPoint(textX, textY), buf);
     }
 
