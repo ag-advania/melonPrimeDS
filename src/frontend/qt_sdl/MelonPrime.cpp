@@ -477,6 +477,10 @@ namespace MelonPrime {
         // Apply aspect ratio patch once per game join
         InGameAspectRatio_ApplyOnce(emuInstance, localCfg, m_currentRom);
 #endif
+#ifdef MELONPRIME_CUSTOM_HUD
+        // Cache battle settings for HUD display
+        CustomHud_OnMatchJoin(mainRAM, m_currentRom);
+#endif
     }
 
     void MelonPrimeCore::ShowCursor(bool show)

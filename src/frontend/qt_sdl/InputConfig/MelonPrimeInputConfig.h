@@ -10,6 +10,7 @@
 
 #include <QWidget>
 #include <QTabWidget>
+#include <QVariantMap>
 #include <initializer_list>
 #include "EmuInstance.h"
 
@@ -106,10 +107,14 @@ public:
     ~MelonPrimeInputConfig();
 
     void saveConfig();
+    void restoreVisualSnapshot();
     QTabWidget* getTabWidget();
 
 private slots:
     void on_metroidResetSensitivityValues_clicked();
+    void resetCrosshairDefaults();
+    void resetHpAmmoDefaults();
+    void resetMatchStatusDefaults();
     void on_metroidSetVideoQualityToLow_clicked();
     void on_metroidSetVideoQualityToHigh_clicked();
     void on_metroidSetVideoQualityToHigh2_clicked();
@@ -122,6 +127,7 @@ private slots:
     void on_leMetroidCrosshairColorCode_editingFinished();
     void on_comboMetroidCrosshairColor_currentIndexChanged(int index);
     void onCrosshairColorSpinChanged();
+    void applyVisualPreview();
 
 private:
     Ui::MelonPrimeInputConfig* ui;
@@ -134,6 +140,10 @@ private:
     int addonsMetroid2JoyMap[hk_tabAddonsMetroid2.size()];
 
     void populatePage(QWidget* page, const std::initializer_list<const char*>& labels, int* keymap, int* joymap);
+    void snapshotVisualConfig();
+
+    QVariantMap m_visualSnapshot;
+    bool m_applyPreviewEnabled = false;
 };
 
 #endif // MELONPRIMEINPUTCONFIG_H

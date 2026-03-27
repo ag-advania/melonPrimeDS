@@ -58,6 +58,9 @@ namespace MelonPrime {
     // Invalidate cached config (call when settings are saved).
     void CustomHud_InvalidateConfigCache();
 
+    // Cache battle settings at match join (call from HandleGameJoinInit).
+    void CustomHud_OnMatchJoin(uint8_t* ram, const RomAddresses& rom);
+
 } // namespace MelonPrime
 
 #endif // MELONPRIME_CUSTOM_HUD
