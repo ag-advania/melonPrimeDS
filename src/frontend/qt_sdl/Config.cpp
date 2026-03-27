@@ -121,7 +121,6 @@ namespace Config
         {"Instance*.Metroid.Visual.HudHpX",               45},
         {"Instance*.Metroid.Visual.HudHpY",               99},
         {"Instance*.Metroid.Visual.HudHpAlign",            2},
-        {"Instance*.Metroid.Visual.HudFontSize",            6},
         {"Instance*.Metroid.Visual.HudWeaponX",          230},
         {"Instance*.Metroid.Visual.HudWeaponY",           99},
         {"Instance*.Metroid.Visual.HudAmmoAlign",          2},
@@ -1155,4 +1154,3 @@ namespace Config
     }
 
 }
-

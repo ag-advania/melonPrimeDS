@@ -728,12 +728,6 @@
 						<attribute name="title"><string>HP &amp; Ammo</string></attribute>
 						<layout class="QVBoxLayout" name="hpAmmoVLayout">
 
-							<item>
-								<layout class="QFormLayout">
-									<item row="0" column="0"><widget class="QLabel"><property name="text"><string>HUD Font Size</string></property></widget></item>
-									<item row="0" column="1"><widget class="QSpinBox" name="spinMetroidHudFontSize"><property name="minimum"><number>1</number></property><property name="maximum"><number>32</number></property><property name="value"><number>8</number></property><property name="toolTip"><string>Font size in pixels for HP and Ammo text (default: 8)</string></property></widget></item>
-								</layout>
-							</item>
 
 							<!-- HP POSITION toggle -->
 							<item><widget class="QPushButton" name="btnToggleHpPos">
