@@ -37,9 +37,6 @@ static const QImage& GetWeaponIconForDraw(uint8_t weapon, bool useOverlay, const
         return s_weaponIcons[weapon];
 
     if (!s_weaponTintCacheValid || s_weaponTintColor != overlayColor) {
-        for (int i = 0; i < 9; i++)
-            s_weaponTintedIcons[i] = s_weaponIcons[i];
-
         for (uint8_t idx : { static_cast<uint8_t>(0), static_cast<uint8_t>(2) }) {
             if (s_weaponIcons[idx].isNull())
                 continue;
@@ -99,6 +96,16 @@ struct TextMeasureCache {
     bool valid;
 };
 
+struct TextBitmapCache {
+    int    fontPixelSize;
+    QColor color;
+    char   text[32];
+    int    originX;
+    int    originY;
+    bool   valid;
+    QImage bitmap;
+};
+
 static inline void MeasureTextCached(const QFontMetrics& fm, int fontPixelSize,
                                      TextMeasureCache& cache, const char* text,
                                      int& outW, int& outH)
@@ -114,6 +121,42 @@ static inline void MeasureTextCached(const QFontMetrics& fm, int fontPixelSize,
 
     outW = cache.width;
     outH = cache.height;
+}
+
+static inline void PrepareTextBitmapCached(const QFontMetrics& fm, const QFont& font,
+                                           int fontPixelSize, TextBitmapCache& cache,
+                                           const char* text, const QColor& color)
+{
+    if (!cache.valid || cache.fontPixelSize != fontPixelSize
+        || cache.color != color || std::strcmp(cache.text, text) != 0)
+    {
+        const QString qtext = QString::fromLatin1(text);
+        QRect bounds = fm.boundingRect(qtext);
+        if (bounds.isEmpty())
+            bounds = QRect(0, -fm.ascent(), 1, fm.height());
+
+        cache.bitmap = QImage(bounds.width(), bounds.height(), QImage::Format_ARGB32_Premultiplied);
+        cache.bitmap.fill(Qt::transparent);
+
+        QPainter painter(&cache.bitmap);
+        painter.setFont(font);
+        painter.setPen(color);
+        painter.drawText(QPoint(-bounds.left(), -bounds.top()), qtext);
+
+        std::strncpy(cache.text, text, sizeof(cache.text) - 1);
+        cache.text[sizeof(cache.text) - 1] = '\0';
+        cache.fontPixelSize = fontPixelSize;
+        cache.color = color;
+        cache.originX = bounds.left();
+        cache.originY = bounds.top();
+        cache.valid = true;
+    }
+}
+
+static inline void DrawCachedText(QPainter* p, const TextBitmapCache& cache, int x, int baselineY)
+{
+    if (!cache.valid || cache.bitmap.isNull()) return;
+    p->drawImage(QPoint(x + cache.originX, baselineY + cache.originY), cache.bitmap);
 }
 
 // =========================================================================
@@ -565,8 +608,13 @@ static void DrawMatchStatusHud(QPainter* p, melonDS::u8* ram,
     int curW = 0, curH = 0;
     MeasureTextCached(fm, fontPixelSize, s_curTextCache, curBuf, curW, curH);
 
-    p->setPen(eff(c.matchStatusValueColor));
-    p->drawText(QPoint(vx, vy), curBuf);
+    static TextBitmapCache s_curBitmapCache = { 0, QColor(), "", 0, 0, false, QImage() };
+    static TextBitmapCache s_sepBitmapCache = { 0, QColor(), "", 0, 0, false, QImage() };
+    static TextBitmapCache s_goalBitmapCache = { 0, QColor(), "", 0, 0, false, QImage() };
+    static TextBitmapCache s_labelBitmapCache = { 0, QColor(), "", 0, 0, false, QImage() };
+
+    PrepareTextBitmapCached(fm, p->font(), fontPixelSize, s_curBitmapCache, curBuf, eff(c.matchStatusValueColor));
+    DrawCachedText(p, s_curBitmapCache, vx, vy);
 
     if (hasGoal) {
         int sepW = 0, sepH = 0, goalW = 0, goalH = 0;
@@ -574,11 +622,11 @@ static void DrawMatchStatusHud(QPainter* p, melonDS::u8* ram,
         MeasureTextCached(fm, fontPixelSize, s_goalTextCache, goalBuf, goalW, goalH);
 
         int x = vx + curW;
-        p->setPen(eff(c.matchStatusSepColor));
-        p->drawText(QPoint(x, vy), sepBuf);
+        PrepareTextBitmapCached(fm, p->font(), fontPixelSize, s_sepBitmapCache, sepBuf, eff(c.matchStatusSepColor));
+        DrawCachedText(p, s_sepBitmapCache, x, vy);
         x += sepW;
-        p->setPen(eff(c.matchStatusGoalColor));
-        p->drawText(QPoint(x, vy), goalBuf);
+        PrepareTextBitmapCached(fm, p->font(), fontPixelSize, s_goalBitmapCache, goalBuf, eff(c.matchStatusGoalColor));
+        DrawCachedText(p, s_goalBitmapCache, x, vy);
     }
 
     const char* label = ResolveMatchStatusLabel(mode, c);
@@ -611,8 +659,8 @@ static void DrawMatchStatusHud(QPainter* p, melonDS::u8* ram,
     lx += c.matchStatusLabelOfsX;
     ly += c.matchStatusLabelOfsY;
 
-    p->setPen(eff(c.matchStatusLabelColor));
-    p->drawText(QPoint(lx, ly), label);
+    PrepareTextBitmapCached(fm, p->font(), fontPixelSize, s_labelBitmapCache, label, eff(c.matchStatusLabelColor));
+    DrawCachedText(p, s_labelBitmapCache, lx, ly);
 }
 
 // =========================================================================
@@ -762,9 +810,10 @@ static void CalcGaugePos(int textX, int textY, int textW, int textH, int anchor,
 static inline void DrawHP(QPainter* p, uint16_t hp, uint16_t maxHP,
                            const CachedHudConfig& c)
 {
-    p->setPen(c.hpTextAutoColor ? HpGaugeColor(hp, c.hpTextColor) : c.hpTextColor);
+    const QColor hpTextColor = c.hpTextAutoColor ? HpGaugeColor(hp, c.hpTextColor) : c.hpTextColor;
 
     static TextMeasureCache s_hpTextCache = { 0, "", 0, 0, false };
+    static TextBitmapCache s_hpBitmapCache = { 0, QColor(), "", 0, 0, false, QImage() };
     const QFontMetrics fm = p->fontMetrics();
     const int fontPixelSize = p->font().pixelSize();
 
@@ -773,7 +822,8 @@ static inline void DrawHP(QPainter* p, uint16_t hp, uint16_t maxHP,
     int textW = 0, textH = 0;
     MeasureTextCached(fm, fontPixelSize, s_hpTextCache, buf, textW, textH);
     const int textX = CalcAlignedTextX(c.hpX, c.hpAlign, textW);
-    p->drawText(QPoint(textX, c.hpY), buf);
+    PrepareTextBitmapCached(fm, p->font(), fontPixelSize, s_hpBitmapCache, buf, hpTextColor);
+    DrawCachedText(p, s_hpBitmapCache, textX, c.hpY);
 
     if (c.hpGauge && maxHP > 0) {
         float ratio = static_cast<float>(hp) / static_cast<float>(maxHP);
@@ -803,16 +853,13 @@ static constexpr WeaponInfo kWeaponTable[9] = {
 
 // =========================================================================
 //  P-7: DrawWeaponAmmo — cached icon, table lookup, stack text
-// =========================================================================
 static void DrawWeaponAmmo(QPainter* p, melonDS::u8* ram,
                            uint8_t weapon, uint16_t ammoSpecial, uint32_t addrMissile,
                            uint16_t maxAmmoSpecial, uint16_t maxAmmoMissile,
                            const CachedHudConfig& c)
 {
-    if (weapon > 8) return;
-    p->setPen(c.ammoTextColor);
-
     static TextMeasureCache s_ammoTextCache = { 0, "", 0, 0, false };
+    static TextBitmapCache s_ammoBitmapCache = { 0, QColor(), "", 0, 0, false, QImage() };
     const QFontMetrics fm = p->fontMetrics();
     const int fontPixelSize = p->font().pixelSize();
 
@@ -841,7 +888,8 @@ static void DrawWeaponAmmo(QPainter* p, melonDS::u8* ram,
         std::snprintf(buf, sizeof(buf), "%s%02u", c.ammoPrefix, ammo);
         MeasureTextCached(fm, fontPixelSize, s_ammoTextCache, buf, textW, textH);
         textX = CalcAlignedTextX(c.wpnX, c.ammoAlign, textW);
-        p->drawText(QPoint(textX, textY), buf);
+        PrepareTextBitmapCached(fm, p->font(), fontPixelSize, s_ammoBitmapCache, buf, c.ammoTextColor);
+        DrawCachedText(p, s_ammoBitmapCache, textX, textY);
     }
 
     if (c.iconShow && !icon.isNull()) {
@@ -986,7 +1034,6 @@ static void DrawCrosshair(QPainter* p, melonDS::u8* ram,
         p->drawRect(cx - dotHalf, cy - dotHalf, dotHalf * 2 + 1, dotHalf * 2 + 1);
         p->setBrush(Qt::NoBrush);
     }
-
     if (nInner > 0) {
         QColor clr = c.chColor; clr.setAlphaF(c.chInnerOpacity);
         QPen pen(clr); pen.setWidth(c.chInnerThickness); p->setPen(pen);
