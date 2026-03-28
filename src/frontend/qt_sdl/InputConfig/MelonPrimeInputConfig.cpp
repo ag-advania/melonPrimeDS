@@ -2792,6 +2792,9 @@ void MelonPrimeInputConfig::updateHpAmmoPreview()
     int hpR = instcfg.GetInt("Metroid.Visual.HudHpTextColorR");
     int hpG = instcfg.GetInt("Metroid.Visual.HudHpTextColorG");
     int hpB = instcfg.GetInt("Metroid.Visual.HudHpTextColorB");
+    int hpGaugeR = instcfg.GetInt("Metroid.Visual.HudHpGaugeColorR");
+    int hpGaugeG = instcfg.GetInt("Metroid.Visual.HudHpGaugeColorG");
+    int hpGaugeB = instcfg.GetInt("Metroid.Visual.HudHpGaugeColorB");
     QString hpText = QString::fromStdString(instcfg.GetString("Metroid.Visual.HudHpPrefix")) + "199";
     p.setPen(QColor(hpR, hpG, hpB));
     float hpSy = offY + hpY * scale;
@@ -2828,7 +2831,7 @@ void MelonPrimeInputConfig::updateHpAmmoPreview()
             }
         }
         p.setPen(Qt::NoPen);
-        p.setBrush(QColor(hpR, hpG, hpB));
+        p.setBrush(QColor(hpGaugeR, hpGaugeG, hpGaugeB));
         if (orient == 0) // Horizontal
             p.drawRect(QRectF(gx, gy, gLen * scale, gWid * scale));
         else // Vertical
@@ -2859,6 +2862,9 @@ void MelonPrimeInputConfig::updateHpAmmoPreview()
     int amR = instcfg.GetInt("Metroid.Visual.HudAmmoTextColorR");
     int amG = instcfg.GetInt("Metroid.Visual.HudAmmoTextColorG");
     int amB = instcfg.GetInt("Metroid.Visual.HudAmmoTextColorB");
+    int amGaugeR = instcfg.GetInt("Metroid.Visual.HudAmmoGaugeColorR");
+    int amGaugeG = instcfg.GetInt("Metroid.Visual.HudAmmoGaugeColorG");
+    int amGaugeB = instcfg.GetInt("Metroid.Visual.HudAmmoGaugeColorB");
     QString ammoText = QString::fromStdString(instcfg.GetString("Metroid.Visual.HudAmmoPrefix")) + "30";
     p.setPen(QColor(amR, amG, amB));
     float wpnSy = offY + wpnY * scale;
@@ -2895,7 +2901,7 @@ void MelonPrimeInputConfig::updateHpAmmoPreview()
             }
         }
         p.setPen(Qt::NoPen);
-        p.setBrush(QColor(amR, amG, amB));
+        p.setBrush(QColor(amGaugeR, amGaugeG, amGaugeB));
         if (orient == 0)
             p.drawRect(QRectF(gx, gy, gLen * scale, gWid * scale));
         else
