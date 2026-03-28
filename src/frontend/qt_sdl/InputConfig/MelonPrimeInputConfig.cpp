@@ -1682,6 +1682,25 @@ void MelonPrimeInputConfig::snapshotVisualConfig()
     sSl("sRadarDstY", ui->spinMetroidBtmOverlayDstY);
     sSl("sRadarSize", ui->spinMetroidBtmOverlayDstSize);
     sD("dRadarOpacity", ui->spinMetroidBtmOverlayOpacity);
+    // Rank & Time colors (from config)
+    sI("sRankClrSpinR", ui->spinMetroidHudRankColorR);
+    sI("sRankClrSpinG", ui->spinMetroidHudRankColorG);
+    sI("sRankClrSpinB", ui->spinMetroidHudRankColorB);
+    sCfgI("sRankClrR", "Metroid.Visual.HudRankColorR");
+    sCfgI("sRankClrG", "Metroid.Visual.HudRankColorG");
+    sCfgI("sRankClrB", "Metroid.Visual.HudRankColorB");
+    sI("sTimeLeftClrSpinR", ui->spinMetroidHudTimeLeftColorR);
+    sI("sTimeLeftClrSpinG", ui->spinMetroidHudTimeLeftColorG);
+    sI("sTimeLeftClrSpinB", ui->spinMetroidHudTimeLeftColorB);
+    sCfgI("sTimeLeftClrR", "Metroid.Visual.HudTimeLeftColorR");
+    sCfgI("sTimeLeftClrG", "Metroid.Visual.HudTimeLeftColorG");
+    sCfgI("sTimeLeftClrB", "Metroid.Visual.HudTimeLeftColorB");
+    sI("sTimeLimitClrSpinR", ui->spinMetroidHudTimeLimitColorR);
+    sI("sTimeLimitClrSpinG", ui->spinMetroidHudTimeLimitColorG);
+    sI("sTimeLimitClrSpinB", ui->spinMetroidHudTimeLimitColorB);
+    sCfgI("sTimeLimitClrR", "Metroid.Visual.HudTimeLimitColorR");
+    sCfgI("sTimeLimitClrG", "Metroid.Visual.HudTimeLimitColorG");
+    sCfgI("sTimeLimitClrB", "Metroid.Visual.HudTimeLimitColorB");
     // Crosshair
     sCfgI("sChR", "Metroid.Visual.CrosshairColorR");
     sCfgI("sChG", "Metroid.Visual.CrosshairColorG");
@@ -1858,6 +1877,16 @@ void MelonPrimeInputConfig::restoreVisualSnapshot()
     rSl("sRadarDstY", ui->spinMetroidBtmOverlayDstY, ui->inputMetroidBtmOverlayDstY, ui->labelMetroidBtmOverlayDstY);
     rSl("sRadarSize", ui->spinMetroidBtmOverlayDstSize, ui->inputMetroidBtmOverlayDstSize, ui->labelMetroidBtmOverlayDstSize);
     rD("dRadarOpacity", ui->spinMetroidBtmOverlayOpacity);
+    // Rank & Time colors
+    rI("sRankClrSpinR", ui->spinMetroidHudRankColorR);
+    rI("sRankClrSpinG", ui->spinMetroidHudRankColorG);
+    rI("sRankClrSpinB", ui->spinMetroidHudRankColorB);
+    rI("sTimeLeftClrSpinR", ui->spinMetroidHudTimeLeftColorR);
+    rI("sTimeLeftClrSpinG", ui->spinMetroidHudTimeLeftColorG);
+    rI("sTimeLeftClrSpinB", ui->spinMetroidHudTimeLeftColorB);
+    rI("sTimeLimitClrSpinR", ui->spinMetroidHudTimeLimitColorR);
+    rI("sTimeLimitClrSpinG", ui->spinMetroidHudTimeLimitColorG);
+    rI("sTimeLimitClrSpinB", ui->spinMetroidHudTimeLimitColorB);
     // Crosshair
     rI("sChR", ui->spinMetroidCrosshairR);
     rI("sChG", ui->spinMetroidCrosshairG);
@@ -1915,6 +1944,12 @@ void MelonPrimeInputConfig::restoreVisualSnapshot()
             "Metroid.Visual.HudMatchStatusSepColorR", "Metroid.Visual.HudMatchStatusSepColorG", "Metroid.Visual.HudMatchStatusSepColorB");
         restoreColor(ui->btnMetroidHudMatchStatusGoalColor, "sMatchGolClrR", "sMatchGolClrG", "sMatchGolClrB",
             "Metroid.Visual.HudMatchStatusGoalColorR", "Metroid.Visual.HudMatchStatusGoalColorG", "Metroid.Visual.HudMatchStatusGoalColorB");
+        restoreColor(ui->btnMetroidHudRankColor, "sRankClrR", "sRankClrG", "sRankClrB",
+            "Metroid.Visual.HudRankColorR", "Metroid.Visual.HudRankColorG", "Metroid.Visual.HudRankColorB");
+        restoreColor(ui->btnMetroidHudTimeLeftColor, "sTimeLeftClrR", "sTimeLeftClrG", "sTimeLeftClrB",
+            "Metroid.Visual.HudTimeLeftColorR", "Metroid.Visual.HudTimeLeftColorG", "Metroid.Visual.HudTimeLeftColorB");
+        restoreColor(ui->btnMetroidHudTimeLimitColor, "sTimeLimitClrR", "sTimeLimitClrG", "sTimeLimitClrB",
+            "Metroid.Visual.HudTimeLimitColorR", "Metroid.Visual.HudTimeLimitColorG", "Metroid.Visual.HudTimeLimitColorB");
     }
 
     m_applyPreviewEnabled = true;
@@ -2056,7 +2091,6 @@ void MelonPrimeInputConfig::applyVisualPreview()
     updateCrosshairPreview();
     updateHpAmmoPreview();
     updateMatchStatusPreview();
-    emuInstance->drawScreen();
     m_applyPreviewActive = false;
 #endif
 }
@@ -3139,28 +3173,34 @@ void MelonPrimeInputConfig::updateMatchStatusPreview()
 
         const float sx = offX + msX * scale;
         const float sy = offY + msY * scale;
-        const float lineH = static_cast<float>(p.fontMetrics().height());
 
         const QString labelText = QString::fromStdString(instcfg.GetString("Metroid.Visual.HudMatchStatusLabelPoints"));
         const int labelPos = instcfg.GetInt("Metroid.Visual.HudMatchStatusLabelPos");
         const int labelOfsX = instcfg.GetInt("Metroid.Visual.HudMatchStatusLabelOfsX");
         const int labelOfsY = instcfg.GetInt("Metroid.Visual.HudMatchStatusLabelOfsY");
-        const float lx = sx + labelOfsX * scale;
-        const float ly = (labelPos == 0)
-            ? sy - labelOfsY * scale
-            : sy + lineH + labelOfsY * scale;
+        // Mirror game logic: base position depends on labelPos (±10 DS px), then add user offset
+        float lx, ly;
+        switch (labelPos) {
+        case 0:  lx = sx;               ly = sy - 10 * scale; break; // above
+        case 1:  lx = sx;               ly = sy + 10 * scale; break; // below
+        case 2:  lx = sx - 50 * scale;  ly = sy;              break; // left
+        case 3:  lx = sx + 50 * scale;  ly = sy;              break; // right
+        default: lx = sx;               ly = sy;              break; // same
+        }
+        lx += labelOfsX * scale;
+        ly += labelOfsY * scale;
 
         p.setPen(labelClr);
         p.drawText(QPointF(lx, ly), labelText);
 
         p.setPen(valueClr);
-        p.drawText(QPointF(sx, sy + lineH), "3");
+        p.drawText(QPointF(sx, sy), "3");
         float xOfs = static_cast<float>(p.fontMetrics().horizontalAdvance("3"));
         p.setPen(sepClr);
-        p.drawText(QPointF(sx + xOfs, sy + lineH), "/");
+        p.drawText(QPointF(sx + xOfs, sy), "/");
         xOfs += static_cast<float>(p.fontMetrics().horizontalAdvance("/"));
         p.setPen(goalClr);
-        p.drawText(QPointF(sx + xOfs, sy + lineH), "7");
+        p.drawText(QPointF(sx + xOfs, sy), "7");
     }
 
     if (instcfg.GetBool("Metroid.Visual.HudRankShow")) {
