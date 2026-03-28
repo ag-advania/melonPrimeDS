@@ -780,6 +780,7 @@
 
 								<widget class="QWidget" name="sectionHpAmmo">
 								<layout class="QVBoxLayout" name="hpAmmoVLayout">
+								<property name="leftMargin"><number>16</number></property>
 
 
 							<!-- HP NUMBER POSITION toggle -->
