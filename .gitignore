@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 build*/
 bin
 obj
@@ -35,3 +36,42 @@ vcpkg.json.bak
 .claude/settings.local.json
 vcpkg
 .claude/worktrees/agent-af2ab1ae
+=======
+build*/
+bin
+obj
+*.depend
+*.layout
+*.o
+melon_grc.c
+melon_grc.h
+melon.rc
+cmake-build*
+cmake-build-debug
+compile_commands.json
+.idea
+.cache
+
+*.exe
+
+.DS_Store
+
+.vs
+.vscode
+CMakeFiles
+CMakeCache.txt
+
+freebios/FreeBIOS_Data.h
+freebios/bios*
+freebios/build/
+
+vcpkg.json.bak
+.classpath
+.project
+.settings/.jsdtscope
+.settings/org.eclipse.wst.jsdt.ui.superType.container
+.settings/org.eclipse.wst.jsdt.ui.superType.name
+.claude/settings.local.json
+vcpkg
+.claude/worktrees/agent-af2ab1ae
+>>>>>>> 3204e4781a40365afc879805a7a42a8df0d293dc
