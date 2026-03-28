@@ -120,6 +120,7 @@ private slots:
     void resetCrosshairDefaults();
     void resetHpAmmoDefaults();
     void resetMatchStatusDefaults();
+    void resetRankTimeDefaults();
     void on_metroidSetVideoQualityToLow_clicked();
     void on_metroidSetVideoQualityToHigh_clicked();
     void on_metroidSetVideoQualityToHigh2_clicked();

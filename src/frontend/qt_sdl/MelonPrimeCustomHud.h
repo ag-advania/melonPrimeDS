@@ -68,11 +68,12 @@ namespace MelonPrime {
     //  Controlled by Metroid.Visual.BtmOverlay* config keys.
     //
     //  Parameters:
-    //    localCfg — config table
-    //    topPaint — QPainter for the top-screen overlay
+    //    localCfg  — config table
+    //    topPaint  — QPainter for the top-screen overlay
     //    btmBuffer — QImage of bottom screen (256x192 ARGB)
+    //    hunterID  — current player character (0=Samus … 6=Weavel)
     // =========================================================================
-    void DrawBottomScreenOverlay(Config::Table& localCfg, QPainter* topPaint, QImage* btmBuffer);
+    void DrawBottomScreenOverlay(Config::Table& localCfg, QPainter* topPaint, QImage* btmBuffer, uint8_t hunterID);
 
 } // namespace MelonPrime
 
