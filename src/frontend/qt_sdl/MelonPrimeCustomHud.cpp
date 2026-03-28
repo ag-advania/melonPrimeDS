@@ -210,6 +210,19 @@ struct CachedHudConfig {
     QColor matchStatusValueColor;  // invalid = use matchStatusColor
     QColor matchStatusSepColor;    // invalid = use matchStatusColor
     QColor matchStatusGoalColor;   // invalid = use matchStatusColor
+    // Rank & Time HUD
+    bool   rankShow;
+    int    rankX, rankY;
+    QColor rankColor;
+    char   rankPrefix[48];
+    bool   rankShowOrdinal;
+    char   rankSuffix[48];
+    bool   timeLeftShow;
+    int    timeLeftX, timeLeftY;
+    QColor timeLeftColor;
+    bool   timeLimitShow;
+    int    timeLimitX, timeLimitY;
+    QColor timeLimitColor;
     // Cache invalidation
     bool valid;
 };
@@ -350,6 +363,32 @@ static void RefreshCachedConfig(Config::Table& cfg)
         "Metroid.Visual.HudMatchStatusGoalColorR",
         "Metroid.Visual.HudMatchStatusGoalColorG",
         "Metroid.Visual.HudMatchStatusGoalColorB");
+    // Rank & Time HUD
+    c.rankShow  = cfg.GetBool("Metroid.Visual.HudRankShow");
+    c.rankX     = cfg.GetInt("Metroid.Visual.HudRankX");
+    c.rankY     = cfg.GetInt("Metroid.Visual.HudRankY");
+    c.rankColor = QColor(cfg.GetInt("Metroid.Visual.HudRankColorR"),
+                         cfg.GetInt("Metroid.Visual.HudRankColorG"),
+                         cfg.GetInt("Metroid.Visual.HudRankColorB"));
+    { auto s = cfg.GetString("Metroid.Visual.HudRankPrefix");
+      std::strncpy(c.rankPrefix, s.c_str(), sizeof(c.rankPrefix)-1);
+      c.rankPrefix[sizeof(c.rankPrefix)-1] = '\0'; }
+    c.rankShowOrdinal = cfg.GetBool("Metroid.Visual.HudRankShowOrdinal");
+    { auto s = cfg.GetString("Metroid.Visual.HudRankSuffix");
+      std::strncpy(c.rankSuffix, s.c_str(), sizeof(c.rankSuffix)-1);
+      c.rankSuffix[sizeof(c.rankSuffix)-1] = '\0'; }
+    c.timeLeftShow  = cfg.GetBool("Metroid.Visual.HudTimeLeftShow");
+    c.timeLeftX     = cfg.GetInt("Metroid.Visual.HudTimeLeftX");
+    c.timeLeftY     = cfg.GetInt("Metroid.Visual.HudTimeLeftY");
+    c.timeLeftColor = QColor(cfg.GetInt("Metroid.Visual.HudTimeLeftColorR"),
+                              cfg.GetInt("Metroid.Visual.HudTimeLeftColorG"),
+                              cfg.GetInt("Metroid.Visual.HudTimeLeftColorB"));
+    c.timeLimitShow  = cfg.GetBool("Metroid.Visual.HudTimeLimitShow");
+    c.timeLimitX     = cfg.GetInt("Metroid.Visual.HudTimeLimitX");
+    c.timeLimitY     = cfg.GetInt("Metroid.Visual.HudTimeLimitY");
+    c.timeLimitColor = QColor(cfg.GetInt("Metroid.Visual.HudTimeLimitColorR"),
+                               cfg.GetInt("Metroid.Visual.HudTimeLimitColorG"),
+                               cfg.GetInt("Metroid.Visual.HudTimeLimitColorB"));
 }
 
 // =========================================================================
@@ -445,6 +484,11 @@ static void FormatTime(char* buf, int bufSize, int seconds)
     int m = seconds / 60;
     int s = seconds % 60;
     std::snprintf(buf, bufSize, "%d:%02d", m, s);
+}
+
+static void FormatMinuteTime(char* buf, int bufSize, int minutes)
+{
+    std::snprintf(buf, bufSize, "%d:00", std::max(0, minutes));
 }
 
 // =========================================================================
@@ -662,6 +706,62 @@ static void DrawMatchStatusHud(QPainter* p, melonDS::u8* ram,
 
     PrepareTextBitmapCached(fm, p->font(), fontPixelSize, s_labelBitmapCache, label, eff(c.matchStatusLabelColor));
     DrawCachedText(p, s_labelBitmapCache, lx, ly);
+}
+
+// =========================================================================
+//  Rank & Time HUD
+// =========================================================================
+static void DrawRankAndTime(QPainter* p, melonDS::u8* ram,
+                             const RomAddresses& rom, uint8_t playerPos,
+                             bool isAdventure, const CachedHudConfig& c)
+{
+    if (isAdventure) return;
+    const QFontMetrics fm = p->fontMetrics();
+    const int fontPixelSize = p->font().pixelSize();
+
+    // Rank (e.g. "1st" / "2nd" / "3rd" / "4th", with configurable prefix/suffix/ordinal)
+    if (c.rankShow) {
+        static const char* kOrdinals[4] = { "st", "nd", "rd", "th" };
+        static TextBitmapCache s_rankCache = { 0, QColor(), "", 0, 0, false, QImage() };
+        uint32_t rankWord = Read32(ram, rom.matchRank);
+        uint8_t rankByte = (rankWord >> (playerPos * 8)) & 0xFF;
+        if (rankByte <= 3) {
+            char rankBuf[64] = {};
+            if (c.rankShowOrdinal)
+                snprintf(rankBuf, sizeof(rankBuf), "%s%u%s%s", c.rankPrefix, rankByte + 1u, kOrdinals[rankByte], c.rankSuffix);
+            else
+                snprintf(rankBuf, sizeof(rankBuf), "%s%u%s", c.rankPrefix, rankByte + 1u, c.rankSuffix);
+            PrepareTextBitmapCached(fm, p->font(), fontPixelSize, s_rankCache, rankBuf, c.rankColor);
+            DrawCachedText(p, s_rankCache, c.rankX, c.rankY);
+        }
+    }
+
+    // Time Left (raw u32 / 60 = seconds)
+    if (c.timeLeftShow) {
+        static TextBitmapCache s_timeLeftCache = { 0, QColor(), "", 0, 0, false, QImage() };
+        uint32_t raw = Read32(ram, rom.timeLeft);
+        int seconds = static_cast<int>(raw) / 60;
+        char buf[16] = {};
+        FormatTime(buf, sizeof(buf), seconds);
+        PrepareTextBitmapCached(fm, p->font(), fontPixelSize, s_timeLeftCache, buf, c.timeLeftColor);
+        DrawCachedText(p, s_timeLeftCache, c.timeLeftX, c.timeLeftY);
+    }
+
+    // Time Limit displays the configured minute value itself, with :00 fixed.
+    if (c.timeLimitShow) {
+        static TextBitmapCache s_timeLimitCache = { 0, QColor(), "", 0, 0, false, QImage() };
+        int goalMinutes = 0;
+        if (s_battleState.valid) {
+            goalMinutes = s_battleState.goalValue;
+        } else {
+            uint32_t timeSetting = Read32(ram, rom.battleSettings + 4);
+            goalMinutes = static_cast<int>((timeSetting >> 4) & 0x1F);
+        }
+        char buf[16] = {};
+        FormatMinuteTime(buf, sizeof(buf), goalMinutes);
+        PrepareTextBitmapCached(fm, p->font(), fontPixelSize, s_timeLimitCache, buf, c.timeLimitColor);
+        DrawCachedText(p, s_timeLimitCache, c.timeLimitX, c.timeLimitY);
+    }
 }
 
 // =========================================================================
@@ -1113,10 +1213,11 @@ HOT_FUNCTION void CustomHud_Render(
 
     DrawHP(topPaint, currentHP, maxHP, c);
 
-    // Match Status HUD (non-adventure only, visible in all camera modes)
+    // Match Status + Rank & Time HUDs (non-adventure only, visible in all camera modes)
     {
         bool isAdventure = Read8(ram, rom.isInAdventure) == 0x02;
         DrawMatchStatusHud(topPaint, ram, rom, playerPosition, isAdventure, c);
+        DrawRankAndTime(topPaint, ram, rom, playerPosition, isAdventure, c);
     }
 
     if (!isFirstPerson) return;
@@ -1172,3 +1273,5 @@ void DrawBottomScreenOverlay(Config::Table& localCfg, QPainter* topPaint, QImage
 } // namespace MelonPrime
 
 #endif // MELONPRIME_CUSTOM_HUD
+
+
