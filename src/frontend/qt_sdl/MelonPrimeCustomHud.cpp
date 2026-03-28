@@ -91,7 +91,7 @@ static QImage& GetOutlineBuffer()
 
 struct TextMeasureCache {
     int  fontPixelSize;
-    char text[32];
+    char text[64];
     int  width;
     int  height;
     bool valid;
@@ -100,7 +100,7 @@ struct TextMeasureCache {
 struct TextBitmapCache {
     int    fontPixelSize;
     QColor color;
-    char   text[32];
+    char   text[64];
     int    originX;
     int    originY;
     bool   valid;
@@ -112,7 +112,7 @@ static inline void MeasureTextCached(const QFontMetrics& fm, int fontPixelSize,
                                      int& outW, int& outH)
 {
     if (!cache.valid || cache.fontPixelSize != fontPixelSize || std::strcmp(cache.text, text) != 0) {
-        cache.width = fm.horizontalAdvance(QString::fromLatin1(text));
+        cache.width = fm.horizontalAdvance(QString::fromUtf8(text));
         cache.height = fm.height();
         std::strncpy(cache.text, text, sizeof(cache.text) - 1);
         cache.text[sizeof(cache.text) - 1] = '\0';
@@ -131,7 +131,7 @@ static inline void PrepareTextBitmapCached(const QFontMetrics& fm, const QFont& 
     if (!cache.valid || cache.fontPixelSize != fontPixelSize
         || cache.color != color || std::strcmp(cache.text, text) != 0)
     {
-        const QString qtext = QString::fromLatin1(text);
+        const QString qtext = QString::fromUtf8(text);
         QRect bounds = fm.boundingRect(qtext);
         if (bounds.isEmpty())
             bounds = QRect(0, -fm.ascent(), 1, fm.height());
@@ -167,7 +167,7 @@ static inline void DrawCachedText(QPainter* p, const TextBitmapCache& cache, int
 struct CachedHudConfig {
     // HP
     int    hpX, hpY, hpAlign;
-    char   hpPrefix[12];
+    char   hpPrefix[48];
     bool   hpTextAutoColor, hpGauge, hpAutoColor;
     QColor hpTextColor;
     int    hpGaugeOri, hpGaugeLen, hpGaugeWid;
@@ -176,7 +176,7 @@ struct CachedHudConfig {
     QColor hpGaugeColor;
     // Weapon / Ammo
     int    wpnX, wpnY, ammoAlign;
-    char   ammoPrefix[12];
+    char   ammoPrefix[48];
     QColor ammoTextColor;
     bool   iconShow, iconColorOverlay, ammoGauge;
     int    iconMode, iconOfsX, iconOfsY, iconPosX, iconPosY;
@@ -203,8 +203,8 @@ struct CachedHudConfig {
     int    matchStatusX, matchStatusY;
     int    matchStatusLabelOfsX, matchStatusLabelOfsY;
     int    matchStatusLabelPos; // 0=Above,1=Below,2=Left,3=Right,4=Center
-    char   matchStatusLabelPoints[17], matchStatusLabelOctoliths[17], matchStatusLabelLives[17];
-    char   matchStatusLabelRingTime[17], matchStatusLabelPrimeTime[17];
+    char   matchStatusLabelPoints[64], matchStatusLabelOctoliths[64], matchStatusLabelLives[64];
+    char   matchStatusLabelRingTime[64], matchStatusLabelPrimeTime[64];
     QColor matchStatusColor;       // overall (fallback)
     QColor matchStatusLabelColor;  // invalid = use matchStatusColor
     QColor matchStatusValueColor;  // invalid = use matchStatusColor

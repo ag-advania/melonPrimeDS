@@ -15,6 +15,10 @@
 #include <initializer_list>
 #include "EmuInstance.h"
 
+class QComboBox;
+class QLineEdit;
+class QSpinBox;
+
 namespace Ui { class MelonPrimeInputConfig; }
 
 static constexpr std::initializer_list<int> hk_tabAddonsMetroid =
@@ -125,6 +129,9 @@ private slots:
     void on_cbMetroidApplyHeadphone_stateChanged(int state);
     void on_cbMetroidUseFirmwareName_stateChanged(int state);
     void on_cbMetroidEnableCustomHud_stateChanged(int state);
+    void onCrosshairColorSpinChanged();
+    void on_leMetroidCrosshairColorCode_editingFinished();
+    void on_comboMetroidCrosshairColor_currentIndexChanged(int index);
     void applyVisualPreview();
     void updateRadarPreview();
     void updateCrosshairPreview();
@@ -143,10 +150,11 @@ private:
 
     void populatePage(QWidget* page, const std::initializer_list<const char*>& labels, int* keymap, int* joymap);
     void snapshotVisualConfig();
-    void setupColorButton(QPushButton* btn, const QString& configKeyR, const QString& configKeyG, const QString& configKeyB);
+    void setupColorButton(QPushButton* btn, const QString& configKeyR, const QString& configKeyG, const QString& configKeyB, QComboBox* combo = nullptr, QLineEdit* lineEdit = nullptr, QSpinBox* spinR = nullptr, QSpinBox* spinG = nullptr, QSpinBox* spinB = nullptr, int customIndex = -1, int overallIndex = -1);
 
     QVariantMap m_visualSnapshot;
     bool m_applyPreviewEnabled = false;
 };
 
 #endif // MELONPRIMEINPUTCONFIG_H
+
