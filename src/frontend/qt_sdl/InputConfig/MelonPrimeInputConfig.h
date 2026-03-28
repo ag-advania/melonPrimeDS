@@ -128,6 +128,7 @@ private slots:
     void on_comboMetroidCrosshairColor_currentIndexChanged(int index);
     void onCrosshairColorSpinChanged();
     void applyVisualPreview();
+    void updateRadarPreview();
 
 private:
     Ui::MelonPrimeInputConfig* ui;

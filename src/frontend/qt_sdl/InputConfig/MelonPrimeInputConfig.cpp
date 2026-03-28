@@ -11,6 +11,8 @@
 #include <QColor>
 #include <QLineEdit>
 #include <QComboBox>
+#include <QPainter>
+#include <QPainterPath>
 
 #include "MelonPrimeInputConfig.h"
 #include "ui_MelonPrimeInputConfig.h"
@@ -838,17 +840,21 @@ MelonPrimeInputConfig::MelonPrimeInputConfig(EmuInstance* emu, QWidget* parent) 
     prvI(ui->spinMetroidCrosshairOuterThickness); prvI(ui->spinMetroidCrosshairOuterOffset);
     prvB(ui->cbMetroidCrosshairOuterLinkXY);
 
-    // Bottom Screen Overlay
+    // HUD Radar
     ui->cbMetroidBtmOverlayEnable->setChecked(instcfg.GetBool("Metroid.Visual.BtmOverlayEnable"));
-    ui->spinMetroidBtmOverlaySrcX->setValue(instcfg.GetInt("Metroid.Visual.BtmOverlaySrcX"));
-    ui->spinMetroidBtmOverlaySrcY->setValue(instcfg.GetInt("Metroid.Visual.BtmOverlaySrcY"));
-    ui->spinMetroidBtmOverlaySrcW->setValue(instcfg.GetInt("Metroid.Visual.BtmOverlaySrcW"));
-    ui->spinMetroidBtmOverlaySrcH->setValue(instcfg.GetInt("Metroid.Visual.BtmOverlaySrcH"));
     ui->spinMetroidBtmOverlayDstX->setValue(instcfg.GetInt("Metroid.Visual.BtmOverlayDstX"));
     ui->spinMetroidBtmOverlayDstY->setValue(instcfg.GetInt("Metroid.Visual.BtmOverlayDstY"));
-    ui->spinMetroidBtmOverlayDstW->setValue(instcfg.GetInt("Metroid.Visual.BtmOverlayDstW"));
-    ui->spinMetroidBtmOverlayDstH->setValue(instcfg.GetInt("Metroid.Visual.BtmOverlayDstH"));
+    ui->spinMetroidBtmOverlayDstSize->setValue(instcfg.GetInt("Metroid.Visual.BtmOverlayDstSize"));
     ui->spinMetroidBtmOverlayOpacity->setValue(instcfg.GetDouble("Metroid.Visual.BtmOverlayOpacity"));
+
+    // Connect radar preview updates
+    connect(ui->cbMetroidBtmOverlayEnable, &QCheckBox::checkStateChanged, this, [this](Qt::CheckState) { updateRadarPreview(); });
+    connect(ui->spinMetroidBtmOverlayDstX, QOverload<int>::of(&QSpinBox::valueChanged), this, [this](int) { updateRadarPreview(); });
+    connect(ui->spinMetroidBtmOverlayDstY, QOverload<int>::of(&QSpinBox::valueChanged), this, [this](int) { updateRadarPreview(); });
+    connect(ui->spinMetroidBtmOverlayDstSize, QOverload<int>::of(&QSpinBox::valueChanged), this, [this](int) { updateRadarPreview(); });
+    connect(ui->spinMetroidBtmOverlayOpacity, QOverload<double>::of(&QDoubleSpinBox::valueChanged), this, [this](double) { updateRadarPreview(); });
+
+    updateRadarPreview();
 
     m_applyPreviewEnabled = true;
 }
@@ -861,6 +867,72 @@ MelonPrimeInputConfig::~MelonPrimeInputConfig()
 QTabWidget* MelonPrimeInputConfig::getTabWidget()
 {
     return ui->metroidTabWidget;
+}
+
+void MelonPrimeInputConfig::updateRadarPreview()
+{
+    QWidget* preview = ui->widgetRadarPreview;
+    if (!preview) return;
+
+    const int pw = preview->width();
+    const int ph = preview->height();
+
+    QPixmap pixmap(pw, ph);
+    pixmap.fill(Qt::transparent);
+
+    QPainter p(&pixmap);
+    p.setRenderHint(QPainter::Antialiasing, true);
+
+    // Draw top screen rectangle (256x192 scaled to fit preview)
+    const float dsW = 256.0f, dsH = 192.0f;
+    const float scale = std::min(static_cast<float>(pw) / dsW, static_cast<float>(ph) / dsH);
+    const float offX = (pw - dsW * scale) / 2.0f;
+    const float offY = (ph - dsH * scale) / 2.0f;
+
+    QRectF screenRect(offX, offY, dsW * scale, dsH * scale);
+    p.setPen(QPen(QColor(100, 100, 100), 1));
+    p.setBrush(QColor(30, 30, 40));
+    p.drawRect(screenRect);
+
+    // Draw "TOP SCREEN" label
+    p.setPen(QColor(80, 80, 80));
+    p.setFont(QFont("sans-serif", 8));
+    p.drawText(screenRect, Qt::AlignCenter, "TOP SCREEN");
+
+    // Draw radar circle overlay
+    bool enabled = ui->cbMetroidBtmOverlayEnable->isChecked();
+    int dstX = ui->spinMetroidBtmOverlayDstX->value();
+    int dstY = ui->spinMetroidBtmOverlayDstY->value();
+    int dstSize = ui->spinMetroidBtmOverlayDstSize->value();
+    double opacity = ui->spinMetroidBtmOverlayOpacity->value();
+
+    if (enabled)
+    {
+        float cx = offX + (dstX + dstSize / 2.0f) * scale;
+        float cy = offY + (dstY + dstSize / 2.0f) * scale;
+        float r = (dstSize / 2.0f) * scale;
+
+        QColor fillColor(0, 200, 80, static_cast<int>(opacity * 180));
+        QColor borderColor(0, 255, 100, static_cast<int>(opacity * 255));
+
+        p.setPen(QPen(borderColor, 2));
+        p.setBrush(fillColor);
+        p.drawEllipse(QPointF(cx, cy), r, r);
+
+        // Cross at center
+        p.setPen(QPen(borderColor, 1));
+        p.drawLine(QPointF(cx - 4, cy), QPointF(cx + 4, cy));
+        p.drawLine(QPointF(cx, cy - 4), QPointF(cx, cy + 4));
+    }
+
+    p.end();
+
+    // Set as background of the preview widget
+    QPalette pal = preview->palette();
+    pal.setBrush(QPalette::Window, pixmap);
+    preview->setPalette(pal);
+    preview->setAutoFillBackground(true);
+    preview->update();
 }
 
 void MelonPrimeInputConfig::populatePage(QWidget* page, const std::initializer_list<const char*>& labels, int* keymap, int* joymap)
@@ -1337,14 +1409,9 @@ void MelonPrimeInputConfig::applyVisualPreview()
 
     // Bottom Screen Overlay
     instcfg.SetBool  ("Metroid.Visual.BtmOverlayEnable",  ui->cbMetroidBtmOverlayEnable->isChecked());
-    instcfg.SetInt   ("Metroid.Visual.BtmOverlaySrcX",    ui->spinMetroidBtmOverlaySrcX->value());
-    instcfg.SetInt   ("Metroid.Visual.BtmOverlaySrcY",    ui->spinMetroidBtmOverlaySrcY->value());
-    instcfg.SetInt   ("Metroid.Visual.BtmOverlaySrcW",    ui->spinMetroidBtmOverlaySrcW->value());
-    instcfg.SetInt   ("Metroid.Visual.BtmOverlaySrcH",    ui->spinMetroidBtmOverlaySrcH->value());
     instcfg.SetInt   ("Metroid.Visual.BtmOverlayDstX",    ui->spinMetroidBtmOverlayDstX->value());
     instcfg.SetInt   ("Metroid.Visual.BtmOverlayDstY",    ui->spinMetroidBtmOverlayDstY->value());
-    instcfg.SetInt   ("Metroid.Visual.BtmOverlayDstW",    ui->spinMetroidBtmOverlayDstW->value());
-    instcfg.SetInt   ("Metroid.Visual.BtmOverlayDstH",    ui->spinMetroidBtmOverlayDstH->value());
+    instcfg.SetInt   ("Metroid.Visual.BtmOverlayDstSize", ui->spinMetroidBtmOverlayDstSize->value());
     instcfg.SetDouble("Metroid.Visual.BtmOverlayOpacity", ui->spinMetroidBtmOverlayOpacity->value());
 
     MelonPrime::CustomHud_InvalidateConfigCache();
@@ -1553,14 +1620,9 @@ void MelonPrimeInputConfig::saveConfig()
 
     // Bottom Screen Overlay
     instcfg.SetBool  ("Metroid.Visual.BtmOverlayEnable",  ui->cbMetroidBtmOverlayEnable->checkState() == Qt::Checked);
-    instcfg.SetInt   ("Metroid.Visual.BtmOverlaySrcX",    ui->spinMetroidBtmOverlaySrcX->value());
-    instcfg.SetInt   ("Metroid.Visual.BtmOverlaySrcY",    ui->spinMetroidBtmOverlaySrcY->value());
-    instcfg.SetInt   ("Metroid.Visual.BtmOverlaySrcW",    ui->spinMetroidBtmOverlaySrcW->value());
-    instcfg.SetInt   ("Metroid.Visual.BtmOverlaySrcH",    ui->spinMetroidBtmOverlaySrcH->value());
     instcfg.SetInt   ("Metroid.Visual.BtmOverlayDstX",    ui->spinMetroidBtmOverlayDstX->value());
     instcfg.SetInt   ("Metroid.Visual.BtmOverlayDstY",    ui->spinMetroidBtmOverlayDstY->value());
-    instcfg.SetInt   ("Metroid.Visual.BtmOverlayDstW",    ui->spinMetroidBtmOverlayDstW->value());
-    instcfg.SetInt   ("Metroid.Visual.BtmOverlayDstH",    ui->spinMetroidBtmOverlayDstH->value());
+    instcfg.SetInt   ("Metroid.Visual.BtmOverlayDstSize", ui->spinMetroidBtmOverlayDstSize->value());
     instcfg.SetDouble("Metroid.Visual.BtmOverlayOpacity", ui->spinMetroidBtmOverlayOpacity->value());
 
     // P-3: Invalidate cached config so next frame re-reads all values

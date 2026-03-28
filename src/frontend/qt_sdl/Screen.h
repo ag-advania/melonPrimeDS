@@ -299,6 +299,9 @@ private:
 
 #ifdef MELONPRIME_CUSTOM_HUD
     GLuint overlayTextures[2];  // GL_TEXTURE_2D per screen (top/bottom)
+    GLuint btmOverlayShader;
+    GLint btmOverlayScreenSizeULoc, btmOverlayOpacityULoc, btmOverlaySrcCenterULoc, btmOverlaySrcRadiusULoc;
+    GLuint btmOverlayVertexArray, btmOverlayVertexBuffer;
 #endif
 
     GLuint logoTexture;
