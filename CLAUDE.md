@@ -87,32 +87,6 @@ Previews are initialized at constructor end and updated live via `applyVisualPre
 
 ---
 
-## MelonPrimeCustomHud.h — Public API
-
-All functions inside `namespace MelonPrime`, guarded by `#ifdef MELONPRIME_CUSTOM_HUD`:
-
-```cpp
-// Main entry point — call once per frame from OSD/overlay render path
-void CustomHud_Render(
-    EmuInstance* emu, Config::Table& localCfg,
-    const RomAddresses& rom, const GameAddressesHot& addrHot,
-    uint8_t playerPosition,
-    QPainter* topPaint, QPainter* btmPaint,
-    QImage* topBuffer, QImage* btmBuffer,
-    bool isInGame, float topStretchX = 1.0f
-);
-
-bool CustomHud_IsEnabled(Config::Table& localCfg);
-void CustomHud_ResetPatchState();       // call on emu stop/reset
-void CustomHud_InvalidateConfigCache(); // call when settings saved
-void CustomHud_OnMatchJoin(uint8_t* ram, const RomAddresses& rom);
-
-// Render circular bottom screen radar onto top screen (SW path)
-void DrawBottomScreenOverlay(Config::Table& localCfg, QPainter* topPaint, QImage* btmBuffer);
-```
-
----
-
 ## Shader Files
 `src/frontend/qt_sdl/main_shaders.h`:
 - `kScreenVS` / `kScreenFS` — standard screen renderer
@@ -136,12 +110,8 @@ All instance-local settings use prefix `Instance*.Metroid.*`.
 
 ## Build Notes
 - Cross-compile from Ubuntu WSL to Windows using MinGW toolchain
-- Feature flags defined in `src/frontend/qt_sdl/CMakeLists.txt`:
-  - `MELONPRIME_DS` — enables MelonPrimeDS mode
-  - `MELONPRIME_CUSTOM_HUD` — enables Custom HUD + radar overlay
-- `MelonPrimeCustomHud.cpp` and `InputConfig/MelonPrimeInputConfig.cpp` are listed explicitly in the CMakeLists sources
-- vcpkg used for dependencies (submodule at `vcpkg/`)
-- `src/CMakeLists.txt` — modified to support cross-compilation toolchain
+- Feature flag: `MELONPRIME_CUSTOM_HUD` (CMake define)
+- vcpkg used for dependencies
 
 ---
 
