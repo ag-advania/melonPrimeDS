@@ -206,14 +206,9 @@ namespace Config
         {"Instance*.Metroid.Visual.InGameAspectRatioMode",     0},
         {"Instance*.Metroid.Visual.InGameScalingMode",         0},
         /* MelonPrimeDS Bottom Screen Overlay defaults { */
-        {"Instance*.Metroid.Visual.BtmOverlaySrcX",            0},
-        {"Instance*.Metroid.Visual.BtmOverlaySrcY",            0},
-        {"Instance*.Metroid.Visual.BtmOverlaySrcW",            256},
-        {"Instance*.Metroid.Visual.BtmOverlaySrcH",            192},
         {"Instance*.Metroid.Visual.BtmOverlayDstX",            190},
         {"Instance*.Metroid.Visual.BtmOverlayDstY",            0},
-        {"Instance*.Metroid.Visual.BtmOverlayDstW",            64},
-        {"Instance*.Metroid.Visual.BtmOverlayDstH",            48},
+        {"Instance*.Metroid.Visual.BtmOverlayDstSize",         64},
         /* MelonPrimeDS Bottom Screen Overlay defaults } */
         /* MelonPrimeDS Custom HUD Crosshair defaults } */
     #endif

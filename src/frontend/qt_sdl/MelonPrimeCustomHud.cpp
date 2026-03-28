@@ -10,6 +10,7 @@
 #include "Config.h"
 
 #include <QPainter>
+#include <QPainterPath>
 #include <QImage>
 #include <QColor>
 #include <QPoint>
@@ -1139,29 +1140,31 @@ void DrawBottomScreenOverlay(Config::Table& localCfg, QPainter* topPaint, QImage
     if (!localCfg.GetBool("Metroid.Visual.BtmOverlayEnable")) return;
     if (!topPaint || !btmBuffer || btmBuffer->isNull()) return;
 
-    int srcX = localCfg.GetInt("Metroid.Visual.BtmOverlaySrcX");
-    int srcY = localCfg.GetInt("Metroid.Visual.BtmOverlaySrcY");
-    int srcW = localCfg.GetInt("Metroid.Visual.BtmOverlaySrcW");
-    int srcH = localCfg.GetInt("Metroid.Visual.BtmOverlaySrcH");
     int dstX = localCfg.GetInt("Metroid.Visual.BtmOverlayDstX");
     int dstY = localCfg.GetInt("Metroid.Visual.BtmOverlayDstY");
-    int dstW = localCfg.GetInt("Metroid.Visual.BtmOverlayDstW");
-    int dstH = localCfg.GetInt("Metroid.Visual.BtmOverlayDstH");
+    int dstSize = std::max(localCfg.GetInt("Metroid.Visual.BtmOverlayDstSize"), 1);
     double opacity = localCfg.GetDouble("Metroid.Visual.BtmOverlayOpacity");
 
-    // Clamp to valid ranges
-    srcX = std::clamp(srcX, 0, 255);
-    srcY = std::clamp(srcY, 0, 191);
-    srcW = std::clamp(srcW, 1, 256 - srcX);
-    srcH = std::clamp(srcH, 1, 192 - srcY);
-    dstW = std::max(dstW, 1);
-    dstH = std::max(dstH, 1);
+    // Source region: radar center at DS (128, 117), radius 50 px (diameter 99)
+    const int srcCenterX = 128, srcCenterY = 117, srcRadius = 50;
+    const float bufScaleX = static_cast<float>(btmBuffer->width()) / 256.0f;
+    const float bufScaleY = static_cast<float>(btmBuffer->height()) / 192.0f;
 
-    QRect srcRect(srcX, srcY, srcW, srcH);
-    QRect dstRect(dstX, dstY, dstW, dstH);
+    QRect srcRect(static_cast<int>((srcCenterX - srcRadius) * bufScaleX),
+                  static_cast<int>((srcCenterY - srcRadius) * bufScaleY),
+                  static_cast<int>(srcRadius * 2 * bufScaleX),
+                  static_cast<int>(srcRadius * 2 * bufScaleY));
+    QRect dstRect(dstX, dstY, dstSize, dstSize);
 
     topPaint->save();
+    topPaint->setRenderHint(QPainter::SmoothPixmapTransform, true);
     topPaint->setOpacity(std::clamp(opacity, 0.0, 1.0));
+
+    // Clip to circle
+    QPainterPath circlePath;
+    circlePath.addEllipse(dstRect);
+    topPaint->setClipPath(circlePath);
+
     topPaint->drawImage(dstRect, *btmBuffer, srcRect);
     topPaint->restore();
 }

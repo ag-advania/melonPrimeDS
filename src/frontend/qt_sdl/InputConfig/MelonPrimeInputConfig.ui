@@ -628,28 +628,22 @@
 								<widget class="QWidget" name="sectionCrosshair">
 								<layout class="QFormLayout" name="formChGeneral">
 									<item row="0" column="0"><widget class="QLabel"><property name="text"><string>Crosshair Color</string></property></widget></item>
-									<item row="0" column="1"><widget class="QComboBox" name="comboMetroidCrosshairColor"><item><property name="text"><string>White</string></property></item><item><property name="text"><string>Green</string></property></item><item><property name="text"><string>Yellow Green</string></property></item><item><property name="text"><string>Green Yellow</string></property></item><item><property name="text"><string>Yellow</string></property></item><item><property name="text"><string>Cyan</string></property></item><item><property name="text"><string>Pink</string></property></item><item><property name="text"><string>Red</string></property></item><item><property name="text"><string>Sylux Hud Color</string></property></item><item><property name="text"><string>Kanden HUD Color</string></property></item><item><property name="text"><string>Samus HUD</string></property></item><item><property name="text"><string>Samus HUD Outline</string></property></item><item><property name="text"><string>Spire HUD</string></property></item><item><property name="text"><string>Spire HUD Outline</string></property></item><item><property name="text"><string>Trace HUD</string></property></item><item><property name="text"><string>Noxus HUD</string></property></item><item><property name="text"><string>Noxus HUD Outline</string></property></item><item><property name="text"><string>Weavel HUD</string></property></item><item><property name="text"><string>Weavel HUD Outline</string></property></item><item><property name="text"><string>Avium Purple</string></property></item><item><property name="text"><string>Sylux Crosshair Color</string></property></item><item><property name="text"><string>Custom</string></property></item></widget></item>
-									<item row="1" column="0"><widget class="QLabel"><property name="text"><string>Crosshair Color Code</string></property></widget></item>
-									<item row="1" column="1"><layout class="QHBoxLayout">
-										<item><widget class="QLineEdit" name="leMetroidCrosshairColorCode"><property name="text"><string>#FF0000</string></property><property name="maxLength"><number>7</number></property></widget></item>
-										<item><widget class="QSpinBox" name="spinMetroidCrosshairR"><property name="minimum"><number>0</number></property><property name="maximum"><number>255</number></property><property name="value"><number>255</number></property><property name="prefix"><string>R:</string></property></widget></item>
-										<item><widget class="QSpinBox" name="spinMetroidCrosshairG"><property name="minimum"><number>0</number></property><property name="maximum"><number>255</number></property><property name="value"><number>0</number></property><property name="prefix"><string>G:</string></property></widget></item>
-										<item><widget class="QSpinBox" name="spinMetroidCrosshairB"><property name="minimum"><number>0</number></property><property name="maximum"><number>255</number></property><property name="value"><number>0</number></property><property name="prefix"><string>B:</string></property></widget></item>
-									</layout></item>
-									<item row="2" column="0"><widget class="QLabel"><property name="text"><string>Outlines</string></property></widget></item>
-									<item row="2" column="1"><widget class="QCheckBox" name="cbMetroidCrosshairOutline"><property name="text"><string></string></property></widget></item>
-									<item row="3" column="0"><widget class="QLabel"><property name="text"><string>Outline Opacity</string></property></widget></item>
-									<item row="3" column="1"><widget class="QDoubleSpinBox" name="spinMetroidCrosshairOutlineOpacity"><property name="minimum"><double>0.0</double></property><property name="maximum"><double>1.0</double></property><property name="singleStep"><double>0.05</double></property><property name="value"><double>0.5</double></property><property name="decimals"><number>2</number></property></widget></item>
-									<item row="4" column="0"><widget class="QLabel"><property name="text"><string>Outline Thickness</string></property></widget></item>
-									<item row="4" column="1"><widget class="QSpinBox" name="spinMetroidCrosshairOutlineThickness"><property name="minimum"><number>1</number></property><property name="maximum"><number>6</number></property><property name="value"><number>1</number></property></widget></item>
-									<item row="5" column="0"><widget class="QLabel"><property name="text"><string>Center Dot</string></property></widget></item>
-									<item row="5" column="1"><widget class="QCheckBox" name="cbMetroidCrosshairCenterDot"><property name="text"><string></string></property></widget></item>
-									<item row="6" column="0"><widget class="QLabel"><property name="text"><string>Center Dot Opacity</string></property></widget></item>
-									<item row="6" column="1"><widget class="QDoubleSpinBox" name="spinMetroidCrosshairDotOpacity"><property name="minimum"><double>0.0</double></property><property name="maximum"><double>1.0</double></property><property name="singleStep"><double>0.05</double></property><property name="value"><double>1.0</double></property><property name="decimals"><number>2</number></property></widget></item>
-									<item row="7" column="0"><widget class="QLabel"><property name="text"><string>Center Dot Thickness</string></property></widget></item>
-									<item row="7" column="1"><widget class="QSpinBox" name="spinMetroidCrosshairDotThickness"><property name="minimum"><number>1</number></property><property name="maximum"><number>6</number></property><property name="value"><number>1</number></property></widget></item>
-									<item row="8" column="0"><widget class="QLabel"><property name="text"><string>T-Style</string></property></widget></item>
-									<item row="8" column="1"><widget class="QCheckBox" name="cbMetroidCrosshairTStyle"><property name="text"><string>(no top line)</string></property><property name="checked"><bool>true</bool></property></widget></item>
+									<item row="0" column="1"><widget class="QPushButton" name="btnMetroidCrosshairColor"><property name="text"><string></string></property><property name="minimumSize"><size><width>60</width><height>24</height></size></property><property name="maximumSize"><size><width>60</width><height>24</height></size></property></widget></item>
+									<item row="1" column="0"><widget class="QLabel"><property name="text"><string>Outlines</string></property></widget></item>
+									<item row="1" column="1"><widget class="QCheckBox" name="cbMetroidCrosshairOutline"><property name="text"><string></string></property></widget></item>
+									<item row="2" column="0"><widget class="QLabel"><property name="text"><string>Outline Opacity</string></property></widget></item>
+									<item row="2" column="1"><widget class="QDoubleSpinBox" name="spinMetroidCrosshairOutlineOpacity"><property name="minimum"><double>0.0</double></property><property name="maximum"><double>1.0</double></property><property name="singleStep"><double>0.05</double></property><property name="value"><double>0.5</double></property><property name="decimals"><number>2</number></property></widget></item>
+									<item row="3" column="0"><widget class="QLabel"><property name="text"><string>Outline Thickness</string></property></widget></item>
+									<item row="3" column="1"><widget class="QSpinBox" name="spinMetroidCrosshairOutlineThickness"><property name="minimum"><number>1</number></property><property name="maximum"><number>6</number></property><property name="value"><number>1</number></property></widget></item>
+									<item row="4" column="0"><widget class="QLabel"><property name="text"><string>Center Dot</string></property></widget></item>
+									<item row="4" column="1"><widget class="QCheckBox" name="cbMetroidCrosshairCenterDot"><property name="text"><string></string></property></widget></item>
+									<item row="5" column="0"><widget class="QLabel"><property name="text"><string>Center Dot Opacity</string></property></widget></item>
+									<item row="5" column="1"><widget class="QDoubleSpinBox" name="spinMetroidCrosshairDotOpacity"><property name="minimum"><double>0.0</double></property><property name="maximum"><double>1.0</double></property><property name="singleStep"><double>0.05</double></property><property name="value"><double>1.0</double></property><property name="decimals"><number>2</number></property></widget></item>
+									<item row="6" column="0"><widget class="QLabel"><property name="text"><string>Center Dot Thickness</string></property></widget></item>
+									<item row="6" column="1"><widget class="QSpinBox" name="spinMetroidCrosshairDotThickness"><property name="minimum"><number>1</number></property><property name="maximum"><number>6</number></property><property name="value"><number>1</number></property></widget></item>
+									<item row="7" column="0"><widget class="QLabel"><property name="text"><string>T-Style</string></property></widget></item>
+									<item row="7" column="1"><widget class="QCheckBox" name="cbMetroidCrosshairTStyle"><property name="text"><string>(no top line)</string></property><property name="checked"><bool>true</bool></property></widget></item>
+
 								</layout>
 								</widget>
 							</item>
@@ -715,6 +709,16 @@
 							<item>
 								<widget class="QPushButton" name="btnResetCrosshairDefaults">
 									<property name="text"><string>Reset Crosshair to Defaults</string></property>
+								</widget>
+							</item>
+
+							<item>
+								<widget class="QLabel"><property name="text"><string>Crosshair Preview:</string></property></widget>
+							</item>
+							<item>
+								<widget class="QWidget" name="widgetCrosshairPreview" native="true">
+									<property name="minimumSize"><size><width>200</width><height>200</height></size></property>
+									<property name="maximumSize"><size><width>200</width><height>200</height></size></property>
 								</widget>
 							</item>
 
@@ -1040,53 +1044,50 @@
 						</layout>
 					</widget>
 
-					<widget class="QWidget" name="tabBottomScreen">
-						<attribute name="title"><string>Bottom Screen</string></attribute>
-						<layout class="QVBoxLayout" name="btmScreenVLayout">
+					<widget class="QWidget" name="tabHudRadar">
+						<attribute name="title"><string>HUD Radar</string></attribute>
+						<layout class="QHBoxLayout" name="hudRadarHLayout">
 
 							<item>
-								<layout class="QFormLayout" name="formBtmScreen">
-									<item row="0" column="0"><widget class="QLabel"><property name="text"><string>Enable Bottom Screen Overlay</string></property></widget></item>
-									<item row="0" column="1"><widget class="QCheckBox" name="cbMetroidBtmOverlayEnable"><property name="text"><string></string></property></widget></item>
+								<layout class="QVBoxLayout" name="hudRadarLeftVLayout">
+									<item>
+										<layout class="QFormLayout" name="formHudRadar">
+											<item row="0" column="0"><widget class="QLabel"><property name="text"><string>Enable HUD Radar</string></property></widget></item>
+											<item row="0" column="1"><widget class="QCheckBox" name="cbMetroidBtmOverlayEnable"><property name="text"><string></string></property></widget></item>
 
-									<item row="1" column="0"><widget class="QLabel"><property name="text"><string>Source X</string></property></widget></item>
-									<item row="1" column="1"><widget class="QSpinBox" name="spinMetroidBtmOverlaySrcX"><property name="minimum"><number>0</number></property><property name="maximum"><number>255</number></property></widget></item>
+											<item row="1" column="0"><widget class="QLabel"><property name="text"><string>Position X</string></property></widget></item>
+											<item row="1" column="1"><widget class="QSpinBox" name="spinMetroidBtmOverlayDstX"><property name="minimum"><number>0</number></property><property name="maximum"><number>255</number></property><property name="value"><number>190</number></property></widget></item>
 
-									<item row="2" column="0"><widget class="QLabel"><property name="text"><string>Source Y</string></property></widget></item>
-									<item row="2" column="1"><widget class="QSpinBox" name="spinMetroidBtmOverlaySrcY"><property name="minimum"><number>0</number></property><property name="maximum"><number>191</number></property></widget></item>
+											<item row="2" column="0"><widget class="QLabel"><property name="text"><string>Position Y</string></property></widget></item>
+											<item row="2" column="1"><widget class="QSpinBox" name="spinMetroidBtmOverlayDstY"><property name="minimum"><number>0</number></property><property name="maximum"><number>191</number></property></widget></item>
 
-									<item row="3" column="0"><widget class="QLabel"><property name="text"><string>Source Width</string></property></widget></item>
-									<item row="3" column="1"><widget class="QSpinBox" name="spinMetroidBtmOverlaySrcW"><property name="minimum"><number>1</number></property><property name="maximum"><number>256</number></property><property name="value"><number>256</number></property></widget></item>
+											<item row="3" column="0"><widget class="QLabel"><property name="text"><string>Size</string></property></widget></item>
+											<item row="3" column="1"><widget class="QSpinBox" name="spinMetroidBtmOverlayDstSize"><property name="minimum"><number>1</number></property><property name="maximum"><number>256</number></property><property name="value"><number>64</number></property></widget></item>
 
-									<item row="4" column="0"><widget class="QLabel"><property name="text"><string>Source Height</string></property></widget></item>
-									<item row="4" column="1"><widget class="QSpinBox" name="spinMetroidBtmOverlaySrcH"><property name="minimum"><number>1</number></property><property name="maximum"><number>192</number></property><property name="value"><number>192</number></property></widget></item>
+											<item row="4" column="0"><widget class="QLabel"><property name="text"><string>Opacity</string></property></widget></item>
+											<item row="4" column="1"><widget class="QDoubleSpinBox" name="spinMetroidBtmOverlayOpacity"><property name="minimum"><double>0.0</double></property><property name="maximum"><double>1.0</double></property><property name="singleStep"><double>0.05</double></property><property name="value"><double>0.85</double></property></widget></item>
+										</layout>
+									</item>
 
-									<item row="5" column="0"><widget class="QLabel"><property name="text"><string>Dest X</string></property></widget></item>
-									<item row="5" column="1"><widget class="QSpinBox" name="spinMetroidBtmOverlayDstX"><property name="minimum"><number>0</number></property><property name="maximum"><number>255</number></property><property name="value"><number>190</number></property></widget></item>
+									<item>
+										<widget class="QLabel">
+											<property name="text"><string>Displays the radar from the bottom DS screen as a circular overlay on the top screen.</string></property>
+											<property name="wordWrap"><bool>true</bool></property>
+										</widget>
+									</item>
 
-									<item row="6" column="0"><widget class="QLabel"><property name="text"><string>Dest Y</string></property></widget></item>
-									<item row="6" column="1"><widget class="QSpinBox" name="spinMetroidBtmOverlayDstY"><property name="minimum"><number>0</number></property><property name="maximum"><number>191</number></property></widget></item>
-
-									<item row="7" column="0"><widget class="QLabel"><property name="text"><string>Dest Width</string></property></widget></item>
-									<item row="7" column="1"><widget class="QSpinBox" name="spinMetroidBtmOverlayDstW"><property name="minimum"><number>1</number></property><property name="maximum"><number>256</number></property><property name="value"><number>64</number></property></widget></item>
-
-									<item row="8" column="0"><widget class="QLabel"><property name="text"><string>Dest Height</string></property></widget></item>
-									<item row="8" column="1"><widget class="QSpinBox" name="spinMetroidBtmOverlayDstH"><property name="minimum"><number>1</number></property><property name="maximum"><number>192</number></property><property name="value"><number>48</number></property></widget></item>
-
-									<item row="9" column="0"><widget class="QLabel"><property name="text"><string>Opacity</string></property></widget></item>
-									<item row="9" column="1"><widget class="QDoubleSpinBox" name="spinMetroidBtmOverlayOpacity"><property name="minimum"><double>0.0</double></property><property name="maximum"><double>1.0</double></property><property name="singleStep"><double>0.05</double></property><property name="value"><double>0.85</double></property></widget></item>
+									<item>
+										<spacer name="hudRadarSpacer"><property name="orientation"><enum>Qt::Vertical</enum></property><property name="sizeHint" stdset="0"><size><width>20</width><height>40</height></size></property></spacer>
+									</item>
 								</layout>
 							</item>
 
 							<item>
-								<widget class="QLabel">
-									<property name="text"><string>Displays a region of the bottom DS screen on the top screen. Useful for showing the map or other bottom screen information during gameplay.</string></property>
-									<property name="wordWrap"><bool>true</bool></property>
+								<widget class="QWidget" name="widgetRadarPreview" native="true">
+									<property name="minimumSize"><size><width>200</width><height>150</height></size></property>
+									<property name="maximumSize"><size><width>200</width><height>150</height></size></property>
+									<property name="toolTip"><string>Preview of radar position on top screen</string></property>
 								</widget>
-							</item>
-
-							<item>
-								<spacer name="btmScreenSpacer"><property name="orientation"><enum>Qt::Vertical</enum></property><property name="sizeHint" stdset="0"><size><width>20</width><height>40</height></size></property></spacer>
 							</item>
 
 						</layout>
