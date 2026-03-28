@@ -438,6 +438,72 @@ MelonPrimeInputConfig::MelonPrimeInputConfig(EmuInstance* emu, QWidget* parent) 
     bindHexButtonSync(ui->btnMetroidHudMatchStatusGoalColor, ui->leMetroidHudMatchStatusGoalColorCode);
     bindComboButtonSync(ui->btnMetroidHudMatchStatusGoalColor, ui->comboMetroidHudMatchStatusGoalColor, ui->spinMetroidHudMatchStatusGoalColorR, ui->spinMetroidHudMatchStatusGoalColorG, ui->spinMetroidHudMatchStatusGoalColorB);
 
+    // Rank & Time HUD — load + color pickers
+    ui->cbMetroidHudRankShow->setChecked(instcfg.GetBool("Metroid.Visual.HudRankShow"));
+    initSliderSync(ui->spinMetroidHudRankX, ui->inputMetroidHudRankX, nullptr, instcfg.GetInt("Metroid.Visual.HudRankX"));
+    initSliderSync(ui->spinMetroidHudRankY, ui->inputMetroidHudRankY, nullptr, instcfg.GetInt("Metroid.Visual.HudRankY"));
+    ui->leMetroidHudRankPrefix->setText(QString::fromStdString(instcfg.GetString("Metroid.Visual.HudRankPrefix")));
+    ui->cbMetroidHudRankShowOrdinal->setChecked(instcfg.GetBool("Metroid.Visual.HudRankShowOrdinal"));
+    ui->leMetroidHudRankSuffix->setText(QString::fromStdString(instcfg.GetString("Metroid.Visual.HudRankSuffix")));
+    ui->cbMetroidHudTimeLeftShow->setChecked(instcfg.GetBool("Metroid.Visual.HudTimeLeftShow"));
+    initSliderSync(ui->spinMetroidHudTimeLeftX, ui->inputMetroidHudTimeLeftX, nullptr, instcfg.GetInt("Metroid.Visual.HudTimeLeftX"));
+    initSliderSync(ui->spinMetroidHudTimeLeftY, ui->inputMetroidHudTimeLeftY, nullptr, instcfg.GetInt("Metroid.Visual.HudTimeLeftY"));
+    ui->cbMetroidHudTimeLimitShow->setChecked(instcfg.GetBool("Metroid.Visual.HudTimeLimitShow"));
+    initSliderSync(ui->spinMetroidHudTimeLimitX, ui->inputMetroidHudTimeLimitX, nullptr, instcfg.GetInt("Metroid.Visual.HudTimeLimitX"));
+    initSliderSync(ui->spinMetroidHudTimeLimitY, ui->inputMetroidHudTimeLimitY, nullptr, instcfg.GetInt("Metroid.Visual.HudTimeLimitY"));
+    // Simple 7-preset color picker helper (White/Green/YellowGreen/Yellow/Cyan/Pink/Red/Custom)
+    {
+        struct Clr { int r, g, b; };
+        static const Clr kRT[] = {
+            {255,255,255},{0,255,0},{127,255,0},{255,255,0},{0,200,255},{255,105,180},{255,0,0}
+        };
+        auto setupRtColor = [&](
+            QPushButton* btn, QComboBox* combo, QLineEdit* le,
+            QSpinBox* spR, QSpinBox* spG, QSpinBox* spB,
+            const char* keyR, const char* keyG, const char* keyB)
+        {
+            setupColorButton(btn, keyR, keyG, keyB, combo, le, spR, spG, spB, 7);
+            spR->setValue(instcfg.GetInt(keyR)); spG->setValue(instcfg.GetInt(keyG)); spB->setValue(instcfg.GetInt(keyB));
+            int r = spR->value(), g = spG->value(), b = spB->value();
+            le->setText(QString("#%1%2%3").arg(r,2,16,QChar('0')).arg(g,2,16,QChar('0')).arg(b,2,16,QChar('0')).toUpper());
+            int idx = 7;
+            for (int i = 0; i < 7; i++) { if (r==kRT[i].r && g==kRT[i].g && b==kRT[i].b) { idx=i; break; } }
+            combo->setCurrentIndex(idx);
+            connect(combo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [=](int i) {
+                if (i < 0 || i >= 7) return;
+                spR->blockSignals(true); spG->blockSignals(true); spB->blockSignals(true);
+                spR->setValue(kRT[i].r); spG->setValue(kRT[i].g); spB->setValue(kRT[i].b);
+                le->setText(QString("#%1%2%3").arg(kRT[i].r,2,16,QChar('0')).arg(kRT[i].g,2,16,QChar('0')).arg(kRT[i].b,2,16,QChar('0')).toUpper());
+                spR->blockSignals(false); spG->blockSignals(false); spB->blockSignals(false);
+            });
+            auto rgbCh = [=]() {
+                combo->blockSignals(true); combo->setCurrentIndex(7); combo->blockSignals(false);
+                le->setText(QString("#%1%2%3").arg(spR->value(),2,16,QChar('0')).arg(spG->value(),2,16,QChar('0')).arg(spB->value(),2,16,QChar('0')).toUpper());
+            };
+            connect(spR, QOverload<int>::of(&QSpinBox::valueChanged), this, rgbCh);
+            connect(spG, QOverload<int>::of(&QSpinBox::valueChanged), this, rgbCh);
+            connect(spB, QOverload<int>::of(&QSpinBox::valueChanged), this, rgbCh);
+            connect(le, &QLineEdit::editingFinished, this, [=]() {
+                QColor c(le->text()); if (!c.isValid()) return;
+                spR->blockSignals(true); spG->blockSignals(true); spB->blockSignals(true);
+                spR->setValue(c.red()); spG->setValue(c.green()); spB->setValue(c.blue());
+                combo->blockSignals(true); combo->setCurrentIndex(7); combo->blockSignals(false);
+                spR->blockSignals(false); spG->blockSignals(false); spB->blockSignals(false);
+            });
+            bindHexButtonSync(btn, le);
+            bindComboButtonSync(btn, combo, spR, spG, spB);
+        };
+        setupRtColor(ui->btnMetroidHudRankColor, ui->comboMetroidHudRankColor, ui->leMetroidHudRankColorCode,
+            ui->spinMetroidHudRankColorR, ui->spinMetroidHudRankColorG, ui->spinMetroidHudRankColorB,
+            "Metroid.Visual.HudRankColorR", "Metroid.Visual.HudRankColorG", "Metroid.Visual.HudRankColorB");
+        setupRtColor(ui->btnMetroidHudTimeLeftColor, ui->comboMetroidHudTimeLeftColor, ui->leMetroidHudTimeLeftColorCode,
+            ui->spinMetroidHudTimeLeftColorR, ui->spinMetroidHudTimeLeftColorG, ui->spinMetroidHudTimeLeftColorB,
+            "Metroid.Visual.HudTimeLeftColorR", "Metroid.Visual.HudTimeLeftColorG", "Metroid.Visual.HudTimeLeftColorB");
+        setupRtColor(ui->btnMetroidHudTimeLimitColor, ui->comboMetroidHudTimeLimitColor, ui->leMetroidHudTimeLimitColorCode,
+            ui->spinMetroidHudTimeLimitColorR, ui->spinMetroidHudTimeLimitColorG, ui->spinMetroidHudTimeLimitColorB,
+            "Metroid.Visual.HudTimeLimitColorR", "Metroid.Visual.HudTimeLimitColorG", "Metroid.Visual.HudTimeLimitColorB");
+    }
+
     // Reset buttons
     connect(ui->btnResetMatchStatusDefaults, &QPushButton::clicked, this, &MelonPrimeInputConfig::resetMatchStatusDefaults);
 
@@ -469,6 +535,7 @@ MelonPrimeInputConfig::MelonPrimeInputConfig(EmuInstance* emu, QWidget* parent) 
     setupToggle(ui->btnToggleAmmoGauge, ui->sectionAmmoGauge, "AMMO GAUGE",     "Metroid.UI.SectionAmmoGauge");
     // Match Status section (inside Custom HUD tab)
     setupToggle(ui->btnToggleMatchStatus, ui->sectionMatchStatus, "MATCH STATUS HUD", "Metroid.UI.SectionMatchStatus");
+    setupToggle(ui->btnToggleRankTime,   ui->sectionRankTime,   "RANK & TIME HUD","Metroid.UI.SectionRankTime");
     // HUD Radar section (inside Custom HUD tab)
     setupToggle(ui->btnToggleHudRadar,  ui->sectionHudRadar,  "HUD RADAR",      "Metroid.UI.SectionHudRadar");
     // Other Metroid Settings 2 tab
@@ -2035,6 +2102,21 @@ void MelonPrimeInputConfig::saveConfig()
     instcfg.SetString("Metroid.Visual.HudMatchStatusLabelPrimeTime", ui->leMetroidHudMatchStatusLabelPrimeTime->text().toStdString());
     // Color values are already in config (set by color button handlers)
 
+    // Rank & Time HUD
+    instcfg.SetBool("Metroid.Visual.HudRankShow",        ui->cbMetroidHudRankShow->checkState() == Qt::Checked);
+    instcfg.SetInt("Metroid.Visual.HudRankX",            ui->spinMetroidHudRankX->value());
+    instcfg.SetInt("Metroid.Visual.HudRankY",            ui->spinMetroidHudRankY->value());
+    instcfg.SetString("Metroid.Visual.HudRankPrefix",    ui->leMetroidHudRankPrefix->text().toStdString());
+    instcfg.SetBool("Metroid.Visual.HudRankShowOrdinal", ui->cbMetroidHudRankShowOrdinal->checkState() == Qt::Checked);
+    instcfg.SetString("Metroid.Visual.HudRankSuffix",   ui->leMetroidHudRankSuffix->text().toStdString());
+    instcfg.SetBool("Metroid.Visual.HudTimeLeftShow",  ui->cbMetroidHudTimeLeftShow->checkState() == Qt::Checked);
+    instcfg.SetInt("Metroid.Visual.HudTimeLeftX",     ui->spinMetroidHudTimeLeftX->value());
+    instcfg.SetInt("Metroid.Visual.HudTimeLeftY",     ui->spinMetroidHudTimeLeftY->value());
+    instcfg.SetBool("Metroid.Visual.HudTimeLimitShow", ui->cbMetroidHudTimeLimitShow->checkState() == Qt::Checked);
+    instcfg.SetInt("Metroid.Visual.HudTimeLimitX",    ui->spinMetroidHudTimeLimitX->value());
+    instcfg.SetInt("Metroid.Visual.HudTimeLimitY",    ui->spinMetroidHudTimeLimitY->value());
+    // Rank & Time colors are saved by color button handlers
+
     // Custom HUD
     instcfg.SetBool("Metroid.Visual.CustomHUD", ui->cbMetroidEnableCustomHud->checkState() == Qt::Checked);
 
@@ -2049,6 +2131,7 @@ void MelonPrimeInputConfig::saveConfig()
     instcfg.SetBool("Metroid.UI.SectionHpGauge",        ui->btnToggleHpGauge->isChecked());
     instcfg.SetBool("Metroid.UI.SectionAmmoGauge",      ui->btnToggleAmmoGauge->isChecked());
     instcfg.SetBool("Metroid.UI.SectionMatchStatus",    ui->btnToggleMatchStatus->isChecked());
+    instcfg.SetBool("Metroid.UI.SectionRankTime",       ui->btnToggleRankTime->isChecked());
     instcfg.SetBool("Metroid.UI.SectionHudRadar",       ui->btnToggleHudRadar->isChecked());
     instcfg.SetBool("Metroid.UI.SectionInputSettings",  ui->btnToggleInputSettings->isChecked());
     instcfg.SetBool("Metroid.UI.SectionScreenSync",     ui->btnToggleScreenSync->isChecked());
@@ -2950,7 +3033,7 @@ void MelonPrimeInputConfig::updateMatchStatusPreview()
     } else {
         int msX = instcfg.GetInt("Metroid.Visual.HudMatchStatusX");
         int msY = instcfg.GetInt("Metroid.Visual.HudMatchStatusY");
-        int fontSize = instcfg.GetInt("Metroid.Visual.HudFontSize");
+        constexpr int fontSize = 6;
 
         int vlR = instcfg.GetInt("Metroid.Visual.HudMatchStatusValueColorR");
         int vlG = instcfg.GetInt("Metroid.Visual.HudMatchStatusValueColorG");
