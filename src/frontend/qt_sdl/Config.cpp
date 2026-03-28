@@ -225,6 +225,7 @@ namespace Config
         {"Instance*.Metroid.Visual.BtmOverlayDstX",            190},
         {"Instance*.Metroid.Visual.BtmOverlayDstY",            0},
         {"Instance*.Metroid.Visual.BtmOverlayDstSize",         64},
+        {"Instance*.Metroid.Visual.BtmOverlaySrcRadius",       46},
         /* MelonPrimeDS Bottom Screen Overlay defaults } */
         /* MelonPrimeDS Custom HUD Crosshair defaults } */
     #endif
@@ -311,9 +312,9 @@ namespace Config
         {"Instance*.Metroid.Visual.HudMatchStatusValueColorOverall", true},
         {"Instance*.Metroid.Visual.HudMatchStatusSepColorOverall",   true},
         {"Instance*.Metroid.Visual.HudMatchStatusGoalColorOverall",  true},
-        {"Instance*.Metroid.Visual.HudRankShow",        false},
+        {"Instance*.Metroid.Visual.HudRankShow",        true},
         {"Instance*.Metroid.Visual.HudRankShowOrdinal", true},
-        {"Instance*.Metroid.Visual.HudTimeLeftShow",    false},
+        {"Instance*.Metroid.Visual.HudTimeLeftShow",    true},
         {"Instance*.Metroid.Visual.HudTimeLimitShow",   false},
         {"Instance*.Metroid.Visual.InGameAspectRatio", true},
         {"Instance*.Metroid.Visual.ClipCursorToBottomScreenWhenNotInGame", false},
@@ -327,6 +328,7 @@ namespace Config
         {"Instance*.Metroid.UI.SectionWpnIcon",        false},
         {"Instance*.Metroid.UI.SectionHpGauge",        false},
         {"Instance*.Metroid.UI.SectionAmmoGauge",      false},
+        {"Instance*.Metroid.UI.SectionMatchStatusScore", false},
         {"Instance*.Metroid.UI.SectionRankTime",       false},
         {"Instance*.Metroid.UI.SectionInputSettings",  false},
         {"Instance*.Metroid.UI.SectionScreenSync",     false},
@@ -338,7 +340,7 @@ namespace Config
         {"Instance*.Metroid.UI.SectionVolume",         true},
         {"Instance*.Metroid.UI.SectionLicense",        true},
         /* MelonPrimeDS Bottom Screen Overlay bool { */
-        {"Instance*.Metroid.Visual.BtmOverlayEnable", false},
+        {"Instance*.Metroid.Visual.BtmOverlayEnable", true},
         /* MelonPrimeDS Bottom Screen Overlay bool } */
         /* MelonPrimeDS Crosshair bools } */
         /* MelonPrimeDS } */

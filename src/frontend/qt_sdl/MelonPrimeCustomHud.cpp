@@ -1233,10 +1233,11 @@ HOT_FUNCTION void CustomHud_Render(
         DrawCrosshair(topPaint, ram, rom, c, topStretchX);
 
     // Draw bottom screen overlay on top screen
-    DrawBottomScreenOverlay(localCfg, topPaint, btmBuffer);
+    const uint8_t hunterID = Read8(ram, addrHot.chosenHunter);
+    DrawBottomScreenOverlay(localCfg, topPaint, btmBuffer, (hunterID <= 6) ? hunterID : 0);
 }
 
-void DrawBottomScreenOverlay(Config::Table& localCfg, QPainter* topPaint, QImage* btmBuffer)
+void DrawBottomScreenOverlay(Config::Table& localCfg, QPainter* topPaint, QImage* btmBuffer, uint8_t hunterID)
 {
     if (!localCfg.GetBool("Metroid.Visual.BtmOverlayEnable")) return;
     if (!topPaint || !btmBuffer || btmBuffer->isNull()) return;
@@ -1246,8 +1247,9 @@ void DrawBottomScreenOverlay(Config::Table& localCfg, QPainter* topPaint, QImage
     int dstSize = std::max(localCfg.GetInt("Metroid.Visual.BtmOverlayDstSize"), 1);
     double opacity = localCfg.GetDouble("Metroid.Visual.BtmOverlayOpacity");
 
-    // Source region: radar center at DS (128, 117), radius 50 px (diameter 99)
-    const int srcCenterX = 128, srcCenterY = 117, srcRadius = 50;
+    const int srcCenterX  = kBtmOverlaySrcCenterX;
+    const int srcCenterY  = kBtmOverlaySrcCenterY[hunterID];
+    const int srcRadius   = std::max(localCfg.GetInt("Metroid.Visual.BtmOverlaySrcRadius"), 1);
     const float bufScaleX = static_cast<float>(btmBuffer->width()) / 256.0f;
     const float bufScaleY = static_cast<float>(btmBuffer->height()) / 192.0f;
 
