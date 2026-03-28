@@ -154,6 +154,8 @@ private:
 
     QVariantMap m_visualSnapshot;
     bool m_applyPreviewEnabled = false;
+    bool m_colorDialogOpen = false;
+    bool m_applyPreviewActive = false;
 };
 
 #endif // MELONPRIMEINPUTCONFIG_H

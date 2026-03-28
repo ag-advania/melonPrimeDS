@@ -15,6 +15,7 @@
 #include <QPainter>
 #include <QPainterPath>
 #include <QColorDialog>
+#include <QTimer>
 
 #include "MelonPrimeInputConfig.h"
 #include "ui_MelonPrimeInputConfig.h"
@@ -1805,7 +1806,8 @@ void MelonPrimeInputConfig::restoreVisualSnapshot()
 void MelonPrimeInputConfig::applyVisualPreview()
 {
 #ifdef MELONPRIME_CUSTOM_HUD
-    if (!m_applyPreviewEnabled) return;
+    if (!m_applyPreviewEnabled || m_applyPreviewActive) return;
+    m_applyPreviewActive = true;
 
     Config::Table& instcfg = emuInstance->getLocalConfig();
 
@@ -1937,6 +1939,7 @@ void MelonPrimeInputConfig::applyVisualPreview()
     updateHpAmmoPreview();
     updateMatchStatusPreview();
     emuInstance->drawScreen();
+    m_applyPreviewActive = false;
 #endif
 }
 
@@ -2257,12 +2260,15 @@ void MelonPrimeInputConfig::setupColorButton(QPushButton* btn, const QString& co
     btn->setStyleSheet(QString("background-color: %1;").arg(QColor(r, g, b).name()));
 
     connect(btn, &QPushButton::clicked, this, [this, btn, configKeyR, configKeyG, configKeyB, combo, lineEdit, spinR, spinG, spinB, customIndex, overallIndex]() {
+        if (m_colorDialogOpen) return;
+        m_colorDialogOpen = true;
         Config::Table& cfg = emuInstance->getLocalConfig();
         int curR = spinR ? spinR->value() : cfg.GetInt(configKeyR.toStdString().c_str());
         int curG = spinG ? spinG->value() : cfg.GetInt(configKeyG.toStdString().c_str());
         int curB = spinB ? spinB->value() : cfg.GetInt(configKeyB.toStdString().c_str());
         QColor initial(curR, curG, curB);
         QColor chosen = QColorDialog::getColor(initial, this, "Pick Color", QColorDialog::DontUseNativeDialog);
+        m_colorDialogOpen = false;
         if (!chosen.isValid()) return;
 
         cfg.SetInt(configKeyR.toStdString().c_str(), chosen.red());
@@ -2304,7 +2310,9 @@ void MelonPrimeInputConfig::setupColorButton(QPushButton* btn, const QString& co
         }
 
         btn->setStyleSheet(QString("background-color: %1;").arg(chosen.name()));
-        applyVisualPreview();
+        // Defer applyVisualPreview to the next event loop iteration so the dialog's
+        // event loop has fully unwound before drawScreen() is called.
+        QTimer::singleShot(0, this, [this]{ applyVisualPreview(); });
     });
 }
 
@@ -2506,6 +2514,10 @@ void MelonPrimeInputConfig::resetHpAmmoDefaults()
         instcfg.SetInt("Metroid.Visual.HudHpGaugeColorR", 56);
         instcfg.SetInt("Metroid.Visual.HudHpGaugeColorG", 192);
         instcfg.SetInt("Metroid.Visual.HudHpGaugeColorB", 8);
+        ui->spinMetroidHudHpGaugeColorR->setValue(56);
+        ui->spinMetroidHudHpGaugeColorG->setValue(192);
+        ui->spinMetroidHudHpGaugeColorB->setValue(8);
+        ui->leMetroidHudHpGaugeColorCode->setText("#38C008");
         ui->btnMetroidHudHpGaugeColor->setStyleSheet("background-color: #38C008;");
     }
 
@@ -2525,6 +2537,10 @@ void MelonPrimeInputConfig::resetHpAmmoDefaults()
         instcfg.SetInt("Metroid.Visual.HudAmmoGaugeColorR", 56);
         instcfg.SetInt("Metroid.Visual.HudAmmoGaugeColorG", 192);
         instcfg.SetInt("Metroid.Visual.HudAmmoGaugeColorB", 8);
+        ui->spinMetroidHudAmmoGaugeColorR->setValue(56);
+        ui->spinMetroidHudAmmoGaugeColorG->setValue(192);
+        ui->spinMetroidHudAmmoGaugeColorB->setValue(8);
+        ui->leMetroidHudAmmoGaugeColorCode->setText("#38C008");
         ui->btnMetroidHudAmmoGaugeColor->setStyleSheet("background-color: #38C008;");
     }
 }
@@ -2551,26 +2567,40 @@ void MelonPrimeInputConfig::resetMatchStatusDefaults()
     ui->leMetroidHudMatchStatusLabelRingTime->setText("ring time");
     ui->leMetroidHudMatchStatusLabelPrimeTime->setText("prime time");
 
-    // Overall color: White
+    // Colors
     {
         Config::Table& instcfg = emuInstance->getLocalConfig();
-        auto resetClr = [&](QPushButton* btn, const char* kR, const char* kG, const char* kB, int r, int g, int b) {
+        auto resetClr = [&](QPushButton* btn, QLineEdit* le, QSpinBox* spR, QSpinBox* spG, QSpinBox* spB,
+                             const char* kR, const char* kG, const char* kB, int r, int g, int b) {
             instcfg.SetInt(kR, r); instcfg.SetInt(kG, g); instcfg.SetInt(kB, b);
+            if (spR) spR->setValue(r);
+            if (spG) spG->setValue(g);
+            if (spB) spB->setValue(b);
+            if (le) le->setText(QColor(r, g, b).name().toUpper());
             btn->setStyleSheet(QString("background-color: %1;").arg(QColor(r, g, b).name()));
         };
-        resetClr(ui->btnMetroidHudMatchStatusColor,
+        resetClr(ui->btnMetroidHudMatchStatusColor, ui->leMetroidHudMatchStatusColorCode,
+            ui->spinMetroidHudMatchStatusColorR, ui->spinMetroidHudMatchStatusColorG, ui->spinMetroidHudMatchStatusColorB,
             "Metroid.Visual.HudMatchStatusColorR", "Metroid.Visual.HudMatchStatusColorG", "Metroid.Visual.HudMatchStatusColorB",
             255, 255, 255);
-        resetClr(ui->btnMetroidHudMatchStatusLabelColor,
+        ui->comboMetroidHudMatchStatusLabelColor->setCurrentIndex(0);
+        resetClr(ui->btnMetroidHudMatchStatusLabelColor, ui->leMetroidHudMatchStatusLabelColorCode,
+            ui->spinMetroidHudMatchStatusLabelColorR, ui->spinMetroidHudMatchStatusLabelColorG, ui->spinMetroidHudMatchStatusLabelColorB,
             "Metroid.Visual.HudMatchStatusLabelColorR", "Metroid.Visual.HudMatchStatusLabelColorG", "Metroid.Visual.HudMatchStatusLabelColorB",
             255, 255, 255);
-        resetClr(ui->btnMetroidHudMatchStatusValueColor,
+        ui->comboMetroidHudMatchStatusValueColor->setCurrentIndex(0);
+        resetClr(ui->btnMetroidHudMatchStatusValueColor, ui->leMetroidHudMatchStatusValueColorCode,
+            ui->spinMetroidHudMatchStatusValueColorR, ui->spinMetroidHudMatchStatusValueColorG, ui->spinMetroidHudMatchStatusValueColorB,
             "Metroid.Visual.HudMatchStatusValueColorR", "Metroid.Visual.HudMatchStatusValueColorG", "Metroid.Visual.HudMatchStatusValueColorB",
             255, 255, 255);
-        resetClr(ui->btnMetroidHudMatchStatusSepColor,
+        ui->comboMetroidHudMatchStatusSepColor->setCurrentIndex(0);
+        resetClr(ui->btnMetroidHudMatchStatusSepColor, ui->leMetroidHudMatchStatusSepColorCode,
+            ui->spinMetroidHudMatchStatusSepColorR, ui->spinMetroidHudMatchStatusSepColorG, ui->spinMetroidHudMatchStatusSepColorB,
             "Metroid.Visual.HudMatchStatusSepColorR", "Metroid.Visual.HudMatchStatusSepColorG", "Metroid.Visual.HudMatchStatusSepColorB",
             255, 255, 255);
-        resetClr(ui->btnMetroidHudMatchStatusGoalColor,
+        ui->comboMetroidHudMatchStatusGoalColor->setCurrentIndex(0);
+        resetClr(ui->btnMetroidHudMatchStatusGoalColor, ui->leMetroidHudMatchStatusGoalColorCode,
+            ui->spinMetroidHudMatchStatusGoalColorR, ui->spinMetroidHudMatchStatusGoalColorG, ui->spinMetroidHudMatchStatusGoalColorB,
             "Metroid.Visual.HudMatchStatusGoalColorR", "Metroid.Visual.HudMatchStatusGoalColorG", "Metroid.Visual.HudMatchStatusGoalColorB",
             255, 255, 255);
     }
@@ -2716,25 +2746,49 @@ void MelonPrimeInputConfig::updateHpAmmoPreview()
     p.setFont(font);
 
     // HP text
+    // hpY is the text baseline in DS coords (matches DrawCachedText/DrawHP in the game).
+    // drawText(QPointF, text) uses Y as baseline, so map directly: no extra font offset needed.
     int hpX = instcfg.GetInt("Metroid.Visual.HudHpX");
     int hpY = instcfg.GetInt("Metroid.Visual.HudHpY");
+    int hpAlign = instcfg.GetInt("Metroid.Visual.HudHpAlign");
     int hpR = instcfg.GetInt("Metroid.Visual.HudHpGaugeColorR");
     int hpG = instcfg.GetInt("Metroid.Visual.HudHpGaugeColorG");
     int hpB = instcfg.GetInt("Metroid.Visual.HudHpGaugeColorB");
+    QString hpText = QString::fromStdString(instcfg.GetString("Metroid.Visual.HudHpPrefix")) + "199";
     p.setPen(QColor(hpR, hpG, hpB));
-    float hpSx = offX + hpX * scale;
     float hpSy = offY + hpY * scale;
-    p.drawText(QPointF(hpSx, hpSy + fontSize * scale), "HP 99");
+    int hpTextW = p.fontMetrics().horizontalAdvance(hpText);
+    float hpSx = offX + hpX * scale;
+    if (hpAlign == 1) hpSx -= hpTextW / 2.0f;
+    else if (hpAlign == 2) hpSx -= hpTextW;
+    p.drawText(QPointF(hpSx, hpSy), hpText);
 
-    // HP gauge bar
+    // HP gauge bar — mirrors CalcGaugePos() from MelonPrimeCustomHud.cpp
     if (instcfg.GetBool("Metroid.Visual.HudHpGauge")) {
-        int gLen = instcfg.GetInt("Metroid.Visual.HudHpGaugeLength");
-        int gWid = instcfg.GetInt("Metroid.Visual.HudHpGaugeWidth");
-        int gOfsX = instcfg.GetInt("Metroid.Visual.HudHpGaugeOffsetX");
-        int gOfsY = instcfg.GetInt("Metroid.Visual.HudHpGaugeOffsetY");
+        int gLen   = instcfg.GetInt("Metroid.Visual.HudHpGaugeLength");
+        int gWid   = instcfg.GetInt("Metroid.Visual.HudHpGaugeWidth");
+        int gOfsX  = instcfg.GetInt("Metroid.Visual.HudHpGaugeOffsetX");
+        int gOfsY  = instcfg.GetInt("Metroid.Visual.HudHpGaugeOffsetY");
         int orient = instcfg.GetInt("Metroid.Visual.HudHpGaugeOrientation");
-        float gx = hpSx + gOfsX * scale;
-        float gy = hpSy + gOfsY * scale;
+        int anchor = instcfg.GetInt("Metroid.Visual.HudHpGaugeAnchor");
+        int posMode= instcfg.GetInt("Metroid.Visual.HudHpGaugePosMode");
+        float gx, gy;
+        if (posMode == 1) {
+            gx = offX + instcfg.GetInt("Metroid.Visual.HudHpGaugePosX") * scale;
+            gy = offY + instcfg.GetInt("Metroid.Visual.HudHpGaugePosY") * scale;
+        } else {
+            const QFontMetrics fm = p.fontMetrics();
+            float tH = fm.height(), tW = static_cast<float>(hpTextW);
+            float gL = gLen * scale, gW = gWid * scale;
+            float ox = gOfsX * scale, oy = gOfsY * scale;
+            switch (anchor) {
+            case 1: gx = hpSx + ox; gy = hpSy - tH - (orient==0?gW:gL) + oy; break;
+            case 2: gx = hpSx + tW + ox; gy = hpSy - tH/2.f - (orient==0?gW:gL)/2.f + oy; break;
+            case 3: gx = hpSx - (orient==0?gL:gW) + ox; gy = hpSy - tH/2.f - (orient==0?gW:gL)/2.f + oy; break;
+            case 4: gx = hpSx + tW/2.f - (orient==0?gL:gW)/2.f + ox; gy = hpSy - tH/2.f - (orient==0?gW:gL)/2.f + oy; break;
+            default: gx = hpSx + ox; gy = hpSy + 2 * scale + oy; break;
+            }
+        }
         p.setPen(Qt::NoPen);
         p.setBrush(QColor(hpR, hpG, hpB));
         if (orient == 0) // Horizontal
@@ -2760,26 +2814,48 @@ void MelonPrimeInputConfig::updateHpAmmoPreview()
         }
     }
 
-    // Ammo text
+    // Ammo text — same baseline logic as HP
     int wpnX = instcfg.GetInt("Metroid.Visual.HudWeaponX");
     int wpnY = instcfg.GetInt("Metroid.Visual.HudWeaponY");
+    int ammoAlign = instcfg.GetInt("Metroid.Visual.HudAmmoAlign");
     int amR = instcfg.GetInt("Metroid.Visual.HudAmmoGaugeColorR");
     int amG = instcfg.GetInt("Metroid.Visual.HudAmmoGaugeColorG");
     int amB = instcfg.GetInt("Metroid.Visual.HudAmmoGaugeColorB");
+    QString ammoText = QString::fromStdString(instcfg.GetString("Metroid.Visual.HudAmmoPrefix")) + "30";
     p.setPen(QColor(amR, amG, amB));
-    float wpnSx = offX + wpnX * scale;
     float wpnSy = offY + wpnY * scale;
-    p.drawText(QPointF(wpnSx, wpnSy + fontSize * scale), "UA 30");
+    int ammoTextW = p.fontMetrics().horizontalAdvance(ammoText);
+    float wpnSx = offX + wpnX * scale;
+    if (ammoAlign == 1) wpnSx -= ammoTextW / 2.0f;
+    else if (ammoAlign == 2) wpnSx -= ammoTextW;
+    p.drawText(QPointF(wpnSx, wpnSy), ammoText);
 
-    // Ammo gauge bar
+    // Ammo gauge bar — mirrors CalcGaugePos() from MelonPrimeCustomHud.cpp
     if (instcfg.GetBool("Metroid.Visual.HudAmmoGauge")) {
-        int gLen = instcfg.GetInt("Metroid.Visual.HudAmmoGaugeLength");
-        int gWid = instcfg.GetInt("Metroid.Visual.HudAmmoGaugeWidth");
-        int gOfsX = instcfg.GetInt("Metroid.Visual.HudAmmoGaugeOffsetX");
-        int gOfsY = instcfg.GetInt("Metroid.Visual.HudAmmoGaugeOffsetY");
+        int gLen   = instcfg.GetInt("Metroid.Visual.HudAmmoGaugeLength");
+        int gWid   = instcfg.GetInt("Metroid.Visual.HudAmmoGaugeWidth");
+        int gOfsX  = instcfg.GetInt("Metroid.Visual.HudAmmoGaugeOffsetX");
+        int gOfsY  = instcfg.GetInt("Metroid.Visual.HudAmmoGaugeOffsetY");
         int orient = instcfg.GetInt("Metroid.Visual.HudAmmoGaugeOrientation");
-        float gx = wpnSx + gOfsX * scale;
-        float gy = wpnSy + gOfsY * scale;
+        int anchor = instcfg.GetInt("Metroid.Visual.HudAmmoGaugeAnchor");
+        int posMode= instcfg.GetInt("Metroid.Visual.HudAmmoGaugePosMode");
+        float gx, gy;
+        if (posMode == 1) {
+            gx = offX + instcfg.GetInt("Metroid.Visual.HudAmmoGaugePosX") * scale;
+            gy = offY + instcfg.GetInt("Metroid.Visual.HudAmmoGaugePosY") * scale;
+        } else {
+            const QFontMetrics fm = p.fontMetrics();
+            float tH = fm.height(), tW = static_cast<float>(ammoTextW);
+            float gL = gLen * scale, gW = gWid * scale;
+            float ox = gOfsX * scale, oy = gOfsY * scale;
+            switch (anchor) {
+            case 1: gx = wpnSx + ox; gy = wpnSy - tH - (orient==0?gW:gL) + oy; break;
+            case 2: gx = wpnSx + tW + ox; gy = wpnSy - tH/2.f - (orient==0?gW:gL)/2.f + oy; break;
+            case 3: gx = wpnSx - (orient==0?gL:gW) + ox; gy = wpnSy - tH/2.f - (orient==0?gW:gL)/2.f + oy; break;
+            case 4: gx = wpnSx + tW/2.f - (orient==0?gL:gW)/2.f + ox; gy = wpnSy - tH/2.f - (orient==0?gW:gL)/2.f + oy; break;
+            default: gx = wpnSx + ox; gy = wpnSy + 2 * scale + oy; break;
+            }
+        }
         p.setPen(Qt::NoPen);
         p.setBrush(QColor(amR, amG, amB));
         if (orient == 0)
