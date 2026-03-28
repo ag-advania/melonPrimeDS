@@ -8,6 +8,7 @@
 #include <QGridLayout>
 #include <QTabWidget>
 #include <QSpinBox>
+#include <QSlider>
 #include <QColor>
 #include <QLineEdit>
 #include <QComboBox>
@@ -185,22 +186,20 @@ MelonPrimeInputConfig::MelonPrimeInputConfig(EmuInstance* emu, QWidget* parent) 
     setupColorButton(ui->btnMetroidCrosshairColor,
         "Metroid.Visual.CrosshairColorR", "Metroid.Visual.CrosshairColorG", "Metroid.Visual.CrosshairColorB");
 
+    // Helper to init a slider and its value label
+    auto initSlider = [](QSlider* sl, QLabel* lbl, int val) {
+        sl->setValue(val);
+        lbl->setText(QString::number(val));
+        QObject::connect(sl, &QSlider::valueChanged, lbl, [lbl](int v) { lbl->setText(QString::number(v)); });
+    };
+
     // HUD element positions
-    ui->spinMetroidHudHpX->setValue(instcfg.GetInt("Metroid.Visual.HudHpX"));
-    ui->spinMetroidHudHpY->setValue(instcfg.GetInt("Metroid.Visual.HudHpY"));
+    initSlider(ui->spinMetroidHudHpX, ui->labelMetroidHudHpX, instcfg.GetInt("Metroid.Visual.HudHpX"));
+    initSlider(ui->spinMetroidHudHpY, ui->labelMetroidHudHpY, instcfg.GetInt("Metroid.Visual.HudHpY"));
     ui->leMetroidHudHpPrefix->setText(QString::fromStdString(instcfg.GetString("Metroid.Visual.HudHpPrefix")));
     ui->comboMetroidHudHpAlign->setCurrentIndex(instcfg.GetInt("Metroid.Visual.HudHpAlign"));
-    ui->cbMetroidHudHpTextAutoColor->setChecked(instcfg.GetBool("Metroid.Visual.HudHpTextAutoColor"));
-    ui->spinMetroidHudHpTextColorR->setValue(instcfg.GetInt("Metroid.Visual.HudHpTextColorR"));
-    ui->spinMetroidHudHpTextColorG->setValue(instcfg.GetInt("Metroid.Visual.HudHpTextColorG"));
-    ui->spinMetroidHudHpTextColorB->setValue(instcfg.GetInt("Metroid.Visual.HudHpTextColorB"));
-    ui->leMetroidHudHpTextColorCode->setText(
-        QString("#%1%2%3")
-            .arg(ui->spinMetroidHudHpTextColorR->value(), 2, 16, QChar('0'))
-            .arg(ui->spinMetroidHudHpTextColorG->value(), 2, 16, QChar('0'))
-            .arg(ui->spinMetroidHudHpTextColorB->value(), 2, 16, QChar('0')).toUpper());
-    ui->spinMetroidHudWeaponX->setValue(instcfg.GetInt("Metroid.Visual.HudWeaponX"));
-    ui->spinMetroidHudWeaponY->setValue(instcfg.GetInt("Metroid.Visual.HudWeaponY"));
+    initSlider(ui->spinMetroidHudWeaponX, ui->labelMetroidHudWeaponX, instcfg.GetInt("Metroid.Visual.HudWeaponX"));
+    initSlider(ui->spinMetroidHudWeaponY, ui->labelMetroidHudWeaponY, instcfg.GetInt("Metroid.Visual.HudWeaponY"));
     ui->leMetroidHudAmmoPrefix->setText(QString::fromStdString(instcfg.GetString("Metroid.Visual.HudAmmoPrefix")));
     ui->comboMetroidHudAmmoAlign->setCurrentIndex(instcfg.GetInt("Metroid.Visual.HudAmmoAlign"));
     ui->spinMetroidHudAmmoTextColorR->setValue(instcfg.GetInt("Metroid.Visual.HudAmmoTextColorR"));
@@ -213,10 +212,10 @@ MelonPrimeInputConfig::MelonPrimeInputConfig(EmuInstance* emu, QWidget* parent) 
             .arg(ui->spinMetroidHudAmmoTextColorB->value(), 2, 16, QChar('0')).toUpper());
     ui->cbMetroidHudWeaponIconShow->setChecked(instcfg.GetBool("Metroid.Visual.HudWeaponIconShow"));
     ui->comboMetroidHudWeaponIconMode->setCurrentIndex(instcfg.GetInt("Metroid.Visual.HudWeaponIconMode"));
-    ui->spinMetroidHudWeaponIconOffsetX->setValue(instcfg.GetInt("Metroid.Visual.HudWeaponIconOffsetX"));
-    ui->spinMetroidHudWeaponIconOffsetY->setValue(instcfg.GetInt("Metroid.Visual.HudWeaponIconOffsetY"));
-    ui->spinMetroidHudWeaponIconPosX->setValue(instcfg.GetInt("Metroid.Visual.HudWeaponIconPosX"));
-    ui->spinMetroidHudWeaponIconPosY->setValue(instcfg.GetInt("Metroid.Visual.HudWeaponIconPosY"));
+    initSlider(ui->spinMetroidHudWeaponIconOffsetX, ui->labelMetroidHudWeaponIconOffsetX, instcfg.GetInt("Metroid.Visual.HudWeaponIconOffsetX"));
+    initSlider(ui->spinMetroidHudWeaponIconOffsetY, ui->labelMetroidHudWeaponIconOffsetY, instcfg.GetInt("Metroid.Visual.HudWeaponIconOffsetY"));
+    initSlider(ui->spinMetroidHudWeaponIconPosX, ui->labelMetroidHudWeaponIconPosX, instcfg.GetInt("Metroid.Visual.HudWeaponIconPosX"));
+    initSlider(ui->spinMetroidHudWeaponIconPosY, ui->labelMetroidHudWeaponIconPosY, instcfg.GetInt("Metroid.Visual.HudWeaponIconPosY"));
     ui->comboMetroidHudWeaponIconAnchorX->setCurrentIndex(instcfg.GetInt("Metroid.Visual.HudWeaponIconAnchorX"));
     ui->comboMetroidHudWeaponIconAnchorY->setCurrentIndex(instcfg.GetInt("Metroid.Visual.HudWeaponIconAnchorY"));
     ui->cbMetroidHudWeaponIconColorOverlay->setChecked(instcfg.GetBool("Metroid.Visual.HudWeaponIconColorOverlay"));
@@ -325,15 +324,17 @@ MelonPrimeInputConfig::MelonPrimeInputConfig(EmuInstance* emu, QWidget* parent) 
         ui->spinMetroidHudWeaponIconPosY->blockSignals(true);
         ui->spinMetroidHudWeaponIconPosX->setValue(presets[idx].x);
         ui->spinMetroidHudWeaponIconPosY->setValue(presets[idx].y);
+        ui->labelMetroidHudWeaponIconPosX->setText(QString::number(presets[idx].x));
+        ui->labelMetroidHudWeaponIconPosY->setText(QString::number(presets[idx].y));
         ui->spinMetroidHudWeaponIconPosX->blockSignals(false);
         ui->spinMetroidHudWeaponIconPosY->blockSignals(false);
     });
-    connect(ui->spinMetroidHudWeaponIconPosX, QOverload<int>::of(&QSpinBox::valueChanged), this, [this]() {
+    connect(ui->spinMetroidHudWeaponIconPosX, &QSlider::valueChanged, this, [this]() {
         ui->comboMetroidHudWeaponIconPosition->blockSignals(true);
         ui->comboMetroidHudWeaponIconPosition->setCurrentIndex(8);
         ui->comboMetroidHudWeaponIconPosition->blockSignals(false);
     });
-    connect(ui->spinMetroidHudWeaponIconPosY, QOverload<int>::of(&QSpinBox::valueChanged), this, [this]() {
+    connect(ui->spinMetroidHudWeaponIconPosY, &QSlider::valueChanged, this, [this]() {
         ui->comboMetroidHudWeaponIconPosition->blockSignals(true);
         ui->comboMetroidHudWeaponIconPosition->setCurrentIndex(8);
         ui->comboMetroidHudWeaponIconPosition->blockSignals(false);
@@ -342,14 +343,14 @@ MelonPrimeInputConfig::MelonPrimeInputConfig(EmuInstance* emu, QWidget* parent) 
     // Gauge settings — HP
     ui->cbMetroidHudHpGauge->setChecked(instcfg.GetBool("Metroid.Visual.HudHpGauge"));
     ui->comboMetroidHudHpGaugeOrientation->setCurrentIndex(instcfg.GetInt("Metroid.Visual.HudHpGaugeOrientation"));
-    ui->spinMetroidHudHpGaugeLength->setValue(instcfg.GetInt("Metroid.Visual.HudHpGaugeLength"));
-    ui->spinMetroidHudHpGaugeWidth->setValue(instcfg.GetInt("Metroid.Visual.HudHpGaugeWidth"));
-    ui->spinMetroidHudHpGaugeOffsetX->setValue(instcfg.GetInt("Metroid.Visual.HudHpGaugeOffsetX"));
-    ui->spinMetroidHudHpGaugeOffsetY->setValue(instcfg.GetInt("Metroid.Visual.HudHpGaugeOffsetY"));
+    initSlider(ui->spinMetroidHudHpGaugeLength, ui->labelMetroidHudHpGaugeLength, instcfg.GetInt("Metroid.Visual.HudHpGaugeLength"));
+    initSlider(ui->spinMetroidHudHpGaugeWidth,  ui->labelMetroidHudHpGaugeWidth,  instcfg.GetInt("Metroid.Visual.HudHpGaugeWidth"));
+    initSlider(ui->spinMetroidHudHpGaugeOffsetX, ui->labelMetroidHudHpGaugeOffsetX, instcfg.GetInt("Metroid.Visual.HudHpGaugeOffsetX"));
+    initSlider(ui->spinMetroidHudHpGaugeOffsetY, ui->labelMetroidHudHpGaugeOffsetY, instcfg.GetInt("Metroid.Visual.HudHpGaugeOffsetY"));
     ui->comboMetroidHudHpGaugeAnchor->setCurrentIndex(instcfg.GetInt("Metroid.Visual.HudHpGaugeAnchor"));
     ui->comboMetroidHudHpGaugePosMode->setCurrentIndex(instcfg.GetInt("Metroid.Visual.HudHpGaugePosMode"));
-    ui->spinMetroidHudHpGaugePosX->setValue(instcfg.GetInt("Metroid.Visual.HudHpGaugePosX"));
-    ui->spinMetroidHudHpGaugePosY->setValue(instcfg.GetInt("Metroid.Visual.HudHpGaugePosY"));
+    initSlider(ui->spinMetroidHudHpGaugePosX, ui->labelMetroidHudHpGaugePosX, instcfg.GetInt("Metroid.Visual.HudHpGaugePosX"));
+    initSlider(ui->spinMetroidHudHpGaugePosY, ui->labelMetroidHudHpGaugePosY, instcfg.GetInt("Metroid.Visual.HudHpGaugePosY"));
     ui->cbMetroidHudHpGaugeAutoColor->setChecked(instcfg.GetBool("Metroid.Visual.HudHpGaugeAutoColor"));
     // HP Gauge color — QPushButton color picker
     setupColorButton(ui->btnMetroidHudHpGaugeColor,
@@ -358,14 +359,14 @@ MelonPrimeInputConfig::MelonPrimeInputConfig(EmuInstance* emu, QWidget* parent) 
     // Gauge settings — Ammo
     ui->cbMetroidHudAmmoGauge->setChecked(instcfg.GetBool("Metroid.Visual.HudAmmoGauge"));
     ui->comboMetroidHudAmmoGaugeOrientation->setCurrentIndex(instcfg.GetInt("Metroid.Visual.HudAmmoGaugeOrientation"));
-    ui->spinMetroidHudAmmoGaugeLength->setValue(instcfg.GetInt("Metroid.Visual.HudAmmoGaugeLength"));
-    ui->spinMetroidHudAmmoGaugeWidth->setValue(instcfg.GetInt("Metroid.Visual.HudAmmoGaugeWidth"));
-    ui->spinMetroidHudAmmoGaugeOffsetX->setValue(instcfg.GetInt("Metroid.Visual.HudAmmoGaugeOffsetX"));
-    ui->spinMetroidHudAmmoGaugeOffsetY->setValue(instcfg.GetInt("Metroid.Visual.HudAmmoGaugeOffsetY"));
+    initSlider(ui->spinMetroidHudAmmoGaugeLength, ui->labelMetroidHudAmmoGaugeLength, instcfg.GetInt("Metroid.Visual.HudAmmoGaugeLength"));
+    initSlider(ui->spinMetroidHudAmmoGaugeWidth,  ui->labelMetroidHudAmmoGaugeWidth,  instcfg.GetInt("Metroid.Visual.HudAmmoGaugeWidth"));
+    initSlider(ui->spinMetroidHudAmmoGaugeOffsetX, ui->labelMetroidHudAmmoGaugeOffsetX, instcfg.GetInt("Metroid.Visual.HudAmmoGaugeOffsetX"));
+    initSlider(ui->spinMetroidHudAmmoGaugeOffsetY, ui->labelMetroidHudAmmoGaugeOffsetY, instcfg.GetInt("Metroid.Visual.HudAmmoGaugeOffsetY"));
     ui->comboMetroidHudAmmoGaugeAnchor->setCurrentIndex(instcfg.GetInt("Metroid.Visual.HudAmmoGaugeAnchor"));
     ui->comboMetroidHudAmmoGaugePosMode->setCurrentIndex(instcfg.GetInt("Metroid.Visual.HudAmmoGaugePosMode"));
-    ui->spinMetroidHudAmmoGaugePosX->setValue(instcfg.GetInt("Metroid.Visual.HudAmmoGaugePosX"));
-    ui->spinMetroidHudAmmoGaugePosY->setValue(instcfg.GetInt("Metroid.Visual.HudAmmoGaugePosY"));
+    initSlider(ui->spinMetroidHudAmmoGaugePosX, ui->labelMetroidHudAmmoGaugePosX, instcfg.GetInt("Metroid.Visual.HudAmmoGaugePosX"));
+    initSlider(ui->spinMetroidHudAmmoGaugePosY, ui->labelMetroidHudAmmoGaugePosY, instcfg.GetInt("Metroid.Visual.HudAmmoGaugePosY"));
     // Ammo Gauge color — QPushButton color picker
     setupColorButton(ui->btnMetroidHudAmmoGaugeColor,
         "Metroid.Visual.HudAmmoGaugeColorR", "Metroid.Visual.HudAmmoGaugeColorG", "Metroid.Visual.HudAmmoGaugeColorB");
@@ -442,16 +443,18 @@ MelonPrimeInputConfig::MelonPrimeInputConfig(EmuInstance* emu, QWidget* parent) 
         ui->spinMetroidHudHpY->blockSignals(true);
         ui->spinMetroidHudHpX->setValue(presets[idx].x);
         ui->spinMetroidHudHpY->setValue(presets[idx].y);
+        ui->labelMetroidHudHpX->setText(QString::number(presets[idx].x));
+        ui->labelMetroidHudHpY->setText(QString::number(presets[idx].y));
         ui->spinMetroidHudHpX->blockSignals(false);
         ui->spinMetroidHudHpY->blockSignals(false);
     });
     // HP X/Y manual change → switch to Custom
-    connect(ui->spinMetroidHudHpX, QOverload<int>::of(&QSpinBox::valueChanged), this, [this]() {
+    connect(ui->spinMetroidHudHpX, &QSlider::valueChanged, this, [this]() {
         ui->comboMetroidHudHpPosition->blockSignals(true);
         ui->comboMetroidHudHpPosition->setCurrentIndex(8);
         ui->comboMetroidHudHpPosition->blockSignals(false);
     });
-    connect(ui->spinMetroidHudHpY, QOverload<int>::of(&QSpinBox::valueChanged), this, [this]() {
+    connect(ui->spinMetroidHudHpY, &QSlider::valueChanged, this, [this]() {
         ui->comboMetroidHudHpPosition->blockSignals(true);
         ui->comboMetroidHudHpPosition->setCurrentIndex(8);
         ui->comboMetroidHudHpPosition->blockSignals(false);
@@ -468,16 +471,18 @@ MelonPrimeInputConfig::MelonPrimeInputConfig(EmuInstance* emu, QWidget* parent) 
         ui->spinMetroidHudWeaponY->blockSignals(true);
         ui->spinMetroidHudWeaponX->setValue(presets[idx].x);
         ui->spinMetroidHudWeaponY->setValue(presets[idx].y);
+        ui->labelMetroidHudWeaponX->setText(QString::number(presets[idx].x));
+        ui->labelMetroidHudWeaponY->setText(QString::number(presets[idx].y));
         ui->spinMetroidHudWeaponX->blockSignals(false);
         ui->spinMetroidHudWeaponY->blockSignals(false);
     });
     // Weapon X/Y manual change → switch to Custom
-    connect(ui->spinMetroidHudWeaponX, QOverload<int>::of(&QSpinBox::valueChanged), this, [this]() {
+    connect(ui->spinMetroidHudWeaponX, &QSlider::valueChanged, this, [this]() {
         ui->comboMetroidHudWeaponPosition->blockSignals(true);
         ui->comboMetroidHudWeaponPosition->setCurrentIndex(8);
         ui->comboMetroidHudWeaponPosition->blockSignals(false);
     });
-    connect(ui->spinMetroidHudWeaponY, QOverload<int>::of(&QSpinBox::valueChanged), this, [this]() {
+    connect(ui->spinMetroidHudWeaponY, &QSlider::valueChanged, this, [this]() {
         ui->comboMetroidHudWeaponPosition->blockSignals(true);
         ui->comboMetroidHudWeaponPosition->setCurrentIndex(8);
         ui->comboMetroidHudWeaponPosition->blockSignals(false);
@@ -550,6 +555,9 @@ MelonPrimeInputConfig::MelonPrimeInputConfig(EmuInstance* emu, QWidget* parent) 
     auto prvI = [&](QSpinBox* w) {
         connect(w, QOverload<int>::of(&QSpinBox::valueChanged), this, &MelonPrimeInputConfig::applyVisualPreview);
     };
+    auto prvSl = [&](QSlider* w) {
+        connect(w, &QSlider::valueChanged, this, [this](int) { applyVisualPreview(); });
+    };
     auto prvD = [&](QDoubleSpinBox* w) {
         connect(w, QOverload<double>::of(&QDoubleSpinBox::valueChanged), this, &MelonPrimeInputConfig::applyVisualPreview);
     };
@@ -568,40 +576,36 @@ MelonPrimeInputConfig::MelonPrimeInputConfig(EmuInstance* emu, QWidget* parent) 
     prvC(ui->comboMetroidInGameAspectRatioMode);
     // Match Status
     prvB(ui->cbMetroidHudMatchStatusShow);
-    prvI(ui->spinMetroidHudMatchStatusX);         prvI(ui->spinMetroidHudMatchStatusY);
-    prvI(ui->spinMetroidHudMatchStatusLabelOfsX); prvI(ui->spinMetroidHudMatchStatusLabelOfsY);
+    prvSl(ui->spinMetroidHudMatchStatusX);         prvSl(ui->spinMetroidHudMatchStatusY);
+    prvSl(ui->spinMetroidHudMatchStatusLabelOfsX); prvSl(ui->spinMetroidHudMatchStatusLabelOfsY);
     prvC(ui->comboMetroidHudMatchStatusLabelPos);
     prvE(ui->leMetroidHudMatchStatusLabelPoints);    prvE(ui->leMetroidHudMatchStatusLabelOctoliths);
     prvE(ui->leMetroidHudMatchStatusLabelLives);     prvE(ui->leMetroidHudMatchStatusLabelRingTime);
     prvE(ui->leMetroidHudMatchStatusLabelPrimeTime);
     // (color button clicks already call applyVisualPreview via setupColorButton)
     // HP/Weapon positions
-    prvI(ui->spinMetroidHudHpX);    prvI(ui->spinMetroidHudHpY);    prvE(ui->leMetroidHudHpPrefix);    prvC(ui->comboMetroidHudHpAlign);
-    prvB(ui->cbMetroidHudHpTextAutoColor); prvC(ui->comboMetroidHudHpTextColor);
-    prvI(ui->spinMetroidHudHpTextColorR); prvI(ui->spinMetroidHudHpTextColorG); prvI(ui->spinMetroidHudHpTextColorB);
-    prvI(ui->spinMetroidHudWeaponX); prvI(ui->spinMetroidHudWeaponY); prvE(ui->leMetroidHudAmmoPrefix); prvC(ui->comboMetroidHudAmmoAlign);
-    prvC(ui->comboMetroidHudAmmoTextColor);
-    prvI(ui->spinMetroidHudAmmoTextColorR); prvI(ui->spinMetroidHudAmmoTextColorG); prvI(ui->spinMetroidHudAmmoTextColorB);
+    prvSl(ui->spinMetroidHudHpX);    prvSl(ui->spinMetroidHudHpY);    prvE(ui->leMetroidHudHpPrefix);    prvC(ui->comboMetroidHudHpAlign);
+    prvSl(ui->spinMetroidHudWeaponX); prvSl(ui->spinMetroidHudWeaponY); prvE(ui->leMetroidHudAmmoPrefix); prvC(ui->comboMetroidHudAmmoAlign);
     prvB(ui->cbMetroidHudWeaponIconShow);  prvC(ui->comboMetroidHudWeaponIconMode);
-    prvI(ui->spinMetroidHudWeaponIconOffsetX); prvI(ui->spinMetroidHudWeaponIconOffsetY);
-    prvI(ui->spinMetroidHudWeaponIconPosX);   prvI(ui->spinMetroidHudWeaponIconPosY);
-    prvC(ui->comboMetroidHudWeaponIconAnchorX); prvC(ui->comboMetroidHudWeaponIconAnchorY); prvB(ui->cbMetroidHudWeaponIconColorOverlay);
+    prvSl(ui->spinMetroidHudWeaponIconOffsetX); prvSl(ui->spinMetroidHudWeaponIconOffsetY);
+    prvSl(ui->spinMetroidHudWeaponIconPosX);   prvSl(ui->spinMetroidHudWeaponIconPosY);
+    prvC(ui->comboMetroidHudWeaponIconAnchorX); prvC(ui->comboMetroidHudWeaponIconAnchorY);
     // HP Gauge
     prvB(ui->cbMetroidHudHpGauge);
     prvC(ui->comboMetroidHudHpGaugeOrientation);
-    prvI(ui->spinMetroidHudHpGaugeLength); prvI(ui->spinMetroidHudHpGaugeWidth);
-    prvI(ui->spinMetroidHudHpGaugeOffsetX); prvI(ui->spinMetroidHudHpGaugeOffsetY);
+    prvSl(ui->spinMetroidHudHpGaugeLength); prvSl(ui->spinMetroidHudHpGaugeWidth);
+    prvSl(ui->spinMetroidHudHpGaugeOffsetX); prvSl(ui->spinMetroidHudHpGaugeOffsetY);
     prvC(ui->comboMetroidHudHpGaugeAnchor); prvC(ui->comboMetroidHudHpGaugePosMode);
-    prvI(ui->spinMetroidHudHpGaugePosX);   prvI(ui->spinMetroidHudHpGaugePosY);
+    prvSl(ui->spinMetroidHudHpGaugePosX);   prvSl(ui->spinMetroidHudHpGaugePosY);
     prvB(ui->cbMetroidHudHpGaugeAutoColor);
     // (HP gauge color button clicks already call applyVisualPreview via setupColorButton)
     // Ammo Gauge
     prvB(ui->cbMetroidHudAmmoGauge);
     prvC(ui->comboMetroidHudAmmoGaugeOrientation);
-    prvI(ui->spinMetroidHudAmmoGaugeLength); prvI(ui->spinMetroidHudAmmoGaugeWidth);
-    prvI(ui->spinMetroidHudAmmoGaugeOffsetX); prvI(ui->spinMetroidHudAmmoGaugeOffsetY);
+    prvSl(ui->spinMetroidHudAmmoGaugeLength); prvSl(ui->spinMetroidHudAmmoGaugeWidth);
+    prvSl(ui->spinMetroidHudAmmoGaugeOffsetX); prvSl(ui->spinMetroidHudAmmoGaugeOffsetY);
     prvC(ui->comboMetroidHudAmmoGaugeAnchor); prvC(ui->comboMetroidHudAmmoGaugePosMode);
-    prvI(ui->spinMetroidHudAmmoGaugePosX);   prvI(ui->spinMetroidHudAmmoGaugePosY);
+    prvSl(ui->spinMetroidHudAmmoGaugePosX);   prvSl(ui->spinMetroidHudAmmoGaugePosY);
     // (Ammo gauge color button clicks already call applyVisualPreview via setupColorButton)
     // Crosshair
     // (Crosshair color button clicks already call applyVisualPreview via setupColorButton)
@@ -623,16 +627,16 @@ MelonPrimeInputConfig::MelonPrimeInputConfig(EmuInstance* emu, QWidget* parent) 
 
     // HUD Radar
     ui->cbMetroidBtmOverlayEnable->setChecked(instcfg.GetBool("Metroid.Visual.BtmOverlayEnable"));
-    ui->spinMetroidBtmOverlayDstX->setValue(instcfg.GetInt("Metroid.Visual.BtmOverlayDstX"));
-    ui->spinMetroidBtmOverlayDstY->setValue(instcfg.GetInt("Metroid.Visual.BtmOverlayDstY"));
-    ui->spinMetroidBtmOverlayDstSize->setValue(instcfg.GetInt("Metroid.Visual.BtmOverlayDstSize"));
+    initSlider(ui->spinMetroidBtmOverlayDstX,    ui->labelMetroidBtmOverlayDstX,    instcfg.GetInt("Metroid.Visual.BtmOverlayDstX"));
+    initSlider(ui->spinMetroidBtmOverlayDstY,    ui->labelMetroidBtmOverlayDstY,    instcfg.GetInt("Metroid.Visual.BtmOverlayDstY"));
+    initSlider(ui->spinMetroidBtmOverlayDstSize, ui->labelMetroidBtmOverlayDstSize, instcfg.GetInt("Metroid.Visual.BtmOverlayDstSize"));
     ui->spinMetroidBtmOverlayOpacity->setValue(instcfg.GetDouble("Metroid.Visual.BtmOverlayOpacity"));
 
     // Connect radar preview updates
     connect(ui->cbMetroidBtmOverlayEnable, &QCheckBox::checkStateChanged, this, [this](Qt::CheckState) { updateRadarPreview(); });
-    connect(ui->spinMetroidBtmOverlayDstX, QOverload<int>::of(&QSpinBox::valueChanged), this, [this](int) { updateRadarPreview(); });
-    connect(ui->spinMetroidBtmOverlayDstY, QOverload<int>::of(&QSpinBox::valueChanged), this, [this](int) { updateRadarPreview(); });
-    connect(ui->spinMetroidBtmOverlayDstSize, QOverload<int>::of(&QSpinBox::valueChanged), this, [this](int) { updateRadarPreview(); });
+    connect(ui->spinMetroidBtmOverlayDstX,    &QSlider::valueChanged, this, [this](int) { updateRadarPreview(); });
+    connect(ui->spinMetroidBtmOverlayDstY,    &QSlider::valueChanged, this, [this](int) { updateRadarPreview(); });
+    connect(ui->spinMetroidBtmOverlayDstSize, &QSlider::valueChanged, this, [this](int) { updateRadarPreview(); });
     connect(ui->spinMetroidBtmOverlayOpacity, QOverload<double>::of(&QDoubleSpinBox::valueChanged), this, [this](double) { updateRadarPreview(); });
 
     updateRadarPreview();
@@ -775,11 +779,12 @@ void MelonPrimeInputConfig::snapshotVisualConfig()
 
     Config::Table& instcfg = emuInstance->getLocalConfig();
 
-    auto sI = [&](const char* k, QSpinBox* w)       { s[k] = w->value(); };
-    auto sD = [&](const char* k, QDoubleSpinBox* w)  { s[k] = w->value(); };
-    auto sB = [&](const char* k, QCheckBox* w)       { s[k] = w->isChecked(); };
-    auto sC = [&](const char* k, QComboBox* w)       { s[k] = w->currentIndex(); };
-    auto sE = [&](const char* k, QLineEdit* w)       { s[k] = w->text(); };
+    auto sI  = [&](const char* k, QSpinBox* w)        { s[k] = w->value(); };
+    auto sSl = [&](const char* k, QSlider* w)         { s[k] = w->value(); };
+    auto sD  = [&](const char* k, QDoubleSpinBox* w)  { s[k] = w->value(); };
+    auto sB  = [&](const char* k, QCheckBox* w)       { s[k] = w->isChecked(); };
+    auto sC  = [&](const char* k, QComboBox* w)       { s[k] = w->currentIndex(); };
+    auto sE  = [&](const char* k, QLineEdit* w)       { s[k] = w->text(); };
     // Snapshot a color from config (since colors are now stored directly in config via button pickers)
     auto sCfgI = [&](const char* snapKey, const char* cfgKey) { s[snapKey] = instcfg.GetInt(cfgKey); };
 
@@ -788,10 +793,10 @@ void MelonPrimeInputConfig::snapshotVisualConfig()
     sC("cAspectRatioMode", ui->comboMetroidInGameAspectRatioMode);
     // Match Status
     sB("cMatchShow",  ui->cbMetroidHudMatchStatusShow);
-    sI("sMatchX",     ui->spinMetroidHudMatchStatusX);
-    sI("sMatchY",     ui->spinMetroidHudMatchStatusY);
-    sI("sMatchLOfsX", ui->spinMetroidHudMatchStatusLabelOfsX);
-    sI("sMatchLOfsY", ui->spinMetroidHudMatchStatusLabelOfsY);
+    sSl("sMatchX",     ui->spinMetroidHudMatchStatusX);
+    sSl("sMatchY",     ui->spinMetroidHudMatchStatusY);
+    sSl("sMatchLOfsX", ui->spinMetroidHudMatchStatusLabelOfsX);
+    sSl("sMatchLOfsY", ui->spinMetroidHudMatchStatusLabelOfsY);
     sC("cMatchLPos",  ui->comboMetroidHudMatchStatusLabelPos);
     sE("eMatchLP",    ui->leMetroidHudMatchStatusLabelPoints);
     sE("eMatchLO",    ui->leMetroidHudMatchStatusLabelOctoliths);
@@ -815,15 +820,10 @@ void MelonPrimeInputConfig::snapshotVisualConfig()
     sCfgI("sMatchGolClrG", "Metroid.Visual.HudMatchStatusGoalColorG");
     sCfgI("sMatchGolClrB", "Metroid.Visual.HudMatchStatusGoalColorB");
     // HP/Weapon
-    sI("sHpX",  ui->spinMetroidHudHpX);       sI("sHpY",  ui->spinMetroidHudHpY);
+    sSl("sHpX",  ui->spinMetroidHudHpX);       sSl("sHpY",  ui->spinMetroidHudHpY);
     sE("eHpPfx", ui->leMetroidHudHpPrefix);
     sC("cHpAlign", ui->comboMetroidHudHpAlign);
-    sB("cHpTxtAuto", ui->cbMetroidHudHpTextAutoColor);
-    sC("cHpTxtClr", ui->comboMetroidHudHpTextColor);
-    sI("sHpTxtClrR", ui->spinMetroidHudHpTextColorR);
-    sI("sHpTxtClrG", ui->spinMetroidHudHpTextColorG);
-    sI("sHpTxtClrB", ui->spinMetroidHudHpTextColorB);
-    sI("sWpnX", ui->spinMetroidHudWeaponX);    sI("sWpnY", ui->spinMetroidHudWeaponY);
+    sSl("sWpnX", ui->spinMetroidHudWeaponX);    sSl("sWpnY", ui->spinMetroidHudWeaponY);
     sE("eAmmoPfx", ui->leMetroidHudAmmoPrefix);
     sC("cAmmoAlign", ui->comboMetroidHudAmmoAlign);
     sC("cAmmoTxtClr", ui->comboMetroidHudAmmoTextColor);
@@ -834,10 +834,10 @@ void MelonPrimeInputConfig::snapshotVisualConfig()
     sC("cWpnPos", ui->comboMetroidHudWeaponPosition);
     sB("cWpnIconShow",  ui->cbMetroidHudWeaponIconShow);
     sC("cWpnIconMode",  ui->comboMetroidHudWeaponIconMode);
-    sI("sWpnIconOfsX",  ui->spinMetroidHudWeaponIconOffsetX);
-    sI("sWpnIconOfsY",  ui->spinMetroidHudWeaponIconOffsetY);
-    sI("sWpnIconPosX",   ui->spinMetroidHudWeaponIconPosX);
-    sI("sWpnIconPosY",   ui->spinMetroidHudWeaponIconPosY);
+    sSl("sWpnIconOfsX",  ui->spinMetroidHudWeaponIconOffsetX);
+    sSl("sWpnIconOfsY",  ui->spinMetroidHudWeaponIconOffsetY);
+    sSl("sWpnIconPosX",   ui->spinMetroidHudWeaponIconPosX);
+    sSl("sWpnIconPosY",   ui->spinMetroidHudWeaponIconPosY);
     sC("cWpnIconPos",    ui->comboMetroidHudWeaponIconPosition);
     sC("cWpnIconAnchX",  ui->comboMetroidHudWeaponIconAnchorX);
     sC("cWpnIconAnchY",  ui->comboMetroidHudWeaponIconAnchorY);
@@ -845,14 +845,14 @@ void MelonPrimeInputConfig::snapshotVisualConfig()
     // HP Gauge
     sB("cHpGauge",       ui->cbMetroidHudHpGauge);
     sC("cHpGaugeOrient", ui->comboMetroidHudHpGaugeOrientation);
-    sI("sHpGaugeLen",    ui->spinMetroidHudHpGaugeLength);
-    sI("sHpGaugeW",      ui->spinMetroidHudHpGaugeWidth);
-    sI("sHpGaugeOfsX",   ui->spinMetroidHudHpGaugeOffsetX);
-    sI("sHpGaugeOfsY",   ui->spinMetroidHudHpGaugeOffsetY);
+    sSl("sHpGaugeLen",    ui->spinMetroidHudHpGaugeLength);
+    sSl("sHpGaugeW",      ui->spinMetroidHudHpGaugeWidth);
+    sSl("sHpGaugeOfsX",   ui->spinMetroidHudHpGaugeOffsetX);
+    sSl("sHpGaugeOfsY",   ui->spinMetroidHudHpGaugeOffsetY);
     sC("cHpGaugeAnch",   ui->comboMetroidHudHpGaugeAnchor);
     sC("cHpGaugePosMode",ui->comboMetroidHudHpGaugePosMode);
-    sI("sHpGaugePosX",   ui->spinMetroidHudHpGaugePosX);
-    sI("sHpGaugePosY",   ui->spinMetroidHudHpGaugePosY);
+    sSl("sHpGaugePosX",   ui->spinMetroidHudHpGaugePosX);
+    sSl("sHpGaugePosY",   ui->spinMetroidHudHpGaugePosY);
     sB("cHpGaugeAutoClr",ui->cbMetroidHudHpGaugeAutoColor);
     sCfgI("sHpGaugeClrR", "Metroid.Visual.HudHpGaugeColorR");
     sCfgI("sHpGaugeClrG", "Metroid.Visual.HudHpGaugeColorG");
@@ -860,14 +860,14 @@ void MelonPrimeInputConfig::snapshotVisualConfig()
     // Ammo Gauge
     sB("cAmmoGauge",       ui->cbMetroidHudAmmoGauge);
     sC("cAmmoGaugeOrient", ui->comboMetroidHudAmmoGaugeOrientation);
-    sI("sAmmoGaugeLen",    ui->spinMetroidHudAmmoGaugeLength);
-    sI("sAmmoGaugeW",      ui->spinMetroidHudAmmoGaugeWidth);
-    sI("sAmmoGaugeOfsX",   ui->spinMetroidHudAmmoGaugeOffsetX);
-    sI("sAmmoGaugeOfsY",   ui->spinMetroidHudAmmoGaugeOffsetY);
+    sSl("sAmmoGaugeLen",    ui->spinMetroidHudAmmoGaugeLength);
+    sSl("sAmmoGaugeW",      ui->spinMetroidHudAmmoGaugeWidth);
+    sSl("sAmmoGaugeOfsX",   ui->spinMetroidHudAmmoGaugeOffsetX);
+    sSl("sAmmoGaugeOfsY",   ui->spinMetroidHudAmmoGaugeOffsetY);
     sC("cAmmoGaugeAnch",   ui->comboMetroidHudAmmoGaugeAnchor);
     sC("cAmmoGaugePosMode",ui->comboMetroidHudAmmoGaugePosMode);
-    sI("sAmmoGaugePosX",   ui->spinMetroidHudAmmoGaugePosX);
-    sI("sAmmoGaugePosY",   ui->spinMetroidHudAmmoGaugePosY);
+    sSl("sAmmoGaugePosX",   ui->spinMetroidHudAmmoGaugePosX);
+    sSl("sAmmoGaugePosY",   ui->spinMetroidHudAmmoGaugePosY);
     sCfgI("sAmmoGaugeClrR", "Metroid.Visual.HudAmmoGaugeColorR");
     sCfgI("sAmmoGaugeClrG", "Metroid.Visual.HudAmmoGaugeColorG");
     sCfgI("sAmmoGaugeClrB", "Metroid.Visual.HudAmmoGaugeColorB");
@@ -908,6 +908,12 @@ void MelonPrimeInputConfig::restoreVisualSnapshot()
         auto it = s.find(k); if (it == s.end()) return;
         w->blockSignals(true); w->setValue(it->toInt()); w->blockSignals(false);
     };
+    auto rSl = [&](const char* k, QSlider* w, QLabel* lbl) {
+        auto it = s.find(k); if (it == s.end()) return;
+        int v = it->toInt();
+        w->blockSignals(true); w->setValue(v); w->blockSignals(false);
+        lbl->setText(QString::number(v));
+    };
     auto rD = [&](const char* k, QDoubleSpinBox* w) {
         auto it = s.find(k); if (it == s.end()) return;
         w->blockSignals(true); w->setValue(it->toDouble()); w->blockSignals(false);
@@ -930,10 +936,10 @@ void MelonPrimeInputConfig::restoreVisualSnapshot()
     rC("cAspectRatioMode", ui->comboMetroidInGameAspectRatioMode);
     // Match Status
     rB("cMatchShow",  ui->cbMetroidHudMatchStatusShow);
-    rI("sMatchX",     ui->spinMetroidHudMatchStatusX);
-    rI("sMatchY",     ui->spinMetroidHudMatchStatusY);
-    rI("sMatchLOfsX", ui->spinMetroidHudMatchStatusLabelOfsX);
-    rI("sMatchLOfsY", ui->spinMetroidHudMatchStatusLabelOfsY);
+    rSl("sMatchX",     ui->spinMetroidHudMatchStatusX,    ui->labelMetroidHudMatchStatusX);
+    rSl("sMatchY",     ui->spinMetroidHudMatchStatusY,    ui->labelMetroidHudMatchStatusY);
+    rSl("sMatchLOfsX", ui->spinMetroidHudMatchStatusLabelOfsX, ui->labelMetroidHudMatchStatusLabelOfsX);
+    rSl("sMatchLOfsY", ui->spinMetroidHudMatchStatusLabelOfsY, ui->labelMetroidHudMatchStatusLabelOfsY);
     rC("cMatchLPos",  ui->comboMetroidHudMatchStatusLabelPos);
     rE("eMatchLP",    ui->leMetroidHudMatchStatusLabelPoints);
     rE("eMatchLO",    ui->leMetroidHudMatchStatusLabelOctoliths);
@@ -941,15 +947,12 @@ void MelonPrimeInputConfig::restoreVisualSnapshot()
     rE("eMatchLR",    ui->leMetroidHudMatchStatusLabelRingTime);
     rE("eMatchLPT",   ui->leMetroidHudMatchStatusLabelPrimeTime);
     // HP/Weapon
-    rI("sHpX",  ui->spinMetroidHudHpX);        rI("sHpY",  ui->spinMetroidHudHpY);
+    rSl("sHpX",  ui->spinMetroidHudHpX,  ui->labelMetroidHudHpX);
+    rSl("sHpY",  ui->spinMetroidHudHpY,  ui->labelMetroidHudHpY);
     rE("eHpPfx", ui->leMetroidHudHpPrefix);
     rC("cHpAlign", ui->comboMetroidHudHpAlign);
-    rB("cHpTxtAuto", ui->cbMetroidHudHpTextAutoColor);
-    rC("cHpTxtClr", ui->comboMetroidHudHpTextColor);
-    rI("sHpTxtClrR", ui->spinMetroidHudHpTextColorR);
-    rI("sHpTxtClrG", ui->spinMetroidHudHpTextColorG);
-    rI("sHpTxtClrB", ui->spinMetroidHudHpTextColorB);
-    rI("sWpnX", ui->spinMetroidHudWeaponX);     rI("sWpnY", ui->spinMetroidHudWeaponY);
+    rSl("sWpnX", ui->spinMetroidHudWeaponX, ui->labelMetroidHudWeaponX);
+    rSl("sWpnY", ui->spinMetroidHudWeaponY, ui->labelMetroidHudWeaponY);
     rE("eAmmoPfx", ui->leMetroidHudAmmoPrefix);
     rC("cAmmoAlign", ui->comboMetroidHudAmmoAlign);
     rC("cAmmoTxtClr", ui->comboMetroidHudAmmoTextColor);
@@ -960,10 +963,10 @@ void MelonPrimeInputConfig::restoreVisualSnapshot()
     rC("cWpnPos", ui->comboMetroidHudWeaponPosition);
     rB("cWpnIconShow",  ui->cbMetroidHudWeaponIconShow);
     rC("cWpnIconMode",  ui->comboMetroidHudWeaponIconMode);
-    rI("sWpnIconOfsX",  ui->spinMetroidHudWeaponIconOffsetX);
-    rI("sWpnIconOfsY",  ui->spinMetroidHudWeaponIconOffsetY);
-    rI("sWpnIconPosX",   ui->spinMetroidHudWeaponIconPosX);
-    rI("sWpnIconPosY",   ui->spinMetroidHudWeaponIconPosY);
+    rSl("sWpnIconOfsX",  ui->spinMetroidHudWeaponIconOffsetX, ui->labelMetroidHudWeaponIconOffsetX);
+    rSl("sWpnIconOfsY",  ui->spinMetroidHudWeaponIconOffsetY, ui->labelMetroidHudWeaponIconOffsetY);
+    rSl("sWpnIconPosX",  ui->spinMetroidHudWeaponIconPosX,    ui->labelMetroidHudWeaponIconPosX);
+    rSl("sWpnIconPosY",  ui->spinMetroidHudWeaponIconPosY,    ui->labelMetroidHudWeaponIconPosY);
     rC("cWpnIconPos",    ui->comboMetroidHudWeaponIconPosition);
     rC("cWpnIconAnchX",  ui->comboMetroidHudWeaponIconAnchorX);
     rC("cWpnIconAnchY",  ui->comboMetroidHudWeaponIconAnchorY);
@@ -971,26 +974,26 @@ void MelonPrimeInputConfig::restoreVisualSnapshot()
     // HP Gauge
     rB("cHpGauge",       ui->cbMetroidHudHpGauge);
     rC("cHpGaugeOrient", ui->comboMetroidHudHpGaugeOrientation);
-    rI("sHpGaugeLen",    ui->spinMetroidHudHpGaugeLength);
-    rI("sHpGaugeW",      ui->spinMetroidHudHpGaugeWidth);
-    rI("sHpGaugeOfsX",   ui->spinMetroidHudHpGaugeOffsetX);
-    rI("sHpGaugeOfsY",   ui->spinMetroidHudHpGaugeOffsetY);
+    rSl("sHpGaugeLen",   ui->spinMetroidHudHpGaugeLength,  ui->labelMetroidHudHpGaugeLength);
+    rSl("sHpGaugeW",     ui->spinMetroidHudHpGaugeWidth,   ui->labelMetroidHudHpGaugeWidth);
+    rSl("sHpGaugeOfsX",  ui->spinMetroidHudHpGaugeOffsetX, ui->labelMetroidHudHpGaugeOffsetX);
+    rSl("sHpGaugeOfsY",  ui->spinMetroidHudHpGaugeOffsetY, ui->labelMetroidHudHpGaugeOffsetY);
     rC("cHpGaugeAnch",   ui->comboMetroidHudHpGaugeAnchor);
     rC("cHpGaugePosMode",ui->comboMetroidHudHpGaugePosMode);
-    rI("sHpGaugePosX",   ui->spinMetroidHudHpGaugePosX);
-    rI("sHpGaugePosY",   ui->spinMetroidHudHpGaugePosY);
+    rSl("sHpGaugePosX",  ui->spinMetroidHudHpGaugePosX,    ui->labelMetroidHudHpGaugePosX);
+    rSl("sHpGaugePosY",  ui->spinMetroidHudHpGaugePosY,    ui->labelMetroidHudHpGaugePosY);
     rB("cHpGaugeAutoClr",ui->cbMetroidHudHpGaugeAutoColor);
     // Ammo Gauge
     rB("cAmmoGauge",       ui->cbMetroidHudAmmoGauge);
     rC("cAmmoGaugeOrient", ui->comboMetroidHudAmmoGaugeOrientation);
-    rI("sAmmoGaugeLen",    ui->spinMetroidHudAmmoGaugeLength);
-    rI("sAmmoGaugeW",      ui->spinMetroidHudAmmoGaugeWidth);
-    rI("sAmmoGaugeOfsX",   ui->spinMetroidHudAmmoGaugeOffsetX);
-    rI("sAmmoGaugeOfsY",   ui->spinMetroidHudAmmoGaugeOffsetY);
+    rSl("sAmmoGaugeLen",   ui->spinMetroidHudAmmoGaugeLength,  ui->labelMetroidHudAmmoGaugeLength);
+    rSl("sAmmoGaugeW",     ui->spinMetroidHudAmmoGaugeWidth,   ui->labelMetroidHudAmmoGaugeWidth);
+    rSl("sAmmoGaugeOfsX",  ui->spinMetroidHudAmmoGaugeOffsetX, ui->labelMetroidHudAmmoGaugeOffsetX);
+    rSl("sAmmoGaugeOfsY",  ui->spinMetroidHudAmmoGaugeOffsetY, ui->labelMetroidHudAmmoGaugeOffsetY);
     rC("cAmmoGaugeAnch",   ui->comboMetroidHudAmmoGaugeAnchor);
     rC("cAmmoGaugePosMode",ui->comboMetroidHudAmmoGaugePosMode);
-    rI("sAmmoGaugePosX",   ui->spinMetroidHudAmmoGaugePosX);
-    rI("sAmmoGaugePosY",   ui->spinMetroidHudAmmoGaugePosY);
+    rSl("sAmmoGaugePosX",  ui->spinMetroidHudAmmoGaugePosX,    ui->labelMetroidHudAmmoGaugePosX);
+    rSl("sAmmoGaugePosY",  ui->spinMetroidHudAmmoGaugePosY,    ui->labelMetroidHudAmmoGaugePosY);
     // Crosshair
     rB("cChOutline",  ui->cbMetroidCrosshairOutline);
     rD("dChOlOp",     ui->spinMetroidCrosshairOutlineOpacity);
@@ -1494,11 +1497,15 @@ void MelonPrimeInputConfig::resetCrosshairDefaults()
 
 void MelonPrimeInputConfig::resetHpAmmoDefaults()
 {
+    auto setSlider = [](QSlider* sl, QLabel* lbl, int v) {
+        sl->setValue(v);
+        lbl->setText(QString::number(v));
+    };
 
     // HP Position
     ui->comboMetroidHudHpPosition->setCurrentIndex(8); // Custom
-    ui->spinMetroidHudHpX->setValue(45);
-    ui->spinMetroidHudHpY->setValue(99);
+    setSlider(ui->spinMetroidHudHpX, ui->labelMetroidHudHpX, 45);
+    setSlider(ui->spinMetroidHudHpY, ui->labelMetroidHudHpY, 99);
     ui->leMetroidHudHpPrefix->setText("");
     ui->comboMetroidHudHpAlign->setCurrentIndex(2); // Right
     ui->cbMetroidHudHpTextAutoColor->setChecked(true);
@@ -1510,8 +1517,8 @@ void MelonPrimeInputConfig::resetHpAmmoDefaults()
 
     // Weapon Position
     ui->comboMetroidHudWeaponPosition->setCurrentIndex(8); // Custom
-    ui->spinMetroidHudWeaponX->setValue(230);
-    ui->spinMetroidHudWeaponY->setValue(99);
+    setSlider(ui->spinMetroidHudWeaponX, ui->labelMetroidHudWeaponX, 230);
+    setSlider(ui->spinMetroidHudWeaponY, ui->labelMetroidHudWeaponY, 99);
     ui->leMetroidHudAmmoPrefix->setText("");
     ui->comboMetroidHudAmmoAlign->setCurrentIndex(2); // Right
     ui->comboMetroidHudAmmoTextColor->setCurrentIndex(0);
@@ -1523,11 +1530,11 @@ void MelonPrimeInputConfig::resetHpAmmoDefaults()
     // Weapon Icon
     ui->cbMetroidHudWeaponIconShow->setChecked(true);
     ui->comboMetroidHudWeaponIconMode->setCurrentIndex(1); // Independent
-    ui->spinMetroidHudWeaponIconOffsetX->setValue(0);
-    ui->spinMetroidHudWeaponIconOffsetY->setValue(10);
+    setSlider(ui->spinMetroidHudWeaponIconOffsetX, ui->labelMetroidHudWeaponIconOffsetX, 0);
+    setSlider(ui->spinMetroidHudWeaponIconOffsetY, ui->labelMetroidHudWeaponIconOffsetY, 10);
     ui->comboMetroidHudWeaponIconPosition->setCurrentIndex(8); // Custom
-    ui->spinMetroidHudWeaponIconPosX->setValue(239);
-    ui->spinMetroidHudWeaponIconPosY->setValue(149);
+    setSlider(ui->spinMetroidHudWeaponIconPosX, ui->labelMetroidHudWeaponIconPosX, 239);
+    setSlider(ui->spinMetroidHudWeaponIconPosY, ui->labelMetroidHudWeaponIconPosY, 149);
     ui->comboMetroidHudWeaponIconAnchorX->setCurrentIndex(1);
     ui->comboMetroidHudWeaponIconAnchorY->setCurrentIndex(1);
     ui->cbMetroidHudWeaponIconColorOverlay->setChecked(true);
@@ -1535,14 +1542,14 @@ void MelonPrimeInputConfig::resetHpAmmoDefaults()
     // HP Gauge
     ui->cbMetroidHudHpGauge->setChecked(true);
     ui->comboMetroidHudHpGaugeOrientation->setCurrentIndex(1); // Vertical
-    ui->spinMetroidHudHpGaugeLength->setValue(80);
-    ui->spinMetroidHudHpGaugeWidth->setValue(3);
-    ui->spinMetroidHudHpGaugeOffsetX->setValue(-14);
-    ui->spinMetroidHudHpGaugeOffsetY->setValue(1);
+    setSlider(ui->spinMetroidHudHpGaugeLength,  ui->labelMetroidHudHpGaugeLength,  80);
+    setSlider(ui->spinMetroidHudHpGaugeWidth,   ui->labelMetroidHudHpGaugeWidth,   3);
+    setSlider(ui->spinMetroidHudHpGaugeOffsetX, ui->labelMetroidHudHpGaugeOffsetX, -14);
+    setSlider(ui->spinMetroidHudHpGaugeOffsetY, ui->labelMetroidHudHpGaugeOffsetY, 1);
     ui->comboMetroidHudHpGaugeAnchor->setCurrentIndex(3);
     ui->comboMetroidHudHpGaugePosMode->setCurrentIndex(1);
-    ui->spinMetroidHudHpGaugePosX->setValue(14);
-    ui->spinMetroidHudHpGaugePosY->setValue(56);
+    setSlider(ui->spinMetroidHudHpGaugePosX, ui->labelMetroidHudHpGaugePosX, 14);
+    setSlider(ui->spinMetroidHudHpGaugePosY, ui->labelMetroidHudHpGaugePosY, 56);
     ui->cbMetroidHudHpGaugeAutoColor->setChecked(true);
     {
         Config::Table& instcfg = emuInstance->getLocalConfig();
@@ -1555,14 +1562,14 @@ void MelonPrimeInputConfig::resetHpAmmoDefaults()
     // Ammo Gauge
     ui->cbMetroidHudAmmoGauge->setChecked(true);
     ui->comboMetroidHudAmmoGaugeOrientation->setCurrentIndex(1); // Vertical
-    ui->spinMetroidHudAmmoGaugeLength->setValue(80);
-    ui->spinMetroidHudAmmoGaugeWidth->setValue(3);
-    ui->spinMetroidHudAmmoGaugeOffsetX->setValue(9);
-    ui->spinMetroidHudAmmoGaugeOffsetY->setValue(2);
+    setSlider(ui->spinMetroidHudAmmoGaugeLength,  ui->labelMetroidHudAmmoGaugeLength,  80);
+    setSlider(ui->spinMetroidHudAmmoGaugeWidth,   ui->labelMetroidHudAmmoGaugeWidth,   3);
+    setSlider(ui->spinMetroidHudAmmoGaugeOffsetX, ui->labelMetroidHudAmmoGaugeOffsetX, 9);
+    setSlider(ui->spinMetroidHudAmmoGaugeOffsetY, ui->labelMetroidHudAmmoGaugeOffsetY, 2);
     ui->comboMetroidHudAmmoGaugeAnchor->setCurrentIndex(2);
     ui->comboMetroidHudAmmoGaugePosMode->setCurrentIndex(0);
-    ui->spinMetroidHudAmmoGaugePosX->setValue(239);
-    ui->spinMetroidHudAmmoGaugePosY->setValue(56);
+    setSlider(ui->spinMetroidHudAmmoGaugePosX, ui->labelMetroidHudAmmoGaugePosX, 239);
+    setSlider(ui->spinMetroidHudAmmoGaugePosY, ui->labelMetroidHudAmmoGaugePosY, 56);
     {
         Config::Table& instcfg = emuInstance->getLocalConfig();
         instcfg.SetInt("Metroid.Visual.HudAmmoGaugeColorR", 56);
@@ -1575,12 +1582,17 @@ void MelonPrimeInputConfig::resetHpAmmoDefaults()
 void MelonPrimeInputConfig::resetMatchStatusDefaults()
 {
 
+    auto setSlider = [](QSlider* sl, QLabel* lbl, int v) {
+        sl->setValue(v);
+        lbl->setText(QString::number(v));
+    };
+
     ui->cbMetroidHudMatchStatusShow->setChecked(true);
-    ui->spinMetroidHudMatchStatusX->setValue(20);
-    ui->spinMetroidHudMatchStatusY->setValue(19);
+    setSlider(ui->spinMetroidHudMatchStatusX, ui->labelMetroidHudMatchStatusX, 20);
+    setSlider(ui->spinMetroidHudMatchStatusY, ui->labelMetroidHudMatchStatusY, 19);
     ui->comboMetroidHudMatchStatusLabelPos->setCurrentIndex(0); // Above
-    ui->spinMetroidHudMatchStatusLabelOfsX->setValue(0);
-    ui->spinMetroidHudMatchStatusLabelOfsY->setValue(1);
+    setSlider(ui->spinMetroidHudMatchStatusLabelOfsX, ui->labelMetroidHudMatchStatusLabelOfsX, 0);
+    setSlider(ui->spinMetroidHudMatchStatusLabelOfsY, ui->labelMetroidHudMatchStatusLabelOfsY, 1);
     ui->leMetroidHudMatchStatusLabelPoints->setText("points");
     ui->leMetroidHudMatchStatusLabelOctoliths->setText("octoliths");
     ui->leMetroidHudMatchStatusLabelLives->setText("lives left");
@@ -1777,6 +1789,23 @@ void MelonPrimeInputConfig::updateHpAmmoPreview()
             p.drawRect(QRectF(gx, gy, gLen * scale, gWid * scale));
         else // Vertical
             p.drawRect(QRectF(gx, gy, gWid * scale, gLen * scale));
+    }
+
+    // Weapon icon
+    if (instcfg.GetBool("Metroid.Visual.HudWeaponIconShow")) {
+        static QPixmap s_missileIcon;
+        if (s_missileIcon.isNull())
+            s_missileIcon.load(":/mph-icon-missile");
+        if (!s_missileIcon.isNull()) {
+            int iconPosX = instcfg.GetInt("Metroid.Visual.HudWeaponIconPosX");
+            int iconPosY = instcfg.GetInt("Metroid.Visual.HudWeaponIconPosY");
+            float iconSx = offX + iconPosX * scale;
+            float iconSy = offY + iconPosY * scale;
+            int iconW = static_cast<int>(s_missileIcon.width() * scale);
+            int iconH = static_cast<int>(s_missileIcon.height() * scale);
+            p.drawPixmap(QRectF(iconSx - iconW / 2.0f, iconSy - iconH / 2.0f, iconW, iconH),
+                         s_missileIcon, s_missileIcon.rect());
+        }
     }
 
     // Ammo text

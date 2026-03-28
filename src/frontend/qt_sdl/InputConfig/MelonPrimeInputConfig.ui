@@ -45,7 +45,7 @@
 					</widget>
 
 					<widget class="QWidget" name="tabMetroid">
-						<attribute name="title"><string>Settings</string></attribute>
+						<attribute name="title"><string>Metroid Settings</string></attribute>
 						<layout class="QVBoxLayout" name="metroidOuterVLayout">
 							<property name="leftMargin"><number>0</number></property>
 							<property name="topMargin"><number>0</number></property>
@@ -629,6 +629,15 @@
 								<widget class="QCheckBox" name="cbMetroidEnableCustomHud"><property name="text"><string>Enable Custom HUD (Replaces the in-game HUD with a custom overlay showing HP, ammo, weapon icons and crosshair)</string></property></widget>
 							</item>
 
+							<!-- HUD Font Size (global, not under any section) -->
+							<item>
+								<layout class="QHBoxLayout" name="hudFontSizeLayout">
+									<item><widget class="QLabel"><property name="text"><string>HUD Font Size</string></property></widget></item>
+									<item><widget class="QSpinBox" name="spinMetroidHudFontSize"><property name="minimum"><number>1</number></property><property name="maximum"><number>32</number></property><property name="value"><number>8</number></property><property name="toolTip"><string>Font size in pixels for HP and Ammo text (default: 8)</string></property></widget></item>
+									<item><spacer><property name="orientation"><enum>Qt::Horizontal</enum></property><property name="sizeHint" stdset="0"><size><width>40</width><height>20</height></size></property></spacer></item>
+								</layout>
+							</item>
+
 							<!-- CROSSHAIR toggle -->
 							<item><widget class="QPushButton" name="btnToggleCrosshair">
 								<property name="text"><string>▶ CROSSHAIR</string></property>
@@ -639,6 +648,10 @@
 							</widget></item>
 							<item>
 								<widget class="QWidget" name="sectionCrosshair">
+								<layout class="QVBoxLayout" name="vboxCrosshair">
+
+								<!-- General crosshair settings -->
+								<item>
 								<layout class="QFormLayout" name="formChGeneral">
 									<item row="0" column="0"><widget class="QLabel"><property name="text"><string>Crosshair Color</string></property></widget></item>
 									<item row="0" column="1"><widget class="QPushButton" name="btnMetroidCrosshairColor"><property name="text"><string></string></property><property name="minimumSize"><size><width>60</width><height>24</height></size></property><property name="maximumSize"><size><width>60</width><height>24</height></size></property></widget></item>
@@ -658,80 +671,83 @@
 									<item row="7" column="1"><widget class="QCheckBox" name="cbMetroidCrosshairTStyle"><property name="text"><string>(no top line)</string></property><property name="checked"><bool>true</bool></property></widget></item>
 
 								</layout>
-								</widget>
-							</item>
+								</item>
 
-							<!-- INNER LINES toggle -->
-							<item><widget class="QPushButton" name="btnToggleInner">
-								<property name="text"><string>▶ INNER LINES</string></property>
-								<property name="checkable"><bool>true</bool></property>
-								<property name="checked"><bool>false</bool></property>
-								<property name="flat"><bool>true</bool></property>
-								<property name="styleSheet"><string>QPushButton { text-align: left; font-weight: bold; padding: 4px; } QPushButton::checked { font-weight: bold; }</string></property>
-							</widget></item>
-							<item>
-								<widget class="QWidget" name="sectionInner">
-								<layout class="QFormLayout" name="formChInner">
-									<item row="0" column="0"><widget class="QLabel"><property name="text"><string>Show Inner Lines</string></property></widget></item>
-									<item row="0" column="1"><widget class="QCheckBox" name="cbMetroidCrosshairInnerShow"><property name="text"><string></string></property><property name="checked"><bool>true</bool></property></widget></item>
-									<item row="1" column="0"><widget class="QLabel"><property name="text"><string>Inner Line Opacity</string></property></widget></item>
-									<item row="1" column="1"><widget class="QDoubleSpinBox" name="spinMetroidCrosshairInnerOpacity"><property name="minimum"><double>0.0</double></property><property name="maximum"><double>1.0</double></property><property name="singleStep"><double>0.05</double></property><property name="value"><double>0.8</double></property><property name="decimals"><number>2</number></property></widget></item>
-									<item row="2" column="0"><widget class="QLabel"><property name="text"><string>Inner Line Length X</string></property></widget></item>
-									<item row="2" column="1"><widget class="QSpinBox" name="spinMetroidCrosshairInnerLengthX"><property name="minimum"><number>0</number></property><property name="maximum"><number>20</number></property><property name="value"><number>2</number></property></widget></item>
-									<item row="3" column="0"><widget class="QLabel"><property name="text"><string>Inner Line Length Y</string></property></widget></item>
-									<item row="3" column="1"><widget class="QSpinBox" name="spinMetroidCrosshairInnerLengthY"><property name="minimum"><number>0</number></property><property name="maximum"><number>20</number></property><property name="value"><number>2</number></property></widget></item>
-									<item row="4" column="0"><widget class="QLabel"><property name="text"><string>Link X/Y</string></property></widget></item>
-									<item row="4" column="1"><widget class="QCheckBox" name="cbMetroidCrosshairInnerLinkXY"><property name="text"><string></string></property><property name="checked"><bool>true</bool></property></widget></item>
-									<item row="5" column="0"><widget class="QLabel"><property name="text"><string>Inner Line Thickness</string></property></widget></item>
-									<item row="5" column="1"><widget class="QSpinBox" name="spinMetroidCrosshairInnerThickness"><property name="minimum"><number>1</number></property><property name="maximum"><number>10</number></property><property name="value"><number>1</number></property></widget></item>
-									<item row="6" column="0"><widget class="QLabel"><property name="text"><string>Inner Line Offset</string></property></widget></item>
-									<item row="6" column="1"><widget class="QSpinBox" name="spinMetroidCrosshairInnerOffset"><property name="minimum"><number>0</number></property><property name="maximum"><number>20</number></property><property name="value"><number>2</number></property></widget></item>
+								<!-- INNER LINES toggle (inside sectionCrosshair) -->
+								<item><widget class="QPushButton" name="btnToggleInner">
+									<property name="text"><string>▶ INNER LINES</string></property>
+									<property name="checkable"><bool>true</bool></property>
+									<property name="checked"><bool>false</bool></property>
+									<property name="flat"><bool>true</bool></property>
+									<property name="styleSheet"><string>QPushButton { text-align: left; font-weight: bold; padding: 4px; } QPushButton::checked { font-weight: bold; }</string></property>
+								</widget></item>
+								<item>
+									<widget class="QWidget" name="sectionInner">
+									<layout class="QFormLayout" name="formChInner">
+										<item row="0" column="0"><widget class="QLabel"><property name="text"><string>Show Inner Lines</string></property></widget></item>
+										<item row="0" column="1"><widget class="QCheckBox" name="cbMetroidCrosshairInnerShow"><property name="text"><string></string></property><property name="checked"><bool>true</bool></property></widget></item>
+										<item row="1" column="0"><widget class="QLabel"><property name="text"><string>Inner Line Opacity</string></property></widget></item>
+										<item row="1" column="1"><widget class="QDoubleSpinBox" name="spinMetroidCrosshairInnerOpacity"><property name="minimum"><double>0.0</double></property><property name="maximum"><double>1.0</double></property><property name="singleStep"><double>0.05</double></property><property name="value"><double>0.8</double></property><property name="decimals"><number>2</number></property></widget></item>
+										<item row="2" column="0"><widget class="QLabel"><property name="text"><string>Inner Line Length X</string></property></widget></item>
+										<item row="2" column="1"><widget class="QSpinBox" name="spinMetroidCrosshairInnerLengthX"><property name="minimum"><number>0</number></property><property name="maximum"><number>20</number></property><property name="value"><number>2</number></property></widget></item>
+										<item row="3" column="0"><widget class="QLabel"><property name="text"><string>Inner Line Length Y</string></property></widget></item>
+										<item row="3" column="1"><widget class="QSpinBox" name="spinMetroidCrosshairInnerLengthY"><property name="minimum"><number>0</number></property><property name="maximum"><number>20</number></property><property name="value"><number>2</number></property></widget></item>
+										<item row="4" column="0"><widget class="QLabel"><property name="text"><string>Link X/Y</string></property></widget></item>
+										<item row="4" column="1"><widget class="QCheckBox" name="cbMetroidCrosshairInnerLinkXY"><property name="text"><string></string></property><property name="checked"><bool>true</bool></property></widget></item>
+										<item row="5" column="0"><widget class="QLabel"><property name="text"><string>Inner Line Thickness</string></property></widget></item>
+										<item row="5" column="1"><widget class="QSpinBox" name="spinMetroidCrosshairInnerThickness"><property name="minimum"><number>1</number></property><property name="maximum"><number>10</number></property><property name="value"><number>1</number></property></widget></item>
+										<item row="6" column="0"><widget class="QLabel"><property name="text"><string>Inner Line Offset</string></property></widget></item>
+										<item row="6" column="1"><widget class="QSpinBox" name="spinMetroidCrosshairInnerOffset"><property name="minimum"><number>0</number></property><property name="maximum"><number>20</number></property><property name="value"><number>2</number></property></widget></item>
+									</layout>
+									</widget>
+								</item>
+
+								<!-- OUTER LINES toggle (inside sectionCrosshair) -->
+								<item><widget class="QPushButton" name="btnToggleOuter">
+									<property name="text"><string>▶ OUTER LINES</string></property>
+									<property name="checkable"><bool>true</bool></property>
+									<property name="checked"><bool>false</bool></property>
+									<property name="flat"><bool>true</bool></property>
+									<property name="styleSheet"><string>QPushButton { text-align: left; font-weight: bold; padding: 4px; } QPushButton::checked { font-weight: bold; }</string></property>
+								</widget></item>
+								<item>
+									<widget class="QWidget" name="sectionOuter">
+									<layout class="QFormLayout" name="formChOuter">
+										<item row="0" column="0"><widget class="QLabel"><property name="text"><string>Show Outer Lines</string></property></widget></item>
+										<item row="0" column="1"><widget class="QCheckBox" name="cbMetroidCrosshairOuterShow"><property name="text"><string></string></property><property name="checked"><bool>true</bool></property></widget></item>
+										<item row="1" column="0"><widget class="QLabel"><property name="text"><string>Outer Line Opacity</string></property></widget></item>
+										<item row="1" column="1"><widget class="QDoubleSpinBox" name="spinMetroidCrosshairOuterOpacity"><property name="minimum"><double>0.0</double></property><property name="maximum"><double>1.0</double></property><property name="singleStep"><double>0.05</double></property><property name="value"><double>0.4</double></property><property name="decimals"><number>2</number></property></widget></item>
+										<item row="2" column="0"><widget class="QLabel"><property name="text"><string>Outer Line Length X</string></property></widget></item>
+										<item row="2" column="1"><widget class="QSpinBox" name="spinMetroidCrosshairOuterLengthX"><property name="minimum"><number>0</number></property><property name="maximum"><number>10</number></property><property name="value"><number>1</number></property></widget></item>
+										<item row="3" column="0"><widget class="QLabel"><property name="text"><string>Outer Line Length Y</string></property></widget></item>
+										<item row="3" column="1"><widget class="QSpinBox" name="spinMetroidCrosshairOuterLengthY"><property name="minimum"><number>0</number></property><property name="maximum"><number>10</number></property><property name="value"><number>1</number></property></widget></item>
+										<item row="4" column="0"><widget class="QLabel"><property name="text"><string>Link X/Y</string></property></widget></item>
+										<item row="4" column="1"><widget class="QCheckBox" name="cbMetroidCrosshairOuterLinkXY"><property name="text"><string></string></property><property name="checked"><bool>true</bool></property></widget></item>
+										<item row="5" column="0"><widget class="QLabel"><property name="text"><string>Outer Line Thickness</string></property></widget></item>
+										<item row="5" column="1"><widget class="QSpinBox" name="spinMetroidCrosshairOuterThickness"><property name="minimum"><number>1</number></property><property name="maximum"><number>10</number></property><property name="value"><number>1</number></property></widget></item>
+										<item row="6" column="0"><widget class="QLabel"><property name="text"><string>Outer Line Offset</string></property></widget></item>
+										<item row="6" column="1"><widget class="QSpinBox" name="spinMetroidCrosshairOuterOffset"><property name="minimum"><number>0</number></property><property name="maximum"><number>40</number></property><property name="value"><number>4</number></property></widget></item>
+									</layout>
+									</widget>
+								</item>
+
+								<!-- Reset + Preview (inside sectionCrosshair) -->
+								<item>
+									<widget class="QPushButton" name="btnResetCrosshairDefaults">
+										<property name="text"><string>Reset Crosshair to Defaults</string></property>
+									</widget>
+								</item>
+								<item>
+									<widget class="QLabel"><property name="text"><string>Crosshair Preview:</string></property></widget>
+								</item>
+								<item>
+									<widget class="QWidget" name="widgetCrosshairPreview" native="true">
+										<property name="minimumSize"><size><width>200</width><height>200</height></size></property>
+										<property name="maximumSize"><size><width>200</width><height>200</height></size></property>
+									</widget>
+								</item>
+
 								</layout>
-								</widget>
-							</item>
-
-							<!-- OUTER LINES toggle -->
-							<item><widget class="QPushButton" name="btnToggleOuter">
-								<property name="text"><string>▶ OUTER LINES</string></property>
-								<property name="checkable"><bool>true</bool></property>
-								<property name="checked"><bool>false</bool></property>
-								<property name="flat"><bool>true</bool></property>
-								<property name="styleSheet"><string>QPushButton { text-align: left; font-weight: bold; padding: 4px; } QPushButton::checked { font-weight: bold; }</string></property>
-							</widget></item>
-							<item>
-								<widget class="QWidget" name="sectionOuter">
-								<layout class="QFormLayout" name="formChOuter">
-									<item row="0" column="0"><widget class="QLabel"><property name="text"><string>Show Outer Lines</string></property></widget></item>
-									<item row="0" column="1"><widget class="QCheckBox" name="cbMetroidCrosshairOuterShow"><property name="text"><string></string></property><property name="checked"><bool>true</bool></property></widget></item>
-									<item row="1" column="0"><widget class="QLabel"><property name="text"><string>Outer Line Opacity</string></property></widget></item>
-									<item row="1" column="1"><widget class="QDoubleSpinBox" name="spinMetroidCrosshairOuterOpacity"><property name="minimum"><double>0.0</double></property><property name="maximum"><double>1.0</double></property><property name="singleStep"><double>0.05</double></property><property name="value"><double>0.4</double></property><property name="decimals"><number>2</number></property></widget></item>
-									<item row="2" column="0"><widget class="QLabel"><property name="text"><string>Outer Line Length X</string></property></widget></item>
-									<item row="2" column="1"><widget class="QSpinBox" name="spinMetroidCrosshairOuterLengthX"><property name="minimum"><number>0</number></property><property name="maximum"><number>10</number></property><property name="value"><number>1</number></property></widget></item>
-									<item row="3" column="0"><widget class="QLabel"><property name="text"><string>Outer Line Length Y</string></property></widget></item>
-									<item row="3" column="1"><widget class="QSpinBox" name="spinMetroidCrosshairOuterLengthY"><property name="minimum"><number>0</number></property><property name="maximum"><number>10</number></property><property name="value"><number>1</number></property></widget></item>
-									<item row="4" column="0"><widget class="QLabel"><property name="text"><string>Link X/Y</string></property></widget></item>
-									<item row="4" column="1"><widget class="QCheckBox" name="cbMetroidCrosshairOuterLinkXY"><property name="text"><string></string></property><property name="checked"><bool>true</bool></property></widget></item>
-									<item row="5" column="0"><widget class="QLabel"><property name="text"><string>Outer Line Thickness</string></property></widget></item>
-									<item row="5" column="1"><widget class="QSpinBox" name="spinMetroidCrosshairOuterThickness"><property name="minimum"><number>1</number></property><property name="maximum"><number>10</number></property><property name="value"><number>1</number></property></widget></item>
-									<item row="6" column="0"><widget class="QLabel"><property name="text"><string>Outer Line Offset</string></property></widget></item>
-									<item row="6" column="1"><widget class="QSpinBox" name="spinMetroidCrosshairOuterOffset"><property name="minimum"><number>0</number></property><property name="maximum"><number>40</number></property><property name="value"><number>4</number></property></widget></item>
-								</layout>
-								</widget>
-							</item>
-
-							<item>
-								<widget class="QPushButton" name="btnResetCrosshairDefaults">
-									<property name="text"><string>Reset Crosshair to Defaults</string></property>
-								</widget>
-							</item>
-
-							<item>
-								<widget class="QLabel"><property name="text"><string>Crosshair Preview:</string></property></widget>
-							</item>
-							<item>
-								<widget class="QWidget" name="widgetCrosshairPreview" native="true">
-									<property name="minimumSize"><size><width>200</width><height>200</height></size></property>
-									<property name="maximumSize"><size><width>200</width><height>200</height></size></property>
 								</widget>
 							</item>
 
@@ -747,8 +763,7 @@
 								<widget class="QWidget" name="sectionHpAmmo">
 								<layout class="QVBoxLayout" name="hpAmmoVLayout">
 
-
-							<!-- HP NUMBER POSITION toggle -->
+							<!-- HP POSITION toggle -->
 							<item><widget class="QPushButton" name="btnToggleHpPos">
 								<property name="text"><string>▶ HP NUMBER POSITION</string></property>
 								<property name="checkable"><bool>true</bool></property>
@@ -761,10 +776,20 @@
 								<layout class="QFormLayout" name="formHudHpPos">
 									<item row="0" column="0"><widget class="QLabel"><property name="text"><string>HP Number Position</string></property></widget></item>
 									<item row="0" column="1"><widget class="QComboBox" name="comboMetroidHudHpPosition"><item><property name="text"><string>Top Left</string></property></item><item><property name="text"><string>Top Center</string></property></item><item><property name="text"><string>Top Right</string></property></item><item><property name="text"><string>Right</string></property></item><item><property name="text"><string>Bottom Right</string></property></item><item><property name="text"><string>Bottom Center</string></property></item><item><property name="text"><string>Bottom Left</string></property></item><item><property name="text"><string>Left</string></property></item><item><property name="text"><string>Custom</string></property></item></widget></item>
-									<item row="1" column="0"><widget class="QLabel"><property name="text"><string>HP Number Position X</string></property></widget></item>
-									<item row="1" column="1"><widget class="QSpinBox" name="spinMetroidHudHpX"><property name="minimum"><number>0</number></property><property name="maximum"><number>255</number></property><property name="value"><number>120</number></property></widget></item>
-									<item row="2" column="0"><widget class="QLabel"><property name="text"><string>HP Number Position Y</string></property></widget></item>
-									<item row="2" column="1"><widget class="QSpinBox" name="spinMetroidHudHpY"><property name="minimum"><number>0</number></property><property name="maximum"><number>191</number></property><property name="value"><number>8</number></property></widget></item>
+									<item row="1" column="0"><widget class="QLabel"><property name="text"><string>HP Position X</string></property></widget></item>
+									<item row="1" column="1">
+										<layout class="QHBoxLayout">
+											<item><widget class="QSlider" name="spinMetroidHudHpX"><property name="minimum"><number>0</number></property><property name="maximum"><number>255</number></property><property name="value"><number>120</number></property><property name="orientation"><enum>Qt::Horizontal</enum></property></widget></item>
+											<item><widget class="QLabel" name="labelMetroidHudHpX"><property name="text"><string>120</string></property><property name="minimumSize"><size><width>30</width><height>0</height></size></property><property name="alignment"><set>Qt::AlignRight|Qt::AlignVCenter</set></property></widget></item>
+										</layout>
+									</item>
+									<item row="2" column="0"><widget class="QLabel"><property name="text"><string>HP Position Y</string></property></widget></item>
+									<item row="2" column="1">
+										<layout class="QHBoxLayout">
+											<item><widget class="QSlider" name="spinMetroidHudHpY"><property name="minimum"><number>0</number></property><property name="maximum"><number>191</number></property><property name="value"><number>8</number></property><property name="orientation"><enum>Qt::Horizontal</enum></property></widget></item>
+											<item><widget class="QLabel" name="labelMetroidHudHpY"><property name="text"><string>8</string></property><property name="minimumSize"><size><width>30</width><height>0</height></size></property><property name="alignment"><set>Qt::AlignRight|Qt::AlignVCenter</set></property></widget></item>
+										</layout>
+									</item>
 									<item row="3" column="0"><widget class="QLabel"><property name="text"><string>HP Prefix</string></property></widget></item>
 									<item row="3" column="1"><widget class="QLineEdit" name="leMetroidHudHpPrefix"><property name="text"><string></string></property><property name="maxLength"><number>8</number></property><property name="toolTip"><string>Text before HP number (e.g. "hp " → "hp 99"). Leave empty to show number only.</string></property></widget></item>
 									<item row="4" column="0"><widget class="QLabel"><property name="text"><string>HP Align</string></property></widget></item>
@@ -798,10 +823,20 @@
 								<layout class="QFormLayout" name="formHudWpnPos">
 									<item row="0" column="0"><widget class="QLabel"><property name="text"><string>Ammo Number Position</string></property></widget></item>
 									<item row="0" column="1"><widget class="QComboBox" name="comboMetroidHudWeaponPosition"><item><property name="text"><string>Top Left</string></property></item><item><property name="text"><string>Top Center</string></property></item><item><property name="text"><string>Top Right</string></property></item><item><property name="text"><string>Right</string></property></item><item><property name="text"><string>Bottom Right</string></property></item><item><property name="text"><string>Bottom Center</string></property></item><item><property name="text"><string>Bottom Left</string></property></item><item><property name="text"><string>Left</string></property></item><item><property name="text"><string>Custom</string></property></item></widget></item>
-									<item row="1" column="0"><widget class="QLabel"><property name="text"><string>Ammo Number Position X</string></property></widget></item>
-									<item row="1" column="1"><widget class="QSpinBox" name="spinMetroidHudWeaponX"><property name="minimum"><number>0</number></property><property name="maximum"><number>255</number></property><property name="value"><number>226</number></property></widget></item>
-									<item row="2" column="0"><widget class="QLabel"><property name="text"><string>Ammo Number Position Y</string></property></widget></item>
-									<item row="2" column="1"><widget class="QSpinBox" name="spinMetroidHudWeaponY"><property name="minimum"><number>0</number></property><property name="maximum"><number>191</number></property><property name="value"><number>164</number></property></widget></item>
+									<item row="1" column="0"><widget class="QLabel"><property name="text"><string>Ammo Position X</string></property></widget></item>
+									<item row="1" column="1">
+										<layout class="QHBoxLayout">
+											<item><widget class="QSlider" name="spinMetroidHudWeaponX"><property name="minimum"><number>0</number></property><property name="maximum"><number>255</number></property><property name="value"><number>226</number></property><property name="orientation"><enum>Qt::Horizontal</enum></property></widget></item>
+											<item><widget class="QLabel" name="labelMetroidHudWeaponX"><property name="text"><string>226</string></property><property name="minimumSize"><size><width>30</width><height>0</height></size></property><property name="alignment"><set>Qt::AlignRight|Qt::AlignVCenter</set></property></widget></item>
+										</layout>
+									</item>
+									<item row="2" column="0"><widget class="QLabel"><property name="text"><string>Ammo Position Y</string></property></widget></item>
+									<item row="2" column="1">
+										<layout class="QHBoxLayout">
+											<item><widget class="QSlider" name="spinMetroidHudWeaponY"><property name="minimum"><number>0</number></property><property name="maximum"><number>191</number></property><property name="value"><number>164</number></property><property name="orientation"><enum>Qt::Horizontal</enum></property></widget></item>
+											<item><widget class="QLabel" name="labelMetroidHudWeaponY"><property name="text"><string>164</string></property><property name="minimumSize"><size><width>30</width><height>0</height></size></property><property name="alignment"><set>Qt::AlignRight|Qt::AlignVCenter</set></property></widget></item>
+										</layout>
+									</item>
 									<item row="3" column="0"><widget class="QLabel"><property name="text"><string>Ammo Prefix</string></property></widget></item>
 									<item row="3" column="1"><widget class="QLineEdit" name="leMetroidHudAmmoPrefix"><property name="text"><string></string></property><property name="maxLength"><number>8</number></property><property name="toolTip"><string>Text before ammo number (e.g. "x" → "x07"). Leave empty to show number only.</string></property></widget></item>
 									<item row="4" column="0"><widget class="QLabel"><property name="text"><string>Ammo Align</string></property></widget></item>
@@ -836,16 +871,36 @@
 									<item row="1" column="0"><widget class="QLabel"><property name="text"><string>Icon Position Mode</string></property></widget></item>
 									<item row="1" column="1"><widget class="QComboBox" name="comboMetroidHudWeaponIconMode"><item><property name="text"><string>Offset from Ammo</string></property></item><item><property name="text"><string>Independent Position</string></property></item></widget></item>
 									<item row="2" column="0"><widget class="QLabel"><property name="text"><string>Icon Offset X</string></property></widget></item>
-									<item row="2" column="1"><widget class="QSpinBox" name="spinMetroidHudWeaponIconOffsetX"><property name="minimum"><number>-128</number></property><property name="maximum"><number>128</number></property><property name="value"><number>0</number></property></widget></item>
+									<item row="2" column="1">
+										<layout class="QHBoxLayout">
+											<item><widget class="QSlider" name="spinMetroidHudWeaponIconOffsetX"><property name="minimum"><number>-128</number></property><property name="maximum"><number>128</number></property><property name="value"><number>0</number></property><property name="orientation"><enum>Qt::Horizontal</enum></property></widget></item>
+											<item><widget class="QLabel" name="labelMetroidHudWeaponIconOffsetX"><property name="text"><string>0</string></property><property name="minimumSize"><size><width>36</width><height>0</height></size></property><property name="alignment"><set>Qt::AlignRight|Qt::AlignVCenter</set></property></widget></item>
+										</layout>
+									</item>
 									<item row="3" column="0"><widget class="QLabel"><property name="text"><string>Icon Offset Y</string></property></widget></item>
-									<item row="3" column="1"><widget class="QSpinBox" name="spinMetroidHudWeaponIconOffsetY"><property name="minimum"><number>-96</number></property><property name="maximum"><number>96</number></property><property name="value"><number>10</number></property></widget></item>
+									<item row="3" column="1">
+										<layout class="QHBoxLayout">
+											<item><widget class="QSlider" name="spinMetroidHudWeaponIconOffsetY"><property name="minimum"><number>-96</number></property><property name="maximum"><number>96</number></property><property name="value"><number>10</number></property><property name="orientation"><enum>Qt::Horizontal</enum></property></widget></item>
+											<item><widget class="QLabel" name="labelMetroidHudWeaponIconOffsetY"><property name="text"><string>10</string></property><property name="minimumSize"><size><width>36</width><height>0</height></size></property><property name="alignment"><set>Qt::AlignRight|Qt::AlignVCenter</set></property></widget></item>
+										</layout>
+									</item>
 									<item row="4" column="0"><widget class="QLabel"><property name="text"><string>Icon Position</string></property></widget></item>
 									<item row="4" column="1"><widget class="QComboBox" name="comboMetroidHudWeaponIconPosition"><item><property name="text"><string>Top Left</string></property></item><item><property name="text"><string>Top Center</string></property></item><item><property name="text"><string>Top Right</string></property></item><item><property name="text"><string>Right</string></property></item><item><property name="text"><string>Bottom Right</string></property></item><item><property name="text"><string>Bottom Center</string></property></item><item><property name="text"><string>Bottom Left</string></property></item><item><property name="text"><string>Left</string></property></item><item><property name="text"><string>Custom</string></property></item></widget></item>
 									<item row="5" column="0"><widget class="QLabel"><property name="text"><string>Icon Position X</string></property></widget></item>
-									<item row="5" column="1"><widget class="QSpinBox" name="spinMetroidHudWeaponIconPosX"><property name="minimum"><number>0</number></property><property name="maximum"><number>255</number></property><property name="value"><number>226</number></property></widget></item>
+									<item row="5" column="1">
+										<layout class="QHBoxLayout">
+											<item><widget class="QSlider" name="spinMetroidHudWeaponIconPosX"><property name="minimum"><number>0</number></property><property name="maximum"><number>255</number></property><property name="value"><number>226</number></property><property name="orientation"><enum>Qt::Horizontal</enum></property></widget></item>
+											<item><widget class="QLabel" name="labelMetroidHudWeaponIconPosX"><property name="text"><string>226</string></property><property name="minimumSize"><size><width>30</width><height>0</height></size></property><property name="alignment"><set>Qt::AlignRight|Qt::AlignVCenter</set></property></widget></item>
+										</layout>
+									</item>
 									<item row="6" column="0"><widget class="QLabel"><property name="text"><string>Icon Position Y</string></property></widget></item>
-									<item row="6" column="1"><widget class="QSpinBox" name="spinMetroidHudWeaponIconPosY"><property name="minimum"><number>0</number></property><property name="maximum"><number>191</number></property><property name="value"><number>174</number></property></widget></item>
-									<item row="7" column="0"><widget class="QLabel"><property name="text"><string>Icon Align X</string></property></widget></item>
+									<item row="6" column="1">
+										<layout class="QHBoxLayout">
+											<item><widget class="QSlider" name="spinMetroidHudWeaponIconPosY"><property name="minimum"><number>0</number></property><property name="maximum"><number>191</number></property><property name="value"><number>174</number></property><property name="orientation"><enum>Qt::Horizontal</enum></property></widget></item>
+											<item><widget class="QLabel" name="labelMetroidHudWeaponIconPosY"><property name="text"><string>174</string></property><property name="minimumSize"><size><width>30</width><height>0</height></size></property><property name="alignment"><set>Qt::AlignRight|Qt::AlignVCenter</set></property></widget></item>
+										</layout>
+									</item>
+									<item row="7" column="0"><widget class="QLabel"><property name="text"><string>Icon Anchor X</string></property></widget></item>
 									<item row="7" column="1"><widget class="QComboBox" name="comboMetroidHudWeaponIconAnchorX"><item><property name="text"><string>Left</string></property></item><item><property name="text"><string>Center</string></property></item><item><property name="text"><string>Right</string></property></item></widget></item>
 									<item row="8" column="0"><widget class="QLabel"><property name="text"><string>Icon Align Y</string></property></widget></item>
 									<item row="8" column="1"><widget class="QComboBox" name="comboMetroidHudWeaponIconAnchorY"><item><property name="text"><string>Top</string></property></item><item><property name="text"><string>Center</string></property></item><item><property name="text"><string>Bottom</string></property></item></widget></item>
@@ -871,21 +926,51 @@
 									<item row="1" column="0"><widget class="QLabel"><property name="text"><string>HP Gauge Orientation</string></property></widget></item>
 									<item row="1" column="1"><widget class="QComboBox" name="comboMetroidHudHpGaugeOrientation"><item><property name="text"><string>Horizontal</string></property></item><item><property name="text"><string>Vertical</string></property></item></widget></item>
 									<item row="2" column="0"><widget class="QLabel"><property name="text"><string>HP Gauge Length</string></property></widget></item>
-									<item row="2" column="1"><widget class="QSpinBox" name="spinMetroidHudHpGaugeLength"><property name="minimum"><number>1</number></property><property name="maximum"><number>128</number></property><property name="value"><number>28</number></property></widget></item>
+									<item row="2" column="1">
+										<layout class="QHBoxLayout">
+											<item><widget class="QSlider" name="spinMetroidHudHpGaugeLength"><property name="minimum"><number>1</number></property><property name="maximum"><number>128</number></property><property name="value"><number>28</number></property><property name="orientation"><enum>Qt::Horizontal</enum></property></widget></item>
+											<item><widget class="QLabel" name="labelMetroidHudHpGaugeLength"><property name="text"><string>28</string></property><property name="minimumSize"><size><width>30</width><height>0</height></size></property><property name="alignment"><set>Qt::AlignRight|Qt::AlignVCenter</set></property></widget></item>
+										</layout>
+									</item>
 									<item row="3" column="0"><widget class="QLabel"><property name="text"><string>HP Gauge Width</string></property></widget></item>
-									<item row="3" column="1"><widget class="QSpinBox" name="spinMetroidHudHpGaugeWidth"><property name="minimum"><number>1</number></property><property name="maximum"><number>20</number></property><property name="value"><number>3</number></property></widget></item>
-									<item row="4" column="0"><widget class="QLabel"><property name="text"><string>HP Gauge Position Mode</string></property></widget></item>
-									<item row="4" column="1"><widget class="QComboBox" name="comboMetroidHudHpGaugePosMode"><item><property name="text"><string>Anchor from Text</string></property></item><item><property name="text"><string>Independent Position</string></property></item></widget></item>
-									<item row="5" column="0"><widget class="QLabel"><property name="text"><string>HP Gauge Offset X</string></property></widget></item>
-									<item row="5" column="1"><widget class="QSpinBox" name="spinMetroidHudHpGaugeOffsetX"><property name="minimum"><number>-128</number></property><property name="maximum"><number>128</number></property><property name="value"><number>0</number></property></widget></item>
-									<item row="6" column="0"><widget class="QLabel"><property name="text"><string>HP Gauge Offset Y</string></property></widget></item>
-									<item row="6" column="1"><widget class="QSpinBox" name="spinMetroidHudHpGaugeOffsetY"><property name="minimum"><number>-96</number></property><property name="maximum"><number>96</number></property><property name="value"><number>2</number></property></widget></item>
-									<item row="7" column="0"><widget class="QLabel"><property name="text"><string>HP Gauge Anchor</string></property></widget></item>
-									<item row="7" column="1"><widget class="QComboBox" name="comboMetroidHudHpGaugeAnchor"><item><property name="text"><string>Below</string></property></item><item><property name="text"><string>Above</string></property></item><item><property name="text"><string>Right</string></property></item><item><property name="text"><string>Left</string></property></item><item><property name="text"><string>Center</string></property></item></widget></item>
+									<item row="3" column="1">
+										<layout class="QHBoxLayout">
+											<item><widget class="QSlider" name="spinMetroidHudHpGaugeWidth"><property name="minimum"><number>1</number></property><property name="maximum"><number>20</number></property><property name="value"><number>3</number></property><property name="orientation"><enum>Qt::Horizontal</enum></property></widget></item>
+											<item><widget class="QLabel" name="labelMetroidHudHpGaugeWidth"><property name="text"><string>3</string></property><property name="minimumSize"><size><width>30</width><height>0</height></size></property><property name="alignment"><set>Qt::AlignRight|Qt::AlignVCenter</set></property></widget></item>
+										</layout>
+									</item>
+									<item row="4" column="0"><widget class="QLabel"><property name="text"><string>HP Gauge Offset X</string></property></widget></item>
+									<item row="4" column="1">
+										<layout class="QHBoxLayout">
+											<item><widget class="QSlider" name="spinMetroidHudHpGaugeOffsetX"><property name="minimum"><number>-128</number></property><property name="maximum"><number>128</number></property><property name="value"><number>0</number></property><property name="orientation"><enum>Qt::Horizontal</enum></property></widget></item>
+											<item><widget class="QLabel" name="labelMetroidHudHpGaugeOffsetX"><property name="text"><string>0</string></property><property name="minimumSize"><size><width>36</width><height>0</height></size></property><property name="alignment"><set>Qt::AlignRight|Qt::AlignVCenter</set></property></widget></item>
+										</layout>
+									</item>
+									<item row="5" column="0"><widget class="QLabel"><property name="text"><string>HP Gauge Offset Y</string></property></widget></item>
+									<item row="5" column="1">
+										<layout class="QHBoxLayout">
+											<item><widget class="QSlider" name="spinMetroidHudHpGaugeOffsetY"><property name="minimum"><number>-96</number></property><property name="maximum"><number>96</number></property><property name="value"><number>2</number></property><property name="orientation"><enum>Qt::Horizontal</enum></property></widget></item>
+											<item><widget class="QLabel" name="labelMetroidHudHpGaugeOffsetY"><property name="text"><string>2</string></property><property name="minimumSize"><size><width>36</width><height>0</height></size></property><property name="alignment"><set>Qt::AlignRight|Qt::AlignVCenter</set></property></widget></item>
+										</layout>
+									</item>
+									<item row="6" column="0"><widget class="QLabel"><property name="text"><string>HP Gauge Anchor</string></property></widget></item>
+									<item row="6" column="1"><widget class="QComboBox" name="comboMetroidHudHpGaugeAnchor"><item><property name="text"><string>Below</string></property></item><item><property name="text"><string>Above</string></property></item><item><property name="text"><string>Right</string></property></item><item><property name="text"><string>Left</string></property></item><item><property name="text"><string>Center</string></property></item></widget></item>
+									<item row="7" column="0"><widget class="QLabel"><property name="text"><string>HP Gauge Position Mode</string></property></widget></item>
+									<item row="7" column="1"><widget class="QComboBox" name="comboMetroidHudHpGaugePosMode"><item><property name="text"><string>Anchor from Text</string></property></item><item><property name="text"><string>Independent Position</string></property></item></widget></item>
 									<item row="8" column="0"><widget class="QLabel"><property name="text"><string>HP Gauge Position X</string></property></widget></item>
-									<item row="8" column="1"><widget class="QSpinBox" name="spinMetroidHudHpGaugePosX"><property name="minimum"><number>0</number></property><property name="maximum"><number>255</number></property><property name="value"><number>0</number></property></widget></item>
+									<item row="8" column="1">
+										<layout class="QHBoxLayout">
+											<item><widget class="QSlider" name="spinMetroidHudHpGaugePosX"><property name="minimum"><number>0</number></property><property name="maximum"><number>255</number></property><property name="value"><number>0</number></property><property name="orientation"><enum>Qt::Horizontal</enum></property></widget></item>
+											<item><widget class="QLabel" name="labelMetroidHudHpGaugePosX"><property name="text"><string>0</string></property><property name="minimumSize"><size><width>30</width><height>0</height></size></property><property name="alignment"><set>Qt::AlignRight|Qt::AlignVCenter</set></property></widget></item>
+										</layout>
+									</item>
 									<item row="9" column="0"><widget class="QLabel"><property name="text"><string>HP Gauge Position Y</string></property></widget></item>
-									<item row="9" column="1"><widget class="QSpinBox" name="spinMetroidHudHpGaugePosY"><property name="minimum"><number>0</number></property><property name="maximum"><number>191</number></property><property name="value"><number>96</number></property></widget></item>
+									<item row="9" column="1">
+										<layout class="QHBoxLayout">
+											<item><widget class="QSlider" name="spinMetroidHudHpGaugePosY"><property name="minimum"><number>0</number></property><property name="maximum"><number>191</number></property><property name="value"><number>96</number></property><property name="orientation"><enum>Qt::Horizontal</enum></property></widget></item>
+											<item><widget class="QLabel" name="labelMetroidHudHpGaugePosY"><property name="text"><string>96</string></property><property name="minimumSize"><size><width>30</width><height>0</height></size></property><property name="alignment"><set>Qt::AlignRight|Qt::AlignVCenter</set></property></widget></item>
+										</layout>
+									</item>
 									<item row="10" column="0"><widget class="QLabel"><property name="text"><string>HP Gauge Auto Color</string></property></widget></item>
 									<item row="10" column="1"><widget class="QCheckBox" name="cbMetroidHudHpGaugeAutoColor"><property name="text"><string>(changes with HP level)</string></property><property name="checked"><bool>true</bool></property></widget></item>
 									<item row="11" column="0"><widget class="QLabel"><property name="text"><string>HP Gauge Color</string></property></widget></item>
@@ -910,21 +995,51 @@
 									<item row="1" column="0"><widget class="QLabel"><property name="text"><string>Ammo Gauge Orientation</string></property></widget></item>
 									<item row="1" column="1"><widget class="QComboBox" name="comboMetroidHudAmmoGaugeOrientation"><item><property name="text"><string>Horizontal</string></property></item><item><property name="text"><string>Vertical</string></property></item></widget></item>
 									<item row="2" column="0"><widget class="QLabel"><property name="text"><string>Ammo Gauge Length</string></property></widget></item>
-									<item row="2" column="1"><widget class="QSpinBox" name="spinMetroidHudAmmoGaugeLength"><property name="minimum"><number>1</number></property><property name="maximum"><number>128</number></property><property name="value"><number>28</number></property></widget></item>
+									<item row="2" column="1">
+										<layout class="QHBoxLayout">
+											<item><widget class="QSlider" name="spinMetroidHudAmmoGaugeLength"><property name="minimum"><number>1</number></property><property name="maximum"><number>128</number></property><property name="value"><number>28</number></property><property name="orientation"><enum>Qt::Horizontal</enum></property></widget></item>
+											<item><widget class="QLabel" name="labelMetroidHudAmmoGaugeLength"><property name="text"><string>28</string></property><property name="minimumSize"><size><width>30</width><height>0</height></size></property><property name="alignment"><set>Qt::AlignRight|Qt::AlignVCenter</set></property></widget></item>
+										</layout>
+									</item>
 									<item row="3" column="0"><widget class="QLabel"><property name="text"><string>Ammo Gauge Width</string></property></widget></item>
-									<item row="3" column="1"><widget class="QSpinBox" name="spinMetroidHudAmmoGaugeWidth"><property name="minimum"><number>1</number></property><property name="maximum"><number>20</number></property><property name="value"><number>3</number></property></widget></item>
-									<item row="4" column="0"><widget class="QLabel"><property name="text"><string>Ammo Gauge Position Mode</string></property></widget></item>
-									<item row="4" column="1"><widget class="QComboBox" name="comboMetroidHudAmmoGaugePosMode"><item><property name="text"><string>Anchor from Text</string></property></item><item><property name="text"><string>Independent Position</string></property></item></widget></item>
-									<item row="5" column="0"><widget class="QLabel"><property name="text"><string>Ammo Gauge Offset X</string></property></widget></item>
-									<item row="5" column="1"><widget class="QSpinBox" name="spinMetroidHudAmmoGaugeOffsetX"><property name="minimum"><number>-128</number></property><property name="maximum"><number>128</number></property><property name="value"><number>0</number></property></widget></item>
-									<item row="6" column="0"><widget class="QLabel"><property name="text"><string>Ammo Gauge Offset Y</string></property></widget></item>
-									<item row="6" column="1"><widget class="QSpinBox" name="spinMetroidHudAmmoGaugeOffsetY"><property name="minimum"><number>-96</number></property><property name="maximum"><number>96</number></property><property name="value"><number>28</number></property></widget></item>
-									<item row="7" column="0"><widget class="QLabel"><property name="text"><string>Ammo Gauge Anchor</string></property></widget></item>
-									<item row="7" column="1"><widget class="QComboBox" name="comboMetroidHudAmmoGaugeAnchor"><item><property name="text"><string>Below</string></property></item><item><property name="text"><string>Above</string></property></item><item><property name="text"><string>Right</string></property></item><item><property name="text"><string>Left</string></property></item><item><property name="text"><string>Center</string></property></item></widget></item>
+									<item row="3" column="1">
+										<layout class="QHBoxLayout">
+											<item><widget class="QSlider" name="spinMetroidHudAmmoGaugeWidth"><property name="minimum"><number>1</number></property><property name="maximum"><number>20</number></property><property name="value"><number>3</number></property><property name="orientation"><enum>Qt::Horizontal</enum></property></widget></item>
+											<item><widget class="QLabel" name="labelMetroidHudAmmoGaugeWidth"><property name="text"><string>3</string></property><property name="minimumSize"><size><width>30</width><height>0</height></size></property><property name="alignment"><set>Qt::AlignRight|Qt::AlignVCenter</set></property></widget></item>
+										</layout>
+									</item>
+									<item row="4" column="0"><widget class="QLabel"><property name="text"><string>Ammo Gauge Offset X</string></property></widget></item>
+									<item row="4" column="1">
+										<layout class="QHBoxLayout">
+											<item><widget class="QSlider" name="spinMetroidHudAmmoGaugeOffsetX"><property name="minimum"><number>-128</number></property><property name="maximum"><number>128</number></property><property name="value"><number>0</number></property><property name="orientation"><enum>Qt::Horizontal</enum></property></widget></item>
+											<item><widget class="QLabel" name="labelMetroidHudAmmoGaugeOffsetX"><property name="text"><string>0</string></property><property name="minimumSize"><size><width>36</width><height>0</height></size></property><property name="alignment"><set>Qt::AlignRight|Qt::AlignVCenter</set></property></widget></item>
+										</layout>
+									</item>
+									<item row="5" column="0"><widget class="QLabel"><property name="text"><string>Ammo Gauge Offset Y</string></property></widget></item>
+									<item row="5" column="1">
+										<layout class="QHBoxLayout">
+											<item><widget class="QSlider" name="spinMetroidHudAmmoGaugeOffsetY"><property name="minimum"><number>-96</number></property><property name="maximum"><number>96</number></property><property name="value"><number>28</number></property><property name="orientation"><enum>Qt::Horizontal</enum></property></widget></item>
+											<item><widget class="QLabel" name="labelMetroidHudAmmoGaugeOffsetY"><property name="text"><string>28</string></property><property name="minimumSize"><size><width>36</width><height>0</height></size></property><property name="alignment"><set>Qt::AlignRight|Qt::AlignVCenter</set></property></widget></item>
+										</layout>
+									</item>
+									<item row="6" column="0"><widget class="QLabel"><property name="text"><string>Ammo Gauge Anchor</string></property></widget></item>
+									<item row="6" column="1"><widget class="QComboBox" name="comboMetroidHudAmmoGaugeAnchor"><item><property name="text"><string>Below</string></property></item><item><property name="text"><string>Above</string></property></item><item><property name="text"><string>Right</string></property></item><item><property name="text"><string>Left</string></property></item><item><property name="text"><string>Center</string></property></item></widget></item>
+									<item row="7" column="0"><widget class="QLabel"><property name="text"><string>Ammo Gauge Position Mode</string></property></widget></item>
+									<item row="7" column="1"><widget class="QComboBox" name="comboMetroidHudAmmoGaugePosMode"><item><property name="text"><string>Anchor from Text</string></property></item><item><property name="text"><string>Independent Position</string></property></item></widget></item>
 									<item row="8" column="0"><widget class="QLabel"><property name="text"><string>Ammo Gauge Position X</string></property></widget></item>
-									<item row="8" column="1"><widget class="QSpinBox" name="spinMetroidHudAmmoGaugePosX"><property name="minimum"><number>0</number></property><property name="maximum"><number>255</number></property><property name="value"><number>240</number></property></widget></item>
+									<item row="8" column="1">
+										<layout class="QHBoxLayout">
+											<item><widget class="QSlider" name="spinMetroidHudAmmoGaugePosX"><property name="minimum"><number>0</number></property><property name="maximum"><number>255</number></property><property name="value"><number>240</number></property><property name="orientation"><enum>Qt::Horizontal</enum></property></widget></item>
+											<item><widget class="QLabel" name="labelMetroidHudAmmoGaugePosX"><property name="text"><string>240</string></property><property name="minimumSize"><size><width>30</width><height>0</height></size></property><property name="alignment"><set>Qt::AlignRight|Qt::AlignVCenter</set></property></widget></item>
+										</layout>
+									</item>
 									<item row="9" column="0"><widget class="QLabel"><property name="text"><string>Ammo Gauge Position Y</string></property></widget></item>
-									<item row="9" column="1"><widget class="QSpinBox" name="spinMetroidHudAmmoGaugePosY"><property name="minimum"><number>0</number></property><property name="maximum"><number>191</number></property><property name="value"><number>82</number></property></widget></item>
+									<item row="9" column="1">
+										<layout class="QHBoxLayout">
+											<item><widget class="QSlider" name="spinMetroidHudAmmoGaugePosY"><property name="minimum"><number>0</number></property><property name="maximum"><number>191</number></property><property name="value"><number>82</number></property><property name="orientation"><enum>Qt::Horizontal</enum></property></widget></item>
+											<item><widget class="QLabel" name="labelMetroidHudAmmoGaugePosY"><property name="text"><string>82</string></property><property name="minimumSize"><size><width>30</width><height>0</height></size></property><property name="alignment"><set>Qt::AlignRight|Qt::AlignVCenter</set></property></widget></item>
+										</layout>
+									</item>
 									<item row="10" column="0"><widget class="QLabel"><property name="text"><string>Ammo Gauge Color</string></property></widget></item>
 									<item row="10" column="1"><widget class="QPushButton" name="btnMetroidHudAmmoGaugeColor"><property name="text"><string></string></property><property name="minimumSize"><size><width>60</width><height>24</height></size></property><property name="maximumSize"><size><width>60</width><height>24</height></size></property></widget></item>
 								</layout>
@@ -968,15 +1083,35 @@
 									<item row="0" column="0"><widget class="QLabel"><property name="text"><string>Show Score HUD</string></property></widget></item>
 									<item row="0" column="1"><widget class="QCheckBox" name="cbMetroidHudMatchStatusShow"><property name="text"><string></string></property><property name="checked"><bool>true</bool></property></widget></item>
 									<item row="1" column="0"><widget class="QLabel"><property name="text"><string>Position X</string></property></widget></item>
-									<item row="1" column="1"><widget class="QSpinBox" name="spinMetroidHudMatchStatusX"><property name="minimum"><number>0</number></property><property name="maximum"><number>255</number></property><property name="value"><number>4</number></property></widget></item>
+									<item row="1" column="1">
+										<layout class="QHBoxLayout">
+											<item><widget class="QSlider" name="spinMetroidHudMatchStatusX"><property name="minimum"><number>0</number></property><property name="maximum"><number>255</number></property><property name="value"><number>4</number></property><property name="orientation"><enum>Qt::Horizontal</enum></property></widget></item>
+											<item><widget class="QLabel" name="labelMetroidHudMatchStatusX"><property name="text"><string>4</string></property><property name="minimumSize"><size><width>30</width><height>0</height></size></property><property name="alignment"><set>Qt::AlignRight|Qt::AlignVCenter</set></property></widget></item>
+										</layout>
+									</item>
 									<item row="2" column="0"><widget class="QLabel"><property name="text"><string>Position Y</string></property></widget></item>
-									<item row="2" column="1"><widget class="QSpinBox" name="spinMetroidHudMatchStatusY"><property name="minimum"><number>0</number></property><property name="maximum"><number>191</number></property><property name="value"><number>16</number></property></widget></item>
+									<item row="2" column="1">
+										<layout class="QHBoxLayout">
+											<item><widget class="QSlider" name="spinMetroidHudMatchStatusY"><property name="minimum"><number>0</number></property><property name="maximum"><number>191</number></property><property name="value"><number>16</number></property><property name="orientation"><enum>Qt::Horizontal</enum></property></widget></item>
+											<item><widget class="QLabel" name="labelMetroidHudMatchStatusY"><property name="text"><string>16</string></property><property name="minimumSize"><size><width>30</width><height>0</height></size></property><property name="alignment"><set>Qt::AlignRight|Qt::AlignVCenter</set></property></widget></item>
+										</layout>
+									</item>
 									<item row="3" column="0"><widget class="QLabel"><property name="text"><string>Label Position</string></property></widget></item>
 									<item row="3" column="1"><widget class="QComboBox" name="comboMetroidHudMatchStatusLabelPos"><item><property name="text"><string>Above</string></property></item><item><property name="text"><string>Below</string></property></item><item><property name="text"><string>Left</string></property></item><item><property name="text"><string>Right</string></property></item><item><property name="text"><string>Center</string></property></item></widget></item>
 									<item row="4" column="0"><widget class="QLabel"><property name="text"><string>Label Offset X</string></property></widget></item>
-									<item row="4" column="1"><widget class="QSpinBox" name="spinMetroidHudMatchStatusLabelOfsX"><property name="minimum"><number>-128</number></property><property name="maximum"><number>128</number></property><property name="value"><number>0</number></property></widget></item>
+									<item row="4" column="1">
+										<layout class="QHBoxLayout">
+											<item><widget class="QSlider" name="spinMetroidHudMatchStatusLabelOfsX"><property name="minimum"><number>-128</number></property><property name="maximum"><number>128</number></property><property name="value"><number>0</number></property><property name="orientation"><enum>Qt::Horizontal</enum></property></widget></item>
+											<item><widget class="QLabel" name="labelMetroidHudMatchStatusLabelOfsX"><property name="text"><string>0</string></property><property name="minimumSize"><size><width>36</width><height>0</height></size></property><property name="alignment"><set>Qt::AlignRight|Qt::AlignVCenter</set></property></widget></item>
+										</layout>
+									</item>
 									<item row="5" column="0"><widget class="QLabel"><property name="text"><string>Label Offset Y</string></property></widget></item>
-									<item row="5" column="1"><widget class="QSpinBox" name="spinMetroidHudMatchStatusLabelOfsY"><property name="minimum"><number>-96</number></property><property name="maximum"><number>96</number></property><property name="value"><number>0</number></property></widget></item>
+									<item row="5" column="1">
+										<layout class="QHBoxLayout">
+											<item><widget class="QSlider" name="spinMetroidHudMatchStatusLabelOfsY"><property name="minimum"><number>-96</number></property><property name="maximum"><number>96</number></property><property name="value"><number>0</number></property><property name="orientation"><enum>Qt::Horizontal</enum></property></widget></item>
+											<item><widget class="QLabel" name="labelMetroidHudMatchStatusLabelOfsY"><property name="text"><string>0</string></property><property name="minimumSize"><size><width>36</width><height>0</height></size></property><property name="alignment"><set>Qt::AlignRight|Qt::AlignVCenter</set></property></widget></item>
+										</layout>
+									</item>
 									<item row="6" column="0"><widget class="QLabel"><property name="text"><string>Text Color</string></property></widget></item>
 									<item row="6" column="1"><widget class="QPushButton" name="btnMetroidHudMatchStatusColor"><property name="text"><string></string></property><property name="minimumSize"><size><width>60</width><height>24</height></size></property><property name="maximumSize"><size><width>60</width><height>24</height></size></property></widget></item>
 								<item row="7" column="0"><widget class="QLabel"><property name="text"><string>Label Color</string></property></widget></item>
@@ -1049,13 +1184,28 @@
 									<item row="0" column="1"><widget class="QCheckBox" name="cbMetroidBtmOverlayEnable"><property name="text"><string></string></property></widget></item>
 
 									<item row="1" column="0"><widget class="QLabel"><property name="text"><string>Position X</string></property></widget></item>
-									<item row="1" column="1"><widget class="QSpinBox" name="spinMetroidBtmOverlayDstX"><property name="minimum"><number>0</number></property><property name="maximum"><number>255</number></property><property name="value"><number>190</number></property></widget></item>
+									<item row="1" column="1">
+										<layout class="QHBoxLayout">
+											<item><widget class="QSlider" name="spinMetroidBtmOverlayDstX"><property name="minimum"><number>0</number></property><property name="maximum"><number>255</number></property><property name="value"><number>190</number></property><property name="orientation"><enum>Qt::Horizontal</enum></property></widget></item>
+											<item><widget class="QLabel" name="labelMetroidBtmOverlayDstX"><property name="text"><string>190</string></property><property name="minimumSize"><size><width>30</width><height>0</height></size></property><property name="alignment"><set>Qt::AlignRight|Qt::AlignVCenter</set></property></widget></item>
+										</layout>
+									</item>
 
 									<item row="2" column="0"><widget class="QLabel"><property name="text"><string>Position Y</string></property></widget></item>
-									<item row="2" column="1"><widget class="QSpinBox" name="spinMetroidBtmOverlayDstY"><property name="minimum"><number>0</number></property><property name="maximum"><number>191</number></property></widget></item>
+									<item row="2" column="1">
+										<layout class="QHBoxLayout">
+											<item><widget class="QSlider" name="spinMetroidBtmOverlayDstY"><property name="minimum"><number>0</number></property><property name="maximum"><number>191</number></property><property name="value"><number>0</number></property><property name="orientation"><enum>Qt::Horizontal</enum></property></widget></item>
+											<item><widget class="QLabel" name="labelMetroidBtmOverlayDstY"><property name="text"><string>0</string></property><property name="minimumSize"><size><width>30</width><height>0</height></size></property><property name="alignment"><set>Qt::AlignRight|Qt::AlignVCenter</set></property></widget></item>
+										</layout>
+									</item>
 
 									<item row="3" column="0"><widget class="QLabel"><property name="text"><string>Size</string></property></widget></item>
-									<item row="3" column="1"><widget class="QSpinBox" name="spinMetroidBtmOverlayDstSize"><property name="minimum"><number>1</number></property><property name="maximum"><number>256</number></property><property name="value"><number>64</number></property></widget></item>
+									<item row="3" column="1">
+										<layout class="QHBoxLayout">
+											<item><widget class="QSlider" name="spinMetroidBtmOverlayDstSize"><property name="minimum"><number>1</number></property><property name="maximum"><number>256</number></property><property name="value"><number>64</number></property><property name="orientation"><enum>Qt::Horizontal</enum></property></widget></item>
+											<item><widget class="QLabel" name="labelMetroidBtmOverlayDstSize"><property name="text"><string>64</string></property><property name="minimumSize"><size><width>30</width><height>0</height></size></property><property name="alignment"><set>Qt::AlignRight|Qt::AlignVCenter</set></property></widget></item>
+										</layout>
+									</item>
 
 									<item row="4" column="0"><widget class="QLabel"><property name="text"><string>Opacity</string></property></widget></item>
 									<item row="4" column="1"><widget class="QDoubleSpinBox" name="spinMetroidBtmOverlayOpacity"><property name="minimum"><double>0.0</double></property><property name="maximum"><double>1.0</double></property><property name="singleStep"><double>0.05</double></property><property name="value"><double>0.85</double></property></widget></item>
