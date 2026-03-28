@@ -1350,8 +1350,8 @@
 							</item>
 							<item>
 								<widget class="QWidget" name="widgetMatchStatusPreview" native="true">
-									<property name="minimumSize"><size><width>300</width><height>80</height></size></property>
-									<property name="maximumSize"><size><width>300</width><height>80</height></size></property>
+									<property name="minimumSize"><size><width>300</width><height>150</height></size></property>
+									<property name="maximumSize"><size><width>300</width><height>150</height></size></property>
 								</widget>
 							</item>
 
