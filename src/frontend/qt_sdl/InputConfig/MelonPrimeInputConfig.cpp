@@ -42,6 +42,39 @@ MelonPrimeInputConfig::MelonPrimeInputConfig(EmuInstance* emu, QWidget* parent) 
 {
     ui->setupUi(this);
 
+    auto hideRedundantValueLabel = [](QLabel* label) {
+        if (label) label->hide();
+    };
+    hideRedundantValueLabel(ui->labelMetroidHudMatchStatusX);
+    hideRedundantValueLabel(ui->labelMetroidHudMatchStatusY);
+    hideRedundantValueLabel(ui->labelMetroidHudMatchStatusLabelOfsX);
+    hideRedundantValueLabel(ui->labelMetroidHudMatchStatusLabelOfsY);
+    hideRedundantValueLabel(ui->labelMetroidHudHpX);
+    hideRedundantValueLabel(ui->labelMetroidHudHpY);
+    hideRedundantValueLabel(ui->labelMetroidHudWeaponX);
+    hideRedundantValueLabel(ui->labelMetroidHudWeaponY);
+    hideRedundantValueLabel(ui->labelMetroidHudWeaponIconOffsetX);
+    hideRedundantValueLabel(ui->labelMetroidHudWeaponIconOffsetY);
+    hideRedundantValueLabel(ui->labelMetroidHudWeaponIconPosX);
+    hideRedundantValueLabel(ui->labelMetroidHudWeaponIconPosY);
+    hideRedundantValueLabel(ui->labelMetroidHudHpGaugeLength);
+    hideRedundantValueLabel(ui->labelMetroidHudHpGaugeWidth);
+    hideRedundantValueLabel(ui->labelMetroidHudHpGaugeOffsetX);
+    hideRedundantValueLabel(ui->labelMetroidHudHpGaugeOffsetY);
+    hideRedundantValueLabel(ui->labelMetroidHudHpGaugePosX);
+    hideRedundantValueLabel(ui->labelMetroidHudHpGaugePosY);
+    hideRedundantValueLabel(ui->labelMetroidHudAmmoGaugeLength);
+    hideRedundantValueLabel(ui->labelMetroidHudAmmoGaugeWidth);
+    hideRedundantValueLabel(ui->labelMetroidHudAmmoGaugeOffsetX);
+    hideRedundantValueLabel(ui->labelMetroidHudAmmoGaugeOffsetY);
+    hideRedundantValueLabel(ui->labelMetroidHudAmmoGaugePosX);
+    hideRedundantValueLabel(ui->labelMetroidHudAmmoGaugePosY);
+    hideRedundantValueLabel(ui->labelMetroidBtmOverlayDstX);
+    hideRedundantValueLabel(ui->labelMetroidBtmOverlayDstY);
+    hideRedundantValueLabel(ui->labelMetroidBtmOverlayDstSize);
+
+
+
     Config::Table& instcfg = emuInstance->getLocalConfig();
     Config::Table keycfg = instcfg.GetTable("Keyboard");
     Config::Table joycfg = instcfg.GetTable("Joystick");
@@ -536,6 +569,9 @@ MelonPrimeInputConfig::MelonPrimeInputConfig(EmuInstance* emu, QWidget* parent) 
     // Match Status section (inside Custom HUD tab)
     setupToggle(ui->btnToggleMatchStatus, ui->sectionMatchStatus, "MATCH STATUS HUD", "Metroid.UI.SectionMatchStatus");
     setupToggle(ui->btnToggleRankTime,   ui->sectionRankTime,   "RANK & TIME HUD","Metroid.UI.SectionRankTime");
+    setupToggle(ui->btnToggleRankHud,    ui->sectionRankHud,    "RANK",       "Metroid.UI.SectionRankHud");
+    setupToggle(ui->btnToggleTimeLeftHud, ui->sectionTimeLeftHud, "TIME LEFT",  "Metroid.UI.SectionTimeLeftHud");
+    setupToggle(ui->btnToggleTimeLimitHud, ui->sectionTimeLimitHud, "TIME LIMIT", "Metroid.UI.SectionTimeLimitHud");
     // HUD Radar section (inside Custom HUD tab)
     setupToggle(ui->btnToggleHudRadar,  ui->sectionHudRadar,  "HUD RADAR",      "Metroid.UI.SectionHudRadar");
     // Other Metroid Settings 2 tab
@@ -2108,14 +2144,22 @@ void MelonPrimeInputConfig::saveConfig()
     instcfg.SetInt("Metroid.Visual.HudRankY",            ui->spinMetroidHudRankY->value());
     instcfg.SetString("Metroid.Visual.HudRankPrefix",    ui->leMetroidHudRankPrefix->text().toStdString());
     instcfg.SetBool("Metroid.Visual.HudRankShowOrdinal", ui->cbMetroidHudRankShowOrdinal->checkState() == Qt::Checked);
-    instcfg.SetString("Metroid.Visual.HudRankSuffix",   ui->leMetroidHudRankSuffix->text().toStdString());
-    instcfg.SetBool("Metroid.Visual.HudTimeLeftShow",  ui->cbMetroidHudTimeLeftShow->checkState() == Qt::Checked);
-    instcfg.SetInt("Metroid.Visual.HudTimeLeftX",     ui->spinMetroidHudTimeLeftX->value());
-    instcfg.SetInt("Metroid.Visual.HudTimeLeftY",     ui->spinMetroidHudTimeLeftY->value());
-    instcfg.SetBool("Metroid.Visual.HudTimeLimitShow", ui->cbMetroidHudTimeLimitShow->checkState() == Qt::Checked);
-    instcfg.SetInt("Metroid.Visual.HudTimeLimitX",    ui->spinMetroidHudTimeLimitX->value());
-    instcfg.SetInt("Metroid.Visual.HudTimeLimitY",    ui->spinMetroidHudTimeLimitY->value());
-    // Rank & Time colors are saved by color button handlers
+    instcfg.SetString("Metroid.Visual.HudRankSuffix",    ui->leMetroidHudRankSuffix->text().toStdString());
+    instcfg.SetInt("Metroid.Visual.HudRankColorR",       ui->spinMetroidHudRankColorR->value());
+    instcfg.SetInt("Metroid.Visual.HudRankColorG",       ui->spinMetroidHudRankColorG->value());
+    instcfg.SetInt("Metroid.Visual.HudRankColorB",       ui->spinMetroidHudRankColorB->value());
+    instcfg.SetBool("Metroid.Visual.HudTimeLeftShow",    ui->cbMetroidHudTimeLeftShow->checkState() == Qt::Checked);
+    instcfg.SetInt("Metroid.Visual.HudTimeLeftX",        ui->spinMetroidHudTimeLeftX->value());
+    instcfg.SetInt("Metroid.Visual.HudTimeLeftY",        ui->spinMetroidHudTimeLeftY->value());
+    instcfg.SetInt("Metroid.Visual.HudTimeLeftColorR",   ui->spinMetroidHudTimeLeftColorR->value());
+    instcfg.SetInt("Metroid.Visual.HudTimeLeftColorG",   ui->spinMetroidHudTimeLeftColorG->value());
+    instcfg.SetInt("Metroid.Visual.HudTimeLeftColorB",   ui->spinMetroidHudTimeLeftColorB->value());
+    instcfg.SetBool("Metroid.Visual.HudTimeLimitShow",   ui->cbMetroidHudTimeLimitShow->checkState() == Qt::Checked);
+    instcfg.SetInt("Metroid.Visual.HudTimeLimitX",       ui->spinMetroidHudTimeLimitX->value());
+    instcfg.SetInt("Metroid.Visual.HudTimeLimitY",       ui->spinMetroidHudTimeLimitY->value());
+    instcfg.SetInt("Metroid.Visual.HudTimeLimitColorR",  ui->spinMetroidHudTimeLimitColorR->value());
+    instcfg.SetInt("Metroid.Visual.HudTimeLimitColorG",  ui->spinMetroidHudTimeLimitColorG->value());
+    instcfg.SetInt("Metroid.Visual.HudTimeLimitColorB",  ui->spinMetroidHudTimeLimitColorB->value());
 
     // Custom HUD
     instcfg.SetBool("Metroid.Visual.CustomHUD", ui->cbMetroidEnableCustomHud->checkState() == Qt::Checked);
@@ -2132,6 +2176,9 @@ void MelonPrimeInputConfig::saveConfig()
     instcfg.SetBool("Metroid.UI.SectionAmmoGauge",      ui->btnToggleAmmoGauge->isChecked());
     instcfg.SetBool("Metroid.UI.SectionMatchStatus",    ui->btnToggleMatchStatus->isChecked());
     instcfg.SetBool("Metroid.UI.SectionRankTime",       ui->btnToggleRankTime->isChecked());
+    instcfg.SetBool("Metroid.UI.SectionRankHud",        ui->btnToggleRankHud->isChecked());
+    instcfg.SetBool("Metroid.UI.SectionTimeLeftHud",    ui->btnToggleTimeLeftHud->isChecked());
+    instcfg.SetBool("Metroid.UI.SectionTimeLimitHud",   ui->btnToggleTimeLimitHud->isChecked());
     instcfg.SetBool("Metroid.UI.SectionHudRadar",       ui->btnToggleHudRadar->isChecked());
     instcfg.SetBool("Metroid.UI.SectionInputSettings",  ui->btnToggleInputSettings->isChecked());
     instcfg.SetBool("Metroid.UI.SectionScreenSync",     ui->btnToggleScreenSync->isChecked());
@@ -3015,73 +3062,138 @@ void MelonPrimeInputConfig::updateMatchStatusPreview()
 
     QPainter p(&pixmap);
     p.setRenderHint(QPainter::Antialiasing, true);
+    p.setRenderHint(QPainter::TextAntialiasing, false);
 
     const float dsW = 256.0f, dsH = 192.0f;
     const float scale = std::min(static_cast<float>(pw) / dsW, static_cast<float>(ph) / dsH);
     const float offX = (pw - dsW * scale) / 2.0f;
     const float offY = (ph - dsH * scale) / 2.0f;
+    constexpr int kHudFontSize = 6;
 
-    // Draw screen border
     p.setPen(QPen(QColor(80, 80, 80), 1));
     p.setBrush(Qt::NoBrush);
     p.drawRect(QRectF(offX, offY, dsW * scale, dsH * scale));
 
+    QFont hudFont;
+    int fontId = QFontDatabase::addApplicationFont(":/mph-font");
+    if (fontId >= 0) {
+        QStringList families = QFontDatabase::applicationFontFamilies(fontId);
+        if (!families.isEmpty())
+            hudFont = QFont(families.at(0));
+    }
+    hudFont.setPixelSize(std::max(1, static_cast<int>(kHudFontSize * scale)));
+    hudFont.setStyleStrategy(QFont::NoAntialias);
+    hudFont.setHintingPreference(QFont::PreferFullHinting);
+    p.setFont(hudFont);
+
+    auto formatTimeText = [](int seconds) {
+        int safeSeconds = std::max(0, seconds);
+        return QString("%1:%2")
+            .arg(safeSeconds / 60)
+            .arg(safeSeconds % 60, 2, 10, QLatin1Char('0'));
+    };
+
+    auto formatMinuteText = [](int minutes) {
+        return QString("%1:00").arg(std::max(0, minutes));
+    };
+
+    auto buildRankText = [&instcfg]() {
+        constexpr const char* ordinals[] = { "st", "nd", "rd", "th" };
+        constexpr int rankIndex = 0;
+        QString text = QString::fromStdString(instcfg.GetString("Metroid.Visual.HudRankPrefix"));
+        text += QString::number(rankIndex + 1);
+        if (instcfg.GetBool("Metroid.Visual.HudRankShowOrdinal"))
+            text += QString::fromLatin1(ordinals[rankIndex]);
+        text += QString::fromStdString(instcfg.GetString("Metroid.Visual.HudRankSuffix"));
+        return text;
+    };
+
+    auto drawPreviewText = [&](const QString& text, int x, int y, const QColor& color) {
+        p.setPen(color);
+        p.drawText(QPointF(offX + x * scale, offY + y * scale), text);
+    };
+
     if (!instcfg.GetBool("Metroid.Visual.HudMatchStatusShow")) {
         p.setPen(QColor(80, 80, 80));
-        p.setFont(QFont("sans-serif", 8));
         p.drawText(QRectF(offX, offY, dsW * scale, dsH * scale), Qt::AlignCenter, "HIDDEN");
     } else {
-        int msX = instcfg.GetInt("Metroid.Visual.HudMatchStatusX");
-        int msY = instcfg.GetInt("Metroid.Visual.HudMatchStatusY");
-        constexpr int fontSize = 6;
+        const int msX = instcfg.GetInt("Metroid.Visual.HudMatchStatusX");
+        const int msY = instcfg.GetInt("Metroid.Visual.HudMatchStatusY");
 
-        int vlR = instcfg.GetInt("Metroid.Visual.HudMatchStatusValueColorR");
-        int vlG = instcfg.GetInt("Metroid.Visual.HudMatchStatusValueColorG");
-        int vlB = instcfg.GetInt("Metroid.Visual.HudMatchStatusValueColorB");
-        QColor valueClr(vlR, vlG, vlB);
+        QColor valueClr(
+            instcfg.GetInt("Metroid.Visual.HudMatchStatusValueColorR"),
+            instcfg.GetInt("Metroid.Visual.HudMatchStatusValueColorG"),
+            instcfg.GetInt("Metroid.Visual.HudMatchStatusValueColorB"));
+        QColor sepClr(
+            instcfg.GetInt("Metroid.Visual.HudMatchStatusSepColorR"),
+            instcfg.GetInt("Metroid.Visual.HudMatchStatusSepColorG"),
+            instcfg.GetInt("Metroid.Visual.HudMatchStatusSepColorB"));
+        QColor goalClr(
+            instcfg.GetInt("Metroid.Visual.HudMatchStatusGoalColorR"),
+            instcfg.GetInt("Metroid.Visual.HudMatchStatusGoalColorG"),
+            instcfg.GetInt("Metroid.Visual.HudMatchStatusGoalColorB"));
+        QColor labelClr(
+            instcfg.GetInt("Metroid.Visual.HudMatchStatusLabelColorR"),
+            instcfg.GetInt("Metroid.Visual.HudMatchStatusLabelColorG"),
+            instcfg.GetInt("Metroid.Visual.HudMatchStatusLabelColorB"));
 
-        int spR = instcfg.GetInt("Metroid.Visual.HudMatchStatusSepColorR");
-        int spG = instcfg.GetInt("Metroid.Visual.HudMatchStatusSepColorG");
-        int spB = instcfg.GetInt("Metroid.Visual.HudMatchStatusSepColorB");
-        QColor sepClr(spR, spG, spB);
+        const float sx = offX + msX * scale;
+        const float sy = offY + msY * scale;
+        const float lineH = static_cast<float>(p.fontMetrics().height());
 
-        int glR = instcfg.GetInt("Metroid.Visual.HudMatchStatusGoalColorR");
-        int glG = instcfg.GetInt("Metroid.Visual.HudMatchStatusGoalColorG");
-        int glB = instcfg.GetInt("Metroid.Visual.HudMatchStatusGoalColorB");
-        QColor goalClr(glR, glG, glB);
-
-        int lbR = instcfg.GetInt("Metroid.Visual.HudMatchStatusLabelColorR");
-        int lbG = instcfg.GetInt("Metroid.Visual.HudMatchStatusLabelColorG");
-        int lbB = instcfg.GetInt("Metroid.Visual.HudMatchStatusLabelColorB");
-        QColor labelClr(lbR, lbG, lbB);
-
-        QFont font("monospace", std::max(1, static_cast<int>(fontSize * scale)));
-        p.setFont(font);
-
-        float sx = offX + msX * scale;
-        float sy = offY + msY * scale;
-        float lineH = fontSize * scale * 1.2f;
-
-        // Draw label above or below
-        QString labelText = QString::fromStdString(instcfg.GetString("Metroid.Visual.HudMatchStatusLabelPoints"));
-        int labelPos = instcfg.GetInt("Metroid.Visual.HudMatchStatusLabelPos");
-        int labelOfsX = instcfg.GetInt("Metroid.Visual.HudMatchStatusLabelOfsX");
-        int labelOfsY = instcfg.GetInt("Metroid.Visual.HudMatchStatusLabelOfsY");
-        float lx = sx + labelOfsX * scale;
-        float ly = (labelPos == 0) ? sy - labelOfsY * scale : sy + lineH + labelOfsY * scale;
+        const QString labelText = QString::fromStdString(instcfg.GetString("Metroid.Visual.HudMatchStatusLabelPoints"));
+        const int labelPos = instcfg.GetInt("Metroid.Visual.HudMatchStatusLabelPos");
+        const int labelOfsX = instcfg.GetInt("Metroid.Visual.HudMatchStatusLabelOfsX");
+        const int labelOfsY = instcfg.GetInt("Metroid.Visual.HudMatchStatusLabelOfsY");
+        const float lx = sx + labelOfsX * scale;
+        const float ly = (labelPos == 0)
+            ? sy - labelOfsY * scale
+            : sy + lineH + labelOfsY * scale;
 
         p.setPen(labelClr);
         p.drawText(QPointF(lx, ly), labelText);
 
-        // Draw "3/7" value text
         p.setPen(valueClr);
         p.drawText(QPointF(sx, sy + lineH), "3");
-        float xOfs = p.fontMetrics().horizontalAdvance("3");
+        float xOfs = static_cast<float>(p.fontMetrics().horizontalAdvance("3"));
         p.setPen(sepClr);
         p.drawText(QPointF(sx + xOfs, sy + lineH), "/");
-        xOfs += p.fontMetrics().horizontalAdvance("/");
+        xOfs += static_cast<float>(p.fontMetrics().horizontalAdvance("/"));
         p.setPen(goalClr);
         p.drawText(QPointF(sx + xOfs, sy + lineH), "7");
+    }
+
+    if (instcfg.GetBool("Metroid.Visual.HudRankShow")) {
+        drawPreviewText(
+            buildRankText(),
+            instcfg.GetInt("Metroid.Visual.HudRankX"),
+            instcfg.GetInt("Metroid.Visual.HudRankY"),
+            QColor(
+                instcfg.GetInt("Metroid.Visual.HudRankColorR"),
+                instcfg.GetInt("Metroid.Visual.HudRankColorG"),
+                instcfg.GetInt("Metroid.Visual.HudRankColorB")));
+    }
+
+    if (instcfg.GetBool("Metroid.Visual.HudTimeLeftShow")) {
+        drawPreviewText(
+            formatTimeText(5 * 60),
+            instcfg.GetInt("Metroid.Visual.HudTimeLeftX"),
+            instcfg.GetInt("Metroid.Visual.HudTimeLeftY"),
+            QColor(
+                instcfg.GetInt("Metroid.Visual.HudTimeLeftColorR"),
+                instcfg.GetInt("Metroid.Visual.HudTimeLeftColorG"),
+                instcfg.GetInt("Metroid.Visual.HudTimeLeftColorB")));
+    }
+
+    if (instcfg.GetBool("Metroid.Visual.HudTimeLimitShow")) {
+        drawPreviewText(
+            formatMinuteText(7),
+            instcfg.GetInt("Metroid.Visual.HudTimeLimitX"),
+            instcfg.GetInt("Metroid.Visual.HudTimeLimitY"),
+            QColor(
+                instcfg.GetInt("Metroid.Visual.HudTimeLimitColorR"),
+                instcfg.GetInt("Metroid.Visual.HudTimeLimitColorG"),
+                instcfg.GetInt("Metroid.Visual.HudTimeLimitColorB")));
     }
 
     p.end();
@@ -3091,7 +3203,6 @@ void MelonPrimeInputConfig::updateMatchStatusPreview()
     preview->setAutoFillBackground(true);
     preview->update();
 }
-
 
 
 
