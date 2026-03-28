@@ -2889,7 +2889,7 @@ void MelonPrimeInputConfig::resetRankTimeDefaults()
     };
 
     // Rank
-    ui->cbMetroidHudRankShow->setChecked(false);
+    ui->cbMetroidHudRankShow->setChecked(true);
     setSlider(ui->spinMetroidHudRankX, ui->inputMetroidHudRankX, 20);
     setSlider(ui->spinMetroidHudRankY, ui->inputMetroidHudRankY, 30);
     ui->comboMetroidHudRankColor->setCurrentIndex(0);

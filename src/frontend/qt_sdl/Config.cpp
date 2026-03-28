@@ -312,9 +312,9 @@ namespace Config
         {"Instance*.Metroid.Visual.HudMatchStatusValueColorOverall", true},
         {"Instance*.Metroid.Visual.HudMatchStatusSepColorOverall",   true},
         {"Instance*.Metroid.Visual.HudMatchStatusGoalColorOverall",  true},
-        {"Instance*.Metroid.Visual.HudRankShow",        false},
+        {"Instance*.Metroid.Visual.HudRankShow",        true},
         {"Instance*.Metroid.Visual.HudRankShowOrdinal", true},
-        {"Instance*.Metroid.Visual.HudTimeLeftShow",    false},
+        {"Instance*.Metroid.Visual.HudTimeLeftShow",    true},
         {"Instance*.Metroid.Visual.HudTimeLimitShow",   false},
         {"Instance*.Metroid.Visual.InGameAspectRatio", true},
         {"Instance*.Metroid.Visual.ClipCursorToBottomScreenWhenNotInGame", false},
@@ -340,7 +340,7 @@ namespace Config
         {"Instance*.Metroid.UI.SectionVolume",         true},
         {"Instance*.Metroid.UI.SectionLicense",        true},
         /* MelonPrimeDS Bottom Screen Overlay bool { */
-        {"Instance*.Metroid.Visual.BtmOverlayEnable", false},
+        {"Instance*.Metroid.Visual.BtmOverlayEnable", true},
         /* MelonPrimeDS Bottom Screen Overlay bool } */
         /* MelonPrimeDS Crosshair bools } */
         /* MelonPrimeDS } */

@@ -1371,7 +1371,7 @@
 										<widget class="QWidget" name="sectionRankHud">
 											<layout class="QFormLayout" name="formHudRank">
 												<item row="0" column="0"><widget class="QLabel"><property name="text"><string>Show Rank</string></property></widget></item>
-												<item row="0" column="1"><widget class="QCheckBox" name="cbMetroidHudRankShow"><property name="text"><string></string></property></widget></item>
+												<item row="0" column="1"><widget class="QCheckBox" name="cbMetroidHudRankShow"><property name="text"><string></string></property><property name="checked"><bool>true</bool></property></widget></item>
 												<item row="1" column="0"><widget class="QLabel"><property name="text"><string>Rank X</string></property></widget></item>
 												<item row="1" column="1"><layout class="QHBoxLayout"><item><widget class="QSlider" name="spinMetroidHudRankX"><property name="minimum"><number>0</number></property><property name="maximum"><number>255</number></property><property name="value"><number>20</number></property><property name="orientation"><enum>Qt::Horizontal</enum></property></widget></item><item><widget class="QSpinBox" name="inputMetroidHudRankX"><property name="minimum"><number>0</number></property><property name="maximum"><number>255</number></property><property name="value"><number>20</number></property><property name="minimumSize"><size><width>72</width><height>0</height></size></property></widget></item></layout></item>
 												<item row="2" column="0"><widget class="QLabel"><property name="text"><string>Rank Y</string></property></widget></item>
@@ -1400,7 +1400,7 @@
 										<widget class="QWidget" name="sectionTimeLeftHud">
 											<layout class="QFormLayout" name="formHudTimeLeft">
 												<item row="0" column="0"><widget class="QLabel"><property name="text"><string>Show Time Left</string></property></widget></item>
-												<item row="0" column="1"><widget class="QCheckBox" name="cbMetroidHudTimeLeftShow"><property name="text"><string></string></property></widget></item>
+												<item row="0" column="1"><widget class="QCheckBox" name="cbMetroidHudTimeLeftShow"><property name="text"><string></string></property><property name="checked"><bool>true</bool></property></widget></item>
 												<item row="1" column="0"><widget class="QLabel"><property name="text"><string>Time Left X</string></property></widget></item>
 												<item row="1" column="1"><layout class="QHBoxLayout"><item><widget class="QSlider" name="spinMetroidHudTimeLeftX"><property name="minimum"><number>0</number></property><property name="maximum"><number>255</number></property><property name="value"><number>20</number></property><property name="orientation"><enum>Qt::Horizontal</enum></property></widget></item><item><widget class="QSpinBox" name="inputMetroidHudTimeLeftX"><property name="minimum"><number>0</number></property><property name="maximum"><number>255</number></property><property name="value"><number>20</number></property><property name="minimumSize"><size><width>72</width><height>0</height></size></property></widget></item></layout></item>
 												<item row="2" column="0"><widget class="QLabel"><property name="text"><string>Time Left Y</string></property></widget></item>
@@ -1473,7 +1473,7 @@
 							<item>
 								<layout class="QFormLayout" name="formHudRadar">
 									<item row="0" column="0"><widget class="QLabel"><property name="text"><string>Enable HUD Radar</string></property></widget></item>
-									<item row="0" column="1"><widget class="QCheckBox" name="cbMetroidBtmOverlayEnable"><property name="text"><string></string></property></widget></item>
+									<item row="0" column="1"><widget class="QCheckBox" name="cbMetroidBtmOverlayEnable"><property name="text"><string></string></property><property name="checked"><bool>true</bool></property></widget></item>
 
 									<item row="1" column="0"><widget class="QLabel"><property name="text"><string>Position X</string></property></widget></item>
 									<item row="1" column="1">
