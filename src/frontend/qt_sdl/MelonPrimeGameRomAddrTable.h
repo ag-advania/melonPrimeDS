@@ -73,6 +73,10 @@ namespace MelonPrime {
     inline constexpr RomTable<uint32_t> LIST_MaxHP             = { 0x020DC6B0, 0x020DC670, 0x020DA7F0, 0x020DB070, 0x020DB090, 0x020DB110, 0x020D3EBC }; // player struct relative (+0xF30)
     inline constexpr RomTable<uint32_t> LIST_MaxAmmoSpecial    = { 0x020DC724, 0x020DC6E4, 0x020DA864, 0x020DB0E4, 0x020DB104, 0x020DB184, 0x020D3F30 }; // player struct relative (+0xF30)
     inline constexpr RomTable<uint32_t> LIST_MaxAmmoMissile    = { 0x020DC726, 0x020DC6E6, 0x020DA866, 0x020DB0E6, 0x020DB106, 0x020DB186, 0x020D3F32 }; // player struct relative (+0xF30)
+    // u32 ZZYYXXVV: byte0=P1 byte1=P2 byte2=P3 byte3=P4 rank (0=1st 1=2nd 2=3rd 3=4th/absent)
+    inline constexpr RomTable<uint32_t> LIST_MatchRank         = { 0x020E9C8C, 0x020E9C4C, 0x020E7B4C, 0x020E860C, 0x020E862C, 0x020E86AC, 0x020E1448 };
+    inline constexpr RomTable<uint32_t> LIST_TimeLeft          = { 0x020E6B68, 0x020E6B28, 0x020E4A3C, 0x020E5504, 0x020E5524, 0x020E55A4, 0x020DE350 };
+    // Time limit setting: battleSettings+4  format: 0000XXYZ  XX=minutes*4(battle) or *A(other); wifi adds +0x20
 #endif
 
 #ifdef MELONPRIME_DS
@@ -155,6 +159,8 @@ namespace MelonPrime {
         uint32_t maxHP;             // player struct relative (+0xF30)
         uint32_t maxAmmoSpecial;    // player struct relative (+0xF30)
         uint32_t maxAmmoMissile;    // player struct relative (+0xF30)
+        uint32_t matchRank;         // u32 ZZYYXXVV: each byte = player rank (0=1st..3=4th/absent)
+        uint32_t timeLeft;          // u32 remaining time; time limit setting = battleSettings+4
 #endif
 #ifdef MELONPRIME_DS
         uint32_t scalePatchAddr1;
@@ -204,6 +210,7 @@ namespace MelonPrime {
             LIST_GameOver[i], LIST_BaseViewMode[i],
             LIST_CrosshairPosX[i], LIST_CrosshairPosY[i],
             LIST_MaxHP[i], LIST_MaxAmmoSpecial[i], LIST_MaxAmmoMissile[i],
+            LIST_MatchRank[i], LIST_TimeLeft[i],
 #endif
 #ifdef MELONPRIME_DS
             LIST_ScalePatchAddr1[i], LIST_ScalePatchAddr2[i], LIST_ScaleValueAddr[i],

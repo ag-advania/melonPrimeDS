@@ -1,7 +1,9 @@
 {
   "permissions": {
     "allow": [
-      "Bash(grep -v \"//\")"
+      "Bash(grep -v \"//\")",
+      "Bash(python3 -c \":*)",
+      "Bash(head -10 grep -n \"kCustomHudFontSize\\\\|HudFontSize\" \"c:/Users/Admin/Documents/git/melonPrimeDS/src/frontend/qt_sdl/MelonPrimeCustomHud.cpp\")"
     ]
   }
 }
