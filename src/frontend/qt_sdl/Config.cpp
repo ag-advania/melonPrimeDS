@@ -225,7 +225,7 @@ namespace Config
         {"Instance*.Metroid.Visual.BtmOverlayDstX",            190},
         {"Instance*.Metroid.Visual.BtmOverlayDstY",            0},
         {"Instance*.Metroid.Visual.BtmOverlayDstSize",         64},
-        {"Instance*.Metroid.Visual.BtmOverlaySrcRadius",       50},
+        {"Instance*.Metroid.Visual.BtmOverlaySrcRadius",       46},
         /* MelonPrimeDS Bottom Screen Overlay defaults } */
         /* MelonPrimeDS Custom HUD Crosshair defaults } */
     #endif

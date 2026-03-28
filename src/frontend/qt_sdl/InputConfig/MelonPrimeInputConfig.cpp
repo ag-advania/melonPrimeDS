@@ -551,6 +551,7 @@ MelonPrimeInputConfig::MelonPrimeInputConfig(EmuInstance* emu, QWidget* parent) 
 
     // Reset buttons
     connect(ui->btnResetMatchStatusDefaults, &QPushButton::clicked, this, &MelonPrimeInputConfig::resetMatchStatusDefaults);
+    connect(ui->btnResetRankTimeDefaults,    &QPushButton::clicked, this, &MelonPrimeInputConfig::resetRankTimeDefaults);
 
     // Custom HUD
     ui->cbMetroidEnableCustomHud->setChecked(instcfg.GetBool("Metroid.Visual.CustomHUD"));
@@ -2878,6 +2879,64 @@ void MelonPrimeInputConfig::resetMatchStatusDefaults()
             "Metroid.Visual.HudMatchStatusGoalColorR", "Metroid.Visual.HudMatchStatusGoalColorG", "Metroid.Visual.HudMatchStatusGoalColorB",
             255, 255, 255);
     }
+}
+
+void MelonPrimeInputConfig::resetRankTimeDefaults()
+{
+    auto setSlider = [this](QSlider* sl, QSpinBox* input, int v) {
+        sl->setValue(v);
+        if (input) input->setValue(v);
+    };
+
+    // Rank
+    ui->cbMetroidHudRankShow->setChecked(false);
+    setSlider(ui->spinMetroidHudRankX, ui->inputMetroidHudRankX, 20);
+    setSlider(ui->spinMetroidHudRankY, ui->inputMetroidHudRankY, 30);
+    ui->comboMetroidHudRankColor->setCurrentIndex(0);
+    ui->leMetroidHudRankPrefix->setText("");
+    ui->cbMetroidHudRankShowOrdinal->setChecked(true);
+    ui->leMetroidHudRankSuffix->setText("");
+    {
+        Config::Table& instcfg = emuInstance->getLocalConfig();
+        instcfg.SetInt("Metroid.Visual.HudRankColorR", 255);
+        instcfg.SetInt("Metroid.Visual.HudRankColorG", 255);
+        instcfg.SetInt("Metroid.Visual.HudRankColorB", 255);
+        ui->spinMetroidHudRankColorR->setValue(255);
+        ui->spinMetroidHudRankColorG->setValue(255);
+        ui->spinMetroidHudRankColorB->setValue(255);
+        ui->leMetroidHudRankColorCode->setText("#FFFFFF");
+        ui->btnMetroidHudRankColor->setStyleSheet("background-color: #ffffff;");
+
+        // Time Left
+        ui->cbMetroidHudTimeLeftShow->setChecked(false);
+        setSlider(ui->spinMetroidHudTimeLeftX, ui->inputMetroidHudTimeLeftX, 20);
+        setSlider(ui->spinMetroidHudTimeLeftY, ui->inputMetroidHudTimeLeftY, 42);
+        ui->comboMetroidHudTimeLeftColor->setCurrentIndex(0);
+        instcfg.SetInt("Metroid.Visual.HudTimeLeftColorR", 255);
+        instcfg.SetInt("Metroid.Visual.HudTimeLeftColorG", 255);
+        instcfg.SetInt("Metroid.Visual.HudTimeLeftColorB", 255);
+        ui->spinMetroidHudTimeLeftColorR->setValue(255);
+        ui->spinMetroidHudTimeLeftColorG->setValue(255);
+        ui->spinMetroidHudTimeLeftColorB->setValue(255);
+        ui->leMetroidHudTimeLeftColorCode->setText("#FFFFFF");
+        ui->btnMetroidHudTimeLeftColor->setStyleSheet("background-color: #ffffff;");
+
+        // Time Limit
+        ui->cbMetroidHudTimeLimitShow->setChecked(false);
+        setSlider(ui->spinMetroidHudTimeLimitX, ui->inputMetroidHudTimeLimitX, 20);
+        setSlider(ui->spinMetroidHudTimeLimitY, ui->inputMetroidHudTimeLimitY, 54);
+        ui->comboMetroidHudTimeLimitColor->setCurrentIndex(0);
+        instcfg.SetInt("Metroid.Visual.HudTimeLimitColorR", 255);
+        instcfg.SetInt("Metroid.Visual.HudTimeLimitColorG", 255);
+        instcfg.SetInt("Metroid.Visual.HudTimeLimitColorB", 255);
+        ui->spinMetroidHudTimeLimitColorR->setValue(255);
+        ui->spinMetroidHudTimeLimitColorG->setValue(255);
+        ui->spinMetroidHudTimeLimitColorB->setValue(255);
+        ui->leMetroidHudTimeLimitColorCode->setText("#FFFFFF");
+        ui->btnMetroidHudTimeLimitColor->setStyleSheet("background-color: #ffffff;");
+    }
+
+    applyVisualPreview();
 }
 
 void MelonPrimeInputConfig::updateCrosshairPreview()

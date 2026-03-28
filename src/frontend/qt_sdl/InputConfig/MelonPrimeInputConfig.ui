@@ -1435,6 +1435,11 @@
 											</layout>
 										</widget>
 									</item>
+									<item>
+										<widget class="QPushButton" name="btnResetRankTimeDefaults">
+											<property name="text"><string>Reset Rank &amp; Time to Defaults</string></property>
+										</widget>
+									</item>
 								</layout>
 							</widget>
 						</item>
@@ -1508,9 +1513,9 @@
 								<item row="5" column="0" colspan="2"><widget class="QLabel"><property name="text"><string>--- Source Region ---</string></property><property name="alignment"><set>Qt::AlignCenter</set></property></widget></item>
 								<item row="6" column="0"><widget class="QLabel"><property name="text"><string>Src Radius</string></property></widget></item>
 								<item row="6" column="1"><layout class="QHBoxLayout">
-									<item><widget class="QSlider" name="spinMetroidBtmOverlaySrcRadius"><property name="minimum"><number>1</number></property><property name="maximum"><number>128</number></property><property name="value"><number>50</number></property><property name="orientation"><enum>Qt::Horizontal</enum></property></widget></item>
-									<item><widget class="QSpinBox" name="inputMetroidBtmOverlaySrcRadius"><property name="minimum"><number>1</number></property><property name="maximum"><number>128</number></property><property name="value"><number>50</number></property><property name="minimumSize"><size><width>72</width><height>0</height></size></property></widget></item>
-									<item><widget class="QLabel" name="labelMetroidBtmOverlaySrcRadius"><property name="text"><string>50</string></property><property name="minimumSize"><size><width>30</width><height>0</height></size></property><property name="alignment"><set>Qt::AlignRight|Qt::AlignVCenter</set></property></widget></item>
+									<item><widget class="QSlider" name="spinMetroidBtmOverlaySrcRadius"><property name="minimum"><number>1</number></property><property name="maximum"><number>128</number></property><property name="value"><number>46</number></property><property name="orientation"><enum>Qt::Horizontal</enum></property></widget></item>
+									<item><widget class="QSpinBox" name="inputMetroidBtmOverlaySrcRadius"><property name="minimum"><number>1</number></property><property name="maximum"><number>128</number></property><property name="value"><number>46</number></property><property name="minimumSize"><size><width>72</width><height>0</height></size></property></widget></item>
+									<item><widget class="QLabel" name="labelMetroidBtmOverlaySrcRadius"><property name="text"><string>46</string></property><property name="minimumSize"><size><width>30</width><height>0</height></size></property><property name="alignment"><set>Qt::AlignRight|Qt::AlignVCenter</set></property></widget></item>
 								</layout></item>
 
 								</layout>
