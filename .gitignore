@@ -34,6 +34,7 @@ vcpkg.json.bak
 .settings/org.eclipse.wst.jsdt.ui.superType.container
 .settings/org.eclipse.wst.jsdt.ui.superType.name
 .claude/settings.local.json
+<<<<<<< HEAD
 vcpkg
 .claude/worktrees/agent-af2ab1ae
 =======
@@ -75,3 +76,5 @@ vcpkg.json.bak
 vcpkg
 .claude/worktrees/agent-af2ab1ae
 >>>>>>> 3204e4781a40365afc879805a7a42a8df0d293dc
+=======
+>>>>>>> parent of 3204e478 (add sliders)
