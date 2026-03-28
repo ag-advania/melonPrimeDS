@@ -225,6 +225,7 @@ namespace Config
         {"Instance*.Metroid.Visual.BtmOverlayDstX",            190},
         {"Instance*.Metroid.Visual.BtmOverlayDstY",            0},
         {"Instance*.Metroid.Visual.BtmOverlayDstSize",         64},
+        {"Instance*.Metroid.Visual.BtmOverlaySrcRadius",       50},
         /* MelonPrimeDS Bottom Screen Overlay defaults } */
         /* MelonPrimeDS Custom HUD Crosshair defaults } */
     #endif
@@ -327,6 +328,7 @@ namespace Config
         {"Instance*.Metroid.UI.SectionWpnIcon",        false},
         {"Instance*.Metroid.UI.SectionHpGauge",        false},
         {"Instance*.Metroid.UI.SectionAmmoGauge",      false},
+        {"Instance*.Metroid.UI.SectionMatchStatusScore", false},
         {"Instance*.Metroid.UI.SectionRankTime",       false},
         {"Instance*.Metroid.UI.SectionInputSettings",  false},
         {"Instance*.Metroid.UI.SectionScreenSync",     false},

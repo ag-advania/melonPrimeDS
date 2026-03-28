@@ -463,6 +463,7 @@ namespace MelonPrime {
         m_ptrs.isMapOrUserActionPaused = GetRamPointer<uint8_t>(mainRAM, m_addrHot.isMapOrUserActionPaused);
 
         const uint8_t hunterID = Read8(mainRAM, m_addrHot.chosenHunter);
+        m_hunterID = (hunterID <= 6) ? hunterID : 0;
         m_flags.assign(StateFlags::BIT_IS_SAMUS, hunterID == 0x00);
         m_flags.assign(StateFlags::BIT_IS_WEAVEL, hunterID == 0x06);
         m_flags.assign(StateFlags::BIT_IN_ADVENTURE, Read8(mainRAM, m_currentRom.isInAdventure) == 0x02);

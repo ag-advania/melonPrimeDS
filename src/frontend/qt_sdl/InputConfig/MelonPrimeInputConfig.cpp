@@ -72,6 +72,17 @@ MelonPrimeInputConfig::MelonPrimeInputConfig(EmuInstance* emu, QWidget* parent) 
     hideRedundantValueLabel(ui->labelMetroidBtmOverlayDstX);
     hideRedundantValueLabel(ui->labelMetroidBtmOverlayDstY);
     hideRedundantValueLabel(ui->labelMetroidBtmOverlayDstSize);
+    hideRedundantValueLabel(ui->labelMetroidBtmOverlaySrcRadius);
+    hideRedundantValueLabel(ui->labelMetroidCrosshairOutlineThickness);
+    hideRedundantValueLabel(ui->labelMetroidCrosshairDotThickness);
+    hideRedundantValueLabel(ui->labelMetroidCrosshairInnerLengthX);
+    hideRedundantValueLabel(ui->labelMetroidCrosshairInnerLengthY);
+    hideRedundantValueLabel(ui->labelMetroidCrosshairInnerThickness);
+    hideRedundantValueLabel(ui->labelMetroidCrosshairInnerOffset);
+    hideRedundantValueLabel(ui->labelMetroidCrosshairOuterLengthX);
+    hideRedundantValueLabel(ui->labelMetroidCrosshairOuterLengthY);
+    hideRedundantValueLabel(ui->labelMetroidCrosshairOuterThickness);
+    hideRedundantValueLabel(ui->labelMetroidCrosshairOuterOffset);
 
 
 
@@ -97,12 +108,13 @@ MelonPrimeInputConfig::MelonPrimeInputConfig(EmuInstance* emu, QWidget* parent) 
         });
 
         if (input) {
-            QObject::connect(input, QOverload<int>::of(&QSpinBox::valueChanged), this, [sl, input, lbl](int v) {
+            QObject::connect(input, QOverload<int>::of(&QSpinBox::valueChanged), this, [this, sl, input, lbl](int v) {
                 const bool old = sl->blockSignals(true);
                 sl->setValue(v);
                 sl->blockSignals(old);
                 if (lbl)
                     lbl->setText(QString::number(v));
+                applyVisualPreview();
             });
         }
     };
@@ -568,6 +580,7 @@ MelonPrimeInputConfig::MelonPrimeInputConfig(EmuInstance* emu, QWidget* parent) 
     setupToggle(ui->btnToggleAmmoGauge, ui->sectionAmmoGauge, "AMMO GAUGE",     "Metroid.UI.SectionAmmoGauge");
     // Match Status section (inside Custom HUD tab)
     setupToggle(ui->btnToggleMatchStatus, ui->sectionMatchStatus, "MATCH STATUS HUD", "Metroid.UI.SectionMatchStatus");
+    setupToggle(ui->btnToggleMatchStatusScore, ui->sectionMatchStatusScore, "SCORE", "Metroid.UI.SectionMatchStatusScore");
     setupToggle(ui->btnToggleRankTime,   ui->sectionRankTime,   "RANK & TIME HUD","Metroid.UI.SectionRankTime");
     setupToggle(ui->btnToggleRankHud,    ui->sectionRankHud,    "RANK",       "Metroid.UI.SectionRankHud");
     setupToggle(ui->btnToggleTimeLeftHud, ui->sectionTimeLeftHud, "TIME LEFT",  "Metroid.UI.SectionTimeLeftHud");
@@ -1170,12 +1183,16 @@ MelonPrimeInputConfig::MelonPrimeInputConfig(EmuInstance* emu, QWidget* parent) 
     // Crosshair — General
     ui->cbMetroidCrosshairOutline->setChecked(instcfg.GetBool("Metroid.Visual.CrosshairOutline"));
     ui->spinMetroidCrosshairOutlineOpacity->setValue(instcfg.GetDouble("Metroid.Visual.CrosshairOutlineOpacity"));
-    int olThick = instcfg.GetInt("Metroid.Visual.CrosshairOutlineThickness");
-    ui->spinMetroidCrosshairOutlineThickness->setValue(olThick > 0 ? olThick : 1);
+    {
+        int olThick = instcfg.GetInt("Metroid.Visual.CrosshairOutlineThickness");
+        initSliderSync(ui->sliderMetroidCrosshairOutlineThickness, ui->spinMetroidCrosshairOutlineThickness, ui->labelMetroidCrosshairOutlineThickness, olThick > 0 ? olThick : 1);
+    }
     ui->cbMetroidCrosshairCenterDot->setChecked(instcfg.GetBool("Metroid.Visual.CrosshairCenterDot"));
     ui->spinMetroidCrosshairDotOpacity->setValue(instcfg.GetDouble("Metroid.Visual.CrosshairDotOpacity"));
-    int dotThick = instcfg.GetInt("Metroid.Visual.CrosshairDotThickness");
-    ui->spinMetroidCrosshairDotThickness->setValue(dotThick > 0 ? dotThick : 1);
+    {
+        int dotThick = instcfg.GetInt("Metroid.Visual.CrosshairDotThickness");
+        initSliderSync(ui->sliderMetroidCrosshairDotThickness, ui->spinMetroidCrosshairDotThickness, ui->labelMetroidCrosshairDotThickness, dotThick > 0 ? dotThick : 1);
+    }
     ui->cbMetroidCrosshairTStyle->setChecked(instcfg.GetBool("Metroid.Visual.CrosshairTStyle"));
 
     // HUD Radar
@@ -1185,11 +1202,13 @@ MelonPrimeInputConfig::MelonPrimeInputConfig(EmuInstance* emu, QWidget* parent) 
     // Crosshair — Inner Lines
     ui->cbMetroidCrosshairInnerShow->setChecked(instcfg.GetBool("Metroid.Visual.CrosshairInnerShow"));
     ui->spinMetroidCrosshairInnerOpacity->setValue(instcfg.GetDouble("Metroid.Visual.CrosshairInnerOpacity"));
-    ui->spinMetroidCrosshairInnerLengthX->setValue(instcfg.GetInt("Metroid.Visual.CrosshairInnerLengthX"));
-    ui->spinMetroidCrosshairInnerLengthY->setValue(instcfg.GetInt("Metroid.Visual.CrosshairInnerLengthY"));
-    int innerThick = instcfg.GetInt("Metroid.Visual.CrosshairInnerThickness");
-    ui->spinMetroidCrosshairInnerThickness->setValue(innerThick > 0 ? innerThick : 1);
-    ui->spinMetroidCrosshairInnerOffset->setValue(instcfg.GetInt("Metroid.Visual.CrosshairInnerOffset"));
+    initSliderSync(ui->sliderMetroidCrosshairInnerLengthX, ui->spinMetroidCrosshairInnerLengthX, ui->labelMetroidCrosshairInnerLengthX, instcfg.GetInt("Metroid.Visual.CrosshairInnerLengthX"));
+    initSliderSync(ui->sliderMetroidCrosshairInnerLengthY, ui->spinMetroidCrosshairInnerLengthY, ui->labelMetroidCrosshairInnerLengthY, instcfg.GetInt("Metroid.Visual.CrosshairInnerLengthY"));
+    {
+        int innerThick = instcfg.GetInt("Metroid.Visual.CrosshairInnerThickness");
+        initSliderSync(ui->sliderMetroidCrosshairInnerThickness, ui->spinMetroidCrosshairInnerThickness, ui->labelMetroidCrosshairInnerThickness, innerThick > 0 ? innerThick : 1);
+    }
+    initSliderSync(ui->sliderMetroidCrosshairInnerOffset, ui->spinMetroidCrosshairInnerOffset, ui->labelMetroidCrosshairInnerOffset, instcfg.GetInt("Metroid.Visual.CrosshairInnerOffset"));
     ui->cbMetroidCrosshairInnerLinkXY->setChecked(instcfg.GetBool("Metroid.Visual.CrosshairInnerLinkXY"));
 
     // HUD Radar
@@ -1199,11 +1218,13 @@ MelonPrimeInputConfig::MelonPrimeInputConfig(EmuInstance* emu, QWidget* parent) 
     // Crosshair — Outer Lines
     ui->cbMetroidCrosshairOuterShow->setChecked(instcfg.GetBool("Metroid.Visual.CrosshairOuterShow"));
     ui->spinMetroidCrosshairOuterOpacity->setValue(instcfg.GetDouble("Metroid.Visual.CrosshairOuterOpacity"));
-    ui->spinMetroidCrosshairOuterLengthX->setValue(instcfg.GetInt("Metroid.Visual.CrosshairOuterLengthX"));
-    ui->spinMetroidCrosshairOuterLengthY->setValue(instcfg.GetInt("Metroid.Visual.CrosshairOuterLengthY"));
-    int outerThick = instcfg.GetInt("Metroid.Visual.CrosshairOuterThickness");
-    ui->spinMetroidCrosshairOuterThickness->setValue(outerThick > 0 ? outerThick : 1);
-    ui->spinMetroidCrosshairOuterOffset->setValue(instcfg.GetInt("Metroid.Visual.CrosshairOuterOffset"));
+    initSliderSync(ui->sliderMetroidCrosshairOuterLengthX, ui->spinMetroidCrosshairOuterLengthX, ui->labelMetroidCrosshairOuterLengthX, instcfg.GetInt("Metroid.Visual.CrosshairOuterLengthX"));
+    initSliderSync(ui->sliderMetroidCrosshairOuterLengthY, ui->spinMetroidCrosshairOuterLengthY, ui->labelMetroidCrosshairOuterLengthY, instcfg.GetInt("Metroid.Visual.CrosshairOuterLengthY"));
+    {
+        int outerThick = instcfg.GetInt("Metroid.Visual.CrosshairOuterThickness");
+        initSliderSync(ui->sliderMetroidCrosshairOuterThickness, ui->spinMetroidCrosshairOuterThickness, ui->labelMetroidCrosshairOuterThickness, outerThick > 0 ? outerThick : 1);
+    }
+    initSliderSync(ui->sliderMetroidCrosshairOuterOffset, ui->spinMetroidCrosshairOuterOffset, ui->labelMetroidCrosshairOuterOffset, instcfg.GetInt("Metroid.Visual.CrosshairOuterOffset"));
     ui->cbMetroidCrosshairOuterLinkXY->setChecked(instcfg.GetBool("Metroid.Visual.CrosshairOuterLinkXY"));
 
     // Link X/Y sync: when linked, changing X updates Y and vice versa
@@ -1212,6 +1233,10 @@ MelonPrimeInputConfig::MelonPrimeInputConfig(EmuInstance* emu, QWidget* parent) 
             ui->spinMetroidCrosshairInnerLengthY->blockSignals(true);
             ui->spinMetroidCrosshairInnerLengthY->setValue(val);
             ui->spinMetroidCrosshairInnerLengthY->blockSignals(false);
+            ui->sliderMetroidCrosshairInnerLengthY->blockSignals(true);
+            ui->sliderMetroidCrosshairInnerLengthY->setValue(val);
+            ui->sliderMetroidCrosshairInnerLengthY->blockSignals(false);
+            ui->labelMetroidCrosshairInnerLengthY->setText(QString::number(val));
         }
     });
     connect(ui->spinMetroidCrosshairInnerLengthY, QOverload<int>::of(&QSpinBox::valueChanged), this, [this](int val) {
@@ -1219,6 +1244,10 @@ MelonPrimeInputConfig::MelonPrimeInputConfig(EmuInstance* emu, QWidget* parent) 
             ui->spinMetroidCrosshairInnerLengthX->blockSignals(true);
             ui->spinMetroidCrosshairInnerLengthX->setValue(val);
             ui->spinMetroidCrosshairInnerLengthX->blockSignals(false);
+            ui->sliderMetroidCrosshairInnerLengthX->blockSignals(true);
+            ui->sliderMetroidCrosshairInnerLengthX->setValue(val);
+            ui->sliderMetroidCrosshairInnerLengthX->blockSignals(false);
+            ui->labelMetroidCrosshairInnerLengthX->setText(QString::number(val));
         }
     });
     connect(ui->spinMetroidCrosshairOuterLengthX, QOverload<int>::of(&QSpinBox::valueChanged), this, [this](int val) {
@@ -1226,6 +1255,10 @@ MelonPrimeInputConfig::MelonPrimeInputConfig(EmuInstance* emu, QWidget* parent) 
             ui->spinMetroidCrosshairOuterLengthY->blockSignals(true);
             ui->spinMetroidCrosshairOuterLengthY->setValue(val);
             ui->spinMetroidCrosshairOuterLengthY->blockSignals(false);
+            ui->sliderMetroidCrosshairOuterLengthY->blockSignals(true);
+            ui->sliderMetroidCrosshairOuterLengthY->setValue(val);
+            ui->sliderMetroidCrosshairOuterLengthY->blockSignals(false);
+            ui->labelMetroidCrosshairOuterLengthY->setText(QString::number(val));
         }
     });
     connect(ui->spinMetroidCrosshairOuterLengthY, QOverload<int>::of(&QSpinBox::valueChanged), this, [this](int val) {
@@ -1233,6 +1266,10 @@ MelonPrimeInputConfig::MelonPrimeInputConfig(EmuInstance* emu, QWidget* parent) 
             ui->spinMetroidCrosshairOuterLengthX->blockSignals(true);
             ui->spinMetroidCrosshairOuterLengthX->setValue(val);
             ui->spinMetroidCrosshairOuterLengthX->blockSignals(false);
+            ui->sliderMetroidCrosshairOuterLengthX->blockSignals(true);
+            ui->sliderMetroidCrosshairOuterLengthX->setValue(val);
+            ui->sliderMetroidCrosshairOuterLengthX->blockSignals(false);
+            ui->labelMetroidCrosshairOuterLengthX->setText(QString::number(val));
         }
     });
 
@@ -1304,6 +1341,7 @@ MelonPrimeInputConfig::MelonPrimeInputConfig(EmuInstance* emu, QWidget* parent) 
     prvB(ui->cbMetroidBtmOverlayEnable);
     prvSl(ui->spinMetroidBtmOverlayDstX); prvSl(ui->spinMetroidBtmOverlayDstY); prvSl(ui->spinMetroidBtmOverlayDstSize);
     prvD(ui->spinMetroidBtmOverlayOpacity);
+    prvSl(ui->spinMetroidBtmOverlaySrcRadius);
     // Match Status colors
     prvC(ui->comboMetroidHudMatchStatusColor);
     prvI(ui->spinMetroidHudMatchStatusColorR); prvI(ui->spinMetroidHudMatchStatusColorG); prvI(ui->spinMetroidHudMatchStatusColorB);
@@ -1319,19 +1357,21 @@ MelonPrimeInputConfig::MelonPrimeInputConfig(EmuInstance* emu, QWidget* parent) 
     // Crosshair
     // (Crosshair color button clicks already call applyVisualPreview via setupColorButton)
     prvB(ui->cbMetroidCrosshairOutline);
-    prvD(ui->spinMetroidCrosshairOutlineOpacity); prvI(ui->spinMetroidCrosshairOutlineThickness);
+    prvD(ui->spinMetroidCrosshairOutlineOpacity);
+    prvSl(ui->sliderMetroidCrosshairOutlineThickness);
     prvB(ui->cbMetroidCrosshairCenterDot);
-    prvD(ui->spinMetroidCrosshairDotOpacity); prvI(ui->spinMetroidCrosshairDotThickness);
+    prvD(ui->spinMetroidCrosshairDotOpacity);
+    prvSl(ui->sliderMetroidCrosshairDotThickness);
     prvB(ui->cbMetroidCrosshairTStyle);
     prvB(ui->cbMetroidCrosshairInnerShow);
     prvD(ui->spinMetroidCrosshairInnerOpacity);
-    prvI(ui->spinMetroidCrosshairInnerLengthX); prvI(ui->spinMetroidCrosshairInnerLengthY);
-    prvI(ui->spinMetroidCrosshairInnerThickness); prvI(ui->spinMetroidCrosshairInnerOffset);
+    prvSl(ui->sliderMetroidCrosshairInnerLengthX); prvSl(ui->sliderMetroidCrosshairInnerLengthY);
+    prvSl(ui->sliderMetroidCrosshairInnerThickness); prvSl(ui->sliderMetroidCrosshairInnerOffset);
     prvB(ui->cbMetroidCrosshairInnerLinkXY);
     prvB(ui->cbMetroidCrosshairOuterShow);
     prvD(ui->spinMetroidCrosshairOuterOpacity);
-    prvI(ui->spinMetroidCrosshairOuterLengthX); prvI(ui->spinMetroidCrosshairOuterLengthY);
-    prvI(ui->spinMetroidCrosshairOuterThickness); prvI(ui->spinMetroidCrosshairOuterOffset);
+    prvSl(ui->sliderMetroidCrosshairOuterLengthX); prvSl(ui->sliderMetroidCrosshairOuterLengthY);
+    prvSl(ui->sliderMetroidCrosshairOuterThickness); prvSl(ui->sliderMetroidCrosshairOuterOffset);
     prvB(ui->cbMetroidCrosshairOuterLinkXY);
 
     // HUD Radar
@@ -1340,13 +1380,26 @@ MelonPrimeInputConfig::MelonPrimeInputConfig(EmuInstance* emu, QWidget* parent) 
     initSliderSync(ui->spinMetroidBtmOverlayDstY,    ui->inputMetroidBtmOverlayDstY,    ui->labelMetroidBtmOverlayDstY,    instcfg.GetInt("Metroid.Visual.BtmOverlayDstY"));
     initSliderSync(ui->spinMetroidBtmOverlayDstSize, ui->inputMetroidBtmOverlayDstSize, ui->labelMetroidBtmOverlayDstSize, instcfg.GetInt("Metroid.Visual.BtmOverlayDstSize"));
     ui->spinMetroidBtmOverlayOpacity->setValue(instcfg.GetDouble("Metroid.Visual.BtmOverlayOpacity"));
+    ui->sliderMetroidBtmOverlayOpacity->setValue(qRound(instcfg.GetDouble("Metroid.Visual.BtmOverlayOpacity") * 100));
+    initSliderSync(ui->spinMetroidBtmOverlaySrcRadius,  ui->inputMetroidBtmOverlaySrcRadius,  ui->labelMetroidBtmOverlaySrcRadius,  instcfg.GetInt("Metroid.Visual.BtmOverlaySrcRadius"));
 
     // Connect radar preview updates
     connect(ui->cbMetroidBtmOverlayEnable, &QCheckBox::checkStateChanged, this, [this](Qt::CheckState) { updateRadarPreview(); });
     connect(ui->spinMetroidBtmOverlayDstX,    &QSlider::valueChanged, this, [this](int) { updateRadarPreview(); });
     connect(ui->spinMetroidBtmOverlayDstY,    &QSlider::valueChanged, this, [this](int) { updateRadarPreview(); });
     connect(ui->spinMetroidBtmOverlayDstSize, &QSlider::valueChanged, this, [this](int) { updateRadarPreview(); });
-    connect(ui->spinMetroidBtmOverlayOpacity, QOverload<double>::of(&QDoubleSpinBox::valueChanged), this, [this](double) { updateRadarPreview(); });
+    connect(ui->spinMetroidBtmOverlayOpacity, QOverload<double>::of(&QDoubleSpinBox::valueChanged), this, [this](double val) {
+        ui->sliderMetroidBtmOverlayOpacity->blockSignals(true);
+        ui->sliderMetroidBtmOverlayOpacity->setValue(qRound(val * 100));
+        ui->sliderMetroidBtmOverlayOpacity->blockSignals(false);
+        updateRadarPreview();
+    });
+    connect(ui->sliderMetroidBtmOverlayOpacity, &QSlider::valueChanged, this, [this](int val) {
+        ui->spinMetroidBtmOverlayOpacity->blockSignals(true);
+        ui->spinMetroidBtmOverlayOpacity->setValue(val / 100.0);
+        ui->spinMetroidBtmOverlayOpacity->blockSignals(false);
+        updateRadarPreview();
+    });
 
     auto syncColorPickerUi = [this](QPushButton* btn,
                                     const char* cfgR, const char* cfgG, const char* cfgB,
@@ -1682,6 +1735,7 @@ void MelonPrimeInputConfig::snapshotVisualConfig()
     sSl("sRadarDstY", ui->spinMetroidBtmOverlayDstY);
     sSl("sRadarSize", ui->spinMetroidBtmOverlayDstSize);
     sD("dRadarOpacity", ui->spinMetroidBtmOverlayOpacity);
+    sSl("sRadarSrcR",  ui->spinMetroidBtmOverlaySrcRadius);
     // Rank & Time colors (from config)
     sI("sRankClrSpinR", ui->spinMetroidHudRankColorR);
     sI("sRankClrSpinG", ui->spinMetroidHudRankColorG);
@@ -1877,6 +1931,10 @@ void MelonPrimeInputConfig::restoreVisualSnapshot()
     rSl("sRadarDstY", ui->spinMetroidBtmOverlayDstY, ui->inputMetroidBtmOverlayDstY, ui->labelMetroidBtmOverlayDstY);
     rSl("sRadarSize", ui->spinMetroidBtmOverlayDstSize, ui->inputMetroidBtmOverlayDstSize, ui->labelMetroidBtmOverlayDstSize);
     rD("dRadarOpacity", ui->spinMetroidBtmOverlayOpacity);
+    ui->sliderMetroidBtmOverlayOpacity->blockSignals(true);
+    ui->sliderMetroidBtmOverlayOpacity->setValue(qRound(ui->spinMetroidBtmOverlayOpacity->value() * 100));
+    ui->sliderMetroidBtmOverlayOpacity->blockSignals(false);
+    rSl("sRadarSrcR",  ui->spinMetroidBtmOverlaySrcRadius,  ui->inputMetroidBtmOverlaySrcRadius,  ui->labelMetroidBtmOverlaySrcRadius);
     // Rank & Time colors
     rI("sRankClrSpinR", ui->spinMetroidHudRankColorR);
     rI("sRankClrSpinG", ui->spinMetroidHudRankColorG);
@@ -1912,6 +1970,23 @@ void MelonPrimeInputConfig::restoreVisualSnapshot()
     rI("sChOuterThick", ui->spinMetroidCrosshairOuterThickness);
     rI("sChOuterOfs",   ui->spinMetroidCrosshairOuterOffset);
     rB("cChOuterLink",  ui->cbMetroidCrosshairOuterLinkXY);
+    // Sync crosshair sliders to their restored spinbox values
+    {
+        auto syncSl = [](QSlider* sl, QSpinBox* sb, QLabel* lbl) {
+            sl->blockSignals(true); sl->setValue(sb->value()); sl->blockSignals(false);
+            lbl->setText(QString::number(sb->value()));
+        };
+        syncSl(ui->sliderMetroidCrosshairOutlineThickness, ui->spinMetroidCrosshairOutlineThickness, ui->labelMetroidCrosshairOutlineThickness);
+        syncSl(ui->sliderMetroidCrosshairDotThickness,     ui->spinMetroidCrosshairDotThickness,     ui->labelMetroidCrosshairDotThickness);
+        syncSl(ui->sliderMetroidCrosshairInnerLengthX,     ui->spinMetroidCrosshairInnerLengthX,     ui->labelMetroidCrosshairInnerLengthX);
+        syncSl(ui->sliderMetroidCrosshairInnerLengthY,     ui->spinMetroidCrosshairInnerLengthY,     ui->labelMetroidCrosshairInnerLengthY);
+        syncSl(ui->sliderMetroidCrosshairInnerThickness,   ui->spinMetroidCrosshairInnerThickness,   ui->labelMetroidCrosshairInnerThickness);
+        syncSl(ui->sliderMetroidCrosshairInnerOffset,      ui->spinMetroidCrosshairInnerOffset,      ui->labelMetroidCrosshairInnerOffset);
+        syncSl(ui->sliderMetroidCrosshairOuterLengthX,     ui->spinMetroidCrosshairOuterLengthX,     ui->labelMetroidCrosshairOuterLengthX);
+        syncSl(ui->sliderMetroidCrosshairOuterLengthY,     ui->spinMetroidCrosshairOuterLengthY,     ui->labelMetroidCrosshairOuterLengthY);
+        syncSl(ui->sliderMetroidCrosshairOuterThickness,   ui->spinMetroidCrosshairOuterThickness,   ui->labelMetroidCrosshairOuterThickness);
+        syncSl(ui->sliderMetroidCrosshairOuterOffset,      ui->spinMetroidCrosshairOuterOffset,      ui->labelMetroidCrosshairOuterOffset);
+    }
 
     // Restore color values from snapshot into config and update button backgrounds
     {
@@ -2079,11 +2154,12 @@ void MelonPrimeInputConfig::applyVisualPreview()
     instcfg.SetBool("Metroid.Visual.CrosshairOuterLinkXY",     ui->cbMetroidCrosshairOuterLinkXY->isChecked());
 
     // Bottom Screen Overlay
-    instcfg.SetBool  ("Metroid.Visual.BtmOverlayEnable",  ui->cbMetroidBtmOverlayEnable->isChecked());
-    instcfg.SetInt   ("Metroid.Visual.BtmOverlayDstX",    ui->spinMetroidBtmOverlayDstX->value());
-    instcfg.SetInt   ("Metroid.Visual.BtmOverlayDstY",    ui->spinMetroidBtmOverlayDstY->value());
-    instcfg.SetInt   ("Metroid.Visual.BtmOverlayDstSize", ui->spinMetroidBtmOverlayDstSize->value());
-    instcfg.SetDouble("Metroid.Visual.BtmOverlayOpacity", ui->spinMetroidBtmOverlayOpacity->value());
+    instcfg.SetBool  ("Metroid.Visual.BtmOverlayEnable",     ui->cbMetroidBtmOverlayEnable->isChecked());
+    instcfg.SetInt   ("Metroid.Visual.BtmOverlayDstX",       ui->spinMetroidBtmOverlayDstX->value());
+    instcfg.SetInt   ("Metroid.Visual.BtmOverlayDstY",       ui->spinMetroidBtmOverlayDstY->value());
+    instcfg.SetInt   ("Metroid.Visual.BtmOverlayDstSize",    ui->spinMetroidBtmOverlayDstSize->value());
+    instcfg.SetDouble("Metroid.Visual.BtmOverlayOpacity",    ui->spinMetroidBtmOverlayOpacity->value());
+    instcfg.SetInt   ("Metroid.Visual.BtmOverlaySrcRadius",  ui->spinMetroidBtmOverlaySrcRadius->value());
 
     MelonPrime::CustomHud_InvalidateConfigCache();
 
@@ -2208,8 +2284,9 @@ void MelonPrimeInputConfig::saveConfig()
     instcfg.SetBool("Metroid.UI.SectionWpnIcon",        ui->btnToggleWpnIcon->isChecked());
     instcfg.SetBool("Metroid.UI.SectionHpGauge",        ui->btnToggleHpGauge->isChecked());
     instcfg.SetBool("Metroid.UI.SectionAmmoGauge",      ui->btnToggleAmmoGauge->isChecked());
-    instcfg.SetBool("Metroid.UI.SectionMatchStatus",    ui->btnToggleMatchStatus->isChecked());
-    instcfg.SetBool("Metroid.UI.SectionRankTime",       ui->btnToggleRankTime->isChecked());
+    instcfg.SetBool("Metroid.UI.SectionMatchStatus",      ui->btnToggleMatchStatus->isChecked());
+    instcfg.SetBool("Metroid.UI.SectionMatchStatusScore", ui->btnToggleMatchStatusScore->isChecked());
+    instcfg.SetBool("Metroid.UI.SectionRankTime",         ui->btnToggleRankTime->isChecked());
     instcfg.SetBool("Metroid.UI.SectionRankHud",        ui->btnToggleRankHud->isChecked());
     instcfg.SetBool("Metroid.UI.SectionTimeLeftHud",    ui->btnToggleTimeLeftHud->isChecked());
     instcfg.SetBool("Metroid.UI.SectionTimeLimitHud",   ui->btnToggleTimeLimitHud->isChecked());
@@ -2344,11 +2421,12 @@ void MelonPrimeInputConfig::saveConfig()
     instcfg.SetBool("Metroid.Visual.CrosshairOuterLinkXY", ui->cbMetroidCrosshairOuterLinkXY->checkState() == Qt::Checked);
 
     // Bottom Screen Overlay
-    instcfg.SetBool  ("Metroid.Visual.BtmOverlayEnable",  ui->cbMetroidBtmOverlayEnable->checkState() == Qt::Checked);
-    instcfg.SetInt   ("Metroid.Visual.BtmOverlayDstX",    ui->spinMetroidBtmOverlayDstX->value());
-    instcfg.SetInt   ("Metroid.Visual.BtmOverlayDstY",    ui->spinMetroidBtmOverlayDstY->value());
-    instcfg.SetInt   ("Metroid.Visual.BtmOverlayDstSize", ui->spinMetroidBtmOverlayDstSize->value());
-    instcfg.SetDouble("Metroid.Visual.BtmOverlayOpacity", ui->spinMetroidBtmOverlayOpacity->value());
+    instcfg.SetBool  ("Metroid.Visual.BtmOverlayEnable",     ui->cbMetroidBtmOverlayEnable->checkState() == Qt::Checked);
+    instcfg.SetInt   ("Metroid.Visual.BtmOverlayDstX",       ui->spinMetroidBtmOverlayDstX->value());
+    instcfg.SetInt   ("Metroid.Visual.BtmOverlayDstY",       ui->spinMetroidBtmOverlayDstY->value());
+    instcfg.SetInt   ("Metroid.Visual.BtmOverlayDstSize",    ui->spinMetroidBtmOverlayDstSize->value());
+    instcfg.SetDouble("Metroid.Visual.BtmOverlayOpacity",    ui->spinMetroidBtmOverlayOpacity->value());
+    instcfg.SetInt   ("Metroid.Visual.BtmOverlaySrcRadius",  ui->spinMetroidBtmOverlaySrcRadius->value());
 
     // P-3: Invalidate cached config so next frame re-reads all values
     MelonPrime::CustomHud_InvalidateConfigCache();
@@ -2446,9 +2524,14 @@ void MelonPrimeInputConfig::setupColorButton(QPushButton* btn, const QString& co
         int curG = spinG ? spinG->value() : cfg.GetInt(configKeyG.toStdString().c_str());
         int curB = spinB ? spinB->value() : cfg.GetInt(configKeyB.toStdString().c_str());
         QColor initial(curR, curG, curB);
-        QColor chosen = QColorDialog::getColor(initial, this, "Pick Color", QColorDialog::DontUseNativeDialog);
+        QColorDialog dlg(initial, this);
+        dlg.setOptions(QColorDialog::DontUseNativeDialog);
+        dlg.raise();
+        dlg.activateWindow();
+        bool _accepted = (dlg.exec() == QDialog::Accepted);
         m_colorDialogOpen = false;
-        if (!chosen.isValid()) return;
+        if (!_accepted) return;
+        QColor chosen = dlg.selectedColor();
 
         cfg.SetInt(configKeyR.toStdString().c_str(), chosen.red());
         cfg.SetInt(configKeyG.toStdString().c_str(), chosen.green());
