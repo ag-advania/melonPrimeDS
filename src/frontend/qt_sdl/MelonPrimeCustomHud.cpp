@@ -10,6 +10,7 @@
 #include "Config.h"
 
 #include <QPainter>
+#include <QPainterPath>
 #include <QImage>
 #include <QColor>
 #include <QPoint>
@@ -1129,6 +1130,43 @@ HOT_FUNCTION void CustomHud_Render(
     bool isTrans = (Read8(ram, addrHot.jumpFlag) & 0x10) != 0;
     if (!isTrans && !isAlt)
         DrawCrosshair(topPaint, ram, rom, c, topStretchX);
+
+    // Draw bottom screen overlay on top screen
+    DrawBottomScreenOverlay(localCfg, topPaint, btmBuffer);
+}
+
+void DrawBottomScreenOverlay(Config::Table& localCfg, QPainter* topPaint, QImage* btmBuffer)
+{
+    if (!localCfg.GetBool("Metroid.Visual.BtmOverlayEnable")) return;
+    if (!topPaint || !btmBuffer || btmBuffer->isNull()) return;
+
+    int dstX = localCfg.GetInt("Metroid.Visual.BtmOverlayDstX");
+    int dstY = localCfg.GetInt("Metroid.Visual.BtmOverlayDstY");
+    int dstSize = std::max(localCfg.GetInt("Metroid.Visual.BtmOverlayDstSize"), 1);
+    double opacity = localCfg.GetDouble("Metroid.Visual.BtmOverlayOpacity");
+
+    // Source region: radar center at DS (128, 117), radius 50 px (diameter 99)
+    const int srcCenterX = 128, srcCenterY = 117, srcRadius = 50;
+    const float bufScaleX = static_cast<float>(btmBuffer->width()) / 256.0f;
+    const float bufScaleY = static_cast<float>(btmBuffer->height()) / 192.0f;
+
+    QRect srcRect(static_cast<int>((srcCenterX - srcRadius) * bufScaleX),
+                  static_cast<int>((srcCenterY - srcRadius) * bufScaleY),
+                  static_cast<int>(srcRadius * 2 * bufScaleX),
+                  static_cast<int>(srcRadius * 2 * bufScaleY));
+    QRect dstRect(dstX, dstY, dstSize, dstSize);
+
+    topPaint->save();
+    topPaint->setRenderHint(QPainter::SmoothPixmapTransform, true);
+    topPaint->setOpacity(std::clamp(opacity, 0.0, 1.0));
+
+    // Clip to circle
+    QPainterPath circlePath;
+    circlePath.addEllipse(dstRect);
+    topPaint->setClipPath(circlePath);
+
+    topPaint->drawImage(dstRect, *btmBuffer, srcRect);
+    topPaint->restore();
 }
 
 } // namespace MelonPrime
