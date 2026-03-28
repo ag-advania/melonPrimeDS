@@ -174,6 +174,7 @@ namespace MelonPrime {
         [[nodiscard]] const RomAddresses& GetCurrentRom() const { return m_currentRom; }
         [[nodiscard]] const GameAddressesHot& GetAddrHot() const { return m_addrHot; }
         [[nodiscard]] uint8_t GetPlayerPosition() const { return m_playerPosition; }
+        [[nodiscard]] uint8_t GetHunterID() const { return m_hunterID; }
         [[nodiscard]] bool IsRomDetected() const { return m_flags.test(StateFlags::BIT_ROM_DETECTED); }
 #endif
 
@@ -307,6 +308,7 @@ namespace MelonPrime {
         RomAddresses m_currentRom{};
         uint8_t      m_appliedFlags = 0;
         melonDS::u8  m_playerPosition = 0;
+        uint8_t      m_hunterID = 0;
 
         // =================================================================
         // Inline helpers

@@ -50,6 +50,7 @@
 #include "MelonPrime.h"
 
 #ifdef MELONPRIME_CUSTOM_HUD
+#include "MelonPrimeConstants.h"
 #include "MelonPrimeCustomHud.h"
 #include <QFontDatabase>
 #endif
@@ -1697,9 +1698,12 @@ void ScreenPanelGL::drawScreen()
                         glUniform2f(btmOverlayScreenSizeULoc, w / factor, h / factor);
                         glUniform1f(btmOverlayOpacityULoc, std::clamp(static_cast<float>(opacity), 0.0f, 1.0f));
 
-                        // Source region: radar center at DS (128, 117), radius 49.5 px (diameter 99)
-                        glUniform2f(btmOverlaySrcCenterULoc, 128.0f / 256.0f, 117.0f / 192.0f);
-                        glUniform1f(btmOverlaySrcRadiusULoc, 49.5f / 256.0f);
+                        const uint8_t hunterID = mp->GetHunterID();
+                        glUniform2f(btmOverlaySrcCenterULoc,
+                            MelonPrime::kBtmOverlaySrcCenterX / 256.0f,
+                            MelonPrime::kBtmOverlaySrcCenterY[hunterID] / 192.0f);
+                        glUniform1f(btmOverlaySrcRadiusULoc,
+                            instcfg.GetInt("Metroid.Visual.BtmOverlaySrcRadius") / 256.0f);
 
                         glActiveTexture(GL_TEXTURE0);
                         glBindTexture(GL_TEXTURE_2D_ARRAY, activeScreenTexture);
