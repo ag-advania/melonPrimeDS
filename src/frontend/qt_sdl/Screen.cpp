@@ -1360,6 +1360,43 @@ void ScreenPanelGL::initOpenGL()
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
         glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, 256, 192, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
     }
+
+    // Bottom screen overlay shader (textured quad with opacity + Y-flip)
+    OpenGL::CompileVertexFragmentProgram(btmOverlayShader,
+        kBtmOverlayVS, kBtmOverlayFS,
+        "BtmOverlayShader",
+        { {"vPosition", 0}, {"vTexcoord", 1} },
+        { {"oColor", 0} });
+
+    glUseProgram(btmOverlayShader);
+    glUniform1i(glGetUniformLocation(btmOverlayShader, "ScreenTex"), 0);
+    btmOverlayScreenSizeULoc = glGetUniformLocation(btmOverlayShader, "uScreenSize");
+    btmOverlayOpacityULoc = glGetUniformLocation(btmOverlayShader, "uOpacity");
+    btmOverlaySrcCenterULoc = glGetUniformLocation(btmOverlayShader, "uSrcCenter");
+    btmOverlaySrcRadiusULoc = glGetUniformLocation(btmOverlayShader, "uSrcRadius");
+
+    // Quad: 6 vertices, each with position(x,y) + texcoord(u,v)
+    // Texcoords map source rect — will be updated dynamically
+    const float btmOverlayVerts[6 * 4] =
+    {
+        0, 0,  0, 0,
+        0, 1,  0, 1,
+        1, 1,  1, 1,
+        0, 0,  0, 0,
+        1, 1,  1, 1,
+        1, 0,  1, 0,
+    };
+
+    glGenBuffers(1, &btmOverlayVertexBuffer);
+    glBindBuffer(GL_ARRAY_BUFFER, btmOverlayVertexBuffer);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(btmOverlayVerts), btmOverlayVerts, GL_STATIC_DRAW);
+
+    glGenVertexArrays(1, &btmOverlayVertexArray);
+    glBindVertexArray(btmOverlayVertexArray);
+    glEnableVertexAttribArray(0); // position
+    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float), (void*)0);
+    glEnableVertexAttribArray(1); // texcoord
+    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float), (void*)(2 * sizeof(float)));
 #endif
 
     transferLayout();
@@ -1394,6 +1431,9 @@ void ScreenPanelGL::deinitOpenGL()
 
 #ifdef MELONPRIME_CUSTOM_HUD
     glDeleteTextures(2, overlayTextures);
+    glDeleteProgram(btmOverlayShader);
+    glDeleteBuffers(1, &btmOverlayVertexBuffer);
+    glDeleteVertexArrays(1, &btmOverlayVertexArray);
 #endif
 
     glDeleteProgram(osdShader);
@@ -1480,7 +1520,9 @@ void ScreenPanelGL::drawScreen()
         glUniform2f(screenShaderScreenSizeULoc, w / factor, h / factor);
 
         void* topbuf; void* bottombuf;
-        if (nds->GPU.GetFramebuffers(&topbuf, &bottombuf))
+        bool hasCPUBuffers = nds->GPU.GetFramebuffers(&topbuf, &bottombuf);
+        GLuint activeScreenTexture = screenTexture; // track which texture has the screen data
+        if (hasCPUBuffers)
         {
             // if we're doing a regular render, use the provided framebuffers
             // otherwise, GetFramebuffers() will set up the required state
@@ -1496,6 +1538,7 @@ void ScreenPanelGL::drawScreen()
         else
         {
             GLuint texid = *(GLuint*)topbuf;
+            activeScreenTexture = texid; // GPU renderer's texture has the screen data
 
             glActiveTexture(GL_TEXTURE0);
             glBindTexture(GL_TEXTURE_2D_ARRAY, texid);
@@ -1612,6 +1655,65 @@ void ScreenPanelGL::drawScreen()
 
                 glDisable(GL_BLEND);
 
+                // --- Bottom Screen Overlay (GL-native, circle, high-res with opacity) ---
+                if (instcfg.GetBool("Metroid.Visual.BtmOverlayEnable"))
+                {
+                    int dstX = instcfg.GetInt("Metroid.Visual.BtmOverlayDstX");
+                    int dstY = instcfg.GetInt("Metroid.Visual.BtmOverlayDstY");
+                    int dstSize = std::max(instcfg.GetInt("Metroid.Visual.BtmOverlayDstSize"), 1);
+                    double opacity = instcfg.GetDouble("Metroid.Visual.BtmOverlayOpacity");
+
+                    // Find the top screen transform to map DS coords → window coords
+                    const float* topMtx = nullptr;
+                    for (int i = 0; i < numScreens; i++)
+                    {
+                        if (screenKind[i] == 0) { topMtx = screenMatrix[i]; break; }
+                    }
+
+                    if (topMtx)
+                    {
+                        // Map DS dest coords to window pixel coords (square bounding box)
+                        float wDstX0 = topMtx[0] * dstX + topMtx[1] * dstY + topMtx[4];
+                        float wDstY0 = topMtx[2] * dstX + topMtx[3] * dstY + topMtx[5];
+                        float wDstX1 = topMtx[0] * (dstX + dstSize) + topMtx[1] * (dstY + dstSize) + topMtx[4];
+                        float wDstY1 = topMtx[2] * (dstX + dstSize) + topMtx[3] * (dstY + dstSize) + topMtx[5];
+
+                        // Full bottom screen as source (texcoords 0-1)
+                        const float verts[6 * 4] =
+                        {
+                            wDstX0, wDstY0,  0.0f, 0.0f,
+                            wDstX0, wDstY1,  0.0f, 1.0f,
+                            wDstX1, wDstY1,  1.0f, 1.0f,
+                            wDstX0, wDstY0,  0.0f, 0.0f,
+                            wDstX1, wDstY1,  1.0f, 1.0f,
+                            wDstX1, wDstY0,  1.0f, 0.0f,
+                        };
+
+                        glUseProgram(btmOverlayShader);
+                        glBindVertexArray(btmOverlayVertexArray);
+                        glBindBuffer(GL_ARRAY_BUFFER, btmOverlayVertexBuffer);
+                        glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(verts), verts);
+
+                        glUniform2f(btmOverlayScreenSizeULoc, w / factor, h / factor);
+                        glUniform1f(btmOverlayOpacityULoc, std::clamp(static_cast<float>(opacity), 0.0f, 1.0f));
+
+                        // Source region: radar center at DS (128, 117), radius 49.5 px (diameter 99)
+                        glUniform2f(btmOverlaySrcCenterULoc, 128.0f / 256.0f, 117.0f / 192.0f);
+                        glUniform1f(btmOverlaySrcRadiusULoc, 49.5f / 256.0f);
+
+                        glActiveTexture(GL_TEXTURE0);
+                        glBindTexture(GL_TEXTURE_2D_ARRAY, activeScreenTexture);
+                        glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+                        glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+
+                        glEnable(GL_BLEND);
+                        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
+                        glDrawArrays(GL_TRIANGLES, 0, 6);
+
+                        glDisable(GL_BLEND);
+                    }
+                }
 
                 // Restore screen shader state
                 glUseProgram(screenShaderProgram);
