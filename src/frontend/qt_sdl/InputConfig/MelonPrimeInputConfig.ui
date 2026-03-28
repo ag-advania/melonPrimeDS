@@ -34,18 +34,28 @@
 
 					<widget class="QWidget" name="tabAddonsMetroid">
 						<attribute name="title">
-							<string>Add-ons (Metroid)</string>
+							<string>Controls</string>
 						</attribute>
 					</widget>
 
 					<widget class="QWidget" name="tabAddonsMetroid2">
 						<attribute name="title">
-							<string>Add-ons (Metroid) 2</string>
+							<string>Controls 2</string>
 						</attribute>
 					</widget>
 
 					<widget class="QWidget" name="tabMetroid">
-						<attribute name="title"><string>Other Metroid settings</string></attribute>
+						<attribute name="title"><string>Settings</string></attribute>
+						<layout class="QVBoxLayout" name="metroidOuterVLayout">
+							<property name="leftMargin"><number>0</number></property>
+							<property name="topMargin"><number>0</number></property>
+							<property name="rightMargin"><number>0</number></property>
+							<property name="bottomMargin"><number>0</number></property>
+							<item>
+								<widget class="QScrollArea" name="scrollSettings">
+									<property name="widgetResizable"><bool>true</bool></property>
+									<property name="frameShape"><enum>QFrame::NoFrame</enum></property>
+									<widget class="QWidget" name="scrollSettingsContents">
 						<layout class="QVBoxLayout" name="metroidVLayout">
 
 							<item>
@@ -447,18 +457,7 @@
 								</widget>
 							</item>
 
-							<item>
-								<spacer name="verticalSpacer"><property name="orientation"><enum>Qt::Vertical</enum></property><property name="sizeHint" stdset="0"><size><width>20</width><height>40</height></size></property></spacer>
-							</item>
-
-						</layout>
-					</widget>
-
-					<widget class="QWidget" name="tabMetroid2">
-						<attribute name="title"><string>Other Metroid settings 2</string></attribute>
-						<layout class="QVBoxLayout" name="metroidVLayout2">
-
-							<!-- INPUT SETTINGS toggle -->
+							<!-- INPUT SETTINGS toggle (merged from tabMetroid2) -->
 							<item><widget class="QPushButton" name="btnToggleInputSettings">
 								<property name="text"><string>▶ INPUT SETTINGS</string></property>
 								<property name="checkable"><bool>true</bool></property>
@@ -493,7 +492,7 @@
 								</widget>
 							</item>
 
-							<!-- SCREEN SYNC toggle -->
+							<!-- SCREEN SYNC toggle (merged from tabMetroid2) -->
 							<item><widget class="QPushButton" name="btnToggleScreenSync">
 								<property name="text"><string>▶ SCREEN SYNC</string></property>
 								<property name="checkable"><bool>true</bool></property>
@@ -554,7 +553,7 @@
 								</widget>
 							</item>
 
-							<!-- IN-GAME ASPECT RATIO toggle -->
+							<!-- IN-GAME ASPECT RATIO toggle (merged from tabMetroid2) -->
 							<item><widget class="QPushButton" name="btnToggleInGameAspectRatio">
 								<property name="text"><string>▶ IN-GAME ASPECT RATIO</string></property>
 								<property name="checkable"><bool>true</bool></property>
@@ -599,9 +598,13 @@
 							</item>
 
 							<item>
-								<spacer name="metroid2Spacer"><property name="orientation"><enum>Qt::Vertical</enum></property><property name="sizeHint" stdset="0"><size><width>20</width><height>40</height></size></property></spacer>
+								<spacer name="settingsSpacer"><property name="orientation"><enum>Qt::Vertical</enum></property><property name="sizeHint" stdset="0"><size><width>20</width><height>40</height></size></property></spacer>
 							</item>
 
+						</layout>
+									</widget>
+								</widget>
+							</item>
 						</layout>
 					</widget>
 
@@ -609,6 +612,16 @@
 
 					<widget class="QWidget" name="tabCrosshair">
 						<attribute name="title"><string>Custom HUD</string></attribute>
+						<layout class="QVBoxLayout" name="customHudOuterVLayout">
+							<property name="leftMargin"><number>0</number></property>
+							<property name="topMargin"><number>0</number></property>
+							<property name="rightMargin"><number>0</number></property>
+							<property name="bottomMargin"><number>0</number></property>
+							<item>
+								<widget class="QScrollArea" name="scrollCustomHud">
+									<property name="widgetResizable"><bool>true</bool></property>
+									<property name="frameShape"><enum>QFrame::NoFrame</enum></property>
+									<widget class="QWidget" name="scrollCustomHudContents">
 						<layout class="QVBoxLayout" name="crosshairVLayout">
 
 							<!-- Enable Custom HUD -->
@@ -722,15 +735,17 @@
 								</widget>
 							</item>
 
+							<!-- HP & AMMO section toggle -->
+							<item><widget class="QPushButton" name="btnToggleHpAmmo">
+								<property name="text"><string>▶ HP &amp; AMMO</string></property>
+								<property name="checkable"><bool>true</bool></property>
+								<property name="checked"><bool>false</bool></property>
+								<property name="flat"><bool>true</bool></property>
+								<property name="styleSheet"><string>QPushButton { text-align: left; font-weight: bold; padding: 4px; } QPushButton::checked { font-weight: bold; }</string></property>
+							</widget></item>
 							<item>
-								<spacer name="crosshairSpacer"><property name="orientation"><enum>Qt::Vertical</enum></property><property name="sizeHint" stdset="0"><size><width>20</width><height>40</height></size></property></spacer>
-							</item>
-
-						</layout>
-					</widget>
-					<widget class="QWidget" name="tabHpAmmo">
-						<attribute name="title"><string>HP &amp; Ammo</string></attribute>
-						<layout class="QVBoxLayout" name="hpAmmoVLayout">
+								<widget class="QWidget" name="sectionHpAmmo">
+								<layout class="QVBoxLayout" name="hpAmmoVLayout">
 
 
 							<!-- HP NUMBER POSITION toggle -->
@@ -932,16 +947,21 @@
 								</widget>
 							</item>
 
-							<item>
-								<spacer name="hpAmmoSpacer"><property name="orientation"><enum>Qt::Vertical</enum></property><property name="sizeHint" stdset="0"><size><width>20</width><height>40</height></size></property></spacer>
+								</layout>
+								</widget>
 							</item>
 
-						</layout>
-					</widget>
-
-					<widget class="QWidget" name="tabBattle">
-						<attribute name="title"><string>Score HUD</string></attribute>
-						<layout class="QVBoxLayout" name="battleVLayout">
+							<!-- MATCH STATUS section toggle -->
+							<item><widget class="QPushButton" name="btnToggleMatchStatus">
+								<property name="text"><string>▶ MATCH STATUS HUD</string></property>
+								<property name="checkable"><bool>true</bool></property>
+								<property name="checked"><bool>false</bool></property>
+								<property name="flat"><bool>true</bool></property>
+								<property name="styleSheet"><string>QPushButton { text-align: left; font-weight: bold; padding: 4px; } QPushButton::checked { font-weight: bold; }</string></property>
+							</widget></item>
+							<item>
+								<widget class="QWidget" name="sectionMatchStatus">
+								<layout class="QVBoxLayout" name="battleVLayout">
 
 							<item>
 								<layout class="QFormLayout" name="formBattle">
@@ -1007,49 +1027,46 @@
 								</widget>
 							</item>
 
-							<item>
-								<spacer name="battleSpacer"><property name="orientation"><enum>Qt::Vertical</enum></property><property name="sizeHint" stdset="0"><size><width>20</width><height>40</height></size></property></spacer>
+								</layout>
+								</widget>
 							</item>
 
-						</layout>
-					</widget>
-
-					<widget class="QWidget" name="tabHudRadar">
-						<attribute name="title"><string>HUD Radar</string></attribute>
-						<layout class="QHBoxLayout" name="hudRadarHLayout">
+							<!-- HUD RADAR section toggle -->
+							<item><widget class="QPushButton" name="btnToggleHudRadar">
+								<property name="text"><string>▶ HUD RADAR</string></property>
+								<property name="checkable"><bool>true</bool></property>
+								<property name="checked"><bool>false</bool></property>
+								<property name="flat"><bool>true</bool></property>
+								<property name="styleSheet"><string>QPushButton { text-align: left; font-weight: bold; padding: 4px; } QPushButton::checked { font-weight: bold; }</string></property>
+							</widget></item>
+							<item>
+								<widget class="QWidget" name="sectionHudRadar">
+								<layout class="QVBoxLayout" name="hudRadarInnerVLayout">
 
 							<item>
-								<layout class="QVBoxLayout" name="hudRadarLeftVLayout">
-									<item>
-										<layout class="QFormLayout" name="formHudRadar">
-											<item row="0" column="0"><widget class="QLabel"><property name="text"><string>Enable HUD Radar</string></property></widget></item>
-											<item row="0" column="1"><widget class="QCheckBox" name="cbMetroidBtmOverlayEnable"><property name="text"><string></string></property></widget></item>
+								<layout class="QFormLayout" name="formHudRadar">
+									<item row="0" column="0"><widget class="QLabel"><property name="text"><string>Enable HUD Radar</string></property></widget></item>
+									<item row="0" column="1"><widget class="QCheckBox" name="cbMetroidBtmOverlayEnable"><property name="text"><string></string></property></widget></item>
 
-											<item row="1" column="0"><widget class="QLabel"><property name="text"><string>Position X</string></property></widget></item>
-											<item row="1" column="1"><widget class="QSpinBox" name="spinMetroidBtmOverlayDstX"><property name="minimum"><number>0</number></property><property name="maximum"><number>255</number></property><property name="value"><number>190</number></property></widget></item>
+									<item row="1" column="0"><widget class="QLabel"><property name="text"><string>Position X</string></property></widget></item>
+									<item row="1" column="1"><widget class="QSpinBox" name="spinMetroidBtmOverlayDstX"><property name="minimum"><number>0</number></property><property name="maximum"><number>255</number></property><property name="value"><number>190</number></property></widget></item>
 
-											<item row="2" column="0"><widget class="QLabel"><property name="text"><string>Position Y</string></property></widget></item>
-											<item row="2" column="1"><widget class="QSpinBox" name="spinMetroidBtmOverlayDstY"><property name="minimum"><number>0</number></property><property name="maximum"><number>191</number></property></widget></item>
+									<item row="2" column="0"><widget class="QLabel"><property name="text"><string>Position Y</string></property></widget></item>
+									<item row="2" column="1"><widget class="QSpinBox" name="spinMetroidBtmOverlayDstY"><property name="minimum"><number>0</number></property><property name="maximum"><number>191</number></property></widget></item>
 
-											<item row="3" column="0"><widget class="QLabel"><property name="text"><string>Size</string></property></widget></item>
-											<item row="3" column="1"><widget class="QSpinBox" name="spinMetroidBtmOverlayDstSize"><property name="minimum"><number>1</number></property><property name="maximum"><number>256</number></property><property name="value"><number>64</number></property></widget></item>
+									<item row="3" column="0"><widget class="QLabel"><property name="text"><string>Size</string></property></widget></item>
+									<item row="3" column="1"><widget class="QSpinBox" name="spinMetroidBtmOverlayDstSize"><property name="minimum"><number>1</number></property><property name="maximum"><number>256</number></property><property name="value"><number>64</number></property></widget></item>
 
-											<item row="4" column="0"><widget class="QLabel"><property name="text"><string>Opacity</string></property></widget></item>
-											<item row="4" column="1"><widget class="QDoubleSpinBox" name="spinMetroidBtmOverlayOpacity"><property name="minimum"><double>0.0</double></property><property name="maximum"><double>1.0</double></property><property name="singleStep"><double>0.05</double></property><property name="value"><double>0.85</double></property></widget></item>
-										</layout>
-									</item>
-
-									<item>
-										<widget class="QLabel">
-											<property name="text"><string>Displays the radar from the bottom DS screen as a circular overlay on the top screen.</string></property>
-											<property name="wordWrap"><bool>true</bool></property>
-										</widget>
-									</item>
-
-									<item>
-										<spacer name="hudRadarSpacer"><property name="orientation"><enum>Qt::Vertical</enum></property><property name="sizeHint" stdset="0"><size><width>20</width><height>40</height></size></property></spacer>
-									</item>
+									<item row="4" column="0"><widget class="QLabel"><property name="text"><string>Opacity</string></property></widget></item>
+									<item row="4" column="1"><widget class="QDoubleSpinBox" name="spinMetroidBtmOverlayOpacity"><property name="minimum"><double>0.0</double></property><property name="maximum"><double>1.0</double></property><property name="singleStep"><double>0.05</double></property><property name="value"><double>0.85</double></property></widget></item>
 								</layout>
+							</item>
+
+							<item>
+								<widget class="QLabel">
+									<property name="text"><string>Displays the radar from the bottom DS screen as a circular overlay on the top screen.</string></property>
+									<property name="wordWrap"><bool>true</bool></property>
+								</widget>
 							</item>
 
 							<item>
@@ -1060,6 +1077,18 @@
 								</widget>
 							</item>
 
+								</layout>
+								</widget>
+							</item>
+
+							<item>
+								<spacer name="customHudSpacer"><property name="orientation"><enum>Qt::Vertical</enum></property><property name="sizeHint" stdset="0"><size><width>20</width><height>40</height></size></property></spacer>
+							</item>
+
+						</layout>
+									</widget>
+								</widget>
+							</item>
 						</layout>
 					</widget>
 
