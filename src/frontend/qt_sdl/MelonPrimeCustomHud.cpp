@@ -10,6 +10,7 @@
 #include "Config.h"
 
 #include <QPainter>
+#include <QPainterPath>
 #include <QImage>
 #include <QColor>
 #include <QPoint>
@@ -90,7 +91,7 @@ static QImage& GetOutlineBuffer()
 
 struct TextMeasureCache {
     int  fontPixelSize;
-    char text[32];
+    char text[64];
     int  width;
     int  height;
     bool valid;
@@ -99,7 +100,7 @@ struct TextMeasureCache {
 struct TextBitmapCache {
     int    fontPixelSize;
     QColor color;
-    char   text[32];
+    char   text[64];
     int    originX;
     int    originY;
     bool   valid;
@@ -111,7 +112,7 @@ static inline void MeasureTextCached(const QFontMetrics& fm, int fontPixelSize,
                                      int& outW, int& outH)
 {
     if (!cache.valid || cache.fontPixelSize != fontPixelSize || std::strcmp(cache.text, text) != 0) {
-        cache.width = fm.horizontalAdvance(QString::fromLatin1(text));
+        cache.width = fm.horizontalAdvance(QString::fromUtf8(text));
         cache.height = fm.height();
         std::strncpy(cache.text, text, sizeof(cache.text) - 1);
         cache.text[sizeof(cache.text) - 1] = '\0';
@@ -130,7 +131,7 @@ static inline void PrepareTextBitmapCached(const QFontMetrics& fm, const QFont& 
     if (!cache.valid || cache.fontPixelSize != fontPixelSize
         || cache.color != color || std::strcmp(cache.text, text) != 0)
     {
-        const QString qtext = QString::fromLatin1(text);
+        const QString qtext = QString::fromUtf8(text);
         QRect bounds = fm.boundingRect(qtext);
         if (bounds.isEmpty())
             bounds = QRect(0, -fm.ascent(), 1, fm.height());
@@ -166,7 +167,7 @@ static inline void DrawCachedText(QPainter* p, const TextBitmapCache& cache, int
 struct CachedHudConfig {
     // HP
     int    hpX, hpY, hpAlign;
-    char   hpPrefix[12];
+    char   hpPrefix[48];
     bool   hpTextAutoColor, hpGauge, hpAutoColor;
     QColor hpTextColor;
     int    hpGaugeOri, hpGaugeLen, hpGaugeWid;
@@ -175,7 +176,7 @@ struct CachedHudConfig {
     QColor hpGaugeColor;
     // Weapon / Ammo
     int    wpnX, wpnY, ammoAlign;
-    char   ammoPrefix[12];
+    char   ammoPrefix[48];
     QColor ammoTextColor;
     bool   iconShow, iconColorOverlay, ammoGauge;
     int    iconMode, iconOfsX, iconOfsY, iconPosX, iconPosY;
@@ -202,8 +203,8 @@ struct CachedHudConfig {
     int    matchStatusX, matchStatusY;
     int    matchStatusLabelOfsX, matchStatusLabelOfsY;
     int    matchStatusLabelPos; // 0=Above,1=Below,2=Left,3=Right,4=Center
-    char   matchStatusLabelPoints[17], matchStatusLabelOctoliths[17], matchStatusLabelLives[17];
-    char   matchStatusLabelRingTime[17], matchStatusLabelPrimeTime[17];
+    char   matchStatusLabelPoints[64], matchStatusLabelOctoliths[64], matchStatusLabelLives[64];
+    char   matchStatusLabelRingTime[64], matchStatusLabelPrimeTime[64];
     QColor matchStatusColor;       // overall (fallback)
     QColor matchStatusLabelColor;  // invalid = use matchStatusColor
     QColor matchStatusValueColor;  // invalid = use matchStatusColor
@@ -1129,6 +1130,43 @@ HOT_FUNCTION void CustomHud_Render(
     bool isTrans = (Read8(ram, addrHot.jumpFlag) & 0x10) != 0;
     if (!isTrans && !isAlt)
         DrawCrosshair(topPaint, ram, rom, c, topStretchX);
+
+    // Draw bottom screen overlay on top screen
+    DrawBottomScreenOverlay(localCfg, topPaint, btmBuffer);
+}
+
+void DrawBottomScreenOverlay(Config::Table& localCfg, QPainter* topPaint, QImage* btmBuffer)
+{
+    if (!localCfg.GetBool("Metroid.Visual.BtmOverlayEnable")) return;
+    if (!topPaint || !btmBuffer || btmBuffer->isNull()) return;
+
+    int dstX = localCfg.GetInt("Metroid.Visual.BtmOverlayDstX");
+    int dstY = localCfg.GetInt("Metroid.Visual.BtmOverlayDstY");
+    int dstSize = std::max(localCfg.GetInt("Metroid.Visual.BtmOverlayDstSize"), 1);
+    double opacity = localCfg.GetDouble("Metroid.Visual.BtmOverlayOpacity");
+
+    // Source region: radar center at DS (128, 117), radius 50 px (diameter 99)
+    const int srcCenterX = 128, srcCenterY = 117, srcRadius = 50;
+    const float bufScaleX = static_cast<float>(btmBuffer->width()) / 256.0f;
+    const float bufScaleY = static_cast<float>(btmBuffer->height()) / 192.0f;
+
+    QRect srcRect(static_cast<int>((srcCenterX - srcRadius) * bufScaleX),
+                  static_cast<int>((srcCenterY - srcRadius) * bufScaleY),
+                  static_cast<int>(srcRadius * 2 * bufScaleX),
+                  static_cast<int>(srcRadius * 2 * bufScaleY));
+    QRect dstRect(dstX, dstY, dstSize, dstSize);
+
+    topPaint->save();
+    topPaint->setRenderHint(QPainter::SmoothPixmapTransform, true);
+    topPaint->setOpacity(std::clamp(opacity, 0.0, 1.0));
+
+    // Clip to circle
+    QPainterPath circlePath;
+    circlePath.addEllipse(dstRect);
+    topPaint->setClipPath(circlePath);
+
+    topPaint->drawImage(dstRect, *btmBuffer, srcRect);
+    topPaint->restore();
 }
 
 } // namespace MelonPrime
