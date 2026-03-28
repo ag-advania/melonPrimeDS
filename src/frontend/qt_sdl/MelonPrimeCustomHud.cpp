@@ -486,6 +486,11 @@ static void FormatTime(char* buf, int bufSize, int seconds)
     std::snprintf(buf, bufSize, "%d:%02d", m, s);
 }
 
+static void FormatMinuteTime(char* buf, int bufSize, int minutes)
+{
+    std::snprintf(buf, bufSize, "%d:00", std::max(0, minutes));
+}
+
 // =========================================================================
 //  Battle match cache — read once at match join, reused every frame
 // =========================================================================
@@ -742,19 +747,18 @@ static void DrawRankAndTime(QPainter* p, melonDS::u8* ram,
         DrawCachedText(p, s_timeLeftCache, c.timeLeftX, c.timeLeftY);
     }
 
-    // Time Limit Setting (configured goal seconds)
+    // Time Limit displays the configured minute value itself, with :00 fixed.
     if (c.timeLimitShow) {
         static TextBitmapCache s_timeLimitCache = { 0, QColor(), "", 0, 0, false, QImage() };
-        int goalSec = 0;
+        int goalMinutes = 0;
         if (s_battleState.valid) {
-            goalSec = s_battleState.goalValue;
+            goalMinutes = s_battleState.goalValue;
         } else {
             uint32_t timeSetting = Read32(ram, rom.battleSettings + 4);
-            uint8_t timeGoalRaw = (timeSetting >> 4) & 0x1F;
-            goalSec = LookupTimeGoalSec(timeGoalRaw);
+            goalMinutes = static_cast<int>((timeSetting >> 4) & 0x1F);
         }
         char buf[16] = {};
-        FormatTime(buf, sizeof(buf), goalSec);
+        FormatMinuteTime(buf, sizeof(buf), goalMinutes);
         PrepareTextBitmapCached(fm, p->font(), fontPixelSize, s_timeLimitCache, buf, c.timeLimitColor);
         DrawCachedText(p, s_timeLimitCache, c.timeLimitX, c.timeLimitY);
     }
@@ -1269,3 +1273,5 @@ void DrawBottomScreenOverlay(Config::Table& localCfg, QPainter* topPaint, QImage
 } // namespace MelonPrime
 
 #endif // MELONPRIME_CUSTOM_HUD
+
+
