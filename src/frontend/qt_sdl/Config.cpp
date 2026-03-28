@@ -121,16 +121,10 @@ namespace Config
         {"Instance*.Metroid.Visual.HudHpX",               45},
         {"Instance*.Metroid.Visual.HudHpY",               99},
         {"Instance*.Metroid.Visual.HudHpAlign",            2},
-        {"Instance*.Metroid.Visual.HudHpTextAutoColor",   true},
-        {"Instance*.Metroid.Visual.HudHpTextColorR",      255},
-        {"Instance*.Metroid.Visual.HudHpTextColorG",      255},
-        {"Instance*.Metroid.Visual.HudHpTextColorB",      255},
+        {"Instance*.Metroid.Visual.HudFontSize",            6},
         {"Instance*.Metroid.Visual.HudWeaponX",          230},
         {"Instance*.Metroid.Visual.HudWeaponY",           99},
         {"Instance*.Metroid.Visual.HudAmmoAlign",          2},
-        {"Instance*.Metroid.Visual.HudAmmoTextColorR",    255},
-        {"Instance*.Metroid.Visual.HudAmmoTextColorG",    255},
-        {"Instance*.Metroid.Visual.HudAmmoTextColorB",    255},
         {"Instance*.Metroid.Visual.HudWeaponLayout",       0},
         {"Instance*.Metroid.Visual.HudWeaponIconOffsetX",  0},
         {"Instance*.Metroid.Visual.HudWeaponIconOffsetY", 10},
@@ -139,7 +133,6 @@ namespace Config
         {"Instance*.Metroid.Visual.HudWeaponIconPosY",   149},
         {"Instance*.Metroid.Visual.HudWeaponIconAnchorX",  1},
         {"Instance*.Metroid.Visual.HudWeaponIconAnchorY",  1},
-        {"Instance*.Metroid.Visual.HudWeaponIconColorOverlay", false},
         {"Instance*.Metroid.Visual.HudHpGaugeOrientation",   1},
         {"Instance*.Metroid.Visual.HudHpGaugeLength",       80},
         {"Instance*.Metroid.Visual.HudHpGaugeWidth",         3},
@@ -161,7 +154,7 @@ namespace Config
         {"Instance*.Metroid.Visual.HudAmmoGaugeColorG",    192},
         {"Instance*.Metroid.Visual.HudAmmoGaugeColorB",      8},
         {"Instance*.Metroid.Visual.HudAmmoGaugeAnchor",      2},
-        {"Instance*.Metroid.Visual.HudAmmoGaugePosMode",     1},
+        {"Instance*.Metroid.Visual.HudAmmoGaugePosMode",     0},
         {"Instance*.Metroid.Visual.HudAmmoGaugePosX",      239},
         {"Instance*.Metroid.Visual.HudAmmoGaugePosY",       56},
         /* Battle HUD */
@@ -296,7 +289,6 @@ namespace Config
         {"Instance*.Metroid.Visual.HudMatchStatusSepColorOverall",   true},
         {"Instance*.Metroid.Visual.HudMatchStatusGoalColorOverall",  true},
         {"Instance*.Metroid.Visual.InGameAspectRatio", true},
-        {"Instance*.Metroid.Visual.ClipCursorToBottomScreenWhenNotInGame", false},
         {"Instance*.Metroid.Visual.InGameScaling", true},
         {"Instance*.Metroid.Visual.InGameScalingAuto", true},
         {"Instance*.Metroid.UI.SectionCrosshair",      false},
@@ -309,7 +301,6 @@ namespace Config
         {"Instance*.Metroid.UI.SectionAmmoGauge",      false},
         {"Instance*.Metroid.UI.SectionInputSettings",  false},
         {"Instance*.Metroid.UI.SectionScreenSync",     false},
-        {"Instance*.Metroid.UI.SectionCursorClipSettings",  false},
         {"Instance*.Metroid.UI.SectionInGameAspectRatio",  false},
         {"Instance*.Metroid.UI.SectionSensitivity",    true},
         {"Instance*.Metroid.UI.SectionGameplay",       true},
@@ -1173,3 +1164,7 @@ namespace Config
     }
 
 }
+
+
+
+

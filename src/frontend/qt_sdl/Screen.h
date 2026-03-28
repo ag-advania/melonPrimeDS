@@ -28,7 +28,6 @@
 #include <QMutex>
 #include <QScreen>
 #include <QCloseEvent>
-#include <QEnterEvent>
 #include <QTimer>
 #include <QFont>
 
@@ -118,9 +117,7 @@ protected:
     ScreenLayout layout;
 
 #ifdef MELONPRIME_DS
-    void focusInEvent(QFocusEvent* event) override;
     void focusOutEvent(QFocusEvent* event) override;
-    void enterEvent(QEnterEvent* event) override;
     void moveEvent(QMoveEvent* event) override;
 #endif
 
@@ -205,19 +202,9 @@ protected:
     void calcSplashLayout();
 
 #ifdef MELONPRIME_DS
-protected:
-    void refreshClipForGameStateChange();
-
 private:
-    bool shouldConfineCursorToBottomScreen() const;
-    std::optional<QRect> getBottomScreenWidgetRect() const;
-    void clipCursorToBottomScreen();
     void setClipWanted(bool value);
-    bool getClipWanted() const;
-    bool m_lastClipInGameState = false;
-    bool m_hasLastClipInGameState = false;
-    bool m_lastClipFocusedState = false;
-    bool m_hasLastClipFocusedState = false;
+    bool getClipWanted();
 #endif
 };
 
