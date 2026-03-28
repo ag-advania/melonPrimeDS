@@ -10,6 +10,7 @@
 
 #include <QWidget>
 #include <QTabWidget>
+#include <QPushButton>
 #include <QVariantMap>
 #include <initializer_list>
 #include "EmuInstance.h"
@@ -124,11 +125,11 @@ private slots:
     void on_cbMetroidApplyHeadphone_stateChanged(int state);
     void on_cbMetroidUseFirmwareName_stateChanged(int state);
     void on_cbMetroidEnableCustomHud_stateChanged(int state);
-    void on_leMetroidCrosshairColorCode_editingFinished();
-    void on_comboMetroidCrosshairColor_currentIndexChanged(int index);
-    void onCrosshairColorSpinChanged();
     void applyVisualPreview();
     void updateRadarPreview();
+    void updateCrosshairPreview();
+    void updateHpAmmoPreview();
+    void updateMatchStatusPreview();
 
 private:
     Ui::MelonPrimeInputConfig* ui;
@@ -142,6 +143,7 @@ private:
 
     void populatePage(QWidget* page, const std::initializer_list<const char*>& labels, int* keymap, int* joymap);
     void snapshotVisualConfig();
+    void setupColorButton(QPushButton* btn, const QString& configKeyR, const QString& configKeyG, const QString& configKeyB);
 
     QVariantMap m_visualSnapshot;
     bool m_applyPreviewEnabled = false;
