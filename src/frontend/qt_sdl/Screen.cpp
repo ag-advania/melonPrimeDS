@@ -1657,7 +1657,9 @@ void ScreenPanelGL::drawScreen()
                 glDisable(GL_BLEND);
 
                 // --- Bottom Screen Overlay (GL-native, circle, high-res with opacity) ---
-                if (instcfg.GetBool("Metroid.Visual.BtmOverlayEnable"))
+                if (instcfg.GetBool("Metroid.Visual.BtmOverlayEnable") &&
+                    MelonPrime::CustomHud_ShouldDrawRadarOverlay(
+                        emuInstance, mp->GetCurrentRom(), mp->GetPlayerPosition()))
                 {
                     int dstX = instcfg.GetInt("Metroid.Visual.BtmOverlayDstX");
                     int dstY = instcfg.GetInt("Metroid.Visual.BtmOverlayDstY");
@@ -2031,3 +2033,5 @@ __attribute__((always_inline)) inline bool ScreenPanel::getClipWanted() const
     return emuInstance->getEmuThread()->GetMelonPrimeCore()->isClipWanted;
 }
 #endif // MELONPRIME_DS
+
+

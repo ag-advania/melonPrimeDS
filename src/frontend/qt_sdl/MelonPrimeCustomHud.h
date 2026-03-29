@@ -52,6 +52,12 @@ namespace MelonPrime {
     // Returns true if the custom HUD setting is enabled in config.
     bool CustomHud_IsEnabled(Config::Table& localCfg);
 
+    // Returns true when the shared HUD hide condition is active.
+    bool CustomHud_ShouldHideForGameplayState(EmuInstance* emu, const RomAddresses& rom, uint8_t playerPosition);
+
+    // Returns true when the radar overlay should be drawn on the top screen.
+    bool CustomHud_ShouldDrawRadarOverlay(EmuInstance* emu, const RomAddresses& rom, uint8_t playerPosition);
+
     // Reset patch tracking state (call on emu stop/reset).
     void CustomHud_ResetPatchState();
 
@@ -71,7 +77,7 @@ namespace MelonPrime {
     //    localCfg  — config table
     //    topPaint  — QPainter for the top-screen overlay
     //    btmBuffer — QImage of bottom screen (256x192 ARGB)
-    //    hunterID  — current player character (0=Samus … 6=Weavel)
+    //    hunterID  — current player character (MelonPrime::HunterId ordering)
     // =========================================================================
     void DrawBottomScreenOverlay(Config::Table& localCfg, QPainter* topPaint, QImage* btmBuffer, uint8_t hunterID);
 
@@ -79,3 +85,4 @@ namespace MelonPrime {
 
 #endif // MELONPRIME_CUSTOM_HUD
 #endif // MELON_PRIME_CUSTOM_HUD_H
+

@@ -212,16 +212,16 @@ struct CachedHudConfig {
     QColor matchStatusGoalColor;   // invalid = use matchStatusColor
     // Rank & Time HUD
     bool   rankShow;
-    int    rankX, rankY;
+    int    rankX, rankY, rankAlign;
     QColor rankColor;
     char   rankPrefix[48];
     bool   rankShowOrdinal;
     char   rankSuffix[48];
     bool   timeLeftShow;
-    int    timeLeftX, timeLeftY;
+    int    timeLeftX, timeLeftY, timeLeftAlign;
     QColor timeLeftColor;
     bool   timeLimitShow;
-    int    timeLimitX, timeLimitY;
+    int    timeLimitX, timeLimitY, timeLimitAlign;
     QColor timeLimitColor;
     // Cache invalidation
     bool valid;
@@ -367,6 +367,7 @@ static void RefreshCachedConfig(Config::Table& cfg)
     c.rankShow  = cfg.GetBool("Metroid.Visual.HudRankShow");
     c.rankX     = cfg.GetInt("Metroid.Visual.HudRankX");
     c.rankY     = cfg.GetInt("Metroid.Visual.HudRankY");
+    c.rankAlign = cfg.GetInt("Metroid.Visual.HudRankAlign");
     c.rankColor = QColor(cfg.GetInt("Metroid.Visual.HudRankColorR"),
                          cfg.GetInt("Metroid.Visual.HudRankColorG"),
                          cfg.GetInt("Metroid.Visual.HudRankColorB"));
@@ -380,12 +381,14 @@ static void RefreshCachedConfig(Config::Table& cfg)
     c.timeLeftShow  = cfg.GetBool("Metroid.Visual.HudTimeLeftShow");
     c.timeLeftX     = cfg.GetInt("Metroid.Visual.HudTimeLeftX");
     c.timeLeftY     = cfg.GetInt("Metroid.Visual.HudTimeLeftY");
+    c.timeLeftAlign = cfg.GetInt("Metroid.Visual.HudTimeLeftAlign");
     c.timeLeftColor = QColor(cfg.GetInt("Metroid.Visual.HudTimeLeftColorR"),
                               cfg.GetInt("Metroid.Visual.HudTimeLeftColorG"),
                               cfg.GetInt("Metroid.Visual.HudTimeLeftColorB"));
-    c.timeLimitShow  = cfg.GetBool("Metroid.Visual.HudTimeLimitShow");
-    c.timeLimitX     = cfg.GetInt("Metroid.Visual.HudTimeLimitX");
-    c.timeLimitY     = cfg.GetInt("Metroid.Visual.HudTimeLimitY");
+    c.timeLimitShow   = cfg.GetBool("Metroid.Visual.HudTimeLimitShow");
+    c.timeLimitX      = cfg.GetInt("Metroid.Visual.HudTimeLimitX");
+    c.timeLimitY      = cfg.GetInt("Metroid.Visual.HudTimeLimitY");
+    c.timeLimitAlign  = cfg.GetInt("Metroid.Visual.HudTimeLimitAlign");
     c.timeLimitColor = QColor(cfg.GetInt("Metroid.Visual.HudTimeLimitColorR"),
                                cfg.GetInt("Metroid.Visual.HudTimeLimitColorG"),
                                cfg.GetInt("Metroid.Visual.HudTimeLimitColorB"));
@@ -467,6 +470,15 @@ static int LookupTimeGoalSec(uint8_t xy)
     }
 }
 
+// Match time limit: battleSettings+4 byte1 (XX) → minutes
+// Bit0 = unused/flag. Bits1-4 = time index (0-14). Bit5+ = flags (WiFi=+0x20, etc. — ignored).
+static int LookupTimeLimitMin(uint8_t XX)
+{
+    static const int kMinutes[] = { 3, 5, 7, 9, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60 };
+    int idx = (XX >> 1) & 0xF;
+    return idx < 15 ? kMinutes[idx] : 0;
+}
+
 static int LookupGoal(uint8_t mode, uint8_t xx)
 {
     switch (mode) {
@@ -498,6 +510,7 @@ struct BattleMatchState {
     uint8_t  mode;
     uint8_t  keyXX;
     int      goalValue;
+    int      timeLimitMinutes; // match time limit in minutes (from battleSettings+4 XX field)
     bool     isTimeMode;
     bool     valid;
 };
@@ -509,6 +522,7 @@ void CustomHud_OnMatchJoin(melonDS::u8* ram, const RomAddresses& rom)
     b.mode = Read8(ram, rom.battleMode);
     b.isTimeMode = false;
     b.goalValue = 0;
+    b.timeLimitMinutes = 0;
 
     if (b.mode < MODE_BATTLE || b.mode > MODE_SURVIVAL) {
         b.valid = false;
@@ -518,6 +532,13 @@ void CustomHud_OnMatchJoin(melonDS::u8* ram, const RomAddresses& rom)
     uint32_t settings = Read32(ram, rom.battleSettings);
     uint8_t xx = (settings >> 20) & 0xFE; // bit 0 is a flag bit, mask it out
     b.keyXX = xx;
+
+    // Time limit in minutes: battleSettings+4 format 0000XXYZ, XX=time limit index
+    {
+        uint32_t ts4 = Read32(ram, rom.battleSettings + 4);
+        uint8_t XX = (ts4 >> 8) & 0xFF;
+        b.timeLimitMinutes = LookupTimeLimitMin(XX);
+    }
 
     switch (b.mode) {
     case MODE_BATTLE:
@@ -709,6 +730,8 @@ static void DrawMatchStatusHud(QPainter* p, melonDS::u8* ram,
 }
 
 // =========================================================================
+static int CalcAlignedTextX(int anchorX, int align, int textW);
+
 //  Rank & Time HUD
 // =========================================================================
 static void DrawRankAndTime(QPainter* p, melonDS::u8* ram,
@@ -731,8 +754,12 @@ static void DrawRankAndTime(QPainter* p, melonDS::u8* ram,
                 snprintf(rankBuf, sizeof(rankBuf), "%s%u%s%s", c.rankPrefix, rankByte + 1u, kOrdinals[rankByte], c.rankSuffix);
             else
                 snprintf(rankBuf, sizeof(rankBuf), "%s%u%s", c.rankPrefix, rankByte + 1u, c.rankSuffix);
+            static TextMeasureCache s_rankMeasure = { 0, "", 0, 0, false };
+            int rankW = 0, rankH = 0;
+            MeasureTextCached(fm, fontPixelSize, s_rankMeasure, rankBuf, rankW, rankH);
+            const int rankTextX = CalcAlignedTextX(c.rankX, c.rankAlign, rankW);
             PrepareTextBitmapCached(fm, p->font(), fontPixelSize, s_rankCache, rankBuf, c.rankColor);
-            DrawCachedText(p, s_rankCache, c.rankX, c.rankY);
+            DrawCachedText(p, s_rankCache, rankTextX, c.rankY);
         }
     }
 
@@ -743,24 +770,33 @@ static void DrawRankAndTime(QPainter* p, melonDS::u8* ram,
         int seconds = static_cast<int>(raw) / 60;
         char buf[16] = {};
         FormatTime(buf, sizeof(buf), seconds);
+        static TextMeasureCache s_timeLeftMeasure = { 0, "", 0, 0, false };
+        int tlW = 0, tlH = 0;
+        MeasureTextCached(fm, fontPixelSize, s_timeLeftMeasure, buf, tlW, tlH);
+        const int tlTextX = CalcAlignedTextX(c.timeLeftX, c.timeLeftAlign, tlW);
         PrepareTextBitmapCached(fm, p->font(), fontPixelSize, s_timeLeftCache, buf, c.timeLeftColor);
-        DrawCachedText(p, s_timeLeftCache, c.timeLeftX, c.timeLeftY);
+        DrawCachedText(p, s_timeLeftCache, tlTextX, c.timeLeftY);
     }
 
-    // Time Limit displays the configured minute value itself, with :00 fixed.
+    // Time Limit displays the match time limit in minutes with :00 fixed.
     if (c.timeLimitShow) {
         static TextBitmapCache s_timeLimitCache = { 0, QColor(), "", 0, 0, false, QImage() };
         int goalMinutes = 0;
         if (s_battleState.valid) {
-            goalMinutes = s_battleState.goalValue;
+            goalMinutes = s_battleState.timeLimitMinutes;
         } else {
-            uint32_t timeSetting = Read32(ram, rom.battleSettings + 4);
-            goalMinutes = static_cast<int>((timeSetting >> 4) & 0x1F);
+            uint32_t ts4 = Read32(ram, rom.battleSettings + 4);
+            uint8_t XX = (ts4 >> 8) & 0xFF;
+            goalMinutes = LookupTimeLimitMin(XX);
         }
         char buf[16] = {};
         FormatMinuteTime(buf, sizeof(buf), goalMinutes);
+        static TextMeasureCache s_timeLimitMeasure = { 0, "", 0, 0, false };
+        int timW = 0, timH = 0;
+        MeasureTextCached(fm, fontPixelSize, s_timeLimitMeasure, buf, timW, timH);
+        const int timTextX = CalcAlignedTextX(c.timeLimitX, c.timeLimitAlign, timW);
         PrepareTextBitmapCached(fm, p->font(), fontPixelSize, s_timeLimitCache, buf, c.timeLimitColor);
-        DrawCachedText(p, s_timeLimitCache, c.timeLimitX, c.timeLimitY);
+        DrawCachedText(p, s_timeLimitCache, timTextX, c.timeLimitY);
     }
 }
 
@@ -774,6 +810,24 @@ bool CustomHud_IsEnabled(Config::Table& localCfg)
     return localCfg.GetBool(kCfgCustomHud);
 }
 
+bool CustomHud_ShouldHideForGameplayState(EmuInstance* emu, const RomAddresses& rom, uint8_t playerPosition)
+{
+    if (!emu) return true;
+
+    melonDS::NDS* nds = emu->getNDS();
+    melonDS::u8* ram = nds ? nds->MainRAM : nullptr;
+    if (!ram) return true;
+
+    const uint32_t offP = static_cast<uint32_t>(playerPosition) * Consts::PLAYER_ADDR_INC;
+    if (Read8(ram, rom.startPressed) == 0x01) return true;
+    if (Read16(ram, rom.playerHP + offP) == 0) return true;
+    return Read8(ram, rom.gameOver) != 0x00;
+}
+
+bool CustomHud_ShouldDrawRadarOverlay(EmuInstance* emu, const RomAddresses& rom, uint8_t playerPosition)
+{
+    return !CustomHud_ShouldHideForGameplayState(emu, rom, playerPosition);
+}
 // =========================================================================
 //  NoHUD Patch
 // =========================================================================
@@ -1203,7 +1257,7 @@ HOT_FUNCTION void CustomHud_Render(
     uint8_t viewMode   = Read8(ram, rom.baseViewMode + offP);
     bool isFirstPerson = (viewMode == 0x00);
 
-    if (isStartPressed || isDead || isGameOver) return;
+    if (CustomHud_ShouldHideForGameplayState(emu, rom, playerPosition)) return;
 
     if (topPaint->font().pixelSize() != kCustomHudFontSize) {
         QFont f = topPaint->font();
@@ -1275,5 +1329,7 @@ void DrawBottomScreenOverlay(Config::Table& localCfg, QPainter* topPaint, QImage
 } // namespace MelonPrime
 
 #endif // MELONPRIME_CUSTOM_HUD
+
+
 
 
