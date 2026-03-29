@@ -1760,22 +1760,40 @@ void MelonPrimeInputConfig::snapshotVisualConfig()
     sSl("sRadarSize", ui->spinMetroidBtmOverlayDstSize);
     sD("dRadarOpacity", ui->spinMetroidBtmOverlayOpacity);
     sSl("sRadarSrcR",  ui->spinMetroidBtmOverlaySrcRadius);
-    // Rank & Time colors (from config)
-    sC("cRankAlign",      ui->comboMetroidHudRankAlign);
-    sC("cTimeLeftAlign",  ui->comboMetroidHudTimeLeftAlign);
-    sC("cTimeLimitAlign", ui->comboMetroidHudTimeLimitAlign);
+    // Rank & Time HUD
+    sB("cRankShow", ui->cbMetroidHudRankShow);
+    sSl("sRankX", ui->spinMetroidHudRankX);
+    sSl("sRankY", ui->spinMetroidHudRankY);
+    sC("cRankAlign", ui->comboMetroidHudRankAlign);
+    sE("eRankPrefix", ui->leMetroidHudRankPrefix);
+    sB("cRankShowOrdinal", ui->cbMetroidHudRankShowOrdinal);
+    sE("eRankSuffix", ui->leMetroidHudRankSuffix);
+    sC("cRankColor", ui->comboMetroidHudRankColor);
+    sE("eRankColorCode", ui->leMetroidHudRankColorCode);
     sI("sRankClrSpinR", ui->spinMetroidHudRankColorR);
     sI("sRankClrSpinG", ui->spinMetroidHudRankColorG);
     sI("sRankClrSpinB", ui->spinMetroidHudRankColorB);
     sCfgI("sRankClrR", "Metroid.Visual.HudRankColorR");
     sCfgI("sRankClrG", "Metroid.Visual.HudRankColorG");
     sCfgI("sRankClrB", "Metroid.Visual.HudRankColorB");
+    sB("cTimeLeftShow", ui->cbMetroidHudTimeLeftShow);
+    sSl("sTimeLeftX", ui->spinMetroidHudTimeLeftX);
+    sSl("sTimeLeftY", ui->spinMetroidHudTimeLeftY);
+    sC("cTimeLeftAlign", ui->comboMetroidHudTimeLeftAlign);
+    sC("cTimeLeftColor", ui->comboMetroidHudTimeLeftColor);
+    sE("eTimeLeftColorCode", ui->leMetroidHudTimeLeftColorCode);
     sI("sTimeLeftClrSpinR", ui->spinMetroidHudTimeLeftColorR);
     sI("sTimeLeftClrSpinG", ui->spinMetroidHudTimeLeftColorG);
     sI("sTimeLeftClrSpinB", ui->spinMetroidHudTimeLeftColorB);
     sCfgI("sTimeLeftClrR", "Metroid.Visual.HudTimeLeftColorR");
     sCfgI("sTimeLeftClrG", "Metroid.Visual.HudTimeLeftColorG");
     sCfgI("sTimeLeftClrB", "Metroid.Visual.HudTimeLeftColorB");
+    sB("cTimeLimitShow", ui->cbMetroidHudTimeLimitShow);
+    sSl("sTimeLimitX", ui->spinMetroidHudTimeLimitX);
+    sSl("sTimeLimitY", ui->spinMetroidHudTimeLimitY);
+    sC("cTimeLimitAlign", ui->comboMetroidHudTimeLimitAlign);
+    sC("cTimeLimitColor", ui->comboMetroidHudTimeLimitColor);
+    sE("eTimeLimitColorCode", ui->leMetroidHudTimeLimitColorCode);
     sI("sTimeLimitClrSpinR", ui->spinMetroidHudTimeLimitColorR);
     sI("sTimeLimitClrSpinG", ui->spinMetroidHudTimeLimitColorG);
     sI("sTimeLimitClrSpinB", ui->spinMetroidHudTimeLimitColorB);
@@ -1828,7 +1846,7 @@ void MelonPrimeInputConfig::restoreVisualSnapshot()
             input->setValue(v);
             input->blockSignals(false);
         }
-        lbl->setText(QString::number(v));
+        if (lbl) lbl->setText(QString::number(v));
     };
     auto rD = [&](const char* k, QDoubleSpinBox* w) {
         auto it = s.find(k); if (it == s.end()) return;
@@ -1962,16 +1980,34 @@ void MelonPrimeInputConfig::restoreVisualSnapshot()
     ui->sliderMetroidBtmOverlayOpacity->setValue(qRound(ui->spinMetroidBtmOverlayOpacity->value() * 100));
     ui->sliderMetroidBtmOverlayOpacity->blockSignals(false);
     rSl("sRadarSrcR",  ui->spinMetroidBtmOverlaySrcRadius,  ui->inputMetroidBtmOverlaySrcRadius,  ui->labelMetroidBtmOverlaySrcRadius);
-    // Rank & Time colors
-    rC("cRankAlign",      ui->comboMetroidHudRankAlign);
-    rC("cTimeLeftAlign",  ui->comboMetroidHudTimeLeftAlign);
-    rC("cTimeLimitAlign", ui->comboMetroidHudTimeLimitAlign);
+    // Rank & Time HUD
+    rB("cRankShow", ui->cbMetroidHudRankShow);
+    rSl("sRankX", ui->spinMetroidHudRankX, ui->inputMetroidHudRankX, nullptr);
+    rSl("sRankY", ui->spinMetroidHudRankY, ui->inputMetroidHudRankY, nullptr);
+    rC("cRankAlign", ui->comboMetroidHudRankAlign);
+    rE("eRankPrefix", ui->leMetroidHudRankPrefix);
+    rB("cRankShowOrdinal", ui->cbMetroidHudRankShowOrdinal);
+    rE("eRankSuffix", ui->leMetroidHudRankSuffix);
+    rC("cRankColor", ui->comboMetroidHudRankColor);
+    rE("eRankColorCode", ui->leMetroidHudRankColorCode);
     rI("sRankClrSpinR", ui->spinMetroidHudRankColorR);
     rI("sRankClrSpinG", ui->spinMetroidHudRankColorG);
     rI("sRankClrSpinB", ui->spinMetroidHudRankColorB);
+    rB("cTimeLeftShow", ui->cbMetroidHudTimeLeftShow);
+    rSl("sTimeLeftX", ui->spinMetroidHudTimeLeftX, ui->inputMetroidHudTimeLeftX, nullptr);
+    rSl("sTimeLeftY", ui->spinMetroidHudTimeLeftY, ui->inputMetroidHudTimeLeftY, nullptr);
+    rC("cTimeLeftAlign", ui->comboMetroidHudTimeLeftAlign);
+    rC("cTimeLeftColor", ui->comboMetroidHudTimeLeftColor);
+    rE("eTimeLeftColorCode", ui->leMetroidHudTimeLeftColorCode);
     rI("sTimeLeftClrSpinR", ui->spinMetroidHudTimeLeftColorR);
     rI("sTimeLeftClrSpinG", ui->spinMetroidHudTimeLeftColorG);
     rI("sTimeLeftClrSpinB", ui->spinMetroidHudTimeLeftColorB);
+    rB("cTimeLimitShow", ui->cbMetroidHudTimeLimitShow);
+    rSl("sTimeLimitX", ui->spinMetroidHudTimeLimitX, ui->inputMetroidHudTimeLimitX, nullptr);
+    rSl("sTimeLimitY", ui->spinMetroidHudTimeLimitY, ui->inputMetroidHudTimeLimitY, nullptr);
+    rC("cTimeLimitAlign", ui->comboMetroidHudTimeLimitAlign);
+    rC("cTimeLimitColor", ui->comboMetroidHudTimeLimitColor);
+    rE("eTimeLimitColorCode", ui->leMetroidHudTimeLimitColorCode);
     rI("sTimeLimitClrSpinR", ui->spinMetroidHudTimeLimitColorR);
     rI("sTimeLimitClrSpinG", ui->spinMetroidHudTimeLimitColorG);
     rI("sTimeLimitClrSpinB", ui->spinMetroidHudTimeLimitColorB);
@@ -2773,7 +2809,7 @@ void MelonPrimeInputConfig::resetHpAmmoDefaults()
         sl->setValue(v);
         if (input)
             input->setValue(v);
-        lbl->setText(QString::number(v));
+        if (lbl) lbl->setText(QString::number(v));
     };
 
     // HP Position
@@ -2882,7 +2918,7 @@ void MelonPrimeInputConfig::resetMatchStatusDefaults()
         sl->setValue(v);
         if (input)
             input->setValue(v);
-        lbl->setText(QString::number(v));
+        if (lbl) lbl->setText(QString::number(v));
     };
 
     ui->cbMetroidHudMatchStatusShow->setChecked(true);
@@ -2952,47 +2988,35 @@ void MelonPrimeInputConfig::resetRankTimeDefaults()
     ui->leMetroidHudRankPrefix->setText("");
     ui->cbMetroidHudRankShowOrdinal->setChecked(true);
     ui->leMetroidHudRankSuffix->setText("");
-    {
-        Config::Table& instcfg = emuInstance->getLocalConfig();
-        instcfg.SetInt("Metroid.Visual.HudRankColorR", 255);
-        instcfg.SetInt("Metroid.Visual.HudRankColorG", 255);
-        instcfg.SetInt("Metroid.Visual.HudRankColorB", 255);
-        ui->spinMetroidHudRankColorR->setValue(255);
-        ui->spinMetroidHudRankColorG->setValue(255);
-        ui->spinMetroidHudRankColorB->setValue(255);
-        ui->leMetroidHudRankColorCode->setText("#FFFFFF");
-        ui->btnMetroidHudRankColor->setStyleSheet("background-color: #ffffff;");
+    ui->spinMetroidHudRankColorR->setValue(255);
+    ui->spinMetroidHudRankColorG->setValue(255);
+    ui->spinMetroidHudRankColorB->setValue(255);
+    ui->leMetroidHudRankColorCode->setText("#FFFFFF");
+    ui->btnMetroidHudRankColor->setStyleSheet("background-color: #ffffff;");
 
-        // Time Left
-        ui->cbMetroidHudTimeLeftShow->setChecked(false);
-        setSlider(ui->spinMetroidHudTimeLeftX, ui->inputMetroidHudTimeLeftX, 20);
-        setSlider(ui->spinMetroidHudTimeLeftY, ui->inputMetroidHudTimeLeftY, 42);
-        ui->comboMetroidHudTimeLeftAlign->setCurrentIndex(0);
-        ui->comboMetroidHudTimeLeftColor->setCurrentIndex(0);
-        instcfg.SetInt("Metroid.Visual.HudTimeLeftColorR", 255);
-        instcfg.SetInt("Metroid.Visual.HudTimeLeftColorG", 255);
-        instcfg.SetInt("Metroid.Visual.HudTimeLeftColorB", 255);
-        ui->spinMetroidHudTimeLeftColorR->setValue(255);
-        ui->spinMetroidHudTimeLeftColorG->setValue(255);
-        ui->spinMetroidHudTimeLeftColorB->setValue(255);
-        ui->leMetroidHudTimeLeftColorCode->setText("#FFFFFF");
-        ui->btnMetroidHudTimeLeftColor->setStyleSheet("background-color: #ffffff;");
+    // Time Left
+    ui->cbMetroidHudTimeLeftShow->setChecked(false);
+    setSlider(ui->spinMetroidHudTimeLeftX, ui->inputMetroidHudTimeLeftX, 20);
+    setSlider(ui->spinMetroidHudTimeLeftY, ui->inputMetroidHudTimeLeftY, 42);
+    ui->comboMetroidHudTimeLeftAlign->setCurrentIndex(0);
+    ui->comboMetroidHudTimeLeftColor->setCurrentIndex(0);
+    ui->spinMetroidHudTimeLeftColorR->setValue(255);
+    ui->spinMetroidHudTimeLeftColorG->setValue(255);
+    ui->spinMetroidHudTimeLeftColorB->setValue(255);
+    ui->leMetroidHudTimeLeftColorCode->setText("#FFFFFF");
+    ui->btnMetroidHudTimeLeftColor->setStyleSheet("background-color: #ffffff;");
 
-        // Time Limit
-        ui->cbMetroidHudTimeLimitShow->setChecked(false);
-        setSlider(ui->spinMetroidHudTimeLimitX, ui->inputMetroidHudTimeLimitX, 20);
-        setSlider(ui->spinMetroidHudTimeLimitY, ui->inputMetroidHudTimeLimitY, 54);
-        ui->comboMetroidHudTimeLimitAlign->setCurrentIndex(0);
-        ui->comboMetroidHudTimeLimitColor->setCurrentIndex(0);
-        instcfg.SetInt("Metroid.Visual.HudTimeLimitColorR", 255);
-        instcfg.SetInt("Metroid.Visual.HudTimeLimitColorG", 255);
-        instcfg.SetInt("Metroid.Visual.HudTimeLimitColorB", 255);
-        ui->spinMetroidHudTimeLimitColorR->setValue(255);
-        ui->spinMetroidHudTimeLimitColorG->setValue(255);
-        ui->spinMetroidHudTimeLimitColorB->setValue(255);
-        ui->leMetroidHudTimeLimitColorCode->setText("#FFFFFF");
-        ui->btnMetroidHudTimeLimitColor->setStyleSheet("background-color: #ffffff;");
-    }
+    // Time Limit
+    ui->cbMetroidHudTimeLimitShow->setChecked(false);
+    setSlider(ui->spinMetroidHudTimeLimitX, ui->inputMetroidHudTimeLimitX, 20);
+    setSlider(ui->spinMetroidHudTimeLimitY, ui->inputMetroidHudTimeLimitY, 54);
+    ui->comboMetroidHudTimeLimitAlign->setCurrentIndex(0);
+    ui->comboMetroidHudTimeLimitColor->setCurrentIndex(0);
+    ui->spinMetroidHudTimeLimitColorR->setValue(255);
+    ui->spinMetroidHudTimeLimitColorG->setValue(255);
+    ui->spinMetroidHudTimeLimitColorB->setValue(255);
+    ui->leMetroidHudTimeLimitColorCode->setText("#FFFFFF");
+    ui->btnMetroidHudTimeLimitColor->setStyleSheet("background-color: #ffffff;");
 
     applyVisualPreview();
 }
