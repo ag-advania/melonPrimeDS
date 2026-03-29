@@ -523,12 +523,10 @@ MelonPrimeInputConfig::MelonPrimeInputConfig(EmuInstance* emu, QWidget* parent) 
                 spR->setValue(kRT[i].r); spG->setValue(kRT[i].g); spB->setValue(kRT[i].b);
                 le->setText(QString("#%1%2%3").arg(kRT[i].r,2,16,QChar('0')).arg(kRT[i].g,2,16,QChar('0')).arg(kRT[i].b,2,16,QChar('0')).toUpper());
                 spR->blockSignals(false); spG->blockSignals(false); spB->blockSignals(false);
-                applyVisualPreview();
             });
             auto rgbCh = [=]() {
                 combo->blockSignals(true); combo->setCurrentIndex(7); combo->blockSignals(false);
                 le->setText(QString("#%1%2%3").arg(spR->value(),2,16,QChar('0')).arg(spG->value(),2,16,QChar('0')).arg(spB->value(),2,16,QChar('0')).toUpper());
-                applyVisualPreview();
             };
             connect(spR, QOverload<int>::of(&QSpinBox::valueChanged), this, rgbCh);
             connect(spG, QOverload<int>::of(&QSpinBox::valueChanged), this, rgbCh);
@@ -539,7 +537,6 @@ MelonPrimeInputConfig::MelonPrimeInputConfig(EmuInstance* emu, QWidget* parent) 
                 spR->setValue(c.red()); spG->setValue(c.green()); spB->setValue(c.blue());
                 combo->blockSignals(true); combo->setCurrentIndex(7); combo->blockSignals(false);
                 spR->blockSignals(false); spG->blockSignals(false); spB->blockSignals(false);
-                applyVisualPreview();
             });
             bindHexButtonSync(btn, le);
             bindComboButtonSync(btn, combo, spR, spG, spB);
@@ -1356,15 +1353,21 @@ MelonPrimeInputConfig::MelonPrimeInputConfig(EmuInstance* emu, QWidget* parent) 
     prvB(ui->cbMetroidHudRankShow);
     prvSl(ui->spinMetroidHudRankX); prvSl(ui->spinMetroidHudRankY);
     prvC(ui->comboMetroidHudRankAlign);
+    prvC(ui->comboMetroidHudRankColor);
+    prvE(ui->leMetroidHudRankColorCode);
     prvI(ui->spinMetroidHudRankColorR); prvI(ui->spinMetroidHudRankColorG); prvI(ui->spinMetroidHudRankColorB);
     prvB(ui->cbMetroidHudRankShowOrdinal);
     prvB(ui->cbMetroidHudTimeLeftShow);
     prvSl(ui->spinMetroidHudTimeLeftX); prvSl(ui->spinMetroidHudTimeLeftY);
     prvC(ui->comboMetroidHudTimeLeftAlign);
+    prvC(ui->comboMetroidHudTimeLeftColor);
+    prvE(ui->leMetroidHudTimeLeftColorCode);
     prvI(ui->spinMetroidHudTimeLeftColorR); prvI(ui->spinMetroidHudTimeLeftColorG); prvI(ui->spinMetroidHudTimeLeftColorB);
     prvB(ui->cbMetroidHudTimeLimitShow);
     prvSl(ui->spinMetroidHudTimeLimitX); prvSl(ui->spinMetroidHudTimeLimitY);
     prvC(ui->comboMetroidHudTimeLimitAlign);
+    prvC(ui->comboMetroidHudTimeLimitColor);
+    prvE(ui->leMetroidHudTimeLimitColorCode);
     prvI(ui->spinMetroidHudTimeLimitColorR); prvI(ui->spinMetroidHudTimeLimitColorG); prvI(ui->spinMetroidHudTimeLimitColorB);
     // Match Status colors
     prvC(ui->comboMetroidHudMatchStatusColor);
@@ -2617,13 +2620,13 @@ void MelonPrimeInputConfig::setupColorButton(QPushButton* btn, const QString& co
         int curG = spinG ? spinG->value() : cfg.GetInt(configKeyG.toStdString().c_str());
         int curB = spinB ? spinB->value() : cfg.GetInt(configKeyB.toStdString().c_str());
         QColor initial(curR, curG, curB);
-        QColorDialog dlg(initial, window());
-        dlg.setOptions(QColorDialog::DontUseNativeDialog);
-        dlg.setWindowModality(Qt::WindowModal);
-        bool _accepted = (dlg.exec() == QDialog::Accepted);
+        QColor chosen = QColorDialog::getColor(
+            initial,
+            this,
+            QString(),
+            QColorDialog::DontUseNativeDialog);
         m_colorDialogOpen = false;
-        if (!_accepted) return;
-        QColor chosen = dlg.selectedColor();
+        if (!chosen.isValid()) return;
 
         cfg.SetInt(configKeyR.toStdString().c_str(), chosen.red());
         cfg.SetInt(configKeyG.toStdString().c_str(), chosen.green());
