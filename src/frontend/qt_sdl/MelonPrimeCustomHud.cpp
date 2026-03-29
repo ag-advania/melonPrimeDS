@@ -212,16 +212,16 @@ struct CachedHudConfig {
     QColor matchStatusGoalColor;   // invalid = use matchStatusColor
     // Rank & Time HUD
     bool   rankShow;
-    int    rankX, rankY;
+    int    rankX, rankY, rankAlign;
     QColor rankColor;
     char   rankPrefix[48];
     bool   rankShowOrdinal;
     char   rankSuffix[48];
     bool   timeLeftShow;
-    int    timeLeftX, timeLeftY;
+    int    timeLeftX, timeLeftY, timeLeftAlign;
     QColor timeLeftColor;
     bool   timeLimitShow;
-    int    timeLimitX, timeLimitY;
+    int    timeLimitX, timeLimitY, timeLimitAlign;
     QColor timeLimitColor;
     // Cache invalidation
     bool valid;
@@ -367,6 +367,7 @@ static void RefreshCachedConfig(Config::Table& cfg)
     c.rankShow  = cfg.GetBool("Metroid.Visual.HudRankShow");
     c.rankX     = cfg.GetInt("Metroid.Visual.HudRankX");
     c.rankY     = cfg.GetInt("Metroid.Visual.HudRankY");
+    c.rankAlign = cfg.GetInt("Metroid.Visual.HudRankAlign");
     c.rankColor = QColor(cfg.GetInt("Metroid.Visual.HudRankColorR"),
                          cfg.GetInt("Metroid.Visual.HudRankColorG"),
                          cfg.GetInt("Metroid.Visual.HudRankColorB"));
@@ -380,12 +381,14 @@ static void RefreshCachedConfig(Config::Table& cfg)
     c.timeLeftShow  = cfg.GetBool("Metroid.Visual.HudTimeLeftShow");
     c.timeLeftX     = cfg.GetInt("Metroid.Visual.HudTimeLeftX");
     c.timeLeftY     = cfg.GetInt("Metroid.Visual.HudTimeLeftY");
+    c.timeLeftAlign = cfg.GetInt("Metroid.Visual.HudTimeLeftAlign");
     c.timeLeftColor = QColor(cfg.GetInt("Metroid.Visual.HudTimeLeftColorR"),
                               cfg.GetInt("Metroid.Visual.HudTimeLeftColorG"),
                               cfg.GetInt("Metroid.Visual.HudTimeLeftColorB"));
-    c.timeLimitShow  = cfg.GetBool("Metroid.Visual.HudTimeLimitShow");
-    c.timeLimitX     = cfg.GetInt("Metroid.Visual.HudTimeLimitX");
-    c.timeLimitY     = cfg.GetInt("Metroid.Visual.HudTimeLimitY");
+    c.timeLimitShow   = cfg.GetBool("Metroid.Visual.HudTimeLimitShow");
+    c.timeLimitX      = cfg.GetInt("Metroid.Visual.HudTimeLimitX");
+    c.timeLimitY      = cfg.GetInt("Metroid.Visual.HudTimeLimitY");
+    c.timeLimitAlign  = cfg.GetInt("Metroid.Visual.HudTimeLimitAlign");
     c.timeLimitColor = QColor(cfg.GetInt("Metroid.Visual.HudTimeLimitColorR"),
                                cfg.GetInt("Metroid.Visual.HudTimeLimitColorG"),
                                cfg.GetInt("Metroid.Visual.HudTimeLimitColorB"));
@@ -727,6 +730,8 @@ static void DrawMatchStatusHud(QPainter* p, melonDS::u8* ram,
 }
 
 // =========================================================================
+static int CalcAlignedTextX(int anchorX, int align, int textW);
+
 //  Rank & Time HUD
 // =========================================================================
 static void DrawRankAndTime(QPainter* p, melonDS::u8* ram,
@@ -749,8 +754,12 @@ static void DrawRankAndTime(QPainter* p, melonDS::u8* ram,
                 snprintf(rankBuf, sizeof(rankBuf), "%s%u%s%s", c.rankPrefix, rankByte + 1u, kOrdinals[rankByte], c.rankSuffix);
             else
                 snprintf(rankBuf, sizeof(rankBuf), "%s%u%s", c.rankPrefix, rankByte + 1u, c.rankSuffix);
+            static TextMeasureCache s_rankMeasure = { 0, "", 0, 0, false };
+            int rankW = 0, rankH = 0;
+            MeasureTextCached(fm, fontPixelSize, s_rankMeasure, rankBuf, rankW, rankH);
+            const int rankTextX = CalcAlignedTextX(c.rankX, c.rankAlign, rankW);
             PrepareTextBitmapCached(fm, p->font(), fontPixelSize, s_rankCache, rankBuf, c.rankColor);
-            DrawCachedText(p, s_rankCache, c.rankX, c.rankY);
+            DrawCachedText(p, s_rankCache, rankTextX, c.rankY);
         }
     }
 
@@ -761,8 +770,12 @@ static void DrawRankAndTime(QPainter* p, melonDS::u8* ram,
         int seconds = static_cast<int>(raw) / 60;
         char buf[16] = {};
         FormatTime(buf, sizeof(buf), seconds);
+        static TextMeasureCache s_timeLeftMeasure = { 0, "", 0, 0, false };
+        int tlW = 0, tlH = 0;
+        MeasureTextCached(fm, fontPixelSize, s_timeLeftMeasure, buf, tlW, tlH);
+        const int tlTextX = CalcAlignedTextX(c.timeLeftX, c.timeLeftAlign, tlW);
         PrepareTextBitmapCached(fm, p->font(), fontPixelSize, s_timeLeftCache, buf, c.timeLeftColor);
-        DrawCachedText(p, s_timeLeftCache, c.timeLeftX, c.timeLeftY);
+        DrawCachedText(p, s_timeLeftCache, tlTextX, c.timeLeftY);
     }
 
     // Time Limit displays the match time limit in minutes with :00 fixed.
@@ -778,8 +791,12 @@ static void DrawRankAndTime(QPainter* p, melonDS::u8* ram,
         }
         char buf[16] = {};
         FormatMinuteTime(buf, sizeof(buf), goalMinutes);
+        static TextMeasureCache s_timeLimitMeasure = { 0, "", 0, 0, false };
+        int timW = 0, timH = 0;
+        MeasureTextCached(fm, fontPixelSize, s_timeLimitMeasure, buf, timW, timH);
+        const int timTextX = CalcAlignedTextX(c.timeLimitX, c.timeLimitAlign, timW);
         PrepareTextBitmapCached(fm, p->font(), fontPixelSize, s_timeLimitCache, buf, c.timeLimitColor);
-        DrawCachedText(p, s_timeLimitCache, c.timeLimitX, c.timeLimitY);
+        DrawCachedText(p, s_timeLimitCache, timTextX, c.timeLimitY);
     }
 }
 
