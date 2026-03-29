@@ -2033,3 +2033,5 @@ __attribute__((always_inline)) inline bool ScreenPanel::getClipWanted() const
     return emuInstance->getEmuThread()->GetMelonPrimeCore()->isClipWanted;
 }
 #endif // MELONPRIME_DS
+
+
