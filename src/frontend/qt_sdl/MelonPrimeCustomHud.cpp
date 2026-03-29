@@ -558,7 +558,9 @@ void CustomHud_OnMatchJoin(melonDS::u8* ram, const RomAddresses& rom)
     case MODE_DEFENDER:
     case MODE_PRIME_HUNTER: {
         uint32_t timeSetting = Read32(ram, rom.battleSettings + 4);
-        uint8_t timeGoalRaw = (timeSetting >> 4) & 0x1F;
+        // Time goal index: Y[3:1] (bits[7:5]) + XX[0] (bit8), skipping Y[0] (bit4 = team-play flag)
+        // Shift out bit4 entirely: >> 5 gives [XX0,Y3,Y2,Y1], << 1 produces even values for the lookup table
+        uint8_t timeGoalRaw = static_cast<uint8_t>(((timeSetting >> 5) & 0x0F) << 1);
         b.goalValue = LookupTimeGoalSec(timeGoalRaw);
         b.isTimeMode = true;
         break;
@@ -658,7 +660,9 @@ static void DrawMatchStatusHud(QPainter* p, melonDS::u8* ram,
         case MODE_DEFENDER:
         case MODE_PRIME_HUNTER: {
             uint32_t timeSetting = Read32(ram, rom.battleSettings + 4);
-            uint8_t timeGoalRaw = (timeSetting >> 4) & 0x1F;
+            // Time goal index: Y[3:1] (bits[7:5]) + XX[0] (bit8), skipping Y[0] (bit4 = team-play flag)
+        // Shift out bit4 entirely: >> 5 gives [XX0,Y3,Y2,Y1], << 1 produces even values for the lookup table
+        uint8_t timeGoalRaw = static_cast<uint8_t>(((timeSetting >> 5) & 0x0F) << 1);
             goalValue = LookupTimeGoalSec(timeGoalRaw);
             isTimeMode = true;
             break;
