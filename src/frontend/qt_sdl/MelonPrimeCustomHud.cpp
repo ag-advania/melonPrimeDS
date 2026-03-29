@@ -509,6 +509,8 @@ static void FormatMinuteTime(char* buf, int bufSize, int minutes)
 struct BattleMatchState {
     uint8_t  mode;
     uint8_t  keyXX;
+    uint8_t  teamNibble;  // battleSettings+4 bits[3:0] (Z): bit i = player(i+1) team (0=red, 1=green)
+    bool     isTeamGame;  // battleSettings+4 bits[7:4] (Y): any bit set = team play ON
     int      goalValue;
     int      timeLimitMinutes; // match time limit in minutes (from battleSettings+4 XX field)
     bool     isTimeMode;
@@ -534,10 +536,13 @@ void CustomHud_OnMatchJoin(melonDS::u8* ram, const RomAddresses& rom)
     b.keyXX = xx;
 
     // Time limit in minutes: battleSettings+4 format 0000XXYZ, XX=time limit index
+    // Z nibble (bits[3:0]) = team composition: bit i = player(i+1) team (0=red, 1=green)
     {
         uint32_t ts4 = Read32(ram, rom.battleSettings + 4);
         uint8_t XX = (ts4 >> 8) & 0xFF;
         b.timeLimitMinutes = LookupTimeLimitMin(XX);
+        b.teamNibble  = ts4 & 0x0F;          // Z nibble: team assignment per player
+        b.isTeamGame  = (ts4 & 0x10) != 0;  // Y nibble bit0 (bit4 of byte): 1=team play ON
     }
 
     switch (b.mode) {
@@ -599,19 +604,38 @@ static void DrawMatchStatusHud(QPainter* p, melonDS::u8* ram,
     bool isTimeMode = match ? match->isTimeMode : false;
     uint8_t xx = match ? match->keyXX : 0;
 
+    // Team play: Y nibble (bits[7:4]) of battleSettings+4 — any bit set = team play ON
+    // Team assignment: Z nibble (bits[3:0]) — bit i = player(i+1) team (0=red, 1=green)
+    uint32_t ts4_local = match ? 0u : Read32(ram, rom.battleSettings + 4);
+    uint8_t teamNibble = match ? match->teamNibble : static_cast<uint8_t>(ts4_local & 0x0F);
+    bool isTeamGame    = match ? match->isTeamGame  : ((ts4_local & 0x10) != 0);
+
+    // Helper: sum raw values for the same team as playerPos, or return solo value.
+    auto teamSum = [&](uint32_t baseAddr) -> int {
+        if (isTeamGame && playerPos < 4) {
+            uint8_t myTeam = (teamNibble >> playerPos) & 1;
+            int sum = 0;
+            for (int p = 0; p < 4; p++)
+                if (((teamNibble >> p) & 1) == myTeam)
+                    sum += static_cast<int>(Read32(ram, baseAddr + p * 4));
+            return sum;
+        }
+        return static_cast<int>(Read32(ram, baseAddr + playerOfs));
+    };
+
     switch (mode) {
     case MODE_BATTLE:
     case MODE_NODES:
     case MODE_BOUNTY:
     case MODE_CAPTURE:
-        currentValue = static_cast<int>(Read32(ram, rom.basePoint + playerOfs));
+        currentValue = teamSum(rom.basePoint);
         break;
     case MODE_SURVIVAL:
-        currentValue = static_cast<int>(Read32(ram, rom.basePoint - 0xB0 + playerOfs));
+        currentValue = teamSum(rom.basePoint - 0xB0);
         break;
     case MODE_DEFENDER:
     case MODE_PRIME_HUNTER:
-        currentValue = static_cast<int>(Read32(ram, rom.basePoint - 0x180 + playerOfs)) / 60;
+        currentValue = teamSum(rom.basePoint - 0x180) / 60;
         break;
     default:
         return;
