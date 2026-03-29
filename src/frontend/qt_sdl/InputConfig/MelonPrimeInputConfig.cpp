@@ -2565,8 +2565,7 @@ void MelonPrimeInputConfig::setupColorButton(QPushButton* btn, const QString& co
         QColor initial(curR, curG, curB);
         QColorDialog dlg(initial, window());
         dlg.setOptions(QColorDialog::DontUseNativeDialog);
-        dlg.raise();
-        dlg.activateWindow();
+        dlg.setWindowModality(Qt::WindowModal);
         bool _accepted = (dlg.exec() == QDialog::Accepted);
         m_colorDialogOpen = false;
         if (!_accepted) return;
