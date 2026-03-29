@@ -467,6 +467,15 @@ static int LookupTimeGoalSec(uint8_t xy)
     }
 }
 
+// Match time limit: battleSettings+4 byte1 (XX) → minutes
+// Bit0 = unused/flag. Bits1-4 = time index (0-14). Bit5+ = flags (WiFi=+0x20, etc. — ignored).
+static int LookupTimeLimitMin(uint8_t XX)
+{
+    static const int kMinutes[] = { 3, 5, 7, 9, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60 };
+    int idx = (XX >> 1) & 0xF;
+    return idx < 15 ? kMinutes[idx] : 0;
+}
+
 static int LookupGoal(uint8_t mode, uint8_t xx)
 {
     switch (mode) {
@@ -521,11 +530,11 @@ void CustomHud_OnMatchJoin(melonDS::u8* ram, const RomAddresses& rom)
     uint8_t xx = (settings >> 20) & 0xFE; // bit 0 is a flag bit, mask it out
     b.keyXX = xx;
 
-    // Time limit in minutes: battleSettings+4 format 0000XXYZ, XX=minutes*4(battle) or *0xA(other)
+    // Time limit in minutes: battleSettings+4 format 0000XXYZ, XX=time limit index
     {
         uint32_t ts4 = Read32(ram, rom.battleSettings + 4);
         uint8_t XX = (ts4 >> 8) & 0xFF;
-        b.timeLimitMinutes = (b.mode == MODE_BATTLE) ? (XX / 4) : (XX / 10);
+        b.timeLimitMinutes = LookupTimeLimitMin(XX);
     }
 
     switch (b.mode) {
@@ -765,8 +774,7 @@ static void DrawRankAndTime(QPainter* p, melonDS::u8* ram,
         } else {
             uint32_t ts4 = Read32(ram, rom.battleSettings + 4);
             uint8_t XX = (ts4 >> 8) & 0xFF;
-            uint8_t mode = Read8(ram, rom.battleMode);
-            goalMinutes = (mode == MODE_BATTLE) ? (XX / 4) : (XX / 10);
+            goalMinutes = LookupTimeLimitMin(XX);
         }
         char buf[16] = {};
         FormatMinuteTime(buf, sizeof(buf), goalMinutes);
