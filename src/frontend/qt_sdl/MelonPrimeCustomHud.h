@@ -77,7 +77,7 @@ namespace MelonPrime {
     //    localCfg  — config table
     //    topPaint  — QPainter for the top-screen overlay
     //    btmBuffer — QImage of bottom screen (256x192 ARGB)
-    //    hunterID  — current player character (0=Samus … 6=Weavel)
+    //    hunterID  — current player character (MelonPrime::HunterId ordering)
     // =========================================================================
     void DrawBottomScreenOverlay(Config::Table& localCfg, QPainter* topPaint, QImage* btmBuffer, uint8_t hunterID);
 
@@ -85,3 +85,4 @@ namespace MelonPrime {
 
 #endif // MELONPRIME_CUSTOM_HUD
 #endif // MELON_PRIME_CUSTOM_HUD_H
+
