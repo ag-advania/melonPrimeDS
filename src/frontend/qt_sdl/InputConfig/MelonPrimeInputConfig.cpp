@@ -1045,6 +1045,9 @@ MelonPrimeInputConfig::MelonPrimeInputConfig(EmuInstance* emu, QWidget* parent) 
             .arg(chB, 2, 16, QChar('0')).toUpper());
     bindHexButtonSync(ui->btnMetroidCrosshairColor, ui->leMetroidCrosshairColorCode);
     bindComboButtonSync(ui->btnMetroidCrosshairColor, ui->comboMetroidCrosshairColor, ui->spinMetroidCrosshairR, ui->spinMetroidCrosshairG, ui->spinMetroidCrosshairB);
+    connect(ui->spinMetroidCrosshairR, QOverload<int>::of(&QSpinBox::valueChanged), this, [this](int) { onCrosshairColorSpinChanged(); });
+    connect(ui->spinMetroidCrosshairG, QOverload<int>::of(&QSpinBox::valueChanged), this, [this](int) { onCrosshairColorSpinChanged(); });
+    connect(ui->spinMetroidCrosshairB, QOverload<int>::of(&QSpinBox::valueChanged), this, [this](int) { onCrosshairColorSpinChanged(); });
 
     ui->comboMetroidCrosshairColor->setCurrentIndex(findPresetColorIndex(
         kUnifiedHudColorPresets,
