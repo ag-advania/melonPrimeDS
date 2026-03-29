@@ -810,6 +810,24 @@ bool CustomHud_IsEnabled(Config::Table& localCfg)
     return localCfg.GetBool(kCfgCustomHud);
 }
 
+bool CustomHud_ShouldHideForGameplayState(EmuInstance* emu, const RomAddresses& rom, uint8_t playerPosition)
+{
+    if (!emu) return true;
+
+    melonDS::NDS* nds = emu->getNDS();
+    melonDS::u8* ram = nds ? nds->MainRAM : nullptr;
+    if (!ram) return true;
+
+    const uint32_t offP = static_cast<uint32_t>(playerPosition) * Consts::PLAYER_ADDR_INC;
+    if (Read8(ram, rom.startPressed) == 0x01) return true;
+    if (Read16(ram, rom.playerHP + offP) == 0) return true;
+    return Read8(ram, rom.gameOver) != 0x00;
+}
+
+bool CustomHud_ShouldDrawRadarOverlay(EmuInstance* emu, const RomAddresses& rom, uint8_t playerPosition)
+{
+    return !CustomHud_ShouldHideForGameplayState(emu, rom, playerPosition);
+}
 // =========================================================================
 //  NoHUD Patch
 // =========================================================================
@@ -1239,7 +1257,7 @@ HOT_FUNCTION void CustomHud_Render(
     uint8_t viewMode   = Read8(ram, rom.baseViewMode + offP);
     bool isFirstPerson = (viewMode == 0x00);
 
-    if (isStartPressed || isDead || isGameOver) return;
+    if (CustomHud_ShouldHideForGameplayState(emu, rom, playerPosition)) return;
 
     if (topPaint->font().pixelSize() != kCustomHudFontSize) {
         QFont f = topPaint->font();

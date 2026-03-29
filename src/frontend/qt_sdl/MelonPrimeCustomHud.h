@@ -52,6 +52,12 @@ namespace MelonPrime {
     // Returns true if the custom HUD setting is enabled in config.
     bool CustomHud_IsEnabled(Config::Table& localCfg);
 
+    // Returns true when the shared HUD hide condition is active.
+    bool CustomHud_ShouldHideForGameplayState(EmuInstance* emu, const RomAddresses& rom, uint8_t playerPosition);
+
+    // Returns true when the radar overlay should be drawn on the top screen.
+    bool CustomHud_ShouldDrawRadarOverlay(EmuInstance* emu, const RomAddresses& rom, uint8_t playerPosition);
+
     // Reset patch tracking state (call on emu stop/reset).
     void CustomHud_ResetPatchState();
 
