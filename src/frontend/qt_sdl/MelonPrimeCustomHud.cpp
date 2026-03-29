@@ -498,6 +498,7 @@ struct BattleMatchState {
     uint8_t  mode;
     uint8_t  keyXX;
     int      goalValue;
+    int      timeLimitMinutes; // match time limit in minutes (from battleSettings+4 XX field)
     bool     isTimeMode;
     bool     valid;
 };
@@ -509,6 +510,7 @@ void CustomHud_OnMatchJoin(melonDS::u8* ram, const RomAddresses& rom)
     b.mode = Read8(ram, rom.battleMode);
     b.isTimeMode = false;
     b.goalValue = 0;
+    b.timeLimitMinutes = 0;
 
     if (b.mode < MODE_BATTLE || b.mode > MODE_SURVIVAL) {
         b.valid = false;
@@ -518,6 +520,13 @@ void CustomHud_OnMatchJoin(melonDS::u8* ram, const RomAddresses& rom)
     uint32_t settings = Read32(ram, rom.battleSettings);
     uint8_t xx = (settings >> 20) & 0xFE; // bit 0 is a flag bit, mask it out
     b.keyXX = xx;
+
+    // Time limit in minutes: battleSettings+4 format 0000XXYZ, XX=minutes*4(battle) or *0xA(other)
+    {
+        uint32_t ts4 = Read32(ram, rom.battleSettings + 4);
+        uint8_t XX = (ts4 >> 8) & 0xFF;
+        b.timeLimitMinutes = (b.mode == MODE_BATTLE) ? (XX / 4) : (XX / 10);
+    }
 
     switch (b.mode) {
     case MODE_BATTLE:
@@ -747,15 +756,17 @@ static void DrawRankAndTime(QPainter* p, melonDS::u8* ram,
         DrawCachedText(p, s_timeLeftCache, c.timeLeftX, c.timeLeftY);
     }
 
-    // Time Limit displays the configured minute value itself, with :00 fixed.
+    // Time Limit displays the match time limit in minutes with :00 fixed.
     if (c.timeLimitShow) {
         static TextBitmapCache s_timeLimitCache = { 0, QColor(), "", 0, 0, false, QImage() };
         int goalMinutes = 0;
         if (s_battleState.valid) {
-            goalMinutes = s_battleState.goalValue;
+            goalMinutes = s_battleState.timeLimitMinutes;
         } else {
-            uint32_t timeSetting = Read32(ram, rom.battleSettings + 4);
-            goalMinutes = static_cast<int>((timeSetting >> 4) & 0x1F);
+            uint32_t ts4 = Read32(ram, rom.battleSettings + 4);
+            uint8_t XX = (ts4 >> 8) & 0xFF;
+            uint8_t mode = Read8(ram, rom.battleMode);
+            goalMinutes = (mode == MODE_BATTLE) ? (XX / 4) : (XX / 10);
         }
         char buf[16] = {};
         FormatMinuteTime(buf, sizeof(buf), goalMinutes);
