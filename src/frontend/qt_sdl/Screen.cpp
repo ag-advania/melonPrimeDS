@@ -1109,7 +1109,7 @@ void ScreenPanelNative::paintEvent(QPaintEvent * event)
         {
             auto* mp = emuThread->GetMelonPrimeCore();
             auto& instcfg = emuInstance->getLocalConfig();
-            if (mp && mp->IsRomDetected() && mp->IsInGame() && MelonPrime::CustomHud_IsEnabled(instcfg))
+            if (mp && mp->IsRomDetected() && mp->IsInGame())
             {
                 // Compute widescreen stretch factor from top screen transform
                 float topStretchX = 1.0f;
@@ -1145,11 +1145,14 @@ void ScreenPanelNative::paintEvent(QPaintEvent * event)
                 } // painter ends here — safe to read image
 
                 // Composite top overlay only on the top screen.
-                for (int i = 0; i < numScreens; i++)
+                if (MelonPrime::CustomHud_IsEnabled(instcfg))
                 {
-                    if (screenKind[i] != 0) continue;
-                    painter.setTransform(screenTrans[i]);
-                    painter.drawImage(screenrc, Overlay[0]);
+                    for (int i = 0; i < numScreens; i++)
+                    {
+                        if (screenKind[i] != 0) continue;
+                        painter.setTransform(screenTrans[i]);
+                        painter.drawImage(screenrc, Overlay[0]);
+                    }
                 }
             }
         }
@@ -1576,7 +1579,7 @@ void ScreenPanelGL::drawScreen()
         {
             auto* mp = emuThread->GetMelonPrimeCore();
             auto& instcfg = emuInstance->getLocalConfig();
-            if (mp && mp->IsRomDetected() && mp->IsInGame() && MelonPrime::CustomHud_IsEnabled(instcfg))
+            if (mp && mp->IsRomDetected() && mp->IsInGame())
             {
                 // Compute widescreen stretch factor from top screen transform
                 float topStretchX = 1.0f;
@@ -1611,6 +1614,8 @@ void ScreenPanelGL::drawScreen()
                         topStretchX);
                 } // painter ends here — safe to read constBits()
 
+                if (MelonPrime::CustomHud_IsEnabled(instcfg))
+                {
                 glBindTexture(GL_TEXTURE_2D, overlayTextures[0]);
                 glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, 256, 192,
                     GL_RGBA, GL_UNSIGNED_BYTE, Overlay[0].constBits());
@@ -1726,6 +1731,7 @@ void ScreenPanelGL::drawScreen()
                 glBindBuffer(GL_ARRAY_BUFFER, screenVertexBuffer);
                 glBindVertexArray(screenVertexArray);
                 glBindTexture(GL_TEXTURE_2D_ARRAY, screenTexture);
+                } // if (CustomHud_IsEnabled)
             }
         }
 #endif
