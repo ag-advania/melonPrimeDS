@@ -631,7 +631,16 @@ MelonPrimeInputConfig::MelonPrimeInputConfig(EmuInstance* emu, QWidget* parent) 
         setupRtColor(ui->btnMetroidHudTimeLimitColor, ui->comboMetroidHudTimeLimitColor, ui->leMetroidHudTimeLimitColorCode,
             ui->spinMetroidHudTimeLimitColorR, ui->spinMetroidHudTimeLimitColorG, ui->spinMetroidHudTimeLimitColorB,
             "Metroid.Visual.HudTimeLimitColorR", "Metroid.Visual.HudTimeLimitColorG", "Metroid.Visual.HudTimeLimitColorB");
+        setupRtColor(ui->btnMetroidHudBombLeftColor, ui->comboMetroidHudBombLeftColor, ui->leMetroidHudBombLeftColorCode,
+            ui->spinMetroidHudBombLeftColorR, ui->spinMetroidHudBombLeftColorG, ui->spinMetroidHudBombLeftColorB,
+            "Metroid.Visual.HudBombLeftColorR", "Metroid.Visual.HudBombLeftColorG", "Metroid.Visual.HudBombLeftColorB");
     }
+    ui->cbMetroidHudBombLeftShow->setChecked(instcfg.GetBool("Metroid.Visual.HudBombLeftShow"));
+    initSliderSync(ui->spinMetroidHudBombLeftX, ui->inputMetroidHudBombLeftX, nullptr, instcfg.GetInt("Metroid.Visual.HudBombLeftX"));
+    initSliderSync(ui->spinMetroidHudBombLeftY, ui->inputMetroidHudBombLeftY, nullptr, instcfg.GetInt("Metroid.Visual.HudBombLeftY"));
+    ui->comboMetroidHudBombLeftAlign->setCurrentIndex(instcfg.GetInt("Metroid.Visual.HudBombLeftAlign"));
+    ui->leMetroidHudBombLeftPrefix->setText(QString::fromStdString(instcfg.GetString("Metroid.Visual.HudBombLeftPrefix")));
+    ui->leMetroidHudBombLeftSuffix->setText(QString::fromStdString(instcfg.GetString("Metroid.Visual.HudBombLeftSuffix")));
 
     // Reset buttons
     connect(ui->btnResetMatchStatusDefaults, &QPushButton::clicked, this, &MelonPrimeInputConfig::resetMatchStatusDefaults);
@@ -670,6 +679,7 @@ MelonPrimeInputConfig::MelonPrimeInputConfig(EmuInstance* emu, QWidget* parent) 
     setupToggle(ui->btnToggleRankHud,    ui->sectionRankHud,    "RANK",       "Metroid.UI.SectionRankHud");
     setupToggle(ui->btnToggleTimeLeftHud, ui->sectionTimeLeftHud, "TIME LEFT",  "Metroid.UI.SectionTimeLeftHud");
     setupToggle(ui->btnToggleTimeLimitHud, ui->sectionTimeLimitHud, "TIME LIMIT", "Metroid.UI.SectionTimeLimitHud");
+    setupToggle(ui->btnToggleBombLeft,     ui->sectionBombLeft,     "BOMB LEFT",  "Metroid.UI.SectionBombLeft");
     // HUD Radar section (inside Custom HUD tab)
     setupToggle(ui->btnToggleHudRadar,  ui->sectionHudRadar,  "HUD RADAR",      "Metroid.UI.SectionHudRadar");
     // Other Metroid Settings 2 tab
@@ -1247,6 +1257,15 @@ MelonPrimeInputConfig::MelonPrimeInputConfig(EmuInstance* emu, QWidget* parent) 
     prvC(ui->comboMetroidHudTimeLimitColor);
     prvE(ui->leMetroidHudTimeLimitColorCode);
     prvI(ui->spinMetroidHudTimeLimitColorR); prvI(ui->spinMetroidHudTimeLimitColorG); prvI(ui->spinMetroidHudTimeLimitColorB);
+    // Bomb Left HUD
+    prvB(ui->cbMetroidHudBombLeftShow);
+    prvSl(ui->spinMetroidHudBombLeftX); prvSl(ui->spinMetroidHudBombLeftY);
+    prvC(ui->comboMetroidHudBombLeftAlign);
+    prvC(ui->comboMetroidHudBombLeftColor);
+    prvE(ui->leMetroidHudBombLeftColorCode);
+    prvI(ui->spinMetroidHudBombLeftColorR); prvI(ui->spinMetroidHudBombLeftColorG); prvI(ui->spinMetroidHudBombLeftColorB);
+    prvE(ui->leMetroidHudBombLeftPrefix);
+    prvE(ui->leMetroidHudBombLeftSuffix);
     // Match Status colors
     prvC(ui->comboMetroidHudMatchStatusColor);
     prvI(ui->spinMetroidHudMatchStatusColorR); prvI(ui->spinMetroidHudMatchStatusColorG); prvI(ui->spinMetroidHudMatchStatusColorB);
@@ -1683,6 +1702,21 @@ void MelonPrimeInputConfig::snapshotVisualConfig()
     sCfgI("sTimeLimitClrR", "Metroid.Visual.HudTimeLimitColorR");
     sCfgI("sTimeLimitClrG", "Metroid.Visual.HudTimeLimitColorG");
     sCfgI("sTimeLimitClrB", "Metroid.Visual.HudTimeLimitColorB");
+    // Bomb Left HUD
+    sB("cBombLeftShow", ui->cbMetroidHudBombLeftShow);
+    sSl("sBombLeftX", ui->spinMetroidHudBombLeftX);
+    sSl("sBombLeftY", ui->spinMetroidHudBombLeftY);
+    sC("cBombLeftAlign", ui->comboMetroidHudBombLeftAlign);
+    sC("cBombLeftColor", ui->comboMetroidHudBombLeftColor);
+    sE("eBombLeftColorCode", ui->leMetroidHudBombLeftColorCode);
+    sI("sBombLeftClrSpinR", ui->spinMetroidHudBombLeftColorR);
+    sI("sBombLeftClrSpinG", ui->spinMetroidHudBombLeftColorG);
+    sI("sBombLeftClrSpinB", ui->spinMetroidHudBombLeftColorB);
+    sCfgI("sBombLeftClrR", "Metroid.Visual.HudBombLeftColorR");
+    sCfgI("sBombLeftClrG", "Metroid.Visual.HudBombLeftColorG");
+    sCfgI("sBombLeftClrB", "Metroid.Visual.HudBombLeftColorB");
+    sE("eBombLeftPrefix", ui->leMetroidHudBombLeftPrefix);
+    sE("eBombLeftSuffix", ui->leMetroidHudBombLeftSuffix);
     // Crosshair
     sCfgI("sChR", "Metroid.Visual.CrosshairColorR");
     sCfgI("sChG", "Metroid.Visual.CrosshairColorG");
@@ -1894,6 +1928,18 @@ void MelonPrimeInputConfig::restoreVisualSnapshot()
     rI("sTimeLimitClrSpinR", ui->spinMetroidHudTimeLimitColorR);
     rI("sTimeLimitClrSpinG", ui->spinMetroidHudTimeLimitColorG);
     rI("sTimeLimitClrSpinB", ui->spinMetroidHudTimeLimitColorB);
+    // Bomb Left HUD
+    rB("cBombLeftShow", ui->cbMetroidHudBombLeftShow);
+    rSl("sBombLeftX", ui->spinMetroidHudBombLeftX, ui->inputMetroidHudBombLeftX, nullptr);
+    rSl("sBombLeftY", ui->spinMetroidHudBombLeftY, ui->inputMetroidHudBombLeftY, nullptr);
+    rC("cBombLeftAlign", ui->comboMetroidHudBombLeftAlign);
+    rC("cBombLeftColor", ui->comboMetroidHudBombLeftColor);
+    rE("eBombLeftColorCode", ui->leMetroidHudBombLeftColorCode);
+    rI("sBombLeftClrSpinR", ui->spinMetroidHudBombLeftColorR);
+    rI("sBombLeftClrSpinG", ui->spinMetroidHudBombLeftColorG);
+    rI("sBombLeftClrSpinB", ui->spinMetroidHudBombLeftColorB);
+    rE("eBombLeftPrefix", ui->leMetroidHudBombLeftPrefix);
+    rE("eBombLeftSuffix", ui->leMetroidHudBombLeftSuffix);
     // Crosshair
     rI("sChR", ui->spinMetroidCrosshairR);
     rI("sChG", ui->spinMetroidCrosshairG);
@@ -1974,6 +2020,8 @@ void MelonPrimeInputConfig::restoreVisualSnapshot()
             "Metroid.Visual.HudTimeLeftColorR", "Metroid.Visual.HudTimeLeftColorG", "Metroid.Visual.HudTimeLeftColorB");
         restoreColor(ui->btnMetroidHudTimeLimitColor, "sTimeLimitClrR", "sTimeLimitClrG", "sTimeLimitClrB",
             "Metroid.Visual.HudTimeLimitColorR", "Metroid.Visual.HudTimeLimitColorG", "Metroid.Visual.HudTimeLimitColorB");
+        restoreColor(ui->btnMetroidHudBombLeftColor, "sBombLeftClrR", "sBombLeftClrG", "sBombLeftClrB",
+            "Metroid.Visual.HudBombLeftColorR", "Metroid.Visual.HudBombLeftColorG", "Metroid.Visual.HudBombLeftColorB");
     }
 
     m_applyPreviewEnabled = true;
@@ -2133,6 +2181,15 @@ void MelonPrimeInputConfig::applyVisualPreview()
     instcfg.SetInt ("Metroid.Visual.HudTimeLimitColorR", ui->spinMetroidHudTimeLimitColorR->value());
     instcfg.SetInt ("Metroid.Visual.HudTimeLimitColorG", ui->spinMetroidHudTimeLimitColorG->value());
     instcfg.SetInt ("Metroid.Visual.HudTimeLimitColorB", ui->spinMetroidHudTimeLimitColorB->value());
+    instcfg.SetBool("Metroid.Visual.HudBombLeftShow",   ui->cbMetroidHudBombLeftShow->isChecked());
+    instcfg.SetInt ("Metroid.Visual.HudBombLeftX",      ui->spinMetroidHudBombLeftX->value());
+    instcfg.SetInt ("Metroid.Visual.HudBombLeftY",      ui->spinMetroidHudBombLeftY->value());
+    instcfg.SetInt ("Metroid.Visual.HudBombLeftAlign",  ui->comboMetroidHudBombLeftAlign->currentIndex());
+    instcfg.SetInt ("Metroid.Visual.HudBombLeftColorR", ui->spinMetroidHudBombLeftColorR->value());
+    instcfg.SetInt ("Metroid.Visual.HudBombLeftColorG", ui->spinMetroidHudBombLeftColorG->value());
+    instcfg.SetInt ("Metroid.Visual.HudBombLeftColorB", ui->spinMetroidHudBombLeftColorB->value());
+    instcfg.SetString("Metroid.Visual.HudBombLeftPrefix", ui->leMetroidHudBombLeftPrefix->text().toStdString());
+    instcfg.SetString("Metroid.Visual.HudBombLeftSuffix", ui->leMetroidHudBombLeftSuffix->text().toStdString());
 
     MelonPrime::CustomHud_InvalidateConfigCache();
 
@@ -2246,6 +2303,15 @@ void MelonPrimeInputConfig::saveConfig()
     instcfg.SetInt("Metroid.Visual.HudTimeLimitColorR",  ui->spinMetroidHudTimeLimitColorR->value());
     instcfg.SetInt("Metroid.Visual.HudTimeLimitColorG",  ui->spinMetroidHudTimeLimitColorG->value());
     instcfg.SetInt("Metroid.Visual.HudTimeLimitColorB",  ui->spinMetroidHudTimeLimitColorB->value());
+    instcfg.SetBool("Metroid.Visual.HudBombLeftShow",    ui->cbMetroidHudBombLeftShow->checkState() == Qt::Checked);
+    instcfg.SetInt("Metroid.Visual.HudBombLeftX",        ui->spinMetroidHudBombLeftX->value());
+    instcfg.SetInt("Metroid.Visual.HudBombLeftY",        ui->spinMetroidHudBombLeftY->value());
+    instcfg.SetInt("Metroid.Visual.HudBombLeftAlign",    ui->comboMetroidHudBombLeftAlign->currentIndex());
+    instcfg.SetInt("Metroid.Visual.HudBombLeftColorR",   ui->spinMetroidHudBombLeftColorR->value());
+    instcfg.SetInt("Metroid.Visual.HudBombLeftColorG",   ui->spinMetroidHudBombLeftColorG->value());
+    instcfg.SetInt("Metroid.Visual.HudBombLeftColorB",   ui->spinMetroidHudBombLeftColorB->value());
+    instcfg.SetString("Metroid.Visual.HudBombLeftPrefix", ui->leMetroidHudBombLeftPrefix->text().toStdString());
+    instcfg.SetString("Metroid.Visual.HudBombLeftSuffix", ui->leMetroidHudBombLeftSuffix->text().toStdString());
 
     // Custom HUD
     instcfg.SetBool("Metroid.Visual.CustomHUD", ui->cbMetroidEnableCustomHud->checkState() == Qt::Checked);
@@ -2266,6 +2332,7 @@ void MelonPrimeInputConfig::saveConfig()
     instcfg.SetBool("Metroid.UI.SectionRankHud",        ui->btnToggleRankHud->isChecked());
     instcfg.SetBool("Metroid.UI.SectionTimeLeftHud",    ui->btnToggleTimeLeftHud->isChecked());
     instcfg.SetBool("Metroid.UI.SectionTimeLimitHud",   ui->btnToggleTimeLimitHud->isChecked());
+    instcfg.SetBool("Metroid.UI.SectionBombLeft",       ui->btnToggleBombLeft->isChecked());
     instcfg.SetBool("Metroid.UI.SectionHudRadar",       ui->btnToggleHudRadar->isChecked());
     instcfg.SetBool("Metroid.UI.SectionInputSettings",  ui->btnToggleInputSettings->isChecked());
     instcfg.SetBool("Metroid.UI.SectionScreenSync",     ui->btnToggleScreenSync->isChecked());
@@ -2830,6 +2897,20 @@ void MelonPrimeInputConfig::resetRankTimeDefaults()
     ui->leMetroidHudTimeLeftColorCode->setText("#FFFFFF");
     ui->btnMetroidHudTimeLeftColor->setStyleSheet("background-color: #ffffff;");
 
+    // Bomb Left
+    ui->cbMetroidHudBombLeftShow->setChecked(true);
+    setSlider(ui->spinMetroidHudBombLeftX, ui->inputMetroidHudBombLeftX, 210);
+    setSlider(ui->spinMetroidHudBombLeftY, ui->inputMetroidHudBombLeftY, 185);
+    ui->comboMetroidHudBombLeftAlign->setCurrentIndex(0);
+    ui->comboMetroidHudBombLeftColor->setCurrentIndex(0);
+    ui->spinMetroidHudBombLeftColorR->setValue(255);
+    ui->spinMetroidHudBombLeftColorG->setValue(255);
+    ui->spinMetroidHudBombLeftColorB->setValue(255);
+    ui->leMetroidHudBombLeftColorCode->setText("#FFFFFF");
+    ui->btnMetroidHudBombLeftColor->setStyleSheet("background-color: #ffffff;");
+    ui->leMetroidHudBombLeftPrefix->setText("bombs:");
+    ui->leMetroidHudBombLeftSuffix->setText("");
+
     // Time Limit
     ui->cbMetroidHudTimeLimitShow->setChecked(false);
     setSlider(ui->spinMetroidHudTimeLimitX, ui->inputMetroidHudTimeLimitX, 20);
@@ -3292,6 +3373,21 @@ void MelonPrimeInputConfig::updateMatchStatusPreview()
                 instcfg.GetInt("Metroid.Visual.HudTimeLimitColorG"),
                 instcfg.GetInt("Metroid.Visual.HudTimeLimitColorB")),
             instcfg.GetInt("Metroid.Visual.HudTimeLimitAlign"));
+    }
+
+    if (instcfg.GetBool("Metroid.Visual.HudBombLeftShow")) {
+        const QString bombText =
+            QString::fromStdString(instcfg.GetString("Metroid.Visual.HudBombLeftPrefix")) + "3" +
+            QString::fromStdString(instcfg.GetString("Metroid.Visual.HudBombLeftSuffix"));
+        drawPreviewText(
+            bombText,
+            instcfg.GetInt("Metroid.Visual.HudBombLeftX"),
+            instcfg.GetInt("Metroid.Visual.HudBombLeftY"),
+            QColor(
+                instcfg.GetInt("Metroid.Visual.HudBombLeftColorR"),
+                instcfg.GetInt("Metroid.Visual.HudBombLeftColorG"),
+                instcfg.GetInt("Metroid.Visual.HudBombLeftColorB")),
+            instcfg.GetInt("Metroid.Visual.HudBombLeftAlign"));
     }
 
     p.end();
