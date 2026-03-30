@@ -210,6 +210,12 @@ struct CachedHudConfig {
     QColor matchStatusValueColor;  // invalid = use matchStatusColor
     QColor matchStatusSepColor;    // invalid = use matchStatusColor
     QColor matchStatusGoalColor;   // invalid = use matchStatusColor
+    // Bomb Left
+    bool   bombLeftShow;
+    int    bombLeftX, bombLeftY, bombLeftAlign;
+    QColor bombLeftColor;
+    char   bombLeftPrefix[48];
+    char   bombLeftSuffix[48];
     // Rank & Time HUD
     bool   rankShow;
     int    rankX, rankY, rankAlign;
@@ -363,6 +369,20 @@ static void RefreshCachedConfig(Config::Table& cfg)
         "Metroid.Visual.HudMatchStatusGoalColorR",
         "Metroid.Visual.HudMatchStatusGoalColorG",
         "Metroid.Visual.HudMatchStatusGoalColorB");
+    // Bomb Left
+    c.bombLeftShow = cfg.GetBool("Metroid.Visual.HudBombLeftShow");
+    c.bombLeftX     = cfg.GetInt("Metroid.Visual.HudBombLeftX");
+    c.bombLeftY     = cfg.GetInt("Metroid.Visual.HudBombLeftY");
+    c.bombLeftAlign = cfg.GetInt("Metroid.Visual.HudBombLeftAlign");
+    c.bombLeftColor = QColor(cfg.GetInt("Metroid.Visual.HudBombLeftColorR"),
+                             cfg.GetInt("Metroid.Visual.HudBombLeftColorG"),
+                             cfg.GetInt("Metroid.Visual.HudBombLeftColorB"));
+    { auto s = cfg.GetString("Metroid.Visual.HudBombLeftPrefix");
+      std::strncpy(c.bombLeftPrefix, s.c_str(), sizeof(c.bombLeftPrefix)-1);
+      c.bombLeftPrefix[sizeof(c.bombLeftPrefix)-1] = '\0'; }
+    { auto s = cfg.GetString("Metroid.Visual.HudBombLeftSuffix");
+      std::strncpy(c.bombLeftSuffix, s.c_str(), sizeof(c.bombLeftSuffix)-1);
+      c.bombLeftSuffix[sizeof(c.bombLeftSuffix)-1] = '\0'; }
     // Rank & Time HUD
     c.rankShow  = cfg.GetBool("Metroid.Visual.HudRankShow");
     c.rankX     = cfg.GetInt("Metroid.Visual.HudRankX");
@@ -558,7 +578,9 @@ void CustomHud_OnMatchJoin(melonDS::u8* ram, const RomAddresses& rom)
     case MODE_DEFENDER:
     case MODE_PRIME_HUNTER: {
         uint32_t timeSetting = Read32(ram, rom.battleSettings + 4);
-        uint8_t timeGoalRaw = (timeSetting >> 4) & 0x1F;
+        // Time goal index: Y[3:1] (bits[7:5]) + XX[0] (bit8), skipping Y[0] (bit4 = team-play flag)
+        // Shift out bit4 entirely: >> 5 gives [XX0,Y3,Y2,Y1], << 1 produces even values for the lookup table
+        uint8_t timeGoalRaw = static_cast<uint8_t>(((timeSetting >> 5) & 0x0F) << 1);
         b.goalValue = LookupTimeGoalSec(timeGoalRaw);
         b.isTimeMode = true;
         break;
@@ -658,7 +680,9 @@ static void DrawMatchStatusHud(QPainter* p, melonDS::u8* ram,
         case MODE_DEFENDER:
         case MODE_PRIME_HUNTER: {
             uint32_t timeSetting = Read32(ram, rom.battleSettings + 4);
-            uint8_t timeGoalRaw = (timeSetting >> 4) & 0x1F;
+            // Time goal index: Y[3:1] (bits[7:5]) + XX[0] (bit8), skipping Y[0] (bit4 = team-play flag)
+        // Shift out bit4 entirely: >> 5 gives [XX0,Y3,Y2,Y1], << 1 produces even values for the lookup table
+        uint8_t timeGoalRaw = static_cast<uint8_t>(((timeSetting >> 5) & 0x0F) << 1);
             goalValue = LookupTimeGoalSec(timeGoalRaw);
             isTimeMode = true;
             break;
@@ -755,6 +779,29 @@ static void DrawMatchStatusHud(QPainter* p, melonDS::u8* ram,
 
 // =========================================================================
 static int CalcAlignedTextX(int anchorX, int align, int textW);
+
+// =========================================================================
+//  Bomb Left HUD
+// =========================================================================
+static void DrawBombLeft(QPainter* p, melonDS::u8* ram,
+                         const RomAddresses& rom, uint32_t offP,
+                         const CachedHudConfig& c)
+{
+    if (!c.bombLeftShow) return;
+
+    // Format: 00000X00 — bomb count in bits[11:8]
+    uint8_t bombs = static_cast<uint8_t>((Read32(ram, rom.baseBomb + offP) >> 8) & 0xF);
+
+    static TextBitmapCache s_bombBitmapCache = { 0, QColor(), "", 0, 0, false, QImage() };
+    const QFontMetrics fm = p->fontMetrics();
+    const int fontPixelSize = p->font().pixelSize();
+
+    char buf[64];
+    std::snprintf(buf, sizeof(buf), "%s%u%s", c.bombLeftPrefix, bombs, c.bombLeftSuffix);
+    PrepareTextBitmapCached(fm, p->font(), fontPixelSize, s_bombBitmapCache, buf, c.bombLeftColor);
+    const int bombTextX = CalcAlignedTextX(c.bombLeftX, c.bombLeftAlign, s_bombBitmapCache.bitmap.width());
+    DrawCachedText(p, s_bombBitmapCache, bombTextX, c.bombLeftY);
+}
 
 //  Rank & Time HUD
 // =========================================================================
@@ -1289,7 +1336,18 @@ HOT_FUNCTION void CustomHud_Render(
         topPaint->setFont(f);
     }
 
+    const uint8_t hunterID = Read8(ram, addrHot.chosenHunter);
+    bool isAlt   = Read8(ram, addrHot.isAltForm) == 0x02;
+
     DrawHP(topPaint, currentHP, maxHP, c);
+
+    // Bomb count: Samus/Sylux in alt form only
+    {
+        bool isBomber = (hunterID == static_cast<uint8_t>(HunterId::Samus) ||
+                         hunterID == static_cast<uint8_t>(HunterId::Sylux));
+        if (isBomber && isAlt)
+            DrawBombLeft(topPaint, ram, rom, offP, c);
+    }
 
     // Match Status + Rank & Time HUDs (non-adventure only, visible in all camera modes)
     {
@@ -1305,13 +1363,11 @@ HOT_FUNCTION void CustomHud_Render(
                    Read16(ram, addrAmmoSpecial), addrAmmoMissile,
                    maxAmmoSpecial, maxAmmoMissile, c);
 
-    bool isAlt   = Read8(ram, addrHot.isAltForm) == 0x02;
     bool isTrans = (Read8(ram, addrHot.jumpFlag) & 0x10) != 0;
     if (!isTrans && !isAlt)
         DrawCrosshair(topPaint, ram, rom, c, topStretchX);
 
     // Draw bottom screen overlay on top screen
-    const uint8_t hunterID = Read8(ram, addrHot.chosenHunter);
     DrawBottomScreenOverlay(localCfg, topPaint, btmBuffer, (hunterID <= 6) ? hunterID : 0);
 }
 
