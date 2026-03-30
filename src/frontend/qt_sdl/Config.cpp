@@ -185,6 +185,13 @@ namespace Config
         {"Instance*.Metroid.Visual.HudMatchStatusGoalColorR",  255},
         {"Instance*.Metroid.Visual.HudMatchStatusGoalColorG",  255},
         {"Instance*.Metroid.Visual.HudMatchStatusGoalColorB",  255},
+        /* Bomb Left HUD */
+        {"Instance*.Metroid.Visual.HudBombLeftX",      210},
+        {"Instance*.Metroid.Visual.HudBombLeftY",      185},
+        {"Instance*.Metroid.Visual.HudBombLeftAlign",  0},
+        {"Instance*.Metroid.Visual.HudBombLeftColorR", 255},
+        {"Instance*.Metroid.Visual.HudBombLeftColorG", 255},
+        {"Instance*.Metroid.Visual.HudBombLeftColorB", 255},
         /* Rank & Time HUD */
         {"Instance*.Metroid.Visual.HudRankX",          20},
         {"Instance*.Metroid.Visual.HudRankY",          30},
@@ -319,6 +326,7 @@ namespace Config
         {"Instance*.Metroid.Visual.HudRankShowOrdinal", true},
         {"Instance*.Metroid.Visual.HudTimeLeftShow",    true},
         {"Instance*.Metroid.Visual.HudTimeLimitShow",   false},
+        {"Instance*.Metroid.Visual.HudBombLeftShow",   true},
         {"Instance*.Metroid.Visual.InGameAspectRatio", true},
         {"Instance*.Metroid.Visual.ClipCursorToBottomScreenWhenNotInGame", false},
         {"Instance*.Metroid.Visual.InGameScaling", true},
@@ -333,6 +341,7 @@ namespace Config
         {"Instance*.Metroid.UI.SectionAmmoGauge",      false},
         {"Instance*.Metroid.UI.SectionMatchStatusScore", false},
         {"Instance*.Metroid.UI.SectionRankTime",       false},
+        {"Instance*.Metroid.UI.SectionBombLeft",       false},
         {"Instance*.Metroid.UI.SectionInputSettings",  false},
         {"Instance*.Metroid.UI.SectionScreenSync",     false},
         {"Instance*.Metroid.UI.SectionCursorClipSettings",  false},
@@ -358,6 +367,8 @@ namespace Config
     #ifdef MELONPRIME_DS
         {"Instance*.Metroid.Visual.HudHpPrefix", ""},
         {"Instance*.Metroid.Visual.HudAmmoPrefix", ""},
+        {"Instance*.Metroid.Visual.HudBombLeftPrefix", "bombs:"},
+        {"Instance*.Metroid.Visual.HudBombLeftSuffix", ""},
         {"Instance*.Metroid.Visual.HudMatchStatusLabelPoints",    "points"},
         {"Instance*.Metroid.Visual.HudMatchStatusLabelOctoliths", "octoliths"},
         {"Instance*.Metroid.Visual.HudMatchStatusLabelLives",     "lives left"},
