@@ -79,6 +79,8 @@ set(SOURCES_QT_SDL
     MelonPrimeGameWeapon.cpp
 
     InputConfig/MelonPrimeInputConfig.cpp
+    InputConfig/MelonPrimeInputConfigConfig.cpp
+    InputConfig/MelonPrimeInputConfigPreview.cpp
 
     MelonPrime.cpp
     MelonPrimeCustomHud.cpp
@@ -120,9 +122,9 @@ add_compile_definitions(MELONPRIME_DS) # MelonPrimeDS
 add_compile_definitions(MELONPRIME_CUSTOM_HUD ) # MelonPrimeDS
 
 if (WIN32)
-    # windowsの除外設定はとくになし。
+    # No Windows-specific source exclusions are needed here.
 elseif (APPLE)
-    # macOSでは生RawInput連携を無効化する（該当ソースを除外）
+    # Disable the Windows-only raw input sources on macOS.
     list(REMOVE_ITEM SOURCES_QT_SDL
         #rawinput/rawinput_common.c
         #RawInputThread.cpp
@@ -134,7 +136,7 @@ elseif (APPLE)
         #MelonPrimeDirectInputBinding.cpp
     )
 else()
-    # Linuxでは生RawInput連携を無効化する（該当ソースを除外）
+    # Disable the Windows-only raw input sources on Linux.
     list(REMOVE_ITEM SOURCES_QT_SDL
         #rawinput/rawinput_common.c
         #RawInputThread.cpp
