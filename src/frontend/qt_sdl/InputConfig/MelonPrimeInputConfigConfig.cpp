@@ -12,6 +12,7 @@
 #include <QSpinBox>
 
 #include "MelonPrimeInputConfig.h"
+#include "MelonPrimeInputConfigInternal.h"
 #include "ui_MelonPrimeInputConfig.h"
 #include "Config.h"
 #ifdef MELONPRIME_CUSTOM_HUD
@@ -21,8 +22,20 @@
 using namespace melonDS;
 
 namespace {
-constexpr int kHudPositionPresetCount = 8;
-constexpr int kHudPositionCustomIndex = kHudPositionPresetCount;
+
+// Helper shared by all reset functions: set slider + optional spinbox + optional label.
+void setSliderValue(QSlider* sl, QSpinBox* input, QLabel* lbl, int v)
+{
+    sl->setValue(v);
+    if (input) input->setValue(v);
+    if (lbl)   lbl->setText(QString::number(v));
+}
+
+void setSliderValue(QSlider* sl, QSpinBox* input, int v)
+{
+    setSliderValue(sl, input, nullptr, v);
+}
+
 } // namespace
 
 void MelonPrimeInputConfig::saveConfig()
@@ -31,22 +44,18 @@ void MelonPrimeInputConfig::saveConfig()
     Config::Table keycfg = instcfg.GetTable("Keyboard");
     Config::Table joycfg = instcfg.GetTable("Joystick");
 
-    int i = 0;
-    for (int hotkey : hk_tabAddonsMetroid)
+    for (int i = 0; i < kMetroidHotkeyCount; ++i)
     {
-        const char* btn = EmuInstance::hotkeyNames[hotkey];
+        const char* btn = EmuInstance::hotkeyNames[kMetroidHotkeys[i].id];
         keycfg.SetInt(btn, addonsMetroidKeyMap[i]);
         joycfg.SetInt(btn, addonsMetroidJoyMap[i]);
-        i++;
     }
 
-    i = 0;
-    for (int hotkey : hk_tabAddonsMetroid2)
+    for (int i = 0; i < kMetroidHotkey2Count; ++i)
     {
-        const char* btn = EmuInstance::hotkeyNames[hotkey];
+        const char* btn = EmuInstance::hotkeyNames[kMetroidHotkeys2[i].id];
         keycfg.SetInt(btn, addonsMetroid2KeyMap[i]);
         joycfg.SetInt(btn, addonsMetroid2JoyMap[i]);
-        i++;
     }
 
     // Sensitivities
@@ -248,10 +257,6 @@ void MelonPrimeInputConfig::saveConfig()
     instcfg.SetInt("Metroid.Visual.CrosshairColorG", ui->spinMetroidCrosshairG->value());
     instcfg.SetInt("Metroid.Visual.CrosshairColorB", ui->spinMetroidCrosshairB->value());
 
-    // HUD Radar
-
-    // HUD Radar
-
     // Crosshair - General
     instcfg.SetBool("Metroid.Visual.CrosshairOutline", ui->cbMetroidCrosshairOutline->checkState() == Qt::Checked);
     instcfg.SetDouble("Metroid.Visual.CrosshairOutlineOpacity", ui->spinMetroidCrosshairOutlineOpacity->value());
@@ -260,10 +265,6 @@ void MelonPrimeInputConfig::saveConfig()
     instcfg.SetDouble("Metroid.Visual.CrosshairDotOpacity", ui->spinMetroidCrosshairDotOpacity->value());
     instcfg.SetInt("Metroid.Visual.CrosshairDotThickness", ui->spinMetroidCrosshairDotThickness->value());
     instcfg.SetBool("Metroid.Visual.CrosshairTStyle", ui->cbMetroidCrosshairTStyle->checkState() == Qt::Checked);
-
-    // HUD Radar
-
-    // HUD Radar
 
     // Crosshair - Inner Lines
     instcfg.SetBool("Metroid.Visual.CrosshairInnerShow", ui->cbMetroidCrosshairInnerShow->checkState() == Qt::Checked);
@@ -274,10 +275,6 @@ void MelonPrimeInputConfig::saveConfig()
     instcfg.SetInt("Metroid.Visual.CrosshairInnerOffset", ui->spinMetroidCrosshairInnerOffset->value());
     instcfg.SetBool("Metroid.Visual.CrosshairInnerLinkXY", ui->cbMetroidCrosshairInnerLinkXY->checkState() == Qt::Checked);
 
-    // HUD Radar
-
-    // HUD Radar
-
     // Crosshair - Outer Lines
     instcfg.SetBool("Metroid.Visual.CrosshairOuterShow", ui->cbMetroidCrosshairOuterShow->checkState() == Qt::Checked);
     instcfg.SetDouble("Metroid.Visual.CrosshairOuterOpacity", ui->spinMetroidCrosshairOuterOpacity->value());
@@ -287,6 +284,7 @@ void MelonPrimeInputConfig::saveConfig()
     instcfg.SetInt("Metroid.Visual.CrosshairOuterOffset", ui->spinMetroidCrosshairOuterOffset->value());
     instcfg.SetBool("Metroid.Visual.CrosshairOuterLinkXY", ui->cbMetroidCrosshairOuterLinkXY->checkState() == Qt::Checked);
 
+    // HUD Radar
     // Bottom Screen Overlay
     instcfg.SetBool  ("Metroid.Visual.BtmOverlayEnable",     ui->cbMetroidBtmOverlayEnable->checkState() == Qt::Checked);
     instcfg.SetInt   ("Metroid.Visual.BtmOverlayDstX",       ui->spinMetroidBtmOverlayDstX->value());
@@ -340,17 +338,10 @@ void MelonPrimeInputConfig::resetCrosshairDefaults()
 
 void MelonPrimeInputConfig::resetHpAmmoDefaults()
 {
-    auto setSlider = [this](QSlider* sl, QSpinBox* input, QLabel* lbl, int v) {
-        sl->setValue(v);
-        if (input)
-            input->setValue(v);
-        if (lbl) lbl->setText(QString::number(v));
-    };
-
     // HP Position
     ui->comboMetroidHudHpPosition->setCurrentIndex(kHudPositionCustomIndex); // Custom
-    setSlider(ui->spinMetroidHudHpX, ui->inputMetroidHudHpX, ui->labelMetroidHudHpX, 45);
-    setSlider(ui->spinMetroidHudHpY, ui->inputMetroidHudHpY, ui->labelMetroidHudHpY, 99);
+    setSliderValue(ui->spinMetroidHudHpX, ui->inputMetroidHudHpX, ui->labelMetroidHudHpX, 45);
+    setSliderValue(ui->spinMetroidHudHpY, ui->inputMetroidHudHpY, ui->labelMetroidHudHpY, 99);
     ui->leMetroidHudHpPrefix->setText("");
     ui->comboMetroidHudHpAlign->setCurrentIndex(2); // Right
     ui->cbMetroidHudHpTextAutoColor->setChecked(true);
@@ -369,8 +360,8 @@ void MelonPrimeInputConfig::resetHpAmmoDefaults()
 
     // Weapon Position
     ui->comboMetroidHudWeaponPosition->setCurrentIndex(kHudPositionCustomIndex); // Custom
-    setSlider(ui->spinMetroidHudWeaponX, ui->inputMetroidHudWeaponX, ui->labelMetroidHudWeaponX, 230);
-    setSlider(ui->spinMetroidHudWeaponY, ui->inputMetroidHudWeaponY, ui->labelMetroidHudWeaponY, 99);
+    setSliderValue(ui->spinMetroidHudWeaponX, ui->inputMetroidHudWeaponX, ui->labelMetroidHudWeaponX, 230);
+    setSliderValue(ui->spinMetroidHudWeaponY, ui->inputMetroidHudWeaponY, ui->labelMetroidHudWeaponY, 99);
     ui->leMetroidHudAmmoPrefix->setText("");
     ui->comboMetroidHudAmmoAlign->setCurrentIndex(2); // Right
     ui->comboMetroidHudAmmoTextColor->setCurrentIndex(0);
@@ -389,11 +380,11 @@ void MelonPrimeInputConfig::resetHpAmmoDefaults()
     // Weapon Icon
     ui->cbMetroidHudWeaponIconShow->setChecked(true);
     ui->comboMetroidHudWeaponIconMode->setCurrentIndex(1); // Independent
-    setSlider(ui->spinMetroidHudWeaponIconOffsetX, ui->inputMetroidHudWeaponIconOffsetX, ui->labelMetroidHudWeaponIconOffsetX, 0);
-    setSlider(ui->spinMetroidHudWeaponIconOffsetY, ui->inputMetroidHudWeaponIconOffsetY, ui->labelMetroidHudWeaponIconOffsetY, 10);
+    setSliderValue(ui->spinMetroidHudWeaponIconOffsetX, ui->inputMetroidHudWeaponIconOffsetX, ui->labelMetroidHudWeaponIconOffsetX, 0);
+    setSliderValue(ui->spinMetroidHudWeaponIconOffsetY, ui->inputMetroidHudWeaponIconOffsetY, ui->labelMetroidHudWeaponIconOffsetY, 10);
     ui->comboMetroidHudWeaponIconPosition->setCurrentIndex(kHudPositionCustomIndex); // Custom
-    setSlider(ui->spinMetroidHudWeaponIconPosX, ui->inputMetroidHudWeaponIconPosX, ui->labelMetroidHudWeaponIconPosX, 239);
-    setSlider(ui->spinMetroidHudWeaponIconPosY, ui->inputMetroidHudWeaponIconPosY, ui->labelMetroidHudWeaponIconPosY, 149);
+    setSliderValue(ui->spinMetroidHudWeaponIconPosX, ui->inputMetroidHudWeaponIconPosX, ui->labelMetroidHudWeaponIconPosX, 239);
+    setSliderValue(ui->spinMetroidHudWeaponIconPosY, ui->inputMetroidHudWeaponIconPosY, ui->labelMetroidHudWeaponIconPosY, 149);
     ui->comboMetroidHudWeaponIconAnchorX->setCurrentIndex(1);
     ui->comboMetroidHudWeaponIconAnchorY->setCurrentIndex(1);
     ui->cbMetroidHudWeaponIconColorOverlay->setChecked(false);
@@ -401,14 +392,14 @@ void MelonPrimeInputConfig::resetHpAmmoDefaults()
     // HP Gauge
     ui->cbMetroidHudHpGauge->setChecked(true);
     ui->comboMetroidHudHpGaugeOrientation->setCurrentIndex(1); // Vertical
-    setSlider(ui->spinMetroidHudHpGaugeLength,  ui->inputMetroidHudHpGaugeLength,  ui->labelMetroidHudHpGaugeLength,  80);
-    setSlider(ui->spinMetroidHudHpGaugeWidth,   ui->inputMetroidHudHpGaugeWidth,   ui->labelMetroidHudHpGaugeWidth,   3);
-    setSlider(ui->spinMetroidHudHpGaugeOffsetX, ui->inputMetroidHudHpGaugeOffsetX, ui->labelMetroidHudHpGaugeOffsetX, -14);
-    setSlider(ui->spinMetroidHudHpGaugeOffsetY, ui->inputMetroidHudHpGaugeOffsetY, ui->labelMetroidHudHpGaugeOffsetY, 1);
+    setSliderValue(ui->spinMetroidHudHpGaugeLength,  ui->inputMetroidHudHpGaugeLength,  ui->labelMetroidHudHpGaugeLength,  80);
+    setSliderValue(ui->spinMetroidHudHpGaugeWidth,   ui->inputMetroidHudHpGaugeWidth,   ui->labelMetroidHudHpGaugeWidth,   3);
+    setSliderValue(ui->spinMetroidHudHpGaugeOffsetX, ui->inputMetroidHudHpGaugeOffsetX, ui->labelMetroidHudHpGaugeOffsetX, -14);
+    setSliderValue(ui->spinMetroidHudHpGaugeOffsetY, ui->inputMetroidHudHpGaugeOffsetY, ui->labelMetroidHudHpGaugeOffsetY, 1);
     ui->comboMetroidHudHpGaugeAnchor->setCurrentIndex(3);
     ui->comboMetroidHudHpGaugePosMode->setCurrentIndex(1);
-    setSlider(ui->spinMetroidHudHpGaugePosX, ui->inputMetroidHudHpGaugePosX, ui->labelMetroidHudHpGaugePosX, 14);
-    setSlider(ui->spinMetroidHudHpGaugePosY, ui->inputMetroidHudHpGaugePosY, ui->labelMetroidHudHpGaugePosY, 56);
+    setSliderValue(ui->spinMetroidHudHpGaugePosX, ui->inputMetroidHudHpGaugePosX, ui->labelMetroidHudHpGaugePosX, 14);
+    setSliderValue(ui->spinMetroidHudHpGaugePosY, ui->inputMetroidHudHpGaugePosY, ui->labelMetroidHudHpGaugePosY, 56);
     ui->cbMetroidHudHpGaugeAutoColor->setChecked(true);
     {
         Config::Table& instcfg = emuInstance->getLocalConfig();
@@ -425,14 +416,14 @@ void MelonPrimeInputConfig::resetHpAmmoDefaults()
     // Ammo Gauge
     ui->cbMetroidHudAmmoGauge->setChecked(true);
     ui->comboMetroidHudAmmoGaugeOrientation->setCurrentIndex(1); // Vertical
-    setSlider(ui->spinMetroidHudAmmoGaugeLength,  ui->inputMetroidHudAmmoGaugeLength,  ui->labelMetroidHudAmmoGaugeLength,  80);
-    setSlider(ui->spinMetroidHudAmmoGaugeWidth,   ui->inputMetroidHudAmmoGaugeWidth,   ui->labelMetroidHudAmmoGaugeWidth,   3);
-    setSlider(ui->spinMetroidHudAmmoGaugeOffsetX, ui->inputMetroidHudAmmoGaugeOffsetX, ui->labelMetroidHudAmmoGaugeOffsetX, 9);
-    setSlider(ui->spinMetroidHudAmmoGaugeOffsetY, ui->inputMetroidHudAmmoGaugeOffsetY, ui->labelMetroidHudAmmoGaugeOffsetY, 2);
+    setSliderValue(ui->spinMetroidHudAmmoGaugeLength,  ui->inputMetroidHudAmmoGaugeLength,  ui->labelMetroidHudAmmoGaugeLength,  80);
+    setSliderValue(ui->spinMetroidHudAmmoGaugeWidth,   ui->inputMetroidHudAmmoGaugeWidth,   ui->labelMetroidHudAmmoGaugeWidth,   3);
+    setSliderValue(ui->spinMetroidHudAmmoGaugeOffsetX, ui->inputMetroidHudAmmoGaugeOffsetX, ui->labelMetroidHudAmmoGaugeOffsetX, 9);
+    setSliderValue(ui->spinMetroidHudAmmoGaugeOffsetY, ui->inputMetroidHudAmmoGaugeOffsetY, ui->labelMetroidHudAmmoGaugeOffsetY, 2);
     ui->comboMetroidHudAmmoGaugeAnchor->setCurrentIndex(2);
     ui->comboMetroidHudAmmoGaugePosMode->setCurrentIndex(0);
-    setSlider(ui->spinMetroidHudAmmoGaugePosX, ui->inputMetroidHudAmmoGaugePosX, ui->labelMetroidHudAmmoGaugePosX, 239);
-    setSlider(ui->spinMetroidHudAmmoGaugePosY, ui->inputMetroidHudAmmoGaugePosY, ui->labelMetroidHudAmmoGaugePosY, 56);
+    setSliderValue(ui->spinMetroidHudAmmoGaugePosX, ui->inputMetroidHudAmmoGaugePosX, ui->labelMetroidHudAmmoGaugePosX, 239);
+    setSliderValue(ui->spinMetroidHudAmmoGaugePosY, ui->inputMetroidHudAmmoGaugePosY, ui->labelMetroidHudAmmoGaugePosY, 56);
     {
         Config::Table& instcfg = emuInstance->getLocalConfig();
         instcfg.SetInt("Metroid.Visual.HudAmmoGaugeColorR", 56);
@@ -448,20 +439,12 @@ void MelonPrimeInputConfig::resetHpAmmoDefaults()
 
 void MelonPrimeInputConfig::resetMatchStatusDefaults()
 {
-
-    auto setSlider = [this](QSlider* sl, QSpinBox* input, QLabel* lbl, int v) {
-        sl->setValue(v);
-        if (input)
-            input->setValue(v);
-        if (lbl) lbl->setText(QString::number(v));
-    };
-
     ui->cbMetroidHudMatchStatusShow->setChecked(true);
-    setSlider(ui->spinMetroidHudMatchStatusX, ui->inputMetroidHudMatchStatusX, ui->labelMetroidHudMatchStatusX, 20);
-    setSlider(ui->spinMetroidHudMatchStatusY, ui->inputMetroidHudMatchStatusY, ui->labelMetroidHudMatchStatusY, 19);
+    setSliderValue(ui->spinMetroidHudMatchStatusX, ui->inputMetroidHudMatchStatusX, ui->labelMetroidHudMatchStatusX, 20);
+    setSliderValue(ui->spinMetroidHudMatchStatusY, ui->inputMetroidHudMatchStatusY, ui->labelMetroidHudMatchStatusY, 19);
     ui->comboMetroidHudMatchStatusLabelPos->setCurrentIndex(0); // Above
-    setSlider(ui->spinMetroidHudMatchStatusLabelOfsX, ui->inputMetroidHudMatchStatusLabelOfsX, ui->labelMetroidHudMatchStatusLabelOfsX, 0);
-    setSlider(ui->spinMetroidHudMatchStatusLabelOfsY, ui->inputMetroidHudMatchStatusLabelOfsY, ui->labelMetroidHudMatchStatusLabelOfsY, 1);
+    setSliderValue(ui->spinMetroidHudMatchStatusLabelOfsX, ui->inputMetroidHudMatchStatusLabelOfsX, ui->labelMetroidHudMatchStatusLabelOfsX, 0);
+    setSliderValue(ui->spinMetroidHudMatchStatusLabelOfsY, ui->inputMetroidHudMatchStatusLabelOfsY, ui->labelMetroidHudMatchStatusLabelOfsY, 1);
     ui->leMetroidHudMatchStatusLabelPoints->setText("points");
     ui->leMetroidHudMatchStatusLabelOctoliths->setText("octoliths");
     ui->leMetroidHudMatchStatusLabelLives->setText("lives left");
@@ -509,15 +492,10 @@ void MelonPrimeInputConfig::resetMatchStatusDefaults()
 
 void MelonPrimeInputConfig::resetRankTimeDefaults()
 {
-    auto setSlider = [this](QSlider* sl, QSpinBox* input, int v) {
-        sl->setValue(v);
-        if (input) input->setValue(v);
-    };
-
     // Rank
     ui->cbMetroidHudRankShow->setChecked(true);
-    setSlider(ui->spinMetroidHudRankX, ui->inputMetroidHudRankX, 20);
-    setSlider(ui->spinMetroidHudRankY, ui->inputMetroidHudRankY, 30);
+    setSliderValue(ui->spinMetroidHudRankX, ui->inputMetroidHudRankX, 20);
+    setSliderValue(ui->spinMetroidHudRankY, ui->inputMetroidHudRankY, 30);
     ui->comboMetroidHudRankColor->setCurrentIndex(0);
     ui->comboMetroidHudRankAlign->setCurrentIndex(0);
     ui->leMetroidHudRankPrefix->setText("");
@@ -531,8 +509,8 @@ void MelonPrimeInputConfig::resetRankTimeDefaults()
 
     // Time Left
     ui->cbMetroidHudTimeLeftShow->setChecked(false);
-    setSlider(ui->spinMetroidHudTimeLeftX, ui->inputMetroidHudTimeLeftX, 20);
-    setSlider(ui->spinMetroidHudTimeLeftY, ui->inputMetroidHudTimeLeftY, 42);
+    setSliderValue(ui->spinMetroidHudTimeLeftX, ui->inputMetroidHudTimeLeftX, 20);
+    setSliderValue(ui->spinMetroidHudTimeLeftY, ui->inputMetroidHudTimeLeftY, 42);
     ui->comboMetroidHudTimeLeftAlign->setCurrentIndex(0);
     ui->comboMetroidHudTimeLeftColor->setCurrentIndex(0);
     ui->spinMetroidHudTimeLeftColorR->setValue(255);
@@ -543,8 +521,8 @@ void MelonPrimeInputConfig::resetRankTimeDefaults()
 
     // Bomb Left
     ui->cbMetroidHudBombLeftShow->setChecked(true);
-    setSlider(ui->spinMetroidHudBombLeftX, ui->inputMetroidHudBombLeftX, 210);
-    setSlider(ui->spinMetroidHudBombLeftY, ui->inputMetroidHudBombLeftY, 185);
+    setSliderValue(ui->spinMetroidHudBombLeftX, ui->inputMetroidHudBombLeftX, 210);
+    setSliderValue(ui->spinMetroidHudBombLeftY, ui->inputMetroidHudBombLeftY, 185);
     ui->comboMetroidHudBombLeftAlign->setCurrentIndex(0);
     ui->comboMetroidHudBombLeftColor->setCurrentIndex(0);
     ui->spinMetroidHudBombLeftColorR->setValue(255);
@@ -557,8 +535,8 @@ void MelonPrimeInputConfig::resetRankTimeDefaults()
 
     // Time Limit
     ui->cbMetroidHudTimeLimitShow->setChecked(false);
-    setSlider(ui->spinMetroidHudTimeLimitX, ui->inputMetroidHudTimeLimitX, 20);
-    setSlider(ui->spinMetroidHudTimeLimitY, ui->inputMetroidHudTimeLimitY, 54);
+    setSliderValue(ui->spinMetroidHudTimeLimitX, ui->inputMetroidHudTimeLimitX, 20);
+    setSliderValue(ui->spinMetroidHudTimeLimitY, ui->inputMetroidHudTimeLimitY, 54);
     ui->comboMetroidHudTimeLimitAlign->setCurrentIndex(0);
     ui->comboMetroidHudTimeLimitColor->setCurrentIndex(0);
     ui->spinMetroidHudTimeLimitColorR->setValue(255);
