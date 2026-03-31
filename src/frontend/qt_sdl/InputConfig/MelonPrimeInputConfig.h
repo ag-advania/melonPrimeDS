@@ -12,96 +12,68 @@
 #include <QTabWidget>
 #include <QPushButton>
 #include <QVariantMap>
-#include <initializer_list>
 #include "EmuInstance.h"
+#include "Config.h"
 
+class QCheckBox;
 class QComboBox;
+class QDoubleSpinBox;
+class QLabel;
 class QLineEdit;
+class QSlider;
 class QSpinBox;
 
 namespace Ui { class MelonPrimeInputConfig; }
 
-static constexpr std::initializer_list<int> hk_tabAddonsMetroid =
+// A hotkey binding: ID (from EmuInstance) paired with its display label.
+struct HotkeyEntry
 {
-    HK_MetroidMoveForward,
-    HK_MetroidMoveBack,
-    HK_MetroidMoveLeft,
-    HK_MetroidMoveRight,
-    HK_MetroidShootScan,
-    HK_MetroidScanShoot,
-    HK_MetroidZoom,
-    HK_MetroidJump,
-    HK_MetroidMorphBall,
-    HK_MetroidHoldMorphBallBoost,
-    HK_MetroidWeaponBeam,
-    HK_MetroidWeaponMissile,
-    HK_MetroidWeapon1,
-    HK_MetroidWeapon2,
-    HK_MetroidWeapon3,
-    HK_MetroidWeapon4,
-    HK_MetroidWeapon5,
-    HK_MetroidWeapon6,
-    HK_MetroidWeaponSpecial,
-    HK_MetroidMenu,
+    int         id;
+    const char* label;
 };
 
-static constexpr std::initializer_list<const char*> hk_tabAddonsMetroid_labels =
+static constexpr HotkeyEntry kMetroidHotkeys[] =
 {
-    "[Metroid] (W) Move Forward",
-    "[Metroid] (S) Move Back",
-    "[Metroid] (A) Move Left",
-    "[Metroid] (D) Move Right",
-    "[Metroid] (Mouse Left) Shoot/Scan, Map Zoom In",
-    "[Metroid] (V) Scan/Shoot, Map Zoom In",
-    "[Metroid] (Mouse Right) Imperialist Zoom, Map Zoom Out, Morph Ball Boost",
-    "[Metroid] (Space) Jump",
-    "[Metroid] (L. Ctrl) Transform",
-    "[Metroid] (Shift) Hold to Fast Morph Ball Boost",
-    "[Metroid] (Mouse 5, Side Top) Weapon Beam",
-    "[Metroid] (Mouse 4, Side Bottom) Weapon Missile",
-    "[Metroid] (1) Weapon 1. ShockCoil",
-    "[Metroid] (2) Weapon 2. Magmaul",
-    "[Metroid] (3) Weapon 3. Judicator",
-    "[Metroid] (4) Weapon 4. Imperialist",
-    "[Metroid] (5) Weapon 5. Battlehammer",
-    "[Metroid] (6) Weapon 6. VoltDriver",
-    "[Metroid] (R) Affinity Weapon (Last used Weapon/Omega cannon)",
-    "[Metroid] (Tab) Menu/Map",
+    {HK_MetroidMoveForward,         "[Metroid] (W) Move Forward"},
+    {HK_MetroidMoveBack,            "[Metroid] (S) Move Back"},
+    {HK_MetroidMoveLeft,            "[Metroid] (A) Move Left"},
+    {HK_MetroidMoveRight,           "[Metroid] (D) Move Right"},
+    {HK_MetroidShootScan,           "[Metroid] (Mouse Left) Shoot/Scan, Map Zoom In"},
+    {HK_MetroidScanShoot,           "[Metroid] (V) Scan/Shoot, Map Zoom In"},
+    {HK_MetroidZoom,                "[Metroid] (Mouse Right) Imperialist Zoom, Map Zoom Out, Morph Ball Boost"},
+    {HK_MetroidJump,                "[Metroid] (Space) Jump"},
+    {HK_MetroidMorphBall,           "[Metroid] (L. Ctrl) Transform"},
+    {HK_MetroidHoldMorphBallBoost,  "[Metroid] (Shift) Hold to Fast Morph Ball Boost"},
+    {HK_MetroidWeaponBeam,          "[Metroid] (Mouse 5, Side Top) Weapon Beam"},
+    {HK_MetroidWeaponMissile,       "[Metroid] (Mouse 4, Side Bottom) Weapon Missile"},
+    {HK_MetroidWeapon1,             "[Metroid] (1) Weapon 1. ShockCoil"},
+    {HK_MetroidWeapon2,             "[Metroid] (2) Weapon 2. Magmaul"},
+    {HK_MetroidWeapon3,             "[Metroid] (3) Weapon 3. Judicator"},
+    {HK_MetroidWeapon4,             "[Metroid] (4) Weapon 4. Imperialist"},
+    {HK_MetroidWeapon5,             "[Metroid] (5) Weapon 5. Battlehammer"},
+    {HK_MetroidWeapon6,             "[Metroid] (6) Weapon 6. VoltDriver"},
+    {HK_MetroidWeaponSpecial,       "[Metroid] (R) Affinity Weapon (Last used Weapon/Omega cannon)"},
+    {HK_MetroidMenu,                "[Metroid] (Tab) Menu/Map"},
 };
 
-static_assert(hk_tabAddonsMetroid.size() == hk_tabAddonsMetroid_labels.size());
-
-static constexpr std::initializer_list<int> hk_tabAddonsMetroid2 =
+static constexpr HotkeyEntry kMetroidHotkeys2[] =
 {
-    HK_MetroidIngameSensiUp,
-    HK_MetroidIngameSensiDown,
-    HK_MetroidWeaponNext,
-    HK_MetroidWeaponPrevious,
-    HK_MetroidScanVisor,
-    HK_MetroidUILeft,
-    HK_MetroidUIRight,
-    HK_MetroidUIOk,
-    HK_MetroidUIYes,
-    HK_MetroidUINo,
-    HK_MetroidWeaponCheck,
+    {HK_MetroidIngameSensiUp,    "[Metroid] (PgUp) AimSensitivity Up"},
+    {HK_MetroidIngameSensiDown,  "[Metroid] (PgDown) AimSensitivity Down"},
+    {HK_MetroidWeaponNext,       "[Metroid] (J) Next Weapon in the sorted order"},
+    {HK_MetroidWeaponPrevious,   "[Metroid] (K) Previous Weapon in the sorted order"},
+    {HK_MetroidScanVisor,        "[Metroid] (C) Scan Visor"},
+    {HK_MetroidUILeft,           "[Metroid] (Z) UI Left (Adventure Left Arrow / Hunter License L)"},
+    {HK_MetroidUIRight,          "[Metroid] (X) UI Right (Adventure Right Arrow / Hunter License R)"},
+    {HK_MetroidUIOk,             "[Metroid] (F) UI Ok"},
+    {HK_MetroidUIYes,            "[Metroid] (G) UI Yes (Enter Starship)"},
+    {HK_MetroidUINo,             "[Metroid] (H) UI No (Enter Starship)"},
+    {HK_MetroidWeaponCheck,      "[Metroid] (Y) Weapon Check"},
 };
 
-static constexpr std::initializer_list<const char*> hk_tabAddonsMetroid2_labels =
-{
-    "[Metroid] (PgUp) AimSensitivity Up",
-    "[Metroid] (PgDown) AimSensitivity Down",
-    "[Metroid] (J) Next Weapon in the sorted order",
-    "[Metroid] (K) Previous Weapon in the sorted order",
-    "[Metroid] (C) Scan Visor",
-    "[Metroid] (Z) UI Left (Adventure Left Arrow / Hunter License L)",
-    "[Metroid] (X) UI Right (Adventure Right Arrow / Hunter License R)",
-    "[Metroid] (F) UI Ok",
-    "[Metroid] (G) UI Yes (Enter Starship)",
-    "[Metroid] (H) UI No (Enter Starship)",
-    "[Metroid] (Y) Weapon Check",
-};
-
-static_assert(hk_tabAddonsMetroid2.size() == hk_tabAddonsMetroid2_labels.size());
+// Compile-time counts for array sizing.
+constexpr int kMetroidHotkeyCount  = static_cast<int>(sizeof(kMetroidHotkeys)  / sizeof(kMetroidHotkeys[0]));
+constexpr int kMetroidHotkey2Count = static_cast<int>(sizeof(kMetroidHotkeys2) / sizeof(kMetroidHotkeys2[0]));
 
 class MelonPrimeInputConfig : public QWidget
 {
@@ -143,15 +115,36 @@ private:
     Ui::MelonPrimeInputConfig* ui;
     EmuInstance* emuInstance;
 
-    int addonsMetroidKeyMap[hk_tabAddonsMetroid.size()];
-    int addonsMetroidJoyMap[hk_tabAddonsMetroid.size()];
+    int addonsMetroidKeyMap[kMetroidHotkeyCount];
+    int addonsMetroidJoyMap[kMetroidHotkeyCount];
 
-    int addonsMetroid2KeyMap[hk_tabAddonsMetroid2.size()];
-    int addonsMetroid2JoyMap[hk_tabAddonsMetroid2.size()];
+    int addonsMetroid2KeyMap[kMetroidHotkey2Count];
+    int addonsMetroid2JoyMap[kMetroidHotkey2Count];
 
-    void populatePage(QWidget* page, const std::initializer_list<const char*>& labels, int* keymap, int* joymap);
+    // Constructor setup helpers
+    void setupHiddenLabels();
+    void setupKeyBindings(Config::Table& instcfg, Config::Table& keycfg, Config::Table& joycfg);
+    void setupSensitivityAndToggles(Config::Table& instcfg);
+    void setupMatchStatusHud(Config::Table& instcfg);
+    void setupCollapsibleSections(Config::Table& instcfg);
+    void setupHpAmmoHud(Config::Table& instcfg);
+    void setupCrosshair(Config::Table& instcfg);
+    void setupPreviewConnections();
+    void setupRadar(Config::Table& instcfg);
+
+    // Widget sync helpers (extracted from constructor)
+    void initSliderSync(QSlider* sl, QSpinBox* input, QLabel* lbl, int val);
+    void bindHexButtonSync(QPushButton* btn, QLineEdit* lineEdit);
+    void bindComboButtonSync(QPushButton* btn, QComboBox* combo,
+        QSpinBox* spinR, QSpinBox* spinG, QSpinBox* spinB);
+
+    void populatePage(QWidget* page, const HotkeyEntry* entries, int count, int* keymap, int* joymap);
     void snapshotVisualConfig();
-    void setupColorButton(QPushButton* btn, const QString& configKeyR, const QString& configKeyG, const QString& configKeyB, QComboBox* combo = nullptr, QLineEdit* lineEdit = nullptr, QSpinBox* spinR = nullptr, QSpinBox* spinG = nullptr, QSpinBox* spinB = nullptr, int customIndex = -1, int overallIndex = -1);
+    void setupColorButton(QPushButton* btn,
+        const QString& configKeyR, const QString& configKeyG, const QString& configKeyB,
+        QComboBox* combo = nullptr, QLineEdit* lineEdit = nullptr,
+        QSpinBox* spinR = nullptr, QSpinBox* spinG = nullptr, QSpinBox* spinB = nullptr,
+        int customIndex = -1, int overallIndex = -1);
 
     QVariantMap m_visualSnapshot;
     bool m_applyPreviewEnabled = false;
@@ -160,5 +153,3 @@ private:
 };
 
 #endif // MELONPRIMEINPUTCONFIG_H
-
-
