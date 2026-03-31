@@ -10,6 +10,7 @@
 #include <QLineEdit>
 #include <QSlider>
 #include <QSpinBox>
+#include <QTimer>
 
 #include "MelonPrimeInputConfig.h"
 #include "MelonPrimeInputConfigInternal.h"
@@ -41,6 +42,8 @@ void setSliderValue(QSlider* sl, QSpinBox* input, int v)
 void MelonPrimeInputConfig::saveConfig()
 {
     Config::Table& instcfg = emuInstance->getLocalConfig();
+    const bool oldClipCursorToBottomScreenWhenNotInGame =
+        instcfg.GetBool("Metroid.Visual.ClipCursorToBottomScreenWhenNotInGame");
     Config::Table keycfg = instcfg.GetTable("Keyboard");
     Config::Table joycfg = instcfg.GetTable("Joystick");
 
@@ -95,7 +98,19 @@ void MelonPrimeInputConfig::saveConfig()
     // In-game scaling
     instcfg.SetBool("Metroid.Visual.InGameAspectRatio", ui->cbMetroidInGameAspectRatio->checkState() == Qt::Checked);
     instcfg.SetInt("Metroid.Visual.InGameAspectRatioMode", ui->comboMetroidInGameAspectRatioMode->currentIndex());
-    instcfg.SetBool("Metroid.Visual.ClipCursorToBottomScreenWhenNotInGame", ui->cbMetroidClipCursorToBottomScreenWhenNotInGame->checkState() == Qt::Checked);
+    const bool clipCursorToBottomScreenWhenNotInGame =
+        (ui->cbMetroidClipCursorToBottomScreenWhenNotInGame->checkState() == Qt::Checked);
+    instcfg.SetBool("Metroid.Visual.ClipCursorToBottomScreenWhenNotInGame", clipCursorToBottomScreenWhenNotInGame);
+
+    if (oldClipCursorToBottomScreenWhenNotInGame != clipCursorToBottomScreenWhenNotInGame) {
+        QTimer::singleShot(0, this, [this]() {
+            for (int i = 0; i < emuInstance->getNumWindows(); ++i) {
+                MainWindow* win = emuInstance->getWindow(i);
+                if (win && win->panel)
+                    win->panel->updateClipIfNeeded();
+            }
+        });
+    }
 
     // Battle HUD
     instcfg.SetBool("Metroid.Visual.HudMatchStatusShow", ui->cbMetroidHudMatchStatusShow->checkState() == Qt::Checked);
@@ -547,6 +562,7 @@ void MelonPrimeInputConfig::resetRankTimeDefaults()
 
     applyVisualPreview();
 }
+
 
 
 
