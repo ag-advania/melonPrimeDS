@@ -43,6 +43,92 @@ MelonPrimeInputConfig::MelonPrimeInputConfig(EmuInstance* emu, QWidget* parent) 
 {
     ui->setupUi(this);
 
+    Config::Table& instcfg = emuInstance->getLocalConfig();
+    Config::Table keycfg = instcfg.GetTable("Keyboard");
+    Config::Table joycfg = instcfg.GetTable("Joystick");
+
+    setupHiddenLabels();
+    setupKeyBindings(instcfg, keycfg, joycfg);
+    setupSensitivityAndToggles(instcfg);
+    setupMatchStatusHud(instcfg);
+    setupCollapsibleSections(instcfg);
+    setupHpAmmoHud(instcfg);
+    setupCrosshair(instcfg);
+    setupPreviewConnections();
+    setupRadar(instcfg);
+
+    snapshotVisualConfig();
+    updateRadarPreview();
+    updateCrosshairPreview();
+    updateHpAmmoPreview();
+    updateMatchStatusPreview();
+
+    m_applyPreviewEnabled = true;
+}
+
+void MelonPrimeInputConfig::initSliderSync(QSlider* sl, QSpinBox* input, QLabel* lbl, int val)
+{
+    sl->setValue(val);
+    if (input)
+        input->setValue(val);
+    if (lbl)
+        lbl->setText(QString::number(val));
+
+    QObject::connect(sl, &QSlider::valueChanged, this, [sl, input, lbl](int v) {
+        if (input) {
+            const bool old = input->blockSignals(true);
+            input->setValue(v);
+            input->blockSignals(old);
+        }
+        if (lbl)
+            lbl->setText(QString::number(v));
+    });
+
+    if (input) {
+        QObject::connect(input, QOverload<int>::of(&QSpinBox::valueChanged), this, [this, sl, input, lbl](int v) {
+            const bool old = sl->blockSignals(true);
+            sl->setValue(v);
+            sl->blockSignals(old);
+            if (lbl)
+                lbl->setText(QString::number(v));
+            applyVisualPreview();
+        });
+    }
+}
+
+void MelonPrimeInputConfig::bindHexButtonSync(QPushButton* btn, QLineEdit* lineEdit)
+{
+    connect(lineEdit, &QLineEdit::editingFinished, this, [btn, lineEdit]() {
+        QColor c(lineEdit->text());
+        if (!c.isValid()) return;
+        btn->setStyleSheet(QString("background-color: %1;").arg(c.name()));
+    });
+}
+
+void MelonPrimeInputConfig::bindComboButtonSync(QPushButton* btn, QComboBox* combo,
+    QSpinBox* spinR, QSpinBox* spinG, QSpinBox* spinB)
+{
+    auto updateButtonColor = [btn, spinR, spinG, spinB]() {
+        btn->setStyleSheet(QString("background-color: %1;").arg(
+            QColor(spinR->value(), spinG->value(), spinB->value()).name()));
+    };
+    connect(combo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [updateButtonColor](int) {
+        updateButtonColor();
+    });
+    connect(spinR, QOverload<int>::of(&QSpinBox::valueChanged), this, [updateButtonColor](int) {
+        updateButtonColor();
+    });
+    connect(spinG, QOverload<int>::of(&QSpinBox::valueChanged), this, [updateButtonColor](int) {
+        updateButtonColor();
+    });
+    connect(spinB, QOverload<int>::of(&QSpinBox::valueChanged), this, [updateButtonColor](int) {
+        updateButtonColor();
+    });
+    updateButtonColor();
+}
+
+void MelonPrimeInputConfig::setupHiddenLabels()
+{
     hideWidgets({
         ui->labelMetroidHudMatchStatusX,
         ui->labelMetroidHudMatchStatusY,
@@ -83,69 +169,10 @@ MelonPrimeInputConfig::MelonPrimeInputConfig(EmuInstance* emu, QWidget* parent) 
         ui->labelMetroidCrosshairOuterThickness,
         ui->labelMetroidCrosshairOuterOffset,
     });
+}
 
-    Config::Table& instcfg = emuInstance->getLocalConfig();
-    Config::Table keycfg = instcfg.GetTable("Keyboard");
-    Config::Table joycfg = instcfg.GetTable("Joystick");
-
-    auto initSliderSync = [this](QSlider* sl, QSpinBox* input, QLabel* lbl, int val) {
-        sl->setValue(val);
-        if (input)
-            input->setValue(val);
-        if (lbl)
-            lbl->setText(QString::number(val));
-
-        QObject::connect(sl, &QSlider::valueChanged, this, [sl, input, lbl](int v) {
-            if (input) {
-                const bool old = input->blockSignals(true);
-                input->setValue(v);
-                input->blockSignals(old);
-            }
-            if (lbl)
-                lbl->setText(QString::number(v));
-        });
-
-        if (input) {
-            QObject::connect(input, QOverload<int>::of(&QSpinBox::valueChanged), this, [this, sl, input, lbl](int v) {
-                const bool old = sl->blockSignals(true);
-                sl->setValue(v);
-                sl->blockSignals(old);
-                if (lbl)
-                    lbl->setText(QString::number(v));
-                applyVisualPreview();
-            });
-        }
-    };
-
-    auto bindHexButtonSync = [this](QPushButton* btn, QLineEdit* lineEdit) {
-        connect(lineEdit, &QLineEdit::editingFinished, this, [btn, lineEdit]() {
-            QColor c(lineEdit->text());
-            if (!c.isValid()) return;
-            btn->setStyleSheet(QString("background-color: %1;").arg(c.name()));
-        });
-    };
-
-    auto bindComboButtonSync = [this](QPushButton* btn, QComboBox* combo, QSpinBox* spinR, QSpinBox* spinG, QSpinBox* spinB) {
-        auto updateButtonColor = [btn, spinR, spinG, spinB]() {
-            btn->setStyleSheet(QString("background-color: %1;").arg(QColor(spinR->value(), spinG->value(), spinB->value()).name()));
-        };
-        connect(combo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [updateButtonColor](int) {
-            updateButtonColor();
-        });
-        connect(spinR, QOverload<int>::of(&QSpinBox::valueChanged), this, [updateButtonColor](int) {
-            updateButtonColor();
-        });
-        connect(spinG, QOverload<int>::of(&QSpinBox::valueChanged), this, [updateButtonColor](int) {
-            updateButtonColor();
-        });
-        connect(spinB, QOverload<int>::of(&QSpinBox::valueChanged), this, [updateButtonColor](int) {
-            updateButtonColor();
-        });
-        updateButtonColor();
-    };
-
-
-    // Load key values
+void MelonPrimeInputConfig::setupKeyBindings(Config::Table& instcfg, Config::Table& keycfg, Config::Table& joycfg)
+{
     for (int i = 0; i < kMetroidHotkeyCount; ++i)
     {
         const char* btn = EmuInstance::hotkeyNames[kMetroidHotkeys[i].id];
@@ -160,10 +187,12 @@ MelonPrimeInputConfig::MelonPrimeInputConfig(EmuInstance* emu, QWidget* parent) 
         addonsMetroid2JoyMap[i] = joycfg.GetInt(btn);
     }
 
-    // Populate Pages
     populatePage(ui->tabAddonsMetroid,  kMetroidHotkeys,  kMetroidHotkeyCount,  addonsMetroidKeyMap,  addonsMetroidJoyMap);
     populatePage(ui->tabAddonsMetroid2, kMetroidHotkeys2, kMetroidHotkey2Count, addonsMetroid2KeyMap, addonsMetroid2JoyMap);
+}
 
+void MelonPrimeInputConfig::setupSensitivityAndToggles(Config::Table& instcfg)
+{
     // Sensitivities
     ui->metroidMphSensitvitySpinBox->setValue(instcfg.GetDouble("Metroid.Sensitivity.Mph"));
     ui->metroidAimSensitvitySpinBox->setValue(instcfg.GetInt("Metroid.Sensitivity.Aim"));
@@ -202,10 +231,13 @@ MelonPrimeInputConfig::MelonPrimeInputConfig(EmuInstance* emu, QWidget* parent) 
     ui->comboMetroidScreenSyncMode->setCurrentIndex(instcfg.GetInt("Metroid.Screen.SyncMode"));
     ui->cbMetroidClipCursorToBottomScreenWhenNotInGame->setChecked(instcfg.GetBool("Metroid.Visual.ClipCursorToBottomScreenWhenNotInGame"));
 
-    // In-game scaling (mode 0=Auto, 1=5:3, 2=16:10, 3=16:9, 4=21:9)
+    // In-game scaling
     ui->cbMetroidInGameAspectRatio->setChecked(instcfg.GetBool("Metroid.Visual.InGameAspectRatio"));
     ui->comboMetroidInGameAspectRatioMode->setCurrentIndex(instcfg.GetInt("Metroid.Visual.InGameAspectRatioMode"));
+}
 
+void MelonPrimeInputConfig::setupMatchStatusHud(Config::Table& instcfg)
+{
     // Battle HUD
     ui->cbMetroidHudMatchStatusShow->setChecked(instcfg.GetBool("Metroid.Visual.HudMatchStatusShow"));
     initSliderSync(ui->spinMetroidHudMatchStatusX, ui->inputMetroidHudMatchStatusX, ui->labelMetroidHudMatchStatusX, instcfg.GetInt("Metroid.Visual.HudMatchStatusX"));
@@ -415,7 +447,10 @@ MelonPrimeInputConfig::MelonPrimeInputConfig(EmuInstance* emu, QWidget* parent) 
     // Reset buttons
     connect(ui->btnResetMatchStatusDefaults, &QPushButton::clicked, this, &MelonPrimeInputConfig::resetMatchStatusDefaults);
     connect(ui->btnResetRankTimeDefaults,    &QPushButton::clicked, this, &MelonPrimeInputConfig::resetRankTimeDefaults);
+}
 
+void MelonPrimeInputConfig::setupCollapsibleSections(Config::Table& instcfg)
+{
     // Custom HUD
     ui->cbMetroidEnableCustomHud->setChecked(instcfg.GetBool("Metroid.Visual.CustomHUD"));
 
@@ -463,7 +498,10 @@ MelonPrimeInputConfig::MelonPrimeInputConfig(EmuInstance* emu, QWidget* parent) 
     setupToggle(ui->btnToggleVideo,       ui->sectionVideo,       "VIDEO QUALITY",    "Metroid.UI.SectionVideo");
     setupToggle(ui->btnToggleVolume,      ui->sectionVolume,      "VOLUME",           "Metroid.UI.SectionVolume");
     setupToggle(ui->btnToggleLicense,     ui->sectionLicense,     "LICENSE APPLY",    "Metroid.UI.SectionLicense");
+}
 
+void MelonPrimeInputConfig::setupHpAmmoHud(Config::Table& instcfg)
+{
     // --- Reset buttons ---
     connect(ui->btnResetCrosshairDefaults, &QPushButton::clicked, this, &MelonPrimeInputConfig::resetCrosshairDefaults);
     connect(ui->btnResetHpAmmoDefaults,    &QPushButton::clicked, this, &MelonPrimeInputConfig::resetHpAmmoDefaults);
@@ -743,7 +781,10 @@ MelonPrimeInputConfig::MelonPrimeInputConfig(EmuInstance* emu, QWidget* parent) 
         ui->comboMetroidHudWeaponPosition->blockSignals(false);
     });
 
-    // Crosshair - Color (continued)
+}
+
+void MelonPrimeInputConfig::setupCrosshair(Config::Table& instcfg)
+{
     int chR = instcfg.GetInt("Metroid.Visual.CrosshairColorR");
     int chG = instcfg.GetInt("Metroid.Visual.CrosshairColorG");
     int chB = instcfg.GetInt("Metroid.Visual.CrosshairColorB");
@@ -845,8 +886,10 @@ MelonPrimeInputConfig::MelonPrimeInputConfig(EmuInstance* emu, QWidget* parent) 
         }
     });
 
-    // --- Live visual preview ---
+}
 
+void MelonPrimeInputConfig::setupPreviewConnections()
+{
     auto prvI = [&](QObject* w) {
         if (auto sb = qobject_cast<QSpinBox*>(w))
             connect(sb, QOverload<int>::of(&QSpinBox::valueChanged), this, &MelonPrimeInputConfig::applyVisualPreview);
@@ -981,7 +1024,10 @@ MelonPrimeInputConfig::MelonPrimeInputConfig(EmuInstance* emu, QWidget* parent) 
     prvSl(ui->sliderMetroidCrosshairOuterThickness); prvSl(ui->sliderMetroidCrosshairOuterOffset);
     prvB(ui->cbMetroidCrosshairOuterLinkXY);
 
-    // HUD Radar
+}
+
+void MelonPrimeInputConfig::setupRadar(Config::Table& instcfg)
+{
     ui->cbMetroidBtmOverlayEnable->setChecked(instcfg.GetBool("Metroid.Visual.BtmOverlayEnable"));
     initSliderSync(ui->spinMetroidBtmOverlayDstX,    ui->inputMetroidBtmOverlayDstX,    ui->labelMetroidBtmOverlayDstX,    instcfg.GetInt("Metroid.Visual.BtmOverlayDstX"));
     initSliderSync(ui->spinMetroidBtmOverlayDstY,    ui->inputMetroidBtmOverlayDstY,    ui->labelMetroidBtmOverlayDstY,    instcfg.GetInt("Metroid.Visual.BtmOverlayDstY"));
@@ -1007,14 +1053,6 @@ MelonPrimeInputConfig::MelonPrimeInputConfig(EmuInstance* emu, QWidget* parent) 
         ui->spinMetroidBtmOverlayOpacity->blockSignals(false);
         updateRadarPreview();
     });
-
-    snapshotVisualConfig();
-    updateRadarPreview();
-    updateCrosshairPreview();
-    updateHpAmmoPreview();
-    updateMatchStatusPreview();
-
-    m_applyPreviewEnabled = true;
 }
 
 MelonPrimeInputConfig::~MelonPrimeInputConfig()

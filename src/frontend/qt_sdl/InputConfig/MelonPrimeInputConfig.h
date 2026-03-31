@@ -13,9 +13,14 @@
 #include <QPushButton>
 #include <QVariantMap>
 #include "EmuInstance.h"
+#include "Config.h"
 
+class QCheckBox;
 class QComboBox;
+class QDoubleSpinBox;
+class QLabel;
 class QLineEdit;
+class QSlider;
 class QSpinBox;
 
 namespace Ui { class MelonPrimeInputConfig; }
@@ -115,6 +120,23 @@ private:
 
     int addonsMetroid2KeyMap[kMetroidHotkey2Count];
     int addonsMetroid2JoyMap[kMetroidHotkey2Count];
+
+    // Constructor setup helpers
+    void setupHiddenLabels();
+    void setupKeyBindings(Config::Table& instcfg, Config::Table& keycfg, Config::Table& joycfg);
+    void setupSensitivityAndToggles(Config::Table& instcfg);
+    void setupMatchStatusHud(Config::Table& instcfg);
+    void setupCollapsibleSections(Config::Table& instcfg);
+    void setupHpAmmoHud(Config::Table& instcfg);
+    void setupCrosshair(Config::Table& instcfg);
+    void setupPreviewConnections();
+    void setupRadar(Config::Table& instcfg);
+
+    // Widget sync helpers (extracted from constructor)
+    void initSliderSync(QSlider* sl, QSpinBox* input, QLabel* lbl, int val);
+    void bindHexButtonSync(QPushButton* btn, QLineEdit* lineEdit);
+    void bindComboButtonSync(QPushButton* btn, QComboBox* combo,
+        QSpinBox* spinR, QSpinBox* spinG, QSpinBox* spinB);
 
     void populatePage(QWidget* page, const HotkeyEntry* entries, int count, int* keymap, int* joymap);
     void snapshotVisualConfig();
