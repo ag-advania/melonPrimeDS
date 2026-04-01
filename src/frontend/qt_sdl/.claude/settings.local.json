@@ -5,7 +5,10 @@
       "Bash(python3 -c \":*)",
       "Bash(head -10 grep -n \"kCustomHudFontSize\\\\|HudFontSize\" \"c:/Users/Admin/Documents/git/melonPrimeDS/src/frontend/qt_sdl/MelonPrimeCustomHud.cpp\")",
       "Bash(grep -rn \"timeLimit\\\\|battleSettings\\\\|timeLeft\\\\b\" c:/Users/Admin/Documents/git/melonPrimeDS/src/frontend/qt_sdl/*.h)",
-      "Bash(awk -F: 'NR<=20')"
+      "Bash(awk -F: 'NR<=20')",
+      "Bash(git -C \"c:/Users/Admin/Documents/git/melonPrimeDS\" diff --stat HEAD)",
+      "Bash(git -C \"c:/Users/Admin/Documents/git/melonPrimeDS\" log --oneline -10)",
+      "Bash(git -C \"c:/Users/Admin/Documents/git/melonPrimeDS\" grep -n \"QFontDatabase\\\\|#include\" -- src/frontend/qt_sdl/InputConfig/MelonPrimeInputConfig.cpp)"
     ]
   }
 }

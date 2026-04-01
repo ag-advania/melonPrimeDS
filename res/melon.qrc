@@ -13,5 +13,9 @@
 		<file alias="mph-icon-battlehammer">assets/weapons/battlehammer.png</file>
 		<file alias="mph-icon-imperialist">assets/weapons/imperialist.png</file>
 		<file alias="mph-icon-omega">assets/weapons/omega.png</file>
+		<file alias="mph-icon-bombs3">assets/bombs/bombs_3.png</file>
+		<file alias="mph-icon-bombs2">assets/bombs/bombs_2.png</file>
+		<file alias="mph-icon-bombs1">assets/bombs/bombs_1.png</file>
+		<file alias="mph-icon-bombs0">assets/bombs/bombs_0.png</file>
 	</qresource>
 </RCC>
