@@ -12,10 +12,7 @@
 #include <QColor>
 #include <QLineEdit>
 #include <QComboBox>
-#include <QPainter>
-#include <QPainterPath>
 #include <QColorDialog>
-#include <QFontDatabase>
 #include <QTimer>
 
 #include "MelonPrimeInputConfig.h"
@@ -154,6 +151,10 @@ void MelonPrimeInputConfig::setupHiddenLabels()
         ui->labelMetroidHudAmmoGaugeOffsetY,
         ui->labelMetroidHudAmmoGaugePosX,
         ui->labelMetroidHudAmmoGaugePosY,
+        ui->labelMetroidHudBombLeftIconOfsX,
+        ui->labelMetroidHudBombLeftIconOfsY,
+        ui->labelMetroidHudBombLeftIconPosX,
+        ui->labelMetroidHudBombLeftIconPosY,
         ui->labelMetroidBtmOverlayDstX,
         ui->labelMetroidBtmOverlayDstY,
         ui->labelMetroidBtmOverlayDstSize,
@@ -436,13 +437,27 @@ void MelonPrimeInputConfig::setupMatchStatusHud(Config::Table& instcfg)
         setupRtColor(ui->btnMetroidHudBombLeftColor, ui->comboMetroidHudBombLeftColor, ui->leMetroidHudBombLeftColorCode,
             ui->spinMetroidHudBombLeftColorR, ui->spinMetroidHudBombLeftColorG, ui->spinMetroidHudBombLeftColorB,
             "Metroid.Visual.HudBombLeftColorR", "Metroid.Visual.HudBombLeftColorG", "Metroid.Visual.HudBombLeftColorB");
+        setupRtColor(ui->btnMetroidHudBombLeftIconColor, ui->comboMetroidHudBombLeftIconColor, ui->leMetroidHudBombLeftIconColorCode,
+            ui->spinMetroidHudBombLeftIconColorR, ui->spinMetroidHudBombLeftIconColorG, ui->spinMetroidHudBombLeftIconColorB,
+            "Metroid.Visual.HudBombLeftIconColorR", "Metroid.Visual.HudBombLeftIconColorG", "Metroid.Visual.HudBombLeftIconColorB");
     }
     ui->cbMetroidHudBombLeftShow->setChecked(instcfg.GetBool("Metroid.Visual.HudBombLeftShow"));
+    ui->cbMetroidHudBombLeftTextShow->setChecked(instcfg.GetBool("Metroid.Visual.HudBombLeftTextShow"));
     initSliderSync(ui->spinMetroidHudBombLeftX, ui->inputMetroidHudBombLeftX, nullptr, instcfg.GetInt("Metroid.Visual.HudBombLeftX"));
     initSliderSync(ui->spinMetroidHudBombLeftY, ui->inputMetroidHudBombLeftY, nullptr, instcfg.GetInt("Metroid.Visual.HudBombLeftY"));
     ui->comboMetroidHudBombLeftAlign->setCurrentIndex(instcfg.GetInt("Metroid.Visual.HudBombLeftAlign"));
     ui->leMetroidHudBombLeftPrefix->setText(QString::fromStdString(instcfg.GetString("Metroid.Visual.HudBombLeftPrefix")));
     ui->leMetroidHudBombLeftSuffix->setText(QString::fromStdString(instcfg.GetString("Metroid.Visual.HudBombLeftSuffix")));
+    // Bomb Left Icon
+    ui->cbMetroidHudBombLeftIconShow->setChecked(instcfg.GetBool("Metroid.Visual.HudBombLeftIconShow"));
+    ui->cbMetroidHudBombLeftIconColorOverlay->setChecked(instcfg.GetBool("Metroid.Visual.HudBombLeftIconColorOverlay"));
+    ui->comboMetroidHudBombLeftIconMode->setCurrentIndex(instcfg.GetInt("Metroid.Visual.HudBombLeftIconMode"));
+    initSliderSync(ui->spinMetroidHudBombLeftIconOfsX, ui->inputMetroidHudBombLeftIconOfsX, ui->labelMetroidHudBombLeftIconOfsX, instcfg.GetInt("Metroid.Visual.HudBombLeftIconOfsX"));
+    initSliderSync(ui->spinMetroidHudBombLeftIconOfsY, ui->inputMetroidHudBombLeftIconOfsY, ui->labelMetroidHudBombLeftIconOfsY, instcfg.GetInt("Metroid.Visual.HudBombLeftIconOfsY"));
+    initSliderSync(ui->spinMetroidHudBombLeftIconPosX, ui->inputMetroidHudBombLeftIconPosX, ui->labelMetroidHudBombLeftIconPosX, instcfg.GetInt("Metroid.Visual.HudBombLeftIconPosX"));
+    initSliderSync(ui->spinMetroidHudBombLeftIconPosY, ui->inputMetroidHudBombLeftIconPosY, ui->labelMetroidHudBombLeftIconPosY, instcfg.GetInt("Metroid.Visual.HudBombLeftIconPosY"));
+    ui->comboMetroidHudBombLeftIconAnchorX->setCurrentIndex(instcfg.GetInt("Metroid.Visual.HudBombLeftIconAnchorX"));
+    ui->comboMetroidHudBombLeftIconAnchorY->setCurrentIndex(instcfg.GetInt("Metroid.Visual.HudBombLeftIconAnchorY"));
 
     // Reset buttons
     connect(ui->btnResetMatchStatusDefaults, &QPushButton::clicked, this, &MelonPrimeInputConfig::resetMatchStatusDefaults);
@@ -983,6 +998,7 @@ void MelonPrimeInputConfig::setupPreviewConnections()
     prvI(ui->spinMetroidHudTimeLimitColorR); prvI(ui->spinMetroidHudTimeLimitColorG); prvI(ui->spinMetroidHudTimeLimitColorB);
     // Bomb Left HUD
     prvB(ui->cbMetroidHudBombLeftShow);
+    prvB(ui->cbMetroidHudBombLeftTextShow);
     prvSl(ui->spinMetroidHudBombLeftX); prvSl(ui->spinMetroidHudBombLeftY);
     prvC(ui->comboMetroidHudBombLeftAlign);
     prvC(ui->comboMetroidHudBombLeftColor);
@@ -990,6 +1006,17 @@ void MelonPrimeInputConfig::setupPreviewConnections()
     prvI(ui->spinMetroidHudBombLeftColorR); prvI(ui->spinMetroidHudBombLeftColorG); prvI(ui->spinMetroidHudBombLeftColorB);
     prvE(ui->leMetroidHudBombLeftPrefix);
     prvE(ui->leMetroidHudBombLeftSuffix);
+    // Bomb Left Icon
+    prvB(ui->cbMetroidHudBombLeftIconShow);
+    prvB(ui->cbMetroidHudBombLeftIconColorOverlay);
+    prvC(ui->comboMetroidHudBombLeftIconColor);
+    prvE(ui->leMetroidHudBombLeftIconColorCode);
+    prvI(ui->spinMetroidHudBombLeftIconColorR); prvI(ui->spinMetroidHudBombLeftIconColorG); prvI(ui->spinMetroidHudBombLeftIconColorB);
+    prvC(ui->comboMetroidHudBombLeftIconMode);
+    prvSl(ui->spinMetroidHudBombLeftIconOfsX); prvSl(ui->spinMetroidHudBombLeftIconOfsY);
+    prvSl(ui->spinMetroidHudBombLeftIconPosX); prvSl(ui->spinMetroidHudBombLeftIconPosY);
+    prvC(ui->comboMetroidHudBombLeftIconAnchorX);
+    prvC(ui->comboMetroidHudBombLeftIconAnchorY);
     // Match Status colors
     prvC(ui->comboMetroidHudMatchStatusColor);
     prvI(ui->spinMetroidHudMatchStatusColorR); prvI(ui->spinMetroidHudMatchStatusColorG); prvI(ui->spinMetroidHudMatchStatusColorB);

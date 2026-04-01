@@ -151,7 +151,8 @@ void MelonPrimeInputConfig::saveConfig()
     instcfg.SetInt("Metroid.Visual.HudTimeLimitColorR",  ui->spinMetroidHudTimeLimitColorR->value());
     instcfg.SetInt("Metroid.Visual.HudTimeLimitColorG",  ui->spinMetroidHudTimeLimitColorG->value());
     instcfg.SetInt("Metroid.Visual.HudTimeLimitColorB",  ui->spinMetroidHudTimeLimitColorB->value());
-    instcfg.SetBool("Metroid.Visual.HudBombLeftShow",    ui->cbMetroidHudBombLeftShow->checkState() == Qt::Checked);
+    instcfg.SetBool("Metroid.Visual.HudBombLeftShow",     ui->cbMetroidHudBombLeftShow->checkState() == Qt::Checked);
+    instcfg.SetBool("Metroid.Visual.HudBombLeftTextShow", ui->cbMetroidHudBombLeftTextShow->checkState() == Qt::Checked);
     instcfg.SetInt("Metroid.Visual.HudBombLeftX",        ui->spinMetroidHudBombLeftX->value());
     instcfg.SetInt("Metroid.Visual.HudBombLeftY",        ui->spinMetroidHudBombLeftY->value());
     instcfg.SetInt("Metroid.Visual.HudBombLeftAlign",    ui->comboMetroidHudBombLeftAlign->currentIndex());
@@ -160,6 +161,18 @@ void MelonPrimeInputConfig::saveConfig()
     instcfg.SetInt("Metroid.Visual.HudBombLeftColorB",   ui->spinMetroidHudBombLeftColorB->value());
     instcfg.SetString("Metroid.Visual.HudBombLeftPrefix", ui->leMetroidHudBombLeftPrefix->text().toStdString());
     instcfg.SetString("Metroid.Visual.HudBombLeftSuffix", ui->leMetroidHudBombLeftSuffix->text().toStdString());
+    instcfg.SetBool("Metroid.Visual.HudBombLeftIconShow",         ui->cbMetroidHudBombLeftIconShow->isChecked());
+    instcfg.SetBool("Metroid.Visual.HudBombLeftIconColorOverlay", ui->cbMetroidHudBombLeftIconColorOverlay->isChecked());
+    instcfg.SetInt ("Metroid.Visual.HudBombLeftIconColorR",       ui->spinMetroidHudBombLeftIconColorR->value());
+    instcfg.SetInt ("Metroid.Visual.HudBombLeftIconColorG",       ui->spinMetroidHudBombLeftIconColorG->value());
+    instcfg.SetInt ("Metroid.Visual.HudBombLeftIconColorB",       ui->spinMetroidHudBombLeftIconColorB->value());
+    instcfg.SetInt ("Metroid.Visual.HudBombLeftIconMode",         ui->comboMetroidHudBombLeftIconMode->currentIndex());
+    instcfg.SetInt ("Metroid.Visual.HudBombLeftIconOfsX",         ui->spinMetroidHudBombLeftIconOfsX->value());
+    instcfg.SetInt ("Metroid.Visual.HudBombLeftIconOfsY",         ui->spinMetroidHudBombLeftIconOfsY->value());
+    instcfg.SetInt ("Metroid.Visual.HudBombLeftIconPosX",         ui->spinMetroidHudBombLeftIconPosX->value());
+    instcfg.SetInt ("Metroid.Visual.HudBombLeftIconPosY",         ui->spinMetroidHudBombLeftIconPosY->value());
+    instcfg.SetInt ("Metroid.Visual.HudBombLeftIconAnchorX",      ui->comboMetroidHudBombLeftIconAnchorX->currentIndex());
+    instcfg.SetInt ("Metroid.Visual.HudBombLeftIconAnchorY",      ui->comboMetroidHudBombLeftIconAnchorY->currentIndex());
 
     // Custom HUD
     instcfg.SetBool("Metroid.Visual.CustomHUD", ui->cbMetroidEnableCustomHud->checkState() == Qt::Checked);
@@ -536,6 +549,7 @@ void MelonPrimeInputConfig::resetRankTimeDefaults()
 
     // Bomb Left
     ui->cbMetroidHudBombLeftShow->setChecked(true);
+    ui->cbMetroidHudBombLeftTextShow->setChecked(false);
     setSliderValue(ui->spinMetroidHudBombLeftX, ui->inputMetroidHudBombLeftX, 210);
     setSliderValue(ui->spinMetroidHudBombLeftY, ui->inputMetroidHudBombLeftY, 185);
     ui->comboMetroidHudBombLeftAlign->setCurrentIndex(0);
@@ -545,8 +559,24 @@ void MelonPrimeInputConfig::resetRankTimeDefaults()
     ui->spinMetroidHudBombLeftColorB->setValue(255);
     ui->leMetroidHudBombLeftColorCode->setText("#FFFFFF");
     ui->btnMetroidHudBombLeftColor->setStyleSheet("background-color: #ffffff;");
-    ui->leMetroidHudBombLeftPrefix->setText("bombs:");
+    ui->leMetroidHudBombLeftPrefix->setText("bombs");
     ui->leMetroidHudBombLeftSuffix->setText("");
+    // Bomb Left Icon
+    ui->cbMetroidHudBombLeftIconShow->setChecked(true);
+    ui->cbMetroidHudBombLeftIconColorOverlay->setChecked(true);
+    ui->comboMetroidHudBombLeftIconColor->setCurrentIndex(0);
+    ui->spinMetroidHudBombLeftIconColorR->setValue(255);
+    ui->spinMetroidHudBombLeftIconColorG->setValue(255);
+    ui->spinMetroidHudBombLeftIconColorB->setValue(255);
+    ui->leMetroidHudBombLeftIconColorCode->setText("#FFFFFF");
+    ui->btnMetroidHudBombLeftIconColor->setStyleSheet("background-color: #ffffff;");
+    ui->comboMetroidHudBombLeftIconMode->setCurrentIndex(0);
+    setSliderValue(ui->spinMetroidHudBombLeftIconOfsX, ui->inputMetroidHudBombLeftIconOfsX, 16);
+    setSliderValue(ui->spinMetroidHudBombLeftIconOfsY, ui->inputMetroidHudBombLeftIconOfsY, -15);
+    setSliderValue(ui->spinMetroidHudBombLeftIconPosX, ui->inputMetroidHudBombLeftIconPosX, 210);
+    setSliderValue(ui->spinMetroidHudBombLeftIconPosY, ui->inputMetroidHudBombLeftIconPosY, 175);
+    ui->comboMetroidHudBombLeftIconAnchorX->setCurrentIndex(1);
+    ui->comboMetroidHudBombLeftIconAnchorY->setCurrentIndex(1);
 
     // Time Limit
     ui->cbMetroidHudTimeLimitShow->setChecked(false);
