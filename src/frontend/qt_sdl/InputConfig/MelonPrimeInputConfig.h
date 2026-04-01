@@ -93,6 +93,8 @@ private slots:
     void resetHpAmmoDefaults();
     void resetMatchStatusDefaults();
     void resetRankTimeDefaults();
+    void resetBombLeftDefaults();
+    void resetRadarDefaults();
     void on_metroidSetVideoQualityToLow_clicked();
     void on_metroidSetVideoQualityToHigh_clicked();
     void on_metroidSetVideoQualityToHigh2_clicked();
@@ -157,3 +159,6 @@ private:
 };
 
 #endif // MELONPRIMEINPUTCONFIG_H
+
+
+

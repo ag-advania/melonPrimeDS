@@ -462,6 +462,8 @@ void MelonPrimeInputConfig::setupMatchStatusHud(Config::Table& instcfg)
     // Reset buttons
     connect(ui->btnResetMatchStatusDefaults, &QPushButton::clicked, this, &MelonPrimeInputConfig::resetMatchStatusDefaults);
     connect(ui->btnResetRankTimeDefaults,    &QPushButton::clicked, this, &MelonPrimeInputConfig::resetRankTimeDefaults);
+    connect(ui->btnResetBombLeftDefaults,    &QPushButton::clicked, this, &MelonPrimeInputConfig::resetBombLeftDefaults);
+    connect(ui->btnResetRadarDefaults,       &QPushButton::clicked, this, &MelonPrimeInputConfig::resetRadarDefaults);
 }
 
 void MelonPrimeInputConfig::setupCollapsibleSections(Config::Table& instcfg)
@@ -707,7 +709,6 @@ void MelonPrimeInputConfig::setupHpAmmoHud(Config::Table& instcfg)
         ui->spinMetroidHudWeaponX->value(),
         ui->spinMetroidHudWeaponY->value(),
         kHudPositionCustomIndex));
-
     auto updateWeaponIconModeUi = [this]() {
         const bool independent = (ui->comboMetroidHudWeaponIconMode->currentIndex() == 1);
         ui->spinMetroidHudWeaponIconOffsetX->setEnabled(!independent);
@@ -722,6 +723,29 @@ void MelonPrimeInputConfig::setupHpAmmoHud(Config::Table& instcfg)
         updateWeaponIconModeUi();
     });
     updateWeaponIconModeUi();
+
+    auto updateBombLeftIconModeUi = [this]() {
+        const bool independent = (ui->comboMetroidHudBombLeftIconMode->currentIndex() == 1);
+        ui->spinMetroidHudBombLeftIconOfsX->setEnabled(!independent);
+        ui->inputMetroidHudBombLeftIconOfsX->setEnabled(!independent);
+        ui->labelMetroidHudBombLeftIconOfsX->setEnabled(!independent);
+        ui->spinMetroidHudBombLeftIconOfsY->setEnabled(!independent);
+        ui->inputMetroidHudBombLeftIconOfsY->setEnabled(!independent);
+        ui->labelMetroidHudBombLeftIconOfsY->setEnabled(!independent);
+        ui->spinMetroidHudBombLeftIconPosX->setEnabled(independent);
+        ui->inputMetroidHudBombLeftIconPosX->setEnabled(independent);
+        ui->labelMetroidHudBombLeftIconPosX->setEnabled(independent);
+        ui->spinMetroidHudBombLeftIconPosY->setEnabled(independent);
+        ui->inputMetroidHudBombLeftIconPosY->setEnabled(independent);
+        ui->labelMetroidHudBombLeftIconPosY->setEnabled(independent);
+        ui->comboMetroidHudBombLeftIconAnchorX->setEnabled(true);
+        ui->comboMetroidHudBombLeftIconAnchorY->setEnabled(true);
+    };
+    connect(ui->comboMetroidHudBombLeftIconMode, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [updateBombLeftIconModeUi](int) {
+        updateBombLeftIconModeUi();
+    });
+    updateBombLeftIconModeUi();
+
     auto updateHpGaugeModeUi = [this]() {
         const bool independent = (ui->comboMetroidHudHpGaugePosMode->currentIndex() == 1);
         ui->spinMetroidHudHpGaugeOffsetX->setEnabled(!independent);
@@ -1315,4 +1339,8 @@ void MelonPrimeInputConfig::on_comboMetroidCrosshairColor_currentIndexChanged(in
         kHudColorPresetCount,
         index);
 }
+
+
+
+
 
