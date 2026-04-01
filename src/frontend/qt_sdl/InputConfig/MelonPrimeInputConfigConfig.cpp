@@ -449,7 +449,7 @@ void MelonPrimeInputConfig::resetHpAmmoDefaults()
     setSliderValue(ui->spinMetroidHudAmmoGaugeOffsetX, ui->inputMetroidHudAmmoGaugeOffsetX, ui->labelMetroidHudAmmoGaugeOffsetX, 9);
     setSliderValue(ui->spinMetroidHudAmmoGaugeOffsetY, ui->inputMetroidHudAmmoGaugeOffsetY, ui->labelMetroidHudAmmoGaugeOffsetY, 2);
     ui->comboMetroidHudAmmoGaugeAnchor->setCurrentIndex(2);
-    ui->comboMetroidHudAmmoGaugePosMode->setCurrentIndex(0);
+    ui->comboMetroidHudAmmoGaugePosMode->setCurrentIndex(1);
     setSliderValue(ui->spinMetroidHudAmmoGaugePosX, ui->inputMetroidHudAmmoGaugePosX, ui->labelMetroidHudAmmoGaugePosX, 239);
     setSliderValue(ui->spinMetroidHudAmmoGaugePosY, ui->inputMetroidHudAmmoGaugePosY, ui->labelMetroidHudAmmoGaugePosY, 56);
     {
@@ -570,11 +570,11 @@ void MelonPrimeInputConfig::resetRankTimeDefaults()
     ui->spinMetroidHudBombLeftIconColorB->setValue(255);
     ui->leMetroidHudBombLeftIconColorCode->setText("#FFFFFF");
     ui->btnMetroidHudBombLeftIconColor->setStyleSheet("background-color: #ffffff;");
-    ui->comboMetroidHudBombLeftIconMode->setCurrentIndex(0);
+    ui->comboMetroidHudBombLeftIconMode->setCurrentIndex(1);
     setSliderValue(ui->spinMetroidHudBombLeftIconOfsX, ui->inputMetroidHudBombLeftIconOfsX, 16);
     setSliderValue(ui->spinMetroidHudBombLeftIconOfsY, ui->inputMetroidHudBombLeftIconOfsY, -15);
-    setSliderValue(ui->spinMetroidHudBombLeftIconPosX, ui->inputMetroidHudBombLeftIconPosX, 210);
-    setSliderValue(ui->spinMetroidHudBombLeftIconPosY, ui->inputMetroidHudBombLeftIconPosY, 175);
+    setSliderValue(ui->spinMetroidHudBombLeftIconPosX, ui->inputMetroidHudBombLeftIconPosX, 226);
+    setSliderValue(ui->spinMetroidHudBombLeftIconPosY, ui->inputMetroidHudBombLeftIconPosY, 170);
     ui->comboMetroidHudBombLeftIconAnchorX->setCurrentIndex(1);
     ui->comboMetroidHudBombLeftIconAnchorY->setCurrentIndex(1);
 

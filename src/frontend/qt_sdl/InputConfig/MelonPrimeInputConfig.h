@@ -106,6 +106,10 @@ private slots:
     void on_leMetroidCrosshairColorCode_editingFinished();
     void on_comboMetroidCrosshairColor_currentIndexChanged(int index);
     void applyVisualPreview();
+    void applyAndPreviewCrosshair();
+    void applyAndPreviewHpAmmo();
+    void applyAndPreviewMatchStatus();
+    void applyAndPreviewRadar();
     void updateRadarPreview();
     void updateCrosshairPreview();
     void updateHpAmmoPreview();
