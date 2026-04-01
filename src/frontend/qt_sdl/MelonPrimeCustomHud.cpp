@@ -293,6 +293,7 @@ struct CachedHudConfig {
 };
 
 static CachedHudConfig s_cache = { .valid = false };
+static uint32_t s_cacheEpoch = 1;
 
 static void RefreshCachedConfig(Config::Table& cfg)
 {
@@ -495,6 +496,8 @@ static void RefreshCachedConfig(Config::Table& cfg)
     c.timeLimitColor = QColor(cfg.GetInt("Metroid.Visual.HudTimeLimitColorR"),
                                cfg.GetInt("Metroid.Visual.HudTimeLimitColorG"),
                                cfg.GetInt("Metroid.Visual.HudTimeLimitColorB"));
+    ++s_cacheEpoch;
+    if (s_cacheEpoch == 0) s_cacheEpoch = 1;
 }
 
 // =========================================================================
@@ -672,7 +675,6 @@ void CustomHud_OnMatchJoin(melonDS::u8* ram, const RomAddresses& rom)
 
     b.valid = true;
 }
-
 static const char* ResolveMatchStatusLabel(uint8_t mode, const CachedHudConfig& c)
 {
     switch (mode) {
@@ -685,6 +687,107 @@ static const char* ResolveMatchStatusLabel(uint8_t mode, const CachedHudConfig& 
     case MODE_PRIME_HUNTER: return c.matchStatusLabelPrimeTime;
     default:                return "";
     }
+}
+
+struct MatchStatusStringCache {
+    uint32_t configEpoch;
+    uint8_t  mode;
+    uint8_t  xx;
+    int      currentValue;
+    int      goalValue;
+    bool     hasGoal;
+    bool     isTimeMode;
+    bool     valid;
+    char     curBuf[24];
+    char     sepBuf[4];
+    char     goalBuf[24];
+};
+
+struct RankStringCache {
+    uint32_t configEpoch;
+    uint8_t  rankByte;
+    bool     showOrdinal;
+    bool     valid;
+    char     buf[64];
+};
+
+struct TimeStringCache {
+    uint32_t configEpoch;
+    int      value;
+    bool     valid;
+    char     buf[16];
+};
+
+static inline void UpdateMatchStatusStrings(MatchStatusStringCache& cache,
+                                            int currentValue, int goalValue,
+                                            bool isTimeMode, uint8_t mode, uint8_t xx)
+{
+    const bool hasGoal = isTimeMode || goalValue > 0;
+    if (cache.valid && cache.configEpoch == s_cacheEpoch && cache.currentValue == currentValue
+        && cache.goalValue == goalValue && cache.isTimeMode == isTimeMode
+        && cache.mode == mode && cache.xx == xx && cache.hasGoal == hasGoal)
+    {
+        return;
+    }
+
+    cache.currentValue = currentValue;
+    cache.goalValue = goalValue;
+    cache.isTimeMode = isTimeMode;
+    cache.mode = mode;
+    cache.xx = xx;
+    cache.hasGoal = hasGoal;
+    cache.configEpoch = s_cacheEpoch;
+
+    if (isTimeMode) {
+        FormatTime(cache.curBuf, sizeof(cache.curBuf), currentValue);
+        FormatTime(cache.goalBuf, sizeof(cache.goalBuf), goalValue);
+        std::strncpy(cache.sepBuf, "/", sizeof(cache.sepBuf));
+        cache.sepBuf[sizeof(cache.sepBuf) - 1] = '\0';
+    } else if (goalValue > 0) {
+        std::snprintf(cache.curBuf, sizeof(cache.curBuf), "%d", currentValue);
+        std::snprintf(cache.goalBuf, sizeof(cache.goalBuf), "%d", goalValue);
+        std::strncpy(cache.sepBuf, " / ", sizeof(cache.sepBuf));
+        cache.sepBuf[sizeof(cache.sepBuf) - 1] = '\0';
+    } else {
+        std::snprintf(cache.curBuf, sizeof(cache.curBuf), "%d (XX=0x%02X)", currentValue, xx);
+        cache.goalBuf[0] = '\0';
+        cache.sepBuf[0] = '\0';
+    }
+
+    cache.valid = true;
+}
+
+static inline const char* UpdateRankString(RankStringCache& cache, uint8_t rankByte,
+                                           bool showOrdinal, const CachedHudConfig& c)
+{
+    if (!cache.valid || cache.configEpoch != s_cacheEpoch || cache.rankByte != rankByte
+        || cache.showOrdinal != showOrdinal)
+    {
+        static const char* kOrdinals[4] = { "st", "nd", "rd", "th" };
+        if (showOrdinal)
+            std::snprintf(cache.buf, sizeof(cache.buf), "%s%u%s%s", c.rankPrefix, rankByte + 1u, kOrdinals[rankByte], c.rankSuffix);
+        else
+            std::snprintf(cache.buf, sizeof(cache.buf), "%s%u%s", c.rankPrefix, rankByte + 1u, c.rankSuffix);
+        cache.rankByte = rankByte;
+        cache.showOrdinal = showOrdinal;
+        cache.configEpoch = s_cacheEpoch;
+        cache.valid = true;
+    }
+    return cache.buf;
+}
+
+static inline const char* UpdateTimeString(TimeStringCache& cache, int value, bool minutesOnly)
+{
+    if (!cache.valid || cache.configEpoch != s_cacheEpoch || cache.value != value) {
+        if (minutesOnly)
+            FormatMinuteTime(cache.buf, sizeof(cache.buf), value);
+        else
+            FormatTime(cache.buf, sizeof(cache.buf), value);
+        cache.value = value;
+        cache.configEpoch = s_cacheEpoch;
+        cache.valid = true;
+    }
+    return cache.buf;
 }
 
 static void DrawMatchStatusHud(QPainter* p, melonDS::u8* ram,
@@ -709,13 +812,10 @@ static void DrawMatchStatusHud(QPainter* p, melonDS::u8* ram,
     bool isTimeMode = match ? match->isTimeMode : false;
     uint8_t xx = match ? match->keyXX : 0;
 
-    // Team play: Y nibble (bits[7:4]) of battleSettings+4 — any bit set = team play ON
-    // Team assignment: Z nibble (bits[3:0]) — bit i = player(i+1) team (0=red, 1=green)
     uint32_t ts4_local = match ? 0u : Read32(ram, rom.battleSettings + 4);
     uint8_t teamNibble = match ? match->teamNibble : static_cast<uint8_t>(ts4_local & 0x0F);
     bool isTeamGame    = match ? match->isTeamGame  : ((ts4_local & 0x10) != 0);
 
-    // Helper: sum raw values for the same team as playerPos, or return solo value.
     auto teamSum = [&](uint32_t baseAddr) -> int {
         if (isTeamGame && playerPos < 4) {
             uint8_t myTeam = (teamNibble >> playerPos) & 1;
@@ -763,9 +863,7 @@ static void DrawMatchStatusHud(QPainter* p, melonDS::u8* ram,
         case MODE_DEFENDER:
         case MODE_PRIME_HUNTER: {
             uint32_t timeSetting = Read32(ram, rom.battleSettings + 4);
-            // Time goal index: Y[3:1] (bits[7:5]) + XX[0] (bit8), skipping Y[0] (bit4 = team-play flag)
-        // Shift out bit4 entirely: >> 5 gives [XX0,Y3,Y2,Y1], << 1 produces even values for the lookup table
-        uint8_t timeGoalRaw = static_cast<uint8_t>(((timeSetting >> 5) & 0x0F) << 1);
+            uint8_t timeGoalRaw = static_cast<uint8_t>(((timeSetting >> 5) & 0x0F) << 1);
             goalValue = LookupTimeGoalSec(timeGoalRaw);
             isTimeMode = true;
             break;
@@ -780,21 +878,8 @@ static void DrawMatchStatusHud(QPainter* p, melonDS::u8* ram,
         if (currentValue < 0) currentValue = 0;
     }
 
-    char curBuf[24] = {}, sepBuf[4] = {}, goalBuf[24] = {};
-    bool hasGoal = false;
-    if (isTimeMode) {
-        FormatTime(curBuf, sizeof(curBuf), currentValue);
-        FormatTime(goalBuf, sizeof(goalBuf), goalValue);
-        std::strncpy(sepBuf, "/", sizeof(sepBuf));
-        hasGoal = true;
-    } else if (goalValue > 0) {
-        std::snprintf(curBuf, sizeof(curBuf), "%d", currentValue);
-        std::snprintf(goalBuf, sizeof(goalBuf), "%d", goalValue);
-        std::strncpy(sepBuf, " / ", sizeof(sepBuf));
-        hasGoal = true;
-    } else {
-        std::snprintf(curBuf, sizeof(curBuf), "%d (XX=0x%02X)", currentValue, xx);
-    }
+    static MatchStatusStringCache s_matchStringCache = { 0, 0, 0, 0, 0, false, false, false, "", "", "" };
+    UpdateMatchStatusStrings(s_matchStringCache, currentValue, goalValue, isTimeMode, mode, xx);
 
     auto eff = [&](const QColor& sub) -> const QColor& {
         return sub.isValid() ? sub : c.matchStatusColor;
@@ -803,26 +888,26 @@ static void DrawMatchStatusHud(QPainter* p, melonDS::u8* ram,
     int vx = c.matchStatusX;
     int vy = c.matchStatusY;
     int curW = 0, curH = 0;
-    MeasureTextCached(fm, fontPixelSize, s_curTextCache, curBuf, curW, curH);
+    MeasureTextCached(fm, fontPixelSize, s_curTextCache, s_matchStringCache.curBuf, curW, curH);
 
     static TextBitmapCache s_curBitmapCache = { 0, QColor(), "", 0, 0, false, QImage() };
     static TextBitmapCache s_sepBitmapCache = { 0, QColor(), "", 0, 0, false, QImage() };
     static TextBitmapCache s_goalBitmapCache = { 0, QColor(), "", 0, 0, false, QImage() };
     static TextBitmapCache s_labelBitmapCache = { 0, QColor(), "", 0, 0, false, QImage() };
 
-    PrepareTextBitmapCached(fm, p->font(), fontPixelSize, s_curBitmapCache, curBuf, eff(c.matchStatusValueColor));
+    PrepareTextBitmapCached(fm, p->font(), fontPixelSize, s_curBitmapCache, s_matchStringCache.curBuf, eff(c.matchStatusValueColor));
     DrawCachedText(p, s_curBitmapCache, vx, vy);
 
-    if (hasGoal) {
+    if (s_matchStringCache.hasGoal) {
         int sepW = 0, sepH = 0, goalW = 0, goalH = 0;
-        MeasureTextCached(fm, fontPixelSize, s_sepTextCache, sepBuf, sepW, sepH);
-        MeasureTextCached(fm, fontPixelSize, s_goalTextCache, goalBuf, goalW, goalH);
+        MeasureTextCached(fm, fontPixelSize, s_sepTextCache, s_matchStringCache.sepBuf, sepW, sepH);
+        MeasureTextCached(fm, fontPixelSize, s_goalTextCache, s_matchStringCache.goalBuf, goalW, goalH);
 
         int x = vx + curW;
-        PrepareTextBitmapCached(fm, p->font(), fontPixelSize, s_sepBitmapCache, sepBuf, eff(c.matchStatusSepColor));
+        PrepareTextBitmapCached(fm, p->font(), fontPixelSize, s_sepBitmapCache, s_matchStringCache.sepBuf, eff(c.matchStatusSepColor));
         DrawCachedText(p, s_sepBitmapCache, x, vy);
         x += sepW;
-        PrepareTextBitmapCached(fm, p->font(), fontPixelSize, s_goalBitmapCache, goalBuf, eff(c.matchStatusGoalColor));
+        PrepareTextBitmapCached(fm, p->font(), fontPixelSize, s_goalBitmapCache, s_matchStringCache.goalBuf, eff(c.matchStatusGoalColor));
         DrawCachedText(p, s_goalBitmapCache, x, vy);
     }
 
@@ -918,18 +1003,13 @@ static void DrawRankAndTime(QPainter* p, melonDS::u8* ram,
     const QFontMetrics fm = p->fontMetrics();
     const int fontPixelSize = p->font().pixelSize();
 
-    // Rank (e.g. "1st" / "2nd" / "3rd" / "4th", with configurable prefix/suffix/ordinal)
     if (c.rankShow) {
-        static const char* kOrdinals[4] = { "st", "nd", "rd", "th" };
+        static RankStringCache s_rankStringCache = { 0, 0, false, false, "" };
         static TextBitmapCache s_rankCache = { 0, QColor(), "", 0, 0, false, QImage() };
         uint32_t rankWord = Read32(ram, rom.matchRank);
         uint8_t rankByte = (rankWord >> (playerPos * 8)) & 0xFF;
         if (rankByte <= 3) {
-            char rankBuf[64] = {};
-            if (c.rankShowOrdinal)
-                snprintf(rankBuf, sizeof(rankBuf), "%s%u%s%s", c.rankPrefix, rankByte + 1u, kOrdinals[rankByte], c.rankSuffix);
-            else
-                snprintf(rankBuf, sizeof(rankBuf), "%s%u%s", c.rankPrefix, rankByte + 1u, c.rankSuffix);
+            const char* rankBuf = UpdateRankString(s_rankStringCache, rankByte, c.rankShowOrdinal, c);
             static TextMeasureCache s_rankMeasure = { 0, "", 0, 0, false };
             int rankW = 0, rankH = 0;
             MeasureTextCached(fm, fontPixelSize, s_rankMeasure, rankBuf, rankW, rankH);
@@ -939,13 +1019,12 @@ static void DrawRankAndTime(QPainter* p, melonDS::u8* ram,
         }
     }
 
-    // Time Left (raw u32 / 60 = seconds)
     if (c.timeLeftShow) {
+        static TimeStringCache s_timeLeftStringCache = { 0, 0, false, "" };
         static TextBitmapCache s_timeLeftCache = { 0, QColor(), "", 0, 0, false, QImage() };
         uint32_t raw = Read32(ram, rom.timeLeft);
         int seconds = static_cast<int>(raw) / 60;
-        char buf[16] = {};
-        FormatTime(buf, sizeof(buf), seconds);
+        const char* buf = UpdateTimeString(s_timeLeftStringCache, seconds, false);
         static TextMeasureCache s_timeLeftMeasure = { 0, "", 0, 0, false };
         int tlW = 0, tlH = 0;
         MeasureTextCached(fm, fontPixelSize, s_timeLeftMeasure, buf, tlW, tlH);
@@ -954,8 +1033,8 @@ static void DrawRankAndTime(QPainter* p, melonDS::u8* ram,
         DrawCachedText(p, s_timeLeftCache, tlTextX, c.timeLeftY);
     }
 
-    // Time Limit displays the match time limit in minutes with :00 fixed.
     if (c.timeLimitShow) {
+        static TimeStringCache s_timeLimitStringCache = { 0, 0, false, "" };
         static TextBitmapCache s_timeLimitCache = { 0, QColor(), "", 0, 0, false, QImage() };
         int goalMinutes = 0;
         if (s_battleState.valid) {
@@ -965,8 +1044,7 @@ static void DrawRankAndTime(QPainter* p, melonDS::u8* ram,
             uint8_t XX = (ts4 >> 8) & 0xFF;
             goalMinutes = LookupTimeLimitMin(XX);
         }
-        char buf[16] = {};
-        FormatMinuteTime(buf, sizeof(buf), goalMinutes);
+        const char* buf = UpdateTimeString(s_timeLimitStringCache, goalMinutes, true);
         static TextMeasureCache s_timeLimitMeasure = { 0, "", 0, 0, false };
         int timW = 0, timH = 0;
         MeasureTextCached(fm, fontPixelSize, s_timeLimitMeasure, buf, timW, timH);
@@ -985,6 +1063,7 @@ bool CustomHud_IsEnabled(Config::Table& localCfg)
 {
     return localCfg.GetBool(kCfgCustomHud);
 }
+
 
 static inline bool ShouldHideForGameplayState(bool isStartPressed, uint16_t currentHP, bool isGameOver)
 {
@@ -1514,7 +1593,3 @@ void DrawBottomScreenOverlay(Config::Table& localCfg, QPainter* topPaint, QImage
 } // namespace MelonPrime
 
 #endif // MELONPRIME_CUSTOM_HUD
-
-
-
-
