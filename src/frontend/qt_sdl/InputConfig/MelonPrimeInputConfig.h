@@ -20,6 +20,7 @@ class QComboBox;
 class QDoubleSpinBox;
 class QLabel;
 class QLineEdit;
+class QPlainTextEdit;
 class QSlider;
 class QSpinBox;
 
@@ -137,6 +138,7 @@ private:
     void setupCrosshair(Config::Table& instcfg);
     void setupPreviewConnections();
     void setupRadar(Config::Table& instcfg);
+    void setupCustomHudCode();
 
     // Widget sync helpers (extracted from constructor)
     void initSliderSync(QSlider* sl, QSpinBox* input, QLabel* lbl, int val);
@@ -146,6 +148,10 @@ private:
 
     void populatePage(QWidget* page, const HotkeyEntry* entries, int count, int* keymap, int* joymap);
     void snapshotVisualConfig();
+    QString buildCustomHudCode() const;
+    bool applyCustomHudCode(const QString& code, QString* errorMessage = nullptr);
+    void refreshCustomHudCodeOutput();
+    void setCustomHudCodeStatus(const QString& text, bool isError);
     void setupColorButton(QPushButton* btn,
         const QString& configKeyR, const QString& configKeyG, const QString& configKeyB,
         QComboBox* combo = nullptr, QLineEdit* lineEdit = nullptr,
