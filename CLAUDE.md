@@ -1,24 +1,25 @@
 # MelonPrimeDS — Context for Claude Code Sessions
 
 ## Project Overview
-MelonPrimeDS is a fork of melonDS emulator specifically tailored for **Metroid Prime Hunters DS** (FPS mouse+keyboard controls). The game renders on the **top screen only** in mouse mode; the bottom screen shows the radar/map.
+MelonPrimeDS is a fork of melonDS tailored for **Metroid Prime Hunters DS** with mouse/keyboard-focused FPS controls and game-specific emulator/UI patches.
 
-Build target: **Windows (MinGW cross-compilation from Ubuntu WSL)**.
+Primary target: **Windows**. The repo has also been used with **MinGW cross-compilation from Ubuntu WSL**.
 
 ---
 
 ## Key Custom Features Implemented
 
 ### 1. Bottom Screen Radar Overlay (`MELONPRIME_CUSTOM_HUD`)
-Displays a circular region of the DS bottom screen (radar) as an overlay on the top screen.
+Displays a circular crop of the DS bottom screen on top of the rendered top screen.
 
 **Two render paths:**
-- **OpenGL path** (`Screen.cpp`): Custom GLSL shader (`kBtmOverlayVS` / `kBtmOverlayFS` in `main_shaders.h`). Samples layer 1 of the `GL_TEXTURE_2D_ARRAY` (bottom screen). Uses `uSrcCenter` + `uSrcRadius` uniforms to extract a circular region. Exact color filtering (10 radar palette colors). `GL_BLEND` with antialiasing via `smoothstep`.
-- **Software path** (`MelonPrimeCustomHud.cpp`): `DrawBottomScreenOverlay()` uses `QPainter` + `QPainterPath` circle clip on a 256×192 `QImage` bottom screen buffer.
+- **OpenGL path** (`Screen.cpp` + `main_shaders.h`): samples the bottom screen from the texture array and clips it to a circular overlay.
+- **Software path** (`MelonPrimeCustomHud.cpp`): `DrawBottomScreenOverlay()` draws a cropped `QImage` region with `QPainter` and a circular clip path.
 
-**Source region** (hardcoded, radar center on DS bottom screen):
-- Center: `(128, 112)` in DS pixels
-- Radius: `49.5f / 256.0f` (normalized) ≈ 49.5 DS pixels diameter ~99px
+**Current source region behavior:**
+- X center is fixed at `128`
+- Y center is **hunter-specific** via `kBtmOverlaySrcCenterY[]` in `MelonPrimeConstants.h`
+- Radius is configurable via `Metroid.Visual.BtmOverlaySrcRadius` (default `46`)
 
 **Config keys** (`Instance*.Metroid.Visual.*`):
 | Key | Default | Description |
@@ -26,20 +27,52 @@ Displays a circular region of the DS bottom screen (radar) as an overlay on the 
 | `BtmOverlayEnable` | false | Enable overlay |
 | `BtmOverlayDstX` | 190 | X position on top screen |
 | `BtmOverlayDstY` | 0 | Y position on top screen |
-| `BtmOverlayDstSize` | 64 | Size (width=height) of the circular overlay |
-| `BtmOverlayOpacity` | 0.85 | Opacity (0.0–1.0) |
-
-**GL shader color filter** (exact match, `round(pixel.rgb * 255.0)`):
-```
-E01018, 68E028, D0F0A0, D09838, F87038, F8F858, C0F868, F8A8A8, E03030, 5098D0
-```
+| `BtmOverlayDstSize` | 64 | Output size of the circular overlay |
+| `BtmOverlayOpacity` | 0.85 | Opacity (`0.0-1.0`) |
+| `BtmOverlaySrcRadius` | 46 | Source radius on the DS bottom screen |
 
 ### 2. Custom HUD System
-Drawn via `QPainter` over the top screen buffer. Includes:
-- **Crosshair** (configurable shape, color, size)
-- **HP & Ammo** display (position, gauge, color, weapon icon)
-- **Match Status HUD** (battle score, lives, octoliths — configurable labels/colors)
-- **HUD Radar** overlay (the circular bottom screen feature above)
+Drawn with `QPainter` over the top screen buffer. The current HUD system includes:
+- **Crosshair** with inner/outer arms, outline, center dot, T-style, opacity, thickness, and XY-length controls
+- **HP HUD** with text, optional auto-color, and optional gauge
+- **Weapon / Ammo HUD** with text, optional weapon icon, optional icon tint overlay, and optional ammo gauge
+- **Match Status HUD** with per-mode labels and separate overall/label/value/separator/goal colors
+- **Rank / Time HUD** for multiplayer ranking and timer display
+- **Bomb Left HUD** for alt-form bomb count, with optional text and bomb icon
+- **Radar overlay** described above
+
+Implementation details worth knowing:
+- `MelonPrimeCustomHud.cpp` caches HUD config and several rendered assets to avoid repeated per-frame work.
+- Weapon icons and bomb icons are cached and optionally tint-overlaid.
+- The custom HUD also applies a **No HUD patch** to suppress parts of the game's native HUD while custom elements are active.
+
+### 3. In-game Aspect Ratio Patch
+`MelonPrimePatch.cpp` patches the game's projection/scaling setup so gameplay FOV better matches the emulator aspect ratio.
+
+**Config keys:**
+- `Metroid.Visual.InGameAspectRatio`
+- `Metroid.Visual.InGameAspectRatioMode`
+
+**Modes:**
+- `0 = Auto`
+- `1 = 5:3`
+- `2 = 16:10`
+- `3 = 16:9`
+- `4 = 21:9`
+
+`Auto` reads the current top-screen aspect ratio from window config and only applies a patch when needed.
+
+### 4. MelonPrime Internal Helpers
+`MelonPrimeInternal.h` now contains shared low-level helpers used across the custom gameplay code:
+- `BitScanFwd()` / `BitScanRev()` wrappers
+- strict-aliasing-safe RAM accessors `Read8/16/32()` and `Write8/16/32()`
+- shared constants such as `PLAYER_ADDR_INC`, `AIM_ADDR_INC`, `RAM_MASK`, and touch UI coordinates
+
+### 5. In-game Logic Structure
+`MelonPrimeInGame.cpp` contains the current hot/cold-split gameplay update path:
+- `MelonPrimeCore::HandleInGameLogic()` is the hot per-frame entry point
+- rare actions are outlined into cold helpers such as morph, weapon-check, and adventure UI handlers
+- movement/buttons, morph-ball boost, and mouse/stylus aim are handled separately for better hot-path locality
 
 ---
 
@@ -49,104 +82,118 @@ Drawn via `QPainter` over the top screen buffer. Includes:
 | File | Purpose |
 |------|---------|
 | `src/frontend/qt_sdl/InputConfig/MelonPrimeInputConfig.ui` | Qt Designer UI XML |
-| `src/frontend/qt_sdl/InputConfig/MelonPrimeInputConfig.cpp` | Load/save/preview logic |
-| `src/frontend/qt_sdl/InputConfig/MelonPrimeInputConfig.h` | Class declaration |
+| `src/frontend/qt_sdl/InputConfig/MelonPrimeInputConfig.h` | class declaration and hotkey tables |
+| `src/frontend/qt_sdl/InputConfig/MelonPrimeInputConfig.cpp` | constructor/setup/save logic |
+| `src/frontend/qt_sdl/InputConfig/MelonPrimeInputConfigPreview.cpp` | live preview rendering |
 
-### Tab Structure (4 tabs after restructuring)
+### Tab Structure
 | Tab name | Object name | Content |
 |----------|-------------|---------|
-| Controls | `tabAddonsMetroid` | Keybinds page 1 (dynamically populated via `populatePage()`) |
-| Controls 2 | `tabAddonsMetroid2` | Keybinds page 2 (dynamically populated) |
-| Settings | `tabMetroid` | Sensitivity, Gameplay, Video, Volume, License, Input Settings, Screen Sync, Aspect Ratio — all collapsible sections in QScrollArea |
-| Custom HUD | `tabCrosshair` | Crosshair + HP/Ammo + Match Status + HUD Radar — all collapsible sections in QScrollArea |
+| Controls | `tabAddonsMetroid` | Hotkey mappings page 1 |
+| Controls 2 | `tabAddonsMetroid2` | Hotkey mappings page 2 |
+| Settings | `tabMetroid` | Sensitivity, toggles, hunter license, volume, video, screen sync, in-game aspect ratio, and related settings |
+| Custom HUD | `tabCrosshair` | Crosshair, HP/ammo, match status, rank/time, bomb-left HUD, and radar settings |
 
-### Collapsible Section Pattern
-Toggle buttons (`btnToggle*`) + section widgets (`section*`) managed by `setupToggle` lambda in constructor. Toggle state persisted in config under `Metroid.UI.Section*` bool keys.
+### Collapsible Sections
+The settings/custom HUD UI uses toggle buttons and section widgets wired up in `setupCollapsibleSections()`. Toggle state is persisted under `Metroid.UI.Section*` config keys.
 
-Example:
-```cpp
-setupToggle(ui->btnToggleSensitivity, ui->sectionSensitivity, "SENSITIVITY", "Metroid.UI.SectionSensitivity");
-```
-
-### Color Picker Buttons
-All color pickers use `QPushButton` with `QColorDialog`. Set up via:
-```cpp
-setupColorButton(ui->btnMetroidCrosshairColor,
-    "Metroid.Visual.CrosshairColorR", "Metroid.Visual.CrosshairColorG", "Metroid.Visual.CrosshairColorB");
-```
-The button background stylesheet reflects the current color. On click, opens `QColorDialog`, updates config + stylesheet.
+### Color Picker Pattern
+Color pickers use `QPushButton` plus `QColorDialog`, coordinated with preset combos, RGB spin boxes, and hex editors through `setupColorButton()` and helper sync functions.
 
 ### Preview Widgets
-Each Custom HUD section has a live preview widget:
-- `widgetCrosshairPreview` (200×200) — drawn by `updateCrosshairPreview()`
-- `widgetHpAmmoPreview` (300×150) — drawn by `updateHpAmmoPreview()`
-- `widgetMatchStatusPreview` (300×80) — drawn by `updateMatchStatusPreview()`
-- `widgetRadarPreview` (200×150) — drawn by `updateRadarPreview()`
+Live preview rendering is split by feature area:
+- `widgetCrosshairPreview`
+- `widgetHpAmmoPreview`
+- `widgetMatchStatusPreview`
+- `widgetRadarPreview`
 
-Previews are initialized at constructor end and updated live via `applyVisualPreview()`.
+Constructor flow currently initializes previews with:
+- `updateRadarPreview()`
+- `updateCrosshairPreview()`
+- `updateHpAmmoPreview()`
+- `updateMatchStatusPreview()`
 
 ---
 
 ## MelonPrimeCustomHud.h — Public API
 
-All functions inside `namespace MelonPrime`, guarded by `#ifdef MELONPRIME_CUSTOM_HUD`:
+All functions are inside `namespace MelonPrime` and guarded by `#ifdef MELONPRIME_CUSTOM_HUD`.
 
 ```cpp
-// Main entry point — call once per frame from OSD/overlay render path
 void CustomHud_Render(
-    EmuInstance* emu, Config::Table& localCfg,
-    const RomAddresses& rom, const GameAddressesHot& addrHot,
+    EmuInstance* emu,
+    Config::Table& localCfg,
+    const RomAddresses& rom,
+    const GameAddressesHot& addrHot,
     uint8_t playerPosition,
-    QPainter* topPaint, QPainter* btmPaint,
-    QImage* topBuffer, QImage* btmBuffer,
-    bool isInGame, float topStretchX = 1.0f
+    QPainter* topPaint,
+    QPainter* btmPaint,
+    QImage* topBuffer,
+    QImage* btmBuffer,
+    bool isInGame,
+    float topStretchX = 1.0f
 );
 
 bool CustomHud_IsEnabled(Config::Table& localCfg);
-void CustomHud_ResetPatchState();       // call on emu stop/reset
-void CustomHud_InvalidateConfigCache(); // call when settings saved
+bool CustomHud_ShouldHideForGameplayState(EmuInstance* emu, const RomAddresses& rom, uint8_t playerPosition);
+bool CustomHud_ShouldDrawRadarOverlay(EmuInstance* emu, const RomAddresses& rom, uint8_t playerPosition);
+void CustomHud_ResetPatchState();
+void CustomHud_InvalidateConfigCache();
 void CustomHud_OnMatchJoin(uint8_t* ram, const RomAddresses& rom);
-
-// Render circular bottom screen radar onto top screen (SW path)
-void DrawBottomScreenOverlay(Config::Table& localCfg, QPainter* topPaint, QImage* btmBuffer);
+void DrawBottomScreenOverlay(Config::Table& localCfg, QPainter* topPaint, QImage* btmBuffer, uint8_t hunterID);
 ```
+
+Notes:
+- `DrawBottomScreenOverlay()` now takes `hunterID` so the source crop can use hunter-specific radar centers.
+- `CustomHud_Render()` handles more than crosshair/HP/ammo now: it also covers match status, rank/time, bomb-left HUD, and radar overlay.
 
 ---
 
 ## Shader Files
 `src/frontend/qt_sdl/main_shaders.h`:
 - `kScreenVS` / `kScreenFS` — standard screen renderer
-- `kBtmOverlayVS` / `kBtmOverlayFS` — radar overlay (inside `#ifdef MELONPRIME_CUSTOM_HUD`)
+- `kBtmOverlayVS` / `kBtmOverlayFS` — radar overlay shader path used when `MELONPRIME_CUSTOM_HUD` is enabled
 
-`Screen.h` (inside `#ifdef MELONPRIME_CUSTOM_HUD`):
-```cpp
-GLuint btmOverlayShader;
-GLint btmOverlayScreenSizeULoc, btmOverlayOpacityULoc, btmOverlaySrcCenterULoc, btmOverlaySrcRadiusULoc;
-GLuint btmOverlayVertexArray, btmOverlayVertexBuffer;
-```
+`Screen.h` / `Screen.cpp` also hold the OpenGL-side overlay shader program, uniforms, and draw setup.
 
 ---
 
 ## Config System
-Config defaults in `src/frontend/qt_sdl/Config.cpp` under `/* MelonPrimeDS Custom HUD */` block.
+Default values live in `src/frontend/qt_sdl/Config.cpp`.
 
-All instance-local settings use prefix `Instance*.Metroid.*`.
+MelonPrime-specific settings are primarily stored under:
+- `Instance*.Metroid.*` for per-instance values
+- `Metroid.UI.Section*` for persisted UI section state
+
+Important current groups include:
+- `Metroid.Visual.CustomHUD`
+- `Metroid.Visual.Crosshair*`
+- `Metroid.Visual.HudHp*`
+- `Metroid.Visual.HudWeapon*`
+- `Metroid.Visual.HudAmmo*`
+- `Metroid.Visual.HudMatchStatus*`
+- `Metroid.Visual.HudRank*`
+- `Metroid.Visual.HudTimeLeft*`
+- `Metroid.Visual.HudTimeLimit*`
+- `Metroid.Visual.HudBombLeft*`
+- `Metroid.Visual.BtmOverlay*`
+- `Metroid.Visual.InGameAspectRatio*`
 
 ---
 
 ## Build Notes
-- Cross-compile from Ubuntu WSL to Windows using MinGW toolchain
-- Feature flags defined in `src/frontend/qt_sdl/CMakeLists.txt`:
-  - `MELONPRIME_DS` — enables MelonPrimeDS mode
-  - `MELONPRIME_CUSTOM_HUD` — enables Custom HUD + radar overlay
-- `MelonPrimeCustomHud.cpp` and `InputConfig/MelonPrimeInputConfig.cpp` are listed explicitly in the CMakeLists sources
-- vcpkg used for dependencies (submodule at `vcpkg/`)
-- `src/CMakeLists.txt` — modified to support cross-compilation toolchain
+- Main feature flags in `src/frontend/qt_sdl/CMakeLists.txt`:
+  - `MELONPRIME_DS`
+  - `MELONPRIME_CUSTOM_HUD`
+- `MelonPrimeCustomHud.cpp` and `InputConfig/MelonPrimeInputConfig.cpp` are explicitly built as part of the frontend
+- The project has been built on Windows and via MinGW cross-compilation from WSL
+- `vcpkg/` is used for dependencies in this repo setup
 
 ---
 
 ## Hotkeys
-Defined in `EmuInstance.h` as `HK_Metroid*` enum values.
-Two lists in `MelonPrimeInputConfig.h`:
-- `hk_tabAddonsMetroid` + `hk_tabAddonsMetroid_labels` (20 entries)
-- `hk_tabAddonsMetroid2` + `hk_tabAddonsMetroid2_labels` (11 entries)
+Defined in `EmuInstance.h` and grouped in `src/frontend/qt_sdl/InputConfig/MelonPrimeInputConfig.h`:
+- `kMetroidHotkeys` — first controls page (`20` entries)
+- `kMetroidHotkeys2` — second controls page (`11` entries)
+
+These replaced the older `hk_tabAddonsMetroid*` naming.
