@@ -12,10 +12,7 @@
 #include <QColor>
 #include <QLineEdit>
 #include <QComboBox>
-#include <QPainter>
-#include <QPainterPath>
 #include <QColorDialog>
-#include <QFontDatabase>
 #include <QTimer>
 
 #include "MelonPrimeInputConfig.h"
@@ -154,6 +151,10 @@ void MelonPrimeInputConfig::setupHiddenLabels()
         ui->labelMetroidHudAmmoGaugeOffsetY,
         ui->labelMetroidHudAmmoGaugePosX,
         ui->labelMetroidHudAmmoGaugePosY,
+        ui->labelMetroidHudBombLeftIconOfsX,
+        ui->labelMetroidHudBombLeftIconOfsY,
+        ui->labelMetroidHudBombLeftIconPosX,
+        ui->labelMetroidHudBombLeftIconPosY,
         ui->labelMetroidBtmOverlayDstX,
         ui->labelMetroidBtmOverlayDstY,
         ui->labelMetroidBtmOverlayDstSize,
@@ -436,13 +437,27 @@ void MelonPrimeInputConfig::setupMatchStatusHud(Config::Table& instcfg)
         setupRtColor(ui->btnMetroidHudBombLeftColor, ui->comboMetroidHudBombLeftColor, ui->leMetroidHudBombLeftColorCode,
             ui->spinMetroidHudBombLeftColorR, ui->spinMetroidHudBombLeftColorG, ui->spinMetroidHudBombLeftColorB,
             "Metroid.Visual.HudBombLeftColorR", "Metroid.Visual.HudBombLeftColorG", "Metroid.Visual.HudBombLeftColorB");
+        setupRtColor(ui->btnMetroidHudBombLeftIconColor, ui->comboMetroidHudBombLeftIconColor, ui->leMetroidHudBombLeftIconColorCode,
+            ui->spinMetroidHudBombLeftIconColorR, ui->spinMetroidHudBombLeftIconColorG, ui->spinMetroidHudBombLeftIconColorB,
+            "Metroid.Visual.HudBombLeftIconColorR", "Metroid.Visual.HudBombLeftIconColorG", "Metroid.Visual.HudBombLeftIconColorB");
     }
     ui->cbMetroidHudBombLeftShow->setChecked(instcfg.GetBool("Metroid.Visual.HudBombLeftShow"));
+    ui->cbMetroidHudBombLeftTextShow->setChecked(instcfg.GetBool("Metroid.Visual.HudBombLeftTextShow"));
     initSliderSync(ui->spinMetroidHudBombLeftX, ui->inputMetroidHudBombLeftX, nullptr, instcfg.GetInt("Metroid.Visual.HudBombLeftX"));
     initSliderSync(ui->spinMetroidHudBombLeftY, ui->inputMetroidHudBombLeftY, nullptr, instcfg.GetInt("Metroid.Visual.HudBombLeftY"));
     ui->comboMetroidHudBombLeftAlign->setCurrentIndex(instcfg.GetInt("Metroid.Visual.HudBombLeftAlign"));
     ui->leMetroidHudBombLeftPrefix->setText(QString::fromStdString(instcfg.GetString("Metroid.Visual.HudBombLeftPrefix")));
     ui->leMetroidHudBombLeftSuffix->setText(QString::fromStdString(instcfg.GetString("Metroid.Visual.HudBombLeftSuffix")));
+    // Bomb Left Icon
+    ui->cbMetroidHudBombLeftIconShow->setChecked(instcfg.GetBool("Metroid.Visual.HudBombLeftIconShow"));
+    ui->cbMetroidHudBombLeftIconColorOverlay->setChecked(instcfg.GetBool("Metroid.Visual.HudBombLeftIconColorOverlay"));
+    ui->comboMetroidHudBombLeftIconMode->setCurrentIndex(instcfg.GetInt("Metroid.Visual.HudBombLeftIconMode"));
+    initSliderSync(ui->spinMetroidHudBombLeftIconOfsX, ui->inputMetroidHudBombLeftIconOfsX, ui->labelMetroidHudBombLeftIconOfsX, instcfg.GetInt("Metroid.Visual.HudBombLeftIconOfsX"));
+    initSliderSync(ui->spinMetroidHudBombLeftIconOfsY, ui->inputMetroidHudBombLeftIconOfsY, ui->labelMetroidHudBombLeftIconOfsY, instcfg.GetInt("Metroid.Visual.HudBombLeftIconOfsY"));
+    initSliderSync(ui->spinMetroidHudBombLeftIconPosX, ui->inputMetroidHudBombLeftIconPosX, ui->labelMetroidHudBombLeftIconPosX, instcfg.GetInt("Metroid.Visual.HudBombLeftIconPosX"));
+    initSliderSync(ui->spinMetroidHudBombLeftIconPosY, ui->inputMetroidHudBombLeftIconPosY, ui->labelMetroidHudBombLeftIconPosY, instcfg.GetInt("Metroid.Visual.HudBombLeftIconPosY"));
+    ui->comboMetroidHudBombLeftIconAnchorX->setCurrentIndex(instcfg.GetInt("Metroid.Visual.HudBombLeftIconAnchorX"));
+    ui->comboMetroidHudBombLeftIconAnchorY->setCurrentIndex(instcfg.GetInt("Metroid.Visual.HudBombLeftIconAnchorY"));
 
     // Reset buttons
     connect(ui->btnResetMatchStatusDefaults, &QPushButton::clicked, this, &MelonPrimeInputConfig::resetMatchStatusDefaults);
@@ -890,140 +905,158 @@ void MelonPrimeInputConfig::setupCrosshair(Config::Table& instcfg)
 
 void MelonPrimeInputConfig::setupPreviewConnections()
 {
-    auto prvI = [&](QObject* w) {
-        if (auto sb = qobject_cast<QSpinBox*>(w))
-            connect(sb, QOverload<int>::of(&QSpinBox::valueChanged), this, &MelonPrimeInputConfig::applyVisualPreview);
-        else if (auto sl = qobject_cast<QSlider*>(w))
-            connect(sl, &QSlider::valueChanged, this, [this](int) { applyVisualPreview(); });
-    };
-    auto prvSl = [&](QSlider* w) {
-        connect(w, &QSlider::valueChanged, this, [this](int) { applyVisualPreview(); });
-    };
-    auto prvD = [&](QDoubleSpinBox* w) {
-        connect(w, QOverload<double>::of(&QDoubleSpinBox::valueChanged), this, &MelonPrimeInputConfig::applyVisualPreview);
-    };
-    auto prvB = [&](QCheckBox* w) {
-        connect(w, &QCheckBox::checkStateChanged, this, [this](Qt::CheckState) { applyVisualPreview(); });
-    };
-    auto prvC = [&](QComboBox* w) {
-        connect(w, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this](int) { applyVisualPreview(); });
-    };
-    auto prvE = [&](QLineEdit* w) {
-        connect(w, &QLineEdit::textChanged, this, [this](const QString&) { applyVisualPreview(); });
+    // Macro helpers parameterized by which apply function to call.
+    // Each section redefines these inside its own { } block.
+#define DEFINE_PRV_HELPERS(applyFn) \
+    auto prvB  = [&](QCheckBox* w)    { connect(w, &QCheckBox::checkStateChanged, this, [this](Qt::CheckState) { applyFn(); }); }; \
+    auto prvC  = [&](QComboBox* w)    { connect(w, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this](int) { applyFn(); }); }; \
+    auto prvE  = [&](QLineEdit* w)    { connect(w, &QLineEdit::textChanged, this, [this](const QString&) { applyFn(); }); }; \
+    auto prvD  = [&](QDoubleSpinBox* w) { connect(w, QOverload<double>::of(&QDoubleSpinBox::valueChanged), this, [this](double) { applyFn(); }); }; \
+    auto prvSl = [&](QSlider* w)      { connect(w, &QSlider::valueChanged, this, [this](int) { applyFn(); }); }; \
+    auto prvI  = [&](QObject* w) { \
+        if (auto sb = qobject_cast<QSpinBox*>(w)) \
+            connect(sb, QOverload<int>::of(&QSpinBox::valueChanged), this, [this](int) { applyFn(); }); \
+        else if (auto sl = qobject_cast<QSlider*>(w)) \
+            connect(sl, &QSlider::valueChanged, this, [this](int) { applyFn(); }); \
     };
 
-    prvB(ui->cbMetroidEnableCustomHud);
-    prvB(ui->cbMetroidInGameAspectRatio);
-    prvC(ui->comboMetroidInGameAspectRatioMode);
-    // Match Status
-    prvB(ui->cbMetroidHudMatchStatusShow);
-    prvSl(ui->spinMetroidHudMatchStatusX);         prvSl(ui->spinMetroidHudMatchStatusY);
-    prvSl(ui->spinMetroidHudMatchStatusLabelOfsX); prvSl(ui->spinMetroidHudMatchStatusLabelOfsY);
-    prvC(ui->comboMetroidHudMatchStatusLabelPos);
-    prvE(ui->leMetroidHudMatchStatusLabelPoints);    prvE(ui->leMetroidHudMatchStatusLabelOctoliths);
-    prvE(ui->leMetroidHudMatchStatusLabelLives);     prvE(ui->leMetroidHudMatchStatusLabelRingTime);
-    prvE(ui->leMetroidHudMatchStatusLabelPrimeTime);
-    // (color button clicks already call applyVisualPreview via setupColorButton)
-    // HP/Weapon positions
-    prvSl(ui->spinMetroidHudHpX);    prvSl(ui->spinMetroidHudHpY);    prvE(ui->leMetroidHudHpPrefix);    prvC(ui->comboMetroidHudHpAlign);
-    prvB(ui->cbMetroidHudHpTextAutoColor); prvC(ui->comboMetroidHudHpTextColor); prvE(ui->leMetroidHudHpTextColorCode);
-    prvI(ui->spinMetroidHudHpTextColorR); prvI(ui->spinMetroidHudHpTextColorG); prvI(ui->spinMetroidHudHpTextColorB);
-    prvSl(ui->spinMetroidHudWeaponX); prvSl(ui->spinMetroidHudWeaponY); prvE(ui->leMetroidHudAmmoPrefix); prvC(ui->comboMetroidHudAmmoAlign);
-    prvC(ui->comboMetroidHudAmmoTextColor); prvE(ui->leMetroidHudAmmoTextColorCode);
-    prvI(ui->spinMetroidHudAmmoTextColorR); prvI(ui->spinMetroidHudAmmoTextColorG); prvI(ui->spinMetroidHudAmmoTextColorB);
-    prvB(ui->cbMetroidHudWeaponIconShow);  prvC(ui->comboMetroidHudWeaponIconMode);
-    prvSl(ui->spinMetroidHudWeaponIconOffsetX); prvSl(ui->spinMetroidHudWeaponIconOffsetY);
-    prvSl(ui->spinMetroidHudWeaponIconPosX);   prvSl(ui->spinMetroidHudWeaponIconPosY);
-    prvC(ui->comboMetroidHudWeaponIconAnchorX); prvC(ui->comboMetroidHudWeaponIconAnchorY); prvB(ui->cbMetroidHudWeaponIconColorOverlay);
-    // HP Gauge
-    prvB(ui->cbMetroidHudHpGauge);
-    prvC(ui->comboMetroidHudHpGaugeOrientation);
-    prvSl(ui->spinMetroidHudHpGaugeLength); prvSl(ui->spinMetroidHudHpGaugeWidth);
-    prvSl(ui->spinMetroidHudHpGaugeOffsetX); prvSl(ui->spinMetroidHudHpGaugeOffsetY);
-    prvC(ui->comboMetroidHudHpGaugeAnchor); prvC(ui->comboMetroidHudHpGaugePosMode);
-    prvSl(ui->spinMetroidHudHpGaugePosX);   prvSl(ui->spinMetroidHudHpGaugePosY);
-    prvB(ui->cbMetroidHudHpGaugeAutoColor);
-    prvC(ui->comboMetroidHudHpGaugeColor); prvE(ui->leMetroidHudHpGaugeColorCode);
-    prvI(ui->spinMetroidHudHpGaugeColorR); prvI(ui->spinMetroidHudHpGaugeColorG); prvI(ui->spinMetroidHudHpGaugeColorB);
-    // (HP gauge color button clicks already call applyVisualPreview via setupColorButton)
-    // Ammo Gauge
-    prvB(ui->cbMetroidHudAmmoGauge);
-    prvC(ui->comboMetroidHudAmmoGaugeOrientation);
-    prvSl(ui->spinMetroidHudAmmoGaugeLength); prvSl(ui->spinMetroidHudAmmoGaugeWidth);
-    prvSl(ui->spinMetroidHudAmmoGaugeOffsetX); prvSl(ui->spinMetroidHudAmmoGaugeOffsetY);
-    prvC(ui->comboMetroidHudAmmoGaugeAnchor); prvC(ui->comboMetroidHudAmmoGaugePosMode);
-    prvSl(ui->spinMetroidHudAmmoGaugePosX);   prvSl(ui->spinMetroidHudAmmoGaugePosY);
-    prvC(ui->comboMetroidHudAmmoGaugeColor); prvE(ui->leMetroidHudAmmoGaugeColorCode);
-    prvI(ui->spinMetroidHudAmmoGaugeColorR); prvI(ui->spinMetroidHudAmmoGaugeColorG); prvI(ui->spinMetroidHudAmmoGaugeColorB);
-    // (Ammo gauge color button clicks already call applyVisualPreview via setupColorButton)
-    // HUD Radar
-    prvB(ui->cbMetroidBtmOverlayEnable);
-    prvSl(ui->spinMetroidBtmOverlayDstX); prvSl(ui->spinMetroidBtmOverlayDstY); prvSl(ui->spinMetroidBtmOverlayDstSize);
-    prvD(ui->spinMetroidBtmOverlayOpacity);
-    prvSl(ui->spinMetroidBtmOverlaySrcRadius);
-    // Rank & Time HUD
-    prvB(ui->cbMetroidHudRankShow);
-    prvSl(ui->spinMetroidHudRankX); prvSl(ui->spinMetroidHudRankY);
-    prvC(ui->comboMetroidHudRankAlign);
-    prvC(ui->comboMetroidHudRankColor);
-    prvE(ui->leMetroidHudRankColorCode);
-    prvI(ui->spinMetroidHudRankColorR); prvI(ui->spinMetroidHudRankColorG); prvI(ui->spinMetroidHudRankColorB);
-    prvB(ui->cbMetroidHudRankShowOrdinal);
-    prvB(ui->cbMetroidHudTimeLeftShow);
-    prvSl(ui->spinMetroidHudTimeLeftX); prvSl(ui->spinMetroidHudTimeLeftY);
-    prvC(ui->comboMetroidHudTimeLeftAlign);
-    prvC(ui->comboMetroidHudTimeLeftColor);
-    prvE(ui->leMetroidHudTimeLeftColorCode);
-    prvI(ui->spinMetroidHudTimeLeftColorR); prvI(ui->spinMetroidHudTimeLeftColorG); prvI(ui->spinMetroidHudTimeLeftColorB);
-    prvB(ui->cbMetroidHudTimeLimitShow);
-    prvSl(ui->spinMetroidHudTimeLimitX); prvSl(ui->spinMetroidHudTimeLimitY);
-    prvC(ui->comboMetroidHudTimeLimitAlign);
-    prvC(ui->comboMetroidHudTimeLimitColor);
-    prvE(ui->leMetroidHudTimeLimitColorCode);
-    prvI(ui->spinMetroidHudTimeLimitColorR); prvI(ui->spinMetroidHudTimeLimitColorG); prvI(ui->spinMetroidHudTimeLimitColorB);
-    // Bomb Left HUD
-    prvB(ui->cbMetroidHudBombLeftShow);
-    prvSl(ui->spinMetroidHudBombLeftX); prvSl(ui->spinMetroidHudBombLeftY);
-    prvC(ui->comboMetroidHudBombLeftAlign);
-    prvC(ui->comboMetroidHudBombLeftColor);
-    prvE(ui->leMetroidHudBombLeftColorCode);
-    prvI(ui->spinMetroidHudBombLeftColorR); prvI(ui->spinMetroidHudBombLeftColorG); prvI(ui->spinMetroidHudBombLeftColorB);
-    prvE(ui->leMetroidHudBombLeftPrefix);
-    prvE(ui->leMetroidHudBombLeftSuffix);
-    // Match Status colors
-    prvC(ui->comboMetroidHudMatchStatusColor);
-    prvI(ui->spinMetroidHudMatchStatusColorR); prvI(ui->spinMetroidHudMatchStatusColorG); prvI(ui->spinMetroidHudMatchStatusColorB);
-    prvE(ui->leMetroidHudMatchStatusColorCode);
-    prvC(ui->comboMetroidHudMatchStatusLabelColor); prvE(ui->leMetroidHudMatchStatusLabelColorCode);
-    prvI(ui->spinMetroidHudMatchStatusLabelColorR); prvI(ui->spinMetroidHudMatchStatusLabelColorG); prvI(ui->spinMetroidHudMatchStatusLabelColorB);
-    prvC(ui->comboMetroidHudMatchStatusValueColor); prvE(ui->leMetroidHudMatchStatusValueColorCode);
-    prvI(ui->spinMetroidHudMatchStatusValueColorR); prvI(ui->spinMetroidHudMatchStatusValueColorG); prvI(ui->spinMetroidHudMatchStatusValueColorB);
-    prvC(ui->comboMetroidHudMatchStatusSepColor); prvE(ui->leMetroidHudMatchStatusSepColorCode);
-    prvI(ui->spinMetroidHudMatchStatusSepColorR); prvI(ui->spinMetroidHudMatchStatusSepColorG); prvI(ui->spinMetroidHudMatchStatusSepColorB);
-    prvC(ui->comboMetroidHudMatchStatusGoalColor); prvE(ui->leMetroidHudMatchStatusGoalColorCode);
-    prvI(ui->spinMetroidHudMatchStatusGoalColorR); prvI(ui->spinMetroidHudMatchStatusGoalColorG); prvI(ui->spinMetroidHudMatchStatusGoalColorB);
-    // Crosshair
-    prvC(ui->comboMetroidCrosshairColor); prvE(ui->leMetroidCrosshairColorCode);
-    prvI(ui->spinMetroidCrosshairR); prvI(ui->spinMetroidCrosshairG); prvI(ui->spinMetroidCrosshairB);
-    // (Crosshair color button clicks already call applyVisualPreview via setupColorButton)
-    prvB(ui->cbMetroidCrosshairOutline);
-    prvD(ui->spinMetroidCrosshairOutlineOpacity);
-    prvSl(ui->sliderMetroidCrosshairOutlineThickness);
-    prvB(ui->cbMetroidCrosshairCenterDot);
-    prvD(ui->spinMetroidCrosshairDotOpacity);
-    prvSl(ui->sliderMetroidCrosshairDotThickness);
-    prvB(ui->cbMetroidCrosshairTStyle);
-    prvB(ui->cbMetroidCrosshairInnerShow);
-    prvD(ui->spinMetroidCrosshairInnerOpacity);
-    prvSl(ui->sliderMetroidCrosshairInnerLengthX); prvSl(ui->sliderMetroidCrosshairInnerLengthY);
-    prvSl(ui->sliderMetroidCrosshairInnerThickness); prvSl(ui->sliderMetroidCrosshairInnerOffset);
-    prvB(ui->cbMetroidCrosshairInnerLinkXY);
-    prvB(ui->cbMetroidCrosshairOuterShow);
-    prvD(ui->spinMetroidCrosshairOuterOpacity);
-    prvSl(ui->sliderMetroidCrosshairOuterLengthX); prvSl(ui->sliderMetroidCrosshairOuterLengthY);
-    prvSl(ui->sliderMetroidCrosshairOuterThickness); prvSl(ui->sliderMetroidCrosshairOuterOffset);
-    prvB(ui->cbMetroidCrosshairOuterLinkXY);
+    // --- Global (affects all previews) ---
+    {
+        DEFINE_PRV_HELPERS(applyVisualPreview)
+        prvB(ui->cbMetroidEnableCustomHud);
+        prvB(ui->cbMetroidInGameAspectRatio);
+        prvC(ui->comboMetroidInGameAspectRatioMode);
+    }
 
+    // --- Match Status + Rank/Time/Bomb ---
+    {
+        DEFINE_PRV_HELPERS(applyAndPreviewMatchStatus)
+        prvB(ui->cbMetroidHudMatchStatusShow);
+        prvSl(ui->spinMetroidHudMatchStatusX);         prvSl(ui->spinMetroidHudMatchStatusY);
+        prvSl(ui->spinMetroidHudMatchStatusLabelOfsX); prvSl(ui->spinMetroidHudMatchStatusLabelOfsY);
+        prvC(ui->comboMetroidHudMatchStatusLabelPos);
+        prvE(ui->leMetroidHudMatchStatusLabelPoints);    prvE(ui->leMetroidHudMatchStatusLabelOctoliths);
+        prvE(ui->leMetroidHudMatchStatusLabelLives);     prvE(ui->leMetroidHudMatchStatusLabelRingTime);
+        prvE(ui->leMetroidHudMatchStatusLabelPrimeTime);
+        prvC(ui->comboMetroidHudMatchStatusColor);
+        prvI(ui->spinMetroidHudMatchStatusColorR); prvI(ui->spinMetroidHudMatchStatusColorG); prvI(ui->spinMetroidHudMatchStatusColorB);
+        prvE(ui->leMetroidHudMatchStatusColorCode);
+        prvC(ui->comboMetroidHudMatchStatusLabelColor); prvE(ui->leMetroidHudMatchStatusLabelColorCode);
+        prvI(ui->spinMetroidHudMatchStatusLabelColorR); prvI(ui->spinMetroidHudMatchStatusLabelColorG); prvI(ui->spinMetroidHudMatchStatusLabelColorB);
+        prvC(ui->comboMetroidHudMatchStatusValueColor); prvE(ui->leMetroidHudMatchStatusValueColorCode);
+        prvI(ui->spinMetroidHudMatchStatusValueColorR); prvI(ui->spinMetroidHudMatchStatusValueColorG); prvI(ui->spinMetroidHudMatchStatusValueColorB);
+        prvC(ui->comboMetroidHudMatchStatusSepColor); prvE(ui->leMetroidHudMatchStatusSepColorCode);
+        prvI(ui->spinMetroidHudMatchStatusSepColorR); prvI(ui->spinMetroidHudMatchStatusSepColorG); prvI(ui->spinMetroidHudMatchStatusSepColorB);
+        prvC(ui->comboMetroidHudMatchStatusGoalColor); prvE(ui->leMetroidHudMatchStatusGoalColorCode);
+        prvI(ui->spinMetroidHudMatchStatusGoalColorR); prvI(ui->spinMetroidHudMatchStatusGoalColorG); prvI(ui->spinMetroidHudMatchStatusGoalColorB);
+        // Rank & Time HUD
+        prvB(ui->cbMetroidHudRankShow);
+        prvSl(ui->spinMetroidHudRankX); prvSl(ui->spinMetroidHudRankY);
+        prvC(ui->comboMetroidHudRankAlign);
+        prvC(ui->comboMetroidHudRankColor);
+        prvE(ui->leMetroidHudRankColorCode);
+        prvI(ui->spinMetroidHudRankColorR); prvI(ui->spinMetroidHudRankColorG); prvI(ui->spinMetroidHudRankColorB);
+        prvB(ui->cbMetroidHudRankShowOrdinal);
+        prvB(ui->cbMetroidHudTimeLeftShow);
+        prvSl(ui->spinMetroidHudTimeLeftX); prvSl(ui->spinMetroidHudTimeLeftY);
+        prvC(ui->comboMetroidHudTimeLeftAlign);
+        prvC(ui->comboMetroidHudTimeLeftColor);
+        prvE(ui->leMetroidHudTimeLeftColorCode);
+        prvI(ui->spinMetroidHudTimeLeftColorR); prvI(ui->spinMetroidHudTimeLeftColorG); prvI(ui->spinMetroidHudTimeLeftColorB);
+        prvB(ui->cbMetroidHudTimeLimitShow);
+        prvSl(ui->spinMetroidHudTimeLimitX); prvSl(ui->spinMetroidHudTimeLimitY);
+        prvC(ui->comboMetroidHudTimeLimitAlign);
+        prvC(ui->comboMetroidHudTimeLimitColor);
+        prvE(ui->leMetroidHudTimeLimitColorCode);
+        prvI(ui->spinMetroidHudTimeLimitColorR); prvI(ui->spinMetroidHudTimeLimitColorG); prvI(ui->spinMetroidHudTimeLimitColorB);
+        // Bomb Left HUD
+        prvB(ui->cbMetroidHudBombLeftShow);
+        prvB(ui->cbMetroidHudBombLeftTextShow);
+        prvSl(ui->spinMetroidHudBombLeftX); prvSl(ui->spinMetroidHudBombLeftY);
+        prvC(ui->comboMetroidHudBombLeftAlign);
+        prvC(ui->comboMetroidHudBombLeftColor);
+        prvE(ui->leMetroidHudBombLeftColorCode);
+        prvI(ui->spinMetroidHudBombLeftColorR); prvI(ui->spinMetroidHudBombLeftColorG); prvI(ui->spinMetroidHudBombLeftColorB);
+        prvE(ui->leMetroidHudBombLeftPrefix);
+        prvE(ui->leMetroidHudBombLeftSuffix);
+        prvB(ui->cbMetroidHudBombLeftIconShow);
+        prvB(ui->cbMetroidHudBombLeftIconColorOverlay);
+        prvC(ui->comboMetroidHudBombLeftIconColor);
+        prvE(ui->leMetroidHudBombLeftIconColorCode);
+        prvI(ui->spinMetroidHudBombLeftIconColorR); prvI(ui->spinMetroidHudBombLeftIconColorG); prvI(ui->spinMetroidHudBombLeftIconColorB);
+        prvC(ui->comboMetroidHudBombLeftIconMode);
+        prvSl(ui->spinMetroidHudBombLeftIconOfsX); prvSl(ui->spinMetroidHudBombLeftIconOfsY);
+        prvSl(ui->spinMetroidHudBombLeftIconPosX); prvSl(ui->spinMetroidHudBombLeftIconPosY);
+        prvC(ui->comboMetroidHudBombLeftIconAnchorX);
+        prvC(ui->comboMetroidHudBombLeftIconAnchorY);
+    }
+
+    // --- HP / Ammo / Gauge ---
+    {
+        DEFINE_PRV_HELPERS(applyAndPreviewHpAmmo)
+        prvSl(ui->spinMetroidHudHpX);    prvSl(ui->spinMetroidHudHpY);    prvE(ui->leMetroidHudHpPrefix);    prvC(ui->comboMetroidHudHpAlign);
+        prvB(ui->cbMetroidHudHpTextAutoColor); prvC(ui->comboMetroidHudHpTextColor); prvE(ui->leMetroidHudHpTextColorCode);
+        prvI(ui->spinMetroidHudHpTextColorR); prvI(ui->spinMetroidHudHpTextColorG); prvI(ui->spinMetroidHudHpTextColorB);
+        prvSl(ui->spinMetroidHudWeaponX); prvSl(ui->spinMetroidHudWeaponY); prvE(ui->leMetroidHudAmmoPrefix); prvC(ui->comboMetroidHudAmmoAlign);
+        prvC(ui->comboMetroidHudAmmoTextColor); prvE(ui->leMetroidHudAmmoTextColorCode);
+        prvI(ui->spinMetroidHudAmmoTextColorR); prvI(ui->spinMetroidHudAmmoTextColorG); prvI(ui->spinMetroidHudAmmoTextColorB);
+        prvB(ui->cbMetroidHudWeaponIconShow);  prvC(ui->comboMetroidHudWeaponIconMode);
+        prvSl(ui->spinMetroidHudWeaponIconOffsetX); prvSl(ui->spinMetroidHudWeaponIconOffsetY);
+        prvSl(ui->spinMetroidHudWeaponIconPosX);   prvSl(ui->spinMetroidHudWeaponIconPosY);
+        prvC(ui->comboMetroidHudWeaponIconAnchorX); prvC(ui->comboMetroidHudWeaponIconAnchorY); prvB(ui->cbMetroidHudWeaponIconColorOverlay);
+        prvB(ui->cbMetroidHudHpGauge);
+        prvC(ui->comboMetroidHudHpGaugeOrientation);
+        prvSl(ui->spinMetroidHudHpGaugeLength); prvSl(ui->spinMetroidHudHpGaugeWidth);
+        prvSl(ui->spinMetroidHudHpGaugeOffsetX); prvSl(ui->spinMetroidHudHpGaugeOffsetY);
+        prvC(ui->comboMetroidHudHpGaugeAnchor); prvC(ui->comboMetroidHudHpGaugePosMode);
+        prvSl(ui->spinMetroidHudHpGaugePosX);   prvSl(ui->spinMetroidHudHpGaugePosY);
+        prvB(ui->cbMetroidHudHpGaugeAutoColor);
+        prvC(ui->comboMetroidHudHpGaugeColor); prvE(ui->leMetroidHudHpGaugeColorCode);
+        prvI(ui->spinMetroidHudHpGaugeColorR); prvI(ui->spinMetroidHudHpGaugeColorG); prvI(ui->spinMetroidHudHpGaugeColorB);
+        prvB(ui->cbMetroidHudAmmoGauge);
+        prvC(ui->comboMetroidHudAmmoGaugeOrientation);
+        prvSl(ui->spinMetroidHudAmmoGaugeLength); prvSl(ui->spinMetroidHudAmmoGaugeWidth);
+        prvSl(ui->spinMetroidHudAmmoGaugeOffsetX); prvSl(ui->spinMetroidHudAmmoGaugeOffsetY);
+        prvC(ui->comboMetroidHudAmmoGaugeAnchor); prvC(ui->comboMetroidHudAmmoGaugePosMode);
+        prvSl(ui->spinMetroidHudAmmoGaugePosX);   prvSl(ui->spinMetroidHudAmmoGaugePosY);
+        prvC(ui->comboMetroidHudAmmoGaugeColor); prvE(ui->leMetroidHudAmmoGaugeColorCode);
+        prvI(ui->spinMetroidHudAmmoGaugeColorR); prvI(ui->spinMetroidHudAmmoGaugeColorG); prvI(ui->spinMetroidHudAmmoGaugeColorB);
+    }
+
+    // --- HUD Radar ---
+    {
+        DEFINE_PRV_HELPERS(applyAndPreviewRadar)
+        prvB(ui->cbMetroidBtmOverlayEnable);
+        prvSl(ui->spinMetroidBtmOverlayDstX); prvSl(ui->spinMetroidBtmOverlayDstY); prvSl(ui->spinMetroidBtmOverlayDstSize);
+        prvD(ui->spinMetroidBtmOverlayOpacity);
+        prvSl(ui->spinMetroidBtmOverlaySrcRadius);
+    }
+
+    // --- Crosshair ---
+    {
+        DEFINE_PRV_HELPERS(applyAndPreviewCrosshair)
+        prvC(ui->comboMetroidCrosshairColor); prvE(ui->leMetroidCrosshairColorCode);
+        prvI(ui->spinMetroidCrosshairR); prvI(ui->spinMetroidCrosshairG); prvI(ui->spinMetroidCrosshairB);
+        prvB(ui->cbMetroidCrosshairOutline);
+        prvD(ui->spinMetroidCrosshairOutlineOpacity);
+        prvSl(ui->sliderMetroidCrosshairOutlineThickness);
+        prvB(ui->cbMetroidCrosshairCenterDot);
+        prvD(ui->spinMetroidCrosshairDotOpacity);
+        prvSl(ui->sliderMetroidCrosshairDotThickness);
+        prvB(ui->cbMetroidCrosshairTStyle);
+        prvB(ui->cbMetroidCrosshairInnerShow);
+        prvD(ui->spinMetroidCrosshairInnerOpacity);
+        prvSl(ui->sliderMetroidCrosshairInnerLengthX); prvSl(ui->sliderMetroidCrosshairInnerLengthY);
+        prvSl(ui->sliderMetroidCrosshairInnerThickness); prvSl(ui->sliderMetroidCrosshairInnerOffset);
+        prvB(ui->cbMetroidCrosshairInnerLinkXY);
+        prvB(ui->cbMetroidCrosshairOuterShow);
+        prvD(ui->spinMetroidCrosshairOuterOpacity);
+        prvSl(ui->sliderMetroidCrosshairOuterLengthX); prvSl(ui->sliderMetroidCrosshairOuterLengthY);
+        prvSl(ui->sliderMetroidCrosshairOuterThickness); prvSl(ui->sliderMetroidCrosshairOuterOffset);
+        prvB(ui->cbMetroidCrosshairOuterLinkXY);
+    }
+
+#undef DEFINE_PRV_HELPERS
 }
 
 void MelonPrimeInputConfig::setupRadar(Config::Table& instcfg)
