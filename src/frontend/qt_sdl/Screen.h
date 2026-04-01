@@ -112,6 +112,7 @@ protected:
     int screenSizing;
     bool integerScaling;
     int screenAspectTop, screenAspectBot;
+    bool inGameTopScreenOnly = false;
 
     int autoScreenSizing;
 
@@ -209,11 +210,14 @@ protected:
     void refreshClipForGameStateChange();
 
 private:
+    void applyInGameTopScreenOnlyOverride(int& layout, int& sizing) const;
     bool shouldConfineCursorToBottomScreen() const;
     std::optional<QRect> getBottomScreenWidgetRect() const;
     void clipCursorToBottomScreen();
     void setClipWanted(bool value);
     bool getClipWanted() const;
+    bool m_lastInGameTopScreenOnlyOverride = false;
+    bool m_hasLastInGameTopScreenOnlyOverride = false;
     bool m_lastClipInGameState = false;
     bool m_hasLastClipInGameState = false;
     bool m_lastClipFocusedState = false;

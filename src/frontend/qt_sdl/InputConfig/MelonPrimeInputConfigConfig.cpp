@@ -126,6 +126,8 @@ void MelonPrimeInputConfig::saveConfig()
     Config::Table& instcfg = emuInstance->getLocalConfig();
     const bool oldClipCursorToBottomScreenWhenNotInGame =
         instcfg.GetBool("Metroid.Visual.ClipCursorToBottomScreenWhenNotInGame");
+    const bool oldInGameTopScreenOnly =
+        instcfg.GetBool("Metroid.Visual.InGameTopScreenOnly");
     Config::Table keycfg = instcfg.GetTable("Keyboard");
     Config::Table joycfg = instcfg.GetTable("Joystick");
 
@@ -183,7 +185,9 @@ void MelonPrimeInputConfig::saveConfig()
     const bool clipCursorToBottomScreenWhenNotInGame =
         (ui->cbMetroidClipCursorToBottomScreenWhenNotInGame->checkState() == Qt::Checked);
     instcfg.SetBool("Metroid.Visual.ClipCursorToBottomScreenWhenNotInGame", clipCursorToBottomScreenWhenNotInGame);
-
+    const bool inGameTopScreenOnly =
+        (ui->cbMetroidInGameTopScreenOnly->checkState() == Qt::Checked);
+    instcfg.SetBool("Metroid.Visual.InGameTopScreenOnly", inGameTopScreenOnly);
     if (oldClipCursorToBottomScreenWhenNotInGame != clipCursorToBottomScreenWhenNotInGame) {
         QTimer::singleShot(0, this, [this]() {
             for (int i = 0; i < emuInstance->getNumWindows(); ++i) {
@@ -193,7 +197,15 @@ void MelonPrimeInputConfig::saveConfig()
             }
         });
     }
-
+    if (oldInGameTopScreenOnly != inGameTopScreenOnly) {
+        QTimer::singleShot(0, this, [this]() {
+            for (int i = 0; i < emuInstance->getNumWindows(); ++i) {
+                MainWindow* win = emuInstance->getWindow(i);
+                if (win && win->panel)
+                    QMetaObject::invokeMethod(win->panel, "onScreenLayoutChanged", Qt::QueuedConnection);
+            }
+        });
+    }
     // Battle HUD
     instcfg.SetBool("Metroid.Visual.HudMatchStatusShow", ui->cbMetroidHudMatchStatusShow->checkState() == Qt::Checked);
     instcfg.SetInt("Metroid.Visual.HudMatchStatusX", ui->spinMetroidHudMatchStatusX->value());
@@ -280,6 +292,7 @@ void MelonPrimeInputConfig::saveConfig()
     instcfg.SetBool("Metroid.UI.SectionInputSettings",  ui->btnToggleInputSettings->isChecked());
     instcfg.SetBool("Metroid.UI.SectionScreenSync",     ui->btnToggleScreenSync->isChecked());
     instcfg.SetBool("Metroid.UI.SectionCursorClipSettings",  ui->btnToggleCursorClipSettings->isChecked());
+    instcfg.SetBool("Metroid.UI.SectionInGameApply",  ui->btnToggleInGameApply->isChecked());
     instcfg.SetBool("Metroid.UI.SectionInGameAspectRatio",  ui->btnToggleInGameAspectRatio->isChecked());
     instcfg.SetBool("Metroid.UI.SectionSensitivity",    ui->btnToggleSensitivity->isChecked());
     instcfg.SetBool("Metroid.UI.SectionGameplay",       ui->btnToggleGameplay->isChecked());

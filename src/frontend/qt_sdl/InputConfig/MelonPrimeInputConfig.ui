@@ -553,6 +553,26 @@
 								</widget>
 							</item>
 
+							<item><widget class="QPushButton" name="btnToggleInGameApply">
+								<property name="text"><string>▶ IN-GAME APPLY</string></property>
+								<property name="checkable"><bool>true</bool></property>
+								<property name="checked"><bool>false</bool></property>
+								<property name="flat"><bool>true</bool></property>
+								<property name="styleSheet"><string>QPushButton { text-align: left; font-weight: bold; padding: 4px; } QPushButton::checked { font-weight: bold; }</string></property>
+							</widget></item>
+							<item>
+								<widget class="QWidget" name="sectionInGameApply">
+								<layout class="QVBoxLayout" name="vboxInGameApply">
+									<item>
+										<widget class="QCheckBox" name="cbMetroidInGameTopScreenOnly">
+											<property name="text"><string>In-game only, temporarily force Screen Sizing to Top Only and Screen Layout to Natural. Outside of gameplay, restore the normal window settings.</string></property>
+											<property name="toolTip"><string>Does not overwrite your saved window layout settings. The override is applied only while Metroid Prime Hunters is in-game.</string></property>
+										</widget>
+									</item>
+								</layout>
+								</widget>
+							</item>
+
 							<!-- IN-GAME ASPECT RATIO toggle (merged from tabMetroid2) -->
 							<item><widget class="QPushButton" name="btnToggleInGameAspectRatio">
 								<property name="text"><string>▶ IN-GAME ASPECT RATIO</string></property>
@@ -1632,7 +1652,6 @@
 	<connections>
 	</connections>
 </ui>
-
 
 
 

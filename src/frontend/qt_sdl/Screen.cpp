@@ -153,21 +153,50 @@ void ScreenPanel::refreshClipForGameStateChange()
     const bool hasState = (core != nullptr);
     const bool isInGame = hasState && core->IsInGame();
     const bool isFocused = hasState && core->isFocused;
+    const bool wantsInGameTopScreenOnly =
+        hasState
+        && core->IsRomDetected()
+        && isInGame
+        && inGameTopScreenOnly;
 
-    if (m_hasLastClipInGameState == hasState
+    const bool clipStateUnchanged =
+        m_hasLastClipInGameState == hasState
         && (!hasState || m_lastClipInGameState == isInGame)
         && m_hasLastClipFocusedState == hasState
-        && (!hasState || m_lastClipFocusedState == isFocused))
+        && (!hasState || m_lastClipFocusedState == isFocused);
+    const bool topScreenOnlyStateUnchanged =
+        m_hasLastInGameTopScreenOnlyOverride
+        && m_lastInGameTopScreenOnlyOverride == wantsInGameTopScreenOnly;
+
+    if (clipStateUnchanged && topScreenOnlyStateUnchanged)
         return;
 
     m_hasLastClipInGameState = hasState;
     m_lastClipInGameState = isInGame;
     m_hasLastClipFocusedState = hasState;
     m_lastClipFocusedState = isFocused;
+    m_hasLastInGameTopScreenOnlyOverride = true;
+    m_lastInGameTopScreenOnlyOverride = wantsInGameTopScreenOnly;
+
+    if (!topScreenOnlyStateUnchanged)
+        setupScreenLayout();
 
 #if defined(_WIN32)
-    updateClipIfNeeded();
+    if (!clipStateUnchanged)
+        updateClipIfNeeded();
 #endif
+}
+
+void ScreenPanel::applyInGameTopScreenOnlyOverride(int& layout, int& sizing) const
+{
+    auto* core = emuInstance->getEmuThread()->GetMelonPrimeCore();
+    if (!core) return;
+    if (!core->IsRomDetected()) return;
+    if (!core->IsInGame()) return;
+    if (!inGameTopScreenOnly) return;
+
+    layout = screenLayout_Natural;
+    sizing = screenSizing_TopOnly;
 }
 
 bool ScreenPanel::shouldConfineCursorToBottomScreen() const
@@ -353,6 +382,7 @@ void ScreenPanel::loadConfig()
     integerScaling = cfg.GetBool("IntegerScaling");
     screenAspectTop = cfg.GetInt("ScreenAspectTop");
     screenAspectBot = cfg.GetInt("ScreenAspectBot");
+    inGameTopScreenOnly = emuInstance->getLocalConfig().GetBool("Metroid.Visual.InGameTopScreenOnly");
 }
 
 void ScreenPanel::setFilter(bool filter)
@@ -371,7 +401,9 @@ void ScreenPanel::setupScreenLayout()
     int w = width();
     int h = height();
 
+    int layoutType = screenLayout;
     int sizing = screenSizing;
+    applyInGameTopScreenOnlyOverride(layoutType, sizing);
     if (sizing == screenSizing_Auto) sizing = autoScreenSizing;
 
     float aspectTop, aspectBot;
@@ -391,7 +423,7 @@ void ScreenPanel::setupScreenLayout()
         aspectBot = ((float)w / h) / (4.f / 3.f);
 
     layout.Setup(w, h,
-        static_cast<ScreenLayoutType>(screenLayout),
+        static_cast<ScreenLayoutType>(layoutType),
         static_cast<ScreenRotation>(screenRotation),
         static_cast<ScreenSizing>(sizing),
         screenGap,
@@ -2039,5 +2071,4 @@ __attribute__((always_inline)) inline bool ScreenPanel::getClipWanted() const
     return emuInstance->getEmuThread()->GetMelonPrimeCore()->isClipWanted;
 }
 #endif // MELONPRIME_DS
-
 
