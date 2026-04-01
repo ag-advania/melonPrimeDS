@@ -1358,12 +1358,12 @@ void MelonPrimeInputConfig::updateMatchStatusPreview()
                 : instcfg.GetInt("Metroid.Visual.HudBombLeftIconPosY")) * scale;
             const int iw = static_cast<int>(iconPm.width() * scale);
             const int ih = static_cast<int>(iconPm.height() * scale);
-            const int anchorX = instcfg.GetInt("Metroid.Visual.HudBombLeftIconAnchorX");
-            const int anchorY = instcfg.GetInt("Metroid.Visual.HudBombLeftIconAnchorY");
-            if (anchorX == 1) ix -= iw / 2.0f;
-            else if (anchorX == 2) ix -= iw;
-            if (anchorY == 1) iy -= ih / 2.0f;
-            else if (anchorY == 2) iy -= ih;
+            const int iconAlignX = instcfg.GetInt("Metroid.Visual.HudBombLeftIconAnchorX");
+            const int iconAlignY = instcfg.GetInt("Metroid.Visual.HudBombLeftIconAnchorY");
+            if (iconAlignX == 1) ix -= iw / 2.0f;
+            else if (iconAlignX == 2) ix -= iw;
+            if (iconAlignY == 1) iy -= ih / 2.0f;
+            else if (iconAlignY == 2) iy -= ih;
 
             if (useOverlay) {
                 QImage img = iconPm.toImage().convertToFormat(QImage::Format_ARGB32_Premultiplied);
@@ -1381,3 +1381,4 @@ void MelonPrimeInputConfig::updateMatchStatusPreview()
     p.end();
     applyPixmapToPreview(preview, pixmap);
 }
+
