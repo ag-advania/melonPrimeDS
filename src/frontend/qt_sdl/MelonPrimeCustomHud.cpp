@@ -729,7 +729,7 @@ static void DrawBombLeft(QPainter* p, melonDS::u8* ram, const RomAddresses& rom,
 {
     if (!c.bombLeft.bombLeftShow) return; uint8_t bombs = static_cast<uint8_t>((Read32(ram, rom.baseBomb + offP) >> 8) & 0xF);
     { static TextBitmapCache s_bombBitmapCache = { 0, QColor(), "", 0, 0, false, QImage() }; const QFontMetrics fm = p->fontMetrics(); const int fontPixelSize = p->font().pixelSize(); char buf[64]; if (c.bombLeft.bombLeftTextShow) std::snprintf(buf, sizeof(buf), "%s%u%s", c.bombLeft.bombLeftPrefix, bombs, c.bombLeft.bombLeftSuffix); else std::snprintf(buf, sizeof(buf), "%s%s", c.bombLeft.bombLeftPrefix, c.bombLeft.bombLeftSuffix); if (buf[0] != '\0') { PrepareTextBitmapCached(fm, p->font(), fontPixelSize, s_bombBitmapCache, buf, c.bombLeft.bombLeftColor); const int bombTextX = CalcAlignedTextX(c.bombLeft.bombLeftX, c.bombLeft.bombLeftAlign, s_bombBitmapCache.bitmap.width()); DrawCachedText(p, s_bombBitmapCache, bombTextX, c.bombLeft.bombLeftY); } }
-    if (c.bombLeft.bombIconShow) { EnsureBombIconsLoaded(); const QImage& icon = GetBombIconForDraw(bombs, c.bombLeft.bombIconColorOverlay, c.bombLeft.bombIconColor); if (!icon.isNull()) { int ix = (c.bombLeft.bombIconMode == 0) ? c.bombLeft.bombLeftX + c.bombLeft.bombIconOfsX : c.bombLeft.bombIconPosX; int iy = (c.bombLeft.bombIconMode == 0) ? c.bombLeft.bombLeftY + c.bombLeft.bombIconOfsY : c.bombLeft.bombIconPosY; if (c.bombLeft.bombIconAnchorX == 1) ix -= icon.width() / 2; else if (c.bombLeft.bombIconAnchorX == 2) ix -= icon.width(); if (c.bombLeft.bombIconAnchorY == 1) iy -= icon.height() / 2; else if (c.bombLeft.bombIconAnchorY == 2) iy -= icon.height(); p->drawImage(QPoint(ix, iy), icon); } }
+    if (c.bombLeft.bombIconShow) { EnsureBombIconsLoaded(); const QImage& icon = GetBombIconForDraw(bombs, c.bombLeft.bombIconColorOverlay, c.bombLeft.bombIconColor); if (!icon.isNull()) { int ix = (c.bombLeft.bombIconMode == 0) ? c.bombLeft.bombLeftX + c.bombLeft.bombIconOfsX : c.bombLeft.bombIconPosX; int iy = (c.bombLeft.bombIconMode == 0) ? c.bombLeft.bombLeftY + c.bombLeft.bombIconOfsY : c.bombLeft.bombIconPosY; const int iconAlignX = c.bombLeft.bombIconAnchorX; const int iconAlignY = c.bombLeft.bombIconAnchorY; if (iconAlignX == 1) ix -= icon.width() / 2; else if (iconAlignX == 2) ix -= icon.width(); if (iconAlignY == 1) iy -= icon.height() / 2; else if (iconAlignY == 2) iy -= icon.height(); p->drawImage(QPoint(ix, iy), icon); } }
 }
 //  Rank & Time HUD
 // =========================================================================
@@ -1277,6 +1277,7 @@ void DrawBottomScreenOverlay(Config::Table& localCfg, QPainter* topPaint, QImage
 } // namespace MelonPrime
 
 #endif // MELONPRIME_CUSTOM_HUD
+
 
 
 
