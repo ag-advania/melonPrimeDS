@@ -281,6 +281,13 @@ struct CachedHudConfig {
     bool   timeLimitShow;
     int    timeLimitX, timeLimitY, timeLimitAlign;
     QColor timeLimitColor;
+    // Bottom screen radar overlay
+    bool   radarShow;
+    int    radarDstX, radarDstY, radarDstSize;
+    int    radarSrcRadius;
+    double radarOpacity;
+    QRect  radarDstRect;
+    QPainterPath radarClipPath;
     // Cache invalidation
     bool valid;
 };
@@ -471,6 +478,16 @@ static void RefreshCachedConfig(Config::Table& cfg)
     c.timeLeftColor = QColor(cfg.GetInt("Metroid.Visual.HudTimeLeftColorR"),
                               cfg.GetInt("Metroid.Visual.HudTimeLeftColorG"),
                               cfg.GetInt("Metroid.Visual.HudTimeLeftColorB"));
+    // Bottom screen radar overlay
+    c.radarShow      = cfg.GetBool("Metroid.Visual.BtmOverlayEnable");
+    c.radarDstX      = cfg.GetInt("Metroid.Visual.BtmOverlayDstX");
+    c.radarDstY      = cfg.GetInt("Metroid.Visual.BtmOverlayDstY");
+    c.radarDstSize   = std::max(cfg.GetInt("Metroid.Visual.BtmOverlayDstSize"), 1);
+    c.radarOpacity   = std::clamp(cfg.GetDouble("Metroid.Visual.BtmOverlayOpacity"), 0.0, 1.0);
+    c.radarSrcRadius = std::max(cfg.GetInt("Metroid.Visual.BtmOverlaySrcRadius"), 1);
+    c.radarDstRect   = QRect(c.radarDstX, c.radarDstY, c.radarDstSize, c.radarDstSize);
+    c.radarClipPath  = QPainterPath();
+    c.radarClipPath.addEllipse(c.radarDstRect);
     c.timeLimitShow   = cfg.GetBool("Metroid.Visual.HudTimeLimitShow");
     c.timeLimitX      = cfg.GetInt("Metroid.Visual.HudTimeLimitX");
     c.timeLimitY      = cfg.GetInt("Metroid.Visual.HudTimeLimitY");
@@ -969,6 +986,11 @@ bool CustomHud_IsEnabled(Config::Table& localCfg)
     return localCfg.GetBool(kCfgCustomHud);
 }
 
+static inline bool ShouldHideForGameplayState(bool isStartPressed, uint16_t currentHP, bool isGameOver)
+{
+    return isStartPressed || currentHP == 0 || isGameOver;
+}
+
 bool CustomHud_ShouldHideForGameplayState(EmuInstance* emu, const RomAddresses& rom, uint8_t playerPosition)
 {
     if (!emu) return true;
@@ -978,9 +1000,9 @@ bool CustomHud_ShouldHideForGameplayState(EmuInstance* emu, const RomAddresses& 
     if (!ram) return true;
 
     const uint32_t offP = static_cast<uint32_t>(playerPosition) * Consts::PLAYER_ADDR_INC;
-    if (Read8(ram, rom.startPressed) == 0x01) return true;
-    if (Read16(ram, rom.playerHP + offP) == 0) return true;
-    return Read8(ram, rom.gameOver) != 0x00;
+    return ShouldHideForGameplayState(Read8(ram, rom.startPressed) == 0x01,
+                                      Read16(ram, rom.playerHP + offP),
+                                      Read8(ram, rom.gameOver) != 0x00);
 }
 
 bool CustomHud_ShouldDrawRadarOverlay(EmuInstance* emu, const RomAddresses& rom, uint8_t playerPosition)
@@ -1412,12 +1434,11 @@ HOT_FUNCTION void CustomHud_Render(
     Write8(ram, rom.hudToggle, isStartPressed ? 0x11 : 0x01);
 
     uint16_t currentHP = Read16(ram, rom.playerHP + offP);
-    bool isDead        = (currentHP == 0);
     bool isGameOver    = Read8(ram, rom.gameOver) != 0x00;
     uint8_t viewMode   = Read8(ram, rom.baseViewMode + offP);
     bool isFirstPerson = (viewMode == 0x00);
 
-    if (CustomHud_ShouldHideForGameplayState(emu, rom, playerPosition)) return;
+    if (ShouldHideForGameplayState(isStartPressed, currentHP, isGameOver)) return;
 
     if (topPaint->font().pixelSize() != kCustomHudFontSize) {
         QFont f = topPaint->font();
@@ -1462,17 +1483,18 @@ HOT_FUNCTION void CustomHud_Render(
 
 void DrawBottomScreenOverlay(Config::Table& localCfg, QPainter* topPaint, QImage* btmBuffer, uint8_t hunterID)
 {
-    if (!localCfg.GetBool("Metroid.Visual.BtmOverlayEnable")) return;
-    if (!topPaint || !btmBuffer || btmBuffer->isNull()) return;
+    if (UNLIKELY(!s_cache.valid)) {
+        RefreshCachedConfig(localCfg);
+        s_cache.valid = true;
+    }
 
-    int dstX = localCfg.GetInt("Metroid.Visual.BtmOverlayDstX");
-    int dstY = localCfg.GetInt("Metroid.Visual.BtmOverlayDstY");
-    int dstSize = std::max(localCfg.GetInt("Metroid.Visual.BtmOverlayDstSize"), 1);
-    double opacity = localCfg.GetDouble("Metroid.Visual.BtmOverlayOpacity");
+    const CachedHudConfig& c = s_cache;
+    if (!c.radarShow) return;
+    if (!topPaint || !btmBuffer || btmBuffer->isNull()) return;
 
     const int srcCenterX  = kBtmOverlaySrcCenterX;
     const int srcCenterY  = kBtmOverlaySrcCenterY[hunterID];
-    const int srcRadius   = std::max(localCfg.GetInt("Metroid.Visual.BtmOverlaySrcRadius"), 1);
+    const int srcRadius   = c.radarSrcRadius;
     const float bufScaleX = static_cast<float>(btmBuffer->width()) / 256.0f;
     const float bufScaleY = static_cast<float>(btmBuffer->height()) / 192.0f;
 
@@ -1480,18 +1502,12 @@ void DrawBottomScreenOverlay(Config::Table& localCfg, QPainter* topPaint, QImage
                   static_cast<int>((srcCenterY - srcRadius) * bufScaleY),
                   static_cast<int>(srcRadius * 2 * bufScaleX),
                   static_cast<int>(srcRadius * 2 * bufScaleY));
-    QRect dstRect(dstX, dstY, dstSize, dstSize);
 
     topPaint->save();
     topPaint->setRenderHint(QPainter::SmoothPixmapTransform, true);
-    topPaint->setOpacity(std::clamp(opacity, 0.0, 1.0));
-
-    // Clip to circle
-    QPainterPath circlePath;
-    circlePath.addEllipse(dstRect);
-    topPaint->setClipPath(circlePath);
-
-    topPaint->drawImage(dstRect, *btmBuffer, srcRect);
+    topPaint->setOpacity(c.radarOpacity);
+    topPaint->setClipPath(c.radarClipPath);
+    topPaint->drawImage(c.radarDstRect, *btmBuffer, srcRect);
     topPaint->restore();
 }
 
