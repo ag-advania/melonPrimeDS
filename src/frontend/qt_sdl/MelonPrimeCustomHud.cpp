@@ -209,293 +209,263 @@ static inline void DrawCachedText(QPainter* p, const TextBitmapCache& cache, int
 //  P-3: Cached HUD config — refreshed only when config generation changes.
 //       Avoids ~50 hash-map lookups per frame → single generation compare.
 // =========================================================================
-struct CachedHudConfig {
-    // HP
-    int    hpX, hpY, hpAlign;
-    char   hpPrefix[48];
-    bool   hpTextAutoColor, hpGauge, hpAutoColor;
+struct HpHudConfig {
+    int hpX, hpY, hpAlign;
+    char hpPrefix[48];
+    bool hpTextAutoColor, hpGauge, hpAutoColor;
     QColor hpTextColor;
-    int    hpGaugeOri, hpGaugeLen, hpGaugeWid;
-    int    hpGaugeOfsX, hpGaugeOfsY, hpGaugeAnchor;
-    int    hpGaugePosMode, hpGaugePosX, hpGaugePosY;
+    int hpGaugeOri, hpGaugeLen, hpGaugeWid;
+    int hpGaugeOfsX, hpGaugeOfsY, hpGaugeAnchor;
+    int hpGaugePosMode, hpGaugePosX, hpGaugePosY;
     QColor hpGaugeColor;
-    // Weapon / Ammo
-    int    wpnX, wpnY, ammoAlign;
-    char   ammoPrefix[48];
+};
+struct WeaponHudConfig {
+    int wpnX, wpnY, ammoAlign;
+    char ammoPrefix[48];
     QColor ammoTextColor;
-    bool   iconShow, iconColorOverlay, ammoGauge;
-    int    iconMode, iconOfsX, iconOfsY, iconPosX, iconPosY;
-    int    iconAnchorX, iconAnchorY; // 0=Left/Top  1=Center  2=Right/Bottom
-    int    ammoGaugeOri, ammoGaugeLen, ammoGaugeWid;
-    int    ammoGaugeOfsX, ammoGaugeOfsY, ammoGaugeAnchor;
-    int    ammoGaugePosMode, ammoGaugePosX, ammoGaugePosY;
+    bool iconShow, iconColorOverlay, ammoGauge;
+    int iconMode, iconOfsX, iconOfsY, iconPosX, iconPosY;
+    int iconAnchorX, iconAnchorY;
+    int ammoGaugeOri, ammoGaugeLen, ammoGaugeWid;
+    int ammoGaugeOfsX, ammoGaugeOfsY, ammoGaugeAnchor;
+    int ammoGaugePosMode, ammoGaugePosX, ammoGaugePosY;
     QColor ammoGaugeColor;
-    // Crosshair — general
+};
+struct CrosshairHudConfig {
     QColor chColor;
-    bool   chOutline, chCenterDot, chTStyle;
+    bool chOutline, chCenterDot, chTStyle;
     double chOutlineOpacity, chDotOpacity;
-    int    chOutlineThickness, chDotThickness;
-    // Crosshair — inner
-    bool   chInnerShow;
+    int chOutlineThickness, chDotThickness;
+    bool chInnerShow;
     double chInnerOpacity;
-    int    chInnerLengthX, chInnerLengthY, chInnerThickness, chInnerOffset;
-    // Crosshair — outer
-    bool   chOuterShow;
+    int chInnerLengthX, chInnerLengthY, chInnerThickness, chInnerOffset;
+    bool chOuterShow;
     double chOuterOpacity;
-    int    chOuterLengthX, chOuterLengthY, chOuterThickness, chOuterOffset;
-    // Match Status HUD
-    bool   matchStatusShow;
-    int    matchStatusX, matchStatusY;
-    int    matchStatusLabelOfsX, matchStatusLabelOfsY;
-    int    matchStatusLabelPos; // 0=Above,1=Below,2=Left,3=Right,4=Center
-    char   matchStatusLabelPoints[64], matchStatusLabelOctoliths[64], matchStatusLabelLives[64];
-    char   matchStatusLabelRingTime[64], matchStatusLabelPrimeTime[64];
-    QColor matchStatusColor;       // overall (fallback)
-    QColor matchStatusLabelColor;  // invalid = use matchStatusColor
-    QColor matchStatusValueColor;  // invalid = use matchStatusColor
-    QColor matchStatusSepColor;    // invalid = use matchStatusColor
-    QColor matchStatusGoalColor;   // invalid = use matchStatusColor
-    // Bomb Left
-    bool   bombLeftShow, bombLeftTextShow;
-    int    bombLeftX, bombLeftY, bombLeftAlign;
+    int chOuterLengthX, chOuterLengthY, chOuterThickness, chOuterOffset;
+};
+struct MatchStatusHudConfig {
+    bool matchStatusShow;
+    int matchStatusX, matchStatusY;
+    int matchStatusLabelOfsX, matchStatusLabelOfsY;
+    int matchStatusLabelPos;
+    char matchStatusLabelPoints[64], matchStatusLabelOctoliths[64], matchStatusLabelLives[64];
+    char matchStatusLabelRingTime[64], matchStatusLabelPrimeTime[64];
+    QColor matchStatusColor, matchStatusLabelColor, matchStatusValueColor, matchStatusSepColor, matchStatusGoalColor;
+};
+struct BombLeftHudConfig {
+    bool bombLeftShow, bombLeftTextShow;
+    int bombLeftX, bombLeftY, bombLeftAlign;
     QColor bombLeftColor;
-    char   bombLeftPrefix[48];
-    char   bombLeftSuffix[48];
-    // Bomb Left Icon
-    bool   bombIconShow, bombIconColorOverlay;
+    char bombLeftPrefix[48];
+    char bombLeftSuffix[48];
+    bool bombIconShow, bombIconColorOverlay;
     QColor bombIconColor;
-    int    bombIconMode;
-    int    bombIconOfsX, bombIconOfsY;
-    int    bombIconPosX, bombIconPosY;
-    int    bombIconAnchorX, bombIconAnchorY;
-    // Rank & Time HUD
-    bool   rankShow;
-    int    rankX, rankY, rankAlign;
+    int bombIconMode, bombIconOfsX, bombIconOfsY, bombIconPosX, bombIconPosY, bombIconAnchorX, bombIconAnchorY;
+};
+struct RankTimeHudConfig {
+    bool rankShow;
+    int rankX, rankY, rankAlign;
     QColor rankColor;
-    char   rankPrefix[48];
-    bool   rankShowOrdinal;
-    char   rankSuffix[48];
-    bool   timeLeftShow;
-    int    timeLeftX, timeLeftY, timeLeftAlign;
+    char rankPrefix[48];
+    bool rankShowOrdinal;
+    char rankSuffix[48];
+    bool timeLeftShow;
+    int timeLeftX, timeLeftY, timeLeftAlign;
     QColor timeLeftColor;
-    bool   timeLimitShow;
-    int    timeLimitX, timeLimitY, timeLimitAlign;
+    bool timeLimitShow;
+    int timeLimitX, timeLimitY, timeLimitAlign;
     QColor timeLimitColor;
-    // Bottom screen radar overlay
-    bool   radarShow;
-    int    radarDstX, radarDstY, radarDstSize;
-    int    radarSrcRadius;
+};
+struct RadarOverlayConfig {
+    bool radarShow;
+    int radarDstX, radarDstY, radarDstSize;
+    int radarSrcRadius;
     double radarOpacity;
-    QRect  radarDstRect;
+    QRect radarDstRect;
     QPainterPath radarClipPath;
-    // Cache invalidation
+};
+struct CachedHudConfig {
+    HpHudConfig hp;
+    WeaponHudConfig weapon;
+    CrosshairHudConfig crosshair;
+    MatchStatusHudConfig matchStatus;
+    BombLeftHudConfig bombLeft;
+    RankTimeHudConfig rankTime;
+    RadarOverlayConfig radar;
     bool valid;
 };
-
 static CachedHudConfig s_cache = { .valid = false };
 static uint32_t s_cacheEpoch = 1;
-
+static inline void CopyConfigString(char* dst, size_t dstSize, const std::string& value)
+{
+    std::strncpy(dst, value.c_str(), dstSize - 1);
+    dst[dstSize - 1] = '\0';
+}
+static inline QColor ReadRgbColor(Config::Table& cfg, const char* keyR, const char* keyG, const char* keyB)
+{
+    return QColor(cfg.GetInt(keyR), cfg.GetInt(keyG), cfg.GetInt(keyB));
+}
+static inline QColor ReadOptionalSubColor(Config::Table& cfg, const char* keyOverall,
+                                          const char* keyR, const char* keyG, const char* keyB)
+{
+    if (cfg.GetBool(keyOverall)) return QColor();
+    return ReadRgbColor(cfg, keyR, keyG, keyB);
+}
+static void LoadHpConfig(HpHudConfig& hp, Config::Table& cfg)
+{
+    hp.hpX = cfg.GetInt("Metroid.Visual.HudHpX");
+    hp.hpY = cfg.GetInt("Metroid.Visual.HudHpY");
+    hp.hpAlign = cfg.GetInt("Metroid.Visual.HudHpAlign");
+    CopyConfigString(hp.hpPrefix, sizeof(hp.hpPrefix), cfg.GetString("Metroid.Visual.HudHpPrefix"));
+    hp.hpTextAutoColor = cfg.GetBool("Metroid.Visual.HudHpTextAutoColor");
+    hp.hpTextColor = ReadRgbColor(cfg, "Metroid.Visual.HudHpTextColorR", "Metroid.Visual.HudHpTextColorG", "Metroid.Visual.HudHpTextColorB");
+    hp.hpGauge = cfg.GetBool("Metroid.Visual.HudHpGauge");
+    hp.hpGaugeOri = cfg.GetInt("Metroid.Visual.HudHpGaugeOrientation");
+    hp.hpGaugeLen = cfg.GetInt("Metroid.Visual.HudHpGaugeLength");
+    hp.hpGaugeWid = cfg.GetInt("Metroid.Visual.HudHpGaugeWidth");
+    hp.hpGaugeOfsX = cfg.GetInt("Metroid.Visual.HudHpGaugeOffsetX");
+    hp.hpGaugeOfsY = cfg.GetInt("Metroid.Visual.HudHpGaugeOffsetY");
+    hp.hpGaugeAnchor = cfg.GetInt("Metroid.Visual.HudHpGaugeAnchor");
+    hp.hpGaugePosMode = cfg.GetInt("Metroid.Visual.HudHpGaugePosMode");
+    hp.hpGaugePosX = cfg.GetInt("Metroid.Visual.HudHpGaugePosX");
+    hp.hpGaugePosY = cfg.GetInt("Metroid.Visual.HudHpGaugePosY");
+    hp.hpAutoColor = cfg.GetBool("Metroid.Visual.HudHpGaugeAutoColor");
+    hp.hpGaugeColor = ReadRgbColor(cfg, "Metroid.Visual.HudHpGaugeColorR", "Metroid.Visual.HudHpGaugeColorG", "Metroid.Visual.HudHpGaugeColorB");
+}
+static void LoadWeaponConfig(WeaponHudConfig& weapon, Config::Table& cfg)
+{
+    weapon.wpnX = cfg.GetInt("Metroid.Visual.HudWeaponX");
+    weapon.wpnY = cfg.GetInt("Metroid.Visual.HudWeaponY");
+    weapon.ammoAlign = cfg.GetInt("Metroid.Visual.HudAmmoAlign");
+    CopyConfigString(weapon.ammoPrefix, sizeof(weapon.ammoPrefix), cfg.GetString("Metroid.Visual.HudAmmoPrefix"));
+    weapon.ammoTextColor = ReadRgbColor(cfg, "Metroid.Visual.HudAmmoTextColorR", "Metroid.Visual.HudAmmoTextColorG", "Metroid.Visual.HudAmmoTextColorB");
+    weapon.iconShow = cfg.GetBool("Metroid.Visual.HudWeaponIconShow");
+    weapon.iconColorOverlay = cfg.GetBool("Metroid.Visual.HudWeaponIconColorOverlay");
+    weapon.iconMode = cfg.GetInt("Metroid.Visual.HudWeaponIconMode");
+    weapon.iconOfsX = cfg.GetInt("Metroid.Visual.HudWeaponIconOffsetX");
+    weapon.iconOfsY = cfg.GetInt("Metroid.Visual.HudWeaponIconOffsetY");
+    weapon.iconPosX = cfg.GetInt("Metroid.Visual.HudWeaponIconPosX");
+    weapon.iconPosY = cfg.GetInt("Metroid.Visual.HudWeaponIconPosY");
+    weapon.iconAnchorX = cfg.GetInt("Metroid.Visual.HudWeaponIconAnchorX");
+    weapon.iconAnchorY = cfg.GetInt("Metroid.Visual.HudWeaponIconAnchorY");
+    weapon.ammoGauge = cfg.GetBool("Metroid.Visual.HudAmmoGauge");
+    weapon.ammoGaugeOri = cfg.GetInt("Metroid.Visual.HudAmmoGaugeOrientation");
+    weapon.ammoGaugeLen = cfg.GetInt("Metroid.Visual.HudAmmoGaugeLength");
+    weapon.ammoGaugeWid = cfg.GetInt("Metroid.Visual.HudAmmoGaugeWidth");
+    weapon.ammoGaugeOfsX = cfg.GetInt("Metroid.Visual.HudAmmoGaugeOffsetX");
+    weapon.ammoGaugeOfsY = cfg.GetInt("Metroid.Visual.HudAmmoGaugeOffsetY");
+    weapon.ammoGaugeAnchor = cfg.GetInt("Metroid.Visual.HudAmmoGaugeAnchor");
+    weapon.ammoGaugePosMode = cfg.GetInt("Metroid.Visual.HudAmmoGaugePosMode");
+    weapon.ammoGaugePosX = cfg.GetInt("Metroid.Visual.HudAmmoGaugePosX");
+    weapon.ammoGaugePosY = cfg.GetInt("Metroid.Visual.HudAmmoGaugePosY");
+    weapon.ammoGaugeColor = ReadRgbColor(cfg, "Metroid.Visual.HudAmmoGaugeColorR", "Metroid.Visual.HudAmmoGaugeColorG", "Metroid.Visual.HudAmmoGaugeColorB");
+}
+static void LoadCrosshairConfig(CrosshairHudConfig& crosshair, Config::Table& cfg)
+{
+    crosshair.chColor = ReadRgbColor(cfg, "Metroid.Visual.CrosshairColorR", "Metroid.Visual.CrosshairColorG", "Metroid.Visual.CrosshairColorB");
+    crosshair.chOutline = cfg.GetBool("Metroid.Visual.CrosshairOutline");
+    crosshair.chOutlineOpacity = cfg.GetDouble("Metroid.Visual.CrosshairOutlineOpacity");
+    crosshair.chOutlineThickness = cfg.GetInt("Metroid.Visual.CrosshairOutlineThickness"); if (crosshair.chOutlineThickness <= 0) crosshair.chOutlineThickness = 1;
+    crosshair.chCenterDot = cfg.GetBool("Metroid.Visual.CrosshairCenterDot");
+    crosshair.chDotOpacity = cfg.GetDouble("Metroid.Visual.CrosshairDotOpacity");
+    crosshair.chDotThickness = cfg.GetInt("Metroid.Visual.CrosshairDotThickness"); if (crosshair.chDotThickness <= 0) crosshair.chDotThickness = 1;
+    crosshair.chTStyle = cfg.GetBool("Metroid.Visual.CrosshairTStyle");
+    crosshair.chInnerShow = cfg.GetBool("Metroid.Visual.CrosshairInnerShow");
+    crosshair.chInnerOpacity = cfg.GetDouble("Metroid.Visual.CrosshairInnerOpacity");
+    crosshair.chInnerLengthX = cfg.GetInt("Metroid.Visual.CrosshairInnerLengthX");
+    crosshair.chInnerLengthY = cfg.GetInt("Metroid.Visual.CrosshairInnerLengthY");
+    crosshair.chInnerThickness = cfg.GetInt("Metroid.Visual.CrosshairInnerThickness"); if (crosshair.chInnerThickness <= 0) crosshair.chInnerThickness = 1;
+    crosshair.chInnerOffset = cfg.GetInt("Metroid.Visual.CrosshairInnerOffset");
+    crosshair.chOuterShow = cfg.GetBool("Metroid.Visual.CrosshairOuterShow");
+    crosshair.chOuterOpacity = cfg.GetDouble("Metroid.Visual.CrosshairOuterOpacity");
+    crosshair.chOuterLengthX = cfg.GetInt("Metroid.Visual.CrosshairOuterLengthX");
+    crosshair.chOuterLengthY = cfg.GetInt("Metroid.Visual.CrosshairOuterLengthY");
+    crosshair.chOuterThickness = cfg.GetInt("Metroid.Visual.CrosshairOuterThickness"); if (crosshair.chOuterThickness <= 0) crosshair.chOuterThickness = 1;
+    crosshair.chOuterOffset = cfg.GetInt("Metroid.Visual.CrosshairOuterOffset");
+}
+static void LoadMatchStatusConfig(MatchStatusHudConfig& matchStatus, Config::Table& cfg)
+{
+    matchStatus.matchStatusShow = cfg.GetBool("Metroid.Visual.HudMatchStatusShow");
+    matchStatus.matchStatusX = cfg.GetInt("Metroid.Visual.HudMatchStatusX");
+    matchStatus.matchStatusY = cfg.GetInt("Metroid.Visual.HudMatchStatusY");
+    matchStatus.matchStatusLabelOfsX = cfg.GetInt("Metroid.Visual.HudMatchStatusLabelOfsX");
+    matchStatus.matchStatusLabelOfsY = cfg.GetInt("Metroid.Visual.HudMatchStatusLabelOfsY");
+    matchStatus.matchStatusLabelPos = cfg.GetInt("Metroid.Visual.HudMatchStatusLabelPos");
+    CopyConfigString(matchStatus.matchStatusLabelPoints, sizeof(matchStatus.matchStatusLabelPoints), cfg.GetString("Metroid.Visual.HudMatchStatusLabelPoints"));
+    CopyConfigString(matchStatus.matchStatusLabelOctoliths, sizeof(matchStatus.matchStatusLabelOctoliths), cfg.GetString("Metroid.Visual.HudMatchStatusLabelOctoliths"));
+    CopyConfigString(matchStatus.matchStatusLabelLives, sizeof(matchStatus.matchStatusLabelLives), cfg.GetString("Metroid.Visual.HudMatchStatusLabelLives"));
+    CopyConfigString(matchStatus.matchStatusLabelRingTime, sizeof(matchStatus.matchStatusLabelRingTime), cfg.GetString("Metroid.Visual.HudMatchStatusLabelRingTime"));
+    CopyConfigString(matchStatus.matchStatusLabelPrimeTime, sizeof(matchStatus.matchStatusLabelPrimeTime), cfg.GetString("Metroid.Visual.HudMatchStatusLabelPrimeTime"));
+    matchStatus.matchStatusColor = ReadRgbColor(cfg, "Metroid.Visual.HudMatchStatusColorR", "Metroid.Visual.HudMatchStatusColorG", "Metroid.Visual.HudMatchStatusColorB");
+    matchStatus.matchStatusLabelColor = ReadOptionalSubColor(cfg, "Metroid.Visual.HudMatchStatusLabelColorOverall", "Metroid.Visual.HudMatchStatusLabelColorR", "Metroid.Visual.HudMatchStatusLabelColorG", "Metroid.Visual.HudMatchStatusLabelColorB");
+    matchStatus.matchStatusValueColor = ReadOptionalSubColor(cfg, "Metroid.Visual.HudMatchStatusValueColorOverall", "Metroid.Visual.HudMatchStatusValueColorR", "Metroid.Visual.HudMatchStatusValueColorG", "Metroid.Visual.HudMatchStatusValueColorB");
+    matchStatus.matchStatusSepColor = ReadOptionalSubColor(cfg, "Metroid.Visual.HudMatchStatusSepColorOverall", "Metroid.Visual.HudMatchStatusSepColorR", "Metroid.Visual.HudMatchStatusSepColorG", "Metroid.Visual.HudMatchStatusSepColorB");
+    matchStatus.matchStatusGoalColor = ReadOptionalSubColor(cfg, "Metroid.Visual.HudMatchStatusGoalColorOverall", "Metroid.Visual.HudMatchStatusGoalColorR", "Metroid.Visual.HudMatchStatusGoalColorG", "Metroid.Visual.HudMatchStatusGoalColorB");
+}
+static void LoadBombLeftConfig(BombLeftHudConfig& bombLeft, Config::Table& cfg)
+{
+    bombLeft.bombLeftShow = cfg.GetBool("Metroid.Visual.HudBombLeftShow");
+    bombLeft.bombLeftTextShow = cfg.GetBool("Metroid.Visual.HudBombLeftTextShow");
+    bombLeft.bombLeftX = cfg.GetInt("Metroid.Visual.HudBombLeftX");
+    bombLeft.bombLeftY = cfg.GetInt("Metroid.Visual.HudBombLeftY");
+    bombLeft.bombLeftAlign = cfg.GetInt("Metroid.Visual.HudBombLeftAlign");
+    bombLeft.bombLeftColor = ReadRgbColor(cfg, "Metroid.Visual.HudBombLeftColorR", "Metroid.Visual.HudBombLeftColorG", "Metroid.Visual.HudBombLeftColorB");
+    CopyConfigString(bombLeft.bombLeftPrefix, sizeof(bombLeft.bombLeftPrefix), cfg.GetString("Metroid.Visual.HudBombLeftPrefix"));
+    CopyConfigString(bombLeft.bombLeftSuffix, sizeof(bombLeft.bombLeftSuffix), cfg.GetString("Metroid.Visual.HudBombLeftSuffix"));
+    bombLeft.bombIconShow = cfg.GetBool("Metroid.Visual.HudBombLeftIconShow");
+    bombLeft.bombIconColorOverlay = cfg.GetBool("Metroid.Visual.HudBombLeftIconColorOverlay");
+    bombLeft.bombIconColor = ReadRgbColor(cfg, "Metroid.Visual.HudBombLeftIconColorR", "Metroid.Visual.HudBombLeftIconColorG", "Metroid.Visual.HudBombLeftIconColorB");
+    bombLeft.bombIconMode = cfg.GetInt("Metroid.Visual.HudBombLeftIconMode");
+    bombLeft.bombIconOfsX = cfg.GetInt("Metroid.Visual.HudBombLeftIconOfsX");
+    bombLeft.bombIconOfsY = cfg.GetInt("Metroid.Visual.HudBombLeftIconOfsY");
+    bombLeft.bombIconPosX = cfg.GetInt("Metroid.Visual.HudBombLeftIconPosX");
+    bombLeft.bombIconPosY = cfg.GetInt("Metroid.Visual.HudBombLeftIconPosY");
+    bombLeft.bombIconAnchorX = cfg.GetInt("Metroid.Visual.HudBombLeftIconAnchorX");
+    bombLeft.bombIconAnchorY = cfg.GetInt("Metroid.Visual.HudBombLeftIconAnchorY");
+}
+static void LoadRankTimeConfig(RankTimeHudConfig& rankTime, Config::Table& cfg)
+{
+    rankTime.rankShow = cfg.GetBool("Metroid.Visual.HudRankShow");
+    rankTime.rankX = cfg.GetInt("Metroid.Visual.HudRankX");
+    rankTime.rankY = cfg.GetInt("Metroid.Visual.HudRankY");
+    rankTime.rankAlign = cfg.GetInt("Metroid.Visual.HudRankAlign");
+    rankTime.rankColor = ReadRgbColor(cfg, "Metroid.Visual.HudRankColorR", "Metroid.Visual.HudRankColorG", "Metroid.Visual.HudRankColorB");
+    CopyConfigString(rankTime.rankPrefix, sizeof(rankTime.rankPrefix), cfg.GetString("Metroid.Visual.HudRankPrefix"));
+    rankTime.rankShowOrdinal = cfg.GetBool("Metroid.Visual.HudRankShowOrdinal");
+    CopyConfigString(rankTime.rankSuffix, sizeof(rankTime.rankSuffix), cfg.GetString("Metroid.Visual.HudRankSuffix"));
+    rankTime.timeLeftShow = cfg.GetBool("Metroid.Visual.HudTimeLeftShow");
+    rankTime.timeLeftX = cfg.GetInt("Metroid.Visual.HudTimeLeftX");
+    rankTime.timeLeftY = cfg.GetInt("Metroid.Visual.HudTimeLeftY");
+    rankTime.timeLeftAlign = cfg.GetInt("Metroid.Visual.HudTimeLeftAlign");
+    rankTime.timeLeftColor = ReadRgbColor(cfg, "Metroid.Visual.HudTimeLeftColorR", "Metroid.Visual.HudTimeLeftColorG", "Metroid.Visual.HudTimeLeftColorB");
+    rankTime.timeLimitShow = cfg.GetBool("Metroid.Visual.HudTimeLimitShow");
+    rankTime.timeLimitX = cfg.GetInt("Metroid.Visual.HudTimeLimitX");
+    rankTime.timeLimitY = cfg.GetInt("Metroid.Visual.HudTimeLimitY");
+    rankTime.timeLimitAlign = cfg.GetInt("Metroid.Visual.HudTimeLimitAlign");
+    rankTime.timeLimitColor = ReadRgbColor(cfg, "Metroid.Visual.HudTimeLimitColorR", "Metroid.Visual.HudTimeLimitColorG", "Metroid.Visual.HudTimeLimitColorB");
+}
+static void LoadRadarOverlayConfig(RadarOverlayConfig& radar, Config::Table& cfg)
+{
+    radar.radarShow = cfg.GetBool("Metroid.Visual.BtmOverlayEnable");
+    radar.radarDstX = cfg.GetInt("Metroid.Visual.BtmOverlayDstX");
+    radar.radarDstY = cfg.GetInt("Metroid.Visual.BtmOverlayDstY");
+    radar.radarDstSize = std::max(cfg.GetInt("Metroid.Visual.BtmOverlayDstSize"), 1);
+    radar.radarOpacity = std::clamp(cfg.GetDouble("Metroid.Visual.BtmOverlayOpacity"), 0.0, 1.0);
+    radar.radarSrcRadius = std::max(cfg.GetInt("Metroid.Visual.BtmOverlaySrcRadius"), 1);
+    radar.radarDstRect = QRect(radar.radarDstX, radar.radarDstY, radar.radarDstSize, radar.radarDstSize);
+    radar.radarClipPath = QPainterPath();
+    radar.radarClipPath.addEllipse(radar.radarDstRect);
+}
 static void RefreshCachedConfig(Config::Table& cfg)
 {
     auto& c = s_cache;
-    // HP
-    c.hpX = cfg.GetInt("Metroid.Visual.HudHpX");
-    c.hpY = cfg.GetInt("Metroid.Visual.HudHpY");
-    c.hpAlign = cfg.GetInt("Metroid.Visual.HudHpAlign");
-    { auto s = cfg.GetString("Metroid.Visual.HudHpPrefix");
-      std::strncpy(c.hpPrefix, s.c_str(), sizeof(c.hpPrefix)-1);
-      c.hpPrefix[sizeof(c.hpPrefix)-1] = '\0'; }
-    c.hpTextAutoColor = cfg.GetBool("Metroid.Visual.HudHpTextAutoColor");
-    c.hpTextColor = QColor(cfg.GetInt("Metroid.Visual.HudHpTextColorR"),
-                           cfg.GetInt("Metroid.Visual.HudHpTextColorG"),
-                           cfg.GetInt("Metroid.Visual.HudHpTextColorB"));
-    c.hpGauge      = cfg.GetBool("Metroid.Visual.HudHpGauge");
-    c.hpGaugeOri   = cfg.GetInt("Metroid.Visual.HudHpGaugeOrientation");
-    c.hpGaugeLen   = cfg.GetInt("Metroid.Visual.HudHpGaugeLength");
-    c.hpGaugeWid   = cfg.GetInt("Metroid.Visual.HudHpGaugeWidth");
-    c.hpGaugeOfsX  = cfg.GetInt("Metroid.Visual.HudHpGaugeOffsetX");
-    c.hpGaugeOfsY  = cfg.GetInt("Metroid.Visual.HudHpGaugeOffsetY");
-    c.hpGaugeAnchor = cfg.GetInt("Metroid.Visual.HudHpGaugeAnchor");
-    c.hpGaugePosMode = cfg.GetInt("Metroid.Visual.HudHpGaugePosMode");
-    c.hpGaugePosX  = cfg.GetInt("Metroid.Visual.HudHpGaugePosX");
-    c.hpGaugePosY  = cfg.GetInt("Metroid.Visual.HudHpGaugePosY");
-    c.hpAutoColor  = cfg.GetBool("Metroid.Visual.HudHpGaugeAutoColor");
-    c.hpGaugeColor = QColor(cfg.GetInt("Metroid.Visual.HudHpGaugeColorR"),
-                            cfg.GetInt("Metroid.Visual.HudHpGaugeColorG"),
-                            cfg.GetInt("Metroid.Visual.HudHpGaugeColorB"));
-    // Weapon / Ammo
-    c.wpnX = cfg.GetInt("Metroid.Visual.HudWeaponX");
-    c.wpnY = cfg.GetInt("Metroid.Visual.HudWeaponY");
-    c.ammoAlign = cfg.GetInt("Metroid.Visual.HudAmmoAlign");
-    { auto s = cfg.GetString("Metroid.Visual.HudAmmoPrefix");
-      std::strncpy(c.ammoPrefix, s.c_str(), sizeof(c.ammoPrefix)-1);
-      c.ammoPrefix[sizeof(c.ammoPrefix)-1] = '\0'; }
-    c.ammoTextColor = QColor(cfg.GetInt("Metroid.Visual.HudAmmoTextColorR"),
-                              cfg.GetInt("Metroid.Visual.HudAmmoTextColorG"),
-                              cfg.GetInt("Metroid.Visual.HudAmmoTextColorB"));
-    c.iconShow = cfg.GetBool("Metroid.Visual.HudWeaponIconShow");
-    c.iconColorOverlay = cfg.GetBool("Metroid.Visual.HudWeaponIconColorOverlay");
-    c.iconMode = cfg.GetInt("Metroid.Visual.HudWeaponIconMode");
-    c.iconOfsX = cfg.GetInt("Metroid.Visual.HudWeaponIconOffsetX");
-    c.iconOfsY = cfg.GetInt("Metroid.Visual.HudWeaponIconOffsetY");
-    c.iconPosX    = cfg.GetInt("Metroid.Visual.HudWeaponIconPosX");
-    c.iconPosY    = cfg.GetInt("Metroid.Visual.HudWeaponIconPosY");
-    c.iconAnchorX = cfg.GetInt("Metroid.Visual.HudWeaponIconAnchorX");
-    c.iconAnchorY = cfg.GetInt("Metroid.Visual.HudWeaponIconAnchorY");
-    c.ammoGauge     = cfg.GetBool("Metroid.Visual.HudAmmoGauge");
-    c.ammoGaugeOri  = cfg.GetInt("Metroid.Visual.HudAmmoGaugeOrientation");
-    c.ammoGaugeLen  = cfg.GetInt("Metroid.Visual.HudAmmoGaugeLength");
-    c.ammoGaugeWid  = cfg.GetInt("Metroid.Visual.HudAmmoGaugeWidth");
-    c.ammoGaugeOfsX = cfg.GetInt("Metroid.Visual.HudAmmoGaugeOffsetX");
-    c.ammoGaugeOfsY = cfg.GetInt("Metroid.Visual.HudAmmoGaugeOffsetY");
-    c.ammoGaugeAnchor = cfg.GetInt("Metroid.Visual.HudAmmoGaugeAnchor");
-    c.ammoGaugePosMode = cfg.GetInt("Metroid.Visual.HudAmmoGaugePosMode");
-    c.ammoGaugePosX  = cfg.GetInt("Metroid.Visual.HudAmmoGaugePosX");
-    c.ammoGaugePosY  = cfg.GetInt("Metroid.Visual.HudAmmoGaugePosY");
-    c.ammoGaugeColor = QColor(cfg.GetInt("Metroid.Visual.HudAmmoGaugeColorR"),
-                              cfg.GetInt("Metroid.Visual.HudAmmoGaugeColorG"),
-                              cfg.GetInt("Metroid.Visual.HudAmmoGaugeColorB"));
-    // Crosshair — general
-    c.chColor = QColor(cfg.GetInt("Metroid.Visual.CrosshairColorR"),
-                       cfg.GetInt("Metroid.Visual.CrosshairColorG"),
-                       cfg.GetInt("Metroid.Visual.CrosshairColorB"));
-    c.chOutline          = cfg.GetBool("Metroid.Visual.CrosshairOutline");
-    c.chOutlineOpacity   = cfg.GetDouble("Metroid.Visual.CrosshairOutlineOpacity");
-    c.chOutlineThickness = cfg.GetInt("Metroid.Visual.CrosshairOutlineThickness");
-    if (c.chOutlineThickness <= 0) c.chOutlineThickness = 1;
-    c.chCenterDot    = cfg.GetBool("Metroid.Visual.CrosshairCenterDot");
-    c.chDotOpacity   = cfg.GetDouble("Metroid.Visual.CrosshairDotOpacity");
-    c.chDotThickness = cfg.GetInt("Metroid.Visual.CrosshairDotThickness");
-    if (c.chDotThickness <= 0) c.chDotThickness = 1;
-    c.chTStyle       = cfg.GetBool("Metroid.Visual.CrosshairTStyle");
-    // Inner
-    c.chInnerShow    = cfg.GetBool("Metroid.Visual.CrosshairInnerShow");
-    c.chInnerOpacity = cfg.GetDouble("Metroid.Visual.CrosshairInnerOpacity");
-    c.chInnerLengthX = cfg.GetInt("Metroid.Visual.CrosshairInnerLengthX");
-    c.chInnerLengthY = cfg.GetInt("Metroid.Visual.CrosshairInnerLengthY");
-    c.chInnerThickness = cfg.GetInt("Metroid.Visual.CrosshairInnerThickness");
-    if (c.chInnerThickness <= 0) c.chInnerThickness = 1;
-    c.chInnerOffset  = cfg.GetInt("Metroid.Visual.CrosshairInnerOffset");
-    // Outer
-    c.chOuterShow    = cfg.GetBool("Metroid.Visual.CrosshairOuterShow");
-    c.chOuterOpacity = cfg.GetDouble("Metroid.Visual.CrosshairOuterOpacity");
-    c.chOuterLengthX = cfg.GetInt("Metroid.Visual.CrosshairOuterLengthX");
-    c.chOuterLengthY = cfg.GetInt("Metroid.Visual.CrosshairOuterLengthY");
-    c.chOuterThickness = cfg.GetInt("Metroid.Visual.CrosshairOuterThickness");
-    if (c.chOuterThickness <= 0) c.chOuterThickness = 1;
-    c.chOuterOffset  = cfg.GetInt("Metroid.Visual.CrosshairOuterOffset");
-    // Match Status HUD
-    c.matchStatusShow     = cfg.GetBool("Metroid.Visual.HudMatchStatusShow");
-    c.matchStatusX        = cfg.GetInt("Metroid.Visual.HudMatchStatusX");
-    c.matchStatusY        = cfg.GetInt("Metroid.Visual.HudMatchStatusY");
-    c.matchStatusLabelOfsX = cfg.GetInt("Metroid.Visual.HudMatchStatusLabelOfsX");
-    c.matchStatusLabelOfsY = cfg.GetInt("Metroid.Visual.HudMatchStatusLabelOfsY");
-    c.matchStatusLabelPos  = cfg.GetInt("Metroid.Visual.HudMatchStatusLabelPos");
-    // Per-mode label strings
-    auto copyLabel = [](char* dst, size_t sz, const std::string& s) {
-        std::strncpy(dst, s.c_str(), sz - 1); dst[sz - 1] = '\0';
-    };
-    copyLabel(c.matchStatusLabelPoints,    sizeof(c.matchStatusLabelPoints),    cfg.GetString("Metroid.Visual.HudMatchStatusLabelPoints"));
-    copyLabel(c.matchStatusLabelOctoliths, sizeof(c.matchStatusLabelOctoliths), cfg.GetString("Metroid.Visual.HudMatchStatusLabelOctoliths"));
-    copyLabel(c.matchStatusLabelLives,     sizeof(c.matchStatusLabelLives),     cfg.GetString("Metroid.Visual.HudMatchStatusLabelLives"));
-    copyLabel(c.matchStatusLabelRingTime,  sizeof(c.matchStatusLabelRingTime),  cfg.GetString("Metroid.Visual.HudMatchStatusLabelRingTime"));
-    copyLabel(c.matchStatusLabelPrimeTime, sizeof(c.matchStatusLabelPrimeTime), cfg.GetString("Metroid.Visual.HudMatchStatusLabelPrimeTime"));
-    c.matchStatusColor = QColor(cfg.GetInt("Metroid.Visual.HudMatchStatusColorR"),
-                           cfg.GetInt("Metroid.Visual.HudMatchStatusColorG"),
-                           cfg.GetInt("Metroid.Visual.HudMatchStatusColorB"));
-    // Sub-colors: invalid QColor means "use overall matchStatusColor"
-    auto readSubColor = [&](const char* keyOverall,
-                            const char* keyR, const char* keyG, const char* keyB) -> QColor {
-        if (cfg.GetBool(keyOverall)) return QColor(); // invalid = inherit
-        return QColor(cfg.GetInt(keyR), cfg.GetInt(keyG), cfg.GetInt(keyB));
-    };
-    c.matchStatusLabelColor = readSubColor(
-        "Metroid.Visual.HudMatchStatusLabelColorOverall",
-        "Metroid.Visual.HudMatchStatusLabelColorR",
-        "Metroid.Visual.HudMatchStatusLabelColorG",
-        "Metroid.Visual.HudMatchStatusLabelColorB");
-    c.matchStatusValueColor = readSubColor(
-        "Metroid.Visual.HudMatchStatusValueColorOverall",
-        "Metroid.Visual.HudMatchStatusValueColorR",
-        "Metroid.Visual.HudMatchStatusValueColorG",
-        "Metroid.Visual.HudMatchStatusValueColorB");
-    c.matchStatusSepColor = readSubColor(
-        "Metroid.Visual.HudMatchStatusSepColorOverall",
-        "Metroid.Visual.HudMatchStatusSepColorR",
-        "Metroid.Visual.HudMatchStatusSepColorG",
-        "Metroid.Visual.HudMatchStatusSepColorB");
-    c.matchStatusGoalColor = readSubColor(
-        "Metroid.Visual.HudMatchStatusGoalColorOverall",
-        "Metroid.Visual.HudMatchStatusGoalColorR",
-        "Metroid.Visual.HudMatchStatusGoalColorG",
-        "Metroid.Visual.HudMatchStatusGoalColorB");
-    // Bomb Left
-    c.bombLeftShow     = cfg.GetBool("Metroid.Visual.HudBombLeftShow");
-    c.bombLeftTextShow = cfg.GetBool("Metroid.Visual.HudBombLeftTextShow");
-    c.bombLeftX     = cfg.GetInt("Metroid.Visual.HudBombLeftX");
-    c.bombLeftY     = cfg.GetInt("Metroid.Visual.HudBombLeftY");
-    c.bombLeftAlign = cfg.GetInt("Metroid.Visual.HudBombLeftAlign");
-    c.bombLeftColor = QColor(cfg.GetInt("Metroid.Visual.HudBombLeftColorR"),
-                             cfg.GetInt("Metroid.Visual.HudBombLeftColorG"),
-                             cfg.GetInt("Metroid.Visual.HudBombLeftColorB"));
-    { auto s = cfg.GetString("Metroid.Visual.HudBombLeftPrefix");
-      std::strncpy(c.bombLeftPrefix, s.c_str(), sizeof(c.bombLeftPrefix)-1);
-      c.bombLeftPrefix[sizeof(c.bombLeftPrefix)-1] = '\0'; }
-    { auto s = cfg.GetString("Metroid.Visual.HudBombLeftSuffix");
-      std::strncpy(c.bombLeftSuffix, s.c_str(), sizeof(c.bombLeftSuffix)-1);
-      c.bombLeftSuffix[sizeof(c.bombLeftSuffix)-1] = '\0'; }
-    // Bomb Left Icon
-    c.bombIconShow         = cfg.GetBool("Metroid.Visual.HudBombLeftIconShow");
-    c.bombIconColorOverlay = cfg.GetBool("Metroid.Visual.HudBombLeftIconColorOverlay");
-    c.bombIconColor  = QColor(cfg.GetInt("Metroid.Visual.HudBombLeftIconColorR"),
-                              cfg.GetInt("Metroid.Visual.HudBombLeftIconColorG"),
-                              cfg.GetInt("Metroid.Visual.HudBombLeftIconColorB"));
-    c.bombIconMode   = cfg.GetInt("Metroid.Visual.HudBombLeftIconMode");
-    c.bombIconOfsX   = cfg.GetInt("Metroid.Visual.HudBombLeftIconOfsX");
-    c.bombIconOfsY   = cfg.GetInt("Metroid.Visual.HudBombLeftIconOfsY");
-    c.bombIconPosX   = cfg.GetInt("Metroid.Visual.HudBombLeftIconPosX");
-    c.bombIconPosY   = cfg.GetInt("Metroid.Visual.HudBombLeftIconPosY");
-    c.bombIconAnchorX = cfg.GetInt("Metroid.Visual.HudBombLeftIconAnchorX");
-    c.bombIconAnchorY = cfg.GetInt("Metroid.Visual.HudBombLeftIconAnchorY");
-    // Rank & Time HUD
-    c.rankShow  = cfg.GetBool("Metroid.Visual.HudRankShow");
-    c.rankX     = cfg.GetInt("Metroid.Visual.HudRankX");
-    c.rankY     = cfg.GetInt("Metroid.Visual.HudRankY");
-    c.rankAlign = cfg.GetInt("Metroid.Visual.HudRankAlign");
-    c.rankColor = QColor(cfg.GetInt("Metroid.Visual.HudRankColorR"),
-                         cfg.GetInt("Metroid.Visual.HudRankColorG"),
-                         cfg.GetInt("Metroid.Visual.HudRankColorB"));
-    { auto s = cfg.GetString("Metroid.Visual.HudRankPrefix");
-      std::strncpy(c.rankPrefix, s.c_str(), sizeof(c.rankPrefix)-1);
-      c.rankPrefix[sizeof(c.rankPrefix)-1] = '\0'; }
-    c.rankShowOrdinal = cfg.GetBool("Metroid.Visual.HudRankShowOrdinal");
-    { auto s = cfg.GetString("Metroid.Visual.HudRankSuffix");
-      std::strncpy(c.rankSuffix, s.c_str(), sizeof(c.rankSuffix)-1);
-      c.rankSuffix[sizeof(c.rankSuffix)-1] = '\0'; }
-    c.timeLeftShow  = cfg.GetBool("Metroid.Visual.HudTimeLeftShow");
-    c.timeLeftX     = cfg.GetInt("Metroid.Visual.HudTimeLeftX");
-    c.timeLeftY     = cfg.GetInt("Metroid.Visual.HudTimeLeftY");
-    c.timeLeftAlign = cfg.GetInt("Metroid.Visual.HudTimeLeftAlign");
-    c.timeLeftColor = QColor(cfg.GetInt("Metroid.Visual.HudTimeLeftColorR"),
-                              cfg.GetInt("Metroid.Visual.HudTimeLeftColorG"),
-                              cfg.GetInt("Metroid.Visual.HudTimeLeftColorB"));
-    // Bottom screen radar overlay
-    c.radarShow      = cfg.GetBool("Metroid.Visual.BtmOverlayEnable");
-    c.radarDstX      = cfg.GetInt("Metroid.Visual.BtmOverlayDstX");
-    c.radarDstY      = cfg.GetInt("Metroid.Visual.BtmOverlayDstY");
-    c.radarDstSize   = std::max(cfg.GetInt("Metroid.Visual.BtmOverlayDstSize"), 1);
-    c.radarOpacity   = std::clamp(cfg.GetDouble("Metroid.Visual.BtmOverlayOpacity"), 0.0, 1.0);
-    c.radarSrcRadius = std::max(cfg.GetInt("Metroid.Visual.BtmOverlaySrcRadius"), 1);
-    c.radarDstRect   = QRect(c.radarDstX, c.radarDstY, c.radarDstSize, c.radarDstSize);
-    c.radarClipPath  = QPainterPath();
-    c.radarClipPath.addEllipse(c.radarDstRect);
-    c.timeLimitShow   = cfg.GetBool("Metroid.Visual.HudTimeLimitShow");
-    c.timeLimitX      = cfg.GetInt("Metroid.Visual.HudTimeLimitX");
-    c.timeLimitY      = cfg.GetInt("Metroid.Visual.HudTimeLimitY");
-    c.timeLimitAlign  = cfg.GetInt("Metroid.Visual.HudTimeLimitAlign");
-    c.timeLimitColor = QColor(cfg.GetInt("Metroid.Visual.HudTimeLimitColorR"),
-                               cfg.GetInt("Metroid.Visual.HudTimeLimitColorG"),
-                               cfg.GetInt("Metroid.Visual.HudTimeLimitColorB"));
+    LoadHpConfig(c.hp, cfg);
+    LoadWeaponConfig(c.weapon, cfg);
+    LoadCrosshairConfig(c.crosshair, cfg);
+    LoadMatchStatusConfig(c.matchStatus, cfg);
+    LoadBombLeftConfig(c.bombLeft, cfg);
+    LoadRankTimeConfig(c.rankTime, cfg);
+    LoadRadarOverlayConfig(c.radar, cfg);
     ++s_cacheEpoch;
     if (s_cacheEpoch == 0) s_cacheEpoch = 1;
 }
@@ -675,395 +645,109 @@ void CustomHud_OnMatchJoin(melonDS::u8* ram, const RomAddresses& rom)
 
     b.valid = true;
 }
-static const char* ResolveMatchStatusLabel(uint8_t mode, const CachedHudConfig& c)
+static const char* ResolveMatchStatusLabel(uint8_t mode, const MatchStatusHudConfig& c)
 {
     switch (mode) {
     case MODE_BATTLE:
-    case MODE_NODES:        return c.matchStatusLabelPoints;
+    case MODE_NODES: return c.matchStatusLabelPoints;
     case MODE_BOUNTY:
-    case MODE_CAPTURE:      return c.matchStatusLabelOctoliths;
-    case MODE_SURVIVAL:     return c.matchStatusLabelLives;
-    case MODE_DEFENDER:     return c.matchStatusLabelRingTime;
+    case MODE_CAPTURE: return c.matchStatusLabelOctoliths;
+    case MODE_SURVIVAL: return c.matchStatusLabelLives;
+    case MODE_DEFENDER: return c.matchStatusLabelRingTime;
     case MODE_PRIME_HUNTER: return c.matchStatusLabelPrimeTime;
-    default:                return "";
+    default: return "";
     }
 }
-
-struct MatchStatusStringCache {
-    uint32_t configEpoch;
-    uint8_t  mode;
-    uint8_t  xx;
-    int      currentValue;
-    int      goalValue;
-    bool     hasGoal;
-    bool     isTimeMode;
-    bool     valid;
-    char     curBuf[24];
-    char     sepBuf[4];
-    char     goalBuf[24];
-};
-
-struct RankStringCache {
-    uint32_t configEpoch;
-    uint8_t  rankByte;
-    bool     showOrdinal;
-    bool     valid;
-    char     buf[64];
-};
-
-struct TimeStringCache {
-    uint32_t configEpoch;
-    int      value;
-    bool     valid;
-    char     buf[16];
-};
-
-static inline void UpdateMatchStatusStrings(MatchStatusStringCache& cache,
-                                            int currentValue, int goalValue,
-                                            bool isTimeMode, uint8_t mode, uint8_t xx)
+struct MatchStatusResolvedState { uint8_t mode, xx; int currentValue, goalValue; bool isTimeMode; };
+struct MatchStatusStringCache { uint32_t configEpoch; uint8_t mode, xx; int currentValue, goalValue; bool hasGoal, isTimeMode, valid; char curBuf[24], sepBuf[4], goalBuf[24]; };
+struct RankStringCache { uint32_t configEpoch; uint8_t rankByte; bool showOrdinal, valid; char buf[64]; };
+struct TimeStringCache { uint32_t configEpoch; int value; bool valid; char buf[16]; };
+static inline void UpdateMatchStatusStrings(MatchStatusStringCache& cache, const MatchStatusResolvedState& state)
 {
-    const bool hasGoal = isTimeMode || goalValue > 0;
-    if (cache.valid && cache.configEpoch == s_cacheEpoch && cache.currentValue == currentValue
-        && cache.goalValue == goalValue && cache.isTimeMode == isTimeMode
-        && cache.mode == mode && cache.xx == xx && cache.hasGoal == hasGoal)
-    {
-        return;
-    }
-
-    cache.currentValue = currentValue;
-    cache.goalValue = goalValue;
-    cache.isTimeMode = isTimeMode;
-    cache.mode = mode;
-    cache.xx = xx;
-    cache.hasGoal = hasGoal;
-    cache.configEpoch = s_cacheEpoch;
-
-    if (isTimeMode) {
-        FormatTime(cache.curBuf, sizeof(cache.curBuf), currentValue);
-        FormatTime(cache.goalBuf, sizeof(cache.goalBuf), goalValue);
-        std::strncpy(cache.sepBuf, "/", sizeof(cache.sepBuf));
-        cache.sepBuf[sizeof(cache.sepBuf) - 1] = '\0';
-    } else if (goalValue > 0) {
-        std::snprintf(cache.curBuf, sizeof(cache.curBuf), "%d", currentValue);
-        std::snprintf(cache.goalBuf, sizeof(cache.goalBuf), "%d", goalValue);
-        std::strncpy(cache.sepBuf, " / ", sizeof(cache.sepBuf));
-        cache.sepBuf[sizeof(cache.sepBuf) - 1] = '\0';
-    } else {
-        std::snprintf(cache.curBuf, sizeof(cache.curBuf), "%d (XX=0x%02X)", currentValue, xx);
-        cache.goalBuf[0] = '\0';
-        cache.sepBuf[0] = '\0';
-    }
-
+    const bool hasGoal = state.isTimeMode || state.goalValue > 0;
+    if (cache.valid && cache.configEpoch == s_cacheEpoch && cache.currentValue == state.currentValue && cache.goalValue == state.goalValue && cache.isTimeMode == state.isTimeMode && cache.mode == state.mode && cache.xx == state.xx && cache.hasGoal == hasGoal) return;
+    cache.currentValue = state.currentValue; cache.goalValue = state.goalValue; cache.isTimeMode = state.isTimeMode; cache.mode = state.mode; cache.xx = state.xx; cache.hasGoal = hasGoal; cache.configEpoch = s_cacheEpoch;
+    if (state.isTimeMode) { FormatTime(cache.curBuf, sizeof(cache.curBuf), state.currentValue); FormatTime(cache.goalBuf, sizeof(cache.goalBuf), state.goalValue); std::strncpy(cache.sepBuf, "/", sizeof(cache.sepBuf)); cache.sepBuf[sizeof(cache.sepBuf)-1]='\0'; }
+    else if (state.goalValue > 0) { std::snprintf(cache.curBuf, sizeof(cache.curBuf), "%d", state.currentValue); std::snprintf(cache.goalBuf, sizeof(cache.goalBuf), "%d", state.goalValue); std::strncpy(cache.sepBuf, " / ", sizeof(cache.sepBuf)); cache.sepBuf[sizeof(cache.sepBuf)-1]='\0'; }
+    else { std::snprintf(cache.curBuf, sizeof(cache.curBuf), "%d (XX=0x%02X)", state.currentValue, state.xx); cache.goalBuf[0]='\0'; cache.sepBuf[0]='\0'; }
     cache.valid = true;
 }
-
-static inline const char* UpdateRankString(RankStringCache& cache, uint8_t rankByte,
-                                           bool showOrdinal, const CachedHudConfig& c)
+static inline const char* UpdateRankString(RankStringCache& cache, uint8_t rankByte, bool showOrdinal, const RankTimeHudConfig& c)
 {
-    if (!cache.valid || cache.configEpoch != s_cacheEpoch || cache.rankByte != rankByte
-        || cache.showOrdinal != showOrdinal)
-    {
+    if (!cache.valid || cache.configEpoch != s_cacheEpoch || cache.rankByte != rankByte || cache.showOrdinal != showOrdinal) {
         static const char* kOrdinals[4] = { "st", "nd", "rd", "th" };
-        if (showOrdinal)
-            std::snprintf(cache.buf, sizeof(cache.buf), "%s%u%s%s", c.rankPrefix, rankByte + 1u, kOrdinals[rankByte], c.rankSuffix);
-        else
-            std::snprintf(cache.buf, sizeof(cache.buf), "%s%u%s", c.rankPrefix, rankByte + 1u, c.rankSuffix);
-        cache.rankByte = rankByte;
-        cache.showOrdinal = showOrdinal;
-        cache.configEpoch = s_cacheEpoch;
-        cache.valid = true;
+        if (showOrdinal) std::snprintf(cache.buf, sizeof(cache.buf), "%s%u%s%s", c.rankPrefix, rankByte + 1u, kOrdinals[rankByte], c.rankSuffix);
+        else std::snprintf(cache.buf, sizeof(cache.buf), "%s%u%s", c.rankPrefix, rankByte + 1u, c.rankSuffix);
+        cache.rankByte = rankByte; cache.showOrdinal = showOrdinal; cache.configEpoch = s_cacheEpoch; cache.valid = true;
     }
     return cache.buf;
 }
-
 static inline const char* UpdateTimeString(TimeStringCache& cache, int value, bool minutesOnly)
 {
-    if (!cache.valid || cache.configEpoch != s_cacheEpoch || cache.value != value) {
-        if (minutesOnly)
-            FormatMinuteTime(cache.buf, sizeof(cache.buf), value);
-        else
-            FormatTime(cache.buf, sizeof(cache.buf), value);
-        cache.value = value;
-        cache.configEpoch = s_cacheEpoch;
-        cache.valid = true;
-    }
+    if (!cache.valid || cache.configEpoch != s_cacheEpoch || cache.value != value) { if (minutesOnly) FormatMinuteTime(cache.buf, sizeof(cache.buf), value); else FormatTime(cache.buf, sizeof(cache.buf), value); cache.value = value; cache.configEpoch = s_cacheEpoch; cache.valid = true; }
     return cache.buf;
 }
-
-static void DrawMatchStatusHud(QPainter* p, melonDS::u8* ram,
-                                const RomAddresses& rom, uint8_t playerPos,
-                                bool isAdventure, const CachedHudConfig& c)
+static bool ComputeMatchStatusState(melonDS::u8* ram, const RomAddresses& rom, uint8_t playerPos, MatchStatusResolvedState& outState)
 {
-    if (!c.matchStatusShow || isAdventure) return;
-
-    static TextMeasureCache s_curTextCache  = { 0, "", 0, 0, false };
-    static TextMeasureCache s_sepTextCache  = { 0, "", 0, 0, false };
-    static TextMeasureCache s_goalTextCache = { 0, "", 0, 0, false };
-    const QFontMetrics fm = p->fontMetrics();
-    const int fontPixelSize = p->font().pixelSize();
-
-    const BattleMatchState* match = s_battleState.valid ? &s_battleState : nullptr;
-    uint8_t mode = match ? match->mode : Read8(ram, rom.battleMode);
-    if (mode < MODE_BATTLE || mode > MODE_SURVIVAL) return;
-
-    uint32_t playerOfs = static_cast<uint32_t>(playerPos) * 4;
-    int currentValue = 0;
-    int goalValue = match ? match->goalValue : 0;
-    bool isTimeMode = match ? match->isTimeMode : false;
-    uint8_t xx = match ? match->keyXX : 0;
-
-    uint32_t ts4_local = match ? 0u : Read32(ram, rom.battleSettings + 4);
-    uint8_t teamNibble = match ? match->teamNibble : static_cast<uint8_t>(ts4_local & 0x0F);
-    bool isTeamGame    = match ? match->isTeamGame  : ((ts4_local & 0x10) != 0);
-
-    auto teamSum = [&](uint32_t baseAddr) -> int {
-        if (isTeamGame && playerPos < 4) {
-            uint8_t myTeam = (teamNibble >> playerPos) & 1;
-            int sum = 0;
-            for (int p = 0; p < 4; p++)
-                if (((teamNibble >> p) & 1) == myTeam)
-                    sum += static_cast<int>(Read32(ram, baseAddr + p * 4));
-            return sum;
-        }
-        return static_cast<int>(Read32(ram, baseAddr + playerOfs));
-    };
-
-    switch (mode) {
-    case MODE_BATTLE:
-    case MODE_NODES:
-    case MODE_BOUNTY:
-    case MODE_CAPTURE:
-        currentValue = teamSum(rom.basePoint);
-        break;
-    case MODE_SURVIVAL:
-        currentValue = teamSum(rom.basePoint - 0xB0);
-        break;
-    case MODE_DEFENDER:
-    case MODE_PRIME_HUNTER:
-        currentValue = teamSum(rom.basePoint - 0x180) / 60;
-        break;
-    default:
-        return;
-    }
-
-    if (!match) {
-        uint32_t settings = Read32(ram, rom.battleSettings);
-        xx = (settings >> 20) & 0xFE;
-
-        switch (mode) {
-        case MODE_BATTLE:
-        case MODE_NODES:
-        case MODE_BOUNTY:
-        case MODE_CAPTURE:
-            goalValue = LookupGoal(mode, xx);
-            break;
-        case MODE_SURVIVAL:
-            goalValue = LookupGoal(mode, xx);
-            break;
-        case MODE_DEFENDER:
-        case MODE_PRIME_HUNTER: {
-            uint32_t timeSetting = Read32(ram, rom.battleSettings + 4);
-            uint8_t timeGoalRaw = static_cast<uint8_t>(((timeSetting >> 5) & 0x0F) << 1);
-            goalValue = LookupTimeGoalSec(timeGoalRaw);
-            isTimeMode = true;
-            break;
-        }
-        default:
-            return;
-        }
-    }
-
-    if (mode == MODE_SURVIVAL && goalValue > 0) {
-        currentValue = goalValue - currentValue;
-        if (currentValue < 0) currentValue = 0;
-    }
-
-    static MatchStatusStringCache s_matchStringCache = { 0, 0, 0, 0, 0, false, false, false, "", "", "" };
-    UpdateMatchStatusStrings(s_matchStringCache, currentValue, goalValue, isTimeMode, mode, xx);
-
-    auto eff = [&](const QColor& sub) -> const QColor& {
-        return sub.isValid() ? sub : c.matchStatusColor;
-    };
-
-    int vx = c.matchStatusX;
-    int vy = c.matchStatusY;
-    int curW = 0, curH = 0;
-    MeasureTextCached(fm, fontPixelSize, s_curTextCache, s_matchStringCache.curBuf, curW, curH);
-
-    static TextBitmapCache s_curBitmapCache = { 0, QColor(), "", 0, 0, false, QImage() };
-    static TextBitmapCache s_sepBitmapCache = { 0, QColor(), "", 0, 0, false, QImage() };
-    static TextBitmapCache s_goalBitmapCache = { 0, QColor(), "", 0, 0, false, QImage() };
-    static TextBitmapCache s_labelBitmapCache = { 0, QColor(), "", 0, 0, false, QImage() };
-
-    PrepareTextBitmapCached(fm, p->font(), fontPixelSize, s_curBitmapCache, s_matchStringCache.curBuf, eff(c.matchStatusValueColor));
-    DrawCachedText(p, s_curBitmapCache, vx, vy);
-
-    if (s_matchStringCache.hasGoal) {
-        int sepW = 0, sepH = 0, goalW = 0, goalH = 0;
-        MeasureTextCached(fm, fontPixelSize, s_sepTextCache, s_matchStringCache.sepBuf, sepW, sepH);
-        MeasureTextCached(fm, fontPixelSize, s_goalTextCache, s_matchStringCache.goalBuf, goalW, goalH);
-
-        int x = vx + curW;
-        PrepareTextBitmapCached(fm, p->font(), fontPixelSize, s_sepBitmapCache, s_matchStringCache.sepBuf, eff(c.matchStatusSepColor));
-        DrawCachedText(p, s_sepBitmapCache, x, vy);
-        x += sepW;
-        PrepareTextBitmapCached(fm, p->font(), fontPixelSize, s_goalBitmapCache, s_matchStringCache.goalBuf, eff(c.matchStatusGoalColor));
-        DrawCachedText(p, s_goalBitmapCache, x, vy);
-    }
-
-    const char* label = ResolveMatchStatusLabel(mode, c);
-    if (label[0] == '\0') return;
-
-    int lx, ly;
-    switch (c.matchStatusLabelPos) {
-    default:
-    case 0:
-        lx = vx;
-        ly = vy - 10;
-        break;
-    case 1:
-        lx = vx;
-        ly = vy + 10;
-        break;
-    case 2:
-        lx = vx - 50;
-        ly = vy;
-        break;
-    case 3:
-        lx = vx + 50;
-        ly = vy;
-        break;
-    case 4:
-        lx = vx;
-        ly = vy;
-        break;
-    }
-    lx += c.matchStatusLabelOfsX;
-    ly += c.matchStatusLabelOfsY;
-
-    PrepareTextBitmapCached(fm, p->font(), fontPixelSize, s_labelBitmapCache, label, eff(c.matchStatusLabelColor));
-    DrawCachedText(p, s_labelBitmapCache, lx, ly);
+    const BattleMatchState* match = s_battleState.valid ? &s_battleState : nullptr; uint8_t mode = match ? match->mode : Read8(ram, rom.battleMode); if (mode < MODE_BATTLE || mode > MODE_SURVIVAL) return false;
+    uint32_t playerOfs = static_cast<uint32_t>(playerPos) * 4; int currentValue = 0; int goalValue = match ? match->goalValue : 0; bool isTimeMode = match ? match->isTimeMode : false; uint8_t xx = match ? match->keyXX : 0;
+    uint32_t ts4Local = match ? 0u : Read32(ram, rom.battleSettings + 4); uint8_t teamNibble = match ? match->teamNibble : static_cast<uint8_t>(ts4Local & 0x0F); bool isTeamGame = match ? match->isTeamGame : ((ts4Local & 0x10) != 0);
+    auto teamSum = [&](uint32_t baseAddr) -> int { if (isTeamGame && playerPos < 4) { uint8_t myTeam = (teamNibble >> playerPos) & 1; int sum = 0; for (int p = 0; p < 4; ++p) if (((teamNibble >> p) & 1) == myTeam) sum += static_cast<int>(Read32(ram, baseAddr + p * 4)); return sum; } return static_cast<int>(Read32(ram, baseAddr + playerOfs)); };
+    switch (mode) { case MODE_BATTLE: case MODE_NODES: case MODE_BOUNTY: case MODE_CAPTURE: currentValue = teamSum(rom.basePoint); break; case MODE_SURVIVAL: currentValue = teamSum(rom.basePoint - 0xB0); break; case MODE_DEFENDER: case MODE_PRIME_HUNTER: currentValue = teamSum(rom.basePoint - 0x180) / 60; break; default: return false; }
+    if (!match) { uint32_t settings = Read32(ram, rom.battleSettings); xx = (settings >> 20) & 0xFE; switch (mode) { case MODE_BATTLE: case MODE_NODES: case MODE_BOUNTY: case MODE_CAPTURE: goalValue = LookupGoal(mode, xx); break; case MODE_SURVIVAL: goalValue = LookupGoal(mode, xx); break; case MODE_DEFENDER: case MODE_PRIME_HUNTER: { uint32_t timeSetting = Read32(ram, rom.battleSettings + 4); uint8_t timeGoalRaw = static_cast<uint8_t>(((timeSetting >> 5) & 0x0F) << 1); goalValue = LookupTimeGoalSec(timeGoalRaw); isTimeMode = true; break; } default: return false; } }
+    if (mode == MODE_SURVIVAL && goalValue > 0) { currentValue = goalValue - currentValue; if (currentValue < 0) currentValue = 0; }
+    outState = { mode, xx, currentValue, goalValue, isTimeMode }; return true;
 }
-
+static void DrawMatchStatusText(QPainter* p, const QFontMetrics& fm, int fontPixelSize, const MatchStatusResolvedState& state, const MatchStatusHudConfig& c)
+{
+    static TextMeasureCache s_curTextCache = { 0, "", 0, 0, false }, s_sepTextCache = { 0, "", 0, 0, false }, s_goalTextCache = { 0, "", 0, 0, false };
+    static TextBitmapCache s_curBitmapCache = { 0, QColor(), "", 0, 0, false, QImage() }, s_sepBitmapCache = { 0, QColor(), "", 0, 0, false, QImage() }, s_goalBitmapCache = { 0, QColor(), "", 0, 0, false, QImage() }, s_labelBitmapCache = { 0, QColor(), "", 0, 0, false, QImage() };
+    static MatchStatusStringCache s_matchStringCache = { 0, 0, 0, 0, 0, false, false, false, "", "", "" };
+    UpdateMatchStatusStrings(s_matchStringCache, state);
+    auto eff = [&](const QColor& sub) -> const QColor& { return sub.isValid() ? sub : c.matchStatusColor; };
+    int vx = c.matchStatusX, vy = c.matchStatusY, curW = 0, curH = 0;
+    MeasureTextCached(fm, fontPixelSize, s_curTextCache, s_matchStringCache.curBuf, curW, curH);
+    PrepareTextBitmapCached(fm, p->font(), fontPixelSize, s_curBitmapCache, s_matchStringCache.curBuf, eff(c.matchStatusValueColor)); DrawCachedText(p, s_curBitmapCache, vx, vy);
+    if (s_matchStringCache.hasGoal) { int sepW = 0, sepH = 0, goalW = 0, goalH = 0; MeasureTextCached(fm, fontPixelSize, s_sepTextCache, s_matchStringCache.sepBuf, sepW, sepH); MeasureTextCached(fm, fontPixelSize, s_goalTextCache, s_matchStringCache.goalBuf, goalW, goalH); int x = vx + curW; PrepareTextBitmapCached(fm, p->font(), fontPixelSize, s_sepBitmapCache, s_matchStringCache.sepBuf, eff(c.matchStatusSepColor)); DrawCachedText(p, s_sepBitmapCache, x, vy); x += sepW; PrepareTextBitmapCached(fm, p->font(), fontPixelSize, s_goalBitmapCache, s_matchStringCache.goalBuf, eff(c.matchStatusGoalColor)); DrawCachedText(p, s_goalBitmapCache, x, vy); }
+    const char* label = ResolveMatchStatusLabel(state.mode, c); if (label[0] == '\0') return; int lx = vx, ly = vy; switch (c.matchStatusLabelPos) { default: case 0: ly = vy - 10; break; case 1: ly = vy + 10; break; case 2: lx = vx - 50; break; case 3: lx = vx + 50; break; case 4: break; } lx += c.matchStatusLabelOfsX; ly += c.matchStatusLabelOfsY; PrepareTextBitmapCached(fm, p->font(), fontPixelSize, s_labelBitmapCache, label, eff(c.matchStatusLabelColor)); DrawCachedText(p, s_labelBitmapCache, lx, ly);
+}
+static void DrawMatchStatusHud(QPainter* p, melonDS::u8* ram, const RomAddresses& rom, uint8_t playerPos, bool isAdventure, const CachedHudConfig& c)
+{
+    if (!c.matchStatus.matchStatusShow || isAdventure) return; MatchStatusResolvedState state = {}; if (!ComputeMatchStatusState(ram, rom, playerPos, state)) return; const QFontMetrics fm = p->fontMetrics(); const int fontPixelSize = p->font().pixelSize(); DrawMatchStatusText(p, fm, fontPixelSize, state, c.matchStatus);
+}
+static int CalcAlignedTextX(int anchorX, int align, int textW);
+static void DrawCachedAlignedText(QPainter* p, const QFontMetrics& fm, int fontPixelSize, TextMeasureCache& measureCache, TextBitmapCache& bitmapCache, const char* text, const QColor& color, int anchorX, int align, int y)
+{
+    int textW = 0, textH = 0; MeasureTextCached(fm, fontPixelSize, measureCache, text, textW, textH); const int textX = CalcAlignedTextX(anchorX, align, textW); PrepareTextBitmapCached(fm, p->font(), fontPixelSize, bitmapCache, text, color); DrawCachedText(p, bitmapCache, textX, y);
+}
 // =========================================================================
 static int CalcAlignedTextX(int anchorX, int align, int textW);
-
 // =========================================================================
 //  Bomb Left HUD
 // =========================================================================
-static void DrawBombLeft(QPainter* p, melonDS::u8* ram,
-                         const RomAddresses& rom, uint32_t offP,
-                         const CachedHudConfig& c)
+static void DrawBombLeft(QPainter* p, melonDS::u8* ram, const RomAddresses& rom, uint32_t offP, const CachedHudConfig& c)
 {
-    if (!c.bombLeftShow) return;
-
-    // Format: 00000X00 — bomb count in bits[11:8]
-    uint8_t bombs = static_cast<uint8_t>((Read32(ram, rom.baseBomb + offP) >> 8) & 0xF);
-
-    {
-        static TextBitmapCache s_bombBitmapCache = { 0, QColor(), "", 0, 0, false, QImage() };
-        const QFontMetrics fm = p->fontMetrics();
-        const int fontPixelSize = p->font().pixelSize();
-
-        char buf[64];
-        if (c.bombLeftTextShow)
-            std::snprintf(buf, sizeof(buf), "%s%u%s", c.bombLeftPrefix, bombs, c.bombLeftSuffix);
-        else
-            std::snprintf(buf, sizeof(buf), "%s%s", c.bombLeftPrefix, c.bombLeftSuffix);
-
-        if (buf[0] != '\0') {
-            PrepareTextBitmapCached(fm, p->font(), fontPixelSize, s_bombBitmapCache, buf, c.bombLeftColor);
-            const int bombTextX = CalcAlignedTextX(c.bombLeftX, c.bombLeftAlign, s_bombBitmapCache.bitmap.width());
-            DrawCachedText(p, s_bombBitmapCache, bombTextX, c.bombLeftY);
-        }
-    }
-
-    if (c.bombIconShow) {
-        EnsureBombIconsLoaded();
-        const QImage& icon = GetBombIconForDraw(bombs, c.bombIconColorOverlay, c.bombIconColor);
-        if (!icon.isNull()) {
-            int ix = (c.bombIconMode == 0) ? c.bombLeftX + c.bombIconOfsX : c.bombIconPosX;
-            int iy = (c.bombIconMode == 0) ? c.bombLeftY + c.bombIconOfsY : c.bombIconPosY;
-            if (c.bombIconAnchorX == 1) ix -= icon.width() / 2;
-            else if (c.bombIconAnchorX == 2) ix -= icon.width();
-            if (c.bombIconAnchorY == 1) iy -= icon.height() / 2;
-            else if (c.bombIconAnchorY == 2) iy -= icon.height();
-            p->drawImage(QPoint(ix, iy), icon);
-        }
-    }
+    if (!c.bombLeft.bombLeftShow) return; uint8_t bombs = static_cast<uint8_t>((Read32(ram, rom.baseBomb + offP) >> 8) & 0xF);
+    { static TextBitmapCache s_bombBitmapCache = { 0, QColor(), "", 0, 0, false, QImage() }; const QFontMetrics fm = p->fontMetrics(); const int fontPixelSize = p->font().pixelSize(); char buf[64]; if (c.bombLeft.bombLeftTextShow) std::snprintf(buf, sizeof(buf), "%s%u%s", c.bombLeft.bombLeftPrefix, bombs, c.bombLeft.bombLeftSuffix); else std::snprintf(buf, sizeof(buf), "%s%s", c.bombLeft.bombLeftPrefix, c.bombLeft.bombLeftSuffix); if (buf[0] != '\0') { PrepareTextBitmapCached(fm, p->font(), fontPixelSize, s_bombBitmapCache, buf, c.bombLeft.bombLeftColor); const int bombTextX = CalcAlignedTextX(c.bombLeft.bombLeftX, c.bombLeft.bombLeftAlign, s_bombBitmapCache.bitmap.width()); DrawCachedText(p, s_bombBitmapCache, bombTextX, c.bombLeft.bombLeftY); } }
+    if (c.bombLeft.bombIconShow) { EnsureBombIconsLoaded(); const QImage& icon = GetBombIconForDraw(bombs, c.bombLeft.bombIconColorOverlay, c.bombLeft.bombIconColor); if (!icon.isNull()) { int ix = (c.bombLeft.bombIconMode == 0) ? c.bombLeft.bombLeftX + c.bombLeft.bombIconOfsX : c.bombLeft.bombIconPosX; int iy = (c.bombLeft.bombIconMode == 0) ? c.bombLeft.bombLeftY + c.bombLeft.bombIconOfsY : c.bombLeft.bombIconPosY; if (c.bombLeft.bombIconAnchorX == 1) ix -= icon.width() / 2; else if (c.bombLeft.bombIconAnchorX == 2) ix -= icon.width(); if (c.bombLeft.bombIconAnchorY == 1) iy -= icon.height() / 2; else if (c.bombLeft.bombIconAnchorY == 2) iy -= icon.height(); p->drawImage(QPoint(ix, iy), icon); } }
 }
-
 //  Rank & Time HUD
 // =========================================================================
-static void DrawRankAndTime(QPainter* p, melonDS::u8* ram,
-                             const RomAddresses& rom, uint8_t playerPos,
-                             bool isAdventure, const CachedHudConfig& c)
+static void DrawRankAndTime(QPainter* p, melonDS::u8* ram, const RomAddresses& rom, uint8_t playerPos, bool isAdventure, const CachedHudConfig& c)
 {
-    if (isAdventure) return;
-    const QFontMetrics fm = p->fontMetrics();
-    const int fontPixelSize = p->font().pixelSize();
-
-    if (c.rankShow) {
-        static RankStringCache s_rankStringCache = { 0, 0, false, false, "" };
-        static TextBitmapCache s_rankCache = { 0, QColor(), "", 0, 0, false, QImage() };
-        uint32_t rankWord = Read32(ram, rom.matchRank);
-        uint8_t rankByte = (rankWord >> (playerPos * 8)) & 0xFF;
-        if (rankByte <= 3) {
-            const char* rankBuf = UpdateRankString(s_rankStringCache, rankByte, c.rankShowOrdinal, c);
-            static TextMeasureCache s_rankMeasure = { 0, "", 0, 0, false };
-            int rankW = 0, rankH = 0;
-            MeasureTextCached(fm, fontPixelSize, s_rankMeasure, rankBuf, rankW, rankH);
-            const int rankTextX = CalcAlignedTextX(c.rankX, c.rankAlign, rankW);
-            PrepareTextBitmapCached(fm, p->font(), fontPixelSize, s_rankCache, rankBuf, c.rankColor);
-            DrawCachedText(p, s_rankCache, rankTextX, c.rankY);
-        }
-    }
-
-    if (c.timeLeftShow) {
-        static TimeStringCache s_timeLeftStringCache = { 0, 0, false, "" };
-        static TextBitmapCache s_timeLeftCache = { 0, QColor(), "", 0, 0, false, QImage() };
-        uint32_t raw = Read32(ram, rom.timeLeft);
-        int seconds = static_cast<int>(raw) / 60;
-        const char* buf = UpdateTimeString(s_timeLeftStringCache, seconds, false);
-        static TextMeasureCache s_timeLeftMeasure = { 0, "", 0, 0, false };
-        int tlW = 0, tlH = 0;
-        MeasureTextCached(fm, fontPixelSize, s_timeLeftMeasure, buf, tlW, tlH);
-        const int tlTextX = CalcAlignedTextX(c.timeLeftX, c.timeLeftAlign, tlW);
-        PrepareTextBitmapCached(fm, p->font(), fontPixelSize, s_timeLeftCache, buf, c.timeLeftColor);
-        DrawCachedText(p, s_timeLeftCache, tlTextX, c.timeLeftY);
-    }
-
-    if (c.timeLimitShow) {
-        static TimeStringCache s_timeLimitStringCache = { 0, 0, false, "" };
-        static TextBitmapCache s_timeLimitCache = { 0, QColor(), "", 0, 0, false, QImage() };
-        int goalMinutes = 0;
-        if (s_battleState.valid) {
-            goalMinutes = s_battleState.timeLimitMinutes;
-        } else {
-            uint32_t ts4 = Read32(ram, rom.battleSettings + 4);
-            uint8_t XX = (ts4 >> 8) & 0xFF;
-            goalMinutes = LookupTimeLimitMin(XX);
-        }
-        const char* buf = UpdateTimeString(s_timeLimitStringCache, goalMinutes, true);
-        static TextMeasureCache s_timeLimitMeasure = { 0, "", 0, 0, false };
-        int timW = 0, timH = 0;
-        MeasureTextCached(fm, fontPixelSize, s_timeLimitMeasure, buf, timW, timH);
-        const int timTextX = CalcAlignedTextX(c.timeLimitX, c.timeLimitAlign, timW);
-        PrepareTextBitmapCached(fm, p->font(), fontPixelSize, s_timeLimitCache, buf, c.timeLimitColor);
-        DrawCachedText(p, s_timeLimitCache, timTextX, c.timeLimitY);
-    }
+    if (isAdventure) return; const auto& hud = c.rankTime; const QFontMetrics fm = p->fontMetrics(); const int fontPixelSize = p->font().pixelSize();
+    if (hud.rankShow) { static RankStringCache s_rankStringCache = { 0, 0, false, false, "" }; static TextBitmapCache s_rankCache = { 0, QColor(), "", 0, 0, false, QImage() }; static TextMeasureCache s_rankMeasure = { 0, "", 0, 0, false }; uint32_t rankWord = Read32(ram, rom.matchRank); uint8_t rankByte = (rankWord >> (playerPos * 8)) & 0xFF; if (rankByte <= 3) DrawCachedAlignedText(p, fm, fontPixelSize, s_rankMeasure, s_rankCache, UpdateRankString(s_rankStringCache, rankByte, hud.rankShowOrdinal, hud), hud.rankColor, hud.rankX, hud.rankAlign, hud.rankY); }
+    if (hud.timeLeftShow) { static TimeStringCache s_timeLeftStringCache = { 0, 0, false, "" }; static TextBitmapCache s_timeLeftCache = { 0, QColor(), "", 0, 0, false, QImage() }; static TextMeasureCache s_timeLeftMeasure = { 0, "", 0, 0, false }; int seconds = static_cast<int>(Read32(ram, rom.timeLeft)) / 60; DrawCachedAlignedText(p, fm, fontPixelSize, s_timeLeftMeasure, s_timeLeftCache, UpdateTimeString(s_timeLeftStringCache, seconds, false), hud.timeLeftColor, hud.timeLeftX, hud.timeLeftAlign, hud.timeLeftY); }
+    if (hud.timeLimitShow) { static TimeStringCache s_timeLimitStringCache = { 0, 0, false, "" }; static TextBitmapCache s_timeLimitCache = { 0, QColor(), "", 0, 0, false, QImage() }; static TextMeasureCache s_timeLimitMeasure = { 0, "", 0, 0, false }; int goalMinutes = s_battleState.valid ? s_battleState.timeLimitMinutes : LookupTimeLimitMin((Read32(ram, rom.battleSettings + 4) >> 8) & 0xFF); DrawCachedAlignedText(p, fm, fontPixelSize, s_timeLimitMeasure, s_timeLimitCache, UpdateTimeString(s_timeLimitStringCache, goalMinutes, true), hud.timeLimitColor, hud.timeLimitX, hud.timeLimitAlign, hud.timeLimitY); }
 }
-
 // =========================================================================
 //  Config key (only for IsEnabled — hot path uses s_cache)
 // =========================================================================
 static constexpr const char* kCfgCustomHud = "Metroid.Visual.CustomHUD";
-
 bool CustomHud_IsEnabled(Config::Table& localCfg)
 {
     return localCfg.GetBool(kCfgCustomHud);
 }
-
 
 static inline bool ShouldHideForGameplayState(bool isStartPressed, uint16_t currentHP, bool isGameOver)
 {
@@ -1226,7 +910,7 @@ static void CalcGaugePos(int textX, int textY, int textW, int textH, int anchor,
 static inline void DrawHP(QPainter* p, uint16_t hp, uint16_t maxHP,
                            const CachedHudConfig& c)
 {
-    const QColor hpTextColor = c.hpTextAutoColor ? HpGaugeColor(hp, c.hpTextColor) : c.hpTextColor;
+    const QColor hpTextColor = c.hp.hpTextAutoColor ? HpGaugeColor(hp, c.hp.hpTextColor) : c.hp.hpTextColor;
 
     static TextMeasureCache s_hpTextCache = { 0, "", 0, 0, false };
     static TextBitmapCache s_hpBitmapCache = { 0, QColor(), "", 0, 0, false, QImage() };
@@ -1234,25 +918,25 @@ static inline void DrawHP(QPainter* p, uint16_t hp, uint16_t maxHP,
     const int fontPixelSize = p->font().pixelSize();
 
     char buf[24];
-    std::snprintf(buf, sizeof(buf), "%s%u", c.hpPrefix, hp);
+    std::snprintf(buf, sizeof(buf), "%s%u", c.hp.hpPrefix, hp);
     int textW = 0, textH = 0;
     MeasureTextCached(fm, fontPixelSize, s_hpTextCache, buf, textW, textH);
-    const int textX = CalcAlignedTextX(c.hpX, c.hpAlign, textW);
+    const int textX = CalcAlignedTextX(c.hp.hpX, c.hp.hpAlign, textW);
     PrepareTextBitmapCached(fm, p->font(), fontPixelSize, s_hpBitmapCache, buf, hpTextColor);
-    DrawCachedText(p, s_hpBitmapCache, textX, c.hpY);
+    DrawCachedText(p, s_hpBitmapCache, textX, c.hp.hpY);
 
-    if (c.hpGauge && maxHP > 0) {
+    if (c.hp.hpGauge && maxHP > 0) {
         float ratio = static_cast<float>(hp) / static_cast<float>(maxHP);
-        QColor gc = c.hpAutoColor ? HpGaugeColor(hp, c.hpGaugeColor) : c.hpGaugeColor;
+        QColor gc = c.hp.hpAutoColor ? HpGaugeColor(hp, c.hp.hpGaugeColor) : c.hp.hpGaugeColor;
         int gx, gy;
-        if (c.hpGaugePosMode == 1) {
-            gx = c.hpGaugePosX;
-            gy = c.hpGaugePosY;
+        if (c.hp.hpGaugePosMode == 1) {
+            gx = c.hp.hpGaugePosX;
+            gy = c.hp.hpGaugePosY;
         } else {
-            CalcGaugePos(textX, c.hpY, textW, textH, c.hpGaugeAnchor, c.hpGaugeOfsX, c.hpGaugeOfsY,
-                         c.hpGaugeLen, c.hpGaugeWid, c.hpGaugeOri, gx, gy);
+            CalcGaugePos(textX, c.hp.hpY, textW, textH, c.hp.hpGaugeAnchor, c.hp.hpGaugeOfsX, c.hp.hpGaugeOfsY,
+                         c.hp.hpGaugeLen, c.hp.hpGaugeWid, c.hp.hpGaugeOri, gx, gy);
         }
-        DrawGauge(p, gx, gy, ratio, gc, c.hpGaugeOri, c.hpGaugeLen, c.hpGaugeWid);
+        DrawGauge(p, gx, gy, ratio, gc, c.hp.hpGaugeOri, c.hp.hpGaugeLen, c.hp.hpGaugeWid);
     }
 }
 
@@ -1280,7 +964,7 @@ static void DrawWeaponAmmo(QPainter* p, melonDS::u8* ram,
     const int fontPixelSize = p->font().pixelSize();
 
     const WeaponInfo& wi = kWeaponTable[weapon];
-    const QImage& icon = GetWeaponIconForDraw(weapon, c.iconColorOverlay, c.ammoGaugeColor); // P-1
+    const QImage& icon = GetWeaponIconForDraw(weapon, c.weapon.iconColorOverlay, c.weapon.ammoGaugeColor); // P-1
 
     uint16_t ammo = 0, maxAmmo = 0;
     bool hasAmmo = (wi.divisor > 0);
@@ -1297,38 +981,38 @@ static void DrawWeaponAmmo(QPainter* p, melonDS::u8* ram,
         }
     }
 
-    int textX = c.wpnX, textY = c.wpnY;
+    int textX = c.weapon.wpnX, textY = c.weapon.wpnY;
     int textW = 0, textH = fm.height();
     if (hasAmmo) {
         char buf[24];
-        std::snprintf(buf, sizeof(buf), "%s%02u", c.ammoPrefix, ammo);
+        std::snprintf(buf, sizeof(buf), "%s%02u", c.weapon.ammoPrefix, ammo);
         MeasureTextCached(fm, fontPixelSize, s_ammoTextCache, buf, textW, textH);
-        textX = CalcAlignedTextX(c.wpnX, c.ammoAlign, textW);
-        PrepareTextBitmapCached(fm, p->font(), fontPixelSize, s_ammoBitmapCache, buf, c.ammoTextColor);
+        textX = CalcAlignedTextX(c.weapon.wpnX, c.weapon.ammoAlign, textW);
+        PrepareTextBitmapCached(fm, p->font(), fontPixelSize, s_ammoBitmapCache, buf, c.weapon.ammoTextColor);
         DrawCachedText(p, s_ammoBitmapCache, textX, textY);
     }
 
-    if (c.iconShow && !icon.isNull()) {
-        int ix = (c.iconMode == 0) ? c.wpnX + c.iconOfsX : c.iconPosX;
-        int iy = (c.iconMode == 0) ? c.wpnY + c.iconOfsY : c.iconPosY;
-        if (c.iconAnchorX == 1) ix -= icon.width() / 2;
-        else if (c.iconAnchorX == 2) ix -= icon.width();
-        if (c.iconAnchorY == 1) iy -= icon.height() / 2;
-        else if (c.iconAnchorY == 2) iy -= icon.height();
+    if (c.weapon.iconShow && !icon.isNull()) {
+        int ix = (c.weapon.iconMode == 0) ? c.weapon.wpnX + c.weapon.iconOfsX : c.weapon.iconPosX;
+        int iy = (c.weapon.iconMode == 0) ? c.weapon.wpnY + c.weapon.iconOfsY : c.weapon.iconPosY;
+        if (c.weapon.iconAnchorX == 1) ix -= icon.width() / 2;
+        else if (c.weapon.iconAnchorX == 2) ix -= icon.width();
+        if (c.weapon.iconAnchorY == 1) iy -= icon.height() / 2;
+        else if (c.weapon.iconAnchorY == 2) iy -= icon.height();
         p->drawImage(QPoint(ix, iy), icon);
     }
 
-    if (c.ammoGauge && hasAmmo && maxAmmo > 0) {
+    if (c.weapon.ammoGauge && hasAmmo && maxAmmo > 0) {
         float ratio = static_cast<float>(ammo) / static_cast<float>(maxAmmo);
         int gx, gy;
-        if (c.ammoGaugePosMode == 1) {
-            gx = c.ammoGaugePosX;
-            gy = c.ammoGaugePosY;
+        if (c.weapon.ammoGaugePosMode == 1) {
+            gx = c.weapon.ammoGaugePosX;
+            gy = c.weapon.ammoGaugePosY;
         } else {
-            CalcGaugePos(textX, textY, textW, textH, c.ammoGaugeAnchor, c.ammoGaugeOfsX, c.ammoGaugeOfsY,
-                         c.ammoGaugeLen, c.ammoGaugeWid, c.ammoGaugeOri, gx, gy);
+            CalcGaugePos(textX, textY, textW, textH, c.weapon.ammoGaugeAnchor, c.weapon.ammoGaugeOfsX, c.weapon.ammoGaugeOfsY,
+                         c.weapon.ammoGaugeLen, c.weapon.ammoGaugeWid, c.weapon.ammoGaugeOri, gx, gy);
         }
-        DrawGauge(p, gx, gy, ratio, c.ammoGaugeColor, c.ammoGaugeOri, c.ammoGaugeLen, c.ammoGaugeWid);
+        DrawGauge(p, gx, gy, ratio, c.weapon.ammoGaugeColor, c.weapon.ammoGaugeOri, c.weapon.ammoGaugeLen, c.weapon.ammoGaugeWid);
     }
 }
 
@@ -1368,14 +1052,14 @@ static void DrawCrosshair(QPainter* p, melonDS::u8* ram,
 
     ArmCoords innerArms[4], outerArms[4];
     int nInner = 0, nOuter = 0;
-    if (c.chInnerShow)
-        nInner = CollectArms(innerArms, cx, cy, c.chInnerLengthX, c.chInnerLengthY, c.chInnerOffset, c.chTStyle);
-    if (c.chOuterShow)
-        nOuter = CollectArms(outerArms, cx, cy, c.chOuterLengthX, c.chOuterLengthY, c.chOuterOffset, c.chTStyle);
+    if (c.crosshair.chInnerShow)
+        nInner = CollectArms(innerArms, cx, cy, c.crosshair.chInnerLengthX, c.crosshair.chInnerLengthY, c.crosshair.chInnerOffset, c.crosshair.chTStyle);
+    if (c.crosshair.chOuterShow)
+        nOuter = CollectArms(outerArms, cx, cy, c.crosshair.chOuterLengthX, c.crosshair.chOuterLengthY, c.crosshair.chOuterOffset, c.crosshair.chTStyle);
 
-    int dotHalf = c.chDotThickness / 2;
+    int dotHalf = c.crosshair.chDotThickness / 2;
 
-    if (c.chOutline && c.chOutlineOpacity > 0.0) {
+    if (c.crosshair.chOutline && c.crosshair.chOutlineOpacity > 0.0) {
         int minX = cx, maxX = cx, minY = cy, maxY = cy;
         auto expandBounds = [&](int x, int y, int pad) {
             if (x - pad < minX) minX = x - pad;
@@ -1384,16 +1068,16 @@ static void DrawCrosshair(QPainter* p, melonDS::u8* ram,
             if (y + pad > maxY) maxY = y + pad;
         };
 
-        if (c.chCenterDot) {
-            expandBounds(cx, cy, dotHalf + c.chOutlineThickness);
+        if (c.crosshair.chCenterDot) {
+            expandBounds(cx, cy, dotHalf + c.crosshair.chOutlineThickness);
         }
         for (int i = 0; i < nInner; i++) {
-            int pad = (c.chInnerThickness + c.chOutlineThickness * 2 + 1) / 2;
+            int pad = (c.crosshair.chInnerThickness + c.crosshair.chOutlineThickness * 2 + 1) / 2;
             expandBounds(innerArms[i].x1, innerArms[i].y1, pad);
             expandBounds(innerArms[i].x2, innerArms[i].y2, pad);
         }
         for (int i = 0; i < nOuter; i++) {
-            int pad = (c.chOuterThickness + c.chOutlineThickness * 2 + 1) / 2;
+            int pad = (c.crosshair.chOuterThickness + c.crosshair.chOutlineThickness * 2 + 1) / 2;
             expandBounds(outerArms[i].x1, outerArms[i].y1, pad);
             expandBounds(outerArms[i].x2, outerArms[i].y2, pad);
         }
@@ -1415,51 +1099,51 @@ static void DrawCrosshair(QPainter* p, melonDS::u8* ram,
             olP.setCompositionMode(QPainter::CompositionMode_SourceOver);
             static const QColor solidBlack(0, 0, 0, 255);
 
-            if (c.chCenterDot) {
+            if (c.crosshair.chCenterDot) {
                 olP.setPen(Qt::NoPen);
                 olP.setBrush(solidBlack);
-                int oh = dotHalf + c.chOutlineThickness;
+                int oh = dotHalf + c.crosshair.chOutlineThickness;
                 olP.drawRect(cx - oh, cy - oh, oh * 2 + 1, oh * 2 + 1);
                 olP.setBrush(Qt::NoBrush);
             }
             if (nInner > 0) {
                 QPen pen(solidBlack);
-                pen.setWidth(c.chInnerThickness + c.chOutlineThickness * 2);
+                pen.setWidth(c.crosshair.chInnerThickness + c.crosshair.chOutlineThickness * 2);
                 olP.setPen(pen);
                 for (int i = 0; i < nInner; i++)
                     olP.drawLine(innerArms[i].x1, innerArms[i].y1, innerArms[i].x2, innerArms[i].y2);
             }
             if (nOuter > 0) {
                 QPen pen(solidBlack);
-                pen.setWidth(c.chOuterThickness + c.chOutlineThickness * 2);
+                pen.setWidth(c.crosshair.chOuterThickness + c.crosshair.chOutlineThickness * 2);
                 olP.setPen(pen);
                 for (int i = 0; i < nOuter; i++)
                     olP.drawLine(outerArms[i].x1, outerArms[i].y1, outerArms[i].x2, outerArms[i].y2);
             }
         }
-        p->setOpacity(c.chOutlineOpacity);
+        p->setOpacity(c.crosshair.chOutlineOpacity);
         p->drawImage(dirtyRect.topLeft(), olBuf, dirtyRect);
         p->setOpacity(1.0);
     }
 
-    if (c.chCenterDot) {
+    if (c.crosshair.chCenterDot) {
         p->setPen(Qt::NoPen);
-        QColor dotColor = c.chColor;
-        dotColor.setAlphaF(c.chDotOpacity);
+        QColor dotColor = c.crosshair.chColor;
+        dotColor.setAlphaF(c.crosshair.chDotOpacity);
         p->setBrush(dotColor);
         p->drawRect(cx - dotHalf, cy - dotHalf, dotHalf * 2 + 1, dotHalf * 2 + 1);
         p->setBrush(Qt::NoBrush);
     }
     if (nInner > 0) {
-        QColor clr = c.chColor; clr.setAlphaF(c.chInnerOpacity);
-        QPen pen(clr); pen.setWidth(c.chInnerThickness); p->setPen(pen);
+        QColor clr = c.crosshair.chColor; clr.setAlphaF(c.crosshair.chInnerOpacity);
+        QPen pen(clr); pen.setWidth(c.crosshair.chInnerThickness); p->setPen(pen);
         for (int i = 0; i < nInner; i++)
             p->drawLine(innerArms[i].x1, innerArms[i].y1, innerArms[i].x2, innerArms[i].y2);
     }
 
     if (nOuter > 0) {
-        QColor clr = c.chColor; clr.setAlphaF(c.chOuterOpacity);
-        QPen pen(clr); pen.setWidth(c.chOuterThickness); p->setPen(pen);
+        QColor clr = c.crosshair.chColor; clr.setAlphaF(c.crosshair.chOuterOpacity);
+        QPen pen(clr); pen.setWidth(c.crosshair.chOuterThickness); p->setPen(pen);
         for (int i = 0; i < nOuter; i++)
             p->drawLine(outerArms[i].x1, outerArms[i].y1, outerArms[i].x2, outerArms[i].y2);
     }
@@ -1568,12 +1252,12 @@ void DrawBottomScreenOverlay(Config::Table& localCfg, QPainter* topPaint, QImage
     }
 
     const CachedHudConfig& c = s_cache;
-    if (!c.radarShow) return;
+    if (!c.radar.radarShow) return;
     if (!topPaint || !btmBuffer || btmBuffer->isNull()) return;
 
     const int srcCenterX  = kBtmOverlaySrcCenterX;
     const int srcCenterY  = kBtmOverlaySrcCenterY[hunterID];
-    const int srcRadius   = c.radarSrcRadius;
+    const int srcRadius   = c.radar.radarSrcRadius;
     const float bufScaleX = static_cast<float>(btmBuffer->width()) / 256.0f;
     const float bufScaleY = static_cast<float>(btmBuffer->height()) / 192.0f;
 
@@ -1584,12 +1268,16 @@ void DrawBottomScreenOverlay(Config::Table& localCfg, QPainter* topPaint, QImage
 
     topPaint->save();
     topPaint->setRenderHint(QPainter::SmoothPixmapTransform, true);
-    topPaint->setOpacity(c.radarOpacity);
-    topPaint->setClipPath(c.radarClipPath);
-    topPaint->drawImage(c.radarDstRect, *btmBuffer, srcRect);
+    topPaint->setOpacity(c.radar.radarOpacity);
+    topPaint->setClipPath(c.radar.radarClipPath);
+    topPaint->drawImage(c.radar.radarDstRect, *btmBuffer, srcRect);
     topPaint->restore();
 }
 
 } // namespace MelonPrime
 
 #endif // MELONPRIME_CUSTOM_HUD
+
+
+
+
