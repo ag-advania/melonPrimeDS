@@ -14,11 +14,16 @@
 #include <QComboBox>
 #include <QColorDialog>
 #include <QTimer>
+#include <QGuiApplication>
+#include <QClipboard>
+#include <algorithm>
+#include <sstream>
 
 #include "MelonPrimeInputConfig.h"
 #include "MelonPrimeInputConfigInternal.h"
 #include "ui_MelonPrimeInputConfig.h"
 #include "Config.h"
+#include "toml/toml.hpp"
 
 // InputConfigDialog must be fully defined before including MapButton.h.
 // MapButton accesses parentDialog directly, so a forward declaration is not enough.
@@ -53,6 +58,7 @@ MelonPrimeInputConfig::MelonPrimeInputConfig(EmuInstance* emu, QWidget* parent) 
     setupCrosshair(instcfg);
     setupPreviewConnections();
     setupRadar(instcfg);
+    setupCustomHudCode();
 
     snapshotVisualConfig();
     updateRadarPreview();
@@ -1342,6 +1348,5 @@ void MelonPrimeInputConfig::on_comboMetroidCrosshairColor_currentIndexChanged(in
         index);
 }
 
-
-
+#include "MelonPrimeInputConfigCustomHudCode.inc"
 
