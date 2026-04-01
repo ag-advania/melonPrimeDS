@@ -186,8 +186,8 @@ namespace Config
         {"Instance*.Metroid.Visual.HudMatchStatusGoalColorG",  255},
         {"Instance*.Metroid.Visual.HudMatchStatusGoalColorB",  255},
         /* Bomb Left HUD */
-        {"Instance*.Metroid.Visual.HudBombLeftX",      210},
-        {"Instance*.Metroid.Visual.HudBombLeftY",      185},
+        {"Instance*.Metroid.Visual.HudBombLeftX",      214},
+        {"Instance*.Metroid.Visual.HudBombLeftY",      184},
         {"Instance*.Metroid.Visual.HudBombLeftAlign",  0},
         {"Instance*.Metroid.Visual.HudBombLeftColorR", 255},
         {"Instance*.Metroid.Visual.HudBombLeftColorG", 255},
@@ -198,9 +198,9 @@ namespace Config
         {"Instance*.Metroid.Visual.HudBombLeftIconColorB", 255},
         {"Instance*.Metroid.Visual.HudBombLeftIconMode",    1},
         {"Instance*.Metroid.Visual.HudBombLeftIconOfsX",   16},
-        {"Instance*.Metroid.Visual.HudBombLeftIconOfsY",  -15},
-        {"Instance*.Metroid.Visual.HudBombLeftIconPosX",  226},
-        {"Instance*.Metroid.Visual.HudBombLeftIconPosY",  170},
+        {"Instance*.Metroid.Visual.HudBombLeftIconOfsY",  -16},
+        {"Instance*.Metroid.Visual.HudBombLeftIconPosX",  230},
+        {"Instance*.Metroid.Visual.HudBombLeftIconPosY",  168},
         {"Instance*.Metroid.Visual.HudBombLeftIconAnchorX", 1},
         {"Instance*.Metroid.Visual.HudBombLeftIconAnchorY", 1},
         /* Rank & Time HUD */
@@ -1227,3 +1227,4 @@ namespace Config
     }
 
 }
+
