@@ -36,7 +36,7 @@ static void applyPixmapToPreview(QWidget* preview, QPixmap& pixmap)
     preview->update();
 }
 
-static QFont loadHudFont(float scale)
+static QFont loadHudFont(int pixelSize)
 {
     static int s_fontId = -2;  // -2 = not yet loaded
     static QStringList s_families;
@@ -47,7 +47,7 @@ static QFont loadHudFont(float scale)
     }
     QFont font;
     if (!s_families.isEmpty()) font = QFont(s_families.at(0));
-    font.setPixelSize(std::max(1, static_cast<int>(6.0f * scale)));
+    font.setPixelSize(std::max(1, pixelSize));
     font.setStyleStrategy(QFont::NoAntialias);
     font.setHintingPreference(QFont::PreferFullHinting);
     return font;
@@ -85,10 +85,17 @@ void MelonPrimeInputConfig::updateRadarPreview()
 
     // Draw radar circle overlay
     bool enabled = ui->cbMetroidBtmOverlayEnable->isChecked();
-    int dstX = ui->spinMetroidBtmOverlayDstX->value();
-    int dstY = ui->spinMetroidBtmOverlayDstY->value();
+    int anchor  = ui->comboMetroidBtmOverlayAnchor->currentIndex();
+    int ofsX    = ui->spinMetroidBtmOverlayDstX->value();
+    int ofsY    = ui->spinMetroidBtmOverlayDstY->value();
     int dstSize = ui->spinMetroidBtmOverlayDstSize->value();
     double opacity = ui->spinMetroidBtmOverlayOpacity->value();
+
+    // Apply 9-point anchor (DS canvas = 256x192)
+    const int anchorBaseX = (anchor % 3 == 0) ? 0 : (anchor % 3 == 1) ? 128 : 256;
+    const int anchorBaseY = (anchor / 3 == 0) ? 0 : (anchor / 3 == 1) ? 96  : 192;
+    int dstX = anchorBaseX + ofsX;
+    int dstY = anchorBaseY + ofsY;
 
     if (enabled)
     {
@@ -133,10 +140,12 @@ void MelonPrimeInputConfig::snapshotVisualConfig()
     auto sCfgI = [&](const char* snapKey, const char* cfgKey) { s[snapKey] = instcfg.GetInt(cfgKey); };
 
     sB("cCustomHud",       ui->cbMetroidEnableCustomHud);
+    sI("iFontScale",       ui->spinMetroidHudFontScale);
     sB("cAspectRatio",     ui->cbMetroidInGameAspectRatio);
     sC("cAspectRatioMode", ui->comboMetroidInGameAspectRatioMode);
     // Match Status
     sB("cMatchShow",  ui->cbMetroidHudMatchStatusShow);
+    sC("cMatchAnchor", ui->comboMetroidHudMatchStatusAnchor);
     sSl("sMatchX",     ui->spinMetroidHudMatchStatusX);
     sSl("sMatchY",     ui->spinMetroidHudMatchStatusY);
     sSl("sMatchLOfsX", ui->spinMetroidHudMatchStatusLabelOfsX);
@@ -189,6 +198,7 @@ void MelonPrimeInputConfig::snapshotVisualConfig()
     sCfgI("sMatchGolClrG", "Metroid.Visual.HudMatchStatusGoalColorG");
     sCfgI("sMatchGolClrB", "Metroid.Visual.HudMatchStatusGoalColorB");
     // HP/Weapon
+    sC("cHpAnchor", ui->comboMetroidHudHpAnchor);
     sSl("sHpX",  ui->spinMetroidHudHpX);       sSl("sHpY",  ui->spinMetroidHudHpY);
     sE("eHpPfx", ui->leMetroidHudHpPrefix);
     sC("cHpAlign", ui->comboMetroidHudHpAlign);
@@ -201,6 +211,7 @@ void MelonPrimeInputConfig::snapshotVisualConfig()
     sCfgI("sCfgHpTxtClrR", "Metroid.Visual.HudHpTextColorR");
     sCfgI("sCfgHpTxtClrG", "Metroid.Visual.HudHpTextColorG");
     sCfgI("sCfgHpTxtClrB", "Metroid.Visual.HudHpTextColorB");
+    sC("cWpnAnchor", ui->comboMetroidHudWeaponAnchor);
     sI("sWpnX", ui->spinMetroidHudWeaponX);    sI("sWpnY", ui->spinMetroidHudWeaponY);
     sE("eAmmoPfx", ui->leMetroidHudAmmoPrefix);
     sC("cAmmoAlign", ui->comboMetroidHudAmmoAlign);
@@ -212,15 +223,14 @@ void MelonPrimeInputConfig::snapshotVisualConfig()
     sCfgI("sCfgAmmoTxtClrR", "Metroid.Visual.HudAmmoTextColorR");
     sCfgI("sCfgAmmoTxtClrG", "Metroid.Visual.HudAmmoTextColorG");
     sCfgI("sCfgAmmoTxtClrB", "Metroid.Visual.HudAmmoTextColorB");
-    sC("cHpPos",  ui->comboMetroidHudHpPosition);
-    sC("cWpnPos", ui->comboMetroidHudWeaponPosition);
+    sC("cHpPos",  ui->comboMetroidHudHpAlign);
     sB("cWpnIconShow",  ui->cbMetroidHudWeaponIconShow);
     sC("cWpnIconMode",  ui->comboMetroidHudWeaponIconMode);
     sSl("sWpnIconOfsX",  ui->spinMetroidHudWeaponIconOffsetX);
     sSl("sWpnIconOfsY",  ui->spinMetroidHudWeaponIconOffsetY);
     sSl("sWpnIconPosX",   ui->spinMetroidHudWeaponIconPosX);
     sSl("sWpnIconPosY",   ui->spinMetroidHudWeaponIconPosY);
-    sC("cWpnIconPos",    ui->comboMetroidHudWeaponIconPosition);
+    sC("cWpnIconPosAnch", ui->comboMetroidHudWeaponIconPosAnchor);
     sC("cWpnIconAnchX",  ui->comboMetroidHudWeaponIconAnchorX);
     sC("cWpnIconAnchY",  ui->comboMetroidHudWeaponIconAnchorY);
     sB("cWpnIconClrOv",  ui->cbMetroidHudWeaponIconColorOverlay);
@@ -233,6 +243,7 @@ void MelonPrimeInputConfig::snapshotVisualConfig()
     sSl("sHpGaugeOfsY",   ui->spinMetroidHudHpGaugeOffsetY);
     sC("cHpGaugeAnch",   ui->comboMetroidHudHpGaugeAnchor);
     sC("cHpGaugePosMode",ui->comboMetroidHudHpGaugePosMode);
+    sC("cHpGaugePosAnch",ui->comboMetroidHudHpGaugePosAnchor);
     sSl("sHpGaugePosX",   ui->spinMetroidHudHpGaugePosX);
     sSl("sHpGaugePosY",   ui->spinMetroidHudHpGaugePosY);
     sB("cHpGaugeAutoClr",ui->cbMetroidHudHpGaugeAutoColor);
@@ -253,6 +264,7 @@ void MelonPrimeInputConfig::snapshotVisualConfig()
     sSl("sAmmoGaugeOfsY",   ui->spinMetroidHudAmmoGaugeOffsetY);
     sC("cAmmoGaugeAnch",   ui->comboMetroidHudAmmoGaugeAnchor);
     sC("cAmmoGaugePosMode",ui->comboMetroidHudAmmoGaugePosMode);
+    sC("cAmmoGaugePosAnch",ui->comboMetroidHudAmmoGaugePosAnchor);
     sSl("sAmmoGaugePosX",   ui->spinMetroidHudAmmoGaugePosX);
     sSl("sAmmoGaugePosY",   ui->spinMetroidHudAmmoGaugePosY);
     sC("cAmmoGaugeClr", ui->comboMetroidHudAmmoGaugeColor);
@@ -265,6 +277,7 @@ void MelonPrimeInputConfig::snapshotVisualConfig()
     sCfgI("sAmmoGaugeClrB", "Metroid.Visual.HudAmmoGaugeColorB");
     // HUD Radar
     sB("cRadarEnable", ui->cbMetroidBtmOverlayEnable);
+    sC("cRadarAnchor", ui->comboMetroidBtmOverlayAnchor);
     sSl("sRadarDstX", ui->spinMetroidBtmOverlayDstX);
     sSl("sRadarDstY", ui->spinMetroidBtmOverlayDstY);
     sSl("sRadarSize", ui->spinMetroidBtmOverlayDstSize);
@@ -272,6 +285,7 @@ void MelonPrimeInputConfig::snapshotVisualConfig()
     sSl("sRadarSrcR",  ui->spinMetroidBtmOverlaySrcRadius);
     // Rank & Time HUD
     sB("cRankShow", ui->cbMetroidHudRankShow);
+    sC("cRankAnchor", ui->comboMetroidHudRankAnchor);
     sSl("sRankX", ui->spinMetroidHudRankX);
     sSl("sRankY", ui->spinMetroidHudRankY);
     sC("cRankAlign", ui->comboMetroidHudRankAlign);
@@ -287,6 +301,7 @@ void MelonPrimeInputConfig::snapshotVisualConfig()
     sCfgI("sRankClrG", "Metroid.Visual.HudRankColorG");
     sCfgI("sRankClrB", "Metroid.Visual.HudRankColorB");
     sB("cTimeLeftShow", ui->cbMetroidHudTimeLeftShow);
+    sC("cTimeLeftAnchor", ui->comboMetroidHudTimeLeftAnchor);
     sSl("sTimeLeftX", ui->spinMetroidHudTimeLeftX);
     sSl("sTimeLeftY", ui->spinMetroidHudTimeLeftY);
     sC("cTimeLeftAlign", ui->comboMetroidHudTimeLeftAlign);
@@ -299,6 +314,7 @@ void MelonPrimeInputConfig::snapshotVisualConfig()
     sCfgI("sTimeLeftClrG", "Metroid.Visual.HudTimeLeftColorG");
     sCfgI("sTimeLeftClrB", "Metroid.Visual.HudTimeLeftColorB");
     sB("cTimeLimitShow", ui->cbMetroidHudTimeLimitShow);
+    sC("cTimeLimitAnchor", ui->comboMetroidHudTimeLimitAnchor);
     sSl("sTimeLimitX", ui->spinMetroidHudTimeLimitX);
     sSl("sTimeLimitY", ui->spinMetroidHudTimeLimitY);
     sC("cTimeLimitAlign", ui->comboMetroidHudTimeLimitAlign);
@@ -313,6 +329,7 @@ void MelonPrimeInputConfig::snapshotVisualConfig()
     // Bomb Left HUD
     sB("cBombLeftShow",     ui->cbMetroidHudBombLeftShow);
     sB("cBombLeftTextShow", ui->cbMetroidHudBombLeftTextShow);
+    sC("cBombLeftAnchor",   ui->comboMetroidHudBombLeftAnchor);
     sSl("sBombLeftX", ui->spinMetroidHudBombLeftX);
     sSl("sBombLeftY", ui->spinMetroidHudBombLeftY);
     sC("cBombLeftAlign", ui->comboMetroidHudBombLeftAlign);
@@ -339,6 +356,7 @@ void MelonPrimeInputConfig::snapshotVisualConfig()
     sC("cBombLeftIconMode",         ui->comboMetroidHudBombLeftIconMode);
     sSl("sBombLeftIconOfsX",        ui->spinMetroidHudBombLeftIconOfsX);
     sSl("sBombLeftIconOfsY",        ui->spinMetroidHudBombLeftIconOfsY);
+    sC("cBombLeftIconPosAnchor",    ui->comboMetroidHudBombLeftIconPosAnchor);
     sSl("sBombLeftIconPosX",        ui->spinMetroidHudBombLeftIconPosX);
     sSl("sBombLeftIconPosY",        ui->spinMetroidHudBombLeftIconPosY);
     sC("cBombLeftIconAnchorX",      ui->comboMetroidHudBombLeftIconAnchorX);
@@ -409,10 +427,12 @@ void MelonPrimeInputConfig::restoreVisualSnapshot()
     };
 
     rB("cCustomHud",       ui->cbMetroidEnableCustomHud);
+    rI("iFontScale",       ui->spinMetroidHudFontScale);
     rB("cAspectRatio",     ui->cbMetroidInGameAspectRatio);
     rC("cAspectRatioMode", ui->comboMetroidInGameAspectRatioMode);
     // Match Status
     rB("cMatchShow",  ui->cbMetroidHudMatchStatusShow);
+    rC("cMatchAnchor", ui->comboMetroidHudMatchStatusAnchor);
     rSl("sMatchX",     ui->spinMetroidHudMatchStatusX,    ui->inputMetroidHudMatchStatusX,    ui->labelMetroidHudMatchStatusX);
     rSl("sMatchY",     ui->spinMetroidHudMatchStatusY,    ui->inputMetroidHudMatchStatusY,    ui->labelMetroidHudMatchStatusY);
     rSl("sMatchLOfsX", ui->spinMetroidHudMatchStatusLabelOfsX, ui->inputMetroidHudMatchStatusLabelOfsX, ui->labelMetroidHudMatchStatusLabelOfsX);
@@ -449,6 +469,7 @@ void MelonPrimeInputConfig::restoreVisualSnapshot()
     rI("sMatchGolClrSpinG", ui->spinMetroidHudMatchStatusGoalColorG);
     rI("sMatchGolClrSpinB", ui->spinMetroidHudMatchStatusGoalColorB);
     // HP/Weapon
+    rC("cHpAnchor", ui->comboMetroidHudHpAnchor);
     rSl("sHpX",  ui->spinMetroidHudHpX,  ui->inputMetroidHudHpX,  ui->labelMetroidHudHpX);
     rSl("sHpY",  ui->spinMetroidHudHpY,  ui->inputMetroidHudHpY,  ui->labelMetroidHudHpY);
     rE("eHpPfx", ui->leMetroidHudHpPrefix);
@@ -459,6 +480,7 @@ void MelonPrimeInputConfig::restoreVisualSnapshot()
     rI("sHpTxtClrG", ui->spinMetroidHudHpTextColorG);
     rI("sHpTxtClrB", ui->spinMetroidHudHpTextColorB);
     rE("eHpTxtClr",  ui->leMetroidHudHpTextColorCode);
+    rC("cWpnAnchor", ui->comboMetroidHudWeaponAnchor);
     rSl("sWpnX", ui->spinMetroidHudWeaponX, ui->inputMetroidHudWeaponX, ui->labelMetroidHudWeaponX);
     rSl("sWpnY", ui->spinMetroidHudWeaponY, ui->inputMetroidHudWeaponY, ui->labelMetroidHudWeaponY);
     rE("eAmmoPfx", ui->leMetroidHudAmmoPrefix);
@@ -468,15 +490,13 @@ void MelonPrimeInputConfig::restoreVisualSnapshot()
     rI("sAmmoTxtClrG", ui->spinMetroidHudAmmoTextColorG);
     rI("sAmmoTxtClrB", ui->spinMetroidHudAmmoTextColorB);
     rE("eAmmoTxtClr",  ui->leMetroidHudAmmoTextColorCode);
-    rC("cHpPos",  ui->comboMetroidHudHpPosition);
-    rC("cWpnPos", ui->comboMetroidHudWeaponPosition);
     rB("cWpnIconShow",  ui->cbMetroidHudWeaponIconShow);
     rC("cWpnIconMode",  ui->comboMetroidHudWeaponIconMode);
     rSl("sWpnIconOfsX",  ui->spinMetroidHudWeaponIconOffsetX, ui->inputMetroidHudWeaponIconOffsetX, ui->labelMetroidHudWeaponIconOffsetX);
     rSl("sWpnIconOfsY",  ui->spinMetroidHudWeaponIconOffsetY, ui->inputMetroidHudWeaponIconOffsetY, ui->labelMetroidHudWeaponIconOffsetY);
+    rC("cWpnIconPosAnch", ui->comboMetroidHudWeaponIconPosAnchor);
     rSl("sWpnIconPosX",  ui->spinMetroidHudWeaponIconPosX,    ui->inputMetroidHudWeaponIconPosX,    ui->labelMetroidHudWeaponIconPosX);
     rSl("sWpnIconPosY",  ui->spinMetroidHudWeaponIconPosY,    ui->inputMetroidHudWeaponIconPosY,    ui->labelMetroidHudWeaponIconPosY);
-    rC("cWpnIconPos",    ui->comboMetroidHudWeaponIconPosition);
     rC("cWpnIconAnchX",  ui->comboMetroidHudWeaponIconAnchorX);
     rC("cWpnIconAnchY",  ui->comboMetroidHudWeaponIconAnchorY);
     rB("cWpnIconClrOv",  ui->cbMetroidHudWeaponIconColorOverlay);
@@ -489,6 +509,7 @@ void MelonPrimeInputConfig::restoreVisualSnapshot()
     rSl("sHpGaugeOfsY",  ui->spinMetroidHudHpGaugeOffsetY, ui->inputMetroidHudHpGaugeOffsetY, ui->labelMetroidHudHpGaugeOffsetY);
     rC("cHpGaugeAnch",   ui->comboMetroidHudHpGaugeAnchor);
     rC("cHpGaugePosMode",ui->comboMetroidHudHpGaugePosMode);
+    rC("cHpGaugePosAnch",ui->comboMetroidHudHpGaugePosAnchor);
     rSl("sHpGaugePosX",  ui->spinMetroidHudHpGaugePosX,    ui->inputMetroidHudHpGaugePosX,    ui->labelMetroidHudHpGaugePosX);
     rSl("sHpGaugePosY",  ui->spinMetroidHudHpGaugePosY,    ui->inputMetroidHudHpGaugePosY,    ui->labelMetroidHudHpGaugePosY);
     rB("cHpGaugeAutoClr",ui->cbMetroidHudHpGaugeAutoColor);
@@ -506,6 +527,7 @@ void MelonPrimeInputConfig::restoreVisualSnapshot()
     rSl("sAmmoGaugeOfsY",  ui->spinMetroidHudAmmoGaugeOffsetY, ui->inputMetroidHudAmmoGaugeOffsetY, ui->labelMetroidHudAmmoGaugeOffsetY);
     rC("cAmmoGaugeAnch",   ui->comboMetroidHudAmmoGaugeAnchor);
     rC("cAmmoGaugePosMode",ui->comboMetroidHudAmmoGaugePosMode);
+    rC("cAmmoGaugePosAnch",ui->comboMetroidHudAmmoGaugePosAnchor);
     rSl("sAmmoGaugePosX",  ui->spinMetroidHudAmmoGaugePosX,    ui->inputMetroidHudAmmoGaugePosX,    ui->labelMetroidHudAmmoGaugePosX);
     rSl("sAmmoGaugePosY",  ui->spinMetroidHudAmmoGaugePosY,    ui->inputMetroidHudAmmoGaugePosY,    ui->labelMetroidHudAmmoGaugePosY);
     rC("cAmmoGaugeClr", ui->comboMetroidHudAmmoGaugeColor);
@@ -515,6 +537,7 @@ void MelonPrimeInputConfig::restoreVisualSnapshot()
     rI("sAmmoGaugeClrSpinB", ui->spinMetroidHudAmmoGaugeColorB);
     // HUD Radar
     rB("cRadarEnable", ui->cbMetroidBtmOverlayEnable);
+    rC("cRadarAnchor", ui->comboMetroidBtmOverlayAnchor);
     rSl("sRadarDstX", ui->spinMetroidBtmOverlayDstX, ui->inputMetroidBtmOverlayDstX, ui->labelMetroidBtmOverlayDstX);
     rSl("sRadarDstY", ui->spinMetroidBtmOverlayDstY, ui->inputMetroidBtmOverlayDstY, ui->labelMetroidBtmOverlayDstY);
     rSl("sRadarSize", ui->spinMetroidBtmOverlayDstSize, ui->inputMetroidBtmOverlayDstSize, ui->labelMetroidBtmOverlayDstSize);
@@ -525,6 +548,7 @@ void MelonPrimeInputConfig::restoreVisualSnapshot()
     rSl("sRadarSrcR",  ui->spinMetroidBtmOverlaySrcRadius,  ui->inputMetroidBtmOverlaySrcRadius,  ui->labelMetroidBtmOverlaySrcRadius);
     // Rank & Time HUD
     rB("cRankShow", ui->cbMetroidHudRankShow);
+    rC("cRankAnchor", ui->comboMetroidHudRankAnchor);
     rSl("sRankX", ui->spinMetroidHudRankX, ui->inputMetroidHudRankX, nullptr);
     rSl("sRankY", ui->spinMetroidHudRankY, ui->inputMetroidHudRankY, nullptr);
     rC("cRankAlign", ui->comboMetroidHudRankAlign);
@@ -537,6 +561,7 @@ void MelonPrimeInputConfig::restoreVisualSnapshot()
     rI("sRankClrSpinG", ui->spinMetroidHudRankColorG);
     rI("sRankClrSpinB", ui->spinMetroidHudRankColorB);
     rB("cTimeLeftShow", ui->cbMetroidHudTimeLeftShow);
+    rC("cTimeLeftAnchor", ui->comboMetroidHudTimeLeftAnchor);
     rSl("sTimeLeftX", ui->spinMetroidHudTimeLeftX, ui->inputMetroidHudTimeLeftX, nullptr);
     rSl("sTimeLeftY", ui->spinMetroidHudTimeLeftY, ui->inputMetroidHudTimeLeftY, nullptr);
     rC("cTimeLeftAlign", ui->comboMetroidHudTimeLeftAlign);
@@ -546,6 +571,7 @@ void MelonPrimeInputConfig::restoreVisualSnapshot()
     rI("sTimeLeftClrSpinG", ui->spinMetroidHudTimeLeftColorG);
     rI("sTimeLeftClrSpinB", ui->spinMetroidHudTimeLeftColorB);
     rB("cTimeLimitShow", ui->cbMetroidHudTimeLimitShow);
+    rC("cTimeLimitAnchor", ui->comboMetroidHudTimeLimitAnchor);
     rSl("sTimeLimitX", ui->spinMetroidHudTimeLimitX, ui->inputMetroidHudTimeLimitX, nullptr);
     rSl("sTimeLimitY", ui->spinMetroidHudTimeLimitY, ui->inputMetroidHudTimeLimitY, nullptr);
     rC("cTimeLimitAlign", ui->comboMetroidHudTimeLimitAlign);
@@ -557,6 +583,7 @@ void MelonPrimeInputConfig::restoreVisualSnapshot()
     // Bomb Left HUD
     rB("cBombLeftShow",     ui->cbMetroidHudBombLeftShow);
     rB("cBombLeftTextShow", ui->cbMetroidHudBombLeftTextShow);
+    rC("cBombLeftAnchor",   ui->comboMetroidHudBombLeftAnchor);
     rSl("sBombLeftX", ui->spinMetroidHudBombLeftX, ui->inputMetroidHudBombLeftX, nullptr);
     rSl("sBombLeftY", ui->spinMetroidHudBombLeftY, ui->inputMetroidHudBombLeftY, nullptr);
     rC("cBombLeftAlign", ui->comboMetroidHudBombLeftAlign);
@@ -577,6 +604,7 @@ void MelonPrimeInputConfig::restoreVisualSnapshot()
     rC("cBombLeftIconMode",         ui->comboMetroidHudBombLeftIconMode);
     rSl("sBombLeftIconOfsX", ui->spinMetroidHudBombLeftIconOfsX, ui->inputMetroidHudBombLeftIconOfsX, ui->labelMetroidHudBombLeftIconOfsX);
     rSl("sBombLeftIconOfsY", ui->spinMetroidHudBombLeftIconOfsY, ui->inputMetroidHudBombLeftIconOfsY, ui->labelMetroidHudBombLeftIconOfsY);
+    rC("cBombLeftIconPosAnchor",    ui->comboMetroidHudBombLeftIconPosAnchor);
     rSl("sBombLeftIconPosX", ui->spinMetroidHudBombLeftIconPosX, ui->inputMetroidHudBombLeftIconPosX, ui->labelMetroidHudBombLeftIconPosX);
     rSl("sBombLeftIconPosY", ui->spinMetroidHudBombLeftIconPosY, ui->inputMetroidHudBombLeftIconPosY, ui->labelMetroidHudBombLeftIconPosY);
     rC("cBombLeftIconAnchorX",      ui->comboMetroidHudBombLeftIconAnchorX);
@@ -679,6 +707,7 @@ void MelonPrimeInputConfig::applyVisualPreview()
 
     Config::Table& instcfg = emuInstance->getLocalConfig();
     instcfg.SetBool("Metroid.Visual.CustomHUD",              ui->cbMetroidEnableCustomHud->isChecked());
+    instcfg.SetInt ("Metroid.Visual.HudTextScale",           ui->spinMetroidHudFontScale->value());
     instcfg.SetBool("Metroid.Visual.InGameAspectRatio",      ui->cbMetroidInGameAspectRatio->isChecked());
     instcfg.SetInt ("Metroid.Visual.InGameAspectRatioMode",  ui->comboMetroidInGameAspectRatioMode->currentIndex());
     instcfg.SetBool("Metroid.Visual.ClipCursorToBottomScreenWhenNotInGame", ui->cbMetroidClipCursorToBottomScreenWhenNotInGame->isChecked());
@@ -698,6 +727,7 @@ void MelonPrimeInputConfig::applyAndPreviewMatchStatus()
     m_applyPreviewActive = true;
     Config::Table& instcfg = emuInstance->getLocalConfig();
     instcfg.SetBool("Metroid.Visual.HudMatchStatusShow",     ui->cbMetroidHudMatchStatusShow->isChecked());
+    instcfg.SetInt ("Metroid.Visual.HudMatchStatusAnchor",   ui->comboMetroidHudMatchStatusAnchor->currentIndex());
     instcfg.SetInt ("Metroid.Visual.HudMatchStatusX",        ui->spinMetroidHudMatchStatusX->value());
     instcfg.SetInt ("Metroid.Visual.HudMatchStatusY",        ui->spinMetroidHudMatchStatusY->value());
     instcfg.SetInt ("Metroid.Visual.HudMatchStatusLabelOfsX",ui->spinMetroidHudMatchStatusLabelOfsX->value());
@@ -728,6 +758,7 @@ void MelonPrimeInputConfig::applyAndPreviewMatchStatus()
     instcfg.SetInt("Metroid.Visual.HudMatchStatusGoalColorG", ui->spinMetroidHudMatchStatusGoalColorG->value());
     instcfg.SetInt("Metroid.Visual.HudMatchStatusGoalColorB", ui->spinMetroidHudMatchStatusGoalColorB->value());
     instcfg.SetBool("Metroid.Visual.HudRankShow",        ui->cbMetroidHudRankShow->isChecked());
+    instcfg.SetInt ("Metroid.Visual.HudRankAnchor",      ui->comboMetroidHudRankAnchor->currentIndex());
     instcfg.SetInt ("Metroid.Visual.HudRankX",           ui->spinMetroidHudRankX->value());
     instcfg.SetInt ("Metroid.Visual.HudRankY",           ui->spinMetroidHudRankY->value());
     instcfg.SetInt ("Metroid.Visual.HudRankAlign",       ui->comboMetroidHudRankAlign->currentIndex());
@@ -736,6 +767,7 @@ void MelonPrimeInputConfig::applyAndPreviewMatchStatus()
     instcfg.SetInt ("Metroid.Visual.HudRankColorG",      ui->spinMetroidHudRankColorG->value());
     instcfg.SetInt ("Metroid.Visual.HudRankColorB",      ui->spinMetroidHudRankColorB->value());
     instcfg.SetBool("Metroid.Visual.HudTimeLeftShow",    ui->cbMetroidHudTimeLeftShow->isChecked());
+    instcfg.SetInt ("Metroid.Visual.HudTimeLeftAnchor",  ui->comboMetroidHudTimeLeftAnchor->currentIndex());
     instcfg.SetInt ("Metroid.Visual.HudTimeLeftX",       ui->spinMetroidHudTimeLeftX->value());
     instcfg.SetInt ("Metroid.Visual.HudTimeLeftY",       ui->spinMetroidHudTimeLeftY->value());
     instcfg.SetInt ("Metroid.Visual.HudTimeLeftAlign",   ui->comboMetroidHudTimeLeftAlign->currentIndex());
@@ -743,6 +775,7 @@ void MelonPrimeInputConfig::applyAndPreviewMatchStatus()
     instcfg.SetInt ("Metroid.Visual.HudTimeLeftColorG",  ui->spinMetroidHudTimeLeftColorG->value());
     instcfg.SetInt ("Metroid.Visual.HudTimeLeftColorB",  ui->spinMetroidHudTimeLeftColorB->value());
     instcfg.SetBool("Metroid.Visual.HudTimeLimitShow",   ui->cbMetroidHudTimeLimitShow->isChecked());
+    instcfg.SetInt ("Metroid.Visual.HudTimeLimitAnchor", ui->comboMetroidHudTimeLimitAnchor->currentIndex());
     instcfg.SetInt ("Metroid.Visual.HudTimeLimitX",      ui->spinMetroidHudTimeLimitX->value());
     instcfg.SetInt ("Metroid.Visual.HudTimeLimitY",      ui->spinMetroidHudTimeLimitY->value());
     instcfg.SetInt ("Metroid.Visual.HudTimeLimitAlign",  ui->comboMetroidHudTimeLimitAlign->currentIndex());
@@ -751,6 +784,7 @@ void MelonPrimeInputConfig::applyAndPreviewMatchStatus()
     instcfg.SetInt ("Metroid.Visual.HudTimeLimitColorB", ui->spinMetroidHudTimeLimitColorB->value());
     instcfg.SetBool("Metroid.Visual.HudBombLeftShow",     ui->cbMetroidHudBombLeftShow->isChecked());
     instcfg.SetBool("Metroid.Visual.HudBombLeftTextShow", ui->cbMetroidHudBombLeftTextShow->isChecked());
+    instcfg.SetInt ("Metroid.Visual.HudBombLeftAnchor",  ui->comboMetroidHudBombLeftAnchor->currentIndex());
     instcfg.SetInt ("Metroid.Visual.HudBombLeftX",      ui->spinMetroidHudBombLeftX->value());
     instcfg.SetInt ("Metroid.Visual.HudBombLeftY",      ui->spinMetroidHudBombLeftY->value());
     instcfg.SetInt ("Metroid.Visual.HudBombLeftAlign",  ui->comboMetroidHudBombLeftAlign->currentIndex());
@@ -767,6 +801,7 @@ void MelonPrimeInputConfig::applyAndPreviewMatchStatus()
     instcfg.SetInt ("Metroid.Visual.HudBombLeftIconMode",         ui->comboMetroidHudBombLeftIconMode->currentIndex());
     instcfg.SetInt ("Metroid.Visual.HudBombLeftIconOfsX",         ui->spinMetroidHudBombLeftIconOfsX->value());
     instcfg.SetInt ("Metroid.Visual.HudBombLeftIconOfsY",         ui->spinMetroidHudBombLeftIconOfsY->value());
+    instcfg.SetInt ("Metroid.Visual.HudBombLeftIconPosAnchor",    ui->comboMetroidHudBombLeftIconPosAnchor->currentIndex());
     instcfg.SetInt ("Metroid.Visual.HudBombLeftIconPosX",         ui->spinMetroidHudBombLeftIconPosX->value());
     instcfg.SetInt ("Metroid.Visual.HudBombLeftIconPosY",         ui->spinMetroidHudBombLeftIconPosY->value());
     instcfg.SetInt ("Metroid.Visual.HudBombLeftIconAnchorX",      ui->comboMetroidHudBombLeftIconAnchorX->currentIndex());
@@ -783,6 +818,7 @@ void MelonPrimeInputConfig::applyAndPreviewHpAmmo()
     if (!m_applyPreviewEnabled || m_applyPreviewActive) return;
     m_applyPreviewActive = true;
     Config::Table& instcfg = emuInstance->getLocalConfig();
+    instcfg.SetInt ("Metroid.Visual.HudHpAnchor",          ui->comboMetroidHudHpAnchor->currentIndex());
     instcfg.SetInt ("Metroid.Visual.HudHpX",              ui->spinMetroidHudHpX->value());
     instcfg.SetInt ("Metroid.Visual.HudHpY",              ui->spinMetroidHudHpY->value());
     instcfg.SetString("Metroid.Visual.HudHpPrefix",       ui->leMetroidHudHpPrefix->text().toStdString());
@@ -791,6 +827,7 @@ void MelonPrimeInputConfig::applyAndPreviewHpAmmo()
     instcfg.SetInt ("Metroid.Visual.HudHpTextColorR",      ui->spinMetroidHudHpTextColorR->value());
     instcfg.SetInt ("Metroid.Visual.HudHpTextColorG",      ui->spinMetroidHudHpTextColorG->value());
     instcfg.SetInt ("Metroid.Visual.HudHpTextColorB",      ui->spinMetroidHudHpTextColorB->value());
+    instcfg.SetInt ("Metroid.Visual.HudWeaponAnchor",      ui->comboMetroidHudWeaponAnchor->currentIndex());
     instcfg.SetInt ("Metroid.Visual.HudWeaponX",          ui->spinMetroidHudWeaponX->value());
     instcfg.SetInt ("Metroid.Visual.HudWeaponY",          ui->spinMetroidHudWeaponY->value());
     instcfg.SetString("Metroid.Visual.HudAmmoPrefix",     ui->leMetroidHudAmmoPrefix->text().toStdString());
@@ -802,6 +839,7 @@ void MelonPrimeInputConfig::applyAndPreviewHpAmmo()
     instcfg.SetInt ("Metroid.Visual.HudWeaponIconMode",   ui->comboMetroidHudWeaponIconMode->currentIndex());
     instcfg.SetInt ("Metroid.Visual.HudWeaponIconOffsetX",ui->spinMetroidHudWeaponIconOffsetX->value());
     instcfg.SetInt ("Metroid.Visual.HudWeaponIconOffsetY",ui->spinMetroidHudWeaponIconOffsetY->value());
+    instcfg.SetInt ("Metroid.Visual.HudWeaponIconPosAnchor", ui->comboMetroidHudWeaponIconPosAnchor->currentIndex());
     instcfg.SetInt ("Metroid.Visual.HudWeaponIconPosX",     ui->spinMetroidHudWeaponIconPosX->value());
     instcfg.SetInt ("Metroid.Visual.HudWeaponIconPosY",     ui->spinMetroidHudWeaponIconPosY->value());
     instcfg.SetInt ("Metroid.Visual.HudWeaponIconAnchorX",  ui->comboMetroidHudWeaponIconAnchorX->currentIndex());
@@ -815,6 +853,7 @@ void MelonPrimeInputConfig::applyAndPreviewHpAmmo()
     instcfg.SetInt ("Metroid.Visual.HudHpGaugeOffsetY",        ui->spinMetroidHudHpGaugeOffsetY->value());
     instcfg.SetInt ("Metroid.Visual.HudHpGaugeAnchor",         ui->comboMetroidHudHpGaugeAnchor->currentIndex());
     instcfg.SetInt ("Metroid.Visual.HudHpGaugePosMode",        ui->comboMetroidHudHpGaugePosMode->currentIndex());
+    instcfg.SetInt ("Metroid.Visual.HudHpGaugePosAnchor",      ui->comboMetroidHudHpGaugePosAnchor->currentIndex());
     instcfg.SetInt ("Metroid.Visual.HudHpGaugePosX",           ui->spinMetroidHudHpGaugePosX->value());
     instcfg.SetInt ("Metroid.Visual.HudHpGaugePosY",           ui->spinMetroidHudHpGaugePosY->value());
     instcfg.SetBool("Metroid.Visual.HudHpGaugeAutoColor",      ui->cbMetroidHudHpGaugeAutoColor->isChecked());
@@ -829,6 +868,7 @@ void MelonPrimeInputConfig::applyAndPreviewHpAmmo()
     instcfg.SetInt ("Metroid.Visual.HudAmmoGaugeOffsetY",      ui->spinMetroidHudAmmoGaugeOffsetY->value());
     instcfg.SetInt ("Metroid.Visual.HudAmmoGaugeAnchor",       ui->comboMetroidHudAmmoGaugeAnchor->currentIndex());
     instcfg.SetInt ("Metroid.Visual.HudAmmoGaugePosMode",      ui->comboMetroidHudAmmoGaugePosMode->currentIndex());
+    instcfg.SetInt ("Metroid.Visual.HudAmmoGaugePosAnchor",    ui->comboMetroidHudAmmoGaugePosAnchor->currentIndex());
     instcfg.SetInt ("Metroid.Visual.HudAmmoGaugePosX",         ui->spinMetroidHudAmmoGaugePosX->value());
     instcfg.SetInt ("Metroid.Visual.HudAmmoGaugePosY",         ui->spinMetroidHudAmmoGaugePosY->value());
     instcfg.SetInt("Metroid.Visual.HudAmmoGaugeColorR", ui->spinMetroidHudAmmoGaugeColorR->value());
@@ -883,6 +923,7 @@ void MelonPrimeInputConfig::applyAndPreviewRadar()
     m_applyPreviewActive = true;
     Config::Table& instcfg = emuInstance->getLocalConfig();
     instcfg.SetBool  ("Metroid.Visual.BtmOverlayEnable",     ui->cbMetroidBtmOverlayEnable->isChecked());
+    instcfg.SetInt   ("Metroid.Visual.BtmOverlayAnchor",     ui->comboMetroidBtmOverlayAnchor->currentIndex());
     instcfg.SetInt   ("Metroid.Visual.BtmOverlayDstX",       ui->spinMetroidBtmOverlayDstX->value());
     instcfg.SetInt   ("Metroid.Visual.BtmOverlayDstY",       ui->spinMetroidBtmOverlayDstY->value());
     instcfg.SetInt   ("Metroid.Visual.BtmOverlayDstSize",    ui->spinMetroidBtmOverlayDstSize->value());
@@ -1025,14 +1066,24 @@ void MelonPrimeInputConfig::updateHpAmmoPreview()
     p.setBrush(Qt::NoBrush);
     p.drawRect(QRectF(offX, offY, dsW * scale, dsH * scale));
 
-    // Use the same font as the actual game HUD (:/mph-font, pixel size 6)
-    p.setFont(loadHudFont(scale));
+    // Font rendered at 6px × textScalePct% in DS-space, then mapped to preview via scale.
+    const int textScalePct = std::max(10, instcfg.GetInt("Metroid.Visual.HudTextScale"));
+    const int fontPx = std::max(1, static_cast<int>(std::round(6.0 * textScalePct / 100.0)));
+    p.setFont(loadHudFont(fontPx));
+
+    // 9-point anchor helper: anchor 0=TL 1=TC 2=TR 3=ML 4=MC 5=MR 6=BL 7=BC 8=BR
+    auto applyAnchorPreview = [](int anchor, int ofsX, int ofsY, int& outX, int& outY) {
+        outX = (anchor % 3 == 0 ? 0 : anchor % 3 == 1 ? 128 : 256) + ofsX;
+        outY = (anchor / 3 == 0 ? 0 : anchor / 3 == 1 ? 96  : 192) + ofsY;
+    };
 
     // HP text
     // hpY is the text baseline in DS coords (matches DrawCachedText/DrawHP in the game).
     // drawText(QPointF, text) uses Y as baseline, so map directly: no extra font offset needed.
-    int hpX = instcfg.GetInt("Metroid.Visual.HudHpX");
-    int hpY = instcfg.GetInt("Metroid.Visual.HudHpY");
+    int hpX, hpY;
+    applyAnchorPreview(instcfg.GetInt("Metroid.Visual.HudHpAnchor"),
+                       instcfg.GetInt("Metroid.Visual.HudHpX"), instcfg.GetInt("Metroid.Visual.HudHpY"),
+                       hpX, hpY);
     int hpAlign = instcfg.GetInt("Metroid.Visual.HudHpAlign");
     int hpR = instcfg.GetInt("Metroid.Visual.HudHpTextColorR");
     int hpG = instcfg.GetInt("Metroid.Visual.HudHpTextColorG");
@@ -1060,8 +1111,12 @@ void MelonPrimeInputConfig::updateHpAmmoPreview()
         int posMode= instcfg.GetInt("Metroid.Visual.HudHpGaugePosMode");
         float gx, gy;
         if (posMode == 1) {
-            gx = offX + instcfg.GetInt("Metroid.Visual.HudHpGaugePosX") * scale;
-            gy = offY + instcfg.GetInt("Metroid.Visual.HudHpGaugePosY") * scale;
+            int gpx, gpy;
+            applyAnchorPreview(instcfg.GetInt("Metroid.Visual.HudHpGaugePosAnchor"),
+                               instcfg.GetInt("Metroid.Visual.HudHpGaugePosX"),
+                               instcfg.GetInt("Metroid.Visual.HudHpGaugePosY"), gpx, gpy);
+            gx = offX + gpx * scale;
+            gy = offY + gpy * scale;
         } else {
             const QFontMetrics fm = p.fontMetrics();
             float tH = fm.height(), tW = static_cast<float>(hpTextW);
@@ -1089,8 +1144,11 @@ void MelonPrimeInputConfig::updateHpAmmoPreview()
         if (s_missileIcon.isNull())
             s_missileIcon.load(":/mph-icon-missile");
         if (!s_missileIcon.isNull()) {
-            int iconPosX = instcfg.GetInt("Metroid.Visual.HudWeaponIconPosX");
-            int iconPosY = instcfg.GetInt("Metroid.Visual.HudWeaponIconPosY");
+            int iconPosX, iconPosY;
+            applyAnchorPreview(instcfg.GetInt("Metroid.Visual.HudWeaponIconPosAnchor"),
+                               instcfg.GetInt("Metroid.Visual.HudWeaponIconPosX"),
+                               instcfg.GetInt("Metroid.Visual.HudWeaponIconPosY"),
+                               iconPosX, iconPosY);
             float iconSx = offX + iconPosX * scale;
             float iconSy = offY + iconPosY * scale;
             int iconW = static_cast<int>(s_missileIcon.width() * scale);
@@ -1101,8 +1159,10 @@ void MelonPrimeInputConfig::updateHpAmmoPreview()
     }
 
     // Ammo text - same baseline logic as HP
-    int wpnX = instcfg.GetInt("Metroid.Visual.HudWeaponX");
-    int wpnY = instcfg.GetInt("Metroid.Visual.HudWeaponY");
+    int wpnX, wpnY;
+    applyAnchorPreview(instcfg.GetInt("Metroid.Visual.HudWeaponAnchor"),
+                       instcfg.GetInt("Metroid.Visual.HudWeaponX"), instcfg.GetInt("Metroid.Visual.HudWeaponY"),
+                       wpnX, wpnY);
     int ammoAlign = instcfg.GetInt("Metroid.Visual.HudAmmoAlign");
     int amR = instcfg.GetInt("Metroid.Visual.HudAmmoTextColorR");
     int amG = instcfg.GetInt("Metroid.Visual.HudAmmoTextColorG");
@@ -1130,8 +1190,12 @@ void MelonPrimeInputConfig::updateHpAmmoPreview()
         int posMode= instcfg.GetInt("Metroid.Visual.HudAmmoGaugePosMode");
         float gx, gy;
         if (posMode == 1) {
-            gx = offX + instcfg.GetInt("Metroid.Visual.HudAmmoGaugePosX") * scale;
-            gy = offY + instcfg.GetInt("Metroid.Visual.HudAmmoGaugePosY") * scale;
+            int agpx, agpy;
+            applyAnchorPreview(instcfg.GetInt("Metroid.Visual.HudAmmoGaugePosAnchor"),
+                               instcfg.GetInt("Metroid.Visual.HudAmmoGaugePosX"),
+                               instcfg.GetInt("Metroid.Visual.HudAmmoGaugePosY"), agpx, agpy);
+            gx = offX + agpx * scale;
+            gy = offY + agpy * scale;
         } else {
             const QFontMetrics fm = p.fontMetrics();
             float tH = fm.height(), tW = static_cast<float>(ammoTextW);
@@ -1183,7 +1247,9 @@ void MelonPrimeInputConfig::updateMatchStatusPreview()
     p.setBrush(Qt::NoBrush);
     p.drawRect(QRectF(offX, offY, dsW * scale, dsH * scale));
 
-    p.setFont(loadHudFont(scale));
+    const int textScalePct2 = std::max(10, instcfg.GetInt("Metroid.Visual.HudTextScale"));
+    const int fontPx2 = std::max(1, static_cast<int>(std::round(6.0 * textScalePct2 / 100.0)));
+    p.setFont(loadHudFont(fontPx2));
 
     auto formatTimeText = [](int seconds) {
         int safeSeconds = std::max(0, seconds);
@@ -1207,6 +1273,12 @@ void MelonPrimeInputConfig::updateMatchStatusPreview()
         return text;
     };
 
+    // 9-point anchor helper for this preview function
+    auto applyAnchor2 = [](int anchor, int ofsX, int ofsY, int& outX, int& outY) {
+        outX = (anchor % 3 == 0 ? 0 : anchor % 3 == 1 ? 128 : 256) + ofsX;
+        outY = (anchor / 3 == 0 ? 0 : anchor / 3 == 1 ? 96  : 192) + ofsY;
+    };
+
     auto drawPreviewText = [&](const QString& text, int x, int y, const QColor& color, int align = 0) {
         float sx = offX + x * scale;
         float sy = offY + y * scale;
@@ -1223,8 +1295,10 @@ void MelonPrimeInputConfig::updateMatchStatusPreview()
         p.setPen(QColor(80, 80, 80));
         p.drawText(QRectF(offX, offY, dsW * scale, dsH * scale), Qt::AlignCenter, "HIDDEN");
     } else {
-        const int msX = instcfg.GetInt("Metroid.Visual.HudMatchStatusX");
-        const int msY = instcfg.GetInt("Metroid.Visual.HudMatchStatusY");
+        int msX, msY;
+        applyAnchor2(instcfg.GetInt("Metroid.Visual.HudMatchStatusAnchor"),
+                     instcfg.GetInt("Metroid.Visual.HudMatchStatusX"),
+                     instcfg.GetInt("Metroid.Visual.HudMatchStatusY"), msX, msY);
 
         QColor valueClr(
             instcfg.GetInt("Metroid.Visual.HudMatchStatusValueColorR"),
@@ -1276,42 +1350,49 @@ void MelonPrimeInputConfig::updateMatchStatusPreview()
     }
 
     if (instcfg.GetBool("Metroid.Visual.HudRankShow")) {
+        int rkX, rkY;
+        applyAnchor2(instcfg.GetInt("Metroid.Visual.HudRankAnchor"),
+                     instcfg.GetInt("Metroid.Visual.HudRankX"), instcfg.GetInt("Metroid.Visual.HudRankY"),
+                     rkX, rkY);
         drawPreviewText(
-            buildRankText(),
-            instcfg.GetInt("Metroid.Visual.HudRankX"),
-            instcfg.GetInt("Metroid.Visual.HudRankY"),
-            QColor(
-                instcfg.GetInt("Metroid.Visual.HudRankColorR"),
-                instcfg.GetInt("Metroid.Visual.HudRankColorG"),
-                instcfg.GetInt("Metroid.Visual.HudRankColorB")),
+            buildRankText(), rkX, rkY,
+            QColor(instcfg.GetInt("Metroid.Visual.HudRankColorR"),
+                   instcfg.GetInt("Metroid.Visual.HudRankColorG"),
+                   instcfg.GetInt("Metroid.Visual.HudRankColorB")),
             instcfg.GetInt("Metroid.Visual.HudRankAlign"));
     }
 
     if (instcfg.GetBool("Metroid.Visual.HudTimeLeftShow")) {
+        int tlX, tlY;
+        applyAnchor2(instcfg.GetInt("Metroid.Visual.HudTimeLeftAnchor"),
+                     instcfg.GetInt("Metroid.Visual.HudTimeLeftX"), instcfg.GetInt("Metroid.Visual.HudTimeLeftY"),
+                     tlX, tlY);
         drawPreviewText(
-            formatTimeText(5 * 60),
-            instcfg.GetInt("Metroid.Visual.HudTimeLeftX"),
-            instcfg.GetInt("Metroid.Visual.HudTimeLeftY"),
-            QColor(
-                instcfg.GetInt("Metroid.Visual.HudTimeLeftColorR"),
-                instcfg.GetInt("Metroid.Visual.HudTimeLeftColorG"),
-                instcfg.GetInt("Metroid.Visual.HudTimeLeftColorB")),
+            formatTimeText(5 * 60), tlX, tlY,
+            QColor(instcfg.GetInt("Metroid.Visual.HudTimeLeftColorR"),
+                   instcfg.GetInt("Metroid.Visual.HudTimeLeftColorG"),
+                   instcfg.GetInt("Metroid.Visual.HudTimeLeftColorB")),
             instcfg.GetInt("Metroid.Visual.HudTimeLeftAlign"));
     }
 
     if (instcfg.GetBool("Metroid.Visual.HudTimeLimitShow")) {
+        int tlimX, tlimY;
+        applyAnchor2(instcfg.GetInt("Metroid.Visual.HudTimeLimitAnchor"),
+                     instcfg.GetInt("Metroid.Visual.HudTimeLimitX"), instcfg.GetInt("Metroid.Visual.HudTimeLimitY"),
+                     tlimX, tlimY);
         drawPreviewText(
-            formatMinuteText(7),
-            instcfg.GetInt("Metroid.Visual.HudTimeLimitX"),
-            instcfg.GetInt("Metroid.Visual.HudTimeLimitY"),
-            QColor(
-                instcfg.GetInt("Metroid.Visual.HudTimeLimitColorR"),
-                instcfg.GetInt("Metroid.Visual.HudTimeLimitColorG"),
-                instcfg.GetInt("Metroid.Visual.HudTimeLimitColorB")),
+            formatMinuteText(7), tlimX, tlimY,
+            QColor(instcfg.GetInt("Metroid.Visual.HudTimeLimitColorR"),
+                   instcfg.GetInt("Metroid.Visual.HudTimeLimitColorG"),
+                   instcfg.GetInt("Metroid.Visual.HudTimeLimitColorB")),
             instcfg.GetInt("Metroid.Visual.HudTimeLimitAlign"));
     }
 
     if (instcfg.GetBool("Metroid.Visual.HudBombLeftShow")) {
+        int blX, blY;
+        applyAnchor2(instcfg.GetInt("Metroid.Visual.HudBombLeftAnchor"),
+                     instcfg.GetInt("Metroid.Visual.HudBombLeftX"), instcfg.GetInt("Metroid.Visual.HudBombLeftY"),
+                     blX, blY);
         const QString prefix = QString::fromStdString(instcfg.GetString("Metroid.Visual.HudBombLeftPrefix"));
         const QString suffix = QString::fromStdString(instcfg.GetString("Metroid.Visual.HudBombLeftSuffix"));
         const QString bombText = instcfg.GetBool("Metroid.Visual.HudBombLeftTextShow")
@@ -1319,13 +1400,10 @@ void MelonPrimeInputConfig::updateMatchStatusPreview()
             : (prefix + suffix);
         if (!bombText.isEmpty())
             drawPreviewText(
-                bombText,
-                instcfg.GetInt("Metroid.Visual.HudBombLeftX"),
-                instcfg.GetInt("Metroid.Visual.HudBombLeftY"),
-                QColor(
-                    instcfg.GetInt("Metroid.Visual.HudBombLeftColorR"),
-                    instcfg.GetInt("Metroid.Visual.HudBombLeftColorG"),
-                    instcfg.GetInt("Metroid.Visual.HudBombLeftColorB")),
+                bombText, blX, blY,
+                QColor(instcfg.GetInt("Metroid.Visual.HudBombLeftColorR"),
+                       instcfg.GetInt("Metroid.Visual.HudBombLeftColorG"),
+                       instcfg.GetInt("Metroid.Visual.HudBombLeftColorB")),
                 instcfg.GetInt("Metroid.Visual.HudBombLeftAlign"));
     }
 
@@ -1348,14 +1426,22 @@ void MelonPrimeInputConfig::updateMatchStatusPreview()
                 instcfg.GetInt("Metroid.Visual.HudBombLeftIconColorG"),
                 instcfg.GetInt("Metroid.Visual.HudBombLeftIconColorB"));
             const int iconMode = instcfg.GetInt("Metroid.Visual.HudBombLeftIconMode");
-            const int baseX = instcfg.GetInt("Metroid.Visual.HudBombLeftX");
-            const int baseY = instcfg.GetInt("Metroid.Visual.HudBombLeftY");
-            float ix = offX + ((iconMode == 0)
-                ? (baseX + instcfg.GetInt("Metroid.Visual.HudBombLeftIconOfsX"))
-                : instcfg.GetInt("Metroid.Visual.HudBombLeftIconPosX")) * scale;
-            float iy = offY + ((iconMode == 0)
-                ? (baseY + instcfg.GetInt("Metroid.Visual.HudBombLeftIconOfsY"))
-                : instcfg.GetInt("Metroid.Visual.HudBombLeftIconPosY")) * scale;
+            float ix, iy;
+            if (iconMode == 0) {
+                int blBaseX, blBaseY;
+                applyAnchor2(instcfg.GetInt("Metroid.Visual.HudBombLeftAnchor"),
+                             instcfg.GetInt("Metroid.Visual.HudBombLeftX"),
+                             instcfg.GetInt("Metroid.Visual.HudBombLeftY"), blBaseX, blBaseY);
+                ix = offX + (blBaseX + instcfg.GetInt("Metroid.Visual.HudBombLeftIconOfsX")) * scale;
+                iy = offY + (blBaseY + instcfg.GetInt("Metroid.Visual.HudBombLeftIconOfsY")) * scale;
+            } else {
+                int bix, biy;
+                applyAnchor2(instcfg.GetInt("Metroid.Visual.HudBombLeftIconPosAnchor"),
+                             instcfg.GetInt("Metroid.Visual.HudBombLeftIconPosX"),
+                             instcfg.GetInt("Metroid.Visual.HudBombLeftIconPosY"), bix, biy);
+                ix = offX + bix * scale;
+                iy = offY + biy * scale;
+            }
             const int iw = static_cast<int>(iconPm.width() * scale);
             const int ih = static_cast<int>(iconPm.height() * scale);
             const int iconAlignX = instcfg.GetInt("Metroid.Visual.HudBombLeftIconAnchorX");

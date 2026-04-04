@@ -321,7 +321,9 @@ ScreenPanel::ScreenPanel(QWidget* parent) : QWidget(parent)
     Overlay[1] = QImage(256, 192, QImage::Format_ARGB32_Premultiplied);
     Overlay[0].fill(0x00000000);
     Overlay[1].fill(0x00000000);
-    // Load custom font for HUD text — disable anti-aliasing for crisp pixels
+    // Load custom font for HUD text.
+    // Anti-aliasing is enabled so the font looks sharp at high output resolutions.
+    // The font is a TTF (vector), so it renders cleanly at any pixel size.
     {
         int fontId = QFontDatabase::addApplicationFont(":/mph-font");
         if (fontId >= 0) {
@@ -1143,8 +1145,14 @@ void ScreenPanelNative::paintEvent(QPaintEvent * event)
             auto& instcfg = emuInstance->getLocalConfig();
             if (mp && mp->IsRomDetected() && mp->IsInGame())
             {
-                // Compute widescreen stretch factor from top screen transform
+                // Compute hudScale and topStretchX from the top screen transform.
+                // hudScale = scaleY: output pixels per DS pixel along Y. The buffer
+                //   height is always 192*hudScale = the actual displayed screen height.
+                // topStretchX = scaleX / scaleY: horizontal stretch ratio.
+                //   > 1 when window is wider than 4:3 (widescreen), < 1 when narrower.
+                // topOutW/H match the exact pixel dimensions of the displayed top screen.
                 float topStretchX = 1.0f;
+                float hudScale = 1.0f;
                 for (int i = 0; i < numScreens; i++)
                 {
                     if (screenKind[i] != 0) continue; // 0 = top screen
@@ -1152,14 +1160,17 @@ void ScreenPanelNative::paintEvent(QPaintEvent * event)
                     const float scaleX = std::sqrt((mtx[0] * mtx[0]) + (mtx[1] * mtx[1]));
                     const float scaleY = std::sqrt((mtx[2] * mtx[2]) + (mtx[3] * mtx[3]));
                     if (scaleX > 0.0f && scaleY > 0.0f) {
-                        const float baseScale = std::min(scaleX, scaleY);
-                        if (baseScale > 0.0f)
-                            topStretchX = scaleX / baseScale;
+                        hudScale = scaleY;
+                        topStretchX = scaleX / scaleY;
                     }
                     break;
                 }
 
-                // Custom HUD currently renders only to the top overlay.
+                // Buffer matches the exact displayed area of the top screen.
+                const int topOutW = std::max(1, static_cast<int>(std::ceil(hudScale * topStretchX * 256.0f)));
+                const int topOutH = std::max(1, static_cast<int>(std::ceil(hudScale * 192.0f)));
+                if (Overlay[0].width() != topOutW || Overlay[0].height() != topOutH)
+                    Overlay[0] = QImage(topOutW, topOutH, QImage::Format_ARGB32_Premultiplied);
                 Overlay[0].fill(Qt::transparent);
 
                 // Per-frame painter (must end before reading image)
@@ -1173,17 +1184,18 @@ void ScreenPanelNative::paintEvent(QPaintEvent * event)
                         &topP, nullptr,
                         &Overlay[0], nullptr,
                         mp->IsInGame(),
-                        topStretchX);
+                        topStretchX, hudScale);
                 } // painter ends here — safe to read image
 
-                // Composite top overlay only on the top screen.
+                // Composite 1:1 at the screen's window-space origin (no scaling — buffer is already hi-res).
                 if (MelonPrime::CustomHud_IsEnabled(instcfg))
                 {
                     for (int i = 0; i < numScreens; i++)
                     {
                         if (screenKind[i] != 0) continue;
-                        painter.setTransform(screenTrans[i]);
-                        painter.drawImage(screenrc, Overlay[0]);
+                        const float* mtx = screenMatrix[i];
+                        painter.resetTransform();
+                        painter.drawImage(QPoint(static_cast<int>(mtx[4]), static_cast<int>(mtx[5])), Overlay[0]);
                     }
                 }
             }
@@ -1613,8 +1625,11 @@ void ScreenPanelGL::drawScreen()
             auto& instcfg = emuInstance->getLocalConfig();
             if (mp && mp->IsRomDetected() && mp->IsInGame())
             {
-                // Compute widescreen stretch factor from top screen transform
+                // Compute hudScale and topStretchX from the top screen transform.
+                // hudScale = scaleY: output pixels per DS pixel along Y.
+                // topStretchX = scaleX / scaleY: horizontal ratio (>1 wide, <1 narrow).
                 float topStretchX = 1.0f;
+                float hudScale = 1.0f;
                 for (int i = 0; i < numScreens; i++)
                 {
                     if (screenKind[i] != 0) continue; // 0 = top screen
@@ -1622,14 +1637,17 @@ void ScreenPanelGL::drawScreen()
                     const float scaleX = std::sqrt((mtx[0] * mtx[0]) + (mtx[1] * mtx[1]));
                     const float scaleY = std::sqrt((mtx[2] * mtx[2]) + (mtx[3] * mtx[3]));
                     if (scaleX > 0.0f && scaleY > 0.0f) {
-                        const float baseScale = std::min(scaleX, scaleY);
-                        if (baseScale > 0.0f)
-                            topStretchX = scaleX / baseScale;
+                        hudScale = scaleY;
+                        topStretchX = scaleX / scaleY;
                     }
                     break;
                 }
 
-                // Custom HUD currently renders only to the top overlay.
+                // Buffer matches the exact displayed area of the top screen.
+                const int topOutW = std::max(1, static_cast<int>(std::ceil(hudScale * topStretchX * 256.0f)));
+                const int topOutH = std::max(1, static_cast<int>(std::ceil(hudScale * 192.0f)));
+                if (Overlay[0].width() != topOutW || Overlay[0].height() != topOutH)
+                    Overlay[0] = QImage(topOutW, topOutH, QImage::Format_ARGB32_Premultiplied);
                 Overlay[0].fill(Qt::transparent);
 
                 // Per-frame painter (must end before GL upload reads image bits)
@@ -1643,14 +1661,22 @@ void ScreenPanelGL::drawScreen()
                         &topP, nullptr,
                         &Overlay[0], nullptr,
                         mp->IsInGame(),
-                        topStretchX);
+                        topStretchX, hudScale);
                 } // painter ends here — safe to read constBits()
 
                 if (MelonPrime::CustomHud_IsEnabled(instcfg))
                 {
                 glBindTexture(GL_TEXTURE_2D, overlayTextures[0]);
-                glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, 256, 192,
-                    GL_RGBA, GL_UNSIGNED_BYTE, Overlay[0].constBits());
+                // Reallocate GL texture when the buffer size changes (window resize).
+                if (topOutW != overlayTexW || topOutH != overlayTexH) {
+                    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, topOutW, topOutH, 0,
+                        GL_RGBA, GL_UNSIGNED_BYTE, Overlay[0].constBits());
+                    overlayTexW = topOutW;
+                    overlayTexH = topOutH;
+                } else {
+                    glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, topOutW, topOutH,
+                        GL_RGBA, GL_UNSIGNED_BYTE, Overlay[0].constBits());
+                }
 
 
                 // Switch to OSD shader (supports alpha via texelFetch + BGRA swizzle)
@@ -1677,12 +1703,9 @@ void ScreenPanelGL::drawScreen()
                     const float displayW = scaleX * 256.0f;
                     const float displayH = scaleY * 192.0f;
 
-                    // Separate X/Y tex scales: map full display to full 256x192 overlay.
-                    // This correctly handles widescreen — the 4:3 overlay is stretched
-                    // non-uniformly to fill the display, matching how the 3D scene is
-                    // rendered with wider horizontal FOV.
-                    const float texScaleX = 256.0f / displayW;
-                    const float texScaleY = 192.0f / displayH;
+                    // Hi-res overlay: texcoords map 1:1 to display pixels.
+                    const float texScaleX = 1.0f;
+                    const float texScaleY = 1.0f;
 
                     glUniform2i(osdPosULoc, static_cast<int>(mtx[4]), static_cast<int>(mtx[5]));
                     glUniform2i(osdSizeULoc, static_cast<int>(displayW), static_cast<int>(displayH));
@@ -1712,11 +1735,27 @@ void ScreenPanelGL::drawScreen()
 
                     if (topMtx)
                     {
-                        // Map DS dest coords to window pixel coords (square bounding box)
-                        float wDstX0 = topMtx[0] * dstX + topMtx[1] * dstY + topMtx[4];
-                        float wDstY0 = topMtx[2] * dstX + topMtx[3] * dstY + topMtx[5];
-                        float wDstX1 = topMtx[0] * (dstX + dstSize) + topMtx[1] * (dstY + dstSize) + topMtx[4];
-                        float wDstY1 = topMtx[2] * (dstX + dstSize) + topMtx[3] * (dstY + dstSize) + topMtx[5];
+                        // Compute anchor base directly in window space: map the DS anchor point
+                        // (0/128/256, 0/96/192) through the screen matrix.
+                        // Then apply offsets in rScaleY units (uniform, matching painter's
+                        // scale(scaleY,scaleY) behavior). Doing anchor math in DS-space first
+                        // then multiplying through the matrix would double-apply the X stretch.
+                        const float rScaleY = std::sqrt(topMtx[2]*topMtx[2] + topMtx[3]*topMtx[3]);
+                        {
+                            const int radarAnchor = instcfg.GetInt("Metroid.Visual.BtmOverlayAnchor");
+                            const float dsAX = (radarAnchor % 3) * 128.0f;
+                            const float dsAY = (radarAnchor / 3) * 96.0f;
+                            const float wAX = topMtx[0]*dsAX + topMtx[1]*dsAY + topMtx[4];
+                            const float wAY = topMtx[2]*dsAX + topMtx[3]*dsAY + topMtx[5];
+                            dstX = static_cast<int>(wAX + dstX * rScaleY);
+                            dstY = static_cast<int>(wAY + dstY * rScaleY);
+                        }
+
+                        // dstX/dstY are now in window pixels. Use rScaleY for both dims (circle, not ellipse).
+                        const float wDstX0 = dstX;
+                        const float wDstY0 = dstY;
+                        const float wDstX1 = dstX + rScaleY * dstSize;
+                        const float wDstY1 = dstY + rScaleY * dstSize;
 
                         // Full bottom screen as source (texcoords 0-1)
                         const float verts[6 * 4] =

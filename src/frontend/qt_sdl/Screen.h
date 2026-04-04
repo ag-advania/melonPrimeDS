@@ -163,7 +163,7 @@ protected:
     std::deque<OSDItem> osdItems;
 
 #ifdef MELONPRIME_CUSTOM_HUD
-    QImage Overlay[2];       // [0]=Top, [1]=Bottom — ARGB32_Premultiplied, 256x192
+    QImage Overlay[2];       // [0]=Top, [1]=Bottom — ARGB32_Premultiplied, 256x192 (DS-native space)
     QFont overlayFont;
 #endif
 
@@ -315,7 +315,8 @@ private:
     std::map<unsigned int, GLuint> osdTextures;
 
 #ifdef MELONPRIME_CUSTOM_HUD
-    GLuint overlayTextures[2];  // GL_TEXTURE_2D per screen (top/bottom)
+    GLuint overlayTextures[2];  // GL_TEXTURE_2D per screen (top/bottom), resized to match hi-res HUD buffer
+    int overlayTexW = 0, overlayTexH = 0; // currently allocated texture dimensions
     GLuint btmOverlayShader;
     GLint btmOverlayScreenSizeULoc, btmOverlayOpacityULoc, btmOverlaySrcCenterULoc, btmOverlaySrcRadiusULoc;
     GLuint btmOverlayVertexArray, btmOverlayVertexBuffer;

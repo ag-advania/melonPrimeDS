@@ -46,7 +46,8 @@ namespace MelonPrime {
         QImage* topBuffer,
         QImage* btmBuffer,
         bool isInGame,
-        float topStretchX = 1.0f
+        float topStretchX = 1.0f,
+        float hudScale = 1.0f
     );
 
     // Returns true if the custom HUD setting is enabled in config.

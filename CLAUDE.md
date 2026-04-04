@@ -25,8 +25,9 @@ Displays a circular crop of the DS bottom screen on top of the rendered top scre
 | Key | Default | Description |
 |-----|---------|-------------|
 | `BtmOverlayEnable` | false | Enable overlay |
-| `BtmOverlayDstX` | 190 | X position on top screen |
-| `BtmOverlayDstY` | 0 | Y position on top screen |
+| `BtmOverlayAnchor` | 2 (TR) | 9-point anchor for overlay destination |
+| `BtmOverlayDstX` | 190 | X offset from anchor |
+| `BtmOverlayDstY` | 0 | Y offset from anchor |
 | `BtmOverlayDstSize` | 64 | Output size of the circular overlay |
 | `BtmOverlayOpacity` | 0.85 | Opacity (`0.0-1.0`) |
 | `BtmOverlaySrcRadius` | 46 | Source radius on the DS bottom screen |
@@ -132,13 +133,58 @@ Current cached data inside `MelonPrimeCustomHud.cpp` includes:
 - tinted icon variants
 - outline image buffer for crosshair rendering
 - text measurement / text bitmap caches
-- `CachedHudConfig`
+- `CachedHudConfig` (contains `HpHudConfig`, `WeaponHudConfig`, `CrosshairHudConfig`, `MatchStatusHudConfig`, `BombLeftHudConfig`, `RankTimeHudConfig`, `RadarOverlayConfig`)
 - `BattleMatchState`
+
+### CachedHudConfig struct notes
+Each sub-struct stores both **raw anchor + offset** values and **computed final coordinates**. The raw values are loaded once per config change in `Load*Config()`. Final positions are recomputed by `RecomputeAnchorPositions(topStretchX)` whenever config changes **or** `topStretchX` changes (window resize). This ensures anchored elements track the actual visible screen edges in widescreen/narrow views.
+
+Key struct fields:
+- `HpHudConfig`: `hpAnchor`, `hpOfsX/Y` (raw), `hpX/Y` (final); `hpGaugePosAnchor`, `hpGaugePosOfsX/Y`, `hpGaugePosX/Y`
+- `WeaponHudConfig`: `wpnAnchor`, `wpnOfsX/Y`, `wpnX/Y`; `iconPosAnchor`, `iconPosOfsX/Y`, `iconPosX/Y`; `ammoGaugePosAnchor`, `ammoGaugePosOfsX/Y`, `ammoGaugePosX/Y`
+- `MatchStatusHudConfig`: `matchStatusAnchor`, `matchStatusOfsX/Y`, `matchStatusX/Y`
+- `BombLeftHudConfig`: `bombLeftAnchor`, `bombLeftOfsX/Y`, `bombLeftX/Y`; `bombIconPosAnchor`, `bombIconPosOfsX/Y`, `bombIconPosX/Y`
+- `RankTimeHudConfig`: `rankAnchor/OfsX/Y/X/Y`, `timeLeftAnchor/OfsX/Y/X/Y`, `timeLimitAnchor/OfsX/Y/X/Y`
+- `RadarOverlayConfig`: `radarAnchor`, `radarOfsX/Y`, `radarDstX/Y`
+- `CachedHudConfig`: `lastStretchX` tracks the `topStretchX` used for the last position computation
+
+### High-resolution HUD rendering
+The HUD overlay is rendered into a hi-res buffer matching the actual screen output size (not DS-native 256×192).
+
+Key design points:
+- `Overlay[0]` is sized `ceil(hudScale * topStretchX * 256) × ceil(hudScale * 192)` pixels.
+- `CustomHud_Render()` receives `hudScale` (`scaleY = output height / 192`) and `topStretchX` (`scaleX / scaleY`: `>1` widescreen, `<1` narrow window, `=1` exact 4:3).
+- The painter uses `scale(hudScale, hudScale)` then `translate((topStretchX-1)*128, 0)`. DS Y is always scaled by `scaleY`; DS X effectively scales by `scaleX` via the translate.
+- All HUD element positions are specified in DS-space (integers, 0–255 / 0–191) and scale correctly with the window without any manual correction.
+- Icons are drawn with `drawImage(QRectF(x, y, icon.width(), icon.height()), icon)` so they scale with the painter transform.
+- The font is always rendered at `kCustomHudFontSize = 6` px (optimal glyph quality for `mph.ttf`). Visual text size is controlled separately by `Metroid.Visual.HudTextScale` (percentage, default 100). Text bitmaps are drawn scaled via `DrawCachedText(..., tds)` where `tds = textScalePct / 100.0f`.
+- The crosshair reads `cx/cy` from RAM in DS-space (0–255) and requires **no** manual `topStretchX` correction — the painter transform handles it.
+
+### 9-point anchor system
+All HUD text/icon positions use a 9-point anchor + offset model (implemented in the `highres_fonts` branch):
+
+```
+0=Top Left    1=Top Center    2=Top Right
+3=Middle Left 4=Middle Center 5=Middle Right
+6=Bottom Left 7=Bottom Center 8=Bottom Right
+```
+
+- Anchor base coordinates (DS canvas 256×192):
+  - X: col 0 → 0, col 1 → 128, col 2 → 256
+  - Y: row 0 → 0, row 1 → 96, row 2 → 192
+- The stored `*X`/`*Y` config values are **offsets** from the anchor base, not absolute positions.
+- `ApplyAnchor(anchor, ofsX, ofsY, outX, outY)` in `MelonPrimeCustomHud.cpp` computes final DS-space coordinates at config-load time (inside `Load*Config()`). Draw functions receive pre-computed positions.
+- Every HUD element has a `*Anchor` config key (default values in `Config.cpp`). Default anchors:
+  - HP: 6 (BL), Weapon/Ammo: 8 (BR), WeaponIconPos: 8 (BR)
+  - HpGaugePos: 6 (BL), AmmoGaugePos: 8 (BR)
+  - MatchStatus: 0 (TL), Rank: 0 (TL), TimeLeft: 0 (TL), TimeLimit: 0 (TL)
+  - BombLeft: 8 (BR), BombLeftIconPos: 8 (BR)
+  - Radar: 2 (TR)
+- Preview functions (`updateHpAmmoPreview`, `updateMatchStatusPreview`, `updateRadarPreview`) each contain a local `applyAnchorPreview` / `applyAnchor2` lambda mirroring the same logic.
 
 ### Runtime HUD behavior details
 Useful implementation notes for future edits:
-- Crosshair X coordinate is adjusted by `topStretchX` so widescreen rendering still lines up with game aim position.
-- HP and ammo gauges support both anchored positioning relative to text and fully independent positioning.
+- HP and ammo gauges support both anchored positioning relative to text (via `HudHpGaugeAnchor`) and fully independent absolute positioning (mode 1, via `HudHpGaugePosAnchor` + offset).
 - Match-status colors use an “invalid `QColor` means inherit overall color” convention in cached config.
 - Bomb-left text and icon are separate toggles.
 - Bomb-left is only drawn for Samus/Sylux alt-form cases, but the settings UI always previews it.
@@ -223,8 +269,9 @@ Live preview rendering is split by feature area:
 Preview implementation notes:
 - `loadHudFont()` loads the same `:/mph-font` resource used by the in-game HUD preview
 - previews render against a simulated 256x192 DS top-screen area scaled to the preview widget
-- `updateHpAmmoPreview()` and `updateMatchStatusPreview()` intentionally mirror runtime layout rules such as text alignment and gauge anchor calculations
+- `updateHpAmmoPreview()` and `updateMatchStatusPreview()` intentionally mirror runtime layout rules such as text alignment, gauge anchor calculations, and 9-point anchor application
 - `updateRadarPreview()` is only an approximate visualization of destination placement/size/opacity; it does not sample the real bottom-screen texture
+- each preview function contains a local lambda (`applyAnchorPreview` in `updateHpAmmoPreview`, `applyAnchor2` in `updateMatchStatusPreview`) that mirrors `ApplyAnchor()` from `MelonPrimeCustomHud.cpp`
 
 ### Preview apply / cancel model
 The dialog keeps a visual snapshot through `snapshotVisualConfig()` and restores it with `restoreVisualSnapshot()` when the parent dialog is cancelled.
@@ -265,6 +312,27 @@ Defined in `EmuInstance.h` and grouped in `src/frontend/qt_sdl/InputConfig/Melon
 
 These replaced the older `hk_tabAddonsMetroid*` naming.
 
+### 9-point anchor widgets in the UI
+Every HUD position section in `MelonPrimeInputConfig.ui` has a `QComboBox` named `comboMetroid*Anchor` with 9 items (Top Left → Bottom Right). The adjacent X/Y spinboxes are labelled **Offset X / Offset Y** (not Position X/Y) to reflect that they are offsets from the anchor.
+
+Current anchor combo widget names:
+| Element | Widget name |
+|---------|-------------|
+| HP text | `comboMetroidHudHpAnchor` |
+| HP gauge (independent pos) | `comboMetroidHudHpGaugePosAnchor` |
+| Weapon/Ammo text | `comboMetroidHudWeaponAnchor` |
+| Weapon icon (independent pos) | `comboMetroidHudWeaponIconPosAnchor` |
+| Ammo gauge (independent pos) | `comboMetroidHudAmmoGaugePosAnchor` |
+| Match Status | `comboMetroidHudMatchStatusAnchor` |
+| Rank | `comboMetroidHudRankAnchor` |
+| Time Left | `comboMetroidHudTimeLeftAnchor` |
+| Time Limit | `comboMetroidHudTimeLimitAnchor` |
+| Bomb Left text | `comboMetroidHudBombLeftAnchor` |
+| Bomb Left icon (independent pos) | `comboMetroidHudBombLeftIconPosAnchor` |
+| Radar overlay | `comboMetroidBtmOverlayAnchor` |
+
+Note: `comboMetroidHudHpGaugeAnchor`, `comboMetroidHudAmmoGaugeAnchor` etc. are **gauge-relative-to-text** anchors (a different 5-point system), not the 9-point screen anchors.
+
 ---
 
 ## MelonPrimeCustomHud.h — Public API
@@ -283,7 +351,8 @@ void CustomHud_Render(
     QImage* topBuffer,
     QImage* btmBuffer,
     bool isInGame,
-    float topStretchX = 1.0f
+    float topStretchX = 1.0f,
+    float hudScale = 1.0f
 );
 
 bool CustomHud_IsEnabled(Config::Table& localCfg);
@@ -319,16 +388,17 @@ MelonPrime-specific settings are primarily stored under:
 
 Important current groups include:
 - `Metroid.Visual.CustomHUD`
+- `Metroid.Visual.HudTextScale` — text visual scale in percent (default 100, font always 6px)
 - `Metroid.Visual.Crosshair*`
-- `Metroid.Visual.HudHp*`
-- `Metroid.Visual.HudWeapon*`
-- `Metroid.Visual.HudAmmo*`
-- `Metroid.Visual.HudMatchStatus*`
-- `Metroid.Visual.HudRank*`
-- `Metroid.Visual.HudTimeLeft*`
-- `Metroid.Visual.HudTimeLimit*`
-- `Metroid.Visual.HudBombLeft*`
-- `Metroid.Visual.BtmOverlay*`
+- `Metroid.Visual.HudHp*` — includes `HudHpAnchor` (default 6=BL), `HudHpX/Y` (offsets), `HudHpGaugePosAnchor` (default 6=BL)
+- `Metroid.Visual.HudWeapon*` — includes `HudWeaponAnchor` (default 8=BR), `HudWeaponIconPosAnchor` (default 8=BR)
+- `Metroid.Visual.HudAmmo*` — includes `HudAmmoGaugePosAnchor` (default 8=BR)
+- `Metroid.Visual.HudMatchStatus*` — includes `HudMatchStatusAnchor` (default 0=TL)
+- `Metroid.Visual.HudRank*` — includes `HudRankAnchor` (default 0=TL)
+- `Metroid.Visual.HudTimeLeft*` — includes `HudTimeLeftAnchor` (default 0=TL)
+- `Metroid.Visual.HudTimeLimit*` — includes `HudTimeLimitAnchor` (default 0=TL)
+- `Metroid.Visual.HudBombLeft*` — includes `HudBombLeftAnchor` (default 8=BR), `HudBombLeftIconPosAnchor` (default 8=BR)
+- `Metroid.Visual.BtmOverlay*` — includes `BtmOverlayAnchor` (default 2=TR)
 - `Metroid.Visual.InGameAspectRatio*`
 
 When touching UI or runtime HUD behavior, always check both:
@@ -344,3 +414,12 @@ When touching UI or runtime HUD behavior, always check both:
 - `MelonPrimeCustomHud.cpp` and `InputConfig/MelonPrimeInputConfig.cpp` are explicitly built as part of the frontend
 - The project has been built on Windows and via MinGW cross-compilation from WSL
 - `vcpkg/` is used for dependencies in this repo setup
+
+## Active branch: `highres_fonts`
+Current work is on the `highres_fonts` branch. Main changes relative to `master`:
+- Full **9-point anchor system** for all HUD element positions (described above)
+- All `*X`/`*Y` HUD config values are now **offsets from anchor**, not absolute DS-space coordinates
+- `ApplyAnchor()` helper in `MelonPrimeCustomHud.cpp` — called once per element in `Load*Config()`, transparent to draw functions
+- UI form (`MelonPrimeInputConfig.ui`): all position rows renamed "Offset X/Y", anchor combos inserted at row 1 of each section, row indices of subsequent widgets shifted accordingly
+- Preview lambdas (`applyAnchorPreview`, `applyAnchor2`) in `MelonPrimeInputConfigPreview.cpp` mirror the runtime logic
+- Snapshot/restore in `snapshotVisualConfig` / `restoreVisualSnapshot` covers all new anchor combo widgets
