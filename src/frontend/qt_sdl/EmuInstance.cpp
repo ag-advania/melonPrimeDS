@@ -80,6 +80,41 @@ EmuInstance::EmuInstance(int inst) : deleting(false),
 {
     consoleType = globalCfg.GetInt("Emu.ConsoleType");
 
+    // Migrate pre-anchor-system configs. Detection: HudHpAnchor absent AND
+    // HudHpX explicitly saved — the latter distinguishes old configs from a
+    // completely fresh/blank config (which has neither key yet).
+    if (!localCfg.HasKey("Metroid.Visual.HudHpAnchor") &&
+         localCfg.HasKey("Metroid.Visual.HudHpX"))
+    {
+        // Setting all screen-anchor keys to 0 (TL, base 0,0) makes old
+        // absolute X/Y values work correctly as offsets from the TL corner.
+        static const char* const kAnchorKeys[] = {
+            "Metroid.Visual.HudHpAnchor",
+            "Metroid.Visual.HudHpGaugePosAnchor",
+            "Metroid.Visual.HudWeaponAnchor",
+            "Metroid.Visual.HudWeaponIconPosAnchor",
+            "Metroid.Visual.HudAmmoGaugePosAnchor",
+            "Metroid.Visual.HudMatchStatusAnchor",
+            "Metroid.Visual.HudRankAnchor",
+            "Metroid.Visual.HudTimeLeftAnchor",
+            "Metroid.Visual.HudTimeLimitAnchor",
+            "Metroid.Visual.HudBombLeftAnchor",
+            "Metroid.Visual.HudBombLeftIconPosAnchor",
+            "Metroid.Visual.BtmOverlayAnchor",
+        };
+        for (const char* key : kAnchorKeys)
+            localCfg.SetInt(key, 0);
+
+        // Map legacy HudFontSize (pixel size) to HudTextScale (% of 6px baseline).
+        if (localCfg.HasKey("Metroid.Visual.HudFontSize"))
+        {
+            const int oldPx = localCfg.GetInt("Metroid.Visual.HudFontSize");
+            if (oldPx > 0)
+                localCfg.SetInt("Metroid.Visual.HudTextScale", (oldPx * 100 + 3) / 6);
+        }
+        Config::Save();
+    }
+
     ndsSave = nullptr;
     cartType = -1;
     baseROMDir = "";

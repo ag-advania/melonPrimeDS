@@ -118,15 +118,18 @@ namespace Config
         /* MelonPrimeDS } */
 
         /* MelonPrimeDS Custom HUD Crosshair defaults { */
+        {"Instance*.Metroid.Visual.HudTextScale",           60},
+        {"Instance*.Metroid.Visual.HudHpAnchor",           6},
         {"Instance*.Metroid.Visual.HudHpX",               45},
-        {"Instance*.Metroid.Visual.HudHpY",               99},
+        {"Instance*.Metroid.Visual.HudHpY",              -93},
         {"Instance*.Metroid.Visual.HudHpAlign",            2},
         {"Instance*.Metroid.Visual.HudHpTextAutoColor",   true},
         {"Instance*.Metroid.Visual.HudHpTextColorR",      255},
         {"Instance*.Metroid.Visual.HudHpTextColorG",      255},
         {"Instance*.Metroid.Visual.HudHpTextColorB",      255},
-        {"Instance*.Metroid.Visual.HudWeaponX",          230},
-        {"Instance*.Metroid.Visual.HudWeaponY",           99},
+        {"Instance*.Metroid.Visual.HudWeaponAnchor",       8},
+        {"Instance*.Metroid.Visual.HudWeaponX",          -26},
+        {"Instance*.Metroid.Visual.HudWeaponY",          -93},
         {"Instance*.Metroid.Visual.HudAmmoAlign",          2},
         {"Instance*.Metroid.Visual.HudAmmoTextColorR",    255},
         {"Instance*.Metroid.Visual.HudAmmoTextColorG",    255},
@@ -135,8 +138,9 @@ namespace Config
         {"Instance*.Metroid.Visual.HudWeaponIconOffsetX",  0},
         {"Instance*.Metroid.Visual.HudWeaponIconOffsetY", 10},
         {"Instance*.Metroid.Visual.HudWeaponIconMode",     1},
-        {"Instance*.Metroid.Visual.HudWeaponIconPosX",   239},
-        {"Instance*.Metroid.Visual.HudWeaponIconPosY",   149},
+        {"Instance*.Metroid.Visual.HudWeaponIconPosAnchor", 8},
+        {"Instance*.Metroid.Visual.HudWeaponIconPosX",   -17},
+        {"Instance*.Metroid.Visual.HudWeaponIconPosY",   -43},
         {"Instance*.Metroid.Visual.HudWeaponIconAnchorX",  1},
         {"Instance*.Metroid.Visual.HudWeaponIconAnchorY",  1},
         {"Instance*.Metroid.Visual.HudWeaponIconColorOverlay", false},
@@ -150,8 +154,9 @@ namespace Config
         {"Instance*.Metroid.Visual.HudHpGaugeColorB",        8},
         {"Instance*.Metroid.Visual.HudHpGaugeAnchor",        3},
         {"Instance*.Metroid.Visual.HudHpGaugePosMode",       1},
+        {"Instance*.Metroid.Visual.HudHpGaugePosAnchor",    6},
         {"Instance*.Metroid.Visual.HudHpGaugePosX",         14},
-        {"Instance*.Metroid.Visual.HudHpGaugePosY",         56},
+        {"Instance*.Metroid.Visual.HudHpGaugePosY",       -136},
         {"Instance*.Metroid.Visual.HudAmmoGaugeOrientation", 1},
         {"Instance*.Metroid.Visual.HudAmmoGaugeLength",     80},
         {"Instance*.Metroid.Visual.HudAmmoGaugeWidth",       3},
@@ -162,9 +167,11 @@ namespace Config
         {"Instance*.Metroid.Visual.HudAmmoGaugeColorB",      8},
         {"Instance*.Metroid.Visual.HudAmmoGaugeAnchor",      2},
         {"Instance*.Metroid.Visual.HudAmmoGaugePosMode",     1},
-        {"Instance*.Metroid.Visual.HudAmmoGaugePosX",      239},
-        {"Instance*.Metroid.Visual.HudAmmoGaugePosY",       56},
+        {"Instance*.Metroid.Visual.HudAmmoGaugePosAnchor",  8},
+        {"Instance*.Metroid.Visual.HudAmmoGaugePosX",      -17},
+        {"Instance*.Metroid.Visual.HudAmmoGaugePosY",     -136},
         /* Battle HUD */
+        {"Instance*.Metroid.Visual.HudMatchStatusAnchor",   0},
         {"Instance*.Metroid.Visual.HudMatchStatusX",        20},
         {"Instance*.Metroid.Visual.HudMatchStatusY",        19},
         {"Instance*.Metroid.Visual.HudMatchStatusLabelOfsX", 0},
@@ -186,8 +193,9 @@ namespace Config
         {"Instance*.Metroid.Visual.HudMatchStatusGoalColorG",  255},
         {"Instance*.Metroid.Visual.HudMatchStatusGoalColorB",  255},
         /* Bomb Left HUD */
-        {"Instance*.Metroid.Visual.HudBombLeftX",      214},
-        {"Instance*.Metroid.Visual.HudBombLeftY",      184},
+        {"Instance*.Metroid.Visual.HudBombLeftAnchor",  8},
+        {"Instance*.Metroid.Visual.HudBombLeftX",      -42},
+        {"Instance*.Metroid.Visual.HudBombLeftY",       -8},
         {"Instance*.Metroid.Visual.HudBombLeftAlign",  0},
         {"Instance*.Metroid.Visual.HudBombLeftColorR", 255},
         {"Instance*.Metroid.Visual.HudBombLeftColorG", 255},
@@ -199,23 +207,27 @@ namespace Config
         {"Instance*.Metroid.Visual.HudBombLeftIconMode",    1},
         {"Instance*.Metroid.Visual.HudBombLeftIconOfsX",   16},
         {"Instance*.Metroid.Visual.HudBombLeftIconOfsY",  -16},
-        {"Instance*.Metroid.Visual.HudBombLeftIconPosX",  230},
-        {"Instance*.Metroid.Visual.HudBombLeftIconPosY",  168},
+        {"Instance*.Metroid.Visual.HudBombLeftIconPosAnchor", 8},
+        {"Instance*.Metroid.Visual.HudBombLeftIconPosX",  -26},
+        {"Instance*.Metroid.Visual.HudBombLeftIconPosY",  -24},
         {"Instance*.Metroid.Visual.HudBombLeftIconAnchorX", 1},
         {"Instance*.Metroid.Visual.HudBombLeftIconAnchorY", 1},
         /* Rank & Time HUD */
+        {"Instance*.Metroid.Visual.HudRankAnchor",       0},
         {"Instance*.Metroid.Visual.HudRankX",          20},
         {"Instance*.Metroid.Visual.HudRankY",          30},
         {"Instance*.Metroid.Visual.HudRankAlign",       0},
         {"Instance*.Metroid.Visual.HudRankColorR",    255},
         {"Instance*.Metroid.Visual.HudRankColorG",    255},
         {"Instance*.Metroid.Visual.HudRankColorB",    255},
+        {"Instance*.Metroid.Visual.HudTimeLeftAnchor",   0},
         {"Instance*.Metroid.Visual.HudTimeLeftX",      20},
         {"Instance*.Metroid.Visual.HudTimeLeftY",      42},
         {"Instance*.Metroid.Visual.HudTimeLeftAlign",   0},
         {"Instance*.Metroid.Visual.HudTimeLeftColorR", 255},
         {"Instance*.Metroid.Visual.HudTimeLeftColorG", 255},
         {"Instance*.Metroid.Visual.HudTimeLeftColorB", 255},
+        {"Instance*.Metroid.Visual.HudTimeLimitAnchor",  0},
         {"Instance*.Metroid.Visual.HudTimeLimitX",     20},
         {"Instance*.Metroid.Visual.HudTimeLimitY",     54},
         {"Instance*.Metroid.Visual.HudTimeLimitAlign",  0},
@@ -243,7 +255,8 @@ namespace Config
         {"Instance*.Metroid.Visual.InGameAspectRatioMode",     0},
         {"Instance*.Metroid.Visual.InGameScalingMode",         0},
         /* MelonPrimeDS Bottom Screen Overlay defaults { */
-        {"Instance*.Metroid.Visual.BtmOverlayDstX",            190},
+        {"Instance*.Metroid.Visual.BtmOverlayAnchor",           2},
+        {"Instance*.Metroid.Visual.BtmOverlayDstX",            -66},
         {"Instance*.Metroid.Visual.BtmOverlayDstY",            0},
         {"Instance*.Metroid.Visual.BtmOverlayDstSize",         64},
         {"Instance*.Metroid.Visual.BtmOverlaySrcRadius",       46},
@@ -316,7 +329,7 @@ namespace Config
         {"Instance*.Metroid.Apply.joy2KeySupport", true},
         {"Instance*.Metroid.Enable.stylusMode", false},
         /* MelonPrimeDS Crosshair bools { */
-        {"Instance*.Metroid.Visual.CustomHUD", false},
+        {"Instance*.Metroid.Visual.CustomHUD", true},
         {"Instance*.Metroid.Visual.CrosshairOutline", true},
         {"Instance*.Metroid.Visual.CrosshairCenterDot", true},
         {"Instance*.Metroid.Visual.CrosshairTStyle", true},
@@ -1054,6 +1067,25 @@ namespace Config
         }
 
         return (*ret)[tmp];
+    }
+
+    bool Table::HasKey(const std::string& path)
+    {
+        const toml::value* node = &Data;
+        std::string tmp = path;
+
+        size_t sep;
+        while ((sep = tmp.find('.')) != std::string::npos)
+        {
+            if (!node->is_table()) return false;
+            const auto& key = tmp.substr(0, sep);
+            if (!node->as_table(std::nothrow).count(key)) return false;
+            node = &node->as_table(std::nothrow).at(key);
+            tmp = tmp.substr(sep + 1);
+        }
+
+        if (!node->is_table()) return false;
+        return node->as_table(std::nothrow).count(tmp) > 0;
     }
 
     template<typename T> T Table::FindDefault(const std::string& path, T def, DefaultList<T> list)
