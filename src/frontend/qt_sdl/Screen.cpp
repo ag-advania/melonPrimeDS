@@ -52,6 +52,8 @@
 #ifdef MELONPRIME_CUSTOM_HUD
 #include "MelonPrimeConstants.h"
 #include "MelonPrimeCustomHud.h"
+#include "HudEditSidePanel.h"
+#include "InputConfig/InputConfigDialog.h"
 #include <QFontDatabase>
 #endif
 
@@ -147,6 +149,18 @@ const u32 kOSDMargin = 6;
 const int kLogoWidth = 192;
 
 #ifdef MELONPRIME_DS
+void ScreenPanel::wheelEvent(QWheelEvent* event)
+{
+    wheelDelta = (event->angleDelta().y() > 0) ? 1 : -1;
+#ifdef MELONPRIME_CUSTOM_HUD
+    if (MelonPrime::CustomHud_IsEditMode()) {
+        Config::Table& instcfg = emuInstance->getLocalConfig();
+        MelonPrime::CustomHud_EditMouseWheel(event->position(), event->angleDelta().y(), instcfg);
+    }
+#endif
+    event->accept();
+}
+
 void ScreenPanel::refreshClipForGameStateChange()
 {
     auto* core = emuInstance->getEmuThread()->GetMelonPrimeCore();
@@ -334,6 +348,20 @@ ScreenPanel::ScreenPanel(QWidget* parent) : QWidget(parent)
             overlayFont.setHintingPreference(QFont::PreferFullHinting);
         }
     }
+    m_hudEditPanel = new HudEditSidePanel(this, emuInstance);
+    MelonPrime::CustomHud_SetEditSelectionCallback([this](int idx) {
+        if (!MelonPrime::CustomHud_IsEditMode() || idx < 0) {
+            m_hudEditPanel->clear();
+        } else {
+            m_hudEditPanel->populateForElement(idx);
+            // Position at right edge of the widget
+            int px = width() - m_hudEditPanel->width() - 4;
+            int py = (height() - m_hudEditPanel->sizeHint().height()) / 2;
+            m_hudEditPanel->move(px, std::max(4, py));
+            m_hudEditPanel->show();
+            m_hudEditPanel->raise();
+        }
+    });
 #endif
 
     loadConfig();
@@ -518,6 +546,13 @@ void ScreenPanel::resizeEvent(QResizeEvent* event)
     updateClipIfNeeded();
 #endif
 #endif
+#ifdef MELONPRIME_CUSTOM_HUD
+    if (m_hudEditPanel && m_hudEditPanel->isVisible()) {
+        int px = width() - m_hudEditPanel->width() - 4;
+        int py = (height() - m_hudEditPanel->sizeHint().height()) / 2;
+        m_hudEditPanel->move(px, std::max(4, py));
+    }
+#endif
     QWidget::resizeEvent(event);
 }
 
@@ -536,6 +571,28 @@ void ScreenPanel::mousePressEvent(QMouseEvent* event)
         touching = false;
         return;
     }
+
+#ifdef MELONPRIME_CUSTOM_HUD
+    // HUD Layout Editor: intercept all mouse input while in edit mode
+    if (UNLIKELY(MelonPrime::CustomHud_IsEditMode())) {
+        float originX = 0.0f, originY = 0.0f, hudScale = 1.0f, topStretchX = 1.0f;
+        for (int i = 0; i < numScreens; i++) {
+            if (screenKind[i] != 0) continue;
+            const float* mtx = screenMatrix[i];
+            const float scaleX = std::sqrt(mtx[0]*mtx[0] + mtx[1]*mtx[1]);
+            const float scaleY = std::sqrt(mtx[2]*mtx[2] + mtx[3]*mtx[3]);
+            originX = mtx[4]; originY = mtx[5];
+            if (scaleX > 0.0f && scaleY > 0.0f) { hudScale = scaleY; topStretchX = scaleX / scaleY; }
+            break;
+        }
+        Config::Table& instcfg = emuInstance->getLocalConfig();
+        MelonPrime::CustomHud_UpdateEditContext(originX, originY, hudScale, topStretchX);
+        MelonPrime::CustomHud_EditMousePress(event->pos(), event->button(), instcfg);
+        if (!MelonPrime::CustomHud_IsEditMode() && InputConfigDialog::currentDlg)
+            InputConfigDialog::currentDlg->refreshAfterHudEditSave();
+        return;
+    }
+#endif
 
 #ifdef MELONPRIME_DS
     // Click sets focus
@@ -596,6 +653,14 @@ void ScreenPanel::mouseReleaseEvent(QMouseEvent* event)
         return;
     }
 
+#ifdef MELONPRIME_CUSTOM_HUD
+    if (UNLIKELY(MelonPrime::CustomHud_IsEditMode())) {
+        Config::Table& instcfg = emuInstance->getLocalConfig();
+        MelonPrime::CustomHud_EditMouseRelease(event->pos(), event->button(), instcfg);
+        return;
+    }
+#endif
+
     if (event->button() != Qt::LeftButton)
         return;
 
@@ -614,6 +679,25 @@ void ScreenPanel::mouseMoveEvent(QMouseEvent* event)
 
     if (Q_UNLIKELY(!emu->emuIsActive()))
         return;
+
+#ifdef MELONPRIME_CUSTOM_HUD
+    if (UNLIKELY(MelonPrime::CustomHud_IsEditMode())) {
+        float originX = 0.0f, originY = 0.0f, hudScale = 1.0f, topStretchX = 1.0f;
+        for (int i = 0; i < numScreens; i++) {
+            if (screenKind[i] != 0) continue;
+            const float* mtx = screenMatrix[i];
+            const float scaleX = std::sqrt(mtx[0]*mtx[0] + mtx[1]*mtx[1]);
+            const float scaleY = std::sqrt(mtx[2]*mtx[2] + mtx[3]*mtx[3]);
+            originX = mtx[4]; originY = mtx[5];
+            if (scaleX > 0.0f && scaleY > 0.0f) { hudScale = scaleY; topStretchX = scaleX / scaleY; }
+            break;
+        }
+        Config::Table& instcfg = emuInstance->getLocalConfig();
+        MelonPrime::CustomHud_UpdateEditContext(originX, originY, hudScale, topStretchX);
+        MelonPrime::CustomHud_EditMouseMove(event->pos(), instcfg);
+        return;
+    }
+#endif
 
     if (!touching)
         return;
@@ -1143,14 +1227,8 @@ void ScreenPanelNative::paintEvent(QPaintEvent * event)
         {
             auto* mp = emuThread->GetMelonPrimeCore();
             auto& instcfg = emuInstance->getLocalConfig();
-            if (mp && mp->IsRomDetected() && mp->IsInGame())
+            if (mp && mp->IsRomDetected() && (mp->IsInGame() || MelonPrime::CustomHud_IsEditMode()))
             {
-                // Compute hudScale and topStretchX from the top screen transform.
-                // hudScale = scaleY: output pixels per DS pixel along Y. The buffer
-                //   height is always 192*hudScale = the actual displayed screen height.
-                // topStretchX = scaleX / scaleY: horizontal stretch ratio.
-                //   > 1 when window is wider than 4:3 (widescreen), < 1 when narrower.
-                // topOutW/H match the exact pixel dimensions of the displayed top screen.
                 float topStretchX = 1.0f;
                 float hudScale = 1.0f;
                 for (int i = 0; i < numScreens; i++)
@@ -1188,7 +1266,7 @@ void ScreenPanelNative::paintEvent(QPaintEvent * event)
                 } // painter ends here — safe to read image
 
                 // Composite 1:1 at the screen's window-space origin (no scaling — buffer is already hi-res).
-                if (MelonPrime::CustomHud_IsEnabled(instcfg))
+                if (MelonPrime::CustomHud_IsEnabled(instcfg) || MelonPrime::CustomHud_IsEditMode())
                 {
                     for (int i = 0; i < numScreens; i++)
                     {
@@ -1623,7 +1701,7 @@ void ScreenPanelGL::drawScreen()
         {
             auto* mp = emuThread->GetMelonPrimeCore();
             auto& instcfg = emuInstance->getLocalConfig();
-            if (mp && mp->IsRomDetected() && mp->IsInGame())
+            if (mp && mp->IsRomDetected() && (mp->IsInGame() || MelonPrime::CustomHud_IsEditMode()))
             {
                 // Compute hudScale and topStretchX from the top screen transform.
                 // hudScale = scaleY: output pixels per DS pixel along Y.
@@ -1664,7 +1742,7 @@ void ScreenPanelGL::drawScreen()
                         topStretchX, hudScale);
                 } // painter ends here — safe to read constBits()
 
-                if (MelonPrime::CustomHud_IsEnabled(instcfg))
+                if (MelonPrime::CustomHud_IsEnabled(instcfg) || MelonPrime::CustomHud_IsEditMode())
                 {
                 glBindTexture(GL_TEXTURE_2D, overlayTextures[0]);
                 // Reallocate GL texture when the buffer size changes (window resize).

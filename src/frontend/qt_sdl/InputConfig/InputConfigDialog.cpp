@@ -341,5 +341,13 @@ void InputConfigDialog::switchTabToMetroid2() {
     QWidget* tab = ui->tabWidget->findChild<QWidget*>("tabMetroid2");
     if (tab) ui->tabWidget->setCurrentWidget(tab);
 }
+
+void InputConfigDialog::refreshAfterHudEditSave()
+{
+    if (melonPrimeInputConfig) {
+        melonPrimeInputConfig->snapshotVisualConfig();
+    }
+    show();
+}
 /* } MelonPrimeDS */
 #endif
