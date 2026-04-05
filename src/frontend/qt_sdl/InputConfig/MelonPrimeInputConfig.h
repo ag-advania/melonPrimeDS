@@ -9,9 +9,14 @@
 #define MELONPRIMEINPUTCONFIG_H
 
 #include <QWidget>
+#include <QList>
 #include <QTabWidget>
 #include <QPushButton>
 #include <QVariantMap>
+#include <unordered_map>
+#include <vector>
+#include <string>
+#include <utility>
 #include "EmuInstance.h"
 #include "Config.h"
 
@@ -118,16 +123,25 @@ private:
     void setupCollapsibleSections(Config::Table& instcfg);
     void setupPreviewConnections();
     void setupCustomHudCode();
+    void setupCustomHudWidgets(Config::Table& instcfg);
 
     void populatePage(QWidget* page, const HotkeyEntry* entries, int count, int* keymap, int* joymap);
     QString buildCustomHudCode() const;
     bool applyCustomHudCode(const QString& code, QString* errorMessage = nullptr);
     void refreshCustomHudCodeOutput();
     void setCustomHudCodeStatus(const QString& text, bool isError);
+    void invalidateHudAndRefreshPreviews();
 
     QVariantMap m_visualSnapshot;
     bool m_applyPreviewEnabled = false;
     bool m_applyPreviewActive = false;
+
+    // Programmatic HUD settings widgets (config key → widget)
+    std::unordered_map<std::string, QWidget*> m_hudWidgets;
+    // Section toggle buttons (button, config key for collapse state)
+    std::vector<std::pair<QPushButton*, std::string>> m_hudToggles;
+    // Preview widgets that need refresh on config change
+    QList<QWidget*> m_hudPreviews;
 };
 
 #endif // MELONPRIMEINPUTCONFIG_H

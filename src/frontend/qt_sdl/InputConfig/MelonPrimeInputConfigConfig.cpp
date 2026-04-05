@@ -6,6 +6,8 @@
 #include <QCheckBox>
 #include <QComboBox>
 #include <QSpinBox>
+#include <QDoubleSpinBox>
+#include <QLineEdit>
 #include <QTimer>
 
 #include "MelonPrimeInputConfig.h"
@@ -106,7 +108,21 @@ void MelonPrimeInputConfig::saveConfig()
     // Custom HUD
     instcfg.SetBool("Metroid.Visual.CustomHUD", ui->cbMetroidEnableCustomHud->checkState() == Qt::Checked);
 
-    // Section toggle states
+    // Save all programmatic HUD widgets
+    for (auto& [key, widget] : m_hudWidgets) {
+        if (auto* cb = qobject_cast<QCheckBox*>(widget))
+            instcfg.SetBool(key, cb->isChecked());
+        else if (auto* sb = qobject_cast<QSpinBox*>(widget))
+            instcfg.SetInt(key, sb->value());
+        else if (auto* dsb = qobject_cast<QDoubleSpinBox*>(widget))
+            instcfg.SetDouble(key, dsb->value());
+        else if (auto* le = qobject_cast<QLineEdit*>(widget))
+            instcfg.SetString(key, le->text().toStdString());
+        else if (auto* combo = qobject_cast<QComboBox*>(widget))
+            instcfg.SetInt(key, combo->currentIndex());
+    }
+
+    // Section toggle states (existing UI sections)
     instcfg.SetBool("Metroid.UI.SectionInputSettings",  ui->btnToggleInputSettings->isChecked());
     instcfg.SetBool("Metroid.UI.SectionScreenSync",     ui->btnToggleScreenSync->isChecked());
     instcfg.SetBool("Metroid.UI.SectionCursorClipSettings",  ui->btnToggleCursorClipSettings->isChecked());
@@ -117,6 +133,10 @@ void MelonPrimeInputConfig::saveConfig()
     instcfg.SetBool("Metroid.UI.SectionVideo",          ui->btnToggleVideo->isChecked());
     instcfg.SetBool("Metroid.UI.SectionVolume",         ui->btnToggleVolume->isChecked());
     instcfg.SetBool("Metroid.UI.SectionLicense",        ui->btnToggleLicense->isChecked());
+
+    // HUD section toggle states (programmatic sections)
+    for (auto& [btn, cfgKey] : m_hudToggles)
+        instcfg.SetBool(cfgKey, btn->isChecked());
 
     // P-3: Invalidate cached config so next frame re-reads all values
     MelonPrime::CustomHud_InvalidateConfigCache();

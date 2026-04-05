@@ -5,6 +5,9 @@
 
 #include <QCheckBox>
 #include <QComboBox>
+#include <QSpinBox>
+#include <QDoubleSpinBox>
+#include <QLineEdit>
 
 #include "MelonPrimeInputConfig.h"
 #include "ui_MelonPrimeInputConfig.h"
@@ -26,6 +29,21 @@ void MelonPrimeInputConfig::snapshotVisualConfig()
     sB("cCustomHud",       ui->cbMetroidEnableCustomHud);
     sB("cAspectRatio",     ui->cbMetroidInGameAspectRatio);
     sC("cAspectRatioMode", ui->comboMetroidInGameAspectRatioMode);
+
+    // Snapshot all programmatic HUD widgets
+    for (auto& [key, widget] : m_hudWidgets) {
+        QString qk = QString::fromStdString(key);
+        if (auto* cb = qobject_cast<QCheckBox*>(widget))
+            s[qk] = cb->isChecked();
+        else if (auto* sb = qobject_cast<QSpinBox*>(widget))
+            s[qk] = sb->value();
+        else if (auto* dsb = qobject_cast<QDoubleSpinBox*>(widget))
+            s[qk] = dsb->value();
+        else if (auto* le = qobject_cast<QLineEdit*>(widget))
+            s[qk] = le->text();
+        else if (auto* combo = qobject_cast<QComboBox*>(widget))
+            s[qk] = combo->currentIndex();
+    }
 }
 
 void MelonPrimeInputConfig::restoreVisualSnapshot()
@@ -47,6 +65,26 @@ void MelonPrimeInputConfig::restoreVisualSnapshot()
     rB("cAspectRatio",     ui->cbMetroidInGameAspectRatio);
     rC("cAspectRatioMode", ui->comboMetroidInGameAspectRatioMode);
 
+    // Restore all programmatic HUD widgets
+    for (auto& [key, widget] : m_hudWidgets) {
+        QString qk = QString::fromStdString(key);
+        auto it = s.find(qk);
+        if (it == s.end()) continue;
+
+        widget->blockSignals(true);
+        if (auto* cb = qobject_cast<QCheckBox*>(widget))
+            cb->setChecked(it->toBool());
+        else if (auto* sb = qobject_cast<QSpinBox*>(widget))
+            sb->setValue(it->toInt());
+        else if (auto* dsb = qobject_cast<QDoubleSpinBox*>(widget))
+            dsb->setValue(it->toDouble());
+        else if (auto* le = qobject_cast<QLineEdit*>(widget))
+            le->setText(it->toString());
+        else if (auto* combo = qobject_cast<QComboBox*>(widget))
+            combo->setCurrentIndex(it->toInt());
+        widget->blockSignals(false);
+    }
+
     m_applyPreviewEnabled = true;
     applyVisualPreview();
 }
@@ -63,7 +101,26 @@ void MelonPrimeInputConfig::applyVisualPreview()
     instcfg.SetInt ("Metroid.Visual.InGameAspectRatioMode",  ui->comboMetroidInGameAspectRatioMode->currentIndex());
     instcfg.SetBool("Metroid.Visual.ClipCursorToBottomScreenWhenNotInGame", ui->cbMetroidClipCursorToBottomScreenWhenNotInGame->isChecked());
 
+    // Write all programmatic HUD widget values to config
+    for (auto& [key, widget] : m_hudWidgets) {
+        if (auto* cb = qobject_cast<QCheckBox*>(widget))
+            instcfg.SetBool(key, cb->isChecked());
+        else if (auto* sb = qobject_cast<QSpinBox*>(widget))
+            instcfg.SetInt(key, sb->value());
+        else if (auto* dsb = qobject_cast<QDoubleSpinBox*>(widget))
+            instcfg.SetDouble(key, dsb->value());
+        else if (auto* le = qobject_cast<QLineEdit*>(widget))
+            instcfg.SetString(key, le->text().toStdString());
+        else if (auto* combo = qobject_cast<QComboBox*>(widget))
+            instcfg.SetInt(key, combo->currentIndex());
+    }
+
     MelonPrime::CustomHud_InvalidateConfigCache();
+
+    // Refresh preview widgets
+    for (auto* pw : m_hudPreviews)
+        pw->update();
+
     m_applyPreviewActive = false;
 #endif
 }
