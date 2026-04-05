@@ -424,6 +424,19 @@ namespace Config
         {"Instance*.Metroid.Visual.CrosshairInnerOpacity",   0.80},
         {"Instance*.Metroid.Visual.CrosshairOuterOpacity",   0.40},
         /* MelonPrimeDS Crosshair opacities } */
+        /* MelonPrimeDS HUD element opacities { */
+        {"Instance*.Metroid.Visual.HudHpOpacity",            1.0},
+        {"Instance*.Metroid.Visual.HudHpGaugeOpacity",       1.0},
+        {"Instance*.Metroid.Visual.HudWeaponOpacity",        1.0},
+        {"Instance*.Metroid.Visual.HudWpnIconOpacity",       1.0},
+        {"Instance*.Metroid.Visual.HudAmmoGaugeOpacity",     1.0},
+        {"Instance*.Metroid.Visual.HudMatchStatusOpacity",   1.0},
+        {"Instance*.Metroid.Visual.HudRankOpacity",          1.0},
+        {"Instance*.Metroid.Visual.HudTimeLeftOpacity",      1.0},
+        {"Instance*.Metroid.Visual.HudTimeLimitOpacity",     1.0},
+        {"Instance*.Metroid.Visual.HudBombLeftOpacity",      1.0},
+        {"Instance*.Metroid.Visual.HudBombIconOpacity",      1.0},
+        /* MelonPrimeDS HUD element opacities } */
         /* MelonPrimeDS Bottom Screen Overlay opacity { */
         {"Instance*.Metroid.Visual.BtmOverlayOpacity", 0.85},
         /* MelonPrimeDS Bottom Screen Overlay opacity } */

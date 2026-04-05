@@ -39,6 +39,7 @@
 
 class MainWindow;
 class EmuInstance;
+class HudEditSidePanel;
 
 
 const struct { int id; float ratio; const char* label; } aspectRatios[] =
@@ -151,10 +152,7 @@ protected:
 
 #ifdef MELONPRIME_DS
     int wheelDelta = 0;
-    void wheelEvent(QWheelEvent* event) override {
-        wheelDelta = (event->angleDelta().y() > 0) ? 1 : -1;
-        event->accept();
-    }
+    void wheelEvent(QWheelEvent* event) override;
 #endif
 
     QMutex osdMutex;
@@ -165,6 +163,7 @@ protected:
 #ifdef MELONPRIME_CUSTOM_HUD
     QImage Overlay[2];       // [0]=Top, [1]=Bottom — ARGB32_Premultiplied, 256x192 (DS-native space)
     QFont overlayFont;
+    HudEditSidePanel* m_hudEditPanel = nullptr;
 #endif
 
 #ifdef MELONPRIME_DS

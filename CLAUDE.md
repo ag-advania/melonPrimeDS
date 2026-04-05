@@ -223,63 +223,43 @@ The software radar overlay path takes `hunterID` and uses `kBtmOverlaySrcCenterY
 | Controls | `tabAddonsMetroid` | Hotkey mappings page 1 |
 | Controls 2 | `tabAddonsMetroid2` | Hotkey mappings page 2 |
 | Settings | `tabMetroid` | Sensitivity, toggles, hunter license, volume, video, screen sync, in-game aspect ratio, and related settings |
-| Custom HUD | `tabCrosshair` | Crosshair, HP/ammo, match status, rank/time, bomb-left HUD, and radar settings |
+| Custom HUD | `tabCrosshair` | Enable checkbox + Edit HUD Layout button (all crosshair/HP/ammo/etc. settings migrated to in-game edit mode) |
 
 ### Constructor/setup flow
 Current constructor flow in `MelonPrimeInputConfig.cpp` is:
-1. `setupHiddenLabels()`
-2. `setupKeyBindings()`
-3. `setupSensitivityAndToggles()`
-4. `setupMatchStatusHud()`
-5. `setupCollapsibleSections()`
-6. `setupHpAmmoHud()`
-7. `setupCrosshair()`
-8. `setupPreviewConnections()`
-9. `setupRadar()`
-10. `snapshotVisualConfig()`
-11. initial preview refreshes
+1. `setupKeyBindings()`
+2. `setupSensitivityAndToggles()`
+3. `setupCollapsibleSections()`
+4. `setupPreviewConnections()`
+5. `setupCustomHudCode()`
+6. `snapshotVisualConfig()`
 
 This ordering matters because preview wiring assumes widgets are already initialized.
 
 ### Collapsible Sections
-The settings/custom HUD UI uses toggle buttons and section widgets wired up in `setupCollapsibleSections()`. Toggle state is persisted under `Metroid.UI.Section*` config keys.
+The settings UI uses toggle buttons and section widgets wired up in `setupCollapsibleSections()`. Toggle state is persisted under `Metroid.UI.Section*` config keys.
 
 Current persisted sections include groups such as:
-- crosshair / inner / outer
-- HP-ammo / weapon icon / gauges
-- match-status / rank-time / bomb-left / radar
 - input settings / screen sync / cursor clip / in-game aspect ratio
 - sensitivity / gameplay / video / volume / license
 
-### Color Picker Pattern
-Color pickers use `QPushButton` plus `QColorDialog`, coordinated with preset combos, RGB spin boxes, and hex editors through `setupColorButton()` and helper sync functions.
+(Crosshair / HP-ammo / match-status / rank-time / bomb-left / radar sections have been removed from the dialog — they are now configured exclusively via in-game edit mode.)
 
-Important behavior:
-- color buttons write values directly into local config immediately
-- many non-color widgets are only persisted on `saveConfig()`
-- some sub-colors support an “Overall” mode where the runtime HUD inherits the main match-status color
+### Color Picker Pattern
+In the in-game edit mode, color pickers use `QColorDialog` triggered by clicking the Color swatch in the element properties panel or the crosshair panel.
 
 ### Preview system
-Live preview rendering is split by feature area:
-- `widgetCrosshairPreview`
-- `widgetHpAmmoPreview`
-- `widgetMatchStatusPreview`
-- `widgetRadarPreview`
-
-Preview implementation notes:
-- `loadHudFont()` loads the same `:/mph-font` resource used by the in-game HUD preview
-- previews render against a simulated 256x192 DS top-screen area scaled to the preview widget
-- `updateHpAmmoPreview()` and `updateMatchStatusPreview()` intentionally mirror runtime layout rules such as text alignment, gauge anchor calculations, and 9-point anchor application
-- `updateRadarPreview()` is only an approximate visualization of destination placement/size/opacity; it does not sample the real bottom-screen texture
-- each preview function contains a local lambda (`applyAnchorPreview` in `updateHpAmmoPreview`, `applyAnchor2` in `updateMatchStatusPreview`) that mirrors `ApplyAnchor()` from `MelonPrimeCustomHud.cpp`
+The settings dialog's preview widgets (`widgetCrosshairPreview`, `widgetHpAmmoPreview`, `widgetMatchStatusPreview`, `widgetRadarPreview`) have been removed. All preview functionality is now live in the in-game edit mode overlay.
 
 ### Preview apply / cancel model
 The dialog keeps a visual snapshot through `snapshotVisualConfig()` and restores it with `restoreVisualSnapshot()` when the parent dialog is cancelled.
 
-This matters because:
-- preview interactions may write temporary values into local config before the user presses OK
-- `restoreVisualSnapshot()` is the guard that puts both widget state and config-backed visual values back when cancelling the dialog
-- `InputConfigDialog.cpp` calls `saveConfig()` on accept and `restoreVisualSnapshot()` on cancel
+The snapshot now only covers 3 fields:
+- `cCustomHud` — the Custom HUD enable bool
+- `cAspectRatio` — the in-game aspect ratio enable bool
+- `cAspectRatioMode` — the aspect ratio mode combo index
+
+`InputConfigDialog.cpp` calls `saveConfig()` on accept and `restoreVisualSnapshot()` on cancel.
 
 ### Save behavior
 `saveConfig()` in `MelonPrimeInputConfigConfig.cpp` is the main commit point for UI state.
@@ -288,22 +268,17 @@ It currently saves:
 - both hotkey pages (`Keyboard` and `Joystick` subtables)
 - gameplay / sensitivity / license / volume / sync settings
 - in-game aspect ratio settings
-- all Custom HUD values
+- `Metroid.Visual.CustomHUD` enable bool
 - all collapsible-section open/closed states
 
 Important side effects in `saveConfig()`:
 - if `Metroid.Visual.ClipCursorToBottomScreenWhenNotInGame` changed, windows schedule `panel->updateClipIfNeeded()` via `QTimer::singleShot`
 - `MelonPrime::CustomHud_InvalidateConfigCache()` is called at the end so runtime HUD reads updated values on the next frame
 
-### Reset/default handlers
-Default-reset entry points live in `MelonPrimeInputConfigConfig.cpp`:
-- `resetCrosshairDefaults()`
-- `resetHpAmmoDefaults()`
-- `resetMatchStatusDefaults()`
-- `resetRankTimeDefaults()`
+Note: all crosshair, HP/ammo, match-status, rank/time, bomb-left, radar, and text-scale settings are saved directly from the in-game edit mode (via `CustomHud_ExitEditMode(true, cfg)` → `Config::Save()`), NOT from the settings dialog.
 
-Useful note:
-- these functions update both widgets and, in some cases, config-backed color values so previews stay consistent immediately
+### Reset/default handlers
+Default-reset entry points have been removed from the settings dialog. Resetting to defaults now happens through the in-game edit mode's Reset button (`ResetEditToDefaults()` in `MelonPrimeCustomHud.cpp`).
 
 ### Hotkeys
 Defined in `EmuInstance.h` and grouped in `src/frontend/qt_sdl/InputConfig/MelonPrimeInputConfig.h`:
@@ -313,25 +288,98 @@ Defined in `EmuInstance.h` and grouped in `src/frontend/qt_sdl/InputConfig/Melon
 These replaced the older `hk_tabAddonsMetroid*` naming.
 
 ### 9-point anchor widgets in the UI
-Every HUD position section in `MelonPrimeInputConfig.ui` has a `QComboBox` named `comboMetroid*Anchor` with 9 items (Top Left → Bottom Right). The adjacent X/Y spinboxes are labelled **Offset X / Offset Y** (not Position X/Y) to reflect that they are offsets from the anchor.
+The 9-point anchor combos have been removed from the settings dialog. All HUD element positioning (anchor + offset) is now done exclusively through the in-game edit mode's properties panels, which include an embedded 3×3 anchor grid picker.
 
-Current anchor combo widget names:
-| Element | Widget name |
-|---------|-------------|
-| HP text | `comboMetroidHudHpAnchor` |
-| HP gauge (independent pos) | `comboMetroidHudHpGaugePosAnchor` |
-| Weapon/Ammo text | `comboMetroidHudWeaponAnchor` |
-| Weapon icon (independent pos) | `comboMetroidHudWeaponIconPosAnchor` |
-| Ammo gauge (independent pos) | `comboMetroidHudAmmoGaugePosAnchor` |
-| Match Status | `comboMetroidHudMatchStatusAnchor` |
-| Rank | `comboMetroidHudRankAnchor` |
-| Time Left | `comboMetroidHudTimeLeftAnchor` |
-| Time Limit | `comboMetroidHudTimeLimitAnchor` |
-| Bomb Left text | `comboMetroidHudBombLeftAnchor` |
-| Bomb Left icon (independent pos) | `comboMetroidHudBombLeftIconPosAnchor` |
-| Radar overlay | `comboMetroidBtmOverlayAnchor` |
+---
 
-Note: `comboMetroidHudHpGaugeAnchor`, `comboMetroidHudAmmoGaugeAnchor` etc. are **gauge-relative-to-text** anchors (a different 5-point system), not the 9-point screen anchors.
+## In-game HUD Edit Mode
+
+### Overview
+All HUD element positioning, crosshair configuration, and text scaling are now configured exclusively through an in-game edit mode overlay (entered via `CustomHud_EnterEditMode()`, triggered by the "Edit HUD Layout" button in the settings dialog).
+
+### Source location
+All edit-mode code lives in `MelonPrimeCustomHud.cpp`, within the `namespace MelonPrime` block.
+
+### Public API
+```cpp
+void CustomHud_EnterEditMode(EmuInstance* emu, Config::Table& cfg);
+void CustomHud_ExitEditMode(bool save, Config::Table& cfg);
+bool CustomHud_IsEditMode();
+void CustomHud_EditMousePress(QPointF pt, Qt::MouseButton btn, Config::Table& cfg);
+void CustomHud_EditMouseMove(QPointF pt, Config::Table& cfg);
+void CustomHud_EditMouseRelease(QPointF pt, Qt::MouseButton btn, Config::Table& cfg);
+void CustomHud_EditMouseWheel(QPointF pt, int delta, Config::Table& cfg);
+void CustomHud_SetSelectionCallback(std::function<void(int)> cb);
+```
+
+### Layout (DS-space coordinates)
+The edit overlay uses DS-space (0–255 × 0–191). Key layout:
+
+**Fixed button bar (top):**
+- Save/Cancel/Reset buttons: `y=1, h=12` → bottom at `y=13`
+- Text Scale / Crosshair buttons: `y=15, h=10` → bottom at `y=25`
+
+**Crosshair panel system (below button bar):**
+- Main panel: `x=2, y=28, w=82` (10 rows fixed: color + 7 main props + Inner header + Outer header)
+- Side panel for Inner/Outer: `x=84, y=28, w=82` (opens to the right when header is clicked, mutually exclusive)
+- Crosshair preview: `x=166, y=28, 64×64` (live preview using `CollectArmRects` at scale 2)
+
+**Element properties panel:**
+- Positioned relative to selected element via `ComputePropsPanelRect()` (right or left of element, clamped `py >= 26.0f` to avoid overlapping button bar)
+- Contains Show toggle, Color picker, 3×3 Anchor grid, and element-specific properties
+- All property labels use full, unabbreviated names (e.g., "Opacity" not "Opac", "Suffix" not "Sfx")
+
+### Layout constants
+```cpp
+kPropRowH    = 7.0f    // height of each property row
+kPropLabelW  = 40.0f   // label column width (wide for full names)
+kPropCtrlW   = 38.0f   // control column width
+kPropPanelW  = 82.0f   // total panel width
+kCrosshairSidePanelX = kCrosshairPanelX + kPropPanelW + 2.0f  // = 84
+kCrosshairPreviewX   = kCrosshairSidePanelX + kPropPanelW + 2.0f // = 168
+kCrosshairPreviewSize = 64
+```
+
+### 12 editable HUD elements
+Defined in `kEditElems[kEditElemCount]` array:
+| Index | Name | Anchor default | Notes |
+|-------|------|----------------|-------|
+| 0 | HP | 6 (BL) | Text element |
+| 1 | HP Gauge | 6 (BL) | Gauge element with orientation/length/width |
+| 2 | Weapon/Ammo | 8 (BR) | Text element |
+| 3 | Weapon Icon | 8 (BR) | Icon element (24×24, cached icon preview) |
+| 4 | Ammo Gauge | 8 (BR) | Gauge element |
+| 5 | Match Status | 0 (TL) | Text element |
+| 6 | Rank | 0 (TL) | Text element |
+| 7 | Time Left | 0 (TL) | Text element |
+| 8 | Time Limit | 0 (TL) | Text element |
+| 9 | Bomb Left | 8 (BR) | Text element |
+| 10 | Bomb Icon | 8 (BR) | Icon element (16×16, cached icon preview) |
+| 11 | Radar | 2 (TR) | Radar element (circle preview) |
+
+### Element box live previews
+Instead of text labels, element boxes render live previews:
+- **Gauge elements**: filled bar at 50% with the gauge color
+- **Icon elements**: cached weapon/bomb icon image drawn into the box
+- **Radar**: circle outline
+- **Text elements**: sample text in the element's color (e.g., "100" for HP, "PWR 50" for weapon/ammo)
+
+Element box text uses `elemFont` which scales with `HudTextScale` (`pixelSize = max(3, 4*tds)`), so text shrinks proportionally when boxes get smaller.
+
+### Edit-mode config snapshot
+On entering edit mode, `SnapshotEditConfig()` snapshots all relevant config keys. `RestoreEditSnapshot()` restores them on cancel. `ResetEditToDefaults()` resets to factory defaults.
+
+### Crosshair panel details
+The crosshair panel has a fixed layout (no scrolling needed):
+- Row 0: Color swatch (clickable → `QColorDialog`)
+- Rows 1–7: Main props (Outline, Outline Opacity, Outline Thick., Center Dot, Dot Opacity, Dot Thick., T-Style)
+- Row 8: Inner header (click toggles side panel, closes Outer)
+- Row 9: Outer header (click toggles side panel, closes Inner)
+
+Side panel (Inner or Outer) shows 7 property rows: Show, Opacity, Length X, Length Y, Link XY, Thickness, Offset.
+
+### Crosshair preview
+The preview box at `(kCrosshairPreviewX, 28, 64, 64)` reads all crosshair config values directly from `cfg` and renders inner/outer arms + center dot using `CollectArmRects` at preview scale `PVS=2`. The preview is clipped to the box and updates live as settings change.
 
 ---
 
@@ -420,6 +468,9 @@ Current work is on the `highres_fonts` branch. Main changes relative to `master`
 - Full **9-point anchor system** for all HUD element positions (described above)
 - All `*X`/`*Y` HUD config values are now **offsets from anchor**, not absolute DS-space coordinates
 - `ApplyAnchor()` helper in `MelonPrimeCustomHud.cpp` — called once per element in `Load*Config()`, transparent to draw functions
-- UI form (`MelonPrimeInputConfig.ui`): all position rows renamed "Offset X/Y", anchor combos inserted at row 1 of each section, row indices of subsequent widgets shifted accordingly
-- Preview lambdas (`applyAnchorPreview`, `applyAnchor2`) in `MelonPrimeInputConfigPreview.cpp` mirror the runtime logic
-- Snapshot/restore in `snapshotVisualConfig` / `restoreVisualSnapshot` covers all new anchor combo widgets
+- **In-game HUD edit mode** — full drag-and-drop editor with properties panels, crosshair panel with side panels, live previews (described in "In-game HUD Edit Mode" section above)
+- **Settings dialog simplified** — Custom HUD tab stripped to Enable checkbox + Edit button; all HUD element configuration moved to in-game edit mode
+- Snapshot/restore in `snapshotVisualConfig` / `restoreVisualSnapshot` simplified to only 3 fields: `cCustomHud`, `cAspectRatio`, `cAspectRatioMode`
+- Property labels use full unabbreviated names throughout the edit mode UI
+- Element boxes show live previews (gauge bars, cached icons, sample text) instead of static text labels
+- Element box font scales with `HudTextScale` setting

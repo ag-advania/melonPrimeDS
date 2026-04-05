@@ -135,6 +135,7 @@ public:
     void switchTabToAddons();
     void switchTabToMetroid();
     void switchTabToMetroid2();
+    void refreshAfterHudEditSave();
     /* } MelonPrimeDS*/
 #endif
 
@@ -169,7 +170,7 @@ private:
     int joystickID;
 
 #ifdef MELONPRIME_DS
-    // •Ï”–¼‚Íæ“ª¬•¶š‚É‚µ‚ÄƒNƒ‰ƒX–¼‚Æ‹æ•Ê‚·‚é
+    // ï¿½Ïï¿½ï¿½ï¿½ï¿½Íæ“ªï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½É‚ï¿½ï¿½ÄƒNï¿½ï¿½ï¿½Xï¿½ï¿½ï¿½Æ‹ï¿½Ê‚ï¿½ï¿½ï¿½
     MelonPrimeInputConfig* melonPrimeInputConfig;
 #endif
 };
