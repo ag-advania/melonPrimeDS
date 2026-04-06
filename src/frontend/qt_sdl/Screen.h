@@ -39,7 +39,10 @@
 
 class MainWindow;
 class EmuInstance;
+
+#ifdef MELONPRIME_CUSTOM_HUD
 class HudEditSidePanel;
+#endif // MELONPRIME_CUSTOM_HUD
 
 
 const struct { int id; float ratio; const char* label; } aspectRatios[] =
