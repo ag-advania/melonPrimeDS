@@ -8,7 +8,28 @@
       "Bash(awk -F: 'NR<=20')",
       "Bash(git -C \"c:/Users/Admin/Documents/git/melonPrimeDS\" diff --stat HEAD)",
       "Bash(git -C \"c:/Users/Admin/Documents/git/melonPrimeDS\" log --oneline -10)",
-      "Bash(git -C \"c:/Users/Admin/Documents/git/melonPrimeDS\" grep -n \"QFontDatabase\\\\|#include\" -- src/frontend/qt_sdl/InputConfig/MelonPrimeInputConfig.cpp)"
+      "Bash(git -C \"c:/Users/Admin/Documents/git/melonPrimeDS\" grep -n \"QFontDatabase\\\\|#include\" -- src/frontend/qt_sdl/InputConfig/MelonPrimeInputConfig.cpp)",
+      "Bash('C:\\\\msys64\\\\usr\\\\bin\\\\bash.exe' -lc \"cd /c/Users/Admin/Documents/git/melonPrimeDS && /mingw64/bin/cmake.exe --build --preset=release-mingw-x86_64 --parallel 1 2>&1 | tail -20\")",
+      "Bash('C:\\\\msys64\\\\usr\\\\bin\\\\bash.exe' -lc \"cd /c/Users/Admin/Documents/git/melonPrimeDS && /mingw64/bin/cmake.exe --build --preset=release-mingw-x86_64 --parallel 1 2>&1 | tail -15\")",
+      "Bash('C:\\\\msys64\\\\usr\\\\bin\\\\bash.exe' -lc \"cd /c/Users/Admin/Documents/git/melonPrimeDS && /mingw64/bin/cmake.exe --build --preset=release-mingw-x86_64 --parallel 1 2>&1 | tail -10\")",
+      "Bash('C:\\\\msys64\\\\usr\\\\bin\\\\bash.exe' -lc \"grep -n 'HudBombLeft\\\\|HudHpGauge\\\\|HudAmmoGauge\\\\|BombLeft\\\\|refreshAfterHud\\\\|reloadValues\\\\|setupCustomHudWidgets' /c/Users/Admin/Documents/git/melonPrimeDS/src/frontend/qt_sdl/InputConfig/MelonPrimeInputConfig.cpp | head -60\")",
+      "Bash('C:\\\\msys64\\\\usr\\\\bin\\\\bash.exe' -lc \"grep -n 'HudBombLeft\\\\|HudHpGauge\\\\|HudWeaponIcon\\\\|refreshAfterHud' /c/Users/Admin/Documents/git/melonPrimeDS/src/frontend/qt_sdl/Config.cpp | head -60\")",
+      "Bash('C:\\\\msys64\\\\usr\\\\bin\\\\bash.exe' -lc \"cd /c/Users/Admin/Documents/git/melonPrimeDS && /mingw64/bin/cmake.exe --build --preset=release-mingw-x86_64 --parallel 1 2>&1 | tail -40\")",
+      "Bash('C:\\\\msys64\\\\usr\\\\bin\\\\bash.exe' -lc \"cd /c/Users/Admin/Documents/git/melonPrimeDS && git log --oneline -10\")",
+      "Bash('C:\\\\msys64\\\\usr\\\\bin\\\\bash.exe' -lc \"cd /c/Users/Admin/Documents/git/melonPrimeDS && git show 7301b423:src/frontend/qt_sdl/InputConfig/MelonPrimeInputConfig.cpp | grep -n 'PreviewWidget\\\\|paintEvent\\\\|kPrevW\\\\|kPrevH\\\\|DrawCached\\\\|drawImage\\\\|applyAnchor\\\\|DS-space\\\\|overlay\\\\|topBuffer\\\\|radar' | head -80\")",
+      "Read(//c/Users/Admin/Documents/git/melonPrimeDS/**)",
+      "Bash(cmake --build --preset=release-mingw-x86_64 --parallel 1)",
+      "Bash('C:\\\\msys64\\\\usr\\\\bin\\\\bash.exe' -lc \"cd /c/Users/Admin/Documents/git/melonPrimeDS && /mingw64/bin/cmake.exe --build --preset=release-mingw-x86_64 --parallel 1 2>&1 | tail -25\")",
+      "Bash('C:\\\\msys64\\\\usr\\\\bin\\\\bash.exe' -lc \"MSYSTEM=MINGW64 source /etc/profile.d/msystem.sh 2>/dev/null; cd /c/Users/Admin/Documents/git/melonPrimeDS && /mingw64/bin/cmake.exe --build --preset=release-mingw-x86_64 --parallel 1 2>&1 | tail -15\")",
+      "Bash('C:\\\\msys64\\\\usr\\\\bin\\\\bash.exe' -lc \"cd /c/Users/Admin/Documents/git/melonPrimeDS/build/release-mingw-x86_64 && /mingw64/bin/ninja.exe melonDS 2>&1 | tail -20\")",
+      "Bash(ninja -C build -j4)",
+      "Bash(/c/msys64/mingw64/bin/ninja.exe -j4)",
+      "Bash(/c/msys64/mingw64/bin/ninja.exe -j1)",
+      "Bash('C:\\\\msys64\\\\usr\\\\bin\\\\bash.exe' -lc \"wc -l /c/Users/Admin/Documents/git/melonPrimeDS/src/frontend/qt_sdl/MelonPrimeCustomHud.cpp\")",
+      "Bash('C:\\\\msys64\\\\usr\\\\bin\\\\bash.exe' -lc \"awk 'NR>=1507 && NR<=3512' /c/Users/Admin/Documents/git/melonPrimeDS/src/frontend/qt_sdl/MelonPrimeCustomHud.cpp | wc -l\")",
+      "Bash('C:\\\\msys64\\\\usr\\\\bin\\\\bash.exe' -lc \"grep -n 'MelonPrimeCustomHud' /c/Users/Admin/Documents/git/melonPrimeDS/src/frontend/qt_sdl/CMakeLists.txt\")",
+      "Bash('C:\\\\msys64\\\\usr\\\\bin\\\\bash.exe' -lc \"cd /c/Users/Admin/Documents/git/melonPrimeDS && /mingw64/bin/cmake.exe --build --preset=release-mingw-x86_64 --parallel 1 2>&1 | tail -30\")",
+      "Bash('C:\\\\msys64\\\\usr\\\\bin\\\\bash.exe' -lc \"cd /c/Users/Admin/Documents/git/melonPrimeDS/build/release-mingw-x86_64 && /mingw64/bin/ninja.exe -j1 2>&1 | tail -30\")"
     ]
   }
 }
