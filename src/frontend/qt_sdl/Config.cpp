@@ -440,6 +440,8 @@ namespace Config
         {"Instance*.Metroid.Visual.HudBombLeftOpacity",      1.0},
         {"Instance*.Metroid.Visual.HudBombIconOpacity",      1.0},
         /* MelonPrimeDS HUD element opacities } */
+        /* MelonPrimeDS HUD render scale (N = render at N×DS native res, 0 = no cap) */
+        {"Instance*.Metroid.Visual.HudRenderScale", 0},
         /* MelonPrimeDS Bottom Screen Overlay opacity { */
         {"Instance*.Metroid.Visual.BtmOverlayOpacity", 0.85},
         /* MelonPrimeDS Bottom Screen Overlay opacity } */

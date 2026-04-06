@@ -1244,36 +1244,48 @@ void ScreenPanelNative::paintEvent(QPaintEvent * event)
                     break;
                 }
 
-                // Buffer matches the exact displayed area of the top screen.
-                const int topOutW = std::max(1, static_cast<int>(std::ceil(hudScale * topStretchX * 256.0f)));
-                const int topOutH = std::max(1, static_cast<int>(std::ceil(hudScale * 192.0f)));
-                if (Overlay[0].width() != topOutW || Overlay[0].height() != topOutH)
-                    Overlay[0] = QImage(topOutW, topOutH, QImage::Format_ARGB32_Premultiplied);
-                Overlay[0].fill(Qt::transparent);
-
-                // Per-frame painter (must end before reading image)
+                // Cap overlay render scale for performance (HudRenderScale=N means render at N×DS).
+                // Buffer is then upscaled to the actual display area at composite time.
                 {
-                    QPainter topP(&Overlay[0]);
-                    topP.setFont(overlayFont);
-                    MelonPrime::CustomHud_Render(
-                        emuInstance, instcfg,
-                        mp->GetCurrentRom(), mp->GetAddrHot(),
-                        mp->GetPlayerPosition(),
-                        &topP, nullptr,
-                        &Overlay[0], nullptr,
-                        mp->IsInGame(),
-                        topStretchX, hudScale);
-                } // painter ends here — safe to read image
+                    const int scaleCap = instcfg.GetInt("Metroid.Visual.HudRenderScale");
+                    const float hudScaleRender = (scaleCap > 0 && hudScale > (float)scaleCap)
+                        ? (float)scaleCap : hudScale;
 
-                // Composite 1:1 at the screen's window-space origin (no scaling — buffer is already hi-res).
-                if (MelonPrime::CustomHud_IsEnabled(instcfg) || MelonPrime::CustomHud_IsEditMode())
-                {
-                    for (int i = 0; i < numScreens; i++)
+                    const int topOutW = std::max(1, static_cast<int>(std::ceil(hudScaleRender * topStretchX * 256.0f)));
+                    const int topOutH = std::max(1, static_cast<int>(std::ceil(hudScaleRender * 192.0f)));
+                    if (Overlay[0].width() != topOutW || Overlay[0].height() != topOutH)
+                        Overlay[0] = QImage(topOutW, topOutH, QImage::Format_ARGB32_Premultiplied);
+                    Overlay[0].fill(Qt::transparent);
+
+                    // Per-frame painter (must end before reading image)
                     {
-                        if (screenKind[i] != 0) continue;
-                        const float* mtx = screenMatrix[i];
-                        painter.resetTransform();
-                        painter.drawImage(QPoint(static_cast<int>(mtx[4]), static_cast<int>(mtx[5])), Overlay[0]);
+                        QPainter topP(&Overlay[0]);
+                        topP.setFont(overlayFont);
+                        MelonPrime::CustomHud_Render(
+                            emuInstance, instcfg,
+                            mp->GetCurrentRom(), mp->GetAddrHot(),
+                            mp->GetPlayerPosition(),
+                            &topP, nullptr,
+                            &Overlay[0], nullptr,
+                            mp->IsInGame(),
+                            topStretchX, hudScaleRender);
+                    } // painter ends here — safe to read image
+
+                    // Composite: stretch overlay to actual display size if scale was capped.
+                    if (MelonPrime::CustomHud_IsEnabled(instcfg) || MelonPrime::CustomHud_IsEditMode())
+                    {
+                        const int dispW = std::max(1, static_cast<int>(std::ceil(hudScale * topStretchX * 256.0f)));
+                        const int dispH = std::max(1, static_cast<int>(std::ceil(hudScale * 192.0f)));
+                        for (int i = 0; i < numScreens; i++)
+                        {
+                            if (screenKind[i] != 0) continue;
+                            const float* mtx = screenMatrix[i];
+                            painter.resetTransform();
+                            if (topOutW != dispW || topOutH != dispH)
+                                painter.drawImage(QRect(static_cast<int>(mtx[4]), static_cast<int>(mtx[5]), dispW, dispH), Overlay[0]);
+                            else
+                                painter.drawImage(QPoint(static_cast<int>(mtx[4]), static_cast<int>(mtx[5])), Overlay[0]);
+                        }
                     }
                 }
             }
@@ -1721,9 +1733,13 @@ void ScreenPanelGL::drawScreen()
                     break;
                 }
 
-                // Buffer matches the exact displayed area of the top screen.
-                const int topOutW = std::max(1, static_cast<int>(std::ceil(hudScale * topStretchX * 256.0f)));
-                const int topOutH = std::max(1, static_cast<int>(std::ceil(hudScale * 192.0f)));
+                // Cap overlay render scale for performance (HudRenderScale=N means render at N×DS).
+                const int scaleCap = instcfg.GetInt("Metroid.Visual.HudRenderScale");
+                const float hudScaleRender = (scaleCap > 0 && hudScale > (float)scaleCap)
+                    ? (float)scaleCap : hudScale;
+
+                const int topOutW = std::max(1, static_cast<int>(std::ceil(hudScaleRender * topStretchX * 256.0f)));
+                const int topOutH = std::max(1, static_cast<int>(std::ceil(hudScaleRender * 192.0f)));
                 if (Overlay[0].width() != topOutW || Overlay[0].height() != topOutH)
                     Overlay[0] = QImage(topOutW, topOutH, QImage::Format_ARGB32_Premultiplied);
                 Overlay[0].fill(Qt::transparent);
@@ -1739,7 +1755,7 @@ void ScreenPanelGL::drawScreen()
                         &topP, nullptr,
                         &Overlay[0], nullptr,
                         mp->IsInGame(),
-                        topStretchX, hudScale);
+                        topStretchX, hudScaleRender);
                 } // painter ends here — safe to read constBits()
 
                 if (MelonPrime::CustomHud_IsEnabled(instcfg) || MelonPrime::CustomHud_IsEditMode())
@@ -1781,9 +1797,9 @@ void ScreenPanelGL::drawScreen()
                     const float displayW = scaleX * 256.0f;
                     const float displayH = scaleY * 192.0f;
 
-                    // Hi-res overlay: texcoords map 1:1 to display pixels.
-                    const float texScaleX = 1.0f;
-                    const float texScaleY = 1.0f;
+                    // Map display pixels → texture pixels (handles capped-scale overlay).
+                    const float texScaleX = (float)topOutW / displayW;
+                    const float texScaleY = (float)topOutH / displayH;
 
                     glUniform2i(osdPosULoc, static_cast<int>(mtx[4]), static_cast<int>(mtx[5]));
                     glUniform2i(osdSizeULoc, static_cast<int>(displayW), static_cast<int>(displayH));
