@@ -22,109 +22,92 @@ When an element is selected in edit mode, a **properties panel** appears on the 
 A new struct `HudEditPropDesc` describes each property:
 
 ```cpp
-enum class EditPropType { Bool, Int, Float, String, SubColor };
+enum class EditPropType { Bool, Int, Float, String, SubColor, Color };
 struct HudEditPropDesc {
     const char* label;         // tiny label, e.g. "Auto", "Align", "Pfx"
     EditPropType type;
     const char* cfgKey;        // config key
     int minVal, maxVal;        // for Int/Float steppers
-    // For SubColor: cfgKey = overall bool key, extra keys for R/G/B
-    const char* extraKey1;     // R key (SubColor) or string for labels
-    const char* extraKey2;     // G key
-    const char* extraKey3;     // B key
+    int step;                  // 0 = default (1 for Int, 5 for Float)
+    const char* extra1;        // SubColor/Color: R key
+    const char* extra2;        // G key
+    const char* extra3;        // B key
 };
 ```
 
-Each `kEditElems[i]` will point to a property list:
-```cpp
-struct HudEditElemDesc {
-    // ... existing fields ...
-    const HudEditPropDesc* props;  // nullable, array of properties
-    int propCount;
-};
-```
+Each `kEditElems[i]` points to a property list via `HudEditElemDesc::props` / `propCount`.
 
 ### Properties panel layout
 
-When selected, the props panel renders below the anchor picker + toggle/swatch row:
+When selected, the props panel floats next to the selected element (positioned by `ComputePropsPanelRect()`):
 - Each property is ONE row: `[label] [control]`
-- Row height: ~8px DS-space (tiny text)
-- Panel width: ~60px
+- Row height: `kPropRowH = 8.0f` DS-space
+- Panel width: `kPropPanelW = 86.0f`
+- Label column: `kPropLabelW = 52.0f` (full unabbreviated names)
+- Control column: `kPropCtrlW = 30.0f`
 - Bool: `[label] [ON/OFF]` — clickable toggle
-- Int: `[label] [◀ val ▶]` — click left/right arrows to decrement/increment
-- Float: same as Int but step = 0.05
-- String: `[label] [text...]` — shows truncated text, click opens QInputDialog
-- SubColor: `[label] [■ swatch]` — click opens QColorDialog (like existing color picker), plus a small "OVR" toggle for "use overall color"
-
-### Legends in the overlay
-
-Add small labels (using `smallFont`, 4px) next to existing controls:
-- Next to the **ON/OFF toggle**: small "Show" label above/next to it
-- Next to the **color swatch**: small "Color" label above/next to it
-- Next to the **orientation toggle**: small "Orient" label above/next to it
-- Next to the **resize handles**: small "Size" text label
-
-On the Save/Cancel/Reset buttons: already have text labels.
+- Int: `[label] [◀ val ▶]` — click arrows or scroll wheel
+- Float: same as Int, value×100, step=5
+- String: `[label] [text...]` — click opens QInputDialog
+- SubColor: `[label] [■ swatch]` — click opens QColorDialog; checkbox for "use overall color"
+- Color: `[label] [■ swatch]` — click opens QColorDialog directly
 
 ### Snapshot/Restore
 
-The snapshot system already captures all existing edit-mode keys. For new migrated properties:
-- Extend `SnapshotEditConfig` and `RestoreEditSnapshot` to also capture all `props[]` keys
-- Bool props: use `s_editSnapshotBools` tracking
-- Float props: need `s_editSnapshotDoubles` map (new, since current snapshot is int-only)
-- String props: need `s_editSnapshotStrings` map (new)
+`SnapshotEditConfig()` / `RestoreEditSnapshot()` capture all config keys for all 12 elements' props. `ResetEditToDefaults()` resets all props to factory defaults.
 
-### Reset
+### Preview mode interactivity
 
-`ResetEditToDefaults()` already resets position/anchor/show/color from defaults. Extend it to also reset all props.
+In preview mode (`s_editPreviewMode = true`) the overlay renders the live HUD but remains interactive:
+- **Left-click drag** — moves the element under the cursor
+- **Right-click** — selects element under cursor and opens properties panel; empty space deselects
+- Properties panel and crosshair panel work identically in both modes
+- Orientation toggle and resize handles are normal-mode-only
 
 ## Implementation Steps
 
-### Step 1: Extend data model
-- Add `HudEditPropDesc` struct and `EditPropType` enum
-- Define prop arrays for each of the 12 elements
-- Add `props` and `propCount` to `HudEditElemDesc`
-- Update `kEditElems[]` with prop pointers
+### ✅ Step 1: Extend data model
+- `HudEditPropDesc` struct and `EditPropType` enum defined in `MelonPrimeHudConfigScreen.cpp`
+- Prop arrays defined for all 12 elements (`kPropsHp`, `kPropsHpGauge`, etc.)
+- `props` / `propCount` added to `HudEditElemDesc`
+- `kEditElems[]` updated with prop pointers
 
-### Step 2: Extend snapshot/restore/reset
-- Add `s_editSnapshotDoubles` (map<string, double>) and `s_editSnapshotStrings` (map<string, string>)
-- In `SnapshotEditConfig`: iterate props[], capture each by type
-- In `RestoreEditSnapshot`: restore props by type
-- In `ResetEditToDefaults`: reset props from default config
+### ✅ Step 2: Extend snapshot/restore/reset
+- `SnapshotEditConfig` / `RestoreEditSnapshot` iterate all props by type
+- `ResetEditToDefaults` resets all props
 
-### Step 3: Draw properties panel
-- In `DrawEditOverlay`, after the anchor picker / toggle / swatch section:
-  - Draw a small dark panel for the selected element's properties
-  - For each prop, draw label + control in one row
-  - Add legends (tiny text labels) next to existing controls (color swatch, toggle, orient)
+### ✅ Step 3: Draw properties panel
+- `DrawElemPropsPanel()` helper in `MelonPrimeHudConfigScreen.cpp`
+- Called from both normal mode and preview mode paths in `DrawEditOverlay()`
+- Panels scroll when row count exceeds `kPropMaxVisible`
 
-### Step 4: Handle property clicks
-- In `CustomHud_EditMousePress`:
-  - After existing Priority 3 (visibility/color):
-  - Check if click hits a prop row
-  - Bool: toggle the value
-  - Int/Float: check if click is on left arrow (decrement) or right arrow (increment)
-  - String: open QInputDialog::getText()
-  - SubColor: open QColorDialog, or toggle OVR
+### ✅ Step 4: Handle property clicks
+- In `CustomHud_EditMousePress`: prop row hit-testing for Bool/Int/Float/String/SubColor/Color
+- Mouse wheel (`CustomHud_EditMouseWheel`) scrolls props panel and adjusts Int/Float values
 
-### Step 5: Hide/remove remaining settings panel widgets
-- Extend `hideEditModeWidgets()` to also hide ALL remaining per-element widgets
-- This includes: text prefix/suffix fields, align combos, auto-color checkboxes, icon mode/offset widgets, gauge offset/anchor widgets, match status sub-colors + label strings, radar opacity/srcRadius, bomb text show, rank prefix/suffix/ordinal
+### ✅ Step 5a: Code split
+- Edit mode code separated into `MelonPrimeHudConfigScreen.cpp` (unity-build included by `MelonPrimeHudRender.cpp`)
+- `MelonPrimeHudRender.cpp` handles only rendering + cache management
+
+### ⬜ Step 5b: Hide/remove remaining settings panel widgets
+- Extend `hideEditModeWidgets()` to hide ALL remaining per-element widgets
 - Keep: Enable Custom HUD, Font Scale, entire Crosshair section, Edit HUD Layout button
-- Hide entire collapsible sections that become empty: HP & AMMO, WEAPON ICON, HP GAUGE, AMMO GAUGE, MATCH STATUS, RANK, TIME LEFT, TIME LIMIT, BOMB LEFT, HUD RADAR
-- Also hide preview widgets that become useless: widgetHpAmmoPreview, widgetMatchStatusPreview, widgetRadarPreview (keep crosshair preview)
-- Remove all corresponding `saveConfig()` lines, `applyAndPreview*()` lines, setup code, signal connections
+- Hide entire collapsible sections: HP & AMMO, WEAPON ICON, HP GAUGE, AMMO GAUGE, MATCH STATUS, RANK, TIME LEFT, TIME LIMIT, BOMB LEFT, HUD RADAR
+- Also hide preview widgets that become useless: `widgetHpAmmoPreview`, `widgetMatchStatusPreview`, `widgetRadarPreview` (keep crosshair preview)
+- Remove corresponding `saveConfig()` lines, `applyAndPreview*()` lines, setup code, signal connections
 - Remove section toggles for removed sections from `setupCollapsibleSections()`
 
-### Step 6: Cleanup .ui file (optional later)
-- Remove dead widget XML from .ui. Can be done in a follow-up since hiding them works.
+### ⬜ Step 6: Cleanup .ui file (optional later)
+- Remove dead widget XML from `.ui`. Can be done in a follow-up since hiding them works.
 
 ## File changes summary
 
-| File | Changes |
-|------|---------|
-| `MelonPrimeCustomHud.cpp` | New PropDesc struct/data, extended snapshot/restore/reset, new DrawPropsPanel(), new prop click handling, labels on existing controls |
-| `MelonPrimeCustomHud.h` | No API changes needed (internal) |
-| `MelonPrimeInputConfig.cpp` | Extended hideEditModeWidgets(), remove setup code for all migrated widgets, remove empty section toggles |
-| `MelonPrimeInputConfigConfig.cpp` | Remove remaining saveConfig() lines for migrated widgets, remove reset handlers for migrated widgets |
-| `MelonPrimeInputConfigPreview.cpp` | Remove remaining applyAndPreview*() lines for migrated widgets, simplify snapshot/restore |
+| File | Role |
+|------|------|
+| `MelonPrimeHudRender.cpp` | Runtime HUD rendering, cache management, no-HUD patching |
+| `MelonPrimeHudConfigScreen.cpp` | All edit mode code (unity-build included, NOT in CMakeLists) |
+| `MelonPrimeHudRender.h` | Public API surface |
+| `MelonPrimeInputConfig.cpp` | Step 5b: extend `hideEditModeWidgets()`, remove setup for migrated widgets |
+| `MelonPrimeInputConfigConfig.cpp` | Step 5b: remove `saveConfig()` lines for migrated widgets |
+| `MelonPrimeInputConfigPreview.cpp` | Step 5b: remove `applyAndPreview*()` for migrated widgets |
+| `MelonPrimeInputConfig.ui` | Step 6: remove dead widget XML |
