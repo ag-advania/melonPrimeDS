@@ -84,7 +84,7 @@ set(SOURCES_QT_SDL
 
     MelonPrime.cpp
     MelonPrimeCustomHud.cpp
-    HudEditSidePanel.cpp
+    MelonPrimeHudEditSidePanel.cpp
     MelonPrimePatch.cpp
     
 
