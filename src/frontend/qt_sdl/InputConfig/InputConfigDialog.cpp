@@ -345,7 +345,7 @@ void InputConfigDialog::switchTabToMetroid2() {
 void InputConfigDialog::refreshAfterHudEditSave()
 {
     if (melonPrimeInputConfig) {
-        melonPrimeInputConfig->snapshotVisualConfig();
+        melonPrimeInputConfig->refreshAfterHudEditSave();
     }
     show();
 }

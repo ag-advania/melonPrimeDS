@@ -91,6 +91,7 @@ public:
     void saveConfig();
     void restoreVisualSnapshot();
     void snapshotVisualConfig();
+    void refreshAfterHudEditSave();
     QTabWidget* getTabWidget();
 
 private slots:

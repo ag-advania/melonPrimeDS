@@ -1,6 +1,6 @@
 #ifdef MELONPRIME_CUSTOM_HUD
 
-#include "HudEditSidePanel.h"
+#include "MelonPrimeHudEditSidePanel.h"
 #include "MelonPrimeCustomHud.h"
 #include "EmuInstance.h"
 #include <QColorDialog>
@@ -9,7 +9,7 @@
 
 // ─── Construction ───────────────────────────────────────────────────────────
 
-HudEditSidePanel::HudEditSidePanel(QWidget* parent, EmuInstance* emu)
+MelonPrimeHudEditSidePanel::MelonPrimeHudEditSidePanel(QWidget* parent, EmuInstance* emu)
     : QWidget(parent), m_emu(emu)
 {
     setWindowFlags(Qt::Widget);
@@ -55,21 +55,21 @@ HudEditSidePanel::HudEditSidePanel(QWidget* parent, EmuInstance* emu)
 
 // ─── Config access ──────────────────────────────────────────────────────────
 
-Config::Table& HudEditSidePanel::cfg()
+Config::Table& MelonPrimeHudEditSidePanel::cfg()
 {
     return m_emu->getLocalConfig();
 }
 
 // ─── Clear ──────────────────────────────────────────────────────────────────
 
-void HudEditSidePanel::clearForm()
+void MelonPrimeHudEditSidePanel::clearForm()
 {
     while (m_form->rowCount() > 0)
         m_form->removeRow(0);
     m_rows.clear();
 }
 
-void HudEditSidePanel::clear()
+void MelonPrimeHudEditSidePanel::clear()
 {
     clearForm();
     m_currentElem = -1;
@@ -79,7 +79,7 @@ void HudEditSidePanel::clear()
 
 // ─── Reload values ──────────────────────────────────────────────────────────
 
-void HudEditSidePanel::reloadValues()
+void MelonPrimeHudEditSidePanel::reloadValues()
 {
     if (m_currentElem >= 0)
         populateForElement(m_currentElem);
@@ -87,7 +87,7 @@ void HudEditSidePanel::reloadValues()
 
 // ─── Factory: CheckBox ──────────────────────────────────────────────────────
 
-QCheckBox* HudEditSidePanel::addCheckBox(const QString& label, const char* key)
+QCheckBox* MelonPrimeHudEditSidePanel::addCheckBox(const QString& label, const char* key)
 {
     auto* cb = new QCheckBox(this);
     cb->setChecked(cfg().GetBool(key));
@@ -104,7 +104,7 @@ QCheckBox* HudEditSidePanel::addCheckBox(const QString& label, const char* key)
 
 // ─── Factory: ComboBox ──────────────────────────────────────────────────────
 
-QComboBox* HudEditSidePanel::addComboBox(const QString& label, const char* key, const QStringList& items)
+QComboBox* MelonPrimeHudEditSidePanel::addComboBox(const QString& label, const char* key, const QStringList& items)
 {
     auto* cb = new QComboBox(this);
     cb->addItems(items);
@@ -122,7 +122,7 @@ QComboBox* HudEditSidePanel::addComboBox(const QString& label, const char* key, 
 
 // ─── Factory: SpinBox ───────────────────────────────────────────────────────
 
-QSpinBox* HudEditSidePanel::addSpinBox(const QString& label, const char* key, int min, int max)
+QSpinBox* MelonPrimeHudEditSidePanel::addSpinBox(const QString& label, const char* key, int min, int max)
 {
     auto* sb = new QSpinBox(this);
     sb->setRange(min, max);
@@ -140,7 +140,7 @@ QSpinBox* HudEditSidePanel::addSpinBox(const QString& label, const char* key, in
 
 // ─── Factory: DoubleSpinBox ─────────────────────────────────────────────────
 
-QDoubleSpinBox* HudEditSidePanel::addDoubleSpinBox(const QString& label, const char* key, double min, double max, double step)
+QDoubleSpinBox* MelonPrimeHudEditSidePanel::addDoubleSpinBox(const QString& label, const char* key, double min, double max, double step)
 {
     auto* sb = new QDoubleSpinBox(this);
     sb->setRange(min, max);
@@ -160,7 +160,7 @@ QDoubleSpinBox* HudEditSidePanel::addDoubleSpinBox(const QString& label, const c
 
 // ─── Factory: LineEdit ──────────────────────────────────────────────────────
 
-QLineEdit* HudEditSidePanel::addLineEdit(const QString& label, const char* key)
+QLineEdit* MelonPrimeHudEditSidePanel::addLineEdit(const QString& label, const char* key)
 {
     auto* le = new QLineEdit(this);
     le->setText(QString::fromStdString(cfg().GetString(key)));
@@ -184,7 +184,7 @@ static void updateColorButton(QPushButton* btn, int r, int g, int b)
     btn->setText(QColor(r, g, b).name());
 }
 
-QPushButton* HudEditSidePanel::addColorPicker(const QString& label, const char* keyR, const char* keyG, const char* keyB)
+QPushButton* MelonPrimeHudEditSidePanel::addColorPicker(const QString& label, const char* keyR, const char* keyG, const char* keyB)
 {
     auto* btn = new QPushButton(this);
     int r = cfg().GetInt(keyR), g = cfg().GetInt(keyG), b = cfg().GetInt(keyB);
@@ -208,7 +208,7 @@ QPushButton* HudEditSidePanel::addColorPicker(const QString& label, const char* 
 
 // ─── Factory: Sub-Color (with "Overall" toggle) ─────────────────────────────
 
-void HudEditSidePanel::addSubColor(const QString& label, const char* overallKey,
+void MelonPrimeHudEditSidePanel::addSubColor(const QString& label, const char* overallKey,
     const char* keyR, const char* keyG, const char* keyB)
 {
     auto* container = new QWidget(this);
@@ -255,7 +255,7 @@ void HudEditSidePanel::addSubColor(const QString& label, const char* overallKey,
 
 // ─── Separator ──────────────────────────────────────────────────────────────
 
-void HudEditSidePanel::addSeparator()
+void MelonPrimeHudEditSidePanel::addSeparator()
 {
     auto* line = new QFrame(this);
     line->setFrameShape(QFrame::HLine);
@@ -266,7 +266,7 @@ void HudEditSidePanel::addSeparator()
 
 // ─── Built-ins: Show / Color / Anchor ───────────────────────────────────────
 
-void HudEditSidePanel::addBuiltins(const char* showKey,
+void MelonPrimeHudEditSidePanel::addBuiltins(const char* showKey,
     const char* colorR, const char* colorG, const char* colorB,
     const char* anchorKey)
 {
@@ -291,7 +291,7 @@ static const char* kElementNames[] = {
     "Bomb Left", "Bomb Icon", "Radar"
 };
 
-void HudEditSidePanel::populateForElement(int idx)
+void MelonPrimeHudEditSidePanel::populateForElement(int idx)
 {
     m_populating = true;
     clearForm();
@@ -326,7 +326,7 @@ void HudEditSidePanel::populateForElement(int idx)
 
 // ─── Per-element populate ───────────────────────────────────────────────────
 
-void HudEditSidePanel::populateHP()
+void MelonPrimeHudEditSidePanel::populateHP()
 {
     addBuiltins(nullptr,
         "Metroid.Visual.HudHpTextColorR", "Metroid.Visual.HudHpTextColorG", "Metroid.Visual.HudHpTextColorB",
@@ -337,7 +337,7 @@ void HudEditSidePanel::populateHP()
     addCheckBox(QStringLiteral("Auto Color"), "Metroid.Visual.HudHpTextAutoColor");
 }
 
-void HudEditSidePanel::populateHPGauge()
+void MelonPrimeHudEditSidePanel::populateHPGauge()
 {
     addBuiltins("Metroid.Visual.HudHpGauge",
         "Metroid.Visual.HudHpGaugeColorR", "Metroid.Visual.HudHpGaugeColorG", "Metroid.Visual.HudHpGaugeColorB",
@@ -349,7 +349,7 @@ void HudEditSidePanel::populateHPGauge()
     addCheckBox(QStringLiteral("Auto Color"), "Metroid.Visual.HudHpGaugeAutoColor");
 }
 
-void HudEditSidePanel::populateWeaponAmmo()
+void MelonPrimeHudEditSidePanel::populateWeaponAmmo()
 {
     addBuiltins(nullptr,
         "Metroid.Visual.HudAmmoTextColorR", "Metroid.Visual.HudAmmoTextColorG", "Metroid.Visual.HudAmmoTextColorB",
@@ -359,7 +359,7 @@ void HudEditSidePanel::populateWeaponAmmo()
         {QStringLiteral("Left"), QStringLiteral("Center"), QStringLiteral("Right")});
 }
 
-void HudEditSidePanel::populateWpnIcon()
+void MelonPrimeHudEditSidePanel::populateWpnIcon()
 {
     addBuiltins("Metroid.Visual.HudWeaponIconShow",
         nullptr, nullptr, nullptr,
@@ -375,7 +375,7 @@ void HudEditSidePanel::populateWpnIcon()
     addCheckBox(QStringLiteral("Color Override"), "Metroid.Visual.HudWeaponIconColorOverlay");
 }
 
-void HudEditSidePanel::populateAmmoGauge()
+void MelonPrimeHudEditSidePanel::populateAmmoGauge()
 {
     addBuiltins("Metroid.Visual.HudAmmoGauge",
         "Metroid.Visual.HudAmmoGaugeColorR", "Metroid.Visual.HudAmmoGaugeColorG", "Metroid.Visual.HudAmmoGaugeColorB",
@@ -386,7 +386,7 @@ void HudEditSidePanel::populateAmmoGauge()
     addSpinBox(QStringLiteral("Offset Y"), "Metroid.Visual.HudAmmoGaugeOffsetY", -128, 128);
 }
 
-void HudEditSidePanel::populateMatchStatus()
+void MelonPrimeHudEditSidePanel::populateMatchStatus()
 {
     addBuiltins("Metroid.Visual.HudMatchStatusShow",
         "Metroid.Visual.HudMatchStatusColorR", "Metroid.Visual.HudMatchStatusColorG", "Metroid.Visual.HudMatchStatusColorB",
@@ -424,7 +424,7 @@ void HudEditSidePanel::populateMatchStatus()
         "Metroid.Visual.HudMatchStatusGoalColorB");
 }
 
-void HudEditSidePanel::populateRank()
+void MelonPrimeHudEditSidePanel::populateRank()
 {
     addBuiltins("Metroid.Visual.HudRankShow",
         "Metroid.Visual.HudRankColorR", "Metroid.Visual.HudRankColorG", "Metroid.Visual.HudRankColorB",
@@ -436,7 +436,7 @@ void HudEditSidePanel::populateRank()
         {QStringLiteral("Left"), QStringLiteral("Center"), QStringLiteral("Right")});
 }
 
-void HudEditSidePanel::populateTimeLeft()
+void MelonPrimeHudEditSidePanel::populateTimeLeft()
 {
     addBuiltins("Metroid.Visual.HudTimeLeftShow",
         "Metroid.Visual.HudTimeLeftColorR", "Metroid.Visual.HudTimeLeftColorG", "Metroid.Visual.HudTimeLeftColorB",
@@ -445,7 +445,7 @@ void HudEditSidePanel::populateTimeLeft()
         {QStringLiteral("Left"), QStringLiteral("Center"), QStringLiteral("Right")});
 }
 
-void HudEditSidePanel::populateTimeLimit()
+void MelonPrimeHudEditSidePanel::populateTimeLimit()
 {
     addBuiltins("Metroid.Visual.HudTimeLimitShow",
         "Metroid.Visual.HudTimeLimitColorR", "Metroid.Visual.HudTimeLimitColorG", "Metroid.Visual.HudTimeLimitColorB",
@@ -454,7 +454,7 @@ void HudEditSidePanel::populateTimeLimit()
         {QStringLiteral("Left"), QStringLiteral("Center"), QStringLiteral("Right")});
 }
 
-void HudEditSidePanel::populateBombLeft()
+void MelonPrimeHudEditSidePanel::populateBombLeft()
 {
     addBuiltins("Metroid.Visual.HudBombLeftShow",
         "Metroid.Visual.HudBombLeftColorR", "Metroid.Visual.HudBombLeftColorG", "Metroid.Visual.HudBombLeftColorB",
@@ -466,7 +466,7 @@ void HudEditSidePanel::populateBombLeft()
     addLineEdit(QStringLiteral("Suffix"), "Metroid.Visual.HudBombLeftSuffix");
 }
 
-void HudEditSidePanel::populateBombIcon()
+void MelonPrimeHudEditSidePanel::populateBombIcon()
 {
     addBuiltins("Metroid.Visual.HudBombLeftIconShow",
         "Metroid.Visual.HudBombLeftIconColorR", "Metroid.Visual.HudBombLeftIconColorG", "Metroid.Visual.HudBombLeftIconColorB",
@@ -482,7 +482,7 @@ void HudEditSidePanel::populateBombIcon()
         {QStringLiteral("Top"), QStringLiteral("Center"), QStringLiteral("Bottom")});
 }
 
-void HudEditSidePanel::populateRadar()
+void MelonPrimeHudEditSidePanel::populateRadar()
 {
     addBuiltins("Metroid.Visual.BtmOverlayEnable",
         nullptr, nullptr, nullptr,

@@ -18,11 +18,10 @@
 
 class EmuInstance;
 
-class HudEditSidePanel : public QWidget
+class MelonPrimeHudEditSidePanel : public QWidget
 {
-    Q_OBJECT
 public:
-    explicit HudEditSidePanel(QWidget* parent, EmuInstance* emu);
+    explicit MelonPrimeHudEditSidePanel(QWidget* parent, EmuInstance* emu);
 
     void populateForElement(int elemIdx);
     void clear();

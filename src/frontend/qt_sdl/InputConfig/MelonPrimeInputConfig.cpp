@@ -1153,3 +1153,8 @@ void MelonPrimeInputConfig::setupCustomHudWidgets(Config::Table& instcfg)
 
 #include "MelonPrimeInputConfigCustomHudCode.inc"
 
+void MelonPrimeInputConfig::refreshAfterHudEditSave()
+{
+    snapshotVisualConfig();
+}
+
