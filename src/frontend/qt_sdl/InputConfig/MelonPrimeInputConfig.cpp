@@ -651,6 +651,10 @@ protected:
         return QColor(c.GetInt(kR), c.GetInt(kG), c.GetInt(kB), qBound(0, static_cast<int>(opacity * 255), 255));
     }
 
+    QFont hudFont() {
+        return getMphHudFont(cfg().GetInt("Metroid.Visual.HudTextScale"));
+    }
+
     void drawBackground(QPainter& p, const QRect& r) {
         p.fillRect(r, QColor(20, 20, 30));
         p.setPen(QColor(60, 60, 80));
@@ -725,8 +729,7 @@ protected:
         drawBackground(p, r);
 
         auto& c = cfg();
-        QFont f(QStringLiteral("Consolas"), 9);
-        p.setFont(f);
+        p.setFont(hudFont());
 
         {
             float op = c.GetDouble("Metroid.Visual.HudHpOpacity");
@@ -784,8 +787,7 @@ protected:
         drawBackground(p, r);
 
         auto& c = cfg();
-        QFont f(QStringLiteral("Consolas"), 9);
-        p.setFont(f);
+        p.setFont(hudFont());
 
         if (c.GetBool("Metroid.Visual.HudMatchStatusShow")) {
             float op = c.GetDouble("Metroid.Visual.HudMatchStatusOpacity");

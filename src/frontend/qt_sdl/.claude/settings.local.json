@@ -8,7 +8,9 @@
       "Bash(awk -F: 'NR<=20')",
       "Bash(git -C \"c:/Users/Admin/Documents/git/melonPrimeDS\" diff --stat HEAD)",
       "Bash(git -C \"c:/Users/Admin/Documents/git/melonPrimeDS\" log --oneline -10)",
-      "Bash(git -C \"c:/Users/Admin/Documents/git/melonPrimeDS\" grep -n \"QFontDatabase\\\\|#include\" -- src/frontend/qt_sdl/InputConfig/MelonPrimeInputConfig.cpp)"
+      "Bash(git -C \"c:/Users/Admin/Documents/git/melonPrimeDS\" grep -n \"QFontDatabase\\\\|#include\" -- src/frontend/qt_sdl/InputConfig/MelonPrimeInputConfig.cpp)",
+      "Bash('C:\\\\msys64\\\\usr\\\\bin\\\\bash.exe' -lc \"cd /c/Users/Admin/Documents/git/melonPrimeDS && /mingw64/bin/cmake.exe --build --preset=release-mingw-x86_64 --parallel 1 2>&1 | tail -20\")",
+      "Bash('C:\\\\msys64\\\\usr\\\\bin\\\\bash.exe' -lc \"cd /c/Users/Admin/Documents/git/melonPrimeDS && /mingw64/bin/cmake.exe --build --preset=release-mingw-x86_64 --parallel 1 2>&1 | tail -15\")"
     ]
   }
 }
