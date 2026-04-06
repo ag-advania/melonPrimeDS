@@ -639,11 +639,14 @@ static QString cfgKeyToObjName(const char* key)
 class HudPreviewWidget : public QWidget
 {
 public:
+    // DS top screen 256×192 at ×0.75 → 192×144 (equal X/Y scale, keeps circles round)
+    static constexpr int kPrevW = 192;
+    static constexpr int kPrevH = 144;
+
     explicit HudPreviewWidget(EmuInstance* emu, QWidget* parent = nullptr)
         : QWidget(parent), m_emu(emu)
     {
-        setFixedWidth(160);
-        setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Expanding);
+        setFixedSize(kPrevW, kPrevH);
     }
     void refreshPreview() { update(); }
 protected:
@@ -916,19 +919,24 @@ protected:
         auto& c = cfg();
         if (!c.GetBool("Metroid.Visual.BtmOverlayEnable")) return;
 
-        float op = c.GetDouble("Metroid.Visual.BtmOverlayOpacity");
-        int sz = c.GetInt("Metroid.Visual.BtmOverlayDstSize");
-        int drawSz = qMin(sz, qMin(r.width(), r.height()) - 16);
+        setupDsTransform(p);
 
-        int cx = r.center().x();
-        int cy = r.center().y();
+        float op  = c.GetDouble("Metroid.Visual.BtmOverlayOpacity");
+        int   sz  = c.GetInt("Metroid.Visual.BtmOverlayDstSize");
+        QPoint pos = dsPos(c.GetInt("Metroid.Visual.BtmOverlayAnchor"),
+                           c.GetInt("Metroid.Visual.BtmOverlayDstX"),
+                           c.GetInt("Metroid.Visual.BtmOverlayDstY"));
+        // Rect top-left = pos, circle centered in rect
+        int cx = pos.x() + sz / 2;
+        int cy = pos.y() + sz / 2;
+        int r2 = sz / 2;
 
         QColor fill(40, 80, 40, static_cast<int>(op * 180));
         QColor border(80, 160, 80, static_cast<int>(op * 255));
 
         p.setPen(QPen(border, 2));
         p.setBrush(fill);
-        p.drawEllipse(QPoint(cx, cy), drawSz / 2, drawSz / 2);
+        p.drawEllipse(QPoint(cx, cy), r2, r2);
 
         p.setPen(QPen(border, 1));
         p.drawLine(cx - 4, cy, cx + 4, cy);
