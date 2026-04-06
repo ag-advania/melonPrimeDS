@@ -660,6 +660,40 @@ protected:
         p.setPen(QColor(60, 60, 80));
         p.drawRect(r.adjusted(0, 0, -1, -1));
     }
+
+    // 9-point anchor + offset → DS-space QPoint (0-255, 0-191)
+    static QPoint dsPos(int anchor, int ofsX, int ofsY) {
+        return QPoint((anchor % 3) * 128 + ofsX, (anchor / 3) * 96 + ofsY);
+    }
+
+    // Apply DS-space transform (call after drawBackground, before DS-space drawing)
+    void setupDsTransform(QPainter& p) const {
+        p.scale(width() / 256.0f, height() / 192.0f);
+    }
+
+    // Text width in DS-space units (accounts for scale transform)
+    int textWidthDS(QPainter& p, const QString& str) const {
+        return static_cast<int>(p.fontMetrics().horizontalAdvance(str) * 256.0f / width());
+    }
+
+    // Alignment-adjusted X in DS-space: 0=left, 1=center, 2=right
+    int alignedX(int anchorX, int align, int textW) const {
+        if (align == 1) return anchorX - textW / 2;
+        if (align == 2) return anchorX - textW;
+        return anchorX;
+    }
+
+    // Draw a gauge bar in DS-space at 50% fill
+    static void drawGaugeDS(QPainter& p, int x, int y, const QColor& color, int orient, int len, int wid) {
+        if (len <= 0) len = 28;
+        if (wid <= 0) wid = 3;
+        int fw = (orient == 0) ? len / 2 : wid;
+        int fh = (orient == 0) ? wid    : len / 2;
+        int fx = x;
+        int fy = (orient == 0) ? y : y + len - fh;
+        p.fillRect(QRect(x, y, orient == 0 ? len : wid, orient == 0 ? wid : len), QColor(0,0,0,100));
+        p.fillRect(QRect(fx, fy, fw, fh), color);
+    }
 };
 
 class CrosshairPreviewWidget : public HudPreviewWidget
@@ -724,54 +758,82 @@ public:
 protected:
     void paintEvent(QPaintEvent*) override {
         QPainter p(this);
-        p.setRenderHint(QPainter::Antialiasing);
         QRect r = rect();
         drawBackground(p, r);
 
         auto& c = cfg();
-        QFont f = getMphHudFont(cfg().GetInt("Metroid.Visual.HudTextScale"));
-        p.setFont(f);
+        setupDsTransform(p);
+        p.setFont(getMphHudFont(c.GetInt("Metroid.Visual.HudTextScale")));
 
+        // ── HP text ──
         {
             float op = c.GetDouble("Metroid.Visual.HudHpOpacity");
             QColor col = readColor("Metroid.Visual.HudHpTextColorR", "Metroid.Visual.HudHpTextColorG", "Metroid.Visual.HudHpTextColorB", op);
+            QPoint pos = dsPos(c.GetInt("Metroid.Visual.HudHpAnchor"), c.GetInt("Metroid.Visual.HudHpX"), c.GetInt("Metroid.Visual.HudHpY"));
+            QString str = QString::fromStdString(c.GetString("Metroid.Visual.HudHpPrefix")) + "100";
+            int tw = textWidthDS(p, str);
+            int tx = alignedX(pos.x(), c.GetInt("Metroid.Visual.HudHpAlign"), tw);
             p.setPen(col);
-            QString prefix = QString::fromStdString(c.GetString("Metroid.Visual.HudHpPrefix"));
-            p.drawText(8, r.height() - 24, prefix + "100");
+            p.drawText(QPoint(tx, pos.y()), str);
+
+            // HP gauge
+            if (c.GetBool("Metroid.Visual.HudHpGauge")) {
+                float gop = c.GetDouble("Metroid.Visual.HudHpGaugeOpacity");
+                QColor gc = readColor("Metroid.Visual.HudHpGaugeColorR", "Metroid.Visual.HudHpGaugeColorG", "Metroid.Visual.HudHpGaugeColorB", gop);
+                int ori = c.GetInt("Metroid.Visual.HudHpGaugeOrientation");
+                int len = c.GetInt("Metroid.Visual.HudHpGaugeLength");
+                int wid = c.GetInt("Metroid.Visual.HudHpGaugeWidth");
+                int gx, gy;
+                if (c.GetInt("Metroid.Visual.HudHpGaugePosMode") == 1) {
+                    QPoint gp = dsPos(c.GetInt("Metroid.Visual.HudHpGaugePosAnchor"), c.GetInt("Metroid.Visual.HudHpGaugePosX"), c.GetInt("Metroid.Visual.HudHpGaugePosY"));
+                    gx = gp.x(); gy = gp.y();
+                } else {
+                    gx = tx + c.GetInt("Metroid.Visual.HudHpGaugeOffsetX");
+                    gy = pos.y() + c.GetInt("Metroid.Visual.HudHpGaugeOffsetY") + 2;
+                }
+                drawGaugeDS(p, gx, gy, gc, ori, len, wid);
+            }
         }
 
-        if (c.GetBool("Metroid.Visual.HudHpGauge")) {
-            float op = c.GetDouble("Metroid.Visual.HudHpGaugeOpacity");
-            QColor gc = readColor("Metroid.Visual.HudHpGaugeColorR", "Metroid.Visual.HudHpGaugeColorG", "Metroid.Visual.HudHpGaugeColorB", op);
-            int len = c.GetInt("Metroid.Visual.HudHpGaugeLength");
-            int w = c.GetInt("Metroid.Visual.HudHpGaugeWidth");
-            int orient = c.GetInt("Metroid.Visual.HudHpGaugeOrientation");
-            int drawLen = qMin(len, r.width() - 16);
-            if (orient == 0)
-                p.fillRect(QRect(8, r.height() - 12, drawLen, qMax(w, 2)), gc);
-            else
-                p.fillRect(QRect(8, r.height() - 12 - qMin(len, r.height()-30), qMax(w, 2), qMin(len, r.height()-30)), gc);
+        // ── Weapon icon ──
+        if (c.GetInt("Metroid.Visual.HudWeaponIconMode") != 0) {
+            QPoint ip = dsPos(c.GetInt("Metroid.Visual.HudWeaponIconPosAnchor"), c.GetInt("Metroid.Visual.HudWeaponIconPosX"), c.GetInt("Metroid.Visual.HudWeaponIconPosY"));
+            // anchorX/Y = 1 (center) by default → draw centered
+            int ix = ip.x() - 12;
+            int iy = ip.y() - 12;
+            p.fillRect(QRect(ix, iy, 24, 24), QColor(80, 80, 50, 160));
+            p.setPen(QColor(180, 180, 100, 200));
+            p.drawRect(QRect(ix, iy, 23, 23));
         }
 
+        // ── Ammo text ──
         {
             float op = c.GetDouble("Metroid.Visual.HudWeaponOpacity");
             QColor col = readColor("Metroid.Visual.HudAmmoTextColorR", "Metroid.Visual.HudAmmoTextColorG", "Metroid.Visual.HudAmmoTextColorB", op);
+            QPoint pos = dsPos(c.GetInt("Metroid.Visual.HudWeaponAnchor"), c.GetInt("Metroid.Visual.HudWeaponX"), c.GetInt("Metroid.Visual.HudWeaponY"));
+            QString str = QString::fromStdString(c.GetString("Metroid.Visual.HudAmmoPrefix")) + "50";
+            int tw = textWidthDS(p, str);
+            int tx = alignedX(pos.x(), c.GetInt("Metroid.Visual.HudAmmoAlign"), tw);
             p.setPen(col);
-            QString prefix = QString::fromStdString(c.GetString("Metroid.Visual.HudAmmoPrefix"));
-            p.drawText(r.width() - 80, r.height() - 24, prefix + "50");
-        }
+            p.drawText(QPoint(tx, pos.y()), str);
 
-        if (c.GetBool("Metroid.Visual.HudAmmoGauge")) {
-            float op = c.GetDouble("Metroid.Visual.HudAmmoGaugeOpacity");
-            QColor gc = readColor("Metroid.Visual.HudAmmoGaugeColorR", "Metroid.Visual.HudAmmoGaugeColorG", "Metroid.Visual.HudAmmoGaugeColorB", op);
-            int len = c.GetInt("Metroid.Visual.HudAmmoGaugeLength");
-            int w = c.GetInt("Metroid.Visual.HudAmmoGaugeWidth");
-            int orient = c.GetInt("Metroid.Visual.HudAmmoGaugeOrientation");
-            int drawLen = qMin(len, r.width() - 16);
-            if (orient == 0)
-                p.fillRect(QRect(r.width() - 8 - drawLen, r.height() - 12, drawLen, qMax(w, 2)), gc);
-            else
-                p.fillRect(QRect(r.width() - 8 - qMax(w, 2), r.height() - 12 - qMin(len, r.height()-30), qMax(w, 2), qMin(len, r.height()-30)), gc);
+            // Ammo gauge
+            if (c.GetBool("Metroid.Visual.HudAmmoGauge")) {
+                float gop = c.GetDouble("Metroid.Visual.HudAmmoGaugeOpacity");
+                QColor gc = readColor("Metroid.Visual.HudAmmoGaugeColorR", "Metroid.Visual.HudAmmoGaugeColorG", "Metroid.Visual.HudAmmoGaugeColorB", gop);
+                int ori = c.GetInt("Metroid.Visual.HudAmmoGaugeOrientation");
+                int len = c.GetInt("Metroid.Visual.HudAmmoGaugeLength");
+                int wid = c.GetInt("Metroid.Visual.HudAmmoGaugeWidth");
+                int gx, gy;
+                if (c.GetInt("Metroid.Visual.HudAmmoGaugePosMode") == 1) {
+                    QPoint gp = dsPos(c.GetInt("Metroid.Visual.HudAmmoGaugePosAnchor"), c.GetInt("Metroid.Visual.HudAmmoGaugePosX"), c.GetInt("Metroid.Visual.HudAmmoGaugePosY"));
+                    gx = gp.x(); gy = gp.y();
+                } else {
+                    gx = tx + c.GetInt("Metroid.Visual.HudAmmoGaugeOffsetX");
+                    gy = pos.y() + c.GetInt("Metroid.Visual.HudAmmoGaugeOffsetY") + 2;
+                }
+                drawGaugeDS(p, gx, gy, gc, ori, len, wid);
+            }
         }
     }
 };
@@ -783,43 +845,59 @@ public:
 protected:
     void paintEvent(QPaintEvent*) override {
         QPainter p(this);
-        p.setRenderHint(QPainter::Antialiasing);
         QRect r = rect();
         drawBackground(p, r);
 
         auto& c = cfg();
-        QFont f = getMphHudFont(cfg().GetInt("Metroid.Visual.HudTextScale"));
-        p.setFont(f);
+        setupDsTransform(p);
+        p.setFont(getMphHudFont(c.GetInt("Metroid.Visual.HudTextScale")));
 
+        // ── Score ──
         if (c.GetBool("Metroid.Visual.HudMatchStatusShow")) {
             float op = c.GetDouble("Metroid.Visual.HudMatchStatusOpacity");
             QColor col = readColor("Metroid.Visual.HudMatchStatusColorR", "Metroid.Visual.HudMatchStatusColorG", "Metroid.Visual.HudMatchStatusColorB", op);
+            QPoint pos = dsPos(c.GetInt("Metroid.Visual.HudMatchStatusAnchor"), c.GetInt("Metroid.Visual.HudMatchStatusX"), c.GetInt("Metroid.Visual.HudMatchStatusY"));
             p.setPen(col);
-            p.drawText(8, 16, "3 / 7");
+            p.drawText(pos, "3 / 7");
         }
 
+        // ── Rank ──
         if (c.GetBool("Metroid.Visual.HudRankShow")) {
             float op = c.GetDouble("Metroid.Visual.HudRankOpacity");
             QColor col = readColor("Metroid.Visual.HudRankColorR", "Metroid.Visual.HudRankColorG", "Metroid.Visual.HudRankColorB", op);
-            p.setPen(col);
+            QPoint pos = dsPos(c.GetInt("Metroid.Visual.HudRankAnchor"), c.GetInt("Metroid.Visual.HudRankX"), c.GetInt("Metroid.Visual.HudRankY"));
             QString prefix = QString::fromStdString(c.GetString("Metroid.Visual.HudRankPrefix"));
             QString suffix = QString::fromStdString(c.GetString("Metroid.Visual.HudRankSuffix"));
-            p.drawText(8, 32, prefix + "1st" + suffix);
+            QString str = prefix + "1st" + suffix;
+            int tx = alignedX(pos.x(), c.GetInt("Metroid.Visual.HudRankAlign"), textWidthDS(p, str));
+            p.setPen(col);
+            p.drawText(QPoint(tx, pos.y()), str);
         }
 
+        // ── Time Left ──
         if (c.GetBool("Metroid.Visual.HudTimeLeftShow")) {
             float op = c.GetDouble("Metroid.Visual.HudTimeLeftOpacity");
             QColor col = readColor("Metroid.Visual.HudTimeLeftColorR", "Metroid.Visual.HudTimeLeftColorG", "Metroid.Visual.HudTimeLeftColorB", op);
+            QPoint pos = dsPos(c.GetInt("Metroid.Visual.HudTimeLeftAnchor"), c.GetInt("Metroid.Visual.HudTimeLeftX"), c.GetInt("Metroid.Visual.HudTimeLeftY"));
+            QString str = QStringLiteral("4:32");
+            int tx = alignedX(pos.x(), c.GetInt("Metroid.Visual.HudTimeLeftAlign"), textWidthDS(p, str));
             p.setPen(col);
-            p.drawText(8, 48, "4:32");
+            p.drawText(QPoint(tx, pos.y()), str);
         }
 
-        if (c.GetBool("Metroid.Visual.HudBombLeftShow") && c.GetBool("Metroid.Visual.HudBombLeftTextShow")) {
+        // ── Bomb Left ── (show when HudBombLeftShow, text from prefix+count+suffix)
+        if (c.GetBool("Metroid.Visual.HudBombLeftShow")) {
             float op = c.GetDouble("Metroid.Visual.HudBombLeftOpacity");
             QColor col = readColor("Metroid.Visual.HudBombLeftColorR", "Metroid.Visual.HudBombLeftColorG", "Metroid.Visual.HudBombLeftColorB", op);
-            p.setPen(col);
+            QPoint pos = dsPos(c.GetInt("Metroid.Visual.HudBombLeftAnchor"), c.GetInt("Metroid.Visual.HudBombLeftX"), c.GetInt("Metroid.Visual.HudBombLeftY"));
             QString prefix = QString::fromStdString(c.GetString("Metroid.Visual.HudBombLeftPrefix"));
-            p.drawText(r.width() - 60, r.height() - 16, prefix + "3");
+            QString suffix = QString::fromStdString(c.GetString("Metroid.Visual.HudBombLeftSuffix"));
+            QString str = c.GetBool("Metroid.Visual.HudBombLeftTextShow") ? prefix + "3" + suffix : prefix + suffix;
+            if (!str.isEmpty()) {
+                int tx = alignedX(pos.x(), c.GetInt("Metroid.Visual.HudBombLeftAlign"), textWidthDS(p, str));
+                p.setPen(col);
+                p.drawText(QPoint(tx, pos.y()), str);
+            }
         }
     }
 };
