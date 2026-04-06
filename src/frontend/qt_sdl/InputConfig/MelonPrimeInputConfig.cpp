@@ -28,6 +28,9 @@
 #include "ui_MelonPrimeInputConfig.h"
 #include "Config.h"
 #include "toml/toml.hpp"
+#ifdef MELONPRIME_CUSTOM_HUD
+#include "MelonPrimeCustomHud.h"
+#endif
 
 // InputConfigDialog must be fully defined before including MapButton.h.
 // MapButton accesses parentDialog directly, so a forward declaration is not enough.
@@ -311,7 +314,7 @@ void MelonPrimeInputConfig::on_btnEditHudLayout_clicked()
 
 namespace {
 
-enum class HWType { Bool, Int, Float, String, Anchor9, Align3, Color3 };
+enum class HWType { Bool, Int, Float, String, Anchor9, Align3, Color3, HorizVert };
 
 struct HudWidgetProp {
     const char* label;
@@ -348,6 +351,7 @@ struct HudMainSec {
 #define P_ANC(lbl, key)               { lbl, HWType::Anchor9,key, 0,8,1, nullptr, nullptr }
 #define P_ALN(lbl, key)               { lbl, HWType::Align3, key, 0,2,1, nullptr, nullptr }
 #define P_CLR(lbl, kR, kG, kB)        { lbl, HWType::Color3, kR, 0,255,1, kG, kB }
+#define P_ORIENT(lbl, key)            { lbl, HWType::HorizVert, key, 0,1,1, nullptr, nullptr }
 
 // --- Section 1: Text Scale ---
 static const HudWidgetProp kSecTextScale[] = {
@@ -404,7 +408,7 @@ static const HudWidgetProp kSecHp[] = {
 static const HudWidgetProp kSecHpGauge[] = {
     P_BOOL("Enable", "Metroid.Visual.HudHpGauge"),
     P_BOOL("Auto Color", "Metroid.Visual.HudHpGaugeAutoColor"),
-    P_INT("Orientation", "Metroid.Visual.HudHpGaugeOrientation", 0, 1, 1),
+    P_ORIENT("Orientation", "Metroid.Visual.HudHpGaugeOrientation"),
     P_INT("Length", "Metroid.Visual.HudHpGaugeLength", 1, 192, 1),
     P_INT("Width", "Metroid.Visual.HudHpGaugeWidth", 1, 20, 1),
     P_INT("Offset X", "Metroid.Visual.HudHpGaugeOffsetX", -128, 128, 1),
@@ -448,7 +452,7 @@ static const HudWidgetProp kSecWpnIcon[] = {
 // --- Section 9: Ammo Gauge ---
 static const HudWidgetProp kSecAmmoGauge[] = {
     P_BOOL("Enable", "Metroid.Visual.HudAmmoGauge"),
-    P_INT("Orientation", "Metroid.Visual.HudAmmoGaugeOrientation", 0, 1, 1),
+    P_ORIENT("Orientation", "Metroid.Visual.HudAmmoGaugeOrientation"),
     P_INT("Length", "Metroid.Visual.HudAmmoGaugeLength", 1, 192, 1),
     P_INT("Width", "Metroid.Visual.HudAmmoGaugeWidth", 1, 20, 1),
     P_INT("Offset X", "Metroid.Visual.HudAmmoGaugeOffsetX", -128, 128, 1),
@@ -651,10 +655,6 @@ protected:
         return QColor(c.GetInt(kR), c.GetInt(kG), c.GetInt(kB), qBound(0, static_cast<int>(opacity * 255), 255));
     }
 
-    QFont hudFont() {
-        return getMphHudFont(cfg().GetInt("Metroid.Visual.HudTextScale"));
-    }
-
     void drawBackground(QPainter& p, const QRect& r) {
         p.fillRect(r, QColor(20, 20, 30));
         p.setPen(QColor(60, 60, 80));
@@ -729,7 +729,8 @@ protected:
         drawBackground(p, r);
 
         auto& c = cfg();
-        p.setFont(hudFont());
+        QFont f = getMphHudFont(cfg().GetInt("Metroid.Visual.HudTextScale"));
+        p.setFont(f);
 
         {
             float op = c.GetDouble("Metroid.Visual.HudHpOpacity");
@@ -787,7 +788,8 @@ protected:
         drawBackground(p, r);
 
         auto& c = cfg();
-        p.setFont(hudFont());
+        QFont f = getMphHudFont(cfg().GetInt("Metroid.Visual.HudTextScale"));
+        p.setFont(f);
 
         if (c.GetBool("Metroid.Visual.HudMatchStatusShow")) {
             float op = c.GetDouble("Metroid.Visual.HudMatchStatusOpacity");
@@ -975,6 +977,21 @@ void MelonPrimeInputConfig::setupCustomHudWidgets(Config::Table& instcfg)
             combo->setObjectName(objName);
             for (int a = 0; a < 3; ++a)
                 combo->addItem(QString::fromUtf8(kAlignLabels[a]));
+            combo->setCurrentIndex(instcfg.GetInt(p.cfgKey));
+            form->addRow(QString::fromUtf8(p.label), combo);
+            m_hudWidgets[p.cfgKey] = combo;
+            connect(combo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this, key = std::string(p.cfgKey)](int val) {
+                if (!m_applyPreviewEnabled) return;
+                emuInstance->getLocalConfig().SetInt(key, val);
+                invalidateHudAndRefreshPreviews();
+            });
+            break;
+        }
+        case HWType::HorizVert: {
+            auto* combo = new QComboBox(parent);
+            combo->setObjectName(objName);
+            combo->addItem(QStringLiteral("Horizontal"));
+            combo->addItem(QStringLiteral("Vertical"));
             combo->setCurrentIndex(instcfg.GetInt(p.cfgKey));
             form->addRow(QString::fromUtf8(p.label), combo);
             m_hudWidgets[p.cfgKey] = combo;
@@ -1225,6 +1242,25 @@ void MelonPrimeInputConfig::setupCustomHudWidgets(Config::Table& instcfg)
 
 void MelonPrimeInputConfig::refreshAfterHudEditSave()
 {
+    // Edit HUD Layout wrote directly to config. Reload all widget values so
+    // that clicking OK in the settings dialog doesn't overwrite the new positions.
+    auto& cfg = emuInstance->getLocalConfig();
+    m_applyPreviewEnabled = false;
+    for (auto& [key, widget] : m_hudWidgets) {
+        widget->blockSignals(true);
+        if (auto* cb = qobject_cast<QCheckBox*>(widget))
+            cb->setChecked(cfg.GetBool(key));
+        else if (auto* sb = qobject_cast<QSpinBox*>(widget))
+            sb->setValue(cfg.GetInt(key));
+        else if (auto* dsb = qobject_cast<QDoubleSpinBox*>(widget))
+            dsb->setValue(cfg.GetDouble(key));
+        else if (auto* le = qobject_cast<QLineEdit*>(widget))
+            le->setText(QString::fromStdString(cfg.GetString(key)));
+        else if (auto* combo = qobject_cast<QComboBox*>(widget))
+            combo->setCurrentIndex(cfg.GetInt(key));
+        widget->blockSignals(false);
+    }
+    m_applyPreviewEnabled = true;
     snapshotVisualConfig();
 }
 
