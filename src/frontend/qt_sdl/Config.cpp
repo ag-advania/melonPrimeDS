@@ -144,6 +144,7 @@ namespace Config
         {"Instance*.Metroid.Visual.HudWeaponIconAnchorX",  1},
         {"Instance*.Metroid.Visual.HudWeaponIconAnchorY",  1},
         {"Instance*.Metroid.Visual.HudWeaponIconColorOverlay", false},
+        {"Instance*.Metroid.Visual.HudWeaponIconHeight",    16},
         {"Instance*.Metroid.Visual.HudHpGaugeOrientation",   1},
         {"Instance*.Metroid.Visual.HudHpGaugeLength",       80},
         {"Instance*.Metroid.Visual.HudHpGaugeWidth",         3},
@@ -212,6 +213,7 @@ namespace Config
         {"Instance*.Metroid.Visual.HudBombLeftIconPosY",  -24},
         {"Instance*.Metroid.Visual.HudBombLeftIconAnchorX", 1},
         {"Instance*.Metroid.Visual.HudBombLeftIconAnchorY", 1},
+        {"Instance*.Metroid.Visual.HudBombIconHeight",      12},
         /* Rank & Time HUD */
         {"Instance*.Metroid.Visual.HudRankAnchor",       0},
         {"Instance*.Metroid.Visual.HudRankX",          20},

@@ -20,6 +20,7 @@
 #include <QHBoxLayout>
 #include <QSlider>
 #include <QPainter>
+#include <QImageReader>
 #include <algorithm>
 #include <sstream>
 
@@ -442,6 +443,7 @@ static const HudWidgetProp kSecWpnIcon[] = {
     P_INT("Pos Y", "Metroid.Visual.HudWeaponIconPosY", -256, 256, 1),
     P_INT("Icon Mode", "Metroid.Visual.HudWeaponIconMode", 0, 1, 1),
     P_BOOL("Color Overlay", "Metroid.Visual.HudWeaponIconColorOverlay"),
+    P_INT("Height", "Metroid.Visual.HudWeaponIconHeight", 4, 64, 1),
     P_INT("Icon Offset X", "Metroid.Visual.HudWeaponIconOffsetX", -128, 128, 1),
     P_INT("Icon Offset Y", "Metroid.Visual.HudWeaponIconOffsetY", -128, 128, 1),
     P_INT("Icon Anchor X", "Metroid.Visual.HudWeaponIconAnchorX", 0, 2, 1),
@@ -550,6 +552,7 @@ static const HudWidgetProp kSecBombIcon[] = {
     P_INT("Pos Y", "Metroid.Visual.HudBombLeftIconPosY", -256, 256, 1),
     P_INT("Icon Mode", "Metroid.Visual.HudBombLeftIconMode", 0, 1, 1),
     P_BOOL("Color Overlay", "Metroid.Visual.HudBombLeftIconColorOverlay"),
+    P_INT("Height", "Metroid.Visual.HudBombIconHeight", 4, 64, 1),
     P_CLR("Icon Color", "Metroid.Visual.HudBombLeftIconColorR", "Metroid.Visual.HudBombLeftIconColorG", "Metroid.Visual.HudBombLeftIconColorB"),
     P_INT("Icon Offset X", "Metroid.Visual.HudBombLeftIconOfsX", -128, 128, 1),
     P_INT("Icon Offset Y", "Metroid.Visual.HudBombLeftIconOfsY", -128, 128, 1),
@@ -801,7 +804,14 @@ protected:
         // ── Weapon icon ──
         if (c.GetInt("Metroid.Visual.HudWeaponIconMode") != 0) {
             static QImage s_magmaul;
-            if (s_magmaul.isNull()) s_magmaul = QImage(QStringLiteral(":/mph-icon-magmaul"));
+            static int s_magmaulH = 0;
+            int wantH = c.GetInt("Metroid.Visual.HudWeaponIconHeight");
+            if (s_magmaul.isNull() || s_magmaulH != wantH) {
+                QImageReader rd(QStringLiteral(":/mph-icon-magmaul"));
+                QSize sz = rd.size(); if (sz.isEmpty()) sz = QSize(wantH, wantH);
+                rd.setScaledSize(QSize(qMax(1, sz.width()*wantH/qMax(1,sz.height())), wantH));
+                s_magmaul = rd.read(); s_magmaulH = wantH;
+            }
             if (!s_magmaul.isNull()) {
                 QPoint ip = dsPos(c.GetInt("Metroid.Visual.HudWeaponIconPosAnchor"),
                                   c.GetInt("Metroid.Visual.HudWeaponIconPosX"),
@@ -911,7 +921,14 @@ protected:
             // Bomb icon
             if (c.GetBool("Metroid.Visual.HudBombLeftIconShow")) {
                 static QImage s_bombIcon;
-                if (s_bombIcon.isNull()) s_bombIcon = QImage(QStringLiteral(":/mph-icon-bombs3"));
+                static int s_bombIconH = 0;
+                int wantBH = c.GetInt("Metroid.Visual.HudBombIconHeight");
+                if (s_bombIcon.isNull() || s_bombIconH != wantBH) {
+                    QImageReader rd(QStringLiteral(":/mph-icon-bombs3"));
+                    QSize sz = rd.size(); if (sz.isEmpty()) sz = QSize(wantBH, wantBH);
+                    rd.setScaledSize(QSize(qMax(1, sz.width()*wantBH/qMax(1,sz.height())), wantBH));
+                    s_bombIcon = rd.read(); s_bombIconH = wantBH;
+                }
                 if (!s_bombIcon.isNull()) {
                     QPoint ip;
                     if (c.GetInt("Metroid.Visual.HudBombLeftIconMode") == 0) {

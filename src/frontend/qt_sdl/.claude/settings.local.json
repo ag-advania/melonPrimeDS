@@ -19,7 +19,9 @@
       "Bash('C:\\\\msys64\\\\usr\\\\bin\\\\bash.exe' -lc \"cd /c/Users/Admin/Documents/git/melonPrimeDS && git show 7301b423:src/frontend/qt_sdl/InputConfig/MelonPrimeInputConfig.cpp | grep -n 'PreviewWidget\\\\|paintEvent\\\\|kPrevW\\\\|kPrevH\\\\|DrawCached\\\\|drawImage\\\\|applyAnchor\\\\|DS-space\\\\|overlay\\\\|topBuffer\\\\|radar' | head -80\")",
       "Read(//c/Users/Admin/Documents/git/melonPrimeDS/**)",
       "Bash(cmake --build --preset=release-mingw-x86_64 --parallel 1)",
-      "Bash('C:\\\\msys64\\\\usr\\\\bin\\\\bash.exe' -lc \"cd /c/Users/Admin/Documents/git/melonPrimeDS && /mingw64/bin/cmake.exe --build --preset=release-mingw-x86_64 --parallel 1 2>&1 | tail -25\")"
+      "Bash('C:\\\\msys64\\\\usr\\\\bin\\\\bash.exe' -lc \"cd /c/Users/Admin/Documents/git/melonPrimeDS && /mingw64/bin/cmake.exe --build --preset=release-mingw-x86_64 --parallel 1 2>&1 | tail -25\")",
+      "Bash('C:\\\\msys64\\\\usr\\\\bin\\\\bash.exe' -lc \"MSYSTEM=MINGW64 source /etc/profile.d/msystem.sh 2>/dev/null; cd /c/Users/Admin/Documents/git/melonPrimeDS && /mingw64/bin/cmake.exe --build --preset=release-mingw-x86_64 --parallel 1 2>&1 | tail -15\")",
+      "Bash('C:\\\\msys64\\\\usr\\\\bin\\\\bash.exe' -lc \"cd /c/Users/Admin/Documents/git/melonPrimeDS/build/release-mingw-x86_64 && /mingw64/bin/ninja.exe melonDS 2>&1 | tail -20\")"
     ]
   }
 }

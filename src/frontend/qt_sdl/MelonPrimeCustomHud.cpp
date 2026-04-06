@@ -14,6 +14,7 @@
 #include <QPainter>
 #include <QPainterPath>
 #include <QImage>
+#include <QImageReader>
 #include <QMutex>
 #include <QColor>
 #include <QPoint>
@@ -31,20 +32,35 @@
 namespace MelonPrime {
 
 // =========================================================================
-//  P-1: Static icon cache — loaded once, reused every frame.
-//       Eliminates QImage resource I/O + format conversion from hot path.
+//  P-1: Static icon cache — loaded at a specific pixel height, reloaded when
+//       the config-driven size changes.  SVGs are rasterised via QImageReader.
 // =========================================================================
+
+// Render an SVG resource to a QImage of the requested height (aspect-preserving).
+static QImage loadSvgToHeight(const char* path, int h)
+{
+    if (h <= 0) h = 16;
+    QString qpath = QString::fromLatin1(path);
+    QImageReader reader(qpath);
+    QSize sz = reader.size();
+    if (sz.isEmpty()) sz = QSize(h, h);
+    int w = qMax(1, sz.width() * h / qMax(1, sz.height()));
+    reader.setScaledSize(QSize(w, h));
+    QImage img = reader.read();
+    return img.isNull() ? img : img.convertToFormat(QImage::Format_ARGB32_Premultiplied);
+}
+
 static QImage s_weaponIcons[9];
 static QImage s_weaponTintedIcons[9];
 static QColor s_weaponTintColor;
-static bool   s_iconsLoaded = false;
+static int    s_weaponIconHeight = 0;
 static bool   s_weaponTintCacheValid = false;
 
 // Bomb icon cache — 4 icons (index 0-3 = bombs remaining)
 static QImage s_bombIcons[4];
 static QImage s_bombTintedIcons[4];
 static QColor s_bombTintColor;
-static bool   s_bombIconsLoaded = false;
+static int    s_bombIconHeight = 0;
 static bool   s_bombTintCacheValid = false;
 
 static const QImage& GetBombIconForDraw(int bombs, bool useOverlay, const QColor& overlayColor)
@@ -68,21 +84,19 @@ static const QImage& GetBombIconForDraw(int bombs, bool useOverlay, const QColor
     return s_bombTintedIcons[idx];
 }
 
-static void EnsureBombIconsLoaded()
+static void EnsureBombIconsLoaded(int targetH = 12)
 {
-    if (LIKELY(s_bombIconsLoaded)) return;
+    if (LIKELY(s_bombIconHeight == targetH && s_bombIconHeight != 0)) return;
     static const char* kPaths[4] = {
         ":/mph-icon-bombs0", ":/mph-icon-bombs1",
         ":/mph-icon-bombs2", ":/mph-icon-bombs3"
     };
     for (int i = 0; i < 4; ++i) {
-        QImage img(kPaths[i]);
-        s_bombIcons[i] = img.isNull() ? img
-            : img.convertToFormat(QImage::Format_ARGB32_Premultiplied);
+        s_bombIcons[i] = loadSvgToHeight(kPaths[i], targetH);
         s_bombTintedIcons[i] = s_bombIcons[i];
     }
     s_bombTintCacheValid = false;
-    s_bombIconsLoaded = true;
+    s_bombIconHeight = targetH;
 }
 
 static const QImage& GetWeaponIconForDraw(uint8_t weapon, bool useOverlay, const QColor& overlayColor)
@@ -110,9 +124,9 @@ static const QImage& GetWeaponIconForDraw(uint8_t weapon, bool useOverlay, const
     return s_weaponTintedIcons[weapon];
 }
 
-static void EnsureIconsLoaded()
+static void EnsureIconsLoaded(int targetH = 16)
 {
-    if (LIKELY(s_iconsLoaded)) return;
+    if (LIKELY(s_weaponIconHeight == targetH && s_weaponIconHeight != 0)) return;
     static const char* kIconPaths[9] = {
         ":/mph-icon-pb", ":/mph-icon-volt", ":/mph-icon-missile",
         ":/mph-icon-battlehammer", ":/mph-icon-imperialist",
@@ -120,13 +134,11 @@ static void EnsureIconsLoaded()
         ":/mph-icon-shock", ":/mph-icon-omega"
     };
     for (int i = 0; i < 9; i++) {
-        QImage img(kIconPaths[i]);
-        s_weaponIcons[i] = img.isNull() ? img
-            : img.convertToFormat(QImage::Format_ARGB32_Premultiplied);
+        s_weaponIcons[i] = loadSvgToHeight(kIconPaths[i], targetH);
         s_weaponTintedIcons[i] = s_weaponIcons[i];
     }
     s_weaponTintCacheValid = false;
-    s_iconsLoaded = true;
+    s_weaponIconHeight = targetH;
 }
 
 // =========================================================================
@@ -246,6 +258,7 @@ struct WeaponHudConfig {
     char ammoPrefix[48];
     QColor ammoTextColor;
     bool iconShow, iconColorOverlay, ammoGauge;
+    int iconHeight;
     int iconMode, iconOfsX, iconOfsY, iconPosX, iconPosY;  // iconPosX/Y = final
     int iconPosAnchor, iconPosOfsX, iconPosOfsY;            // raw
     int iconAnchorX, iconAnchorY;
@@ -286,6 +299,7 @@ struct BombLeftHudConfig {
     char bombLeftSuffix[48];
     bool bombIconShow, bombIconColorOverlay;
     QColor bombIconColor;
+    int bombIconHeight;
     int bombIconMode, bombIconOfsX, bombIconOfsY, bombIconPosX, bombIconPosY;  // iconPosX/Y = final
     int bombIconPosAnchor, bombIconPosOfsX, bombIconPosOfsY;                    // raw
     int bombIconAnchorX, bombIconAnchorY;
@@ -399,6 +413,7 @@ static void LoadWeaponConfig(WeaponHudConfig& weapon, Config::Table& cfg)
     weapon.ammoTextColor = ReadRgbColor(cfg, "Metroid.Visual.HudAmmoTextColorR", "Metroid.Visual.HudAmmoTextColorG", "Metroid.Visual.HudAmmoTextColorB");
     weapon.iconShow = cfg.GetBool("Metroid.Visual.HudWeaponIconShow");
     weapon.iconColorOverlay = cfg.GetBool("Metroid.Visual.HudWeaponIconColorOverlay");
+    weapon.iconHeight = cfg.GetInt("Metroid.Visual.HudWeaponIconHeight");
     weapon.iconMode = cfg.GetInt("Metroid.Visual.HudWeaponIconMode");
     weapon.iconOfsX = cfg.GetInt("Metroid.Visual.HudWeaponIconOffsetX");
     weapon.iconOfsY = cfg.GetInt("Metroid.Visual.HudWeaponIconOffsetY");
@@ -476,6 +491,7 @@ static void LoadBombLeftConfig(BombLeftHudConfig& bombLeft, Config::Table& cfg)
     CopyConfigString(bombLeft.bombLeftSuffix, sizeof(bombLeft.bombLeftSuffix), cfg.GetString("Metroid.Visual.HudBombLeftSuffix"));
     bombLeft.bombIconShow = cfg.GetBool("Metroid.Visual.HudBombLeftIconShow");
     bombLeft.bombIconColorOverlay = cfg.GetBool("Metroid.Visual.HudBombLeftIconColorOverlay");
+    bombLeft.bombIconHeight = cfg.GetInt("Metroid.Visual.HudBombIconHeight");
     bombLeft.bombIconColor = ReadRgbColor(cfg, "Metroid.Visual.HudBombLeftIconColorR", "Metroid.Visual.HudBombLeftIconColorG", "Metroid.Visual.HudBombLeftIconColorB");
     bombLeft.bombIconMode = cfg.GetInt("Metroid.Visual.HudBombLeftIconMode");
     bombLeft.bombIconOfsX = cfg.GetInt("Metroid.Visual.HudBombLeftIconOfsX");
@@ -832,7 +848,7 @@ static void DrawBombLeft(QPainter* p, melonDS::u8* ram, const RomAddresses& rom,
 {
     if (!c.bombLeft.bombLeftShow) return; uint8_t bombs = static_cast<uint8_t>((Read32(ram, rom.baseBomb + offP) >> 8) & 0xF);
     { static TextBitmapCache s_bombBitmapCache = { 0, QColor(), "", 0, 0, false, QImage() }; const QFontMetrics fm = p->fontMetrics(); const int fontPixelSize = p->font().pixelSize(); char buf[64]; if (c.bombLeft.bombLeftTextShow) std::snprintf(buf, sizeof(buf), "%s%u%s", c.bombLeft.bombLeftPrefix, bombs, c.bombLeft.bombLeftSuffix); else std::snprintf(buf, sizeof(buf), "%s%s", c.bombLeft.bombLeftPrefix, c.bombLeft.bombLeftSuffix); if (buf[0] != '\0') { static TextMeasureCache s_bombMeasureCache = { 0, "", 0, 0, false }; int bombTextW = 0, bombTextH = 0; MeasureTextCached(fm, fontPixelSize, s_bombMeasureCache, buf, bombTextW, bombTextH, tds); PrepareTextBitmapCached(fm, p->font(), fontPixelSize, s_bombBitmapCache, buf, c.bombLeft.bombLeftColor); const int bombTextX = CalcAlignedTextX(c.bombLeft.bombLeftX, c.bombLeft.bombLeftAlign, bombTextW); DrawCachedText(p, s_bombBitmapCache, bombTextX, c.bombLeft.bombLeftY, tds); } }
-    if (c.bombLeft.bombIconShow) { EnsureBombIconsLoaded(); const QImage& icon = GetBombIconForDraw(bombs, c.bombLeft.bombIconColorOverlay, c.bombLeft.bombIconColor); if (!icon.isNull()) { int ix = (c.bombLeft.bombIconMode == 0) ? c.bombLeft.bombLeftX + c.bombLeft.bombIconOfsX : c.bombLeft.bombIconPosX; int iy = (c.bombLeft.bombIconMode == 0) ? c.bombLeft.bombLeftY + c.bombLeft.bombIconOfsY : c.bombLeft.bombIconPosY; const int iconAlignX = c.bombLeft.bombIconAnchorX; const int iconAlignY = c.bombLeft.bombIconAnchorY; if (iconAlignX == 1) ix -= icon.width() / 2; else if (iconAlignX == 2) ix -= icon.width(); if (iconAlignY == 1) iy -= icon.height() / 2; else if (iconAlignY == 2) iy -= icon.height(); p->drawImage(QRectF(ix, iy, icon.width(), icon.height()), icon); } }
+    if (c.bombLeft.bombIconShow) { EnsureBombIconsLoaded(c.bombLeft.bombIconHeight); const QImage& icon = GetBombIconForDraw(bombs, c.bombLeft.bombIconColorOverlay, c.bombLeft.bombIconColor); if (!icon.isNull()) { int ix = (c.bombLeft.bombIconMode == 0) ? c.bombLeft.bombLeftX + c.bombLeft.bombIconOfsX : c.bombLeft.bombIconPosX; int iy = (c.bombLeft.bombIconMode == 0) ? c.bombLeft.bombLeftY + c.bombLeft.bombIconOfsY : c.bombLeft.bombIconPosY; const int iconAlignX = c.bombLeft.bombIconAnchorX; const int iconAlignY = c.bombLeft.bombIconAnchorY; if (iconAlignX == 1) ix -= icon.width() / 2; else if (iconAlignX == 2) ix -= icon.width(); if (iconAlignY == 1) iy -= icon.height() / 2; else if (iconAlignY == 2) iy -= icon.height(); p->drawImage(QRectF(ix, iy, icon.width(), icon.height()), icon); } }
 }
 //  Rank & Time HUD
 // =========================================================================
@@ -1067,6 +1083,7 @@ static void DrawWeaponAmmo(QPainter* p, melonDS::u8* ram,
     const int fontPixelSize = p->font().pixelSize();
 
     const WeaponInfo& wi = kWeaponTable[weapon];
+    EnsureIconsLoaded(c.weapon.iconHeight);
     const QImage& icon = GetWeaponIconForDraw(weapon, c.weapon.iconColorOverlay, c.weapon.ammoGaugeColor); // P-1
 
     uint16_t ammo = 0, maxAmmo = 0;
@@ -1306,7 +1323,6 @@ HOT_FUNCTION void CustomHud_Render(
         return;
     }
 
-    EnsureIconsLoaded();                     // P-1: one-time init
     ApplyNoHudPatch(nds, romGroup);
 
     // P-3: Refresh config cache only when invalidated, or recompute anchor
