@@ -54,6 +54,32 @@ template <typename T, size_t N>
 constexpr int ArrayCount(const T (&)[N]) { return static_cast<int>(N); }
 
 // Must be constexpr so ArrayCount() below is a compile-time constant.
+constexpr const char* kHudColorPaletteNames[] = {
+    "White",
+    "Green",
+    "Yellow Green",
+    "Green Yellow",
+    "Yellow",
+    "Pure Cyan",
+    "Hud Cyan",
+    "Pink",
+    "Red",
+    "Orange",
+    "Samus Hud",
+    "Samus Hud Outline",
+    "Kanden Hud",
+    "Spire Hud",
+    "Spire Hud Outline",
+    "Trace Hud",
+    "Noxus Hud",
+    "Noxus Hud Outline",
+    "Sylux Hud",
+    "Sylux Crosshair",
+    "Weavel Hud",
+    "Weavel Hud Outline",
+    "Avium Purple",
+};
+
 constexpr PresetColor kHudColorPalette[] = {
     {255,255,255}, // White
     {0,255,0},     // Green

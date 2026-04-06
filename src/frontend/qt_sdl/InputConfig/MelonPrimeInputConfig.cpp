@@ -18,6 +18,7 @@
 #include <QCheckBox>
 #include <QColorDialog>
 #include <QHBoxLayout>
+#include <QSlider>
 #include <QPainter>
 #include <algorithm>
 #include <sstream>
@@ -889,12 +890,32 @@ void MelonPrimeInputConfig::setupCustomHudWidgets(Config::Table& instcfg)
             break;
         }
         case HWType::Int: {
-            auto* sb = new QSpinBox(parent);
+            auto* rowW = new QWidget(parent);
+            auto* hlay = new QHBoxLayout(rowW);
+            hlay->setContentsMargins(0, 0, 0, 0);
+            hlay->setSpacing(4);
+
+            auto* slider = new QSlider(Qt::Horizontal, rowW);
+            slider->setRange(p.min, p.max);
+            slider->setSingleStep(p.step);
+            slider->setPageStep(p.step * 5);
+            slider->setValue(instcfg.GetInt(p.cfgKey));
+
+            auto* sb = new QSpinBox(rowW);
             sb->setObjectName(objName);
             sb->setRange(p.min, p.max);
             sb->setSingleStep(p.step);
             sb->setValue(instcfg.GetInt(p.cfgKey));
-            form->addRow(QString::fromUtf8(p.label), sb);
+            sb->setFixedWidth(58);
+
+            hlay->addWidget(slider, 1);
+            hlay->addWidget(sb);
+
+            // keep slider and spinbox in sync
+            connect(slider, &QSlider::valueChanged, sb, &QSpinBox::setValue);
+            connect(sb, QOverload<int>::of(&QSpinBox::valueChanged), slider, &QSlider::setValue);
+
+            form->addRow(QString::fromUtf8(p.label), rowW);
             m_hudWidgets[p.cfgKey] = sb;
             connect(sb, QOverload<int>::of(&QSpinBox::valueChanged), this, [this, key = std::string(p.cfgKey)](int val) {
                 if (!m_applyPreviewEnabled) return;
@@ -963,33 +984,80 @@ void MelonPrimeInputConfig::setupCustomHudWidgets(Config::Table& instcfg)
             break;
         }
         case HWType::Color3: {
-            auto* row = new QWidget(parent);
-            auto* hlay = new QHBoxLayout(row);
+            // Outer container (vertical: preset combo on top, RGB spinboxes below)
+            auto* colWidget = new QWidget(parent);
+            auto* vlay = new QVBoxLayout(colWidget);
+            vlay->setContentsMargins(0, 0, 0, 0);
+            vlay->setSpacing(2);
+
+            // ── Preset combo ──
+            auto* presetCombo = new QComboBox(colWidget);
+            static const int kPaletteCount = ArrayCount(kHudColorPalette);
+            // Build pixmap icon for each preset colour
+            for (int pi = 0; pi < kPaletteCount; ++pi) {
+                const PresetColor& pc = kHudColorPalette[pi];
+                QPixmap pm(14, 14);
+                pm.fill(QColor(pc.r, pc.g, pc.b));
+                presetCombo->addItem(QIcon(pm), QString::fromUtf8(kHudColorPaletteNames[pi]));
+            }
+            presetCombo->addItem(QStringLiteral("Custom"));   // index == kPaletteCount
+
+            // ── RGB spinboxes row ──
+            auto* rgbRow = new QWidget(colWidget);
+            auto* hlay = new QHBoxLayout(rgbRow);
             hlay->setContentsMargins(0, 0, 0, 0);
             hlay->setSpacing(4);
 
-            auto* sbR = new QSpinBox(row); sbR->setRange(0, 255); sbR->setPrefix(QStringLiteral("R:")); sbR->setObjectName(cfgKeyToObjName(p.cfgKey));
-            auto* sbG = new QSpinBox(row); sbG->setRange(0, 255); sbG->setPrefix(QStringLiteral("G:")); sbG->setObjectName(cfgKeyToObjName(p.cfgKeyG));
-            auto* sbB = new QSpinBox(row); sbB->setRange(0, 255); sbB->setPrefix(QStringLiteral("B:")); sbB->setObjectName(cfgKeyToObjName(p.cfgKeyB));
+            auto* sbR = new QSpinBox(rgbRow); sbR->setRange(0, 255); sbR->setPrefix(QStringLiteral("R:")); sbR->setObjectName(cfgKeyToObjName(p.cfgKey));
+            auto* sbG = new QSpinBox(rgbRow); sbG->setRange(0, 255); sbG->setPrefix(QStringLiteral("G:")); sbG->setObjectName(cfgKeyToObjName(p.cfgKeyG));
+            auto* sbB = new QSpinBox(rgbRow); sbB->setRange(0, 255); sbB->setPrefix(QStringLiteral("B:")); sbB->setObjectName(cfgKeyToObjName(p.cfgKeyB));
 
             sbR->setValue(instcfg.GetInt(p.cfgKey));
             sbG->setValue(instcfg.GetInt(p.cfgKeyG));
             sbB->setValue(instcfg.GetInt(p.cfgKeyB));
 
-            auto* swatch = new QPushButton(row);
+            auto* swatch = new QPushButton(rgbRow);
             swatch->setFixedSize(24, 24);
-            auto updateSwatch = [sbR, sbG, sbB, swatch]() {
+            auto updateSwatch = [sbR, sbG, sbB, swatch, presetCombo]() {
                 swatch->setStyleSheet(QString("background-color: rgb(%1,%2,%3); border: 1px solid #888;")
                     .arg(sbR->value()).arg(sbG->value()).arg(sbB->value()));
+                // Sync preset combo
+                int match = kPaletteCount; // default: Custom
+                for (int pi = 0; pi < kPaletteCount; ++pi) {
+                    const PresetColor& pc = kHudColorPalette[pi];
+                    if (sbR->value() == pc.r && sbG->value() == pc.g && sbB->value() == pc.b) {
+                        match = pi; break;
+                    }
+                }
+                const bool old = presetCombo->blockSignals(true);
+                presetCombo->setCurrentIndex(match);
+                presetCombo->blockSignals(old);
             };
             updateSwatch();
 
             hlay->addWidget(sbR); hlay->addWidget(sbG); hlay->addWidget(sbB); hlay->addWidget(swatch);
-            form->addRow(QString::fromUtf8(p.label), row);
+
+            vlay->addWidget(presetCombo);
+            vlay->addWidget(rgbRow);
+            form->addRow(QString::fromUtf8(p.label), colWidget);
 
             m_hudWidgets[p.cfgKey]  = sbR;
             m_hudWidgets[p.cfgKeyG] = sbG;
             m_hudWidgets[p.cfgKeyB] = sbB;
+
+            // Preset combo → update spinboxes
+            connect(presetCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), this,
+                [sbR, sbG, sbB, updateSwatch](int idx) {
+                    if (idx < 0 || idx >= kPaletteCount) return;
+                    const PresetColor& pc = kHudColorPalette[idx];
+                    const bool oldR = sbR->blockSignals(true);
+                    const bool oldG = sbG->blockSignals(true);
+                    const bool oldB = sbB->blockSignals(true);
+                    sbR->setValue(pc.r); sbG->setValue(pc.g); sbB->setValue(pc.b);
+                    sbR->blockSignals(oldR); sbG->blockSignals(oldG); sbB->blockSignals(oldB);
+                    updateSwatch();
+                });
+            // Spinbox → after preset combo sets spinboxes, fire config update via spinbox signal below
 
             auto connectColorSpin = [this, updateSwatch](QSpinBox* sb, const std::string& key) {
                 connect(sb, QOverload<int>::of(&QSpinBox::valueChanged), this, [this, key, updateSwatch](int val) {
