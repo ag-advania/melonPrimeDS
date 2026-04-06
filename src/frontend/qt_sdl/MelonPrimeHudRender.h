@@ -1,5 +1,5 @@
-#ifndef MELON_PRIME_CUSTOM_HUD_H
-#define MELON_PRIME_CUSTOM_HUD_H
+#ifndef MELON_PRIME_HUD_RENDER_H
+#define MELON_PRIME_HUD_RENDER_H
 
 #ifdef MELONPRIME_CUSTOM_HUD
 
@@ -118,5 +118,5 @@ namespace MelonPrime {
 } // namespace MelonPrime
 
 #endif // MELONPRIME_CUSTOM_HUD
-#endif // MELON_PRIME_CUSTOM_HUD_H
+#endif // MELON_PRIME_HUD_RENDER_H
 

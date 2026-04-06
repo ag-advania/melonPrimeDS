@@ -1,7 +1,7 @@
 #ifdef MELONPRIME_CUSTOM_HUD
 
 #include "MelonPrimeHudEditSidePanel.h"
-#include "MelonPrimeCustomHud.h"
+#include "MelonPrimeHudRender.h"
 #include "EmuInstance.h"
 #include <QColorDialog>
 #include <QHBoxLayout>
