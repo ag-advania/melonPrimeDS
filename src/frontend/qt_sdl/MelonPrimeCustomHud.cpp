@@ -1301,6 +1301,10 @@ static bool          s_editMode       = false;
 static QRectF        s_editRects[kEditElemCount];
 static float         s_editHudScale    = 1.0f;
 static float         s_editTopStretchX = 1.0f;
+static bool          s_editPreviewMode = false;
+static RomAddresses     s_editRomCopy       = {};
+static GameAddressesHot s_editAddrHotCopy   = {};
+static uint8_t          s_editPlayerPosCopy = 0;
 static QRectF ComputeEditBounds(int idx, Config::Table& cfg, float topStretchX);
 static void   DrawEditOverlay(QPainter* p, Config::Table& cfg, float topStretchX);
 
@@ -1318,8 +1322,11 @@ HOT_FUNCTION void CustomHud_Render(
 {
     // Edit mode: draw element overlay every frame, skip normal HUD rendering.
     if (UNLIKELY(s_editMode)) {
-        s_editHudScale    = hudScale;
-        s_editTopStretchX = topStretchX;
+        s_editHudScale      = hudScale;
+        s_editTopStretchX   = topStretchX;
+        s_editRomCopy       = rom;
+        s_editAddrHotCopy   = addrHot;
+        s_editPlayerPosCopy = playerPosition;
         if (UNLIKELY(!s_cache.valid)) {
             RefreshCachedConfig(localCfg, topStretchX);
             s_cache.valid = true;
@@ -1533,28 +1540,42 @@ static const HudEditPropDesc kPropsHp[] = {
 };
 
 static const HudEditPropDesc kPropsHpGauge[] = {
-    {"Auto Color",EditPropType::Bool, "Metroid.Visual.HudHpGaugeAutoColor", 0, 0, 0, nullptr, nullptr, nullptr},
-    {"Opacity",   EditPropType::Float,"Metroid.Visual.HudHpGaugeOpacity", 0, 100, 5, nullptr, nullptr, nullptr},
+    {"Auto Color",   EditPropType::Bool, "Metroid.Visual.HudHpGaugeAutoColor", 0, 0, 0, nullptr, nullptr, nullptr},
+    {"Gauge Anchor", EditPropType::Int,  "Metroid.Visual.HudHpGaugeAnchor", 0, 4, 1, nullptr, nullptr, nullptr},
+    {"Offset X",     EditPropType::Int,  "Metroid.Visual.HudHpGaugeOffsetX", -128, 128, 1, nullptr, nullptr, nullptr},
+    {"Offset Y",     EditPropType::Int,  "Metroid.Visual.HudHpGaugeOffsetY", -128, 128, 1, nullptr, nullptr, nullptr},
+    {"Opacity",      EditPropType::Float,"Metroid.Visual.HudHpGaugeOpacity", 0, 100, 5, nullptr, nullptr, nullptr},
 };
 
 static const HudEditPropDesc kPropsWeaponAmmo[] = {
     {"Prefix", EditPropType::String, "Metroid.Visual.HudAmmoPrefix", 0, 0, 0, nullptr, nullptr, nullptr},
     {"Align",  EditPropType::Int,    "Metroid.Visual.HudAmmoAlign", 0, 2, 1, nullptr, nullptr, nullptr},
+    {"Layout", EditPropType::Int,    "Metroid.Visual.HudWeaponLayout", 0, 1, 1, nullptr, nullptr, nullptr},
     {"Opacity",EditPropType::Float,  "Metroid.Visual.HudWeaponOpacity", 0, 100, 5, nullptr, nullptr, nullptr},
 };
 
 static const HudEditPropDesc kPropsWpnIcon[] = {
-    {"Mode",   EditPropType::Int,  "Metroid.Visual.HudWeaponIconMode", 0, 1, 1, nullptr, nullptr, nullptr},
-    {"Tint",   EditPropType::Bool, "Metroid.Visual.HudWeaponIconColorOverlay", 0, 0, 0, nullptr, nullptr, nullptr},
-    {"Opacity",EditPropType::Float,"Metroid.Visual.HudWpnIconOpacity", 0, 100, 5, nullptr, nullptr, nullptr},
+    {"Mode",     EditPropType::Int,  "Metroid.Visual.HudWeaponIconMode", 0, 1, 1, nullptr, nullptr, nullptr},
+    {"Tint",     EditPropType::Bool, "Metroid.Visual.HudWeaponIconColorOverlay", 0, 0, 0, nullptr, nullptr, nullptr},
+    {"Height",   EditPropType::Int,  "Metroid.Visual.HudWeaponIconHeight", 4, 64, 1, nullptr, nullptr, nullptr},
+    {"Ofs X",    EditPropType::Int,  "Metroid.Visual.HudWeaponIconOffsetX", -128, 128, 1, nullptr, nullptr, nullptr},
+    {"Ofs Y",    EditPropType::Int,  "Metroid.Visual.HudWeaponIconOffsetY", -128, 128, 1, nullptr, nullptr, nullptr},
+    {"Anchor X", EditPropType::Int,  "Metroid.Visual.HudWeaponIconAnchorX", 0, 2, 1, nullptr, nullptr, nullptr},
+    {"Anchor Y", EditPropType::Int,  "Metroid.Visual.HudWeaponIconAnchorY", 0, 2, 1, nullptr, nullptr, nullptr},
+    {"Opacity",  EditPropType::Float,"Metroid.Visual.HudWpnIconOpacity", 0, 100, 5, nullptr, nullptr, nullptr},
 };
 
 static const HudEditPropDesc kPropsAmmoGauge[] = {
-    {"Opacity",EditPropType::Float,"Metroid.Visual.HudAmmoGaugeOpacity", 0, 100, 5, nullptr, nullptr, nullptr},
+    {"Gauge Anchor", EditPropType::Int,  "Metroid.Visual.HudAmmoGaugeAnchor", 0, 4, 1, nullptr, nullptr, nullptr},
+    {"Offset X",     EditPropType::Int,  "Metroid.Visual.HudAmmoGaugeOffsetX", -128, 128, 1, nullptr, nullptr, nullptr},
+    {"Offset Y",     EditPropType::Int,  "Metroid.Visual.HudAmmoGaugeOffsetY", -128, 128, 1, nullptr, nullptr, nullptr},
+    {"Opacity",      EditPropType::Float,"Metroid.Visual.HudAmmoGaugeOpacity", 0, 100, 5, nullptr, nullptr, nullptr},
 };
 
 static const HudEditPropDesc kPropsMatchStatus[] = {
-    {"Label Pos",EditPropType::Int,    "Metroid.Visual.HudMatchStatusLabelPos", 0, 3, 1, nullptr, nullptr, nullptr},
+    {"Label Pos",  EditPropType::Int,  "Metroid.Visual.HudMatchStatusLabelPos", 0, 3, 1, nullptr, nullptr, nullptr},
+    {"Label Ofs X",EditPropType::Int,  "Metroid.Visual.HudMatchStatusLabelOfsX", -64, 64, 1, nullptr, nullptr, nullptr},
+    {"Label Ofs Y",EditPropType::Int,  "Metroid.Visual.HudMatchStatusLabelOfsY", -64, 64, 1, nullptr, nullptr, nullptr},
     {"Points",   EditPropType::String, "Metroid.Visual.HudMatchStatusLabelPoints", 0, 0, 0, nullptr, nullptr, nullptr},
     {"Octolith", EditPropType::String, "Metroid.Visual.HudMatchStatusLabelOctoliths", 0, 0, 0, nullptr, nullptr, nullptr},
     {"Lives",    EditPropType::String, "Metroid.Visual.HudMatchStatusLabelLives", 0, 0, 0, nullptr, nullptr, nullptr},
@@ -1598,9 +1619,14 @@ static const HudEditPropDesc kPropsBombLeft[] = {
 };
 
 static const HudEditPropDesc kPropsBombIcon[] = {
-    {"Mode",   EditPropType::Int,  "Metroid.Visual.HudBombLeftIconMode", 0, 1, 1, nullptr, nullptr, nullptr},
-    {"Tint",   EditPropType::Bool, "Metroid.Visual.HudBombLeftIconColorOverlay", 0, 0, 0, nullptr, nullptr, nullptr},
-    {"Opacity",EditPropType::Float,"Metroid.Visual.HudBombIconOpacity", 0, 100, 5, nullptr, nullptr, nullptr},
+    {"Mode",     EditPropType::Int,  "Metroid.Visual.HudBombLeftIconMode", 0, 1, 1, nullptr, nullptr, nullptr},
+    {"Tint",     EditPropType::Bool, "Metroid.Visual.HudBombLeftIconColorOverlay", 0, 0, 0, nullptr, nullptr, nullptr},
+    {"Height",   EditPropType::Int,  "Metroid.Visual.HudBombIconHeight", 4, 64, 1, nullptr, nullptr, nullptr},
+    {"Ofs X",    EditPropType::Int,  "Metroid.Visual.HudBombLeftIconOfsX", -128, 128, 1, nullptr, nullptr, nullptr},
+    {"Ofs Y",    EditPropType::Int,  "Metroid.Visual.HudBombLeftIconOfsY", -128, 128, 1, nullptr, nullptr, nullptr},
+    {"Anchor X", EditPropType::Int,  "Metroid.Visual.HudBombLeftIconAnchorX", 0, 2, 1, nullptr, nullptr, nullptr},
+    {"Anchor Y", EditPropType::Int,  "Metroid.Visual.HudBombLeftIconAnchorY", 0, 2, 1, nullptr, nullptr, nullptr},
+    {"Opacity",  EditPropType::Float,"Metroid.Visual.HudBombIconOpacity", 0, 100, 5, nullptr, nullptr, nullptr},
 };
 
 static const HudEditPropDesc kPropsRadar[] = {
@@ -1610,6 +1636,7 @@ static const HudEditPropDesc kPropsRadar[] = {
 
 // ── Crosshair edit-mode props ────────────────────────────────────────────
 static const HudEditPropDesc kPropsCrosshairMain[] = {
+    {"Scale %",          EditPropType::Int,   "Metroid.Visual.CrosshairScale", 10, 500, 1, nullptr, nullptr, nullptr},
     {"Outline",          EditPropType::Bool,  "Metroid.Visual.CrosshairOutline", 0, 0, 0, nullptr, nullptr, nullptr},
     {"Outline Opacity",  EditPropType::Float, "Metroid.Visual.CrosshairOutlineOpacity", 0, 100, 5, nullptr, nullptr, nullptr},
     {"Outline Thick.",   EditPropType::Int,   "Metroid.Visual.CrosshairOutlineThickness", 1, 10, 1, nullptr, nullptr, nullptr},
@@ -1618,7 +1645,7 @@ static const HudEditPropDesc kPropsCrosshairMain[] = {
     {"Dot Thick.",       EditPropType::Int,   "Metroid.Visual.CrosshairDotThickness", 1, 10, 1, nullptr, nullptr, nullptr},
     {"T-Style",          EditPropType::Bool,  "Metroid.Visual.CrosshairTStyle", 0, 0, 0, nullptr, nullptr, nullptr},
 };
-static constexpr int kCrosshairMainCount = 7;
+static constexpr int kCrosshairMainCount = 8;
 
 static const HudEditPropDesc kPropsCrosshairInner[] = {
     {"Show",      EditPropType::Bool,  "Metroid.Visual.CrosshairInnerShow", 0, 0, 0, nullptr, nullptr, nullptr},
@@ -1692,7 +1719,7 @@ static const HudEditElemDesc kEditElems[kEditElemCount] = {
         "Metroid.Visual.HudHpGaugeColorR",
         "Metroid.Visual.HudHpGaugeColorG",
         "Metroid.Visual.HudHpGaugeColorB",
-        kPropsHpGauge, 2
+        kPropsHpGauge, 5
     },
     {   // 2: Weapon / Ammo text
         "Weapon/Ammo",
@@ -1704,7 +1731,7 @@ static const HudEditElemDesc kEditElems[kEditElemCount] = {
         "Metroid.Visual.HudAmmoTextColorR",
         "Metroid.Visual.HudAmmoTextColorG",
         "Metroid.Visual.HudAmmoTextColorB",
-        kPropsWeaponAmmo, 3
+        kPropsWeaponAmmo, 4
     },
     {   // 3: Weapon icon
         "Wpn\nIcon",
@@ -1714,7 +1741,7 @@ static const HudEditElemDesc kEditElems[kEditElemCount] = {
         nullptr, nullptr, nullptr, nullptr,
         "Metroid.Visual.HudWeaponIconShow", // showKey
         nullptr, nullptr, nullptr, // no color picker
-        kPropsWpnIcon, 3
+        kPropsWpnIcon, 8
     },
     {   // 4: Ammo gauge (independent position)
         "Ammo Gauge",
@@ -1729,7 +1756,7 @@ static const HudEditElemDesc kEditElems[kEditElemCount] = {
         "Metroid.Visual.HudAmmoGaugeColorR",
         "Metroid.Visual.HudAmmoGaugeColorG",
         "Metroid.Visual.HudAmmoGaugeColorB",
-        kPropsAmmoGauge, 1
+        kPropsAmmoGauge, 4
     },
     {   // 5: Match Status
         "Match Status",
@@ -1741,7 +1768,7 @@ static const HudEditElemDesc kEditElems[kEditElemCount] = {
         "Metroid.Visual.HudMatchStatusColorR",
         "Metroid.Visual.HudMatchStatusColorG",
         "Metroid.Visual.HudMatchStatusColorB",
-        kPropsMatchStatus, 11
+        kPropsMatchStatus, 13
     },
     {   // 6: Rank
         "Rank",
@@ -1801,7 +1828,7 @@ static const HudEditElemDesc kEditElems[kEditElemCount] = {
         "Metroid.Visual.HudBombLeftIconColorR",
         "Metroid.Visual.HudBombLeftIconColorG",
         "Metroid.Visual.HudBombLeftIconColorB",
-        kPropsBombIcon, 3
+        kPropsBombIcon, 8
     },
     {   // 11: Radar overlay
         "Radar",
@@ -1819,11 +1846,11 @@ static const HudEditElemDesc kEditElems[kEditElemCount] = {
 };
 
 // ── Edit mode static state ──────────────────────────────────────────────────
-static EmuInstance* s_editEmu         = nullptr;
-static int          s_editSelected    = -1;
-static int          s_editHovered     = -1;
-static bool         s_dragging        = false;
-static bool         s_anchorPickerOpen = false;  // expanded 3×3 anchor grid visible
+static EmuInstance*     s_editEmu           = nullptr;
+static int              s_editSelected      = -1;
+static int              s_editHovered       = -1;
+static bool             s_dragging          = false;
+static bool             s_anchorPickerOpen  = false;  // expanded 3×3 anchor grid visible
 static QPointF      s_dragStartDS;
 static int          s_dragStartOfsX   = 0;
 static int          s_dragStartOfsY   = 0;
@@ -1851,9 +1878,10 @@ static const QRectF kEditSaveRect  (10.0f,  1.0f, 74.0f, 12.0f);
 static const QRectF kEditCancelRect(88.0f,  1.0f, 74.0f, 12.0f);
 static const QRectF kEditResetRect (166.0f, 1.0f, 74.0f, 12.0f);
 
-// Text Scale control and Crosshair button (below button bar)
+// Text Scale control, Crosshair button, and Preview toggle (below button bar)
 static const QRectF kEditTextScaleRect(10.0f, 15.0f, 74.0f, 10.0f);
 static const QRectF kEditCrosshairBtnRect(88.0f, 15.0f, 74.0f, 10.0f);
+static const QRectF kEditPreviewBtnRect(166.0f, 15.0f, 74.0f, 10.0f);
 
 // Crosshair panel rect (left side, below control bar)
 static constexpr float kCrosshairPanelX = 2.0f;
@@ -1912,10 +1940,11 @@ static void SnapshotEditConfig(Config::Table& cfg)
     }
     s_editSnapshotDoubles.clear();
     s_editSnapshotStrings.clear();
-    for (int i = 0; i < kEditElemCount; ++i) {
-        const HudEditElemDesc& d = kEditElems[i];
-        for (int p = 0; p < d.propCount; ++p) {
-            const HudEditPropDesc& pr = d.props[p];
+
+    // Lambda used for all prop-array loops below
+    auto snapshotPropArray = [&](const HudEditPropDesc* arr, int count) {
+        for (int p = 0; p < count; ++p) {
+            const HudEditPropDesc& pr = arr[p];
             switch (pr.type) {
             case EditPropType::Bool:
                 s_editSnapshot[pr.cfgKey] = cfg.GetBool(pr.cfgKey) ? 1 : 0;
@@ -1931,15 +1960,29 @@ static void SnapshotEditConfig(Config::Table& cfg)
                 s_editSnapshotStrings[pr.cfgKey] = cfg.GetString(pr.cfgKey);
                 break;
             case EditPropType::SubColor:
-                s_editSnapshot[pr.cfgKey] = cfg.GetBool(pr.cfgKey) ? 1 : 0; // overall bool
+                s_editSnapshot[pr.cfgKey] = cfg.GetBool(pr.cfgKey) ? 1 : 0;
                 s_editSnapshotBools.insert(pr.cfgKey);
                 s_editSnapshot[pr.extra1] = cfg.GetInt(pr.extra1);
                 s_editSnapshot[pr.extra2] = cfg.GetInt(pr.extra2);
                 s_editSnapshot[pr.extra3] = cfg.GetInt(pr.extra3);
                 break;
+            default: break;
             }
         }
-    }
+    };
+
+    for (int i = 0; i < kEditElemCount; ++i)
+        snapshotPropArray(kEditElems[i].props, kEditElems[i].propCount);
+
+    // Crosshair panel properties (not part of any kEditElem)
+    s_editSnapshot["Metroid.Visual.CrosshairColorR"] = cfg.GetInt("Metroid.Visual.CrosshairColorR");
+    s_editSnapshot["Metroid.Visual.CrosshairColorG"] = cfg.GetInt("Metroid.Visual.CrosshairColorG");
+    s_editSnapshot["Metroid.Visual.CrosshairColorB"] = cfg.GetInt("Metroid.Visual.CrosshairColorB");
+    snapshotPropArray(kPropsCrosshairMain,  kCrosshairMainCount);
+    snapshotPropArray(kPropsCrosshairInner, kCrosshairInnerCount);
+    snapshotPropArray(kPropsCrosshairOuter, kCrosshairOuterCount);
+    // Text scale control
+    s_editSnapshot["Metroid.Visual.HudTextScale"] = cfg.GetInt("Metroid.Visual.HudTextScale");
 }
 
 static void RestoreEditSnapshot(Config::Table& cfg)
@@ -2000,6 +2043,26 @@ static void ResetEditToDefaults(Config::Table& cfg)
             }
         }
     }
+
+    // Crosshair panel properties
+    auto resetPropArray = [&](const HudEditPropDesc* arr, int count) {
+        for (int p = 0; p < count; ++p) {
+            const HudEditPropDesc& pr = arr[p];
+            switch (pr.type) {
+            case EditPropType::Bool:   cfg.SetBool(pr.cfgKey, defaults.GetBool(pr.cfgKey));     break;
+            case EditPropType::Int:    cfg.SetInt(pr.cfgKey,  defaults.GetInt(pr.cfgKey));       break;
+            case EditPropType::Float:  cfg.SetDouble(pr.cfgKey, defaults.GetDouble(pr.cfgKey)); break;
+            default: break;
+            }
+        }
+    };
+    cfg.SetInt("Metroid.Visual.CrosshairColorR", defaults.GetInt("Metroid.Visual.CrosshairColorR"));
+    cfg.SetInt("Metroid.Visual.CrosshairColorG", defaults.GetInt("Metroid.Visual.CrosshairColorG"));
+    cfg.SetInt("Metroid.Visual.CrosshairColorB", defaults.GetInt("Metroid.Visual.CrosshairColorB"));
+    resetPropArray(kPropsCrosshairMain,  kCrosshairMainCount);
+    resetPropArray(kPropsCrosshairInner, kCrosshairInnerCount);
+    resetPropArray(kPropsCrosshairOuter, kCrosshairOuterCount);
+    cfg.SetInt("Metroid.Visual.HudTextScale", defaults.GetInt("Metroid.Visual.HudTextScale"));
 }
 
 // ── Bounding rect computation ───────────────────────────────────────────────
@@ -2088,6 +2151,55 @@ static void GetResizeHandles(int idx, Config::Table& cfg,
     }
 }
 
+// ── DrawEditHudPreview ──────────────────────────────────────────────────────
+// Renders actual HUD elements over the DS canvas using real game state.
+// Called when s_editPreviewMode is active.  Painter already has the DS transform.
+static void DrawEditHudPreview(QPainter* p, Config::Table& cfg, float tds, float hudScale, float topStretchX)
+{
+    if (!s_editEmu || s_editRomCopy.playerHP == 0) return;
+    melonDS::NDS* nds = s_editEmu->getNDS();
+    if (!nds) return;
+    melonDS::u8* ram = nds->MainRAM;
+    if (!ram) return;
+
+    const CachedHudConfig& c = s_cache;
+    const RomAddresses&     rom    = s_editRomCopy;
+    const GameAddressesHot& addrHot = s_editAddrHotCopy;
+    const uint32_t offP = static_cast<uint32_t>(s_editPlayerPosCopy) * Consts::PLAYER_ADDR_INC;
+
+    const uint16_t currentHP = Read16(ram, rom.playerHP + offP);
+    const uint16_t maxHP     = Read16(ram, rom.maxHP     + offP);
+    DrawHP(p, currentHP, maxHP, c, tds);
+
+    const uint8_t hunterID = Read8(ram, addrHot.chosenHunter);
+    const bool    isAlt    = Read8(ram, addrHot.isAltForm) == 0x02;
+    const bool    isBomber = (hunterID == static_cast<uint8_t>(HunterId::Samus) ||
+                              hunterID == static_cast<uint8_t>(HunterId::Sylux));
+    if (isBomber && isAlt)
+        DrawBombLeft(p, ram, rom, offP, c, tds, hudScale);
+
+    const bool isAdventure = Read8(ram, rom.isInAdventure) == 0x02;
+    DrawMatchStatusHud(p, ram, rom, s_editPlayerPosCopy, isAdventure, c);
+    DrawRankAndTime(p, ram, rom, s_editPlayerPosCopy, isAdventure, c, tds);
+
+    const uint8_t viewMode    = Read8(ram, rom.baseViewMode + offP);
+    const bool    isFirstPerson = (viewMode == 0x00);
+    if (isFirstPerson) {
+        const uint8_t  weapon          = Read8(ram, addrHot.currentWeapon);
+        const uint32_t addrAmmoSpecial = rom.currentAmmoSpecial + offP;
+        const uint32_t addrAmmoMissile = rom.currentAmmoMissile + offP;
+        const uint16_t maxAmmoSpecial  = Read16(ram, rom.maxAmmoSpecial + offP);
+        const uint16_t maxAmmoMissile  = Read16(ram, rom.maxAmmoMissile + offP);
+        DrawWeaponAmmo(p, ram, weapon,
+                       Read16(ram, addrAmmoSpecial), addrAmmoMissile,
+                       maxAmmoSpecial, maxAmmoMissile, c, tds, hudScale);
+
+        const bool isTrans = (Read8(ram, addrHot.jumpFlag) & 0x10) != 0;
+        if (!isTrans && !isAlt)
+            DrawCrosshair(p, ram, rom, c, hudScale, topStretchX);
+    }
+}
+
 // ── DrawEditOverlay ─────────────────────────────────────────────────────────
 // Guard to prevent re-entrant QColorDialog
 static bool s_colorDialogOpen = false;
@@ -2097,17 +2209,24 @@ static void DrawEditOverlay(QPainter* p, Config::Table& cfg, float topStretchX)
     if (!p) return;
 
     const float leftX = -(topStretchX - 1.0f) * 128.0f;
-    p->fillRect(QRectF(leftX, 0.0f, 256.0f * topStretchX, 192.0f), QColor(0, 0, 0, 80));
-    p->setPen(Qt::NoPen);
+    const float tds   = std::max(0.5f, cfg.GetInt("Metroid.Visual.HudTextScale") / 100.0f);
 
-    // Element bounding boxes with live previews
-    const float tds = std::max(0.5f, cfg.GetInt("Metroid.Visual.HudTextScale") / 100.0f);
     QFont smallFont = p->font();
     smallFont.setPixelSize(4);
     QFont elemFont = p->font();    // element box font scales with text scale
     elemFont.setPixelSize(std::max(3, static_cast<int>(4.0f * tds)));
     QFont normalFont = p->font();
     normalFont.setPixelSize(6);
+
+    // ── Preview mode: actual HUD rendering ────────────────────────────────
+    if (s_editPreviewMode) {
+        DrawEditHudPreview(p, cfg, tds, s_editHudScale, topStretchX);
+        // Fall through to always draw the button bar below.
+    } else {
+    // ── Normal mode: element boxes ─────────────────────────────────────────
+
+    p->fillRect(QRectF(leftX, 0.0f, 256.0f * topStretchX, 192.0f), QColor(0, 0, 0, 80));
+    p->setPen(Qt::NoPen);
 
     for (int i = 0; i < kEditElemCount; ++i) {
         const QRectF& r = s_editRects[i];
@@ -2456,6 +2575,10 @@ static void DrawEditOverlay(QPainter* p, Config::Table& cfg, float topStretchX)
         }
     }
 
+    } // end of normal (non-preview) element rendering
+
+    // ── Button bar (always drawn in both modes) ─────────────────────────────
+
     // Save / Cancel / Reset buttons
     p->setFont(normalFont);
     p->fillRect(kEditSaveRect,   QColor(30, 100, 30, 220));
@@ -2515,8 +2638,21 @@ static void DrawEditOverlay(QPainter* p, Config::Table& cfg, float topStretchX)
                                          : QStringLiteral("Crosshair \u25b6"));
     }
 
-    // ── Crosshair panel (when open) ─────────────────────────────────────
-    if (s_crosshairPanelOpen) {
+    // ── Preview toggle button ───────────────────────────────────────────
+    {
+        p->fillRect(kEditPreviewBtnRect,
+                    s_editPreviewMode ? QColor(80, 60, 20, 230) : QColor(40, 40, 80, 220));
+        p->setPen(QPen(s_editPreviewMode ? QColor(255, 200, 80) : QColor(140, 140, 200), 0.4));
+        p->drawRect(kEditPreviewBtnRect);
+        p->setFont(normalFont);
+        p->setPen(Qt::white);
+        p->drawText(kEditPreviewBtnRect, Qt::AlignCenter,
+                    s_editPreviewMode ? QStringLiteral("\u25a0 Preview ON")
+                                      : QStringLiteral("\u25b6 Preview"));
+    }
+
+    // ── Crosshair panel (when open, only in normal mode) ───────────────
+    if (!s_editPreviewMode && s_crosshairPanelOpen) {
         const int totalRows = CountCrosshairRows(); // always 10
         const int visCount  = totalRows;            // no scrolling needed
         const float panelH  = visCount * kPropRowH + 4.0f;
@@ -2760,12 +2896,13 @@ static void DrawEditOverlay(QPainter* p, Config::Table& cfg, float topStretchX)
 
 void CustomHud_EnterEditMode(EmuInstance* emu, Config::Table& cfg)
 {
-    s_editEmu        = emu;
-    s_editSelected   = -1;
-    s_editHovered    = -1;
-    s_dragging       = false;
-    s_resizingLength = false;
-    s_resizingWidth  = false;
+    s_editEmu           = emu;
+    s_editSelected      = -1;
+    s_editHovered       = -1;
+    s_dragging          = false;
+    s_resizingLength    = false;
+    s_resizingWidth     = false;
+    s_editPreviewMode   = false;
     SnapshotEditConfig(cfg);
     s_editMode = true;
     CustomHud_InvalidateConfigCache();
@@ -2783,18 +2920,19 @@ void CustomHud_ExitEditMode(bool save, Config::Table& cfg)
     CustomHud_InvalidateConfigCache();
     if (save) Config::Save();
 
-    s_editMode       = false;
-    s_editSelected   = -1;
-    s_editHovered    = -1;
-    s_dragging       = false;
-    s_anchorPickerOpen = false;
+    s_editMode           = false;
+    s_editSelected       = -1;
+    s_editHovered        = -1;
+    s_dragging           = false;
+    s_anchorPickerOpen   = false;
     s_crosshairPanelOpen = false;
     s_innerSectionOpen   = false;
     s_outerSectionOpen   = false;
     s_crosshairPanelScroll = 0;
-    s_resizingLength = false;
-    s_resizingWidth  = false;
-    s_editEmu        = nullptr;
+    s_resizingLength     = false;
+    s_resizingWidth      = false;
+    s_editPreviewMode    = false;
+    s_editEmu            = nullptr;
     NotifySelectionChanged(-1);
     // Caller (Screen.cpp) is responsible for re-showing the settings dialog.
 }
@@ -2872,8 +3010,19 @@ void CustomHud_EditMousePress(QPointF pt, Qt::MouseButton btn, Config::Table& cf
         return;
     }
 
-    // Priority 1d: Crosshair panel clicks (when open)
-    if (s_crosshairPanelOpen) {
+    // Priority 1d: Preview toggle
+    if (kEditPreviewBtnRect.contains(ds)) {
+        s_editPreviewMode = !s_editPreviewMode;
+        // Close panels when switching to preview (they'd be invisible anyway)
+        if (s_editPreviewMode) {
+            s_crosshairPanelOpen = false;
+            s_anchorPickerOpen   = false;
+        }
+        return;
+    }
+
+    // Priority 1e: Crosshair panel clicks (when open)
+    if (!s_editPreviewMode && s_crosshairPanelOpen) {
         const int totalRows = CountCrosshairRows();
         const int visCount  = std::min(totalRows, kCrosshairMaxVisible);
         const float panelH  = visCount * kPropRowH + 4.0f;
@@ -3020,6 +3169,9 @@ void CustomHud_EditMousePress(QPointF pt, Qt::MouseButton btn, Config::Table& cf
             }
         }
     }
+
+    // In preview mode, only the button bar is interactive — skip element interactions.
+    if (s_editPreviewMode) return;
 
     // Priority 2–4: only when an element is already selected
     if (s_editSelected >= 0 && s_editSelected < kEditElemCount) {
