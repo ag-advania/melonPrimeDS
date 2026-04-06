@@ -254,6 +254,7 @@ namespace Config
         {"Instance*.Metroid.Visual.CrosshairDotThickness",     1},
         {"Instance*.Metroid.Visual.CrosshairInnerThickness",   1},
         {"Instance*.Metroid.Visual.CrosshairOuterThickness",   1},
+        {"Instance*.Metroid.Visual.CrosshairScale",           100},
         {"Instance*.Metroid.Visual.InGameAspectRatioMode",     0},
         {"Instance*.Metroid.Visual.InGameScalingMode",         0},
         /* MelonPrimeDS Bottom Screen Overlay defaults { */

@@ -84,8 +84,9 @@ static const QImage& GetBombIconForDraw(int bombs, bool useOverlay, const QColor
     return s_bombTintedIcons[idx];
 }
 
-static void EnsureBombIconsLoaded(int targetH = 12)
+static void EnsureBombIconsLoaded(int dsH = 12, float hudScale = 1.0f)
 {
+    int targetH = qMax(1, (int)std::ceil((float)dsH * hudScale));
     if (LIKELY(s_bombIconHeight == targetH && s_bombIconHeight != 0)) return;
     static const char* kPaths[4] = {
         ":/mph-icon-bombs0", ":/mph-icon-bombs1",
@@ -124,8 +125,9 @@ static const QImage& GetWeaponIconForDraw(uint8_t weapon, bool useOverlay, const
     return s_weaponTintedIcons[weapon];
 }
 
-static void EnsureIconsLoaded(int targetH = 16)
+static void EnsureIconsLoaded(int dsH = 16, float hudScale = 1.0f)
 {
+    int targetH = qMax(1, (int)std::ceil((float)dsH * hudScale));
     if (LIKELY(s_weaponIconHeight == targetH && s_weaponIconHeight != 0)) return;
     static const char* kIconPaths[9] = {
         ":/mph-icon-pb", ":/mph-icon-volt", ":/mph-icon-missile",
@@ -147,10 +149,10 @@ static void EnsureIconsLoaded(int targetH = 16)
 // =========================================================================
 static QImage s_outlineBuf;
 
-static QImage& GetOutlineBuffer()
+static QImage& GetOutlineBuffer(int w, int h)
 {
-    if (UNLIKELY(s_outlineBuf.isNull()))
-        s_outlineBuf = QImage(256, 192, QImage::Format_ARGB32_Premultiplied);
+    if (UNLIKELY(s_outlineBuf.isNull() || s_outlineBuf.width() != w || s_outlineBuf.height() != h))
+        s_outlineBuf = QImage(w, h, QImage::Format_ARGB32_Premultiplied);
     return s_outlineBuf;
 }
 
@@ -279,6 +281,7 @@ struct CrosshairHudConfig {
     bool chOuterShow;
     double chOuterOpacity;
     int chOuterLengthX, chOuterLengthY, chOuterThickness, chOuterOffset;
+    double chScale; // visual scale multiplier (1.0 = 100%)
 };
 struct MatchStatusHudConfig {
     bool matchStatusShow;
@@ -457,6 +460,8 @@ static void LoadCrosshairConfig(CrosshairHudConfig& crosshair, Config::Table& cf
     crosshair.chOuterLengthY = cfg.GetInt("Metroid.Visual.CrosshairOuterLengthY");
     crosshair.chOuterThickness = cfg.GetInt("Metroid.Visual.CrosshairOuterThickness"); if (crosshair.chOuterThickness <= 0) crosshair.chOuterThickness = 1;
     crosshair.chOuterOffset = cfg.GetInt("Metroid.Visual.CrosshairOuterOffset");
+    crosshair.chScale = cfg.GetInt("Metroid.Visual.CrosshairScale") / 100.0;
+    if (crosshair.chScale <= 0.0) crosshair.chScale = 1.0;
 }
 static void LoadMatchStatusConfig(MatchStatusHudConfig& matchStatus, Config::Table& cfg)
 {
@@ -844,11 +849,11 @@ static int CalcAlignedTextX(int anchorX, int align, int textW);
 // =========================================================================
 //  Bomb Left HUD
 // =========================================================================
-static void DrawBombLeft(QPainter* p, melonDS::u8* ram, const RomAddresses& rom, uint32_t offP, const CachedHudConfig& c, float tds)
+static void DrawBombLeft(QPainter* p, melonDS::u8* ram, const RomAddresses& rom, uint32_t offP, const CachedHudConfig& c, float tds, float hudScale)
 {
     if (!c.bombLeft.bombLeftShow) return; uint8_t bombs = static_cast<uint8_t>((Read32(ram, rom.baseBomb + offP) >> 8) & 0xF);
     { static TextBitmapCache s_bombBitmapCache = { 0, QColor(), "", 0, 0, false, QImage() }; const QFontMetrics fm = p->fontMetrics(); const int fontPixelSize = p->font().pixelSize(); char buf[64]; if (c.bombLeft.bombLeftTextShow) std::snprintf(buf, sizeof(buf), "%s%u%s", c.bombLeft.bombLeftPrefix, bombs, c.bombLeft.bombLeftSuffix); else std::snprintf(buf, sizeof(buf), "%s%s", c.bombLeft.bombLeftPrefix, c.bombLeft.bombLeftSuffix); if (buf[0] != '\0') { static TextMeasureCache s_bombMeasureCache = { 0, "", 0, 0, false }; int bombTextW = 0, bombTextH = 0; MeasureTextCached(fm, fontPixelSize, s_bombMeasureCache, buf, bombTextW, bombTextH, tds); PrepareTextBitmapCached(fm, p->font(), fontPixelSize, s_bombBitmapCache, buf, c.bombLeft.bombLeftColor); const int bombTextX = CalcAlignedTextX(c.bombLeft.bombLeftX, c.bombLeft.bombLeftAlign, bombTextW); DrawCachedText(p, s_bombBitmapCache, bombTextX, c.bombLeft.bombLeftY, tds); } }
-    if (c.bombLeft.bombIconShow) { EnsureBombIconsLoaded(c.bombLeft.bombIconHeight); const QImage& icon = GetBombIconForDraw(bombs, c.bombLeft.bombIconColorOverlay, c.bombLeft.bombIconColor); if (!icon.isNull()) { int ix = (c.bombLeft.bombIconMode == 0) ? c.bombLeft.bombLeftX + c.bombLeft.bombIconOfsX : c.bombLeft.bombIconPosX; int iy = (c.bombLeft.bombIconMode == 0) ? c.bombLeft.bombLeftY + c.bombLeft.bombIconOfsY : c.bombLeft.bombIconPosY; const int iconAlignX = c.bombLeft.bombIconAnchorX; const int iconAlignY = c.bombLeft.bombIconAnchorY; if (iconAlignX == 1) ix -= icon.width() / 2; else if (iconAlignX == 2) ix -= icon.width(); if (iconAlignY == 1) iy -= icon.height() / 2; else if (iconAlignY == 2) iy -= icon.height(); p->drawImage(QRectF(ix, iy, icon.width(), icon.height()), icon); } }
+    if (c.bombLeft.bombIconShow) { EnsureBombIconsLoaded(c.bombLeft.bombIconHeight, hudScale); const QImage& icon = GetBombIconForDraw(bombs, c.bombLeft.bombIconColorOverlay, c.bombLeft.bombIconColor); if (!icon.isNull()) { const float dw = icon.width() / hudScale; const float dh = icon.height() / hudScale; float ix = (c.bombLeft.bombIconMode == 0) ? c.bombLeft.bombLeftX + c.bombLeft.bombIconOfsX : c.bombLeft.bombIconPosX; float iy = (c.bombLeft.bombIconMode == 0) ? c.bombLeft.bombLeftY + c.bombLeft.bombIconOfsY : c.bombLeft.bombIconPosY; const int iconAlignX = c.bombLeft.bombIconAnchorX; const int iconAlignY = c.bombLeft.bombIconAnchorY; if (iconAlignX == 1) ix -= dw * 0.5f; else if (iconAlignX == 2) ix -= dw; if (iconAlignY == 1) iy -= dh * 0.5f; else if (iconAlignY == 2) iy -= dh; p->drawImage(QRectF(ix, iy, dw, dh), icon); } }
 }
 //  Rank & Time HUD
 // =========================================================================
@@ -1075,7 +1080,7 @@ static constexpr WeaponInfo kWeaponTable[9] = {
 static void DrawWeaponAmmo(QPainter* p, melonDS::u8* ram,
                            uint8_t weapon, uint16_t ammoSpecial, uint32_t addrMissile,
                            uint16_t maxAmmoSpecial, uint16_t maxAmmoMissile,
-                           const CachedHudConfig& c, float tds)
+                           const CachedHudConfig& c, float tds, float hudScale)
 {
     static TextMeasureCache s_ammoTextCache = { 0, "", 0, 0, false };
     static TextBitmapCache s_ammoBitmapCache = { 0, QColor(), "", 0, 0, false, QImage() };
@@ -1083,7 +1088,7 @@ static void DrawWeaponAmmo(QPainter* p, melonDS::u8* ram,
     const int fontPixelSize = p->font().pixelSize();
 
     const WeaponInfo& wi = kWeaponTable[weapon];
-    EnsureIconsLoaded(c.weapon.iconHeight);
+    EnsureIconsLoaded(c.weapon.iconHeight, hudScale);
     const QImage& icon = GetWeaponIconForDraw(weapon, c.weapon.iconColorOverlay, c.weapon.ammoGaugeColor); // P-1
 
     uint16_t ammo = 0, maxAmmo = 0;
@@ -1113,13 +1118,15 @@ static void DrawWeaponAmmo(QPainter* p, melonDS::u8* ram,
     }
 
     if (c.weapon.iconShow && !icon.isNull()) {
-        int ix = (c.weapon.iconMode == 0) ? c.weapon.wpnX + c.weapon.iconOfsX : c.weapon.iconPosX;
-        int iy = (c.weapon.iconMode == 0) ? c.weapon.wpnY + c.weapon.iconOfsY : c.weapon.iconPosY;
-        if (c.weapon.iconAnchorX == 1) ix -= icon.width() / 2;
-        else if (c.weapon.iconAnchorX == 2) ix -= icon.width();
-        if (c.weapon.iconAnchorY == 1) iy -= icon.height() / 2;
-        else if (c.weapon.iconAnchorY == 2) iy -= icon.height();
-        p->drawImage(QRectF(ix, iy, icon.width(), icon.height()), icon);
+        const float dw = icon.width()  / hudScale;
+        const float dh = icon.height() / hudScale;
+        float ix = (c.weapon.iconMode == 0) ? c.weapon.wpnX + c.weapon.iconOfsX : c.weapon.iconPosX;
+        float iy = (c.weapon.iconMode == 0) ? c.weapon.wpnY + c.weapon.iconOfsY : c.weapon.iconPosY;
+        if (c.weapon.iconAnchorX == 1) ix -= dw * 0.5f;
+        else if (c.weapon.iconAnchorX == 2) ix -= dw;
+        if (c.weapon.iconAnchorY == 1) iy -= dh * 0.5f;
+        else if (c.weapon.iconAnchorY == 2) iy -= dh;
+        p->drawImage(QRectF(ix, iy, dw, dh), icon);
     }
 
     if (c.weapon.ammoGauge && hasAmmo && maxAmmo > 0) {
@@ -1162,81 +1169,108 @@ static void CollectArmRects(QRect* out, int& n, int cx, int cy,
     }
 }
 
+// Float version of CollectArmRects — uses QRectF for sub-pixel precision and
+// applies chScale to all geometry (arm lengths, offset, thickness).
+static void CollectArmRectsF(QRectF* out, int& n, float cx, float cy,
+                              float lengthX, float lengthY, float offset,
+                              float thickness, bool tStyle)
+{
+    const float halfT = thickness * 0.5f;
+    n = 0;
+    if (lengthX > 0.0f) {
+        out[n++] = QRectF(cx - offset - lengthX, cy - halfT, lengthX, thickness);
+        out[n++] = QRectF(cx + offset,           cy - halfT, lengthX, thickness);
+    }
+    if (lengthY > 0.0f) {
+        out[n++] = QRectF(cx - halfT, cy + offset,           thickness, lengthY);
+        if (!tStyle)
+            out[n++] = QRectF(cx - halfT, cy - offset - lengthY, thickness, lengthY);
+    }
+}
+
 // P-8: Reads directly from CachedHudConfig — no ReadCrosshairConfig() copy.
+// hudScale / topStretchX are passed to size the outline buffer at output resolution.
 static void DrawCrosshair(QPainter* p, melonDS::u8* ram,
                           const RomAddresses& rom,
-                          const CachedHudConfig& c)
+                          const CachedHudConfig& c,
+                          float hudScale, float topStretchX)
 {
-    int cx = static_cast<int>(Read8(ram, rom.crosshairPosX));
-    int cy = static_cast<int>(Read8(ram, rom.crosshairPosY));
+    const float cx = static_cast<float>(Read8(ram, rom.crosshairPosX));
+    const float cy = static_cast<float>(Read8(ram, rom.crosshairPosY));
+    const float cs = static_cast<float>(c.crosshair.chScale);
 
-    QRect innerRects[4], outerRects[4];
+    QRectF innerRects[4], outerRects[4];
     int nInner = 0, nOuter = 0;
     if (c.crosshair.chInnerShow)
-        CollectArmRects(innerRects, nInner, cx, cy,
-                        c.crosshair.chInnerLengthX, c.crosshair.chInnerLengthY,
-                        c.crosshair.chInnerOffset, c.crosshair.chInnerThickness,
-                        c.crosshair.chTStyle);
+        CollectArmRectsF(innerRects, nInner, cx, cy,
+                         c.crosshair.chInnerLengthX  * cs, c.crosshair.chInnerLengthY  * cs,
+                         c.crosshair.chInnerOffset   * cs, c.crosshair.chInnerThickness * cs,
+                         c.crosshair.chTStyle);
     if (c.crosshair.chOuterShow)
-        CollectArmRects(outerRects, nOuter, cx, cy,
-                        c.crosshair.chOuterLengthX, c.crosshair.chOuterLengthY,
-                        c.crosshair.chOuterOffset, c.crosshair.chOuterThickness,
-                        c.crosshair.chTStyle);
+        CollectArmRectsF(outerRects, nOuter, cx, cy,
+                         c.crosshair.chOuterLengthX  * cs, c.crosshair.chOuterLengthY  * cs,
+                         c.crosshair.chOuterOffset   * cs, c.crosshair.chOuterThickness * cs,
+                         c.crosshair.chTStyle);
 
-    // Outline pass: render to separate buffer, composite with opacity
+    // Outline pass: render into a pixel-resolution buffer so the outline is
+    // sharp even at hudScale > 1.  The outline painter inherits p's transform
+    // so DS-space coordinates map directly to output pixels in the buffer.
     if (c.crosshair.chOutline && c.crosshair.chOutlineOpacity > 0.0) {
-        const int olT = c.crosshair.chOutlineThickness;
+        const float olT = static_cast<float>(c.crosshair.chOutlineThickness);
+        const float dotH = c.crosshair.chCenterDot
+                         ? (c.crosshair.chDotThickness * cs + olT * 2.0f) * 0.5f : 0.0f;
 
-        // Build dirty rect from all arm rects + dot, expanded by outline thickness
-        int minX = cx, maxX = cx, minY = cy, maxY = cy;
-        auto expandBounds = [&](const QRect& r, int pad) {
+        // DS-space bounding box
+        float minX = cx - dotH, maxX = cx + dotH;
+        float minY = cy - dotH, maxY = cy + dotH;
+        auto expandBoundsF = [&](const QRectF& r, float pad) {
             if (r.left()   - pad < minX) minX = r.left()   - pad;
             if (r.right()  + pad > maxX) maxX = r.right()  + pad;
             if (r.top()    - pad < minY) minY = r.top()    - pad;
             if (r.bottom() + pad > maxY) maxY = r.bottom() + pad;
         };
+        for (int i = 0; i < nInner; i++) expandBoundsF(innerRects[i], olT);
+        for (int i = 0; i < nOuter; i++) expandBoundsF(outerRects[i], olT);
 
-        if (c.crosshair.chCenterDot) {
-            int dotHalf = (c.crosshair.chDotThickness + olT * 2) / 2;
-            expandBounds(QRect(cx - dotHalf, cy - dotHalf, dotHalf * 2 + 1, dotHalf * 2 + 1), 1);
-        }
-        for (int i = 0; i < nInner; i++) expandBounds(innerRects[i], olT);
-        for (int i = 0; i < nOuter; i++) expandBounds(outerRects[i], olT);
+        // Pixel-resolution buffer matching the full overlay
+        const int bw = qMax(1, (int)std::ceil(topStretchX * 256.0f * hudScale));
+        const int bh = qMax(1, (int)std::ceil(192.0f * hudScale));
+        QImage& olBuf = GetOutlineBuffer(bw, bh);
 
-        QImage& olBuf = GetOutlineBuffer();
-        minX = std::max(0, minX);
-        minY = std::max(0, minY);
-        maxX = std::min(olBuf.width() - 1, maxX);
-        maxY = std::min(olBuf.height() - 1, maxY);
-        QRect dirtyRect(minX, minY, maxX - minX + 1, maxY - minY + 1);
+        // Convert DS dirty rect → pixel rect using the painter's current transform
+        QRectF dsDirty(minX - 1.0f, minY - 1.0f, maxX - minX + 2.0f, maxY - minY + 2.0f);
+        QRect pixDirty = p->transform().mapRect(dsDirty).toAlignedRect().intersected(olBuf.rect());
 
         {
             QPainter olP(&olBuf);
             olP.setRenderHint(QPainter::Antialiasing, false);
+            // Clear dirty region (no transform yet — pixDirty is in pixel coords)
             olP.setCompositionMode(QPainter::CompositionMode_Source);
-            olP.fillRect(dirtyRect, Qt::transparent);
+            olP.fillRect(pixDirty, Qt::transparent);
+            // Draw in DS space by inheriting the same transform as p
             olP.setCompositionMode(QPainter::CompositionMode_SourceOver);
+            olP.setTransform(p->transform());
             static const QColor solidBlack(0, 0, 0, 255);
 
-            // Outline arms = arm rect expanded by olT on each side
             for (int i = 0; i < nInner; i++)
                 olP.fillRect(innerRects[i].adjusted(-olT, -olT, olT, olT), solidBlack);
             for (int i = 0; i < nOuter; i++)
                 olP.fillRect(outerRects[i].adjusted(-olT, -olT, olT, olT), solidBlack);
 
-            // Outline dot
             if (c.crosshair.chCenterDot) {
-                int totalW = c.crosshair.chDotThickness + olT * 2;
-                int halfW  = totalW / 2;
-                olP.fillRect(cx - halfW, cy - halfW, totalW, totalW, solidBlack);
+                float halfW = dotH;
+                olP.fillRect(QRectF(cx - halfW, cy - halfW, halfW * 2.0f, halfW * 2.0f), solidBlack);
             }
         }
+        // Composite: reset to pixel coords and blit just the dirty region
+        p->save();
+        p->resetTransform();
         p->setOpacity(c.crosshair.chOutlineOpacity);
-        p->drawImage(dirtyRect.topLeft(), olBuf, dirtyRect);
-        p->setOpacity(1.0);
+        p->drawImage(pixDirty.topLeft(), olBuf, pixDirty);
+        p->restore();
     }
 
-    // Inner arms
+    // Inner arms (drawn in DS space — painter transform handles scaling)
     if (nInner > 0) {
         QColor clr = c.crosshair.chColor; clr.setAlphaF(c.crosshair.chInnerOpacity);
         for (int i = 0; i < nInner; i++)
@@ -1254,9 +1288,8 @@ static void DrawCrosshair(QPainter* p, melonDS::u8* ram,
     if (c.crosshair.chCenterDot) {
         QColor dotColor = c.crosshair.chColor;
         dotColor.setAlphaF(c.crosshair.chDotOpacity);
-        int halfDot = c.crosshair.chDotThickness / 2;
-        p->fillRect(cx - halfDot, cy - halfDot,
-                    c.crosshair.chDotThickness, c.crosshair.chDotThickness, dotColor);
+        const float dh = c.crosshair.chDotThickness * cs * 0.5f;
+        p->fillRect(QRectF(cx - dh, cy - dh, c.crosshair.chDotThickness * cs, c.crosshair.chDotThickness * cs), dotColor);
     }
 }
 
@@ -1386,7 +1419,7 @@ HOT_FUNCTION void CustomHud_Render(
         if (isBomber && isAlt) {
             double op = localCfg.GetDouble("Metroid.Visual.HudBombLeftOpacity");
             if (op < 1.0) topPaint->setOpacity(op);
-            DrawBombLeft(topPaint, ram, rom, offP, c, textDrawScale);
+            DrawBombLeft(topPaint, ram, rom, offP, c, textDrawScale, hudScale);
             if (op < 1.0) topPaint->setOpacity(1.0);
         }
     }
@@ -1416,13 +1449,13 @@ HOT_FUNCTION void CustomHud_Render(
         if (op < 1.0) topPaint->setOpacity(op);
         DrawWeaponAmmo(topPaint, ram, currentWeapon,
                        Read16(ram, addrAmmoSpecial), addrAmmoMissile,
-                       maxAmmoSpecial, maxAmmoMissile, c, textDrawScale);
+                       maxAmmoSpecial, maxAmmoMissile, c, textDrawScale, hudScale);
         if (op < 1.0) topPaint->setOpacity(1.0);
     }
 
     bool isTrans = (Read8(ram, addrHot.jumpFlag) & 0x10) != 0;
     if (!isTrans && !isAlt)
-        DrawCrosshair(topPaint, ram, rom, c);
+        DrawCrosshair(topPaint, ram, rom, c, hudScale, topStretchX);
 
     // Draw bottom screen overlay on top screen
     DrawBottomScreenOverlay(localCfg, topPaint, btmBuffer, (hunterID <= 6) ? hunterID : 0);
