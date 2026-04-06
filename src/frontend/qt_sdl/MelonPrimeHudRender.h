@@ -1,9 +1,11 @@
-#ifndef MELON_PRIME_CUSTOM_HUD_H
-#define MELON_PRIME_CUSTOM_HUD_H
+#ifndef MELON_PRIME_HUD_RENDER_H
+#define MELON_PRIME_HUD_RENDER_H
 
 #ifdef MELONPRIME_CUSTOM_HUD
 
 #include <cstdint>
+#include <functional>
+#include <QMouseEvent>
 
 class EmuInstance;
 class QPainter;
@@ -46,7 +48,8 @@ namespace MelonPrime {
         QImage* topBuffer,
         QImage* btmBuffer,
         bool isInGame,
-        float topStretchX = 1.0f
+        float topStretchX = 1.0f,
+        float hudScale = 1.0f
     );
 
     // Returns true if the custom HUD setting is enabled in config.
@@ -81,8 +84,39 @@ namespace MelonPrime {
     // =========================================================================
     void DrawBottomScreenOverlay(Config::Table& localCfg, QPainter* topPaint, QImage* btmBuffer, uint8_t hunterID);
 
+    // =========================================================================
+    //  HUD Layout Editor
+    // =========================================================================
+
+    // Enter interactive HUD layout editing mode. Frees the cursor and draws
+    // draggable element boxes on the top screen. Call from the UI thread only.
+    void CustomHud_EnterEditMode(EmuInstance* emu, Config::Table& cfg);
+
+    // Commit (save=true) or discard (save=false) changes and leave edit mode.
+    void CustomHud_ExitEditMode(bool save, Config::Table& cfg);
+
+    // Returns true while the HUD layout editor is active.
+    bool CustomHud_IsEditMode();
+
+    // Update the coordinate context used by mouse handlers (call each render).
+    void CustomHud_UpdateEditContext(float originX, float originY,
+                                     float hudScale, float topStretchX);
+
+    // Forward mouse events from the screen panel to the layout editor.
+    void CustomHud_EditMousePress  (QPointF pt, Qt::MouseButton btn, Config::Table& cfg);
+    void CustomHud_EditMouseMove   (QPointF pt, Config::Table& cfg);
+    void CustomHud_EditMouseRelease(QPointF pt, Qt::MouseButton btn, Config::Table& cfg);
+    void CustomHud_EditMouseWheel(QPointF pt, int delta, Config::Table& cfg);
+
+    // Register a callback invoked whenever the selected element changes in edit mode.
+    // Pass nullptr to clear. The int argument is the element index (-1 = none).
+    void CustomHud_SetEditSelectionCallback(std::function<void(int)> cb);
+
+    // Returns the currently selected element index (-1 = none).
+    int  CustomHud_GetSelectedElement();
+
 } // namespace MelonPrime
 
 #endif // MELONPRIME_CUSTOM_HUD
-#endif // MELON_PRIME_CUSTOM_HUD_H
+#endif // MELON_PRIME_HUD_RENDER_H
 

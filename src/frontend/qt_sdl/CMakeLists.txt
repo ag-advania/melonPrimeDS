@@ -83,7 +83,8 @@ set(SOURCES_QT_SDL
     InputConfig/MelonPrimeInputConfigPreview.cpp
 
     MelonPrime.cpp
-    MelonPrimeCustomHud.cpp
+    MelonPrimeHudRender.cpp
+    MelonPrimeHudEditSidePanel.cpp
     MelonPrimePatch.cpp
     
 

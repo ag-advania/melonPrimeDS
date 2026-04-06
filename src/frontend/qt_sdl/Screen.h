@@ -36,6 +36,9 @@
 #include "ScreenLayout.h"
 #include "duckstation/gl/context.h"
 
+#ifdef MELONPRIME_CUSTOM_HUD
+#include "MelonPrimeHudEditSidePanel.h"
+#endif // MELONPRIME_CUSTOM_HUD
 
 class MainWindow;
 class EmuInstance;
@@ -151,10 +154,7 @@ protected:
 
 #ifdef MELONPRIME_DS
     int wheelDelta = 0;
-    void wheelEvent(QWheelEvent* event) override {
-        wheelDelta = (event->angleDelta().y() > 0) ? 1 : -1;
-        event->accept();
-    }
+    void wheelEvent(QWheelEvent* event) override;
 #endif
 
     QMutex osdMutex;
@@ -163,8 +163,9 @@ protected:
     std::deque<OSDItem> osdItems;
 
 #ifdef MELONPRIME_CUSTOM_HUD
-    QImage Overlay[2];       // [0]=Top, [1]=Bottom — ARGB32_Premultiplied, 256x192
+    QImage Overlay[2];       // [0]=Top, [1]=Bottom — ARGB32_Premultiplied, 256x192 (DS-native space)
     QFont overlayFont;
+    MelonPrimeHudEditSidePanel* m_hudEditPanel = nullptr;
 #endif
 
 #ifdef MELONPRIME_DS
@@ -315,7 +316,8 @@ private:
     std::map<unsigned int, GLuint> osdTextures;
 
 #ifdef MELONPRIME_CUSTOM_HUD
-    GLuint overlayTextures[2];  // GL_TEXTURE_2D per screen (top/bottom)
+    GLuint overlayTextures[2];  // GL_TEXTURE_2D per screen (top/bottom), resized to match hi-res HUD buffer
+    int overlayTexW = 0, overlayTexH = 0; // currently allocated texture dimensions
     GLuint btmOverlayShader;
     GLint btmOverlayScreenSizeULoc, btmOverlayOpacityULoc, btmOverlaySrcCenterULoc, btmOverlaySrcRadiusULoc;
     GLuint btmOverlayVertexArray, btmOverlayVertexBuffer;

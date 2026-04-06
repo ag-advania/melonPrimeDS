@@ -8,14 +8,19 @@
 #include <QGridLayout>
 #include <QTabWidget>
 #include <QSpinBox>
-#include <QSlider>
-#include <QColor>
+#include <QDoubleSpinBox>
 #include <QLineEdit>
 #include <QComboBox>
-#include <QColorDialog>
 #include <QTimer>
 #include <QGuiApplication>
 #include <QClipboard>
+#include <QFormLayout>
+#include <QCheckBox>
+#include <QColorDialog>
+#include <QHBoxLayout>
+#include <QSlider>
+#include <QPainter>
+#include <QImageReader>
 #include <algorithm>
 #include <sstream>
 
@@ -24,6 +29,9 @@
 #include "ui_MelonPrimeInputConfig.h"
 #include "Config.h"
 #include "toml/toml.hpp"
+#ifdef MELONPRIME_CUSTOM_HUD
+#include "MelonPrimeHudRender.h"
+#endif
 
 // InputConfigDialog must be fully defined before including MapButton.h.
 // MapButton accesses parentDialog directly, so a forward declaration is not enough.
@@ -33,7 +41,7 @@
 #include "Platform.h"
 #include "VideoSettingsDialog.h"
 #ifdef MELONPRIME_CUSTOM_HUD
-#include "MelonPrimeCustomHud.h"
+#include "MelonPrimeHudRender.h"
 #endif
 
 using namespace melonDS;
@@ -49,134 +57,19 @@ MelonPrimeInputConfig::MelonPrimeInputConfig(EmuInstance* emu, QWidget* parent) 
     Config::Table keycfg = instcfg.GetTable("Keyboard");
     Config::Table joycfg = instcfg.GetTable("Joystick");
 
-    setupHiddenLabels();
     setupKeyBindings(instcfg, keycfg, joycfg);
     setupSensitivityAndToggles(instcfg);
-    setupMatchStatusHud(instcfg);
     setupCollapsibleSections(instcfg);
-    setupHpAmmoHud(instcfg);
-    setupCrosshair(instcfg);
+    setupCustomHudWidgets(instcfg);
     setupPreviewConnections();
-    setupRadar(instcfg);
     setupCustomHudCode();
 
     snapshotVisualConfig();
-    updateRadarPreview();
-    updateCrosshairPreview();
-    updateHpAmmoPreview();
-    updateMatchStatusPreview();
 
     m_applyPreviewEnabled = true;
 }
 
-void MelonPrimeInputConfig::initSliderSync(QSlider* sl, QSpinBox* input, QLabel* lbl, int val)
-{
-    sl->setValue(val);
-    if (input)
-        input->setValue(val);
-    if (lbl)
-        lbl->setText(QString::number(val));
 
-    QObject::connect(sl, &QSlider::valueChanged, this, [sl, input, lbl](int v) {
-        if (input) {
-            const bool old = input->blockSignals(true);
-            input->setValue(v);
-            input->blockSignals(old);
-        }
-        if (lbl)
-            lbl->setText(QString::number(v));
-    });
-
-    if (input) {
-        QObject::connect(input, QOverload<int>::of(&QSpinBox::valueChanged), this, [this, sl, input, lbl](int v) {
-            const bool old = sl->blockSignals(true);
-            sl->setValue(v);
-            sl->blockSignals(old);
-            if (lbl)
-                lbl->setText(QString::number(v));
-            applyVisualPreview();
-        });
-    }
-}
-
-void MelonPrimeInputConfig::bindHexButtonSync(QPushButton* btn, QLineEdit* lineEdit)
-{
-    connect(lineEdit, &QLineEdit::editingFinished, this, [btn, lineEdit]() {
-        QColor c(lineEdit->text());
-        if (!c.isValid()) return;
-        btn->setStyleSheet(QString("background-color: %1;").arg(c.name()));
-    });
-}
-
-void MelonPrimeInputConfig::bindComboButtonSync(QPushButton* btn, QComboBox* combo,
-    QSpinBox* spinR, QSpinBox* spinG, QSpinBox* spinB)
-{
-    auto updateButtonColor = [btn, spinR, spinG, spinB]() {
-        btn->setStyleSheet(QString("background-color: %1;").arg(
-            QColor(spinR->value(), spinG->value(), spinB->value()).name()));
-    };
-    connect(combo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [updateButtonColor](int) {
-        updateButtonColor();
-    });
-    connect(spinR, QOverload<int>::of(&QSpinBox::valueChanged), this, [updateButtonColor](int) {
-        updateButtonColor();
-    });
-    connect(spinG, QOverload<int>::of(&QSpinBox::valueChanged), this, [updateButtonColor](int) {
-        updateButtonColor();
-    });
-    connect(spinB, QOverload<int>::of(&QSpinBox::valueChanged), this, [updateButtonColor](int) {
-        updateButtonColor();
-    });
-    updateButtonColor();
-}
-
-void MelonPrimeInputConfig::setupHiddenLabels()
-{
-    hideWidgets({
-        ui->labelMetroidHudMatchStatusX,
-        ui->labelMetroidHudMatchStatusY,
-        ui->labelMetroidHudMatchStatusLabelOfsX,
-        ui->labelMetroidHudMatchStatusLabelOfsY,
-        ui->labelMetroidHudHpX,
-        ui->labelMetroidHudHpY,
-        ui->labelMetroidHudWeaponX,
-        ui->labelMetroidHudWeaponY,
-        ui->labelMetroidHudWeaponIconOffsetX,
-        ui->labelMetroidHudWeaponIconOffsetY,
-        ui->labelMetroidHudWeaponIconPosX,
-        ui->labelMetroidHudWeaponIconPosY,
-        ui->labelMetroidHudHpGaugeLength,
-        ui->labelMetroidHudHpGaugeWidth,
-        ui->labelMetroidHudHpGaugeOffsetX,
-        ui->labelMetroidHudHpGaugeOffsetY,
-        ui->labelMetroidHudHpGaugePosX,
-        ui->labelMetroidHudHpGaugePosY,
-        ui->labelMetroidHudAmmoGaugeLength,
-        ui->labelMetroidHudAmmoGaugeWidth,
-        ui->labelMetroidHudAmmoGaugeOffsetX,
-        ui->labelMetroidHudAmmoGaugeOffsetY,
-        ui->labelMetroidHudAmmoGaugePosX,
-        ui->labelMetroidHudAmmoGaugePosY,
-        ui->labelMetroidHudBombLeftIconOfsX,
-        ui->labelMetroidHudBombLeftIconOfsY,
-        ui->labelMetroidHudBombLeftIconPosX,
-        ui->labelMetroidHudBombLeftIconPosY,
-        ui->labelMetroidBtmOverlayDstX,
-        ui->labelMetroidBtmOverlayDstY,
-        ui->labelMetroidBtmOverlayDstSize,
-        ui->labelMetroidBtmOverlaySrcRadius,
-        ui->labelMetroidCrosshairOutlineThickness,
-        ui->labelMetroidCrosshairDotThickness,
-        ui->labelMetroidCrosshairInnerLengthX,
-        ui->labelMetroidCrosshairInnerLengthY,
-        ui->labelMetroidCrosshairInnerThickness,
-        ui->labelMetroidCrosshairInnerOffset,
-        ui->labelMetroidCrosshairOuterLengthX,
-        ui->labelMetroidCrosshairOuterLengthY,
-        ui->labelMetroidCrosshairOuterThickness,
-        ui->labelMetroidCrosshairOuterOffset,
-    });
-}
 
 void MelonPrimeInputConfig::setupKeyBindings(Config::Table& instcfg, Config::Table& keycfg, Config::Table& joycfg)
 {
@@ -244,234 +137,6 @@ void MelonPrimeInputConfig::setupSensitivityAndToggles(Config::Table& instcfg)
     ui->comboMetroidInGameAspectRatioMode->setCurrentIndex(instcfg.GetInt("Metroid.Visual.InGameAspectRatioMode"));
 }
 
-void MelonPrimeInputConfig::setupMatchStatusHud(Config::Table& instcfg)
-{
-    // Battle HUD
-    ui->cbMetroidHudMatchStatusShow->setChecked(instcfg.GetBool("Metroid.Visual.HudMatchStatusShow"));
-    initSliderSync(ui->spinMetroidHudMatchStatusX, ui->inputMetroidHudMatchStatusX, ui->labelMetroidHudMatchStatusX, instcfg.GetInt("Metroid.Visual.HudMatchStatusX"));
-    initSliderSync(ui->spinMetroidHudMatchStatusY, ui->inputMetroidHudMatchStatusY, ui->labelMetroidHudMatchStatusY, instcfg.GetInt("Metroid.Visual.HudMatchStatusY"));
-    ui->spinMetroidHudMatchStatusLabelOfsX->setValue(instcfg.GetInt("Metroid.Visual.HudMatchStatusLabelOfsX"));
-    ui->spinMetroidHudMatchStatusLabelOfsY->setValue(instcfg.GetInt("Metroid.Visual.HudMatchStatusLabelOfsY"));
-    ui->comboMetroidHudMatchStatusLabelPos->setCurrentIndex(instcfg.GetInt("Metroid.Visual.HudMatchStatusLabelPos"));
-    initSliderSync(ui->spinMetroidHudMatchStatusLabelOfsX, ui->inputMetroidHudMatchStatusLabelOfsX, ui->labelMetroidHudMatchStatusLabelOfsX, instcfg.GetInt("Metroid.Visual.HudMatchStatusLabelOfsX"));
-    initSliderSync(ui->spinMetroidHudMatchStatusLabelOfsY, ui->inputMetroidHudMatchStatusLabelOfsY, ui->labelMetroidHudMatchStatusLabelOfsY, instcfg.GetInt("Metroid.Visual.HudMatchStatusLabelOfsY"));
-    ui->leMetroidHudMatchStatusLabelPoints->setText(QString::fromStdString(instcfg.GetString("Metroid.Visual.HudMatchStatusLabelPoints")));
-    ui->leMetroidHudMatchStatusLabelOctoliths->setText(QString::fromStdString(instcfg.GetString("Metroid.Visual.HudMatchStatusLabelOctoliths")));
-    ui->leMetroidHudMatchStatusLabelLives->setText(QString::fromStdString(instcfg.GetString("Metroid.Visual.HudMatchStatusLabelLives")));
-    ui->leMetroidHudMatchStatusLabelRingTime->setText(QString::fromStdString(instcfg.GetString("Metroid.Visual.HudMatchStatusLabelRingTime")));
-    ui->leMetroidHudMatchStatusLabelPrimeTime->setText(QString::fromStdString(instcfg.GetString("Metroid.Visual.HudMatchStatusLabelPrimeTime")));
-
-    // Match Status colors - QPushButton color pickers
-    setupColorButton(ui->btnMetroidHudMatchStatusColor,
-        "Metroid.Visual.HudMatchStatusColorR", "Metroid.Visual.HudMatchStatusColorG", "Metroid.Visual.HudMatchStatusColorB",
-        ui->comboMetroidHudMatchStatusColor, ui->leMetroidHudMatchStatusColorCode,
-        ui->spinMetroidHudMatchStatusColorR, ui->spinMetroidHudMatchStatusColorG, ui->spinMetroidHudMatchStatusColorB, kHudColorCustomIndex);
-    setupColorButton(ui->btnMetroidHudMatchStatusLabelColor,
-        "Metroid.Visual.HudMatchStatusLabelColorR", "Metroid.Visual.HudMatchStatusLabelColorG", "Metroid.Visual.HudMatchStatusLabelColorB",
-        ui->comboMetroidHudMatchStatusLabelColor, ui->leMetroidHudMatchStatusLabelColorCode,
-        ui->spinMetroidHudMatchStatusLabelColorR, ui->spinMetroidHudMatchStatusLabelColorG, ui->spinMetroidHudMatchStatusLabelColorB, kHudColorSubColorCustomIndex);
-    setupColorButton(ui->btnMetroidHudMatchStatusValueColor,
-        "Metroid.Visual.HudMatchStatusValueColorR", "Metroid.Visual.HudMatchStatusValueColorG", "Metroid.Visual.HudMatchStatusValueColorB",
-        ui->comboMetroidHudMatchStatusValueColor, ui->leMetroidHudMatchStatusValueColorCode,
-        ui->spinMetroidHudMatchStatusValueColorR, ui->spinMetroidHudMatchStatusValueColorG, ui->spinMetroidHudMatchStatusValueColorB, kHudColorSubColorCustomIndex);
-    setupColorButton(ui->btnMetroidHudMatchStatusSepColor,
-        "Metroid.Visual.HudMatchStatusSepColorR", "Metroid.Visual.HudMatchStatusSepColorG", "Metroid.Visual.HudMatchStatusSepColorB",
-        ui->comboMetroidHudMatchStatusSepColor, ui->leMetroidHudMatchStatusSepColorCode,
-        ui->spinMetroidHudMatchStatusSepColorR, ui->spinMetroidHudMatchStatusSepColorG, ui->spinMetroidHudMatchStatusSepColorB, kHudColorSubColorCustomIndex);
-    setupColorButton(ui->btnMetroidHudMatchStatusGoalColor,
-        "Metroid.Visual.HudMatchStatusGoalColorR", "Metroid.Visual.HudMatchStatusGoalColorG", "Metroid.Visual.HudMatchStatusGoalColorB",
-        ui->comboMetroidHudMatchStatusGoalColor, ui->leMetroidHudMatchStatusGoalColorCode,
-        ui->spinMetroidHudMatchStatusGoalColorR, ui->spinMetroidHudMatchStatusGoalColorG, ui->spinMetroidHudMatchStatusGoalColorB, kHudColorSubColorCustomIndex);
-    // Match Status color
-    ui->spinMetroidHudMatchStatusColorR->setValue(instcfg.GetInt("Metroid.Visual.HudMatchStatusColorR"));
-    ui->spinMetroidHudMatchStatusColorG->setValue(instcfg.GetInt("Metroid.Visual.HudMatchStatusColorG"));
-    ui->spinMetroidHudMatchStatusColorB->setValue(instcfg.GetInt("Metroid.Visual.HudMatchStatusColorB"));
-    ui->leMetroidHudMatchStatusColorCode->setText(formatColorHex(
-        ui->spinMetroidHudMatchStatusColorR->value(),
-        ui->spinMetroidHudMatchStatusColorG->value(),
-        ui->spinMetroidHudMatchStatusColorB->value()));
-    bindPresetColorSync(this,
-        ui->comboMetroidHudMatchStatusColor,
-        ui->leMetroidHudMatchStatusColorCode,
-        ui->spinMetroidHudMatchStatusColorR,
-        ui->spinMetroidHudMatchStatusColorG,
-        ui->spinMetroidHudMatchStatusColorB,
-        kUnifiedHudColorPresets,
-        kHudColorPresetCount,
-        kHudColorCustomIndex);
-
-    // Sub-color helper: sets up load, combo↔RGB sync, and enable/disable for one part
-    // comboIdx 0 = "Overall" (useOverall=true); 1..kHudColorPresetCount = presets; kHudColorSubColorCustomIndex = Custom
-    auto setupSubColor = [&](
-        QComboBox* combo, QLineEdit* le,
-        QSpinBox* spR, QSpinBox* spG, QSpinBox* spB,
-        bool useOverall, int cfgR, int cfgG, int cfgB)
-    {
-        // Enable/disable helper
-        auto setEnabled = [le, spR, spG, spB](bool en) {
-            le->setEnabled(en); spR->setEnabled(en); spG->setEnabled(en); spB->setEnabled(en);
-        };
-        // Load initial values
-        spR->setValue(cfgR); spG->setValue(cfgG); spB->setValue(cfgB);
-        le->setText(formatColorHex(cfgR, cfgG, cfgB));
-        // Detect preset index (offset +1 for "Overall" at 0)
-        int idx = kHudColorSubColorCustomIndex; // Custom
-        if (useOverall) {
-            idx = kHudColorOverallIndex;
-        } else {
-            for (int i = 0; i < kHudColorPresetCount; i++) {
-                const PresetColor& preset = getPresetColor(kUnifiedHudColorPresets[i]);
-                if (cfgR == preset.r && cfgG == preset.g && cfgB == preset.b)
-                    { idx = i + kHudColorSubColorPresetIndexOffset; break; }
-            }
-        }
-        combo->setCurrentIndex(idx);
-        setEnabled(idx != kHudColorOverallIndex);
-
-        // Combo -> RGB + hex + enable/disable
-        QObject::connect(combo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [=](int i) {
-            setEnabled(i != kHudColorOverallIndex);
-            if (i <= kHudColorOverallIndex || i > kHudColorPresetCount) return; // Overall or Custom: don't change RGB
-            const PresetColor& pc = getPresetColor(kUnifiedHudColorPresets[i - kHudColorSubColorPresetIndexOffset]);
-            setColorSpinValues(spR, spG, spB, pc.r, pc.g, pc.b);
-            le->setText(formatColorHex(pc.r, pc.g, pc.b));
-        });
-        // RGB -> hex + switch to Custom
-        auto rgbChanged = [=]() {
-            setBlockedComboIndex(combo, kHudColorSubColorCustomIndex);
-            le->setText(formatColorHex(spR->value(), spG->value(), spB->value()));
-        };
-        QObject::connect(spR, QOverload<int>::of(&QSpinBox::valueChanged), this, rgbChanged);
-        QObject::connect(spG, QOverload<int>::of(&QSpinBox::valueChanged), this, rgbChanged);
-        QObject::connect(spB, QOverload<int>::of(&QSpinBox::valueChanged), this, rgbChanged);
-        // Hex -> RGB + switch to Custom
-        QObject::connect(le, &QLineEdit::editingFinished, this, [=]() {
-            syncColorFromHexEditor(combo, le, spR, spG, spB, kHudColorSubColorCustomIndex);
-        });
-    };
-
-    setupSubColor(
-        ui->comboMetroidHudMatchStatusLabelColor,
-        ui->leMetroidHudMatchStatusLabelColorCode,
-        ui->spinMetroidHudMatchStatusLabelColorR,
-        ui->spinMetroidHudMatchStatusLabelColorG,
-        ui->spinMetroidHudMatchStatusLabelColorB,
-        instcfg.GetBool("Metroid.Visual.HudMatchStatusLabelColorOverall"),
-        instcfg.GetInt("Metroid.Visual.HudMatchStatusLabelColorR"),
-        instcfg.GetInt("Metroid.Visual.HudMatchStatusLabelColorG"),
-        instcfg.GetInt("Metroid.Visual.HudMatchStatusLabelColorB"));
-    setupSubColor(
-        ui->comboMetroidHudMatchStatusValueColor,
-        ui->leMetroidHudMatchStatusValueColorCode,
-        ui->spinMetroidHudMatchStatusValueColorR,
-        ui->spinMetroidHudMatchStatusValueColorG,
-        ui->spinMetroidHudMatchStatusValueColorB,
-        instcfg.GetBool("Metroid.Visual.HudMatchStatusValueColorOverall"),
-        instcfg.GetInt("Metroid.Visual.HudMatchStatusValueColorR"),
-        instcfg.GetInt("Metroid.Visual.HudMatchStatusValueColorG"),
-        instcfg.GetInt("Metroid.Visual.HudMatchStatusValueColorB"));
-    setupSubColor(
-        ui->comboMetroidHudMatchStatusSepColor,
-        ui->leMetroidHudMatchStatusSepColorCode,
-        ui->spinMetroidHudMatchStatusSepColorR,
-        ui->spinMetroidHudMatchStatusSepColorG,
-        ui->spinMetroidHudMatchStatusSepColorB,
-        instcfg.GetBool("Metroid.Visual.HudMatchStatusSepColorOverall"),
-        instcfg.GetInt("Metroid.Visual.HudMatchStatusSepColorR"),
-        instcfg.GetInt("Metroid.Visual.HudMatchStatusSepColorG"),
-        instcfg.GetInt("Metroid.Visual.HudMatchStatusSepColorB"));
-    setupSubColor(
-        ui->comboMetroidHudMatchStatusGoalColor,
-        ui->leMetroidHudMatchStatusGoalColorCode,
-        ui->spinMetroidHudMatchStatusGoalColorR,
-        ui->spinMetroidHudMatchStatusGoalColorG,
-        ui->spinMetroidHudMatchStatusGoalColorB,
-        instcfg.GetBool("Metroid.Visual.HudMatchStatusGoalColorOverall"),
-        instcfg.GetInt("Metroid.Visual.HudMatchStatusGoalColorR"),
-        instcfg.GetInt("Metroid.Visual.HudMatchStatusGoalColorG"),
-        instcfg.GetInt("Metroid.Visual.HudMatchStatusGoalColorB"));
-    bindHexButtonSync(ui->btnMetroidHudMatchStatusColor, ui->leMetroidHudMatchStatusColorCode);
-    bindComboButtonSync(ui->btnMetroidHudMatchStatusColor, ui->comboMetroidHudMatchStatusColor, ui->spinMetroidHudMatchStatusColorR, ui->spinMetroidHudMatchStatusColorG, ui->spinMetroidHudMatchStatusColorB);
-    bindHexButtonSync(ui->btnMetroidHudMatchStatusLabelColor, ui->leMetroidHudMatchStatusLabelColorCode);
-    bindComboButtonSync(ui->btnMetroidHudMatchStatusLabelColor, ui->comboMetroidHudMatchStatusLabelColor, ui->spinMetroidHudMatchStatusLabelColorR, ui->spinMetroidHudMatchStatusLabelColorG, ui->spinMetroidHudMatchStatusLabelColorB);
-    bindHexButtonSync(ui->btnMetroidHudMatchStatusValueColor, ui->leMetroidHudMatchStatusValueColorCode);
-    bindComboButtonSync(ui->btnMetroidHudMatchStatusValueColor, ui->comboMetroidHudMatchStatusValueColor, ui->spinMetroidHudMatchStatusValueColorR, ui->spinMetroidHudMatchStatusValueColorG, ui->spinMetroidHudMatchStatusValueColorB);
-    bindHexButtonSync(ui->btnMetroidHudMatchStatusSepColor, ui->leMetroidHudMatchStatusSepColorCode);
-    bindComboButtonSync(ui->btnMetroidHudMatchStatusSepColor, ui->comboMetroidHudMatchStatusSepColor, ui->spinMetroidHudMatchStatusSepColorR, ui->spinMetroidHudMatchStatusSepColorG, ui->spinMetroidHudMatchStatusSepColorB);
-    bindHexButtonSync(ui->btnMetroidHudMatchStatusGoalColor, ui->leMetroidHudMatchStatusGoalColorCode);
-    bindComboButtonSync(ui->btnMetroidHudMatchStatusGoalColor, ui->comboMetroidHudMatchStatusGoalColor, ui->spinMetroidHudMatchStatusGoalColorR, ui->spinMetroidHudMatchStatusGoalColorG, ui->spinMetroidHudMatchStatusGoalColorB);
-
-    // Rank & Time HUD - load + color pickers
-    ui->cbMetroidHudRankShow->setChecked(instcfg.GetBool("Metroid.Visual.HudRankShow"));
-    initSliderSync(ui->spinMetroidHudRankX, ui->inputMetroidHudRankX, nullptr, instcfg.GetInt("Metroid.Visual.HudRankX"));
-    initSliderSync(ui->spinMetroidHudRankY, ui->inputMetroidHudRankY, nullptr, instcfg.GetInt("Metroid.Visual.HudRankY"));
-    ui->leMetroidHudRankPrefix->setText(QString::fromStdString(instcfg.GetString("Metroid.Visual.HudRankPrefix")));
-    ui->cbMetroidHudRankShowOrdinal->setChecked(instcfg.GetBool("Metroid.Visual.HudRankShowOrdinal"));
-    ui->leMetroidHudRankSuffix->setText(QString::fromStdString(instcfg.GetString("Metroid.Visual.HudRankSuffix")));
-    ui->comboMetroidHudRankAlign->setCurrentIndex(instcfg.GetInt("Metroid.Visual.HudRankAlign"));
-    ui->cbMetroidHudTimeLeftShow->setChecked(instcfg.GetBool("Metroid.Visual.HudTimeLeftShow"));
-    initSliderSync(ui->spinMetroidHudTimeLeftX, ui->inputMetroidHudTimeLeftX, nullptr, instcfg.GetInt("Metroid.Visual.HudTimeLeftX"));
-    initSliderSync(ui->spinMetroidHudTimeLeftY, ui->inputMetroidHudTimeLeftY, nullptr, instcfg.GetInt("Metroid.Visual.HudTimeLeftY"));
-    ui->comboMetroidHudTimeLeftAlign->setCurrentIndex(instcfg.GetInt("Metroid.Visual.HudTimeLeftAlign"));
-    ui->cbMetroidHudTimeLimitShow->setChecked(instcfg.GetBool("Metroid.Visual.HudTimeLimitShow"));
-    initSliderSync(ui->spinMetroidHudTimeLimitX, ui->inputMetroidHudTimeLimitX, nullptr, instcfg.GetInt("Metroid.Visual.HudTimeLimitX"));
-    initSliderSync(ui->spinMetroidHudTimeLimitY, ui->inputMetroidHudTimeLimitY, nullptr, instcfg.GetInt("Metroid.Visual.HudTimeLimitY"));
-    ui->comboMetroidHudTimeLimitAlign->setCurrentIndex(instcfg.GetInt("Metroid.Visual.HudTimeLimitAlign"));
-    // Rank/Time color sync shares the same preset <-> RGB <-> hex path.
-    {
-        auto setupRtColor = [&](QPushButton* btn, QComboBox* combo, QLineEdit* le,
-            QSpinBox* spR, QSpinBox* spG, QSpinBox* spB,
-            const char* keyR, const char* keyG, const char* keyB)
-        {
-            setupColorButton(btn, keyR, keyG, keyB, combo, le, spR, spG, spB, kHudColorCustomIndex);
-            spR->setValue(instcfg.GetInt(keyR));
-            spG->setValue(instcfg.GetInt(keyG));
-            spB->setValue(instcfg.GetInt(keyB));
-            le->setText(formatColorHex(spR->value(), spG->value(), spB->value()));
-            bindPresetColorSync(this, combo, le, spR, spG, spB, kUnifiedHudColorPresets, kHudColorPresetCount, kHudColorCustomIndex);
-            bindHexButtonSync(btn, le);
-            bindComboButtonSync(btn, combo, spR, spG, spB);
-        };
-        setupRtColor(ui->btnMetroidHudRankColor, ui->comboMetroidHudRankColor, ui->leMetroidHudRankColorCode,
-            ui->spinMetroidHudRankColorR, ui->spinMetroidHudRankColorG, ui->spinMetroidHudRankColorB,
-            "Metroid.Visual.HudRankColorR", "Metroid.Visual.HudRankColorG", "Metroid.Visual.HudRankColorB");
-        setupRtColor(ui->btnMetroidHudTimeLeftColor, ui->comboMetroidHudTimeLeftColor, ui->leMetroidHudTimeLeftColorCode,
-            ui->spinMetroidHudTimeLeftColorR, ui->spinMetroidHudTimeLeftColorG, ui->spinMetroidHudTimeLeftColorB,
-            "Metroid.Visual.HudTimeLeftColorR", "Metroid.Visual.HudTimeLeftColorG", "Metroid.Visual.HudTimeLeftColorB");
-        setupRtColor(ui->btnMetroidHudTimeLimitColor, ui->comboMetroidHudTimeLimitColor, ui->leMetroidHudTimeLimitColorCode,
-            ui->spinMetroidHudTimeLimitColorR, ui->spinMetroidHudTimeLimitColorG, ui->spinMetroidHudTimeLimitColorB,
-            "Metroid.Visual.HudTimeLimitColorR", "Metroid.Visual.HudTimeLimitColorG", "Metroid.Visual.HudTimeLimitColorB");
-        setupRtColor(ui->btnMetroidHudBombLeftColor, ui->comboMetroidHudBombLeftColor, ui->leMetroidHudBombLeftColorCode,
-            ui->spinMetroidHudBombLeftColorR, ui->spinMetroidHudBombLeftColorG, ui->spinMetroidHudBombLeftColorB,
-            "Metroid.Visual.HudBombLeftColorR", "Metroid.Visual.HudBombLeftColorG", "Metroid.Visual.HudBombLeftColorB");
-        setupRtColor(ui->btnMetroidHudBombLeftIconColor, ui->comboMetroidHudBombLeftIconColor, ui->leMetroidHudBombLeftIconColorCode,
-            ui->spinMetroidHudBombLeftIconColorR, ui->spinMetroidHudBombLeftIconColorG, ui->spinMetroidHudBombLeftIconColorB,
-            "Metroid.Visual.HudBombLeftIconColorR", "Metroid.Visual.HudBombLeftIconColorG", "Metroid.Visual.HudBombLeftIconColorB");
-    }
-    ui->cbMetroidHudBombLeftShow->setChecked(instcfg.GetBool("Metroid.Visual.HudBombLeftShow"));
-    ui->cbMetroidHudBombLeftTextShow->setChecked(instcfg.GetBool("Metroid.Visual.HudBombLeftTextShow"));
-    initSliderSync(ui->spinMetroidHudBombLeftX, ui->inputMetroidHudBombLeftX, nullptr, instcfg.GetInt("Metroid.Visual.HudBombLeftX"));
-    initSliderSync(ui->spinMetroidHudBombLeftY, ui->inputMetroidHudBombLeftY, nullptr, instcfg.GetInt("Metroid.Visual.HudBombLeftY"));
-    ui->comboMetroidHudBombLeftAlign->setCurrentIndex(instcfg.GetInt("Metroid.Visual.HudBombLeftAlign"));
-    ui->leMetroidHudBombLeftPrefix->setText(QString::fromStdString(instcfg.GetString("Metroid.Visual.HudBombLeftPrefix")));
-    ui->leMetroidHudBombLeftSuffix->setText(QString::fromStdString(instcfg.GetString("Metroid.Visual.HudBombLeftSuffix")));
-    // Bomb Left Icon
-    ui->cbMetroidHudBombLeftIconShow->setChecked(instcfg.GetBool("Metroid.Visual.HudBombLeftIconShow"));
-    ui->cbMetroidHudBombLeftIconColorOverlay->setChecked(instcfg.GetBool("Metroid.Visual.HudBombLeftIconColorOverlay"));
-    ui->comboMetroidHudBombLeftIconMode->setCurrentIndex(instcfg.GetInt("Metroid.Visual.HudBombLeftIconMode"));
-    initSliderSync(ui->spinMetroidHudBombLeftIconOfsX, ui->inputMetroidHudBombLeftIconOfsX, ui->labelMetroidHudBombLeftIconOfsX, instcfg.GetInt("Metroid.Visual.HudBombLeftIconOfsX"));
-    initSliderSync(ui->spinMetroidHudBombLeftIconOfsY, ui->inputMetroidHudBombLeftIconOfsY, ui->labelMetroidHudBombLeftIconOfsY, instcfg.GetInt("Metroid.Visual.HudBombLeftIconOfsY"));
-    initSliderSync(ui->spinMetroidHudBombLeftIconPosX, ui->inputMetroidHudBombLeftIconPosX, ui->labelMetroidHudBombLeftIconPosX, instcfg.GetInt("Metroid.Visual.HudBombLeftIconPosX"));
-    initSliderSync(ui->spinMetroidHudBombLeftIconPosY, ui->inputMetroidHudBombLeftIconPosY, ui->labelMetroidHudBombLeftIconPosY, instcfg.GetInt("Metroid.Visual.HudBombLeftIconPosY"));
-    ui->comboMetroidHudBombLeftIconAnchorX->setCurrentIndex(instcfg.GetInt("Metroid.Visual.HudBombLeftIconAnchorX"));
-    ui->comboMetroidHudBombLeftIconAnchorY->setCurrentIndex(instcfg.GetInt("Metroid.Visual.HudBombLeftIconAnchorY"));
-
-    // Reset buttons
-    connect(ui->btnResetMatchStatusDefaults, &QPushButton::clicked, this, &MelonPrimeInputConfig::resetMatchStatusDefaults);
-    connect(ui->btnResetRankTimeDefaults,    &QPushButton::clicked, this, &MelonPrimeInputConfig::resetRankTimeDefaults);
-    connect(ui->btnResetBombLeftDefaults,    &QPushButton::clicked, this, &MelonPrimeInputConfig::resetBombLeftDefaults);
-    connect(ui->btnResetRadarDefaults,       &QPushButton::clicked, this, &MelonPrimeInputConfig::resetRadarDefaults);
-}
 
 void MelonPrimeInputConfig::setupCollapsibleSections(Config::Table& instcfg)
 {
@@ -489,28 +154,6 @@ void MelonPrimeInputConfig::setupCollapsibleSections(Config::Table& instcfg)
             btn->setText((checked ? QString::fromUtf8("▼ ") : QString::fromUtf8("▶ ")) + label);
         });
     };
-    // Custom HUD tab
-    setupToggle(ui->btnToggleCrosshair, ui->sectionCrosshair, "CROSSHAIR",      "Metroid.UI.SectionCrosshair");
-    setupToggle(ui->btnToggleInner,     ui->sectionInner,     "INNER LINES",    "Metroid.UI.SectionInner");
-    setupToggle(ui->btnToggleOuter,     ui->sectionOuter,     "OUTER LINES",    "Metroid.UI.SectionOuter");
-
-    // HP & Ammo section (inside Custom HUD tab)
-    setupToggle(ui->btnToggleHpAmmo,    ui->sectionHpAmmo,    "HP & AMMO",      "Metroid.UI.SectionHpAmmo");
-    setupToggle(ui->btnToggleHpPos,     ui->sectionHpPos,     "HP NUMBER POSITION",    "Metroid.UI.SectionHpPos");
-    setupToggle(ui->btnToggleWpnPos,    ui->sectionWpnPos,    "AMMO NUMBER POSITION",  "Metroid.UI.SectionWpnPos");
-    setupToggle(ui->btnToggleWpnIcon,   ui->sectionWpnIcon,   "WEAPON ICON",    "Metroid.UI.SectionWpnIcon");
-    setupToggle(ui->btnToggleHpGauge,   ui->sectionHpGauge,   "HP GAUGE",       "Metroid.UI.SectionHpGauge");
-    setupToggle(ui->btnToggleAmmoGauge, ui->sectionAmmoGauge, "AMMO GAUGE",     "Metroid.UI.SectionAmmoGauge");
-    // Match Status section (inside Custom HUD tab)
-    setupToggle(ui->btnToggleMatchStatus, ui->sectionMatchStatus, "MATCH STATUS HUD", "Metroid.UI.SectionMatchStatus");
-    setupToggle(ui->btnToggleMatchStatusScore, ui->sectionMatchStatusScore, "SCORE", "Metroid.UI.SectionMatchStatusScore");
-    setupToggle(ui->btnToggleRankTime,   ui->sectionRankTime,   "RANK & TIME HUD","Metroid.UI.SectionRankTime");
-    setupToggle(ui->btnToggleRankHud,    ui->sectionRankHud,    "RANK",       "Metroid.UI.SectionRankHud");
-    setupToggle(ui->btnToggleTimeLeftHud, ui->sectionTimeLeftHud, "TIME LEFT",  "Metroid.UI.SectionTimeLeftHud");
-    setupToggle(ui->btnToggleTimeLimitHud, ui->sectionTimeLimitHud, "TIME LIMIT", "Metroid.UI.SectionTimeLimitHud");
-    setupToggle(ui->btnToggleBombLeft,     ui->sectionBombLeft,     "BOMB LEFT",  "Metroid.UI.SectionBombLeft");
-    // HUD Radar section (inside Custom HUD tab)
-    setupToggle(ui->btnToggleHudRadar,  ui->sectionHudRadar,  "HUD RADAR",      "Metroid.UI.SectionHudRadar");
     // Other Metroid Settings 2 tab
     setupToggle(ui->btnToggleInputSettings, ui->sectionInputSettings, "INPUT SETTINGS",   "Metroid.UI.SectionInputSettings");
     setupToggle(ui->btnToggleScreenSync,    ui->sectionScreenSync,    "SCREEN SYNC",      "Metroid.UI.SectionScreenSync");
@@ -525,600 +168,15 @@ void MelonPrimeInputConfig::setupCollapsibleSections(Config::Table& instcfg)
     setupToggle(ui->btnToggleLicense,     ui->sectionLicense,     "LICENSE APPLY",    "Metroid.UI.SectionLicense");
 }
 
-void MelonPrimeInputConfig::setupHpAmmoHud(Config::Table& instcfg)
-{
-    // --- Reset buttons ---
-    connect(ui->btnResetCrosshairDefaults, &QPushButton::clicked, this, &MelonPrimeInputConfig::resetCrosshairDefaults);
-    connect(ui->btnResetHpAmmoDefaults,    &QPushButton::clicked, this, &MelonPrimeInputConfig::resetHpAmmoDefaults);
-
-    // Crosshair - Color (QPushButton color picker)
-    setupColorButton(ui->btnMetroidCrosshairColor,
-        "Metroid.Visual.CrosshairColorR", "Metroid.Visual.CrosshairColorG", "Metroid.Visual.CrosshairColorB",
-        ui->comboMetroidCrosshairColor, ui->leMetroidCrosshairColorCode,
-        ui->spinMetroidCrosshairR, ui->spinMetroidCrosshairG, ui->spinMetroidCrosshairB, kHudColorCustomIndex);
-
-    // HUD element positions
-    initSliderSync(ui->spinMetroidHudHpX, ui->inputMetroidHudHpX, ui->labelMetroidHudHpX, instcfg.GetInt("Metroid.Visual.HudHpX"));
-    initSliderSync(ui->spinMetroidHudHpY, ui->inputMetroidHudHpY, ui->labelMetroidHudHpY, instcfg.GetInt("Metroid.Visual.HudHpY"));
-    ui->leMetroidHudHpPrefix->setText(QString::fromStdString(instcfg.GetString("Metroid.Visual.HudHpPrefix")));
-    ui->comboMetroidHudHpAlign->setCurrentIndex(instcfg.GetInt("Metroid.Visual.HudHpAlign"));
-    initSliderSync(ui->spinMetroidHudWeaponX, ui->inputMetroidHudWeaponX, ui->labelMetroidHudWeaponX, instcfg.GetInt("Metroid.Visual.HudWeaponX"));
-    initSliderSync(ui->spinMetroidHudWeaponY, ui->inputMetroidHudWeaponY, ui->labelMetroidHudWeaponY, instcfg.GetInt("Metroid.Visual.HudWeaponY"));
-    ui->cbMetroidHudHpTextAutoColor->setChecked(instcfg.GetBool("Metroid.Visual.HudHpTextAutoColor"));
-    ui->spinMetroidHudHpTextColorR->setValue(instcfg.GetInt("Metroid.Visual.HudHpTextColorR"));
-    ui->spinMetroidHudHpTextColorG->setValue(instcfg.GetInt("Metroid.Visual.HudHpTextColorG"));
-    ui->spinMetroidHudHpTextColorB->setValue(instcfg.GetInt("Metroid.Visual.HudHpTextColorB"));
-    ui->leMetroidHudHpTextColorCode->setText(formatColorHex(
-        ui->spinMetroidHudHpTextColorR->value(),
-        ui->spinMetroidHudHpTextColorG->value(),
-        ui->spinMetroidHudHpTextColorB->value()));
-    ui->spinMetroidHudWeaponX->setValue(instcfg.GetInt("Metroid.Visual.HudWeaponX"));
-    ui->spinMetroidHudWeaponY->setValue(instcfg.GetInt("Metroid.Visual.HudWeaponY"));
-    ui->leMetroidHudAmmoPrefix->setText(QString::fromStdString(instcfg.GetString("Metroid.Visual.HudAmmoPrefix")));
-    ui->comboMetroidHudAmmoAlign->setCurrentIndex(instcfg.GetInt("Metroid.Visual.HudAmmoAlign"));
-    ui->spinMetroidHudAmmoTextColorR->setValue(instcfg.GetInt("Metroid.Visual.HudAmmoTextColorR"));
-    ui->spinMetroidHudAmmoTextColorG->setValue(instcfg.GetInt("Metroid.Visual.HudAmmoTextColorG"));
-    ui->spinMetroidHudAmmoTextColorB->setValue(instcfg.GetInt("Metroid.Visual.HudAmmoTextColorB"));
-    ui->leMetroidHudAmmoTextColorCode->setText(formatColorHex(
-        ui->spinMetroidHudAmmoTextColorR->value(),
-        ui->spinMetroidHudAmmoTextColorG->value(),
-        ui->spinMetroidHudAmmoTextColorB->value()));
-    ui->cbMetroidHudWeaponIconShow->setChecked(instcfg.GetBool("Metroid.Visual.HudWeaponIconShow"));
-    ui->comboMetroidHudWeaponIconMode->setCurrentIndex(instcfg.GetInt("Metroid.Visual.HudWeaponIconMode"));
-    initSliderSync(ui->spinMetroidHudWeaponIconOffsetX, ui->inputMetroidHudWeaponIconOffsetX, ui->labelMetroidHudWeaponIconOffsetX, instcfg.GetInt("Metroid.Visual.HudWeaponIconOffsetX"));
-    initSliderSync(ui->spinMetroidHudWeaponIconOffsetY, ui->inputMetroidHudWeaponIconOffsetY, ui->labelMetroidHudWeaponIconOffsetY, instcfg.GetInt("Metroid.Visual.HudWeaponIconOffsetY"));
-    initSliderSync(ui->spinMetroidHudWeaponIconPosX, ui->inputMetroidHudWeaponIconPosX, ui->labelMetroidHudWeaponIconPosX, instcfg.GetInt("Metroid.Visual.HudWeaponIconPosX"));
-    initSliderSync(ui->spinMetroidHudWeaponIconPosY, ui->inputMetroidHudWeaponIconPosY, ui->labelMetroidHudWeaponIconPosY, instcfg.GetInt("Metroid.Visual.HudWeaponIconPosY"));
-    ui->comboMetroidHudWeaponIconAnchorX->setCurrentIndex(instcfg.GetInt("Metroid.Visual.HudWeaponIconAnchorX"));
-    ui->comboMetroidHudWeaponIconAnchorY->setCurrentIndex(instcfg.GetInt("Metroid.Visual.HudWeaponIconAnchorY"));
-    ui->cbMetroidHudWeaponIconColorOverlay->setChecked(instcfg.GetBool("Metroid.Visual.HudWeaponIconColorOverlay"));
-
-    auto setupTextColorPreset = [this](QComboBox* combo, QLineEdit* lineEdit,
-                                       QSpinBox* spinR, QSpinBox* spinG, QSpinBox* spinB) {
-        bindPresetColorSync(this, combo, lineEdit, spinR, spinG, spinB, kUnifiedHudColorPresets, kHudColorPresetCount, kHudColorCustomIndex);
-    };
-
-    setupTextColorPreset(ui->comboMetroidHudHpTextColor,
-                         ui->leMetroidHudHpTextColorCode,
-                         ui->spinMetroidHudHpTextColorR,
-                         ui->spinMetroidHudHpTextColorG,
-                         ui->spinMetroidHudHpTextColorB);
-    setupTextColorPreset(ui->comboMetroidHudAmmoTextColor,
-                         ui->leMetroidHudAmmoTextColorCode,
-                         ui->spinMetroidHudAmmoTextColorR,
-                         ui->spinMetroidHudAmmoTextColorG,
-                         ui->spinMetroidHudAmmoTextColorB);
-    bindHexButtonSync(ui->btnMetroidHudHpTextColor, ui->leMetroidHudHpTextColorCode);
-    bindComboButtonSync(ui->btnMetroidHudHpTextColor, ui->comboMetroidHudHpTextColor, ui->spinMetroidHudHpTextColorR, ui->spinMetroidHudHpTextColorG, ui->spinMetroidHudHpTextColorB);
-    bindHexButtonSync(ui->btnMetroidHudAmmoTextColor, ui->leMetroidHudAmmoTextColorCode);
-    bindComboButtonSync(ui->btnMetroidHudAmmoTextColor, ui->comboMetroidHudAmmoTextColor, ui->spinMetroidHudAmmoTextColorR, ui->spinMetroidHudAmmoTextColorG, ui->spinMetroidHudAmmoTextColorB);
-
-    setupColorButton(ui->btnMetroidHudHpTextColor,
-        "Metroid.Visual.HudHpTextColorR", "Metroid.Visual.HudHpTextColorG", "Metroid.Visual.HudHpTextColorB",
-        ui->comboMetroidHudHpTextColor, ui->leMetroidHudHpTextColorCode,
-        ui->spinMetroidHudHpTextColorR, ui->spinMetroidHudHpTextColorG, ui->spinMetroidHudHpTextColorB, kHudColorCustomIndex);
-    setupColorButton(ui->btnMetroidHudAmmoTextColor,
-        "Metroid.Visual.HudAmmoTextColorR", "Metroid.Visual.HudAmmoTextColorG", "Metroid.Visual.HudAmmoTextColorB",
-        ui->comboMetroidHudAmmoTextColor, ui->leMetroidHudAmmoTextColorCode,
-        ui->spinMetroidHudAmmoTextColorR, ui->spinMetroidHudAmmoTextColorG, ui->spinMetroidHudAmmoTextColorB, kHudColorCustomIndex);
-
-    // Icon independent position preset detection
-    ui->comboMetroidHudWeaponIconPosition->setCurrentIndex(findPositionPresetIndex(
-        kHudWeaponIconPositionPresets,
-        ui->spinMetroidHudWeaponIconPosX->value(),
-        ui->spinMetroidHudWeaponIconPosY->value(),
-        kHudPositionCustomIndex));
-    connect(ui->comboMetroidHudWeaponIconPosition, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this](int idx) {
-        if (idx < 0 || idx >= kHudPositionPresetCount) return;
-        ui->spinMetroidHudWeaponIconPosX->blockSignals(true);
-        ui->spinMetroidHudWeaponIconPosY->blockSignals(true);
-        ui->spinMetroidHudWeaponIconPosX->setValue(kHudWeaponIconPositionPresets[idx].x);
-        ui->spinMetroidHudWeaponIconPosY->setValue(kHudWeaponIconPositionPresets[idx].y);
-        ui->labelMetroidHudWeaponIconPosX->setText(QString::number(kHudWeaponIconPositionPresets[idx].x));
-        ui->labelMetroidHudWeaponIconPosY->setText(QString::number(kHudWeaponIconPositionPresets[idx].y));
-        ui->spinMetroidHudWeaponIconPosX->blockSignals(false);
-        ui->spinMetroidHudWeaponIconPosY->blockSignals(false);
-    });
-    connect(ui->spinMetroidHudWeaponIconPosX, &QSlider::valueChanged, this, [this]() {
-        ui->comboMetroidHudWeaponIconPosition->blockSignals(true);
-        ui->comboMetroidHudWeaponIconPosition->setCurrentIndex(kHudPositionCustomIndex);
-        ui->comboMetroidHudWeaponIconPosition->blockSignals(false);
-    });
-    connect(ui->spinMetroidHudWeaponIconPosY, &QSlider::valueChanged, this, [this]() {
-        ui->comboMetroidHudWeaponIconPosition->blockSignals(true);
-        ui->comboMetroidHudWeaponIconPosition->setCurrentIndex(kHudPositionCustomIndex);
-        ui->comboMetroidHudWeaponIconPosition->blockSignals(false);
-    });
-
-    // Gauge settings - HP
-    ui->cbMetroidHudHpGauge->setChecked(instcfg.GetBool("Metroid.Visual.HudHpGauge"));
-    ui->comboMetroidHudHpGaugeOrientation->setCurrentIndex(instcfg.GetInt("Metroid.Visual.HudHpGaugeOrientation"));
-    initSliderSync(ui->spinMetroidHudHpGaugeLength, ui->inputMetroidHudHpGaugeLength, ui->labelMetroidHudHpGaugeLength, instcfg.GetInt("Metroid.Visual.HudHpGaugeLength"));
-    initSliderSync(ui->spinMetroidHudHpGaugeWidth,  ui->inputMetroidHudHpGaugeWidth,  ui->labelMetroidHudHpGaugeWidth,  instcfg.GetInt("Metroid.Visual.HudHpGaugeWidth"));
-    initSliderSync(ui->spinMetroidHudHpGaugeOffsetX, ui->inputMetroidHudHpGaugeOffsetX, ui->labelMetroidHudHpGaugeOffsetX, instcfg.GetInt("Metroid.Visual.HudHpGaugeOffsetX"));
-    initSliderSync(ui->spinMetroidHudHpGaugeOffsetY, ui->inputMetroidHudHpGaugeOffsetY, ui->labelMetroidHudHpGaugeOffsetY, instcfg.GetInt("Metroid.Visual.HudHpGaugeOffsetY"));
-    ui->comboMetroidHudHpGaugeAnchor->setCurrentIndex(instcfg.GetInt("Metroid.Visual.HudHpGaugeAnchor"));
-    ui->comboMetroidHudHpGaugePosMode->setCurrentIndex(instcfg.GetInt("Metroid.Visual.HudHpGaugePosMode"));
-    initSliderSync(ui->spinMetroidHudHpGaugePosX, ui->inputMetroidHudHpGaugePosX, ui->labelMetroidHudHpGaugePosX, instcfg.GetInt("Metroid.Visual.HudHpGaugePosX"));
-    initSliderSync(ui->spinMetroidHudHpGaugePosY, ui->inputMetroidHudHpGaugePosY, ui->labelMetroidHudHpGaugePosY, instcfg.GetInt("Metroid.Visual.HudHpGaugePosY"));
-    ui->cbMetroidHudHpGaugeAutoColor->setChecked(instcfg.GetBool("Metroid.Visual.HudHpGaugeAutoColor"));
-    // HP Gauge color - QPushButton color picker
-    setupColorButton(ui->btnMetroidHudHpGaugeColor,
-        "Metroid.Visual.HudHpGaugeColorR", "Metroid.Visual.HudHpGaugeColorG", "Metroid.Visual.HudHpGaugeColorB",
-        ui->comboMetroidHudHpGaugeColor, ui->leMetroidHudHpGaugeColorCode,
-        ui->spinMetroidHudHpGaugeColorR, ui->spinMetroidHudHpGaugeColorG, ui->spinMetroidHudHpGaugeColorB, kHudColorCustomIndex);
-    ui->spinMetroidHudHpGaugeColorR->setValue(instcfg.GetInt("Metroid.Visual.HudHpGaugeColorR"));
-    ui->spinMetroidHudHpGaugeColorG->setValue(instcfg.GetInt("Metroid.Visual.HudHpGaugeColorG"));
-    ui->spinMetroidHudHpGaugeColorB->setValue(instcfg.GetInt("Metroid.Visual.HudHpGaugeColorB"));
-    ui->leMetroidHudHpGaugeColorCode->setText(formatColorHex(
-        ui->spinMetroidHudHpGaugeColorR->value(),
-        ui->spinMetroidHudHpGaugeColorG->value(),
-        ui->spinMetroidHudHpGaugeColorB->value()));
-
-    bindPresetColorSync(this,
-        ui->comboMetroidHudHpGaugeColor,
-        ui->leMetroidHudHpGaugeColorCode,
-        ui->spinMetroidHudHpGaugeColorR,
-        ui->spinMetroidHudHpGaugeColorG,
-        ui->spinMetroidHudHpGaugeColorB,
-        kUnifiedHudColorPresets,
-        kHudColorPresetCount,
-        kHudColorCustomIndex);
-
-    // Gauge settings - Ammo
-    ui->cbMetroidHudAmmoGauge->setChecked(instcfg.GetBool("Metroid.Visual.HudAmmoGauge"));
-    ui->comboMetroidHudAmmoGaugeOrientation->setCurrentIndex(instcfg.GetInt("Metroid.Visual.HudAmmoGaugeOrientation"));
-    initSliderSync(ui->spinMetroidHudAmmoGaugeLength, ui->inputMetroidHudAmmoGaugeLength, ui->labelMetroidHudAmmoGaugeLength, instcfg.GetInt("Metroid.Visual.HudAmmoGaugeLength"));
-    initSliderSync(ui->spinMetroidHudAmmoGaugeWidth,  ui->inputMetroidHudAmmoGaugeWidth,  ui->labelMetroidHudAmmoGaugeWidth,  instcfg.GetInt("Metroid.Visual.HudAmmoGaugeWidth"));
-    initSliderSync(ui->spinMetroidHudAmmoGaugeOffsetX, ui->inputMetroidHudAmmoGaugeOffsetX, ui->labelMetroidHudAmmoGaugeOffsetX, instcfg.GetInt("Metroid.Visual.HudAmmoGaugeOffsetX"));
-    initSliderSync(ui->spinMetroidHudAmmoGaugeOffsetY, ui->inputMetroidHudAmmoGaugeOffsetY, ui->labelMetroidHudAmmoGaugeOffsetY, instcfg.GetInt("Metroid.Visual.HudAmmoGaugeOffsetY"));
-    ui->comboMetroidHudAmmoGaugeAnchor->setCurrentIndex(instcfg.GetInt("Metroid.Visual.HudAmmoGaugeAnchor"));
-    ui->comboMetroidHudAmmoGaugePosMode->setCurrentIndex(instcfg.GetInt("Metroid.Visual.HudAmmoGaugePosMode"));
-    initSliderSync(ui->spinMetroidHudAmmoGaugePosX, ui->inputMetroidHudAmmoGaugePosX, ui->labelMetroidHudAmmoGaugePosX, instcfg.GetInt("Metroid.Visual.HudAmmoGaugePosX"));
-    initSliderSync(ui->spinMetroidHudAmmoGaugePosY, ui->inputMetroidHudAmmoGaugePosY, ui->labelMetroidHudAmmoGaugePosY, instcfg.GetInt("Metroid.Visual.HudAmmoGaugePosY"));
-    // Ammo Gauge color - QPushButton color picker
-    setupColorButton(ui->btnMetroidHudAmmoGaugeColor,
-        "Metroid.Visual.HudAmmoGaugeColorR", "Metroid.Visual.HudAmmoGaugeColorG", "Metroid.Visual.HudAmmoGaugeColorB",
-        ui->comboMetroidHudAmmoGaugeColor, ui->leMetroidHudAmmoGaugeColorCode,
-        ui->spinMetroidHudAmmoGaugeColorR, ui->spinMetroidHudAmmoGaugeColorG, ui->spinMetroidHudAmmoGaugeColorB, kHudColorCustomIndex);
-    ui->spinMetroidHudAmmoGaugePosX->setValue(instcfg.GetInt("Metroid.Visual.HudAmmoGaugePosX"));
-    ui->spinMetroidHudAmmoGaugePosY->setValue(instcfg.GetInt("Metroid.Visual.HudAmmoGaugePosY"));
-    ui->spinMetroidHudAmmoGaugeColorR->setValue(instcfg.GetInt("Metroid.Visual.HudAmmoGaugeColorR"));
-    ui->spinMetroidHudAmmoGaugeColorG->setValue(instcfg.GetInt("Metroid.Visual.HudAmmoGaugeColorG"));
-    ui->spinMetroidHudAmmoGaugeColorB->setValue(instcfg.GetInt("Metroid.Visual.HudAmmoGaugeColorB"));
-    ui->leMetroidHudAmmoGaugeColorCode->setText(formatColorHex(
-        ui->spinMetroidHudAmmoGaugeColorR->value(),
-        ui->spinMetroidHudAmmoGaugeColorG->value(),
-        ui->spinMetroidHudAmmoGaugeColorB->value()));
-
-    bindPresetColorSync(this,
-        ui->comboMetroidHudAmmoGaugeColor,
-        ui->leMetroidHudAmmoGaugeColorCode,
-        ui->spinMetroidHudAmmoGaugeColorR,
-        ui->spinMetroidHudAmmoGaugeColorG,
-        ui->spinMetroidHudAmmoGaugeColorB,
-        kUnifiedHudColorPresets,
-        kHudColorPresetCount,
-        kHudColorCustomIndex);
-    bindHexButtonSync(ui->btnMetroidHudHpGaugeColor, ui->leMetroidHudHpGaugeColorCode);
-    bindComboButtonSync(ui->btnMetroidHudHpGaugeColor, ui->comboMetroidHudHpGaugeColor, ui->spinMetroidHudHpGaugeColorR, ui->spinMetroidHudHpGaugeColorG, ui->spinMetroidHudHpGaugeColorB);
-    bindHexButtonSync(ui->btnMetroidHudAmmoGaugeColor, ui->leMetroidHudAmmoGaugeColorCode);
-    bindComboButtonSync(ui->btnMetroidHudAmmoGaugeColor, ui->comboMetroidHudAmmoGaugeColor, ui->spinMetroidHudAmmoGaugeColorR, ui->spinMetroidHudAmmoGaugeColorG, ui->spinMetroidHudAmmoGaugeColorB);
-
-    // HUD position presets: detect current preset from X/Y values
-    // 0=TopLeft 1=TopCenter 2=TopRight 3=Right 4=BottomRight 5=BottomCenter 6=BottomLeft 7=Left 8=Custom
-    ui->comboMetroidHudHpPosition->setCurrentIndex(findPositionPresetIndex(
-        kHudHpPositionPresets,
-        ui->spinMetroidHudHpX->value(),
-        ui->spinMetroidHudHpY->value(),
-        kHudPositionCustomIndex));
-    ui->comboMetroidHudWeaponPosition->setCurrentIndex(findPositionPresetIndex(
-        kHudWeaponPositionPresets,
-        ui->spinMetroidHudWeaponX->value(),
-        ui->spinMetroidHudWeaponY->value(),
-        kHudPositionCustomIndex));
-    auto updateWeaponIconModeUi = [this]() {
-        const bool independent = (ui->comboMetroidHudWeaponIconMode->currentIndex() == 1);
-        ui->spinMetroidHudWeaponIconOffsetX->setEnabled(!independent);
-        ui->spinMetroidHudWeaponIconOffsetY->setEnabled(!independent);
-        ui->comboMetroidHudWeaponIconPosition->setEnabled(independent);
-        ui->spinMetroidHudWeaponIconPosX->setEnabled(independent);
-        ui->spinMetroidHudWeaponIconPosY->setEnabled(independent);
-        ui->comboMetroidHudWeaponIconAnchorX->setEnabled(independent);
-        ui->comboMetroidHudWeaponIconAnchorY->setEnabled(independent);
-    };
-    connect(ui->comboMetroidHudWeaponIconMode, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [updateWeaponIconModeUi](int) {
-        updateWeaponIconModeUi();
-    });
-    updateWeaponIconModeUi();
-
-    auto updateBombLeftIconModeUi = [this]() {
-        const bool independent = (ui->comboMetroidHudBombLeftIconMode->currentIndex() == 1);
-        ui->spinMetroidHudBombLeftIconOfsX->setEnabled(!independent);
-        ui->inputMetroidHudBombLeftIconOfsX->setEnabled(!independent);
-        ui->labelMetroidHudBombLeftIconOfsX->setEnabled(!independent);
-        ui->spinMetroidHudBombLeftIconOfsY->setEnabled(!independent);
-        ui->inputMetroidHudBombLeftIconOfsY->setEnabled(!independent);
-        ui->labelMetroidHudBombLeftIconOfsY->setEnabled(!independent);
-        ui->spinMetroidHudBombLeftIconPosX->setEnabled(independent);
-        ui->inputMetroidHudBombLeftIconPosX->setEnabled(independent);
-        ui->labelMetroidHudBombLeftIconPosX->setEnabled(independent);
-        ui->spinMetroidHudBombLeftIconPosY->setEnabled(independent);
-        ui->inputMetroidHudBombLeftIconPosY->setEnabled(independent);
-        ui->labelMetroidHudBombLeftIconPosY->setEnabled(independent);
-        ui->comboMetroidHudBombLeftIconAnchorX->setEnabled(true);
-        ui->comboMetroidHudBombLeftIconAnchorY->setEnabled(true);
-    };
-    connect(ui->comboMetroidHudBombLeftIconMode, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [updateBombLeftIconModeUi](int) {
-        updateBombLeftIconModeUi();
-    });
-    updateBombLeftIconModeUi();
-
-    auto updateHpGaugeModeUi = [this]() {
-        const bool independent = (ui->comboMetroidHudHpGaugePosMode->currentIndex() == 1);
-        ui->spinMetroidHudHpGaugeOffsetX->setEnabled(!independent);
-        ui->spinMetroidHudHpGaugeOffsetY->setEnabled(!independent);
-        ui->comboMetroidHudHpGaugeAnchor->setEnabled(!independent);
-        ui->spinMetroidHudHpGaugePosX->setEnabled(independent);
-        ui->spinMetroidHudHpGaugePosY->setEnabled(independent);
-    };
-    connect(ui->comboMetroidHudHpGaugePosMode, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [updateHpGaugeModeUi](int) {
-        updateHpGaugeModeUi();
-    });
-    updateHpGaugeModeUi();
-
-    auto updateAmmoGaugeModeUi = [this]() {
-        const bool independent = (ui->comboMetroidHudAmmoGaugePosMode->currentIndex() == 1);
-        ui->spinMetroidHudAmmoGaugeOffsetX->setEnabled(!independent);
-        ui->spinMetroidHudAmmoGaugeOffsetY->setEnabled(!independent);
-        ui->comboMetroidHudAmmoGaugeAnchor->setEnabled(!independent);
-        ui->spinMetroidHudAmmoGaugePosX->setEnabled(independent);
-        ui->spinMetroidHudAmmoGaugePosY->setEnabled(independent);
-    };
-    connect(ui->comboMetroidHudAmmoGaugePosMode, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [updateAmmoGaugeModeUi](int) {
-        updateAmmoGaugeModeUi();
-    });
-    updateAmmoGaugeModeUi();
-
-    // HP position preset -> update X/Y
-    connect(ui->comboMetroidHudHpPosition, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this](int idx) {
-        if (idx < 0 || idx >= kHudPositionPresetCount) return;
-        ui->spinMetroidHudHpX->blockSignals(true);
-        ui->spinMetroidHudHpY->blockSignals(true);
-        ui->spinMetroidHudHpX->setValue(kHudHpPositionPresets[idx].x);
-        ui->spinMetroidHudHpY->setValue(kHudHpPositionPresets[idx].y);
-        ui->labelMetroidHudHpX->setText(QString::number(kHudHpPositionPresets[idx].x));
-        ui->labelMetroidHudHpY->setText(QString::number(kHudHpPositionPresets[idx].y));
-        ui->spinMetroidHudHpX->blockSignals(false);
-        ui->spinMetroidHudHpY->blockSignals(false);
-    });
-    // HP X/Y manual change -> switch to Custom
-    connect(ui->spinMetroidHudHpX, &QSlider::valueChanged, this, [this]() {
-        ui->comboMetroidHudHpPosition->blockSignals(true);
-        ui->comboMetroidHudHpPosition->setCurrentIndex(kHudPositionCustomIndex);
-        ui->comboMetroidHudHpPosition->blockSignals(false);
-    });
-    connect(ui->spinMetroidHudHpY, &QSlider::valueChanged, this, [this]() {
-        ui->comboMetroidHudHpPosition->blockSignals(true);
-        ui->comboMetroidHudHpPosition->setCurrentIndex(kHudPositionCustomIndex);
-        ui->comboMetroidHudHpPosition->blockSignals(false);
-    });
-
-    // Weapon position preset -> update X/Y
-    connect(ui->comboMetroidHudWeaponPosition, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this](int idx) {
-        if (idx < 0 || idx >= kHudPositionPresetCount) return;
-        ui->spinMetroidHudWeaponX->blockSignals(true);
-        ui->spinMetroidHudWeaponY->blockSignals(true);
-        ui->spinMetroidHudWeaponX->setValue(kHudWeaponPositionPresets[idx].x);
-        ui->spinMetroidHudWeaponY->setValue(kHudWeaponPositionPresets[idx].y);
-        ui->labelMetroidHudWeaponX->setText(QString::number(kHudWeaponPositionPresets[idx].x));
-        ui->labelMetroidHudWeaponY->setText(QString::number(kHudWeaponPositionPresets[idx].y));
-        ui->spinMetroidHudWeaponX->blockSignals(false);
-        ui->spinMetroidHudWeaponY->blockSignals(false);
-    });
-    // Weapon X/Y manual change -> switch to Custom
-    connect(ui->spinMetroidHudWeaponX, &QSlider::valueChanged, this, [this]() {
-        ui->comboMetroidHudWeaponPosition->blockSignals(true);
-        ui->comboMetroidHudWeaponPosition->setCurrentIndex(kHudPositionCustomIndex);
-        ui->comboMetroidHudWeaponPosition->blockSignals(false);
-    });
-    connect(ui->spinMetroidHudWeaponY, &QSlider::valueChanged, this, [this]() {
-        ui->comboMetroidHudWeaponPosition->blockSignals(true);
-        ui->comboMetroidHudWeaponPosition->setCurrentIndex(kHudPositionCustomIndex);
-        ui->comboMetroidHudWeaponPosition->blockSignals(false);
-    });
-
-}
-
-void MelonPrimeInputConfig::setupCrosshair(Config::Table& instcfg)
-{
-    int chR = instcfg.GetInt("Metroid.Visual.CrosshairColorR");
-    int chG = instcfg.GetInt("Metroid.Visual.CrosshairColorG");
-    int chB = instcfg.GetInt("Metroid.Visual.CrosshairColorB");
-    ui->spinMetroidCrosshairR->setValue(chR);
-    ui->spinMetroidCrosshairG->setValue(chG);
-    ui->spinMetroidCrosshairB->setValue(chB);
-    ui->leMetroidCrosshairColorCode->setText(formatColorHex(chR, chG, chB));
-    bindHexButtonSync(ui->btnMetroidCrosshairColor, ui->leMetroidCrosshairColorCode);
-    bindComboButtonSync(ui->btnMetroidCrosshairColor, ui->comboMetroidCrosshairColor, ui->spinMetroidCrosshairR, ui->spinMetroidCrosshairG, ui->spinMetroidCrosshairB);
-    connect(ui->spinMetroidCrosshairR, QOverload<int>::of(&QSpinBox::valueChanged), this, [this](int) { syncCrosshairColorFromRgbEditors(); });
-    connect(ui->spinMetroidCrosshairG, QOverload<int>::of(&QSpinBox::valueChanged), this, [this](int) { syncCrosshairColorFromRgbEditors(); });
-    connect(ui->spinMetroidCrosshairB, QOverload<int>::of(&QSpinBox::valueChanged), this, [this](int) { syncCrosshairColorFromRgbEditors(); });
-
-    ui->comboMetroidCrosshairColor->setCurrentIndex(findPresetColorIndex(
-        kUnifiedHudColorPresets, kHudColorPresetCount, chR, chG, chB, kHudColorCustomIndex));
-
-    // Crosshair - General
-    ui->cbMetroidCrosshairOutline->setChecked(instcfg.GetBool("Metroid.Visual.CrosshairOutline"));
-    ui->spinMetroidCrosshairOutlineOpacity->setValue(instcfg.GetDouble("Metroid.Visual.CrosshairOutlineOpacity"));
-    {
-        int olThick = instcfg.GetInt("Metroid.Visual.CrosshairOutlineThickness");
-        initSliderSync(ui->sliderMetroidCrosshairOutlineThickness, ui->spinMetroidCrosshairOutlineThickness, ui->labelMetroidCrosshairOutlineThickness, olThick > 0 ? olThick : 1);
-    }
-    ui->cbMetroidCrosshairCenterDot->setChecked(instcfg.GetBool("Metroid.Visual.CrosshairCenterDot"));
-    ui->spinMetroidCrosshairDotOpacity->setValue(instcfg.GetDouble("Metroid.Visual.CrosshairDotOpacity"));
-    {
-        int dotThick = instcfg.GetInt("Metroid.Visual.CrosshairDotThickness");
-        initSliderSync(ui->sliderMetroidCrosshairDotThickness, ui->spinMetroidCrosshairDotThickness, ui->labelMetroidCrosshairDotThickness, dotThick > 0 ? dotThick : 1);
-    }
-    ui->cbMetroidCrosshairTStyle->setChecked(instcfg.GetBool("Metroid.Visual.CrosshairTStyle"));
-
-    // Crosshair - Inner Lines
-    ui->cbMetroidCrosshairInnerShow->setChecked(instcfg.GetBool("Metroid.Visual.CrosshairInnerShow"));
-    ui->spinMetroidCrosshairInnerOpacity->setValue(instcfg.GetDouble("Metroid.Visual.CrosshairInnerOpacity"));
-    initSliderSync(ui->sliderMetroidCrosshairInnerLengthX, ui->spinMetroidCrosshairInnerLengthX, ui->labelMetroidCrosshairInnerLengthX, instcfg.GetInt("Metroid.Visual.CrosshairInnerLengthX"));
-    initSliderSync(ui->sliderMetroidCrosshairInnerLengthY, ui->spinMetroidCrosshairInnerLengthY, ui->labelMetroidCrosshairInnerLengthY, instcfg.GetInt("Metroid.Visual.CrosshairInnerLengthY"));
-    {
-        int innerThick = instcfg.GetInt("Metroid.Visual.CrosshairInnerThickness");
-        initSliderSync(ui->sliderMetroidCrosshairInnerThickness, ui->spinMetroidCrosshairInnerThickness, ui->labelMetroidCrosshairInnerThickness, innerThick > 0 ? innerThick : 1);
-    }
-    initSliderSync(ui->sliderMetroidCrosshairInnerOffset, ui->spinMetroidCrosshairInnerOffset, ui->labelMetroidCrosshairInnerOffset, instcfg.GetInt("Metroid.Visual.CrosshairInnerOffset"));
-    ui->cbMetroidCrosshairInnerLinkXY->setChecked(instcfg.GetBool("Metroid.Visual.CrosshairInnerLinkXY"));
-
-    // Crosshair - Outer Lines
-    ui->cbMetroidCrosshairOuterShow->setChecked(instcfg.GetBool("Metroid.Visual.CrosshairOuterShow"));
-    ui->spinMetroidCrosshairOuterOpacity->setValue(instcfg.GetDouble("Metroid.Visual.CrosshairOuterOpacity"));
-    initSliderSync(ui->sliderMetroidCrosshairOuterLengthX, ui->spinMetroidCrosshairOuterLengthX, ui->labelMetroidCrosshairOuterLengthX, instcfg.GetInt("Metroid.Visual.CrosshairOuterLengthX"));
-    initSliderSync(ui->sliderMetroidCrosshairOuterLengthY, ui->spinMetroidCrosshairOuterLengthY, ui->labelMetroidCrosshairOuterLengthY, instcfg.GetInt("Metroid.Visual.CrosshairOuterLengthY"));
-    {
-        int outerThick = instcfg.GetInt("Metroid.Visual.CrosshairOuterThickness");
-        initSliderSync(ui->sliderMetroidCrosshairOuterThickness, ui->spinMetroidCrosshairOuterThickness, ui->labelMetroidCrosshairOuterThickness, outerThick > 0 ? outerThick : 1);
-    }
-    initSliderSync(ui->sliderMetroidCrosshairOuterOffset, ui->spinMetroidCrosshairOuterOffset, ui->labelMetroidCrosshairOuterOffset, instcfg.GetInt("Metroid.Visual.CrosshairOuterOffset"));
-    ui->cbMetroidCrosshairOuterLinkXY->setChecked(instcfg.GetBool("Metroid.Visual.CrosshairOuterLinkXY"));
-
-    // Link X/Y sync: when linked, changing X updates Y and vice versa
-    connect(ui->spinMetroidCrosshairInnerLengthX, QOverload<int>::of(&QSpinBox::valueChanged), this, [this](int val) {
-        if (ui->cbMetroidCrosshairInnerLinkXY->isChecked()) {
-            ui->spinMetroidCrosshairInnerLengthY->blockSignals(true);
-            ui->spinMetroidCrosshairInnerLengthY->setValue(val);
-            ui->spinMetroidCrosshairInnerLengthY->blockSignals(false);
-            ui->sliderMetroidCrosshairInnerLengthY->blockSignals(true);
-            ui->sliderMetroidCrosshairInnerLengthY->setValue(val);
-            ui->sliderMetroidCrosshairInnerLengthY->blockSignals(false);
-            ui->labelMetroidCrosshairInnerLengthY->setText(QString::number(val));
-        }
-    });
-    connect(ui->spinMetroidCrosshairInnerLengthY, QOverload<int>::of(&QSpinBox::valueChanged), this, [this](int val) {
-        if (ui->cbMetroidCrosshairInnerLinkXY->isChecked()) {
-            ui->spinMetroidCrosshairInnerLengthX->blockSignals(true);
-            ui->spinMetroidCrosshairInnerLengthX->setValue(val);
-            ui->spinMetroidCrosshairInnerLengthX->blockSignals(false);
-            ui->sliderMetroidCrosshairInnerLengthX->blockSignals(true);
-            ui->sliderMetroidCrosshairInnerLengthX->setValue(val);
-            ui->sliderMetroidCrosshairInnerLengthX->blockSignals(false);
-            ui->labelMetroidCrosshairInnerLengthX->setText(QString::number(val));
-        }
-    });
-    connect(ui->spinMetroidCrosshairOuterLengthX, QOverload<int>::of(&QSpinBox::valueChanged), this, [this](int val) {
-        if (ui->cbMetroidCrosshairOuterLinkXY->isChecked()) {
-            ui->spinMetroidCrosshairOuterLengthY->blockSignals(true);
-            ui->spinMetroidCrosshairOuterLengthY->setValue(val);
-            ui->spinMetroidCrosshairOuterLengthY->blockSignals(false);
-            ui->sliderMetroidCrosshairOuterLengthY->blockSignals(true);
-            ui->sliderMetroidCrosshairOuterLengthY->setValue(val);
-            ui->sliderMetroidCrosshairOuterLengthY->blockSignals(false);
-            ui->labelMetroidCrosshairOuterLengthY->setText(QString::number(val));
-        }
-    });
-    connect(ui->spinMetroidCrosshairOuterLengthY, QOverload<int>::of(&QSpinBox::valueChanged), this, [this](int val) {
-        if (ui->cbMetroidCrosshairOuterLinkXY->isChecked()) {
-            ui->spinMetroidCrosshairOuterLengthX->blockSignals(true);
-            ui->spinMetroidCrosshairOuterLengthX->setValue(val);
-            ui->spinMetroidCrosshairOuterLengthX->blockSignals(false);
-            ui->sliderMetroidCrosshairOuterLengthX->blockSignals(true);
-            ui->sliderMetroidCrosshairOuterLengthX->setValue(val);
-            ui->sliderMetroidCrosshairOuterLengthX->blockSignals(false);
-            ui->labelMetroidCrosshairOuterLengthX->setText(QString::number(val));
-        }
-    });
-
-}
 
 void MelonPrimeInputConfig::setupPreviewConnections()
 {
-    // Macro helpers parameterized by which apply function to call.
-    // Each section redefines these inside its own { } block.
-#define DEFINE_PRV_HELPERS(applyFn) \
-    auto prvB  = [&](QCheckBox* w)    { connect(w, &QCheckBox::checkStateChanged, this, [this](Qt::CheckState) { applyFn(); }); }; \
-    auto prvC  = [&](QComboBox* w)    { connect(w, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this](int) { applyFn(); }); }; \
-    auto prvE  = [&](QLineEdit* w)    { connect(w, &QLineEdit::textChanged, this, [this](const QString&) { applyFn(); }); }; \
-    auto prvD  = [&](QDoubleSpinBox* w) { connect(w, QOverload<double>::of(&QDoubleSpinBox::valueChanged), this, [this](double) { applyFn(); }); }; \
-    auto prvSl = [&](QSlider* w)      { connect(w, &QSlider::valueChanged, this, [this](int) { applyFn(); }); }; \
-    auto prvI  = [&](QObject* w) { \
-        if (auto sb = qobject_cast<QSpinBox*>(w)) \
-            connect(sb, QOverload<int>::of(&QSpinBox::valueChanged), this, [this](int) { applyFn(); }); \
-        else if (auto sl = qobject_cast<QSlider*>(w)) \
-            connect(sl, &QSlider::valueChanged, this, [this](int) { applyFn(); }); \
-    };
-
-    // --- Global (affects all previews) ---
-    {
-        DEFINE_PRV_HELPERS(applyVisualPreview)
-        prvB(ui->cbMetroidEnableCustomHud);
-        prvB(ui->cbMetroidInGameAspectRatio);
-        prvC(ui->comboMetroidInGameAspectRatioMode);
-    }
-
-    // --- Match Status + Rank/Time/Bomb ---
-    {
-        DEFINE_PRV_HELPERS(applyAndPreviewMatchStatus)
-        prvB(ui->cbMetroidHudMatchStatusShow);
-        prvSl(ui->spinMetroidHudMatchStatusX);         prvSl(ui->spinMetroidHudMatchStatusY);
-        prvSl(ui->spinMetroidHudMatchStatusLabelOfsX); prvSl(ui->spinMetroidHudMatchStatusLabelOfsY);
-        prvC(ui->comboMetroidHudMatchStatusLabelPos);
-        prvE(ui->leMetroidHudMatchStatusLabelPoints);    prvE(ui->leMetroidHudMatchStatusLabelOctoliths);
-        prvE(ui->leMetroidHudMatchStatusLabelLives);     prvE(ui->leMetroidHudMatchStatusLabelRingTime);
-        prvE(ui->leMetroidHudMatchStatusLabelPrimeTime);
-        prvC(ui->comboMetroidHudMatchStatusColor);
-        prvI(ui->spinMetroidHudMatchStatusColorR); prvI(ui->spinMetroidHudMatchStatusColorG); prvI(ui->spinMetroidHudMatchStatusColorB);
-        prvE(ui->leMetroidHudMatchStatusColorCode);
-        prvC(ui->comboMetroidHudMatchStatusLabelColor); prvE(ui->leMetroidHudMatchStatusLabelColorCode);
-        prvI(ui->spinMetroidHudMatchStatusLabelColorR); prvI(ui->spinMetroidHudMatchStatusLabelColorG); prvI(ui->spinMetroidHudMatchStatusLabelColorB);
-        prvC(ui->comboMetroidHudMatchStatusValueColor); prvE(ui->leMetroidHudMatchStatusValueColorCode);
-        prvI(ui->spinMetroidHudMatchStatusValueColorR); prvI(ui->spinMetroidHudMatchStatusValueColorG); prvI(ui->spinMetroidHudMatchStatusValueColorB);
-        prvC(ui->comboMetroidHudMatchStatusSepColor); prvE(ui->leMetroidHudMatchStatusSepColorCode);
-        prvI(ui->spinMetroidHudMatchStatusSepColorR); prvI(ui->spinMetroidHudMatchStatusSepColorG); prvI(ui->spinMetroidHudMatchStatusSepColorB);
-        prvC(ui->comboMetroidHudMatchStatusGoalColor); prvE(ui->leMetroidHudMatchStatusGoalColorCode);
-        prvI(ui->spinMetroidHudMatchStatusGoalColorR); prvI(ui->spinMetroidHudMatchStatusGoalColorG); prvI(ui->spinMetroidHudMatchStatusGoalColorB);
-        // Rank & Time HUD
-        prvB(ui->cbMetroidHudRankShow);
-        prvSl(ui->spinMetroidHudRankX); prvSl(ui->spinMetroidHudRankY);
-        prvC(ui->comboMetroidHudRankAlign);
-        prvC(ui->comboMetroidHudRankColor);
-        prvE(ui->leMetroidHudRankColorCode);
-        prvI(ui->spinMetroidHudRankColorR); prvI(ui->spinMetroidHudRankColorG); prvI(ui->spinMetroidHudRankColorB);
-        prvB(ui->cbMetroidHudRankShowOrdinal);
-        prvB(ui->cbMetroidHudTimeLeftShow);
-        prvSl(ui->spinMetroidHudTimeLeftX); prvSl(ui->spinMetroidHudTimeLeftY);
-        prvC(ui->comboMetroidHudTimeLeftAlign);
-        prvC(ui->comboMetroidHudTimeLeftColor);
-        prvE(ui->leMetroidHudTimeLeftColorCode);
-        prvI(ui->spinMetroidHudTimeLeftColorR); prvI(ui->spinMetroidHudTimeLeftColorG); prvI(ui->spinMetroidHudTimeLeftColorB);
-        prvB(ui->cbMetroidHudTimeLimitShow);
-        prvSl(ui->spinMetroidHudTimeLimitX); prvSl(ui->spinMetroidHudTimeLimitY);
-        prvC(ui->comboMetroidHudTimeLimitAlign);
-        prvC(ui->comboMetroidHudTimeLimitColor);
-        prvE(ui->leMetroidHudTimeLimitColorCode);
-        prvI(ui->spinMetroidHudTimeLimitColorR); prvI(ui->spinMetroidHudTimeLimitColorG); prvI(ui->spinMetroidHudTimeLimitColorB);
-        // Bomb Left HUD
-        prvB(ui->cbMetroidHudBombLeftShow);
-        prvB(ui->cbMetroidHudBombLeftTextShow);
-        prvSl(ui->spinMetroidHudBombLeftX); prvSl(ui->spinMetroidHudBombLeftY);
-        prvC(ui->comboMetroidHudBombLeftAlign);
-        prvC(ui->comboMetroidHudBombLeftColor);
-        prvE(ui->leMetroidHudBombLeftColorCode);
-        prvI(ui->spinMetroidHudBombLeftColorR); prvI(ui->spinMetroidHudBombLeftColorG); prvI(ui->spinMetroidHudBombLeftColorB);
-        prvE(ui->leMetroidHudBombLeftPrefix);
-        prvE(ui->leMetroidHudBombLeftSuffix);
-        prvB(ui->cbMetroidHudBombLeftIconShow);
-        prvB(ui->cbMetroidHudBombLeftIconColorOverlay);
-        prvC(ui->comboMetroidHudBombLeftIconColor);
-        prvE(ui->leMetroidHudBombLeftIconColorCode);
-        prvI(ui->spinMetroidHudBombLeftIconColorR); prvI(ui->spinMetroidHudBombLeftIconColorG); prvI(ui->spinMetroidHudBombLeftIconColorB);
-        prvC(ui->comboMetroidHudBombLeftIconMode);
-        prvSl(ui->spinMetroidHudBombLeftIconOfsX); prvSl(ui->spinMetroidHudBombLeftIconOfsY);
-        prvSl(ui->spinMetroidHudBombLeftIconPosX); prvSl(ui->spinMetroidHudBombLeftIconPosY);
-        prvC(ui->comboMetroidHudBombLeftIconAnchorX);
-        prvC(ui->comboMetroidHudBombLeftIconAnchorY);
-    }
-
-    // --- HP / Ammo / Gauge ---
-    {
-        DEFINE_PRV_HELPERS(applyAndPreviewHpAmmo)
-        prvSl(ui->spinMetroidHudHpX);    prvSl(ui->spinMetroidHudHpY);    prvE(ui->leMetroidHudHpPrefix);    prvC(ui->comboMetroidHudHpAlign);
-        prvB(ui->cbMetroidHudHpTextAutoColor); prvC(ui->comboMetroidHudHpTextColor); prvE(ui->leMetroidHudHpTextColorCode);
-        prvI(ui->spinMetroidHudHpTextColorR); prvI(ui->spinMetroidHudHpTextColorG); prvI(ui->spinMetroidHudHpTextColorB);
-        prvSl(ui->spinMetroidHudWeaponX); prvSl(ui->spinMetroidHudWeaponY); prvE(ui->leMetroidHudAmmoPrefix); prvC(ui->comboMetroidHudAmmoAlign);
-        prvC(ui->comboMetroidHudAmmoTextColor); prvE(ui->leMetroidHudAmmoTextColorCode);
-        prvI(ui->spinMetroidHudAmmoTextColorR); prvI(ui->spinMetroidHudAmmoTextColorG); prvI(ui->spinMetroidHudAmmoTextColorB);
-        prvB(ui->cbMetroidHudWeaponIconShow);  prvC(ui->comboMetroidHudWeaponIconMode);
-        prvSl(ui->spinMetroidHudWeaponIconOffsetX); prvSl(ui->spinMetroidHudWeaponIconOffsetY);
-        prvSl(ui->spinMetroidHudWeaponIconPosX);   prvSl(ui->spinMetroidHudWeaponIconPosY);
-        prvC(ui->comboMetroidHudWeaponIconAnchorX); prvC(ui->comboMetroidHudWeaponIconAnchorY); prvB(ui->cbMetroidHudWeaponIconColorOverlay);
-        prvB(ui->cbMetroidHudHpGauge);
-        prvC(ui->comboMetroidHudHpGaugeOrientation);
-        prvSl(ui->spinMetroidHudHpGaugeLength); prvSl(ui->spinMetroidHudHpGaugeWidth);
-        prvSl(ui->spinMetroidHudHpGaugeOffsetX); prvSl(ui->spinMetroidHudHpGaugeOffsetY);
-        prvC(ui->comboMetroidHudHpGaugeAnchor); prvC(ui->comboMetroidHudHpGaugePosMode);
-        prvSl(ui->spinMetroidHudHpGaugePosX);   prvSl(ui->spinMetroidHudHpGaugePosY);
-        prvB(ui->cbMetroidHudHpGaugeAutoColor);
-        prvC(ui->comboMetroidHudHpGaugeColor); prvE(ui->leMetroidHudHpGaugeColorCode);
-        prvI(ui->spinMetroidHudHpGaugeColorR); prvI(ui->spinMetroidHudHpGaugeColorG); prvI(ui->spinMetroidHudHpGaugeColorB);
-        prvB(ui->cbMetroidHudAmmoGauge);
-        prvC(ui->comboMetroidHudAmmoGaugeOrientation);
-        prvSl(ui->spinMetroidHudAmmoGaugeLength); prvSl(ui->spinMetroidHudAmmoGaugeWidth);
-        prvSl(ui->spinMetroidHudAmmoGaugeOffsetX); prvSl(ui->spinMetroidHudAmmoGaugeOffsetY);
-        prvC(ui->comboMetroidHudAmmoGaugeAnchor); prvC(ui->comboMetroidHudAmmoGaugePosMode);
-        prvSl(ui->spinMetroidHudAmmoGaugePosX);   prvSl(ui->spinMetroidHudAmmoGaugePosY);
-        prvC(ui->comboMetroidHudAmmoGaugeColor); prvE(ui->leMetroidHudAmmoGaugeColorCode);
-        prvI(ui->spinMetroidHudAmmoGaugeColorR); prvI(ui->spinMetroidHudAmmoGaugeColorG); prvI(ui->spinMetroidHudAmmoGaugeColorB);
-    }
-
-    // --- HUD Radar ---
-    {
-        DEFINE_PRV_HELPERS(applyAndPreviewRadar)
-        prvB(ui->cbMetroidBtmOverlayEnable);
-        prvSl(ui->spinMetroidBtmOverlayDstX); prvSl(ui->spinMetroidBtmOverlayDstY); prvSl(ui->spinMetroidBtmOverlayDstSize);
-        prvD(ui->spinMetroidBtmOverlayOpacity);
-        prvSl(ui->spinMetroidBtmOverlaySrcRadius);
-    }
-
-    // --- Crosshair ---
-    {
-        DEFINE_PRV_HELPERS(applyAndPreviewCrosshair)
-        prvC(ui->comboMetroidCrosshairColor); prvE(ui->leMetroidCrosshairColorCode);
-        prvI(ui->spinMetroidCrosshairR); prvI(ui->spinMetroidCrosshairG); prvI(ui->spinMetroidCrosshairB);
-        prvB(ui->cbMetroidCrosshairOutline);
-        prvD(ui->spinMetroidCrosshairOutlineOpacity);
-        prvSl(ui->sliderMetroidCrosshairOutlineThickness);
-        prvB(ui->cbMetroidCrosshairCenterDot);
-        prvD(ui->spinMetroidCrosshairDotOpacity);
-        prvSl(ui->sliderMetroidCrosshairDotThickness);
-        prvB(ui->cbMetroidCrosshairTStyle);
-        prvB(ui->cbMetroidCrosshairInnerShow);
-        prvD(ui->spinMetroidCrosshairInnerOpacity);
-        prvSl(ui->sliderMetroidCrosshairInnerLengthX); prvSl(ui->sliderMetroidCrosshairInnerLengthY);
-        prvSl(ui->sliderMetroidCrosshairInnerThickness); prvSl(ui->sliderMetroidCrosshairInnerOffset);
-        prvB(ui->cbMetroidCrosshairInnerLinkXY);
-        prvB(ui->cbMetroidCrosshairOuterShow);
-        prvD(ui->spinMetroidCrosshairOuterOpacity);
-        prvSl(ui->sliderMetroidCrosshairOuterLengthX); prvSl(ui->sliderMetroidCrosshairOuterLengthY);
-        prvSl(ui->sliderMetroidCrosshairOuterThickness); prvSl(ui->sliderMetroidCrosshairOuterOffset);
-        prvB(ui->cbMetroidCrosshairOuterLinkXY);
-    }
-
-#undef DEFINE_PRV_HELPERS
+    // --- Global (affects visual preview) ---
+    connect(ui->cbMetroidEnableCustomHud, &QCheckBox::checkStateChanged, this, [this](Qt::CheckState) { applyVisualPreview(); });
+    connect(ui->cbMetroidInGameAspectRatio, &QCheckBox::checkStateChanged, this, [this](Qt::CheckState) { applyVisualPreview(); });
+    connect(ui->comboMetroidInGameAspectRatioMode, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this](int) { applyVisualPreview(); });
 }
 
-void MelonPrimeInputConfig::setupRadar(Config::Table& instcfg)
-{
-    ui->cbMetroidBtmOverlayEnable->setChecked(instcfg.GetBool("Metroid.Visual.BtmOverlayEnable"));
-    initSliderSync(ui->spinMetroidBtmOverlayDstX,    ui->inputMetroidBtmOverlayDstX,    ui->labelMetroidBtmOverlayDstX,    instcfg.GetInt("Metroid.Visual.BtmOverlayDstX"));
-    initSliderSync(ui->spinMetroidBtmOverlayDstY,    ui->inputMetroidBtmOverlayDstY,    ui->labelMetroidBtmOverlayDstY,    instcfg.GetInt("Metroid.Visual.BtmOverlayDstY"));
-    initSliderSync(ui->spinMetroidBtmOverlayDstSize, ui->inputMetroidBtmOverlayDstSize, ui->labelMetroidBtmOverlayDstSize, instcfg.GetInt("Metroid.Visual.BtmOverlayDstSize"));
-    ui->spinMetroidBtmOverlayOpacity->setValue(instcfg.GetDouble("Metroid.Visual.BtmOverlayOpacity"));
-    ui->sliderMetroidBtmOverlayOpacity->setValue(qRound(instcfg.GetDouble("Metroid.Visual.BtmOverlayOpacity") * 100));
-    initSliderSync(ui->spinMetroidBtmOverlaySrcRadius,  ui->inputMetroidBtmOverlaySrcRadius,  ui->labelMetroidBtmOverlaySrcRadius,  instcfg.GetInt("Metroid.Visual.BtmOverlaySrcRadius"));
-
-    // Connect radar preview updates
-    connect(ui->cbMetroidBtmOverlayEnable, &QCheckBox::checkStateChanged, this, [this](Qt::CheckState) { updateRadarPreview(); });
-    connect(ui->spinMetroidBtmOverlayDstX,    &QSlider::valueChanged, this, [this](int) { updateRadarPreview(); });
-    connect(ui->spinMetroidBtmOverlayDstY,    &QSlider::valueChanged, this, [this](int) { updateRadarPreview(); });
-    connect(ui->spinMetroidBtmOverlayDstSize, &QSlider::valueChanged, this, [this](int) { updateRadarPreview(); });
-    connect(ui->spinMetroidBtmOverlayOpacity, QOverload<double>::of(&QDoubleSpinBox::valueChanged), this, [this](double val) {
-        ui->sliderMetroidBtmOverlayOpacity->blockSignals(true);
-        ui->sliderMetroidBtmOverlayOpacity->setValue(qRound(val * 100));
-        ui->sliderMetroidBtmOverlayOpacity->blockSignals(false);
-        updateRadarPreview();
-    });
-    connect(ui->sliderMetroidBtmOverlayOpacity, &QSlider::valueChanged, this, [this](int val) {
-        ui->spinMetroidBtmOverlayOpacity->blockSignals(true);
-        ui->spinMetroidBtmOverlayOpacity->setValue(val / 100.0);
-        ui->spinMetroidBtmOverlayOpacity->blockSignals(false);
-        updateRadarPreview();
-    });
-}
 
 MelonPrimeInputConfig::~MelonPrimeInputConfig()
 {
@@ -1242,111 +300,1103 @@ void MelonPrimeInputConfig::on_cbMetroidEnableCustomHud_stateChanged(int state)
     cfg.SetBool("Metroid.Visual.CustomHUD", state != 0);
 }
 
-void MelonPrimeInputConfig::setupColorButton(QPushButton* btn, const QString& configKeyR, const QString& configKeyG, const QString& configKeyB,
-    QComboBox* combo, QLineEdit* lineEdit, QSpinBox* spinR, QSpinBox* spinG, QSpinBox* spinB, int customIndex, int overallIndex)
+void MelonPrimeInputConfig::on_btnEditHudLayout_clicked()
 {
-    Config::Table& instcfg = emuInstance->getLocalConfig();
-    int r = instcfg.GetInt(configKeyR.toStdString().c_str());
-    int g = instcfg.GetInt(configKeyG.toStdString().c_str());
-    int b = instcfg.GetInt(configKeyB.toStdString().c_str());
+    applyVisualPreview();
+#ifdef MELONPRIME_CUSTOM_HUD
+    MelonPrime::CustomHud_EnterEditMode(emuInstance, emuInstance->getLocalConfig());
+#endif
+    if (InputConfigDialog::currentDlg)
+        InputConfigDialog::currentDlg->hide();
+}
 
-    btn->setStyleSheet(QString("background-color: %1;").arg(QColor(r, g, b).name()));
 
-    connect(btn, &QPushButton::clicked, this, [this, btn, configKeyR, configKeyG, configKeyB, combo, lineEdit, spinR, spinG, spinB, customIndex, overallIndex]() {
-        if (m_colorDialogOpen) return;
-        m_colorDialogOpen = true;
-        Config::Table& cfg = emuInstance->getLocalConfig();
-        int curR = spinR ? spinR->value() : cfg.GetInt(configKeyR.toStdString().c_str());
-        int curG = spinG ? spinG->value() : cfg.GetInt(configKeyG.toStdString().c_str());
-        int curB = spinB ? spinB->value() : cfg.GetInt(configKeyB.toStdString().c_str());
-        QColor initial(curR, curG, curB);
-        QColor chosen = QColorDialog::getColor(
-            initial,
-            this,
-            QString(),
-            QColorDialog::DontUseNativeDialog);
-        m_colorDialogOpen = false;
-        if (!chosen.isValid()) return;
+// ── HUD Widget Descriptors ──────────────────────────────────────────────────
 
-        cfg.SetInt(configKeyR.toStdString().c_str(), chosen.red());
-        cfg.SetInt(configKeyG.toStdString().c_str(), chosen.green());
-        cfg.SetInt(configKeyB.toStdString().c_str(), chosen.blue());
+namespace {
 
-        if (spinR && spinG && spinB) {
-            spinR->blockSignals(true);
-            spinG->blockSignals(true);
-            spinB->blockSignals(true);
-            spinR->setValue(chosen.red());
-            spinG->setValue(chosen.green());
-            spinB->setValue(chosen.blue());
-            spinR->blockSignals(false);
-            spinG->blockSignals(false);
-            spinB->blockSignals(false);
+enum class HWType { Bool, Int, Float, String, Anchor9, Align3, Color3, HorizVert };
+
+struct HudWidgetProp {
+    const char* label;
+    HWType      type;
+    const char* cfgKey;
+    int         min, max, step;
+    const char* cfgKeyG;   // Color3 only
+    const char* cfgKeyB;   // Color3 only
+};
+
+struct HudSubSec {
+    const char* title;
+    const char* cfgToggleKey;
+    const HudWidgetProp* props;
+    int propCount;
+    const HudSubSec* children;   // nested sub-sections (e.g., Rank/Time inside "Rank / Time")
+    int childCount;
+};
+
+struct HudMainSec {
+    const char* title;
+    const char* cfgToggleKey;
+    const HudWidgetProp* directProps;   // props shown at group level (before sub-sections)
+    int directPropCount;
+    const HudSubSec* subs;
+    int subCount;
+    int previewKind; // 0=None, 1=Crosshair, 2=HpAmmo, 3=MatchStatus, 4=Radar
+};
+
+#define P_BOOL(lbl, key)              { lbl, HWType::Bool,   key, 0,0,0, nullptr, nullptr }
+#define P_INT(lbl, key, lo, hi, s)    { lbl, HWType::Int,    key, lo, hi, s, nullptr, nullptr }
+#define P_FLOAT(lbl, key)             { lbl, HWType::Float,  key, 0,100,5, nullptr, nullptr }
+#define P_STR(lbl, key)               { lbl, HWType::String, key, 0,0,0, nullptr, nullptr }
+#define P_ANC(lbl, key)               { lbl, HWType::Anchor9,key, 0,8,1, nullptr, nullptr }
+#define P_ALN(lbl, key)               { lbl, HWType::Align3, key, 0,2,1, nullptr, nullptr }
+#define P_CLR(lbl, kR, kG, kB)        { lbl, HWType::Color3, kR, 0,255,1, kG, kB }
+#define P_ORIENT(lbl, key)            { lbl, HWType::HorizVert, key, 0,1,1, nullptr, nullptr }
+
+// --- Section 1: Text Scale ---
+static const HudWidgetProp kSecTextScale[] = {
+    P_INT("Text Scale %", "Metroid.Visual.HudTextScale", 10, 300, 10),
+};
+
+// --- Section 2: Crosshair ---
+static const HudWidgetProp kSecCrosshair[] = {
+    P_CLR("Color", "Metroid.Visual.CrosshairColorR", "Metroid.Visual.CrosshairColorG", "Metroid.Visual.CrosshairColorB"),
+    P_INT("Scale %", "Metroid.Visual.CrosshairScale", 10, 500, 1),
+    P_BOOL("Outline", "Metroid.Visual.CrosshairOutline"),
+    P_FLOAT("Outline Opacity", "Metroid.Visual.CrosshairOutlineOpacity"),
+    P_INT("Outline Thickness", "Metroid.Visual.CrosshairOutlineThickness", 1, 10, 1),
+    P_BOOL("Center Dot", "Metroid.Visual.CrosshairCenterDot"),
+    P_FLOAT("Dot Opacity", "Metroid.Visual.CrosshairDotOpacity"),
+    P_INT("Dot Thickness", "Metroid.Visual.CrosshairDotThickness", 1, 10, 1),
+    P_BOOL("T-Style", "Metroid.Visual.CrosshairTStyle"),
+};
+
+// --- Section 3: Crosshair Inner ---
+static const HudWidgetProp kSecCrosshairInner[] = {
+    P_BOOL("Show", "Metroid.Visual.CrosshairInnerShow"),
+    P_FLOAT("Opacity", "Metroid.Visual.CrosshairInnerOpacity"),
+    P_INT("Length X", "Metroid.Visual.CrosshairInnerLengthX", 0, 64, 1),
+    P_INT("Length Y", "Metroid.Visual.CrosshairInnerLengthY", 0, 64, 1),
+    P_BOOL("Link XY", "Metroid.Visual.CrosshairInnerLinkXY"),
+    P_INT("Thickness", "Metroid.Visual.CrosshairInnerThickness", 1, 10, 1),
+    P_INT("Offset", "Metroid.Visual.CrosshairInnerOffset", 0, 64, 1),
+};
+
+// --- Section 4: Crosshair Outer ---
+static const HudWidgetProp kSecCrosshairOuter[] = {
+    P_BOOL("Show", "Metroid.Visual.CrosshairOuterShow"),
+    P_FLOAT("Opacity", "Metroid.Visual.CrosshairOuterOpacity"),
+    P_INT("Length X", "Metroid.Visual.CrosshairOuterLengthX", 0, 64, 1),
+    P_INT("Length Y", "Metroid.Visual.CrosshairOuterLengthY", 0, 64, 1),
+    P_BOOL("Link XY", "Metroid.Visual.CrosshairOuterLinkXY"),
+    P_INT("Thickness", "Metroid.Visual.CrosshairOuterThickness", 1, 10, 1),
+    P_INT("Offset", "Metroid.Visual.CrosshairOuterOffset", 0, 64, 1),
+};
+
+// --- Section 5: HP ---
+static const HudWidgetProp kSecHp[] = {
+    P_ANC("Anchor", "Metroid.Visual.HudHpAnchor"),
+    P_INT("Offset X", "Metroid.Visual.HudHpX", -256, 256, 1),
+    P_INT("Offset Y", "Metroid.Visual.HudHpY", -256, 256, 1),
+    P_STR("Prefix", "Metroid.Visual.HudHpPrefix"),
+    P_ALN("Align", "Metroid.Visual.HudHpAlign"),
+    P_BOOL("Auto Color", "Metroid.Visual.HudHpTextAutoColor"),
+    P_CLR("Color", "Metroid.Visual.HudHpTextColorR", "Metroid.Visual.HudHpTextColorG", "Metroid.Visual.HudHpTextColorB"),
+    P_FLOAT("Opacity", "Metroid.Visual.HudHpOpacity"),
+};
+
+// --- Section 6: HP Gauge ---
+static const HudWidgetProp kSecHpGauge[] = {
+    P_BOOL("Enable", "Metroid.Visual.HudHpGauge"),
+    P_BOOL("Auto Color", "Metroid.Visual.HudHpGaugeAutoColor"),
+    P_ORIENT("Orientation", "Metroid.Visual.HudHpGaugeOrientation"),
+    P_INT("Length", "Metroid.Visual.HudHpGaugeLength", 1, 192, 1),
+    P_INT("Width", "Metroid.Visual.HudHpGaugeWidth", 1, 20, 1),
+    P_INT("Offset X", "Metroid.Visual.HudHpGaugeOffsetX", -128, 128, 1),
+    P_INT("Offset Y", "Metroid.Visual.HudHpGaugeOffsetY", -128, 128, 1),
+    P_CLR("Color", "Metroid.Visual.HudHpGaugeColorR", "Metroid.Visual.HudHpGaugeColorG", "Metroid.Visual.HudHpGaugeColorB"),
+    P_INT("Gauge Anchor", "Metroid.Visual.HudHpGaugeAnchor", 0, 4, 1),
+    P_INT("Pos Mode", "Metroid.Visual.HudHpGaugePosMode", 0, 1, 1),
+    P_ANC("Pos Anchor", "Metroid.Visual.HudHpGaugePosAnchor"),
+    P_INT("Pos X", "Metroid.Visual.HudHpGaugePosX", -256, 256, 1),
+    P_INT("Pos Y", "Metroid.Visual.HudHpGaugePosY", -256, 256, 1),
+    P_FLOAT("Opacity", "Metroid.Visual.HudHpGaugeOpacity"),
+};
+
+// --- Section 7: Weapon / Ammo ---
+static const HudWidgetProp kSecWeaponAmmo[] = {
+    P_ANC("Anchor", "Metroid.Visual.HudWeaponAnchor"),
+    P_INT("Offset X", "Metroid.Visual.HudWeaponX", -256, 256, 1),
+    P_INT("Offset Y", "Metroid.Visual.HudWeaponY", -256, 256, 1),
+    P_STR("Prefix", "Metroid.Visual.HudAmmoPrefix"),
+    P_ALN("Align", "Metroid.Visual.HudAmmoAlign"),
+    P_CLR("Color", "Metroid.Visual.HudAmmoTextColorR", "Metroid.Visual.HudAmmoTextColorG", "Metroid.Visual.HudAmmoTextColorB"),
+    P_INT("Weapon Layout", "Metroid.Visual.HudWeaponLayout", 0, 1, 1),
+    P_FLOAT("Opacity", "Metroid.Visual.HudWeaponOpacity"),
+};
+
+// --- Section 8: Weapon Icon ---
+static const HudWidgetProp kSecWpnIcon[] = {
+    P_BOOL("Show", "Metroid.Visual.HudWeaponIconShow"),
+    P_ANC("Pos Anchor", "Metroid.Visual.HudWeaponIconPosAnchor"),
+    P_INT("Pos X", "Metroid.Visual.HudWeaponIconPosX", -256, 256, 1),
+    P_INT("Pos Y", "Metroid.Visual.HudWeaponIconPosY", -256, 256, 1),
+    P_INT("Icon Mode", "Metroid.Visual.HudWeaponIconMode", 0, 1, 1),
+    P_BOOL("Color Overlay", "Metroid.Visual.HudWeaponIconColorOverlay"),
+    P_INT("Height", "Metroid.Visual.HudWeaponIconHeight", 4, 64, 1),
+    P_INT("Icon Offset X", "Metroid.Visual.HudWeaponIconOffsetX", -128, 128, 1),
+    P_INT("Icon Offset Y", "Metroid.Visual.HudWeaponIconOffsetY", -128, 128, 1),
+    P_INT("Icon Anchor X", "Metroid.Visual.HudWeaponIconAnchorX", 0, 2, 1),
+    P_INT("Icon Anchor Y", "Metroid.Visual.HudWeaponIconAnchorY", 0, 2, 1),
+    P_FLOAT("Opacity", "Metroid.Visual.HudWpnIconOpacity"),
+};
+
+// --- Section 9: Ammo Gauge ---
+static const HudWidgetProp kSecAmmoGauge[] = {
+    P_BOOL("Enable", "Metroid.Visual.HudAmmoGauge"),
+    P_ORIENT("Orientation", "Metroid.Visual.HudAmmoGaugeOrientation"),
+    P_INT("Length", "Metroid.Visual.HudAmmoGaugeLength", 1, 192, 1),
+    P_INT("Width", "Metroid.Visual.HudAmmoGaugeWidth", 1, 20, 1),
+    P_INT("Offset X", "Metroid.Visual.HudAmmoGaugeOffsetX", -128, 128, 1),
+    P_INT("Offset Y", "Metroid.Visual.HudAmmoGaugeOffsetY", -128, 128, 1),
+    P_CLR("Color", "Metroid.Visual.HudAmmoGaugeColorR", "Metroid.Visual.HudAmmoGaugeColorG", "Metroid.Visual.HudAmmoGaugeColorB"),
+    P_INT("Gauge Anchor", "Metroid.Visual.HudAmmoGaugeAnchor", 0, 4, 1),
+    P_INT("Pos Mode", "Metroid.Visual.HudAmmoGaugePosMode", 0, 1, 1),
+    P_ANC("Pos Anchor", "Metroid.Visual.HudAmmoGaugePosAnchor"),
+    P_INT("Pos X", "Metroid.Visual.HudAmmoGaugePosX", -256, 256, 1),
+    P_INT("Pos Y", "Metroid.Visual.HudAmmoGaugePosY", -256, 256, 1),
+    P_FLOAT("Opacity", "Metroid.Visual.HudAmmoGaugeOpacity"),
+};
+
+// --- Section 10: Match Status ---
+static const HudWidgetProp kSecMatchStatus[] = {
+    P_BOOL("Show", "Metroid.Visual.HudMatchStatusShow"),
+    P_ANC("Anchor", "Metroid.Visual.HudMatchStatusAnchor"),
+    P_INT("Offset X", "Metroid.Visual.HudMatchStatusX", -256, 256, 1),
+    P_INT("Offset Y", "Metroid.Visual.HudMatchStatusY", -256, 256, 1),
+    P_CLR("Color", "Metroid.Visual.HudMatchStatusColorR", "Metroid.Visual.HudMatchStatusColorG", "Metroid.Visual.HudMatchStatusColorB"),
+    P_INT("Label Pos", "Metroid.Visual.HudMatchStatusLabelPos", 0, 3, 1),
+    P_INT("Label Offset X", "Metroid.Visual.HudMatchStatusLabelOfsX", -64, 64, 1),
+    P_INT("Label Offset Y", "Metroid.Visual.HudMatchStatusLabelOfsY", -64, 64, 1),
+    P_STR("Label: Points", "Metroid.Visual.HudMatchStatusLabelPoints"),
+    P_STR("Label: Octoliths", "Metroid.Visual.HudMatchStatusLabelOctoliths"),
+    P_STR("Label: Lives", "Metroid.Visual.HudMatchStatusLabelLives"),
+    P_STR("Label: Ring Time", "Metroid.Visual.HudMatchStatusLabelRingTime"),
+    P_STR("Label: Prime Time", "Metroid.Visual.HudMatchStatusLabelPrimeTime"),
+    P_BOOL("Label Color: Overall", "Metroid.Visual.HudMatchStatusLabelColorOverall"),
+    P_CLR("Label Color", "Metroid.Visual.HudMatchStatusLabelColorR", "Metroid.Visual.HudMatchStatusLabelColorG", "Metroid.Visual.HudMatchStatusLabelColorB"),
+    P_BOOL("Value Color: Overall", "Metroid.Visual.HudMatchStatusValueColorOverall"),
+    P_CLR("Value Color", "Metroid.Visual.HudMatchStatusValueColorR", "Metroid.Visual.HudMatchStatusValueColorG", "Metroid.Visual.HudMatchStatusValueColorB"),
+    P_BOOL("Sep Color: Overall", "Metroid.Visual.HudMatchStatusSepColorOverall"),
+    P_CLR("Sep Color", "Metroid.Visual.HudMatchStatusSepColorR", "Metroid.Visual.HudMatchStatusSepColorG", "Metroid.Visual.HudMatchStatusSepColorB"),
+    P_BOOL("Goal Color: Overall", "Metroid.Visual.HudMatchStatusGoalColorOverall"),
+    P_CLR("Goal Color", "Metroid.Visual.HudMatchStatusGoalColorR", "Metroid.Visual.HudMatchStatusGoalColorG", "Metroid.Visual.HudMatchStatusGoalColorB"),
+    P_FLOAT("Opacity", "Metroid.Visual.HudMatchStatusOpacity"),
+};
+
+// --- Section 11: Rank ---
+static const HudWidgetProp kSecRank[] = {
+    P_BOOL("Show", "Metroid.Visual.HudRankShow"),
+    P_ANC("Anchor", "Metroid.Visual.HudRankAnchor"),
+    P_INT("Offset X", "Metroid.Visual.HudRankX", -256, 256, 1),
+    P_INT("Offset Y", "Metroid.Visual.HudRankY", -256, 256, 1),
+    P_ALN("Align", "Metroid.Visual.HudRankAlign"),
+    P_CLR("Color", "Metroid.Visual.HudRankColorR", "Metroid.Visual.HudRankColorG", "Metroid.Visual.HudRankColorB"),
+    P_STR("Prefix", "Metroid.Visual.HudRankPrefix"),
+    P_STR("Suffix", "Metroid.Visual.HudRankSuffix"),
+    P_BOOL("Ordinal", "Metroid.Visual.HudRankShowOrdinal"),
+    P_FLOAT("Opacity", "Metroid.Visual.HudRankOpacity"),
+};
+
+// --- Section 12: Time Left ---
+static const HudWidgetProp kSecTimeLeft[] = {
+    P_BOOL("Show", "Metroid.Visual.HudTimeLeftShow"),
+    P_ANC("Anchor", "Metroid.Visual.HudTimeLeftAnchor"),
+    P_INT("Offset X", "Metroid.Visual.HudTimeLeftX", -256, 256, 1),
+    P_INT("Offset Y", "Metroid.Visual.HudTimeLeftY", -256, 256, 1),
+    P_ALN("Align", "Metroid.Visual.HudTimeLeftAlign"),
+    P_CLR("Color", "Metroid.Visual.HudTimeLeftColorR", "Metroid.Visual.HudTimeLeftColorG", "Metroid.Visual.HudTimeLeftColorB"),
+    P_FLOAT("Opacity", "Metroid.Visual.HudTimeLeftOpacity"),
+};
+
+// --- Section 13: Time Limit ---
+static const HudWidgetProp kSecTimeLimit[] = {
+    P_BOOL("Show", "Metroid.Visual.HudTimeLimitShow"),
+    P_ANC("Anchor", "Metroid.Visual.HudTimeLimitAnchor"),
+    P_INT("Offset X", "Metroid.Visual.HudTimeLimitX", -256, 256, 1),
+    P_INT("Offset Y", "Metroid.Visual.HudTimeLimitY", -256, 256, 1),
+    P_ALN("Align", "Metroid.Visual.HudTimeLimitAlign"),
+    P_CLR("Color", "Metroid.Visual.HudTimeLimitColorR", "Metroid.Visual.HudTimeLimitColorG", "Metroid.Visual.HudTimeLimitColorB"),
+    P_FLOAT("Opacity", "Metroid.Visual.HudTimeLimitOpacity"),
+};
+
+// --- Section 14: Bomb Left ---
+static const HudWidgetProp kSecBombLeft[] = {
+    P_BOOL("Show", "Metroid.Visual.HudBombLeftShow"),
+    P_ANC("Anchor", "Metroid.Visual.HudBombLeftAnchor"),
+    P_INT("Offset X", "Metroid.Visual.HudBombLeftX", -256, 256, 1),
+    P_INT("Offset Y", "Metroid.Visual.HudBombLeftY", -256, 256, 1),
+    P_ALN("Align", "Metroid.Visual.HudBombLeftAlign"),
+    P_CLR("Color", "Metroid.Visual.HudBombLeftColorR", "Metroid.Visual.HudBombLeftColorG", "Metroid.Visual.HudBombLeftColorB"),
+    P_BOOL("Show Text", "Metroid.Visual.HudBombLeftTextShow"),
+    P_STR("Prefix", "Metroid.Visual.HudBombLeftPrefix"),
+    P_STR("Suffix", "Metroid.Visual.HudBombLeftSuffix"),
+    P_FLOAT("Opacity", "Metroid.Visual.HudBombLeftOpacity"),
+};
+
+// --- Section 15: Bomb Icon ---
+static const HudWidgetProp kSecBombIcon[] = {
+    P_BOOL("Show", "Metroid.Visual.HudBombLeftIconShow"),
+    P_ANC("Pos Anchor", "Metroid.Visual.HudBombLeftIconPosAnchor"),
+    P_INT("Pos X", "Metroid.Visual.HudBombLeftIconPosX", -256, 256, 1),
+    P_INT("Pos Y", "Metroid.Visual.HudBombLeftIconPosY", -256, 256, 1),
+    P_INT("Icon Mode", "Metroid.Visual.HudBombLeftIconMode", 0, 1, 1),
+    P_BOOL("Color Overlay", "Metroid.Visual.HudBombLeftIconColorOverlay"),
+    P_INT("Height", "Metroid.Visual.HudBombIconHeight", 4, 64, 1),
+    P_CLR("Icon Color", "Metroid.Visual.HudBombLeftIconColorR", "Metroid.Visual.HudBombLeftIconColorG", "Metroid.Visual.HudBombLeftIconColorB"),
+    P_INT("Icon Offset X", "Metroid.Visual.HudBombLeftIconOfsX", -128, 128, 1),
+    P_INT("Icon Offset Y", "Metroid.Visual.HudBombLeftIconOfsY", -128, 128, 1),
+    P_INT("Icon Anchor X", "Metroid.Visual.HudBombLeftIconAnchorX", 0, 2, 1),
+    P_INT("Icon Anchor Y", "Metroid.Visual.HudBombLeftIconAnchorY", 0, 2, 1),
+    P_FLOAT("Opacity", "Metroid.Visual.HudBombIconOpacity"),
+};
+
+// --- Section 16: Radar ---
+static const HudWidgetProp kSecRadar[] = {
+    P_BOOL("Enable", "Metroid.Visual.BtmOverlayEnable"),
+    P_ANC("Anchor", "Metroid.Visual.BtmOverlayAnchor"),
+    P_INT("Dst X", "Metroid.Visual.BtmOverlayDstX", -256, 256, 1),
+    P_INT("Dst Y", "Metroid.Visual.BtmOverlayDstY", -256, 256, 1),
+    P_INT("Dst Size", "Metroid.Visual.BtmOverlayDstSize", 16, 128, 1),
+    P_INT("Src Radius", "Metroid.Visual.BtmOverlaySrcRadius", 10, 96, 1),
+    P_FLOAT("Opacity", "Metroid.Visual.BtmOverlayOpacity"),
+};
+
+#define _P(arr) arr, static_cast<int>(sizeof(arr)/sizeof(arr[0]))
+#define SUB(title, key, arr)               { title, key, _P(arr), nullptr, 0 }
+#define SUB_NEST(title, key, ch)           { title, key, nullptr, 0, ch, static_cast<int>(sizeof(ch)/sizeof(ch[0])) }
+
+// ── CROSSHAIR sub-sections ──
+static const HudSubSec kSubsCrosshair[] = {
+    SUB("Inner Lines",  "Metroid.UI.SectionHudCrosshairInner",  kSecCrosshairInner),
+    SUB("Outer Lines",  "Metroid.UI.SectionHudCrosshairOuter",  kSecCrosshairOuter),
+};
+
+// ── HP / AMMO sub-sections ──
+static const HudSubSec kSubsHpAmmo[] = {
+    SUB("HP Number Position",     "Metroid.UI.SectionHudHp",         kSecHp),
+    SUB("Ammo Number Position",   "Metroid.UI.SectionHudWeaponAmmo", kSecWeaponAmmo),
+    SUB("Weapon Icon",            "Metroid.UI.SectionHudWpnIcon",    kSecWpnIcon),
+    SUB("HP Gauge",               "Metroid.UI.SectionHudHpGauge",    kSecHpGauge),
+    SUB("Ammo Gauge",             "Metroid.UI.SectionHudAmmoGauge",  kSecAmmoGauge),
+};
+
+// ── Rank/Time sub-sub-sections ──
+static const HudSubSec kSubsRankTime[] = {
+    SUB("Rank",       "Metroid.UI.SectionHudRank",      kSecRank),
+    SUB("Time Left",  "Metroid.UI.SectionHudTimeLeft",  kSecTimeLeft),
+    SUB("Time Limit", "Metroid.UI.SectionHudTimeLimit", kSecTimeLimit),
+};
+
+// ── MATCH STATUS HUD sub-sections ──
+static const HudSubSec kSubsMatchStatus[] = {
+    SUB("Score",                   "Metroid.UI.SectionHudMatchStatus", kSecMatchStatus),
+    SUB_NEST("Rank / Time",      "Metroid.UI.SectionHudRankTime",   kSubsRankTime),
+    SUB("Bomb Left",               "Metroid.UI.SectionHudBombLeft",   kSecBombLeft),
+    SUB("Bomb Icon",               "Metroid.UI.SectionHudBombIcon",   kSecBombIcon),
+};
+
+// ── Main section groups ──
+static const HudMainSec kHudMainSections[] = {
+    { "TEXT SCALE",        "Metroid.UI.SectionHudTextScale",
+      _P(kSecTextScale), nullptr, 0, /*preview*/ 0 },
+    { "CROSSHAIR",         "Metroid.UI.SectionHudCrosshair",
+      _P(kSecCrosshair), kSubsCrosshair, static_cast<int>(sizeof(kSubsCrosshair)/sizeof(kSubsCrosshair[0])), /*preview*/ 1 },
+    { "HP / AMMO",         "Metroid.UI.SectionHudHpAmmo",
+      nullptr, 0, kSubsHpAmmo, static_cast<int>(sizeof(kSubsHpAmmo)/sizeof(kSubsHpAmmo[0])), /*preview*/ 2 },
+    { "MATCH STATUS HUD",  "Metroid.UI.SectionHudMatchStatusGrp",
+      nullptr, 0, kSubsMatchStatus, static_cast<int>(sizeof(kSubsMatchStatus)/sizeof(kSubsMatchStatus[0])), /*preview*/ 3 },
+    { "HUD RADAR",         "Metroid.UI.SectionHudRadar",
+      _P(kSecRadar), nullptr, 0, /*preview*/ 4 },
+};
+static constexpr int kHudMainSectionCount = static_cast<int>(sizeof(kHudMainSections) / sizeof(kHudMainSections[0]));
+
+static const char* kAnchorLabels[] = {
+    "Top Left", "Top Center", "Top Right",
+    "Middle Left", "Middle Center", "Middle Right",
+    "Bottom Left", "Bottom Center", "Bottom Right",
+};
+
+static const char* kAlignLabels[] = { "Left", "Center", "Right" };
+
+// Helper: make objectName from config key (dots → underscores)
+static QString cfgKeyToObjName(const char* key)
+{
+    QString s = QString::fromUtf8(key);
+    s.replace('.', '_');
+    return s;
+}
+
+// ── Preview Widgets ─────────────────────────────────────────────────────────
+
+class HudPreviewWidget : public QWidget
+{
+public:
+    // DS top screen 256×192 at ×0.75 → 192×144 (equal X/Y scale, keeps circles round)
+    static constexpr int kPrevW = 192;
+    static constexpr int kPrevH = 144;
+
+    explicit HudPreviewWidget(EmuInstance* emu, QWidget* parent = nullptr)
+        : QWidget(parent), m_emu(emu)
+    {
+        setFixedSize(kPrevW, kPrevH);
+    }
+    void refreshPreview() { update(); }
+protected:
+    EmuInstance* m_emu;
+    Config::Table& cfg() { return m_emu->getLocalConfig(); }
+
+    QColor readColor(const char* kR, const char* kG, const char* kB, float opacity = 1.0f) {
+        auto& c = cfg();
+        return QColor(c.GetInt(kR), c.GetInt(kG), c.GetInt(kB), qBound(0, static_cast<int>(opacity * 255), 255));
+    }
+
+    void drawBackground(QPainter& p, const QRect& r) {
+        p.fillRect(r, QColor(20, 20, 30));
+        p.setPen(QColor(60, 60, 80));
+        p.drawRect(r.adjusted(0, 0, -1, -1));
+    }
+
+    // 9-point anchor + offset → DS-space QPoint (0-255, 0-191)
+    static QPoint dsPos(int anchor, int ofsX, int ofsY) {
+        return QPoint((anchor % 3) * 128 + ofsX, (anchor / 3) * 96 + ofsY);
+    }
+
+    // Apply DS-space transform (call after drawBackground, before DS-space drawing)
+    void setupDsTransform(QPainter& p) const {
+        p.scale(width() / 256.0f, height() / 192.0f);
+    }
+
+    // Text width in DS-space units (accounts for scale transform)
+    int textWidthDS(QPainter& p, const QString& str) const {
+        return static_cast<int>(p.fontMetrics().horizontalAdvance(str) * 256.0f / width());
+    }
+
+    // Alignment-adjusted X in DS-space: 0=left, 1=center, 2=right
+    int alignedX(int anchorX, int align, int textW) const {
+        if (align == 1) return anchorX - textW / 2;
+        if (align == 2) return anchorX - textW;
+        return anchorX;
+    }
+
+    // Draw a gauge bar in DS-space at 50% fill
+    static void drawGaugeDS(QPainter& p, int x, int y, const QColor& color, int orient, int len, int wid) {
+        if (len <= 0) len = 28;
+        if (wid <= 0) wid = 3;
+        int fw = (orient == 0) ? len / 2 : wid;
+        int fh = (orient == 0) ? wid    : len / 2;
+        int fx = x;
+        int fy = (orient == 0) ? y : y + len - fh;
+        p.fillRect(QRect(x, y, orient == 0 ? len : wid, orient == 0 ? wid : len), QColor(0,0,0,100));
+        p.fillRect(QRect(fx, fy, fw, fh), color);
+    }
+};
+
+class CrosshairPreviewWidget : public HudPreviewWidget
+{
+public:
+    using HudPreviewWidget::HudPreviewWidget;
+protected:
+    void paintEvent(QPaintEvent*) override {
+        QPainter p(this);
+        p.setRenderHint(QPainter::Antialiasing);
+        QRect r = rect();
+        drawBackground(p, r);
+
+        auto& c = cfg();
+        QColor col = readColor("Metroid.Visual.CrosshairColorR", "Metroid.Visual.CrosshairColorG", "Metroid.Visual.CrosshairColorB");
+
+        int cx = r.center().x();
+        int cy = r.center().y();
+        float scale = 2.0f;
+
+        auto drawArms = [&](const char* showKey, const char* opacityKey, const char* lxKey, const char* lyKey,
+                            const char* thickKey, const char* ofsKey) {
+            if (!c.GetBool(showKey)) return;
+            float opacity = c.GetDouble(opacityKey);
+            int lx = c.GetInt(lxKey);
+            int ly = c.GetInt(lyKey);
+            int thick = c.GetInt(thickKey);
+            int ofs = c.GetInt(ofsKey);
+            QColor ac = col;
+            ac.setAlphaF(opacity);
+            int t = qMax(1, static_cast<int>(thick * scale));
+            int ht = t / 2;
+            bool tStyle = c.GetBool("Metroid.Visual.CrosshairTStyle");
+            p.fillRect(QRect(cx + static_cast<int>(ofs * scale), cy - ht, static_cast<int>(lx * scale), t), ac);
+            p.fillRect(QRect(cx - static_cast<int>(ofs * scale) - static_cast<int>(lx * scale), cy - ht, static_cast<int>(lx * scale), t), ac);
+            p.fillRect(QRect(cx - ht, cy + static_cast<int>(ofs * scale), t, static_cast<int>(ly * scale)), ac);
+            if (!tStyle)
+                p.fillRect(QRect(cx - ht, cy - static_cast<int>(ofs * scale) - static_cast<int>(ly * scale), t, static_cast<int>(ly * scale)), ac);
+        };
+
+        drawArms("Metroid.Visual.CrosshairInnerShow", "Metroid.Visual.CrosshairInnerOpacity",
+                 "Metroid.Visual.CrosshairInnerLengthX", "Metroid.Visual.CrosshairInnerLengthY",
+                 "Metroid.Visual.CrosshairInnerThickness", "Metroid.Visual.CrosshairInnerOffset");
+        drawArms("Metroid.Visual.CrosshairOuterShow", "Metroid.Visual.CrosshairOuterOpacity",
+                 "Metroid.Visual.CrosshairOuterLengthX", "Metroid.Visual.CrosshairOuterLengthY",
+                 "Metroid.Visual.CrosshairOuterThickness", "Metroid.Visual.CrosshairOuterOffset");
+
+        if (c.GetBool("Metroid.Visual.CrosshairCenterDot")) {
+            float dotOp = c.GetDouble("Metroid.Visual.CrosshairDotOpacity");
+            int dotThick = c.GetInt("Metroid.Visual.CrosshairDotThickness");
+            QColor dc = col; dc.setAlphaF(dotOp);
+            int ds = qMax(1, static_cast<int>(dotThick * scale));
+            p.fillRect(QRect(cx - ds/2, cy - ds/2, ds, ds), dc);
+        }
+    }
+};
+
+class HpAmmoPreviewWidget : public HudPreviewWidget
+{
+public:
+    using HudPreviewWidget::HudPreviewWidget;
+protected:
+    void paintEvent(QPaintEvent*) override {
+        QPainter p(this);
+        QRect r = rect();
+        drawBackground(p, r);
+
+        auto& c = cfg();
+        setupDsTransform(p);
+        p.setFont(getMphHudFont(c.GetInt("Metroid.Visual.HudTextScale")));
+
+        // ── HP text ──
+        {
+            float op = c.GetDouble("Metroid.Visual.HudHpOpacity");
+            QColor col = readColor("Metroid.Visual.HudHpTextColorR", "Metroid.Visual.HudHpTextColorG", "Metroid.Visual.HudHpTextColorB", op);
+            QPoint pos = dsPos(c.GetInt("Metroid.Visual.HudHpAnchor"), c.GetInt("Metroid.Visual.HudHpX"), c.GetInt("Metroid.Visual.HudHpY"));
+            QString str = QString::fromStdString(c.GetString("Metroid.Visual.HudHpPrefix")) + "100";
+            int tw = textWidthDS(p, str);
+            int tx = alignedX(pos.x(), c.GetInt("Metroid.Visual.HudHpAlign"), tw);
+            p.setPen(col);
+            p.drawText(QPoint(tx, pos.y()), str);
+
+            // HP gauge
+            if (c.GetBool("Metroid.Visual.HudHpGauge")) {
+                float gop = c.GetDouble("Metroid.Visual.HudHpGaugeOpacity");
+                QColor gc = readColor("Metroid.Visual.HudHpGaugeColorR", "Metroid.Visual.HudHpGaugeColorG", "Metroid.Visual.HudHpGaugeColorB", gop);
+                int ori = c.GetInt("Metroid.Visual.HudHpGaugeOrientation");
+                int len = c.GetInt("Metroid.Visual.HudHpGaugeLength");
+                int wid = c.GetInt("Metroid.Visual.HudHpGaugeWidth");
+                int gx, gy;
+                if (c.GetInt("Metroid.Visual.HudHpGaugePosMode") == 1) {
+                    QPoint gp = dsPos(c.GetInt("Metroid.Visual.HudHpGaugePosAnchor"), c.GetInt("Metroid.Visual.HudHpGaugePosX"), c.GetInt("Metroid.Visual.HudHpGaugePosY"));
+                    gx = gp.x(); gy = gp.y();
+                } else {
+                    gx = tx + c.GetInt("Metroid.Visual.HudHpGaugeOffsetX");
+                    gy = pos.y() + c.GetInt("Metroid.Visual.HudHpGaugeOffsetY") + 2;
+                }
+                drawGaugeDS(p, gx, gy, gc, ori, len, wid);
+            }
         }
 
-        if (lineEdit) {
-            lineEdit->blockSignals(true);
-            lineEdit->setText(QString("#%1%2%3")
-                .arg(chosen.red(), 2, 16, QChar('0'))
-                .arg(chosen.green(), 2, 16, QChar('0'))
-                .arg(chosen.blue(), 2, 16, QChar('0')).toUpper());
-            lineEdit->blockSignals(false);
+        // ── Weapon icon ──
+        if (c.GetInt("Metroid.Visual.HudWeaponIconMode") != 0) {
+            static QImage s_magmaul;
+            static int s_magmaulH = 0;
+            int wantH = c.GetInt("Metroid.Visual.HudWeaponIconHeight");
+            if (s_magmaul.isNull() || s_magmaulH != wantH) {
+                QImageReader rd(QStringLiteral(":/mph-icon-magmaul"));
+                QSize sz = rd.size(); if (sz.isEmpty()) sz = QSize(wantH, wantH);
+                rd.setScaledSize(QSize(qMax(1, sz.width()*wantH/qMax(1,sz.height())), wantH));
+                s_magmaul = rd.read(); s_magmaulH = wantH;
+            }
+            if (!s_magmaul.isNull()) {
+                QPoint ip = dsPos(c.GetInt("Metroid.Visual.HudWeaponIconPosAnchor"),
+                                  c.GetInt("Metroid.Visual.HudWeaponIconPosX"),
+                                  c.GetInt("Metroid.Visual.HudWeaponIconPosY"));
+                int ancX = c.GetInt("Metroid.Visual.HudWeaponIconAnchorX");
+                int ancY = c.GetInt("Metroid.Visual.HudWeaponIconAnchorY");
+                int iw = s_magmaul.width(), ih = s_magmaul.height();
+                int ix = ip.x() - (ancX == 1 ? iw/2 : ancX == 2 ? iw : 0);
+                int iy = ip.y() - (ancY == 1 ? ih/2 : ancY == 2 ? ih : 0);
+                p.drawImage(QRectF(ix, iy, iw, ih), s_magmaul);
+            }
         }
 
-        if (combo && customIndex >= 0) {
-            const int nextIndex = overallIndex >= 0 ? overallIndex : customIndex;
-            combo->blockSignals(true);
-            combo->setCurrentIndex(nextIndex);
-            combo->blockSignals(false);
+        // ── Ammo text ──
+        {
+            float op = c.GetDouble("Metroid.Visual.HudWeaponOpacity");
+            QColor col = readColor("Metroid.Visual.HudAmmoTextColorR", "Metroid.Visual.HudAmmoTextColorG", "Metroid.Visual.HudAmmoTextColorB", op);
+            QPoint pos = dsPos(c.GetInt("Metroid.Visual.HudWeaponAnchor"), c.GetInt("Metroid.Visual.HudWeaponX"), c.GetInt("Metroid.Visual.HudWeaponY"));
+            QString str = QString::fromStdString(c.GetString("Metroid.Visual.HudAmmoPrefix")) + "50";
+            int tw = textWidthDS(p, str);
+            int tx = alignedX(pos.x(), c.GetInt("Metroid.Visual.HudAmmoAlign"), tw);
+            p.setPen(col);
+            p.drawText(QPoint(tx, pos.y()), str);
 
-            const bool enableColorEditors = nextIndex != 0;
-            if (lineEdit) lineEdit->setEnabled(enableColorEditors);
-            if (spinR) spinR->setEnabled(enableColorEditors);
-            if (spinG) spinG->setEnabled(enableColorEditors);
-            if (spinB) spinB->setEnabled(enableColorEditors);
+            // Ammo gauge
+            if (c.GetBool("Metroid.Visual.HudAmmoGauge")) {
+                float gop = c.GetDouble("Metroid.Visual.HudAmmoGaugeOpacity");
+                QColor gc = readColor("Metroid.Visual.HudAmmoGaugeColorR", "Metroid.Visual.HudAmmoGaugeColorG", "Metroid.Visual.HudAmmoGaugeColorB", gop);
+                int ori = c.GetInt("Metroid.Visual.HudAmmoGaugeOrientation");
+                int len = c.GetInt("Metroid.Visual.HudAmmoGaugeLength");
+                int wid = c.GetInt("Metroid.Visual.HudAmmoGaugeWidth");
+                int gx, gy;
+                if (c.GetInt("Metroid.Visual.HudAmmoGaugePosMode") == 1) {
+                    QPoint gp = dsPos(c.GetInt("Metroid.Visual.HudAmmoGaugePosAnchor"), c.GetInt("Metroid.Visual.HudAmmoGaugePosX"), c.GetInt("Metroid.Visual.HudAmmoGaugePosY"));
+                    gx = gp.x(); gy = gp.y();
+                } else {
+                    gx = tx + c.GetInt("Metroid.Visual.HudAmmoGaugeOffsetX");
+                    gy = pos.y() + c.GetInt("Metroid.Visual.HudAmmoGaugeOffsetY") + 2;
+                }
+                drawGaugeDS(p, gx, gy, gc, ori, len, wid);
+            }
+        }
+    }
+};
+
+class MatchStatusPreviewWidget : public HudPreviewWidget
+{
+public:
+    using HudPreviewWidget::HudPreviewWidget;
+protected:
+    void paintEvent(QPaintEvent*) override {
+        QPainter p(this);
+        QRect r = rect();
+        drawBackground(p, r);
+
+        auto& c = cfg();
+        setupDsTransform(p);
+        p.setFont(getMphHudFont(c.GetInt("Metroid.Visual.HudTextScale")));
+
+        // ── Score ──
+        if (c.GetBool("Metroid.Visual.HudMatchStatusShow")) {
+            float op = c.GetDouble("Metroid.Visual.HudMatchStatusOpacity");
+            QColor col = readColor("Metroid.Visual.HudMatchStatusColorR", "Metroid.Visual.HudMatchStatusColorG", "Metroid.Visual.HudMatchStatusColorB", op);
+            QPoint pos = dsPos(c.GetInt("Metroid.Visual.HudMatchStatusAnchor"), c.GetInt("Metroid.Visual.HudMatchStatusX"), c.GetInt("Metroid.Visual.HudMatchStatusY"));
+            p.setPen(col);
+            p.drawText(pos, "3 / 7");
         }
 
-        btn->setStyleSheet(QString("background-color: %1;").arg(chosen.name()));
-        // Defer applyVisualPreview to the next event loop iteration so the dialog's
-        // event loop has fully unwound before drawScreen() is called.
-        QTimer::singleShot(0, this, [this]{ applyVisualPreview(); });
-    });
+        // ── Rank ──
+        if (c.GetBool("Metroid.Visual.HudRankShow")) {
+            float op = c.GetDouble("Metroid.Visual.HudRankOpacity");
+            QColor col = readColor("Metroid.Visual.HudRankColorR", "Metroid.Visual.HudRankColorG", "Metroid.Visual.HudRankColorB", op);
+            QPoint pos = dsPos(c.GetInt("Metroid.Visual.HudRankAnchor"), c.GetInt("Metroid.Visual.HudRankX"), c.GetInt("Metroid.Visual.HudRankY"));
+            QString prefix = QString::fromStdString(c.GetString("Metroid.Visual.HudRankPrefix"));
+            QString suffix = QString::fromStdString(c.GetString("Metroid.Visual.HudRankSuffix"));
+            QString str = prefix + "1st" + suffix;
+            int tx = alignedX(pos.x(), c.GetInt("Metroid.Visual.HudRankAlign"), textWidthDS(p, str));
+            p.setPen(col);
+            p.drawText(QPoint(tx, pos.y()), str);
+        }
+
+        // ── Time Left ──
+        if (c.GetBool("Metroid.Visual.HudTimeLeftShow")) {
+            float op = c.GetDouble("Metroid.Visual.HudTimeLeftOpacity");
+            QColor col = readColor("Metroid.Visual.HudTimeLeftColorR", "Metroid.Visual.HudTimeLeftColorG", "Metroid.Visual.HudTimeLeftColorB", op);
+            QPoint pos = dsPos(c.GetInt("Metroid.Visual.HudTimeLeftAnchor"), c.GetInt("Metroid.Visual.HudTimeLeftX"), c.GetInt("Metroid.Visual.HudTimeLeftY"));
+            QString str = QStringLiteral("4:32");
+            int tx = alignedX(pos.x(), c.GetInt("Metroid.Visual.HudTimeLeftAlign"), textWidthDS(p, str));
+            p.setPen(col);
+            p.drawText(QPoint(tx, pos.y()), str);
+        }
+
+        // ── Bomb Left ── (text + icon)
+        if (c.GetBool("Metroid.Visual.HudBombLeftShow")) {
+            float op = c.GetDouble("Metroid.Visual.HudBombLeftOpacity");
+            QColor col = readColor("Metroid.Visual.HudBombLeftColorR", "Metroid.Visual.HudBombLeftColorG", "Metroid.Visual.HudBombLeftColorB", op);
+            QPoint pos = dsPos(c.GetInt("Metroid.Visual.HudBombLeftAnchor"), c.GetInt("Metroid.Visual.HudBombLeftX"), c.GetInt("Metroid.Visual.HudBombLeftY"));
+            QString prefix = QString::fromStdString(c.GetString("Metroid.Visual.HudBombLeftPrefix"));
+            QString suffix = QString::fromStdString(c.GetString("Metroid.Visual.HudBombLeftSuffix"));
+            QString str = c.GetBool("Metroid.Visual.HudBombLeftTextShow") ? prefix + "3" + suffix : prefix + suffix;
+            if (!str.isEmpty()) {
+                int tx = alignedX(pos.x(), c.GetInt("Metroid.Visual.HudBombLeftAlign"), textWidthDS(p, str));
+                p.setPen(col);
+                p.drawText(QPoint(tx, pos.y()), str);
+            }
+
+            // Bomb icon
+            if (c.GetBool("Metroid.Visual.HudBombLeftIconShow")) {
+                static QImage s_bombIcon;
+                static int s_bombIconH = 0;
+                int wantBH = c.GetInt("Metroid.Visual.HudBombIconHeight");
+                if (s_bombIcon.isNull() || s_bombIconH != wantBH) {
+                    QImageReader rd(QStringLiteral(":/mph-icon-bombs3"));
+                    QSize sz = rd.size(); if (sz.isEmpty()) sz = QSize(wantBH, wantBH);
+                    rd.setScaledSize(QSize(qMax(1, sz.width()*wantBH/qMax(1,sz.height())), wantBH));
+                    s_bombIcon = rd.read(); s_bombIconH = wantBH;
+                }
+                if (!s_bombIcon.isNull()) {
+                    QPoint ip;
+                    if (c.GetInt("Metroid.Visual.HudBombLeftIconMode") == 0) {
+                        // relative to text anchor
+                        ip = QPoint(pos.x() + c.GetInt("Metroid.Visual.HudBombLeftIconOfsX"),
+                                    pos.y() + c.GetInt("Metroid.Visual.HudBombLeftIconOfsY"));
+                    } else {
+                        ip = dsPos(c.GetInt("Metroid.Visual.HudBombLeftIconPosAnchor"),
+                                   c.GetInt("Metroid.Visual.HudBombLeftIconPosX"),
+                                   c.GetInt("Metroid.Visual.HudBombLeftIconPosY"));
+                    }
+                    int ancX = c.GetInt("Metroid.Visual.HudBombLeftIconAnchorX");
+                    int ancY = c.GetInt("Metroid.Visual.HudBombLeftIconAnchorY");
+                    int iw = s_bombIcon.width(), ih = s_bombIcon.height();
+                    int ix = ip.x() - (ancX == 1 ? iw/2 : ancX == 2 ? iw : 0);
+                    int iy = ip.y() - (ancY == 1 ? ih/2 : ancY == 2 ? ih : 0);
+                    p.setOpacity(op);
+                    p.drawImage(QRectF(ix, iy, iw, ih), s_bombIcon);
+                    p.setOpacity(1.0);
+                }
+            }
+        }
+    }
+};
+
+class RadarPreviewWidget : public HudPreviewWidget
+{
+public:
+    using HudPreviewWidget::HudPreviewWidget;
+protected:
+    void paintEvent(QPaintEvent*) override {
+        QPainter p(this);
+        p.setRenderHint(QPainter::Antialiasing);
+        QRect r = rect();
+        drawBackground(p, r);
+
+        auto& c = cfg();
+        if (!c.GetBool("Metroid.Visual.BtmOverlayEnable")) return;
+
+        setupDsTransform(p);
+
+        float op  = c.GetDouble("Metroid.Visual.BtmOverlayOpacity");
+        int   sz  = c.GetInt("Metroid.Visual.BtmOverlayDstSize");
+        QPoint pos = dsPos(c.GetInt("Metroid.Visual.BtmOverlayAnchor"),
+                           c.GetInt("Metroid.Visual.BtmOverlayDstX"),
+                           c.GetInt("Metroid.Visual.BtmOverlayDstY"));
+        // Rect top-left = pos, circle centered in rect
+        int cx = pos.x() + sz / 2;
+        int cy = pos.y() + sz / 2;
+        int r2 = sz / 2;
+
+        QColor fill(40, 80, 40, static_cast<int>(op * 180));
+        QColor border(80, 160, 80, static_cast<int>(op * 255));
+
+        p.setPen(QPen(border, 2));
+        p.setBrush(fill);
+        p.drawEllipse(QPoint(cx, cy), r2, r2);
+
+        p.setPen(QPen(border, 1));
+        p.drawLine(cx - 4, cy, cx + 4, cy);
+        p.drawLine(cx, cy - 4, cx, cy + 4);
+    }
+};
+
+} // anonymous namespace
+
+
+void MelonPrimeInputConfig::invalidateHudAndRefreshPreviews()
+{
+#ifdef MELONPRIME_CUSTOM_HUD
+    MelonPrime::CustomHud_InvalidateConfigCache();
+#endif
+    for (auto* pw : m_hudPreviews) pw->update();
 }
 
-void MelonPrimeInputConfig::syncCrosshairColorFromRgbEditors()
+void MelonPrimeInputConfig::setupCustomHudWidgets(Config::Table& instcfg)
 {
-    syncColorFromRgbEditors(
-        ui->comboMetroidCrosshairColor,
-        ui->leMetroidCrosshairColorCode,
-        ui->spinMetroidCrosshairR,
-        ui->spinMetroidCrosshairG,
-        ui->spinMetroidCrosshairB,
-        kHudColorCustomIndex);
+    QVBoxLayout* vlay = ui->crosshairVLayout;
+    const int spacerIdx = vlay->count() - 1;
+    int insertPos = spacerIdx;
+
+    // ── Widget factory: creates one widget for a HudWidgetProp and adds it to a QFormLayout ──
+    auto createPropWidget = [&](QWidget* parent, QFormLayout* form, const HudWidgetProp& p) {
+        QString objName = cfgKeyToObjName(p.cfgKey);
+
+        switch (p.type) {
+        case HWType::Bool: {
+            auto* cb = new QCheckBox(parent);
+            cb->setObjectName(objName);
+            cb->setChecked(instcfg.GetBool(p.cfgKey));
+            form->addRow(QString::fromUtf8(p.label), cb);
+            m_hudWidgets[p.cfgKey] = cb;
+            connect(cb, &QCheckBox::toggled, this, [this, key = std::string(p.cfgKey)](bool val) {
+                if (!m_applyPreviewEnabled) return;
+                emuInstance->getLocalConfig().SetBool(key, val);
+                invalidateHudAndRefreshPreviews();
+            });
+            break;
+        }
+        case HWType::Int: {
+            auto* rowW = new QWidget(parent);
+            auto* hlay = new QHBoxLayout(rowW);
+            hlay->setContentsMargins(0, 0, 0, 0);
+            hlay->setSpacing(4);
+
+            auto* slider = new QSlider(Qt::Horizontal, rowW);
+            slider->setRange(p.min, p.max);
+            slider->setSingleStep(p.step);
+            slider->setPageStep(p.step * 5);
+            slider->setValue(instcfg.GetInt(p.cfgKey));
+
+            auto* sb = new QSpinBox(rowW);
+            sb->setObjectName(objName);
+            sb->setRange(p.min, p.max);
+            sb->setSingleStep(p.step);
+            sb->setValue(instcfg.GetInt(p.cfgKey));
+            sb->setFixedWidth(58);
+
+            hlay->addWidget(slider, 1);
+            hlay->addWidget(sb);
+
+            // keep slider and spinbox in sync
+            connect(slider, &QSlider::valueChanged, sb, &QSpinBox::setValue);
+            connect(sb, QOverload<int>::of(&QSpinBox::valueChanged), slider, &QSlider::setValue);
+
+            form->addRow(QString::fromUtf8(p.label), rowW);
+            m_hudWidgets[p.cfgKey] = sb;
+            connect(sb, QOverload<int>::of(&QSpinBox::valueChanged), this, [this, key = std::string(p.cfgKey)](int val) {
+                if (!m_applyPreviewEnabled) return;
+                emuInstance->getLocalConfig().SetInt(key, val);
+                invalidateHudAndRefreshPreviews();
+            });
+            break;
+        }
+        case HWType::Float: {
+            auto* dsb = new QDoubleSpinBox(parent);
+            dsb->setObjectName(objName);
+            dsb->setRange(0.0, 1.0);
+            dsb->setSingleStep(0.05);
+            dsb->setDecimals(2);
+            dsb->setValue(instcfg.GetDouble(p.cfgKey));
+            form->addRow(QString::fromUtf8(p.label), dsb);
+            m_hudWidgets[p.cfgKey] = dsb;
+            connect(dsb, QOverload<double>::of(&QDoubleSpinBox::valueChanged), this, [this, key = std::string(p.cfgKey)](double val) {
+                if (!m_applyPreviewEnabled) return;
+                emuInstance->getLocalConfig().SetDouble(key, val);
+                invalidateHudAndRefreshPreviews();
+            });
+            break;
+        }
+        case HWType::String: {
+            auto* le = new QLineEdit(parent);
+            le->setObjectName(objName);
+            le->setText(QString::fromStdString(instcfg.GetString(p.cfgKey)));
+            form->addRow(QString::fromUtf8(p.label), le);
+            m_hudWidgets[p.cfgKey] = le;
+            connect(le, &QLineEdit::textChanged, this, [this, key = std::string(p.cfgKey)](const QString& val) {
+                if (!m_applyPreviewEnabled) return;
+                emuInstance->getLocalConfig().SetString(key, val.toStdString());
+                invalidateHudAndRefreshPreviews();
+            });
+            break;
+        }
+        case HWType::Anchor9: {
+            auto* combo = new QComboBox(parent);
+            combo->setObjectName(objName);
+            for (int a = 0; a < 9; ++a)
+                combo->addItem(QString::fromUtf8(kAnchorLabels[a]));
+            combo->setCurrentIndex(instcfg.GetInt(p.cfgKey));
+            form->addRow(QString::fromUtf8(p.label), combo);
+            m_hudWidgets[p.cfgKey] = combo;
+            connect(combo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this, key = std::string(p.cfgKey)](int val) {
+                if (!m_applyPreviewEnabled) return;
+                emuInstance->getLocalConfig().SetInt(key, val);
+                invalidateHudAndRefreshPreviews();
+            });
+            break;
+        }
+        case HWType::Align3: {
+            auto* combo = new QComboBox(parent);
+            combo->setObjectName(objName);
+            for (int a = 0; a < 3; ++a)
+                combo->addItem(QString::fromUtf8(kAlignLabels[a]));
+            combo->setCurrentIndex(instcfg.GetInt(p.cfgKey));
+            form->addRow(QString::fromUtf8(p.label), combo);
+            m_hudWidgets[p.cfgKey] = combo;
+            connect(combo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this, key = std::string(p.cfgKey)](int val) {
+                if (!m_applyPreviewEnabled) return;
+                emuInstance->getLocalConfig().SetInt(key, val);
+                invalidateHudAndRefreshPreviews();
+            });
+            break;
+        }
+        case HWType::HorizVert: {
+            auto* combo = new QComboBox(parent);
+            combo->setObjectName(objName);
+            combo->addItem(QStringLiteral("Horizontal"));
+            combo->addItem(QStringLiteral("Vertical"));
+            combo->setCurrentIndex(instcfg.GetInt(p.cfgKey));
+            form->addRow(QString::fromUtf8(p.label), combo);
+            m_hudWidgets[p.cfgKey] = combo;
+            connect(combo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this, key = std::string(p.cfgKey)](int val) {
+                if (!m_applyPreviewEnabled) return;
+                emuInstance->getLocalConfig().SetInt(key, val);
+                invalidateHudAndRefreshPreviews();
+            });
+            break;
+        }
+        case HWType::Color3: {
+            // Outer container (vertical: preset combo on top, RGB spinboxes below)
+            auto* colWidget = new QWidget(parent);
+            auto* vlay = new QVBoxLayout(colWidget);
+            vlay->setContentsMargins(0, 0, 0, 0);
+            vlay->setSpacing(2);
+
+            // ── Preset combo ──
+            auto* presetCombo = new QComboBox(colWidget);
+            static const int kPaletteCount = ArrayCount(kHudColorPalette);
+            // Build pixmap icon for each preset colour
+            for (int pi = 0; pi < kPaletteCount; ++pi) {
+                const PresetColor& pc = kHudColorPalette[pi];
+                QPixmap pm(14, 14);
+                pm.fill(QColor(pc.r, pc.g, pc.b));
+                presetCombo->addItem(QIcon(pm), QString::fromUtf8(kHudColorPaletteNames[pi]));
+            }
+            presetCombo->addItem(QStringLiteral("Custom"));   // index == kPaletteCount
+
+            // ── RGB spinboxes row ──
+            auto* rgbRow = new QWidget(colWidget);
+            auto* hlay = new QHBoxLayout(rgbRow);
+            hlay->setContentsMargins(0, 0, 0, 0);
+            hlay->setSpacing(4);
+
+            auto* sbR = new QSpinBox(rgbRow); sbR->setRange(0, 255); sbR->setPrefix(QStringLiteral("R:")); sbR->setObjectName(cfgKeyToObjName(p.cfgKey));
+            auto* sbG = new QSpinBox(rgbRow); sbG->setRange(0, 255); sbG->setPrefix(QStringLiteral("G:")); sbG->setObjectName(cfgKeyToObjName(p.cfgKeyG));
+            auto* sbB = new QSpinBox(rgbRow); sbB->setRange(0, 255); sbB->setPrefix(QStringLiteral("B:")); sbB->setObjectName(cfgKeyToObjName(p.cfgKeyB));
+
+            sbR->setValue(instcfg.GetInt(p.cfgKey));
+            sbG->setValue(instcfg.GetInt(p.cfgKeyG));
+            sbB->setValue(instcfg.GetInt(p.cfgKeyB));
+
+            auto* swatch = new QPushButton(rgbRow);
+            swatch->setFixedSize(24, 24);
+            auto updateSwatch = [sbR, sbG, sbB, swatch, presetCombo]() {
+                swatch->setStyleSheet(QString("background-color: rgb(%1,%2,%3); border: 1px solid #888;")
+                    .arg(sbR->value()).arg(sbG->value()).arg(sbB->value()));
+                // Sync preset combo
+                int match = kPaletteCount; // default: Custom
+                for (int pi = 0; pi < kPaletteCount; ++pi) {
+                    const PresetColor& pc = kHudColorPalette[pi];
+                    if (sbR->value() == pc.r && sbG->value() == pc.g && sbB->value() == pc.b) {
+                        match = pi; break;
+                    }
+                }
+                const bool old = presetCombo->blockSignals(true);
+                presetCombo->setCurrentIndex(match);
+                presetCombo->blockSignals(old);
+            };
+            updateSwatch();
+
+            hlay->addWidget(sbR); hlay->addWidget(sbG); hlay->addWidget(sbB); hlay->addWidget(swatch);
+
+            vlay->addWidget(presetCombo);
+            vlay->addWidget(rgbRow);
+            form->addRow(QString::fromUtf8(p.label), colWidget);
+
+            m_hudWidgets[p.cfgKey]  = sbR;
+            m_hudWidgets[p.cfgKeyG] = sbG;
+            m_hudWidgets[p.cfgKeyB] = sbB;
+
+            // Preset combo → update spinboxes
+            connect(presetCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), this,
+                [sbR, sbG, sbB, updateSwatch](int idx) {
+                    if (idx < 0 || idx >= kPaletteCount) return;
+                    const PresetColor& pc = kHudColorPalette[idx];
+                    const bool oldR = sbR->blockSignals(true);
+                    const bool oldG = sbG->blockSignals(true);
+                    const bool oldB = sbB->blockSignals(true);
+                    sbR->setValue(pc.r); sbG->setValue(pc.g); sbB->setValue(pc.b);
+                    sbR->blockSignals(oldR); sbG->blockSignals(oldG); sbB->blockSignals(oldB);
+                    updateSwatch();
+                });
+            // Spinbox → after preset combo sets spinboxes, fire config update via spinbox signal below
+
+            auto connectColorSpin = [this, updateSwatch](QSpinBox* sb, const std::string& key) {
+                connect(sb, QOverload<int>::of(&QSpinBox::valueChanged), this, [this, key, updateSwatch](int val) {
+                    updateSwatch();
+                    if (!m_applyPreviewEnabled) return;
+                    emuInstance->getLocalConfig().SetInt(key, val);
+                    invalidateHudAndRefreshPreviews();
+                });
+            };
+            connectColorSpin(sbR, std::string(p.cfgKey));
+            connectColorSpin(sbG, std::string(p.cfgKeyG));
+            connectColorSpin(sbB, std::string(p.cfgKeyB));
+
+            connect(swatch, &QPushButton::clicked, this, [this, sbR, sbG, sbB, updateSwatch]() {
+                QColor init(sbR->value(), sbG->value(), sbB->value());
+                QColor c = QColorDialog::getColor(init, this, QStringLiteral("Pick Color"));
+                if (c.isValid()) {
+                    sbR->setValue(c.red());
+                    sbG->setValue(c.green());
+                    sbB->setValue(c.blue());
+                    updateSwatch();
+                }
+            });
+            break;
+        }
+        } // switch
+    };
+
+    // ── Helper: populate a QFormLayout from a props array ──
+    auto populateProps = [&](QWidget* parent, QFormLayout* form, const HudWidgetProp* props, int count) {
+        for (int i = 0; i < count; ++i)
+            createPropWidget(parent, form, props[i]);
+    };
+
+    // ── Helper: create a collapsible sub-section toggle + body ──
+    // Returns the section body widget. Adds toggle+body to destLayout.
+    auto makeSubToggle = [&](QVBoxLayout* destLayout, const char* title, const char* cfgKey, int indent) -> QWidget*
+    {
+        auto* btn = new QPushButton(this);
+        btn->setCheckable(true);
+        btn->setFlat(true);
+        btn->setStyleSheet(QStringLiteral(
+            "QPushButton { text-align: left; font-weight: bold; padding: 3px; padding-left: %1px; } "
+            "QPushButton::checked { font-weight: bold; }").arg(indent));
+
+        bool expanded = instcfg.GetBool(cfgKey);
+        btn->setChecked(expanded);
+        QString label = QString::fromUtf8(title);
+        btn->setText((expanded ? QString::fromUtf8("\u25BC ") : QString::fromUtf8("\u25B6 ")) + label);
+
+        connect(btn, &QPushButton::toggled, [btn, label](bool checked) {
+            btn->setText((checked ? QString::fromUtf8("\u25BC ") : QString::fromUtf8("\u25B6 ")) + label);
+        });
+
+        m_hudToggles.push_back({btn, std::string(cfgKey)});
+        destLayout->addWidget(btn);
+
+        auto* body = new QWidget(this);
+        body->setVisible(expanded);
+        connect(btn, &QPushButton::toggled, body, &QWidget::setVisible);
+        destLayout->addWidget(body);
+
+        return body;
+    };
+
+    // ── Build sub-section recursively (handles HudSubSec with optional children) ──
+    std::function<void(QVBoxLayout*, const HudSubSec&, int)> buildSubSection;
+    buildSubSection = [&](QVBoxLayout* destLayout, const HudSubSec& sub, int indent)
+    {
+        QWidget* body = makeSubToggle(destLayout, sub.title, sub.cfgToggleKey, indent);
+        auto* bodyLayout = new QVBoxLayout(body);
+        bodyLayout->setContentsMargins(indent + 8, 2, 2, 2);
+        bodyLayout->setSpacing(2);
+
+        // Direct props
+        if (sub.props && sub.propCount > 0) {
+            auto* form = new QFormLayout();
+            form->setContentsMargins(0, 0, 0, 0);
+            form->setVerticalSpacing(4);
+            populateProps(body, form, sub.props, sub.propCount);
+            bodyLayout->addLayout(form);
+        }
+
+        // Nested children (e.g., Rank/Time Left/Time Limit inside "Rank / Time")
+        for (int ci = 0; ci < sub.childCount; ++ci)
+            buildSubSection(bodyLayout, sub.children[ci], indent + 8);
+    };
+
+    // ── Build main sections ──
+    for (int si = 0; si < kHudMainSectionCount; ++si) {
+        const HudMainSec& sec = kHudMainSections[si];
+
+        // --- Main toggle button (top-level, bold + large) ---
+        auto* mainBtn = new QPushButton(this);
+        mainBtn->setCheckable(true);
+        mainBtn->setFlat(true);
+        mainBtn->setStyleSheet(QStringLiteral(
+            "QPushButton { text-align: left; font-weight: bold; font-size: 11pt; padding: 6px 4px; } "
+            "QPushButton::checked { font-weight: bold; }"));
+
+        bool expanded = instcfg.GetBool(sec.cfgToggleKey);
+        mainBtn->setChecked(expanded);
+        QString label = QString::fromUtf8(sec.title);
+        mainBtn->setText((expanded ? QString::fromUtf8("\u25BC ") : QString::fromUtf8("\u25B6 ")) + label);
+
+        connect(mainBtn, &QPushButton::toggled, [mainBtn, label](bool checked) {
+            mainBtn->setText((checked ? QString::fromUtf8("\u25BC ") : QString::fromUtf8("\u25B6 ")) + label);
+        });
+
+        m_hudToggles.push_back({mainBtn, std::string(sec.cfgToggleKey)});
+        vlay->insertWidget(insertPos++, mainBtn);
+
+        // --- Main section body with HBoxLayout: left = sub-sections, right = preview ---
+        auto* mainBody = new QWidget(this);
+        mainBody->setVisible(expanded);
+        connect(mainBtn, &QPushButton::toggled, mainBody, &QWidget::setVisible);
+
+        auto* hbox = new QHBoxLayout(mainBody);
+        hbox->setContentsMargins(0, 0, 0, 0);
+        hbox->setSpacing(4);
+
+        // Left column: direct properties + sub-sections
+        auto* leftCol = new QWidget(mainBody);
+        auto* bodyLayout = new QVBoxLayout(leftCol);
+        bodyLayout->setContentsMargins(8, 4, 4, 4);
+        bodyLayout->setSpacing(2);
+
+        // Direct properties (e.g., crosshair color/outline at group level)
+        if (sec.directProps && sec.directPropCount > 0) {
+            auto* form = new QFormLayout();
+            form->setContentsMargins(0, 0, 0, 0);
+            form->setVerticalSpacing(4);
+            populateProps(leftCol, form, sec.directProps, sec.directPropCount);
+            bodyLayout->addLayout(form);
+        }
+
+        // Sub-sections
+        for (int si2 = 0; si2 < sec.subCount; ++si2)
+            buildSubSection(bodyLayout, sec.subs[si2], 8);
+
+        bodyLayout->addStretch();
+        hbox->addWidget(leftCol, 1);
+
+        // Right column: preview widget
+        HudPreviewWidget* preview = nullptr;
+        switch (sec.previewKind) {
+        case 1: preview = new CrosshairPreviewWidget(emuInstance, mainBody); break;
+        case 2: preview = new HpAmmoPreviewWidget(emuInstance, mainBody); break;
+        case 3: preview = new MatchStatusPreviewWidget(emuInstance, mainBody); break;
+        case 4: preview = new RadarPreviewWidget(emuInstance, mainBody); break;
+        }
+        if (preview) {
+            hbox->addWidget(preview, 0);
+            m_hudPreviews.push_back(preview);
+        }
+
+        vlay->insertWidget(insertPos++, mainBody);
+    }
 }
 
-void MelonPrimeInputConfig::on_leMetroidCrosshairColorCode_editingFinished()
-{
-    syncColorFromHexEditor(
-        ui->comboMetroidCrosshairColor,
-        ui->leMetroidCrosshairColorCode,
-        ui->spinMetroidCrosshairR,
-        ui->spinMetroidCrosshairG,
-        ui->spinMetroidCrosshairB,
-        kHudColorCustomIndex);
-}
-
-void MelonPrimeInputConfig::on_comboMetroidCrosshairColor_currentIndexChanged(int index)
-{
-    syncColorFromPresetSelection(
-        ui->comboMetroidCrosshairColor,
-        ui->leMetroidCrosshairColorCode,
-        ui->spinMetroidCrosshairR,
-        ui->spinMetroidCrosshairG,
-        ui->spinMetroidCrosshairB,
-        kUnifiedHudColorPresets,
-        kHudColorPresetCount,
-        index);
-}
 
 #include "MelonPrimeInputConfigCustomHudCode.inc"
+
+void MelonPrimeInputConfig::refreshAfterHudEditSave()
+{
+    // Edit HUD Layout wrote directly to config. Reload all widget values so
+    // that clicking OK in the settings dialog doesn't overwrite the new positions.
+    auto& cfg = emuInstance->getLocalConfig();
+    m_applyPreviewEnabled = false;
+    for (auto& [key, widget] : m_hudWidgets) {
+        widget->blockSignals(true);
+        if (auto* cb = qobject_cast<QCheckBox*>(widget))
+            cb->setChecked(cfg.GetBool(key));
+        else if (auto* sb = qobject_cast<QSpinBox*>(widget))
+            sb->setValue(cfg.GetInt(key));
+        else if (auto* dsb = qobject_cast<QDoubleSpinBox*>(widget))
+            dsb->setValue(cfg.GetDouble(key));
+        else if (auto* le = qobject_cast<QLineEdit*>(widget))
+            le->setText(QString::fromStdString(cfg.GetString(key)));
+        else if (auto* combo = qobject_cast<QComboBox*>(widget))
+            combo->setCurrentIndex(cfg.GetInt(key));
+        widget->blockSignals(false);
+    }
+    m_applyPreviewEnabled = true;
+    snapshotVisualConfig();
+}
 

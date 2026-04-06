@@ -9,9 +9,14 @@
 #define MELONPRIMEINPUTCONFIG_H
 
 #include <QWidget>
+#include <QList>
 #include <QTabWidget>
 #include <QPushButton>
 #include <QVariantMap>
+#include <unordered_map>
+#include <vector>
+#include <string>
+#include <utility>
 #include "EmuInstance.h"
 #include "Config.h"
 
@@ -21,7 +26,6 @@ class QDoubleSpinBox;
 class QLabel;
 class QLineEdit;
 class QPlainTextEdit;
-class QSlider;
 class QSpinBox;
 
 namespace Ui { class MelonPrimeInputConfig; }
@@ -86,16 +90,12 @@ public:
 
     void saveConfig();
     void restoreVisualSnapshot();
+    void snapshotVisualConfig();
+    void refreshAfterHudEditSave();
     QTabWidget* getTabWidget();
 
 private slots:
     void on_metroidResetSensitivityValues_clicked();
-    void resetCrosshairDefaults();
-    void resetHpAmmoDefaults();
-    void resetMatchStatusDefaults();
-    void resetRankTimeDefaults();
-    void resetBombLeftDefaults();
-    void resetRadarDefaults();
     void on_metroidSetVideoQualityToLow_clicked();
     void on_metroidSetVideoQualityToHigh_clicked();
     void on_metroidSetVideoQualityToHigh2_clicked();
@@ -105,18 +105,8 @@ private slots:
     void on_cbMetroidApplyHeadphone_stateChanged(int state);
     void on_cbMetroidUseFirmwareName_stateChanged(int state);
     void on_cbMetroidEnableCustomHud_stateChanged(int state);
-    void syncCrosshairColorFromRgbEditors();
-    void on_leMetroidCrosshairColorCode_editingFinished();
-    void on_comboMetroidCrosshairColor_currentIndexChanged(int index);
+    void on_btnEditHudLayout_clicked();
     void applyVisualPreview();
-    void applyAndPreviewCrosshair();
-    void applyAndPreviewHpAmmo();
-    void applyAndPreviewMatchStatus();
-    void applyAndPreviewRadar();
-    void updateRadarPreview();
-    void updateCrosshairPreview();
-    void updateHpAmmoPreview();
-    void updateMatchStatusPreview();
 
 private:
     Ui::MelonPrimeInputConfig* ui;
@@ -129,39 +119,30 @@ private:
     int addonsMetroid2JoyMap[kMetroidHotkey2Count];
 
     // Constructor setup helpers
-    void setupHiddenLabels();
     void setupKeyBindings(Config::Table& instcfg, Config::Table& keycfg, Config::Table& joycfg);
     void setupSensitivityAndToggles(Config::Table& instcfg);
-    void setupMatchStatusHud(Config::Table& instcfg);
     void setupCollapsibleSections(Config::Table& instcfg);
-    void setupHpAmmoHud(Config::Table& instcfg);
-    void setupCrosshair(Config::Table& instcfg);
     void setupPreviewConnections();
-    void setupRadar(Config::Table& instcfg);
     void setupCustomHudCode();
-
-    // Widget sync helpers (extracted from constructor)
-    void initSliderSync(QSlider* sl, QSpinBox* input, QLabel* lbl, int val);
-    void bindHexButtonSync(QPushButton* btn, QLineEdit* lineEdit);
-    void bindComboButtonSync(QPushButton* btn, QComboBox* combo,
-        QSpinBox* spinR, QSpinBox* spinG, QSpinBox* spinB);
+    void setupCustomHudWidgets(Config::Table& instcfg);
 
     void populatePage(QWidget* page, const HotkeyEntry* entries, int count, int* keymap, int* joymap);
-    void snapshotVisualConfig();
     QString buildCustomHudCode() const;
     bool applyCustomHudCode(const QString& code, QString* errorMessage = nullptr);
     void refreshCustomHudCodeOutput();
     void setCustomHudCodeStatus(const QString& text, bool isError);
-    void setupColorButton(QPushButton* btn,
-        const QString& configKeyR, const QString& configKeyG, const QString& configKeyB,
-        QComboBox* combo = nullptr, QLineEdit* lineEdit = nullptr,
-        QSpinBox* spinR = nullptr, QSpinBox* spinG = nullptr, QSpinBox* spinB = nullptr,
-        int customIndex = -1, int overallIndex = -1);
+    void invalidateHudAndRefreshPreviews();
 
     QVariantMap m_visualSnapshot;
     bool m_applyPreviewEnabled = false;
-    bool m_colorDialogOpen = false;
     bool m_applyPreviewActive = false;
+
+    // Programmatic HUD settings widgets (config key → widget)
+    std::unordered_map<std::string, QWidget*> m_hudWidgets;
+    // Section toggle buttons (button, config key for collapse state)
+    std::vector<std::pair<QPushButton*, std::string>> m_hudToggles;
+    // Preview widgets that need refresh on config change
+    QList<QWidget*> m_hudPreviews;
 };
 
 #endif // MELONPRIMEINPUTCONFIG_H

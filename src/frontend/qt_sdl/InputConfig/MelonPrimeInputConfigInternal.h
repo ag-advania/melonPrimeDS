@@ -12,11 +12,15 @@
 
 #include <QColor>
 #include <QComboBox>
+#include <QFont>
+#include <QFontDatabase>
 #include <QLineEdit>
 #include <QObject>
 #include <QSpinBox>
 #include <QString>
 #include <QWidget>
+
+#include "MelonPrimeConstants.h"
 
 // ─── Colour palette ────────────────────────────────────────────────────────
 
@@ -54,6 +58,32 @@ template <typename T, size_t N>
 constexpr int ArrayCount(const T (&)[N]) { return static_cast<int>(N); }
 
 // Must be constexpr so ArrayCount() below is a compile-time constant.
+constexpr const char* kHudColorPaletteNames[] = {
+    "White",
+    "Green",
+    "Yellow Green",
+    "Green Yellow",
+    "Yellow",
+    "Pure Cyan",
+    "Hud Cyan",
+    "Pink",
+    "Red",
+    "Orange",
+    "Samus Hud",
+    "Samus Hud Outline",
+    "Kanden Hud",
+    "Spire Hud",
+    "Spire Hud Outline",
+    "Trace Hud",
+    "Noxus Hud",
+    "Noxus Hud Outline",
+    "Sylux Hud",
+    "Sylux Crosshair",
+    "Weavel Hud",
+    "Weavel Hud Outline",
+    "Avium Purple",
+};
+
 constexpr PresetColor kHudColorPalette[] = {
     {255,255,255}, // White
     {0,255,0},     // Green
@@ -254,4 +284,31 @@ inline void bindPresetColorSync(QObject* owner, QComboBox* combo, QLineEdit* lin
         [=]() {
             syncColorFromHexEditor(combo, lineEdit, spinR, spinG, spinB, customIndex);
         });
+}
+
+// ─── HUD font helper ───────────────────────────────────────────────────────
+// Returns the mph.ttf font at kCustomHudFontSize scaled by textScalePct/100,
+// matching the rendering used by the actual in-game HUD overlay.
+// textScalePct: value of Metroid.Visual.HudTextScale (default 100)
+inline QFont getMphHudFont(int textScalePct = 100)
+{
+    static QString s_family;
+    if (s_family.isEmpty()) {
+        // Font may already be registered by Screen.cpp; addApplicationFont is idempotent.
+        int id = QFontDatabase::addApplicationFont(QStringLiteral(":/mph-font"));
+        if (id >= 0) {
+            const auto families = QFontDatabase::applicationFontFamilies(id);
+            if (!families.isEmpty())
+                s_family = families.at(0);
+        }
+    }
+
+    const double tds = qBound(0.1, textScalePct / 100.0, 10.0);
+    const int px = qMax(3, static_cast<int>(MelonPrime::kCustomHudFontSize * tds));
+
+    QFont f(s_family.isEmpty() ? QStringLiteral("Consolas") : s_family, -1);
+    f.setPixelSize(px);
+    f.setStyleStrategy(QFont::NoAntialias);
+    f.setHintingPreference(QFont::PreferFullHinting);
+    return f;
 }

@@ -97,6 +97,8 @@ public:
     Array GetArray(const std::string& path);
     Table GetTable(const std::string& path, const std::string& defpath = "");
 
+    bool HasKey(const std::string& path);
+
     int GetInt(const std::string& path);
     int64_t GetInt64(const std::string& path);
     bool GetBool(const std::string& path);
