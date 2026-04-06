@@ -800,13 +800,19 @@ protected:
 
         // ── Weapon icon ──
         if (c.GetInt("Metroid.Visual.HudWeaponIconMode") != 0) {
-            QPoint ip = dsPos(c.GetInt("Metroid.Visual.HudWeaponIconPosAnchor"), c.GetInt("Metroid.Visual.HudWeaponIconPosX"), c.GetInt("Metroid.Visual.HudWeaponIconPosY"));
-            // anchorX/Y = 1 (center) by default → draw centered
-            int ix = ip.x() - 12;
-            int iy = ip.y() - 12;
-            p.fillRect(QRect(ix, iy, 24, 24), QColor(80, 80, 50, 160));
-            p.setPen(QColor(180, 180, 100, 200));
-            p.drawRect(QRect(ix, iy, 23, 23));
+            static QImage s_magmaul;
+            if (s_magmaul.isNull()) s_magmaul = QImage(QStringLiteral(":/mph-icon-magmaul"));
+            if (!s_magmaul.isNull()) {
+                QPoint ip = dsPos(c.GetInt("Metroid.Visual.HudWeaponIconPosAnchor"),
+                                  c.GetInt("Metroid.Visual.HudWeaponIconPosX"),
+                                  c.GetInt("Metroid.Visual.HudWeaponIconPosY"));
+                int ancX = c.GetInt("Metroid.Visual.HudWeaponIconAnchorX");
+                int ancY = c.GetInt("Metroid.Visual.HudWeaponIconAnchorY");
+                int iw = s_magmaul.width(), ih = s_magmaul.height();
+                int ix = ip.x() - (ancX == 1 ? iw/2 : ancX == 2 ? iw : 0);
+                int iy = ip.y() - (ancY == 1 ? ih/2 : ancY == 2 ? ih : 0);
+                p.drawImage(QRectF(ix, iy, iw, ih), s_magmaul);
+            }
         }
 
         // ── Ammo text ──
@@ -888,7 +894,7 @@ protected:
             p.drawText(QPoint(tx, pos.y()), str);
         }
 
-        // ── Bomb Left ── (show when HudBombLeftShow, text from prefix+count+suffix)
+        // ── Bomb Left ── (text + icon)
         if (c.GetBool("Metroid.Visual.HudBombLeftShow")) {
             float op = c.GetDouble("Metroid.Visual.HudBombLeftOpacity");
             QColor col = readColor("Metroid.Visual.HudBombLeftColorR", "Metroid.Visual.HudBombLeftColorG", "Metroid.Visual.HudBombLeftColorB", op);
@@ -900,6 +906,32 @@ protected:
                 int tx = alignedX(pos.x(), c.GetInt("Metroid.Visual.HudBombLeftAlign"), textWidthDS(p, str));
                 p.setPen(col);
                 p.drawText(QPoint(tx, pos.y()), str);
+            }
+
+            // Bomb icon
+            if (c.GetBool("Metroid.Visual.HudBombLeftIconShow")) {
+                static QImage s_bombIcon;
+                if (s_bombIcon.isNull()) s_bombIcon = QImage(QStringLiteral(":/mph-icon-bombs3"));
+                if (!s_bombIcon.isNull()) {
+                    QPoint ip;
+                    if (c.GetInt("Metroid.Visual.HudBombLeftIconMode") == 0) {
+                        // relative to text anchor
+                        ip = QPoint(pos.x() + c.GetInt("Metroid.Visual.HudBombLeftIconOfsX"),
+                                    pos.y() + c.GetInt("Metroid.Visual.HudBombLeftIconOfsY"));
+                    } else {
+                        ip = dsPos(c.GetInt("Metroid.Visual.HudBombLeftIconPosAnchor"),
+                                   c.GetInt("Metroid.Visual.HudBombLeftIconPosX"),
+                                   c.GetInt("Metroid.Visual.HudBombLeftIconPosY"));
+                    }
+                    int ancX = c.GetInt("Metroid.Visual.HudBombLeftIconAnchorX");
+                    int ancY = c.GetInt("Metroid.Visual.HudBombLeftIconAnchorY");
+                    int iw = s_bombIcon.width(), ih = s_bombIcon.height();
+                    int ix = ip.x() - (ancX == 1 ? iw/2 : ancX == 2 ? iw : 0);
+                    int iy = ip.y() - (ancY == 1 ? ih/2 : ancY == 2 ? ih : 0);
+                    p.setOpacity(op);
+                    p.drawImage(QRectF(ix, iy, iw, ih), s_bombIcon);
+                    p.setOpacity(1.0);
+                }
             }
         }
     }
