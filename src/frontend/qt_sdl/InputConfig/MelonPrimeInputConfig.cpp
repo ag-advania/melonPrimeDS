@@ -362,6 +362,7 @@ static const HudWidgetProp kSecTextScale[] = {
 // --- Section 2: Crosshair ---
 static const HudWidgetProp kSecCrosshair[] = {
     P_CLR("Color", "Metroid.Visual.CrosshairColorR", "Metroid.Visual.CrosshairColorG", "Metroid.Visual.CrosshairColorB"),
+    P_INT("Scale %", "Metroid.Visual.CrosshairScale", 10, 500, 1),
     P_BOOL("Outline", "Metroid.Visual.CrosshairOutline"),
     P_FLOAT("Outline Opacity", "Metroid.Visual.CrosshairOutlineOpacity"),
     P_INT("Outline Thickness", "Metroid.Visual.CrosshairOutlineThickness", 1, 10, 1),
