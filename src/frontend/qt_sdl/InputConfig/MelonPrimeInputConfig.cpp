@@ -356,7 +356,8 @@ struct HudMainSec {
 
 // --- Section 1: Text Scale ---
 static const HudWidgetProp kSecTextScale[] = {
-    P_INT("Text Scale %", "Metroid.Visual.HudTextScale", 10, 300, 10),
+    P_INT("Text Scale %",     "Metroid.Visual.HudTextScale",   10, 300, 10),
+    P_INT("Render Scale Cap (0=unlimited)", "Metroid.Visual.HudRenderScale",  0,  10,   1),
 };
 
 // --- Section 2: Crosshair ---

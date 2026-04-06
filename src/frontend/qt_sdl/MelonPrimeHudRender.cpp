@@ -343,6 +343,8 @@ struct CachedHudConfig {
     RadarOverlayConfig radar;
     int textScalePct; // text visual scale in percent (100 = 1×, bitmap always rendered at 6px)
     float lastStretchX; // topStretchX used for last anchor position computation
+    // Per-element opacity values (cached to avoid per-frame config lookups)
+    float hpOpacity, weaponOpacity, matchStatusOpacity, rankOpacity, bombLeftOpacity;
     bool valid;
 };
 static CachedHudConfig s_cache = { .valid = false };
@@ -588,7 +590,12 @@ static void RefreshCachedConfig(Config::Table& cfg, float topStretchX = 1.0f)
     LoadBombLeftConfig(c.bombLeft, cfg);
     LoadRankTimeConfig(c.rankTime, cfg);
     LoadRadarOverlayConfig(c.radar, cfg);
-    c.textScalePct = std::max(10, cfg.GetInt("Metroid.Visual.HudTextScale"));
+    c.textScalePct        = std::max(10, cfg.GetInt("Metroid.Visual.HudTextScale"));
+    c.hpOpacity           = (float)cfg.GetDouble("Metroid.Visual.HudHpOpacity");
+    c.weaponOpacity       = (float)cfg.GetDouble("Metroid.Visual.HudWeaponOpacity");
+    c.matchStatusOpacity  = (float)cfg.GetDouble("Metroid.Visual.HudMatchStatusOpacity");
+    c.rankOpacity         = (float)cfg.GetDouble("Metroid.Visual.HudRankOpacity");
+    c.bombLeftOpacity     = (float)cfg.GetDouble("Metroid.Visual.HudBombLeftOpacity");
     RecomputeAnchorPositions(topStretchX);
     ++s_cacheEpoch;
     if (s_cacheEpoch == 0) s_cacheEpoch = 1;
@@ -1413,10 +1420,9 @@ HOT_FUNCTION void CustomHud_Render(
     bool isAlt   = Read8(ram, addrHot.isAltForm) == 0x02;
 
     {
-        double op = localCfg.GetDouble("Metroid.Visual.HudHpOpacity");
-        if (op < 1.0) topPaint->setOpacity(op);
+        if (c.hpOpacity < 1.0f) topPaint->setOpacity(c.hpOpacity);
         DrawHP(topPaint, currentHP, maxHP, c, textDrawScale);
-        if (op < 1.0) topPaint->setOpacity(1.0);
+        if (c.hpOpacity < 1.0f) topPaint->setOpacity(1.0);
     }
 
     // Bomb count: Samus/Sylux in alt form only
@@ -1424,10 +1430,9 @@ HOT_FUNCTION void CustomHud_Render(
         bool isBomber = (hunterID == static_cast<uint8_t>(HunterId::Samus) ||
                          hunterID == static_cast<uint8_t>(HunterId::Sylux));
         if (isBomber && isAlt) {
-            double op = localCfg.GetDouble("Metroid.Visual.HudBombLeftOpacity");
-            if (op < 1.0) topPaint->setOpacity(op);
+            if (c.bombLeftOpacity < 1.0f) topPaint->setOpacity(c.bombLeftOpacity);
             DrawBombLeft(topPaint, ram, rom, offP, c, textDrawScale, hudScale);
-            if (op < 1.0) topPaint->setOpacity(1.0);
+            if (c.bombLeftOpacity < 1.0f) topPaint->setOpacity(1.0);
         }
     }
 
@@ -1435,16 +1440,14 @@ HOT_FUNCTION void CustomHud_Render(
     {
         bool isAdventure = Read8(ram, rom.isInAdventure) == 0x02;
         {
-            double op = localCfg.GetDouble("Metroid.Visual.HudMatchStatusOpacity");
-            if (op < 1.0) topPaint->setOpacity(op);
+            if (c.matchStatusOpacity < 1.0f) topPaint->setOpacity(c.matchStatusOpacity);
             DrawMatchStatusHud(topPaint, ram, rom, playerPosition, isAdventure, c);
-            if (op < 1.0) topPaint->setOpacity(1.0);
+            if (c.matchStatusOpacity < 1.0f) topPaint->setOpacity(1.0);
         }
         {
-            double op = localCfg.GetDouble("Metroid.Visual.HudRankOpacity");
-            if (op < 1.0) topPaint->setOpacity(op);
+            if (c.rankOpacity < 1.0f) topPaint->setOpacity(c.rankOpacity);
             DrawRankAndTime(topPaint, ram, rom, playerPosition, isAdventure, c, textDrawScale);
-            if (op < 1.0) topPaint->setOpacity(1.0);
+            if (c.rankOpacity < 1.0f) topPaint->setOpacity(1.0);
         }
     }
 
@@ -1452,12 +1455,11 @@ HOT_FUNCTION void CustomHud_Render(
 
     uint8_t currentWeapon = Read8(ram, addrHot.currentWeapon);
     {
-        double op = localCfg.GetDouble("Metroid.Visual.HudWeaponOpacity");
-        if (op < 1.0) topPaint->setOpacity(op);
+        if (c.weaponOpacity < 1.0f) topPaint->setOpacity(c.weaponOpacity);
         DrawWeaponAmmo(topPaint, ram, currentWeapon,
                        Read16(ram, addrAmmoSpecial), addrAmmoMissile,
                        maxAmmoSpecial, maxAmmoMissile, c, textDrawScale, hudScale);
-        if (op < 1.0) topPaint->setOpacity(1.0);
+        if (c.weaponOpacity < 1.0f) topPaint->setOpacity(1.0);
     }
 
     bool isTrans = (Read8(ram, addrHot.jumpFlag) & 0x10) != 0;
