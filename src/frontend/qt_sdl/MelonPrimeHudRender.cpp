@@ -981,6 +981,11 @@ void CustomHud_InvalidateConfigCache()
     s_bombTintCacheValid = false;
 }
 
+uint32_t CustomHud_GetCacheEpoch()
+{
+    return s_cacheEpoch;
+}
+
 // =========================================================================
 //  Gauge drawing
 // =========================================================================

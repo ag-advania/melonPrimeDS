@@ -35,3 +35,6 @@ vcpkg.json.bak
 .claude/settings.local.json
 vcpkg
 .claude/worktrees/agent-af2ab1ae
+res/assets/weapons/old/Missile.svg
+res/assets/weapons/old/Missilev2.svg
+res/assets/weapons/old/Missilev3.svg
