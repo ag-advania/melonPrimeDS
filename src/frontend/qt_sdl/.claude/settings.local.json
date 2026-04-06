@@ -24,7 +24,9 @@
       "Bash('C:\\\\msys64\\\\usr\\\\bin\\\\bash.exe' -lc \"cd /c/Users/Admin/Documents/git/melonPrimeDS/build/release-mingw-x86_64 && /mingw64/bin/ninja.exe melonDS 2>&1 | tail -20\")",
       "Bash(ninja -C build -j4)",
       "Bash(/c/msys64/mingw64/bin/ninja.exe -j4)",
-      "Bash(/c/msys64/mingw64/bin/ninja.exe -j1)"
+      "Bash(/c/msys64/mingw64/bin/ninja.exe -j1)",
+      "Bash('C:\\\\msys64\\\\usr\\\\bin\\\\bash.exe' -lc \"wc -l /c/Users/Admin/Documents/git/melonPrimeDS/src/frontend/qt_sdl/MelonPrimeCustomHud.cpp\")",
+      "Bash('C:\\\\msys64\\\\usr\\\\bin\\\\bash.exe' -lc \"awk 'NR>=1507 && NR<=3512' /c/Users/Admin/Documents/git/melonPrimeDS/src/frontend/qt_sdl/MelonPrimeCustomHud.cpp | wc -l\")"
     ]
   }
 }
