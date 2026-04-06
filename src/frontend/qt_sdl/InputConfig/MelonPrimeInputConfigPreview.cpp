@@ -13,7 +13,7 @@
 #include "ui_MelonPrimeInputConfig.h"
 #include "Config.h"
 #ifdef MELONPRIME_CUSTOM_HUD
-#include "MelonPrimeCustomHud.h"
+#include "MelonPrimeHudRender.h"
 #endif
 
 using namespace melonDS;

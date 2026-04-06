@@ -11,7 +11,7 @@
 #include "MelonPrimeGameRomAddrTable.h"
 
 #ifdef MELONPRIME_CUSTOM_HUD
-#include "MelonPrimeCustomHud.h"
+#include "MelonPrimeHudRender.h"
 #include "MelonPrimePatch.h"
 #endif
 

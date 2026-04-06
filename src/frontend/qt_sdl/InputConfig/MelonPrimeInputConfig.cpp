@@ -30,7 +30,7 @@
 #include "Config.h"
 #include "toml/toml.hpp"
 #ifdef MELONPRIME_CUSTOM_HUD
-#include "MelonPrimeCustomHud.h"
+#include "MelonPrimeHudRender.h"
 #endif
 
 // InputConfigDialog must be fully defined before including MapButton.h.
@@ -41,7 +41,7 @@
 #include "Platform.h"
 #include "VideoSettingsDialog.h"
 #ifdef MELONPRIME_CUSTOM_HUD
-#include "MelonPrimeCustomHud.h"
+#include "MelonPrimeHudRender.h"
 #endif
 
 using namespace melonDS;
