@@ -466,6 +466,20 @@ void ScreenPanel::setupScreenLayout()
 
     calcSplashLayout();
 
+#ifdef MELONPRIME_CUSTOM_HUD
+    // Cache scale/origin so paint paths and mouse handlers avoid sqrt per-frame.
+    m_hudScale = 1.0f; m_topStretchX = 1.0f; m_hudOriginX = 0.0f; m_hudOriginY = 0.0f;
+    for (int i = 0; i < numScreens; i++) {
+        if (screenKind[i] != 0) continue;
+        const float* mtx = screenMatrix[i];
+        const float sx = std::sqrt(mtx[0]*mtx[0] + mtx[1]*mtx[1]);
+        const float sy = std::sqrt(mtx[2]*mtx[2] + mtx[3]*mtx[3]);
+        m_hudOriginX = mtx[4]; m_hudOriginY = mtx[5];
+        if (sx > 0.0f && sy > 0.0f) { m_hudScale = sy; m_topStretchX = sx / sy; }
+        break;
+    }
+#endif
+
 #ifdef MELONPRIME_DS
     // Notify layout change
     if (auto* core = emuInstance->getEmuThread()->GetMelonPrimeCore()) {
@@ -575,18 +589,8 @@ void ScreenPanel::mousePressEvent(QMouseEvent* event)
 #ifdef MELONPRIME_CUSTOM_HUD
     // HUD Layout Editor: intercept all mouse input while in edit mode
     if (UNLIKELY(MelonPrime::CustomHud_IsEditMode())) {
-        float originX = 0.0f, originY = 0.0f, hudScale = 1.0f, topStretchX = 1.0f;
-        for (int i = 0; i < numScreens; i++) {
-            if (screenKind[i] != 0) continue;
-            const float* mtx = screenMatrix[i];
-            const float scaleX = std::sqrt(mtx[0]*mtx[0] + mtx[1]*mtx[1]);
-            const float scaleY = std::sqrt(mtx[2]*mtx[2] + mtx[3]*mtx[3]);
-            originX = mtx[4]; originY = mtx[5];
-            if (scaleX > 0.0f && scaleY > 0.0f) { hudScale = scaleY; topStretchX = scaleX / scaleY; }
-            break;
-        }
         Config::Table& instcfg = emuInstance->getLocalConfig();
-        MelonPrime::CustomHud_UpdateEditContext(originX, originY, hudScale, topStretchX);
+        MelonPrime::CustomHud_UpdateEditContext(m_hudOriginX, m_hudOriginY, m_hudScale, m_topStretchX);
         MelonPrime::CustomHud_EditMousePress(event->pos(), event->button(), instcfg);
         if (!MelonPrime::CustomHud_IsEditMode() && InputConfigDialog::currentDlg)
             InputConfigDialog::currentDlg->refreshAfterHudEditSave();
@@ -682,18 +686,8 @@ void ScreenPanel::mouseMoveEvent(QMouseEvent* event)
 
 #ifdef MELONPRIME_CUSTOM_HUD
     if (UNLIKELY(MelonPrime::CustomHud_IsEditMode())) {
-        float originX = 0.0f, originY = 0.0f, hudScale = 1.0f, topStretchX = 1.0f;
-        for (int i = 0; i < numScreens; i++) {
-            if (screenKind[i] != 0) continue;
-            const float* mtx = screenMatrix[i];
-            const float scaleX = std::sqrt(mtx[0]*mtx[0] + mtx[1]*mtx[1]);
-            const float scaleY = std::sqrt(mtx[2]*mtx[2] + mtx[3]*mtx[3]);
-            originX = mtx[4]; originY = mtx[5];
-            if (scaleX > 0.0f && scaleY > 0.0f) { hudScale = scaleY; topStretchX = scaleX / scaleY; }
-            break;
-        }
         Config::Table& instcfg = emuInstance->getLocalConfig();
-        MelonPrime::CustomHud_UpdateEditContext(originX, originY, hudScale, topStretchX);
+        MelonPrime::CustomHud_UpdateEditContext(m_hudOriginX, m_hudOriginY, m_hudScale, m_topStretchX);
         MelonPrime::CustomHud_EditMouseMove(event->pos(), instcfg);
         return;
     }
@@ -1229,25 +1223,26 @@ void ScreenPanelNative::paintEvent(QPaintEvent * event)
             auto& instcfg = emuInstance->getLocalConfig();
             if (mp && mp->IsRomDetected() && (mp->IsInGame() || MelonPrime::CustomHud_IsEditMode()))
             {
-                float topStretchX = 1.0f;
-                float hudScale = 1.0f;
-                for (int i = 0; i < numScreens; i++)
+                // Use layout values cached in setupScreenLayout() — no sqrt per-frame.
+                const float hudScale    = m_hudScale;
+                const float topStretchX = m_topStretchX;
+
+                // Refresh config cache when epoch changes (settings saved / reset).
                 {
-                    if (screenKind[i] != 0) continue; // 0 = top screen
-                    const float* mtx = screenMatrix[i];
-                    const float scaleX = std::sqrt((mtx[0] * mtx[0]) + (mtx[1] * mtx[1]));
-                    const float scaleY = std::sqrt((mtx[2] * mtx[2]) + (mtx[3] * mtx[3]));
-                    if (scaleX > 0.0f && scaleY > 0.0f) {
-                        hudScale = scaleY;
-                        topStretchX = scaleX / scaleY;
+                    const uint32_t epoch = MelonPrime::CustomHud_GetCacheEpoch();
+                    if (epoch != m_hudCfgEpoch) {
+                        m_hudRenderScale = instcfg.GetInt("Metroid.Visual.HudRenderScale");
+                        m_hudCfgEpoch = epoch;
                     }
-                    break;
                 }
 
-                // Cap overlay render scale for performance (HudRenderScale=N means render at N×DS).
-                // Buffer is then upscaled to the actual display area at composite time.
+                // Skip fill + render entirely when HUD is disabled and not in edit mode.
+                const bool hudVisible = MelonPrime::CustomHud_IsEnabled(instcfg) || MelonPrime::CustomHud_IsEditMode();
+                if (hudVisible)
                 {
-                    const int scaleCap = instcfg.GetInt("Metroid.Visual.HudRenderScale");
+                    // Cap overlay render scale for performance (HudRenderScale=N means render at N×DS).
+                    // Buffer is then upscaled to the actual display area at composite time.
+                    const int scaleCap = m_hudRenderScale;
                     const float hudScaleRender = (scaleCap > 0 && hudScale > (float)scaleCap)
                         ? (float)scaleCap : hudScale;
 
@@ -1272,21 +1267,15 @@ void ScreenPanelNative::paintEvent(QPaintEvent * event)
                     } // painter ends here — safe to read image
 
                     // Composite: stretch overlay to actual display size if scale was capped.
-                    if (MelonPrime::CustomHud_IsEnabled(instcfg) || MelonPrime::CustomHud_IsEditMode())
-                    {
-                        const int dispW = std::max(1, static_cast<int>(std::ceil(hudScale * topStretchX * 256.0f)));
-                        const int dispH = std::max(1, static_cast<int>(std::ceil(hudScale * 192.0f)));
-                        for (int i = 0; i < numScreens; i++)
-                        {
-                            if (screenKind[i] != 0) continue;
-                            const float* mtx = screenMatrix[i];
-                            painter.resetTransform();
-                            if (topOutW != dispW || topOutH != dispH)
-                                painter.drawImage(QRect(static_cast<int>(mtx[4]), static_cast<int>(mtx[5]), dispW, dispH), Overlay[0]);
-                            else
-                                painter.drawImage(QPoint(static_cast<int>(mtx[4]), static_cast<int>(mtx[5])), Overlay[0]);
-                        }
-                    }
+                    const int dispW = std::max(1, static_cast<int>(std::ceil(hudScale * topStretchX * 256.0f)));
+                    const int dispH = std::max(1, static_cast<int>(std::ceil(hudScale * 192.0f)));
+                    const int ox = static_cast<int>(m_hudOriginX);
+                    const int oy = static_cast<int>(m_hudOriginY);
+                    painter.resetTransform();
+                    if (topOutW != dispW || topOutH != dispH)
+                        painter.drawImage(QRect(ox, oy, dispW, dispH), Overlay[0]);
+                    else
+                        painter.drawImage(QPoint(ox, oy), Overlay[0]);
                 }
             }
         }
@@ -1715,26 +1704,32 @@ void ScreenPanelGL::drawScreen()
             auto& instcfg = emuInstance->getLocalConfig();
             if (mp && mp->IsRomDetected() && (mp->IsInGame() || MelonPrime::CustomHud_IsEditMode()))
             {
-                // Compute hudScale and topStretchX from the top screen transform.
-                // hudScale = scaleY: output pixels per DS pixel along Y.
-                // topStretchX = scaleX / scaleY: horizontal ratio (>1 wide, <1 narrow).
-                float topStretchX = 1.0f;
-                float hudScale = 1.0f;
-                for (int i = 0; i < numScreens; i++)
+                // Use layout values cached in setupScreenLayout() — no sqrt per-frame.
+                const float hudScale    = m_hudScale;
+                const float topStretchX = m_topStretchX;
+
+                // Refresh config cache when epoch changes (settings saved / reset).
                 {
-                    if (screenKind[i] != 0) continue; // 0 = top screen
-                    const float* mtx = screenMatrix[i];
-                    const float scaleX = std::sqrt((mtx[0] * mtx[0]) + (mtx[1] * mtx[1]));
-                    const float scaleY = std::sqrt((mtx[2] * mtx[2]) + (mtx[3] * mtx[3]));
-                    if (scaleX > 0.0f && scaleY > 0.0f) {
-                        hudScale = scaleY;
-                        topStretchX = scaleX / scaleY;
+                    const uint32_t epoch = MelonPrime::CustomHud_GetCacheEpoch();
+                    if (epoch != m_hudCfgEpoch) {
+                        m_hudRenderScale    = instcfg.GetInt("Metroid.Visual.HudRenderScale");
+                        m_radarEnable       = instcfg.GetBool("Metroid.Visual.BtmOverlayEnable");
+                        m_radarAnchor       = instcfg.GetInt("Metroid.Visual.BtmOverlayAnchor");
+                        m_radarDstX         = instcfg.GetInt("Metroid.Visual.BtmOverlayDstX");
+                        m_radarDstY         = instcfg.GetInt("Metroid.Visual.BtmOverlayDstY");
+                        m_radarDstSize      = std::max(instcfg.GetInt("Metroid.Visual.BtmOverlayDstSize"), 1);
+                        m_radarOpacity      = std::clamp((float)instcfg.GetDouble("Metroid.Visual.BtmOverlayOpacity"), 0.0f, 1.0f);
+                        m_radarSrcRadius    = instcfg.GetInt("Metroid.Visual.BtmOverlaySrcRadius");
+                        m_hudCfgEpoch       = epoch;
                     }
-                    break;
                 }
 
+                // Skip fill + render + upload when HUD is disabled and not in edit mode.
+                const bool hudVisible = MelonPrime::CustomHud_IsEnabled(instcfg) || MelonPrime::CustomHud_IsEditMode();
+                if (hudVisible)
+                {
                 // Cap overlay render scale for performance (HudRenderScale=N means render at N×DS).
-                const int scaleCap = instcfg.GetInt("Metroid.Visual.HudRenderScale");
+                const int scaleCap = m_hudRenderScale;
                 const float hudScaleRender = (scaleCap > 0 && hudScale > (float)scaleCap)
                     ? (float)scaleCap : hudScale;
 
@@ -1758,8 +1753,6 @@ void ScreenPanelGL::drawScreen()
                         topStretchX, hudScaleRender);
                 } // painter ends here — safe to read constBits()
 
-                if (MelonPrime::CustomHud_IsEnabled(instcfg) || MelonPrime::CustomHud_IsEditMode())
-                {
                 glBindTexture(GL_TEXTURE_2D, overlayTextures[0]);
                 // Reallocate GL texture when the buffer size changes (window resize).
                 if (topOutW != overlayTexW || topOutH != overlayTexH) {
@@ -1784,66 +1777,49 @@ void ScreenPanelGL::drawScreen()
                 glEnable(GL_BLEND);
                 glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
 
-                for (int i = 0; i < numScreens; i++)
+                // Use cached scale values — no sqrt per-frame.
                 {
-                    if (screenKind[i] != 0) continue;
-                    const float* mtx = screenMatrix[i];
-
-                    // Extract true scale from matrix (rotation-safe)
-                    const float scaleX = std::sqrt((mtx[0] * mtx[0]) + (mtx[1] * mtx[1]));
-                    const float scaleY = std::sqrt((mtx[2] * mtx[2]) + (mtx[3] * mtx[3]));
-                    if (scaleX <= 0.0f || scaleY <= 0.0f) continue;
-
-                    const float displayW = scaleX * 256.0f;
-                    const float displayH = scaleY * 192.0f;
-
-                    // Map display pixels → texture pixels (handles capped-scale overlay).
-                    const float texScaleX = (float)topOutW / displayW;
-                    const float texScaleY = (float)topOutH / displayH;
-
-                    glUniform2i(osdPosULoc, static_cast<int>(mtx[4]), static_cast<int>(mtx[5]));
-                    glUniform2i(osdSizeULoc, static_cast<int>(displayW), static_cast<int>(displayH));
-                    glUniform2f(osdTexScaleULoc, texScaleX, texScaleY);
-
-                    glDrawArrays(GL_TRIANGLES, 0, 2 * 3);
+                    const float displayW = m_hudScale * m_topStretchX * 256.0f;
+                    const float displayH = m_hudScale * 192.0f;
+                    if (displayW > 0.0f && displayH > 0.0f)
+                    {
+                        const float texScaleX = (float)topOutW / displayW;
+                        const float texScaleY = (float)topOutH / displayH;
+                        glUniform2i(osdPosULoc, static_cast<int>(m_hudOriginX), static_cast<int>(m_hudOriginY));
+                        glUniform2i(osdSizeULoc, static_cast<int>(displayW), static_cast<int>(displayH));
+                        glUniform2f(osdTexScaleULoc, texScaleX, texScaleY);
+                        glDrawArrays(GL_TRIANGLES, 0, 2 * 3);
+                    }
                 }
 
                 glDisable(GL_BLEND);
 
                 // --- Bottom Screen Overlay (GL-native, circle, high-res with opacity) ---
-                if (instcfg.GetBool("Metroid.Visual.BtmOverlayEnable") &&
+                if (m_radarEnable &&
                     MelonPrime::CustomHud_ShouldDrawRadarOverlay(
                         emuInstance, mp->GetCurrentRom(), mp->GetPlayerPosition()))
                 {
-                    int dstX = instcfg.GetInt("Metroid.Visual.BtmOverlayDstX");
-                    int dstY = instcfg.GetInt("Metroid.Visual.BtmOverlayDstY");
-                    int dstSize = std::max(instcfg.GetInt("Metroid.Visual.BtmOverlayDstSize"), 1);
-                    double opacity = instcfg.GetDouble("Metroid.Visual.BtmOverlayOpacity");
+                    // Use cached config values — no hash-map lookups per-frame.
+                    int dstX    = m_radarDstX;
+                    int dstY    = m_radarDstY;
+                    const int dstSize = m_radarDstSize;
+                    const float opacity = m_radarOpacity;
 
-                    // Find the top screen transform to map DS coords → window coords
+                    // Use cached hudScale as rScaleY (already the top-screen scaleY).
+                    const float rScaleY = m_hudScale;
+
+                    // Find top screen matrix (needed for anchor → window coord transform).
                     const float* topMtx = nullptr;
                     for (int i = 0; i < numScreens; i++)
-                    {
                         if (screenKind[i] == 0) { topMtx = screenMatrix[i]; break; }
-                    }
-
                     if (topMtx)
                     {
-                        // Compute anchor base directly in window space: map the DS anchor point
-                        // (0/128/256, 0/96/192) through the screen matrix.
-                        // Then apply offsets in rScaleY units (uniform, matching painter's
-                        // scale(scaleY,scaleY) behavior). Doing anchor math in DS-space first
-                        // then multiplying through the matrix would double-apply the X stretch.
-                        const float rScaleY = std::sqrt(topMtx[2]*topMtx[2] + topMtx[3]*topMtx[3]);
-                        {
-                            const int radarAnchor = instcfg.GetInt("Metroid.Visual.BtmOverlayAnchor");
-                            const float dsAX = (radarAnchor % 3) * 128.0f;
-                            const float dsAY = (radarAnchor / 3) * 96.0f;
-                            const float wAX = topMtx[0]*dsAX + topMtx[1]*dsAY + topMtx[4];
-                            const float wAY = topMtx[2]*dsAX + topMtx[3]*dsAY + topMtx[5];
-                            dstX = static_cast<int>(wAX + dstX * rScaleY);
-                            dstY = static_cast<int>(wAY + dstY * rScaleY);
-                        }
+                        const float dsAX = (m_radarAnchor % 3) * 128.0f;
+                        const float dsAY = (m_radarAnchor / 3) * 96.0f;
+                        const float wAX  = topMtx[0]*dsAX + topMtx[1]*dsAY + topMtx[4];
+                        const float wAY  = topMtx[2]*dsAX + topMtx[3]*dsAY + topMtx[5];
+                        dstX = static_cast<int>(wAX + dstX * rScaleY);
+                        dstY = static_cast<int>(wAY + dstY * rScaleY);
 
                         // dstX/dstY are now in window pixels. Use rScaleY for both dims (circle, not ellipse).
                         const float wDstX0 = dstX;
@@ -1868,14 +1844,13 @@ void ScreenPanelGL::drawScreen()
                         glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(verts), verts);
 
                         glUniform2f(btmOverlayScreenSizeULoc, w / factor, h / factor);
-                        glUniform1f(btmOverlayOpacityULoc, std::clamp(static_cast<float>(opacity), 0.0f, 1.0f));
+                        glUniform1f(btmOverlayOpacityULoc, opacity);
 
                         const uint8_t hunterID = mp->GetHunterID();
                         glUniform2f(btmOverlaySrcCenterULoc,
                             MelonPrime::kBtmOverlaySrcCenterX / 256.0f,
                             MelonPrime::kBtmOverlaySrcCenterY[hunterID] / 192.0f);
-                        glUniform1f(btmOverlaySrcRadiusULoc,
-                            instcfg.GetInt("Metroid.Visual.BtmOverlaySrcRadius") / 256.0f);
+                        glUniform1f(btmOverlaySrcRadiusULoc, m_radarSrcRadius / 256.0f);
 
                         glActiveTexture(GL_TEXTURE0);
                         glBindTexture(GL_TEXTURE_2D_ARRAY, activeScreenTexture);
@@ -1888,15 +1863,15 @@ void ScreenPanelGL::drawScreen()
                         glDrawArrays(GL_TRIANGLES, 0, 6);
 
                         glDisable(GL_BLEND);
-                    }
-                }
+                    } // if (topMtx)
+                } // if (m_radarEnable)
 
                 // Restore screen shader state
                 glUseProgram(screenShaderProgram);
                 glBindBuffer(GL_ARRAY_BUFFER, screenVertexBuffer);
                 glBindVertexArray(screenVertexArray);
                 glBindTexture(GL_TEXTURE_2D_ARRAY, screenTexture);
-                } // if (CustomHud_IsEnabled)
+                } // if (hudVisible)
             }
         }
 #endif
