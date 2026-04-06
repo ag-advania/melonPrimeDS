@@ -1499,9 +1499,13 @@ void DrawBottomScreenOverlay(Config::Table& localCfg, QPainter* topPaint, QImage
 }
 
 // =========================================================================
-//  P-7: HUD Layout Editor
+//  P-7: HUD Layout Editor — implementation lives in a separate file.
+//  This is a unity-build include: ScreenConfig shares all statics above.
 // =========================================================================
+#include "MelonPrimeCustomHudScreenConfig.cpp"
+#define MELONPRIME_SCREENCONFIG_INCLUDED  // new file is active — skip original below
 
+#ifndef MELONPRIME_SCREENCONFIG_INCLUDED
 enum class EditPropType : uint8_t { Bool, Int, Float, String, SubColor, Color };
 
 struct HudEditPropDesc {
@@ -3508,6 +3512,8 @@ void CustomHud_EditMouseWheel(QPointF pt, int delta, Config::Table& cfg)
     if (delta > 0) s_editPropScroll = std::max(0, s_editPropScroll - 1);
     else if (delta < 0) s_editPropScroll = std::min(maxScroll, s_editPropScroll + 1);
 }
+
+#endif // MELONPRIME_SCREENCONFIG_INCLUDED
 
 } // namespace MelonPrime
 
