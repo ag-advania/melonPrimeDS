@@ -36,13 +36,12 @@
 #include "ScreenLayout.h"
 #include "duckstation/gl/context.h"
 
+#ifdef MELONPRIME_CUSTOM_HUD
+#include "MelonPrimeHudEditSidePanel.h"
+#endif // MELONPRIME_CUSTOM_HUD
 
 class MainWindow;
 class EmuInstance;
-
-#ifdef MELONPRIME_CUSTOM_HUD
-class HudEditSidePanel;
-#endif // MELONPRIME_CUSTOM_HUD
 
 
 const struct { int id; float ratio; const char* label; } aspectRatios[] =
@@ -166,7 +165,7 @@ protected:
 #ifdef MELONPRIME_CUSTOM_HUD
     QImage Overlay[2];       // [0]=Top, [1]=Bottom — ARGB32_Premultiplied, 256x192 (DS-native space)
     QFont overlayFont;
-    HudEditSidePanel* m_hudEditPanel = nullptr;
+    MelonPrimeHudEditSidePanel* m_hudEditPanel = nullptr;
 #endif
 
 #ifdef MELONPRIME_DS
