@@ -14,6 +14,7 @@
 #include <QPainter>
 #include <QPainterPath>
 #include <QImage>
+#include <QMutex>
 #include <QColor>
 #include <QPoint>
 #include <QRect>
@@ -329,6 +330,7 @@ struct CachedHudConfig {
 };
 static CachedHudConfig s_cache = { .valid = false };
 static uint32_t s_cacheEpoch = 1;
+
 static inline void CopyConfigString(char* dst, size_t dstSize, const std::string& value)
 {
     std::strncpy(dst, value.c_str(), dstSize - 1);
