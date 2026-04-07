@@ -17,5 +17,6 @@
 		<file alias="mph-icon-bombs2">assets/bombs/bombs_2.svg</file>
 		<file alias="mph-icon-bombs1">assets/bombs/bombs_1.svg</file>
 		<file alias="mph-icon-bombs0">assets/bombs/bombs_0.svg</file>
+		<file alias="mph-icon-radar-frame">assets/radar/Rader.svg</file>
 	</qresource>
 </RCC>

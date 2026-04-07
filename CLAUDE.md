@@ -14,7 +14,7 @@ Displays a circular crop of the DS bottom screen on top of the rendered top scre
 
 **Two render paths:**
 - **OpenGL path** (`Screen.cpp` + `main_shaders.h`): samples the bottom screen from the texture array and clips it to a circular overlay.
-- **Software path** (`MelonPrimeHudRender.cpp`): `DrawBottomScreenOverlay()` draws a cropped `QImage` region with `QPainter` and a circular clip path.
+- **Software path** (`MelonPrimeHudRender.cpp`): `DrawBottomScreenOverlay()` draws a cropped `QImage` region with `QPainter` and a circular clip path. A radar frame SVG (`res/assets/radar/Rader.svg`) is drawn behind the crop with an independently configurable color (`BtmOverlayFrameColor*`), and the HUD outline is applied to it.
 
 **Current source region behavior:**
 - X center is fixed at `128`
@@ -31,6 +31,9 @@ Displays a circular crop of the DS bottom screen on top of the rendered top scre
 | `BtmOverlayDstSize` | 64 | Output size of the circular overlay |
 | `BtmOverlayOpacity` | 0.85 | Opacity (`0.0-1.0`) |
 | `BtmOverlaySrcRadius` | 46 | Source radius on the DS bottom screen |
+| `BtmOverlayFrameColorR` | 185 | Radar frame SVG tint color red (independent) |
+| `BtmOverlayFrameColorG` | 0 | Radar frame SVG tint color green |
+| `BtmOverlayFrameColorB` | 5 | Radar frame SVG tint color blue |
 
 ### 2. Custom HUD System
 Drawn with `QPainter` over the top screen buffer. The current HUD system includes:
@@ -141,6 +144,7 @@ Current cached data inside `MelonPrimeHudRender.cpp` includes:
 - `BattleMatchState`
 - P-9: `s_frameFm` / `s_frameFpx` — frame-level `QFontMetrics` cache (constructed once on first call, shared by all draw sub-functions via statics; avoids 5+ `p->fontMetrics()` copies per frame)
 - P-11: `CrosshairHudConfig::chInnerColor/chOuterColor/chDotColor` — pre-computed arm/dot colors with alpha set at config load time (avoids per-frame `QColor` copy + `setAlphaF`)
+- Radar frame SVG (`s_radarFrame` / `s_radarFrameTinted` / `s_radarFrameOutline`) — loaded once via `loadSvgToHeight()`, tinted and outline-colored images cached separately; re-tinted on color change
 
 ### CachedHudConfig struct notes
 Each sub-struct stores both **raw anchor + offset** values and **computed final coordinates**. The raw values are loaded once per config change in `Load*Config()`. Final positions are recomputed by `RecomputeAnchorPositions(topStretchX)` whenever config changes **or** `topStretchX` changes (window resize). This ensures anchored elements track the actual visible screen edges in widescreen/narrow views.
@@ -220,6 +224,10 @@ Applied optimizations in `MelonPrimeHudRender.cpp`:
 
 ### Radar overlay note
 The software radar overlay path takes `hunterID` and uses `kBtmOverlaySrcCenterY[hunterID]` to pick the crop center. That means the source crop is intentionally not identical for all hunters.
+
+The radar frame SVG (`res/assets/radar/Rader.svg`, Qt resource `:/mph-icon-radar-frame`) is drawn as a **background** behind the crop circle. The SVG's 76×76 viewBox matches the actual bottom screen radar art size in DS pixels (**not** the crop circle diameter). Sizing uses proportional mapping: `kRadarArtSize * dstSize / (srcRadius * 2)` DS pixels, so the frame scales with the overlay but does not match the crop circle boundary. The frame is always shown when the radar is visible, with no separate toggle.
+
+**Frame color** is independently configurable via `Metroid.Visual.BtmOverlayFrameColor[R/G/B]` (default `#B90005` = SVG's original stroke color). The **HUD Outline** settings (`HudOutlineColor*`, `HudOutlineThickness`, `HudOutlineOpacity`) are applied to the frame: a cached outline-colored copy (`s_radarFrameOutline`) is drawn expanded behind the tinted frame (`s_radarFrameTinted`). All three cached images (`s_radarFrame`, `s_radarFrameTinted`, `s_radarFrameOutline`) are invalidated on size/color change.
 
 ---
 
