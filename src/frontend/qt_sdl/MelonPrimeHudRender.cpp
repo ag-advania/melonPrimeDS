@@ -1925,10 +1925,9 @@ static void DrawRadarFrame(QPainter* topPaint, const CachedHudConfig& c)
     if (s_radarFrameTinted.isNull()) return;
 
     // Frame size in DS-space: proportional mapping from 76 btm-screen pixels.
-    // +1 to cropCenterX aligns the SVG frame with the crop circle / GL overlay.
     const float frameSizeDS = static_cast<float>(kRadarArtSize) * c.radar.radarDstSize
                               / static_cast<float>(srcDiameter);
-    const float cropCenterX = c.radar.radarDstX + c.radar.radarDstSize * 0.5f + 1.0f;
+    const float cropCenterX = c.radar.radarDstX + c.radar.radarDstSize * 0.5f + 0.75f;
     const float cropCenterY = c.radar.radarDstY + c.radar.radarDstSize * 0.5f;
     const QRectF frameDstRect(cropCenterX - frameSizeDS * 0.5f,
                               cropCenterY - frameSizeDS * 0.5f,
