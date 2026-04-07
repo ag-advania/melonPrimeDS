@@ -166,6 +166,22 @@ protected:
     QImage Overlay[2];       // [0]=Top, [1]=Bottom — ARGB32_Premultiplied, 256x192 (DS-native space)
     QFont overlayFont;
     MelonPrimeHudEditSidePanel* m_hudEditPanel = nullptr;
+    // Layout values cached in setupScreenLayout() — avoids sqrt per-frame.
+    float m_hudScale      = 1.0f;
+    float m_topStretchX   = 1.0f;
+    float m_hudOriginX    = 0.0f;
+    float m_hudOriginY    = 0.0f;
+    // Config values cached per epoch — avoids hash-map lookups per-frame.
+    uint32_t m_hudCfgEpoch   = ~0u;
+    int      m_hudRenderScale = 0;
+    // BtmOverlay config cache (GL path):
+    bool     m_radarEnable    = false;
+    int      m_radarAnchor    = 2;
+    int      m_radarDstX      = 0;
+    int      m_radarDstY      = 0;
+    int      m_radarDstSize   = 64;
+    float    m_radarOpacity   = 0.85f;
+    int      m_radarSrcRadius = 46;
 #endif
 
 #ifdef MELONPRIME_DS

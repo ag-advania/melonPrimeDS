@@ -67,6 +67,11 @@ namespace MelonPrime {
     // Invalidate cached config (call when settings are saved).
     void CustomHud_InvalidateConfigCache();
 
+    // Returns the current config cache generation counter.
+    // Incremented every time the config cache is refreshed.
+    // Screen.cpp uses this to skip re-reading config per-frame.
+    uint32_t CustomHud_GetCacheEpoch();
+
     // Cache battle settings at match join (call from HandleGameJoinInit).
     void CustomHud_OnMatchJoin(uint8_t* ram, const RomAddresses& rom);
 
