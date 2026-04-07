@@ -87,22 +87,22 @@ void MelonPrimeInputConfig::saveConfig()
         (ui->cbMetroidInGameTopScreenOnly->checkState() == Qt::Checked);
     instcfg.SetBool("Metroid.Visual.InGameTopScreenOnly", inGameTopScreenOnly);
     if (oldClipCursorToBottomScreenWhenNotInGame != clipCursorToBottomScreenWhenNotInGame) {
-        QTimer::singleShot(0, this, [this]() {
-            for (int i = 0; i < emuInstance->getNumWindows(); ++i) {
-                MainWindow* win = emuInstance->getWindow(i);
-                if (win && win->panel)
-                    win->panel->updateClipIfNeeded();
+        for (int i = 0; i < emuInstance->getNumWindows(); ++i) {
+            MainWindow* win = emuInstance->getWindow(i);
+            if (win && win->panel) {
+                QTimer::singleShot(0, win->panel, [panel = win->panel]() {
+                    panel->updateClipIfNeeded();
+                });
             }
-        });
+        }
     }
     if (oldInGameTopScreenOnly != inGameTopScreenOnly) {
-        QTimer::singleShot(0, this, [this]() {
-            for (int i = 0; i < emuInstance->getNumWindows(); ++i) {
-                MainWindow* win = emuInstance->getWindow(i);
-                if (win && win->panel)
-                    QMetaObject::invokeMethod(win->panel, "onScreenLayoutChanged", Qt::QueuedConnection);
+        for (int i = 0; i < emuInstance->getNumWindows(); ++i) {
+            MainWindow* win = emuInstance->getWindow(i);
+            if (win && win->panel) {
+                QMetaObject::invokeMethod(win->panel, "onScreenLayoutChanged", Qt::QueuedConnection);
             }
-        });
+        }
     }
 
     // Custom HUD
