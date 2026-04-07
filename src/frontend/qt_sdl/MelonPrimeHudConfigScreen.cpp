@@ -185,6 +185,9 @@ static bool s_innerSectionOpen    = false;
 static bool s_outerSectionOpen    = false;
 static int  s_crosshairPanelScroll = 0;
 
+// Text-scale slider drag state
+static bool s_textScaleDragging = false;
+
 static int CountCrosshairRows() {
     return 1 + kCrosshairMainCount + 2; // color + main props + Inner header + Outer header
 }
@@ -391,12 +394,37 @@ static const QRectF kEditResetRect (166.0f, 1.0f, 74.0f, 12.0f);
 // Text Scale control, Crosshair button, and Preview toggle (below button bar)
 static const QRectF kEditTextScaleRect(10.0f, 15.0f, 74.0f, 10.0f);
 static const QRectF kEditCrosshairBtnRect(88.0f, 15.0f, 74.0f, 10.0f);
+
+// Text Scale slider helpers (depend on kEditTextScaleRect)
+static constexpr int kTsMin = 10, kTsMax = 300;
+static constexpr float kTsLabelW = 16.0f;
+
+static inline QRectF TsTrackRect()
+{
+    const float tsX = static_cast<float>(kEditTextScaleRect.left()) + 2.0f;
+    const float tsY = static_cast<float>(kEditTextScaleRect.top());
+    const float tsW = static_cast<float>(kEditTextScaleRect.width()) - 4.0f;
+    const float tsH = static_cast<float>(kEditTextScaleRect.height());
+    return QRectF(tsX + kTsLabelW, tsY + 2.0f, tsW - kTsLabelW, tsH - 4.0f);
+}
+
+static inline int TsValueFromX(float px)
+{
+    const QRectF tr = TsTrackRect();
+    float frac = static_cast<float>((px - tr.left()) / tr.width());
+    frac = std::max(0.0f, std::min(1.0f, frac));
+    return std::max(kTsMin, std::min(kTsMax,
+        kTsMin + static_cast<int>(std::round(frac * (kTsMax - kTsMin) / 5.0f) * 5.0f)));
+}
 static const QRectF kEditPreviewBtnRect(166.0f, 15.0f, 74.0f, 10.0f);
 
 // Crosshair panel rect (left side, below control bar)
 static constexpr float kCrosshairPanelX = 2.0f;
 static constexpr float kCrosshairPanelY = 28.0f;
-static constexpr int kCrosshairMaxVisible = 10;
+// Max rows the crosshair panel can show — set large enough to fit all rows
+// without scrolling (11 currently). At 8px/row + 4px padding, 16 rows = 132px
+// which fits comfortably below the button bar (192 - 28 = 164px available).
+static constexpr int kCrosshairMaxVisible = 16;
 
 // Properties panel layout constants
 static constexpr float kPropRowH    = 8.0f;
@@ -1091,33 +1119,39 @@ static void DrawEditOverlay(QPainter* p, Config::Table& cfg, float topStretchX)
     p->drawText(kEditCancelRect, Qt::AlignCenter, QStringLiteral("\u2717 Cancel"));
     p->drawText(kEditResetRect,  Qt::AlignCenter, QStringLiteral("\u21ba Reset"));
 
-    // ── Text Scale control ──────────────────────────────────────────────────
+    // ── Text Scale slider ───────────────────────────────────────────────────
     {
-        int txSc = cfg.GetInt("Metroid.Visual.HudTextScale");
+        int txSc = std::max(kTsMin, std::min(kTsMax, cfg.GetInt("Metroid.Visual.HudTextScale")));
         p->fillRect(kEditTextScaleRect, QColor(40, 40, 80, 220));
         p->setPen(QPen(QColor(140, 140, 200), 0.4));
         p->drawRect(kEditTextScaleRect);
         p->setFont(smallFont);
+
+        const float tsX = static_cast<float>(kEditTextScaleRect.left()) + 2.0f;
+        const float tsY = static_cast<float>(kEditTextScaleRect.top());
+        const float tsH = static_cast<float>(kEditTextScaleRect.height());
+
+        // Label
         p->setPen(QColor(160, 160, 200));
-        float tsX = static_cast<float>(kEditTextScaleRect.left()) + 2.0f;
-        float tsY = static_cast<float>(kEditTextScaleRect.top());
-        float tsW = static_cast<float>(kEditTextScaleRect.width());
-        float tsH = static_cast<float>(kEditTextScaleRect.height());
-        p->drawText(QRectF(tsX, tsY, 26.0f, tsH), Qt::AlignLeft | Qt::AlignVCenter,
+        p->drawText(QRectF(tsX, tsY, kTsLabelW, tsH), Qt::AlignLeft | Qt::AlignVCenter,
                     QStringLiteral("Scale"));
-        float ctrlX = tsX + 26.0f;
-        float ctrlW = tsW - 28.0f;
-        float btnW = 8.0f;
-        QRectF decR(ctrlX, tsY + 1.0f, btnW, tsH - 2.0f);
-        QRectF valR(ctrlX + btnW, tsY + 1.0f, ctrlW - btnW * 2, tsH - 2.0f);
-        QRectF incR(ctrlX + ctrlW - btnW, tsY + 1.0f, btnW, tsH - 2.0f);
-        p->fillRect(decR, QColor(60, 60, 100, 200));
-        p->fillRect(valR, QColor(30, 30, 60, 180));
-        p->fillRect(incR, QColor(60, 60, 100, 200));
+
+        // Track
+        const QRectF tr = TsTrackRect();
+        const float frac = static_cast<float>(txSc - kTsMin) / (kTsMax - kTsMin);
+        p->fillRect(tr, QColor(20, 20, 50, 200));
+        p->fillRect(QRectF(tr.left(), tr.top(), tr.width() * frac, tr.height()),
+                    QColor(60, 90, 180, 220));
+        // Thumb
+        const float thumbX = tr.left() + tr.width() * frac - 1.0f;
+        p->fillRect(QRectF(thumbX, tsY + 0.5f, 2.0f, tsH - 1.0f), QColor(200, 220, 255, 240));
+        // Track border
+        p->setPen(QPen(QColor(80, 80, 160), 0.5));
+        p->drawRect(tr);
+        // Value text
         p->setPen(Qt::white);
-        p->drawText(decR, Qt::AlignCenter, QStringLiteral("\u25c0"));
-        p->drawText(valR, Qt::AlignCenter, QString::number(txSc) + QStringLiteral("%"));
-        p->drawText(incR, Qt::AlignCenter, QStringLiteral("\u25b6"));
+        p->setFont(smallFont);
+        p->drawText(tr, Qt::AlignCenter, QString::number(txSc) + QStringLiteral("%"));
     }
 
     // ── Crosshair toggle button ─────────────────────────────────────────────
@@ -1153,9 +1187,24 @@ static void DrawEditOverlay(QPainter* p, Config::Table& cfg, float topStretchX)
         const float panelH  = visCount * kPropRowH + 4.0f;
         const QRectF panelRect(kCrosshairPanelX, kCrosshairPanelY, kPropPanelW, panelH);
 
+        const int scrollOfs = std::min(s_crosshairPanelScroll,
+                                       std::max(0, totalRows - kCrosshairMaxVisible));
+
         p->fillRect(panelRect, QColor(20, 20, 40, 230));
         p->setPen(QPen(QColor(80, 80, 160), 0.5));
         p->drawRect(panelRect);
+
+        // Scrollbar indicator (right edge, visible when content overflows)
+        if (totalRows > visCount) {
+            const float sbW    = 2.5f;
+            const float sbX    = panelRect.right() - sbW - 0.5f;
+            const float sbY    = panelRect.top()   + 2.0f;
+            const float sbH    = panelH - 4.0f;
+            const float thumbH = sbH * (float)visCount / totalRows;
+            const float thumbY = sbY + sbH * (float)scrollOfs / totalRows;
+            p->fillRect(QRectF(sbX, sbY, sbW, sbH),       QColor(40, 40, 80, 180));
+            p->fillRect(QRectF(sbX, thumbY, sbW, thumbH), QColor(120, 140, 220, 220));
+        }
 
         const float rowX  = kCrosshairPanelX + 2.0f;
         const float ctrlX = rowX + kPropLabelW;
@@ -1163,8 +1212,6 @@ static void DrawEditOverlay(QPainter* p, Config::Table& cfg, float topStretchX)
 
         p->setFont(smallFont);
 
-        const int scrollOfs = std::min(s_crosshairPanelScroll,
-                                       std::max(0, totalRows - kCrosshairMaxVisible));
         for (int vi = 0; vi < visCount; ++vi) {
             const int rowIdx = vi + scrollOfs;
             const float rowY = kCrosshairPanelY + 2.0f + vi * kPropRowH;
@@ -1411,13 +1458,14 @@ void CustomHud_ExitEditMode(bool save, Config::Table& cfg)
 
     s_editMode           = false;
     s_editSelected       = -1;
-    s_editHovered        = -1;
-    s_dragging           = false;
-    s_anchorPickerOpen   = false;
-    s_crosshairPanelOpen = false;
-    s_innerSectionOpen   = false;
-    s_outerSectionOpen   = false;
-    s_crosshairPanelScroll = 0;
+    s_editHovered           = -1;
+    s_dragging              = false;
+    s_textScaleDragging     = false;
+    s_anchorPickerOpen      = false;
+    s_crosshairPanelOpen    = false;
+    s_innerSectionOpen      = false;
+    s_outerSectionOpen      = false;
+    s_crosshairPanelScroll  = 0;
     s_resizingLength     = false;
     s_resizingWidth      = false;
     s_editPreviewMode    = false;
@@ -1511,22 +1559,13 @@ void CustomHud_EditMousePress(QPointF pt, Qt::MouseButton btn, Config::Table& cf
         return;
     }
 
-    // Priority 1b: Text Scale ◀/▶
+    // Priority 1b: Text Scale slider
     if (kEditTextScaleRect.contains(ds)) {
-        float tsX = static_cast<float>(kEditTextScaleRect.left()) + 2.0f + 26.0f;
-        float tsW = static_cast<float>(kEditTextScaleRect.width()) - 28.0f;
-        float btnW = 8.0f;
-        float tsY = static_cast<float>(kEditTextScaleRect.top());
-        float tsH = static_cast<float>(kEditTextScaleRect.height());
-        QRectF decR(tsX, tsY + 1.0f, btnW, tsH - 2.0f);
-        QRectF incR(tsX + tsW - btnW, tsY + 1.0f, btnW, tsH - 2.0f);
-        int val = cfg.GetInt("Metroid.Visual.HudTextScale");
-        if (decR.contains(ds)) {
-            cfg.SetInt("Metroid.Visual.HudTextScale", std::max(50, val - 10));
+        const QRectF tr = TsTrackRect();
+        if (tr.contains(ds)) {
+            cfg.SetInt("Metroid.Visual.HudTextScale", TsValueFromX(static_cast<float>(ds.x())));
             CustomHud_InvalidateConfigCache();
-        } else if (incR.contains(ds)) {
-            cfg.SetInt("Metroid.Visual.HudTextScale", std::min(300, val + 10));
-            CustomHud_InvalidateConfigCache();
+            s_textScaleDragging = true;
         }
         return;
     }
@@ -1936,6 +1975,12 @@ void CustomHud_EditMouseMove(QPointF pt, Config::Table& cfg)
 {
     const QPointF ds = WidgetToDS(pt);
 
+    if (s_textScaleDragging) {
+        cfg.SetInt("Metroid.Visual.HudTextScale", TsValueFromX(static_cast<float>(ds.x())));
+        CustomHud_InvalidateConfigCache();
+        return;
+    }
+
     if (s_dragging && s_editSelected >= 0) {
         const HudEditElemDesc& d = kEditElems[s_editSelected];
         const int newOfsX = static_cast<int>(std::round(s_dragStartOfsX + ds.x() - s_dragStartDS.x()));
@@ -1987,16 +2032,25 @@ void CustomHud_EditMouseRelease(QPointF pt, Qt::MouseButton btn, Config::Table& 
     Q_UNUSED(pt);
     Q_UNUSED(btn);
     Q_UNUSED(cfg);
-    s_dragging       = false;
-    s_resizingLength = false;
-    s_resizingWidth  = false;
+    s_dragging          = false;
+    s_resizingLength    = false;
+    s_resizingWidth     = false;
+    s_textScaleDragging = false;
 }
 
 void CustomHud_EditMouseWheel(QPointF pt, int delta, Config::Table& cfg)
 {
-    Q_UNUSED(cfg);
     if (!s_editMode) return;
     QPointF ds = WidgetToDS(pt);
+
+    // Text Scale slider wheel
+    if (kEditTextScaleRect.contains(ds)) {
+        int val = cfg.GetInt("Metroid.Visual.HudTextScale");
+        val = std::max(kTsMin, std::min(kTsMax, val + (delta > 0 ? 5 : -5)));
+        cfg.SetInt("Metroid.Visual.HudTextScale", val);
+        CustomHud_InvalidateConfigCache();
+        return;
+    }
 
     // Crosshair panel scroll
     if (s_crosshairPanelOpen) {
