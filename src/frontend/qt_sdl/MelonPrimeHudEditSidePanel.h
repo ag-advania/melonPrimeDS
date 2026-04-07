@@ -52,6 +52,8 @@ private:
     QLineEdit*      addLineEdit(const QString& label, const char* key);
     QPushButton*    addColorPicker(const QString& label, const char* keyR, const char* keyG, const char* keyB);
     void            addSubColor(const QString& label, const char* overallKey, const char* keyR, const char* keyG, const char* keyB);
+    // Checkbox + color button in one row (for per-weapon tint etc.)
+    void            addColorOverlayRow(const QString& label, const char* enableKey, const char* keyR, const char* keyG, const char* keyB);
     // Add Show/Color/Anchor rows common to all elements; pass nullptr for absent keys
     void            addBuiltins(const char* showKey, const char* colorR, const char* colorG, const char* colorB, const char* anchorKey);
 

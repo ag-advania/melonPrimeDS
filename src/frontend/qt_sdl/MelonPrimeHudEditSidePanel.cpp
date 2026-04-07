@@ -253,6 +253,49 @@ void MelonPrimeHudEditSidePanel::addSubColor(const QString& label, const char* o
     m_rows.append(container);
 }
 
+void MelonPrimeHudEditSidePanel::addColorOverlayRow(
+    const QString& label, const char* enableKey,
+    const char* keyR, const char* keyG, const char* keyB)
+{
+    auto* container = new QWidget(this);
+    auto* hlay = new QHBoxLayout(container);
+    hlay->setContentsMargins(0, 0, 0, 0);
+    hlay->setSpacing(4);
+
+    auto* cb = new QCheckBox(container);
+    cb->setChecked(cfg().GetBool(enableKey));
+
+    auto* btn = new QPushButton(container);
+    int r = cfg().GetInt(keyR), g = cfg().GetInt(keyG), b = cfg().GetInt(keyB);
+    updateColorButton(btn, r, g, b);
+    btn->setEnabled(cb->isChecked());
+
+    hlay->addWidget(cb, 0);
+    hlay->addWidget(btn, 1);
+
+    std::string kE(enableKey), kR(keyR), kG(keyG), kB(keyB);
+    connect(cb, &QCheckBox::toggled, this, [this, btn, kE](bool checked) {
+        if (m_populating) return;
+        cfg().SetBool(kE, checked);
+        btn->setEnabled(checked);
+        MelonPrime::CustomHud_InvalidateConfigCache();
+    });
+    connect(btn, &QPushButton::clicked, this, [this, btn, kR, kG, kB]() {
+        QColor cur(cfg().GetInt(kR), cfg().GetInt(kG), cfg().GetInt(kB));
+        QColor picked = QColorDialog::getColor(cur, this, QStringLiteral("Pick Color"));
+        if (picked.isValid()) {
+            cfg().SetInt(kR, picked.red());
+            cfg().SetInt(kG, picked.green());
+            cfg().SetInt(kB, picked.blue());
+            updateColorButton(btn, picked.red(), picked.green(), picked.blue());
+            MelonPrime::CustomHud_InvalidateConfigCache();
+        }
+    });
+
+    m_form->addRow(label, container);
+    m_rows.append(container);
+}
+
 // ─── Separator ──────────────────────────────────────────────────────────────
 
 void MelonPrimeHudEditSidePanel::addSeparator()
@@ -372,7 +415,27 @@ void MelonPrimeHudEditSidePanel::populateWpnIcon()
         {QStringLiteral("Left"), QStringLiteral("Center"), QStringLiteral("Right")});
     addComboBox(QStringLiteral("Align Y"), "Metroid.Visual.HudWeaponIconAnchorY",
         {QStringLiteral("Top"), QStringLiteral("Center"), QStringLiteral("Bottom")});
-    addCheckBox(QStringLiteral("Color Override"), "Metroid.Visual.HudWeaponIconColorOverlay");
+    addSeparator();
+    // Per-weapon icon tint (enable + color per weapon)
+    struct { const char* label; const char* wpn; } kWeapons[9] = {
+        {"Power Beam",    "PowerBeam"},
+        {"Volt Driver",   "VoltDriver"},
+        {"Missile",       "Missile"},
+        {"Battle Hammer", "BattleHammer"},
+        {"Imperialist",   "Imperialist"},
+        {"Judicator",     "Judicator"},
+        {"Magmaul",       "Magmaul"},
+        {"Shock Coil",    "ShockCoil"},
+        {"Omega Cannon",  "OmegaCannon"},
+    };
+    char kE[80], kR[80], kG[80], kB[80];
+    for (auto& w : kWeapons) {
+        std::snprintf(kE, sizeof(kE), "Metroid.Visual.HudWeaponIconColorOverlay%s", w.wpn);
+        std::snprintf(kR, sizeof(kR), "Metroid.Visual.HudWeaponIconOverlayColorR%s", w.wpn);
+        std::snprintf(kG, sizeof(kG), "Metroid.Visual.HudWeaponIconOverlayColorG%s", w.wpn);
+        std::snprintf(kB, sizeof(kB), "Metroid.Visual.HudWeaponIconOverlayColorB%s", w.wpn);
+        addColorOverlayRow(QString::fromUtf8(w.label), kE, kR, kG, kB);
+    }
 }
 
 void MelonPrimeHudEditSidePanel::populateAmmoGauge()

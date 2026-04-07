@@ -444,13 +444,34 @@ static const HudWidgetProp kSecWpnIcon[] = {
     P_INT("Pos X", "Metroid.Visual.HudWeaponIconPosX", -256, 256, 1),
     P_INT("Pos Y", "Metroid.Visual.HudWeaponIconPosY", -256, 256, 1),
     P_INT("Icon Mode", "Metroid.Visual.HudWeaponIconMode", 0, 1, 1),
-    P_BOOL("Color Overlay", "Metroid.Visual.HudWeaponIconColorOverlay"),
     P_INT("Height", "Metroid.Visual.HudWeaponIconHeight", 4, 64, 1),
     P_INT("Icon Offset X", "Metroid.Visual.HudWeaponIconOffsetX", -128, 128, 1),
     P_INT("Icon Offset Y", "Metroid.Visual.HudWeaponIconOffsetY", -128, 128, 1),
     P_INT("Icon Anchor X", "Metroid.Visual.HudWeaponIconAnchorX", 0, 2, 1),
     P_INT("Icon Anchor Y", "Metroid.Visual.HudWeaponIconAnchorY", 0, 2, 1),
     P_FLOAT("Opacity", "Metroid.Visual.HudWpnIconOpacity"),
+};
+
+// --- Section 8b: Per-weapon icon color overlays ---
+static const HudWidgetProp kSecWpnIconTints[] = {
+    P_BOOL("Power Beam",    "Metroid.Visual.HudWeaponIconColorOverlayPowerBeam"),
+    P_CLR ("PB Color",      "Metroid.Visual.HudWeaponIconOverlayColorRPowerBeam",    "Metroid.Visual.HudWeaponIconOverlayColorGPowerBeam",    "Metroid.Visual.HudWeaponIconOverlayColorBPowerBeam"),
+    P_BOOL("Volt Driver",   "Metroid.Visual.HudWeaponIconColorOverlayVoltDriver"),
+    P_CLR ("VD Color",      "Metroid.Visual.HudWeaponIconOverlayColorRVoltDriver",   "Metroid.Visual.HudWeaponIconOverlayColorGVoltDriver",   "Metroid.Visual.HudWeaponIconOverlayColorBVoltDriver"),
+    P_BOOL("Missile",       "Metroid.Visual.HudWeaponIconColorOverlayMissile"),
+    P_CLR ("MSL Color",     "Metroid.Visual.HudWeaponIconOverlayColorRMissile",      "Metroid.Visual.HudWeaponIconOverlayColorGMissile",      "Metroid.Visual.HudWeaponIconOverlayColorBMissile"),
+    P_BOOL("Battle Hammer", "Metroid.Visual.HudWeaponIconColorOverlayBattleHammer"),
+    P_CLR ("BH Color",      "Metroid.Visual.HudWeaponIconOverlayColorRBattleHammer", "Metroid.Visual.HudWeaponIconOverlayColorGBattleHammer", "Metroid.Visual.HudWeaponIconOverlayColorBBattleHammer"),
+    P_BOOL("Imperialist",   "Metroid.Visual.HudWeaponIconColorOverlayImperialist"),
+    P_CLR ("IMP Color",     "Metroid.Visual.HudWeaponIconOverlayColorRImperialist",  "Metroid.Visual.HudWeaponIconOverlayColorGImperialist",  "Metroid.Visual.HudWeaponIconOverlayColorBImperialist"),
+    P_BOOL("Judicator",     "Metroid.Visual.HudWeaponIconColorOverlayJudicator"),
+    P_CLR ("JUD Color",     "Metroid.Visual.HudWeaponIconOverlayColorRJudicator",    "Metroid.Visual.HudWeaponIconOverlayColorGJudicator",    "Metroid.Visual.HudWeaponIconOverlayColorBJudicator"),
+    P_BOOL("Magmaul",       "Metroid.Visual.HudWeaponIconColorOverlayMagmaul"),
+    P_CLR ("MAG Color",     "Metroid.Visual.HudWeaponIconOverlayColorRMagmaul",      "Metroid.Visual.HudWeaponIconOverlayColorGMagmaul",      "Metroid.Visual.HudWeaponIconOverlayColorBMagmaul"),
+    P_BOOL("Shock Coil",    "Metroid.Visual.HudWeaponIconColorOverlayShockCoil"),
+    P_CLR ("SCL Color",     "Metroid.Visual.HudWeaponIconOverlayColorRShockCoil",    "Metroid.Visual.HudWeaponIconOverlayColorGShockCoil",    "Metroid.Visual.HudWeaponIconOverlayColorBShockCoil"),
+    P_BOOL("Omega Cannon",  "Metroid.Visual.HudWeaponIconColorOverlayOmegaCannon"),
+    P_CLR ("OC Color",      "Metroid.Visual.HudWeaponIconOverlayColorROmegaCannon",  "Metroid.Visual.HudWeaponIconOverlayColorGOmegaCannon",  "Metroid.Visual.HudWeaponIconOverlayColorBOmegaCannon"),
 };
 
 // --- Section 9: Ammo Gauge ---
@@ -586,11 +607,12 @@ static const HudSubSec kSubsCrosshair[] = {
 
 // ── HP / AMMO sub-sections ──
 static const HudSubSec kSubsHpAmmo[] = {
-    SUB("HP Number Position",     "Metroid.UI.SectionHudHp",         kSecHp),
-    SUB("Ammo Number Position",   "Metroid.UI.SectionHudWeaponAmmo", kSecWeaponAmmo),
-    SUB("Weapon Icon",            "Metroid.UI.SectionHudWpnIcon",    kSecWpnIcon),
-    SUB("HP Gauge",               "Metroid.UI.SectionHudHpGauge",    kSecHpGauge),
-    SUB("Ammo Gauge",             "Metroid.UI.SectionHudAmmoGauge",  kSecAmmoGauge),
+    SUB("HP Number Position",     "Metroid.UI.SectionHudHp",             kSecHp),
+    SUB("Ammo Number Position",   "Metroid.UI.SectionHudWeaponAmmo",     kSecWeaponAmmo),
+    SUB("Weapon Icon",            "Metroid.UI.SectionHudWpnIcon",        kSecWpnIcon),
+    SUB("Weapon Icon Color Overlay", "Metroid.UI.SectionHudWpnIconTints", kSecWpnIconTints),
+    SUB("HP Gauge",               "Metroid.UI.SectionHudHpGauge",        kSecHpGauge),
+    SUB("Ammo Gauge",             "Metroid.UI.SectionHudAmmoGauge",      kSecAmmoGauge),
 };
 
 // ── Rank/Time sub-sub-sections ──
@@ -1201,9 +1223,10 @@ void MelonPrimeInputConfig::setupCustomHudWidgets(Config::Table& instcfg)
             m_hudWidgets[p.cfgKeyG] = sbG;
             m_hudWidgets[p.cfgKeyB] = sbB;
 
-            // Preset combo → update spinboxes
+            // Preset combo → update spinboxes + write config + refresh preview
             connect(presetCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), this,
-                [sbR, sbG, sbB, updateSwatch](int idx) {
+                [this, sbR, sbG, sbB, updateSwatch,
+                 kR = std::string(p.cfgKey), kG = std::string(p.cfgKeyG), kB = std::string(p.cfgKeyB)](int idx) {
                     if (idx < 0 || idx >= kPaletteCount) return;
                     const PresetColor& pc = kHudColorPalette[idx];
                     const bool oldR = sbR->blockSignals(true);
@@ -1212,8 +1235,13 @@ void MelonPrimeInputConfig::setupCustomHudWidgets(Config::Table& instcfg)
                     sbR->setValue(pc.r); sbG->setValue(pc.g); sbB->setValue(pc.b);
                     sbR->blockSignals(oldR); sbG->blockSignals(oldG); sbB->blockSignals(oldB);
                     updateSwatch();
+                    if (!m_applyPreviewEnabled) return;
+                    emuInstance->getLocalConfig().SetInt(kR, pc.r);
+                    emuInstance->getLocalConfig().SetInt(kG, pc.g);
+                    emuInstance->getLocalConfig().SetInt(kB, pc.b);
+                    invalidateHudAndRefreshPreviews();
                 });
-            // Spinbox → after preset combo sets spinboxes, fire config update via spinbox signal below
+            // Spinbox → write config + refresh preview
 
             auto connectColorSpin = [this, updateSwatch](QSpinBox* sb, const std::string& key) {
                 connect(sb, QOverload<int>::of(&QSpinBox::valueChanged), this, [this, key, updateSwatch](int val) {
