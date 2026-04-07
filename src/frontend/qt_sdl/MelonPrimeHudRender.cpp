@@ -1960,7 +1960,15 @@ void DrawBottomScreenOverlay(Config::Table& localCfg, QPainter* topPaint, QImage
 
     const CachedHudConfig& c = s_cache;
     if (!c.radar.radarShow) return;
-    if (!topPaint || !btmBuffer || btmBuffer->isNull()) return;
+    if (!topPaint) return;
+
+    // Draw radar frame SVG as background (behind the crop circle).
+    // This does not depend on btmBuffer, so it works in both Native and GL paths.
+    DrawRadarFrame(topPaint, c);
+
+    // The bottom-screen crop circle requires a valid btmBuffer (Native path only).
+    // In GL path btmBuffer is nullptr — the circle is rendered via btmOverlayShader.
+    if (!btmBuffer || btmBuffer->isNull()) return;
 
     const int srcCenterX  = kBtmOverlaySrcCenterX;
     const int srcCenterY  = kBtmOverlaySrcCenterY[hunterID];
@@ -1972,9 +1980,6 @@ void DrawBottomScreenOverlay(Config::Table& localCfg, QPainter* topPaint, QImage
                   static_cast<int>((srcCenterY - srcRadius) * bufScaleY),
                   static_cast<int>(srcRadius * 2 * bufScaleX),
                   static_cast<int>(srcRadius * 2 * bufScaleY));
-
-    // Draw radar frame SVG as background (behind the crop circle)
-    DrawRadarFrame(topPaint, c);
 
     topPaint->save();
     topPaint->setRenderHint(QPainter::SmoothPixmapTransform, true);
