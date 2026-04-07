@@ -602,7 +602,8 @@ static const HudWidgetProp kSecRadar[] = {
     P_INT("Dst Size", "Metroid.Visual.BtmOverlayDstSize", 16, 128, 1),
     P_INT("Src Radius", "Metroid.Visual.BtmOverlaySrcRadius", 10, 96, 1),
     P_FLOAT("Opacity", "Metroid.Visual.BtmOverlayOpacity"),
-    P_CLR("Frame Color", "Metroid.Visual.BtmOverlayFrameColorR", "Metroid.Visual.BtmOverlayFrameColorG", "Metroid.Visual.BtmOverlayFrameColorB"),
+    P_CLR("Radar Color", "Metroid.Visual.BtmOverlayRadarColorR", "Metroid.Visual.BtmOverlayRadarColorG", "Metroid.Visual.BtmOverlayRadarColorB"),
+    P_BOOL("Use Hunter Color", "Metroid.Visual.BtmOverlayRadarColorUseHunter"),
     P_BOOL("Frame Outline", "Metroid.Visual.BtmOverlayFrameOutlineEnable"),
 };
 

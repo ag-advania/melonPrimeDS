@@ -592,10 +592,11 @@ void MelonPrimeHudEditSidePanel::populateRadar()
         "Metroid.Visual.BtmOverlayAnchor");
     addOpacitySlider(QStringLiteral("Opacity"), "Metroid.Visual.BtmOverlayOpacity");
     addSpinBox(QStringLiteral("Src Radius"), "Metroid.Visual.BtmOverlaySrcRadius", 10, 120);
-    addColorPicker(QStringLiteral("Frame Color"),
-        "Metroid.Visual.BtmOverlayFrameColorR",
-        "Metroid.Visual.BtmOverlayFrameColorG",
-        "Metroid.Visual.BtmOverlayFrameColorB");
+    addColorPicker(QStringLiteral("Radar Color"),
+        "Metroid.Visual.BtmOverlayRadarColorR",
+        "Metroid.Visual.BtmOverlayRadarColorG",
+        "Metroid.Visual.BtmOverlayRadarColorB");
+    addCheckBox(QStringLiteral("Use Hunter Color"), "Metroid.Visual.BtmOverlayRadarColorUseHunter");
     addCheckBox(QStringLiteral("Frame Outline"), "Metroid.Visual.BtmOverlayFrameOutlineEnable");
 }
 
