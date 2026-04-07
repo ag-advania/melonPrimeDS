@@ -299,6 +299,12 @@ namespace Config
         {"Instance*.Metroid.Visual.BtmOverlayDstY",            0},
         {"Instance*.Metroid.Visual.BtmOverlayDstSize",         64},
         {"Instance*.Metroid.Visual.BtmOverlaySrcRadius",       46},
+        /* MelonPrimeDS Bottom Screen Overlay frame color (default #B90005) { */
+        {"Instance*.Metroid.Visual.BtmOverlayFrameColorR",    185},
+        {"Instance*.Metroid.Visual.BtmOverlayFrameColorG",      0},
+        {"Instance*.Metroid.Visual.BtmOverlayFrameColorB",      5},
+        /* MelonPrimeDS Bottom Screen Overlay frame color } */
+        {"Instance*.Metroid.Visual.BtmOverlayFrameOutlineEnable", true},
         /* MelonPrimeDS Bottom Screen Overlay defaults } */
         /* MelonPrimeDS Custom HUD Crosshair defaults } */
     #endif
