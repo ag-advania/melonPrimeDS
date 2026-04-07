@@ -61,6 +61,16 @@ namespace MelonPrime {
     // Returns true when the radar overlay should be drawn on the top screen.
     bool CustomHud_ShouldDrawRadarOverlay(EmuInstance* emu, const RomAddresses& rom, uint8_t playerPosition);
 
+    // Ensure the no-HUD patch is reverted when custom HUD is disabled.
+    // Call every frame from Screen.cpp even when the HUD overlay is not rendered.
+    void CustomHud_EnsurePatchRestored(
+        EmuInstance* emu,
+        Config::Table& localCfg,
+        const RomAddresses& rom,
+        uint8_t playerPosition,
+        bool isInGame
+    );
+
     // Reset patch tracking state (call on emu stop/reset).
     void CustomHud_ResetPatchState();
 
