@@ -1769,11 +1769,15 @@ static void DrawCrosshair(QPainter* p, melonDS::u8* ram,
             }
         }
         // Composite: reset to pixel coords and blit just the dirty region
-        p->save();
+        // OPT-SR1: Manual save/restore — only transform + opacity changed.
+        // Avoids QPainter::save() full-state heap clone (~200-500 cyc).
+        const QTransform savedXform = p->transform();
+        const qreal savedOpacity = p->opacity();
         p->resetTransform();
         p->setOpacity(c.crosshair.chOutlineOpacity);
         p->drawImage(pixDirty.topLeft(), olBuf, pixDirty);
-        p->restore();
+        p->setTransform(savedXform);
+        p->setOpacity(savedOpacity);
     }
 
     // P-11: Inner arms — use pre-computed color with alpha (no per-frame copy + setAlphaF)
@@ -1979,7 +1983,7 @@ static void DrawRadarCombinedOutlines(QPainter* topPaint, const CachedHudConfig&
     const float expandDS = (c.lastHudScale > 0.0f)
                            ? static_cast<float>(std::max(1, c.outline.thickness)) / c.lastHudScale : 0.0f;
 
-    topPaint->save();
+    // OPT-SR2: No save/restore — caller (DrawBottomScreenOverlay) manages state.
     topPaint->setRenderHint(QPainter::Antialiasing, true);
     topPaint->setRenderHint(QPainter::SmoothPixmapTransform, true);
     topPaint->setOpacity(c.outline.opacity);
@@ -1998,8 +2002,6 @@ static void DrawRadarCombinedOutlines(QPainter* topPaint, const CachedHudConfig&
                                    fr.height() + expandDS * 2.0f),
                             s_radarFrameOutline);
     }
-
-    topPaint->restore();
 }
 
 void DrawBottomScreenOverlay(Config::Table& localCfg, QPainter* topPaint, QImage* btmBuffer, uint8_t hunterID)
@@ -2041,11 +2043,16 @@ void DrawBottomScreenOverlay(Config::Table& localCfg, QPainter* topPaint, QImage
     //  ② (mid):   Radar SVG frame
     //  ① (front): Radar HUD crop circle from bottom screen
 
-    // ③ Combined outlines (backmost).
+    // OPT-SR2: Manual state management replaces 2× QPainter::save()/restore().
+    // save() clones entire painter state to heap (~200-500 cyc each); here we
+    // only track the attributes actually modified by ③②①.
+    const qreal savedOpacity = topPaint->opacity();
+
+    // ③ Combined outlines (backmost) — sets RenderHints, opacity, pen, brush.
     DrawRadarCombinedOutlines(topPaint, c);
 
-    // P-16: Single save/restore for ② and ① — SmoothPixmapTransform set once.
-    topPaint->save();
+    // SmoothPixmapTransform already set by ③ if outlines are enabled;
+    // ensure it's on even when outlines are skipped.
     topPaint->setRenderHint(QPainter::SmoothPixmapTransform, true);
 
     // ② Radar SVG frame.
@@ -2069,7 +2076,11 @@ void DrawBottomScreenOverlay(Config::Table& localCfg, QPainter* topPaint, QImage
         topPaint->drawImage(c.radar.radarDstRect, *btmBuffer, srcRect);
     }
 
-    topPaint->restore();
+    // OPT-SR2: Manual restore — only the attributes actually changed.
+    topPaint->setClipping(false);
+    topPaint->setRenderHint(QPainter::Antialiasing, false);
+    topPaint->setRenderHint(QPainter::SmoothPixmapTransform, false);
+    topPaint->setOpacity(savedOpacity);
 }
 
 // =========================================================================
