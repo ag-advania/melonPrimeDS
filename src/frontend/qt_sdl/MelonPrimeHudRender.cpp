@@ -63,10 +63,12 @@ static QColor s_bombTintColor;
 static int    s_bombIconHeight = 0;
 static bool   s_bombTintCacheValid = false;
 
-// Outline tint caches — forward-declared here so EnsureBombIconsLoaded can invalidate
+// Outline icon caches — forward-declared here so EnsureBombIconsLoaded can invalidate
 static QImage s_weaponIconsOutline[9];
 static QImage s_bombIconsOutline[4];
-static QColor s_outlineTintColor; // invalid QColor = needs regeneration
+static QColor s_outlineTintColor;       // invalid QColor = needs regeneration
+static int    s_outlineExpandR     = -1;
+static int    s_outlineBaseIconH   = -1; // s_weaponIconHeight at last outline-gen
 
 static const QImage& GetBombIconForDraw(int bombs, bool useOverlay, const QColor& overlayColor)
 {
@@ -146,33 +148,56 @@ static void EnsureIconsLoaded(int dsH = 16, float hudScale = 1.0f)
     s_outlineTintColor = QColor(); // invalidate outline cache
 }
 
-// ── Outline icon tinting ─────────────────────────────────────────────────────
-static QImage TintIconForOutline(const QImage& src, const QColor& col)
+// ── Outline icon dilation ────────────────────────────────────────────────────
+// Applies max-dilation (same algorithm as BuildDilatedOutlineBitmap) to an icon.
+// Output image is (sw+2R) × (sh+2R), filled with outlineColor at dilated alpha.
+// Icon images are at output-pixel scale, so R == thickness (output pixels).
+static QImage DilateAndTintIconForOutline(const QImage& src, const QColor& col, int R)
 {
     if (src.isNull()) return src;
-    QImage dst = src.convertToFormat(QImage::Format_ARGB32_Premultiplied);
-    const int r = col.red(), g = col.green(), b = col.blue();
-    QRgb* bits = reinterpret_cast<QRgb*>(dst.bits());
-    const int n = dst.width() * dst.height();
-    for (int i = 0; i < n; ++i) {
-        const int a = qAlpha(bits[i]);
-        bits[i] = (a > 0) ? qRgba(r * a / 255, g * a / 255, b * a / 255, a) : 0;
+    const QImage s = src.convertToFormat(QImage::Format_ARGB32_Premultiplied);
+    const int sw = s.width(), sh = s.height();
+    const int dw = sw + R * 2, dh = sh + R * 2;
+    QImage dst(dw, dh, QImage::Format_ARGB32_Premultiplied);
+    dst.fill(Qt::transparent);
+    const int cr = col.red(), cg = col.green(), cb = col.blue();
+    for (int dy = 0; dy < dh; ++dy) {
+        QRgb* dstRow = reinterpret_cast<QRgb*>(dst.scanLine(dy));
+        for (int dx = 0; dx < dw; ++dx) {
+            const int sx0 = dx - R, sy0 = dy - R;
+            int maxA = 0;
+            for (int ky = -R; ky <= R && maxA < 255; ++ky) {
+                const int sy = sy0 + ky;
+                if (sy < 0 || sy >= sh) continue;
+                const QRgb* srcRow = reinterpret_cast<const QRgb*>(s.constScanLine(sy));
+                for (int kx = -R; kx <= R && maxA < 255; ++kx) {
+                    const int sx = sx0 + kx;
+                    if (sx < 0 || sx >= sw) continue;
+                    const int a = qAlpha(srcRow[sx]);
+                    if (a > maxA) maxA = a;
+                }
+            }
+            if (maxA > 0)
+                dstRow[dx] = qRgba(cr * maxA / 255, cg * maxA / 255, cb * maxA / 255, maxA);
+        }
     }
     return dst;
 }
 
-// Regenerates outline icon tints when color or icon size changes.
-static void EnsureOutlineIconsUpdated(const QColor& outlineColor)
+// Regenerates dilated outline icon caches when color, expandR, or icon size changes.
+// expandR == thickness in output pixels (icon image pixels == output pixels).
+static void EnsureOutlineIconsUpdated(const QColor& outlineColor, int expandR)
 {
-    const bool sizeChanged = !s_weaponIcons[0].isNull() &&
-                             !s_weaponIconsOutline[0].isNull() &&
-                             s_weaponIcons[0].size() != s_weaponIconsOutline[0].size();
-    if (s_outlineTintColor == outlineColor && !sizeChanged) return;
-    s_outlineTintColor = outlineColor;
+    if (s_outlineTintColor == outlineColor &&
+        s_outlineExpandR   == expandR      &&
+        s_outlineBaseIconH == s_weaponIconHeight) return;
+    s_outlineTintColor   = outlineColor;
+    s_outlineExpandR     = expandR;
+    s_outlineBaseIconH   = s_weaponIconHeight;
     for (int i = 0; i < 9; ++i)
-        s_weaponIconsOutline[i] = TintIconForOutline(s_weaponIcons[i], outlineColor);
+        s_weaponIconsOutline[i] = DilateAndTintIconForOutline(s_weaponIcons[i], outlineColor, expandR);
     for (int i = 0; i < 4; ++i)
-        s_bombIconsOutline[i] = TintIconForOutline(s_bombIcons[i], outlineColor);
+        s_bombIconsOutline[i] = DilateAndTintIconForOutline(s_bombIcons[i], outlineColor, expandR);
 }
 
 // =========================================================================
@@ -357,9 +382,8 @@ static inline void DrawCachedTextOutlined(QPainter* p,
 }
 
 // Draw an image with a dilation-based outline.
-// outlineIcon should be the result of TintIconForOutline + dilated separately,
-// but since icons are already at output scale, we use a simple expand in DS-space.
-// We draw the outline icon at a 1-pixel-enlarged rect on each side.
+// outlineIcon must be a DilateAndTintIconForOutline result: (sw+2R)×(sh+2R) pixels.
+// expandDS = R / hudScale (DS-space expansion to match the R-pixel dilation).
 static inline void DrawImageOutlined(QPainter* p,
                                      const QImage& icon,
                                      const QImage& outlineIcon,
@@ -1123,10 +1147,11 @@ static void DrawBombLeft(QPainter* p, melonDS::u8* ram, const RomAddresses& rom,
             if (iconAlignX == 1) ix -= dw * 0.5f; else if (iconAlignX == 2) ix -= dw;
             if (iconAlignY == 1) iy -= dh * 0.5f; else if (iconAlignY == 2) iy -= dh;
             if (c.outline.enable && c.outline.opacity > 0.0f) {
-                EnsureOutlineIconsUpdated(c.outline.color);
+                const int expandR = std::max(1, c.outline.thickness);
+                EnsureOutlineIconsUpdated(c.outline.color, expandR);
                 const int bombIdx = (bombs >= 0 && bombs <= 3) ? bombs : 0;
                 DrawImageOutlined(p, icon, s_bombIconsOutline[bombIdx],
-                                  QRectF(ix, iy, dw, dh), (float)c.outline.thickness / hudScale,
+                                  QRectF(ix, iy, dw, dh), (float)expandR / hudScale,
                                   c.bombIconOpacity, c.outline.opacity);
             } else {
                 if (c.bombIconOpacity < 1.0f) p->setOpacity(c.bombIconOpacity);
@@ -1438,10 +1463,11 @@ static void DrawWeaponAmmo(QPainter* p, melonDS::u8* ram,
         if (c.weapon.iconAnchorY == 1) iy -= dh * 0.5f;
         else if (c.weapon.iconAnchorY == 2) iy -= dh;
         if (c.outline.enable && c.outline.opacity > 0.0f) {
-            EnsureOutlineIconsUpdated(c.outline.color);
+            const int expandR = std::max(1, c.outline.thickness);
+            EnsureOutlineIconsUpdated(c.outline.color, expandR);
             const uint8_t wpnIdx = (weapon < 9) ? weapon : 0;
             DrawImageOutlined(p, icon, s_weaponIconsOutline[wpnIdx],
-                              QRectF(ix, iy, dw, dh), (float)c.outline.thickness / hudScale,
+                              QRectF(ix, iy, dw, dh), (float)expandR / hudScale,
                               c.wpnIconOpacity, c.outline.opacity);
         } else {
             if (c.wpnIconOpacity < 1.0f) p->setOpacity(c.wpnIconOpacity);
