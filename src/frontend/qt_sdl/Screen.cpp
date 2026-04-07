@@ -1238,6 +1238,13 @@ void ScreenPanelNative::paintEvent(QPaintEvent * event)
 
                 // Skip fill + render entirely when HUD is disabled and not in edit mode.
                 const bool hudVisible = MelonPrime::CustomHud_IsEnabled(instcfg) || MelonPrime::CustomHud_IsEditMode();
+                if (!hudVisible) {
+                    // Ensure the no-HUD ROM patch is reverted when custom HUD is off.
+                    MelonPrime::CustomHud_EnsurePatchRestored(
+                        emuInstance, instcfg,
+                        mp->GetCurrentRom(), mp->GetPlayerPosition(),
+                        mp->IsInGame());
+                }
                 if (hudVisible)
                 {
                     // Cap overlay render scale for performance (HudRenderScale=N means render at N×DS).
@@ -1726,6 +1733,13 @@ void ScreenPanelGL::drawScreen()
 
                 // Skip fill + render + upload when HUD is disabled and not in edit mode.
                 const bool hudVisible = MelonPrime::CustomHud_IsEnabled(instcfg) || MelonPrime::CustomHud_IsEditMode();
+                if (!hudVisible) {
+                    // Ensure the no-HUD ROM patch is reverted when custom HUD is off.
+                    MelonPrime::CustomHud_EnsurePatchRestored(
+                        emuInstance, instcfg,
+                        mp->GetCurrentRom(), mp->GetPlayerPosition(),
+                        mp->IsInGame());
+                }
                 if (hudVisible)
                 {
                 // Cap overlay render scale for performance (HudRenderScale=N means render at N×DS).
@@ -1818,8 +1832,13 @@ void ScreenPanelGL::drawScreen()
                         const float dsAY = (m_radarAnchor / 3) * 96.0f;
                         const float wAX  = topMtx[0]*dsAX + topMtx[1]*dsAY + topMtx[4];
                         const float wAY  = topMtx[2]*dsAX + topMtx[3]*dsAY + topMtx[5];
-                        dstX = static_cast<int>(wAX + dstX * rScaleY);
-                        dstY = static_cast<int>(wAY + dstY * rScaleY);
+                        // Decompose into overlay-base + internal-offset so the int
+                        // truncation of the origin matches the HUD overlay texture
+                        // placement (both use int(m_hudOriginX) as the base).
+                        const int ovrBaseX = static_cast<int>(m_hudOriginX);
+                        const int ovrBaseY = static_cast<int>(m_hudOriginY);
+                        dstX = ovrBaseX + static_cast<int>((wAX - m_hudOriginX) + dstX * rScaleY);
+                        dstY = ovrBaseY + static_cast<int>((wAY - m_hudOriginY) + dstY * rScaleY);
 
                         // dstX/dstY are now in window pixels. Use rScaleY for both dims (circle, not ellipse).
                         const float wDstX0 = dstX;

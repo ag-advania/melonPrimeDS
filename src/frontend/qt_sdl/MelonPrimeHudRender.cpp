@@ -229,6 +229,59 @@ static void EnsureOutlineIconsUpdated(const QColor& outlineColor, int expandR)
 }
 
 // =========================================================================
+//  Radar frame SVG cache — loaded once per size, re-tinted on color change.
+//  The SVG viewBox is 76×76 matching the actual bottom screen radar art size.
+//  The frame is drawn proportionally: 76 / (srcRadius*2) * dstSize DS pixels.
+// =========================================================================
+static QImage s_radarFrame;
+static QImage s_radarFrameTinted;
+static QColor s_radarFrameTintColor;
+static int    s_radarFrameTargetH = 0;
+// Cached dilated outline of the frame (same technique as weapon icons)
+static QImage s_radarFrameOutline;
+static QColor s_radarFrameOutlineColor;
+static int    s_radarFrameOutlineR = -1;
+
+// Bottom screen radar art size in pixels (= SVG viewBox width/height).
+static constexpr int kRadarArtSize = 76;
+
+static void EnsureRadarFrameLoaded(int dstSize, int srcRadius, float hudScale,
+                                    const QColor& tintColor, const QColor& outlineColor,
+                                    int outlineThickness)
+{
+    // Map 76 bottom-screen pixels to top-screen DS pixels proportionally,
+    // then scale to output pixels via hudScale.
+    const float dsFrameSize = static_cast<float>(kRadarArtSize) * dstSize / static_cast<float>(srcRadius * 2);
+    const int targetH = qMax(1, (int)std::ceil(dsFrameSize * hudScale));
+    if (s_radarFrameTargetH != targetH || s_radarFrameTargetH == 0) {
+        s_radarFrame = loadSvgToHeight(":/mph-icon-radar-frame", targetH);
+        s_radarFrameTargetH = targetH;
+        s_radarFrameTintColor = QColor(); // force re-tint
+        s_radarFrameOutlineColor = QColor(); // force re-outline
+        s_radarFrameOutlineR = -1;
+    }
+    if (s_radarFrameTintColor != tintColor) {
+        if (!s_radarFrame.isNull()) {
+            s_radarFrameTinted = s_radarFrame.copy();
+            QPainter tp(&s_radarFrameTinted);
+            tp.setCompositionMode(QPainter::CompositionMode_SourceIn);
+            tp.fillRect(s_radarFrameTinted.rect(), tintColor);
+            tp.end();
+        }
+        s_radarFrameTintColor = tintColor;
+    }
+    // Use proper max-filter dilation for the outline (same as weapon/bomb icons).
+    const int expandR = std::max(1, outlineThickness);
+    if (s_radarFrameOutlineColor != outlineColor || s_radarFrameOutlineR != expandR) {
+        if (!s_radarFrame.isNull()) {
+            s_radarFrameOutline = DilateAndTintIconForOutline(s_radarFrame, outlineColor, expandR);
+        }
+        s_radarFrameOutlineColor = outlineColor;
+        s_radarFrameOutlineR = expandR;
+    }
+}
+
+// =========================================================================
 //  P-2: Static outline buffer — allocated once, fill(transparent) per frame.
 //       Eliminates 196 KB heap alloc+dealloc every frame.
 // =========================================================================
@@ -507,6 +560,8 @@ struct RadarOverlayConfig {
     int radarAnchor, radarOfsX, radarOfsY;               // raw
     int radarSrcRadius;
     double radarOpacity;
+    QColor radarFrameColor;  // independent color for the radar frame SVG
+    bool radarFrameOutlineEnable;
     QRect radarDstRect;
     QPainterPath radarClipPath;
 };
@@ -748,6 +803,10 @@ static void LoadRadarOverlayConfig(RadarOverlayConfig& radar, Config::Table& cfg
     radar.radarDstSize = std::max(cfg.GetInt("Metroid.Visual.BtmOverlayDstSize"), 1);
     radar.radarOpacity = std::clamp(cfg.GetDouble("Metroid.Visual.BtmOverlayOpacity"), 0.0, 1.0);
     radar.radarSrcRadius = std::max(cfg.GetInt("Metroid.Visual.BtmOverlaySrcRadius"), 1);
+    radar.radarFrameColor = ReadRgbColor(cfg, "Metroid.Visual.BtmOverlayFrameColorR",
+                                              "Metroid.Visual.BtmOverlayFrameColorG",
+                                              "Metroid.Visual.BtmOverlayFrameColorB");
+    radar.radarFrameOutlineEnable = cfg.GetBool("Metroid.Visual.BtmOverlayFrameOutlineEnable");
     // radarDstRect and radarClipPath are recomputed in RecomputeAnchorPositions()
 }
 // Recompute all final X/Y positions from stored anchor + offset + topStretchX.
@@ -1280,6 +1339,27 @@ static void RestoreHudPatch(melonDS::NDS* nds, uint8_t romGroup)
     s_hudPatchApplied = false;
 }
 
+void CustomHud_EnsurePatchRestored(
+    EmuInstance* emu,
+    Config::Table& localCfg,
+    const RomAddresses& rom,
+    uint8_t playerPosition,
+    bool isInGame)
+{
+    if (!isInGame) return;
+    if (CustomHud_IsEnabled(localCfg)) return; // HUD enabled — Render() handles patches
+    if (!s_hudPatchApplied) return;
+
+    melonDS::NDS* nds = emu->getNDS();
+    melonDS::u8* ram = nds->MainRAM;
+    const uint32_t offP = static_cast<uint32_t>(playerPosition) * Consts::PLAYER_ADDR_INC;
+    const uint8_t romGroup = rom.romGroupIndex;
+
+    RestoreHudPatch(nds, romGroup);
+    uint8_t vm = Read8(ram, rom.baseViewMode + offP);
+    Write8(ram, rom.hudToggle, (vm == 0x00) ? 0x1F : 0x11);
+}
+
 void CustomHud_ResetPatchState()
 {
     s_hudPatchApplied = false;
@@ -1737,15 +1817,6 @@ HOT_FUNCTION void CustomHud_Render(
     const uint32_t offP = static_cast<uint32_t>(playerPosition) * Consts::PLAYER_ADDR_INC;
     const uint8_t romGroup = rom.romGroupIndex;
 
-    if (!CustomHud_IsEnabled(localCfg)) {
-        if (s_hudPatchApplied) {
-            RestoreHudPatch(nds, romGroup);
-            uint8_t vm = Read8(ram, rom.baseViewMode + offP);
-            Write8(ram, rom.hudToggle, (vm == 0x00) ? 0x1F : 0x11);
-        }
-        return;
-    }
-
     ApplyNoHudPatch(nds, romGroup);
 
     // P-3: Refresh config cache only when invalidated, or recompute anchor
@@ -1825,6 +1896,9 @@ HOT_FUNCTION void CustomHud_Render(
         }
     }
 
+    // Draw bottom screen overlay on top screen (visible in all camera modes incl. alt form)
+    DrawBottomScreenOverlay(localCfg, topPaint, btmBuffer, (hunterID <= 6) ? hunterID : 0);
+
     if (!isFirstPerson) return;
 
     uint8_t currentWeapon = Read8(ram, addrHot.currentWeapon);
@@ -1837,9 +1911,79 @@ HOT_FUNCTION void CustomHud_Render(
     bool isTrans = (Read8(ram, addrHot.jumpFlag) & 0x10) != 0;
     if (!isTrans && !isAlt)
         DrawCrosshair(topPaint, ram, rom, c, hudScale, topStretchX);
+}
 
-    // Draw bottom screen overlay on top screen
-    DrawBottomScreenOverlay(localCfg, topPaint, btmBuffer, (hunterID <= 6) ? hunterID : 0);
+// =========================================================================
+//  Radar frame SVG drawing — separated from the bottom screen crop overlay.
+//  Uses the same position/size as the radar overlay (radarDstRect center).
+// =========================================================================
+static void DrawRadarFrame(QPainter* topPaint, const CachedHudConfig& c)
+{
+    const int srcDiameter = c.radar.radarSrcRadius * 2;
+    const int expandR = (c.outline.enable && c.outline.opacity > 0.0f)
+                        ? std::max(1, c.outline.thickness) : 0;
+    EnsureRadarFrameLoaded(c.radar.radarDstSize, c.radar.radarSrcRadius, c.lastHudScale,
+                            c.radar.radarFrameColor, c.outline.color, expandR);
+    if (s_radarFrameTinted.isNull()) return;
+
+    // Frame size in DS-space: proportional mapping from 76 btm-screen pixels.
+    const float frameSizeDS = static_cast<float>(kRadarArtSize) * c.radar.radarDstSize
+                              / static_cast<float>(srcDiameter);
+    const float cropCenterX = c.radar.radarDstX + c.radar.radarDstSize * 0.5f + 0.75f;
+    const float cropCenterY = c.radar.radarDstY + c.radar.radarDstSize * 0.5f;
+    const QRectF frameDstRect(cropCenterX - frameSizeDS * 0.5f,
+                              cropCenterY - frameSizeDS * 0.5f,
+                              frameSizeDS, frameSizeDS);
+
+    // Draw the tinted frame
+    topPaint->save();
+    topPaint->setRenderHint(QPainter::SmoothPixmapTransform, true);
+    topPaint->setOpacity(c.radar.radarOpacity);
+    topPaint->drawImage(frameDstRect, s_radarFrameTinted);
+    topPaint->restore();
+}
+
+static void DrawRadarCombinedOutlines(QPainter* topPaint, const CachedHudConfig& c)
+{
+    if (!c.outline.enable || c.outline.opacity <= 0.0f) return;
+
+    const int srcDiameter = c.radar.radarSrcRadius * 2;
+    const int expandR = std::max(1, c.outline.thickness);
+
+    const float frameSizeDS = static_cast<float>(kRadarArtSize) * c.radar.radarDstSize
+                              / static_cast<float>(srcDiameter);
+    const float cropCenterX = c.radar.radarDstX + c.radar.radarDstSize * 0.5f + 0.75f;
+    const float cropCenterY = c.radar.radarDstY + c.radar.radarDstSize * 0.5f;
+    const QRectF frameDstRect(cropCenterX - frameSizeDS * 0.5f,
+                              cropCenterY - frameSizeDS * 0.5f,
+                              frameSizeDS, frameSizeDS);
+
+    const float expandDS = (c.lastHudScale > 0.0f)
+                           ? static_cast<float>(expandR) / c.lastHudScale : 0.0f;
+
+    QColor olc = c.outline.color;
+    olc.setAlphaF(c.outline.opacity);
+
+    topPaint->save();
+    topPaint->setRenderHint(QPainter::Antialiasing, true);
+    topPaint->setRenderHint(QPainter::SmoothPixmapTransform, true);
+    topPaint->setOpacity(c.outline.opacity);
+
+    // Radar HUD circle outline: filled ellipse expanded by outline thickness
+    topPaint->setPen(Qt::NoPen);
+    topPaint->setBrush(olc);
+    topPaint->drawEllipse(QRectF(c.radar.radarDstRect).adjusted(-expandDS, -expandDS, expandDS, expandDS));
+
+    // SVG frame outline (dilated image, same technique as weapon/bomb icons)
+    if (c.radar.radarFrameOutlineEnable && !s_radarFrameOutline.isNull()) {
+        topPaint->drawImage(QRectF(frameDstRect.x() - expandDS,
+                                   frameDstRect.y() - expandDS,
+                                   frameDstRect.width()  + expandDS * 2.0f,
+                                   frameDstRect.height() + expandDS * 2.0f),
+                            s_radarFrameOutline);
+    }
+
+    topPaint->restore();
 }
 
 void DrawBottomScreenOverlay(Config::Table& localCfg, QPainter* topPaint, QImage* btmBuffer, uint8_t hunterID)
@@ -1851,41 +1995,45 @@ void DrawBottomScreenOverlay(Config::Table& localCfg, QPainter* topPaint, QImage
 
     const CachedHudConfig& c = s_cache;
     if (!c.radar.radarShow) return;
-    if (!topPaint || !btmBuffer || btmBuffer->isNull()) return;
+    if (!topPaint) return;
 
-    const int srcCenterX  = kBtmOverlaySrcCenterX;
-    const int srcCenterY  = kBtmOverlaySrcCenterY[hunterID];
-    const int srcRadius   = c.radar.radarSrcRadius;
-    const float bufScaleX = static_cast<float>(btmBuffer->width()) / 256.0f;
-    const float bufScaleY = static_cast<float>(btmBuffer->height()) / 192.0f;
+    // Build frame caches up front (tinted + outline), then draw in final order below.
+    {
+        const int expandR = (c.outline.enable && c.outline.opacity > 0.0f)
+                            ? std::max(1, c.outline.thickness) : 0;
+        EnsureRadarFrameLoaded(c.radar.radarDstSize, c.radar.radarSrcRadius, c.lastHudScale,
+                               c.radar.radarFrameColor, c.outline.color, expandR);
+    }
 
-    QRect srcRect(static_cast<int>((srcCenterX - srcRadius) * bufScaleX),
-                  static_cast<int>((srcCenterY - srcRadius) * bufScaleY),
-                  static_cast<int>(srcRadius * 2 * bufScaleX),
-                  static_cast<int>(srcRadius * 2 * bufScaleY));
+    // Draw order (back-to-front):
+    //  ③ (back):  Combined outlines (expanded circle + dilated SVG frame)
+    //  ② (mid):   Radar SVG frame
+    //  ① (front): Radar HUD crop circle from bottom screen
 
-    topPaint->save();
-    topPaint->setRenderHint(QPainter::SmoothPixmapTransform, true);
-    topPaint->setOpacity(c.radar.radarOpacity);
-    topPaint->setClipPath(c.radar.radarClipPath);
-    topPaint->drawImage(c.radar.radarDstRect, *btmBuffer, srcRect);
-    topPaint->restore();
+    // ③ Combined outlines (backmost).
+    DrawRadarCombinedOutlines(topPaint, c);
 
-    // Outline ring around the radar circle
-    if (c.outline.enable && c.outline.opacity > 0.0f) {
-        // penW in DS units: thickness output pixels / hudScale → DS units (painter already scaled)
-        const float penW = (c.lastHudScale > 0.0f)
-                           ? static_cast<float>(c.outline.thickness * 2) / c.lastHudScale
-                           : static_cast<float>(c.outline.thickness * 2);
-        QColor olc = c.outline.color;
-        olc.setAlphaF(c.outline.opacity);
+    // ② Radar SVG frame.
+    DrawRadarFrame(topPaint, c);
+
+    // ① Radar HUD (crop from bottom screen, frontmost), if available.
+    if (btmBuffer && !btmBuffer->isNull()) {
+        const int srcCenterX  = kBtmOverlaySrcCenterX;
+        const int srcCenterY  = kBtmOverlaySrcCenterY[hunterID];
+        const int srcRadius   = c.radar.radarSrcRadius;
+        const float bufScaleX = static_cast<float>(btmBuffer->width()) / 256.0f;
+        const float bufScaleY = static_cast<float>(btmBuffer->height()) / 192.0f;
+
+        QRect srcRect(static_cast<int>((srcCenterX - srcRadius) * bufScaleX),
+                      static_cast<int>((srcCenterY - srcRadius) * bufScaleY),
+                      static_cast<int>(srcRadius * 2 * bufScaleX),
+                      static_cast<int>(srcRadius * 2 * bufScaleY));
+
         topPaint->save();
-        topPaint->setRenderHint(QPainter::Antialiasing, true);
-        topPaint->setPen(QPen(olc, penW));
-        topPaint->setBrush(Qt::NoBrush);
-        // Shrink rect by half pen width to keep ring inside the clip circle
-        const float half = penW * 0.5f;
-        topPaint->drawEllipse(QRectF(c.radar.radarDstRect).adjusted(half, half, -half, -half));
+        topPaint->setRenderHint(QPainter::SmoothPixmapTransform, true);
+        topPaint->setOpacity(c.radar.radarOpacity);
+        topPaint->setClipPath(c.radar.radarClipPath);
+        topPaint->drawImage(c.radar.radarDstRect, *btmBuffer, srcRect);
         topPaint->restore();
     }
 }

@@ -602,6 +602,8 @@ static const HudWidgetProp kSecRadar[] = {
     P_INT("Dst Size", "Metroid.Visual.BtmOverlayDstSize", 16, 128, 1),
     P_INT("Src Radius", "Metroid.Visual.BtmOverlaySrcRadius", 10, 96, 1),
     P_FLOAT("Opacity", "Metroid.Visual.BtmOverlayOpacity"),
+    P_CLR("Frame Color", "Metroid.Visual.BtmOverlayFrameColorR", "Metroid.Visual.BtmOverlayFrameColorG", "Metroid.Visual.BtmOverlayFrameColorB"),
+    P_BOOL("Frame Outline", "Metroid.Visual.BtmOverlayFrameOutlineEnable"),
 };
 
 #define _P(arr) arr, static_cast<int>(sizeof(arr)/sizeof(arr[0]))
