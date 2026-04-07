@@ -639,6 +639,14 @@ static const HudSubSec kSubsMatchStatus[] = {
     SUB("Bomb Icon",               "Metroid.UI.SectionHudBombIcon",   kSecBombIcon),
 };
 
+// --- Section: HUD Outline ---
+static const HudWidgetProp kSecHudOutline[] = {
+    P_BOOL("Enable",    "Metroid.Visual.HudOutline"),
+    P_CLR("Color",      "Metroid.Visual.HudOutlineColorR", "Metroid.Visual.HudOutlineColorG", "Metroid.Visual.HudOutlineColorB"),
+    P_FLOAT("Opacity",  "Metroid.Visual.HudOutlineOpacity"),
+    P_INT("Thickness",  "Metroid.Visual.HudOutlineThickness", 1, 10, 1),
+};
+
 // ── Main section groups ──
 static const HudMainSec kHudMainSections[] = {
     { "TEXT SCALE",        "Metroid.UI.SectionHudTextScale",
@@ -651,6 +659,8 @@ static const HudMainSec kHudMainSections[] = {
       nullptr, 0, kSubsMatchStatus, static_cast<int>(sizeof(kSubsMatchStatus)/sizeof(kSubsMatchStatus[0])), /*preview*/ 3 },
     { "HUD RADAR",         "Metroid.UI.SectionHudRadar",
       _P(kSecRadar), nullptr, 0, /*preview*/ 4 },
+    { "HUD OUTLINE",       "Metroid.UI.SectionHudOutline",
+      _P(kSecHudOutline), nullptr, 0, /*preview*/ 0 },
 };
 static constexpr int kHudMainSectionCount = static_cast<int>(sizeof(kHudMainSections) / sizeof(kHudMainSections[0]));
 
