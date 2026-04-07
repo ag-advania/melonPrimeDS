@@ -1933,28 +1933,54 @@ static void DrawRadarFrame(QPainter* topPaint, const CachedHudConfig& c)
                               cropCenterY - frameSizeDS * 0.5f,
                               frameSizeDS, frameSizeDS);
 
-    // Draw dilated outline behind the frame (same technique as weapon/bomb icons).
-    if (expandR > 0 && !s_radarFrameOutline.isNull()) {
-        // The dilated image is (w+2R)×(h+2R) in output pixels.
-        // Convert the R-pixel expansion back to DS-space for the painter.
-        const float expandDS = (c.lastHudScale > 0.0f)
-                               ? static_cast<float>(expandR) / c.lastHudScale : 0.0f;
-        topPaint->save();
-        topPaint->setRenderHint(QPainter::SmoothPixmapTransform, true);
-        topPaint->setOpacity(c.outline.opacity);
-        topPaint->drawImage(QRectF(frameDstRect.x() - expandDS,
-                                   frameDstRect.y() - expandDS,
-                                   frameDstRect.width()  + expandDS * 2.0f,
-                                   frameDstRect.height() + expandDS * 2.0f),
-                            s_radarFrameOutline);
-        topPaint->restore();
-    }
-
     // Draw the tinted frame
     topPaint->save();
     topPaint->setRenderHint(QPainter::SmoothPixmapTransform, true);
     topPaint->setOpacity(c.radar.radarOpacity);
     topPaint->drawImage(frameDstRect, s_radarFrameTinted);
+    topPaint->restore();
+}
+
+static void DrawRadarCombinedOutlines(QPainter* topPaint, const CachedHudConfig& c)
+{
+    if (!c.outline.enable || c.outline.opacity <= 0.0f) return;
+
+    const int srcDiameter = c.radar.radarSrcRadius * 2;
+    const int expandR = std::max(1, c.outline.thickness);
+
+    const float frameSizeDS = static_cast<float>(kRadarArtSize) * c.radar.radarDstSize
+                              / static_cast<float>(srcDiameter);
+    const float cropCenterX = c.radar.radarDstX + c.radar.radarDstSize * 0.5f + 0.75f;
+    const float cropCenterY = c.radar.radarDstY + c.radar.radarDstSize * 0.5f;
+    const QRectF frameDstRect(cropCenterX - frameSizeDS * 0.5f,
+                              cropCenterY - frameSizeDS * 0.5f,
+                              frameSizeDS, frameSizeDS);
+
+    const float expandDS = (c.lastHudScale > 0.0f)
+                           ? static_cast<float>(expandR) / c.lastHudScale : 0.0f;
+
+    QColor olc = c.outline.color;
+    olc.setAlphaF(c.outline.opacity);
+
+    topPaint->save();
+    topPaint->setRenderHint(QPainter::Antialiasing, true);
+    topPaint->setRenderHint(QPainter::SmoothPixmapTransform, true);
+    topPaint->setOpacity(c.outline.opacity);
+
+    // Radar HUD circle outline: filled ellipse expanded by outline thickness
+    topPaint->setPen(Qt::NoPen);
+    topPaint->setBrush(olc);
+    topPaint->drawEllipse(QRectF(c.radar.radarDstRect).adjusted(-expandDS, -expandDS, expandDS, expandDS));
+
+    // SVG frame outline (dilated image, same technique as weapon/bomb icons)
+    if (!s_radarFrameOutline.isNull()) {
+        topPaint->drawImage(QRectF(frameDstRect.x() - expandDS,
+                                   frameDstRect.y() - expandDS,
+                                   frameDstRect.width()  + expandDS * 2.0f,
+                                   frameDstRect.height() + expandDS * 2.0f),
+                            s_radarFrameOutline);
+    }
+
     topPaint->restore();
 }
 
@@ -1969,47 +1995,43 @@ void DrawBottomScreenOverlay(Config::Table& localCfg, QPainter* topPaint, QImage
     if (!c.radar.radarShow) return;
     if (!topPaint) return;
 
-    // Draw radar frame SVG as background (behind the crop circle).
-    // This does not depend on btmBuffer, so it works in both Native and GL paths.
+    // Build frame caches up front (tinted + outline), then draw in final order below.
+    {
+        const int expandR = (c.outline.enable && c.outline.opacity > 0.0f)
+                            ? std::max(1, c.outline.thickness) : 0;
+        EnsureRadarFrameLoaded(c.radar.radarDstSize, c.radar.radarSrcRadius, c.lastHudScale,
+                               c.radar.radarFrameColor, c.outline.color, expandR);
+    }
+
+    // Draw order (back-to-front):
+    //  ③ (back):  Combined outlines (expanded circle + dilated SVG frame)
+    //  ② (mid):   Radar SVG frame
+    //  ① (front): Radar HUD crop circle from bottom screen
+
+    // ③ Combined outlines (backmost).
+    DrawRadarCombinedOutlines(topPaint, c);
+
+    // ② Radar SVG frame.
     DrawRadarFrame(topPaint, c);
 
-    // The bottom-screen crop circle requires a valid btmBuffer (Native path only).
-    // In GL path btmBuffer is nullptr — the circle is rendered via btmOverlayShader.
-    if (!btmBuffer || btmBuffer->isNull()) return;
+    // ① Radar HUD (crop from bottom screen, frontmost), if available.
+    if (btmBuffer && !btmBuffer->isNull()) {
+        const int srcCenterX  = kBtmOverlaySrcCenterX;
+        const int srcCenterY  = kBtmOverlaySrcCenterY[hunterID];
+        const int srcRadius   = c.radar.radarSrcRadius;
+        const float bufScaleX = static_cast<float>(btmBuffer->width()) / 256.0f;
+        const float bufScaleY = static_cast<float>(btmBuffer->height()) / 192.0f;
 
-    const int srcCenterX  = kBtmOverlaySrcCenterX;
-    const int srcCenterY  = kBtmOverlaySrcCenterY[hunterID];
-    const int srcRadius   = c.radar.radarSrcRadius;
-    const float bufScaleX = static_cast<float>(btmBuffer->width()) / 256.0f;
-    const float bufScaleY = static_cast<float>(btmBuffer->height()) / 192.0f;
+        QRect srcRect(static_cast<int>((srcCenterX - srcRadius) * bufScaleX),
+                      static_cast<int>((srcCenterY - srcRadius) * bufScaleY),
+                      static_cast<int>(srcRadius * 2 * bufScaleX),
+                      static_cast<int>(srcRadius * 2 * bufScaleY));
 
-    QRect srcRect(static_cast<int>((srcCenterX - srcRadius) * bufScaleX),
-                  static_cast<int>((srcCenterY - srcRadius) * bufScaleY),
-                  static_cast<int>(srcRadius * 2 * bufScaleX),
-                  static_cast<int>(srcRadius * 2 * bufScaleY));
-
-    topPaint->save();
-    topPaint->setRenderHint(QPainter::SmoothPixmapTransform, true);
-    topPaint->setOpacity(c.radar.radarOpacity);
-    topPaint->setClipPath(c.radar.radarClipPath);
-    topPaint->drawImage(c.radar.radarDstRect, *btmBuffer, srcRect);
-    topPaint->restore();
-
-    // Outline ring around the radar circle
-    if (c.outline.enable && c.outline.opacity > 0.0f) {
-        // penW in DS units: thickness output pixels / hudScale → DS units (painter already scaled)
-        const float penW = (c.lastHudScale > 0.0f)
-                           ? static_cast<float>(c.outline.thickness * 2) / c.lastHudScale
-                           : static_cast<float>(c.outline.thickness * 2);
-        QColor olc = c.outline.color;
-        olc.setAlphaF(c.outline.opacity);
         topPaint->save();
-        topPaint->setRenderHint(QPainter::Antialiasing, true);
-        topPaint->setPen(QPen(olc, penW));
-        topPaint->setBrush(Qt::NoBrush);
-        // Shrink rect by half pen width to keep ring inside the clip circle
-        const float half = penW * 0.5f;
-        topPaint->drawEllipse(QRectF(c.radar.radarDstRect).adjusted(half, half, -half, -half));
+        topPaint->setRenderHint(QPainter::SmoothPixmapTransform, true);
+        topPaint->setOpacity(c.radar.radarOpacity);
+        topPaint->setClipPath(c.radar.radarClipPath);
+        topPaint->drawImage(c.radar.radarDstRect, *btmBuffer, srcRect);
         topPaint->restore();
     }
 }
