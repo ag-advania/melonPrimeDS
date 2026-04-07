@@ -242,6 +242,28 @@ static QImage s_radarFrameOutline;
 static QColor s_radarFrameOutlineColor;
 static int    s_radarFrameOutlineR = -1;
 
+// P-13: Pre-computed hunter QColor table — avoids per-frame QColor construction
+//       from bit-shifting. Initialized once on first use.
+static const QColor& HunterFrameQColor(int idx)
+{
+    static const QColor table[kHunterCount] = {
+        QColor((kHunterFrameColor[0] >> 16) & 0xFF, (kHunterFrameColor[0] >> 8) & 0xFF, kHunterFrameColor[0] & 0xFF),
+        QColor((kHunterFrameColor[1] >> 16) & 0xFF, (kHunterFrameColor[1] >> 8) & 0xFF, kHunterFrameColor[1] & 0xFF),
+        QColor((kHunterFrameColor[2] >> 16) & 0xFF, (kHunterFrameColor[2] >> 8) & 0xFF, kHunterFrameColor[2] & 0xFF),
+        QColor((kHunterFrameColor[3] >> 16) & 0xFF, (kHunterFrameColor[3] >> 8) & 0xFF, kHunterFrameColor[3] & 0xFF),
+        QColor((kHunterFrameColor[4] >> 16) & 0xFF, (kHunterFrameColor[4] >> 8) & 0xFF, kHunterFrameColor[4] & 0xFF),
+        QColor((kHunterFrameColor[5] >> 16) & 0xFF, (kHunterFrameColor[5] >> 8) & 0xFF, kHunterFrameColor[5] & 0xFF),
+        QColor((kHunterFrameColor[6] >> 16) & 0xFF, (kHunterFrameColor[6] >> 8) & 0xFF, kHunterFrameColor[6] & 0xFF),
+    };
+    return table[idx];
+}
+
+// P-13: Cached effective radar color — avoids QColor construction + comparison
+//       every frame when hunter/config hasn't changed.
+static QColor  s_effectiveRadarColor;
+static uint8_t s_effectiveRadarHunterID = 0xFF;
+static bool    s_effectiveRadarUseHunter = false;
+
 // Bottom screen radar art size in pixels (= SVG viewBox width/height).
 static constexpr int kRadarArtSize = 76;
 
@@ -1375,6 +1397,7 @@ void CustomHud_InvalidateConfigCache()
     s_cache.valid = false;
     s_bombTintCacheValid = false;
     for (int i = 0; i < 9; i++) s_weaponTintValid[i] = false;
+    s_effectiveRadarHunterID = 0xFF; // P-13: force re-evaluation of effective radar color
 }
 
 uint32_t CustomHud_GetCacheEpoch()
@@ -1995,11 +2018,19 @@ void DrawBottomScreenOverlay(Config::Table& localCfg, QPainter* topPaint, QImage
     if (!c.radar.radarShow) return;
     if (!topPaint) return;
 
-    // Resolve effective frame color: use hunter-specific color if enabled.
-    QColor effectiveFrameColor = c.radar.radarFrameColor;
-    if (c.radar.radarFrameColorUseHunter && hunterID < kHunterCount) {
-        const uint32_t rgb = kHunterFrameColor[hunterID];
-        effectiveFrameColor = QColor((rgb >> 16) & 0xFF, (rgb >> 8) & 0xFF, rgb & 0xFF);
+    // P-13: Resolve effective radar color with caching — only recompute QColor
+    //        when hunterID or useHunter config actually changes.
+    {
+        const bool useHunter = c.radar.radarFrameColorUseHunter;
+        if (useHunter != s_effectiveRadarUseHunter ||
+            (useHunter  && hunterID != s_effectiveRadarHunterID) ||
+            (!useHunter && s_effectiveRadarColor != c.radar.radarFrameColor)) {
+            s_effectiveRadarColor = (useHunter && hunterID < kHunterCount)
+                                    ? HunterFrameQColor(hunterID)
+                                    : c.radar.radarFrameColor;
+            s_effectiveRadarUseHunter = useHunter;
+            s_effectiveRadarHunterID  = hunterID;
+        }
     }
 
     // Build frame caches up front (tinted + outline), then draw in final order below.
@@ -2007,7 +2038,7 @@ void DrawBottomScreenOverlay(Config::Table& localCfg, QPainter* topPaint, QImage
         const int expandR = (c.outline.enable && c.outline.opacity > 0.0f)
                             ? std::max(1, c.outline.thickness) : 0;
         EnsureRadarFrameLoaded(c.radar.radarDstSize, c.radar.radarSrcRadius, c.lastHudScale,
-                               effectiveFrameColor, c.outline.color, expandR);
+                               s_effectiveRadarColor, c.outline.color, expandR);
     }
 
     // Draw order (back-to-front):
