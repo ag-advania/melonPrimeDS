@@ -1090,6 +1090,13 @@ bool needsCompile = UNLIKELY(!shadersReady)
 
 短絡評価により、`shadersReady == true` ならば右辺は評価されない。
 
+> **⚠️ 注意: `videoSettingsDirty` 時のリセット必須**
+> `shadersReady` はレンダラー切り替え時に `false` へリセットしなければならない。
+> `updateRenderer()` で新しい 3D レンダラーが生成されると `NeedsShaderCompile()` が再び `true` を返すが、
+> `shadersReady` が `true` のままだと短絡評価でチェック自体がスキップされ、
+> **新レンダラーのシェーダーがコンパイルされず画面が壊れる**。
+> リセット箇所: `videoSettingsDirty` ブロック内、`updateRenderer()` 直後。
+
 ## 16.5 P-40: targetTick 算出の除算→乗算変換
 
 P-27 で導入されたスピンループの整数比較では `targetTime / perfCountsSec` で tick に変換していた。
