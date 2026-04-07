@@ -499,6 +499,23 @@ Notes:
 - `kScreenVS` / `kScreenFS` — standard screen renderer
 - `kBtmOverlayVS` / `kBtmOverlayFS` — radar overlay shader path used when `MELONPRIME_CUSTOM_HUD` is enabled
 
+`src/frontend/qt_sdl/OSD_shaders.h`:
+- `kScreenVS_OSD` / `kScreenFS_OSD` — OSD (on-screen display) + HUD overlay shader. Has `#ifdef MELONPRIME_DS` branches (VS: `uTexScale` is `vec2` vs `float`; FS: texture swizzle removed by OPT-TX1)
+
+### main_shaders.h ↔ Screen.cpp coupling
+**Shaders and C++ are tightly coupled** — always check both sides when modifying either.
+
+| Shader (main_shaders.h) | C++ (Screen.cpp) | Coupling |
+|---|---|---|
+| `kBtmOverlayFS` `uniform vec3 uPalette[15]` | `initOpenGL()` OPT-SH1 block | Radar palette (15 colors). Shader `PALETTE_SIZE` must match C++ array size and `glUniform3fv` count |
+| `kBtmOverlayFS` `uniform float uOpacity` etc. | `drawScreen()` radar draw block | `btmOverlayOpacityULoc` etc. — uniform locations correspond to shader uniform names |
+| `kBtmOverlayVS` `uniform vec2 uScreenSize` etc. | `initOpenGL()` `glGetUniformLocation` calls | Uniform locations fetched at init and stored as member variables |
+
+### OSD_shaders.h ↔ Screen.cpp coupling
+| Shader (OSD_shaders.h) | C++ (Screen.cpp) | Coupling |
+|---|---|---|
+| `kScreenFS_OSD` texture read | `glTexImage2D` / `glTexSubImage2D` format arg | MelonPrime: `GL_BGRA` upload + no swizzle (OPT-TX1). Non-MelonPrime: `GL_RGBA` upload + `.bgra` swizzle |
+
 `Screen.h` / `Screen.cpp` also hold the OpenGL-side overlay shader program, uniforms, and draw setup.
 
 ---
