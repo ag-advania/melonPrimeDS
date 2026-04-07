@@ -1291,13 +1291,26 @@ uint32_t CustomHud_GetCacheEpoch()
 // =========================================================================
 static void DrawGauge(QPainter* p, int x, int y, float ratio,
                       const QColor& fillColor, int orientation,
-                      int barLength, int barWidth)
+                      int barLength, int barWidth,
+                      const HudOutlineConfig* outline = nullptr,
+                      float hudScale = 1.0f)
 {
     ratio = (ratio < 0.0f) ? 0.0f : (ratio > 1.0f) ? 1.0f : ratio;
     if (barLength <= 0) barLength = 28;
     if (barWidth  <= 0) barWidth  = 3;
 
     static const QColor bgColor(0, 0, 0, 128); // P-4: construct once
+
+    if (outline && outline->enable && outline->opacity > 0.0f) {
+        const float expand = static_cast<float>(outline->thickness) / hudScale;
+        QColor outlineColor = outline->color;
+        outlineColor.setAlphaF(outline->opacity);
+        if (orientation == 0) {
+            p->fillRect(QRectF(x - expand, y - expand, barLength + expand * 2.0f, barWidth + expand * 2.0f), outlineColor);
+        } else {
+            p->fillRect(QRectF(x - expand, y - expand, barWidth + expand * 2.0f, barLength + expand * 2.0f), outlineColor);
+        }
+    }
 
     if (orientation == 0) {
         p->fillRect(x, y, barLength, barWidth, bgColor);
@@ -1383,7 +1396,8 @@ static inline void DrawHP(QPainter* p, uint16_t hp, uint16_t maxHP,
                          c.hp.hpGaugeLen, c.hp.hpGaugeWid, c.hp.hpGaugeOri, gx, gy);
         }
         if (c.hpGaugeOpacity < 1.0f) p->setOpacity(c.hpGaugeOpacity);
-        DrawGauge(p, gx, gy, ratio, gc, c.hp.hpGaugeOri, c.hp.hpGaugeLen, c.hp.hpGaugeWid);
+        DrawGauge(p, gx, gy, ratio, gc, c.hp.hpGaugeOri, c.hp.hpGaugeLen, c.hp.hpGaugeWid,
+                  &c.outline, c.lastHudScale);
         if (c.hpGaugeOpacity < 1.0f) p->setOpacity(1.0);
     }
 }
@@ -1487,7 +1501,8 @@ static void DrawWeaponAmmo(QPainter* p, melonDS::u8* ram,
                          c.weapon.ammoGaugeLen, c.weapon.ammoGaugeWid, c.weapon.ammoGaugeOri, gx, gy);
         }
         if (c.ammoGaugeOpacity < 1.0f) p->setOpacity(c.ammoGaugeOpacity);
-        DrawGauge(p, gx, gy, ratio, c.weapon.ammoGaugeColor, c.weapon.ammoGaugeOri, c.weapon.ammoGaugeLen, c.weapon.ammoGaugeWid);
+        DrawGauge(p, gx, gy, ratio, c.weapon.ammoGaugeColor, c.weapon.ammoGaugeOri, c.weapon.ammoGaugeLen, c.weapon.ammoGaugeWid,
+                  &c.outline, hudScale);
         if (c.ammoGaugeOpacity < 1.0f) p->setOpacity(1.0);
     }
 }
