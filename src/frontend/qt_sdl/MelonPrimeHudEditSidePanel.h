@@ -49,6 +49,7 @@ private:
     QComboBox*      addComboBox(const QString& label, const char* key, const QStringList& items);
     QSpinBox*       addSpinBox(const QString& label, const char* key, int min, int max);
     QDoubleSpinBox* addDoubleSpinBox(const QString& label, const char* key, double min, double max, double step);
+    QSlider*        addOpacitySlider(const QString& label, const char* key);
     QLineEdit*      addLineEdit(const QString& label, const char* key);
     QPushButton*    addColorPicker(const QString& label, const char* keyR, const char* keyG, const char* keyB);
     void            addSubColor(const QString& label, const char* overallKey, const char* keyR, const char* keyG, const char* keyB);

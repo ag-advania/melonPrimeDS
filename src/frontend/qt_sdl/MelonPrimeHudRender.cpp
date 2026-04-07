@@ -343,6 +343,8 @@ struct CachedHudConfig {
     float lastStretchX; // topStretchX used for last anchor position computation
     // Per-element opacity values (cached to avoid per-frame config lookups)
     float hpOpacity, weaponOpacity, matchStatusOpacity, rankOpacity, bombLeftOpacity;
+    float hpGaugeOpacity, wpnIconOpacity, ammoGaugeOpacity;
+    float bombIconOpacity, timeLeftOpacity, timeLimitOpacity;
     bool valid;
 };
 static CachedHudConfig s_cache = { .valid = false };
@@ -608,6 +610,12 @@ static void RefreshCachedConfig(Config::Table& cfg, float topStretchX = 1.0f)
     c.matchStatusOpacity  = (float)cfg.GetDouble("Metroid.Visual.HudMatchStatusOpacity");
     c.rankOpacity         = (float)cfg.GetDouble("Metroid.Visual.HudRankOpacity");
     c.bombLeftOpacity     = (float)cfg.GetDouble("Metroid.Visual.HudBombLeftOpacity");
+    c.hpGaugeOpacity      = (float)cfg.GetDouble("Metroid.Visual.HudHpGaugeOpacity");
+    c.wpnIconOpacity      = (float)cfg.GetDouble("Metroid.Visual.HudWpnIconOpacity");
+    c.ammoGaugeOpacity    = (float)cfg.GetDouble("Metroid.Visual.HudAmmoGaugeOpacity");
+    c.bombIconOpacity     = (float)cfg.GetDouble("Metroid.Visual.HudBombIconOpacity");
+    c.timeLeftOpacity     = (float)cfg.GetDouble("Metroid.Visual.HudTimeLeftOpacity");
+    c.timeLimitOpacity    = (float)cfg.GetDouble("Metroid.Visual.HudTimeLimitOpacity");
     RecomputeAnchorPositions(topStretchX);
     ++s_cacheEpoch;
     if (s_cacheEpoch == 0) s_cacheEpoch = 1;
@@ -872,7 +880,7 @@ static void DrawBombLeft(QPainter* p, melonDS::u8* ram, const RomAddresses& rom,
 {
     if (!c.bombLeft.bombLeftShow) return; uint8_t bombs = static_cast<uint8_t>((Read32(ram, rom.baseBomb + offP) >> 8) & 0xF);
     { static TextBitmapCache s_bombBitmapCache = { 0, QColor(), "", 0, 0, false, QImage() }; const QFontMetrics fm = p->fontMetrics(); const int fontPixelSize = p->font().pixelSize(); char buf[64]; if (c.bombLeft.bombLeftTextShow) std::snprintf(buf, sizeof(buf), "%s%u%s", c.bombLeft.bombLeftPrefix, bombs, c.bombLeft.bombLeftSuffix); else std::snprintf(buf, sizeof(buf), "%s%s", c.bombLeft.bombLeftPrefix, c.bombLeft.bombLeftSuffix); if (buf[0] != '\0') { static TextMeasureCache s_bombMeasureCache = { 0, "", 0, 0, false }; int bombTextW = 0, bombTextH = 0; MeasureTextCached(fm, fontPixelSize, s_bombMeasureCache, buf, bombTextW, bombTextH, tds); PrepareTextBitmapCached(fm, p->font(), fontPixelSize, s_bombBitmapCache, buf, c.bombLeft.bombLeftColor); const int bombTextX = CalcAlignedTextX(c.bombLeft.bombLeftX, c.bombLeft.bombLeftAlign, bombTextW); DrawCachedText(p, s_bombBitmapCache, bombTextX, c.bombLeft.bombLeftY, tds); } }
-    if (c.bombLeft.bombIconShow) { EnsureBombIconsLoaded(c.bombLeft.bombIconHeight, hudScale); const QImage& icon = GetBombIconForDraw(bombs, c.bombLeft.bombIconColorOverlay, c.bombLeft.bombIconColor); if (!icon.isNull()) { const float dw = icon.width() / hudScale; const float dh = icon.height() / hudScale; float ix = (c.bombLeft.bombIconMode == 0) ? c.bombLeft.bombLeftX + c.bombLeft.bombIconOfsX : c.bombLeft.bombIconPosX; float iy = (c.bombLeft.bombIconMode == 0) ? c.bombLeft.bombLeftY + c.bombLeft.bombIconOfsY : c.bombLeft.bombIconPosY; const int iconAlignX = c.bombLeft.bombIconAnchorX; const int iconAlignY = c.bombLeft.bombIconAnchorY; if (iconAlignX == 1) ix -= dw * 0.5f; else if (iconAlignX == 2) ix -= dw; if (iconAlignY == 1) iy -= dh * 0.5f; else if (iconAlignY == 2) iy -= dh; p->drawImage(QRectF(ix, iy, dw, dh), icon); } }
+    if (c.bombLeft.bombIconShow) { EnsureBombIconsLoaded(c.bombLeft.bombIconHeight, hudScale); const QImage& icon = GetBombIconForDraw(bombs, c.bombLeft.bombIconColorOverlay, c.bombLeft.bombIconColor); if (!icon.isNull()) { const float dw = icon.width() / hudScale; const float dh = icon.height() / hudScale; float ix = (c.bombLeft.bombIconMode == 0) ? c.bombLeft.bombLeftX + c.bombLeft.bombIconOfsX : c.bombLeft.bombIconPosX; float iy = (c.bombLeft.bombIconMode == 0) ? c.bombLeft.bombLeftY + c.bombLeft.bombIconOfsY : c.bombLeft.bombIconPosY; const int iconAlignX = c.bombLeft.bombIconAnchorX; const int iconAlignY = c.bombLeft.bombIconAnchorY; if (iconAlignX == 1) ix -= dw * 0.5f; else if (iconAlignX == 2) ix -= dw; if (iconAlignY == 1) iy -= dh * 0.5f; else if (iconAlignY == 2) iy -= dh; if (c.bombIconOpacity < 1.0f) p->setOpacity(c.bombIconOpacity); p->drawImage(QRectF(ix, iy, dw, dh), icon); if (c.bombIconOpacity < 1.0f) p->setOpacity(1.0); } }
 }
 //  Rank & Time HUD
 // =========================================================================
@@ -880,8 +888,8 @@ static void DrawRankAndTime(QPainter* p, melonDS::u8* ram, const RomAddresses& r
 {
     if (isAdventure) return; const auto& hud = c.rankTime; const QFontMetrics fm = p->fontMetrics(); const int fontPixelSize = p->font().pixelSize();
     if (hud.rankShow) { static RankStringCache s_rankStringCache = { 0, 0, false, false, "" }; static TextBitmapCache s_rankCache = { 0, QColor(), "", 0, 0, false, QImage() }; static TextMeasureCache s_rankMeasure = { 0, "", 0, 0, false }; uint32_t rankWord = Read32(ram, rom.matchRank); uint8_t rankByte = (rankWord >> (playerPos * 8)) & 0xFF; if (rankByte <= 3) DrawCachedAlignedText(p, fm, fontPixelSize, tds, s_rankMeasure, s_rankCache, UpdateRankString(s_rankStringCache, rankByte, hud.rankShowOrdinal, hud), hud.rankColor, hud.rankX, hud.rankAlign, hud.rankY); }
-    if (hud.timeLeftShow) { static TimeStringCache s_timeLeftStringCache = { 0, 0, false, "" }; static TextBitmapCache s_timeLeftCache = { 0, QColor(), "", 0, 0, false, QImage() }; static TextMeasureCache s_timeLeftMeasure = { 0, "", 0, 0, false }; int seconds = static_cast<int>(Read32(ram, rom.timeLeft)) / 60; DrawCachedAlignedText(p, fm, fontPixelSize, tds, s_timeLeftMeasure, s_timeLeftCache, UpdateTimeString(s_timeLeftStringCache, seconds, false), hud.timeLeftColor, hud.timeLeftX, hud.timeLeftAlign, hud.timeLeftY); }
-    if (hud.timeLimitShow) { static TimeStringCache s_timeLimitStringCache = { 0, 0, false, "" }; static TextBitmapCache s_timeLimitCache = { 0, QColor(), "", 0, 0, false, QImage() }; static TextMeasureCache s_timeLimitMeasure = { 0, "", 0, 0, false }; int goalMinutes = s_battleState.valid ? s_battleState.timeLimitMinutes : LookupTimeLimitMin((Read32(ram, rom.battleSettings + 4) >> 8) & 0xFF); DrawCachedAlignedText(p, fm, fontPixelSize, tds, s_timeLimitMeasure, s_timeLimitCache, UpdateTimeString(s_timeLimitStringCache, goalMinutes, true), hud.timeLimitColor, hud.timeLimitX, hud.timeLimitAlign, hud.timeLimitY); }
+    if (hud.timeLeftShow) { static TimeStringCache s_timeLeftStringCache = { 0, 0, false, "" }; static TextBitmapCache s_timeLeftCache = { 0, QColor(), "", 0, 0, false, QImage() }; static TextMeasureCache s_timeLeftMeasure = { 0, "", 0, 0, false }; int seconds = static_cast<int>(Read32(ram, rom.timeLeft)) / 60; if (c.timeLeftOpacity < 1.0f) p->setOpacity(c.timeLeftOpacity); DrawCachedAlignedText(p, fm, fontPixelSize, tds, s_timeLeftMeasure, s_timeLeftCache, UpdateTimeString(s_timeLeftStringCache, seconds, false), hud.timeLeftColor, hud.timeLeftX, hud.timeLeftAlign, hud.timeLeftY); if (c.timeLeftOpacity < 1.0f) p->setOpacity(1.0); }
+    if (hud.timeLimitShow) { static TimeStringCache s_timeLimitStringCache = { 0, 0, false, "" }; static TextBitmapCache s_timeLimitCache = { 0, QColor(), "", 0, 0, false, QImage() }; static TextMeasureCache s_timeLimitMeasure = { 0, "", 0, 0, false }; int goalMinutes = s_battleState.valid ? s_battleState.timeLimitMinutes : LookupTimeLimitMin((Read32(ram, rom.battleSettings + 4) >> 8) & 0xFF); if (c.timeLimitOpacity < 1.0f) p->setOpacity(c.timeLimitOpacity); DrawCachedAlignedText(p, fm, fontPixelSize, tds, s_timeLimitMeasure, s_timeLimitCache, UpdateTimeString(s_timeLimitStringCache, goalMinutes, true), hud.timeLimitColor, hud.timeLimitX, hud.timeLimitAlign, hud.timeLimitY); if (c.timeLimitOpacity < 1.0f) p->setOpacity(1.0); }
 }
 // =========================================================================
 //  Config key (only for IsEnabled — hot path uses s_cache)
@@ -1085,7 +1093,9 @@ static inline void DrawHP(QPainter* p, uint16_t hp, uint16_t maxHP,
             CalcGaugePos(textX, c.hp.hpY, textW, textH, c.hp.hpGaugeAnchor, c.hp.hpGaugeOfsX, c.hp.hpGaugeOfsY,
                          c.hp.hpGaugeLen, c.hp.hpGaugeWid, c.hp.hpGaugeOri, gx, gy);
         }
+        if (c.hpGaugeOpacity < 1.0f) p->setOpacity(c.hpGaugeOpacity);
         DrawGauge(p, gx, gy, ratio, gc, c.hp.hpGaugeOri, c.hp.hpGaugeLen, c.hp.hpGaugeWid);
+        if (c.hpGaugeOpacity < 1.0f) p->setOpacity(1.0);
     }
 }
 
@@ -1153,7 +1163,9 @@ static void DrawWeaponAmmo(QPainter* p, melonDS::u8* ram,
         else if (c.weapon.iconAnchorX == 2) ix -= dw;
         if (c.weapon.iconAnchorY == 1) iy -= dh * 0.5f;
         else if (c.weapon.iconAnchorY == 2) iy -= dh;
+        if (c.wpnIconOpacity < 1.0f) p->setOpacity(c.wpnIconOpacity);
         p->drawImage(QRectF(ix, iy, dw, dh), icon);
+        if (c.wpnIconOpacity < 1.0f) p->setOpacity(1.0);
     }
 
     if (c.weapon.ammoGauge && hasAmmo && maxAmmo > 0) {
@@ -1166,7 +1178,9 @@ static void DrawWeaponAmmo(QPainter* p, melonDS::u8* ram,
             CalcGaugePos(textX, textY, textW, textH, c.weapon.ammoGaugeAnchor, c.weapon.ammoGaugeOfsX, c.weapon.ammoGaugeOfsY,
                          c.weapon.ammoGaugeLen, c.weapon.ammoGaugeWid, c.weapon.ammoGaugeOri, gx, gy);
         }
+        if (c.ammoGaugeOpacity < 1.0f) p->setOpacity(c.ammoGaugeOpacity);
         DrawGauge(p, gx, gy, ratio, c.weapon.ammoGaugeColor, c.weapon.ammoGaugeOri, c.weapon.ammoGaugeLen, c.weapon.ammoGaugeWid);
+        if (c.ammoGaugeOpacity < 1.0f) p->setOpacity(1.0);
     }
 }
 
