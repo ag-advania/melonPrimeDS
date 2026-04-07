@@ -1480,7 +1480,13 @@ void ScreenPanelGL::initOpenGL()
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+#ifdef MELONPRIME_DS
+    // OPT-TX1: GL_BGRA matches QImage ARGB32_Premultiplied native byte order
+    // (BGRA on little-endian), enabling driver fast-path (no R↔B byte swap).
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, logo.width(), logo.height(), 0, GL_BGRA, GL_UNSIGNED_BYTE, logo.bits());
+#else
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, logo.width(), logo.height(), 0, GL_RGBA, GL_UNSIGNED_BYTE, logo.bits());
+#endif
     logoTexture = tex;
 
 #ifdef MELONPRIME_CUSTOM_HUD
@@ -1508,6 +1514,42 @@ void ScreenPanelGL::initOpenGL()
     btmOverlayOpacityULoc = glGetUniformLocation(btmOverlayShader, "uOpacity");
     btmOverlaySrcCenterULoc = glGetUniformLocation(btmOverlayShader, "uSrcCenter");
     btmOverlaySrcRadiusULoc = glGetUniformLocation(btmOverlayShader, "uSrcRadius");
+
+    // OPT-SH1: Upload radar palette colors as uniform array (set once at init).
+    // Corresponds to uPalette[PALETTE_SIZE] in main_shaders.h kBtmOverlayFS.
+    // These are the active radar palette colors (nodes, octoliths, etc.)
+    // Commented-out colors below are hunter-specific radar dots — currently
+    // filtered by the radar frame overlay, but kept here for future reference:
+    //   68E028 (104,224, 40) - green Samus radar
+    //   F8F858 (248,248, 88) - yellow Kanden radar
+    //   F87038 (248,112, 56) - orange Spire radar
+    //   E01018 (224, 16, 24) - red Trace radar
+    //   5098D0 ( 80,152,208) - blue Noxus radar
+    //   D0F0A0 (208,240,160) - pale green Sylux radar
+    //   D09838 (208,152, 56) - amber Weavel radar
+    //   F8F898 (248,248,152) - center of Kanden radar
+    //   529CD6, 6582B1       - Noxus radar blue variants
+    {
+        const float palette[15][3] = {
+            {192, 248, 104},  // C0F868 - yellow-green
+            {248, 168, 168},  // F8A8A8 - pink, node red middle
+            {224,  48,  48},  // E03030 - node red outer and center
+            {160, 160, 160},  // A0A0A0 - octolith gray top
+            {200, 200, 200},  // C8C8C8 - octolith gray center
+            {144, 144, 144},  // 909090 - octolith gray bottom
+            {248, 128,  16},  // F88010 - octolith orange top
+            {248, 208, 160},  // F8D0A0 - octolith orange center
+            {216, 104,   0},  // D86800 - octolith orange bottom
+            {136, 224,   8},  // 88E008 - octolith green top
+            {200, 248, 128},  // C8F880 - octolith green center
+            {104, 184,   0},  // 68B800 - octolith green bottom
+            { 16, 152, 200},  // 1098C8 - node blue outer and center
+            { 40, 216, 248},  // 28D8F8 - node blue middle
+            {168, 168, 168},  // A8A8A8 - node gray
+        };
+        GLint paletteLoc = glGetUniformLocation(btmOverlayShader, "uPalette");
+        glUniform3fv(paletteLoc, 15, &palette[0][0]);
+    }
 
     // Quad: 6 vertices, each with position(x,y) + texcoord(u,v)
     // Texcoords map source rect — will be updated dynamically
@@ -1604,7 +1646,12 @@ void ScreenPanelGL::osdRenderItem(OSDItem * item)
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+#ifdef MELONPRIME_DS
+    // OPT-TX1: GL_BGRA fast-path (see logo upload comment).
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, item->bitmap.width(), item->bitmap.height(), 0, GL_BGRA, GL_UNSIGNED_BYTE, item->bitmap.bits());
+#else
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, item->bitmap.width(), item->bitmap.height(), 0, GL_RGBA, GL_UNSIGNED_BYTE, item->bitmap.bits());
+#endif
 
     osdTextures[item->id] = tex;
 }
@@ -1769,18 +1816,19 @@ void ScreenPanelGL::drawScreen()
 
                 glBindTexture(GL_TEXTURE_2D, overlayTextures[0]);
                 // Reallocate GL texture when the buffer size changes (window resize).
+                // OPT-TX1: GL_BGRA matches QImage native byte order — driver fast-path.
                 if (topOutW != overlayTexW || topOutH != overlayTexH) {
                     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, topOutW, topOutH, 0,
-                        GL_RGBA, GL_UNSIGNED_BYTE, Overlay[0].constBits());
+                        GL_BGRA, GL_UNSIGNED_BYTE, Overlay[0].constBits());
                     overlayTexW = topOutW;
                     overlayTexH = topOutH;
                 } else {
                     glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, topOutW, topOutH,
-                        GL_RGBA, GL_UNSIGNED_BYTE, Overlay[0].constBits());
+                        GL_BGRA, GL_UNSIGNED_BYTE, Overlay[0].constBits());
                 }
 
 
-                // Switch to OSD shader (supports alpha via texelFetch + BGRA swizzle)
+                // Switch to OSD shader for HUD overlay compositing
                 glUseProgram(osdShader);
                 glUniform2f(osdScreenSizeULoc, w, h);
                 glUniform1f(osdScaleFactorULoc, factor);
@@ -1873,8 +1921,16 @@ void ScreenPanelGL::drawScreen()
 
                         glActiveTexture(GL_TEXTURE0);
                         glBindTexture(GL_TEXTURE_2D_ARRAY, activeScreenTexture);
-                        glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-                        glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+                        // OPT-RL1: Radar always needs GL_LINEAR. Skip redundant
+                        // glTexParameteri when the texture already has it.
+                        // lastFilter tracks screenTexture's state; for GPU
+                        // renderer textures we always set (not tracked).
+                        if (activeScreenTexture != screenTexture || lastFilter != GL_LINEAR) {
+                            glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+                            glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+                            if (activeScreenTexture == screenTexture)
+                                lastFilter = GL_LINEAR;
+                        }
 
                         glEnable(GL_BLEND);
                         glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);

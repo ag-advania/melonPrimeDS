@@ -80,6 +80,22 @@ void main()
 }
 )";
 #endif
+#ifdef MELONPRIME_DS
+const char* kScreenFS_OSD = R"(#version 140
+
+uniform sampler2D OSDTex;
+
+smooth in vec2 fTexcoord;
+
+out vec4 oColor;
+
+void main()
+{
+    // OPT-TX1: With GL_BGRA upload, texture stores correct RGBA — no swizzle needed.
+    oColor = texelFetch(OSDTex, ivec2(fTexcoord), 0);
+}
+)";
+#else
 const char* kScreenFS_OSD = R"(#version 140
 
 uniform sampler2D OSDTex;
@@ -94,5 +110,6 @@ void main()
     oColor = pixel.bgra;
 }
 )";
+#endif
 
 #endif // OSD_SHADERS_H
