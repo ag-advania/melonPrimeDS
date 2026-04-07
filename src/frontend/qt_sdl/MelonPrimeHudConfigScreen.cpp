@@ -624,27 +624,104 @@ static QRectF ComputeEditBounds(int idx, Config::Table& cfg, float topStretchX)
     int fx, fy;
     ApplyAnchor(anchor, ofsX, ofsY, fx, fy, topStretchX);
 
+    float tds = std::max(0.5f, cfg.GetInt("Metroid.Visual.HudTextScale") / 100.0f);
+
+    // ── HP Gauge (idx=1) / Ammo Gauge (idx=4) ──────────────────────────────
     if (d.lengthKey != nullptr) {
-        const int len = std::max(4, cfg.GetInt(d.lengthKey));
-        const int wid = std::max(1, cfg.GetInt(d.widthKey));
-        const int ori = (d.orientKey != nullptr) ? cfg.GetInt(d.orientKey) : 0;
-        if (ori == 1)
-            return QRectF(fx, fy, wid, len);
-        return QRectF(fx, fy, len, wid);
+        const int len     = std::max(4, cfg.GetInt(d.lengthKey));
+        const int wid     = std::max(1, cfg.GetInt(d.widthKey));
+        const int ori     = (d.orientKey != nullptr) ? cfg.GetInt(d.orientKey) : 0;
+        const int posMode = d.posModeKey ? cfg.GetInt(d.posModeKey) : 1;
+
+        if (posMode == 0) {
+            // Relative to parent text element
+            const int parentIdx = (idx == 1) ? 0 : 2; // HP→0, AmmoGauge→Weapon(2)
+            const HudEditElemDesc& td = kEditElems[parentIdx];
+            int tx, ty;
+            ApplyAnchor(cfg.GetInt(td.anchorKey), cfg.GetInt(td.ofsXKey), cfg.GetInt(td.ofsYKey),
+                        tx, ty, topStretchX);
+            const int approxW = static_cast<int>(30.0f * tds);
+            const int approxH = static_cast<int>(12.0f * tds);
+            const char* gaugeAnchorKey = (idx == 1) ? "Metroid.Visual.HudHpGaugeAnchor"
+                                                     : "Metroid.Visual.HudAmmoGaugeAnchor";
+            const char* gaugeOfsXKey   = (idx == 1) ? "Metroid.Visual.HudHpGaugeOffsetX"
+                                                     : "Metroid.Visual.HudAmmoGaugeOffsetX";
+            const char* gaugeOfsYKey   = (idx == 1) ? "Metroid.Visual.HudHpGaugeOffsetY"
+                                                     : "Metroid.Visual.HudAmmoGaugeOffsetY";
+            int gx, gy;
+            CalcGaugePos(tx, ty, approxW, approxH,
+                         cfg.GetInt(gaugeAnchorKey), cfg.GetInt(gaugeOfsXKey), cfg.GetInt(gaugeOfsYKey),
+                         len, wid, ori, gx, gy);
+            return (ori == 1) ? QRectF(gx, gy, wid, len) : QRectF(gx, gy, len, wid);
+        }
+        // Independent: fx/fy come from PosAnchor + PosX/Y
+        return (ori == 1) ? QRectF(fx, fy, wid, len) : QRectF(fx, fy, len, wid);
     }
 
-    if (idx == 3)
-        return QRectF(fx - 12.0, fy - 12.0, 24.0, 24.0);
+    // ── Weapon icon (idx=3) ─────────────────────────────────────────────────
+    if (idx == 3) {
+        const int iconH = std::max(4, cfg.GetInt("Metroid.Visual.HudWeaponIconHeight"));
+        const float dh  = static_cast<float>(iconH);
+        // Use cached icon aspect ratio (don't reload); fall back to square
+        const QImage& icon = s_weaponIcons[0];
+        const float dw = (!icon.isNull() && icon.height() > 0)
+                         ? dh * static_cast<float>(icon.width()) / static_cast<float>(icon.height())
+                         : dh;
+        float ix, iy;
+        if (cfg.GetInt("Metroid.Visual.HudWeaponIconMode") == 0) {
+            // Relative to Weapon/Ammo text (idx=2)
+            const HudEditElemDesc& td = kEditElems[2];
+            int tx, ty;
+            ApplyAnchor(cfg.GetInt(td.anchorKey), cfg.GetInt(td.ofsXKey), cfg.GetInt(td.ofsYKey),
+                        tx, ty, topStretchX);
+            ix = static_cast<float>(tx) + cfg.GetInt("Metroid.Visual.HudWeaponIconOffsetX");
+            iy = static_cast<float>(ty) + cfg.GetInt("Metroid.Visual.HudWeaponIconOffsetY");
+        } else {
+            ix = static_cast<float>(fx);
+            iy = static_cast<float>(fy);
+        }
+        const int ancX = cfg.GetInt("Metroid.Visual.HudWeaponIconAnchorX");
+        const int ancY = cfg.GetInt("Metroid.Visual.HudWeaponIconAnchorY");
+        if (ancX == 1) ix -= dw * 0.5f; else if (ancX == 2) ix -= dw;
+        if (ancY == 1) iy -= dh * 0.5f; else if (ancY == 2) iy -= dh;
+        return QRectF(ix, iy, dw, dh);
+    }
 
-    if (idx == 10)
-        return QRectF(fx - 8.0, fy - 8.0, 16.0, 16.0);
+    // ── Bomb icon (idx=10) ──────────────────────────────────────────────────
+    if (idx == 10) {
+        const int iconH = std::max(4, cfg.GetInt("Metroid.Visual.HudBombIconHeight"));
+        const float dh  = static_cast<float>(iconH);
+        const QImage& icon = s_bombIcons[3];
+        const float dw = (!icon.isNull() && icon.height() > 0)
+                         ? dh * static_cast<float>(icon.width()) / static_cast<float>(icon.height())
+                         : dh;
+        float ix, iy;
+        if (cfg.GetInt("Metroid.Visual.HudBombLeftIconMode") == 0) {
+            // Relative to BombLeft text (idx=9)
+            const HudEditElemDesc& td = kEditElems[9];
+            int tx, ty;
+            ApplyAnchor(cfg.GetInt(td.anchorKey), cfg.GetInt(td.ofsXKey), cfg.GetInt(td.ofsYKey),
+                        tx, ty, topStretchX);
+            ix = static_cast<float>(tx) + cfg.GetInt("Metroid.Visual.HudBombLeftIconOfsX");
+            iy = static_cast<float>(ty) + cfg.GetInt("Metroid.Visual.HudBombLeftIconOfsY");
+        } else {
+            ix = static_cast<float>(fx);
+            iy = static_cast<float>(fy);
+        }
+        const int ancX = cfg.GetInt("Metroid.Visual.HudBombLeftIconAnchorX");
+        const int ancY = cfg.GetInt("Metroid.Visual.HudBombLeftIconAnchorY");
+        if (ancX == 1) ix -= dw * 0.5f; else if (ancX == 2) ix -= dw;
+        if (ancY == 1) iy -= dh * 0.5f; else if (ancY == 2) iy -= dh;
+        return QRectF(ix, iy, dw, dh);
+    }
 
+    // ── Radar (idx=11) ──────────────────────────────────────────────────────
     if (idx == 11) {
         const float sz = static_cast<float>(cfg.GetInt("Metroid.Visual.BtmOverlayDstSize"));
         return QRectF(fx, fy, sz, sz);
     }
 
-    float tds = std::max(0.5f, cfg.GetInt("Metroid.Visual.HudTextScale") / 100.0f);
+    // ── Text elements ───────────────────────────────────────────────────────
     return QRectF(fx - 30.0 * tds, fy - 6.0 * tds, 60.0 * tds, 12.0 * tds);
 }
 
