@@ -13,7 +13,7 @@
 //  Element property descriptors and element table
 // =========================================================================
 
-enum class EditPropType : uint8_t { Bool, Int, Float, String, SubColor, Color };
+enum class EditPropType : uint8_t { Bool, Int, Float, String, SubColor, Color, Enum };
 
 struct HudEditPropDesc {
     const char* label;       // tiny label e.g. "Align", "Pfx"
@@ -43,16 +43,36 @@ struct HudEditElemDesc {
     int propCount;                  // number of props
 };
 
+// ── Enum label helpers ─────────────────────────────────────────────────────
+static const char* kEnumAlign3      = "Left|Center|Right";
+static const char* kEnumGaugeAnchor = "Below|Above|Right|Left|Center";
+static const char* kEnumRelIndep    = "Relative|Independent";
+static const char* kEnumAnchorY     = "Top|Center|Bottom";
+static const char* kEnumLabelPos    = "Above|Below|Left|Right|Center";
+static const char* kEnumLayout      = "Standard|Alternative";
+
+static QString EditEnumLabel(const char* items, int val) {
+    if (!items || val < 0) return QString::number(val);
+    const char* p = items;
+    for (int idx = 0; idx < val; ++idx) {
+        while (*p && *p != '|') ++p;
+        if (*p == '|') ++p; else return QString::number(val);
+    }
+    const char* end = p;
+    while (*end && *end != '|') ++end;
+    return QString::fromUtf8(p, static_cast<int>(end - p));
+}
+
 static const HudEditPropDesc kPropsHp[] = {
     {"Prefix",    EditPropType::String, "Metroid.Visual.HudHpPrefix", 0, 0, 0, nullptr, nullptr, nullptr},
-    {"Align",     EditPropType::Int,    "Metroid.Visual.HudHpAlign", 0, 2, 1, nullptr, nullptr, nullptr},
+    {"Align",     EditPropType::Enum,   "Metroid.Visual.HudHpAlign", 0, 2, 1, kEnumAlign3, nullptr, nullptr},
     {"Auto Color",EditPropType::Bool,   "Metroid.Visual.HudHpTextAutoColor", 0, 0, 0, nullptr, nullptr, nullptr},
     {"Opacity",   EditPropType::Float,  "Metroid.Visual.HudHpOpacity", 0, 100, 5, nullptr, nullptr, nullptr},
 };
 
 static const HudEditPropDesc kPropsHpGauge[] = {
     {"Auto Color",   EditPropType::Bool, "Metroid.Visual.HudHpGaugeAutoColor", 0, 0, 0, nullptr, nullptr, nullptr},
-    {"Gauge Anchor", EditPropType::Int,  "Metroid.Visual.HudHpGaugeAnchor", 0, 4, 1, nullptr, nullptr, nullptr},
+    {"Gauge Anchor", EditPropType::Enum, "Metroid.Visual.HudHpGaugeAnchor", 0, 4, 1, kEnumGaugeAnchor, nullptr, nullptr},
     {"Offset X",     EditPropType::Int,  "Metroid.Visual.HudHpGaugeOffsetX", -128, 128, 1, nullptr, nullptr, nullptr},
     {"Offset Y",     EditPropType::Int,  "Metroid.Visual.HudHpGaugeOffsetY", -128, 128, 1, nullptr, nullptr, nullptr},
     {"Opacity",      EditPropType::Float,"Metroid.Visual.HudHpGaugeOpacity", 0, 100, 5, nullptr, nullptr, nullptr},
@@ -60,30 +80,30 @@ static const HudEditPropDesc kPropsHpGauge[] = {
 
 static const HudEditPropDesc kPropsWeaponAmmo[] = {
     {"Prefix", EditPropType::String, "Metroid.Visual.HudAmmoPrefix", 0, 0, 0, nullptr, nullptr, nullptr},
-    {"Align",  EditPropType::Int,    "Metroid.Visual.HudAmmoAlign", 0, 2, 1, nullptr, nullptr, nullptr},
-    {"Layout", EditPropType::Int,    "Metroid.Visual.HudWeaponLayout", 0, 1, 1, nullptr, nullptr, nullptr},
+    {"Align",  EditPropType::Enum,   "Metroid.Visual.HudAmmoAlign", 0, 2, 1, kEnumAlign3, nullptr, nullptr},
+    {"Layout", EditPropType::Enum,   "Metroid.Visual.HudWeaponLayout", 0, 1, 1, kEnumLayout, nullptr, nullptr},
     {"Opacity",EditPropType::Float,  "Metroid.Visual.HudWeaponOpacity", 0, 100, 5, nullptr, nullptr, nullptr},
 };
 
 static const HudEditPropDesc kPropsWpnIcon[] = {
-    {"Mode",     EditPropType::Int,  "Metroid.Visual.HudWeaponIconMode", 0, 1, 1, nullptr, nullptr, nullptr},
+    {"Mode",     EditPropType::Enum, "Metroid.Visual.HudWeaponIconMode", 0, 1, 1, kEnumRelIndep, nullptr, nullptr},
     {"Height",   EditPropType::Int,  "Metroid.Visual.HudWeaponIconHeight", 4, 64, 1, nullptr, nullptr, nullptr},
     {"Ofs X",    EditPropType::Int,  "Metroid.Visual.HudWeaponIconOffsetX", -128, 128, 1, nullptr, nullptr, nullptr},
     {"Ofs Y",    EditPropType::Int,  "Metroid.Visual.HudWeaponIconOffsetY", -128, 128, 1, nullptr, nullptr, nullptr},
-    {"Anchor X", EditPropType::Int,  "Metroid.Visual.HudWeaponIconAnchorX", 0, 2, 1, nullptr, nullptr, nullptr},
-    {"Anchor Y", EditPropType::Int,  "Metroid.Visual.HudWeaponIconAnchorY", 0, 2, 1, nullptr, nullptr, nullptr},
+    {"Anchor X", EditPropType::Enum, "Metroid.Visual.HudWeaponIconAnchorX", 0, 2, 1, kEnumAlign3, nullptr, nullptr},
+    {"Anchor Y", EditPropType::Enum, "Metroid.Visual.HudWeaponIconAnchorY", 0, 2, 1, kEnumAnchorY, nullptr, nullptr},
     {"Opacity",  EditPropType::Float,"Metroid.Visual.HudWpnIconOpacity", 0, 100, 5, nullptr, nullptr, nullptr},
 };
 
 static const HudEditPropDesc kPropsAmmoGauge[] = {
-    {"Gauge Anchor", EditPropType::Int,  "Metroid.Visual.HudAmmoGaugeAnchor", 0, 4, 1, nullptr, nullptr, nullptr},
+    {"Gauge Anchor", EditPropType::Enum, "Metroid.Visual.HudAmmoGaugeAnchor", 0, 4, 1, kEnumGaugeAnchor, nullptr, nullptr},
     {"Offset X",     EditPropType::Int,  "Metroid.Visual.HudAmmoGaugeOffsetX", -128, 128, 1, nullptr, nullptr, nullptr},
     {"Offset Y",     EditPropType::Int,  "Metroid.Visual.HudAmmoGaugeOffsetY", -128, 128, 1, nullptr, nullptr, nullptr},
     {"Opacity",      EditPropType::Float,"Metroid.Visual.HudAmmoGaugeOpacity", 0, 100, 5, nullptr, nullptr, nullptr},
 };
 
 static const HudEditPropDesc kPropsMatchStatus[] = {
-    {"Label Pos",  EditPropType::Int,  "Metroid.Visual.HudMatchStatusLabelPos", 0, 3, 1, nullptr, nullptr, nullptr},
+    {"Label Pos",  EditPropType::Enum, "Metroid.Visual.HudMatchStatusLabelPos", 0, 4, 1, kEnumLabelPos, nullptr, nullptr},
     {"Label Ofs X",EditPropType::Int,  "Metroid.Visual.HudMatchStatusLabelOfsX", -64, 64, 1, nullptr, nullptr, nullptr},
     {"Label Ofs Y",EditPropType::Int,  "Metroid.Visual.HudMatchStatusLabelOfsY", -64, 64, 1, nullptr, nullptr, nullptr},
     {"Points",   EditPropType::String, "Metroid.Visual.HudMatchStatusLabelPoints", 0, 0, 0, nullptr, nullptr, nullptr},
@@ -105,18 +125,18 @@ static const HudEditPropDesc kPropsMatchStatus[] = {
 static const HudEditPropDesc kPropsRank[] = {
     {"Prefix", EditPropType::String, "Metroid.Visual.HudRankPrefix", 0, 0, 0, nullptr, nullptr, nullptr},
     {"Suffix", EditPropType::String, "Metroid.Visual.HudRankSuffix", 0, 0, 0, nullptr, nullptr, nullptr},
-    {"Align",  EditPropType::Int,    "Metroid.Visual.HudRankAlign", 0, 2, 1, nullptr, nullptr, nullptr},
+    {"Align",  EditPropType::Enum,   "Metroid.Visual.HudRankAlign", 0, 2, 1, kEnumAlign3, nullptr, nullptr},
     {"Ordinal",EditPropType::Bool,   "Metroid.Visual.HudRankShowOrdinal", 0, 0, 0, nullptr, nullptr, nullptr},
     {"Opacity",EditPropType::Float,  "Metroid.Visual.HudRankOpacity", 0, 100, 5, nullptr, nullptr, nullptr},
 };
 
 static const HudEditPropDesc kPropsTimeLeft[] = {
-    {"Align",  EditPropType::Int,   "Metroid.Visual.HudTimeLeftAlign", 0, 2, 1, nullptr, nullptr, nullptr},
+    {"Align",  EditPropType::Enum,  "Metroid.Visual.HudTimeLeftAlign", 0, 2, 1, kEnumAlign3, nullptr, nullptr},
     {"Opacity",EditPropType::Float, "Metroid.Visual.HudTimeLeftOpacity", 0, 100, 5, nullptr, nullptr, nullptr},
 };
 
 static const HudEditPropDesc kPropsTimeLimit[] = {
-    {"Align",  EditPropType::Int,   "Metroid.Visual.HudTimeLimitAlign", 0, 2, 1, nullptr, nullptr, nullptr},
+    {"Align",  EditPropType::Enum,  "Metroid.Visual.HudTimeLimitAlign", 0, 2, 1, kEnumAlign3, nullptr, nullptr},
     {"Opacity",EditPropType::Float, "Metroid.Visual.HudTimeLimitOpacity", 0, 100, 5, nullptr, nullptr, nullptr},
 };
 
@@ -124,18 +144,18 @@ static const HudEditPropDesc kPropsBombLeft[] = {
     {"Text",   EditPropType::Bool,   "Metroid.Visual.HudBombLeftTextShow", 0, 0, 0, nullptr, nullptr, nullptr},
     {"Prefix", EditPropType::String, "Metroid.Visual.HudBombLeftPrefix", 0, 0, 0, nullptr, nullptr, nullptr},
     {"Suffix", EditPropType::String, "Metroid.Visual.HudBombLeftSuffix", 0, 0, 0, nullptr, nullptr, nullptr},
-    {"Align",  EditPropType::Int,    "Metroid.Visual.HudBombLeftAlign", 0, 2, 1, nullptr, nullptr, nullptr},
+    {"Align",  EditPropType::Enum,   "Metroid.Visual.HudBombLeftAlign", 0, 2, 1, kEnumAlign3, nullptr, nullptr},
     {"Opacity",EditPropType::Float,  "Metroid.Visual.HudBombLeftOpacity", 0, 100, 5, nullptr, nullptr, nullptr},
 };
 
 static const HudEditPropDesc kPropsBombIcon[] = {
-    {"Mode",     EditPropType::Int,  "Metroid.Visual.HudBombLeftIconMode", 0, 1, 1, nullptr, nullptr, nullptr},
+    {"Mode",     EditPropType::Enum, "Metroid.Visual.HudBombLeftIconMode", 0, 1, 1, kEnumRelIndep, nullptr, nullptr},
     {"Tint",     EditPropType::Bool, "Metroid.Visual.HudBombLeftIconColorOverlay", 0, 0, 0, nullptr, nullptr, nullptr},
     {"Height",   EditPropType::Int,  "Metroid.Visual.HudBombIconHeight", 4, 64, 1, nullptr, nullptr, nullptr},
     {"Ofs X",    EditPropType::Int,  "Metroid.Visual.HudBombLeftIconOfsX", -128, 128, 1, nullptr, nullptr, nullptr},
     {"Ofs Y",    EditPropType::Int,  "Metroid.Visual.HudBombLeftIconOfsY", -128, 128, 1, nullptr, nullptr, nullptr},
-    {"Anchor X", EditPropType::Int,  "Metroid.Visual.HudBombLeftIconAnchorX", 0, 2, 1, nullptr, nullptr, nullptr},
-    {"Anchor Y", EditPropType::Int,  "Metroid.Visual.HudBombLeftIconAnchorY", 0, 2, 1, nullptr, nullptr, nullptr},
+    {"Anchor X", EditPropType::Enum, "Metroid.Visual.HudBombLeftIconAnchorX", 0, 2, 1, kEnumAlign3, nullptr, nullptr},
+    {"Anchor Y", EditPropType::Enum, "Metroid.Visual.HudBombLeftIconAnchorY", 0, 2, 1, kEnumAnchorY, nullptr, nullptr},
     {"Opacity",  EditPropType::Float,"Metroid.Visual.HudBombIconOpacity", 0, 100, 5, nullptr, nullptr, nullptr},
 };
 
@@ -487,6 +507,7 @@ static void SnapshotEditConfig(Config::Table& cfg)
                 s_editSnapshot[pr.cfgKey] = cfg.GetBool(pr.cfgKey) ? 1 : 0;
                 s_editSnapshotBools.insert(pr.cfgKey);
                 break;
+            case EditPropType::Enum:
             case EditPropType::Int:
                 s_editSnapshot[pr.cfgKey] = cfg.GetInt(pr.cfgKey);
                 break;
@@ -558,6 +579,7 @@ static void ResetEditToDefaults(Config::Table& cfg)
             const HudEditPropDesc& pr = d.props[p];
             switch (pr.type) {
             case EditPropType::Bool:   cfg.SetBool(pr.cfgKey, defaults.GetBool(pr.cfgKey)); break;
+            case EditPropType::Enum:
             case EditPropType::Int:    cfg.SetInt(pr.cfgKey,  defaults.GetInt(pr.cfgKey));  break;
             case EditPropType::Float:  cfg.SetDouble(pr.cfgKey, defaults.GetDouble(pr.cfgKey)); break;
             case EditPropType::String: cfg.SetString(pr.cfgKey, defaults.GetString(pr.cfgKey)); break;
@@ -576,6 +598,7 @@ static void ResetEditToDefaults(Config::Table& cfg)
             const HudEditPropDesc& pr = arr[p];
             switch (pr.type) {
             case EditPropType::Bool:   cfg.SetBool(pr.cfgKey, defaults.GetBool(pr.cfgKey));     break;
+            case EditPropType::Enum:
             case EditPropType::Int:    cfg.SetInt(pr.cfgKey,  defaults.GetInt(pr.cfgKey));       break;
             case EditPropType::Float:  cfg.SetDouble(pr.cfgKey, defaults.GetDouble(pr.cfgKey)); break;
             default: break;
@@ -838,6 +861,21 @@ static void DrawElemPropsPanel(QPainter* p, Config::Table& cfg,
                 p->drawText(leftArr, Qt::AlignCenter, QStringLiteral("\u25C0"));
                 p->drawText(rightArr, Qt::AlignCenter, QStringLiteral("\u25B6"));
                 p->drawText(valR, Qt::AlignCenter, QString::number(val));
+                break;
+            }
+            case EditPropType::Enum: {
+                int val = cfg.GetInt(pr.cfgKey);
+                float arrowW = 8.0f;
+                QRectF leftArr(ctrlX, rowY + 1.0f, arrowW, kPropRowH - 2.0f);
+                QRectF rightArr(ctrlX + ctrlW - arrowW, rowY + 1.0f, arrowW, kPropRowH - 2.0f);
+                QRectF valR(ctrlX + arrowW, rowY + 1.0f, ctrlW - 2.0f * arrowW, kPropRowH - 2.0f);
+                p->fillRect(leftArr, QColor(60, 60, 100, 200));
+                p->fillRect(rightArr, QColor(60, 60, 100, 200));
+                p->fillRect(valR, QColor(30, 30, 60, 180));
+                p->setPen(Qt::white);
+                p->drawText(leftArr, Qt::AlignCenter, QStringLiteral("\u25C0"));
+                p->drawText(rightArr, Qt::AlignCenter, QStringLiteral("\u25B6"));
+                p->drawText(valR, Qt::AlignCenter, EditEnumLabel(pr.extra1, val));
                 break;
             }
             case EditPropType::Float: {
@@ -1269,6 +1307,21 @@ static void DrawEditOverlay(QPainter* p, Config::Table& cfg, float topStretchX)
                     p->drawText(incR, Qt::AlignCenter, QStringLiteral("\u25b6"));
                     break;
                 }
+                case EditPropType::Enum: {
+                    int val = cfg.GetInt(pr->cfgKey);
+                    float btnW2 = 8.0f;
+                    QRectF decR(ctrlX, rowY + 1.0f, btnW2, kPropRowH - 2.0f);
+                    QRectF valR2(ctrlX + btnW2, rowY + 1.0f, ctrlW - btnW2 * 2, kPropRowH - 2.0f);
+                    QRectF incR(ctrlX + ctrlW - btnW2, rowY + 1.0f, btnW2, kPropRowH - 2.0f);
+                    p->fillRect(decR, QColor(60, 60, 100, 200));
+                    p->fillRect(valR2, QColor(30, 30, 60, 180));
+                    p->fillRect(incR, QColor(60, 60, 100, 200));
+                    p->setPen(Qt::white);
+                    p->drawText(decR, Qt::AlignCenter, QStringLiteral("\u25c0"));
+                    p->drawText(valR2, Qt::AlignCenter, EditEnumLabel(pr->extra1, val));
+                    p->drawText(incR, Qt::AlignCenter, QStringLiteral("\u25b6"));
+                    break;
+                }
                 case EditPropType::Float: {
                     double val = cfg.GetDouble(pr->cfgKey);
                     int pct = static_cast<int>(val * 100.0 + 0.5);
@@ -1642,6 +1695,7 @@ void CustomHud_EditMousePress(QPointF pt, Qt::MouseButton btn, Config::Table& cf
                     cfg.SetBool(pr->cfgKey, !cfg.GetBool(pr->cfgKey));
                     CustomHud_InvalidateConfigCache();
                     return;
+                case EditPropType::Enum:
                 case EditPropType::Int: {
                     float btnW2 = 8.0f;
                     QRectF decR(ctrlX, rowY + 1.0f, btnW2, kPropRowH - 2.0f);
@@ -1811,6 +1865,7 @@ void CustomHud_EditMousePress(QPointF pt, Qt::MouseButton btn, Config::Table& cf
                             cfg.SetBool(pr.cfgKey, !cfg.GetBool(pr.cfgKey));
                             CustomHud_InvalidateConfigCache();
                             return;
+                        case EditPropType::Enum:
                         case EditPropType::Int: {
                             float arrowW = 8.0f;
                             int step = pr.step > 0 ? pr.step : 1;

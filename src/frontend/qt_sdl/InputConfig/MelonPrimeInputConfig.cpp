@@ -315,7 +315,12 @@ void MelonPrimeInputConfig::on_btnEditHudLayout_clicked()
 
 namespace {
 
-enum class HWType { Bool, Int, Float, String, Anchor9, Align3, Color3, HorizVert };
+enum class HWType { Bool, Int, Float, String, Anchor9, Align3, Color3, HorizVert,
+                    RelIndep,      // 0=Relative to Text, 1=Independent
+                    GaugeAnchor5,  // 0=Below, 1=Above, 2=Right, 3=Left, 4=Center
+                    AnchorY3,      // 0=Top, 1=Center, 2=Bottom
+                    LabelPos5,     // 0=Above, 1=Below, 2=Left, 3=Right, 4=Center
+                  };
 
 struct HudWidgetProp {
     const char* label;
@@ -353,6 +358,10 @@ struct HudMainSec {
 #define P_ALN(lbl, key)               { lbl, HWType::Align3, key, 0,2,1, nullptr, nullptr }
 #define P_CLR(lbl, kR, kG, kB)        { lbl, HWType::Color3, kR, 0,255,1, kG, kB }
 #define P_ORIENT(lbl, key)            { lbl, HWType::HorizVert, key, 0,1,1, nullptr, nullptr }
+#define P_RELINDEP(lbl, key)          { lbl, HWType::RelIndep,     key, 0,1,1, nullptr, nullptr }
+#define P_GANCHOR(lbl, key)           { lbl, HWType::GaugeAnchor5, key, 0,4,1, nullptr, nullptr }
+#define P_ANCHY(lbl, key)             { lbl, HWType::AnchorY3,     key, 0,2,1, nullptr, nullptr }
+#define P_LPOS(lbl, key)              { lbl, HWType::LabelPos5,    key, 0,4,1, nullptr, nullptr }
 
 // --- Section 1: Text Scale ---
 static const HudWidgetProp kSecTextScale[] = {
@@ -417,8 +426,8 @@ static const HudWidgetProp kSecHpGauge[] = {
     P_INT("Offset X", "Metroid.Visual.HudHpGaugeOffsetX", -128, 128, 1),
     P_INT("Offset Y", "Metroid.Visual.HudHpGaugeOffsetY", -128, 128, 1),
     P_CLR("Color", "Metroid.Visual.HudHpGaugeColorR", "Metroid.Visual.HudHpGaugeColorG", "Metroid.Visual.HudHpGaugeColorB"),
-    P_INT("Gauge Anchor", "Metroid.Visual.HudHpGaugeAnchor", 0, 4, 1),
-    P_INT("Pos Mode", "Metroid.Visual.HudHpGaugePosMode", 0, 1, 1),
+    P_GANCHOR("Gauge Position", "Metroid.Visual.HudHpGaugeAnchor"),
+    P_RELINDEP("Position Mode", "Metroid.Visual.HudHpGaugePosMode"),
     P_ANC("Pos Anchor", "Metroid.Visual.HudHpGaugePosAnchor"),
     P_INT("Pos X", "Metroid.Visual.HudHpGaugePosX", -256, 256, 1),
     P_INT("Pos Y", "Metroid.Visual.HudHpGaugePosY", -256, 256, 1),
@@ -433,7 +442,7 @@ static const HudWidgetProp kSecWeaponAmmo[] = {
     P_STR("Prefix", "Metroid.Visual.HudAmmoPrefix"),
     P_ALN("Align", "Metroid.Visual.HudAmmoAlign"),
     P_CLR("Color", "Metroid.Visual.HudAmmoTextColorR", "Metroid.Visual.HudAmmoTextColorG", "Metroid.Visual.HudAmmoTextColorB"),
-    P_INT("Weapon Layout", "Metroid.Visual.HudWeaponLayout", 0, 1, 1),
+    P_RELINDEP("Weapon Layout", "Metroid.Visual.HudWeaponLayout"),
     P_FLOAT("Opacity", "Metroid.Visual.HudWeaponOpacity"),
 };
 
@@ -443,12 +452,12 @@ static const HudWidgetProp kSecWpnIcon[] = {
     P_ANC("Pos Anchor", "Metroid.Visual.HudWeaponIconPosAnchor"),
     P_INT("Pos X", "Metroid.Visual.HudWeaponIconPosX", -256, 256, 1),
     P_INT("Pos Y", "Metroid.Visual.HudWeaponIconPosY", -256, 256, 1),
-    P_INT("Icon Mode", "Metroid.Visual.HudWeaponIconMode", 0, 1, 1),
+    P_RELINDEP("Icon Position", "Metroid.Visual.HudWeaponIconMode"),
     P_INT("Height", "Metroid.Visual.HudWeaponIconHeight", 4, 64, 1),
     P_INT("Icon Offset X", "Metroid.Visual.HudWeaponIconOffsetX", -128, 128, 1),
     P_INT("Icon Offset Y", "Metroid.Visual.HudWeaponIconOffsetY", -128, 128, 1),
-    P_INT("Icon Anchor X", "Metroid.Visual.HudWeaponIconAnchorX", 0, 2, 1),
-    P_INT("Icon Anchor Y", "Metroid.Visual.HudWeaponIconAnchorY", 0, 2, 1),
+    P_ALN("Icon Align X", "Metroid.Visual.HudWeaponIconAnchorX"),
+    P_ANCHY("Icon Align Y", "Metroid.Visual.HudWeaponIconAnchorY"),
     P_FLOAT("Opacity", "Metroid.Visual.HudWpnIconOpacity"),
 };
 
@@ -483,8 +492,8 @@ static const HudWidgetProp kSecAmmoGauge[] = {
     P_INT("Offset X", "Metroid.Visual.HudAmmoGaugeOffsetX", -128, 128, 1),
     P_INT("Offset Y", "Metroid.Visual.HudAmmoGaugeOffsetY", -128, 128, 1),
     P_CLR("Color", "Metroid.Visual.HudAmmoGaugeColorR", "Metroid.Visual.HudAmmoGaugeColorG", "Metroid.Visual.HudAmmoGaugeColorB"),
-    P_INT("Gauge Anchor", "Metroid.Visual.HudAmmoGaugeAnchor", 0, 4, 1),
-    P_INT("Pos Mode", "Metroid.Visual.HudAmmoGaugePosMode", 0, 1, 1),
+    P_GANCHOR("Gauge Position", "Metroid.Visual.HudAmmoGaugeAnchor"),
+    P_RELINDEP("Position Mode", "Metroid.Visual.HudAmmoGaugePosMode"),
     P_ANC("Pos Anchor", "Metroid.Visual.HudAmmoGaugePosAnchor"),
     P_INT("Pos X", "Metroid.Visual.HudAmmoGaugePosX", -256, 256, 1),
     P_INT("Pos Y", "Metroid.Visual.HudAmmoGaugePosY", -256, 256, 1),
@@ -498,7 +507,7 @@ static const HudWidgetProp kSecMatchStatus[] = {
     P_INT("Offset X", "Metroid.Visual.HudMatchStatusX", -256, 256, 1),
     P_INT("Offset Y", "Metroid.Visual.HudMatchStatusY", -256, 256, 1),
     P_CLR("Color", "Metroid.Visual.HudMatchStatusColorR", "Metroid.Visual.HudMatchStatusColorG", "Metroid.Visual.HudMatchStatusColorB"),
-    P_INT("Label Pos", "Metroid.Visual.HudMatchStatusLabelPos", 0, 3, 1),
+    P_LPOS("Label Position", "Metroid.Visual.HudMatchStatusLabelPos"),
     P_INT("Label Offset X", "Metroid.Visual.HudMatchStatusLabelOfsX", -64, 64, 1),
     P_INT("Label Offset Y", "Metroid.Visual.HudMatchStatusLabelOfsY", -64, 64, 1),
     P_STR("Label: Points", "Metroid.Visual.HudMatchStatusLabelPoints"),
@@ -573,14 +582,14 @@ static const HudWidgetProp kSecBombIcon[] = {
     P_ANC("Pos Anchor", "Metroid.Visual.HudBombLeftIconPosAnchor"),
     P_INT("Pos X", "Metroid.Visual.HudBombLeftIconPosX", -256, 256, 1),
     P_INT("Pos Y", "Metroid.Visual.HudBombLeftIconPosY", -256, 256, 1),
-    P_INT("Icon Mode", "Metroid.Visual.HudBombLeftIconMode", 0, 1, 1),
+    P_RELINDEP("Icon Position", "Metroid.Visual.HudBombLeftIconMode"),
     P_BOOL("Color Overlay", "Metroid.Visual.HudBombLeftIconColorOverlay"),
     P_INT("Height", "Metroid.Visual.HudBombIconHeight", 4, 64, 1),
     P_CLR("Icon Color", "Metroid.Visual.HudBombLeftIconColorR", "Metroid.Visual.HudBombLeftIconColorG", "Metroid.Visual.HudBombLeftIconColorB"),
     P_INT("Icon Offset X", "Metroid.Visual.HudBombLeftIconOfsX", -128, 128, 1),
     P_INT("Icon Offset Y", "Metroid.Visual.HudBombLeftIconOfsY", -128, 128, 1),
-    P_INT("Icon Anchor X", "Metroid.Visual.HudBombLeftIconAnchorX", 0, 2, 1),
-    P_INT("Icon Anchor Y", "Metroid.Visual.HudBombLeftIconAnchorY", 0, 2, 1),
+    P_ALN("Icon Align X", "Metroid.Visual.HudBombLeftIconAnchorX"),
+    P_ANCHY("Icon Align Y", "Metroid.Visual.HudBombLeftIconAnchorY"),
     P_FLOAT("Opacity", "Metroid.Visual.HudBombIconOpacity"),
 };
 
@@ -1151,6 +1160,73 @@ void MelonPrimeInputConfig::setupCustomHudWidgets(Config::Table& instcfg)
             combo->setObjectName(objName);
             combo->addItem(QStringLiteral("Horizontal"));
             combo->addItem(QStringLiteral("Vertical"));
+            combo->setCurrentIndex(instcfg.GetInt(p.cfgKey));
+            form->addRow(QString::fromUtf8(p.label), combo);
+            m_hudWidgets[p.cfgKey] = combo;
+            connect(combo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this, key = std::string(p.cfgKey)](int val) {
+                if (!m_applyPreviewEnabled) return;
+                emuInstance->getLocalConfig().SetInt(key, val);
+                invalidateHudAndRefreshPreviews();
+            });
+            break;
+        }
+        case HWType::RelIndep: {
+            auto* combo = new QComboBox(parent);
+            combo->setObjectName(objName);
+            combo->addItem(QStringLiteral("Relative to Text"));
+            combo->addItem(QStringLiteral("Independent"));
+            combo->setCurrentIndex(instcfg.GetInt(p.cfgKey));
+            form->addRow(QString::fromUtf8(p.label), combo);
+            m_hudWidgets[p.cfgKey] = combo;
+            connect(combo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this, key = std::string(p.cfgKey)](int val) {
+                if (!m_applyPreviewEnabled) return;
+                emuInstance->getLocalConfig().SetInt(key, val);
+                invalidateHudAndRefreshPreviews();
+            });
+            break;
+        }
+        case HWType::GaugeAnchor5: {
+            auto* combo = new QComboBox(parent);
+            combo->setObjectName(objName);
+            combo->addItem(QStringLiteral("Below"));
+            combo->addItem(QStringLiteral("Above"));
+            combo->addItem(QStringLiteral("Right"));
+            combo->addItem(QStringLiteral("Left"));
+            combo->addItem(QStringLiteral("Center"));
+            combo->setCurrentIndex(instcfg.GetInt(p.cfgKey));
+            form->addRow(QString::fromUtf8(p.label), combo);
+            m_hudWidgets[p.cfgKey] = combo;
+            connect(combo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this, key = std::string(p.cfgKey)](int val) {
+                if (!m_applyPreviewEnabled) return;
+                emuInstance->getLocalConfig().SetInt(key, val);
+                invalidateHudAndRefreshPreviews();
+            });
+            break;
+        }
+        case HWType::AnchorY3: {
+            auto* combo = new QComboBox(parent);
+            combo->setObjectName(objName);
+            combo->addItem(QStringLiteral("Top"));
+            combo->addItem(QStringLiteral("Center"));
+            combo->addItem(QStringLiteral("Bottom"));
+            combo->setCurrentIndex(instcfg.GetInt(p.cfgKey));
+            form->addRow(QString::fromUtf8(p.label), combo);
+            m_hudWidgets[p.cfgKey] = combo;
+            connect(combo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this, key = std::string(p.cfgKey)](int val) {
+                if (!m_applyPreviewEnabled) return;
+                emuInstance->getLocalConfig().SetInt(key, val);
+                invalidateHudAndRefreshPreviews();
+            });
+            break;
+        }
+        case HWType::LabelPos5: {
+            auto* combo = new QComboBox(parent);
+            combo->setObjectName(objName);
+            combo->addItem(QStringLiteral("Above"));
+            combo->addItem(QStringLiteral("Below"));
+            combo->addItem(QStringLiteral("Left"));
+            combo->addItem(QStringLiteral("Right"));
+            combo->addItem(QStringLiteral("Center"));
             combo->setCurrentIndex(instcfg.GetInt(p.cfgKey));
             form->addRow(QString::fromUtf8(p.label), combo);
             m_hudWidgets[p.cfgKey] = combo;
