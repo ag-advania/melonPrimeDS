@@ -573,6 +573,7 @@ struct RankTimeHudConfig {
 struct HudOutlineConfig {
     bool   enable;
     QColor color;
+    QColor colorWithAlpha; // P-14: pre-computed color with opacity baked in
     float  opacity;
     int    thickness;
 };
@@ -587,6 +588,9 @@ struct RadarOverlayConfig {
     bool radarFrameOutlineEnable;
     QRect radarDstRect;
     QPainterPath radarClipPath;
+    // P-15: Pre-computed radar frame geometry (avoids redundant per-draw calculations)
+    QRectF frameDstRect;
+    float expandDS;   // outline thickness in DS-space
 };
 struct CachedHudConfig {
     HpHudConfig hp;
@@ -598,6 +602,7 @@ struct CachedHudConfig {
     RadarOverlayConfig radar;
     HudOutlineConfig outline;
     int textScalePct; // text visual scale in percent (100 = 1×, bitmap always rendered at 6px)
+    float textDrawScale; // P-14: pre-computed textScalePct / 100.0f
     float lastStretchX; // topStretchX used for last anchor position computation
     float lastHudScale;  // hudScale (scaleY) at last render — needed for outline thickness conversion
     // Per-element opacity values (cached to avoid per-frame config lookups)
@@ -867,6 +872,17 @@ static void RecomputeAnchorPositions(float topStretchX)
     c.radar.radarDstRect = QRect(c.radar.radarDstX, c.radar.radarDstY, c.radar.radarDstSize, c.radar.radarDstSize);
     c.radar.radarClipPath = QPainterPath();
     c.radar.radarClipPath.addEllipse(c.radar.radarDstRect);
+    // P-15: Pre-compute radar frame geometry
+    {
+        const int srcDiameter = c.radar.radarSrcRadius * 2;
+        const float frameSizeDS = static_cast<float>(kRadarArtSize) * c.radar.radarDstSize
+                                  / static_cast<float>(srcDiameter);
+        const float cropCenterX = c.radar.radarDstX + c.radar.radarDstSize * 0.5f + 0.75f;
+        const float cropCenterY = c.radar.radarDstY + c.radar.radarDstSize * 0.5f;
+        c.radar.frameDstRect = QRectF(cropCenterX - frameSizeDS * 0.5f,
+                                      cropCenterY - frameSizeDS * 0.5f,
+                                      frameSizeDS, frameSizeDS);
+    }
 }
 
 static void RefreshCachedConfig(Config::Table& cfg, float topStretchX = 1.0f)
@@ -883,7 +899,11 @@ static void RefreshCachedConfig(Config::Table& cfg, float topStretchX = 1.0f)
     c.outline.color     = ReadRgbColor(cfg, "Metroid.Visual.HudOutlineColorR", "Metroid.Visual.HudOutlineColorG", "Metroid.Visual.HudOutlineColorB");
     c.outline.opacity   = (float)std::clamp(cfg.GetDouble("Metroid.Visual.HudOutlineOpacity"), 0.0, 1.0);
     c.outline.thickness = std::max(1, cfg.GetInt("Metroid.Visual.HudOutlineThickness"));
+    // P-14: Pre-compute outline color with alpha baked in — avoids per-draw setAlphaF/copy
+    c.outline.colorWithAlpha = c.outline.color;
+    c.outline.colorWithAlpha.setAlphaF(c.outline.opacity);
     c.textScalePct        = std::max(10, cfg.GetInt("Metroid.Visual.HudTextScale"));
+    c.textDrawScale       = c.textScalePct / 100.0f;
     c.hpOpacity           = (float)cfg.GetDouble("Metroid.Visual.HudHpOpacity");
     c.weaponOpacity       = (float)cfg.GetDouble("Metroid.Visual.HudWeaponOpacity");
     c.matchStatusOpacity  = (float)cfg.GetDouble("Metroid.Visual.HudMatchStatusOpacity");
@@ -1176,7 +1196,7 @@ static void DrawMatchStatusText(QPainter* p, const QFontMetrics& fm, int fontPix
 }
 static void DrawMatchStatusHud(QPainter* p, melonDS::u8* ram, const RomAddresses& rom, uint8_t playerPos, bool isAdventure, const CachedHudConfig& c)
 {
-    if (!c.matchStatus.matchStatusShow || isAdventure) return; MatchStatusResolvedState state = {}; if (!ComputeMatchStatusState(ram, rom, playerPos, state)) return; const QFontMetrics& fm = s_frameFm; const int fontPixelSize = s_frameFpx; /* P-9 */ DrawMatchStatusText(p, fm, fontPixelSize, c.textScalePct / 100.0f, state, c.matchStatus, c.matchStatusOpacity, c.outline, c.lastHudScale);
+    if (!c.matchStatus.matchStatusShow || isAdventure) return; MatchStatusResolvedState state = {}; if (!ComputeMatchStatusState(ram, rom, playerPos, state)) return; const QFontMetrics& fm = s_frameFm; const int fontPixelSize = s_frameFpx; /* P-9 */ DrawMatchStatusText(p, fm, fontPixelSize, c.textDrawScale, state, c.matchStatus, c.matchStatusOpacity, c.outline, c.lastHudScale);
 }
 static int CalcAlignedTextX(int anchorX, int align, int textW);
 static void DrawCachedAlignedText(QPainter* p, const QFontMetrics& fm, int fontPixelSize, float tds,
@@ -1422,8 +1442,7 @@ static void DrawGauge(QPainter* p, int x, int y, float ratio,
 
     if (outline && outline->enable && outline->opacity > 0.0f) {
         const float expand = static_cast<float>(outline->thickness) / hudScale;
-        QColor outlineColor = outline->color;
-        outlineColor.setAlphaF(outline->opacity);
+        const QColor& outlineColor = outline->colorWithAlpha; // P-14
         if (orientation == 0) {
             p->fillRect(QRectF(x - expand, y - expand, barLength + expand * 2.0f, barWidth + expand * 2.0f), outlineColor);
         } else {
@@ -1891,7 +1910,7 @@ HOT_FUNCTION void CustomHud_Render(
         s_frameFm = topPaint->fontMetrics();
         s_frameFpx = kCustomHudFontSize;
     }
-    const float textDrawScale = c.textScalePct / 100.0f;
+    const float textDrawScale = c.textDrawScale;
     s_cache.lastHudScale = hudScale;
 
     const uint8_t hunterID = Read8(ram, addrHot.chosenHunter);
@@ -1942,48 +1961,23 @@ HOT_FUNCTION void CustomHud_Render(
 //  Radar frame SVG drawing — separated from the bottom screen crop overlay.
 //  Uses the same position/size as the radar overlay (radarDstRect center).
 // =========================================================================
+// P-15: Radar frame SVG drawing — uses pre-computed frameDstRect from config cache.
+// P-16: No save/restore — only modifies opacity (caller handles state).
 static void DrawRadarFrame(QPainter* topPaint, const CachedHudConfig& c)
 {
-    const int srcDiameter = c.radar.radarSrcRadius * 2;
     if (s_radarFrameTinted.isNull()) return;
 
-    // Frame size in DS-space: proportional mapping from 76 btm-screen pixels.
-    const float frameSizeDS = static_cast<float>(kRadarArtSize) * c.radar.radarDstSize
-                              / static_cast<float>(srcDiameter);
-    const float cropCenterX = c.radar.radarDstX + c.radar.radarDstSize * 0.5f + 0.75f;
-    const float cropCenterY = c.radar.radarDstY + c.radar.radarDstSize * 0.5f;
-    const QRectF frameDstRect(cropCenterX - frameSizeDS * 0.5f,
-                              cropCenterY - frameSizeDS * 0.5f,
-                              frameSizeDS, frameSizeDS);
-
-    // Draw the tinted frame
-    topPaint->save();
-    topPaint->setRenderHint(QPainter::SmoothPixmapTransform, true);
     topPaint->setOpacity(c.radar.radarOpacity);
-    topPaint->drawImage(frameDstRect, s_radarFrameTinted);
-    topPaint->restore();
+    topPaint->drawImage(c.radar.frameDstRect, s_radarFrameTinted);
 }
 
 static void DrawRadarCombinedOutlines(QPainter* topPaint, const CachedHudConfig& c)
 {
     if (!c.outline.enable || c.outline.opacity <= 0.0f) return;
 
-    const int srcDiameter = c.radar.radarSrcRadius * 2;
-    const int expandR = std::max(1, c.outline.thickness);
-
-    const float frameSizeDS = static_cast<float>(kRadarArtSize) * c.radar.radarDstSize
-                              / static_cast<float>(srcDiameter);
-    const float cropCenterX = c.radar.radarDstX + c.radar.radarDstSize * 0.5f + 0.75f;
-    const float cropCenterY = c.radar.radarDstY + c.radar.radarDstSize * 0.5f;
-    const QRectF frameDstRect(cropCenterX - frameSizeDS * 0.5f,
-                              cropCenterY - frameSizeDS * 0.5f,
-                              frameSizeDS, frameSizeDS);
-
+    // P-15: Use pre-computed frameDstRect; P-17: compute expandDS once
     const float expandDS = (c.lastHudScale > 0.0f)
-                           ? static_cast<float>(expandR) / c.lastHudScale : 0.0f;
-
-    QColor olc = c.outline.color;
-    olc.setAlphaF(c.outline.opacity);
+                           ? static_cast<float>(std::max(1, c.outline.thickness)) / c.lastHudScale : 0.0f;
 
     topPaint->save();
     topPaint->setRenderHint(QPainter::Antialiasing, true);
@@ -1992,15 +1986,16 @@ static void DrawRadarCombinedOutlines(QPainter* topPaint, const CachedHudConfig&
 
     // Radar HUD circle outline: filled ellipse expanded by outline thickness
     topPaint->setPen(Qt::NoPen);
-    topPaint->setBrush(olc);
+    topPaint->setBrush(c.outline.colorWithAlpha); // P-14
     topPaint->drawEllipse(QRectF(c.radar.radarDstRect).adjusted(-expandDS, -expandDS, expandDS, expandDS));
 
     // SVG frame outline (dilated image, same technique as weapon/bomb icons)
     if (c.radar.radarFrameOutlineEnable && !s_radarFrameOutline.isNull()) {
-        topPaint->drawImage(QRectF(frameDstRect.x() - expandDS,
-                                   frameDstRect.y() - expandDS,
-                                   frameDstRect.width()  + expandDS * 2.0f,
-                                   frameDstRect.height() + expandDS * 2.0f),
+        const QRectF& fr = c.radar.frameDstRect;
+        topPaint->drawImage(QRectF(fr.x() - expandDS,
+                                   fr.y() - expandDS,
+                                   fr.width()  + expandDS * 2.0f,
+                                   fr.height() + expandDS * 2.0f),
                             s_radarFrameOutline);
     }
 
@@ -2049,6 +2044,10 @@ void DrawBottomScreenOverlay(Config::Table& localCfg, QPainter* topPaint, QImage
     // ③ Combined outlines (backmost).
     DrawRadarCombinedOutlines(topPaint, c);
 
+    // P-16: Single save/restore for ② and ① — SmoothPixmapTransform set once.
+    topPaint->save();
+    topPaint->setRenderHint(QPainter::SmoothPixmapTransform, true);
+
     // ② Radar SVG frame.
     DrawRadarFrame(topPaint, c);
 
@@ -2065,13 +2064,12 @@ void DrawBottomScreenOverlay(Config::Table& localCfg, QPainter* topPaint, QImage
                       static_cast<int>(srcRadius * 2 * bufScaleX),
                       static_cast<int>(srcRadius * 2 * bufScaleY));
 
-        topPaint->save();
-        topPaint->setRenderHint(QPainter::SmoothPixmapTransform, true);
         topPaint->setOpacity(c.radar.radarOpacity);
         topPaint->setClipPath(c.radar.radarClipPath);
         topPaint->drawImage(c.radar.radarDstRect, *btmBuffer, srcRect);
-        topPaint->restore();
     }
+
+    topPaint->restore();
 }
 
 // =========================================================================
