@@ -1894,6 +1894,9 @@ HOT_FUNCTION void CustomHud_Render(
         }
     }
 
+    // Draw bottom screen overlay on top screen (visible in all camera modes incl. alt form)
+    DrawBottomScreenOverlay(localCfg, topPaint, btmBuffer, (hunterID <= 6) ? hunterID : 0);
+
     if (!isFirstPerson) return;
 
     uint8_t currentWeapon = Read8(ram, addrHot.currentWeapon);
@@ -1906,9 +1909,6 @@ HOT_FUNCTION void CustomHud_Render(
     bool isTrans = (Read8(ram, addrHot.jumpFlag) & 0x10) != 0;
     if (!isTrans && !isAlt)
         DrawCrosshair(topPaint, ram, rom, c, hudScale, topStretchX);
-
-    // Draw bottom screen overlay on top screen
-    DrawBottomScreenOverlay(localCfg, topPaint, btmBuffer, (hunterID <= 6) ? hunterID : 0);
 }
 
 // =========================================================================
