@@ -34,6 +34,7 @@ Displays a circular crop of the DS bottom screen on top of the rendered top scre
 | `BtmOverlayFrameColorR` | 185 | Radar frame SVG tint color red (independent) |
 | `BtmOverlayFrameColorG` | 0 | Radar frame SVG tint color green |
 | `BtmOverlayFrameColorB` | 5 | Radar frame SVG tint color blue |
+| `BtmOverlayFrameOutlineEnable` | true | Enable/disable SVG frame outline behind radar |
 
 ### 2. Custom HUD System
 Drawn with `QPainter` over the top screen buffer. The current HUD system includes:
@@ -88,6 +89,8 @@ Implementation details worth knowing:
 | `src/frontend/qt_sdl/MelonPrimeHudRender.h` | public API surface |
 | `src/frontend/qt_sdl/MelonPrimeHudRender.cpp` | runtime HUD rendering, cache management, no-HUD patching, match-state caching |
 | `src/frontend/qt_sdl/MelonPrimeHudConfigScreen.cpp` | in-game HUD layout editor (unity-build included by `MelonPrimeHudRender.cpp`, **not** in CMakeLists) |
+| `src/frontend/qt_sdl/MelonPrimeHudEditSidePanel.cpp` | in-game HUD element properties side panel — `populate*()` functions define per-element settings (unity-build included by `MelonPrimeHudConfigScreen.cpp`) |
+| `src/frontend/qt_sdl/MelonPrimeHudEditSidePanel.h` | side panel class declaration |
 | `src/frontend/qt_sdl/MelonPrimeConstants.h` | hunter-specific radar source Y positions and related constants |
 | `src/frontend/qt_sdl/Screen.cpp` | calls `CustomHud_Render()` and OpenGL radar overlay path |
 
@@ -225,13 +228,21 @@ Applied optimizations in `MelonPrimeHudRender.cpp`:
 ### Radar overlay note
 The software radar overlay path takes `hunterID` and uses `kBtmOverlaySrcCenterY[hunterID]` to pick the crop center. That means the source crop is intentionally not identical for all hunters.
 
-The radar frame SVG (`res/assets/radar/Rader.svg`, Qt resource `:/mph-icon-radar-frame`) is drawn as a **background** behind the crop circle. The SVG's 76×76 viewBox matches the actual bottom screen radar art size in DS pixels (**not** the crop circle diameter). Sizing uses proportional mapping: `kRadarArtSize * dstSize / (srcRadius * 2)` DS pixels, so the frame scales with the overlay but does not match the crop circle boundary. The frame is always shown when the radar is visible, with no separate toggle.
+The radar frame SVG (`res/assets/radar/Rader.svg`, Qt resource `:/mph-icon-radar-frame`) is drawn as a **background** behind the crop circle. The SVG's 76×76 viewBox matches the actual bottom screen radar art size in DS pixels (**not** the crop circle diameter). Sizing uses proportional mapping: `kRadarArtSize * dstSize / (srcRadius * 2)` DS pixels, so the frame scales with the overlay but does not match the crop circle boundary. The frame is always shown when the radar is visible. The SVG frame outline can be independently toggled via `BtmOverlayFrameOutlineEnable` (default `true`).
 
 **Frame color** is independently configurable via `Metroid.Visual.BtmOverlayFrameColor[R/G/B]` (default `#B90005` = SVG's original stroke color). The **HUD Outline** settings (`HudOutlineColor*`, `HudOutlineThickness`, `HudOutlineOpacity`) are applied to the frame: a cached outline-colored copy (`s_radarFrameOutline`) is drawn expanded behind the tinted frame (`s_radarFrameTinted`). All three cached images (`s_radarFrame`, `s_radarFrameTinted`, `s_radarFrameOutline`) are invalidated on size/color change.
 
 ---
 
 ## Settings UI Architecture (`MelonPrimeInputConfig`)
+
+### HUD settings entry points
+When adding or modifying a HUD setting, touch all three:
+| File | Role | Radar example |
+|------|------|---------------|
+| `InputConfig/MelonPrimeInputConfig.cpp` | Classic settings dialog — descriptor arrays (`kSecRadar[]`) | `P_BOOL`/`P_INT`/`P_CLR` entries |
+| `MelonPrimeHudEditSidePanel.cpp` | In-game edit side panel — `populate*()` methods | `populateRadar()` with `addCheckBox`/`addSpinBox`/`addColorPicker` |
+| `MelonPrimeHudConfigScreen.cpp` | In-game HUD config screen — element/property definitions | Element definitions and reset defaults |
 
 ### Files
 | File | Purpose |

@@ -304,6 +304,7 @@ namespace Config
         {"Instance*.Metroid.Visual.BtmOverlayFrameColorG",      0},
         {"Instance*.Metroid.Visual.BtmOverlayFrameColorB",      5},
         /* MelonPrimeDS Bottom Screen Overlay frame color } */
+        {"Instance*.Metroid.Visual.BtmOverlayFrameOutlineEnable", true},
         /* MelonPrimeDS Bottom Screen Overlay defaults } */
         /* MelonPrimeDS Custom HUD Crosshair defaults } */
     #endif
