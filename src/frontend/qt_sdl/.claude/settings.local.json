@@ -30,7 +30,9 @@
       "Bash('C:\\\\msys64\\\\usr\\\\bin\\\\bash.exe' -lc \"grep -n 'MelonPrimeCustomHud' /c/Users/Admin/Documents/git/melonPrimeDS/src/frontend/qt_sdl/CMakeLists.txt\")",
       "Bash('C:\\\\msys64\\\\usr\\\\bin\\\\bash.exe' -lc \"cd /c/Users/Admin/Documents/git/melonPrimeDS && /mingw64/bin/cmake.exe --build --preset=release-mingw-x86_64 --parallel 1 2>&1 | tail -30\")",
       "Bash('C:\\\\msys64\\\\usr\\\\bin\\\\bash.exe' -lc \"cd /c/Users/Admin/Documents/git/melonPrimeDS/build/release-mingw-x86_64 && /mingw64/bin/ninja.exe -j1 2>&1 | tail -30\")",
-      "Bash(cmake --build --preset windows-release)"
+      "Bash(cmake --build --preset windows-release)",
+      "Bash(cmake --build build --target melonDS -- -j8)",
+      "Bash(/c/Users/Admin/AppData/Local/Programs/CLion/bin/cmake/win/x64/bin/cmake.exe --build build --target melonDS -- -j8)"
     ]
   }
 }

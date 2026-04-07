@@ -92,15 +92,18 @@ Implementation details worth knowing:
 `CustomHud_Render()` is the main per-frame entry point.
 
 Current high-level flow inside `CustomHud_Render()`:
-1. Return immediately if not in-game.
-2. If custom HUD is disabled, restore the native HUD patch state and exit.
-3. Ensure icon caches are loaded.
+1. If edit mode, draw element overlay and return immediately.
+2. Return immediately if not in-game.
+3. If custom HUD is disabled, restore the native HUD patch state and exit.
 4. Apply the no-HUD patch.
-5. Refresh cached HUD config when invalidated.
+5. Refresh cached HUD config when invalidated (or recompute anchors if `topStretchX` changed).
 6. Read current gameplay values from RAM.
 7. Hide HUD entirely for certain gameplay states.
-8. Draw HP, bomb-left, match-status, rank/time.
-9. If first-person, additionally draw weapon/ammo, crosshair, and radar overlay.
+8. Set up painter (scale + translate + font); P-9 caches `QFontMetrics` on first call.
+9. Draw HP, bomb-left, match-status, rank/time.
+10. If first-person, additionally draw weapon/ammo, crosshair, and radar overlay.
+
+Icon caches are loaded lazily inside `DrawWeaponAmmo()` / `DrawBombLeft()` via `EnsureIconsLoaded()` / `EnsureBombIconsLoaded()`, not as a separate top-level step.
 
 ### HUD hide rules
 `CustomHud_ShouldHideForGameplayState()` currently hides the HUD when:
@@ -134,8 +137,10 @@ Current cached data inside `MelonPrimeHudRender.cpp` includes:
 - tinted icon variants
 - outline image buffer for crosshair rendering
 - text measurement / text bitmap caches
-- `CachedHudConfig` (contains `HpHudConfig`, `WeaponHudConfig`, `CrosshairHudConfig`, `MatchStatusHudConfig`, `BombLeftHudConfig`, `RankTimeHudConfig`, `RadarOverlayConfig`)
+- `CachedHudConfig` (contains `HpHudConfig`, `WeaponHudConfig`, `CrosshairHudConfig`, `MatchStatusHudConfig`, `BombLeftHudConfig`, `RankTimeHudConfig`, `RadarOverlayConfig`, `HudOutlineConfig`)
 - `BattleMatchState`
+- P-9: `s_frameFm` / `s_frameFpx` — frame-level `QFontMetrics` cache (constructed once on first call, shared by all draw sub-functions via statics; avoids 5+ `p->fontMetrics()` copies per frame)
+- P-11: `CrosshairHudConfig::chInnerColor/chOuterColor/chDotColor` — pre-computed arm/dot colors with alpha set at config load time (avoids per-frame `QColor` copy + `setAlphaF`)
 
 ### CachedHudConfig struct notes
 Each sub-struct stores both **raw anchor + offset** values and **computed final coordinates**. The raw values are loaded once per config change in `Load*Config()`. Final positions are recomputed by `RecomputeAnchorPositions(topStretchX)` whenever config changes **or** `topStretchX` changes (window resize). This ensures anchored elements track the actual visible screen edges in widescreen/narrow views.
@@ -147,7 +152,8 @@ Key struct fields:
 - `BombLeftHudConfig`: `bombLeftAnchor`, `bombLeftOfsX/Y`, `bombLeftX/Y`; `bombIconPosAnchor`, `bombIconPosOfsX/Y`, `bombIconPosX/Y`
 - `RankTimeHudConfig`: `rankAnchor/OfsX/Y/X/Y`, `timeLeftAnchor/OfsX/Y/X/Y`, `timeLimitAnchor/OfsX/Y/X/Y`
 - `RadarOverlayConfig`: `radarAnchor`, `radarOfsX/Y`, `radarDstX/Y`
-- `CachedHudConfig`: `lastStretchX` tracks the `topStretchX` used for the last position computation
+- `CachedHudConfig`: `lastStretchX` tracks the `topStretchX` used for the last position computation; `lastHudScale` tracks hudScale for outline thickness conversion
+- `CrosshairHudConfig`: additionally stores `chInnerColor`, `chOuterColor`, `chDotColor` (P-11)
 
 ### High-resolution HUD rendering
 The HUD overlay is rendered into a hi-res buffer matching the actual screen output size (not DS-native 256×192).
@@ -198,6 +204,17 @@ The runtime custom HUD disables pieces of the original game HUD by writing ARM N
 Relevant details:
 - patch table lives in `MelonPrimeHudRender.cpp`
 - keyed by `romGroupIndex`
+
+### Performance optimizations (P-9 through P-12)
+
+Applied optimizations in `MelonPrimeHudRender.cpp`:
+
+| ID | Description | Impact | When |
+|---|---|---|---|
+| P-9 | Frame-level `QFontMetrics` cache (`s_frameFm`/`s_frameFpx`) — constructed once, shared by all draw sub-functions via statics | Eliminates 5+ `p->fontMetrics()` / `p->font().pixelSize()` copies per frame | Per frame |
+| P-10 | `HpGaugeColor()` returns `const QColor&` with `static const` threshold colors | Eliminates per-call `QColor(255,0,0)` / `QColor(255,165,0)` construction | Per frame (HP ≤ 50) |
+| P-11 | Pre-computed crosshair arm/dot colors with alpha in `CrosshairHudConfig` | Eliminates 3 `QColor` copies + `setAlphaF()` per frame | Per frame |
+| P-12 | Separable max-filter dilation (`DilateSeparableTinted`) — two-pass horizontal+vertical max replaces O(R²) naive kernel with O(R) per pixel | ~1.5× faster for R=1, ~3× for R=3 | Config changes / editor |
 - guarded by `s_hudPatchApplied`
 - restored automatically when custom HUD is no longer active
 
