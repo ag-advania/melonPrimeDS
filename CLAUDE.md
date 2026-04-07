@@ -14,7 +14,7 @@ Displays a circular crop of the DS bottom screen on top of the rendered top scre
 
 **Two render paths:**
 - **OpenGL path** (`Screen.cpp` + `main_shaders.h`): samples the bottom screen from the texture array and clips it to a circular overlay.
-- **Software path** (`MelonPrimeHudRender.cpp`): `DrawBottomScreenOverlay()` draws a cropped `QImage` region with `QPainter` and a circular clip path. A radar frame SVG (`res/assets/radar/Rader.svg`) is drawn behind the crop with an independently configurable color (`BtmOverlayFrameColor*`), and the HUD outline is applied to it.
+- **Software path** (`MelonPrimeHudRender.cpp`): `DrawBottomScreenOverlay()` draws a cropped `QImage` region with `QPainter` and a circular clip path. A radar frame SVG (`res/assets/radar/Rader.svg`) is drawn behind the crop with an independently configurable color (`BtmOverlayRadarColor*`), and the HUD outline is applied to it.
 
 **Current source region behavior:**
 - X center is fixed at `128`
@@ -31,9 +31,10 @@ Displays a circular crop of the DS bottom screen on top of the rendered top scre
 | `BtmOverlayDstSize` | 64 | Output size of the circular overlay |
 | `BtmOverlayOpacity` | 0.85 | Opacity (`0.0-1.0`) |
 | `BtmOverlaySrcRadius` | 46 | Source radius on the DS bottom screen |
-| `BtmOverlayFrameColorR` | 185 | Radar frame SVG tint color red (independent) |
-| `BtmOverlayFrameColorG` | 0 | Radar frame SVG tint color green |
-| `BtmOverlayFrameColorB` | 5 | Radar frame SVG tint color blue |
+| `BtmOverlayRadarColorR` | 185 | Radar frame SVG tint color red (independent) |
+| `BtmOverlayRadarColorG` | 0 | Radar frame SVG tint color green |
+| `BtmOverlayRadarColorB` | 5 | Radar frame SVG tint color blue |
+| `BtmOverlayRadarColorUseHunter` | false | Use current hunter's color instead of manual frame color |
 | `BtmOverlayFrameOutlineEnable` | true | Enable/disable SVG frame outline behind radar |
 
 ### 2. Custom HUD System
@@ -72,6 +73,11 @@ Implementation details worth knowing:
 - `BitScanFwd()` / `BitScanRev()` wrappers
 - strict-aliasing-safe RAM accessors `Read8/16/32()` and `Write8/16/32()`
 - shared constants such as `PLAYER_ADDR_INC`, `AIM_ADDR_INC`, `RAM_MASK`, and touch UI coordinates
+
+`MelonPrimeConstants.h` defines:
+- `HunterId` enum (Samus=0 through Weavel=6)
+- `kBtmOverlaySrcCenterY[]` — per-hunter radar source Y positions
+- `kHunterFrameColor[]` — per-hunter radar frame colors (RGB packed as `0xRRGGBB`)
 
 ### 5. In-game Logic Structure
 `MelonPrimeInGame.cpp` contains the current hot/cold-split gameplay update path:
@@ -230,7 +236,7 @@ The software radar overlay path takes `hunterID` and uses `kBtmOverlaySrcCenterY
 
 The radar frame SVG (`res/assets/radar/Rader.svg`, Qt resource `:/mph-icon-radar-frame`) is drawn as a **background** behind the crop circle. The SVG's 76×76 viewBox matches the actual bottom screen radar art size in DS pixels (**not** the crop circle diameter). Sizing uses proportional mapping: `kRadarArtSize * dstSize / (srcRadius * 2)` DS pixels, so the frame scales with the overlay but does not match the crop circle boundary. The frame is always shown when the radar is visible. The SVG frame outline can be independently toggled via `BtmOverlayFrameOutlineEnable` (default `true`).
 
-**Frame color** is independently configurable via `Metroid.Visual.BtmOverlayFrameColor[R/G/B]` (default `#B90005` = SVG's original stroke color). The **HUD Outline** settings (`HudOutlineColor*`, `HudOutlineThickness`, `HudOutlineOpacity`) are applied to the frame: a cached outline-colored copy (`s_radarFrameOutline`) is drawn expanded behind the tinted frame (`s_radarFrameTinted`). All three cached images (`s_radarFrame`, `s_radarFrameTinted`, `s_radarFrameOutline`) are invalidated on size/color change.
+**Radar color** is independently configurable via `Metroid.Visual.BtmOverlayRadarColor[R/G/B]` (default `#B90005` = SVG's original stroke color). The **HUD Outline** settings (`HudOutlineColor*`, `HudOutlineThickness`, `HudOutlineOpacity`) are applied to the frame: a cached outline-colored copy (`s_radarFrameOutline`) is drawn expanded behind the tinted frame (`s_radarFrameTinted`). All three cached images (`s_radarFrame`, `s_radarFrameTinted`, `s_radarFrameOutline`) are invalidated on size/color change.
 
 ---
 

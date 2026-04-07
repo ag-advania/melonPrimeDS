@@ -561,6 +561,7 @@ struct RadarOverlayConfig {
     int radarSrcRadius;
     double radarOpacity;
     QColor radarFrameColor;  // independent color for the radar frame SVG
+    bool radarFrameColorUseHunter;
     bool radarFrameOutlineEnable;
     QRect radarDstRect;
     QPainterPath radarClipPath;
@@ -803,9 +804,10 @@ static void LoadRadarOverlayConfig(RadarOverlayConfig& radar, Config::Table& cfg
     radar.radarDstSize = std::max(cfg.GetInt("Metroid.Visual.BtmOverlayDstSize"), 1);
     radar.radarOpacity = std::clamp(cfg.GetDouble("Metroid.Visual.BtmOverlayOpacity"), 0.0, 1.0);
     radar.radarSrcRadius = std::max(cfg.GetInt("Metroid.Visual.BtmOverlaySrcRadius"), 1);
-    radar.radarFrameColor = ReadRgbColor(cfg, "Metroid.Visual.BtmOverlayFrameColorR",
-                                              "Metroid.Visual.BtmOverlayFrameColorG",
-                                              "Metroid.Visual.BtmOverlayFrameColorB");
+    radar.radarFrameColor = ReadRgbColor(cfg, "Metroid.Visual.BtmOverlayRadarColorR",
+                                              "Metroid.Visual.BtmOverlayRadarColorG",
+                                              "Metroid.Visual.BtmOverlayRadarColorB");
+    radar.radarFrameColorUseHunter = cfg.GetBool("Metroid.Visual.BtmOverlayRadarColorUseHunter");
     radar.radarFrameOutlineEnable = cfg.GetBool("Metroid.Visual.BtmOverlayFrameOutlineEnable");
     // radarDstRect and radarClipPath are recomputed in RecomputeAnchorPositions()
 }
@@ -1920,10 +1922,6 @@ HOT_FUNCTION void CustomHud_Render(
 static void DrawRadarFrame(QPainter* topPaint, const CachedHudConfig& c)
 {
     const int srcDiameter = c.radar.radarSrcRadius * 2;
-    const int expandR = (c.outline.enable && c.outline.opacity > 0.0f)
-                        ? std::max(1, c.outline.thickness) : 0;
-    EnsureRadarFrameLoaded(c.radar.radarDstSize, c.radar.radarSrcRadius, c.lastHudScale,
-                            c.radar.radarFrameColor, c.outline.color, expandR);
     if (s_radarFrameTinted.isNull()) return;
 
     // Frame size in DS-space: proportional mapping from 76 btm-screen pixels.
@@ -1997,12 +1995,19 @@ void DrawBottomScreenOverlay(Config::Table& localCfg, QPainter* topPaint, QImage
     if (!c.radar.radarShow) return;
     if (!topPaint) return;
 
+    // Resolve effective frame color: use hunter-specific color if enabled.
+    QColor effectiveFrameColor = c.radar.radarFrameColor;
+    if (c.radar.radarFrameColorUseHunter && hunterID < kHunterCount) {
+        const uint32_t rgb = kHunterFrameColor[hunterID];
+        effectiveFrameColor = QColor((rgb >> 16) & 0xFF, (rgb >> 8) & 0xFF, rgb & 0xFF);
+    }
+
     // Build frame caches up front (tinted + outline), then draw in final order below.
     {
         const int expandR = (c.outline.enable && c.outline.opacity > 0.0f)
                             ? std::max(1, c.outline.thickness) : 0;
         EnsureRadarFrameLoaded(c.radar.radarDstSize, c.radar.radarSrcRadius, c.lastHudScale,
-                               c.radar.radarFrameColor, c.outline.color, expandR);
+                               effectiveFrameColor, c.outline.color, expandR);
     }
 
     // Draw order (back-to-front):
