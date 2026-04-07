@@ -38,6 +38,17 @@ constexpr int kBtmOverlaySrcCenterY[kHunterCount] = {
 static_assert(static_cast<int>(HunterId::Weavel) + 1 == kHunterCount,
     "HunterId and kBtmOverlaySrcCenterY must stay in sync");
 
+// Per-hunter radar frame colors (RGB packed as 0xRRGGBB), in HunterId order.
+constexpr uint32_t kHunterFrameColor[kHunterCount] = {
+    0x68E028, // Samus
+    0xF8F858, // Kanden
+    0xE01018, // Trace
+    0xD0F0A0, // Sylux
+    0x5098D0, // Noxus
+    0xF87038, // Spire
+    0xD09838, // Weavel
+};
+
 } // namespace MelonPrime
 
 
