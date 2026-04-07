@@ -94,6 +94,14 @@ smooth in vec2 fTexcoord;
 
 out vec4 oColor;
 
+// OPT-SH1: Radar palette as uniform array + loop instead of 15 chained || comparisons.
+// GPU compilers unroll small constant-bound loops, enabling SIMD-friendly execution
+// without warp/wavefront divergence from deeply nested short-circuit evaluation.
+// Palette data is uploaded once at init from Screen.cpp (see initOpenGL OPT-SH1 block).
+// Hunter-specific radar dot colors are intentionally excluded — see Screen.cpp comments.
+const int PALETTE_SIZE = 15;
+uniform vec3 uPalette[PALETTE_SIZE];
+
 void main()
 {
     // Circle clipping: discard pixels outside unit circle
@@ -110,32 +118,10 @@ void main()
 
     // Color filter: keep only exact radar palette colors, discard others
     vec3 c = round(pixel.rgb * 255.0);
-    bool match =
-        // 529cd6, 6582b1 = nuxus radar blue
-        // c == vec3(104.0, 224.0, 40.0)  || // 68E028 - green Samus radar?
-        // c == vec3(248.0, 248.0, 88.0)  || // F8F858 - yellow, kanden radar
-        // c == vec3(248.0, 112.0, 56.0)  || // F87038 - orange Spire radar?
-        // c == vec3(224.0, 16.0,  24.0)  || // E01018 - red trace radar?
-        // c == vec3(80.0,  152.0, 208.0) || // 5098D0 - blue Noxus radar
-        // c == vec3(208.0, 240.0, 160.0) || // D0F0A0 - pale green Sylux radar?
-        // c == vec3(208.0, 152.0, 56.0)  || // D09838 - amber Weavel radar?
-
-        c == vec3(192.0, 248.0, 104.0) || // C0F868 - yellow-green
-        c == vec3(248.0, 168.0, 168.0) || // F8A8A8 - pink, node red middle
-        c == vec3(224.0, 48.0,  48.0)  || // E03030 - node red outer and center
-        // c == vec3(248.0, 248.0, 152.0)  || // F8F898 - center of kanden radar
-        c == vec3(160.0, 160.0, 160.0)  || // A0A0A0 - octolith gray top
-        c == vec3(200.0, 200.0, 200.0)  || // C8C8C8 - octolith gray center
-        c == vec3(144.0, 144.0, 144.0)  || // 909090 - octolith gray bottom
-        c == vec3(248.0, 128.0, 16.0)   || // F88010 - octolith orange top
-        c == vec3(248.0, 208.0, 160.0)  || // F8D0A0 - octolith orange center
-        c == vec3(216.0, 104.0, 0.0)    || // D86800 - octolith orange bottom
-        c == vec3(136.0, 224.0, 8.0)    || // 88E008 - octolith green top
-        c == vec3(200.0, 248.0, 128.0)  || // C8F880 - octolith green center
-        c == vec3(104.0, 184.0, 0.0)    || // 68B800 - octolith green bottom
-        c == vec3(16.0,  152.0, 200.0)  || // 1098C8 - node blue outer and center
-        c == vec3(40.0,  216.0, 248.0)  || // 28D8F8 - node blue middle
-        c == vec3(168.0, 168.0, 168.0);   // A8A8A8 - node gray
+    bool match = false;
+    for (int i = 0; i < PALETTE_SIZE; i++) {
+        if (c == uPalette[i]) { match = true; break; }
+    }
 
     if (!match) discard;
 
