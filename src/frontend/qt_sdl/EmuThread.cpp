@@ -322,6 +322,12 @@ void EmuThread::run()
 
             updateRenderer();
 
+#ifdef MELONPRIME_DS
+            // P-39 fix: Reset shadersReady so the new renderer's
+            // NeedsShaderCompile() is actually checked.
+            shadersReady = false;
+#endif
+
             videoSettingsDirty = false;
             emuInstance->renderLock.unlock();
         }
