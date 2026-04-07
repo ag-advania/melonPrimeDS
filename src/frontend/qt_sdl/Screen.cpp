@@ -1480,7 +1480,13 @@ void ScreenPanelGL::initOpenGL()
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+#ifdef MELONPRIME_DS
+    // OPT-TX1: GL_BGRA matches QImage ARGB32_Premultiplied native byte order
+    // (BGRA on little-endian), enabling driver fast-path (no R↔B byte swap).
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, logo.width(), logo.height(), 0, GL_BGRA, GL_UNSIGNED_BYTE, logo.bits());
+#else
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, logo.width(), logo.height(), 0, GL_RGBA, GL_UNSIGNED_BYTE, logo.bits());
+#endif
     logoTexture = tex;
 
 #ifdef MELONPRIME_CUSTOM_HUD
@@ -1604,7 +1610,12 @@ void ScreenPanelGL::osdRenderItem(OSDItem * item)
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+#ifdef MELONPRIME_DS
+    // OPT-TX1: GL_BGRA fast-path (see logo upload comment).
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, item->bitmap.width(), item->bitmap.height(), 0, GL_BGRA, GL_UNSIGNED_BYTE, item->bitmap.bits());
+#else
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, item->bitmap.width(), item->bitmap.height(), 0, GL_RGBA, GL_UNSIGNED_BYTE, item->bitmap.bits());
+#endif
 
     osdTextures[item->id] = tex;
 }
@@ -1769,18 +1780,19 @@ void ScreenPanelGL::drawScreen()
 
                 glBindTexture(GL_TEXTURE_2D, overlayTextures[0]);
                 // Reallocate GL texture when the buffer size changes (window resize).
+                // OPT-TX1: GL_BGRA matches QImage native byte order — driver fast-path.
                 if (topOutW != overlayTexW || topOutH != overlayTexH) {
                     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, topOutW, topOutH, 0,
-                        GL_RGBA, GL_UNSIGNED_BYTE, Overlay[0].constBits());
+                        GL_BGRA, GL_UNSIGNED_BYTE, Overlay[0].constBits());
                     overlayTexW = topOutW;
                     overlayTexH = topOutH;
                 } else {
                     glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, topOutW, topOutH,
-                        GL_RGBA, GL_UNSIGNED_BYTE, Overlay[0].constBits());
+                        GL_BGRA, GL_UNSIGNED_BYTE, Overlay[0].constBits());
                 }
 
 
-                // Switch to OSD shader (supports alpha via texelFetch + BGRA swizzle)
+                // Switch to OSD shader for HUD overlay compositing
                 glUseProgram(osdShader);
                 glUniform2f(osdScreenSizeULoc, w, h);
                 glUniform1f(osdScaleFactorULoc, factor);
@@ -1873,8 +1885,16 @@ void ScreenPanelGL::drawScreen()
 
                         glActiveTexture(GL_TEXTURE0);
                         glBindTexture(GL_TEXTURE_2D_ARRAY, activeScreenTexture);
-                        glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-                        glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+                        // OPT-RL1: Radar always needs GL_LINEAR. Skip redundant
+                        // glTexParameteri when the texture already has it.
+                        // lastFilter tracks screenTexture's state; for GPU
+                        // renderer textures we always set (not tracked).
+                        if (activeScreenTexture != screenTexture || lastFilter != GL_LINEAR) {
+                            glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+                            glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+                            if (activeScreenTexture == screenTexture)
+                                lastFilter = GL_LINEAR;
+                        }
 
                         glEnable(GL_BLEND);
                         glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
