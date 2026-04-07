@@ -25,6 +25,7 @@
 #include <string>
 #include <map>
 #include <set>
+#include <vector>
 #include <cmath>
 #include <cstdio>
 #include <cstring>
@@ -148,39 +149,66 @@ static void EnsureIconsLoaded(int dsH = 16, float hudScale = 1.0f)
     s_outlineTintColor = QColor(); // invalidate outline cache
 }
 
+// ── P-12: Separable max-filter dilation ──────────────────────────────────────
+// Two-pass (horizontal then vertical) max filter reduces per-pixel cost from
+// O((2R+1)²) to O(2(2R+1)). For R=1 this is ~1.5× faster; for R=3, ~3× faster.
+// Called only on config changes (not per frame).
+static void DilateSeparableTinted(QImage& dstImg, const QImage& srcImg,
+                                   const QColor& col, int R)
+{
+    const int sw = srcImg.width(), sh = srcImg.height();
+    const int dw = sw + R * 2, dh = sh + R * 2;
+    dstImg = QImage(dw, dh, QImage::Format_ARGB32_Premultiplied);
+    dstImg.fill(Qt::transparent);
+    if (sw == 0 || sh == 0) return;
+
+    // Pass 1: horizontal max — temp[dw × sh]
+    std::vector<uint8_t> hMax(static_cast<size_t>(dw) * sh, 0);
+    for (int y = 0; y < sh; ++y) {
+        const QRgb* srcRow = reinterpret_cast<const QRgb*>(srcImg.constScanLine(y));
+        uint8_t* hRow = hMax.data() + y * dw;
+        for (int dx = 0; dx < dw; ++dx) {
+            const int x0 = dx - R;
+            int maxA = 0;
+            const int kxMin = std::max(0, x0 - R);
+            const int kxMax = std::min(sw - 1, x0 + R);
+            for (int kx = kxMin; kx <= kxMax; ++kx) {
+                const int a = qAlpha(srcRow[kx]);
+                if (a > maxA) { maxA = a; if (maxA == 255) break; }
+            }
+            hRow[dx] = static_cast<uint8_t>(maxA);
+        }
+    }
+
+    // Pass 2: vertical max + tint → dstImg[dw × dh]
+    const int cr = col.red(), cg = col.green(), cb = col.blue();
+    for (int dy = 0; dy < dh; ++dy) {
+        QRgb* dstRow = reinterpret_cast<QRgb*>(dstImg.scanLine(dy));
+        const int y0 = dy - R;
+        const int kyMin = std::max(0, y0 - R);
+        const int kyMax = std::min(sh - 1, y0 + R);
+        for (int dx = 0; dx < dw; ++dx) {
+            int maxA = 0;
+            for (int ky = kyMin; ky <= kyMax; ++ky) {
+                const int a = hMax[ky * dw + dx];
+                if (a > maxA) { maxA = a; if (maxA == 255) break; }
+            }
+            if (maxA > 0)
+                dstRow[dx] = qRgba(cr * maxA / 255, cg * maxA / 255, cb * maxA / 255, maxA);
+        }
+    }
+}
+
 // ── Outline icon dilation ────────────────────────────────────────────────────
-// Applies max-dilation (same algorithm as BuildDilatedOutlineBitmap) to an icon.
+// Applies max-dilation to an icon using P-12 separable filter.
 // Output image is (sw+2R) × (sh+2R), filled with outlineColor at dilated alpha.
 // Icon images are at output-pixel scale, so R == thickness (output pixels).
 static QImage DilateAndTintIconForOutline(const QImage& src, const QColor& col, int R)
 {
     if (src.isNull()) return src;
     const QImage s = src.convertToFormat(QImage::Format_ARGB32_Premultiplied);
-    const int sw = s.width(), sh = s.height();
-    const int dw = sw + R * 2, dh = sh + R * 2;
-    QImage dst(dw, dh, QImage::Format_ARGB32_Premultiplied);
-    dst.fill(Qt::transparent);
-    const int cr = col.red(), cg = col.green(), cb = col.blue();
-    for (int dy = 0; dy < dh; ++dy) {
-        QRgb* dstRow = reinterpret_cast<QRgb*>(dst.scanLine(dy));
-        for (int dx = 0; dx < dw; ++dx) {
-            const int sx0 = dx - R, sy0 = dy - R;
-            int maxA = 0;
-            for (int ky = -R; ky <= R && maxA < 255; ++ky) {
-                const int sy = sy0 + ky;
-                if (sy < 0 || sy >= sh) continue;
-                const QRgb* srcRow = reinterpret_cast<const QRgb*>(s.constScanLine(sy));
-                for (int kx = -R; kx <= R && maxA < 255; ++kx) {
-                    const int sx = sx0 + kx;
-                    if (sx < 0 || sx >= sw) continue;
-                    const int a = qAlpha(srcRow[sx]);
-                    if (a > maxA) maxA = a;
-                }
-            }
-            if (maxA > 0)
-                dstRow[dx] = qRgba(cr * maxA / 255, cg * maxA / 255, cb * maxA / 255, maxA);
-        }
-    }
+    QImage dst;
+    DilateSeparableTinted(dst, s, col, R);
     return dst;
 }
 
@@ -303,39 +331,12 @@ static inline void DrawCachedText(QPainter* p, const TextBitmapCache& cache, int
 // side, so originX/Y are adjusted outward by R.
 // This produces a gap-free, smooth outline regardless of thickness setting.
 
+// P-12: Uses separable max-filter dilation for O(R) per pixel instead of O(R²).
 static void BuildDilatedOutlineBitmap(TextBitmapCache& dst,
                                        const TextBitmapCache& src,
                                        const QColor& color, int R)
 {
-    const QImage& s = src.bitmap;
-    const int sw = s.width(), sh = s.height();
-    const int dw = sw + R * 2, dh = sh + R * 2;
-
-    dst.bitmap = QImage(dw, dh, QImage::Format_ARGB32_Premultiplied);
-    dst.bitmap.fill(Qt::transparent);
-
-    const int cr = color.red(), cg = color.green(), cb = color.blue();
-
-    for (int dy = 0; dy < dh; ++dy) {
-        QRgb* dstRow = reinterpret_cast<QRgb*>(dst.bitmap.scanLine(dy));
-        for (int dx = 0; dx < dw; ++dx) {
-            const int sx0 = dx - R, sy0 = dy - R;
-            int maxA = 0;
-            for (int ky = -R; ky <= R && maxA < 255; ++ky) {
-                const int sy = sy0 + ky;
-                if (sy < 0 || sy >= sh) continue;
-                const QRgb* srcRow = reinterpret_cast<const QRgb*>(s.constScanLine(sy));
-                for (int kx = -R; kx <= R && maxA < 255; ++kx) {
-                    const int sx = sx0 + kx;
-                    if (sx < 0 || sx >= sw) continue;
-                    const int a = qAlpha(srcRow[sx]);
-                    if (a > maxA) maxA = a;
-                }
-            }
-            if (maxA > 0)
-                dstRow[dx] = qRgba(cr * maxA / 255, cg * maxA / 255, cb * maxA / 255, maxA);
-        }
-    }
+    DilateSeparableTinted(dst.bitmap, src.bitmap, color, R);
 
     // Adjust origin to account for the expansion
     dst.originX     = src.originX - R;
@@ -450,6 +451,8 @@ struct CrosshairHudConfig {
     double chOuterOpacity;
     int chOuterLengthX, chOuterLengthY, chOuterThickness, chOuterOffset;
     double chScale; // visual scale multiplier (1.0 = 100%)
+    // P-11: Pre-computed arm/dot colors with alpha set (avoids per-frame QColor copy + setAlphaF)
+    QColor chInnerColor, chOuterColor, chDotColor;
 };
 struct MatchStatusHudConfig {
     bool matchStatusShow;
@@ -527,6 +530,10 @@ struct CachedHudConfig {
 };
 static CachedHudConfig s_cache = { .valid = false };
 static uint32_t s_cacheEpoch = 1;
+
+// P-9: Frame-level font metrics — set once in CustomHud_Render, shared by all draw sub-functions.
+static QFontMetrics s_frameFm{QFont{}};
+static int s_frameFpx = 0;
 
 static inline void CopyConfigString(char* dst, size_t dstSize, const std::string& value)
 {
@@ -656,6 +663,13 @@ static void LoadCrosshairConfig(CrosshairHudConfig& crosshair, Config::Table& cf
     crosshair.chOuterOffset = cfg.GetInt("Metroid.Visual.CrosshairOuterOffset");
     crosshair.chScale = cfg.GetInt("Metroid.Visual.CrosshairScale") / 100.0;
     if (crosshair.chScale <= 0.0) crosshair.chScale = 1.0;
+    // P-11: Pre-compute arm/dot colors with alpha
+    crosshair.chInnerColor = crosshair.chColor;
+    crosshair.chInnerColor.setAlphaF(crosshair.chInnerOpacity);
+    crosshair.chOuterColor = crosshair.chColor;
+    crosshair.chOuterColor.setAlphaF(crosshair.chOuterOpacity);
+    crosshair.chDotColor = crosshair.chColor;
+    crosshair.chDotColor.setAlphaF(crosshair.chDotOpacity);
 }
 static void LoadMatchStatusConfig(MatchStatusHudConfig& matchStatus, Config::Table& cfg)
 {
@@ -1079,7 +1093,7 @@ static void DrawMatchStatusText(QPainter* p, const QFontMetrics& fm, int fontPix
 }
 static void DrawMatchStatusHud(QPainter* p, melonDS::u8* ram, const RomAddresses& rom, uint8_t playerPos, bool isAdventure, const CachedHudConfig& c)
 {
-    if (!c.matchStatus.matchStatusShow || isAdventure) return; MatchStatusResolvedState state = {}; if (!ComputeMatchStatusState(ram, rom, playerPos, state)) return; const QFontMetrics fm = p->fontMetrics(); const int fontPixelSize = p->font().pixelSize(); DrawMatchStatusText(p, fm, fontPixelSize, c.textScalePct / 100.0f, state, c.matchStatus, c.matchStatusOpacity, c.outline, c.lastHudScale);
+    if (!c.matchStatus.matchStatusShow || isAdventure) return; MatchStatusResolvedState state = {}; if (!ComputeMatchStatusState(ram, rom, playerPos, state)) return; const QFontMetrics& fm = s_frameFm; const int fontPixelSize = s_frameFpx; /* P-9 */ DrawMatchStatusText(p, fm, fontPixelSize, c.textScalePct / 100.0f, state, c.matchStatus, c.matchStatusOpacity, c.outline, c.lastHudScale);
 }
 static int CalcAlignedTextX(int anchorX, int align, int textW);
 static void DrawCachedAlignedText(QPainter* p, const QFontMetrics& fm, int fontPixelSize, float tds,
@@ -1115,7 +1129,7 @@ static void DrawBombLeft(QPainter* p, melonDS::u8* ram, const RomAddresses& rom,
         static TextBitmapCache s_bombBitmapCache = { 0, QColor(), "", 0, 0, 0, false, QImage() };
         static TextBitmapCache s_bombOutlineCache = { 0, QColor(), "", 0, 0, 0, false, QImage() };
         static TextMeasureCache s_bombMeasureCache = { 0, "", 0, 0, false };
-        const QFontMetrics fm = p->fontMetrics(); const int fontPixelSize = p->font().pixelSize();
+        const QFontMetrics& fm = s_frameFm; const int fontPixelSize = s_frameFpx; // P-9
         char buf[64];
         if (c.bombLeft.bombLeftTextShow) std::snprintf(buf, sizeof(buf), "%s%u%s", c.bombLeft.bombLeftPrefix, bombs, c.bombLeft.bombLeftSuffix);
         else std::snprintf(buf, sizeof(buf), "%s%s", c.bombLeft.bombLeftPrefix, c.bombLeft.bombLeftSuffix);
@@ -1165,7 +1179,7 @@ static void DrawBombLeft(QPainter* p, melonDS::u8* ram, const RomAddresses& rom,
 // =========================================================================
 static void DrawRankAndTime(QPainter* p, melonDS::u8* ram, const RomAddresses& rom, uint8_t playerPos, bool isAdventure, const CachedHudConfig& c, float tds)
 {
-    if (isAdventure) return; const auto& hud = c.rankTime; const QFontMetrics fm = p->fontMetrics(); const int fontPixelSize = p->font().pixelSize();
+    if (isAdventure) return; const auto& hud = c.rankTime; const QFontMetrics& fm = s_frameFm; const int fontPixelSize = s_frameFpx; // P-9
     if (hud.rankShow) { static RankStringCache s_rankStringCache = { 0, 0, false, false, "" }; static TextBitmapCache s_rankCache = { 0, QColor(), "", 0, 0, 0, false, QImage() }; static TextBitmapCache s_rankOutlineCache = { 0, QColor(), "", 0, 0, 0, false, QImage() }; static TextMeasureCache s_rankMeasure = { 0, "", 0, 0, false }; uint32_t rankWord = Read32(ram, rom.matchRank); uint8_t rankByte = (rankWord >> (playerPos * 8)) & 0xFF; if (rankByte <= 3) DrawCachedAlignedText(p, fm, fontPixelSize, tds, s_rankMeasure, s_rankCache, s_rankOutlineCache, UpdateRankString(s_rankStringCache, rankByte, hud.rankShowOrdinal, hud), hud.rankColor, hud.rankX, hud.rankAlign, hud.rankY, c.rankOpacity, c.outline, c.lastHudScale); }
     if (hud.timeLeftShow) { static TimeStringCache s_timeLeftStringCache = { 0, 0, false, "" }; static TextBitmapCache s_timeLeftCache = { 0, QColor(), "", 0, 0, 0, false, QImage() }; static TextBitmapCache s_timeLeftOutlineCache = { 0, QColor(), "", 0, 0, 0, false, QImage() }; static TextMeasureCache s_timeLeftMeasure = { 0, "", 0, 0, false }; int seconds = static_cast<int>(Read32(ram, rom.timeLeft)) / 60; DrawCachedAlignedText(p, fm, fontPixelSize, tds, s_timeLeftMeasure, s_timeLeftCache, s_timeLeftOutlineCache, UpdateTimeString(s_timeLeftStringCache, seconds, false), hud.timeLeftColor, hud.timeLeftX, hud.timeLeftAlign, hud.timeLeftY, c.timeLeftOpacity, c.outline, c.lastHudScale); }
     if (hud.timeLimitShow) { static TimeStringCache s_timeLimitStringCache = { 0, 0, false, "" }; static TextBitmapCache s_timeLimitCache = { 0, QColor(), "", 0, 0, 0, false, QImage() }; static TextBitmapCache s_timeLimitOutlineCache = { 0, QColor(), "", 0, 0, 0, false, QImage() }; static TextMeasureCache s_timeLimitMeasure = { 0, "", 0, 0, false }; int goalMinutes = s_battleState.valid ? s_battleState.timeLimitMinutes : LookupTimeLimitMin((Read32(ram, rom.battleSettings + 4) >> 8) & 0xFF); DrawCachedAlignedText(p, fm, fontPixelSize, tds, s_timeLimitMeasure, s_timeLimitCache, s_timeLimitOutlineCache, UpdateTimeString(s_timeLimitStringCache, goalMinutes, true), hud.timeLimitColor, hud.timeLimitX, hud.timeLimitAlign, hud.timeLimitY, c.timeLimitOpacity, c.outline, c.lastHudScale); }
@@ -1323,10 +1337,13 @@ static void DrawGauge(QPainter* p, int x, int y, float ratio,
     }
 }
 
-static inline QColor HpGaugeColor(uint16_t hp, const QColor& safeColor)
+// P-10: Static const threshold colors — avoid per-call QColor construction.
+static inline const QColor& HpGaugeColor(uint16_t hp, const QColor& safeColor)
 {
-    if (hp <= 25)      return QColor(255, 0, 0);
-    else if (hp <= 50) return QColor(255, 165, 0);
+    static const QColor kCritical(255, 0, 0);
+    static const QColor kWarning(255, 165, 0);
+    if (hp <= 25)      return kCritical;
+    else if (hp <= 50) return kWarning;
     else               return safeColor;
 }
 
@@ -1364,8 +1381,8 @@ static inline void DrawHP(QPainter* p, uint16_t hp, uint16_t maxHP,
     static TextMeasureCache s_hpTextCache = { 0, "", 0, 0, false };
     static TextBitmapCache s_hpBitmapCache = { 0, QColor(), "", 0, 0, 0, false, QImage() };
     static TextBitmapCache s_hpOutlineCache = { 0, QColor(), "", 0, 0, 0, false, QImage() };
-    const QFontMetrics fm = p->fontMetrics();
-    const int fontPixelSize = p->font().pixelSize();
+    const QFontMetrics& fm = s_frameFm;        // P-9
+    const int fontPixelSize = s_frameFpx;       // P-9
 
     char buf[24];
     std::snprintf(buf, sizeof(buf), "%s%u", c.hp.hpPrefix, hp);
@@ -1423,8 +1440,8 @@ static void DrawWeaponAmmo(QPainter* p, melonDS::u8* ram,
     static TextMeasureCache s_ammoTextCache = { 0, "", 0, 0, false };
     static TextBitmapCache s_ammoBitmapCache = { 0, QColor(), "", 0, 0, 0, false, QImage() };
     static TextBitmapCache s_ammoOutlineCache = { 0, QColor(), "", 0, 0, 0, false, QImage() };
-    const QFontMetrics fm = p->fontMetrics();
-    const int fontPixelSize = p->font().pixelSize();
+    const QFontMetrics& fm = s_frameFm;        // P-9
+    const int fontPixelSize = s_frameFpx;       // P-9
 
     const WeaponInfo& wi = kWeaponTable[weapon];
     EnsureIconsLoaded(c.weapon.iconHeight, hudScale);
@@ -1635,26 +1652,22 @@ static void DrawCrosshair(QPainter* p, melonDS::u8* ram,
         p->restore();
     }
 
-    // Inner arms (drawn in DS space — painter transform handles scaling)
+    // P-11: Inner arms — use pre-computed color with alpha (no per-frame copy + setAlphaF)
     if (nInner > 0) {
-        QColor clr = c.crosshair.chColor; clr.setAlphaF(c.crosshair.chInnerOpacity);
         for (int i = 0; i < nInner; i++)
-            p->fillRect(innerRects[i], clr);
+            p->fillRect(innerRects[i], c.crosshair.chInnerColor);
     }
 
-    // Outer arms
+    // P-11: Outer arms
     if (nOuter > 0) {
-        QColor clr = c.crosshair.chColor; clr.setAlphaF(c.crosshair.chOuterOpacity);
         for (int i = 0; i < nOuter; i++)
-            p->fillRect(outerRects[i], clr);
+            p->fillRect(outerRects[i], c.crosshair.chOuterColor);
     }
 
-    // Center dot
+    // P-11: Center dot
     if (c.crosshair.chCenterDot) {
-        QColor dotColor = c.crosshair.chColor;
-        dotColor.setAlphaF(c.crosshair.chDotOpacity);
         const float dh = c.crosshair.chDotThickness * cs * 0.5f;
-        p->fillRect(QRectF(cx - dh, cy - dh, c.crosshair.chDotThickness * cs, c.crosshair.chDotThickness * cs), dotColor);
+        p->fillRect(QRectF(cx - dh, cy - dh, c.crosshair.chDotThickness * cs, c.crosshair.chDotThickness * cs), c.crosshair.chDotColor);
     }
 }
 
@@ -1705,6 +1718,11 @@ HOT_FUNCTION void CustomHud_Render(
             QFont f = topPaint->font();
             f.setPixelSize(kCustomHudFontSize);
             topPaint->setFont(f);
+        }
+        // P-9: Cache font metrics (one-time init, same font for all frames)
+        if (UNLIKELY(s_frameFpx != kCustomHudFontSize)) {
+            s_frameFm = topPaint->fontMetrics();
+            s_frameFpx = kCustomHudFontSize;
         }
         for (int i = 0; i < kEditElemCount; ++i)
             s_editRects[i] = ComputeEditBounds(i, localCfg, topStretchX);
@@ -1771,6 +1789,11 @@ HOT_FUNCTION void CustomHud_Render(
         QFont f = topPaint->font();
         f.setPixelSize(kCustomHudFontSize);
         topPaint->setFont(f);
+    }
+    // P-9: Cache font metrics (one-time init, same font for all frames)
+    if (UNLIKELY(s_frameFpx != kCustomHudFontSize)) {
+        s_frameFm = topPaint->fontMetrics();
+        s_frameFpx = kCustomHudFontSize;
     }
     const float textDrawScale = c.textScalePct / 100.0f;
     s_cache.lastHudScale = hudScale;
