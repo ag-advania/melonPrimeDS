@@ -48,6 +48,7 @@
 #include "FreeBIOS.h"
 #include "main.h"
 
+#include "NDSCart/CartSD.h"
 #ifdef MELONPRIME_DS
 #include "MelonPrimeDef.h"
 
