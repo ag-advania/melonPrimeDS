@@ -29,7 +29,8 @@
       "Bash('C:\\\\msys64\\\\usr\\\\bin\\\\bash.exe' -lc \"awk 'NR>=1507 && NR<=3512' /c/Users/Admin/Documents/git/melonPrimeDS/src/frontend/qt_sdl/MelonPrimeCustomHud.cpp | wc -l\")",
       "Bash('C:\\\\msys64\\\\usr\\\\bin\\\\bash.exe' -lc \"grep -n 'MelonPrimeCustomHud' /c/Users/Admin/Documents/git/melonPrimeDS/src/frontend/qt_sdl/CMakeLists.txt\")",
       "Bash('C:\\\\msys64\\\\usr\\\\bin\\\\bash.exe' -lc \"cd /c/Users/Admin/Documents/git/melonPrimeDS && /mingw64/bin/cmake.exe --build --preset=release-mingw-x86_64 --parallel 1 2>&1 | tail -30\")",
-      "Bash('C:\\\\msys64\\\\usr\\\\bin\\\\bash.exe' -lc \"cd /c/Users/Admin/Documents/git/melonPrimeDS/build/release-mingw-x86_64 && /mingw64/bin/ninja.exe -j1 2>&1 | tail -30\")"
+      "Bash('C:\\\\msys64\\\\usr\\\\bin\\\\bash.exe' -lc \"cd /c/Users/Admin/Documents/git/melonPrimeDS/build/release-mingw-x86_64 && /mingw64/bin/ninja.exe -j1 2>&1 | tail -30\")",
+      "Bash(cmake --build --preset windows-release)"
     ]
   }
 }
