@@ -1238,6 +1238,13 @@ void ScreenPanelNative::paintEvent(QPaintEvent * event)
 
                 // Skip fill + render entirely when HUD is disabled and not in edit mode.
                 const bool hudVisible = MelonPrime::CustomHud_IsEnabled(instcfg) || MelonPrime::CustomHud_IsEditMode();
+                if (!hudVisible) {
+                    // Ensure the no-HUD ROM patch is reverted when custom HUD is off.
+                    MelonPrime::CustomHud_EnsurePatchRestored(
+                        emuInstance, instcfg,
+                        mp->GetCurrentRom(), mp->GetPlayerPosition(),
+                        mp->IsInGame());
+                }
                 if (hudVisible)
                 {
                     // Cap overlay render scale for performance (HudRenderScale=N means render at N×DS).
@@ -1726,6 +1733,13 @@ void ScreenPanelGL::drawScreen()
 
                 // Skip fill + render + upload when HUD is disabled and not in edit mode.
                 const bool hudVisible = MelonPrime::CustomHud_IsEnabled(instcfg) || MelonPrime::CustomHud_IsEditMode();
+                if (!hudVisible) {
+                    // Ensure the no-HUD ROM patch is reverted when custom HUD is off.
+                    MelonPrime::CustomHud_EnsurePatchRestored(
+                        emuInstance, instcfg,
+                        mp->GetCurrentRom(), mp->GetPlayerPosition(),
+                        mp->IsInGame());
+                }
                 if (hudVisible)
                 {
                 // Cap overlay render scale for performance (HudRenderScale=N means render at N×DS).

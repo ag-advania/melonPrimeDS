@@ -1335,6 +1335,27 @@ static void RestoreHudPatch(melonDS::NDS* nds, uint8_t romGroup)
     s_hudPatchApplied = false;
 }
 
+void CustomHud_EnsurePatchRestored(
+    EmuInstance* emu,
+    Config::Table& localCfg,
+    const RomAddresses& rom,
+    uint8_t playerPosition,
+    bool isInGame)
+{
+    if (!isInGame) return;
+    if (CustomHud_IsEnabled(localCfg)) return; // HUD enabled — Render() handles patches
+    if (!s_hudPatchApplied) return;
+
+    melonDS::NDS* nds = emu->getNDS();
+    melonDS::u8* ram = nds->MainRAM;
+    const uint32_t offP = static_cast<uint32_t>(playerPosition) * Consts::PLAYER_ADDR_INC;
+    const uint8_t romGroup = rom.romGroupIndex;
+
+    RestoreHudPatch(nds, romGroup);
+    uint8_t vm = Read8(ram, rom.baseViewMode + offP);
+    Write8(ram, rom.hudToggle, (vm == 0x00) ? 0x1F : 0x11);
+}
+
 void CustomHud_ResetPatchState()
 {
     s_hudPatchApplied = false;
@@ -1791,15 +1812,6 @@ HOT_FUNCTION void CustomHud_Render(
     melonDS::u8* ram = nds->MainRAM;
     const uint32_t offP = static_cast<uint32_t>(playerPosition) * Consts::PLAYER_ADDR_INC;
     const uint8_t romGroup = rom.romGroupIndex;
-
-    if (!CustomHud_IsEnabled(localCfg)) {
-        if (s_hudPatchApplied) {
-            RestoreHudPatch(nds, romGroup);
-            uint8_t vm = Read8(ram, rom.baseViewMode + offP);
-            Write8(ram, rom.hudToggle, (vm == 0x00) ? 0x1F : 0x11);
-        }
-        return;
-    }
 
     ApplyNoHudPatch(nds, romGroup);
 
