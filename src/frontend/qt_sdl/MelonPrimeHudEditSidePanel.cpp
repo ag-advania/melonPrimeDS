@@ -596,6 +596,7 @@ void MelonPrimeHudEditSidePanel::populateRadar()
         "Metroid.Visual.BtmOverlayFrameColorR",
         "Metroid.Visual.BtmOverlayFrameColorG",
         "Metroid.Visual.BtmOverlayFrameColorB");
+    addCheckBox(QStringLiteral("Frame Outline"), "Metroid.Visual.BtmOverlayFrameOutlineEnable");
 }
 
 #endif // MELONPRIME_CUSTOM_HUD

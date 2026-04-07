@@ -561,6 +561,7 @@ struct RadarOverlayConfig {
     int radarSrcRadius;
     double radarOpacity;
     QColor radarFrameColor;  // independent color for the radar frame SVG
+    bool radarFrameOutlineEnable;
     QRect radarDstRect;
     QPainterPath radarClipPath;
 };
@@ -805,6 +806,7 @@ static void LoadRadarOverlayConfig(RadarOverlayConfig& radar, Config::Table& cfg
     radar.radarFrameColor = ReadRgbColor(cfg, "Metroid.Visual.BtmOverlayFrameColorR",
                                               "Metroid.Visual.BtmOverlayFrameColorG",
                                               "Metroid.Visual.BtmOverlayFrameColorB");
+    radar.radarFrameOutlineEnable = cfg.GetBool("Metroid.Visual.BtmOverlayFrameOutlineEnable");
     // radarDstRect and radarClipPath are recomputed in RecomputeAnchorPositions()
 }
 // Recompute all final X/Y positions from stored anchor + offset + topStretchX.
@@ -1973,7 +1975,7 @@ static void DrawRadarCombinedOutlines(QPainter* topPaint, const CachedHudConfig&
     topPaint->drawEllipse(QRectF(c.radar.radarDstRect).adjusted(-expandDS, -expandDS, expandDS, expandDS));
 
     // SVG frame outline (dilated image, same technique as weapon/bomb icons)
-    if (!s_radarFrameOutline.isNull()) {
+    if (c.radar.radarFrameOutlineEnable && !s_radarFrameOutline.isNull()) {
         topPaint->drawImage(QRectF(frameDstRect.x() - expandDS,
                                    frameDstRect.y() - expandDS,
                                    frameDstRect.width()  + expandDS * 2.0f,
