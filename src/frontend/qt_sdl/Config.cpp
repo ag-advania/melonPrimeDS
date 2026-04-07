@@ -304,7 +304,7 @@ namespace Config
         {"Instance*.Metroid.Visual.BtmOverlayRadarColorG",      0},
         {"Instance*.Metroid.Visual.BtmOverlayRadarColorB",      5},
         /* MelonPrimeDS Bottom Screen Overlay frame color } */
-        {"Instance*.Metroid.Visual.BtmOverlayRadarColorUseHunter", false},
+        {"Instance*.Metroid.Visual.BtmOverlayRadarColorUseHunter", true},
         {"Instance*.Metroid.Visual.BtmOverlayFrameOutlineEnable", true},
         /* MelonPrimeDS Bottom Screen Overlay defaults } */
         /* MelonPrimeDS Custom HUD Crosshair defaults } */
@@ -375,7 +375,7 @@ namespace Config
         {"Instance*.Metroid.Apply.joy2KeySupport", true},
         {"Instance*.Metroid.Enable.stylusMode", false},
         /* MelonPrimeDS Crosshair bools { */
-        {"Instance*.Metroid.Visual.CustomHUD", true},
+        {"Instance*.Metroid.Visual.CustomHUD", false},
         {"Instance*.Metroid.Visual.CrosshairOutline", true},
         {"Instance*.Metroid.Visual.CrosshairCenterDot", true},
         {"Instance*.Metroid.Visual.CrosshairTStyle", true},
