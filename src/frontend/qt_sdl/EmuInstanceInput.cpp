@@ -25,6 +25,10 @@
 #include "main.h"
 #include "Config.h"
 
+#ifdef MELONPRIME_DS
+#include "MelonPrimeCompilerHints.h"
+#endif
+
 using namespace melonDS;
 
 const char* EmuInstance::buttonNames[12] =
@@ -67,7 +71,42 @@ const char* EmuInstance::hotkeyNames[HK_MAX] =
     "HK_GuitarGripGreen",
     "HK_GuitarGripRed",
     "HK_GuitarGripYellow",
-    "HK_GuitarGripBlue"
+    "HK_GuitarGripBlue",
+
+#ifdef MELONPRIME_DS
+    // Metroid Prime specific hotkeys
+    "HK_MetroidMoveForward",
+    "HK_MetroidMoveBack",
+    "HK_MetroidMoveLeft",
+    "HK_MetroidMoveRight",
+    "HK_MetroidJump",
+    "HK_MetroidMorphBall",
+    "HK_MetroidZoom",
+    "HK_MetroidHoldMorphBallBoost",
+    "HK_MetroidScanVisor",
+    "HK_MetroidUILeft",
+    "HK_MetroidUIRight",
+    "HK_MetroidUIOk",
+    "HK_MetroidUIYes",
+    "HK_MetroidUINo",
+    "HK_MetroidShootScan",
+    "HK_MetroidScanShoot",
+    "HK_MetroidWeaponBeam",
+    "HK_MetroidWeaponMissile",
+    "HK_MetroidWeaponSpecial",
+    "HK_MetroidWeaponNext",
+    "HK_MetroidWeaponPrevious",
+    "HK_MetroidWeapon1",
+    "HK_MetroidWeapon2",
+    "HK_MetroidWeapon3",
+    "HK_MetroidWeapon4",
+    "HK_MetroidWeapon5",
+    "HK_MetroidWeapon6",
+    "HK_MetroidWeaponCheck",
+    "HK_MetroidMenu",
+    "HK_MetroidIngameSensiUp",
+    "HK_MetroidIngameSensiDown",
+#endif
 };
 
 std::shared_ptr<SDL_mutex> EmuInstance::joyMutexGlobal = nullptr;
@@ -82,6 +121,9 @@ void EmuInstance::inputInit()
     }
     joyMutex = joyMutexGlobal;
 
+#ifdef MELONPRIME_DS
+    static_assert(HK_MAX <= 64, "HK_MAX exceeds uint64_t capacity");
+
     keyInputMask = 0xFFF;
     joyInputMask = 0xFFF;
     inputMask = 0xFFF;
@@ -90,6 +132,20 @@ void EmuInstance::inputInit()
     joyHotkeyMask = 0;
     hotkeyMask = 0;
     lastHotkeyMask = 0;
+
+    joyHotkeyPress = 0;
+    joyHotkeyRelease = 0;
+    lastJoyHotkeyMask = 0;
+#else
+    keyInputMask = 0xFFF;
+    joyInputMask = 0xFFF;
+    inputMask = 0xFFF;
+
+    keyHotkeyMask = 0;
+    joyHotkeyMask = 0;
+    hotkeyMask = 0;
+    lastHotkeyMask = 0;
+#endif
 
     isTouching = false;
     touchX = 0;
@@ -305,15 +361,15 @@ int getEventKeyVal(QKeyEvent* event)
     int key = event->key();
     int mod = event->modifiers();
     bool ismod = (key == Qt::Key_Control ||
-                  key == Qt::Key_Alt ||
-                  key == Qt::Key_AltGr ||
-                  key == Qt::Key_Shift ||
-                  key == Qt::Key_Meta);
+        key == Qt::Key_Alt ||
+        key == Qt::Key_AltGr ||
+        key == Qt::Key_Shift ||
+        key == Qt::Key_Meta);
 
     if (!ismod)
         key |= mod;
     else if (isRightModKey(event))
-        key |= (1<<31);
+        key |= (1 << 31);
 
     return key;
 }
@@ -321,6 +377,15 @@ int getEventKeyVal(QKeyEvent* event)
 
 void EmuInstance::onKeyPress(QKeyEvent* event)
 {
+#ifdef MELONPRIME_DS
+    int key = event->key();
+    for (int i = 0; i < 12; i++)
+        if (key == hkKeyMapping[i])
+            keyInputMask &= ~(1u << i);
+    for (int i = 0; i < HK_MAX; i++)
+        if (key == hkKeyMapping[i])
+            keyHotkeyMask |= (1ULL << i);
+#else
     int keyHK = getEventKeyVal(event);
     int keyKP = keyHK;
     if (event->modifiers() != Qt::KeypadModifier)
@@ -328,15 +393,27 @@ void EmuInstance::onKeyPress(QKeyEvent* event)
 
     for (int i = 0; i < 12; i++)
         if (keyKP == keyMapping[i])
-            keyInputMask &= ~(1<<i);
+            keyInputMask &= ~(1 << i);
 
     for (int i = 0; i < HK_MAX; i++)
         if (keyHK == hkKeyMapping[i])
-            keyHotkeyMask |= (1<<i);
+            keyHotkeyMask |= (1 << i);
+#endif
 }
 
 void EmuInstance::onKeyRelease(QKeyEvent* event)
 {
+#ifdef MELONPRIME_DS
+    int key = event->key();
+
+    for (int i = 0; i < 12; i++)
+        if (key == hkKeyMapping[i])
+            keyInputMask |= (1u << i);
+
+    for (int i = 0; i < HK_MAX; i++)
+        if (key == hkKeyMapping[i])
+            keyHotkeyMask &= ~(1ULL << i);
+#else
     int keyHK = getEventKeyVal(event);
     int keyKP = keyHK;
     if (event->modifiers() != Qt::KeypadModifier)
@@ -344,17 +421,51 @@ void EmuInstance::onKeyRelease(QKeyEvent* event)
 
     for (int i = 0; i < 12; i++)
         if (keyKP == keyMapping[i])
-            keyInputMask |= (1<<i);
+            keyInputMask |= (1 << i);
 
     for (int i = 0; i < HK_MAX; i++)
         if (keyHK == hkKeyMapping[i])
-            keyHotkeyMask &= ~(1<<i);
+            keyHotkeyMask &= ~(1 << i);
+#endif
 }
+
+#ifdef MELONPRIME_DS
+void EmuInstance::onMousePress(QMouseEvent* event)
+{
+    int key = static_cast<int>(event->button()) | 0xF0000000;
+
+    for (int i = 0; i < 12; i++)
+        if (key == hkKeyMapping[i])
+            keyInputMask &= ~(1u << i);
+
+    for (int i = 0; i < HK_MAX; i++)
+        if (key == hkKeyMapping[i])
+            keyHotkeyMask |= (1ULL << i);
+}
+
+void EmuInstance::onMouseRelease(QMouseEvent* event)
+{
+    int key = static_cast<int>(event->button()) | 0xF0000000;
+
+    for (int i = 0; i < 12; i++)
+        if (key == hkKeyMapping[i])
+            keyInputMask |= (1u << i);
+
+    for (int i = 0; i < HK_MAX; i++)
+        if (key == hkKeyMapping[i])
+            keyHotkeyMask &= ~(1ULL << i);
+}
+#endif // MELONPRIME_DS
 
 void EmuInstance::keyReleaseAll()
 {
+#ifdef MELONPRIME_DS
     keyInputMask = 0xFFF;
     keyHotkeyMask = 0;
+#else
+    keyInputMask = 0xFFF;
+    keyHotkeyMask = 0;
+#endif
 }
 
 bool EmuInstance::joystickButtonDown(int val)
@@ -372,7 +483,7 @@ bool EmuInstance::joystickButtonDown(int val)
             Uint8 hatval = SDL_JoystickGetHat(joystick, hatnum);
 
             bool pressed = false;
-            if      (hatdir == 0x1) pressed = (hatval & SDL_HAT_UP);
+            if (hatdir == 0x1) pressed = (hatval & SDL_HAT_UP);
             else if (hatdir == 0x4) pressed = (hatval & SDL_HAT_DOWN);
             else if (hatdir == 0x2) pressed = (hatval & SDL_HAT_RIGHT);
             else if (hatdir == 0x8) pressed = (hatval & SDL_HAT_LEFT);
@@ -396,17 +507,17 @@ bool EmuInstance::joystickButtonDown(int val)
 
         switch (axisdir)
         {
-            case 0: // positive
-                if (axisval > 16384) return true;
-                break;
+        case 0: // positive
+            if (axisval > 16384) return true;
+            break;
 
-            case 1: // negative
-                if (axisval < -16384) return true;
-                break;
+        case 1: // negative
+            if (axisval < -16384) return true;
+            break;
 
-            case 2: // trigger
-                if (axisval > 0) return true;
-                break;
+        case 2: // trigger
+            if (axisval > 0) return true;
+            break;
         }
     }
 
@@ -415,6 +526,57 @@ bool EmuInstance::joystickButtonDown(int val)
 
 void EmuInstance::inputProcess()
 {
+#ifdef MELONPRIME_DS
+    // =========================================================================
+    // P-21 + P-34: Lightweight path for MelonPrime.
+    //
+    // P-34: When no joystick is connected (KB+M players), skip SDL mutex
+    // and JoystickUpdate entirely. This saves 2 mutex syscalls + SDL overhead
+    // on 59/60 frames. A throttled check (~once per second) handles hot-plug.
+    //
+    // Joystick mask recalculation (12× joystickButtonDown + HK_MAX× loop)
+    // is handled by inputRefreshJoystickState() inside frameAdvanceOnce.
+    // =========================================================================
+    if (LIKELY(!joystick)) {
+        // P-34: Throttled attachment check (~once per second at 60fps).
+        // SDL_JoystickUpdate is needed for SDL_NumJoysticks to reflect changes.
+        static uint8_t s_inputJoyCheck = 0;
+        if (UNLIKELY(++s_inputJoyCheck >= 60)) {
+            s_inputJoyCheck = 0;
+            SDL_LockMutex(joyMutex.get());
+            SDL_JoystickUpdate();
+            if (SDL_NumJoysticks() > 0) {
+                openJoystick();
+            }
+            SDL_UnlockMutex(joyMutex.get());
+        }
+    }
+    else {
+        SDL_LockMutex(joyMutex.get());
+        SDL_JoystickUpdate();
+
+        if (!SDL_JoystickGetAttached(joystick))
+        {
+            SDL_JoystickClose(joystick);
+            joystick = nullptr;
+        }
+
+        SDL_UnlockMutex(joyMutex.get());
+    }
+
+    // Joystick edge detection (masks set by inputRefreshJoystickState)
+    joyHotkeyPress = joyHotkeyMask & ~lastJoyHotkeyMask;
+    joyHotkeyRelease = lastJoyHotkeyMask & ~joyHotkeyMask;
+    lastJoyHotkeyMask = joyHotkeyMask;
+
+    // Combined edge detection (keyboard + joystick)
+    hotkeyMask = keyHotkeyMask | joyHotkeyMask;
+    hotkeyPress = hotkeyMask & ~lastHotkeyMask;
+    hotkeyRelease = lastHotkeyMask & ~hotkeyMask;
+    lastHotkeyMask = hotkeyMask;
+
+#else
+    // Original melonDS path: full SDL polling + edge detection
     SDL_LockMutex(joyMutex.get());
     SDL_JoystickUpdate();
 
@@ -454,7 +616,100 @@ void EmuInstance::inputProcess()
     hotkeyRelease = lastHotkeyMask & ~hotkeyMask;
     lastHotkeyMask = hotkeyMask;
     SDL_UnlockMutex(joyMutex.get());
+#endif
 }
+
+#ifdef MELONPRIME_DS
+// =========================================================================
+// P-15: inputRefreshJoystickState — lightweight joystick re-poll
+//
+// Called after Sleep inside frameAdvanceOnce to give RunFrameHook the
+// freshest possible joystick axis/button state.
+//
+// P-23: No-joystick fast path.
+// When joystick == nullptr (common for KB+M MelonPrime players),
+// skip SDL_LockMutex + SDL_JoystickUpdate + SDL_UnlockMutex entirely.
+// Saves 2 mutex syscalls + SDL internal overhead per frame.
+//
+// The 60-frame attachment check for newly connected controllers still
+// runs via inputProcess() in the outer loop, but the hot path inside
+// frameAdvanceOnce avoids all SDL overhead when no controller exists.
+// =========================================================================
+void EmuInstance::inputRefreshJoystickState()
+{
+    // P-23: Skip SDL overhead when no joystick connected.
+    // joyInputMask stays 0xFFF (all released), joyHotkeyMask stays 0.
+    // hotkeyMask still includes keyHotkeyMask from Qt events.
+    if (!joystick) {
+        // P-23: Throttled attachment check — detect newly connected controllers.
+        // SDL_NumJoysticks requires the SDL event pump, so we must at least
+        // call SDL_JoystickUpdate periodically to process connect/disconnect.
+        static uint8_t s_joyCheckCounter = 0;
+        if (UNLIKELY(++s_joyCheckCounter >= 60)) {
+            s_joyCheckCounter = 0;
+            SDL_LockMutex(joyMutex.get());
+            SDL_JoystickUpdate();
+            if (SDL_NumJoysticks() > 0) {
+                openJoystick();
+                // If a joystick was found, immediately refresh masks
+                if (joystick) {
+                    joyInputMask = 0xFFF;
+                    for (int i = 0; i < 12; i++)
+                        if (joystickButtonDown(joyMapping[i]))
+                            joyInputMask &= ~(1u << i);
+                    inputMask = keyInputMask & joyInputMask;
+
+                    joyHotkeyMask = 0;
+                    for (int i = 0; i < HK_MAX; i++)
+                        if (joystickButtonDown(hkJoyMapping[i]))
+                            joyHotkeyMask |= (1ULL << i);
+                    hotkeyMask = keyHotkeyMask | joyHotkeyMask;
+                }
+            }
+            SDL_UnlockMutex(joyMutex.get());
+        }
+        return;
+    }
+
+    SDL_LockMutex(joyMutex.get());
+    SDL_JoystickUpdate();
+
+    // P-23: Throttle joystick detachment check to ~once per second.
+    static uint8_t s_detachCheckCounter = 0;
+    if (UNLIKELY(++s_detachCheckCounter >= 60))
+    {
+        s_detachCheckCounter = 0;
+        if (!SDL_JoystickGetAttached(joystick))
+        {
+            SDL_JoystickClose(joystick);
+            joystick = nullptr;
+            joyInputMask = 0xFFF;
+            joyHotkeyMask = 0;
+            inputMask = keyInputMask & joyInputMask;
+            hotkeyMask = keyHotkeyMask | joyHotkeyMask;
+            SDL_UnlockMutex(joyMutex.get());
+            return;
+        }
+    }
+
+    joyInputMask = 0xFFF;
+    for (int i = 0; i < 12; i++)
+        if (joystickButtonDown(joyMapping[i]))
+            joyInputMask &= ~(1u << i);
+
+    inputMask = keyInputMask & joyInputMask;
+
+    joyHotkeyMask = 0;
+    for (int i = 0; i < HK_MAX; i++)
+        if (joystickButtonDown(hkJoyMapping[i]))
+            joyHotkeyMask |= (1ULL << i);
+
+    // Refresh combined mask but do NOT recompute edges.
+    hotkeyMask = keyHotkeyMask | joyHotkeyMask;
+
+    SDL_UnlockMutex(joyMutex.get());
+}
+#endif // MELONPRIME_DS
 
 void EmuInstance::touchScreen(int x, int y)
 {
@@ -467,3 +722,24 @@ void EmuInstance::releaseScreen()
 {
     isTouching = false;
 }
+
+#ifdef MELONPRIME_DS
+float EmuInstance::hotkeyAnalogueValue(int id) {
+    int val = hkJoyMapping[id];
+    if (val == -1) return 0;
+
+    if (val & 0x10000)
+    {
+        int axisnum = (val >> 24) & 0xF;
+        // int axisdir = (val >> 20) & 0xF;
+        Sint16 axisval = SDL_JoystickGetAxis(joystick, axisnum);
+        return (float)axisval / INT16_MAX;
+    }
+
+    return 0;
+}
+
+melonDS::u32 EmuInstance::getInputMask() {
+    return static_cast<melonDS::u32>(inputMask) & 0xFFF;
+}
+#endif // MELONPRIME_DS

@@ -1,0 +1,751 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+	<class>MelonPrimeInputConfig</class>
+	<widget class="QWidget" name="MelonPrimeInputConfig">
+		<property name="geometry">
+			<rect>
+				<x>0</x>
+				<y>0</y>
+				<width>700</width>
+				<height>500</height>
+			</rect>
+		</property>
+		<property name="windowTitle">
+			<string>MelonPrime Settings</string>
+		</property>
+		<layout class="QVBoxLayout" name="verticalLayout">
+			<property name="leftMargin">
+				<number>0</number>
+			</property>
+			<property name="topMargin">
+				<number>0</number>
+			</property>
+			<property name="rightMargin">
+				<number>0</number>
+			</property>
+			<property name="bottomMargin">
+				<number>0</number>
+			</property>
+			<item>
+				<widget class="QTabWidget" name="metroidTabWidget">
+					<property name="currentIndex">
+						<number>0</number>
+					</property>
+
+					<widget class="QWidget" name="tabAddonsMetroid">
+						<attribute name="title">
+							<string>Controls</string>
+						</attribute>
+					</widget>
+
+					<widget class="QWidget" name="tabAddonsMetroid2">
+						<attribute name="title">
+							<string>Controls 2</string>
+						</attribute>
+					</widget>
+
+					<widget class="QWidget" name="tabMetroid">
+						<attribute name="title"><string>Metroid Settings</string></attribute>
+						<layout class="QVBoxLayout" name="metroidOuterVLayout">
+							<property name="leftMargin"><number>0</number></property>
+							<property name="topMargin"><number>0</number></property>
+							<property name="rightMargin"><number>0</number></property>
+							<property name="bottomMargin"><number>0</number></property>
+							<item>
+								<widget class="QScrollArea" name="scrollSettings">
+									<property name="widgetResizable"><bool>true</bool></property>
+									<property name="frameShape"><enum>QFrame::NoFrame</enum></property>
+									<widget class="QWidget" name="scrollSettingsContents">
+						<layout class="QVBoxLayout" name="metroidVLayout">
+
+							<item>
+								<widget class="QPushButton" name="btnToggleSensitivity">
+									<property name="text"><string>▶ SENSITIVITY</string></property>
+									<property name="checkable"><bool>true</bool></property>
+									<property name="checked"><bool>false</bool></property>
+									<property name="flat"><bool>true</bool></property>
+									<property name="styleSheet"><string>QPushButton { text-align: left; font-weight: bold; padding: 4px; } QPushButton::checked { font-weight: bold; }</string></property>
+								</widget>
+							</item>
+							<item>
+								<widget class="QWidget" name="sectionSensitivity">
+									<layout class="QFormLayout" name="formSens">
+										<item row="0" column="0">
+											<widget class="QDoubleSpinBox" name="metroidMphSensitvitySpinBox">
+												<property name="minimum">
+													<double>-5.008</double>
+												</property>
+												<property name="maximum">
+													<double>155.225</double>
+												</property>
+												<property name="singleStep">
+													<double>0.1</double>
+												</property>
+												<property name="decimals">
+													<number>3</number>
+												</property>
+												<property name="value">
+													<double>-3.000</double>
+												</property>
+											</widget>
+										</item>
+										<item row="0" column="1">
+											<widget class="QLabel" name="metroidMphSensitvityLabel">
+												<property name="text">
+													<string>Mph sensitivity (default: -3)</string>
+												</property>
+											</widget>
+										</item>
+										<item row="1" column="1">
+											<widget class="QLabel" name="metroidMphSensitvityLabel2">
+												<property name="text">
+													<string>(Set this value to 1 or lower if possible for precise aiming. We recommend a range of -3 to 0. However, setting it too low will increase the HUD shake when aiming)</string>
+												</property>
+											</widget>
+										</item>
+										<item row="2" column="0">
+											<widget class="QSpinBox" name="metroidAimSensitvitySpinBox">
+												<property name="minimum">
+													<number>0</number>
+												</property>
+												<property name="maximum">
+													<number>99999</number>
+												</property>
+												<property name="value">
+													<number>63</number>
+												</property>
+											</widget>
+										</item>
+										<item row="2" column="1">
+											<widget class="QLabel" name="metroidAimSensitvityLabel">
+												<property name="text">
+													<string>Aim sensitivity (default: 63)</string>
+												</property>
+											</widget>
+										</item>
+										<item row="3" column="0">
+											<widget class="QDoubleSpinBox" name="metroidAimYAxisScaleSpinBox">
+												<property name="minimum">
+													<double>0.000001</double>
+												</property>
+												<property name="maximum">
+													<double>2</double>
+												</property>
+												<property name="singleStep">
+													<double>0.1</double>
+												</property>
+												<property name="decimals">
+													<number>6</number>
+												</property>
+												<property name="value">
+													<double>1.500000</double>
+												</property>
+											</widget>
+										</item>
+										<item row="3" column="1">
+											<widget class="QLabel" name="metroidAimYAxisScaleLabel">
+												<property name="text">
+													<string>Aim Y-Axis Scale (default: 1.5)</string>
+												</property>
+											</widget>
+										</item>
+										<item row="6" column="0">
+											<widget class="QDoubleSpinBox" name="metroidAimAdjustSpinBox">
+												<property name="minimum">
+													<double>0.000000</double>
+												</property>
+												<property name="maximum">
+													<double>100.000000</double>
+												</property>
+												<property name="singleStep">
+													<double>0.1</double>
+												</property>
+												<property name="decimals">
+													<number>6</number>
+												</property>
+												<property name="value">
+													<double>0.010000</double>
+												</property>
+											</widget>
+										</item>
+										<item row="6" column="1">
+											<widget class="QLabel" name="metroidAimAdjustLabel">
+												<property name="text">
+													<string notr="true">&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;&lt;b&gt;Input threshold (deadzone + snap)&lt;/b&gt; (recommended: 0.01 [default] or 0.5): |x|&amp;lt;a → 0, a ≤ |x|&amp;lt;1 → ±1, |x|≥1 → as is (a=0: off = all values under 1 ignored, no snap)&lt;br/&gt;When your aim isn't going the way you want, try lowering this value.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
+												</property>
+											</widget>
+										</item>
+										<item row="8" column="0">
+											<widget class="QPushButton" name="metroidResetSensitivityValues">
+												<property name="text">
+													<string>Reset sensitivity values</string>
+												</property>
+											</widget>
+										</item>
+									</layout>
+								</widget>
+							</item>
+
+							<item>
+								<widget class="QPushButton" name="btnToggleGameplay">
+									<property name="text"><string>▶ GAMEPLAY TOGGLES</string></property>
+									<property name="checkable"><bool>true</bool></property>
+									<property name="checked"><bool>false</bool></property>
+									<property name="flat"><bool>true</bool></property>
+									<property name="styleSheet"><string>QPushButton { text-align: left; font-weight: bold; padding: 4px; } QPushButton::checked { font-weight: bold; }</string></property>
+								</widget>
+							</item>
+							<item>
+								<widget class="QWidget" name="sectionGameplay">
+									<layout class="QFormLayout" name="formGameplay">
+										<item row="0" column="0">
+											<widget class="QCheckBox" name="cbMetroidEnableSnapTap">
+												<property name="text">
+													<string>Enable SnapTap (Faster directional switching for smooth strafing — may slightly increase input delay)</string>
+												</property>
+											</widget>
+										</item>
+										<item row="1" column="0">
+											<widget class="QCheckBox" name="cbMetroidUnlockAll">
+												<property name="text">
+													<string>Unlock All Hunters/Maps/SoundTest/Gallery (Change a setting in MPH and save to update the save data. Uncheck this option after saving)</string>
+												</property>
+											</widget>
+										</item>
+										<item row="2" column="0">
+											<widget class="QCheckBox" name="cbMetroidApplyHeadphone">
+												<property name="text">
+													<string>Set MPH audio settings to headphones.(recommended) (Change a setting in MPH and save to update the save data. Uncheck this option after saving)</string>
+												</property>
+											</widget>
+										</item>
+										<item row="3" column="0">
+											<widget class="QCheckBox" name="cbMetroidUseFirmwareName">
+												<property name="text">
+													<string>Use DS Name (Resets in-game name and HL color):You can change the DS name from [File -&gt; Boot firmware] or [Config -&gt; Firmware Settings].</string>
+												</property>
+											</widget>
+										</item>
+									</layout>
+								</widget>
+							</item>
+
+							<item>
+								<widget class="QPushButton" name="btnToggleVideo">
+									<property name="text"><string>▶ VIDEO QUALITY</string></property>
+									<property name="checkable"><bool>true</bool></property>
+									<property name="checked"><bool>false</bool></property>
+									<property name="flat"><bool>true</bool></property>
+									<property name="styleSheet"><string>QPushButton { text-align: left; font-weight: bold; padding: 4px; } QPushButton::checked { font-weight: bold; }</string></property>
+								</widget>
+							</item>
+							<item>
+								<widget class="QWidget" name="sectionVideo">
+									<layout class="QHBoxLayout" name="videoButtonsLayout">
+										<property name="spacing">
+											<number>8</number>
+										</property>
+										<item>
+											<widget class="QPushButton" name="metroidSetVideoQualityToLow">
+												<property name="text">
+													<string>Video quality: Low (High Performance)</string>
+												</property>
+											</widget>
+										</item>
+										<item>
+											<widget class="QPushButton" name="metroidSetVideoQualityToHigh">
+												<property name="text">
+													<string>Video quality: High (Lower Performance)</string>
+												</property>
+											</widget>
+										</item>
+										<item>
+											<widget class="QPushButton" name="metroidSetVideoQualityToHigh2">
+												<property name="text">
+													<string>Video quality: High2 (Recommended. Best Performance, Minor Visual Glitches)</string>
+												</property>
+											</widget>
+										</item>
+										<item>
+											<spacer name="videoButtonsSpacer">
+												<property name="orientation">
+													<enum>Qt::Horizontal</enum>
+												</property>
+												<property name="sizeHint" stdset="0">
+													<size>
+														<width>40</width>
+														<height>20</height>
+													</size>
+												</property>
+											</spacer>
+										</item>
+									</layout>
+								</widget>
+							</item>
+
+							<item>
+								<widget class="QPushButton" name="btnToggleVolume">
+									<property name="text"><string>▶ VOLUME</string></property>
+									<property name="checkable"><bool>true</bool></property>
+									<property name="checked"><bool>false</bool></property>
+									<property name="flat"><bool>true</bool></property>
+									<property name="styleSheet"><string>QPushButton { text-align: left; font-weight: bold; padding: 4px; } QPushButton::checked { font-weight: bold; }</string></property>
+								</widget>
+							</item>
+							<item>
+								<widget class="QWidget" name="sectionVolume">
+									<layout class="QFormLayout" name="formVolume">
+										<item row="0" column="0">
+											<widget class="QCheckBox" name="cbMetroidApplySfxVolume">
+												<property name="text">
+													<string>Apply SFX volume</string>
+												</property>
+												<property name="toolTip">
+													<string>Setting Key: Metroid.Apply.SfxVolume (check to apply)</string>
+												</property>
+											</widget>
+										</item>
+										<item row="0" column="1">
+											<widget class="QSpinBox" name="spinMetroidVolumeSFX">
+												<property name="minimum">
+													<number>0</number>
+												</property>
+												<property name="maximum">
+													<number>9</number>
+												</property>
+												<property name="value">
+													<number>9</number>
+												</property>
+												<property name="toolTip">
+													<string>Setting Key: Metroid.Volume.SFX (0–9)</string>
+												</property>
+											</widget>
+										</item>
+										<item row="1" column="0">
+											<widget class="QCheckBox" name="cbMetroidApplyMusicVolume">
+												<property name="text">
+													<string>Apply music volume</string>
+												</property>
+												<property name="toolTip">
+													<string>Setting Key: Metroid.Apply.MusicVolume (check to apply)</string>
+												</property>
+											</widget>
+										</item>
+										<item row="1" column="1">
+											<widget class="QSpinBox" name="spinMetroidVolumeMusic">
+												<property name="minimum">
+													<number>0</number>
+												</property>
+												<property name="maximum">
+													<number>9</number>
+												</property>
+												<property name="value">
+													<number>9</number>
+												</property>
+												<property name="toolTip">
+													<string>Setting Key: Metroid.Volume.Music (0–9)</string>
+												</property>
+											</widget>
+										</item>
+									</layout>
+								</widget>
+							</item>
+
+							<item>
+								<widget class="QPushButton" name="btnToggleLicense">
+									<property name="text"><string>▶ LICENSE APPLY</string></property>
+									<property name="checkable"><bool>true</bool></property>
+									<property name="checked"><bool>false</bool></property>
+									<property name="flat"><bool>true</bool></property>
+									<property name="styleSheet"><string>QPushButton { text-align: left; font-weight: bold; padding: 4px; } QPushButton::checked { font-weight: bold; }</string></property>
+								</widget>
+							</item>
+							<item>
+								<widget class="QWidget" name="sectionLicense">
+									<layout class="QFormLayout" name="formLicense">
+										<item row="0" column="0">
+											<widget class="QCheckBox" name="cbMetroidApplyHunter">
+												<property name="text">
+													<string>Apply the selected hunter to your license. (Renaming will update the save data)</string>
+												</property>
+												<property name="toolTip">
+													<string>Enables applying the selected hunter to the license.</string>
+												</property>
+											</widget>
+										</item>
+										<item row="0" column="1">
+											<widget class="QComboBox" name="comboMetroidSelectedHunter">
+												<property name="toolTip">
+													<string>Select the hunter to apply.</string>
+												</property>
+												<item>
+													<property name="text">
+														<string>Samus</string>
+													</property>
+												</item>
+												<item>
+													<property name="text">
+														<string>Kanden</string>
+													</property>
+												</item>
+												<item>
+													<property name="text">
+														<string>Trace</string>
+													</property>
+												</item>
+												<item>
+													<property name="text">
+														<string>Sylux</string>
+													</property>
+												</item>
+												<item>
+													<property name="text">
+														<string>Noxus</string>
+													</property>
+												</item>
+												<item>
+													<property name="text">
+														<string>Spire</string>
+													</property>
+												</item>
+												<item>
+													<property name="text">
+														<string>Weavel</string>
+													</property>
+												</item>
+												<property name="currentIndex">
+													<number>0</number>
+												</property>
+											</widget>
+										</item>
+										<item row="1" column="0">
+											<widget class="QCheckBox" name="cbMetroidApplyColor">
+												<property name="text">
+													<string>Apply the selected color to your license. (Renaming will update the save data)</string>
+												</property>
+												<property name="toolTip">
+													<string>Enables applying the selected color to the license.</string>
+												</property>
+											</widget>
+										</item>
+										<item row="1" column="1">
+											<widget class="QComboBox" name="comboMetroidSelectedColor">
+												<property name="toolTip">
+													<string>Select the color to apply.</string>
+												</property>
+												<item>
+													<property name="text">
+														<string>Blue(US)</string>
+													</property>
+												</item>
+												<item>
+													<property name="text">
+														<string>Red(JP,KR)</string>
+													</property>
+												</item>
+												<item>
+													<property name="text">
+														<string>Green(EU)</string>
+													</property>
+												</item>
+												<property name="currentIndex">
+													<number>0</number>
+												</property>
+											</widget>
+										</item>
+									</layout>
+								</widget>
+							</item>
+
+							<!-- INPUT SETTINGS toggle (merged from tabMetroid2) -->
+							<item><widget class="QPushButton" name="btnToggleInputSettings">
+								<property name="text"><string>▶ INPUT SETTINGS</string></property>
+								<property name="checkable"><bool>true</bool></property>
+								<property name="checked"><bool>false</bool></property>
+								<property name="flat"><bool>true</bool></property>
+								<property name="styleSheet"><string>QPushButton { text-align: left; font-weight: bold; padding: 4px; } QPushButton::checked { font-weight: bold; }</string></property>
+							</widget></item>
+							<item>
+								<widget class="QWidget" name="sectionInputSettings">
+								<layout class="QVBoxLayout">
+									<item>
+										<widget class="QCheckBox" name="cbMetroidApplyJoy2KeySupport">
+											<property name="text"><string>Enable Joy2KeySupport (slightly increase input delay)</string></property>
+										</widget>
+									</item>
+									<item>
+										<widget class="QCheckBox" name="cbMetroidEnableStylusMode">
+											<property name="text"><string>Enable Stylus Mode (Leave this unchecked unless you want to play with the stylus)</string></property>
+										</widget>
+									</item>
+									<item>
+										<widget class="QCheckBox" name="cbMetroidDisableMphAimSmoothing">
+											<property name="text"><string>Disable MPH Aim Smoothing (Disables the in-game aim smoothing. Note: Sensitivity will be reduced to 25% in Stylus Mode)</string></property>
+										</widget>
+									</item>
+									<item>
+										<widget class="QCheckBox" name="cbMetroidEnableAimAccumulator">
+											<property name="text"><string>Enable Aim Sub-pixel Accumulator (Carry fractional mouse movement across frames. Enable for smoother low-sensitivity aiming)</string></property>
+										</widget>
+									</item>
+								</layout>
+								</widget>
+							</item>
+
+							<!-- SCREEN SYNC toggle (merged from tabMetroid2) -->
+							<item><widget class="QPushButton" name="btnToggleScreenSync">
+								<property name="text"><string>▶ SCREEN SYNC</string></property>
+								<property name="checkable"><bool>true</bool></property>
+								<property name="checked"><bool>false</bool></property>
+								<property name="flat"><bool>true</bool></property>
+								<property name="styleSheet"><string>QPushButton { text-align: left; font-weight: bold; padding: 4px; } QPushButton::checked { font-weight: bold; }</string></property>
+							</widget></item>
+							<item>
+								<widget class="QWidget" name="sectionScreenSync">
+								<layout class="QVBoxLayout" name="vboxScreenSync">
+									<item>
+										<layout class="QHBoxLayout" name="hboxScreenSync">
+											<item>
+												<widget class="QComboBox" name="comboMetroidScreenSyncMode">
+													<property name="toolTip"><string>Screen Sync Mode: Off = no sync call, glFinish = wait for GL commands to complete, DwmFlush = wait for DWM compositor (Windows only)</string></property>
+													<item><property name="text"><string>Off</string></property></item>
+													<item><property name="text"><string>glFinish</string></property></item>
+													<item><property name="text"><string>DwmFlush</string></property></item>
+													<property name="currentIndex"><number>0</number></property>
+												</widget>
+											</item>
+											<item>
+												<widget class="QLabel" name="labelMetroidScreenSyncMode">
+													<property name="text"><string>Screen Sync Mode — Default: Off</string></property>
+												</widget>
+											</item>
+										</layout>
+									</item>
+									<item>
+										<widget class="QLabel" name="labelMetroidScreenSyncDesc">
+											<property name="text"><string>Off: No sync (lowest latency, but the display may look choppy). glFinish: Smoother display by waiting for rendering to fully complete each frame. DwmFlush: Smoother display by syncing with the Windows compositor (Windows only). Try glFinish or DwmFlush if the screen looks choppy or flickery. Automatically disabled during FastForward/SlowMo.</string></property>
+											<property name="wordWrap"><bool>true</bool></property>
+											<property name="indent"><number>20</number></property>
+										</widget>
+									</item>
+
+								</layout>
+								</widget>
+							</item>
+
+							<item><widget class="QPushButton" name="btnToggleCursorClipSettings">
+								<property name="text"><string>▶ CURSOR CLIP SETTINGS</string></property>
+								<property name="checkable"><bool>true</bool></property>
+								<property name="checked"><bool>false</bool></property>
+								<property name="flat"><bool>true</bool></property>
+								<property name="styleSheet"><string>QPushButton { text-align: left; font-weight: bold; padding: 4px; } QPushButton::checked { font-weight: bold; }</string></property>
+							</widget></item>
+							<item>
+								<widget class="QWidget" name="sectionCursorClipSettings">
+								<layout class="QVBoxLayout" name="vboxCursorClipSettings">
+									<item>
+										<widget class="QCheckBox" name="cbMetroidClipCursorToBottomScreenWhenNotInGame">
+											<property name="text"><string>When not in-game and the bottom screen is visible, confine the mouse cursor to the bottom screen area. Press ESC to release the cursor.</string></property>
+											<property name="toolTip"><string>Windows only. Applies only while the bottom screen is actually being drawn. Press ESC to release the cursor.</string></property>
+										</widget>
+									</item>
+								</layout>
+								</widget>
+							</item>
+
+							<item><widget class="QPushButton" name="btnToggleInGameApply">
+								<property name="text"><string>▶ IN-GAME APPLY</string></property>
+								<property name="checkable"><bool>true</bool></property>
+								<property name="checked"><bool>false</bool></property>
+								<property name="flat"><bool>true</bool></property>
+								<property name="styleSheet"><string>QPushButton { text-align: left; font-weight: bold; padding: 4px; } QPushButton::checked { font-weight: bold; }</string></property>
+							</widget></item>
+							<item>
+								<widget class="QWidget" name="sectionInGameApply">
+								<layout class="QVBoxLayout" name="vboxInGameApply">
+									<item>
+										<widget class="QCheckBox" name="cbMetroidInGameTopScreenOnly">
+											<property name="text"><string>In-game only, temporarily force Screen Sizing to Top Only and Screen Layout to Natural. Outside of gameplay, restore the normal window settings.</string></property>
+											<property name="toolTip"><string>Does not overwrite your saved window layout settings. The override is applied only while Metroid Prime Hunters is in-game.</string></property>
+										</widget>
+									</item>
+								</layout>
+								</widget>
+							</item>
+
+							<!-- IN-GAME ASPECT RATIO toggle (merged from tabMetroid2) -->
+							<item><widget class="QPushButton" name="btnToggleInGameAspectRatio">
+								<property name="text"><string>▶ IN-GAME ASPECT RATIO</string></property>
+								<property name="checkable"><bool>true</bool></property>
+								<property name="checked"><bool>false</bool></property>
+								<property name="flat"><bool>true</bool></property>
+								<property name="styleSheet"><string>QPushButton { text-align: left; font-weight: bold; padding: 4px; } QPushButton::checked { font-weight: bold; }</string></property>
+							</widget></item>
+							<item>
+								<widget class="QWidget" name="sectionInGameAspectRatio">
+								<layout class="QVBoxLayout">
+									<item>
+										<widget class="QLabel">
+											<property name="text"><string>When playing with an Aspect Ratio other than 4:3 (Native), apply this to change the in-game 3D aspect ratio to match. Changes are applied at the start of each match.</string></property>
+											<property name="wordWrap"><bool>true</bool></property>
+										</widget>
+									</item>
+									<item>
+										<layout class="QFormLayout" name="formInGameAspectRatio">
+											<item row="0" column="0"><widget class="QLabel"><property name="text"><string>Enable In-Game Aspect Ratio</string></property></widget></item>
+											<item row="0" column="1"><widget class="QCheckBox" name="cbMetroidInGameAspectRatio"><property name="text"><string></string></property><property name="checked"><bool>true</bool></property></widget></item>
+											<item row="1" column="0"><widget class="QLabel"><property name="text"><string>Aspect Ratio Mode</string></property></widget></item>
+											<item row="1" column="1">
+												<widget class="QComboBox" name="comboMetroidInGameAspectRatioMode">
+													<item><property name="text"><string>Auto (match Aspect Ratio)</string></property></item>
+													<item><property name="text"><string>5:3 (3DS)</string></property></item>
+													<item><property name="text"><string>16:10 (3DS)</string></property></item>
+													<item><property name="text"><string>16:9</string></property></item>
+													<item><property name="text"><string>21:9</string></property></item>
+												</widget>
+											</item>
+										</layout>
+									</item>
+									<item>
+										<widget class="QLabel" name="labelInGameAspectRatioAutoDesc">
+											<property name="text"><string>Auto: Automatically applies the aspect ratio patch to match the current Aspect Ratio setting (4:3 = off, 5:3/16:9/21:9 = auto-applied, window = off).</string></property>
+											<property name="wordWrap"><bool>true</bool></property>
+											<property name="indent"><number>20</number></property>
+										</widget>
+									</item>
+								</layout>
+								</widget>
+							</item>
+
+							<item>
+								<spacer name="settingsSpacer"><property name="orientation"><enum>Qt::Vertical</enum></property><property name="sizeHint" stdset="0"><size><width>20</width><height>40</height></size></property></spacer>
+							</item>
+
+						</layout>
+									</widget>
+								</widget>
+							</item>
+						</layout>
+					</widget>
+
+
+
+					<widget class="QWidget" name="tabCrosshair">
+						<attribute name="title"><string>Custom HUD</string></attribute>
+						<layout class="QVBoxLayout" name="customHudOuterVLayout">
+							<property name="leftMargin"><number>0</number></property>
+							<property name="topMargin"><number>0</number></property>
+							<property name="rightMargin"><number>0</number></property>
+							<property name="bottomMargin"><number>0</number></property>
+							<item>
+								<widget class="QPushButton" name="btnEditHudLayout">
+									<property name="text"><string>Edit HUD Layout</string></property>
+									<property name="toolTip"><string>Hide this dialog and enter the interactive HUD position editor</string></property>
+								</widget>
+							</item>
+							<item>
+								<widget class="QScrollArea" name="scrollCustomHud">
+									<property name="widgetResizable"><bool>true</bool></property>
+									<property name="frameShape"><enum>QFrame::NoFrame</enum></property>
+									<widget class="QWidget" name="scrollCustomHudContents">
+						<layout class="QVBoxLayout" name="crosshairVLayout">
+
+							<!-- Enable Custom HUD -->
+							<item>
+								<widget class="QCheckBox" name="cbMetroidEnableCustomHud"><property name="text"><string>Enable Custom HUD (Replaces the in-game HUD with a custom overlay showing HP, ammo, weapon icons and crosshair)</string></property></widget>
+							</item>
+
+							<item>
+								<spacer name="customHudSpacer"><property name="orientation"><enum>Qt::Vertical</enum></property><property name="sizeHint" stdset="0"><size><width>20</width><height>40</height></size></property></spacer>
+							</item>
+
+						</layout>
+									</widget>
+								</widget>
+							</item>
+						</layout>
+					</widget>
+					<widget class="QWidget" name="tabCustomHudCode">
+						<attribute name="title"><string>Custom HUD Input/Output</string></attribute>
+						<layout class="QVBoxLayout" name="verticalLayoutCustomHudCode">
+							<property name="leftMargin"><number>12</number></property>
+							<property name="topMargin"><number>12</number></property>
+							<property name="rightMargin"><number>12</number></property>
+							<property name="bottomMargin"><number>12</number></property>
+							<item>
+								<widget class="QLabel" name="labelMetroidCustomHudCodeIntro">
+									<property name="text"><string>Share your Custom HUD setup as TOML text, or paste TOML into the input area to apply it to the current dialog.</string></property>
+									<property name="wordWrap"><bool>true</bool></property>
+								</widget>
+							</item>
+							<item>
+								<widget class="QLabel" name="labelMetroidCustomHudCodeOutputTitle">
+									<property name="text"><string>Output</string></property>
+								</widget>
+							</item>
+							<item>
+								<widget class="QPlainTextEdit" name="pteMetroidCustomHudCodeOutput">
+									<property name="readOnly"><bool>true</bool></property>
+									<property name="placeholderText"><string>Press Generate to build sharable Custom HUD TOML.</string></property>
+								</widget>
+							</item>
+							<item>
+								<layout class="QHBoxLayout" name="layoutMetroidCustomHudCodeOutputButtons">
+									<item><widget class="QPushButton" name="btnMetroidCustomHudCodeGenerate"><property name="text"><string>Generate</string></property></widget></item>
+									<item><widget class="QPushButton" name="btnMetroidCustomHudCodeCopy"><property name="text"><string>Copy Output</string></property></widget></item>
+									<item><spacer name="spacerMetroidCustomHudCodeOutput"><property name="orientation"><enum>Qt::Horizontal</enum></property><property name="sizeHint" stdset="0"><size><width>40</width><height>20</height></size></property></spacer></item>
+								</layout>
+							</item>
+							<item>
+								<widget class="QLabel" name="labelMetroidCustomHudCodeInputTitle">
+									<property name="text"><string>Input</string></property>
+								</widget>
+							</item>
+							<item>
+								<widget class="QPlainTextEdit" name="pteMetroidCustomHudCodeInput">
+									<property name="placeholderText"><string>Paste Custom HUD TOML here, then press Apply Input.</string></property>
+								</widget>
+							</item>
+							<item>
+								<layout class="QHBoxLayout" name="layoutMetroidCustomHudCodeInputButtons">
+									<item><widget class="QPushButton" name="btnMetroidCustomHudCodeUseOutput"><property name="text"><string>Copy Output to Input</string></property></widget></item>
+									<item><widget class="QPushButton" name="btnMetroidCustomHudCodeApply"><property name="text"><string>Apply Input to Custom HUD</string></property></widget></item>
+									<item><spacer name="spacerMetroidCustomHudCodeInput"><property name="orientation"><enum>Qt::Horizontal</enum></property><property name="sizeHint" stdset="0"><size><width>40</width><height>20</height></size></property></spacer></item>
+								</layout>
+							</item>
+							<item>
+								<widget class="QLabel" name="labelMetroidCustomHudCodeStatus">
+                                    <property name="text"><string></string></property>
+									<property name="wordWrap"><bool>true</bool></property>
+								</widget>
+							</item>
+							<item>
+								<spacer name="spacerMetroidCustomHudCodeBottom"><property name="orientation"><enum>Qt::Vertical</enum></property><property name="sizeHint" stdset="0"><size><width>20</width><height>40</height></size></property></spacer>
+							</item>
+						</layout>
+					</widget>
+
+				</widget>
+			</item>
+		</layout>
+	</widget>
+
+	<resources>
+		<include location="resources/ds.qrc"/>
+	</resources>
+
+	<connections>
+	</connections>
+</ui>
+
+
+
+
+
+
+
+
+
+
+
+

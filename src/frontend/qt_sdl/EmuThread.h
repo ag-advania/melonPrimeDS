@@ -34,9 +34,14 @@
 #include "NDSCart.h"
 #include "GBACart.h"
 
+#ifdef MELONPRIME_DS
+// Forward declaration
+namespace MelonPrime { class MelonPrimeCore; }
+#endif
+
 namespace melonDS
 {
-class NDS;
+    class NDS;
 }
 
 class EmuInstance;
@@ -46,10 +51,16 @@ class ScreenPanelGL;
 class EmuThread : public QThread
 {
     Q_OBJECT
-    void run() override;
+        void run() override;
 
 public:
     explicit EmuThread(EmuInstance* inst, QObject* parent = nullptr);
+#ifdef MELONPRIME_DS
+    ~EmuThread();
+
+    // Accessor for ScreenPanel to access MelonPrime state
+    MelonPrime::MelonPrimeCore* GetMelonPrimeCore() { return melonPrime.get(); }
+#endif
 
     void attachWindow(MainWindow* window);
     void detachWindow(MainWindow* window);
@@ -98,7 +109,7 @@ public:
 
     void sendMessage(MessageType type)
     {
-        return sendMessage({.type = type});
+        return sendMessage({ .type = type });
     }
 
     void changeWindowTitle(char* title);
@@ -190,6 +201,12 @@ private:
     QQueue<Message> msgQueue;
 
     EmuInstance* emuInstance;
+
+#ifdef MELONPRIME_DS
+    // --- MelonPrimeDS Integration ---
+    std::unique_ptr<MelonPrime::MelonPrimeCore> melonPrime;
+    // --------------------------------
+#endif
 
     int autoScreenSizing;
 
