@@ -67,7 +67,6 @@ static const HudEditPropDesc kPropsWeaponAmmo[] = {
 
 static const HudEditPropDesc kPropsWpnIcon[] = {
     {"Mode",     EditPropType::Int,  "Metroid.Visual.HudWeaponIconMode", 0, 1, 1, nullptr, nullptr, nullptr},
-    {"Tint",     EditPropType::Bool, "Metroid.Visual.HudWeaponIconColorOverlay", 0, 0, 0, nullptr, nullptr, nullptr},
     {"Height",   EditPropType::Int,  "Metroid.Visual.HudWeaponIconHeight", 4, 64, 1, nullptr, nullptr, nullptr},
     {"Ofs X",    EditPropType::Int,  "Metroid.Visual.HudWeaponIconOffsetX", -128, 128, 1, nullptr, nullptr, nullptr},
     {"Ofs Y",    EditPropType::Int,  "Metroid.Visual.HudWeaponIconOffsetY", -128, 128, 1, nullptr, nullptr, nullptr},
