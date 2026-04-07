@@ -28,6 +28,10 @@
 #include "Window.h"
 #include "Config.h"
 #include "SaveManager.h"
+#ifdef MELONPRIME_DS
+#include <cstdint>
+namespace MelonPrime { class MelonPrimeCore; }
+#endif // MELONPRIME_DS
 
 const int kMaxWindows = 4;
 
@@ -56,6 +60,42 @@ enum
     HK_GuitarGripRed,
     HK_GuitarGripYellow,
     HK_GuitarGripBlue,
+
+#ifdef MELONPRIME_DS
+    HK_MetroidMoveForward,
+    HK_MetroidMoveBack,
+    HK_MetroidMoveLeft,
+    HK_MetroidMoveRight,
+    HK_MetroidJump,
+    HK_MetroidMorphBall,
+    HK_MetroidZoom,
+    HK_MetroidHoldMorphBallBoost,
+    HK_MetroidScanVisor,
+    HK_MetroidUILeft,
+    HK_MetroidUIRight,
+    HK_MetroidUIOk,
+    HK_MetroidUIYes,
+    HK_MetroidUINo,
+    HK_MetroidShootScan,
+    HK_MetroidScanShoot,
+    HK_MetroidWeaponBeam,
+    HK_MetroidWeaponMissile,
+    HK_MetroidWeaponSpecial,
+    HK_MetroidWeaponNext,
+    HK_MetroidWeaponPrevious,
+    HK_MetroidWeapon1,
+    HK_MetroidWeapon2,
+    HK_MetroidWeapon3,
+    HK_MetroidWeapon4,
+    HK_MetroidWeapon5,
+    HK_MetroidWeapon6,
+    HK_MetroidWeaponCheck,
+    HK_MetroidMenu,
+    HK_MetroidIngameSensiUp,
+    HK_MetroidIngameSensiDown,
+#endif // MELONPRIME_DS
+
+    // HK_MAX should be last item.
     HK_MAX
 };
 
@@ -83,9 +123,18 @@ int getEventKeyVal(QKeyEvent* event);
 
 class EmuInstance
 {
+#ifdef MELONPRIME_DS
+    friend class MelonPrime::MelonPrimeCore;
+#endif // MELONPRIME_DS
+
 public:
     EmuInstance(int inst);
     ~EmuInstance();
+
+#ifdef MELONPRIME_DS
+    void onMousePress(QMouseEvent* event);
+    void onMouseRelease(QMouseEvent* event);
+#endif // MELONPRIME_DS
 
     int getInstanceID() { return instanceID; }
     int getConsoleType() { return consoleType; }
@@ -244,6 +293,12 @@ private:
 
     void onKeyPress(QKeyEvent* event);
     void onKeyRelease(QKeyEvent* event);
+
+#ifdef MELONPRIME_DS
+    float hotkeyAnalogueValue(int val);
+    melonDS::u32 getInputMask();
+#endif // MELONPRIME_DS
+
     void keyReleaseAll();
 
     void openJoystick();
@@ -252,9 +307,22 @@ private:
 
     void inputProcess();
 
-    bool hotkeyDown(int id)     { return hotkeyMask    & (1<<id); }
-    bool hotkeyPressed(int id)  { return hotkeyPress   & (1<<id); }
-    bool hotkeyReleased(int id) { return hotkeyRelease & (1<<id); }
+#ifdef MELONPRIME_DS
+    // P-15: Lightweight joystick re-poll after Sleep.
+    // Refreshes joyInputMask/joyHotkeyMask/inputMask/hotkeyMask
+    // WITHOUT touching edge detection (lastHotkeyMask, hotkeyPress, etc.)
+    void inputRefreshJoystickState();
+#endif
+
+#ifdef MELONPRIME_DS
+    bool hotkeyDown(int id) { return (hotkeyMask >> id) & 1; }
+    bool hotkeyPressed(int id) { return (hotkeyPress >> id) & 1; }
+    bool hotkeyReleased(int id) { return (hotkeyRelease >> id) & 1; }
+#else
+    bool hotkeyDown(int id) { return hotkeyMask & (1 << id); }
+    bool hotkeyPressed(int id) { return hotkeyPress & (1 << id); }
+    bool hotkeyReleased(int id) { return hotkeyRelease & (1 << id); }
+#endif // MELONPRIME_DS
 
     void loadRTCData();
     void saveRTCData();
@@ -367,12 +435,29 @@ private:
     static std::shared_ptr<SDL_mutex> joyMutexGlobal;
     std::shared_ptr<SDL_mutex> joyMutex;
 
+#ifdef MELONPRIME_DS
+    // OPT: QBitArray -> native integers.
+    // QBitArray involves heap allocation, reference counting, byte-level iteration,
+    // and bounds checking per operation. With only 12 input bits and ~53 hotkey bits,
+    // uint16_t / uint64_t provide single-instruction bitwise ops with zero overhead.
+    // Estimated saving: ~1400-2400 cyc/frame in inputProcess() alone.
+    uint16_t keyInputMask, joyInputMask;
+    uint16_t inputMask;
+
+    uint64_t keyHotkeyMask, joyHotkeyMask;
+    uint64_t hotkeyMask, lastHotkeyMask;
+    uint64_t hotkeyPress, hotkeyRelease;
+    uint64_t joyHotkeyPress;
+    uint64_t joyHotkeyRelease;
+    uint64_t lastJoyHotkeyMask;
+#else
     melonDS::u32 keyInputMask, joyInputMask;
     melonDS::u32 keyHotkeyMask, joyHotkeyMask;
     melonDS::u32 hotkeyMask, lastHotkeyMask;
     melonDS::u32 hotkeyPress, hotkeyRelease;
 
     melonDS::u32 inputMask;
+#endif // MELONPRIME_DS
 
     bool isTouching;
     melonDS::u16 touchX, touchY;

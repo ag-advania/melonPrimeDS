@@ -28,12 +28,17 @@
 #include <QMutex>
 #include <QScreen>
 #include <QCloseEvent>
+#include <QEnterEvent>
 #include <QTimer>
+#include <QFont>
 
 #include "glad/glad.h"
 #include "ScreenLayout.h"
 #include "duckstation/gl/context.h"
 
+#ifdef MELONPRIME_CUSTOM_HUD
+#include "MelonPrimeHudEditSidePanel.h"
+#endif // MELONPRIME_CUSTOM_HUD
 
 class MainWindow;
 class EmuInstance;
@@ -42,10 +47,12 @@ class EmuInstance;
 const struct { int id; float ratio; const char* label; } aspectRatios[] =
 {
     { 0, 1,                       "4:3 (native)" },
-    { 4, (5.f  / 3) / (4.f / 3), "5:3 (3DS)"},
+    { 4, (5.f / 3) / (4.f / 3), "5:3 (3DS)"},
     { 1, (16.f / 9) / (4.f / 3),  "16:9" },
+#ifdef MELONPRIME_DS
     { 2, (21.f / 9) / (4.f / 3),  "21:9" },
     { 3, 0,                       "window" }
+#endif
 };
 constexpr int AspectRatiosNum = sizeof(aspectRatios) / sizeof(aspectRatios[0]);
 
@@ -62,15 +69,34 @@ public:
 
     void setMouseHide(bool enable, int delay);
 
+#ifndef MELONPRIME_DS
     QTimer* setupMouseTimer();
     void updateMouseTimer();
     QTimer* mouseTimer;
+#endif
+
     QSize screenGetMinSize(int factor);
 
     void osdSetEnabled(bool enabled);
     void osdAddMessage(unsigned int color, const char* msg);
 
     virtual void drawScreen() {}// = 0;
+
+#ifdef MELONPRIME_DS
+    void unfocus();
+
+    int getDelta() {
+        // Store and reset in one operation for optimal performance
+        int currentDelta = wheelDelta;
+        wheelDelta = 0;
+        return currentDelta;
+    }
+
+public slots:
+    void clipCursorCenter1px();
+    void unclip();
+    void updateClipIfNeeded();
+#endif // MELONPRIME_DS
 
 private slots:
     void onScreenLayoutChanged();
@@ -89,10 +115,19 @@ protected:
     int screenSizing;
     bool integerScaling;
     int screenAspectTop, screenAspectBot;
+    bool inGameTopScreenOnly = false;
 
     int autoScreenSizing;
 
     ScreenLayout layout;
+
+#ifdef MELONPRIME_DS
+    void focusInEvent(QFocusEvent* event) override;
+    void focusOutEvent(QFocusEvent* event) override;
+    void enterEvent(QEnterEvent* event) override;
+    void moveEvent(QMoveEvent* event) override;
+#endif
+
     float screenMatrix[kMaxScreenTransforms][6];
     int screenKind[kMaxScreenTransforms];
     int numScreens;
@@ -117,10 +152,42 @@ protected:
         int rainbowend;
     };
 
+#ifdef MELONPRIME_DS
+    int wheelDelta = 0;
+    void wheelEvent(QWheelEvent* event) override;
+#endif
+
     QMutex osdMutex;
     bool osdEnabled;
     unsigned int osdID;
     std::deque<OSDItem> osdItems;
+
+#ifdef MELONPRIME_CUSTOM_HUD
+    QImage Overlay[2];       // [0]=Top, [1]=Bottom — ARGB32_Premultiplied, 256x192 (DS-native space)
+    QFont overlayFont;
+    MelonPrimeHudEditSidePanel* m_hudEditPanel = nullptr;
+    // Layout values cached in setupScreenLayout() — avoids sqrt per-frame.
+    float m_hudScale      = 1.0f;
+    float m_topStretchX   = 1.0f;
+    float m_hudOriginX    = 0.0f;
+    float m_hudOriginY    = 0.0f;
+    // Config values cached per epoch — avoids hash-map lookups per-frame.
+    uint32_t m_hudCfgEpoch   = ~0u;
+    int      m_hudRenderScale = 0;
+    // BtmOverlay config cache (GL path):
+    bool     m_radarEnable    = false;
+    int      m_radarAnchor    = 2;
+    int      m_radarDstX      = 0;
+    int      m_radarDstY      = 0;
+    int      m_radarDstSize   = 64;
+    float    m_radarOpacity   = 0.85f;
+    int      m_radarSrcRadius = 46;
+#endif
+
+#ifdef MELONPRIME_DS
+    // OPT-OSD1: Skip osdUpdate mutex + syscall when no OSD items and splash rendered.
+    bool m_splashRendered = false;
+#endif
 
     QPixmap splashLogo;
     OSDItem splashText[3];
@@ -140,7 +207,9 @@ protected:
     void touchEvent(QTouchEvent* event);
     bool event(QEvent* event) override;
 
+#ifndef MELONPRIME_DS
     void showCursor();
+#endif
 
     int osdFindBreakPoint(const char* text, int i);
     void osdLayoutText(const char* text, int* width, int* height, int* breaks);
@@ -152,6 +221,25 @@ protected:
     void osdUpdate();
 
     void calcSplashLayout();
+
+#ifdef MELONPRIME_DS
+protected:
+    void refreshClipForGameStateChange();
+
+private:
+    void applyInGameTopScreenOnlyOverride(int& layout, int& sizing) const;
+    bool shouldConfineCursorToBottomScreen() const;
+    std::optional<QRect> getBottomScreenWidgetRect() const;
+    void clipCursorToBottomScreen();
+    void setClipWanted(bool value);
+    bool getClipWanted() const;
+    bool m_lastInGameTopScreenOnlyOverride = false;
+    bool m_hasLastInGameTopScreenOnlyOverride = false;
+    bool m_lastClipInGameState = false;
+    bool m_hasLastClipInGameState = false;
+    bool m_lastClipFocusedState = false;
+    bool m_hasLastClipFocusedState = false;
+#endif
 };
 
 
@@ -229,6 +317,12 @@ private:
 
     int lastScreenWidth = -1, lastScreenHeight = -1;
 
+#ifdef MELONPRIME_DS
+    // OPT-GL1: Cache GL texture filter to skip redundant glTexParameteri calls.
+    // Safe: texture parameters are per-texture, not global GL state.
+    GLint lastFilter = -1;
+#endif
+
     GLuint osdShader;
     GLint osdScreenSizeULoc, osdPosULoc, osdSizeULoc;
     GLint osdScaleFactorULoc;
@@ -237,6 +331,14 @@ private:
     GLuint osdVertexBuffer;
     std::map<unsigned int, GLuint> osdTextures;
 
+#ifdef MELONPRIME_CUSTOM_HUD
+    GLuint overlayTextures[2];  // GL_TEXTURE_2D per screen (top/bottom), resized to match hi-res HUD buffer
+    int overlayTexW = 0, overlayTexH = 0; // currently allocated texture dimensions
+    GLuint btmOverlayShader;
+    GLint btmOverlayScreenSizeULoc, btmOverlayOpacityULoc, btmOverlaySrcCenterULoc, btmOverlaySrcRadiusULoc;
+    GLuint btmOverlayVertexArray, btmOverlayVertexBuffer;
+#endif
+
     GLuint logoTexture;
 
     void osdRenderItem(OSDItem* item) override;
@@ -244,4 +346,3 @@ private:
 };
 
 #endif // SCREEN_H
-

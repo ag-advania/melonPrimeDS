@@ -3,5 +3,20 @@
 	<qresource>
 		<file alias="melon-icon">icon/melon_256x256.png</file>
 		<file alias="melon-logo">melon384.png</file>
+		<file alias="mph-font">fonts/mph.ttf</file>
+		<file alias="mph-icon-pb">assets/weapons/PowerBeam.svg</file>
+		<file alias="mph-icon-missile">assets/weapons/Missile.svg</file>
+		<file alias="mph-icon-shock">assets/weapons/ShockCoil.svg</file>
+		<file alias="mph-icon-volt">assets/weapons/VoltDriver.svg</file>
+		<file alias="mph-icon-magmaul">assets/weapons/Magmaul.svg</file>
+		<file alias="mph-icon-judicator">assets/weapons/Judicator.svg</file>
+		<file alias="mph-icon-battlehammer">assets/weapons/BattleHammer.svg</file>
+		<file alias="mph-icon-imperialist">assets/weapons/Imperialist.svg</file>
+		<file alias="mph-icon-omega">assets/weapons/OmegaCannon.svg</file>
+		<file alias="mph-icon-bombs3">assets/bombs/bombs_3.svg</file>
+		<file alias="mph-icon-bombs2">assets/bombs/bombs_2.svg</file>
+		<file alias="mph-icon-bombs1">assets/bombs/bombs_1.svg</file>
+		<file alias="mph-icon-bombs0">assets/bombs/bombs_0.svg</file>
+		<file alias="mph-icon-radar-frame">assets/radar/Radar.svg</file>
 	</qresource>
 </RCC>

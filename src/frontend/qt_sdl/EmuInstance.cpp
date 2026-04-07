@@ -49,6 +49,14 @@
 #include "main.h"
 
 #include "NDSCart/CartSD.h"
+#ifdef MELONPRIME_DS
+#include "MelonPrimeDef.h"
+
+namespace MelonPrime {
+    uint32_t globalChecksum = 0;
+    bool isRomDetected = false;
+}
+#endif // MELONPRIME_DS
 
 using std::make_unique;
 using std::pair;
@@ -72,6 +80,41 @@ EmuInstance::EmuInstance(int inst) : deleting(false),
     localCfg(Config::GetLocalTable(inst))
 {
     consoleType = globalCfg.GetInt("Emu.ConsoleType");
+
+    // Migrate pre-anchor-system configs. Detection: HudHpAnchor absent AND
+    // HudHpX explicitly saved — the latter distinguishes old configs from a
+    // completely fresh/blank config (which has neither key yet).
+    if (!localCfg.HasKey("Metroid.Visual.HudHpAnchor") &&
+         localCfg.HasKey("Metroid.Visual.HudHpX"))
+    {
+        // Setting all screen-anchor keys to 0 (TL, base 0,0) makes old
+        // absolute X/Y values work correctly as offsets from the TL corner.
+        static const char* const kAnchorKeys[] = {
+            "Metroid.Visual.HudHpAnchor",
+            "Metroid.Visual.HudHpGaugePosAnchor",
+            "Metroid.Visual.HudWeaponAnchor",
+            "Metroid.Visual.HudWeaponIconPosAnchor",
+            "Metroid.Visual.HudAmmoGaugePosAnchor",
+            "Metroid.Visual.HudMatchStatusAnchor",
+            "Metroid.Visual.HudRankAnchor",
+            "Metroid.Visual.HudTimeLeftAnchor",
+            "Metroid.Visual.HudTimeLimitAnchor",
+            "Metroid.Visual.HudBombLeftAnchor",
+            "Metroid.Visual.HudBombLeftIconPosAnchor",
+            "Metroid.Visual.BtmOverlayAnchor",
+        };
+        for (const char* key : kAnchorKeys)
+            localCfg.SetInt(key, 0);
+
+        // Map legacy HudFontSize (pixel size) to HudTextScale (% of 6px baseline).
+        if (localCfg.HasKey("Metroid.Visual.HudFontSize"))
+        {
+            const int oldPx = localCfg.GetInt("Metroid.Visual.HudFontSize");
+            if (oldPx > 0)
+                localCfg.SetInt("Metroid.Visual.HudTextScale", (oldPx * 100 + 3) / 6);
+        }
+        Config::Save();
+    }
 
     ndsSave = nullptr;
     cartType = -1;
@@ -1918,6 +1961,37 @@ bool EmuInstance::loadROM(QStringList filepath, bool reset, QString& errorstr)
         errorstr = "Failed to load the DS ROM.";
         return false;
     }
+
+    // MelonPrimeDS: ROM checksum detection
+#ifdef MELONPRIME_DS
+    MelonPrime::globalChecksum = cart->Checksum();
+    MelonPrime::isRomDetected = false;
+
+    switch (MelonPrime::globalChecksum) {
+    case MelonPrime::RomVersions::US1_0:
+    case MelonPrime::RomVersions::US1_1:
+    case MelonPrime::RomVersions::EU1_0:
+    case MelonPrime::RomVersions::EU1_1:
+    case MelonPrime::RomVersions::JP1_0:
+    case MelonPrime::RomVersions::JP1_1:
+    case MelonPrime::RomVersions::KR1_0:
+    case MelonPrime::RomVersions::EU1_1_BALANCED:
+    case MelonPrime::RomVersions::EU1_1_RUSSIANED:
+    case MelonPrime::RomVersions::US1_0_ENCRYPTED:
+    case MelonPrime::RomVersions::US1_1_ENCRYPTED:
+    case MelonPrime::RomVersions::EU1_0_ENCRYPTED:
+    case MelonPrime::RomVersions::EU1_1_ENCRYPTED:
+    case MelonPrime::RomVersions::JP1_0_ENCRYPTED:
+    case MelonPrime::RomVersions::JP1_1_ENCRYPTED:
+    case MelonPrime::RomVersions::KR1_0_ENCRYPTED:
+        break;
+    default:
+        char message[256];
+        sprintf(message, "Unknown ROM (Checksum: 0x%08X). Please make sure to use the untrimmed and unmodified Metroid Prime Hunters ROM which is not encrypted.", MelonPrime::globalChecksum);
+        osdAddMessage(0xFFA0A0, message);
+        break;
+    }
+#endif // MELONPRIME_DS
 
     if (reset)
     {

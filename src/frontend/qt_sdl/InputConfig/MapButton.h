@@ -20,6 +20,12 @@
 #define MAPBUTTON_H
 
 #include <QPushButton>
+#include <QKeyEvent>
+
+#ifdef MELONPRIME_DS
+#include <QMouseEvent>
+#include <optional>
+#endif
 
 #include <SDL2/SDL.h>
 
@@ -64,17 +70,25 @@ protected:
                       key == Qt::Key_Shift ||
                       key == Qt::Key_Meta);
 
+#ifndef MELONPRIME_DS
+        // Original logic: Only allow Esc/Backspace if no modifiers are pressed
         if (!mod)
         {
+#endif
+            // In MelonPrimeDS, we allow these checks even if modifiers are present
             if (key == Qt::Key_Escape) { click(); return; }
             if (key == Qt::Key_Backspace) { *mapping = -1; click(); return; }
+
+#ifndef MELONPRIME_DS
         }
 
+        // Original logic: specific hotkey handling
         if (isHotkey)
         {
             if (ismod)
                 return;
         }
+#endif
 
         if (!ismod)
             key |= mod;
@@ -84,6 +98,17 @@ protected:
         *mapping = key;
         click();
     }
+
+#ifdef MELONPRIME_DS
+    void mousePressEvent(QMouseEvent* event) override {
+        if (!isChecked()) return QPushButton::mousePressEvent(event);
+
+        // Log(melonDS::Platform::Debug, "MOUSE BUTTON PRESSED = %08X\n", event->button());
+
+        *mapping = (int)event->button() | 0xF0000000;
+        click();
+    }
+#endif
 
     void focusOutEvent(QFocusEvent* event) override
     {
@@ -118,10 +143,58 @@ private:
 
         if (key == -1) return "None";
 
-        QString isright = (key & (1<<31)) ? "Right " : "Left ";
-        key &= ~(1<<31);
+#ifdef MELONPRIME_DS
+        auto getMouseButtonName = [](Qt::MouseButton button) -> std::optional<QString> {
+            static const struct {
+                Qt::MouseButton button;
+                const char* name;
+            } mouseButtons[] = {
+                {Qt::LeftButton, "LeftButton"},
+                {Qt::RightButton, "RightButton"},
+                {Qt::MiddleButton, "MiddleButton"},
+                {Qt::BackButton, "BackButton"},
+                {Qt::ForwardButton, "ForwardButton"},
+                {Qt::ExtraButton4, "ExtraButton4"},
+                {Qt::ExtraButton5, "ExtraButton5"},
+                {Qt::ExtraButton6, "ExtraButton6"},
+                {Qt::ExtraButton7, "ExtraButton7"},
+                {Qt::ExtraButton8, "ExtraButton8"},
+                {Qt::ExtraButton9, "ExtraButton9"},
+                {Qt::ExtraButton10, "ExtraButton10"},
+                {Qt::ExtraButton11, "ExtraButton11"},
+                {Qt::ExtraButton12, "ExtraButton12"},
+                {Qt::ExtraButton13, "ExtraButton13"},
+                {Qt::ExtraButton14, "ExtraButton14"},
+                {Qt::ExtraButton15, "ExtraButton15"},
+                {Qt::ExtraButton16, "ExtraButton16"},
+                {Qt::ExtraButton17, "ExtraButton17"},
+                {Qt::ExtraButton18, "ExtraButton18"},
+                {Qt::ExtraButton19, "ExtraButton19"},
+                {Qt::ExtraButton20, "ExtraButton20"},
+                {Qt::ExtraButton21, "ExtraButton21"},
+                {Qt::ExtraButton22, "ExtraButton22"},
+                {Qt::ExtraButton23, "ExtraButton23"},
+                {Qt::ExtraButton24, "ExtraButton24"}
+            };
 
-    #ifndef __APPLE__
+            for (const auto& mb : mouseButtons) {
+                if (button == mb.button) {
+                    return QString("Mouse ") + mb.name;
+                }
+            }
+            return std::nullopt;
+            };
+
+        auto mouseButton = key & ~0xF0000000;
+        if (auto name = getMouseButtonName(static_cast<Qt::MouseButton>(mouseButton))) {
+            return *name;
+        }
+#endif
+
+        QString isright = (key & (1 << 31)) ? "Right " : "Left ";
+        key &= ~(1 << 31);
+
+#ifndef __APPLE__
         switch (key)
         {
         case Qt::Key_Control: return isright + "Ctrl";
@@ -130,7 +203,7 @@ private:
         case Qt::Key_Shift:   return isright + "Shift";
         case Qt::Key_Meta:    return "Meta";
         }
-    #else
+#else
         switch (key)
         {
         case Qt::Key_Control: return isright + "⌘";
@@ -138,7 +211,7 @@ private:
         case Qt::Key_Shift:   return isright + "⇧";
         case Qt::Key_Meta:    return isright + "⌃";
         }
-    #endif
+#endif
 
         QKeySequence seq(key);
         QString ret = seq.toString(QKeySequence::NativeText);

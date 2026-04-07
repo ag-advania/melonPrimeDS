@@ -335,6 +335,7 @@ void ComputeRenderer3D::SetRenderSettings(int scale, bool highResolutionCoordina
     ScreenWidth = 256 * ScaleFactor;
     ScreenHeight = 192 * ScaleFactor;
 
+    /*
     //Starting at 4.5x we want to double TileSize every time scale doubles
     TileScale = 2 * ScaleFactor / 9;
     TileScale = GetMSBit(TileScale);
@@ -357,6 +358,53 @@ void ComputeRenderer3D::SetRenderSettings(int scale, bool highResolutionCoordina
     HiresCoordinates = highResolutionCoordinates;
 
     MaxWorkTiles = TilesPerLine*TileLines*16;
+    */
+
+
+    // v11
+    // range算出処理(2段階しきい値比較の算術化による分岐最小化のため)
+    const uint8_t range = static_cast<uint8_t>((ScaleFactor >= 5) + (ScaleFactor >= 9));
+
+    // TileScale反映処理(2のべき乗生成の左シフト一発化のため)
+    TileScale = static_cast<uint8_t>(1u << range);
+
+    // TileSize反映処理(8×TileScaleの左シフト一発化のため)
+    TileSize = static_cast<uint8_t>(8u << range);
+
+    // CoarseTileCountY反映処理(4または6をrange上位ビットから導出のため)
+    CoarseTileCountY = 4 + ((static_cast<int>(range >> 1)) << 1);
+
+    // ClearCoarseBinMaskLocalSize反映処理(64または48をrange上位ビットから導出のため)
+    ClearCoarseBinMaskLocalSize = 64 - ((static_cast<int>(range >> 1)) << 4);
+
+    // CoarseTileArea算出処理(タイル総数の基礎量確定のため)
+    CoarseTileArea = CoarseTileCountX * CoarseTileCountY;
+
+    // CoarseTileW算出処理(幅方向ピクセル寸法確定のため)
+    CoarseTileW = CoarseTileCountX * TileSize;
+
+    // CoarseTileH算出処理(高さ方向ピクセル寸法確定のため)
+    CoarseTileH = CoarseTileCountY * TileSize;
+
+    // タイルサイズのシフト量算出処理(range再利用による依存短縮のため)
+    /* const uint8_t tileShift = static_cast<uint8_t>(3u + ((ScaleFactor >= 5) + (ScaleFactor >= 9))); */
+    const uint8_t tileShift = static_cast<uint8_t>(3u + range);
+
+    // 横方向タイル数算出処理(除算の右シフト化によるサイクル削減のため)
+    TilesPerLine = static_cast<int>(static_cast<unsigned>(ScreenWidth) >> tileShift);
+
+    // 縦方向タイル数算出処理(除算の右シフト化によるサイクル削減のため)
+    TileLines = static_cast<int>(static_cast<unsigned>(ScreenHeight) >> tileShift);
+
+    // HiresCoordinates反映処理(高解像度座標設定の透過適用のため)
+    HiresCoordinates = highResolutionCoordinates;
+
+    // MaxWorkTiles算出処理(固定係数16倍のビットシフト化による軽量化のため)
+    /* MaxWorkTiles = TilesPerLine * TileLines * 16; */
+    MaxWorkTiles = (TilesPerLine * TileLines) << 4;
+
+
+    /* MelonPrimeDS } */
 
     for (int i = 0; i < tilememoryLayer_Num; i++)
     {

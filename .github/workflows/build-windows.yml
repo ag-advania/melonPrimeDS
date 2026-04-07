@@ -1,57 +1,114 @@
 name: Windows
 
 on:
+  workflow_dispatch:
   push:
-    branches:
-      - master
-      - ci/*
-  pull_request:
     branches:
       - master
 
 env:
+  VCPKG_COMMIT: 55fab67aea1027f7179ae6b5c54a5ba9091c16aa
   MELONDS_GIT_BRANCH: ${{ github.ref }}
   MELONDS_GIT_HASH: ${{ github.sha }}
   MELONDS_BUILD_PROVIDER: GitHub Actions
-#  MELONDS_VERSION_SUFFIX: " RC"
+  VCPKG_MAX_CONCURRENCY: 8
+  CMAKE_BUILD_PARALLEL_LEVEL: 8
+  VCPKG_BINARY_SOURCES: clear;files,${{ github.workspace }}/vcpkg_binary_cache,readwrite
 
 jobs:
   build:
     runs-on: windows-2025
+
     defaults:
       run:
         shell: msys2 {0}
-    env:
-      VCPKG_BINARY_SOURCES: clear;files,${{ github.workspace }}/vcpkg_cache,readwrite
+
     steps:
     - name: Check out sources
-      uses: actions/checkout@v3
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 1
+
+    - name: Cache MSYS2 packages
+      uses: actions/cache@v4
+      with:
+        path: |
+          C:/msys64/var/cache/pacman/pkg
+          C:/msys64/etc/pacman.d/gnupg
+          ${{ github.workspace }}/vcpkg/downloads/tools/msys2
+        key: ${{ runner.os }}-msys2-pacman-${{ hashFiles('CMakeLists.txt', 'cmake/**', 'vcpkg.json') }}
+        restore-keys: |
+          ${{ runner.os }}-msys2-pacman-
+
+    - name: Remove stale MSYS2 temp directory
+      shell: pwsh
+      run: |
+        if (Test-Path 'D:\a\_temp\msys64') {
+          Remove-Item 'D:\a\_temp\msys64' -Recurse -Force
+        }
+
     - name: Set up MSYS2
       uses: msys2/setup-msys2@v2
       with:
         msystem: ucrt64
-        update: true
-        pacboy: gcc:p cmake:p ninja:p make:p
-    - name: Restore vcpkg cache
-      uses: actions/cache/restore@v4
+        update: false
+        path-type: inherit
+        pacboy: >-
+          gcc:p
+          cmake:p
+          ninja:p
+          make:p
+          pkgconf:p
+
+    - name: Ensure binary cache directory exists
+      run: |
+        mkdir -p "${{ github.workspace }}/vcpkg_binary_cache"
+
+    - name: Cache vcpkg
+      uses: actions/cache@v4
       with:
-        path: ${{ github.workspace }}/vcpkg_cache
-        key: vcpkg-x86_64-mingw-${{ hashFiles('vcpkg.json') }}
-        restore-keys: vcpkg-x86_64-mingw-
+        path: |
+          ${{ github.workspace }}/vcpkg
+          ${{ github.workspace }}/vcpkg_installed
+          ${{ github.workspace }}/vcpkg/buildtrees
+          ${{ github.workspace }}/vcpkg/downloads
+          ${{ github.workspace }}/vcpkg/packages
+          ${{ github.workspace }}/vcpkg_binary_cache
+        key: ${{ runner.os }}-vcpkg-${{ env.VCPKG_COMMIT }}-${{ hashFiles('CMakeLists.txt', 'cmake/**', 'cmake/overlay-triplets/*.cmake', 'cmake/overlay-ports/**', 'vcpkg.json', 'CMakePresets.json') }}
+        restore-keys: |
+          ${{ runner.os }}-vcpkg-${{ env.VCPKG_COMMIT }}-${{ hashFiles('CMakeLists.txt', 'cmake/**', 'vcpkg.json') }}
+          ${{ runner.os }}-vcpkg-${{ env.VCPKG_COMMIT }}-
+
     - name: Set up vcpkg
       uses: lukka/run-vcpkg@v11
       with:
-        vcpkgJsonGlob: vcpkg.json
+        vcpkgGitCommitId: ${{ env.VCPKG_COMMIT }}
+
+    - name: Cache CMake build directory
+      uses: actions/cache@v4
+      with:
+        path: ${{ github.workspace }}/build
+        key: ${{ runner.os }}-cmake-build-${{ hashFiles('CMakeLists.txt', 'src/**', 'include/**', 'cmake/**', 'CMakePresets.json') }}
+        restore-keys: |
+          ${{ runner.os }}-cmake-build-${{ hashFiles('CMakeLists.txt') }}
+          ${{ runner.os }}-cmake-build-
+
     - name: Configure
-      run: cmake --preset=release-mingw-x86_64 -DMELONDS_EMBED_BUILD_INFO=ON
+      run: |
+        cmake --preset=release-mingw-x86_64 \
+          -DMELONDS_EMBED_BUILD_INFO=ON \
+          -DCMAKE_BUILD_PARALLEL_LEVEL=${{ env.CMAKE_BUILD_PARALLEL_LEVEL }}
+      env:
+        NINJA_STATUS: "[%f/%t %o/s %es] "
+
     - name: Build
-      run: cmake --build --preset=release-mingw-x86_64
-    - uses: actions/upload-artifact@v4
+      run: |
+        cmake --build --preset=release-mingw-x86_64 --parallel ${{ env.CMAKE_BUILD_PARALLEL_LEVEL }}
+      env:
+        NINJA_STATUS: "[%f/%t %o/s %es] "
+
+    - name: Upload artifact
+      uses: actions/upload-artifact@v4
       with:
         name: melonDS-windows-x86_64
-        path: .\build\release-mingw-x86_64\melonDS.exe
-    - name: Save vcpkg cache
-      uses: actions/cache/save@v4
-      with:
-        path: ${{ github.workspace }}/vcpkg_cache
-        key: vcpkg-x86_64-mingw-${{ hashFiles('vcpkg.json') }}
+        path: ./build/release-mingw-x86_64/melonDS.exe
