@@ -237,15 +237,17 @@ static QImage s_radarFrame;
 static QImage s_radarFrameTinted;
 static QColor s_radarFrameTintColor;
 static int    s_radarFrameTargetH = 0;
-// Cached outline-colored version of the frame (for HUD Outline)
+// Cached dilated outline of the frame (same technique as weapon icons)
 static QImage s_radarFrameOutline;
 static QColor s_radarFrameOutlineColor;
+static int    s_radarFrameOutlineR = -1;
 
 // Bottom screen radar art size in pixels (= SVG viewBox width/height).
 static constexpr int kRadarArtSize = 76;
 
 static void EnsureRadarFrameLoaded(int dstSize, int srcRadius, float hudScale,
-                                    const QColor& tintColor, const QColor& outlineColor)
+                                    const QColor& tintColor, const QColor& outlineColor,
+                                    int outlineThickness)
 {
     // Map 76 bottom-screen pixels to top-screen DS pixels proportionally,
     // then scale to output pixels via hudScale.
@@ -255,7 +257,8 @@ static void EnsureRadarFrameLoaded(int dstSize, int srcRadius, float hudScale,
         s_radarFrame = loadSvgToHeight(":/mph-icon-radar-frame", targetH);
         s_radarFrameTargetH = targetH;
         s_radarFrameTintColor = QColor(); // force re-tint
-        s_radarFrameOutlineColor = QColor(); // force re-tint
+        s_radarFrameOutlineColor = QColor(); // force re-outline
+        s_radarFrameOutlineR = -1;
     }
     if (s_radarFrameTintColor != tintColor) {
         if (!s_radarFrame.isNull()) {
@@ -267,15 +270,14 @@ static void EnsureRadarFrameLoaded(int dstSize, int srcRadius, float hudScale,
         }
         s_radarFrameTintColor = tintColor;
     }
-    if (s_radarFrameOutlineColor != outlineColor) {
+    // Use proper max-filter dilation for the outline (same as weapon/bomb icons).
+    const int expandR = std::max(1, outlineThickness);
+    if (s_radarFrameOutlineColor != outlineColor || s_radarFrameOutlineR != expandR) {
         if (!s_radarFrame.isNull()) {
-            s_radarFrameOutline = s_radarFrame.copy();
-            QPainter tp(&s_radarFrameOutline);
-            tp.setCompositionMode(QPainter::CompositionMode_SourceIn);
-            tp.fillRect(s_radarFrameOutline.rect(), outlineColor);
-            tp.end();
+            s_radarFrameOutline = DilateAndTintIconForOutline(s_radarFrame, outlineColor, expandR);
         }
         s_radarFrameOutlineColor = outlineColor;
+        s_radarFrameOutlineR = expandR;
     }
 }
 
@@ -1916,22 +1918,28 @@ HOT_FUNCTION void CustomHud_Render(
 static void DrawRadarFrame(QPainter* topPaint, const CachedHudConfig& c)
 {
     const int srcDiameter = c.radar.radarSrcRadius * 2;
+    const int expandR = (c.outline.enable && c.outline.opacity > 0.0f)
+                        ? std::max(1, c.outline.thickness) : 0;
     EnsureRadarFrameLoaded(c.radar.radarDstSize, c.radar.radarSrcRadius, c.lastHudScale,
-                            c.radar.radarFrameColor, c.outline.color);
+                            c.radar.radarFrameColor, c.outline.color, expandR);
     if (s_radarFrameTinted.isNull()) return;
 
-    // Frame size in DS-space: proportional mapping from 76 btm-screen pixels
+    // Frame size in DS-space: proportional mapping from 76 btm-screen pixels.
+    // +1 to cropCenterX aligns the SVG frame with the crop circle / GL overlay.
     const float frameSizeDS = static_cast<float>(kRadarArtSize) * c.radar.radarDstSize
                               / static_cast<float>(srcDiameter);
-    const float cropCenterX = c.radar.radarDstX + c.radar.radarDstSize * 0.5f;
+    const float cropCenterX = c.radar.radarDstX + c.radar.radarDstSize * 0.5f + 1.0f;
     const float cropCenterY = c.radar.radarDstY + c.radar.radarDstSize * 0.5f;
     const QRectF frameDstRect(cropCenterX - frameSizeDS * 0.5f,
                               cropCenterY - frameSizeDS * 0.5f,
                               frameSizeDS, frameSizeDS);
 
-    // Apply HUD outline to the frame SVG (drawn first = behind the frame)
-    if (c.outline.enable && c.outline.opacity > 0.0f && !s_radarFrameOutline.isNull()) {
-        const float expandDS = static_cast<float>(c.outline.thickness) / c.lastHudScale;
+    // Draw dilated outline behind the frame (same technique as weapon/bomb icons).
+    if (expandR > 0 && !s_radarFrameOutline.isNull()) {
+        // The dilated image is (w+2R)×(h+2R) in output pixels.
+        // Convert the R-pixel expansion back to DS-space for the painter.
+        const float expandDS = (c.lastHudScale > 0.0f)
+                               ? static_cast<float>(expandR) / c.lastHudScale : 0.0f;
         topPaint->save();
         topPaint->setRenderHint(QPainter::SmoothPixmapTransform, true);
         topPaint->setOpacity(c.outline.opacity);
