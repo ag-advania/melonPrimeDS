@@ -389,6 +389,7 @@ namespace Config
         {"Instance*.Metroid.Visual.HudRankShowOrdinal", true},
         {"Instance*.Metroid.Visual.HudTimeLeftShow",    true},
         {"Instance*.Metroid.Visual.HudTimeLimitShow",   false},
+        {"Instance*.Metroid.Visual.HudOutline",            false},
         {"Instance*.Metroid.Visual.HudBombLeftShow",       true},
         {"Instance*.Metroid.Visual.HudBombLeftTextShow",   false},
         {"Instance*.Metroid.Visual.HudBombLeftIconShow",   true},
@@ -476,6 +477,13 @@ namespace Config
         {"Instance*.Metroid.Visual.HudBombLeftOpacity",      1.0},
         {"Instance*.Metroid.Visual.HudBombIconOpacity",      1.0},
         /* MelonPrimeDS HUD element opacities } */
+        /* MelonPrimeDS HUD global outline { */
+        {"Instance*.Metroid.Visual.HudOutlineColorR",    0},
+        {"Instance*.Metroid.Visual.HudOutlineColorG",    0},
+        {"Instance*.Metroid.Visual.HudOutlineColorB",    0},
+        {"Instance*.Metroid.Visual.HudOutlineOpacity",   0.75},
+        {"Instance*.Metroid.Visual.HudOutlineThickness", 1},
+        /* MelonPrimeDS HUD global outline } */
         /* MelonPrimeDS HUD render scale (N = render at N×DS native res, 0 = no cap) */
         {"Instance*.Metroid.Visual.HudRenderScale", 0},
         /* MelonPrimeDS Bottom Screen Overlay opacity { */
