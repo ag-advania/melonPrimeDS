@@ -345,6 +345,7 @@ struct TextBitmapCache {
     int    originX;
     int    originY;
     int    expandR;  // 0 for normal text; >0 for dilated outline bitmaps
+    float  renderScale; // scale at which bitmap was rendered (for hi-res outline)
     bool   valid;
     QImage bitmap;
 };
@@ -394,6 +395,7 @@ static inline void PrepareTextBitmapCached(const QFontMetrics& fm, const QFont& 
         cache.color = color;
         cache.originX = bounds.left();
         cache.originY = bounds.top();
+        cache.renderScale = 1.0f;
         cache.valid = true;
     }
 }
@@ -423,14 +425,28 @@ static inline void DrawCachedText(QPainter* p, const TextBitmapCache& cache, int
 // P-12: Uses separable max-filter dilation for O(R) per pixel instead of O(R²).
 static void BuildDilatedOutlineBitmap(TextBitmapCache& dst,
                                        const TextBitmapCache& src,
-                                       const QColor& color, int R)
+                                       const QColor& color, int R,
+                                       float renderScale = 1.0f)
 {
-    DilateSeparableTinted(dst.bitmap, src.bitmap, color, R);
-
-    // Adjust origin to account for the expansion
-    dst.originX     = src.originX - R;
-    dst.originY     = src.originY - R;
+    if (renderScale > 1.0f && !src.bitmap.isNull()) {
+        // Scale the source bitmap to output resolution, dilate at that
+        // resolution with exactly `thickness` pixels, then store.
+        // originX/Y are in native (6px font) space and will be converted
+        // to output-pixel space so the draw routine can place them directly.
+        const int hiW = std::max(1, (int)std::ceil(src.bitmap.width()  * renderScale));
+        const int hiH = std::max(1, (int)std::ceil(src.bitmap.height() * renderScale));
+        QImage scaled = src.bitmap.scaled(hiW, hiH, Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
+        scaled = scaled.convertToFormat(QImage::Format_ARGB32_Premultiplied);
+        DilateSeparableTinted(dst.bitmap, scaled, color, R);
+        dst.originX     = (int)std::floor(src.originX * renderScale) - R;
+        dst.originY     = (int)std::floor(src.originY * renderScale) - R;
+    } else {
+        DilateSeparableTinted(dst.bitmap, src.bitmap, color, R);
+        dst.originX     = src.originX - R;
+        dst.originY     = src.originY - R;
+    }
     dst.expandR     = R;
+    dst.renderScale = renderScale;
     dst.fontPixelSize = src.fontPixelSize;
     dst.color       = color;
     std::strncpy(dst.text, src.text, sizeof(dst.text) - 1);
@@ -438,22 +454,30 @@ static void BuildDilatedOutlineBitmap(TextBitmapCache& dst,
     dst.valid       = true;
 }
 
-// expandR: how many native font-bitmap pixels to expand.
-// Computed as max(1, ceil(thickness / hudScale)) so that 1 thickness = ~1 output pixel.
+// thickness: desired outline width in output pixels.
+// renderScale: tds * hudScale — the effective magnification from native bitmap
+//              to final output pixels.  When > 1, the source bitmap is upscaled
+//              before dilation so the outline is computed at output resolution.
 static inline void PrepareOutlineBitmapCached(TextBitmapCache& outlineCache,
                                                const TextBitmapCache& mainCache,
-                                               const QColor& outlineColor, int expandR)
+                                               const QColor& outlineColor,
+                                               int thickness,
+                                               float renderScale = 1.0f)
 {
     if (!mainCache.valid || mainCache.bitmap.isNull()) return;
     if (outlineCache.valid &&
-        outlineCache.expandR       == expandR &&
+        outlineCache.expandR       == thickness &&
+        outlineCache.renderScale   == renderScale &&
         outlineCache.color         == outlineColor &&
         outlineCache.fontPixelSize == mainCache.fontPixelSize &&
         std::strcmp(outlineCache.text, mainCache.text) == 0) return;
-    BuildDilatedOutlineBitmap(outlineCache, mainCache, outlineColor, expandR);
+    BuildDilatedOutlineBitmap(outlineCache, mainCache, outlineColor, thickness, renderScale);
 }
 
 // Draw text with a dilation-based outline (single pass — no gap, no jaggies).
+// When the outline bitmap was rendered at hi-res (renderScale > 1), it is
+// drawn directly in pixel coordinates (painter transform temporarily reset)
+// so the dilation radius maps 1:1 to output pixels — no scaling artefacts.
 static inline void DrawCachedTextOutlined(QPainter* p,
                                           const TextBitmapCache& cache,
                                           const TextBitmapCache& outlineCache,
@@ -464,7 +488,31 @@ static inline void DrawCachedTextOutlined(QPainter* p,
     if (!cache.valid || cache.bitmap.isNull()) return;
     if (outlineOpacity > 0.0f && outlineCache.valid && !outlineCache.bitmap.isNull()) {
         p->setOpacity(outlineOpacity);
-        DrawCachedText(p, outlineCache, x, baselineY, tds);
+        if (outlineCache.renderScale > 1.0f) {
+            // Hi-res path: outline bitmap is at output resolution.
+            // The normal text path draws at DS-space position:
+            //   (x + originX*tds, baselineY + originY*tds)
+            // and the painter transform scales that to pixels.
+            // The hi-res outline bitmap's originX/Y are in output pixels
+            // (= src.originX * renderScale - R).  To find the correct
+            // pixel position we map the DS-space text anchor through
+            // the painter transform and add the output-pixel origin offset.
+            const QTransform& xf = p->transform();
+            const float dsX = static_cast<float>(x);
+            const float dsY = static_cast<float>(baselineY);
+            // Map DS text anchor to output pixels
+            const float anchorPxX = xf.m11() * dsX + xf.m21() * dsY + xf.dx();
+            const float anchorPxY = xf.m12() * dsX + xf.m22() * dsY + xf.dy();
+            // outlineCache.originX/Y are in output-pixel offset from the anchor
+            const float pxX = anchorPxX + outlineCache.originX;
+            const float pxY = anchorPxY + outlineCache.originY;
+            const QTransform savedXform = p->transform();
+            p->resetTransform();
+            p->drawImage(QPointF(pxX, pxY), outlineCache.bitmap);
+            p->setTransform(savedXform);
+        } else {
+            DrawCachedText(p, outlineCache, x, baselineY, tds);
+        }
     }
     p->setOpacity(opacity < 1.0f ? opacity : 1.0f);
     DrawCachedText(p, cache, x, baselineY, tds);
@@ -1195,16 +1243,16 @@ static void DrawMatchStatusText(QPainter* p, const QFontMetrics& fm, int fontPix
                                 float hudScale = 1.0f)
 {
     static TextMeasureCache s_curTextCache = { 0, "", 0, 0, false }, s_sepTextCache = { 0, "", 0, 0, false }, s_goalTextCache = { 0, "", 0, 0, false };
-    static TextBitmapCache s_curBitmapCache = { 0, QColor(), "", 0, 0, 0, false, QImage() }, s_sepBitmapCache = { 0, QColor(), "", 0, 0, 0, false, QImage() }, s_goalBitmapCache = { 0, QColor(), "", 0, 0, 0, false, QImage() }, s_labelBitmapCache = { 0, QColor(), "", 0, 0, 0, false, QImage() };
-    static TextBitmapCache s_curOlCache = { 0, QColor(), "", 0, 0, 0, false, QImage() }, s_sepOlCache = { 0, QColor(), "", 0, 0, 0, false, QImage() }, s_goalOlCache = { 0, QColor(), "", 0, 0, 0, false, QImage() }, s_labelOlCache = { 0, QColor(), "", 0, 0, 0, false, QImage() };
+    static TextBitmapCache s_curBitmapCache = { 0, QColor(), "", 0, 0, 0, 1.0f, false, QImage() }, s_sepBitmapCache = { 0, QColor(), "", 0, 0, 0, 1.0f, false, QImage() }, s_goalBitmapCache = { 0, QColor(), "", 0, 0, 0, 1.0f, false, QImage() }, s_labelBitmapCache = { 0, QColor(), "", 0, 0, 0, 1.0f, false, QImage() };
+    static TextBitmapCache s_curOlCache = { 0, QColor(), "", 0, 0, 0, 1.0f, false, QImage() }, s_sepOlCache = { 0, QColor(), "", 0, 0, 0, 1.0f, false, QImage() }, s_goalOlCache = { 0, QColor(), "", 0, 0, 0, 1.0f, false, QImage() }, s_labelOlCache = { 0, QColor(), "", 0, 0, 0, 1.0f, false, QImage() };
     static MatchStatusStringCache s_matchStringCache = { 0, 0, 0, 0, 0, false, false, false, "", "", "" };
     UpdateMatchStatusStrings(s_matchStringCache, state);
     auto eff = [&](const QColor& sub) -> const QColor& { return sub.isValid() ? sub : c.matchStatusColor; };
     const bool useOutline = ol.enable && ol.opacity > 0.0f;
-    const int expandR = useOutline ? std::max(1, (int)std::ceil((float)ol.thickness / hudScale)) : 0;
+    const float renderScale = tds * hudScale;
     auto drawText = [&](TextBitmapCache& bmp, TextBitmapCache& olBmp, int x, int y) {
         if (useOutline) {
-            PrepareOutlineBitmapCached(olBmp, bmp, ol.color, expandR);
+            PrepareOutlineBitmapCached(olBmp, bmp, ol.color, ol.thickness, renderScale);
             DrawCachedTextOutlined(p, bmp, olBmp, x, y, tds, overallOpacity, ol.opacity);
         } else {
             if (overallOpacity < 1.0f) p->setOpacity(overallOpacity);
@@ -1252,8 +1300,8 @@ static void DrawCachedAlignedText(QPainter* p, const QFontMetrics& fm, int fontP
     const int textX = CalcAlignedTextX(anchorX, align, textW);
     PrepareTextBitmapCached(fm, p->font(), fontPixelSize, bitmapCache, text, color);
     if (ol.enable && ol.opacity > 0.0f) {
-        const int expandR = std::max(1, (int)std::ceil((float)ol.thickness / hudScale));
-        PrepareOutlineBitmapCached(outlineCache, bitmapCache, ol.color, expandR);
+        const float renderScale = tds * hudScale;
+        PrepareOutlineBitmapCached(outlineCache, bitmapCache, ol.color, ol.thickness, renderScale);
         DrawCachedTextOutlined(p, bitmapCache, outlineCache, textX, y, tds, opacity, ol.opacity);
     } else {
         if (opacity < 1.0f) p->setOpacity(opacity);
@@ -1270,8 +1318,8 @@ static void DrawBombLeft(QPainter* p, melonDS::u8* ram, const RomAddresses& rom,
 {
     if (!c.bombLeft.bombLeftShow) return; uint8_t bombs = static_cast<uint8_t>((Read32(ram, rom.baseBomb + offP) >> 8) & 0xF);
     {
-        static TextBitmapCache s_bombBitmapCache = { 0, QColor(), "", 0, 0, 0, false, QImage() };
-        static TextBitmapCache s_bombOutlineCache = { 0, QColor(), "", 0, 0, 0, false, QImage() };
+        static TextBitmapCache s_bombBitmapCache = { 0, QColor(), "", 0, 0, 0, 1.0f, false, QImage() };
+        static TextBitmapCache s_bombOutlineCache = { 0, QColor(), "", 0, 0, 0, 1.0f, false, QImage() };
         static TextMeasureCache s_bombMeasureCache = { 0, "", 0, 0, false };
         const QFontMetrics& fm = s_frameFm; const int fontPixelSize = s_frameFpx; // P-9
         char buf[64];
@@ -1284,8 +1332,8 @@ static void DrawBombLeft(QPainter* p, melonDS::u8* ram, const RomAddresses& rom,
             const int bombTextX = CalcAlignedTextX(c.bombLeft.bombLeftX, c.bombLeft.bombLeftAlign, bombTextW);
             { const HudOutlineConfig& _ol = EffOL(c, c.bombLeft.outline);
             if (_ol.enable && _ol.opacity > 0.0f) {
-                const int expandR = std::max(1, (int)std::ceil((float)_ol.thickness / hudScale));
-                PrepareOutlineBitmapCached(s_bombOutlineCache, s_bombBitmapCache, _ol.color, expandR);
+                const float renderScale = tds * hudScale;
+                PrepareOutlineBitmapCached(s_bombOutlineCache, s_bombBitmapCache, _ol.color, _ol.thickness, renderScale);
                 DrawCachedTextOutlined(p, s_bombBitmapCache, s_bombOutlineCache, bombTextX, c.bombLeft.bombLeftY, tds,
                                        c.bombLeftOpacity, _ol.opacity);
             } else {
@@ -1326,9 +1374,9 @@ static void DrawBombLeft(QPainter* p, melonDS::u8* ram, const RomAddresses& rom,
 static void DrawRankAndTime(QPainter* p, melonDS::u8* ram, const RomAddresses& rom, uint8_t playerPos, bool isAdventure, const CachedHudConfig& c, float tds)
 {
     if (isAdventure) return; const auto& hud = c.rankTime; const QFontMetrics& fm = s_frameFm; const int fontPixelSize = s_frameFpx; // P-9
-    if (hud.rankShow) { static RankStringCache s_rankStringCache = { 0, 0, false, false, "" }; static TextBitmapCache s_rankCache = { 0, QColor(), "", 0, 0, 0, false, QImage() }; static TextBitmapCache s_rankOutlineCache = { 0, QColor(), "", 0, 0, 0, false, QImage() }; static TextMeasureCache s_rankMeasure = { 0, "", 0, 0, false }; uint32_t rankWord = Read32(ram, rom.matchRank); uint8_t rankByte = (rankWord >> (playerPos * 8)) & 0xFF; if (rankByte <= 3) DrawCachedAlignedText(p, fm, fontPixelSize, tds, s_rankMeasure, s_rankCache, s_rankOutlineCache, UpdateRankString(s_rankStringCache, rankByte, hud.rankShowOrdinal, hud), hud.rankColor, hud.rankX, hud.rankAlign, hud.rankY, c.rankOpacity, EffOL(c, c.rankTime.outline), c.lastHudScale); }
-    if (hud.timeLeftShow) { static TimeStringCache s_timeLeftStringCache = { 0, 0, false, "" }; static TextBitmapCache s_timeLeftCache = { 0, QColor(), "", 0, 0, 0, false, QImage() }; static TextBitmapCache s_timeLeftOutlineCache = { 0, QColor(), "", 0, 0, 0, false, QImage() }; static TextMeasureCache s_timeLeftMeasure = { 0, "", 0, 0, false }; int seconds = static_cast<int>(Read32(ram, rom.timeLeft)) / 60; DrawCachedAlignedText(p, fm, fontPixelSize, tds, s_timeLeftMeasure, s_timeLeftCache, s_timeLeftOutlineCache, UpdateTimeString(s_timeLeftStringCache, seconds, false), hud.timeLeftColor, hud.timeLeftX, hud.timeLeftAlign, hud.timeLeftY, c.timeLeftOpacity, EffOL(c, c.rankTime.outline), c.lastHudScale); }
-    if (hud.timeLimitShow) { static TimeStringCache s_timeLimitStringCache = { 0, 0, false, "" }; static TextBitmapCache s_timeLimitCache = { 0, QColor(), "", 0, 0, 0, false, QImage() }; static TextBitmapCache s_timeLimitOutlineCache = { 0, QColor(), "", 0, 0, 0, false, QImage() }; static TextMeasureCache s_timeLimitMeasure = { 0, "", 0, 0, false }; int goalMinutes = s_battleState.valid ? s_battleState.timeLimitMinutes : LookupTimeLimitMin((Read32(ram, rom.battleSettings + 4) >> 8) & 0xFF); DrawCachedAlignedText(p, fm, fontPixelSize, tds, s_timeLimitMeasure, s_timeLimitCache, s_timeLimitOutlineCache, UpdateTimeString(s_timeLimitStringCache, goalMinutes, true), hud.timeLimitColor, hud.timeLimitX, hud.timeLimitAlign, hud.timeLimitY, c.timeLimitOpacity, EffOL(c, c.rankTime.outline), c.lastHudScale); }
+    if (hud.rankShow) { static RankStringCache s_rankStringCache = { 0, 0, false, false, "" }; static TextBitmapCache s_rankCache = { 0, QColor(), "", 0, 0, 0, 1.0f, false, QImage() }; static TextBitmapCache s_rankOutlineCache = { 0, QColor(), "", 0, 0, 0, 1.0f, false, QImage() }; static TextMeasureCache s_rankMeasure = { 0, "", 0, 0, false }; uint32_t rankWord = Read32(ram, rom.matchRank); uint8_t rankByte = (rankWord >> (playerPos * 8)) & 0xFF; if (rankByte <= 3) DrawCachedAlignedText(p, fm, fontPixelSize, tds, s_rankMeasure, s_rankCache, s_rankOutlineCache, UpdateRankString(s_rankStringCache, rankByte, hud.rankShowOrdinal, hud), hud.rankColor, hud.rankX, hud.rankAlign, hud.rankY, c.rankOpacity, EffOL(c, c.rankTime.outline), c.lastHudScale); }
+    if (hud.timeLeftShow) { static TimeStringCache s_timeLeftStringCache = { 0, 0, false, "" }; static TextBitmapCache s_timeLeftCache = { 0, QColor(), "", 0, 0, 0, 1.0f, false, QImage() }; static TextBitmapCache s_timeLeftOutlineCache = { 0, QColor(), "", 0, 0, 0, 1.0f, false, QImage() }; static TextMeasureCache s_timeLeftMeasure = { 0, "", 0, 0, false }; int seconds = static_cast<int>(Read32(ram, rom.timeLeft)) / 60; DrawCachedAlignedText(p, fm, fontPixelSize, tds, s_timeLeftMeasure, s_timeLeftCache, s_timeLeftOutlineCache, UpdateTimeString(s_timeLeftStringCache, seconds, false), hud.timeLeftColor, hud.timeLeftX, hud.timeLeftAlign, hud.timeLeftY, c.timeLeftOpacity, EffOL(c, c.rankTime.outline), c.lastHudScale); }
+    if (hud.timeLimitShow) { static TimeStringCache s_timeLimitStringCache = { 0, 0, false, "" }; static TextBitmapCache s_timeLimitCache = { 0, QColor(), "", 0, 0, 0, 1.0f, false, QImage() }; static TextBitmapCache s_timeLimitOutlineCache = { 0, QColor(), "", 0, 0, 0, 1.0f, false, QImage() }; static TextMeasureCache s_timeLimitMeasure = { 0, "", 0, 0, false }; int goalMinutes = s_battleState.valid ? s_battleState.timeLimitMinutes : LookupTimeLimitMin((Read32(ram, rom.battleSettings + 4) >> 8) & 0xFF); DrawCachedAlignedText(p, fm, fontPixelSize, tds, s_timeLimitMeasure, s_timeLimitCache, s_timeLimitOutlineCache, UpdateTimeString(s_timeLimitStringCache, goalMinutes, true), hud.timeLimitColor, hud.timeLimitX, hud.timeLimitAlign, hud.timeLimitY, c.timeLimitOpacity, EffOL(c, c.rankTime.outline), c.lastHudScale); }
 }
 // =========================================================================
 //  Config key (only for IsEnabled — hot path uses s_cache)
@@ -1547,8 +1595,8 @@ static inline void DrawHP(QPainter* p, uint16_t hp, uint16_t maxHP,
     const QColor hpTextColor = c.hp.hpTextAutoColor ? HpGaugeColor(hp, c.hp.hpTextColor) : c.hp.hpTextColor;
 
     static TextMeasureCache s_hpTextCache = { 0, "", 0, 0, false };
-    static TextBitmapCache s_hpBitmapCache = { 0, QColor(), "", 0, 0, 0, false, QImage() };
-    static TextBitmapCache s_hpOutlineCache = { 0, QColor(), "", 0, 0, 0, false, QImage() };
+    static TextBitmapCache s_hpBitmapCache = { 0, QColor(), "", 0, 0, 0, 1.0f, false, QImage() };
+    static TextBitmapCache s_hpOutlineCache = { 0, QColor(), "", 0, 0, 0, 1.0f, false, QImage() };
     const QFontMetrics& fm = s_frameFm;        // P-9
     const int fontPixelSize = s_frameFpx;       // P-9
 
@@ -1560,8 +1608,8 @@ static inline void DrawHP(QPainter* p, uint16_t hp, uint16_t maxHP,
     PrepareTextBitmapCached(fm, p->font(), fontPixelSize, s_hpBitmapCache, buf, hpTextColor);
     { const HudOutlineConfig& _ol = EffOL(c, c.hp.outline);
     if (_ol.enable && _ol.opacity > 0.0f) {
-        const int expandR = std::max(1, (int)std::ceil((float)_ol.thickness / c.lastHudScale));
-        PrepareOutlineBitmapCached(s_hpOutlineCache, s_hpBitmapCache, _ol.color, expandR);
+        const float renderScale = tds * c.lastHudScale;
+        PrepareOutlineBitmapCached(s_hpOutlineCache, s_hpBitmapCache, _ol.color, _ol.thickness, renderScale);
         DrawCachedTextOutlined(p, s_hpBitmapCache, s_hpOutlineCache, textX, c.hp.hpY, tds,
                                c.hpOpacity, _ol.opacity);
     } else {
@@ -1607,8 +1655,8 @@ static void DrawWeaponAmmo(QPainter* p, melonDS::u8* ram,
                            const CachedHudConfig& c, float tds, float hudScale)
 {
     static TextMeasureCache s_ammoTextCache = { 0, "", 0, 0, false };
-    static TextBitmapCache s_ammoBitmapCache = { 0, QColor(), "", 0, 0, 0, false, QImage() };
-    static TextBitmapCache s_ammoOutlineCache = { 0, QColor(), "", 0, 0, 0, false, QImage() };
+    static TextBitmapCache s_ammoBitmapCache = { 0, QColor(), "", 0, 0, 0, 1.0f, false, QImage() };
+    static TextBitmapCache s_ammoOutlineCache = { 0, QColor(), "", 0, 0, 0, 1.0f, false, QImage() };
     const QFontMetrics& fm = s_frameFm;        // P-9
     const int fontPixelSize = s_frameFpx;       // P-9
 
@@ -1643,8 +1691,8 @@ static void DrawWeaponAmmo(QPainter* p, melonDS::u8* ram,
         PrepareTextBitmapCached(fm, p->font(), fontPixelSize, s_ammoBitmapCache, buf, c.weapon.ammoTextColor);
         { const HudOutlineConfig& _ol = EffOL(c, c.weapon.outline);
         if (_ol.enable && _ol.opacity > 0.0f) {
-            const int expandR = std::max(1, (int)std::ceil((float)_ol.thickness / hudScale));
-            PrepareOutlineBitmapCached(s_ammoOutlineCache, s_ammoBitmapCache, _ol.color, expandR);
+            const float renderScale = tds * hudScale;
+            PrepareOutlineBitmapCached(s_ammoOutlineCache, s_ammoBitmapCache, _ol.color, _ol.thickness, renderScale);
             DrawCachedTextOutlined(p, s_ammoBitmapCache, s_ammoOutlineCache, textX, textY, tds,
                                    c.weaponOpacity, _ol.opacity);
         } else {
