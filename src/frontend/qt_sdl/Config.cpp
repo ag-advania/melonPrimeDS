@@ -305,7 +305,7 @@ namespace Config
         {"Instance*.Metroid.Visual.BtmOverlayRadarColorB",      5},
         /* MelonPrimeDS Bottom Screen Overlay frame color } */
         {"Instance*.Metroid.Visual.BtmOverlayRadarColorUseHunter", true},
-        {"Instance*.Metroid.Visual.BtmOverlayFrameOutlineEnable", true},
+        {"Instance*.Metroid.Visual.BtmOverlayFrameOutline",       true},
         /* MelonPrimeDS Bottom Screen Overlay defaults } */
         /* MelonPrimeDS Custom HUD Crosshair defaults } */
     #endif
@@ -396,6 +396,7 @@ namespace Config
         {"Instance*.Metroid.Visual.HudRankShowOrdinal", true},
         {"Instance*.Metroid.Visual.HudTimeLeftShow",    true},
         {"Instance*.Metroid.Visual.HudTimeLimitShow",   false},
+        {"Instance*.Metroid.Visual.HudGlobalOutline",         false},
         {"Instance*.Metroid.Visual.HudHpOutline",            false},
         {"Instance*.Metroid.Visual.HudHpGaugeOutline",       false},
         {"Instance*.Metroid.Visual.HudWeaponOutline",        false},
@@ -493,6 +494,11 @@ namespace Config
         {"Instance*.Metroid.Visual.HudBombIconOpacity",      1.0},
         /* MelonPrimeDS HUD element opacities } */
         /* MelonPrimeDS HUD per-element outlines { */
+        {"Instance*.Metroid.Visual.HudGlobalOutlineColorR",       0},
+        {"Instance*.Metroid.Visual.HudGlobalOutlineColorG",       0},
+        {"Instance*.Metroid.Visual.HudGlobalOutlineColorB",       0},
+        {"Instance*.Metroid.Visual.HudGlobalOutlineOpacity",      0.75},
+        {"Instance*.Metroid.Visual.HudGlobalOutlineThickness",    1},
         {"Instance*.Metroid.Visual.HudHpOutlineColorR",            0},
         {"Instance*.Metroid.Visual.HudHpOutlineColorG",            0},
         {"Instance*.Metroid.Visual.HudHpOutlineColorB",            0},
@@ -538,6 +544,11 @@ namespace Config
         {"Instance*.Metroid.Visual.BtmOverlayOutlineColorB",       0},
         {"Instance*.Metroid.Visual.BtmOverlayOutlineOpacity",      0.75},
         {"Instance*.Metroid.Visual.BtmOverlayOutlineThickness",    1},
+        {"Instance*.Metroid.Visual.BtmOverlayFrameOutlineColorR",  0},
+        {"Instance*.Metroid.Visual.BtmOverlayFrameOutlineColorG",  0},
+        {"Instance*.Metroid.Visual.BtmOverlayFrameOutlineColorB",  0},
+        {"Instance*.Metroid.Visual.BtmOverlayFrameOutlineOpacity", 0.75},
+        {"Instance*.Metroid.Visual.BtmOverlayFrameOutlineThickness",1},
         /* MelonPrimeDS HUD per-element outlines } */
         /* MelonPrimeDS HUD render scale (N = render at N×DS native res, 0 = no cap) */
         {"Instance*.Metroid.Visual.HudRenderScale", 0},
