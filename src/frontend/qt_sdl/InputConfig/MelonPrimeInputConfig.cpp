@@ -649,11 +649,23 @@ static const HudWidgetProp kSecAmmoGaugeOutline[] = {
     P_FLOAT("Opacity", "Metroid.Visual.HudAmmoGaugeOutlineOpacity"),
     P_INT("Thickness", "Metroid.Visual.HudAmmoGaugeOutlineThickness", 1, 10, 1),
 };
-static const HudWidgetProp kSecRankTimeOutline[] = {
-    P_BOOL("Enable",   "Metroid.Visual.HudRankTimeOutline"),
-    P_CLR("Color",     "Metroid.Visual.HudRankTimeOutlineColorR", "Metroid.Visual.HudRankTimeOutlineColorG", "Metroid.Visual.HudRankTimeOutlineColorB"),
-    P_FLOAT("Opacity", "Metroid.Visual.HudRankTimeOutlineOpacity"),
-    P_INT("Thickness", "Metroid.Visual.HudRankTimeOutlineThickness", 1, 10, 1),
+static const HudWidgetProp kSecRankOutline[] = {
+    P_BOOL("Enable",   "Metroid.Visual.HudRankOutline"),
+    P_CLR("Color",     "Metroid.Visual.HudRankOutlineColorR", "Metroid.Visual.HudRankOutlineColorG", "Metroid.Visual.HudRankOutlineColorB"),
+    P_FLOAT("Opacity", "Metroid.Visual.HudRankOutlineOpacity"),
+    P_INT("Thickness", "Metroid.Visual.HudRankOutlineThickness", 1, 10, 1),
+};
+static const HudWidgetProp kSecTimeLeftOutline[] = {
+    P_BOOL("Enable",   "Metroid.Visual.HudTimeLeftOutline"),
+    P_CLR("Color",     "Metroid.Visual.HudTimeLeftOutlineColorR", "Metroid.Visual.HudTimeLeftOutlineColorG", "Metroid.Visual.HudTimeLeftOutlineColorB"),
+    P_FLOAT("Opacity", "Metroid.Visual.HudTimeLeftOutlineOpacity"),
+    P_INT("Thickness", "Metroid.Visual.HudTimeLeftOutlineThickness", 1, 10, 1),
+};
+static const HudWidgetProp kSecTimeLimitOutline[] = {
+    P_BOOL("Enable",   "Metroid.Visual.HudTimeLimitOutline"),
+    P_CLR("Color",     "Metroid.Visual.HudTimeLimitOutlineColorR", "Metroid.Visual.HudTimeLimitOutlineColorG", "Metroid.Visual.HudTimeLimitOutlineColorB"),
+    P_FLOAT("Opacity", "Metroid.Visual.HudTimeLimitOutlineOpacity"),
+    P_INT("Thickness", "Metroid.Visual.HudTimeLimitOutlineThickness", 1, 10, 1),
 };
 static const HudWidgetProp kSecBombLeftOutline[] = {
     P_BOOL("Enable",   "Metroid.Visual.HudBombLeftOutline"),
@@ -680,6 +692,13 @@ static const HudWidgetProp kSecRadarOutline[] = {
     P_INT("Thickness", "Metroid.Visual.BtmOverlayOutlineThickness", 1, 10, 1),
 };
 
+static const HudWidgetProp kSecWeaponIconOutline[] = {
+    P_BOOL("Enable",   "Metroid.Visual.HudWeaponIconOutline"),
+    P_CLR("Color",     "Metroid.Visual.HudWeaponIconOutlineColorR", "Metroid.Visual.HudWeaponIconOutlineColorG", "Metroid.Visual.HudWeaponIconOutlineColorB"),
+    P_FLOAT("Opacity", "Metroid.Visual.HudWeaponIconOutlineOpacity"),
+    P_INT("Thickness", "Metroid.Visual.HudWeaponIconOutlineThickness", 1, 10, 1),
+};
+
 // ── CROSSHAIR sub-sections ──
 static const HudSubSec kSubsCrosshair[] = {
     SUB("Inner Lines",  "Metroid.UI.SectionHudCrosshairInner",  kSecCrosshairInner),
@@ -693,6 +712,7 @@ static const HudSubSec kSubsHpAmmo[] = {
     SUB("Ammo Number Position",      "Metroid.UI.SectionHudWeaponAmmo",     kSecWeaponAmmo),
     SUB("Weapon Outline",            "Metroid.UI.SectionHudWeaponOutline",   kSecWeaponOutline),
     SUB("Weapon Icon",               "Metroid.UI.SectionHudWpnIcon",        kSecWpnIcon),
+    SUB("Weapon Icon Outline",       "Metroid.UI.SectionHudWeaponIconOutline", kSecWeaponIconOutline),
     SUB("Weapon Icon Color Overlay", "Metroid.UI.SectionHudWpnIconTints", kSecWpnIconTints),
     SUB("HP Gauge",                  "Metroid.UI.SectionHudHpGauge",        kSecHpGauge),
     SUB("HP Gauge Outline",          "Metroid.UI.SectionHudHpGaugeOutline", kSecHpGaugeOutline),
@@ -705,7 +725,9 @@ static const HudSubSec kSubsRankTime[] = {
     SUB("Rank",            "Metroid.UI.SectionHudRank",          kSecRank),
     SUB("Time Left",       "Metroid.UI.SectionHudTimeLeft",       kSecTimeLeft),
     SUB("Time Limit",      "Metroid.UI.SectionHudTimeLimit",      kSecTimeLimit),
-    SUB("Rank/Time Outline","Metroid.UI.SectionHudRankTimeOutline",kSecRankTimeOutline),
+    SUB("Rank Outline",       "Metroid.UI.SectionHudRankOutline",      kSecRankOutline),
+    SUB("Time Left Outline",  "Metroid.UI.SectionHudTimeLeftOutline",  kSecTimeLeftOutline),
+    SUB("Time Limit Outline", "Metroid.UI.SectionHudTimeLimitOutline", kSecTimeLimitOutline),
 };
 
 // ── MATCH STATUS HUD sub-sections ──

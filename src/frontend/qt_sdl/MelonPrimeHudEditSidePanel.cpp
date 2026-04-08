@@ -471,6 +471,7 @@ void MelonPrimeHudEditSidePanel::populateWpnIcon()
     addComboBox(QStringLiteral("Align Y"), "Metroid.Visual.HudWeaponIconAnchorY",
         {QStringLiteral("Top"), QStringLiteral("Center"), QStringLiteral("Bottom")});
     addOpacitySlider(QStringLiteral("Opacity"), "Metroid.Visual.HudWpnIconOpacity");
+    addOutlineGroup("HudWeaponIcon");
     addSeparator();
     // Per-weapon icon tint (enable + color per weapon)
     struct { const char* label; const char* wpn; } kWeapons[9] = {
@@ -556,7 +557,7 @@ void MelonPrimeHudEditSidePanel::populateRank()
     addLineEdit(QStringLiteral("Suffix"), "Metroid.Visual.HudRankSuffix");
     addComboBox(QStringLiteral("Align"), "Metroid.Visual.HudRankAlign",
         {QStringLiteral("Left"), QStringLiteral("Center"), QStringLiteral("Right")});
-    addOutlineGroup("HudRankTime");
+    addOutlineGroup("HudRank");
 }
 
 void MelonPrimeHudEditSidePanel::populateTimeLeft()
@@ -567,6 +568,7 @@ void MelonPrimeHudEditSidePanel::populateTimeLeft()
     addOpacitySlider(QStringLiteral("Opacity"), "Metroid.Visual.HudTimeLeftOpacity");
     addComboBox(QStringLiteral("Align"), "Metroid.Visual.HudTimeLeftAlign",
         {QStringLiteral("Left"), QStringLiteral("Center"), QStringLiteral("Right")});
+    addOutlineGroup("HudTimeLeft");
 }
 
 void MelonPrimeHudEditSidePanel::populateTimeLimit()
@@ -577,6 +579,7 @@ void MelonPrimeHudEditSidePanel::populateTimeLimit()
     addOpacitySlider(QStringLiteral("Opacity"), "Metroid.Visual.HudTimeLimitOpacity");
     addComboBox(QStringLiteral("Align"), "Metroid.Visual.HudTimeLimitAlign",
         {QStringLiteral("Left"), QStringLiteral("Center"), QStringLiteral("Right")});
+    addOutlineGroup("HudTimeLimit");
 }
 
 void MelonPrimeHudEditSidePanel::populateBombLeft()
