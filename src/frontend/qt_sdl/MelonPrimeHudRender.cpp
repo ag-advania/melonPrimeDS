@@ -319,11 +319,14 @@ static void EnsureRadarFrameLoaded(int dstSize, int srcRadius, float hudScale,
 //       Eliminates 196 KB heap alloc+dealloc every frame.
 // =========================================================================
 static QImage s_outlineBuf;
+static QRect  s_prevOutlineDirty;   // previous frame's outline dirty rect (pixel coords)
 
 static QImage& GetOutlineBuffer(int w, int h)
 {
-    if (UNLIKELY(s_outlineBuf.isNull() || s_outlineBuf.width() != w || s_outlineBuf.height() != h))
+    if (UNLIKELY(s_outlineBuf.isNull() || s_outlineBuf.width() != w || s_outlineBuf.height() != h)) {
         s_outlineBuf = QImage(w, h, QImage::Format_ARGB32_Premultiplied);
+        s_prevOutlineDirty = QRect();   // invalidate on resize
+    }
     return s_outlineBuf;
 }
 
@@ -1449,6 +1452,7 @@ void CustomHud_ResetPatchState()
     s_hudPatchApplied = false;
     s_cache.valid = false;
     s_battleState.valid = false;
+    s_prevOutlineDirty = QRect();
 }
 
 // P-3: Called from settings dialog save to trigger config re-read next frame
@@ -1790,12 +1794,19 @@ static void DrawCrosshair(QPainter* p, melonDS::u8* ram,
         QRectF dsDirty(minX - 1.0f, minY - 1.0f, maxX - minX + 2.0f, maxY - minY + 2.0f);
         QRect pixDirty = p->transform().mapRect(dsDirty).toAlignedRect().intersected(olBuf.rect());
 
+        // Union with the previous frame's dirty rect so stale outline pixels from
+        // the old crosshair position are erased when the aim moves.
+        QRect clearRect = pixDirty;
+        if (!s_prevOutlineDirty.isNull())
+            clearRect = clearRect.united(s_prevOutlineDirty);
+        s_prevOutlineDirty = pixDirty;
+
         {
             QPainter olP(&olBuf);
             olP.setRenderHint(QPainter::Antialiasing, false);
-            // Clear dirty region (no transform yet — pixDirty is in pixel coords)
+            // Clear dirty region (no transform yet — clearRect is in pixel coords)
             olP.setCompositionMode(QPainter::CompositionMode_Source);
-            olP.fillRect(pixDirty, Qt::transparent);
+            olP.fillRect(clearRect, Qt::transparent);
             // Draw in DS space by inheriting the same transform as p
             olP.setCompositionMode(QPainter::CompositionMode_SourceOver);
             olP.setTransform(p->transform());
@@ -1867,7 +1878,8 @@ HOT_FUNCTION void CustomHud_Render(
     QPainter* topPaint, QPainter* btmPaint,
     QImage* topBuffer, QImage* btmBuffer,
     bool isInGame,
-    float topStretchX, float hudScale)
+    float topStretchX, float hudScale,
+    float hudOriginXds, float hudOriginYds)
 {
     // Edit mode: draw element overlay every frame, skip normal HUD rendering.
     if (UNLIKELY(s_editMode)) {
@@ -1883,8 +1895,12 @@ HOT_FUNCTION void CustomHud_Render(
             RecomputeAnchorPositions(topStretchX);
         }
         topPaint->scale(hudScale, hudScale);
-        if (topStretchX != 1.0f)
-            topPaint->translate((topStretchX - 1.0f) * 128.0f, 0.0f);
+        {
+            const float tx = (topStretchX - 1.0f) * 128.0f + hudOriginXds;
+            const float ty = hudOriginYds;
+            if (tx != 0.0f || ty != 0.0f)
+                topPaint->translate(tx, ty);
+        }
         if (topPaint->font().pixelSize() != kCustomHudFontSize) {
             QFont f = topPaint->font();
             f.setPixelSize(kCustomHudFontSize);
@@ -1936,14 +1952,18 @@ HOT_FUNCTION void CustomHud_Render(
 
     if (ShouldHideForGameplayState(isStartPressed, currentHP, isGameOver)) return;
 
-    // hudScale = scaleY: DS Y-unit maps to hudScale px. Buffer is scaleX*256 × scaleY*192
-    // (full displayed area). Translate centres the DS canvas in X when topStretchX != 1:
-    //   topStretchX > 1: buffer wider than 256 DS units → centre DS zone (widescreen)
-    //   topStretchX < 1: buffer narrower than 256 DS units → centre DS zone (narrow window)
-    //   topStretchX = 1: exact 4:3, no shift needed
+    // hudScale = scaleY: DS Y-unit maps to hudScale px.
+    // Buffer now covers the full window. Translate has two parts:
+    //   (topStretchX-1)*128 — centres the DS canvas when content is wider/narrower than 4:3
+    //   hudOriginXds        — shifts right by the left black-bar width (DS units), so DS x=0
+    //                          lands at the game-content left edge inside the full-window buffer.
     topPaint->scale(hudScale, hudScale);
-    if (topStretchX != 1.0f)
-        topPaint->translate((topStretchX - 1.0f) * 128.0f, 0.0f);
+    {
+        const float tx = (topStretchX - 1.0f) * 128.0f + hudOriginXds;
+        const float ty = hudOriginYds;
+        if (tx != 0.0f || ty != 0.0f)
+            topPaint->translate(tx, ty);
+    }
 
     // Font locked at kCustomHudFontSize (6px) — optimal for this TTF.
     // Visual text size is controlled by textDrawScale applied at draw time.

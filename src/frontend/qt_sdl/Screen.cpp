@@ -1253,11 +1253,22 @@ void ScreenPanelNative::paintEvent(QPaintEvent * event)
                     const float hudScaleRender = (scaleCap > 0 && hudScale > (float)scaleCap)
                         ? (float)scaleCap : hudScale;
 
-                    const int topOutW = std::max(1, static_cast<int>(std::ceil(hudScaleRender * topStretchX * 256.0f)));
-                    const int topOutH = std::max(1, static_cast<int>(std::ceil(hudScaleRender * 192.0f)));
+                    // Overlay covers the full widget so HUD elements placed in black-bar
+                    // regions (DS x < 0 or > 256 for pillarboxed 4:3) remain visible.
+                    const int fullW = this->width();
+                    const int fullH = this->height();
+                    const float scaleRatio = (hudScale > 0.0f) ? (hudScaleRender / hudScale) : 1.0f;
+                    const int topOutW = std::max(1, static_cast<int>(std::ceil(fullW * scaleRatio)));
+                    const int topOutH = std::max(1, static_cast<int>(std::ceil(fullH * scaleRatio)));
                     if (Overlay[0].width() != topOutW || Overlay[0].height() != topOutH)
                         Overlay[0] = QImage(topOutW, topOutH, QImage::Format_ARGB32_Premultiplied);
                     Overlay[0].fill(Qt::transparent);
+
+                    // hudOriginXds / hudOriginYds: black-bar extents in DS units.
+                    // CustomHud_Render adds these to the painter translate so DS x=0
+                    // lands at the left edge of the game content inside the full buffer.
+                    const float hudOriginXds = m_hudOriginX / hudScale;
+                    const float hudOriginYds = m_hudOriginY / hudScale;
 
                     // Per-frame painter (must end before reading image)
                     {
@@ -1270,19 +1281,16 @@ void ScreenPanelNative::paintEvent(QPaintEvent * event)
                             &topP, nullptr,
                             &Overlay[0], nullptr,
                             mp->IsInGame(),
-                            topStretchX, hudScaleRender);
+                            topStretchX, hudScaleRender,
+                            hudOriginXds, hudOriginYds);
                     } // painter ends here — safe to read image
 
-                    // Composite: stretch overlay to actual display size if scale was capped.
-                    const int dispW = std::max(1, static_cast<int>(std::ceil(hudScale * topStretchX * 256.0f)));
-                    const int dispH = std::max(1, static_cast<int>(std::ceil(hudScale * 192.0f)));
-                    const int ox = static_cast<int>(m_hudOriginX);
-                    const int oy = static_cast<int>(m_hudOriginY);
+                    // Composite: stretch overlay to full widget size if scale was capped.
                     painter.resetTransform();
-                    if (topOutW != dispW || topOutH != dispH)
-                        painter.drawImage(QRect(ox, oy, dispW, dispH), Overlay[0]);
+                    if (topOutW != fullW || topOutH != fullH)
+                        painter.drawImage(QRect(0, 0, fullW, fullH), Overlay[0]);
                     else
-                        painter.drawImage(QPoint(ox, oy), Overlay[0]);
+                        painter.drawImage(QPoint(0, 0), Overlay[0]);
                 }
             }
         }
@@ -1794,11 +1802,22 @@ void ScreenPanelGL::drawScreen()
                 const float hudScaleRender = (scaleCap > 0 && hudScale > (float)scaleCap)
                     ? (float)scaleCap : hudScale;
 
-                const int topOutW = std::max(1, static_cast<int>(std::ceil(hudScaleRender * topStretchX * 256.0f)));
-                const int topOutH = std::max(1, static_cast<int>(std::ceil(hudScaleRender * 192.0f)));
+                // Overlay covers the full logical window so HUD elements placed in black-bar
+                // regions (DS x < 0 or > 256 for pillarboxed 4:3) remain visible.
+                const int fullLogW = static_cast<int>(w / factor);
+                const int fullLogH = static_cast<int>(h / factor);
+                const float scaleRatio = (hudScale > 0.0f) ? (hudScaleRender / hudScale) : 1.0f;
+                const int topOutW = std::max(1, static_cast<int>(std::ceil(fullLogW * scaleRatio)));
+                const int topOutH = std::max(1, static_cast<int>(std::ceil(fullLogH * scaleRatio)));
                 if (Overlay[0].width() != topOutW || Overlay[0].height() != topOutH)
                     Overlay[0] = QImage(topOutW, topOutH, QImage::Format_ARGB32_Premultiplied);
                 Overlay[0].fill(Qt::transparent);
+
+                // hudOriginXds / hudOriginYds: black-bar extents in DS units.
+                // CustomHud_Render adds these to the painter translate so DS x=0
+                // lands at the left edge of the game content inside the full buffer.
+                const float hudOriginXds = m_hudOriginX / hudScale;
+                const float hudOriginYds = m_hudOriginY / hudScale;
 
                 // Per-frame painter (must end before GL upload reads image bits)
                 {
@@ -1811,7 +1830,8 @@ void ScreenPanelGL::drawScreen()
                         &topP, nullptr,
                         &Overlay[0], nullptr,
                         mp->IsInGame(),
-                        topStretchX, hudScaleRender);
+                        topStretchX, hudScaleRender,
+                        hudOriginXds, hudOriginYds);
                 } // painter ends here — safe to read constBits()
 
                 glBindTexture(GL_TEXTURE_2D, overlayTextures[0]);
@@ -1828,7 +1848,8 @@ void ScreenPanelGL::drawScreen()
                 }
 
 
-                // Switch to OSD shader for HUD overlay compositing
+                // Switch to OSD shader for HUD overlay compositing.
+                // Overlay is full-window sized so pos=(0,0), size=(fullLogW, fullLogH).
                 glUseProgram(osdShader);
                 glUniform2f(osdScreenSizeULoc, w, h);
                 glUniform1f(osdScaleFactorULoc, factor);
@@ -1839,19 +1860,14 @@ void ScreenPanelGL::drawScreen()
                 glEnable(GL_BLEND);
                 glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
 
-                // Use cached scale values — no sqrt per-frame.
+                if (fullLogW > 0 && fullLogH > 0)
                 {
-                    const float displayW = m_hudScale * m_topStretchX * 256.0f;
-                    const float displayH = m_hudScale * 192.0f;
-                    if (displayW > 0.0f && displayH > 0.0f)
-                    {
-                        const float texScaleX = (float)topOutW / displayW;
-                        const float texScaleY = (float)topOutH / displayH;
-                        glUniform2i(osdPosULoc, static_cast<int>(m_hudOriginX), static_cast<int>(m_hudOriginY));
-                        glUniform2i(osdSizeULoc, static_cast<int>(displayW), static_cast<int>(displayH));
-                        glUniform2f(osdTexScaleULoc, texScaleX, texScaleY);
-                        glDrawArrays(GL_TRIANGLES, 0, 2 * 3);
-                    }
+                    const float texScaleX = (float)topOutW / (float)fullLogW;
+                    const float texScaleY = (float)topOutH / (float)fullLogH;
+                    glUniform2i(osdPosULoc, 0, 0);
+                    glUniform2i(osdSizeULoc, fullLogW, fullLogH);
+                    glUniform2f(osdTexScaleULoc, texScaleX, texScaleY);
+                    glDrawArrays(GL_TRIANGLES, 0, 2 * 3);
                 }
 
                 glDisable(GL_BLEND);
