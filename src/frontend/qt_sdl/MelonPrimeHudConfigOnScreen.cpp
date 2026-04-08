@@ -447,15 +447,33 @@ static constexpr float kCrosshairPanelY = 28.0f;
 static constexpr int kCrosshairMaxVisible = 16;
 
 // Properties panel layout constants
-static constexpr float kPropRowH    = 8.0f;
+static constexpr float kPropRowH    = 10.0f;
 static constexpr float kPropLabelW  = 52.0f;
 static constexpr float kPropCtrlW   = 30.0f;
 static constexpr float kPropPanelW  = kPropLabelW + kPropCtrlW + 4.0f;
 static constexpr float kAnchorGridCellW = (kPropPanelW - 4.0f) / 3.0f;
-static constexpr float kAnchorGridCellH = 10.0f;
+static constexpr float kAnchorGridCellH = 11.0f;
 static constexpr float kAnchorGridH = kAnchorGridCellH * 3 + 4.0f;
 static int s_editPropScroll = 0;
 static constexpr int kPropMaxVisible = 8;
+
+// UI colors
+static const QColor kPanelBg        (12, 14, 28, 235);
+static const QColor kPanelBorder    (60, 65, 110, 180);
+static const QColor kLabelColor     (170, 175, 210);
+static const QColor kCtrlBg         (25, 28, 50, 200);
+static const QColor kBtnBg          (50, 55, 90, 210);
+static const QColor kBtnOnBg        (35, 130, 65, 220);
+static const QColor kBtnOffBg       (130, 40, 40, 210);
+static const QColor kArrowBg        (50, 55, 90, 210);
+static const QColor kElemSelBg      (50, 140, 220, 140);
+static const QColor kElemHovBg      (50, 120, 180, 90);
+static const QColor kElemNormBg     (50, 100, 160, 55);
+static const QColor kElemHiddenSelBg(100, 100, 100, 120);
+static const QColor kElemHiddenHovBg(100, 100, 100, 80);
+static const QColor kElemHiddenBg   (100, 100, 100, 40);
+static constexpr float kCornerRadius = 1.5f;
+static constexpr float kBtnCorner    = 2.0f;
 
 // Crosshair side panel (Inner/Outer) — positioned to the right of the main panel
 static constexpr float kCrosshairSidePanelX  = kCrosshairPanelX + kPropPanelW + 2.0f;
@@ -624,11 +642,11 @@ static QRectF ComputeEditBounds(int idx, Config::Table& cfg, float topStretchX)
     int fx, fy;
     ApplyAnchor(anchor, ofsX, ofsY, fx, fy, topStretchX);
 
-    float tds = std::max(1.0f, cfg.GetInt("Metroid.Visual.HudTextScale") / 100.0f);
+    const float hs  = (s_editHudScale > 0.0f) ? s_editHudScale : 1.0f;
+    float tds = std::max(1.0f, cfg.GetInt("Metroid.Visual.HudTextScale") / 100.0f) / hs;
 
     // ── HP Gauge (idx=1) / Ammo Gauge (idx=4) ──────────────────────────────
     if (d.lengthKey != nullptr) {
-        const float hs  = (s_editHudScale > 0.0f) ? s_editHudScale : 1.0f;
         const float len = std::max(4.0f, cfg.GetInt(d.lengthKey) / hs);
         const float wid = std::max(1.0f, cfg.GetInt(d.widthKey) / hs);
         const int ori     = (d.orientKey != nullptr) ? cfg.GetInt(d.orientKey) : 0;
@@ -661,7 +679,6 @@ static QRectF ComputeEditBounds(int idx, Config::Table& cfg, float topStretchX)
 
     // ── Weapon icon (idx=3) ─────────────────────────────────────────────────
     if (idx == 3) {
-        const float hs  = (s_editHudScale > 0.0f) ? s_editHudScale : 1.0f;
         const int iconH = std::max(4, cfg.GetInt("Metroid.Visual.HudWeaponIconHeight"));
         const float dh  = static_cast<float>(iconH) / hs;
         // Use cached icon aspect ratio (don't reload); fall back to square
@@ -691,7 +708,6 @@ static QRectF ComputeEditBounds(int idx, Config::Table& cfg, float topStretchX)
 
     // ── Bomb icon (idx=10) ──────────────────────────────────────────────────
     if (idx == 10) {
-        const float hs  = (s_editHudScale > 0.0f) ? s_editHudScale : 1.0f;
         const int iconH = std::max(4, cfg.GetInt("Metroid.Visual.HudBombIconHeight"));
         const float dh  = static_cast<float>(iconH) / hs;
         const QImage& icon = s_bombIcons[3];
@@ -725,7 +741,10 @@ static QRectF ComputeEditBounds(int idx, Config::Table& cfg, float topStretchX)
     }
 
     // ── Text elements ───────────────────────────────────────────────────────
-    return QRectF(fx - 30.0 * tds, fy - 6.0 * tds, 60.0 * tds, 12.0 * tds);
+    // tds is in DS-space (textScalePct/100/hudScale). Enforce min clickable size.
+    const float bw = std::max(14.0f, 60.0f * tds);
+    const float bh = std::max(5.0f, 12.0f * tds);
+    return QRectF(static_cast<float>(fx) - bw * 0.5f, static_cast<float>(fy) - bh * 0.5f, bw, bh);
 }
 
 static int CountBuiltinRows(const HudEditElemDesc& d) {
@@ -837,9 +856,10 @@ static void DrawElemPropsPanel(QPainter* p, Config::Table& cfg,
     if (totalRows <= 0) return;
 
     QRectF panelRect = ComputePropsPanelRect(selRect, totalRows);
-    p->fillRect(panelRect, QColor(15, 15, 35, 230));
-    p->setPen(QPen(QColor(80, 80, 140), 0.4));
-    p->drawRect(panelRect);
+    p->setBrush(kPanelBg);
+    p->setPen(QPen(kPanelBorder, 0.5));
+    p->drawRoundedRect(panelRect, kBtnCorner, kBtnCorner);
+    p->setBrush(Qt::NoBrush);
 
     int visCount = std::min(totalRows, kPropMaxVisible);
     int scrollOfs = std::min(s_editPropScroll, std::max(0, totalRows - kPropMaxVisible));
@@ -869,21 +889,24 @@ static void DrawElemPropsPanel(QPainter* p, Config::Table& cfg,
 
         if (isShowRow) {
             p->setFont(smallFont);
-            p->setPen(QColor(160, 160, 200));
+            p->setPen(kLabelColor);
             p->drawText(QRectF(rowX, rowY, kPropLabelW, kPropRowH),
                          Qt::AlignLeft | Qt::AlignVCenter, QStringLiteral("Show"));
             const bool visible = cfg.GetBool(d.showKey);
-            QRectF btnR(ctrlX, rowY + 1.0f, ctrlW, kPropRowH - 2.0f);
-            p->fillRect(btnR, visible ? QColor(30, 120, 30, 200) : QColor(120, 30, 30, 200));
+            QRectF btnR(ctrlX, rowY + 1.5f, ctrlW, kPropRowH - 3.0f);
+            p->setBrush(visible ? kBtnOnBg : kBtnOffBg);
+            p->setPen(Qt::NoPen);
+            p->drawRoundedRect(btnR, 1.0, 1.0);
+            p->setBrush(Qt::NoBrush);
             p->setPen(Qt::white);
             p->drawText(btnR, Qt::AlignCenter, visible ? QStringLiteral("ON") : QStringLiteral("OFF"));
         } else if (isColorRow) {
             p->setFont(smallFont);
-            p->setPen(QColor(160, 160, 200));
+            p->setPen(kLabelColor);
             p->drawText(QRectF(rowX, rowY, kPropLabelW, kPropRowH),
                          Qt::AlignLeft | Qt::AlignVCenter, QStringLiteral("Color"));
             QColor curColor(cfg.GetInt(d.colorRKey), cfg.GetInt(d.colorGKey), cfg.GetInt(d.colorBKey));
-            QRectF swR(ctrlX, rowY + 1.0f, ctrlW, kPropRowH - 2.0f);
+            QRectF swR(ctrlX, rowY + 1.5f, ctrlW, kPropRowH - 3.0f);
             p->fillRect(swR, curColor);
             p->setPen(QPen(Qt::white, 0.3));
             p->drawRect(swR);
@@ -895,14 +918,17 @@ static void DrawElemPropsPanel(QPainter* p, Config::Table& cfg,
             };
             int anchor = cfg.GetInt(d.anchorKey);
             float halfW = ctrlW / 2.0f;
-            QRectF valR(ctrlX, rowY + 1.0f, halfW - 1.0f, kPropRowH - 2.0f);
-            QRectF btnR(ctrlX + halfW, rowY + 1.0f, halfW, kPropRowH - 2.0f);
+            QRectF valR(ctrlX, rowY + 1.5f, halfW - 1.0f, kPropRowH - 3.0f);
+            QRectF btnR(ctrlX + halfW, rowY + 1.5f, halfW, kPropRowH - 3.0f);
             p->setFont(smallFont);
-            p->setPen(QColor(160, 160, 200));
+            p->setPen(kLabelColor);
             p->drawText(QRectF(rowX, rowY, kPropLabelW, kPropRowH),
                         Qt::AlignLeft | Qt::AlignVCenter, QStringLiteral("Anchor"));
-            p->fillRect(valR, QColor(30, 30, 60, 180));
-            p->fillRect(btnR, s_anchorPickerOpen ? QColor(60, 100, 40, 230) : QColor(60, 60, 100, 200));
+            p->fillRect(valR, kCtrlBg);
+            p->setBrush(s_anchorPickerOpen ? QColor(45, 100, 50, 230) : kBtnBg);
+            p->setPen(Qt::NoPen);
+            p->drawRoundedRect(btnR, 1.0, 1.0);
+            p->setBrush(Qt::NoBrush);
             p->setFont(normalFont);
             p->setPen(Qt::white);
             p->drawText(valR, Qt::AlignCenter,
@@ -915,15 +941,18 @@ static void DrawElemPropsPanel(QPainter* p, Config::Table& cfg,
             const HudEditPropDesc& pr = d.props[propIdx];
 
             p->setFont(smallFont);
-            p->setPen(QColor(160, 160, 200));
+            p->setPen(kLabelColor);
             p->drawText(QRectF(rowX, rowY, kPropLabelW, kPropRowH),
                          Qt::AlignLeft | Qt::AlignVCenter, QString::fromUtf8(pr.label));
 
             switch (pr.type) {
             case EditPropType::Bool: {
                 bool val = cfg.GetBool(pr.cfgKey);
-                QRectF btnR(ctrlX, rowY + 1.0f, ctrlW, kPropRowH - 2.0f);
-                p->fillRect(btnR, val ? QColor(30, 120, 30, 200) : QColor(120, 30, 30, 200));
+                QRectF btnR(ctrlX, rowY + 1.5f, ctrlW, kPropRowH - 3.0f);
+                p->setBrush(val ? kBtnOnBg : kBtnOffBg);
+                p->setPen(Qt::NoPen);
+                p->drawRoundedRect(btnR, 1.0, 1.0);
+                p->setBrush(Qt::NoBrush);
                 p->setPen(Qt::white);
                 p->drawText(btnR, Qt::AlignCenter, val ? QStringLiteral("ON") : QStringLiteral("OFF"));
                 break;
@@ -931,12 +960,12 @@ static void DrawElemPropsPanel(QPainter* p, Config::Table& cfg,
             case EditPropType::Int: {
                 int val = cfg.GetInt(pr.cfgKey);
                 float arrowW = 8.0f;
-                QRectF leftArr(ctrlX, rowY + 1.0f, arrowW, kPropRowH - 2.0f);
-                QRectF rightArr(ctrlX + ctrlW - arrowW, rowY + 1.0f, arrowW, kPropRowH - 2.0f);
-                QRectF valR(ctrlX + arrowW, rowY + 1.0f, ctrlW - 2.0f * arrowW, kPropRowH - 2.0f);
-                p->fillRect(leftArr, QColor(60, 60, 100, 200));
-                p->fillRect(rightArr, QColor(60, 60, 100, 200));
-                p->fillRect(valR, QColor(30, 30, 60, 180));
+                QRectF leftArr(ctrlX, rowY + 1.5f, arrowW, kPropRowH - 3.0f);
+                QRectF rightArr(ctrlX + ctrlW - arrowW, rowY + 1.5f, arrowW, kPropRowH - 3.0f);
+                QRectF valR(ctrlX + arrowW, rowY + 1.5f, ctrlW - 2.0f * arrowW, kPropRowH - 3.0f);
+                p->fillRect(leftArr, kArrowBg);
+                p->fillRect(rightArr, kArrowBg);
+                p->fillRect(valR, kCtrlBg);
                 p->setPen(Qt::white);
                 p->drawText(leftArr, Qt::AlignCenter, QStringLiteral("\u25C0"));
                 p->drawText(rightArr, Qt::AlignCenter, QStringLiteral("\u25B6"));
@@ -946,12 +975,12 @@ static void DrawElemPropsPanel(QPainter* p, Config::Table& cfg,
             case EditPropType::Enum: {
                 int val = cfg.GetInt(pr.cfgKey);
                 float arrowW = 8.0f;
-                QRectF leftArr(ctrlX, rowY + 1.0f, arrowW, kPropRowH - 2.0f);
-                QRectF rightArr(ctrlX + ctrlW - arrowW, rowY + 1.0f, arrowW, kPropRowH - 2.0f);
-                QRectF valR(ctrlX + arrowW, rowY + 1.0f, ctrlW - 2.0f * arrowW, kPropRowH - 2.0f);
-                p->fillRect(leftArr, QColor(60, 60, 100, 200));
-                p->fillRect(rightArr, QColor(60, 60, 100, 200));
-                p->fillRect(valR, QColor(30, 30, 60, 180));
+                QRectF leftArr(ctrlX, rowY + 1.5f, arrowW, kPropRowH - 3.0f);
+                QRectF rightArr(ctrlX + ctrlW - arrowW, rowY + 1.5f, arrowW, kPropRowH - 3.0f);
+                QRectF valR(ctrlX + arrowW, rowY + 1.5f, ctrlW - 2.0f * arrowW, kPropRowH - 3.0f);
+                p->fillRect(leftArr, kArrowBg);
+                p->fillRect(rightArr, kArrowBg);
+                p->fillRect(valR, kCtrlBg);
                 p->setPen(Qt::white);
                 p->drawText(leftArr, Qt::AlignCenter, QStringLiteral("\u25C0"));
                 p->drawText(rightArr, Qt::AlignCenter, QStringLiteral("\u25B6"));
@@ -961,12 +990,12 @@ static void DrawElemPropsPanel(QPainter* p, Config::Table& cfg,
             case EditPropType::Float: {
                 double val = cfg.GetDouble(pr.cfgKey);
                 float arrowW = 8.0f;
-                QRectF leftArr(ctrlX, rowY + 1.0f, arrowW, kPropRowH - 2.0f);
-                QRectF rightArr(ctrlX + ctrlW - arrowW, rowY + 1.0f, arrowW, kPropRowH - 2.0f);
-                QRectF valR(ctrlX + arrowW, rowY + 1.0f, ctrlW - 2.0f * arrowW, kPropRowH - 2.0f);
-                p->fillRect(leftArr, QColor(60, 60, 100, 200));
-                p->fillRect(rightArr, QColor(60, 60, 100, 200));
-                p->fillRect(valR, QColor(30, 30, 60, 180));
+                QRectF leftArr(ctrlX, rowY + 1.5f, arrowW, kPropRowH - 3.0f);
+                QRectF rightArr(ctrlX + ctrlW - arrowW, rowY + 1.5f, arrowW, kPropRowH - 3.0f);
+                QRectF valR(ctrlX + arrowW, rowY + 1.5f, ctrlW - 2.0f * arrowW, kPropRowH - 3.0f);
+                p->fillRect(leftArr, kArrowBg);
+                p->fillRect(rightArr, kArrowBg);
+                p->fillRect(valR, kCtrlBg);
                 p->setPen(Qt::white);
                 p->drawText(leftArr, Qt::AlignCenter, QStringLiteral("\u25C0"));
                 p->drawText(rightArr, Qt::AlignCenter, QStringLiteral("\u25B6"));
@@ -975,9 +1004,9 @@ static void DrawElemPropsPanel(QPainter* p, Config::Table& cfg,
             }
             case EditPropType::String: {
                 std::string val = cfg.GetString(pr.cfgKey);
-                QRectF btnR(ctrlX, rowY + 1.0f, ctrlW, kPropRowH - 2.0f);
-                p->fillRect(btnR, QColor(40, 40, 70, 200));
-                p->setPen(QColor(200, 200, 255));
+                QRectF btnR(ctrlX, rowY + 1.5f, ctrlW, kPropRowH - 3.0f);
+                p->fillRect(btnR, kCtrlBg);
+                p->setPen(QColor(200, 205, 240));
                 QString display = QString::fromStdString(val);
                 if (display.length() > 6) display = display.left(5) + QStringLiteral("\u2026");
                 p->drawText(btnR, Qt::AlignCenter, display.isEmpty() ? QStringLiteral("...") : display);
@@ -986,12 +1015,12 @@ static void DrawElemPropsPanel(QPainter* p, Config::Table& cfg,
             case EditPropType::SubColor: {
                 bool overall = cfg.GetBool(pr.cfgKey);
                 float ovrW = 14.0f;
-                QRectF ovrR(ctrlX, rowY + 1.0f, ovrW, kPropRowH - 2.0f);
+                QRectF ovrR(ctrlX, rowY + 1.5f, ovrW, kPropRowH - 3.0f);
                 p->fillRect(ovrR, overall ? QColor(80, 80, 40, 200) : QColor(40, 40, 60, 200));
                 p->setPen(overall ? QColor(255, 255, 150) : QColor(120, 120, 160));
                 p->drawText(ovrR, Qt::AlignCenter, QStringLiteral("OVR"));
                 QColor clr(cfg.GetInt(pr.extra1), cfg.GetInt(pr.extra2), cfg.GetInt(pr.extra3));
-                QRectF swR(ctrlX + ovrW + 2.0f, rowY + 1.0f, ctrlW - ovrW - 2.0f, kPropRowH - 2.0f);
+                QRectF swR(ctrlX + ovrW + 2.0f, rowY + 1.5f, ctrlW - ovrW - 2.0f, kPropRowH - 3.0f);
                 p->fillRect(swR, overall ? QColor(80, 80, 80) : clr);
                 p->setPen(QPen(Qt::white, 0.3));
                 p->drawRect(swR);
@@ -1009,7 +1038,9 @@ static void DrawElemPropsPanel(QPainter* p, Config::Table& cfg,
         float indY = static_cast<float>(panelRect.top()) + 2.0f +
             (rowAreaH - indH) * scrollOfsI / (totalRows - kPropMaxVisible);
         QRectF indR(panelRect.right() - 2.0f, indY, 1.5f, indH);
-        p->fillRect(indR, QColor(120, 120, 180, 150));
+        p->setPen(Qt::NoPen); p->setBrush(kPanelBorder);
+        p->drawRoundedRect(indR, 0.75f, 0.75f);
+        p->setBrush(Qt::NoBrush);
     }
     // Anchor picker 3×3 grid
     if (s_anchorPickerOpen) {
@@ -1028,10 +1059,13 @@ static void DrawElemPropsPanel(QPainter* p, Config::Table& cfg,
             int col = a % 3, row = a / 3;
             QRectF cell(gridLeft + col * cellW, gridTop + row * cellH, cellW - 1.0f, cellH - 1.0f);
             bool sel = (a == curAnchor);
-            p->fillRect(cell, sel ? QColor(60, 160, 60, 230) : QColor(40, 40, 90, 210));
-            p->setPen(sel ? QPen(Qt::yellow, 0.6) : QPen(QColor(80, 80, 140), 0.3));
-            p->drawRect(cell);
-            p->setPen(sel ? QColor(255, 255, 120) : Qt::white);
+            p->setPen(Qt::NoPen);
+            p->setBrush(sel ? kBtnOnBg : kCtrlBg);
+            p->drawRoundedRect(cell, kCornerRadius, kCornerRadius);
+            p->setBrush(Qt::NoBrush);
+            p->setPen(sel ? QPen(QColor(140, 255, 160), 0.5) : QPen(kPanelBorder, 0.3));
+            p->drawRoundedRect(cell, kCornerRadius, kCornerRadius);
+            p->setPen(sel ? QColor(200, 255, 210) : kLabelColor);
             p->drawText(cell, Qt::AlignCenter, QString::fromUtf8(kAnchorArrowGrid[a]));
         }
     }
@@ -1044,12 +1078,14 @@ static void DrawEditOverlay(QPainter* p, Config::Table& cfg, float topStretchX)
     if (!p) return;
 
     const float leftX = -(topStretchX - 1.0f) * 128.0f;
-    const float tds   = std::max(1.0f, cfg.GetInt("Metroid.Visual.HudTextScale") / 100.0f);
+    const float tdsRaw = std::max(1.0f, cfg.GetInt("Metroid.Visual.HudTextScale") / 100.0f);
+    const float hs     = (s_editHudScale > 0.0f) ? s_editHudScale : 1.0f;
+    const float tds    = tdsRaw / hs;  // DS-space text draw scale
 
     QFont smallFont = p->font();
-    smallFont.setPixelSize(4);
+    smallFont.setPixelSize(5);
     QFont elemFont = p->font();
-    elemFont.setPixelSize(std::max(3, static_cast<int>(4.0f * tds)));
+    elemFont.setPixelSize(std::max(3, static_cast<int>(std::max(4.0f * tds, 3.0f))));
     QFont normalFont = p->font();
     normalFont.setPixelSize(6);
 
@@ -1083,19 +1119,13 @@ static void DrawEditOverlay(QPainter* p, Config::Table& cfg, float topStretchX)
         const HudEditElemDesc& d = kEditElems[i];
 
         const bool hidden = d.showKey && !cfg.GetBool(d.showKey);
-        if (hidden) {
-            p->fillRect(r, sel ? QColor(0x88, 0x88, 0x88, 150)
-                        : hov ? QColor(0x88, 0x88, 0x88, 100)
-                              : QColor(0x88, 0x88, 0x88, 50));
-        } else {
-            p->fillRect(r, sel ? QColor(0x44, 0xAA, 0xFF, 150)
-                        : hov ? QColor(0x44, 0x88, 0xBB, 100)
-                              : QColor(0x44, 0x88, 0xBB, 70));
-        }
+        const QColor& bgc = hidden ? (sel ? kElemHiddenSelBg : hov ? kElemHiddenHovBg : kElemHiddenBg)
+                                   : (sel ? kElemSelBg       : hov ? kElemHovBg       : kElemNormBg);
+        p->setBrush(bgc);
+        p->setPen(sel ? QPen(QColor(255, 255, 255, 220), 0.7)
+                      : QPen(QColor(130, 180, 240, hov ? 180 : 120), 0.4));
+        p->drawRoundedRect(r, kCornerRadius, kCornerRadius);
         p->setBrush(Qt::NoBrush);
-        p->setPen(sel ? QPen(Qt::white, 0.8)
-                      : QPen(QColor(0x88, 0xCC, 0xFF, 180), 0.4));
-        p->drawRect(r);
 
         p->setFont(elemFont);
         const bool isGauge   = (d.lengthKey != nullptr);
@@ -1184,14 +1214,16 @@ static void DrawEditOverlay(QPainter* p, Config::Table& cfg, float topStretchX)
         // Orientation toggle (gauges only)
         if (d.orientKey != nullptr) {
             QRectF orientRect = GetOrientToggleRect(s_editSelected);
-            p->fillRect(orientRect, QColor(80, 50, 120, 210));
-            p->setPen(QPen(QColor(200, 170, 255), 0.7));
-            p->drawRect(orientRect);
+            p->setPen(Qt::NoPen); p->setBrush(kBtnBg);
+            p->drawRoundedRect(orientRect, kBtnCorner, kBtnCorner);
+            p->setBrush(Qt::NoBrush);
+            p->setPen(QPen(kPanelBorder, 0.5));
+            p->drawRoundedRect(orientRect, kBtnCorner, kBtnCorner);
             float lx = static_cast<float>(orientRect.left())  + 1.5f;
             float rx = static_cast<float>(orientRect.right()) - 2.0f;
             float ty = static_cast<float>(orientRect.top())   + 1.5f;
             float by = static_cast<float>(orientRect.bottom())- 2.0f;
-            QPen ap(QColor(220, 190, 255), 0.8f);
+            QPen ap(kLabelColor, 0.8f);
             ap.setCapStyle(Qt::RoundCap);
             p->setPen(ap);
             p->drawLine(QPointF(lx, by), QPointF(rx, by));
@@ -1207,10 +1239,10 @@ static void DrawEditOverlay(QPainter* p, Config::Table& cfg, float topStretchX)
             QRectF lenH, widH;
             GetResizeHandles(s_editSelected, cfg, lenH, widH);
             p->setPen(Qt::NoPen);
-            p->setBrush(QColor(255, 0, 200));
-            p->drawRect(lenH);
+            p->setBrush(QColor(100, 140, 255, 200));
+            p->drawRoundedRect(lenH, 1.0f, 1.0f);
             if (!widH.isEmpty())
-                p->drawRect(widH);
+                p->drawRoundedRect(widH, 1.0f, 1.0f);
             p->setBrush(Qt::NoBrush);
         }
 
@@ -1223,15 +1255,19 @@ static void DrawEditOverlay(QPainter* p, Config::Table& cfg, float topStretchX)
     // ── Button bar (always drawn in both modes) ─────────────────────────────
 
     p->setFont(normalFont);
-    p->fillRect(kEditSaveRect,   QColor(30, 100, 30, 220));
-    p->fillRect(kEditCancelRect, QColor(100, 30, 30, 220));
-    p->fillRect(kEditResetRect,  QColor(30,  30, 100, 220));
-    p->setPen(QPen(QColor(150, 220, 150), 0.4));
-    p->drawRect(kEditSaveRect);
-    p->setPen(QPen(QColor(220, 150, 150), 0.4));
-    p->drawRect(kEditCancelRect);
-    p->setPen(QPen(QColor(150, 150, 220), 0.4));
-    p->drawRect(kEditResetRect);
+    // Save
+    p->setBrush(QColor(30, 110, 50, 230));
+    p->setPen(QPen(QColor(100, 210, 130, 180), 0.5));
+    p->drawRoundedRect(kEditSaveRect, kBtnCorner, kBtnCorner);
+    // Cancel
+    p->setBrush(QColor(120, 35, 35, 230));
+    p->setPen(QPen(QColor(220, 120, 120, 180), 0.5));
+    p->drawRoundedRect(kEditCancelRect, kBtnCorner, kBtnCorner);
+    // Reset
+    p->setBrush(QColor(35, 40, 110, 230));
+    p->setPen(QPen(QColor(130, 140, 220, 180), 0.5));
+    p->drawRoundedRect(kEditResetRect, kBtnCorner, kBtnCorner);
+    p->setBrush(Qt::NoBrush);
     p->setPen(Qt::white);
     p->drawText(kEditSaveRect,   Qt::AlignCenter, QStringLiteral("\u2713 Save"));
     p->drawText(kEditCancelRect, Qt::AlignCenter, QStringLiteral("\u2717 Cancel"));
@@ -1240,9 +1276,10 @@ static void DrawEditOverlay(QPainter* p, Config::Table& cfg, float topStretchX)
     // ── Text Scale slider ───────────────────────────────────────────────────
     {
         int txSc = std::max(kTsMin, std::min(kTsMax, cfg.GetInt("Metroid.Visual.HudTextScale")));
-        p->fillRect(kEditTextScaleRect, QColor(40, 40, 80, 220));
-        p->setPen(QPen(QColor(140, 140, 200), 0.4));
-        p->drawRect(kEditTextScaleRect);
+        p->setBrush(kPanelBg);
+        p->setPen(QPen(kPanelBorder, 0.5));
+        p->drawRoundedRect(kEditTextScaleRect, kBtnCorner, kBtnCorner);
+        p->setBrush(Qt::NoBrush);
         p->setFont(smallFont);
 
         const float tsX = static_cast<float>(kEditTextScaleRect.left()) + 2.0f;
@@ -1250,22 +1287,25 @@ static void DrawEditOverlay(QPainter* p, Config::Table& cfg, float topStretchX)
         const float tsH = static_cast<float>(kEditTextScaleRect.height());
 
         // Label
-        p->setPen(QColor(160, 160, 200));
+        p->setPen(kLabelColor);
         p->drawText(QRectF(tsX, tsY, kTsLabelW, tsH), Qt::AlignLeft | Qt::AlignVCenter,
                     QStringLiteral("Scale"));
 
         // Track
         const QRectF tr = TsTrackRect();
         const float frac = static_cast<float>(txSc - kTsMin) / (kTsMax - kTsMin);
-        p->fillRect(tr, QColor(20, 20, 50, 200));
-        p->fillRect(QRectF(tr.left(), tr.top(), tr.width() * frac, tr.height()),
-                    QColor(60, 90, 180, 220));
+        p->setBrush(QColor(18, 20, 42, 210));
+        p->setPen(Qt::NoPen);
+        p->drawRoundedRect(tr, 1.0, 1.0);
+        p->setBrush(QColor(55, 90, 180, 230));
+        p->drawRoundedRect(QRectF(tr.left(), tr.top(), tr.width() * frac, tr.height()), 1.0, 1.0);
+        p->setBrush(Qt::NoBrush);
         // Thumb
         const float thumbX = tr.left() + tr.width() * frac - 1.0f;
         p->fillRect(QRectF(thumbX, tsY + 0.5f, 2.0f, tsH - 1.0f), QColor(200, 220, 255, 240));
         // Track border
-        p->setPen(QPen(QColor(80, 80, 160), 0.5));
-        p->drawRect(tr);
+        p->setPen(QPen(kPanelBorder, 0.4));
+        p->drawRoundedRect(tr, 1.0, 1.0);
         // Value text
         p->setPen(Qt::white);
         p->setFont(smallFont);
@@ -1274,10 +1314,10 @@ static void DrawEditOverlay(QPainter* p, Config::Table& cfg, float topStretchX)
 
     // ── Crosshair toggle button ─────────────────────────────────────────────
     {
-        p->fillRect(kEditCrosshairBtnRect,
-                    s_crosshairPanelOpen ? QColor(60, 100, 40, 230) : QColor(40, 40, 80, 220));
-        p->setPen(QPen(QColor(140, 200, 140), 0.4));
-        p->drawRect(kEditCrosshairBtnRect);
+        p->setBrush(s_crosshairPanelOpen ? QColor(45, 100, 50, 235) : kPanelBg);
+        p->setPen(QPen(s_crosshairPanelOpen ? QColor(100, 200, 130, 180) : kPanelBorder, 0.5));
+        p->drawRoundedRect(kEditCrosshairBtnRect, kBtnCorner, kBtnCorner);
+        p->setBrush(Qt::NoBrush);
         p->setFont(normalFont);
         p->setPen(Qt::white);
         p->drawText(kEditCrosshairBtnRect, Qt::AlignCenter,
@@ -1287,10 +1327,10 @@ static void DrawEditOverlay(QPainter* p, Config::Table& cfg, float topStretchX)
 
     // ── Preview toggle button ───────────────────────────────────────────────
     {
-        p->fillRect(kEditPreviewBtnRect,
-                    s_editPreviewMode ? QColor(80, 60, 20, 230) : QColor(40, 40, 80, 220));
-        p->setPen(QPen(s_editPreviewMode ? QColor(255, 200, 80) : QColor(140, 140, 200), 0.4));
-        p->drawRect(kEditPreviewBtnRect);
+        p->setBrush(s_editPreviewMode ? QColor(90, 70, 20, 235) : kPanelBg);
+        p->setPen(QPen(s_editPreviewMode ? QColor(255, 200, 80, 180) : kPanelBorder, 0.5));
+        p->drawRoundedRect(kEditPreviewBtnRect, kBtnCorner, kBtnCorner);
+        p->setBrush(Qt::NoBrush);
         p->setFont(normalFont);
         p->setPen(Qt::white);
         p->drawText(kEditPreviewBtnRect, Qt::AlignCenter,
@@ -1308,9 +1348,10 @@ static void DrawEditOverlay(QPainter* p, Config::Table& cfg, float topStretchX)
         const int scrollOfs = std::min(s_crosshairPanelScroll,
                                        std::max(0, totalRows - kCrosshairMaxVisible));
 
-        p->fillRect(panelRect, QColor(20, 20, 40, 230));
-        p->setPen(QPen(QColor(80, 80, 160), 0.5));
-        p->drawRect(panelRect);
+        p->setBrush(kPanelBg);
+        p->setPen(QPen(kPanelBorder, 0.5));
+        p->drawRoundedRect(panelRect, kBtnCorner, kBtnCorner);
+        p->setBrush(Qt::NoBrush);
 
         // Scrollbar indicator (right edge, visible when content overflows)
         if (totalRows > visCount) {
@@ -1340,34 +1381,43 @@ static void DrawEditOverlay(QPainter* p, Config::Table& cfg, float topStretchX)
                 int r = cfg.GetInt("Metroid.Visual.CrosshairColorR");
                 int g = cfg.GetInt("Metroid.Visual.CrosshairColorG");
                 int b = cfg.GetInt("Metroid.Visual.CrosshairColorB");
-                p->setPen(QColor(160, 160, 200));
+                p->setPen(kLabelColor);
                 p->drawText(QRectF(rowX, rowY, kPropLabelW, kPropRowH),
                             Qt::AlignLeft | Qt::AlignVCenter, QStringLiteral("Color"));
-                QRectF swR(ctrlX, rowY + 1.0f, ctrlW, kPropRowH - 2.0f);
+                QRectF swR(ctrlX, rowY + 1.5f, ctrlW, kPropRowH - 3.0f);
                 p->fillRect(swR, QColor(r, g, b));
                 p->setPen(QPen(Qt::white, 0.3));
                 p->drawRect(swR);
             } else if (isInnerHdr) {
-                QRectF hdrR(rowX, rowY, kPropLabelW + ctrlW, kPropRowH);
-                p->fillRect(hdrR, s_innerSectionOpen ? QColor(60, 100, 40, 200) : QColor(50, 50, 100, 200));
+                QRectF hdrR(rowX, rowY + 0.5f, kPropLabelW + ctrlW, kPropRowH - 1.0f);
+                p->setBrush(s_innerSectionOpen ? QColor(45, 100, 50, 210) : kBtnBg);
+                p->setPen(QPen(s_innerSectionOpen ? QColor(100, 200, 130, 180) : kPanelBorder, 0.4));
+                p->drawRoundedRect(hdrR, 1.0, 1.0);
+                p->setBrush(Qt::NoBrush);
                 p->setPen(Qt::white);
                 p->drawText(hdrR, Qt::AlignCenter,
                     s_innerSectionOpen ? QStringLiteral("Inner \u25c4") : QStringLiteral("Inner \u25ba"));
             } else if (isOuterHdr) {
-                QRectF hdrR(rowX, rowY, kPropLabelW + ctrlW, kPropRowH);
-                p->fillRect(hdrR, s_outerSectionOpen ? QColor(60, 100, 40, 200) : QColor(50, 50, 100, 200));
+                QRectF hdrR(rowX, rowY + 0.5f, kPropLabelW + ctrlW, kPropRowH - 1.0f);
+                p->setBrush(s_outerSectionOpen ? QColor(45, 100, 50, 210) : kBtnBg);
+                p->setPen(QPen(s_outerSectionOpen ? QColor(100, 200, 130, 180) : kPanelBorder, 0.4));
+                p->drawRoundedRect(hdrR, 1.0, 1.0);
+                p->setBrush(Qt::NoBrush);
                 p->setPen(Qt::white);
                 p->drawText(hdrR, Qt::AlignCenter,
                     s_outerSectionOpen ? QStringLiteral("Outer \u25c4") : QStringLiteral("Outer \u25ba"));
             } else if (pr) {
-                p->setPen(QColor(160, 160, 200));
+                p->setPen(kLabelColor);
                 p->drawText(QRectF(rowX, rowY, kPropLabelW, kPropRowH),
                             Qt::AlignLeft | Qt::AlignVCenter, QString::fromLatin1(pr->label));
                 switch (pr->type) {
                 case EditPropType::Bool: {
                     bool val = cfg.GetBool(pr->cfgKey);
-                    QRectF swR(ctrlX, rowY + 1.0f, ctrlW, kPropRowH - 2.0f);
-                    p->fillRect(swR, val ? QColor(40, 120, 40, 200) : QColor(80, 30, 30, 200));
+                    QRectF swR(ctrlX, rowY + 1.5f, ctrlW, kPropRowH - 3.0f);
+                    p->setBrush(val ? kBtnOnBg : kBtnOffBg);
+                    p->setPen(Qt::NoPen);
+                    p->drawRoundedRect(swR, 1.0, 1.0);
+                    p->setBrush(Qt::NoBrush);
                     p->setPen(Qt::white);
                     p->drawText(swR, Qt::AlignCenter, val ? QStringLiteral("ON") : QStringLiteral("OFF"));
                     break;
@@ -1375,12 +1425,12 @@ static void DrawEditOverlay(QPainter* p, Config::Table& cfg, float topStretchX)
                 case EditPropType::Int: {
                     int val = cfg.GetInt(pr->cfgKey);
                     float btnW2 = 8.0f;
-                    QRectF decR(ctrlX, rowY + 1.0f, btnW2, kPropRowH - 2.0f);
-                    QRectF valR2(ctrlX + btnW2, rowY + 1.0f, ctrlW - btnW2 * 2, kPropRowH - 2.0f);
-                    QRectF incR(ctrlX + ctrlW - btnW2, rowY + 1.0f, btnW2, kPropRowH - 2.0f);
-                    p->fillRect(decR, QColor(60, 60, 100, 200));
-                    p->fillRect(valR2, QColor(30, 30, 60, 180));
-                    p->fillRect(incR, QColor(60, 60, 100, 200));
+                    QRectF decR(ctrlX, rowY + 1.5f, btnW2, kPropRowH - 3.0f);
+                    QRectF valR2(ctrlX + btnW2, rowY + 1.5f, ctrlW - btnW2 * 2, kPropRowH - 3.0f);
+                    QRectF incR(ctrlX + ctrlW - btnW2, rowY + 1.5f, btnW2, kPropRowH - 3.0f);
+                    p->fillRect(decR, kArrowBg);
+                    p->fillRect(valR2, kCtrlBg);
+                    p->fillRect(incR, kArrowBg);
                     p->setPen(Qt::white);
                     p->drawText(decR, Qt::AlignCenter, QStringLiteral("\u25c0"));
                     p->drawText(valR2, Qt::AlignCenter, QString::number(val));
@@ -1390,12 +1440,12 @@ static void DrawEditOverlay(QPainter* p, Config::Table& cfg, float topStretchX)
                 case EditPropType::Enum: {
                     int val = cfg.GetInt(pr->cfgKey);
                     float btnW2 = 8.0f;
-                    QRectF decR(ctrlX, rowY + 1.0f, btnW2, kPropRowH - 2.0f);
-                    QRectF valR2(ctrlX + btnW2, rowY + 1.0f, ctrlW - btnW2 * 2, kPropRowH - 2.0f);
-                    QRectF incR(ctrlX + ctrlW - btnW2, rowY + 1.0f, btnW2, kPropRowH - 2.0f);
-                    p->fillRect(decR, QColor(60, 60, 100, 200));
-                    p->fillRect(valR2, QColor(30, 30, 60, 180));
-                    p->fillRect(incR, QColor(60, 60, 100, 200));
+                    QRectF decR(ctrlX, rowY + 1.5f, btnW2, kPropRowH - 3.0f);
+                    QRectF valR2(ctrlX + btnW2, rowY + 1.5f, ctrlW - btnW2 * 2, kPropRowH - 3.0f);
+                    QRectF incR(ctrlX + ctrlW - btnW2, rowY + 1.5f, btnW2, kPropRowH - 3.0f);
+                    p->fillRect(decR, kArrowBg);
+                    p->fillRect(valR2, kCtrlBg);
+                    p->fillRect(incR, kArrowBg);
                     p->setPen(Qt::white);
                     p->drawText(decR, Qt::AlignCenter, QStringLiteral("\u25c0"));
                     p->drawText(valR2, Qt::AlignCenter, EditEnumLabel(pr->extra1, val));
@@ -1406,12 +1456,12 @@ static void DrawEditOverlay(QPainter* p, Config::Table& cfg, float topStretchX)
                     double val = cfg.GetDouble(pr->cfgKey);
                     int pct = static_cast<int>(val * 100.0 + 0.5);
                     float btnW2 = 8.0f;
-                    QRectF decR(ctrlX, rowY + 1.0f, btnW2, kPropRowH - 2.0f);
-                    QRectF valR2(ctrlX + btnW2, rowY + 1.0f, ctrlW - btnW2 * 2, kPropRowH - 2.0f);
-                    QRectF incR(ctrlX + ctrlW - btnW2, rowY + 1.0f, btnW2, kPropRowH - 2.0f);
-                    p->fillRect(decR, QColor(60, 60, 100, 200));
-                    p->fillRect(valR2, QColor(30, 30, 60, 180));
-                    p->fillRect(incR, QColor(60, 60, 100, 200));
+                    QRectF decR(ctrlX, rowY + 1.5f, btnW2, kPropRowH - 3.0f);
+                    QRectF valR2(ctrlX + btnW2, rowY + 1.5f, ctrlW - btnW2 * 2, kPropRowH - 3.0f);
+                    QRectF incR(ctrlX + ctrlW - btnW2, rowY + 1.5f, btnW2, kPropRowH - 3.0f);
+                    p->fillRect(decR, kArrowBg);
+                    p->fillRect(valR2, kCtrlBg);
+                    p->fillRect(incR, kArrowBg);
                     p->setPen(Qt::white);
                     p->drawText(decR, Qt::AlignCenter, QStringLiteral("\u25c0"));
                     p->drawText(valR2, Qt::AlignCenter, QString::number(pct) + QStringLiteral("%"));
@@ -1435,9 +1485,10 @@ static void DrawEditOverlay(QPainter* p, Config::Table& cfg, float topStretchX)
             if (sideProps) {
                 const float sidePanelH = sidePropCount * kPropRowH + 4.0f;
                 const QRectF sideRect(kCrosshairSidePanelX, kCrosshairPanelY, kPropPanelW, sidePanelH);
-                p->fillRect(sideRect, QColor(20, 30, 50, 230));
-                p->setPen(QPen(QColor(80, 120, 160), 0.5));
-                p->drawRect(sideRect);
+                p->setBrush(kPanelBg);
+                p->setPen(QPen(kPanelBorder, 0.5));
+                p->drawRoundedRect(sideRect, kBtnCorner, kBtnCorner);
+                p->setBrush(Qt::NoBrush);
 
                 const float sRowX  = kCrosshairSidePanelX + 2.0f;
                 const float sCtrlX = sRowX + kPropLabelW;
@@ -1445,14 +1496,17 @@ static void DrawEditOverlay(QPainter* p, Config::Table& cfg, float topStretchX)
                 for (int i = 0; i < sidePropCount; ++i) {
                     const HudEditPropDesc& pr2 = sideProps[i];
                     const float rowY = kCrosshairPanelY + 2.0f + i * kPropRowH;
-                    p->setPen(QColor(160, 160, 200));
+                    p->setPen(kLabelColor);
                     p->drawText(QRectF(sRowX, rowY, kPropLabelW, kPropRowH),
                                 Qt::AlignLeft | Qt::AlignVCenter, QString::fromLatin1(pr2.label));
                     switch (pr2.type) {
                     case EditPropType::Bool: {
                         bool val = cfg.GetBool(pr2.cfgKey);
-                        QRectF swR(sCtrlX, rowY + 1.0f, kPropCtrlW, kPropRowH - 2.0f);
-                        p->fillRect(swR, val ? QColor(40, 120, 40, 200) : QColor(80, 30, 30, 200));
+                        QRectF swR(sCtrlX, rowY + 1.5f, kPropCtrlW, kPropRowH - 3.0f);
+                        p->setBrush(val ? kBtnOnBg : kBtnOffBg);
+                        p->setPen(Qt::NoPen);
+                        p->drawRoundedRect(swR, 1.0, 1.0);
+                        p->setBrush(Qt::NoBrush);
                         p->setPen(Qt::white);
                         p->drawText(swR, Qt::AlignCenter, val ? QStringLiteral("ON") : QStringLiteral("OFF"));
                         break;
@@ -1460,12 +1514,12 @@ static void DrawEditOverlay(QPainter* p, Config::Table& cfg, float topStretchX)
                     case EditPropType::Int: {
                         int val = cfg.GetInt(pr2.cfgKey);
                         float btnW2 = 8.0f;
-                        QRectF decR(sCtrlX, rowY + 1.0f, btnW2, kPropRowH - 2.0f);
-                        QRectF valR2(sCtrlX + btnW2, rowY + 1.0f, kPropCtrlW - btnW2 * 2, kPropRowH - 2.0f);
-                        QRectF incR(sCtrlX + kPropCtrlW - btnW2, rowY + 1.0f, btnW2, kPropRowH - 2.0f);
-                        p->fillRect(decR, QColor(60, 60, 100, 200));
-                        p->fillRect(valR2, QColor(30, 30, 60, 180));
-                        p->fillRect(incR, QColor(60, 60, 100, 200));
+                        QRectF decR(sCtrlX, rowY + 1.5f, btnW2, kPropRowH - 3.0f);
+                        QRectF valR2(sCtrlX + btnW2, rowY + 1.5f, kPropCtrlW - btnW2 * 2, kPropRowH - 3.0f);
+                        QRectF incR(sCtrlX + kPropCtrlW - btnW2, rowY + 1.5f, btnW2, kPropRowH - 3.0f);
+                        p->fillRect(decR, kArrowBg);
+                        p->fillRect(valR2, kCtrlBg);
+                        p->fillRect(incR, kArrowBg);
                         p->setPen(Qt::white);
                         p->drawText(decR, Qt::AlignCenter, QStringLiteral("\u25c0"));
                         p->drawText(valR2, Qt::AlignCenter, QString::number(val));
@@ -1476,12 +1530,12 @@ static void DrawEditOverlay(QPainter* p, Config::Table& cfg, float topStretchX)
                         double val = cfg.GetDouble(pr2.cfgKey);
                         int pct = static_cast<int>(val * 100.0 + 0.5);
                         float btnW2 = 8.0f;
-                        QRectF decR(sCtrlX, rowY + 1.0f, btnW2, kPropRowH - 2.0f);
-                        QRectF valR2(sCtrlX + btnW2, rowY + 1.0f, kPropCtrlW - btnW2 * 2, kPropRowH - 2.0f);
-                        QRectF incR(sCtrlX + kPropCtrlW - btnW2, rowY + 1.0f, btnW2, kPropRowH - 2.0f);
-                        p->fillRect(decR, QColor(60, 60, 100, 200));
-                        p->fillRect(valR2, QColor(30, 30, 60, 180));
-                        p->fillRect(incR, QColor(60, 60, 100, 200));
+                        QRectF decR(sCtrlX, rowY + 1.5f, btnW2, kPropRowH - 3.0f);
+                        QRectF valR2(sCtrlX + btnW2, rowY + 1.5f, kPropCtrlW - btnW2 * 2, kPropRowH - 3.0f);
+                        QRectF incR(sCtrlX + kPropCtrlW - btnW2, rowY + 1.5f, btnW2, kPropRowH - 3.0f);
+                        p->fillRect(decR, kArrowBg);
+                        p->fillRect(valR2, kCtrlBg);
+                        p->fillRect(incR, kArrowBg);
                         p->setPen(Qt::white);
                         p->drawText(decR, Qt::AlignCenter, QStringLiteral("\u25c0"));
                         p->drawText(valR2, Qt::AlignCenter, QString::number(pct) + QStringLiteral("%"));
@@ -1502,9 +1556,10 @@ static void DrawEditOverlay(QPainter* p, Config::Table& cfg, float topStretchX)
             const int   pvCX = static_cast<int>(pvX + pvS * 0.5f);
             const int   pvCY = static_cast<int>(pvY + pvS * 0.5f);
 
-            p->fillRect(QRectF(pvX, pvY, pvS, pvS), QColor(10, 10, 25, 210));
-            p->setPen(QPen(QColor(80, 80, 120), 0.5));
-            p->drawRect(QRectF(pvX, pvY, pvS, pvS));
+            p->setBrush(QColor(8, 10, 22, 220));
+            p->setPen(QPen(kPanelBorder, 0.5));
+            p->drawRoundedRect(QRectF(pvX, pvY, pvS, pvS), kBtnCorner, kBtnCorner);
+            p->setBrush(Qt::NoBrush);
 
             const int cr  = cfg.GetInt("Metroid.Visual.CrosshairColorR");
             const int cg  = cfg.GetInt("Metroid.Visual.CrosshairColorG");

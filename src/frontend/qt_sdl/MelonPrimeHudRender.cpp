@@ -2259,7 +2259,7 @@ void DrawBottomScreenOverlay(Config::Table& localCfg, QPainter* topPaint, QImage
 //  P-7: HUD Layout Editor — implementation lives in a separate file.
 //  This is a unity-build include: HudConfigScreen shares all statics above.
 // =========================================================================
-#include "MelonPrimeHudConfigScreen.cpp"
+#include "MelonPrimeHudConfigOnScreen.cpp"
 
 } // namespace MelonPrime
 

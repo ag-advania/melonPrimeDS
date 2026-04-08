@@ -1,6 +1,6 @@
 #ifdef MELONPRIME_CUSTOM_HUD
 
-#include "MelonPrimeHudEditSidePanel.h"
+#include "MelonPrimeHudConfigOnScreenEdit.h"
 #include "MelonPrimeHudRender.h"
 #include "EmuInstance.h"
 #include <QColorDialog>
@@ -9,7 +9,7 @@
 
 // ─── Construction ───────────────────────────────────────────────────────────
 
-MelonPrimeHudEditSidePanel::MelonPrimeHudEditSidePanel(QWidget* parent, EmuInstance* emu)
+MelonPrimeHudConfigOnScreenEdit::MelonPrimeHudConfigOnScreenEdit(QWidget* parent, EmuInstance* emu)
     : QWidget(parent), m_emu(emu)
 {
     setWindowFlags(Qt::Widget);
@@ -55,21 +55,21 @@ MelonPrimeHudEditSidePanel::MelonPrimeHudEditSidePanel(QWidget* parent, EmuInsta
 
 // ─── Config access ──────────────────────────────────────────────────────────
 
-Config::Table& MelonPrimeHudEditSidePanel::cfg()
+Config::Table& MelonPrimeHudConfigOnScreenEdit::cfg()
 {
     return m_emu->getLocalConfig();
 }
 
 // ─── Clear ──────────────────────────────────────────────────────────────────
 
-void MelonPrimeHudEditSidePanel::clearForm()
+void MelonPrimeHudConfigOnScreenEdit::clearForm()
 {
     while (m_form->rowCount() > 0)
         m_form->removeRow(0);
     m_rows.clear();
 }
 
-void MelonPrimeHudEditSidePanel::clear()
+void MelonPrimeHudConfigOnScreenEdit::clear()
 {
     clearForm();
     m_currentElem = -1;
@@ -79,7 +79,7 @@ void MelonPrimeHudEditSidePanel::clear()
 
 // ─── Reload values ──────────────────────────────────────────────────────────
 
-void MelonPrimeHudEditSidePanel::reloadValues()
+void MelonPrimeHudConfigOnScreenEdit::reloadValues()
 {
     if (m_currentElem >= 0)
         populateForElement(m_currentElem);
@@ -87,7 +87,7 @@ void MelonPrimeHudEditSidePanel::reloadValues()
 
 // ─── Factory: CheckBox ──────────────────────────────────────────────────────
 
-QCheckBox* MelonPrimeHudEditSidePanel::addCheckBox(const QString& label, const char* key)
+QCheckBox* MelonPrimeHudConfigOnScreenEdit::addCheckBox(const QString& label, const char* key)
 {
     auto* cb = new QCheckBox(this);
     cb->setChecked(cfg().GetBool(key));
@@ -104,7 +104,7 @@ QCheckBox* MelonPrimeHudEditSidePanel::addCheckBox(const QString& label, const c
 
 // ─── Factory: ComboBox ──────────────────────────────────────────────────────
 
-QComboBox* MelonPrimeHudEditSidePanel::addComboBox(const QString& label, const char* key, const QStringList& items)
+QComboBox* MelonPrimeHudConfigOnScreenEdit::addComboBox(const QString& label, const char* key, const QStringList& items)
 {
     auto* cb = new QComboBox(this);
     cb->addItems(items);
@@ -122,7 +122,7 @@ QComboBox* MelonPrimeHudEditSidePanel::addComboBox(const QString& label, const c
 
 // ─── Factory: SpinBox ───────────────────────────────────────────────────────
 
-QSpinBox* MelonPrimeHudEditSidePanel::addSpinBox(const QString& label, const char* key, int min, int max)
+QSpinBox* MelonPrimeHudConfigOnScreenEdit::addSpinBox(const QString& label, const char* key, int min, int max)
 {
     auto* sb = new QSpinBox(this);
     sb->setRange(min, max);
@@ -140,7 +140,7 @@ QSpinBox* MelonPrimeHudEditSidePanel::addSpinBox(const QString& label, const cha
 
 // ─── Factory: DoubleSpinBox ─────────────────────────────────────────────────
 
-QDoubleSpinBox* MelonPrimeHudEditSidePanel::addDoubleSpinBox(const QString& label, const char* key, double min, double max, double step)
+QDoubleSpinBox* MelonPrimeHudConfigOnScreenEdit::addDoubleSpinBox(const QString& label, const char* key, double min, double max, double step)
 {
     auto* sb = new QDoubleSpinBox(this);
     sb->setRange(min, max);
@@ -160,7 +160,7 @@ QDoubleSpinBox* MelonPrimeHudEditSidePanel::addDoubleSpinBox(const QString& labe
 
 // ─── Factory: OpacitySlider ─────────────────────────────────────────────────
 
-QSlider* MelonPrimeHudEditSidePanel::addOpacitySlider(const QString& label, const char* key)
+QSlider* MelonPrimeHudConfigOnScreenEdit::addOpacitySlider(const QString& label, const char* key)
 {
     auto* container = new QWidget(this);
     auto* hlay = new QHBoxLayout(container);
@@ -194,7 +194,7 @@ QSlider* MelonPrimeHudEditSidePanel::addOpacitySlider(const QString& label, cons
 
 // ─── Factory: LineEdit ──────────────────────────────────────────────────────
 
-QLineEdit* MelonPrimeHudEditSidePanel::addLineEdit(const QString& label, const char* key)
+QLineEdit* MelonPrimeHudConfigOnScreenEdit::addLineEdit(const QString& label, const char* key)
 {
     auto* le = new QLineEdit(this);
     le->setText(QString::fromStdString(cfg().GetString(key)));
@@ -218,7 +218,7 @@ static void updateColorButton(QPushButton* btn, int r, int g, int b)
     btn->setText(QColor(r, g, b).name());
 }
 
-QPushButton* MelonPrimeHudEditSidePanel::addColorPicker(const QString& label, const char* keyR, const char* keyG, const char* keyB)
+QPushButton* MelonPrimeHudConfigOnScreenEdit::addColorPicker(const QString& label, const char* keyR, const char* keyG, const char* keyB)
 {
     auto* btn = new QPushButton(this);
     int r = cfg().GetInt(keyR), g = cfg().GetInt(keyG), b = cfg().GetInt(keyB);
@@ -242,7 +242,7 @@ QPushButton* MelonPrimeHudEditSidePanel::addColorPicker(const QString& label, co
 
 // ─── Factory: Sub-Color (with "Overall" toggle) ─────────────────────────────
 
-void MelonPrimeHudEditSidePanel::addSubColor(const QString& label, const char* overallKey,
+void MelonPrimeHudConfigOnScreenEdit::addSubColor(const QString& label, const char* overallKey,
     const char* keyR, const char* keyG, const char* keyB)
 {
     auto* container = new QWidget(this);
@@ -287,7 +287,7 @@ void MelonPrimeHudEditSidePanel::addSubColor(const QString& label, const char* o
     m_rows.append(container);
 }
 
-void MelonPrimeHudEditSidePanel::addColorOverlayRow(
+void MelonPrimeHudConfigOnScreenEdit::addColorOverlayRow(
     const QString& label, const char* enableKey,
     const char* keyR, const char* keyG, const char* keyB)
 {
@@ -332,7 +332,7 @@ void MelonPrimeHudEditSidePanel::addColorOverlayRow(
 
 // ─── Separator ──────────────────────────────────────────────────────────────
 
-void MelonPrimeHudEditSidePanel::addSeparator()
+void MelonPrimeHudConfigOnScreenEdit::addSeparator()
 {
     auto* line = new QFrame(this);
     line->setFrameShape(QFrame::HLine);
@@ -341,7 +341,7 @@ void MelonPrimeHudEditSidePanel::addSeparator()
     m_rows.append(line);
 }
 
-void MelonPrimeHudEditSidePanel::addOutlineGroup(const char* prefix)
+void MelonPrimeHudConfigOnScreenEdit::addOutlineGroup(const char* prefix)
 {
     // prefix e.g. "HudHp" → keys "Metroid.Visual.HudHpOutline", "...OutlineColorR" etc.
     char kE[80], kR[80], kG[80], kB[80], kO[80], kT[80];
@@ -360,7 +360,7 @@ void MelonPrimeHudEditSidePanel::addOutlineGroup(const char* prefix)
 
 // ─── Built-ins: Show / Color / Anchor ───────────────────────────────────────
 
-void MelonPrimeHudEditSidePanel::addBuiltins(const char* showKey,
+void MelonPrimeHudConfigOnScreenEdit::addBuiltins(const char* showKey,
     const char* colorR, const char* colorG, const char* colorB,
     const char* anchorKey)
 {
@@ -385,7 +385,7 @@ static const char* kElementNames[] = {
     "Bomb Left", "Bomb Icon", "Radar"
 };
 
-void MelonPrimeHudEditSidePanel::populateForElement(int idx)
+void MelonPrimeHudConfigOnScreenEdit::populateForElement(int idx)
 {
     m_populating = true;
     clearForm();
@@ -420,7 +420,7 @@ void MelonPrimeHudEditSidePanel::populateForElement(int idx)
 
 // ─── Per-element populate ───────────────────────────────────────────────────
 
-void MelonPrimeHudEditSidePanel::populateHP()
+void MelonPrimeHudConfigOnScreenEdit::populateHP()
 {
     addBuiltins(nullptr,
         "Metroid.Visual.HudHpTextColorR", "Metroid.Visual.HudHpTextColorG", "Metroid.Visual.HudHpTextColorB",
@@ -432,7 +432,7 @@ void MelonPrimeHudEditSidePanel::populateHP()
     addOutlineGroup("HudHp");
 }
 
-void MelonPrimeHudEditSidePanel::populateHPGauge()
+void MelonPrimeHudConfigOnScreenEdit::populateHPGauge()
 {
     addBuiltins("Metroid.Visual.HudHpGauge",
         "Metroid.Visual.HudHpGaugeColorR", "Metroid.Visual.HudHpGaugeColorG", "Metroid.Visual.HudHpGaugeColorB",
@@ -446,7 +446,7 @@ void MelonPrimeHudEditSidePanel::populateHPGauge()
     addOutlineGroup("HudHpGauge");
 }
 
-void MelonPrimeHudEditSidePanel::populateWeaponAmmo()
+void MelonPrimeHudConfigOnScreenEdit::populateWeaponAmmo()
 {
     addBuiltins(nullptr,
         "Metroid.Visual.HudAmmoTextColorR", "Metroid.Visual.HudAmmoTextColorG", "Metroid.Visual.HudAmmoTextColorB",
@@ -457,7 +457,7 @@ void MelonPrimeHudEditSidePanel::populateWeaponAmmo()
     addOutlineGroup("HudWeapon");
 }
 
-void MelonPrimeHudEditSidePanel::populateWpnIcon()
+void MelonPrimeHudConfigOnScreenEdit::populateWpnIcon()
 {
     addBuiltins("Metroid.Visual.HudWeaponIconShow",
         nullptr, nullptr, nullptr,
@@ -495,7 +495,7 @@ void MelonPrimeHudEditSidePanel::populateWpnIcon()
     }
 }
 
-void MelonPrimeHudEditSidePanel::populateAmmoGauge()
+void MelonPrimeHudConfigOnScreenEdit::populateAmmoGauge()
 {
     addBuiltins("Metroid.Visual.HudAmmoGauge",
         "Metroid.Visual.HudAmmoGaugeColorR", "Metroid.Visual.HudAmmoGaugeColorG", "Metroid.Visual.HudAmmoGaugeColorB",
@@ -508,7 +508,7 @@ void MelonPrimeHudEditSidePanel::populateAmmoGauge()
     addOutlineGroup("HudAmmoGauge");
 }
 
-void MelonPrimeHudEditSidePanel::populateMatchStatus()
+void MelonPrimeHudConfigOnScreenEdit::populateMatchStatus()
 {
     addBuiltins("Metroid.Visual.HudMatchStatusShow",
         "Metroid.Visual.HudMatchStatusColorR", "Metroid.Visual.HudMatchStatusColorG", "Metroid.Visual.HudMatchStatusColorB",
@@ -547,7 +547,7 @@ void MelonPrimeHudEditSidePanel::populateMatchStatus()
     addOutlineGroup("HudMatchStatus");
 }
 
-void MelonPrimeHudEditSidePanel::populateRank()
+void MelonPrimeHudConfigOnScreenEdit::populateRank()
 {
     addBuiltins("Metroid.Visual.HudRankShow",
         "Metroid.Visual.HudRankColorR", "Metroid.Visual.HudRankColorG", "Metroid.Visual.HudRankColorB",
@@ -560,7 +560,7 @@ void MelonPrimeHudEditSidePanel::populateRank()
     addOutlineGroup("HudRank");
 }
 
-void MelonPrimeHudEditSidePanel::populateTimeLeft()
+void MelonPrimeHudConfigOnScreenEdit::populateTimeLeft()
 {
     addBuiltins("Metroid.Visual.HudTimeLeftShow",
         "Metroid.Visual.HudTimeLeftColorR", "Metroid.Visual.HudTimeLeftColorG", "Metroid.Visual.HudTimeLeftColorB",
@@ -571,7 +571,7 @@ void MelonPrimeHudEditSidePanel::populateTimeLeft()
     addOutlineGroup("HudTimeLeft");
 }
 
-void MelonPrimeHudEditSidePanel::populateTimeLimit()
+void MelonPrimeHudConfigOnScreenEdit::populateTimeLimit()
 {
     addBuiltins("Metroid.Visual.HudTimeLimitShow",
         "Metroid.Visual.HudTimeLimitColorR", "Metroid.Visual.HudTimeLimitColorG", "Metroid.Visual.HudTimeLimitColorB",
@@ -582,7 +582,7 @@ void MelonPrimeHudEditSidePanel::populateTimeLimit()
     addOutlineGroup("HudTimeLimit");
 }
 
-void MelonPrimeHudEditSidePanel::populateBombLeft()
+void MelonPrimeHudConfigOnScreenEdit::populateBombLeft()
 {
     addBuiltins("Metroid.Visual.HudBombLeftShow",
         "Metroid.Visual.HudBombLeftColorR", "Metroid.Visual.HudBombLeftColorG", "Metroid.Visual.HudBombLeftColorB",
@@ -595,7 +595,7 @@ void MelonPrimeHudEditSidePanel::populateBombLeft()
     addOutlineGroup("HudBombLeft");
 }
 
-void MelonPrimeHudEditSidePanel::populateBombIcon()
+void MelonPrimeHudConfigOnScreenEdit::populateBombIcon()
 {
     addBuiltins("Metroid.Visual.HudBombLeftIconShow",
         "Metroid.Visual.HudBombLeftIconColorR", "Metroid.Visual.HudBombLeftIconColorG", "Metroid.Visual.HudBombLeftIconColorB",
@@ -613,7 +613,7 @@ void MelonPrimeHudEditSidePanel::populateBombIcon()
     addOutlineGroup("HudBombIcon");
 }
 
-void MelonPrimeHudEditSidePanel::populateRadar()
+void MelonPrimeHudConfigOnScreenEdit::populateRadar()
 {
     addBuiltins("Metroid.Visual.BtmOverlayEnable",
         nullptr, nullptr, nullptr,

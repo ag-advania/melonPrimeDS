@@ -52,7 +52,7 @@
 #ifdef MELONPRIME_CUSTOM_HUD
 #include "MelonPrimeConstants.h"
 #include "MelonPrimeHudRender.h"
-#include "MelonPrimeHudEditSidePanel.h"
+#include "MelonPrimeHudConfigOnScreenEdit.h"
 #include "InputConfig/InputConfigDialog.h"
 #include <QFontDatabase>
 #endif
@@ -348,7 +348,7 @@ ScreenPanel::ScreenPanel(QWidget* parent) : QWidget(parent)
             overlayFont.setHintingPreference(QFont::PreferFullHinting);
         }
     }
-    m_hudEditPanel = new MelonPrimeHudEditSidePanel(this, emuInstance);
+    m_hudEditPanel = new MelonPrimeHudConfigOnScreenEdit(this, emuInstance);
     MelonPrime::CustomHud_SetEditSelectionCallback([this](int idx) {
         if (!MelonPrime::CustomHud_IsEditMode() || idx < 0) {
             m_hudEditPanel->clear();
