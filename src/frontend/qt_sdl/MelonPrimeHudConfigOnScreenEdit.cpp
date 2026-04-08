@@ -414,7 +414,8 @@ void MelonPrimeHudConfigOnScreenEdit::populateForElement(int idx)
     case 11: populateRadar(); break;
     }
 
-    show();
+    // NOTE: do not call show() here — the caller (Screen.cpp callback)
+    // positions the widget first, then shows it to avoid a visual flash.
     m_populating = false;
 }
 
