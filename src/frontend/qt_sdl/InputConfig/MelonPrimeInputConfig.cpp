@@ -604,12 +604,19 @@ static const HudWidgetProp kSecRadar[] = {
     P_FLOAT("Opacity", "Metroid.Visual.BtmOverlayOpacity"),
     P_CLR("Radar Color", "Metroid.Visual.BtmOverlayRadarColorR", "Metroid.Visual.BtmOverlayRadarColorG", "Metroid.Visual.BtmOverlayRadarColorB"),
     P_BOOL("Use Hunter Color", "Metroid.Visual.BtmOverlayRadarColorUseHunter"),
-    P_BOOL("Frame Outline", "Metroid.Visual.BtmOverlayFrameOutlineEnable"),
 };
 
 #define _P(arr) arr, static_cast<int>(sizeof(arr)/sizeof(arr[0]))
 #define SUB(title, key, arr)               { title, key, _P(arr), nullptr, 0 }
 #define SUB_NEST(title, key, ch)           { title, key, nullptr, 0, ch, static_cast<int>(sizeof(ch)/sizeof(ch[0])) }
+
+// --- Global outline override (overrides all per-element outlines when enabled) ---
+static const HudWidgetProp kSecGlobalOutline[] = {
+    P_BOOL("Enable (Override All)", "Metroid.Visual.HudGlobalOutline"),
+    P_CLR("Color",     "Metroid.Visual.HudGlobalOutlineColorR", "Metroid.Visual.HudGlobalOutlineColorG", "Metroid.Visual.HudGlobalOutlineColorB"),
+    P_FLOAT("Opacity", "Metroid.Visual.HudGlobalOutlineOpacity"),
+    P_INT("Thickness", "Metroid.Visual.HudGlobalOutlineThickness", 1, 10, 1),
+};
 
 // --- Per-element outline sections ---
 static const HudWidgetProp kSecHpOutline[] = {
@@ -660,6 +667,12 @@ static const HudWidgetProp kSecBombIconOutline[] = {
     P_FLOAT("Opacity", "Metroid.Visual.HudBombIconOutlineOpacity"),
     P_INT("Thickness", "Metroid.Visual.HudBombIconOutlineThickness", 1, 10, 1),
 };
+static const HudWidgetProp kSecRadarFrameOutline[] = {
+    P_BOOL("Enable",   "Metroid.Visual.BtmOverlayFrameOutline"),
+    P_CLR("Color",     "Metroid.Visual.BtmOverlayFrameOutlineColorR", "Metroid.Visual.BtmOverlayFrameOutlineColorG", "Metroid.Visual.BtmOverlayFrameOutlineColorB"),
+    P_FLOAT("Opacity", "Metroid.Visual.BtmOverlayFrameOutlineOpacity"),
+    P_INT("Thickness", "Metroid.Visual.BtmOverlayFrameOutlineThickness", 1, 10, 1),
+};
 static const HudWidgetProp kSecRadarOutline[] = {
     P_BOOL("Enable",   "Metroid.Visual.BtmOverlayOutline"),
     P_CLR("Color",     "Metroid.Visual.BtmOverlayOutlineColorR", "Metroid.Visual.BtmOverlayOutlineColorG", "Metroid.Visual.BtmOverlayOutlineColorB"),
@@ -708,12 +721,15 @@ static const HudSubSec kSubsMatchStatus[] = {
 
 // ── HUD RADAR sub-sections ──
 static const HudSubSec kSubsRadar[] = {
-    SUB("Radar Settings", "Metroid.UI.SectionHudRadarSettings", kSecRadar),
-    SUB("Radar Outline",  "Metroid.UI.SectionHudRadarOutline",  kSecRadarOutline),
+    SUB("Radar Settings",       "Metroid.UI.SectionHudRadarSettings",      kSecRadar),
+    SUB("Radar Outline",        "Metroid.UI.SectionHudRadarOutline",       kSecRadarOutline),
+    SUB("Frame Outline",        "Metroid.UI.SectionHudRadarFrameOutline",  kSecRadarFrameOutline),
 };
 
 // ── Main section groups ──
 static const HudMainSec kHudMainSections[] = {
+    { "OUTLINE OVERRIDE",  "Metroid.UI.SectionHudGlobalOutline",
+      _P(kSecGlobalOutline), nullptr, 0, /*preview*/ 0 },
     { "TEXT SCALE",        "Metroid.UI.SectionHudTextScale",
       _P(kSecTextScale), nullptr, 0, /*preview*/ 0 },
     { "CROSSHAIR",         "Metroid.UI.SectionHudCrosshair",
