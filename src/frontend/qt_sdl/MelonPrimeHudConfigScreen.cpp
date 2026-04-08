@@ -166,7 +166,7 @@ static const HudEditPropDesc kPropsRadar[] = {
 
 // ── Crosshair edit-mode props ────────────────────────────────────────────
 static const HudEditPropDesc kPropsCrosshairMain[] = {
-    {"Scale %",          EditPropType::Int,   "Metroid.Visual.CrosshairScale", 10, 500, 1, nullptr, nullptr, nullptr},
+    {"Scale %",          EditPropType::Int,   "Metroid.Visual.CrosshairScale", 100, 500, 1, nullptr, nullptr, nullptr},
     {"Outline",          EditPropType::Bool,  "Metroid.Visual.CrosshairOutline", 0, 0, 0, nullptr, nullptr, nullptr},
     {"Outline Opacity",  EditPropType::Float, "Metroid.Visual.CrosshairOutlineOpacity", 0, 100, 5, nullptr, nullptr, nullptr},
     {"Outline Thick.",   EditPropType::Int,   "Metroid.Visual.CrosshairOutlineThickness", 1, 10, 1, nullptr, nullptr, nullptr},
@@ -416,7 +416,7 @@ static const QRectF kEditTextScaleRect(10.0f, 15.0f, 74.0f, 10.0f);
 static const QRectF kEditCrosshairBtnRect(88.0f, 15.0f, 74.0f, 10.0f);
 
 // Text Scale slider helpers (depend on kEditTextScaleRect)
-static constexpr int kTsMin = 10, kTsMax = 300;
+static constexpr int kTsMin = 100, kTsMax = 300;
 static constexpr float kTsLabelW = 16.0f;
 
 static inline QRectF TsTrackRect()
@@ -2070,8 +2070,8 @@ void CustomHud_EditMousePress(QPointF pt, Qt::MouseButton btn, Config::Table& cf
 
         // Auto-switch gauge PosMode from text-relative (0) to independent (1)
         if (di.posModeKey != nullptr && cfg.GetInt(di.posModeKey) == 0) {
-            if (UNLIKELY(!s_cache.valid)) {
-                RefreshCachedConfig(cfg, s_editTopStretchX);
+            if (UNLIKELY(!s_cache.valid) || s_cache.lastHudScale != s_editHudScale) {
+                RefreshCachedConfig(cfg, s_editTopStretchX, s_editHudScale);
                 s_cache.valid = true;
             } else if (s_cache.lastStretchX != s_editTopStretchX) {
                 RecomputeAnchorPositions(s_editTopStretchX);

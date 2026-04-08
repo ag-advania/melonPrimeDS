@@ -601,6 +601,12 @@ struct CrosshairHudConfig {
     double chScale; // visual scale multiplier (1.0 = 100%)
     // P-11: Pre-computed arm/dot colors with alpha set (avoids per-frame QColor copy + setAlphaF)
     QColor chInnerColor, chOuterColor, chDotColor;
+    // Cached arm rects in output pixels, centred at (0,0).
+    // DrawCrosshair translates to the rounded pixel position of (cx,cy) each frame.
+    QRect cachedInnerRects[4], cachedOuterRects[4];
+    int   cachedInnerCount, cachedOuterCount;
+    int   cachedDotHalfPx;   // half-size of the centre dot in output pixels
+    int   cachedDotSizePx;   // full size of the centre dot in output pixels
 };
 struct MatchStatusHudConfig {
     bool matchStatusShow;
@@ -793,7 +799,14 @@ static void LoadWeaponConfig(WeaponHudConfig& weapon, Config::Table& cfg)
     weapon.ammoGaugePosOfsY = cfg.GetInt("Metroid.Visual.HudAmmoGaugePosY");
     weapon.ammoGaugeColor = ReadRgbColor(cfg, "Metroid.Visual.HudAmmoGaugeColorR", "Metroid.Visual.HudAmmoGaugeColorG", "Metroid.Visual.HudAmmoGaugeColorB");
 }
-static void LoadCrosshairConfig(CrosshairHudConfig& crosshair, Config::Table& cfg)
+// Forward declaration — full definition follows DrawCrosshair.
+static void CollectArmRects(QRect* out, int& n, int cx, int cy,
+                            int lengthX, int lengthY, int offset,
+                            int thickness, bool tStyle);
+// hudScale: crosshair dimensions are specified in actual output pixels.
+// Arm rects are cached in pixel units (centred at origin) and drawn directly
+// in pixel coordinates, completely bypassing the painter's DS→pixel transform.
+static void LoadCrosshairConfig(CrosshairHudConfig& crosshair, Config::Table& cfg, float hudScale = 1.0f)
 {
     crosshair.chColor = ReadRgbColor(cfg, "Metroid.Visual.CrosshairColorR", "Metroid.Visual.CrosshairColorG", "Metroid.Visual.CrosshairColorB");
     crosshair.chOutline = cfg.GetBool("Metroid.Visual.CrosshairOutline");
@@ -815,8 +828,7 @@ static void LoadCrosshairConfig(CrosshairHudConfig& crosshair, Config::Table& cf
     crosshair.chOuterLengthY = cfg.GetInt("Metroid.Visual.CrosshairOuterLengthY");
     crosshair.chOuterThickness = cfg.GetInt("Metroid.Visual.CrosshairOuterThickness"); if (crosshair.chOuterThickness <= 0) crosshair.chOuterThickness = 1;
     crosshair.chOuterOffset = cfg.GetInt("Metroid.Visual.CrosshairOuterOffset");
-    crosshair.chScale = cfg.GetInt("Metroid.Visual.CrosshairScale") / 100.0;
-    if (crosshair.chScale <= 0.0) crosshair.chScale = 1.0;
+    crosshair.chScale = std::max(100, cfg.GetInt("Metroid.Visual.CrosshairScale")) / 100.0;
     // P-11: Pre-compute arm/dot colors with alpha
     crosshair.chInnerColor = crosshair.chColor;
     crosshair.chInnerColor.setAlphaF(crosshair.chInnerOpacity);
@@ -824,6 +836,32 @@ static void LoadCrosshairConfig(CrosshairHudConfig& crosshair, Config::Table& cf
     crosshair.chOuterColor.setAlphaF(crosshair.chOuterOpacity);
     crosshair.chDotColor = crosshair.chColor;
     crosshair.chDotColor.setAlphaF(crosshair.chDotOpacity);
+
+    // Pre-compute arm rects in actual output pixels, centred at (0,0).
+    // DrawCrosshair maps (cx,cy) to pixel space, rounds to integer, and
+    // adds (pxCx,pxCy) to these rects.  Because both the rects and the
+    // centre are integers, pixel-grid alignment is always identical
+    // regardless of aim position — the crosshair shape never wavers.
+    const double cs = crosshair.chScale;
+    crosshair.cachedInnerCount = 0;
+    crosshair.cachedOuterCount = 0;
+    if (crosshair.chInnerShow)
+        CollectArmRects(crosshair.cachedInnerRects, crosshair.cachedInnerCount, 0, 0,
+                        static_cast<int>(crosshair.chInnerLengthX * cs),
+                        static_cast<int>(crosshair.chInnerLengthY * cs),
+                        static_cast<int>(crosshair.chInnerOffset  * cs),
+                        std::max(1, static_cast<int>(crosshair.chInnerThickness * cs)),
+                        crosshair.chTStyle);
+    if (crosshair.chOuterShow)
+        CollectArmRects(crosshair.cachedOuterRects, crosshair.cachedOuterCount, 0, 0,
+                        static_cast<int>(crosshair.chOuterLengthX * cs),
+                        static_cast<int>(crosshair.chOuterLengthY * cs),
+                        static_cast<int>(crosshair.chOuterOffset  * cs),
+                        std::max(1, static_cast<int>(crosshair.chOuterThickness * cs)),
+                        crosshair.chTStyle);
+    const int dotSz = std::max(1, static_cast<int>(crosshair.chDotThickness * cs));
+    crosshair.cachedDotSizePx = dotSz;
+    crosshair.cachedDotHalfPx = dotSz / 2;
 }
 static void LoadMatchStatusConfig(MatchStatusHudConfig& matchStatus, Config::Table& cfg)
 {
@@ -955,12 +993,12 @@ static void RecomputeAnchorPositions(float topStretchX)
     }
 }
 
-static void RefreshCachedConfig(Config::Table& cfg, float topStretchX = 1.0f)
+static void RefreshCachedConfig(Config::Table& cfg, float topStretchX = 1.0f, float hudScale = 1.0f)
 {
     auto& c = s_cache;
     LoadHpConfig(c.hp, cfg);
     LoadWeaponConfig(c.weapon, cfg);
-    LoadCrosshairConfig(c.crosshair, cfg);
+    LoadCrosshairConfig(c.crosshair, cfg, hudScale);
     LoadMatchStatusConfig(c.matchStatus, cfg);
     LoadBombLeftConfig(c.bombLeft, cfg);
     LoadRankTimeConfig(c.rankTime, cfg);
@@ -987,8 +1025,13 @@ static void RefreshCachedConfig(Config::Table& cfg, float topStretchX = 1.0f)
     loadOL(c.bombLeft.iconOutline,  "HudBombIcon");
     loadOL(c.radar.outline,        "BtmOverlay");
     loadOL(c.radar.frameOutline,   "BtmOverlayFrame");
-    c.textScalePct        = std::max(10, cfg.GetInt("Metroid.Visual.HudTextScale"));
-    c.textDrawScale       = c.textScalePct / 100.0f;
+    c.textScalePct        = std::max(100, cfg.GetInt("Metroid.Visual.HudTextScale"));
+    // Text size is in actual output pixels: 6px font × (textScalePct/100).
+    // Dividing by hudScale converts to DS-space so the painter transform
+    // (×hudScale) restores the exact pixel size.
+    c.textDrawScale       = (hudScale > 0.0f) ? (c.textScalePct / 100.0f) / hudScale
+                                               : c.textScalePct / 100.0f;
+    c.lastHudScale        = hudScale;
     c.hpOpacity           = (float)cfg.GetDouble("Metroid.Visual.HudHpOpacity");
     c.weaponOpacity       = (float)cfg.GetDouble("Metroid.Visual.HudWeaponOpacity");
     c.matchStatusOpacity  = (float)cfg.GetDouble("Metroid.Visual.HudMatchStatusOpacity");
@@ -1788,66 +1831,64 @@ static void CollectArmRectsF(QRectF* out, int& n, float cx, float cy,
     }
 }
 
-// P-8: Reads directly from CachedHudConfig — no ReadCrosshairConfig() copy.
-// hudScale / topStretchX are passed to size the outline buffer at output resolution.
+// P-8: Draws the crosshair entirely in integer pixel coordinates.
+// Cached arm rects (from LoadCrosshairConfig) are in output pixels centred at
+// (0,0).  The DS-space crosshair position (cx,cy) is mapped to pixel space via
+// the painter's current transform, **rounded to integer**, then added to each
+// rect.  Because everything is integer, QPainter never has sub-pixel alignment
+// differences, and the crosshair shape is perfectly stable when the aim moves.
 static void DrawCrosshair(QPainter* p, melonDS::u8* ram,
                           const RomAddresses& rom,
                           const CachedHudConfig& c,
                           float hudScale, float topStretchX)
 {
-    const float cx = static_cast<float>(Read8(ram, rom.crosshairPosX));
-    const float cy = static_cast<float>(Read8(ram, rom.crosshairPosY));
-    const float cs = static_cast<float>(c.crosshair.chScale);
+    const float dsCx = static_cast<float>(Read8(ram, rom.crosshairPosX));
+    const float dsCy = static_cast<float>(Read8(ram, rom.crosshairPosY));
 
-    QRectF innerRects[4], outerRects[4];
-    int nInner = 0, nOuter = 0;
-    if (c.crosshair.chInnerShow)
-        CollectArmRectsF(innerRects, nInner, cx, cy,
-                         c.crosshair.chInnerLengthX  * cs, c.crosshair.chInnerLengthY  * cs,
-                         c.crosshair.chInnerOffset   * cs, c.crosshair.chInnerThickness * cs,
-                         c.crosshair.chTStyle);
-    if (c.crosshair.chOuterShow)
-        CollectArmRectsF(outerRects, nOuter, cx, cy,
-                         c.crosshair.chOuterLengthX  * cs, c.crosshair.chOuterLengthY  * cs,
-                         c.crosshair.chOuterOffset   * cs, c.crosshair.chOuterThickness * cs,
-                         c.crosshair.chTStyle);
+    // Map DS-space centre → output pixel centre (integer).
+    const QTransform& xf = p->transform();
+    const int pxCx = static_cast<int>(std::round(xf.m11() * dsCx + xf.m21() * dsCy + xf.dx()));
+    const int pxCy = static_cast<int>(std::round(xf.m12() * dsCx + xf.m22() * dsCy + xf.dy()));
 
-    // Outline pass: render into a pixel-resolution buffer so the outline is
-    // sharp even at hudScale > 1.  The outline painter inherits p's transform
-    // so DS-space coordinates map directly to output pixels in the buffer.
+    const QRect* innerRects = c.crosshair.cachedInnerRects;
+    const QRect* outerRects = c.crosshair.cachedOuterRects;
+    const int nInner = c.crosshair.cachedInnerCount;
+    const int nOuter = c.crosshair.cachedOuterCount;
+
+    // Save/restore only what we change (transform + opacity).
+    const QTransform savedXform = p->transform();
+    const qreal savedOpacity = p->opacity();
+    p->resetTransform();   // draw in pixel coordinates from here on
+
+    // Outline pass: draw expanded rects into the outline buffer, then composite.
     if (c.crosshair.chOutline && c.crosshair.chOutlineOpacity > 0.0) {
-        // olT is the outline thickness in DS-space units.  After the painter
-        // transform (scale by hudScale) this becomes exactly chOutlineThickness
-        // output pixels.
-        const float olT = static_cast<float>(c.crosshair.chOutlineThickness) / hudScale;
-        const float dotH = c.crosshair.chCenterDot
-                         ? (c.crosshair.chDotThickness * cs + olT * 2.0f) * 0.5f : 0.0f;
+        const int olT = c.crosshair.chOutlineThickness;
+        const int dotHalf = c.crosshair.chCenterDot
+                          ? (c.crosshair.cachedDotSizePx + olT * 2) / 2 : 0;
 
-        // DS-space bounding box
-        float minX = cx - dotH, maxX = cx + dotH;
-        float minY = cy - dotH, maxY = cy + dotH;
-        auto expandBoundsF = [&](const QRectF& r, float pad) {
-            if (r.left()   - pad < minX) minX = r.left()   - pad;
-            if (r.right()  + pad > maxX) maxX = r.right()  + pad;
-            if (r.top()    - pad < minY) minY = r.top()    - pad;
-            if (r.bottom() + pad > maxY) maxY = r.bottom() + pad;
+        // Pixel bounding box (rects centred at origin + pxCx,pxCy)
+        int minX = pxCx - dotHalf, maxX = pxCx + dotHalf;
+        int minY = pxCy - dotHalf, maxY = pxCy + dotHalf;
+        auto expandBounds = [&](const QRect& r, int pad) {
+            int l = r.left()              + pxCx - pad;
+            int ri = r.left() + r.width() + pxCx + pad;
+            int t = r.top()               + pxCy - pad;
+            int b = r.top() + r.height()  + pxCy + pad;
+            if (l < minX) minX = l;
+            if (ri > maxX) maxX = ri;
+            if (t < minY) minY = t;
+            if (b > maxY) maxY = b;
         };
-        for (int i = 0; i < nInner; i++) expandBoundsF(innerRects[i], olT);
-        for (int i = 0; i < nOuter; i++) expandBoundsF(outerRects[i], olT);
+        for (int i = 0; i < nInner; i++) expandBounds(innerRects[i], olT);
+        for (int i = 0; i < nOuter; i++) expandBounds(outerRects[i], olT);
 
-        // Pixel-resolution buffer matching the overlay paint device exactly.
-        // Using p->device() size (instead of a manual formula) ensures the
-        // buffer always covers the full overlay including hudOrigin offset.
         const int bw = p->device()->width();
         const int bh = p->device()->height();
         QImage& olBuf = GetOutlineBuffer(bw, bh);
 
-        // Convert DS dirty rect → pixel rect using the painter's current transform
-        QRectF dsDirty(minX - 1.0f, minY - 1.0f, maxX - minX + 2.0f, maxY - minY + 2.0f);
-        QRect pixDirty = p->transform().mapRect(dsDirty).toAlignedRect().intersected(olBuf.rect());
+        QRect pixDirty(minX - 1, minY - 1, maxX - minX + 2, maxY - minY + 2);
+        pixDirty = pixDirty.intersected(olBuf.rect());
 
-        // Union with the previous frame's dirty rect so stale outline pixels from
-        // the old crosshair position are erased when the aim moves.
         QRect clearRect = pixDirty;
         if (!s_prevOutlineDirty.isNull())
             clearRect = clearRect.united(s_prevOutlineDirty);
@@ -1856,62 +1897,50 @@ static void DrawCrosshair(QPainter* p, melonDS::u8* ram,
         {
             QPainter olP(&olBuf);
             olP.setRenderHint(QPainter::Antialiasing, false);
-            // Clear dirty region in pixel space (identity transform)
             olP.setCompositionMode(QPainter::CompositionMode_Source);
             olP.fillRect(clearRect, Qt::transparent);
-
-            // Draw outline shapes using the SAME transform as the main painter.
-            // This is the key fix: both the outline rects (adjusted by ±olT)
-            // and the arm rects (drawn later by p) go through identical QPainter
-            // rounding.  Because olT = chOutlineThickness / hudScale and the
-            // transform scales by hudScale, the DS-space expansion maps to
-            // exactly chOutlineThickness integer pixels — and since both
-            // expanded and arm rects share the same fractional pixel offset,
-            // QPainter rounds them consistently, guaranteeing the outline
-            // border is uniformly thick on all sides at any resolution.
             olP.setCompositionMode(QPainter::CompositionMode_SourceOver);
-            olP.setTransform(p->transform());
             static const QColor solidBlack(0, 0, 0, 255);
 
             for (int i = 0; i < nInner; i++)
-                olP.fillRect(innerRects[i].adjusted(-olT, -olT, olT, olT), solidBlack);
+                olP.fillRect(innerRects[i].translated(pxCx, pxCy).adjusted(-olT, -olT, olT, olT), solidBlack);
             for (int i = 0; i < nOuter; i++)
-                olP.fillRect(outerRects[i].adjusted(-olT, -olT, olT, olT), solidBlack);
+                olP.fillRect(outerRects[i].translated(pxCx, pxCy).adjusted(-olT, -olT, olT, olT), solidBlack);
 
             if (c.crosshair.chCenterDot) {
-                float halfW = dotH;
-                olP.fillRect(QRectF(cx - halfW, cy - halfW, halfW * 2.0f, halfW * 2.0f), solidBlack);
+                int h = dotHalf;
+                olP.fillRect(QRect(pxCx - h, pxCy - h, h * 2, h * 2), solidBlack);
             }
         }
-        // Composite: reset to pixel coords and blit just the dirty region
-        // OPT-SR1: Manual save/restore — only transform + opacity changed.
-        // Avoids QPainter::save() full-state heap clone (~200-500 cyc).
-        const QTransform savedXform = p->transform();
-        const qreal savedOpacity = p->opacity();
-        p->resetTransform();
         p->setOpacity(c.crosshair.chOutlineOpacity);
         p->drawImage(pixDirty.topLeft(), olBuf, pixDirty);
-        p->setTransform(savedXform);
-        p->setOpacity(savedOpacity);
     }
 
-    // P-11: Inner arms — use pre-computed color with alpha (no per-frame copy + setAlphaF)
+    // Inner arms — chInnerColor already has alpha baked in (P-11)
     if (nInner > 0) {
+        p->setOpacity(1.0);
         for (int i = 0; i < nInner; i++)
-            p->fillRect(innerRects[i], c.crosshair.chInnerColor);
+            p->fillRect(innerRects[i].translated(pxCx, pxCy), c.crosshair.chInnerColor);
     }
 
-    // P-11: Outer arms
+    // Outer arms
     if (nOuter > 0) {
+        p->setOpacity(1.0);
         for (int i = 0; i < nOuter; i++)
-            p->fillRect(outerRects[i], c.crosshair.chOuterColor);
+            p->fillRect(outerRects[i].translated(pxCx, pxCy), c.crosshair.chOuterColor);
     }
 
-    // P-11: Center dot
+    // Center dot
     if (c.crosshair.chCenterDot) {
-        const float dh = c.crosshair.chDotThickness * cs * 0.5f;
-        p->fillRect(QRectF(cx - dh, cy - dh, c.crosshair.chDotThickness * cs, c.crosshair.chDotThickness * cs), c.crosshair.chDotColor);
+        p->setOpacity(1.0);
+        const int dh = c.crosshair.cachedDotHalfPx;
+        const int ds = c.crosshair.cachedDotSizePx;
+        p->fillRect(QRect(pxCx - dh, pxCy - dh, ds, ds), c.crosshair.chDotColor);
     }
+
+    // Restore painter state.
+    p->setTransform(savedXform);
+    p->setOpacity(savedOpacity);
 }
 
 // =========================================================================
@@ -1949,8 +1978,8 @@ HOT_FUNCTION void CustomHud_Render(
         s_editRomCopy       = rom;
         s_editAddrHotCopy   = addrHot;
         s_editPlayerPosCopy = playerPosition;
-        if (UNLIKELY(!s_cache.valid)) {
-            RefreshCachedConfig(localCfg, topStretchX);
+        if (UNLIKELY(!s_cache.valid) || s_cache.lastHudScale != hudScale) {
+            RefreshCachedConfig(localCfg, topStretchX, hudScale);
             s_cache.valid = true;
         } else if (s_cache.lastStretchX != topStretchX) {
             RecomputeAnchorPositions(topStretchX);
@@ -1989,8 +2018,10 @@ HOT_FUNCTION void CustomHud_Render(
 
     // P-3: Refresh config cache only when invalidated, or recompute anchor
     //       positions when topStretchX changes (window resize).
-    if (UNLIKELY(!s_cache.valid)) {
-        RefreshCachedConfig(localCfg, topStretchX);
+    //       Also refresh when hudScale changes — crosshair rects and textDrawScale
+    //       are in actual output pixels divided by hudScale.
+    if (UNLIKELY(!s_cache.valid) || s_cache.lastHudScale != hudScale) {
+        RefreshCachedConfig(localCfg, topStretchX, hudScale);
         s_cache.valid = true;
     } else if (s_cache.lastStretchX != topStretchX) {
         RecomputeAnchorPositions(topStretchX);
@@ -2039,7 +2070,6 @@ HOT_FUNCTION void CustomHud_Render(
         s_frameFpx = kCustomHudFontSize;
     }
     const float textDrawScale = c.textDrawScale;
-    s_cache.lastHudScale = hudScale;
 
     const uint8_t hunterID = Read8(ram, addrHot.chosenHunter);
     bool isAlt   = Read8(ram, addrHot.isAltForm) == 0x02;
