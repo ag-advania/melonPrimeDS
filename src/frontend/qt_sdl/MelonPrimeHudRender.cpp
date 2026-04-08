@@ -1768,7 +1768,9 @@ static void DrawCrosshair(QPainter* p, melonDS::u8* ram,
     // sharp even at hudScale > 1.  The outline painter inherits p's transform
     // so DS-space coordinates map directly to output pixels in the buffer.
     if (c.crosshair.chOutline && c.crosshair.chOutlineOpacity > 0.0) {
-        // Divide by hudScale so thickness=1 means 1 output pixel regardless of resolution.
+        // olT is the outline thickness in DS-space units.  After the painter
+        // transform (scale by hudScale) this becomes exactly chOutlineThickness
+        // output pixels.
         const float olT = static_cast<float>(c.crosshair.chOutlineThickness) / hudScale;
         const float dotH = c.crosshair.chCenterDot
                          ? (c.crosshair.chDotThickness * cs + olT * 2.0f) * 0.5f : 0.0f;
@@ -1785,9 +1787,11 @@ static void DrawCrosshair(QPainter* p, melonDS::u8* ram,
         for (int i = 0; i < nInner; i++) expandBoundsF(innerRects[i], olT);
         for (int i = 0; i < nOuter; i++) expandBoundsF(outerRects[i], olT);
 
-        // Pixel-resolution buffer matching the full overlay
-        const int bw = qMax(1, (int)std::ceil(topStretchX * 256.0f * hudScale));
-        const int bh = qMax(1, (int)std::ceil(192.0f * hudScale));
+        // Pixel-resolution buffer matching the overlay paint device exactly.
+        // Using p->device() size (instead of a manual formula) ensures the
+        // buffer always covers the full overlay including hudOrigin offset.
+        const int bw = p->device()->width();
+        const int bh = p->device()->height();
         QImage& olBuf = GetOutlineBuffer(bw, bh);
 
         // Convert DS dirty rect → pixel rect using the painter's current transform
@@ -1804,10 +1808,19 @@ static void DrawCrosshair(QPainter* p, melonDS::u8* ram,
         {
             QPainter olP(&olBuf);
             olP.setRenderHint(QPainter::Antialiasing, false);
-            // Clear dirty region (no transform yet — clearRect is in pixel coords)
+            // Clear dirty region in pixel space (identity transform)
             olP.setCompositionMode(QPainter::CompositionMode_Source);
             olP.fillRect(clearRect, Qt::transparent);
-            // Draw in DS space by inheriting the same transform as p
+
+            // Draw outline shapes using the SAME transform as the main painter.
+            // This is the key fix: both the outline rects (adjusted by ±olT)
+            // and the arm rects (drawn later by p) go through identical QPainter
+            // rounding.  Because olT = chOutlineThickness / hudScale and the
+            // transform scales by hudScale, the DS-space expansion maps to
+            // exactly chOutlineThickness integer pixels — and since both
+            // expanded and arm rects share the same fractional pixel offset,
+            // QPainter rounds them consistently, guaranteeing the outline
+            // border is uniformly thick on all sides at any resolution.
             olP.setCompositionMode(QPainter::CompositionMode_SourceOver);
             olP.setTransform(p->transform());
             static const QColor solidBlack(0, 0, 0, 255);
