@@ -37,7 +37,7 @@
 #include "duckstation/gl/context.h"
 
 #ifdef MELONPRIME_CUSTOM_HUD
-#include "MelonPrimeHudEditSidePanel.h"
+#include "MelonPrimeHudConfigOnScreenEdit.h"
 #endif // MELONPRIME_CUSTOM_HUD
 
 class MainWindow;
@@ -165,7 +165,7 @@ protected:
 #ifdef MELONPRIME_CUSTOM_HUD
     QImage Overlay[2];       // [0]=Top, [1]=Bottom — ARGB32_Premultiplied, 256x192 (DS-native space)
     QFont overlayFont;
-    MelonPrimeHudEditSidePanel* m_hudEditPanel = nullptr;
+    MelonPrimeHudConfigOnScreenEdit* m_hudEditPanel = nullptr;
     // Layout values cached in setupScreenLayout() — avoids sqrt per-frame.
     float m_hudScale      = 1.0f;
     float m_topStretchX   = 1.0f;

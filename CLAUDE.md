@@ -94,9 +94,9 @@ Implementation details worth knowing:
 |------|----------------|
 | `src/frontend/qt_sdl/MelonPrimeHudRender.h` | public API surface |
 | `src/frontend/qt_sdl/MelonPrimeHudRender.cpp` | runtime HUD rendering, cache management, no-HUD patching, match-state caching |
-| `src/frontend/qt_sdl/MelonPrimeHudConfigScreen.cpp` | in-game HUD layout editor (unity-build included by `MelonPrimeHudRender.cpp`, **not** in CMakeLists) |
-| `src/frontend/qt_sdl/MelonPrimeHudEditSidePanel.cpp` | in-game HUD element properties side panel — `populate*()` functions define per-element settings (unity-build included by `MelonPrimeHudConfigScreen.cpp`) |
-| `src/frontend/qt_sdl/MelonPrimeHudEditSidePanel.h` | side panel class declaration |
+| `src/frontend/qt_sdl/MelonPrimeHudConfigOnScreen.cpp` | in-game HUD layout editor (unity-build included by `MelonPrimeHudRender.cpp`, **not** in CMakeLists) |
+| `src/frontend/qt_sdl/MelonPrimeHudConfigOnScreenEdit.cpp` | in-game HUD element properties side panel — `populate*()` functions define per-element settings (unity-build included by `MelonPrimeHudConfigOnScreen.cpp`) |
+| `src/frontend/qt_sdl/MelonPrimeHudConfigOnScreenEdit.h` | side panel class declaration |
 | `src/frontend/qt_sdl/MelonPrimeConstants.h` | hunter-specific radar source Y positions and related constants |
 | `src/frontend/qt_sdl/Screen.cpp` | calls `CustomHud_Render()` and OpenGL radar overlay path |
 
@@ -247,8 +247,8 @@ When adding or modifying a HUD setting, touch all three:
 | File | Role | Radar example |
 |------|------|---------------|
 | `InputConfig/MelonPrimeInputConfig.cpp` | Classic settings dialog — descriptor arrays (`kSecRadar[]`) | `P_BOOL`/`P_INT`/`P_CLR` entries |
-| `MelonPrimeHudEditSidePanel.cpp` | In-game edit side panel — `populate*()` methods | `populateRadar()` with `addCheckBox`/`addSpinBox`/`addColorPicker` |
-| `MelonPrimeHudConfigScreen.cpp` | In-game HUD config screen — element/property definitions | Element definitions and reset defaults |
+| `MelonPrimeHudConfigOnScreenEdit.cpp` | In-game edit side panel — `populate*()` methods | `populateRadar()` with `addCheckBox`/`addSpinBox`/`addColorPicker` |
+| `MelonPrimeHudConfigOnScreen.cpp` | In-game HUD config screen — element/property definitions | Element definitions and reset defaults |
 
 ### Files
 | File | Purpose |
@@ -346,7 +346,7 @@ Important side effects in `saveConfig()`:
 Note: HUD settings are saved from **both** the settings dialog (`saveConfig()`) and the in-game edit mode (`CustomHud_ExitEditMode(true, cfg)` → `Config::Save()`). Both write the same config keys. When the dialog reopens, `setupCustomHudWidgets()` reads the latest config values, ensuring sync.
 
 ### Reset/default handlers
-Default-reset from the settings dialog is not implemented (no per-section reset buttons). Resetting to defaults happens through the in-game edit mode's Reset button (`ResetEditToDefaults()` in `MelonPrimeHudConfigScreen.cpp`).
+Default-reset from the settings dialog is not implemented (no per-section reset buttons). Resetting to defaults happens through the in-game edit mode's Reset button (`ResetEditToDefaults()` in `MelonPrimeHudConfigOnScreen.cpp`).
 
 ### 9-point anchor widgets
 In the settings dialog, 9-point anchors are QComboBox widgets with 9 items (Top Left through Bottom Right), created programmatically. In the in-game edit mode, anchors use an embedded 3×3 grid picker.
@@ -366,7 +366,7 @@ These replaced the older `hk_tabAddonsMetroid*` naming.
 HUD element positioning, crosshair configuration, and text scaling can also be configured through a visual in-game edit mode overlay (entered via `CustomHud_EnterEditMode()`, triggered by the "Edit HUD Layout" button in the settings dialog). This is the "modern" editor; the settings dialog provides the "classic" form-based editor. Both write the same config keys.
 
 ### Source location
-All edit-mode code lives in `MelonPrimeHudConfigScreen.cpp` (unity-build included by `MelonPrimeHudRender.cpp`), within the `namespace MelonPrime` block.
+All edit-mode code lives in `MelonPrimeHudConfigOnScreen.cpp` (unity-build included by `MelonPrimeHudRender.cpp`), within the `namespace MelonPrime` block.
 
 ### Public API
 ```cpp
@@ -553,7 +553,7 @@ When touching UI or runtime HUD behavior, always check both:
   - `MELONPRIME_DS`
   - `MELONPRIME_CUSTOM_HUD`
 - `MelonPrimeHudRender.cpp` and `InputConfig/MelonPrimeInputConfig.cpp` are explicitly built as part of the frontend
-- `MelonPrimeHudConfigScreen.cpp` is a unity-build include (pulled in by `MelonPrimeHudRender.cpp`); do **not** add it to CMakeLists
+- `MelonPrimeHudConfigOnScreen.cpp` is a unity-build include (pulled in by `MelonPrimeHudRender.cpp`); do **not** add it to CMakeLists
 - The project has been built on Windows and via MinGW cross-compilation from WSL
 - `vcpkg/` is used for dependencies in this repo setup
 
@@ -563,7 +563,7 @@ Current work is on the `highres_fonts_v2` branch. Main changes relative to `mast
 - All `*X`/`*Y` HUD config values are now **offsets from anchor**, not absolute DS-space coordinates
 - `ApplyAnchor()` helper in `MelonPrimeHudRender.cpp` — called once per element in `Load*Config()`, transparent to draw functions
 - **In-game HUD edit mode** — full drag-and-drop editor with properties panels, crosshair panel with side panels, live previews; preview mode supports drag + right-click editing (described in "In-game HUD Edit Mode" section above)
-- Edit mode code split into `MelonPrimeHudConfigScreen.cpp` (unity-build included by `MelonPrimeHudRender.cpp`)
+- Edit mode code split into `MelonPrimeHudConfigOnScreen.cpp` (unity-build included by `MelonPrimeHudRender.cpp`)
 - **Classic settings dialog restored** — Custom HUD tab organized into 5 hierarchical main sections (Crosshair, HP/Ammo, Match Status HUD, HUD Radar, Text Scale) with nested sub-sections. Each main section features a live preview widget on the right (except Text Scale) that refreshes automatically as users modify settings
 - **Programmatic widget architecture** — descriptor-driven (`HudMainSec`/`HudSubSec`/`HudWidgetProp`) widget creation in `setupCustomHudWidgets()`, enabling data-driven save/restore/TOML-export. Preview refresh via `invalidateHudAndRefreshPreviews()` member method
 - Snapshot/restore covers all HUD widgets plus 3 global fields
