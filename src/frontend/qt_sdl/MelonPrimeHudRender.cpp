@@ -67,9 +67,12 @@ static bool   s_bombTintCacheValid = false;
 // Outline icon caches — forward-declared here so EnsureBombIconsLoaded can invalidate
 static QImage s_weaponIconsOutline[9];
 static QImage s_bombIconsOutline[4];
-static QColor s_outlineTintColor;       // invalid QColor = needs regeneration
-static int    s_outlineExpandR     = -1;
-static int    s_outlineBaseIconH   = -1; // s_weaponIconHeight at last outline-gen
+static QColor s_outlineWeaponColor;
+static int    s_outlineWeaponExpandR   = -1;
+static int    s_outlineWeaponBaseIconH = -1;
+static QColor s_outlineBombColor;
+static int    s_outlineBombExpandR     = -1;
+static int    s_outlineBombBaseIconH   = -1;
 
 static const QImage& GetBombIconForDraw(int bombs, bool useOverlay, const QColor& overlayColor)
 {
@@ -106,7 +109,7 @@ static void EnsureBombIconsLoaded(int dsH = 12, float hudScale = 1.0f)
     }
     s_bombTintCacheValid = false;
     s_bombIconHeight = targetH;
-    s_outlineTintColor = QColor(); // invalidate outline cache
+    s_outlineBombColor = QColor(); // invalidate bomb outline cache
 }
 
 static const QImage& GetWeaponIconForDraw(uint8_t weapon, bool useOverlay, const QColor& overlayColor)
@@ -146,7 +149,7 @@ static void EnsureIconsLoaded(int dsH = 16, float hudScale = 1.0f)
         s_weaponTintValid[i] = false;
     }
     s_weaponIconHeight = targetH;
-    s_outlineTintColor = QColor(); // invalidate outline cache
+    s_outlineWeaponColor = QColor(); // invalidate weapon outline cache
 }
 
 // ── P-12: Separable max-filter dilation ──────────────────────────────────────
@@ -212,20 +215,28 @@ static QImage DilateAndTintIconForOutline(const QImage& src, const QColor& col, 
     return dst;
 }
 
-// Regenerates dilated outline icon caches when color, expandR, or icon size changes.
-// expandR == thickness in output pixels (icon image pixels == output pixels).
-static void EnsureOutlineIconsUpdated(const QColor& outlineColor, int expandR)
+// Per-element dilated outline caches (weapon icons and bomb icons use separate colors).
+static void EnsureWeaponOutlineIconsUpdated(const QColor& color, int expandR)
 {
-    if (s_outlineTintColor == outlineColor &&
-        s_outlineExpandR   == expandR      &&
-        s_outlineBaseIconH == s_weaponIconHeight) return;
-    s_outlineTintColor   = outlineColor;
-    s_outlineExpandR     = expandR;
-    s_outlineBaseIconH   = s_weaponIconHeight;
+    if (s_outlineWeaponColor   == color   &&
+        s_outlineWeaponExpandR == expandR &&
+        s_outlineWeaponBaseIconH == s_weaponIconHeight) return;
+    s_outlineWeaponColor     = color;
+    s_outlineWeaponExpandR   = expandR;
+    s_outlineWeaponBaseIconH = s_weaponIconHeight;
     for (int i = 0; i < 9; ++i)
-        s_weaponIconsOutline[i] = DilateAndTintIconForOutline(s_weaponIcons[i], outlineColor, expandR);
+        s_weaponIconsOutline[i] = DilateAndTintIconForOutline(s_weaponIcons[i], color, expandR);
+}
+static void EnsureBombOutlineIconsUpdated(const QColor& color, int expandR)
+{
+    if (s_outlineBombColor   == color   &&
+        s_outlineBombExpandR == expandR &&
+        s_outlineBombBaseIconH == s_bombIconHeight) return;
+    s_outlineBombColor     = color;
+    s_outlineBombExpandR   = expandR;
+    s_outlineBombBaseIconH = s_bombIconHeight;
     for (int i = 0; i < 4; ++i)
-        s_bombIconsOutline[i] = DilateAndTintIconForOutline(s_bombIcons[i], outlineColor, expandR);
+        s_bombIconsOutline[i] = DilateAndTintIconForOutline(s_bombIcons[i], color, expandR);
 }
 
 // =========================================================================
@@ -484,6 +495,13 @@ static inline void DrawImageOutlined(QPainter* p,
 //  P-3: Cached HUD config — refreshed only when config generation changes.
 //       Avoids ~50 hash-map lookups per frame → single generation compare.
 // =========================================================================
+struct HudOutlineConfig {
+    bool   enable;
+    QColor color;
+    QColor colorWithAlpha; // P-14: pre-computed color with opacity baked in
+    float  opacity;
+    int    thickness;
+};
 struct HpHudConfig {
     int hpX, hpY, hpAlign;          // final (computed from anchor + offset + stretch)
     int hpAnchor, hpOfsX, hpOfsY;   // raw config values
@@ -495,6 +513,8 @@ struct HpHudConfig {
     int hpGaugePosMode, hpGaugePosX, hpGaugePosY;  // final
     int hpGaugePosAnchor, hpGaugePosOfsX, hpGaugePosOfsY;  // raw
     QColor hpGaugeColor;
+    HudOutlineConfig outline;
+    HudOutlineConfig gaugeOutline;
 };
 struct WeaponHudConfig {
     int wpnX, wpnY, ammoAlign;           // final
@@ -513,6 +533,8 @@ struct WeaponHudConfig {
     int ammoGaugePosMode, ammoGaugePosX, ammoGaugePosY;     // final
     int ammoGaugePosAnchor, ammoGaugePosOfsX, ammoGaugePosOfsY;  // raw
     QColor ammoGaugeColor;
+    HudOutlineConfig outline;
+    HudOutlineConfig gaugeOutline;
 };
 struct CrosshairHudConfig {
     QColor chColor;
@@ -538,6 +560,7 @@ struct MatchStatusHudConfig {
     char matchStatusLabelPoints[64], matchStatusLabelOctoliths[64], matchStatusLabelLives[64];
     char matchStatusLabelRingTime[64], matchStatusLabelPrimeTime[64];
     QColor matchStatusColor, matchStatusLabelColor, matchStatusValueColor, matchStatusSepColor, matchStatusGoalColor;
+    HudOutlineConfig outline;
 };
 struct BombLeftHudConfig {
     bool bombLeftShow, bombLeftTextShow;
@@ -552,6 +575,8 @@ struct BombLeftHudConfig {
     int bombIconMode, bombIconOfsX, bombIconOfsY, bombIconPosX, bombIconPosY;  // iconPosX/Y = final
     int bombIconPosAnchor, bombIconPosOfsX, bombIconPosOfsY;                    // raw
     int bombIconAnchorX, bombIconAnchorY;
+    HudOutlineConfig outline;
+    HudOutlineConfig iconOutline;
 };
 struct RankTimeHudConfig {
     bool rankShow;
@@ -569,13 +594,7 @@ struct RankTimeHudConfig {
     int timeLimitX, timeLimitY, timeLimitAlign;         // final
     int timeLimitAnchor, timeLimitOfsX, timeLimitOfsY;  // raw
     QColor timeLimitColor;
-};
-struct HudOutlineConfig {
-    bool   enable;
-    QColor color;
-    QColor colorWithAlpha; // P-14: pre-computed color with opacity baked in
-    float  opacity;
-    int    thickness;
+    HudOutlineConfig outline;
 };
 struct RadarOverlayConfig {
     bool radarShow;
@@ -591,6 +610,7 @@ struct RadarOverlayConfig {
     // P-15: Pre-computed radar frame geometry (avoids redundant per-draw calculations)
     QRectF frameDstRect;
     float expandDS;   // outline thickness in DS-space
+    HudOutlineConfig outline;
 };
 struct CachedHudConfig {
     HpHudConfig hp;
@@ -600,7 +620,6 @@ struct CachedHudConfig {
     BombLeftHudConfig bombLeft;
     RankTimeHudConfig rankTime;
     RadarOverlayConfig radar;
-    HudOutlineConfig outline;
     int textScalePct; // text visual scale in percent (100 = 1×, bitmap always rendered at 6px)
     float textDrawScale; // P-14: pre-computed textScalePct / 100.0f
     float lastStretchX; // topStretchX used for last anchor position computation
@@ -895,13 +914,26 @@ static void RefreshCachedConfig(Config::Table& cfg, float topStretchX = 1.0f)
     LoadBombLeftConfig(c.bombLeft, cfg);
     LoadRankTimeConfig(c.rankTime, cfg);
     LoadRadarOverlayConfig(c.radar, cfg);
-    c.outline.enable    = cfg.GetBool("Metroid.Visual.HudOutline");
-    c.outline.color     = ReadRgbColor(cfg, "Metroid.Visual.HudOutlineColorR", "Metroid.Visual.HudOutlineColorG", "Metroid.Visual.HudOutlineColorB");
-    c.outline.opacity   = (float)std::clamp(cfg.GetDouble("Metroid.Visual.HudOutlineOpacity"), 0.0, 1.0);
-    c.outline.thickness = std::max(1, cfg.GetInt("Metroid.Visual.HudOutlineThickness"));
-    // P-14: Pre-compute outline color with alpha baked in — avoids per-draw setAlphaF/copy
-    c.outline.colorWithAlpha = c.outline.color;
-    c.outline.colorWithAlpha.setAlphaF(c.outline.opacity);
+    // Per-element outlines
+    auto loadOL = [&](HudOutlineConfig& ol, const char* pfx) {
+        char k[80];
+        auto key = [&](const char* s) { std::snprintf(k, sizeof(k), "Metroid.Visual.%s%s", pfx, s); return k; };
+        ol.enable    = cfg.GetBool(key("Outline"));
+        ol.color     = ReadRgbColor(cfg, key("OutlineColorR"), key("OutlineColorG"), key("OutlineColorB"));
+        ol.opacity   = (float)std::clamp(cfg.GetDouble(key("OutlineOpacity")), 0.0, 1.0);
+        ol.thickness = std::max(1, cfg.GetInt(key("OutlineThickness")));
+        ol.colorWithAlpha = ol.color;
+        ol.colorWithAlpha.setAlphaF(ol.opacity);
+    };
+    loadOL(c.hp.outline,           "HudHp");
+    loadOL(c.hp.gaugeOutline,      "HudHpGauge");
+    loadOL(c.weapon.outline,       "HudWeapon");
+    loadOL(c.weapon.gaugeOutline,  "HudAmmoGauge");
+    loadOL(c.matchStatus.outline,  "HudMatchStatus");
+    loadOL(c.rankTime.outline,     "HudRankTime");
+    loadOL(c.bombLeft.outline,      "HudBombLeft");
+    loadOL(c.bombLeft.iconOutline,  "HudBombIcon");
+    loadOL(c.radar.outline,        "BtmOverlay");
     c.textScalePct        = std::max(10, cfg.GetInt("Metroid.Visual.HudTextScale"));
     c.textDrawScale       = c.textScalePct / 100.0f;
     c.hpOpacity           = (float)cfg.GetDouble("Metroid.Visual.HudHpOpacity");
@@ -1196,7 +1228,7 @@ static void DrawMatchStatusText(QPainter* p, const QFontMetrics& fm, int fontPix
 }
 static void DrawMatchStatusHud(QPainter* p, melonDS::u8* ram, const RomAddresses& rom, uint8_t playerPos, bool isAdventure, const CachedHudConfig& c)
 {
-    if (!c.matchStatus.matchStatusShow || isAdventure) return; MatchStatusResolvedState state = {}; if (!ComputeMatchStatusState(ram, rom, playerPos, state)) return; const QFontMetrics& fm = s_frameFm; const int fontPixelSize = s_frameFpx; /* P-9 */ DrawMatchStatusText(p, fm, fontPixelSize, c.textDrawScale, state, c.matchStatus, c.matchStatusOpacity, c.outline, c.lastHudScale);
+    if (!c.matchStatus.matchStatusShow || isAdventure) return; MatchStatusResolvedState state = {}; if (!ComputeMatchStatusState(ram, rom, playerPos, state)) return; const QFontMetrics& fm = s_frameFm; const int fontPixelSize = s_frameFpx; /* P-9 */ DrawMatchStatusText(p, fm, fontPixelSize, c.textDrawScale, state, c.matchStatus, c.matchStatusOpacity, c.matchStatus.outline, c.lastHudScale);
 }
 static int CalcAlignedTextX(int anchorX, int align, int textW);
 static void DrawCachedAlignedText(QPainter* p, const QFontMetrics& fm, int fontPixelSize, float tds,
@@ -1241,11 +1273,11 @@ static void DrawBombLeft(QPainter* p, melonDS::u8* ram, const RomAddresses& rom,
             MeasureTextCached(fm, fontPixelSize, s_bombMeasureCache, buf, bombTextW, bombTextH, tds);
             PrepareTextBitmapCached(fm, p->font(), fontPixelSize, s_bombBitmapCache, buf, c.bombLeft.bombLeftColor);
             const int bombTextX = CalcAlignedTextX(c.bombLeft.bombLeftX, c.bombLeft.bombLeftAlign, bombTextW);
-            if (c.outline.enable && c.outline.opacity > 0.0f) {
-                const int expandR = std::max(1, (int)std::ceil((float)c.outline.thickness / hudScale));
-                PrepareOutlineBitmapCached(s_bombOutlineCache, s_bombBitmapCache, c.outline.color, expandR);
+            if (c.bombLeft.outline.enable && c.bombLeft.outline.opacity > 0.0f) {
+                const int expandR = std::max(1, (int)std::ceil((float)c.bombLeft.outline.thickness / hudScale));
+                PrepareOutlineBitmapCached(s_bombOutlineCache, s_bombBitmapCache, c.bombLeft.outline.color, expandR);
                 DrawCachedTextOutlined(p, s_bombBitmapCache, s_bombOutlineCache, bombTextX, c.bombLeft.bombLeftY, tds,
-                                       c.bombLeftOpacity, c.outline.opacity);
+                                       c.bombLeftOpacity, c.bombLeft.outline.opacity);
             } else {
                 if (c.bombLeftOpacity < 1.0f) p->setOpacity(c.bombLeftOpacity);
                 DrawCachedText(p, s_bombBitmapCache, bombTextX, c.bombLeft.bombLeftY, tds);
@@ -1263,13 +1295,13 @@ static void DrawBombLeft(QPainter* p, melonDS::u8* ram, const RomAddresses& rom,
             const int iconAlignX = c.bombLeft.bombIconAnchorX; const int iconAlignY = c.bombLeft.bombIconAnchorY;
             if (iconAlignX == 1) ix -= dw * 0.5f; else if (iconAlignX == 2) ix -= dw;
             if (iconAlignY == 1) iy -= dh * 0.5f; else if (iconAlignY == 2) iy -= dh;
-            if (c.outline.enable && c.outline.opacity > 0.0f) {
-                const int expandR = std::max(1, c.outline.thickness);
-                EnsureOutlineIconsUpdated(c.outline.color, expandR);
+            if (c.bombLeft.iconOutline.enable && c.bombLeft.iconOutline.opacity > 0.0f) {
+                const int expandR = std::max(1, c.bombLeft.iconOutline.thickness);
+                EnsureBombOutlineIconsUpdated(c.bombLeft.iconOutline.color, expandR);
                 const int bombIdx = (bombs >= 0 && bombs <= 3) ? bombs : 0;
                 DrawImageOutlined(p, icon, s_bombIconsOutline[bombIdx],
                                   QRectF(ix, iy, dw, dh), (float)expandR / hudScale,
-                                  c.bombIconOpacity, c.outline.opacity);
+                                  c.bombIconOpacity, c.bombLeft.iconOutline.opacity);
             } else {
                 if (c.bombIconOpacity < 1.0f) p->setOpacity(c.bombIconOpacity);
                 p->drawImage(QRectF(ix, iy, dw, dh), icon);
@@ -1283,9 +1315,9 @@ static void DrawBombLeft(QPainter* p, melonDS::u8* ram, const RomAddresses& rom,
 static void DrawRankAndTime(QPainter* p, melonDS::u8* ram, const RomAddresses& rom, uint8_t playerPos, bool isAdventure, const CachedHudConfig& c, float tds)
 {
     if (isAdventure) return; const auto& hud = c.rankTime; const QFontMetrics& fm = s_frameFm; const int fontPixelSize = s_frameFpx; // P-9
-    if (hud.rankShow) { static RankStringCache s_rankStringCache = { 0, 0, false, false, "" }; static TextBitmapCache s_rankCache = { 0, QColor(), "", 0, 0, 0, false, QImage() }; static TextBitmapCache s_rankOutlineCache = { 0, QColor(), "", 0, 0, 0, false, QImage() }; static TextMeasureCache s_rankMeasure = { 0, "", 0, 0, false }; uint32_t rankWord = Read32(ram, rom.matchRank); uint8_t rankByte = (rankWord >> (playerPos * 8)) & 0xFF; if (rankByte <= 3) DrawCachedAlignedText(p, fm, fontPixelSize, tds, s_rankMeasure, s_rankCache, s_rankOutlineCache, UpdateRankString(s_rankStringCache, rankByte, hud.rankShowOrdinal, hud), hud.rankColor, hud.rankX, hud.rankAlign, hud.rankY, c.rankOpacity, c.outline, c.lastHudScale); }
-    if (hud.timeLeftShow) { static TimeStringCache s_timeLeftStringCache = { 0, 0, false, "" }; static TextBitmapCache s_timeLeftCache = { 0, QColor(), "", 0, 0, 0, false, QImage() }; static TextBitmapCache s_timeLeftOutlineCache = { 0, QColor(), "", 0, 0, 0, false, QImage() }; static TextMeasureCache s_timeLeftMeasure = { 0, "", 0, 0, false }; int seconds = static_cast<int>(Read32(ram, rom.timeLeft)) / 60; DrawCachedAlignedText(p, fm, fontPixelSize, tds, s_timeLeftMeasure, s_timeLeftCache, s_timeLeftOutlineCache, UpdateTimeString(s_timeLeftStringCache, seconds, false), hud.timeLeftColor, hud.timeLeftX, hud.timeLeftAlign, hud.timeLeftY, c.timeLeftOpacity, c.outline, c.lastHudScale); }
-    if (hud.timeLimitShow) { static TimeStringCache s_timeLimitStringCache = { 0, 0, false, "" }; static TextBitmapCache s_timeLimitCache = { 0, QColor(), "", 0, 0, 0, false, QImage() }; static TextBitmapCache s_timeLimitOutlineCache = { 0, QColor(), "", 0, 0, 0, false, QImage() }; static TextMeasureCache s_timeLimitMeasure = { 0, "", 0, 0, false }; int goalMinutes = s_battleState.valid ? s_battleState.timeLimitMinutes : LookupTimeLimitMin((Read32(ram, rom.battleSettings + 4) >> 8) & 0xFF); DrawCachedAlignedText(p, fm, fontPixelSize, tds, s_timeLimitMeasure, s_timeLimitCache, s_timeLimitOutlineCache, UpdateTimeString(s_timeLimitStringCache, goalMinutes, true), hud.timeLimitColor, hud.timeLimitX, hud.timeLimitAlign, hud.timeLimitY, c.timeLimitOpacity, c.outline, c.lastHudScale); }
+    if (hud.rankShow) { static RankStringCache s_rankStringCache = { 0, 0, false, false, "" }; static TextBitmapCache s_rankCache = { 0, QColor(), "", 0, 0, 0, false, QImage() }; static TextBitmapCache s_rankOutlineCache = { 0, QColor(), "", 0, 0, 0, false, QImage() }; static TextMeasureCache s_rankMeasure = { 0, "", 0, 0, false }; uint32_t rankWord = Read32(ram, rom.matchRank); uint8_t rankByte = (rankWord >> (playerPos * 8)) & 0xFF; if (rankByte <= 3) DrawCachedAlignedText(p, fm, fontPixelSize, tds, s_rankMeasure, s_rankCache, s_rankOutlineCache, UpdateRankString(s_rankStringCache, rankByte, hud.rankShowOrdinal, hud), hud.rankColor, hud.rankX, hud.rankAlign, hud.rankY, c.rankOpacity, c.rankTime.outline, c.lastHudScale); }
+    if (hud.timeLeftShow) { static TimeStringCache s_timeLeftStringCache = { 0, 0, false, "" }; static TextBitmapCache s_timeLeftCache = { 0, QColor(), "", 0, 0, 0, false, QImage() }; static TextBitmapCache s_timeLeftOutlineCache = { 0, QColor(), "", 0, 0, 0, false, QImage() }; static TextMeasureCache s_timeLeftMeasure = { 0, "", 0, 0, false }; int seconds = static_cast<int>(Read32(ram, rom.timeLeft)) / 60; DrawCachedAlignedText(p, fm, fontPixelSize, tds, s_timeLeftMeasure, s_timeLeftCache, s_timeLeftOutlineCache, UpdateTimeString(s_timeLeftStringCache, seconds, false), hud.timeLeftColor, hud.timeLeftX, hud.timeLeftAlign, hud.timeLeftY, c.timeLeftOpacity, c.rankTime.outline, c.lastHudScale); }
+    if (hud.timeLimitShow) { static TimeStringCache s_timeLimitStringCache = { 0, 0, false, "" }; static TextBitmapCache s_timeLimitCache = { 0, QColor(), "", 0, 0, 0, false, QImage() }; static TextBitmapCache s_timeLimitOutlineCache = { 0, QColor(), "", 0, 0, 0, false, QImage() }; static TextMeasureCache s_timeLimitMeasure = { 0, "", 0, 0, false }; int goalMinutes = s_battleState.valid ? s_battleState.timeLimitMinutes : LookupTimeLimitMin((Read32(ram, rom.battleSettings + 4) >> 8) & 0xFF); DrawCachedAlignedText(p, fm, fontPixelSize, tds, s_timeLimitMeasure, s_timeLimitCache, s_timeLimitOutlineCache, UpdateTimeString(s_timeLimitStringCache, goalMinutes, true), hud.timeLimitColor, hud.timeLimitX, hud.timeLimitAlign, hud.timeLimitY, c.timeLimitOpacity, c.rankTime.outline, c.lastHudScale); }
 }
 // =========================================================================
 //  Config key (only for IsEnabled — hot path uses s_cache)
@@ -1514,11 +1546,11 @@ static inline void DrawHP(QPainter* p, uint16_t hp, uint16_t maxHP,
     MeasureTextCached(fm, fontPixelSize, s_hpTextCache, buf, textW, textH, tds);
     const int textX = CalcAlignedTextX(c.hp.hpX, c.hp.hpAlign, textW);
     PrepareTextBitmapCached(fm, p->font(), fontPixelSize, s_hpBitmapCache, buf, hpTextColor);
-    if (c.outline.enable && c.outline.opacity > 0.0f) {
-        const int expandR = std::max(1, (int)std::ceil((float)c.outline.thickness / c.lastHudScale));
-        PrepareOutlineBitmapCached(s_hpOutlineCache, s_hpBitmapCache, c.outline.color, expandR);
+    if (c.hp.outline.enable && c.hp.outline.opacity > 0.0f) {
+        const int expandR = std::max(1, (int)std::ceil((float)c.hp.outline.thickness / c.lastHudScale));
+        PrepareOutlineBitmapCached(s_hpOutlineCache, s_hpBitmapCache, c.hp.outline.color, expandR);
         DrawCachedTextOutlined(p, s_hpBitmapCache, s_hpOutlineCache, textX, c.hp.hpY, tds,
-                               c.hpOpacity, c.outline.opacity);
+                               c.hpOpacity, c.hp.outline.opacity);
     } else {
         if (c.hpOpacity < 1.0f) p->setOpacity(c.hpOpacity);
         DrawCachedText(p, s_hpBitmapCache, textX, c.hp.hpY, tds);
@@ -1538,7 +1570,7 @@ static inline void DrawHP(QPainter* p, uint16_t hp, uint16_t maxHP,
         }
         if (c.hpGaugeOpacity < 1.0f) p->setOpacity(c.hpGaugeOpacity);
         DrawGauge(p, gx, gy, ratio, gc, c.hp.hpGaugeOri, c.hp.hpGaugeLen, c.hp.hpGaugeWid,
-                  &c.outline, c.lastHudScale);
+                  &c.hp.gaugeOutline, c.lastHudScale);
         if (c.hpGaugeOpacity < 1.0f) p->setOpacity(1.0);
     }
 }
@@ -1596,11 +1628,11 @@ static void DrawWeaponAmmo(QPainter* p, melonDS::u8* ram,
         MeasureTextCached(fm, fontPixelSize, s_ammoTextCache, buf, textW, textH, tds);
         textX = CalcAlignedTextX(c.weapon.wpnX, c.weapon.ammoAlign, textW);
         PrepareTextBitmapCached(fm, p->font(), fontPixelSize, s_ammoBitmapCache, buf, c.weapon.ammoTextColor);
-        if (c.outline.enable && c.outline.opacity > 0.0f) {
-            const int expandR = std::max(1, (int)std::ceil((float)c.outline.thickness / hudScale));
-            PrepareOutlineBitmapCached(s_ammoOutlineCache, s_ammoBitmapCache, c.outline.color, expandR);
+        if (c.weapon.outline.enable && c.weapon.outline.opacity > 0.0f) {
+            const int expandR = std::max(1, (int)std::ceil((float)c.weapon.outline.thickness / hudScale));
+            PrepareOutlineBitmapCached(s_ammoOutlineCache, s_ammoBitmapCache, c.weapon.outline.color, expandR);
             DrawCachedTextOutlined(p, s_ammoBitmapCache, s_ammoOutlineCache, textX, textY, tds,
-                                   c.weaponOpacity, c.outline.opacity);
+                                   c.weaponOpacity, c.weapon.outline.opacity);
         } else {
             if (c.weaponOpacity < 1.0f) p->setOpacity(c.weaponOpacity);
             DrawCachedText(p, s_ammoBitmapCache, textX, textY, tds);
@@ -1617,13 +1649,13 @@ static void DrawWeaponAmmo(QPainter* p, melonDS::u8* ram,
         else if (c.weapon.iconAnchorX == 2) ix -= dw;
         if (c.weapon.iconAnchorY == 1) iy -= dh * 0.5f;
         else if (c.weapon.iconAnchorY == 2) iy -= dh;
-        if (c.outline.enable && c.outline.opacity > 0.0f) {
-            const int expandR = std::max(1, c.outline.thickness);
-            EnsureOutlineIconsUpdated(c.outline.color, expandR);
+        if (c.weapon.outline.enable && c.weapon.outline.opacity > 0.0f) {
+            const int expandR = std::max(1, c.weapon.outline.thickness);
+            EnsureWeaponOutlineIconsUpdated(c.weapon.outline.color, expandR);
             const uint8_t wpnIdx = (weapon < 9) ? weapon : 0;
             DrawImageOutlined(p, icon, s_weaponIconsOutline[wpnIdx],
                               QRectF(ix, iy, dw, dh), (float)expandR / hudScale,
-                              c.wpnIconOpacity, c.outline.opacity);
+                              c.wpnIconOpacity, c.weapon.outline.opacity);
         } else {
             if (c.wpnIconOpacity < 1.0f) p->setOpacity(c.wpnIconOpacity);
             p->drawImage(QRectF(ix, iy, dw, dh), icon);
@@ -1643,7 +1675,7 @@ static void DrawWeaponAmmo(QPainter* p, melonDS::u8* ram,
         }
         if (c.ammoGaugeOpacity < 1.0f) p->setOpacity(c.ammoGaugeOpacity);
         DrawGauge(p, gx, gy, ratio, c.weapon.ammoGaugeColor, c.weapon.ammoGaugeOri, c.weapon.ammoGaugeLen, c.weapon.ammoGaugeWid,
-                  &c.outline, hudScale);
+                  &c.weapon.gaugeOutline, hudScale);
         if (c.ammoGaugeOpacity < 1.0f) p->setOpacity(1.0);
     }
 }
@@ -1977,20 +2009,20 @@ static void DrawRadarFrame(QPainter* topPaint, const CachedHudConfig& c)
 
 static void DrawRadarCombinedOutlines(QPainter* topPaint, const CachedHudConfig& c)
 {
-    if (!c.outline.enable || c.outline.opacity <= 0.0f) return;
+    if (!c.radar.outline.enable || c.radar.outline.opacity <= 0.0f) return;
 
     // P-15: Use pre-computed frameDstRect; P-17: compute expandDS once
     const float expandDS = (c.lastHudScale > 0.0f)
-                           ? static_cast<float>(std::max(1, c.outline.thickness)) / c.lastHudScale : 0.0f;
+                           ? static_cast<float>(std::max(1, c.radar.outline.thickness)) / c.lastHudScale : 0.0f;
 
     // OPT-SR2: No save/restore — caller (DrawBottomScreenOverlay) manages state.
     topPaint->setRenderHint(QPainter::Antialiasing, true);
     topPaint->setRenderHint(QPainter::SmoothPixmapTransform, true);
-    topPaint->setOpacity(c.outline.opacity);
+    topPaint->setOpacity(c.radar.outline.opacity);
 
     // Radar HUD circle outline: filled ellipse expanded by outline thickness
     topPaint->setPen(Qt::NoPen);
-    topPaint->setBrush(c.outline.colorWithAlpha); // P-14
+    topPaint->setBrush(c.radar.outline.colorWithAlpha); // P-14
     topPaint->drawEllipse(QRectF(c.radar.radarDstRect).adjusted(-expandDS, -expandDS, expandDS, expandDS));
 
     // SVG frame outline (dilated image, same technique as weapon/bomb icons)
@@ -2032,10 +2064,10 @@ void DrawBottomScreenOverlay(Config::Table& localCfg, QPainter* topPaint, QImage
 
     // Build frame caches up front (tinted + outline), then draw in final order below.
     {
-        const int expandR = (c.outline.enable && c.outline.opacity > 0.0f)
-                            ? std::max(1, c.outline.thickness) : 0;
+        const int expandR = (c.radar.outline.enable && c.radar.outline.opacity > 0.0f)
+                            ? std::max(1, c.radar.outline.thickness) : 0;
         EnsureRadarFrameLoaded(c.radar.radarDstSize, c.radar.radarSrcRadius, c.lastHudScale,
-                               s_effectiveRadarColor, c.outline.color, expandR);
+                               s_effectiveRadarColor, c.radar.outline.color, expandR);
     }
 
     // Draw order (back-to-front):
