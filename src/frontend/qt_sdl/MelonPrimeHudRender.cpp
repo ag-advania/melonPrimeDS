@@ -95,9 +95,9 @@ static const QImage& GetBombIconForDraw(int bombs, bool useOverlay, const QColor
     return s_bombTintedIcons[idx];
 }
 
-static void EnsureBombIconsLoaded(int dsH = 12, float hudScale = 1.0f)
+static void EnsureBombIconsLoaded(int pixelH = 12)
 {
-    int targetH = qMax(1, (int)std::ceil((float)dsH * hudScale));
+    int targetH = qMax(1, pixelH);
     if (LIKELY(s_bombIconHeight == targetH && s_bombIconHeight != 0)) return;
     static const char* kPaths[4] = {
         ":/mph-icon-bombs0", ":/mph-icon-bombs1",
@@ -133,9 +133,9 @@ static const QImage& GetWeaponIconForDraw(uint8_t weapon, bool useOverlay, const
     return s_weaponTintedIcons[weapon];
 }
 
-static void EnsureIconsLoaded(int dsH = 16, float hudScale = 1.0f)
+static void EnsureIconsLoaded(int pixelH = 16)
 {
-    int targetH = qMax(1, (int)std::ceil((float)dsH * hudScale));
+    int targetH = qMax(1, pixelH);
     if (LIKELY(s_weaponIconHeight == targetH && s_weaponIconHeight != 0)) return;
     static const char* kIconPaths[9] = {
         ":/mph-icon-pb", ":/mph-icon-volt", ":/mph-icon-missile",
@@ -585,6 +585,7 @@ struct WeaponHudConfig {
     int ammoGaugePosAnchor, ammoGaugePosOfsX, ammoGaugePosOfsY;  // raw
     QColor ammoGaugeColor;
     HudOutlineConfig outline;
+    HudOutlineConfig iconOutline;
     HudOutlineConfig gaugeOutline;
 };
 struct CrosshairHudConfig {
@@ -651,7 +652,9 @@ struct RankTimeHudConfig {
     int timeLimitX, timeLimitY, timeLimitAlign;         // final
     int timeLimitAnchor, timeLimitOfsX, timeLimitOfsY;  // raw
     QColor timeLimitColor;
-    HudOutlineConfig outline;
+    HudOutlineConfig rankOutline;
+    HudOutlineConfig timeLeftOutline;
+    HudOutlineConfig timeLimitOutline;
 };
 struct RadarOverlayConfig {
     bool radarShow;
@@ -1018,9 +1021,12 @@ static void RefreshCachedConfig(Config::Table& cfg, float topStretchX = 1.0f, fl
     loadOL(c.hp.outline,           "HudHp");
     loadOL(c.hp.gaugeOutline,      "HudHpGauge");
     loadOL(c.weapon.outline,       "HudWeapon");
+    loadOL(c.weapon.iconOutline,   "HudWeaponIcon");
     loadOL(c.weapon.gaugeOutline,  "HudAmmoGauge");
     loadOL(c.matchStatus.outline,  "HudMatchStatus");
-    loadOL(c.rankTime.outline,     "HudRankTime");
+    loadOL(c.rankTime.rankOutline,      "HudRank");
+    loadOL(c.rankTime.timeLeftOutline,   "HudTimeLeft");
+    loadOL(c.rankTime.timeLimitOutline,  "HudTimeLimit");
     loadOL(c.bombLeft.outline,      "HudBombLeft");
     loadOL(c.bombLeft.iconOutline,  "HudBombIcon");
     loadOL(c.radar.outline,        "BtmOverlay");
@@ -1387,7 +1393,7 @@ static void DrawBombLeft(QPainter* p, melonDS::u8* ram, const RomAddresses& rom,
         }
     }
     if (c.bombLeft.bombIconShow) {
-        EnsureBombIconsLoaded(c.bombLeft.bombIconHeight, hudScale);
+        EnsureBombIconsLoaded(c.bombLeft.bombIconHeight);
         const QImage& icon = GetBombIconForDraw(bombs, c.bombLeft.bombIconColorOverlay, c.bombLeft.bombIconColor);
         if (!icon.isNull()) {
             const float dw = icon.width() / hudScale; const float dh = icon.height() / hudScale;
@@ -1417,9 +1423,9 @@ static void DrawBombLeft(QPainter* p, melonDS::u8* ram, const RomAddresses& rom,
 static void DrawRankAndTime(QPainter* p, melonDS::u8* ram, const RomAddresses& rom, uint8_t playerPos, bool isAdventure, const CachedHudConfig& c, float tds)
 {
     if (isAdventure) return; const auto& hud = c.rankTime; const QFontMetrics& fm = s_frameFm; const int fontPixelSize = s_frameFpx; // P-9
-    if (hud.rankShow) { static RankStringCache s_rankStringCache = { 0, 0, false, false, "" }; static TextBitmapCache s_rankCache = { 0, QColor(), "", 0, 0, 0, 1.0f, false, QImage() }; static TextBitmapCache s_rankOutlineCache = { 0, QColor(), "", 0, 0, 0, 1.0f, false, QImage() }; static TextMeasureCache s_rankMeasure = { 0, "", 0, 0, false }; uint32_t rankWord = Read32(ram, rom.matchRank); uint8_t rankByte = (rankWord >> (playerPos * 8)) & 0xFF; if (rankByte <= 3) DrawCachedAlignedText(p, fm, fontPixelSize, tds, s_rankMeasure, s_rankCache, s_rankOutlineCache, UpdateRankString(s_rankStringCache, rankByte, hud.rankShowOrdinal, hud), hud.rankColor, hud.rankX, hud.rankAlign, hud.rankY, c.rankOpacity, EffOL(c, c.rankTime.outline), c.lastHudScale); }
-    if (hud.timeLeftShow) { static TimeStringCache s_timeLeftStringCache = { 0, 0, false, "" }; static TextBitmapCache s_timeLeftCache = { 0, QColor(), "", 0, 0, 0, 1.0f, false, QImage() }; static TextBitmapCache s_timeLeftOutlineCache = { 0, QColor(), "", 0, 0, 0, 1.0f, false, QImage() }; static TextMeasureCache s_timeLeftMeasure = { 0, "", 0, 0, false }; int seconds = static_cast<int>(Read32(ram, rom.timeLeft)) / 60; DrawCachedAlignedText(p, fm, fontPixelSize, tds, s_timeLeftMeasure, s_timeLeftCache, s_timeLeftOutlineCache, UpdateTimeString(s_timeLeftStringCache, seconds, false), hud.timeLeftColor, hud.timeLeftX, hud.timeLeftAlign, hud.timeLeftY, c.timeLeftOpacity, EffOL(c, c.rankTime.outline), c.lastHudScale); }
-    if (hud.timeLimitShow) { static TimeStringCache s_timeLimitStringCache = { 0, 0, false, "" }; static TextBitmapCache s_timeLimitCache = { 0, QColor(), "", 0, 0, 0, 1.0f, false, QImage() }; static TextBitmapCache s_timeLimitOutlineCache = { 0, QColor(), "", 0, 0, 0, 1.0f, false, QImage() }; static TextMeasureCache s_timeLimitMeasure = { 0, "", 0, 0, false }; int goalMinutes = s_battleState.valid ? s_battleState.timeLimitMinutes : LookupTimeLimitMin((Read32(ram, rom.battleSettings + 4) >> 8) & 0xFF); DrawCachedAlignedText(p, fm, fontPixelSize, tds, s_timeLimitMeasure, s_timeLimitCache, s_timeLimitOutlineCache, UpdateTimeString(s_timeLimitStringCache, goalMinutes, true), hud.timeLimitColor, hud.timeLimitX, hud.timeLimitAlign, hud.timeLimitY, c.timeLimitOpacity, EffOL(c, c.rankTime.outline), c.lastHudScale); }
+    if (hud.rankShow) { static RankStringCache s_rankStringCache = { 0, 0, false, false, "" }; static TextBitmapCache s_rankCache = { 0, QColor(), "", 0, 0, 0, 1.0f, false, QImage() }; static TextBitmapCache s_rankOutlineCache = { 0, QColor(), "", 0, 0, 0, 1.0f, false, QImage() }; static TextMeasureCache s_rankMeasure = { 0, "", 0, 0, false }; uint32_t rankWord = Read32(ram, rom.matchRank); uint8_t rankByte = (rankWord >> (playerPos * 8)) & 0xFF; if (rankByte <= 3) DrawCachedAlignedText(p, fm, fontPixelSize, tds, s_rankMeasure, s_rankCache, s_rankOutlineCache, UpdateRankString(s_rankStringCache, rankByte, hud.rankShowOrdinal, hud), hud.rankColor, hud.rankX, hud.rankAlign, hud.rankY, c.rankOpacity, EffOL(c, c.rankTime.rankOutline), c.lastHudScale); }
+    if (hud.timeLeftShow) { static TimeStringCache s_timeLeftStringCache = { 0, 0, false, "" }; static TextBitmapCache s_timeLeftCache = { 0, QColor(), "", 0, 0, 0, 1.0f, false, QImage() }; static TextBitmapCache s_timeLeftOutlineCache = { 0, QColor(), "", 0, 0, 0, 1.0f, false, QImage() }; static TextMeasureCache s_timeLeftMeasure = { 0, "", 0, 0, false }; int seconds = static_cast<int>(Read32(ram, rom.timeLeft)) / 60; DrawCachedAlignedText(p, fm, fontPixelSize, tds, s_timeLeftMeasure, s_timeLeftCache, s_timeLeftOutlineCache, UpdateTimeString(s_timeLeftStringCache, seconds, false), hud.timeLeftColor, hud.timeLeftX, hud.timeLeftAlign, hud.timeLeftY, c.timeLeftOpacity, EffOL(c, c.rankTime.timeLeftOutline), c.lastHudScale); }
+    if (hud.timeLimitShow) { static TimeStringCache s_timeLimitStringCache = { 0, 0, false, "" }; static TextBitmapCache s_timeLimitCache = { 0, QColor(), "", 0, 0, 0, 1.0f, false, QImage() }; static TextBitmapCache s_timeLimitOutlineCache = { 0, QColor(), "", 0, 0, 0, 1.0f, false, QImage() }; static TextMeasureCache s_timeLimitMeasure = { 0, "", 0, 0, false }; int goalMinutes = s_battleState.valid ? s_battleState.timeLimitMinutes : LookupTimeLimitMin((Read32(ram, rom.battleSettings + 4) >> 8) & 0xFF); DrawCachedAlignedText(p, fm, fontPixelSize, tds, s_timeLimitMeasure, s_timeLimitCache, s_timeLimitOutlineCache, UpdateTimeString(s_timeLimitStringCache, goalMinutes, true), hud.timeLimitColor, hud.timeLimitX, hud.timeLimitAlign, hud.timeLimitY, c.timeLimitOpacity, EffOL(c, c.rankTime.timeLimitOutline), c.lastHudScale); }
 }
 // =========================================================================
 //  Config key (only for IsEnabled — hot path uses s_cache)
@@ -1561,17 +1567,21 @@ uint32_t CustomHud_GetCacheEpoch()
 }
 
 // =========================================================================
-//  Gauge drawing
+//  Gauge drawing — barLengthPx / barWidthPx are in actual output pixels.
+//  Divided by hudScale to get DS-space; painter's ×hudScale restores exact pixels.
 // =========================================================================
 static void DrawGauge(QPainter* p, int x, int y, float ratio,
                       const QColor& fillColor, int orientation,
-                      int barLength, int barWidth,
+                      int barLengthPx, int barWidthPx,
                       const HudOutlineConfig* outline = nullptr,
                       float hudScale = 1.0f)
 {
     ratio = (ratio < 0.0f) ? 0.0f : (ratio > 1.0f) ? 1.0f : ratio;
-    if (barLength <= 0) barLength = 28;
-    if (barWidth  <= 0) barWidth  = 3;
+    if (barLengthPx <= 0) barLengthPx = 28;
+    if (barWidthPx  <= 0) barWidthPx  = 3;
+
+    const float barLength = barLengthPx / hudScale;
+    const float barWidth  = barWidthPx  / hudScale;
 
     static const QColor bgColor(0, 0, 0, 128); // P-4: construct once
 
@@ -1586,13 +1596,13 @@ static void DrawGauge(QPainter* p, int x, int y, float ratio,
     }
 
     if (orientation == 0) {
-        p->fillRect(x, y, barLength, barWidth, bgColor);
-        int fillW = static_cast<int>(barLength * ratio);
-        if (fillW > 0) p->fillRect(x, y, fillW, barWidth, fillColor);
+        p->fillRect(QRectF(x, y, barLength, barWidth), bgColor);
+        float fillW = barLength * ratio;
+        if (fillW > 0.0f) p->fillRect(QRectF(x, y, fillW, barWidth), fillColor);
     } else {
-        p->fillRect(x, y, barWidth, barLength, bgColor);
-        int fillH = static_cast<int>(barLength * ratio);
-        if (fillH > 0) p->fillRect(x, y + barLength - fillH, barWidth, fillH, fillColor);
+        p->fillRect(QRectF(x, y, barWidth, barLength), bgColor);
+        float fillH = barLength * ratio;
+        if (fillH > 0.0f) p->fillRect(QRectF(x, y + barLength - fillH, barWidth, fillH), fillColor);
     }
 }
 
@@ -1616,15 +1626,16 @@ static int CalcAlignedTextX(int anchorX, int align, int textW)
 }
 
 static void CalcGaugePos(int textX, int textY, int textW, int textH, int anchor,
-                         int ofsX, int ofsY, int gaugeLen, int gaugeWid, int ori,
+                         int ofsX, int ofsY, float gaugeLen, float gaugeWid, int ori,
                          int& outX, int& outY)
 {
+    const int gL = static_cast<int>(gaugeLen), gW = static_cast<int>(gaugeWid);
     switch (anchor) {
     case 0: outX = textX + ofsX;           outY = textY + 2 + ofsY; break;
-    case 1: outX = textX + ofsX;           outY = textY - textH - (ori==0?gaugeWid:gaugeLen) + ofsY; break;
-    case 2: outX = textX + textW + ofsX;   outY = textY - textH/2 - (ori==0?gaugeWid:gaugeLen)/2 + ofsY; break;
-    case 3: outX = textX - (ori==0?gaugeLen:gaugeWid) + ofsX; outY = textY - textH/2 - (ori==0?gaugeWid:gaugeLen)/2 + ofsY; break;
-    case 4: outX = textX + textW/2 - (ori==0?gaugeLen:gaugeWid)/2 + ofsX; outY = textY - textH/2 - (ori==0?gaugeWid:gaugeLen)/2 + ofsY; break;
+    case 1: outX = textX + ofsX;           outY = textY - textH - (ori==0?gW:gL) + ofsY; break;
+    case 2: outX = textX + textW + ofsX;   outY = textY - textH/2 - (ori==0?gW:gL)/2 + ofsY; break;
+    case 3: outX = textX - (ori==0?gL:gW) + ofsX; outY = textY - textH/2 - (ori==0?gW:gL)/2 + ofsY; break;
+    case 4: outX = textX + textW/2 - (ori==0?gL:gW)/2 + ofsX; outY = textY - textH/2 - (ori==0?gW:gL)/2 + ofsY; break;
     default: outX = textX + ofsX;          outY = textY + 2 + ofsY; break;
     }
 }
@@ -1664,17 +1675,18 @@ static inline void DrawHP(QPainter* p, uint16_t hp, uint16_t maxHP,
     if (c.hp.hpGauge && maxHP > 0) {
         float ratio = static_cast<float>(hp) / static_cast<float>(maxHP);
         QColor gc = c.hp.hpAutoColor ? HpGaugeColor(hp, c.hp.hpGaugeColor) : c.hp.hpGaugeColor;
+        const float hs = c.lastHudScale;
         int gx, gy;
         if (c.hp.hpGaugePosMode == 1) {
             gx = c.hp.hpGaugePosX;
             gy = c.hp.hpGaugePosY;
         } else {
             CalcGaugePos(textX, c.hp.hpY, textW, textH, c.hp.hpGaugeAnchor, c.hp.hpGaugeOfsX, c.hp.hpGaugeOfsY,
-                         c.hp.hpGaugeLen, c.hp.hpGaugeWid, c.hp.hpGaugeOri, gx, gy);
+                         c.hp.hpGaugeLen / hs, c.hp.hpGaugeWid / hs, c.hp.hpGaugeOri, gx, gy);
         }
         if (c.hpGaugeOpacity < 1.0f) p->setOpacity(c.hpGaugeOpacity);
         DrawGauge(p, gx, gy, ratio, gc, c.hp.hpGaugeOri, c.hp.hpGaugeLen, c.hp.hpGaugeWid,
-                  &EffOL(c, c.hp.gaugeOutline), c.lastHudScale);
+                  &EffOL(c, c.hp.gaugeOutline), hs);
         if (c.hpGaugeOpacity < 1.0f) p->setOpacity(1.0);
     }
 }
@@ -1704,7 +1716,7 @@ static void DrawWeaponAmmo(QPainter* p, melonDS::u8* ram,
     const int fontPixelSize = s_frameFpx;       // P-9
 
     const WeaponInfo& wi = kWeaponTable[weapon];
-    EnsureIconsLoaded(c.weapon.iconHeight, hudScale);
+    EnsureIconsLoaded(c.weapon.iconHeight);
     const bool iconOvEnable = (weapon < 9) ? c.weapon.iconOverlayEnable[weapon] : false;
     const QColor iconOvColor = (weapon < 9) ? c.weapon.iconOverlayColor[weapon] : QColor();
     const QImage& icon = GetWeaponIconForDraw(weapon, iconOvEnable, iconOvColor); // P-1
@@ -1754,7 +1766,7 @@ static void DrawWeaponAmmo(QPainter* p, melonDS::u8* ram,
         else if (c.weapon.iconAnchorX == 2) ix -= dw;
         if (c.weapon.iconAnchorY == 1) iy -= dh * 0.5f;
         else if (c.weapon.iconAnchorY == 2) iy -= dh;
-        { const HudOutlineConfig& _ol = EffOL(c, c.weapon.outline);
+        { const HudOutlineConfig& _ol = EffOL(c, c.weapon.iconOutline);
         if (_ol.enable && _ol.opacity > 0.0f) {
             const int expandR = std::max(1, _ol.thickness);
             EnsureWeaponOutlineIconsUpdated(_ol.color, expandR);
@@ -1777,7 +1789,7 @@ static void DrawWeaponAmmo(QPainter* p, melonDS::u8* ram,
             gy = c.weapon.ammoGaugePosY;
         } else {
             CalcGaugePos(textX, textY, textW, textH, c.weapon.ammoGaugeAnchor, c.weapon.ammoGaugeOfsX, c.weapon.ammoGaugeOfsY,
-                         c.weapon.ammoGaugeLen, c.weapon.ammoGaugeWid, c.weapon.ammoGaugeOri, gx, gy);
+                         c.weapon.ammoGaugeLen / hudScale, c.weapon.ammoGaugeWid / hudScale, c.weapon.ammoGaugeOri, gx, gy);
         }
         if (c.ammoGaugeOpacity < 1.0f) p->setOpacity(c.ammoGaugeOpacity);
         DrawGauge(p, gx, gy, ratio, c.weapon.ammoGaugeColor, c.weapon.ammoGaugeOri, c.weapon.ammoGaugeLen, c.weapon.ammoGaugeWid,

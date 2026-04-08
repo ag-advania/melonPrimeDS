@@ -624,12 +624,13 @@ static QRectF ComputeEditBounds(int idx, Config::Table& cfg, float topStretchX)
     int fx, fy;
     ApplyAnchor(anchor, ofsX, ofsY, fx, fy, topStretchX);
 
-    float tds = std::max(0.5f, cfg.GetInt("Metroid.Visual.HudTextScale") / 100.0f);
+    float tds = std::max(1.0f, cfg.GetInt("Metroid.Visual.HudTextScale") / 100.0f);
 
     // ── HP Gauge (idx=1) / Ammo Gauge (idx=4) ──────────────────────────────
     if (d.lengthKey != nullptr) {
-        const int len     = std::max(4, cfg.GetInt(d.lengthKey));
-        const int wid     = std::max(1, cfg.GetInt(d.widthKey));
+        const float hs  = (s_editHudScale > 0.0f) ? s_editHudScale : 1.0f;
+        const float len = std::max(4.0f, cfg.GetInt(d.lengthKey) / hs);
+        const float wid = std::max(1.0f, cfg.GetInt(d.widthKey) / hs);
         const int ori     = (d.orientKey != nullptr) ? cfg.GetInt(d.orientKey) : 0;
         const int posMode = d.posModeKey ? cfg.GetInt(d.posModeKey) : 1;
 
@@ -660,8 +661,9 @@ static QRectF ComputeEditBounds(int idx, Config::Table& cfg, float topStretchX)
 
     // ── Weapon icon (idx=3) ─────────────────────────────────────────────────
     if (idx == 3) {
+        const float hs  = (s_editHudScale > 0.0f) ? s_editHudScale : 1.0f;
         const int iconH = std::max(4, cfg.GetInt("Metroid.Visual.HudWeaponIconHeight"));
-        const float dh  = static_cast<float>(iconH);
+        const float dh  = static_cast<float>(iconH) / hs;
         // Use cached icon aspect ratio (don't reload); fall back to square
         const QImage& icon = s_weaponIcons[0];
         const float dw = (!icon.isNull() && icon.height() > 0)
@@ -689,8 +691,9 @@ static QRectF ComputeEditBounds(int idx, Config::Table& cfg, float topStretchX)
 
     // ── Bomb icon (idx=10) ──────────────────────────────────────────────────
     if (idx == 10) {
+        const float hs  = (s_editHudScale > 0.0f) ? s_editHudScale : 1.0f;
         const int iconH = std::max(4, cfg.GetInt("Metroid.Visual.HudBombIconHeight"));
-        const float dh  = static_cast<float>(iconH);
+        const float dh  = static_cast<float>(iconH) / hs;
         const QImage& icon = s_bombIcons[3];
         const float dw = (!icon.isNull() && icon.height() > 0)
                          ? dh * static_cast<float>(icon.width()) / static_cast<float>(icon.height())
@@ -1041,7 +1044,7 @@ static void DrawEditOverlay(QPainter* p, Config::Table& cfg, float topStretchX)
     if (!p) return;
 
     const float leftX = -(topStretchX - 1.0f) * 128.0f;
-    const float tds   = std::max(0.5f, cfg.GetInt("Metroid.Visual.HudTextScale") / 100.0f);
+    const float tds   = std::max(1.0f, cfg.GetInt("Metroid.Visual.HudTextScale") / 100.0f);
 
     QFont smallFont = p->font();
     smallFont.setPixelSize(4);
@@ -2128,22 +2131,24 @@ void CustomHud_EditMouseMove(QPointF pt, Config::Table& cfg)
         const int ori = d.orientKey ? cfg.GetInt(d.orientKey) : 0;
         const bool squareResize = d.lengthKey && d.widthKey
                                   && strcmp(d.lengthKey, d.widthKey) == 0;
-        const int maxLen = squareResize ? 192 : 128;
+        // Gauge configs are in actual pixels; radar (square) stays DS-space
+        const double hs = squareResize ? 1.0 : static_cast<double>(s_editHudScale);
+        const int maxLen = squareResize ? 192 : 512;
         const int minLen = squareResize ? 16  : 4;
-        const int maxWid = squareResize ? 192 : 20;
+        const int maxWid = squareResize ? 192 : 128;
         const int minWid = squareResize ? 16  : 1;
 
         if (s_resizingLength) {
-            const double delta = (ori == 1) ? ds.y() - s_resizeStartDS.y()
-                                            : ds.x() - s_resizeStartDS.x();
+            const double delta = ((ori == 1) ? ds.y() - s_resizeStartDS.y()
+                                             : ds.x() - s_resizeStartDS.x()) * hs;
             const int newVal = std::max(minLen, std::min(maxLen,
                 static_cast<int>(std::round(s_resizeStartVal + delta))));
             cfg.SetInt(d.lengthKey, newVal);
             if (squareResize) cfg.SetInt(d.widthKey, newVal);
             CustomHud_InvalidateConfigCache();
         } else {
-            const double delta = (ori == 1) ? ds.x() - s_resizeStartDS.x()
-                                            : ds.y() - s_resizeStartDS.y();
+            const double delta = ((ori == 1) ? ds.x() - s_resizeStartDS.x()
+                                             : ds.y() - s_resizeStartDS.y()) * hs;
             const int newVal = std::max(minWid, std::min(maxWid,
                 static_cast<int>(std::round(s_resizeStartVal + delta))));
             cfg.SetInt(d.widthKey, newVal);
