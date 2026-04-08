@@ -61,6 +61,9 @@ private:
     // Separator
     void addSeparator();
 
+    // Outline group: Enable, Color, Opacity, Thickness (4 widgets behind a separator)
+    void addOutlineGroup(const char* prefix);
+
     // Per-element populate functions
     void populateHP();
     void populateHPGauge();
