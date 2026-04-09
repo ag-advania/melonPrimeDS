@@ -560,6 +560,7 @@ struct HpHudConfig {
     bool hpTextAutoColor, hpGauge, hpAutoColor;
     QColor hpTextColor;
     int hpGaugeOri, hpGaugeLen, hpGaugeWid;
+    int hpGaugeAlign;
     int hpGaugeOfsX, hpGaugeOfsY, hpGaugeAnchor;
     int hpGaugePosMode, hpGaugePosX, hpGaugePosY;  // final
     int hpGaugePosAnchor, hpGaugePosOfsX, hpGaugePosOfsY;  // raw
@@ -580,6 +581,7 @@ struct WeaponHudConfig {
     int iconPosAnchor, iconPosOfsX, iconPosOfsY;            // raw
     int iconAnchorX, iconAnchorY;
     int ammoGaugeOri, ammoGaugeLen, ammoGaugeWid;
+    int ammoGaugeAlign;
     int ammoGaugeOfsX, ammoGaugeOfsY, ammoGaugeAnchor;
     int ammoGaugePosMode, ammoGaugePosX, ammoGaugePosY;     // final
     int ammoGaugePosAnchor, ammoGaugePosOfsX, ammoGaugePosOfsY;  // raw
@@ -751,6 +753,7 @@ static void LoadHpConfig(HpHudConfig& hp, Config::Table& cfg)
     hp.hpGaugeOri = cfg.GetInt("Metroid.Visual.HudHpGaugeOrientation");
     hp.hpGaugeLen = cfg.GetInt("Metroid.Visual.HudHpGaugeLength");
     hp.hpGaugeWid = cfg.GetInt("Metroid.Visual.HudHpGaugeWidth");
+    hp.hpGaugeAlign = cfg.GetInt("Metroid.Visual.HudHpGaugeAlign");
     hp.hpGaugeOfsX = cfg.GetInt("Metroid.Visual.HudHpGaugeOffsetX");
     hp.hpGaugeOfsY = cfg.GetInt("Metroid.Visual.HudHpGaugeOffsetY");
     hp.hpGaugeAnchor = cfg.GetInt("Metroid.Visual.HudHpGaugeAnchor");
@@ -798,6 +801,7 @@ static void LoadWeaponConfig(WeaponHudConfig& weapon, Config::Table& cfg)
     weapon.ammoGaugeOri = cfg.GetInt("Metroid.Visual.HudAmmoGaugeOrientation");
     weapon.ammoGaugeLen = cfg.GetInt("Metroid.Visual.HudAmmoGaugeLength");
     weapon.ammoGaugeWid = cfg.GetInt("Metroid.Visual.HudAmmoGaugeWidth");
+    weapon.ammoGaugeAlign = cfg.GetInt("Metroid.Visual.HudAmmoGaugeAlign");
     weapon.ammoGaugeOfsX = cfg.GetInt("Metroid.Visual.HudAmmoGaugeOffsetX");
     weapon.ammoGaugeOfsY = cfg.GetInt("Metroid.Visual.HudAmmoGaugeOffsetY");
     weapon.ammoGaugeAnchor = cfg.GetInt("Metroid.Visual.HudAmmoGaugeAnchor");
@@ -1737,6 +1741,9 @@ static inline void DrawHP(QPainter* p, uint16_t hp, uint16_t maxHP,
             CalcGaugePos(textX, c.hp.hpY, textW, textH, c.hp.hpGaugeAnchor, c.hp.hpGaugeOfsX, c.hp.hpGaugeOfsY,
                          c.hp.hpGaugeLen / hs * c.scaleGauges, c.hp.hpGaugeWid / hs * c.scaleGauges, c.hp.hpGaugeOri, gx, gy);
         }
+        { const int gl = (int)(c.hp.hpGaugeLen * c.scaleGauges);
+          if (c.hp.hpGaugeOri == 0) gx -= gl * c.hp.hpGaugeAlign / 2;
+          else                      gy -= gl * c.hp.hpGaugeAlign / 2; }
         if (c.hpGaugeOpacity < 1.0f) p->setOpacity(c.hpGaugeOpacity);
         DrawGauge(p, gx, gy, ratio, gc, c.hp.hpGaugeOri, (int)(c.hp.hpGaugeLen * c.scaleGauges), (int)(c.hp.hpGaugeWid * c.scaleGauges),
                   &EffOL(c, c.hp.gaugeOutline), hs);
@@ -1844,6 +1851,9 @@ static void DrawWeaponAmmo(QPainter* p, melonDS::u8* ram,
             CalcGaugePos(textX, textY, textW, textH, c.weapon.ammoGaugeAnchor, c.weapon.ammoGaugeOfsX, c.weapon.ammoGaugeOfsY,
                          c.weapon.ammoGaugeLen / hudScale * c.scaleGauges, c.weapon.ammoGaugeWid / hudScale * c.scaleGauges, c.weapon.ammoGaugeOri, gx, gy);
         }
+        { const int gl = (int)(c.weapon.ammoGaugeLen * c.scaleGauges);
+          if (c.weapon.ammoGaugeOri == 0) gx -= gl * c.weapon.ammoGaugeAlign / 2;
+          else                            gy -= gl * c.weapon.ammoGaugeAlign / 2; }
         if (c.ammoGaugeOpacity < 1.0f) p->setOpacity(c.ammoGaugeOpacity);
         DrawGauge(p, gx, gy, ratio, c.weapon.ammoGaugeColor, c.weapon.ammoGaugeOri, (int)(c.weapon.ammoGaugeLen * c.scaleGauges), (int)(c.weapon.ammoGaugeWid * c.scaleGauges),
                   &EffOL(c, c.weapon.gaugeOutline), hudScale);

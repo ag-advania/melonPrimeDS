@@ -441,6 +441,8 @@ void MelonPrimeHudConfigOnScreenEdit::populateHPGauge()
     addOpacitySlider(QStringLiteral("Opacity"), "Metroid.Visual.HudHpGaugeOpacity");
     addComboBox(QStringLiteral("Position"), "Metroid.Visual.HudHpGaugeAnchor",
         {QStringLiteral("Below"), QStringLiteral("Above"), QStringLiteral("Right"), QStringLiteral("Left"), QStringLiteral("Center")});
+    addComboBox(QStringLiteral("Align"), "Metroid.Visual.HudHpGaugeAlign",
+        {QStringLiteral("Start"), QStringLiteral("Center"), QStringLiteral("End")});
     addSpinBox(QStringLiteral("Offset X"), "Metroid.Visual.HudHpGaugeOffsetX", -128, 128);
     addSpinBox(QStringLiteral("Offset Y"), "Metroid.Visual.HudHpGaugeOffsetY", -128, 128);
     addCheckBox(QStringLiteral("Auto Color"), "Metroid.Visual.HudHpGaugeAutoColor");
@@ -504,6 +506,8 @@ void MelonPrimeHudConfigOnScreenEdit::populateAmmoGauge()
     addOpacitySlider(QStringLiteral("Opacity"), "Metroid.Visual.HudAmmoGaugeOpacity");
     addComboBox(QStringLiteral("Position"), "Metroid.Visual.HudAmmoGaugeAnchor",
         {QStringLiteral("Below"), QStringLiteral("Above"), QStringLiteral("Right"), QStringLiteral("Left"), QStringLiteral("Center")});
+    addComboBox(QStringLiteral("Align"), "Metroid.Visual.HudAmmoGaugeAlign",
+        {QStringLiteral("Start"), QStringLiteral("Center"), QStringLiteral("End")});
     addSpinBox(QStringLiteral("Offset X"), "Metroid.Visual.HudAmmoGaugeOffsetX", -128, 128);
     addSpinBox(QStringLiteral("Offset Y"), "Metroid.Visual.HudAmmoGaugeOffsetY", -128, 128);
     addOutlineGroup("HudAmmoGauge");
