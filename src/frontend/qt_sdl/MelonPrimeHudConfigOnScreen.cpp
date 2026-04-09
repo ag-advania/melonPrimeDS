@@ -50,6 +50,8 @@ static const char* kEnumRelIndep    = "Relative|Independent";
 static const char* kEnumAnchorY     = "Top|Center|Bottom";
 static const char* kEnumLabelPos    = "Above|Below|Left|Right|Center";
 static const char* kEnumLayout      = "Standard|Alternative";
+static const char* kEnumOrientation = "Horiz|Vert";
+static const char* kEnumGaugeAlign  = "Start|Center|End";
 
 static QString EditEnumLabel(const char* items, int val) {
     if (!items || val < 0) return QString::number(val);
@@ -72,9 +74,16 @@ static const HudEditPropDesc kPropsHp[] = {
 
 static const HudEditPropDesc kPropsHpGauge[] = {
     {"Auto Color",   EditPropType::Bool, "Metroid.Visual.HudHpGaugeAutoColor", 0, 0, 0, nullptr, nullptr, nullptr},
+    {"Orient",       EditPropType::Enum, "Metroid.Visual.HudHpGaugeOrientation", 0, 1, 1, kEnumOrientation, nullptr, nullptr},
+    {"Align",        EditPropType::Enum, "Metroid.Visual.HudHpGaugeAlign", 0, 2, 1, kEnumGaugeAlign, nullptr, nullptr},
+    {"Length",       EditPropType::Int,  "Metroid.Visual.HudHpGaugeLength", 1, 192, 1, nullptr, nullptr, nullptr},
+    {"Width",        EditPropType::Int,  "Metroid.Visual.HudHpGaugeWidth", 1, 20, 1, nullptr, nullptr, nullptr},
+    {"Pos Mode",     EditPropType::Enum, "Metroid.Visual.HudHpGaugePosMode", 0, 1, 1, kEnumRelIndep, nullptr, nullptr},
     {"Gauge Anchor", EditPropType::Enum, "Metroid.Visual.HudHpGaugeAnchor", 0, 4, 1, kEnumGaugeAnchor, nullptr, nullptr},
     {"Offset X",     EditPropType::Int,  "Metroid.Visual.HudHpGaugeOffsetX", -128, 128, 1, nullptr, nullptr, nullptr},
     {"Offset Y",     EditPropType::Int,  "Metroid.Visual.HudHpGaugeOffsetY", -128, 128, 1, nullptr, nullptr, nullptr},
+    {"Pos X",        EditPropType::Int,  "Metroid.Visual.HudHpGaugePosX", -256, 256, 1, nullptr, nullptr, nullptr},
+    {"Pos Y",        EditPropType::Int,  "Metroid.Visual.HudHpGaugePosY", -256, 256, 1, nullptr, nullptr, nullptr},
     {"Opacity",      EditPropType::Float,"Metroid.Visual.HudHpGaugeOpacity", 0, 100, 5, nullptr, nullptr, nullptr},
 };
 
@@ -96,9 +105,16 @@ static const HudEditPropDesc kPropsWpnIcon[] = {
 };
 
 static const HudEditPropDesc kPropsAmmoGauge[] = {
+    {"Orient",       EditPropType::Enum, "Metroid.Visual.HudAmmoGaugeOrientation", 0, 1, 1, kEnumOrientation, nullptr, nullptr},
+    {"Align",        EditPropType::Enum, "Metroid.Visual.HudAmmoGaugeAlign", 0, 2, 1, kEnumGaugeAlign, nullptr, nullptr},
+    {"Length",       EditPropType::Int,  "Metroid.Visual.HudAmmoGaugeLength", 1, 192, 1, nullptr, nullptr, nullptr},
+    {"Width",        EditPropType::Int,  "Metroid.Visual.HudAmmoGaugeWidth", 1, 20, 1, nullptr, nullptr, nullptr},
+    {"Pos Mode",     EditPropType::Enum, "Metroid.Visual.HudAmmoGaugePosMode", 0, 1, 1, kEnumRelIndep, nullptr, nullptr},
     {"Gauge Anchor", EditPropType::Enum, "Metroid.Visual.HudAmmoGaugeAnchor", 0, 4, 1, kEnumGaugeAnchor, nullptr, nullptr},
     {"Offset X",     EditPropType::Int,  "Metroid.Visual.HudAmmoGaugeOffsetX", -128, 128, 1, nullptr, nullptr, nullptr},
     {"Offset Y",     EditPropType::Int,  "Metroid.Visual.HudAmmoGaugeOffsetY", -128, 128, 1, nullptr, nullptr, nullptr},
+    {"Pos X",        EditPropType::Int,  "Metroid.Visual.HudAmmoGaugePosX", -256, 256, 1, nullptr, nullptr, nullptr},
+    {"Pos Y",        EditPropType::Int,  "Metroid.Visual.HudAmmoGaugePosY", -256, 256, 1, nullptr, nullptr, nullptr},
     {"Opacity",      EditPropType::Float,"Metroid.Visual.HudAmmoGaugeOpacity", 0, 100, 5, nullptr, nullptr, nullptr},
 };
 
@@ -255,7 +271,7 @@ static const HudEditElemDesc kEditElems[kEditElemCount] = {
         "Metroid.Visual.HudHpGaugeColorR",
         "Metroid.Visual.HudHpGaugeColorG",
         "Metroid.Visual.HudHpGaugeColorB",
-        kPropsHpGauge, 5
+        kPropsHpGauge, 12
     },
     {   // 2: Weapon / Ammo text
         "Weapon/Ammo",
@@ -292,7 +308,7 @@ static const HudEditElemDesc kEditElems[kEditElemCount] = {
         "Metroid.Visual.HudAmmoGaugeColorR",
         "Metroid.Visual.HudAmmoGaugeColorG",
         "Metroid.Visual.HudAmmoGaugeColorB",
-        kPropsAmmoGauge, 4
+        kPropsAmmoGauge, 11
     },
     {   // 5: Match Status
         "Match Status",
@@ -694,6 +710,8 @@ static QRectF ComputeEditBounds(int idx, Config::Table& cfg, float topStretchX)
         const float wid = std::max(1.0f, cfg.GetInt(d.widthKey) / hs);
         const int ori     = (d.orientKey != nullptr) ? cfg.GetInt(d.orientKey) : 0;
         const int posMode = d.posModeKey ? cfg.GetInt(d.posModeKey) : 1;
+        const int align   = cfg.GetInt((idx == 1) ? "Metroid.Visual.HudHpGaugeAlign"
+                                                   : "Metroid.Visual.HudAmmoGaugeAlign");
 
         if (posMode == 0) {
             // Relative to parent text element
@@ -714,10 +732,15 @@ static QRectF ComputeEditBounds(int idx, Config::Table& cfg, float topStretchX)
             CalcGaugePos(tx, ty, approxW, approxH,
                          cfg.GetInt(gaugeAnchorKey), cfg.GetInt(gaugeOfsXKey), cfg.GetInt(gaugeOfsYKey),
                          len, wid, ori, gx, gy);
+            if (ori == 0) gx -= static_cast<int>(len * align / 2);
+            else          gy -= static_cast<int>(len * align / 2);
             return (ori == 1) ? QRectF(gx, gy, wid, len) : QRectF(gx, gy, len, wid);
         }
         // Independent: fx/fy come from PosAnchor + PosX/Y
-        return (ori == 1) ? QRectF(fx, fy, wid, len) : QRectF(fx, fy, len, wid);
+        float bx = static_cast<float>(fx), by = static_cast<float>(fy);
+        if (ori == 0) bx -= len * align / 2;
+        else          by -= len * align / 2;
+        return (ori == 1) ? QRectF(bx, by, wid, len) : QRectF(bx, by, len, wid);
     }
 
     // ── Weapon icon (idx=3) ─────────────────────────────────────────────────
