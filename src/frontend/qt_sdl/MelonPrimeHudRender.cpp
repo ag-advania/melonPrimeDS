@@ -681,8 +681,12 @@ struct CachedHudConfig {
     RankTimeHudConfig rankTime;
     RadarOverlayConfig radar;
     HudOutlineConfig globalOutline; // when enable=true, overrides all per-element outlines
-    int textScalePct; // text visual scale in percent (100 = 1×, bitmap always rendered at 6px)
-    float textDrawScale; // P-14: pre-computed textScalePct / 100.0f
+    int textScalePct; // text visual scale in percent (100 = 1x, bitmap always rendered at 6px)
+    float textDrawScale; // P-14: pre-computed combined text scale (auto + user offset) / hudScale
+    // Auto-scale: per-category effective scale factors (integer resolution scale capped by user)
+    float scaleText;   // effective text auto-scale factor (capped)
+    float scaleIcons;  // effective icons auto-scale factor (capped)
+    float scaleGauges; // effective gauges auto-scale factor (capped)
     float lastStretchX; // topStretchX used for last anchor position computation
     float lastHudScale;  // hudScale (scaleY) at last render — needed for outline thickness conversion
     // Per-element opacity values (cached to avoid per-frame config lookups)
@@ -1032,11 +1036,30 @@ static void RefreshCachedConfig(Config::Table& cfg, float topStretchX = 1.0f, fl
     loadOL(c.radar.outline,        "BtmOverlay");
     loadOL(c.radar.frameOutline,   "BtmOverlayFrame");
     c.textScalePct        = std::max(100, cfg.GetInt("Metroid.Visual.HudTextScale"));
-    // Text size is in actual output pixels: 6px font × (textScalePct/100).
-    // Dividing by hudScale converts to DS-space so the painter transform
-    // (×hudScale) restores the exact pixel size.
-    c.textDrawScale       = (hudScale > 0.0f) ? (c.textScalePct / 100.0f) / hudScale
-                                               : c.textScalePct / 100.0f;
+    const bool autoScaleEnable = cfg.GetBool("Metroid.Visual.HudAutoScaleEnable");
+    if (autoScaleEnable) {
+        // Auto-scale: integer resolution multiplier, capped by user preferences.
+        // autoScaleInt = floor(hudScale), i.e. at 2.3x DS res -> 2.
+        const int autoScaleInt = std::max(1, static_cast<int>(std::floor(hudScale)));
+        const int autoScalePct = autoScaleInt * 100;
+        const int globalCap    = std::clamp(cfg.GetInt("Metroid.Visual.HudAutoScaleCap"),      100, 800);
+        auto capScale = [&](const char* catKey) -> float {
+            int catCap = std::clamp(cfg.GetInt(catKey), 100, 800);
+            return std::min({autoScalePct, globalCap, catCap}) / 100.0f;
+        };
+        c.scaleText   = capScale("Metroid.Visual.HudAutoScaleCapText");
+        c.scaleIcons  = capScale("Metroid.Visual.HudAutoScaleCapIcons");
+        c.scaleGauges = capScale("Metroid.Visual.HudAutoScaleCapGauges");
+    } else {
+        c.scaleText = 1.0f;
+        c.scaleIcons = 1.0f;
+        c.scaleGauges = 1.0f;
+    }
+    // Text draw scale: auto-scale + user TextScale as additive offset.
+    // e.g. auto=200%, TextScale=150% -> effective=250% (200+150-100).
+    const float effectiveTextPct = c.scaleText * 100.0f + (c.textScalePct - 100);
+    c.textDrawScale       = (hudScale > 0.0f) ? (effectiveTextPct / 100.0f) / hudScale
+                                               : effectiveTextPct / 100.0f;
     c.lastHudScale        = hudScale;
     c.hpOpacity           = (float)cfg.GetDouble("Metroid.Visual.HudHpOpacity");
     c.weaponOpacity       = (float)cfg.GetDouble("Metroid.Visual.HudWeaponOpacity");
@@ -1393,7 +1416,7 @@ static void DrawBombLeft(QPainter* p, melonDS::u8* ram, const RomAddresses& rom,
         }
     }
     if (c.bombLeft.bombIconShow) {
-        EnsureBombIconsLoaded(c.bombLeft.bombIconHeight);
+        EnsureBombIconsLoaded(static_cast<int>(c.bombLeft.bombIconHeight * c.scaleIcons));
         const QImage& icon = GetBombIconForDraw(bombs, c.bombLeft.bombIconColorOverlay, c.bombLeft.bombIconColor);
         if (!icon.isNull()) {
             const float dw = icon.width() / hudScale; const float dh = icon.height() / hudScale;
@@ -1682,10 +1705,10 @@ static inline void DrawHP(QPainter* p, uint16_t hp, uint16_t maxHP,
             gy = c.hp.hpGaugePosY;
         } else {
             CalcGaugePos(textX, c.hp.hpY, textW, textH, c.hp.hpGaugeAnchor, c.hp.hpGaugeOfsX, c.hp.hpGaugeOfsY,
-                         c.hp.hpGaugeLen / hs, c.hp.hpGaugeWid / hs, c.hp.hpGaugeOri, gx, gy);
+                         c.hp.hpGaugeLen / hs * c.scaleGauges, c.hp.hpGaugeWid / hs * c.scaleGauges, c.hp.hpGaugeOri, gx, gy);
         }
         if (c.hpGaugeOpacity < 1.0f) p->setOpacity(c.hpGaugeOpacity);
-        DrawGauge(p, gx, gy, ratio, gc, c.hp.hpGaugeOri, c.hp.hpGaugeLen, c.hp.hpGaugeWid,
+        DrawGauge(p, gx, gy, ratio, gc, c.hp.hpGaugeOri, (int)(c.hp.hpGaugeLen * c.scaleGauges), (int)(c.hp.hpGaugeWid * c.scaleGauges),
                   &EffOL(c, c.hp.gaugeOutline), hs);
         if (c.hpGaugeOpacity < 1.0f) p->setOpacity(1.0);
     }
@@ -1716,7 +1739,7 @@ static void DrawWeaponAmmo(QPainter* p, melonDS::u8* ram,
     const int fontPixelSize = s_frameFpx;       // P-9
 
     const WeaponInfo& wi = kWeaponTable[weapon];
-    EnsureIconsLoaded(c.weapon.iconHeight);
+    EnsureIconsLoaded(static_cast<int>(c.weapon.iconHeight * c.scaleIcons));
     const bool iconOvEnable = (weapon < 9) ? c.weapon.iconOverlayEnable[weapon] : false;
     const QColor iconOvColor = (weapon < 9) ? c.weapon.iconOverlayColor[weapon] : QColor();
     const QImage& icon = GetWeaponIconForDraw(weapon, iconOvEnable, iconOvColor); // P-1
@@ -1789,10 +1812,10 @@ static void DrawWeaponAmmo(QPainter* p, melonDS::u8* ram,
             gy = c.weapon.ammoGaugePosY;
         } else {
             CalcGaugePos(textX, textY, textW, textH, c.weapon.ammoGaugeAnchor, c.weapon.ammoGaugeOfsX, c.weapon.ammoGaugeOfsY,
-                         c.weapon.ammoGaugeLen / hudScale, c.weapon.ammoGaugeWid / hudScale, c.weapon.ammoGaugeOri, gx, gy);
+                         c.weapon.ammoGaugeLen / hudScale * c.scaleGauges, c.weapon.ammoGaugeWid / hudScale * c.scaleGauges, c.weapon.ammoGaugeOri, gx, gy);
         }
         if (c.ammoGaugeOpacity < 1.0f) p->setOpacity(c.ammoGaugeOpacity);
-        DrawGauge(p, gx, gy, ratio, c.weapon.ammoGaugeColor, c.weapon.ammoGaugeOri, c.weapon.ammoGaugeLen, c.weapon.ammoGaugeWid,
+        DrawGauge(p, gx, gy, ratio, c.weapon.ammoGaugeColor, c.weapon.ammoGaugeOri, (int)(c.weapon.ammoGaugeLen * c.scaleGauges), (int)(c.weapon.ammoGaugeWid * c.scaleGauges),
                   &EffOL(c, c.weapon.gaugeOutline), hudScale);
         if (c.ammoGaugeOpacity < 1.0f) p->setOpacity(1.0);
     }
