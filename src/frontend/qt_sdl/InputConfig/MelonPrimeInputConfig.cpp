@@ -363,10 +363,15 @@ struct HudMainSec {
 #define P_ANCHY(lbl, key)             { lbl, HWType::AnchorY3,     key, 0,2,1, nullptr, nullptr }
 #define P_LPOS(lbl, key)              { lbl, HWType::LabelPos5,    key, 0,4,1, nullptr, nullptr }
 
-// --- Section 1: Text Scale ---
+// --- Section 1: HUD SCALE ---
 static const HudWidgetProp kSecTextScale[] = {
-    P_INT("Text Scale %",     "Metroid.Visual.HudTextScale",   100, 300, 10),
-    P_INT("Render Scale Cap (0=unlimited)", "Metroid.Visual.HudRenderScale",  0,  10,   1),
+    P_INT("Text Scale (Base %)", "Metroid.Visual.HudTextScale", 100, 300, 10),
+    P_BOOL("Auto Scale Enable", "Metroid.Visual.HudAutoScaleEnable"),
+    P_INT("HUD Render Scale Cap (0=Unlimited)", "Metroid.Visual.HudRenderScale", 0, 10, 1),
+    P_INT("Auto Scale Global Cap %", "Metroid.Visual.HudAutoScaleCap", 100, 800, 25),
+    P_INT("Auto Scale Text Cap %", "Metroid.Visual.HudAutoScaleCapText", 100, 800, 25),
+    P_INT("Auto Scale Icon Cap %", "Metroid.Visual.HudAutoScaleCapIcons", 100, 800, 25),
+    P_INT("Auto Scale Gauge Cap %", "Metroid.Visual.HudAutoScaleCapGauges", 100, 800, 25),
 };
 
 // --- Section 2: Crosshair ---
@@ -752,7 +757,7 @@ static const HudSubSec kSubsRadar[] = {
 static const HudMainSec kHudMainSections[] = {
     { "OUTLINE OVERRIDE",  "Metroid.UI.SectionHudGlobalOutline",
       _P(kSecGlobalOutline), nullptr, 0, /*preview*/ 0 },
-    { "TEXT SCALE",        "Metroid.UI.SectionHudTextScale",
+        { "HUD SCALE",         "Metroid.UI.SectionHudTextScale",
       _P(kSecTextScale), nullptr, 0, /*preview*/ 0 },
     { "CROSSHAIR",         "Metroid.UI.SectionHudCrosshair",
       _P(kSecCrosshair), kSubsCrosshair, static_cast<int>(sizeof(kSubsCrosshair)/sizeof(kSubsCrosshair[0])), /*preview*/ 1 },

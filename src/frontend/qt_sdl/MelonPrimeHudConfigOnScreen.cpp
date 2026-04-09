@@ -208,6 +208,9 @@ static int  s_crosshairPanelScroll = 0;
 // Text-scale slider drag state
 static bool s_textScaleDragging = false;
 
+// Auto-scale global cap slider drag state
+static bool s_autoScaleCapDragging = false;
+
 static int CountCrosshairRows() {
     return 1 + kCrosshairMainCount + 2; // color + main props + Inner header + Outer header
 }
@@ -411,13 +414,14 @@ static const QRectF kEditSaveRect  (10.0f,  1.0f, 74.0f, 12.0f);
 static const QRectF kEditCancelRect(88.0f,  1.0f, 74.0f, 12.0f);
 static const QRectF kEditResetRect (166.0f, 1.0f, 74.0f, 12.0f);
 
-// Text Scale control, Crosshair button, and Preview toggle (below button bar)
-static const QRectF kEditTextScaleRect(10.0f, 15.0f, 74.0f, 10.0f);
-static const QRectF kEditCrosshairBtnRect(88.0f, 15.0f, 74.0f, 10.0f);
+// Text Scale control, Auto-Scale Cap, Crosshair button, and Preview toggle (below button bar)
+static const QRectF kEditTextScaleRect  (10.0f,  15.0f, 58.0f, 10.0f);
+static const QRectF kEditAutoScaleCapRect(70.0f, 15.0f, 58.0f, 10.0f);
+static const QRectF kEditCrosshairBtnRect(130.0f, 15.0f, 54.0f, 10.0f);
 
 // Text Scale slider helpers (depend on kEditTextScaleRect)
 static constexpr int kTsMin = 100, kTsMax = 300;
-static constexpr float kTsLabelW = 16.0f;
+static constexpr float kTsLabelW = 14.0f;
 
 static inline QRectF TsTrackRect()
 {
@@ -436,7 +440,29 @@ static inline int TsValueFromX(float px)
     return std::max(kTsMin, std::min(kTsMax,
         kTsMin + static_cast<int>(std::round(frac * (kTsMax - kTsMin) / 5.0f) * 5.0f)));
 }
-static const QRectF kEditPreviewBtnRect(166.0f, 15.0f, 74.0f, 10.0f);
+
+// Auto-Scale Cap slider helpers (depend on kEditAutoScaleCapRect)
+static constexpr int kAscMin = 100, kAscMax = 800;
+static constexpr float kAscLabelW = 14.0f;
+
+static inline QRectF AscTrackRect()
+{
+    const float x = static_cast<float>(kEditAutoScaleCapRect.left()) + 2.0f;
+    const float y = static_cast<float>(kEditAutoScaleCapRect.top());
+    const float w = static_cast<float>(kEditAutoScaleCapRect.width()) - 4.0f;
+    const float h = static_cast<float>(kEditAutoScaleCapRect.height());
+    return QRectF(x + kAscLabelW, y + 2.0f, w - kAscLabelW, h - 4.0f);
+}
+
+static inline int AscValueFromX(float px)
+{
+    const QRectF tr = AscTrackRect();
+    float frac = static_cast<float>((px - tr.left()) / tr.width());
+    frac = std::max(0.0f, std::min(1.0f, frac));
+    return std::max(kAscMin, std::min(kAscMax,
+        kAscMin + static_cast<int>(std::round(frac * (kAscMax - kAscMin) / 25.0f) * 25.0f)));
+}
+static const QRectF kEditPreviewBtnRect(186.0f, 15.0f, 54.0f, 10.0f);
 
 // Crosshair panel rect (left side, below control bar)
 static constexpr float kCrosshairPanelX = 2.0f;
@@ -561,6 +587,12 @@ static void SnapshotEditConfig(Config::Table& cfg)
     snapshotPropArray(kPropsCrosshairInner, kCrosshairInnerCount);
     snapshotPropArray(kPropsCrosshairOuter, kCrosshairOuterCount);
     s_editSnapshot["Metroid.Visual.HudTextScale"] = cfg.GetInt("Metroid.Visual.HudTextScale");
+    s_editSnapshot["Metroid.Visual.HudAutoScaleEnable"] = cfg.GetBool("Metroid.Visual.HudAutoScaleEnable") ? 1 : 0;
+    s_editSnapshotBools.insert("Metroid.Visual.HudAutoScaleEnable");
+    s_editSnapshot["Metroid.Visual.HudAutoScaleCap"]       = cfg.GetInt("Metroid.Visual.HudAutoScaleCap");
+    s_editSnapshot["Metroid.Visual.HudAutoScaleCapText"]   = cfg.GetInt("Metroid.Visual.HudAutoScaleCapText");
+    s_editSnapshot["Metroid.Visual.HudAutoScaleCapIcons"]  = cfg.GetInt("Metroid.Visual.HudAutoScaleCapIcons");
+    s_editSnapshot["Metroid.Visual.HudAutoScaleCapGauges"] = cfg.GetInt("Metroid.Visual.HudAutoScaleCapGauges");
 }
 
 static void RestoreEditSnapshot(Config::Table& cfg)
@@ -634,6 +666,11 @@ static void ResetEditToDefaults(Config::Table& cfg)
     resetPropArray(kPropsCrosshairInner, kCrosshairInnerCount);
     resetPropArray(kPropsCrosshairOuter, kCrosshairOuterCount);
     cfg.SetInt("Metroid.Visual.HudTextScale", defaults.GetInt("Metroid.Visual.HudTextScale"));
+    cfg.SetBool("Metroid.Visual.HudAutoScaleEnable", defaults.GetBool("Metroid.Visual.HudAutoScaleEnable"));
+    cfg.SetInt("Metroid.Visual.HudAutoScaleCap",       defaults.GetInt("Metroid.Visual.HudAutoScaleCap"));
+    cfg.SetInt("Metroid.Visual.HudAutoScaleCapText",   defaults.GetInt("Metroid.Visual.HudAutoScaleCapText"));
+    cfg.SetInt("Metroid.Visual.HudAutoScaleCapIcons",  defaults.GetInt("Metroid.Visual.HudAutoScaleCapIcons"));
+    cfg.SetInt("Metroid.Visual.HudAutoScaleCapGauges", defaults.GetInt("Metroid.Visual.HudAutoScaleCapGauges"));
 }
 
 // ── Bounding rect computation ───────────────────────────────────────────────
@@ -1313,7 +1350,7 @@ static void DrawEditOverlay(QPainter* p, Config::Table& cfg, float topStretchX)
         // Label
         p->setPen(kLabelColor);
         p->drawText(QRectF(tsX, tsY, kTsLabelW, tsH), Qt::AlignLeft | Qt::AlignVCenter,
-                    QStringLiteral("Scale"));
+                    QStringLiteral("Text"));
 
         // Track
         const QRectF tr = TsTrackRect();
@@ -1334,6 +1371,45 @@ static void DrawEditOverlay(QPainter* p, Config::Table& cfg, float topStretchX)
         p->setPen(kValueColor);
         p->setFont(smallFont);
         p->drawText(tr, Qt::AlignCenter, QString::number(txSc) + QStringLiteral("%"));
+    }
+
+    // ── Auto-Scale Global Cap slider ────────────────────────────────────────
+    {
+        int ascVal = std::clamp(cfg.GetInt("Metroid.Visual.HudAutoScaleCap"), kAscMin, kAscMax);
+        p->setBrush(kPanelBg);
+        p->setPen(QPen(kPanelBorder, 0.3));
+        p->drawRoundedRect(kEditAutoScaleCapRect, kBtnCorner, kBtnCorner);
+        p->setBrush(Qt::NoBrush);
+        p->setFont(smallFont);
+
+        const float ascX = static_cast<float>(kEditAutoScaleCapRect.left()) + 2.0f;
+        const float ascY = static_cast<float>(kEditAutoScaleCapRect.top());
+        const float ascH = static_cast<float>(kEditAutoScaleCapRect.height());
+
+        // Label
+        p->setPen(kLabelColor);
+        p->drawText(QRectF(ascX, ascY, kAscLabelW, ascH), Qt::AlignLeft | Qt::AlignVCenter,
+                    QStringLiteral("Auto"));
+
+        // Track
+        const QRectF atr = AscTrackRect();
+        const float ascFrac = static_cast<float>(ascVal - kAscMin) / (kAscMax - kAscMin);
+        p->setBrush(kCtrlBg);
+        p->setPen(Qt::NoPen);
+        p->drawRoundedRect(atr, 1.0, 1.0);
+        p->setBrush(QColor(60, 110, 60, 180));
+        p->drawRoundedRect(QRectF(atr.left(), atr.top(), atr.width() * ascFrac, atr.height()), 1.0, 1.0);
+        p->setBrush(Qt::NoBrush);
+        // Thumb
+        const float ascThumbX = atr.left() + atr.width() * ascFrac - 1.0f;
+        p->fillRect(QRectF(ascThumbX, ascY + 0.5f, 2.0f, ascH - 1.0f), QColor(180, 240, 180, 240));
+        // Track border
+        p->setPen(QPen(kPanelBorder, 0.4));
+        p->drawRoundedRect(atr, 1.0, 1.0);
+        // Value text
+        p->setPen(kValueColor);
+        p->setFont(smallFont);
+        p->drawText(atr, Qt::AlignCenter, QString::number(ascVal) + QStringLiteral("%"));
     }
 
     // ── Crosshair toggle button ─────────────────────────────────────────────
@@ -1817,6 +1893,17 @@ void CustomHud_EditMousePress(QPointF pt, Qt::MouseButton btn, Config::Table& cf
         return;
     }
 
+    // Priority 1b2: Auto-Scale Cap slider
+    if (kEditAutoScaleCapRect.contains(ds)) {
+        const QRectF atr = AscTrackRect();
+        if (atr.contains(ds)) {
+            cfg.SetInt("Metroid.Visual.HudAutoScaleCap", AscValueFromX(static_cast<float>(ds.x())));
+            CustomHud_InvalidateConfigCache();
+            s_autoScaleCapDragging = true;
+        }
+        return;
+    }
+
     // Priority 1c: Crosshair panel toggle
     if (kEditCrosshairBtnRect.contains(ds)) {
         s_crosshairPanelOpen = !s_crosshairPanelOpen;
@@ -2230,6 +2317,12 @@ void CustomHud_EditMouseMove(QPointF pt, Config::Table& cfg)
         return;
     }
 
+    if (s_autoScaleCapDragging) {
+        cfg.SetInt("Metroid.Visual.HudAutoScaleCap", AscValueFromX(static_cast<float>(ds.x())));
+        CustomHud_InvalidateConfigCache();
+        return;
+    }
+
     if (s_dragging && s_editSelected >= 0) {
         const HudEditElemDesc& d = kEditElems[s_editSelected];
         const int newOfsX = static_cast<int>(std::round(s_dragStartOfsX + ds.x() - s_dragStartDS.x()));
@@ -2287,6 +2380,7 @@ void CustomHud_EditMouseRelease(QPointF pt, Qt::MouseButton btn, Config::Table& 
     s_resizingLength    = false;
     s_resizingWidth     = false;
     s_textScaleDragging = false;
+    s_autoScaleCapDragging = false;
 }
 
 void CustomHud_EditMouseWheel(QPointF pt, int delta, Config::Table& cfg)
@@ -2299,6 +2393,15 @@ void CustomHud_EditMouseWheel(QPointF pt, int delta, Config::Table& cfg)
         int val = cfg.GetInt("Metroid.Visual.HudTextScale");
         val = std::max(kTsMin, std::min(kTsMax, val + (delta > 0 ? 5 : -5)));
         cfg.SetInt("Metroid.Visual.HudTextScale", val);
+        CustomHud_InvalidateConfigCache();
+        return;
+    }
+
+    // Auto-Scale Cap slider wheel
+    if (kEditAutoScaleCapRect.contains(ds)) {
+        int val = cfg.GetInt("Metroid.Visual.HudAutoScaleCap");
+        val = std::clamp(val + (delta > 0 ? 25 : -25), kAscMin, kAscMax);
+        cfg.SetInt("Metroid.Visual.HudAutoScaleCap", val);
         CustomHud_InvalidateConfigCache();
         return;
     }
