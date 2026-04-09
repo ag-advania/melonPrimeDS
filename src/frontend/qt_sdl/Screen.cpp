@@ -354,10 +354,14 @@ ScreenPanel::ScreenPanel(QWidget* parent) : QWidget(parent)
             m_hudEditPanel->clear();
         } else {
             m_hudEditPanel->populateForElement(idx);
-            // Position at right edge of the widget
+            // Cap height to screen panel and position at right edge (global coords for tool window)
+            const int maxH = height() - 8;
+            m_hudEditPanel->setMaximumHeight(maxH);
+            m_hudEditPanel->adjustSize();
+            const int panelH = std::min(m_hudEditPanel->height(), maxH);
             int px = width() - m_hudEditPanel->width() - 4;
-            int py = (height() - m_hudEditPanel->sizeHint().height()) / 2;
-            m_hudEditPanel->move(px, std::max(4, py));
+            int py = (height() - panelH) / 2;
+            m_hudEditPanel->move(mapToGlobal(QPoint(px, std::max(4, py))));
             m_hudEditPanel->show();
             m_hudEditPanel->raise();
         }
@@ -562,9 +566,12 @@ void ScreenPanel::resizeEvent(QResizeEvent* event)
 #endif
 #ifdef MELONPRIME_CUSTOM_HUD
     if (m_hudEditPanel && m_hudEditPanel->isVisible()) {
+        const int maxH = height() - 8;
+        m_hudEditPanel->setMaximumHeight(maxH);
+        const int panelH = std::min(m_hudEditPanel->height(), maxH);
         int px = width() - m_hudEditPanel->width() - 4;
-        int py = (height() - m_hudEditPanel->sizeHint().height()) / 2;
-        m_hudEditPanel->move(px, std::max(4, py));
+        int py = (height() - panelH) / 2;
+        m_hudEditPanel->move(mapToGlobal(QPoint(px, std::max(4, py))));
     }
 #endif
     QWidget::resizeEvent(event);
@@ -2235,6 +2242,15 @@ void ScreenPanel::enterEvent(QEnterEvent * event)
 void ScreenPanel::moveEvent(QMoveEvent * e) {
 #if defined(_WIN32)
     updateClipIfNeeded();
+#endif
+#ifdef MELONPRIME_CUSTOM_HUD
+    if (m_hudEditPanel && m_hudEditPanel->isVisible()) {
+        const int maxH = height() - 8;
+        const int panelH = std::min(m_hudEditPanel->height(), maxH);
+        int px = width() - m_hudEditPanel->width() - 4;
+        int py = (height() - panelH) / 2;
+        m_hudEditPanel->move(mapToGlobal(QPoint(px, std::max(4, py))));
+    }
 #endif
     QWidget::moveEvent(e);
 }
