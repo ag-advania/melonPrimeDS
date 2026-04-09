@@ -426,6 +426,7 @@ static const HudWidgetProp kSecHpGauge[] = {
     P_BOOL("Enable", "Metroid.Visual.HudHpGauge"),
     P_BOOL("Auto Color", "Metroid.Visual.HudHpGaugeAutoColor"),
     P_ORIENT("Orientation", "Metroid.Visual.HudHpGaugeOrientation"),
+    P_ALN("Align", "Metroid.Visual.HudHpGaugeAlign"),
     P_INT("Length", "Metroid.Visual.HudHpGaugeLength", 1, 192, 1),
     P_INT("Width", "Metroid.Visual.HudHpGaugeWidth", 1, 20, 1),
     P_INT("Offset X", "Metroid.Visual.HudHpGaugeOffsetX", -128, 128, 1),
@@ -492,6 +493,7 @@ static const HudWidgetProp kSecWpnIconTints[] = {
 static const HudWidgetProp kSecAmmoGauge[] = {
     P_BOOL("Enable", "Metroid.Visual.HudAmmoGauge"),
     P_ORIENT("Orientation", "Metroid.Visual.HudAmmoGaugeOrientation"),
+    P_ALN("Align", "Metroid.Visual.HudAmmoGaugeAlign"),
     P_INT("Length", "Metroid.Visual.HudAmmoGaugeLength", 1, 192, 1),
     P_INT("Width", "Metroid.Visual.HudAmmoGaugeWidth", 1, 20, 1),
     P_INT("Offset X", "Metroid.Visual.HudAmmoGaugeOffsetX", -128, 128, 1),
@@ -839,9 +841,11 @@ protected:
     }
 
     // Draw a gauge bar in DS-space at 50% fill
-    static void drawGaugeDS(QPainter& p, int x, int y, const QColor& color, int orient, int len, int wid) {
+    static void drawGaugeDS(QPainter& p, int x, int y, const QColor& color, int orient, int len, int wid, int align = 0) {
         if (len <= 0) len = 28;
         if (wid <= 0) wid = 3;
+        if (orient == 0) x -= len * align / 2;
+        else             y -= len * align / 2;
         int fw = (orient == 0) ? len / 2 : wid;
         int fh = (orient == 0) ? wid    : len / 2;
         int fx = x;
@@ -946,7 +950,7 @@ protected:
                     gx = tx + c.GetInt("Metroid.Visual.HudHpGaugeOffsetX");
                     gy = pos.y() + c.GetInt("Metroid.Visual.HudHpGaugeOffsetY") + 2;
                 }
-                drawGaugeDS(p, gx, gy, gc, ori, len, wid);
+                drawGaugeDS(p, gx, gy, gc, ori, len, wid, c.GetInt("Metroid.Visual.HudHpGaugeAlign"));
             }
         }
 
@@ -1000,7 +1004,7 @@ protected:
                     gx = tx + c.GetInt("Metroid.Visual.HudAmmoGaugeOffsetX");
                     gy = pos.y() + c.GetInt("Metroid.Visual.HudAmmoGaugeOffsetY") + 2;
                 }
-                drawGaugeDS(p, gx, gy, gc, ori, len, wid);
+                drawGaugeDS(p, gx, gy, gc, ori, len, wid, c.GetInt("Metroid.Visual.HudAmmoGaugeAlign"));
             }
         }
     }
