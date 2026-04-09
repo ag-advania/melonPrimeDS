@@ -367,17 +367,17 @@ struct HudMainSec {
 static const HudWidgetProp kSecTextScale[] = {
     P_INT("Text Scale (Base %)", "Metroid.Visual.HudTextScale", 100, 300, 10),
     P_BOOL("Auto Scale Enable", "Metroid.Visual.HudAutoScaleEnable"),
-    P_INT("HUD Render Scale Cap (0=Unlimited)", "Metroid.Visual.HudRenderScale", 0, 10, 1),
     P_INT("Auto Scale Global Cap %", "Metroid.Visual.HudAutoScaleCap", 100, 800, 25),
     P_INT("Auto Scale Text Cap %", "Metroid.Visual.HudAutoScaleCapText", 100, 800, 25),
     P_INT("Auto Scale Icon Cap %", "Metroid.Visual.HudAutoScaleCapIcons", 100, 800, 25),
     P_INT("Auto Scale Gauge Cap %", "Metroid.Visual.HudAutoScaleCapGauges", 100, 800, 25),
+    P_INT("Auto Scale Crosshair Cap %", "Metroid.Visual.HudAutoScaleCapCrosshair", 100, 800, 25),
 };
 
 // --- Section 2: Crosshair ---
 static const HudWidgetProp kSecCrosshair[] = {
     P_CLR("Color", "Metroid.Visual.CrosshairColorR", "Metroid.Visual.CrosshairColorG", "Metroid.Visual.CrosshairColorB"),
-    P_INT("Scale %", "Metroid.Visual.CrosshairScale", 100, 500, 1),
+    P_INT("Scale %", "Metroid.Visual.CrosshairScale", 100, 800, 1),
     P_BOOL("Outline", "Metroid.Visual.CrosshairOutline"),
     P_FLOAT("Outline Opacity", "Metroid.Visual.CrosshairOutlineOpacity"),
     P_INT("Outline Thickness", "Metroid.Visual.CrosshairOutlineThickness", 1, 10, 1),

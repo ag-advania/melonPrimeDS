@@ -165,19 +165,19 @@ Key struct fields:
 - `BombLeftHudConfig`: `bombLeftAnchor`, `bombLeftOfsX/Y`, `bombLeftX/Y`; `bombIconPosAnchor`, `bombIconPosOfsX/Y`, `bombIconPosX/Y`
 - `RankTimeHudConfig`: `rankAnchor/OfsX/Y/X/Y`, `timeLeftAnchor/OfsX/Y/X/Y`, `timeLimitAnchor/OfsX/Y/X/Y`
 - `RadarOverlayConfig`: `radarAnchor`, `radarOfsX/Y`, `radarDstX/Y`
-- `CachedHudConfig`: `lastStretchX` tracks the `topStretchX` used for the last position computation; `lastHudScale` tracks hudScale for outline thickness conversion
+- `CachedHudConfig`: `lastStretchX` tracks the `topStretchX` used for the last position computation; `lastHudScale` tracks hudScale for outline thickness conversion; `scaleText/scaleIcons/scaleGauges/scaleCrosshair` store per-category auto-scale factors
 - `CrosshairHudConfig`: additionally stores `chInnerColor`, `chOuterColor`, `chDotColor` (P-11)
 
 ### High-resolution HUD rendering
 The HUD overlay is rendered into a hi-res buffer matching the actual screen output size (not DS-native 256×192).
 
 Key design points:
-- `Overlay[0]` is sized `ceil(hudScale * topStretchX * 256) × ceil(hudScale * 192)` pixels.
+- `Overlay[0]` is sized to the full output window (no intermediate scaling — buffer matches display 1:1).
 - `CustomHud_Render()` receives `hudScale` (`scaleY = output height / 192`) and `topStretchX` (`scaleX / scaleY`: `>1` widescreen, `<1` narrow window, `=1` exact 4:3).
 - The painter uses `scale(hudScale, hudScale)` then `translate((topStretchX-1)*128, 0)`. DS Y is always scaled by `scaleY`; DS X effectively scales by `scaleX` via the translate.
 - All HUD element positions are specified in DS-space (integers, 0–255 / 0–191) and scale correctly with the window without any manual correction.
 - Icons are drawn with `drawImage(QRectF(x, y, icon.width(), icon.height()), icon)` so they scale with the painter transform.
-- The font is always rendered at `kCustomHudFontSize = 6` px (optimal glyph quality for `mph.ttf`). Visual text size is controlled separately by `Metroid.Visual.HudTextScale` (percentage, default 100). Text bitmaps are drawn scaled via `DrawCachedText(..., tds)` where `tds = textScalePct / 100.0f`.
+- The font is always rendered at `kCustomHudFontSize = 6` px (optimal glyph quality for `mph.ttf`). Visual text size is controlled separately by `Metroid.Visual.HudTextScale` (percentage, default 60). Text bitmaps are drawn scaled via `DrawCachedText(..., tds)` where `tds = textDrawScale` (pre-computed from auto-scale + user TextScale).
 - The crosshair reads `cx/cy` from RAM in DS-space (0–255) and requires **no** manual `topStretchX` correction — the painter transform handles it.
 
 ### 9-point anchor system
@@ -228,6 +228,37 @@ Applied optimizations in `MelonPrimeHudRender.cpp`:
 | P-10 | `HpGaugeColor()` returns `const QColor&` with `static const` threshold colors | Eliminates per-call `QColor(255,0,0)` / `QColor(255,165,0)` construction | Per frame (HP ≤ 50) |
 | P-11 | Pre-computed crosshair arm/dot colors with alpha in `CrosshairHudConfig` | Eliminates 3 `QColor` copies + `setAlphaF()` per frame | Per frame |
 | P-12 | Separable max-filter dilation (`DilateSeparableTinted`) — two-pass horizontal+vertical max replaces O(R²) naive kernel with O(R) per pixel | ~1.5× faster for R=1, ~3× for R=3 | Config changes / editor |
+
+### HUD Auto-Scale System
+
+Automatic integer-based scaling that makes HUD elements readable at high resolutions without manual adjustment.
+
+**Core formula:**
+- `autoScaleInt = max(1, floor(hudScale))` — integer DS resolution multiplier
+- `autoScalePct = autoScaleInt * 100`
+- Per-category effective scale = `min(autoScalePct, globalCap, categoryCap) / 100.0`
+
+**Per-category scale factors** in `CachedHudConfig`:
+| Field | Config cap key | Applied to |
+|-------|---------------|------------|
+| `scaleText` | `HudAutoScaleCapText` | Text: additive with HudTextScale — `effectiveTextPct = scaleText*100 + (textScalePct - 100)` |
+| `scaleIcons` | `HudAutoScaleCapIcons` | SVG icons loaded at `iconHeight * scaleIcons` (rasterized at full resolution, no draw-time stretch) |
+| `scaleGauges` | `HudAutoScaleCapGauges` | Gauge bar `len * scaleGauges` and `wid * scaleGauges` at both `CalcGaugePos` and `DrawGauge` |
+| `scaleCrosshair` | `HudAutoScaleCapCrosshair` | Crosshair arm rects recomputed with `cs = chScale * scaleCrosshair` after auto-scale is determined |
+
+**Exclusions:** Radar overlay is not auto-scaled.
+
+**Enable/disable:** Gated by `HudAutoScaleEnable` (default true). When disabled, all scale factors are 1.0.
+
+**Computation order in `RefreshCachedConfig()`:**
+1. `LoadCrosshairConfig()` computes arm rects with `chScale` only
+2. Auto-scale factors computed from `floor(hudScale)` and caps
+3. If `scaleCrosshair != 1.0`, arm rects are recomputed with `chScale * scaleCrosshair`
+
+**UI locations:**
+- Settings dialog: "HUD SCALE" section with enable checkbox + 5 cap spinboxes (global, text, icons, gauges, crosshair)
+- Edit mode: "Auto" slider (global cap, 100–800, step 25)
+- Edit mode snapshot/restore/reset covers all auto-scale keys
 - guarded by `s_hudPatchApplied`
 - restored automatically when custom HUD is no longer active
 
@@ -292,7 +323,7 @@ Current persisted sections include groups such as:
 All HUD parameters are accessible via hierarchical collapsible sections in the Custom HUD tab, created programmatically by `setupCustomHudWidgets()` using descriptor arrays (`HudMainSec` / `HudSubSec` / `HudWidgetProp`). Supported widget types: `Bool` (QCheckBox), `Int` (QSpinBox), `Float` (QDoubleSpinBox 0.0-1.0), `String` (QLineEdit), `Anchor9` (QComboBox 9-point), `Align3` (QComboBox L/C/R), `Color3` (3× QSpinBox R/G/B + swatch QPushButton).
 
 Main sections (with nested sub-sections):
-- **TEXT SCALE** — single text scale property (no preview)
+- **HUD SCALE** — auto-scale enable, text scale, global + per-category auto-scale caps (no preview)
 - **CROSSHAIR** — color/outline/dot/T-style properties + sub: Inner Lines, Outer Lines (preview: CrosshairPreviewWidget)
 - **HP / AMMO** — sub: HP Number Position, Ammo Number Position, Weapon Icon, HP Gauge, Ammo Gauge (preview: HpAmmoPreviewWidget)
 - **MATCH STATUS HUD** — sub: Score, Rank/Time (nested: Rank, Time Left, Time Limit), Bomb Left, Bomb Icon (preview: MatchStatusPreviewWidget)
@@ -529,8 +560,14 @@ MelonPrime-specific settings are primarily stored under:
 
 Important current groups include:
 - `Metroid.Visual.CustomHUD`
-- `Metroid.Visual.HudTextScale` — text visual scale in percent (default 100, font always 6px)
-- `Metroid.Visual.Crosshair*`
+- `Metroid.Visual.HudTextScale` — text visual scale in percent (default 60, font always 6px)
+- `Metroid.Visual.HudAutoScaleEnable` — enable automatic HUD scaling (default true)
+- `Metroid.Visual.HudAutoScaleCap` — global auto-scale cap percent (default 800)
+- `Metroid.Visual.HudAutoScaleCapText` — text category cap (default 800)
+- `Metroid.Visual.HudAutoScaleCapIcons` — icons category cap (default 800)
+- `Metroid.Visual.HudAutoScaleCapGauges` — gauges category cap (default 800)
+- `Metroid.Visual.HudAutoScaleCapCrosshair` — crosshair category cap (default 800)
+- `Metroid.Visual.Crosshair*` — crosshair settings (CrosshairScale max 800)
 - `Metroid.Visual.HudHp*` — includes `HudHpAnchor` (default 6=BL), `HudHpX/Y` (offsets), `HudHpGaugePosAnchor` (default 6=BL)
 - `Metroid.Visual.HudWeapon*` — includes `HudWeaponAnchor` (default 8=BR), `HudWeaponIconPosAnchor` (default 8=BR)
 - `Metroid.Visual.HudAmmo*` — includes `HudAmmoGaugePosAnchor` (default 8=BR)
@@ -564,9 +601,10 @@ Current work is on the `highres_fonts_v2` branch. Main changes relative to `mast
 - `ApplyAnchor()` helper in `MelonPrimeHudRender.cpp` — called once per element in `Load*Config()`, transparent to draw functions
 - **In-game HUD edit mode** — full drag-and-drop editor with properties panels, crosshair panel with side panels, live previews; preview mode supports drag + right-click editing (described in "In-game HUD Edit Mode" section above)
 - Edit mode code split into `MelonPrimeHudConfigOnScreen.cpp` (unity-build included by `MelonPrimeHudRender.cpp`)
-- **Classic settings dialog restored** — Custom HUD tab organized into 5 hierarchical main sections (Crosshair, HP/Ammo, Match Status HUD, HUD Radar, Text Scale) with nested sub-sections. Each main section features a live preview widget on the right (except Text Scale) that refreshes automatically as users modify settings
+- **Classic settings dialog restored** — Custom HUD tab organized into 5 hierarchical main sections (HUD Scale, Crosshair, HP/Ammo, Match Status HUD, HUD Radar) with nested sub-sections. Each main section features a live preview widget on the right (except HUD Scale) that refreshes automatically as users modify settings
 - **Programmatic widget architecture** — descriptor-driven (`HudMainSec`/`HudSubSec`/`HudWidgetProp`) widget creation in `setupCustomHudWidgets()`, enabling data-driven save/restore/TOML-export. Preview refresh via `invalidateHudAndRefreshPreviews()` member method
 - Snapshot/restore covers all HUD widgets plus 3 global fields
+- **HUD auto-scale system** — automatic integer-based scaling from DS resolution with per-category caps (text, icons, gauges, crosshair); radar excluded from auto-scale
 - Property labels use full unabbreviated names throughout the edit mode UI
 - Element boxes show live previews (gauge bars, cached icons, sample text) instead of static text labels
 - Element box font scales with `HudTextScale` setting

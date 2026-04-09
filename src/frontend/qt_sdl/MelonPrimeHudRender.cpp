@@ -684,9 +684,10 @@ struct CachedHudConfig {
     int textScalePct; // text visual scale in percent (100 = 1x, bitmap always rendered at 6px)
     float textDrawScale; // P-14: pre-computed combined text scale (auto + user offset) / hudScale
     // Auto-scale: per-category effective scale factors (integer resolution scale capped by user)
-    float scaleText;   // effective text auto-scale factor (capped)
-    float scaleIcons;  // effective icons auto-scale factor (capped)
-    float scaleGauges; // effective gauges auto-scale factor (capped)
+    float scaleText;      // effective text auto-scale factor (capped)
+    float scaleIcons;     // effective icons auto-scale factor (capped)
+    float scaleGauges;    // effective gauges auto-scale factor (capped)
+    float scaleCrosshair; // effective crosshair auto-scale factor (capped)
     float lastStretchX; // topStretchX used for last anchor position computation
     float lastHudScale;  // hudScale (scaleY) at last render — needed for outline thickness conversion
     // Per-element opacity values (cached to avoid per-frame config lookups)
@@ -1047,19 +1048,48 @@ static void RefreshCachedConfig(Config::Table& cfg, float topStretchX = 1.0f, fl
             int catCap = std::clamp(cfg.GetInt(catKey), 100, 800);
             return std::min({autoScalePct, globalCap, catCap}) / 100.0f;
         };
-        c.scaleText   = capScale("Metroid.Visual.HudAutoScaleCapText");
-        c.scaleIcons  = capScale("Metroid.Visual.HudAutoScaleCapIcons");
-        c.scaleGauges = capScale("Metroid.Visual.HudAutoScaleCapGauges");
+        c.scaleText      = capScale("Metroid.Visual.HudAutoScaleCapText");
+        c.scaleIcons     = capScale("Metroid.Visual.HudAutoScaleCapIcons");
+        c.scaleGauges    = capScale("Metroid.Visual.HudAutoScaleCapGauges");
+        c.scaleCrosshair = capScale("Metroid.Visual.HudAutoScaleCapCrosshair");
     } else {
         c.scaleText = 1.0f;
         c.scaleIcons = 1.0f;
         c.scaleGauges = 1.0f;
+        c.scaleCrosshair = 1.0f;
     }
     // Text draw scale: auto-scale + user TextScale as additive offset.
     // e.g. auto=200%, TextScale=150% -> effective=250% (200+150-100).
     const float effectiveTextPct = c.scaleText * 100.0f + (c.textScalePct - 100);
     c.textDrawScale       = (hudScale > 0.0f) ? (effectiveTextPct / 100.0f) / hudScale
                                                : effectiveTextPct / 100.0f;
+
+    // Recompute crosshair arm rects with auto-scale applied.
+    // LoadCrosshairConfig computes rects using chScale only; we now
+    // multiply in scaleCrosshair and redo the geometry.
+    if (c.scaleCrosshair != 1.0f) {
+        auto& ch = c.crosshair;
+        const double cs = ch.chScale * (double)c.scaleCrosshair;
+        ch.cachedInnerCount = 0;
+        ch.cachedOuterCount = 0;
+        if (ch.chInnerShow)
+            CollectArmRects(ch.cachedInnerRects, ch.cachedInnerCount, 0, 0,
+                            static_cast<int>(ch.chInnerLengthX * cs),
+                            static_cast<int>(ch.chInnerLengthY * cs),
+                            static_cast<int>(ch.chInnerOffset  * cs),
+                            std::max(1, static_cast<int>(ch.chInnerThickness * cs)),
+                            ch.chTStyle);
+        if (ch.chOuterShow)
+            CollectArmRects(ch.cachedOuterRects, ch.cachedOuterCount, 0, 0,
+                            static_cast<int>(ch.chOuterLengthX * cs),
+                            static_cast<int>(ch.chOuterLengthY * cs),
+                            static_cast<int>(ch.chOuterOffset  * cs),
+                            std::max(1, static_cast<int>(ch.chOuterThickness * cs)),
+                            ch.chTStyle);
+        const int dotSz = std::max(1, static_cast<int>(ch.chDotThickness * cs));
+        ch.cachedDotSizePx = dotSz;
+        ch.cachedDotHalfPx = dotSz / 2;
+    }
     c.lastHudScale        = hudScale;
     c.hpOpacity           = (float)cfg.GetDouble("Metroid.Visual.HudHpOpacity");
     c.weaponOpacity       = (float)cfg.GetDouble("Metroid.Visual.HudWeaponOpacity");

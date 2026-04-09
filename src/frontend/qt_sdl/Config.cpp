@@ -124,6 +124,7 @@ namespace Config
         {"Instance*.Metroid.Visual.HudAutoScaleCapText",   800},
         {"Instance*.Metroid.Visual.HudAutoScaleCapIcons",  800},
         {"Instance*.Metroid.Visual.HudAutoScaleCapGauges", 800},
+        {"Instance*.Metroid.Visual.HudAutoScaleCapCrosshair", 800},
         {"Instance*.Metroid.Visual.HudHpAnchor",           6},
         {"Instance*.Metroid.Visual.HudHpX",               45},
         {"Instance*.Metroid.Visual.HudHpY",              -93},
@@ -573,8 +574,6 @@ namespace Config
         {"Instance*.Metroid.Visual.BtmOverlayFrameOutlineOpacity", 0.75},
         {"Instance*.Metroid.Visual.BtmOverlayFrameOutlineThickness",1},
         /* MelonPrimeDS HUD per-element outlines } */
-        /* MelonPrimeDS HUD render scale (N = render at N×DS native res, 0 = no cap) */
-        {"Instance*.Metroid.Visual.HudRenderScale", 0},
         /* MelonPrimeDS Bottom Screen Overlay opacity { */
         {"Instance*.Metroid.Visual.BtmOverlayOpacity", 0.85},
         /* MelonPrimeDS Bottom Screen Overlay opacity } */
