@@ -166,7 +166,7 @@ static const HudEditPropDesc kPropsRadar[] = {
 
 // ── Crosshair edit-mode props ────────────────────────────────────────────
 static const HudEditPropDesc kPropsCrosshairMain[] = {
-    {"Scale %",          EditPropType::Int,   "Metroid.Visual.CrosshairScale", 100, 500, 1, nullptr, nullptr, nullptr},
+    {"Scale %",          EditPropType::Int,   "Metroid.Visual.CrosshairScale", 100, 800, 1, nullptr, nullptr, nullptr},
     {"Outline",          EditPropType::Bool,  "Metroid.Visual.CrosshairOutline", 0, 0, 0, nullptr, nullptr, nullptr},
     {"Outline Opacity",  EditPropType::Float, "Metroid.Visual.CrosshairOutlineOpacity", 0, 100, 5, nullptr, nullptr, nullptr},
     {"Outline Thick.",   EditPropType::Int,   "Metroid.Visual.CrosshairOutlineThickness", 1, 10, 1, nullptr, nullptr, nullptr},
@@ -592,7 +592,8 @@ static void SnapshotEditConfig(Config::Table& cfg)
     s_editSnapshot["Metroid.Visual.HudAutoScaleCap"]       = cfg.GetInt("Metroid.Visual.HudAutoScaleCap");
     s_editSnapshot["Metroid.Visual.HudAutoScaleCapText"]   = cfg.GetInt("Metroid.Visual.HudAutoScaleCapText");
     s_editSnapshot["Metroid.Visual.HudAutoScaleCapIcons"]  = cfg.GetInt("Metroid.Visual.HudAutoScaleCapIcons");
-    s_editSnapshot["Metroid.Visual.HudAutoScaleCapGauges"] = cfg.GetInt("Metroid.Visual.HudAutoScaleCapGauges");
+    s_editSnapshot["Metroid.Visual.HudAutoScaleCapGauges"]    = cfg.GetInt("Metroid.Visual.HudAutoScaleCapGauges");
+    s_editSnapshot["Metroid.Visual.HudAutoScaleCapCrosshair"] = cfg.GetInt("Metroid.Visual.HudAutoScaleCapCrosshair");
 }
 
 static void RestoreEditSnapshot(Config::Table& cfg)
@@ -670,7 +671,8 @@ static void ResetEditToDefaults(Config::Table& cfg)
     cfg.SetInt("Metroid.Visual.HudAutoScaleCap",       defaults.GetInt("Metroid.Visual.HudAutoScaleCap"));
     cfg.SetInt("Metroid.Visual.HudAutoScaleCapText",   defaults.GetInt("Metroid.Visual.HudAutoScaleCapText"));
     cfg.SetInt("Metroid.Visual.HudAutoScaleCapIcons",  defaults.GetInt("Metroid.Visual.HudAutoScaleCapIcons"));
-    cfg.SetInt("Metroid.Visual.HudAutoScaleCapGauges", defaults.GetInt("Metroid.Visual.HudAutoScaleCapGauges"));
+    cfg.SetInt("Metroid.Visual.HudAutoScaleCapGauges",    defaults.GetInt("Metroid.Visual.HudAutoScaleCapGauges"));
+    cfg.SetInt("Metroid.Visual.HudAutoScaleCapCrosshair", defaults.GetInt("Metroid.Visual.HudAutoScaleCapCrosshair"));
 }
 
 // ── Bounding rect computation ───────────────────────────────────────────────

@@ -173,7 +173,6 @@ protected:
     float m_hudOriginY    = 0.0f;
     // Config values cached per epoch — avoids hash-map lookups per-frame.
     uint32_t m_hudCfgEpoch   = ~0u;
-    int      m_hudRenderScale = 0;
     // BtmOverlay config cache (GL path):
     bool     m_radarEnable    = false;
     int      m_radarAnchor    = 2;

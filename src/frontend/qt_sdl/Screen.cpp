@@ -1231,7 +1231,6 @@ void ScreenPanelNative::paintEvent(QPaintEvent * event)
                 {
                     const uint32_t epoch = MelonPrime::CustomHud_GetCacheEpoch();
                     if (epoch != m_hudCfgEpoch) {
-                        m_hudRenderScale = instcfg.GetInt("Metroid.Visual.HudRenderScale");
                         m_hudCfgEpoch = epoch;
                     }
                 }
@@ -1247,19 +1246,12 @@ void ScreenPanelNative::paintEvent(QPaintEvent * event)
                 }
                 if (hudVisible)
                 {
-                    // Cap overlay render scale for performance (HudRenderScale=N means render at N×DS).
-                    // Buffer is then upscaled to the actual display area at composite time.
-                    const int scaleCap = m_hudRenderScale;
-                    const float hudScaleRender = (scaleCap > 0 && hudScale > (float)scaleCap)
-                        ? (float)scaleCap : hudScale;
-
                     // Overlay covers the full widget so HUD elements placed in black-bar
                     // regions (DS x < 0 or > 256 for pillarboxed 4:3) remain visible.
                     const int fullW = this->width();
                     const int fullH = this->height();
-                    const float scaleRatio = (hudScale > 0.0f) ? (hudScaleRender / hudScale) : 1.0f;
-                    const int topOutW = std::max(1, static_cast<int>(std::ceil(fullW * scaleRatio)));
-                    const int topOutH = std::max(1, static_cast<int>(std::ceil(fullH * scaleRatio)));
+                    const int topOutW = std::max(1, fullW);
+                    const int topOutH = std::max(1, fullH);
                     if (Overlay[0].width() != topOutW || Overlay[0].height() != topOutH)
                         Overlay[0] = QImage(topOutW, topOutH, QImage::Format_ARGB32_Premultiplied);
                     Overlay[0].fill(Qt::transparent);
@@ -1281,16 +1273,13 @@ void ScreenPanelNative::paintEvent(QPaintEvent * event)
                             &topP, nullptr,
                             &Overlay[0], nullptr,
                             mp->IsInGame(),
-                            topStretchX, hudScaleRender,
+                            topStretchX, hudScale,
                             hudOriginXds, hudOriginYds);
                     } // painter ends here — safe to read image
 
-                    // Composite: stretch overlay to full widget size if scale was capped.
+                    // Composite overlay to full widget size.
                     painter.resetTransform();
-                    if (topOutW != fullW || topOutH != fullH)
-                        painter.drawImage(QRect(0, 0, fullW, fullH), Overlay[0]);
-                    else
-                        painter.drawImage(QPoint(0, 0), Overlay[0]);
+                    painter.drawImage(QPoint(0, 0), Overlay[0]);
                 }
             }
         }
@@ -1774,7 +1763,6 @@ void ScreenPanelGL::drawScreen()
                 {
                     const uint32_t epoch = MelonPrime::CustomHud_GetCacheEpoch();
                     if (epoch != m_hudCfgEpoch) {
-                        m_hudRenderScale    = instcfg.GetInt("Metroid.Visual.HudRenderScale");
                         m_radarEnable       = instcfg.GetBool("Metroid.Visual.BtmOverlayEnable");
                         m_radarAnchor       = instcfg.GetInt("Metroid.Visual.BtmOverlayAnchor");
                         m_radarDstX         = instcfg.GetInt("Metroid.Visual.BtmOverlayDstX");
@@ -1797,18 +1785,12 @@ void ScreenPanelGL::drawScreen()
                 }
                 if (hudVisible)
                 {
-                // Cap overlay render scale for performance (HudRenderScale=N means render at N×DS).
-                const int scaleCap = m_hudRenderScale;
-                const float hudScaleRender = (scaleCap > 0 && hudScale > (float)scaleCap)
-                    ? (float)scaleCap : hudScale;
-
                 // Overlay covers the full logical window so HUD elements placed in black-bar
                 // regions (DS x < 0 or > 256 for pillarboxed 4:3) remain visible.
                 const int fullLogW = static_cast<int>(w / factor);
                 const int fullLogH = static_cast<int>(h / factor);
-                const float scaleRatio = (hudScale > 0.0f) ? (hudScaleRender / hudScale) : 1.0f;
-                const int topOutW = std::max(1, static_cast<int>(std::ceil(fullLogW * scaleRatio)));
-                const int topOutH = std::max(1, static_cast<int>(std::ceil(fullLogH * scaleRatio)));
+                const int topOutW = std::max(1, fullLogW);
+                const int topOutH = std::max(1, fullLogH);
                 if (Overlay[0].width() != topOutW || Overlay[0].height() != topOutH)
                     Overlay[0] = QImage(topOutW, topOutH, QImage::Format_ARGB32_Premultiplied);
                 Overlay[0].fill(Qt::transparent);
@@ -1830,7 +1812,7 @@ void ScreenPanelGL::drawScreen()
                         &topP, nullptr,
                         &Overlay[0], nullptr,
                         mp->IsInGame(),
-                        topStretchX, hudScaleRender,
+                        topStretchX, hudScale,
                         hudOriginXds, hudOriginYds);
                 } // painter ends here — safe to read constBits()
 
