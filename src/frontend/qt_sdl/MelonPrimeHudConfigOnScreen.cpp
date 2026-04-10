@@ -175,6 +175,14 @@ static const HudEditPropDesc kPropsBombIcon[] = {
     {"Opacity",  EditPropType::Float,"Metroid.Visual.HudBombIconOpacity", 0, 100, 5, nullptr, nullptr, nullptr},
 };
 
+static const HudEditPropDesc kPropsWeaponInventory[] = {
+    {"Orientation", EditPropType::Enum,  "Metroid.Visual.HudWeaponInventoryOrientation", 0, 1, 1, kEnumOrientation, nullptr, nullptr},
+    {"Align",       EditPropType::Enum,  "Metroid.Visual.HudWeaponInventoryAlign",       0, 2, 1, kEnumAlign3,      nullptr, nullptr},
+    {"Icon Height", EditPropType::Int,   "Metroid.Visual.HudWeaponInventoryIconHeight",  4, 48, 1, nullptr, nullptr, nullptr},
+    {"Opacity",     EditPropType::Float, "Metroid.Visual.HudWeaponInventoryOpacity",     0, 100, 5, nullptr, nullptr, nullptr},
+    {"Not Owned",   EditPropType::Float, "Metroid.Visual.HudWeaponInventoryNotOwnedOpacity", 0, 100, 5, nullptr, nullptr, nullptr},
+};
+
 static const HudEditPropDesc kPropsRadar[] = {
     {"Opacity",   EditPropType::Float,"Metroid.Visual.BtmOverlayOpacity", 0, 100, 5, nullptr, nullptr, nullptr},
     {"Src Radius",EditPropType::Int,  "Metroid.Visual.BtmOverlaySrcRadius", 10, 96, 1, nullptr, nullptr, nullptr},
@@ -395,7 +403,19 @@ static const HudEditElemDesc kEditElems[kEditElemCount] = {
         nullptr, nullptr, nullptr, // no color picker
         kPropsRadar, 2
     },
-    {   // 12: Crosshair (fixed center position — Qt side panel only, no DS-space props)
+    {   // 12: Weapon Inventory
+        "Wpn\nInventory",
+        "Metroid.Visual.HudWeaponInventoryAnchor",
+        "Metroid.Visual.HudWeaponInventoryX",
+        "Metroid.Visual.HudWeaponInventoryY",
+        nullptr, nullptr, nullptr, nullptr,
+        "Metroid.Visual.HudWeaponInventoryShow", // showKey
+        "Metroid.Visual.HudWeaponInventoryColorR",
+        "Metroid.Visual.HudWeaponInventoryColorG",
+        "Metroid.Visual.HudWeaponInventoryColorB",
+        kPropsWeaponInventory, 5
+    },
+    {   // 13: Crosshair (fixed center position — Qt side panel only, no DS-space props)
         "Crosshair",
         nullptr, nullptr, nullptr,            // anchorKey / ofsXKey / ofsYKey: fixed
         nullptr, nullptr, nullptr, nullptr,   // orient / length / width / posMode
@@ -419,7 +439,8 @@ static const char* const kEditElemSampleText[kEditElemCount] = {
     "x3",        // 9: Bomb Left
     nullptr,     // 10: Bomb Icon
     nullptr,     // 11: Radar
-    nullptr,     // 12: Crosshair
+    nullptr,     // 12: Weapon Inventory
+    nullptr,     // 13: Crosshair
 };
 
 // ── Edit mode static state ──────────────────────────────────────────────────
@@ -721,7 +742,7 @@ static void ResetEditToDefaults(Config::Table& cfg)
 static QRectF ComputeEditBounds(int idx, Config::Table& cfg, float topStretchX)
 {
     // Crosshair: fixed preview box at DS screen center
-    if (idx == 12) {
+    if (idx == 13) {
         return QRectF(108.0f, 76.0f, 40.0f, 40.0f); // centered at DS (128, 96)
     }
 
@@ -756,6 +777,23 @@ static QRectF ComputeEditBounds(int idx, Config::Table& cfg, float topStretchX)
                                cropCenterY - frameSizeDS * 0.5f,
                                frameSizeDS, frameSizeDS);
         return radarRect.united(frameRect);
+    }
+
+    // ── Weapon Inventory (idx=12) ───────────────────────────────────────────
+    if (idx == 12) {
+        const float hs = (s_editHudScale > 0.0f) ? s_editHudScale : 1.0f;
+        const float iconScale = s_cache.valid ? s_cache.scaleIcons : 1.0f;
+        const int iconH = std::max(4, cfg.GetInt("Metroid.Visual.HudWeaponInventoryIconHeight"));
+        const float iH = static_cast<float>(iconH) * iconScale / hs;
+        const float rowH = iH + 1.0f;
+        const int ori = cfg.GetInt("Metroid.Visual.HudWeaponInventoryOrientation");
+        // Assume worst-case: all 9 weapons visible
+        if (ori == 1) // Vertical
+            return QRectF(static_cast<float>(fx), static_cast<float>(fy),
+                          iH * 2.0f, rowH * 9.0f);
+        else // Horizontal
+            return QRectF(static_cast<float>(fx), static_cast<float>(fy),
+                          (iH * 2.0f + 1.0f) * 9.0f, rowH);
     }
 
     // ── HP Gauge (idx=1) / Ammo Gauge (idx=4) ──────────────────────────────
@@ -1011,6 +1049,13 @@ static void DrawEditHudPreview(QPainter* p, Config::Table& cfg, float tds, float
         DrawWeaponAmmo(p, ram, weapon,
                        Read16(ram, addrAmmoSpecial), addrAmmoMissile,
                        maxAmmoSpecial, maxAmmoMissile, c, tds, hudScale);
+
+        {
+            const uint16_t havingWeapons = static_cast<uint16_t>(
+                Read16(ram, addrHot.havingWeapons));
+            DrawWeaponInventory(p, ram, rom, s_editPlayerPosCopy,
+                                havingWeapons, c, tds, hudScale);
+        }
 
         const bool isTrans = (Read8(ram, addrHot.jumpFlag) & 0x10) != 0;
         if (!isTrans && !isAlt)
@@ -1400,6 +1445,32 @@ static void DrawEditOverlay(QPainter* p, Config::Table& cfg, float topStretchX, 
                 p->setBrush(Qt::NoBrush);
             }
         } else if (i == 12) {
+            // Weapon Inventory: draw mini icon grid preview
+            EnsureIconsLoaded();
+            const int ori = cfg.GetInt("Metroid.Visual.HudWeaponInventoryOrientation");
+            const float gap = 1.0f;
+            const int numIcons = 9;
+            float iconSz;
+            if (ori == 1) // Vertical
+                iconSz = std::max(2.0f, (static_cast<float>(r.height()) - gap * (numIcons - 1)) / numIcons);
+            else
+                iconSz = std::max(2.0f, (static_cast<float>(r.width()) - gap * (numIcons - 1)) / numIcons);
+            float ix = static_cast<float>(r.left()), iy = static_cast<float>(r.top());
+            for (int wi = 0; wi < numIcons; ++wi) {
+                const QImage& icon = s_weaponIcons[wi];
+                const float iw = (!icon.isNull() && icon.height() > 0)
+                                 ? iconSz * icon.width() / icon.height() : iconSz;
+                const QRectF ir(ix, iy, iw, iconSz);
+                if (!icon.isNull())
+                    p->drawImage(ir, icon);
+                else {
+                    p->setPen(QColor(200,200,200,120));
+                    p->drawRect(ir);
+                }
+                if (ori == 1) iy += iconSz + gap;
+                else           ix += iw + gap;
+            }
+        } else if (i == 13) {
             if (s_cache.valid) {
                 DrawEditCrosshairActual(p, r, s_cache);
             } else {
@@ -2528,7 +2599,7 @@ void CustomHud_EditMousePress(QPointF pt, Qt::MouseButton btn, Config::Table& cf
         s_editSelected = i;
         s_editPropScroll = 0;
         s_anchorPickerOpen = false;
-        if (di.ofsXKey) { // crosshair (idx==12) has no position keys — select only, no drag
+        if (di.ofsXKey) { // crosshair (idx==13) has no position keys — select only, no drag
             s_dragging      = true;
             s_dragStartDS   = ds;
             s_dragStartOfsX = cfg.GetInt(di.ofsXKey);

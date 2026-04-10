@@ -600,6 +600,20 @@ static const HudWidgetProp kSecBombIcon[] = {
     P_FLOAT("Opacity", "Metroid.Visual.HudBombIconOpacity"),
 };
 
+// --- Section: Weapon Inventory ---
+static const HudWidgetProp kSecWeaponInventory[] = {
+    P_BOOL("Show", "Metroid.Visual.HudWeaponInventoryShow"),
+    P_ANC("Anchor", "Metroid.Visual.HudWeaponInventoryAnchor"),
+    P_INT("Offset X", "Metroid.Visual.HudWeaponInventoryX", -256, 256, 1),
+    P_INT("Offset Y", "Metroid.Visual.HudWeaponInventoryY", -256, 256, 1),
+    P_CLR("Color", "Metroid.Visual.HudWeaponInventoryColorR", "Metroid.Visual.HudWeaponInventoryColorG", "Metroid.Visual.HudWeaponInventoryColorB"),
+    P_ORIENT("Orientation", "Metroid.Visual.HudWeaponInventoryOrientation"),
+    P_ALN("Align", "Metroid.Visual.HudWeaponInventoryAlign"),
+    P_INT("Icon Height", "Metroid.Visual.HudWeaponInventoryIconHeight", 4, 48, 1),
+    P_FLOAT("Opacity", "Metroid.Visual.HudWeaponInventoryOpacity"),
+    P_FLOAT("Not Owned Opacity", "Metroid.Visual.HudWeaponInventoryNotOwnedOpacity"),
+};
+
 // --- Section 16: Radar ---
 static const HudWidgetProp kSecRadar[] = {
     P_BOOL("Enable", "Metroid.Visual.BtmOverlayEnable"),
@@ -725,6 +739,7 @@ static const HudSubSec kSubsHpAmmo[] = {
     SUB("HP Gauge Outline",          "Metroid.UI.SectionHudHpGaugeOutline", kSecHpGaugeOutline),
     SUB("Ammo Gauge",                "Metroid.UI.SectionHudAmmoGauge",      kSecAmmoGauge),
     SUB("Ammo Gauge Outline",        "Metroid.UI.SectionHudAmmoGaugeOutline", kSecAmmoGaugeOutline),
+    SUB("Weapon Inventory",          "Metroid.UI.SectionHudWeaponInventory", kSecWeaponInventory),
 };
 
 // ── Rank/Time sub-sub-sections ──

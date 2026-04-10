@@ -76,6 +76,7 @@ private:
     void populateTimeLimit();
     void populateBombLeft();
     void populateBombIcon();
+    void populateWeaponInventory();
     void populateRadar();
 };
 
