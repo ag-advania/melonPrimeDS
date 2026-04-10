@@ -6,6 +6,7 @@
 #include <QColorDialog>
 #include <QHBoxLayout>
 #include <QFrame>
+#include <QRadioButton>
 
 // ─── Construction ───────────────────────────────────────────────────────────
 
@@ -17,7 +18,7 @@ MelonPrimeHudConfigOnScreenEdit::MelonPrimeHudConfigOnScreenEdit(QWidget* parent
     setStyleSheet(
         "MelonPrimeHudConfigOnScreenEdit { background: rgba(24,24,32,210); border: 1px solid #555; border-radius: 4px; }"
         "QLabel { color: #000; font-size: 9px; }"
-        "QCheckBox { color: #000; font-size: 9px; }"
+        "QRadioButton { color: #000; font-size: 9px; }"
         "QComboBox { font-size: 9px; color: #000; }"
         "QSpinBox { font-size: 9px; color: #000; }"
         "QDoubleSpinBox { font-size: 9px; color: #000; }"
@@ -87,19 +88,41 @@ void MelonPrimeHudConfigOnScreenEdit::reloadValues()
 
 // ─── Factory: CheckBox ──────────────────────────────────────────────────────
 
-QCheckBox* MelonPrimeHudConfigOnScreenEdit::addCheckBox(const QString& label, const char* key)
+QWidget* MelonPrimeHudConfigOnScreenEdit::addCheckBox(const QString& label, const char* key)
 {
-    auto* cb = new QCheckBox(this);
-    cb->setChecked(cfg().GetBool(key));
+    auto* container = new QWidget(this);
+    auto* hlay = new QHBoxLayout(container);
+    hlay->setContentsMargins(0, 0, 0, 0);
+    hlay->setSpacing(8);
+
+    auto* on = new QRadioButton(QStringLiteral("ON"), container);
+    auto* off = new QRadioButton(QStringLiteral("OFF"), container);
+    on->setCursor(Qt::PointingHandCursor);
+    off->setCursor(Qt::PointingHandCursor);
+
+    const bool enabled = cfg().GetBool(key);
+    on->setChecked(enabled);
+    off->setChecked(!enabled);
+
     std::string k(key);
-    connect(cb, &QCheckBox::toggled, this, [this, k](bool v) {
-        if (m_populating) return;
-        cfg().SetBool(k, v);
+    connect(on, &QRadioButton::toggled, this, [this, k](bool checked) {
+        if (m_populating || !checked) return;
+        cfg().SetBool(k, true);
         MelonPrime::CustomHud_InvalidateConfigCache();
     });
-    m_form->addRow(label, cb);
-    m_rows.append(cb);
-    return cb;
+    connect(off, &QRadioButton::toggled, this, [this, k](bool checked) {
+        if (m_populating || !checked) return;
+        cfg().SetBool(k, false);
+        MelonPrime::CustomHud_InvalidateConfigCache();
+    });
+
+    hlay->addWidget(on, 0);
+    hlay->addWidget(off, 0);
+    hlay->addStretch(1);
+
+    m_form->addRow(label, container);
+    m_rows.append(container);
+    return container;
 }
 
 // ─── Factory: ComboBox ──────────────────────────────────────────────────────
@@ -296,22 +319,35 @@ void MelonPrimeHudConfigOnScreenEdit::addColorOverlayRow(
     hlay->setContentsMargins(0, 0, 0, 0);
     hlay->setSpacing(4);
 
-    auto* cb = new QCheckBox(container);
-    cb->setChecked(cfg().GetBool(enableKey));
+    auto* on = new QRadioButton(QStringLiteral("ON"), container);
+    auto* off = new QRadioButton(QStringLiteral("OFF"), container);
+    on->setCursor(Qt::PointingHandCursor);
+    off->setCursor(Qt::PointingHandCursor);
+
+    const bool enabled = cfg().GetBool(enableKey);
+    on->setChecked(enabled);
+    off->setChecked(!enabled);
 
     auto* btn = new QPushButton(container);
     int r = cfg().GetInt(keyR), g = cfg().GetInt(keyG), b = cfg().GetInt(keyB);
     updateColorButton(btn, r, g, b);
-    btn->setEnabled(cb->isChecked());
+    btn->setEnabled(enabled);
 
-    hlay->addWidget(cb, 0);
+    hlay->addWidget(on, 0);
+    hlay->addWidget(off, 0);
     hlay->addWidget(btn, 1);
 
     std::string kE(enableKey), kR(keyR), kG(keyG), kB(keyB);
-    connect(cb, &QCheckBox::toggled, this, [this, btn, kE](bool checked) {
-        if (m_populating) return;
-        cfg().SetBool(kE, checked);
-        btn->setEnabled(checked);
+    connect(on, &QRadioButton::toggled, this, [this, btn, kE](bool checked) {
+        if (m_populating || !checked) return;
+        cfg().SetBool(kE, true);
+        btn->setEnabled(true);
+        MelonPrime::CustomHud_InvalidateConfigCache();
+    });
+    connect(off, &QRadioButton::toggled, this, [this, btn, kE](bool checked) {
+        if (m_populating || !checked) return;
+        cfg().SetBool(kE, false);
+        btn->setEnabled(false);
         MelonPrime::CustomHud_InvalidateConfigCache();
     });
     connect(btn, &QPushButton::clicked, this, [this, btn, kR, kG, kB]() {
