@@ -838,18 +838,20 @@ static QRectF ComputeEditBounds(int idx, Config::Table& cfg, float topStretchX)
     // ── Radar (idx=11) ──────────────────────────────────────────────────────
     if (idx == 11) {
         if (s_cache.valid)
-            return s_cache.radar.frameDstRect;
+            return QRectF(s_cache.radar.radarDstRect).united(s_cache.radar.frameDstRect);
 
         const int dstSize = std::max(cfg.GetInt("Metroid.Visual.BtmOverlayDstSize"), 1);
         const int srcRadius = std::max(cfg.GetInt("Metroid.Visual.BtmOverlaySrcRadius"), 1);
         const int srcDiameter = srcRadius * 2;
         const float frameSizeDS = static_cast<float>(kRadarArtSize) * dstSize
                                   / static_cast<float>(srcDiameter);
+        const QRectF radarRect(fx, fy, dstSize, dstSize);
         const float cropCenterX = fx + dstSize * 0.5f + 0.75f;
         const float cropCenterY = fy + dstSize * 0.5f;
-        return QRectF(cropCenterX - frameSizeDS * 0.5f,
-                      cropCenterY - frameSizeDS * 0.5f,
-                      frameSizeDS, frameSizeDS);
+        const QRectF frameRect(cropCenterX - frameSizeDS * 0.5f,
+                               cropCenterY - frameSizeDS * 0.5f,
+                               frameSizeDS, frameSizeDS);
+        return radarRect.united(frameRect);
     }
     // ── Text elements ───────────────────────────────────────────────────────
     // Use actual font metrics (s_frameFm = mph.ttf 6px) scaled by tds for accuracy.
@@ -2005,20 +2007,25 @@ void CustomHud_EditMousePress(QPointF pt, Qt::MouseButton btn, Config::Table& cf
     // Accept both left and right mouse buttons
     if (btn != Qt::LeftButton && btn != Qt::RightButton) return;
     const QPointF ds = WidgetToDS(pt);
+    int hitElem = -1;
+    for (int i = 0; i < kEditElemCount; ++i) {
+        if (!s_editRects[i].isEmpty() && s_editRects[i].contains(ds)) {
+            hitElem = i;
+            break;
+        }
+    }
 
     // Right-click: select element under cursor for property editing (both modes)
     if (btn == Qt::RightButton) {
         // Hit-test elements first so overlapped items like the radar can still be selected.
-        for (int i = 0; i < kEditElemCount; ++i) {
-            if (!s_editRects[i].isEmpty() && s_editRects[i].contains(ds)) {
-                if (s_editSelected != i) {
-                    s_editSelected = i;
-                    s_editPropScroll = 0;
-                    s_anchorPickerOpen = false;
-                    NotifySelectionChanged(i);
-                }
-                return;
+        if (hitElem >= 0) {
+            if (s_editSelected != hitElem) {
+                s_editSelected = hitElem;
+                s_editPropScroll = 0;
+                s_anchorPickerOpen = false;
+                NotifySelectionChanged(hitElem);
             }
+            return;
         }
         // Absorb click inside open properties panel
         if (kShowDsEditPropsPanel && s_editSelected >= 0) {
@@ -2043,6 +2050,43 @@ void CustomHud_EditMousePress(QPointF pt, Qt::MouseButton btn, Config::Table& cf
         return;
     }
     // ── Left-click priority system ──────────────────────────────────────────
+
+    const bool hitTopControl = kEditSaveRect.contains(ds) || kEditCancelRect.contains(ds) ||
+                               kEditResetRect.contains(ds) || kEditTextScaleRect.contains(ds) ||
+                               kEditCrosshairBtnRect.contains(ds) || kEditPreviewBtnRect.contains(ds);
+    if (hitElem >= 0 && hitTopControl) {
+        const HudEditElemDesc& di = kEditElems[hitElem];
+
+        if (di.posModeKey != nullptr && cfg.GetInt(di.posModeKey) == 0) {
+            if (UNLIKELY(!s_cache.valid) || s_cache.lastHudScale != s_editHudScale) {
+                RefreshCachedConfig(cfg, s_editTopStretchX, s_editHudScale);
+                s_cache.valid = true;
+            } else if (s_cache.lastStretchX != s_editTopStretchX) {
+                RecomputeAnchorPositions(s_editTopStretchX);
+            }
+            int visualX = 0, visualY = 0;
+            if (hitElem == 1) { visualX = s_cache.hp.hpGaugePosX;      visualY = s_cache.hp.hpGaugePosY; }
+            if (hitElem == 4) { visualX = s_cache.weapon.ammoGaugePosX; visualY = s_cache.weapon.ammoGaugePosY; }
+            cfg.SetInt(di.posModeKey, 1);
+            cfg.SetInt(di.anchorKey, 0);
+            cfg.SetInt(di.ofsXKey, visualX);
+            cfg.SetInt(di.ofsYKey, visualY);
+            CustomHud_InvalidateConfigCache();
+        }
+
+        s_editSelected = hitElem;
+        s_editPropScroll = 0;
+        s_anchorPickerOpen = false;
+        if (di.ofsXKey) {
+            s_dragging = true;
+            s_dragStartDS = ds;
+            s_dragStartOfsX = cfg.GetInt(di.ofsXKey);
+            s_dragStartOfsY = cfg.GetInt(di.ofsYKey);
+        }
+        s_editHovered = hitElem;
+        NotifySelectionChanged(hitElem);
+        return;
+    }
 
     // Priority 1: Save / Cancel / Reset
     if (kEditSaveRect.contains(ds)) {
