@@ -837,10 +837,20 @@ static QRectF ComputeEditBounds(int idx, Config::Table& cfg, float topStretchX)
 
     // ── Radar (idx=11) ──────────────────────────────────────────────────────
     if (idx == 11) {
-        const float sz = static_cast<float>(cfg.GetInt("Metroid.Visual.BtmOverlayDstSize"));
-        return QRectF(fx, fy, sz, sz);
-    }
+        if (s_cache.valid)
+            return s_cache.radar.frameDstRect;
 
+        const int dstSize = std::max(cfg.GetInt("Metroid.Visual.BtmOverlayDstSize"), 1);
+        const int srcRadius = std::max(cfg.GetInt("Metroid.Visual.BtmOverlaySrcRadius"), 1);
+        const int srcDiameter = srcRadius * 2;
+        const float frameSizeDS = static_cast<float>(kRadarArtSize) * dstSize
+                                  / static_cast<float>(srcDiameter);
+        const float cropCenterX = fx + dstSize * 0.5f + 0.75f;
+        const float cropCenterY = fy + dstSize * 0.5f;
+        return QRectF(cropCenterX - frameSizeDS * 0.5f,
+                      cropCenterY - frameSizeDS * 0.5f,
+                      frameSizeDS, frameSizeDS);
+    }
     // ── Text elements ───────────────────────────────────────────────────────
     // Use actual font metrics (s_frameFm = mph.ttf 6px) scaled by tds for accuracy.
     float bw, bh;
@@ -1363,18 +1373,12 @@ static void DrawEditOverlay(QPainter* p, Config::Table& cfg, float topStretchX, 
             // Ensure radar SVG frame is loaded and draw it behind the crop circle.
             // Always draw even when hidden (BtmOverlayEnable=false) so preview is visible.
             // s_cache is always valid in edit mode (refreshed at top of CustomHud_Render).
-            // Draw crop circle first (background)
             p->setPen(QPen(QColor(0x66, 0xDD, 0x66, 200), 0.5));
             p->setBrush(QColor(0x22, 0x88, 0x22, 80));
-            float sz = std::min(static_cast<float>(r.width()), static_cast<float>(r.height()));
-            QRectF circR(r.center().x() - sz * 0.5, r.center().y() - sz * 0.5, sz, sz);
-            p->drawEllipse(circR);
-            p->setBrush(Qt::NoBrush);
-            // Draw SVG frame on top of the circle.
-            // frameDstRect is smaller than the element box (proportional to radar art / crop area),
-            // so it must be drawn after the fill to remain visible.
             if (s_cache.valid) {
                 const CachedHudConfig& c = s_cache;
+                p->drawEllipse(QRectF(c.radar.radarDstRect));
+                p->setBrush(Qt::NoBrush);
                 const HudOutlineConfig& fol = EffOL(c, c.radar.frameOutline);
                 const int expandR = (fol.enable && fol.opacity > 0.0f)
                                     ? std::max(1, fol.thickness) : 0;
@@ -1385,6 +1389,12 @@ static void DrawEditOverlay(QPainter* p, Config::Table& cfg, float topStretchX, 
                                        s_editHudScale, tint, fol.color, expandR);
                 if (!s_radarFrameTinted.isNull())
                     p->drawImage(c.radar.frameDstRect, s_radarFrameTinted);
+            } else {
+                // Fallback before the first cache refresh.
+                float sz = std::min(static_cast<float>(r.width()), static_cast<float>(r.height()));
+                QRectF circR(r.center().x() - sz * 0.5f, r.center().y() - sz * 0.5f, sz, sz);
+                p->drawEllipse(circR);
+                p->setBrush(Qt::NoBrush);
             }
         } else if (i == 12) {
             if (s_cache.valid) {
@@ -1998,21 +2008,7 @@ void CustomHud_EditMousePress(QPointF pt, Qt::MouseButton btn, Config::Table& cf
 
     // Right-click: select element under cursor for property editing (both modes)
     if (btn == Qt::RightButton) {
-        // Absorb click on button bar items
-        if (kEditSaveRect.contains(ds) || kEditCancelRect.contains(ds) ||
-            kEditResetRect.contains(ds) || kEditTextScaleRect.contains(ds) ||
-            kEditCrosshairBtnRect.contains(ds) || kEditPreviewBtnRect.contains(ds))
-            return;
-        // Absorb click inside open properties panel
-        if (kShowDsEditPropsPanel && s_editSelected >= 0) {
-            const HudEditElemDesc& d = kEditElems[s_editSelected];
-            const int totalRows = CountBuiltinRows(d) + d.propCount;
-            if (totalRows > 0) {
-                QRectF panelRect = ComputePropsPanelRect(s_editRects[s_editSelected], totalRows);
-                if (panelRect.contains(ds)) return;
-            }
-        }
-        // Hit-test elements and select
+        // Hit-test elements first so overlapped items like the radar can still be selected.
         for (int i = 0; i < kEditElemCount; ++i) {
             if (!s_editRects[i].isEmpty() && s_editRects[i].contains(ds)) {
                 if (s_editSelected != i) {
@@ -2024,6 +2020,20 @@ void CustomHud_EditMousePress(QPointF pt, Qt::MouseButton btn, Config::Table& cf
                 return;
             }
         }
+        // Absorb click inside open properties panel
+        if (kShowDsEditPropsPanel && s_editSelected >= 0) {
+            const HudEditElemDesc& d = kEditElems[s_editSelected];
+            const int totalRows = CountBuiltinRows(d) + d.propCount;
+            if (totalRows > 0) {
+                QRectF panelRect = ComputePropsPanelRect(s_editRects[s_editSelected], totalRows);
+                if (panelRect.contains(ds)) return;
+            }
+        }
+        // Absorb click on button bar items
+        if (kEditSaveRect.contains(ds) || kEditCancelRect.contains(ds) ||
+            kEditResetRect.contains(ds) || kEditTextScaleRect.contains(ds) ||
+            kEditCrosshairBtnRect.contains(ds) || kEditPreviewBtnRect.contains(ds))
+            return;
         // Right-click on empty space: deselect
         if (s_editSelected >= 0) {
             s_editSelected = -1;
@@ -2032,7 +2042,6 @@ void CustomHud_EditMousePress(QPointF pt, Qt::MouseButton btn, Config::Table& cf
         }
         return;
     }
-
     // ── Left-click priority system ──────────────────────────────────────────
 
     // Priority 1: Save / Cancel / Reset
