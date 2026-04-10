@@ -2031,7 +2031,7 @@ static RomAddresses     s_editRomCopy       = {};
 static GameAddressesHot s_editAddrHotCopy   = {};
 static uint8_t          s_editPlayerPosCopy = 0;
 static QRectF ComputeEditBounds(int idx, Config::Table& cfg, float topStretchX);
-static void   DrawEditOverlay(QPainter* p, Config::Table& cfg, float topStretchX);
+static void   DrawEditOverlay(QPainter* p, Config::Table& cfg, float topStretchX, QImage* btmBuffer);
 
 // =========================================================================
 //  CustomHud_Render — main entry point
@@ -2078,7 +2078,7 @@ HOT_FUNCTION void CustomHud_Render(
         }
         for (int i = 0; i < kEditElemCount; ++i)
             s_editRects[i] = ComputeEditBounds(i, localCfg, topStretchX);
-        DrawEditOverlay(topPaint, localCfg, topStretchX);
+        DrawEditOverlay(topPaint, localCfg, topStretchX, btmBuffer);
         return;
     }
 

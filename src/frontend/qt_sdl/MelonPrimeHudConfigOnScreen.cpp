@@ -899,7 +899,8 @@ static void GetResizeHandles(int idx, Config::Table& cfg,
 }
 
 // ── DrawEditHudPreview ──────────────────────────────────────────────────────
-static void DrawEditHudPreview(QPainter* p, Config::Table& cfg, float tds, float hudScale, float topStretchX)
+static void DrawEditHudPreview(QPainter* p, Config::Table& cfg, float tds, float hudScale,
+                               float topStretchX, QImage* btmBuffer)
 {
     if (!s_editEmu || s_editRomCopy.playerHP == 0) return;
     melonDS::NDS* nds = s_editEmu->getNDS();
@@ -926,6 +927,9 @@ static void DrawEditHudPreview(QPainter* p, Config::Table& cfg, float tds, float
     const bool isAdventure = Read8(ram, rom.isInAdventure) == 0x02;
     DrawMatchStatusHud(p, ram, rom, s_editPlayerPosCopy, isAdventure, c);
     DrawRankAndTime(p, ram, rom, s_editPlayerPosCopy, isAdventure, c, tds);
+
+    // Mirror the normal HUD path so preview mode includes the live radar frame/crop.
+    DrawBottomScreenOverlay(cfg, p, btmBuffer, (hunterID <= 6) ? hunterID : 0);
 
     const uint8_t viewMode    = Read8(ram, rom.baseViewMode + offP);
     const bool    isFirstPerson = (viewMode == 0x00);
@@ -1202,7 +1206,7 @@ static void DrawElemPropsPanel(QPainter* p, Config::Table& cfg,
 }
 
 // ── DrawEditOverlay ─────────────────────────────────────────────────────────
-static void DrawEditOverlay(QPainter* p, Config::Table& cfg, float topStretchX)
+static void DrawEditOverlay(QPainter* p, Config::Table& cfg, float topStretchX, QImage* btmBuffer)
 {
     if (!p) return;
 
@@ -1222,7 +1226,7 @@ static void DrawEditOverlay(QPainter* p, Config::Table& cfg, float topStretchX)
 
     // ── Preview mode: actual HUD rendering ─────────────────────────────────
     if (s_editPreviewMode) {
-        DrawEditHudPreview(p, cfg, tds, s_editHudScale, topStretchX);
+        DrawEditHudPreview(p, cfg, tds, s_editHudScale, topStretchX, btmBuffer);
 
         // Selection highlight over the live preview
         if (s_editSelected >= 0 && s_editSelected < kEditElemCount) {
