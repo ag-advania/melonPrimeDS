@@ -418,7 +418,7 @@ void MelonPrimeHudConfigOnScreenEdit::addBuiltins(const char* showKey,
 static const char* kElementNames[] = {
     "HP", "HP Gauge", "Weapon/Ammo", "Weapon Icon", "Ammo Gauge",
     "Match Status", "Rank", "Time Left", "Time Limit",
-    "Bomb Left", "Bomb Icon", "Radar", "Crosshair"
+    "Bomb Left", "Bomb Icon", "Radar", "Weapon Inventory", "Crosshair"
 };
 
 void MelonPrimeHudConfigOnScreenEdit::populateForElement(int idx)
@@ -427,7 +427,7 @@ void MelonPrimeHudConfigOnScreenEdit::populateForElement(int idx)
     clearForm();
     m_currentElem = idx;
 
-    if (idx < 0 || idx >= 13) {
+    if (idx < 0 || idx >= 14) {
         hide();
         m_populating = false;
         return;
@@ -448,7 +448,8 @@ void MelonPrimeHudConfigOnScreenEdit::populateForElement(int idx)
     case 9:  populateBombLeft(); break;
     case 10: populateBombIcon(); break;
     case 11: populateRadar(); break;
-    case 12: populateForCrosshair(); return; // already clears/sets m_populating internally
+    case 12: populateWeaponInventory(); break;
+    case 13: populateForCrosshair(); return; // already clears/sets m_populating internally
     }
 
     // NOTE: do not call show() here — the caller (Screen.cpp callback)
@@ -747,6 +748,24 @@ void MelonPrimeHudConfigOnScreenEdit::populateForCrosshair()
     addSpinBox(QStringLiteral("Offset"), "Metroid.Visual.CrosshairOuterOffset", 0, 64);
 
     m_populating = false;
+}
+
+void MelonPrimeHudConfigOnScreenEdit::populateWeaponInventory()
+{
+    addBuiltins("Metroid.Visual.HudWeaponInventoryShow",
+        "Metroid.Visual.HudWeaponInventoryColorR",
+        "Metroid.Visual.HudWeaponInventoryColorG",
+        "Metroid.Visual.HudWeaponInventoryColorB",
+        "Metroid.Visual.HudWeaponInventoryAnchor");
+    addSpinBox(QStringLiteral("Offset X"), "Metroid.Visual.HudWeaponInventoryX", -256, 256);
+    addSpinBox(QStringLiteral("Offset Y"), "Metroid.Visual.HudWeaponInventoryY", -256, 256);
+    addComboBox(QStringLiteral("Orientation"), "Metroid.Visual.HudWeaponInventoryOrientation",
+        {QStringLiteral("Horizontal"), QStringLiteral("Vertical")});
+    addComboBox(QStringLiteral("Align"), "Metroid.Visual.HudWeaponInventoryAlign",
+        {QStringLiteral("Left"), QStringLiteral("Center"), QStringLiteral("Right")});
+    addSpinBox(QStringLiteral("Icon Height"), "Metroid.Visual.HudWeaponInventoryIconHeight", 4, 48);
+    addOpacitySlider(QStringLiteral("Opacity"), "Metroid.Visual.HudWeaponInventoryOpacity");
+    addOpacitySlider(QStringLiteral("Not Owned Opacity"), "Metroid.Visual.HudWeaponInventoryNotOwnedOpacity");
 }
 
 void MelonPrimeHudConfigOnScreenEdit::populateRadar()

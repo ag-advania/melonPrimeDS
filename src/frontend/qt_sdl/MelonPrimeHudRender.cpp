@@ -590,6 +590,17 @@ struct WeaponHudConfig {
     HudOutlineConfig iconOutline;
     HudOutlineConfig gaugeOutline;
 };
+struct WeaponInventoryHudConfig {
+    bool    show;
+    int     anchor, ofsX, ofsY;   // raw anchor + offsets
+    int     posX, posY;            // computed final DS-space position
+    int     align;                 // 0=Left 1=Center 2=Right
+    int     orientation;           // 0=Horizontal 1=Vertical
+    int     iconHeight;            // DS-space icon height (loaded at iconH * scaleIcons px)
+    float   opacity;               // owned-weapon opacity
+    float   notOwnedOpacity;       // unowned-weapon opacity (0 = hide)
+    QColor  textColor;
+};
 struct CrosshairHudConfig {
     QColor chColor;
     bool chOutline, chCenterDot, chTStyle;
@@ -677,6 +688,7 @@ struct RadarOverlayConfig {
 struct CachedHudConfig {
     HpHudConfig hp;
     WeaponHudConfig weapon;
+    WeaponInventoryHudConfig weaponInventory;
     CrosshairHudConfig crosshair;
     MatchStatusHudConfig matchStatus;
     BombLeftHudConfig bombLeft;
@@ -811,6 +823,23 @@ static void LoadWeaponConfig(WeaponHudConfig& weapon, Config::Table& cfg)
     weapon.ammoGaugePosOfsY = cfg.GetInt("Metroid.Visual.HudAmmoGaugePosY");
     weapon.ammoGaugeColor = ReadRgbColor(cfg, "Metroid.Visual.HudAmmoGaugeColorR", "Metroid.Visual.HudAmmoGaugeColorG", "Metroid.Visual.HudAmmoGaugeColorB");
 }
+static void LoadWeaponInventoryConfig(WeaponInventoryHudConfig& wi, Config::Table& cfg)
+{
+    wi.show        = cfg.GetBool("Metroid.Visual.HudWeaponInventoryShow");
+    wi.anchor      = cfg.GetInt ("Metroid.Visual.HudWeaponInventoryAnchor");
+    wi.ofsX        = cfg.GetInt ("Metroid.Visual.HudWeaponInventoryX");
+    wi.ofsY        = cfg.GetInt ("Metroid.Visual.HudWeaponInventoryY");
+    wi.align       = cfg.GetInt ("Metroid.Visual.HudWeaponInventoryAlign");
+    wi.orientation = cfg.GetInt ("Metroid.Visual.HudWeaponInventoryOrientation");
+    wi.iconHeight  = std::max(4, cfg.GetInt("Metroid.Visual.HudWeaponInventoryIconHeight"));
+    wi.opacity        = static_cast<float>(std::clamp(cfg.GetDouble("Metroid.Visual.HudWeaponInventoryOpacity"), 0.0, 1.0));
+    wi.notOwnedOpacity= static_cast<float>(std::clamp(cfg.GetDouble("Metroid.Visual.HudWeaponInventoryNotOwnedOpacity"), 0.0, 1.0));
+    wi.textColor   = QColor(cfg.GetInt("Metroid.Visual.HudWeaponInventoryColorR"),
+                            cfg.GetInt("Metroid.Visual.HudWeaponInventoryColorG"),
+                            cfg.GetInt("Metroid.Visual.HudWeaponInventoryColorB"));
+    // posX/posY computed in RecomputeAnchorPositions
+}
+
 // Forward declaration — full definition follows DrawCrosshair.
 static void CollectArmRects(QRect* out, int& n, int cx, int cy,
                             int lengthX, int lengthY, int offset,
@@ -987,6 +1016,10 @@ static void RecomputeAnchorPositions(float topStretchX)
     ApplyAnchor(c.rankTime.timeLeftAnchor, c.rankTime.timeLeftOfsX, c.rankTime.timeLeftOfsY, c.rankTime.timeLeftX, c.rankTime.timeLeftY, sx);
     ApplyAnchor(c.rankTime.timeLimitAnchor, c.rankTime.timeLimitOfsX, c.rankTime.timeLimitOfsY, c.rankTime.timeLimitX, c.rankTime.timeLimitY, sx);
 
+    // Weapon Inventory
+    ApplyAnchor(c.weaponInventory.anchor, c.weaponInventory.ofsX, c.weaponInventory.ofsY,
+                c.weaponInventory.posX, c.weaponInventory.posY, sx);
+
     // Radar overlay
     ApplyAnchor(c.radar.radarAnchor, c.radar.radarOfsX, c.radar.radarOfsY, c.radar.radarDstX, c.radar.radarDstY, sx);
     c.radar.radarDstRect = QRect(c.radar.radarDstX, c.radar.radarDstY, c.radar.radarDstSize, c.radar.radarDstSize);
@@ -1010,6 +1043,7 @@ static void RefreshCachedConfig(Config::Table& cfg, float topStretchX = 1.0f, fl
     auto& c = s_cache;
     LoadHpConfig(c.hp, cfg);
     LoadWeaponConfig(c.weapon, cfg);
+    LoadWeaponInventoryConfig(c.weaponInventory, cfg);
     LoadCrosshairConfig(c.crosshair, cfg, hudScale);
     LoadMatchStatusConfig(c.matchStatus, cfg);
     LoadBombLeftConfig(c.bombLeft, cfg);
@@ -1763,6 +1797,154 @@ static constexpr WeaponInfo kWeaponTable[9] = {
 };
 
 // =========================================================================
+//  DrawWeaponInventory — show all 9 weapons with ammo counts
+static void DrawWeaponInventory(QPainter* p, melonDS::u8* ram,
+                                 const RomAddresses& rom, uint8_t playerPos,
+                                 uint16_t havingWeapons,
+                                 const CachedHudConfig& c, float tds, float hudScale)
+{
+    const WeaponInventoryHudConfig& wi = c.weaponInventory;
+    if (!wi.show) return;
+
+    // Ensure icons are loaded at the appropriate pixel size
+    const float iconScale = (c.scaleIcons > 0.0f) ? c.scaleIcons : 1.0f;
+    const int iconPx = std::max(4, static_cast<int>(std::round(wi.iconHeight * iconScale * hudScale)));
+    EnsureIconsLoaded(iconPx);
+
+    // Read ammo pools once
+    const uint32_t offP = static_cast<uint32_t>(playerPos) * Consts::PLAYER_ADDR_INC;
+    const uint16_t ammoSpecial = Read16(ram, rom.currentAmmoSpecial + offP);
+    const uint16_t ammoMissile = Read16(ram, rom.currentAmmoMissile + offP);
+
+    // DS-space icon dimensions (before painter scale)
+    const float iH = static_cast<float>(wi.iconHeight) * iconScale;
+    const float rowH = iH + 1.0f;  // icon height + 1px gap
+
+    // Display order: PB, Missile, ShockCoil, Magmaul, Judicator, Imperialist, BattleHammer, VoltDriver, OmegaCannon
+    static constexpr int kInventoryOrder[9] = { 0, 2, 7, 6, 5, 4, 3, 1, 8 };
+
+    // Count drawable weapons to skip entirely if none
+    int drawCount = 0;
+    for (int si = 0; si < 9; ++si) {
+        const int i = kInventoryOrder[si];
+        const bool owned = (havingWeapons & (1u << i)) != 0;
+        const float eff = owned ? wi.opacity : wi.notOwnedOpacity;
+        if (eff > 0.0f) ++drawCount;
+    }
+    if (drawCount == 0) return;
+
+    // Pre-pass: max icon width for vertical center-axis alignment
+    float maxDrawIW = iH;
+    for (int i = 0; i < 9; ++i) {
+        const QImage& icon = s_weaponIcons[i];
+        if (!icon.isNull() && icon.height() > 0) {
+            const float w = iH * static_cast<float>(icon.width()) / static_cast<float>(icon.height());
+            if (w > maxDrawIW) maxDrawIW = w;
+        }
+    }
+
+    p->save();
+
+    const float startX = static_cast<float>(wi.posX);
+    const float startY = static_cast<float>(wi.posY);
+
+    // For vertical mode: fixed icon center X axis and text start X so all icons share one axis.
+    // iconCenterX is determined by alignment relative to startX.
+    const float iconCenterX = (wi.orientation == 1)
+        ? (wi.align == 1 ? startX
+         : wi.align == 2 ? startX - maxDrawIW * 0.5f
+         :                 startX + maxDrawIW * 0.5f)   // Left: column left edge at startX
+        : 0.0f; // unused for horizontal
+    const float vertTextX = iconCenterX + maxDrawIW * 0.5f + 2.0f;
+
+    float curX = startX;
+    float curY = startY;
+
+    for (int si = 0; si < 9; ++si) {
+        const int i = kInventoryOrder[si];
+        const bool owned = (havingWeapons & (1u << i)) != 0;
+        const float eff = owned ? wi.opacity : wi.notOwnedOpacity;
+        if (eff <= 0.0f) continue;
+
+        p->setOpacity(eff);
+
+        // Get icon image
+        const QImage& icon = s_weaponIcons[i];
+        const float drawIH = iH;
+        const float drawIW = (!icon.isNull() && icon.height() > 0)
+                             ? drawIH * static_cast<float>(icon.width()) / static_cast<float>(icon.height())
+                             : drawIH;
+
+        // Compute ammo string — mirrors DrawWeaponAmmo logic
+        char buf[16] = "";
+        const WeaponInfo& winfo = kWeaponTable[i];
+        if (winfo.divisor > 0) {
+            uint16_t ammo;
+            if (winfo.isMissile)
+                ammo = ammoMissile / winfo.divisor;
+            else if (i == 8)  // Omega Cannon: always 1
+                ammo = 1;
+            else
+                ammo = ammoSpecial / winfo.divisor;
+            std::snprintf(buf, sizeof(buf), "%u", static_cast<unsigned>(ammo));
+        }
+        // Power Beam (divisor=0): no ammo shown
+
+        // Text metrics
+        const float textW = (buf[0] && s_frameFpx == kCustomHudFontSize)
+                            ? static_cast<float>(s_frameFm.horizontalAdvance(QString::fromUtf8(buf))) * tds
+                            : 0.0f;
+        const float textH = (buf[0] && s_frameFpx == kCustomHudFontSize && s_frameFm.height() > 0)
+                            ? static_cast<float>(s_frameFm.height()) * tds
+                            : 6.0f * tds;
+
+        float px, py;
+        float textX, textY;
+
+        if (wi.orientation == 1) {
+            // Vertical: all icons share iconCenterX axis
+            px = iconCenterX - drawIW * 0.5f;
+            py = curY;
+            textX = vertTextX;
+            textY = py + drawIH * 0.5f - textH * 0.5f;
+        } else {
+            // Horizontal: align shifts Y
+            const float rowW = drawIW + (buf[0] ? (2.0f + textW) : 0.0f);
+            px = curX;
+            py = wi.align == 1 ? startY - drawIH * 0.5f
+               : wi.align == 2 ? startY - drawIH
+               :                 startY;
+            textX = px + drawIW + 2.0f;
+            textY = py + drawIH * 0.5f - textH * 0.5f;
+            (void)rowW;
+        }
+
+        // Draw icon
+        if (!icon.isNull()) {
+            p->setRenderHint(QPainter::SmoothPixmapTransform, true);
+            p->drawImage(QRectF(px, py, drawIW, drawIH), icon);
+        }
+
+        // Draw ammo text
+        if (buf[0]) {
+            p->setPen(wi.textColor);
+            p->drawText(QRectF(textX, textY, textW + 2.0f, textH + 2.0f),
+                        Qt::AlignLeft | Qt::AlignVCenter,
+                        QString::fromUtf8(buf));
+        }
+
+        // Advance position
+        if (wi.orientation == 1) {
+            curY += rowH;
+        } else {
+            curX += drawIW + (buf[0] ? (2.0f + textW) : 0.0f) + 1.0f;
+        }
+    }
+
+    p->restore();
+}
+
+// =========================================================================
 //  P-7: DrawWeaponAmmo — cached icon, table lookup, stack text
 static void DrawWeaponAmmo(QPainter* p, melonDS::u8* ram,
                            uint8_t weapon, uint16_t ammoSpecial, uint32_t addrMissile,
@@ -2021,7 +2203,7 @@ static void DrawCrosshair(QPainter* p, melonDS::u8* ram,
 // =========================================================================
 //  P-7 forward declarations (full definitions follow CustomHud_Render)
 // =========================================================================
-static constexpr int kEditElemCount   = 13; // 0-11 = HUD elements, 12 = Crosshair
+static constexpr int kEditElemCount   = 14; // 0-11 = HUD elements, 12 = Weapon Inventory, 13 = Crosshair
 static bool          s_editMode       = false;
 static QRectF        s_editRects[kEditElemCount];
 static float         s_editHudScale    = 1.0f;
@@ -2183,6 +2365,13 @@ HOT_FUNCTION void CustomHud_Render(
         DrawWeaponAmmo(topPaint, ram, currentWeapon,
                        Read16(ram, addrAmmoSpecial), addrAmmoMissile,
                        maxAmmoSpecial, maxAmmoMissile, c, textDrawScale, hudScale);
+    }
+
+    {
+        const uint16_t havingWeapons = static_cast<uint16_t>(
+            Read16(ram, addrHot.havingWeapons));
+        DrawWeaponInventory(topPaint, ram, rom, playerPosition,
+                            havingWeapons, c, textDrawScale, hudScale);
     }
 
     bool isTrans = (Read8(ram, addrHot.jumpFlag) & 0x10) != 0;

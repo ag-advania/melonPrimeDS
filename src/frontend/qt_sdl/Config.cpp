@@ -187,6 +187,18 @@ namespace Config
         {"Instance*.Metroid.Visual.HudWeaponIconOverlayColorGOmegaCannon",  255},
         {"Instance*.Metroid.Visual.HudWeaponIconOverlayColorBOmegaCannon",  255},
         {"Instance*.Metroid.Visual.HudWeaponIconHeight",    16},
+        {"Instance*.Metroid.Visual.HudWeaponInventoryShow",         false},
+        {"Instance*.Metroid.Visual.HudWeaponInventoryAnchor",       8},      // BR
+        {"Instance*.Metroid.Visual.HudWeaponInventoryX",            -20},
+        {"Instance*.Metroid.Visual.HudWeaponInventoryY",            -110},
+        {"Instance*.Metroid.Visual.HudWeaponInventoryAlign",        0},      // Left
+        {"Instance*.Metroid.Visual.HudWeaponInventoryOrientation",  1},      // Vertical
+        {"Instance*.Metroid.Visual.HudWeaponInventoryIconHeight",   8},
+        {"Instance*.Metroid.Visual.HudWeaponInventoryOpacity",      1.0},
+        {"Instance*.Metroid.Visual.HudWeaponInventoryNotOwnedOpacity", 0.0},
+        {"Instance*.Metroid.Visual.HudWeaponInventoryColorR",       255},
+        {"Instance*.Metroid.Visual.HudWeaponInventoryColorG",       255},
+        {"Instance*.Metroid.Visual.HudWeaponInventoryColorB",       255},
         {"Instance*.Metroid.Visual.HudHpGaugeOrientation",   1},
         {"Instance*.Metroid.Visual.HudHpGaugeAlign",         0},
         {"Instance*.Metroid.Visual.HudHpGaugeLength",       80},
