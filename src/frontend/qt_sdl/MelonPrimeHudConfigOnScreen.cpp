@@ -898,6 +898,61 @@ static void GetResizeHandles(int idx, Config::Table& cfg,
     }
 }
 
+static void DrawEditCrosshairActual(QPainter* p, const QRectF& r, const CachedHudConfig& c)
+{
+    if (!p) return;
+
+    const QRectF pxR = p->transform().mapRect(r).adjusted(1.0f, 1.0f, -1.0f, -1.0f);
+    if (pxR.isEmpty()) return;
+
+    const QRect* innerRects = c.crosshair.cachedInnerRects;
+    const QRect* outerRects = c.crosshair.cachedOuterRects;
+    const int nInner = c.crosshair.cachedInnerCount;
+    const int nOuter = c.crosshair.cachedOuterCount;
+    const int pxCx = static_cast<int>(std::round(pxR.center().x()));
+    const int pxCy = static_cast<int>(std::round(pxR.center().y()));
+
+    p->save();
+    p->resetTransform();
+    p->setClipRect(pxR);
+
+    if (c.crosshair.chOutline && c.crosshair.chOutlineOpacity > 0.0) {
+        static const QColor kOutlineBlack(0, 0, 0, 255);
+        const int olT = c.crosshair.chOutlineThickness;
+        p->setOpacity(c.crosshair.chOutlineOpacity);
+        for (int i = 0; i < nInner; ++i)
+            p->fillRect(innerRects[i].translated(pxCx, pxCy).adjusted(-olT, -olT, olT, olT), kOutlineBlack);
+        for (int i = 0; i < nOuter; ++i)
+            p->fillRect(outerRects[i].translated(pxCx, pxCy).adjusted(-olT, -olT, olT, olT), kOutlineBlack);
+        if (c.crosshair.chCenterDot) {
+            const int dh = c.crosshair.cachedDotHalfPx + olT;
+            const int ds = c.crosshair.cachedDotSizePx + olT * 2;
+            p->fillRect(QRect(pxCx - dh, pxCy - dh, ds, ds), kOutlineBlack);
+        }
+    }
+
+    if (nInner > 0) {
+        p->setOpacity(1.0);
+        for (int i = 0; i < nInner; ++i)
+            p->fillRect(innerRects[i].translated(pxCx, pxCy), c.crosshair.chInnerColor);
+    }
+
+    if (nOuter > 0) {
+        p->setOpacity(1.0);
+        for (int i = 0; i < nOuter; ++i)
+            p->fillRect(outerRects[i].translated(pxCx, pxCy), c.crosshair.chOuterColor);
+    }
+
+    if (c.crosshair.chCenterDot) {
+        p->setOpacity(1.0);
+        const int dh = c.crosshair.cachedDotHalfPx;
+        const int ds = c.crosshair.cachedDotSizePx;
+        p->fillRect(QRect(pxCx - dh, pxCy - dh, ds, ds), c.crosshair.chDotColor);
+    }
+
+    p->restore();
+}
+
 // ── DrawEditHudPreview ──────────────────────────────────────────────────────
 static void DrawEditHudPreview(QPainter* p, Config::Table& cfg, float tds, float hudScale,
                                float topStretchX, QImage* btmBuffer)
@@ -1331,23 +1386,26 @@ static void DrawEditOverlay(QPainter* p, Config::Table& cfg, float topStretchX, 
                     p->drawImage(c.radar.frameDstRect, s_radarFrameTinted);
             }
         } else if (i == 12) {
-            // Crosshair preview: draw mini + symbol in the configured color
-            const QColor cc(cfg.GetInt("Metroid.Visual.CrosshairColorR"),
-                            cfg.GetInt("Metroid.Visual.CrosshairColorG"),
-                            cfg.GetInt("Metroid.Visual.CrosshairColorB"));
-            const float cx = static_cast<float>(r.center().x());
-            const float cy = static_cast<float>(r.center().y());
-            const float arm = static_cast<float>(r.width()) * 0.38f;
-            QPen chPen(cc, 1.5f);
-            chPen.setCapStyle(Qt::RoundCap);
-            p->setPen(chPen);
-            p->drawLine(QPointF(cx - arm, cy), QPointF(cx + arm, cy));
-            p->drawLine(QPointF(cx, cy - arm), QPointF(cx, cy + arm));
-            if (cfg.GetBool("Metroid.Visual.CrosshairCenterDot")) {
-                p->setPen(Qt::NoPen);
-                p->setBrush(cc);
-                p->drawEllipse(QPointF(cx, cy), 1.8f, 1.8f);
-                p->setBrush(Qt::NoBrush);
+            if (s_cache.valid) {
+                DrawEditCrosshairActual(p, r, s_cache);
+            } else {
+                const QColor cc(cfg.GetInt("Metroid.Visual.CrosshairColorR"),
+                                cfg.GetInt("Metroid.Visual.CrosshairColorG"),
+                                cfg.GetInt("Metroid.Visual.CrosshairColorB"));
+                const float cx = static_cast<float>(r.center().x());
+                const float cy = static_cast<float>(r.center().y());
+                const float arm = static_cast<float>(r.width()) * 0.38f;
+                QPen chPen(cc, 1.5f);
+                chPen.setCapStyle(Qt::RoundCap);
+                p->setPen(chPen);
+                p->drawLine(QPointF(cx - arm, cy), QPointF(cx + arm, cy));
+                p->drawLine(QPointF(cx, cy - arm), QPointF(cx, cy + arm));
+                if (cfg.GetBool("Metroid.Visual.CrosshairCenterDot")) {
+                    p->setPen(Qt::NoPen);
+                    p->setBrush(cc);
+                    p->drawEllipse(QPointF(cx, cy), 1.8f, 1.8f);
+                    p->setBrush(Qt::NoBrush);
+                }
             }
         } else {
             QColor tc(255, 255, 255);
