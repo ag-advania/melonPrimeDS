@@ -24,6 +24,7 @@ public:
     explicit MelonPrimeHudConfigOnScreenEdit(QWidget* parent, EmuInstance* emu);
 
     void populateForElement(int elemIdx);
+    void populateForCrosshair();
     void clear();
     void reloadValues();
 

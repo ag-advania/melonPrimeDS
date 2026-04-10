@@ -395,6 +395,31 @@ static const HudEditElemDesc kEditElems[kEditElemCount] = {
         nullptr, nullptr, nullptr, // no color picker
         kPropsRadar, 2
     },
+    {   // 12: Crosshair (fixed center position — Qt side panel only, no DS-space props)
+        "Crosshair",
+        nullptr, nullptr, nullptr,            // anchorKey / ofsXKey / ofsYKey: fixed
+        nullptr, nullptr, nullptr, nullptr,   // orient / length / width / posMode
+        nullptr,                              // showKey: always visible in edit mode
+        nullptr, nullptr, nullptr,            // no DS-space color picker
+        nullptr, 0                            // no DS-space extra props
+    },
+};
+
+// Sample text used for element box previews (must align with kEditElems indices)
+static const char* const kEditElemSampleText[kEditElemCount] = {
+    "100",       // 0: HP
+    nullptr,     // 1: HP Gauge
+    "PWR 50",    // 2: Weapon/Ammo
+    nullptr,     // 3: Weapon Icon
+    nullptr,     // 4: Ammo Gauge
+    "1st | 5",   // 5: Match Status
+    "#1",        // 6: Rank
+    "2:30",      // 7: Time Left
+    "5:00",      // 8: Time Limit
+    "x3",        // 9: Bomb Left
+    nullptr,     // 10: Bomb Icon
+    nullptr,     // 11: Radar
+    nullptr,     // 12: Crosshair
 };
 
 // ── Edit mode static state ──────────────────────────────────────────────────
@@ -542,9 +567,9 @@ static void SnapshotEditConfig(Config::Table& cfg)
     s_editSnapshotBools.clear();
     for (int i = 0; i < kEditElemCount; ++i) {
         const HudEditElemDesc& d = kEditElems[i];
-        s_editSnapshot[d.anchorKey] = cfg.GetInt(d.anchorKey);
-        s_editSnapshot[d.ofsXKey]   = cfg.GetInt(d.ofsXKey);
-        s_editSnapshot[d.ofsYKey]   = cfg.GetInt(d.ofsYKey);
+        if (d.anchorKey) s_editSnapshot[d.anchorKey] = cfg.GetInt(d.anchorKey);
+        if (d.ofsXKey)   s_editSnapshot[d.ofsXKey]   = cfg.GetInt(d.ofsXKey);
+        if (d.ofsYKey)   s_editSnapshot[d.ofsYKey]   = cfg.GetInt(d.ofsYKey);
         if (d.orientKey)  s_editSnapshot[d.orientKey]  = cfg.GetInt(d.orientKey);
         if (d.lengthKey)  s_editSnapshot[d.lengthKey]  = cfg.GetInt(d.lengthKey);
         if (d.widthKey && d.widthKey != d.lengthKey)
@@ -632,9 +657,9 @@ static void ResetEditToDefaults(Config::Table& cfg)
     Config::Table defaults(defData, "Instance0");
     for (int i = 0; i < kEditElemCount; ++i) {
         const HudEditElemDesc& d = kEditElems[i];
-        cfg.SetInt(d.anchorKey, defaults.GetInt(d.anchorKey));
-        cfg.SetInt(d.ofsXKey,   defaults.GetInt(d.ofsXKey));
-        cfg.SetInt(d.ofsYKey,   defaults.GetInt(d.ofsYKey));
+        if (d.anchorKey) cfg.SetInt(d.anchorKey, defaults.GetInt(d.anchorKey));
+        if (d.ofsXKey)   cfg.SetInt(d.ofsXKey,   defaults.GetInt(d.ofsXKey));
+        if (d.ofsYKey)   cfg.SetInt(d.ofsYKey,   defaults.GetInt(d.ofsYKey));
         if (d.orientKey)  cfg.SetInt(d.orientKey,  defaults.GetInt(d.orientKey));
         if (d.lengthKey)  cfg.SetInt(d.lengthKey,  defaults.GetInt(d.lengthKey));
         if (d.widthKey && d.widthKey != d.lengthKey)
@@ -694,6 +719,11 @@ static void ResetEditToDefaults(Config::Table& cfg)
 // ── Bounding rect computation ───────────────────────────────────────────────
 static QRectF ComputeEditBounds(int idx, Config::Table& cfg, float topStretchX)
 {
+    // Crosshair: fixed preview box at DS screen center
+    if (idx == 12) {
+        return QRectF(108.0f, 76.0f, 40.0f, 40.0f); // centered at DS (128, 96)
+    }
+
     const HudEditElemDesc& d = kEditElems[idx];
     const int anchor = cfg.GetInt(d.anchorKey);
     const int ofsX   = cfg.GetInt(d.ofsXKey);
@@ -702,7 +732,11 @@ static QRectF ComputeEditBounds(int idx, Config::Table& cfg, float topStretchX)
     ApplyAnchor(anchor, ofsX, ofsY, fx, fy, topStretchX);
 
     const float hs  = (s_editHudScale > 0.0f) ? s_editHudScale : 1.0f;
-    float tds = std::max(1.0f, cfg.GetInt("Metroid.Visual.HudTextScale") / 100.0f) / hs;
+    // Use exact textDrawScale from cache (includes auto-scale + user TextScale, divided by hudScale).
+    // Falls back to bare formula only before first cache fill.
+    const float tds = s_cache.valid
+        ? s_cache.textDrawScale
+        : std::max(0.3f, cfg.GetInt("Metroid.Visual.HudTextScale") / 100.0f) / hs;
 
     // ── HP Gauge (idx=1) / Ammo Gauge (idx=4) ──────────────────────────────
     if (d.lengthKey != nullptr) {
@@ -807,14 +841,21 @@ static QRectF ComputeEditBounds(int idx, Config::Table& cfg, float topStretchX)
     }
 
     // ── Text elements ───────────────────────────────────────────────────────
-    // tds is in DS-space (textScalePct/100/hudScale). Enforce min clickable size.
-    const float bw = std::max(14.0f, 60.0f * tds);
-    const float bh = std::max(5.0f, 12.0f * tds);
+    // Use actual font metrics (s_frameFm = mph.ttf 6px) scaled by tds for accuracy.
+    float bw, bh;
+    const char* sampleTxt = (idx >= 0 && idx < kEditElemCount) ? kEditElemSampleText[idx] : nullptr;
+    if (sampleTxt && s_frameFpx == kCustomHudFontSize) {
+        bw = std::max(14.0f, s_frameFm.horizontalAdvance(QString::fromUtf8(sampleTxt)) * tds + 4.0f);
+        bh = std::max(5.0f,  s_frameFm.height() * tds + 2.0f);
+    } else {
+        bw = std::max(14.0f, 50.0f * tds);
+        bh = std::max(5.0f,  12.0f * tds);
+    }
     return QRectF(static_cast<float>(fx) - bw * 0.5f, static_cast<float>(fy) - bh * 0.5f, bw, bh);
 }
 
 static int CountBuiltinRows(const HudEditElemDesc& d) {
-    int n = 1; // anchor always present
+    int n = d.anchorKey ? 1 : 0; // anchor row only if key exists
     if (d.showKey)   ++n;
     if (d.colorRKey) ++n;
     return n;
@@ -1166,14 +1207,16 @@ static void DrawEditOverlay(QPainter* p, Config::Table& cfg, float topStretchX)
     if (!p) return;
 
     const float leftX = -(topStretchX - 1.0f) * 128.0f;
-    const float tdsRaw = std::max(1.0f, cfg.GetInt("Metroid.Visual.HudTextScale") / 100.0f);
-    const float hs     = (s_editHudScale > 0.0f) ? s_editHudScale : 1.0f;
-    const float tds    = tdsRaw / hs;  // DS-space text draw scale
+    const float hs  = (s_editHudScale > 0.0f) ? s_editHudScale : 1.0f;
+    // Use exact textDrawScale from cache (includes auto-scale + user TextScale, divided by hudScale).
+    const float tds = s_cache.valid
+        ? s_cache.textDrawScale
+        : std::max(0.3f, cfg.GetInt("Metroid.Visual.HudTextScale") / 100.0f) / hs;
 
     QFont smallFont = p->font();
     smallFont.setPixelSize(4);
     QFont elemFont = p->font();
-    elemFont.setPixelSize(std::max(3, static_cast<int>(3.5f * tds)));
+    elemFont.setPixelSize(std::max(3, static_cast<int>(std::round(6.0f * tds))));
     QFont normalFont = p->font();
     normalFont.setPixelSize(5);
 
@@ -1216,10 +1259,10 @@ static void DrawEditOverlay(QPainter* p, Config::Table& cfg, float topStretchX)
         p->setBrush(Qt::NoBrush);
 
         p->setFont(elemFont);
-        const bool isGauge   = (d.lengthKey != nullptr);
+        const bool isRadar   = (i == 11);
+        const bool isGauge   = (d.lengthKey != nullptr) && !isRadar; // radar reuses lengthKey for square resize
         const bool isWpnIcon = (i == 3);
         const bool isBmbIcon = (i == 10);
-        const bool isRadar   = (i == 11);
 
         if (isGauge && !hidden) {
             QColor gc(255, 255, 255);
@@ -1256,13 +1299,52 @@ static void DrawEditOverlay(QPainter* p, Config::Table& cfg, float topStretchX)
                 p->setPen(Qt::white);
                 p->drawText(r, Qt::AlignCenter, QStringLiteral("BMB"));
             }
-        } else if (isRadar && !hidden) {
+        } else if (isRadar) {
+            // Ensure radar SVG frame is loaded and draw it behind the crop circle.
+            // Always draw even when hidden (BtmOverlayEnable=false) so preview is visible.
+            // s_cache is always valid in edit mode (refreshed at top of CustomHud_Render).
+            // Draw crop circle first (background)
             p->setPen(QPen(QColor(0x66, 0xDD, 0x66, 200), 0.5));
             p->setBrush(QColor(0x22, 0x88, 0x22, 80));
             float sz = std::min(static_cast<float>(r.width()), static_cast<float>(r.height()));
             QRectF circR(r.center().x() - sz * 0.5, r.center().y() - sz * 0.5, sz, sz);
             p->drawEllipse(circR);
             p->setBrush(Qt::NoBrush);
+            // Draw SVG frame on top of the circle.
+            // frameDstRect is smaller than the element box (proportional to radar art / crop area),
+            // so it must be drawn after the fill to remain visible.
+            if (s_cache.valid) {
+                const CachedHudConfig& c = s_cache;
+                const HudOutlineConfig& fol = EffOL(c, c.radar.frameOutline);
+                const int expandR = (fol.enable && fol.opacity > 0.0f)
+                                    ? std::max(1, fol.thickness) : 0;
+                // Use radarFrameColor directly (s_effectiveRadarColor is only updated
+                // in DrawBottomScreenOverlay which is not called in edit mode).
+                const QColor& tint = c.radar.radarFrameColor;
+                EnsureRadarFrameLoaded(c.radar.radarDstSize, c.radar.radarSrcRadius,
+                                       s_editHudScale, tint, fol.color, expandR);
+                if (!s_radarFrameTinted.isNull())
+                    p->drawImage(c.radar.frameDstRect, s_radarFrameTinted);
+            }
+        } else if (i == 12) {
+            // Crosshair preview: draw mini + symbol in the configured color
+            const QColor cc(cfg.GetInt("Metroid.Visual.CrosshairColorR"),
+                            cfg.GetInt("Metroid.Visual.CrosshairColorG"),
+                            cfg.GetInt("Metroid.Visual.CrosshairColorB"));
+            const float cx = static_cast<float>(r.center().x());
+            const float cy = static_cast<float>(r.center().y());
+            const float arm = static_cast<float>(r.width()) * 0.38f;
+            QPen chPen(cc, 1.5f);
+            chPen.setCapStyle(Qt::RoundCap);
+            p->setPen(chPen);
+            p->drawLine(QPointF(cx - arm, cy), QPointF(cx + arm, cy));
+            p->drawLine(QPointF(cx, cy - arm), QPointF(cx, cy + arm));
+            if (cfg.GetBool("Metroid.Visual.CrosshairCenterDot")) {
+                p->setPen(Qt::NoPen);
+                p->setBrush(cc);
+                p->drawEllipse(QPointF(cx, cy), 1.8f, 1.8f);
+                p->setBrush(Qt::NoBrush);
+            }
         } else {
             QColor tc(255, 255, 255);
             if (d.colorRKey)
@@ -2318,10 +2400,12 @@ void CustomHud_EditMousePress(QPointF pt, Qt::MouseButton btn, Config::Table& cf
         s_editSelected  = i;
         s_editPropScroll = 0;
         s_anchorPickerOpen = false;
-        s_dragging      = true;
-        s_dragStartDS   = ds;
-        s_dragStartOfsX = cfg.GetInt(di.ofsXKey);
-        s_dragStartOfsY = cfg.GetInt(di.ofsYKey);
+        if (di.ofsXKey) { // crosshair (idx==12) has no position keys — select only, no drag
+            s_dragging      = true;
+            s_dragStartDS   = ds;
+            s_dragStartOfsX = cfg.GetInt(di.ofsXKey);
+            s_dragStartOfsY = cfg.GetInt(di.ofsYKey);
+        }
         s_editHovered   = i;
         NotifySelectionChanged(i);
         return;

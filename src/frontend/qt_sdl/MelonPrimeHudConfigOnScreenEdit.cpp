@@ -18,10 +18,10 @@ MelonPrimeHudConfigOnScreenEdit::MelonPrimeHudConfigOnScreenEdit(QWidget* parent
         "MelonPrimeHudConfigOnScreenEdit { background: rgba(24,24,32,210); border: 1px solid #555; border-radius: 4px; }"
         "QLabel { color: #ccc; font-size: 9px; }"
         "QCheckBox { color: #ccc; font-size: 9px; }"
-        "QComboBox { font-size: 9px; }"
-        "QSpinBox { font-size: 9px; }"
-        "QDoubleSpinBox { font-size: 9px; }"
-        "QLineEdit { font-size: 9px; background: #333; color: #eee; border: 1px solid #555; }"
+        "QComboBox { font-size: 9px; color: #000; }"
+        "QSpinBox { font-size: 9px; color: #000; }"
+        "QDoubleSpinBox { font-size: 9px; color: #000; }"
+        "QLineEdit { font-size: 9px; background: #fff; color: #000; border: 1px solid #555; }"
         "QPushButton { font-size: 9px; }"
     );
 
@@ -382,7 +382,7 @@ void MelonPrimeHudConfigOnScreenEdit::addBuiltins(const char* showKey,
 static const char* kElementNames[] = {
     "HP", "HP Gauge", "Weapon/Ammo", "Weapon Icon", "Ammo Gauge",
     "Match Status", "Rank", "Time Left", "Time Limit",
-    "Bomb Left", "Bomb Icon", "Radar"
+    "Bomb Left", "Bomb Icon", "Radar", "Crosshair"
 };
 
 void MelonPrimeHudConfigOnScreenEdit::populateForElement(int idx)
@@ -391,7 +391,7 @@ void MelonPrimeHudConfigOnScreenEdit::populateForElement(int idx)
     clearForm();
     m_currentElem = idx;
 
-    if (idx < 0 || idx >= 12) {
+    if (idx < 0 || idx >= 13) {
         hide();
         m_populating = false;
         return;
@@ -412,6 +412,7 @@ void MelonPrimeHudConfigOnScreenEdit::populateForElement(int idx)
     case 9:  populateBombLeft(); break;
     case 10: populateBombIcon(); break;
     case 11: populateRadar(); break;
+    case 12: populateForCrosshair(); return; // already clears/sets m_populating internally
     }
 
     // NOTE: do not call show() here — the caller (Screen.cpp callback)
@@ -659,6 +660,57 @@ void MelonPrimeHudConfigOnScreenEdit::populateBombIcon()
     addComboBox(QStringLiteral("Align Y"), "Metroid.Visual.HudBombLeftIconAnchorY",
         {QStringLiteral("Top"), QStringLiteral("Center"), QStringLiteral("Bottom")});
     addOutlineGroup("HudBombIcon");
+}
+
+void MelonPrimeHudConfigOnScreenEdit::populateForCrosshair()
+{
+    m_populating = true;
+    clearForm();
+    m_currentElem = -2; // -2 = crosshair (not a regular element)
+    m_title->setText(QStringLiteral("Crosshair"));
+
+    addColorPicker(QStringLiteral("Color"),
+        "Metroid.Visual.CrosshairColorR",
+        "Metroid.Visual.CrosshairColorG",
+        "Metroid.Visual.CrosshairColorB");
+    addSpinBox(QStringLiteral("Scale %"), "Metroid.Visual.CrosshairScale", 100, 800);
+    addCheckBox(QStringLiteral("Outline"), "Metroid.Visual.CrosshairOutline");
+    addOpacitySlider(QStringLiteral("Outline Opacity"), "Metroid.Visual.CrosshairOutlineOpacity");
+    addSpinBox(QStringLiteral("Outline Thick."), "Metroid.Visual.CrosshairOutlineThickness", 1, 10);
+    addCheckBox(QStringLiteral("Center Dot"), "Metroid.Visual.CrosshairCenterDot");
+    addOpacitySlider(QStringLiteral("Dot Opacity"), "Metroid.Visual.CrosshairDotOpacity");
+    addSpinBox(QStringLiteral("Dot Thick."), "Metroid.Visual.CrosshairDotThickness", 1, 10);
+    addCheckBox(QStringLiteral("T-Style"), "Metroid.Visual.CrosshairTStyle");
+
+    addSeparator();
+    // Inner Lines
+    auto* innerHdr = new QLabel(QStringLiteral("Inner Lines"), this);
+    innerHdr->setStyleSheet("color: #fff; font-weight: bold; font-size: 9px;");
+    m_form->addRow(innerHdr);
+    m_rows.append(innerHdr);
+    addCheckBox(QStringLiteral("Show"), "Metroid.Visual.CrosshairInnerShow");
+    addOpacitySlider(QStringLiteral("Opacity"), "Metroid.Visual.CrosshairInnerOpacity");
+    addSpinBox(QStringLiteral("Length X"), "Metroid.Visual.CrosshairInnerLengthX", 0, 64);
+    addSpinBox(QStringLiteral("Length Y"), "Metroid.Visual.CrosshairInnerLengthY", 0, 64);
+    addCheckBox(QStringLiteral("Link XY"), "Metroid.Visual.CrosshairInnerLinkXY");
+    addSpinBox(QStringLiteral("Thickness"), "Metroid.Visual.CrosshairInnerThickness", 1, 10);
+    addSpinBox(QStringLiteral("Offset"), "Metroid.Visual.CrosshairInnerOffset", 0, 64);
+
+    addSeparator();
+    // Outer Lines
+    auto* outerHdr = new QLabel(QStringLiteral("Outer Lines"), this);
+    outerHdr->setStyleSheet("color: #fff; font-weight: bold; font-size: 9px;");
+    m_form->addRow(outerHdr);
+    m_rows.append(outerHdr);
+    addCheckBox(QStringLiteral("Show"), "Metroid.Visual.CrosshairOuterShow");
+    addOpacitySlider(QStringLiteral("Opacity"), "Metroid.Visual.CrosshairOuterOpacity");
+    addSpinBox(QStringLiteral("Length X"), "Metroid.Visual.CrosshairOuterLengthX", 0, 64);
+    addSpinBox(QStringLiteral("Length Y"), "Metroid.Visual.CrosshairOuterLengthY", 0, 64);
+    addCheckBox(QStringLiteral("Link XY"), "Metroid.Visual.CrosshairOuterLinkXY");
+    addSpinBox(QStringLiteral("Thickness"), "Metroid.Visual.CrosshairOuterThickness", 1, 10);
+    addSpinBox(QStringLiteral("Offset"), "Metroid.Visual.CrosshairOuterOffset", 0, 64);
+
+    m_populating = false;
 }
 
 void MelonPrimeHudConfigOnScreenEdit::populateRadar()

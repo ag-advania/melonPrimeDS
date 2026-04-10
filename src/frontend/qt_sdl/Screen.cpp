@@ -354,7 +354,6 @@ ScreenPanel::ScreenPanel(QWidget* parent) : QWidget(parent)
             m_hudEditPanel->clear();
         } else {
             m_hudEditPanel->populateForElement(idx);
-            // Cap height to screen panel and position at right edge (global coords for tool window)
             const int maxH = height() - 8;
             m_hudEditPanel->setMaximumHeight(maxH);
             m_hudEditPanel->adjustSize();
