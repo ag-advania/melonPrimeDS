@@ -598,6 +598,7 @@ struct WeaponInventoryHudConfig {
     int     align;                 // 0=Left 1=Center 2=Right
     int     orientation;           // 0=Horizontal 1=Vertical
     int     iconHeight;            // DS-space icon height (loaded at iconH * scaleIcons px)
+    int     spacing;               // DS-space gap between weapon entries
     float   opacity;               // owned-weapon opacity
     float   notOwnedOpacity;       // unowned-weapon opacity (0 = hide)
     QColor  textColor;
@@ -833,6 +834,7 @@ static void LoadWeaponInventoryConfig(WeaponInventoryHudConfig& wi, Config::Tabl
     wi.align       = cfg.GetInt ("Metroid.Visual.HudWeaponInventoryAlign");
     wi.orientation = cfg.GetInt ("Metroid.Visual.HudWeaponInventoryOrientation");
     wi.iconHeight  = std::max(4, cfg.GetInt("Metroid.Visual.HudWeaponInventoryIconHeight"));
+    wi.spacing     = std::max(0, cfg.GetInt("Metroid.Visual.HudWeaponInventorySpacing"));
     wi.opacity        = static_cast<float>(std::clamp(cfg.GetDouble("Metroid.Visual.HudWeaponInventoryOpacity"), 0.0, 1.0));
     wi.notOwnedOpacity= static_cast<float>(std::clamp(cfg.GetDouble("Metroid.Visual.HudWeaponInventoryNotOwnedOpacity"), 0.0, 1.0));
     wi.textColor   = QColor(cfg.GetInt("Metroid.Visual.HudWeaponInventoryColorR"),
@@ -1825,7 +1827,7 @@ static void DrawWeaponInventory(QPainter* p, melonDS::u8* ram,
     const float iH = (hudScale > 0.0f)
         ? static_cast<float>(wi.iconHeight) * iconScale / hudScale
         : static_cast<float>(wi.iconHeight);
-    const float rowH = iH + 1.0f / hudScale;  // 1 screen-pixel gap in DS space
+    const float rowH = iH + static_cast<float>(wi.spacing);
 
     // Display order: PB, Missile, ShockCoil, Magmaul, Judicator, Imperialist, BattleHammer, VoltDriver, OmegaCannon
     static constexpr int kInventoryOrder[9] = { 0, 2, 7, 6, 5, 4, 3, 1, 8 };
@@ -1963,7 +1965,7 @@ static void DrawWeaponInventory(QPainter* p, melonDS::u8* ram,
         if (wi.orientation == 1) {
             curY += rowH;
         } else {
-            curX += drawIW + (buf[0] ? (2.0f + textW) : 0.0f) + 1.0f;
+            curX += drawIW + (buf[0] ? (2.0f + textW) : 0.0f) + static_cast<float>(wi.spacing);
         }
     }
 

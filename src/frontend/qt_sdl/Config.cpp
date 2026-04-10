@@ -194,6 +194,7 @@ namespace Config
         {"Instance*.Metroid.Visual.HudWeaponInventoryAlign",        0},      // Left
         {"Instance*.Metroid.Visual.HudWeaponInventoryOrientation",  1},      // Vertical
         {"Instance*.Metroid.Visual.HudWeaponInventoryIconHeight",   8},
+        {"Instance*.Metroid.Visual.HudWeaponInventorySpacing",      1},
         {"Instance*.Metroid.Visual.HudWeaponInventoryOpacity",      1.0},
         {"Instance*.Metroid.Visual.HudWeaponInventoryNotOwnedOpacity", 0.0},
         {"Instance*.Metroid.Visual.HudWeaponInventoryColorR",       255},

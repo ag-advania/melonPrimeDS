@@ -764,6 +764,7 @@ void MelonPrimeHudConfigOnScreenEdit::populateWeaponInventory()
     addComboBox(QStringLiteral("Align"), "Metroid.Visual.HudWeaponInventoryAlign",
         {QStringLiteral("Left"), QStringLiteral("Center"), QStringLiteral("Right")});
     addSpinBox(QStringLiteral("Icon Height"), "Metroid.Visual.HudWeaponInventoryIconHeight", 4, 48);
+    addSpinBox(QStringLiteral("Spacing"), "Metroid.Visual.HudWeaponInventorySpacing", 0, 32);
     addOpacitySlider(QStringLiteral("Opacity"), "Metroid.Visual.HudWeaponInventoryOpacity");
     addOpacitySlider(QStringLiteral("Not Owned Opacity"), "Metroid.Visual.HudWeaponInventoryNotOwnedOpacity");
 }

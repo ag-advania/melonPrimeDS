@@ -179,6 +179,7 @@ static const HudEditPropDesc kPropsWeaponInventory[] = {
     {"Orientation", EditPropType::Enum,  "Metroid.Visual.HudWeaponInventoryOrientation", 0, 1, 1, kEnumOrientation, nullptr, nullptr},
     {"Align",       EditPropType::Enum,  "Metroid.Visual.HudWeaponInventoryAlign",       0, 2, 1, kEnumAlign3,      nullptr, nullptr},
     {"Icon Height", EditPropType::Int,   "Metroid.Visual.HudWeaponInventoryIconHeight",  4, 48, 1, nullptr, nullptr, nullptr},
+    {"Spacing",     EditPropType::Int,   "Metroid.Visual.HudWeaponInventorySpacing",     0, 32, 1, nullptr, nullptr, nullptr},
     {"Opacity",     EditPropType::Float, "Metroid.Visual.HudWeaponInventoryOpacity",     0, 100, 5, nullptr, nullptr, nullptr},
     {"Not Owned",   EditPropType::Float, "Metroid.Visual.HudWeaponInventoryNotOwnedOpacity", 0, 100, 5, nullptr, nullptr, nullptr},
 };
@@ -413,7 +414,7 @@ static const HudEditElemDesc kEditElems[kEditElemCount] = {
         "Metroid.Visual.HudWeaponInventoryColorR",
         "Metroid.Visual.HudWeaponInventoryColorG",
         "Metroid.Visual.HudWeaponInventoryColorB",
-        kPropsWeaponInventory, 5
+        kPropsWeaponInventory, 6
     },
     {   // 13: Crosshair (fixed center position — Qt side panel only, no DS-space props)
         "Crosshair",
@@ -785,7 +786,8 @@ static QRectF ComputeEditBounds(int idx, Config::Table& cfg, float topStretchX)
         const float iconScale = s_cache.valid ? s_cache.scaleIcons : 1.0f;
         const int iconH = std::max(4, cfg.GetInt("Metroid.Visual.HudWeaponInventoryIconHeight"));
         const float iH = static_cast<float>(iconH) * iconScale / hs;
-        const float rowH = iH + 1.0f / hs;
+        const float spacing = static_cast<float>(std::max(0, cfg.GetInt("Metroid.Visual.HudWeaponInventorySpacing")));
+        const float rowH = iH + spacing;
         const int ori = cfg.GetInt("Metroid.Visual.HudWeaponInventoryOrientation");
         // Assume worst-case: all 9 weapons visible
         if (ori == 1) // Vertical
@@ -793,7 +795,7 @@ static QRectF ComputeEditBounds(int idx, Config::Table& cfg, float topStretchX)
                           iH * 2.0f, rowH * 9.0f);
         else // Horizontal
             return QRectF(static_cast<float>(fx), static_cast<float>(fy),
-                          (iH * 2.0f + 1.0f) * 9.0f, rowH);
+                          (iH * 2.0f + spacing) * 9.0f, rowH);
     }
 
     // ── HP Gauge (idx=1) / Ammo Gauge (idx=4) ──────────────────────────────
