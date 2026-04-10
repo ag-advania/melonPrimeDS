@@ -1893,9 +1893,10 @@ static void DrawWeaponInventory(QPainter* p, melonDS::u8* ram,
         const WeaponInfo& winfo = kWeaponTable[i];
         if (winfo.divisor > 0) {
             uint16_t ammo;
-            if (winfo.isMissile)
+            if (winfo.isMissile) {
                 ammo = ammoMissile / winfo.divisor;
-            else if (i == WeaponId::OmegaCannon) {
+                std::snprintf(buf, sizeof(buf), "%u", static_cast<unsigned>(ammo));
+            } else if (i == WeaponId::OmegaCannon) {
                 // Omega Cannon: always 1 shot — only show when possession flag is set
                 // (same check as HasOmegaCannonFlag in MelonPrimeGameWeapon.cpp)
                 if (havingWeapons & WeaponMask::OmegaCannon)
@@ -1915,22 +1916,27 @@ static void DrawWeaponInventory(QPainter* p, melonDS::u8* ram,
             s_invTextCache[si].valid = false;
 
         // Text dimensions in DS-space via bitmap * tds
-        const float textW = (s_invTextCache[si].valid && !s_invTextCache[si].bitmap.isNull())
-                            ? static_cast<float>(s_invTextCache[si].bitmap.width()) * tds : 0.0f;
-        const float textH = (s_invTextCache[si].valid && !s_invTextCache[si].bitmap.isNull())
-                            ? static_cast<float>(s_invTextCache[si].bitmap.height()) * tds : 0.0f;
+        const TextBitmapCache& tc = s_invTextCache[si];
+        const float textW = (tc.valid && !tc.bitmap.isNull())
+                            ? static_cast<float>(tc.bitmap.width())  * tds : 0.0f;
+        const float textH = (tc.valid && !tc.bitmap.isNull())
+                            ? static_cast<float>(tc.bitmap.height()) * tds : 0.0f;
+        // DrawCachedText draws at (x + originX*tds, baselineY + originY*tds).
+        // originY is typically -ascent (negative), so subtract it to truly center on icon.
+        const float originYds = tc.valid ? static_cast<float>(tc.originY) * tds : 0.0f;
 
         float px, py;
         float textX;
-        int   textBaseY;  // baseline Y for DrawCachedText
+        int   textBaseY;  // baselineY arg for DrawCachedText
 
         if (wi.orientation == 1) {
             // Vertical: all icons share iconCenterX axis
             px = iconCenterX - drawIW * 0.5f;
             py = curY;
             textX = vertTextX;
-            // Center text on icon vertically
-            textBaseY = static_cast<int>(std::round(py + drawIH * 0.5f - textH * 0.5f));
+            // Center text bitmap on icon: baselineY = iconCenter - textH/2 - originY*tds
+            textBaseY = static_cast<int>(std::round(
+                py + drawIH * 0.5f - textH * 0.5f - originYds));
         } else {
             // Horizontal: align shifts Y
             px = curX;
@@ -1938,13 +1944,15 @@ static void DrawWeaponInventory(QPainter* p, melonDS::u8* ram,
                : wi.align == 2 ? startY - drawIH
                :                 startY;
             textX = px + drawIW + 2.0f;
-            textBaseY = static_cast<int>(std::round(py + drawIH * 0.5f - textH * 0.5f));
+            textBaseY = static_cast<int>(std::round(
+                py + drawIH * 0.5f - textH * 0.5f - originYds));
         }
 
         // Draw icon
         if (!icon.isNull()) {
             p->setRenderHint(QPainter::SmoothPixmapTransform, true);
             p->drawImage(QRectF(px, py, drawIW, drawIH), icon);
+            p->setRenderHint(QPainter::SmoothPixmapTransform, false);
         }
 
         // Draw ammo text via bitmap cache (tds scaling → TextScale + CapText applied)
