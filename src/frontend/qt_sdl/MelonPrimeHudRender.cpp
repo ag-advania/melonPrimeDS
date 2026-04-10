@@ -2021,7 +2021,7 @@ static void DrawCrosshair(QPainter* p, melonDS::u8* ram,
 // =========================================================================
 //  P-7 forward declarations (full definitions follow CustomHud_Render)
 // =========================================================================
-static constexpr int kEditElemCount   = 12;
+static constexpr int kEditElemCount   = 13; // 0-11 = HUD elements, 12 = Crosshair
 static bool          s_editMode       = false;
 static QRectF        s_editRects[kEditElemCount];
 static float         s_editHudScale    = 1.0f;
