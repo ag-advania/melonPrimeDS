@@ -610,6 +610,7 @@ static const HudWidgetProp kSecWeaponInventory[] = {
     P_ORIENT("Orientation", "Metroid.Visual.HudWeaponInventoryOrientation"),
     P_ALN("Align", "Metroid.Visual.HudWeaponInventoryAlign"),
     P_INT("Icon Height", "Metroid.Visual.HudWeaponInventoryIconHeight", 4, 48, 1),
+    P_INT("Spacing", "Metroid.Visual.HudWeaponInventorySpacing", 0, 32, 1),
     P_FLOAT("Opacity", "Metroid.Visual.HudWeaponInventoryOpacity"),
     P_FLOAT("Not Owned Opacity", "Metroid.Visual.HudWeaponInventoryNotOwnedOpacity"),
 };
