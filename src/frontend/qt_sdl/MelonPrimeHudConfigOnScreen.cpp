@@ -523,6 +523,7 @@ static constexpr float kAnchorGridCellH = 9.0f;
 static constexpr float kAnchorGridH = kAnchorGridCellH * 3 + 4.0f;
 static int s_editPropScroll = 0;
 static constexpr int kPropMaxVisible = 8;
+static constexpr bool kShowDsEditPropsPanel = false;
 
 // ── Modern dark theme ────────────────────────────────────────────────────────
 static const QColor kPanelBg        (10, 12, 24, 225);
@@ -1291,8 +1292,8 @@ static void DrawEditOverlay(QPainter* p, Config::Table& cfg, float topStretchX, 
                 p->setPen(QPen(QColor(255, 200, 80, 200), 0.8));
                 p->drawRect(selR);
             }
-            // Properties panel overlaid on the preview
-            DrawElemPropsPanel(p, cfg, smallFont, normalFont);
+            if (kShowDsEditPropsPanel)
+                DrawElemPropsPanel(p, cfg, smallFont, normalFont);
         }
 
     } else {
@@ -1478,8 +1479,8 @@ static void DrawEditOverlay(QPainter* p, Config::Table& cfg, float topStretchX, 
             p->setBrush(Qt::NoBrush);
         }
 
-        // Properties panel
-        DrawElemPropsPanel(p, cfg, smallFont, normalFont);
+        if (kShowDsEditPropsPanel)
+            DrawElemPropsPanel(p, cfg, smallFont, normalFont);
     }
 
     } // end of normal (non-preview) element rendering
@@ -2003,7 +2004,7 @@ void CustomHud_EditMousePress(QPointF pt, Qt::MouseButton btn, Config::Table& cf
             kEditCrosshairBtnRect.contains(ds) || kEditPreviewBtnRect.contains(ds))
             return;
         // Absorb click inside open properties panel
-        if (s_editSelected >= 0) {
+        if (kShowDsEditPropsPanel && s_editSelected >= 0) {
             const HudEditElemDesc& d = kEditElems[s_editSelected];
             const int totalRows = CountBuiltinRows(d) + d.propCount;
             if (totalRows > 0) {
@@ -2242,7 +2243,8 @@ void CustomHud_EditMousePress(QPointF pt, Qt::MouseButton btn, Config::Table& cf
     if (s_editSelected >= 0 && s_editSelected < kEditElemCount) {
         const HudEditElemDesc& d = kEditElems[s_editSelected];
 
-        // Priority 2: Properties panel
+        if (kShowDsEditPropsPanel) {
+        // Priority 2: DS-space properties panel
         {
             const int builtinRows = CountBuiltinRows(d);
             const int totalRows = builtinRows + d.propCount;
@@ -2407,6 +2409,8 @@ void CustomHud_EditMousePress(QPointF pt, Qt::MouseButton btn, Config::Table& cf
                     return; // absorbed by panel
                 }
             }
+        }
+
         }
 
         // Priority 3: Orientation toggle (normal mode only — in preview mode it's hard to see)
@@ -2592,6 +2596,8 @@ void CustomHud_EditMouseWheel(QPointF pt, int delta, Config::Table& cfg)
             }
         }
     }
+
+    if (!kShowDsEditPropsPanel) return;
 
     // Element props panel scroll
     if (s_editSelected < 0) return;
