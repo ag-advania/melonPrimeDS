@@ -739,6 +739,25 @@ static QRectF ComputeEditBounds(int idx, Config::Table& cfg, float topStretchX)
         ? s_cache.textDrawScale
         : std::max(0.3f, cfg.GetInt("Metroid.Visual.HudTextScale") / 100.0f) / hs;
 
+    // ── Radar (idx=11) — must come before gauge branch (radar reuses lengthKey for square resize) ──
+    if (idx == 11) {
+        if (s_cache.valid)
+            return QRectF(s_cache.radar.radarDstRect).united(s_cache.radar.frameDstRect);
+
+        const int dstSize = std::max(cfg.GetInt("Metroid.Visual.BtmOverlayDstSize"), 1);
+        const int srcRadius = std::max(cfg.GetInt("Metroid.Visual.BtmOverlaySrcRadius"), 1);
+        const int srcDiameter = srcRadius * 2;
+        const float frameSizeDS = static_cast<float>(kRadarArtSize) * dstSize
+                                  / static_cast<float>(srcDiameter);
+        const QRectF radarRect(fx, fy, dstSize, dstSize);
+        const float cropCenterX = fx + dstSize * 0.5f + 0.75f;
+        const float cropCenterY = fy + dstSize * 0.5f;
+        const QRectF frameRect(cropCenterX - frameSizeDS * 0.5f,
+                               cropCenterY - frameSizeDS * 0.5f,
+                               frameSizeDS, frameSizeDS);
+        return radarRect.united(frameRect);
+    }
+
     // ── HP Gauge (idx=1) / Ammo Gauge (idx=4) ──────────────────────────────
     if (d.lengthKey != nullptr) {
         const float len = std::max(4.0f, cfg.GetInt(d.lengthKey) / hs);
@@ -835,24 +854,6 @@ static QRectF ComputeEditBounds(int idx, Config::Table& cfg, float topStretchX)
         return QRectF(ix, iy, dw, dh);
     }
 
-    // ── Radar (idx=11) ──────────────────────────────────────────────────────
-    if (idx == 11) {
-        if (s_cache.valid)
-            return QRectF(s_cache.radar.radarDstRect).united(s_cache.radar.frameDstRect);
-
-        const int dstSize = std::max(cfg.GetInt("Metroid.Visual.BtmOverlayDstSize"), 1);
-        const int srcRadius = std::max(cfg.GetInt("Metroid.Visual.BtmOverlaySrcRadius"), 1);
-        const int srcDiameter = srcRadius * 2;
-        const float frameSizeDS = static_cast<float>(kRadarArtSize) * dstSize
-                                  / static_cast<float>(srcDiameter);
-        const QRectF radarRect(fx, fy, dstSize, dstSize);
-        const float cropCenterX = fx + dstSize * 0.5f + 0.75f;
-        const float cropCenterY = fy + dstSize * 0.5f;
-        const QRectF frameRect(cropCenterX - frameSizeDS * 0.5f,
-                               cropCenterY - frameSizeDS * 0.5f,
-                               frameSizeDS, frameSizeDS);
-        return radarRect.united(frameRect);
-    }
     // ── Text elements ───────────────────────────────────────────────────────
     // Use actual font metrics (s_frameFm = mph.ttf 6px) scaled by tds for accuracy.
     float bw, bh;
@@ -2002,18 +2003,26 @@ void CustomHud_UpdateEditContext(float originX, float originY,
     s_editTopStretchX = topStretchX;
 }
 
+static int HitTestEditElement(const QPointF& ds)
+{
+    // Radar first: it can overlap other UI near the top-right corner.
+    if (!s_editRects[11].isEmpty() && s_editRects[11].contains(ds))
+        return 11;
+
+    for (int i = 0; i < kEditElemCount; ++i) {
+        if (i == 11) continue;
+        if (!s_editRects[i].isEmpty() && s_editRects[i].contains(ds))
+            return i;
+    }
+    return -1;
+}
+
 void CustomHud_EditMousePress(QPointF pt, Qt::MouseButton btn, Config::Table& cfg)
 {
     // Accept both left and right mouse buttons
     if (btn != Qt::LeftButton && btn != Qt::RightButton) return;
     const QPointF ds = WidgetToDS(pt);
-    int hitElem = -1;
-    for (int i = 0; i < kEditElemCount; ++i) {
-        if (!s_editRects[i].isEmpty() && s_editRects[i].contains(ds)) {
-            hitElem = i;
-            break;
-        }
-    }
+    const int hitElem = HitTestEditElement(ds);
 
     // Right-click: select element under cursor for property editing (both modes)
     if (btn == Qt::RightButton) {
@@ -2023,8 +2032,8 @@ void CustomHud_EditMousePress(QPointF pt, Qt::MouseButton btn, Config::Table& cf
                 s_editSelected = hitElem;
                 s_editPropScroll = 0;
                 s_anchorPickerOpen = false;
-                NotifySelectionChanged(hitElem);
             }
+            NotifySelectionChanged(hitElem);
             return;
         }
         // Absorb click inside open properties panel
@@ -2494,8 +2503,8 @@ void CustomHud_EditMousePress(QPointF pt, Qt::MouseButton btn, Config::Table& cf
     }
 
     // Priority 5: Element drag (left-click on element — works in both modes)
-    for (int i = 0; i < kEditElemCount; ++i) {
-        if (!s_editRects[i].contains(ds)) continue;
+    if (hitElem >= 0) {
+        const int i = hitElem;
         const HudEditElemDesc& di = kEditElems[i];
 
         // Auto-switch gauge PosMode from text-relative (0) to independent (1)
@@ -2507,8 +2516,8 @@ void CustomHud_EditMousePress(QPointF pt, Qt::MouseButton btn, Config::Table& cf
                 RecomputeAnchorPositions(s_editTopStretchX);
             }
             int visualX = 0, visualY = 0;
-            if (i == 1) { visualX = s_cache.hp.hpGaugePosX;       visualY = s_cache.hp.hpGaugePosY; }
-            if (i == 4) { visualX = s_cache.weapon.ammoGaugePosX;  visualY = s_cache.weapon.ammoGaugePosY; }
+            if (i == 1) { visualX = s_cache.hp.hpGaugePosX;      visualY = s_cache.hp.hpGaugePosY; }
+            if (i == 4) { visualX = s_cache.weapon.ammoGaugePosX; visualY = s_cache.weapon.ammoGaugePosY; }
             cfg.SetInt(di.posModeKey, 1);
             cfg.SetInt(di.anchorKey, 0);
             cfg.SetInt(di.ofsXKey, visualX);
@@ -2516,7 +2525,7 @@ void CustomHud_EditMousePress(QPointF pt, Qt::MouseButton btn, Config::Table& cf
             CustomHud_InvalidateConfigCache();
         }
 
-        s_editSelected  = i;
+        s_editSelected = i;
         s_editPropScroll = 0;
         s_anchorPickerOpen = false;
         if (di.ofsXKey) { // crosshair (idx==12) has no position keys — select only, no drag
@@ -2525,11 +2534,10 @@ void CustomHud_EditMousePress(QPointF pt, Qt::MouseButton btn, Config::Table& cf
             s_dragStartOfsX = cfg.GetInt(di.ofsXKey);
             s_dragStartOfsY = cfg.GetInt(di.ofsYKey);
         }
-        s_editHovered   = i;
+        s_editHovered = i;
         NotifySelectionChanged(i);
         return;
     }
-
     s_editSelected = -1;  // deselect
     s_anchorPickerOpen = false;
     NotifySelectionChanged(-1);
@@ -2593,10 +2601,7 @@ void CustomHud_EditMouseMove(QPointF pt, Config::Table& cfg)
         return;
     }
 
-    s_editHovered = -1;
-    for (int i = 0; i < kEditElemCount; ++i) {
-        if (s_editRects[i].contains(ds)) { s_editHovered = i; break; }
-    }
+    s_editHovered = HitTestEditElement(ds);
 }
 
 void CustomHud_EditMouseRelease(QPointF pt, Qt::MouseButton btn, Config::Table& cfg)
