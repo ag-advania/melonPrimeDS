@@ -10,6 +10,7 @@
 #include "Config.h"
 #include "toml/toml.hpp"
 #include "MelonPrime.h"
+#include "MelonPrimeDef.h"
 
 #include <QPainter>
 #include <QPainterPath>
@@ -1806,19 +1807,25 @@ static void DrawWeaponInventory(QPainter* p, melonDS::u8* ram,
     const WeaponInventoryHudConfig& wi = c.weaponInventory;
     if (!wi.show) return;
 
-    // Ensure icons are loaded at the appropriate pixel size
+    // scaleIcons is derived from HudAutoScaleEnable + HudAutoScaleCapIcons.
     const float iconScale = (c.scaleIcons > 0.0f) ? c.scaleIcons : 1.0f;
-    const int iconPx = std::max(4, static_cast<int>(std::round(wi.iconHeight * iconScale * hudScale)));
-    EnsureIconsLoaded(iconPx);
+
+    // Load icons at the same pixel size as DrawWeaponAmmo (c.weapon.iconHeight * scaleIcons)
+    // to avoid per-frame reload contention. The drawn DS-space size uses wi.iconHeight.
+    EnsureIconsLoaded(std::max(4, static_cast<int>(std::round(
+        static_cast<float>(c.weapon.iconHeight) * iconScale))));
 
     // Read ammo pools once
     const uint32_t offP = static_cast<uint32_t>(playerPos) * Consts::PLAYER_ADDR_INC;
     const uint16_t ammoSpecial = Read16(ram, rom.currentAmmoSpecial + offP);
     const uint16_t ammoMissile = Read16(ram, rom.currentAmmoMissile + offP);
 
-    // DS-space icon dimensions (before painter scale)
-    const float iH = static_cast<float>(wi.iconHeight) * iconScale;
-    const float rowH = iH + 1.0f;  // icon height + 1px gap
+    // DS-space icon height: wi.iconHeight * scaleIcons / hudScale
+    // mirrors the main weapon icon formula (iconHeight * scaleIcons px, drawn at px/hudScale DS-units).
+    const float iH = (hudScale > 0.0f)
+        ? static_cast<float>(wi.iconHeight) * iconScale / hudScale
+        : static_cast<float>(wi.iconHeight);
+    const float rowH = iH + 1.0f / hudScale;  // 1 screen-pixel gap in DS space
 
     // Display order: PB, Missile, ShockCoil, Magmaul, Judicator, Imperialist, BattleHammer, VoltDriver, OmegaCannon
     static constexpr int kInventoryOrder[9] = { 0, 2, 7, 6, 5, 4, 3, 1, 8 };
@@ -1860,6 +1867,12 @@ static void DrawWeaponInventory(QPainter* p, melonDS::u8* ram,
     float curX = startX;
     float curY = startY;
 
+    // Per-slot text bitmap caches — persist across frames, invalidated by PrepareTextBitmapCached.
+    static TextBitmapCache s_invTextCache[9] = {};
+
+    const QFontMetrics& fm      = s_frameFm;
+    const int           fontPx  = s_frameFpx;
+
     for (int si = 0; si < 9; ++si) {
         const int i = kInventoryOrder[si];
         const bool owned = (havingWeapons & (1u << i)) != 0;
@@ -1882,41 +1895,50 @@ static void DrawWeaponInventory(QPainter* p, melonDS::u8* ram,
             uint16_t ammo;
             if (winfo.isMissile)
                 ammo = ammoMissile / winfo.divisor;
-            else if (i == 8)  // Omega Cannon: always 1
-                ammo = 1;
-            else
+            else if (i == WeaponId::OmegaCannon) {
+                // Omega Cannon: always 1 shot — only show when possession flag is set
+                // (same check as HasOmegaCannonFlag in MelonPrimeGameWeapon.cpp)
+                if (havingWeapons & WeaponMask::OmegaCannon)
+                    std::snprintf(buf, sizeof(buf), "1");
+                // else leave buf empty: unowned OC shows no ammo regardless of notOwnedOpacity
+            } else {
                 ammo = ammoSpecial / winfo.divisor;
-            std::snprintf(buf, sizeof(buf), "%u", static_cast<unsigned>(ammo));
+                std::snprintf(buf, sizeof(buf), "%u", static_cast<unsigned>(ammo));
+            }
         }
         // Power Beam (divisor=0): no ammo shown
 
-        // Text metrics
-        const float textW = (buf[0] && s_frameFpx == kCustomHudFontSize)
-                            ? static_cast<float>(s_frameFm.horizontalAdvance(QString::fromUtf8(buf))) * tds
-                            : 0.0f;
-        const float textH = (buf[0] && s_frameFpx == kCustomHudFontSize && s_frameFm.height() > 0)
-                            ? static_cast<float>(s_frameFm.height()) * tds
-                            : 6.0f * tds;
+        // Prepare text bitmap (respects tds / TextScale / CapText via DrawCachedText scaling).
+        if (buf[0] && fontPx == kCustomHudFontSize)
+            PrepareTextBitmapCached(fm, p->font(), fontPx, s_invTextCache[si], buf, wi.textColor);
+        else
+            s_invTextCache[si].valid = false;
+
+        // Text dimensions in DS-space via bitmap * tds
+        const float textW = (s_invTextCache[si].valid && !s_invTextCache[si].bitmap.isNull())
+                            ? static_cast<float>(s_invTextCache[si].bitmap.width()) * tds : 0.0f;
+        const float textH = (s_invTextCache[si].valid && !s_invTextCache[si].bitmap.isNull())
+                            ? static_cast<float>(s_invTextCache[si].bitmap.height()) * tds : 0.0f;
 
         float px, py;
-        float textX, textY;
+        float textX;
+        int   textBaseY;  // baseline Y for DrawCachedText
 
         if (wi.orientation == 1) {
             // Vertical: all icons share iconCenterX axis
             px = iconCenterX - drawIW * 0.5f;
             py = curY;
             textX = vertTextX;
-            textY = py + drawIH * 0.5f - textH * 0.5f;
+            // Center text on icon vertically
+            textBaseY = static_cast<int>(std::round(py + drawIH * 0.5f - textH * 0.5f));
         } else {
             // Horizontal: align shifts Y
-            const float rowW = drawIW + (buf[0] ? (2.0f + textW) : 0.0f);
             px = curX;
             py = wi.align == 1 ? startY - drawIH * 0.5f
                : wi.align == 2 ? startY - drawIH
                :                 startY;
             textX = px + drawIW + 2.0f;
-            textY = py + drawIH * 0.5f - textH * 0.5f;
-            (void)rowW;
+            textBaseY = static_cast<int>(std::round(py + drawIH * 0.5f - textH * 0.5f));
         }
 
         // Draw icon
@@ -1925,13 +1947,9 @@ static void DrawWeaponInventory(QPainter* p, melonDS::u8* ram,
             p->drawImage(QRectF(px, py, drawIW, drawIH), icon);
         }
 
-        // Draw ammo text
-        if (buf[0]) {
-            p->setPen(wi.textColor);
-            p->drawText(QRectF(textX, textY, textW + 2.0f, textH + 2.0f),
-                        Qt::AlignLeft | Qt::AlignVCenter,
-                        QString::fromUtf8(buf));
-        }
+        // Draw ammo text via bitmap cache (tds scaling → TextScale + CapText applied)
+        if (s_invTextCache[si].valid)
+            DrawCachedText(p, s_invTextCache[si], static_cast<int>(std::round(textX)), textBaseY, tds);
 
         // Advance position
         if (wi.orientation == 1) {
