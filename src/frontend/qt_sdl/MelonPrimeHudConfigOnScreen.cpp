@@ -785,7 +785,7 @@ static QRectF ComputeEditBounds(int idx, Config::Table& cfg, float topStretchX)
         const float iconScale = s_cache.valid ? s_cache.scaleIcons : 1.0f;
         const int iconH = std::max(4, cfg.GetInt("Metroid.Visual.HudWeaponInventoryIconHeight"));
         const float iH = static_cast<float>(iconH) * iconScale / hs;
-        const float rowH = iH + 1.0f;
+        const float rowH = iH + 1.0f / hs;
         const int ori = cfg.GetInt("Metroid.Visual.HudWeaponInventoryOrientation");
         // Assume worst-case: all 9 weapons visible
         if (ori == 1) // Vertical
