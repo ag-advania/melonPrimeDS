@@ -16,8 +16,8 @@ MelonPrimeHudConfigOnScreenEdit::MelonPrimeHudConfigOnScreenEdit(QWidget* parent
     setAttribute(Qt::WA_StyledBackground, true);
     setStyleSheet(
         "MelonPrimeHudConfigOnScreenEdit { background: rgba(24,24,32,210); border: 1px solid #555; border-radius: 4px; }"
-        "QLabel { color: #ccc; font-size: 9px; }"
-        "QCheckBox { color: #ccc; font-size: 9px; }"
+        "QLabel { color: #000; font-size: 9px; }"
+        "QCheckBox { color: #000; font-size: 9px; }"
         "QComboBox { font-size: 9px; color: #000; }"
         "QSpinBox { font-size: 9px; color: #000; }"
         "QDoubleSpinBox { font-size: 9px; color: #000; }"
