@@ -320,6 +320,7 @@ enum class HWType { Bool, Int, Float, String, Anchor9, Align3, Color3, HorizVert
                     GaugeAnchor5,  // 0=Below, 1=Above, 2=Right, 3=Left, 4=Center
                     AnchorY3,      // 0=Top, 1=Center, 2=Bottom
                     LabelPos5,     // 0=Above, 1=Below, 2=Left, 3=Right, 4=Center
+                    Double,        // lo/hi/step stored as ×100 integers (e.g. 10,800,25 → 0.10–8.00 step 0.25)
                   };
 
 struct HudWidgetProp {
@@ -353,6 +354,8 @@ struct HudMainSec {
 #define P_BOOL(lbl, key)              { lbl, HWType::Bool,   key, 0,0,0, nullptr, nullptr }
 #define P_INT(lbl, key, lo, hi, s)    { lbl, HWType::Int,    key, lo, hi, s, nullptr, nullptr }
 #define P_FLOAT(lbl, key)             { lbl, HWType::Float,  key, 0,100,5, nullptr, nullptr }
+// lo100/hi100/step100 are the range multiplied by 100 (e.g. 10,800,25 → 0.10–8.00 step 0.25)
+#define P_DOUBLE(lbl, key, lo100, hi100, step100) { lbl, HWType::Double, key, lo100, hi100, step100, nullptr, nullptr }
 #define P_STR(lbl, key)               { lbl, HWType::String, key, 0,0,0, nullptr, nullptr }
 #define P_ANC(lbl, key)               { lbl, HWType::Anchor9,key, 0,8,1, nullptr, nullptr }
 #define P_ALN(lbl, key)               { lbl, HWType::Align3, key, 0,2,1, nullptr, nullptr }
@@ -613,9 +616,19 @@ static const HudWidgetProp kSecWeaponInventory[] = {
     P_INT("Spacing", "Metroid.Visual.HudWeaponInventorySpacing", 0, 32, 1),
     P_FLOAT("Opacity", "Metroid.Visual.HudWeaponInventoryOpacity"),
     P_FLOAT("Not Owned Opacity", "Metroid.Visual.HudWeaponInventoryNotOwnedOpacity"),
-    P_BOOL("Highlight Current Weapon", "Metroid.Visual.HudWeaponInventoryHighlightEnable"),
-    P_CLR("Highlight Color", "Metroid.Visual.HudWeaponInventoryHighlightColorR", "Metroid.Visual.HudWeaponInventoryHighlightColorG", "Metroid.Visual.HudWeaponInventoryHighlightColorB"),
-    P_FLOAT("Highlight Opacity", "Metroid.Visual.HudWeaponInventoryHighlightOpacity"),
+};
+
+static const HudWidgetProp kSecWeaponInventoryHighlight[] = {
+    P_BOOL("Enable", "Metroid.Visual.HudWeaponInventoryHighlightEnable"),
+    P_CLR("Color", "Metroid.Visual.HudWeaponInventoryHighlightColorR", "Metroid.Visual.HudWeaponInventoryHighlightColorG", "Metroid.Visual.HudWeaponInventoryHighlightColorB"),
+    P_FLOAT("Opacity", "Metroid.Visual.HudWeaponInventoryHighlightOpacity"),
+    P_DOUBLE("Thickness", "Metroid.Visual.HudWeaponInventoryHighlightThickness", 10, 800, 25),
+    P_INT("Padding", "Metroid.Visual.HudWeaponInventoryHighlightPadding", 0, 16, 1),
+    P_INT("Corner Radius", "Metroid.Visual.HudWeaponInventoryHighlightCornerRadius", 0, 16, 1),
+    P_INT("Size Offset Left",   "Metroid.Visual.HudWeaponInventoryHighlightSizeOffsetLeft",   -16, 32, 1),
+    P_INT("Size Offset Right",  "Metroid.Visual.HudWeaponInventoryHighlightSizeOffsetRight",  -16, 32, 1),
+    P_INT("Size Offset Top",    "Metroid.Visual.HudWeaponInventoryHighlightSizeOffsetTop",    -16, 32, 1),
+    P_INT("Size Offset Bottom", "Metroid.Visual.HudWeaponInventoryHighlightSizeOffsetBottom", -16, 32, 1),
 };
 
 // --- Section 16: Radar ---
@@ -743,7 +756,8 @@ static const HudSubSec kSubsHpAmmo[] = {
     SUB("HP Gauge Outline",          "Metroid.UI.SectionHudHpGaugeOutline", kSecHpGaugeOutline),
     SUB("Ammo Gauge",                "Metroid.UI.SectionHudAmmoGauge",      kSecAmmoGauge),
     SUB("Ammo Gauge Outline",        "Metroid.UI.SectionHudAmmoGaugeOutline", kSecAmmoGaugeOutline),
-    SUB("Weapon Inventory",          "Metroid.UI.SectionHudWeaponInventory", kSecWeaponInventory),
+    SUB("Weapon Inventory",           "Metroid.UI.SectionHudWeaponInventory",          kSecWeaponInventory),
+    SUB("Weapon Inventory Highlight", "Metroid.UI.SectionHudWeaponInventoryHighlight",  kSecWeaponInventoryHighlight),
 };
 
 // ── Rank/Time sub-sub-sections ──
@@ -1240,6 +1254,22 @@ void MelonPrimeInputConfig::setupCustomHudWidgets(Config::Table& instcfg)
             dsb->setObjectName(objName);
             dsb->setRange(0.0, 1.0);
             dsb->setSingleStep(0.05);
+            dsb->setDecimals(2);
+            dsb->setValue(instcfg.GetDouble(p.cfgKey));
+            form->addRow(QString::fromUtf8(p.label), dsb);
+            m_hudWidgets[p.cfgKey] = dsb;
+            connect(dsb, QOverload<double>::of(&QDoubleSpinBox::valueChanged), this, [this, key = std::string(p.cfgKey)](double val) {
+                if (!m_applyPreviewEnabled) return;
+                emuInstance->getLocalConfig().SetDouble(key, val);
+                invalidateHudAndRefreshPreviews();
+            });
+            break;
+        }
+        case HWType::Double: {
+            auto* dsb = new QDoubleSpinBox(parent);
+            dsb->setObjectName(objName);
+            dsb->setRange(p.min * 0.01, p.max * 0.01);
+            dsb->setSingleStep(p.step * 0.01);
             dsb->setDecimals(2);
             dsb->setValue(instcfg.GetDouble(p.cfgKey));
             form->addRow(QString::fromUtf8(p.label), dsb);

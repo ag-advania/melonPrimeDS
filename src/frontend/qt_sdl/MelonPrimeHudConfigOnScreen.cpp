@@ -182,8 +182,15 @@ static const HudEditPropDesc kPropsWeaponInventory[] = {
     {"Spacing",     EditPropType::Int,   "Metroid.Visual.HudWeaponInventorySpacing",     0, 32, 1, nullptr, nullptr, nullptr},
     {"Opacity",     EditPropType::Float, "Metroid.Visual.HudWeaponInventoryOpacity",     0, 100, 5, nullptr, nullptr, nullptr},
     {"Not Owned",   EditPropType::Float, "Metroid.Visual.HudWeaponInventoryNotOwnedOpacity", 0, 100, 5, nullptr, nullptr, nullptr},
-    {"Highlight",   EditPropType::Bool,  "Metroid.Visual.HudWeaponInventoryHighlightEnable", 0, 1, 1, nullptr, nullptr, nullptr},
-    {"Highlight Opacity", EditPropType::Float, "Metroid.Visual.HudWeaponInventoryHighlightOpacity", 0, 100, 5, nullptr, nullptr, nullptr},
+    {"Highlight",        EditPropType::Bool,  "Metroid.Visual.HudWeaponInventoryHighlightEnable",       0, 1,   1, nullptr, nullptr, nullptr},
+    {"Hl Opacity",       EditPropType::Float, "Metroid.Visual.HudWeaponInventoryHighlightOpacity",       0, 100, 5, nullptr, nullptr, nullptr},
+    {"Hl Thickness",     EditPropType::Float, "Metroid.Visual.HudWeaponInventoryHighlightThickness",     1,  80, 5, nullptr, nullptr, nullptr},
+    {"Hl Padding",       EditPropType::Int,   "Metroid.Visual.HudWeaponInventoryHighlightPadding",       0,  16, 1, nullptr, nullptr, nullptr},
+    {"Hl Corner Radius", EditPropType::Int,   "Metroid.Visual.HudWeaponInventoryHighlightCornerRadius",  0,  16, 1, nullptr, nullptr, nullptr},
+    {"Hl Ofs Left",      EditPropType::Int,   "Metroid.Visual.HudWeaponInventoryHighlightSizeOffsetLeft",   -16, 32, 1, nullptr, nullptr, nullptr},
+    {"Hl Ofs Right",     EditPropType::Int,   "Metroid.Visual.HudWeaponInventoryHighlightSizeOffsetRight",  -16, 32, 1, nullptr, nullptr, nullptr},
+    {"Hl Ofs Top",       EditPropType::Int,   "Metroid.Visual.HudWeaponInventoryHighlightSizeOffsetTop",    -16, 32, 1, nullptr, nullptr, nullptr},
+    {"Hl Ofs Bottom",    EditPropType::Int,   "Metroid.Visual.HudWeaponInventoryHighlightSizeOffsetBottom", -16, 32, 1, nullptr, nullptr, nullptr},
 };
 
 static const HudEditPropDesc kPropsRadar[] = {
@@ -416,7 +423,7 @@ static const HudEditElemDesc kEditElems[kEditElemCount] = {
         "Metroid.Visual.HudWeaponInventoryColorR",
         "Metroid.Visual.HudWeaponInventoryColorG",
         "Metroid.Visual.HudWeaponInventoryColorB",
-        kPropsWeaponInventory, 8
+        kPropsWeaponInventory, 15
     },
     {   // 13: Crosshair (fixed center position — Qt side panel only, no DS-space props)
         "Crosshair",
