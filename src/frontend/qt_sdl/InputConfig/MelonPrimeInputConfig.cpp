@@ -705,6 +705,18 @@ static const HudWidgetProp kSecTimeLimitOutline[] = {
     P_FLOAT("Opacity", "Metroid.Visual.HudTimeLimitOutlineOpacity"),
     P_INT("Thickness", "Metroid.Visual.HudTimeLimitOutlineThickness", 1, 10, 1),
 };
+static const HudWidgetProp kSecWeaponInventoryOutline[] = {
+    P_BOOL("Enable",   "Metroid.Visual.HudWeaponInventoryOutline"),
+    P_CLR("Color",     "Metroid.Visual.HudWeaponInventoryOutlineColorR", "Metroid.Visual.HudWeaponInventoryOutlineColorG", "Metroid.Visual.HudWeaponInventoryOutlineColorB"),
+    P_FLOAT("Opacity", "Metroid.Visual.HudWeaponInventoryOutlineOpacity"),
+    P_INT("Thickness", "Metroid.Visual.HudWeaponInventoryOutlineThickness", 1, 10, 1),
+};
+static const HudWidgetProp kSecWeaponInventoryIconOutline[] = {
+    P_BOOL("Enable",   "Metroid.Visual.HudWeaponInventoryIconOutline"),
+    P_CLR("Color",     "Metroid.Visual.HudWeaponInventoryIconOutlineColorR", "Metroid.Visual.HudWeaponInventoryIconOutlineColorG", "Metroid.Visual.HudWeaponInventoryIconOutlineColorB"),
+    P_FLOAT("Opacity", "Metroid.Visual.HudWeaponInventoryIconOutlineOpacity"),
+    P_INT("Thickness", "Metroid.Visual.HudWeaponInventoryIconOutlineThickness", 1, 10, 1),
+};
 static const HudWidgetProp kSecBombLeftOutline[] = {
     P_BOOL("Enable",   "Metroid.Visual.HudBombLeftOutline"),
     P_CLR("Color",     "Metroid.Visual.HudBombLeftOutlineColorR", "Metroid.Visual.HudBombLeftOutlineColorG", "Metroid.Visual.HudBombLeftOutlineColorB"),
@@ -758,6 +770,8 @@ static const HudSubSec kSubsHpAmmo[] = {
     SUB("Ammo Gauge Outline",        "Metroid.UI.SectionHudAmmoGaugeOutline", kSecAmmoGaugeOutline),
     SUB("Weapon Inventory",           "Metroid.UI.SectionHudWeaponInventory",          kSecWeaponInventory),
     SUB("Weapon Inventory Highlight", "Metroid.UI.SectionHudWeaponInventoryHighlight",  kSecWeaponInventoryHighlight),
+    SUB("Weapon Inventory Outline",      "Metroid.UI.SectionHudWeaponInventoryOutline",      kSecWeaponInventoryOutline),
+    SUB("Weapon Inventory Icon Outline", "Metroid.UI.SectionHudWeaponInventoryIconOutline",  kSecWeaponInventoryIconOutline),
 };
 
 // ── Rank/Time sub-sub-sections ──

@@ -74,6 +74,11 @@ static int    s_outlineWeaponBaseIconH = -1;
 static QColor s_outlineBombColor;
 static int    s_outlineBombExpandR     = -1;
 static int    s_outlineBombBaseIconH   = -1;
+// Weapon Inventory icon outline cache (separate from DrawWeaponAmmo's weapon outline)
+static QImage s_invIconsOutline[9];
+static QColor s_outlineInvColor;
+static int    s_outlineInvExpandR     = -1;
+static int    s_outlineInvBaseIconH   = -1;
 
 static const QImage& GetBombIconForDraw(int bombs, bool useOverlay, const QColor& overlayColor)
 {
@@ -151,6 +156,7 @@ static void EnsureIconsLoaded(int pixelH = 16)
     }
     s_weaponIconHeight = targetH;
     s_outlineWeaponColor = QColor(); // invalidate weapon outline cache
+    s_outlineInvColor    = QColor(); // invalidate inventory icon outline cache
 }
 
 // ── P-12: Separable max-filter dilation ──────────────────────────────────────
@@ -227,6 +233,17 @@ static void EnsureWeaponOutlineIconsUpdated(const QColor& color, int expandR)
     s_outlineWeaponBaseIconH = s_weaponIconHeight;
     for (int i = 0; i < 9; ++i)
         s_weaponIconsOutline[i] = DilateAndTintIconForOutline(s_weaponIcons[i], color, expandR);
+}
+static void EnsureInvOutlineIconsUpdated(const QColor& color, int expandR)
+{
+    if (s_outlineInvColor     == color   &&
+        s_outlineInvExpandR   == expandR &&
+        s_outlineInvBaseIconH == s_weaponIconHeight) return;
+    s_outlineInvColor     = color;
+    s_outlineInvExpandR   = expandR;
+    s_outlineInvBaseIconH = s_weaponIconHeight;
+    for (int i = 0; i < 9; ++i)
+        s_invIconsOutline[i] = DilateAndTintIconForOutline(s_weaponIcons[i], color, expandR);
 }
 static void EnsureBombOutlineIconsUpdated(const QColor& color, int expandR)
 {
@@ -602,6 +619,8 @@ struct WeaponInventoryHudConfig {
     float   opacity;               // owned-weapon opacity
     float   notOwnedOpacity;       // unowned-weapon opacity (0 = hide)
     QColor  textColor;
+    HudOutlineConfig outline;      // text outline
+    HudOutlineConfig iconOutline;  // icon outline
     bool    highlightEnable;       // highlight currently selected weapon
     QColor  highlightColor;
     float   highlightOpacity;
@@ -1095,6 +1114,8 @@ static void RefreshCachedConfig(Config::Table& cfg, float topStretchX = 1.0f, fl
     loadOL(c.rankTime.rankOutline,      "HudRank");
     loadOL(c.rankTime.timeLeftOutline,   "HudTimeLeft");
     loadOL(c.rankTime.timeLimitOutline,  "HudTimeLimit");
+    loadOL(c.weaponInventory.outline,     "HudWeaponInventory");
+    loadOL(c.weaponInventory.iconOutline, "HudWeaponInventoryIcon");
     loadOL(c.bombLeft.outline,      "HudBombLeft");
     loadOL(c.bombLeft.iconOutline,  "HudBombIcon");
     loadOL(c.radar.outline,        "BtmOverlay");
@@ -1892,7 +1913,8 @@ static void DrawWeaponInventory(QPainter* p, melonDS::u8* ram,
     float curY = startY;
 
     // Per-slot text bitmap caches — persist across frames, invalidated by PrepareTextBitmapCached.
-    static TextBitmapCache s_invTextCache[9] = {};
+    static TextBitmapCache s_invTextCache[9]    = {};
+    static TextBitmapCache s_invOutlineCache[9] = {};
 
     const QFontMetrics& fm      = s_frameFm;
     const int           fontPx  = s_frameFpx;
@@ -1995,16 +2017,37 @@ static void DrawWeaponInventory(QPainter* p, melonDS::u8* ram,
             p->setOpacity(eff);  // restore per-slot opacity for icon + text
         }
 
-        // Draw icon
+        // Draw icon (with optional outline)
         if (!icon.isNull()) {
             p->setRenderHint(QPainter::SmoothPixmapTransform, true);
-            p->drawImage(QRectF(px, py, drawIW, drawIH), icon);
+            const HudOutlineConfig& _iol = EffOL(c, c.weaponInventory.iconOutline);
+            if (_iol.enable && _iol.opacity > 0.0f) {
+                const int expandR = std::max(1, _iol.thickness);
+                EnsureInvOutlineIconsUpdated(_iol.color, expandR);
+                DrawImageOutlined(p, icon, s_invIconsOutline[i],
+                                  QRectF(px, py, drawIW, drawIH),
+                                  static_cast<float>(expandR) / hudScale,
+                                  eff, _iol.opacity);
+                p->setOpacity(eff); // DrawImageOutlined resets opacity to 1.0; restore for text
+            } else {
+                p->drawImage(QRectF(px, py, drawIW, drawIH), icon);
+            }
             p->setRenderHint(QPainter::SmoothPixmapTransform, false);
         }
 
         // Draw ammo text via bitmap cache (tds scaling → TextScale + CapText applied)
-        if (s_invTextCache[si].valid)
-            DrawCachedText(p, s_invTextCache[si], static_cast<int>(std::round(textX)), textBaseY, tds);
+        if (s_invTextCache[si].valid) {
+            const int tx = static_cast<int>(std::round(textX));
+            const HudOutlineConfig& _ol = EffOL(c, c.weaponInventory.outline);
+            if (_ol.enable && _ol.opacity > 0.0f) {
+                PrepareOutlineBitmapCached(s_invOutlineCache[si], s_invTextCache[si],
+                                           _ol.color, _ol.thickness, tds * hudScale);
+                DrawCachedTextOutlined(p, s_invTextCache[si], s_invOutlineCache[si],
+                                       tx, textBaseY, tds, eff, _ol.opacity);
+            } else {
+                DrawCachedText(p, s_invTextCache[si], tx, textBaseY, tds);
+            }
+        }
 
         // Advance position
         if (wi.orientation == 1) {

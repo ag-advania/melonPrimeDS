@@ -768,6 +768,9 @@ void MelonPrimeHudConfigOnScreenEdit::populateWeaponInventory()
     addOpacitySlider(QStringLiteral("Opacity"), "Metroid.Visual.HudWeaponInventoryOpacity");
     addOpacitySlider(QStringLiteral("Not Owned Opacity"), "Metroid.Visual.HudWeaponInventoryNotOwnedOpacity");
     addSeparator();
+    addOutlineGroup("HudWeaponInventory");
+    addOutlineGroup("HudWeaponInventoryIcon");
+    addSeparator();
     addCheckBox(QStringLiteral("Highlight Current Weapon"), "Metroid.Visual.HudWeaponInventoryHighlightEnable");
     addColorPicker(QStringLiteral("Highlight Color"),
         "Metroid.Visual.HudWeaponInventoryHighlightColorR",

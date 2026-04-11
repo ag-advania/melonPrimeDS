@@ -198,6 +198,14 @@ namespace Config
         {"Instance*.Metroid.Visual.HudWeaponInventoryColorR",       255},
         {"Instance*.Metroid.Visual.HudWeaponInventoryColorG",       255},
         {"Instance*.Metroid.Visual.HudWeaponInventoryColorB",       255},
+        {"Instance*.Metroid.Visual.HudWeaponInventoryOutlineColorR",        0},
+        {"Instance*.Metroid.Visual.HudWeaponInventoryOutlineColorG",        0},
+        {"Instance*.Metroid.Visual.HudWeaponInventoryOutlineColorB",        0},
+        {"Instance*.Metroid.Visual.HudWeaponInventoryOutlineThickness",     1},
+        {"Instance*.Metroid.Visual.HudWeaponInventoryIconOutlineColorR",    0},
+        {"Instance*.Metroid.Visual.HudWeaponInventoryIconOutlineColorG",    0},
+        {"Instance*.Metroid.Visual.HudWeaponInventoryIconOutlineColorB",    0},
+        {"Instance*.Metroid.Visual.HudWeaponInventoryIconOutlineThickness", 1},
         {"Instance*.Metroid.Visual.HudWeaponInventoryHighlightColorR",   160},
         {"Instance*.Metroid.Visual.HudWeaponInventoryHighlightColorG",   160},
         {"Instance*.Metroid.Visual.HudWeaponInventoryHighlightColorB",   160},
@@ -471,8 +479,12 @@ namespace Config
         /* MelonPrimeDS Bottom Screen Overlay bool { */
         {"Instance*.Metroid.Visual.BtmOverlayEnable", true},
         /* MelonPrimeDS Bottom Screen Overlay bool } */
+        {"Instance*.Metroid.Visual.HudWeaponInventoryOutline",          false},
+        {"Instance*.Metroid.Visual.HudWeaponInventoryIconOutline",      false},
         {"Instance*.Metroid.Visual.HudWeaponInventoryHighlightEnable", true},
-        {"Instance*.Metroid.UI.SectionHudWeaponInventoryHighlight", false},
+        {"Instance*.Metroid.UI.SectionHudWeaponInventoryHighlight",    false},
+        {"Instance*.Metroid.UI.SectionHudWeaponInventoryOutline",      false},
+        {"Instance*.Metroid.UI.SectionHudWeaponInventoryIconOutline", false},
         /* MelonPrimeDS Crosshair bools } */
         /* MelonPrimeDS } */
     #endif
@@ -525,6 +537,8 @@ namespace Config
         {"Instance*.Metroid.Visual.HudTimeLimitOpacity",     1.0},
         {"Instance*.Metroid.Visual.HudBombLeftOpacity",      1.0},
         {"Instance*.Metroid.Visual.HudBombIconOpacity",      1.0},
+        {"Instance*.Metroid.Visual.HudWeaponInventoryOutlineOpacity",      0.75},
+        {"Instance*.Metroid.Visual.HudWeaponInventoryIconOutlineOpacity",   0.75},
         {"Instance*.Metroid.Visual.HudWeaponInventoryOpacity",         1.0},
         {"Instance*.Metroid.Visual.HudWeaponInventoryNotOwnedOpacity", 0.0},
         {"Instance*.Metroid.Visual.HudWeaponInventoryHighlightOpacity",   0.8},
