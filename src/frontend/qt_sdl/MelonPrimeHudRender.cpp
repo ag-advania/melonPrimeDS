@@ -602,6 +602,9 @@ struct WeaponInventoryHudConfig {
     float   opacity;               // owned-weapon opacity
     float   notOwnedOpacity;       // unowned-weapon opacity (0 = hide)
     QColor  textColor;
+    bool    highlightEnable;       // highlight currently selected weapon
+    QColor  highlightColor;
+    float   highlightOpacity;
 };
 struct CrosshairHudConfig {
     QColor chColor;
@@ -840,6 +843,11 @@ static void LoadWeaponInventoryConfig(WeaponInventoryHudConfig& wi, Config::Tabl
     wi.textColor   = QColor(cfg.GetInt("Metroid.Visual.HudWeaponInventoryColorR"),
                             cfg.GetInt("Metroid.Visual.HudWeaponInventoryColorG"),
                             cfg.GetInt("Metroid.Visual.HudWeaponInventoryColorB"));
+    wi.highlightEnable  = cfg.GetBool("Metroid.Visual.HudWeaponInventoryHighlightEnable");
+    wi.highlightColor   = QColor(cfg.GetInt("Metroid.Visual.HudWeaponInventoryHighlightColorR"),
+                                 cfg.GetInt("Metroid.Visual.HudWeaponInventoryHighlightColorG"),
+                                 cfg.GetInt("Metroid.Visual.HudWeaponInventoryHighlightColorB"));
+    wi.highlightOpacity = static_cast<float>(std::clamp(cfg.GetDouble("Metroid.Visual.HudWeaponInventoryHighlightOpacity"), 0.0, 1.0));
     // posX/posY computed in RecomputeAnchorPositions
 }
 
@@ -1803,7 +1811,7 @@ static constexpr WeaponInfo kWeaponTable[9] = {
 //  DrawWeaponInventory — show all 9 weapons with ammo counts
 static void DrawWeaponInventory(QPainter* p, melonDS::u8* ram,
                                  const RomAddresses& rom, uint8_t playerPos,
-                                 uint16_t havingWeapons,
+                                 uint16_t havingWeapons, uint8_t currentWeapon,
                                  const CachedHudConfig& c, float tds, float hudScale)
 {
     const WeaponInventoryHudConfig& wi = c.weaponInventory;
@@ -1948,6 +1956,12 @@ static void DrawWeaponInventory(QPainter* p, melonDS::u8* ram,
             textX = px + drawIW + 2.0f;
             textBaseY = static_cast<int>(std::round(
                 py + drawIH * 0.5f - textH * 0.5f - originYds));
+        }
+
+        // Draw highlight background for currently selected weapon
+        if (wi.highlightEnable && i == static_cast<int>(currentWeapon) && wi.highlightOpacity > 0.0f) {
+            p->setOpacity(wi.highlightOpacity);
+            p->fillRect(QRectF(px, py, drawIW, drawIH), wi.highlightColor);
         }
 
         // Draw icon
@@ -2399,7 +2413,7 @@ HOT_FUNCTION void CustomHud_Render(
         const uint16_t havingWeapons = static_cast<uint16_t>(
             Read16(ram, addrHot.havingWeapons));
         DrawWeaponInventory(topPaint, ram, rom, playerPosition,
-                            havingWeapons, c, textDrawScale, hudScale);
+                            havingWeapons, currentWeapon, c, textDrawScale, hudScale);
     }
 
     bool isTrans = (Read8(ram, addrHot.jumpFlag) & 0x10) != 0;
