@@ -1934,20 +1934,18 @@ static void DrawWeaponInventory(QPainter* p, melonDS::u8* ram,
                              ? drawIH * static_cast<float>(icon.width()) / static_cast<float>(icon.height())
                              : drawIH;
 
-        // Compute ammo string — mirrors DrawWeaponAmmo logic
+        // Compute ammo string — mirrors DrawWeaponAmmo logic; unowned weapons show no ammo
         char buf[16] = "";
         const WeaponInfo& winfo = kWeaponTable[i];
-        if (winfo.divisor > 0) {
+        if (owned && winfo.divisor > 0) {
             uint16_t ammo;
             if (winfo.isMissile) {
                 ammo = ammoMissile / winfo.divisor;
                 std::snprintf(buf, sizeof(buf), "%u", static_cast<unsigned>(ammo));
             } else if (i == WeaponId::OmegaCannon) {
                 // Omega Cannon: always 1 shot — only show when possession flag is set
-                // (same check as HasOmegaCannonFlag in MelonPrimeGameWeapon.cpp)
                 if (havingWeapons & WeaponMask::OmegaCannon)
                     std::snprintf(buf, sizeof(buf), "1");
-                // else leave buf empty: unowned OC shows no ammo regardless of notOwnedOpacity
             } else {
                 ammo = ammoSpecial / winfo.divisor;
                 std::snprintf(buf, sizeof(buf), "%u", static_cast<unsigned>(ammo));
