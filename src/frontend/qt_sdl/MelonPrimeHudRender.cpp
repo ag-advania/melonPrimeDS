@@ -605,6 +605,13 @@ struct WeaponInventoryHudConfig {
     bool    highlightEnable;       // highlight currently selected weapon
     QColor  highlightColor;
     float   highlightOpacity;
+    float   highlightThickness;    // border line width (DS-space)
+    int     highlightPadding;      // padding around icon+text (DS-space px)
+    int     highlightCornerRadius; // rounded corner radius (DS-space px)
+    int     highlightOffsetLeft;   // expand/shrink rect left edge (DS-space px)
+    int     highlightOffsetRight;  // expand/shrink rect right edge
+    int     highlightOffsetTop;    // expand/shrink rect top edge
+    int     highlightOffsetBottom; // expand/shrink rect bottom edge
 };
 struct CrosshairHudConfig {
     QColor chColor;
@@ -847,7 +854,14 @@ static void LoadWeaponInventoryConfig(WeaponInventoryHudConfig& wi, Config::Tabl
     wi.highlightColor   = QColor(cfg.GetInt("Metroid.Visual.HudWeaponInventoryHighlightColorR"),
                                  cfg.GetInt("Metroid.Visual.HudWeaponInventoryHighlightColorG"),
                                  cfg.GetInt("Metroid.Visual.HudWeaponInventoryHighlightColorB"));
-    wi.highlightOpacity = static_cast<float>(std::clamp(cfg.GetDouble("Metroid.Visual.HudWeaponInventoryHighlightOpacity"), 0.0, 1.0));
+    wi.highlightOpacity       = static_cast<float>(std::clamp(cfg.GetDouble("Metroid.Visual.HudWeaponInventoryHighlightOpacity"), 0.0, 1.0));
+    wi.highlightThickness     = static_cast<float>(std::clamp(cfg.GetDouble("Metroid.Visual.HudWeaponInventoryHighlightThickness"), 0.1, 8.0));
+    wi.highlightPadding       = std::max(0, cfg.GetInt("Metroid.Visual.HudWeaponInventoryHighlightPadding"));
+    wi.highlightCornerRadius  = std::max(0, cfg.GetInt("Metroid.Visual.HudWeaponInventoryHighlightCornerRadius"));
+    wi.highlightOffsetLeft   = cfg.GetInt("Metroid.Visual.HudWeaponInventoryHighlightSizeOffsetLeft");
+    wi.highlightOffsetRight  = cfg.GetInt("Metroid.Visual.HudWeaponInventoryHighlightSizeOffsetRight");
+    wi.highlightOffsetTop    = cfg.GetInt("Metroid.Visual.HudWeaponInventoryHighlightSizeOffsetTop");
+    wi.highlightOffsetBottom = cfg.GetInt("Metroid.Visual.HudWeaponInventoryHighlightSizeOffsetBottom");
     // posX/posY computed in RecomputeAnchorPositions
 }
 
@@ -1960,15 +1974,23 @@ static void DrawWeaponInventory(QPainter* p, melonDS::u8* ram,
 
         // Draw highlight rounded-rect outline around icon + ammo text for currently selected weapon
         if (wi.highlightEnable && i == static_cast<int>(currentWeapon) && wi.highlightOpacity > 0.0f) {
-            const float pad    = 1.5f;
+            const float pad    = static_cast<float>(wi.highlightPadding);
+            const float ofsL   = static_cast<float>(wi.highlightOffsetLeft);
+            const float ofsR   = static_cast<float>(wi.highlightOffsetRight);
+            const float ofsT   = static_cast<float>(wi.highlightOffsetTop);
+            const float ofsB   = static_cast<float>(wi.highlightOffsetBottom);
             const float right  = (textW > 0.0f) ? (textX + textW + pad) : (px + drawIW + pad);
-            const QRectF hlRect(px - pad, py - pad, right - (px - pad), drawIH + 2.0f * pad);
+            const QRectF hlRect(px  - pad - ofsL,
+                                py  - pad - ofsT,
+                                right - (px - pad) + ofsL + ofsR,
+                                drawIH + 2.0f * pad + ofsT + ofsB);
+            const double radius = static_cast<double>(wi.highlightCornerRadius);
             p->setOpacity(wi.highlightOpacity);
             QPen hlPen(wi.highlightColor);
-            hlPen.setWidthF(0.75f);
+            hlPen.setWidthF(static_cast<double>(wi.highlightThickness));
             p->setPen(hlPen);
             p->setBrush(Qt::NoBrush);
-            p->drawRoundedRect(hlRect, 2.0, 2.0);
+            p->drawRoundedRect(hlRect, radius, radius);
             p->setPen(Qt::NoPen);
             p->setOpacity(eff);  // restore per-slot opacity for icon + text
         }

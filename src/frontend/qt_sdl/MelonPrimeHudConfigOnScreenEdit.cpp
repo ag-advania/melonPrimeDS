@@ -774,6 +774,13 @@ void MelonPrimeHudConfigOnScreenEdit::populateWeaponInventory()
         "Metroid.Visual.HudWeaponInventoryHighlightColorG",
         "Metroid.Visual.HudWeaponInventoryHighlightColorB");
     addOpacitySlider(QStringLiteral("Highlight Opacity"), "Metroid.Visual.HudWeaponInventoryHighlightOpacity");
+    addDoubleSpinBox(QStringLiteral("Highlight Thickness"), "Metroid.Visual.HudWeaponInventoryHighlightThickness", 0.1, 8.0, 0.25);
+    addSpinBox(QStringLiteral("Highlight Padding"), "Metroid.Visual.HudWeaponInventoryHighlightPadding", 0, 16);
+    addSpinBox(QStringLiteral("Highlight Corner Radius"), "Metroid.Visual.HudWeaponInventoryHighlightCornerRadius", 0, 16);
+    addSpinBox(QStringLiteral("Highlight Offset Left"),   "Metroid.Visual.HudWeaponInventoryHighlightSizeOffsetLeft",   -16, 32);
+    addSpinBox(QStringLiteral("Highlight Offset Right"),  "Metroid.Visual.HudWeaponInventoryHighlightSizeOffsetRight",  -16, 32);
+    addSpinBox(QStringLiteral("Highlight Offset Top"),    "Metroid.Visual.HudWeaponInventoryHighlightSizeOffsetTop",    -16, 32);
+    addSpinBox(QStringLiteral("Highlight Offset Bottom"), "Metroid.Visual.HudWeaponInventoryHighlightSizeOffsetBottom", -16, 32);
 }
 
 void MelonPrimeHudConfigOnScreenEdit::populateRadar()

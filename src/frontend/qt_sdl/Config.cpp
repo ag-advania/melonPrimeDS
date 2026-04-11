@@ -201,6 +201,12 @@ namespace Config
         {"Instance*.Metroid.Visual.HudWeaponInventoryHighlightColorR",   160},
         {"Instance*.Metroid.Visual.HudWeaponInventoryHighlightColorG",   160},
         {"Instance*.Metroid.Visual.HudWeaponInventoryHighlightColorB",   160},
+        {"Instance*.Metroid.Visual.HudWeaponInventoryHighlightCornerRadius", 2},
+        {"Instance*.Metroid.Visual.HudWeaponInventoryHighlightPadding",      1},
+        {"Instance*.Metroid.Visual.HudWeaponInventoryHighlightSizeOffsetLeft",   0},
+        {"Instance*.Metroid.Visual.HudWeaponInventoryHighlightSizeOffsetRight",  0},
+        {"Instance*.Metroid.Visual.HudWeaponInventoryHighlightSizeOffsetTop",    0},
+        {"Instance*.Metroid.Visual.HudWeaponInventoryHighlightSizeOffsetBottom", 0},
         {"Instance*.Metroid.Visual.HudHpGaugeOrientation",   1},
         {"Instance*.Metroid.Visual.HudHpGaugeAlign",         0},
         {"Instance*.Metroid.Visual.HudHpGaugeLength",       80},
@@ -466,6 +472,7 @@ namespace Config
         {"Instance*.Metroid.Visual.BtmOverlayEnable", true},
         /* MelonPrimeDS Bottom Screen Overlay bool } */
         {"Instance*.Metroid.Visual.HudWeaponInventoryHighlightEnable", true},
+        {"Instance*.Metroid.UI.SectionHudWeaponInventoryHighlight", false},
         /* MelonPrimeDS Crosshair bools } */
         /* MelonPrimeDS } */
     #endif
@@ -520,7 +527,8 @@ namespace Config
         {"Instance*.Metroid.Visual.HudBombIconOpacity",      1.0},
         {"Instance*.Metroid.Visual.HudWeaponInventoryOpacity",         1.0},
         {"Instance*.Metroid.Visual.HudWeaponInventoryNotOwnedOpacity", 0.0},
-        {"Instance*.Metroid.Visual.HudWeaponInventoryHighlightOpacity", 0.8},
+        {"Instance*.Metroid.Visual.HudWeaponInventoryHighlightOpacity",   0.8},
+        {"Instance*.Metroid.Visual.HudWeaponInventoryHighlightThickness", 0.75},
         /* MelonPrimeDS HUD element opacities } */
         /* MelonPrimeDS HUD per-element outlines { */
         {"Instance*.Metroid.Visual.HudGlobalOutlineColorR",       0},
