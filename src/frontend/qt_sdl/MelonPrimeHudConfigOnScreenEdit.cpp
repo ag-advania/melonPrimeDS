@@ -1,27 +1,28 @@
 #ifdef MELONPRIME_CUSTOM_HUD
 
-#include "MelonPrimeHudEditSidePanel.h"
+#include "MelonPrimeHudConfigOnScreenEdit.h"
 #include "MelonPrimeHudRender.h"
 #include "EmuInstance.h"
 #include <QColorDialog>
 #include <QHBoxLayout>
 #include <QFrame>
+#include <QRadioButton>
 
 // ─── Construction ───────────────────────────────────────────────────────────
 
-MelonPrimeHudEditSidePanel::MelonPrimeHudEditSidePanel(QWidget* parent, EmuInstance* emu)
+MelonPrimeHudConfigOnScreenEdit::MelonPrimeHudConfigOnScreenEdit(QWidget* parent, EmuInstance* emu)
     : QWidget(parent), m_emu(emu)
 {
-    setWindowFlags(Qt::Widget);
+    setWindowFlags(Qt::Tool | Qt::FramelessWindowHint | Qt::WindowStaysOnTopHint);
     setAttribute(Qt::WA_StyledBackground, true);
     setStyleSheet(
-        "HudEditSidePanel { background: rgba(24,24,32,210); border: 1px solid #555; border-radius: 4px; }"
-        "QLabel { color: #ccc; font-size: 9px; }"
-        "QCheckBox { color: #ccc; font-size: 9px; }"
-        "QComboBox { font-size: 9px; }"
-        "QSpinBox { font-size: 9px; }"
-        "QDoubleSpinBox { font-size: 9px; }"
-        "QLineEdit { font-size: 9px; background: #333; color: #eee; border: 1px solid #555; }"
+        "MelonPrimeHudConfigOnScreenEdit { background: rgba(24,24,32,210); border: 1px solid #555; border-radius: 4px; }"
+        "QLabel { color: #000; font-size: 9px; }"
+        "QRadioButton { color: #000; font-size: 9px; }"
+        "QComboBox { font-size: 9px; color: #000; }"
+        "QSpinBox { font-size: 9px; color: #000; }"
+        "QDoubleSpinBox { font-size: 9px; color: #000; }"
+        "QLineEdit { font-size: 9px; background: #fff; color: #000; border: 1px solid #555; }"
         "QPushButton { font-size: 9px; }"
     );
 
@@ -55,21 +56,21 @@ MelonPrimeHudEditSidePanel::MelonPrimeHudEditSidePanel(QWidget* parent, EmuInsta
 
 // ─── Config access ──────────────────────────────────────────────────────────
 
-Config::Table& MelonPrimeHudEditSidePanel::cfg()
+Config::Table& MelonPrimeHudConfigOnScreenEdit::cfg()
 {
     return m_emu->getLocalConfig();
 }
 
 // ─── Clear ──────────────────────────────────────────────────────────────────
 
-void MelonPrimeHudEditSidePanel::clearForm()
+void MelonPrimeHudConfigOnScreenEdit::clearForm()
 {
     while (m_form->rowCount() > 0)
         m_form->removeRow(0);
     m_rows.clear();
 }
 
-void MelonPrimeHudEditSidePanel::clear()
+void MelonPrimeHudConfigOnScreenEdit::clear()
 {
     clearForm();
     m_currentElem = -1;
@@ -79,7 +80,7 @@ void MelonPrimeHudEditSidePanel::clear()
 
 // ─── Reload values ──────────────────────────────────────────────────────────
 
-void MelonPrimeHudEditSidePanel::reloadValues()
+void MelonPrimeHudConfigOnScreenEdit::reloadValues()
 {
     if (m_currentElem >= 0)
         populateForElement(m_currentElem);
@@ -87,24 +88,46 @@ void MelonPrimeHudEditSidePanel::reloadValues()
 
 // ─── Factory: CheckBox ──────────────────────────────────────────────────────
 
-QCheckBox* MelonPrimeHudEditSidePanel::addCheckBox(const QString& label, const char* key)
+QWidget* MelonPrimeHudConfigOnScreenEdit::addCheckBox(const QString& label, const char* key)
 {
-    auto* cb = new QCheckBox(this);
-    cb->setChecked(cfg().GetBool(key));
+    auto* container = new QWidget(this);
+    auto* hlay = new QHBoxLayout(container);
+    hlay->setContentsMargins(0, 0, 0, 0);
+    hlay->setSpacing(8);
+
+    auto* on = new QRadioButton(QStringLiteral("ON"), container);
+    auto* off = new QRadioButton(QStringLiteral("OFF"), container);
+    on->setCursor(Qt::PointingHandCursor);
+    off->setCursor(Qt::PointingHandCursor);
+
+    const bool enabled = cfg().GetBool(key);
+    on->setChecked(enabled);
+    off->setChecked(!enabled);
+
     std::string k(key);
-    connect(cb, &QCheckBox::toggled, this, [this, k](bool v) {
-        if (m_populating) return;
-        cfg().SetBool(k, v);
+    connect(on, &QRadioButton::toggled, this, [this, k](bool checked) {
+        if (m_populating || !checked) return;
+        cfg().SetBool(k, true);
         MelonPrime::CustomHud_InvalidateConfigCache();
     });
-    m_form->addRow(label, cb);
-    m_rows.append(cb);
-    return cb;
+    connect(off, &QRadioButton::toggled, this, [this, k](bool checked) {
+        if (m_populating || !checked) return;
+        cfg().SetBool(k, false);
+        MelonPrime::CustomHud_InvalidateConfigCache();
+    });
+
+    hlay->addWidget(on, 0);
+    hlay->addWidget(off, 0);
+    hlay->addStretch(1);
+
+    m_form->addRow(label, container);
+    m_rows.append(container);
+    return container;
 }
 
 // ─── Factory: ComboBox ──────────────────────────────────────────────────────
 
-QComboBox* MelonPrimeHudEditSidePanel::addComboBox(const QString& label, const char* key, const QStringList& items)
+QComboBox* MelonPrimeHudConfigOnScreenEdit::addComboBox(const QString& label, const char* key, const QStringList& items)
 {
     auto* cb = new QComboBox(this);
     cb->addItems(items);
@@ -122,7 +145,7 @@ QComboBox* MelonPrimeHudEditSidePanel::addComboBox(const QString& label, const c
 
 // ─── Factory: SpinBox ───────────────────────────────────────────────────────
 
-QSpinBox* MelonPrimeHudEditSidePanel::addSpinBox(const QString& label, const char* key, int min, int max)
+QSpinBox* MelonPrimeHudConfigOnScreenEdit::addSpinBox(const QString& label, const char* key, int min, int max)
 {
     auto* sb = new QSpinBox(this);
     sb->setRange(min, max);
@@ -140,7 +163,7 @@ QSpinBox* MelonPrimeHudEditSidePanel::addSpinBox(const QString& label, const cha
 
 // ─── Factory: DoubleSpinBox ─────────────────────────────────────────────────
 
-QDoubleSpinBox* MelonPrimeHudEditSidePanel::addDoubleSpinBox(const QString& label, const char* key, double min, double max, double step)
+QDoubleSpinBox* MelonPrimeHudConfigOnScreenEdit::addDoubleSpinBox(const QString& label, const char* key, double min, double max, double step)
 {
     auto* sb = new QDoubleSpinBox(this);
     sb->setRange(min, max);
@@ -160,7 +183,7 @@ QDoubleSpinBox* MelonPrimeHudEditSidePanel::addDoubleSpinBox(const QString& labe
 
 // ─── Factory: OpacitySlider ─────────────────────────────────────────────────
 
-QSlider* MelonPrimeHudEditSidePanel::addOpacitySlider(const QString& label, const char* key)
+QSlider* MelonPrimeHudConfigOnScreenEdit::addOpacitySlider(const QString& label, const char* key)
 {
     auto* container = new QWidget(this);
     auto* hlay = new QHBoxLayout(container);
@@ -194,7 +217,7 @@ QSlider* MelonPrimeHudEditSidePanel::addOpacitySlider(const QString& label, cons
 
 // ─── Factory: LineEdit ──────────────────────────────────────────────────────
 
-QLineEdit* MelonPrimeHudEditSidePanel::addLineEdit(const QString& label, const char* key)
+QLineEdit* MelonPrimeHudConfigOnScreenEdit::addLineEdit(const QString& label, const char* key)
 {
     auto* le = new QLineEdit(this);
     le->setText(QString::fromStdString(cfg().GetString(key)));
@@ -218,7 +241,7 @@ static void updateColorButton(QPushButton* btn, int r, int g, int b)
     btn->setText(QColor(r, g, b).name());
 }
 
-QPushButton* MelonPrimeHudEditSidePanel::addColorPicker(const QString& label, const char* keyR, const char* keyG, const char* keyB)
+QPushButton* MelonPrimeHudConfigOnScreenEdit::addColorPicker(const QString& label, const char* keyR, const char* keyG, const char* keyB)
 {
     auto* btn = new QPushButton(this);
     int r = cfg().GetInt(keyR), g = cfg().GetInt(keyG), b = cfg().GetInt(keyB);
@@ -242,7 +265,7 @@ QPushButton* MelonPrimeHudEditSidePanel::addColorPicker(const QString& label, co
 
 // ─── Factory: Sub-Color (with "Overall" toggle) ─────────────────────────────
 
-void MelonPrimeHudEditSidePanel::addSubColor(const QString& label, const char* overallKey,
+void MelonPrimeHudConfigOnScreenEdit::addSubColor(const QString& label, const char* overallKey,
     const char* keyR, const char* keyG, const char* keyB)
 {
     auto* container = new QWidget(this);
@@ -287,7 +310,7 @@ void MelonPrimeHudEditSidePanel::addSubColor(const QString& label, const char* o
     m_rows.append(container);
 }
 
-void MelonPrimeHudEditSidePanel::addColorOverlayRow(
+void MelonPrimeHudConfigOnScreenEdit::addColorOverlayRow(
     const QString& label, const char* enableKey,
     const char* keyR, const char* keyG, const char* keyB)
 {
@@ -296,22 +319,35 @@ void MelonPrimeHudEditSidePanel::addColorOverlayRow(
     hlay->setContentsMargins(0, 0, 0, 0);
     hlay->setSpacing(4);
 
-    auto* cb = new QCheckBox(container);
-    cb->setChecked(cfg().GetBool(enableKey));
+    auto* on = new QRadioButton(QStringLiteral("ON"), container);
+    auto* off = new QRadioButton(QStringLiteral("OFF"), container);
+    on->setCursor(Qt::PointingHandCursor);
+    off->setCursor(Qt::PointingHandCursor);
+
+    const bool enabled = cfg().GetBool(enableKey);
+    on->setChecked(enabled);
+    off->setChecked(!enabled);
 
     auto* btn = new QPushButton(container);
     int r = cfg().GetInt(keyR), g = cfg().GetInt(keyG), b = cfg().GetInt(keyB);
     updateColorButton(btn, r, g, b);
-    btn->setEnabled(cb->isChecked());
+    btn->setEnabled(enabled);
 
-    hlay->addWidget(cb, 0);
+    hlay->addWidget(on, 0);
+    hlay->addWidget(off, 0);
     hlay->addWidget(btn, 1);
 
     std::string kE(enableKey), kR(keyR), kG(keyG), kB(keyB);
-    connect(cb, &QCheckBox::toggled, this, [this, btn, kE](bool checked) {
-        if (m_populating) return;
-        cfg().SetBool(kE, checked);
-        btn->setEnabled(checked);
+    connect(on, &QRadioButton::toggled, this, [this, btn, kE](bool checked) {
+        if (m_populating || !checked) return;
+        cfg().SetBool(kE, true);
+        btn->setEnabled(true);
+        MelonPrime::CustomHud_InvalidateConfigCache();
+    });
+    connect(off, &QRadioButton::toggled, this, [this, btn, kE](bool checked) {
+        if (m_populating || !checked) return;
+        cfg().SetBool(kE, false);
+        btn->setEnabled(false);
         MelonPrime::CustomHud_InvalidateConfigCache();
     });
     connect(btn, &QPushButton::clicked, this, [this, btn, kR, kG, kB]() {
@@ -332,7 +368,7 @@ void MelonPrimeHudEditSidePanel::addColorOverlayRow(
 
 // ─── Separator ──────────────────────────────────────────────────────────────
 
-void MelonPrimeHudEditSidePanel::addSeparator()
+void MelonPrimeHudConfigOnScreenEdit::addSeparator()
 {
     auto* line = new QFrame(this);
     line->setFrameShape(QFrame::HLine);
@@ -341,9 +377,26 @@ void MelonPrimeHudEditSidePanel::addSeparator()
     m_rows.append(line);
 }
 
+void MelonPrimeHudConfigOnScreenEdit::addOutlineGroup(const char* prefix)
+{
+    // prefix e.g. "HudHp" → keys "Metroid.Visual.HudHpOutline", "...OutlineColorR" etc.
+    char kE[80], kR[80], kG[80], kB[80], kO[80], kT[80];
+    std::snprintf(kE, sizeof(kE), "Metroid.Visual.%sOutline", prefix);
+    std::snprintf(kR, sizeof(kR), "Metroid.Visual.%sOutlineColorR", prefix);
+    std::snprintf(kG, sizeof(kG), "Metroid.Visual.%sOutlineColorG", prefix);
+    std::snprintf(kB, sizeof(kB), "Metroid.Visual.%sOutlineColorB", prefix);
+    std::snprintf(kO, sizeof(kO), "Metroid.Visual.%sOutlineOpacity", prefix);
+    std::snprintf(kT, sizeof(kT), "Metroid.Visual.%sOutlineThickness", prefix);
+    addSeparator();
+    addCheckBox(QStringLiteral("Outline"), kE);
+    addColorPicker(QStringLiteral("Outline Color"), kR, kG, kB);
+    addOpacitySlider(QStringLiteral("Outline Opacity"), kO);
+    addSpinBox(QStringLiteral("Outline Thick."), kT, 1, 10);
+}
+
 // ─── Built-ins: Show / Color / Anchor ───────────────────────────────────────
 
-void MelonPrimeHudEditSidePanel::addBuiltins(const char* showKey,
+void MelonPrimeHudConfigOnScreenEdit::addBuiltins(const char* showKey,
     const char* colorR, const char* colorG, const char* colorB,
     const char* anchorKey)
 {
@@ -365,16 +418,16 @@ void MelonPrimeHudEditSidePanel::addBuiltins(const char* showKey,
 static const char* kElementNames[] = {
     "HP", "HP Gauge", "Weapon/Ammo", "Weapon Icon", "Ammo Gauge",
     "Match Status", "Rank", "Time Left", "Time Limit",
-    "Bomb Left", "Bomb Icon", "Radar"
+    "Bomb Left", "Bomb Icon", "Radar", "Weapon Inventory", "Crosshair"
 };
 
-void MelonPrimeHudEditSidePanel::populateForElement(int idx)
+void MelonPrimeHudConfigOnScreenEdit::populateForElement(int idx)
 {
     m_populating = true;
     clearForm();
     m_currentElem = idx;
 
-    if (idx < 0 || idx >= 12) {
+    if (idx < 0 || idx >= 14) {
         hide();
         m_populating = false;
         return;
@@ -395,55 +448,82 @@ void MelonPrimeHudEditSidePanel::populateForElement(int idx)
     case 9:  populateBombLeft(); break;
     case 10: populateBombIcon(); break;
     case 11: populateRadar(); break;
+    case 12: populateWeaponInventory(); break;
+    case 13: populateForCrosshair(); return; // already clears/sets m_populating internally
     }
 
-    show();
+    // NOTE: do not call show() here — the caller (Screen.cpp callback)
+    // positions the widget first, then shows it to avoid a visual flash.
     m_populating = false;
 }
 
 // ─── Per-element populate ───────────────────────────────────────────────────
 
-void MelonPrimeHudEditSidePanel::populateHP()
+void MelonPrimeHudConfigOnScreenEdit::populateHP()
 {
     addBuiltins(nullptr,
         "Metroid.Visual.HudHpTextColorR", "Metroid.Visual.HudHpTextColorG", "Metroid.Visual.HudHpTextColorB",
         "Metroid.Visual.HudHpAnchor");
+    addSpinBox(QStringLiteral("Offset X"), "Metroid.Visual.HudHpX", -256, 256);
+    addSpinBox(QStringLiteral("Offset Y"), "Metroid.Visual.HudHpY", -256, 256);
     addLineEdit(QStringLiteral("Prefix"), "Metroid.Visual.HudHpPrefix");
     addComboBox(QStringLiteral("Align"), "Metroid.Visual.HudHpAlign",
         {QStringLiteral("Left"), QStringLiteral("Center"), QStringLiteral("Right")});
     addCheckBox(QStringLiteral("Auto Color"), "Metroid.Visual.HudHpTextAutoColor");
+    addOpacitySlider(QStringLiteral("Opacity"), "Metroid.Visual.HudHpOpacity");
+    addOutlineGroup("HudHp");
 }
 
-void MelonPrimeHudEditSidePanel::populateHPGauge()
+void MelonPrimeHudConfigOnScreenEdit::populateHPGauge()
 {
     addBuiltins("Metroid.Visual.HudHpGauge",
         "Metroid.Visual.HudHpGaugeColorR", "Metroid.Visual.HudHpGaugeColorG", "Metroid.Visual.HudHpGaugeColorB",
         "Metroid.Visual.HudHpGaugePosAnchor");
     addOpacitySlider(QStringLiteral("Opacity"), "Metroid.Visual.HudHpGaugeOpacity");
+    addComboBox(QStringLiteral("Orientation"), "Metroid.Visual.HudHpGaugeOrientation",
+        {QStringLiteral("Horizontal"), QStringLiteral("Vertical")});
+    addComboBox(QStringLiteral("Align"), "Metroid.Visual.HudHpGaugeAlign",
+        {QStringLiteral("Start"), QStringLiteral("Center"), QStringLiteral("End")});
+    addSpinBox(QStringLiteral("Length"), "Metroid.Visual.HudHpGaugeLength", 1, 192);
+    addSpinBox(QStringLiteral("Width"), "Metroid.Visual.HudHpGaugeWidth", 1, 20);
+    addComboBox(QStringLiteral("Position Mode"), "Metroid.Visual.HudHpGaugePosMode",
+        {QStringLiteral("Relative"), QStringLiteral("Independent")});
     addComboBox(QStringLiteral("Position"), "Metroid.Visual.HudHpGaugeAnchor",
         {QStringLiteral("Below"), QStringLiteral("Above"), QStringLiteral("Right"), QStringLiteral("Left"), QStringLiteral("Center")});
     addSpinBox(QStringLiteral("Offset X"), "Metroid.Visual.HudHpGaugeOffsetX", -128, 128);
     addSpinBox(QStringLiteral("Offset Y"), "Metroid.Visual.HudHpGaugeOffsetY", -128, 128);
+    addSpinBox(QStringLiteral("Pos X"), "Metroid.Visual.HudHpGaugePosX", -256, 256);
+    addSpinBox(QStringLiteral("Pos Y"), "Metroid.Visual.HudHpGaugePosY", -256, 256);
     addCheckBox(QStringLiteral("Auto Color"), "Metroid.Visual.HudHpGaugeAutoColor");
+    addOutlineGroup("HudHpGauge");
 }
 
-void MelonPrimeHudEditSidePanel::populateWeaponAmmo()
+void MelonPrimeHudConfigOnScreenEdit::populateWeaponAmmo()
 {
     addBuiltins(nullptr,
         "Metroid.Visual.HudAmmoTextColorR", "Metroid.Visual.HudAmmoTextColorG", "Metroid.Visual.HudAmmoTextColorB",
         "Metroid.Visual.HudWeaponAnchor");
+    addSpinBox(QStringLiteral("Offset X"), "Metroid.Visual.HudWeaponX", -256, 256);
+    addSpinBox(QStringLiteral("Offset Y"), "Metroid.Visual.HudWeaponY", -256, 256);
     addLineEdit(QStringLiteral("Prefix"), "Metroid.Visual.HudAmmoPrefix");
     addComboBox(QStringLiteral("Align"), "Metroid.Visual.HudAmmoAlign",
         {QStringLiteral("Left"), QStringLiteral("Center"), QStringLiteral("Right")});
+    addComboBox(QStringLiteral("Layout"), "Metroid.Visual.HudWeaponLayout",
+        {QStringLiteral("Standard"), QStringLiteral("Alternative")});
+    addOpacitySlider(QStringLiteral("Opacity"), "Metroid.Visual.HudWeaponOpacity");
+    addOutlineGroup("HudWeapon");
 }
 
-void MelonPrimeHudEditSidePanel::populateWpnIcon()
+void MelonPrimeHudConfigOnScreenEdit::populateWpnIcon()
 {
     addBuiltins("Metroid.Visual.HudWeaponIconShow",
         nullptr, nullptr, nullptr,
         "Metroid.Visual.HudWeaponIconPosAnchor");
+    addSpinBox(QStringLiteral("Pos X"), "Metroid.Visual.HudWeaponIconPosX", -256, 256);
+    addSpinBox(QStringLiteral("Pos Y"), "Metroid.Visual.HudWeaponIconPosY", -256, 256);
     addComboBox(QStringLiteral("Mode"), "Metroid.Visual.HudWeaponIconMode",
         {QStringLiteral("Relative"), QStringLiteral("Independent")});
+    addSpinBox(QStringLiteral("Height"), "Metroid.Visual.HudWeaponIconHeight", 4, 64);
     addSpinBox(QStringLiteral("Offset X"), "Metroid.Visual.HudWeaponIconOffsetX", -128, 128);
     addSpinBox(QStringLiteral("Offset Y"), "Metroid.Visual.HudWeaponIconOffsetY", -128, 128);
     addComboBox(QStringLiteral("Align X"), "Metroid.Visual.HudWeaponIconAnchorX",
@@ -451,6 +531,7 @@ void MelonPrimeHudEditSidePanel::populateWpnIcon()
     addComboBox(QStringLiteral("Align Y"), "Metroid.Visual.HudWeaponIconAnchorY",
         {QStringLiteral("Top"), QStringLiteral("Center"), QStringLiteral("Bottom")});
     addOpacitySlider(QStringLiteral("Opacity"), "Metroid.Visual.HudWpnIconOpacity");
+    addOutlineGroup("HudWeaponIcon");
     addSeparator();
     // Per-weapon icon tint (enable + color per weapon)
     struct { const char* label; const char* wpn; } kWeapons[9] = {
@@ -474,23 +555,37 @@ void MelonPrimeHudEditSidePanel::populateWpnIcon()
     }
 }
 
-void MelonPrimeHudEditSidePanel::populateAmmoGauge()
+void MelonPrimeHudConfigOnScreenEdit::populateAmmoGauge()
 {
     addBuiltins("Metroid.Visual.HudAmmoGauge",
         "Metroid.Visual.HudAmmoGaugeColorR", "Metroid.Visual.HudAmmoGaugeColorG", "Metroid.Visual.HudAmmoGaugeColorB",
         "Metroid.Visual.HudAmmoGaugePosAnchor");
     addOpacitySlider(QStringLiteral("Opacity"), "Metroid.Visual.HudAmmoGaugeOpacity");
+    addComboBox(QStringLiteral("Orientation"), "Metroid.Visual.HudAmmoGaugeOrientation",
+        {QStringLiteral("Horizontal"), QStringLiteral("Vertical")});
+    addComboBox(QStringLiteral("Align"), "Metroid.Visual.HudAmmoGaugeAlign",
+        {QStringLiteral("Start"), QStringLiteral("Center"), QStringLiteral("End")});
+    addSpinBox(QStringLiteral("Length"), "Metroid.Visual.HudAmmoGaugeLength", 1, 192);
+    addSpinBox(QStringLiteral("Width"), "Metroid.Visual.HudAmmoGaugeWidth", 1, 20);
+    addComboBox(QStringLiteral("Position Mode"), "Metroid.Visual.HudAmmoGaugePosMode",
+        {QStringLiteral("Relative"), QStringLiteral("Independent")});
     addComboBox(QStringLiteral("Position"), "Metroid.Visual.HudAmmoGaugeAnchor",
         {QStringLiteral("Below"), QStringLiteral("Above"), QStringLiteral("Right"), QStringLiteral("Left"), QStringLiteral("Center")});
     addSpinBox(QStringLiteral("Offset X"), "Metroid.Visual.HudAmmoGaugeOffsetX", -128, 128);
     addSpinBox(QStringLiteral("Offset Y"), "Metroid.Visual.HudAmmoGaugeOffsetY", -128, 128);
+    addSpinBox(QStringLiteral("Pos X"), "Metroid.Visual.HudAmmoGaugePosX", -256, 256);
+    addSpinBox(QStringLiteral("Pos Y"), "Metroid.Visual.HudAmmoGaugePosY", -256, 256);
+    addOutlineGroup("HudAmmoGauge");
 }
 
-void MelonPrimeHudEditSidePanel::populateMatchStatus()
+void MelonPrimeHudConfigOnScreenEdit::populateMatchStatus()
 {
     addBuiltins("Metroid.Visual.HudMatchStatusShow",
         "Metroid.Visual.HudMatchStatusColorR", "Metroid.Visual.HudMatchStatusColorG", "Metroid.Visual.HudMatchStatusColorB",
         "Metroid.Visual.HudMatchStatusAnchor");
+    addSpinBox(QStringLiteral("Offset X"), "Metroid.Visual.HudMatchStatusX", -256, 256);
+    addSpinBox(QStringLiteral("Offset Y"), "Metroid.Visual.HudMatchStatusY", -256, 256);
+    addOpacitySlider(QStringLiteral("Opacity"), "Metroid.Visual.HudMatchStatusOpacity");
     addComboBox(QStringLiteral("Label Pos"), "Metroid.Visual.HudMatchStatusLabelPos",
         {QStringLiteral("Above"), QStringLiteral("Below"), QStringLiteral("Left"), QStringLiteral("Right"), QStringLiteral("Center")});
     addSpinBox(QStringLiteral("Label Ofs X"), "Metroid.Visual.HudMatchStatusLabelOfsX", -128, 128);
@@ -522,74 +617,183 @@ void MelonPrimeHudEditSidePanel::populateMatchStatus()
         "Metroid.Visual.HudMatchStatusGoalColorR",
         "Metroid.Visual.HudMatchStatusGoalColorG",
         "Metroid.Visual.HudMatchStatusGoalColorB");
+    addOutlineGroup("HudMatchStatus");
 }
 
-void MelonPrimeHudEditSidePanel::populateRank()
+void MelonPrimeHudConfigOnScreenEdit::populateRank()
 {
     addBuiltins("Metroid.Visual.HudRankShow",
         "Metroid.Visual.HudRankColorR", "Metroid.Visual.HudRankColorG", "Metroid.Visual.HudRankColorB",
         "Metroid.Visual.HudRankAnchor");
+    addSpinBox(QStringLiteral("Offset X"), "Metroid.Visual.HudRankX", -256, 256);
+    addSpinBox(QStringLiteral("Offset Y"), "Metroid.Visual.HudRankY", -256, 256);
     addLineEdit(QStringLiteral("Prefix"), "Metroid.Visual.HudRankPrefix");
     addCheckBox(QStringLiteral("Ordinal"), "Metroid.Visual.HudRankShowOrdinal");
     addLineEdit(QStringLiteral("Suffix"), "Metroid.Visual.HudRankSuffix");
     addComboBox(QStringLiteral("Align"), "Metroid.Visual.HudRankAlign",
         {QStringLiteral("Left"), QStringLiteral("Center"), QStringLiteral("Right")});
+    addOpacitySlider(QStringLiteral("Opacity"), "Metroid.Visual.HudRankOpacity");
+    addOutlineGroup("HudRank");
 }
 
-void MelonPrimeHudEditSidePanel::populateTimeLeft()
+void MelonPrimeHudConfigOnScreenEdit::populateTimeLeft()
 {
     addBuiltins("Metroid.Visual.HudTimeLeftShow",
         "Metroid.Visual.HudTimeLeftColorR", "Metroid.Visual.HudTimeLeftColorG", "Metroid.Visual.HudTimeLeftColorB",
         "Metroid.Visual.HudTimeLeftAnchor");
+    addSpinBox(QStringLiteral("Offset X"), "Metroid.Visual.HudTimeLeftX", -256, 256);
+    addSpinBox(QStringLiteral("Offset Y"), "Metroid.Visual.HudTimeLeftY", -256, 256);
     addOpacitySlider(QStringLiteral("Opacity"), "Metroid.Visual.HudTimeLeftOpacity");
     addComboBox(QStringLiteral("Align"), "Metroid.Visual.HudTimeLeftAlign",
         {QStringLiteral("Left"), QStringLiteral("Center"), QStringLiteral("Right")});
+    addOutlineGroup("HudTimeLeft");
 }
 
-void MelonPrimeHudEditSidePanel::populateTimeLimit()
+void MelonPrimeHudConfigOnScreenEdit::populateTimeLimit()
 {
     addBuiltins("Metroid.Visual.HudTimeLimitShow",
         "Metroid.Visual.HudTimeLimitColorR", "Metroid.Visual.HudTimeLimitColorG", "Metroid.Visual.HudTimeLimitColorB",
         "Metroid.Visual.HudTimeLimitAnchor");
+    addSpinBox(QStringLiteral("Offset X"), "Metroid.Visual.HudTimeLimitX", -256, 256);
+    addSpinBox(QStringLiteral("Offset Y"), "Metroid.Visual.HudTimeLimitY", -256, 256);
     addOpacitySlider(QStringLiteral("Opacity"), "Metroid.Visual.HudTimeLimitOpacity");
     addComboBox(QStringLiteral("Align"), "Metroid.Visual.HudTimeLimitAlign",
         {QStringLiteral("Left"), QStringLiteral("Center"), QStringLiteral("Right")});
+    addOutlineGroup("HudTimeLimit");
 }
 
-void MelonPrimeHudEditSidePanel::populateBombLeft()
+void MelonPrimeHudConfigOnScreenEdit::populateBombLeft()
 {
     addBuiltins("Metroid.Visual.HudBombLeftShow",
         "Metroid.Visual.HudBombLeftColorR", "Metroid.Visual.HudBombLeftColorG", "Metroid.Visual.HudBombLeftColorB",
         "Metroid.Visual.HudBombLeftAnchor");
+    addSpinBox(QStringLiteral("Offset X"), "Metroid.Visual.HudBombLeftX", -256, 256);
+    addSpinBox(QStringLiteral("Offset Y"), "Metroid.Visual.HudBombLeftY", -256, 256);
     addCheckBox(QStringLiteral("Show Number"), "Metroid.Visual.HudBombLeftTextShow");
     addComboBox(QStringLiteral("Align"), "Metroid.Visual.HudBombLeftAlign",
         {QStringLiteral("Left"), QStringLiteral("Center"), QStringLiteral("Right")});
     addLineEdit(QStringLiteral("Prefix"), "Metroid.Visual.HudBombLeftPrefix");
     addLineEdit(QStringLiteral("Suffix"), "Metroid.Visual.HudBombLeftSuffix");
+    addOpacitySlider(QStringLiteral("Opacity"), "Metroid.Visual.HudBombLeftOpacity");
+    addOutlineGroup("HudBombLeft");
 }
 
-void MelonPrimeHudEditSidePanel::populateBombIcon()
+void MelonPrimeHudConfigOnScreenEdit::populateBombIcon()
 {
     addBuiltins("Metroid.Visual.HudBombLeftIconShow",
         "Metroid.Visual.HudBombLeftIconColorR", "Metroid.Visual.HudBombLeftIconColorG", "Metroid.Visual.HudBombLeftIconColorB",
         "Metroid.Visual.HudBombLeftIconPosAnchor");
+    addSpinBox(QStringLiteral("Pos X"), "Metroid.Visual.HudBombLeftIconPosX", -256, 256);
+    addSpinBox(QStringLiteral("Pos Y"), "Metroid.Visual.HudBombLeftIconPosY", -256, 256);
     addOpacitySlider(QStringLiteral("Opacity"), "Metroid.Visual.HudBombIconOpacity");
     addCheckBox(QStringLiteral("Color Overlay"), "Metroid.Visual.HudBombLeftIconColorOverlay");
     addComboBox(QStringLiteral("Mode"), "Metroid.Visual.HudBombLeftIconMode",
         {QStringLiteral("Relative"), QStringLiteral("Independent")});
+    addSpinBox(QStringLiteral("Height"), "Metroid.Visual.HudBombIconHeight", 4, 64);
     addSpinBox(QStringLiteral("Offset X"), "Metroid.Visual.HudBombLeftIconOfsX", -128, 128);
     addSpinBox(QStringLiteral("Offset Y"), "Metroid.Visual.HudBombLeftIconOfsY", -128, 128);
     addComboBox(QStringLiteral("Align X"), "Metroid.Visual.HudBombLeftIconAnchorX",
         {QStringLiteral("Left"), QStringLiteral("Center"), QStringLiteral("Right")});
     addComboBox(QStringLiteral("Align Y"), "Metroid.Visual.HudBombLeftIconAnchorY",
         {QStringLiteral("Top"), QStringLiteral("Center"), QStringLiteral("Bottom")});
+    addOutlineGroup("HudBombIcon");
 }
 
-void MelonPrimeHudEditSidePanel::populateRadar()
+void MelonPrimeHudConfigOnScreenEdit::populateForCrosshair()
+{
+    m_populating = true;
+    clearForm();
+    m_currentElem = -2; // -2 = crosshair (not a regular element)
+    m_title->setText(QStringLiteral("Crosshair"));
+
+    addColorPicker(QStringLiteral("Color"),
+        "Metroid.Visual.CrosshairColorR",
+        "Metroid.Visual.CrosshairColorG",
+        "Metroid.Visual.CrosshairColorB");
+    addSpinBox(QStringLiteral("Scale %"), "Metroid.Visual.CrosshairScale", 100, 800);
+    addCheckBox(QStringLiteral("Outline"), "Metroid.Visual.CrosshairOutline");
+    addOpacitySlider(QStringLiteral("Outline Opacity"), "Metroid.Visual.CrosshairOutlineOpacity");
+    addSpinBox(QStringLiteral("Outline Thick."), "Metroid.Visual.CrosshairOutlineThickness", 1, 10);
+    addCheckBox(QStringLiteral("Center Dot"), "Metroid.Visual.CrosshairCenterDot");
+    addOpacitySlider(QStringLiteral("Dot Opacity"), "Metroid.Visual.CrosshairDotOpacity");
+    addSpinBox(QStringLiteral("Dot Thick."), "Metroid.Visual.CrosshairDotThickness", 1, 10);
+    addCheckBox(QStringLiteral("T-Style"), "Metroid.Visual.CrosshairTStyle");
+
+    addSeparator();
+    // Inner Lines
+    auto* innerHdr = new QLabel(QStringLiteral("Inner Lines"), this);
+    innerHdr->setStyleSheet("color: #fff; font-weight: bold; font-size: 9px;");
+    m_form->addRow(innerHdr);
+    m_rows.append(innerHdr);
+    addCheckBox(QStringLiteral("Show"), "Metroid.Visual.CrosshairInnerShow");
+    addOpacitySlider(QStringLiteral("Opacity"), "Metroid.Visual.CrosshairInnerOpacity");
+    addSpinBox(QStringLiteral("Length X"), "Metroid.Visual.CrosshairInnerLengthX", 0, 64);
+    addSpinBox(QStringLiteral("Length Y"), "Metroid.Visual.CrosshairInnerLengthY", 0, 64);
+    addCheckBox(QStringLiteral("Link XY"), "Metroid.Visual.CrosshairInnerLinkXY");
+    addSpinBox(QStringLiteral("Thickness"), "Metroid.Visual.CrosshairInnerThickness", 1, 10);
+    addSpinBox(QStringLiteral("Offset"), "Metroid.Visual.CrosshairInnerOffset", 0, 64);
+
+    addSeparator();
+    // Outer Lines
+    auto* outerHdr = new QLabel(QStringLiteral("Outer Lines"), this);
+    outerHdr->setStyleSheet("color: #fff; font-weight: bold; font-size: 9px;");
+    m_form->addRow(outerHdr);
+    m_rows.append(outerHdr);
+    addCheckBox(QStringLiteral("Show"), "Metroid.Visual.CrosshairOuterShow");
+    addOpacitySlider(QStringLiteral("Opacity"), "Metroid.Visual.CrosshairOuterOpacity");
+    addSpinBox(QStringLiteral("Length X"), "Metroid.Visual.CrosshairOuterLengthX", 0, 64);
+    addSpinBox(QStringLiteral("Length Y"), "Metroid.Visual.CrosshairOuterLengthY", 0, 64);
+    addCheckBox(QStringLiteral("Link XY"), "Metroid.Visual.CrosshairOuterLinkXY");
+    addSpinBox(QStringLiteral("Thickness"), "Metroid.Visual.CrosshairOuterThickness", 1, 10);
+    addSpinBox(QStringLiteral("Offset"), "Metroid.Visual.CrosshairOuterOffset", 0, 64);
+
+    m_populating = false;
+}
+
+void MelonPrimeHudConfigOnScreenEdit::populateWeaponInventory()
+{
+    addBuiltins("Metroid.Visual.HudWeaponInventoryShow",
+        "Metroid.Visual.HudWeaponInventoryColorR",
+        "Metroid.Visual.HudWeaponInventoryColorG",
+        "Metroid.Visual.HudWeaponInventoryColorB",
+        "Metroid.Visual.HudWeaponInventoryAnchor");
+    addSpinBox(QStringLiteral("Offset X"), "Metroid.Visual.HudWeaponInventoryX", -256, 256);
+    addSpinBox(QStringLiteral("Offset Y"), "Metroid.Visual.HudWeaponInventoryY", -256, 256);
+    addComboBox(QStringLiteral("Orientation"), "Metroid.Visual.HudWeaponInventoryOrientation",
+        {QStringLiteral("Horizontal"), QStringLiteral("Vertical")});
+    addComboBox(QStringLiteral("Align"), "Metroid.Visual.HudWeaponInventoryAlign",
+        {QStringLiteral("Left"), QStringLiteral("Center"), QStringLiteral("Right")});
+    addSpinBox(QStringLiteral("Icon Height"), "Metroid.Visual.HudWeaponInventoryIconHeight", 4, 48);
+    addSpinBox(QStringLiteral("Spacing"), "Metroid.Visual.HudWeaponInventorySpacing", 0, 32);
+    addOpacitySlider(QStringLiteral("Opacity"), "Metroid.Visual.HudWeaponInventoryOpacity");
+    addOpacitySlider(QStringLiteral("Not Owned Opacity"), "Metroid.Visual.HudWeaponInventoryNotOwnedOpacity");
+    addSeparator();
+    addOutlineGroup("HudWeaponInventory");
+    addOutlineGroup("HudWeaponInventoryIcon");
+    addSeparator();
+    addCheckBox(QStringLiteral("Highlight Current Weapon"), "Metroid.Visual.HudWeaponInventoryHighlightEnable");
+    addColorPicker(QStringLiteral("Highlight Color"),
+        "Metroid.Visual.HudWeaponInventoryHighlightColorR",
+        "Metroid.Visual.HudWeaponInventoryHighlightColorG",
+        "Metroid.Visual.HudWeaponInventoryHighlightColorB");
+    addOpacitySlider(QStringLiteral("Highlight Opacity"), "Metroid.Visual.HudWeaponInventoryHighlightOpacity");
+    addDoubleSpinBox(QStringLiteral("Highlight Thickness"), "Metroid.Visual.HudWeaponInventoryHighlightThickness", 0.1, 8.0, 0.25);
+    addSpinBox(QStringLiteral("Highlight Padding"), "Metroid.Visual.HudWeaponInventoryHighlightPadding", 0, 16);
+    addSpinBox(QStringLiteral("Highlight Corner Radius"), "Metroid.Visual.HudWeaponInventoryHighlightCornerRadius", 0, 16);
+    addSpinBox(QStringLiteral("Highlight Offset Left"),   "Metroid.Visual.HudWeaponInventoryHighlightSizeOffsetLeft",   -16, 32);
+    addSpinBox(QStringLiteral("Highlight Offset Right"),  "Metroid.Visual.HudWeaponInventoryHighlightSizeOffsetRight",  -16, 32);
+    addSpinBox(QStringLiteral("Highlight Offset Top"),    "Metroid.Visual.HudWeaponInventoryHighlightSizeOffsetTop",    -16, 32);
+    addSpinBox(QStringLiteral("Highlight Offset Bottom"), "Metroid.Visual.HudWeaponInventoryHighlightSizeOffsetBottom", -16, 32);
+}
+
+void MelonPrimeHudConfigOnScreenEdit::populateRadar()
 {
     addBuiltins("Metroid.Visual.BtmOverlayEnable",
         nullptr, nullptr, nullptr,
         "Metroid.Visual.BtmOverlayAnchor");
+    addSpinBox(QStringLiteral("Dst X"), "Metroid.Visual.BtmOverlayDstX", -256, 256);
+    addSpinBox(QStringLiteral("Dst Y"), "Metroid.Visual.BtmOverlayDstY", -256, 256);
+    addSpinBox(QStringLiteral("Dst Size"), "Metroid.Visual.BtmOverlayDstSize", 16, 128);
     addOpacitySlider(QStringLiteral("Opacity"), "Metroid.Visual.BtmOverlayOpacity");
     addSpinBox(QStringLiteral("Src Radius"), "Metroid.Visual.BtmOverlaySrcRadius", 10, 120);
     addColorPicker(QStringLiteral("Radar Color"),
@@ -597,7 +801,8 @@ void MelonPrimeHudEditSidePanel::populateRadar()
         "Metroid.Visual.BtmOverlayRadarColorG",
         "Metroid.Visual.BtmOverlayRadarColorB");
     addCheckBox(QStringLiteral("Use Hunter Color"), "Metroid.Visual.BtmOverlayRadarColorUseHunter");
-    addCheckBox(QStringLiteral("Frame Outline"), "Metroid.Visual.BtmOverlayFrameOutlineEnable");
+    addOutlineGroup("BtmOverlay");
+    addOutlineGroup("BtmOverlayFrame");
 }
 
 #endif // MELONPRIME_CUSTOM_HUD

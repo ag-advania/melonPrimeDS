@@ -52,7 +52,7 @@
 #ifdef MELONPRIME_CUSTOM_HUD
 #include "MelonPrimeConstants.h"
 #include "MelonPrimeHudRender.h"
-#include "MelonPrimeHudEditSidePanel.h"
+#include "MelonPrimeHudConfigOnScreenEdit.h"
 #include "InputConfig/InputConfigDialog.h"
 #include <QFontDatabase>
 #endif
@@ -348,16 +348,19 @@ ScreenPanel::ScreenPanel(QWidget* parent) : QWidget(parent)
             overlayFont.setHintingPreference(QFont::PreferFullHinting);
         }
     }
-    m_hudEditPanel = new MelonPrimeHudEditSidePanel(this, emuInstance);
+    m_hudEditPanel = new MelonPrimeHudConfigOnScreenEdit(this, emuInstance);
     MelonPrime::CustomHud_SetEditSelectionCallback([this](int idx) {
         if (!MelonPrime::CustomHud_IsEditMode() || idx < 0) {
             m_hudEditPanel->clear();
         } else {
             m_hudEditPanel->populateForElement(idx);
-            // Position at right edge of the widget
+            const int maxH = height() - 8;
+            m_hudEditPanel->setMaximumHeight(maxH);
+            m_hudEditPanel->adjustSize();
+            const int panelH = std::min(m_hudEditPanel->height(), maxH);
             int px = width() - m_hudEditPanel->width() - 4;
-            int py = (height() - m_hudEditPanel->sizeHint().height()) / 2;
-            m_hudEditPanel->move(px, std::max(4, py));
+            int py = (height() - panelH) / 2;
+            m_hudEditPanel->move(mapToGlobal(QPoint(px, std::max(4, py))));
             m_hudEditPanel->show();
             m_hudEditPanel->raise();
         }
@@ -562,9 +565,12 @@ void ScreenPanel::resizeEvent(QResizeEvent* event)
 #endif
 #ifdef MELONPRIME_CUSTOM_HUD
     if (m_hudEditPanel && m_hudEditPanel->isVisible()) {
+        const int maxH = height() - 8;
+        m_hudEditPanel->setMaximumHeight(maxH);
+        const int panelH = std::min(m_hudEditPanel->height(), maxH);
         int px = width() - m_hudEditPanel->width() - 4;
-        int py = (height() - m_hudEditPanel->sizeHint().height()) / 2;
-        m_hudEditPanel->move(px, std::max(4, py));
+        int py = (height() - panelH) / 2;
+        m_hudEditPanel->move(mapToGlobal(QPoint(px, std::max(4, py))));
     }
 #endif
     QWidget::resizeEvent(event);
@@ -1231,7 +1237,6 @@ void ScreenPanelNative::paintEvent(QPaintEvent * event)
                 {
                     const uint32_t epoch = MelonPrime::CustomHud_GetCacheEpoch();
                     if (epoch != m_hudCfgEpoch) {
-                        m_hudRenderScale = instcfg.GetInt("Metroid.Visual.HudRenderScale");
                         m_hudCfgEpoch = epoch;
                     }
                 }
@@ -1247,17 +1252,21 @@ void ScreenPanelNative::paintEvent(QPaintEvent * event)
                 }
                 if (hudVisible)
                 {
-                    // Cap overlay render scale for performance (HudRenderScale=N means render at N×DS).
-                    // Buffer is then upscaled to the actual display area at composite time.
-                    const int scaleCap = m_hudRenderScale;
-                    const float hudScaleRender = (scaleCap > 0 && hudScale > (float)scaleCap)
-                        ? (float)scaleCap : hudScale;
-
-                    const int topOutW = std::max(1, static_cast<int>(std::ceil(hudScaleRender * topStretchX * 256.0f)));
-                    const int topOutH = std::max(1, static_cast<int>(std::ceil(hudScaleRender * 192.0f)));
+                    // Overlay covers the full widget so HUD elements placed in black-bar
+                    // regions (DS x < 0 or > 256 for pillarboxed 4:3) remain visible.
+                    const int fullW = this->width();
+                    const int fullH = this->height();
+                    const int topOutW = std::max(1, fullW);
+                    const int topOutH = std::max(1, fullH);
                     if (Overlay[0].width() != topOutW || Overlay[0].height() != topOutH)
                         Overlay[0] = QImage(topOutW, topOutH, QImage::Format_ARGB32_Premultiplied);
                     Overlay[0].fill(Qt::transparent);
+
+                    // hudOriginXds / hudOriginYds: black-bar extents in DS units.
+                    // CustomHud_Render adds these to the painter translate so DS x=0
+                    // lands at the left edge of the game content inside the full buffer.
+                    const float hudOriginXds = m_hudOriginX / hudScale;
+                    const float hudOriginYds = m_hudOriginY / hudScale;
 
                     // Per-frame painter (must end before reading image)
                     {
@@ -1270,19 +1279,13 @@ void ScreenPanelNative::paintEvent(QPaintEvent * event)
                             &topP, nullptr,
                             &Overlay[0], nullptr,
                             mp->IsInGame(),
-                            topStretchX, hudScaleRender);
+                            topStretchX, hudScale,
+                            hudOriginXds, hudOriginYds);
                     } // painter ends here — safe to read image
 
-                    // Composite: stretch overlay to actual display size if scale was capped.
-                    const int dispW = std::max(1, static_cast<int>(std::ceil(hudScale * topStretchX * 256.0f)));
-                    const int dispH = std::max(1, static_cast<int>(std::ceil(hudScale * 192.0f)));
-                    const int ox = static_cast<int>(m_hudOriginX);
-                    const int oy = static_cast<int>(m_hudOriginY);
+                    // Composite overlay to full widget size.
                     painter.resetTransform();
-                    if (topOutW != dispW || topOutH != dispH)
-                        painter.drawImage(QRect(ox, oy, dispW, dispH), Overlay[0]);
-                    else
-                        painter.drawImage(QPoint(ox, oy), Overlay[0]);
+                    painter.drawImage(QPoint(0, 0), Overlay[0]);
                 }
             }
         }
@@ -1766,7 +1769,6 @@ void ScreenPanelGL::drawScreen()
                 {
                     const uint32_t epoch = MelonPrime::CustomHud_GetCacheEpoch();
                     if (epoch != m_hudCfgEpoch) {
-                        m_hudRenderScale    = instcfg.GetInt("Metroid.Visual.HudRenderScale");
                         m_radarEnable       = instcfg.GetBool("Metroid.Visual.BtmOverlayEnable");
                         m_radarAnchor       = instcfg.GetInt("Metroid.Visual.BtmOverlayAnchor");
                         m_radarDstX         = instcfg.GetInt("Metroid.Visual.BtmOverlayDstX");
@@ -1789,16 +1791,21 @@ void ScreenPanelGL::drawScreen()
                 }
                 if (hudVisible)
                 {
-                // Cap overlay render scale for performance (HudRenderScale=N means render at N×DS).
-                const int scaleCap = m_hudRenderScale;
-                const float hudScaleRender = (scaleCap > 0 && hudScale > (float)scaleCap)
-                    ? (float)scaleCap : hudScale;
-
-                const int topOutW = std::max(1, static_cast<int>(std::ceil(hudScaleRender * topStretchX * 256.0f)));
-                const int topOutH = std::max(1, static_cast<int>(std::ceil(hudScaleRender * 192.0f)));
+                // Overlay covers the full logical window so HUD elements placed in black-bar
+                // regions (DS x < 0 or > 256 for pillarboxed 4:3) remain visible.
+                const int fullLogW = static_cast<int>(w / factor);
+                const int fullLogH = static_cast<int>(h / factor);
+                const int topOutW = std::max(1, fullLogW);
+                const int topOutH = std::max(1, fullLogH);
                 if (Overlay[0].width() != topOutW || Overlay[0].height() != topOutH)
                     Overlay[0] = QImage(topOutW, topOutH, QImage::Format_ARGB32_Premultiplied);
                 Overlay[0].fill(Qt::transparent);
+
+                // hudOriginXds / hudOriginYds: black-bar extents in DS units.
+                // CustomHud_Render adds these to the painter translate so DS x=0
+                // lands at the left edge of the game content inside the full buffer.
+                const float hudOriginXds = m_hudOriginX / hudScale;
+                const float hudOriginYds = m_hudOriginY / hudScale;
 
                 // Per-frame painter (must end before GL upload reads image bits)
                 {
@@ -1811,7 +1818,8 @@ void ScreenPanelGL::drawScreen()
                         &topP, nullptr,
                         &Overlay[0], nullptr,
                         mp->IsInGame(),
-                        topStretchX, hudScaleRender);
+                        topStretchX, hudScale,
+                        hudOriginXds, hudOriginYds);
                 } // painter ends here — safe to read constBits()
 
                 glBindTexture(GL_TEXTURE_2D, overlayTextures[0]);
@@ -1828,7 +1836,8 @@ void ScreenPanelGL::drawScreen()
                 }
 
 
-                // Switch to OSD shader for HUD overlay compositing
+                // Switch to OSD shader for HUD overlay compositing.
+                // Overlay is full-window sized so pos=(0,0), size=(fullLogW, fullLogH).
                 glUseProgram(osdShader);
                 glUniform2f(osdScreenSizeULoc, w, h);
                 glUniform1f(osdScaleFactorULoc, factor);
@@ -1839,19 +1848,14 @@ void ScreenPanelGL::drawScreen()
                 glEnable(GL_BLEND);
                 glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
 
-                // Use cached scale values — no sqrt per-frame.
+                if (fullLogW > 0 && fullLogH > 0)
                 {
-                    const float displayW = m_hudScale * m_topStretchX * 256.0f;
-                    const float displayH = m_hudScale * 192.0f;
-                    if (displayW > 0.0f && displayH > 0.0f)
-                    {
-                        const float texScaleX = (float)topOutW / displayW;
-                        const float texScaleY = (float)topOutH / displayH;
-                        glUniform2i(osdPosULoc, static_cast<int>(m_hudOriginX), static_cast<int>(m_hudOriginY));
-                        glUniform2i(osdSizeULoc, static_cast<int>(displayW), static_cast<int>(displayH));
-                        glUniform2f(osdTexScaleULoc, texScaleX, texScaleY);
-                        glDrawArrays(GL_TRIANGLES, 0, 2 * 3);
-                    }
+                    const float texScaleX = (float)topOutW / (float)fullLogW;
+                    const float texScaleY = (float)topOutH / (float)fullLogH;
+                    glUniform2i(osdPosULoc, 0, 0);
+                    glUniform2i(osdSizeULoc, fullLogW, fullLogH);
+                    glUniform2f(osdTexScaleULoc, texScaleX, texScaleY);
+                    glDrawArrays(GL_TRIANGLES, 0, 2 * 3);
                 }
 
                 glDisable(GL_BLEND);
@@ -2237,6 +2241,15 @@ void ScreenPanel::enterEvent(QEnterEvent * event)
 void ScreenPanel::moveEvent(QMoveEvent * e) {
 #if defined(_WIN32)
     updateClipIfNeeded();
+#endif
+#ifdef MELONPRIME_CUSTOM_HUD
+    if (m_hudEditPanel && m_hudEditPanel->isVisible()) {
+        const int maxH = height() - 8;
+        const int panelH = std::min(m_hudEditPanel->height(), maxH);
+        int px = width() - m_hudEditPanel->width() - 4;
+        int py = (height() - panelH) / 2;
+        m_hudEditPanel->move(mapToGlobal(QPoint(px, std::max(4, py))));
+    }
 #endif
     QWidget::moveEvent(e);
 }

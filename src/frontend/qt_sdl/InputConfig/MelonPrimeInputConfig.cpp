@@ -320,6 +320,7 @@ enum class HWType { Bool, Int, Float, String, Anchor9, Align3, Color3, HorizVert
                     GaugeAnchor5,  // 0=Below, 1=Above, 2=Right, 3=Left, 4=Center
                     AnchorY3,      // 0=Top, 1=Center, 2=Bottom
                     LabelPos5,     // 0=Above, 1=Below, 2=Left, 3=Right, 4=Center
+                    Double,        // lo/hi/step stored as ×100 integers (e.g. 10,800,25 → 0.10–8.00 step 0.25)
                   };
 
 struct HudWidgetProp {
@@ -353,6 +354,8 @@ struct HudMainSec {
 #define P_BOOL(lbl, key)              { lbl, HWType::Bool,   key, 0,0,0, nullptr, nullptr }
 #define P_INT(lbl, key, lo, hi, s)    { lbl, HWType::Int,    key, lo, hi, s, nullptr, nullptr }
 #define P_FLOAT(lbl, key)             { lbl, HWType::Float,  key, 0,100,5, nullptr, nullptr }
+// lo100/hi100/step100 are the range multiplied by 100 (e.g. 10,800,25 → 0.10–8.00 step 0.25)
+#define P_DOUBLE(lbl, key, lo100, hi100, step100) { lbl, HWType::Double, key, lo100, hi100, step100, nullptr, nullptr }
 #define P_STR(lbl, key)               { lbl, HWType::String, key, 0,0,0, nullptr, nullptr }
 #define P_ANC(lbl, key)               { lbl, HWType::Anchor9,key, 0,8,1, nullptr, nullptr }
 #define P_ALN(lbl, key)               { lbl, HWType::Align3, key, 0,2,1, nullptr, nullptr }
@@ -363,16 +366,21 @@ struct HudMainSec {
 #define P_ANCHY(lbl, key)             { lbl, HWType::AnchorY3,     key, 0,2,1, nullptr, nullptr }
 #define P_LPOS(lbl, key)              { lbl, HWType::LabelPos5,    key, 0,4,1, nullptr, nullptr }
 
-// --- Section 1: Text Scale ---
+// --- Section 1: HUD SCALE ---
 static const HudWidgetProp kSecTextScale[] = {
-    P_INT("Text Scale %",     "Metroid.Visual.HudTextScale",   10, 300, 10),
-    P_INT("Render Scale Cap (0=unlimited)", "Metroid.Visual.HudRenderScale",  0,  10,   1),
+    P_INT("Text Scale (Base %)", "Metroid.Visual.HudTextScale", 100, 300, 10),
+    P_BOOL("Auto Scale Enable", "Metroid.Visual.HudAutoScaleEnable"),
+    P_INT("Auto Scale Global Cap %", "Metroid.Visual.HudAutoScaleCap", 100, 800, 25),
+    P_INT("Auto Scale Text Cap %", "Metroid.Visual.HudAutoScaleCapText", 100, 800, 25),
+    P_INT("Auto Scale Icon Cap %", "Metroid.Visual.HudAutoScaleCapIcons", 100, 800, 25),
+    P_INT("Auto Scale Gauge Cap %", "Metroid.Visual.HudAutoScaleCapGauges", 100, 800, 25),
+    P_INT("Auto Scale Crosshair Cap %", "Metroid.Visual.HudAutoScaleCapCrosshair", 100, 800, 25),
 };
 
 // --- Section 2: Crosshair ---
 static const HudWidgetProp kSecCrosshair[] = {
     P_CLR("Color", "Metroid.Visual.CrosshairColorR", "Metroid.Visual.CrosshairColorG", "Metroid.Visual.CrosshairColorB"),
-    P_INT("Scale %", "Metroid.Visual.CrosshairScale", 10, 500, 1),
+    P_INT("Scale %", "Metroid.Visual.CrosshairScale", 100, 800, 1),
     P_BOOL("Outline", "Metroid.Visual.CrosshairOutline"),
     P_FLOAT("Outline Opacity", "Metroid.Visual.CrosshairOutlineOpacity"),
     P_INT("Outline Thickness", "Metroid.Visual.CrosshairOutlineThickness", 1, 10, 1),
@@ -421,6 +429,7 @@ static const HudWidgetProp kSecHpGauge[] = {
     P_BOOL("Enable", "Metroid.Visual.HudHpGauge"),
     P_BOOL("Auto Color", "Metroid.Visual.HudHpGaugeAutoColor"),
     P_ORIENT("Orientation", "Metroid.Visual.HudHpGaugeOrientation"),
+    P_ALN("Align", "Metroid.Visual.HudHpGaugeAlign"),
     P_INT("Length", "Metroid.Visual.HudHpGaugeLength", 1, 192, 1),
     P_INT("Width", "Metroid.Visual.HudHpGaugeWidth", 1, 20, 1),
     P_INT("Offset X", "Metroid.Visual.HudHpGaugeOffsetX", -128, 128, 1),
@@ -487,6 +496,7 @@ static const HudWidgetProp kSecWpnIconTints[] = {
 static const HudWidgetProp kSecAmmoGauge[] = {
     P_BOOL("Enable", "Metroid.Visual.HudAmmoGauge"),
     P_ORIENT("Orientation", "Metroid.Visual.HudAmmoGaugeOrientation"),
+    P_ALN("Align", "Metroid.Visual.HudAmmoGaugeAlign"),
     P_INT("Length", "Metroid.Visual.HudAmmoGaugeLength", 1, 192, 1),
     P_INT("Width", "Metroid.Visual.HudAmmoGaugeWidth", 1, 20, 1),
     P_INT("Offset X", "Metroid.Visual.HudAmmoGaugeOffsetX", -128, 128, 1),
@@ -593,6 +603,34 @@ static const HudWidgetProp kSecBombIcon[] = {
     P_FLOAT("Opacity", "Metroid.Visual.HudBombIconOpacity"),
 };
 
+// --- Section: Weapon Inventory ---
+static const HudWidgetProp kSecWeaponInventory[] = {
+    P_BOOL("Show", "Metroid.Visual.HudWeaponInventoryShow"),
+    P_ANC("Anchor", "Metroid.Visual.HudWeaponInventoryAnchor"),
+    P_INT("Offset X", "Metroid.Visual.HudWeaponInventoryX", -256, 256, 1),
+    P_INT("Offset Y", "Metroid.Visual.HudWeaponInventoryY", -256, 256, 1),
+    P_CLR("Color", "Metroid.Visual.HudWeaponInventoryColorR", "Metroid.Visual.HudWeaponInventoryColorG", "Metroid.Visual.HudWeaponInventoryColorB"),
+    P_ORIENT("Orientation", "Metroid.Visual.HudWeaponInventoryOrientation"),
+    P_ALN("Align", "Metroid.Visual.HudWeaponInventoryAlign"),
+    P_INT("Icon Height", "Metroid.Visual.HudWeaponInventoryIconHeight", 4, 48, 1),
+    P_INT("Spacing", "Metroid.Visual.HudWeaponInventorySpacing", 0, 32, 1),
+    P_FLOAT("Opacity", "Metroid.Visual.HudWeaponInventoryOpacity"),
+    P_FLOAT("Not Owned Opacity", "Metroid.Visual.HudWeaponInventoryNotOwnedOpacity"),
+};
+
+static const HudWidgetProp kSecWeaponInventoryHighlight[] = {
+    P_BOOL("Enable", "Metroid.Visual.HudWeaponInventoryHighlightEnable"),
+    P_CLR("Color", "Metroid.Visual.HudWeaponInventoryHighlightColorR", "Metroid.Visual.HudWeaponInventoryHighlightColorG", "Metroid.Visual.HudWeaponInventoryHighlightColorB"),
+    P_FLOAT("Opacity", "Metroid.Visual.HudWeaponInventoryHighlightOpacity"),
+    P_DOUBLE("Thickness", "Metroid.Visual.HudWeaponInventoryHighlightThickness", 10, 800, 25),
+    P_INT("Padding", "Metroid.Visual.HudWeaponInventoryHighlightPadding", 0, 16, 1),
+    P_INT("Corner Radius", "Metroid.Visual.HudWeaponInventoryHighlightCornerRadius", 0, 16, 1),
+    P_INT("Size Offset Left",   "Metroid.Visual.HudWeaponInventoryHighlightSizeOffsetLeft",   -16, 32, 1),
+    P_INT("Size Offset Right",  "Metroid.Visual.HudWeaponInventoryHighlightSizeOffsetRight",  -16, 32, 1),
+    P_INT("Size Offset Top",    "Metroid.Visual.HudWeaponInventoryHighlightSizeOffsetTop",    -16, 32, 1),
+    P_INT("Size Offset Bottom", "Metroid.Visual.HudWeaponInventoryHighlightSizeOffsetBottom", -16, 32, 1),
+};
+
 // --- Section 16: Radar ---
 static const HudWidgetProp kSecRadar[] = {
     P_BOOL("Enable", "Metroid.Visual.BtmOverlayEnable"),
@@ -604,12 +642,112 @@ static const HudWidgetProp kSecRadar[] = {
     P_FLOAT("Opacity", "Metroid.Visual.BtmOverlayOpacity"),
     P_CLR("Radar Color", "Metroid.Visual.BtmOverlayRadarColorR", "Metroid.Visual.BtmOverlayRadarColorG", "Metroid.Visual.BtmOverlayRadarColorB"),
     P_BOOL("Use Hunter Color", "Metroid.Visual.BtmOverlayRadarColorUseHunter"),
-    P_BOOL("Frame Outline", "Metroid.Visual.BtmOverlayFrameOutlineEnable"),
 };
 
 #define _P(arr) arr, static_cast<int>(sizeof(arr)/sizeof(arr[0]))
 #define SUB(title, key, arr)               { title, key, _P(arr), nullptr, 0 }
 #define SUB_NEST(title, key, ch)           { title, key, nullptr, 0, ch, static_cast<int>(sizeof(ch)/sizeof(ch[0])) }
+
+// --- Global outline override (overrides all per-element outlines when enabled) ---
+static const HudWidgetProp kSecGlobalOutline[] = {
+    P_BOOL("Enable (Override All)", "Metroid.Visual.HudGlobalOutline"),
+    P_CLR("Color",     "Metroid.Visual.HudGlobalOutlineColorR", "Metroid.Visual.HudGlobalOutlineColorG", "Metroid.Visual.HudGlobalOutlineColorB"),
+    P_FLOAT("Opacity", "Metroid.Visual.HudGlobalOutlineOpacity"),
+    P_INT("Thickness", "Metroid.Visual.HudGlobalOutlineThickness", 1, 10, 1),
+};
+
+// --- Per-element outline sections ---
+static const HudWidgetProp kSecHpOutline[] = {
+    P_BOOL("Enable",   "Metroid.Visual.HudHpOutline"),
+    P_CLR("Color",     "Metroid.Visual.HudHpOutlineColorR", "Metroid.Visual.HudHpOutlineColorG", "Metroid.Visual.HudHpOutlineColorB"),
+    P_FLOAT("Opacity", "Metroid.Visual.HudHpOutlineOpacity"),
+    P_INT("Thickness", "Metroid.Visual.HudHpOutlineThickness", 1, 10, 1),
+};
+static const HudWidgetProp kSecWeaponOutline[] = {
+    P_BOOL("Enable",   "Metroid.Visual.HudWeaponOutline"),
+    P_CLR("Color",     "Metroid.Visual.HudWeaponOutlineColorR", "Metroid.Visual.HudWeaponOutlineColorG", "Metroid.Visual.HudWeaponOutlineColorB"),
+    P_FLOAT("Opacity", "Metroid.Visual.HudWeaponOutlineOpacity"),
+    P_INT("Thickness", "Metroid.Visual.HudWeaponOutlineThickness", 1, 10, 1),
+};
+static const HudWidgetProp kSecMatchStatusOutline[] = {
+    P_BOOL("Enable",   "Metroid.Visual.HudMatchStatusOutline"),
+    P_CLR("Color",     "Metroid.Visual.HudMatchStatusOutlineColorR", "Metroid.Visual.HudMatchStatusOutlineColorG", "Metroid.Visual.HudMatchStatusOutlineColorB"),
+    P_FLOAT("Opacity", "Metroid.Visual.HudMatchStatusOutlineOpacity"),
+    P_INT("Thickness", "Metroid.Visual.HudMatchStatusOutlineThickness", 1, 10, 1),
+};
+static const HudWidgetProp kSecHpGaugeOutline[] = {
+    P_BOOL("Enable",   "Metroid.Visual.HudHpGaugeOutline"),
+    P_CLR("Color",     "Metroid.Visual.HudHpGaugeOutlineColorR", "Metroid.Visual.HudHpGaugeOutlineColorG", "Metroid.Visual.HudHpGaugeOutlineColorB"),
+    P_FLOAT("Opacity", "Metroid.Visual.HudHpGaugeOutlineOpacity"),
+    P_INT("Thickness", "Metroid.Visual.HudHpGaugeOutlineThickness", 1, 10, 1),
+};
+static const HudWidgetProp kSecAmmoGaugeOutline[] = {
+    P_BOOL("Enable",   "Metroid.Visual.HudAmmoGaugeOutline"),
+    P_CLR("Color",     "Metroid.Visual.HudAmmoGaugeOutlineColorR", "Metroid.Visual.HudAmmoGaugeOutlineColorG", "Metroid.Visual.HudAmmoGaugeOutlineColorB"),
+    P_FLOAT("Opacity", "Metroid.Visual.HudAmmoGaugeOutlineOpacity"),
+    P_INT("Thickness", "Metroid.Visual.HudAmmoGaugeOutlineThickness", 1, 10, 1),
+};
+static const HudWidgetProp kSecRankOutline[] = {
+    P_BOOL("Enable",   "Metroid.Visual.HudRankOutline"),
+    P_CLR("Color",     "Metroid.Visual.HudRankOutlineColorR", "Metroid.Visual.HudRankOutlineColorG", "Metroid.Visual.HudRankOutlineColorB"),
+    P_FLOAT("Opacity", "Metroid.Visual.HudRankOutlineOpacity"),
+    P_INT("Thickness", "Metroid.Visual.HudRankOutlineThickness", 1, 10, 1),
+};
+static const HudWidgetProp kSecTimeLeftOutline[] = {
+    P_BOOL("Enable",   "Metroid.Visual.HudTimeLeftOutline"),
+    P_CLR("Color",     "Metroid.Visual.HudTimeLeftOutlineColorR", "Metroid.Visual.HudTimeLeftOutlineColorG", "Metroid.Visual.HudTimeLeftOutlineColorB"),
+    P_FLOAT("Opacity", "Metroid.Visual.HudTimeLeftOutlineOpacity"),
+    P_INT("Thickness", "Metroid.Visual.HudTimeLeftOutlineThickness", 1, 10, 1),
+};
+static const HudWidgetProp kSecTimeLimitOutline[] = {
+    P_BOOL("Enable",   "Metroid.Visual.HudTimeLimitOutline"),
+    P_CLR("Color",     "Metroid.Visual.HudTimeLimitOutlineColorR", "Metroid.Visual.HudTimeLimitOutlineColorG", "Metroid.Visual.HudTimeLimitOutlineColorB"),
+    P_FLOAT("Opacity", "Metroid.Visual.HudTimeLimitOutlineOpacity"),
+    P_INT("Thickness", "Metroid.Visual.HudTimeLimitOutlineThickness", 1, 10, 1),
+};
+static const HudWidgetProp kSecWeaponInventoryOutline[] = {
+    P_BOOL("Enable",   "Metroid.Visual.HudWeaponInventoryOutline"),
+    P_CLR("Color",     "Metroid.Visual.HudWeaponInventoryOutlineColorR", "Metroid.Visual.HudWeaponInventoryOutlineColorG", "Metroid.Visual.HudWeaponInventoryOutlineColorB"),
+    P_FLOAT("Opacity", "Metroid.Visual.HudWeaponInventoryOutlineOpacity"),
+    P_INT("Thickness", "Metroid.Visual.HudWeaponInventoryOutlineThickness", 1, 10, 1),
+};
+static const HudWidgetProp kSecWeaponInventoryIconOutline[] = {
+    P_BOOL("Enable",   "Metroid.Visual.HudWeaponInventoryIconOutline"),
+    P_CLR("Color",     "Metroid.Visual.HudWeaponInventoryIconOutlineColorR", "Metroid.Visual.HudWeaponInventoryIconOutlineColorG", "Metroid.Visual.HudWeaponInventoryIconOutlineColorB"),
+    P_FLOAT("Opacity", "Metroid.Visual.HudWeaponInventoryIconOutlineOpacity"),
+    P_INT("Thickness", "Metroid.Visual.HudWeaponInventoryIconOutlineThickness", 1, 10, 1),
+};
+static const HudWidgetProp kSecBombLeftOutline[] = {
+    P_BOOL("Enable",   "Metroid.Visual.HudBombLeftOutline"),
+    P_CLR("Color",     "Metroid.Visual.HudBombLeftOutlineColorR", "Metroid.Visual.HudBombLeftOutlineColorG", "Metroid.Visual.HudBombLeftOutlineColorB"),
+    P_FLOAT("Opacity", "Metroid.Visual.HudBombLeftOutlineOpacity"),
+    P_INT("Thickness", "Metroid.Visual.HudBombLeftOutlineThickness", 1, 10, 1),
+};
+static const HudWidgetProp kSecBombIconOutline[] = {
+    P_BOOL("Enable",   "Metroid.Visual.HudBombIconOutline"),
+    P_CLR("Color",     "Metroid.Visual.HudBombIconOutlineColorR", "Metroid.Visual.HudBombIconOutlineColorG", "Metroid.Visual.HudBombIconOutlineColorB"),
+    P_FLOAT("Opacity", "Metroid.Visual.HudBombIconOutlineOpacity"),
+    P_INT("Thickness", "Metroid.Visual.HudBombIconOutlineThickness", 1, 10, 1),
+};
+static const HudWidgetProp kSecRadarFrameOutline[] = {
+    P_BOOL("Enable",   "Metroid.Visual.BtmOverlayFrameOutline"),
+    P_CLR("Color",     "Metroid.Visual.BtmOverlayFrameOutlineColorR", "Metroid.Visual.BtmOverlayFrameOutlineColorG", "Metroid.Visual.BtmOverlayFrameOutlineColorB"),
+    P_FLOAT("Opacity", "Metroid.Visual.BtmOverlayFrameOutlineOpacity"),
+    P_INT("Thickness", "Metroid.Visual.BtmOverlayFrameOutlineThickness", 1, 10, 1),
+};
+static const HudWidgetProp kSecRadarOutline[] = {
+    P_BOOL("Enable",   "Metroid.Visual.BtmOverlayOutline"),
+    P_CLR("Color",     "Metroid.Visual.BtmOverlayOutlineColorR", "Metroid.Visual.BtmOverlayOutlineColorG", "Metroid.Visual.BtmOverlayOutlineColorB"),
+    P_FLOAT("Opacity", "Metroid.Visual.BtmOverlayOutlineOpacity"),
+    P_INT("Thickness", "Metroid.Visual.BtmOverlayOutlineThickness", 1, 10, 1),
+};
+
+static const HudWidgetProp kSecWeaponIconOutline[] = {
+    P_BOOL("Enable",   "Metroid.Visual.HudWeaponIconOutline"),
+    P_CLR("Color",     "Metroid.Visual.HudWeaponIconOutlineColorR", "Metroid.Visual.HudWeaponIconOutlineColorG", "Metroid.Visual.HudWeaponIconOutlineColorB"),
+    P_FLOAT("Opacity", "Metroid.Visual.HudWeaponIconOutlineOpacity"),
+    P_INT("Thickness", "Metroid.Visual.HudWeaponIconOutlineThickness", 1, 10, 1),
+};
 
 // ── CROSSHAIR sub-sections ──
 static const HudSubSec kSubsCrosshair[] = {
@@ -619,40 +757,56 @@ static const HudSubSec kSubsCrosshair[] = {
 
 // ── HP / AMMO sub-sections ──
 static const HudSubSec kSubsHpAmmo[] = {
-    SUB("HP Number Position",     "Metroid.UI.SectionHudHp",             kSecHp),
-    SUB("Ammo Number Position",   "Metroid.UI.SectionHudWeaponAmmo",     kSecWeaponAmmo),
-    SUB("Weapon Icon",            "Metroid.UI.SectionHudWpnIcon",        kSecWpnIcon),
+    SUB("HP Number Position",        "Metroid.UI.SectionHudHp",             kSecHp),
+    SUB("HP Outline",                "Metroid.UI.SectionHudHpOutline",       kSecHpOutline),
+    SUB("Ammo Number Position",      "Metroid.UI.SectionHudWeaponAmmo",     kSecWeaponAmmo),
+    SUB("Weapon Outline",            "Metroid.UI.SectionHudWeaponOutline",   kSecWeaponOutline),
+    SUB("Weapon Icon",               "Metroid.UI.SectionHudWpnIcon",        kSecWpnIcon),
+    SUB("Weapon Icon Outline",       "Metroid.UI.SectionHudWeaponIconOutline", kSecWeaponIconOutline),
     SUB("Weapon Icon Color Overlay", "Metroid.UI.SectionHudWpnIconTints", kSecWpnIconTints),
-    SUB("HP Gauge",               "Metroid.UI.SectionHudHpGauge",        kSecHpGauge),
-    SUB("Ammo Gauge",             "Metroid.UI.SectionHudAmmoGauge",      kSecAmmoGauge),
+    SUB("HP Gauge",                  "Metroid.UI.SectionHudHpGauge",        kSecHpGauge),
+    SUB("HP Gauge Outline",          "Metroid.UI.SectionHudHpGaugeOutline", kSecHpGaugeOutline),
+    SUB("Ammo Gauge",                "Metroid.UI.SectionHudAmmoGauge",      kSecAmmoGauge),
+    SUB("Ammo Gauge Outline",        "Metroid.UI.SectionHudAmmoGaugeOutline", kSecAmmoGaugeOutline),
+    SUB("Weapon Inventory",           "Metroid.UI.SectionHudWeaponInventory",          kSecWeaponInventory),
+    SUB("Weapon Inventory Highlight", "Metroid.UI.SectionHudWeaponInventoryHighlight",  kSecWeaponInventoryHighlight),
+    SUB("Weapon Inventory Outline",      "Metroid.UI.SectionHudWeaponInventoryOutline",      kSecWeaponInventoryOutline),
+    SUB("Weapon Inventory Icon Outline", "Metroid.UI.SectionHudWeaponInventoryIconOutline",  kSecWeaponInventoryIconOutline),
 };
 
 // ── Rank/Time sub-sub-sections ──
 static const HudSubSec kSubsRankTime[] = {
-    SUB("Rank",       "Metroid.UI.SectionHudRank",      kSecRank),
-    SUB("Time Left",  "Metroid.UI.SectionHudTimeLeft",  kSecTimeLeft),
-    SUB("Time Limit", "Metroid.UI.SectionHudTimeLimit", kSecTimeLimit),
+    SUB("Rank",            "Metroid.UI.SectionHudRank",          kSecRank),
+    SUB("Time Left",       "Metroid.UI.SectionHudTimeLeft",       kSecTimeLeft),
+    SUB("Time Limit",      "Metroid.UI.SectionHudTimeLimit",      kSecTimeLimit),
+    SUB("Rank Outline",       "Metroid.UI.SectionHudRankOutline",      kSecRankOutline),
+    SUB("Time Left Outline",  "Metroid.UI.SectionHudTimeLeftOutline",  kSecTimeLeftOutline),
+    SUB("Time Limit Outline", "Metroid.UI.SectionHudTimeLimitOutline", kSecTimeLimitOutline),
 };
 
 // ── MATCH STATUS HUD sub-sections ──
 static const HudSubSec kSubsMatchStatus[] = {
-    SUB("Score",                   "Metroid.UI.SectionHudMatchStatus", kSecMatchStatus),
-    SUB_NEST("Rank / Time",      "Metroid.UI.SectionHudRankTime",   kSubsRankTime),
-    SUB("Bomb Left",               "Metroid.UI.SectionHudBombLeft",   kSecBombLeft),
-    SUB("Bomb Icon",               "Metroid.UI.SectionHudBombIcon",   kSecBombIcon),
+    SUB("Score",                    "Metroid.UI.SectionHudMatchStatus",       kSecMatchStatus),
+    SUB("Score Outline",            "Metroid.UI.SectionHudMatchStatusOutline", kSecMatchStatusOutline),
+    SUB_NEST("Rank / Time",         "Metroid.UI.SectionHudRankTime",          kSubsRankTime),
+    SUB("Bomb Left",                "Metroid.UI.SectionHudBombLeft",          kSecBombLeft),
+    SUB("Bomb Left Outline",        "Metroid.UI.SectionHudBombLeftOutline",   kSecBombLeftOutline),
+    SUB("Bomb Icon",                "Metroid.UI.SectionHudBombIcon",          kSecBombIcon),
+    SUB("Bomb Icon Outline",        "Metroid.UI.SectionHudBombIconOutline",   kSecBombIconOutline),
 };
 
-// --- Section: HUD Outline ---
-static const HudWidgetProp kSecHudOutline[] = {
-    P_BOOL("Enable",    "Metroid.Visual.HudOutline"),
-    P_CLR("Color",      "Metroid.Visual.HudOutlineColorR", "Metroid.Visual.HudOutlineColorG", "Metroid.Visual.HudOutlineColorB"),
-    P_FLOAT("Opacity",  "Metroid.Visual.HudOutlineOpacity"),
-    P_INT("Thickness",  "Metroid.Visual.HudOutlineThickness", 1, 10, 1),
+// ── HUD RADAR sub-sections ──
+static const HudSubSec kSubsRadar[] = {
+    SUB("Radar Settings",       "Metroid.UI.SectionHudRadarSettings",      kSecRadar),
+    SUB("Radar Outline",        "Metroid.UI.SectionHudRadarOutline",       kSecRadarOutline),
+    SUB("Frame Outline",        "Metroid.UI.SectionHudRadarFrameOutline",  kSecRadarFrameOutline),
 };
 
 // ── Main section groups ──
 static const HudMainSec kHudMainSections[] = {
-    { "TEXT SCALE",        "Metroid.UI.SectionHudTextScale",
+    { "OUTLINE OVERRIDE",  "Metroid.UI.SectionHudGlobalOutline",
+      _P(kSecGlobalOutline), nullptr, 0, /*preview*/ 0 },
+        { "HUD SCALE",         "Metroid.UI.SectionHudTextScale",
       _P(kSecTextScale), nullptr, 0, /*preview*/ 0 },
     { "CROSSHAIR",         "Metroid.UI.SectionHudCrosshair",
       _P(kSecCrosshair), kSubsCrosshair, static_cast<int>(sizeof(kSubsCrosshair)/sizeof(kSubsCrosshair[0])), /*preview*/ 1 },
@@ -661,9 +815,7 @@ static const HudMainSec kHudMainSections[] = {
     { "MATCH STATUS HUD",  "Metroid.UI.SectionHudMatchStatusGrp",
       nullptr, 0, kSubsMatchStatus, static_cast<int>(sizeof(kSubsMatchStatus)/sizeof(kSubsMatchStatus[0])), /*preview*/ 3 },
     { "HUD RADAR",         "Metroid.UI.SectionHudRadar",
-      _P(kSecRadar), nullptr, 0, /*preview*/ 4 },
-    { "HUD OUTLINE",       "Metroid.UI.SectionHudOutline",
-      _P(kSecHudOutline), nullptr, 0, /*preview*/ 0 },
+      nullptr, 0, kSubsRadar, static_cast<int>(sizeof(kSubsRadar)/sizeof(kSubsRadar[0])), /*preview*/ 4 },
 };
 static constexpr int kHudMainSectionCount = static_cast<int>(sizeof(kHudMainSections) / sizeof(kHudMainSections[0]));
 
@@ -736,9 +888,11 @@ protected:
     }
 
     // Draw a gauge bar in DS-space at 50% fill
-    static void drawGaugeDS(QPainter& p, int x, int y, const QColor& color, int orient, int len, int wid) {
+    static void drawGaugeDS(QPainter& p, int x, int y, const QColor& color, int orient, int len, int wid, int align = 0) {
         if (len <= 0) len = 28;
         if (wid <= 0) wid = 3;
+        if (orient == 0) x -= len * align / 2;
+        else             y -= len * align / 2;
         int fw = (orient == 0) ? len / 2 : wid;
         int fh = (orient == 0) ? wid    : len / 2;
         int fx = x;
@@ -843,7 +997,7 @@ protected:
                     gx = tx + c.GetInt("Metroid.Visual.HudHpGaugeOffsetX");
                     gy = pos.y() + c.GetInt("Metroid.Visual.HudHpGaugeOffsetY") + 2;
                 }
-                drawGaugeDS(p, gx, gy, gc, ori, len, wid);
+                drawGaugeDS(p, gx, gy, gc, ori, len, wid, c.GetInt("Metroid.Visual.HudHpGaugeAlign"));
             }
         }
 
@@ -897,7 +1051,7 @@ protected:
                     gx = tx + c.GetInt("Metroid.Visual.HudAmmoGaugeOffsetX");
                     gy = pos.y() + c.GetInt("Metroid.Visual.HudAmmoGaugeOffsetY") + 2;
                 }
-                drawGaugeDS(p, gx, gy, gc, ori, len, wid);
+                drawGaugeDS(p, gx, gy, gc, ori, len, wid, c.GetInt("Metroid.Visual.HudAmmoGaugeAlign"));
             }
         }
     }
@@ -1114,6 +1268,22 @@ void MelonPrimeInputConfig::setupCustomHudWidgets(Config::Table& instcfg)
             dsb->setObjectName(objName);
             dsb->setRange(0.0, 1.0);
             dsb->setSingleStep(0.05);
+            dsb->setDecimals(2);
+            dsb->setValue(instcfg.GetDouble(p.cfgKey));
+            form->addRow(QString::fromUtf8(p.label), dsb);
+            m_hudWidgets[p.cfgKey] = dsb;
+            connect(dsb, QOverload<double>::of(&QDoubleSpinBox::valueChanged), this, [this, key = std::string(p.cfgKey)](double val) {
+                if (!m_applyPreviewEnabled) return;
+                emuInstance->getLocalConfig().SetDouble(key, val);
+                invalidateHudAndRefreshPreviews();
+            });
+            break;
+        }
+        case HWType::Double: {
+            auto* dsb = new QDoubleSpinBox(parent);
+            dsb->setObjectName(objName);
+            dsb->setRange(p.min * 0.01, p.max * 0.01);
+            dsb->setSingleStep(p.step * 0.01);
             dsb->setDecimals(2);
             dsb->setValue(instcfg.GetDouble(p.cfgKey));
             form->addRow(QString::fromUtf8(p.label), dsb);

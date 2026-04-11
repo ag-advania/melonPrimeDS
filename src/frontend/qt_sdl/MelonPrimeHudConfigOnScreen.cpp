@@ -50,6 +50,8 @@ static const char* kEnumRelIndep    = "Relative|Independent";
 static const char* kEnumAnchorY     = "Top|Center|Bottom";
 static const char* kEnumLabelPos    = "Above|Below|Left|Right|Center";
 static const char* kEnumLayout      = "Standard|Alternative";
+static const char* kEnumOrientation = "Horiz|Vert";
+static const char* kEnumGaugeAlign  = "Start|Center|End";
 
 static QString EditEnumLabel(const char* items, int val) {
     if (!items || val < 0) return QString::number(val);
@@ -72,9 +74,16 @@ static const HudEditPropDesc kPropsHp[] = {
 
 static const HudEditPropDesc kPropsHpGauge[] = {
     {"Auto Color",   EditPropType::Bool, "Metroid.Visual.HudHpGaugeAutoColor", 0, 0, 0, nullptr, nullptr, nullptr},
+    {"Orient",       EditPropType::Enum, "Metroid.Visual.HudHpGaugeOrientation", 0, 1, 1, kEnumOrientation, nullptr, nullptr},
+    {"Align",        EditPropType::Enum, "Metroid.Visual.HudHpGaugeAlign", 0, 2, 1, kEnumGaugeAlign, nullptr, nullptr},
+    {"Length",       EditPropType::Int,  "Metroid.Visual.HudHpGaugeLength", 1, 192, 1, nullptr, nullptr, nullptr},
+    {"Width",        EditPropType::Int,  "Metroid.Visual.HudHpGaugeWidth", 1, 20, 1, nullptr, nullptr, nullptr},
+    {"Pos Mode",     EditPropType::Enum, "Metroid.Visual.HudHpGaugePosMode", 0, 1, 1, kEnumRelIndep, nullptr, nullptr},
     {"Gauge Anchor", EditPropType::Enum, "Metroid.Visual.HudHpGaugeAnchor", 0, 4, 1, kEnumGaugeAnchor, nullptr, nullptr},
     {"Offset X",     EditPropType::Int,  "Metroid.Visual.HudHpGaugeOffsetX", -128, 128, 1, nullptr, nullptr, nullptr},
     {"Offset Y",     EditPropType::Int,  "Metroid.Visual.HudHpGaugeOffsetY", -128, 128, 1, nullptr, nullptr, nullptr},
+    {"Pos X",        EditPropType::Int,  "Metroid.Visual.HudHpGaugePosX", -256, 256, 1, nullptr, nullptr, nullptr},
+    {"Pos Y",        EditPropType::Int,  "Metroid.Visual.HudHpGaugePosY", -256, 256, 1, nullptr, nullptr, nullptr},
     {"Opacity",      EditPropType::Float,"Metroid.Visual.HudHpGaugeOpacity", 0, 100, 5, nullptr, nullptr, nullptr},
 };
 
@@ -96,9 +105,16 @@ static const HudEditPropDesc kPropsWpnIcon[] = {
 };
 
 static const HudEditPropDesc kPropsAmmoGauge[] = {
+    {"Orient",       EditPropType::Enum, "Metroid.Visual.HudAmmoGaugeOrientation", 0, 1, 1, kEnumOrientation, nullptr, nullptr},
+    {"Align",        EditPropType::Enum, "Metroid.Visual.HudAmmoGaugeAlign", 0, 2, 1, kEnumGaugeAlign, nullptr, nullptr},
+    {"Length",       EditPropType::Int,  "Metroid.Visual.HudAmmoGaugeLength", 1, 192, 1, nullptr, nullptr, nullptr},
+    {"Width",        EditPropType::Int,  "Metroid.Visual.HudAmmoGaugeWidth", 1, 20, 1, nullptr, nullptr, nullptr},
+    {"Pos Mode",     EditPropType::Enum, "Metroid.Visual.HudAmmoGaugePosMode", 0, 1, 1, kEnumRelIndep, nullptr, nullptr},
     {"Gauge Anchor", EditPropType::Enum, "Metroid.Visual.HudAmmoGaugeAnchor", 0, 4, 1, kEnumGaugeAnchor, nullptr, nullptr},
     {"Offset X",     EditPropType::Int,  "Metroid.Visual.HudAmmoGaugeOffsetX", -128, 128, 1, nullptr, nullptr, nullptr},
     {"Offset Y",     EditPropType::Int,  "Metroid.Visual.HudAmmoGaugeOffsetY", -128, 128, 1, nullptr, nullptr, nullptr},
+    {"Pos X",        EditPropType::Int,  "Metroid.Visual.HudAmmoGaugePosX", -256, 256, 1, nullptr, nullptr, nullptr},
+    {"Pos Y",        EditPropType::Int,  "Metroid.Visual.HudAmmoGaugePosY", -256, 256, 1, nullptr, nullptr, nullptr},
     {"Opacity",      EditPropType::Float,"Metroid.Visual.HudAmmoGaugeOpacity", 0, 100, 5, nullptr, nullptr, nullptr},
 };
 
@@ -159,6 +175,24 @@ static const HudEditPropDesc kPropsBombIcon[] = {
     {"Opacity",  EditPropType::Float,"Metroid.Visual.HudBombIconOpacity", 0, 100, 5, nullptr, nullptr, nullptr},
 };
 
+static const HudEditPropDesc kPropsWeaponInventory[] = {
+    {"Orientation", EditPropType::Enum,  "Metroid.Visual.HudWeaponInventoryOrientation", 0, 1, 1, kEnumOrientation, nullptr, nullptr},
+    {"Align",       EditPropType::Enum,  "Metroid.Visual.HudWeaponInventoryAlign",       0, 2, 1, kEnumAlign3,      nullptr, nullptr},
+    {"Icon Height", EditPropType::Int,   "Metroid.Visual.HudWeaponInventoryIconHeight",  4, 48, 1, nullptr, nullptr, nullptr},
+    {"Spacing",     EditPropType::Int,   "Metroid.Visual.HudWeaponInventorySpacing",     0, 32, 1, nullptr, nullptr, nullptr},
+    {"Opacity",     EditPropType::Float, "Metroid.Visual.HudWeaponInventoryOpacity",     0, 100, 5, nullptr, nullptr, nullptr},
+    {"Not Owned",   EditPropType::Float, "Metroid.Visual.HudWeaponInventoryNotOwnedOpacity", 0, 100, 5, nullptr, nullptr, nullptr},
+    {"Highlight",        EditPropType::Bool,  "Metroid.Visual.HudWeaponInventoryHighlightEnable",       0, 1,   1, nullptr, nullptr, nullptr},
+    {"Hl Opacity",       EditPropType::Float, "Metroid.Visual.HudWeaponInventoryHighlightOpacity",       0, 100, 5, nullptr, nullptr, nullptr},
+    {"Hl Thickness",     EditPropType::Float, "Metroid.Visual.HudWeaponInventoryHighlightThickness",     1,  80, 5, nullptr, nullptr, nullptr},
+    {"Hl Padding",       EditPropType::Int,   "Metroid.Visual.HudWeaponInventoryHighlightPadding",       0,  16, 1, nullptr, nullptr, nullptr},
+    {"Hl Corner Radius", EditPropType::Int,   "Metroid.Visual.HudWeaponInventoryHighlightCornerRadius",  0,  16, 1, nullptr, nullptr, nullptr},
+    {"Hl Ofs Left",      EditPropType::Int,   "Metroid.Visual.HudWeaponInventoryHighlightSizeOffsetLeft",   -16, 32, 1, nullptr, nullptr, nullptr},
+    {"Hl Ofs Right",     EditPropType::Int,   "Metroid.Visual.HudWeaponInventoryHighlightSizeOffsetRight",  -16, 32, 1, nullptr, nullptr, nullptr},
+    {"Hl Ofs Top",       EditPropType::Int,   "Metroid.Visual.HudWeaponInventoryHighlightSizeOffsetTop",    -16, 32, 1, nullptr, nullptr, nullptr},
+    {"Hl Ofs Bottom",    EditPropType::Int,   "Metroid.Visual.HudWeaponInventoryHighlightSizeOffsetBottom", -16, 32, 1, nullptr, nullptr, nullptr},
+};
+
 static const HudEditPropDesc kPropsRadar[] = {
     {"Opacity",   EditPropType::Float,"Metroid.Visual.BtmOverlayOpacity", 0, 100, 5, nullptr, nullptr, nullptr},
     {"Src Radius",EditPropType::Int,  "Metroid.Visual.BtmOverlaySrcRadius", 10, 96, 1, nullptr, nullptr, nullptr},
@@ -166,7 +200,7 @@ static const HudEditPropDesc kPropsRadar[] = {
 
 // ── Crosshair edit-mode props ────────────────────────────────────────────
 static const HudEditPropDesc kPropsCrosshairMain[] = {
-    {"Scale %",          EditPropType::Int,   "Metroid.Visual.CrosshairScale", 10, 500, 1, nullptr, nullptr, nullptr},
+    {"Scale %",          EditPropType::Int,   "Metroid.Visual.CrosshairScale", 100, 800, 1, nullptr, nullptr, nullptr},
     {"Outline",          EditPropType::Bool,  "Metroid.Visual.CrosshairOutline", 0, 0, 0, nullptr, nullptr, nullptr},
     {"Outline Opacity",  EditPropType::Float, "Metroid.Visual.CrosshairOutlineOpacity", 0, 100, 5, nullptr, nullptr, nullptr},
     {"Outline Thick.",   EditPropType::Int,   "Metroid.Visual.CrosshairOutlineThickness", 1, 10, 1, nullptr, nullptr, nullptr},
@@ -207,6 +241,9 @@ static int  s_crosshairPanelScroll = 0;
 
 // Text-scale slider drag state
 static bool s_textScaleDragging = false;
+
+// Auto-scale global cap slider drag state
+static bool s_autoScaleCapDragging = false;
 
 static int CountCrosshairRows() {
     return 1 + kCrosshairMainCount + 2; // color + main props + Inner header + Outer header
@@ -252,7 +289,7 @@ static const HudEditElemDesc kEditElems[kEditElemCount] = {
         "Metroid.Visual.HudHpGaugeColorR",
         "Metroid.Visual.HudHpGaugeColorG",
         "Metroid.Visual.HudHpGaugeColorB",
-        kPropsHpGauge, 5
+        kPropsHpGauge, 12
     },
     {   // 2: Weapon / Ammo text
         "Weapon/Ammo",
@@ -289,7 +326,7 @@ static const HudEditElemDesc kEditElems[kEditElemCount] = {
         "Metroid.Visual.HudAmmoGaugeColorR",
         "Metroid.Visual.HudAmmoGaugeColorG",
         "Metroid.Visual.HudAmmoGaugeColorB",
-        kPropsAmmoGauge, 4
+        kPropsAmmoGauge, 11
     },
     {   // 5: Match Status
         "Match Status",
@@ -376,6 +413,44 @@ static const HudEditElemDesc kEditElems[kEditElemCount] = {
         nullptr, nullptr, nullptr, // no color picker
         kPropsRadar, 2
     },
+    {   // 12: Weapon Inventory
+        "Wpn\nInventory",
+        "Metroid.Visual.HudWeaponInventoryAnchor",
+        "Metroid.Visual.HudWeaponInventoryX",
+        "Metroid.Visual.HudWeaponInventoryY",
+        nullptr, nullptr, nullptr, nullptr,
+        "Metroid.Visual.HudWeaponInventoryShow", // showKey
+        "Metroid.Visual.HudWeaponInventoryColorR",
+        "Metroid.Visual.HudWeaponInventoryColorG",
+        "Metroid.Visual.HudWeaponInventoryColorB",
+        kPropsWeaponInventory, 15
+    },
+    {   // 13: Crosshair (fixed center position — Qt side panel only, no DS-space props)
+        "Crosshair",
+        nullptr, nullptr, nullptr,            // anchorKey / ofsXKey / ofsYKey: fixed
+        nullptr, nullptr, nullptr, nullptr,   // orient / length / width / posMode
+        nullptr,                              // showKey: always visible in edit mode
+        nullptr, nullptr, nullptr,            // no DS-space color picker
+        nullptr, 0                            // no DS-space extra props
+    },
+};
+
+// Sample text used for element box previews (must align with kEditElems indices)
+static const char* const kEditElemSampleText[kEditElemCount] = {
+    "100",       // 0: HP
+    nullptr,     // 1: HP Gauge
+    "PWR 50",    // 2: Weapon/Ammo
+    nullptr,     // 3: Weapon Icon
+    nullptr,     // 4: Ammo Gauge
+    "1st | 5",   // 5: Match Status
+    "#1",        // 6: Rank
+    "2:30",      // 7: Time Left
+    "5:00",      // 8: Time Limit
+    "x3",        // 9: Bomb Left
+    nullptr,     // 10: Bomb Icon
+    nullptr,     // 11: Radar
+    nullptr,     // 12: Weapon Inventory
+    nullptr,     // 13: Crosshair
 };
 
 // ── Edit mode static state ──────────────────────────────────────────────────
@@ -411,13 +486,14 @@ static const QRectF kEditSaveRect  (10.0f,  1.0f, 74.0f, 12.0f);
 static const QRectF kEditCancelRect(88.0f,  1.0f, 74.0f, 12.0f);
 static const QRectF kEditResetRect (166.0f, 1.0f, 74.0f, 12.0f);
 
-// Text Scale control, Crosshair button, and Preview toggle (below button bar)
-static const QRectF kEditTextScaleRect(10.0f, 15.0f, 74.0f, 10.0f);
-static const QRectF kEditCrosshairBtnRect(88.0f, 15.0f, 74.0f, 10.0f);
+// Text Scale control, Auto-Scale Cap, Crosshair button, and Preview toggle (below button bar)
+static const QRectF kEditTextScaleRect  (10.0f,  15.0f, 58.0f, 10.0f);
+static const QRectF kEditAutoScaleCapRect(70.0f, 15.0f, 58.0f, 10.0f);
+static const QRectF kEditCrosshairBtnRect(130.0f, 15.0f, 54.0f, 10.0f);
 
 // Text Scale slider helpers (depend on kEditTextScaleRect)
-static constexpr int kTsMin = 10, kTsMax = 300;
-static constexpr float kTsLabelW = 16.0f;
+static constexpr int kTsMin = 100, kTsMax = 300;
+static constexpr float kTsLabelW = 14.0f;
 
 static inline QRectF TsTrackRect()
 {
@@ -436,7 +512,29 @@ static inline int TsValueFromX(float px)
     return std::max(kTsMin, std::min(kTsMax,
         kTsMin + static_cast<int>(std::round(frac * (kTsMax - kTsMin) / 5.0f) * 5.0f)));
 }
-static const QRectF kEditPreviewBtnRect(166.0f, 15.0f, 74.0f, 10.0f);
+
+// Auto-Scale Cap slider helpers (depend on kEditAutoScaleCapRect)
+static constexpr int kAscMin = 100, kAscMax = 800;
+static constexpr float kAscLabelW = 14.0f;
+
+static inline QRectF AscTrackRect()
+{
+    const float x = static_cast<float>(kEditAutoScaleCapRect.left()) + 2.0f;
+    const float y = static_cast<float>(kEditAutoScaleCapRect.top());
+    const float w = static_cast<float>(kEditAutoScaleCapRect.width()) - 4.0f;
+    const float h = static_cast<float>(kEditAutoScaleCapRect.height());
+    return QRectF(x + kAscLabelW, y + 2.0f, w - kAscLabelW, h - 4.0f);
+}
+
+static inline int AscValueFromX(float px)
+{
+    const QRectF tr = AscTrackRect();
+    float frac = static_cast<float>((px - tr.left()) / tr.width());
+    frac = std::max(0.0f, std::min(1.0f, frac));
+    return std::max(kAscMin, std::min(kAscMax,
+        kAscMin + static_cast<int>(std::round(frac * (kAscMax - kAscMin) / 25.0f) * 25.0f)));
+}
+static const QRectF kEditPreviewBtnRect(186.0f, 15.0f, 54.0f, 10.0f);
 
 // Crosshair panel rect (left side, below control bar)
 static constexpr float kCrosshairPanelX = 2.0f;
@@ -449,13 +547,36 @@ static constexpr int kCrosshairMaxVisible = 16;
 // Properties panel layout constants
 static constexpr float kPropRowH    = 8.0f;
 static constexpr float kPropLabelW  = 52.0f;
-static constexpr float kPropCtrlW   = 30.0f;
+static constexpr float kPropCtrlW   = 36.0f;
 static constexpr float kPropPanelW  = kPropLabelW + kPropCtrlW + 4.0f;
 static constexpr float kAnchorGridCellW = (kPropPanelW - 4.0f) / 3.0f;
-static constexpr float kAnchorGridCellH = 10.0f;
+static constexpr float kAnchorGridCellH = 9.0f;
 static constexpr float kAnchorGridH = kAnchorGridCellH * 3 + 4.0f;
 static int s_editPropScroll = 0;
 static constexpr int kPropMaxVisible = 8;
+static constexpr bool kShowDsEditPropsPanel = false;
+
+// ── Modern dark theme ────────────────────────────────────────────────────────
+static const QColor kPanelBg        (10, 12, 24, 225);
+static const QColor kPanelShadow    (0, 0, 0, 100);
+static const QColor kPanelBorder    (50, 55, 80, 80);
+static const QColor kAccent         (70, 140, 255);
+static const QColor kAccentDim      (70, 140, 255, 60);
+static const QColor kLabelColor     (120, 130, 165);
+static const QColor kValueColor     (200, 210, 235);
+static const QColor kCtrlBg         (18, 22, 42, 200);
+static const QColor kBtnBg          (28, 32, 58, 220);
+static const QColor kBtnOnBg        (25, 115, 55, 220);
+static const QColor kBtnOffBg       (105, 32, 32, 210);
+static const QColor kArrowBg        (28, 32, 58, 220);
+static const QColor kElemSelBg      (70, 140, 255, 35);
+static const QColor kElemHovBg      (70, 140, 255, 18);
+static const QColor kElemNormBg     (50, 80, 130, 12);
+static const QColor kElemHiddenSelBg(90, 90, 90, 45);
+static const QColor kElemHiddenHovBg(70, 70, 70, 25);
+static const QColor kElemHiddenBg   (50, 50, 50, 12);
+static constexpr float kCornerRadius = 2.0f;
+static constexpr float kBtnCorner    = 3.0f;
 
 // Crosshair side panel (Inner/Outer) — positioned to the right of the main panel
 static constexpr float kCrosshairSidePanelX  = kCrosshairPanelX + kPropPanelW + 2.0f;
@@ -478,9 +599,9 @@ static void SnapshotEditConfig(Config::Table& cfg)
     s_editSnapshotBools.clear();
     for (int i = 0; i < kEditElemCount; ++i) {
         const HudEditElemDesc& d = kEditElems[i];
-        s_editSnapshot[d.anchorKey] = cfg.GetInt(d.anchorKey);
-        s_editSnapshot[d.ofsXKey]   = cfg.GetInt(d.ofsXKey);
-        s_editSnapshot[d.ofsYKey]   = cfg.GetInt(d.ofsYKey);
+        if (d.anchorKey) s_editSnapshot[d.anchorKey] = cfg.GetInt(d.anchorKey);
+        if (d.ofsXKey)   s_editSnapshot[d.ofsXKey]   = cfg.GetInt(d.ofsXKey);
+        if (d.ofsYKey)   s_editSnapshot[d.ofsYKey]   = cfg.GetInt(d.ofsYKey);
         if (d.orientKey)  s_editSnapshot[d.orientKey]  = cfg.GetInt(d.orientKey);
         if (d.lengthKey)  s_editSnapshot[d.lengthKey]  = cfg.GetInt(d.lengthKey);
         if (d.widthKey && d.widthKey != d.lengthKey)
@@ -539,6 +660,13 @@ static void SnapshotEditConfig(Config::Table& cfg)
     snapshotPropArray(kPropsCrosshairInner, kCrosshairInnerCount);
     snapshotPropArray(kPropsCrosshairOuter, kCrosshairOuterCount);
     s_editSnapshot["Metroid.Visual.HudTextScale"] = cfg.GetInt("Metroid.Visual.HudTextScale");
+    s_editSnapshot["Metroid.Visual.HudAutoScaleEnable"] = cfg.GetBool("Metroid.Visual.HudAutoScaleEnable") ? 1 : 0;
+    s_editSnapshotBools.insert("Metroid.Visual.HudAutoScaleEnable");
+    s_editSnapshot["Metroid.Visual.HudAutoScaleCap"]       = cfg.GetInt("Metroid.Visual.HudAutoScaleCap");
+    s_editSnapshot["Metroid.Visual.HudAutoScaleCapText"]   = cfg.GetInt("Metroid.Visual.HudAutoScaleCapText");
+    s_editSnapshot["Metroid.Visual.HudAutoScaleCapIcons"]  = cfg.GetInt("Metroid.Visual.HudAutoScaleCapIcons");
+    s_editSnapshot["Metroid.Visual.HudAutoScaleCapGauges"]    = cfg.GetInt("Metroid.Visual.HudAutoScaleCapGauges");
+    s_editSnapshot["Metroid.Visual.HudAutoScaleCapCrosshair"] = cfg.GetInt("Metroid.Visual.HudAutoScaleCapCrosshair");
 }
 
 static void RestoreEditSnapshot(Config::Table& cfg)
@@ -561,9 +689,9 @@ static void ResetEditToDefaults(Config::Table& cfg)
     Config::Table defaults(defData, "Instance0");
     for (int i = 0; i < kEditElemCount; ++i) {
         const HudEditElemDesc& d = kEditElems[i];
-        cfg.SetInt(d.anchorKey, defaults.GetInt(d.anchorKey));
-        cfg.SetInt(d.ofsXKey,   defaults.GetInt(d.ofsXKey));
-        cfg.SetInt(d.ofsYKey,   defaults.GetInt(d.ofsYKey));
+        if (d.anchorKey) cfg.SetInt(d.anchorKey, defaults.GetInt(d.anchorKey));
+        if (d.ofsXKey)   cfg.SetInt(d.ofsXKey,   defaults.GetInt(d.ofsXKey));
+        if (d.ofsYKey)   cfg.SetInt(d.ofsYKey,   defaults.GetInt(d.ofsYKey));
         if (d.orientKey)  cfg.SetInt(d.orientKey,  defaults.GetInt(d.orientKey));
         if (d.lengthKey)  cfg.SetInt(d.lengthKey,  defaults.GetInt(d.lengthKey));
         if (d.widthKey && d.widthKey != d.lengthKey)
@@ -612,11 +740,22 @@ static void ResetEditToDefaults(Config::Table& cfg)
     resetPropArray(kPropsCrosshairInner, kCrosshairInnerCount);
     resetPropArray(kPropsCrosshairOuter, kCrosshairOuterCount);
     cfg.SetInt("Metroid.Visual.HudTextScale", defaults.GetInt("Metroid.Visual.HudTextScale"));
+    cfg.SetBool("Metroid.Visual.HudAutoScaleEnable", defaults.GetBool("Metroid.Visual.HudAutoScaleEnable"));
+    cfg.SetInt("Metroid.Visual.HudAutoScaleCap",       defaults.GetInt("Metroid.Visual.HudAutoScaleCap"));
+    cfg.SetInt("Metroid.Visual.HudAutoScaleCapText",   defaults.GetInt("Metroid.Visual.HudAutoScaleCapText"));
+    cfg.SetInt("Metroid.Visual.HudAutoScaleCapIcons",  defaults.GetInt("Metroid.Visual.HudAutoScaleCapIcons"));
+    cfg.SetInt("Metroid.Visual.HudAutoScaleCapGauges",    defaults.GetInt("Metroid.Visual.HudAutoScaleCapGauges"));
+    cfg.SetInt("Metroid.Visual.HudAutoScaleCapCrosshair", defaults.GetInt("Metroid.Visual.HudAutoScaleCapCrosshair"));
 }
 
 // ── Bounding rect computation ───────────────────────────────────────────────
 static QRectF ComputeEditBounds(int idx, Config::Table& cfg, float topStretchX)
 {
+    // Crosshair: fixed preview box at DS screen center
+    if (idx == 13) {
+        return QRectF(108.0f, 76.0f, 40.0f, 40.0f); // centered at DS (128, 96)
+    }
+
     const HudEditElemDesc& d = kEditElems[idx];
     const int anchor = cfg.GetInt(d.anchorKey);
     const int ofsX   = cfg.GetInt(d.ofsXKey);
@@ -624,14 +763,58 @@ static QRectF ComputeEditBounds(int idx, Config::Table& cfg, float topStretchX)
     int fx, fy;
     ApplyAnchor(anchor, ofsX, ofsY, fx, fy, topStretchX);
 
-    float tds = std::max(0.5f, cfg.GetInt("Metroid.Visual.HudTextScale") / 100.0f);
+    const float hs  = (s_editHudScale > 0.0f) ? s_editHudScale : 1.0f;
+    // Use exact textDrawScale from cache (includes auto-scale + user TextScale, divided by hudScale).
+    // Falls back to bare formula only before first cache fill.
+    const float tds = s_cache.valid
+        ? s_cache.textDrawScale
+        : std::max(0.3f, cfg.GetInt("Metroid.Visual.HudTextScale") / 100.0f) / hs;
+
+    // ── Radar (idx=11) — must come before gauge branch (radar reuses lengthKey for square resize) ──
+    if (idx == 11) {
+        if (s_cache.valid)
+            return QRectF(s_cache.radar.radarDstRect).united(s_cache.radar.frameDstRect);
+
+        const int dstSize = std::max(cfg.GetInt("Metroid.Visual.BtmOverlayDstSize"), 1);
+        const int srcRadius = std::max(cfg.GetInt("Metroid.Visual.BtmOverlaySrcRadius"), 1);
+        const int srcDiameter = srcRadius * 2;
+        const float frameSizeDS = static_cast<float>(kRadarArtSize) * dstSize
+                                  / static_cast<float>(srcDiameter);
+        const QRectF radarRect(fx, fy, dstSize, dstSize);
+        const float cropCenterX = fx + dstSize * 0.5f + 0.75f;
+        const float cropCenterY = fy + dstSize * 0.5f;
+        const QRectF frameRect(cropCenterX - frameSizeDS * 0.5f,
+                               cropCenterY - frameSizeDS * 0.5f,
+                               frameSizeDS, frameSizeDS);
+        return radarRect.united(frameRect);
+    }
+
+    // ── Weapon Inventory (idx=12) ───────────────────────────────────────────
+    if (idx == 12) {
+        const float hs = (s_editHudScale > 0.0f) ? s_editHudScale : 1.0f;
+        const float iconScale = s_cache.valid ? s_cache.scaleIcons : 1.0f;
+        const int iconH = std::max(4, cfg.GetInt("Metroid.Visual.HudWeaponInventoryIconHeight"));
+        const float iH = static_cast<float>(iconH) * iconScale / hs;
+        const float spacing = static_cast<float>(std::max(0, cfg.GetInt("Metroid.Visual.HudWeaponInventorySpacing")));
+        const float rowH = iH + spacing;
+        const int ori = cfg.GetInt("Metroid.Visual.HudWeaponInventoryOrientation");
+        // Assume worst-case: all 9 weapons visible
+        if (ori == 1) // Vertical
+            return QRectF(static_cast<float>(fx), static_cast<float>(fy),
+                          iH * 2.0f, rowH * 9.0f);
+        else // Horizontal
+            return QRectF(static_cast<float>(fx), static_cast<float>(fy),
+                          (iH * 2.0f + spacing) * 9.0f, rowH);
+    }
 
     // ── HP Gauge (idx=1) / Ammo Gauge (idx=4) ──────────────────────────────
     if (d.lengthKey != nullptr) {
-        const int len     = std::max(4, cfg.GetInt(d.lengthKey));
-        const int wid     = std::max(1, cfg.GetInt(d.widthKey));
+        const float len = std::max(4.0f, cfg.GetInt(d.lengthKey) / hs);
+        const float wid = std::max(1.0f, cfg.GetInt(d.widthKey) / hs);
         const int ori     = (d.orientKey != nullptr) ? cfg.GetInt(d.orientKey) : 0;
         const int posMode = d.posModeKey ? cfg.GetInt(d.posModeKey) : 1;
+        const int align   = cfg.GetInt((idx == 1) ? "Metroid.Visual.HudHpGaugeAlign"
+                                                   : "Metroid.Visual.HudAmmoGaugeAlign");
 
         if (posMode == 0) {
             // Relative to parent text element
@@ -652,16 +835,21 @@ static QRectF ComputeEditBounds(int idx, Config::Table& cfg, float topStretchX)
             CalcGaugePos(tx, ty, approxW, approxH,
                          cfg.GetInt(gaugeAnchorKey), cfg.GetInt(gaugeOfsXKey), cfg.GetInt(gaugeOfsYKey),
                          len, wid, ori, gx, gy);
+            if (ori == 0) gx -= static_cast<int>(len * align / 2);
+            else          gy -= static_cast<int>(len * align / 2);
             return (ori == 1) ? QRectF(gx, gy, wid, len) : QRectF(gx, gy, len, wid);
         }
         // Independent: fx/fy come from PosAnchor + PosX/Y
-        return (ori == 1) ? QRectF(fx, fy, wid, len) : QRectF(fx, fy, len, wid);
+        float bx = static_cast<float>(fx), by = static_cast<float>(fy);
+        if (ori == 0) bx -= len * align / 2;
+        else          by -= len * align / 2;
+        return (ori == 1) ? QRectF(bx, by, wid, len) : QRectF(bx, by, len, wid);
     }
 
     // ── Weapon icon (idx=3) ─────────────────────────────────────────────────
     if (idx == 3) {
         const int iconH = std::max(4, cfg.GetInt("Metroid.Visual.HudWeaponIconHeight"));
-        const float dh  = static_cast<float>(iconH);
+        const float dh  = static_cast<float>(iconH) / hs;
         // Use cached icon aspect ratio (don't reload); fall back to square
         const QImage& icon = s_weaponIcons[0];
         const float dw = (!icon.isNull() && icon.height() > 0)
@@ -690,7 +878,7 @@ static QRectF ComputeEditBounds(int idx, Config::Table& cfg, float topStretchX)
     // ── Bomb icon (idx=10) ──────────────────────────────────────────────────
     if (idx == 10) {
         const int iconH = std::max(4, cfg.GetInt("Metroid.Visual.HudBombIconHeight"));
-        const float dh  = static_cast<float>(iconH);
+        const float dh  = static_cast<float>(iconH) / hs;
         const QImage& icon = s_bombIcons[3];
         const float dw = (!icon.isNull() && icon.height() > 0)
                          ? dh * static_cast<float>(icon.width()) / static_cast<float>(icon.height())
@@ -715,18 +903,22 @@ static QRectF ComputeEditBounds(int idx, Config::Table& cfg, float topStretchX)
         return QRectF(ix, iy, dw, dh);
     }
 
-    // ── Radar (idx=11) ──────────────────────────────────────────────────────
-    if (idx == 11) {
-        const float sz = static_cast<float>(cfg.GetInt("Metroid.Visual.BtmOverlayDstSize"));
-        return QRectF(fx, fy, sz, sz);
-    }
-
     // ── Text elements ───────────────────────────────────────────────────────
-    return QRectF(fx - 30.0 * tds, fy - 6.0 * tds, 60.0 * tds, 12.0 * tds);
+    // Use actual font metrics (s_frameFm = mph.ttf 6px) scaled by tds for accuracy.
+    float bw, bh;
+    const char* sampleTxt = (idx >= 0 && idx < kEditElemCount) ? kEditElemSampleText[idx] : nullptr;
+    if (sampleTxt && s_frameFpx == kCustomHudFontSize) {
+        bw = std::max(14.0f, s_frameFm.horizontalAdvance(QString::fromUtf8(sampleTxt)) * tds + 4.0f);
+        bh = std::max(5.0f,  s_frameFm.height() * tds + 2.0f);
+    } else {
+        bw = std::max(14.0f, 50.0f * tds);
+        bh = std::max(5.0f,  12.0f * tds);
+    }
+    return QRectF(static_cast<float>(fx) - bw * 0.5f, static_cast<float>(fy) - bh * 0.5f, bw, bh);
 }
 
 static int CountBuiltinRows(const HudEditElemDesc& d) {
-    int n = 1; // anchor always present
+    int n = d.anchorKey ? 1 : 0; // anchor row only if key exists
     if (d.showKey)   ++n;
     if (d.colorRKey) ++n;
     return n;
@@ -769,8 +961,64 @@ static void GetResizeHandles(int idx, Config::Table& cfg,
     }
 }
 
+static void DrawEditCrosshairActual(QPainter* p, const QRectF& r, const CachedHudConfig& c)
+{
+    if (!p) return;
+
+    const QRectF pxR = p->transform().mapRect(r).adjusted(1.0f, 1.0f, -1.0f, -1.0f);
+    if (pxR.isEmpty()) return;
+
+    const QRect* innerRects = c.crosshair.cachedInnerRects;
+    const QRect* outerRects = c.crosshair.cachedOuterRects;
+    const int nInner = c.crosshair.cachedInnerCount;
+    const int nOuter = c.crosshair.cachedOuterCount;
+    const int pxCx = static_cast<int>(std::round(pxR.center().x()));
+    const int pxCy = static_cast<int>(std::round(pxR.center().y()));
+
+    p->save();
+    p->resetTransform();
+    p->setClipRect(pxR);
+
+    if (c.crosshair.chOutline && c.crosshair.chOutlineOpacity > 0.0) {
+        static const QColor kOutlineBlack(0, 0, 0, 255);
+        const int olT = c.crosshair.chOutlineThickness;
+        p->setOpacity(c.crosshair.chOutlineOpacity);
+        for (int i = 0; i < nInner; ++i)
+            p->fillRect(innerRects[i].translated(pxCx, pxCy).adjusted(-olT, -olT, olT, olT), kOutlineBlack);
+        for (int i = 0; i < nOuter; ++i)
+            p->fillRect(outerRects[i].translated(pxCx, pxCy).adjusted(-olT, -olT, olT, olT), kOutlineBlack);
+        if (c.crosshair.chCenterDot) {
+            const int dh = c.crosshair.cachedDotHalfPx + olT;
+            const int ds = c.crosshair.cachedDotSizePx + olT * 2;
+            p->fillRect(QRect(pxCx - dh, pxCy - dh, ds, ds), kOutlineBlack);
+        }
+    }
+
+    if (nInner > 0) {
+        p->setOpacity(1.0);
+        for (int i = 0; i < nInner; ++i)
+            p->fillRect(innerRects[i].translated(pxCx, pxCy), c.crosshair.chInnerColor);
+    }
+
+    if (nOuter > 0) {
+        p->setOpacity(1.0);
+        for (int i = 0; i < nOuter; ++i)
+            p->fillRect(outerRects[i].translated(pxCx, pxCy), c.crosshair.chOuterColor);
+    }
+
+    if (c.crosshair.chCenterDot) {
+        p->setOpacity(1.0);
+        const int dh = c.crosshair.cachedDotHalfPx;
+        const int ds = c.crosshair.cachedDotSizePx;
+        p->fillRect(QRect(pxCx - dh, pxCy - dh, ds, ds), c.crosshair.chDotColor);
+    }
+
+    p->restore();
+}
+
 // ── DrawEditHudPreview ──────────────────────────────────────────────────────
-static void DrawEditHudPreview(QPainter* p, Config::Table& cfg, float tds, float hudScale, float topStretchX)
+static void DrawEditHudPreview(QPainter* p, Config::Table& cfg, float tds, float hudScale,
+                               float topStretchX, QImage* btmBuffer)
 {
     if (!s_editEmu || s_editRomCopy.playerHP == 0) return;
     melonDS::NDS* nds = s_editEmu->getNDS();
@@ -798,6 +1046,9 @@ static void DrawEditHudPreview(QPainter* p, Config::Table& cfg, float tds, float
     DrawMatchStatusHud(p, ram, rom, s_editPlayerPosCopy, isAdventure, c);
     DrawRankAndTime(p, ram, rom, s_editPlayerPosCopy, isAdventure, c, tds);
 
+    // Mirror the normal HUD path so preview mode includes the live radar frame/crop.
+    DrawBottomScreenOverlay(cfg, p, btmBuffer, (hunterID <= 6) ? hunterID : 0);
+
     const uint8_t viewMode    = Read8(ram, rom.baseViewMode + offP);
     const bool    isFirstPerson = (viewMode == 0x00);
     if (isFirstPerson) {
@@ -809,6 +1060,13 @@ static void DrawEditHudPreview(QPainter* p, Config::Table& cfg, float tds, float
         DrawWeaponAmmo(p, ram, weapon,
                        Read16(ram, addrAmmoSpecial), addrAmmoMissile,
                        maxAmmoSpecial, maxAmmoMissile, c, tds, hudScale);
+
+        {
+            const uint16_t havingWeapons = static_cast<uint16_t>(
+                Read16(ram, addrHot.havingWeapons));
+            DrawWeaponInventory(p, ram, rom, s_editPlayerPosCopy,
+                                havingWeapons, weapon, c, tds, hudScale);
+        }
 
         const bool isTrans = (Read8(ram, addrHot.jumpFlag) & 0x10) != 0;
         if (!isTrans && !isAlt)
@@ -834,9 +1092,18 @@ static void DrawElemPropsPanel(QPainter* p, Config::Table& cfg,
     if (totalRows <= 0) return;
 
     QRectF panelRect = ComputePropsPanelRect(selRect, totalRows);
-    p->fillRect(panelRect, QColor(15, 15, 35, 230));
-    p->setPen(QPen(QColor(80, 80, 140), 0.4));
-    p->drawRect(panelRect);
+    // Shadow
+    p->setPen(Qt::NoPen); p->setBrush(kPanelShadow);
+    p->drawRoundedRect(panelRect.translated(1.0, 1.0), kBtnCorner, kBtnCorner);
+    // Panel bg
+    p->setBrush(kPanelBg);
+    p->setPen(QPen(kPanelBorder, 0.3));
+    p->drawRoundedRect(panelRect, kBtnCorner, kBtnCorner);
+    // Accent line at top
+    p->setPen(QPen(kAccent, 0.6));
+    p->drawLine(QPointF(panelRect.left() + 3, panelRect.top()),
+                QPointF(panelRect.right() - 3, panelRect.top()));
+    p->setBrush(Qt::NoBrush);
 
     int visCount = std::min(totalRows, kPropMaxVisible);
     int scrollOfs = std::min(s_editPropScroll, std::max(0, totalRows - kPropMaxVisible));
@@ -866,24 +1133,27 @@ static void DrawElemPropsPanel(QPainter* p, Config::Table& cfg,
 
         if (isShowRow) {
             p->setFont(smallFont);
-            p->setPen(QColor(160, 160, 200));
+            p->setPen(kLabelColor);
             p->drawText(QRectF(rowX, rowY, kPropLabelW, kPropRowH),
                          Qt::AlignLeft | Qt::AlignVCenter, QStringLiteral("Show"));
             const bool visible = cfg.GetBool(d.showKey);
             QRectF btnR(ctrlX, rowY + 1.0f, ctrlW, kPropRowH - 2.0f);
-            p->fillRect(btnR, visible ? QColor(30, 120, 30, 200) : QColor(120, 30, 30, 200));
-            p->setPen(Qt::white);
+            p->setBrush(visible ? kBtnOnBg : kBtnOffBg);
+            p->setPen(Qt::NoPen);
+            p->drawRoundedRect(btnR, 1.5, 1.5);
+            p->setBrush(Qt::NoBrush);
+            p->setPen(kValueColor);
             p->drawText(btnR, Qt::AlignCenter, visible ? QStringLiteral("ON") : QStringLiteral("OFF"));
         } else if (isColorRow) {
             p->setFont(smallFont);
-            p->setPen(QColor(160, 160, 200));
+            p->setPen(kLabelColor);
             p->drawText(QRectF(rowX, rowY, kPropLabelW, kPropRowH),
                          Qt::AlignLeft | Qt::AlignVCenter, QStringLiteral("Color"));
             QColor curColor(cfg.GetInt(d.colorRKey), cfg.GetInt(d.colorGKey), cfg.GetInt(d.colorBKey));
             QRectF swR(ctrlX, rowY + 1.0f, ctrlW, kPropRowH - 2.0f);
-            p->fillRect(swR, curColor);
-            p->setPen(QPen(Qt::white, 0.3));
-            p->drawRect(swR);
+            p->setBrush(curColor); p->setPen(Qt::NoPen);
+            p->drawRoundedRect(swR, 1.5, 1.5);
+            p->setBrush(Qt::NoBrush);
         } else if (isAnchorRow) {
             static const char* const kAnchorArrow[9] = {
                 "\xe2\x86\x96", "\xe2\x86\x91", "\xe2\x86\x97",
@@ -895,16 +1165,18 @@ static void DrawElemPropsPanel(QPainter* p, Config::Table& cfg,
             QRectF valR(ctrlX, rowY + 1.0f, halfW - 1.0f, kPropRowH - 2.0f);
             QRectF btnR(ctrlX + halfW, rowY + 1.0f, halfW, kPropRowH - 2.0f);
             p->setFont(smallFont);
-            p->setPen(QColor(160, 160, 200));
+            p->setPen(kLabelColor);
             p->drawText(QRectF(rowX, rowY, kPropLabelW, kPropRowH),
                         Qt::AlignLeft | Qt::AlignVCenter, QStringLiteral("Anchor"));
-            p->fillRect(valR, QColor(30, 30, 60, 180));
-            p->fillRect(btnR, s_anchorPickerOpen ? QColor(60, 100, 40, 230) : QColor(60, 60, 100, 200));
-            p->setFont(normalFont);
-            p->setPen(Qt::white);
+            p->setBrush(kCtrlBg); p->setPen(Qt::NoPen);
+            p->drawRoundedRect(valR, 1.5, 1.5); p->setBrush(Qt::NoBrush);
+            p->setBrush(s_anchorPickerOpen ? QColor(45, 100, 50, 230) : kBtnBg);
+            p->setPen(Qt::NoPen);
+            p->drawRoundedRect(btnR, 1.5, 1.5);
+            p->setBrush(Qt::NoBrush);
+            p->setPen(kValueColor);
             p->drawText(valR, Qt::AlignCenter,
                 QString::fromUtf8(anchor >= 0 && anchor < 9 ? kAnchorArrow[anchor] : "?"));
-            p->setFont(smallFont);
             p->drawText(btnR, Qt::AlignCenter, QStringLiteral("Chng"));
         } else {
             int propIdx = rowIdx - builtinRows;
@@ -912,7 +1184,7 @@ static void DrawElemPropsPanel(QPainter* p, Config::Table& cfg,
             const HudEditPropDesc& pr = d.props[propIdx];
 
             p->setFont(smallFont);
-            p->setPen(QColor(160, 160, 200));
+            p->setPen(kLabelColor);
             p->drawText(QRectF(rowX, rowY, kPropLabelW, kPropRowH),
                          Qt::AlignLeft | Qt::AlignVCenter, QString::fromUtf8(pr.label));
 
@@ -920,8 +1192,11 @@ static void DrawElemPropsPanel(QPainter* p, Config::Table& cfg,
             case EditPropType::Bool: {
                 bool val = cfg.GetBool(pr.cfgKey);
                 QRectF btnR(ctrlX, rowY + 1.0f, ctrlW, kPropRowH - 2.0f);
-                p->fillRect(btnR, val ? QColor(30, 120, 30, 200) : QColor(120, 30, 30, 200));
-                p->setPen(Qt::white);
+                p->setBrush(val ? kBtnOnBg : kBtnOffBg);
+                p->setPen(Qt::NoPen);
+                p->drawRoundedRect(btnR, 1.5, 1.5);
+                p->setBrush(Qt::NoBrush);
+                p->setPen(kValueColor);
                 p->drawText(btnR, Qt::AlignCenter, val ? QStringLiteral("ON") : QStringLiteral("OFF"));
                 break;
             }
@@ -931,12 +1206,16 @@ static void DrawElemPropsPanel(QPainter* p, Config::Table& cfg,
                 QRectF leftArr(ctrlX, rowY + 1.0f, arrowW, kPropRowH - 2.0f);
                 QRectF rightArr(ctrlX + ctrlW - arrowW, rowY + 1.0f, arrowW, kPropRowH - 2.0f);
                 QRectF valR(ctrlX + arrowW, rowY + 1.0f, ctrlW - 2.0f * arrowW, kPropRowH - 2.0f);
-                p->fillRect(leftArr, QColor(60, 60, 100, 200));
-                p->fillRect(rightArr, QColor(60, 60, 100, 200));
-                p->fillRect(valR, QColor(30, 30, 60, 180));
-                p->setPen(Qt::white);
+                p->setBrush(kArrowBg); p->setPen(Qt::NoPen);
+                p->drawRoundedRect(leftArr, 1.5, 1.5);
+                p->drawRoundedRect(rightArr, 1.5, 1.5);
+                p->setBrush(kCtrlBg);
+                p->drawRoundedRect(valR, 0, 0);
+                p->setBrush(Qt::NoBrush);
+                p->setPen(kLabelColor);
                 p->drawText(leftArr, Qt::AlignCenter, QStringLiteral("\u25C0"));
                 p->drawText(rightArr, Qt::AlignCenter, QStringLiteral("\u25B6"));
+                p->setPen(kValueColor);
                 p->drawText(valR, Qt::AlignCenter, QString::number(val));
                 break;
             }
@@ -946,12 +1225,16 @@ static void DrawElemPropsPanel(QPainter* p, Config::Table& cfg,
                 QRectF leftArr(ctrlX, rowY + 1.0f, arrowW, kPropRowH - 2.0f);
                 QRectF rightArr(ctrlX + ctrlW - arrowW, rowY + 1.0f, arrowW, kPropRowH - 2.0f);
                 QRectF valR(ctrlX + arrowW, rowY + 1.0f, ctrlW - 2.0f * arrowW, kPropRowH - 2.0f);
-                p->fillRect(leftArr, QColor(60, 60, 100, 200));
-                p->fillRect(rightArr, QColor(60, 60, 100, 200));
-                p->fillRect(valR, QColor(30, 30, 60, 180));
-                p->setPen(Qt::white);
+                p->setBrush(kArrowBg); p->setPen(Qt::NoPen);
+                p->drawRoundedRect(leftArr, 1.5, 1.5);
+                p->drawRoundedRect(rightArr, 1.5, 1.5);
+                p->setBrush(kCtrlBg);
+                p->drawRoundedRect(valR, 0, 0);
+                p->setBrush(Qt::NoBrush);
+                p->setPen(kLabelColor);
                 p->drawText(leftArr, Qt::AlignCenter, QStringLiteral("\u25C0"));
                 p->drawText(rightArr, Qt::AlignCenter, QStringLiteral("\u25B6"));
+                p->setPen(kValueColor);
                 p->drawText(valR, Qt::AlignCenter, EditEnumLabel(pr.extra1, val));
                 break;
             }
@@ -961,20 +1244,25 @@ static void DrawElemPropsPanel(QPainter* p, Config::Table& cfg,
                 QRectF leftArr(ctrlX, rowY + 1.0f, arrowW, kPropRowH - 2.0f);
                 QRectF rightArr(ctrlX + ctrlW - arrowW, rowY + 1.0f, arrowW, kPropRowH - 2.0f);
                 QRectF valR(ctrlX + arrowW, rowY + 1.0f, ctrlW - 2.0f * arrowW, kPropRowH - 2.0f);
-                p->fillRect(leftArr, QColor(60, 60, 100, 200));
-                p->fillRect(rightArr, QColor(60, 60, 100, 200));
-                p->fillRect(valR, QColor(30, 30, 60, 180));
-                p->setPen(Qt::white);
+                p->setBrush(kArrowBg); p->setPen(Qt::NoPen);
+                p->drawRoundedRect(leftArr, 1.5, 1.5);
+                p->drawRoundedRect(rightArr, 1.5, 1.5);
+                p->setBrush(kCtrlBg);
+                p->drawRoundedRect(valR, 0, 0);
+                p->setBrush(Qt::NoBrush);
+                p->setPen(kLabelColor);
                 p->drawText(leftArr, Qt::AlignCenter, QStringLiteral("\u25C0"));
                 p->drawText(rightArr, Qt::AlignCenter, QStringLiteral("\u25B6"));
+                p->setPen(kValueColor);
                 p->drawText(valR, Qt::AlignCenter, QString::number(val, 'f', 2));
                 break;
             }
             case EditPropType::String: {
                 std::string val = cfg.GetString(pr.cfgKey);
                 QRectF btnR(ctrlX, rowY + 1.0f, ctrlW, kPropRowH - 2.0f);
-                p->fillRect(btnR, QColor(40, 40, 70, 200));
-                p->setPen(QColor(200, 200, 255));
+                p->setBrush(kCtrlBg); p->setPen(Qt::NoPen);
+                p->drawRoundedRect(btnR, 1.5, 1.5); p->setBrush(Qt::NoBrush);
+                p->setPen(kValueColor);
                 QString display = QString::fromStdString(val);
                 if (display.length() > 6) display = display.left(5) + QStringLiteral("\u2026");
                 p->drawText(btnR, Qt::AlignCenter, display.isEmpty() ? QStringLiteral("...") : display);
@@ -984,14 +1272,16 @@ static void DrawElemPropsPanel(QPainter* p, Config::Table& cfg,
                 bool overall = cfg.GetBool(pr.cfgKey);
                 float ovrW = 14.0f;
                 QRectF ovrR(ctrlX, rowY + 1.0f, ovrW, kPropRowH - 2.0f);
-                p->fillRect(ovrR, overall ? QColor(80, 80, 40, 200) : QColor(40, 40, 60, 200));
-                p->setPen(overall ? QColor(255, 255, 150) : QColor(120, 120, 160));
+                p->setBrush(overall ? QColor(70, 70, 35, 200) : kCtrlBg);
+                p->setPen(Qt::NoPen);
+                p->drawRoundedRect(ovrR, 1.5, 1.5); p->setBrush(Qt::NoBrush);
+                p->setPen(overall ? QColor(220, 220, 130) : QColor(100, 100, 140));
                 p->drawText(ovrR, Qt::AlignCenter, QStringLiteral("OVR"));
                 QColor clr(cfg.GetInt(pr.extra1), cfg.GetInt(pr.extra2), cfg.GetInt(pr.extra3));
                 QRectF swR(ctrlX + ovrW + 2.0f, rowY + 1.0f, ctrlW - ovrW - 2.0f, kPropRowH - 2.0f);
-                p->fillRect(swR, overall ? QColor(80, 80, 80) : clr);
-                p->setPen(QPen(Qt::white, 0.3));
-                p->drawRect(swR);
+                p->setBrush(overall ? QColor(80, 80, 80) : clr);
+                p->setPen(Qt::NoPen);
+                p->drawRoundedRect(swR, 1.5, 1.5); p->setBrush(Qt::NoBrush);
                 break;
             }
             case EditPropType::Color: break;
@@ -1006,7 +1296,9 @@ static void DrawElemPropsPanel(QPainter* p, Config::Table& cfg,
         float indY = static_cast<float>(panelRect.top()) + 2.0f +
             (rowAreaH - indH) * scrollOfsI / (totalRows - kPropMaxVisible);
         QRectF indR(panelRect.right() - 2.0f, indY, 1.5f, indH);
-        p->fillRect(indR, QColor(120, 120, 180, 150));
+        p->setPen(Qt::NoPen); p->setBrush(kPanelBorder);
+        p->drawRoundedRect(indR, 0.75f, 0.75f);
+        p->setBrush(Qt::NoBrush);
     }
     // Anchor picker 3×3 grid
     if (s_anchorPickerOpen) {
@@ -1025,10 +1317,13 @@ static void DrawElemPropsPanel(QPainter* p, Config::Table& cfg,
             int col = a % 3, row = a / 3;
             QRectF cell(gridLeft + col * cellW, gridTop + row * cellH, cellW - 1.0f, cellH - 1.0f);
             bool sel = (a == curAnchor);
-            p->fillRect(cell, sel ? QColor(60, 160, 60, 230) : QColor(40, 40, 90, 210));
-            p->setPen(sel ? QPen(Qt::yellow, 0.6) : QPen(QColor(80, 80, 140), 0.3));
-            p->drawRect(cell);
-            p->setPen(sel ? QColor(255, 255, 120) : Qt::white);
+            p->setPen(Qt::NoPen);
+            p->setBrush(sel ? kBtnOnBg : kCtrlBg);
+            p->drawRoundedRect(cell, kCornerRadius, kCornerRadius);
+            p->setBrush(Qt::NoBrush);
+            p->setPen(sel ? QPen(QColor(140, 255, 160), 0.5) : QPen(kPanelBorder, 0.3));
+            p->drawRoundedRect(cell, kCornerRadius, kCornerRadius);
+            p->setPen(sel ? QColor(200, 255, 210) : kLabelColor);
             p->drawText(cell, Qt::AlignCenter, QString::fromUtf8(kAnchorArrowGrid[a]));
         }
     }
@@ -1036,23 +1331,27 @@ static void DrawElemPropsPanel(QPainter* p, Config::Table& cfg,
 }
 
 // ── DrawEditOverlay ─────────────────────────────────────────────────────────
-static void DrawEditOverlay(QPainter* p, Config::Table& cfg, float topStretchX)
+static void DrawEditOverlay(QPainter* p, Config::Table& cfg, float topStretchX, QImage* btmBuffer)
 {
     if (!p) return;
 
     const float leftX = -(topStretchX - 1.0f) * 128.0f;
-    const float tds   = std::max(0.5f, cfg.GetInt("Metroid.Visual.HudTextScale") / 100.0f);
+    const float hs  = (s_editHudScale > 0.0f) ? s_editHudScale : 1.0f;
+    // Use exact textDrawScale from cache (includes auto-scale + user TextScale, divided by hudScale).
+    const float tds = s_cache.valid
+        ? s_cache.textDrawScale
+        : std::max(0.3f, cfg.GetInt("Metroid.Visual.HudTextScale") / 100.0f) / hs;
 
     QFont smallFont = p->font();
     smallFont.setPixelSize(4);
     QFont elemFont = p->font();
-    elemFont.setPixelSize(std::max(3, static_cast<int>(4.0f * tds)));
+    elemFont.setPixelSize(std::max(3, static_cast<int>(std::round(6.0f * tds))));
     QFont normalFont = p->font();
-    normalFont.setPixelSize(6);
+    normalFont.setPixelSize(5);
 
     // ── Preview mode: actual HUD rendering ─────────────────────────────────
     if (s_editPreviewMode) {
-        DrawEditHudPreview(p, cfg, tds, s_editHudScale, topStretchX);
+        DrawEditHudPreview(p, cfg, tds, s_editHudScale, topStretchX, btmBuffer);
 
         // Selection highlight over the live preview
         if (s_editSelected >= 0 && s_editSelected < kEditElemCount) {
@@ -1062,8 +1361,8 @@ static void DrawEditOverlay(QPainter* p, Config::Table& cfg, float topStretchX)
                 p->setPen(QPen(QColor(255, 200, 80, 200), 0.8));
                 p->drawRect(selR);
             }
-            // Properties panel overlaid on the preview
-            DrawElemPropsPanel(p, cfg, smallFont, normalFont);
+            if (kShowDsEditPropsPanel)
+                DrawElemPropsPanel(p, cfg, smallFont, normalFont);
         }
 
     } else {
@@ -1080,25 +1379,19 @@ static void DrawEditOverlay(QPainter* p, Config::Table& cfg, float topStretchX)
         const HudEditElemDesc& d = kEditElems[i];
 
         const bool hidden = d.showKey && !cfg.GetBool(d.showKey);
-        if (hidden) {
-            p->fillRect(r, sel ? QColor(0x88, 0x88, 0x88, 150)
-                        : hov ? QColor(0x88, 0x88, 0x88, 100)
-                              : QColor(0x88, 0x88, 0x88, 50));
-        } else {
-            p->fillRect(r, sel ? QColor(0x44, 0xAA, 0xFF, 150)
-                        : hov ? QColor(0x44, 0x88, 0xBB, 100)
-                              : QColor(0x44, 0x88, 0xBB, 70));
-        }
+        const QColor& bgc = hidden ? (sel ? kElemHiddenSelBg : hov ? kElemHiddenHovBg : kElemHiddenBg)
+                                   : (sel ? kElemSelBg       : hov ? kElemHovBg       : kElemNormBg);
+        p->setBrush(bgc);
+        p->setPen(sel ? QPen(kAccent, 0.8)
+                      : QPen(QColor(90, 120, 170, hov ? 60 : 30), 0.3));
+        p->drawRoundedRect(r, kCornerRadius, kCornerRadius);
         p->setBrush(Qt::NoBrush);
-        p->setPen(sel ? QPen(Qt::white, 0.8)
-                      : QPen(QColor(0x88, 0xCC, 0xFF, 180), 0.4));
-        p->drawRect(r);
 
         p->setFont(elemFont);
-        const bool isGauge   = (d.lengthKey != nullptr);
+        const bool isRadar   = (i == 11);
+        const bool isGauge   = (d.lengthKey != nullptr) && !isRadar; // radar reuses lengthKey for square resize
         const bool isWpnIcon = (i == 3);
         const bool isBmbIcon = (i == 10);
-        const bool isRadar   = (i == 11);
 
         if (isGauge && !hidden) {
             QColor gc(255, 255, 255);
@@ -1135,13 +1428,81 @@ static void DrawEditOverlay(QPainter* p, Config::Table& cfg, float topStretchX)
                 p->setPen(Qt::white);
                 p->drawText(r, Qt::AlignCenter, QStringLiteral("BMB"));
             }
-        } else if (isRadar && !hidden) {
+        } else if (isRadar) {
+            // Ensure radar SVG frame is loaded and draw it behind the crop circle.
+            // Always draw even when hidden (BtmOverlayEnable=false) so preview is visible.
+            // s_cache is always valid in edit mode (refreshed at top of CustomHud_Render).
             p->setPen(QPen(QColor(0x66, 0xDD, 0x66, 200), 0.5));
             p->setBrush(QColor(0x22, 0x88, 0x22, 80));
-            float sz = std::min(static_cast<float>(r.width()), static_cast<float>(r.height()));
-            QRectF circR(r.center().x() - sz * 0.5, r.center().y() - sz * 0.5, sz, sz);
-            p->drawEllipse(circR);
-            p->setBrush(Qt::NoBrush);
+            if (s_cache.valid) {
+                const CachedHudConfig& c = s_cache;
+                p->drawEllipse(QRectF(c.radar.radarDstRect));
+                p->setBrush(Qt::NoBrush);
+                const HudOutlineConfig& fol = EffOL(c, c.radar.frameOutline);
+                const int expandR = (fol.enable && fol.opacity > 0.0f)
+                                    ? std::max(1, fol.thickness) : 0;
+                // Use radarFrameColor directly (s_effectiveRadarColor is only updated
+                // in DrawBottomScreenOverlay which is not called in edit mode).
+                const QColor& tint = c.radar.radarFrameColor;
+                EnsureRadarFrameLoaded(c.radar.radarDstSize, c.radar.radarSrcRadius,
+                                       s_editHudScale, tint, fol.color, expandR);
+                if (!s_radarFrameTinted.isNull())
+                    p->drawImage(c.radar.frameDstRect, s_radarFrameTinted);
+            } else {
+                // Fallback before the first cache refresh.
+                float sz = std::min(static_cast<float>(r.width()), static_cast<float>(r.height()));
+                QRectF circR(r.center().x() - sz * 0.5f, r.center().y() - sz * 0.5f, sz, sz);
+                p->drawEllipse(circR);
+                p->setBrush(Qt::NoBrush);
+            }
+        } else if (i == 12) {
+            // Weapon Inventory: draw mini icon grid preview
+            EnsureIconsLoaded();
+            const int ori = cfg.GetInt("Metroid.Visual.HudWeaponInventoryOrientation");
+            const float gap = 1.0f;
+            const int numIcons = 9;
+            float iconSz;
+            if (ori == 1) // Vertical
+                iconSz = std::max(2.0f, (static_cast<float>(r.height()) - gap * (numIcons - 1)) / numIcons);
+            else
+                iconSz = std::max(2.0f, (static_cast<float>(r.width()) - gap * (numIcons - 1)) / numIcons);
+            float ix = static_cast<float>(r.left()), iy = static_cast<float>(r.top());
+            for (int wi = 0; wi < numIcons; ++wi) {
+                const QImage& icon = s_weaponIcons[wi];
+                const float iw = (!icon.isNull() && icon.height() > 0)
+                                 ? iconSz * icon.width() / icon.height() : iconSz;
+                const QRectF ir(ix, iy, iw, iconSz);
+                if (!icon.isNull())
+                    p->drawImage(ir, icon);
+                else {
+                    p->setPen(QColor(200,200,200,120));
+                    p->drawRect(ir);
+                }
+                if (ori == 1) iy += iconSz + gap;
+                else           ix += iw + gap;
+            }
+        } else if (i == 13) {
+            if (s_cache.valid) {
+                DrawEditCrosshairActual(p, r, s_cache);
+            } else {
+                const QColor cc(cfg.GetInt("Metroid.Visual.CrosshairColorR"),
+                                cfg.GetInt("Metroid.Visual.CrosshairColorG"),
+                                cfg.GetInt("Metroid.Visual.CrosshairColorB"));
+                const float cx = static_cast<float>(r.center().x());
+                const float cy = static_cast<float>(r.center().y());
+                const float arm = static_cast<float>(r.width()) * 0.38f;
+                QPen chPen(cc, 1.5f);
+                chPen.setCapStyle(Qt::RoundCap);
+                p->setPen(chPen);
+                p->drawLine(QPointF(cx - arm, cy), QPointF(cx + arm, cy));
+                p->drawLine(QPointF(cx, cy - arm), QPointF(cx, cy + arm));
+                if (cfg.GetBool("Metroid.Visual.CrosshairCenterDot")) {
+                    p->setPen(Qt::NoPen);
+                    p->setBrush(cc);
+                    p->drawEllipse(QPointF(cx, cy), 1.8f, 1.8f);
+                    p->setBrush(Qt::NoBrush);
+                }
+            }
         } else {
             QColor tc(255, 255, 255);
             if (d.colorRKey)
@@ -1181,14 +1542,16 @@ static void DrawEditOverlay(QPainter* p, Config::Table& cfg, float topStretchX)
         // Orientation toggle (gauges only)
         if (d.orientKey != nullptr) {
             QRectF orientRect = GetOrientToggleRect(s_editSelected);
-            p->fillRect(orientRect, QColor(80, 50, 120, 210));
-            p->setPen(QPen(QColor(200, 170, 255), 0.7));
-            p->drawRect(orientRect);
+            p->setPen(Qt::NoPen); p->setBrush(kBtnBg);
+            p->drawRoundedRect(orientRect, kBtnCorner, kBtnCorner);
+            p->setBrush(Qt::NoBrush);
+            p->setPen(QPen(kPanelBorder, 0.5));
+            p->drawRoundedRect(orientRect, kBtnCorner, kBtnCorner);
             float lx = static_cast<float>(orientRect.left())  + 1.5f;
             float rx = static_cast<float>(orientRect.right()) - 2.0f;
             float ty = static_cast<float>(orientRect.top())   + 1.5f;
             float by = static_cast<float>(orientRect.bottom())- 2.0f;
-            QPen ap(QColor(220, 190, 255), 0.8f);
+            QPen ap(kLabelColor, 0.8f);
             ap.setCapStyle(Qt::RoundCap);
             p->setPen(ap);
             p->drawLine(QPointF(lx, by), QPointF(rx, by));
@@ -1204,15 +1567,15 @@ static void DrawEditOverlay(QPainter* p, Config::Table& cfg, float topStretchX)
             QRectF lenH, widH;
             GetResizeHandles(s_editSelected, cfg, lenH, widH);
             p->setPen(Qt::NoPen);
-            p->setBrush(QColor(255, 0, 200));
-            p->drawRect(lenH);
+            p->setBrush(QColor(100, 140, 255, 200));
+            p->drawRoundedRect(lenH, 1.0f, 1.0f);
             if (!widH.isEmpty())
-                p->drawRect(widH);
+                p->drawRoundedRect(widH, 1.0f, 1.0f);
             p->setBrush(Qt::NoBrush);
         }
 
-        // Properties panel
-        DrawElemPropsPanel(p, cfg, smallFont, normalFont);
+        if (kShowDsEditPropsPanel)
+            DrawElemPropsPanel(p, cfg, smallFont, normalFont);
     }
 
     } // end of normal (non-preview) element rendering
@@ -1220,16 +1583,18 @@ static void DrawEditOverlay(QPainter* p, Config::Table& cfg, float topStretchX)
     // ── Button bar (always drawn in both modes) ─────────────────────────────
 
     p->setFont(normalFont);
-    p->fillRect(kEditSaveRect,   QColor(30, 100, 30, 220));
-    p->fillRect(kEditCancelRect, QColor(100, 30, 30, 220));
-    p->fillRect(kEditResetRect,  QColor(30,  30, 100, 220));
-    p->setPen(QPen(QColor(150, 220, 150), 0.4));
-    p->drawRect(kEditSaveRect);
-    p->setPen(QPen(QColor(220, 150, 150), 0.4));
-    p->drawRect(kEditCancelRect);
-    p->setPen(QPen(QColor(150, 150, 220), 0.4));
-    p->drawRect(kEditResetRect);
-    p->setPen(Qt::white);
+    // Save
+    p->setBrush(QColor(25, 105, 50, 220));
+    p->setPen(Qt::NoPen);
+    p->drawRoundedRect(kEditSaveRect, kBtnCorner, kBtnCorner);
+    // Cancel
+    p->setBrush(QColor(110, 32, 32, 220));
+    p->drawRoundedRect(kEditCancelRect, kBtnCorner, kBtnCorner);
+    // Reset
+    p->setBrush(QColor(30, 35, 100, 220));
+    p->drawRoundedRect(kEditResetRect, kBtnCorner, kBtnCorner);
+    p->setBrush(Qt::NoBrush);
+    p->setPen(kValueColor);
     p->drawText(kEditSaveRect,   Qt::AlignCenter, QStringLiteral("\u2713 Save"));
     p->drawText(kEditCancelRect, Qt::AlignCenter, QStringLiteral("\u2717 Cancel"));
     p->drawText(kEditResetRect,  Qt::AlignCenter, QStringLiteral("\u21ba Reset"));
@@ -1237,9 +1602,10 @@ static void DrawEditOverlay(QPainter* p, Config::Table& cfg, float topStretchX)
     // ── Text Scale slider ───────────────────────────────────────────────────
     {
         int txSc = std::max(kTsMin, std::min(kTsMax, cfg.GetInt("Metroid.Visual.HudTextScale")));
-        p->fillRect(kEditTextScaleRect, QColor(40, 40, 80, 220));
-        p->setPen(QPen(QColor(140, 140, 200), 0.4));
-        p->drawRect(kEditTextScaleRect);
+        p->setBrush(kPanelBg);
+        p->setPen(QPen(kPanelBorder, 0.3));
+        p->drawRoundedRect(kEditTextScaleRect, kBtnCorner, kBtnCorner);
+        p->setBrush(Qt::NoBrush);
         p->setFont(smallFont);
 
         const float tsX = static_cast<float>(kEditTextScaleRect.left()) + 2.0f;
@@ -1247,36 +1613,78 @@ static void DrawEditOverlay(QPainter* p, Config::Table& cfg, float topStretchX)
         const float tsH = static_cast<float>(kEditTextScaleRect.height());
 
         // Label
-        p->setPen(QColor(160, 160, 200));
+        p->setPen(kLabelColor);
         p->drawText(QRectF(tsX, tsY, kTsLabelW, tsH), Qt::AlignLeft | Qt::AlignVCenter,
-                    QStringLiteral("Scale"));
+                    QStringLiteral("Text"));
 
         // Track
         const QRectF tr = TsTrackRect();
         const float frac = static_cast<float>(txSc - kTsMin) / (kTsMax - kTsMin);
-        p->fillRect(tr, QColor(20, 20, 50, 200));
-        p->fillRect(QRectF(tr.left(), tr.top(), tr.width() * frac, tr.height()),
-                    QColor(60, 90, 180, 220));
+        p->setBrush(kCtrlBg);
+        p->setPen(Qt::NoPen);
+        p->drawRoundedRect(tr, 1.0, 1.0);
+        p->setBrush(kAccentDim);
+        p->drawRoundedRect(QRectF(tr.left(), tr.top(), tr.width() * frac, tr.height()), 1.0, 1.0);
+        p->setBrush(Qt::NoBrush);
         // Thumb
         const float thumbX = tr.left() + tr.width() * frac - 1.0f;
         p->fillRect(QRectF(thumbX, tsY + 0.5f, 2.0f, tsH - 1.0f), QColor(200, 220, 255, 240));
         // Track border
-        p->setPen(QPen(QColor(80, 80, 160), 0.5));
-        p->drawRect(tr);
+        p->setPen(QPen(kPanelBorder, 0.4));
+        p->drawRoundedRect(tr, 1.0, 1.0);
         // Value text
-        p->setPen(Qt::white);
+        p->setPen(kValueColor);
         p->setFont(smallFont);
         p->drawText(tr, Qt::AlignCenter, QString::number(txSc) + QStringLiteral("%"));
     }
 
+    // ── Auto-Scale Global Cap slider ────────────────────────────────────────
+    {
+        int ascVal = std::clamp(cfg.GetInt("Metroid.Visual.HudAutoScaleCap"), kAscMin, kAscMax);
+        p->setBrush(kPanelBg);
+        p->setPen(QPen(kPanelBorder, 0.3));
+        p->drawRoundedRect(kEditAutoScaleCapRect, kBtnCorner, kBtnCorner);
+        p->setBrush(Qt::NoBrush);
+        p->setFont(smallFont);
+
+        const float ascX = static_cast<float>(kEditAutoScaleCapRect.left()) + 2.0f;
+        const float ascY = static_cast<float>(kEditAutoScaleCapRect.top());
+        const float ascH = static_cast<float>(kEditAutoScaleCapRect.height());
+
+        // Label
+        p->setPen(kLabelColor);
+        p->drawText(QRectF(ascX, ascY, kAscLabelW, ascH), Qt::AlignLeft | Qt::AlignVCenter,
+                    QStringLiteral("Auto"));
+
+        // Track
+        const QRectF atr = AscTrackRect();
+        const float ascFrac = static_cast<float>(ascVal - kAscMin) / (kAscMax - kAscMin);
+        p->setBrush(kCtrlBg);
+        p->setPen(Qt::NoPen);
+        p->drawRoundedRect(atr, 1.0, 1.0);
+        p->setBrush(QColor(60, 110, 60, 180));
+        p->drawRoundedRect(QRectF(atr.left(), atr.top(), atr.width() * ascFrac, atr.height()), 1.0, 1.0);
+        p->setBrush(Qt::NoBrush);
+        // Thumb
+        const float ascThumbX = atr.left() + atr.width() * ascFrac - 1.0f;
+        p->fillRect(QRectF(ascThumbX, ascY + 0.5f, 2.0f, ascH - 1.0f), QColor(180, 240, 180, 240));
+        // Track border
+        p->setPen(QPen(kPanelBorder, 0.4));
+        p->drawRoundedRect(atr, 1.0, 1.0);
+        // Value text
+        p->setPen(kValueColor);
+        p->setFont(smallFont);
+        p->drawText(atr, Qt::AlignCenter, QString::number(ascVal) + QStringLiteral("%"));
+    }
+
     // ── Crosshair toggle button ─────────────────────────────────────────────
     {
-        p->fillRect(kEditCrosshairBtnRect,
-                    s_crosshairPanelOpen ? QColor(60, 100, 40, 230) : QColor(40, 40, 80, 220));
-        p->setPen(QPen(QColor(140, 200, 140), 0.4));
-        p->drawRect(kEditCrosshairBtnRect);
+        p->setBrush(s_crosshairPanelOpen ? QColor(35, 90, 45, 220) : kPanelBg);
+        p->setPen(Qt::NoPen);
+        p->drawRoundedRect(kEditCrosshairBtnRect, kBtnCorner, kBtnCorner);
+        p->setBrush(Qt::NoBrush);
         p->setFont(normalFont);
-        p->setPen(Qt::white);
+        p->setPen(s_crosshairPanelOpen ? kValueColor : kLabelColor);
         p->drawText(kEditCrosshairBtnRect, Qt::AlignCenter,
                     s_crosshairPanelOpen ? QStringLiteral("Crosshair \u25bc")
                                          : QStringLiteral("Crosshair \u25b6"));
@@ -1284,12 +1692,12 @@ static void DrawEditOverlay(QPainter* p, Config::Table& cfg, float topStretchX)
 
     // ── Preview toggle button ───────────────────────────────────────────────
     {
-        p->fillRect(kEditPreviewBtnRect,
-                    s_editPreviewMode ? QColor(80, 60, 20, 230) : QColor(40, 40, 80, 220));
-        p->setPen(QPen(s_editPreviewMode ? QColor(255, 200, 80) : QColor(140, 140, 200), 0.4));
-        p->drawRect(kEditPreviewBtnRect);
+        p->setBrush(s_editPreviewMode ? QColor(80, 65, 18, 220) : kPanelBg);
+        p->setPen(Qt::NoPen);
+        p->drawRoundedRect(kEditPreviewBtnRect, kBtnCorner, kBtnCorner);
+        p->setBrush(Qt::NoBrush);
         p->setFont(normalFont);
-        p->setPen(Qt::white);
+        p->setPen(s_editPreviewMode ? QColor(255, 210, 100) : kLabelColor);
         p->drawText(kEditPreviewBtnRect, Qt::AlignCenter,
                     s_editPreviewMode ? QStringLiteral("\u25a0 Preview ON")
                                       : QStringLiteral("\u25b6 Preview"));
@@ -1305,11 +1713,15 @@ static void DrawEditOverlay(QPainter* p, Config::Table& cfg, float topStretchX)
         const int scrollOfs = std::min(s_crosshairPanelScroll,
                                        std::max(0, totalRows - kCrosshairMaxVisible));
 
-        p->fillRect(panelRect, QColor(20, 20, 40, 230));
-        p->setPen(QPen(QColor(80, 80, 160), 0.5));
-        p->drawRect(panelRect);
-
-        // Scrollbar indicator (right edge, visible when content overflows)
+        p->setBrush(kPanelShadow);
+        p->setPen(Qt::NoPen);
+        p->drawRoundedRect(panelRect.translated(1.0, 1.0), kBtnCorner, kBtnCorner);
+        p->setBrush(kPanelBg);
+        p->setPen(QPen(kPanelBorder, 0.3));
+        p->drawRoundedRect(panelRect, kBtnCorner, kBtnCorner);
+        p->setPen(QPen(kAccent, 0.5));
+        p->drawLine(panelRect.left()+kBtnCorner, panelRect.top(), panelRect.right()-kBtnCorner, panelRect.top());
+        p->setBrush(Qt::NoBrush);
         if (totalRows > visCount) {
             const float sbW    = 2.5f;
             const float sbX    = panelRect.right() - sbW - 0.5f;
@@ -1317,8 +1729,8 @@ static void DrawEditOverlay(QPainter* p, Config::Table& cfg, float topStretchX)
             const float sbH    = panelH - 4.0f;
             const float thumbH = sbH * (float)visCount / totalRows;
             const float thumbY = sbY + sbH * (float)scrollOfs / totalRows;
-            p->fillRect(QRectF(sbX, sbY, sbW, sbH),       QColor(40, 40, 80, 180));
-            p->fillRect(QRectF(sbX, thumbY, sbW, thumbH), QColor(120, 140, 220, 220));
+            p->fillRect(QRectF(sbX, sbY, sbW, sbH),       kCtrlBg);
+            p->fillRect(QRectF(sbX, thumbY, sbW, thumbH), kAccentDim);
         }
 
         const float rowX  = kCrosshairPanelX + 2.0f;
@@ -1337,35 +1749,44 @@ static void DrawEditOverlay(QPainter* p, Config::Table& cfg, float topStretchX)
                 int r = cfg.GetInt("Metroid.Visual.CrosshairColorR");
                 int g = cfg.GetInt("Metroid.Visual.CrosshairColorG");
                 int b = cfg.GetInt("Metroid.Visual.CrosshairColorB");
-                p->setPen(QColor(160, 160, 200));
+                p->setPen(kLabelColor);
                 p->drawText(QRectF(rowX, rowY, kPropLabelW, kPropRowH),
                             Qt::AlignLeft | Qt::AlignVCenter, QStringLiteral("Color"));
                 QRectF swR(ctrlX, rowY + 1.0f, ctrlW, kPropRowH - 2.0f);
-                p->fillRect(swR, QColor(r, g, b));
-                p->setPen(QPen(Qt::white, 0.3));
-                p->drawRect(swR);
+                p->setBrush(QColor(r, g, b));
+                p->setPen(Qt::NoPen);
+                p->drawRoundedRect(swR, 1.5, 1.5); p->setBrush(Qt::NoBrush);
             } else if (isInnerHdr) {
-                QRectF hdrR(rowX, rowY, kPropLabelW + ctrlW, kPropRowH);
-                p->fillRect(hdrR, s_innerSectionOpen ? QColor(60, 100, 40, 200) : QColor(50, 50, 100, 200));
-                p->setPen(Qt::white);
+                QRectF hdrR(rowX, rowY + 0.5f, kPropLabelW + ctrlW, kPropRowH - 1.0f);
+                p->setBrush(s_innerSectionOpen ? QColor(35, 90, 45, 210) : kBtnBg);
+                p->setPen(Qt::NoPen);
+                p->drawRoundedRect(hdrR, 1.5, 1.5);
+                p->setBrush(Qt::NoBrush);
+                p->setPen(s_innerSectionOpen ? kValueColor : kLabelColor);
                 p->drawText(hdrR, Qt::AlignCenter,
                     s_innerSectionOpen ? QStringLiteral("Inner \u25c4") : QStringLiteral("Inner \u25ba"));
             } else if (isOuterHdr) {
-                QRectF hdrR(rowX, rowY, kPropLabelW + ctrlW, kPropRowH);
-                p->fillRect(hdrR, s_outerSectionOpen ? QColor(60, 100, 40, 200) : QColor(50, 50, 100, 200));
-                p->setPen(Qt::white);
+                QRectF hdrR(rowX, rowY + 0.5f, kPropLabelW + ctrlW, kPropRowH - 1.0f);
+                p->setBrush(s_outerSectionOpen ? QColor(35, 90, 45, 210) : kBtnBg);
+                p->setPen(Qt::NoPen);
+                p->drawRoundedRect(hdrR, 1.5, 1.5);
+                p->setBrush(Qt::NoBrush);
+                p->setPen(s_outerSectionOpen ? kValueColor : kLabelColor);
                 p->drawText(hdrR, Qt::AlignCenter,
                     s_outerSectionOpen ? QStringLiteral("Outer \u25c4") : QStringLiteral("Outer \u25ba"));
             } else if (pr) {
-                p->setPen(QColor(160, 160, 200));
+                p->setPen(kLabelColor);
                 p->drawText(QRectF(rowX, rowY, kPropLabelW, kPropRowH),
                             Qt::AlignLeft | Qt::AlignVCenter, QString::fromLatin1(pr->label));
                 switch (pr->type) {
                 case EditPropType::Bool: {
                     bool val = cfg.GetBool(pr->cfgKey);
                     QRectF swR(ctrlX, rowY + 1.0f, ctrlW, kPropRowH - 2.0f);
-                    p->fillRect(swR, val ? QColor(40, 120, 40, 200) : QColor(80, 30, 30, 200));
-                    p->setPen(Qt::white);
+                    p->setBrush(val ? kBtnOnBg : kBtnOffBg);
+                    p->setPen(Qt::NoPen);
+                    p->drawRoundedRect(swR, 1.5, 1.5);
+                    p->setBrush(Qt::NoBrush);
+                    p->setPen(kValueColor);
                     p->drawText(swR, Qt::AlignCenter, val ? QStringLiteral("ON") : QStringLiteral("OFF"));
                     break;
                 }
@@ -1375,13 +1796,17 @@ static void DrawEditOverlay(QPainter* p, Config::Table& cfg, float topStretchX)
                     QRectF decR(ctrlX, rowY + 1.0f, btnW2, kPropRowH - 2.0f);
                     QRectF valR2(ctrlX + btnW2, rowY + 1.0f, ctrlW - btnW2 * 2, kPropRowH - 2.0f);
                     QRectF incR(ctrlX + ctrlW - btnW2, rowY + 1.0f, btnW2, kPropRowH - 2.0f);
-                    p->fillRect(decR, QColor(60, 60, 100, 200));
-                    p->fillRect(valR2, QColor(30, 30, 60, 180));
-                    p->fillRect(incR, QColor(60, 60, 100, 200));
-                    p->setPen(Qt::white);
+                    p->setBrush(kArrowBg); p->setPen(Qt::NoPen);
+                    p->drawRoundedRect(decR, 1.5, 1.5);
+                    p->drawRoundedRect(incR, 1.5, 1.5);
+                    p->setBrush(kCtrlBg);
+                    p->drawRoundedRect(valR2, 0, 0);
+                    p->setBrush(Qt::NoBrush);
+                    p->setPen(kLabelColor);
                     p->drawText(decR, Qt::AlignCenter, QStringLiteral("\u25c0"));
-                    p->drawText(valR2, Qt::AlignCenter, QString::number(val));
                     p->drawText(incR, Qt::AlignCenter, QStringLiteral("\u25b6"));
+                    p->setPen(kValueColor);
+                    p->drawText(valR2, Qt::AlignCenter, QString::number(val));
                     break;
                 }
                 case EditPropType::Enum: {
@@ -1390,13 +1815,17 @@ static void DrawEditOverlay(QPainter* p, Config::Table& cfg, float topStretchX)
                     QRectF decR(ctrlX, rowY + 1.0f, btnW2, kPropRowH - 2.0f);
                     QRectF valR2(ctrlX + btnW2, rowY + 1.0f, ctrlW - btnW2 * 2, kPropRowH - 2.0f);
                     QRectF incR(ctrlX + ctrlW - btnW2, rowY + 1.0f, btnW2, kPropRowH - 2.0f);
-                    p->fillRect(decR, QColor(60, 60, 100, 200));
-                    p->fillRect(valR2, QColor(30, 30, 60, 180));
-                    p->fillRect(incR, QColor(60, 60, 100, 200));
-                    p->setPen(Qt::white);
+                    p->setBrush(kArrowBg); p->setPen(Qt::NoPen);
+                    p->drawRoundedRect(decR, 1.5, 1.5);
+                    p->drawRoundedRect(incR, 1.5, 1.5);
+                    p->setBrush(kCtrlBg);
+                    p->drawRoundedRect(valR2, 0, 0);
+                    p->setBrush(Qt::NoBrush);
+                    p->setPen(kLabelColor);
                     p->drawText(decR, Qt::AlignCenter, QStringLiteral("\u25c0"));
-                    p->drawText(valR2, Qt::AlignCenter, EditEnumLabel(pr->extra1, val));
                     p->drawText(incR, Qt::AlignCenter, QStringLiteral("\u25b6"));
+                    p->setPen(kValueColor);
+                    p->drawText(valR2, Qt::AlignCenter, EditEnumLabel(pr->extra1, val));
                     break;
                 }
                 case EditPropType::Float: {
@@ -1406,13 +1835,17 @@ static void DrawEditOverlay(QPainter* p, Config::Table& cfg, float topStretchX)
                     QRectF decR(ctrlX, rowY + 1.0f, btnW2, kPropRowH - 2.0f);
                     QRectF valR2(ctrlX + btnW2, rowY + 1.0f, ctrlW - btnW2 * 2, kPropRowH - 2.0f);
                     QRectF incR(ctrlX + ctrlW - btnW2, rowY + 1.0f, btnW2, kPropRowH - 2.0f);
-                    p->fillRect(decR, QColor(60, 60, 100, 200));
-                    p->fillRect(valR2, QColor(30, 30, 60, 180));
-                    p->fillRect(incR, QColor(60, 60, 100, 200));
-                    p->setPen(Qt::white);
+                    p->setBrush(kArrowBg); p->setPen(Qt::NoPen);
+                    p->drawRoundedRect(decR, 1.5, 1.5);
+                    p->drawRoundedRect(incR, 1.5, 1.5);
+                    p->setBrush(kCtrlBg);
+                    p->drawRoundedRect(valR2, 0, 0);
+                    p->setBrush(Qt::NoBrush);
+                    p->setPen(kLabelColor);
                     p->drawText(decR, Qt::AlignCenter, QStringLiteral("\u25c0"));
-                    p->drawText(valR2, Qt::AlignCenter, QString::number(pct) + QStringLiteral("%"));
                     p->drawText(incR, Qt::AlignCenter, QStringLiteral("\u25b6"));
+                    p->setPen(kValueColor);
+                    p->drawText(valR2, Qt::AlignCenter, QString::number(pct) + QStringLiteral("%"));
                     break;
                 }
                 default: break;
@@ -1432,9 +1865,15 @@ static void DrawEditOverlay(QPainter* p, Config::Table& cfg, float topStretchX)
             if (sideProps) {
                 const float sidePanelH = sidePropCount * kPropRowH + 4.0f;
                 const QRectF sideRect(kCrosshairSidePanelX, kCrosshairPanelY, kPropPanelW, sidePanelH);
-                p->fillRect(sideRect, QColor(20, 30, 50, 230));
-                p->setPen(QPen(QColor(80, 120, 160), 0.5));
-                p->drawRect(sideRect);
+                p->setBrush(kPanelShadow);
+                p->setPen(Qt::NoPen);
+                p->drawRoundedRect(sideRect.translated(1.0, 1.0), kBtnCorner, kBtnCorner);
+                p->setBrush(kPanelBg);
+                p->setPen(QPen(kPanelBorder, 0.3));
+                p->drawRoundedRect(sideRect, kBtnCorner, kBtnCorner);
+                p->setPen(QPen(kAccent, 0.5));
+                p->drawLine(sideRect.left()+kBtnCorner, sideRect.top(), sideRect.right()-kBtnCorner, sideRect.top());
+                p->setBrush(Qt::NoBrush);
 
                 const float sRowX  = kCrosshairSidePanelX + 2.0f;
                 const float sCtrlX = sRowX + kPropLabelW;
@@ -1442,15 +1881,18 @@ static void DrawEditOverlay(QPainter* p, Config::Table& cfg, float topStretchX)
                 for (int i = 0; i < sidePropCount; ++i) {
                     const HudEditPropDesc& pr2 = sideProps[i];
                     const float rowY = kCrosshairPanelY + 2.0f + i * kPropRowH;
-                    p->setPen(QColor(160, 160, 200));
+                    p->setPen(kLabelColor);
                     p->drawText(QRectF(sRowX, rowY, kPropLabelW, kPropRowH),
                                 Qt::AlignLeft | Qt::AlignVCenter, QString::fromLatin1(pr2.label));
                     switch (pr2.type) {
                     case EditPropType::Bool: {
                         bool val = cfg.GetBool(pr2.cfgKey);
                         QRectF swR(sCtrlX, rowY + 1.0f, kPropCtrlW, kPropRowH - 2.0f);
-                        p->fillRect(swR, val ? QColor(40, 120, 40, 200) : QColor(80, 30, 30, 200));
-                        p->setPen(Qt::white);
+                        p->setBrush(val ? kBtnOnBg : kBtnOffBg);
+                        p->setPen(Qt::NoPen);
+                        p->drawRoundedRect(swR, 1.5, 1.5);
+                        p->setBrush(Qt::NoBrush);
+                        p->setPen(kValueColor);
                         p->drawText(swR, Qt::AlignCenter, val ? QStringLiteral("ON") : QStringLiteral("OFF"));
                         break;
                     }
@@ -1460,13 +1902,17 @@ static void DrawEditOverlay(QPainter* p, Config::Table& cfg, float topStretchX)
                         QRectF decR(sCtrlX, rowY + 1.0f, btnW2, kPropRowH - 2.0f);
                         QRectF valR2(sCtrlX + btnW2, rowY + 1.0f, kPropCtrlW - btnW2 * 2, kPropRowH - 2.0f);
                         QRectF incR(sCtrlX + kPropCtrlW - btnW2, rowY + 1.0f, btnW2, kPropRowH - 2.0f);
-                        p->fillRect(decR, QColor(60, 60, 100, 200));
-                        p->fillRect(valR2, QColor(30, 30, 60, 180));
-                        p->fillRect(incR, QColor(60, 60, 100, 200));
-                        p->setPen(Qt::white);
+                        p->setBrush(kArrowBg); p->setPen(Qt::NoPen);
+                        p->drawRoundedRect(decR, 1.5, 1.5);
+                        p->drawRoundedRect(incR, 1.5, 1.5);
+                        p->setBrush(kCtrlBg);
+                        p->drawRoundedRect(valR2, 0, 0);
+                        p->setBrush(Qt::NoBrush);
+                        p->setPen(kLabelColor);
                         p->drawText(decR, Qt::AlignCenter, QStringLiteral("\u25c0"));
-                        p->drawText(valR2, Qt::AlignCenter, QString::number(val));
                         p->drawText(incR, Qt::AlignCenter, QStringLiteral("\u25b6"));
+                        p->setPen(kValueColor);
+                        p->drawText(valR2, Qt::AlignCenter, QString::number(val));
                         break;
                     }
                     case EditPropType::Float: {
@@ -1476,13 +1922,17 @@ static void DrawEditOverlay(QPainter* p, Config::Table& cfg, float topStretchX)
                         QRectF decR(sCtrlX, rowY + 1.0f, btnW2, kPropRowH - 2.0f);
                         QRectF valR2(sCtrlX + btnW2, rowY + 1.0f, kPropCtrlW - btnW2 * 2, kPropRowH - 2.0f);
                         QRectF incR(sCtrlX + kPropCtrlW - btnW2, rowY + 1.0f, btnW2, kPropRowH - 2.0f);
-                        p->fillRect(decR, QColor(60, 60, 100, 200));
-                        p->fillRect(valR2, QColor(30, 30, 60, 180));
-                        p->fillRect(incR, QColor(60, 60, 100, 200));
-                        p->setPen(Qt::white);
+                        p->setBrush(kArrowBg); p->setPen(Qt::NoPen);
+                        p->drawRoundedRect(decR, 1.5, 1.5);
+                        p->drawRoundedRect(incR, 1.5, 1.5);
+                        p->setBrush(kCtrlBg);
+                        p->drawRoundedRect(valR2, 0, 0);
+                        p->setBrush(Qt::NoBrush);
+                        p->setPen(kLabelColor);
                         p->drawText(decR, Qt::AlignCenter, QStringLiteral("\u25c0"));
-                        p->drawText(valR2, Qt::AlignCenter, QString::number(pct) + QStringLiteral("%"));
                         p->drawText(incR, Qt::AlignCenter, QStringLiteral("\u25b6"));
+                        p->setPen(kValueColor);
+                        p->drawText(valR2, Qt::AlignCenter, QString::number(pct) + QStringLiteral("%"));
                         break;
                     }
                     default: break;
@@ -1496,12 +1946,13 @@ static void DrawEditOverlay(QPainter* p, Config::Table& cfg, float topStretchX)
             const float pvX = kCrosshairPreviewX;
             const float pvY = kCrosshairPanelY;
             const float pvS = static_cast<float>(kCrosshairPreviewSize);
-            const int   pvCX = static_cast<int>(pvX + pvS * 0.5f);
-            const int   pvCY = static_cast<int>(pvY + pvS * 0.5f);
+            const float fcx = pvX + pvS * 0.5f;
+            const float fcy = pvY + pvS * 0.5f;
 
-            p->fillRect(QRectF(pvX, pvY, pvS, pvS), QColor(10, 10, 25, 210));
-            p->setPen(QPen(QColor(80, 80, 120), 0.5));
-            p->drawRect(QRectF(pvX, pvY, pvS, pvS));
+            p->setBrush(QColor(8, 10, 22, 220));
+            p->setPen(QPen(kPanelBorder, 0.3));
+            p->drawRoundedRect(QRectF(pvX, pvY, pvS, pvS), kBtnCorner, kBtnCorner);
+            p->setBrush(Qt::NoBrush);
 
             const int cr  = cfg.GetInt("Metroid.Visual.CrosshairColorR");
             const int cg  = cfg.GetInt("Metroid.Visual.CrosshairColorG");
@@ -1510,41 +1961,48 @@ static void DrawEditOverlay(QPainter* p, Config::Table& cfg, float topStretchX)
             const bool innerShow = cfg.GetBool("Metroid.Visual.CrosshairInnerShow");
             const bool outerShow = cfg.GetBool("Metroid.Visual.CrosshairOuterShow");
             const bool centerDot = cfg.GetBool("Metroid.Visual.CrosshairCenterDot");
-            constexpr int PVS = 2;
+            constexpr float PVS = 2.0f;
+
+            // Helper lambda: draw arms using float rects with properly scaled center gap
+            auto drawArms = [&](float lenX, float lenY, float offset, float thick,
+                                bool tSt, const QColor& clr) {
+                const float ht = thick * 0.5f;
+                if (lenX > 0.0f) {
+                    p->fillRect(QRectF(fcx - offset - lenX, fcy - ht, lenX, thick), clr);
+                    p->fillRect(QRectF(fcx + offset + PVS,  fcy - ht, lenX, thick), clr);
+                }
+                if (lenY > 0.0f) {
+                    p->fillRect(QRectF(fcx - ht, fcy + offset + PVS,  thick, lenY), clr);
+                    if (!tSt)
+                        p->fillRect(QRectF(fcx - ht, fcy - offset - lenY, thick, lenY), clr);
+                }
+            };
 
             p->setClipRect(QRectF(pvX + 1.0f, pvY + 1.0f, pvS - 2.0f, pvS - 2.0f));
             if (outerShow) {
-                const int oLenX   = cfg.GetInt("Metroid.Visual.CrosshairOuterLengthX");
-                const int oLenY   = cfg.GetInt("Metroid.Visual.CrosshairOuterLengthY");
-                const int oThick  = cfg.GetInt("Metroid.Visual.CrosshairOuterThickness");
-                const int oOffset = cfg.GetInt("Metroid.Visual.CrosshairOuterOffset");
-                const float oOpac = static_cast<float>(cfg.GetDouble("Metroid.Visual.CrosshairOuterOpacity"));
-                QRect outerRects[4]; int nOuter = 0;
-                CollectArmRects(outerRects, nOuter, pvCX, pvCY,
-                                oLenX * PVS, oLenY * PVS, oOffset * PVS,
-                                std::max(1, oThick * PVS), tStyle);
-                QColor outerColor(cr, cg, cb2, static_cast<int>(oOpac * 255.0f));
-                for (int i = 0; i < nOuter; ++i) p->fillRect(outerRects[i], outerColor);
+                const float oLenX  = cfg.GetInt("Metroid.Visual.CrosshairOuterLengthX") * PVS;
+                const float oLenY  = cfg.GetInt("Metroid.Visual.CrosshairOuterLengthY") * PVS;
+                const float oThick = std::max(1.0f, cfg.GetInt("Metroid.Visual.CrosshairOuterThickness") * PVS);
+                const float oOfs   = cfg.GetInt("Metroid.Visual.CrosshairOuterOffset") * PVS;
+                const float oOpac  = static_cast<float>(cfg.GetDouble("Metroid.Visual.CrosshairOuterOpacity"));
+                drawArms(oLenX, oLenY, oOfs, oThick, tStyle,
+                         QColor(cr, cg, cb2, static_cast<int>(oOpac * 255.0f)));
             }
             if (innerShow) {
-                const int iLenX   = cfg.GetInt("Metroid.Visual.CrosshairInnerLengthX");
-                const int iLenY   = cfg.GetInt("Metroid.Visual.CrosshairInnerLengthY");
-                const int iThick  = cfg.GetInt("Metroid.Visual.CrosshairInnerThickness");
-                const int iOffset = cfg.GetInt("Metroid.Visual.CrosshairInnerOffset");
-                const float iOpac = static_cast<float>(cfg.GetDouble("Metroid.Visual.CrosshairInnerOpacity"));
-                QRect innerRects[4]; int nInner = 0;
-                CollectArmRects(innerRects, nInner, pvCX, pvCY,
-                                iLenX * PVS, iLenY * PVS, iOffset * PVS,
-                                std::max(1, iThick * PVS), tStyle);
-                QColor innerColor(cr, cg, cb2, static_cast<int>(iOpac * 255.0f));
-                for (int i = 0; i < nInner; ++i) p->fillRect(innerRects[i], innerColor);
+                const float iLenX  = cfg.GetInt("Metroid.Visual.CrosshairInnerLengthX") * PVS;
+                const float iLenY  = cfg.GetInt("Metroid.Visual.CrosshairInnerLengthY") * PVS;
+                const float iThick = std::max(1.0f, cfg.GetInt("Metroid.Visual.CrosshairInnerThickness") * PVS);
+                const float iOfs   = cfg.GetInt("Metroid.Visual.CrosshairInnerOffset") * PVS;
+                const float iOpac  = static_cast<float>(cfg.GetDouble("Metroid.Visual.CrosshairInnerOpacity"));
+                drawArms(iLenX, iLenY, iOfs, iThick, tStyle,
+                         QColor(cr, cg, cb2, static_cast<int>(iOpac * 255.0f)));
             }
             if (centerDot) {
-                const int dotThick = cfg.GetInt("Metroid.Visual.CrosshairDotThickness");
+                const float dotThick = std::max(1.0f, cfg.GetInt("Metroid.Visual.CrosshairDotThickness") * PVS);
                 const float dotOpac = static_cast<float>(cfg.GetDouble("Metroid.Visual.CrosshairDotOpacity"));
-                const int dHalf = std::max(1, dotThick * PVS) / 2;
+                const float dh = dotThick * 0.5f;
                 QColor dotColor(cr, cg, cb2, static_cast<int>(dotOpac * 255.0f));
-                p->fillRect(QRect(pvCX - dHalf, pvCY - dHalf, dHalf * 2 + 1, dHalf * 2 + 1), dotColor);
+                p->fillRect(QRectF(fcx - dh, fcy - dh, dotThick, dotThick), dotColor);
             }
             p->setClipping(false);
 
@@ -1627,21 +2085,41 @@ void CustomHud_UpdateEditContext(float originX, float originY,
     s_editTopStretchX = topStretchX;
 }
 
+static int HitTestEditElement(const QPointF& ds)
+{
+    // Radar first: it can overlap other UI near the top-right corner.
+    if (!s_editRects[11].isEmpty() && s_editRects[11].contains(ds))
+        return 11;
+
+    for (int i = 0; i < kEditElemCount; ++i) {
+        if (i == 11) continue;
+        if (!s_editRects[i].isEmpty() && s_editRects[i].contains(ds))
+            return i;
+    }
+    return -1;
+}
+
 void CustomHud_EditMousePress(QPointF pt, Qt::MouseButton btn, Config::Table& cfg)
 {
     // Accept both left and right mouse buttons
     if (btn != Qt::LeftButton && btn != Qt::RightButton) return;
     const QPointF ds = WidgetToDS(pt);
+    const int hitElem = HitTestEditElement(ds);
 
     // Right-click: select element under cursor for property editing (both modes)
     if (btn == Qt::RightButton) {
-        // Absorb click on button bar items
-        if (kEditSaveRect.contains(ds) || kEditCancelRect.contains(ds) ||
-            kEditResetRect.contains(ds) || kEditTextScaleRect.contains(ds) ||
-            kEditCrosshairBtnRect.contains(ds) || kEditPreviewBtnRect.contains(ds))
+        // Hit-test elements first so overlapped items like the radar can still be selected.
+        if (hitElem >= 0) {
+            if (s_editSelected != hitElem) {
+                s_editSelected = hitElem;
+                s_editPropScroll = 0;
+                s_anchorPickerOpen = false;
+            }
+            NotifySelectionChanged(hitElem);
             return;
+        }
         // Absorb click inside open properties panel
-        if (s_editSelected >= 0) {
+        if (kShowDsEditPropsPanel && s_editSelected >= 0) {
             const HudEditElemDesc& d = kEditElems[s_editSelected];
             const int totalRows = CountBuiltinRows(d) + d.propCount;
             if (totalRows > 0) {
@@ -1649,18 +2127,11 @@ void CustomHud_EditMousePress(QPointF pt, Qt::MouseButton btn, Config::Table& cf
                 if (panelRect.contains(ds)) return;
             }
         }
-        // Hit-test elements and select
-        for (int i = 0; i < kEditElemCount; ++i) {
-            if (!s_editRects[i].isEmpty() && s_editRects[i].contains(ds)) {
-                if (s_editSelected != i) {
-                    s_editSelected = i;
-                    s_editPropScroll = 0;
-                    s_anchorPickerOpen = false;
-                    NotifySelectionChanged(i);
-                }
-                return;
-            }
-        }
+        // Absorb click on button bar items
+        if (kEditSaveRect.contains(ds) || kEditCancelRect.contains(ds) ||
+            kEditResetRect.contains(ds) || kEditTextScaleRect.contains(ds) ||
+            kEditCrosshairBtnRect.contains(ds) || kEditPreviewBtnRect.contains(ds))
+            return;
         // Right-click on empty space: deselect
         if (s_editSelected >= 0) {
             s_editSelected = -1;
@@ -1669,8 +2140,44 @@ void CustomHud_EditMousePress(QPointF pt, Qt::MouseButton btn, Config::Table& cf
         }
         return;
     }
-
     // ── Left-click priority system ──────────────────────────────────────────
+
+    const bool hitTopControl = kEditSaveRect.contains(ds) || kEditCancelRect.contains(ds) ||
+                               kEditResetRect.contains(ds) || kEditTextScaleRect.contains(ds) ||
+                               kEditCrosshairBtnRect.contains(ds) || kEditPreviewBtnRect.contains(ds);
+    if (hitElem >= 0 && hitTopControl) {
+        const HudEditElemDesc& di = kEditElems[hitElem];
+
+        if (di.posModeKey != nullptr && cfg.GetInt(di.posModeKey) == 0) {
+            if (UNLIKELY(!s_cache.valid) || s_cache.lastHudScale != s_editHudScale) {
+                RefreshCachedConfig(cfg, s_editTopStretchX, s_editHudScale);
+                s_cache.valid = true;
+            } else if (s_cache.lastStretchX != s_editTopStretchX) {
+                RecomputeAnchorPositions(s_editTopStretchX);
+            }
+            int visualX = 0, visualY = 0;
+            if (hitElem == 1) { visualX = s_cache.hp.hpGaugePosX;      visualY = s_cache.hp.hpGaugePosY; }
+            if (hitElem == 4) { visualX = s_cache.weapon.ammoGaugePosX; visualY = s_cache.weapon.ammoGaugePosY; }
+            cfg.SetInt(di.posModeKey, 1);
+            cfg.SetInt(di.anchorKey, 0);
+            cfg.SetInt(di.ofsXKey, visualX);
+            cfg.SetInt(di.ofsYKey, visualY);
+            CustomHud_InvalidateConfigCache();
+        }
+
+        s_editSelected = hitElem;
+        s_editPropScroll = 0;
+        s_anchorPickerOpen = false;
+        if (di.ofsXKey) {
+            s_dragging = true;
+            s_dragStartDS = ds;
+            s_dragStartOfsX = cfg.GetInt(di.ofsXKey);
+            s_dragStartOfsY = cfg.GetInt(di.ofsYKey);
+        }
+        s_editHovered = hitElem;
+        NotifySelectionChanged(hitElem);
+        return;
+    }
 
     // Priority 1: Save / Cancel / Reset
     if (kEditSaveRect.contains(ds)) {
@@ -1696,6 +2203,17 @@ void CustomHud_EditMousePress(QPointF pt, Qt::MouseButton btn, Config::Table& cf
             cfg.SetInt("Metroid.Visual.HudTextScale", TsValueFromX(static_cast<float>(ds.x())));
             CustomHud_InvalidateConfigCache();
             s_textScaleDragging = true;
+        }
+        return;
+    }
+
+    // Priority 1b2: Auto-Scale Cap slider
+    if (kEditAutoScaleCapRect.contains(ds)) {
+        const QRectF atr = AscTrackRect();
+        if (atr.contains(ds)) {
+            cfg.SetInt("Metroid.Visual.HudAutoScaleCap", AscValueFromX(static_cast<float>(ds.x())));
+            CustomHud_InvalidateConfigCache();
+            s_autoScaleCapDragging = true;
         }
         return;
     }
@@ -1869,7 +2387,8 @@ void CustomHud_EditMousePress(QPointF pt, Qt::MouseButton btn, Config::Table& cf
     if (s_editSelected >= 0 && s_editSelected < kEditElemCount) {
         const HudEditElemDesc& d = kEditElems[s_editSelected];
 
-        // Priority 2: Properties panel
+        if (kShowDsEditPropsPanel) {
+        // Priority 2: DS-space properties panel
         {
             const int builtinRows = CountBuiltinRows(d);
             const int totalRows = builtinRows + d.propCount;
@@ -2036,6 +2555,8 @@ void CustomHud_EditMousePress(QPointF pt, Qt::MouseButton btn, Config::Table& cf
             }
         }
 
+        }
+
         // Priority 3: Orientation toggle (normal mode only — in preview mode it's hard to see)
         if (!s_editPreviewMode && d.orientKey != nullptr && GetOrientToggleRect(s_editSelected).contains(ds)) {
             cfg.SetInt(d.orientKey, cfg.GetInt(d.orientKey) == 0 ? 1 : 0);
@@ -2064,21 +2585,21 @@ void CustomHud_EditMousePress(QPointF pt, Qt::MouseButton btn, Config::Table& cf
     }
 
     // Priority 5: Element drag (left-click on element — works in both modes)
-    for (int i = 0; i < kEditElemCount; ++i) {
-        if (!s_editRects[i].contains(ds)) continue;
+    if (hitElem >= 0) {
+        const int i = hitElem;
         const HudEditElemDesc& di = kEditElems[i];
 
         // Auto-switch gauge PosMode from text-relative (0) to independent (1)
         if (di.posModeKey != nullptr && cfg.GetInt(di.posModeKey) == 0) {
-            if (UNLIKELY(!s_cache.valid)) {
-                RefreshCachedConfig(cfg, s_editTopStretchX);
+            if (UNLIKELY(!s_cache.valid) || s_cache.lastHudScale != s_editHudScale) {
+                RefreshCachedConfig(cfg, s_editTopStretchX, s_editHudScale);
                 s_cache.valid = true;
             } else if (s_cache.lastStretchX != s_editTopStretchX) {
                 RecomputeAnchorPositions(s_editTopStretchX);
             }
             int visualX = 0, visualY = 0;
-            if (i == 1) { visualX = s_cache.hp.hpGaugePosX;       visualY = s_cache.hp.hpGaugePosY; }
-            if (i == 4) { visualX = s_cache.weapon.ammoGaugePosX;  visualY = s_cache.weapon.ammoGaugePosY; }
+            if (i == 1) { visualX = s_cache.hp.hpGaugePosX;      visualY = s_cache.hp.hpGaugePosY; }
+            if (i == 4) { visualX = s_cache.weapon.ammoGaugePosX; visualY = s_cache.weapon.ammoGaugePosY; }
             cfg.SetInt(di.posModeKey, 1);
             cfg.SetInt(di.anchorKey, 0);
             cfg.SetInt(di.ofsXKey, visualX);
@@ -2086,18 +2607,19 @@ void CustomHud_EditMousePress(QPointF pt, Qt::MouseButton btn, Config::Table& cf
             CustomHud_InvalidateConfigCache();
         }
 
-        s_editSelected  = i;
+        s_editSelected = i;
         s_editPropScroll = 0;
         s_anchorPickerOpen = false;
-        s_dragging      = true;
-        s_dragStartDS   = ds;
-        s_dragStartOfsX = cfg.GetInt(di.ofsXKey);
-        s_dragStartOfsY = cfg.GetInt(di.ofsYKey);
-        s_editHovered   = i;
+        if (di.ofsXKey) { // crosshair (idx==13) has no position keys — select only, no drag
+            s_dragging      = true;
+            s_dragStartDS   = ds;
+            s_dragStartOfsX = cfg.GetInt(di.ofsXKey);
+            s_dragStartOfsY = cfg.GetInt(di.ofsYKey);
+        }
+        s_editHovered = i;
         NotifySelectionChanged(i);
         return;
     }
-
     s_editSelected = -1;  // deselect
     s_anchorPickerOpen = false;
     NotifySelectionChanged(-1);
@@ -2109,6 +2631,12 @@ void CustomHud_EditMouseMove(QPointF pt, Config::Table& cfg)
 
     if (s_textScaleDragging) {
         cfg.SetInt("Metroid.Visual.HudTextScale", TsValueFromX(static_cast<float>(ds.x())));
+        CustomHud_InvalidateConfigCache();
+        return;
+    }
+
+    if (s_autoScaleCapDragging) {
+        cfg.SetInt("Metroid.Visual.HudAutoScaleCap", AscValueFromX(static_cast<float>(ds.x())));
         CustomHud_InvalidateConfigCache();
         return;
     }
@@ -2128,22 +2656,24 @@ void CustomHud_EditMouseMove(QPointF pt, Config::Table& cfg)
         const int ori = d.orientKey ? cfg.GetInt(d.orientKey) : 0;
         const bool squareResize = d.lengthKey && d.widthKey
                                   && strcmp(d.lengthKey, d.widthKey) == 0;
-        const int maxLen = squareResize ? 192 : 128;
+        // Gauge configs are in actual pixels; radar (square) stays DS-space
+        const double hs = squareResize ? 1.0 : static_cast<double>(s_editHudScale);
+        const int maxLen = squareResize ? 192 : 512;
         const int minLen = squareResize ? 16  : 4;
-        const int maxWid = squareResize ? 192 : 20;
+        const int maxWid = squareResize ? 192 : 128;
         const int minWid = squareResize ? 16  : 1;
 
         if (s_resizingLength) {
-            const double delta = (ori == 1) ? ds.y() - s_resizeStartDS.y()
-                                            : ds.x() - s_resizeStartDS.x();
+            const double delta = ((ori == 1) ? ds.y() - s_resizeStartDS.y()
+                                             : ds.x() - s_resizeStartDS.x()) * hs;
             const int newVal = std::max(minLen, std::min(maxLen,
                 static_cast<int>(std::round(s_resizeStartVal + delta))));
             cfg.SetInt(d.lengthKey, newVal);
             if (squareResize) cfg.SetInt(d.widthKey, newVal);
             CustomHud_InvalidateConfigCache();
         } else {
-            const double delta = (ori == 1) ? ds.x() - s_resizeStartDS.x()
-                                            : ds.y() - s_resizeStartDS.y();
+            const double delta = ((ori == 1) ? ds.x() - s_resizeStartDS.x()
+                                             : ds.y() - s_resizeStartDS.y()) * hs;
             const int newVal = std::max(minWid, std::min(maxWid,
                 static_cast<int>(std::round(s_resizeStartVal + delta))));
             cfg.SetInt(d.widthKey, newVal);
@@ -2153,10 +2683,7 @@ void CustomHud_EditMouseMove(QPointF pt, Config::Table& cfg)
         return;
     }
 
-    s_editHovered = -1;
-    for (int i = 0; i < kEditElemCount; ++i) {
-        if (s_editRects[i].contains(ds)) { s_editHovered = i; break; }
-    }
+    s_editHovered = HitTestEditElement(ds);
 }
 
 void CustomHud_EditMouseRelease(QPointF pt, Qt::MouseButton btn, Config::Table& cfg)
@@ -2168,6 +2695,7 @@ void CustomHud_EditMouseRelease(QPointF pt, Qt::MouseButton btn, Config::Table& 
     s_resizingLength    = false;
     s_resizingWidth     = false;
     s_textScaleDragging = false;
+    s_autoScaleCapDragging = false;
 }
 
 void CustomHud_EditMouseWheel(QPointF pt, int delta, Config::Table& cfg)
@@ -2180,6 +2708,15 @@ void CustomHud_EditMouseWheel(QPointF pt, int delta, Config::Table& cfg)
         int val = cfg.GetInt("Metroid.Visual.HudTextScale");
         val = std::max(kTsMin, std::min(kTsMax, val + (delta > 0 ? 5 : -5)));
         cfg.SetInt("Metroid.Visual.HudTextScale", val);
+        CustomHud_InvalidateConfigCache();
+        return;
+    }
+
+    // Auto-Scale Cap slider wheel
+    if (kEditAutoScaleCapRect.contains(ds)) {
+        int val = cfg.GetInt("Metroid.Visual.HudAutoScaleCap");
+        val = std::clamp(val + (delta > 0 ? 25 : -25), kAscMin, kAscMax);
+        cfg.SetInt("Metroid.Visual.HudAutoScaleCap", val);
         CustomHud_InvalidateConfigCache();
         return;
     }
@@ -2199,6 +2736,8 @@ void CustomHud_EditMouseWheel(QPointF pt, int delta, Config::Table& cfg)
             }
         }
     }
+
+    if (!kShowDsEditPropsPanel) return;
 
     // Element props panel scroll
     if (s_editSelected < 0) return;
