@@ -36,6 +36,11 @@ namespace MelonPrime {
     //    btmBuffer      — QImage backing the bottom overlay (cleared inside)
     //    isInGame       — whether the game is currently in a match
     //    topStretchX    — widescreen X stretch factor (1.0=4:3, >1.0=wide)
+    //    hudOriginXds   — left black-bar width in DS units (m_hudOriginX / hudScale).
+    //                     Non-zero when game content is pillarboxed inside the window.
+    //                     Shifts the painter so DS x=0 maps to the left game edge,
+    //                     allowing elements at DS x<0 or x>256 to appear in black bars.
+    //    hudOriginYds   — top black-bar height in DS units (m_hudOriginY / hudScale).
     // =========================================================================
     void CustomHud_Render(
         EmuInstance* emu,
@@ -49,7 +54,9 @@ namespace MelonPrime {
         QImage* btmBuffer,
         bool isInGame,
         float topStretchX = 1.0f,
-        float hudScale = 1.0f
+        float hudScale = 1.0f,
+        float hudOriginXds = 0.0f,
+        float hudOriginYds = 0.0f
     );
 
     // Returns true if the custom HUD setting is enabled in config.

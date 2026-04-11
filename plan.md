@@ -67,7 +67,7 @@ In preview mode (`s_editPreviewMode = true`) the overlay renders the live HUD bu
 ## Implementation Steps
 
 ### ✅ Step 1: Extend data model
-- `HudEditPropDesc` struct and `EditPropType` enum defined in `MelonPrimeHudConfigScreen.cpp`
+- `HudEditPropDesc` struct and `EditPropType` enum defined in `MelonPrimeHudConfigOnScreen.cpp`
 - Prop arrays defined for all 12 elements (`kPropsHp`, `kPropsHpGauge`, etc.)
 - `props` / `propCount` added to `HudEditElemDesc`
 - `kEditElems[]` updated with prop pointers
@@ -77,7 +77,7 @@ In preview mode (`s_editPreviewMode = true`) the overlay renders the live HUD bu
 - `ResetEditToDefaults` resets all props
 
 ### ✅ Step 3: Draw properties panel
-- `DrawElemPropsPanel()` helper in `MelonPrimeHudConfigScreen.cpp`
+- `DrawElemPropsPanel()` helper in `MelonPrimeHudConfigOnScreen.cpp`
 - Called from both normal mode and preview mode paths in `DrawEditOverlay()`
 - Panels scroll when row count exceeds `kPropMaxVisible`
 
@@ -86,7 +86,7 @@ In preview mode (`s_editPreviewMode = true`) the overlay renders the live HUD bu
 - Mouse wheel (`CustomHud_EditMouseWheel`) scrolls props panel and adjusts Int/Float values
 
 ### ✅ Step 5a: Code split
-- Edit mode code separated into `MelonPrimeHudConfigScreen.cpp` (unity-build included by `MelonPrimeHudRender.cpp`)
+- Edit mode code separated into `MelonPrimeHudConfigOnScreen.cpp` (unity-build included by `MelonPrimeHudRender.cpp`)
 - `MelonPrimeHudRender.cpp` handles only rendering + cache management
 
 ### ⬜ Step 5b: Hide/remove remaining settings panel widgets
@@ -105,7 +105,7 @@ In preview mode (`s_editPreviewMode = true`) the overlay renders the live HUD bu
 | File | Role |
 |------|------|
 | `MelonPrimeHudRender.cpp` | Runtime HUD rendering, cache management, no-HUD patching |
-| `MelonPrimeHudConfigScreen.cpp` | All edit mode code (unity-build included, NOT in CMakeLists) |
+| `MelonPrimeHudConfigOnScreen.cpp` | All edit mode code (unity-build included, NOT in CMakeLists) |
 | `MelonPrimeHudRender.h` | Public API surface |
 | `MelonPrimeInputConfig.cpp` | Step 5b: extend `hideEditModeWidgets()`, remove setup for migrated widgets |
 | `MelonPrimeInputConfigConfig.cpp` | Step 5b: remove `saveConfig()` lines for migrated widgets |

@@ -4,7 +4,6 @@
 #include <QWidget>
 #include <QFormLayout>
 #include <QScrollArea>
-#include <QCheckBox>
 #include <QComboBox>
 #include <QSpinBox>
 #include <QDoubleSpinBox>
@@ -18,12 +17,13 @@
 
 class EmuInstance;
 
-class MelonPrimeHudEditSidePanel : public QWidget
+class MelonPrimeHudConfigOnScreenEdit : public QWidget
 {
 public:
-    explicit MelonPrimeHudEditSidePanel(QWidget* parent, EmuInstance* emu);
+    explicit MelonPrimeHudConfigOnScreenEdit(QWidget* parent, EmuInstance* emu);
 
     void populateForElement(int elemIdx);
+    void populateForCrosshair();
     void clear();
     void reloadValues();
 
@@ -45,7 +45,7 @@ private:
     Config::Table& cfg();
 
     // Factory methods — each creates a widget, connects it, adds to form
-    QCheckBox*      addCheckBox(const QString& label, const char* key);
+    QWidget*        addCheckBox(const QString& label, const char* key);
     QComboBox*      addComboBox(const QString& label, const char* key, const QStringList& items);
     QSpinBox*       addSpinBox(const QString& label, const char* key, int min, int max);
     QDoubleSpinBox* addDoubleSpinBox(const QString& label, const char* key, double min, double max, double step);
@@ -53,13 +53,16 @@ private:
     QLineEdit*      addLineEdit(const QString& label, const char* key);
     QPushButton*    addColorPicker(const QString& label, const char* keyR, const char* keyG, const char* keyB);
     void            addSubColor(const QString& label, const char* overallKey, const char* keyR, const char* keyG, const char* keyB);
-    // Checkbox + color button in one row (for per-weapon tint etc.)
+    // ON/OFF radios + color button in one row (for per-weapon tint etc.)
     void            addColorOverlayRow(const QString& label, const char* enableKey, const char* keyR, const char* keyG, const char* keyB);
     // Add Show/Color/Anchor rows common to all elements; pass nullptr for absent keys
     void            addBuiltins(const char* showKey, const char* colorR, const char* colorG, const char* colorB, const char* anchorKey);
 
     // Separator
     void addSeparator();
+
+    // Outline group: Enable, Color, Opacity, Thickness (4 widgets behind a separator)
+    void addOutlineGroup(const char* prefix);
 
     // Per-element populate functions
     void populateHP();
@@ -73,6 +76,7 @@ private:
     void populateTimeLimit();
     void populateBombLeft();
     void populateBombIcon();
+    void populateWeaponInventory();
     void populateRadar();
 };
 
