@@ -348,6 +348,20 @@ static QImage& GetOutlineBuffer(int w, int h)
     return s_outlineBuf;
 }
 
+// =========================================================================
+//  P-17: Crosshair outline stamp — small pre-rendered ARGB image of the
+//        crosshair outline shape, built once on config change and composited
+//        with a single drawImage each frame.  Eliminates per-frame QPainter
+//        creation + all fillRect calls in DrawCrosshair.
+// =========================================================================
+static QImage s_chOutlineStamp;
+static QPoint s_chStampOrigin;   // offset from (pxCx, pxCy) to stamp top-left
+static bool   s_chStampValid = false;
+
+// Forward-declared; called from RefreshCachedConfig after crosshair geometry is final.
+struct CrosshairHudConfig;
+static void RebuildCrosshairOutlineStamp(const CrosshairHudConfig& ch);
+
 struct TextMeasureCache {
     int  fontPixelSize;
     char text[64];
@@ -1187,6 +1201,8 @@ static void RefreshCachedConfig(Config::Table& cfg, float topStretchX = 1.0f, fl
     c.timeLeftOpacity     = (float)cfg.GetDouble("Metroid.Visual.HudTimeLeftOpacity");
     c.timeLimitOpacity    = (float)cfg.GetDouble("Metroid.Visual.HudTimeLimitOpacity");
     RecomputeAnchorPositions(topStretchX);
+    // P-17: Rebuild crosshair outline stamp now that geometry is final.
+    RebuildCrosshairOutlineStamp(c.crosshair);
     ++s_cacheEpoch;
     if (s_cacheEpoch == 0) s_cacheEpoch = 1;
 }
@@ -2202,6 +2218,64 @@ static void CollectArmRectsF(QRectF* out, int& n, float cx, float cy,
     }
 }
 
+// P-17: Rebuild the crosshair outline stamp from the cached arm geometry.
+// Called once from RefreshCachedConfig whenever crosshair config changes.
+static void RebuildCrosshairOutlineStamp(const CrosshairHudConfig& ch)
+{
+    s_chStampValid = false;
+    if (!ch.chOutline) return;
+
+    const int olT = ch.chOutlineThickness;
+    const int dotHalf = ch.chCenterDot
+                      ? (ch.cachedDotSizePx + olT * 2) / 2 : 0;
+
+    // Bounding box of all outline-expanded rects, centred at origin.
+    int minX = -dotHalf, maxX = dotHalf;
+    int minY = -dotHalf, maxY = dotHalf;
+    auto expand = [&](const QRect& r) {
+        int l  = r.left()                   - olT;
+        int ri = r.left()  + r.width()  + olT;
+        int t  = r.top()                    - olT;
+        int b  = r.top()   + r.height() + olT;
+        if (l  < minX) minX = l;
+        if (ri > maxX) maxX = ri;
+        if (t  < minY) minY = t;
+        if (b  > maxY) maxY = b;
+    };
+    for (int i = 0; i < ch.cachedInnerCount; i++) expand(ch.cachedInnerRects[i]);
+    for (int i = 0; i < ch.cachedOuterCount; i++) expand(ch.cachedOuterRects[i]);
+
+    if (maxX <= minX || maxY <= minY) return;
+
+    // +2 border so drawImage never clips edge pixels.
+    const int w = maxX - minX + 2;
+    const int h = maxY - minY + 2;
+    // stampOrigin is added to (pxCx,pxCy) to get the drawImage top-left pixel.
+    s_chStampOrigin = QPoint(minX - 1, minY - 1);
+
+    s_chOutlineStamp = QImage(w, h, QImage::Format_ARGB32_Premultiplied);
+    s_chOutlineStamp.fill(Qt::transparent);
+
+    QPainter sp(&s_chOutlineStamp);
+    sp.setRenderHint(QPainter::Antialiasing, false);
+    static const QColor solidBlack(0, 0, 0, 255);
+
+    // Local origin: shift (0,0) → (ox,oy) inside the stamp image.
+    const int ox = -minX + 1;
+    const int oy = -minY + 1;
+
+    for (int i = 0; i < ch.cachedInnerCount; i++)
+        sp.fillRect(ch.cachedInnerRects[i].adjusted(-olT,-olT,olT,olT).translated(ox,oy), solidBlack);
+    for (int i = 0; i < ch.cachedOuterCount; i++)
+        sp.fillRect(ch.cachedOuterRects[i].adjusted(-olT,-olT,olT,olT).translated(ox,oy), solidBlack);
+    if (ch.chCenterDot) {
+        const int dh = dotHalf;
+        sp.fillRect(QRect(ox - dh, oy - dh, dh * 2, dh * 2), solidBlack);
+    }
+    sp.end();
+    s_chStampValid = true;
+}
+
 // P-8: Draws the crosshair entirely in integer pixel coordinates.
 // Cached arm rects (from LoadCrosshairConfig) are in output pixels centred at
 // (0,0).  The DS-space crosshair position (cx,cy) is mapped to pixel space via
@@ -2231,60 +2305,13 @@ static void DrawCrosshair(QPainter* p, melonDS::u8* ram,
     const qreal savedOpacity = p->opacity();
     p->resetTransform();   // draw in pixel coordinates from here on
 
-    // Outline pass: draw expanded rects into the outline buffer, then composite.
-    if (c.crosshair.chOutline && c.crosshair.chOutlineOpacity > 0.0) {
-        const int olT = c.crosshair.chOutlineThickness;
-        const int dotHalf = c.crosshair.chCenterDot
-                          ? (c.crosshair.cachedDotSizePx + olT * 2) / 2 : 0;
-
-        // Pixel bounding box (rects centred at origin + pxCx,pxCy)
-        int minX = pxCx - dotHalf, maxX = pxCx + dotHalf;
-        int minY = pxCy - dotHalf, maxY = pxCy + dotHalf;
-        auto expandBounds = [&](const QRect& r, int pad) {
-            int l = r.left()              + pxCx - pad;
-            int ri = r.left() + r.width() + pxCx + pad;
-            int t = r.top()               + pxCy - pad;
-            int b = r.top() + r.height()  + pxCy + pad;
-            if (l < minX) minX = l;
-            if (ri > maxX) maxX = ri;
-            if (t < minY) minY = t;
-            if (b > maxY) maxY = b;
-        };
-        for (int i = 0; i < nInner; i++) expandBounds(innerRects[i], olT);
-        for (int i = 0; i < nOuter; i++) expandBounds(outerRects[i], olT);
-
-        const int bw = p->device()->width();
-        const int bh = p->device()->height();
-        QImage& olBuf = GetOutlineBuffer(bw, bh);
-
-        QRect pixDirty(minX - 1, minY - 1, maxX - minX + 2, maxY - minY + 2);
-        pixDirty = pixDirty.intersected(olBuf.rect());
-
-        QRect clearRect = pixDirty;
-        if (!s_prevOutlineDirty.isNull())
-            clearRect = clearRect.united(s_prevOutlineDirty);
-        s_prevOutlineDirty = pixDirty;
-
-        {
-            QPainter olP(&olBuf);
-            olP.setRenderHint(QPainter::Antialiasing, false);
-            olP.setCompositionMode(QPainter::CompositionMode_Source);
-            olP.fillRect(clearRect, Qt::transparent);
-            olP.setCompositionMode(QPainter::CompositionMode_SourceOver);
-            static const QColor solidBlack(0, 0, 0, 255);
-
-            for (int i = 0; i < nInner; i++)
-                olP.fillRect(innerRects[i].translated(pxCx, pxCy).adjusted(-olT, -olT, olT, olT), solidBlack);
-            for (int i = 0; i < nOuter; i++)
-                olP.fillRect(outerRects[i].translated(pxCx, pxCy).adjusted(-olT, -olT, olT, olT), solidBlack);
-
-            if (c.crosshair.chCenterDot) {
-                int h = dotHalf;
-                olP.fillRect(QRect(pxCx - h, pxCy - h, h * 2, h * 2), solidBlack);
-            }
-        }
+    // P-17: Outline pass — composite the pre-rendered stamp at the current pixel centre.
+    // Stamp is built once in RebuildCrosshairOutlineStamp (called from RefreshCachedConfig);
+    // each frame is a single drawImage, no QPainter creation or per-rect fillRect.
+    if (c.crosshair.chOutline && c.crosshair.chOutlineOpacity > 0.0 &&
+        s_chStampValid && !s_chOutlineStamp.isNull()) {
         p->setOpacity(c.crosshair.chOutlineOpacity);
-        p->drawImage(pixDirty.topLeft(), olBuf, pixDirty);
+        p->drawImage(QPoint(pxCx + s_chStampOrigin.x(), pxCy + s_chStampOrigin.y()), s_chOutlineStamp);
     }
 
     // Inner arms — chInnerColor already has alpha baked in (P-11)
