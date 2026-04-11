@@ -1958,10 +1958,19 @@ static void DrawWeaponInventory(QPainter* p, melonDS::u8* ram,
                 py + drawIH * 0.5f - textH * 0.5f - originYds));
         }
 
-        // Draw highlight background for currently selected weapon
+        // Draw highlight rounded-rect outline around icon + ammo text for currently selected weapon
         if (wi.highlightEnable && i == static_cast<int>(currentWeapon) && wi.highlightOpacity > 0.0f) {
+            const float pad    = 1.5f;
+            const float right  = (textW > 0.0f) ? (textX + textW + pad) : (px + drawIW + pad);
+            const QRectF hlRect(px - pad, py - pad, right - (px - pad), drawIH + 2.0f * pad);
             p->setOpacity(wi.highlightOpacity);
-            p->fillRect(QRectF(px, py, drawIW, drawIH), wi.highlightColor);
+            QPen hlPen(wi.highlightColor);
+            hlPen.setWidthF(0.75f);
+            p->setPen(hlPen);
+            p->setBrush(Qt::NoBrush);
+            p->drawRoundedRect(hlRect, 2.0, 2.0);
+            p->setPen(Qt::NoPen);
+            p->setOpacity(eff);  // restore per-slot opacity for icon + text
         }
 
         // Draw icon
