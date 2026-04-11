@@ -182,6 +182,8 @@ static const HudEditPropDesc kPropsWeaponInventory[] = {
     {"Spacing",     EditPropType::Int,   "Metroid.Visual.HudWeaponInventorySpacing",     0, 32, 1, nullptr, nullptr, nullptr},
     {"Opacity",     EditPropType::Float, "Metroid.Visual.HudWeaponInventoryOpacity",     0, 100, 5, nullptr, nullptr, nullptr},
     {"Not Owned",   EditPropType::Float, "Metroid.Visual.HudWeaponInventoryNotOwnedOpacity", 0, 100, 5, nullptr, nullptr, nullptr},
+    {"Highlight",   EditPropType::Bool,  "Metroid.Visual.HudWeaponInventoryHighlightEnable", 0, 1, 1, nullptr, nullptr, nullptr},
+    {"Highlight Opacity", EditPropType::Float, "Metroid.Visual.HudWeaponInventoryHighlightOpacity", 0, 100, 5, nullptr, nullptr, nullptr},
 };
 
 static const HudEditPropDesc kPropsRadar[] = {
@@ -414,7 +416,7 @@ static const HudEditElemDesc kEditElems[kEditElemCount] = {
         "Metroid.Visual.HudWeaponInventoryColorR",
         "Metroid.Visual.HudWeaponInventoryColorG",
         "Metroid.Visual.HudWeaponInventoryColorB",
-        kPropsWeaponInventory, 6
+        kPropsWeaponInventory, 8
     },
     {   // 13: Crosshair (fixed center position — Qt side panel only, no DS-space props)
         "Crosshair",
@@ -1056,7 +1058,7 @@ static void DrawEditHudPreview(QPainter* p, Config::Table& cfg, float tds, float
             const uint16_t havingWeapons = static_cast<uint16_t>(
                 Read16(ram, addrHot.havingWeapons));
             DrawWeaponInventory(p, ram, rom, s_editPlayerPosCopy,
-                                havingWeapons, c, tds, hudScale);
+                                havingWeapons, weapon, c, tds, hudScale);
         }
 
         const bool isTrans = (Read8(ram, addrHot.jumpFlag) & 0x10) != 0;

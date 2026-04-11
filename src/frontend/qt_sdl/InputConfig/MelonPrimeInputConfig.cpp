@@ -613,6 +613,9 @@ static const HudWidgetProp kSecWeaponInventory[] = {
     P_INT("Spacing", "Metroid.Visual.HudWeaponInventorySpacing", 0, 32, 1),
     P_FLOAT("Opacity", "Metroid.Visual.HudWeaponInventoryOpacity"),
     P_FLOAT("Not Owned Opacity", "Metroid.Visual.HudWeaponInventoryNotOwnedOpacity"),
+    P_BOOL("Highlight Current Weapon", "Metroid.Visual.HudWeaponInventoryHighlightEnable"),
+    P_CLR("Highlight Color", "Metroid.Visual.HudWeaponInventoryHighlightColorR", "Metroid.Visual.HudWeaponInventoryHighlightColorG", "Metroid.Visual.HudWeaponInventoryHighlightColorB"),
+    P_FLOAT("Highlight Opacity", "Metroid.Visual.HudWeaponInventoryHighlightOpacity"),
 };
 
 // --- Section 16: Radar ---
