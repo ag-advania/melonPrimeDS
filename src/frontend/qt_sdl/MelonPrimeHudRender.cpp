@@ -1911,7 +1911,15 @@ static void DrawWeaponInventory(QPainter* p, melonDS::u8* ram,
         }
     }
 
-    p->save();
+    // OPT-WI1: QPainter::save()/restore() copies the full painter state.
+    // DrawWeaponInventory only mutates opacity, SmoothPixmapTransform, and
+    // highlight pen/brush, so track just those values.
+    const qreal savedOpacity = p->opacity();
+    const bool savedSmoothPixmap = p->testRenderHint(QPainter::SmoothPixmapTransform);
+    QPen savedPen;
+    QBrush savedBrush;
+    bool penBrushChanged = false;
+    bool smoothPixmapChanged = false;
 
     const float startX = static_cast<float>(wi.posX);
     const float startY = static_cast<float>(wi.posY);
@@ -2010,6 +2018,11 @@ static void DrawWeaponInventory(QPainter* p, melonDS::u8* ram,
 
         // Draw highlight rounded-rect outline around icon + ammo text for currently selected weapon
         if (wi.highlightEnable && i == static_cast<int>(currentWeapon) && wi.highlightOpacity > 0.0f) {
+            if (!penBrushChanged) {
+                savedPen = p->pen();
+                savedBrush = p->brush();
+                penBrushChanged = true;
+            }
             const float pad    = static_cast<float>(wi.highlightPadding);
             const float ofsL   = static_cast<float>(wi.highlightOffsetLeft);
             const float ofsR   = static_cast<float>(wi.highlightOffsetRight);
@@ -2034,6 +2047,7 @@ static void DrawWeaponInventory(QPainter* p, melonDS::u8* ram,
         // Draw icon (with optional outline)
         if (!icon.isNull()) {
             p->setRenderHint(QPainter::SmoothPixmapTransform, true);
+            smoothPixmapChanged = true;
             const HudOutlineConfig& _iol = EffOL(c, c.weaponInventory.iconOutline);
             if (_iol.enable && _iol.opacity > 0.0f) {
                 const int expandR = std::max(1, _iol.thickness);
@@ -2071,7 +2085,15 @@ static void DrawWeaponInventory(QPainter* p, melonDS::u8* ram,
         }
     }
 
-    p->restore();
+    // Manual restore for the attributes changed above.
+    if (penBrushChanged) {
+        p->setPen(savedPen);
+        p->setBrush(savedBrush);
+    }
+    if (smoothPixmapChanged && savedSmoothPixmap) {
+        p->setRenderHint(QPainter::SmoothPixmapTransform, true);
+    }
+    p->setOpacity(savedOpacity);
 }
 
 // =========================================================================
