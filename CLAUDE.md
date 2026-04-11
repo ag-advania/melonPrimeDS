@@ -1,8 +1,11 @@
 # MelonPrimeDS - Claude Index
 
+This file is an index only. Keep detailed instructions in the linked Rules, Skills, Hooks, or Agents files.
+
 ## Rules
 - [.claude/rules/README.md](.claude/rules/README.md)
 - [.claude/rules/project-context.md](.claude/rules/project-context.md)
+- [.claude/rules/build.md](.claude/rules/build.md)
 - [.claude/rules/repo-architecture.md](.claude/rules/repo-architecture.md)
 
 ## Skills

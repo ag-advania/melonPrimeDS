@@ -74,15 +74,6 @@ When touching UI or runtime HUD behavior, always check both:
 - `Config.cpp` for defaults (and correct list placement per the table above)
 - `MelonPrimeInputConfigConfig.cpp` for save/reset coverage
 
-## Build Notes
-- Main feature flags in `src/frontend/qt_sdl/CMakeLists.txt`:
-  - `MELONPRIME_DS`
-  - `MELONPRIME_CUSTOM_HUD`
-- `MelonPrimeHudRender.cpp` and `InputConfig/MelonPrimeInputConfig.cpp` are explicitly built as part of the frontend
-- `MelonPrimeHudConfigOnScreen.cpp` is a unity-build include (pulled in by `MelonPrimeHudRender.cpp`); do not add it to `CMakeLists.txt`
-- The project has been built on Windows and via MinGW cross-compilation from WSL
-- `vcpkg/` is used for dependencies in this repo setup
-
 ## Active Branch: `highres_fonts_v2`
 Current work is on the `highres_fonts_v2` branch. Main changes relative to `master`:
 - Full 9-point anchor system for all HUD element positions
