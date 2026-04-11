@@ -53,8 +53,25 @@ Important current groups include:
 - `Metroid.Visual.BtmOverlay*` - includes `BtmOverlayAnchor` (default 2=TR)
 - `Metroid.Visual.InGameAspectRatio*`
 
+### Default value type classification — CRITICAL
+
+`Config.cpp` has **three separate typed default lists**. Each `GetXxx()` method looks only in its own list; cross-list entries are silently ignored and the hard-coded fallback is used instead (e.g. `false` for bool, `0.0` for double).
+
+| List | Type | `GetXxx` that reads it | Use for |
+|---|---|---|---|
+| `DefaultInts` | `int` | `GetInt()` | integers, anchors, color R/G/B channels, enum indices |
+| `DefaultBools` | `bool` | `GetBool()` | booleans (Show, Enable, …) |
+| `DefaultDoubles` | `double` | `GetDouble()` | opacities, scale factors, floating-point values |
+
+**Rule**: always register a new key in the list that matches its C++ accessor:
+- `cfg.GetBool(...)` → entry must be in `DefaultBools`
+- `cfg.GetDouble(...)` → entry must be in `DefaultDoubles`
+- `cfg.GetInt(...)` → entry must be in `DefaultInts`
+
+In particular, `true`/`false` literals placed in `DefaultInts` are **not** seen by `GetBool()`, and `1.0`/`0.8` etc. placed in `DefaultInts` are **not** seen by `GetDouble()`. Both bugs silently produce 0/false at runtime for any key not yet present in the user's config file.
+
 When touching UI or runtime HUD behavior, always check both:
-- `Config.cpp` for defaults
+- `Config.cpp` for defaults (and correct list placement per the table above)
 - `MelonPrimeInputConfigConfig.cpp` for save/reset coverage
 
 ## Build Notes
