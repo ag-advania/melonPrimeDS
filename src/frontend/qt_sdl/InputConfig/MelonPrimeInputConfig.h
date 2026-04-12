@@ -105,6 +105,7 @@ private slots:
     void on_cbMetroidApplyHeadphone_stateChanged(int state);
     void on_cbMetroidUseFirmwareName_stateChanged(int state);
     void on_cbMetroidEnableCustomHud_stateChanged(int state);
+    void on_cbMetroidEnableStylusMode_stateChanged(int state);
     void on_btnEditHudLayout_clicked();
     void applyVisualPreview();
 
@@ -125,6 +126,7 @@ private:
     void setupPreviewConnections();
     void setupCustomHudCode();
     void setupCustomHudWidgets(Config::Table& instcfg);
+    void updateAimControlsForStylusMode(bool stylusEnabled);
 
     void populatePage(QWidget* page, const HotkeyEntry* entries, int count, int* keymap, int* joymap);
     QString buildCustomHudCode() const;
@@ -146,6 +148,4 @@ private:
 };
 
 #endif // MELONPRIMEINPUTCONFIG_H
-
-
 

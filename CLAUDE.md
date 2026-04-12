@@ -7,6 +7,7 @@ This file is an index only. Keep detailed instructions in the linked Rules, Skil
 - [.claude/rules/project-context.md](.claude/rules/project-context.md)
 - [.claude/rules/build.md](.claude/rules/build.md)
 - [.claude/rules/repo-architecture.md](.claude/rules/repo-architecture.md)
+- [.claude/rules/git-workflow.md](.claude/rules/git-workflow.md)
 
 ## Skills
 - [.claude/skills/README.md](.claude/skills/README.md)
