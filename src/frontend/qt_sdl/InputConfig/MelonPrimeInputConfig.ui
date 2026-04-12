@@ -181,7 +181,17 @@
 												</property>
 											</widget>
 										</item>
-										<item row="8" column="0">
+										<item row="7" column="0" colspan="2">
+											<widget class="QCheckBox" name="cbMetroidDisableMphAimSmoothing">
+												<property name="text"><string>Disable MPH Aim Smoothing (Disables the in-game aim smoothing. Note: Sensitivity will be reduced to 25% in Stylus Mode)</string></property>
+											</widget>
+										</item>
+										<item row="8" column="0" colspan="2">
+											<widget class="QCheckBox" name="cbMetroidEnableAimAccumulator">
+												<property name="text"><string>Enable Aim Sub-pixel Accumulator (Carry fractional mouse movement across frames. Enable for smoother low-sensitivity aiming)</string></property>
+											</widget>
+										</item>
+										<item row="9" column="0">
 											<widget class="QPushButton" name="metroidResetSensitivityValues">
 												<property name="text">
 													<string>Reset sensitivity values</string>
@@ -484,17 +494,7 @@
 											<property name="text"><string>Enable Stylus Mode (Leave this unchecked unless you want to play with the stylus)</string></property>
 										</widget>
 									</item>
-									<item>
-										<widget class="QCheckBox" name="cbMetroidDisableMphAimSmoothing">
-											<property name="text"><string>Disable MPH Aim Smoothing (Disables the in-game aim smoothing. Note: Sensitivity will be reduced to 25% in Stylus Mode)</string></property>
-										</widget>
-									</item>
-									<item>
-										<widget class="QCheckBox" name="cbMetroidEnableAimAccumulator">
-											<property name="text"><string>Enable Aim Sub-pixel Accumulator (Carry fractional mouse movement across frames. Enable for smoother low-sensitivity aiming)</string></property>
-										</widget>
-									</item>
-								</layout>
+									</layout>
 								</widget>
 							</item>
 
