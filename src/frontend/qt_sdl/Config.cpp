@@ -119,7 +119,6 @@ namespace Config
 
         /* MelonPrimeDS Custom HUD Crosshair defaults { */
         {"Instance*.Metroid.Visual.HudTextScale",           60},
-        {"Instance*.Metroid.Visual.HudAutoScaleEnable",    true},
         {"Instance*.Metroid.Visual.HudAutoScaleCap",       800},
         {"Instance*.Metroid.Visual.HudAutoScaleCapText",   800},
         {"Instance*.Metroid.Visual.HudAutoScaleCapIcons",  800},
@@ -412,6 +411,7 @@ namespace Config
         {"Instance*.Metroid.Enable.stylusMode", false},
         /* MelonPrimeDS Crosshair bools { */
         {"Instance*.Metroid.Visual.CustomHUD", false},
+        {"Instance*.Metroid.Visual.HudAutoScaleEnable", true},
         {"Instance*.Metroid.Visual.CrosshairOutline", true},
         {"Instance*.Metroid.Visual.CrosshairCenterDot", true},
         {"Instance*.Metroid.Visual.CrosshairTStyle", true},
