@@ -92,18 +92,34 @@
 										<item row="0" column="1">
 											<widget class="QLabel" name="metroidMphSensitvityLabel">
 												<property name="text">
-													<string>Mph sensitivity (default: -3)</string>
+													<string>MPH Sensitivity (default: -3)</string>
 												</property>
 											</widget>
 										</item>
-										<item row="1" column="1">
+										<item row="1" column="0" colspan="2">
 											<widget class="QLabel" name="metroidMphSensitvityLabel2">
 												<property name="text">
-													<string>(Set this value to 1 or lower if possible for precise aiming. We recommend a range of -3 to 0. However, setting it too low will increase the HUD shake when aiming)</string>
+													<string>(Set this value to 1 or lower if possible for precise aiming. We recommend a range of -3 to 0. However, setting it too low will increase the HUD shake when aiming. This value is relative to the game's sensitivity, so 0 is not zero sensitivity; it is only lower than 1. This setting overrides MPH's in-game sensitivity, so changing sensitivity inside the game has no effect.)</string>
+												</property>
+												<property name="wordWrap">
+													<bool>true</bool>
+												</property>
+												<property name="indent">
+													<number>20</number>
 												</property>
 											</widget>
 										</item>
-										<item row="2" column="0">
+										<item row="2" column="0" colspan="2">
+											<widget class="QCheckBox" name="cbMetroidDisableMphAimSmoothing">
+												<property name="text"><string>Disable MPH Aim Smoothing (Disables the in-game aim smoothing. Note: Sensitivity will be reduced to 25% in Stylus Mode)</string></property>
+											</widget>
+										</item>
+										<item row="3" column="0" colspan="2">
+											<widget class="QCheckBox" name="cbMetroidEnableStylusMode">
+												<property name="text"><string>Enable Stylus Mode (Leave this unchecked unless you want to play with the stylus)</string></property>
+											</widget>
+										</item>
+										<item row="4" column="0">
 											<widget class="QSpinBox" name="metroidAimSensitvitySpinBox">
 												<property name="minimum">
 													<number>0</number>
@@ -116,14 +132,14 @@
 												</property>
 											</widget>
 										</item>
-										<item row="2" column="1">
+										<item row="4" column="1">
 											<widget class="QLabel" name="metroidAimSensitvityLabel">
 												<property name="text">
 													<string>Aim sensitivity (default: 63)</string>
 												</property>
 											</widget>
 										</item>
-										<item row="3" column="0">
+										<item row="5" column="0">
 											<widget class="QDoubleSpinBox" name="metroidAimYAxisScaleSpinBox">
 												<property name="minimum">
 													<double>0.000001</double>
@@ -142,7 +158,7 @@
 												</property>
 											</widget>
 										</item>
-										<item row="3" column="1">
+										<item row="5" column="1">
 											<widget class="QLabel" name="metroidAimYAxisScaleLabel">
 												<property name="text">
 													<string>Aim Y-Axis Scale (default: 1.5)</string>
@@ -173,6 +189,11 @@
 												<property name="text">
 													<string notr="true">&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;&lt;b&gt;Input threshold (deadzone + snap)&lt;/b&gt; (recommended: 0.01 [default] or 0.5): |x|&amp;lt;a → 0, a ≤ |x|&amp;lt;1 → ±1, |x|≥1 → as is (a=0: off = all values under 1 ignored, no snap)&lt;br/&gt;When your aim isn't going the way you want, try lowering this value.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
 												</property>
+											</widget>
+										</item>
+										<item row="7" column="0" colspan="2">
+											<widget class="QCheckBox" name="cbMetroidEnableAimAccumulator">
+												<property name="text"><string>Enable Aim Sub-pixel Accumulator (Carry fractional mouse movement across frames. Enable for smoother low-sensitivity aiming)</string></property>
 											</widget>
 										</item>
 										<item row="8" column="0">
@@ -473,22 +494,7 @@
 											<property name="text"><string>Enable Joy2KeySupport (slightly increase input delay)</string></property>
 										</widget>
 									</item>
-									<item>
-										<widget class="QCheckBox" name="cbMetroidEnableStylusMode">
-											<property name="text"><string>Enable Stylus Mode (Leave this unchecked unless you want to play with the stylus)</string></property>
-										</widget>
-									</item>
-									<item>
-										<widget class="QCheckBox" name="cbMetroidDisableMphAimSmoothing">
-											<property name="text"><string>Disable MPH Aim Smoothing (Disables the in-game aim smoothing. Note: Sensitivity will be reduced to 25% in Stylus Mode)</string></property>
-										</widget>
-									</item>
-									<item>
-										<widget class="QCheckBox" name="cbMetroidEnableAimAccumulator">
-											<property name="text"><string>Enable Aim Sub-pixel Accumulator (Carry fractional mouse movement across frames. Enable for smoother low-sensitivity aiming)</string></property>
-										</widget>
-									</item>
-								</layout>
+									</layout>
 								</widget>
 							</item>
 

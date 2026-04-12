@@ -126,6 +126,7 @@ void MelonPrimeInputConfig::setupSensitivityAndToggles(Config::Table& instcfg)
     ui->cbMetroidEnableStylusMode->setChecked(instcfg.GetBool("Metroid.Enable.stylusMode"));
     ui->cbMetroidDisableMphAimSmoothing->setChecked(instcfg.GetBool("Metroid.Aim.Disable.MphAimSmoothing"));
     ui->cbMetroidEnableAimAccumulator->setChecked(instcfg.GetBool("Metroid.Aim.Enable.Accumulator"));
+    updateAimControlsForStylusMode(ui->cbMetroidEnableStylusMode->isChecked());
 
     // Screen Sync Mode
     ui->comboMetroidScreenSyncMode->setCurrentIndex(instcfg.GetInt("Metroid.Screen.SyncMode"));
@@ -137,6 +138,19 @@ void MelonPrimeInputConfig::setupSensitivityAndToggles(Config::Table& instcfg)
     ui->comboMetroidInGameAspectRatioMode->setCurrentIndex(instcfg.GetInt("Metroid.Visual.InGameAspectRatioMode"));
 }
 
+
+
+void MelonPrimeInputConfig::updateAimControlsForStylusMode(bool stylusEnabled)
+{
+    const bool enableAimControls = !stylusEnabled;
+    ui->metroidAimSensitvitySpinBox->setEnabled(enableAimControls);
+    ui->metroidAimSensitvityLabel->setEnabled(enableAimControls);
+    ui->metroidAimYAxisScaleSpinBox->setEnabled(enableAimControls);
+    ui->metroidAimYAxisScaleLabel->setEnabled(enableAimControls);
+    ui->metroidAimAdjustSpinBox->setEnabled(enableAimControls);
+    ui->metroidAimAdjustLabel->setEnabled(enableAimControls);
+    ui->cbMetroidEnableAimAccumulator->setEnabled(enableAimControls);
+}
 
 void MelonPrimeInputConfig::setupCollapsibleSections(Config::Table& instcfg)
 {
@@ -298,6 +312,11 @@ void MelonPrimeInputConfig::on_cbMetroidEnableCustomHud_stateChanged(int state)
 {
     auto& cfg = emuInstance->getLocalConfig();
     cfg.SetBool("Metroid.Visual.CustomHUD", state != 0);
+}
+
+void MelonPrimeInputConfig::on_cbMetroidEnableStylusMode_stateChanged(int state)
+{
+    updateAimControlsForStylusMode(state != 0);
 }
 
 void MelonPrimeInputConfig::on_btnEditHudLayout_clicked()
