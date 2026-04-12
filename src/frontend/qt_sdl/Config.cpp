@@ -128,7 +128,6 @@ namespace Config
         {"Instance*.Metroid.Visual.HudHpX",               -53},
         {"Instance*.Metroid.Visual.HudHpY",              -5},
         {"Instance*.Metroid.Visual.HudHpAlign",            2},
-        {"Instance*.Metroid.Visual.HudHpTextAutoColor",   false},
         {"Instance*.Metroid.Visual.HudHpTextColorR",      255},
         {"Instance*.Metroid.Visual.HudHpTextColorG",      255},
         {"Instance*.Metroid.Visual.HudHpTextColorB",      255},
@@ -149,15 +148,6 @@ namespace Config
         {"Instance*.Metroid.Visual.HudWeaponIconAnchorX",  1},
         {"Instance*.Metroid.Visual.HudWeaponIconAnchorY",  1},
         // Per-weapon icon color overlays
-        {"Instance*.Metroid.Visual.HudWeaponIconColorOverlayPowerBeam",    false},
-        {"Instance*.Metroid.Visual.HudWeaponIconColorOverlayVoltDriver",   false},
-        {"Instance*.Metroid.Visual.HudWeaponIconColorOverlayMissile",      false},
-        {"Instance*.Metroid.Visual.HudWeaponIconColorOverlayBattleHammer", false},
-        {"Instance*.Metroid.Visual.HudWeaponIconColorOverlayImperialist",  false},
-        {"Instance*.Metroid.Visual.HudWeaponIconColorOverlayJudicator",    false},
-        {"Instance*.Metroid.Visual.HudWeaponIconColorOverlayMagmaul",      false},
-        {"Instance*.Metroid.Visual.HudWeaponIconColorOverlayShockCoil",    false},
-        {"Instance*.Metroid.Visual.HudWeaponIconColorOverlayOmegaCannon",  false},
         {"Instance*.Metroid.Visual.HudWeaponIconOverlayColorRPowerBeam",    255},
         {"Instance*.Metroid.Visual.HudWeaponIconOverlayColorGPowerBeam",    255},
         {"Instance*.Metroid.Visual.HudWeaponIconOverlayColorBPowerBeam",    255},
@@ -338,8 +328,6 @@ namespace Config
         {"Instance*.Metroid.Visual.BtmOverlayRadarColorG",      152},
         {"Instance*.Metroid.Visual.BtmOverlayRadarColorB",      208},
         /* MelonPrimeDS Bottom Screen Overlay frame color } */
-        {"Instance*.Metroid.Visual.BtmOverlayRadarColorUseHunter", false},
-        {"Instance*.Metroid.Visual.BtmOverlayFrameOutline",       false},
         /* MelonPrimeDS Bottom Screen Overlay defaults } */
         /* MelonPrimeDS Custom HUD Crosshair defaults } */
     #endif
@@ -420,7 +408,17 @@ namespace Config
         {"Instance*.Metroid.Visual.CrosshairOuterLinkXY", true},
         {"Instance*.Metroid.Visual.HudHpGauge", true},
         {"Instance*.Metroid.Visual.HudHpGaugeAutoColor", true},
+        {"Instance*.Metroid.Visual.HudHpTextAutoColor", false},
         {"Instance*.Metroid.Visual.HudWeaponIconShow", true},
+        {"Instance*.Metroid.Visual.HudWeaponIconColorOverlayPowerBeam", false},
+        {"Instance*.Metroid.Visual.HudWeaponIconColorOverlayVoltDriver", false},
+        {"Instance*.Metroid.Visual.HudWeaponIconColorOverlayMissile", false},
+        {"Instance*.Metroid.Visual.HudWeaponIconColorOverlayBattleHammer", false},
+        {"Instance*.Metroid.Visual.HudWeaponIconColorOverlayImperialist", false},
+        {"Instance*.Metroid.Visual.HudWeaponIconColorOverlayJudicator", false},
+        {"Instance*.Metroid.Visual.HudWeaponIconColorOverlayMagmaul", false},
+        {"Instance*.Metroid.Visual.HudWeaponIconColorOverlayShockCoil", false},
+        {"Instance*.Metroid.Visual.HudWeaponIconColorOverlayOmegaCannon", false},
         {"Instance*.Metroid.Visual.HudWeaponInventoryShow", true},
         {"Instance*.Metroid.Visual.HudAmmoGauge", true},
         {"Instance*.Metroid.Visual.HudMatchStatusShow", true},
@@ -478,6 +476,8 @@ namespace Config
         {"Instance*.Metroid.UI.SectionLicense",        true},
         /* MelonPrimeDS Bottom Screen Overlay bool { */
         {"Instance*.Metroid.Visual.BtmOverlayEnable", true},
+        {"Instance*.Metroid.Visual.BtmOverlayRadarColorUseHunter", false},
+        {"Instance*.Metroid.Visual.BtmOverlayFrameOutline", false},
         /* MelonPrimeDS Bottom Screen Overlay bool } */
         {"Instance*.Metroid.Visual.HudWeaponInventoryOutline",          true},
         {"Instance*.Metroid.Visual.HudWeaponInventoryIconOutline",      true},
