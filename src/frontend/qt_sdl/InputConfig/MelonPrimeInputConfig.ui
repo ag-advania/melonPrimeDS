@@ -92,14 +92,20 @@
 										<item row="0" column="1">
 											<widget class="QLabel" name="metroidMphSensitvityLabel">
 												<property name="text">
-													<string>Mph sensitivity (default: -3)</string>
+													<string>MPH Sensitivity (default: -3)</string>
 												</property>
 											</widget>
 										</item>
-										<item row="1" column="1">
+										<item row="1" column="0" colspan="2">
 											<widget class="QLabel" name="metroidMphSensitvityLabel2">
 												<property name="text">
-													<string>(Set this value to 1 or lower if possible for precise aiming. We recommend a range of -3 to 0. However, setting it too low will increase the HUD shake when aiming)</string>
+													<string>(Set this value to 1 or lower if possible for precise aiming. We recommend a range of -3 to 0. However, setting it too low will increase the HUD shake when aiming. This value is relative to the game's sensitivity, so 0 is not zero sensitivity; it is only lower than 1. This setting overrides MPH's in-game sensitivity, so changing sensitivity inside the game has no effect.)</string>
+												</property>
+												<property name="wordWrap">
+													<bool>true</bool>
+												</property>
+												<property name="indent">
+													<number>20</number>
 												</property>
 											</widget>
 										</item>
