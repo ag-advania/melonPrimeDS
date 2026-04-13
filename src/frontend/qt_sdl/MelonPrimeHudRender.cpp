@@ -596,6 +596,8 @@ struct HpHudConfig {
     int hpGaugeOfsX, hpGaugeOfsY, hpGaugeAnchor;
     int hpGaugePosMode, hpGaugePosX, hpGaugePosY;  // final
     int hpGaugePosAnchor, hpGaugePosOfsX, hpGaugePosOfsY;  // raw
+    int hpTextAnchor;            // which side of gauge the text appears (mode 2 only)
+    int hpTextOfsX, hpTextOfsY;  // text offset from gauge (mode 2 only)
     QColor hpGaugeColor;
     HudOutlineConfig outline;
     HudOutlineConfig gaugeOutline;
@@ -617,6 +619,8 @@ struct WeaponHudConfig {
     int ammoGaugeOfsX, ammoGaugeOfsY, ammoGaugeAnchor;
     int ammoGaugePosMode, ammoGaugePosX, ammoGaugePosY;     // final
     int ammoGaugePosAnchor, ammoGaugePosOfsX, ammoGaugePosOfsY;  // raw
+    int ammoTextAnchor;              // which side of gauge the text appears (mode 2 only)
+    int ammoTextOfsX, ammoTextOfsY;  // text offset from gauge (mode 2 only)
     QColor ammoGaugeColor;
     HudOutlineConfig outline;
     HudOutlineConfig iconOutline;
@@ -818,6 +822,9 @@ static void LoadHpConfig(HpHudConfig& hp, Config::Table& cfg)
     hp.hpGaugePosAnchor = cfg.GetInt("Metroid.Visual.HudHpGaugePosAnchor");
     hp.hpGaugePosOfsX = cfg.GetInt("Metroid.Visual.HudHpGaugePosX");
     hp.hpGaugePosOfsY = cfg.GetInt("Metroid.Visual.HudHpGaugePosY");
+    hp.hpTextAnchor = cfg.GetInt("Metroid.Visual.HudHpTextAnchor");
+    hp.hpTextOfsX = cfg.GetInt("Metroid.Visual.HudHpTextOffsetX");
+    hp.hpTextOfsY = cfg.GetInt("Metroid.Visual.HudHpTextOffsetY");
     hp.hpAutoColor = cfg.GetBool("Metroid.Visual.HudHpGaugeAutoColor");
     hp.hpGaugeColor = ReadRgbColor(cfg, "Metroid.Visual.HudHpGaugeColorR", "Metroid.Visual.HudHpGaugeColorG", "Metroid.Visual.HudHpGaugeColorB");
 }
@@ -866,6 +873,9 @@ static void LoadWeaponConfig(WeaponHudConfig& weapon, Config::Table& cfg)
     weapon.ammoGaugePosAnchor = cfg.GetInt("Metroid.Visual.HudAmmoGaugePosAnchor");
     weapon.ammoGaugePosOfsX = cfg.GetInt("Metroid.Visual.HudAmmoGaugePosX");
     weapon.ammoGaugePosOfsY = cfg.GetInt("Metroid.Visual.HudAmmoGaugePosY");
+    weapon.ammoTextAnchor = cfg.GetInt("Metroid.Visual.HudAmmoTextAnchor");
+    weapon.ammoTextOfsX = cfg.GetInt("Metroid.Visual.HudAmmoTextOffsetX");
+    weapon.ammoTextOfsY = cfg.GetInt("Metroid.Visual.HudAmmoTextOffsetY");
     weapon.ammoGaugeColor = ReadRgbColor(cfg, "Metroid.Visual.HudAmmoGaugeColorR", "Metroid.Visual.HudAmmoGaugeColorG", "Metroid.Visual.HudAmmoGaugeColorB");
 }
 static void LoadWeaponInventoryConfig(WeaponInventoryHudConfig& wi, Config::Table& cfg)
@@ -1793,6 +1803,42 @@ static void CalcGaugePos(int textX, int textY, int textW, int textH, int anchor,
     }
 }
 
+// Inverse of CalcGaugePos: given the gauge's effective top-left and dimensions,
+// compute where the text should be placed (anchor = which side of the gauge).
+// anchor: 0=Below, 1=Above, 2=Right, 3=Left, 4=Center  (same enum as GaugeAnchor5)
+// textY convention: bottom edge of text (same as CalcGaugePos's textY).
+// anchor: 0=Below, 1=Above, 2=Right, 3=Left, 4=Center
+static void CalcTextPosFromGauge(int gx, int gy, int gaugeLen, int gaugeWid, int ori,
+                                  int anchor, int ofsX, int ofsY,
+                                  int textW, int textH,
+                                  int& outTextX, int& outTextY)
+{
+    const int gW = (ori == 0) ? gaugeLen : gaugeWid;
+    const int gH = (ori == 0) ? gaugeWid : gaugeLen;
+    switch (anchor) {
+    case 1: // Above — text bottom at gauge top
+        outTextX = gx + gW / 2 - textW / 2 + ofsX;
+        outTextY = gy + ofsY;
+        break;
+    case 2: // Right — text vertically centered on gauge
+        outTextX = gx + gW + ofsX;
+        outTextY = gy + gH / 2 + textH / 2 + ofsY;
+        break;
+    case 3: // Left — text vertically centered on gauge
+        outTextX = gx - textW + ofsX;
+        outTextY = gy + gH / 2 + textH / 2 + ofsY;
+        break;
+    case 4: // Center — text centered on gauge
+        outTextX = gx + gW / 2 - textW / 2 + ofsX;
+        outTextY = gy + gH / 2 + textH / 2 + ofsY;
+        break;
+    default: // 0 = Below — text top at gauge bottom + 2px gap
+        outTextX = gx + gW / 2 - textW / 2 + ofsX;
+        outTextY = gy + gH + textH + 2 + ofsY;
+        break;
+    }
+}
+
 // =========================================================================
 //  P-5: DrawHP — stack-buffer text, reads CachedHudConfig directly
 // =========================================================================
@@ -1811,17 +1857,32 @@ static inline void DrawHP(QPainter* p, uint16_t hp, uint16_t maxHP,
     std::snprintf(buf, sizeof(buf), "%s%u", c.hp.hpPrefix, hp);
     int textW = 0, textH = 0;
     MeasureTextCached(fm, fontPixelSize, s_hpTextCache, buf, textW, textH, tds);
-    const int textX = CalcAlignedTextX(c.hp.hpX, c.hp.hpAlign, textW);
+    int textX, hpTextY;
+    if (c.hp.hpGaugePosMode == 2) {
+        // mode 2: text side relative to gauge — compute gauge effective top-left first
+        const float hs = c.lastHudScale;
+        const int gl = (int)(c.hp.hpGaugeLen / hs * c.scaleGauges);
+        const int gw = (int)(c.hp.hpGaugeWid / hs * c.scaleGauges);
+        int gxEff = c.hp.hpGaugePosX, gyEff = c.hp.hpGaugePosY;
+        if (c.hp.hpGaugeOri == 0) gxEff -= gl * c.hp.hpGaugeAlign / 2;
+        else                       gyEff -= gl * c.hp.hpGaugeAlign / 2;
+        CalcTextPosFromGauge(gxEff, gyEff, gl, gw, c.hp.hpGaugeOri,
+                             c.hp.hpTextAnchor, c.hp.hpTextOfsX, c.hp.hpTextOfsY,
+                             textW, textH, textX, hpTextY);
+    } else {
+        textX  = CalcAlignedTextX(c.hp.hpX, c.hp.hpAlign, textW);
+        hpTextY = c.hp.hpY;
+    }
     PrepareTextBitmapCached(fm, p->font(), fontPixelSize, s_hpBitmapCache, buf, hpTextColor);
     { const HudOutlineConfig& _ol = EffOL(c, c.hp.outline);
     if (_ol.enable && _ol.opacity > 0.0f) {
         const float renderScale = tds * c.lastHudScale;
         PrepareOutlineBitmapCached(s_hpOutlineCache, s_hpBitmapCache, _ol.color, _ol.thickness, renderScale);
-        DrawCachedTextOutlined(p, s_hpBitmapCache, s_hpOutlineCache, textX, c.hp.hpY, tds,
+        DrawCachedTextOutlined(p, s_hpBitmapCache, s_hpOutlineCache, textX, hpTextY, tds,
                                c.hpOpacity, _ol.opacity);
     } else {
         if (c.hpOpacity < 1.0f) p->setOpacity(c.hpOpacity);
-        DrawCachedText(p, s_hpBitmapCache, textX, c.hp.hpY, tds);
+        DrawCachedText(p, s_hpBitmapCache, textX, hpTextY, tds);
         if (c.hpOpacity < 1.0f) p->setOpacity(1.0f);
     } }
 
@@ -1830,12 +1891,14 @@ static inline void DrawHP(QPainter* p, uint16_t hp, uint16_t maxHP,
         QColor gc = c.hp.hpAutoColor ? HpGaugeColor(hp, c.hp.hpGaugeColor) : c.hp.hpGaugeColor;
         const float hs = c.lastHudScale;
         int gx, gy;
-        if (c.hp.hpGaugePosMode == 1) {
+        if (c.hp.hpGaugePosMode == 0) {
+            // gauge relative to text
+            CalcGaugePos(textX, hpTextY, textW, textH, c.hp.hpGaugeAnchor, c.hp.hpGaugeOfsX, c.hp.hpGaugeOfsY,
+                         c.hp.hpGaugeLen / hs * c.scaleGauges, c.hp.hpGaugeWid / hs * c.scaleGauges, c.hp.hpGaugeOri, gx, gy);
+        } else {
+            // modes 1 (independent) and 2 (text follows gauge): gauge at absolute position
             gx = c.hp.hpGaugePosX;
             gy = c.hp.hpGaugePosY;
-        } else {
-            CalcGaugePos(textX, c.hp.hpY, textW, textH, c.hp.hpGaugeAnchor, c.hp.hpGaugeOfsX, c.hp.hpGaugeOfsY,
-                         c.hp.hpGaugeLen / hs * c.scaleGauges, c.hp.hpGaugeWid / hs * c.scaleGauges, c.hp.hpGaugeOri, gx, gy);
         }
         { const int gl_ds = (int)(c.hp.hpGaugeLen / hs * c.scaleGauges);
           if (c.hp.hpGaugeOri == 0) gx -= gl_ds * c.hp.hpGaugeAlign / 2;
@@ -2136,7 +2199,20 @@ static void DrawWeaponAmmo(QPainter* p, melonDS::u8* ram,
         char buf[24];
         std::snprintf(buf, sizeof(buf), "%s%02u", c.weapon.ammoPrefix, ammo);
         MeasureTextCached(fm, fontPixelSize, s_ammoTextCache, buf, textW, textH, tds);
-        textX = CalcAlignedTextX(c.weapon.wpnX, c.weapon.ammoAlign, textW);
+        if (c.weapon.ammoGaugePosMode == 2) {
+            // mode 2: text side relative to gauge — compute gauge effective top-left first
+            const float hs = hudScale;
+            const int gl = (int)(c.weapon.ammoGaugeLen / hs * c.scaleGauges);
+            const int gw = (int)(c.weapon.ammoGaugeWid / hs * c.scaleGauges);
+            int gxEff = c.weapon.ammoGaugePosX, gyEff = c.weapon.ammoGaugePosY;
+            if (c.weapon.ammoGaugeOri == 0) gxEff -= gl * c.weapon.ammoGaugeAlign / 2;
+            else                             gyEff -= gl * c.weapon.ammoGaugeAlign / 2;
+            CalcTextPosFromGauge(gxEff, gyEff, gl, gw, c.weapon.ammoGaugeOri,
+                                 c.weapon.ammoTextAnchor, c.weapon.ammoTextOfsX, c.weapon.ammoTextOfsY,
+                                 textW, textH, textX, textY);
+        } else {
+            textX = CalcAlignedTextX(c.weapon.wpnX, c.weapon.ammoAlign, textW);
+        }
         PrepareTextBitmapCached(fm, p->font(), fontPixelSize, s_ammoBitmapCache, buf, c.weapon.ammoTextColor);
         { const HudOutlineConfig& _ol = EffOL(c, c.weapon.outline);
         if (_ol.enable && _ol.opacity > 0.0f) {
@@ -2178,12 +2254,14 @@ static void DrawWeaponAmmo(QPainter* p, melonDS::u8* ram,
     if (c.weapon.ammoGauge && hasAmmo && maxAmmo > 0) {
         float ratio = static_cast<float>(ammo) / static_cast<float>(maxAmmo);
         int gx, gy;
-        if (c.weapon.ammoGaugePosMode == 1) {
-            gx = c.weapon.ammoGaugePosX;
-            gy = c.weapon.ammoGaugePosY;
-        } else {
+        if (c.weapon.ammoGaugePosMode == 0) {
+            // gauge relative to text
             CalcGaugePos(textX, textY, textW, textH, c.weapon.ammoGaugeAnchor, c.weapon.ammoGaugeOfsX, c.weapon.ammoGaugeOfsY,
                          c.weapon.ammoGaugeLen / hudScale * c.scaleGauges, c.weapon.ammoGaugeWid / hudScale * c.scaleGauges, c.weapon.ammoGaugeOri, gx, gy);
+        } else {
+            // modes 1 (independent) and 2 (text follows gauge): gauge at absolute position
+            gx = c.weapon.ammoGaugePosX;
+            gy = c.weapon.ammoGaugePosY;
         }
         { const int gl_ds = (int)(c.weapon.ammoGaugeLen / hudScale * c.scaleGauges);
           if (c.weapon.ammoGaugeOri == 0) gx -= gl_ds * c.weapon.ammoGaugeAlign / 2;
