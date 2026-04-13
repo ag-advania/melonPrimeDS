@@ -336,6 +336,7 @@ namespace {
 
 enum class HWType { Bool, Int, Float, String, Anchor9, Align3, Color3, HorizVert,
                     RelIndep,      // 0=Relative to Text, 1=Independent
+                    PosMode3,      // 0=Gauge→Text, 1=Independent, 2=Text→Gauge
                     GaugeAnchor5,  // 0=Below, 1=Above, 2=Right, 3=Left, 4=Center
                     AnchorY3,      // 0=Top, 1=Center, 2=Bottom
                     LabelPos5,     // 0=Above, 1=Below, 2=Left, 3=Right, 4=Center
@@ -381,6 +382,7 @@ struct HudMainSec {
 #define P_CLR(lbl, kR, kG, kB)        { lbl, HWType::Color3, kR, 0,255,1, kG, kB }
 #define P_ORIENT(lbl, key)            { lbl, HWType::HorizVert, key, 0,1,1, nullptr, nullptr }
 #define P_RELINDEP(lbl, key)          { lbl, HWType::RelIndep,     key, 0,1,1, nullptr, nullptr }
+#define P_POSMODE3(lbl, key)          { lbl, HWType::PosMode3,    key, 0,2,1, nullptr, nullptr }
 #define P_GANCHOR(lbl, key)           { lbl, HWType::GaugeAnchor5, key, 0,4,1, nullptr, nullptr }
 #define P_ANCHY(lbl, key)             { lbl, HWType::AnchorY3,     key, 0,2,1, nullptr, nullptr }
 #define P_LPOS(lbl, key)              { lbl, HWType::LabelPos5,    key, 0,4,1, nullptr, nullptr }
@@ -445,21 +447,29 @@ static const HudWidgetProp kSecHp[] = {
 
 // --- Section 6: HP Gauge ---
 static const HudWidgetProp kSecHpGauge[] = {
-    P_BOOL("Enable", "Metroid.Visual.HudHpGauge"),
-    P_BOOL("Auto Color", "Metroid.Visual.HudHpGaugeAutoColor"),
-    P_ORIENT("Orientation", "Metroid.Visual.HudHpGaugeOrientation"),
-    P_ALN("Align", "Metroid.Visual.HudHpGaugeAlign"),
-    P_INT("Length", "Metroid.Visual.HudHpGaugeLength", 1, 192, 1),
-    P_INT("Width", "Metroid.Visual.HudHpGaugeWidth", 1, 20, 1),
-    P_INT("Offset X", "Metroid.Visual.HudHpGaugeOffsetX", -128, 128, 1),
-    P_INT("Offset Y", "Metroid.Visual.HudHpGaugeOffsetY", -128, 128, 1),
-    P_CLR("Color", "Metroid.Visual.HudHpGaugeColorR", "Metroid.Visual.HudHpGaugeColorG", "Metroid.Visual.HudHpGaugeColorB"),
-    P_GANCHOR("Gauge Position", "Metroid.Visual.HudHpGaugeAnchor"),
-    P_RELINDEP("Position Mode", "Metroid.Visual.HudHpGaugePosMode"),
-    P_ANC("Pos Anchor", "Metroid.Visual.HudHpGaugePosAnchor"),
-    P_INT("Pos X", "Metroid.Visual.HudHpGaugePosX", -256, 256, 1),
-    P_INT("Pos Y", "Metroid.Visual.HudHpGaugePosY", -256, 256, 1),
-    P_FLOAT("Opacity", "Metroid.Visual.HudHpGaugeOpacity"),
+    // Appearance
+    P_BOOL("Enable",       "Metroid.Visual.HudHpGauge"),
+    P_BOOL("Auto Color",   "Metroid.Visual.HudHpGaugeAutoColor"),
+    P_CLR("Color",         "Metroid.Visual.HudHpGaugeColorR", "Metroid.Visual.HudHpGaugeColorG", "Metroid.Visual.HudHpGaugeColorB"),
+    P_FLOAT("Opacity",     "Metroid.Visual.HudHpGaugeOpacity"),
+    P_ORIENT("Orientation","Metroid.Visual.HudHpGaugeOrientation"),
+    P_INT("Length",        "Metroid.Visual.HudHpGaugeLength", 1, 192, 1),
+    P_INT("Width",         "Metroid.Visual.HudHpGaugeWidth", 1, 20, 1),
+    P_ALN("Align",         "Metroid.Visual.HudHpGaugeAlign"),
+    // Position mode — determines which settings below apply
+    P_POSMODE3("Position Mode",  "Metroid.Visual.HudHpGaugePosMode"),
+    // Mode 0 (Gauge → Text): gauge placed relative to the HP text
+    P_GANCHOR("Gauge Side",      "Metroid.Visual.HudHpGaugeAnchor"),
+    P_INT("Offset X",            "Metroid.Visual.HudHpGaugeOffsetX", -128, 128, 1),
+    P_INT("Offset Y",            "Metroid.Visual.HudHpGaugeOffsetY", -128, 128, 1),
+    // Modes 1 & 2: gauge at an independent absolute position
+    P_ANC("Gauge Anchor",        "Metroid.Visual.HudHpGaugePosAnchor"),
+    P_INT("Gauge X",             "Metroid.Visual.HudHpGaugePosX", -256, 256, 1),
+    P_INT("Gauge Y",             "Metroid.Visual.HudHpGaugePosY", -256, 256, 1),
+    // Mode 2 only (Text → Gauge): text placed relative to the gauge
+    P_GANCHOR("Text Side",       "Metroid.Visual.HudHpTextAnchor"),
+    P_INT("Text Offset X",       "Metroid.Visual.HudHpTextOffsetX", -128, 128, 1),
+    P_INT("Text Offset Y",       "Metroid.Visual.HudHpTextOffsetY", -128, 128, 1),
 };
 
 // --- Section 7: Weapon / Ammo ---
@@ -513,20 +523,28 @@ static const HudWidgetProp kSecWpnIconTints[] = {
 
 // --- Section 9: Ammo Gauge ---
 static const HudWidgetProp kSecAmmoGauge[] = {
-    P_BOOL("Enable", "Metroid.Visual.HudAmmoGauge"),
-    P_ORIENT("Orientation", "Metroid.Visual.HudAmmoGaugeOrientation"),
-    P_ALN("Align", "Metroid.Visual.HudAmmoGaugeAlign"),
-    P_INT("Length", "Metroid.Visual.HudAmmoGaugeLength", 1, 192, 1),
-    P_INT("Width", "Metroid.Visual.HudAmmoGaugeWidth", 1, 20, 1),
-    P_INT("Offset X", "Metroid.Visual.HudAmmoGaugeOffsetX", -128, 128, 1),
-    P_INT("Offset Y", "Metroid.Visual.HudAmmoGaugeOffsetY", -128, 128, 1),
-    P_CLR("Color", "Metroid.Visual.HudAmmoGaugeColorR", "Metroid.Visual.HudAmmoGaugeColorG", "Metroid.Visual.HudAmmoGaugeColorB"),
-    P_GANCHOR("Gauge Position", "Metroid.Visual.HudAmmoGaugeAnchor"),
-    P_RELINDEP("Position Mode", "Metroid.Visual.HudAmmoGaugePosMode"),
-    P_ANC("Pos Anchor", "Metroid.Visual.HudAmmoGaugePosAnchor"),
-    P_INT("Pos X", "Metroid.Visual.HudAmmoGaugePosX", -256, 256, 1),
-    P_INT("Pos Y", "Metroid.Visual.HudAmmoGaugePosY", -256, 256, 1),
-    P_FLOAT("Opacity", "Metroid.Visual.HudAmmoGaugeOpacity"),
+    // Appearance
+    P_BOOL("Enable",       "Metroid.Visual.HudAmmoGauge"),
+    P_CLR("Color",         "Metroid.Visual.HudAmmoGaugeColorR", "Metroid.Visual.HudAmmoGaugeColorG", "Metroid.Visual.HudAmmoGaugeColorB"),
+    P_FLOAT("Opacity",     "Metroid.Visual.HudAmmoGaugeOpacity"),
+    P_ORIENT("Orientation","Metroid.Visual.HudAmmoGaugeOrientation"),
+    P_INT("Length",        "Metroid.Visual.HudAmmoGaugeLength", 1, 192, 1),
+    P_INT("Width",         "Metroid.Visual.HudAmmoGaugeWidth", 1, 20, 1),
+    P_ALN("Align",         "Metroid.Visual.HudAmmoGaugeAlign"),
+    // Position mode — determines which settings below apply
+    P_POSMODE3("Position Mode",  "Metroid.Visual.HudAmmoGaugePosMode"),
+    // Mode 0 (Gauge → Text): gauge placed relative to the Ammo text
+    P_GANCHOR("Gauge Side",      "Metroid.Visual.HudAmmoGaugeAnchor"),
+    P_INT("Offset X",            "Metroid.Visual.HudAmmoGaugeOffsetX", -128, 128, 1),
+    P_INT("Offset Y",            "Metroid.Visual.HudAmmoGaugeOffsetY", -128, 128, 1),
+    // Modes 1 & 2: gauge at an independent absolute position
+    P_ANC("Gauge Anchor",        "Metroid.Visual.HudAmmoGaugePosAnchor"),
+    P_INT("Gauge X",             "Metroid.Visual.HudAmmoGaugePosX", -256, 256, 1),
+    P_INT("Gauge Y",             "Metroid.Visual.HudAmmoGaugePosY", -256, 256, 1),
+    // Mode 2 only (Text → Gauge): text placed relative to the gauge
+    P_GANCHOR("Text Side",       "Metroid.Visual.HudAmmoTextAnchor"),
+    P_INT("Text Offset X",       "Metroid.Visual.HudAmmoTextOffsetX", -128, 128, 1),
+    P_INT("Text Offset Y",       "Metroid.Visual.HudAmmoTextOffsetY", -128, 128, 1),
 };
 
 // --- Section 10: Match Status ---
@@ -1407,6 +1425,22 @@ void MelonPrimeInputConfig::setupCustomHudWidgets(Config::Table& instcfg)
             });
             break;
         }
+        case HWType::PosMode3: {
+            auto* combo = new QComboBox(parent);
+            combo->setObjectName(objName);
+            combo->addItem(QStringLiteral("Gauge \u2192 Text"));
+            combo->addItem(QStringLiteral("Independent"));
+            combo->addItem(QStringLiteral("Text \u2192 Gauge"));
+            combo->setCurrentIndex(instcfg.GetInt(p.cfgKey));
+            form->addRow(QString::fromUtf8(p.label), combo);
+            m_hudWidgets[p.cfgKey] = combo;
+            connect(combo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this, key = std::string(p.cfgKey)](int val) {
+                if (!m_applyPreviewEnabled) return;
+                emuInstance->getLocalConfig().SetInt(key, val);
+                invalidateHudAndRefreshPreviews();
+            });
+            break;
+        }
         case HWType::GaugeAnchor5: {
             auto* combo = new QComboBox(parent);
             combo->setObjectName(objName);
@@ -1698,6 +1732,59 @@ void MelonPrimeInputConfig::setupCustomHudWidgets(Config::Table& instcfg)
 
         vlay->insertWidget(insertPos++, mainBody);
     }
+
+    // ── PosMode3 grayout: disable irrelevant rows when Position Mode changes ──
+    auto wirePosModeGrayout = [this](
+        const char* modeKey,
+        std::vector<std::string> mode0Keys,
+        std::vector<std::string> mode12Keys,
+        std::vector<std::string> mode2Keys)
+    {
+        auto it0 = m_hudWidgets.find(std::string(modeKey));
+        if (it0 == m_hudWidgets.end()) return;
+        auto* combo = qobject_cast<QComboBox*>(it0->second);
+        if (!combo) return;
+
+        auto applyState = [this, mode0Keys, mode12Keys, mode2Keys](int mode) {
+            auto setRowEnabled = [this](const std::string& key, bool enabled) {
+                auto it = m_hudWidgets.find(key);
+                if (it == m_hudWidgets.end()) return;
+                QWidget* w = it->second;
+                w->setEnabled(enabled);
+                if (QWidget* par = w->parentWidget())
+                    if (auto* fl = qobject_cast<QFormLayout*>(par->layout()))
+                        if (QWidget* lw = fl->labelForField(w))
+                            lw->setEnabled(enabled);
+            };
+            for (const auto& k : mode0Keys)  setRowEnabled(k, mode == 0);
+            for (const auto& k : mode12Keys) setRowEnabled(k, mode >= 1);
+            for (const auto& k : mode2Keys)  setRowEnabled(k, mode == 2);
+        };
+
+        applyState(combo->currentIndex());
+        connect(combo, QOverload<int>::of(&QComboBox::currentIndexChanged),
+                this, [applyState](int val) { applyState(val); });
+    };
+
+    wirePosModeGrayout("Metroid.Visual.HudHpGaugePosMode",
+        {"Metroid.Visual.HudHpGaugeAnchor",
+         "Metroid.Visual.HudHpGaugeOffsetX",
+         "Metroid.Visual.HudHpGaugeOffsetY"},
+        {"Metroid.Visual.HudHpGaugePosX",
+         "Metroid.Visual.HudHpGaugePosY"},
+        {"Metroid.Visual.HudHpTextAnchor",
+         "Metroid.Visual.HudHpTextOffsetX",
+         "Metroid.Visual.HudHpTextOffsetY"});
+
+    wirePosModeGrayout("Metroid.Visual.HudAmmoGaugePosMode",
+        {"Metroid.Visual.HudAmmoGaugeAnchor",
+         "Metroid.Visual.HudAmmoGaugeOffsetX",
+         "Metroid.Visual.HudAmmoGaugeOffsetY"},
+        {"Metroid.Visual.HudAmmoGaugePosX",
+         "Metroid.Visual.HudAmmoGaugePosY"},
+        {"Metroid.Visual.HudAmmoTextAnchor",
+         "Metroid.Visual.HudAmmoTextOffsetX",
+         "Metroid.Visual.HudAmmoTextOffsetY"});
 }
 
 
