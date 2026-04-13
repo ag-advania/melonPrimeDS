@@ -774,23 +774,43 @@ static const HudSubSec kSubsCrosshair[] = {
     SUB("Outer Lines",  "Metroid.UI.SectionHudCrosshairOuter",  kSecCrosshairOuter),
 };
 
+// ── HP sub-sections ──
+static const HudSubSec kSubsHp[] = {
+    SUB("HP Number Position", "Metroid.UI.SectionHudHp",            kSecHp),
+    SUB("HP Outline",         "Metroid.UI.SectionHudHpOutline",      kSecHpOutline),
+    SUB("HP Gauge",           "Metroid.UI.SectionHudHpGauge",        kSecHpGauge),
+    SUB("HP Gauge Outline",   "Metroid.UI.SectionHudHpGaugeOutline", kSecHpGaugeOutline),
+};
+
+// ── Ammo sub-sections ──
+static const HudSubSec kSubsAmmo[] = {
+    SUB("Ammo Number Position", "Metroid.UI.SectionHudWeaponAmmo",        kSecWeaponAmmo),
+    SUB("Ammo Outline",         "Metroid.UI.SectionHudWeaponOutline",      kSecWeaponOutline),
+    SUB("Ammo Gauge",           "Metroid.UI.SectionHudAmmoGauge",          kSecAmmoGauge),
+    SUB("Ammo Gauge Outline",   "Metroid.UI.SectionHudAmmoGaugeOutline",   kSecAmmoGaugeOutline),
+};
+
+// ── Weapon Icon sub-sections ──
+static const HudSubSec kSubsWpnIcon[] = {
+    SUB("Weapon Icon",               "Metroid.UI.SectionHudWpnIcon",              kSecWpnIcon),
+    SUB("Weapon Icon Outline",       "Metroid.UI.SectionHudWeaponIconOutline",    kSecWeaponIconOutline),
+    SUB("Weapon Icon Color Overlay", "Metroid.UI.SectionHudWpnIconTints",         kSecWpnIconTints),
+};
+
+// ── Weapon Inventory sub-sections ──
+static const HudSubSec kSubsWpnInventory[] = {
+    SUB("Weapon Inventory",              "Metroid.UI.SectionHudWeaponInventory",              kSecWeaponInventory),
+    SUB("Weapon Inventory Highlight",    "Metroid.UI.SectionHudWeaponInventoryHighlight",     kSecWeaponInventoryHighlight),
+    SUB("Weapon Inventory Outline",      "Metroid.UI.SectionHudWeaponInventoryOutline",       kSecWeaponInventoryOutline),
+    SUB("Weapon Inventory Icon Outline", "Metroid.UI.SectionHudWeaponInventoryIconOutline",   kSecWeaponInventoryIconOutline),
+};
+
 // ── HP / AMMO sub-sections ──
 static const HudSubSec kSubsHpAmmo[] = {
-    SUB("HP Number Position",        "Metroid.UI.SectionHudHp",             kSecHp),
-    SUB("HP Outline",                "Metroid.UI.SectionHudHpOutline",       kSecHpOutline),
-    SUB("Ammo Number Position",      "Metroid.UI.SectionHudWeaponAmmo",     kSecWeaponAmmo),
-    SUB("Weapon Outline",            "Metroid.UI.SectionHudWeaponOutline",   kSecWeaponOutline),
-    SUB("Weapon Icon",               "Metroid.UI.SectionHudWpnIcon",        kSecWpnIcon),
-    SUB("Weapon Icon Outline",       "Metroid.UI.SectionHudWeaponIconOutline", kSecWeaponIconOutline),
-    SUB("Weapon Icon Color Overlay", "Metroid.UI.SectionHudWpnIconTints", kSecWpnIconTints),
-    SUB("HP Gauge",                  "Metroid.UI.SectionHudHpGauge",        kSecHpGauge),
-    SUB("HP Gauge Outline",          "Metroid.UI.SectionHudHpGaugeOutline", kSecHpGaugeOutline),
-    SUB("Ammo Gauge",                "Metroid.UI.SectionHudAmmoGauge",      kSecAmmoGauge),
-    SUB("Ammo Gauge Outline",        "Metroid.UI.SectionHudAmmoGaugeOutline", kSecAmmoGaugeOutline),
-    SUB("Weapon Inventory",           "Metroid.UI.SectionHudWeaponInventory",          kSecWeaponInventory),
-    SUB("Weapon Inventory Highlight", "Metroid.UI.SectionHudWeaponInventoryHighlight",  kSecWeaponInventoryHighlight),
-    SUB("Weapon Inventory Outline",      "Metroid.UI.SectionHudWeaponInventoryOutline",      kSecWeaponInventoryOutline),
-    SUB("Weapon Inventory Icon Outline", "Metroid.UI.SectionHudWeaponInventoryIconOutline",  kSecWeaponInventoryIconOutline),
+    SUB_NEST("HP",               "Metroid.UI.SectionHudHpGrp",       kSubsHp),
+    SUB_NEST("Ammo",             "Metroid.UI.SectionHudAmmoGrp",     kSubsAmmo),
+    SUB_NEST("Weapon Icon",      "Metroid.UI.SectionHudWpnIconGrp",  kSubsWpnIcon),
+    SUB_NEST("Weapon Inventory", "Metroid.UI.SectionHudWpnInvGrp",   kSubsWpnInventory),
 };
 
 // ── Rank/Time sub-sub-sections ──
