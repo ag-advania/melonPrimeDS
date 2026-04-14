@@ -134,7 +134,7 @@ Relevant details:
 - patch table lives in `MelonPrimeHudRender.cpp`
 - keyed by `romGroupIndex`
 
-### Performance optimizations (P-9 through P-12)
+### Performance optimizations (P-9 through P-12, OPT-DR1)
 
 | ID | Description | Impact | When |
 |---|---|---|---|
@@ -142,6 +142,7 @@ Relevant details:
 | P-10 | `HpGaugeColor()` returns `const QColor&` with `static const` threshold colors | Eliminates per-call `QColor(255,0,0)` / `QColor(255,165,0)` construction | Per frame (HP <= 50) |
 | P-11 | Pre-computed crosshair arm/dot colors with alpha in `CrosshairHudConfig` | Eliminates 3 `QColor` copies + `setAlphaF()` per frame | Per frame |
 | P-12 | Separable max-filter dilation (`DilateSeparableTinted`) - two-pass horizontal+vertical max replaces `O(R^2)` naive kernel with `O(R)` per pixel | About `1.5x` faster for `R=1`, about `3x` for `R=3` | Config changes / editor |
+| OPT-DR1 | Dirty-rect overlay optimization: `CustomHud_Render()` returns `QRect`; `Screen.cpp` clears only the prev dirty rect (via `CompositionMode_Source`), composites only the union rect, and uploads only that region via `glTexSubImage2D` with `GL_UNPACK_ROW_LENGTH/SKIP_*` | Reduces per-frame CPU memset and PCIe upload from full-window to HUD-element bounding box at high resolutions | Per frame |
 
 ### HUD Auto-Scale System
 Automatic integer-based scaling that makes HUD elements readable at high resolutions without manual adjustment.
@@ -189,7 +190,8 @@ Radar color is independently configurable via `Metroid.Visual.BtmOverlayRadarCol
 All functions are inside `namespace MelonPrime` and guarded by `#ifdef MELONPRIME_CUSTOM_HUD`.
 
 ```cpp
-void CustomHud_Render(
+// Returns dirty pixel rect in overlay space (QRect()) if nothing drawn.
+QRect CustomHud_Render(
     EmuInstance* emu,
     Config::Table& localCfg,
     const RomAddresses& rom,
@@ -201,7 +203,9 @@ void CustomHud_Render(
     QImage* btmBuffer,
     bool isInGame,
     float topStretchX = 1.0f,
-    float hudScale = 1.0f
+    float hudScale = 1.0f,
+    float hudOriginXds = 0.0f,
+    float hudOriginYds = 0.0f
 );
 
 bool CustomHud_IsEnabled(Config::Table& localCfg);
@@ -216,3 +220,4 @@ void DrawBottomScreenOverlay(Config::Table& localCfg, QPainter* topPaint, QImage
 Notes:
 - `DrawBottomScreenOverlay()` takes `hunterID` so the source crop can use hunter-specific radar centers.
 - `CustomHud_Render()` now covers match status, rank/time, bomb-left HUD, and radar overlay in addition to crosshair/HP/ammo.
+- `CustomHud_Render()` returns a `QRect` (OPT-DR1): the pixel-space dirty region of everything rendered. Callers in `Screen.cpp` use this to limit the overlay clear and GL texture upload to only the changed region. Returns empty `QRect` when nothing was drawn.
