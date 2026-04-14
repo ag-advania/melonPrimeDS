@@ -74,6 +74,56 @@ When touching UI or runtime HUD behavior, always check both:
 - `Config.cpp` for defaults (and correct list placement per the table above)
 - `MelonPrimeInputConfigConfig.cpp` for save/reset coverage
 
+### GetXxx Default Coverage Audit (Metroid keys)
+Use this quick audit whenever you add/rename settings or large default updates:
+- Enumerate call sites by accessor type: `GetInt("Metroid....")`, `GetDouble("Metroid....")`, `GetBool("Metroid....")`.
+- Ensure every runtime/UI-read key exists in the matching default list (`DefaultInts` / `DefaultDoubles` / `DefaultBools`).
+- If a key type changes (for example int->double), move it to the correct list and remove the old entry from the old list.
+
+Rules of thumb from recent fixes:
+- Outline keys split by type: `*OutlineColor[R/G/B]` and `*OutlineThickness` are int; `*OutlineOpacity` is double.
+- Non-Visual `Metroid.*` keys used by InputConfig/MelonPrimeCore also need defaults (not just `Metroid.Visual.*`).
+- `Metroid.Visual.HudFontSize` is a legacy migration-only key read behind `HasKey()`; it does not need a new default unless migration logic changes.
+
+#### Audit Command (PowerShell, Metroid.*)
+Run from repo root. This lists missing defaults by accessor type and catches cross-list type mistakes:
+
+```powershell
+$cfgPath = "src/frontend/qt_sdl/Config.cpp"
+$cfgLines = Get-Content $cfgPath
+$ints    = [System.Collections.Generic.HashSet[string]]::new()
+$doubles = [System.Collections.Generic.HashSet[string]]::new()
+$bools   = [System.Collections.Generic.HashSet[string]]::new()
+$state = ""
+foreach ($line in $cfgLines) {
+  if ($line -match "^\s*DefaultList<int>\s+DefaultInts") { $state = "int"; continue }
+  if ($line -match "^\s*DefaultList<double>\s+DefaultDoubles") { $state = "double"; continue }
+  if ($line -match "^\s*DefaultList<bool>\s+DefaultBools") { $state = "bool"; continue }
+  if ($state -ne "" -and $line -match "^\s*};\s*$") { $state = ""; continue }
+  if ($state -eq "") { continue }
+  if ($line -match "\{\"Instance\*\.Metroid\.([^\"]+)\"\s*,") {
+    $k = "Metroid." + $matches[1]
+    if ($state -eq "int")    { [void]$ints.Add($k) }
+    if ($state -eq "double") { [void]$doubles.Add($k) }
+    if ($state -eq "bool")   { [void]$bools.Add($k) }
+  }
+}
+
+$usageInt = rg -o "GetInt\(\"Metroid\.[^\"]+\"\)" src/frontend/qt_sdl -g"*.cpp" -g"*.h"  | % { if($_ -match "GetInt\(\"([^\"]+)\"\)"){ $matches[1] } } | sort -Unique
+$usageDbl = rg -o "GetDouble\(\"Metroid\.[^\"]+\"\)" src/frontend/qt_sdl -g"*.cpp" -g"*.h" | % { if($_ -match "GetDouble\(\"([^\"]+)\"\)"){ $matches[1] } } | sort -Unique
+$usageBol = rg -o "GetBool\(\"Metroid\.[^\"]+\"\)" src/frontend/qt_sdl -g"*.cpp" -g"*.h"   | % { if($_ -match "GetBool\(\"([^\"]+)\"\)"){ $matches[1] } } | sort -Unique
+
+"GetInt missing:";    $usageInt | ? { -not $ints.Contains($_) }
+"GetDouble missing:"; $usageDbl | ? { -not $doubles.Contains($_) }
+"GetBool missing:";   $usageBol | ? { -not $bools.Contains($_) }
+
+"GetInt in DefaultDoubles:";  $usageInt | ? { $doubles.Contains($_) }
+"GetInt in DefaultBools:";    $usageInt | ? { $bools.Contains($_) }
+"GetDouble in DefaultInts:";  $usageDbl | ? { $ints.Contains($_) }
+"GetBool in DefaultInts:";    $usageBol | ? { $ints.Contains($_) }
+"GetBool in DefaultDoubles:"; $usageBol | ? { $doubles.Contains($_) }
+```
+
 ## Active Branch: `highres_fonts_v2`
 Current work is on the `highres_fonts_v2` branch. Main changes relative to `master`:
 - Full 9-point anchor system for all HUD element positions
