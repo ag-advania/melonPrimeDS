@@ -317,10 +317,11 @@ namespace MelonPrime {
             // Use the lean updater: no press-map scan, no wheel fetch.
             UpdateInputStateReentrant();
             ProcessMoveAndButtonsFast();
+            auto* const nds = emuInstance->getNDS();
 
             if (isStylusMode) {
                 if (emuInstance->isTouching && !m_flags.test(StateFlags::BIT_BLOCK_STYLUS)) {
-                    emuInstance->getNDS()->TouchScreen(emuInstance->touchX, emuInstance->touchY);
+                    nds->TouchScreen(emuInstance->touchX, emuInstance->touchY);
                 }
             }
             else {
@@ -384,10 +385,11 @@ namespace MelonPrime {
                 }
 
                 if (isCursorMode) {
+                    auto* const nds = emuInstance->getNDS();
                     if (emuInstance->isTouching)
-                        emuInstance->getNDS()->TouchScreen(emuInstance->touchX, emuInstance->touchY);
+                        nds->TouchScreen(emuInstance->touchX, emuInstance->touchY);
                     else
-                        emuInstance->getNDS()->ReleaseScreen();
+                        nds->ReleaseScreen();
                 }
                 InputSetBranchless(INPUT_START, !IsDown(IB_MENU));
             }

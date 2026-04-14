@@ -216,11 +216,12 @@ namespace MelonPrime {
 
     void MelonPrimeCore::ProcessAimInputStylus()
     {
+        auto* const nds = emuInstance->getNDS();
         if (LIKELY(emuInstance->isTouching)) {
-            emuInstance->getNDS()->TouchScreen(emuInstance->touchX, emuInstance->touchY);
+            nds->TouchScreen(emuInstance->touchX, emuInstance->touchY);
         }
         else {
-            emuInstance->getNDS()->ReleaseScreen();
+            nds->ReleaseScreen();
         }
     }
 

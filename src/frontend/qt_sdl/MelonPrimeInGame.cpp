@@ -15,6 +15,9 @@ namespace MelonPrime {
     // =========================================================================
     HOT_FUNCTION void MelonPrimeCore::HandleInGameLogic()
     {
+        const uint64_t pressBits = m_input.press;
+        const uint64_t downBits = m_input.down;
+
         PREFETCH_READ(m_ptrs.isAltForm);
         // Early prefetch of aim pointers - gives ~50-100 instructions of
         // lead time before ProcessAimInputMouse reads them, hiding potential L2 miss.
@@ -26,7 +29,7 @@ namespace MelonPrime {
         auto* const nds = emuInstance->getNDS();
 
         // --- Rare Actions (Morph, Weapon Switch) ---
-        if (UNLIKELY(IsPressed(IB_MORPH))) {
+        if (UNLIKELY((pressBits & IB_MORPH) != 0)) {
             HandleRareMorph();
         }
 
@@ -36,7 +39,7 @@ namespace MelonPrime {
             constexpr uint64_t IB_WEAPON_ALL_TRIGGERS =
                 IB_WEAPON_ANY | IB_WEAPON_NEXT | IB_WEAPON_PREV;
             const bool hasWeaponInput =
-                (m_input.press & IB_WEAPON_ALL_TRIGGERS) || m_input.wheelDelta;
+                (pressBits & IB_WEAPON_ALL_TRIGGERS) || m_input.wheelDelta;
             if (UNLIKELY(hasWeaponInput && ProcessWeaponSwitch())) {
                 HandleRareWeaponSwitch();
             }
@@ -47,13 +50,13 @@ namespace MelonPrime {
             const bool isPaused = (*m_ptrs.isMapOrUserActionPaused) == 0x1;
             m_flags.assign(StateFlags::BIT_PAUSED, isPaused);
 
-            if (IsAnyPressed(IB_SCAN_VISOR | IB_UI_ANY)) {
+            if ((pressBits & (IB_SCAN_VISOR | IB_UI_ANY)) != 0) {
                 HandleAdventureMode();
             }
         }
 
         // --- Weapon Check ---
-        if (IsDown(IB_WEAPON_CHECK)) {
+        if ((downBits & IB_WEAPON_CHECK) != 0) {
             const bool isOmegaCannonFlagActive =
                 ((*m_ptrs.havingWeapons & WeaponMask::OmegaCannon) != 0);
 
@@ -61,7 +64,7 @@ namespace MelonPrime {
                 if (UNLIKELY(m_isWeaponCheckActive)) {
                     HandleRareWeaponCheckEnd();
                 }
-                if (IsPressed(IB_WEAPON_CHECK)) {
+                if ((pressBits & IB_WEAPON_CHECK) != 0) {
                     emuInstance->osdAddMessage(0, "Weapon Check is unavailable while Omega Cannon is active!");
                 }
             }
