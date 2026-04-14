@@ -8,6 +8,8 @@ This file is an index only. Keep detailed instructions in the linked Rules, Skil
 - [.claude/rules/build.md](.claude/rules/build.md)
 - [.claude/rules/repo-architecture.md](.claude/rules/repo-architecture.md)
 - [.claude/rules/git-workflow.md](.claude/rules/git-workflow.md)
+- [.claude/rules/melonprime-gameplay-runtime.md](.claude/rules/melonprime-gameplay-runtime.md)
+- [.claude/rules/melonprime-aim-input.md](.claude/rules/melonprime-aim-input.md)
 
 ## Skills
 - [.claude/skills/README.md](.claude/skills/README.md)
