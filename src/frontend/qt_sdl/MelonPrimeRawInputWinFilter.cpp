@@ -170,6 +170,28 @@ namespace MelonPrime {
         }
     }
 
+    // =========================================================================
+    // LateLatchMouseDelta — flush kernel buffer + fetch delta before aim write.
+    //
+    // Called just before ProcessAimInputMouse() to capture mouse events that
+    // arrived after PollAndSnapshot (during morph/weapon/move processing).
+    //
+    // Joy2key path: events arrive via nativeEventFilter → already in accumulator;
+    // processRawInputBatched is skipped.
+    //
+    // Hidden-window path: processRawInputBatched drains the kernel buffer first,
+    // then fetchMouseDelta reads whatever HiddenWndProc or the batch collected.
+    // =========================================================================
+    void RawInputWinFilter::LateLatchMouseDelta(int& accX, int& accY) noexcept {
+        if (!m_joy2KeySupport) {
+            m_state->processRawInputBatched();
+        }
+        int lateX = 0, lateY = 0;
+        m_state->fetchMouseDelta(lateX, lateY);
+        accX += lateX;
+        accY += lateY;
+    }
+
     void RawInputWinFilter::setJoy2KeySupport(bool enable) {
         if (m_joy2KeySupport == enable) return;
 

@@ -6,6 +6,9 @@
 #include "Screen.h"
 #include "MelonPrimeDef.h"
 #include "MelonPrimeGameRomAddrTable.h"
+#ifdef _WIN32
+#include "MelonPrimeRawInputWinFilter.h"
+#endif
 
 namespace MelonPrime {
 
@@ -89,6 +92,12 @@ namespace MelonPrime {
             }
         }
         else {
+#ifdef _WIN32
+            // Late-latch: flush kernel buffer and capture any mouse events that
+            // arrived since PollAndSnapshot (during morph/weapon/move processing).
+            // Reduces aim write latency by ~the time spent in the above logic.
+            if (m_rawFilter) m_rawFilter->LateLatchMouseDelta(m_input.mouseX, m_input.mouseY);
+#endif
             ProcessAimInputMouse();
             // m_aimBlockBits replaces m_isAimDisabled (same semantics: != 0)
             if (!m_flags.test(StateFlags::BIT_LAST_FOCUSED) || !m_aimBlockBits) {
