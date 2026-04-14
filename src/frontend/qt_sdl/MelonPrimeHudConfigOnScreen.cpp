@@ -453,17 +453,18 @@ static const HudEditElemDesc kEditElems[kEditElemCount] = {
 };
 
 // Sample text used for element box previews (must align with kEditElems indices)
+// Width sample text for element boxes. Match Status uses a two-line format separately.
 static const char* const kEditElemSampleText[kEditElemCount] = {
     "100",       // 0: HP
     nullptr,     // 1: HP Gauge
-    "PWR 50",    // 2: Weapon/Ammo
+    "50",        // 2: Weapon/Ammo (number only, no weapon name prefix)
     nullptr,     // 3: Weapon Icon
     nullptr,     // 4: Ammo Gauge
-    "1st | 5",   // 5: Match Status
-    "#1",        // 6: Rank
+    "points",    // 5: Match Status — width based on label row; height handled specially
+    "1st",       // 6: Rank
     "2:30",      // 7: Time Left
     "5:00",      // 8: Time Limit
-    "x3",        // 9: Bomb Left
+    "Bombs",     // 9: Bomb Left
     nullptr,     // 10: Bomb Icon
     nullptr,     // 11: Radar
     nullptr,     // 12: Weapon Inventory
@@ -826,8 +827,9 @@ static QRectF ComputeEditBounds(int idx, Config::Table& cfg, float topStretchX)
 
     // ── HP Gauge (idx=1) / Ammo Gauge (idx=4) ──────────────────────────────
     if (d.lengthKey != nullptr) {
-        const float len = std::max(4.0f, cfg.GetInt(d.lengthKey) / hs);
-        const float wid = std::max(1.0f, cfg.GetInt(d.widthKey) / hs);
+        const float gaugeScale = s_cache.valid ? s_cache.scaleGauges : 1.0f;
+        const float len = std::max(4.0f, cfg.GetInt(d.lengthKey) * gaugeScale / hs);
+        const float wid = std::max(1.0f, cfg.GetInt(d.widthKey) * gaugeScale / hs);
         const int ori     = (d.orientKey != nullptr) ? cfg.GetInt(d.orientKey) : 0;
         const int posMode = d.posModeKey ? cfg.GetInt(d.posModeKey) : 1;
         const int align   = cfg.GetInt((idx == 1) ? "Metroid.Visual.HudHpGaugeAlign"
@@ -939,7 +941,30 @@ static QRectF ComputeEditBounds(int idx, Config::Table& cfg, float topStretchX)
         // Fallback: treat fy as the bottom of the text area.
         boxTop = static_cast<float>(fy) - bh + 2.0f;
     }
-    return QRectF(static_cast<float>(fx) - bw * 0.5f, boxTop, bw, bh);
+
+    // Determine horizontal alignment to position the box correctly relative to the anchor.
+    // Each text element uses CalcAlignedTextX: 0=left (text starts at fx),
+    // 1=center (text centered on fx), 2=right (text ends at fx).
+    // Match Status (idx=5) is always left-anchored (no alignment setting).
+    static const struct { int idx; const char* key; } kAlignMap[] = {
+        {0, "Metroid.Visual.HudHpAlign"},
+        {2, "Metroid.Visual.HudAmmoAlign"},
+        {6, "Metroid.Visual.HudRankAlign"},
+        {7, "Metroid.Visual.HudTimeLeftAlign"},
+        {8, "Metroid.Visual.HudTimeLimitAlign"},
+        {9, "Metroid.Visual.HudBombLeftAlign"},
+    };
+    int textAlign = 1; // default: center
+    if (idx == 5) { textAlign = 0; } // Match Status: always left
+    else {
+        for (auto& ka : kAlignMap)
+            if (ka.idx == idx) { textAlign = cfg.GetInt(ka.key); break; }
+    }
+    float boxLeft;
+    if      (textAlign == 0) boxLeft = static_cast<float>(fx);               // left
+    else if (textAlign == 2) boxLeft = static_cast<float>(fx) - bw;          // right
+    else                     boxLeft = static_cast<float>(fx) - bw * 0.5f;   // center
+    return QRectF(boxLeft, boxTop, bw, bh);
 }
 
 static int CountBuiltinRows(const HudEditElemDesc& d) {
@@ -1534,17 +1559,8 @@ static void DrawEditOverlay(QPainter* p, Config::Table& cfg, float topStretchX, 
                 tc = QColor(cfg.GetInt(d.colorRKey), cfg.GetInt(d.colorGKey), cfg.GetInt(d.colorBKey));
             p->setPen(tc);
 
-            const char* sampleText = nullptr;
-            switch (i) {
-            case 0:  sampleText = "100";     break;
-            case 2:  sampleText = "PWR 50";  break;
-            case 5:  sampleText = "1st | 5"; break;
-            case 6:  sampleText = "#1";      break;
-            case 7:  sampleText = "2:30";    break;
-            case 8:  sampleText = "5:00";    break;
-            case 9:  sampleText = "x3";      break;
-            default: sampleText = d.name;    break;
-            }
+            const char* sampleText = (i >= 0 && i < kEditElemCount && kEditElemSampleText[i])
+                                      ? kEditElemSampleText[i] : d.name;
 
             if (r.height() > r.width() * 1.3) {
                 p->save();
