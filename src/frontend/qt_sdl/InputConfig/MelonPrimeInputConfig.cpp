@@ -487,15 +487,18 @@ static const HudWidgetProp kSecWeaponAmmo[] = {
 // --- Section 8: Weapon Icon ---
 static const HudWidgetProp kSecWpnIcon[] = {
     P_BOOL("Show", "Metroid.Visual.HudWeaponIconShow"),
+    P_RELINDEP("Icon Position", "Metroid.Visual.HudWeaponIconMode"),
+    // Relative mode (0): offset from weapon text position
+    P_INT("Offset X", "Metroid.Visual.HudWeaponIconOffsetX", -128, 128, 1),
+    P_INT("Offset Y", "Metroid.Visual.HudWeaponIconOffsetY", -128, 128, 1),
+    // Independent mode (1): own anchor + position
     P_ANC("Pos Anchor", "Metroid.Visual.HudWeaponIconPosAnchor"),
     P_INT("Pos X", "Metroid.Visual.HudWeaponIconPosX", -256, 256, 1),
     P_INT("Pos Y", "Metroid.Visual.HudWeaponIconPosY", -256, 256, 1),
-    P_RELINDEP("Icon Position", "Metroid.Visual.HudWeaponIconMode"),
+    // Common
     P_INT("Height", "Metroid.Visual.HudWeaponIconHeight", 4, 64, 1),
-    P_INT("Icon Offset X", "Metroid.Visual.HudWeaponIconOffsetX", -128, 128, 1),
-    P_INT("Icon Offset Y", "Metroid.Visual.HudWeaponIconOffsetY", -128, 128, 1),
-    P_ALN("Icon Align X", "Metroid.Visual.HudWeaponIconAnchorX"),
-    P_ANCHY("Icon Align Y", "Metroid.Visual.HudWeaponIconAnchorY"),
+    P_ALN("Align X", "Metroid.Visual.HudWeaponIconAnchorX"),
+    P_ANCHY("Align Y", "Metroid.Visual.HudWeaponIconAnchorY"),
     P_FLOAT("Opacity", "Metroid.Visual.HudWpnIconOpacity"),
 };
 
@@ -1849,6 +1852,15 @@ void MelonPrimeInputConfig::setupCustomHudWidgets(Config::Table& instcfg)
         {"Metroid.Visual.HudAmmoTextAnchor",
          "Metroid.Visual.HudAmmoTextOffsetX",
          "Metroid.Visual.HudAmmoTextOffsetY"});
+
+    // Weapon Icon Position: mode 0=Relative (offset from text), 1=Independent (own anchor+pos)
+    wirePosModeGrayout("Metroid.Visual.HudWeaponIconMode",
+        {"Metroid.Visual.HudWeaponIconOffsetX",
+         "Metroid.Visual.HudWeaponIconOffsetY"},
+        {"Metroid.Visual.HudWeaponIconPosAnchor",
+         "Metroid.Visual.HudWeaponIconPosX",
+         "Metroid.Visual.HudWeaponIconPosY"},
+        {});
 }
 
 
