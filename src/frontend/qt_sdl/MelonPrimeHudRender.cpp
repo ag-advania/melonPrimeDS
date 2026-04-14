@@ -432,12 +432,12 @@ static inline void PrepareTextBitmapCached(const QFontMetrics& fm, const QFont& 
     }
 }
 
-static inline void DrawCachedText(QPainter* p, const TextBitmapCache& cache, int x, int baselineY,
+static inline void DrawCachedText(QPainter* p, const TextBitmapCache& cache, float x, float baselineY,
                                    float textDrawScale = 1.0f)
 {
     if (!cache.valid || cache.bitmap.isNull()) return;
     if (textDrawScale == 1.0f) {
-        p->drawImage(QPoint(x + cache.originX, baselineY + cache.originY), cache.bitmap);
+        p->drawImage(QPointF(x + cache.originX, baselineY + cache.originY), cache.bitmap);
     } else {
         const float ox = cache.originX * textDrawScale;
         const float oy = cache.originY * textDrawScale;
@@ -513,7 +513,7 @@ static inline void PrepareOutlineBitmapCached(TextBitmapCache& outlineCache,
 static inline void DrawCachedTextOutlined(QPainter* p,
                                           const TextBitmapCache& cache,
                                           const TextBitmapCache& outlineCache,
-                                          int x, int baselineY,
+                                          float x, float baselineY,
                                           float tds,
                                           float opacity, float outlineOpacity)
 {
@@ -2050,24 +2050,16 @@ static void DrawWeaponInventory(QPainter* p, melonDS::u8* ram,
         const TextBitmapCache& tc = s_invTextCache[si];
         const float textW = (tc.valid && !tc.bitmap.isNull())
                             ? static_cast<float>(tc.bitmap.width())  * tds : 0.0f;
-        const float textH = (tc.valid && !tc.bitmap.isNull())
-                            ? static_cast<float>(tc.bitmap.height()) * tds : 0.0f;
-        // DrawCachedText draws at (x + originX*tds, baselineY + originY*tds).
-        // originY is typically -ascent (negative), so subtract it to truly center on icon.
-        const float originYds = tc.valid ? static_cast<float>(tc.originY) * tds : 0.0f;
 
         float px, py;
         float textX;
-        int   textBaseY;  // baselineY arg for DrawCachedText
+        float textBaseY;  // baselineY arg for DrawCachedText (kept as float for sub-pixel precision)
 
         if (wi.orientation == 1) {
             // Vertical: all icons share iconCenterX axis
             px = iconCenterX - drawIW * 0.5f;
             py = curY;
             textX = vertTextX;
-            // Center text bitmap on icon: baselineY = iconCenter - textH/2 - originY*tds
-            textBaseY = static_cast<int>(std::round(
-                py + drawIH * 0.5f - textH * 0.5f - originYds));
         } else {
             // Horizontal: align shifts Y
             px = curX;
@@ -2075,8 +2067,16 @@ static void DrawWeaponInventory(QPainter* p, melonDS::u8* ram,
                : wi.align == 2 ? startY - drawIH
                :                 startY;
             textX = px + drawIW + 2.0f;
-            textBaseY = static_cast<int>(std::round(
-                py + drawIH * 0.5f - textH * 0.5f - originYds));
+        }
+        // Center glyph pixels on the icon center without integer rounding.
+        // DrawCachedText places bitmap top at (textBaseY + originY*tds).
+        // Digit glyphs span from bitmap-top to the baseline (-originY pixels, no descenders),
+        // so visual center = bitmap-top + (-originY*tds)/2.
+        // Setting that equal to iconCenterY = py + drawIH/2:
+        //   textBaseY = py + drawIH/2 - originY*tds/2
+        {
+            const float originYds = tc.valid ? static_cast<float>(tc.originY) * tds : 0.0f;
+            textBaseY = py + drawIH * 0.5f - originYds * 0.5f;
         }
 
         // Draw highlight rounded-rect outline around icon + ammo text for currently selected weapon
@@ -2128,15 +2128,14 @@ static void DrawWeaponInventory(QPainter* p, melonDS::u8* ram,
 
         // Draw ammo text via bitmap cache (tds scaling → TextScale + CapText applied)
         if (s_invTextCache[si].valid) {
-            const int tx = static_cast<int>(std::round(textX));
             const HudOutlineConfig& _ol = EffOL(c, c.weaponInventory.outline);
             if (_ol.enable && _ol.opacity > 0.0f) {
                 PrepareOutlineBitmapCached(s_invOutlineCache[si], s_invTextCache[si],
                                            _ol.color, _ol.thickness, tds * hudScale);
                 DrawCachedTextOutlined(p, s_invTextCache[si], s_invOutlineCache[si],
-                                       tx, textBaseY, tds, eff, _ol.opacity);
+                                       textX, textBaseY, tds, eff, _ol.opacity);
             } else {
-                DrawCachedText(p, s_invTextCache[si], tx, textBaseY, tds);
+                DrawCachedText(p, s_invTextCache[si], textX, textBaseY, tds);
             }
         }
 
