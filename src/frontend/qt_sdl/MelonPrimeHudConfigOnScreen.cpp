@@ -866,7 +866,8 @@ static QRectF ComputeEditBounds(int idx, Config::Table& cfg, float topStretchX)
     // ── Weapon icon (idx=3) ─────────────────────────────────────────────────
     if (idx == 3) {
         const int iconH = std::max(4, cfg.GetInt("Metroid.Visual.HudWeaponIconHeight"));
-        const float dh  = static_cast<float>(iconH) / hs;
+        const float iconScale = s_cache.valid ? s_cache.scaleIcons : 1.0f;
+        const float dh  = static_cast<float>(iconH) * iconScale / hs;
         // Use cached icon aspect ratio (don't reload); fall back to square
         const QImage& icon = s_weaponIcons[0];
         const float dw = (!icon.isNull() && icon.height() > 0)
@@ -895,7 +896,8 @@ static QRectF ComputeEditBounds(int idx, Config::Table& cfg, float topStretchX)
     // ── Bomb icon (idx=10) ──────────────────────────────────────────────────
     if (idx == 10) {
         const int iconH = std::max(4, cfg.GetInt("Metroid.Visual.HudBombIconHeight"));
-        const float dh  = static_cast<float>(iconH) / hs;
+        const float iconScale = s_cache.valid ? s_cache.scaleIcons : 1.0f;
+        const float dh  = static_cast<float>(iconH) * iconScale / hs;
         const QImage& icon = s_bombIcons[3];
         const float dw = (!icon.isNull() && icon.height() > 0)
                          ? dh * static_cast<float>(icon.width()) / static_cast<float>(icon.height())
@@ -922,16 +924,22 @@ static QRectF ComputeEditBounds(int idx, Config::Table& cfg, float topStretchX)
 
     // ── Text elements ───────────────────────────────────────────────────────
     // Use actual font metrics (s_frameFm = mph.ttf 6px) scaled by tds for accuracy.
-    float bw, bh;
+    // fy is the text baseline — rendered glyphs sit above it (by ascent) with a small
+    // descender margin below. Position the box to match the actual drawn region.
+    float bw, bh, boxTop;
     const char* sampleTxt = (idx >= 0 && idx < kEditElemCount) ? kEditElemSampleText[idx] : nullptr;
     if (sampleTxt && s_frameFpx == kCustomHudFontSize) {
         bw = std::max(14.0f, s_frameFm.horizontalAdvance(QString::fromUtf8(sampleTxt)) * tds + 4.0f);
         bh = std::max(5.0f,  s_frameFm.height() * tds + 2.0f);
+        // Align box so text ascent sits just inside the top edge.
+        boxTop = static_cast<float>(fy) - static_cast<float>(s_frameFm.ascent()) * tds - 1.0f;
     } else {
         bw = std::max(14.0f, 50.0f * tds);
         bh = std::max(5.0f,  12.0f * tds);
+        // Fallback: treat fy as the bottom of the text area.
+        boxTop = static_cast<float>(fy) - bh + 2.0f;
     }
-    return QRectF(static_cast<float>(fx) - bw * 0.5f, static_cast<float>(fy) - bh * 0.5f, bw, bh);
+    return QRectF(static_cast<float>(fx) - bw * 0.5f, boxTop, bw, bh);
 }
 
 static int CountBuiltinRows(const HudEditElemDesc& d) {
