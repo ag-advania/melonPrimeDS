@@ -157,9 +157,9 @@ namespace MelonPrime {
     // This matches the convention in processRawInput and Windows input handling.
     // =========================================================================
     void InputState::processRawInputBatched() noexcept {
-        alignas(64) static thread_local uint8_t buffer[16384];
+        alignas(64) static uint8_t buffer[16384];
 
-        int32_t localAccX = 0, localAccY = 0;
+        int64_t localAccX = 0, localAccY = 0;
         uint64_t localKeyDeltaDown[4] = {};
         uint64_t localKeyDeltaUp[4] = {};
         bool hasKeyChanges = false;
@@ -228,10 +228,8 @@ namespace MelonPrime {
         // P-37: Combined nonzero check reduces branch count.
         // With 8kHz mouse, (localAccX | localAccY) is nonzero on ~99% of frames.
         if (localAccX | localAccY) {
-            const int64_t curX = m_accumMouseX.load(std::memory_order_relaxed);
-            const int64_t curY = m_accumMouseY.load(std::memory_order_relaxed);
-            if (localAccX) m_accumMouseX.store(curX + localAccX, std::memory_order_relaxed);
-            if (localAccY) m_accumMouseY.store(curY + localAccY, std::memory_order_relaxed);
+            m_accumMouseX.store(m_accumMouseX.load(std::memory_order_relaxed) + localAccX, std::memory_order_relaxed);
+            m_accumMouseY.store(m_accumMouseY.load(std::memory_order_relaxed) + localAccY, std::memory_order_relaxed);
         }
 
         if (finalBtnState != initialBtnState) {
