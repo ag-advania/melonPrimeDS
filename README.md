@@ -33,6 +33,9 @@ You can buy a coffee for the current maintainer and updater, Zection, if you’d
   </tr>
 </table>
 
+## If you’d like to see new HUD features added, you can also support Livetek .
+https://ko-fi.com/livetek 
+
 
 [melonPrimeDS.webm](https://github.com/makidoll/melonPrimeDS/assets/8362329/69ab26bb-7205-451a-a11c-70a2ca0b549d)
 
