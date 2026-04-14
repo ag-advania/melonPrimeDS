@@ -384,9 +384,10 @@ struct TextBitmapCache {
 
 // textDrawScale: visual scale applied when drawing (textScalePct/100). Returned
 // dimensions are in pre-hudScale DS space so gauge/alignment math stays correct.
+// outW/outH are float to preserve sub-pixel precision for centering calculations.
 static inline void MeasureTextCached(const QFontMetrics& fm, int fontPixelSize,
                                      TextMeasureCache& cache, const char* text,
-                                     int& outW, int& outH, float textDrawScale = 1.0f)
+                                     float& outW, float& outH, float textDrawScale = 1.0f)
 {
     if (!cache.valid || cache.fontPixelSize != fontPixelSize || std::strcmp(cache.text, text) != 0) {
         cache.width = fm.horizontalAdvance(QString::fromUtf8(text));
@@ -397,8 +398,8 @@ static inline void MeasureTextCached(const QFontMetrics& fm, int fontPixelSize,
         cache.valid = true;
     }
 
-    outW = static_cast<int>(cache.width  * textDrawScale);
-    outH = static_cast<int>(cache.height * textDrawScale);
+    outW = cache.width  * textDrawScale;
+    outH = cache.height * textDrawScale;
 }
 
 static inline void PrepareTextBitmapCached(const QFontMetrics& fm, const QFont& font,
@@ -432,12 +433,12 @@ static inline void PrepareTextBitmapCached(const QFontMetrics& fm, const QFont& 
     }
 }
 
-static inline void DrawCachedText(QPainter* p, const TextBitmapCache& cache, int x, int baselineY,
+static inline void DrawCachedText(QPainter* p, const TextBitmapCache& cache, float x, float baselineY,
                                    float textDrawScale = 1.0f)
 {
     if (!cache.valid || cache.bitmap.isNull()) return;
     if (textDrawScale == 1.0f) {
-        p->drawImage(QPoint(x + cache.originX, baselineY + cache.originY), cache.bitmap);
+        p->drawImage(QPointF(x + cache.originX, baselineY + cache.originY), cache.bitmap);
     } else {
         const float ox = cache.originX * textDrawScale;
         const float oy = cache.originY * textDrawScale;
@@ -513,7 +514,7 @@ static inline void PrepareOutlineBitmapCached(TextBitmapCache& outlineCache,
 static inline void DrawCachedTextOutlined(QPainter* p,
                                           const TextBitmapCache& cache,
                                           const TextBitmapCache& outlineCache,
-                                          int x, int baselineY,
+                                          float x, float baselineY,
                                           float tds,
                                           float opacity, float outlineOpacity)
 {
@@ -596,6 +597,8 @@ struct HpHudConfig {
     int hpGaugeOfsX, hpGaugeOfsY, hpGaugeAnchor;
     int hpGaugePosMode, hpGaugePosX, hpGaugePosY;  // final
     int hpGaugePosAnchor, hpGaugePosOfsX, hpGaugePosOfsY;  // raw
+    int hpTextAnchor;            // which side of gauge the text appears (mode 2 only)
+    int hpTextOfsX, hpTextOfsY;  // text offset from gauge (mode 2 only)
     QColor hpGaugeColor;
     HudOutlineConfig outline;
     HudOutlineConfig gaugeOutline;
@@ -617,6 +620,8 @@ struct WeaponHudConfig {
     int ammoGaugeOfsX, ammoGaugeOfsY, ammoGaugeAnchor;
     int ammoGaugePosMode, ammoGaugePosX, ammoGaugePosY;     // final
     int ammoGaugePosAnchor, ammoGaugePosOfsX, ammoGaugePosOfsY;  // raw
+    int ammoTextAnchor;              // which side of gauge the text appears (mode 2 only)
+    int ammoTextOfsX, ammoTextOfsY;  // text offset from gauge (mode 2 only)
     QColor ammoGaugeColor;
     HudOutlineConfig outline;
     HudOutlineConfig iconOutline;
@@ -818,6 +823,9 @@ static void LoadHpConfig(HpHudConfig& hp, Config::Table& cfg)
     hp.hpGaugePosAnchor = cfg.GetInt("Metroid.Visual.HudHpGaugePosAnchor");
     hp.hpGaugePosOfsX = cfg.GetInt("Metroid.Visual.HudHpGaugePosX");
     hp.hpGaugePosOfsY = cfg.GetInt("Metroid.Visual.HudHpGaugePosY");
+    hp.hpTextAnchor = cfg.GetInt("Metroid.Visual.HudHpTextAnchor");
+    hp.hpTextOfsX = cfg.GetInt("Metroid.Visual.HudHpTextOffsetX");
+    hp.hpTextOfsY = cfg.GetInt("Metroid.Visual.HudHpTextOffsetY");
     hp.hpAutoColor = cfg.GetBool("Metroid.Visual.HudHpGaugeAutoColor");
     hp.hpGaugeColor = ReadRgbColor(cfg, "Metroid.Visual.HudHpGaugeColorR", "Metroid.Visual.HudHpGaugeColorG", "Metroid.Visual.HudHpGaugeColorB");
 }
@@ -866,6 +874,9 @@ static void LoadWeaponConfig(WeaponHudConfig& weapon, Config::Table& cfg)
     weapon.ammoGaugePosAnchor = cfg.GetInt("Metroid.Visual.HudAmmoGaugePosAnchor");
     weapon.ammoGaugePosOfsX = cfg.GetInt("Metroid.Visual.HudAmmoGaugePosX");
     weapon.ammoGaugePosOfsY = cfg.GetInt("Metroid.Visual.HudAmmoGaugePosY");
+    weapon.ammoTextAnchor = cfg.GetInt("Metroid.Visual.HudAmmoTextAnchor");
+    weapon.ammoTextOfsX = cfg.GetInt("Metroid.Visual.HudAmmoTextOffsetX");
+    weapon.ammoTextOfsY = cfg.GetInt("Metroid.Visual.HudAmmoTextOffsetY");
     weapon.ammoGaugeColor = ReadRgbColor(cfg, "Metroid.Visual.HudAmmoGaugeColorR", "Metroid.Visual.HudAmmoGaugeColorG", "Metroid.Visual.HudAmmoGaugeColorB");
 }
 static void LoadWeaponInventoryConfig(WeaponInventoryHudConfig& wi, Config::Table& cfg)
@@ -1452,7 +1463,7 @@ static void DrawMatchStatusText(QPainter* p, const QFontMetrics& fm, int fontPix
     auto eff = [&](const QColor& sub) -> const QColor& { return sub.isValid() ? sub : c.matchStatusColor; };
     const bool useOutline = ol.enable && ol.opacity > 0.0f;
     const float renderScale = tds * hudScale;
-    auto drawText = [&](TextBitmapCache& bmp, TextBitmapCache& olBmp, int x, int y) {
+    auto drawText = [&](TextBitmapCache& bmp, TextBitmapCache& olBmp, float x, float y) {
         if (useOutline) {
             PrepareOutlineBitmapCached(olBmp, bmp, ol.color, ol.thickness, renderScale);
             DrawCachedTextOutlined(p, bmp, olBmp, x, y, tds, overallOpacity, ol.opacity);
@@ -1462,25 +1473,25 @@ static void DrawMatchStatusText(QPainter* p, const QFontMetrics& fm, int fontPix
             p->setOpacity(1.0f);
         }
     };
-    int vx = c.matchStatusX, vy = c.matchStatusY, curW = 0, curH = 0;
+    float curW = 0.0f, curH = 0.0f;
     MeasureTextCached(fm, fontPixelSize, s_curTextCache, s_matchStringCache.curBuf, curW, curH, tds);
     PrepareTextBitmapCached(fm, p->font(), fontPixelSize, s_curBitmapCache, s_matchStringCache.curBuf, eff(c.matchStatusValueColor));
-    drawText(s_curBitmapCache, s_curOlCache, vx, vy);
+    drawText(s_curBitmapCache, s_curOlCache, static_cast<float>(c.matchStatusX), static_cast<float>(c.matchStatusY));
     if (s_matchStringCache.hasGoal) {
-        int sepW = 0, sepH = 0, goalW = 0, goalH = 0;
+        float sepW = 0.0f, sepH = 0.0f, goalW = 0.0f, goalH = 0.0f;
         MeasureTextCached(fm, fontPixelSize, s_sepTextCache, s_matchStringCache.sepBuf, sepW, sepH, tds);
         MeasureTextCached(fm, fontPixelSize, s_goalTextCache, s_matchStringCache.goalBuf, goalW, goalH, tds);
-        int x = vx + curW;
+        float x = c.matchStatusX + curW;
         PrepareTextBitmapCached(fm, p->font(), fontPixelSize, s_sepBitmapCache, s_matchStringCache.sepBuf, eff(c.matchStatusSepColor));
-        drawText(s_sepBitmapCache, s_sepOlCache, x, vy);
+        drawText(s_sepBitmapCache, s_sepOlCache, x, static_cast<float>(c.matchStatusY));
         x += sepW;
         PrepareTextBitmapCached(fm, p->font(), fontPixelSize, s_goalBitmapCache, s_matchStringCache.goalBuf, eff(c.matchStatusGoalColor));
-        drawText(s_goalBitmapCache, s_goalOlCache, x, vy);
+        drawText(s_goalBitmapCache, s_goalOlCache, x, static_cast<float>(c.matchStatusY));
     }
     const char* label = ResolveMatchStatusLabel(state.mode, c);
     if (label[0] == '\0') return;
-    int lx = vx, ly = vy;
-    switch (c.matchStatusLabelPos) { default: case 0: ly = vy - 10; break; case 1: ly = vy + 10; break; case 2: lx = vx - 50; break; case 3: lx = vx + 50; break; case 4: break; }
+    float lx = static_cast<float>(c.matchStatusX), ly = static_cast<float>(c.matchStatusY);
+    switch (c.matchStatusLabelPos) { default: case 0: ly -= 10; break; case 1: ly += 10; break; case 2: lx -= 50; break; case 3: lx += 50; break; case 4: break; }
     lx += c.matchStatusLabelOfsX; ly += c.matchStatusLabelOfsY;
     PrepareTextBitmapCached(fm, p->font(), fontPixelSize, s_labelBitmapCache, label, eff(c.matchStatusLabelColor));
     drawText(s_labelBitmapCache, s_labelOlCache, lx, ly);
@@ -1489,7 +1500,7 @@ static void DrawMatchStatusHud(QPainter* p, melonDS::u8* ram, const RomAddresses
 {
     if (!c.matchStatus.matchStatusShow || isAdventure) return; MatchStatusResolvedState state = {}; if (!ComputeMatchStatusState(ram, rom, playerPos, state)) return; const QFontMetrics& fm = s_frameFm; const int fontPixelSize = s_frameFpx; /* P-9 */ DrawMatchStatusText(p, fm, fontPixelSize, c.textDrawScale, state, c.matchStatus, c.matchStatusOpacity, EffOL(c, c.matchStatus.outline), c.lastHudScale);
 }
-static int CalcAlignedTextX(int anchorX, int align, int textW);
+static float CalcAlignedTextX(int anchorX, int align, float textW);
 static void DrawCachedAlignedText(QPainter* p, const QFontMetrics& fm, int fontPixelSize, float tds,
                                    TextMeasureCache& measureCache, TextBitmapCache& bitmapCache,
                                    TextBitmapCache& outlineCache,
@@ -1497,9 +1508,9 @@ static void DrawCachedAlignedText(QPainter* p, const QFontMetrics& fm, int fontP
                                    int anchorX, int align, int y,
                                    float opacity, const HudOutlineConfig& ol, float hudScale = 1.0f)
 {
-    int textW = 0, textH = 0;
+    float textW = 0.0f, textH = 0.0f;
     MeasureTextCached(fm, fontPixelSize, measureCache, text, textW, textH, tds);
-    const int textX = CalcAlignedTextX(anchorX, align, textW);
+    const float textX = CalcAlignedTextX(anchorX, align, textW);
     PrepareTextBitmapCached(fm, p->font(), fontPixelSize, bitmapCache, text, color);
     if (ol.enable && ol.opacity > 0.0f) {
         const float renderScale = tds * hudScale;
@@ -1512,7 +1523,7 @@ static void DrawCachedAlignedText(QPainter* p, const QFontMetrics& fm, int fontP
     }
 }
 // =========================================================================
-static int CalcAlignedTextX(int anchorX, int align, int textW);
+static float CalcAlignedTextX(int anchorX, int align, float textW);
 // =========================================================================
 //  Bomb Left HUD
 // =========================================================================
@@ -1528,10 +1539,10 @@ static void DrawBombLeft(QPainter* p, melonDS::u8* ram, const RomAddresses& rom,
         if (c.bombLeft.bombLeftTextShow) std::snprintf(buf, sizeof(buf), "%s%u%s", c.bombLeft.bombLeftPrefix, bombs, c.bombLeft.bombLeftSuffix);
         else std::snprintf(buf, sizeof(buf), "%s%s", c.bombLeft.bombLeftPrefix, c.bombLeft.bombLeftSuffix);
         if (buf[0] != '\0') {
-            int bombTextW = 0, bombTextH = 0;
+            float bombTextW = 0.0f, bombTextH = 0.0f;
             MeasureTextCached(fm, fontPixelSize, s_bombMeasureCache, buf, bombTextW, bombTextH, tds);
             PrepareTextBitmapCached(fm, p->font(), fontPixelSize, s_bombBitmapCache, buf, c.bombLeft.bombLeftColor);
-            const int bombTextX = CalcAlignedTextX(c.bombLeft.bombLeftX, c.bombLeft.bombLeftAlign, bombTextW);
+            const float bombTextX = CalcAlignedTextX(c.bombLeft.bombLeftX, c.bombLeft.bombLeftAlign, bombTextW);
             { const HudOutlineConfig& _ol = EffOL(c, c.bombLeft.outline);
             if (_ol.enable && _ol.opacity > 0.0f) {
                 const float renderScale = tds * hudScale;
@@ -1769,27 +1780,63 @@ static inline const QColor& HpGaugeColor(uint16_t hp, const QColor& safeColor)
     else               return safeColor;
 }
 
-static int CalcAlignedTextX(int anchorX, int align, int textW)
+static float CalcAlignedTextX(int anchorX, int align, float textW)
 {
     switch (align) {
-    case 1: return anchorX - textW / 2;
+    case 1: return anchorX - textW * 0.5f;
     case 2: return anchorX - textW;
-    default: return anchorX;
+    default: return static_cast<float>(anchorX);
     }
 }
 
-static void CalcGaugePos(int textX, int textY, int textW, int textH, int anchor,
+static void CalcGaugePos(float textX, float textY, float textW, float textH, int anchor,
                          int ofsX, int ofsY, float gaugeLen, float gaugeWid, int ori,
                          int& outX, int& outY)
 {
-    const int gL = static_cast<int>(gaugeLen), gW = static_cast<int>(gaugeWid);
+    const float gL = gaugeLen, gW = gaugeWid;
     switch (anchor) {
-    case 0: outX = textX + ofsX;           outY = textY + 2 + ofsY; break;
-    case 1: outX = textX + ofsX;           outY = textY - textH - (ori==0?gW:gL) + ofsY; break;
-    case 2: outX = textX + textW + ofsX;   outY = textY - textH/2 - (ori==0?gW:gL)/2 + ofsY; break;
-    case 3: outX = textX - (ori==0?gL:gW) + ofsX; outY = textY - textH/2 - (ori==0?gW:gL)/2 + ofsY; break;
-    case 4: outX = textX + textW/2 - (ori==0?gL:gW)/2 + ofsX; outY = textY - textH/2 - (ori==0?gW:gL)/2 + ofsY; break;
-    default: outX = textX + ofsX;          outY = textY + 2 + ofsY; break;
+    case 0: outX = static_cast<int>(textX) + ofsX;                       outY = static_cast<int>(textY) + 2 + ofsY; break;
+    case 1: outX = static_cast<int>(textX) + ofsX;                       outY = static_cast<int>(std::round(textY - textH - (ori==0?gW:gL))) + ofsY; break;
+    case 2: outX = static_cast<int>(std::round(textX + textW)) + ofsX;   outY = static_cast<int>(std::round(textY - textH*0.5f - (ori==0?gW:gL)*0.5f)) + ofsY; break;
+    case 3: outX = static_cast<int>(std::round(textX - (ori==0?gL:gW))) + ofsX; outY = static_cast<int>(std::round(textY - textH*0.5f - (ori==0?gW:gL)*0.5f)) + ofsY; break;
+    case 4: outX = static_cast<int>(std::round(textX + textW*0.5f - (ori==0?gL:gW)*0.5f)) + ofsX; outY = static_cast<int>(std::round(textY - textH*0.5f - (ori==0?gW:gL)*0.5f)) + ofsY; break;
+    default: outX = static_cast<int>(textX) + ofsX;                      outY = static_cast<int>(textY) + 2 + ofsY; break;
+    }
+}
+
+// Inverse of CalcGaugePos: given the gauge's effective top-left and dimensions,
+// compute where the text should be placed (anchor = which side of the gauge).
+// anchor: 0=Below, 1=Above, 2=Right, 3=Left, 4=Center  (same enum as GaugeAnchor5)
+// textY convention: bottom edge of text (same as CalcGaugePos's textY).
+// anchor: 0=Below, 1=Above, 2=Right, 3=Left, 4=Center
+static void CalcTextPosFromGauge(int gx, int gy, int gaugeLen, int gaugeWid, int ori,
+                                  int anchor, int ofsX, int ofsY,
+                                  float textW, float textH,
+                                  float& outTextX, float& outTextY)
+{
+    const float gW = static_cast<float>((ori == 0) ? gaugeLen : gaugeWid);
+    const float gH = static_cast<float>((ori == 0) ? gaugeWid : gaugeLen);
+    switch (anchor) {
+    case 1: // Above — text bottom at gauge top
+        outTextX = gx + gW * 0.5f - textW * 0.5f + ofsX;
+        outTextY = gy + ofsY;
+        break;
+    case 2: // Right — text vertically centered on gauge
+        outTextX = gx + gW + ofsX;
+        outTextY = gy + gH * 0.5f + textH * 0.5f + ofsY;
+        break;
+    case 3: // Left — text vertically centered on gauge
+        outTextX = gx - textW + ofsX;
+        outTextY = gy + gH * 0.5f + textH * 0.5f + ofsY;
+        break;
+    case 4: // Center — text centered on gauge
+        outTextX = gx + gW * 0.5f - textW * 0.5f + ofsX;
+        outTextY = gy + gH * 0.5f + textH * 0.5f + ofsY;
+        break;
+    default: // 0 = Below — text top at gauge bottom + 2px gap
+        outTextX = gx + gW * 0.5f - textW * 0.5f + ofsX;
+        outTextY = gy + gH + textH + 2 + ofsY;
+        break;
     }
 }
 
@@ -1809,19 +1856,34 @@ static inline void DrawHP(QPainter* p, uint16_t hp, uint16_t maxHP,
 
     char buf[24];
     std::snprintf(buf, sizeof(buf), "%s%u", c.hp.hpPrefix, hp);
-    int textW = 0, textH = 0;
+    float textW = 0.0f, textH = 0.0f;
     MeasureTextCached(fm, fontPixelSize, s_hpTextCache, buf, textW, textH, tds);
-    const int textX = CalcAlignedTextX(c.hp.hpX, c.hp.hpAlign, textW);
+    float textX, hpTextY;
+    if (c.hp.hpGaugePosMode == 2) {
+        // mode 2: text side relative to gauge — compute gauge effective top-left first
+        const float hs = c.lastHudScale;
+        const int gl = (int)(c.hp.hpGaugeLen / hs * c.scaleGauges);
+        const int gw = (int)(c.hp.hpGaugeWid / hs * c.scaleGauges);
+        int gxEff = c.hp.hpGaugePosX, gyEff = c.hp.hpGaugePosY;
+        if (c.hp.hpGaugeOri == 0) gxEff -= gl * c.hp.hpGaugeAlign / 2;
+        else                       gyEff -= gl * c.hp.hpGaugeAlign / 2;
+        CalcTextPosFromGauge(gxEff, gyEff, gl, gw, c.hp.hpGaugeOri,
+                             c.hp.hpTextAnchor, c.hp.hpTextOfsX, c.hp.hpTextOfsY,
+                             textW, textH, textX, hpTextY);
+    } else {
+        textX  = CalcAlignedTextX(c.hp.hpX, c.hp.hpAlign, textW);
+        hpTextY = static_cast<float>(c.hp.hpY);
+    }
     PrepareTextBitmapCached(fm, p->font(), fontPixelSize, s_hpBitmapCache, buf, hpTextColor);
     { const HudOutlineConfig& _ol = EffOL(c, c.hp.outline);
     if (_ol.enable && _ol.opacity > 0.0f) {
         const float renderScale = tds * c.lastHudScale;
         PrepareOutlineBitmapCached(s_hpOutlineCache, s_hpBitmapCache, _ol.color, _ol.thickness, renderScale);
-        DrawCachedTextOutlined(p, s_hpBitmapCache, s_hpOutlineCache, textX, c.hp.hpY, tds,
+        DrawCachedTextOutlined(p, s_hpBitmapCache, s_hpOutlineCache, textX, hpTextY, tds,
                                c.hpOpacity, _ol.opacity);
     } else {
         if (c.hpOpacity < 1.0f) p->setOpacity(c.hpOpacity);
-        DrawCachedText(p, s_hpBitmapCache, textX, c.hp.hpY, tds);
+        DrawCachedText(p, s_hpBitmapCache, textX, hpTextY, tds);
         if (c.hpOpacity < 1.0f) p->setOpacity(1.0f);
     } }
 
@@ -1830,12 +1892,14 @@ static inline void DrawHP(QPainter* p, uint16_t hp, uint16_t maxHP,
         QColor gc = c.hp.hpAutoColor ? HpGaugeColor(hp, c.hp.hpGaugeColor) : c.hp.hpGaugeColor;
         const float hs = c.lastHudScale;
         int gx, gy;
-        if (c.hp.hpGaugePosMode == 1) {
+        if (c.hp.hpGaugePosMode == 0) {
+            // gauge relative to text
+            CalcGaugePos(textX, hpTextY, textW, textH, c.hp.hpGaugeAnchor, c.hp.hpGaugeOfsX, c.hp.hpGaugeOfsY,
+                         c.hp.hpGaugeLen / hs * c.scaleGauges, c.hp.hpGaugeWid / hs * c.scaleGauges, c.hp.hpGaugeOri, gx, gy);
+        } else {
+            // modes 1 (independent) and 2 (text follows gauge): gauge at absolute position
             gx = c.hp.hpGaugePosX;
             gy = c.hp.hpGaugePosY;
-        } else {
-            CalcGaugePos(textX, c.hp.hpY, textW, textH, c.hp.hpGaugeAnchor, c.hp.hpGaugeOfsX, c.hp.hpGaugeOfsY,
-                         c.hp.hpGaugeLen / hs * c.scaleGauges, c.hp.hpGaugeWid / hs * c.scaleGauges, c.hp.hpGaugeOri, gx, gy);
         }
         { const int gl_ds = (int)(c.hp.hpGaugeLen / hs * c.scaleGauges);
           if (c.hp.hpGaugeOri == 0) gx -= gl_ds * c.hp.hpGaugeAlign / 2;
@@ -1987,24 +2051,16 @@ static void DrawWeaponInventory(QPainter* p, melonDS::u8* ram,
         const TextBitmapCache& tc = s_invTextCache[si];
         const float textW = (tc.valid && !tc.bitmap.isNull())
                             ? static_cast<float>(tc.bitmap.width())  * tds : 0.0f;
-        const float textH = (tc.valid && !tc.bitmap.isNull())
-                            ? static_cast<float>(tc.bitmap.height()) * tds : 0.0f;
-        // DrawCachedText draws at (x + originX*tds, baselineY + originY*tds).
-        // originY is typically -ascent (negative), so subtract it to truly center on icon.
-        const float originYds = tc.valid ? static_cast<float>(tc.originY) * tds : 0.0f;
 
         float px, py;
         float textX;
-        int   textBaseY;  // baselineY arg for DrawCachedText
+        float textBaseY;  // baselineY arg for DrawCachedText (kept as float for sub-pixel precision)
 
         if (wi.orientation == 1) {
             // Vertical: all icons share iconCenterX axis
             px = iconCenterX - drawIW * 0.5f;
             py = curY;
             textX = vertTextX;
-            // Center text bitmap on icon: baselineY = iconCenter - textH/2 - originY*tds
-            textBaseY = static_cast<int>(std::round(
-                py + drawIH * 0.5f - textH * 0.5f - originYds));
         } else {
             // Horizontal: align shifts Y
             px = curX;
@@ -2012,8 +2068,16 @@ static void DrawWeaponInventory(QPainter* p, melonDS::u8* ram,
                : wi.align == 2 ? startY - drawIH
                :                 startY;
             textX = px + drawIW + 2.0f;
-            textBaseY = static_cast<int>(std::round(
-                py + drawIH * 0.5f - textH * 0.5f - originYds));
+        }
+        // Center glyph pixels on the icon center without integer rounding.
+        // DrawCachedText places bitmap top at (textBaseY + originY*tds).
+        // Digit glyphs span from bitmap-top to the baseline (-originY pixels, no descenders),
+        // so visual center = bitmap-top + (-originY*tds)/2.
+        // Setting that equal to iconCenterY = py + drawIH/2:
+        //   textBaseY = py + drawIH/2 - originY*tds/2
+        {
+            const float originYds = tc.valid ? static_cast<float>(tc.originY) * tds : 0.0f;
+            textBaseY = py + drawIH * 0.5f - originYds * 0.5f;
         }
 
         // Draw highlight rounded-rect outline around icon + ammo text for currently selected weapon
@@ -2065,15 +2129,14 @@ static void DrawWeaponInventory(QPainter* p, melonDS::u8* ram,
 
         // Draw ammo text via bitmap cache (tds scaling → TextScale + CapText applied)
         if (s_invTextCache[si].valid) {
-            const int tx = static_cast<int>(std::round(textX));
             const HudOutlineConfig& _ol = EffOL(c, c.weaponInventory.outline);
             if (_ol.enable && _ol.opacity > 0.0f) {
                 PrepareOutlineBitmapCached(s_invOutlineCache[si], s_invTextCache[si],
                                            _ol.color, _ol.thickness, tds * hudScale);
                 DrawCachedTextOutlined(p, s_invTextCache[si], s_invOutlineCache[si],
-                                       tx, textBaseY, tds, eff, _ol.opacity);
+                                       textX, textBaseY, tds, eff, _ol.opacity);
             } else {
-                DrawCachedText(p, s_invTextCache[si], tx, textBaseY, tds);
+                DrawCachedText(p, s_invTextCache[si], textX, textBaseY, tds);
             }
         }
 
@@ -2130,13 +2193,26 @@ static void DrawWeaponAmmo(QPainter* p, melonDS::u8* ram,
         }
     }
 
-    int textX = c.weapon.wpnX, textY = c.weapon.wpnY;
-    int textW = 0, textH = fm.height();
+    float textX = static_cast<float>(c.weapon.wpnX), textY = static_cast<float>(c.weapon.wpnY);
+    float textW = 0.0f, textH = static_cast<float>(fm.height());
     if (hasAmmo) {
         char buf[24];
         std::snprintf(buf, sizeof(buf), "%s%02u", c.weapon.ammoPrefix, ammo);
         MeasureTextCached(fm, fontPixelSize, s_ammoTextCache, buf, textW, textH, tds);
-        textX = CalcAlignedTextX(c.weapon.wpnX, c.weapon.ammoAlign, textW);
+        if (c.weapon.ammoGaugePosMode == 2) {
+            // mode 2: text side relative to gauge — compute gauge effective top-left first
+            const float hs = hudScale;
+            const int gl = (int)(c.weapon.ammoGaugeLen / hs * c.scaleGauges);
+            const int gw = (int)(c.weapon.ammoGaugeWid / hs * c.scaleGauges);
+            int gxEff = c.weapon.ammoGaugePosX, gyEff = c.weapon.ammoGaugePosY;
+            if (c.weapon.ammoGaugeOri == 0) gxEff -= gl * c.weapon.ammoGaugeAlign / 2;
+            else                             gyEff -= gl * c.weapon.ammoGaugeAlign / 2;
+            CalcTextPosFromGauge(gxEff, gyEff, gl, gw, c.weapon.ammoGaugeOri,
+                                 c.weapon.ammoTextAnchor, c.weapon.ammoTextOfsX, c.weapon.ammoTextOfsY,
+                                 textW, textH, textX, textY);
+        } else {
+            textX = CalcAlignedTextX(c.weapon.wpnX, c.weapon.ammoAlign, textW);
+        }
         PrepareTextBitmapCached(fm, p->font(), fontPixelSize, s_ammoBitmapCache, buf, c.weapon.ammoTextColor);
         { const HudOutlineConfig& _ol = EffOL(c, c.weapon.outline);
         if (_ol.enable && _ol.opacity > 0.0f) {
@@ -2178,12 +2254,14 @@ static void DrawWeaponAmmo(QPainter* p, melonDS::u8* ram,
     if (c.weapon.ammoGauge && hasAmmo && maxAmmo > 0) {
         float ratio = static_cast<float>(ammo) / static_cast<float>(maxAmmo);
         int gx, gy;
-        if (c.weapon.ammoGaugePosMode == 1) {
-            gx = c.weapon.ammoGaugePosX;
-            gy = c.weapon.ammoGaugePosY;
-        } else {
+        if (c.weapon.ammoGaugePosMode == 0) {
+            // gauge relative to text
             CalcGaugePos(textX, textY, textW, textH, c.weapon.ammoGaugeAnchor, c.weapon.ammoGaugeOfsX, c.weapon.ammoGaugeOfsY,
                          c.weapon.ammoGaugeLen / hudScale * c.scaleGauges, c.weapon.ammoGaugeWid / hudScale * c.scaleGauges, c.weapon.ammoGaugeOri, gx, gy);
+        } else {
+            // modes 1 (independent) and 2 (text follows gauge): gauge at absolute position
+            gx = c.weapon.ammoGaugePosX;
+            gy = c.weapon.ammoGaugePosY;
         }
         { const int gl_ds = (int)(c.weapon.ammoGaugeLen / hudScale * c.scaleGauges);
           if (c.weapon.ammoGaugeOri == 0) gx -= gl_ds * c.weapon.ammoGaugeAlign / 2;
