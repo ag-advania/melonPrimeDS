@@ -133,7 +133,7 @@ namespace MelonPrime {
                     : MapVirtualKeyW(kb.MakeCode, MAPVK_VSC_TO_VK_EX);
             }
 
-            if (LIKELY(vk > 0 && vk < 255)) {
+            if (LIKELY(vk > 0 && vk < 256)) {
                 vk = remapVk(vk, kb.MakeCode, kb.Flags);
                 setVkBit(vk, !(kb.Flags & RI_KEY_BREAK));
                 std::atomic_thread_fence(std::memory_order_release);
@@ -198,7 +198,7 @@ namespace MelonPrime {
                             : MapVirtualKeyW(kb.MakeCode, MAPVK_VSC_TO_VK_EX);
                     }
 
-                    if (LIKELY(vk > 0 && vk < 255)) {
+                    if (LIKELY(vk > 0 && vk < 256)) {
                         vk = remapVk(vk, kb.MakeCode, kb.Flags);
                         const int idx = vk >> 6;
                         const uint64_t bit = 1ULL << (vk & 63);
