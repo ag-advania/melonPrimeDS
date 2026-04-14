@@ -12,7 +12,7 @@ Displays a circular crop of the DS bottom screen on top of the rendered top scre
 
 Two render paths:
 - OpenGL path (`Screen.cpp` + `main_shaders.h`): samples the bottom screen from the texture array and clips it to a circular overlay.
-- Software path (`MelonPrimeHudRender.cpp`): `DrawBottomScreenOverlay()` draws a cropped `QImage` region with `QPainter` and a circular clip path. A radar frame SVG (`res/assets/radar/Rader.svg`) is drawn behind the crop with an independently configurable color (`BtmOverlayRadarColor*`), and the HUD outline is applied to it.
+- Software path (`MelonPrimeHudRender.cpp`): `DrawBottomScreenOverlay()` draws a cropped `QImage` region with `QPainter` and a circular clip path. A radar frame SVG (`res/assets/radar/Radar.svg`) is drawn behind the crop with an independently configurable color (`BtmOverlayRadarColor*`), and the HUD outline is applied to it.
 
 Current source region behavior:
 - X center is fixed at `128`
