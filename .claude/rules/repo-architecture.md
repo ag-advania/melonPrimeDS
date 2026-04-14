@@ -25,6 +25,59 @@ Shaders and C++ are tightly coupled. Always check both sides when modifying eith
 
 `Screen.h` / `Screen.cpp` also hold the OpenGL-side overlay shader program, uniforms, and draw setup.
 
+### OPT-DR1 — Dirty-Rect Overlay Optimization
+
+**Goal**: avoid per-frame full-window memset and full GL texture upload for the HUD overlay.
+
+**`CustomHud_Render` return value**: returns `QRect` (dirty pixel rect in overlay space, in `Overlay[0]` coordinates). Returns empty `QRect` when nothing was drawn. `void` at all call sites was replaced with capturing this return value.
+
+**Key statics in `MelonPrimeHudRender.cpp`**:
+- `s_chPrevPxCx / s_chPrevPxCy` — previous frame crosshair pixel center (`INT_MIN` = unset)
+- `s_chDirtyThisFrame` — union of current + previous crosshair bbox, computed in `DrawCrosshair`
+- `s_staticHudDirtyPx` — conservative pixel-space bbox covering all non-crosshair HUD elements; cached across frames
+- `s_staticDirtyStale` — set `true` when config or transform changes; triggers `RefreshStaticHudDirty()` at next frame start
+
+**`CrosshairBboxPx(cx, cy, ch)`**: computes exact pixel bbox from stamp (`s_chOutlineStamp`, `s_chStampOrigin`), pre-cached arm rects, and dot rect. Used to union prev + current crosshair positions.
+
+**`RefreshStaticHudDirty()`**: iterates over all enabled fixed-position HUD elements (HP, weapon, ammo, radar, match status, rank, time, bomb), converts their DS-space positions to pixel space, adds per-element padding, unions into `s_staticHudDirtyPx`. Called once per config/transform change (not every frame).
+
+**Stale flag triggers** (`s_staticDirtyStale = true`):
+- `RecomputeAnchorPositions` (positions changed)
+- `CustomHud_ResetPatchState` (emu stop/reset)
+- `CustomHud_InvalidateConfigCache` (settings saved)
+
+**Screen.cpp software path** (`ScreenPanelNative::paintEvent`):
+```cpp
+static QRect s_hudPrevDirtyS;
+// On resize: full fill + reset s_hudPrevDirtyS
+// On same size: clear only prev dirty via CompositionMode_Source
+QRect curDirty = MelonPrime::CustomHud_Render(...);
+const QRect compositeRect = s_hudPrevDirtyS.united(curDirty);
+if (!compositeRect.isEmpty())
+    painter.drawImage(QPoint(compositeRect.x(), compositeRect.y()), Overlay[0], compositeRect);
+s_hudPrevDirtyS = curDirty;
+```
+
+**Screen.cpp GL path** (`ScreenPanelGL::drawScreen`):
+```cpp
+static QRect s_hudPrevDirtyGL;
+// partial clear of prev dirty via CompositionMode_Source
+QRect curDirty = MelonPrime::CustomHud_Render(...);
+const QRect uploadRect = s_hudPrevDirtyGL.united(curDirty);
+if (!uploadRect.isEmpty()) {
+    glPixelStorei(GL_UNPACK_ROW_LENGTH,  topOutW);
+    glPixelStorei(GL_UNPACK_SKIP_PIXELS, uploadRect.x());
+    glPixelStorei(GL_UNPACK_SKIP_ROWS,   uploadRect.y());
+    glTexSubImage2D(GL_TEXTURE_2D, 0,
+        uploadRect.x(), uploadRect.y(), uploadRect.width(), uploadRect.height(),
+        GL_BGRA, GL_UNSIGNED_BYTE, Overlay[0].constBits());
+    // reset GL_UNPACK_* to 0
+}
+s_hudPrevDirtyGL = curDirty;
+```
+
+**Removed dead code**: `GetOutlineBuffer()`, `s_outlineBuf`, `s_prevOutlineDirty` — were declared but never called; deleted.
+
 ## Config System
 Default values live in `src/frontend/qt_sdl/Config.cpp`.
 
@@ -124,8 +177,8 @@ $usageBol = rg -o "GetBool\(\"Metroid\.[^\"]+\"\)" src/frontend/qt_sdl -g"*.cpp"
 "GetBool in DefaultDoubles:"; $usageBol | ? { $doubles.Contains($_) }
 ```
 
-## Active Branch: `highres_fonts_v2`
-Current work is on the `highres_fonts_v2` branch. Main changes relative to `master`:
+## Active Branch: `highres_fonts_v3`
+Current work is on the `highres_fonts_v3` branch. Main changes relative to `master`:
 - Full 9-point anchor system for all HUD element positions
 - All `*X`/`*Y` HUD config values are offsets from anchor, not absolute DS-space coordinates
 - `ApplyAnchor()` helper in `MelonPrimeHudRender.cpp` is called once per element in `Load*Config()`, transparent to draw functions
@@ -138,3 +191,4 @@ Current work is on the `highres_fonts_v2` branch. Main changes relative to `mast
 - Property labels use full unabbreviated names throughout the edit mode UI
 - Element boxes show live previews (gauge bars, cached icons, sample text) instead of static text labels
 - Element box font scales with `HudTextScale`
+- OPT-DR1 dirty-rect overlay optimization: `CustomHud_Render` returns `QRect`; only dirty regions cleared/composited/uploaded per frame (see OPT-DR1 section above)
