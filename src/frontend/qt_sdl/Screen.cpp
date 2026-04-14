@@ -1258,9 +1258,19 @@ void ScreenPanelNative::paintEvent(QPaintEvent * event)
                     const int fullH = this->height();
                     const int topOutW = std::max(1, fullW);
                     const int topOutH = std::max(1, fullH);
-                    if (Overlay[0].width() != topOutW || Overlay[0].height() != topOutH)
+
+                    // OPT-DR1: Track dirty rect to limit clear + composite to HUD area only.
+                    static QRect s_hudPrevDirtyS;
+                    if (Overlay[0].width() != topOutW || Overlay[0].height() != topOutH) {
                         Overlay[0] = QImage(topOutW, topOutH, QImage::Format_ARGB32_Premultiplied);
-                    Overlay[0].fill(Qt::transparent);
+                        Overlay[0].fill(Qt::transparent);
+                        s_hudPrevDirtyS = QRect();
+                    } else if (!s_hudPrevDirtyS.isEmpty()) {
+                        // Clear only the region drawn last frame.
+                        QPainter clrP(&Overlay[0]);
+                        clrP.setCompositionMode(QPainter::CompositionMode_Source);
+                        clrP.fillRect(s_hudPrevDirtyS, Qt::transparent);
+                    }
 
                     // hudOriginXds / hudOriginYds: black-bar extents in DS units.
                     // CustomHud_Render adds these to the painter translate so DS x=0
@@ -1269,10 +1279,11 @@ void ScreenPanelNative::paintEvent(QPaintEvent * event)
                     const float hudOriginYds = m_hudOriginY / hudScale;
 
                     // Per-frame painter (must end before reading image)
+                    QRect curDirty;
                     {
                         QPainter topP(&Overlay[0]);
                         topP.setFont(overlayFont);
-                        MelonPrime::CustomHud_Render(
+                        curDirty = MelonPrime::CustomHud_Render(
                             emuInstance, instcfg,
                             mp->GetCurrentRom(), mp->GetAddrHot(),
                             mp->GetPlayerPosition(),
@@ -1283,9 +1294,13 @@ void ScreenPanelNative::paintEvent(QPaintEvent * event)
                             hudOriginXds, hudOriginYds);
                     } // painter ends here — safe to read image
 
-                    // Composite overlay to full widget size.
+                    // Composite only the dirty region (prev cleared + curr drawn).
                     painter.resetTransform();
-                    painter.drawImage(QPoint(0, 0), Overlay[0]);
+                    const QRect compositeRect = s_hudPrevDirtyS.united(curDirty);
+                    if (!compositeRect.isEmpty())
+                        painter.drawImage(QPoint(compositeRect.x(), compositeRect.y()),
+                                          Overlay[0], compositeRect);
+                    s_hudPrevDirtyS = curDirty;
                 }
             }
         }
@@ -1797,9 +1812,19 @@ void ScreenPanelGL::drawScreen()
                 const int fullLogH = static_cast<int>(h / factor);
                 const int topOutW = std::max(1, fullLogW);
                 const int topOutH = std::max(1, fullLogH);
-                if (Overlay[0].width() != topOutW || Overlay[0].height() != topOutH)
+
+                // OPT-DR1: Track dirty rect to limit CPU clear + GL texture upload.
+                static QRect s_hudPrevDirtyGL;
+                if (Overlay[0].width() != topOutW || Overlay[0].height() != topOutH) {
                     Overlay[0] = QImage(topOutW, topOutH, QImage::Format_ARGB32_Premultiplied);
-                Overlay[0].fill(Qt::transparent);
+                    Overlay[0].fill(Qt::transparent);  // full fill only on resize
+                    s_hudPrevDirtyGL = QRect();
+                } else if (!s_hudPrevDirtyGL.isEmpty()) {
+                    // Clear only the region drawn last frame (Source mode = overwrite with transparent).
+                    QPainter clrP(&Overlay[0]);
+                    clrP.setCompositionMode(QPainter::CompositionMode_Source);
+                    clrP.fillRect(s_hudPrevDirtyGL, Qt::transparent);
+                }
 
                 // hudOriginXds / hudOriginYds: black-bar extents in DS units.
                 // CustomHud_Render adds these to the painter translate so DS x=0
@@ -1808,10 +1833,11 @@ void ScreenPanelGL::drawScreen()
                 const float hudOriginYds = m_hudOriginY / hudScale;
 
                 // Per-frame painter (must end before GL upload reads image bits)
+                QRect curDirty;
                 {
                     QPainter topP(&Overlay[0]);
                     topP.setFont(overlayFont);
-                    MelonPrime::CustomHud_Render(
+                    curDirty = MelonPrime::CustomHud_Render(
                         emuInstance, instcfg,
                         mp->GetCurrentRom(), mp->GetAddrHot(),
                         mp->GetPlayerPosition(),
@@ -1826,14 +1852,29 @@ void ScreenPanelGL::drawScreen()
                 // Reallocate GL texture when the buffer size changes (window resize).
                 // OPT-TX1: GL_BGRA matches QImage native byte order — driver fast-path.
                 if (topOutW != overlayTexW || topOutH != overlayTexH) {
+                    // Full upload on size change — texture must be re-allocated.
                     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, topOutW, topOutH, 0,
                         GL_BGRA, GL_UNSIGNED_BYTE, Overlay[0].constBits());
                     overlayTexW = topOutW;
                     overlayTexH = topOutH;
                 } else {
-                    glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, topOutW, topOutH,
-                        GL_BGRA, GL_UNSIGNED_BYTE, Overlay[0].constBits());
+                    // OPT-DR1: Partial upload — only upload the union of prev (cleared)
+                    // and curr (drawn) dirty rects using GL_UNPACK_ROW_LENGTH.
+                    const QRect uploadRect = s_hudPrevDirtyGL.united(curDirty);
+                    if (!uploadRect.isEmpty()) {
+                        glPixelStorei(GL_UNPACK_ROW_LENGTH, topOutW);
+                        glPixelStorei(GL_UNPACK_SKIP_PIXELS, uploadRect.x());
+                        glPixelStorei(GL_UNPACK_SKIP_ROWS,   uploadRect.y());
+                        glTexSubImage2D(GL_TEXTURE_2D, 0,
+                            uploadRect.x(), uploadRect.y(),
+                            uploadRect.width(), uploadRect.height(),
+                            GL_BGRA, GL_UNSIGNED_BYTE, Overlay[0].constBits());
+                        glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
+                        glPixelStorei(GL_UNPACK_SKIP_PIXELS, 0);
+                        glPixelStorei(GL_UNPACK_SKIP_ROWS,   0);
+                    }
                 }
+                s_hudPrevDirtyGL = curDirty;
 
 
                 // Switch to OSD shader for HUD overlay compositing.
