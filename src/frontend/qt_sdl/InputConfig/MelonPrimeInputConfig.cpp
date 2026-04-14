@@ -1035,26 +1035,55 @@ protected:
             QPoint pos = dsPos(c.GetInt("Metroid.Visual.HudHpAnchor"), c.GetInt("Metroid.Visual.HudHpX"), c.GetInt("Metroid.Visual.HudHpY"));
             QString str = QString::fromStdString(c.GetString("Metroid.Visual.HudHpPrefix")) + "100";
             int tw = textWidthDS(p, str);
-            int tx = alignedX(pos.x(), c.GetInt("Metroid.Visual.HudHpAlign"), tw);
-            p.setPen(col);
-            p.drawText(QPoint(tx, pos.y()), str);
+            int th = static_cast<int>(p.fontMetrics().height() * 192.0f / height());
 
-            // HP gauge
-            if (c.GetBool("Metroid.Visual.HudHpGauge")) {
-                float gop = c.GetDouble("Metroid.Visual.HudHpGaugeOpacity");
-                QColor gc = readColor("Metroid.Visual.HudHpGaugeColorR", "Metroid.Visual.HudHpGaugeColorG", "Metroid.Visual.HudHpGaugeColorB", gop);
-                int ori = c.GetInt("Metroid.Visual.HudHpGaugeOrientation");
-                int len = c.GetInt("Metroid.Visual.HudHpGaugeLength");
-                int wid = c.GetInt("Metroid.Visual.HudHpGaugeWidth");
-                int gx, gy;
-                if (c.GetInt("Metroid.Visual.HudHpGaugePosMode") == 1) {
+            bool showGauge = c.GetBool("Metroid.Visual.HudHpGauge");
+            int mode = showGauge ? c.GetInt("Metroid.Visual.HudHpGaugePosMode") : 0;
+            int ori  = c.GetInt("Metroid.Visual.HudHpGaugeOrientation");
+            int glen = c.GetInt("Metroid.Visual.HudHpGaugeLength");
+            int gwid = c.GetInt("Metroid.Visual.HudHpGaugeWidth");
+            int galign = c.GetInt("Metroid.Visual.HudHpGaugeAlign");
+
+            int tx, textY;
+            int gx = 0, gy = 0;
+
+            if (showGauge && mode == 2) {
+                // Text → Gauge: gauge at independent pos, text derived from gauge
+                QPoint gp = dsPos(c.GetInt("Metroid.Visual.HudHpGaugePosAnchor"), c.GetInt("Metroid.Visual.HudHpGaugePosX"), c.GetInt("Metroid.Visual.HudHpGaugePosY"));
+                gx = gp.x(); gy = gp.y();
+                int egx = gx - (ori == 0 ? glen * galign / 2 : 0);
+                int egy = gy - (ori == 1 ? glen * galign / 2 : 0);
+                int gW  = (ori == 0) ? glen : gwid;
+                int gH  = (ori == 0) ? gwid : glen;
+                int tAnc = c.GetInt("Metroid.Visual.HudHpTextAnchor");
+                int ofsX = c.GetInt("Metroid.Visual.HudHpTextOffsetX");
+                int ofsY = c.GetInt("Metroid.Visual.HudHpTextOffsetY");
+                switch (tAnc) {
+                case 1: tx = egx + gW/2 - tw/2 + ofsX; textY = egy                  + ofsY; break; // Above
+                case 2: tx = egx + gW       + ofsX;    textY = egy + gH/2 + th/2 + ofsY; break; // Right
+                case 3: tx = egx - tw       + ofsX;    textY = egy + gH/2 + th/2 + ofsY; break; // Left
+                case 4: tx = egx + gW/2 - tw/2 + ofsX; textY = egy + gH/2 + th/2 + ofsY; break; // Center
+                default:tx = egx + gW/2 - tw/2 + ofsX; textY = egy + gH + th + 2 + ofsY; break; // Below
+                }
+            } else {
+                tx    = alignedX(pos.x(), c.GetInt("Metroid.Visual.HudHpAlign"), tw);
+                textY = pos.y();
+                if (showGauge && mode == 1) {
                     QPoint gp = dsPos(c.GetInt("Metroid.Visual.HudHpGaugePosAnchor"), c.GetInt("Metroid.Visual.HudHpGaugePosX"), c.GetInt("Metroid.Visual.HudHpGaugePosY"));
                     gx = gp.x(); gy = gp.y();
-                } else {
-                    gx = tx + c.GetInt("Metroid.Visual.HudHpGaugeOffsetX");
+                } else if (showGauge) { // mode 0: gauge relative to text
+                    gx = tx    + c.GetInt("Metroid.Visual.HudHpGaugeOffsetX");
                     gy = pos.y() + c.GetInt("Metroid.Visual.HudHpGaugeOffsetY") + 2;
                 }
-                drawGaugeDS(p, gx, gy, gc, ori, len, wid, c.GetInt("Metroid.Visual.HudHpGaugeAlign"));
+            }
+
+            p.setPen(col);
+            p.drawText(QPoint(tx, textY), str);
+
+            if (showGauge) {
+                float gop = c.GetDouble("Metroid.Visual.HudHpGaugeOpacity");
+                QColor gc = readColor("Metroid.Visual.HudHpGaugeColorR", "Metroid.Visual.HudHpGaugeColorG", "Metroid.Visual.HudHpGaugeColorB", gop);
+                drawGaugeDS(p, gx, gy, gc, ori, glen, gwid, galign);
             }
         }
 
@@ -1089,26 +1118,55 @@ protected:
             QPoint pos = dsPos(c.GetInt("Metroid.Visual.HudWeaponAnchor"), c.GetInt("Metroid.Visual.HudWeaponX"), c.GetInt("Metroid.Visual.HudWeaponY"));
             QString str = QString::fromStdString(c.GetString("Metroid.Visual.HudAmmoPrefix")) + "50";
             int tw = textWidthDS(p, str);
-            int tx = alignedX(pos.x(), c.GetInt("Metroid.Visual.HudAmmoAlign"), tw);
-            p.setPen(col);
-            p.drawText(QPoint(tx, pos.y()), str);
+            int th = static_cast<int>(p.fontMetrics().height() * 192.0f / height());
 
-            // Ammo gauge
-            if (c.GetBool("Metroid.Visual.HudAmmoGauge")) {
-                float gop = c.GetDouble("Metroid.Visual.HudAmmoGaugeOpacity");
-                QColor gc = readColor("Metroid.Visual.HudAmmoGaugeColorR", "Metroid.Visual.HudAmmoGaugeColorG", "Metroid.Visual.HudAmmoGaugeColorB", gop);
-                int ori = c.GetInt("Metroid.Visual.HudAmmoGaugeOrientation");
-                int len = c.GetInt("Metroid.Visual.HudAmmoGaugeLength");
-                int wid = c.GetInt("Metroid.Visual.HudAmmoGaugeWidth");
-                int gx, gy;
-                if (c.GetInt("Metroid.Visual.HudAmmoGaugePosMode") == 1) {
+            bool showGauge = c.GetBool("Metroid.Visual.HudAmmoGauge");
+            int mode = showGauge ? c.GetInt("Metroid.Visual.HudAmmoGaugePosMode") : 0;
+            int ori  = c.GetInt("Metroid.Visual.HudAmmoGaugeOrientation");
+            int glen = c.GetInt("Metroid.Visual.HudAmmoGaugeLength");
+            int gwid = c.GetInt("Metroid.Visual.HudAmmoGaugeWidth");
+            int galign = c.GetInt("Metroid.Visual.HudAmmoGaugeAlign");
+
+            int tx, textY;
+            int gx = 0, gy = 0;
+
+            if (showGauge && mode == 2) {
+                // Text → Gauge: gauge at independent pos, text derived from gauge
+                QPoint gp = dsPos(c.GetInt("Metroid.Visual.HudAmmoGaugePosAnchor"), c.GetInt("Metroid.Visual.HudAmmoGaugePosX"), c.GetInt("Metroid.Visual.HudAmmoGaugePosY"));
+                gx = gp.x(); gy = gp.y();
+                int egx = gx - (ori == 0 ? glen * galign / 2 : 0);
+                int egy = gy - (ori == 1 ? glen * galign / 2 : 0);
+                int gW  = (ori == 0) ? glen : gwid;
+                int gH  = (ori == 0) ? gwid : glen;
+                int tAnc = c.GetInt("Metroid.Visual.HudAmmoTextAnchor");
+                int ofsX = c.GetInt("Metroid.Visual.HudAmmoTextOffsetX");
+                int ofsY = c.GetInt("Metroid.Visual.HudAmmoTextOffsetY");
+                switch (tAnc) {
+                case 1: tx = egx + gW/2 - tw/2 + ofsX; textY = egy                  + ofsY; break; // Above
+                case 2: tx = egx + gW       + ofsX;    textY = egy + gH/2 + th/2 + ofsY; break; // Right
+                case 3: tx = egx - tw       + ofsX;    textY = egy + gH/2 + th/2 + ofsY; break; // Left
+                case 4: tx = egx + gW/2 - tw/2 + ofsX; textY = egy + gH/2 + th/2 + ofsY; break; // Center
+                default:tx = egx + gW/2 - tw/2 + ofsX; textY = egy + gH + th + 2 + ofsY; break; // Below
+                }
+            } else {
+                tx    = alignedX(pos.x(), c.GetInt("Metroid.Visual.HudAmmoAlign"), tw);
+                textY = pos.y();
+                if (showGauge && mode == 1) {
                     QPoint gp = dsPos(c.GetInt("Metroid.Visual.HudAmmoGaugePosAnchor"), c.GetInt("Metroid.Visual.HudAmmoGaugePosX"), c.GetInt("Metroid.Visual.HudAmmoGaugePosY"));
                     gx = gp.x(); gy = gp.y();
-                } else {
-                    gx = tx + c.GetInt("Metroid.Visual.HudAmmoGaugeOffsetX");
+                } else if (showGauge) { // mode 0: gauge relative to text
+                    gx = tx    + c.GetInt("Metroid.Visual.HudAmmoGaugeOffsetX");
                     gy = pos.y() + c.GetInt("Metroid.Visual.HudAmmoGaugeOffsetY") + 2;
                 }
-                drawGaugeDS(p, gx, gy, gc, ori, len, wid, c.GetInt("Metroid.Visual.HudAmmoGaugeAlign"));
+            }
+
+            p.setPen(col);
+            p.drawText(QPoint(tx, textY), str);
+
+            if (showGauge) {
+                float gop = c.GetDouble("Metroid.Visual.HudAmmoGaugeOpacity");
+                QColor gc = readColor("Metroid.Visual.HudAmmoGaugeColorR", "Metroid.Visual.HudAmmoGaugeColorG", "Metroid.Visual.HudAmmoGaugeColorB", gop);
+                drawGaugeDS(p, gx, gy, gc, ori, glen, gwid, galign);
             }
         }
     }
@@ -1750,10 +1808,16 @@ void MelonPrimeInputConfig::setupCustomHudWidgets(Config::Table& instcfg)
                 auto it = m_hudWidgets.find(key);
                 if (it == m_hudWidgets.end()) return;
                 QWidget* w = it->second;
-                w->setEnabled(enabled);
-                if (QWidget* par = w->parentWidget())
+                // P_INT rows wrap slider+spinbox in a QHBoxLayout container.
+                // Operate on that container so both children are affected and
+                // labelForField can find the row via the parent QFormLayout.
+                QWidget* rowWidget = w;
+                if (w->parentWidget() && qobject_cast<QHBoxLayout*>(w->parentWidget()->layout()))
+                    rowWidget = w->parentWidget();
+                rowWidget->setEnabled(enabled);
+                if (QWidget* par = rowWidget->parentWidget())
                     if (auto* fl = qobject_cast<QFormLayout*>(par->layout()))
-                        if (QWidget* lw = fl->labelForField(w))
+                        if (QWidget* lw = fl->labelForField(rowWidget))
                             lw->setEnabled(enabled);
             };
             for (const auto& k : mode0Keys)  setRowEnabled(k, mode == 0);
