@@ -28,6 +28,7 @@
 #include <set>
 #include <vector>
 #include <cmath>
+#include <climits>
 #include <cstdio>
 #include <cstring>
 
@@ -333,22 +334,6 @@ static void EnsureRadarFrameLoaded(int dstSize, int srcRadius, float hudScale,
 }
 
 // =========================================================================
-//  P-2: Static outline buffer — allocated once, fill(transparent) per frame.
-//       Eliminates 196 KB heap alloc+dealloc every frame.
-// =========================================================================
-static QImage s_outlineBuf;
-static QRect  s_prevOutlineDirty;   // previous frame's outline dirty rect (pixel coords)
-
-static QImage& GetOutlineBuffer(int w, int h)
-{
-    if (UNLIKELY(s_outlineBuf.isNull() || s_outlineBuf.width() != w || s_outlineBuf.height() != h)) {
-        s_outlineBuf = QImage(w, h, QImage::Format_ARGB32_Premultiplied);
-        s_prevOutlineDirty = QRect();   // invalidate on resize
-    }
-    return s_outlineBuf;
-}
-
-// =========================================================================
 //  P-17: Crosshair outline stamp — small pre-rendered ARGB image of the
 //        crosshair outline shape, built once on config change and composited
 //        with a single drawImage each frame.  Eliminates per-frame QPainter
@@ -357,6 +342,29 @@ static QImage& GetOutlineBuffer(int w, int h)
 static QImage s_chOutlineStamp;
 static QPoint s_chStampOrigin;   // offset from (pxCx, pxCy) to stamp top-left
 static bool   s_chStampValid = false;
+
+// ── OPT-DR1: Dirty-rect tracking ─────────────────────────────────────────────
+// Crosshair moves every frame with the aim.  Track previous pixel-space centre
+// so each frame only the union of (prev ∪ curr) crosshair bbox is dirty.
+// All other HUD elements have fixed positions (config-driven); their dirty rect
+// is pre-computed once in RefreshStaticHudDirty() and reused every frame.
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Crosshair position from the previous frame (pixel space, after resetTransform).
+// INT_MIN = not drawn yet / reset.
+static int   s_chPrevPxCx = INT_MIN;
+static int   s_chPrevPxCy = INT_MIN;
+// Accumulated dirty rect for the crosshair in the current frame (prev ∪ curr pos).
+static QRect s_chDirtyThisFrame;
+
+// Static dirty rect: covers all enabled non-crosshair HUD elements.
+// Recomputed in RefreshStaticHudDirty() whenever the config cache or transform changes.
+static QRect  s_staticHudDirtyPx;
+static float  s_staticDirtyHudScale = -1.0f;
+static float  s_staticDirtyTxDs    = 1e30f;
+static float  s_staticDirtyTyDs    = 1e30f;
+// Set to true by RefreshCachedConfig/RecomputeAnchorPositions to force recomputation.
+static bool   s_staticDirtyStale   = true;
 
 // Forward-declared; called from RefreshCachedConfig after crosshair geometry is final.
 struct CrosshairHudConfig;
@@ -763,6 +771,24 @@ struct CachedHudConfig {
 static CachedHudConfig s_cache = { .valid = false };
 static uint32_t s_cacheEpoch = 1;
 
+// OPT-DR1: Returns the pixel-space bounding rect of the crosshair rendered at (cx, cy).
+// Uses the pre-computed stamp, arm rects, and dot size from CrosshairHudConfig.
+// Result is in overlay pixel space (same as Overlay[0]).
+static QRect CrosshairBboxPx(int cx, int cy, const CrosshairHudConfig& ch)
+{
+    QRect r;
+    if (s_chStampValid && !s_chOutlineStamp.isNull())
+        r = QRect(cx + s_chStampOrigin.x(), cy + s_chStampOrigin.y(),
+                  s_chOutlineStamp.width(), s_chOutlineStamp.height());
+    for (int i = 0; i < ch.cachedInnerCount; ++i) r |= ch.cachedInnerRects[i].translated(cx, cy);
+    for (int i = 0; i < ch.cachedOuterCount; ++i) r |= ch.cachedOuterRects[i].translated(cx, cy);
+    if (ch.chCenterDot) {
+        const int dh = ch.cachedDotHalfPx, ds = ch.cachedDotSizePx;
+        r |= QRect(cx - dh, cy - dh, ds, ds);
+    }
+    return r;
+}
+
 // P-9: Frame-level font metrics — set once in CustomHud_Render, shared by all draw sub-functions.
 static QFontMetrics s_frameFm{QFont{}};
 static int s_frameFpx = 0;
@@ -1105,6 +1131,7 @@ static void RecomputeAnchorPositions(float topStretchX)
                                       cropCenterY - frameSizeDS * 0.5f,
                                       frameSizeDS, frameSizeDS);
     }
+    s_staticDirtyStale = true; // OPT-DR1: element positions changed
 }
 
 static void RefreshCachedConfig(Config::Table& cfg, float topStretchX = 1.0f, float hudScale = 1.0f)
@@ -1450,6 +1477,78 @@ static bool ComputeMatchStatusState(melonDS::u8* ram, const RomAddresses& rom, u
 static inline const HudOutlineConfig& EffOL(const CachedHudConfig& c, const HudOutlineConfig& el) {
     return c.globalOutline.enable ? c.globalOutline : el;
 }
+
+// OPT-DR1: Computes the conservative pixel-space dirty rect for all non-crosshair elements.
+// Called at most once per config/transform change; result cached in s_staticHudDirtyPx.
+static void RefreshStaticHudDirty(const CachedHudConfig& c,
+                                   float hs, float txDs, float tyDs,
+                                   int overlayW, int overlayH)
+{
+    // Expands dirty by a DS-space bbox centred at (cx, cy) with ±padX/±padY DS units.
+    QRect dirty;
+    auto addDS = [&](int cx, int cy, int padX, int padY) {
+        dirty |= QRect(
+            QPoint(static_cast<int>((cx - padX + txDs) * hs),
+                   static_cast<int>((cy - padY + tyDs) * hs)),
+            QPoint(static_cast<int>((cx + padX + txDs) * hs) + 1,
+                   static_cast<int>((cy + padY + tyDs) * hs) + 1));
+    };
+
+    // HP — always drawn in-game (no show flag)
+    addDS(c.hp.hpX, c.hp.hpY, 90, 65);
+    if (c.hp.hpGauge)
+        addDS(c.hp.hpGaugePosX, c.hp.hpGaugePosY, c.hp.hpGaugeLen / 2 + 12, c.hp.hpGaugeWid / 2 + 12);
+
+    // Weapon + Ammo — always drawn in first-person (no show flag; include conservatively)
+    addDS(c.weapon.wpnX, c.weapon.wpnY, 90, 65);
+    if (c.weapon.iconShow) addDS(c.weapon.iconPosX, c.weapon.iconPosY, 35, 35);
+    if (c.weapon.ammoGauge) addDS(c.weapon.ammoGaugePosX, c.weapon.ammoGaugePosY, 65, 55);
+
+    // Weapon Inventory
+    if (c.weaponInventory.show) addDS(c.weaponInventory.posX, c.weaponInventory.posY, 170, 170);
+
+    // Match Status
+    if (c.matchStatus.matchStatusShow) addDS(c.matchStatus.matchStatusX, c.matchStatus.matchStatusY, 110, 90);
+
+    // Bomb Left
+    if (c.bombLeft.bombLeftShow) {
+        addDS(c.bombLeft.bombLeftX, c.bombLeft.bombLeftY, 75, 45);
+        if (c.bombLeft.bombIconShow)
+            addDS(c.bombLeft.bombIconPosX, c.bombLeft.bombIconPosY, 35, 35);
+    }
+
+    // Rank & Time
+    if (c.rankTime.rankShow)      addDS(c.rankTime.rankX,      c.rankTime.rankY,      80, 28);
+    if (c.rankTime.timeLeftShow)  addDS(c.rankTime.timeLeftX,  c.rankTime.timeLeftY,  80, 28);
+    if (c.rankTime.timeLimitShow) addDS(c.rankTime.timeLimitX, c.rankTime.timeLimitY, 80, 28);
+
+    // Radar — use radarDstSize for radius, plus outline padding
+    if (c.radar.radarShow) {
+        const int s   = c.radar.radarDstSize;
+        const int pad = s / 2 + std::max(8, EffOL(c, c.radar.frameOutline).thickness + 5);
+        addDS(c.radar.radarDstX + s / 2, c.radar.radarDstY + s / 2, pad, pad);
+        // Also cover the (potentially larger) SVG frame
+        const QRectF& fr = c.radar.frameDstRect;
+        if (!fr.isEmpty()) {
+            const int fx = static_cast<int>(fr.x()) - 2;
+            const int fy = static_cast<int>(fr.y()) - 2;
+            const int fW = static_cast<int>(fr.width())  + 4;
+            const int fH = static_cast<int>(fr.height()) + 4;
+            dirty |= QRect(
+                QPoint(static_cast<int>((fx + txDs) * hs),
+                       static_cast<int>((fy + tyDs) * hs)),
+                QPoint(static_cast<int>((fx + fW + txDs) * hs) + 1,
+                       static_cast<int>((fy + fH + tyDs) * hs) + 1));
+        }
+    }
+
+    s_staticHudDirtyPx  = dirty & QRect(0, 0, overlayW, overlayH);
+    s_staticDirtyHudScale = hs;
+    s_staticDirtyTxDs   = txDs;
+    s_staticDirtyTyDs   = tyDs;
+    s_staticDirtyStale  = false;
+}
+
 static void DrawMatchStatusText(QPainter* p, const QFontMetrics& fm, int fontPixelSize, float tds,
                                 const MatchStatusResolvedState& state, const MatchStatusHudConfig& c,
                                 float overallOpacity = 1.0f, const HudOutlineConfig& ol = {false,QColor(),0.0f,1},
@@ -1713,7 +1812,9 @@ void CustomHud_ResetPatchState()
     s_hudPatchApplied = false;
     s_cache.valid = false;
     s_battleState.valid = false;
-    s_prevOutlineDirty = QRect();
+    s_staticDirtyStale = true;
+    s_chPrevPxCx = INT_MIN;
+    s_chPrevPxCy = INT_MIN;
 }
 
 // P-3: Called from settings dialog save to trigger config re-read next frame
@@ -1723,6 +1824,7 @@ void CustomHud_InvalidateConfigCache()
     s_bombTintCacheValid = false;
     for (int i = 0; i < 9; i++) s_weaponTintValid[i] = false;
     s_effectiveRadarHunterID = 0xFF; // P-13: force re-evaluation of effective radar color
+    s_staticDirtyStale = true;       // OPT-DR1: force static dirty rect recomputation
 }
 
 uint32_t CustomHud_GetCacheEpoch()
@@ -2400,6 +2502,17 @@ static void DrawCrosshair(QPainter* p, melonDS::u8* ram,
     const int nInner = c.crosshair.cachedInnerCount;
     const int nOuter = c.crosshair.cachedOuterCount;
 
+    // OPT-DR1: Update crosshair dirty rect (prev ∪ curr position).
+    // This is accumulated into s_chDirtyThisFrame so CustomHud_Render can return it.
+    {
+        const QRect currBbox = CrosshairBboxPx(pxCx, pxCy, c.crosshair);
+        s_chDirtyThisFrame = currBbox;
+        if (s_chPrevPxCx != INT_MIN)
+            s_chDirtyThisFrame |= CrosshairBboxPx(s_chPrevPxCx, s_chPrevPxCy, c.crosshair);
+        s_chPrevPxCx = pxCx;
+        s_chPrevPxCy = pxCy;
+    }
+
     // Save/restore only what we change (transform + opacity).
     const QTransform savedXform = p->transform();
     const qreal savedOpacity = p->opacity();
@@ -2459,7 +2572,7 @@ static void   DrawEditOverlay(QPainter* p, Config::Table& cfg, float topStretchX
 // =========================================================================
 //  CustomHud_Render — main entry point
 // =========================================================================
-HOT_FUNCTION void CustomHud_Render(
+HOT_FUNCTION QRect CustomHud_Render(
     EmuInstance* emu, Config::Table& localCfg,
     const RomAddresses& rom, const GameAddressesHot& addrHot,
     uint8_t playerPosition,
@@ -2469,6 +2582,14 @@ HOT_FUNCTION void CustomHud_Render(
     float topStretchX, float hudScale,
     float hudOriginXds, float hudOriginYds)
 {
+    // OPT-DR1: Overlay size — used for dirty rect clamping and static dirty computation.
+    const int overlayW = topBuffer ? topBuffer->width()  : 1;
+    const int overlayH = topBuffer ? topBuffer->height() : 1;
+    const QRect overlayRect(0, 0, overlayW, overlayH);
+
+    // OPT-DR1: Reset crosshair dirty accumulator for this frame.
+    s_chDirtyThisFrame = QRect();
+
     // Edit mode: draw element overlay every frame, skip normal HUD rendering.
     if (UNLIKELY(s_editMode)) {
         s_editHudScale      = hudScale;
@@ -2502,10 +2623,10 @@ HOT_FUNCTION void CustomHud_Render(
         for (int i = 0; i < kEditElemCount; ++i)
             s_editRects[i] = ComputeEditBounds(i, localCfg, topStretchX);
         DrawEditOverlay(topPaint, localCfg, topStretchX, btmBuffer);
-        return;
+        return overlayRect;  // edit mode covers full overlay
     }
 
-    if (!isInGame) return;
+    if (!isInGame) return QRect();
 
     melonDS::NDS* nds = emu->getNDS();
     melonDS::u8* ram = nds->MainRAM;
@@ -2526,6 +2647,16 @@ HOT_FUNCTION void CustomHud_Render(
     }
     const CachedHudConfig& c = s_cache;
 
+    // OPT-DR1: Refresh static dirty rect when transform or config changed.
+    const float txDs = (topStretchX - 1.0f) * 128.0f + hudOriginXds;
+    const float tyDs = hudOriginYds;
+    if (UNLIKELY(s_staticDirtyStale ||
+                 s_staticDirtyHudScale != hudScale ||
+                 s_staticDirtyTxDs    != txDs      ||
+                 s_staticDirtyTyDs    != tyDs)) {
+        RefreshStaticHudDirty(c, hudScale, txDs, tyDs, overlayW, overlayH);
+    }
+
     const uint32_t addrAmmoSpecial = rom.currentAmmoSpecial + offP;
     const uint32_t addrAmmoMissile = rom.currentAmmoMissile + offP;
     const uint16_t maxHP           = Read16(ram, rom.maxHP + offP);
@@ -2540,7 +2671,7 @@ HOT_FUNCTION void CustomHud_Render(
     uint8_t viewMode   = Read8(ram, rom.baseViewMode + offP);
     bool isFirstPerson = (viewMode == 0x00);
 
-    if (ShouldHideForGameplayState(isStartPressed, currentHP, isGameOver)) return;
+    if (ShouldHideForGameplayState(isStartPressed, currentHP, isGameOver)) return QRect();
 
     // hudScale = scaleY: DS Y-unit maps to hudScale px.
     // Buffer now covers the full window. Translate has two parts:
@@ -2548,12 +2679,8 @@ HOT_FUNCTION void CustomHud_Render(
     //   hudOriginXds        — shifts right by the left black-bar width (DS units), so DS x=0
     //                          lands at the game-content left edge inside the full-window buffer.
     topPaint->scale(hudScale, hudScale);
-    {
-        const float tx = (topStretchX - 1.0f) * 128.0f + hudOriginXds;
-        const float ty = hudOriginYds;
-        if (tx != 0.0f || ty != 0.0f)
-            topPaint->translate(tx, ty);
-    }
+    if (txDs != 0.0f || tyDs != 0.0f)
+        topPaint->translate(txDs, tyDs);
 
     // Font locked at kCustomHudFontSize (6px) — optimal for this TTF.
     // Visual text size is controlled by textDrawScale applied at draw time.
@@ -2599,7 +2726,16 @@ HOT_FUNCTION void CustomHud_Render(
     // Draw bottom screen overlay on top screen (visible in all camera modes incl. alt form)
     DrawBottomScreenOverlay(localCfg, topPaint, btmBuffer, (hunterID <= 6) ? hunterID : 0);
 
-    if (!isFirstPerson) return;
+    if (!isFirstPerson) {
+        // OPT-DR1: Crosshair not drawn in third-person / alt-form.
+        // If it was drawn last frame, include its previous bbox so Screen.cpp clears it.
+        if (s_chPrevPxCx != INT_MIN) {
+            s_chDirtyThisFrame = CrosshairBboxPx(s_chPrevPxCx, s_chPrevPxCy, c.crosshair);
+            s_chPrevPxCx = INT_MIN;
+            s_chPrevPxCy = INT_MIN;
+        }
+        return (s_staticHudDirtyPx | s_chDirtyThisFrame) & overlayRect;
+    }
 
     uint8_t currentWeapon = Read8(ram, addrHot.currentWeapon);
     {
@@ -2616,8 +2752,16 @@ HOT_FUNCTION void CustomHud_Render(
     }
 
     bool isTrans = (Read8(ram, addrHot.jumpFlag) & 0x10) != 0;
-    if (!isTrans && !isAlt)
+    if (!isTrans && !isAlt) {
         DrawCrosshair(topPaint, ram, rom, c, hudScale, topStretchX);
+    } else if (s_chPrevPxCx != INT_MIN) {
+        // OPT-DR1: Crosshair not drawn this frame (transition/alt) but was last frame.
+        s_chDirtyThisFrame = CrosshairBboxPx(s_chPrevPxCx, s_chPrevPxCy, c.crosshair);
+        s_chPrevPxCx = INT_MIN;
+        s_chPrevPxCy = INT_MIN;
+    }
+
+    return (s_staticHudDirtyPx | s_chDirtyThisFrame) & overlayRect;
 }
 
 // =========================================================================

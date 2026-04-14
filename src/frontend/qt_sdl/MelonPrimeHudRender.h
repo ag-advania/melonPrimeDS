@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <functional>
 #include <QMouseEvent>
+#include <QRect>
 
 class EmuInstance;
 class QPainter;
@@ -42,7 +43,10 @@ namespace MelonPrime {
     //                     allowing elements at DS x<0 or x>256 to appear in black bars.
     //    hudOriginYds   — top black-bar height in DS units (m_hudOriginY / hudScale).
     // =========================================================================
-    void CustomHud_Render(
+    // Returns the dirty pixel rect of everything rendered into the overlay (in overlay space).
+    // Screen.cpp uses this to limit the GPU texture upload and overlay clear to the HUD region.
+    // Returns an empty QRect if nothing was drawn.
+    QRect CustomHud_Render(
         EmuInstance* emu,
         Config::Table& localCfg,
         const RomAddresses& rom,
