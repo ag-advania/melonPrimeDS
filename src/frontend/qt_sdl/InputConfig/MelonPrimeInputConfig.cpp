@@ -629,17 +629,20 @@ static const HudWidgetProp kSecBombLeft[] = {
 // --- Section 15: Bomb Icon ---
 static const HudWidgetProp kSecBombIcon[] = {
     P_BOOL("Show", "Metroid.Visual.HudBombLeftIconShow"),
+    P_RELINDEP("Icon Position", "Metroid.Visual.HudBombLeftIconMode"),
+    // Relative mode (0): offset from bomb text position
+    P_INT("Offset X", "Metroid.Visual.HudBombLeftIconOfsX", -128, 128, 1),
+    P_INT("Offset Y", "Metroid.Visual.HudBombLeftIconOfsY", -128, 128, 1),
+    // Independent mode (1): own anchor + position
     P_ANC("Pos Anchor", "Metroid.Visual.HudBombLeftIconPosAnchor"),
     P_INT("Pos X", "Metroid.Visual.HudBombLeftIconPosX", -256, 256, 1),
     P_INT("Pos Y", "Metroid.Visual.HudBombLeftIconPosY", -256, 256, 1),
-    P_RELINDEP("Icon Position", "Metroid.Visual.HudBombLeftIconMode"),
-    P_BOOL("Color Overlay", "Metroid.Visual.HudBombLeftIconColorOverlay"),
+    // Common
     P_INT("Height", "Metroid.Visual.HudBombIconHeight", 4, 64, 1),
+    P_ALN("Align X", "Metroid.Visual.HudBombLeftIconAnchorX"),
+    P_ANCHY("Align Y", "Metroid.Visual.HudBombLeftIconAnchorY"),
+    P_BOOL("Color Overlay", "Metroid.Visual.HudBombLeftIconColorOverlay"),
     P_CLR("Icon Color", "Metroid.Visual.HudBombLeftIconColorR", "Metroid.Visual.HudBombLeftIconColorG", "Metroid.Visual.HudBombLeftIconColorB"),
-    P_INT("Icon Offset X", "Metroid.Visual.HudBombLeftIconOfsX", -128, 128, 1),
-    P_INT("Icon Offset Y", "Metroid.Visual.HudBombLeftIconOfsY", -128, 128, 1),
-    P_ALN("Icon Align X", "Metroid.Visual.HudBombLeftIconAnchorX"),
-    P_ANCHY("Icon Align Y", "Metroid.Visual.HudBombLeftIconAnchorY"),
     P_FLOAT("Opacity", "Metroid.Visual.HudBombIconOpacity"),
 };
 
@@ -675,10 +678,10 @@ static const HudWidgetProp kSecWeaponInventoryHighlight[] = {
 static const HudWidgetProp kSecRadar[] = {
     P_BOOL("Enable", "Metroid.Visual.BtmOverlayEnable"),
     P_ANC("Anchor", "Metroid.Visual.BtmOverlayAnchor"),
-    P_INT("Dst X", "Metroid.Visual.BtmOverlayDstX", -256, 256, 1),
-    P_INT("Dst Y", "Metroid.Visual.BtmOverlayDstY", -256, 256, 1),
-    P_INT("Dst Size", "Metroid.Visual.BtmOverlayDstSize", 16, 128, 1),
-    P_INT("Src Radius", "Metroid.Visual.BtmOverlaySrcRadius", 10, 96, 1),
+    P_INT("Offset X", "Metroid.Visual.BtmOverlayDstX", -256, 256, 1),
+    P_INT("Offset Y", "Metroid.Visual.BtmOverlayDstY", -256, 256, 1),
+    P_INT("Display Size", "Metroid.Visual.BtmOverlayDstSize", 16, 128, 1),
+    P_INT("Source Radius", "Metroid.Visual.BtmOverlaySrcRadius", 10, 96, 1),
     P_FLOAT("Opacity", "Metroid.Visual.BtmOverlayOpacity"),
     P_CLR("Radar Color", "Metroid.Visual.BtmOverlayRadarColorR", "Metroid.Visual.BtmOverlayRadarColorG", "Metroid.Visual.BtmOverlayRadarColorB"),
     P_BOOL("Use Hunter Color", "Metroid.Visual.BtmOverlayRadarColorUseHunter"),
@@ -844,15 +847,20 @@ static const HudSubSec kSubsRankTime[] = {
     SUB("Time Limit Outline", "Metroid.UI.SectionHudTimeLimitOutline", kSecTimeLimitOutline),
 };
 
+// ── Bomb sub-sections ──
+static const HudSubSec kSubsBomb[] = {
+    SUB("Bomb Left",         "Metroid.UI.SectionHudBombLeft",        kSecBombLeft),
+    SUB("Bomb Left Outline", "Metroid.UI.SectionHudBombLeftOutline", kSecBombLeftOutline),
+    SUB("Bomb Icon",         "Metroid.UI.SectionHudBombIcon",        kSecBombIcon),
+    SUB("Bomb Icon Outline", "Metroid.UI.SectionHudBombIconOutline", kSecBombIconOutline),
+};
+
 // ── MATCH STATUS HUD sub-sections ──
 static const HudSubSec kSubsMatchStatus[] = {
     SUB("Score",                    "Metroid.UI.SectionHudMatchStatus",       kSecMatchStatus),
     SUB("Score Outline",            "Metroid.UI.SectionHudMatchStatusOutline", kSecMatchStatusOutline),
     SUB_NEST("Rank / Time",         "Metroid.UI.SectionHudRankTime",          kSubsRankTime),
-    SUB("Bomb Left",                "Metroid.UI.SectionHudBombLeft",          kSecBombLeft),
-    SUB("Bomb Left Outline",        "Metroid.UI.SectionHudBombLeftOutline",   kSecBombLeftOutline),
-    SUB("Bomb Icon",                "Metroid.UI.SectionHudBombIcon",          kSecBombIcon),
-    SUB("Bomb Icon Outline",        "Metroid.UI.SectionHudBombIconOutline",   kSecBombIconOutline),
+    SUB_NEST("Bomb",                "Metroid.UI.SectionHudBombGrp",           kSubsBomb),
 };
 
 // ── HUD RADAR sub-sections ──
@@ -1860,6 +1868,15 @@ void MelonPrimeInputConfig::setupCustomHudWidgets(Config::Table& instcfg)
         {"Metroid.Visual.HudWeaponIconPosAnchor",
          "Metroid.Visual.HudWeaponIconPosX",
          "Metroid.Visual.HudWeaponIconPosY"},
+        {});
+
+    // Bomb Icon Position: mode 0=Relative (offset from bomb text), 1=Independent (own anchor+pos)
+    wirePosModeGrayout("Metroid.Visual.HudBombLeftIconMode",
+        {"Metroid.Visual.HudBombLeftIconOfsX",
+         "Metroid.Visual.HudBombLeftIconOfsY"},
+        {"Metroid.Visual.HudBombLeftIconPosAnchor",
+         "Metroid.Visual.HudBombLeftIconPosX",
+         "Metroid.Visual.HudBombLeftIconPosY"},
         {});
 }
 
