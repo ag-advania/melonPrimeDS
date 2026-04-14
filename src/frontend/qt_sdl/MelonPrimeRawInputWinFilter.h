@@ -40,6 +40,9 @@ namespace MelonPrime {
         // P-22: Drain WM_INPUT queue after RunFrame (non-latency-critical).
         void DeferredDrain() noexcept;
 
+        // Late-latch: flush kernel buffer + fetch fresh delta just before aim write.
+        void LateLatchMouseDelta(int& accX, int& accY) noexcept;
+
         void discardDeltas();
 
         // R2: Primary interface -- zero-allocation path from SmallVkList
