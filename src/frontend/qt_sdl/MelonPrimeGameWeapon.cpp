@@ -11,15 +11,6 @@
 
 namespace MelonPrime {
 
-    static_assert(IB_WEAPON_MISSILE == (IB_WEAPON_BEAM << 1), "Weapon input bits must stay contiguous");
-    static_assert(IB_WEAPON_1 == (IB_WEAPON_MISSILE << 1), "Weapon input bits must stay contiguous");
-    static_assert(IB_WEAPON_2 == (IB_WEAPON_1 << 1), "Weapon input bits must stay contiguous");
-    static_assert(IB_WEAPON_3 == (IB_WEAPON_2 << 1), "Weapon input bits must stay contiguous");
-    static_assert(IB_WEAPON_4 == (IB_WEAPON_3 << 1), "Weapon input bits must stay contiguous");
-    static_assert(IB_WEAPON_5 == (IB_WEAPON_4 << 1), "Weapon input bits must stay contiguous");
-    static_assert(IB_WEAPON_6 == (IB_WEAPON_5 << 1), "Weapon input bits must stay contiguous");
-    static_assert(IB_WEAPON_SPECIAL == (IB_WEAPON_6 << 1), "Weapon input bits must stay contiguous");
-
     namespace WeaponData {
 
         enum ID : uint8_t {
@@ -68,6 +59,12 @@ namespace MelonPrime {
             { VOLT_DRIVER,   0x002, 0x05 }, // MIN_AMMO[1] = 0x05
             { OMEGA_CANNON,  0x100, 0x00 }  // MIN_AMMO[8] = 0x00
         } };
+
+        constexpr uint64_t HOTKEY_BITS[] = {
+            IB_WEAPON_BEAM, IB_WEAPON_MISSILE, IB_WEAPON_1, IB_WEAPON_2,
+            IB_WEAPON_3,    IB_WEAPON_4,       IB_WEAPON_5, IB_WEAPON_6,
+            IB_WEAPON_SPECIAL
+        };
 
         constexpr uint8_t HOTKEY_TO_ID[] = {
             POWER_BEAM, MISSILE, SHOCK_COIL, MAGMAUL, JUDICATOR,
@@ -138,6 +135,21 @@ namespace MelonPrime {
         std::index_sequence<Is...>)
     {
         return (CheckOneWeapon<Is>(having, weaponAmmo, missileAmmo, isWeavel) | ...);
+    }
+
+    // =========================================================================
+    // Hotkey mask builder -- fold-expression (replaces runtime loop)
+    //
+    // OPT: The previous `for (size_t i = 0; i < 9; ++i)` loop was likely
+    //      unrolled by the compiler, but the fold expression makes it explicit
+    //      and consistent with the codebase style (cf. UnrollCheckDown/Press).
+    //      Also avoids potential loop overhead on debug builds.
+    // =========================================================================
+    template <size_t... Is>
+    FORCE_INLINE uint32_t BuildHotkeyMask(uint64_t press, std::index_sequence<Is...>)
+    {
+        using namespace WeaponData;
+        return (((press & HOTKEY_BITS[Is]) ? (1u << Is) : 0u) | ...);
     }
 
     // =========================================================================
@@ -239,10 +251,10 @@ namespace MelonPrime {
         // --- Case 2: Direct Weapon Hotkeys ---
         if (isStylusMode) m_flags.set(StateFlags::BIT_BLOCK_STYLUS);
 
-        // OPT-WH1: Direct contiguous extract for weapon hotkey bits.
-        // IB_WEAPON_BEAM..IB_WEAPON_SPECIAL are contiguous (17..25),
-        // so this is equivalent to the old BuildHotkeyMask() path with fewer ops.
-        const uint32_t hot = static_cast<uint32_t>((m_input.press >> 17) & 0x1FFu);
+        // OPT: fold expression replaces runtime loop
+        const uint32_t hot = BuildHotkeyMask(
+            m_input.press, std::make_index_sequence<9>{});
+
         const int firstSet = static_cast<int>(BitScanFwd(hot));
 
         const WeaponState ws(m_ptrs.havingWeapons, m_ptrs.weaponAmmo);
