@@ -90,67 +90,38 @@ namespace MelonPrime {
         return press;
     }
 
-    HOT_FUNCTION void MelonPrimeCore::UpdateInputState()
+    // =========================================================================
+    // UpdateInputStateImpl<kReentrant>
+    //
+    // Unified implementation for UpdateInputState (kReentrant=false) and
+    // UpdateInputStateReentrant (kReentrant=true). if constexpr branches are
+    // completely eliminated at compile time — zero overhead vs hand-written
+    // duplicates.
+    //
+    // kReentrant=false (full path):
+    //   - PollAndSnapshot        : drains WM_INPUT and latches edge state
+    //   - reads press mask       : ProjectPressMask from hotPressMask
+    //   - reads wheelDelta       : from cached panel (P-3)
+    //
+    // kReentrant=true (re-entrant FrameAdvance path):
+    //   - PollAndSnapshotNoEdges : drains WM_INPUT, no edge latch
+    //   - press = 0              : outer-frame press detection preserved
+    //   - wheelDelta = 0         : never consumed mid-frame
+    // =========================================================================
+    template <bool kReentrant>
+    FORCE_INLINE void MelonPrimeCore::UpdateInputStateImpl()
     {
 #ifdef _WIN32
         auto* const rawFilter = m_rawFilter.get();
 
-        // OPT-Z3: PollAndSnapshot -- merged Poll + snapshot into single call.
-        // Always runs to drain WM_INPUT messages even when unfocused,
-        // preventing message buildup and stale delta accumulation.
+        // OPT-Z3: Always poll to drain WM_INPUT even when unfocused,
+        // preventing message buildup and stale delta accumulation. [FIX-2]
         FrameHotkeyState hk{};
         if (rawFilter) {
-            rawFilter->PollAndSnapshot(hk, m_input.mouseX, m_input.mouseY);
-        }
-
-        if (!isFocused) { // [FIX-2] moved after poll + clear stale state
-            m_input.down = 0;
-            m_input.press = 0;
-            m_input.moveIndex = 0;
-            m_input.mouseX = 0;
-            m_input.mouseY = 0;
-            m_input.wheelDelta = 0;
-            return;
-        }
-#endif
-
-#ifdef _WIN32
-        const uint64_t hotDownMask = hk.down | emuInstance->joyHotkeyMask;
-        const uint64_t hotPressMask = hk.pressed | emuInstance->joyHotkeyPress;
-#else
-        const uint64_t hotDownMask = emuInstance->hotkeyMask;
-        const uint64_t hotPressMask = emuInstance->hotkeyPress;
-#endif
-
-        const ProjectedDownState downState = ProjectDownState(hotDownMask);
-        const uint64_t press = ProjectPressMask(hotPressMask);
-
-        m_input.down = downState.mask;
-        m_input.press = press;
-        m_input.moveIndex = downState.moveIndex;
-
-#if !defined(_WIN32)
-        const QPoint currentPos = QCursor::pos();
-        m_input.mouseX = currentPos.x() - m_aimData.centerX;
-        m_input.mouseY = currentPos.y() - m_aimData.centerY;
-#endif
-
-        {
-            // P-3: Use cached panel pointer (avoids emuInstance->getMainWindow()->panel chase)
-            m_input.wheelDelta = m_cachedPanel ? m_cachedPanel->getDelta() : 0;
-        }
-    }
-
-    HOT_FUNCTION void MelonPrimeCore::UpdateInputStateReentrant()
-    {
-#ifdef _WIN32
-        auto* const rawFilter = m_rawFilter.get();
-
-        // Re-entrant path only needs current down-state + mouse deltas.
-        // Use the no-edge snapshot so outer-frame press detection is preserved.
-        FrameHotkeyState hk{};
-        if (rawFilter) {
-            rawFilter->PollAndSnapshotNoEdges(hk, m_input.mouseX, m_input.mouseY);
+            if constexpr (kReentrant)
+                rawFilter->PollAndSnapshotNoEdges(hk, m_input.mouseX, m_input.mouseY);
+            else
+                rawFilter->PollAndSnapshot(hk, m_input.mouseX, m_input.mouseY);
         }
 
         if (!isFocused) {
@@ -162,18 +133,22 @@ namespace MelonPrime {
             m_input.wheelDelta = 0;
             return;
         }
-#endif
 
-#ifdef _WIN32
         const uint64_t hotDownMask = hk.down | emuInstance->joyHotkeyMask;
+        if constexpr (!kReentrant)
+            m_input.press = ProjectPressMask(hk.pressed | emuInstance->joyHotkeyPress);
+        else
+            m_input.press = 0;
 #else
         const uint64_t hotDownMask = emuInstance->hotkeyMask;
+        if constexpr (!kReentrant)
+            m_input.press = ProjectPressMask(emuInstance->hotkeyPress);
+        else
+            m_input.press = 0;
 #endif
 
         const ProjectedDownState downState = ProjectDownState(hotDownMask);
-
         m_input.down = downState.mask;
-        m_input.press = 0;
         m_input.moveIndex = downState.moveIndex;
 
 #if !defined(_WIN32)
@@ -182,9 +157,14 @@ namespace MelonPrime {
         m_input.mouseY = currentPos.y() - m_aimData.centerY;
 #endif
 
-        // Re-entrant path never consumes wheel / press-triggered UI actions.
-        m_input.wheelDelta = 0;
+        if constexpr (!kReentrant)
+            m_input.wheelDelta = m_cachedPanel ? m_cachedPanel->getDelta() : 0;
+        else
+            m_input.wheelDelta = 0;
     }
+
+    HOT_FUNCTION void MelonPrimeCore::UpdateInputState()          { UpdateInputStateImpl<false>(); }
+    HOT_FUNCTION void MelonPrimeCore::UpdateInputStateReentrant() { UpdateInputStateImpl<true>();  }
 
     // OPT-Z2: Unified move + button mask update.
     //
@@ -260,6 +240,37 @@ namespace MelonPrime {
     }
 
     // =========================================================================
+    // ApplyAim - branchless deadzone/snap helper for the legacy aim path.
+    //
+    // Input:  raw     Q14 fixed-point residual for one axis
+    //         adjT    deadzone threshold (Q14)
+    //         snapT   snap threshold (Q14); 0 disables snap
+    //
+    // Output: Q14→int16 reduced value (consumed portion)
+    //
+    // All branches are replaced with arithmetic using sign-extension tricks:
+    //   isDeadzone / isSnap produce 0 or -1 masks via SAR 63.
+    //   snapVal computes ±1 from the sign bit without a branch.
+    //   normVal is the standard >> FracBits reduction.
+    // The final OR selects the appropriate output for each region.
+    // =========================================================================
+    [[nodiscard]] static FORCE_INLINE int16_t ApplyAim(
+        int64_t raw, int64_t adjT, int64_t snapT) noexcept
+    {
+        constexpr int kFracBits = 14; // AIM_FRAC_BITS
+        const int64_t sign      = raw >> 63;
+        const int64_t absRaw    = (raw ^ sign) - sign;
+        const int64_t isDeadzone = (absRaw - adjT) >> 63;
+        const int64_t isSnap     = (absRaw - snapT) >> 63;
+        const int64_t snapVal    = (1LL ^ sign) - sign;
+        const int64_t normVal    = raw >> kFracBits;
+        return static_cast<int16_t>(
+            (~isDeadzone & isSnap & snapVal) |
+            (~isSnap     & normVal)
+        );
+    }
+
+    // =========================================================================
     // ProcessAimInputMouse
     //
     // P-17: Sub-pixel residual accumulation.
@@ -273,7 +284,7 @@ namespace MelonPrime {
     //
     //   Legacy path (m_disableMphAimSmoothing = false):
     //     - Deadzone/snap for DS-side compatibility
-    //     - P-17 residual accumulation with apply_aim branchless logic
+    //     - P-17 residual accumulation with ApplyAim branchless logic
     //     - ampShift = 0 (DS handles amplification internally)
     // =========================================================================
     HOT_FUNCTION void MelonPrimeCore::ProcessAimInputMouse()
@@ -356,27 +367,11 @@ namespace MelonPrime {
                 PREFETCH_WRITE(m_ptrs.aimX);
                 PREFETCH_WRITE(m_ptrs.aimY);
 
-                const int64_t adjT = m_aimFixedAdjust;
+                const int64_t adjT  = m_aimFixedAdjust;
                 const int64_t snapT = m_aimFixedSnapThresh;
 
-                auto apply_aim = [adjT, snapT](int64_t raw) -> int16_t {
-                    const int64_t sign = raw >> 63;
-                    const int64_t absRaw = (raw ^ sign) - sign;
-
-                    const int64_t isDeadzone = (absRaw - adjT) >> 63;
-                    const int64_t isSnap = (absRaw - snapT) >> 63;
-
-                    const int64_t snapVal = (1LL ^ sign) - sign;
-                    const int64_t normVal = raw >> AIM_FRAC_BITS;
-
-                    return static_cast<int16_t>(
-                        (~isDeadzone & isSnap & snapVal) |
-                        (~isSnap & normVal)
-                        );
-                    };
-
-                const int16_t outX = apply_aim(m_aimResidualX);
-                const int16_t outY = apply_aim(m_aimResidualY);
+                const int16_t outX = ApplyAim(m_aimResidualX, adjT, snapT);
+                const int16_t outY = ApplyAim(m_aimResidualY, adjT, snapT);
 
                 m_aimResidualX -= static_cast<int64_t>(outX) << AIM_FRAC_BITS;
                 m_aimResidualY -= static_cast<int64_t>(outY) << AIM_FRAC_BITS;

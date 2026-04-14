@@ -440,6 +440,7 @@ namespace MelonPrime {
         m_addrHot.boostGauge = m_currentRom.boostGauge + offP;
         m_addrHot.isBoosting = m_currentRom.isBoosting + offP;
         m_addrHot.isInVisorOrMap = m_currentRom.isInVisorOrMap + offP;
+        m_addrHot.isMapOrUserActionPaused = m_currentRom.isMapOrUserActionPaused;
 
         m_addrHot.aimX = m_currentRom.baseAimX + offA;
         m_addrHot.aimY = m_currentRom.baseAimY + offA;
