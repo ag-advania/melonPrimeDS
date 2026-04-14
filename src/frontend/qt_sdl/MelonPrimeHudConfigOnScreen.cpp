@@ -47,6 +47,7 @@ struct HudEditElemDesc {
 static const char* kEnumAlign3      = "Left|Center|Right";
 static const char* kEnumGaugeAnchor = "Below|Above|Right|Left|Center";
 static const char* kEnumRelIndep    = "Relative|Independent";
+static const char* kEnumPosMode3    = "Gauge\u2192Text|Independent|Text\u2192Gauge";
 static const char* kEnumAnchorY     = "Top|Center|Bottom";
 static const char* kEnumLabelPos    = "Above|Below|Left|Right|Center";
 static const char* kEnumLayout      = "Standard|Alternative";
@@ -73,18 +74,26 @@ static const HudEditPropDesc kPropsHp[] = {
 };
 
 static const HudEditPropDesc kPropsHpGauge[] = {
+    // Appearance
     {"Auto Color",   EditPropType::Bool, "Metroid.Visual.HudHpGaugeAutoColor", 0, 0, 0, nullptr, nullptr, nullptr},
     {"Orient",       EditPropType::Enum, "Metroid.Visual.HudHpGaugeOrientation", 0, 1, 1, kEnumOrientation, nullptr, nullptr},
-    {"Align",        EditPropType::Enum, "Metroid.Visual.HudHpGaugeAlign", 0, 2, 1, kEnumGaugeAlign, nullptr, nullptr},
     {"Length",       EditPropType::Int,  "Metroid.Visual.HudHpGaugeLength", 1, 192, 1, nullptr, nullptr, nullptr},
     {"Width",        EditPropType::Int,  "Metroid.Visual.HudHpGaugeWidth", 1, 20, 1, nullptr, nullptr, nullptr},
-    {"Pos Mode",     EditPropType::Enum, "Metroid.Visual.HudHpGaugePosMode", 0, 1, 1, kEnumRelIndep, nullptr, nullptr},
-    {"Gauge Anchor", EditPropType::Enum, "Metroid.Visual.HudHpGaugeAnchor", 0, 4, 1, kEnumGaugeAnchor, nullptr, nullptr},
+    {"Align",        EditPropType::Enum, "Metroid.Visual.HudHpGaugeAlign", 0, 2, 1, kEnumGaugeAlign, nullptr, nullptr},
+    {"Opacity",      EditPropType::Float,"Metroid.Visual.HudHpGaugeOpacity", 0, 100, 5, nullptr, nullptr, nullptr},
+    // Position mode selector
+    {"Pos Mode",     EditPropType::Enum, "Metroid.Visual.HudHpGaugePosMode", 0, 2, 1, kEnumPosMode3, nullptr, nullptr},
+    // Mode 0: gauge relative to text
+    {"Gauge Side",   EditPropType::Enum, "Metroid.Visual.HudHpGaugeAnchor", 0, 4, 1, kEnumGaugeAnchor, nullptr, nullptr},
     {"Offset X",     EditPropType::Int,  "Metroid.Visual.HudHpGaugeOffsetX", -128, 128, 1, nullptr, nullptr, nullptr},
     {"Offset Y",     EditPropType::Int,  "Metroid.Visual.HudHpGaugeOffsetY", -128, 128, 1, nullptr, nullptr, nullptr},
-    {"Pos X",        EditPropType::Int,  "Metroid.Visual.HudHpGaugePosX", -256, 256, 1, nullptr, nullptr, nullptr},
-    {"Pos Y",        EditPropType::Int,  "Metroid.Visual.HudHpGaugePosY", -256, 256, 1, nullptr, nullptr, nullptr},
-    {"Opacity",      EditPropType::Float,"Metroid.Visual.HudHpGaugeOpacity", 0, 100, 5, nullptr, nullptr, nullptr},
+    // Modes 1 & 2: gauge at independent absolute position
+    {"Gauge X",      EditPropType::Int,  "Metroid.Visual.HudHpGaugePosX", -256, 256, 1, nullptr, nullptr, nullptr},
+    {"Gauge Y",      EditPropType::Int,  "Metroid.Visual.HudHpGaugePosY", -256, 256, 1, nullptr, nullptr, nullptr},
+    // Mode 2: text relative to gauge
+    {"Text Side",    EditPropType::Enum, "Metroid.Visual.HudHpTextAnchor", 0, 4, 1, kEnumGaugeAnchor, nullptr, nullptr},
+    {"Text Ofs X",   EditPropType::Int,  "Metroid.Visual.HudHpTextOffsetX", -128, 128, 1, nullptr, nullptr, nullptr},
+    {"Text Ofs Y",   EditPropType::Int,  "Metroid.Visual.HudHpTextOffsetY", -128, 128, 1, nullptr, nullptr, nullptr},
 };
 
 static const HudEditPropDesc kPropsWeaponAmmo[] = {
@@ -105,17 +114,25 @@ static const HudEditPropDesc kPropsWpnIcon[] = {
 };
 
 static const HudEditPropDesc kPropsAmmoGauge[] = {
+    // Appearance
     {"Orient",       EditPropType::Enum, "Metroid.Visual.HudAmmoGaugeOrientation", 0, 1, 1, kEnumOrientation, nullptr, nullptr},
-    {"Align",        EditPropType::Enum, "Metroid.Visual.HudAmmoGaugeAlign", 0, 2, 1, kEnumGaugeAlign, nullptr, nullptr},
     {"Length",       EditPropType::Int,  "Metroid.Visual.HudAmmoGaugeLength", 1, 192, 1, nullptr, nullptr, nullptr},
     {"Width",        EditPropType::Int,  "Metroid.Visual.HudAmmoGaugeWidth", 1, 20, 1, nullptr, nullptr, nullptr},
-    {"Pos Mode",     EditPropType::Enum, "Metroid.Visual.HudAmmoGaugePosMode", 0, 1, 1, kEnumRelIndep, nullptr, nullptr},
-    {"Gauge Anchor", EditPropType::Enum, "Metroid.Visual.HudAmmoGaugeAnchor", 0, 4, 1, kEnumGaugeAnchor, nullptr, nullptr},
+    {"Align",        EditPropType::Enum, "Metroid.Visual.HudAmmoGaugeAlign", 0, 2, 1, kEnumGaugeAlign, nullptr, nullptr},
+    {"Opacity",      EditPropType::Float,"Metroid.Visual.HudAmmoGaugeOpacity", 0, 100, 5, nullptr, nullptr, nullptr},
+    // Position mode selector
+    {"Pos Mode",     EditPropType::Enum, "Metroid.Visual.HudAmmoGaugePosMode", 0, 2, 1, kEnumPosMode3, nullptr, nullptr},
+    // Mode 0: gauge relative to text
+    {"Gauge Side",   EditPropType::Enum, "Metroid.Visual.HudAmmoGaugeAnchor", 0, 4, 1, kEnumGaugeAnchor, nullptr, nullptr},
     {"Offset X",     EditPropType::Int,  "Metroid.Visual.HudAmmoGaugeOffsetX", -128, 128, 1, nullptr, nullptr, nullptr},
     {"Offset Y",     EditPropType::Int,  "Metroid.Visual.HudAmmoGaugeOffsetY", -128, 128, 1, nullptr, nullptr, nullptr},
-    {"Pos X",        EditPropType::Int,  "Metroid.Visual.HudAmmoGaugePosX", -256, 256, 1, nullptr, nullptr, nullptr},
-    {"Pos Y",        EditPropType::Int,  "Metroid.Visual.HudAmmoGaugePosY", -256, 256, 1, nullptr, nullptr, nullptr},
-    {"Opacity",      EditPropType::Float,"Metroid.Visual.HudAmmoGaugeOpacity", 0, 100, 5, nullptr, nullptr, nullptr},
+    // Modes 1 & 2: gauge at independent absolute position
+    {"Gauge X",      EditPropType::Int,  "Metroid.Visual.HudAmmoGaugePosX", -256, 256, 1, nullptr, nullptr, nullptr},
+    {"Gauge Y",      EditPropType::Int,  "Metroid.Visual.HudAmmoGaugePosY", -256, 256, 1, nullptr, nullptr, nullptr},
+    // Mode 2: text relative to gauge
+    {"Text Side",    EditPropType::Enum, "Metroid.Visual.HudAmmoTextAnchor", 0, 4, 1, kEnumGaugeAnchor, nullptr, nullptr},
+    {"Text Ofs X",   EditPropType::Int,  "Metroid.Visual.HudAmmoTextOffsetX", -128, 128, 1, nullptr, nullptr, nullptr},
+    {"Text Ofs Y",   EditPropType::Int,  "Metroid.Visual.HudAmmoTextOffsetY", -128, 128, 1, nullptr, nullptr, nullptr},
 };
 
 static const HudEditPropDesc kPropsMatchStatus[] = {

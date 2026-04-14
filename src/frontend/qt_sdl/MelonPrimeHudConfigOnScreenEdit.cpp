@@ -486,15 +486,23 @@ void MelonPrimeHudConfigOnScreenEdit::populateHPGauge()
         {QStringLiteral("Start"), QStringLiteral("Center"), QStringLiteral("End")});
     addSpinBox(QStringLiteral("Length"), "Metroid.Visual.HudHpGaugeLength", 1, 192);
     addSpinBox(QStringLiteral("Width"), "Metroid.Visual.HudHpGaugeWidth", 1, 20);
+    addCheckBox(QStringLiteral("Auto Color"), "Metroid.Visual.HudHpGaugeAutoColor");
+    // Position mode selector
     addComboBox(QStringLiteral("Position Mode"), "Metroid.Visual.HudHpGaugePosMode",
-        {QStringLiteral("Relative"), QStringLiteral("Independent")});
-    addComboBox(QStringLiteral("Position"), "Metroid.Visual.HudHpGaugeAnchor",
+        {QStringLiteral("Gauge \u2192 Text"), QStringLiteral("Independent"), QStringLiteral("Text \u2192 Gauge")});
+    // Mode 0: gauge relative to text
+    addComboBox(QStringLiteral("Gauge Side"), "Metroid.Visual.HudHpGaugeAnchor",
         {QStringLiteral("Below"), QStringLiteral("Above"), QStringLiteral("Right"), QStringLiteral("Left"), QStringLiteral("Center")});
     addSpinBox(QStringLiteral("Offset X"), "Metroid.Visual.HudHpGaugeOffsetX", -128, 128);
     addSpinBox(QStringLiteral("Offset Y"), "Metroid.Visual.HudHpGaugeOffsetY", -128, 128);
-    addSpinBox(QStringLiteral("Pos X"), "Metroid.Visual.HudHpGaugePosX", -256, 256);
-    addSpinBox(QStringLiteral("Pos Y"), "Metroid.Visual.HudHpGaugePosY", -256, 256);
-    addCheckBox(QStringLiteral("Auto Color"), "Metroid.Visual.HudHpGaugeAutoColor");
+    // Modes 1 & 2: gauge at independent absolute position
+    addSpinBox(QStringLiteral("Gauge X"), "Metroid.Visual.HudHpGaugePosX", -256, 256);
+    addSpinBox(QStringLiteral("Gauge Y"), "Metroid.Visual.HudHpGaugePosY", -256, 256);
+    // Mode 2: text relative to gauge
+    addComboBox(QStringLiteral("Text Side"), "Metroid.Visual.HudHpTextAnchor",
+        {QStringLiteral("Below"), QStringLiteral("Above"), QStringLiteral("Right"), QStringLiteral("Left"), QStringLiteral("Center")});
+    addSpinBox(QStringLiteral("Text Offset X"), "Metroid.Visual.HudHpTextOffsetX", -128, 128);
+    addSpinBox(QStringLiteral("Text Offset Y"), "Metroid.Visual.HudHpTextOffsetY", -128, 128);
     addOutlineGroup("HudHpGauge");
 }
 
@@ -567,14 +575,22 @@ void MelonPrimeHudConfigOnScreenEdit::populateAmmoGauge()
         {QStringLiteral("Start"), QStringLiteral("Center"), QStringLiteral("End")});
     addSpinBox(QStringLiteral("Length"), "Metroid.Visual.HudAmmoGaugeLength", 1, 192);
     addSpinBox(QStringLiteral("Width"), "Metroid.Visual.HudAmmoGaugeWidth", 1, 20);
+    // Position mode selector
     addComboBox(QStringLiteral("Position Mode"), "Metroid.Visual.HudAmmoGaugePosMode",
-        {QStringLiteral("Relative"), QStringLiteral("Independent")});
-    addComboBox(QStringLiteral("Position"), "Metroid.Visual.HudAmmoGaugeAnchor",
+        {QStringLiteral("Gauge \u2192 Text"), QStringLiteral("Independent"), QStringLiteral("Text \u2192 Gauge")});
+    // Mode 0: gauge relative to text
+    addComboBox(QStringLiteral("Gauge Side"), "Metroid.Visual.HudAmmoGaugeAnchor",
         {QStringLiteral("Below"), QStringLiteral("Above"), QStringLiteral("Right"), QStringLiteral("Left"), QStringLiteral("Center")});
     addSpinBox(QStringLiteral("Offset X"), "Metroid.Visual.HudAmmoGaugeOffsetX", -128, 128);
     addSpinBox(QStringLiteral("Offset Y"), "Metroid.Visual.HudAmmoGaugeOffsetY", -128, 128);
-    addSpinBox(QStringLiteral("Pos X"), "Metroid.Visual.HudAmmoGaugePosX", -256, 256);
-    addSpinBox(QStringLiteral("Pos Y"), "Metroid.Visual.HudAmmoGaugePosY", -256, 256);
+    // Modes 1 & 2: gauge at independent absolute position
+    addSpinBox(QStringLiteral("Gauge X"), "Metroid.Visual.HudAmmoGaugePosX", -256, 256);
+    addSpinBox(QStringLiteral("Gauge Y"), "Metroid.Visual.HudAmmoGaugePosY", -256, 256);
+    // Mode 2: text relative to gauge
+    addComboBox(QStringLiteral("Text Side"), "Metroid.Visual.HudAmmoTextAnchor",
+        {QStringLiteral("Below"), QStringLiteral("Above"), QStringLiteral("Right"), QStringLiteral("Left"), QStringLiteral("Center")});
+    addSpinBox(QStringLiteral("Text Offset X"), "Metroid.Visual.HudAmmoTextOffsetX", -128, 128);
+    addSpinBox(QStringLiteral("Text Offset Y"), "Metroid.Visual.HudAmmoTextOffsetY", -128, 128);
     addOutlineGroup("HudAmmoGauge");
 }
 

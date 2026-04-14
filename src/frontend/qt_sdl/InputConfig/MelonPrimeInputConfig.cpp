@@ -336,6 +336,7 @@ namespace {
 
 enum class HWType { Bool, Int, Float, String, Anchor9, Align3, Color3, HorizVert,
                     RelIndep,      // 0=Relative to Text, 1=Independent
+                    PosMode3,      // 0=Gauge→Text, 1=Independent, 2=Text→Gauge
                     GaugeAnchor5,  // 0=Below, 1=Above, 2=Right, 3=Left, 4=Center
                     AnchorY3,      // 0=Top, 1=Center, 2=Bottom
                     LabelPos5,     // 0=Above, 1=Below, 2=Left, 3=Right, 4=Center
@@ -381,6 +382,7 @@ struct HudMainSec {
 #define P_CLR(lbl, kR, kG, kB)        { lbl, HWType::Color3, kR, 0,255,1, kG, kB }
 #define P_ORIENT(lbl, key)            { lbl, HWType::HorizVert, key, 0,1,1, nullptr, nullptr }
 #define P_RELINDEP(lbl, key)          { lbl, HWType::RelIndep,     key, 0,1,1, nullptr, nullptr }
+#define P_POSMODE3(lbl, key)          { lbl, HWType::PosMode3,    key, 0,2,1, nullptr, nullptr }
 #define P_GANCHOR(lbl, key)           { lbl, HWType::GaugeAnchor5, key, 0,4,1, nullptr, nullptr }
 #define P_ANCHY(lbl, key)             { lbl, HWType::AnchorY3,     key, 0,2,1, nullptr, nullptr }
 #define P_LPOS(lbl, key)              { lbl, HWType::LabelPos5,    key, 0,4,1, nullptr, nullptr }
@@ -445,21 +447,29 @@ static const HudWidgetProp kSecHp[] = {
 
 // --- Section 6: HP Gauge ---
 static const HudWidgetProp kSecHpGauge[] = {
-    P_BOOL("Enable", "Metroid.Visual.HudHpGauge"),
-    P_BOOL("Auto Color", "Metroid.Visual.HudHpGaugeAutoColor"),
-    P_ORIENT("Orientation", "Metroid.Visual.HudHpGaugeOrientation"),
-    P_ALN("Align", "Metroid.Visual.HudHpGaugeAlign"),
-    P_INT("Length", "Metroid.Visual.HudHpGaugeLength", 1, 192, 1),
-    P_INT("Width", "Metroid.Visual.HudHpGaugeWidth", 1, 20, 1),
-    P_INT("Offset X", "Metroid.Visual.HudHpGaugeOffsetX", -128, 128, 1),
-    P_INT("Offset Y", "Metroid.Visual.HudHpGaugeOffsetY", -128, 128, 1),
-    P_CLR("Color", "Metroid.Visual.HudHpGaugeColorR", "Metroid.Visual.HudHpGaugeColorG", "Metroid.Visual.HudHpGaugeColorB"),
-    P_GANCHOR("Gauge Position", "Metroid.Visual.HudHpGaugeAnchor"),
-    P_RELINDEP("Position Mode", "Metroid.Visual.HudHpGaugePosMode"),
-    P_ANC("Pos Anchor", "Metroid.Visual.HudHpGaugePosAnchor"),
-    P_INT("Pos X", "Metroid.Visual.HudHpGaugePosX", -256, 256, 1),
-    P_INT("Pos Y", "Metroid.Visual.HudHpGaugePosY", -256, 256, 1),
-    P_FLOAT("Opacity", "Metroid.Visual.HudHpGaugeOpacity"),
+    // Appearance
+    P_BOOL("Enable",       "Metroid.Visual.HudHpGauge"),
+    P_BOOL("Auto Color",   "Metroid.Visual.HudHpGaugeAutoColor"),
+    P_CLR("Color",         "Metroid.Visual.HudHpGaugeColorR", "Metroid.Visual.HudHpGaugeColorG", "Metroid.Visual.HudHpGaugeColorB"),
+    P_FLOAT("Opacity",     "Metroid.Visual.HudHpGaugeOpacity"),
+    P_ORIENT("Orientation","Metroid.Visual.HudHpGaugeOrientation"),
+    P_INT("Length",        "Metroid.Visual.HudHpGaugeLength", 1, 192, 1),
+    P_INT("Width",         "Metroid.Visual.HudHpGaugeWidth", 1, 20, 1),
+    P_ALN("Align",         "Metroid.Visual.HudHpGaugeAlign"),
+    // Position mode — determines which settings below apply
+    P_POSMODE3("Position Mode",  "Metroid.Visual.HudHpGaugePosMode"),
+    // Mode 0 (Gauge → Text): gauge placed relative to the HP text
+    P_GANCHOR("Gauge Side",      "Metroid.Visual.HudHpGaugeAnchor"),
+    P_INT("Offset X",            "Metroid.Visual.HudHpGaugeOffsetX", -128, 128, 1),
+    P_INT("Offset Y",            "Metroid.Visual.HudHpGaugeOffsetY", -128, 128, 1),
+    // Modes 1 & 2: gauge at an independent absolute position
+    P_ANC("Gauge Anchor",        "Metroid.Visual.HudHpGaugePosAnchor"),
+    P_INT("Gauge X",             "Metroid.Visual.HudHpGaugePosX", -256, 256, 1),
+    P_INT("Gauge Y",             "Metroid.Visual.HudHpGaugePosY", -256, 256, 1),
+    // Mode 2 only (Text → Gauge): text placed relative to the gauge
+    P_GANCHOR("Text Side",       "Metroid.Visual.HudHpTextAnchor"),
+    P_INT("Text Offset X",       "Metroid.Visual.HudHpTextOffsetX", -128, 128, 1),
+    P_INT("Text Offset Y",       "Metroid.Visual.HudHpTextOffsetY", -128, 128, 1),
 };
 
 // --- Section 7: Weapon / Ammo ---
@@ -477,15 +487,18 @@ static const HudWidgetProp kSecWeaponAmmo[] = {
 // --- Section 8: Weapon Icon ---
 static const HudWidgetProp kSecWpnIcon[] = {
     P_BOOL("Show", "Metroid.Visual.HudWeaponIconShow"),
+    P_RELINDEP("Icon Position", "Metroid.Visual.HudWeaponIconMode"),
+    // Relative mode (0): offset from weapon text position
+    P_INT("Offset X", "Metroid.Visual.HudWeaponIconOffsetX", -128, 128, 1),
+    P_INT("Offset Y", "Metroid.Visual.HudWeaponIconOffsetY", -128, 128, 1),
+    // Independent mode (1): own anchor + position
     P_ANC("Pos Anchor", "Metroid.Visual.HudWeaponIconPosAnchor"),
     P_INT("Pos X", "Metroid.Visual.HudWeaponIconPosX", -256, 256, 1),
     P_INT("Pos Y", "Metroid.Visual.HudWeaponIconPosY", -256, 256, 1),
-    P_RELINDEP("Icon Position", "Metroid.Visual.HudWeaponIconMode"),
+    // Common
     P_INT("Height", "Metroid.Visual.HudWeaponIconHeight", 4, 64, 1),
-    P_INT("Icon Offset X", "Metroid.Visual.HudWeaponIconOffsetX", -128, 128, 1),
-    P_INT("Icon Offset Y", "Metroid.Visual.HudWeaponIconOffsetY", -128, 128, 1),
-    P_ALN("Icon Align X", "Metroid.Visual.HudWeaponIconAnchorX"),
-    P_ANCHY("Icon Align Y", "Metroid.Visual.HudWeaponIconAnchorY"),
+    P_ALN("Align X", "Metroid.Visual.HudWeaponIconAnchorX"),
+    P_ANCHY("Align Y", "Metroid.Visual.HudWeaponIconAnchorY"),
     P_FLOAT("Opacity", "Metroid.Visual.HudWpnIconOpacity"),
 };
 
@@ -513,20 +526,28 @@ static const HudWidgetProp kSecWpnIconTints[] = {
 
 // --- Section 9: Ammo Gauge ---
 static const HudWidgetProp kSecAmmoGauge[] = {
-    P_BOOL("Enable", "Metroid.Visual.HudAmmoGauge"),
-    P_ORIENT("Orientation", "Metroid.Visual.HudAmmoGaugeOrientation"),
-    P_ALN("Align", "Metroid.Visual.HudAmmoGaugeAlign"),
-    P_INT("Length", "Metroid.Visual.HudAmmoGaugeLength", 1, 192, 1),
-    P_INT("Width", "Metroid.Visual.HudAmmoGaugeWidth", 1, 20, 1),
-    P_INT("Offset X", "Metroid.Visual.HudAmmoGaugeOffsetX", -128, 128, 1),
-    P_INT("Offset Y", "Metroid.Visual.HudAmmoGaugeOffsetY", -128, 128, 1),
-    P_CLR("Color", "Metroid.Visual.HudAmmoGaugeColorR", "Metroid.Visual.HudAmmoGaugeColorG", "Metroid.Visual.HudAmmoGaugeColorB"),
-    P_GANCHOR("Gauge Position", "Metroid.Visual.HudAmmoGaugeAnchor"),
-    P_RELINDEP("Position Mode", "Metroid.Visual.HudAmmoGaugePosMode"),
-    P_ANC("Pos Anchor", "Metroid.Visual.HudAmmoGaugePosAnchor"),
-    P_INT("Pos X", "Metroid.Visual.HudAmmoGaugePosX", -256, 256, 1),
-    P_INT("Pos Y", "Metroid.Visual.HudAmmoGaugePosY", -256, 256, 1),
-    P_FLOAT("Opacity", "Metroid.Visual.HudAmmoGaugeOpacity"),
+    // Appearance
+    P_BOOL("Enable",       "Metroid.Visual.HudAmmoGauge"),
+    P_CLR("Color",         "Metroid.Visual.HudAmmoGaugeColorR", "Metroid.Visual.HudAmmoGaugeColorG", "Metroid.Visual.HudAmmoGaugeColorB"),
+    P_FLOAT("Opacity",     "Metroid.Visual.HudAmmoGaugeOpacity"),
+    P_ORIENT("Orientation","Metroid.Visual.HudAmmoGaugeOrientation"),
+    P_INT("Length",        "Metroid.Visual.HudAmmoGaugeLength", 1, 192, 1),
+    P_INT("Width",         "Metroid.Visual.HudAmmoGaugeWidth", 1, 20, 1),
+    P_ALN("Align",         "Metroid.Visual.HudAmmoGaugeAlign"),
+    // Position mode — determines which settings below apply
+    P_POSMODE3("Position Mode",  "Metroid.Visual.HudAmmoGaugePosMode"),
+    // Mode 0 (Gauge → Text): gauge placed relative to the Ammo text
+    P_GANCHOR("Gauge Side",      "Metroid.Visual.HudAmmoGaugeAnchor"),
+    P_INT("Offset X",            "Metroid.Visual.HudAmmoGaugeOffsetX", -128, 128, 1),
+    P_INT("Offset Y",            "Metroid.Visual.HudAmmoGaugeOffsetY", -128, 128, 1),
+    // Modes 1 & 2: gauge at an independent absolute position
+    P_ANC("Gauge Anchor",        "Metroid.Visual.HudAmmoGaugePosAnchor"),
+    P_INT("Gauge X",             "Metroid.Visual.HudAmmoGaugePosX", -256, 256, 1),
+    P_INT("Gauge Y",             "Metroid.Visual.HudAmmoGaugePosY", -256, 256, 1),
+    // Mode 2 only (Text → Gauge): text placed relative to the gauge
+    P_GANCHOR("Text Side",       "Metroid.Visual.HudAmmoTextAnchor"),
+    P_INT("Text Offset X",       "Metroid.Visual.HudAmmoTextOffsetX", -128, 128, 1),
+    P_INT("Text Offset Y",       "Metroid.Visual.HudAmmoTextOffsetY", -128, 128, 1),
 };
 
 // --- Section 10: Match Status ---
@@ -608,17 +629,20 @@ static const HudWidgetProp kSecBombLeft[] = {
 // --- Section 15: Bomb Icon ---
 static const HudWidgetProp kSecBombIcon[] = {
     P_BOOL("Show", "Metroid.Visual.HudBombLeftIconShow"),
+    P_RELINDEP("Icon Position", "Metroid.Visual.HudBombLeftIconMode"),
+    // Relative mode (0): offset from bomb text position
+    P_INT("Offset X", "Metroid.Visual.HudBombLeftIconOfsX", -128, 128, 1),
+    P_INT("Offset Y", "Metroid.Visual.HudBombLeftIconOfsY", -128, 128, 1),
+    // Independent mode (1): own anchor + position
     P_ANC("Pos Anchor", "Metroid.Visual.HudBombLeftIconPosAnchor"),
     P_INT("Pos X", "Metroid.Visual.HudBombLeftIconPosX", -256, 256, 1),
     P_INT("Pos Y", "Metroid.Visual.HudBombLeftIconPosY", -256, 256, 1),
-    P_RELINDEP("Icon Position", "Metroid.Visual.HudBombLeftIconMode"),
-    P_BOOL("Color Overlay", "Metroid.Visual.HudBombLeftIconColorOverlay"),
+    // Common
     P_INT("Height", "Metroid.Visual.HudBombIconHeight", 4, 64, 1),
+    P_ALN("Align X", "Metroid.Visual.HudBombLeftIconAnchorX"),
+    P_ANCHY("Align Y", "Metroid.Visual.HudBombLeftIconAnchorY"),
+    P_BOOL("Color Overlay", "Metroid.Visual.HudBombLeftIconColorOverlay"),
     P_CLR("Icon Color", "Metroid.Visual.HudBombLeftIconColorR", "Metroid.Visual.HudBombLeftIconColorG", "Metroid.Visual.HudBombLeftIconColorB"),
-    P_INT("Icon Offset X", "Metroid.Visual.HudBombLeftIconOfsX", -128, 128, 1),
-    P_INT("Icon Offset Y", "Metroid.Visual.HudBombLeftIconOfsY", -128, 128, 1),
-    P_ALN("Icon Align X", "Metroid.Visual.HudBombLeftIconAnchorX"),
-    P_ANCHY("Icon Align Y", "Metroid.Visual.HudBombLeftIconAnchorY"),
     P_FLOAT("Opacity", "Metroid.Visual.HudBombIconOpacity"),
 };
 
@@ -654,10 +678,10 @@ static const HudWidgetProp kSecWeaponInventoryHighlight[] = {
 static const HudWidgetProp kSecRadar[] = {
     P_BOOL("Enable", "Metroid.Visual.BtmOverlayEnable"),
     P_ANC("Anchor", "Metroid.Visual.BtmOverlayAnchor"),
-    P_INT("Dst X", "Metroid.Visual.BtmOverlayDstX", -256, 256, 1),
-    P_INT("Dst Y", "Metroid.Visual.BtmOverlayDstY", -256, 256, 1),
-    P_INT("Dst Size", "Metroid.Visual.BtmOverlayDstSize", 16, 128, 1),
-    P_INT("Src Radius", "Metroid.Visual.BtmOverlaySrcRadius", 10, 96, 1),
+    P_INT("Offset X", "Metroid.Visual.BtmOverlayDstX", -256, 256, 1),
+    P_INT("Offset Y", "Metroid.Visual.BtmOverlayDstY", -256, 256, 1),
+    P_INT("Display Size", "Metroid.Visual.BtmOverlayDstSize", 16, 128, 1),
+    P_INT("Source Radius", "Metroid.Visual.BtmOverlaySrcRadius", 10, 96, 1),
     P_FLOAT("Opacity", "Metroid.Visual.BtmOverlayOpacity"),
     P_CLR("Radar Color", "Metroid.Visual.BtmOverlayRadarColorR", "Metroid.Visual.BtmOverlayRadarColorG", "Metroid.Visual.BtmOverlayRadarColorB"),
     P_BOOL("Use Hunter Color", "Metroid.Visual.BtmOverlayRadarColorUseHunter"),
@@ -774,23 +798,43 @@ static const HudSubSec kSubsCrosshair[] = {
     SUB("Outer Lines",  "Metroid.UI.SectionHudCrosshairOuter",  kSecCrosshairOuter),
 };
 
+// ── HP sub-sections ──
+static const HudSubSec kSubsHp[] = {
+    SUB("HP Number Position", "Metroid.UI.SectionHudHp",            kSecHp),
+    SUB("HP Outline",         "Metroid.UI.SectionHudHpOutline",      kSecHpOutline),
+    SUB("HP Gauge",           "Metroid.UI.SectionHudHpGauge",        kSecHpGauge),
+    SUB("HP Gauge Outline",   "Metroid.UI.SectionHudHpGaugeOutline", kSecHpGaugeOutline),
+};
+
+// ── Ammo sub-sections ──
+static const HudSubSec kSubsAmmo[] = {
+    SUB("Ammo Number Position", "Metroid.UI.SectionHudWeaponAmmo",        kSecWeaponAmmo),
+    SUB("Ammo Outline",         "Metroid.UI.SectionHudWeaponOutline",      kSecWeaponOutline),
+    SUB("Ammo Gauge",           "Metroid.UI.SectionHudAmmoGauge",          kSecAmmoGauge),
+    SUB("Ammo Gauge Outline",   "Metroid.UI.SectionHudAmmoGaugeOutline",   kSecAmmoGaugeOutline),
+};
+
+// ── Weapon Icon sub-sections ──
+static const HudSubSec kSubsWpnIcon[] = {
+    SUB("Weapon Icon",               "Metroid.UI.SectionHudWpnIcon",              kSecWpnIcon),
+    SUB("Weapon Icon Outline",       "Metroid.UI.SectionHudWeaponIconOutline",    kSecWeaponIconOutline),
+    SUB("Weapon Icon Color Overlay", "Metroid.UI.SectionHudWpnIconTints",         kSecWpnIconTints),
+};
+
+// ── Weapon Inventory sub-sections ──
+static const HudSubSec kSubsWpnInventory[] = {
+    SUB("Weapon Inventory",              "Metroid.UI.SectionHudWeaponInventory",              kSecWeaponInventory),
+    SUB("Weapon Inventory Highlight",    "Metroid.UI.SectionHudWeaponInventoryHighlight",     kSecWeaponInventoryHighlight),
+    SUB("Weapon Inventory Outline",      "Metroid.UI.SectionHudWeaponInventoryOutline",       kSecWeaponInventoryOutline),
+    SUB("Weapon Inventory Icon Outline", "Metroid.UI.SectionHudWeaponInventoryIconOutline",   kSecWeaponInventoryIconOutline),
+};
+
 // ── HP / AMMO sub-sections ──
 static const HudSubSec kSubsHpAmmo[] = {
-    SUB("HP Number Position",        "Metroid.UI.SectionHudHp",             kSecHp),
-    SUB("HP Outline",                "Metroid.UI.SectionHudHpOutline",       kSecHpOutline),
-    SUB("Ammo Number Position",      "Metroid.UI.SectionHudWeaponAmmo",     kSecWeaponAmmo),
-    SUB("Weapon Outline",            "Metroid.UI.SectionHudWeaponOutline",   kSecWeaponOutline),
-    SUB("Weapon Icon",               "Metroid.UI.SectionHudWpnIcon",        kSecWpnIcon),
-    SUB("Weapon Icon Outline",       "Metroid.UI.SectionHudWeaponIconOutline", kSecWeaponIconOutline),
-    SUB("Weapon Icon Color Overlay", "Metroid.UI.SectionHudWpnIconTints", kSecWpnIconTints),
-    SUB("HP Gauge",                  "Metroid.UI.SectionHudHpGauge",        kSecHpGauge),
-    SUB("HP Gauge Outline",          "Metroid.UI.SectionHudHpGaugeOutline", kSecHpGaugeOutline),
-    SUB("Ammo Gauge",                "Metroid.UI.SectionHudAmmoGauge",      kSecAmmoGauge),
-    SUB("Ammo Gauge Outline",        "Metroid.UI.SectionHudAmmoGaugeOutline", kSecAmmoGaugeOutline),
-    SUB("Weapon Inventory",           "Metroid.UI.SectionHudWeaponInventory",          kSecWeaponInventory),
-    SUB("Weapon Inventory Highlight", "Metroid.UI.SectionHudWeaponInventoryHighlight",  kSecWeaponInventoryHighlight),
-    SUB("Weapon Inventory Outline",      "Metroid.UI.SectionHudWeaponInventoryOutline",      kSecWeaponInventoryOutline),
-    SUB("Weapon Inventory Icon Outline", "Metroid.UI.SectionHudWeaponInventoryIconOutline",  kSecWeaponInventoryIconOutline),
+    SUB_NEST("HP",               "Metroid.UI.SectionHudHpGrp",       kSubsHp),
+    SUB_NEST("Ammo",             "Metroid.UI.SectionHudAmmoGrp",     kSubsAmmo),
+    SUB_NEST("Weapon Icon",      "Metroid.UI.SectionHudWpnIconGrp",  kSubsWpnIcon),
+    SUB_NEST("Weapon Inventory", "Metroid.UI.SectionHudWpnInvGrp",   kSubsWpnInventory),
 };
 
 // ── Rank/Time sub-sub-sections ──
@@ -803,15 +847,20 @@ static const HudSubSec kSubsRankTime[] = {
     SUB("Time Limit Outline", "Metroid.UI.SectionHudTimeLimitOutline", kSecTimeLimitOutline),
 };
 
+// ── Bomb sub-sections ──
+static const HudSubSec kSubsBomb[] = {
+    SUB("Bomb Left",         "Metroid.UI.SectionHudBombLeft",        kSecBombLeft),
+    SUB("Bomb Left Outline", "Metroid.UI.SectionHudBombLeftOutline", kSecBombLeftOutline),
+    SUB("Bomb Icon",         "Metroid.UI.SectionHudBombIcon",        kSecBombIcon),
+    SUB("Bomb Icon Outline", "Metroid.UI.SectionHudBombIconOutline", kSecBombIconOutline),
+};
+
 // ── MATCH STATUS HUD sub-sections ──
 static const HudSubSec kSubsMatchStatus[] = {
     SUB("Score",                    "Metroid.UI.SectionHudMatchStatus",       kSecMatchStatus),
     SUB("Score Outline",            "Metroid.UI.SectionHudMatchStatusOutline", kSecMatchStatusOutline),
     SUB_NEST("Rank / Time",         "Metroid.UI.SectionHudRankTime",          kSubsRankTime),
-    SUB("Bomb Left",                "Metroid.UI.SectionHudBombLeft",          kSecBombLeft),
-    SUB("Bomb Left Outline",        "Metroid.UI.SectionHudBombLeftOutline",   kSecBombLeftOutline),
-    SUB("Bomb Icon",                "Metroid.UI.SectionHudBombIcon",          kSecBombIcon),
-    SUB("Bomb Icon Outline",        "Metroid.UI.SectionHudBombIconOutline",   kSecBombIconOutline),
+    SUB_NEST("Bomb",                "Metroid.UI.SectionHudBombGrp",           kSubsBomb),
 };
 
 // ── HUD RADAR sub-sections ──
@@ -997,26 +1046,55 @@ protected:
             QPoint pos = dsPos(c.GetInt("Metroid.Visual.HudHpAnchor"), c.GetInt("Metroid.Visual.HudHpX"), c.GetInt("Metroid.Visual.HudHpY"));
             QString str = QString::fromStdString(c.GetString("Metroid.Visual.HudHpPrefix")) + "100";
             int tw = textWidthDS(p, str);
-            int tx = alignedX(pos.x(), c.GetInt("Metroid.Visual.HudHpAlign"), tw);
-            p.setPen(col);
-            p.drawText(QPoint(tx, pos.y()), str);
+            int th = static_cast<int>(p.fontMetrics().height() * 192.0f / height());
 
-            // HP gauge
-            if (c.GetBool("Metroid.Visual.HudHpGauge")) {
-                float gop = c.GetDouble("Metroid.Visual.HudHpGaugeOpacity");
-                QColor gc = readColor("Metroid.Visual.HudHpGaugeColorR", "Metroid.Visual.HudHpGaugeColorG", "Metroid.Visual.HudHpGaugeColorB", gop);
-                int ori = c.GetInt("Metroid.Visual.HudHpGaugeOrientation");
-                int len = c.GetInt("Metroid.Visual.HudHpGaugeLength");
-                int wid = c.GetInt("Metroid.Visual.HudHpGaugeWidth");
-                int gx, gy;
-                if (c.GetInt("Metroid.Visual.HudHpGaugePosMode") == 1) {
+            bool showGauge = c.GetBool("Metroid.Visual.HudHpGauge");
+            int mode = showGauge ? c.GetInt("Metroid.Visual.HudHpGaugePosMode") : 0;
+            int ori  = c.GetInt("Metroid.Visual.HudHpGaugeOrientation");
+            int glen = c.GetInt("Metroid.Visual.HudHpGaugeLength");
+            int gwid = c.GetInt("Metroid.Visual.HudHpGaugeWidth");
+            int galign = c.GetInt("Metroid.Visual.HudHpGaugeAlign");
+
+            int tx, textY;
+            int gx = 0, gy = 0;
+
+            if (showGauge && mode == 2) {
+                // Text → Gauge: gauge at independent pos, text derived from gauge
+                QPoint gp = dsPos(c.GetInt("Metroid.Visual.HudHpGaugePosAnchor"), c.GetInt("Metroid.Visual.HudHpGaugePosX"), c.GetInt("Metroid.Visual.HudHpGaugePosY"));
+                gx = gp.x(); gy = gp.y();
+                int egx = gx - (ori == 0 ? glen * galign / 2 : 0);
+                int egy = gy - (ori == 1 ? glen * galign / 2 : 0);
+                int gW  = (ori == 0) ? glen : gwid;
+                int gH  = (ori == 0) ? gwid : glen;
+                int tAnc = c.GetInt("Metroid.Visual.HudHpTextAnchor");
+                int ofsX = c.GetInt("Metroid.Visual.HudHpTextOffsetX");
+                int ofsY = c.GetInt("Metroid.Visual.HudHpTextOffsetY");
+                switch (tAnc) {
+                case 1: tx = egx + gW/2 - tw/2 + ofsX; textY = egy                  + ofsY; break; // Above
+                case 2: tx = egx + gW       + ofsX;    textY = egy + gH/2 + th/2 + ofsY; break; // Right
+                case 3: tx = egx - tw       + ofsX;    textY = egy + gH/2 + th/2 + ofsY; break; // Left
+                case 4: tx = egx + gW/2 - tw/2 + ofsX; textY = egy + gH/2 + th/2 + ofsY; break; // Center
+                default:tx = egx + gW/2 - tw/2 + ofsX; textY = egy + gH + th + 2 + ofsY; break; // Below
+                }
+            } else {
+                tx    = alignedX(pos.x(), c.GetInt("Metroid.Visual.HudHpAlign"), tw);
+                textY = pos.y();
+                if (showGauge && mode == 1) {
                     QPoint gp = dsPos(c.GetInt("Metroid.Visual.HudHpGaugePosAnchor"), c.GetInt("Metroid.Visual.HudHpGaugePosX"), c.GetInt("Metroid.Visual.HudHpGaugePosY"));
                     gx = gp.x(); gy = gp.y();
-                } else {
-                    gx = tx + c.GetInt("Metroid.Visual.HudHpGaugeOffsetX");
+                } else if (showGauge) { // mode 0: gauge relative to text
+                    gx = tx    + c.GetInt("Metroid.Visual.HudHpGaugeOffsetX");
                     gy = pos.y() + c.GetInt("Metroid.Visual.HudHpGaugeOffsetY") + 2;
                 }
-                drawGaugeDS(p, gx, gy, gc, ori, len, wid, c.GetInt("Metroid.Visual.HudHpGaugeAlign"));
+            }
+
+            p.setPen(col);
+            p.drawText(QPoint(tx, textY), str);
+
+            if (showGauge) {
+                float gop = c.GetDouble("Metroid.Visual.HudHpGaugeOpacity");
+                QColor gc = readColor("Metroid.Visual.HudHpGaugeColorR", "Metroid.Visual.HudHpGaugeColorG", "Metroid.Visual.HudHpGaugeColorB", gop);
+                drawGaugeDS(p, gx, gy, gc, ori, glen, gwid, galign);
             }
         }
 
@@ -1051,26 +1129,55 @@ protected:
             QPoint pos = dsPos(c.GetInt("Metroid.Visual.HudWeaponAnchor"), c.GetInt("Metroid.Visual.HudWeaponX"), c.GetInt("Metroid.Visual.HudWeaponY"));
             QString str = QString::fromStdString(c.GetString("Metroid.Visual.HudAmmoPrefix")) + "50";
             int tw = textWidthDS(p, str);
-            int tx = alignedX(pos.x(), c.GetInt("Metroid.Visual.HudAmmoAlign"), tw);
-            p.setPen(col);
-            p.drawText(QPoint(tx, pos.y()), str);
+            int th = static_cast<int>(p.fontMetrics().height() * 192.0f / height());
 
-            // Ammo gauge
-            if (c.GetBool("Metroid.Visual.HudAmmoGauge")) {
-                float gop = c.GetDouble("Metroid.Visual.HudAmmoGaugeOpacity");
-                QColor gc = readColor("Metroid.Visual.HudAmmoGaugeColorR", "Metroid.Visual.HudAmmoGaugeColorG", "Metroid.Visual.HudAmmoGaugeColorB", gop);
-                int ori = c.GetInt("Metroid.Visual.HudAmmoGaugeOrientation");
-                int len = c.GetInt("Metroid.Visual.HudAmmoGaugeLength");
-                int wid = c.GetInt("Metroid.Visual.HudAmmoGaugeWidth");
-                int gx, gy;
-                if (c.GetInt("Metroid.Visual.HudAmmoGaugePosMode") == 1) {
+            bool showGauge = c.GetBool("Metroid.Visual.HudAmmoGauge");
+            int mode = showGauge ? c.GetInt("Metroid.Visual.HudAmmoGaugePosMode") : 0;
+            int ori  = c.GetInt("Metroid.Visual.HudAmmoGaugeOrientation");
+            int glen = c.GetInt("Metroid.Visual.HudAmmoGaugeLength");
+            int gwid = c.GetInt("Metroid.Visual.HudAmmoGaugeWidth");
+            int galign = c.GetInt("Metroid.Visual.HudAmmoGaugeAlign");
+
+            int tx, textY;
+            int gx = 0, gy = 0;
+
+            if (showGauge && mode == 2) {
+                // Text → Gauge: gauge at independent pos, text derived from gauge
+                QPoint gp = dsPos(c.GetInt("Metroid.Visual.HudAmmoGaugePosAnchor"), c.GetInt("Metroid.Visual.HudAmmoGaugePosX"), c.GetInt("Metroid.Visual.HudAmmoGaugePosY"));
+                gx = gp.x(); gy = gp.y();
+                int egx = gx - (ori == 0 ? glen * galign / 2 : 0);
+                int egy = gy - (ori == 1 ? glen * galign / 2 : 0);
+                int gW  = (ori == 0) ? glen : gwid;
+                int gH  = (ori == 0) ? gwid : glen;
+                int tAnc = c.GetInt("Metroid.Visual.HudAmmoTextAnchor");
+                int ofsX = c.GetInt("Metroid.Visual.HudAmmoTextOffsetX");
+                int ofsY = c.GetInt("Metroid.Visual.HudAmmoTextOffsetY");
+                switch (tAnc) {
+                case 1: tx = egx + gW/2 - tw/2 + ofsX; textY = egy                  + ofsY; break; // Above
+                case 2: tx = egx + gW       + ofsX;    textY = egy + gH/2 + th/2 + ofsY; break; // Right
+                case 3: tx = egx - tw       + ofsX;    textY = egy + gH/2 + th/2 + ofsY; break; // Left
+                case 4: tx = egx + gW/2 - tw/2 + ofsX; textY = egy + gH/2 + th/2 + ofsY; break; // Center
+                default:tx = egx + gW/2 - tw/2 + ofsX; textY = egy + gH + th + 2 + ofsY; break; // Below
+                }
+            } else {
+                tx    = alignedX(pos.x(), c.GetInt("Metroid.Visual.HudAmmoAlign"), tw);
+                textY = pos.y();
+                if (showGauge && mode == 1) {
                     QPoint gp = dsPos(c.GetInt("Metroid.Visual.HudAmmoGaugePosAnchor"), c.GetInt("Metroid.Visual.HudAmmoGaugePosX"), c.GetInt("Metroid.Visual.HudAmmoGaugePosY"));
                     gx = gp.x(); gy = gp.y();
-                } else {
-                    gx = tx + c.GetInt("Metroid.Visual.HudAmmoGaugeOffsetX");
+                } else if (showGauge) { // mode 0: gauge relative to text
+                    gx = tx    + c.GetInt("Metroid.Visual.HudAmmoGaugeOffsetX");
                     gy = pos.y() + c.GetInt("Metroid.Visual.HudAmmoGaugeOffsetY") + 2;
                 }
-                drawGaugeDS(p, gx, gy, gc, ori, len, wid, c.GetInt("Metroid.Visual.HudAmmoGaugeAlign"));
+            }
+
+            p.setPen(col);
+            p.drawText(QPoint(tx, textY), str);
+
+            if (showGauge) {
+                float gop = c.GetDouble("Metroid.Visual.HudAmmoGaugeOpacity");
+                QColor gc = readColor("Metroid.Visual.HudAmmoGaugeColorR", "Metroid.Visual.HudAmmoGaugeColorG", "Metroid.Visual.HudAmmoGaugeColorB", gop);
+                drawGaugeDS(p, gx, gy, gc, ori, glen, gwid, galign);
             }
         }
     }
@@ -1387,6 +1494,22 @@ void MelonPrimeInputConfig::setupCustomHudWidgets(Config::Table& instcfg)
             });
             break;
         }
+        case HWType::PosMode3: {
+            auto* combo = new QComboBox(parent);
+            combo->setObjectName(objName);
+            combo->addItem(QStringLiteral("Gauge \u2192 Text"));
+            combo->addItem(QStringLiteral("Independent"));
+            combo->addItem(QStringLiteral("Text \u2192 Gauge"));
+            combo->setCurrentIndex(instcfg.GetInt(p.cfgKey));
+            form->addRow(QString::fromUtf8(p.label), combo);
+            m_hudWidgets[p.cfgKey] = combo;
+            connect(combo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this, key = std::string(p.cfgKey)](int val) {
+                if (!m_applyPreviewEnabled) return;
+                emuInstance->getLocalConfig().SetInt(key, val);
+                invalidateHudAndRefreshPreviews();
+            });
+            break;
+        }
         case HWType::GaugeAnchor5: {
             auto* combo = new QComboBox(parent);
             combo->setObjectName(objName);
@@ -1678,6 +1801,83 @@ void MelonPrimeInputConfig::setupCustomHudWidgets(Config::Table& instcfg)
 
         vlay->insertWidget(insertPos++, mainBody);
     }
+
+    // ── PosMode3 grayout: disable irrelevant rows when Position Mode changes ──
+    auto wirePosModeGrayout = [this](
+        const char* modeKey,
+        std::vector<std::string> mode0Keys,
+        std::vector<std::string> mode12Keys,
+        std::vector<std::string> mode2Keys)
+    {
+        auto it0 = m_hudWidgets.find(std::string(modeKey));
+        if (it0 == m_hudWidgets.end()) return;
+        auto* combo = qobject_cast<QComboBox*>(it0->second);
+        if (!combo) return;
+
+        auto applyState = [this, mode0Keys, mode12Keys, mode2Keys](int mode) {
+            auto setRowEnabled = [this](const std::string& key, bool enabled) {
+                auto it = m_hudWidgets.find(key);
+                if (it == m_hudWidgets.end()) return;
+                QWidget* w = it->second;
+                // P_INT rows wrap slider+spinbox in a QHBoxLayout container.
+                // Operate on that container so both children are affected and
+                // labelForField can find the row via the parent QFormLayout.
+                QWidget* rowWidget = w;
+                if (w->parentWidget() && qobject_cast<QHBoxLayout*>(w->parentWidget()->layout()))
+                    rowWidget = w->parentWidget();
+                rowWidget->setEnabled(enabled);
+                if (QWidget* par = rowWidget->parentWidget())
+                    if (auto* fl = qobject_cast<QFormLayout*>(par->layout()))
+                        if (QWidget* lw = fl->labelForField(rowWidget))
+                            lw->setEnabled(enabled);
+            };
+            for (const auto& k : mode0Keys)  setRowEnabled(k, mode == 0);
+            for (const auto& k : mode12Keys) setRowEnabled(k, mode >= 1);
+            for (const auto& k : mode2Keys)  setRowEnabled(k, mode == 2);
+        };
+
+        applyState(combo->currentIndex());
+        connect(combo, QOverload<int>::of(&QComboBox::currentIndexChanged),
+                this, [applyState](int val) { applyState(val); });
+    };
+
+    wirePosModeGrayout("Metroid.Visual.HudHpGaugePosMode",
+        {"Metroid.Visual.HudHpGaugeAnchor",
+         "Metroid.Visual.HudHpGaugeOffsetX",
+         "Metroid.Visual.HudHpGaugeOffsetY"},
+        {"Metroid.Visual.HudHpGaugePosX",
+         "Metroid.Visual.HudHpGaugePosY"},
+        {"Metroid.Visual.HudHpTextAnchor",
+         "Metroid.Visual.HudHpTextOffsetX",
+         "Metroid.Visual.HudHpTextOffsetY"});
+
+    wirePosModeGrayout("Metroid.Visual.HudAmmoGaugePosMode",
+        {"Metroid.Visual.HudAmmoGaugeAnchor",
+         "Metroid.Visual.HudAmmoGaugeOffsetX",
+         "Metroid.Visual.HudAmmoGaugeOffsetY"},
+        {"Metroid.Visual.HudAmmoGaugePosX",
+         "Metroid.Visual.HudAmmoGaugePosY"},
+        {"Metroid.Visual.HudAmmoTextAnchor",
+         "Metroid.Visual.HudAmmoTextOffsetX",
+         "Metroid.Visual.HudAmmoTextOffsetY"});
+
+    // Weapon Icon Position: mode 0=Relative (offset from text), 1=Independent (own anchor+pos)
+    wirePosModeGrayout("Metroid.Visual.HudWeaponIconMode",
+        {"Metroid.Visual.HudWeaponIconOffsetX",
+         "Metroid.Visual.HudWeaponIconOffsetY"},
+        {"Metroid.Visual.HudWeaponIconPosAnchor",
+         "Metroid.Visual.HudWeaponIconPosX",
+         "Metroid.Visual.HudWeaponIconPosY"},
+        {});
+
+    // Bomb Icon Position: mode 0=Relative (offset from bomb text), 1=Independent (own anchor+pos)
+    wirePosModeGrayout("Metroid.Visual.HudBombLeftIconMode",
+        {"Metroid.Visual.HudBombLeftIconOfsX",
+         "Metroid.Visual.HudBombLeftIconOfsY"},
+        {"Metroid.Visual.HudBombLeftIconPosAnchor",
+         "Metroid.Visual.HudBombLeftIconPosX",
+         "Metroid.Visual.HudBombLeftIconPosY"},
+        {});
 }
 
 
