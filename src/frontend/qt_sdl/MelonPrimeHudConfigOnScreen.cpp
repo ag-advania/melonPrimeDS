@@ -43,6 +43,8 @@ struct HudEditElemDesc {
     int propCount;                  // number of props
 };
 
+#define HUD_EDIT_PROP_COUNT(arr) static_cast<int>(sizeof(arr) / sizeof((arr)[0]))
+
 // ── Enum label helpers ─────────────────────────────────────────────────────
 static const char* kEnumAlign3      = "Left|Center|Right";
 static const char* kEnumGaugeAnchor = "Below|Above|Right|Left|Center";
@@ -226,7 +228,7 @@ static const HudEditPropDesc kPropsCrosshairMain[] = {
     {"Dot Thick.",       EditPropType::Int,   "Metroid.Visual.CrosshairDotThickness", 1, 10, 1, nullptr, nullptr, nullptr},
     {"T-Style",          EditPropType::Bool,  "Metroid.Visual.CrosshairTStyle", 0, 0, 0, nullptr, nullptr, nullptr},
 };
-static constexpr int kCrosshairMainCount = 8;
+static constexpr int kCrosshairMainCount = HUD_EDIT_PROP_COUNT(kPropsCrosshairMain);
 
 static const HudEditPropDesc kPropsCrosshairInner[] = {
     {"Show",      EditPropType::Bool,  "Metroid.Visual.CrosshairInnerShow", 0, 0, 0, nullptr, nullptr, nullptr},
@@ -237,7 +239,7 @@ static const HudEditPropDesc kPropsCrosshairInner[] = {
     {"Thickness", EditPropType::Int,   "Metroid.Visual.CrosshairInnerThickness", 1, 10, 1, nullptr, nullptr, nullptr},
     {"Offset",    EditPropType::Int,   "Metroid.Visual.CrosshairInnerOffset", 0, 64, 1, nullptr, nullptr, nullptr},
 };
-static constexpr int kCrosshairInnerCount = 7;
+static constexpr int kCrosshairInnerCount = HUD_EDIT_PROP_COUNT(kPropsCrosshairInner);
 
 static const HudEditPropDesc kPropsCrosshairOuter[] = {
     {"Show",      EditPropType::Bool,  "Metroid.Visual.CrosshairOuterShow", 0, 0, 0, nullptr, nullptr, nullptr},
@@ -248,7 +250,7 @@ static const HudEditPropDesc kPropsCrosshairOuter[] = {
     {"Thickness", EditPropType::Int,   "Metroid.Visual.CrosshairOuterThickness", 1, 10, 1, nullptr, nullptr, nullptr},
     {"Offset",    EditPropType::Int,   "Metroid.Visual.CrosshairOuterOffset", 0, 64, 1, nullptr, nullptr, nullptr},
 };
-static constexpr int kCrosshairOuterCount = 7;
+static constexpr int kCrosshairOuterCount = HUD_EDIT_PROP_COUNT(kPropsCrosshairOuter);
 
 // Crosshair panel state
 static bool s_crosshairPanelOpen  = false;
@@ -291,7 +293,7 @@ static const HudEditElemDesc kEditElems[kEditElemCount] = {
         "Metroid.Visual.HudHpTextColorR",
         "Metroid.Visual.HudHpTextColorG",
         "Metroid.Visual.HudHpTextColorB",
-        kPropsHp, 4
+        kPropsHp, HUD_EDIT_PROP_COUNT(kPropsHp)
     },
     {   // 1: HP Gauge (independent position)
         "HP Gauge",
@@ -306,7 +308,7 @@ static const HudEditElemDesc kEditElems[kEditElemCount] = {
         "Metroid.Visual.HudHpGaugeColorR",
         "Metroid.Visual.HudHpGaugeColorG",
         "Metroid.Visual.HudHpGaugeColorB",
-        kPropsHpGauge, 12
+        kPropsHpGauge, HUD_EDIT_PROP_COUNT(kPropsHpGauge)
     },
     {   // 2: Weapon / Ammo text
         "Weapon/Ammo",
@@ -318,7 +320,7 @@ static const HudEditElemDesc kEditElems[kEditElemCount] = {
         "Metroid.Visual.HudAmmoTextColorR",
         "Metroid.Visual.HudAmmoTextColorG",
         "Metroid.Visual.HudAmmoTextColorB",
-        kPropsWeaponAmmo, 4
+        kPropsWeaponAmmo, HUD_EDIT_PROP_COUNT(kPropsWeaponAmmo)
     },
     {   // 3: Weapon icon
         "Wpn\nIcon",
@@ -328,7 +330,7 @@ static const HudEditElemDesc kEditElems[kEditElemCount] = {
         nullptr, nullptr, nullptr, nullptr,
         "Metroid.Visual.HudWeaponIconShow", // showKey
         nullptr, nullptr, nullptr, // no color picker
-        kPropsWpnIcon, 8
+        kPropsWpnIcon, HUD_EDIT_PROP_COUNT(kPropsWpnIcon)
     },
     {   // 4: Ammo gauge (independent position)
         "Ammo Gauge",
@@ -343,7 +345,7 @@ static const HudEditElemDesc kEditElems[kEditElemCount] = {
         "Metroid.Visual.HudAmmoGaugeColorR",
         "Metroid.Visual.HudAmmoGaugeColorG",
         "Metroid.Visual.HudAmmoGaugeColorB",
-        kPropsAmmoGauge, 11
+        kPropsAmmoGauge, HUD_EDIT_PROP_COUNT(kPropsAmmoGauge)
     },
     {   // 5: Match Status
         "Match Status",
@@ -355,7 +357,7 @@ static const HudEditElemDesc kEditElems[kEditElemCount] = {
         "Metroid.Visual.HudMatchStatusColorR",
         "Metroid.Visual.HudMatchStatusColorG",
         "Metroid.Visual.HudMatchStatusColorB",
-        kPropsMatchStatus, 13
+        kPropsMatchStatus, HUD_EDIT_PROP_COUNT(kPropsMatchStatus)
     },
     {   // 6: Rank
         "Rank",
@@ -367,7 +369,7 @@ static const HudEditElemDesc kEditElems[kEditElemCount] = {
         "Metroid.Visual.HudRankColorR",
         "Metroid.Visual.HudRankColorG",
         "Metroid.Visual.HudRankColorB",
-        kPropsRank, 5
+        kPropsRank, HUD_EDIT_PROP_COUNT(kPropsRank)
     },
     {   // 7: Time Left
         "Time Left",
@@ -379,7 +381,7 @@ static const HudEditElemDesc kEditElems[kEditElemCount] = {
         "Metroid.Visual.HudTimeLeftColorR",
         "Metroid.Visual.HudTimeLeftColorG",
         "Metroid.Visual.HudTimeLeftColorB",
-        kPropsTimeLeft, 2
+        kPropsTimeLeft, HUD_EDIT_PROP_COUNT(kPropsTimeLeft)
     },
     {   // 8: Time Limit
         "Time Limit",
@@ -391,7 +393,7 @@ static const HudEditElemDesc kEditElems[kEditElemCount] = {
         "Metroid.Visual.HudTimeLimitColorR",
         "Metroid.Visual.HudTimeLimitColorG",
         "Metroid.Visual.HudTimeLimitColorB",
-        kPropsTimeLimit, 2
+        kPropsTimeLimit, HUD_EDIT_PROP_COUNT(kPropsTimeLimit)
     },
     {   // 9: Bomb Left text
         "Bomb Left",
@@ -403,7 +405,7 @@ static const HudEditElemDesc kEditElems[kEditElemCount] = {
         "Metroid.Visual.HudBombLeftColorR",
         "Metroid.Visual.HudBombLeftColorG",
         "Metroid.Visual.HudBombLeftColorB",
-        kPropsBombLeft, 5
+        kPropsBombLeft, HUD_EDIT_PROP_COUNT(kPropsBombLeft)
     },
     {   // 10: Bomb icon
         "Bmb\nIcon",
@@ -415,7 +417,7 @@ static const HudEditElemDesc kEditElems[kEditElemCount] = {
         "Metroid.Visual.HudBombLeftIconColorR",
         "Metroid.Visual.HudBombLeftIconColorG",
         "Metroid.Visual.HudBombLeftIconColorB",
-        kPropsBombIcon, 8
+        kPropsBombIcon, HUD_EDIT_PROP_COUNT(kPropsBombIcon)
     },
     {   // 11: Radar overlay
         "Radar",
@@ -428,7 +430,7 @@ static const HudEditElemDesc kEditElems[kEditElemCount] = {
         nullptr, // posModeKey
         "Metroid.Visual.BtmOverlayEnable", // showKey
         nullptr, nullptr, nullptr, // no color picker
-        kPropsRadar, 2
+        kPropsRadar, HUD_EDIT_PROP_COUNT(kPropsRadar)
     },
     {   // 12: Weapon Inventory
         "Wpn\nInventory",
@@ -440,7 +442,7 @@ static const HudEditElemDesc kEditElems[kEditElemCount] = {
         "Metroid.Visual.HudWeaponInventoryColorR",
         "Metroid.Visual.HudWeaponInventoryColorG",
         "Metroid.Visual.HudWeaponInventoryColorB",
-        kPropsWeaponInventory, 15
+        kPropsWeaponInventory, HUD_EDIT_PROP_COUNT(kPropsWeaponInventory)
     },
     {   // 13: Crosshair (fixed center position — Qt side panel only, no DS-space props)
         "Crosshair",
@@ -451,6 +453,8 @@ static const HudEditElemDesc kEditElems[kEditElemCount] = {
         nullptr, 0                            // no DS-space extra props
     },
 };
+
+#undef HUD_EDIT_PROP_COUNT
 
 // Sample text used for element box previews (must align with kEditElems indices)
 // Width sample text for element boxes. Match Status uses a two-line format separately.
