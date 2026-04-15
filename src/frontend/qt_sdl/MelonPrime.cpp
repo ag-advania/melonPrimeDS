@@ -49,7 +49,8 @@ namespace MelonPrime {
         m_flags.assign(StateFlags::BIT_JOY2KEY, localCfg.GetBool(CfgKey::Joy2Key));
         m_flags.assign(StateFlags::BIT_SNAP_TAP, localCfg.GetBool(CfgKey::SnapTap));
         m_flags.assign(StateFlags::BIT_STYLUS_MODE, localCfg.GetBool(CfgKey::StylusMode));
-        isStylusMode = m_flags.test(StateFlags::BIT_STYLUS_MODE);
+        isStylusMode    = m_flags.test(StateFlags::BIT_STYLUS_MODE);
+        m_snapTapMode   = m_flags.test(StateFlags::BIT_SNAP_TAP);
 
         m_disableMphAimSmoothing = localCfg.GetBool(CfgKey::DisableMphAimSmoothing);
         m_enableAimAccumulator = localCfg.GetBool(CfgKey::AimAccumulator);
