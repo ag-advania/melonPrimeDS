@@ -171,8 +171,11 @@ protected:
     float m_topStretchX   = 1.0f;
     float m_hudOriginX    = 0.0f;
     float m_hudOriginY    = 0.0f;
+    bool  m_hudTopMatrixValid = false;
+    float m_hudTopMatrix[6] = {1.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f};
     // Config values cached per epoch — avoids hash-map lookups per-frame.
     uint32_t m_hudCfgEpoch   = ~0u;
+    bool     m_hudEnabled    = false;
     // BtmOverlay config cache (GL path):
     uint32_t m_radarCfgEpoch = ~0u;
     bool     m_radarEnable    = false;
@@ -182,6 +185,8 @@ protected:
     int      m_radarDstSize   = 64;
     float    m_radarOpacity   = 0.85f;
     int      m_radarSrcRadius = 46;
+    float    m_radarAnchorDsX = 256.0f;
+    float    m_radarAnchorDsY = 0.0f;
 #endif
 
 #ifdef MELONPRIME_DS

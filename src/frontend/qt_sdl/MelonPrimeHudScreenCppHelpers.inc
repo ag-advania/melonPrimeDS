@@ -53,6 +53,15 @@ static bool MelonPrimeHud_RefreshHudEpoch(uint32_t& cachedEpoch)
     return true;
 }
 
+static void MelonPrimeHud_RefreshHudEnabledIfNeeded(
+    Config::Table& instcfg,
+    uint32_t& cachedEpoch,
+    bool& hudEnabled)
+{
+    if (MelonPrimeHud_RefreshHudEpoch(cachedEpoch))
+        hudEnabled = MelonPrime::CustomHud_IsEnabled(instcfg);
+}
+
 static void MelonPrimeHud_RefreshRadarConfigIfNeeded(
     Config::Table& instcfg,
     uint32_t& cachedEpoch,
@@ -62,7 +71,9 @@ static void MelonPrimeHud_RefreshRadarConfigIfNeeded(
     int& radarDstY,
     int& radarDstSize,
     float& radarOpacity,
-    int& radarSrcRadius)
+    int& radarSrcRadius,
+    float& radarAnchorDsX,
+    float& radarAnchorDsY)
 {
     if (!MelonPrimeHud_RefreshHudEpoch(cachedEpoch))
         return;
@@ -74,16 +85,25 @@ static void MelonPrimeHud_RefreshRadarConfigIfNeeded(
     radarDstSize   = std::max(instcfg.GetInt("Metroid.Visual.BtmOverlayDstSize"), 1);
     radarOpacity   = std::clamp((float)instcfg.GetDouble("Metroid.Visual.BtmOverlayOpacity"), 0.0f, 1.0f);
     radarSrcRadius = instcfg.GetInt("Metroid.Visual.BtmOverlaySrcRadius");
+    radarAnchorDsX = (radarAnchor % 3) * 128.0f;
+    radarAnchorDsY = (radarAnchor / 3) * 96.0f;
+}
+
+template <typename CoreT>
+static bool MelonPrimeHud_CanRenderForCore(CoreT* mp, bool editMode)
+{
+    return mp && mp->IsRomDetected() && (mp->IsInGame() || editMode);
 }
 
 template <typename CoreT>
 static bool MelonPrimeHud_IsHudVisibleOrRestorePatch(
     EmuInstance* emuInstance,
     Config::Table& instcfg,
-    CoreT* mp)
+    CoreT* mp,
+    bool hudEnabled,
+    bool editMode)
 {
-    const bool hudVisible =
-        MelonPrime::CustomHud_IsEnabled(instcfg) || MelonPrime::CustomHud_IsEditMode();
+    const bool hudVisible = hudEnabled || editMode;
     if (!hudVisible) {
         MelonPrime::CustomHud_EnsurePatchRestored(
             emuInstance, instcfg,
