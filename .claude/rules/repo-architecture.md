@@ -183,7 +183,11 @@ Current work is on the `highres_fonts_v3` branch. Main changes relative to `mast
 - All `*X`/`*Y` HUD config values are offsets from anchor, not absolute DS-space coordinates
 - `ApplyAnchor()` helper in `MelonPrimeHudRender.cpp` is called once per element in `Load*Config()`, transparent to draw functions
 - In-game HUD edit mode with drag-and-drop editor, properties panels, crosshair panel with side panels, and live previews
-- Edit mode code split into `MelonPrimeHudConfigOnScreen.cpp` (unity-build included by `MelonPrimeHudRender.cpp`)
+- Edit mode code rooted at `MelonPrimeHudConfigOnScreen.cpp` (unity-build included by `MelonPrimeHudRender.cpp`) and split into `.inc` fragments:
+  - `MelonPrimeHudConfigOnScreenDefs.inc` - definition tables
+  - `MelonPrimeHudConfigOnScreenSnapshot.inc` - snapshot/restore/reset
+  - `MelonPrimeHudConfigOnScreenDraw.inc` - bounds and overlay drawing
+  - `MelonPrimeHudConfigOnScreenInput.inc` - public edit API and input handling
 - Classic settings dialog restored with 5 hierarchical main sections and live preview widgets on the right (except HUD Scale)
 - Programmatic widget architecture via `HudMainSec` / `HudSubSec` / `HudWidgetProp`, enabling data-driven save/restore/TOML-export
 - Snapshot/restore covers all HUD widgets plus 3 global fields

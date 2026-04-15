@@ -8,11 +8,17 @@
 |------|----------------|
 | `src/frontend/qt_sdl/MelonPrimeHudRender.h` | public API surface |
 | `src/frontend/qt_sdl/MelonPrimeHudRender.cpp` | runtime HUD rendering, cache management, no-HUD patching, match-state caching |
-| `src/frontend/qt_sdl/MelonPrimeHudConfigOnScreen.cpp` | in-game HUD layout editor (unity-build included by `MelonPrimeHudRender.cpp`, not in `CMakeLists.txt`) |
-| `src/frontend/qt_sdl/MelonPrimeHudConfigOnScreenEdit.cpp` | in-game HUD element properties side panel - `populate*()` functions define per-element settings (unity-build included by `MelonPrimeHudConfigOnScreen.cpp`) |
+| `src/frontend/qt_sdl/MelonPrimeHudConfigOnScreen.cpp` | in-game HUD layout editor unity entry point; owns shared edit-mode state/constants and includes the `.inc` fragments below (not in `CMakeLists.txt`) |
+| `src/frontend/qt_sdl/MelonPrimeHudConfigOnScreenDefs.inc` | edit-mode definitions: `EditPropType`, property descriptors, element table `kEditElems`, crosshair property arrays, sample element text |
+| `src/frontend/qt_sdl/MelonPrimeHudConfigOnScreenSnapshot.inc` | edit-mode config snapshot, restore, and reset-to-default helpers |
+| `src/frontend/qt_sdl/MelonPrimeHudConfigOnScreenDraw.inc` | edit-mode bounds calculation and all on-screen editor drawing, including element boxes, property panels, live preview, and crosshair preview |
+| `src/frontend/qt_sdl/MelonPrimeHudConfigOnScreenInput.inc` | edit-mode public API and input handling: enter/exit, selection callback, hit testing, mouse press/move/release, wheel |
+| `src/frontend/qt_sdl/MelonPrimeHudConfigOnScreenEdit.cpp` | Qt floating side panel for in-game HUD element properties - `populate*()` functions define per-element settings |
 | `src/frontend/qt_sdl/MelonPrimeHudConfigOnScreenEdit.h` | side panel class declaration |
 | `src/frontend/qt_sdl/MelonPrimeConstants.h` | hunter-specific radar source Y positions and related constants |
 | `src/frontend/qt_sdl/Screen.cpp` | calls `CustomHud_Render()` and OpenGL radar overlay path |
+
+`MelonPrimeHudConfigOnScreen*.inc` files are not standalone translation units. They are included only through `MelonPrimeHudConfigOnScreen.cpp`, which itself is included by `MelonPrimeHudRender.cpp` inside `namespace MelonPrime` and `#ifdef MELONPRIME_CUSTOM_HUD`.
 
 ### Runtime entry points
 `CustomHud_Render()` is the main per-frame entry point.

@@ -6,6 +6,7 @@
   - `MELONPRIME_CUSTOM_HUD`
 - `MelonPrimeHudRender.cpp` and `InputConfig/MelonPrimeInputConfig.cpp` are explicitly built as part of the frontend
 - `MelonPrimeHudConfigOnScreen.cpp` is a unity-build include (pulled in by `MelonPrimeHudRender.cpp`); do not add it to `CMakeLists.txt`
+  - Its `MelonPrimeHudConfigOnScreen*.inc` fragments are also unity include fragments; do not add those to `CMakeLists.txt` either
 - The project has been built on Windows and via MinGW cross-compilation from WSL
 - `vcpkg/` is used for dependencies in this repo setup
 
