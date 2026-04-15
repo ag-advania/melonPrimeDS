@@ -199,6 +199,14 @@ private:
     QMutex msgMutex;
     QSemaphore msgSemaphore;
     QQueue<Message> msgQueue;
+#ifdef MELONPRIME_DS
+    // P-46: Fast-path flag for handleMessages().
+    // Set (release) in sendMessage() before enqueue; cleared (relaxed) after
+    // drain. Emu thread checks this (acquire) before locking msgMutex.
+    // On 99%+ of frames with no messages, avoids the uncontended mutex
+    // lock/unlock entirely (~20-50 cyc/frame).
+    std::atomic<bool> msgPending{false};
+#endif
 
     EmuInstance* emuInstance;
 

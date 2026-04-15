@@ -25,6 +25,8 @@ Shaders and C++ are tightly coupled. Always check both sides when modifying eith
 
 `Screen.h` / `Screen.cpp` also hold the OpenGL-side overlay shader program, uniforms, and draw setup.
 
+Custom HUD integration inside `Screen.cpp` is split into unity include fragments named `MelonPrimeHudScreenCpp*.inc`. These are grouped by call site: shared helpers, panel setup/layout/input, `OverlayOfSoftware`, `OverlayOfGl`, and GL init/deinit. They are not standalone translation units and should not be added to CMake.
+
 ### OPT-DR1 — Dirty-Rect Overlay Optimization
 
 **Goal**: avoid per-frame full-window memset and full GL texture upload for the HUD overlay.
@@ -75,6 +77,13 @@ if (!uploadRect.isEmpty()) {
 }
 s_hudPrevDirtyGL = curDirty;
 ```
+
+Additional Screen-fragment caches:
+- `m_hudEnabled` is refreshed by `m_hudCfgEpoch` instead of reading `Metroid.Visual.CustomHUD` every frame.
+- `m_radarCfgEpoch` owns GL radar config refresh separately from the top HUD enable cache.
+- `m_hudTopMatrix` / `m_hudTopMatrixValid` are updated during layout, so the GL radar path does not scan `screenKind` each frame.
+- `m_radarAnchorDsX/Y` are computed when radar config refreshes, not per frame.
+- The GL overlay path skips texture upload/composite setup when both previous and current dirty rects are empty, and restores screen GL state only if HUD/radar drawing changed it.
 
 **Removed dead code**: `GetOutlineBuffer()`, `s_outlineBuf`, `s_prevOutlineDirty` — were declared but never called; deleted.
 
@@ -183,7 +192,11 @@ Current work is on the `highres_fonts_v3` branch. Main changes relative to `mast
 - All `*X`/`*Y` HUD config values are offsets from anchor, not absolute DS-space coordinates
 - `ApplyAnchor()` helper in `MelonPrimeHudRender.cpp` is called once per element in `Load*Config()`, transparent to draw functions
 - In-game HUD edit mode with drag-and-drop editor, properties panels, crosshair panel with side panels, and live previews
-- Edit mode code split into `MelonPrimeHudConfigOnScreen.cpp` (unity-build included by `MelonPrimeHudRender.cpp`)
+- Edit mode code rooted at `MelonPrimeHudConfigOnScreen.cpp` (unity-build included by `MelonPrimeHudRender.cpp`) and split into `.inc` fragments:
+  - `MelonPrimeHudConfigOnScreenDefs.inc` - definition tables
+  - `MelonPrimeHudConfigOnScreenSnapshot.inc` - snapshot/restore/reset
+  - `MelonPrimeHudConfigOnScreenDraw.inc` - bounds and overlay drawing
+  - `MelonPrimeHudConfigOnScreenInput.inc` - public edit API and input handling
 - Classic settings dialog restored with 5 hierarchical main sections and live preview widgets on the right (except HUD Scale)
 - Programmatic widget architecture via `HudMainSec` / `HudSubSec` / `HudWidgetProp`, enabling data-driven save/restore/TOML-export
 - Snapshot/restore covers all HUD widgets plus 3 global fields
@@ -192,3 +205,14 @@ Current work is on the `highres_fonts_v3` branch. Main changes relative to `mast
 - Element boxes show live previews (gauge bars, cached icons, sample text) instead of static text labels
 - Element box font scales with `HudTextScale`
 - OPT-DR1 dirty-rect overlay optimization: `CustomHud_Render` returns `QRect`; only dirty regions cleared/composited/uploaded per frame (see OPT-DR1 section above)
+- Runtime HUD code rooted at `MelonPrimeHudRender.cpp` and split into `.inc` fragments:
+  - `MelonPrimeHudRenderAssets.inc` - assets, icon/radar/text/outline caches
+  - `MelonPrimeHudRenderConfig.inc` - cached config structs/loaders and anchor recomputation
+  - `MelonPrimeHudRenderRuntime.inc` - battle state, frame helpers, hide rules, NoHUD patch/cache lifecycle
+  - `MelonPrimeHudRenderDraw.inc` - HUD element drawing
+  - `MelonPrimeHudRenderMain.inc` - `CustomHud_Render`, radar overlay, edit-mode forward state
+- Screen integration code rooted at `Screen.cpp` and split into `MelonPrimeHudScreenCpp*.inc` fragments:
+  - `Helpers` fragment for common edit-panel placement, epoch refresh, top overlay clear/render, and patch restore helpers
+  - setup/layout/input fragments for edit-mode forwarding and floating panel placement
+  - software overlay fragment for `ScreenPanelNative::paintEvent`
+  - GL init/deinit/overlay fragments for texture/shader resources, HUD upload/composite, and native radar overlay

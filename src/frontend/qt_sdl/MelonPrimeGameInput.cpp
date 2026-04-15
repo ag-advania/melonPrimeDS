@@ -175,12 +175,13 @@ namespace MelonPrime {
     //   Now: single function, single store to m_inputMaskFast, zero duplication.
     //   Also enables the compiler to keep m_inputMaskFast in a register across
     //   the move LUT lookup and button merge.
-    HOT_FUNCTION void MelonPrimeCore::ProcessMoveAndButtonsFast()
+    template <bool kInputMaskReset>
+    FORCE_INLINE void MelonPrimeCore::ProcessMoveAndButtonsFastImpl()
     {
         const uint32_t curr = m_input.moveIndex;
         uint32_t finalInput;
 
-        if (LIKELY(!m_flags.test(StateFlags::BIT_SNAP_TAP))) {
+        if (LIKELY(!m_snapTapMode)) {
             finalInput = curr;
         }
         else {
@@ -203,7 +204,13 @@ namespace MelonPrime {
         }
 
         const uint8_t lutResult = MoveLUT[finalInput & 0xF];
-        uint16_t mask = (m_inputMaskFast & 0xFF0Fu) | (static_cast<uint16_t>(lutResult) & 0x00F0u);
+        uint16_t mask;
+        if constexpr (kInputMaskReset) {
+            mask = 0xFF0Fu | (static_cast<uint16_t>(lutResult) & 0x00F0u);
+        }
+        else {
+            mask = (m_inputMaskFast & 0xFF0Fu) | (static_cast<uint16_t>(lutResult) & 0x00F0u);
+        }
 
         // --- Branchless button merge (B/L/R) ---
         constexpr uint16_t kModBits = (1u << INPUT_B) | (1u << INPUT_L) | (1u << INPUT_R);
@@ -212,6 +219,16 @@ namespace MelonPrime {
         const uint16_t lBit = static_cast<uint16_t>(((nd >> 1) & 1u) << INPUT_L);
         const uint16_t rBit = static_cast<uint16_t>(((nd >> 2) & 1u) << INPUT_R);
         m_inputMaskFast = (mask & ~kModBits) | bBit | lBit | rBit;
+    }
+
+    HOT_FUNCTION void MelonPrimeCore::ProcessMoveAndButtonsFast()
+    {
+        ProcessMoveAndButtonsFastImpl<false>();
+    }
+
+    HOT_FUNCTION void MelonPrimeCore::ProcessMoveAndButtonsFastFromReset()
+    {
+        ProcessMoveAndButtonsFastImpl<true>();
     }
 
     void MelonPrimeCore::ProcessAimInputStylus()
@@ -314,8 +331,10 @@ namespace MelonPrime {
                 // P-29a: Branchless residual clamp (CMOV on x86, CSEL on ARM).
                 m_aimResidualX = std::clamp(m_aimResidualX, -AIM_MAX_RESIDUAL, AIM_MAX_RESIDUAL);
                 m_aimResidualY = std::clamp(m_aimResidualY, -AIM_MAX_RESIDUAL, AIM_MAX_RESIDUAL);
-            } else if (LIKELY((m_aimResidualX | m_aimResidualY) == 0)) {
+            } else if ((m_aimResidualX | m_aimResidualY) == 0) {
                 // No delta AND no residual → nothing to output. Skip everything.
+                // Note: not LIKELY — with accumulator enabled, residuals persist after
+                //       mouse stops, so zero-residual is not the dominant case here.
                 return;
             }
 
@@ -340,11 +359,11 @@ namespace MelonPrime {
 
                 if ((outX | outY) == 0) return;
 
-                PREFETCH_WRITE(m_ptrs.aimX);
-                PREFETCH_WRITE(m_ptrs.aimY);
-
                 // Direct write — no << ampShift needed.
                 // >> 12 already produces the same scale as the old >> 14 << 2.
+                // Note: PREFETCH_WRITE for aimX/aimY issued at top of HandleInGameLogic
+                //       with proper lead time (~50-100 instructions). Inner prefetches
+                //       here (2 instructions before write) are too late to help and removed.
                 *m_ptrs.aimX = static_cast<uint16_t>(outX);
                 *m_ptrs.aimY = static_cast<uint16_t>(outY);
             }
@@ -363,9 +382,6 @@ namespace MelonPrime {
                     if (absResX < m_aimFixedAdjust && absResY < m_aimFixedAdjust)
                         return;
                 }
-
-                PREFETCH_WRITE(m_ptrs.aimX);
-                PREFETCH_WRITE(m_ptrs.aimY);
 
                 const int64_t adjT  = m_aimFixedAdjust;
                 const int64_t snapT = m_aimFixedSnapThresh;

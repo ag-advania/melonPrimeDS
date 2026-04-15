@@ -72,7 +72,7 @@ namespace MelonPrime {
     // This function is only safe where the caller ALREADY captured all pending
     // raw input via GetRawInputBuffer, or where data loss is acceptable.
     // =========================================================================
-    void RawInputWinFilter::drainMessagesOnly() noexcept {
+    FORCE_INLINE void RawInputWinFilter::drainMessagesOnly() noexcept {
         MSG msg;
         if (LIKELY(WinInternal::fnNtUserPeekMessage != nullptr)) {
             while (WinInternal::fnNtUserPeekMessage(&msg, m_hHiddenWnd, WM_INPUT, WM_INPUT, PM_REMOVE, FALSE)) {}
@@ -86,7 +86,7 @@ namespace MelonPrime {
     // REFACTORED (R1): drainPendingMessages -- extracted from Poll()/PollAndSnapshot()
     // Retained with full GetRawInputBuffer for Poll() backward compatibility.
     // =========================================================================
-    void RawInputWinFilter::drainPendingMessages() noexcept {
+    FORCE_INLINE void RawInputWinFilter::drainPendingMessages() noexcept {
         if (m_state && !m_joy2KeySupport) {
             m_state->processRawInputBatched();
         }

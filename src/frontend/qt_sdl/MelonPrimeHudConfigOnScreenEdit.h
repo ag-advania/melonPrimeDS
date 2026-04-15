@@ -57,6 +57,14 @@ private:
     void            addColorOverlayRow(const QString& label, const char* enableKey, const char* keyR, const char* keyG, const char* keyB);
     // Add Show/Color/Anchor rows common to all elements; pass nullptr for absent keys
     void            addBuiltins(const char* showKey, const char* colorR, const char* colorG, const char* colorB, const char* anchorKey);
+    void            addOffsetRows(const char* keyX, const char* keyY, int min, int max,
+                                   const QString& labelX, const QString& labelY);
+    QComboBox*      addAlign3Combo(const QString& label, const char* key);
+    void            addGaugePositionRows(const char* posModeKey,
+                                         const char* gaugeAnchorKey, const char* gaugeOffsetXKey, const char* gaugeOffsetYKey,
+                                         const char* gaugePosXKey, const char* gaugePosYKey,
+                                         const char* textAnchorKey, const char* textOffsetXKey, const char* textOffsetYKey);
+    void            addSectionHeader(const QString& label);
 
     // Separator
     void addSeparator();

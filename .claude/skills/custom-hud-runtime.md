@@ -7,12 +7,36 @@
 | File | Responsibility |
 |------|----------------|
 | `src/frontend/qt_sdl/MelonPrimeHudRender.h` | public API surface |
-| `src/frontend/qt_sdl/MelonPrimeHudRender.cpp` | runtime HUD rendering, cache management, no-HUD patching, match-state caching |
-| `src/frontend/qt_sdl/MelonPrimeHudConfigOnScreen.cpp` | in-game HUD layout editor (unity-build included by `MelonPrimeHudRender.cpp`, not in `CMakeLists.txt`) |
-| `src/frontend/qt_sdl/MelonPrimeHudConfigOnScreenEdit.cpp` | in-game HUD element properties side panel - `populate*()` functions define per-element settings (unity-build included by `MelonPrimeHudConfigOnScreen.cpp`) |
+| `src/frontend/qt_sdl/MelonPrimeHudRender.cpp` | runtime HUD unity entry point; owns includes, namespace, and ordered `.inc` fragment list |
+| `src/frontend/qt_sdl/MelonPrimeHudRenderAssets.inc` | asset/icon/radar-frame caches, text/outline bitmap caches, shared image/text drawing helpers |
+| `src/frontend/qt_sdl/MelonPrimeHudRenderConfig.inc` | cached HUD config structs, config loaders, anchor recomputation, auto-scale setup |
+| `src/frontend/qt_sdl/MelonPrimeHudRenderRuntime.inc` | battle/match state, frame runtime helpers, static dirty rects, hide rules, NoHUD patching, cache invalidation |
+| `src/frontend/qt_sdl/MelonPrimeHudRenderDraw.inc` | primitive and element drawing: gauges, HP, bomb left, rank/time, weapon/ammo, weapon inventory, crosshair |
+| `src/frontend/qt_sdl/MelonPrimeHudRenderMain.inc` | `CustomHud_Render()`, edit-mode forward state, radar frame drawing, `DrawBottomScreenOverlay()` |
+| `src/frontend/qt_sdl/MelonPrimeHudConfigOnScreen.cpp` | in-game HUD layout editor unity entry point; owns shared edit-mode state/constants and includes the `.inc` fragments below (not in `CMakeLists.txt`) |
+| `src/frontend/qt_sdl/MelonPrimeHudConfigOnScreenDefs.inc` | edit-mode definitions: `EditPropType`, property descriptors, element table `kEditElems`, crosshair property arrays, sample element text |
+| `src/frontend/qt_sdl/MelonPrimeHudConfigOnScreenSnapshot.inc` | edit-mode config snapshot, restore, and reset-to-default helpers |
+| `src/frontend/qt_sdl/MelonPrimeHudConfigOnScreenDraw.inc` | edit-mode bounds calculation and all on-screen editor drawing, including element boxes, property panels, live preview, and crosshair preview |
+| `src/frontend/qt_sdl/MelonPrimeHudConfigOnScreenInput.inc` | edit-mode public API and input handling: enter/exit, selection callback, hit testing, mouse press/move/release, wheel |
+| `src/frontend/qt_sdl/MelonPrimeHudConfigOnScreenEdit.cpp` | Qt floating side panel for in-game HUD element properties - `populate*()` functions define per-element settings |
 | `src/frontend/qt_sdl/MelonPrimeHudConfigOnScreenEdit.h` | side panel class declaration |
 | `src/frontend/qt_sdl/MelonPrimeConstants.h` | hunter-specific radar source Y positions and related constants |
-| `src/frontend/qt_sdl/Screen.cpp` | calls `CustomHud_Render()` and OpenGL radar overlay path |
+| `src/frontend/qt_sdl/Screen.cpp` | screen presentation entry point; includes `MelonPrimeHudScreenCpp*.inc` fragments for Custom HUD integration |
+| `src/frontend/qt_sdl/MelonPrimeHudScreenCppHelpers.inc` | shared helpers for screen fragments: edit panel placement, epoch/config refresh, top overlay clear/render, patch restore, core visibility checks |
+| `src/frontend/qt_sdl/MelonPrimeHudScreenCppInit.inc` | `ScreenPanel` Custom HUD setup: overlay buffers, font, edit side panel, selection callback |
+| `src/frontend/qt_sdl/MelonPrimeHudScreenCppLayout.inc` | cached HUD scale/origin update in `setupScreenLayout()` |
+| `src/frontend/qt_sdl/MelonPrimeHudScreenCppEditPanelResize.inc` | edit side panel repositioning during resize |
+| `src/frontend/qt_sdl/MelonPrimeHudScreenCppEditPanelMove.inc` | edit side panel repositioning during window move |
+| `src/frontend/qt_sdl/MelonPrimeHudScreenCppMouseWheel.inc` | edit-mode mouse wheel input interception |
+| `src/frontend/qt_sdl/MelonPrimeHudScreenCppMousePress.inc` | edit-mode mouse press interception |
+| `src/frontend/qt_sdl/MelonPrimeHudScreenCppMouseRelease.inc` | edit-mode mouse release interception |
+| `src/frontend/qt_sdl/MelonPrimeHudScreenCppMouseMove.inc` | edit-mode mouse move/drag interception |
+| `src/frontend/qt_sdl/MelonPrimeHudScreenCppOverlayOfSoftware.inc` | software `QPainter` HUD overlay path for `ScreenPanelNative::paintEvent()` |
+| `src/frontend/qt_sdl/MelonPrimeHudScreenCppGlInit.inc` | Custom HUD OpenGL overlay/radar resource initialization |
+| `src/frontend/qt_sdl/MelonPrimeHudScreenCppGlDeinit.inc` | Custom HUD OpenGL overlay/radar resource cleanup |
+| `src/frontend/qt_sdl/MelonPrimeHudScreenCppOverlayOfGl.inc` | OpenGL HUD overlay upload/composite path and GL-native bottom-screen radar overlay |
+
+`MelonPrimeHudRender*.inc`, `MelonPrimeHudConfigOnScreen*.inc`, and `MelonPrimeHudScreenCpp*.inc` files are not standalone translation units. Render fragments are included only through `MelonPrimeHudRender.cpp`. Edit-mode fragments are included only through `MelonPrimeHudConfigOnScreen.cpp`, which itself is included by `MelonPrimeHudRender.cpp` inside `namespace MelonPrime` and `#ifdef MELONPRIME_CUSTOM_HUD`. Screen integration fragments are included only through `Screen.cpp`.
 
 ### Runtime entry points
 `CustomHud_Render()` is the main per-frame entry point.
@@ -143,6 +167,7 @@ Relevant details:
 | P-11 | Pre-computed crosshair arm/dot colors with alpha in `CrosshairHudConfig` | Eliminates 3 `QColor` copies + `setAlphaF()` per frame | Per frame |
 | P-12 | Separable max-filter dilation (`DilateSeparableTinted`) - two-pass horizontal+vertical max replaces `O(R^2)` naive kernel with `O(R)` per pixel | About `1.5x` faster for `R=1`, about `3x` for `R=3` | Config changes / editor |
 | OPT-DR1 | Dirty-rect overlay optimization: `CustomHud_Render()` returns `QRect`; `Screen.cpp` clears only the prev dirty rect (via `CompositionMode_Source`), composites only the union rect, and uploads only that region via `glTexSubImage2D` with `GL_UNPACK_ROW_LENGTH/SKIP_*` | Reduces per-frame CPU memset and PCIe upload from full-window to HUD-element bounding box at high resolutions | Per frame |
+| OPT-SC1 | Screen-fragment HUD enable/radar config caching by epoch, cached top-screen matrix/radar anchor coordinates, empty dirty-rect GL overlay skip, and conditional GL state restore | Avoids repeated config lookups, screen-matrix scans, zero-work GL upload/composite setup, and redundant shader/buffer restore calls | Per frame |
 
 ### HUD Auto-Scale System
 Automatic integer-based scaling that makes HUD elements readable at high resolutions without manual adjustment.

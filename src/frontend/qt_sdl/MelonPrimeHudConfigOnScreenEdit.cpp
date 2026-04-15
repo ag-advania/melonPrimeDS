@@ -413,6 +413,49 @@ void MelonPrimeHudConfigOnScreenEdit::addBuiltins(const char* showKey,
     addSeparator();
 }
 
+void MelonPrimeHudConfigOnScreenEdit::addOffsetRows(const char* keyX, const char* keyY, int min, int max,
+    const QString& labelX, const QString& labelY)
+{
+    addSpinBox(labelX, keyX, min, max);
+    addSpinBox(labelY, keyY, min, max);
+}
+
+QComboBox* MelonPrimeHudConfigOnScreenEdit::addAlign3Combo(const QString& label, const char* key)
+{
+    return addComboBox(label, key,
+        {QStringLiteral("Left"), QStringLiteral("Center"), QStringLiteral("Right")});
+}
+
+void MelonPrimeHudConfigOnScreenEdit::addGaugePositionRows(const char* posModeKey,
+    const char* gaugeAnchorKey, const char* gaugeOffsetXKey, const char* gaugeOffsetYKey,
+    const char* gaugePosXKey, const char* gaugePosYKey,
+    const char* textAnchorKey, const char* textOffsetXKey, const char* textOffsetYKey)
+{
+    static const QStringList kGaugeSides = {
+        QStringLiteral("Below"), QStringLiteral("Above"), QStringLiteral("Right"),
+        QStringLiteral("Left"), QStringLiteral("Center")
+    };
+
+    addComboBox(QStringLiteral("Position Mode"), posModeKey,
+        {QStringLiteral("Gauge \u2192 Text"), QStringLiteral("Independent"), QStringLiteral("Text \u2192 Gauge")});
+    addComboBox(QStringLiteral("Gauge Side"), gaugeAnchorKey, kGaugeSides);
+    addOffsetRows(gaugeOffsetXKey, gaugeOffsetYKey, -128, 128,
+        QStringLiteral("Offset X"), QStringLiteral("Offset Y"));
+    addOffsetRows(gaugePosXKey, gaugePosYKey, -256, 256,
+        QStringLiteral("Gauge X"), QStringLiteral("Gauge Y"));
+    addComboBox(QStringLiteral("Text Side"), textAnchorKey, kGaugeSides);
+    addOffsetRows(textOffsetXKey, textOffsetYKey, -128, 128,
+        QStringLiteral("Text Offset X"), QStringLiteral("Text Offset Y"));
+}
+
+void MelonPrimeHudConfigOnScreenEdit::addSectionHeader(const QString& label)
+{
+    auto* hdr = new QLabel(label, this);
+    hdr->setStyleSheet("color: #fff; font-weight: bold; font-size: 9px;");
+    m_form->addRow(hdr);
+    m_rows.append(hdr);
+}
+
 // ─── Main populate dispatch ─────────────────────────────────────────────────
 
 static const char* kElementNames[] = {
@@ -464,11 +507,10 @@ void MelonPrimeHudConfigOnScreenEdit::populateHP()
     addBuiltins(nullptr,
         "Metroid.Visual.HudHpTextColorR", "Metroid.Visual.HudHpTextColorG", "Metroid.Visual.HudHpTextColorB",
         "Metroid.Visual.HudHpAnchor");
-    addSpinBox(QStringLiteral("Offset X"), "Metroid.Visual.HudHpX", -256, 256);
-    addSpinBox(QStringLiteral("Offset Y"), "Metroid.Visual.HudHpY", -256, 256);
+    addOffsetRows("Metroid.Visual.HudHpX", "Metroid.Visual.HudHpY", -256, 256,
+        QStringLiteral("Offset X"), QStringLiteral("Offset Y"));
     addLineEdit(QStringLiteral("Prefix"), "Metroid.Visual.HudHpPrefix");
-    addComboBox(QStringLiteral("Align"), "Metroid.Visual.HudHpAlign",
-        {QStringLiteral("Left"), QStringLiteral("Center"), QStringLiteral("Right")});
+    addAlign3Combo(QStringLiteral("Align"), "Metroid.Visual.HudHpAlign");
     addCheckBox(QStringLiteral("Auto Color"), "Metroid.Visual.HudHpTextAutoColor");
     addOpacitySlider(QStringLiteral("Opacity"), "Metroid.Visual.HudHpOpacity");
     addOutlineGroup("HudHp");
@@ -487,22 +529,10 @@ void MelonPrimeHudConfigOnScreenEdit::populateHPGauge()
     addSpinBox(QStringLiteral("Length"), "Metroid.Visual.HudHpGaugeLength", 1, 192);
     addSpinBox(QStringLiteral("Width"), "Metroid.Visual.HudHpGaugeWidth", 1, 20);
     addCheckBox(QStringLiteral("Auto Color"), "Metroid.Visual.HudHpGaugeAutoColor");
-    // Position mode selector
-    addComboBox(QStringLiteral("Position Mode"), "Metroid.Visual.HudHpGaugePosMode",
-        {QStringLiteral("Gauge \u2192 Text"), QStringLiteral("Independent"), QStringLiteral("Text \u2192 Gauge")});
-    // Mode 0: gauge relative to text
-    addComboBox(QStringLiteral("Gauge Side"), "Metroid.Visual.HudHpGaugeAnchor",
-        {QStringLiteral("Below"), QStringLiteral("Above"), QStringLiteral("Right"), QStringLiteral("Left"), QStringLiteral("Center")});
-    addSpinBox(QStringLiteral("Offset X"), "Metroid.Visual.HudHpGaugeOffsetX", -128, 128);
-    addSpinBox(QStringLiteral("Offset Y"), "Metroid.Visual.HudHpGaugeOffsetY", -128, 128);
-    // Modes 1 & 2: gauge at independent absolute position
-    addSpinBox(QStringLiteral("Gauge X"), "Metroid.Visual.HudHpGaugePosX", -256, 256);
-    addSpinBox(QStringLiteral("Gauge Y"), "Metroid.Visual.HudHpGaugePosY", -256, 256);
-    // Mode 2: text relative to gauge
-    addComboBox(QStringLiteral("Text Side"), "Metroid.Visual.HudHpTextAnchor",
-        {QStringLiteral("Below"), QStringLiteral("Above"), QStringLiteral("Right"), QStringLiteral("Left"), QStringLiteral("Center")});
-    addSpinBox(QStringLiteral("Text Offset X"), "Metroid.Visual.HudHpTextOffsetX", -128, 128);
-    addSpinBox(QStringLiteral("Text Offset Y"), "Metroid.Visual.HudHpTextOffsetY", -128, 128);
+    addGaugePositionRows("Metroid.Visual.HudHpGaugePosMode",
+        "Metroid.Visual.HudHpGaugeAnchor", "Metroid.Visual.HudHpGaugeOffsetX", "Metroid.Visual.HudHpGaugeOffsetY",
+        "Metroid.Visual.HudHpGaugePosX", "Metroid.Visual.HudHpGaugePosY",
+        "Metroid.Visual.HudHpTextAnchor", "Metroid.Visual.HudHpTextOffsetX", "Metroid.Visual.HudHpTextOffsetY");
     addOutlineGroup("HudHpGauge");
 }
 
@@ -511,11 +541,10 @@ void MelonPrimeHudConfigOnScreenEdit::populateWeaponAmmo()
     addBuiltins(nullptr,
         "Metroid.Visual.HudAmmoTextColorR", "Metroid.Visual.HudAmmoTextColorG", "Metroid.Visual.HudAmmoTextColorB",
         "Metroid.Visual.HudWeaponAnchor");
-    addSpinBox(QStringLiteral("Offset X"), "Metroid.Visual.HudWeaponX", -256, 256);
-    addSpinBox(QStringLiteral("Offset Y"), "Metroid.Visual.HudWeaponY", -256, 256);
+    addOffsetRows("Metroid.Visual.HudWeaponX", "Metroid.Visual.HudWeaponY", -256, 256,
+        QStringLiteral("Offset X"), QStringLiteral("Offset Y"));
     addLineEdit(QStringLiteral("Prefix"), "Metroid.Visual.HudAmmoPrefix");
-    addComboBox(QStringLiteral("Align"), "Metroid.Visual.HudAmmoAlign",
-        {QStringLiteral("Left"), QStringLiteral("Center"), QStringLiteral("Right")});
+    addAlign3Combo(QStringLiteral("Align"), "Metroid.Visual.HudAmmoAlign");
     addComboBox(QStringLiteral("Layout"), "Metroid.Visual.HudWeaponLayout",
         {QStringLiteral("Standard"), QStringLiteral("Alternative")});
     addOpacitySlider(QStringLiteral("Opacity"), "Metroid.Visual.HudWeaponOpacity");
@@ -527,15 +556,14 @@ void MelonPrimeHudConfigOnScreenEdit::populateWpnIcon()
     addBuiltins("Metroid.Visual.HudWeaponIconShow",
         nullptr, nullptr, nullptr,
         "Metroid.Visual.HudWeaponIconPosAnchor");
-    addSpinBox(QStringLiteral("Pos X"), "Metroid.Visual.HudWeaponIconPosX", -256, 256);
-    addSpinBox(QStringLiteral("Pos Y"), "Metroid.Visual.HudWeaponIconPosY", -256, 256);
+    addOffsetRows("Metroid.Visual.HudWeaponIconPosX", "Metroid.Visual.HudWeaponIconPosY", -256, 256,
+        QStringLiteral("Pos X"), QStringLiteral("Pos Y"));
     addComboBox(QStringLiteral("Mode"), "Metroid.Visual.HudWeaponIconMode",
         {QStringLiteral("Relative"), QStringLiteral("Independent")});
     addSpinBox(QStringLiteral("Height"), "Metroid.Visual.HudWeaponIconHeight", 4, 64);
-    addSpinBox(QStringLiteral("Offset X"), "Metroid.Visual.HudWeaponIconOffsetX", -128, 128);
-    addSpinBox(QStringLiteral("Offset Y"), "Metroid.Visual.HudWeaponIconOffsetY", -128, 128);
-    addComboBox(QStringLiteral("Align X"), "Metroid.Visual.HudWeaponIconAnchorX",
-        {QStringLiteral("Left"), QStringLiteral("Center"), QStringLiteral("Right")});
+    addOffsetRows("Metroid.Visual.HudWeaponIconOffsetX", "Metroid.Visual.HudWeaponIconOffsetY", -128, 128,
+        QStringLiteral("Offset X"), QStringLiteral("Offset Y"));
+    addAlign3Combo(QStringLiteral("Align X"), "Metroid.Visual.HudWeaponIconAnchorX");
     addComboBox(QStringLiteral("Align Y"), "Metroid.Visual.HudWeaponIconAnchorY",
         {QStringLiteral("Top"), QStringLiteral("Center"), QStringLiteral("Bottom")});
     addOpacitySlider(QStringLiteral("Opacity"), "Metroid.Visual.HudWpnIconOpacity");
@@ -575,22 +603,10 @@ void MelonPrimeHudConfigOnScreenEdit::populateAmmoGauge()
         {QStringLiteral("Start"), QStringLiteral("Center"), QStringLiteral("End")});
     addSpinBox(QStringLiteral("Length"), "Metroid.Visual.HudAmmoGaugeLength", 1, 192);
     addSpinBox(QStringLiteral("Width"), "Metroid.Visual.HudAmmoGaugeWidth", 1, 20);
-    // Position mode selector
-    addComboBox(QStringLiteral("Position Mode"), "Metroid.Visual.HudAmmoGaugePosMode",
-        {QStringLiteral("Gauge \u2192 Text"), QStringLiteral("Independent"), QStringLiteral("Text \u2192 Gauge")});
-    // Mode 0: gauge relative to text
-    addComboBox(QStringLiteral("Gauge Side"), "Metroid.Visual.HudAmmoGaugeAnchor",
-        {QStringLiteral("Below"), QStringLiteral("Above"), QStringLiteral("Right"), QStringLiteral("Left"), QStringLiteral("Center")});
-    addSpinBox(QStringLiteral("Offset X"), "Metroid.Visual.HudAmmoGaugeOffsetX", -128, 128);
-    addSpinBox(QStringLiteral("Offset Y"), "Metroid.Visual.HudAmmoGaugeOffsetY", -128, 128);
-    // Modes 1 & 2: gauge at independent absolute position
-    addSpinBox(QStringLiteral("Gauge X"), "Metroid.Visual.HudAmmoGaugePosX", -256, 256);
-    addSpinBox(QStringLiteral("Gauge Y"), "Metroid.Visual.HudAmmoGaugePosY", -256, 256);
-    // Mode 2: text relative to gauge
-    addComboBox(QStringLiteral("Text Side"), "Metroid.Visual.HudAmmoTextAnchor",
-        {QStringLiteral("Below"), QStringLiteral("Above"), QStringLiteral("Right"), QStringLiteral("Left"), QStringLiteral("Center")});
-    addSpinBox(QStringLiteral("Text Offset X"), "Metroid.Visual.HudAmmoTextOffsetX", -128, 128);
-    addSpinBox(QStringLiteral("Text Offset Y"), "Metroid.Visual.HudAmmoTextOffsetY", -128, 128);
+    addGaugePositionRows("Metroid.Visual.HudAmmoGaugePosMode",
+        "Metroid.Visual.HudAmmoGaugeAnchor", "Metroid.Visual.HudAmmoGaugeOffsetX", "Metroid.Visual.HudAmmoGaugeOffsetY",
+        "Metroid.Visual.HudAmmoGaugePosX", "Metroid.Visual.HudAmmoGaugePosY",
+        "Metroid.Visual.HudAmmoTextAnchor", "Metroid.Visual.HudAmmoTextOffsetX", "Metroid.Visual.HudAmmoTextOffsetY");
     addOutlineGroup("HudAmmoGauge");
 }
 
@@ -599,13 +615,13 @@ void MelonPrimeHudConfigOnScreenEdit::populateMatchStatus()
     addBuiltins("Metroid.Visual.HudMatchStatusShow",
         "Metroid.Visual.HudMatchStatusColorR", "Metroid.Visual.HudMatchStatusColorG", "Metroid.Visual.HudMatchStatusColorB",
         "Metroid.Visual.HudMatchStatusAnchor");
-    addSpinBox(QStringLiteral("Offset X"), "Metroid.Visual.HudMatchStatusX", -256, 256);
-    addSpinBox(QStringLiteral("Offset Y"), "Metroid.Visual.HudMatchStatusY", -256, 256);
+    addOffsetRows("Metroid.Visual.HudMatchStatusX", "Metroid.Visual.HudMatchStatusY", -256, 256,
+        QStringLiteral("Offset X"), QStringLiteral("Offset Y"));
     addOpacitySlider(QStringLiteral("Opacity"), "Metroid.Visual.HudMatchStatusOpacity");
     addComboBox(QStringLiteral("Label Pos"), "Metroid.Visual.HudMatchStatusLabelPos",
         {QStringLiteral("Above"), QStringLiteral("Below"), QStringLiteral("Left"), QStringLiteral("Right"), QStringLiteral("Center")});
-    addSpinBox(QStringLiteral("Label Ofs X"), "Metroid.Visual.HudMatchStatusLabelOfsX", -128, 128);
-    addSpinBox(QStringLiteral("Label Ofs Y"), "Metroid.Visual.HudMatchStatusLabelOfsY", -128, 128);
+    addOffsetRows("Metroid.Visual.HudMatchStatusLabelOfsX", "Metroid.Visual.HudMatchStatusLabelOfsY", -128, 128,
+        QStringLiteral("Label Ofs X"), QStringLiteral("Label Ofs Y"));
     addSeparator();
     addLineEdit(QStringLiteral("Battle"), "Metroid.Visual.HudMatchStatusLabelPoints");
     addLineEdit(QStringLiteral("Bounty"), "Metroid.Visual.HudMatchStatusLabelOctoliths");
@@ -641,13 +657,12 @@ void MelonPrimeHudConfigOnScreenEdit::populateRank()
     addBuiltins("Metroid.Visual.HudRankShow",
         "Metroid.Visual.HudRankColorR", "Metroid.Visual.HudRankColorG", "Metroid.Visual.HudRankColorB",
         "Metroid.Visual.HudRankAnchor");
-    addSpinBox(QStringLiteral("Offset X"), "Metroid.Visual.HudRankX", -256, 256);
-    addSpinBox(QStringLiteral("Offset Y"), "Metroid.Visual.HudRankY", -256, 256);
+    addOffsetRows("Metroid.Visual.HudRankX", "Metroid.Visual.HudRankY", -256, 256,
+        QStringLiteral("Offset X"), QStringLiteral("Offset Y"));
     addLineEdit(QStringLiteral("Prefix"), "Metroid.Visual.HudRankPrefix");
     addCheckBox(QStringLiteral("Ordinal"), "Metroid.Visual.HudRankShowOrdinal");
     addLineEdit(QStringLiteral("Suffix"), "Metroid.Visual.HudRankSuffix");
-    addComboBox(QStringLiteral("Align"), "Metroid.Visual.HudRankAlign",
-        {QStringLiteral("Left"), QStringLiteral("Center"), QStringLiteral("Right")});
+    addAlign3Combo(QStringLiteral("Align"), "Metroid.Visual.HudRankAlign");
     addOpacitySlider(QStringLiteral("Opacity"), "Metroid.Visual.HudRankOpacity");
     addOutlineGroup("HudRank");
 }
@@ -657,11 +672,10 @@ void MelonPrimeHudConfigOnScreenEdit::populateTimeLeft()
     addBuiltins("Metroid.Visual.HudTimeLeftShow",
         "Metroid.Visual.HudTimeLeftColorR", "Metroid.Visual.HudTimeLeftColorG", "Metroid.Visual.HudTimeLeftColorB",
         "Metroid.Visual.HudTimeLeftAnchor");
-    addSpinBox(QStringLiteral("Offset X"), "Metroid.Visual.HudTimeLeftX", -256, 256);
-    addSpinBox(QStringLiteral("Offset Y"), "Metroid.Visual.HudTimeLeftY", -256, 256);
+    addOffsetRows("Metroid.Visual.HudTimeLeftX", "Metroid.Visual.HudTimeLeftY", -256, 256,
+        QStringLiteral("Offset X"), QStringLiteral("Offset Y"));
     addOpacitySlider(QStringLiteral("Opacity"), "Metroid.Visual.HudTimeLeftOpacity");
-    addComboBox(QStringLiteral("Align"), "Metroid.Visual.HudTimeLeftAlign",
-        {QStringLiteral("Left"), QStringLiteral("Center"), QStringLiteral("Right")});
+    addAlign3Combo(QStringLiteral("Align"), "Metroid.Visual.HudTimeLeftAlign");
     addOutlineGroup("HudTimeLeft");
 }
 
@@ -670,11 +684,10 @@ void MelonPrimeHudConfigOnScreenEdit::populateTimeLimit()
     addBuiltins("Metroid.Visual.HudTimeLimitShow",
         "Metroid.Visual.HudTimeLimitColorR", "Metroid.Visual.HudTimeLimitColorG", "Metroid.Visual.HudTimeLimitColorB",
         "Metroid.Visual.HudTimeLimitAnchor");
-    addSpinBox(QStringLiteral("Offset X"), "Metroid.Visual.HudTimeLimitX", -256, 256);
-    addSpinBox(QStringLiteral("Offset Y"), "Metroid.Visual.HudTimeLimitY", -256, 256);
+    addOffsetRows("Metroid.Visual.HudTimeLimitX", "Metroid.Visual.HudTimeLimitY", -256, 256,
+        QStringLiteral("Offset X"), QStringLiteral("Offset Y"));
     addOpacitySlider(QStringLiteral("Opacity"), "Metroid.Visual.HudTimeLimitOpacity");
-    addComboBox(QStringLiteral("Align"), "Metroid.Visual.HudTimeLimitAlign",
-        {QStringLiteral("Left"), QStringLiteral("Center"), QStringLiteral("Right")});
+    addAlign3Combo(QStringLiteral("Align"), "Metroid.Visual.HudTimeLimitAlign");
     addOutlineGroup("HudTimeLimit");
 }
 
@@ -683,11 +696,10 @@ void MelonPrimeHudConfigOnScreenEdit::populateBombLeft()
     addBuiltins("Metroid.Visual.HudBombLeftShow",
         "Metroid.Visual.HudBombLeftColorR", "Metroid.Visual.HudBombLeftColorG", "Metroid.Visual.HudBombLeftColorB",
         "Metroid.Visual.HudBombLeftAnchor");
-    addSpinBox(QStringLiteral("Offset X"), "Metroid.Visual.HudBombLeftX", -256, 256);
-    addSpinBox(QStringLiteral("Offset Y"), "Metroid.Visual.HudBombLeftY", -256, 256);
+    addOffsetRows("Metroid.Visual.HudBombLeftX", "Metroid.Visual.HudBombLeftY", -256, 256,
+        QStringLiteral("Offset X"), QStringLiteral("Offset Y"));
     addCheckBox(QStringLiteral("Show Number"), "Metroid.Visual.HudBombLeftTextShow");
-    addComboBox(QStringLiteral("Align"), "Metroid.Visual.HudBombLeftAlign",
-        {QStringLiteral("Left"), QStringLiteral("Center"), QStringLiteral("Right")});
+    addAlign3Combo(QStringLiteral("Align"), "Metroid.Visual.HudBombLeftAlign");
     addLineEdit(QStringLiteral("Prefix"), "Metroid.Visual.HudBombLeftPrefix");
     addLineEdit(QStringLiteral("Suffix"), "Metroid.Visual.HudBombLeftSuffix");
     addOpacitySlider(QStringLiteral("Opacity"), "Metroid.Visual.HudBombLeftOpacity");
@@ -699,17 +711,16 @@ void MelonPrimeHudConfigOnScreenEdit::populateBombIcon()
     addBuiltins("Metroid.Visual.HudBombLeftIconShow",
         "Metroid.Visual.HudBombLeftIconColorR", "Metroid.Visual.HudBombLeftIconColorG", "Metroid.Visual.HudBombLeftIconColorB",
         "Metroid.Visual.HudBombLeftIconPosAnchor");
-    addSpinBox(QStringLiteral("Pos X"), "Metroid.Visual.HudBombLeftIconPosX", -256, 256);
-    addSpinBox(QStringLiteral("Pos Y"), "Metroid.Visual.HudBombLeftIconPosY", -256, 256);
+    addOffsetRows("Metroid.Visual.HudBombLeftIconPosX", "Metroid.Visual.HudBombLeftIconPosY", -256, 256,
+        QStringLiteral("Pos X"), QStringLiteral("Pos Y"));
     addOpacitySlider(QStringLiteral("Opacity"), "Metroid.Visual.HudBombIconOpacity");
     addCheckBox(QStringLiteral("Color Overlay"), "Metroid.Visual.HudBombLeftIconColorOverlay");
     addComboBox(QStringLiteral("Mode"), "Metroid.Visual.HudBombLeftIconMode",
         {QStringLiteral("Relative"), QStringLiteral("Independent")});
     addSpinBox(QStringLiteral("Height"), "Metroid.Visual.HudBombIconHeight", 4, 64);
-    addSpinBox(QStringLiteral("Offset X"), "Metroid.Visual.HudBombLeftIconOfsX", -128, 128);
-    addSpinBox(QStringLiteral("Offset Y"), "Metroid.Visual.HudBombLeftIconOfsY", -128, 128);
-    addComboBox(QStringLiteral("Align X"), "Metroid.Visual.HudBombLeftIconAnchorX",
-        {QStringLiteral("Left"), QStringLiteral("Center"), QStringLiteral("Right")});
+    addOffsetRows("Metroid.Visual.HudBombLeftIconOfsX", "Metroid.Visual.HudBombLeftIconOfsY", -128, 128,
+        QStringLiteral("Offset X"), QStringLiteral("Offset Y"));
+    addAlign3Combo(QStringLiteral("Align X"), "Metroid.Visual.HudBombLeftIconAnchorX");
     addComboBox(QStringLiteral("Align Y"), "Metroid.Visual.HudBombLeftIconAnchorY",
         {QStringLiteral("Top"), QStringLiteral("Center"), QStringLiteral("Bottom")});
     addOutlineGroup("HudBombIcon");
@@ -737,10 +748,7 @@ void MelonPrimeHudConfigOnScreenEdit::populateForCrosshair()
 
     addSeparator();
     // Inner Lines
-    auto* innerHdr = new QLabel(QStringLiteral("Inner Lines"), this);
-    innerHdr->setStyleSheet("color: #fff; font-weight: bold; font-size: 9px;");
-    m_form->addRow(innerHdr);
-    m_rows.append(innerHdr);
+    addSectionHeader(QStringLiteral("Inner Lines"));
     addCheckBox(QStringLiteral("Show"), "Metroid.Visual.CrosshairInnerShow");
     addOpacitySlider(QStringLiteral("Opacity"), "Metroid.Visual.CrosshairInnerOpacity");
     addSpinBox(QStringLiteral("Length X"), "Metroid.Visual.CrosshairInnerLengthX", 0, 64);
@@ -751,10 +759,7 @@ void MelonPrimeHudConfigOnScreenEdit::populateForCrosshair()
 
     addSeparator();
     // Outer Lines
-    auto* outerHdr = new QLabel(QStringLiteral("Outer Lines"), this);
-    outerHdr->setStyleSheet("color: #fff; font-weight: bold; font-size: 9px;");
-    m_form->addRow(outerHdr);
-    m_rows.append(outerHdr);
+    addSectionHeader(QStringLiteral("Outer Lines"));
     addCheckBox(QStringLiteral("Show"), "Metroid.Visual.CrosshairOuterShow");
     addOpacitySlider(QStringLiteral("Opacity"), "Metroid.Visual.CrosshairOuterOpacity");
     addSpinBox(QStringLiteral("Length X"), "Metroid.Visual.CrosshairOuterLengthX", 0, 64);
@@ -773,12 +778,11 @@ void MelonPrimeHudConfigOnScreenEdit::populateWeaponInventory()
         "Metroid.Visual.HudWeaponInventoryColorG",
         "Metroid.Visual.HudWeaponInventoryColorB",
         "Metroid.Visual.HudWeaponInventoryAnchor");
-    addSpinBox(QStringLiteral("Offset X"), "Metroid.Visual.HudWeaponInventoryX", -256, 256);
-    addSpinBox(QStringLiteral("Offset Y"), "Metroid.Visual.HudWeaponInventoryY", -256, 256);
+    addOffsetRows("Metroid.Visual.HudWeaponInventoryX", "Metroid.Visual.HudWeaponInventoryY", -256, 256,
+        QStringLiteral("Offset X"), QStringLiteral("Offset Y"));
     addComboBox(QStringLiteral("Orientation"), "Metroid.Visual.HudWeaponInventoryOrientation",
         {QStringLiteral("Horizontal"), QStringLiteral("Vertical")});
-    addComboBox(QStringLiteral("Align"), "Metroid.Visual.HudWeaponInventoryAlign",
-        {QStringLiteral("Left"), QStringLiteral("Center"), QStringLiteral("Right")});
+    addAlign3Combo(QStringLiteral("Align"), "Metroid.Visual.HudWeaponInventoryAlign");
     addSpinBox(QStringLiteral("Icon Height"), "Metroid.Visual.HudWeaponInventoryIconHeight", 4, 48);
     addSpinBox(QStringLiteral("Spacing"), "Metroid.Visual.HudWeaponInventorySpacing", 0, 32);
     addOpacitySlider(QStringLiteral("Opacity"), "Metroid.Visual.HudWeaponInventoryOpacity");
@@ -807,8 +811,8 @@ void MelonPrimeHudConfigOnScreenEdit::populateRadar()
     addBuiltins("Metroid.Visual.BtmOverlayEnable",
         nullptr, nullptr, nullptr,
         "Metroid.Visual.BtmOverlayAnchor");
-    addSpinBox(QStringLiteral("Dst X"), "Metroid.Visual.BtmOverlayDstX", -256, 256);
-    addSpinBox(QStringLiteral("Dst Y"), "Metroid.Visual.BtmOverlayDstY", -256, 256);
+    addOffsetRows("Metroid.Visual.BtmOverlayDstX", "Metroid.Visual.BtmOverlayDstY", -256, 256,
+        QStringLiteral("Dst X"), QStringLiteral("Dst Y"));
     addSpinBox(QStringLiteral("Dst Size"), "Metroid.Visual.BtmOverlayDstSize", 16, 128);
     addOpacitySlider(QStringLiteral("Opacity"), "Metroid.Visual.BtmOverlayOpacity");
     addSpinBox(QStringLiteral("Src Radius"), "Metroid.Visual.BtmOverlaySrcRadius", 10, 120);
