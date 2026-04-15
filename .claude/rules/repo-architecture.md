@@ -196,3 +196,9 @@ Current work is on the `highres_fonts_v3` branch. Main changes relative to `mast
 - Element boxes show live previews (gauge bars, cached icons, sample text) instead of static text labels
 - Element box font scales with `HudTextScale`
 - OPT-DR1 dirty-rect overlay optimization: `CustomHud_Render` returns `QRect`; only dirty regions cleared/composited/uploaded per frame (see OPT-DR1 section above)
+- Runtime HUD code rooted at `MelonPrimeHudRender.cpp` and split into `.inc` fragments:
+  - `MelonPrimeHudRenderAssets.inc` - assets, icon/radar/text/outline caches
+  - `MelonPrimeHudRenderConfig.inc` - cached config structs/loaders and anchor recomputation
+  - `MelonPrimeHudRenderRuntime.inc` - battle state, frame helpers, hide rules, NoHUD patch/cache lifecycle
+  - `MelonPrimeHudRenderDraw.inc` - HUD element drawing
+  - `MelonPrimeHudRenderMain.inc` - `CustomHud_Render`, radar overlay, edit-mode forward state
