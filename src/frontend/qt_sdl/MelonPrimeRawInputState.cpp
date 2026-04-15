@@ -372,6 +372,89 @@ namespace MelonPrime {
     }
 
     // =========================================================================
+    // clearStuckMouseButtons — GetAsyncKeyState recovery for stuck mouse buttons.
+    //
+    // Root cause: When SDL/Qt calls PeekMessage+DispatchMessage internally, it
+    // can dispatch old WM_INPUT handles to HiddenWndProc. GetRawInputData may
+    // then return stale button-DOWN data (FIX-1 shared-buffer semantics), even
+    // though processRawInputBatched already captured the correct DOWN+UP sequence.
+    // The subsequent button-UP WM_INPUT is silently removed by drainMessagesOnly
+    // (PM_REMOVE without DispatchMessage), so HiddenWndProc never clears the bit.
+    // Result: m_mouseButtons stuck with a button-down bit set.
+    //
+    // Fix: poll physical button state via GetAsyncKeyState at snapshot time.
+    // If a bit is set but the physical button is released, clear it.
+    // Overhead: fast-exit when m_mouseButtons == 0 (~99%+ of frames).
+    //           At most 5 GetAsyncKeyState calls when any button is stuck.
+    // =========================================================================
+    FORCE_INLINE void InputState::clearStuckMouseButtons() noexcept {
+        const uint8_t cur = m_mouseButtons.load(std::memory_order_relaxed);
+        if (!cur) return;
+
+        static constexpr UINT kBitToVk[5] = {
+            VK_LBUTTON, VK_RBUTTON, VK_MBUTTON, VK_XBUTTON1, VK_XBUTTON2
+        };
+
+        uint8_t cleared = cur;
+        for (int i = 0; i < 5; ++i) {
+            if ((cur >> i) & 1u) {
+                if (!(GetAsyncKeyState(kBitToVk[i]) & 0x8000)) {
+                    cleared &= ~static_cast<uint8_t>(1u << i);
+                }
+            }
+        }
+        if (cleared != cur) {
+            m_mouseButtons.store(cleared, std::memory_order_relaxed);
+        }
+    }
+
+    // =========================================================================
+    // clearStuckKeys — GetAsyncKeyState recovery for stuck keyboard keys.
+    //
+    // Same root cause as clearStuckMouseButtons: stale KEY_DOWN data from
+    // GetRawInputData (FIX-1 shared-buffer semantics). Only occurs in the
+    // hidden-window path (joy2key OFF), where SDL/Qt PeekMessage+DispatchMessage
+    // can dispatch WM_INPUT from the hidden window, triggering processRawInput
+    // with stale data that re-sets a key as DOWN after processRawInputBatched
+    // already captured the correct DOWN+UP sequence.
+    //
+    // Scans only set bits in m_vkDown (proportional to held-key count, not 256).
+    // Skips VK 0 (invalid). Mouse-button VKs (1-6) are never in m_vkDown.
+    // =========================================================================
+    FORCE_INLINE void InputState::clearStuckKeys() noexcept {
+        bool anyCleared = false;
+        for (int w = 0; w < 4; ++w) {
+            const uint64_t cur = m_vkDown[w].load(std::memory_order_relaxed);
+            if (!cur) continue;
+
+            uint64_t cleared = cur;
+            uint64_t bits = cur;
+            while (bits) {
+#if defined(_MSC_VER) && !defined(__clang__)
+                unsigned long lsb;
+                _BitScanForward64(&lsb, bits);
+                const int bit = static_cast<int>(lsb);
+#else
+                const int bit = __builtin_ctzll(bits);
+#endif
+                bits &= bits - 1;
+                const UINT vk = static_cast<UINT>(w * 64 + bit);
+                if (vk == 0) continue;
+                if (!(GetAsyncKeyState(static_cast<int>(vk)) & 0x8000)) {
+                    cleared &= ~(1ULL << bit);
+                }
+            }
+            if (cleared != cur) {
+                m_vkDown[w].store(cleared, std::memory_order_relaxed);
+                anyCleared = true;
+            }
+        }
+        if (anyCleared) {
+            std::atomic_thread_fence(std::memory_order_release);
+        }
+    }
+
+    // =========================================================================
     // P-1 FIX: Memory ordering correction.
     //
     // Previously, mouse accumulator loads were sequenced BEFORE the acquire
@@ -386,6 +469,8 @@ namespace MelonPrime {
     void InputState::snapshotInputFrame(FrameHotkeyState& outHk,
         int& outMouseX, int& outMouseY) noexcept
     {
+        clearStuckMouseButtons();
+        clearStuckKeys();
         const auto snap = takeSnapshot();  // acquire fence inside
 
         // Mouse loads are now sequenced after the acquire fence,
