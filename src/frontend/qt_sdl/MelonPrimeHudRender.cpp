@@ -23,6 +23,7 @@
 #include <QRectF>
 #include <QColorDialog>
 #include <QInputDialog>
+#include <algorithm>
 #include <string>
 #include <map>
 #include <set>
@@ -1478,6 +1479,149 @@ static inline const HudOutlineConfig& EffOL(const CachedHudConfig& c, const HudO
     return c.globalOutline.enable ? c.globalOutline : el;
 }
 
+static void RefreshStaticHudDirty(const CachedHudConfig& c,
+                                  float hs, float txDs, float tyDs,
+                                  int overlayW, int overlayH);
+
+struct HudFrameTransform {
+    float topStretchX;
+    float hudScale;
+    float txDs;
+    float tyDs;
+    QRect overlayRect;
+};
+
+struct HudRuntimeState {
+    melonDS::NDS* nds;
+    melonDS::u8* ram;
+    uint32_t offP;
+    uint8_t romGroup;
+    uint16_t currentHP;
+    uint16_t maxHP;
+    uint16_t maxAmmoSpecial;
+    uint16_t maxAmmoMissile;
+    uint8_t hunterID;
+    uint8_t currentWeapon;
+    bool isStartPressed;
+    bool isGameOver;
+    bool isFirstPerson;
+    bool isAlt;
+    bool isTrans;
+    bool isAdventure;
+};
+
+static inline QRect OverlayRectFor(const QImage* topBuffer)
+{
+    const int overlayW = topBuffer ? topBuffer->width()  : 1;
+    const int overlayH = topBuffer ? topBuffer->height() : 1;
+    return QRect(0, 0, overlayW, overlayH);
+}
+
+static inline HudFrameTransform MakeHudFrameTransform(const QImage* topBuffer,
+                                                      float topStretchX,
+                                                      float hudScale,
+                                                      float hudOriginXds,
+                                                      float hudOriginYds)
+{
+    return {
+        topStretchX,
+        hudScale,
+        (topStretchX - 1.0f) * 128.0f + hudOriginXds,
+        hudOriginYds,
+        OverlayRectFor(topBuffer),
+    };
+}
+
+static void EnsureCachedConfigForFrame(Config::Table& cfg, const HudFrameTransform& xf)
+{
+    if (UNLIKELY(!s_cache.valid) || s_cache.lastHudScale != xf.hudScale) {
+        RefreshCachedConfig(cfg, xf.topStretchX, xf.hudScale);
+        s_cache.valid = true;
+    } else if (s_cache.lastStretchX != xf.topStretchX) {
+        RecomputeAnchorPositions(xf.topStretchX);
+    }
+}
+
+static void EnsureStaticDirtyForFrame(const CachedHudConfig& c, const HudFrameTransform& xf)
+{
+    if (UNLIKELY(s_staticDirtyStale ||
+                 s_staticDirtyHudScale != xf.hudScale ||
+                 s_staticDirtyTxDs    != xf.txDs     ||
+                 s_staticDirtyTyDs    != xf.tyDs)) {
+        RefreshStaticHudDirty(c, xf.hudScale, xf.txDs, xf.tyDs,
+                              xf.overlayRect.width(), xf.overlayRect.height());
+    }
+}
+
+static void ApplyHudPainterTransform(QPainter* p, const HudFrameTransform& xf)
+{
+    p->scale(xf.hudScale, xf.hudScale);
+    if (xf.txDs != 0.0f || xf.tyDs != 0.0f)
+        p->translate(xf.txDs, xf.tyDs);
+}
+
+static void EnsureHudFont(QPainter* p)
+{
+    if (p->font().pixelSize() != kCustomHudFontSize) {
+        QFont f = p->font();
+        f.setPixelSize(kCustomHudFontSize);
+        p->setFont(f);
+    }
+
+    // P-9: Cache font metrics once for the fixed HUD font size.
+    if (UNLIKELY(s_frameFpx != kCustomHudFontSize)) {
+        s_frameFm = p->fontMetrics();
+        s_frameFpx = kCustomHudFontSize;
+    }
+}
+
+static inline QRect CurrentHudDirtyRect(const HudFrameTransform& xf)
+{
+    return (s_staticHudDirtyPx | s_chDirtyThisFrame) & xf.overlayRect;
+}
+
+static void ClearPreviousCrosshairDirty(const CrosshairHudConfig& ch)
+{
+    if (s_chPrevPxCx == INT_MIN) return;
+    s_chDirtyThisFrame = CrosshairBboxPx(s_chPrevPxCx, s_chPrevPxCy, ch);
+    s_chPrevPxCx = INT_MIN;
+    s_chPrevPxCy = INT_MIN;
+}
+
+static bool ReadHudRuntimeState(EmuInstance* emu,
+                                const RomAddresses& rom,
+                                const GameAddressesHot& addrHot,
+                                uint8_t playerPosition,
+                                HudRuntimeState& out)
+{
+    if (!emu) return false;
+
+    melonDS::NDS* nds = emu->getNDS();
+    melonDS::u8* ram = nds ? nds->MainRAM : nullptr;
+    if (!ram) return false;
+
+    const uint32_t offP = static_cast<uint32_t>(playerPosition) * Consts::PLAYER_ADDR_INC;
+    const uint8_t viewMode = Read8(ram, rom.baseViewMode + offP);
+
+    out.nds = nds;
+    out.ram = ram;
+    out.offP = offP;
+    out.romGroup = rom.romGroupIndex;
+    out.currentHP = Read16(ram, rom.playerHP + offP);
+    out.maxHP = Read16(ram, rom.maxHP + offP);
+    out.maxAmmoSpecial = Read16(ram, rom.maxAmmoSpecial + offP);
+    out.maxAmmoMissile = Read16(ram, rom.maxAmmoMissile + offP);
+    out.hunterID = Read8(ram, addrHot.chosenHunter);
+    out.currentWeapon = Read8(ram, addrHot.currentWeapon);
+    out.isStartPressed = Read8(ram, rom.startPressed) == 0x01;
+    out.isGameOver = Read8(ram, rom.gameOver) != 0x00;
+    out.isFirstPerson = (viewMode == 0x00);
+    out.isAlt = Read8(ram, addrHot.isAltForm) == 0x02;
+    out.isTrans = (Read8(ram, addrHot.jumpFlag) & 0x10) != 0;
+    out.isAdventure = Read8(ram, rom.isInAdventure) == 0x02;
+    return true;
+}
+
 // OPT-DR1: Computes the conservative pixel-space dirty rect for all non-crosshair elements.
 // Called at most once per config/transform change; result cached in s_staticHudDirtyPx.
 static void RefreshStaticHudDirty(const CachedHudConfig& c,
@@ -1597,7 +1741,16 @@ static void DrawMatchStatusText(QPainter* p, const QFontMetrics& fm, int fontPix
 }
 static void DrawMatchStatusHud(QPainter* p, melonDS::u8* ram, const RomAddresses& rom, uint8_t playerPos, bool isAdventure, const CachedHudConfig& c)
 {
-    if (!c.matchStatus.matchStatusShow || isAdventure) return; MatchStatusResolvedState state = {}; if (!ComputeMatchStatusState(ram, rom, playerPos, state)) return; const QFontMetrics& fm = s_frameFm; const int fontPixelSize = s_frameFpx; /* P-9 */ DrawMatchStatusText(p, fm, fontPixelSize, c.textDrawScale, state, c.matchStatus, c.matchStatusOpacity, EffOL(c, c.matchStatus.outline), c.lastHudScale);
+    if (!c.matchStatus.matchStatusShow || isAdventure)
+        return;
+
+    MatchStatusResolvedState state = {};
+    if (!ComputeMatchStatusState(ram, rom, playerPos, state))
+        return;
+
+    DrawMatchStatusText(p, s_frameFm, s_frameFpx, c.textDrawScale,
+                        state, c.matchStatus, c.matchStatusOpacity,
+                        EffOL(c, c.matchStatus.outline), c.lastHudScale);
 }
 static float CalcAlignedTextX(int anchorX, int align, float textW);
 static void DrawCachedAlignedText(QPainter* p, const QFontMetrics& fm, int fontPixelSize, float tds,
@@ -1621,8 +1774,6 @@ static void DrawCachedAlignedText(QPainter* p, const QFontMetrics& fm, int fontP
         p->setOpacity(1.0f);
     }
 }
-// =========================================================================
-static float CalcAlignedTextX(int anchorX, int align, float textW);
 // =========================================================================
 //  Bomb Left HUD
 // =========================================================================
@@ -1685,10 +1836,57 @@ static void DrawBombLeft(QPainter* p, melonDS::u8* ram, const RomAddresses& rom,
 // =========================================================================
 static void DrawRankAndTime(QPainter* p, melonDS::u8* ram, const RomAddresses& rom, uint8_t playerPos, bool isAdventure, const CachedHudConfig& c, float tds)
 {
-    if (isAdventure) return; const auto& hud = c.rankTime; const QFontMetrics& fm = s_frameFm; const int fontPixelSize = s_frameFpx; // P-9
-    if (hud.rankShow) { static RankStringCache s_rankStringCache = { 0, 0, false, false, "" }; static TextBitmapCache s_rankCache = { 0, QColor(), "", 0, 0, 0, 1.0f, false, QImage() }; static TextBitmapCache s_rankOutlineCache = { 0, QColor(), "", 0, 0, 0, 1.0f, false, QImage() }; static TextMeasureCache s_rankMeasure = { 0, "", 0, 0, false }; uint32_t rankWord = Read32(ram, rom.matchRank); uint8_t rankByte = (rankWord >> (playerPos * 8)) & 0xFF; if (rankByte <= 3) DrawCachedAlignedText(p, fm, fontPixelSize, tds, s_rankMeasure, s_rankCache, s_rankOutlineCache, UpdateRankString(s_rankStringCache, rankByte, hud.rankShowOrdinal, hud), hud.rankColor, hud.rankX, hud.rankAlign, hud.rankY, c.rankOpacity, EffOL(c, c.rankTime.rankOutline), c.lastHudScale); }
-    if (hud.timeLeftShow) { static TimeStringCache s_timeLeftStringCache = { 0, 0, false, "" }; static TextBitmapCache s_timeLeftCache = { 0, QColor(), "", 0, 0, 0, 1.0f, false, QImage() }; static TextBitmapCache s_timeLeftOutlineCache = { 0, QColor(), "", 0, 0, 0, 1.0f, false, QImage() }; static TextMeasureCache s_timeLeftMeasure = { 0, "", 0, 0, false }; int seconds = static_cast<int>(Read32(ram, rom.timeLeft)) / 60; DrawCachedAlignedText(p, fm, fontPixelSize, tds, s_timeLeftMeasure, s_timeLeftCache, s_timeLeftOutlineCache, UpdateTimeString(s_timeLeftStringCache, seconds, false), hud.timeLeftColor, hud.timeLeftX, hud.timeLeftAlign, hud.timeLeftY, c.timeLeftOpacity, EffOL(c, c.rankTime.timeLeftOutline), c.lastHudScale); }
-    if (hud.timeLimitShow) { static TimeStringCache s_timeLimitStringCache = { 0, 0, false, "" }; static TextBitmapCache s_timeLimitCache = { 0, QColor(), "", 0, 0, 0, 1.0f, false, QImage() }; static TextBitmapCache s_timeLimitOutlineCache = { 0, QColor(), "", 0, 0, 0, 1.0f, false, QImage() }; static TextMeasureCache s_timeLimitMeasure = { 0, "", 0, 0, false }; int goalMinutes = s_battleState.valid ? s_battleState.timeLimitMinutes : LookupTimeLimitMin((Read32(ram, rom.battleSettings + 4) >> 8) & 0xFF); DrawCachedAlignedText(p, fm, fontPixelSize, tds, s_timeLimitMeasure, s_timeLimitCache, s_timeLimitOutlineCache, UpdateTimeString(s_timeLimitStringCache, goalMinutes, true), hud.timeLimitColor, hud.timeLimitX, hud.timeLimitAlign, hud.timeLimitY, c.timeLimitOpacity, EffOL(c, c.rankTime.timeLimitOutline), c.lastHudScale); }
+    if (isAdventure)
+        return;
+
+    const auto& hud = c.rankTime;
+
+    if (hud.rankShow) {
+        static RankStringCache s_rankStringCache = { 0, 0, false, false, "" };
+        static TextBitmapCache s_rankCache = { 0, QColor(), "", 0, 0, 0, 1.0f, false, QImage() };
+        static TextBitmapCache s_rankOutlineCache = { 0, QColor(), "", 0, 0, 0, 1.0f, false, QImage() };
+        static TextMeasureCache s_rankMeasure = { 0, "", 0, 0, false };
+
+        const uint32_t rankWord = Read32(ram, rom.matchRank);
+        const uint8_t rankByte = (rankWord >> (playerPos * 8)) & 0xFF;
+        if (rankByte <= 3) {
+            DrawCachedAlignedText(p, s_frameFm, s_frameFpx, tds,
+                                  s_rankMeasure, s_rankCache, s_rankOutlineCache,
+                                  UpdateRankString(s_rankStringCache, rankByte, hud.rankShowOrdinal, hud),
+                                  hud.rankColor, hud.rankX, hud.rankAlign, hud.rankY,
+                                  c.rankOpacity, EffOL(c, c.rankTime.rankOutline), c.lastHudScale);
+        }
+    }
+
+    if (hud.timeLeftShow) {
+        static TimeStringCache s_timeLeftStringCache = { 0, 0, false, "" };
+        static TextBitmapCache s_timeLeftCache = { 0, QColor(), "", 0, 0, 0, 1.0f, false, QImage() };
+        static TextBitmapCache s_timeLeftOutlineCache = { 0, QColor(), "", 0, 0, 0, 1.0f, false, QImage() };
+        static TextMeasureCache s_timeLeftMeasure = { 0, "", 0, 0, false };
+
+        const int seconds = static_cast<int>(Read32(ram, rom.timeLeft)) / 60;
+        DrawCachedAlignedText(p, s_frameFm, s_frameFpx, tds,
+                              s_timeLeftMeasure, s_timeLeftCache, s_timeLeftOutlineCache,
+                              UpdateTimeString(s_timeLeftStringCache, seconds, false),
+                              hud.timeLeftColor, hud.timeLeftX, hud.timeLeftAlign, hud.timeLeftY,
+                              c.timeLeftOpacity, EffOL(c, c.rankTime.timeLeftOutline), c.lastHudScale);
+    }
+
+    if (hud.timeLimitShow) {
+        static TimeStringCache s_timeLimitStringCache = { 0, 0, false, "" };
+        static TextBitmapCache s_timeLimitCache = { 0, QColor(), "", 0, 0, 0, 1.0f, false, QImage() };
+        static TextBitmapCache s_timeLimitOutlineCache = { 0, QColor(), "", 0, 0, 0, 1.0f, false, QImage() };
+        static TextMeasureCache s_timeLimitMeasure = { 0, "", 0, 0, false };
+
+        const int goalMinutes = s_battleState.valid
+            ? s_battleState.timeLimitMinutes
+            : LookupTimeLimitMin((Read32(ram, rom.battleSettings + 4) >> 8) & 0xFF);
+        DrawCachedAlignedText(p, s_frameFm, s_frameFpx, tds,
+                              s_timeLimitMeasure, s_timeLimitCache, s_timeLimitOutlineCache,
+                              UpdateTimeString(s_timeLimitStringCache, goalMinutes, true),
+                              hud.timeLimitColor, hud.timeLimitX, hud.timeLimitAlign, hud.timeLimitY,
+                              c.timeLimitOpacity, EffOL(c, c.rankTime.timeLimitOutline), c.lastHudScale);
+    }
 }
 // =========================================================================
 //  Config key (only for IsEnabled — hot path uses s_cache)
@@ -2582,10 +2780,8 @@ HOT_FUNCTION QRect CustomHud_Render(
     float topStretchX, float hudScale,
     float hudOriginXds, float hudOriginYds)
 {
-    // OPT-DR1: Overlay size — used for dirty rect clamping and static dirty computation.
-    const int overlayW = topBuffer ? topBuffer->width()  : 1;
-    const int overlayH = topBuffer ? topBuffer->height() : 1;
-    const QRect overlayRect(0, 0, overlayW, overlayH);
+    const HudFrameTransform xf = MakeHudFrameTransform(topBuffer, topStretchX, hudScale,
+                                                       hudOriginXds, hudOriginYds);
 
     // OPT-DR1: Reset crosshair dirty accumulator for this frame.
     s_chDirtyThisFrame = QRect();
@@ -2597,171 +2793,97 @@ HOT_FUNCTION QRect CustomHud_Render(
         s_editRomCopy       = rom;
         s_editAddrHotCopy   = addrHot;
         s_editPlayerPosCopy = playerPosition;
-        if (UNLIKELY(!s_cache.valid) || s_cache.lastHudScale != hudScale) {
-            RefreshCachedConfig(localCfg, topStretchX, hudScale);
-            s_cache.valid = true;
-        } else if (s_cache.lastStretchX != topStretchX) {
-            RecomputeAnchorPositions(topStretchX);
-        }
-        topPaint->scale(hudScale, hudScale);
-        {
-            const float tx = (topStretchX - 1.0f) * 128.0f + hudOriginXds;
-            const float ty = hudOriginYds;
-            if (tx != 0.0f || ty != 0.0f)
-                topPaint->translate(tx, ty);
-        }
-        if (topPaint->font().pixelSize() != kCustomHudFontSize) {
-            QFont f = topPaint->font();
-            f.setPixelSize(kCustomHudFontSize);
-            topPaint->setFont(f);
-        }
-        // P-9: Cache font metrics (one-time init, same font for all frames)
-        if (UNLIKELY(s_frameFpx != kCustomHudFontSize)) {
-            s_frameFm = topPaint->fontMetrics();
-            s_frameFpx = kCustomHudFontSize;
-        }
+        EnsureCachedConfigForFrame(localCfg, xf);
+        ApplyHudPainterTransform(topPaint, xf);
+        EnsureHudFont(topPaint);
         for (int i = 0; i < kEditElemCount; ++i)
             s_editRects[i] = ComputeEditBounds(i, localCfg, topStretchX);
         DrawEditOverlay(topPaint, localCfg, topStretchX, btmBuffer);
-        return overlayRect;  // edit mode covers full overlay
+        return xf.overlayRect;  // edit mode covers full overlay
     }
 
     if (!isInGame) return QRect();
 
-    melonDS::NDS* nds = emu->getNDS();
-    melonDS::u8* ram = nds->MainRAM;
-    const uint32_t offP = static_cast<uint32_t>(playerPosition) * Consts::PLAYER_ADDR_INC;
-    const uint8_t romGroup = rom.romGroupIndex;
+    HudRuntimeState st = {};
+    if (!ReadHudRuntimeState(emu, rom, addrHot, playerPosition, st))
+        return QRect();
 
-    ApplyNoHudPatch(nds, romGroup);
+    ApplyNoHudPatch(st.nds, st.romGroup);
 
     // P-3: Refresh config cache only when invalidated, or recompute anchor
     //       positions when topStretchX changes (window resize).
     //       Also refresh when hudScale changes — crosshair rects and textDrawScale
     //       are in actual output pixels divided by hudScale.
-    if (UNLIKELY(!s_cache.valid) || s_cache.lastHudScale != hudScale) {
-        RefreshCachedConfig(localCfg, topStretchX, hudScale);
-        s_cache.valid = true;
-    } else if (s_cache.lastStretchX != topStretchX) {
-        RecomputeAnchorPositions(topStretchX);
-    }
+    EnsureCachedConfigForFrame(localCfg, xf);
     const CachedHudConfig& c = s_cache;
 
     // OPT-DR1: Refresh static dirty rect when transform or config changed.
-    const float txDs = (topStretchX - 1.0f) * 128.0f + hudOriginXds;
-    const float tyDs = hudOriginYds;
-    if (UNLIKELY(s_staticDirtyStale ||
-                 s_staticDirtyHudScale != hudScale ||
-                 s_staticDirtyTxDs    != txDs      ||
-                 s_staticDirtyTyDs    != tyDs)) {
-        RefreshStaticHudDirty(c, hudScale, txDs, tyDs, overlayW, overlayH);
-    }
+    EnsureStaticDirtyForFrame(c, xf);
 
-    const uint32_t addrAmmoSpecial = rom.currentAmmoSpecial + offP;
-    const uint32_t addrAmmoMissile = rom.currentAmmoMissile + offP;
-    const uint16_t maxHP           = Read16(ram, rom.maxHP + offP);
-    const uint16_t maxAmmoSpecial  = Read16(ram, rom.maxAmmoSpecial + offP);
-    const uint16_t maxAmmoMissile  = Read16(ram, rom.maxAmmoMissile + offP);
+    const uint32_t addrAmmoSpecial = rom.currentAmmoSpecial + st.offP;
+    const uint32_t addrAmmoMissile = rom.currentAmmoMissile + st.offP;
 
-    bool isStartPressed = Read8(ram, rom.startPressed) == 0x01;
-    Write8(ram, rom.hudToggle, isStartPressed ? 0x11 : 0x01);
+    Write8(st.ram, rom.hudToggle, st.isStartPressed ? 0x11 : 0x01);
 
-    uint16_t currentHP = Read16(ram, rom.playerHP + offP);
-    bool isGameOver    = Read8(ram, rom.gameOver) != 0x00;
-    uint8_t viewMode   = Read8(ram, rom.baseViewMode + offP);
-    bool isFirstPerson = (viewMode == 0x00);
-
-    if (ShouldHideForGameplayState(isStartPressed, currentHP, isGameOver)) return QRect();
+    if (ShouldHideForGameplayState(st.isStartPressed, st.currentHP, st.isGameOver))
+        return QRect();
 
     // hudScale = scaleY: DS Y-unit maps to hudScale px.
     // Buffer now covers the full window. Translate has two parts:
     //   (topStretchX-1)*128 — centres the DS canvas when content is wider/narrower than 4:3
     //   hudOriginXds        — shifts right by the left black-bar width (DS units), so DS x=0
     //                          lands at the game-content left edge inside the full-window buffer.
-    topPaint->scale(hudScale, hudScale);
-    if (txDs != 0.0f || tyDs != 0.0f)
-        topPaint->translate(txDs, tyDs);
+    ApplyHudPainterTransform(topPaint, xf);
 
     // Font locked at kCustomHudFontSize (6px) — optimal for this TTF.
     // Visual text size is controlled by textDrawScale applied at draw time.
-    if (topPaint->font().pixelSize() != kCustomHudFontSize) {
-        QFont f = topPaint->font();
-        f.setPixelSize(kCustomHudFontSize);
-        topPaint->setFont(f);
-    }
-    // P-9: Cache font metrics (one-time init, same font for all frames)
-    if (UNLIKELY(s_frameFpx != kCustomHudFontSize)) {
-        s_frameFm = topPaint->fontMetrics();
-        s_frameFpx = kCustomHudFontSize;
-    }
+    EnsureHudFont(topPaint);
     const float textDrawScale = c.textDrawScale;
 
-    const uint8_t hunterID = Read8(ram, addrHot.chosenHunter);
-    bool isAlt   = Read8(ram, addrHot.isAltForm) == 0x02;
-
-    {
-        DrawHP(topPaint, currentHP, maxHP, c, textDrawScale);
-    }
+    DrawHP(topPaint, st.currentHP, st.maxHP, c, textDrawScale);
 
     // Bomb count: Samus/Sylux in alt form only
     {
-        bool isBomber = (hunterID == static_cast<uint8_t>(HunterId::Samus) ||
-                         hunterID == static_cast<uint8_t>(HunterId::Sylux));
-        if (isBomber && isAlt) {
-            DrawBombLeft(topPaint, ram, rom, offP, c, textDrawScale, hudScale);
+        const bool isBomber = (st.hunterID == static_cast<uint8_t>(HunterId::Samus) ||
+                               st.hunterID == static_cast<uint8_t>(HunterId::Sylux));
+        if (isBomber && st.isAlt) {
+            DrawBombLeft(topPaint, st.ram, rom, st.offP, c, textDrawScale, hudScale);
         }
     }
 
     // Match Status + Rank & Time HUDs (non-adventure only, visible in all camera modes)
-    {
-        bool isAdventure = Read8(ram, rom.isInAdventure) == 0x02;
-        {
-            DrawMatchStatusHud(topPaint, ram, rom, playerPosition, isAdventure, c);
-        }
-        {
-            DrawRankAndTime(topPaint, ram, rom, playerPosition, isAdventure, c, textDrawScale);
-        }
-    }
+    DrawMatchStatusHud(topPaint, st.ram, rom, playerPosition, st.isAdventure, c);
+    DrawRankAndTime(topPaint, st.ram, rom, playerPosition, st.isAdventure, c, textDrawScale);
 
     // Draw bottom screen overlay on top screen (visible in all camera modes incl. alt form)
-    DrawBottomScreenOverlay(localCfg, topPaint, btmBuffer, (hunterID <= 6) ? hunterID : 0);
+    DrawBottomScreenOverlay(localCfg, topPaint, btmBuffer, (st.hunterID <= 6) ? st.hunterID : 0);
 
-    if (!isFirstPerson) {
+    if (!st.isFirstPerson) {
         // OPT-DR1: Crosshair not drawn in third-person / alt-form.
         // If it was drawn last frame, include its previous bbox so Screen.cpp clears it.
-        if (s_chPrevPxCx != INT_MIN) {
-            s_chDirtyThisFrame = CrosshairBboxPx(s_chPrevPxCx, s_chPrevPxCy, c.crosshair);
-            s_chPrevPxCx = INT_MIN;
-            s_chPrevPxCy = INT_MIN;
-        }
-        return (s_staticHudDirtyPx | s_chDirtyThisFrame) & overlayRect;
+        ClearPreviousCrosshairDirty(c.crosshair);
+        return CurrentHudDirtyRect(xf);
     }
 
-    uint8_t currentWeapon = Read8(ram, addrHot.currentWeapon);
-    {
-        DrawWeaponAmmo(topPaint, ram, currentWeapon,
-                       Read16(ram, addrAmmoSpecial), addrAmmoMissile,
-                       maxAmmoSpecial, maxAmmoMissile, c, textDrawScale, hudScale);
-    }
+    DrawWeaponAmmo(topPaint, st.ram, st.currentWeapon,
+                   Read16(st.ram, addrAmmoSpecial), addrAmmoMissile,
+                   st.maxAmmoSpecial, st.maxAmmoMissile, c, textDrawScale, hudScale);
 
     {
         const uint16_t havingWeapons = static_cast<uint16_t>(
-            Read16(ram, addrHot.havingWeapons));
-        DrawWeaponInventory(topPaint, ram, rom, playerPosition,
-                            havingWeapons, currentWeapon, c, textDrawScale, hudScale);
+            Read16(st.ram, addrHot.havingWeapons));
+        DrawWeaponInventory(topPaint, st.ram, rom, playerPosition,
+                            havingWeapons, st.currentWeapon, c, textDrawScale, hudScale);
     }
 
-    bool isTrans = (Read8(ram, addrHot.jumpFlag) & 0x10) != 0;
-    if (!isTrans && !isAlt) {
-        DrawCrosshair(topPaint, ram, rom, c, hudScale, topStretchX);
-    } else if (s_chPrevPxCx != INT_MIN) {
+    if (!st.isTrans && !st.isAlt) {
+        DrawCrosshair(topPaint, st.ram, rom, c, hudScale, topStretchX);
+    } else {
         // OPT-DR1: Crosshair not drawn this frame (transition/alt) but was last frame.
-        s_chDirtyThisFrame = CrosshairBboxPx(s_chPrevPxCx, s_chPrevPxCy, c.crosshair);
-        s_chPrevPxCx = INT_MIN;
-        s_chPrevPxCy = INT_MIN;
+        ClearPreviousCrosshairDirty(c.crosshair);
     }
 
-    return (s_staticHudDirtyPx | s_chDirtyThisFrame) & overlayRect;
+    return CurrentHudDirtyRect(xf);
 }
 
 // =========================================================================
