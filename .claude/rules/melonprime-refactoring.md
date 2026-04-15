@@ -1,202 +1,201 @@
-# MelonPrime リファクタリング統合ドキュメント
+# MelonPrime Refactoring Unified Document
 
-**統合対象:** `MelonPrime_REFACTORING_1.md` ～ `MelonPrime_REFACTORING_5.md`、旧 `MelonPrime_PERF_ROUND6.md`、Round 7～8、Custom HUD リファクタリング / 最適化
+**Integrated sources:** `MelonPrime_REFACTORING_1.md` through `MelonPrime_REFACTORING_5.md`, former `MelonPrime_PERF_ROUND6.md`, Round 7–8, and Custom HUD refactoring / optimization
 
-**文書種別:** 現行統合版 / 参照用正本
+**Document type:** Current unified edition / canonical reference copy
 
-**正本ファイル名:** `.claude/rules/melonprime-refactoring.md`
+**Canonical filename:** `.claude/rules/melonprime-refactoring.md`
 
-**旧統合版名:** `MelonPrime_REFACTORING_UNIFIED.md`, `MelonPrime_REFACTORING_UNIFIED_1_TO_5.md`, `MelonPrime_REFACTORING_UNIFIED_1_TO_5_aliases_v2.md`, `MelonPrime_REFACTORING_UNIFIED_1_TO_5_aliases_v3_audited.md`  
+**Final audit:** Verified against the current code as of 2026-04-15 (`src/frontend/qt_sdl`)
 
-**位置づけ:** 1～5 の内容、旧名対応、情報源監査、Round 6～8、Custom HUD 系の分割 / 高速化を反映した現行版。旧 `src/frontend/qt_sdl/MelonPrime_PERF_ROUND6.md` は本書へ統合済みで削除済み。旧 `src/frontend/qt_sdl/MelonPrime_REFACTORING.md` から `.claude/rules/` へ移動済み。ソースコメントや作業メモから逆引きできることを重視する。
+**Former unified document names:** `MelonPrime_REFACTORING_UNIFIED.md`, `MelonPrime_REFACTORING_UNIFIED_1_TO_5.md`, `MelonPrime_REFACTORING_UNIFIED_1_TO_5_aliases_v2.md`, `MelonPrime_REFACTORING_UNIFIED_1_TO_5_aliases_v3_audited.md`
 
-**統合目的:** 1～5 に分散していた知見、適用済み最適化、正確性修正、リファクタリング、入力遅延最適化、却下・撤回事項を、**重複を整理したうえで漏れなく 1 本化**する。  
-**この文書の立場:**  
-- 1 は「既存知見 + FIX + OPT A～Z5」の土台  
-- 2 は **Refactoring Round 1 (R1)**  
-- 3 は **Refactoring Round 2 (R2)**  
-- 4 は **Round 4: P-1～P-10 の提案・採否**  
-- 5 は **Round 5: P-11～P-27 の入力遅延 / フレームペーシング最適化**  
-- 6 は **Round 6: P-33～P-37 の syscall 削減 / ホットパス改善**  
-- 7 は **Round 7: P-38～P-41 のフレームループ最適化**  
-- 8 は **Round 8: P-42～P-44 のホットキー・エイム・レジスタ最適化**  
-- 9 は **Custom HUD リファクタリング: render / on-screen editor / Screen integration の unity fragment 分割**
-- 10 は **Custom HUD パフォーマンス: dirty rect、config cache、screen fragment GL skip**
-- 重複する項目は統合し、**履歴として重要な「一度採用されたが後で代替・撤回されたもの」も残す**
+**Positioning:** This is the current edition reflecting the contents of 1–5, support for former names, source-audit results, Round 6–8, and the splitting / acceleration of the Custom HUD system. The former `src/frontend/qt_sdl/MelonPrime_PERF_ROUND6.md` has already been merged into this document and removed. The former `src/frontend/qt_sdl/MelonPrime_REFACTORING.md` has been moved to `.claude/rules/`. A major priority is preserving reverse lookupability from source comments and work notes.
+
+**Integration goal:** To consolidate, without omission and with duplication cleaned up, the knowledge scattered across 1–5, the optimizations already applied, correctness fixes, refactorings, input-latency optimizations, and rejected / reverted items into a single unified document.
+**Role of this document:**
+- 1 is the foundation of “existing knowledge + FIX + OPT A–Z5”
+- 2 is **Refactoring Round 1 (R1)**
+- 3 is **Refactoring Round 2 (R2)**
+- 4 is **Round 4: proposals and adoption decisions for P-1–P-10**
+- 5 is **Round 5: input-latency / frame-pacing optimizations for P-11–P-27**
+- 6 is **Round 6: syscall reduction / hot-path improvements for P-33–P-37**
+- 7 is **Round 7: frame-loop optimizations for P-38–P-41**
+- 8 is **Round 8: hotkey / aim / register optimizations for P-42–P-44**
+- 9 is **Custom HUD Refactor: unity-fragment split of render / on-screen editor / Screen integration**
+- 10 is **Custom HUD Performance: dirty rect, config cache, screen-fragment GL skip**
+- Overlapping items are merged, while preserving historically important cases that were once adopted and later replaced or reverted
 
 ---
 
-## 1. ソース対応表
+## 1. Source mapping table
 
-| 統合元 | 位置づけ | 主な内容 |
+| Integrated source | Positioning | Main contents |
 |---|---|---|
-| `MelonPrime_REFACTORING_1.md` | 基礎ナレッジ / 初期最適化 | スレッディングモデル、FIX-1～3、OPT A～Z5、パイプライン分析、却下項目 |
-| `MelonPrime_REFACTORING_2.md` | R1 | 保守性改善、重複排除、SmallVkList、static→member、constexpr テーブル、UTF-8 修正 |
-| `MelonPrime_REFACTORING_3.md` | R2 | ボタン優先度バグ修正、fetch_add、setHotkeyVks pointer+count、LUT 化、hasMask 廃止、ヒープ排除完全化 |
-| `MelonPrime_REFACTORING_4.md` | Round 4 | P-1～P-10 の詳細分析、適用済み / 却下 / リバートの整理 |
-| `MelonPrime_REFACTORING_5.md` | Round 5 | P-11～P-27 の入力遅延最適化、フレームペーシング改善、最終レイテンシ観点の整理 |
-| 旧 `MelonPrime_PERF_ROUND6.md` | Round 6 | P-33～P-37: PrePollRawInput 除去、SDL スキップ、DeferredDrain 軽量化案の検証と P-35 リバート、ホットパス分岐改善。本書へ統合済み |
-| (本文書 §16) | Round 7 | P-38～P-41: フレームループ内 hotkey ゲート、NeedsShaderCompile キャッシュ、除算→乗算、DSi sync 除去 |
-| (本文書 §17) | Round 8 | P-42～P-44: hotkey scan、RunFrameHook、aim zero-delta skip |
-| (本文書 §18) | Custom HUD Refactor | `MelonPrimeHudRender*.inc`, `MelonPrimeHudConfigOnScreen*.inc`, `MelonPrimeHudScreenCpp*.inc` への分割 |
-| (本文書 §19) | Custom HUD Perf | OPT-DR1 / OPT-SC1: HUD dirty rect、screen overlay GL/software path の高パフォーマンス化 |
+| `MelonPrime_REFACTORING_1.md` | Foundational knowledge / initial optimization | Threading model, FIX-1–3, OPT A–Z5, pipeline analysis, rejected items |
+| `MelonPrime_REFACTORING_2.md` | R1 | Maintainability improvements, deduplication, SmallVkList, static→member, constexpr tables, UTF-8 fixes |
+| `MelonPrime_REFACTORING_3.md` | R2 | Button-priority bug fix, fetch_add, setHotkeyVks pointer+count, LUT conversion, hasMask removal, complete heap elimination |
+| `MelonPrime_REFACTORING_4.md` | Round 4 | Detailed analysis of P-1–P-10, organization of applied / rejected / reverted items |
+| `MelonPrime_REFACTORING_5.md` | Round 5 | Input-latency optimization for P-11–P-27, frame-pacing improvements, final latency-oriented organization |
+| Former `MelonPrime_PERF_ROUND6.md` | Round 6 | P-33–P-37: PrePollRawInput removal, SDL skipping, validation of DeferredDrain lightweight plan and P-35 revert, hot-path branch improvements. Already merged into this document |
+| (This document §16) | Round 7 | P-38–P-41: hotkey gate inside the frame loop, NeedsShaderCompile cache, division→multiplication, DSi sync removal |
+| (This document §17) | Round 8 | P-42–P-44: hotkey scan, RunFrameHook, aim zero-delta skip |
+| (This document §18) | Custom HUD Refactor | Split into `MelonPrimeHudRender*.inc`, `MelonPrimeHudConfigOnScreen*.inc`, and `MelonPrimeHudScreenCpp*.inc` |
+| (This document §19) | Custom HUD Perf | OPT-DR1 / OPT-SC1: high-performance HUD dirty rect and screen overlay GL/software paths |
 
 ---
 
-## 2. 正規化ルール
+## 2. Normalization rules
 
-### 2.1 ラウンド名の統一
+### 2.1 Unification of round names
 
-- `MelonPrime_REFACTORING_2.md` を **R1**
-- `MelonPrime_REFACTORING_3.md` を **R2**
-- `MelonPrime_REFACTORING_4.md` を **Round 4**
-- `MelonPrime_REFACTORING_5.md` を **Round 5**
-- 旧 `MelonPrime_PERF_ROUND6.md` を **Round 6** として本書 §15 に統合済み
-- (本文書 §16) を **Round 7**
-- (本文書 §17) を **Round 8**
-- (本文書 §18) を **Custom HUD Refactor**
-- (本文書 §19) を **Custom HUD Perf**
+- `MelonPrime_REFACTORING_2.md` is treated as **R1**
+- `MelonPrime_REFACTORING_3.md` is treated as **R2**
+- `MelonPrime_REFACTORING_4.md` is treated as **Round 4**
+- `MelonPrime_REFACTORING_5.md` is treated as **Round 5**
+- Former `MelonPrime_PERF_ROUND6.md` has already been merged into §15 of this document as **Round 6**
+- (This document §16) is treated as **Round 7**
+- (This document §17) is treated as **Round 8**
+- (This document §18) is treated as **Custom HUD Refactor**
+- (This document §19) is treated as **Custom HUD Perf**
 
-として扱う。
+### 2.2 Unification of duplicated IDs
 
-### 2.2 重複 ID の統一
+`MelonPrime_REFACTORING_5.md` contains duplicate descriptions under the same IDs, so this unified document normalizes them as follows.
 
-`MelonPrime_REFACTORING_5.md` には同一 ID の重複記述があるため、本統合文書では以下のように正規化する。
-
-| 元の表記 | 本文書での扱い |
+| Original notation | Handling in this document |
 |---|---|
-| P-16 が 2 回出現 | **P-16: FastForward/SlowMo 後の VSync 復帰修正** に統合 |
-| P-17 が複数回出現 | **P-17: サブピクセル残差蓄積** に統合 |
-| P-26 が 2 種類出現 | **P-26a: Auto Screen Layout バイパス** と **P-26b: DeferredDrain スロットル** に分離 |
-| P-14 が適用済み扱い / P-19・P-20 で代替 | **P-14 は歴史的段階**, 最終的には P-19 と P-20 に吸収 |
+| P-16 appears twice | Merged into **P-16: VSync restore fix after FastForward/SlowMo** |
+| P-17 appears multiple times | Merged into **P-17: subpixel residual accumulation** |
+| P-26 appears in two forms | Split into **P-26a: Auto Screen Layout bypass** and **P-26b: DeferredDrain throttle** |
+| P-14 treated as already applied / replaced by P-19 and P-20 | **P-14 is treated as a historical stage**, ultimately absorbed into P-19 and P-20 |
 
-### 2.3 履歴の扱い
+### 2.3 Handling of history
 
-- **適用済み**: 現実装の到達点として扱う
-- **見送り / 却下**: 検討結果として保持する
-- **リバート済み**: 一度試したが戻したものとして保持する
-- **歴史的段階**: 後続最適化の踏み台になったものとして別扱いする
+- **Applied:** Treated as the current implementation endpoint
+- **Deferred / Rejected:** Preserved as evaluation results
+- **Reverted:** Preserved as something that was tried once and later rolled back
+- **Historical stage:** Treated separately as a stepping stone toward later optimizations
 
-### 2.4 旧名 / 別名の保持ルール
+### 2.4 Rules for preserving former names / aliases
 
-この統合版では、**統一名だけでなく元ドキュメントの見出し名も追えること**を重視する。
-特にソースコメントや作業メモで旧名が使われていても逆引きできるよう、以下の規則で併記する。
+This unified edition emphasizes not only the unified names but also the ability to trace original section names from the source documents. In particular, even when older names appear in source comments or work notes, they should still be reverse searchable, so they are preserved under the following rules.
 
-- 見出しを統一した項目は、本文中に **旧名 / 別名 / 元見出し** を残す
-- Round 5 で重複していた ID は、**正規化名 + 元の呼び方** を併記する
-- ソースコメントで旧名が出てきたときは、まずこの節と各ステータス表の **旧名 / 元見出し** 列を参照する
+- For items whose headings were unified, **former name / alias / original heading** is retained in the body
+- For IDs that were duplicated in Round 5, both the **normalized name + former wording** are shown together
+- When an old name appears in source comments, first consult this section and the **Former name / original heading** column of each status table
 
-### 2.5 正規化名 ↔ 旧名 早見表
+### 2.5 Quick reference: normalized names ↔ former names
 
-| 正規化名 | 旧名 / 別名 / 元見出し |
+| Normalized name | Former name / alias / original heading |
 |---|---|
-| P-14: PrePoll バッチドレイン | PrePollRawInput, PrePoll バッチドレイン (Stuck Keys 修正) |
-| P-15 + P-21: ジョイスティック状態更新の分離 | Late-Poll ジョイスティック, `inputRefreshJoystickState()`, `inputProcess` 分離 |
-| P-16: VSync 復帰修正 | VSync 設定復元, VSync 復帰バグ修正 |
-| P-17: サブピクセル残差蓄積 | サブピクセルアキュムレータ, サブピクセルエイム蓄積, サブピクセル残差アキュムレータ |
-| P-18: Dual-Path エイムパイプライン | Direct Path / Legacy Path, P-18c 残差クランプ |
-| P-19: HiddenWndProc 即時 `processRawInput` | Stuck keys 根本修正, HiddenWndProc processRawInput |
-| P-20: PrePollRawInput 除去 | P-20b `InputReset` バグ修正, P-20c P-3 キャッシュ適用漏れ修正 |
-| P-22: DeferredDrain 分離 | `DeferredDrainInput()` 呼び出し追加, PollAndSnapshot から drain 分離 |
-| P-24: 外部ループ hotkey 一括早期脱出 | 外部ループ ホットキー一括早期脱出 |
-| P-26a: Auto Screen Layout バイパス | Auto Screen Layout バイパス |
-| P-26b: DeferredDrain スロットル | DeferredDrain スロットル |
+| P-14: PrePoll batched drain | PrePollRawInput, PrePoll batched drain (Stuck Keys fix) |
+| P-15 + P-21: separation of joystick state updates | Late-Poll joystick, `inputRefreshJoystickState()`, `inputProcess` split |
+| P-16: VSync restore fix | VSync setting restoration, VSync restore bug fix |
+| P-17: subpixel residual accumulation | Subpixel accumulator, subpixel aim accumulation, subpixel residual accumulator |
+| P-18: Dual-Path aim pipeline | Direct Path / Legacy Path, P-18c residual clamp |
+| P-19: immediate `processRawInput` in HiddenWndProc | Root stuck-keys fix, HiddenWndProc processRawInput |
+| P-20: removal of PrePollRawInput | P-20b `InputReset` bug fix, P-20c P-3 cache application omission fix |
+| P-22: DeferredDrain split | `DeferredDrainInput()` call addition, drain split out of PollAndSnapshot |
+| P-24: outer-loop unified early exit for hotkeys | Outer-loop hotkey unified early exit |
+| P-26a: Auto Screen Layout bypass | Auto Screen Layout bypass |
+| P-26b: DeferredDrain throttle | DeferredDrain throttle |
 
 ---
 
+### 2.6 Policy for reflecting source audits
 
-### 2.6 情報源監査の反映方針
+In this edition, not only the original documents but also the current code are audited as information sources. When discrepancies exist, they are handled with the following priority.
 
-この版では、**元ドキュメントだけでなく現コードも情報源として監査**し、食い違いがある箇所は次の優先順位で扱う。
+1. **Current code**
+   Actual functions, call sites, and comments take top priority.
+2. **Original Round 5 document**
+   Treated as a primary source showing the intent at proposal time and adoption time.
+3. **Existing UNIFIED / older versions of this unified document**
+   Used as organized references, but corrected if they contradict the code.
 
-1. **現コード**  
-   実際に存在する関数、呼び出し位置、コメントを最優先とする。
-2. **Round 5 原文**  
-   提案時点・適用時点の意図を示す一次資料として扱う。
-3. **既存 UNIFIED / 本統合版の旧版**  
-   整理結果として参照するが、コードと矛盾した場合は修正対象とする。
+In particular, the following items should be read by separating the **document-side endpoint** from the **current-code residue / later changes**.
 
-特に以下は、**文書上の到達点** と **現コード残置 / 後続変更** を分けて読む。
-
-| 項目 | 監査結果 |
+| Item | Audit result |
 |---|---|
-| P-14 / `PrePollRawInput` | Round 5 では P-19 / P-20 に吸収。**Round 6 (P-33) で空インライン化・呼び出し除去により完了** |
-| P-20 / PrePollRawInput 除去 | **Round 6 (P-33) により完了**。設計どおり PrePollRawInput は実質削除された |
-| P-22 / DeferredDrain 分離 | 分離自体は有効。配置は `drawScreen()` 後。**P-35 はリバート済み — drainPendingMessages を維持 (shared-buffer セーフティネット)** |
-| P-26b / DeferredDrain スロットル | **撤回済み / 現コード未採用**。8-frame throttle counter は存在せず、旧 throttle コメントも削除済み |
-| P-32 | 1～5 の範囲外だが、**DeferredDrain の最終配置を説明する現コード上の後続変更**として参照が必要 |
+| P-14 / `PrePollRawInput` | In Round 5 it was absorbed into P-19 / P-20. **Completed in Round 6 (P-33) by empty-inlining and removing the calls** |
+| P-20 / removal of PrePollRawInput | **Completed in Round 6 (P-33)**. PrePollRawInput was effectively removed as designed |
+| P-22 / DeferredDrain split | The split itself remains valid. Placement is after `drawScreen()`. **P-35 has been reverted — `drainPendingMessages` is retained as a shared-buffer safety net** |
+| P-26b / DeferredDrain throttle | **Already withdrawn / not adopted in current code**. No 8-frame throttle counter exists, and the old throttle comment has been removed |
+| P-32 | Outside the 1–5 range, but still needed as a **later change in the current code that explains DeferredDrain’s final placement** |
 
+## 3. Architecture overview
 
-## 3. アーキテクチャ概要
+## 3.1 Target modules
 
-## 3.1 対象モジュール
+- Raw Input layer: `MelonPrimeRawInputState` / `MelonPrimeRawInputWinFilter`
+- Game-logic layer: `MelonPrime.h` / `MelonPrime.cpp` / `MelonPrimeInGame.cpp` / `MelonPrimeGameInput.cpp` / `MelonPrimeGameWeapon.cpp`
+- ROM-detection layer: `MelonPrimeGameRomDetect.cpp`
 
-- Raw Input 層: `MelonPrimeRawInputState` / `MelonPrimeRawInputWinFilter`
-- ゲームロジック層: `MelonPrime.h` / `MelonPrime.cpp` / `MelonPrimeInGame.cpp` / `MelonPrimeGameInput.cpp` / `MelonPrimeGameWeapon.cpp`
-- ROM 検出層: `MelonPrimeGameRomDetect.cpp`
+## 3.2 Threading model
 
-## 3.2 スレッディングモデル
+MelonPrime’s Raw Input layer has two modes, and in both cases **there is always exactly one writer thread**.
 
-MelonPrime の Raw Input 層は 2 モードを持ち、どちらも **書き込みスレッドは常に 1 つ** である。
-
-| モード | ライター | リーダー | 入力経路 |
+| Mode | Writer | Reader | Input path |
 |---|---|---|---|
-| Joy2Key ON | Qt メインスレッド | Emu スレッド | `nativeEventFilter` → `processRawInput` |
-| Joy2Key OFF | Emu スレッド | Emu スレッド | `Poll` → `processRawInputBatched` |
+| Joy2Key ON | Qt main thread | Emu thread | `nativeEventFilter` → `processRawInput` |
+| Joy2Key OFF | Emu thread | Emu thread | `PollAndSnapshot()` / `LateLatchMouseDelta()` / `DeferredDrain()` → `processRawInputBatched` + hidden-window dispatch |
 
-この **Single-Writer 保証** が、atomic 最適化の根拠である。  
-具体的には、CAS ループや locked RMW を避け、`relaxed load + release store` を使う判断の土台になっている。
+This **Single-Writer guarantee** is the basis for the atomic optimizations.
+More concretely, it is what allows the design to avoid CAS loops and locked RMW operations, and instead use `relaxed load + release store`.
 
-## 3.3 Joy2Key ON / OFF の構造差
+## 3.3 Structural differences between Joy2Key ON / OFF
 
-| 項目 | ON (Joy2Key) | OFF (Joy2Key Off) |
+| Item | ON (Joy2Key) | OFF (Joy2Key Off) |
 |---|---|---|
-| ライタースレッド | Qt メインスレッド | Emu スレッド |
-| 入力経路 | `nativeEventFilter` → `processRawInput(HRAWINPUT)` | `Poll()` → `GetRawInputBuffer` |
-| WM_INPUT 受信先 | Qt ウィンドウ | 隠しウィンドウ (`RIDEV_INPUTSINK`) |
-| イベント取得 | `GetRawInputData` 1 件ずつ | `GetRawInputBuffer` でバッチ |
-| 読み取りタイミング | 到着即時 | フレーム先頭付近で一括 |
-| フォーカス喪失時 | WM_INPUT 自体が来なくなる | `RIDEV_INPUTSINK` により継続受信 |
-| DefWindowProc 耐性 | 先にデータ消費されるので安全 | `DefWindowProc` によるデータ消費リスク |
+| Writer thread | Qt main thread | Emu thread |
+| Input path | `nativeEventFilter` → `processRawInput(HRAWINPUT)` | `PollAndSnapshot()` / `LateLatchMouseDelta()` / `DeferredDrain()` → `GetRawInputBuffer` + hidden-window dispatch |
+| WM_INPUT destination | Qt window | Hidden window (`RIDEV_INPUTSINK`) |
+| Event retrieval | `GetRawInputData` one by one | Batched with `GetRawInputBuffer` |
+| Read timing | Immediate on arrival | Snapshot at frame start, late latch before aim, drain after rendering |
+| When focus is lost | WM_INPUT itself stops arriving | Reception continues via `RIDEV_INPUTSINK` |
+| DefWindowProc resilience | Safe because data is consumed first | Risk of data consumption by `DefWindowProc` |
 
-**ON で stuck が起きにくい理由**
-1. `nativeEventFilter` が `DispatchMessage` より前に `GetRawInputData` する  
-2. フォーカス喪失時に Qt 側へ WM_INPUT が届かなくなる
+`Poll()` remains as a compatibility / legacy path, but the main path for current per-frame input is `PollAndSnapshot()` + `LateLatchMouseDelta()` + `DeferredDrain()`.
+
+**Why stuck keys are less likely when ON**
+1. `nativeEventFilter` performs `GetRawInputData` before `DispatchMessage`
+2. When focus is lost, WM_INPUT no longer reaches the Qt side
 
 ---
 
-## 4. 既知の不具合と修正
+## 4. Known bugs and fixes
 
-## 4.1 FIX-1: HiddenWndProc の WM_INPUT データ消失 (stuck keys 根本原因)
+## 4.1 FIX-1: WM_INPUT data loss in HiddenWndProc (root cause of stuck keys)
 
-**事象**  
-Joy2Key OFF 時にキーやクリックが押しっぱなしになる。
+**Phenomenon**
+When Joy2Key is OFF, keys or clicks can remain stuck as if held down.
 
-**原因**  
-隠しウィンドウの `WndProc` が `DefWindowProcW` に WM_INPUT を渡すと、内部で `GetRawInputData` が走り、raw input バッファが消費される。  
-その後 `GetRawInputBuffer` で拾うべき key-up が失われ、stuck になる。
+**Cause**
+If the hidden window’s `WndProc` passes WM_INPUT to `DefWindowProcW`, it internally performs `GetRawInputData`, consuming the raw-input buffer.
+As a result, the key-up event that should have been retrieved later by `GetRawInputBuffer` is lost, causing a stuck key.
 
-**重要な仕様**
-1. `PeekMessage(PM_REMOVE)` は WM_INPUT をキューから外す  
-2. この時点で `GetRawInputBuffer` からは不可視になる  
-3. `lParam` の `HRAWINPUT` は `GetRawInputData` でまだ読める  
-4. `DefWindowProcW(WM_INPUT)` は内部でそれを消費する
+**Important behavior**
+1. `PeekMessage(PM_REMOVE)` removes WM_INPUT from the queue
+2. At that point it becomes invisible to `GetRawInputBuffer`
+3. The `HRAWINPUT` in `lParam` can still be read via `GetRawInputData`
+4. `DefWindowProcW(WM_INPUT)` consumes it internally
 
-**修正**
-- `HiddenWndProc` で `WM_INPUT` を受けた瞬間に `processRawInput(reinterpret_cast<HRAWINPUT>(lParam))`
-- `DefWindowProcW` に渡さず `return 0`
-- `Poll()` / `drainPendingMessages()` との二重経路でロストを防止
+**Fix**
+- As soon as `HiddenWndProc` receives WM_INPUT, call `processRawInput(reinterpret_cast<HRAWINPUT>(lParam))`
+- Do not pass it to `DefWindowProcW`; instead `return 0`
+- Prevent loss via a dual path with `Poll()` / `drainPendingMessages()`
 
-**要点**  
-`return 0` だけでは足りず、**WndProc 内で明示的に `GetRawInputData` 相当を実行して救出する必要がある**。
+**Key point**
+A plain `return 0` is not enough; **it is necessary to explicitly perform the equivalent of `GetRawInputData` inside the WndProc and rescue the event there**.
 
-## 4.2 FIX-2: `UpdateInputState()` の !isFocused 時 stale 入力
+## 4.2 FIX-2: stale input in `UpdateInputState()` while `!isFocused`
 
-**事象**  
-フォーカス喪失中に stale な `m_input.down` が残り、再入パスで誤ったキーマスクが NDS に渡る。
+**Phenomenon**
+During focus loss, stale `m_input.down` can remain, and the wrong key mask may be passed to the NDS on the reentry path.
 
-**修正**
-`!isFocused` 時に以下をゼロクリアして return:
+**Fix**
+When `!isFocused`, zero-clear the following and return:
 - `m_input.down`
 - `m_input.press`
 - `m_input.moveIndex`
@@ -204,355 +203,350 @@ Joy2Key OFF 時にキーやクリックが押しっぱなしになる。
 - `m_input.mouseY`
 - `m_input.wheelDelta`
 
-## 4.3 FIX-3: フォーカス遷移時の raw input リセット
+## 4.3 FIX-3: raw-input reset on focus transition
 
-**事象**  
-focus 喪失 → 復帰間に stale キーが残る可能性がある。
+**Phenomenon**
+Stale keys may remain between focus loss and focus regain.
 
-**修正**
-`BIT_LAST_FOCUSED` の変化を検出したら、フォーカス喪失側で
-- `m_input.down/press/moveIndex` のクリア
+**Fix**
+When a change in `BIT_LAST_FOCUSED` is detected, run the following on the focus-lost side:
+- Clear `m_input.down/press/moveIndex`
 - `m_rawFilter->resetAllKeys()`
 - `m_rawFilter->resetMouseButtons()`
 
-を実行する。
+**Relationship between FIX-2 and FIX-3**
+- FIX-2: immediately blocks stale state on the hot path every frame
+- FIX-3: performs a comprehensive clear at the raw-input layer as part of the focus-transition event
 
-**FIX-2 と FIX-3 の関係**
-- FIX-2: 毎フレームのホットパス側で stale を即時遮断
-- FIX-3: フォーカス遷移イベントとして raw input 層まで含めて包括クリア
+## 4.4 The reset in OnEmuUnpause is already sufficient
 
-## 4.4 OnEmuUnpause のリセットは既に十分
-
-一見すると `OnEmuUnpause()` に `resetAllKeys + resetMouseButtons` を追加したくなるが、  
-実際には `ApplyJoy2KeySupportAndQtFilter(enable, doReset=true)` が先頭で呼ばれており、既に
+At first glance, it may seem desirable to add `resetAllKeys + resetMouseButtons` to `OnEmuUnpause()`, but in practice `ApplyJoy2KeySupportAndQtFilter(enable, doReset=true)` is already called at the start, and it has already performed:
 - `resetAllKeys`
 - `resetMouseButtons`
 - `resetHotkeyEdges`
 
-が実行済み。  
-したがって追加リセットは冗長であり、必要なのは
+Therefore, any additional reset would be redundant. What is needed is only resynchronization of:
 1. `BindMetroidHotkeysFromConfig()`
 2. `resetHotkeyEdges()`
 
-の再同期のみ。
+## 4.5 R2: `processRawInputBatched` button-priority bug fix (former name: inconsistency in mouse-button priority)
 
-## 4.5 R2: `processRawInputBatched` ボタン優先度バグ修正 (旧名: マウスボタン優先度の不整合)
+**Problem**
+Single-event processing used `UP wins`, while batched processing used `DOWN wins`.
 
-**問題**  
-単一イベント処理は `UP wins`、バッチ処理は `DOWN wins` になっていた。
-
-**修正前**
+**Before**
 ```cpp
 (finalBtnState & ~lut.upBits) | lut.downBits
 ```
 
-**修正後**
+**After**
 ```cpp
 (finalBtnState | lut.downBits) & ~lut.upBits
 ```
 
-同一メッセージに DOWN/UP が同時に立つ結合入力では、最終状態は「離された」が正しいため、`UP wins` に統一する。
+When DOWN and UP are both set in the same combined message, the correct final state is “released”, so behavior was unified under `UP wins`.
 
-## 4.6 P-1: `snapshotInputFrame` のメモリオーダリング不整合 (旧名同じ)
+## 4.6 P-1: memory-ordering inconsistency in `snapshotInputFrame` (same former name)
 
-**問題**  
-`m_accumMouseX/Y.load(relaxed)` が `takeSnapshot()` 内の acquire fence より前に配置されていた。  
-x86 TSO では実質問題化しにくいが、ARM / RISC-V では load-load reorder により VK スナップショットとマウスデルタの整合が崩れる可能性がある。
+**Problem**
+`m_accumMouseX/Y.load(relaxed)` was placed before the acquire fence inside `takeSnapshot()`.
+On x86 TSO this is unlikely to become a practical issue, but on ARM / RISC-V, load-load reordering could break consistency between the VK snapshot and mouse delta.
 
-**修正方針**
-- `takeSnapshot()` の後で `m_accumMouseX/Y` を読む  
-または
-- `takeFullSnapshot()` 的な統合スナップショットを導入する
+**Fix policy**
+- Read `m_accumMouseX/Y` after `takeSnapshot()`
+or
+- Introduce an integrated snapshot such as `takeFullSnapshot()`
 
-Round 4 では **Option A: takeSnapshot 後にマウスを読む** の最小変更が推奨された。
+In Round 4, **Option A: read the mouse after `takeSnapshot()`** was recommended as the minimal change.
 
-## 4.7 P-20b: `InputReset()` による残差破壊バグ (旧名: InputReset バグ修正)
+## 4.7 P-20b: residual-destruction bug caused by `InputReset()` (former name: InputReset bug fix)
 
-**問題**  
-`InputReset()` が毎フレーム `m_aimResidualX/Y = 0` を実行していたため、P-17 のサブピクセル蓄積と P-18 の Dual-Path が事実上無効化されていた。
+**Problem**
+Because `InputReset()` executed `m_aimResidualX/Y = 0` every frame, the subpixel accumulation of P-17 and the Dual-Path behavior of P-18 were effectively disabled.
 
-**修正**
-- `InputReset()` から残差リセットを除去
-- 残差クリアは、感度変更、レイアウト変更、エイムブロックなどの明示的リセット時のみに限定
+**Fix**
+- Remove the residual reset from `InputReset()`
+- Limit residual clears to explicit reset cases only, such as sensitivity changes, layout changes, or aim blocking
 
-## 4.8 P-20c: P-3 キャッシュ適用漏れ修正 (旧名同じ)
+## 4.8 P-20c: fix for missing application of the P-3 cache (same former name)
 
-P-3 で `m_cachedPanel` を導入したのに、`UpdateInputState()` がまだ `emuInstance->getMainWindow()->panel` を辿っていた。  
-これを `m_cachedPanel ? m_cachedPanel->getDelta() : 0` に置き換えることで、P-3 の意図をホットパスへ正しく反映した。
+Although P-3 introduced `m_cachedPanel`, `UpdateInputState()` was still traversing `emuInstance->getMainWindow()->panel`.
+By replacing it with `m_cachedPanel ? m_cachedPanel->getDelta() : 0`, the intent of P-3 was correctly reflected in the hot path.
 
-## 4.9 P-22 修正: `DeferredDrainInput()` 呼び出し漏れ (旧名: DeferredDrainInput 呼び出し追加)
+## 4.9 P-22 fix: missing `DeferredDrainInput()` call (former name: DeferredDrainInput call addition)
 
-P-22 で `PollAndSnapshot` から `drainPendingMessages()` を分離したが、`EmuThread.cpp` の `frameAdvanceOnce()` に `DeferredDrainInput()` 呼び出しが入っていなかった。
-これを追加した後、配置は後続変更で `drawScreen()` 後へ移動した。P-26b のスロットル案は最終的に未採用。
+P-22 split `drainPendingMessages()` out of `PollAndSnapshot`, but `frameAdvanceOnce()` in `EmuThread.cpp` did not yet call `DeferredDrainInput()`.
+After this was added, later changes moved its placement to after `drawScreen()`. The throttle proposal from P-26b was ultimately not adopted.
 
 ---
 
-## 5. 基礎最適化 (OPT A～Z5)
+## 5. Foundational optimizations (OPT A–Z5)
 
-## 5.1 総合一覧
+## 5.1 Overall list
 
-| OPT | 対象 | 削減 / 効果 | 要旨 |
+| OPT | Target | Reduction / effect | Summary |
 |---|---|---|---|
-| A | wheelDelta 事前フェッチ + 武器ゲート | ~18～28 cyc/frame | wheelDelta を先に取得し、武器入力がない 99%+ フレームで処理をスキップ |
-| B | Boost ビットガード | ~2～4 cyc/frame | モーフボール boost 条件の早期ビット判定 |
-| C | クラスレイアウト最適化 | ~0～10 cyc/frame | ホットメンバーの配置改善 |
-| D | `m_isInGame` → `BIT_IN_GAME` | ~1 cyc/frame | bool からフラグ統合へ |
-| E | 再入パス バッチ化 | ~2 cyc/再入 | 再入時の重複処理整理 |
-| F | 整数閾値スキップ | ~15～25 cyc/frame | 低感度時の無駄な aim 演算を除外 |
-| G | `m_isAimDisabled` → `aimBlockBits` | ~1～2 cyc/frame | 複数条件のブロック管理をビット化 |
-| H | エイム書込プリフェッチ | ~0～10 cyc/frame | aimX / aimY 書き込み先のウォームアップ |
-| I | `setRawInputTarget` 毎フレーム除去 | ~7～10 cyc/frame | HWND 更新の冗長呼び出しを除去 |
-| J | NDS ポインタキャッシュ | ~3～5 cyc/frame | `emuInstance->getNDS()` 等の追跡を削減 |
-| K | `BIT_LAST_FOCUSED` 変更ガード | ~1～2 cyc/frame | フォーカス変化検出の無駄を削減 |
-| L | `inGame` ポインタ HotPointers 昇格 | ~4～10 cyc/frame | 頻用アドレスのキャッシュ局所性改善 |
-| M | `m_rawFilter` シングルロード | ~4～6 cyc/frame | 同一フレーム内のポインタ再読込を減らす |
-| N | `BIT_LAYOUT_PENDING` デッドコード除去 | 品質改善 | 不要コード除去 |
-| O | 固定小数点エイムパイプライン | ~14 cyc/frame | float 系を Q14 固定小数点へ置換 |
-| P | 融合 AimAdjust | O に統合 | 独立項目ではなく O に吸収 |
-| Q | 冗長ゼロチェック除去 | ~1～2 cyc/frame | 二重のゼロ判定整理 |
-| R | Safety-net `processRawInputBatched` 除去 | ~500～1000 cyc/frame | 冗長な再読込除去 |
-| S | `pollHotkeys + fetchMouseDelta` 融合 | ~8～15 cyc/frame | 1 回の snapshot で hotkey + mouse delta を取得 |
-| T | `hasMouseDelta / hasButtonChanges` 除去 | ~0～133 cyc/frame | 不要フラグの削減 |
-| U | `Poll()` 内 `m_state` キャッシュ | ~2～3 cyc/frame | 間接参照削減 |
-| W | `BIT_IN_GAME_INIT` ブロック外出し | icache ~300～400 byte | ホットパスから cold 初期化を退避 |
-| Z1 | mainRAM 遅延取得 | ~6～10 cyc/frame | 必要時のみ取得 |
-| Z2 | `ProcessMoveAndButtonsFast` 統合 | ~3～5 cyc/frame | move / buttons を 1 本化 |
-| Z3 | `PollAndSnapshot` 統合 | ~8～12 cyc/frame | Poll + snapshot を融合 |
-| Z4 | `HandleGlobalHotkeys` インライン | ~5 cyc/frame | call / ret 除去 |
-| Z5 | aimX/aimY 早期プリフェッチ | 0～40 cyc | L2 miss を確率的に隠蔽 |
+| A | Pre-fetch of wheelDelta + weapon gate | ~18–28 cyc/frame | Fetch `wheelDelta` first and skip processing in 99%+ of frames with no weapon input |
+| B | Boost bit guard | ~2–4 cyc/frame | Early bit check for Morph Ball boost conditions |
+| C | Class layout optimization | ~0–10 cyc/frame | Better placement of hot members |
+| D | `m_isInGame` → `BIT_IN_GAME` | ~1 cyc/frame | Merge bool into flags |
+| E | Batching the reentry path | ~2 cyc/reentry | Organize duplicated reentry processing |
+| F | Integer-threshold skip | ~15–25 cyc/frame | Exclude unnecessary aim computation at low sensitivity |
+| G | `m_isAimDisabled` → `aimBlockBits` | ~1–2 cyc/frame | Bit-pack block management for multiple conditions |
+| H | Prefetch of aim write targets | ~0–10 cyc/frame | Warm up the write targets for aimX / aimY |
+| I | Remove per-frame `setRawInputTarget` | ~7–10 cyc/frame | Eliminate redundant HWND updates |
+| J | NDS pointer cache | ~3–5 cyc/frame | Reduce repeated chasing of `emuInstance->getNDS()` etc. |
+| K | `BIT_LAST_FOCUSED` change guard | ~1–2 cyc/frame | Reduce unnecessary focus-change detection |
+| L | Promote inGame pointers to HotPointers | ~4–10 cyc/frame | Improve cache locality of frequently used addresses |
+| M | Single-load of `m_rawFilter` | ~4–6 cyc/frame | Reduce rereads of the pointer within the same frame |
+| N | Remove dead code for `BIT_LAYOUT_PENDING` | Quality improvement | Remove unnecessary code |
+| O | Fixed-point aim pipeline | ~14 cyc/frame | Replace float-based path with Q14 fixed point |
+| P | Fused AimAdjust | Integrated into O | Absorbed into O instead of remaining an independent item |
+| Q | Remove redundant zero checks | ~1–2 cyc/frame | Organize duplicate zero tests |
+| R | Remove redundant safety-net rereads | ~500–1000 cyc/frame | Organize redundant rereads after `PollAndSnapshot`, etc. However, `drainPendingMessages()` inside `DeferredDrain` remains due to the P-35 revert |
+| S | Fuse `pollHotkeys + fetchMouseDelta` | ~8–15 cyc/frame | Retrieve hotkey + mouse delta in one snapshot |
+| T | Remove `hasMouseDelta / hasButtonChanges` | ~0–133 cyc/frame | Reduce unnecessary flags |
+| U | Cache `m_state` inside `Poll()` | ~2–3 cyc/frame | Reduce indirect references |
+| W | Hoist `BIT_IN_GAME_INIT` block out | icache ~300–400 bytes | Move cold initialization out of the hot path |
+| Z1 | Deferred acquisition of mainRAM | ~6–10 cyc/frame | Acquire only when needed |
+| Z2 | Merge `ProcessMoveAndButtonsFast` | ~3–5 cyc/frame | Unify move / buttons into one path |
+| Z3 | Merge `PollAndSnapshot` | ~8–12 cyc/frame | Fuse Poll + snapshot |
+| Z4 | Inline `HandleGlobalHotkeys` | ~5 cyc/frame | Remove call / return |
+| Z5 | Early prefetch of aimX/aimY | 0–40 cyc | Hide L2 misses probabilistically |
 
-## 5.2 Raw Input 層の主要最適化
+## 5.2 Main optimizations in the Raw Input layer
 
-### CAS ループ / locked RMW 排除
+### Removal of CAS loops / locked RMW
 
-Single-Writer を前提として、
+With Single-Writer as the premise:
 - `fetch_or / fetch_and / compare_exchange`
 - `lock xadd`
 
-などの locked 命令を避け、`relaxed load + release store` に置換する方向で最適化された。
+and similar locked instructions were avoided, and the implementation was optimized toward `relaxed load + release store`.
 
-主な適用箇所:
+Main application points:
 - `setVkBit`
-- `processRawInput` のマウス座標
-- `processRawInput` のマウスボタン
-- `processRawInputBatched` の VK / mouse / delta commit
+- Mouse coordinates in `processRawInput`
+- Mouse buttons in `processRawInput`
+- VK / mouse / delta commit phase in `processRawInputBatched`
 
-### `pollHotkeys` フェンス集約
+### Fence aggregation in `pollHotkeys`
 
-複数の acquire load を
-- relaxed load 群
-- `atomic_thread_fence(acquire)` 1 回
+Multiple acquire loads were aggregated into:
+- a group of relaxed loads
+- one `atomic_thread_fence(acquire)`
 
-へ集約し、特に ARM / RISC-V 側のオーダリングコストを削減。
+thereby reducing ordering cost, especially on ARM / RISC-V.
 
-### OPT-R: Safety-net `processRawInputBatched` 除去
+### OPT-R: removal of redundant safety-net rereads
 
-ドレイン後の再読み取りは理論上の安心感はあるが、コストに対して実利が小さいため除去。
+Rereads with duplicate meaning within the same frame, such as after `PollAndSnapshot`, were cleaned up.
+However, in the current code’s `DeferredDrain()`, `processRawInputBatched()` inside `drainPendingMessages()` is essential as a shared-buffer safety net.
+An attempt was made in P-35 to remove this from `DeferredDrain`, but it was reverted because stuck keys reappeared.
 
-### OPT-S: `snapshotInputFrame()` による hotkey + mouse delta 融合
+### OPT-S: fusion of hotkey + mouse delta via `snapshotInputFrame()`
 
-`pollHotkeys()` と `fetchMouseDelta()` を 1 API にまとめ、load / fence / call 回数を削減。
+`pollHotkeys()` and `fetchMouseDelta()` were combined into one API, reducing the number of loads, fences, and calls.
 
 ### OPT-T / U
 
-- `hasMouseDelta / hasButtonChanges` のような補助フラグを整理
-- `Poll()` 内で `m_state` を一度だけ読む
+- Auxiliary flags such as `hasMouseDelta / hasButtonChanges` were eliminated
+- `m_state` is read only once inside `Poll()`
 
-## 5.3 ゲームロジック層の主要最適化
+## 5.3 Main optimizations in the game-logic layer
 
-- `wheelDelta` を先に取得し、武器入力経路をゲート
-- `aimBlockBits` によるブロック状態の統合
-- Q14 固定小数点化
-- `HotPointers` による頻用 RAM アドレスの集約
-- `ProcessMoveAndButtonsFast` で store / load サイクルを整理
-- `HandleGlobalHotkeys` インライン化
-- `mainRAM` 遅延取得
+- Fetch `wheelDelta` first and gate the weapon-input path
+- Unify block state via `aimBlockBits`
+- Convert to Q14 fixed point
+- Aggregate frequently used RAM addresses via `HotPointers`
+- Organize store / load cycles in `ProcessMoveAndButtonsFast`
+- Inline `HandleGlobalHotkeys`
+- Defer acquisition of `mainRAM`
 
 ---
 
-## 6. R1: 保守性・コード品質リファクタリング
+## 6. R1: maintainability / code-quality refactoring
 
-| 項目 | 変更 | 効果 |
+| Item | Change | Effect |
 |---|---|---|
-| R1-1 | `MelonPrimeCompilerHints.h` 新設 | `FORCE_INLINE` / `LIKELY` / `PREFETCH_*` / `HOT/COLD_FUNCTION` / `NOINLINE` の一元化、ODR リスク排除 |
-| R1-2 | `takeSnapshot()` + `scanBoundHotkeys()` 抽出 | `pollHotkeys` / `snapshotInputFrame` / `resetHotkeyEdges` / `hotkeyDown` の重複除去 |
-| R1-3 | `drainPendingMessages()` 抽出 | `Poll()` と `PollAndSnapshot()` のドレインロジック重複排除 |
-| R1-4 | `SmallVkList` 導入 | hotkey バインド経路のヒープ確保削減 |
-| R1-5 | `BindMetroidHotkeysFromConfig()` の Config 一括取得 | 28 回のテーブル取得を 1 回に縮小 |
-| R1-6 | `static bool s_isInstalled` → `m_isNativeFilterInstalled` | マルチインスタンス安全性とテスタビリティ向上 |
-| R1-7 | `TOUCH_IF_PRESSED` マクロ → constexpr テーブル | 型安全・デバッグ容易性向上 |
-| R1-8 | UTF-8 文字化けコメント修正 | `â†'`, `Ã—` などの残骸除去 |
+| R1-1 | Add `MelonPrimeCompilerHints.h` | Centralize `FORCE_INLINE` / `LIKELY` / `PREFETCH_*` / `HOT/COLD_FUNCTION` / `NOINLINE`, remove ODR risk |
+| R1-2 | Extract `takeSnapshot()` + `scanBoundHotkeys()` | Remove duplication across `pollHotkeys` / `snapshotInputFrame` / `resetHotkeyEdges` / `hotkeyDown` |
+| R1-3 | Extract `drainPendingMessages()` | Remove duplicated drain logic in `Poll()` and `PollAndSnapshot()` |
+| R1-4 | Introduce `SmallVkList` | Reduce heap allocations in the hotkey-binding path |
+| R1-5 | Batch config acquisition in `BindMetroidHotkeysFromConfig()` | Reduce 28 table fetches to 1 |
+| R1-6 | `static bool s_isInstalled` → `m_isNativeFilterInstalled` | Improve multi-instance safety and testability |
+| R1-7 | `TOUCH_IF_PRESSED` macro → constexpr table | Improve type safety and debuggability |
+| R1-8 | Fix garbled UTF-8 comments | Remove remnants such as `â†'`, `Ã—`, etc. |
 
-**総評**  
-R1 はホットパスの性能を変えずに、将来の改修と検証をしやすくしたラウンドである。
+**Overall assessment**
+R1 is the round that made future modifications and verification easier without changing hot-path performance.
 
 ---
 
-## 7. R2: 正確性・ヒープ排除完全化
+## 7. R2: correctness / complete heap elimination
 
-| 項目 | 変更 | 効果 |
+| Item | Change | Effect |
 |---|---|---|
-| R2-1 | `processRawInputBatched` ボタン優先度統一 | 単一イベント処理とバッチ処理の意味論を一致 |
-| R2-2 | `processRawInput` の `fetch_add` 化 | コード量削減、意味的正確性向上 |
-| R2-3 | `setHotkeyVks(int, const UINT*, size_t)` 追加 | `std::vector<UINT>` ブリッジの完全撤廃 |
-| R2-4 | `MapQtKeyIntToVks()` + `SmallVkList` 直結 | hotkey バインド経路のヒープ確保 0 |
-| R2-5 | マウスボタン LUT 化 | switch 連鎖をテーブル参照へ |
-| R2-6 | `hasMask[64]` 廃止 | 64B 削減、`m_boundHotkeys` に統合 |
-| R2-7 | `MelonPrimeGameWeapon.cpp` の NDS キャッシュ | 一貫性向上、コールドパス改善 |
-| R2-8 | 残存 UTF-8 文字化け修正 | コメント品質の統一 |
+| R2-1 | Unify button priority in `processRawInputBatched` | Match the semantics of single-event and batched processing |
+| R2-2 | Convert `processRawInput` to `fetch_add` | Reduce code size and improve semantic correctness |
+| R2-3 | Add `setHotkeyVks(int, const UINT*, size_t)` | Completely eliminate the `std::vector<UINT>` bridge |
+| R2-4 | Connect `MapQtKeyIntToVks()` directly to `SmallVkList` | Zero heap allocations in the hotkey-binding path |
+| R2-5 | Convert mouse buttons to LUTs | Replace switch chains with table lookup |
+| R2-6 | Remove `hasMask[64]` | Reduce 64B and merge into `m_boundHotkeys` |
+| R2-7 | NDS cache in `MelonPrimeGameWeapon.cpp` | Improve consistency and the cold path |
+| R2-8 | Fix remaining garbled UTF-8 | Unify comment quality |
 
-**総評**  
-R2 は「ホットパス微改善」よりも、**正確性バグ 1 件の修正** と **ヒープ排除の完了** が本質である。
-
----
-
-## 8. Round 4: P-1～P-10 の統合結果 (旧名も併記)
-
-## 8.1 ステータス一覧
-
-| ID | 種別 | 状態 | 結論 | 旧名 / 元見出し |
-|---|---|---|---|---|
-| P-1 | 正確性 | ✅ 適用 | `snapshotInputFrame` のメモリオーダリング修正 | `snapshotInputFrame` メモリオーダリング不整合 |
-| P-2 | パフォーマンス | ❌ リバート | 二重プリフェッチ除去は性能悪化 | `HandleInGameLogic` / `ProcessAimInputMouse` 二重プリフェッチ除去 |
-| P-3 | パフォーマンス | ✅ 適用 | `m_cachedPanel` による panel ポインタチェーン削減 | `UpdateInputState` panel ポインタチェーン最適化 |
-| P-4 | パフォーマンス | ❌ 見送り | 再入パス二重管理の複雑化が大きい | 再入パス軽量化 |
-| P-5 | コード品質 | ✅ 適用 | MSVC でも cold code の inlining を抑制 | MSVC `COLD_FUNCTION` 改善 |
-| P-6 | パフォーマンス | ✅ 適用 | `processRawInputBatched` の型分岐ヒント改善 | `processRawInputBatched` イベントループ型分岐最適化 |
-| P-7 | パフォーマンス | ❌ 不要 | 既に早期脱出が存在 | `HandleGlobalHotkeys` 条件最適化 |
-| P-8 | パフォーマンス | ❌ 見送り | `FrameInputState` 再配置はリスクが高い | `FrameInputState` パディング活用 |
-| P-9 | パフォーマンス / クリーンアップ | ✅ 適用 | reset 系の統合とフォーカス遷移側の整理 | `RunFrameHook` フォーカス遷移の `UNLIKELY` 分岐マージ |
-| P-10 | パフォーマンス | ❌ 却下 | `hasKeyChanges` 除去は逆効果 | `processRawInputBatched` キーボードデルタの `hasKeyChanges` 分岐除去 |
-
-## 8.2 適用済み項目の要点
-
-### P-1 (旧名: `snapshotInputFrame` メモリオーダリング不整合)
-- x86 では実害が見えにくい
-- ARM / RISC-V での不整合防止が主眼
-- 最小変更での修正が推奨
-
-### P-3 (旧名: `UpdateInputState` panel ポインタチェーン最適化)
-- `emuInstance->getMainWindow()->panel->getDelta()` の 3 段ポインタ追跡を、
-  `m_cachedPanel->getDelta()` に短縮
-- `OnEmuStart()` と `NotifyLayoutChange()` で更新すれば十分
-
-### P-5 (旧名: MSVC `COLD_FUNCTION` 改善)
-- `COLD_FUNCTION` を GCC / Clang だけでなく MSVC でも cold 側へ寄せる方向へ改善
-
-### P-6 (旧名: `processRawInputBatched` イベントループ型分岐最適化)
-- `processRawInputBatched()` 内のイベント型分岐に対して、実際の入力比率に合った分岐ヒントを与える
-
-### P-9 (旧名: `RunFrameHook` フォーカス遷移の `UNLIKELY` 分岐マージ)
-Round 4 文書では「RunFrameHook フォーカス遷移の `UNLIKELY` 分岐マージ」という表現があるが、統合すると本質は以下である。
-
-- reset 系 API の整理
-- `resetAll()` による fence 統合
-- フォーカス遷移処理の冷経路化
-- 既存 FIX との整合性改善
-
-## 8.3 非採用 / 却下の要点
-
-### P-2: 二重プリフェッチ除去はリバート (旧名: `HandleInGameLogic` / `ProcessAimInputMouse` 二重プリフェッチ除去)
-見た目は冗長でも、`ProcessAimInputMouse()` 側の近距離プリフェッチは「保険」として有効であり、MainRAM のワーキングセットを考えると削除は逆効果だった。
-
-### P-4: 再入パス軽量化は見送り (旧名同じ)
-再入は稀で、`FrameAdvanceTwice()` が支配的。10～20 cyc の削減より、二重実装によるバグ混入リスクの方が大きい。
-
-### P-7: 不要 (旧名: `HandleGlobalHotkeys` 条件最適化)
-既に `HandleGlobalHotkeys` には早期脱出があり、追加の最適化余地はほぼない。
-
-### P-8: 見送り (旧名: `FrameInputState` パディング活用)
-`FrameInputState` の `_pad` 再利用は理論上可能でも、API 影響と可読性低下が大きい。
-
-### P-10: 却下 (旧名: `processRawInputBatched` キーボードデルタの `hasKeyChanges` 分岐除去)
-キーボード入力がないフレームが大半のため、`hasKeyChanges` ガードの方が合理的。
-
-### その他の却下
-- `processRawInputBatched` 手動アンロール
-- `mainRAM` 追加プリフェッチ
-- `Config::Table` ルックアップ高速化
-- `UpdateInputState` の UnrollCheckDown/Press 再最適化
+**Overall assessment**
+The essence of R2 is not minor hot-path improvement, but rather **one correctness bug fix** and **completion of heap elimination**.
 
 ---
 
-## 9. Round 5: P-11～P-27 の統合結果 (旧名も併記)
+## 8. Round 4: integrated results for P-1–P-10 (with former names)
 
-## 9.1 Round 5 の中心テーマ
+## 8.1 Status list
 
-Round 5 は CPU サイクル削減そのものよりも、以下を主目的とする。
-
-1. **入力取得の鮮度を上げる**
-2. **フレームタイミングのブレを減らす**
-3. **Raw Input と SDL メッセージポンプの干渉を抑える**
-4. **エイム出力の切り捨て損失をなくす**
-5. **syscall / mutex / 仮想ディスパッチの定常コストを削る**
-
-## 9.2 ステータス一覧 (正規化版)
-
-| ID | 種別 | 状態 | 統合後の扱い | 旧名 / 元見出し |
+| ID | Category | Status | Conclusion | Former name / original heading |
 |---|---|---|---|---|
-| P-11 | タイマー解像度 | ✅ | `NtSetTimerResolution` 導入 | Windows タイマー解像度 (`NtSetTimerResolution`) |
-| P-12 | フレームリミッタ | ✅ | Hybrid Sleep + Spin | 精密ハイブリッド Sleep+Spin フレームリミッタ |
-| P-13 | フレーム順序 | ✅ | Late-Poll アーキテクチャ | Late-Poll フレームアーキテクチャ |
-| P-14 | 歴史的段階 | ⚠→✅ P-33 で空インライン化 | PrePoll バッチドレイン。Round 5 では P-19 / P-20 に吸収された流れ。Round 6 (P-33) で `PrePollRawInput()` を空インライン化し完了 | PrePoll バッチドレイン (Stuck Keys 修正), PrePollRawInput |
-| P-15 | ジョイスティック鮮度 | ✅ | `inputRefreshJoystickState()` 導入 | Late-Poll ジョイスティック |
-| P-16 | VSync 復帰修正 | ✅ | 重複記述を統合 | VSync 設定復元, VSync 復帰バグ修正 |
-| P-17 | サブピクセル残差蓄積 | ✅ | 重複記述を統合 | サブピクセルアキュムレータ, サブピクセルエイム蓄積, サブピクセル残差アキュムレータ |
-| P-18 | Dual-Path エイム | ✅ | Direct path / Legacy path の二系統 | Dual-Path エイムパイプライン, P-18c 残差クランプ |
-| P-19 | Stuck keys 根本修正 | ✅ | HiddenWndProc で即時 `processRawInput` | Stuck keys 根本修正 — HiddenWndProc processRawInput |
-| P-20 | PrePollRawInput 除去 | ⚠→✅ P-33 で完了 | Round 5 の設計どおり P-19 により不要化。Round 6 (P-33) で呼び出し除去 + 空インライン化を実施 | PrePollRawInput 除去 |
-| P-20b | 残差破壊バグ修正 | ✅ | `InputReset()` から残差リセット除去 | InputReset バグ修正 |
-| P-20c | P-3 適用漏れ修正 | ✅ | `m_cachedPanel` のホットパス反映 | P-3 キャッシュ適用漏れ修正 |
-| P-21 | `inputProcess` 分離 | ✅ | edge 検出と状態再ポーリングの分離 | `inputProcess` 分離 |
-| P-22 | DeferredDrain 分離 | ✅ | PollAndSnapshot から drain を切り離し。P-35 はリバート済み、drainPendingMessages を維持 | DeferredDrainInput 呼び出し追加 |
-| P-23 | ジョイスティック不在高速パス | ✅ | joystick 未接続時の SDL overhead 削減 | ジョイスティック不在時高速パス |
-| P-24 | 外部ループ hotkey 早期脱出 | ✅ | `hotkeyPress==0` で 7 チェック回避 | 外部ループ ホットキー一括早期脱出 |
-| P-25 | セーブフラッシュ間引き | ✅ | 30 フレームごとに flush check | セーブフラッシュ間引き |
-| P-26a | Auto Screen Layout バイパス | ✅ | MelonPrime では不要な自動レイアウト処理を除外 | Auto Screen Layout バイパス |
-| P-26b | DeferredDrain スロットル | ❌ 撤回 | 8 フレームごと drain という案は文書上の一時案。現コードは毎フレーム `DeferredDrain()` で、8-frame counter も旧 throttle コメントも存在しない | DeferredDrain スロットル |
-| P-27 | 整数スピン比較 | ✅ | float 乗算を除去 | 整数スピン比較 |
+| P-1 | Correctness | ✅ Applied | Fix memory ordering in `snapshotInputFrame` | `snapshotInputFrame` memory-ordering inconsistency |
+| P-2 | Performance | ❌ Reverted | Removing double prefetch hurt performance | Removal of double prefetch in `HandleInGameLogic` / `ProcessAimInputMouse` |
+| P-3 | Performance | ✅ Applied | Reduce panel pointer chain via `m_cachedPanel` | `UpdateInputState` panel pointer-chain optimization |
+| P-4 | Performance | ❌ Deferred | Double management of the reentry path is too complex | Reentry-path lightweighting |
+| P-5 | Code quality | ✅ Applied | Suppress inlining of cold code on MSVC as well | MSVC `COLD_FUNCTION` improvement |
+| P-6 | Performance | ✅ Applied | Improve type-branch hints in `processRawInputBatched` | Event-loop type-branch optimization in `processRawInputBatched` |
+| P-7 | Performance | ❌ Unnecessary | Early exit already exists | `HandleGlobalHotkeys` condition optimization |
+| P-8 | Performance | ❌ Deferred | Repacking `FrameInputState` is too risky | Use of `FrameInputState` padding |
+| P-9 | Performance / cleanup | ✅ Applied | Consolidate reset APIs and reorganize the focus-transition side | Merge of `UNLIKELY` focus-transition branches in `RunFrameHook` |
+| P-10 | Performance | ❌ Rejected | Removing `hasKeyChanges` is counterproductive | Removal of the `hasKeyChanges` branch for keyboard deltas in `processRawInputBatched` |
 
-## 9.3 P-11: Windows タイマー解像度 (旧名: `NtSetTimerResolution`)
+## 8.2 Key points of the applied items
 
-- `NtSetTimerResolution(5000)` を `WinInternal` に統合
-- 0.5ms 解像度を狙う
-- 失敗時は `timeBeginPeriod(1)` へフォールバック
+### P-1 (former name: `snapshotInputFrame` memory-ordering inconsistency)
+- On x86, actual impact is hard to observe
+- The main goal is preventing inconsistency on ARM / RISC-V
+- A minimal-change fix is recommended
 
-**効果**
-- `SDL_Delay(1)` が最大 15.6ms に張り付く問題を大幅に緩和
-- P-12 のスピンマージンを 1.5ms → 1.0ms に縮小可能
-- CPU スピン浪費を約 33% 改善
+### P-3 (former name: `UpdateInputState` panel pointer-chain optimization)
+- Shortens the three-step pointer chase of `emuInstance->getMainWindow()->panel->getDelta()` to `m_cachedPanel->getDelta()`
+- Updating it in `OnEmuStart()` and `NotifyLayoutChange()` is sufficient
 
-## 9.4 P-12: 精密ハイブリッド Sleep + Spin (旧名: 精密ハイブリッド Sleep+Spin フレームリミッタ)
+### P-5 (former name: MSVC `COLD_FUNCTION` improvement)
+- Improve `COLD_FUNCTION` so that it pushes code toward the cold side on MSVC as well as GCC / Clang
 
-旧:
+### P-6 (former name: event-loop type-branch optimization in `processRawInputBatched`)
+- Provide branch hints in `processRawInputBatched()` that match the actual input-type ratios
+
+### P-9 (former name: merge of `UNLIKELY` focus-transition branches in `RunFrameHook`)
+Round 4 uses the wording “merge of `UNLIKELY` focus-transition branches in RunFrameHook”, but once integrated, the essence is the following.
+
+- Organizing reset-related APIs
+- Fence unification through `resetAll()`
+- Moving focus-transition handling onto the cold path
+- Improving consistency with existing FIX items
+
+## 8.3 Key points of non-adopted / rejected items
+
+### P-2: removal of double prefetch was reverted (former name: removal of double prefetch in `HandleInGameLogic` / `ProcessAimInputMouse`)
+Even if it appears redundant, the near-distance prefetch on the `ProcessAimInputMouse()` side acts as an “insurance policy”, and deleting it was counterproductive considering the MainRAM working set.
+
+### P-4: reentry-path lightweighting deferred (same former name)
+Reentry is rare, and `FrameAdvanceTwice()` is dominant. The bug-injection risk from a double implementation is larger than a 10–20 cyc reduction.
+
+### P-7: unnecessary (former name: `HandleGlobalHotkeys` condition optimization)
+`HandleGlobalHotkeys` already has an early exit, so there is almost no further optimization headroom.
+
+### P-8: deferred (former name: use of `FrameInputState` padding)
+Although reusing `_pad` in `FrameInputState` is theoretically possible, the API impact and readability loss are too large.
+
+### P-10: rejected (former name: removal of the `hasKeyChanges` branch for keyboard deltas in `processRawInputBatched`)
+Since most frames do not have keyboard input, keeping the `hasKeyChanges` guard is the more rational choice.
+
+### Other rejected items
+- Manual unrolling of `processRawInputBatched`
+- Additional prefetching of `mainRAM`
+- Faster `Config::Table` lookup
+- Re-optimization of `UnrollCheckDown/Press` in `UpdateInputState`
+
+---
+
+## 9. Round 5: integrated results for P-11–P-27 (with former names)
+
+## 9.1 Central theme of Round 5
+
+The primary purpose of Round 5 is not CPU-cycle reduction itself, but the following:
+
+1. **Increase the freshness of input acquisition**
+2. **Reduce frame-timing jitter**
+3. **Suppress interference between Raw Input and the SDL message pump**
+4. **Eliminate truncation loss in aim output**
+5. **Reduce the steady-state cost of syscalls / mutexes / virtual dispatch**
+
+## 9.2 Status list (normalized edition)
+
+| ID | Category | Status | Handling after integration | Former name / original heading |
+|---|---|---|---|---|
+| P-11 | Timer resolution | ✅ | Introduce `NtSetTimerResolution` | Windows timer resolution (`NtSetTimerResolution`) |
+| P-12 | Frame limiter | ✅ | Hybrid Sleep + Spin | Precise hybrid Sleep+Spin frame limiter |
+| P-13 | Frame order | ✅ | Late-Poll architecture | Late-Poll frame architecture |
+| P-14 | Historical stage | ⚠→✅ Empty-inlined in P-33 | PrePoll batched drain. In Round 5, this flow was absorbed into P-19 / P-20. Completed in Round 6 (P-33) by making `PrePollRawInput()` empty-inline | PrePoll batched drain (Stuck Keys fix), PrePollRawInput |
+| P-15 | Joystick freshness | ✅ | Introduce `inputRefreshJoystickState()` | Late-Poll joystick |
+| P-16 | VSync restore fix | ✅ | Duplicate descriptions unified | VSync setting restoration, VSync restore bug fix |
+| P-17 | Subpixel residual accumulation | ✅ | Duplicate descriptions unified | Subpixel accumulator, subpixel aim accumulation, subpixel residual accumulator |
+| P-18 | Dual-Path aim | ✅ | Two paths: Direct path / Legacy path | Dual-Path aim pipeline, P-18c residual clamp |
+| P-19 | Root stuck-keys fix | ✅ | Immediate `processRawInput` in HiddenWndProc | Root stuck-keys fix — HiddenWndProc processRawInput |
+| P-20 | Removal of PrePollRawInput | ⚠→✅ Completed in P-33 | As designed in Round 5, it became unnecessary because of P-19. Round 6 (P-33) removed the calls and replaced it with an empty-inline stub | Removal of PrePollRawInput |
+| P-20b | Residual-destruction bug fix | ✅ | Remove residual reset from `InputReset()` | InputReset bug fix |
+| P-20c | Fix for missing application of P-3 | ✅ | Reflect `m_cachedPanel` on the hot path | P-3 cache application omission fix |
+| P-21 | Split `inputProcess` | ✅ | Separate edge detection from state repolling | `inputProcess` split |
+| P-22 | DeferredDrain split | ✅ | Split drain out of PollAndSnapshot. P-35 has been reverted, and `drainPendingMessages` is retained | DeferredDrainInput call addition |
+| P-23 | Fast path for no joystick | ✅ | Reduce SDL overhead when no joystick is connected | Fast path when joystick is absent |
+| P-24 | Early exit for outer-loop hotkeys | ✅ | Avoid 7 checks when `hotkeyPress==0` | Outer-loop hotkey unified early exit |
+| P-25 | Save-flush throttling | ✅ | Perform flush check every 30 frames | Save-flush throttling |
+| P-26a | Auto Screen Layout bypass | ✅ | Exclude unnecessary automatic layout processing in MelonPrime | Auto Screen Layout bypass |
+| P-26b | DeferredDrain throttle | ❌ Withdrawn | The “drain once every 8 frames” plan was only a temporary document-side proposal. Current code runs `DeferredDrain()` every frame, and has neither the 8-frame counter nor the old throttle comment | DeferredDrain throttle |
+| P-27 | Integer spin comparison | ✅ | Remove float multiplication | Integer spin comparison |
+
+## 9.3 P-11: Windows timer resolution (former name: `NtSetTimerResolution`)
+
+- Integrate `NtSetTimerResolution(5000)` into `WinInternal`
+- Target 0.5ms resolution
+- Fall back to `timeBeginPeriod(1)` on failure
+
+**Effect**
+- Greatly alleviates the problem where `SDL_Delay(1)` can stick at up to 15.6ms
+- Allows the spin margin in P-12 to be reduced from 1.5ms → 1.0ms
+- Improves wasted CPU spin time by about 33%
+
+## 9.4 P-12: precise hybrid Sleep + Spin (former name: precise hybrid Sleep+Spin frame limiter)
+
+Old:
 - `SDL_Delay(round(ms))`
-- フレーム時間が 15～32ms へブレる
+- Frame time fluctuated into the 15–32ms range
 
-新:
-1. 粗い待機を `SDL_Delay`
-2. 残りを QPC ベースのスピンで詰める
+New:
+1. Perform the coarse wait with `SDL_Delay`
+2. Fill the remaining time with a QPC-based spin
 
-**効果**
-- jitter を ±15ms 級から ±0.03ms 級へ改善
-- ただし最大 ~1ms のスピン待ちによる CPU 使用は増える
+**Effect**
+- Improves jitter from roughly ±15ms down to roughly ±0.03ms
+- However, CPU usage increases due to up to ~1ms of spin waiting
 
-## 9.5 P-13: Late-Poll フレームアーキテクチャ (旧名同じ)
+## 9.5 P-13: Late-Poll frame architecture (same former name)
 
-旧:
+Old:
 ```text
 Poll → RunFrame → Render → Sleep
 ```
 
-新:
+New:
 ```text
 Sleep → Poll → RunFrame → Render
 ```
 
-これにより、Sleep 中に到着した入力を **次フレームではなく直後の RunFrame に反映** できる。
+This makes it possible for input that arrives during Sleep to be reflected **in the immediately following RunFrame, rather than in the next frame**.
 
-## 9.6 P-14: PrePoll バッチドレイン / PrePollRawInput (歴史的段階, 現コードは空インラインのみ)
+## 9.6 P-14: PrePoll batched drain / PrePollRawInput (historical stage; current code has only an empty inline)
 
-P-14 では、SDL の `PeekMessage` が WM_INPUT を dispatch する前に `GetRawInputBuffer` で救出する作戦が取られた。旧コメントでは **PrePollRawInput** と書かれている箇所がこれに対応する。
+In P-14, the strategy was to rescue WM_INPUT with `GetRawInputBuffer` before SDL’s `PeekMessage` could dispatch it. Places labeled **PrePollRawInput** in old comments correspond to this item.
 
 ```text
 PrePollRawInput
@@ -561,33 +555,31 @@ PrePollRawInput
 → PollAndSnapshot
 ```
 
-しかしこの方式には
-- `PrePollRawInput` と `inputProcess` の間のレース
-- P-15 による SDL ジョイスティック更新回数増加との相性
-- syscall の増大
+However, this method has the following limitations:
+- A race between `PrePollRawInput` and `inputProcess`
+- Poor interaction with the increased number of SDL joystick updates introduced by P-15
+- Increased syscall count
 
-という限界がある。
+**Document-side endpoint in Round 5**
+- P-19 makes the HiddenWndProc side run `processRawInput` immediately
+- P-20 removes PrePollRawInput itself
 
-**Round 5 文書上の到達点**
-- P-19 で HiddenWndProc 側が即時 `processRawInput`
-- P-20 で PrePollRawInput 自体を削除
+**However, according to the current-code audit (Round 6 update)**
+- In Round 6 (P-33), `PrePollRawInput()` was converted into an empty inline
+- The calls from `EmuThread.cpp` were also removed
+- Therefore, **P-14 became fully historical due to P-33**
 
-**ただし現コード監査結果 (Round 6 更新)**
-- Round 6 (P-33) により `PrePollRawInput()` は空インライン化された
-- `EmuThread.cpp` からの呼び出しも除去済み
-- したがって、**P-14 は P-33 により完全に歴史的段階となった**
+## 9.7 P-15 + P-21: separation of joystick state updates (former names: Late-Poll joystick / `inputRefreshJoystickState()` / split of `inputProcess`)
 
-## 9.7 P-15 + P-21: ジョイスティック状態更新の分離 (旧名: Late-Poll ジョイスティック / `inputRefreshJoystickState()` / `inputProcess` 分離)
+Problem:
+- `inputProcess()` performs both edge detection and state updates at the same time
+- Calling `inputProcess()` again after Sleep breaks `lastHotkeyMask` and can cause double firing
 
-問題:
-- `inputProcess()` は edge 検出と状態更新を同時に行う
-- Sleep 後にもう一度 `inputProcess()` を呼ぶと、`lastHotkeyMask` が壊れて二重発火の温床になる
+Solution:
+- On the main-loop side, execute `inputProcess()` only once to finalize edge detection
+- After Sleep, use `inputRefreshJoystickState()` to update **only the state**
 
-解決:
-- メインループ側は `inputProcess()` を 1 回だけ実行し edge を確定
-- Sleep 後は `inputRefreshJoystickState()` で **状態だけ** 更新する
-
-この節は、Round 5 の元文書では **P-15: Late-Poll ジョイスティック** と **P-21: `inputProcess` 分離** に分かれていた。
+In the original Round 5 document, this was split across **P-15: Late-Poll joystick** and **P-21: `inputProcess` split**.
 
 ```cpp
 void EmuInstance::inputRefreshJoystickState()
@@ -595,169 +587,161 @@ void EmuInstance::inputRefreshJoystickState()
     SDL_JoystickUpdate();
     inputMask = keyInputMask & joyInputMask;
     hotkeyMask = keyHotkeyMask | joyHotkeyMask;
-    // lastHotkeyMask / hotkeyPress / hotkeyRelease は更新しない
+    // lastHotkeyMask / hotkeyPress / hotkeyRelease are not updated
 }
 ```
 
-## 9.8 P-16: VSync 復帰修正 (旧名: VSync 設定復元 / VSync 復帰バグ修正)
+## 9.8 P-16: VSync restore fix (former names: VSync setting restoration / VSync restore bug fix)
 
-FastForward / SlowMo の出入りで VSync を無条件に `true` に戻すと、ユーザー設定を破壊する。ソースコメントで **VSync 設定復元** または **VSync 復帰バグ修正** と書かれている箇所はこの項目を指す。
+If VSync is unconditionally restored to `true` when entering or leaving FastForward / SlowMo, user settings are broken. Places in source comments labeled **VSync setting restoration** or **VSync restore bug fix** refer to this item.
 
-修正後は
-- 現在の `Screen.VSync` 設定
+After the fix, the following are handled correctly:
+- Current `Screen.VSync` setting
 - `Screen.VSyncInterval`
-- FastForward / SlowMo の出入り
+- Entry / exit of FastForward / SlowMo
 
-を正しく考慮し、**「解除したら必ず true」ではなく「元設定へ戻す」** 方式へ修正した。
+The behavior was changed from **“always restore to true on exit”** to **“restore to the original setting”**.
 
-## 9.9 P-17: サブピクセル残差蓄積 (旧名: サブピクセルアキュムレータ / サブピクセルエイム蓄積 / サブピクセル残差アキュムレータ)
+## 9.9 P-17: subpixel residual accumulation (former names: subpixel accumulator / subpixel aim accumulation / subpixel residual accumulator)
 
-低感度時には、`delta * scale` が整数化でゼロになりやすく、細かいマウス移動が消えていた。コメント上は **サブピクセルアキュムレータ**、**サブピクセルエイム蓄積**、**サブピクセル残差アキュムレータ** のいずれで書かれていても同じ系列の改善を指す。
+At low sensitivity, `delta * scale` was often quantized to zero, causing fine mouse movement to disappear. Whether comments call it **subpixel accumulator**, **subpixel aim accumulation**, or **subpixel residual accumulator**, they all refer to the same family of improvements.
 
-修正:
-- Q14 固定小数点で残差を保持
-- 出力した整数分だけ `residual -= out << 14`
-- 小数部を次フレームへ持ち越す
+Fix:
+- Store residuals in Q14 fixed point
+- Subtract the emitted integer portion with `residual -= out << 14`
+- Carry the fractional part over to the next frame
 
-**効果**
-- 低速・低感度の aim ステッピングを改善
-- 切り捨て損失ゼロ
-- 残差は、感度変更、レイアウト変更、エイムブロックなどでのみ明示的にリセット
+**Effect**
+- Improves aim stepping at low speed / low sensitivity
+- Eliminates truncation loss
+- Residuals are explicitly reset only on sensitivity changes, layout changes, aim blocking, and similar events
 
-## 9.10 P-18: Dual-Path エイムパイプライン (旧名同じ)
+## 9.10 P-18: Dual-Path aim pipeline (same former name)
 
 ### Direct Path
-- ASM パッチが有効なとき
-- `residual >> 12` で 4 倍分解能
-- デッドゾーンを避け、毎フレーム即出力
+- Used when the ASM patch is enabled
+- `residual >> 12` provides 4× resolution
+- Avoids dead zones and outputs immediately every frame
 
 ### Legacy Path
-- 従来互換パス
-- `apply_aim()` を通し、デッドゾーンやスナップを保持
+- Conventional compatibility path
+- Passes through `apply_aim()` and preserves dead zones and snapping
 
-### 残差クランプ
-P-18c として残差の暴走を防ぐクランプも導入。
+### Residual clamp
+A clamp was also introduced as P-18c to prevent residual runaway.
 
-## 9.11 P-19: HiddenWndProc 即時 `processRawInput` (旧名: Stuck keys 根本修正 / HiddenWndProc processRawInput)
+## 9.11 P-19: immediate `processRawInput` in HiddenWndProc (former names: root stuck-keys fix / HiddenWndProc processRawInput)
 
-P-14 の「SDL に dispatch される前に buffer から救う」発想ではなく、  
-**dispatch された瞬間に `lParam` の `HRAWINPUT` を読み切る** 方式へ移行。
+Instead of P-14’s idea of “rescue it from the buffer before SDL dispatches it”, the design moved to **reading out the `HRAWINPUT` in `lParam` at the instant it is dispatched**.
 
-旧見出しの **Stuck keys 根本修正 — HiddenWndProc processRawInput** はこの節に対応する。
+The former heading **Root stuck-keys fix — HiddenWndProc processRawInput** corresponds to this section.
 
-これにより、
-- SDL がいつ `PeekMessage` しても安全
-- DefWindowProc に食われる前に確保
-- stuck keys の根本を断つ
+This makes the following true:
+- Safe no matter when SDL calls `PeekMessage`
+- Captured before DefWindowProc can consume it
+- Eliminates the root cause of stuck keys
 
-## 9.12 P-20: PrePollRawInput 除去 (関連旧名: P-20b `InputReset` バグ修正 / P-20c P-3 キャッシュ適用漏れ修正)
+## 9.12 P-20: removal of PrePollRawInput (related former names: P-20b `InputReset` bug fix / P-20c P-3 cache application omission fix)
 
-P-19 により SDL dispatch が脅威でなくなったため、**Round 5 文書の設計上は** PrePollRawInput は不要になった。
+Because P-19 removed the SDL dispatch threat, **from the design perspective of the Round 5 document**, PrePollRawInput became unnecessary.
 
-**設計上の効果**
-- `GetRawInputBuffer` 呼び出し回数削減
-- PeekMessage / drain 系 syscall 削減
-- 入力経路の簡素化
+**Design-side effects**
+- Fewer `GetRawInputBuffer` calls
+- Fewer PeekMessage / drain-related syscalls
+- A simpler input path
 
-**監査注記 (Round 6 更新)**
-- Round 6 (P-33) により `PrePollRawInput()` の実装は削除、呼び出しも除去済み
-- ヘッダーでは空インラインとして残留（ソース互換性維持）
-- **P-20 の設計到達点は P-33 により完了**
+**Audit note (Round 6 update)**
+- In Round 6 (P-33), the implementation of `PrePollRawInput()` was removed, and its calls were also removed
+- An empty inline remains in the header for source compatibility
+- **The design endpoint of P-20 was completed by P-33**
 
-## 9.13 P-22: DeferredDrain 分離 (旧名: `DeferredDrainInput()` 呼び出し追加)
+## 9.13 P-22: DeferredDrain split (former name: `DeferredDrainInput()` call addition)
 
-`PollAndSnapshot()` から `drainPendingMessages()` を切り離し、
-旧コメントで **DeferredDrainInput 呼び出し追加** と書かれている箇所もここに含める。
-- 入力反映のクリティカルパス
-- メッセージ掃除のノンクリティカルパス
+`drainPendingMessages()` was split out of `PollAndSnapshot()`, and places in old comments labeled **DeferredDrainInput call addition** are also included here. It separates:
+- The critical path of input reflection
+- The non-critical path of message cleanup
 
-を分離した。
+**Important audit note**
+- In the original Round 5 text, `DeferredDrainInput()` was placed **immediately after RunFrame**
+- However, in the current code it was moved by later changes to **after `drawScreen()`**
+- Therefore, the essence of P-22 is the **split itself**, and the description of its final placement should be understood as having been overwritten by later changes outside the 1–5 range
 
-**重要な監査注記**
-- Round 5 原文では `DeferredDrainInput()` は **RunFrame 直後** に置かれていた
-- しかし現コードでは、後続変更により **`drawScreen()` の後** に配置されている
-- したがって、P-22 の本質は **「分離」** であり、**最終配置説明は 1～5 外の後続変更で上書き済み** と整理する
+## 9.14 P-23: fast path when no joystick is connected (same former name)
 
-## 9.14 P-23: ジョイスティック不在時高速パス (旧名同じ)
-
-KB+M プレイヤーでも毎フレーム
+Even for KB+M players, every frame was executing:
 - `SDL_LockMutex`
 - `SDL_JoystickUpdate`
 - `SDL_UnlockMutex`
 
-が走っていた。
+When no joystick is connected, a new connection is checked only once every 60 frames, and everything else is skipped completely. In the current code, both `inputProcess()` and `inputRefreshJoystickState()` each have a throttled check, avoiding SDL overhead in both the outer loop and the frame hot path during normal frames.
 
-joystick 未接続時は、60 フレームに 1 回だけ新規接続確認を行い、残りは完全スキップする。現コードでは `inputProcess()` と `inputRefreshJoystickState()` がそれぞれ throttled check を持ち、outer loop と frame hot path の両方で通常フレームの SDL overhead を避ける。
+## 9.15 P-24: outer-loop unified early exit for hotkeys (former name: outer-loop hotkey unified early exit)
 
-## 9.15 P-24: 外部ループ hotkey 一括早期脱出 (旧名: 外部ループ ホットキー一括早期脱出)
-
-毎フレーム 7 個の `hotkeyPressed()` を呼ぶのは無駄。  
-ほぼ全フレームで `hotkeyPress == 0` なので、
+Calling `hotkeyPressed()` for seven hotkeys every frame is wasteful.
+Since `hotkeyPress == 0` in almost every frame, the logic is aggregated as follows:
 
 ```cpp
 if (UNLIKELY(emuInstance->hotkeyPress)) {
-    // 7 個のチェック
+    // 7 checks
 }
 ```
 
-に集約する。
+## 9.16 P-25: save-flush throttling (same former name)
 
-## 9.16 P-25: セーブフラッシュ間引き (旧名同じ)
+Three `CheckFlush()` calls per frame are excessive.
+They are throttled to once every 30 frames (about 0.5 seconds).
 
-毎フレーム 3 回の `CheckFlush()` は過剰。  
-30 フレームごと (約 0.5 秒) に 1 回へ間引く。
+## 9.17 P-26a: Auto Screen Layout bypass (same former name)
 
-## 9.17 P-26a: Auto Screen Layout バイパス (旧名同じ)
+MelonPrime manages screen layout independently, so melonDS-side auto screen sizing is unnecessary.
+Therefore, per-frame `PowerControl9` reads and array updates are excluded under compile-time conditions.
 
-MelonPrime は画面レイアウトを独自管理しており、melonDS 側の auto screen sizing は不要。  
-したがって毎フレームの `PowerControl9` 読み取りや配列更新をコンパイル条件で除外する。
+## 9.18 P-26b: DeferredDrain throttle (same former name; treated as withdrawn by audit)
 
-## 9.18 P-26b: DeferredDrain スロットル (旧名同じ, 監査上は撤回扱い)
+Running `DeferredDrain()` every frame accumulates PeekMessage syscalls in 8kHz mouse environments.
+A temporary proposal therefore suggested draining only once every 8 frames.
 
-`DeferredDrain()` を毎フレーム行うと、8kHz マウス環境では PeekMessage syscall が積み上がる。  
-そこで 8 フレームごとに drain する、という案が一時的に提案された。
+**However, the audit result is as follows**
+- The current code’s `DeferredDrain()` runs every frame and has no 8-frame counter
+- The old comments of the `With P-26 throttle (every 8 frames)` type have already been removed
+- Therefore, this item is treated as **not adopted / withdrawn in the current implementation**
 
-**ただし監査結果**
-- 現コードの `DeferredDrain()` は毎フレーム実行される構造で、8 フレーム周期カウンタは存在しない
-- 以前残っていた `With P-26 throttle (every 8 frames)` 系の旧コメントは削除済み
-- したがって本項目は **現行実装では未採用 / 撤回扱い** とする
-
-**提案当時の想定値**
+**Estimated values at the time of the proposal**
 - 8kHz / 60fps ≒ 133 WM_INPUT / frame
-- 8 フレーム蓄積でも ~1064 メッセージ
-- Windows キュー上限 10,000 未満に十分収まる
+- Even after accumulating for 8 frames, that is only about ~1064 messages
+- Still comfortably below the Windows queue limit of 10,000
 
-## 9.19 P-27: 整数スピン比較 (旧名同じ)
+## 9.19 P-27: integer spin comparison (same former name)
 
-旧:
+Old:
 ```cpp
 while (SDL_GetPerformanceCounter() * perfCountsSec < targetTime) { ... }
 ```
 
-新:
-- `targetTime` をあらかじめ tick に変換
-- ループ内は整数比較のみ
+New:
+- Convert `targetTime` to ticks in advance
+- Use integer comparison only inside the loop
 
-これにより、スピン中の float 乗算オーバーヘッドを削る。
+This removes the overhead of float multiplication during the spin wait.
 
 ---
 
-## 10. 最終フレームパイプライン (1～5 統合後 / 旧名対応版)
+## 10. Frame pipeline (starting from Round 5 / supplemented by current-code audit)
 
-Round 5 までを統合した**到達点**は次の形で整理できる。
+When the **document-side endpoint** integrated up through Round 5 is corrected using current-code auditing from Round 6 onward, it can be organized as follows.
 
 ```text
-Round 5 文書上の到達点:
-  メインループ:
-    inputProcess()                   ← edge 検出はここで 1 回だけ
-    hotkeyPressed(HK_Reset) など     ← P-24 で一括ゲート
+Document-side endpoint in Round 5:
+  Main loop:
+    inputProcess()                   ← edge detection is performed only once here
+    hotkeyPressed(HK_Reset), etc.    ← unified gate by P-24
 
     frameAdvanceOnce() {
       Sleep / HybridLimiter          ← P-11, P-12
       inputRefreshJoystickState()    ← P-15, P-21
 
       RunFrameHook() {
-        PollAndSnapshot()            ← Z3 + P-19/P-20 後の最終入力取得
+        PollAndSnapshot()            ← final input acquisition after Z3 + P-19/P-20
         UpdateInputState()
         HandleInGameLogic()
           ProcessMoveAndButtonsFast()← Z2
@@ -769,311 +753,307 @@ Round 5 文書上の到達点:
       RunFrame()
       drawScreen()
 
-      DeferredDrainInput()           ← P-22 (毎フレーム; P-26b throttle は未採用)
+      DeferredDrainInput()           ← P-22 (every frame; P-26b throttle not adopted)
     }
 ```
 
-### 現コード監査ベースの注記 (Round 6 適用後)
-- P-33 により `PrePollRawInput()` は空インライン化。P-20 の設計到達点を達成
-- `DeferredDrainInput()` は後続変更により **`drawScreen()` 後** に置かれている (P-35 はリバート済み、drainPendingMessages を使用)
-- P-26b の 8 フレームスロットルは現コードには入っておらず、旧 throttle コメントも削除済み
+### Notes based on the current-code audit (after Round 6)
+- Due to P-33, `PrePollRawInput()` has become an empty inline. This achieves the design endpoint of P-20
+- `DeferredDrainInput()` is placed **after `drawScreen()`** due to a later change (P-35 was reverted, and `drainPendingMessages` is used)
+- The 8-frame throttle of P-26b does not exist in the current code, and the old throttle comment has also been removed
 
-### 歴史的補足
-- P-14 の段階では `PrePollRawInput()` を使っていた
-- P-19 により HiddenWndProc 側で即時 `processRawInput`
-- Round 5 文書では P-20 により PrePollRawInput は不要化
-- **Round 6 (P-33) で呼び出し除去・空インライン化を実施し、P-20 完了**
+### Historical supplement
+- At the P-14 stage, `PrePollRawInput()` was still used
+- P-19 made the HiddenWndProc side run `processRawInput` immediately
+- In the Round 5 document, P-20 made PrePollRawInput unnecessary
+- **Round 6 (P-33) removed the calls and converted it to an empty inline, completing P-20**
 
-したがって、**文書上の設計到達点** と **現コードの実装状態** は P-33 により一致した。
-
----
-
-## 11. 非採用・撤回・却下一覧
-
-## 11.1 1 からの却下 / リバート
-
-| 項目 | 結論 | 理由 |
-|---|---|---|
-| `static thread_local` バッファ → スタック | リバート | `__chkstk`、レジスタ圧迫、16KB stack buffer が不利 |
-| `Poll()` ドレインループ上限 | 不採用 | 8000Hz 環境でも通常 ~133 メッセージ / frame で十分処理可能 |
-| `ApplyAimAdjustBranchless` | リバート | 分岐予測が当たるホットケースでは ALU 追加が逆効果 |
-| OnEmuUnpause への extra reset | 除去 | 既に `ApplyJoy2KeySupportAndQtFilter(..., doReset=true)` が実施済み |
-| HandleGlobalHotkeys ゲート再設計 | 却下 | 効果が小さい |
-| `m_rawFilter` → BIT フラグ | 却下 | ポインタ自体は結局必要 |
-| UnrollCheckDown/Press 再設計 | 却下 | 既にテンプレート展開済み |
-| ProcessMoveInputFast SnapTap 再設計 | 却下 | 既に十分最適 |
-| HandleMorphBallBoost 早期脱出追加 | 歴史的には却下 | 初期案は効果小として却下。後続 Round 6 の P-36 では別形の分岐統合として採用済み |
-| `m_isWeaponCheckActive` → BIT | 却下 | 稀経路で効果なし |
-| `InputSetBranchless(INPUT_START)` バッチ化 | 却下 | 複雑化の割に効果が小さい |
-| `FrameAdvanceDefault usesOpenGL()` キャッシュ | 却下 | コールドパスのみ |
-| wheelDelta 再入フレームスキップ | 却下 | 再入が稀 |
-| `isStylusMode` bool → BIT | 却下 | 外部参照あり、速度差実質なし |
-| `m_isLayoutChangePending` → BIT | 却下 | bool と BIT の差が実質ない |
-| `pollHotkeys` BSF 改善 | 却下 | 既に妥当 |
-| `processRawInputBatched` の dwType 分離 | 却下 | キャッシュ局所性悪化 |
-| mainRAM プリフェッチ | 却下 | 効果不確定 |
-| panel ポインタキャッシュは不要 | 元文書では却下 | ただし Round 4 / 5 で P-3 と P-20c により採用へ転換 |
-
-## 11.2 Round 4 からの却下 / リバート
-
-| 項目 | 結論 | 理由 |
-|---|---|---|
-| P-2 | リバート | 近距離プリフェッチを失い逆効果 |
-| P-4 | 見送り | 再入パス二重管理が危険 |
-| P-7 | 不要 | 既に早期脱出あり |
-| P-8 | 見送り | `FrameInputState` の再設計リスクが高い |
-| P-10 | 却下 | `hasKeyChanges` ガード維持の方が良い |
-| ループアンロール | 却下 | `NEXTRAWINPUTBLOCK` の可変長と相性が悪い |
-| Config::Table 高速化 | 却下 | コールドパスのみ |
-| mainRAM 追加プリフェッチ | 却下 | 効果不確定 |
-| UnrollCheckDown/Press 再最適化 | 却下 | 改善幅微小 |
-
-## 11.3 Round 5 の今後の検討事項
-
-| 項目 | 内容 |
-|---|---|
-| フレームタイム可視化 | FPS だけでなく ms 表示があると P-12 の効果検証がしやすい |
-| SDL ジョイスティック Late-Poll のさらなる整理 | `inputProcess()` を完全に Sleep 後へ寄せる設計余地 |
-| `glFlush()` / GPU パイプライン遅延 | `glFinish()` は避ける前提で、SwapBuffers 前 flush のトレードオフ検討 |
-
-## 11.4 Round 6 からのリバート
-
-| 項目 | 結論 | 理由 |
-|---|---|---|
-| P-35 | リバート | DeferredDrain から `processRawInputBatched` を除去したところ stuck keys 再発。FIX-1 の shared-buffer semantics により、GetRawInputBuffer が PeekMessage の前に走る必要がある。`drainMessagesOnly` は `DeferredDrain` では使用不可 |
+Therefore, the **document-side design endpoint** and the **current implementation state** became consistent thanks to P-33.
 
 ---
 
+## 11. List of non-adopted, reverted, and rejected items
 
-## 11.5 情報源監査で確定した読み替え
+## 11.1 Rejections / reversions originating from 1
 
-この統合版を読むときは、次の 4 点を固定ルールとして扱う。
+| Item | Conclusion | Reason |
+|---|---|---|
+| `static thread_local` buffer → stack | Reverted | `__chkstk`, register pressure, and the 16KB stack buffer were disadvantageous |
+| Upper bound on the drain loop in `Poll()` | Not adopted | Even at 8000Hz, the normal ~133 messages / frame are fully processable |
+| `ApplyAimAdjustBranchless` | Reverted | Added ALU work is counterproductive in hot cases where branch prediction hits |
+| Extra reset in OnEmuUnpause | Removed | `ApplyJoy2KeySupportAndQtFilter(..., doReset=true)` already does it |
+| Redesign of the HandleGlobalHotkeys gate | Rejected | Too little benefit |
+| `m_rawFilter` → BIT flags | Rejected | The pointer is still required anyway |
+| Redesign of UnrollCheckDown/Press | Rejected | It is already template-expanded |
+| Redesign of ProcessMoveInputFast SnapTap | Rejected | Already sufficiently optimized |
+| Add early exit to HandleMorphBallBoost | Historically rejected | The initial proposal was rejected for small effect, but a different form of branch unification was later adopted in Round 6 as P-36 |
+| `m_isWeaponCheckActive` → BIT | Rejected | No benefit on a rare path |
+| Batch `InputSetBranchless(INPUT_START)` | Rejected | Too much complexity for too little gain |
+| Cache `FrameAdvanceDefault usesOpenGL()` | Rejected | Cold path only |
+| Skip wheelDelta on reentry frames | Rejected | Reentry is rare |
+| `isStylusMode` bool → BIT | Rejected | Externally referenced, with effectively no speed difference |
+| `m_isLayoutChangePending` → BIT | Rejected | Effectively no difference between bool and BIT |
+| BSF improvement for `pollHotkeys` | Rejected | Already reasonable |
+| Split `dwType` in `processRawInputBatched` | Rejected | Hurts cache locality |
+| mainRAM prefetch | Rejected | Uncertain effect |
+| Panel pointer cache unnecessary | Rejected in the original document | Later adopted in Round 4 / 5 via P-3 and P-20c |
 
-1. **P-14 は歴史的に重要だが、Round 6 (P-33) により空インライン化された**  
-   現コードでは `PrePollRawInput()` は何もしない。P-19 が全てカバーする。
-2. **P-20 は Round 6 (P-33) により完了した**  
-   `PrePollRawInput` の呼び出しは除去済み、実装は空インライン。
-3. **P-22 の本質は drain 分離であり、配置は後続変更で上書きされている**  
-   現コードでの最終位置は `drawScreen()` 後。P-35 はリバート済みのため `drainPendingMessages` を使用。
-4. **P-26b のスロットルは現行実装では採用されていない**
-   8-frame counter も旧 throttle コメントも存在しない。
+## 11.2 Rejections / reversions from Round 4
 
+| Item | Conclusion | Reason |
+|---|---|---|
+| P-2 | Reverted | Lost near-distance prefetch and became counterproductive |
+| P-4 | Deferred | Double management of the reentry path is dangerous |
+| P-7 | Unnecessary | Early exit already exists |
+| P-8 | Deferred | Redesigning `FrameInputState` is too risky |
+| P-10 | Rejected | Better to keep the `hasKeyChanges` guard |
+| Loop unrolling | Rejected | Poor fit with the variable-length `NEXTRAWINPUTBLOCK` |
+| Faster Config::Table lookup | Rejected | Cold path only |
+| Additional mainRAM prefetch | Rejected | Uncertain effect |
+| Re-optimization of UnrollCheckDown/Press | Rejected | Improvement would be too small |
 
-## 12. 変更ファイル統合一覧
+## 11.3 Review notes from Round 5 (not active work items)
 
-| ファイル | 主な統合内容 |
+The following are additional review notes from the time of Round 5, and are not active work items. They should not be claimed as unapplied optimizations in the current code.
+
+| Item | Contents |
 |---|---|
-| `MelonPrimeCompilerHints.h` | R1: 共通マクロ統合、P-5 |
-| `MelonPrime.h` | OPT C/D/G/L/O/W、P-3、P-17、P-18、P-33 (PrePollRawInput 空インライン化) |
-| `MelonPrime.cpp` | OPT D/E/K/L/O/W/Z1/Z2/Z3/Z4、FIX-3、P-14、P-20b、P-20c、P-22 (`DeferredDrainInput()` 実装)、P-33 (PrePoll 実装除去)、P-43 (focused ローカルキャッシュ) |
-| `MelonPrimeGameInput.cpp` | OPT F/O/Q/Z2/Z3、FIX-2、P-3、P-17、P-18、P-44 (ゼロデルタスキップ) |
-| `MelonPrimeInGame.cpp` | OPT A/B/G/H/J/Z2/Z5、R1 constexpr テーブル、P-36 (HandleMorphBallBoost 分岐統合) |
-| `MelonPrimeGameWeapon.cpp` | OPT A、R2 NDS キャッシュ |
+| Frame-time visualization | In addition to FPS, an ms display would make the effect of P-12 easier to validate |
+| Further cleanup of SDL joystick Late-Poll | Possible design room to move `inputProcess()` entirely after Sleep |
+| `glFlush()` / GPU pipeline delay | Tradeoff analysis for flush before SwapBuffers, assuming `glFinish()` is avoided |
+
+## 11.4 Reverts from Round 6
+
+| Item | Conclusion | Reason |
+|---|---|---|
+| P-35 | Reverted | Removing `processRawInputBatched` from DeferredDrain caused stuck keys to reappear. Due to the shared-buffer semantics described in FIX-1, `GetRawInputBuffer` must run before PeekMessage. `drainMessagesOnly` cannot be used in `DeferredDrain` |
+
+---
+
+## 11.5 Readings fixed by the source audit
+
+When reading this unified edition, treat the following four points as fixed rules.
+
+1. **P-14 is historically important, but was converted into an empty inline in Round 6 (P-33)**
+   In current code, `PrePollRawInput()` does nothing. P-19 covers everything.
+2. **P-20 was completed by Round 6 (P-33)**
+   Calls to `PrePollRawInput` have been removed, and the implementation is an empty inline.
+3. **The essence of P-22 is the drain split, and its placement has been overwritten by later changes**
+   The final current-code position is after `drawScreen()`. Because P-35 was reverted, it uses `drainPendingMessages`.
+4. **The throttle from P-26b is not adopted in the current implementation**
+   There is neither an 8-frame counter nor the old throttle comment.
+
+## 12. Integrated list of modified files
+
+| File | Main integrated contents |
+|---|---|
+| `MelonPrimeCompilerHints.h` | R1: common macro integration, P-5 |
+| `MelonPrime.h` | OPT C/D/G/L/O/W, P-3, P-17, P-18, P-33 (empty-inline PrePollRawInput) |
+| `MelonPrime.cpp` | OPT D/E/K/L/O/W/Z1/Z2/Z3/Z4, FIX-3, P-20b, P-20c, P-22 (`DeferredDrainInput()` implementation), P-33 (remove PrePoll implementation), P-43 (focused local cache) |
+| `MelonPrimeGameInput.cpp` | OPT F/O/Q/Z2/Z3, FIX-2, P-3, P-17, P-18, P-44 (zero-delta skip) |
+| `MelonPrimeInGame.cpp` | OPT A/B/G/H/J/Z2/Z5, R1 constexpr tables, P-36 (HandleMorphBallBoost branch unification) |
+| `MelonPrimeGameWeapon.cpp` | OPT A, R2 NDS cache |
 | `MelonPrimeGameRomDetect.cpp` | OPT L |
-| `MelonPrimeRawInputState.h` | R1 snapshot helpers、R2 `setHotkeyVks` / `hasMask` 整理、P-9、P-42 (`m_hkFastWord` + `scanBoundHotkeys` 高速パス) |
-| `MelonPrimeRawInputState.cpp` | OPT S/T、R2 button precedence / fetch_add / LUT、P-1、P-6、P-37 (コミットフェーズ分岐結合)、P-42 (`setHotkeyVks` fast word 算出) |
-| `MelonPrimeRawInputWinFilter.h` | R1 drain helper、R2 overload、P-22、P-35 リバート (`drainMessagesOnly` 宣言は残留) |
-| `MelonPrimeRawInputWinFilter.cpp` | FIX-1、OPT R/U、R1/R2、P-19、P-22、P-26b 撤回済み、P-35 リバート (`DeferredDrain` は `drainPendingMessages` に復元) |
+| `MelonPrimeRawInputState.h` | R1 snapshot helpers, R2 organization of `setHotkeyVks` / `hasMask`, P-9, P-42 (`m_hkFastWord` + fast path for `scanBoundHotkeys`) |
+| `MelonPrimeRawInputState.cpp` | OPT S/T, R2 button precedence / fetch_add / LUT, P-1, P-6, P-37 (commit-phase branch merge), P-42 (`setHotkeyVks` fast-word calculation) |
+| `MelonPrimeRawInputWinFilter.h` | R1 drain helper, R2 overload, P-22, P-35 revert (`drainMessagesOnly` declaration remains) |
+| `MelonPrimeRawInputWinFilter.cpp` | FIX-1, OPT R/U, R1/R2, P-19, P-22, P-26b already withdrawn, P-35 reverted (`DeferredDrain` restored to `drainPendingMessages`) |
 | `MelonPrimeRawHotkeyVkBinding.h` | R1 `SmallVkList` |
-| `MelonPrimeRawHotkeyVkBinding.cpp` | R1/R2 ヒープ排除完全化 |
+| `MelonPrimeRawHotkeyVkBinding.cpp` | Complete heap elimination in R1/R2 |
 | `MelonPrimeRawWinInternal.h/.cpp` | P-11 `NtSetTimerResolution` |
-| `EmuThread.cpp` | P-11、P-12、P-13、P-14、P-15、P-16、P-22、P-24、P-25、P-26a、P-27、P-32 相当の後続配置変更、P-33 (PrePollRawInput 呼び出し除去 ×2)、P-38 (内側 hotkey 一括ゲート)、P-39 (NeedsShaderCompile キャッシュ)、P-40 (除算→乗算)、P-41 (DSi volume sync 除去) |
+| `EmuThread.cpp` | P-11, P-12, P-13, P-15, P-16, P-22, P-24, P-25, P-26a, P-27, later placement change corresponding to P-32, P-33 (remove PrePollRawInput calls ×2), P-38 (inner hotkey unified gate), P-39 (NeedsShaderCompile cache), P-40 (division→multiplication), P-41 (remove DSi volume sync) |
 | `EmuInstance.h` | P-15 / P-21 |
-| `EmuInstanceInput.cpp` | P-15、P-21、P-23、P-34 (`inputProcess` ジョイスティック不在時 SDL スキップ) |
-| `MelonPrimeHudRender.cpp` | Custom HUD runtime unity entry point。`MelonPrimeHudRender*.inc` と edit-mode include を束ねる |
-| `MelonPrimeHudRenderAssets.inc` | HUD asset/icon/radar-frame/text/outline caches、image/text helper、dirty rect support |
-| `MelonPrimeHudRenderConfig.inc` | cached HUD config、anchor recomputation、auto-scale setup |
-| `MelonPrimeHudRenderRuntime.inc` | battle/match state、runtime helpers、hide rules、NoHUD patch、static dirty rect |
-| `MelonPrimeHudRenderDraw.inc` | HP/weapon/ammo/radar/crosshair など HUD element drawing |
-| `MelonPrimeHudRenderMain.inc` | `CustomHud_Render()`、edit-mode forward state、radar frame drawing |
-| `MelonPrimeHudConfigOnScreen.cpp` | in-game HUD editor unity entry point。shared edit-mode state と include ordering を持つ |
-| `MelonPrimeHudConfigOnScreenDefs.inc` | edit-mode definition tables / property descriptors / element table |
-| `MelonPrimeHudConfigOnScreenSnapshot.inc` | edit-mode snapshot / restore / reset |
-| `MelonPrimeHudConfigOnScreenDraw.inc` | edit-mode bounds / overlay drawing / previews |
-| `MelonPrimeHudConfigOnScreenInput.inc` | edit-mode public API と mouse/wheel input handling |
-| `Screen.cpp` | Custom HUD screen integration include owner。`MelonPrimeHudScreenCpp*.inc` を call site ごとに include |
-| `Screen.h` | Custom HUD screen-side caches: HUD enable epoch、radar epoch、top matrix、radar anchor DS coords |
-| `MelonPrimeHudScreenCppHelpers.inc` | screen fragments 共通 helper: edit panel placement、epoch/config refresh、overlay clear/render、patch restore |
-| `MelonPrimeHudScreenCppOverlayOfSoftware.inc` | software paint HUD overlay path。dirty rect composite |
-| `MelonPrimeHudScreenCppOverlayOfGl.inc` | GL HUD overlay upload/composite と GL-native bottom radar overlay。dirty upload / GL state skip |
+| `EmuInstanceInput.cpp` | P-15, P-21, P-23, P-34 (skip SDL in `inputProcess` when joystick is absent) |
+| `MelonPrimeHudRender.cpp` | Custom HUD runtime unity entry point. Bundles `MelonPrimeHudRender*.inc` and edit-mode includes |
+| `MelonPrimeHudRenderAssets.inc` | HUD asset/icon/radar-frame/text/outline caches, image/text helpers, dirty-rect support |
+| `MelonPrimeHudRenderConfig.inc` | Cached HUD config, anchor recomputation, auto-scale setup |
+| `MelonPrimeHudRenderRuntime.inc` | Battle/match state, runtime helpers, hide rules, NoHUD patch, static dirty rect |
+| `MelonPrimeHudRenderDraw.inc` | Drawing of HUD elements such as HP/weapon/ammo/radar/crosshair |
+| `MelonPrimeHudRenderMain.inc` | `CustomHud_Render()`, edit-mode forward state, radar-frame drawing |
+| `MelonPrimeHudConfigOnScreen.cpp` | In-game HUD editor unity entry point. Holds shared edit-mode state and include ordering |
+| `MelonPrimeHudConfigOnScreenDefs.inc` | Edit-mode definition tables / property descriptors / element table |
+| `MelonPrimeHudConfigOnScreenSnapshot.inc` | Edit-mode snapshot / restore / reset |
+| `MelonPrimeHudConfigOnScreenDraw.inc` | Edit-mode bounds / overlay drawing / previews |
+| `MelonPrimeHudConfigOnScreenInput.inc` | Edit-mode public API and mouse/wheel input handling |
+| `Screen.cpp` | Owner of Custom HUD screen-integration includes. Includes `MelonPrimeHudScreenCpp*.inc` at each call site |
+| `Screen.h` | Custom HUD screen-side caches: HUD enable epoch, radar epoch, top matrix, radar anchor DS coords |
+| `MelonPrimeHudScreenCppHelpers.inc` | Common helpers for screen fragments: edit-panel placement, epoch/config refresh, overlay clear/render, patch restore |
+| `MelonPrimeHudScreenCppOverlayOfSoftware.inc` | Software-paint HUD overlay path. Dirty-rect composite |
+| `MelonPrimeHudScreenCppOverlayOfGl.inc` | GL HUD overlay upload/composite and GL-native bottom radar overlay. Dirty upload / GL-state skip |
 | `MelonPrimeHudScreenCppGlInit.inc` / `MelonPrimeHudScreenCppGlDeinit.inc` | Custom HUD GL resource init/deinit |
-| `MelonPrimeHudScreenCppInit.inc` / `Layout.inc` / `Mouse*.inc` / `EditPanel*.inc` | screen panel setup、layout cache、edit-mode input forwarding、floating panel placement |
+| `MelonPrimeHudScreenCppInit.inc` / `Layout.inc` / `Mouse*.inc` / `EditPanel*.inc` | Screen-panel setup, layout cache, edit-mode input forwarding, floating-panel placement |
 
 ---
 
-## 13. 環境メモ
+## 13. Environment notes
 
-- マウス: 8000Hz ポーリングレート
-- 60fps 想定時: 約 133 WM_INPUT / frame
-- コンパイラ: MSVC / MinGW 両対応
-- `NEXTRAWINPUTBLOCK` を使う都合で MinGW では `QWORD` typedef が必要
-- x86-64 TSO では relaxed load/store は通常 `MOV`
-- Q14 固定小数点では `int64_t` 乗算を使用
-- 4MB MainRAM を扱うため、プリフェッチや近接アクセスの評価は「L1 常駐」前提ではなく、実ワーキングセットを前提に考える必要がある
-
----
-
-## 14. まとめ
-
-この文書を **今後の正本** とし、旧版は履歴参照用として扱う。
-
-
-現行版までを統合すると、MelonPrime の流れは次のように整理できる。
-
-1. **1** で、Single-Writer 前提の Raw Input 最適化、FIX-1～3、OPT A～Z5 が固まった  
-2. **2 (R1)** で、保守性と重複排除が進んだ  
-3. **3 (R2)** で、正確性バグ修正とヒープ排除が完了した  
-4. **4** で、微細最適化の採否が精査され、P-1 / P-3 / P-5 / P-6 / P-9 が採用された  
-5. **5** で、入力遅延、フレーム順序、VSync 復帰、サブピクセル蓄積、stuck keys 根本修正、syscall 削減までを含む**パイプライン再設計案とその適用履歴**が整理された  
-6. **6** で、P-20 (PrePollRawInput 除去) が完了し、inputProcess の SDL 不在時スキップ、DeferredDrain 軽量化案の検証と P-35 リバート、ホットパス分岐改善が適用された  
-7. **7** で、フレームループ内の定常コスト（仮想ディスパッチ、浮動小数点除算、デッドコード、hotkey 分岐）が削減された
-8. **8** で、ホットキー走査の命令数削減、RunFrameHook のレジスタ最適化、エイムパイプラインのゼロデルタスキップが適用された
-9. **Custom HUD Refactor** で、runtime HUD、on-screen editor、Screen integration が unity fragment に整理された
-10. **Custom HUD Perf** で、dirty rect、config cache、screen matrix cache、GL zero-work skip が適用された
-
-つまりこの統合結果は、単なる「速くするための断片集」ではなく、
-
-- **Raw Input の正確性**
-- **ゲームロジックのホットパス最適化**
-- **入力取得タイミングの刷新**
-- **エイム出力の精度向上**
-- **保守性と将来の改修容易性**
-- **syscall の定常コスト最小化**
-- **Custom HUD の描画コストと Screen integration の整理**
-
-を段階的に積み上げた、**MelonPrime の入力・フレーム基盤・Custom HUD 基盤の進化履歴そのもの**である。
-
+- Mouse: 8000Hz polling rate
+- At 60fps: about 133 WM_INPUT / frame
+- Compiler: supports both MSVC and MinGW
+- Because `NEXTRAWINPUTBLOCK` is used, MinGW requires a `QWORD` typedef
+- Under x86-64 TSO, relaxed load/store normally compiles to `MOV`
+- Q14 fixed point uses `int64_t` multiplication
+- Because 4MB MainRAM is involved, prefetch and locality evaluations must be made against the real working set, not under the assumption that everything resides in L1
 
 ---
 
-## 15. Round 6: P-33～P-37 の統合結果
+## 14. Summary
 
-## 15.1 Round 6 の中心テーマ
+This document shall serve as the **canonical document going forward**, while older versions are treated as historical references.
 
-Round 6 は Round 5 の監査で判明した **「文書上の到達点」と「現コード状態」のギャップ** を解消し、加えて入力パイプラインの **定常 syscall コストをさらに削減** することを主目的とする。
+When everything up to the current edition is integrated, the evolution of MelonPrime can be organized as follows.
 
-1. **P-20 の完了** — PrePollRawInput の実質的除去
-2. **KB+M プレイヤー向け SDL overhead 削減**
-3. **DeferredDrain 軽量化案の検証とリバート**
-4. **ホットパスの分岐改善**
+1. In **1**, Raw Input optimizations based on the Single-Writer premise, FIX-1–3, and OPT A–Z5 were established
+2. In **2 (R1)**, maintainability and deduplication advanced
+3. In **3 (R2)**, correctness bug fixes and heap elimination were completed
+4. In **4**, the adoption of fine-grained optimizations was reviewed in detail, and P-1 / P-3 / P-5 / P-6 / P-9 were adopted
+5. In **5**, the **pipeline redesign proposal and its application history** were organized, including input latency, frame order, VSync restoration, subpixel accumulation, the root stuck-keys fix, and syscall reduction
+6. In **6**, P-20 (removal of PrePollRawInput) was completed, SDL skipping in `inputProcess` when absent, validation of the DeferredDrain lightweight plan and the P-35 revert, and hot-path branch improvements were applied
+7. In **7**, steady-state costs inside the frame loop (virtual dispatch, floating-point division, dead code, hotkey branching) were reduced
+8. In **8**, hotkey-scan instruction-count reduction, register optimization in RunFrameHook, and zero-delta skipping in the aim pipeline were applied
+9. In **Custom HUD Refactor**, the runtime HUD, on-screen editor, and Screen integration were organized into unity fragments
+10. In **Custom HUD Perf**, dirty rect, config cache, screen matrix cache, and GL zero-work skip were applied
 
-## 15.2 ステータス一覧
+In other words, this integration result is not just a collection of fragments intended to “make things faster”, but the **evolution history itself of MelonPrime’s input foundation, frame foundation, and Custom HUD foundation**, built up step by step in terms of:
 
-| ID | 種別 | 状態 | 統合後の扱い | 対象ファイル |
+- **Correctness of Raw Input**
+- **Hot-path optimization of game logic**
+- **Renewal of input-acquisition timing**
+- **Improved precision of aim output**
+- **Maintainability and future ease of modification**
+- **Minimization of steady-state syscall cost**
+- **Organization of Custom HUD rendering cost and Screen integration**
+
+---
+
+## 15. Round 6: integrated results for P-33–P-37
+
+## 15.1 Central theme of Round 6
+
+Round 6 primarily aims to close the gap uncovered by the Round 5 audit between the **document-side endpoint** and the **current code state**, while also further reducing the **steady-state syscall cost** of the input pipeline.
+
+1. **Completion of P-20** — effective removal of PrePollRawInput
+2. **Reduction of SDL overhead for KB+M players**
+3. **Validation and revert of the DeferredDrain lightweight plan**
+4. **Hot-path branch improvements**
+
+## 15.2 Status list
+
+| ID | Category | Status | Handling after integration | Target files |
 |---|---|---|---|---|
-| P-33 | syscall 削減 | ✅ | PrePollRawInput 除去 (P-20 完了) | `EmuThread.cpp`, `MelonPrime.cpp`, `MelonPrime.h` |
-| P-34 | syscall 削減 | ✅ | inputProcess ジョイスティック不在時 SDL スキップ | `EmuInstanceInput.cpp` |
-| P-35 | syscall 削減 | ❌ リバート | DeferredDrain 内 GetRawInputBuffer 除去 → stuck keys 再発 | `MelonPrimeRawInputWinFilter.cpp`, `MelonPrimeRawInputWinFilter.h` |
-| P-36 | ホットパス改善 | ✅ | HandleMorphBallBoost 分岐統合 | `MelonPrimeInGame.cpp` |
-| P-37 | ホットパス改善 | ✅ | processRawInputBatched コミットフェーズ分岐結合 | `MelonPrimeRawInputState.cpp` |
+| P-33 | Syscall reduction | ✅ | Removal of PrePollRawInput (completion of P-20) | `EmuThread.cpp`, `MelonPrime.cpp`, `MelonPrime.h` |
+| P-34 | Syscall reduction | ✅ | Skip SDL in `inputProcess` when joystick is absent | `EmuInstanceInput.cpp` |
+| P-35 | Syscall reduction | ❌ Reverted | Removal of `GetRawInputBuffer` inside DeferredDrain → stuck keys reappeared | `MelonPrimeRawInputWinFilter.cpp`, `MelonPrimeRawInputWinFilter.h` |
+| P-36 | Hot-path improvement | ✅ | Branch unification for HandleMorphBallBoost | `MelonPrimeInGame.cpp` |
+| P-37 | Hot-path improvement | ✅ | Commit-phase branch merge in `processRawInputBatched` | `MelonPrimeRawInputState.cpp` |
 
-## 15.3 P-33: PrePollRawInput 除去 (P-20 完了)
+## 15.3 P-33: removal of PrePollRawInput (completion of P-20)
 
-Round 5 文書 (P-20) で「P-19 により PrePollRawInput は不要化」と定義されていたが、現コードでは実装・呼び出しが残置されていた。
+The Round 5 document (P-20) defined that “PrePollRawInput becomes unnecessary because of P-19”, but by the time of the Round 6 audit, both the implementation and the calls still remained.
 
-**変更内容**
-- `EmuThread.cpp` の 2 箇所の `melonPrime->PrePollRawInput()` 呼び出しを除去
-- `MelonPrime.cpp` の `PrePollRawInput()` 実装を削除
-- `MelonPrime.h` で空インラインに置換（ソース互換性維持）
+**Changes**
+- Remove the two `melonPrime->PrePollRawInput()` calls from `EmuThread.cpp`
+- Remove the `PrePollRawInput()` implementation from `MelonPrime.cpp`
+- Replace it with an empty inline in `MelonPrime.h` (for source compatibility)
 
-**効果**
-- `GetRawInputBuffer` syscall: 4 回/frame → 2 回/frame（`PollAndSnapshot` 内のみ）
-- `PeekMessage` ループ: 2 回/frame → 0 回（`DeferredDrain` のみ残留）
-- 推定削減: ~500–2000 cyc/frame
+**Effect**
+- `GetRawInputBuffer` syscalls originating from `PrePollRawInput`: 2/frame → 0/frame
+- `PeekMessage` loops originating from `PrePollRawInput`: 2/frame → 0/frame (the post-render `DeferredDrain` remains)
+- Estimated reduction: ~500–2000 cyc/frame
 
-**安全性の根拠**
-P-19 により `HiddenWndProc` が WM_INPUT 到着時に即座に `processRawInput(HRAWINPUT)` を実行する。SDL の `PeekMessage` で WM_INPUT が dispatch されても、データは `processRawInput` で即時キャプチャされる。`PollAndSnapshot` 内の `processRawInputBatched()` と `DeferredDrain` が残りを回収し、三重の防御が成立。
+**Basis for safety**
+Thanks to P-19, `HiddenWndProc` immediately executes `processRawInput(HRAWINPUT)` when WM_INPUT arrives. Even if SDL dispatches WM_INPUT via `PeekMessage`, the data is immediately captured by `processRawInput`. `processRawInputBatched()` inside `PollAndSnapshot` and `DeferredDrain` collect the rest, forming triple protection.
 
-## 15.4 P-34: inputProcess ジョイスティック不在時 SDL スキップ
+## 15.4 P-34: skip SDL in `inputProcess` when joystick is absent
 
-P-23 は `inputRefreshJoystickState()` のみに no-joystick 高速パスを実装していたが、`inputProcess()` 自体は毎フレーム `SDL_LockMutex` + `SDL_JoystickUpdate` + `SDL_UnlockMutex` を無条件実行していた。
+P-23 implemented a fast path for the no-joystick case only in `inputRefreshJoystickState()`, but `inputProcess()` itself was still unconditionally executing `SDL_LockMutex` + `SDL_JoystickUpdate` + `SDL_UnlockMutex` every frame.
 
-**変更内容**
-- `inputProcess()` は `joystick == nullptr` 時、59/60 フレームで SDL 呼び出しを完全スキップ
-- 60 フレームに 1 回の throttled check で新規接続を検出
-- `inputRefreshJoystickState()` 側にも no-joystick fast path があり、frameAdvanceOnce 内の hot path でも SDL mutex/update を避ける
-- 現コードでは `inputProcess()` と `inputRefreshJoystickState()` がそれぞれ 60-frame throttled hot-plug check を持つ
+**Changes**
+- When `joystick == nullptr`, `inputProcess()` skips SDL calls completely in 59 out of 60 frames
+- Detect new connections via a throttled check once every 60 frames
+- `inputRefreshJoystickState()` also has a no-joystick fast path, avoiding SDL mutex/update in the hot path inside `frameAdvanceOnce`
+- In the current code, `inputProcess()` and `inputRefreshJoystickState()` each have their own 60-frame throttled hot-plug check
 
-**効果**
-- KB+M プレイヤー: `inputProcess()` と frame hot path の両方で、通常フレームの SDL mutex syscall + `SDL_JoystickUpdate` を回避
-- 推定削減: ~300–600 cyc/frame
+**Effect**
+- For KB+M players: avoid the SDL mutex syscall + `SDL_JoystickUpdate` in both `inputProcess()` and the frame hot path during normal frames
+- Estimated reduction: ~300–600 cyc/frame
 
-## 15.5 P-35: DeferredDrain 内 GetRawInputBuffer 除去 (リバート)
+## 15.5 P-35: removal of `GetRawInputBuffer` inside DeferredDrain (reverted)
 
-`drainPendingMessages()` は `processRawInputBatched()` (GetRawInputBuffer) + PeekMessage ループの 2 段構成だったが、`DeferredDrain` からの呼び出しでは P-19 により GetRawInputBuffer は空を返すと想定して除去を試みた。
+`drainPendingMessages()` had a two-stage structure: `processRawInputBatched()` (`GetRawInputBuffer`) + a PeekMessage loop. Since P-19 had seemingly made `GetRawInputBuffer` redundant in calls from `DeferredDrain`, its removal was attempted.
 
-**変更内容**
-- `drainMessagesOnly()` を新設（PeekMessage ループのみ）
-- `DeferredDrain()` が `drainMessagesOnly()` を使用するよう変更
+**Attempted change (already reverted)**
+- Introduce `drainMessagesOnly()` (PeekMessage loop only)
+- Change `DeferredDrain()` to use `drainMessagesOnly()`
 
-**リバート理由: stuck keys 再発**
+**Reason for revert: stuck keys reappeared**
 
-FIX-1 で文書化された **shared-buffer semantics** が原因。GetRawInputBuffer と GetRawInputData は内部バッファを共有しており:
+The cause was the **shared-buffer semantics** documented in FIX-1. `GetRawInputBuffer` and `GetRawInputData` share an internal buffer:
 
-1. `PollAndSnapshot` の `GetRawInputBuffer` がバッファを消費
-2. `DeferredDrain` の `PeekMessage(PM_REMOVE)` が WM_INPUT を dispatch
-3. `HiddenWndProc` → `processRawInput` → `GetRawInputData(HRAWINPUT)` を試みるが、バッファは既に消費済みで失敗
-4. key-up イベントがロスト → stuck key
+1. `GetRawInputBuffer` in `PollAndSnapshot` consumes the buffer
+2. `PeekMessage(PM_REMOVE)` in `DeferredDrain` dispatches WM_INPUT
+3. `HiddenWndProc` → `processRawInput` → attempts `GetRawInputData(HRAWINPUT)`, but the buffer has already been consumed and the call fails
+4. The key-up event is lost → stuck key
 
-元の `drainPendingMessages` では `processRawInputBatched` が PeekMessage の前に走り、GetRawInputBuffer で新しいデータを先に確保していたため、後続の GetRawInputData が失敗しても安全だった。
+In the original `drainPendingMessages`, `processRawInputBatched` ran before `PeekMessage`, acquiring new data first via `GetRawInputBuffer`, so it was safe even if the later `GetRawInputData` failed.
 
-**教訓**
-- `drainPendingMessages` 内の `processRawInputBatched` は冗長に見えるが、shared-buffer に対するセーフティネットとして必須
-- P-14 の「belt-and-suspenders」の設計意図はこの問題を防ぐためだった
-- `drainMessagesOnly` は `drainPendingMessages` の後段として残すが、`DeferredDrain` では使わない
+**Lesson learned**
+- The `processRawInputBatched` inside `drainPendingMessages` looks redundant, but is required as a safety net for the shared buffer
+- The “belt-and-suspenders” intent behind P-14 existed specifically to prevent this problem
+- `drainMessagesOnly` remains as a later-stage helper after `drainPendingMessages`, but is not used in `DeferredDrain`
 
-## 15.6 P-36: HandleMorphBallBoost 分岐統合
+## 15.6 P-36: branch unification in HandleMorphBallBoost
 
-元コードでは `BIT_IS_SAMUS` テスト → `IsDown(IB_MORPH_BOOST)` テスト → else ブランチの 3 段構造だった。大多数のフレーム（非サムス or ブースト未押下）は else の aimBlock クリーンアップに到達する。
+The original code had a three-stage structure: `BIT_IS_SAMUS` test → `IsDown(IB_MORPH_BOOST)` test → else branch. In the vast majority of frames (not Samus or boost not pressed), execution reaches the else-side aimBlock cleanup.
 
-**変更内容**
-- `LIKELY(!BIT_IS_SAMUS || !IsDown(IB_MORPH_BOOST))` で fast path を 1 分岐に統合
-- aimBlock クリーンアップを fast path 内に移動
-- ブースト実行ロジック（rare path）のネスト解除で可読性向上
+**Changes**
+- Merge the fast path into one branch with `LIKELY(!BIT_IS_SAMUS || !IsDown(IB_MORPH_BOOST))`
+- Move the aimBlock cleanup into the fast path
+- Improve readability by unnesting the boost-execution logic (rare path)
 
-**効果**
-- 推定削減: ~5–15 cyc/frame（分岐予測改善が主）
+**Effect**
+- Estimated reduction: ~5–15 cyc/frame (mainly via improved branch prediction)
 
-## 15.7 P-37: processRawInputBatched コミットフェーズ分岐結合
+## 15.7 P-37: commit-phase branch merge in `processRawInputBatched`
 
-マウスデルタのコミットで X/Y を独立にゼロチェックしていた 2 分岐を、`localAccX | localAccY` の 1 分岐に統合。
+The two independent zero-check branches for X and Y in mouse-delta commit were merged into one branch using `localAccX | localAccY`.
 
-**変更内容**
-- 外側のゼロチェックで両軸を結合
-- 内側で個別の store スキップは維持（片軸のみ移動時の不要 store 回避）
+**Changes**
+- Combine both axes in the outer zero check
+- Preserve the inner per-axis store skips (to avoid unnecessary stores when only one axis moves)
 
-**効果**
-- マウス静止フレーム: 2 分岐 → 1 分岐
-- 推定削減: ~3–8 cyc/frame
+**Effect**
+- On frames with no mouse movement: 2 branches → 1 branch
+- Estimated reduction: ~3–8 cyc/frame
 
-## 15.8 Round 6 合計推定効果
+## 15.8 Total estimated effect of Round 6
 
-| 環境 | 削減 (cyc/frame) | 主要要因 |
+| Environment | Reduction (cyc/frame) | Main factors |
 |---|---|---|
-| 8kHz マウス + KB+M | ~800–2600 | P-33 + P-34 |
-| 通常マウス + KB+M | ~300–1000 | syscall 削減効果が相対的に大 |
-| ジョイスティック使用 | ~500–2000 | P-34 の効果なし、他は同等 |
+| 8kHz mouse + KB+M | ~800–2600 | P-33 + P-34 |
+| Normal mouse + KB+M | ~300–1000 | Syscall reduction has relatively larger impact |
+| Using joystick | ~500–2000 | No effect from P-34; others remain similar |
 
-**注記:** P-35 はリバート済みのため合計に含まない。
+**Note:** P-35 is not included in the total because it was reverted.
 
-## 15.9 Round 6 適用後のフレームパイプライン
+## 15.9 Frame pipeline after applying Round 6
 
 ```text
-Round 6 適用後の到達点:
-  メインループ:
-    inputProcess()                   ← P-34: no-joystick 時 SDL スキップ
-    hotkeyPressed(HK_Reset) など     ← P-24 で一括ゲート
+Endpoint after applying Round 6:
+  Main loop:
+    inputProcess()                   ← P-34: skip SDL when no joystick
+    hotkeyPressed(HK_Reset), etc.    ← unified gate by P-24
 
     frameAdvanceOnce() {
       Sleep / HybridLimiter          ← P-11, P-12
-      // P-33: PrePollRawInput 除去
+      // P-33: PrePollRawInput removed
       inputRefreshJoystickState()    ← P-15, P-21
 
       RunFrameHook() {
-        PollAndSnapshot()            ← Z3 + P-19 後の最終入力取得
+        PollAndSnapshot()            ← final input acquisition after Z3 + P-19
         UpdateInputState()
         HandleInGameLogic()
-          HandleMorphBallBoost()     ← P-36: 分岐統合
+          HandleMorphBallBoost()     ← P-36: branch merge
           ProcessMoveAndButtonsFast()← Z2
           ProcessAimInputMouse()     ← OPT-O + P-17 + P-18
       }
@@ -1083,105 +1063,103 @@ Round 6 適用後の到達点:
       RunFrame()
       drawScreen()
 
-      DeferredDrainInput()           ← P-22 (drainPendingMessages, P-35 リバート済み)
+      DeferredDrainInput()           ← P-22 (`drainPendingMessages`, P-35 reverted)
     }
 ```
 
 ---
 
-## 16. Round 7: P-38～P-41 のフレームループ最適化
+## 16. Round 7: frame-loop optimization for P-38–P-41
 
-## 16.1 Round 7 の中心テーマ
+## 16.1 Central theme of Round 7
 
-Round 6 が入力パイプラインの syscall 削減に焦点を当てたのに対し、Round 7 は **フレームループ自体の定常コスト** を削減する。対象はすべて `EmuThread.cpp` の `frameAdvanceOnce` ラムダ内である。
+Whereas Round 6 focused on reducing syscalls in the input pipeline, Round 7 reduces the **steady-state cost of the frame loop itself**. All targets are inside the `frameAdvanceOnce` lambda in `EmuThread.cpp`.
 
-## 16.2 ステータス一覧
+## 16.2 Status list
 
-| ID | 種別 | 状態 | 内容 | 推定効果 |
+| ID | Category | Status | Contents | Estimated effect |
 |---|---|---|---|---|
-| P-38 | 分岐削減 | ✅ | 内側ループ hotkey 一括ゲート (P-24 の拡張) | ~5–10 cyc/frame |
-| P-39 | 仮想ディスパッチ削減 | ✅ | NeedsShaderCompile キャッシュ | ~15–25 cyc/frame |
-| P-40 | 浮動小数点演算改善 | ✅ | targetTick 算出の除算→乗算変換 | ~15–30 cyc/frame |
-| P-41 | デッドコード除去 | ✅ | DSi ボリューム同期スキップ (NDS 専用) | ~10–20 cyc/frame |
+| P-38 | Branch reduction | ✅ | Inner-loop unified hotkey gate (extension of P-24) | ~5–10 cyc/frame |
+| P-39 | Virtual-dispatch reduction | ✅ | NeedsShaderCompile cache | ~15–25 cyc/frame |
+| P-40 | Floating-point arithmetic improvement | ✅ | Convert division→multiplication in targetTick calculation | ~15–30 cyc/frame |
+| P-41 | Dead-code removal | ✅ | Skip DSi volume sync (NDS only) | ~10–20 cyc/frame |
 
-## 16.3 P-38: 内側ループ hotkey 一括ゲート
+## 16.3 P-38: inner-loop unified hotkey gate
 
-P-24 がメインループの 7 個の `hotkeyPressed()` チェックを `hotkeyPress == 0` で一括ゲートしたのと同じパターンを、`frameAdvanceOnce` 内の 3 個のチェック (FastForwardToggle, SlowMoToggle, AudioMuteToggle) にも適用。
+The same pattern used in P-24, which unified the seven `hotkeyPressed()` checks in the main loop behind `hotkeyPress == 0`, is also applied to the three checks inside `frameAdvanceOnce` (FastForwardToggle, SlowMoToggle, AudioMuteToggle).
 
-99.9%+ のフレームで `hotkeyPress == 0` なので、3 回の bit test + 分岐がスキップされる。
+Since `hotkeyPress == 0` in 99.9%+ of frames, three bit tests + branches are skipped.
 
-## 16.4 P-39: NeedsShaderCompile 仮想ディスパッチ削減
+## 16.4 P-39: reduction of virtual dispatch in NeedsShaderCompile
 
-`GPU.GetRenderer().NeedsShaderCompile()` は vtable lookup + indirect call (~15–25 cyc) だが、シェーダーコンパイル完了後は 100% `false` を返す。
+`GPU.GetRenderer().NeedsShaderCompile()` costs about ~15–25 cyc due to a vtable lookup + indirect call, but after shader compilation finishes, it returns `false` 100% of the time.
 
-`shadersReady` フラグを導入し、コンパイル完了後は仮想ディスパッチ自体をスキップ:
+A `shadersReady` flag is introduced so that after compilation completes, the virtual dispatch itself is skipped:
 
 ```cpp
 bool needsCompile = UNLIKELY(!shadersReady)
     && emuInstance->nds->GPU.GetRenderer().NeedsShaderCompile();
 ```
 
-短絡評価により、`shadersReady == true` ならば右辺は評価されない。
+Because of short-circuit evaluation, the right-hand side is not evaluated when `shadersReady == true`.
 
-> **⚠️ 注意: `videoSettingsDirty` 時のリセット必須**
-> `shadersReady` はレンダラー切り替え時に `false` へリセットしなければならない。
-> `updateRenderer()` で新しい 3D レンダラーが生成されると `NeedsShaderCompile()` が再び `true` を返すが、
-> `shadersReady` が `true` のままだと短絡評価でチェック自体がスキップされ、
-> **新レンダラーのシェーダーがコンパイルされず画面が壊れる**。
-> リセット箇所: `videoSettingsDirty` ブロック内、`updateRenderer()` 直後。
+> **⚠️ Important: reset is mandatory when `videoSettingsDirty` occurs**
+> `shadersReady` must be reset to `false` when the renderer is switched.
+> When `updateRenderer()` creates a new 3D renderer, `NeedsShaderCompile()` becomes `true` again,
+> but if `shadersReady` remains `true`, short-circuiting skips the check itself,
+> **preventing the new renderer’s shaders from compiling and breaking the display**.
+> Reset location: inside the `videoSettingsDirty` block, immediately after `updateRenderer()`.
 
-## 16.5 P-40: targetTick 算出の除算→乗算変換
+## 16.5 P-40: convert division→multiplication in targetTick calculation
 
-P-27 で導入されたスピンループの整数比較では `targetTime / perfCountsSec` で tick に変換していた。
-`perfCountsSec = 1.0 / frequency` なので、この式は `targetTime * frequency` と等価。
+In the integer-comparison spin loop introduced by P-27, tick conversion used `targetTime / perfCountsSec`.
+Since `perfCountsSec = 1.0 / frequency`, that expression is equivalent to `targetTime * frequency`.
 
 ```cpp
-// 変更前: DIVSD (~20-35 cyc)
+// Before: DIVSD (~20–35 cyc)
 const Uint64 targetTick = static_cast<Uint64>(targetTime / perfCountsSec);
 
-// 変更後: MULSD (~3-5 cyc)
+// After: MULSD (~3–5 cyc)
 const Uint64 targetTick = static_cast<Uint64>(targetTime * perfCountsFreq);
 ```
 
-`perfCountsFreq` はループ前に一度だけ計算し、ラムダキャプチャで参照。
+`perfCountsFreq` is computed only once before the loop and referenced via lambda capture.
 
-## 16.6 P-41: DSi ボリューム同期スキップ
+## 16.6 P-41: skip DSi volume sync
 
-MelonPrime は NDS (ConsoleType == 0) 専用のため、DSi 固有のボリューム同期コードは到達不能。コンパイル時に `#ifndef MELONPRIME_DS` で除外し:
+Because MelonPrime is NDS-only (`ConsoleType == 0`), the DSi-specific volume-sync code is unreachable. It is excluded at compile time with `#ifndef MELONPRIME_DS`, removing the following from every frame:
 
-- `audioDSiVolumeSync` の bool テスト
-- `nds->ConsoleType` のメンバアクセス
-- `DSi*` キャスト + I2C ポインタ追跡の可能性
+- The bool test of `audioDSiVolumeSync`
+- Member access to `nds->ConsoleType`
+- Possible `DSi*` cast + I2C pointer chase
 
-を毎フレーム除去。
+## 16.7 Total estimated effect of Round 7
 
-## 16.7 Round 7 合計推定効果
-
-| 環境 | 削減 (cyc/frame) | 備考 |
+| Environment | Reduction (cyc/frame) | Notes |
 |---|---|---|
-| 全環境共通 | ~45–85 | P-38 + P-39 + P-40 + P-41 |
+| Common to all environments | ~45–85 | P-38 + P-39 + P-40 + P-41 |
 
-Round 6 (P-33/P-34) の syscall 削減と比べると 1 桁小さいが、全環境で均等に効く定常改善。
+Compared with the syscall reductions of Round 6 (P-33/P-34), this is an order of magnitude smaller, but it is a steady-state improvement that benefits all environments equally.
 
-## 16.8 Round 6 + 7 統合後のフレームパイプライン
+## 16.8 Integrated frame pipeline after Round 6 + 7
 
 ```text
-Round 7 適用後の到達点:
-  メインループ:
-    inputProcess()                   ← P-34: no-joystick 時 SDL スキップ
-    if (hotkeyPress)                 ← P-24: 一括ゲート (7 チェック)
+Endpoint after applying Round 7:
+  Main loop:
+    inputProcess()                   ← P-34: skip SDL when no joystick
+    if (hotkeyPress)                 ← P-24: unified gate (7 checks)
     { ... }
 
     frameAdvanceOnce() {
       Sleep / HybridLimiter          ← P-11, P-12, P-40 (mul)
       inputRefreshJoystickState()    ← P-15, P-21
 
-      NeedsShaderCompile             ← P-39: shadersReady で vtable スキップ
+      NeedsShaderCompile             ← P-39: skip vtable via shadersReady
       RunFrameHook() {
         PollAndSnapshot()            ← Z3 + P-19
         UpdateInputState()
         HandleInGameLogic()
-          HandleMorphBallBoost()     ← P-36: 分岐統合
+          HandleMorphBallBoost()     ← P-36: branch merge
           ProcessMoveAndButtonsFast()
           ProcessAimInputMouse()     ← OPT-O + P-17 + P-18
       }
@@ -1193,178 +1171,178 @@ Round 7 適用後の到達点:
 
       DeferredDrainInput()           ← P-22
 
-      if (hotkeyPress)               ← P-38: 一括ゲート (3 チェック)
+      if (hotkeyPress)               ← P-38: unified gate (3 checks)
       { FF / SlowMo / Mute }
-                                     ← P-41: DSi volume sync 除去
+                                     ← P-41: remove DSi volume sync
     }
 ```
 
 ---
 
-## 17. Round 8: P-42～P-44 のホットキー・エイム・レジスタ最適化
+## 17. Round 8: hotkey / aim / register optimizations for P-42–P-44
 
-## 17.1 Round 8 の中心テーマ
+## 17.1 Central theme of Round 8
 
-Round 8 は **フレームごとに実行されるホットパスの命令数と不要なメモリアクセス** を削減する。
+Round 8 reduces the **instruction count and unnecessary memory accesses on hot paths that execute every frame**.
 
-## 17.2 ステータス一覧
+## 17.2 Status list
 
-| ID | 種別 | 状態 | 内容 | 推定効果 |
+| ID | Category | Status | Contents | Estimated effect |
 |---|---|---|---|---|
-| P-42 | 命令数削減 | ✅ | `testHotkeyMask` シングルワード高速パス | ~60–140 cyc/frame |
-| P-43 | レジスタ最適化 | ✅ | `RunFrameHook` の `isFocused` ローカルキャッシュ | ~8–12 cyc/frame |
-| P-44 | 命令数削減 | ✅ | `ProcessAimInputMouse` ゼロデルタスキップ | ~8–12 cyc/frame (低速マウス/静止時) |
+| P-42 | Instruction-count reduction | ✅ | `testHotkeyMask` single-word fast path | ~60–140 cyc/frame |
+| P-43 | Register optimization | ✅ | Local caching of `isFocused` in `RunFrameHook` | ~8–12 cyc/frame |
+| P-44 | Instruction-count reduction | ✅ | Zero-delta skip in `ProcessAimInputMouse` | ~8–12 cyc/frame (at low-rate mouse / while stationary) |
 
-## 17.3 P-42: `testHotkeyMask` シングルワード高速パス
+## 17.3 P-42: `testHotkeyMask` single-word fast path
 
-`scanBoundHotkeys` は毎フレーム ~28 個のバインド済みホットキーを走査し、各ホットキーに対して `testHotkeyMask` を呼ぶ。元の実装は 4 つの vkMask ワードを全て AND + OR する (4 AND + 3 OR + compare)。
+`scanBoundHotkeys` scans about ~28 bound hotkeys every frame and calls `testHotkeyMask` for each one. The original implementation ANDed + ORed all four vkMask words (4 AND + 3 OR + compare).
 
-しかし殆どのホットキーは **単一の VK コード** にバインドされ、4 ワードのうち 1 つだけが非ゼロ。
+However, most hotkeys are bound to **a single VK code**, so only one of the four words is non-zero.
 
-**変更内容**
-- `setHotkeyVks` でバインド時に `m_hkFastWord[id]` を算出:
-  - 0–3: 使用ワードインデックス（シングルワード、マウスなし）
-  - 4: マウスのみ
-  - 5: 複数ワード or 混合（フルチェックにフォールバック）
-- `scanBoundHotkeys` で `m_hkFastWord` を参照し、シングルワードなら 1 AND + compare のみ
+**Changes**
+- Calculate `m_hkFastWord[id]` at bind time in `setHotkeyVks`:
+  - 0–3: used word index (single-word, no mouse)
+  - 4: mouse only
+  - 5: multi-word or mixed (falls back to the full check)
+- In `scanBoundHotkeys`, consult `m_hkFastWord`; if it is a single-word case, do only 1 AND + compare
 
-**効果**
-- 28 ホットキー × (4 AND + 3 OR → 1 AND) = ~168 命令削減
-- 分岐予測: 毎フレーム同じホットキー構成 → 完全予測
-- 推定削減: ~60–140 cyc/frame
+**Effect**
+- 28 hotkeys × (4 AND + 3 OR → 1 AND) = ~168 instructions removed
+- Branch prediction: identical hotkey configuration every frame → perfectly predictable
+- Estimated reduction: ~60–140 cyc/frame
 
-## 17.4 P-43: `RunFrameHook` の `isFocused` ローカルキャッシュ
+## 17.4 P-43: local caching of `isFocused` in `RunFrameHook`
 
-`isFocused` は `MelonPrimeCore` の public メンバ変数で、GUI スレッドから設定される。`RunFrameHook` 内で `UpdateInputState()`、`HandleGlobalHotkeys()`、`HandleInGameLogic()` 等のメンバ関数呼び出し後、コンパイラは `this->isFocused` が変更されていないことを証明できず、メモリからの再読込を強制される。
+`isFocused` is a public member variable of `MelonPrimeCore`, set by the GUI thread. After member-function calls such as `UpdateInputState()`, `HandleGlobalHotkeys()`, and `HandleInGameLogic()` inside `RunFrameHook`, the compiler cannot prove that `this->isFocused` is unchanged, so it is forced to reread it from memory.
 
-`const bool focused = isFocused` でローカルにキャッシュし、以降全ての参照を `focused` に置換。emu スレッドでは読み取り専用なので安全。
+By caching it locally with `const bool focused = isFocused`, all subsequent references can be replaced with `focused`. This is safe because the emu thread only reads it.
 
-**効果**
-- 2–3 回の L1 メモリ再読込を回避
-- 推定削減: ~8–12 cyc/frame
+**Effect**
+- Avoids 2–3 L1 memory rereads
+- Estimated reduction: ~8–12 cyc/frame
 
-## 17.5 P-44: `ProcessAimInputMouse` ゼロデルタスキップ
+## 17.5 P-44: zero-delta skip in `ProcessAimInputMouse`
 
-8kHz マウスではデルタは殆ど常に非ゼロだが、標準マウス (125–1000Hz) や静止時にはゼロデルタが発生する。ゼロデルタ時は IMUL × 2 + clamp × 2 をスキップし、さらに残差もゼロなら即 return。
+On an 8kHz mouse, delta is almost always non-zero, but on standard mice (125–1000Hz) or while stationary, zero-delta frames occur. When delta is zero, it skips IMUL × 2 + clamp × 2, and if residuals are also zero, it returns immediately.
 
-**変更内容**
-- `deltaX | deltaY` で非ゼロチェック（LIKELY パスは従来どおり）
-- ゼロデルタ + ゼロ残差の場合は早期 return（direct/legacy パス全体をスキップ）
+**Changes**
+- Non-zero check via `deltaX | deltaY` (the LIKELY path remains unchanged)
+- Early return when both delta and residual are zero (skips the entire direct/legacy path)
 
-**効果**
-- 静止時: 2 IMUL (~6 cyc) + 2 clamp (~4 cyc) + direct/legacy path 全体をスキップ
-- 推定削減: ~8–12 cyc/frame (マウス静止時のみ、8kHz では稀)
+**Effect**
+- While stationary: skip 2 IMUL (~6 cyc) + 2 clamp (~4 cyc) + the entire direct/legacy path
+- Estimated reduction: ~8–12 cyc/frame (only while the mouse is stationary; rare at 8kHz)
 
-## 17.6 Round 6 + 7 + 8 累積推定効果
+## 17.6 Cumulative estimated effect of Round 6 + 7 + 8
 
-| 環境 | Round 6 | Round 7 | Round 8 | 合計 |
+| Environment | Round 6 | Round 7 | Round 8 | Total |
 |---|---|---|---|---|
-| 8kHz マウス + KB+M | ~800–2600 | ~45–85 | ~68–152 | **~913–2837** |
-| 通常マウス + KB+M | ~300–1000 | ~45–85 | ~76–164 | **~421–1249** |
-| ジョイスティック使用 | ~500–2000 | ~45–85 | ~68–152 | **~613–2237** |
+| 8kHz mouse + KB+M | ~800–2600 | ~45–85 | ~68–152 | **~913–2837** |
+| Normal mouse + KB+M | ~300–1000 | ~45–85 | ~76–164 | **~421–1249** |
+| Using joystick | ~500–2000 | ~45–85 | ~68–152 | **~613–2237** |
 
 ---
 
-## 18. Custom HUD リファクタリング統合結果
+## 18. Integrated result of the Custom HUD refactor
 
-## 18.1 中心テーマ
+## 18.1 Central theme
 
-Custom HUD 系は当初 `MelonPrimeHudRender.cpp` / `MelonPrimeHudConfigOnScreen.cpp` / `Screen.cpp` に大きな処理が集中していた。現行実装では、責務ごとに unity include fragment へ分割し、ビルド単位を増やさずに見通しを改善している。
+Originally, large amounts of processing were concentrated in `MelonPrimeHudRender.cpp` / `MelonPrimeHudConfigOnScreen.cpp` / `Screen.cpp`. In the current implementation, responsibilities are split into unity include fragments, improving readability without increasing the number of build units.
 
-重要なルール:
-- `MelonPrimeHudRender*.inc` は `MelonPrimeHudRender.cpp` からのみ include する
-- `MelonPrimeHudConfigOnScreen*.inc` は `MelonPrimeHudConfigOnScreen.cpp` からのみ include する
-- `MelonPrimeHudScreenCpp*.inc` は `Screen.cpp` からのみ include する
-- これらの `.inc` は standalone translation unit ではないため、`CMakeLists.txt` へ追加しない
+Important rules:
+- `MelonPrimeHudRender*.inc` must only be included from `MelonPrimeHudRender.cpp`
+- `MelonPrimeHudConfigOnScreen*.inc` must only be included from `MelonPrimeHudConfigOnScreen.cpp`
+- `MelonPrimeHudScreenCpp*.inc` must only be included from `Screen.cpp`
+- These `.inc` files are not standalone translation units, so they must not be added to `CMakeLists.txt`
 
-## 18.2 Runtime HUD 分割
+## 18.2 Runtime HUD split
 
-`MelonPrimeHudRender.cpp` は runtime HUD の unity entry point で、現在は次の fragment を順に include する。
+`MelonPrimeHudRender.cpp` is the unity entry point for the runtime HUD, and currently includes the following fragments in order.
 
-| ファイル | 責務 |
+| File | Responsibility |
 |---|---|
-| `MelonPrimeHudRenderAssets.inc` | icon/radar/text/outline cache、image helper、dirty rect support |
-| `MelonPrimeHudRenderConfig.inc` | `CachedHudConfig`、config load、anchor recomputation、auto-scale |
-| `MelonPrimeHudRenderRuntime.inc` | runtime state、battle state、hide rules、NoHUD patch、dirty rect computation |
+| `MelonPrimeHudRenderAssets.inc` | icon/radar/text/outline cache, image helper, dirty-rect support |
+| `MelonPrimeHudRenderConfig.inc` | `CachedHudConfig`, config load, anchor recomputation, auto-scale |
+| `MelonPrimeHudRenderRuntime.inc` | runtime state, battle state, hide rules, NoHUD patch, dirty-rect computation |
 | `MelonPrimeHudRenderDraw.inc` | HUD element drawing |
-| `MelonPrimeHudRenderMain.inc` | `CustomHud_Render()`、edit-mode forward state、radar frame drawing |
+| `MelonPrimeHudRenderMain.inc` | `CustomHud_Render()`, edit-mode forward state, radar-frame drawing |
 
-## 18.3 On-screen HUD Editor 分割
+## 18.3 On-screen HUD Editor split
 
-`MelonPrimeHudConfigOnScreen.cpp` は in-game editor の unity entry point で、shared edit-mode state と include order を持つ。
+`MelonPrimeHudConfigOnScreen.cpp` is the unity entry point for the in-game editor, and holds shared edit-mode state and the include order.
 
-| ファイル | 責務 |
+| File | Responsibility |
 |---|---|
-| `MelonPrimeHudConfigOnScreenDefs.inc` | edit element table、property definitions、sample text |
+| `MelonPrimeHudConfigOnScreenDefs.inc` | edit-element table, property definitions, sample text |
 | `MelonPrimeHudConfigOnScreenSnapshot.inc` | snapshot / restore / reset-to-default |
-| `MelonPrimeHudConfigOnScreenDraw.inc` | hit bounds、selection box、property panel、preview drawing |
-| `MelonPrimeHudConfigOnScreenInput.inc` | edit-mode API、mouse press/move/release、wheel handling |
+| `MelonPrimeHudConfigOnScreenDraw.inc` | hit bounds, selection box, property panel, preview drawing |
+| `MelonPrimeHudConfigOnScreenInput.inc` | edit-mode API, mouse press/move/release, wheel handling |
 
-## 18.4 Screen.cpp Custom HUD 分割
+## 18.4 Split of Custom HUD integration in Screen.cpp
 
-`Screen.cpp` 内の Custom HUD integration は `MelonPrimeHudScreenCpp*.inc` に分割されている。
+The Custom HUD integration inside `Screen.cpp` is split into `MelonPrimeHudScreenCpp*.inc`.
 
-| ファイル | 責務 |
+| File | Responsibility |
 |---|---|
-| `MelonPrimeHudScreenCppHelpers.inc` | screen-side common helper |
-| `MelonPrimeHudScreenCppInit.inc` | overlay buffers、HUD font、edit side panel、selection callback |
-| `MelonPrimeHudScreenCppLayout.inc` | HUD scale/origin/top matrix cache update |
-| `MelonPrimeHudScreenCppMouseWheel.inc` | edit-mode mouse wheel interception |
-| `MelonPrimeHudScreenCppMousePress.inc` | edit-mode mouse press interception |
-| `MelonPrimeHudScreenCppMouseRelease.inc` | edit-mode mouse release interception |
-| `MelonPrimeHudScreenCppMouseMove.inc` | edit-mode mouse move/drag interception |
-| `MelonPrimeHudScreenCppEditPanelResize.inc` | resize 時の edit side panel placement |
-| `MelonPrimeHudScreenCppEditPanelMove.inc` | move 時の edit side panel placement |
+| `MelonPrimeHudScreenCppHelpers.inc` | screen-side common helpers |
+| `MelonPrimeHudScreenCppInit.inc` | overlay buffers, HUD font, edit side panel, selection callback |
+| `MelonPrimeHudScreenCppLayout.inc` | update of HUD scale/origin/top-matrix cache |
+| `MelonPrimeHudScreenCppMouseWheel.inc` | edit-mode mouse-wheel interception |
+| `MelonPrimeHudScreenCppMousePress.inc` | edit-mode mouse-press interception |
+| `MelonPrimeHudScreenCppMouseRelease.inc` | edit-mode mouse-release interception |
+| `MelonPrimeHudScreenCppMouseMove.inc` | edit-mode mouse-move/drag interception |
+| `MelonPrimeHudScreenCppEditPanelResize.inc` | edit side-panel placement on resize |
+| `MelonPrimeHudScreenCppEditPanelMove.inc` | edit side-panel placement on move |
 | `MelonPrimeHudScreenCppOverlayOfSoftware.inc` | software `QPainter` overlay path |
 | `MelonPrimeHudScreenCppGlInit.inc` | HUD/radar GL resource init |
 | `MelonPrimeHudScreenCppGlDeinit.inc` | HUD/radar GL resource cleanup |
-| `MelonPrimeHudScreenCppOverlayOfGl.inc` | GL overlay upload/composite、GL-native radar overlay |
+| `MelonPrimeHudScreenCppOverlayOfGl.inc` | GL overlay upload/composite, GL-native radar overlay |
 
 ---
 
-## 19. Custom HUD パフォーマンス統合結果
+## 19. Integrated result of Custom HUD performance work
 
 ## 19.1 OPT-DR1: Dirty-rect overlay optimization
 
-`CustomHud_Render()` は描画した pixel-space dirty rect を `QRect` で返す。`Screen.cpp` の software / GL path は、前フレーム dirty rect と現フレーム dirty rect の union のみを clear / composite / upload する。
+`CustomHud_Render()` returns the drawn pixel-space dirty rect as a `QRect`. The software / GL paths in `Screen.cpp` clear / composite / upload only the union of the previous frame’s dirty rect and the current frame’s dirty rect.
 
-主な効果:
-- full-window `QImage::fill()` の定常実行を避ける
-- GL path では `glTexSubImage2D` を dirty rect に限定する
-- crosshair の移動だけのフレームで、upload/composite 範囲を小さく保つ
-- first-person 以外では weapon/ammo/crosshair 系の RAM read と dirty rect を省く
+Main effects:
+- Avoid steady-state full-window `QImage::fill()`
+- In the GL path, limit `glTexSubImage2D` to the dirty rect only
+- Keep the upload/composite region small on frames where only the crosshair moves
+- Outside first-person view, skip weapon/ammo/crosshair-related RAM reads and dirty rect work
 
-## 19.2 HUD render runtime 側の cache / skip
+## 19.2 Cache / skip on the HUD-render runtime side
 
-現行 runtime は以下を cache する。
+The current runtime caches the following.
 
-| 対象 | 内容 |
+| Target | Contents |
 |---|---|
-| `CachedHudConfig` | HUD config と anchor recomputation 結果 |
-| `BattleMatchState` | match join 時に battle settings を decode |
-| text bitmap / measurement cache | repeated text drawing の pixmap/measure を再利用 |
-| weapon/bomb icon cache | SVG/icon rasterize と tint を再利用 |
-| radar frame cache | SVG frame、tint、outline を size/color 変更時のみ再生成 |
-| static dirty rect | fixed-position HUD elements の dirty rect を config/transform 変更時のみ再計算 |
-| crosshair dirty rect | previous/current crosshair bbox を union |
+| `CachedHudConfig` | HUD config and anchor-recomputation results |
+| `BattleMatchState` | Decode battle settings when joining a match |
+| Text bitmap / measurement cache | Reuse pixmap/measurement results for repeated text drawing |
+| Weapon/bomb icon cache | Reuse SVG/icon rasterization and tinting |
+| Radar-frame cache | Regenerate SVG frame, tint, and outline only when size/color changes |
+| Static dirty rect | Recompute dirty rects for fixed-position HUD elements only when config/transform changes |
+| Crosshair dirty rect | Union of previous/current crosshair bounding boxes |
 
-## 19.3 OPT-SC1: Screen fragment hot path optimization
+## 19.3 OPT-SC1: Screen-fragment hot-path optimization
 
-Screen integration 側では、HUD overlay の外側にある per-frame cost を削減している。
+On the Screen-integration side, per-frame costs outside the HUD overlay itself are reduced.
 
-| 最適化 | 内容 |
+| Optimization | Contents |
 |---|---|
-| HUD enable cache | `m_hudCfgEpoch` + `m_hudEnabled` で `Metroid.Visual.CustomHUD` の `GetBool()` を epoch 更新時だけに限定 |
-| radar config cache 分離 | `m_radarCfgEpoch` で GL radar config を HUD enable cache から独立管理 |
-| top matrix cache | `setupScreenLayout()` で `m_hudTopMatrix` / `m_hudTopMatrixValid` を更新し、GL radar path の `screenKind` scan を削除 |
-| radar anchor precompute | `m_radarAnchorDsX/Y` を config refresh 時に計算し、毎フレームの `%` / `/` を削減 |
-| empty dirty skip | GL path で previous/current dirty rect が空なら texture bind/upload、OSD shader setup、blend、draw を丸ごと skip |
-| conditional GL restore | HUD/radar が GL state を変更した時だけ screen shader / buffer / VAO / texture を restore |
-| software reset skip | software path で composite rect が空なら `painter.resetTransform()` も skip |
+| HUD enable cache | Use `m_hudCfgEpoch` + `m_hudEnabled` so `GetBool()` for `Metroid.Visual.CustomHUD` runs only when the epoch updates |
+| Separate radar config cache | Manage GL radar config independently from the HUD enable cache via `m_radarCfgEpoch` |
+| Top-matrix cache | Update `m_hudTopMatrix` / `m_hudTopMatrixValid` in `setupScreenLayout()`, removing `screenKind` scans from the GL radar path |
+| Radar-anchor precompute | Compute `m_radarAnchorDsX/Y` during config refresh, removing per-frame `%` / `/` |
+| Empty-dirty skip | In the GL path, if both previous/current dirty rects are empty, skip texture bind/upload, OSD shader setup, blend, and draw entirely |
+| Conditional GL restore | Restore screen shader / buffer / VAO / texture only when the HUD/radar actually changed GL state |
+| Software reset skip | In the software path, skip `painter.resetTransform()` when the composite rect is empty |
 
-## 19.4 現行の注意点
+## 19.4 Current caution points
 
-- `MelonPrimeHudScreenCppOverlayOfGl.inc` は HUD overlay と GL-native radar overlay の両方を扱うため、GL state を追加で変更した場合は `hudGlStateChanged` と restore の対象を必ず確認する。
-- `m_hudCfgEpoch` と `m_radarCfgEpoch` は意図的に分離されている。software path と GL radar path が互いの cache refresh を潰さないようにするため。
-- `m_hudTopMatrix` は `setupScreenLayout()` の結果に依存する。layout 更新をバイパスする変更を入れる場合は、この cache の更新漏れに注意する。
-- `.inc` fragment は単体では compile されない。include 元の scope、local variable、`#ifdef MELONPRIME_CUSTOM_HUD` に依存する。
+- `MelonPrimeHudScreenCppOverlayOfGl.inc` handles both the HUD overlay and the GL-native radar overlay, so if additional GL state changes are introduced, always verify `hudGlStateChanged` and the restore targets.
+- `m_hudCfgEpoch` and `m_radarCfgEpoch` are intentionally separated so that the software path and the GL radar path do not invalidate each other’s cache refreshes.
+- `m_hudTopMatrix` depends on the result of `setupScreenLayout()`. If a change bypasses layout updates, watch out for missed updates to this cache.
+- `.inc` fragments are not compiled on their own. They depend on the scope of the including file, local variables, and `#ifdef MELONPRIME_CUSTOM_HUD`.
