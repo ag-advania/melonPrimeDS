@@ -111,7 +111,7 @@ HOT_FUNCTION QRect CustomHud_Render(
         // OPT-DR1: Crosshair not drawn in third-person / alt-form.
         // If it was drawn last frame, include its previous bbox so Screen.cpp clears it.
         ClearPreviousCrosshairDirty(c.crosshair);
-        return CurrentHudDirtyRect(xf);
+        return CurrentHudDirtyRect(xf, false);
     }
 
     DrawWeaponAmmo(topPaint, st.ram, st.currentWeapon,
@@ -132,7 +132,7 @@ HOT_FUNCTION QRect CustomHud_Render(
         ClearPreviousCrosshairDirty(c.crosshair);
     }
 
-    return CurrentHudDirtyRect(xf);
+    return CurrentHudDirtyRect(xf, true);
 }
 
 // =========================================================================
