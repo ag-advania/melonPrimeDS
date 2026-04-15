@@ -124,6 +124,7 @@ static inline void DrawHP(QPainter* p, uint16_t hp, uint16_t maxHP,
     static TextBitmapCache s_hpOutlineCache = { 0, QColor(), "", 0, 0, 0, 1.0f, false, QImage() };
     const QFontMetrics& fm = s_frameFm;        // P-9
     const int fontPixelSize = s_frameFpx;       // P-9
+    const QFont font = p->font();
 
     char buf[24];
     std::snprintf(buf, sizeof(buf), "%s%u", c.hp.hpPrefix, hp);
@@ -145,7 +146,7 @@ static inline void DrawHP(QPainter* p, uint16_t hp, uint16_t maxHP,
         textX  = CalcAlignedTextX(c.hp.hpX, c.hp.hpAlign, textW);
         hpTextY = static_cast<float>(c.hp.hpY);
     }
-    PrepareTextBitmapCached(fm, p->font(), fontPixelSize, s_hpBitmapCache, buf, hpTextColor);
+    PrepareTextBitmapCached(fm, font, fontPixelSize, s_hpBitmapCache, buf, hpTextColor);
     { const HudOutlineConfig& _ol = EffOL(c, c.hp.outline);
     if (_ol.enable && _ol.opacity > 0.0f) {
         const float renderScale = tds * c.lastHudScale;
@@ -236,15 +237,9 @@ static void DrawWeaponInventory(QPainter* p, melonDS::u8* ram,
     }
     if (drawCount == 0) return;
 
-    // Pre-pass: max icon width for vertical center-axis alignment
-    float maxDrawIW = iH;
-    for (int i = 0; i < 9; ++i) {
-        const QImage& icon = s_weaponIcons[i];
-        if (!icon.isNull() && icon.height() > 0) {
-            const float w = iH * static_cast<float>(icon.width()) / static_cast<float>(icon.height());
-            if (w > maxDrawIW) maxDrawIW = w;
-        }
-    }
+    // Max icon width for vertical center-axis alignment. The aspect ratio is
+    // cached when the SVGs are rasterized, so this avoids a per-frame icon scan.
+    const float maxDrawIW = iH * s_weaponIconMaxAspect;
 
     // OPT-WI1: QPainter::save()/restore() copies the full painter state.
     // DrawWeaponInventory only mutates opacity, SmoothPixmapTransform, and
@@ -255,6 +250,7 @@ static void DrawWeaponInventory(QPainter* p, melonDS::u8* ram,
     QBrush savedBrush;
     bool penBrushChanged = false;
     bool smoothPixmapChanged = false;
+    bool smoothPixmapActive = savedSmoothPixmap;
 
     const float startX = static_cast<float>(wi.posX);
     const float startY = static_cast<float>(wi.posY);
@@ -277,6 +273,14 @@ static void DrawWeaponInventory(QPainter* p, melonDS::u8* ram,
 
     const QFontMetrics& fm      = s_frameFm;
     const int           fontPx  = s_frameFpx;
+    const QFont         font    = p->font();
+    const HudOutlineConfig& invIconOutline = EffOL(c, c.weaponInventory.iconOutline);
+    const HudOutlineConfig& invTextOutline = EffOL(c, c.weaponInventory.outline);
+    const bool useIconOutline = invIconOutline.enable && invIconOutline.opacity > 0.0f;
+    const bool useTextOutline = invTextOutline.enable && invTextOutline.opacity > 0.0f;
+    const int iconExpandR = useIconOutline ? std::max(1, invIconOutline.thickness) : 0;
+    if (useIconOutline)
+        EnsureInvOutlineIconsUpdated(invIconOutline.color, iconExpandR);
 
     for (int si = 0; si < 9; ++si) {
         const int i = kInventoryOrder[si];
@@ -314,7 +318,7 @@ static void DrawWeaponInventory(QPainter* p, melonDS::u8* ram,
 
         // Prepare text bitmap (respects tds / TextScale / CapText via DrawCachedText scaling).
         if (buf[0] && fontPx == kCustomHudFontSize)
-            PrepareTextBitmapCached(fm, p->font(), fontPx, s_invTextCache[si], buf, wi.textColor);
+            PrepareTextBitmapCached(fm, font, fontPx, s_invTextCache[si], buf, wi.textColor);
         else
             s_invTextCache[si].valid = false;
 
@@ -381,31 +385,34 @@ static void DrawWeaponInventory(QPainter* p, melonDS::u8* ram,
 
         // Draw icon (with optional outline)
         if (!icon.isNull()) {
-            p->setRenderHint(QPainter::SmoothPixmapTransform, true);
-            smoothPixmapChanged = true;
-            const HudOutlineConfig& _iol = EffOL(c, c.weaponInventory.iconOutline);
-            if (_iol.enable && _iol.opacity > 0.0f) {
-                const int expandR = std::max(1, _iol.thickness);
-                EnsureInvOutlineIconsUpdated(_iol.color, expandR);
+            if (!smoothPixmapActive) {
+                p->setRenderHint(QPainter::SmoothPixmapTransform, true);
+                smoothPixmapActive = true;
+                smoothPixmapChanged = true;
+            }
+            if (useIconOutline) {
                 DrawImageOutlined(p, icon, s_invIconsOutline[i],
                                   QRectF(px, py, drawIW, drawIH),
-                                  static_cast<float>(expandR) / hudScale,
-                                  eff, _iol.opacity);
+                                  static_cast<float>(iconExpandR) / hudScale,
+                                  eff, invIconOutline.opacity);
                 p->setOpacity(eff); // DrawImageOutlined resets opacity to 1.0; restore for text
             } else {
                 p->drawImage(QRectF(px, py, drawIW, drawIH), icon);
             }
-            p->setRenderHint(QPainter::SmoothPixmapTransform, false);
         }
 
         // Draw ammo text via bitmap cache (tds scaling → TextScale + CapText applied)
         if (s_invTextCache[si].valid) {
-            const HudOutlineConfig& _ol = EffOL(c, c.weaponInventory.outline);
-            if (_ol.enable && _ol.opacity > 0.0f) {
+            if (smoothPixmapActive) {
+                p->setRenderHint(QPainter::SmoothPixmapTransform, false);
+                smoothPixmapActive = false;
+                smoothPixmapChanged = true;
+            }
+            if (useTextOutline) {
                 PrepareOutlineBitmapCached(s_invOutlineCache[si], s_invTextCache[si],
-                                           _ol.color, _ol.thickness, tds * hudScale);
+                                           invTextOutline.color, invTextOutline.thickness, tds * hudScale);
                 DrawCachedTextOutlined(p, s_invTextCache[si], s_invOutlineCache[si],
-                                       textX, textBaseY, tds, eff, _ol.opacity);
+                                       textX, textBaseY, tds, eff, invTextOutline.opacity);
             } else {
                 DrawCachedText(p, s_invTextCache[si], textX, textBaseY, tds);
             }
@@ -424,9 +431,8 @@ static void DrawWeaponInventory(QPainter* p, melonDS::u8* ram,
         p->setPen(savedPen);
         p->setBrush(savedBrush);
     }
-    if (smoothPixmapChanged && savedSmoothPixmap) {
-        p->setRenderHint(QPainter::SmoothPixmapTransform, true);
-    }
+    if (smoothPixmapChanged && smoothPixmapActive != savedSmoothPixmap)
+        p->setRenderHint(QPainter::SmoothPixmapTransform, savedSmoothPixmap);
     p->setOpacity(savedOpacity);
 }
 
@@ -442,6 +448,7 @@ static void DrawWeaponAmmo(QPainter* p, melonDS::u8* ram,
     static TextBitmapCache s_ammoOutlineCache = { 0, QColor(), "", 0, 0, 0, 1.0f, false, QImage() };
     const QFontMetrics& fm = s_frameFm;        // P-9
     const int fontPixelSize = s_frameFpx;       // P-9
+    const QFont font = p->font();
 
     const WeaponInfo& wi = kWeaponTable[weapon];
     EnsureIconsLoaded(static_cast<int>(c.weapon.iconHeight * c.scaleIcons));
@@ -484,7 +491,7 @@ static void DrawWeaponAmmo(QPainter* p, melonDS::u8* ram,
         } else {
             textX = CalcAlignedTextX(c.weapon.wpnX, c.weapon.ammoAlign, textW);
         }
-        PrepareTextBitmapCached(fm, p->font(), fontPixelSize, s_ammoBitmapCache, buf, c.weapon.ammoTextColor);
+        PrepareTextBitmapCached(fm, font, fontPixelSize, s_ammoBitmapCache, buf, c.weapon.ammoTextColor);
         { const HudOutlineConfig& _ol = EffOL(c, c.weapon.outline);
         if (_ol.enable && _ol.opacity > 0.0f) {
             const float renderScale = tds * hudScale;

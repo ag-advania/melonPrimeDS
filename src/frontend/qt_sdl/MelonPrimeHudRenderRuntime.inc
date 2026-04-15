@@ -330,9 +330,12 @@ static void EnsureHudFont(QPainter* p)
     }
 }
 
-static inline QRect CurrentHudDirtyRect(const HudFrameTransform& xf)
+static inline QRect CurrentHudDirtyRect(const HudFrameTransform& xf, bool includeFirstPersonHud)
 {
-    return (s_staticHudDirtyPx | s_chDirtyThisFrame) & xf.overlayRect;
+    QRect dirty = s_staticHudDirtyPx | s_chDirtyThisFrame;
+    if (includeFirstPersonHud)
+        dirty |= s_staticHudFirstPersonDirtyPx;
+    return dirty & xf.overlayRect;
 }
 
 static void ClearPreviousCrosshairDirty(const CrosshairHudConfig& ch)
@@ -357,6 +360,7 @@ static bool ReadHudRuntimeState(EmuInstance* emu,
 
     const uint32_t offP = static_cast<uint32_t>(playerPosition) * Consts::PLAYER_ADDR_INC;
     const uint8_t viewMode = Read8(ram, rom.baseViewMode + offP);
+    const bool isFirstPerson = (viewMode == 0x00);
 
     out.nds = nds;
     out.ram = ram;
@@ -364,29 +368,31 @@ static bool ReadHudRuntimeState(EmuInstance* emu,
     out.romGroup = rom.romGroupIndex;
     out.currentHP = Read16(ram, rom.playerHP + offP);
     out.maxHP = Read16(ram, rom.maxHP + offP);
-    out.maxAmmoSpecial = Read16(ram, rom.maxAmmoSpecial + offP);
-    out.maxAmmoMissile = Read16(ram, rom.maxAmmoMissile + offP);
+    out.maxAmmoSpecial = isFirstPerson ? Read16(ram, rom.maxAmmoSpecial + offP) : 0;
+    out.maxAmmoMissile = isFirstPerson ? Read16(ram, rom.maxAmmoMissile + offP) : 0;
     out.hunterID = Read8(ram, addrHot.chosenHunter);
-    out.currentWeapon = Read8(ram, addrHot.currentWeapon);
+    out.currentWeapon = isFirstPerson ? Read8(ram, addrHot.currentWeapon) : 0;
     out.isStartPressed = Read8(ram, rom.startPressed) == 0x01;
     out.isGameOver = Read8(ram, rom.gameOver) != 0x00;
-    out.isFirstPerson = (viewMode == 0x00);
+    out.isFirstPerson = isFirstPerson;
     out.isAlt = Read8(ram, addrHot.isAltForm) == 0x02;
-    out.isTrans = (Read8(ram, addrHot.jumpFlag) & 0x10) != 0;
+    out.isTrans = isFirstPerson && (Read8(ram, addrHot.jumpFlag) & 0x10) != 0;
     out.isAdventure = Read8(ram, rom.isInAdventure) == 0x02;
     return true;
 }
 
-// OPT-DR1: Computes the conservative pixel-space dirty rect for all non-crosshair elements.
-// Called at most once per config/transform change; result cached in s_staticHudDirtyPx.
+// OPT-DR1: Computes conservative pixel-space dirty rects for non-crosshair elements.
+// The always-visible rect excludes first-person-only weapon HUD, so third-person
+// and alt-form frames clear/upload a smaller overlay region.
 static void RefreshStaticHudDirty(const CachedHudConfig& c,
                                    float hs, float txDs, float tyDs,
                                    int overlayW, int overlayH)
 {
     // Expands dirty by a DS-space bbox centred at (cx, cy) with ±padX/±padY DS units.
     QRect dirty;
-    auto addDS = [&](int cx, int cy, int padX, int padY) {
-        dirty |= QRect(
+    QRect firstPersonDirty;
+    auto addDS = [&](QRect& dst, int cx, int cy, int padX, int padY) {
+        dst |= QRect(
             QPoint(static_cast<int>((cx - padX + txDs) * hs),
                    static_cast<int>((cy - padY + tyDs) * hs)),
             QPoint(static_cast<int>((cx + padX + txDs) * hs) + 1,
@@ -394,38 +400,38 @@ static void RefreshStaticHudDirty(const CachedHudConfig& c,
     };
 
     // HP — always drawn in-game (no show flag)
-    addDS(c.hp.hpX, c.hp.hpY, 90, 65);
+    addDS(dirty, c.hp.hpX, c.hp.hpY, 90, 65);
     if (c.hp.hpGauge)
-        addDS(c.hp.hpGaugePosX, c.hp.hpGaugePosY, c.hp.hpGaugeLen / 2 + 12, c.hp.hpGaugeWid / 2 + 12);
+        addDS(dirty, c.hp.hpGaugePosX, c.hp.hpGaugePosY, c.hp.hpGaugeLen / 2 + 12, c.hp.hpGaugeWid / 2 + 12);
 
-    // Weapon + Ammo — always drawn in first-person (no show flag; include conservatively)
-    addDS(c.weapon.wpnX, c.weapon.wpnY, 90, 65);
-    if (c.weapon.iconShow) addDS(c.weapon.iconPosX, c.weapon.iconPosY, 35, 35);
-    if (c.weapon.ammoGauge) addDS(c.weapon.ammoGaugePosX, c.weapon.ammoGaugePosY, 65, 55);
+    // Weapon + Ammo — first-person only.
+    addDS(firstPersonDirty, c.weapon.wpnX, c.weapon.wpnY, 90, 65);
+    if (c.weapon.iconShow) addDS(firstPersonDirty, c.weapon.iconPosX, c.weapon.iconPosY, 35, 35);
+    if (c.weapon.ammoGauge) addDS(firstPersonDirty, c.weapon.ammoGaugePosX, c.weapon.ammoGaugePosY, 65, 55);
 
-    // Weapon Inventory
-    if (c.weaponInventory.show) addDS(c.weaponInventory.posX, c.weaponInventory.posY, 170, 170);
+    // Weapon Inventory — first-person only.
+    if (c.weaponInventory.show) addDS(firstPersonDirty, c.weaponInventory.posX, c.weaponInventory.posY, 170, 170);
 
     // Match Status
-    if (c.matchStatus.matchStatusShow) addDS(c.matchStatus.matchStatusX, c.matchStatus.matchStatusY, 110, 90);
+    if (c.matchStatus.matchStatusShow) addDS(dirty, c.matchStatus.matchStatusX, c.matchStatus.matchStatusY, 110, 90);
 
     // Bomb Left
     if (c.bombLeft.bombLeftShow) {
-        addDS(c.bombLeft.bombLeftX, c.bombLeft.bombLeftY, 75, 45);
+        addDS(dirty, c.bombLeft.bombLeftX, c.bombLeft.bombLeftY, 75, 45);
         if (c.bombLeft.bombIconShow)
-            addDS(c.bombLeft.bombIconPosX, c.bombLeft.bombIconPosY, 35, 35);
+            addDS(dirty, c.bombLeft.bombIconPosX, c.bombLeft.bombIconPosY, 35, 35);
     }
 
     // Rank & Time
-    if (c.rankTime.rankShow)      addDS(c.rankTime.rankX,      c.rankTime.rankY,      80, 28);
-    if (c.rankTime.timeLeftShow)  addDS(c.rankTime.timeLeftX,  c.rankTime.timeLeftY,  80, 28);
-    if (c.rankTime.timeLimitShow) addDS(c.rankTime.timeLimitX, c.rankTime.timeLimitY, 80, 28);
+    if (c.rankTime.rankShow)      addDS(dirty, c.rankTime.rankX,      c.rankTime.rankY,      80, 28);
+    if (c.rankTime.timeLeftShow)  addDS(dirty, c.rankTime.timeLeftX,  c.rankTime.timeLeftY,  80, 28);
+    if (c.rankTime.timeLimitShow) addDS(dirty, c.rankTime.timeLimitX, c.rankTime.timeLimitY, 80, 28);
 
     // Radar — use radarDstSize for radius, plus outline padding
     if (c.radar.radarShow) {
         const int s   = c.radar.radarDstSize;
         const int pad = s / 2 + std::max(8, EffOL(c, c.radar.frameOutline).thickness + 5);
-        addDS(c.radar.radarDstX + s / 2, c.radar.radarDstY + s / 2, pad, pad);
+        addDS(dirty, c.radar.radarDstX + s / 2, c.radar.radarDstY + s / 2, pad, pad);
         // Also cover the (potentially larger) SVG frame
         const QRectF& fr = c.radar.frameDstRect;
         if (!fr.isEmpty()) {
@@ -442,6 +448,7 @@ static void RefreshStaticHudDirty(const CachedHudConfig& c,
     }
 
     s_staticHudDirtyPx  = dirty & QRect(0, 0, overlayW, overlayH);
+    s_staticHudFirstPersonDirtyPx = firstPersonDirty & QRect(0, 0, overlayW, overlayH);
     s_staticDirtyHudScale = hs;
     s_staticDirtyTxDs   = txDs;
     s_staticDirtyTyDs   = tyDs;
@@ -458,6 +465,7 @@ static void DrawMatchStatusText(QPainter* p, const QFontMetrics& fm, int fontPix
     static TextBitmapCache s_curOlCache = { 0, QColor(), "", 0, 0, 0, 1.0f, false, QImage() }, s_sepOlCache = { 0, QColor(), "", 0, 0, 0, 1.0f, false, QImage() }, s_goalOlCache = { 0, QColor(), "", 0, 0, 0, 1.0f, false, QImage() }, s_labelOlCache = { 0, QColor(), "", 0, 0, 0, 1.0f, false, QImage() };
     static MatchStatusStringCache s_matchStringCache = { 0, 0, 0, 0, 0, false, false, false, "", "", "" };
     UpdateMatchStatusStrings(s_matchStringCache, state);
+    const QFont font = p->font();
     auto eff = [&](const QColor& sub) -> const QColor& { return sub.isValid() ? sub : c.matchStatusColor; };
     const bool useOutline = ol.enable && ol.opacity > 0.0f;
     const float renderScale = tds * hudScale;
@@ -473,17 +481,17 @@ static void DrawMatchStatusText(QPainter* p, const QFontMetrics& fm, int fontPix
     };
     float curW = 0.0f, curH = 0.0f;
     MeasureTextCached(fm, fontPixelSize, s_curTextCache, s_matchStringCache.curBuf, curW, curH, tds);
-    PrepareTextBitmapCached(fm, p->font(), fontPixelSize, s_curBitmapCache, s_matchStringCache.curBuf, eff(c.matchStatusValueColor));
+    PrepareTextBitmapCached(fm, font, fontPixelSize, s_curBitmapCache, s_matchStringCache.curBuf, eff(c.matchStatusValueColor));
     drawText(s_curBitmapCache, s_curOlCache, static_cast<float>(c.matchStatusX), static_cast<float>(c.matchStatusY));
     if (s_matchStringCache.hasGoal) {
         float sepW = 0.0f, sepH = 0.0f, goalW = 0.0f, goalH = 0.0f;
         MeasureTextCached(fm, fontPixelSize, s_sepTextCache, s_matchStringCache.sepBuf, sepW, sepH, tds);
         MeasureTextCached(fm, fontPixelSize, s_goalTextCache, s_matchStringCache.goalBuf, goalW, goalH, tds);
         float x = c.matchStatusX + curW;
-        PrepareTextBitmapCached(fm, p->font(), fontPixelSize, s_sepBitmapCache, s_matchStringCache.sepBuf, eff(c.matchStatusSepColor));
+        PrepareTextBitmapCached(fm, font, fontPixelSize, s_sepBitmapCache, s_matchStringCache.sepBuf, eff(c.matchStatusSepColor));
         drawText(s_sepBitmapCache, s_sepOlCache, x, static_cast<float>(c.matchStatusY));
         x += sepW;
-        PrepareTextBitmapCached(fm, p->font(), fontPixelSize, s_goalBitmapCache, s_matchStringCache.goalBuf, eff(c.matchStatusGoalColor));
+        PrepareTextBitmapCached(fm, font, fontPixelSize, s_goalBitmapCache, s_matchStringCache.goalBuf, eff(c.matchStatusGoalColor));
         drawText(s_goalBitmapCache, s_goalOlCache, x, static_cast<float>(c.matchStatusY));
     }
     const char* label = ResolveMatchStatusLabel(state.mode, c);
@@ -491,7 +499,7 @@ static void DrawMatchStatusText(QPainter* p, const QFontMetrics& fm, int fontPix
     float lx = static_cast<float>(c.matchStatusX), ly = static_cast<float>(c.matchStatusY);
     switch (c.matchStatusLabelPos) { default: case 0: ly -= 10; break; case 1: ly += 10; break; case 2: lx -= 50; break; case 3: lx += 50; break; case 4: break; }
     lx += c.matchStatusLabelOfsX; ly += c.matchStatusLabelOfsY;
-    PrepareTextBitmapCached(fm, p->font(), fontPixelSize, s_labelBitmapCache, label, eff(c.matchStatusLabelColor));
+    PrepareTextBitmapCached(fm, font, fontPixelSize, s_labelBitmapCache, label, eff(c.matchStatusLabelColor));
     drawText(s_labelBitmapCache, s_labelOlCache, lx, ly);
 }
 static void DrawMatchStatusHud(QPainter* p, melonDS::u8* ram, const RomAddresses& rom, uint8_t playerPos, bool isAdventure, const CachedHudConfig& c)
@@ -518,7 +526,8 @@ static void DrawCachedAlignedText(QPainter* p, const QFontMetrics& fm, int fontP
     float textW = 0.0f, textH = 0.0f;
     MeasureTextCached(fm, fontPixelSize, measureCache, text, textW, textH, tds);
     const float textX = CalcAlignedTextX(anchorX, align, textW);
-    PrepareTextBitmapCached(fm, p->font(), fontPixelSize, bitmapCache, text, color);
+    const QFont font = p->font();
+    PrepareTextBitmapCached(fm, font, fontPixelSize, bitmapCache, text, color);
     if (ol.enable && ol.opacity > 0.0f) {
         const float renderScale = tds * hudScale;
         PrepareOutlineBitmapCached(outlineCache, bitmapCache, ol.color, ol.thickness, renderScale);
@@ -540,13 +549,14 @@ static void DrawBombLeft(QPainter* p, melonDS::u8* ram, const RomAddresses& rom,
         static TextBitmapCache s_bombOutlineCache = { 0, QColor(), "", 0, 0, 0, 1.0f, false, QImage() };
         static TextMeasureCache s_bombMeasureCache = { 0, "", 0, 0, false };
         const QFontMetrics& fm = s_frameFm; const int fontPixelSize = s_frameFpx; // P-9
+        const QFont font = p->font();
         char buf[64];
         if (c.bombLeft.bombLeftTextShow) std::snprintf(buf, sizeof(buf), "%s%u%s", c.bombLeft.bombLeftPrefix, bombs, c.bombLeft.bombLeftSuffix);
         else std::snprintf(buf, sizeof(buf), "%s%s", c.bombLeft.bombLeftPrefix, c.bombLeft.bombLeftSuffix);
         if (buf[0] != '\0') {
             float bombTextW = 0.0f, bombTextH = 0.0f;
             MeasureTextCached(fm, fontPixelSize, s_bombMeasureCache, buf, bombTextW, bombTextH, tds);
-            PrepareTextBitmapCached(fm, p->font(), fontPixelSize, s_bombBitmapCache, buf, c.bombLeft.bombLeftColor);
+            PrepareTextBitmapCached(fm, font, fontPixelSize, s_bombBitmapCache, buf, c.bombLeft.bombLeftColor);
             const float bombTextX = CalcAlignedTextX(c.bombLeft.bombLeftX, c.bombLeft.bombLeftAlign, bombTextW);
             { const HudOutlineConfig& _ol = EffOL(c, c.bombLeft.outline);
             if (_ol.enable && _ol.opacity > 0.0f) {

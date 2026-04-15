@@ -25,6 +25,7 @@ static QImage s_weaponTintedIcons[9];
 static QColor s_weaponTintColors[9];
 static bool   s_weaponTintValid[9] = {};
 static int    s_weaponIconHeight = 0;
+static float  s_weaponIconMaxAspect = 1.0f;
 
 // Bomb icon cache — 4 icons (index 0-3 = bombs remaining)
 static QImage s_bombIcons[4];
@@ -117,12 +118,19 @@ static void EnsureIconsLoaded(int pixelH = 16)
         ":/mph-icon-judicator", ":/mph-icon-magmaul",
         ":/mph-icon-shock", ":/mph-icon-omega"
     };
+    float maxAspect = 1.0f;
     for (int i = 0; i < 9; i++) {
         s_weaponIcons[i] = loadSvgToHeight(kIconPaths[i], targetH);
         s_weaponTintedIcons[i] = s_weaponIcons[i];
         s_weaponTintValid[i] = false;
+        if (!s_weaponIcons[i].isNull() && s_weaponIcons[i].height() > 0) {
+            const float aspect = static_cast<float>(s_weaponIcons[i].width()) /
+                                 static_cast<float>(s_weaponIcons[i].height());
+            if (aspect > maxAspect) maxAspect = aspect;
+        }
     }
     s_weaponIconHeight = targetH;
+    s_weaponIconMaxAspect = maxAspect;
     s_outlineWeaponColor = QColor(); // invalidate weapon outline cache
     s_outlineInvColor    = QColor(); // invalidate inventory icon outline cache
 }
@@ -327,6 +335,7 @@ static QRect s_chDirtyThisFrame;
 // Static dirty rect: covers all enabled non-crosshair HUD elements.
 // Recomputed in RefreshStaticHudDirty() whenever the config cache or transform changes.
 static QRect  s_staticHudDirtyPx;
+static QRect  s_staticHudFirstPersonDirtyPx;
 static float  s_staticDirtyHudScale = -1.0f;
 static float  s_staticDirtyTxDs    = 1e30f;
 static float  s_staticDirtyTyDs    = 1e30f;
