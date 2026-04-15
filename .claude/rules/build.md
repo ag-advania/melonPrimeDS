@@ -12,16 +12,26 @@
 ## Windows Build Command
 Windows-only AI build command. Do not rebuild, bootstrap, or reinstall `vcpkg/` unless the user explicitly asks for it.
 
-Use MSYS bash and the existing CMake preset:
+Use MSYS bash and the existing CMake preset. Put `/mingw64/bin` first in `PATH`; Qt's `moc.exe` depends on MinGW DLLs such as `libgcc_s_seh-1.dll` and `libstdc++-6.dll`, and can fail with `Process failed with return value 3221225781` if they are not discoverable.
 
 ```powershell
-& 'C:\msys64\usr\bin\bash.exe' -lc "export PATH='/c/Program Files/Python312:/c/Program Files/Python312/Scripts:`$PATH'; cd /c/Users/Admin/Documents/git/melonPrimeDS && /mingw64/bin/cmake.exe --build --preset=release-mingw-x86_64 --parallel 1 --verbose 2>&1"
+& 'C:\msys64\usr\bin\bash.exe' -lc "export PATH='/mingw64/bin:/c/Program Files/Python312:/c/Program Files/Python312/Scripts:/c/Users/Admin/Documents/git/melonPrimeDS/build/release-mingw-x86_64/vcpkg_installed/x64-mingw-static-release/tools/Qt6/bin:/c/Users/Admin/Documents/git/melonPrimeDS/build/release-mingw-x86_64/vcpkg_installed/x64-mingw-static-release/bin:`$PATH'; cd /c/Users/Admin/Documents/git/melonPrimeDS && /mingw64/bin/cmake.exe --build --preset=release-mingw-x86_64 --parallel 1 --verbose 2>&1"
 ```
 
 For short output, use:
 
 ```powershell
-& 'C:\msys64\usr\bin\bash.exe' -lc "cd /c/Users/Admin/Documents/git/melonPrimeDS && /mingw64/bin/cmake.exe --build --preset=release-mingw-x86_64 --parallel 1 2>&1 | tail -20"
+& 'C:\msys64\usr\bin\bash.exe' -lc "export PATH='/mingw64/bin:/c/Program Files/Python312:/c/Program Files/Python312/Scripts:/c/Users/Admin/Documents/git/melonPrimeDS/build/release-mingw-x86_64/vcpkg_installed/x64-mingw-static-release/tools/Qt6/bin:/c/Users/Admin/Documents/git/melonPrimeDS/build/release-mingw-x86_64/vcpkg_installed/x64-mingw-static-release/bin:`$PATH'; cd /c/Users/Admin/Documents/git/melonPrimeDS && /mingw64/bin/cmake.exe --build --preset=release-mingw-x86_64 --parallel 1 2>&1 | tail -20"
 ```
 
-Note: keep the backtick before `$PATH` when running from PowerShell so bash receives `$PATH` instead of PowerShell expanding it.
+When building manually from the `C:\msys64\mingw64.exe` console:
+
+```bash
+export PATH="/c/Program Files/Python312:/c/Program Files/Python312/Scripts:$PATH"
+cd /c/Users/Admin/Documents/git/melonPrimeDS
+cmake --build --preset=release-mingw-x86_64 --parallel 2
+```
+
+Notes:
+- Keep the backtick before `$PATH` in PowerShell commands so bash receives `$PATH` instead of PowerShell expanding it.
+- Avoid unlimited `--parallel`; it can exhaust RAM during compilation and fail with `cc1plus.exe: out of memory allocating 65536 bytes`. Use `--parallel 1` for AI builds, or `--parallel 2` when building manually if memory allows.
