@@ -62,6 +62,15 @@ namespace MelonPrime {
             int& outMouseX, int& outMouseY) noexcept;
         void snapshotInputFrameNoEdges(FrameHotkeyState& outHk,
             int& outMouseX, int& outMouseY) noexcept;
+
+        // Clears mouse button bits that are physically released.
+        // Guards against stuck buttons caused by stale GetRawInputData returns.
+        void clearStuckMouseButtons() noexcept;
+
+        // Clears VK bits for keys that are physically released.
+        // Same root cause as clearStuckMouseButtons — stale KEY_DOWN from GetRawInputData.
+        // Only iterates over set bits, so overhead scales with currently-held key count.
+        void clearStuckKeys() noexcept;
         [[nodiscard]] bool hotkeyDown(int id) const noexcept;
         void resetHotkeyEdges() noexcept;
 

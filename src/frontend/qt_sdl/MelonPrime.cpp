@@ -49,7 +49,8 @@ namespace MelonPrime {
         m_flags.assign(StateFlags::BIT_JOY2KEY, localCfg.GetBool(CfgKey::Joy2Key));
         m_flags.assign(StateFlags::BIT_SNAP_TAP, localCfg.GetBool(CfgKey::SnapTap));
         m_flags.assign(StateFlags::BIT_STYLUS_MODE, localCfg.GetBool(CfgKey::StylusMode));
-        isStylusMode = m_flags.test(StateFlags::BIT_STYLUS_MODE);
+        isStylusMode    = m_flags.test(StateFlags::BIT_STYLUS_MODE);
+        m_snapTapMode   = m_flags.test(StateFlags::BIT_SNAP_TAP);
 
         m_disableMphAimSmoothing = localCfg.GetBool(CfgKey::DisableMphAimSmoothing);
         m_enableAimAccumulator = localCfg.GetBool(CfgKey::AimAccumulator);
@@ -166,16 +167,6 @@ namespace MelonPrime {
             m_aimFixedAdjust = 0;
             m_aimFixedSnapThresh = 0;
         }
-
-        const float effMin = (m_aimAdjust > 0.0f) ? m_aimAdjust : 1.0f;
-        m_aimMinDeltaX = (m_aimSensiFactor > 0.0f)
-            ? static_cast<int32_t>(std::ceil(effMin / m_aimSensiFactor))
-            : 1;
-        m_aimMinDeltaY = (m_aimCombinedY > 0.0f)
-            ? static_cast<int32_t>(std::ceil(effMin / m_aimCombinedY))
-            : 1;
-        if (m_aimMinDeltaX < 1) m_aimMinDeltaX = 1;
-        if (m_aimMinDeltaY < 1) m_aimMinDeltaY = 1;
 
         // P-17: Reset sub-pixel accumulators when scale changes.
         // Old residuals were computed with previous scale factors.

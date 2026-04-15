@@ -149,15 +149,12 @@ const u32 kOSDMargin = 6;
 const int kLogoWidth = 192;
 
 #ifdef MELONPRIME_DS
+#include "MelonPrimeHudScreenCppHelpers.inc"
+
 void ScreenPanel::wheelEvent(QWheelEvent* event)
 {
     wheelDelta = (event->angleDelta().y() > 0) ? 1 : -1;
-#ifdef MELONPRIME_CUSTOM_HUD
-    if (MelonPrime::CustomHud_IsEditMode()) {
-        Config::Table& instcfg = emuInstance->getLocalConfig();
-        MelonPrime::CustomHud_EditMouseWheel(event->position(), event->angleDelta().y(), instcfg);
-    }
-#endif
+#include "MelonPrimeHudScreenCppMouseWheel.inc"
     event->accept();
 }
 
@@ -330,42 +327,7 @@ ScreenPanel::ScreenPanel(QWidget* parent) : QWidget(parent)
     osdEnabled = false;
     osdID = 1;
 
-#ifdef MELONPRIME_CUSTOM_HUD
-    Overlay[0] = QImage(256, 192, QImage::Format_ARGB32_Premultiplied);
-    Overlay[1] = QImage(256, 192, QImage::Format_ARGB32_Premultiplied);
-    Overlay[0].fill(0x00000000);
-    Overlay[1].fill(0x00000000);
-    // Load custom font for HUD text.
-    // Anti-aliasing is enabled so the font looks sharp at high output resolutions.
-    // The font is a TTF (vector), so it renders cleanly at any pixel size.
-    {
-        int fontId = QFontDatabase::addApplicationFont(":/mph-font");
-        if (fontId >= 0) {
-            QFontDatabase fontDB;
-            QString family = fontDB.applicationFontFamilies(fontId).at(0);
-            overlayFont = QFont(family, 6);
-            overlayFont.setStyleStrategy(QFont::NoAntialias);
-            overlayFont.setHintingPreference(QFont::PreferFullHinting);
-        }
-    }
-    m_hudEditPanel = new MelonPrimeHudConfigOnScreenEdit(this, emuInstance);
-    MelonPrime::CustomHud_SetEditSelectionCallback([this](int idx) {
-        if (!MelonPrime::CustomHud_IsEditMode() || idx < 0) {
-            m_hudEditPanel->clear();
-        } else {
-            m_hudEditPanel->populateForElement(idx);
-            const int maxH = height() - 8;
-            m_hudEditPanel->setMaximumHeight(maxH);
-            m_hudEditPanel->adjustSize();
-            const int panelH = std::min(m_hudEditPanel->height(), maxH);
-            int px = width() - m_hudEditPanel->width() - 4;
-            int py = (height() - panelH) / 2;
-            m_hudEditPanel->move(mapToGlobal(QPoint(px, std::max(4, py))));
-            m_hudEditPanel->show();
-            m_hudEditPanel->raise();
-        }
-    });
-#endif
+#include "MelonPrimeHudScreenCppInit.inc"
 
     loadConfig();
     setFilter(mainWindow->getWindowConfig().GetBool("ScreenFilter"));
@@ -469,19 +431,7 @@ void ScreenPanel::setupScreenLayout()
 
     calcSplashLayout();
 
-#ifdef MELONPRIME_CUSTOM_HUD
-    // Cache scale/origin so paint paths and mouse handlers avoid sqrt per-frame.
-    m_hudScale = 1.0f; m_topStretchX = 1.0f; m_hudOriginX = 0.0f; m_hudOriginY = 0.0f;
-    for (int i = 0; i < numScreens; i++) {
-        if (screenKind[i] != 0) continue;
-        const float* mtx = screenMatrix[i];
-        const float sx = std::sqrt(mtx[0]*mtx[0] + mtx[1]*mtx[1]);
-        const float sy = std::sqrt(mtx[2]*mtx[2] + mtx[3]*mtx[3]);
-        m_hudOriginX = mtx[4]; m_hudOriginY = mtx[5];
-        if (sx > 0.0f && sy > 0.0f) { m_hudScale = sy; m_topStretchX = sx / sy; }
-        break;
-    }
-#endif
+#include "MelonPrimeHudScreenCppLayout.inc"
 
 #ifdef MELONPRIME_DS
     // Notify layout change
@@ -563,16 +513,7 @@ void ScreenPanel::resizeEvent(QResizeEvent* event)
     updateClipIfNeeded();
 #endif
 #endif
-#ifdef MELONPRIME_CUSTOM_HUD
-    if (m_hudEditPanel && m_hudEditPanel->isVisible()) {
-        const int maxH = height() - 8;
-        m_hudEditPanel->setMaximumHeight(maxH);
-        const int panelH = std::min(m_hudEditPanel->height(), maxH);
-        int px = width() - m_hudEditPanel->width() - 4;
-        int py = (height() - panelH) / 2;
-        m_hudEditPanel->move(mapToGlobal(QPoint(px, std::max(4, py))));
-    }
-#endif
+#include "MelonPrimeHudScreenCppEditPanelResize.inc"
     QWidget::resizeEvent(event);
 }
 
@@ -592,17 +533,7 @@ void ScreenPanel::mousePressEvent(QMouseEvent* event)
         return;
     }
 
-#ifdef MELONPRIME_CUSTOM_HUD
-    // HUD Layout Editor: intercept all mouse input while in edit mode
-    if (UNLIKELY(MelonPrime::CustomHud_IsEditMode())) {
-        Config::Table& instcfg = emuInstance->getLocalConfig();
-        MelonPrime::CustomHud_UpdateEditContext(m_hudOriginX, m_hudOriginY, m_hudScale, m_topStretchX);
-        MelonPrime::CustomHud_EditMousePress(event->pos(), event->button(), instcfg);
-        if (!MelonPrime::CustomHud_IsEditMode() && InputConfigDialog::currentDlg)
-            InputConfigDialog::currentDlg->refreshAfterHudEditSave();
-        return;
-    }
-#endif
+#include "MelonPrimeHudScreenCppMousePress.inc"
 
 #ifdef MELONPRIME_DS
     // Click sets focus
@@ -663,13 +594,7 @@ void ScreenPanel::mouseReleaseEvent(QMouseEvent* event)
         return;
     }
 
-#ifdef MELONPRIME_CUSTOM_HUD
-    if (UNLIKELY(MelonPrime::CustomHud_IsEditMode())) {
-        Config::Table& instcfg = emuInstance->getLocalConfig();
-        MelonPrime::CustomHud_EditMouseRelease(event->pos(), event->button(), instcfg);
-        return;
-    }
-#endif
+#include "MelonPrimeHudScreenCppMouseRelease.inc"
 
     if (event->button() != Qt::LeftButton)
         return;
@@ -690,14 +615,7 @@ void ScreenPanel::mouseMoveEvent(QMouseEvent* event)
     if (Q_UNLIKELY(!emu->emuIsActive()))
         return;
 
-#ifdef MELONPRIME_CUSTOM_HUD
-    if (UNLIKELY(MelonPrime::CustomHud_IsEditMode())) {
-        Config::Table& instcfg = emuInstance->getLocalConfig();
-        MelonPrime::CustomHud_UpdateEditContext(m_hudOriginX, m_hudOriginY, m_hudScale, m_topStretchX);
-        MelonPrime::CustomHud_EditMouseMove(event->pos(), instcfg);
-        return;
-    }
-#endif
+#include "MelonPrimeHudScreenCppMouseMove.inc"
 
     if (!touching)
         return;
@@ -1223,88 +1141,7 @@ void ScreenPanelNative::paintEvent(QPaintEvent * event)
             painter.drawImage(screenrc, screen[screenKind[i]]);
         }
 
-#ifdef MELONPRIME_CUSTOM_HUD
-        {
-            auto* mp = emuThread->GetMelonPrimeCore();
-            auto& instcfg = emuInstance->getLocalConfig();
-            if (mp && mp->IsRomDetected() && (mp->IsInGame() || MelonPrime::CustomHud_IsEditMode()))
-            {
-                // Use layout values cached in setupScreenLayout() — no sqrt per-frame.
-                const float hudScale    = m_hudScale;
-                const float topStretchX = m_topStretchX;
-
-                // Refresh config cache when epoch changes (settings saved / reset).
-                {
-                    const uint32_t epoch = MelonPrime::CustomHud_GetCacheEpoch();
-                    if (epoch != m_hudCfgEpoch) {
-                        m_hudCfgEpoch = epoch;
-                    }
-                }
-
-                // Skip fill + render entirely when HUD is disabled and not in edit mode.
-                const bool hudVisible = MelonPrime::CustomHud_IsEnabled(instcfg) || MelonPrime::CustomHud_IsEditMode();
-                if (!hudVisible) {
-                    // Ensure the no-HUD ROM patch is reverted when custom HUD is off.
-                    MelonPrime::CustomHud_EnsurePatchRestored(
-                        emuInstance, instcfg,
-                        mp->GetCurrentRom(), mp->GetPlayerPosition(),
-                        mp->IsInGame());
-                }
-                if (hudVisible)
-                {
-                    // Overlay covers the full widget so HUD elements placed in black-bar
-                    // regions (DS x < 0 or > 256 for pillarboxed 4:3) remain visible.
-                    const int fullW = this->width();
-                    const int fullH = this->height();
-                    const int topOutW = std::max(1, fullW);
-                    const int topOutH = std::max(1, fullH);
-
-                    // OPT-DR1: Track dirty rect to limit clear + composite to HUD area only.
-                    static QRect s_hudPrevDirtyS;
-                    if (Overlay[0].width() != topOutW || Overlay[0].height() != topOutH) {
-                        Overlay[0] = QImage(topOutW, topOutH, QImage::Format_ARGB32_Premultiplied);
-                        Overlay[0].fill(Qt::transparent);
-                        s_hudPrevDirtyS = QRect();
-                    } else if (!s_hudPrevDirtyS.isEmpty()) {
-                        // Clear only the region drawn last frame.
-                        QPainter clrP(&Overlay[0]);
-                        clrP.setCompositionMode(QPainter::CompositionMode_Source);
-                        clrP.fillRect(s_hudPrevDirtyS, Qt::transparent);
-                    }
-
-                    // hudOriginXds / hudOriginYds: black-bar extents in DS units.
-                    // CustomHud_Render adds these to the painter translate so DS x=0
-                    // lands at the left edge of the game content inside the full buffer.
-                    const float hudOriginXds = m_hudOriginX / hudScale;
-                    const float hudOriginYds = m_hudOriginY / hudScale;
-
-                    // Per-frame painter (must end before reading image)
-                    QRect curDirty;
-                    {
-                        QPainter topP(&Overlay[0]);
-                        topP.setFont(overlayFont);
-                        curDirty = MelonPrime::CustomHud_Render(
-                            emuInstance, instcfg,
-                            mp->GetCurrentRom(), mp->GetAddrHot(),
-                            mp->GetPlayerPosition(),
-                            &topP, nullptr,
-                            &Overlay[0], nullptr,
-                            mp->IsInGame(),
-                            topStretchX, hudScale,
-                            hudOriginXds, hudOriginYds);
-                    } // painter ends here — safe to read image
-
-                    // Composite only the dirty region (prev cleared + curr drawn).
-                    painter.resetTransform();
-                    const QRect compositeRect = s_hudPrevDirtyS.united(curDirty);
-                    if (!compositeRect.isEmpty())
-                        painter.drawImage(QPoint(compositeRect.x(), compositeRect.y()),
-                                          Overlay[0], compositeRect);
-                    s_hudPrevDirtyS = curDirty;
-                }
-            }
-        }
-#endif
+#include "MelonPrimeHudScreenCppOverlayOfSoftware.inc"
 
         emuInstance->renderLock.unlock();
     }
@@ -1507,91 +1344,7 @@ void ScreenPanelGL::initOpenGL()
 #endif
     logoTexture = tex;
 
-#ifdef MELONPRIME_CUSTOM_HUD
-    // Create 2 overlay textures (GL_TEXTURE_2D, 256x192 each, one per screen)
-    glGenTextures(2, overlayTextures);
-    for (int i = 0; i < 2; i++) {
-        glBindTexture(GL_TEXTURE_2D, overlayTextures[i]);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, 256, 192, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
-    }
-
-    // Bottom screen overlay shader (textured quad with opacity + Y-flip)
-    OpenGL::CompileVertexFragmentProgram(btmOverlayShader,
-        kBtmOverlayVS, kBtmOverlayFS,
-        "BtmOverlayShader",
-        { {"vPosition", 0}, {"vTexcoord", 1} },
-        { {"oColor", 0} });
-
-    glUseProgram(btmOverlayShader);
-    glUniform1i(glGetUniformLocation(btmOverlayShader, "ScreenTex"), 0);
-    btmOverlayScreenSizeULoc = glGetUniformLocation(btmOverlayShader, "uScreenSize");
-    btmOverlayOpacityULoc = glGetUniformLocation(btmOverlayShader, "uOpacity");
-    btmOverlaySrcCenterULoc = glGetUniformLocation(btmOverlayShader, "uSrcCenter");
-    btmOverlaySrcRadiusULoc = glGetUniformLocation(btmOverlayShader, "uSrcRadius");
-
-    // OPT-SH1: Upload radar palette colors as uniform array (set once at init).
-    // Corresponds to uPalette[PALETTE_SIZE] in main_shaders.h kBtmOverlayFS.
-    // These are the active radar palette colors (nodes, octoliths, etc.)
-    // Commented-out colors below are hunter-specific radar dots — currently
-    // filtered by the radar frame overlay, but kept here for future reference:
-    //   68E028 (104,224, 40) - green Samus radar
-    //   F8F858 (248,248, 88) - yellow Kanden radar
-    //   F87038 (248,112, 56) - orange Spire radar
-    //   E01018 (224, 16, 24) - red Trace radar
-    //   5098D0 ( 80,152,208) - blue Noxus radar
-    //   D0F0A0 (208,240,160) - pale green Sylux radar
-    //   D09838 (208,152, 56) - amber Weavel radar
-    //   F8F898 (248,248,152) - center of Kanden radar
-    //   529CD6, 6582B1       - Noxus radar blue variants
-    {
-        const float palette[15][3] = {
-            {192, 248, 104},  // C0F868 - yellow-green
-            {248, 168, 168},  // F8A8A8 - pink, node red middle
-            {224,  48,  48},  // E03030 - node red outer and center
-            {160, 160, 160},  // A0A0A0 - octolith gray top
-            {200, 200, 200},  // C8C8C8 - octolith gray center
-            {144, 144, 144},  // 909090 - octolith gray bottom
-            {248, 128,  16},  // F88010 - octolith orange top
-            {248, 208, 160},  // F8D0A0 - octolith orange center
-            {216, 104,   0},  // D86800 - octolith orange bottom
-            {136, 224,   8},  // 88E008 - octolith green top
-            {200, 248, 128},  // C8F880 - octolith green center
-            {104, 184,   0},  // 68B800 - octolith green bottom
-            { 16, 152, 200},  // 1098C8 - node blue outer and center
-            { 40, 216, 248},  // 28D8F8 - node blue middle
-            {168, 168, 168},  // A8A8A8 - node gray
-        };
-        GLint paletteLoc = glGetUniformLocation(btmOverlayShader, "uPalette");
-        glUniform3fv(paletteLoc, 15, &palette[0][0]);
-    }
-
-    // Quad: 6 vertices, each with position(x,y) + texcoord(u,v)
-    // Texcoords map source rect — will be updated dynamically
-    const float btmOverlayVerts[6 * 4] =
-    {
-        0, 0,  0, 0,
-        0, 1,  0, 1,
-        1, 1,  1, 1,
-        0, 0,  0, 0,
-        1, 1,  1, 1,
-        1, 0,  1, 0,
-    };
-
-    glGenBuffers(1, &btmOverlayVertexBuffer);
-    glBindBuffer(GL_ARRAY_BUFFER, btmOverlayVertexBuffer);
-    glBufferData(GL_ARRAY_BUFFER, sizeof(btmOverlayVerts), btmOverlayVerts, GL_STATIC_DRAW);
-
-    glGenVertexArrays(1, &btmOverlayVertexArray);
-    glBindVertexArray(btmOverlayVertexArray);
-    glEnableVertexAttribArray(0); // position
-    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float), (void*)0);
-    glEnableVertexAttribArray(1); // texcoord
-    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float), (void*)(2 * sizeof(float)));
-#endif
+#include "MelonPrimeHudScreenCppGlInit.inc"
 
     transferLayout();
     glInited = true;
@@ -1623,12 +1376,7 @@ void ScreenPanelGL::deinitOpenGL()
 
     glDeleteTextures(1, &logoTexture);
 
-#ifdef MELONPRIME_CUSTOM_HUD
-    glDeleteTextures(2, overlayTextures);
-    glDeleteProgram(btmOverlayShader);
-    glDeleteBuffers(1, &btmOverlayVertexBuffer);
-    glDeleteVertexArrays(1, &btmOverlayVertexArray);
-#endif
+#include "MelonPrimeHudScreenCppGlDeinit.inc"
 
     glDeleteProgram(osdShader);
 
@@ -1769,232 +1517,7 @@ void ScreenPanelGL::drawScreen()
             glDrawArrays(GL_TRIANGLES, screenKind[i] == 0 ? 0 : 2 * 3, 2 * 3);
         }
 
-#ifdef MELONPRIME_CUSTOM_HUD
-        // --- Custom HUD Overlay (uses OSD shader for proper alpha blending) ---
-        {
-            auto* mp = emuThread->GetMelonPrimeCore();
-            auto& instcfg = emuInstance->getLocalConfig();
-            if (mp && mp->IsRomDetected() && (mp->IsInGame() || MelonPrime::CustomHud_IsEditMode()))
-            {
-                // Use layout values cached in setupScreenLayout() — no sqrt per-frame.
-                const float hudScale    = m_hudScale;
-                const float topStretchX = m_topStretchX;
-
-                // Refresh config cache when epoch changes (settings saved / reset).
-                {
-                    const uint32_t epoch = MelonPrime::CustomHud_GetCacheEpoch();
-                    if (epoch != m_hudCfgEpoch) {
-                        m_radarEnable       = instcfg.GetBool("Metroid.Visual.BtmOverlayEnable");
-                        m_radarAnchor       = instcfg.GetInt("Metroid.Visual.BtmOverlayAnchor");
-                        m_radarDstX         = instcfg.GetInt("Metroid.Visual.BtmOverlayDstX");
-                        m_radarDstY         = instcfg.GetInt("Metroid.Visual.BtmOverlayDstY");
-                        m_radarDstSize      = std::max(instcfg.GetInt("Metroid.Visual.BtmOverlayDstSize"), 1);
-                        m_radarOpacity      = std::clamp((float)instcfg.GetDouble("Metroid.Visual.BtmOverlayOpacity"), 0.0f, 1.0f);
-                        m_radarSrcRadius    = instcfg.GetInt("Metroid.Visual.BtmOverlaySrcRadius");
-                        m_hudCfgEpoch       = epoch;
-                    }
-                }
-
-                // Skip fill + render + upload when HUD is disabled and not in edit mode.
-                const bool hudVisible = MelonPrime::CustomHud_IsEnabled(instcfg) || MelonPrime::CustomHud_IsEditMode();
-                if (!hudVisible) {
-                    // Ensure the no-HUD ROM patch is reverted when custom HUD is off.
-                    MelonPrime::CustomHud_EnsurePatchRestored(
-                        emuInstance, instcfg,
-                        mp->GetCurrentRom(), mp->GetPlayerPosition(),
-                        mp->IsInGame());
-                }
-                if (hudVisible)
-                {
-                // Overlay covers the full logical window so HUD elements placed in black-bar
-                // regions (DS x < 0 or > 256 for pillarboxed 4:3) remain visible.
-                const int fullLogW = static_cast<int>(w / factor);
-                const int fullLogH = static_cast<int>(h / factor);
-                const int topOutW = std::max(1, fullLogW);
-                const int topOutH = std::max(1, fullLogH);
-
-                // OPT-DR1: Track dirty rect to limit CPU clear + GL texture upload.
-                static QRect s_hudPrevDirtyGL;
-                if (Overlay[0].width() != topOutW || Overlay[0].height() != topOutH) {
-                    Overlay[0] = QImage(topOutW, topOutH, QImage::Format_ARGB32_Premultiplied);
-                    Overlay[0].fill(Qt::transparent);  // full fill only on resize
-                    s_hudPrevDirtyGL = QRect();
-                } else if (!s_hudPrevDirtyGL.isEmpty()) {
-                    // Clear only the region drawn last frame (Source mode = overwrite with transparent).
-                    QPainter clrP(&Overlay[0]);
-                    clrP.setCompositionMode(QPainter::CompositionMode_Source);
-                    clrP.fillRect(s_hudPrevDirtyGL, Qt::transparent);
-                }
-
-                // hudOriginXds / hudOriginYds: black-bar extents in DS units.
-                // CustomHud_Render adds these to the painter translate so DS x=0
-                // lands at the left edge of the game content inside the full buffer.
-                const float hudOriginXds = m_hudOriginX / hudScale;
-                const float hudOriginYds = m_hudOriginY / hudScale;
-
-                // Per-frame painter (must end before GL upload reads image bits)
-                QRect curDirty;
-                {
-                    QPainter topP(&Overlay[0]);
-                    topP.setFont(overlayFont);
-                    curDirty = MelonPrime::CustomHud_Render(
-                        emuInstance, instcfg,
-                        mp->GetCurrentRom(), mp->GetAddrHot(),
-                        mp->GetPlayerPosition(),
-                        &topP, nullptr,
-                        &Overlay[0], nullptr,
-                        mp->IsInGame(),
-                        topStretchX, hudScale,
-                        hudOriginXds, hudOriginYds);
-                } // painter ends here — safe to read constBits()
-
-                glBindTexture(GL_TEXTURE_2D, overlayTextures[0]);
-                // Reallocate GL texture when the buffer size changes (window resize).
-                // OPT-TX1: GL_BGRA matches QImage native byte order — driver fast-path.
-                if (topOutW != overlayTexW || topOutH != overlayTexH) {
-                    // Full upload on size change — texture must be re-allocated.
-                    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, topOutW, topOutH, 0,
-                        GL_BGRA, GL_UNSIGNED_BYTE, Overlay[0].constBits());
-                    overlayTexW = topOutW;
-                    overlayTexH = topOutH;
-                } else {
-                    // OPT-DR1: Partial upload — only upload the union of prev (cleared)
-                    // and curr (drawn) dirty rects using GL_UNPACK_ROW_LENGTH.
-                    const QRect uploadRect = s_hudPrevDirtyGL.united(curDirty);
-                    if (!uploadRect.isEmpty()) {
-                        glPixelStorei(GL_UNPACK_ROW_LENGTH, topOutW);
-                        glPixelStorei(GL_UNPACK_SKIP_PIXELS, uploadRect.x());
-                        glPixelStorei(GL_UNPACK_SKIP_ROWS,   uploadRect.y());
-                        glTexSubImage2D(GL_TEXTURE_2D, 0,
-                            uploadRect.x(), uploadRect.y(),
-                            uploadRect.width(), uploadRect.height(),
-                            GL_BGRA, GL_UNSIGNED_BYTE, Overlay[0].constBits());
-                        glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
-                        glPixelStorei(GL_UNPACK_SKIP_PIXELS, 0);
-                        glPixelStorei(GL_UNPACK_SKIP_ROWS,   0);
-                    }
-                }
-                s_hudPrevDirtyGL = curDirty;
-
-
-                // Switch to OSD shader for HUD overlay compositing.
-                // Overlay is full-window sized so pos=(0,0), size=(fullLogW, fullLogH).
-                glUseProgram(osdShader);
-                glUniform2f(osdScreenSizeULoc, w, h);
-                glUniform1f(osdScaleFactorULoc, factor);
-
-                glBindBuffer(GL_ARRAY_BUFFER, osdVertexBuffer);
-                glBindVertexArray(osdVertexArray);
-                glActiveTexture(GL_TEXTURE0);
-                glEnable(GL_BLEND);
-                glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
-
-                if (fullLogW > 0 && fullLogH > 0)
-                {
-                    const float texScaleX = (float)topOutW / (float)fullLogW;
-                    const float texScaleY = (float)topOutH / (float)fullLogH;
-                    glUniform2i(osdPosULoc, 0, 0);
-                    glUniform2i(osdSizeULoc, fullLogW, fullLogH);
-                    glUniform2f(osdTexScaleULoc, texScaleX, texScaleY);
-                    glDrawArrays(GL_TRIANGLES, 0, 2 * 3);
-                }
-
-                glDisable(GL_BLEND);
-
-                // --- Bottom Screen Overlay (GL-native, circle, high-res with opacity) ---
-                if (m_radarEnable &&
-                    MelonPrime::CustomHud_ShouldDrawRadarOverlay(
-                        emuInstance, mp->GetCurrentRom(), mp->GetPlayerPosition()))
-                {
-                    // Use cached config values — no hash-map lookups per-frame.
-                    int dstX    = m_radarDstX;
-                    int dstY    = m_radarDstY;
-                    const int dstSize = m_radarDstSize;
-                    const float opacity = m_radarOpacity;
-
-                    // Use cached hudScale as rScaleY (already the top-screen scaleY).
-                    const float rScaleY = m_hudScale;
-
-                    // Find top screen matrix (needed for anchor → window coord transform).
-                    const float* topMtx = nullptr;
-                    for (int i = 0; i < numScreens; i++)
-                        if (screenKind[i] == 0) { topMtx = screenMatrix[i]; break; }
-                    if (topMtx)
-                    {
-                        const float dsAX = (m_radarAnchor % 3) * 128.0f;
-                        const float dsAY = (m_radarAnchor / 3) * 96.0f;
-                        const float wAX  = topMtx[0]*dsAX + topMtx[1]*dsAY + topMtx[4];
-                        const float wAY  = topMtx[2]*dsAX + topMtx[3]*dsAY + topMtx[5];
-                        // Decompose into overlay-base + internal-offset so the int
-                        // truncation of the origin matches the HUD overlay texture
-                        // placement (both use int(m_hudOriginX) as the base).
-                        const int ovrBaseX = static_cast<int>(m_hudOriginX);
-                        const int ovrBaseY = static_cast<int>(m_hudOriginY);
-                        dstX = ovrBaseX + static_cast<int>((wAX - m_hudOriginX) + dstX * rScaleY);
-                        dstY = ovrBaseY + static_cast<int>((wAY - m_hudOriginY) + dstY * rScaleY);
-
-                        // dstX/dstY are now in window pixels. Use rScaleY for both dims (circle, not ellipse).
-                        const float wDstX0 = dstX;
-                        const float wDstY0 = dstY;
-                        const float wDstX1 = dstX + rScaleY * dstSize;
-                        const float wDstY1 = dstY + rScaleY * dstSize;
-
-                        // Full bottom screen as source (texcoords 0-1)
-                        const float verts[6 * 4] =
-                        {
-                            wDstX0, wDstY0,  0.0f, 0.0f,
-                            wDstX0, wDstY1,  0.0f, 1.0f,
-                            wDstX1, wDstY1,  1.0f, 1.0f,
-                            wDstX0, wDstY0,  0.0f, 0.0f,
-                            wDstX1, wDstY1,  1.0f, 1.0f,
-                            wDstX1, wDstY0,  1.0f, 0.0f,
-                        };
-
-                        glUseProgram(btmOverlayShader);
-                        glBindVertexArray(btmOverlayVertexArray);
-                        glBindBuffer(GL_ARRAY_BUFFER, btmOverlayVertexBuffer);
-                        glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(verts), verts);
-
-                        glUniform2f(btmOverlayScreenSizeULoc, w / factor, h / factor);
-                        glUniform1f(btmOverlayOpacityULoc, opacity);
-
-                        const uint8_t hunterID = mp->GetHunterID();
-                        glUniform2f(btmOverlaySrcCenterULoc,
-                            MelonPrime::kBtmOverlaySrcCenterX / 256.0f,
-                            MelonPrime::kBtmOverlaySrcCenterY[hunterID] / 192.0f);
-                        glUniform1f(btmOverlaySrcRadiusULoc, m_radarSrcRadius / 256.0f);
-
-                        glActiveTexture(GL_TEXTURE0);
-                        glBindTexture(GL_TEXTURE_2D_ARRAY, activeScreenTexture);
-                        // OPT-RL1: Radar always needs GL_LINEAR. Skip redundant
-                        // glTexParameteri when the texture already has it.
-                        // lastFilter tracks screenTexture's state; for GPU
-                        // renderer textures we always set (not tracked).
-                        if (activeScreenTexture != screenTexture || lastFilter != GL_LINEAR) {
-                            glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-                            glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-                            if (activeScreenTexture == screenTexture)
-                                lastFilter = GL_LINEAR;
-                        }
-
-                        glEnable(GL_BLEND);
-                        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-
-                        glDrawArrays(GL_TRIANGLES, 0, 6);
-
-                        glDisable(GL_BLEND);
-                    } // if (topMtx)
-                } // if (m_radarEnable)
-
-                // Restore screen shader state
-                glUseProgram(screenShaderProgram);
-                glBindBuffer(GL_ARRAY_BUFFER, screenVertexBuffer);
-                glBindVertexArray(screenVertexArray);
-                glBindTexture(GL_TEXTURE_2D_ARRAY, screenTexture);
-                } // if (hudVisible)
-            }
-        }
-#endif
+#include "MelonPrimeHudScreenCppOverlayOfGl.inc"
 
         screenSettingsLock.unlock();
     }
@@ -2283,15 +1806,7 @@ void ScreenPanel::moveEvent(QMoveEvent * e) {
 #if defined(_WIN32)
     updateClipIfNeeded();
 #endif
-#ifdef MELONPRIME_CUSTOM_HUD
-    if (m_hudEditPanel && m_hudEditPanel->isVisible()) {
-        const int maxH = height() - 8;
-        const int panelH = std::min(m_hudEditPanel->height(), maxH);
-        int px = width() - m_hudEditPanel->width() - 4;
-        int py = (height() - panelH) / 2;
-        m_hudEditPanel->move(mapToGlobal(QPoint(px, std::max(4, py))));
-    }
-#endif
+#include "MelonPrimeHudScreenCppEditPanelMove.inc"
     QWidget::moveEvent(e);
 }
 

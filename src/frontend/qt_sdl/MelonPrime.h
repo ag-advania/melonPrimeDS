@@ -182,6 +182,7 @@ namespace MelonPrime {
         bool isFocused = false;
         bool isClipWanted = false;
         bool isStylusMode = false;
+        bool m_snapTapMode = false;     // Cached from BIT_SNAP_TAP; avoids bitmask test in hot path
         bool isFastForward = false;     // Set by EmuThread; Screen Sync skips when true
         int  screenSyncMode = 0;       // 0=Off, 1=glFinish, 2=DwmFlush
 
@@ -240,9 +241,6 @@ namespace MelonPrime {
         int32_t  m_aimFixedScaleY = 218;
         int64_t  m_aimFixedAdjust = 8192;
         int64_t  m_aimFixedSnapThresh = AIM_ONE_FP;
-
-        int32_t  m_aimMinDeltaX = 1;
-        int32_t  m_aimMinDeltaY = 1;
 
         // P-17: Sub-pixel residual accumulators (Q14 fixed-point).
         // Carry fractional remainder across frames for smooth slow-speed aiming.
@@ -355,7 +353,9 @@ namespace MelonPrime {
         HOT_FUNCTION void UpdateInputStateReentrant();  // re-entrant FrameAdvance path
         template <bool kReentrant> FORCE_INLINE void UpdateInputStateImpl();
         HOT_FUNCTION void HandleInGameLogic();
+        template <bool kInputMaskReset> FORCE_INLINE void ProcessMoveAndButtonsFastImpl();
         HOT_FUNCTION void ProcessMoveAndButtonsFast();
+        HOT_FUNCTION void ProcessMoveAndButtonsFastFromReset();
         HOT_FUNCTION void ProcessAimInputMouse();
         HOT_FUNCTION bool ProcessWeaponSwitch();
         HOT_FUNCTION bool HandleMorphBallBoost();
