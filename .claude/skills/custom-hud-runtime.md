@@ -21,9 +21,22 @@
 | `src/frontend/qt_sdl/MelonPrimeHudConfigOnScreenEdit.cpp` | Qt floating side panel for in-game HUD element properties - `populate*()` functions define per-element settings |
 | `src/frontend/qt_sdl/MelonPrimeHudConfigOnScreenEdit.h` | side panel class declaration |
 | `src/frontend/qt_sdl/MelonPrimeConstants.h` | hunter-specific radar source Y positions and related constants |
-| `src/frontend/qt_sdl/Screen.cpp` | calls `CustomHud_Render()` and OpenGL radar overlay path |
+| `src/frontend/qt_sdl/Screen.cpp` | screen presentation entry point; includes `MelonPrimeHudScreenCpp*.inc` fragments for Custom HUD integration |
+| `src/frontend/qt_sdl/MelonPrimeHudScreenCppHelpers.inc` | shared helpers for screen fragments: edit panel placement, epoch refresh, top overlay clear/render, patch restore |
+| `src/frontend/qt_sdl/MelonPrimeHudScreenCppInit.inc` | `ScreenPanel` Custom HUD setup: overlay buffers, font, edit side panel, selection callback |
+| `src/frontend/qt_sdl/MelonPrimeHudScreenCppLayout.inc` | cached HUD scale/origin update in `setupScreenLayout()` |
+| `src/frontend/qt_sdl/MelonPrimeHudScreenCppEditPanelResize.inc` | edit side panel repositioning during resize |
+| `src/frontend/qt_sdl/MelonPrimeHudScreenCppEditPanelMove.inc` | edit side panel repositioning during window move |
+| `src/frontend/qt_sdl/MelonPrimeHudScreenCppMouseWheel.inc` | edit-mode mouse wheel input interception |
+| `src/frontend/qt_sdl/MelonPrimeHudScreenCppMousePress.inc` | edit-mode mouse press interception |
+| `src/frontend/qt_sdl/MelonPrimeHudScreenCppMouseRelease.inc` | edit-mode mouse release interception |
+| `src/frontend/qt_sdl/MelonPrimeHudScreenCppMouseMove.inc` | edit-mode mouse move/drag interception |
+| `src/frontend/qt_sdl/MelonPrimeHudScreenCppOverlayOfSoftware.inc` | software `QPainter` HUD overlay path for `ScreenPanelNative::paintEvent()` |
+| `src/frontend/qt_sdl/MelonPrimeHudScreenCppGlInit.inc` | Custom HUD OpenGL overlay/radar resource initialization |
+| `src/frontend/qt_sdl/MelonPrimeHudScreenCppGlDeinit.inc` | Custom HUD OpenGL overlay/radar resource cleanup |
+| `src/frontend/qt_sdl/MelonPrimeHudScreenCppOverlayOfGl.inc` | OpenGL HUD overlay upload/composite path and GL-native bottom-screen radar overlay |
 
-`MelonPrimeHudRender*.inc` and `MelonPrimeHudConfigOnScreen*.inc` files are not standalone translation units. Render fragments are included only through `MelonPrimeHudRender.cpp`. Edit-mode fragments are included only through `MelonPrimeHudConfigOnScreen.cpp`, which itself is included by `MelonPrimeHudRender.cpp` inside `namespace MelonPrime` and `#ifdef MELONPRIME_CUSTOM_HUD`.
+`MelonPrimeHudRender*.inc`, `MelonPrimeHudConfigOnScreen*.inc`, and `MelonPrimeHudScreenCpp*.inc` files are not standalone translation units. Render fragments are included only through `MelonPrimeHudRender.cpp`. Edit-mode fragments are included only through `MelonPrimeHudConfigOnScreen.cpp`, which itself is included by `MelonPrimeHudRender.cpp` inside `namespace MelonPrime` and `#ifdef MELONPRIME_CUSTOM_HUD`. Screen integration fragments are included only through `Screen.cpp`.
 
 ### Runtime entry points
 `CustomHud_Render()` is the main per-frame entry point.

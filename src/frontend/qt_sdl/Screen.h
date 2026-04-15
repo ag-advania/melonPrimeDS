@@ -174,6 +174,7 @@ protected:
     // Config values cached per epoch — avoids hash-map lookups per-frame.
     uint32_t m_hudCfgEpoch   = ~0u;
     // BtmOverlay config cache (GL path):
+    uint32_t m_radarCfgEpoch = ~0u;
     bool     m_radarEnable    = false;
     int      m_radarAnchor    = 2;
     int      m_radarDstX      = 0;

@@ -25,6 +25,8 @@ Shaders and C++ are tightly coupled. Always check both sides when modifying eith
 
 `Screen.h` / `Screen.cpp` also hold the OpenGL-side overlay shader program, uniforms, and draw setup.
 
+Custom HUD integration inside `Screen.cpp` is split into unity include fragments named `MelonPrimeHudScreenCpp*.inc`. These are grouped by call site: shared helpers, panel setup/layout/input, `OverlayOfSoftware`, `OverlayOfGl`, and GL init/deinit. They are not standalone translation units and should not be added to CMake.
+
 ### OPT-DR1 — Dirty-Rect Overlay Optimization
 
 **Goal**: avoid per-frame full-window memset and full GL texture upload for the HUD overlay.
@@ -202,3 +204,8 @@ Current work is on the `highres_fonts_v3` branch. Main changes relative to `mast
   - `MelonPrimeHudRenderRuntime.inc` - battle state, frame helpers, hide rules, NoHUD patch/cache lifecycle
   - `MelonPrimeHudRenderDraw.inc` - HUD element drawing
   - `MelonPrimeHudRenderMain.inc` - `CustomHud_Render`, radar overlay, edit-mode forward state
+- Screen integration code rooted at `Screen.cpp` and split into `MelonPrimeHudScreenCpp*.inc` fragments:
+  - `Helpers` fragment for common edit-panel placement, epoch refresh, top overlay clear/render, and patch restore helpers
+  - setup/layout/input fragments for edit-mode forwarding and floating panel placement
+  - software overlay fragment for `ScreenPanelNative::paintEvent`
+  - GL init/deinit/overlay fragments for texture/shader resources, HUD upload/composite, and native radar overlay

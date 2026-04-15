@@ -8,6 +8,7 @@
   - `MelonPrimeHudRender*.inc` files are unity include fragments pulled in by `MelonPrimeHudRender.cpp`; do not add them to `CMakeLists.txt`
 - `MelonPrimeHudConfigOnScreen.cpp` is a unity-build include (pulled in by `MelonPrimeHudRender.cpp`); do not add it to `CMakeLists.txt`
   - Its `MelonPrimeHudConfigOnScreen*.inc` fragments are also unity include fragments; do not add those to `CMakeLists.txt` either
+- `MelonPrimeHudScreenCpp*.inc` files are unity include fragments pulled into `Screen.cpp`; do not add them to `CMakeLists.txt`
 - The project has been built on Windows and via MinGW cross-compilation from WSL
 - `vcpkg/` is used for dependencies in this repo setup
 
