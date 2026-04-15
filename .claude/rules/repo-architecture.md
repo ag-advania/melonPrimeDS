@@ -78,6 +78,13 @@ if (!uploadRect.isEmpty()) {
 s_hudPrevDirtyGL = curDirty;
 ```
 
+Additional Screen-fragment caches:
+- `m_hudEnabled` is refreshed by `m_hudCfgEpoch` instead of reading `Metroid.Visual.CustomHUD` every frame.
+- `m_radarCfgEpoch` owns GL radar config refresh separately from the top HUD enable cache.
+- `m_hudTopMatrix` / `m_hudTopMatrixValid` are updated during layout, so the GL radar path does not scan `screenKind` each frame.
+- `m_radarAnchorDsX/Y` are computed when radar config refreshes, not per frame.
+- The GL overlay path skips texture upload/composite setup when both previous and current dirty rects are empty, and restores screen GL state only if HUD/radar drawing changed it.
+
 **Removed dead code**: `GetOutlineBuffer()`, `s_outlineBuf`, `s_prevOutlineDirty` — were declared but never called; deleted.
 
 ## Config System

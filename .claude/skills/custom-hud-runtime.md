@@ -22,7 +22,7 @@
 | `src/frontend/qt_sdl/MelonPrimeHudConfigOnScreenEdit.h` | side panel class declaration |
 | `src/frontend/qt_sdl/MelonPrimeConstants.h` | hunter-specific radar source Y positions and related constants |
 | `src/frontend/qt_sdl/Screen.cpp` | screen presentation entry point; includes `MelonPrimeHudScreenCpp*.inc` fragments for Custom HUD integration |
-| `src/frontend/qt_sdl/MelonPrimeHudScreenCppHelpers.inc` | shared helpers for screen fragments: edit panel placement, epoch refresh, top overlay clear/render, patch restore |
+| `src/frontend/qt_sdl/MelonPrimeHudScreenCppHelpers.inc` | shared helpers for screen fragments: edit panel placement, epoch/config refresh, top overlay clear/render, patch restore, core visibility checks |
 | `src/frontend/qt_sdl/MelonPrimeHudScreenCppInit.inc` | `ScreenPanel` Custom HUD setup: overlay buffers, font, edit side panel, selection callback |
 | `src/frontend/qt_sdl/MelonPrimeHudScreenCppLayout.inc` | cached HUD scale/origin update in `setupScreenLayout()` |
 | `src/frontend/qt_sdl/MelonPrimeHudScreenCppEditPanelResize.inc` | edit side panel repositioning during resize |
@@ -167,6 +167,7 @@ Relevant details:
 | P-11 | Pre-computed crosshair arm/dot colors with alpha in `CrosshairHudConfig` | Eliminates 3 `QColor` copies + `setAlphaF()` per frame | Per frame |
 | P-12 | Separable max-filter dilation (`DilateSeparableTinted`) - two-pass horizontal+vertical max replaces `O(R^2)` naive kernel with `O(R)` per pixel | About `1.5x` faster for `R=1`, about `3x` for `R=3` | Config changes / editor |
 | OPT-DR1 | Dirty-rect overlay optimization: `CustomHud_Render()` returns `QRect`; `Screen.cpp` clears only the prev dirty rect (via `CompositionMode_Source`), composites only the union rect, and uploads only that region via `glTexSubImage2D` with `GL_UNPACK_ROW_LENGTH/SKIP_*` | Reduces per-frame CPU memset and PCIe upload from full-window to HUD-element bounding box at high resolutions | Per frame |
+| OPT-SC1 | Screen-fragment HUD enable/radar config caching by epoch, cached top-screen matrix/radar anchor coordinates, empty dirty-rect GL overlay skip, and conditional GL state restore | Avoids repeated config lookups, screen-matrix scans, zero-work GL upload/composite setup, and redundant shader/buffer restore calls | Per frame |
 
 ### HUD Auto-Scale System
 Automatic integer-based scaling that makes HUD elements readable at high resolutions without manual adjustment.

@@ -4,16 +4,17 @@
 #ifdef MELONPRIME_CUSTOM_HUD
 {
     auto* mp = emuThread->GetMelonPrimeCore();
-    auto& instcfg = emuInstance->getLocalConfig();
-    if (mp && mp->IsRomDetected() && (mp->IsInGame() || MelonPrime::CustomHud_IsEditMode()))
+    const bool editMode = MelonPrime::CustomHud_IsEditMode();
+    if (MelonPrimeHud_CanRenderForCore(mp, editMode))
     {
+        auto& instcfg = emuInstance->getLocalConfig();
         // Use layout values cached in setupScreenLayout() - no sqrt per-frame.
         const float hudScale    = m_hudScale;
         const float topStretchX = m_topStretchX;
 
-        MelonPrimeHud_RefreshHudEpoch(m_hudCfgEpoch);
+        MelonPrimeHud_RefreshHudEnabledIfNeeded(instcfg, m_hudCfgEpoch, m_hudEnabled);
 
-        if (MelonPrimeHud_IsHudVisibleOrRestorePatch(emuInstance, instcfg, mp))
+        if (MelonPrimeHud_IsHudVisibleOrRestorePatch(emuInstance, instcfg, mp, m_hudEnabled, editMode))
         {
             // Overlay covers the full widget so HUD elements placed in black-bar
             // regions (DS x < 0 or > 256 for pillarboxed 4:3) remain visible.
@@ -34,11 +35,12 @@
                 m_hudOriginX, m_hudOriginY);
 
             // Composite only the dirty region (prev cleared + curr drawn).
-            painter.resetTransform();
             const QRect compositeRect = s_hudPrevDirtyS.united(curDirty);
-            if (!compositeRect.isEmpty())
+            if (!compositeRect.isEmpty()) {
+                painter.resetTransform();
                 painter.drawImage(QPoint(compositeRect.x(), compositeRect.y()),
                                   Overlay[0], compositeRect);
+            }
             s_hudPrevDirtyS = curDirty;
         }
     }
