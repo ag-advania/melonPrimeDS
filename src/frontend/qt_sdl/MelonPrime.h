@@ -242,9 +242,6 @@ namespace MelonPrime {
         int64_t  m_aimFixedAdjust = 8192;
         int64_t  m_aimFixedSnapThresh = AIM_ONE_FP;
 
-        int32_t  m_aimMinDeltaX = 1;
-        int32_t  m_aimMinDeltaY = 1;
-
         // P-17: Sub-pixel residual accumulators (Q14 fixed-point).
         // Carry fractional remainder across frames for smooth slow-speed aiming.
         int64_t  m_aimResidualX = 0;
@@ -356,7 +353,9 @@ namespace MelonPrime {
         HOT_FUNCTION void UpdateInputStateReentrant();  // re-entrant FrameAdvance path
         template <bool kReentrant> FORCE_INLINE void UpdateInputStateImpl();
         HOT_FUNCTION void HandleInGameLogic();
+        template <bool kInputMaskReset> FORCE_INLINE void ProcessMoveAndButtonsFastImpl();
         HOT_FUNCTION void ProcessMoveAndButtonsFast();
+        HOT_FUNCTION void ProcessMoveAndButtonsFastFromReset();
         HOT_FUNCTION void ProcessAimInputMouse();
         HOT_FUNCTION bool ProcessWeaponSwitch();
         HOT_FUNCTION bool HandleMorphBallBoost();
