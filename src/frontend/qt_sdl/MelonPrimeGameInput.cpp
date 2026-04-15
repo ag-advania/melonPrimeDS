@@ -175,7 +175,8 @@ namespace MelonPrime {
     //   Now: single function, single store to m_inputMaskFast, zero duplication.
     //   Also enables the compiler to keep m_inputMaskFast in a register across
     //   the move LUT lookup and button merge.
-    HOT_FUNCTION void MelonPrimeCore::ProcessMoveAndButtonsFast()
+    template <bool kInputMaskReset>
+    FORCE_INLINE void MelonPrimeCore::ProcessMoveAndButtonsFastImpl()
     {
         const uint32_t curr = m_input.moveIndex;
         uint32_t finalInput;
@@ -203,7 +204,13 @@ namespace MelonPrime {
         }
 
         const uint8_t lutResult = MoveLUT[finalInput & 0xF];
-        uint16_t mask = (m_inputMaskFast & 0xFF0Fu) | (static_cast<uint16_t>(lutResult) & 0x00F0u);
+        uint16_t mask;
+        if constexpr (kInputMaskReset) {
+            mask = 0xFF0Fu | (static_cast<uint16_t>(lutResult) & 0x00F0u);
+        }
+        else {
+            mask = (m_inputMaskFast & 0xFF0Fu) | (static_cast<uint16_t>(lutResult) & 0x00F0u);
+        }
 
         // --- Branchless button merge (B/L/R) ---
         constexpr uint16_t kModBits = (1u << INPUT_B) | (1u << INPUT_L) | (1u << INPUT_R);
@@ -212,6 +219,16 @@ namespace MelonPrime {
         const uint16_t lBit = static_cast<uint16_t>(((nd >> 1) & 1u) << INPUT_L);
         const uint16_t rBit = static_cast<uint16_t>(((nd >> 2) & 1u) << INPUT_R);
         m_inputMaskFast = (mask & ~kModBits) | bBit | lBit | rBit;
+    }
+
+    HOT_FUNCTION void MelonPrimeCore::ProcessMoveAndButtonsFast()
+    {
+        ProcessMoveAndButtonsFastImpl<false>();
+    }
+
+    HOT_FUNCTION void MelonPrimeCore::ProcessMoveAndButtonsFastFromReset()
+    {
+        ProcessMoveAndButtonsFastImpl<true>();
     }
 
     void MelonPrimeCore::ProcessAimInputStylus()

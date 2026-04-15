@@ -168,16 +168,6 @@ namespace MelonPrime {
             m_aimFixedSnapThresh = 0;
         }
 
-        const float effMin = (m_aimAdjust > 0.0f) ? m_aimAdjust : 1.0f;
-        m_aimMinDeltaX = (m_aimSensiFactor > 0.0f)
-            ? static_cast<int32_t>(std::ceil(effMin / m_aimSensiFactor))
-            : 1;
-        m_aimMinDeltaY = (m_aimCombinedY > 0.0f)
-            ? static_cast<int32_t>(std::ceil(effMin / m_aimCombinedY))
-            : 1;
-        if (m_aimMinDeltaX < 1) m_aimMinDeltaX = 1;
-        if (m_aimMinDeltaY < 1) m_aimMinDeltaY = 1;
-
         // P-17: Reset sub-pixel accumulators when scale changes.
         // Old residuals were computed with previous scale factors.
         m_aimResidualX = 0;

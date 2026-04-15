@@ -81,7 +81,7 @@ namespace MelonPrime {
         }
 
         // --- Movement & Buttons (Hot Path) ---
-        ProcessMoveAndButtonsFast();
+        ProcessMoveAndButtonsFastFromReset();
 
         // --- Morph Boost & Aim (Hot Path) ---
         HandleMorphBallBoost();
