@@ -182,6 +182,7 @@ namespace MelonPrime {
         bool isFocused = false;
         bool isClipWanted = false;
         bool isStylusMode = false;
+        bool m_snapTapMode = false;     // Cached from BIT_SNAP_TAP; avoids bitmask test in hot path
         bool isFastForward = false;     // Set by EmuThread; Screen Sync skips when true
         int  screenSyncMode = 0;       // 0=Off, 1=glFinish, 2=DwmFlush
 
