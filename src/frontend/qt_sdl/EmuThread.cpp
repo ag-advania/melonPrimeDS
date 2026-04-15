@@ -231,14 +231,20 @@ void EmuThread::run()
                 //
                 // P-40: targetTime / perfCountsSec → targetTime * perfCountsFreq.
                 // DIVSD (~20-35 cyc) → MULSD (~3-5 cyc).
+                //
+                // P-45: Capture final tick from spin loop condition.
+                // The loop's last evaluation already holds a tick >= targetTick.
+                // Reuse it instead of calling SDL_GetPerformanceCounter() again.
+                // Saves 1 QPC call (~20-40 cyc) per frame when limiting is active.
                 const Uint64 targetTick = static_cast<Uint64>(targetTime * perfCountsFreq);
-                while (SDL_GetPerformanceCounter() < targetTick) {
+                Uint64 curTick;
+                while ((curTick = SDL_GetPerformanceCounter()) < targetTick) {
 #ifdef _WIN32
                     YieldProcessor();
 #endif
                 }
 
-                curtime = SDL_GetPerformanceCounter() * perfCountsSec;
+                curtime = static_cast<double>(curTick) * perfCountsSec;
                 frameLimitError = targetTime - curtime;  // residual overshoot
             }
 
@@ -682,6 +688,13 @@ void EmuThread::sendMessage(Message msg)
     msgMutex.lock();
     msgQueue.enqueue(msg);
     msgMutex.unlock();
+#ifdef MELONPRIME_DS
+    // P-46: Store true AFTER unlock so the enqueue is always visible to the
+    // emu thread when it sees true (release pairs with the acquire load in
+    // handleMessages). Storing before lock would allow emu to see true, lock
+    // an empty queue, clear the flag, and then lose the message.
+    msgPending.store(true, std::memory_order_release);
+#endif
 }
 
 void EmuThread::waitMessage(int num)
@@ -699,6 +712,16 @@ void EmuThread::waitAllMessages()
 
 void EmuThread::handleMessages()
 {
+#ifdef MELONPRIME_DS
+    // P-46: Atomic fast-path — skip mutex entirely when no messages pending.
+    // sendMessage() stores true (release) before enqueue; we load (acquire)
+    // here so any enqueued message is visible if we see true.
+    // On 99%+ of frames this returns immediately, saving the uncontended
+    // QMutex lock/unlock overhead (~20-50 cyc/frame).
+    if (!msgPending.load(std::memory_order_acquire))
+        return;
+#endif
+
     bool glborrow = false;
 
     msgMutex.lock();
@@ -882,6 +905,14 @@ void EmuThread::handleMessages()
 
         msgSemaphore.release();
     }
+#ifdef MELONPRIME_DS
+    // P-46: Clear flag INSIDE the mutex after draining.
+    // Clearing inside the lock ensures sendMessage cannot enqueue between the
+    // drain and the clear, which would otherwise cause that message to be
+    // missed until the flag is set again. Relaxed is sufficient here because
+    // the subsequent mutex unlock provides the necessary release ordering.
+    msgPending.store(false, std::memory_order_relaxed);
+#endif
     msgMutex.unlock();
 
     if (glborrow)
