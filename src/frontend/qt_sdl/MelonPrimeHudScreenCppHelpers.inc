@@ -37,9 +37,20 @@ static void MelonPrimeHud_PrepareTopOverlay(
     }
 
     if (!prevDirty.isEmpty()) {
-        QPainter clrP(&overlay);
-        clrP.setCompositionMode(QPainter::CompositionMode_Source);
-        clrP.fillRect(prevDirty, Qt::transparent);
+        // OPT-HUD-1: Direct scanline clear — avoids QPainter construction +
+        // raster-engine setup (~500–2000 cyc/frame when HUD is visible).
+        // ARGB32_Premultiplied transparent == 0x00000000, so memset-to-0 is correct.
+        const int left  = std::max(0, prevDirty.left());
+        const int right = std::min(overlay.width()  - 1, prevDirty.right());
+        const int top   = std::max(0, prevDirty.top());
+        const int bot   = std::min(overlay.height() - 1, prevDirty.bottom());
+        if (left <= right && top <= bot) {
+            const std::size_t clearBytes =
+                static_cast<std::size_t>(right - left + 1) * sizeof(QRgb);
+            for (int y = top; y <= bot; ++y)
+                std::memset(reinterpret_cast<QRgb*>(overlay.scanLine(y)) + left,
+                            0, clearBytes);
+        }
     }
 }
 

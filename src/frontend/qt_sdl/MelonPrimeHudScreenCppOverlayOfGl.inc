@@ -54,18 +54,20 @@
                         overlayTexW = topOutW;
                         overlayTexH = topOutH;
                     } else {
-                        // OPT-DR1: Partial upload — only upload the union of prev (cleared)
-                        // and curr (drawn) dirty rects using GL_UNPACK_ROW_LENGTH.
+                        // OPT-DR1 / OPT-HUD-3: Partial upload — direct pointer
+                        // into QImage data eliminates GL_UNPACK_SKIP_PIXELS and
+                        // GL_UNPACK_SKIP_ROWS (4 driver calls → 0).
+                        // Only GL_UNPACK_ROW_LENGTH is needed so the driver
+                        // advances by a full row between upload rows.
+                        const uchar* uploadPtr = Overlay[0].constBits()
+                            + uploadRect.y() * Overlay[0].bytesPerLine()
+                            + uploadRect.x() * 4;
                         glPixelStorei(GL_UNPACK_ROW_LENGTH, topOutW);
-                        glPixelStorei(GL_UNPACK_SKIP_PIXELS, uploadRect.x());
-                        glPixelStorei(GL_UNPACK_SKIP_ROWS,   uploadRect.y());
                         glTexSubImage2D(GL_TEXTURE_2D, 0,
                             uploadRect.x(), uploadRect.y(),
                             uploadRect.width(), uploadRect.height(),
-                            GL_BGRA, GL_UNSIGNED_BYTE, Overlay[0].constBits());
+                            GL_BGRA, GL_UNSIGNED_BYTE, uploadPtr);
                         glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
-                        glPixelStorei(GL_UNPACK_SKIP_PIXELS, 0);
-                        glPixelStorei(GL_UNPACK_SKIP_ROWS,   0);
                     }
 
                     // Switch to OSD shader for HUD overlay compositing.
