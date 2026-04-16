@@ -124,7 +124,7 @@ static inline void DrawHP(QPainter* p, uint16_t hp, uint16_t maxHP,
     static TextBitmapCache s_hpOutlineCache = { 0, QColor(), "", 0, 0, 0, 1.0f, false, QImage() };
     const QFontMetrics& fm = s_frameFm;        // P-9
     const int fontPixelSize = s_frameFpx;       // P-9
-    const QFont font = p->font();
+    // OPT-HUD-6: use s_frameFont (cached by EnsureHudFont) — no p->font() copy per-frame.
 
     char buf[24];
     std::snprintf(buf, sizeof(buf), "%s%u", c.hp.hpPrefix, hp);
@@ -146,7 +146,7 @@ static inline void DrawHP(QPainter* p, uint16_t hp, uint16_t maxHP,
         textX  = CalcAlignedTextX(c.hp.hpX, c.hp.hpAlign, textW);
         hpTextY = static_cast<float>(c.hp.hpY);
     }
-    PrepareTextBitmapCached(fm, font, fontPixelSize, s_hpBitmapCache, buf, hpTextColor);
+    PrepareTextBitmapCached(fm, s_frameFont, fontPixelSize, s_hpBitmapCache, buf, hpTextColor);
     { const HudOutlineConfig& _ol = EffOL(c, c.hp.outline);
     if (_ol.enable && _ol.opacity > 0.0f) {
         const float renderScale = tds * c.lastHudScale;
@@ -273,7 +273,7 @@ static void DrawWeaponInventory(QPainter* p, melonDS::u8* ram,
 
     const QFontMetrics& fm      = s_frameFm;
     const int           fontPx  = s_frameFpx;
-    const QFont         font    = p->font();
+    // OPT-HUD-6: use s_frameFont (cached by EnsureHudFont) — no p->font() copy per-frame.
     const HudOutlineConfig& invIconOutline = EffOL(c, c.weaponInventory.iconOutline);
     const HudOutlineConfig& invTextOutline = EffOL(c, c.weaponInventory.outline);
     const bool useIconOutline = invIconOutline.enable && invIconOutline.opacity > 0.0f;
@@ -318,7 +318,7 @@ static void DrawWeaponInventory(QPainter* p, melonDS::u8* ram,
 
         // Prepare text bitmap (respects tds / TextScale / CapText via DrawCachedText scaling).
         if (buf[0] && fontPx == kCustomHudFontSize)
-            PrepareTextBitmapCached(fm, font, fontPx, s_invTextCache[si], buf, wi.textColor);
+            PrepareTextBitmapCached(fm, s_frameFont, fontPx, s_invTextCache[si], buf, wi.textColor);
         else
             s_invTextCache[si].valid = false;
 
@@ -448,7 +448,7 @@ static void DrawWeaponAmmo(QPainter* p, melonDS::u8* ram,
     static TextBitmapCache s_ammoOutlineCache = { 0, QColor(), "", 0, 0, 0, 1.0f, false, QImage() };
     const QFontMetrics& fm = s_frameFm;        // P-9
     const int fontPixelSize = s_frameFpx;       // P-9
-    const QFont font = p->font();
+    // OPT-HUD-6: use s_frameFont (cached by EnsureHudFont) — no p->font() copy per-frame.
 
     const WeaponInfo& wi = kWeaponTable[weapon];
     EnsureIconsLoaded(static_cast<int>(c.weapon.iconHeight * c.scaleIcons));
@@ -491,7 +491,7 @@ static void DrawWeaponAmmo(QPainter* p, melonDS::u8* ram,
         } else {
             textX = CalcAlignedTextX(c.weapon.wpnX, c.weapon.ammoAlign, textW);
         }
-        PrepareTextBitmapCached(fm, font, fontPixelSize, s_ammoBitmapCache, buf, c.weapon.ammoTextColor);
+        PrepareTextBitmapCached(fm, s_frameFont, fontPixelSize, s_ammoBitmapCache, buf, c.weapon.ammoTextColor);
         { const HudOutlineConfig& _ol = EffOL(c, c.weapon.outline);
         if (_ol.enable && _ol.opacity > 0.0f) {
             const float renderScale = tds * hudScale;

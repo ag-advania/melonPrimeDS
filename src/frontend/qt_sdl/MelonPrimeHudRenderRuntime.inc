@@ -323,10 +323,12 @@ static void EnsureHudFont(QPainter* p)
         p->setFont(f);
     }
 
-    // P-9: Cache font metrics once for the fixed HUD font size.
+    // P-9 / OPT-HUD-6: Cache font + metrics once for the fixed HUD font size.
+    // s_frameFont lets draw functions skip p->font() per-frame (~10-20 cyc each).
     if (UNLIKELY(s_frameFpx != kCustomHudFontSize)) {
-        s_frameFm = p->fontMetrics();
-        s_frameFpx = kCustomHudFontSize;
+        s_frameFm   = p->fontMetrics();
+        s_frameFont = p->font();
+        s_frameFpx  = kCustomHudFontSize;
     }
 }
 
@@ -465,7 +467,7 @@ static void DrawMatchStatusText(QPainter* p, const QFontMetrics& fm, int fontPix
     static TextBitmapCache s_curOlCache = { 0, QColor(), "", 0, 0, 0, 1.0f, false, QImage() }, s_sepOlCache = { 0, QColor(), "", 0, 0, 0, 1.0f, false, QImage() }, s_goalOlCache = { 0, QColor(), "", 0, 0, 0, 1.0f, false, QImage() }, s_labelOlCache = { 0, QColor(), "", 0, 0, 0, 1.0f, false, QImage() };
     static MatchStatusStringCache s_matchStringCache = { 0, 0, 0, 0, 0, false, false, false, "", "", "" };
     UpdateMatchStatusStrings(s_matchStringCache, state);
-    const QFont font = p->font();
+    // OPT-HUD-6: use s_frameFont (cached by EnsureHudFont) — no p->font() copy per-frame.
     auto eff = [&](const QColor& sub) -> const QColor& { return sub.isValid() ? sub : c.matchStatusColor; };
     const bool useOutline = ol.enable && ol.opacity > 0.0f;
     const float renderScale = tds * hudScale;
@@ -481,17 +483,17 @@ static void DrawMatchStatusText(QPainter* p, const QFontMetrics& fm, int fontPix
     };
     float curW = 0.0f, curH = 0.0f;
     MeasureTextCached(fm, fontPixelSize, s_curTextCache, s_matchStringCache.curBuf, curW, curH, tds);
-    PrepareTextBitmapCached(fm, font, fontPixelSize, s_curBitmapCache, s_matchStringCache.curBuf, eff(c.matchStatusValueColor));
+    PrepareTextBitmapCached(fm, s_frameFont, fontPixelSize, s_curBitmapCache, s_matchStringCache.curBuf, eff(c.matchStatusValueColor));
     drawText(s_curBitmapCache, s_curOlCache, static_cast<float>(c.matchStatusX), static_cast<float>(c.matchStatusY));
     if (s_matchStringCache.hasGoal) {
         float sepW = 0.0f, sepH = 0.0f, goalW = 0.0f, goalH = 0.0f;
         MeasureTextCached(fm, fontPixelSize, s_sepTextCache, s_matchStringCache.sepBuf, sepW, sepH, tds);
         MeasureTextCached(fm, fontPixelSize, s_goalTextCache, s_matchStringCache.goalBuf, goalW, goalH, tds);
         float x = c.matchStatusX + curW;
-        PrepareTextBitmapCached(fm, font, fontPixelSize, s_sepBitmapCache, s_matchStringCache.sepBuf, eff(c.matchStatusSepColor));
+        PrepareTextBitmapCached(fm, s_frameFont, fontPixelSize, s_sepBitmapCache, s_matchStringCache.sepBuf, eff(c.matchStatusSepColor));
         drawText(s_sepBitmapCache, s_sepOlCache, x, static_cast<float>(c.matchStatusY));
         x += sepW;
-        PrepareTextBitmapCached(fm, font, fontPixelSize, s_goalBitmapCache, s_matchStringCache.goalBuf, eff(c.matchStatusGoalColor));
+        PrepareTextBitmapCached(fm, s_frameFont, fontPixelSize, s_goalBitmapCache, s_matchStringCache.goalBuf, eff(c.matchStatusGoalColor));
         drawText(s_goalBitmapCache, s_goalOlCache, x, static_cast<float>(c.matchStatusY));
     }
     const char* label = ResolveMatchStatusLabel(state.mode, c);
@@ -499,7 +501,7 @@ static void DrawMatchStatusText(QPainter* p, const QFontMetrics& fm, int fontPix
     float lx = static_cast<float>(c.matchStatusX), ly = static_cast<float>(c.matchStatusY);
     switch (c.matchStatusLabelPos) { default: case 0: ly -= 10; break; case 1: ly += 10; break; case 2: lx -= 50; break; case 3: lx += 50; break; case 4: break; }
     lx += c.matchStatusLabelOfsX; ly += c.matchStatusLabelOfsY;
-    PrepareTextBitmapCached(fm, font, fontPixelSize, s_labelBitmapCache, label, eff(c.matchStatusLabelColor));
+    PrepareTextBitmapCached(fm, s_frameFont, fontPixelSize, s_labelBitmapCache, label, eff(c.matchStatusLabelColor));
     drawText(s_labelBitmapCache, s_labelOlCache, lx, ly);
 }
 static void DrawMatchStatusHud(QPainter* p, melonDS::u8* ram, const RomAddresses& rom, uint8_t playerPos, bool isAdventure, const CachedHudConfig& c)
@@ -526,8 +528,8 @@ static void DrawCachedAlignedText(QPainter* p, const QFontMetrics& fm, int fontP
     float textW = 0.0f, textH = 0.0f;
     MeasureTextCached(fm, fontPixelSize, measureCache, text, textW, textH, tds);
     const float textX = CalcAlignedTextX(anchorX, align, textW);
-    const QFont font = p->font();
-    PrepareTextBitmapCached(fm, font, fontPixelSize, bitmapCache, text, color);
+    // OPT-HUD-6: use s_frameFont (cached by EnsureHudFont) — no p->font() copy per-frame.
+    PrepareTextBitmapCached(fm, s_frameFont, fontPixelSize, bitmapCache, text, color);
     if (ol.enable && ol.opacity > 0.0f) {
         const float renderScale = tds * hudScale;
         PrepareOutlineBitmapCached(outlineCache, bitmapCache, ol.color, ol.thickness, renderScale);
@@ -549,14 +551,14 @@ static void DrawBombLeft(QPainter* p, melonDS::u8* ram, const RomAddresses& rom,
         static TextBitmapCache s_bombOutlineCache = { 0, QColor(), "", 0, 0, 0, 1.0f, false, QImage() };
         static TextMeasureCache s_bombMeasureCache = { 0, "", 0, 0, false };
         const QFontMetrics& fm = s_frameFm; const int fontPixelSize = s_frameFpx; // P-9
-        const QFont font = p->font();
+        // OPT-HUD-6: use s_frameFont (cached by EnsureHudFont) — no p->font() copy per-frame.
         char buf[64];
         if (c.bombLeft.bombLeftTextShow) std::snprintf(buf, sizeof(buf), "%s%u%s", c.bombLeft.bombLeftPrefix, bombs, c.bombLeft.bombLeftSuffix);
         else std::snprintf(buf, sizeof(buf), "%s%s", c.bombLeft.bombLeftPrefix, c.bombLeft.bombLeftSuffix);
         if (buf[0] != '\0') {
             float bombTextW = 0.0f, bombTextH = 0.0f;
             MeasureTextCached(fm, fontPixelSize, s_bombMeasureCache, buf, bombTextW, bombTextH, tds);
-            PrepareTextBitmapCached(fm, font, fontPixelSize, s_bombBitmapCache, buf, c.bombLeft.bombLeftColor);
+            PrepareTextBitmapCached(fm, s_frameFont, fontPixelSize, s_bombBitmapCache, buf, c.bombLeft.bombLeftColor);
             const float bombTextX = CalcAlignedTextX(c.bombLeft.bombLeftX, c.bombLeft.bombLeftAlign, bombTextW);
             { const HudOutlineConfig& _ol = EffOL(c, c.bombLeft.outline);
             if (_ol.enable && _ol.opacity > 0.0f) {

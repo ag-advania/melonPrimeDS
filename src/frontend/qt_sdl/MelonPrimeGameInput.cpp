@@ -120,8 +120,12 @@ namespace MelonPrime {
         if (rawFilter) {
             if constexpr (kReentrant)
                 rawFilter->PollAndSnapshotNoEdges(hk, m_input.mouseX, m_input.mouseY);
-            else
+            else {
                 rawFilter->PollAndSnapshot(hk, m_input.mouseX, m_input.mouseY);
+                // P-47: Kernel buffer just drained; no FrameAdvance has occurred yet.
+                // LateLatch skips processRawInputBatched on frames with no FrameAdvance.
+                m_didFrameAdvanceSinceSnapshot = false;
+            }
         }
 
         if (!isFocused) {

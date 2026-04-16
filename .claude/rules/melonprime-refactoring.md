@@ -22,8 +22,9 @@
 - 6 is **Round 6: syscall reduction / hot-path improvements for P-33–P-37**
 - 7 is **Round 7: frame-loop optimizations for P-38–P-41**
 - 8 is **Round 8: hotkey / aim / register optimizations for P-42–P-44**
-- 9 is **Custom HUD Refactor: unity-fragment split of render / on-screen editor / Screen integration**
-- 10 is **Custom HUD Performance: dirty rect, config cache, screen-fragment GL skip**
+- 9 is **Round 9: EmuThread / LateLatch syscall optimizations for P-45–P-47**
+- 10 is **Custom HUD Refactor: unity-fragment split of render / on-screen editor / Screen integration**
+- 11 is **Custom HUD Performance: dirty rect, config cache, screen-fragment GL skip**
 - Overlapping items are merged, while preserving historically important cases that were once adopted and later replaced or reverted
 
 ---
@@ -40,8 +41,9 @@
 | Former `MelonPrime_PERF_ROUND6.md` | Round 6 | P-33–P-37: PrePollRawInput removal, SDL skipping, validation of DeferredDrain lightweight plan and P-35 revert, hot-path branch improvements. Already merged into this document |
 | (This document §16) | Round 7 | P-38–P-41: hotkey gate inside the frame loop, NeedsShaderCompile cache, division→multiplication, DSi sync removal |
 | (This document §17) | Round 8 | P-42–P-44: hotkey scan, RunFrameHook, aim zero-delta skip |
+| (This document §20) | Round 9 | P-45–P-47: QPC spin-loop reuse, handleMessages atomic fast-path, LateLatch syscall skip |
 | (This document §18) | Custom HUD Refactor | Split into `MelonPrimeHudRender*.inc`, `MelonPrimeHudConfigOnScreen*.inc`, and `MelonPrimeHudScreenCpp*.inc` |
-| (This document §19) | Custom HUD Perf | OPT-DR1 / OPT-SC1: high-performance HUD dirty rect and screen overlay GL/software paths |
+| (This document §19) | Custom HUD Perf | OPT-DR1 / OPT-SC1 / OPT-HUD-1 / OPT-HUD-3 / OPT-HUD-6: dirty rect, GL upload, screen-fragment optimizations, overlay clear, and font cache |
 
 ---
 
@@ -848,10 +850,12 @@ When reading this unified edition, treat the following four points as fixed rule
 | File | Main integrated contents |
 |---|---|
 | `MelonPrimeCompilerHints.h` | R1: common macro integration, P-5 |
-| `MelonPrime.h` | OPT C/D/G/L/O/W, P-3, P-17, P-18, P-33 (empty-inline PrePollRawInput) |
+| `MelonPrime.h` | OPT C/D/G/L/O/W, P-3, P-17, P-18, P-33 (empty-inline PrePollRawInput), P-46 (`msgPending` atomic), P-47 (`m_didFrameAdvanceSinceSnapshot` + `FrameAdvanceOnce` set) |
 | `MelonPrime.cpp` | OPT D/E/K/L/O/W/Z1/Z2/Z3/Z4, FIX-3, P-20b, P-20c, P-22 (`DeferredDrainInput()` implementation), P-33 (remove PrePoll implementation), P-43 (focused local cache) |
-| `MelonPrimeGameInput.cpp` | OPT F/O/Q/Z2/Z3, FIX-2, P-3, P-17, P-18, P-44 (zero-delta skip) |
-| `MelonPrimeInGame.cpp` | OPT A/B/G/H/J/Z2/Z5, R1 constexpr tables, P-36 (HandleMorphBallBoost branch unification) |
+| `MelonPrimeGameInput.cpp` | OPT F/O/Q/Z2/Z3, FIX-2, P-3, P-17, P-18, P-44 (zero-delta skip), P-47 (clear `m_didFrameAdvanceSinceSnapshot` after PollAndSnapshot) |
+| `MelonPrimeInGame.cpp` | OPT A/B/G/H/J/Z2/Z5, R1 constexpr tables, P-36 (HandleMorphBallBoost branch unification), P-47 (gate LateLatch on `m_didFrameAdvanceSinceSnapshot`) |
+| `EmuThread.cpp` | P-11, P-12, P-13, P-15, P-16, P-22, P-24, P-25, P-26a, P-27, P-32, P-33, P-38, P-39, P-40, P-41, P-45 (QPC spin-loop reuse), P-46 (`handleMessages` acquire fast-path + `sendMessage` release store) |
+| `EmuThread.h` | P-46 (`std::atomic<bool> msgPending`) |
 | `MelonPrimeGameWeapon.cpp` | OPT A, R2 NDS cache |
 | `MelonPrimeGameRomDetect.cpp` | OPT L |
 | `MelonPrimeRawInputState.h` | R1 snapshot helpers, R2 organization of `setHotkeyVks` / `hasMask`, P-9, P-42 (`m_hkFastWord` + fast path for `scanBoundHotkeys`) |
@@ -866,9 +870,9 @@ When reading this unified edition, treat the following four points as fixed rule
 | `EmuInstanceInput.cpp` | P-15, P-21, P-23, P-34 (skip SDL in `inputProcess` when joystick is absent) |
 | `MelonPrimeHudRender.cpp` | Custom HUD runtime unity entry point. Bundles `MelonPrimeHudRender*.inc` and edit-mode includes |
 | `MelonPrimeHudRenderAssets.inc` | HUD asset/icon/radar-frame/text/outline caches, image/text helpers, dirty-rect support |
-| `MelonPrimeHudRenderConfig.inc` | Cached HUD config, anchor recomputation, auto-scale setup |
-| `MelonPrimeHudRenderRuntime.inc` | Battle/match state, runtime helpers, hide rules, NoHUD patch, static dirty rect |
-| `MelonPrimeHudRenderDraw.inc` | Drawing of HUD elements such as HP/weapon/ammo/radar/crosshair |
+| `MelonPrimeHudRenderConfig.inc` | Cached HUD config, anchor recomputation, auto-scale setup; OPT-HUD-6 (`s_frameFont` static) |
+| `MelonPrimeHudRenderRuntime.inc` | Battle/match state, runtime helpers, hide rules, NoHUD patch, static dirty rect; OPT-HUD-6 (`EnsureHudFont` populates `s_frameFont`) |
+| `MelonPrimeHudRenderDraw.inc` | Drawing of HUD elements such as HP/weapon/ammo/radar/crosshair; OPT-HUD-6 (removed `p->font()` copies in 3 draw functions) |
 | `MelonPrimeHudRenderMain.inc` | `CustomHud_Render()`, edit-mode forward state, radar-frame drawing |
 | `MelonPrimeHudConfigOnScreen.cpp` | In-game HUD editor unity entry point. Holds shared edit-mode state and include ordering |
 | `MelonPrimeHudConfigOnScreenDefs.inc` | Edit-mode definition tables / property descriptors / element table |
@@ -877,9 +881,9 @@ When reading this unified edition, treat the following four points as fixed rule
 | `MelonPrimeHudConfigOnScreenInput.inc` | Edit-mode public API and mouse/wheel input handling |
 | `Screen.cpp` | Owner of Custom HUD screen-integration includes. Includes `MelonPrimeHudScreenCpp*.inc` at each call site |
 | `Screen.h` | Custom HUD screen-side caches: HUD enable epoch, radar epoch, top matrix, radar anchor DS coords |
-| `MelonPrimeHudScreenCppHelpers.inc` | Common helpers for screen fragments: edit-panel placement, epoch/config refresh, overlay clear/render, patch restore |
+| `MelonPrimeHudScreenCppHelpers.inc` | Common helpers for screen fragments: edit-panel placement, epoch/config refresh, overlay clear/render, patch restore; OPT-HUD-1 (scanline-memset clear) |
 | `MelonPrimeHudScreenCppOverlayOfSoftware.inc` | Software-paint HUD overlay path. Dirty-rect composite |
-| `MelonPrimeHudScreenCppOverlayOfGl.inc` | GL HUD overlay upload/composite and GL-native bottom radar overlay. Dirty upload / GL-state skip |
+| `MelonPrimeHudScreenCppOverlayOfGl.inc` | GL HUD overlay upload/composite and GL-native bottom radar overlay. Dirty upload / GL-state skip; OPT-HUD-3 (direct-pointer partial upload) |
 | `MelonPrimeHudScreenCppGlInit.inc` / `MelonPrimeHudScreenCppGlDeinit.inc` | Custom HUD GL resource init/deinit |
 | `MelonPrimeHudScreenCppInit.inc` / `Layout.inc` / `Mouse*.inc` / `EditPanel*.inc` | Screen-panel setup, layout cache, edit-mode input forwarding, floating-panel placement |
 
@@ -1243,6 +1247,82 @@ On an 8kHz mouse, delta is almost always non-zero, but on standard mice (125–1
 
 ---
 
+## 20. Round 9: EmuThread / LateLatch syscall optimizations for P-45–P-47
+
+## 20.1 Central theme of Round 9
+
+Round 9 targets two separate steady-state costs: a redundant QPC call in the EmuThread spin loop (P-45), a mutex lock/unlock per frame for an empty message queue (P-46), and a `GetRawInputBuffer` syscall on every in-game frame even when no FrameAdvance occurred (P-47).
+
+## 20.2 Status list
+
+| ID | Category | Status | Contents | Estimated effect |
+|---|---|---|---|---|
+| P-45 | Syscall reduction | ✅ | QPC spin-loop reuse — capture final tick from loop condition, reuse for `curtime` | ~20–40 cyc/frame |
+| P-46 | Mutex elimination | ✅ | `handleMessages` atomic acquire fast-path — skip `QMutex::lock/unlock` on 99%+ of frames | ~20–50 cyc/frame |
+| P-47 | Syscall reduction | ✅ | LateLatch `processRawInputBatched` skip on normal frames via `m_didFrameAdvanceSinceSnapshot` | ~500–2000 cyc/frame |
+
+## 20.3 P-45: QPC spin-loop reuse
+
+The spin loop in `EmuThread.cpp` called `SDL_GetPerformanceCounter()` once per spin iteration (via the `while` condition) and then called it **again** immediately after the loop exited to compute `curtime`.
+
+**Fix**: capture the final `SDL_GetPerformanceCounter()` return value from the loop condition into `curTick`, then reuse `curTick` instead of issuing a second QPC call.
+
+```cpp
+// Before: extra SDL_GetPerformanceCounter() after loop
+while (SDL_GetPerformanceCounter() < targetTick) { YieldProcessor(); }
+curtime = SDL_GetPerformanceCounter() * perfCountsSec;  // redundant
+
+// After: reuse the tick that exited the loop
+Uint64 curTick;
+while ((curTick = SDL_GetPerformanceCounter()) < targetTick) { YieldProcessor(); }
+curtime = static_cast<double>(curTick) * perfCountsSec;
+```
+
+**Effect**: saves ~1 QPC call (~20–40 cyc) on every frame where the frame limiter is active.
+
+## 20.4 P-46: `handleMessages` atomic fast-path
+
+`handleMessages()` is called every iteration of the `run()` loop. On 99%+ of frames the message queue is empty, but the old path still executed `QMutex::lock()` + `QMutex::unlock()` unconditionally (~20–50 cyc).
+
+**Fix**: add `std::atomic<bool> msgPending{false}` to `EmuThread`. `sendMessage()` stores `true` (release) **after** `msgMutex.unlock()` so the enqueue is complete and visible. `handleMessages()` loads with `acquire` and returns immediately if `false`.
+
+**Memory ordering correctness**:
+- `store(true, release)` is placed AFTER `msgMutex.unlock()` in `sendMessage`: enqueue → unlock → store(true). When emu thread loads `true`, the release-acquire pair guarantees the enqueue is visible.
+- `store(false, relaxed)` is placed INSIDE the mutex lock, just before `msgMutex.unlock()` in `handleMessages`: drain → store(false) → unlock. `sendMessage` cannot enqueue between drain and clear.
+
+**Effect**: on frames with no GUI messages (99%+), one `atomic::load` (acquire) replaces one `QMutex::lock` + `QMutex::unlock`.
+
+## 20.5 P-47: LateLatch `processRawInputBatched` skip
+
+`LateLatchMouseDelta()` called `processRawInputBatched()` (`GetRawInputBuffer` syscall) on **every in-game frame**. On normal frames (no `FrameAdvance`), `PollAndSnapshot` just drained the buffer and the window before LateLatch is only ~40–100 ns → kernel buffer is empty. The syscall is pure waste (~500–2000 cyc).
+
+On `FrameAdvance` frames (morph: 3× `FrameAdvanceTwice` = ~96 ms; weapon switch: ~32 ms) the window is long enough to accumulate 256–768 events at 8kHz → LateLatch is essential.
+
+**Fix**: add `bool m_didFrameAdvanceSinceSnapshot` to `MelonPrimeCore`.
+
+| Where | Action |
+|---|---|
+| `FrameAdvanceOnce()` inline (`MelonPrime.h`) | Set `m_didFrameAdvanceSinceSnapshot = true` |
+| `UpdateInputStateImpl<false>()` (`MelonPrimeGameInput.cpp`), after `PollAndSnapshot` | Clear `m_didFrameAdvanceSinceSnapshot = false` |
+| `HandleInGameLogic()` (`MelonPrimeInGame.cpp`), LateLatch call site | Guard: `if (m_rawFilter && m_didFrameAdvanceSinceSnapshot)` |
+
+On normal frames: flag is `false` → LateLatch skips `processRawInputBatched` entirely. `fetchMouseDelta` is also skipped because LateLatch itself is not called.
+On FrameAdvance frames: `FrameAdvanceOnce` sets the flag `true` → LateLatch runs in full.
+
+**Effect**: saves one `GetRawInputBuffer` syscall (~500–2000 cyc) on every normal in-game frame. Zero latency regression — on FrameAdvance frames, LateLatch still runs at full fidelity.
+
+## 20.6 Cumulative estimated effect of Round 6 + 7 + 8 + 9
+
+| Environment | Round 6 | Round 7 | Round 8 | Round 9 | Total |
+|---|---|---|---|---|---|
+| 8kHz mouse + KB+M | ~800–2600 | ~45–85 | ~68–152 | ~540–2090 | **~1453–4927** |
+| Normal mouse + KB+M | ~300–1000 | ~45–85 | ~76–164 | ~540–2090 | **~961–3339** |
+| Using joystick | ~500–2000 | ~45–85 | ~68–152 | ~40–90 | **~653–2327** |
+
+Note: P-47 effect for joystick is minimal because `LateLatchMouseDelta` is only called on the mouse (`!isStylusMode && m_rawFilter`) path; joystick players use the same code path but `m_rawFilter` may be null depending on configuration.
+
+---
+
 ## 18. Integrated result of the Custom HUD refactor
 
 ## 18.1 Central theme
@@ -1325,6 +1405,51 @@ The current runtime caches the following.
 | Radar-frame cache | Regenerate SVG frame, tint, and outline only when size/color changes |
 | Static dirty rect | Recompute dirty rects for fixed-position HUD elements only when config/transform changes |
 | Crosshair dirty rect | Union of previous/current crosshair bounding boxes |
+| `s_frameFont` (OPT-HUD-6) | Cached `QFont` populated once in `EnsureHudFont()`; eliminates 6 per-frame `p->font()` CoW copies |
+
+## 19.2a OPT-HUD-1: Scanline-memset overlay clear
+
+`MelonPrimeHud_PrepareTopOverlay` (in `MelonPrimeHudScreenCppHelpers.inc`) previously cleared the previous-frame dirty region with QPainter in Source composition mode, paying QPainter construction + raster-engine setup cost (~500–2000 cyc/frame when HUD is visible).
+
+After OPT-HUD-1, the clear is done directly with scanline `memset`:
+- `ARGB32_Premultiplied` transparent == `0x00000000`, so memset-to-0 is semantically equivalent
+- Avoids QPainter construction and raster-engine setup entirely on the clear path
+- Tight loop: clamps dirty rect to image bounds, one `std::memset` per scanline
+
+**Effect**: ~500–2000 cyc/frame (only when HUD is visible)
+
+## 19.2b OPT-HUD-3: Direct-pointer GL partial upload
+
+In the GL overlay path (`MelonPrimeHudScreenCppOverlayOfGl.inc`), the partial `glTexSubImage2D` call previously used `GL_UNPACK_SKIP_PIXELS` + `GL_UNPACK_SKIP_ROWS` to offset into the `QImage` buffer (4 extra `glPixelStorei` calls = ~4 driver-side register writes).
+
+After OPT-HUD-3, a direct pointer offset into `QImage::constBits()` is computed:
+```cpp
+const uchar* uploadPtr = Overlay[0].constBits()
+    + uploadRect.y() * Overlay[0].bytesPerLine()
+    + uploadRect.x() * 4;
+glPixelStorei(GL_UNPACK_ROW_LENGTH, topOutW);
+glTexSubImage2D(..., uploadPtr);
+glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
+```
+This reduces `glPixelStorei` calls from 6 → 2 (only `ROW_LENGTH` needed for stride).
+
+**Effect**: 4 fewer driver calls per partial-upload frame
+
+## 19.2c OPT-HUD-6: Cached QFont eliminates per-draw `p->font()` copies
+
+Every draw function that calls `PrepareTextBitmapCached` previously did `const QFont font = p->font()`. On cache-hit frames (95%+ of frames), the returned `QFont` is never used — but QFont's copy constructor increments a ref count (~10–20 cyc per call).
+
+After OPT-HUD-6, a `static QFont s_frameFont` is added alongside `s_frameFm`/`s_frameFpx` in `MelonPrimeHudRenderConfig.inc` and populated once in `EnsureHudFont()` whenever the font changes. All six `PrepareTextBitmapCached` callers now reference `s_frameFont` directly.
+
+**Affected callers** (all in `MelonPrimeHudRenderDraw.inc` / `MelonPrimeHudRenderRuntime.inc`):
+- `DrawHP`
+- `DrawWeaponInventory`
+- `DrawWeaponAmmo`
+- `DrawMatchStatusText`
+- `DrawCachedAlignedText`
+- `DrawBombLeft`
+
+**Effect**: ~60–120 cyc/frame (6 CoW ref-increments removed per visible HUD frame)
 
 ## 19.3 OPT-SC1: Screen-fragment hot-path optimization
 
