@@ -256,6 +256,13 @@ namespace MelonPrime {
         bool     m_isRunningHook = false;
         bool     m_isWeaponCheckActive = false;
         bool     m_isLayoutChangePending = true;
+        // P-47: Set by FrameAdvanceOnce; cleared after PollAndSnapshot.
+        // True  → LateLatch must call processRawInputBatched (events may have
+        //          arrived during the FrameAdvance window: ~32–96 ms).
+        // False → PollAndSnapshot was just called; kernel buffer is still
+        //          empty on a normal frame (~40–100 ns window). Skip the
+        //          GetRawInputBuffer syscall entirely (~500–2000 cyc saved).
+        bool     m_didFrameAdvanceSinceSnapshot = false;
 
         // Cold: float intermediates (config change only)
         float    m_aimSensiFactor = 0.01f;
@@ -380,7 +387,7 @@ namespace MelonPrime {
         void SwitchWeapon(int weaponIndex);
         void ShowCursor(bool show);
         void FrameAdvanceTwice();
-        FORCE_INLINE void FrameAdvanceOnce() { (this->*m_fnAdvance)(); }
+        FORCE_INLINE void FrameAdvanceOnce() { m_didFrameAdvanceSinceSnapshot = true; (this->*m_fnAdvance)(); }
         void FrameAdvanceDefault();
         void FrameAdvanceCustom();
         QPoint GetAdjustedCenter();
