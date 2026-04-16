@@ -43,7 +43,7 @@
 | (This document §17) | Round 8 | P-42–P-44: hotkey scan, RunFrameHook, aim zero-delta skip |
 | (This document §20) | Round 9 | P-45–P-47: QPC spin-loop reuse, handleMessages atomic fast-path, LateLatch syscall skip |
 | (This document §18) | Custom HUD Refactor | Split into `MelonPrimeHudRender*.inc`, `MelonPrimeHudConfigOnScreen*.inc`, and `MelonPrimeHudScreenCpp*.inc` |
-| (This document §19) | Custom HUD Perf | OPT-DR1 / OPT-SC1: high-performance HUD dirty rect and screen overlay GL/software paths |
+| (This document §19) | Custom HUD Perf | OPT-DR1 / OPT-SC1 / OPT-HUD-1 / OPT-HUD-3 / OPT-HUD-6: dirty rect, GL upload, screen-fragment optimizations, overlay clear, and font cache |
 
 ---
 
@@ -870,9 +870,9 @@ When reading this unified edition, treat the following four points as fixed rule
 | `EmuInstanceInput.cpp` | P-15, P-21, P-23, P-34 (skip SDL in `inputProcess` when joystick is absent) |
 | `MelonPrimeHudRender.cpp` | Custom HUD runtime unity entry point. Bundles `MelonPrimeHudRender*.inc` and edit-mode includes |
 | `MelonPrimeHudRenderAssets.inc` | HUD asset/icon/radar-frame/text/outline caches, image/text helpers, dirty-rect support |
-| `MelonPrimeHudRenderConfig.inc` | Cached HUD config, anchor recomputation, auto-scale setup |
-| `MelonPrimeHudRenderRuntime.inc` | Battle/match state, runtime helpers, hide rules, NoHUD patch, static dirty rect |
-| `MelonPrimeHudRenderDraw.inc` | Drawing of HUD elements such as HP/weapon/ammo/radar/crosshair |
+| `MelonPrimeHudRenderConfig.inc` | Cached HUD config, anchor recomputation, auto-scale setup; OPT-HUD-6 (`s_frameFont` static) |
+| `MelonPrimeHudRenderRuntime.inc` | Battle/match state, runtime helpers, hide rules, NoHUD patch, static dirty rect; OPT-HUD-6 (`EnsureHudFont` populates `s_frameFont`) |
+| `MelonPrimeHudRenderDraw.inc` | Drawing of HUD elements such as HP/weapon/ammo/radar/crosshair; OPT-HUD-6 (removed `p->font()` copies in 3 draw functions) |
 | `MelonPrimeHudRenderMain.inc` | `CustomHud_Render()`, edit-mode forward state, radar-frame drawing |
 | `MelonPrimeHudConfigOnScreen.cpp` | In-game HUD editor unity entry point. Holds shared edit-mode state and include ordering |
 | `MelonPrimeHudConfigOnScreenDefs.inc` | Edit-mode definition tables / property descriptors / element table |
@@ -881,9 +881,9 @@ When reading this unified edition, treat the following four points as fixed rule
 | `MelonPrimeHudConfigOnScreenInput.inc` | Edit-mode public API and mouse/wheel input handling |
 | `Screen.cpp` | Owner of Custom HUD screen-integration includes. Includes `MelonPrimeHudScreenCpp*.inc` at each call site |
 | `Screen.h` | Custom HUD screen-side caches: HUD enable epoch, radar epoch, top matrix, radar anchor DS coords |
-| `MelonPrimeHudScreenCppHelpers.inc` | Common helpers for screen fragments: edit-panel placement, epoch/config refresh, overlay clear/render, patch restore |
+| `MelonPrimeHudScreenCppHelpers.inc` | Common helpers for screen fragments: edit-panel placement, epoch/config refresh, overlay clear/render, patch restore; OPT-HUD-1 (scanline-memset clear) |
 | `MelonPrimeHudScreenCppOverlayOfSoftware.inc` | Software-paint HUD overlay path. Dirty-rect composite |
-| `MelonPrimeHudScreenCppOverlayOfGl.inc` | GL HUD overlay upload/composite and GL-native bottom radar overlay. Dirty upload / GL-state skip |
+| `MelonPrimeHudScreenCppOverlayOfGl.inc` | GL HUD overlay upload/composite and GL-native bottom radar overlay. Dirty upload / GL-state skip; OPT-HUD-3 (direct-pointer partial upload) |
 | `MelonPrimeHudScreenCppGlInit.inc` / `MelonPrimeHudScreenCppGlDeinit.inc` | Custom HUD GL resource init/deinit |
 | `MelonPrimeHudScreenCppInit.inc` / `Layout.inc` / `Mouse*.inc` / `EditPanel*.inc` | Screen-panel setup, layout cache, edit-mode input forwarding, floating-panel placement |
 
@@ -1405,6 +1405,51 @@ The current runtime caches the following.
 | Radar-frame cache | Regenerate SVG frame, tint, and outline only when size/color changes |
 | Static dirty rect | Recompute dirty rects for fixed-position HUD elements only when config/transform changes |
 | Crosshair dirty rect | Union of previous/current crosshair bounding boxes |
+| `s_frameFont` (OPT-HUD-6) | Cached `QFont` populated once in `EnsureHudFont()`; eliminates 6 per-frame `p->font()` CoW copies |
+
+## 19.2a OPT-HUD-1: Scanline-memset overlay clear
+
+`MelonPrimeHud_PrepareTopOverlay` (in `MelonPrimeHudScreenCppHelpers.inc`) previously cleared the previous-frame dirty region with QPainter in Source composition mode, paying QPainter construction + raster-engine setup cost (~500–2000 cyc/frame when HUD is visible).
+
+After OPT-HUD-1, the clear is done directly with scanline `memset`:
+- `ARGB32_Premultiplied` transparent == `0x00000000`, so memset-to-0 is semantically equivalent
+- Avoids QPainter construction and raster-engine setup entirely on the clear path
+- Tight loop: clamps dirty rect to image bounds, one `std::memset` per scanline
+
+**Effect**: ~500–2000 cyc/frame (only when HUD is visible)
+
+## 19.2b OPT-HUD-3: Direct-pointer GL partial upload
+
+In the GL overlay path (`MelonPrimeHudScreenCppOverlayOfGl.inc`), the partial `glTexSubImage2D` call previously used `GL_UNPACK_SKIP_PIXELS` + `GL_UNPACK_SKIP_ROWS` to offset into the `QImage` buffer (4 extra `glPixelStorei` calls = ~4 driver-side register writes).
+
+After OPT-HUD-3, a direct pointer offset into `QImage::constBits()` is computed:
+```cpp
+const uchar* uploadPtr = Overlay[0].constBits()
+    + uploadRect.y() * Overlay[0].bytesPerLine()
+    + uploadRect.x() * 4;
+glPixelStorei(GL_UNPACK_ROW_LENGTH, topOutW);
+glTexSubImage2D(..., uploadPtr);
+glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
+```
+This reduces `glPixelStorei` calls from 6 → 2 (only `ROW_LENGTH` needed for stride).
+
+**Effect**: 4 fewer driver calls per partial-upload frame
+
+## 19.2c OPT-HUD-6: Cached QFont eliminates per-draw `p->font()` copies
+
+Every draw function that calls `PrepareTextBitmapCached` previously did `const QFont font = p->font()`. On cache-hit frames (95%+ of frames), the returned `QFont` is never used — but QFont's copy constructor increments a ref count (~10–20 cyc per call).
+
+After OPT-HUD-6, a `static QFont s_frameFont` is added alongside `s_frameFm`/`s_frameFpx` in `MelonPrimeHudRenderConfig.inc` and populated once in `EnsureHudFont()` whenever the font changes. All six `PrepareTextBitmapCached` callers now reference `s_frameFont` directly.
+
+**Affected callers** (all in `MelonPrimeHudRenderDraw.inc` / `MelonPrimeHudRenderRuntime.inc`):
+- `DrawHP`
+- `DrawWeaponInventory`
+- `DrawWeaponAmmo`
+- `DrawMatchStatusText`
+- `DrawCachedAlignedText`
+- `DrawBombLeft`
+
+**Effect**: ~60–120 cyc/frame (6 CoW ref-increments removed per visible HUD frame)
 
 ## 19.3 OPT-SC1: Screen-fragment hot-path optimization
 

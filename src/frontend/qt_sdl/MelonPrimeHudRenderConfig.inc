@@ -208,8 +208,11 @@ static QRect CrosshairBboxPx(int cx, int cy, const CrosshairHudConfig& ch)
 }
 
 // P-9: Frame-level font metrics — set once in CustomHud_Render, shared by all draw sub-functions.
+// OPT-HUD-6: s_frameFont caches the QFont so draw functions never call p->font() per-frame.
+//   p->font() creates a CoW ref-increment even on cache-hit paths (~10–20 cyc × 6 callers).
 static QFontMetrics s_frameFm{QFont{}};
 static int s_frameFpx = 0;
+static QFont s_frameFont;
 
 static inline void CopyConfigString(char* dst, size_t dstSize, const std::string& value)
 {
