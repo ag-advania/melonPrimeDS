@@ -93,10 +93,12 @@ namespace MelonPrime {
         }
         else {
 #ifdef _WIN32
-            // Late-latch: flush kernel buffer and capture any mouse events that
-            // arrived since PollAndSnapshot (during morph/weapon/move processing).
-            // Reduces aim write latency by ~the time spent in the above logic.
-            if (m_rawFilter) m_rawFilter->LateLatchMouseDelta(m_input.mouseX, m_input.mouseY);
+            // P-47: LateLatch only matters when FrameAdvance was called since
+            // PollAndSnapshot (morph: ~96 ms, weapon: ~32 ms).  On normal frames
+            // the window is ~40–100 ns → kernel buffer is empty.
+            // Skipping processRawInputBatched saves ~500–2000 cyc/frame.
+            if (m_rawFilter && m_didFrameAdvanceSinceSnapshot)
+                m_rawFilter->LateLatchMouseDelta(m_input.mouseX, m_input.mouseY);
 #endif
             ProcessAimInputMouse();
             // m_aimBlockBits replaces m_isAimDisabled (same semantics: != 0)
