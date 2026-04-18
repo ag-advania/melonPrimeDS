@@ -469,9 +469,15 @@ namespace MelonPrime {
     void InputState::snapshotInputFrame(FrameHotkeyState& outHk,
         int& outMouseX, int& outMouseY) noexcept
     {
+        const auto snap = takeSnapshot();  // acquire fence inside
+
+        // clearStuck* runs AFTER takeSnapshot so that valid quick presses
+        // (button pressed and released within one frame) are captured in the
+        // snapshot before being cleared.  Stuck bits are cleared for the
+        // next frame — one frame of false-fire from a stuck button is
+        // preferable to silently dropping a genuine click.
         clearStuckMouseButtons();
         clearStuckKeys();
-        const auto snap = takeSnapshot();  // acquire fence inside
 
         // Mouse loads are now sequenced after the acquire fence,
         // guaranteeing consistency with the VK snapshot.
