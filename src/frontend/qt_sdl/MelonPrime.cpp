@@ -350,6 +350,10 @@ namespace MelonPrime {
                 HandleGameJoinInit();
             }
 
+            if (LIKELY(isInGame)) {
+                OsdColor_ApplyOnce(emuInstance, localCfg, m_currentRom);
+            }
+
             if (focused) {
                 if (LIKELY(isInGame)) {
                     if (UNLIKELY(m_aimBlockBits & AIMBLK_NOT_IN_GAME)) {

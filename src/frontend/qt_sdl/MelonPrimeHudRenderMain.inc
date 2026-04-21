@@ -57,7 +57,7 @@ HOT_FUNCTION QRect CustomHud_Render(
     if (!ReadHudRuntimeState(emu, rom, addrHot, playerPosition, st))
         return QRect();
 
-    ApplyNoHudPatch(st.nds, st.romGroup);
+    NoHudPatch_Apply(st.nds, st.romGroup);
 
     // P-3: Refresh config cache only when invalidated, or recompute anchor
     //       positions when topStretchX changes (window resize).

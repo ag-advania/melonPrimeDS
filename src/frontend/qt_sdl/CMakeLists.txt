@@ -85,7 +85,9 @@ set(SOURCES_QT_SDL
     MelonPrime.cpp
     MelonPrimeHudRender.cpp
     MelonPrimeHudConfigOnScreenEdit.cpp
-    MelonPrimePatch.cpp
+    MelonPrimePatchAspectRatio.cpp
+    MelonPrimePatchOsdColor.cpp
+    MelonPrimePatchNoHud.cpp
     
 
 )
