@@ -189,6 +189,7 @@ namespace MelonPrime {
 #endif
 #ifdef MELONPRIME_DS
         InGameAspectRatio_ResetPatchState();
+        OsdColor_ResetPatchState();
 #endif
 
         ReloadConfigFlags();
@@ -210,6 +211,7 @@ namespace MelonPrime {
 #endif
 #ifdef MELONPRIME_DS
         InGameAspectRatio_ResetPatchState();
+        OsdColor_ResetPatchState();
 #endif
     }
 
@@ -360,6 +362,7 @@ namespace MelonPrime {
                     SetAimBlockBranchless(AIMBLK_NOT_IN_GAME, true);
                     if (m_flags.test(StateFlags::BIT_IN_GAME_INIT)) {
                         m_flags.clear(StateFlags::BIT_IN_GAME_INIT);
+                        OsdColor_RestoreOnce(emuInstance->getNDS(), m_currentRom);
                     }
                     ApplyGameSettingsOnce();
                 }
@@ -469,6 +472,7 @@ namespace MelonPrime {
 #ifdef MELONPRIME_DS
         // Apply aspect ratio patch once per game join
         InGameAspectRatio_ApplyOnce(emuInstance, localCfg, m_currentRom);
+        OsdColor_ApplyOnce(emuInstance, localCfg, m_currentRom);
 #endif
 #ifdef MELONPRIME_CUSTOM_HUD
         // Cache battle settings for HUD display

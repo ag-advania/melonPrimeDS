@@ -395,6 +395,50 @@ namespace Config
         {"Instance*.Metroid.Visual.BtmOverlayRadarColorB",      208},
         /* MelonPrimeDS Bottom Screen Overlay frame color } */
         /* MelonPrimeDS Bottom Screen Overlay defaults } */
+        /* MelonPrimeDS OSD Color Patch defaults { */
+        /* Global "set all" color (white) */
+        {"Instance*.Metroid.Visual.OsdColorR",              255},
+        {"Instance*.Metroid.Visual.OsdColorG",              255},
+        {"Instance*.Metroid.Visual.OsdColorB",              255},
+        /* Per-category colors (all default white) */
+        {"Instance*.Metroid.Visual.OsdColorLostLivesR",     255},
+        {"Instance*.Metroid.Visual.OsdColorLostLivesG",     255},
+        {"Instance*.Metroid.Visual.OsdColorLostLivesB",     255},
+        {"Instance*.Metroid.Visual.OsdColorKillDeathR",     255},
+        {"Instance*.Metroid.Visual.OsdColorKillDeathG",     255},
+        {"Instance*.Metroid.Visual.OsdColorKillDeathB",     255},
+        {"Instance*.Metroid.Visual.OsdColorReturnBaseR",    255},
+        {"Instance*.Metroid.Visual.OsdColorReturnBaseG",    255},
+        {"Instance*.Metroid.Visual.OsdColorReturnBaseB",    255},
+        {"Instance*.Metroid.Visual.OsdColorNoAmmoR",        255},
+        {"Instance*.Metroid.Visual.OsdColorNoAmmoG",        255},
+        {"Instance*.Metroid.Visual.OsdColorNoAmmoB",        255},
+        {"Instance*.Metroid.Visual.OsdColorCowardDetectR",  255},
+        {"Instance*.Metroid.Visual.OsdColorCowardDetectG",  255},
+        {"Instance*.Metroid.Visual.OsdColorCowardDetectB",  255},
+        {"Instance*.Metroid.Visual.OsdColorAcquiringNodeR", 255},
+        {"Instance*.Metroid.Visual.OsdColorAcquiringNodeG", 255},
+        {"Instance*.Metroid.Visual.OsdColorAcquiringNodeB", 255},
+        {"Instance*.Metroid.Visual.OsdColorTurretR",        255},
+        {"Instance*.Metroid.Visual.OsdColorTurretG",        255},
+        {"Instance*.Metroid.Visual.OsdColorTurretB",        255},
+        {"Instance*.Metroid.Visual.OsdColorOctoResetR",     255},
+        {"Instance*.Metroid.Visual.OsdColorOctoResetG",     255},
+        {"Instance*.Metroid.Visual.OsdColorOctoResetB",     255},
+        {"Instance*.Metroid.Visual.OsdColorOctoDropR",      255},
+        {"Instance*.Metroid.Visual.OsdColorOctoDropG",      255},
+        {"Instance*.Metroid.Visual.OsdColorOctoDropB",      255},
+        {"Instance*.Metroid.Visual.OsdColorOctoCondR",      255},
+        {"Instance*.Metroid.Visual.OsdColorOctoCondG",      255},
+        {"Instance*.Metroid.Visual.OsdColorOctoCondB",      255},
+        {"Instance*.Metroid.Visual.OsdColorOctoMissingR",   255},
+        {"Instance*.Metroid.Visual.OsdColorOctoMissingG",   255},
+        {"Instance*.Metroid.Visual.OsdColorOctoMissingB",   255},
+        /* H211 "node stolen" separate color (default red) */
+        {"Instance*.Metroid.Visual.OsdColorH211R",          255},
+        {"Instance*.Metroid.Visual.OsdColorH211G",            0},
+        {"Instance*.Metroid.Visual.OsdColorH211B",            0},
+        /* MelonPrimeDS OSD Color Patch defaults } */
         /* MelonPrimeDS Custom HUD Crosshair defaults } */
     #endif
     };
@@ -523,6 +567,8 @@ namespace Config
         {"Instance*.Metroid.Visual.HudBombLeftIconShow",   true},
         {"Instance*.Metroid.Visual.HudBombLeftIconColorOverlay", true},
         {"Instance*.Metroid.Visual.InGameAspectRatio", true},
+        {"Instance*.Metroid.Visual.OsdColor",    false},
+        {"Instance*.Metroid.Visual.OsdColorH211", true},
         {"Instance*.Metroid.Visual.ClipCursorToBottomScreenWhenNotInGame", false},
         {"Instance*.Metroid.Visual.InGameTopScreenOnly", false},
         {"Instance*.Metroid.Visual.InGameScaling", true},
@@ -561,6 +607,21 @@ namespace Config
         {"Instance*.Metroid.UI.SectionHudWeaponInventoryOutline",      false},
         {"Instance*.Metroid.UI.SectionHudWeaponInventoryIconOutline", false},
         /* MelonPrimeDS Crosshair bools } */
+        /* MelonPrimeDS OSD Color section toggles { */
+        {"Instance*.Metroid.UI.SectionOsdColor",         false},
+        {"Instance*.Metroid.UI.SectionOsdH211",          false},
+        {"Instance*.Metroid.UI.SectionOsdLostLives",     false},
+        {"Instance*.Metroid.UI.SectionOsdKillDeath",     false},
+        {"Instance*.Metroid.UI.SectionOsdReturnBase",    false},
+        {"Instance*.Metroid.UI.SectionOsdNoAmmo",        false},
+        {"Instance*.Metroid.UI.SectionOsdCowardDetect",  false},
+        {"Instance*.Metroid.UI.SectionOsdAcquiringNode", false},
+        {"Instance*.Metroid.UI.SectionOsdTurret",        false},
+        {"Instance*.Metroid.UI.SectionOsdOctoReset",     false},
+        {"Instance*.Metroid.UI.SectionOsdOctoDrop",      false},
+        {"Instance*.Metroid.UI.SectionOsdOctoCond",      false},
+        {"Instance*.Metroid.UI.SectionOsdOctoMissing",   false},
+        /* MelonPrimeDS OSD Color section toggles } */
         /* MelonPrimeDS } */
     #endif
     };
