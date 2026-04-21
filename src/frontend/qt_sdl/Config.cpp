@@ -438,6 +438,24 @@ namespace Config
         {"Instance*.Metroid.Visual.OsdColorH211R",          255},
         {"Instance*.Metroid.Visual.OsdColorH211G",            0},
         {"Instance*.Metroid.Visual.OsdColorH211B",            0},
+        /* Slot override per-flag category colors (used when applyGlobal=false).
+           Defaults match game OSD defaults (0x3FEF = RGB 123,255,123 for all categories).
+           flags=0x02: kill/death result messages (YOU KILLED, KILLED YOU, 5-kill, prime hunter)
+           flags=0x11: node capture messages (acquiring node H204/H205, node stolen H211)
+           flags=0x01: objective messages (AMMO DEPLETED, return to base, bounty, octolith events)
+           flags=0x00: system/quick messages (HEADSHOT!, FACE OFF!, RETURN TO BATTLE!, COWARD, turret) */
+        {"Instance*.Metroid.Visual.OsdColorSlotKillDeathR", 123},
+        {"Instance*.Metroid.Visual.OsdColorSlotKillDeathG", 255},
+        {"Instance*.Metroid.Visual.OsdColorSlotKillDeathB", 123},
+        {"Instance*.Metroid.Visual.OsdColorSlotNodeR",      123},
+        {"Instance*.Metroid.Visual.OsdColorSlotNodeG",      255},
+        {"Instance*.Metroid.Visual.OsdColorSlotNodeB",      123},
+        {"Instance*.Metroid.Visual.OsdColorSlotObjectiveR", 123},
+        {"Instance*.Metroid.Visual.OsdColorSlotObjectiveG", 255},
+        {"Instance*.Metroid.Visual.OsdColorSlotObjectiveB", 123},
+        {"Instance*.Metroid.Visual.OsdColorSlotSystemR",    123},
+        {"Instance*.Metroid.Visual.OsdColorSlotSystemG",    255},
+        {"Instance*.Metroid.Visual.OsdColorSlotSystemB",    123},
         /* MelonPrimeDS OSD Color Patch defaults } */
         /* MelonPrimeDS Custom HUD Crosshair defaults } */
     #endif

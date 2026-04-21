@@ -893,6 +893,41 @@ static const HudWidgetProp kSecOsdGlobal[] = {
     P_BOOL("Use Global Color for All",        "Metroid.Visual.OsdColorApplyGlobal"),
 };
 
+// Slot override per-flag colors (active when "Use Global Color for All" is OFF).
+// Each category is identified by the flags byte (entry+0x15) written by the game's OSD enqueue.
+// Since slots are dynamically assigned, slot index has no fixed category — flag-based dispatch
+// is the coarsest per-category discrimination available from the slot structs at runtime.
+// flags=0x02: YOU KILLED / KILLED YOU / 5-kill / prime hunter / teammate kill
+//             (timer=0x5A or 0x3C, longer-duration kill/death result messages)
+static const HudWidgetProp kSecOsdSlotKillDeath[] = {
+    P_CLR("Color  (YOU KILLED / KILLED YOU / 5-kill streak / prime hunter / teammate)",
+          "Metroid.Visual.OsdColorSlotKillDeathR",
+          "Metroid.Visual.OsdColorSlotKillDeathG",
+          "Metroid.Visual.OsdColorSlotKillDeathB"),
+};
+// flags=0x11 (bit4 set): acquiring node (H204/H205) and node stolen (H211)
+static const HudWidgetProp kSecOsdSlotNode[] = {
+    P_CLR("Color  (acquiring node / node stolen H211)",
+          "Metroid.Visual.OsdColorSlotNodeR",
+          "Metroid.Visual.OsdColorSlotNodeG",
+          "Metroid.Visual.OsdColorSlotNodeB"),
+};
+// flags=0x01 (bit0 only): AMMO DEPLETED, return to base, bounty, octolith events
+static const HudWidgetProp kSecOsdSlotObjective[] = {
+    P_CLR("Color  (AMMO DEPLETED / return to base / bounty received / octolith events)",
+          "Metroid.Visual.OsdColorSlotObjectiveR",
+          "Metroid.Visual.OsdColorSlotObjectiveG",
+          "Metroid.Visual.OsdColorSlotObjectiveB"),
+};
+// flags=0x00: HEADSHOT!, FACE OFF!, RETURN TO BATTLE!, COWARD DETECTED, turret, octolith missing
+//             Note: HEADSHOT! (H228) is flags=0x00 timer=0x14, not flags=0x02.
+static const HudWidgetProp kSecOsdSlotSystem[] = {
+    P_CLR("Color  (HEADSHOT! / FACE OFF! / RETURN TO BATTLE! / COWARD DETECTED / turret)",
+          "Metroid.Visual.OsdColorSlotSystemR",
+          "Metroid.Visual.OsdColorSlotSystemG",
+          "Metroid.Visual.OsdColorSlotSystemB"),
+};
+
 static const HudSubSec kSubsOsdColor[] = {
     SUB("Node Stolen (H211)",  "Metroid.UI.SectionOsdH211",         kSecOsdH211),
     SUB("Lost Lives",          "Metroid.UI.SectionOsdLostLives",    kSecOsdLostLives),
@@ -906,6 +941,11 @@ static const HudSubSec kSubsOsdColor[] = {
     SUB("Octo Drop",           "Metroid.UI.SectionOsdOctoDrop",     kSecOsdOctoDrop),
     SUB("Octo Condition",      "Metroid.UI.SectionOsdOctoCond",     kSecOsdOctoCond),
     SUB("Octo Missing",        "Metroid.UI.SectionOsdOctoMissing",  kSecOsdOctoMissing),
+    // Slot override colors (flags-based, effective when "Use Global Color for All" is OFF)
+    SUB("Slot: Kill / Death  [flags=0x02]",    "Metroid.UI.SectionOsdSlotKillDeath", kSecOsdSlotKillDeath),
+    SUB("Slot: Node Capture  [flags=0x11]",    "Metroid.UI.SectionOsdSlotNode",      kSecOsdSlotNode),
+    SUB("Slot: Objective     [flags=0x01]",    "Metroid.UI.SectionOsdSlotObjective", kSecOsdSlotObjective),
+    SUB("Slot: System / Misc [flags=0x00]",    "Metroid.UI.SectionOsdSlotSystem",    kSecOsdSlotSystem),
 };
 
 // ── Main section groups ──
