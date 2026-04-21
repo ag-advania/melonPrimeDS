@@ -341,7 +341,6 @@ enum class HWType { Bool, Int, Float, String, Anchor9, Align3, Color3, HorizVert
                     AnchorY3,      // 0=Top, 1=Center, 2=Bottom
                     LabelPos5,     // 0=Above, 1=Below, 2=Left, 3=Right, 4=Center
                     Double,        // lo/hi/step stored as ×100 integers (e.g. 10,800,25 → 0.10–8.00 step 0.25)
-                    OsdBulkApply,  // button: copy global OSD color to all 11 categories
                   };
 
 struct HudWidgetProp {
@@ -387,7 +386,6 @@ struct HudMainSec {
 #define P_GANCHOR(lbl, key)           { lbl, HWType::GaugeAnchor5, key, 0,4,1, nullptr, nullptr }
 #define P_ANCHY(lbl, key)             { lbl, HWType::AnchorY3,     key, 0,2,1, nullptr, nullptr }
 #define P_LPOS(lbl, key)              { lbl, HWType::LabelPos5,    key, 0,4,1, nullptr, nullptr }
-#define P_BULK(lbl)                   { lbl, HWType::OsdBulkApply, nullptr, 0,0,0, nullptr, nullptr }
 
 // --- Section 1: HUD SCALE ---
 static const HudWidgetProp kSecTextScale[] = {
@@ -892,7 +890,7 @@ static const HudWidgetProp kSecOsdOctoMissing[]  = { P_CLR("Color", "Metroid.Vis
 static const HudWidgetProp kSecOsdGlobal[] = {
     P_BOOL("Enable OSD Color Patch",          "Metroid.Visual.OsdColor"),
     P_CLR("Global Color",                     "Metroid.Visual.OsdColorR",  "Metroid.Visual.OsdColorG",  "Metroid.Visual.OsdColorB"),
-    P_BULK("Apply Global to All Categories"),
+    P_BOOL("Use Global Color for All",        "Metroid.Visual.OsdColorApplyGlobal"),
 };
 
 static const HudSubSec kSubsOsdColor[] = {
@@ -1706,56 +1704,6 @@ void MelonPrimeInputConfig::setupCustomHudWidgets(Config::Table& instcfg)
                     sbG->setValue(c.green());
                     sbB->setValue(c.blue());
                     updateSwatch();
-                }
-            });
-            break;
-        }
-        case HWType::OsdBulkApply: {
-            auto* btn = new QPushButton(QString::fromUtf8(p.label), parent);
-            form->addRow(btn);
-            connect(btn, &QPushButton::clicked, this, [this]() {
-                auto getSpinVal = [this](const char* key) -> int {
-                    auto it = m_hudWidgets.find(std::string(key));
-                    if (it == m_hudWidgets.end()) return 255;
-                    auto* sb = qobject_cast<QSpinBox*>(it->second);
-                    return sb ? sb->value() : 255;
-                };
-                const int r = getSpinVal("Metroid.Visual.OsdColorR");
-                const int g = getSpinVal("Metroid.Visual.OsdColorG");
-                const int b = getSpinVal("Metroid.Visual.OsdColorB");
-                static const char* kCatR[] = {
-                    "Metroid.Visual.OsdColorLostLivesR",    "Metroid.Visual.OsdColorKillDeathR",
-                    "Metroid.Visual.OsdColorReturnBaseR",   "Metroid.Visual.OsdColorNoAmmoR",
-                    "Metroid.Visual.OsdColorCowardDetectR", "Metroid.Visual.OsdColorAcquiringNodeR",
-                    "Metroid.Visual.OsdColorTurretR",       "Metroid.Visual.OsdColorOctoResetR",
-                    "Metroid.Visual.OsdColorOctoDropR",     "Metroid.Visual.OsdColorOctoCondR",
-                    "Metroid.Visual.OsdColorOctoMissingR",
-                };
-                static const char* kCatG[] = {
-                    "Metroid.Visual.OsdColorLostLivesG",    "Metroid.Visual.OsdColorKillDeathG",
-                    "Metroid.Visual.OsdColorReturnBaseG",   "Metroid.Visual.OsdColorNoAmmoG",
-                    "Metroid.Visual.OsdColorCowardDetectG", "Metroid.Visual.OsdColorAcquiringNodeG",
-                    "Metroid.Visual.OsdColorTurretG",       "Metroid.Visual.OsdColorOctoResetG",
-                    "Metroid.Visual.OsdColorOctoDropG",     "Metroid.Visual.OsdColorOctoCondG",
-                    "Metroid.Visual.OsdColorOctoMissingG",
-                };
-                static const char* kCatB[] = {
-                    "Metroid.Visual.OsdColorLostLivesB",    "Metroid.Visual.OsdColorKillDeathB",
-                    "Metroid.Visual.OsdColorReturnBaseB",   "Metroid.Visual.OsdColorNoAmmoB",
-                    "Metroid.Visual.OsdColorCowardDetectB", "Metroid.Visual.OsdColorAcquiringNodeB",
-                    "Metroid.Visual.OsdColorTurretB",       "Metroid.Visual.OsdColorOctoResetB",
-                    "Metroid.Visual.OsdColorOctoDropB",     "Metroid.Visual.OsdColorOctoCondB",
-                    "Metroid.Visual.OsdColorOctoMissingB",
-                };
-                auto setSpinVal = [this](const char* key, int val) {
-                    auto it = m_hudWidgets.find(std::string(key));
-                    if (it == m_hudWidgets.end()) return;
-                    if (auto* sb = qobject_cast<QSpinBox*>(it->second)) sb->setValue(val);
-                };
-                for (int i = 0; i < 11; ++i) {
-                    setSpinVal(kCatR[i], r);
-                    setSpinVal(kCatG[i], g);
-                    setSpinVal(kCatB[i], b);
                 }
             });
             break;

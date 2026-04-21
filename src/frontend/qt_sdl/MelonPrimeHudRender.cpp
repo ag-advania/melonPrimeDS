@@ -1,6 +1,7 @@
 #ifdef MELONPRIME_CUSTOM_HUD
 
 #include "MelonPrimeHudRender.h"
+#include "MelonPrimePatchNoHud.h"
 #include "MelonPrimeInternal.h"
 #include "MelonPrimeGameRomAddrTable.h"
 #include "MelonPrimeCompilerHints.h"
