@@ -341,6 +341,7 @@ enum class HWType { Bool, Int, Float, String, Anchor9, Align3, Color3, HorizVert
                     AnchorY3,      // 0=Top, 1=Center, 2=Bottom
                     LabelPos5,     // 0=Above, 1=Below, 2=Left, 3=Right, 4=Center
                     Double,        // lo/hi/step stored as ×100 integers (e.g. 10,800,25 → 0.10–8.00 step 0.25)
+                    OsdBulkApply,  // button: copy global OSD color to all 11 categories
                   };
 
 struct HudWidgetProp {
@@ -386,6 +387,7 @@ struct HudMainSec {
 #define P_GANCHOR(lbl, key)           { lbl, HWType::GaugeAnchor5, key, 0,4,1, nullptr, nullptr }
 #define P_ANCHY(lbl, key)             { lbl, HWType::AnchorY3,     key, 0,2,1, nullptr, nullptr }
 #define P_LPOS(lbl, key)              { lbl, HWType::LabelPos5,    key, 0,4,1, nullptr, nullptr }
+#define P_BULK(lbl)                   { lbl, HWType::OsdBulkApply, nullptr, 0,0,0, nullptr, nullptr }
 
 // --- Section 1: HUD SCALE ---
 static const HudWidgetProp kSecTextScale[] = {
@@ -870,6 +872,44 @@ static const HudSubSec kSubsRadar[] = {
     SUB("Frame Outline",        "Metroid.UI.SectionHudRadarFrameOutline",  kSecRadarFrameOutline),
 };
 
+// ── IN-GAME OSD COLOR sub-sections ──
+static const HudWidgetProp kSecOsdH211[] = {
+    P_BOOL("Enable Separate Color",   "Metroid.Visual.OsdColorH211"),
+    P_CLR("Color (Default: Red)",     "Metroid.Visual.OsdColorH211R", "Metroid.Visual.OsdColorH211G", "Metroid.Visual.OsdColorH211B"),
+};
+static const HudWidgetProp kSecOsdLostLives[]    = { P_CLR("Color", "Metroid.Visual.OsdColorLostLivesR",    "Metroid.Visual.OsdColorLostLivesG",    "Metroid.Visual.OsdColorLostLivesB") };
+static const HudWidgetProp kSecOsdKillDeath[]    = { P_CLR("Color", "Metroid.Visual.OsdColorKillDeathR",    "Metroid.Visual.OsdColorKillDeathG",    "Metroid.Visual.OsdColorKillDeathB") };
+static const HudWidgetProp kSecOsdReturnBase[]   = { P_CLR("Color", "Metroid.Visual.OsdColorReturnBaseR",   "Metroid.Visual.OsdColorReturnBaseG",   "Metroid.Visual.OsdColorReturnBaseB") };
+static const HudWidgetProp kSecOsdNoAmmo[]       = { P_CLR("Color", "Metroid.Visual.OsdColorNoAmmoR",       "Metroid.Visual.OsdColorNoAmmoG",       "Metroid.Visual.OsdColorNoAmmoB") };
+static const HudWidgetProp kSecOsdCowardDetect[] = { P_CLR("Color", "Metroid.Visual.OsdColorCowardDetectR", "Metroid.Visual.OsdColorCowardDetectG", "Metroid.Visual.OsdColorCowardDetectB") };
+static const HudWidgetProp kSecOsdAcquiringNode[]= { P_CLR("Color", "Metroid.Visual.OsdColorAcquiringNodeR","Metroid.Visual.OsdColorAcquiringNodeG","Metroid.Visual.OsdColorAcquiringNodeB") };
+static const HudWidgetProp kSecOsdTurret[]       = { P_CLR("Color", "Metroid.Visual.OsdColorTurretR",       "Metroid.Visual.OsdColorTurretG",       "Metroid.Visual.OsdColorTurretB") };
+static const HudWidgetProp kSecOsdOctoReset[]    = { P_CLR("Color", "Metroid.Visual.OsdColorOctoResetR",    "Metroid.Visual.OsdColorOctoResetG",    "Metroid.Visual.OsdColorOctoResetB") };
+static const HudWidgetProp kSecOsdOctoDrop[]     = { P_CLR("Color", "Metroid.Visual.OsdColorOctoDropR",     "Metroid.Visual.OsdColorOctoDropG",     "Metroid.Visual.OsdColorOctoDropB") };
+static const HudWidgetProp kSecOsdOctoCond[]     = { P_CLR("Color", "Metroid.Visual.OsdColorOctoCondR",     "Metroid.Visual.OsdColorOctoCondG",     "Metroid.Visual.OsdColorOctoCondB") };
+static const HudWidgetProp kSecOsdOctoMissing[]  = { P_CLR("Color", "Metroid.Visual.OsdColorOctoMissingR",  "Metroid.Visual.OsdColorOctoMissingG",  "Metroid.Visual.OsdColorOctoMissingB") };
+
+static const HudWidgetProp kSecOsdGlobal[] = {
+    P_BOOL("Enable OSD Color Patch",          "Metroid.Visual.OsdColor"),
+    P_CLR("Global Color",                     "Metroid.Visual.OsdColorR",  "Metroid.Visual.OsdColorG",  "Metroid.Visual.OsdColorB"),
+    P_BULK("Apply Global to All Categories"),
+};
+
+static const HudSubSec kSubsOsdColor[] = {
+    SUB("Node Stolen (H211)",  "Metroid.UI.SectionOsdH211",         kSecOsdH211),
+    SUB("Lost Lives",          "Metroid.UI.SectionOsdLostLives",    kSecOsdLostLives),
+    SUB("Kill / Death",        "Metroid.UI.SectionOsdKillDeath",    kSecOsdKillDeath),
+    SUB("Return to Base",      "Metroid.UI.SectionOsdReturnBase",   kSecOsdReturnBase),
+    SUB("No Ammo",             "Metroid.UI.SectionOsdNoAmmo",       kSecOsdNoAmmo),
+    SUB("Coward Detect",       "Metroid.UI.SectionOsdCowardDetect", kSecOsdCowardDetect),
+    SUB("Acquiring Node",      "Metroid.UI.SectionOsdAcquiringNode",kSecOsdAcquiringNode),
+    SUB("Turret",              "Metroid.UI.SectionOsdTurret",       kSecOsdTurret),
+    SUB("Octo Reset",          "Metroid.UI.SectionOsdOctoReset",    kSecOsdOctoReset),
+    SUB("Octo Drop",           "Metroid.UI.SectionOsdOctoDrop",     kSecOsdOctoDrop),
+    SUB("Octo Condition",      "Metroid.UI.SectionOsdOctoCond",     kSecOsdOctoCond),
+    SUB("Octo Missing",        "Metroid.UI.SectionOsdOctoMissing",  kSecOsdOctoMissing),
+};
+
 // ── Main section groups ──
 static const HudMainSec kHudMainSections[] = {
     { "OUTLINE OVERRIDE",  "Metroid.UI.SectionHudGlobalOutline",
@@ -884,6 +924,8 @@ static const HudMainSec kHudMainSections[] = {
       nullptr, 0, kSubsMatchStatus, static_cast<int>(sizeof(kSubsMatchStatus)/sizeof(kSubsMatchStatus[0])), /*preview*/ 3 },
     { "HUD RADAR",         "Metroid.UI.SectionHudRadar",
       nullptr, 0, kSubsRadar, static_cast<int>(sizeof(kSubsRadar)/sizeof(kSubsRadar[0])), /*preview*/ 4 },
+    { "IN-GAME OSD COLOR", "Metroid.UI.SectionOsdColor",
+      _P(kSecOsdGlobal), kSubsOsdColor, static_cast<int>(sizeof(kSubsOsdColor)/sizeof(kSubsOsdColor[0])), /*preview*/ 0 },
 };
 static constexpr int kHudMainSectionCount = static_cast<int>(sizeof(kHudMainSections) / sizeof(kHudMainSections[0]));
 
@@ -1664,6 +1706,56 @@ void MelonPrimeInputConfig::setupCustomHudWidgets(Config::Table& instcfg)
                     sbG->setValue(c.green());
                     sbB->setValue(c.blue());
                     updateSwatch();
+                }
+            });
+            break;
+        }
+        case HWType::OsdBulkApply: {
+            auto* btn = new QPushButton(QString::fromUtf8(p.label), parent);
+            form->addRow(btn);
+            connect(btn, &QPushButton::clicked, this, [this]() {
+                auto getSpinVal = [this](const char* key) -> int {
+                    auto it = m_hudWidgets.find(std::string(key));
+                    if (it == m_hudWidgets.end()) return 255;
+                    auto* sb = qobject_cast<QSpinBox*>(it->second);
+                    return sb ? sb->value() : 255;
+                };
+                const int r = getSpinVal("Metroid.Visual.OsdColorR");
+                const int g = getSpinVal("Metroid.Visual.OsdColorG");
+                const int b = getSpinVal("Metroid.Visual.OsdColorB");
+                static const char* kCatR[] = {
+                    "Metroid.Visual.OsdColorLostLivesR",    "Metroid.Visual.OsdColorKillDeathR",
+                    "Metroid.Visual.OsdColorReturnBaseR",   "Metroid.Visual.OsdColorNoAmmoR",
+                    "Metroid.Visual.OsdColorCowardDetectR", "Metroid.Visual.OsdColorAcquiringNodeR",
+                    "Metroid.Visual.OsdColorTurretR",       "Metroid.Visual.OsdColorOctoResetR",
+                    "Metroid.Visual.OsdColorOctoDropR",     "Metroid.Visual.OsdColorOctoCondR",
+                    "Metroid.Visual.OsdColorOctoMissingR",
+                };
+                static const char* kCatG[] = {
+                    "Metroid.Visual.OsdColorLostLivesG",    "Metroid.Visual.OsdColorKillDeathG",
+                    "Metroid.Visual.OsdColorReturnBaseG",   "Metroid.Visual.OsdColorNoAmmoG",
+                    "Metroid.Visual.OsdColorCowardDetectG", "Metroid.Visual.OsdColorAcquiringNodeG",
+                    "Metroid.Visual.OsdColorTurretG",       "Metroid.Visual.OsdColorOctoResetG",
+                    "Metroid.Visual.OsdColorOctoDropG",     "Metroid.Visual.OsdColorOctoCondG",
+                    "Metroid.Visual.OsdColorOctoMissingG",
+                };
+                static const char* kCatB[] = {
+                    "Metroid.Visual.OsdColorLostLivesB",    "Metroid.Visual.OsdColorKillDeathB",
+                    "Metroid.Visual.OsdColorReturnBaseB",   "Metroid.Visual.OsdColorNoAmmoB",
+                    "Metroid.Visual.OsdColorCowardDetectB", "Metroid.Visual.OsdColorAcquiringNodeB",
+                    "Metroid.Visual.OsdColorTurretB",       "Metroid.Visual.OsdColorOctoResetB",
+                    "Metroid.Visual.OsdColorOctoDropB",     "Metroid.Visual.OsdColorOctoCondB",
+                    "Metroid.Visual.OsdColorOctoMissingB",
+                };
+                auto setSpinVal = [this](const char* key, int val) {
+                    auto it = m_hudWidgets.find(std::string(key));
+                    if (it == m_hudWidgets.end()) return;
+                    if (auto* sb = qobject_cast<QSpinBox*>(it->second)) sb->setValue(val);
+                };
+                for (int i = 0; i < 11; ++i) {
+                    setSpinVal(kCatR[i], r);
+                    setSpinVal(kCatG[i], g);
+                    setSpinVal(kCatB[i], b);
                 }
             });
             break;
