@@ -334,7 +334,7 @@ void MelonPrimeInputConfig::on_btnEditHudLayout_clicked()
 
 namespace {
 
-enum class HWType { Bool, Int, Float, String, Anchor9, Align3, Color3, HorizVert,
+enum class HWType { Bool, Int, Float, String, Anchor9, Align3, Color3, HorizVert, Label,
                     RelIndep,      // 0=Relative to Text, 1=Independent
                     PosMode3,      // 0=Gauge→Text, 1=Independent, 2=Text→Gauge
                     GaugeAnchor5,  // 0=Below, 1=Above, 2=Right, 3=Left, 4=Center
@@ -371,6 +371,7 @@ struct HudMainSec {
     int previewKind; // 0=None, 1=Crosshair, 2=HpAmmo, 3=MatchStatus, 4=Radar
 };
 
+#define P_LABEL(text)                 { text, HWType::Label, "",  0,0,0, nullptr, nullptr }
 #define P_BOOL(lbl, key)              { lbl, HWType::Bool,   key, 0,0,0, nullptr, nullptr }
 #define P_INT(lbl, key, lo, hi, s)    { lbl, HWType::Int,    key, lo, hi, s, nullptr, nullptr }
 #define P_FLOAT(lbl, key)             { lbl, HWType::Float,  key, 0,100,5, nullptr, nullptr }
@@ -897,16 +898,24 @@ static const HudWidgetProp kSecOsdGlobal[] = {
 // Each category is identified by the flags byte (entry+0x15) written by the game's OSD enqueue.
 // Since slots are dynamically assigned, slot index has no fixed category — flag-based dispatch
 // is the coarsest per-category discrimination available from the slot structs at runtime.
+// Slot override sections — one label per section explains the purpose.
+// These colors are written ONCE to currently displayed OSD slot structs (entry+0x10)
+// when settings are closed. New messages use the per-category literal colors above.
+// Since slots are dynamically assigned, only a coarse 4-way split by flags byte is possible.
+
 // flags=0x02: YOU KILLED / KILLED YOU / 5-kill / prime hunter / teammate kill
-//             (timer=0x5A or 0x3C, longer-duration kill/death result messages)
 static const HudWidgetProp kSecOsdSlotKillDeath[] = {
-    P_CLR("Color  (YOU KILLED / KILLED YOU / 5-kill streak / prime hunter / teammate)",
+    P_LABEL("Applied once on settings close to currently displayed messages (flags=0x02).\n"
+            "New messages use the 'Kill / Death' literal color above."),
+    P_CLR("Color  (YOU KILLED / KILLED YOU / 5-kill / prime hunter / teammate)",
           "Metroid.Visual.OsdColorSlotKillDeathR",
           "Metroid.Visual.OsdColorSlotKillDeathG",
           "Metroid.Visual.OsdColorSlotKillDeathB"),
 };
 // flags=0x11 (bit4 set): acquiring node (H204/H205) and node stolen (H211)
 static const HudWidgetProp kSecOsdSlotNode[] = {
+    P_LABEL("Applied once on settings close to currently displayed messages (flags=0x11).\n"
+            "New messages use 'Acquiring Node' or 'Node Stolen' literal colors above."),
     P_CLR("Color  (acquiring node / node stolen H211)",
           "Metroid.Visual.OsdColorSlotNodeR",
           "Metroid.Visual.OsdColorSlotNodeG",
@@ -914,14 +923,19 @@ static const HudWidgetProp kSecOsdSlotNode[] = {
 };
 // flags=0x01 (bit0 only): AMMO DEPLETED, return to base, bounty, octolith events
 static const HudWidgetProp kSecOsdSlotObjective[] = {
-    P_CLR("Color  (AMMO DEPLETED / return to base / bounty received / octolith events)",
+    P_LABEL("Applied once on settings close to currently displayed messages (flags=0x01).\n"
+            "New messages use their individual literal colors above (No Ammo / Return to Base / Octo ...)."),
+    P_CLR("Color  (AMMO DEPLETED / return to base / bounty / octolith events)",
           "Metroid.Visual.OsdColorSlotObjectiveR",
           "Metroid.Visual.OsdColorSlotObjectiveG",
           "Metroid.Visual.OsdColorSlotObjectiveB"),
 };
 // flags=0x00: HEADSHOT!, FACE OFF!, RETURN TO BATTLE!, COWARD DETECTED, turret, octolith missing
-//             Note: HEADSHOT! (H228) is flags=0x00 timer=0x14, not flags=0x02.
+// Note: HEADSHOT! (H228) is flags=0x00 timer=0x14, not 0x02.
 static const HudWidgetProp kSecOsdSlotSystem[] = {
+    P_LABEL("Applied once on settings close to currently displayed messages (flags=0x00).\n"
+            "New messages use their individual literal colors above (Lost Lives / Coward Detect / Turret ...).\n"
+            "Note: HEADSHOT! (H228) is flags=0x00, not 0x02."),
     P_CLR("Color  (HEADSHOT! / FACE OFF! / RETURN TO BATTLE! / COWARD DETECTED / turret)",
           "Metroid.Visual.OsdColorSlotSystemR",
           "Metroid.Visual.OsdColorSlotSystemG",
@@ -1421,6 +1435,13 @@ void MelonPrimeInputConfig::setupCustomHudWidgets(Config::Table& instcfg)
         QString objName = cfgKeyToObjName(p.cfgKey);
 
         switch (p.type) {
+        case HWType::Label: {
+            auto* lbl = new QLabel(QString::fromUtf8(p.label), parent);
+            lbl->setWordWrap(true);
+            lbl->setStyleSheet(QStringLiteral("color: #999;"));
+            form->addRow(lbl);
+            break;
+        }
         case HWType::Bool: {
             auto* cb = new QCheckBox(parent);
             cb->setObjectName(objName);

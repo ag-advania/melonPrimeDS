@@ -528,6 +528,88 @@ ldr r1,[pc,#font_pointer]
 
 H211だけを独立色にしたい場合は、上の `H211 Separate Color` のように2命令でBGR555値を組み立てる。専用literal候補を潰さないので、code caveなしで試せる。
 
+## H228 HEADSHOT / WiFi Branch Notes
+
+H228 `HEADSHOT!` / `ヘッドショット！` は、色literalだけを変えてもWiFi側では出ない可能性が高い。H228をOSD slotへ投入する直前に、共通flagのbit0を見てskipする分岐がある。
+
+推定フロー:
+
+```text
+if ((damage_flags & 0x10) == 0) skip;      ; headshot damage routeではない
+if (attacker_player != local_player) skip; ; 自分が撃ったheadshotではない
+if ((*global_flags & 0x1) != 0) skip;      ; WiFi/online側の抑制候補
+
+msg = (mode == 2) ? H121 : H228;
+enqueue_osd(msg, color_literal, timer=0x14, flags=0x00);
+```
+
+`damage_flags & 0x10` は `Weapon-Data-Struct-JP1_0.md` の `used_headshot_damage` と一致する候補。`global_flags & 0x1` は、ダンプ上では多くのbattle/online分岐にも使われている。名前は未確定だが、HEADSHOTだけWiFiで単独表示されない現象とは、この直前skipがかなり噛み合う。
+
+H228の色は従来どおりkill/death通知群のliteralを共有する。つまりWiFiでH228が表示されない場合、`02018288 0000CCCC` などの色patchは効いていないのではなく、H228のOSD投入自体がskipされている可能性が高い。
+
+| Version | global_flags候補 | bit0 check | skip branch | H228 OSD call |
+| --- | --- | --- | --- | --- |
+| JP1.0 | `020ECC30` | `02017488: ands r1,r1,#0x1` | `0201748C: bne 020174EC` | `020174E8` |
+| JP1.1 | `020ECBF0` | `02017488: ands r1,r1,#0x1` | `0201748C: bne 020174EC` | `020174E8` |
+| US1.0 | `020EAAF0` | `020174A8: ands r1,r1,#0x1` | `020174AC: bne 0201750C` | `02017508` |
+| US1.1 | `020EB5B0` | `020174AC: ands r1,r1,#0x1` | `020174B0: bne 02017510` | `0201750C` |
+| EU1.0 | `020EB5D0` | `020174A0: ands r1,r1,#0x1` | `020174A4: bne 02017504` | `02017500` |
+| EU1.1 | `020EB650` | `020174AC: ands r1,r1,#0x1` | `020174B0: bne 02017510` | `0201750C` |
+| KR1.0 | `020E4380` | `02019A40: tst r0,#0x1` | `02019A44: bne 02019AA4` | `02019AA0` |
+
+### H228 Force Standalone HEADSHOT Test Patch
+
+WiFiでも単独のH228 `HEADSHOT!` を出すテスト候補。やることは、`global_flags & 1` が立っている時にskipする `bne` だけをNOPにする。
+
+```text
+write size = 32-bit
+NOP        = E1A00000
+```
+
+注意:
+
+- これは色patchではなく表示分岐patch。
+- WiFi側で本来別のkill/death通知を出している場合、単独 `HEADSHOT!` が追加で出て二重表示になる可能性がある。
+- `global_flags & 1` の正式名は未確定。WiFi抑制候補として扱う。
+
+```text
+; JP1.0 / JP1.1: do not skip standalone H228 when global_flags bit0 is set
+0201748C E1A00000 ; was bne 020174EC
+
+; US1.0: do not skip standalone H228 when global_flags bit0 is set
+020174AC E1A00000 ; was bne 0201750C
+
+; US1.1 / EU1.1: do not skip standalone H228 when global_flags bit0 is set
+020174B0 E1A00000 ; was bne 02017510
+
+; EU1.0: do not skip standalone H228 when global_flags bit0 is set
+020174A4 E1A00000 ; was bne 02017504
+
+; KR1.0: do not skip standalone H228 when global_flags bit0 is set
+02019A44 E1A00000 ; was bne 02019AA4
+```
+
+### H228 Force Display Revert
+
+上のテストpatchを元に戻す。
+
+```text
+; JP1.0 / JP1.1
+0201748C 1A000016 ; restore bne 020174EC
+
+; US1.0
+020174AC 1A000016 ; restore bne 0201750C
+
+; US1.1 / EU1.1
+020174B0 1A000016 ; restore bne 02017510
+
+; EU1.0
+020174A4 1A000016 ; restore bne 02017504
+
+; KR1.0
+02019A44 1A000016 ; restore bne 02019AA4
+```
+
 ## Slot Address Map
 
 `US1.0` だけ entry stride が `0x80`。他バージョンは `0x9C`。
