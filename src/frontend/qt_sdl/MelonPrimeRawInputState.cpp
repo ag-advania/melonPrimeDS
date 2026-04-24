@@ -26,6 +26,7 @@ namespace MelonPrime {
         for (auto& vk : m_vkDown)
             vk.store(0, std::memory_order_relaxed);
         m_mouseButtons.store(0, std::memory_order_relaxed);
+        m_mouseButtonPresses.store(0, std::memory_order_relaxed);
 
         m_accumMouseX.store(0, std::memory_order_relaxed);
         m_accumMouseY.store(0, std::memory_order_relaxed);
@@ -117,9 +118,14 @@ namespace MelonPrime {
                 const auto& lut = s_btnLut[flags];
                 if (lut.downBits | lut.upBits) {
                     const uint8_t cur = m_mouseButtons.load(std::memory_order_relaxed);
+                    // UP without a known DOWN is still evidence of a short click.
+                    const uint8_t pressBits = lut.downBits | (lut.upBits & ~cur);
                     m_mouseButtons.store(
                         (cur | lut.downBits) & ~lut.upBits,
                         std::memory_order_release);
+                    if (pressBits) {
+                        m_mouseButtonPresses.fetch_or(pressBits, std::memory_order_release);
+                    }
                 }
             }
             break;
@@ -166,6 +172,7 @@ namespace MelonPrime {
 
         const uint8_t initialBtnState = m_mouseButtons.load(std::memory_order_relaxed);
         uint8_t finalBtnState = initialBtnState;
+        uint8_t localBtnPresses = 0;
 
         for (;;) {
             UINT size = sizeof(buffer);
@@ -185,6 +192,10 @@ namespace MelonPrime {
                     const USHORT flags = m.usButtonFlags & 0x03FF;
                     if (flags) {
                         const auto& lut = s_btnLut[flags];
+                        // If only an UP arrives while our logical state is already up,
+                        // the matching DOWN was probably consumed by the WM_INPUT drain
+                        // race. Treat it as a one-frame click instead of dropping it.
+                        localBtnPresses |= lut.downBits | (lut.upBits & ~finalBtnState);
                         // R2 FIX: UP wins (was: DOWN wins). See header comment.
                         finalBtnState = (finalBtnState | lut.downBits) & ~lut.upBits;
                     }
@@ -235,6 +246,9 @@ namespace MelonPrime {
         if (finalBtnState != initialBtnState) {
             m_mouseButtons.store(finalBtnState, std::memory_order_relaxed);
         }
+        if (localBtnPresses) {
+            m_mouseButtonPresses.fetch_or(localBtnPresses, std::memory_order_release);
+        }
 
         if (hasKeyChanges) {
             for (int i = 0; i < 4; ++i) {
@@ -267,12 +281,14 @@ namespace MelonPrime {
     void InputState::resetAllKeys() noexcept {
         for (auto& vk : m_vkDown) vk.store(0, std::memory_order_relaxed);
         m_mouseButtons.store(0, std::memory_order_relaxed);
+        m_mouseButtonPresses.store(0, std::memory_order_relaxed);
         std::atomic_thread_fence(std::memory_order_release);
         m_hkPrev = 0;
     }
 
     void InputState::resetMouseButtons() noexcept {
         m_mouseButtons.store(0, std::memory_order_release);
+        m_mouseButtonPresses.store(0, std::memory_order_release);
     }
 
     // =========================================================================
@@ -286,6 +302,7 @@ namespace MelonPrime {
     void InputState::resetAll() noexcept {
         for (auto& vk : m_vkDown) vk.store(0, std::memory_order_relaxed);
         m_mouseButtons.store(0, std::memory_order_relaxed);
+        m_mouseButtonPresses.store(0, std::memory_order_relaxed);
         std::atomic_thread_fence(std::memory_order_release);
         m_hkPrev = 0;
     }
@@ -329,8 +346,6 @@ namespace MelonPrime {
                 m_hkMasks.vkMask[id][vk >> 6] |= (1ULL << (vk & 63));
             }
         }
-        m_boundHotkeys |= bbit;
-
         // P-42: Precompute fast-check word index.
         // If this hotkey uses exactly one vkMask word and no mouse bits,
         // scanBoundHotkeys can do 1 AND instead of 4 AND + 3 OR.
@@ -344,12 +359,17 @@ namespace MelonPrime {
                     lastWord = static_cast<uint8_t>(w);
                 }
             }
-            if (activeWords == 0 && hasMouse) {
+            if (activeWords == 0 && !hasMouse) {
+                m_boundHotkeys &= ~bbit;
+                m_hkFastWord[id] = 5;
+            } else if (activeWords == 0) {
+                m_boundHotkeys |= bbit;
                 m_hkFastWord[id] = 4;  // mouse-only
-            } else if (activeWords <= 1 && !hasMouse) {
-                // 0 active words (shouldn't happen with count>0 + vk<256) or 1 word
+            } else if (activeWords == 1 && !hasMouse) {
+                m_boundHotkeys |= bbit;
                 m_hkFastWord[id] = lastWord;  // single word fast path
             } else {
+                m_boundHotkeys |= bbit;
                 m_hkFastWord[id] = 5;  // multi-word or mixed → full check
             }
         }
@@ -469,7 +489,8 @@ namespace MelonPrime {
     void InputState::snapshotInputFrame(FrameHotkeyState& outHk,
         int& outMouseX, int& outMouseY) noexcept
     {
-        const auto snap = takeSnapshot();  // acquire fence inside
+        auto snap = takeSnapshot();  // acquire fence inside
+        snap.mouse |= m_mouseButtonPresses.exchange(0, std::memory_order_acquire);
 
         // clearStuck* runs AFTER takeSnapshot so that valid quick presses
         // (button pressed and released within one frame) are captured in the
@@ -505,7 +526,8 @@ namespace MelonPrime {
     void InputState::snapshotInputFrameNoEdges(FrameHotkeyState& outHk,
         int& outMouseX, int& outMouseY) noexcept
     {
-        const auto snap = takeSnapshot();  // acquire fence inside
+        auto snap = takeSnapshot();  // acquire fence inside
+        snap.mouse |= m_mouseButtonPresses.load(std::memory_order_acquire);
 
         const int64_t curX = m_accumMouseX.load(std::memory_order_relaxed);
         const int64_t curY = m_accumMouseY.load(std::memory_order_relaxed);
@@ -527,6 +549,13 @@ namespace MelonPrime {
         if (!(m_boundHotkeys & (1ULL << id))) return false;
 
         const auto snap = takeSnapshot();
+        const uint8_t fw = m_hkFastWord[id];
+        if (LIKELY(fw <= 3)) {
+            return (m_hkMasks.vkMask[id][fw] & snap.vk[fw]) != 0;
+        }
+        if (fw == 4) {
+            return (m_hkMasks.mouseMask[id] & snap.mouse) != 0;
+        }
         return testHotkeyMask(id, snap.vk, snap.mouse);
     }
 

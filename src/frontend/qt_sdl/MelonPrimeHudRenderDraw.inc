@@ -196,9 +196,9 @@ static constexpr WeaponInfo kWeaponTable[9] = {
 
 // =========================================================================
 //  DrawWeaponInventory — show all 9 weapons with ammo counts
-static void DrawWeaponInventory(QPainter* p, melonDS::u8* ram,
-                                 const RomAddresses& rom, uint8_t playerPos,
+static void DrawWeaponInventory(QPainter* p,
                                  uint16_t havingWeapons, uint8_t currentWeapon,
+                                 uint16_t ammoSpecial, uint16_t ammoMissile,
                                  const CachedHudConfig& c, float tds, float hudScale)
 {
     const WeaponInventoryHudConfig& wi = c.weaponInventory;
@@ -211,11 +211,6 @@ static void DrawWeaponInventory(QPainter* p, melonDS::u8* ram,
     // to avoid per-frame reload contention. The drawn DS-space size uses wi.iconHeight.
     EnsureIconsLoaded(std::max(4, static_cast<int>(std::round(
         static_cast<float>(c.weapon.iconHeight) * iconScale))));
-
-    // Read ammo pools once
-    const uint32_t offP = static_cast<uint32_t>(playerPos) * Consts::PLAYER_ADDR_INC;
-    const uint16_t ammoSpecial = Read16(ram, rom.currentAmmoSpecial + offP);
-    const uint16_t ammoMissile = Read16(ram, rom.currentAmmoMissile + offP);
 
     // DS-space icon height: wi.iconHeight * scaleIcons / hudScale
     // mirrors the main weapon icon formula (iconHeight * scaleIcons px, drawn at px/hudScale DS-units).
@@ -438,8 +433,8 @@ static void DrawWeaponInventory(QPainter* p, melonDS::u8* ram,
 
 // =========================================================================
 //  P-7: DrawWeaponAmmo — cached icon, table lookup, stack text
-static void DrawWeaponAmmo(QPainter* p, melonDS::u8* ram,
-                           uint8_t weapon, uint16_t ammoSpecial, uint32_t addrMissile,
+static void DrawWeaponAmmo(QPainter* p,
+                           uint8_t weapon, uint16_t ammoSpecial, uint16_t ammoMissile,
                            uint16_t maxAmmoSpecial, uint16_t maxAmmoMissile,
                            const CachedHudConfig& c, float tds, float hudScale)
 {
@@ -450,20 +445,21 @@ static void DrawWeaponAmmo(QPainter* p, melonDS::u8* ram,
     const int fontPixelSize = s_frameFpx;       // P-9
     // OPT-HUD-6: use s_frameFont (cached by EnsureHudFont) — no p->font() copy per-frame.
 
-    const WeaponInfo& wi = kWeaponTable[weapon];
+    const uint8_t weaponIdx = (weapon < 9) ? weapon : 0;
+    const WeaponInfo& wi = kWeaponTable[weaponIdx];
     EnsureIconsLoaded(static_cast<int>(c.weapon.iconHeight * c.scaleIcons));
-    const bool iconOvEnable = (weapon < 9) ? c.weapon.iconOverlayEnable[weapon] : false;
-    const QColor iconOvColor = (weapon < 9) ? c.weapon.iconOverlayColor[weapon] : QColor();
-    const QImage& icon = GetWeaponIconForDraw(weapon, iconOvEnable, iconOvColor); // P-1
+    const bool iconOvEnable = c.weapon.iconOverlayEnable[weaponIdx];
+    const QColor& iconOvColor = c.weapon.iconOverlayColor[weaponIdx];
+    const QImage& icon = GetWeaponIconForDraw(weaponIdx, iconOvEnable, iconOvColor); // P-1
 
     uint16_t ammo = 0, maxAmmo = 0;
     bool hasAmmo = (wi.divisor > 0);
 
     if (hasAmmo) {
         if (wi.isMissile) {
-            ammo    = Read16(ram, addrMissile) / wi.divisor;
+            ammo    = ammoMissile / wi.divisor;
             maxAmmo = maxAmmoMissile / wi.divisor;
-        } else if (weapon == 8) {
+        } else if (weaponIdx == 8) {
             ammo = 1; maxAmmo = 1;
         } else {
             ammo    = ammoSpecial / wi.divisor;
@@ -518,8 +514,7 @@ static void DrawWeaponAmmo(QPainter* p, melonDS::u8* ram,
         if (_ol.enable && _ol.opacity > 0.0f) {
             const int expandR = std::max(1, _ol.thickness);
             EnsureWeaponOutlineIconsUpdated(_ol.color, expandR);
-            const uint8_t wpnIdx = (weapon < 9) ? weapon : 0;
-            DrawImageOutlined(p, icon, s_weaponIconsOutline[wpnIdx],
+            DrawImageOutlined(p, icon, s_weaponIconsOutline[weaponIdx],
                               QRectF(ix, iy, dw, dh), (float)expandR / hudScale,
                               c.wpnIconOpacity, _ol.opacity);
         } else {

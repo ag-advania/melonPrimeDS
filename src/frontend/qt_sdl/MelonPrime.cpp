@@ -189,6 +189,7 @@ namespace MelonPrime {
 #endif
 #ifdef MELONPRIME_DS
         InGameAspectRatio_ResetPatchState();
+        OsdColor_ResetPatchState();
 #endif
 
         ReloadConfigFlags();
@@ -210,6 +211,7 @@ namespace MelonPrime {
 #endif
 #ifdef MELONPRIME_DS
         InGameAspectRatio_ResetPatchState();
+        OsdColor_ResetPatchState();
 #endif
     }
 
@@ -280,11 +282,13 @@ namespace MelonPrime {
     // 99%+ frames hit the early return (2 bit tests + branch).
     FORCE_INLINE void MelonPrimeCore::HandleGlobalHotkeys()
     {
-        const bool up = emuInstance->hotkeyReleased(HK_MetroidIngameSensiUp);
-        const bool down = emuInstance->hotkeyReleased(HK_MetroidIngameSensiDown);
-        if (LIKELY(!up && !down)) return;
+        constexpr uint64_t kSensiUpBit   = 1ULL << HK_MetroidIngameSensiUp;
+        constexpr uint64_t kSensiDownBit = 1ULL << HK_MetroidIngameSensiDown;
+        const uint64_t released = emuInstance->hotkeyRelease &
+                                  (kSensiUpBit | kSensiDownBit);
+        if (LIKELY(!released)) return;
 
-        const int change = up ? 1 : -1;
+        const int change = (released & kSensiUpBit) ? 1 : -1;
         const int cur = localCfg.GetInt(CfgKey::AimSens);
         const int next = cur + change;
 
@@ -309,6 +313,7 @@ namespace MelonPrime {
             UpdateInputStateReentrant();
             ProcessMoveAndButtonsFast();
 
+            const bool isStylusMode = this->isStylusMode;
             if (isStylusMode) {
                 if (emuInstance->isTouching && !m_flags.test(StateFlags::BIT_BLOCK_STYLUS)) {
                     emuInstance->getNDS()->TouchScreen(emuInstance->touchX, emuInstance->touchY);
@@ -348,6 +353,14 @@ namespace MelonPrime {
                 HandleGameJoinInit();
             }
 
+            if (LIKELY(isInGame)) {
+                OsdColor_ApplyOnce(emuInstance, localCfg, m_currentRom);
+            }
+            else if (m_flags.test(StateFlags::BIT_IN_GAME_INIT)) {
+                m_flags.clear(StateFlags::BIT_IN_GAME_INIT);
+                OsdColor_RestoreOnce(emuInstance->getNDS(), m_currentRom);
+            }
+
             if (focused) {
                 if (LIKELY(isInGame)) {
                     if (UNLIKELY(m_aimBlockBits & AIMBLK_NOT_IN_GAME)) {
@@ -358,9 +371,6 @@ namespace MelonPrime {
                 else {
                     m_flags.clear(StateFlags::BIT_IN_ADVENTURE);
                     SetAimBlockBranchless(AIMBLK_NOT_IN_GAME, true);
-                    if (m_flags.test(StateFlags::BIT_IN_GAME_INIT)) {
-                        m_flags.clear(StateFlags::BIT_IN_GAME_INIT);
-                    }
                     ApplyGameSettingsOnce();
                 }
 
@@ -469,6 +479,7 @@ namespace MelonPrime {
 #ifdef MELONPRIME_DS
         // Apply aspect ratio patch once per game join
         InGameAspectRatio_ApplyOnce(emuInstance, localCfg, m_currentRom);
+        OsdColor_ApplyOnce(emuInstance, localCfg, m_currentRom);
 #endif
 #ifdef MELONPRIME_CUSTOM_HUD
         // Cache battle settings for HUD display

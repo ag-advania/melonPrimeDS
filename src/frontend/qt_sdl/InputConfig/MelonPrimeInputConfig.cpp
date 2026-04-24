@@ -334,7 +334,7 @@ void MelonPrimeInputConfig::on_btnEditHudLayout_clicked()
 
 namespace {
 
-enum class HWType { Bool, Int, Float, String, Anchor9, Align3, Color3, HorizVert,
+enum class HWType { Bool, Int, Float, String, Anchor9, Align3, Color3, HorizVert, Label,
                     RelIndep,      // 0=Relative to Text, 1=Independent
                     PosMode3,      // 0=Gauge→Text, 1=Independent, 2=Text→Gauge
                     GaugeAnchor5,  // 0=Below, 1=Above, 2=Right, 3=Left, 4=Center
@@ -371,6 +371,7 @@ struct HudMainSec {
     int previewKind; // 0=None, 1=Crosshair, 2=HpAmmo, 3=MatchStatus, 4=Radar
 };
 
+#define P_LABEL(text)                 { text, HWType::Label, "",  0,0,0, nullptr, nullptr }
 #define P_BOOL(lbl, key)              { lbl, HWType::Bool,   key, 0,0,0, nullptr, nullptr }
 #define P_INT(lbl, key, lo, hi, s)    { lbl, HWType::Int,    key, lo, hi, s, nullptr, nullptr }
 #define P_FLOAT(lbl, key)             { lbl, HWType::Float,  key, 0,100,5, nullptr, nullptr }
@@ -870,6 +871,97 @@ static const HudSubSec kSubsRadar[] = {
     SUB("Frame Outline",        "Metroid.UI.SectionHudRadarFrameOutline",  kSecRadarFrameOutline),
 };
 
+// ── IN-GAME OSD COLOR sub-sections ──
+static const HudWidgetProp kSecOsdH211[] = {
+    P_BOOL("Enable Separate Color",   "Metroid.Visual.OsdColorH211"),
+    P_CLR("Color (Default: Red)",     "Metroid.Visual.OsdColorH211R", "Metroid.Visual.OsdColorH211G", "Metroid.Visual.OsdColorH211B"),
+};
+static const HudWidgetProp kSecOsdLostLives[]    = { P_CLR("Color", "Metroid.Visual.OsdColorLostLivesR",    "Metroid.Visual.OsdColorLostLivesG",    "Metroid.Visual.OsdColorLostLivesB") };
+static const HudWidgetProp kSecOsdKillDeath[]    = { P_CLR("Color", "Metroid.Visual.OsdColorKillDeathR",    "Metroid.Visual.OsdColorKillDeathG",    "Metroid.Visual.OsdColorKillDeathB") };
+static const HudWidgetProp kSecOsdReturnBase[]   = { P_CLR("Color", "Metroid.Visual.OsdColorReturnBaseR",   "Metroid.Visual.OsdColorReturnBaseG",   "Metroid.Visual.OsdColorReturnBaseB") };
+static const HudWidgetProp kSecOsdNoAmmo[]       = { P_CLR("Color", "Metroid.Visual.OsdColorNoAmmoR",       "Metroid.Visual.OsdColorNoAmmoG",       "Metroid.Visual.OsdColorNoAmmoB") };
+static const HudWidgetProp kSecOsdCowardDetect[] = { P_CLR("Color", "Metroid.Visual.OsdColorCowardDetectR", "Metroid.Visual.OsdColorCowardDetectG", "Metroid.Visual.OsdColorCowardDetectB") };
+static const HudWidgetProp kSecOsdAcquiringNode[]= { P_CLR("Color", "Metroid.Visual.OsdColorAcquiringNodeR","Metroid.Visual.OsdColorAcquiringNodeG","Metroid.Visual.OsdColorAcquiringNodeB") };
+static const HudWidgetProp kSecOsdTurret[]       = { P_CLR("Color", "Metroid.Visual.OsdColorTurretR",       "Metroid.Visual.OsdColorTurretG",       "Metroid.Visual.OsdColorTurretB") };
+static const HudWidgetProp kSecOsdOctoReset[]    = { P_CLR("Color", "Metroid.Visual.OsdColorOctoResetR",    "Metroid.Visual.OsdColorOctoResetG",    "Metroid.Visual.OsdColorOctoResetB") };
+static const HudWidgetProp kSecOsdOctoDrop[]     = { P_CLR("Color", "Metroid.Visual.OsdColorOctoDropR",     "Metroid.Visual.OsdColorOctoDropG",     "Metroid.Visual.OsdColorOctoDropB") };
+static const HudWidgetProp kSecOsdOctoCond[]     = { P_CLR("Color", "Metroid.Visual.OsdColorOctoCondR",     "Metroid.Visual.OsdColorOctoCondG",     "Metroid.Visual.OsdColorOctoCondB") };
+static const HudWidgetProp kSecOsdOctoMissing[]  = { P_CLR("Color", "Metroid.Visual.OsdColorOctoMissingR",  "Metroid.Visual.OsdColorOctoMissingG",  "Metroid.Visual.OsdColorOctoMissingB") };
+
+static const HudWidgetProp kSecOsdGlobal[] = {
+    P_BOOL("Enable OSD Color Patch",          "Metroid.Visual.OsdColor"),
+    P_CLR("Global Color",                     "Metroid.Visual.OsdColorR",  "Metroid.Visual.OsdColorG",  "Metroid.Visual.OsdColorB"),
+    P_BOOL("Use Global Color for All",        "Metroid.Visual.OsdColorApplyGlobal"),
+};
+
+// Slot override per-flag colors (active when "Use Global Color for All" is OFF).
+// Each category is identified by the flags byte (entry+0x15) written by the game's OSD enqueue.
+// Since slots are dynamically assigned, slot index has no fixed category — flag-based dispatch
+// is the coarsest per-category discrimination available from the slot structs at runtime.
+// Slot override sections — one label per section explains the purpose.
+// These colors are written ONCE to currently displayed OSD slot structs (entry+0x10)
+// when settings are closed. New messages use the per-category literal colors above.
+// Since slots are dynamically assigned, only a coarse 4-way split by flags byte is possible.
+
+// flags=0x02: YOU KILLED / KILLED YOU / 5-kill / prime hunter / teammate kill
+static const HudWidgetProp kSecOsdSlotKillDeath[] = {
+    P_LABEL("Applied once on settings close to currently displayed messages (flags=0x02).\n"
+            "New messages use the 'Kill / Death' literal color above."),
+    P_CLR("Color  (YOU KILLED / KILLED YOU / 5-kill / prime hunter / teammate)",
+          "Metroid.Visual.OsdColorSlotKillDeathR",
+          "Metroid.Visual.OsdColorSlotKillDeathG",
+          "Metroid.Visual.OsdColorSlotKillDeathB"),
+};
+// flags=0x11 (bit4 set): acquiring node (H204/H205) and node stolen (H211)
+static const HudWidgetProp kSecOsdSlotNode[] = {
+    P_LABEL("Applied once on settings close to currently displayed messages (flags=0x11).\n"
+            "New messages use 'Acquiring Node' or 'Node Stolen' literal colors above."),
+    P_CLR("Color  (acquiring node / node stolen H211)",
+          "Metroid.Visual.OsdColorSlotNodeR",
+          "Metroid.Visual.OsdColorSlotNodeG",
+          "Metroid.Visual.OsdColorSlotNodeB"),
+};
+// flags=0x01 (bit0 only): AMMO DEPLETED, return to base, bounty, octolith events
+static const HudWidgetProp kSecOsdSlotObjective[] = {
+    P_LABEL("Applied once on settings close to currently displayed messages (flags=0x01).\n"
+            "New messages use their individual literal colors above (No Ammo / Return to Base / Octo ...)."),
+    P_CLR("Color  (AMMO DEPLETED / return to base / bounty / octolith events)",
+          "Metroid.Visual.OsdColorSlotObjectiveR",
+          "Metroid.Visual.OsdColorSlotObjectiveG",
+          "Metroid.Visual.OsdColorSlotObjectiveB"),
+};
+// flags=0x00: HEADSHOT!, FACE OFF!, RETURN TO BATTLE!, COWARD DETECTED, turret, octolith missing
+// Note: HEADSHOT! (H228) is flags=0x00 timer=0x14, not 0x02.
+static const HudWidgetProp kSecOsdSlotSystem[] = {
+    P_LABEL("Applied once on settings close to currently displayed messages (flags=0x00).\n"
+            "New messages use their individual literal colors above (Lost Lives / Coward Detect / Turret ...).\n"
+            "Note: HEADSHOT! (H228) is flags=0x00, not 0x02."),
+    P_CLR("Color  (HEADSHOT! / FACE OFF! / RETURN TO BATTLE! / COWARD DETECTED / turret)",
+          "Metroid.Visual.OsdColorSlotSystemR",
+          "Metroid.Visual.OsdColorSlotSystemG",
+          "Metroid.Visual.OsdColorSlotSystemB"),
+};
+
+static const HudSubSec kSubsOsdColor[] = {
+    SUB("Node Stolen (H211)",  "Metroid.UI.SectionOsdH211",         kSecOsdH211),
+    SUB("Lost Lives",          "Metroid.UI.SectionOsdLostLives",    kSecOsdLostLives),
+    SUB("Kill / Death",        "Metroid.UI.SectionOsdKillDeath",    kSecOsdKillDeath),
+    SUB("Return to Base",      "Metroid.UI.SectionOsdReturnBase",   kSecOsdReturnBase),
+    SUB("No Ammo",             "Metroid.UI.SectionOsdNoAmmo",       kSecOsdNoAmmo),
+    SUB("Coward Detect",       "Metroid.UI.SectionOsdCowardDetect", kSecOsdCowardDetect),
+    SUB("Acquiring Node",      "Metroid.UI.SectionOsdAcquiringNode",kSecOsdAcquiringNode),
+    SUB("Turret",              "Metroid.UI.SectionOsdTurret",       kSecOsdTurret),
+    SUB("Octo Reset",          "Metroid.UI.SectionOsdOctoReset",    kSecOsdOctoReset),
+    SUB("Octo Drop",           "Metroid.UI.SectionOsdOctoDrop",     kSecOsdOctoDrop),
+    SUB("Octo Condition",      "Metroid.UI.SectionOsdOctoCond",     kSecOsdOctoCond),
+    SUB("Octo Missing",        "Metroid.UI.SectionOsdOctoMissing",  kSecOsdOctoMissing),
+    // Slot override colors (flags-based, effective when "Use Global Color for All" is OFF)
+    SUB("Slot: Kill / Death  [flags=0x02]",    "Metroid.UI.SectionOsdSlotKillDeath", kSecOsdSlotKillDeath),
+    SUB("Slot: Node Capture  [flags=0x11]",    "Metroid.UI.SectionOsdSlotNode",      kSecOsdSlotNode),
+    SUB("Slot: Objective     [flags=0x01]",    "Metroid.UI.SectionOsdSlotObjective", kSecOsdSlotObjective),
+    SUB("Slot: System / Misc [flags=0x00]",    "Metroid.UI.SectionOsdSlotSystem",    kSecOsdSlotSystem),
+};
+
 // ── Main section groups ──
 static const HudMainSec kHudMainSections[] = {
     { "OUTLINE OVERRIDE",  "Metroid.UI.SectionHudGlobalOutline",
@@ -884,6 +976,8 @@ static const HudMainSec kHudMainSections[] = {
       nullptr, 0, kSubsMatchStatus, static_cast<int>(sizeof(kSubsMatchStatus)/sizeof(kSubsMatchStatus[0])), /*preview*/ 3 },
     { "HUD RADAR",         "Metroid.UI.SectionHudRadar",
       nullptr, 0, kSubsRadar, static_cast<int>(sizeof(kSubsRadar)/sizeof(kSubsRadar[0])), /*preview*/ 4 },
+    { "IN-GAME OSD COLOR", "Metroid.UI.SectionOsdColor",
+      _P(kSecOsdGlobal), kSubsOsdColor, static_cast<int>(sizeof(kSubsOsdColor)/sizeof(kSubsOsdColor[0])), /*preview*/ 0 },
 };
 static constexpr int kHudMainSectionCount = static_cast<int>(sizeof(kHudMainSections) / sizeof(kHudMainSections[0]));
 
@@ -1341,6 +1435,13 @@ void MelonPrimeInputConfig::setupCustomHudWidgets(Config::Table& instcfg)
         QString objName = cfgKeyToObjName(p.cfgKey);
 
         switch (p.type) {
+        case HWType::Label: {
+            auto* lbl = new QLabel(QString::fromUtf8(p.label), parent);
+            lbl->setWordWrap(true);
+            lbl->setStyleSheet(QStringLiteral("color: #999;"));
+            form->addRow(lbl);
+            break;
+        }
         case HWType::Bool: {
             auto* cb = new QCheckBox(parent);
             cb->setObjectName(objName);

@@ -113,8 +113,10 @@ namespace MelonPrime {
                     // P-42: Single-word fast path — 1 AND instead of 4 AND + 3 OR.
                     // ~26-28 of 28 hotkeys hit this path (single VK, no mouse).
                     hit = (m_hkMasks.vkMask[bitPos][fw] & snap.vk[fw]) != 0;
+                } else if (fw == 4) {
+                    hit = (m_hkMasks.mouseMask[bitPos] & snap.mouse) != 0;
                 } else {
-                    // Fallback: mouse-only (4) or multi-word (5).
+                    // Fallback: multi-word or mixed bindings.
                     hit = testHotkeyMask(bitPos, snap.vk, snap.mouse);
                 }
                 if (hit) result |= 1ULL << bitPos;
@@ -131,6 +133,9 @@ namespace MelonPrime {
         std::atomic<int64_t>  m_accumMouseX{ 0 };
         std::atomic<int64_t>  m_accumMouseY{ 0 };
         std::atomic<uint8_t>  m_mouseButtons{ 0 };
+        // Mouse DOWN edges seen since the last outer-frame snapshot.
+        // Preserves very short clicks whose DOWN+UP both arrive in one batch.
+        std::atomic<uint8_t>  m_mouseButtonPresses{ 0 };
 
         // =================================================================
         // Cache Line 1+: Read-Mostly / Consumer State

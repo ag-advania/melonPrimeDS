@@ -14,10 +14,11 @@ Overlay[1].fill(0x00000000);
     if (fontId >= 0) {
         QFontDatabase fontDB;
         QString family = fontDB.applicationFontFamilies(fontId).at(0);
-        overlayFont = QFont(family, 6);
-        overlayFont.setStyleStrategy(QFont::NoAntialias);
-        overlayFont.setHintingPreference(QFont::PreferFullHinting);
+        overlayFont.setFamily(family);
     }
+    overlayFont.setPixelSize(MelonPrime::kCustomHudFontSize);
+    overlayFont.setStyleStrategy(QFont::NoAntialias);
+    overlayFont.setHintingPreference(QFont::PreferFullHinting);
 }
 m_hudEditPanel = new MelonPrimeHudConfigOnScreenEdit(this, emuInstance);
 MelonPrime::CustomHud_SetEditSelectionCallback([this](int idx) {
