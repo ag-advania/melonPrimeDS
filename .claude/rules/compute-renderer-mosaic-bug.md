@@ -73,6 +73,25 @@ There is **no upper bound check** on `VariantWorkCount[0].w`. The downstream sor
 - The `atomicCompSwap` retry budget (32) may interact badly with workgroup divergence.
 - Possibly the binnedMask=0 path still leaves `inVariantOffset` consistency issues, since other groups for the same variant continue counting.
 
+### Attempt C: CPU-side bounds guard on `YSpanIndices` writes
+
+**Hypothesis tested:** [src/GPU3D_Compute.cpp:438](../../src/GPU3D_Compute.cpp#L438) sizes `YSpanIndices` and the GL `XSpanSetupMemory` buffer with the heuristic `64*2048*ScaleFactor`. The 64 represents an assumed "average polygon height in DS coords"; large alpha effects could push the actual per-frame `numSetupIndices` over this budget. The two write sites at [line 936-940](../../src/GPU3D_Compute.cpp#L936) and [line 1001-1005](../../src/GPU3D_Compute.cpp#L1001) had **no bounds check** — `std::vector::operator[]` with an out-of-range index is undefined behavior, and the subsequent `glBufferSubData(..., numSetupIndices*4*2, ...)` upload at [line 1027](../../src/GPU3D_Compute.cpp#L1027) would silently fail with `GL_INVALID_VALUE` if the size exceeded the GL buffer's capacity, leaving the shader to read stale span data.
+
+This hypothesis matched all the symptoms (Magmaul/death effects produce many tall polygons; close range increases polygon screen height; mosaic-shaped corruption matches stale `XSpanSetups` causing `BinPolygon` to bin polygons into wrong tiles; OSD bleed-through matches a frame-wide shared buffer being corrupted; Compute-only because Software/OpenGL don't use a span buffer; and most importantly **explains why both A and B did nothing** — neither touched the relevant buffer).
+
+**Change:**
+
+- Added `int MaxYSpanIndicesAllocated` member to [src/GPU3D_Compute.h](../../src/GPU3D_Compute.h) and cached the budget there at `SetRenderSettings` time (replaced the local `int maxYSpanIndices` so `RenderFrame()` could see the value).
+- Wrapped the dummy-path write ([line 936-940](../../src/GPU3D_Compute.cpp#L936)) with `if (numSetupIndices < MaxYSpanIndicesAllocated)`. On overflow, collapsed the polygon to zero height (`RenderPolygons[i].YBot = RenderPolygons[i].YTop`) so `BinPolygon`'s early-out would skip it.
+- In the multi-row loop ([line 951-1006](../../src/GPU3D_Compute.cpp#L951)), added `if (numSetupIndices >= MaxYSpanIndicesAllocated) { RenderPolygons[i].YBot = (s32)y; break; }` to truncate the polygon to whatever rows had been written.
+
+**Result:** **Did not fix the bug.** Reverted.
+
+**What this tells us:**
+
+- The `YSpanIndices` overflow hypothesis is **wrong** (or at least not the dominant cause). Either no overflow is happening in practice, or overflow happens and the dropped polygons are somewhere other than the corrupting effect.
+- All three single-buffer overflow hypotheses (`MaxWorkTiles` global pool, binning sort buffer, `YSpanIndices`) have been eliminated by direct testing. The bug is almost certainly **not a buffer overflow**.
+
 ## Things to investigate next
 
 1. **Confirm or refute the overflow hypothesis empirically.**
