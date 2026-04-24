@@ -235,13 +235,13 @@ namespace MelonPrime {
         ProcessMoveAndButtonsFastImpl<true>();
     }
 
-    void MelonPrimeCore::ProcessAimInputStylus()
+    void MelonPrimeCore::ProcessAimInputStylus(melonDS::NDS* nds)
     {
         if (LIKELY(emuInstance->isTouching)) {
-            emuInstance->getNDS()->TouchScreen(emuInstance->touchX, emuInstance->touchY);
+            nds->TouchScreen(emuInstance->touchX, emuInstance->touchY);
         }
         else {
-            emuInstance->getNDS()->ReleaseScreen();
+            nds->ReleaseScreen();
         }
     }
 

@@ -383,7 +383,7 @@ namespace MelonPrime {
         void ApplyAimAdjustSetting(Config::Table& cfg);
         void RecalcAimFixedPoint();
         FORCE_INLINE void HandleGlobalHotkeys();
-        void ProcessAimInputStylus();
+        void ProcessAimInputStylus(melonDS::NDS* nds);
         void SwitchWeapon(int weaponIndex);
         void ShowCursor(bool show);
         void FrameAdvanceTwice();

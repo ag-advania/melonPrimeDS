@@ -282,11 +282,13 @@ namespace MelonPrime {
     // 99%+ frames hit the early return (2 bit tests + branch).
     FORCE_INLINE void MelonPrimeCore::HandleGlobalHotkeys()
     {
-        const bool up = emuInstance->hotkeyReleased(HK_MetroidIngameSensiUp);
-        const bool down = emuInstance->hotkeyReleased(HK_MetroidIngameSensiDown);
-        if (LIKELY(!up && !down)) return;
+        constexpr uint64_t kSensiUpBit   = 1ULL << HK_MetroidIngameSensiUp;
+        constexpr uint64_t kSensiDownBit = 1ULL << HK_MetroidIngameSensiDown;
+        const uint64_t released = emuInstance->hotkeyRelease &
+                                  (kSensiUpBit | kSensiDownBit);
+        if (LIKELY(!released)) return;
 
-        const int change = up ? 1 : -1;
+        const int change = (released & kSensiUpBit) ? 1 : -1;
         const int cur = localCfg.GetInt(CfgKey::AimSens);
         const int next = cur + change;
 
@@ -311,6 +313,7 @@ namespace MelonPrime {
             UpdateInputStateReentrant();
             ProcessMoveAndButtonsFast();
 
+            const bool isStylusMode = this->isStylusMode;
             if (isStylusMode) {
                 if (emuInstance->isTouching && !m_flags.test(StateFlags::BIT_BLOCK_STYLUS)) {
                     emuInstance->getNDS()->TouchScreen(emuInstance->touchX, emuInstance->touchY);
