@@ -118,11 +118,13 @@ namespace MelonPrime {
                 const auto& lut = s_btnLut[flags];
                 if (lut.downBits | lut.upBits) {
                     const uint8_t cur = m_mouseButtons.load(std::memory_order_relaxed);
+                    // UP without a known DOWN is still evidence of a short click.
+                    const uint8_t pressBits = lut.downBits | (lut.upBits & ~cur);
                     m_mouseButtons.store(
                         (cur | lut.downBits) & ~lut.upBits,
                         std::memory_order_release);
-                    if (lut.downBits) {
-                        m_mouseButtonPresses.fetch_or(lut.downBits, std::memory_order_release);
+                    if (pressBits) {
+                        m_mouseButtonPresses.fetch_or(pressBits, std::memory_order_release);
                     }
                 }
             }
@@ -190,9 +192,12 @@ namespace MelonPrime {
                     const USHORT flags = m.usButtonFlags & 0x03FF;
                     if (flags) {
                         const auto& lut = s_btnLut[flags];
+                        // If only an UP arrives while our logical state is already up,
+                        // the matching DOWN was probably consumed by the WM_INPUT drain
+                        // race. Treat it as a one-frame click instead of dropping it.
+                        localBtnPresses |= lut.downBits | (lut.upBits & ~finalBtnState);
                         // R2 FIX: UP wins (was: DOWN wins). See header comment.
                         finalBtnState = (finalBtnState | lut.downBits) & ~lut.upBits;
-                        localBtnPresses |= lut.downBits;
                     }
                 }
                 else if (raw->header.dwType == RIM_TYPEKEYBOARD) {
