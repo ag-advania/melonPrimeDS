@@ -11,6 +11,7 @@ This file is an index only. Keep detailed instructions in the linked Rules, Skil
 - [.claude/rules/melonprime-refactoring.md](.claude/rules/melonprime-refactoring.md)
 - [.claude/rules/melonprime-gameplay-runtime.md](.claude/rules/melonprime-gameplay-runtime.md)
 - [.claude/rules/melonprime-aim-input.md](.claude/rules/melonprime-aim-input.md)
+- [.claude/rules/compute-renderer-mosaic-bug.md](.claude/rules/compute-renderer-mosaic-bug.md)
 
 ## Skills
 - [.claude/skills/README.md](.claude/skills/README.md)
