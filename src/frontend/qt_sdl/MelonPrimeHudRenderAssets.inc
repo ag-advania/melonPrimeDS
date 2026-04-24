@@ -298,6 +298,17 @@ static void EnsureRadarFrameLoaded(int dstSize, int srcRadius, float hudScale,
         s_radarFrameTintColor = tintColor;
     }
     // Use proper max-filter dilation for the outline (same as weapon/bomb icons).
+    // outlineThickness == 0 means the frame outline is disabled; avoid building
+    // a never-used dilation bitmap on the first radar frame after config refresh.
+    if (outlineThickness <= 0) {
+        if (s_radarFrameOutlineR != 0 || !s_radarFrameOutline.isNull()) {
+            s_radarFrameOutline = QImage();
+            s_radarFrameOutlineColor = QColor();
+            s_radarFrameOutlineR = 0;
+        }
+        return;
+    }
+
     const int expandR = std::max(1, outlineThickness);
     if (s_radarFrameOutlineColor != outlineColor || s_radarFrameOutlineR != expandR) {
         if (!s_radarFrame.isNull()) {

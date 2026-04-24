@@ -317,19 +317,20 @@ static void ApplyHudPainterTransform(QPainter* p, const HudFrameTransform& xf)
 
 static void EnsureHudFont(QPainter* p)
 {
-    if (p->font().pixelSize() != kCustomHudFontSize) {
-        QFont f = p->font();
+    if (LIKELY(s_frameFpx == kCustomHudFontSize))
+        return;
+
+    // P-9 / OPT-HUD-6 / OPT-HUD-7: Cache font + metrics once for the fixed HUD font size.
+    // Screen.cpp now gives each painter a pixel-sized overlayFont, so the normal path avoids
+    // p->font() and p->setFont() entirely after the first cache fill.
+    QFont f = p->font();
+    if (f.pixelSize() != kCustomHudFontSize) {
         f.setPixelSize(kCustomHudFontSize);
         p->setFont(f);
     }
-
-    // P-9 / OPT-HUD-6: Cache font + metrics once for the fixed HUD font size.
-    // s_frameFont lets draw functions skip p->font() per-frame (~10-20 cyc each).
-    if (UNLIKELY(s_frameFpx != kCustomHudFontSize)) {
-        s_frameFm   = p->fontMetrics();
-        s_frameFont = p->font();
-        s_frameFpx  = kCustomHudFontSize;
-    }
+    s_frameFont = f;
+    s_frameFm   = QFontMetrics(f);
+    s_frameFpx  = kCustomHudFontSize;
 }
 
 static inline QRect CurrentHudDirtyRect(const HudFrameTransform& xf, bool includeFirstPersonHud)
@@ -348,11 +349,10 @@ static void ClearPreviousCrosshairDirty(const CrosshairHudConfig& ch)
     s_chPrevPxCy = INT_MIN;
 }
 
-static bool ReadHudRuntimeState(EmuInstance* emu,
-                                const RomAddresses& rom,
-                                const GameAddressesHot& addrHot,
-                                uint8_t playerPosition,
-                                HudRuntimeState& out)
+static bool ReadHudRuntimeBaseState(EmuInstance* emu,
+                                    const RomAddresses& rom,
+                                    uint8_t playerPosition,
+                                    HudRuntimeState& out)
 {
     if (!emu) return false;
 
@@ -361,26 +361,34 @@ static bool ReadHudRuntimeState(EmuInstance* emu,
     if (!ram) return false;
 
     const uint32_t offP = static_cast<uint32_t>(playerPosition) * Consts::PLAYER_ADDR_INC;
-    const uint8_t viewMode = Read8(ram, rom.baseViewMode + offP);
-    const bool isFirstPerson = (viewMode == 0x00);
-
     out.nds = nds;
     out.ram = ram;
     out.offP = offP;
     out.romGroup = rom.romGroupIndex;
     out.currentHP = Read16(ram, rom.playerHP + offP);
+    out.isStartPressed = Read8(ram, rom.startPressed) == 0x01;
+    out.isGameOver = Read8(ram, rom.gameOver) != 0x00;
+    return true;
+}
+
+static void ReadHudRuntimeVisibleState(const RomAddresses& rom,
+                                       const GameAddressesHot& addrHot,
+                                       HudRuntimeState& out)
+{
+    melonDS::u8* ram = out.ram;
+    const uint32_t offP = out.offP;
+    const uint8_t viewMode = Read8(ram, rom.baseViewMode + offP);
+    const bool isFirstPerson = (viewMode == 0x00);
+
     out.maxHP = Read16(ram, rom.maxHP + offP);
     out.maxAmmoSpecial = isFirstPerson ? Read16(ram, rom.maxAmmoSpecial + offP) : 0;
     out.maxAmmoMissile = isFirstPerson ? Read16(ram, rom.maxAmmoMissile + offP) : 0;
     out.hunterID = Read8(ram, addrHot.chosenHunter);
     out.currentWeapon = isFirstPerson ? Read8(ram, addrHot.currentWeapon) : 0;
-    out.isStartPressed = Read8(ram, rom.startPressed) == 0x01;
-    out.isGameOver = Read8(ram, rom.gameOver) != 0x00;
     out.isFirstPerson = isFirstPerson;
     out.isAlt = Read8(ram, addrHot.isAltForm) == 0x02;
     out.isTrans = isFirstPerson && (Read8(ram, addrHot.jumpFlag) & 0x10) != 0;
     out.isAdventure = Read8(ram, rom.isInAdventure) == 0x02;
-    return true;
 }
 
 // OPT-DR1: Computes conservative pixel-space dirty rects for non-crosshair elements.
