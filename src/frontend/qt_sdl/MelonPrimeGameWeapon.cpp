@@ -4,6 +4,7 @@
 #include "main.h"
 #include "Screen.h"
 #include "MelonPrimeDef.h"
+#include "MelonPrimePatchNoDoubleTapJump.h"
 
 #include <array>
 #include <string_view>
@@ -361,6 +362,9 @@ namespace MelonPrime {
 
         // R2: Cache NDS pointer once (was called twice via emuInstance->getNDS())
         auto* const nds = emuInstance->getNDS();
+
+        NoDoubleTapJumpPatch_Apply(nds, m_currentRom.romGroupIndex);
+
         nds->ReleaseScreen();
         FrameAdvanceTwice();
 
@@ -371,6 +375,8 @@ namespace MelonPrime {
             nds->TouchScreen(emuInstance->touchX, emuInstance->touchY);
         }
         FrameAdvanceTwice();
+
+        NoDoubleTapJumpPatch_Restore(nds, m_currentRom.romGroupIndex);
 
         if (isRestoreNeeded) {
             const uint8_t current = *m_ptrs.jumpFlag;
