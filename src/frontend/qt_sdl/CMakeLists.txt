@@ -88,6 +88,7 @@ set(SOURCES_QT_SDL
     MelonPrimePatchAspectRatio.cpp
     MelonPrimePatchOsdColor.cpp
     MelonPrimePatchNoHud.cpp
+    MelonPrimePatchNoDoubleTapJump.cpp
     
 
 )
