@@ -466,9 +466,11 @@ namespace MelonPrime {
 
         const uint8_t hunterID = Read8(mainRAM, m_addrHot.chosenHunter);
         m_hunterID = (hunterID <= 6) ? hunterID : 0;
-        m_flags.assign(StateFlags::BIT_IS_SAMUS, hunterID == 0x00);
-        m_flags.assign(StateFlags::BIT_IS_WEAVEL, hunterID == 0x06);
-        m_flags.assign(StateFlags::BIT_IN_ADVENTURE, Read8(mainRAM, m_currentRom.isInAdventure) == 0x02);
+        const bool isAdventure = Read8(mainRAM, m_currentRom.isInAdventure) == 0x02;
+        // In Adventure mode the player is always Samus regardless of the stored multiplayer hunter ID.
+        m_flags.assign(StateFlags::BIT_IS_SAMUS, isAdventure || hunterID == 0x00);
+        m_flags.assign(StateFlags::BIT_IS_WEAVEL, !isAdventure && hunterID == 0x06);
+        m_flags.assign(StateFlags::BIT_IN_ADVENTURE, isAdventure);
 
         MelonPrimeGameSettings::ApplyMphSensitivity(
             emuInstance->getNDS(), localCfg, m_currentRom.sensitivity, m_addrHot.inGameSensi, true);
