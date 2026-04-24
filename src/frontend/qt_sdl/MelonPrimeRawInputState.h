@@ -113,8 +113,10 @@ namespace MelonPrime {
                     // P-42: Single-word fast path — 1 AND instead of 4 AND + 3 OR.
                     // ~26-28 of 28 hotkeys hit this path (single VK, no mouse).
                     hit = (m_hkMasks.vkMask[bitPos][fw] & snap.vk[fw]) != 0;
+                } else if (fw == 4) {
+                    hit = (m_hkMasks.mouseMask[bitPos] & snap.mouse) != 0;
                 } else {
-                    // Fallback: mouse-only (4) or multi-word (5).
+                    // Fallback: multi-word or mixed bindings.
                     hit = testHotkeyMask(bitPos, snap.vk, snap.mouse);
                 }
                 if (hit) result |= 1ULL << bitPos;
