@@ -96,7 +96,6 @@ namespace MelonPrime {
     void RawInputWinFilter::Poll() {
         if (m_joy2KeySupport) return;
 
-        m_state->processRawInputBatched();
         drainPendingMessages();
     }
 
