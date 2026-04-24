@@ -356,6 +356,10 @@ namespace MelonPrime {
             if (LIKELY(isInGame)) {
                 OsdColor_ApplyOnce(emuInstance, localCfg, m_currentRom);
             }
+            else if (m_flags.test(StateFlags::BIT_IN_GAME_INIT)) {
+                m_flags.clear(StateFlags::BIT_IN_GAME_INIT);
+                OsdColor_RestoreOnce(emuInstance->getNDS(), m_currentRom);
+            }
 
             if (focused) {
                 if (LIKELY(isInGame)) {
@@ -367,10 +371,6 @@ namespace MelonPrime {
                 else {
                     m_flags.clear(StateFlags::BIT_IN_ADVENTURE);
                     SetAimBlockBranchless(AIMBLK_NOT_IN_GAME, true);
-                    if (m_flags.test(StateFlags::BIT_IN_GAME_INIT)) {
-                        m_flags.clear(StateFlags::BIT_IN_GAME_INIT);
-                        OsdColor_RestoreOnce(emuInstance->getNDS(), m_currentRom);
-                    }
                     ApplyGameSettingsOnce();
                 }
 
