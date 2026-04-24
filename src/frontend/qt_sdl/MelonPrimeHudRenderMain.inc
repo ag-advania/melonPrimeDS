@@ -54,10 +54,22 @@ HOT_FUNCTION QRect CustomHud_Render(
     if (!isInGame) return QRect();
 
     HudRuntimeState st = {};
-    if (!ReadHudRuntimeState(emu, rom, addrHot, playerPosition, st))
+    if (!ReadHudRuntimeBaseState(emu, rom, playerPosition, st))
         return QRect();
 
     NoHudPatch_Apply(st.nds, st.romGroup);
+
+    Write8(st.ram, rom.hudToggle, st.isStartPressed ? 0x11 : 0x01);
+
+    if (ShouldHideForGameplayState(st.isStartPressed, st.currentHP, st.isGameOver)) {
+        // If settings were saved while the HUD is hidden, still refresh once so
+        // Screen.cpp's epoch-based CustomHUD enable cache observes the change.
+        if (UNLIKELY(!s_cache.valid)) {
+            EnsureCachedConfigForFrame(localCfg, xf);
+            s_cache.valid = true;
+        }
+        return QRect();
+    }
 
     // P-3: Refresh config cache only when invalidated, or recompute anchor
     //       positions when topStretchX changes (window resize).
@@ -69,13 +81,7 @@ HOT_FUNCTION QRect CustomHud_Render(
     // OPT-DR1: Refresh static dirty rect when transform or config changed.
     EnsureStaticDirtyForFrame(c, xf);
 
-    const uint32_t addrAmmoSpecial = rom.currentAmmoSpecial + st.offP;
-    const uint32_t addrAmmoMissile = rom.currentAmmoMissile + st.offP;
-
-    Write8(st.ram, rom.hudToggle, st.isStartPressed ? 0x11 : 0x01);
-
-    if (ShouldHideForGameplayState(st.isStartPressed, st.currentHP, st.isGameOver))
-        return QRect();
+    ReadHudRuntimeVisibleState(rom, addrHot, st);
 
     // hudScale = scaleY: DS Y-unit maps to hudScale px.
     // Buffer now covers the full window. Translate has two parts:
@@ -105,7 +111,8 @@ HOT_FUNCTION QRect CustomHud_Render(
     DrawRankAndTime(topPaint, st.ram, rom, playerPosition, st.isAdventure, c, textDrawScale);
 
     // Draw bottom screen overlay on top screen (visible in all camera modes incl. alt form)
-    DrawBottomScreenOverlay(localCfg, topPaint, btmBuffer, (st.hunterID <= 6) ? st.hunterID : 0);
+    if (c.radar.radarShow)
+        DrawBottomScreenOverlay(localCfg, topPaint, btmBuffer, (st.hunterID <= 6) ? st.hunterID : 0);
 
     if (!st.isFirstPerson) {
         // OPT-DR1: Crosshair not drawn in third-person / alt-form.
@@ -114,15 +121,28 @@ HOT_FUNCTION QRect CustomHud_Render(
         return CurrentHudDirtyRect(xf, false);
     }
 
-    DrawWeaponAmmo(topPaint, st.ram, st.currentWeapon,
-                   Read16(st.ram, addrAmmoSpecial), addrAmmoMissile,
+    const uint8_t weaponIdx = (st.currentWeapon < 9) ? st.currentWeapon : 0;
+    const WeaponInfo& weaponInfo = kWeaponTable[weaponIdx];
+    uint16_t currentAmmoSpecial = 0;
+    uint16_t currentAmmoMissile = 0;
+    if (c.weaponInventory.show ||
+        (weaponInfo.divisor > 0 && !weaponInfo.isMissile && weaponIdx != WeaponId::OmegaCannon))
+        currentAmmoSpecial = Read16(st.ram, rom.currentAmmoSpecial + st.offP);
+    if (c.weaponInventory.show ||
+        weaponInfo.isMissile)
+        currentAmmoMissile = Read16(st.ram, rom.currentAmmoMissile + st.offP);
+
+    DrawWeaponAmmo(topPaint, st.currentWeapon,
+                   currentAmmoSpecial, currentAmmoMissile,
                    st.maxAmmoSpecial, st.maxAmmoMissile, c, textDrawScale, hudScale);
 
-    {
+    if (c.weaponInventory.show) {
         const uint16_t havingWeapons = static_cast<uint16_t>(
             Read16(st.ram, addrHot.havingWeapons));
-        DrawWeaponInventory(topPaint, st.ram, rom, playerPosition,
-                            havingWeapons, st.currentWeapon, c, textDrawScale, hudScale);
+        DrawWeaponInventory(topPaint,
+                            havingWeapons, st.currentWeapon,
+                            currentAmmoSpecial, currentAmmoMissile,
+                            c, textDrawScale, hudScale);
     }
 
     if (!st.isTrans && !st.isAlt) {
