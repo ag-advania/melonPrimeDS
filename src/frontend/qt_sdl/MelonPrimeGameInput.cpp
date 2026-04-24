@@ -6,7 +6,6 @@
 #include "MelonPrimeDef.h"
 
 #include <utility>
-#include <algorithm>  // std::clamp (P-29a)
 #include <QCursor>
 
 #ifdef _WIN32
@@ -235,13 +234,13 @@ namespace MelonPrime {
         ProcessMoveAndButtonsFastImpl<true>();
     }
 
-    void MelonPrimeCore::ProcessAimInputStylus()
+    void MelonPrimeCore::ProcessAimInputStylus(melonDS::NDS* nds)
     {
         if (LIKELY(emuInstance->isTouching)) {
-            emuInstance->getNDS()->TouchScreen(emuInstance->touchX, emuInstance->touchY);
+            nds->TouchScreen(emuInstance->touchX, emuInstance->touchY);
         }
         else {
-            emuInstance->getNDS()->ReleaseScreen();
+            nds->ReleaseScreen();
         }
     }
 
@@ -249,8 +248,10 @@ namespace MelonPrime {
     // Outlined from ProcessAimInputMouse to keep the hot path branch-free.
     COLD_FUNCTION void MelonPrimeCore::HandleAimEarlyReset()
     {
-        m_aimResidualX = 0;
-        m_aimResidualY = 0;
+        if (m_aimResidualX | m_aimResidualY) {
+            m_aimResidualX = 0;
+            m_aimResidualY = 0;
+        }
 
         if (m_isLayoutChangePending) {
             m_isLayoutChangePending = false;
@@ -258,6 +259,14 @@ namespace MelonPrime {
             if (m_rawFilter) m_rawFilter->discardDeltas();
 #endif
         }
+    }
+
+    [[nodiscard]] static FORCE_INLINE int64_t ClampAimResidual(
+        const int64_t value, const int64_t limit) noexcept
+    {
+        if (LIKELY(value <= limit && value >= -limit))
+            return value;
+        return (value < 0) ? -limit : limit;
     }
 
     // =========================================================================
@@ -321,21 +330,24 @@ namespace MelonPrime {
         if (LIKELY(m_flags.test(StateFlags::BIT_LAST_FOCUSED))) {
             const int32_t deltaX = m_input.mouseX;
             const int32_t deltaY = m_input.mouseY;
+            const bool hasDelta = (deltaX | deltaY) != 0;
+            int64_t resX = m_aimResidualX;
+            int64_t resY = m_aimResidualY;
 
             // P-44: Skip IMUL + clamp when mouse is completely at rest.
             // With 8kHz mouse this is rarely zero, but at standard poll rates
             // or when idling, it saves 2 IMUL (~6 cyc) + 2 clamp (~4 cyc).
             // The direct path's (outX|outY)==0 exit handles the "no output" case,
             // but skipping accumulation avoids touching the residual accumulators.
-            if (LIKELY(deltaX | deltaY)) {
+            if (LIKELY(hasDelta)) {
                 // P-17: Accumulate into residual (Q14 fixed-point).
-                m_aimResidualX += static_cast<int64_t>(deltaX) * m_aimFixedScaleX;
-                m_aimResidualY += static_cast<int64_t>(deltaY) * m_aimFixedScaleY;
+                resX += static_cast<int64_t>(deltaX) * m_aimFixedScaleX;
+                resY += static_cast<int64_t>(deltaY) * m_aimFixedScaleY;
 
-                // P-29a: Branchless residual clamp (CMOV on x86, CSEL on ARM).
-                m_aimResidualX = std::clamp(m_aimResidualX, -AIM_MAX_RESIDUAL, AIM_MAX_RESIDUAL);
-                m_aimResidualY = std::clamp(m_aimResidualY, -AIM_MAX_RESIDUAL, AIM_MAX_RESIDUAL);
-            } else if ((m_aimResidualX | m_aimResidualY) == 0) {
+                // P-29a: Clamp only when residual escapes the normal range.
+                resX = ClampAimResidual(resX, AIM_MAX_RESIDUAL);
+                resY = ClampAimResidual(resY, AIM_MAX_RESIDUAL);
+            } else if ((resX | resY) == 0) {
                 // No delta AND no residual → nothing to output. Skip everything.
                 // Note: not LIKELY — with accumulator enabled, residuals persist after
                 //       mouse stops, so zero-residual is not the dominant case here.
@@ -354,14 +366,20 @@ namespace MelonPrime {
                 // (delta=0 → residual unchanged → output 0).
                 // DS-side deadzone is also bypassed by the ASM patch.
                 // =========================================================
-                const int16_t outX = static_cast<int16_t>(m_aimResidualX >> AIM_DIRECT_BITS);
-                const int16_t outY = static_cast<int16_t>(m_aimResidualY >> AIM_DIRECT_BITS);
+                const int16_t outX = static_cast<int16_t>(resX >> AIM_DIRECT_BITS);
+                const int16_t outY = static_cast<int16_t>(resY >> AIM_DIRECT_BITS);
 
                 // Subtract consumed integer portion; fractional remainder carries over.
-                m_aimResidualX -= static_cast<int64_t>(outX) << AIM_DIRECT_BITS;
-                m_aimResidualY -= static_cast<int64_t>(outY) << AIM_DIRECT_BITS;
+                resX -= static_cast<int64_t>(outX) << AIM_DIRECT_BITS;
+                resY -= static_cast<int64_t>(outY) << AIM_DIRECT_BITS;
 
-                if ((outX | outY) == 0) return;
+                if ((outX | outY) == 0) {
+                    if (hasDelta) {
+                        m_aimResidualX = resX;
+                        m_aimResidualY = resY;
+                    }
+                    return;
+                }
 
                 // Direct write — no << ampShift needed.
                 // >> 12 already produces the same scale as the old >> 14 << 2.
@@ -381,22 +399,33 @@ namespace MelonPrime {
 
                 // Early exit if both residuals are in deadzone.
                 {
-                    const int64_t absResX = m_aimResidualX < 0 ? -m_aimResidualX : m_aimResidualX;
-                    const int64_t absResY = m_aimResidualY < 0 ? -m_aimResidualY : m_aimResidualY;
-                    if (absResX < m_aimFixedAdjust && absResY < m_aimFixedAdjust)
+                    const int64_t absResX = resX < 0 ? -resX : resX;
+                    const int64_t absResY = resY < 0 ? -resY : resY;
+                    if (absResX < m_aimFixedAdjust && absResY < m_aimFixedAdjust) {
+                        if (hasDelta) {
+                            m_aimResidualX = resX;
+                            m_aimResidualY = resY;
+                        }
                         return;
+                    }
                 }
 
                 const int64_t adjT  = m_aimFixedAdjust;
                 const int64_t snapT = m_aimFixedSnapThresh;
 
-                const int16_t outX = ApplyAim(m_aimResidualX, adjT, snapT);
-                const int16_t outY = ApplyAim(m_aimResidualY, adjT, snapT);
+                const int16_t outX = ApplyAim(resX, adjT, snapT);
+                const int16_t outY = ApplyAim(resY, adjT, snapT);
 
-                m_aimResidualX -= static_cast<int64_t>(outX) << AIM_FRAC_BITS;
-                m_aimResidualY -= static_cast<int64_t>(outY) << AIM_FRAC_BITS;
+                resX -= static_cast<int64_t>(outX) << AIM_FRAC_BITS;
+                resY -= static_cast<int64_t>(outY) << AIM_FRAC_BITS;
 
-                if ((outX | outY) == 0) return;
+                if ((outX | outY) == 0) {
+                    if (hasDelta) {
+                        m_aimResidualX = resX;
+                        m_aimResidualY = resY;
+                    }
+                    return;
+                }
 
                 *m_ptrs.aimX = static_cast<uint16_t>(outX);
                 *m_ptrs.aimY = static_cast<uint16_t>(outY);
@@ -404,10 +433,12 @@ namespace MelonPrime {
 
             // Discard sub-pixel residuals when accumulator is off.
             // Fractional remainder won't carry to the next frame.
-            if (UNLIKELY(!m_enableAimAccumulator)) {
-                m_aimResidualX = 0;
-                m_aimResidualY = 0;
+            if (!m_enableAimAccumulator) {
+                resX = 0;
+                resY = 0;
             }
+            m_aimResidualX = resX;
+            m_aimResidualY = resY;
 
 #if !defined(_WIN32)
             QCursor::setPos(m_aimData.centerX, m_aimData.centerY);

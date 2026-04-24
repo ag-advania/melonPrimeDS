@@ -317,19 +317,20 @@ static void ApplyHudPainterTransform(QPainter* p, const HudFrameTransform& xf)
 
 static void EnsureHudFont(QPainter* p)
 {
-    if (p->font().pixelSize() != kCustomHudFontSize) {
-        QFont f = p->font();
+    if (LIKELY(s_frameFpx == kCustomHudFontSize))
+        return;
+
+    // P-9 / OPT-HUD-6 / OPT-HUD-7: Cache font + metrics once for the fixed HUD font size.
+    // Screen.cpp now gives each painter a pixel-sized overlayFont, so the normal path avoids
+    // p->font() and p->setFont() entirely after the first cache fill.
+    QFont f = p->font();
+    if (f.pixelSize() != kCustomHudFontSize) {
         f.setPixelSize(kCustomHudFontSize);
         p->setFont(f);
     }
-
-    // P-9 / OPT-HUD-6: Cache font + metrics once for the fixed HUD font size.
-    // s_frameFont lets draw functions skip p->font() per-frame (~10-20 cyc each).
-    if (UNLIKELY(s_frameFpx != kCustomHudFontSize)) {
-        s_frameFm   = p->fontMetrics();
-        s_frameFont = p->font();
-        s_frameFpx  = kCustomHudFontSize;
-    }
+    s_frameFont = f;
+    s_frameFm   = QFontMetrics(f);
+    s_frameFpx  = kCustomHudFontSize;
 }
 
 static inline QRect CurrentHudDirtyRect(const HudFrameTransform& xf, bool includeFirstPersonHud)
@@ -348,11 +349,10 @@ static void ClearPreviousCrosshairDirty(const CrosshairHudConfig& ch)
     s_chPrevPxCy = INT_MIN;
 }
 
-static bool ReadHudRuntimeState(EmuInstance* emu,
-                                const RomAddresses& rom,
-                                const GameAddressesHot& addrHot,
-                                uint8_t playerPosition,
-                                HudRuntimeState& out)
+static bool ReadHudRuntimeBaseState(EmuInstance* emu,
+                                    const RomAddresses& rom,
+                                    uint8_t playerPosition,
+                                    HudRuntimeState& out)
 {
     if (!emu) return false;
 
@@ -361,26 +361,34 @@ static bool ReadHudRuntimeState(EmuInstance* emu,
     if (!ram) return false;
 
     const uint32_t offP = static_cast<uint32_t>(playerPosition) * Consts::PLAYER_ADDR_INC;
-    const uint8_t viewMode = Read8(ram, rom.baseViewMode + offP);
-    const bool isFirstPerson = (viewMode == 0x00);
-
     out.nds = nds;
     out.ram = ram;
     out.offP = offP;
     out.romGroup = rom.romGroupIndex;
     out.currentHP = Read16(ram, rom.playerHP + offP);
+    out.isStartPressed = Read8(ram, rom.startPressed) == 0x01;
+    out.isGameOver = Read8(ram, rom.gameOver) != 0x00;
+    return true;
+}
+
+static void ReadHudRuntimeVisibleState(const RomAddresses& rom,
+                                       const GameAddressesHot& addrHot,
+                                       HudRuntimeState& out)
+{
+    melonDS::u8* ram = out.ram;
+    const uint32_t offP = out.offP;
+    const uint8_t viewMode = Read8(ram, rom.baseViewMode + offP);
+    const bool isFirstPerson = (viewMode == 0x00);
+
     out.maxHP = Read16(ram, rom.maxHP + offP);
     out.maxAmmoSpecial = isFirstPerson ? Read16(ram, rom.maxAmmoSpecial + offP) : 0;
     out.maxAmmoMissile = isFirstPerson ? Read16(ram, rom.maxAmmoMissile + offP) : 0;
     out.hunterID = Read8(ram, addrHot.chosenHunter);
     out.currentWeapon = isFirstPerson ? Read8(ram, addrHot.currentWeapon) : 0;
-    out.isStartPressed = Read8(ram, rom.startPressed) == 0x01;
-    out.isGameOver = Read8(ram, rom.gameOver) != 0x00;
     out.isFirstPerson = isFirstPerson;
     out.isAlt = Read8(ram, addrHot.isAltForm) == 0x02;
     out.isTrans = isFirstPerson && (Read8(ram, addrHot.jumpFlag) & 0x10) != 0;
     out.isAdventure = Read8(ram, rom.isInAdventure) == 0x02;
-    return true;
 }
 
 // OPT-DR1: Computes conservative pixel-space dirty rects for non-crosshair elements.
@@ -687,70 +695,6 @@ bool CustomHud_ShouldDrawRadarOverlay(EmuInstance* emu, const RomAddresses& rom,
 {
     return !CustomHud_ShouldHideForGameplayState(emu, rom, playerPosition);
 }
-// =========================================================================
-//  NoHUD Patch
-// =========================================================================
-static constexpr int NOHUD_PATCH_COUNT = 17;
-static constexpr uint32_t ARM_NOP = 0xE1A00000;
-
-struct HudPatchEntry { uint32_t addr, restoreValue; };
-
-static constexpr HudPatchEntry kHudPatch[7][NOHUD_PATCH_COUNT] = {
-    {{0x02008E78,0xE5840018},{0x02008F0C,0xE5840018},{0x0202A494,0xE5841000},{0x0202A554,0xE584C000},
-     {0x0202A5FC,0xE584C000},{0x0202A6AC,0xE5840000},{0x0202A6B4,0xE5840000},{0x0202F7B4,0xE5801000},
-     {0x0202F814,0xE5801000},{0x0202F870,0xE5801000},{0x0202F938,0xE5823000},{0x02030E58,0xE5812000},
-     {0x020311F8,0xE5801000},{0x020565F8,0xE5801000},{0x020568C4,0xE5801000},{0x02058C50,0xE5801000},
-     {0x0205A958,0xE5813000}},
-    {{0x02008E78,0xE5840018},{0x02008F0C,0xE5840018},{0x0202A494,0xE5841000},{0x0202A554,0xE584C000},
-     {0x0202A5FC,0xE584C000},{0x0202A6AC,0xE5840000},{0x0202A6B4,0xE5840000},{0x0202F7B4,0xE5801000},
-     {0x0202F814,0xE5801000},{0x0202F870,0xE5801000},{0x0202F938,0xE5823000},{0x02030E58,0xE5812000},
-     {0x020311F8,0xE5801000},{0x020565F8,0xE5801000},{0x020568C4,0xE5801000},{0x02058C50,0xE5801000},
-     {0x0205A958,0xE5813000}},
-    {{0x02008E78,0xE5840018},{0x02008F0C,0xE5840018},{0x0202A4B8,0xE5841000},{0x0202A578,0xE584C000},
-     {0x0202A620,0xE584C000},{0x0202A6D0,0xE5840000},{0x0202A6D8,0xE5840000},{0x0202F79C,0xE5801000},
-     {0x0202F7FC,0xE5801000},{0x0202F858,0xE5801000},{0x0202F920,0xE5823000},{0x02030E40,0xE5812000},
-     {0x0203111C,0xE5801000},{0x02054BA8,0xE5801000},{0x02054E74,0xE5801000},{0x020571AC,0xE5801000},
-     {0x02058D20,0xE5813000}},
-    {{0x02008E78,0xE5840018},{0x02008F0C,0xE5840018},{0x0202A4B8,0xE5841000},{0x0202A578,0xE584C000},
-     {0x0202A620,0xE584C000},{0x0202A6D0,0xE5840000},{0x0202A6D8,0xE5840000},{0x0202F76C,0xE5801000},
-     {0x0202F7CC,0xE5801000},{0x0202F828,0xE5801000},{0x0202F8F0,0xE5823000},{0x02030E0C,0xE5812000},
-     {0x020310E8,0xE5801000},{0x020553C8,0xE5801000},{0x02055694,0xE5801000},{0x020579C0,0xE5801000},
-     {0x02059534,0xE5813000}},
-    {{0x02008E7C,0xE5840018},{0x02008F10,0xE5840018},{0x0202A4B0,0xE5841000},{0x0202A570,0xE584C000},
-     {0x0202A618,0xE584C000},{0x0202A6C8,0xE5840000},{0x0202A6D0,0xE5840000},{0x0202F764,0xE5801000},
-     {0x0202F7C4,0xE5801000},{0x0202F820,0xE5801000},{0x0202F8E8,0xE5823000},{0x02030E04,0xE5812000},
-     {0x020310E0,0xE5801000},{0x0205539C,0xE5801000},{0x02055668,0xE5801000},{0x02057994,0xE5801000},
-     {0x020594E8,0xE5813000}},
-    {{0x02008E78,0xE5840018},{0x02008F0C,0xE5840018},{0x0202A4B8,0xE5841000},{0x0202A578,0xE584C000},
-     {0x0202A620,0xE584C000},{0x0202A6D0,0xE5840000},{0x0202A6D8,0xE5840000},{0x0202F76C,0xE5801000},
-     {0x0202F7CC,0xE5801000},{0x0202F828,0xE5801000},{0x0202F8F0,0xE5823000},{0x02030E0C,0xE5812000},
-     {0x020310E8,0xE5801000},{0x020553C8,0xE5801000},{0x02055694,0xE5801000},{0x020579C0,0xE5801000},
-     {0x02059534,0xE5813000}},
-    {{0x0203302C,0xE5801000},{0x0203336C,0xE5812000},{0x020345F8,0xE5801000},{0x0203472C,0xE5801000},
-     {0x02034788,0xE5801000},{0x020347DC,0xE5801000},{0x02034800,0xE5801000},{0x0203487C,0xE5812000},
-     {0x0203489C,0xE5823000},{0x02038FB8,0xE5841000},{0x02039054,0xE584C000},{0x02039100,0xE584C000},
-     {0x020391BC,0xE5840000},{0x02050764,0xE5801000},{0x02050A24,0xE5801000},{0x02053F54,0xE5803000},
-     {0x02054DCC,0xE5801000}},
-};
-
-static bool s_hudPatchApplied = false;
-
-static void ApplyNoHudPatch(melonDS::NDS* nds, uint8_t romGroup)
-{
-    if (s_hudPatchApplied) return;
-    for (int i = 0; i < NOHUD_PATCH_COUNT; i++)
-        nds->ARM9Write32(kHudPatch[romGroup][i].addr, ARM_NOP);
-    s_hudPatchApplied = true;
-}
-
-static void RestoreHudPatch(melonDS::NDS* nds, uint8_t romGroup)
-{
-    if (!s_hudPatchApplied) return;
-    for (int i = 0; i < NOHUD_PATCH_COUNT; i++)
-        nds->ARM9Write32(kHudPatch[romGroup][i].addr, kHudPatch[romGroup][i].restoreValue);
-    s_hudPatchApplied = false;
-}
-
 void CustomHud_EnsurePatchRestored(
     EmuInstance* emu,
     Config::Table& localCfg,
@@ -760,21 +704,21 @@ void CustomHud_EnsurePatchRestored(
 {
     if (!isInGame) return;
     if (CustomHud_IsEnabled(localCfg)) return; // HUD enabled — Render() handles patches
-    if (!s_hudPatchApplied) return;
+    if (!NoHudPatch_IsApplied()) return;
 
     melonDS::NDS* nds = emu->getNDS();
     melonDS::u8* ram = nds->MainRAM;
     const uint32_t offP = static_cast<uint32_t>(playerPosition) * Consts::PLAYER_ADDR_INC;
     const uint8_t romGroup = rom.romGroupIndex;
 
-    RestoreHudPatch(nds, romGroup);
+    NoHudPatch_Restore(nds, romGroup);
     uint8_t vm = Read8(ram, rom.baseViewMode + offP);
     Write8(ram, rom.hudToggle, (vm == 0x00) ? 0x1F : 0x11);
 }
 
 void CustomHud_ResetPatchState()
 {
-    s_hudPatchApplied = false;
+    NoHudPatch_ResetState();
     s_cache.valid = false;
     s_battleState.valid = false;
     s_staticDirtyStale = true;

@@ -16,6 +16,9 @@
 #ifdef MELONPRIME_CUSTOM_HUD
 #include "MelonPrimeHudRender.h"
 #endif
+#ifdef MELONPRIME_DS
+#include "MelonPrimePatch.h"
+#endif
 
 using namespace melonDS;
 
@@ -140,5 +143,8 @@ void MelonPrimeInputConfig::saveConfig()
 
     // P-3: Invalidate cached config so next frame re-reads all values
     MelonPrime::CustomHud_InvalidateConfigCache();
+#ifdef MELONPRIME_DS
+    MelonPrime::OsdColor_InvalidatePatch();
+#endif
 }
 

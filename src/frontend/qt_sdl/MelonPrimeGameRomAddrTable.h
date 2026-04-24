@@ -96,6 +96,67 @@ namespace MelonPrime {
     // Lives offset = basePoint - 0xB0, Time offset = basePoint - 0x180 (per-player: +4 * playerIdx)
 #endif
 
+#ifdef MELONPRIME_DS
+    // =========================================================================
+    //  OSD Color Patch — literal pool addresses
+    //  Order: JP1.0, JP1.1, US1.0, US1.1, EU1.0, EU1.1, KR1.0
+    //  Each address holds a 32-bit value 0x0000CCCC (BGR555 color).
+    // =========================================================================
+    inline constexpr RomTable<uint32_t> LIST_OsdLiteral_LostLives    = { 0x0200FED4, 0x0200FED4, 0x0200FF18, 0x0200FEA4, 0x0200FF10, 0x0200FEA4, 0x02021844 };
+    inline constexpr RomTable<uint32_t> LIST_OsdLiteral_KillDeath    = { 0x02018268, 0x02018268, 0x02018288, 0x0201828C, 0x02018280, 0x0201828C, 0x0201A7F8 };
+    inline constexpr RomTable<uint32_t> LIST_OsdLiteral_ReturnBase   = { 0x0202DE50, 0x0202DE50, 0x0202DE2C, 0x0202DE2C, 0x0202DE24, 0x0202DE2C, 0x02036AC8 };
+    inline constexpr RomTable<uint32_t> LIST_OsdLiteral_NoAmmo       = { 0x0202DE68, 0x0202DE68, 0x0202DE44, 0x0202DE44, 0x0202DE3C, 0x0202DE44, 0x02036AD4 };
+    inline constexpr RomTable<uint32_t> LIST_OsdLiteral_CowardDetect = { 0x02030534, 0x02030534, 0x0203051C, 0x020304E8, 0x020304E0, 0x020304E8, 0x02033D98 };
+    inline constexpr RomTable<uint32_t> LIST_OsdLiteral_AcquiringNode= { 0x02031D0C, 0x02031D0C, 0x02031BF8, 0x02031BA8, 0x02031BA0, 0x02031BA8, 0x0203285C };
+    inline constexpr RomTable<uint32_t> LIST_OsdLiteral_Turret       = { 0x02111F6C, 0x02111F2C, 0x0210FE2C, 0x021108EC, 0x0211090C, 0x0211098C, 0x02108C28 };
+    inline constexpr RomTable<uint32_t> LIST_OsdLiteral_OctoReset    = { 0x0212F6D8, 0x0212F698, 0x0212D538, 0x0212E058, 0x0212E018, 0x0212E0F8, 0x021251C4 };
+    inline constexpr RomTable<uint32_t> LIST_OsdLiteral_OctoDrop     = { 0x0212FA64, 0x0212FA24, 0x0212D8C4, 0x0212E3E4, 0x0212E3A4, 0x0212E484, 0x02124F98 };
+    inline constexpr RomTable<uint32_t> LIST_OsdLiteral_OctoCond     = { 0x0212FBCC, 0x0212FB8C, 0x0212DA2C, 0x0212E54C, 0x0212E50C, 0x0212E5EC, 0x02124D6C };
+    inline constexpr RomTable<uint32_t> LIST_OsdLiteral_OctoMissing  = { 0x0213042C, 0x021303EC, 0x0212E28C, 0x0212EDAC, 0x0212ED6C, 0x0212EE4C, 0x02126268 };
+    // H211 "node stolen" shim: 4 ARM instructions that redirect H211's hardcoded
+    // immediate color load to the same literal pool entry as the return/base/complete
+    // group, so H211 uses the patched color without a separate literal.
+    inline constexpr RomTable<uint32_t> LIST_OsdH211ShimAddr   = { 0x0202D88C, 0x0202D88C, 0x0202D8B0, 0x0202D8B0, 0x0202D8A8, 0x0202D8B0, 0x020365F8 };
+    inline constexpr RomTable<uint32_t> LIST_OsdH211ShimInstr0 = { 0xE59F25BC, 0xE59F25BC, 0xE59F2574, 0xE59F2574, 0xE59F2574, 0xE59F2574, 0xE59F24C8 }; // ldr r2,[pc,#offset] -> ReturnBase literal
+    inline constexpr RomTable<uint32_t> LIST_OsdH211ShimInstr3 = { 0xE59F15B4, 0xE59F15B4, 0xE59F156C, 0xE59F156C, 0xE59F156C, 0xE59F156C, 0xE59F1488 }; // ldr r1,[pc,#offset] -> font pointer restore
+    // instr1 (E3A0301F = mov r3,#0x1F alpha) and instr2 (E98D000C = stmib sp,{r2,r3}) are constant.
+    // H211 Separate Color: 10-instruction shim that encodes the color directly in
+    // mov/orr immediates, allowing H211 to use a color independent from other OSD msgs.
+    // instr0 = E3A020LL (mov r2,#ll) and instr1 = E3822CHH (orr r2,r2,#hh<<8) are built at runtime.
+    // instr2-3 (alpha/store) and instr6-9 (timer/flags/ptr) are constant across versions.
+    inline constexpr RomTable<uint32_t> LIST_OsdH211SepInstr4 = { 0xE59F15B0, 0xE59F15B0, 0xE59F1568, 0xE59F1568, 0xE59F1568, 0xE59F1568, 0xE59F1484 }; // ldr r1,[pc,#offset] -> font ptr holder
+    inline constexpr RomTable<uint32_t> LIST_OsdH211SepInstr5 = { 0xE5911000, 0xE5911000, 0xE5911000, 0xE5911000, 0xE5911000, 0xE5911000, 0xE59110A8 }; // ldr r1,[r1,...] (KR offset differs)
+
+    // ── OSD color patch revert: original ARM values from ROM dump ──
+    // Default OSD colors before any patch
+    static constexpr uint32_t kOsdOrigLit        = 0x00003FEFu; // default bright green (all except no-ammo)
+    static constexpr uint32_t kOsdOrigLitNoAmmo   = 0x0000295Fu; // default no-ammo red (H009 only)
+    // H211 shim revert: original 4 instructions at the shim site
+    // instr0 (+0x00) / instr1 (+0x04) / instr3 (+0x0C) are identical for all ROMs
+    static constexpr uint32_t kH211OrigInstr0     = 0xE3A0201Fu; // mov r2,#0x1F
+    static constexpr uint32_t kH211OrigInstr1     = 0xE58D2004u; // str r2,[sp,#4]
+    // instr2 (+0x08) varies by ROM:
+    inline constexpr RomTable<uint32_t> LIST_OsdH211OrigShimInstr2 = {
+        0xE59F15B8u, 0xE59F15B8u,  // JP1.0, JP1.1
+        0xE59F1570u, 0xE59F1570u,  // US1.0, US1.1
+        0xE59F1570u, 0xE59F1570u,  // EU1.0, EU1.1
+        0xE59F148Cu,               // KR1.0
+    };
+    static constexpr uint32_t kH211OrigInstr3     = 0xE58D2008u; // str r2,[sp,#8]
+    // H211 separate-color revert: instr at +0x10 varies by ROM (instructions +0x14..+0x24 are constant)
+    inline constexpr RomTable<uint32_t> LIST_OsdH211SepOrigInstr4 = {
+        0xE5912000u, 0xE5912000u,  // JP1.0, JP1.1
+        0xE5912000u, 0xE5912000u,  // US1.0, US1.1
+        0xE5912000u, 0xE5912000u,  // EU1.0, EU1.1
+        0xE59120A8u,               // KR1.0 (different ldr offset)
+    };
+    static constexpr uint32_t kH211SepOrigInstr5  = 0xE3A0105Au; // +0x14
+    static constexpr uint32_t kH211SepOrigInstr6  = 0xE58D200Cu; // +0x18
+    static constexpr uint32_t kH211SepOrigInstr7  = 0xE58D1010u; // +0x1C
+    static constexpr uint32_t kH211SepOrigInstr8  = 0xE3A01011u; // +0x20
+    static constexpr uint32_t kH211SepOrigInstr9  = 0xE58D1014u; // +0x24
+#endif
+
     // =========================================================================
     //  Aim Smoothing Patch Target Addresses & Original Instructions
     // =========================================================================

@@ -19,6 +19,7 @@ namespace MelonPrime {
     HOT_FUNCTION void MelonPrimeCore::HandleInGameLogic()
     {
         PREFETCH_READ(m_ptrs.isAltForm);
+        const bool isStylusMode = this->isStylusMode;
         // Early prefetch of aim pointers - gives ~50-100 instructions of
         // lead time before ProcessAimInputMouse reads them, hiding potential L2 miss.
         if (LIKELY(!isStylusMode)) {
@@ -88,7 +89,7 @@ namespace MelonPrime {
 
         if (isStylusMode) {
             if (!m_flags.test(StateFlags::BIT_BLOCK_STYLUS)) {
-                ProcessAimInputStylus();
+                ProcessAimInputStylus(nds);
             }
         }
         else {

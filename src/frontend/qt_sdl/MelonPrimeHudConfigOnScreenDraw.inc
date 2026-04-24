@@ -338,19 +338,29 @@ static void DrawEditHudPreview(QPainter* p, Config::Table& cfg, float tds, float
     const bool    isFirstPerson = (viewMode == 0x00);
     if (isFirstPerson) {
         const uint8_t  weapon          = Read8(ram, addrHot.currentWeapon);
-        const uint32_t addrAmmoSpecial = rom.currentAmmoSpecial + offP;
-        const uint32_t addrAmmoMissile = rom.currentAmmoMissile + offP;
+        const uint8_t  weaponIdx       = (weapon < 9) ? weapon : 0;
+        const WeaponInfo& weaponInfo   = kWeaponTable[weaponIdx];
         const uint16_t maxAmmoSpecial  = Read16(ram, rom.maxAmmoSpecial + offP);
         const uint16_t maxAmmoMissile  = Read16(ram, rom.maxAmmoMissile + offP);
-        DrawWeaponAmmo(p, ram, weapon,
-                       Read16(ram, addrAmmoSpecial), addrAmmoMissile,
+        uint16_t currentAmmoSpecial = 0;
+        uint16_t currentAmmoMissile = 0;
+        if (c.weaponInventory.show ||
+            (weaponInfo.divisor > 0 && !weaponInfo.isMissile && weaponIdx != WeaponId::OmegaCannon))
+            currentAmmoSpecial = Read16(ram, rom.currentAmmoSpecial + offP);
+        if (c.weaponInventory.show || weaponInfo.isMissile)
+            currentAmmoMissile = Read16(ram, rom.currentAmmoMissile + offP);
+
+        DrawWeaponAmmo(p, weapon,
+                       currentAmmoSpecial, currentAmmoMissile,
                        maxAmmoSpecial, maxAmmoMissile, c, tds, hudScale);
 
-        {
+        if (c.weaponInventory.show) {
             const uint16_t havingWeapons = static_cast<uint16_t>(
                 Read16(ram, addrHot.havingWeapons));
-            DrawWeaponInventory(p, ram, rom, s_editPlayerPosCopy,
-                                havingWeapons, weapon, c, tds, hudScale);
+            DrawWeaponInventory(p,
+                                havingWeapons, weapon,
+                                currentAmmoSpecial, currentAmmoMissile,
+                                c, tds, hudScale);
         }
 
         const bool isTrans = (Read8(ram, addrHot.jumpFlag) & 0x10) != 0;
