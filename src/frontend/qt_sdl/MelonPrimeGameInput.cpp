@@ -330,6 +330,7 @@ namespace MelonPrime {
         if (LIKELY(m_flags.test(StateFlags::BIT_LAST_FOCUSED))) {
             const int32_t deltaX = m_input.mouseX;
             const int32_t deltaY = m_input.mouseY;
+            const bool hasDelta = (deltaX | deltaY) != 0;
             int64_t resX = m_aimResidualX;
             int64_t resY = m_aimResidualY;
 
@@ -338,7 +339,7 @@ namespace MelonPrime {
             // or when idling, it saves 2 IMUL (~6 cyc) + 2 clamp (~4 cyc).
             // The direct path's (outX|outY)==0 exit handles the "no output" case,
             // but skipping accumulation avoids touching the residual accumulators.
-            if (LIKELY(deltaX | deltaY)) {
+            if (LIKELY(hasDelta)) {
                 // P-17: Accumulate into residual (Q14 fixed-point).
                 resX += static_cast<int64_t>(deltaX) * m_aimFixedScaleX;
                 resY += static_cast<int64_t>(deltaY) * m_aimFixedScaleY;
@@ -373,8 +374,10 @@ namespace MelonPrime {
                 resY -= static_cast<int64_t>(outY) << AIM_DIRECT_BITS;
 
                 if ((outX | outY) == 0) {
-                    m_aimResidualX = resX;
-                    m_aimResidualY = resY;
+                    if (hasDelta) {
+                        m_aimResidualX = resX;
+                        m_aimResidualY = resY;
+                    }
                     return;
                 }
 
@@ -399,8 +402,10 @@ namespace MelonPrime {
                     const int64_t absResX = resX < 0 ? -resX : resX;
                     const int64_t absResY = resY < 0 ? -resY : resY;
                     if (absResX < m_aimFixedAdjust && absResY < m_aimFixedAdjust) {
-                        m_aimResidualX = resX;
-                        m_aimResidualY = resY;
+                        if (hasDelta) {
+                            m_aimResidualX = resX;
+                            m_aimResidualY = resY;
+                        }
                         return;
                     }
                 }
@@ -415,8 +420,10 @@ namespace MelonPrime {
                 resY -= static_cast<int64_t>(outY) << AIM_FRAC_BITS;
 
                 if ((outX | outY) == 0) {
-                    m_aimResidualX = resX;
-                    m_aimResidualY = resY;
+                    if (hasDelta) {
+                        m_aimResidualX = resX;
+                        m_aimResidualY = resY;
+                    }
                     return;
                 }
 
