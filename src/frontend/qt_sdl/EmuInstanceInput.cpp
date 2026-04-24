@@ -631,9 +631,9 @@ void EmuInstance::inputProcess()
 // skip SDL_LockMutex + SDL_JoystickUpdate + SDL_UnlockMutex entirely.
 // Saves 2 mutex syscalls + SDL internal overhead per frame.
 //
-// The 60-frame attachment check for newly connected controllers still
-// runs via inputProcess() in the outer loop, but the hot path inside
-// frameAdvanceOnce avoids all SDL overhead when no controller exists.
+// The 60-frame attachment check for newly connected controllers runs via
+// inputProcess() in the outer loop. The late-poll path avoids all SDL overhead
+// when no controller exists.
 // =========================================================================
 void EmuInstance::inputRefreshJoystickState()
 {
@@ -641,33 +641,6 @@ void EmuInstance::inputRefreshJoystickState()
     // joyInputMask stays 0xFFF (all released), joyHotkeyMask stays 0.
     // hotkeyMask still includes keyHotkeyMask from Qt events.
     if (!joystick) {
-        // P-23: Throttled attachment check — detect newly connected controllers.
-        // SDL_NumJoysticks requires the SDL event pump, so we must at least
-        // call SDL_JoystickUpdate periodically to process connect/disconnect.
-        static uint8_t s_joyCheckCounter = 0;
-        if (UNLIKELY(++s_joyCheckCounter >= 60)) {
-            s_joyCheckCounter = 0;
-            SDL_LockMutex(joyMutex.get());
-            SDL_JoystickUpdate();
-            if (SDL_NumJoysticks() > 0) {
-                openJoystick();
-                // If a joystick was found, immediately refresh masks
-                if (joystick) {
-                    joyInputMask = 0xFFF;
-                    for (int i = 0; i < 12; i++)
-                        if (joystickButtonDown(joyMapping[i]))
-                            joyInputMask &= ~(1u << i);
-                    inputMask = keyInputMask & joyInputMask;
-
-                    joyHotkeyMask = 0;
-                    for (int i = 0; i < HK_MAX; i++)
-                        if (joystickButtonDown(hkJoyMapping[i]))
-                            joyHotkeyMask |= (1ULL << i);
-                    hotkeyMask = keyHotkeyMask | joyHotkeyMask;
-                }
-            }
-            SDL_UnlockMutex(joyMutex.get());
-        }
         return;
     }
 

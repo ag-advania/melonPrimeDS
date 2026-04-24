@@ -419,6 +419,19 @@ void EmuThread::run()
         // P-38: Batch early-exit for inner-loop hotkeys.
         // Same pattern as P-24 for the outer loop. hotkeyPress is 0 on 99.9%+
         // of frames, so the 3 individual hotkeyPressed checks are skipped.
+#ifdef MELONPRIME_DS
+        const uint64_t innerHotkeyPress = emuInstance->hotkeyPress;
+        if (UNLIKELY(innerHotkeyPress)) {
+            if (innerHotkeyPress & (1ULL << HK_FastForwardToggle)) emuInstance->fastForwardToggled = !emuInstance->fastForwardToggled;
+            if (innerHotkeyPress & (1ULL << HK_SlowMoToggle)) emuInstance->slowmoToggled = !emuInstance->slowmoToggled;
+
+            if (innerHotkeyPress & (1ULL << HK_AudioMuteToggle)) emuInstance->toggleAudioMute();
+        }
+
+        const uint64_t innerHotkeyDown = emuInstance->hotkeyMask;
+        bool enablefastforward = ((innerHotkeyDown & (1ULL << HK_FastForward)) != 0) | emuInstance->fastForwardToggled;
+        bool enableslowmo = ((innerHotkeyDown & (1ULL << HK_SlowMo)) != 0) | emuInstance->slowmoToggled;
+#else
         if (UNLIKELY(emuInstance->hotkeyPress)) {
             if (emuInstance->hotkeyPressed(HK_FastForwardToggle)) emuInstance->fastForwardToggled = !emuInstance->fastForwardToggled;
             if (emuInstance->hotkeyPressed(HK_SlowMoToggle)) emuInstance->slowmoToggled = !emuInstance->slowmoToggled;
@@ -428,6 +441,7 @@ void EmuThread::run()
 
         bool enablefastforward = emuInstance->hotkeyDown(HK_FastForward) | emuInstance->fastForwardToggled;
         bool enableslowmo = emuInstance->hotkeyDown(HK_SlowMo) | emuInstance->slowmoToggled;
+#endif
 
         if (useOpenGL)
         {
@@ -550,9 +564,21 @@ void EmuThread::run()
         // P-24: Batch early-exit for outer loop hotkeys.
         // hotkeyPress is 0 on 99.9%+ of frames. Single mask test skips
         // all 7 individual hotkeyPressed checks and their branch prediction.
-        if (UNLIKELY(emuInstance->hotkeyPress))
+        const uint64_t outerHotkeyPress = emuInstance->hotkeyPress;
+        if (UNLIKELY(outerHotkeyPress))
         {
-#endif
+            if (outerHotkeyPress & (1ULL << HK_FrameLimitToggle)) emit windowLimitFPSChange();
+
+            if (outerHotkeyPress & (1ULL << HK_Pause)) emuTogglePause();
+            if (outerHotkeyPress & (1ULL << HK_Reset)) emuReset();
+            if (outerHotkeyPress & (1ULL << HK_FrameStep)) emuFrameStep();
+
+            if (outerHotkeyPress & (1ULL << HK_FullscreenToggle)) emit windowFullscreenToggle();
+
+            if (outerHotkeyPress & (1ULL << HK_SwapScreens)) emit swapScreensToggle();
+            if (outerHotkeyPress & (1ULL << HK_SwapScreenEmphasis)) emit screenEmphasisToggle();
+        }
+#else
         if (emuInstance->hotkeyPressed(HK_FrameLimitToggle)) emit windowLimitFPSChange();
 
         if (emuInstance->hotkeyPressed(HK_Pause)) emuTogglePause();
@@ -563,8 +589,6 @@ void EmuThread::run()
 
         if (emuInstance->hotkeyPressed(HK_SwapScreens)) emit swapScreensToggle();
         if (emuInstance->hotkeyPressed(HK_SwapScreenEmphasis)) emit screenEmphasisToggle();
-#ifdef MELONPRIME_DS
-        }
 #endif
 
         if (emuStatus == emuStatus_Running || emuStatus == emuStatus_FrameStep)
