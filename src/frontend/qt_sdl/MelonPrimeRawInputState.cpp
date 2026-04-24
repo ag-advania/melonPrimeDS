@@ -26,6 +26,7 @@ namespace MelonPrime {
         for (auto& vk : m_vkDown)
             vk.store(0, std::memory_order_relaxed);
         m_mouseButtons.store(0, std::memory_order_relaxed);
+        m_mouseButtonPresses.store(0, std::memory_order_relaxed);
 
         m_accumMouseX.store(0, std::memory_order_relaxed);
         m_accumMouseY.store(0, std::memory_order_relaxed);
@@ -120,6 +121,9 @@ namespace MelonPrime {
                     m_mouseButtons.store(
                         (cur | lut.downBits) & ~lut.upBits,
                         std::memory_order_release);
+                    if (lut.downBits) {
+                        m_mouseButtonPresses.fetch_or(lut.downBits, std::memory_order_release);
+                    }
                 }
             }
             break;
@@ -166,6 +170,7 @@ namespace MelonPrime {
 
         const uint8_t initialBtnState = m_mouseButtons.load(std::memory_order_relaxed);
         uint8_t finalBtnState = initialBtnState;
+        uint8_t localBtnPresses = 0;
 
         for (;;) {
             UINT size = sizeof(buffer);
@@ -187,6 +192,7 @@ namespace MelonPrime {
                         const auto& lut = s_btnLut[flags];
                         // R2 FIX: UP wins (was: DOWN wins). See header comment.
                         finalBtnState = (finalBtnState | lut.downBits) & ~lut.upBits;
+                        localBtnPresses |= lut.downBits;
                     }
                 }
                 else if (raw->header.dwType == RIM_TYPEKEYBOARD) {
@@ -235,6 +241,9 @@ namespace MelonPrime {
         if (finalBtnState != initialBtnState) {
             m_mouseButtons.store(finalBtnState, std::memory_order_relaxed);
         }
+        if (localBtnPresses) {
+            m_mouseButtonPresses.fetch_or(localBtnPresses, std::memory_order_release);
+        }
 
         if (hasKeyChanges) {
             for (int i = 0; i < 4; ++i) {
@@ -267,12 +276,14 @@ namespace MelonPrime {
     void InputState::resetAllKeys() noexcept {
         for (auto& vk : m_vkDown) vk.store(0, std::memory_order_relaxed);
         m_mouseButtons.store(0, std::memory_order_relaxed);
+        m_mouseButtonPresses.store(0, std::memory_order_relaxed);
         std::atomic_thread_fence(std::memory_order_release);
         m_hkPrev = 0;
     }
 
     void InputState::resetMouseButtons() noexcept {
         m_mouseButtons.store(0, std::memory_order_release);
+        m_mouseButtonPresses.store(0, std::memory_order_release);
     }
 
     // =========================================================================
@@ -286,6 +297,7 @@ namespace MelonPrime {
     void InputState::resetAll() noexcept {
         for (auto& vk : m_vkDown) vk.store(0, std::memory_order_relaxed);
         m_mouseButtons.store(0, std::memory_order_relaxed);
+        m_mouseButtonPresses.store(0, std::memory_order_relaxed);
         std::atomic_thread_fence(std::memory_order_release);
         m_hkPrev = 0;
     }
@@ -472,7 +484,8 @@ namespace MelonPrime {
     void InputState::snapshotInputFrame(FrameHotkeyState& outHk,
         int& outMouseX, int& outMouseY) noexcept
     {
-        const auto snap = takeSnapshot();  // acquire fence inside
+        auto snap = takeSnapshot();  // acquire fence inside
+        snap.mouse |= m_mouseButtonPresses.exchange(0, std::memory_order_acquire);
 
         // clearStuck* runs AFTER takeSnapshot so that valid quick presses
         // (button pressed and released within one frame) are captured in the
@@ -508,7 +521,8 @@ namespace MelonPrime {
     void InputState::snapshotInputFrameNoEdges(FrameHotkeyState& outHk,
         int& outMouseX, int& outMouseY) noexcept
     {
-        const auto snap = takeSnapshot();  // acquire fence inside
+        auto snap = takeSnapshot();  // acquire fence inside
+        snap.mouse |= m_mouseButtonPresses.load(std::memory_order_acquire);
 
         const int64_t curX = m_accumMouseX.load(std::memory_order_relaxed);
         const int64_t curY = m_accumMouseY.load(std::memory_order_relaxed);

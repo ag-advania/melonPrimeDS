@@ -133,6 +133,9 @@ namespace MelonPrime {
         std::atomic<int64_t>  m_accumMouseX{ 0 };
         std::atomic<int64_t>  m_accumMouseY{ 0 };
         std::atomic<uint8_t>  m_mouseButtons{ 0 };
+        // Mouse DOWN edges seen since the last outer-frame snapshot.
+        // Preserves very short clicks whose DOWN+UP both arrive in one batch.
+        std::atomic<uint8_t>  m_mouseButtonPresses{ 0 };
 
         // =================================================================
         // Cache Line 1+: Read-Mostly / Consumer State
