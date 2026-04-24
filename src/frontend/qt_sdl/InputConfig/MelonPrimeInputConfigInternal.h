@@ -49,6 +49,8 @@ enum class HudColorPresetId
     WeavelHud,
     WeavelHudOutline,
     AviumPurple,
+    OsdBrightGreen,
+    OsdNoAmmoRed,
 };
 
 struct PresetColor { int r, g, b; };
@@ -82,6 +84,8 @@ constexpr const char* kHudColorPaletteNames[] = {
     "Weavel Hud",
     "Weavel Hud Outline",
     "Avium Purple",
+    "OSD Bright Green",
+    "OSD No-Ammo Red",
 };
 
 constexpr PresetColor kHudColorPalette[] = {
@@ -108,6 +112,8 @@ constexpr PresetColor kHudColorPalette[] = {
     {208,152,56},  // WeavelHud
     {248,224,128}, // WeavelHudOutline
     {76,0,252},    // AviumPurple
+    {123,255,123}, // OsdBrightGreen   (vanilla OSD literal 0x3FEF)
+    {248,80,80},   // OsdNoAmmoRed     (vanilla H009 literal 0x295F)
 };
 
 constexpr HudColorPresetId kUnifiedHudColorPresets[] = {
@@ -134,6 +140,8 @@ constexpr HudColorPresetId kUnifiedHudColorPresets[] = {
     HudColorPresetId::WeavelHud,
     HudColorPresetId::WeavelHudOutline,
     HudColorPresetId::AviumPurple,
+    HudColorPresetId::OsdBrightGreen,
+    HudColorPresetId::OsdNoAmmoRed,
 };
 
 constexpr int kHudColorPresetCount              = ArrayCount(kUnifiedHudColorPresets);
@@ -146,7 +154,7 @@ constexpr int kHudPositionCustomIndex           = kHudPositionPresetCount;
 
 static_assert(ArrayCount(kHudColorPalette) == kHudColorPresetCount,
     "kHudColorPalette must match the unified HUD preset list");
-static_assert(static_cast<int>(HudColorPresetId::AviumPurple) + 1 == kHudColorPresetCount,
+static_assert(static_cast<int>(HudColorPresetId::OsdNoAmmoRed) + 1 == kHudColorPresetCount,
     "HudColorPresetId and the unified HUD preset list must stay in sync");
 
 // ─── Position presets ──────────────────────────────────────────────────────

@@ -396,45 +396,53 @@ namespace Config
         /* MelonPrimeDS Bottom Screen Overlay frame color } */
         /* MelonPrimeDS Bottom Screen Overlay defaults } */
         /* MelonPrimeDS OSD Color Patch defaults { */
-        /* Global "set all" color (white) */
-        {"Instance*.Metroid.Visual.OsdColorR",              255},
+        /* Defaults are anchored to the game's original BGR555 literals so that
+           enabling the patch with no further changes preserves vanilla appearance.
+           See In-Game-OSD-COLOR-PATCH.md:
+             - Default bright green = 0x3FEF -> R=123, G=255, B=123 (most messages)
+             - Default no-ammo red  = 0x295F -> R=248, G=80,  B=80  (H009 only)
+             - H211 "node stolen"   = 0x001F -> R=255, G=0,   B=0   (separate color path) */
+
+        /* Global "set all" color (defaults to game's bright green 0x3FEF) */
+        {"Instance*.Metroid.Visual.OsdColorR",              123},
         {"Instance*.Metroid.Visual.OsdColorG",              255},
-        {"Instance*.Metroid.Visual.OsdColorB",              255},
-        /* Per-category colors (all default white) */
-        {"Instance*.Metroid.Visual.OsdColorLostLivesR",     255},
+        {"Instance*.Metroid.Visual.OsdColorB",              123},
+        /* Per-category literal colors. All anchored to game default 0x3FEF except NoAmmo (0x295F). */
+        {"Instance*.Metroid.Visual.OsdColorLostLivesR",     123},
         {"Instance*.Metroid.Visual.OsdColorLostLivesG",     255},
-        {"Instance*.Metroid.Visual.OsdColorLostLivesB",     255},
-        {"Instance*.Metroid.Visual.OsdColorKillDeathR",     255},
+        {"Instance*.Metroid.Visual.OsdColorLostLivesB",     123},
+        {"Instance*.Metroid.Visual.OsdColorKillDeathR",     123},
         {"Instance*.Metroid.Visual.OsdColorKillDeathG",     255},
-        {"Instance*.Metroid.Visual.OsdColorKillDeathB",     255},
-        {"Instance*.Metroid.Visual.OsdColorReturnBaseR",    255},
+        {"Instance*.Metroid.Visual.OsdColorKillDeathB",     123},
+        {"Instance*.Metroid.Visual.OsdColorReturnBaseR",    123},
         {"Instance*.Metroid.Visual.OsdColorReturnBaseG",    255},
-        {"Instance*.Metroid.Visual.OsdColorReturnBaseB",    255},
-        {"Instance*.Metroid.Visual.OsdColorNoAmmoR",        255},
-        {"Instance*.Metroid.Visual.OsdColorNoAmmoG",        255},
-        {"Instance*.Metroid.Visual.OsdColorNoAmmoB",        255},
-        {"Instance*.Metroid.Visual.OsdColorCowardDetectR",  255},
+        {"Instance*.Metroid.Visual.OsdColorReturnBaseB",    123},
+        /* H009 AMMO DEPLETED uses 0x295F (red-orange) in vanilla */
+        {"Instance*.Metroid.Visual.OsdColorNoAmmoR",        248},
+        {"Instance*.Metroid.Visual.OsdColorNoAmmoG",         80},
+        {"Instance*.Metroid.Visual.OsdColorNoAmmoB",         80},
+        {"Instance*.Metroid.Visual.OsdColorCowardDetectR",  123},
         {"Instance*.Metroid.Visual.OsdColorCowardDetectG",  255},
-        {"Instance*.Metroid.Visual.OsdColorCowardDetectB",  255},
-        {"Instance*.Metroid.Visual.OsdColorAcquiringNodeR", 255},
+        {"Instance*.Metroid.Visual.OsdColorCowardDetectB",  123},
+        {"Instance*.Metroid.Visual.OsdColorAcquiringNodeR", 123},
         {"Instance*.Metroid.Visual.OsdColorAcquiringNodeG", 255},
-        {"Instance*.Metroid.Visual.OsdColorAcquiringNodeB", 255},
-        {"Instance*.Metroid.Visual.OsdColorTurretR",        255},
+        {"Instance*.Metroid.Visual.OsdColorAcquiringNodeB", 123},
+        {"Instance*.Metroid.Visual.OsdColorTurretR",        123},
         {"Instance*.Metroid.Visual.OsdColorTurretG",        255},
-        {"Instance*.Metroid.Visual.OsdColorTurretB",        255},
-        {"Instance*.Metroid.Visual.OsdColorOctoResetR",     255},
+        {"Instance*.Metroid.Visual.OsdColorTurretB",        123},
+        {"Instance*.Metroid.Visual.OsdColorOctoResetR",     123},
         {"Instance*.Metroid.Visual.OsdColorOctoResetG",     255},
-        {"Instance*.Metroid.Visual.OsdColorOctoResetB",     255},
-        {"Instance*.Metroid.Visual.OsdColorOctoDropR",      255},
+        {"Instance*.Metroid.Visual.OsdColorOctoResetB",     123},
+        {"Instance*.Metroid.Visual.OsdColorOctoDropR",      123},
         {"Instance*.Metroid.Visual.OsdColorOctoDropG",      255},
-        {"Instance*.Metroid.Visual.OsdColorOctoDropB",      255},
-        {"Instance*.Metroid.Visual.OsdColorOctoCondR",      255},
+        {"Instance*.Metroid.Visual.OsdColorOctoDropB",      123},
+        {"Instance*.Metroid.Visual.OsdColorOctoCondR",      123},
         {"Instance*.Metroid.Visual.OsdColorOctoCondG",      255},
-        {"Instance*.Metroid.Visual.OsdColorOctoCondB",      255},
-        {"Instance*.Metroid.Visual.OsdColorOctoMissingR",   255},
+        {"Instance*.Metroid.Visual.OsdColorOctoCondB",      123},
+        {"Instance*.Metroid.Visual.OsdColorOctoMissingR",   123},
         {"Instance*.Metroid.Visual.OsdColorOctoMissingG",   255},
-        {"Instance*.Metroid.Visual.OsdColorOctoMissingB",   255},
-        /* H211 "node stolen" separate color (default red) */
+        {"Instance*.Metroid.Visual.OsdColorOctoMissingB",   123},
+        /* H211 "node stolen" separate color (vanilla 0x001F = pure red) */
         {"Instance*.Metroid.Visual.OsdColorH211R",          255},
         {"Instance*.Metroid.Visual.OsdColorH211G",            0},
         {"Instance*.Metroid.Visual.OsdColorH211B",            0},
