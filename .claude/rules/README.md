@@ -7,3 +7,4 @@
 - [MelonPrime Refactoring / Performance History](melonprime-refactoring.md)
 - [MelonPrime Gameplay Runtime (No CustomHud)](melonprime-gameplay-runtime.md)
 - [MelonPrime Aim/Input (No CustomHud)](melonprime-aim-input.md)
+- [Compute Renderer Mosaic Bug — Investigation Log](compute-renderer-mosaic-bug.md)
