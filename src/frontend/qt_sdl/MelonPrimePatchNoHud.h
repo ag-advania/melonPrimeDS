@@ -11,6 +11,7 @@ namespace MelonPrime {
 
     void NoHudPatch_Apply(melonDS::NDS* nds, uint8_t romGroup);
     void NoHudPatch_Restore(melonDS::NDS* nds, uint8_t romGroup);
+    void NoHudPatch_ForceRestore(melonDS::NDS* nds, uint8_t romGroup);
     void NoHudPatch_ResetState();
     bool NoHudPatch_IsApplied();
 
