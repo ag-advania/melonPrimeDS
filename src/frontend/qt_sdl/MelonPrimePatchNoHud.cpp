@@ -7,6 +7,8 @@ namespace MelonPrime {
 
 static constexpr int NOHUD_PATCH_COUNT = 17;
 static constexpr uint32_t ARM_NOP = 0xE1A00000;
+static constexpr uint32_t HUD_TOGGLE_OFF = 0x00000001;
+static constexpr uint32_t HUD_TOGGLE_RESTORE = 0x00000011;
 
 struct HudPatchEntry { uint32_t addr, restoreValue; };
 
@@ -48,6 +50,16 @@ static constexpr HudPatchEntry kHudPatch[7][NOHUD_PATCH_COUNT] = {
      {0x02054DCC,0xE5801000}},
 };
 
+static constexpr uint32_t kHudTogglePatch[7] = {
+    0x020DB090, // JP1.0
+    0x020DB050, // JP1.1
+    0x020D91D0, // US1.0
+    0x020D9A50, // US1.1
+    0x020D9A70, // EU1.0
+    0x020D9AF0, // EU1.1
+    0x020D31C0, // KR1.0
+};
+
 static bool s_hudPatchApplied = false;
 
 bool NoHudPatch_IsApplied()
@@ -65,6 +77,7 @@ void NoHudPatch_Apply(melonDS::NDS* nds, uint8_t romGroup)
     if (s_hudPatchApplied) return;
     for (int i = 0; i < NOHUD_PATCH_COUNT; i++)
         nds->ARM9Write32(kHudPatch[romGroup][i].addr, ARM_NOP);
+    nds->ARM9Write32(kHudTogglePatch[romGroup], HUD_TOGGLE_OFF);
     s_hudPatchApplied = true;
 }
 
@@ -73,6 +86,19 @@ void NoHudPatch_Restore(melonDS::NDS* nds, uint8_t romGroup)
     if (!s_hudPatchApplied) return;
     for (int i = 0; i < NOHUD_PATCH_COUNT; i++)
         nds->ARM9Write32(kHudPatch[romGroup][i].addr, kHudPatch[romGroup][i].restoreValue);
+    nds->ARM9Write32(kHudTogglePatch[romGroup], HUD_TOGGLE_RESTORE);
+    s_hudPatchApplied = false;
+}
+
+// Defensive: write restoreValues regardless of s_hudPatchApplied tracking.
+// Used when we want to guarantee clean ARM9 state even if our flag is out of
+// sync with actual RAM (e.g. savestate loads, persistent main RAM, JIT cache
+// edge cases).
+void NoHudPatch_ForceRestore(melonDS::NDS* nds, uint8_t romGroup)
+{
+    for (int i = 0; i < NOHUD_PATCH_COUNT; i++)
+        nds->ARM9Write32(kHudPatch[romGroup][i].addr, kHudPatch[romGroup][i].restoreValue);
+    nds->ARM9Write32(kHudTogglePatch[romGroup], HUD_TOGGLE_RESTORE);
     s_hudPatchApplied = false;
 }
 

@@ -207,6 +207,10 @@ namespace MelonPrime {
     {
         m_flags.clear(StateFlags::BIT_IN_GAME);
 #ifdef MELONPRIME_CUSTOM_HUD
+        if (m_flags.test(StateFlags::BIT_ROM_DETECTED)) {
+            CustomHud_EnsurePatchRestored(
+                emuInstance, localCfg, m_currentRom, m_playerPosition, false);
+        }
         CustomHud_ResetPatchState();
 #endif
 #ifdef MELONPRIME_DS
@@ -358,6 +362,10 @@ namespace MelonPrime {
             }
             else if (m_flags.test(StateFlags::BIT_IN_GAME_INIT)) {
                 m_flags.clear(StateFlags::BIT_IN_GAME_INIT);
+#ifdef MELONPRIME_CUSTOM_HUD
+                CustomHud_EnsurePatchRestored(
+                    emuInstance, localCfg, m_currentRom, m_playerPosition, false);
+#endif
                 OsdColor_RestoreOnce(emuInstance->getNDS(), m_currentRom);
             }
 

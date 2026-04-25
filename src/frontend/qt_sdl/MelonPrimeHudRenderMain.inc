@@ -37,6 +37,10 @@ HOT_FUNCTION QRect CustomHud_Render(
 
     // Edit mode: draw element overlay every frame, skip normal HUD rendering.
     if (UNLIKELY(s_editMode)) {
+        HudRuntimeState st = {};
+        if (isInGame && ReadHudRuntimeBaseState(emu, rom, playerPosition, st))
+            CustomHud_RestoreNativeHudState(rom, st, true);
+
         s_editHudScale      = hudScale;
         s_editTopStretchX   = topStretchX;
         s_editRomCopy       = rom;
@@ -53,21 +57,21 @@ HOT_FUNCTION QRect CustomHud_Render(
 
     if (!isInGame) return QRect();
 
-    // Defensive: caller (Screen.cpp) gates on the epoch-cached m_hudEnabled,
-    // which can be stale right after the user toggles the setting. Re-check
-    // the live config so we never apply NoHudPatch / write hudToggle while
-    // CustomHUD is actually disabled.
-    if (!CustomHud_IsEnabled(localCfg)) return QRect();
-
     HudRuntimeState st = {};
     if (!ReadHudRuntimeBaseState(emu, rom, playerPosition, st))
         return QRect();
 
-    NoHudPatch_Apply(st.nds, st.romGroup);
-
-    Write8(st.ram, rom.hudToggle, st.isStartPressed ? 0x11 : 0x01);
+    // Defensive: caller (Screen.cpp) gates on the epoch-cached m_hudEnabled,
+    // which can be stale right after the user toggles the setting. Re-check
+    // the live config so we never apply NoHudPatch / write hudToggle while
+    // CustomHUD is actually disabled.
+    if (!CustomHud_IsEnabled(localCfg)) {
+        CustomHud_RestoreNativeHudState(rom, st, true);
+        return QRect();
+    }
 
     if (ShouldHideForGameplayState(st.isStartPressed, st.currentHP, st.isGameOver)) {
+        CustomHud_RestoreNativeHudState(rom, st, true);
         // If settings were saved while the HUD is hidden, still refresh once so
         // Screen.cpp's epoch-based CustomHUD enable cache observes the change.
         if (UNLIKELY(!s_cache.valid)) {
@@ -76,6 +80,11 @@ HOT_FUNCTION QRect CustomHud_Render(
         }
         return QRect();
     }
+
+    NoHudPatch_Apply(st.nds, st.romGroup);
+    CustomHud_MarkNoHudPatchDesired();
+
+    st.nds->ARM9Write32(rom.hudToggle, 0x00000001u);
 
     // P-3: Refresh config cache only when invalidated, or recompute anchor
     //       positions when topStretchX changes (window resize).
