@@ -202,8 +202,11 @@ void OsdColor_ApplyOnce(EmuInstance* emu, Config::Table& localCfg,
     if (!s_osdConfigDirty) return;
     s_osdConfigDirty = false;
 
-    const bool globalEnabled = localCfg.GetBool(kCfgOsdColorEnable);
-    const bool h211Enabled   = localCfg.GetBool(kCfgOsdColorH211Enable);
+    // OsdColor patches are part of the Custom HUD feature; force-disable when
+    // CustomHUD itself is off so toggling it cleanly restores all OSD literals.
+    const bool customHudEnabled = localCfg.GetBool("Metroid.Visual.CustomHUD");
+    const bool globalEnabled = customHudEnabled && localCfg.GetBool(kCfgOsdColorEnable);
+    const bool h211Enabled   = customHudEnabled && localCfg.GetBool(kCfgOsdColorH211Enable);
 
     // Restore any previously applied state so mode changes are handled cleanly
     OsdColor_RestoreOnce(emu->getNDS(), rom);

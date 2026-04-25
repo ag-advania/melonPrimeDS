@@ -734,6 +734,10 @@ void CustomHud_InvalidateConfigCache()
     for (int i = 0; i < 9; i++) s_weaponTintValid[i] = false;
     s_effectiveRadarHunterID = 0xFF; // P-13: force re-evaluation of effective radar color
     s_staticDirtyStale = true;       // OPT-DR1: force static dirty rect recomputation
+    // Bump epoch immediately so Screen.cpp's m_hudEnabled cache refreshes on the
+    // next frame. Without this, when CustomHUD is toggled off, the stale cache
+    // keeps Render() running for one extra frame and re-applies NoHudPatch.
+    if (++s_cacheEpoch == 0) s_cacheEpoch = 1;
 }
 
 uint32_t CustomHud_GetCacheEpoch()

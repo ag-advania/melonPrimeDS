@@ -53,6 +53,12 @@ HOT_FUNCTION QRect CustomHud_Render(
 
     if (!isInGame) return QRect();
 
+    // Defensive: caller (Screen.cpp) gates on the epoch-cached m_hudEnabled,
+    // which can be stale right after the user toggles the setting. Re-check
+    // the live config so we never apply NoHudPatch / write hudToggle while
+    // CustomHUD is actually disabled.
+    if (!CustomHud_IsEnabled(localCfg)) return QRect();
+
     HudRuntimeState st = {};
     if (!ReadHudRuntimeBaseState(emu, rom, playerPosition, st))
         return QRect();
