@@ -707,25 +707,18 @@ static void CustomHud_MarkNoHudPatchDesired()
     s_hudPatchForceRestorePending = true;
 }
 
-static void CustomHud_RestoreNativeHudState(const RomAddresses& rom,
-                                            const HudRuntimeState& st,
-                                            bool restoreHudToggleForViewMode)
+static void CustomHud_RestoreNativeHudState(const RomAddresses& /*rom*/,
+                                            const HudRuntimeState& st)
 {
     const bool needForceRestore = s_hudPatchForceRestorePending;
-    if (!NoHudPatch_IsApplied() && !needForceRestore)
+    if (NoHudPatch_GetAppliedMask() == 0 && !needForceRestore)
         return;
 
     if (needForceRestore) {
-        NoHudPatch_ForceRestore(st.nds, st.romGroup);
+        NoHudPatch_RestoreAll(st.nds, st.romGroup);
         s_hudPatchForceRestorePending = false;
     } else {
-        NoHudPatch_Restore(st.nds, st.romGroup);
-    }
-
-    if (restoreHudToggleForViewMode) {
-        const uint8_t vm = Read8(st.ram, rom.baseViewMode + st.offP);
-        const uint32_t hudToggle = (vm == 0x00) ? 0x0000001Fu : 0x00000011u;
-        st.nds->ARM9Write32(rom.hudToggle, hudToggle);
+        NoHudPatch_Sync(st.nds, st.romGroup, 0);
     }
 }
 
@@ -747,7 +740,7 @@ void CustomHud_EnsurePatchRestored(
     if (!ReadHudRuntimeBaseState(emu, rom, playerPosition, st))
         return;
 
-    CustomHud_RestoreNativeHudState(rom, st, isInGame);
+    CustomHud_RestoreNativeHudState(rom, st);
 }
 
 void CustomHud_ResetPatchState()

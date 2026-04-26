@@ -39,7 +39,7 @@ HOT_FUNCTION QRect CustomHud_Render(
     if (UNLIKELY(s_editMode)) {
         HudRuntimeState st = {};
         if (isInGame && ReadHudRuntimeBaseState(emu, rom, playerPosition, st))
-            CustomHud_RestoreNativeHudState(rom, st, true);
+            CustomHud_RestoreNativeHudState(rom, st);
 
         s_editHudScale      = hudScale;
         s_editTopStretchX   = topStretchX;
@@ -66,12 +66,12 @@ HOT_FUNCTION QRect CustomHud_Render(
     // the live config so we never apply NoHudPatch / write hudToggle while
     // CustomHUD is actually disabled.
     if (!CustomHud_IsEnabled(localCfg)) {
-        CustomHud_RestoreNativeHudState(rom, st, true);
+        CustomHud_RestoreNativeHudState(rom, st);
         return QRect();
     }
 
     if (ShouldHideForGameplayState(st.isStartPressed, st.currentHP, st.isGameOver)) {
-        CustomHud_RestoreNativeHudState(rom, st, true);
+        CustomHud_RestoreNativeHudState(rom, st);
         // If settings were saved while the HUD is hidden, still refresh once so
         // Screen.cpp's epoch-based CustomHUD enable cache observes the change.
         if (UNLIKELY(!s_cache.valid)) {
@@ -81,17 +81,16 @@ HOT_FUNCTION QRect CustomHud_Render(
         return QRect();
     }
 
-    NoHudPatch_Apply(st.nds, st.romGroup);
-    CustomHud_MarkNoHudPatchDesired();
-
-    st.nds->ARM9Write32(rom.hudToggle, 0x00000001u);
-
     // P-3: Refresh config cache only when invalidated, or recompute anchor
     //       positions when topStretchX changes (window resize).
     //       Also refresh when hudScale changes — crosshair rects and textDrawScale
     //       are in actual output pixels divided by hudScale.
+    // Refreshed BEFORE NoHudPatch_Sync so c.noHudMask is current.
     EnsureCachedConfigForFrame(localCfg, xf);
     const CachedHudConfig& c = s_cache;
+
+    NoHudPatch_Sync(st.nds, st.romGroup, c.noHudMask);
+    CustomHud_MarkNoHudPatchDesired();
 
     // OPT-DR1: Refresh static dirty rect when transform or config changed.
     EnsureStaticDirtyForFrame(c, xf);
