@@ -543,6 +543,24 @@ namespace Config
         {"Instance*.Metroid.Aim.Enable.Accumulator", false},
         /* MelonPrimeDS Crosshair bools { */
         {"Instance*.Metroid.Visual.CustomHUD", false},
+        // Per-element default-HUD hide patches (DisableDefaultHud section).
+        // Defaults match the legacy bulk-hide behavior so existing CustomHUD
+        // users see no visual change on upgrade.
+        {"Instance*.Metroid.Visual.DisableDefaultHud.Helmet",            true},
+        {"Instance*.Metroid.Visual.DisableDefaultHud.Ammo",              true},
+        {"Instance*.Metroid.Visual.DisableDefaultHud.WeaponIcon",        true},
+        {"Instance*.Metroid.Visual.DisableDefaultHud.HP",                true},
+        {"Instance*.Metroid.Visual.DisableDefaultHud.Crosshair",         true},
+        {"Instance*.Metroid.Visual.DisableDefaultHud.Bomb",              true},
+        // Per-mode top-screen score row patches. Default true for all so
+        // the custom MatchStatus HUD replaces the native row in every mode.
+        {"Instance*.Metroid.Visual.DisableDefaultHud.ScoreBattle",       true},
+        {"Instance*.Metroid.Visual.DisableDefaultHud.ScoreSurvival",     true},
+        {"Instance*.Metroid.Visual.DisableDefaultHud.ScorePrimeHunter",  true},
+        {"Instance*.Metroid.Visual.DisableDefaultHud.ScoreBounty",       true},
+        {"Instance*.Metroid.Visual.DisableDefaultHud.ScoreCapture",      true},
+        {"Instance*.Metroid.Visual.DisableDefaultHud.ScoreDefender",     true},
+        {"Instance*.Metroid.Visual.DisableDefaultHud.ScoreNode",         true},
         {"Instance*.Metroid.Visual.HudAutoScaleEnable", true},
         {"Instance*.Metroid.Visual.CrosshairOutline", true},
         {"Instance*.Metroid.Visual.CrosshairCenterDot", true},
@@ -633,6 +651,7 @@ namespace Config
         {"Instance*.Metroid.UI.SectionHudWeaponInventoryHighlight",    false},
         {"Instance*.Metroid.UI.SectionHudWeaponInventoryOutline",      false},
         {"Instance*.Metroid.UI.SectionHudWeaponInventoryIconOutline", false},
+        {"Instance*.Metroid.UI.SectionDisableDefaultHud",              false},
         /* MelonPrimeDS Crosshair bools } */
         /* MelonPrimeDS OSD Color section toggles { */
         {"Instance*.Metroid.UI.SectionOsdColor",         false},
