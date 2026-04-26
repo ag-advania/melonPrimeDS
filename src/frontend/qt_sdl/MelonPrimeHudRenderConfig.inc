@@ -184,6 +184,9 @@ struct CachedHudConfig {
     float hpOpacity, weaponOpacity, matchStatusOpacity, rankOpacity, bombLeftOpacity;
     float hpGaugeOpacity, wpnIconOpacity, ammoGaugeOpacity;
     float bombIconOpacity, timeLeftOpacity, timeLimitOpacity;
+    // DisableDefaultHud: bitmask of NoHudElement bits the user wants hidden.
+    // Cached once per epoch so the hot path doesn't issue 12 GetBool per frame.
+    uint16_t noHudMask;
     bool valid;
 };
 static CachedHudConfig s_cache = { .valid = false };
@@ -659,6 +662,23 @@ static void RefreshCachedConfig(Config::Table& cfg, float topStretchX = 1.0f, fl
     c.bombIconOpacity     = (float)cfg.GetDouble("Metroid.Visual.HudBombIconOpacity");
     c.timeLeftOpacity     = (float)cfg.GetDouble("Metroid.Visual.HudTimeLeftOpacity");
     c.timeLimitOpacity    = (float)cfg.GetDouble("Metroid.Visual.HudTimeLimitOpacity");
+    {
+        uint16_t m = 0;
+        if (cfg.GetBool("Metroid.Visual.DisableDefaultHud.Helmet"))            m |= (1u << NOHUD_HELMET);
+        if (cfg.GetBool("Metroid.Visual.DisableDefaultHud.Ammo"))              m |= (1u << NOHUD_AMMO);
+        if (cfg.GetBool("Metroid.Visual.DisableDefaultHud.WeaponIcon"))        m |= (1u << NOHUD_WEAPONICON);
+        if (cfg.GetBool("Metroid.Visual.DisableDefaultHud.HP"))                m |= (1u << NOHUD_HP);
+        if (cfg.GetBool("Metroid.Visual.DisableDefaultHud.Crosshair"))         m |= (1u << NOHUD_CROSSHAIR);
+        if (cfg.GetBool("Metroid.Visual.DisableDefaultHud.ScoreBattle"))       m |= (1u << NOHUD_SCORE_BATTLE);
+        if (cfg.GetBool("Metroid.Visual.DisableDefaultHud.ScoreSurvival"))     m |= (1u << NOHUD_SCORE_SURVIVAL);
+        if (cfg.GetBool("Metroid.Visual.DisableDefaultHud.ScorePrimeHunter"))  m |= (1u << NOHUD_SCORE_PRIMEHUNTER);
+        if (cfg.GetBool("Metroid.Visual.DisableDefaultHud.ScoreBounty"))       m |= (1u << NOHUD_SCORE_BOUNTY);
+        if (cfg.GetBool("Metroid.Visual.DisableDefaultHud.ScoreCapture"))      m |= (1u << NOHUD_SCORE_CAPTURE);
+        if (cfg.GetBool("Metroid.Visual.DisableDefaultHud.ScoreDefender"))     m |= (1u << NOHUD_SCORE_DEFENDER);
+        if (cfg.GetBool("Metroid.Visual.DisableDefaultHud.ScoreNode"))         m |= (1u << NOHUD_SCORE_NODE);
+        if (cfg.GetBool("Metroid.Visual.DisableDefaultHud.Bomb"))              m |= (1u << NOHUD_BOMB);
+        c.noHudMask = m;
+    }
     RecomputeAnchorPositions(topStretchX);
     // P-17: Rebuild crosshair outline stamp now that geometry is final.
     RebuildCrosshairOutlineStamp(c.crosshair);
