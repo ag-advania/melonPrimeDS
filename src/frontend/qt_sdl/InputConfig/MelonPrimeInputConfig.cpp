@@ -388,6 +388,29 @@ struct HudMainSec {
 #define P_ANCHY(lbl, key)             { lbl, HWType::AnchorY3,     key, 0,2,1, nullptr, nullptr }
 #define P_LPOS(lbl, key)              { lbl, HWType::LabelPos5,    key, 0,4,1, nullptr, nullptr }
 
+// --- Section: DISABLE DEFAULT HUD (per-element ARM patches) ---
+// Each toggle hides one piece of the game's built-in HUD via a single
+// ARM instruction patch. Score rows are per-mode (Battle / Survival /
+// Prime Hunter / Bounty / Capture / Defender / Node) — only the active
+// mode's row is touched, so disabling unrelated modes is harmless.
+static const HudWidgetProp kSecDisableDefaultHud[] = {
+    P_LABEL("— Common HUD —"),
+    P_BOOL("Hide Helmet (Visor Mask)",       "Metroid.Visual.DisableDefaultHud.Helmet"),
+    P_BOOL("Hide Ammo",                      "Metroid.Visual.DisableDefaultHud.Ammo"),
+    P_BOOL("Hide Weapon Icon",               "Metroid.Visual.DisableDefaultHud.WeaponIcon"),
+    P_BOOL("Hide HP",                        "Metroid.Visual.DisableDefaultHud.HP"),
+    P_BOOL("Hide Crosshair",                 "Metroid.Visual.DisableDefaultHud.Crosshair"),
+    P_BOOL("Hide Bomb (Boost Ball kept)",    "Metroid.Visual.DisableDefaultHud.Bomb"),
+    P_LABEL("— Score Row (per mode) —"),
+    P_BOOL("Hide Score: Battle",             "Metroid.Visual.DisableDefaultHud.ScoreBattle"),
+    P_BOOL("Hide Score: Survival",           "Metroid.Visual.DisableDefaultHud.ScoreSurvival"),
+    P_BOOL("Hide Score: Prime Hunter",       "Metroid.Visual.DisableDefaultHud.ScorePrimeHunter"),
+    P_BOOL("Hide Score: Bounty",             "Metroid.Visual.DisableDefaultHud.ScoreBounty"),
+    P_BOOL("Hide Score: Capture",            "Metroid.Visual.DisableDefaultHud.ScoreCapture"),
+    P_BOOL("Hide Score: Defender",           "Metroid.Visual.DisableDefaultHud.ScoreDefender"),
+    P_BOOL("Hide Score: Node",               "Metroid.Visual.DisableDefaultHud.ScoreNode"),
+};
+
 // --- Section 1: HUD SCALE ---
 static const HudWidgetProp kSecTextScale[] = {
     P_INT("Text Scale (Base %)", "Metroid.Visual.HudTextScale", 100, 300, 10),
@@ -964,6 +987,8 @@ static const HudSubSec kSubsOsdColor[] = {
 
 // ── Main section groups ──
 static const HudMainSec kHudMainSections[] = {
+    { "DISABLE DEFAULT HUD", "Metroid.UI.SectionDisableDefaultHud",
+      _P(kSecDisableDefaultHud), nullptr, 0, /*preview*/ 0 },
     { "OUTLINE OVERRIDE",  "Metroid.UI.SectionHudGlobalOutline",
       _P(kSecGlobalOutline), nullptr, 0, /*preview*/ 0 },
         { "HUD SCALE",         "Metroid.UI.SectionHudTextScale",

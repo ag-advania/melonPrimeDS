@@ -73,32 +73,52 @@ There is **no upper bound check** on `VariantWorkCount[0].w`. The downstream sor
 - The `atomicCompSwap` retry budget (32) may interact badly with workgroup divergence.
 - Possibly the binnedMask=0 path still leaves `inVariantOffset` consistency issues, since other groups for the same variant continue counting.
 
+### Attempt C: CPU-side bounds guard on `YSpanIndices` writes
+
+**Hypothesis tested:** [src/GPU3D_Compute.cpp:438](../../src/GPU3D_Compute.cpp#L438) sizes `YSpanIndices` and the GL `XSpanSetupMemory` buffer with the heuristic `64*2048*ScaleFactor`. The 64 represents an assumed "average polygon height in DS coords"; large alpha effects could push the actual per-frame `numSetupIndices` over this budget. The two write sites at [line 936-940](../../src/GPU3D_Compute.cpp#L936) and [line 1001-1005](../../src/GPU3D_Compute.cpp#L1001) had **no bounds check** — `std::vector::operator[]` with an out-of-range index is undefined behavior, and the subsequent `glBufferSubData(..., numSetupIndices*4*2, ...)` upload at [line 1027](../../src/GPU3D_Compute.cpp#L1027) would silently fail with `GL_INVALID_VALUE` if the size exceeded the GL buffer's capacity, leaving the shader to read stale span data.
+
+This hypothesis matched all the symptoms (Magmaul/death effects produce many tall polygons; close range increases polygon screen height; mosaic-shaped corruption matches stale `XSpanSetups` causing `BinPolygon` to bin polygons into wrong tiles; OSD bleed-through matches a frame-wide shared buffer being corrupted; Compute-only because Software/OpenGL don't use a span buffer; and most importantly **explains why both A and B did nothing** — neither touched the relevant buffer).
+
+**Change:**
+
+- Added `int MaxYSpanIndicesAllocated` member to [src/GPU3D_Compute.h](../../src/GPU3D_Compute.h) and cached the budget there at `SetRenderSettings` time (replaced the local `int maxYSpanIndices` so `RenderFrame()` could see the value).
+- Wrapped the dummy-path write ([line 936-940](../../src/GPU3D_Compute.cpp#L936)) with `if (numSetupIndices < MaxYSpanIndicesAllocated)`. On overflow, collapsed the polygon to zero height (`RenderPolygons[i].YBot = RenderPolygons[i].YTop`) so `BinPolygon`'s early-out would skip it.
+- In the multi-row loop ([line 951-1006](../../src/GPU3D_Compute.cpp#L951)), added `if (numSetupIndices >= MaxYSpanIndicesAllocated) { RenderPolygons[i].YBot = (s32)y; break; }` to truncate the polygon to whatever rows had been written.
+
+**Result:** **Did not fix the bug.** Reverted.
+
+**What this tells us:**
+
+- The `YSpanIndices` overflow hypothesis is **wrong** (or at least not the dominant cause). Either no overflow is happening in practice, or overflow happens and the dropped polygons are somewhere other than the corrupting effect.
+- All three single-buffer overflow hypotheses (`MaxWorkTiles` global pool, binning sort buffer, `YSpanIndices`) have been eliminated by direct testing. The bug is almost certainly **not a buffer overflow**.
+
 ## Things to investigate next
 
-1. **Confirm or refute the overflow hypothesis empirically.**
-   Add a debug counter: in the binning shader, atomicMax a separate SSBO field with `workOffset + workCount`, then read it back per frame on the CPU side and log the peak value vs `MaxWorkTiles`. If peak << MaxWorkTiles during the buggy frame, overflow is *not* the cause.
+**Strong negative result from C:** with three buffer-overflow hypotheses all empirically refuted, redirect investigation away from buffer sizing and toward shader-side numerical / pipeline issues.
 
-2. **Look at other buffers that could overflow:**
-   - `BinningMaskAndOffset` per-tile per-group entries — bounded by `BinStride = 64`, hardware-limited by 2048 polygons. Probably safe.
-   - Per-variant counters (`VariantWorkCount[variantIdx].z`) — could a single variant exceed reasonable counts?
-   - `YSpanIndices` — `maxYSpanIndices = 64 * 2048 * ScaleFactor` ([GPU3D_Compute.cpp:438](../../src/GPU3D_Compute.cpp#L438)). Likely safe but verify.
-   - `WorkDescMemory` size = `MaxWorkTiles*2*4*2` ([GPU3D_Compute.cpp:426](../../src/GPU3D_Compute.cpp#L426)).
+1. **Test reproduction in vanilla melonDS (compute renderer).**
+   This is the cheapest first step now. If vanilla melonDS reproduces the same bug, it's an upstream Compute renderer issue we should fix at the source rather than patching downstream. If only MelonPrimeDS reproduces, narrow to our diff.
 
-3. **Suspect transparent-polygon path specifically.**
-   Magmaul blast and death effects are alpha-blended. The compute renderer's transparent rasterise path differs from opaque. Look at `Rasterise` shader (around [GPU3D_Compute_shaders.h:1056](../../src/GPU3D_Compute_shaders.h#L1056)) and how it composites transparent layers.
+2. **Diff our compute renderer vs vanilla melonDS develop.**
+   This fork has many "improved", "optimized" commits ([git log](#) for `GPU3D_Compute*`) that touched the C++ side. Most look like comment / TileSize-formula micro-optimizations, but a regression smuggled in there is plausible. Bisect the compute renderer commits if vanilla doesn't repro.
 
-4. **Suspect shadow-volume / shadow-mask polygons.**
-   The rasterizer has special handling for `isShadowMask` ([GPU3D_Compute_shaders.h:1343](../../src/GPU3D_Compute_shaders.h#L1343)). Death effects in MPH may use shadow-volume tricks for the dissolve.
+3. **Suspect transparent-polygon path / shadow-mask polygons specifically.**
+   Magmaul blast and death effects are alpha-blended; death effects may also use shadow-volume tricks for the dissolve. Look at `Rasterise` shader's transparent path (around [GPU3D_Compute_shaders.h:1056](../../src/GPU3D_Compute_shaders.h#L1056)) and `isShadowMask` handling (around [GPU3D_Compute_shaders.h:1343](../../src/GPU3D_Compute_shaders.h#L1343)). The mosaic shape might come from a per-tile composition bug, not a binning bug.
 
-5. **Check upstream melonDS issues / discussions** for compute renderer artifacts on alpha-heavy effects — this might be a known unfixed issue with a discussed root cause we can leverage.
+4. **Numerical edge cases when polygons are very close to the camera.**
+   "Worse when approaching" suggests W getting very small. Look at `XRecip` / `YRecip` calculation and Q-format precision. A divide-by-near-zero or saturation could produce extreme `XSpanSetups` values that bin polygons into wildly wrong tiles. Check `InterpSpans` shader where these are computed.
 
-6. **Test reproduction in vanilla melonDS (compute renderer).**
-   If vanilla melonDS reproduces the same bug, this is purely an upstream issue and fixes should be coordinated upstream. If only MelonPrimeDS reproduces it, something in our local edits to compute renderer / shaders / config introduced or exposed it.
+5. **Add per-frame debug instrumentation.**
+   Now that overflow is ruled out, the cheapest next step on our side is to dump runtime numbers: peak `numSetupIndices` per frame, peak `VariantWorkCount[0].w`, polygon counts, and the bounding boxes of polygons during a buggy frame vs a clean frame. If we see anomalous values (e.g. polygon with `XMin=-2147483648` or `YBot=2000` at native res), we have the smoking gun.
 
-7. **Driver / GPU dependency.**
-   Note GPU vendor and driver version. Some out-of-bounds SSBO behavior is implementation-defined and may differ between NVIDIA / AMD / Intel.
+6. **Driver / GPU dependency.**
+   Note GPU vendor and driver version on the reproducing machine. Some shader behavior (especially around SSBO synchronization, denormalized floats, and integer overflow in shaders) is implementation-defined.
+
+7. **Bisect within MPH itself.**
+   Confirm whether the bug repros in single-player only, multiplayer, both. Confirm it repros in Adventure mode and Battle mode. The differences in poly counts and effects between modes can hint at which polygon kind triggers it.
 
 ## Files touched and reverted in this investigation
 
-- [src/GPU3D_Compute.cpp](../../src/GPU3D_Compute.cpp) — Attempt A (reverted)
+- [src/GPU3D_Compute.cpp](../../src/GPU3D_Compute.cpp) — Attempts A and C (both reverted)
 - [src/GPU3D_Compute_shaders.h](../../src/GPU3D_Compute_shaders.h) — Attempt B (reverted)
+- [src/GPU3D_Compute.h](../../src/GPU3D_Compute.h) — Attempt C (reverted; added `MaxYSpanIndicesAllocated` member)

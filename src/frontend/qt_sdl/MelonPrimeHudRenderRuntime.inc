@@ -695,6 +695,33 @@ bool CustomHud_ShouldDrawRadarOverlay(EmuInstance* emu, const RomAddresses& rom,
 {
     return !CustomHud_ShouldHideForGameplayState(emu, rom, playerPosition);
 }
+// One-shot guard: when CustomHUD transitions to disabled, perform a full
+// ForceRestore on the next in-game frame regardless of s_hudPatchApplied,
+// so any out-of-sync RAM state (savestate / persistent RAM / JIT corner
+// cases) is normalized exactly once. Reset to true when CustomHUD becomes
+// enabled or on emu start/stop, so a future disable triggers it again.
+static bool s_hudPatchForceRestorePending = true;
+
+static void CustomHud_MarkNoHudPatchDesired()
+{
+    s_hudPatchForceRestorePending = true;
+}
+
+static void CustomHud_RestoreNativeHudState(const RomAddresses& /*rom*/,
+                                            const HudRuntimeState& st)
+{
+    const bool needForceRestore = s_hudPatchForceRestorePending;
+    if (NoHudPatch_GetAppliedMask() == 0 && !needForceRestore)
+        return;
+
+    if (needForceRestore) {
+        NoHudPatch_RestoreAll(st.nds, st.romGroup);
+        s_hudPatchForceRestorePending = false;
+    } else {
+        NoHudPatch_Sync(st.nds, st.romGroup, 0);
+    }
+}
+
 void CustomHud_EnsurePatchRestored(
     EmuInstance* emu,
     Config::Table& localCfg,
@@ -702,18 +729,18 @@ void CustomHud_EnsurePatchRestored(
     uint8_t playerPosition,
     bool isInGame)
 {
-    if (!isInGame) return;
-    if (CustomHud_IsEnabled(localCfg)) return; // HUD enabled — Render() handles patches
-    if (!NoHudPatch_IsApplied()) return;
+    if (isInGame && CustomHud_IsEnabled(localCfg)) {
+        // HUD is enabled — Render() handles patches. Re-arm the force-restore
+        // for the next disable event.
+        CustomHud_MarkNoHudPatchDesired();
+        return;
+    }
 
-    melonDS::NDS* nds = emu->getNDS();
-    melonDS::u8* ram = nds->MainRAM;
-    const uint32_t offP = static_cast<uint32_t>(playerPosition) * Consts::PLAYER_ADDR_INC;
-    const uint8_t romGroup = rom.romGroupIndex;
+    HudRuntimeState st = {};
+    if (!ReadHudRuntimeBaseState(emu, rom, playerPosition, st))
+        return;
 
-    NoHudPatch_Restore(nds, romGroup);
-    uint8_t vm = Read8(ram, rom.baseViewMode + offP);
-    Write8(ram, rom.hudToggle, (vm == 0x00) ? 0x1F : 0x11);
+    CustomHud_RestoreNativeHudState(rom, st);
 }
 
 void CustomHud_ResetPatchState()
@@ -724,6 +751,7 @@ void CustomHud_ResetPatchState()
     s_staticDirtyStale = true;
     s_chPrevPxCx = INT_MIN;
     s_chPrevPxCy = INT_MIN;
+    s_hudPatchForceRestorePending = true;
 }
 
 // P-3: Called from settings dialog save to trigger config re-read next frame
@@ -734,6 +762,10 @@ void CustomHud_InvalidateConfigCache()
     for (int i = 0; i < 9; i++) s_weaponTintValid[i] = false;
     s_effectiveRadarHunterID = 0xFF; // P-13: force re-evaluation of effective radar color
     s_staticDirtyStale = true;       // OPT-DR1: force static dirty rect recomputation
+    // Bump epoch immediately so Screen.cpp's m_hudEnabled cache refreshes on the
+    // next frame. Without this, when CustomHUD is toggled off, the stale cache
+    // keeps Render() running for one extra frame and re-applies NoHudPatch.
+    if (++s_cacheEpoch == 0) s_cacheEpoch = 1;
 }
 
 uint32_t CustomHud_GetCacheEpoch()

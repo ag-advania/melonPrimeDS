@@ -37,6 +37,10 @@ HOT_FUNCTION QRect CustomHud_Render(
 
     // Edit mode: draw element overlay every frame, skip normal HUD rendering.
     if (UNLIKELY(s_editMode)) {
+        HudRuntimeState st = {};
+        if (isInGame && ReadHudRuntimeBaseState(emu, rom, playerPosition, st))
+            CustomHud_RestoreNativeHudState(rom, st);
+
         s_editHudScale      = hudScale;
         s_editTopStretchX   = topStretchX;
         s_editRomCopy       = rom;
@@ -57,11 +61,20 @@ HOT_FUNCTION QRect CustomHud_Render(
     if (!ReadHudRuntimeBaseState(emu, rom, playerPosition, st))
         return QRect();
 
-    NoHudPatch_Apply(st.nds, st.romGroup);
-
-    Write8(st.ram, rom.hudToggle, st.isStartPressed ? 0x11 : 0x01);
+    // Defensive: caller (Screen.cpp) gates on the epoch-cached m_hudEnabled,
+    // which can be stale right after the user toggles the setting. Re-check
+    // the live config so we never apply NoHudPatch / write hudToggle while
+    // CustomHUD is actually disabled.
+    if (!CustomHud_IsEnabled(localCfg)) {
+        CustomHud_RestoreNativeHudState(rom, st);
+        return QRect();
+    }
 
     if (ShouldHideForGameplayState(st.isStartPressed, st.currentHP, st.isGameOver)) {
+        // Per-element patches NOP individual ARM draw instructions, so the
+        // start menu / death / game-over screens are unaffected by them — no
+        // need to restore patches just because we're skipping our own overlay
+        // for this frame.
         // If settings were saved while the HUD is hidden, still refresh once so
         // Screen.cpp's epoch-based CustomHUD enable cache observes the change.
         if (UNLIKELY(!s_cache.valid)) {
@@ -75,8 +88,12 @@ HOT_FUNCTION QRect CustomHud_Render(
     //       positions when topStretchX changes (window resize).
     //       Also refresh when hudScale changes — crosshair rects and textDrawScale
     //       are in actual output pixels divided by hudScale.
+    // Refreshed BEFORE NoHudPatch_Sync so c.noHudMask is current.
     EnsureCachedConfigForFrame(localCfg, xf);
     const CachedHudConfig& c = s_cache;
+
+    NoHudPatch_Sync(st.nds, st.romGroup, c.noHudMask);
+    CustomHud_MarkNoHudPatchDesired();
 
     // OPT-DR1: Refresh static dirty rect when transform or config changed.
     EnsureStaticDirtyForFrame(c, xf);
