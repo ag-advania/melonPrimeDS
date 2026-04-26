@@ -71,7 +71,10 @@ HOT_FUNCTION QRect CustomHud_Render(
     }
 
     if (ShouldHideForGameplayState(st.isStartPressed, st.currentHP, st.isGameOver)) {
-        CustomHud_RestoreNativeHudState(rom, st);
+        // Per-element patches NOP individual ARM draw instructions, so the
+        // start menu / death / game-over screens are unaffected by them — no
+        // need to restore patches just because we're skipping our own overlay
+        // for this frame.
         // If settings were saved while the HUD is hidden, still refresh once so
         // Screen.cpp's epoch-based CustomHUD enable cache observes the change.
         if (UNLIKELY(!s_cache.valid)) {
