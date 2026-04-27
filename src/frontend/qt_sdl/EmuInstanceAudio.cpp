@@ -164,7 +164,7 @@ void EmuInstance::audioCallback(void* data, Uint8* stream, int len)
     EmuInstance* inst = (EmuInstance*)data;
     len /= (sizeof(s16) * 2);
 
-    double skew = std::clamp(inst->targetFPS / INTERNAL_FRAME_RATE, 0.995, 1.005);
+    double skew = std::max(inst->targetFPS / INTERNAL_FRAME_RATE, 0.5);
     inst->nds->SPU.SetOutputSkew(skew);
 
     int len_in = inst->audioGetNumSamplesOut(len);
