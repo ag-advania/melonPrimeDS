@@ -208,6 +208,50 @@
 							</item>
 
 							<item>
+								<widget class="QPushButton" name="btnToggleBugFix">
+									<property name="text"><string>▶ BUG FIXES</string></property>
+									<property name="checkable"><bool>true</bool></property>
+									<property name="checked"><bool>false</bool></property>
+									<property name="flat"><bool>true</bool></property>
+									<property name="styleSheet"><string>QPushButton { text-align: left; font-weight: bold; padding: 4px; } QPushButton::checked { font-weight: bold; }</string></property>
+								</widget>
+							</item>
+							<item>
+								<widget class="QWidget" name="sectionBugFix">
+									<layout class="QVBoxLayout" name="vboxBugFix">
+										<property name="leftMargin"><number>8</number></property>
+										<property name="topMargin"><number>2</number></property>
+										<property name="rightMargin"><number>0</number></property>
+										<property name="bottomMargin"><number>4</number></property>
+										<item>
+											<widget class="QCheckBox" name="cbMetroidFixWifiBitset">
+												<property name="text">
+													<string>Friend/Rival Wi-Fi Active Bitset Fix (v2)</string>
+												</property>
+											</widget>
+										</item>
+										<item>
+											<widget class="QLabel" name="lblMetroidFixWifiBitsetDesc">
+												<property name="text">
+													<string>Fixes the broken pseudo-64-bit bitset used to track active friend/rival slots.
+Slot indices 32-59 are not handled correctly in JP1.0 / US1.0 / EU1.0,
+causing some friends/rivals to be invisible online.
+Replaced with byte-indexed bitset matching JP1.1 / US1.1 / EU1.1 / KR1.0 behavior.
+(JP1.0 / US1.0 / EU1.0 only — no effect on other ROM versions)</string>
+												</property>
+												<property name="wordWrap">
+													<bool>true</bool>
+												</property>
+												<property name="enabled">
+													<bool>true</bool>
+												</property>
+											</widget>
+										</item>
+									</layout>
+								</widget>
+							</item>
+
+							<item>
 								<widget class="QPushButton" name="btnToggleGameplay">
 									<property name="text"><string>▶ GAMEPLAY TOGGLES</string></property>
 									<property name="checkable"><bool>true</bool></property>
@@ -743,15 +787,3 @@
 	<connections>
 	</connections>
 </ui>
-
-
-
-
-
-
-
-
-
-
-
-
