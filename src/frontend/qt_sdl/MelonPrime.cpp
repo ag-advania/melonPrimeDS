@@ -190,6 +190,7 @@ namespace MelonPrime {
 #ifdef MELONPRIME_DS
         InGameAspectRatio_ResetPatchState();
         OsdColor_ResetPatchState();
+        FixWifi_ResetPatchState();
 #endif
 
         ReloadConfigFlags();
@@ -216,6 +217,7 @@ namespace MelonPrime {
 #ifdef MELONPRIME_DS
         InGameAspectRatio_ResetPatchState();
         OsdColor_ResetPatchState();
+        FixWifi_ResetPatchState();
 #endif
     }
 
@@ -490,6 +492,7 @@ namespace MelonPrime {
         // Apply aspect ratio patch once per game join
         InGameAspectRatio_ApplyOnce(emuInstance, localCfg, m_currentRom);
         OsdColor_ApplyOnce(emuInstance, localCfg, m_currentRom);
+        FixWifi_ApplyOnce(emuInstance->getNDS(), localCfg, m_currentRom.romGroupIndex);
 #endif
 #ifdef MELONPRIME_CUSTOM_HUD
         // Cache battle settings for HUD display
