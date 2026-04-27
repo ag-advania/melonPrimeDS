@@ -169,7 +169,6 @@ void EmuInstance::audioCallback(void* data, Uint8* stream, int len)
 
     int len_in = inst->audioGetNumSamplesOut(len);
     if (len_in > inst->audioBufSize) len_in = inst->audioBufSize;
-    s16 buf_in[inst->audioBufSize*2];
 
     SDL_LockMutex(inst->audioSyncLock);
     int num_in = inst->nds->SPU.ReadOutput((s16*) stream, len_in);
@@ -189,12 +188,11 @@ void EmuInstance::audioCallback(void* data, Uint8* stream, int len)
             samples[i] = ((s32) samples[i] * inst->audioVolume) >> 8;
     }
 
-    int margin = 6;
-    if (num_in < len_in-margin)
+    if (num_in < len_in)
     {
         int last = num_in-1;
 
-        for (int i = num_in; i < len_in-margin; i++)
+        for (int i = num_in; i < len_in; i++)
             ((u32*)stream)[i] = ((u32*)stream)[last];
     }
 }
