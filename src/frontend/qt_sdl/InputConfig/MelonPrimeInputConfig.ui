@@ -277,10 +277,13 @@ Replaced with byte-indexed bitset matching JP1.1 / US1.1 / EU1.1 / KR1.0 behavio
 										<item>
 											<widget class="QLabel" name="lblMetroidUseFirmwareLanguageDesc">
 												<property name="text">
-													<string>Reads the DS firmware language setting and maps it to the game&apos;s internal language slot (EU-style).
-DS Japanese → Japanese/Korean slot (slot 5) instead of the EU default of English.
-DS English → English, French → French, German → German, Italian → Italian, Spanish → Spanish.
-(All ROMs supported)</string>
+													<string>&lt;html&gt;&lt;body&gt;
+Reads the DS firmware language and maps it to the game&apos;s language slot (EU-style).&lt;br&gt;
+DS Japanese → slot 5, English → English, French/German/Italian/Spanish → respective slots.&lt;br&gt;&lt;br&gt;
+&lt;b&gt;EU / US ROM:&lt;/b&gt; Works in all modes (multiplayer and adventure).&lt;br&gt;
+&lt;b&gt;JP ROM:&lt;/b&gt; Works in multiplayer only. &lt;font color=&quot;red&quot;&gt;&lt;b&gt;Adventure mode will not be playable with this enabled.&lt;/b&gt;&lt;/font&gt;&lt;br&gt;
+&lt;b&gt;KR ROM:&lt;/b&gt; Not yet supported (temporarily excluded).
+&lt;/body&gt;&lt;/html&gt;</string>
 												</property>
 												<property name="wordWrap">
 													<bool>true</bool>

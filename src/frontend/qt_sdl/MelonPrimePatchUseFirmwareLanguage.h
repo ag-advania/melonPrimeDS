@@ -10,7 +10,8 @@ namespace melonDS { class NDS; }
 
 namespace MelonPrime {
 
-    void UseFirmwareLanguage_ApplyOnce(melonDS::NDS* nds, Config::Table& cfg, uint8_t romGroupIndex);
+    // isInAdventureAddr: m_currentRom.isInAdventure — skips non-EU ROMs when byte == 0x02
+    void UseFirmwareLanguage_ApplyOnce(melonDS::NDS* nds, Config::Table& cfg, uint8_t romGroupIndex, uint32_t isInAdventureAddr);
     void UseFirmwareLanguage_ResetPatchState();
 
 } // namespace MelonPrime
