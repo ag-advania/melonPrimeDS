@@ -252,6 +252,49 @@ Replaced with byte-indexed bitset matching JP1.1 / US1.1 / EU1.1 / KR1.0 behavio
 							</item>
 
 							<item>
+								<widget class="QPushButton" name="btnToggleGameFeature">
+									<property name="text"><string>▶ GAME FEATURE IMPROVEMENTS</string></property>
+									<property name="checkable"><bool>true</bool></property>
+									<property name="checked"><bool>false</bool></property>
+									<property name="flat"><bool>true</bool></property>
+									<property name="styleSheet"><string>QPushButton { text-align: left; font-weight: bold; padding: 4px; } QPushButton::checked { font-weight: bold; }</string></property>
+								</widget>
+							</item>
+							<item>
+								<widget class="QWidget" name="sectionGameFeature">
+									<layout class="QVBoxLayout" name="vboxGameFeature">
+										<property name="leftMargin"><number>8</number></property>
+										<property name="topMargin"><number>2</number></property>
+										<property name="rightMargin"><number>0</number></property>
+										<property name="bottomMargin"><number>4</number></property>
+										<item>
+											<widget class="QCheckBox" name="cbMetroidUseFirmwareLanguage">
+												<property name="text">
+													<string>Use DS Firmware Language (EU-style Auto Patch)</string>
+												</property>
+											</widget>
+										</item>
+										<item>
+											<widget class="QLabel" name="lblMetroidUseFirmwareLanguageDesc">
+												<property name="text">
+													<string>&lt;html&gt;&lt;body&gt;
+Reads the DS firmware language and maps it to the game&apos;s language slot (EU-style).&lt;br&gt;
+DS Japanese → slot 5, English → English, French/German/Italian/Spanish → respective slots.&lt;br&gt;&lt;br&gt;
+&lt;b&gt;EU / US ROM:&lt;/b&gt; Works in all modes (multiplayer and adventure).&lt;br&gt;
+&lt;b&gt;JP ROM:&lt;/b&gt; Works in multiplayer only. &lt;font color=&quot;red&quot;&gt;&lt;b&gt;Adventure mode will not be playable with this enabled.&lt;/b&gt;&lt;/font&gt;&lt;br&gt;
+&lt;b&gt;KR ROM:&lt;/b&gt; Not yet supported (temporarily excluded).
+&lt;/body&gt;&lt;/html&gt;</string>
+												</property>
+												<property name="wordWrap">
+													<bool>true</bool>
+												</property>
+											</widget>
+										</item>
+									</layout>
+								</widget>
+							</item>
+
+							<item>
 								<widget class="QPushButton" name="btnToggleGameplay">
 									<property name="text"><string>▶ GAMEPLAY TOGGLES</string></property>
 									<property name="checkable"><bool>true</bool></property>

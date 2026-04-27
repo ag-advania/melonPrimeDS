@@ -90,6 +90,7 @@ set(SOURCES_QT_SDL
     MelonPrimePatchNoHud.cpp
     MelonPrimePatchNoDoubleTapJump.cpp
     MelonPrimePatchFixWifi.cpp
+    MelonPrimePatchUseFirmwareLanguage.cpp
 
 
 )
