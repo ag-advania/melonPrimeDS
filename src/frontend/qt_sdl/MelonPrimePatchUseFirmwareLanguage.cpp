@@ -38,7 +38,8 @@ static constexpr uint8_t kFwToGameLang[8] = {
     0x00u, // Reserved
 };
 
-// Game language field address per ROM (== cave38 in the original cheat)
+// Game language field address per ROM (== cave38 in the original cheat).
+// 0xFFFFFFFFu = not applicable for this ROM version.
 static constexpr uint32_t kLangAddr[7] = {
     0x020E98E8u, // JP1_0
     0x020E98A8u, // JP1_1
@@ -46,17 +47,24 @@ static constexpr uint32_t kLangAddr[7] = {
     0x020E8268u, // US1_1
     0x020E8288u, // EU1_0
     0x020E8308u, // EU1_1
-    0x020E10AAu, // KR1_0
+    0xFFFFFFFFu, // KR1_0 — temporarily excluded; restore to 0x020E10AAu when ready
 };
 
-void UseFirmwareLanguage_ApplyOnce(melonDS::NDS* nds, Config::Table& cfg, uint8_t romGroupIndex)
+void UseFirmwareLanguage_ApplyOnce(melonDS::NDS* nds, Config::Table& cfg, uint8_t romGroupIndex, uint32_t isInAdventureAddr)
 {
     if (!cfg.GetBool("Metroid.BugFix.UseFirmwareLanguage")) return;
     if (romGroupIndex >= 7) return;
 
+    const uint32_t addr = kLangAddr[romGroupIndex];
+    if (addr == 0xFFFFFFFFu) return;
+
+    // JP ROMs only: skip in adventure mode (isInAdventure byte == 0x02).
+    // EU and US ROMs apply in all states including adventure.
+    const bool isJp = (romGroupIndex == 0 || romGroupIndex == 1);
+    if (isJp && nds->ARM9Read8(isInAdventureAddr) == 0x02) return;
+
     const uint8_t fwLang = nds->GetFirmware().GetEffectiveUserData().Settings & 0x7u;
     const uint8_t gameLangBits = kFwToGameLang[fwLang];
-    const uint32_t addr = kLangAddr[romGroupIndex];
 
     const uint8_t oldVal = nds->ARM9Read8(addr);
     const uint8_t newVal = (oldVal & ~0x3Fu) | gameLangBits;

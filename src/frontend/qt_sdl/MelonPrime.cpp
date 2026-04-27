@@ -387,7 +387,7 @@ namespace MelonPrime {
                     {
                         melonDS::NDS* const nds = emuInstance->getNDS();
                         FixWifi_ApplyOnce(nds, localCfg, m_currentRom.romGroupIndex);
-                        UseFirmwareLanguage_ApplyOnce(nds, localCfg, m_currentRom.romGroupIndex);
+                        UseFirmwareLanguage_ApplyOnce(nds, localCfg, m_currentRom.romGroupIndex, m_currentRom.isInAdventure);
                     }
 #endif
                     ApplyGameSettingsOnce();
