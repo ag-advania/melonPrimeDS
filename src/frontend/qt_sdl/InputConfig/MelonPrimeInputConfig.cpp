@@ -135,6 +135,7 @@ void MelonPrimeInputConfig::setupSensitivityAndToggles(Config::Table& instcfg)
 
     // Bug fixes
     ui->cbMetroidFixWifiBitset->setChecked(instcfg.GetBool("Metroid.BugFix.WifiBitset"));
+    ui->cbMetroidUseFirmwareLanguage->setChecked(instcfg.GetBool("Metroid.BugFix.UseFirmwareLanguage"));
 
     // In-game scaling
     ui->cbMetroidInGameAspectRatio->setChecked(instcfg.GetBool("Metroid.Visual.InGameAspectRatio"));
@@ -179,8 +180,9 @@ void MelonPrimeInputConfig::setupCollapsibleSections(Config::Table& instcfg)
     setupToggle(ui->btnToggleInGameAspectRatio, ui->sectionInGameAspectRatio, "IN-GAME ASPECT RATIO",  "Metroid.UI.SectionInGameAspectRatio");
     // Other Metroid Settings tab
     setupToggle(ui->btnToggleSensitivity, ui->sectionSensitivity, "SENSITIVITY",      "Metroid.UI.SectionSensitivity");
-    setupToggle(ui->btnToggleBugFix,      ui->sectionBugFix,      "BUG FIXES",        "Metroid.UI.SectionBugFix");
-    setupToggle(ui->btnToggleGameplay,    ui->sectionGameplay,    "GAMEPLAY TOGGLES", "Metroid.UI.SectionGameplay");
+    setupToggle(ui->btnToggleBugFix,        ui->sectionBugFix,        "BUG FIXES",                   "Metroid.UI.SectionBugFix");
+    setupToggle(ui->btnToggleGameFeature,   ui->sectionGameFeature,   "GAME FEATURE IMPROVEMENTS",   "Metroid.UI.SectionGameFeature");
+    setupToggle(ui->btnToggleGameplay,      ui->sectionGameplay,      "GAMEPLAY TOGGLES",             "Metroid.UI.SectionGameplay");
     setupToggle(ui->btnToggleVideo,       ui->sectionVideo,       "VIDEO QUALITY",    "Metroid.UI.SectionVideo");
     setupToggle(ui->btnToggleVolume,      ui->sectionVolume,      "VOLUME",           "Metroid.UI.SectionVolume");
     setupToggle(ui->btnToggleLicense,     ui->sectionLicense,     "LICENSE APPLY",    "Metroid.UI.SectionLicense");
