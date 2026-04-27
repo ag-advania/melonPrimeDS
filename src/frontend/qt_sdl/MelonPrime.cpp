@@ -383,6 +383,13 @@ namespace MelonPrime {
                 else {
                     m_flags.clear(StateFlags::BIT_IN_ADVENTURE);
                     SetAimBlockBranchless(AIMBLK_NOT_IN_GAME, true);
+#ifdef MELONPRIME_DS
+                    {
+                        melonDS::NDS* const nds = emuInstance->getNDS();
+                        FixWifi_ApplyOnce(nds, localCfg, m_currentRom.romGroupIndex);
+                        UseFirmwareLanguage_ApplyOnce(nds, localCfg, m_currentRom.romGroupIndex);
+                    }
+#endif
                     ApplyGameSettingsOnce();
                 }
 
@@ -491,11 +498,9 @@ namespace MelonPrime {
             emuInstance->getNDS(), m_currentRom, m_disableMphAimSmoothing);
 
 #ifdef MELONPRIME_DS
-        // Apply aspect ratio patch once per game join
+        // Apply patches that need game-join context (player struct resolved)
         InGameAspectRatio_ApplyOnce(emuInstance, localCfg, m_currentRom);
         OsdColor_ApplyOnce(emuInstance, localCfg, m_currentRom);
-        FixWifi_ApplyOnce(emuInstance->getNDS(), localCfg, m_currentRom.romGroupIndex);
-        UseFirmwareLanguage_ApplyOnce(emuInstance->getNDS(), localCfg, m_currentRom.romGroupIndex);
 #endif
 #ifdef MELONPRIME_CUSTOM_HUD
         // Cache battle settings for HUD display
