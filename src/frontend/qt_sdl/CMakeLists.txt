@@ -89,7 +89,8 @@ set(SOURCES_QT_SDL
     MelonPrimePatchOsdColor.cpp
     MelonPrimePatchNoHud.cpp
     MelonPrimePatchNoDoubleTapJump.cpp
-    
+    MelonPrimePatchFixWifi.cpp
+
 
 )
 
