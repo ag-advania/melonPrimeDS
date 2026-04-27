@@ -247,6 +247,26 @@ Replaced with byte-indexed bitset matching JP1.1 / US1.1 / EU1.1 / KR1.0 behavio
 												</property>
 											</widget>
 										</item>
+										<item>
+											<widget class="QCheckBox" name="cbMetroidUseFirmwareLanguage">
+												<property name="text">
+													<string>Use DS Firmware Language (EU-style Auto Patch)</string>
+												</property>
+											</widget>
+										</item>
+										<item>
+											<widget class="QLabel" name="lblMetroidUseFirmwareLanguageDesc">
+												<property name="text">
+													<string>Reads the DS firmware language setting and maps it to the game&apos;s internal language slot (EU-style).
+DS Japanese → Japanese/Korean slot (slot 5) instead of the EU default of English.
+DS English → English, French → French, German → German, Italian → Italian, Spanish → Spanish.
+(All ROMs supported)</string>
+												</property>
+												<property name="wordWrap">
+													<bool>true</bool>
+												</property>
+											</widget>
+										</item>
 									</layout>
 								</widget>
 							</item>
