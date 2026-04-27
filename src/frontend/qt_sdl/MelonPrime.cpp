@@ -191,6 +191,7 @@ namespace MelonPrime {
         InGameAspectRatio_ResetPatchState();
         OsdColor_ResetPatchState();
         FixWifi_ResetPatchState();
+        UseFirmwareLanguage_ResetPatchState();
 #endif
 
         ReloadConfigFlags();
@@ -218,6 +219,7 @@ namespace MelonPrime {
         InGameAspectRatio_ResetPatchState();
         OsdColor_ResetPatchState();
         FixWifi_ResetPatchState();
+        UseFirmwareLanguage_ResetPatchState();
 #endif
     }
 
@@ -493,6 +495,7 @@ namespace MelonPrime {
         InGameAspectRatio_ApplyOnce(emuInstance, localCfg, m_currentRom);
         OsdColor_ApplyOnce(emuInstance, localCfg, m_currentRom);
         FixWifi_ApplyOnce(emuInstance->getNDS(), localCfg, m_currentRom.romGroupIndex);
+        UseFirmwareLanguage_ApplyOnce(emuInstance->getNDS(), localCfg, m_currentRom.romGroupIndex);
 #endif
 #ifdef MELONPRIME_CUSTOM_HUD
         // Cache battle settings for HUD display

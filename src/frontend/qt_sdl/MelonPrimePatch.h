@@ -5,5 +5,6 @@
 #include "MelonPrimePatchOsdColor.h"
 #include "MelonPrimePatchNoDoubleTapJump.h"
 #include "MelonPrimePatchFixWifi.h"
+#include "MelonPrimePatchUseFirmwareLanguage.h"
 
 #endif // MELON_PRIME_PATCH_H
