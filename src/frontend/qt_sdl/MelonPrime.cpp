@@ -12,6 +12,8 @@
 
 #ifdef MELONPRIME_CUSTOM_HUD
 #include "MelonPrimeHudRender.h"
+#endif
+#if defined(MELONPRIME_CUSTOM_HUD) || defined(MELONPRIME_DS)
 #include "MelonPrimePatch.h"
 #endif
 
@@ -178,7 +180,6 @@ namespace MelonPrime {
     {
         m_flags.packed = 0;
         m_isLayoutChangePending = true;
-        m_appliedFlags = 0;
         m_isWeaponCheckActive = false;
 #ifdef _WIN32
         m_isNativeFilterInstalled = false;
@@ -188,10 +189,12 @@ namespace MelonPrime {
         CustomHud_ResetPatchState();
 #endif
 #ifdef MELONPRIME_DS
+        ShadowFreezeRuntimeHook_Uninstall(emuInstance->getNDS());
         InGameAspectRatio_ResetPatchState();
         OsdColor_ResetPatchState();
         FixWifi_ResetPatchState();
         UseFirmwareLanguage_ResetPatchState();
+        ShadowFreezeRuntimeHook_ResetPatchState();
 #endif
 
         ReloadConfigFlags();
@@ -216,10 +219,12 @@ namespace MelonPrime {
         CustomHud_ResetPatchState();
 #endif
 #ifdef MELONPRIME_DS
+        ShadowFreezeRuntimeHook_Uninstall(emuInstance->getNDS());
         InGameAspectRatio_ResetPatchState();
         OsdColor_ResetPatchState();
         FixWifi_ResetPatchState();
         UseFirmwareLanguage_ResetPatchState();
+        ShadowFreezeRuntimeHook_ResetPatchState();
 #endif
     }
 
@@ -261,7 +266,6 @@ namespace MelonPrime {
         ReloadConfigFlags();
         ApplyJoy2KeySupportAndQtFilter(m_flags.test(StateFlags::BIT_JOY2KEY));
 
-        m_appliedFlags &= ~APPLIED_ALL_ONCE;
         m_flags.clear(StateFlags::BIT_BLOCK_STYLUS);
 
         RecalcAimSensitivityCache(localCfg);
