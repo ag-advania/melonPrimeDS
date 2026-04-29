@@ -263,35 +263,24 @@ namespace MelonPrime {
 
         auto* nds = emuInstance->getNDS();
 
-        if (!(m_appliedFlags & APPLIED_HEADPHONE)) {
-            MelonPrimeGameSettings::ApplyHeadphoneOnce(
-                nds, localCfg, m_currentRom.operationAndSound, m_appliedFlags, APPLIED_HEADPHONE);
-        }
+        MelonPrimeGameSettings::ApplyHeadphone(nds, localCfg, m_currentRom.operationAndSound);
 
         MelonPrimeGameSettings::ApplyMphSensitivity(
             nds, localCfg, m_currentRom.sensitivity,
             m_currentRom.baseInGameSensi, m_flags.test(StateFlags::BIT_IN_GAME_INIT));
 
-        if (!(m_appliedFlags & APPLIED_UNLOCK)) {
-            MelonPrimeGameSettings::ApplyUnlockHuntersMaps(
-                nds, localCfg, m_appliedFlags, APPLIED_UNLOCK,
-                m_currentRom.unlockMapsHunters, m_currentRom.unlockMapsHunters2,
-                m_currentRom.unlockMapsHunters3, m_currentRom.unlockMapsHunters4,
-                m_currentRom.unlockMapsHunters5);
-        }
+        MelonPrimeGameSettings::ApplyUnlockHuntersMaps(
+            nds, localCfg,
+            m_currentRom.unlockMapsHunters, m_currentRom.unlockMapsHunters2,
+            m_currentRom.unlockMapsHunters3, m_currentRom.unlockMapsHunters4,
+            m_currentRom.unlockMapsHunters5);
 
         MelonPrimeGameSettings::UseDsName(nds, localCfg, m_currentRom.dsNameFlagAndMicVolume);
         MelonPrimeGameSettings::ApplySelectedHunterStrict(nds, localCfg, m_currentRom.mainHunter);
         MelonPrimeGameSettings::ApplyLicenseColorStrict(nds, localCfg, m_currentRom.rankColor);
 
-        if (!(m_appliedFlags & APPLIED_VOL_SFX)) {
-            MelonPrimeGameSettings::ApplySfxVolumeOnce(
-                nds, localCfg, m_currentRom.volSfx8Bit, m_appliedFlags, APPLIED_VOL_SFX);
-        }
-        if (!(m_appliedFlags & APPLIED_VOL_MUSIC)) {
-            MelonPrimeGameSettings::ApplyMusicVolumeOnce(
-                nds, localCfg, m_currentRom.volMusic8Bit, m_appliedFlags, APPLIED_VOL_MUSIC);
-        }
+        MelonPrimeGameSettings::ApplySfxVolume(nds, localCfg, m_currentRom.volSfx8Bit);
+        MelonPrimeGameSettings::ApplyMusicVolume(nds, localCfg, m_currentRom.volMusic8Bit);
     }
 
 } // namespace MelonPrime
