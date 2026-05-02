@@ -541,6 +541,8 @@ namespace Config
         {"Instance*.Metroid.Enable.stylusMode", false},
         {"Instance*.Metroid.Aim.Disable.MphAimSmoothing", false},
         {"Instance*.Metroid.Aim.Enable.Accumulator", false},
+        {"Instance*.Metroid.Aim.Enable.NativeDeltaHook", false},
+        {"Instance*.Metroid.Aim.Enable.InstantAimFollow", false},
         /* MelonPrimeDS Crosshair bools { */
         {"Instance*.Metroid.Visual.CustomHUD", false},
         // Per-element default-HUD hide patches (DisableDefaultHud section).
@@ -612,6 +614,7 @@ namespace Config
         {"Instance*.Metroid.Visual.HudBombLeftIconColorOverlay", true},
         {"Instance*.Metroid.BugFix.WifiBitset",        true},
         {"Instance*.Metroid.BugFix.FixShadowFreeze",   false},
+        {"Instance*.Metroid.BugFix.FixNoxusBladePersistence", true},
         {"Instance*.Metroid.BugFix.UseFirmwareLanguage", false},
         {"Instance*.Metroid.Visual.InGameAspectRatio", true},
         {"Instance*.Metroid.Visual.OsdColor",            false},

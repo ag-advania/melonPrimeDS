@@ -126,6 +126,8 @@ void MelonPrimeInputConfig::setupSensitivityAndToggles(Config::Table& instcfg)
     ui->cbMetroidEnableStylusMode->setChecked(instcfg.GetBool("Metroid.Enable.stylusMode"));
     ui->cbMetroidDisableMphAimSmoothing->setChecked(instcfg.GetBool("Metroid.Aim.Disable.MphAimSmoothing"));
     ui->cbMetroidEnableAimAccumulator->setChecked(instcfg.GetBool("Metroid.Aim.Enable.Accumulator"));
+    ui->cbMetroidEnableNativeAimDeltaHook->setChecked(instcfg.GetBool("Metroid.Aim.Enable.NativeDeltaHook"));
+    ui->cbMetroidEnableInstantAimFollow->setChecked(instcfg.GetBool("Metroid.Aim.Enable.InstantAimFollow"));
     updateAimControlsForStylusMode(ui->cbMetroidEnableStylusMode->isChecked());
 
     // Screen Sync Mode
@@ -136,6 +138,7 @@ void MelonPrimeInputConfig::setupSensitivityAndToggles(Config::Table& instcfg)
     // Bug fixes
     ui->cbMetroidFixWifiBitset->setChecked(instcfg.GetBool("Metroid.BugFix.WifiBitset"));
     ui->cbMetroidFixShadowFreeze->setChecked(instcfg.GetBool("Metroid.BugFix.FixShadowFreeze"));
+    ui->cbMetroidFixNoxusBladePersistence->setChecked(instcfg.GetBool("Metroid.BugFix.FixNoxusBladePersistence"));
     ui->cbMetroidUseFirmwareLanguage->setChecked(instcfg.GetBool("Metroid.BugFix.UseFirmwareLanguage"));
 
     // In-game scaling
@@ -155,6 +158,12 @@ void MelonPrimeInputConfig::updateAimControlsForStylusMode(bool stylusEnabled)
     ui->metroidAimAdjustSpinBox->setEnabled(enableAimControls);
     ui->metroidAimAdjustLabel->setEnabled(enableAimControls);
     ui->cbMetroidEnableAimAccumulator->setEnabled(enableAimControls);
+    ui->cbMetroidEnableNativeAimDeltaHook->setEnabled(
+        enableAimControls && ui->cbMetroidDisableMphAimSmoothing->isChecked());
+    ui->lblMetroidNativeAimDeltaHookDesc->setEnabled(
+        enableAimControls && ui->cbMetroidDisableMphAimSmoothing->isChecked());
+    ui->cbMetroidEnableInstantAimFollow->setEnabled(enableAimControls);
+    ui->lblMetroidInstantAimFollowDesc->setEnabled(enableAimControls);
 }
 
 void MelonPrimeInputConfig::setupCollapsibleSections(Config::Table& instcfg)
@@ -324,6 +333,11 @@ void MelonPrimeInputConfig::on_cbMetroidEnableCustomHud_stateChanged(int state)
 void MelonPrimeInputConfig::on_cbMetroidEnableStylusMode_stateChanged(int state)
 {
     updateAimControlsForStylusMode(state != 0);
+}
+
+void MelonPrimeInputConfig::on_cbMetroidDisableMphAimSmoothing_stateChanged(int)
+{
+    updateAimControlsForStylusMode(ui->cbMetroidEnableStylusMode->isChecked());
 }
 
 void MelonPrimeInputConfig::on_btnEditHudLayout_clicked()
