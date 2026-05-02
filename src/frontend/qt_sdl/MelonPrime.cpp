@@ -56,6 +56,7 @@ namespace MelonPrime {
 
         m_disableMphAimSmoothing = localCfg.GetBool(CfgKey::DisableMphAimSmoothing);
         m_enableAimAccumulator = localCfg.GetBool(CfgKey::AimAccumulator);
+        m_enableNativeAimDeltaHook = localCfg.GetBool(CfgKey::NativeAimDeltaHook);
 
         screenSyncMode = localCfg.GetInt(CfgKey::ScreenSyncMode);
     }
@@ -174,6 +175,8 @@ namespace MelonPrime {
         // Old residuals were computed with previous scale factors.
         m_aimResidualX = 0;
         m_aimResidualY = 0;
+        m_nativeAimDeltaX = 0;
+        m_nativeAimDeltaY = 0;
     }
 
     void MelonPrimeCore::OnEmuStart()
@@ -189,12 +192,14 @@ namespace MelonPrime {
         CustomHud_ResetPatchState();
 #endif
 #ifdef MELONPRIME_DS
-        ShadowFreezeRuntimeHook_Uninstall(emuInstance->getNDS());
+        ARM9Hook_Uninstall(emuInstance->getNDS());
+        InstantAimFollow_RestoreOnce(emuInstance->getNDS(), m_currentRom.romGroupIndex);
         InGameAspectRatio_ResetPatchState();
         OsdColor_ResetPatchState();
         FixWifi_ResetPatchState();
         UseFirmwareLanguage_ResetPatchState();
-        ShadowFreezeRuntimeHook_ResetPatchState();
+        InstantAimFollow_ResetPatchState();
+        ARM9Hook_ResetPatchState();
 #endif
 
         ReloadConfigFlags();
@@ -202,6 +207,8 @@ namespace MelonPrime {
         InputReset();
         m_aimResidualX = 0;
         m_aimResidualY = 0;
+        m_nativeAimDeltaX = 0;
+        m_nativeAimDeltaY = 0;
 
         // P-3: Cache panel pointer (avoids 3-level pointer chase every frame)
         if (auto* mw = emuInstance->getMainWindow())
@@ -219,12 +226,14 @@ namespace MelonPrime {
         CustomHud_ResetPatchState();
 #endif
 #ifdef MELONPRIME_DS
-        ShadowFreezeRuntimeHook_Uninstall(emuInstance->getNDS());
+        ARM9Hook_Uninstall(emuInstance->getNDS());
+        InstantAimFollow_RestoreOnce(emuInstance->getNDS(), m_currentRom.romGroupIndex);
         InGameAspectRatio_ResetPatchState();
         OsdColor_ResetPatchState();
         FixWifi_ResetPatchState();
         UseFirmwareLanguage_ResetPatchState();
-        ShadowFreezeRuntimeHook_ResetPatchState();
+        InstantAimFollow_ResetPatchState();
+        ARM9Hook_ResetPatchState();
 #endif
     }
 
@@ -374,6 +383,9 @@ namespace MelonPrime {
                 CustomHud_EnsurePatchRestored(
                     emuInstance, localCfg, m_currentRom, m_playerPosition, false);
 #endif
+#ifdef MELONPRIME_DS
+                InstantAimFollow_RestoreOnce(emuInstance->getNDS(), m_currentRom.romGroupIndex);
+#endif
                 OsdColor_RestoreOnce(emuInstance->getNDS(), m_currentRom);
             }
 
@@ -505,6 +517,10 @@ namespace MelonPrime {
         // Apply patches that need game-join context (player struct resolved)
         InGameAspectRatio_ApplyOnce(emuInstance, localCfg, m_currentRom);
         OsdColor_ApplyOnce(emuInstance, localCfg, m_currentRom);
+        InstantAimFollow_ApplyOnce(
+            emuInstance->getNDS(),
+            localCfg,
+            m_currentRom.romGroupIndex);
 #endif
 #ifdef MELONPRIME_CUSTOM_HUD
         // Cache battle settings for HUD display

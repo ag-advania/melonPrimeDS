@@ -21,6 +21,8 @@ namespace MelonPrime {
         inline constexpr const char* AimAdjust       = "Metroid.Aim.Adjust";
         inline constexpr const char* DisableMphAimSmoothing = "Metroid.Aim.Disable.MphAimSmoothing";
         inline constexpr const char* AimAccumulator = "Metroid.Aim.Enable.Accumulator";
+        inline constexpr const char* NativeAimDeltaHook = "Metroid.Aim.Enable.NativeDeltaHook";
+        inline constexpr const char* InstantAimFollow = "Metroid.Aim.Enable.InstantAimFollow";
         inline constexpr const char* ScreenSyncMode = "Metroid.Screen.SyncMode";
         inline constexpr const char* MphSens         = "Metroid.Sensitivity.Mph";
         inline constexpr const char* Headphone       = "Metroid.Apply.Headphone";
@@ -68,6 +70,7 @@ namespace MelonPrime {
         constexpr uint32_t EU1_0           = 0xA4A8FE5A;
         constexpr uint32_t EU1_1           = 0x910018A5;
         constexpr uint32_t EU1_1_BALANCED  = 0x948B1E48;
+        constexpr uint32_t EU1_1_BALANCED_V1_2_11 = 0x2970A14F;
         constexpr uint32_t EU1_1_RUSSIANED = 0x9E20F3A8;
         constexpr uint32_t JP1_0           = 0xD75F539D;
         constexpr uint32_t JP1_1           = 0x42EBF348;

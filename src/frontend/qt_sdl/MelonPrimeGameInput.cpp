@@ -5,6 +5,8 @@
 #include "Screen.h"
 #include "MelonPrimeDef.h"
 
+#include <cstdint>
+#include <cstring>
 #include <utility>
 #include <QCursor>
 
@@ -252,6 +254,8 @@ namespace MelonPrime {
             m_aimResidualX = 0;
             m_aimResidualY = 0;
         }
+        m_nativeAimDeltaX = 0;
+        m_nativeAimDeltaY = 0;
 
         if (m_isLayoutChangePending) {
             m_isLayoutChangePending = false;
@@ -300,6 +304,8 @@ namespace MelonPrime {
         );
     }
 
+#include "MelonPrimePatchNativeAimDeltaHook.inc"
+
     // =========================================================================
     // ProcessAimInputMouse
     //
@@ -319,6 +325,9 @@ namespace MelonPrime {
     // =========================================================================
     HOT_FUNCTION void MelonPrimeCore::ProcessAimInputMouse()
     {
+        m_nativeAimDeltaX = 0;
+        m_nativeAimDeltaY = 0;
+
         // P-29b: Combined early-exit gate.
         // Single branch covers both aimBlock (morph/weapon) and layout change.
         // Cold path handles the specifics.
@@ -381,13 +390,16 @@ namespace MelonPrime {
                     return;
                 }
 
-                // Direct write — no << ampShift needed.
-                // >> 12 already produces the same scale as the old >> 14 << 2.
-                // Note: PREFETCH_WRITE for aimX/aimY issued at top of HandleInGameLogic
-                //       with proper lead time (~50-100 instructions). Inner prefetches
-                //       here (2 instructions before write) are too late to help and removed.
-                *m_ptrs.aimX = static_cast<uint16_t>(outX);
-                *m_ptrs.aimY = static_cast<uint16_t>(outY);
+                if (m_enableNativeAimDeltaHook) {
+                    m_nativeAimDeltaX = outX;
+                    m_nativeAimDeltaY = outY;
+                }
+                else {
+                    // Direct write fallback — no << ampShift needed.
+                    // >> 12 already produces the same scale as the old >> 14 << 2.
+                    *m_ptrs.aimX = static_cast<uint16_t>(outX);
+                    *m_ptrs.aimY = static_cast<uint16_t>(outY);
+                }
             }
             else {
                 // =========================================================
@@ -455,6 +467,8 @@ namespace MelonPrime {
         m_isLayoutChangePending = false;
         m_aimResidualX = 0;
         m_aimResidualY = 0;
+        m_nativeAimDeltaX = 0;
+        m_nativeAimDeltaY = 0;
     }
 
 } // namespace MelonPrime

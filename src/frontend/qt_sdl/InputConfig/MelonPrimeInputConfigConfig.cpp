@@ -55,6 +55,7 @@ void MelonPrimeInputConfig::saveConfig()
     // Bug fixes
     instcfg.SetBool("Metroid.BugFix.WifiBitset", ui->cbMetroidFixWifiBitset->checkState() == Qt::Checked);
     instcfg.SetBool("Metroid.BugFix.FixShadowFreeze", ui->cbMetroidFixShadowFreeze->checkState() == Qt::Checked);
+    instcfg.SetBool("Metroid.BugFix.FixNoxusBladePersistence", ui->cbMetroidFixNoxusBladePersistence->checkState() == Qt::Checked);
     instcfg.SetBool("Metroid.BugFix.UseFirmwareLanguage", ui->cbMetroidUseFirmwareLanguage->checkState() == Qt::Checked);
 
     // SnapTap
@@ -81,6 +82,8 @@ void MelonPrimeInputConfig::saveConfig()
     instcfg.SetBool("Metroid.Enable.stylusMode", ui->cbMetroidEnableStylusMode->checkState() == Qt::Checked);
     instcfg.SetBool("Metroid.Aim.Disable.MphAimSmoothing", ui->cbMetroidDisableMphAimSmoothing->checkState() == Qt::Checked);
     instcfg.SetBool("Metroid.Aim.Enable.Accumulator", ui->cbMetroidEnableAimAccumulator->checkState() == Qt::Checked);
+    instcfg.SetBool("Metroid.Aim.Enable.NativeDeltaHook", ui->cbMetroidEnableNativeAimDeltaHook->checkState() == Qt::Checked);
+    instcfg.SetBool("Metroid.Aim.Enable.InstantAimFollow", ui->cbMetroidEnableInstantAimFollow->checkState() == Qt::Checked);
 
     // Screen Sync Mode
     instcfg.SetInt("Metroid.Screen.SyncMode", ui->comboMetroidScreenSyncMode->currentIndex());
@@ -153,6 +156,7 @@ void MelonPrimeInputConfig::saveConfig()
 #ifdef MELONPRIME_DS
     MelonPrime::OsdColor_InvalidatePatch();
     MelonPrime::ShadowFreezeRuntimeHook_NotifyConfigChanged();
+    MelonPrime::FixNoxusBladePersistence_NotifyConfigChanged();
 #endif
 }
 
