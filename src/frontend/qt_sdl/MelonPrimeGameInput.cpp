@@ -110,7 +110,7 @@ namespace MelonPrime {
     //   - wheelDelta = 0         : never consumed mid-frame
     // =========================================================================
     template <bool kReentrant>
-    FORCE_INLINE void MelonPrimeCore::UpdateInputStateImpl()
+    FORCE_INLINE void MelonPrimeCore::UpdateInputStateImpl(const bool focused)
     {
 #ifdef _WIN32
         auto* const rawFilter = m_rawFilter.get();
@@ -128,17 +128,24 @@ namespace MelonPrime {
                 m_didFrameAdvanceSinceSnapshot = false;
             }
         }
+#endif
 
-        if (!isFocused) {
+        if (!focused) {
             m_input.down = 0;
             m_input.press = 0;
             m_input.moveIndex = 0;
             m_input.mouseX = 0;
             m_input.mouseY = 0;
             m_input.wheelDelta = 0;
+            m_snapState = 0;
+            // Re-entrant FrameAdvance does not call InputReset before rebuilding
+            // the fast DS mask. Release it here so stale non-movement bits
+            // cannot survive a focus loss.
+            m_inputMaskFast = 0xFFFF;
             return;
         }
 
+#ifdef _WIN32
         const uint64_t hotDownMask = hk.down | emuInstance->joyHotkeyMask;
         if constexpr (!kReentrant)
             m_input.press = ProjectPressMask(hk.pressed | emuInstance->joyHotkeyPress);
@@ -168,8 +175,8 @@ namespace MelonPrime {
             m_input.wheelDelta = 0;
     }
 
-    HOT_FUNCTION void MelonPrimeCore::UpdateInputState()          { UpdateInputStateImpl<false>(); }
-    HOT_FUNCTION void MelonPrimeCore::UpdateInputStateReentrant() { UpdateInputStateImpl<true>();  }
+    HOT_FUNCTION void MelonPrimeCore::UpdateInputState(const bool focused)          { UpdateInputStateImpl<false>(focused); }
+    HOT_FUNCTION void MelonPrimeCore::UpdateInputStateReentrant(const bool focused) { UpdateInputStateImpl<true>(focused);  }
 
     // OPT-Z2: Unified move + button mask update.
     //
@@ -390,7 +397,12 @@ namespace MelonPrime {
                     return;
                 }
 
-                if (m_enableNativeAimDeltaHook) {
+                // Samus morph ball movement does not reliably run the native
+                // aim update hook path. Keep the old RAM-write path there so
+                // mouse movement still drives the ball while the hook is on.
+                const bool useNativeAimDeltaHook =
+                    m_enableNativeAimDeltaHook && !IsSamusMorphBallAltForm();
+                if (useNativeAimDeltaHook) {
                     m_nativeAimDeltaX = outX;
                     m_nativeAimDeltaY = outY;
                 }
