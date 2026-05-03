@@ -3,6 +3,8 @@
 #include "MelonPrimeRawWinInternal.h"
 #include <cstring>
 #include <algorithm>
+#include <memory>
+#include <new>
 
 #ifdef _MSC_VER
 #include <intrin.h>
@@ -176,11 +178,24 @@ namespace MelonPrime {
 
         for (;;) {
             UINT size = sizeof(buffer);
+            uint8_t* batchBuffer = buffer;
             UINT count = s_fnBestGetRawInputBuffer(
                 reinterpret_cast<PRAWINPUT>(buffer), &size, sizeof(RAWINPUTHEADER));
+            std::unique_ptr<uint8_t[]> overflowBuffer;
+            if (UNLIKELY(count == UINT(-1))) {
+                if (size <= sizeof(buffer)) break;
+
+                overflowBuffer.reset(new (std::nothrow) uint8_t[size]);
+                if (!overflowBuffer) break;
+
+                batchBuffer = overflowBuffer.get();
+                UINT retrySize = size;
+                count = s_fnBestGetRawInputBuffer(
+                    reinterpret_cast<PRAWINPUT>(batchBuffer), &retrySize, sizeof(RAWINPUTHEADER));
+            }
             if (count == 0 || count == UINT(-1)) break;
 
-            const RAWINPUT* raw = reinterpret_cast<const RAWINPUT*>(buffer);
+            const RAWINPUT* raw = reinterpret_cast<const RAWINPUT*>(batchBuffer);
             for (UINT i = 0; i < count; ++i) {
                 // P-6: LIKELY -- 8000Hz mouse generates ~133 events/frame vs 0-2 keyboard
                 if (LIKELY(raw->header.dwType == RIM_TYPEMOUSE)) {
@@ -231,7 +246,7 @@ namespace MelonPrime {
             // Without this, Windows may fail to retire internal buffer entries,
             // causing GetRawInputBuffer to return 0 on subsequent calls
             // → key events dropped → stuck keys / unresponsive keys.
-            PRAWINPUT pri = reinterpret_cast<PRAWINPUT>(buffer);
+            PRAWINPUT pri = reinterpret_cast<PRAWINPUT>(batchBuffer);
             DefRawInputProc(&pri, static_cast<INT>(count), sizeof(RAWINPUTHEADER));
         }
 
@@ -407,9 +422,9 @@ namespace MelonPrime {
     // Overhead: fast-exit when m_mouseButtons == 0 (~99%+ of frames).
     //           At most 5 GetAsyncKeyState calls when any button is stuck.
     // =========================================================================
-    FORCE_INLINE void InputState::clearStuckMouseButtons() noexcept {
+    FORCE_INLINE bool InputState::clearStuckMouseButtons() noexcept {
         const uint8_t cur = m_mouseButtons.load(std::memory_order_relaxed);
-        if (!cur) return;
+        if (!cur) return false;
 
         static constexpr UINT kBitToVk[5] = {
             VK_LBUTTON, VK_RBUTTON, VK_MBUTTON, VK_XBUTTON1, VK_XBUTTON2
@@ -425,7 +440,9 @@ namespace MelonPrime {
         }
         if (cleared != cur) {
             m_mouseButtons.store(cleared, std::memory_order_relaxed);
+            return true;
         }
+        return false;
     }
 
     // =========================================================================
@@ -441,7 +458,7 @@ namespace MelonPrime {
     // Scans only set bits in m_vkDown (proportional to held-key count, not 256).
     // Skips VK 0 (invalid). Mouse-button VKs (1-6) are never in m_vkDown.
     // =========================================================================
-    FORCE_INLINE void InputState::clearStuckKeys() noexcept {
+    FORCE_INLINE bool InputState::clearStuckKeys() noexcept {
         bool anyCleared = false;
         for (int w = 0; w < 4; ++w) {
             const uint64_t cur = m_vkDown[w].load(std::memory_order_relaxed);
@@ -472,6 +489,7 @@ namespace MelonPrime {
         if (anyCleared) {
             std::atomic_thread_fence(std::memory_order_release);
         }
+        return anyCleared;
     }
 
     // =========================================================================
@@ -497,8 +515,8 @@ namespace MelonPrime {
         // snapshot before being cleared.  Stuck bits are cleared for the
         // next frame — one frame of false-fire from a stuck button is
         // preferable to silently dropping a genuine click.
-        clearStuckMouseButtons();
-        clearStuckKeys();
+        const bool clearedMouse = clearStuckMouseButtons();
+        const bool clearedKeys = clearStuckKeys();
 
         // Mouse loads are now sequenced after the acquire fence,
         // guaranteeing consistency with the VK snapshot.
@@ -513,7 +531,15 @@ namespace MelonPrime {
         const uint64_t newDown = scanBoundHotkeys(snap);
         outHk.down = newDown;
         outHk.pressed = newDown & ~m_hkPrev;
-        m_hkPrev = newDown;
+
+        // If recovery cleared stale bits, keep edge tracking aligned with the
+        // post-recovery held state. The frame output still preserves the
+        // pre-clear snapshot so short clicks are not dropped.
+        if (UNLIKELY(clearedMouse || clearedKeys)) {
+            m_hkPrev = scanBoundHotkeys(takeSnapshot());
+        } else {
+            m_hkPrev = newDown;
+        }
     }
 
     // =========================================================================
@@ -526,8 +552,13 @@ namespace MelonPrime {
     void InputState::snapshotInputFrameNoEdges(FrameHotkeyState& outHk,
         int& outMouseX, int& outMouseY) noexcept
     {
+        // No-edge snapshots are used only by re-entrant frame advances. They
+        // should reflect physical held state, not the one-frame click cache.
+        // Clear stale held bits first.
+        (void)clearStuckMouseButtons();
+        (void)clearStuckKeys();
+
         auto snap = takeSnapshot();  // acquire fence inside
-        snap.mouse |= m_mouseButtonPresses.load(std::memory_order_acquire);
 
         const int64_t curX = m_accumMouseX.load(std::memory_order_relaxed);
         const int64_t curY = m_accumMouseY.load(std::memory_order_relaxed);

@@ -9,6 +9,7 @@
 #include <memory>
 #include <cmath>
 #include <cstring>
+#include <atomic>
 
 class QPoint;
 class ScreenPanel;  // P-3: forward decl for cached panel pointer
@@ -186,7 +187,7 @@ namespace MelonPrime {
 #endif
 
         bool isCursorMode = true;
-        bool isFocused = false;
+        std::atomic_bool isFocused{ false };
         bool isClipWanted = false;
         bool isStylusMode = false;
         bool m_snapTapMode = false;     // Cached from BIT_SNAP_TAP; avoids bitmask test in hot path
@@ -353,6 +354,12 @@ namespace MelonPrime {
             m_aimBlockBits = (m_aimBlockBits & ~bitMask) | (enable ? bitMask : 0u);
         }
 
+        [[nodiscard]] FORCE_INLINE bool IsSamusMorphBallAltForm() const noexcept {
+            return m_flags.test(StateFlags::BIT_IS_SAMUS)
+                && m_ptrs.isAltForm
+                && *m_ptrs.isAltForm == 0x02;
+        }
+
         template <typename T>
         [[nodiscard]] FORCE_INLINE T* GetRamPointer(melonDS::u8* ram, melonDS::u32 addr) {
             return reinterpret_cast<T*>(&ram[addr & 0x3FFFFF]);
@@ -365,9 +372,9 @@ namespace MelonPrime {
         // =================================================================
         // Methods
         // =================================================================
-        HOT_FUNCTION void UpdateInputState();
-        HOT_FUNCTION void UpdateInputStateReentrant();  // re-entrant FrameAdvance path
-        template <bool kReentrant> FORCE_INLINE void UpdateInputStateImpl();
+        HOT_FUNCTION void UpdateInputState(bool focused);
+        HOT_FUNCTION void UpdateInputStateReentrant(bool focused);  // re-entrant FrameAdvance path
+        template <bool kReentrant> FORCE_INLINE void UpdateInputStateImpl(bool focused);
         HOT_FUNCTION void HandleInGameLogic();
         template <bool kInputMaskReset> FORCE_INLINE void ProcessMoveAndButtonsFastImpl();
         HOT_FUNCTION void ProcessMoveAndButtonsFast();
