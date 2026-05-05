@@ -118,6 +118,16 @@ namespace MelonPrime {
     {
         if (isStylusMode) m_flags.set(StateFlags::BIT_BLOCK_STYLUS);
         auto* nds = emuInstance->getNDS();
+
+        if (m_enableDirectAltFormTransform && !isStylusMode) {
+            // TransformGateHook redirects Gate A/B into the game's native
+            // TransformRequest path. Keep a short pending window so a press is
+            // not lost if the game reaches the transform gate a few frames late.
+            m_directTransformPendingFrames = 10;
+            return;
+        }
+
+        // Legacy touch-simulation approach.
         nds->ReleaseScreen();
         FrameAdvanceTwice();
         using namespace Consts::UI;
