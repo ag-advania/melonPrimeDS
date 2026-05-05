@@ -316,14 +316,22 @@
                 if (player != localPlayer)
                     return;
 
-                // Inject raw int16 delta — the game applies its own VectorSteer
-                // scale (player+0x6F4/+0x6F8/+0x6FC/+0x700), so we do not
-                // pre-multiply by player+0x3F8/+0x3FC here.
-                const int16_t rawDelta = vs.v[i].isVertical
-                    ? m_nativeAimDeltaY
-                    : m_nativeAimDeltaX;
-                regs[vs.v[i].deltaReg] =
-                    static_cast<uint32_t>(static_cast<int32_t>(rawDelta));
+                // m_nativeAimDeltaX/Y is the sensitivity-scaled AIM output
+                // (resX >> AIM_DIRECT_BITS), typically ±4..±64 for normal mouse use.
+                // The VectorSteer path applies its own ~×5 multiplier via r2≈0x5000
+                // and then a basis component (~Q12 unit vector, ≈0x1000), so the
+                // final stack vector component is roughly rawDelta × 5.
+                // Injecting the full AIM delta causes the stack vector to overflow
+                // and freeze the game.  Clamp to ±4 so the max component is ±20,
+                // which is safe.  Raise this conservatively if steering feels weak.
+                static constexpr int32_t kVSteerClamp = 4;
+                const int32_t raw = vs.v[i].isVertical
+                    ? static_cast<int32_t>(m_nativeAimDeltaY)
+                    : static_cast<int32_t>(m_nativeAimDeltaX);
+                const int32_t clamped = raw > kVSteerClamp ? kVSteerClamp
+                                      : raw < -kVSteerClamp ? -kVSteerClamp
+                                      : raw;
+                regs[vs.v[i].deltaReg] = static_cast<uint32_t>(clamped);
 
                 // Consume after H2 (index 3 = last in V1→V2→H1→H2 sequence).
                 // V1/V2/H1 leave the delta intact so all four reads reuse it.
