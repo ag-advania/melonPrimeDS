@@ -117,13 +117,14 @@
 										<item row="3" column="0" colspan="2">
 											<widget class="QCheckBox" name="cbMetroidEnableNativeAimPostFoldWrite">
 												<property name="text"><string>Enable Native Aim PostFold Write</string></property>
+												<property name="styleSheet"><string>QCheckBox { margin-left: 24px; }</string></property>
 											</widget>
 										</item>
 										<item row="4" column="0" colspan="2">
 											<widget class="QLabel" name="lblMetroidNativeAimHookModeDesc">
 												<property name="text"><string>PostFold Write hooks after TouchInputProcessor and covers all AltForms including spec108=0 (Samus/Kanden/Noxus/Spire).</string></property>
 												<property name="wordWrap"><bool>true</bool></property>
-												<property name="styleSheet"><string>QLabel { margin-left: 24px; }</string></property>
+												<property name="styleSheet"><string>QLabel { margin-left: 48px; }</string></property>
 											</widget>
 										</item>
 										<item row="8" column="0" colspan="2">
