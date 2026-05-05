@@ -295,6 +295,7 @@ namespace MelonPrime {
         int16_t  m_nativeAimDeltaX = 0;
         int16_t  m_nativeAimDeltaY = 0;
         uint16_t m_immediateOverlayPrevHeld = 0;
+        uint16_t m_immediateOverlayPreserveMask = 0;
         uint8_t  m_directTransformPendingFrames = 0;
 
         // Warm scalars (checked per frame but not in aim hot path)
@@ -377,6 +378,7 @@ namespace MelonPrime {
         //   - Aim block / focus loss → stale residuals would cause jump
         FORCE_INLINE void InputReset() {
             m_inputMaskFast = 0xFFFF;
+            m_immediateOverlayPreserveMask = 0;
         }
 
         FORCE_INLINE void InputSetBranchless(uint16_t bit, bool released) {

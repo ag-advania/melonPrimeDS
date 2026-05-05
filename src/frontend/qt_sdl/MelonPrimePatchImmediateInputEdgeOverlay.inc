@@ -125,7 +125,16 @@
             if (managedMask == 0)
                 return;
 
-            // Build emulator-side held state for all managed actions.
+            // Some systems synthesize hardware input before the game's poll
+            // (for example morph-ball boost writes INPUT_R). If such a bit also
+            // belongs to the overlay's managed set, leave the game-polled
+            // current/pressed/released fields intact for that bit.
+            const uint16_t preserveMask =
+                static_cast<uint16_t>(m_immediateOverlayPreserveMask & managedMask);
+            const uint16_t overlayMask =
+                static_cast<uint16_t>(managedMask & ~preserveMask);
+
+            // Build emulator-side held state for all overlay-managed actions.
             const uint64_t down = m_input.down;
             uint16_t injectedHeld = 0;
             if (down & IB_MOVE_L) injectedHeld = static_cast<uint16_t>(injectedHeld | movLMask);
@@ -135,8 +144,9 @@
             if (down & IB_SHOOT)  injectedHeld = static_cast<uint16_t>(injectedHeld | fireMask);
             if (down & IB_JUMP)   injectedHeld = static_cast<uint16_t>(injectedHeld | jumpMask);
             if (down & IB_ZOOM)   injectedHeld = static_cast<uint16_t>(injectedHeld | zoomMask);
+            injectedHeld = static_cast<uint16_t>(injectedHeld & overlayMask);
 
-            const uint16_t prevInjectedHeld = static_cast<uint16_t>(m_immediateOverlayPrevHeld & managedMask);
+            const uint16_t prevInjectedHeld = static_cast<uint16_t>(m_immediateOverlayPrevHeld & overlayMask);
             const uint16_t injectedPressed  = static_cast<uint16_t>( injectedHeld & ~prevInjectedHeld);
             const uint16_t injectedReleased = static_cast<uint16_t>(~injectedHeld &  prevInjectedHeld);
 
@@ -149,16 +159,18 @@
             std::memcpy(&pressed,  mainRAM + ((inputBase + 0x04u) & 0x3FFFFFu), sizeof(pressed));
             std::memcpy(&released, mainRAM + ((inputBase + 0x08u) & 0x3FFFFFu), sizeof(released));
 
-            // Replace only managed bits; leave all others from the game's poll.
-            const uint16_t newCurrent  = static_cast<uint16_t>((current  & ~managedMask) | injectedHeld);
-            const uint16_t newPressed  = static_cast<uint16_t>((pressed  & ~managedMask) | injectedPressed);
-            const uint16_t newReleased = static_cast<uint16_t>((released & ~managedMask) | injectedReleased);
+            // Replace only overlay-owned bits; preserve game-polled bits that
+            // another MelonPrime path synthesized through the hardware mask.
+            const uint16_t newCurrent  = static_cast<uint16_t>((current  & ~overlayMask) | injectedHeld);
+            const uint16_t newPressed  = static_cast<uint16_t>((pressed  & ~overlayMask) | injectedPressed);
+            const uint16_t newReleased = static_cast<uint16_t>((released & ~overlayMask) | injectedReleased);
 
             std::memcpy(mainRAM + ((inputBase + 0x00u) & 0x3FFFFFu), &newCurrent,  sizeof(newCurrent));
             std::memcpy(mainRAM + ((inputBase + 0x04u) & 0x3FFFFFu), &newPressed,  sizeof(newPressed));
             std::memcpy(mainRAM + ((inputBase + 0x08u) & 0x3FFFFFu), &newReleased, sizeof(newReleased));
 
-            m_immediateOverlayPrevHeld = injectedHeld;
+            m_immediateOverlayPrevHeld =
+                static_cast<uint16_t>(injectedHeld | (current & preserveMask));
             return;
         }
     }
