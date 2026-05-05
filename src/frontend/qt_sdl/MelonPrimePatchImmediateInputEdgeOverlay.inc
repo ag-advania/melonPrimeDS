@@ -106,6 +106,40 @@
                 == sizeof(kImmediateOverlayActionConsumerPc) / sizeof(kImmediateOverlayActionConsumerPc[0]),
             "kVSteerHooks ROM count mismatch");
 
+        // ── AltForm VectorSteer input write hook (spec108 == 0 entry) ────────
+        //
+        // Rather than injecting into registers mid-calculation (which corrupts
+        // the movement/collision solver), we write the aim delta directly to
+        // input+0x2A (horizontal) and input+0x2C (vertical) in the player's
+        // input struct.  The hook fires at the VectorSteer block entry — right
+        // after the spec108==0 branch falls through — so the subsequent ldrsh
+        // instructions naturally read our values.
+        //
+        // The delta is clamped to ±4 before writing.  The VectorSteer path
+        // scales by r2≈0x5000 (×5) and a Q12 basis component, so ±4 → ±20
+        // maximum stack vector component, which is safe.
+
+        struct VSteerInputHook {
+            uint32_t pc;              // spec108==0 confirmed entry (first instr after bne)
+            uint8_t  playerReg;       // register holding player ptr at this PC
+            uint32_t localPlayerPtrAddr;
+        };
+
+        static constexpr VSteerInputHook kVSteerInputHooks[] = {
+            { 0x02021DACu, 5u, 0x020BE790u }, // JP1_0
+            { 0x02021DACu, 5u, 0x020BE750u }, // JP1_1
+            { 0x02021DD0u, 5u, 0x020BCA70u }, // US1_0
+            { 0x02021DD0u, 5u, 0x020BD2D0u }, // US1_1
+            { 0x02021DC8u, 5u, 0x020BD2F0u }, // EU1_0
+            { 0x02021DD0u, 5u, 0x020BD370u }, // EU1_1
+            { 0x0200F884u, 7u, 0x020B6240u }, // KR1_0
+        };
+
+        static_assert(
+            sizeof(kVSteerInputHooks) / sizeof(kVSteerInputHooks[0])
+                == sizeof(kImmediateOverlayActionConsumerPc) / sizeof(kImmediateOverlayActionConsumerPc[0]),
+            "kVSteerInputHooks ROM count mismatch");
+
         // ── AltForm StoredYaw / StoredPitch hooks (transition fallback) ───────
         //
         // These fire in the spec108 != 0 code path (Trace/Sylux/Weavel) during
@@ -184,15 +218,10 @@
         // 1. Action consumer (Fire / Jump / Zoom / Movement)
         push(kImmediateOverlayActionConsumerPc[romGroupIndex]);
 
-        // 2. AltForm VectorSteer: V1, V2, H1, H2
-        // DISABLED: 02021E04 block updates movement/steering vectors (sp+0x4/0xC)
-        // via player+0x6F4/+0x6F8/+0x6FC/+0x700, not the camera AIM chain
-        // (02027798/02027E1C).  Injecting m_nativeAimDeltaX/Y here corrupts
-        // collision/movement state and freezes the game regardless of clamp value.
-        // spec108==0 hunters fall back to the ProcessAimInputMouse memory write
-        // path (*m_ptrs.aimX/Y) which feeds input+0x2A/+0x2C naturally.
-        // for (const auto& e : kVSteerHooks[romGroupIndex].v)
-        //     push(e.pc);
+        // 2. AltForm spec108==0 input write (Samus/Kanden/Noxus/Spire)
+        //    Hook at VectorSteer block entry; writes delta to input+0x2A/+0x2C
+        //    before the ldrsh instructions naturally read it.
+        push(kVSteerInputHooks[romGroupIndex].pc);
 
         // 3. AltForm StoredYaw / StoredPitch (transition fallback)
         push(kAltStoredHooks[romGroupIndex].yawPc);
@@ -299,52 +328,50 @@
             return;
         }
 
-        // ── AltForm VectorSteer (spec108 == 0: Samus/Kanden/Noxus/Spire) ─────
-        // Hook registration disabled above; this branch is never reached.
-        // Left in place for future re-evaluation once the correct injection
-        // point (camera AIM boundary rather than movement vector block) is found.
-        if (false && m_enableNativeAimDeltaHook && m_disableMphAimSmoothing) {
-            const auto& vs = kVSteerHooks[romIdx];
-            for (int i = 0; i < 4; i++) {
-                if (vs.v[i].pc != arm9ExecAddr)
-                    continue;
-
-                if (!IsPlayerAltForm())
-                    return;
-                if (!regs)
-                    return;
-
-                const uint32_t player = regs[vs.playerReg];
+        // ── AltForm VectorSteer input write (spec108 == 0: Samus/Kanden/Noxus/Spire) ──
+        //
+        // Fires at the VectorSteer block entry, immediately after spec108==0 is
+        // confirmed.  We write the aim delta directly to input+0x2A (horizontal)
+        // and input+0x2C (vertical) so the subsequent ldrsh instructions read our
+        // values without any register injection into the movement solver.
+        // Delta is clamped to ±4: VectorSteer multiplies by r2≈0x5000 (×5) plus a
+        // Q12 basis component, giving at most ±20 per stack vector component.
+        {
+            const auto& vi = kVSteerInputHooks[romIdx];
+            if (arm9ExecAddr == vi.pc
+                && m_enableNativeAimDeltaHook && m_disableMphAimSmoothing
+                && regs
+                && (m_nativeAimDeltaX | m_nativeAimDeltaY) != 0)
+            {
+                const uint32_t player = regs[vi.playerReg];
                 uint32_t localPlayer = 0;
-                if (!ImmediateOverlay_IsMainRamRange(vs.localPlayerPtrAddr, sizeof(localPlayer)))
+                if (!ImmediateOverlay_IsMainRamRange(vi.localPlayerPtrAddr, sizeof(localPlayer)))
                     return;
-                std::memcpy(&localPlayer, mainRAM + (vs.localPlayerPtrAddr & 0x3FFFFFu), sizeof(localPlayer));
+                std::memcpy(&localPlayer, mainRAM + (vi.localPlayerPtrAddr & 0x3FFFFFu),
+                            sizeof(localPlayer));
                 if (player != localPlayer)
                     return;
 
-                // m_nativeAimDeltaX/Y is the sensitivity-scaled AIM output
-                // (resX >> AIM_DIRECT_BITS), typically ±4..±64 for normal mouse use.
-                // The VectorSteer path applies its own ~×5 multiplier via r2≈0x5000
-                // and then a basis component (~Q12 unit vector, ≈0x1000), so the
-                // final stack vector component is roughly rawDelta × 5.
-                // Injecting the full AIM delta causes the stack vector to overflow
-                // and freeze the game.  Clamp to ±4 so the max component is ±20,
-                // which is safe.  Raise this conservatively if steering feels weak.
-                static constexpr int32_t kVSteerClamp = 4;
-                const int32_t raw = vs.v[i].isVertical
-                    ? static_cast<int32_t>(m_nativeAimDeltaY)
-                    : static_cast<int32_t>(m_nativeAimDeltaX);
-                const int32_t clamped = raw > kVSteerClamp ? kVSteerClamp
-                                      : raw < -kVSteerClamp ? -kVSteerClamp
-                                      : raw;
-                regs[vs.v[i].deltaReg] = static_cast<uint32_t>(clamped);
+                // input struct at player+0x464; horizontal at +0x2A, vertical at +0x2C
+                const uint32_t addrH = player + 0x464u + 0x2Au;
+                const uint32_t addrV = player + 0x464u + 0x2Cu;
+                if (!ImmediateOverlay_IsMainRamRange(addrH, 2u)
+                    || !ImmediateOverlay_IsMainRamRange(addrV, 2u))
+                    return;
 
-                // Consume after H2 (index 3 = last in V1→V2→H1→H2 sequence).
-                // V1/V2/H1 leave the delta intact so all four reads reuse it.
-                if (i == 3) {
-                    m_nativeAimDeltaX = 0;
-                    m_nativeAimDeltaY = 0;
-                }
+                static constexpr int32_t kAltSteerClamp = 4;
+                const auto clamp16 = [](int32_t v) -> int16_t {
+                    return static_cast<int16_t>(
+                        v > kAltSteerClamp  ? kAltSteerClamp  :
+                        v < -kAltSteerClamp ? -kAltSteerClamp : v);
+                };
+                const int16_t dx = clamp16(m_nativeAimDeltaX);
+                const int16_t dy = clamp16(m_nativeAimDeltaY);
+
+                std::memcpy(mainRAM + (addrH & 0x3FFFFFu), &dx, sizeof(dx));
+                std::memcpy(mainRAM + (addrV & 0x3FFFFFu), &dy, sizeof(dy));
+                m_nativeAimDeltaX = 0;
+                m_nativeAimDeltaY = 0;
                 return;
             }
         }
