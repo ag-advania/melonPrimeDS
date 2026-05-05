@@ -44,6 +44,63 @@
             },
         };
 
+        // ── AltForm VectorSteer input write (spec108 == 0: Samus/Kanden/Noxus/Spire) ──
+        //
+        // Fires at the VectorSteer block entry, immediately after the spec108==0
+        // branch falls through.  Writes m_nativeAimDeltaX/Y (clamped to ±4) to
+        // input+0x2A/+0x2C so the subsequent ldrsh instructions read our delta
+        // without any register injection into the movement solver.
+        // ±4 clamp: VectorSteer multiplies by r2≈0x5000 (×5) × Q12 basis ≈ ±20 max.
+
+        struct AltFormVSteerInputHook {
+            uint32_t pc;               // first instr after spec108==0 bne (entry confirmed)
+            uint8_t  playerReg;        // register holding player ptr at this PC
+            uint32_t localPlayerPtrAddr;
+        };
+
+        static constexpr AltFormVSteerInputHook kAltFormVSteerInputHooks[] = {
+            { 0x02021DACu, 5u, 0x020BE790u }, // JP1_0
+            { 0x02021DACu, 5u, 0x020BE750u }, // JP1_1
+            { 0x02021DD0u, 5u, 0x020BCA70u }, // US1_0
+            { 0x02021DD0u, 5u, 0x020BD2D0u }, // US1_1
+            { 0x02021DC8u, 5u, 0x020BD2F0u }, // EU1_0
+            { 0x02021DD0u, 5u, 0x020BD370u }, // EU1_1
+            { 0x0200F884u, 7u, 0x020B6240u }, // KR1_0
+        };
+
+        // ── AltForm StoredYaw / StoredPitch (transition fallback) ────────────
+        //
+        // Fires in the spec108 != 0 path (Trace/Sylux/Weavel) during
+        // biped↔altform transformation when NativeAimDeltaHook is suppressed by
+        // IsPlayerTransforming().  Injects scaled delta into r1 before the bl
+        // to update player+0xE4/+0xE8 (stored aim).
+
+        struct AltStoredHookSet {
+            uint8_t  playerReg;
+            uint32_t localPlayerPtrAddr;
+            uint32_t yawPc;
+            uint32_t pitchPc;
+        };
+
+        static constexpr AltStoredHookSet kAltStoredHooks[] = {
+            { 5u, 0x020BE790u, 0x020221D0u, 0x020221DCu }, // JP1_0
+            { 5u, 0x020BE750u, 0x020221D0u, 0x020221DCu }, // JP1_1
+            { 5u, 0x020BCA70u, 0x020221F4u, 0x02022200u }, // US1_0
+            { 5u, 0x020BD2D0u, 0x020221F4u, 0x02022200u }, // US1_1
+            { 5u, 0x020BD2F0u, 0x020221ECu, 0x020221F8u }, // EU1_0
+            { 5u, 0x020BD370u, 0x020221F4u, 0x02022200u }, // EU1_1
+            { 7u, 0x020B6240u, 0x0200FC78u, 0x0200FC84u }, // KR1_0
+        };
+
+        static_assert(
+            sizeof(kAltFormVSteerInputHooks) / sizeof(kAltFormVSteerInputHooks[0])
+                == sizeof(kNativeAimDeltaHooks) / sizeof(kNativeAimDeltaHooks[0]),
+            "kAltFormVSteerInputHooks ROM count mismatch");
+        static_assert(
+            sizeof(kAltStoredHooks) / sizeof(kAltStoredHooks[0])
+                == sizeof(kNativeAimDeltaHooks) / sizeof(kNativeAimDeltaHooks[0]),
+            "kAltStoredHooks ROM count mismatch");
+
         [[nodiscard]] static FORCE_INLINE bool NativeAimDeltaHook_IsMainRamRange(
             uint32_t address,
             uint32_t size) noexcept
@@ -101,11 +158,20 @@
             return 0;
 
         uint32_t count = 0;
-        for (const auto& info : kNativeAimDeltaHooks[romGroupIndex]) {
-            if (count >= maxCount)
-                break;
-            out[count++] = info.hookPc;
-        }
+        const auto push = [&](uint32_t pc) {
+            if (count < maxCount) out[count++] = pc;
+        };
+
+        for (const auto& info : kNativeAimDeltaHooks[romGroupIndex])
+            push(info.hookPc);
+
+        // AltForm spec108==0 input write (Samus/Kanden/Noxus/Spire)
+        push(kAltFormVSteerInputHooks[romGroupIndex].pc);
+
+        // AltForm StoredYaw / StoredPitch (transition fallback)
+        push(kAltStoredHooks[romGroupIndex].yawPc);
+        push(kAltStoredHooks[romGroupIndex].pitchPc);
+
         return count;
     }
 
@@ -118,15 +184,98 @@
             return;
         if (!m_enableNativeAimDeltaHook || !m_disableMphAimSmoothing || isStylusMode)
             return;
-        if (IsPlayerTransforming())
-            return;
         if ((m_aimBlockBits | static_cast<uint32_t>(m_isLayoutChangePending)) != 0)
             return;
         if (!m_flags.test(StateFlags::BIT_LAST_FOCUSED))
             return;
 
+        if (!m_flags.test(StateFlags::BIT_IN_GAME_INIT))
+            return;
+
+        const uint8_t romIdx = m_currentRom.romGroupIndex;
+        if (romIdx >= sizeof(kNativeAimDeltaHooks) / sizeof(kNativeAimDeltaHooks[0]))
+            return;
+
+        uint8_t* const mainRAM = nds->MainRAM;
+
+        // ── AltForm VectorSteer input write (spec108==0: Samus/Kanden/Noxus/Spire) ──
+        {
+            const auto& vi = kAltFormVSteerInputHooks[romIdx];
+            if (arm9ExecAddr == vi.pc && (m_nativeAimDeltaX | m_nativeAimDeltaY) != 0) {
+                uint32_t localPlayer = 0;
+                if (!NativeAimDeltaHook_IsMainRamRange(vi.localPlayerPtrAddr, sizeof(localPlayer)))
+                    return;
+                std::memcpy(&localPlayer, mainRAM + (vi.localPlayerPtrAddr & 0x3FFFFFu),
+                            sizeof(localPlayer));
+                const uint32_t player = regs[vi.playerReg];
+                if (player != localPlayer)
+                    return;
+
+                const uint32_t addrH = player + 0x464u + 0x2Au;
+                const uint32_t addrV = player + 0x464u + 0x2Cu;
+                if (!NativeAimDeltaHook_IsMainRamRange(addrH, 2u)
+                    || !NativeAimDeltaHook_IsMainRamRange(addrV, 2u))
+                    return;
+
+                static constexpr int32_t kClamp = 4;
+                const auto clamp16 = [](int32_t v) -> int16_t {
+                    return static_cast<int16_t>(v > kClamp ? kClamp : v < -kClamp ? -kClamp : v);
+                };
+                const int16_t dx = clamp16(m_nativeAimDeltaX);
+                const int16_t dy = clamp16(m_nativeAimDeltaY);
+                std::memcpy(mainRAM + (addrH & 0x3FFFFFu), &dx, sizeof(dx));
+                std::memcpy(mainRAM + (addrV & 0x3FFFFFu), &dy, sizeof(dy));
+                m_nativeAimDeltaX = 0;
+                m_nativeAimDeltaY = 0;
+                return;
+            }
+        }
+
+        // ── AltForm StoredYaw / StoredPitch (transition fallback) ────────────
+        // Fires during biped↔altform transformation (IsPlayerTransforming==true),
+        // when the register injection path is suppressed.  No IsPlayerTransforming
+        // guard here so this block is reachable in that state.
+        if ((m_nativeAimDeltaX | m_nativeAimDeltaY) != 0) {
+            const auto& as = kAltStoredHooks[romIdx];
+            const bool isYaw   = (arm9ExecAddr == as.yawPc);
+            const bool isPitch = (arm9ExecAddr == as.pitchPc);
+
+            if (isYaw || isPitch) {
+                uint32_t localPlayer = 0;
+                if (!NativeAimDeltaHook_IsMainRamRange(as.localPlayerPtrAddr, sizeof(localPlayer)))
+                    return;
+                std::memcpy(&localPlayer, mainRAM + (as.localPlayerPtrAddr & 0x3FFFFFu),
+                            sizeof(localPlayer));
+                const uint32_t player = regs[as.playerReg];
+                if (player != localPlayer)
+                    return;
+                if (!NativeAimDeltaHook_IsMainRamRange(player + 0x3F8u, 8u))
+                    return;
+
+                uint32_t sensXRaw = 0, sensYRaw = 0;
+                std::memcpy(&sensXRaw, mainRAM + ((player + 0x3F8u) & 0x3FFFFFu), sizeof(sensXRaw));
+                std::memcpy(&sensYRaw, mainRAM + ((player + 0x3FCu) & 0x3FFFFFu), sizeof(sensYRaw));
+
+                if (isYaw) {
+                    regs[1] = static_cast<uint32_t>(
+                        static_cast<int64_t>(m_nativeAimDeltaX) * static_cast<int32_t>(sensXRaw));
+                } else {
+                    regs[1] = static_cast<uint32_t>(
+                        static_cast<int64_t>(m_nativeAimDeltaY) * static_cast<int32_t>(sensYRaw));
+                    m_nativeAimDeltaX = 0;
+                    m_nativeAimDeltaY = 0;
+                }
+                return;
+            }
+        }
+
+        // ── Register injection (Normal / AltInput spec108=1) ─────────────────
+        // Skip during transformation; VSteerInput/AltStored above handle those cases.
+        if (IsPlayerTransforming())
+            return;
+
         const NativeAimDeltaHookInfo* const info =
-            NativeAimDeltaHook_Find(m_currentRom.romGroupIndex, arm9ExecAddr);
+            NativeAimDeltaHook_Find(romIdx, arm9ExecAddr);
         if (!info)
             return;
         if (IsPlayerAltForm() != info->isAltFormPath)

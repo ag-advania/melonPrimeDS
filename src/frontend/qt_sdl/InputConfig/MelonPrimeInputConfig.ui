@@ -115,14 +115,22 @@
 											</widget>
 										</item>
 										<item row="3" column="0" colspan="2">
-											<widget class="QCheckBox" name="cbMetroidEnableNativeAimDeltaHook">
-												<property name="text"><string>Enable Native Aim Delta Hook</string></property>
-												<property name="styleSheet"><string>QCheckBox { margin-left: 24px; }</string></property>
+											<widget class="QLabel" name="lblMetroidNativeAimHookMode">
+												<property name="text"><string>Native Aim Hook</string></property>
+												<property name="styleSheet"><string>QLabel { margin-left: 24px; }</string></property>
 											</widget>
 										</item>
 										<item row="4" column="0" colspan="2">
-											<widget class="QLabel" name="lblMetroidNativeAimDeltaHookDesc">
-												<property name="text"><string>Apply mouse input directly to the game's internal aim update path. This can reduce input latency.</string></property>
+											<widget class="QComboBox" name="cmbMetroidNativeAimHookMode">
+												<property name="styleSheet"><string>QComboBox { margin-left: 48px; }</string></property>
+												<item><property name="text"><string>Off</string></property></item>
+												<item><property name="text"><string>Register Injection (低遅延・Biped+AltSpec108)</string></property></item>
+												<item><property name="text"><string>PostFold Write (全AltForm対応・やや遅延あり)</string></property></item>
+											</widget>
+										</item>
+										<item row="5" column="0" colspan="2">
+											<widget class="QLabel" name="lblMetroidNativeAimHookModeDesc">
+												<property name="text"><string>Register Injection: hooks at the aim call-site for lowest latency, covers Biped and AltForm spec108=1 (Trace/Sylux/Weavel). PostFold Write: hooks after TouchInputProcessor, covers all AltForms including spec108=0 (Samus/Kanden/Noxus/Spire), slightly higher latency.</string></property>
 												<property name="wordWrap"><bool>true</bool></property>
 												<property name="styleSheet"><string>QLabel { margin-left: 48px; }</string></property>
 											</widget>

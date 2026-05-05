@@ -312,6 +312,7 @@ namespace MelonPrime {
     }
 
 #include "MelonPrimePatchNativeAimDeltaHook.inc"
+#include "MelonPrimePatchNativeAimDeltaHookNew.inc"
 #include "MelonPrimePatchImmediateInputEdgeOverlay.inc"
 #include "MelonPrimePatchImmediateTransformGateHook.inc"
 
