@@ -124,8 +124,8 @@
 											<widget class="QComboBox" name="cmbMetroidNativeAimHookMode">
 												<property name="styleSheet"><string>QComboBox { margin-left: 48px; }</string></property>
 												<item><property name="text"><string>Off</string></property></item>
-												<item><property name="text"><string>Register Injection (低遅延・Biped+AltSpec108)</string></property></item>
-												<item><property name="text"><string>PostFold Write (全AltForm対応・やや遅延あり)</string></property></item>
+												<item><property name="text"><string>Register Injection (low latency, Biped + AltSpec108)</string></property></item>
+												<item><property name="text"><string>PostFold Write (all AltForm, slightly higher latency)</string></property></item>
 											</widget>
 										</item>
 										<item row="5" column="0" colspan="2">
