@@ -14,7 +14,8 @@ Support the original creator of melonPrimeDS, Makidoll:
 
 [![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/Q5Q0MLBI)
 
-You can buy a coffee for the current maintainer and updater, Zection, if you’d like:
+## You can buy a coffee for the current maintainer and updater, Zection, if you’d like:
+https://ko-fi.com/zection
 
 <table width="100%">
   <tr>
@@ -32,6 +33,9 @@ You can buy a coffee for the current maintainer and updater, Zection, if you’d
     </td>
   </tr>
 </table>
+
+## If you’d like to see new HUD features added, you can also support Livetek .
+https://ko-fi.com/livetek 
 
 
 [melonPrimeDS.webm](https://github.com/makidoll/melonPrimeDS/assets/8362329/69ab26bb-7205-451a-a11c-70a2ca0b549d)
