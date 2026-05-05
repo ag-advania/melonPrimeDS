@@ -47,10 +47,10 @@
         // ── AltForm VectorSteer input write (spec108 == 0: Samus/Kanden/Noxus/Spire) ──
         //
         // Fires at the VectorSteer block entry, immediately after the spec108==0
-        // branch falls through.  Writes m_nativeAimDeltaX/Y (clamped to ±4) to
+        // branch falls through.  Writes scaled m_nativeAimDeltaX/Y to
         // input+0x2A/+0x2C so the subsequent ldrsh instructions read our delta
         // without any register injection into the movement solver.
-        // ±4 clamp: VectorSteer multiplies by r2≈0x5000 (×5) × Q12 basis ≈ ±20 max.
+        // The write path stays in game input memory; gain/clamp controls aim strength.
 
         struct AltFormVSteerInputHook {
             uint32_t pc;               // first instr after spec108==0 bne (entry confirmed)
@@ -129,6 +129,21 @@
             if (value < -32768)
                 return -32768;
             return static_cast<int16_t>(value);
+        }
+
+        [[nodiscard]] static FORCE_INLINE int16_t NativeAimDeltaHook_ClampScaledS16(
+            int32_t value,
+            int32_t gain,
+            int32_t limit) noexcept
+        {
+            int64_t scaled = static_cast<int64_t>(value) * static_cast<int64_t>(gain);
+
+            if (scaled > limit)
+                scaled = limit;
+            else if (scaled < -limit)
+                scaled = -limit;
+
+            return static_cast<int16_t>(scaled);
         }
 
         [[nodiscard]] static FORCE_INLINE const NativeAimDeltaHookInfo* NativeAimDeltaHook_Find(
@@ -217,12 +232,17 @@
                     || !NativeAimDeltaHook_IsMainRamRange(addrV, 2u))
                     return;
 
-                static constexpr int32_t kClamp = 4;
-                const auto clamp16 = [](int32_t v) -> int16_t {
-                    return static_cast<int16_t>(v > kClamp ? kClamp : v < -kClamp ? -kClamp : v);
-                };
-                const int16_t dx = clamp16(m_nativeAimDeltaX);
-                const int16_t dy = clamp16(m_nativeAimDeltaY);
+                static constexpr int32_t kVSteerGain  = 8;
+                static constexpr int32_t kVSteerClamp = 128;
+
+                const int16_t dx = NativeAimDeltaHook_ClampScaledS16(
+                    m_nativeAimDeltaX,
+                    kVSteerGain,
+                    kVSteerClamp);
+                const int16_t dy = NativeAimDeltaHook_ClampScaledS16(
+                    m_nativeAimDeltaY,
+                    kVSteerGain,
+                    kVSteerClamp);
                 std::memcpy(mainRAM + (addrH & 0x3FFFFFu), &dx, sizeof(dx));
                 std::memcpy(mainRAM + (addrV & 0x3FFFFFu), &dy, sizeof(dy));
                 m_nativeAimDeltaX = 0;
