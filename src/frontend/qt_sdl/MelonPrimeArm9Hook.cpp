@@ -133,7 +133,12 @@ static bool DispatcherCallback(
     if ((mask & Dispatch_NativeAimDelta) != 0)
     {
         if (auto* core = static_cast<MelonPrimeCore*>(userdata))
-            core->NativeAimDeltaHook_DispatchCheck(nds, arm9ExecAddr, regs);
+        {
+            if (core->m_nativeAimHookMode == 2)
+                core->NativeAimDeltaHookNew_DispatchCheck(nds, arm9ExecAddr, regs);
+            else
+                core->NativeAimDeltaHook_DispatchCheck(nds, arm9ExecAddr, regs);
+        }
     }
 
     if ((mask & Dispatch_ImmediateInputEdgeOverlay) != 0)
@@ -189,10 +194,16 @@ void ARM9Hook_Install(
     uint32_t moduleAddresses[melonDS::NDS::ARM9InstructionHookMaxAddresses] = {};
     uint32_t moduleCount = 0;
 
-    moduleCount = MelonPrimeCore::NativeAimDeltaHook_GetAddresses(
-        romGroupIndex,
-        moduleAddresses,
-        melonDS::NDS::ARM9InstructionHookMaxAddresses);
+    if (core && core->m_nativeAimHookMode == 2)
+        moduleCount = MelonPrimeCore::NativeAimDeltaHookNew_GetAddresses(
+            romGroupIndex,
+            moduleAddresses,
+            melonDS::NDS::ARM9InstructionHookMaxAddresses);
+    else
+        moduleCount = MelonPrimeCore::NativeAimDeltaHook_GetAddresses(
+            romGroupIndex,
+            moduleAddresses,
+            melonDS::NDS::ARM9InstructionHookMaxAddresses);
     for (uint32_t i = 0; i < moduleCount; ++i)
         AddDispatchAddress(moduleAddresses[i], Dispatch_NativeAimDelta);
 

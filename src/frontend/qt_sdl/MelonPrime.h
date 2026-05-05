@@ -177,6 +177,15 @@ namespace MelonPrime {
             uint32_t arm9ExecAddr,
             uint32_t regs[16]);
 
+        static uint32_t NativeAimDeltaHookNew_GetAddresses(
+            uint8_t romGroupIndex,
+            uint32_t* out,
+            uint32_t maxCount);
+        void NativeAimDeltaHookNew_DispatchCheck(
+            melonDS::NDS* nds,
+            uint32_t arm9ExecAddr,
+            uint32_t regs[16]);
+
         static uint32_t ImmediateInputEdgeOverlay_GetAddresses(
             uint8_t romGroupIndex,
             uint32_t* out,
@@ -278,7 +287,8 @@ namespace MelonPrime {
         // ProcessAimInputMouse reads these every frame right after residuals.
         bool     m_disableMphAimSmoothing = false;
         bool     m_enableAimAccumulator = false;
-        bool     m_enableNativeAimDeltaHook = false;
+        bool     m_enableNativeAimDeltaHook = false; // true when mode != 0
+        int8_t   m_nativeAimHookMode = 0;  // 0=off 1=RegisterInject 2=FoldDerived
         bool     m_enableImmediateInputEdgeOverlay = false;
         bool     m_enableDirectAltFormTransform = false;
         int16_t  m_nativeAimDeltaX = 0;
