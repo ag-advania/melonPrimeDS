@@ -194,16 +194,17 @@ void ARM9Hook_Install(
     uint32_t moduleAddresses[melonDS::NDS::ARM9InstructionHookMaxAddresses] = {};
     uint32_t moduleCount = 0;
 
-    if (core && core->GetNativeAimHookMode() == 2)
-        moduleCount = MelonPrimeCore::NativeAimDeltaHookNew_GetAddresses(
-            romGroupIndex,
-            moduleAddresses,
-            melonDS::NDS::ARM9InstructionHookMaxAddresses);
-    else
-        moduleCount = MelonPrimeCore::NativeAimDeltaHook_GetAddresses(
-            romGroupIndex,
-            moduleAddresses,
-            melonDS::NDS::ARM9InstructionHookMaxAddresses);
+    // Register addresses for BOTH hook modes so mid-game mode switching works.
+    // DispatcherCallback checks GetNativeAimHookMode() at call time to route
+    // to the correct handler; whichever mode's PCs don't match will early-return
+    // inside their DispatchCheck without side effects.
+    moduleCount = MelonPrimeCore::NativeAimDeltaHook_GetAddresses(
+        romGroupIndex, moduleAddresses, melonDS::NDS::ARM9InstructionHookMaxAddresses);
+    for (uint32_t i = 0; i < moduleCount; ++i)
+        AddDispatchAddress(moduleAddresses[i], Dispatch_NativeAimDelta);
+
+    moduleCount = MelonPrimeCore::NativeAimDeltaHookNew_GetAddresses(
+        romGroupIndex, moduleAddresses, melonDS::NDS::ARM9InstructionHookMaxAddresses);
     for (uint32_t i = 0; i < moduleCount; ++i)
         AddDispatchAddress(moduleAddresses[i], Dispatch_NativeAimDelta);
 
