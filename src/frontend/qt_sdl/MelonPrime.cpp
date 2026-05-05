@@ -57,8 +57,16 @@ namespace MelonPrime {
         m_disableMphAimSmoothing = localCfg.GetBool(CfgKey::DisableMphAimSmoothing);
         m_enableAimAccumulator = localCfg.GetBool(CfgKey::AimAccumulator);
         m_nativeAimHookMode = static_cast<int8_t>(localCfg.GetInt(CfgKey::NativeAimHookMode));
+#ifndef MELONPRIME_ENABLE_DEVELOPER_FEATURES
+        if (m_nativeAimHookMode == 1)
+            m_nativeAimHookMode = 0;
+#endif
         m_enableNativeAimDeltaHook = (m_nativeAimHookMode != 0);
+#ifdef MELONPRIME_ENABLE_DEVELOPER_FEATURES
         m_enableImmediateInputEdgeOverlay = localCfg.GetBool(CfgKey::ImmediateInputEdgeOverlay);
+#else
+        m_enableImmediateInputEdgeOverlay = false;
+#endif
         m_enableDirectAltFormTransform    = localCfg.GetBool(CfgKey::DirectAltFormTransform);
         if (!m_enableDirectAltFormTransform)
             m_directTransformPendingFrames = 0;

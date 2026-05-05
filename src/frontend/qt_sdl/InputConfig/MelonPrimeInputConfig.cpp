@@ -134,13 +134,35 @@ void MelonPrimeInputConfig::setupSensitivityAndToggles(Config::Table& instcfg)
     ui->cbMetroidEnableStylusMode->setChecked(instcfg.GetBool("Metroid.Enable.stylusMode"));
     ui->cbMetroidDisableMphAimSmoothing->setChecked(instcfg.GetBool("Metroid.Aim.Disable.MphAimSmoothing"));
     ui->cbMetroidEnableAimAccumulator->setChecked(instcfg.GetBool("Metroid.Aim.Enable.Accumulator"));
-    ui->cmbMetroidNativeAimHookMode->setCurrentIndex(instcfg.GetInt("Metroid.Aim.NativeHookMode"));
-    ui->cbMetroidEnableImmediateInputEdgeOverlay->setChecked(instcfg.GetBool("Metroid.Input.Enable.ImmediateInputEdgeOverlay"));
+    const int nativeAimHookMode = instcfg.GetInt("Metroid.Aim.NativeHookMode");
+    ui->cmbMetroidNativeAimHookMode->setCurrentIndex(nativeAimHookMode == 2 ? 1 : 0);
+    ui->cbMetroidEnableNativeAimRegisterInjection->setChecked(
+        kDeveloperOnlyFeaturesEnabled && nativeAimHookMode == 1);
+    ui->cbMetroidEnableImmediateInputEdgeOverlay->setChecked(
+        kDeveloperOnlyFeaturesEnabled && instcfg.GetBool("Metroid.Input.Enable.ImmediateInputEdgeOverlay"));
     ui->cbMetroidEnableDirectAltFormTransform->setChecked(instcfg.GetBool("Metroid.Input.Enable.DirectAltFormTransform"));
     // Original public behavior:
     // ui->cbMetroidEnableInstantAimFollow->setChecked(instcfg.GetBool("Metroid.Aim.Enable.InstantAimFollow"));
     ui->cbMetroidEnableInstantAimFollow->setChecked(
         kDeveloperOnlyFeaturesEnabled && instcfg.GetBool("Metroid.Aim.Enable.InstantAimFollow"));
+    connect(
+        ui->cbMetroidEnableNativeAimRegisterInjection,
+        &QCheckBox::checkStateChanged,
+        this,
+        [this](Qt::CheckState state) {
+            if (state == Qt::Checked && ui->cmbMetroidNativeAimHookMode->currentIndex() != 0)
+                ui->cmbMetroidNativeAimHookMode->setCurrentIndex(0);
+            updateAimControlsForStylusMode(ui->cbMetroidEnableStylusMode->isChecked());
+        });
+    connect(
+        ui->cmbMetroidNativeAimHookMode,
+        QOverload<int>::of(&QComboBox::currentIndexChanged),
+        this,
+        [this](int index) {
+            if (index != 0 && ui->cbMetroidEnableNativeAimRegisterInjection->isChecked())
+                ui->cbMetroidEnableNativeAimRegisterInjection->setChecked(false);
+            updateAimControlsForStylusMode(ui->cbMetroidEnableStylusMode->isChecked());
+        });
     updateAimControlsForStylusMode(ui->cbMetroidEnableStylusMode->isChecked());
 
     // Screen Sync Mode
@@ -161,6 +183,8 @@ void MelonPrimeInputConfig::setupSensitivityAndToggles(Config::Table& instcfg)
         ui->lblMetroidFixNoxusBladePersistenceWarning->setText(
             "Developer build only: this fix is unstable and the blade may still remain active in some cases, especially in the Korean version.");
         ui->cbMetroidEnableInstantAimFollow->setToolTip("Developer-only option enabled in this build.");
+        ui->cbMetroidEnableNativeAimRegisterInjection->setToolTip("Developer-only option enabled in this build.");
+        ui->cbMetroidEnableImmediateInputEdgeOverlay->setToolTip("Developer-only option enabled in this build.");
         ui->lblMetroidInstantAimFollowDesc->setText(
             "The game normally moves currentAim only about 10% toward targetAim each update, which can feel like mouse lag. This patch makes currentAim follow targetAim instantly. Developer build only.");
     }
@@ -186,11 +210,14 @@ void MelonPrimeInputConfig::updateAimControlsForStylusMode(bool stylusEnabled)
     ui->metroidAimAdjustLabel->setEnabled(enableAimControls);
     ui->cbMetroidEnableAimAccumulator->setEnabled(enableAimControls);
     const bool enableAimHooks = enableAimControls && ui->cbMetroidDisableMphAimSmoothing->isChecked();
+    const bool enableRegisterInjection = kDeveloperOnlyFeaturesEnabled && enableAimHooks;
     ui->lblMetroidNativeAimHookMode->setEnabled(enableAimHooks);
     ui->cmbMetroidNativeAimHookMode->setEnabled(enableAimHooks);
     ui->lblMetroidNativeAimHookModeDesc->setEnabled(enableAimHooks);
-    ui->cbMetroidEnableImmediateInputEdgeOverlay->setEnabled(enableAimControls);
-    ui->lblMetroidImmediateInputEdgeOverlayDesc->setEnabled(enableAimControls);
+    ui->cbMetroidEnableNativeAimRegisterInjection->setEnabled(enableRegisterInjection);
+    ui->lblMetroidNativeAimRegisterInjectionDesc->setEnabled(enableRegisterInjection);
+    ui->cbMetroidEnableImmediateInputEdgeOverlay->setEnabled(kDeveloperOnlyFeaturesEnabled && enableAimControls);
+    ui->lblMetroidImmediateInputEdgeOverlayDesc->setEnabled(kDeveloperOnlyFeaturesEnabled && enableAimControls);
     ui->cbMetroidEnableDirectAltFormTransform->setEnabled(enableAimControls);
     ui->lblMetroidDirectAltFormTransformDesc->setEnabled(enableAimControls);
     // Original public behavior:

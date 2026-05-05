@@ -124,27 +124,14 @@
 											<widget class="QComboBox" name="cmbMetroidNativeAimHookMode">
 												<property name="styleSheet"><string>QComboBox { margin-left: 48px; }</string></property>
 												<item><property name="text"><string>Off</string></property></item>
-												<item><property name="text"><string>Register Injection (low latency, Biped + AltSpec108)</string></property></item>
-												<item><property name="text"><string>PostFold Write (all AltForm, slightly higher latency)</string></property></item>
+												<item><property name="text"><string>PostFold Write</string></property></item>
 											</widget>
 										</item>
 										<item row="5" column="0" colspan="2">
 											<widget class="QLabel" name="lblMetroidNativeAimHookModeDesc">
-												<property name="text"><string>Register Injection: hooks at the aim call-site for lowest latency, covers Biped and AltForm spec108=1 (Trace/Sylux/Weavel). PostFold Write: hooks after TouchInputProcessor, covers all AltForms including spec108=0 (Samus/Kanden/Noxus/Spire), slightly higher latency.</string></property>
+												<property name="text"><string>PostFold Write hooks after TouchInputProcessor and covers all AltForms including spec108=0 (Samus/Kanden/Noxus/Spire).</string></property>
 												<property name="wordWrap"><bool>true</bool></property>
 												<property name="styleSheet"><string>QLabel { margin-left: 48px; }</string></property>
-											</widget>
-										</item>
-										<item row="6" column="0" colspan="2">
-											<widget class="QCheckBox" name="cbMetroidEnableImmediateInputEdgeOverlay">
-												<property name="text"><string>Enable Immediate Input Edge Overlay</string></property>
-											</widget>
-										</item>
-										<item row="7" column="0" colspan="2">
-											<widget class="QLabel" name="lblMetroidImmediateInputEdgeOverlayDesc">
-												<property name="text"><string>Generate pressed/released edges on the emulator side and overlay them into MPH's internal input state before player actions are processed. Covers fire, jump, zoom, and movement. Button masks are read from the player's current control-preset binding table, so all presets (Touch R/L, Dual R/L) are supported automatically.</string></property>
-												<property name="wordWrap"><bool>true</bool></property>
-												<property name="styleSheet"><string>QLabel { margin-left: 24px; }</string></property>
 											</widget>
 										</item>
 										<item row="8" column="0" colspan="2">
@@ -832,6 +819,36 @@ The EU ROM has a hidden Japanese option — setting your DS firmware to Japanese
 										<widget class="QLabel" name="lblMetroidDeveloperOnlyDesc">
 											<property name="text"><string>Features in this section are still in development and are not ready for public release. They may or may not be released.</string></property>
 											<property name="wordWrap"><bool>true</bool></property>
+										</widget>
+									</item>
+									<item>
+										<widget class="QCheckBox" name="cbMetroidEnableNativeAimRegisterInjection">
+											<property name="enabled"><bool>false</bool></property>
+											<property name="text"><string>Enable Native Aim Register Injection</string></property>
+											<property name="toolTip"><string>Developer-only option. Currently disabled.</string></property>
+										</widget>
+									</item>
+									<item>
+										<widget class="QLabel" name="lblMetroidNativeAimRegisterInjectionDesc">
+											<property name="enabled"><bool>false</bool></property>
+											<property name="text"><string>Hooks at the aim call-site for lowest latency. Covers Biped and AltForm spec108=1 (Trace/Sylux/Weavel). When enabled, this overrides the Native Aim Hook combo above.</string></property>
+											<property name="wordWrap"><bool>true</bool></property>
+											<property name="styleSheet"><string>QLabel { margin-left: 20px; }</string></property>
+										</widget>
+									</item>
+									<item>
+										<widget class="QCheckBox" name="cbMetroidEnableImmediateInputEdgeOverlay">
+											<property name="enabled"><bool>false</bool></property>
+											<property name="text"><string>Enable Immediate Input Edge Overlay</string></property>
+											<property name="toolTip"><string>Developer-only option. Currently disabled.</string></property>
+										</widget>
+									</item>
+									<item>
+										<widget class="QLabel" name="lblMetroidImmediateInputEdgeOverlayDesc">
+											<property name="enabled"><bool>false</bool></property>
+											<property name="text"><string>Generate pressed/released edges on the emulator side and overlay them into MPH's internal input state before player actions are processed. Covers fire, jump, zoom, and movement. Button masks are read from the player's current control-preset binding table, so all presets (Touch R/L, Dual R/L) are supported automatically.</string></property>
+											<property name="wordWrap"><bool>true</bool></property>
+											<property name="styleSheet"><string>QLabel { margin-left: 20px; }</string></property>
 										</widget>
 									</item>
 									<item>
