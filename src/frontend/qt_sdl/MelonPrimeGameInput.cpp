@@ -400,7 +400,7 @@ namespace MelonPrime {
                     return;
                 }
 
-                if (m_enableNativeAimDeltaHook && !IsPlayerTransforming()) {
+                if (m_enableNativeAimDeltaHook) {
                     m_nativeAimDeltaX = outX;
                     m_nativeAimDeltaY = outY;
                 }
