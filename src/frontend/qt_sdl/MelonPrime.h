@@ -169,20 +169,20 @@ namespace MelonPrime {
 
 #ifdef MELONPRIME_DS
         [[nodiscard]] int GetNativeAimHookMode() const noexcept { return m_nativeAimHookMode; }
-        static uint32_t NativeAimDeltaHook_GetAddresses(
+        static uint32_t NativeAimDeltaHookRegisterInjection_GetAddresses(
             uint8_t romGroupIndex,
             uint32_t* out,
             uint32_t maxCount);
-        void NativeAimDeltaHook_DispatchCheck(
+        void NativeAimDeltaHookRegisterInjection_DispatchCheck(
             melonDS::NDS* nds,
             uint32_t arm9ExecAddr,
             uint32_t regs[16]);
 
-        static uint32_t NativeAimDeltaHookNew_GetAddresses(
+        static uint32_t NativeAimDeltaHookPostFoldWrite_GetAddresses(
             uint8_t romGroupIndex,
             uint32_t* out,
             uint32_t maxCount);
-        void NativeAimDeltaHookNew_DispatchCheck(
+        void NativeAimDeltaHookPostFoldWrite_DispatchCheck(
             melonDS::NDS* nds,
             uint32_t arm9ExecAddr,
             uint32_t regs[16]);

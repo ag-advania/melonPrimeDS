@@ -1,8 +1,8 @@
 #ifdef MELONPRIME_DS
 
-    // ── AimFoldDerivedOverride Hook ──────────────────────────────────────────
+    // ── PostFold Write Hook ──────────────────────────────────────────────────
     //
-    // Alternative to NativeAimDeltaHook register injection.
+    // Alternative to the NativeAimDeltaHookRegisterInjection version.
     //
     // Hooks at the single point right AFTER the TouchInputProcessor writes the
     // derived Y value (strh at 0202A02C / 0202A050 etc.).  At that PC, r7/r6
@@ -40,7 +40,7 @@
 
     } // anonymous namespace
 
-    uint32_t MelonPrimeCore::NativeAimDeltaHookNew_GetAddresses(
+    uint32_t MelonPrimeCore::NativeAimDeltaHookPostFoldWrite_GetAddresses(
         uint8_t romGroupIndex,
         uint32_t* out,
         uint32_t maxCount)
@@ -53,7 +53,7 @@
         return 1;
     }
 
-    void MelonPrimeCore::NativeAimDeltaHookNew_DispatchCheck(
+    void MelonPrimeCore::NativeAimDeltaHookPostFoldWrite_DispatchCheck(
         melonDS::NDS* nds,
         uint32_t arm9ExecAddr,
         uint32_t regs[16])

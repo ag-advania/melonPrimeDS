@@ -162,7 +162,7 @@
 
     } // anonymous namespace
 
-    uint32_t MelonPrimeCore::NativeAimDeltaHook_GetAddresses(
+    uint32_t MelonPrimeCore::NativeAimDeltaHookRegisterInjection_GetAddresses(
         uint8_t romGroupIndex,
         uint32_t* out,
         uint32_t maxCount)
@@ -190,7 +190,7 @@
         return count;
     }
 
-    void MelonPrimeCore::NativeAimDeltaHook_DispatchCheck(
+    void MelonPrimeCore::NativeAimDeltaHookRegisterInjection_DispatchCheck(
         melonDS::NDS* nds,
         uint32_t arm9ExecAddr,
         uint32_t regs[16])

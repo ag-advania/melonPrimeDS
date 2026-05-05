@@ -135,9 +135,9 @@ static bool DispatcherCallback(
         if (auto* core = static_cast<MelonPrimeCore*>(userdata))
         {
             if (core->GetNativeAimHookMode() == 2)
-                core->NativeAimDeltaHookNew_DispatchCheck(nds, arm9ExecAddr, regs);
+                core->NativeAimDeltaHookPostFoldWrite_DispatchCheck(nds, arm9ExecAddr, regs);
             else
-                core->NativeAimDeltaHook_DispatchCheck(nds, arm9ExecAddr, regs);
+                core->NativeAimDeltaHookRegisterInjection_DispatchCheck(nds, arm9ExecAddr, regs);
         }
     }
 
@@ -198,12 +198,12 @@ void ARM9Hook_Install(
     // DispatcherCallback checks GetNativeAimHookMode() at call time to route
     // to the correct handler; whichever mode's PCs don't match will early-return
     // inside their DispatchCheck without side effects.
-    moduleCount = MelonPrimeCore::NativeAimDeltaHook_GetAddresses(
+    moduleCount = MelonPrimeCore::NativeAimDeltaHookRegisterInjection_GetAddresses(
         romGroupIndex, moduleAddresses, melonDS::NDS::ARM9InstructionHookMaxAddresses);
     for (uint32_t i = 0; i < moduleCount; ++i)
         AddDispatchAddress(moduleAddresses[i], Dispatch_NativeAimDelta);
 
-    moduleCount = MelonPrimeCore::NativeAimDeltaHookNew_GetAddresses(
+    moduleCount = MelonPrimeCore::NativeAimDeltaHookPostFoldWrite_GetAddresses(
         romGroupIndex, moduleAddresses, melonDS::NDS::ARM9InstructionHookMaxAddresses);
     for (uint32_t i = 0; i < moduleCount; ++i)
         AddDispatchAddress(moduleAddresses[i], Dispatch_NativeAimDelta);

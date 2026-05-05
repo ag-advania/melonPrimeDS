@@ -116,7 +116,7 @@
 										</item>
 										<item row="3" column="0" colspan="2">
 											<widget class="QCheckBox" name="cbMetroidEnableNativeAimPostFoldWrite">
-												<property name="text"><string>Enable Native Aim PostFold Write</string></property>
+												<property name="text"><string>Enable Native Aim Delta Hook (PostFold Write)</string></property>
 												<property name="styleSheet"><string>QCheckBox { margin-left: 24px; }</string></property>
 											</widget>
 										</item>
@@ -824,7 +824,7 @@ The EU ROM has a hidden Japanese option — setting your DS firmware to Japanese
 									<item>
 										<widget class="QLabel" name="lblMetroidNativeAimRegisterInjectionDesc">
 											<property name="enabled"><bool>false</bool></property>
-											<property name="text"><string>Hooks at the aim call-site for lowest latency. Covers Biped and AltForm spec108=1 (Trace/Sylux/Weavel). When enabled, this overrides Native Aim PostFold Write above.</string></property>
+											<property name="text"><string>Hooks at the aim call-site for lowest latency. Covers Biped and AltForm spec108=1 (Trace/Sylux/Weavel). When enabled, this overrides Native Aim Delta Hook (PostFold Write) above.</string></property>
 											<property name="wordWrap"><bool>true</bool></property>
 											<property name="styleSheet"><string>QLabel { margin-left: 20px; }</string></property>
 										</widget>
