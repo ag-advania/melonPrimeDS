@@ -526,6 +526,7 @@ namespace Config
     #endif
     #endif
         {"DSi.DSP.HLE", true},
+        {"Instance*.RTC.SyncToHost", true},
 
     #ifdef MELONPRIME_DS
         /* MelonPrimeDS { */
@@ -543,6 +544,8 @@ namespace Config
         {"Instance*.Metroid.Aim.Enable.Accumulator", false},
         {"Instance*.Metroid.Aim.Enable.NativeDeltaHook", false},
         {"Instance*.Metroid.Aim.Enable.InstantAimFollow", false},
+        {"Instance*.Metroid.Input.Enable.ImmediateInputEdgeOverlay", false},
+        {"Instance*.Metroid.Input.Enable.DirectAltFormTransform",    false},
         /* MelonPrimeDS Crosshair bools { */
         {"Instance*.Metroid.Visual.CustomHUD", false},
         // Per-element default-HUD hide patches (DisableDefaultHud section).
@@ -616,6 +619,8 @@ namespace Config
         {"Instance*.Metroid.BugFix.FixShadowFreeze",   false},
         {"Instance*.Metroid.BugFix.FixNoxusBladePersistence", false},
         {"Instance*.Metroid.BugFix.UseFirmwareLanguage", false},
+        {"Instance*.Metroid.GameFeature.ShowHeadshotOnline", false},
+        {"Instance*.Metroid.GameFeature.ShowEnemyHpMeterOnline", false},
         {"Instance*.Metroid.Visual.InGameAspectRatio", true},
         {"Instance*.Metroid.Visual.OsdColor",            false},
         {"Instance*.Metroid.Visual.OsdColorApplyGlobal", false},
@@ -709,7 +714,7 @@ namespace Config
         {"SlowmoFPS", 30.0},
     #ifdef MELONPRIME_DS
         {"Instance*.Metroid.Sensitivity.Mph", -3.000},
-        {"Instance*.Metroid.Sensitivity.AimYAxisScale", 1.500000},
+        {"Instance*.Metroid.Sensitivity.AimYAxisScale", 1.514700},
         {"Instance*.Metroid.Aim.Adjust", 0.010000},
         /* MelonPrimeDS Crosshair opacities { */
         {"Instance*.Metroid.Visual.CrosshairOutlineOpacity", 0.5},

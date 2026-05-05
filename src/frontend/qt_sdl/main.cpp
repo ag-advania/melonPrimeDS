@@ -291,13 +291,6 @@ int main(int argc, char** argv)
     qputenv("QT_QPA_PLATFORM", "windows:darkmode=2");
 #endif
 
-    printf("melonDS " MELONDS_VERSION "\n");
-    printf(MELONDS_URL "\n");
-
-    // easter egg - not worth checking other cases for something so dumb
-    if (argc != 0 && (!strcasecmp(argv[0], "derpDS") || !strcasecmp(argv[0], "./derpDS")))
-        printf("did you just call me a derp???\n");
-
 #ifdef _WIN32
     // argc and argv are passed as UTF8 by SDL's WinMain function
     // QT checks for the original value in local encoding though
@@ -305,7 +298,33 @@ int main(int argc, char** argv)
     // retrieves the unicode value via CommandLineToArgvW.
     argc = __argc;
     argv = __argv;
+
+    // Check whether we are already attached to an output stream.
+    HANDLE outputHandle = GetStdHandle(STD_OUTPUT_HANDLE);
+    if (!outputHandle || (outputHandle == INVALID_HANDLE_VALUE))
+    {
+        // If started from terminal, attach and output logs to it.
+        if (AttachConsole(ATTACH_PARENT_PROCESS))
+        {
+            freopen("CONOUT$", "a", stdout);
+            freopen("CONOUT$", "a", stderr);
+        }
+        else
+        {
+            // Otherwise, discard log output.
+            freopen("NUL:", "w", stdout);
+            freopen("NUL:", "w", stderr);
+        }
+    }
 #endif
+
+    printf("melonDS " MELONDS_VERSION "\n");
+    printf(MELONDS_URL "\n");
+
+    // easter egg - not worth checking other cases for something so dumb
+    if (argc != 0 && (!strcasecmp(argv[0], "derpDS") || !strcasecmp(argv[0], "./derpDS")))
+        printf("did you just call me a derp???\n");
+
     MelonApplication melon(argc, argv);
     pathInit();
 

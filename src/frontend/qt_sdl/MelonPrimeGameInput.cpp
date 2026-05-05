@@ -312,6 +312,8 @@ namespace MelonPrime {
     }
 
 #include "MelonPrimePatchNativeAimDeltaHook.inc"
+#include "MelonPrimePatchImmediateInputEdgeOverlay.inc"
+#include "MelonPrimePatchImmediateTransformGateHook.inc"
 
     // =========================================================================
     // ProcessAimInputMouse
@@ -397,12 +399,7 @@ namespace MelonPrime {
                     return;
                 }
 
-                // Alt-form movement does not reliably run the native aim
-                // update hook path. Keep the old RAM-write path there so mouse
-                // movement still drives alt forms while the hook is on.
-                const bool useNativeAimDeltaHook =
-                    m_enableNativeAimDeltaHook && !IsPlayerAltForm();
-                if (useNativeAimDeltaHook) {
+                if (m_enableNativeAimDeltaHook && !IsPlayerTransforming()) {
                     m_nativeAimDeltaX = outX;
                     m_nativeAimDeltaY = outY;
                 }

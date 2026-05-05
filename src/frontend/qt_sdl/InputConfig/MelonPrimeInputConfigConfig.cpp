@@ -22,6 +22,14 @@
 
 using namespace melonDS;
 
+namespace {
+#ifdef MELONPRIME_ENABLE_DEVELOPER_FEATURES
+    constexpr bool kDeveloperOnlyFeaturesEnabled = true;
+#else
+    constexpr bool kDeveloperOnlyFeaturesEnabled = false;
+#endif
+}
+
 void MelonPrimeInputConfig::saveConfig()
 {
     Config::Table& instcfg = emuInstance->getLocalConfig();
@@ -55,8 +63,13 @@ void MelonPrimeInputConfig::saveConfig()
     // Bug fixes
     instcfg.SetBool("Metroid.BugFix.WifiBitset", ui->cbMetroidFixWifiBitset->checkState() == Qt::Checked);
     instcfg.SetBool("Metroid.BugFix.FixShadowFreeze", ui->cbMetroidFixShadowFreeze->checkState() == Qt::Checked);
-    instcfg.SetBool("Metroid.BugFix.FixNoxusBladePersistence", false);
+    instcfg.SetBool(
+        "Metroid.BugFix.FixNoxusBladePersistence",
+        kDeveloperOnlyFeaturesEnabled
+            && ui->cbMetroidFixNoxusBladePersistence->checkState() == Qt::Checked);
     instcfg.SetBool("Metroid.BugFix.UseFirmwareLanguage", ui->cbMetroidUseFirmwareLanguage->checkState() == Qt::Checked);
+    instcfg.SetBool("Metroid.GameFeature.ShowHeadshotOnline", ui->cbMetroidShowHeadshotOnline->checkState() == Qt::Checked);
+    instcfg.SetBool("Metroid.GameFeature.ShowEnemyHpMeterOnline", ui->cbMetroidShowEnemyHpMeterOnline->checkState() == Qt::Checked);
 
     // SnapTap
     instcfg.SetBool("Metroid.Operation.SnapTap", ui->cbMetroidEnableSnapTap->checkState() == Qt::Checked);
@@ -83,9 +96,14 @@ void MelonPrimeInputConfig::saveConfig()
     instcfg.SetBool("Metroid.Aim.Disable.MphAimSmoothing", ui->cbMetroidDisableMphAimSmoothing->checkState() == Qt::Checked);
     instcfg.SetBool("Metroid.Aim.Enable.Accumulator", ui->cbMetroidEnableAimAccumulator->checkState() == Qt::Checked);
     instcfg.SetBool("Metroid.Aim.Enable.NativeDeltaHook", ui->cbMetroidEnableNativeAimDeltaHook->checkState() == Qt::Checked);
+    instcfg.SetBool("Metroid.Input.Enable.ImmediateInputEdgeOverlay", ui->cbMetroidEnableImmediateInputEdgeOverlay->checkState() == Qt::Checked);
+    instcfg.SetBool("Metroid.Input.Enable.DirectAltFormTransform",    ui->cbMetroidEnableDirectAltFormTransform->checkState() == Qt::Checked);
     // Original public behavior:
     // instcfg.SetBool("Metroid.Aim.Enable.InstantAimFollow", ui->cbMetroidEnableInstantAimFollow->checkState() == Qt::Checked);
-    instcfg.SetBool("Metroid.Aim.Enable.InstantAimFollow", false);
+    instcfg.SetBool(
+        "Metroid.Aim.Enable.InstantAimFollow",
+        kDeveloperOnlyFeaturesEnabled
+            && ui->cbMetroidEnableInstantAimFollow->checkState() == Qt::Checked);
 
     // Screen Sync Mode
     instcfg.SetInt("Metroid.Screen.SyncMode", ui->comboMetroidScreenSyncMode->currentIndex());

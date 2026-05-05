@@ -44,13 +44,20 @@ static constexpr RomDeathCleanupHooks kRomHooks[] = {
     {kHooks_KR1_0, 1},
 };
 
+#ifdef MELONPRIME_ENABLE_DEVELOPER_FEATURES
+static constexpr bool kFixNoxusBladePersistenceAvailable = true;
+#else
 static constexpr bool kFixNoxusBladePersistenceAvailable = false;
-static constexpr uint32_t kOffAltAttackTimer    = 0x704u;
+#endif
+static constexpr uint32_t kOffAltAttackTimer = 0x704u;
+static constexpr uint32_t kOffHunterId       = 0x400u;
+static constexpr uint8_t  kHunterIdNoxus     = 4u;
 
 static bool IsMainRamRange(uint32_t address, uint32_t size)
 {
     return size != 0
         && address >= 0x02000000u
+        && address <= 0x023FFFFFu
         && size - 1u <= 0x023FFFFFu - address;
 }
 
@@ -91,6 +98,11 @@ static bool ApplyHookInternal(
     if (!IsMainRamRange(player, kOffAltAttackTimer + sizeof(uint16_t)))
         return false;
 
+    uint8_t hunterId = 0;
+    std::memcpy(&hunterId, nds->MainRAM + ((player + kOffHunterId) & 0x3FFFFFu), sizeof(hunterId));
+    if (hunterId != kHunterIdNoxus)
+        return false;
+
     uint16_t zero = 0;
     std::memcpy(nds->MainRAM + ((player + kOffAltAttackTimer) & 0x3FFFFFu), &zero, sizeof(zero));
     return true;
@@ -113,6 +125,7 @@ uint32_t FixNoxusBladePersistence_GetAddresses(
 {
     if (!kFixNoxusBladePersistenceAvailable)
         return 0;
+
     if (romGroupIndex >= sizeof(kRomHooks) / sizeof(kRomHooks[0]) || maxCount == 0)
         return 0;
 

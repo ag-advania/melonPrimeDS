@@ -176,6 +176,25 @@ namespace MelonPrime {
             melonDS::NDS* nds,
             uint32_t arm9ExecAddr,
             uint32_t regs[16]);
+
+        static uint32_t ImmediateInputEdgeOverlay_GetAddresses(
+            uint8_t romGroupIndex,
+            uint32_t* out,
+            uint32_t maxCount);
+        void ImmediateInputEdgeOverlay_DispatchCheck(
+            melonDS::NDS* nds,
+            uint32_t arm9ExecAddr,
+            uint32_t regs[16]);
+
+        static uint32_t TransformGateHook_GetAddresses(
+            uint8_t romGroupIndex,
+            uint32_t* out,
+            uint32_t maxCount);
+        bool TransformGateHook_DispatchCheckAndRedirect(
+            melonDS::NDS* nds,
+            uint32_t arm9ExecAddr,
+            uint32_t regs[16],
+            uint32_t& redirectExecAddr);
 #endif
 
 #ifdef MELONPRIME_CUSTOM_HUD
@@ -260,8 +279,12 @@ namespace MelonPrime {
         bool     m_disableMphAimSmoothing = false;
         bool     m_enableAimAccumulator = false;
         bool     m_enableNativeAimDeltaHook = false;
+        bool     m_enableImmediateInputEdgeOverlay = false;
+        bool     m_enableDirectAltFormTransform = false;
         int16_t  m_nativeAimDeltaX = 0;
         int16_t  m_nativeAimDeltaY = 0;
+        uint16_t m_immediateOverlayPrevHeld = 0;
+        uint8_t  m_directTransformPendingFrames = 0;
 
         // Warm scalars (checked per frame but not in aim hot path)
         bool     m_isRunningHook = false;
@@ -357,6 +380,11 @@ namespace MelonPrime {
         [[nodiscard]] FORCE_INLINE bool IsPlayerAltForm() const noexcept {
             return m_ptrs.isAltForm
                 && *m_ptrs.isAltForm == 0x02;
+        }
+
+        [[nodiscard]] FORCE_INLINE bool IsPlayerTransforming() const noexcept {
+            return m_ptrs.jumpFlag
+                && ((*m_ptrs.jumpFlag & 0x10) != 0);
         }
 
         template <typename T>
