@@ -23,6 +23,30 @@
 
         switch (ARM9InstructionHookAddrCount)
         {
+        case 16:
+            if (arm9ExecAddr == ARM9InstructionHookAddresses[15]) return true;
+            [[fallthrough]];
+        case 15:
+            if (arm9ExecAddr == ARM9InstructionHookAddresses[14]) return true;
+            [[fallthrough]];
+        case 14:
+            if (arm9ExecAddr == ARM9InstructionHookAddresses[13]) return true;
+            [[fallthrough]];
+        case 13:
+            if (arm9ExecAddr == ARM9InstructionHookAddresses[12]) return true;
+            [[fallthrough]];
+        case 12:
+            if (arm9ExecAddr == ARM9InstructionHookAddresses[11]) return true;
+            [[fallthrough]];
+        case 11:
+            if (arm9ExecAddr == ARM9InstructionHookAddresses[10]) return true;
+            [[fallthrough]];
+        case 10:
+            if (arm9ExecAddr == ARM9InstructionHookAddresses[9]) return true;
+            [[fallthrough]];
+        case 9:
+            if (arm9ExecAddr == ARM9InstructionHookAddresses[8]) return true;
+            [[fallthrough]];
         case 8:
             return arm9ExecAddr == ARM9InstructionHookAddresses[0]
                 || arm9ExecAddr == ARM9InstructionHookAddresses[1]
