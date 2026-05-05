@@ -168,6 +168,7 @@ namespace MelonPrime {
         [[nodiscard]] uint16_t GetInputMaskFast() const { return m_inputMaskFast; }
 
 #ifdef MELONPRIME_DS
+        [[nodiscard]] int GetNativeAimHookMode() const noexcept { return m_nativeAimHookMode; }
         static uint32_t NativeAimDeltaHook_GetAddresses(
             uint8_t romGroupIndex,
             uint32_t* out,

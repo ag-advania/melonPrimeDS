@@ -134,7 +134,7 @@ static bool DispatcherCallback(
     {
         if (auto* core = static_cast<MelonPrimeCore*>(userdata))
         {
-            if (core->m_nativeAimHookMode == 2)
+            if (core->GetNativeAimHookMode() == 2)
                 core->NativeAimDeltaHookNew_DispatchCheck(nds, arm9ExecAddr, regs);
             else
                 core->NativeAimDeltaHook_DispatchCheck(nds, arm9ExecAddr, regs);
@@ -194,7 +194,7 @@ void ARM9Hook_Install(
     uint32_t moduleAddresses[melonDS::NDS::ARM9InstructionHookMaxAddresses] = {};
     uint32_t moduleCount = 0;
 
-    if (core && core->m_nativeAimHookMode == 2)
+    if (core && core->GetNativeAimHookMode() == 2)
         moduleCount = MelonPrimeCore::NativeAimDeltaHookNew_GetAddresses(
             romGroupIndex,
             moduleAddresses,
