@@ -185,8 +185,14 @@
         push(kImmediateOverlayActionConsumerPc[romGroupIndex]);
 
         // 2. AltForm VectorSteer: V1, V2, H1, H2
-        for (const auto& e : kVSteerHooks[romGroupIndex].v)
-            push(e.pc);
+        // DISABLED: 02021E04 block updates movement/steering vectors (sp+0x4/0xC)
+        // via player+0x6F4/+0x6F8/+0x6FC/+0x700, not the camera AIM chain
+        // (02027798/02027E1C).  Injecting m_nativeAimDeltaX/Y here corrupts
+        // collision/movement state and freezes the game regardless of clamp value.
+        // spec108==0 hunters fall back to the ProcessAimInputMouse memory write
+        // path (*m_ptrs.aimX/Y) which feeds input+0x2A/+0x2C naturally.
+        // for (const auto& e : kVSteerHooks[romGroupIndex].v)
+        //     push(e.pc);
 
         // 3. AltForm StoredYaw / StoredPitch (transition fallback)
         push(kAltStoredHooks[romGroupIndex].yawPc);
@@ -294,10 +300,10 @@
         }
 
         // ── AltForm VectorSteer (spec108 == 0: Samus/Kanden/Noxus/Spire) ─────
-        //
-        // These PCs are only reached when the game took the spec108==0 branch,
-        // so no explicit spec108 check is needed here.
-        if (m_enableNativeAimDeltaHook && m_disableMphAimSmoothing) {
+        // Hook registration disabled above; this branch is never reached.
+        // Left in place for future re-evaluation once the correct injection
+        // point (camera AIM boundary rather than movement vector block) is found.
+        if (false && m_enableNativeAimDeltaHook && m_disableMphAimSmoothing) {
             const auto& vs = kVSteerHooks[romIdx];
             for (int i = 0; i < 4; i++) {
                 if (vs.v[i].pc != arm9ExecAddr)
