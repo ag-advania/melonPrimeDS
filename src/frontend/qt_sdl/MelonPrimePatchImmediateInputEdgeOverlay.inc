@@ -51,54 +51,54 @@
         // deltaReg pattern across all versions: V1=r1, V2=r7, H1=r7, H2=r6
         static constexpr VSteerSet kVSteerHooks[] = {
             // JP1_0
-            { 5u, 0x020BE790u, {{
+            { 5u, 0x020BE790u, {
                 { 0x02021E08u, 1u, true  }, // V1
                 { 0x02021E48u, 7u, true  }, // V2
                 { 0x02021E80u, 7u, false }, // H1
                 { 0x02021EB8u, 6u, false }, // H2
-            }}},
+            }},
             // JP1_1
-            { 5u, 0x020BE750u, {{
+            { 5u, 0x020BE750u, {
                 { 0x02021E08u, 1u, true  },
                 { 0x02021E48u, 7u, true  },
                 { 0x02021E80u, 7u, false },
                 { 0x02021EB8u, 6u, false },
-            }}},
+            }},
             // US1_0
-            { 5u, 0x020BCA70u, {{
+            { 5u, 0x020BCA70u, {
                 { 0x02021E2Cu, 1u, true  },
                 { 0x02021E6Cu, 7u, true  },
                 { 0x02021EA4u, 7u, false },
                 { 0x02021EDCu, 6u, false },
-            }}},
+            }},
             // US1_1
-            { 5u, 0x020BD2D0u, {{
+            { 5u, 0x020BD2D0u, {
                 { 0x02021E2Cu, 1u, true  },
                 { 0x02021E6Cu, 7u, true  },
                 { 0x02021EA4u, 7u, false },
                 { 0x02021EDCu, 6u, false },
-            }}},
+            }},
             // EU1_0
-            { 5u, 0x020BD2F0u, {{
+            { 5u, 0x020BD2F0u, {
                 { 0x02021E24u, 1u, true  },
                 { 0x02021E64u, 7u, true  },
                 { 0x02021E9Cu, 7u, false },
                 { 0x02021ED4u, 6u, false },
-            }}},
+            }},
             // EU1_1
-            { 5u, 0x020BD370u, {{
+            { 5u, 0x020BD370u, {
                 { 0x02021E2Cu, 1u, true  },
                 { 0x02021E6Cu, 7u, true  },
                 { 0x02021EA4u, 7u, false },
                 { 0x02021EDCu, 6u, false },
-            }}},
+            }},
             // KR1_0  (playerReg = r7; deltaReg pattern same as JP/US/EU)
-            { 7u, 0x020B6240u, {{
+            { 7u, 0x020B6240u, {
                 { 0x0200F8C0u, 1u, true  },
                 { 0x0200F90Cu, 7u, true  },
                 { 0x0200F948u, 7u, false },
                 { 0x0200F980u, 6u, false },
-            }}},
+            }},
         };
 
         static_assert(
