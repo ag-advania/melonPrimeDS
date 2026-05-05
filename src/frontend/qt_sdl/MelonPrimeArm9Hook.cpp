@@ -59,6 +59,30 @@ static void AddDispatchAddress(uint32_t address, uint8_t mask) noexcept
 {
     switch (s_dispatchCount)
     {
+    case 16:
+        if (s_dispatchEntries[15].Address == arm9ExecAddr) return s_dispatchEntries[15].Mask;
+        [[fallthrough]];
+    case 15:
+        if (s_dispatchEntries[14].Address == arm9ExecAddr) return s_dispatchEntries[14].Mask;
+        [[fallthrough]];
+    case 14:
+        if (s_dispatchEntries[13].Address == arm9ExecAddr) return s_dispatchEntries[13].Mask;
+        [[fallthrough]];
+    case 13:
+        if (s_dispatchEntries[12].Address == arm9ExecAddr) return s_dispatchEntries[12].Mask;
+        [[fallthrough]];
+    case 12:
+        if (s_dispatchEntries[11].Address == arm9ExecAddr) return s_dispatchEntries[11].Mask;
+        [[fallthrough]];
+    case 11:
+        if (s_dispatchEntries[10].Address == arm9ExecAddr) return s_dispatchEntries[10].Mask;
+        [[fallthrough]];
+    case 10:
+        if (s_dispatchEntries[9].Address == arm9ExecAddr) return s_dispatchEntries[9].Mask;
+        [[fallthrough]];
+    case 9:
+        if (s_dispatchEntries[8].Address == arm9ExecAddr) return s_dispatchEntries[8].Mask;
+        [[fallthrough]];
     case 8:
         if (s_dispatchEntries[7].Address == arm9ExecAddr) return s_dispatchEntries[7].Mask;
         [[fallthrough]];
