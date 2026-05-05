@@ -18,6 +18,7 @@
             0x0200F6DCu,  // KR1_0
         };
 
+        // ── Shared helpers ───────────────────────────────────────────────────
 
         [[nodiscard]] static FORCE_INLINE bool ImmediateOverlay_IsMainRamRange(
             uint32_t address, uint32_t size) noexcept
@@ -44,26 +45,32 @@
     {
         if (!out || maxCount == 0)
             return 0;
-        if (romGroupIndex >= sizeof(kImmediateOverlayActionConsumerPc) / sizeof(kImmediateOverlayActionConsumerPc[0]))
+
+        constexpr uint32_t kRomCount =
+            sizeof(kImmediateOverlayActionConsumerPc) / sizeof(kImmediateOverlayActionConsumerPc[0]);
+        if (romGroupIndex >= kRomCount)
             return 0;
 
-        out[0] = kImmediateOverlayActionConsumerPc[romGroupIndex];
-        return 1;
+        uint32_t count = 0;
+        const auto push = [&](uint32_t pc) {
+            if (count < maxCount)
+                out[count++] = pc;
+        };
+
+        // Action consumer only (Fire / Jump / Zoom / Movement).
+        // AltForm AIM hooks (VSteerInput, AltStored) live in NativeAimDeltaHook.inc.
+        push(kImmediateOverlayActionConsumerPc[romGroupIndex]);
+
+        return count;
     }
 
     void MelonPrimeCore::ImmediateInputEdgeOverlay_DispatchCheck(
         melonDS::NDS* nds,
         uint32_t arm9ExecAddr,
-        uint32_t /*regs*/[16])
+        uint32_t regs[16])
     {
         if (!nds)
             return;
-
-        // This hook handles Fire / Jump / Zoom / Movement injection only.
-        // AltForm / Transform is handled by TransformGateHook separately.
-        if (!m_enableImmediateInputEdgeOverlay)
-            return;
-        const bool doOverlay = true;
 
         if (!m_flags.test(StateFlags::BIT_IN_GAME_INIT))
             return;
@@ -75,82 +82,97 @@
             return;
 
         const uint8_t romIdx = m_currentRom.romGroupIndex;
-        if (romIdx >= sizeof(kImmediateOverlayActionConsumerPc) / sizeof(kImmediateOverlayActionConsumerPc[0]))
-            return;
-        if (kImmediateOverlayActionConsumerPc[romIdx] != arm9ExecAddr)
-            return;
-
-        const uint32_t offP = static_cast<uint32_t>(m_playerPosition)
-                            * static_cast<uint32_t>(Consts::PLAYER_ADDR_INC);
-        const uint32_t playerBase = m_currentRom.playerStructStart + offP;
-
-        if (!ImmediateOverlay_IsMainRamRange(playerBase, 0x470u))
+        constexpr uint8_t kRomCount =
+            sizeof(kImmediateOverlayActionConsumerPc) / sizeof(kImmediateOverlayActionConsumerPc[0]);
+        if (romIdx >= kRomCount)
             return;
 
         uint8_t* const mainRAM = nds->MainRAM;
 
-        // Morph / AltForm transform is handled by TransformGateHook, not here.
-        // TransformGateHook hooks at Gate A (02023B30 etc.) and redirects
-        // execution to the transform call site when IB_MORPH is pressed.
-        // No morph injection is needed in this overlay.
+        // ── Action Consumer (Fire / Jump / Zoom / Movement) ──────────────────
+        if (arm9ExecAddr == kImmediateOverlayActionConsumerPc[romIdx]) {
+            if (!m_enableImmediateInputEdgeOverlay)
+                return;
 
-        // ── General action bindings (ImmediateInputEdgeOverlay) ───────────────
-        //   +0x368  Move left         +0x36C  Move right
-        //   +0x370  Move forward      +0x374  Move backward
-        //   +0x398  Fire              +0x39C  Jump (normal binding path)
-        //   +0x3E0  Zoom
-        uint16_t movLMask = 0, movRMask = 0, movFMask = 0, movBMask = 0;
-        uint16_t fireMask = 0, jumpMask = 0, zoomMask = 0;
-        if (doOverlay) {
-            movLMask = ImmediateOverlay_ReadBindingLow(mainRAM, playerBase + 0x368u);
-            movRMask = ImmediateOverlay_ReadBindingLow(mainRAM, playerBase + 0x36Cu);
-            movFMask = ImmediateOverlay_ReadBindingLow(mainRAM, playerBase + 0x370u);
-            movBMask = ImmediateOverlay_ReadBindingLow(mainRAM, playerBase + 0x374u);
-            fireMask = ImmediateOverlay_ReadBindingLow(mainRAM, playerBase + 0x398u);
-            jumpMask = ImmediateOverlay_ReadBindingLow(mainRAM, playerBase + 0x39Cu);
-            zoomMask = ImmediateOverlay_ReadBindingLow(mainRAM, playerBase + 0x3E0u);
-        }
+            const uint32_t offP = static_cast<uint32_t>(m_playerPosition)
+                                * static_cast<uint32_t>(Consts::PLAYER_ADDR_INC);
+            const uint32_t playerBase = m_currentRom.playerStructStart + offP;
 
-        const uint16_t managedMask = static_cast<uint16_t>(
-            movLMask | movRMask | movFMask | movBMask |
-            fireMask  | jumpMask | zoomMask);
-        if (managedMask == 0)
+            if (!ImmediateOverlay_IsMainRamRange(playerBase, 0x470u))
+                return;
+
+            // Morph / AltForm transform is handled by TransformGateHook, not here.
+            // TransformGateHook hooks at Gate A (02023B30 etc.) and redirects
+            // execution to the transform call site when IB_MORPH is pressed.
+            // No morph injection is needed in this overlay.
+
+            // ── General action bindings (ImmediateInputEdgeOverlay) ──────────
+            //   +0x368  Move left         +0x36C  Move right
+            //   +0x370  Move forward      +0x374  Move backward
+            //   +0x398  Fire              +0x39C  Jump (normal binding path)
+            //   +0x3E0  Zoom
+            const uint16_t movLMask = ImmediateOverlay_ReadBindingLow(mainRAM, playerBase + 0x368u);
+            const uint16_t movRMask = ImmediateOverlay_ReadBindingLow(mainRAM, playerBase + 0x36Cu);
+            const uint16_t movFMask = ImmediateOverlay_ReadBindingLow(mainRAM, playerBase + 0x370u);
+            const uint16_t movBMask = ImmediateOverlay_ReadBindingLow(mainRAM, playerBase + 0x374u);
+            const uint16_t fireMask = ImmediateOverlay_ReadBindingLow(mainRAM, playerBase + 0x398u);
+            const uint16_t jumpMask = ImmediateOverlay_ReadBindingLow(mainRAM, playerBase + 0x39Cu);
+            const uint16_t zoomMask = ImmediateOverlay_ReadBindingLow(mainRAM, playerBase + 0x3E0u);
+
+            const uint16_t managedMask = static_cast<uint16_t>(
+                movLMask | movRMask | movFMask | movBMask |
+                fireMask | jumpMask | zoomMask);
+            if (managedMask == 0)
+                return;
+
+            // Some systems synthesize hardware input before the game's poll
+            // (for example morph-ball boost writes INPUT_R). If such a bit also
+            // belongs to the overlay's managed set, leave the game-polled
+            // current/pressed/released fields intact for that bit.
+            const uint16_t preserveMask =
+                static_cast<uint16_t>(m_immediateOverlayPreserveMask & managedMask);
+            const uint16_t overlayMask =
+                static_cast<uint16_t>(managedMask & ~preserveMask);
+
+            // Build emulator-side held state for all overlay-managed actions.
+            const uint64_t down = m_input.down;
+            uint16_t injectedHeld = 0;
+            if (down & IB_MOVE_L) injectedHeld = static_cast<uint16_t>(injectedHeld | movLMask);
+            if (down & IB_MOVE_R) injectedHeld = static_cast<uint16_t>(injectedHeld | movRMask);
+            if (down & IB_MOVE_F) injectedHeld = static_cast<uint16_t>(injectedHeld | movFMask);
+            if (down & IB_MOVE_B) injectedHeld = static_cast<uint16_t>(injectedHeld | movBMask);
+            if (down & IB_SHOOT)  injectedHeld = static_cast<uint16_t>(injectedHeld | fireMask);
+            if (down & IB_JUMP)   injectedHeld = static_cast<uint16_t>(injectedHeld | jumpMask);
+            if (down & IB_ZOOM)   injectedHeld = static_cast<uint16_t>(injectedHeld | zoomMask);
+            injectedHeld = static_cast<uint16_t>(injectedHeld & overlayMask);
+
+            const uint16_t prevInjectedHeld = static_cast<uint16_t>(m_immediateOverlayPrevHeld & overlayMask);
+            const uint16_t injectedPressed  = static_cast<uint16_t>( injectedHeld & ~prevInjectedHeld);
+            const uint16_t injectedReleased = static_cast<uint16_t>(~injectedHeld &  prevInjectedHeld);
+
+            // Read game-polled input struct at player+0x464.
+            const uint32_t inputBase = playerBase + 0x464u;
+            uint16_t current  = 0;
+            uint16_t pressed  = 0;
+            uint16_t released = 0;
+            std::memcpy(&current,  mainRAM + ((inputBase + 0x00u) & 0x3FFFFFu), sizeof(current));
+            std::memcpy(&pressed,  mainRAM + ((inputBase + 0x04u) & 0x3FFFFFu), sizeof(pressed));
+            std::memcpy(&released, mainRAM + ((inputBase + 0x08u) & 0x3FFFFFu), sizeof(released));
+
+            // Replace only overlay-owned bits; preserve game-polled bits that
+            // another MelonPrime path synthesized through the hardware mask.
+            const uint16_t newCurrent  = static_cast<uint16_t>((current  & ~overlayMask) | injectedHeld);
+            const uint16_t newPressed  = static_cast<uint16_t>((pressed  & ~overlayMask) | injectedPressed);
+            const uint16_t newReleased = static_cast<uint16_t>((released & ~overlayMask) | injectedReleased);
+
+            std::memcpy(mainRAM + ((inputBase + 0x00u) & 0x3FFFFFu), &newCurrent,  sizeof(newCurrent));
+            std::memcpy(mainRAM + ((inputBase + 0x04u) & 0x3FFFFFu), &newPressed,  sizeof(newPressed));
+            std::memcpy(mainRAM + ((inputBase + 0x08u) & 0x3FFFFFu), &newReleased, sizeof(newReleased));
+
+            m_immediateOverlayPrevHeld =
+                static_cast<uint16_t>(injectedHeld | (current & preserveMask));
             return;
-
-        // Build emulator-side held state for all managed actions.
-        const uint64_t down = m_input.down;
-        uint16_t injectedHeld = 0;
-        if (down & IB_MOVE_L) injectedHeld = static_cast<uint16_t>(injectedHeld | movLMask);
-        if (down & IB_MOVE_R) injectedHeld = static_cast<uint16_t>(injectedHeld | movRMask);
-        if (down & IB_MOVE_F) injectedHeld = static_cast<uint16_t>(injectedHeld | movFMask);
-        if (down & IB_MOVE_B) injectedHeld = static_cast<uint16_t>(injectedHeld | movBMask);
-        if (down & IB_SHOOT)  injectedHeld = static_cast<uint16_t>(injectedHeld | fireMask);
-        if (down & IB_JUMP)   injectedHeld = static_cast<uint16_t>(injectedHeld | jumpMask);
-        if (down & IB_ZOOM)   injectedHeld = static_cast<uint16_t>(injectedHeld | zoomMask);
-
-        const uint16_t prevInjectedHeld = static_cast<uint16_t>(m_immediateOverlayPrevHeld & managedMask);
-        const uint16_t injectedPressed  = static_cast<uint16_t>( injectedHeld & ~prevInjectedHeld);
-        const uint16_t injectedReleased = static_cast<uint16_t>(~injectedHeld &  prevInjectedHeld);
-
-        // Read game-polled input struct at player+0x464.
-        const uint32_t inputBase = playerBase + 0x464u;
-        uint16_t current  = 0;
-        uint16_t pressed  = 0;
-        uint16_t released = 0;
-        std::memcpy(&current,  mainRAM + ((inputBase + 0x00u) & 0x3FFFFFu), sizeof(current));
-        std::memcpy(&pressed,  mainRAM + ((inputBase + 0x04u) & 0x3FFFFFu), sizeof(pressed));
-        std::memcpy(&released, mainRAM + ((inputBase + 0x08u) & 0x3FFFFFu), sizeof(released));
-
-        // Replace only managed bits; leave all others from the game's poll.
-        const uint16_t newCurrent  = static_cast<uint16_t>((current  & ~managedMask) | injectedHeld);
-        const uint16_t newPressed  = static_cast<uint16_t>((pressed  & ~managedMask) | injectedPressed);
-        const uint16_t newReleased = static_cast<uint16_t>((released & ~managedMask) | injectedReleased);
-
-        std::memcpy(mainRAM + ((inputBase + 0x00u) & 0x3FFFFFu), &newCurrent,  sizeof(newCurrent));
-        std::memcpy(mainRAM + ((inputBase + 0x04u) & 0x3FFFFFu), &newPressed,  sizeof(newPressed));
-        std::memcpy(mainRAM + ((inputBase + 0x08u) & 0x3FFFFFu), &newReleased, sizeof(newReleased));
-
-        m_immediateOverlayPrevHeld = injectedHeld;
+        }
     }
 
 #endif // MELONPRIME_DS

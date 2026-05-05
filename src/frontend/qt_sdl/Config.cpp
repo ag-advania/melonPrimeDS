@@ -85,6 +85,7 @@ namespace Config
         {"Instance*.Metroid.Volume.SFX", 9},
         {"Instance*.Metroid.Volume.Music", 9},
         {"Instance*.Metroid.Screen.SyncMode", 0},
+        {"Instance*.Metroid.Aim.NativeHookMode", 0},
         {"Instance*.Metroid.HunterLicense.Hunter.Selected", 0},
         {"Instance*.Metroid.HunterLicense.Color.Selected", 0},
         {"Instance*.Keyboard.HK_MetroidMoveForward",       Qt::Key_W},
