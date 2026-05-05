@@ -1,7 +1,7 @@
 #if defined(MELONPRIME_ARM9_INSTRUCTION_HOOK_NDS_PUBLIC_TYPES)
 
     using ARM9InstructionHookFn = bool (*)(NDS* nds, void* userdata, u32 arm9ExecAddr, u32 regs[16], u32& redirectExecAddr);
-    static constexpr u32 ARM9InstructionHookMaxAddresses = 8;
+    static constexpr u32 ARM9InstructionHookMaxAddresses = 16;
 
 #elif defined(MELONPRIME_ARM9_INSTRUCTION_HOOK_NDS_FIELDS)
 
