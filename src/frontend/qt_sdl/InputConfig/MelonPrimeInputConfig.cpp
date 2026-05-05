@@ -135,7 +135,7 @@ void MelonPrimeInputConfig::setupSensitivityAndToggles(Config::Table& instcfg)
     ui->cbMetroidDisableMphAimSmoothing->setChecked(instcfg.GetBool("Metroid.Aim.Disable.MphAimSmoothing"));
     ui->cbMetroidEnableAimAccumulator->setChecked(instcfg.GetBool("Metroid.Aim.Enable.Accumulator"));
     const int nativeAimHookMode = instcfg.GetInt("Metroid.Aim.NativeHookMode");
-    ui->cmbMetroidNativeAimHookMode->setCurrentIndex(nativeAimHookMode == 2 ? 1 : 0);
+    ui->cbMetroidEnableNativeAimPostFoldWrite->setChecked(nativeAimHookMode == 2);
     ui->cbMetroidEnableNativeAimRegisterInjection->setChecked(
         kDeveloperOnlyFeaturesEnabled && nativeAimHookMode == 1);
     ui->cbMetroidEnableImmediateInputEdgeOverlay->setChecked(
@@ -150,16 +150,16 @@ void MelonPrimeInputConfig::setupSensitivityAndToggles(Config::Table& instcfg)
         &QCheckBox::checkStateChanged,
         this,
         [this](Qt::CheckState state) {
-            if (state == Qt::Checked && ui->cmbMetroidNativeAimHookMode->currentIndex() != 0)
-                ui->cmbMetroidNativeAimHookMode->setCurrentIndex(0);
+            if (state == Qt::Checked && ui->cbMetroidEnableNativeAimPostFoldWrite->isChecked())
+                ui->cbMetroidEnableNativeAimPostFoldWrite->setChecked(false);
             updateAimControlsForStylusMode(ui->cbMetroidEnableStylusMode->isChecked());
         });
     connect(
-        ui->cmbMetroidNativeAimHookMode,
-        QOverload<int>::of(&QComboBox::currentIndexChanged),
+        ui->cbMetroidEnableNativeAimPostFoldWrite,
+        &QCheckBox::checkStateChanged,
         this,
-        [this](int index) {
-            if (index != 0 && ui->cbMetroidEnableNativeAimRegisterInjection->isChecked())
+        [this](Qt::CheckState state) {
+            if (state == Qt::Checked && ui->cbMetroidEnableNativeAimRegisterInjection->isChecked())
                 ui->cbMetroidEnableNativeAimRegisterInjection->setChecked(false);
             updateAimControlsForStylusMode(ui->cbMetroidEnableStylusMode->isChecked());
         });
@@ -211,8 +211,7 @@ void MelonPrimeInputConfig::updateAimControlsForStylusMode(bool stylusEnabled)
     ui->cbMetroidEnableAimAccumulator->setEnabled(enableAimControls);
     const bool enableAimHooks = enableAimControls && ui->cbMetroidDisableMphAimSmoothing->isChecked();
     const bool enableRegisterInjection = kDeveloperOnlyFeaturesEnabled && enableAimHooks;
-    ui->lblMetroidNativeAimHookMode->setEnabled(enableAimHooks);
-    ui->cmbMetroidNativeAimHookMode->setEnabled(enableAimHooks);
+    ui->cbMetroidEnableNativeAimPostFoldWrite->setEnabled(enableAimHooks);
     ui->lblMetroidNativeAimHookModeDesc->setEnabled(enableAimHooks);
     ui->cbMetroidEnableNativeAimRegisterInjection->setEnabled(enableRegisterInjection);
     ui->lblMetroidNativeAimRegisterInjectionDesc->setEnabled(enableRegisterInjection);

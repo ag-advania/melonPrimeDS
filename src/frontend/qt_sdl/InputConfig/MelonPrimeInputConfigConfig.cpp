@@ -101,7 +101,7 @@ void MelonPrimeInputConfig::saveConfig()
     const int nativeAimHookMode =
         enableRegisterInjection
             ? 1
-            : (ui->cmbMetroidNativeAimHookMode->currentIndex() == 1 ? 2 : 0);
+            : (ui->cbMetroidEnableNativeAimPostFoldWrite->checkState() == Qt::Checked ? 2 : 0);
     instcfg.SetInt("Metroid.Aim.NativeHookMode", nativeAimHookMode);
     instcfg.SetBool(
         "Metroid.Input.Enable.ImmediateInputEdgeOverlay",
