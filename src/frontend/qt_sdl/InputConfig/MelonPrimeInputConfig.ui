@@ -115,48 +115,36 @@
 											</widget>
 										</item>
 										<item row="3" column="0" colspan="2">
-											<widget class="QCheckBox" name="cbMetroidEnableNativeAimDeltaHook">
-												<property name="text"><string>Enable Native Aim Delta Hook</string></property>
+											<widget class="QCheckBox" name="cbMetroidEnableNativeAimPostFoldWrite">
+												<property name="text"><string>Enable Native Aim Delta Hook (PostFold Write)</string></property>
 												<property name="styleSheet"><string>QCheckBox { margin-left: 24px; }</string></property>
 											</widget>
 										</item>
 										<item row="4" column="0" colspan="2">
-											<widget class="QLabel" name="lblMetroidNativeAimDeltaHookDesc">
-												<property name="text"><string>Apply mouse input directly to the game's internal aim update path. This can reduce input latency.</string></property>
+											<widget class="QLabel" name="lblMetroidNativeAimHookModeDesc">
+												<property name="text"><string>PostFold Write hooks after TouchInputProcessor and covers all AltForms including spec108=0 (Samus/Kanden/Noxus/Spire).</string></property>
 												<property name="wordWrap"><bool>true</bool></property>
 												<property name="styleSheet"><string>QLabel { margin-left: 48px; }</string></property>
 											</widget>
 										</item>
-										<item row="5" column="0" colspan="2">
-											<widget class="QCheckBox" name="cbMetroidEnableImmediateInputEdgeOverlay">
-												<property name="text"><string>Enable Immediate Input Edge Overlay</string></property>
-											</widget>
-										</item>
-										<item row="6" column="0" colspan="2">
-											<widget class="QLabel" name="lblMetroidImmediateInputEdgeOverlayDesc">
-												<property name="text"><string>Generate pressed/released edges on the emulator side and overlay them into MPH's internal input state before player actions are processed. Covers fire, jump, zoom, and movement. Button masks are read from the player's current control-preset binding table, so all presets (Touch R/L, Dual R/L) are supported automatically.</string></property>
-												<property name="wordWrap"><bool>true</bool></property>
-												<property name="styleSheet"><string>QLabel { margin-left: 24px; }</string></property>
-											</widget>
-										</item>
-										<item row="7" column="0" colspan="2">
+										<item row="8" column="0" colspan="2">
 											<widget class="QCheckBox" name="cbMetroidEnableDirectAltFormTransform">
 												<property name="text"><string>Enable Direct Alt-Form Transform</string></property>
 											</widget>
 										</item>
-										<item row="8" column="0" colspan="2">
+										<item row="9" column="0" colspan="2">
 											<widget class="QLabel" name="lblMetroidDirectAltFormTransformDesc">
 												<property name="text"><string>Triggers the Alt-Form transition by writing directly to the game's player state flags instead of simulating touch input. Uses the same guard conditions as the game's own TransformRequest function. Note: Weavel Halfturret spawn (hunter-specific setup inside TransformRequest) is not reproduced.</string></property>
 												<property name="wordWrap"><bool>true</bool></property>
 												<property name="styleSheet"><string>QLabel { margin-left: 24px; }</string></property>
 											</widget>
 										</item>
-										<item row="9" column="0" colspan="2">
+										<item row="10" column="0" colspan="2">
 											<widget class="QCheckBox" name="cbMetroidEnableStylusMode">
 												<property name="text"><string>Enable Stylus Mode (Leave this unchecked unless you want to play with the stylus)</string></property>
 											</widget>
 										</item>
-										<item row="10" column="0">
+										<item row="11" column="0">
 											<widget class="QSpinBox" name="metroidAimSensitvitySpinBox">
 												<property name="minimum">
 													<number>0</number>
@@ -169,14 +157,14 @@
 												</property>
 											</widget>
 										</item>
-										<item row="10" column="1">
+										<item row="11" column="1">
 											<widget class="QLabel" name="metroidAimSensitvityLabel">
 												<property name="text">
 													<string>Aim sensitivity (default: 63)</string>
 												</property>
 											</widget>
 										</item>
-										<item row="11" column="0">
+										<item row="12" column="0">
 											<widget class="QDoubleSpinBox" name="metroidAimYAxisScaleSpinBox">
 												<property name="minimum">
 													<double>0.000001</double>
@@ -195,7 +183,7 @@
 												</property>
 											</widget>
 										</item>
-										<item row="11" column="1">
+										<item row="12" column="1">
 											<widget class="QLabel" name="metroidAimYAxisScaleLabel">
 												<property name="text">
 													<string>Aim Y-Axis Scale (default: 1.5147 = MPH native; option: 1.9429 = perfectly matches X/Y angular velocity)</string>
@@ -203,7 +191,7 @@
 												<property name="wordWrap"><bool>true</bool></property>
 											</widget>
 										</item>
-										<item row="12" column="0">
+										<item row="13" column="0">
 											<widget class="QDoubleSpinBox" name="metroidAimAdjustSpinBox">
 												<property name="minimum">
 													<double>0.000000</double>
@@ -222,19 +210,19 @@
 												</property>
 											</widget>
 										</item>
-										<item row="12" column="1">
+										<item row="13" column="1">
 											<widget class="QLabel" name="metroidAimAdjustLabel">
 												<property name="text">
 													<string notr="true">&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;&lt;b&gt;Input threshold (deadzone + snap)&lt;/b&gt; (recommended: 0.01 [default] or 0.5): |x|&amp;lt;a → 0, a ≤ |x|&amp;lt;1 → ±1, |x|≥1 → as is (a=0: off = all values under 1 ignored, no snap)&lt;br/&gt;When your aim isn't going the way you want, try lowering this value.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
 												</property>
 											</widget>
 										</item>
-										<item row="13" column="0" colspan="2">
+										<item row="14" column="0" colspan="2">
 											<widget class="QCheckBox" name="cbMetroidEnableAimAccumulator">
 												<property name="text"><string>Enable Aim Sub-pixel Accumulator (Carry fractional mouse movement across frames. Enable for smoother low-sensitivity aiming)</string></property>
 											</widget>
 										</item>
-										<item row="14" column="0">
+										<item row="15" column="0">
 											<widget class="QPushButton" name="metroidResetSensitivityValues">
 												<property name="text">
 													<string>Reset sensitivity values</string>
@@ -824,6 +812,36 @@ The EU ROM has a hidden Japanese option — setting your DS firmware to Japanese
 										<widget class="QLabel" name="lblMetroidDeveloperOnlyDesc">
 											<property name="text"><string>Features in this section are still in development and are not ready for public release. They may or may not be released.</string></property>
 											<property name="wordWrap"><bool>true</bool></property>
+										</widget>
+									</item>
+									<item>
+										<widget class="QCheckBox" name="cbMetroidEnableNativeAimRegisterInjection">
+											<property name="enabled"><bool>false</bool></property>
+											<property name="text"><string>Enable Native Aim Register Injection</string></property>
+											<property name="toolTip"><string>Developer-only option. Currently disabled.</string></property>
+										</widget>
+									</item>
+									<item>
+										<widget class="QLabel" name="lblMetroidNativeAimRegisterInjectionDesc">
+											<property name="enabled"><bool>false</bool></property>
+											<property name="text"><string>Hooks at the aim call-site for lowest latency. Covers Biped and AltForm spec108=1 (Trace/Sylux/Weavel). When enabled, this overrides Native Aim Delta Hook (PostFold Write) above.</string></property>
+											<property name="wordWrap"><bool>true</bool></property>
+											<property name="styleSheet"><string>QLabel { margin-left: 20px; }</string></property>
+										</widget>
+									</item>
+									<item>
+										<widget class="QCheckBox" name="cbMetroidEnableImmediateInputEdgeOverlay">
+											<property name="enabled"><bool>false</bool></property>
+											<property name="text"><string>Enable Immediate Input Edge Overlay</string></property>
+											<property name="toolTip"><string>Developer-only option. Currently disabled.</string></property>
+										</widget>
+									</item>
+									<item>
+										<widget class="QLabel" name="lblMetroidImmediateInputEdgeOverlayDesc">
+											<property name="enabled"><bool>false</bool></property>
+											<property name="text"><string>Generate pressed/released edges on the emulator side and overlay them into MPH's internal input state before player actions are processed. Covers fire, jump, zoom, and movement. Button masks are read from the player's current control-preset binding table, so all presets (Touch R/L, Dual R/L) are supported automatically.</string></property>
+											<property name="wordWrap"><bool>true</bool></property>
+											<property name="styleSheet"><string>QLabel { margin-left: 20px; }</string></property>
 										</widget>
 									</item>
 									<item>

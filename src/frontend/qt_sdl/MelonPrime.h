@@ -168,11 +168,21 @@ namespace MelonPrime {
         [[nodiscard]] uint16_t GetInputMaskFast() const { return m_inputMaskFast; }
 
 #ifdef MELONPRIME_DS
-        static uint32_t NativeAimDeltaHook_GetAddresses(
+        [[nodiscard]] int GetNativeAimHookMode() const noexcept { return m_nativeAimHookMode; }
+        static uint32_t NativeAimDeltaHookRegisterInjection_GetAddresses(
             uint8_t romGroupIndex,
             uint32_t* out,
             uint32_t maxCount);
-        void NativeAimDeltaHook_DispatchCheck(
+        void NativeAimDeltaHookRegisterInjection_DispatchCheck(
+            melonDS::NDS* nds,
+            uint32_t arm9ExecAddr,
+            uint32_t regs[16]);
+
+        static uint32_t NativeAimDeltaHookPostFoldWrite_GetAddresses(
+            uint8_t romGroupIndex,
+            uint32_t* out,
+            uint32_t maxCount);
+        void NativeAimDeltaHookPostFoldWrite_DispatchCheck(
             melonDS::NDS* nds,
             uint32_t arm9ExecAddr,
             uint32_t regs[16]);
@@ -278,12 +288,14 @@ namespace MelonPrime {
         // ProcessAimInputMouse reads these every frame right after residuals.
         bool     m_disableMphAimSmoothing = false;
         bool     m_enableAimAccumulator = false;
-        bool     m_enableNativeAimDeltaHook = false;
+        bool     m_enableNativeAimDeltaHook = false; // true when mode != 0
+        int8_t   m_nativeAimHookMode = 0;  // 0=off 1=RegisterInject 2=FoldDerived
         bool     m_enableImmediateInputEdgeOverlay = false;
         bool     m_enableDirectAltFormTransform = false;
         int16_t  m_nativeAimDeltaX = 0;
         int16_t  m_nativeAimDeltaY = 0;
         uint16_t m_immediateOverlayPrevHeld = 0;
+        uint16_t m_immediateOverlayPreserveMask = 0;
         uint8_t  m_directTransformPendingFrames = 0;
 
         // Warm scalars (checked per frame but not in aim hot path)
@@ -366,6 +378,7 @@ namespace MelonPrime {
         //   - Aim block / focus loss → stale residuals would cause jump
         FORCE_INLINE void InputReset() {
             m_inputMaskFast = 0xFFFF;
+            m_immediateOverlayPreserveMask = 0;
         }
 
         FORCE_INLINE void InputSetBranchless(uint16_t bit, bool released) {

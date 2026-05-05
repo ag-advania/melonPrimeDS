@@ -95,8 +95,18 @@ void MelonPrimeInputConfig::saveConfig()
     instcfg.SetBool("Metroid.Enable.stylusMode", ui->cbMetroidEnableStylusMode->checkState() == Qt::Checked);
     instcfg.SetBool("Metroid.Aim.Disable.MphAimSmoothing", ui->cbMetroidDisableMphAimSmoothing->checkState() == Qt::Checked);
     instcfg.SetBool("Metroid.Aim.Enable.Accumulator", ui->cbMetroidEnableAimAccumulator->checkState() == Qt::Checked);
-    instcfg.SetBool("Metroid.Aim.Enable.NativeDeltaHook", ui->cbMetroidEnableNativeAimDeltaHook->checkState() == Qt::Checked);
-    instcfg.SetBool("Metroid.Input.Enable.ImmediateInputEdgeOverlay", ui->cbMetroidEnableImmediateInputEdgeOverlay->checkState() == Qt::Checked);
+    const bool enableRegisterInjection =
+        kDeveloperOnlyFeaturesEnabled
+            && ui->cbMetroidEnableNativeAimRegisterInjection->checkState() == Qt::Checked;
+    const int nativeAimHookMode =
+        enableRegisterInjection
+            ? 1
+            : (ui->cbMetroidEnableNativeAimPostFoldWrite->checkState() == Qt::Checked ? 2 : 0);
+    instcfg.SetInt("Metroid.Aim.NativeHookMode", nativeAimHookMode);
+    instcfg.SetBool(
+        "Metroid.Input.Enable.ImmediateInputEdgeOverlay",
+        kDeveloperOnlyFeaturesEnabled
+            && ui->cbMetroidEnableImmediateInputEdgeOverlay->checkState() == Qt::Checked);
     instcfg.SetBool("Metroid.Input.Enable.DirectAltFormTransform",    ui->cbMetroidEnableDirectAltFormTransform->checkState() == Qt::Checked);
     // Original public behavior:
     // instcfg.SetBool("Metroid.Aim.Enable.InstantAimFollow", ui->cbMetroidEnableInstantAimFollow->checkState() == Qt::Checked);

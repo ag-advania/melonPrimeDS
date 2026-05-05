@@ -311,7 +311,8 @@ namespace MelonPrime {
         );
     }
 
-#include "MelonPrimePatchNativeAimDeltaHook.inc"
+#include "MelonPrimePatchNativeAimDeltaHookRegisterInjectionVersion.inc"
+#include "MelonPrimePatchNativeAimDeltaHookPostFoldWriteVersion.inc"
 #include "MelonPrimePatchImmediateInputEdgeOverlay.inc"
 #include "MelonPrimePatchImmediateTransformGateHook.inc"
 
@@ -399,7 +400,7 @@ namespace MelonPrime {
                     return;
                 }
 
-                if (m_enableNativeAimDeltaHook && !IsPlayerTransforming()) {
+                if (m_enableNativeAimDeltaHook) {
                     m_nativeAimDeltaX = outX;
                     m_nativeAimDeltaY = outY;
                 }

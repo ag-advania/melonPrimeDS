@@ -255,6 +255,11 @@ namespace MelonPrime {
                 emuInstance->getNDS()->ReleaseScreen();
             }
 
+            // ImmediateInputEdgeOverlay rewrites game input struct bits after
+            // the game's poll. Mark this synthesized R press so overlay presets
+            // that also manage R (for example Zoom) preserve the boost input.
+            m_immediateOverlayPreserveMask =
+                static_cast<uint16_t>(m_immediateOverlayPreserveMask | (1u << INPUT_R));
             InputSetBranchless(INPUT_R, !isBoosting && gaugeEnough);
 
             if (isBoosting) {
