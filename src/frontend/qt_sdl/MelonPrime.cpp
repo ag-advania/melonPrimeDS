@@ -205,6 +205,7 @@ namespace MelonPrime {
         CustomHud_ResetPatchState();
 #endif
 #ifdef MELONPRIME_DS
+        m_weaponSwitchPending.Clear();
         ARM9Hook_Uninstall(emuInstance->getNDS());
         InstantAimFollow_RestoreOnce(emuInstance->getNDS(), m_currentRom.romGroupIndex);
         ShowHeadshotOnline_RestoreOnce(emuInstance->getNDS(), m_currentRom.romGroupIndex);
@@ -250,6 +251,7 @@ namespace MelonPrime {
         CustomHud_ResetPatchState();
 #endif
 #ifdef MELONPRIME_DS
+        m_weaponSwitchPending.Clear();
         ARM9Hook_Uninstall(emuInstance->getNDS());
         InstantAimFollow_RestoreOnce(emuInstance->getNDS(), m_currentRom.romGroupIndex);
         ShowHeadshotOnline_RestoreOnce(emuInstance->getNDS(), m_currentRom.romGroupIndex);
@@ -437,6 +439,7 @@ namespace MelonPrime {
                     emuInstance, localCfg, m_currentRom, m_playerPosition, false);
 #endif
 #ifdef MELONPRIME_DS
+                m_weaponSwitchPending.Clear();
                 InstantAimFollow_RestoreOnce(emuInstance->getNDS(), m_currentRom.romGroupIndex);
                 ShowHeadshotOnline_RestoreOnce(emuInstance->getNDS(), m_currentRom.romGroupIndex);
                 ShowEnemyHpMeterOnline_RestoreOnce(emuInstance->getNDS(), m_currentRom.romGroupIndex);
@@ -501,6 +504,9 @@ namespace MelonPrime {
                         m_rawFilter->resetAll();
                     }
 #endif
+#ifdef MELONPRIME_DS
+                    m_weaponSwitchPending.Clear();
+#endif
                 }
             }
         }
@@ -516,6 +522,23 @@ namespace MelonPrime {
                 --m_directTransformPendingFrames;
             }
         }
+#ifdef MELONPRIME_DS
+        if (m_weaponSwitchPending.IsValid()) {
+            if (!focused || !m_flags.test(StateFlags::BIT_IN_GAME)) {
+                m_weaponSwitchPending.Clear();
+            }
+            else if (m_weaponSwitchPending.FallbackFrames != 0) {
+                --m_weaponSwitchPending.FallbackFrames;
+            }
+            else {
+                const uint8_t weaponId = m_weaponSwitchPending.WeaponId;
+                m_weaponSwitchPending.Clear();
+                if (weaponId < 9 && *m_ptrs.currentWeapon != weaponId) {
+                    static_cast<void>(SwitchWeaponLegacyTouchFallback(weaponId));
+                }
+            }
+        }
+#endif
         m_isRunningHook = false;
     }
 
@@ -532,6 +555,9 @@ namespace MelonPrime {
         m_flags.set(StateFlags::BIT_IN_GAME_INIT);
         m_immediateOverlayPrevHeld = 0;
         m_directTransformPendingFrames = 0;
+#ifdef MELONPRIME_DS
+        m_weaponSwitchPending.Clear();
+#endif
         m_playerPosition = Read8(mainRAM, m_currentRom.playerPos);
 
         const uint32_t offP = static_cast<uint32_t>(m_playerPosition) * Consts::PLAYER_ADDR_INC;

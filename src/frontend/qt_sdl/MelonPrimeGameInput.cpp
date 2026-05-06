@@ -348,6 +348,7 @@ namespace MelonPrime {
 #include "MelonPrimePatchNativeAimDeltaHookPostFoldWriteVersion.inc"
 #include "MelonPrimePatchImmediateInputEdgeOverlay.inc"
 #include "MelonPrimePatchImmediateTransformGateHook.inc"
+#include "MelonPrimePatchWeaponSwitchHook.inc"
 
     // =========================================================================
     // ProcessAimInputMouse

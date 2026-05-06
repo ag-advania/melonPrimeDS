@@ -18,8 +18,10 @@ class MelonPrimeCore;
 // MelonPrime runtime hooks in priority order:
 //
 //   1. NativeAimDeltaHook        — register side effect only, never redirects
-//   2. FixNoxusBladePersistence  — RAM side effect only, never redirects
-//   3. ShadowFreezeRuntimeHook   — may redirect execution
+//   2. WeaponSwitchHook          — may redirect execution
+//   3. FixNoxusBladePersistence  — RAM side effect only, never redirects
+//   4. TransformGateHook         — may redirect execution
+//   5. ShadowFreezeRuntimeHook   — may redirect execution
 //
 // Call Install once after ROM detection.  Call Uninstall on emu stop/reset.
 

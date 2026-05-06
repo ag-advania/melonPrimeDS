@@ -205,6 +205,20 @@ namespace MelonPrime {
             uint32_t arm9ExecAddr,
             uint32_t regs[16],
             uint32_t& redirectExecAddr);
+
+        static uint32_t WeaponSwitchHook_GetAddresses(
+            uint8_t romGroupIndex,
+            uint32_t* out,
+            uint32_t maxCount);
+        bool WeaponSwitchHook_DispatchCheckAndRedirect(
+            melonDS::NDS* nds,
+            uint32_t arm9ExecAddr,
+            uint32_t regs[16],
+            uint32_t& redirectExecAddr);
+        [[nodiscard]] static bool WeaponSwitchHook_IsRomSupported(uint8_t romGroupIndex);
+        [[nodiscard]] static bool WeaponSwitchHook_IsSiteValid(
+            melonDS::NDS* nds,
+            uint8_t romGroupIndex);
 #endif
 
 #ifdef MELONPRIME_CUSTOM_HUD
@@ -292,11 +306,33 @@ namespace MelonPrime {
         int8_t   m_nativeAimHookMode = 0;  // 0=off 1=RegisterInject 2=FoldDerived
         bool     m_enableImmediateInputEdgeOverlay = false;
         bool     m_enableDirectAltFormTransform = false;
+#ifdef MELONPRIME_DS
+        bool     m_enableNativeWeaponSwitch = true;
+#endif
         int16_t  m_nativeAimDeltaX = 0;
         int16_t  m_nativeAimDeltaY = 0;
         uint16_t m_immediateOverlayPrevHeld = 0;
         uint16_t m_immediateOverlayPreserveMask = 0;
         uint8_t  m_directTransformPendingFrames = 0;
+#ifdef MELONPRIME_DS
+        struct WeaponSwitchPendingRequest {
+            uint8_t WeaponId = 0xFF;
+            uint8_t RetryCount = 0;
+            uint8_t FallbackFrames = 0;
+
+            FORCE_INLINE void Clear() noexcept
+            {
+                WeaponId = 0xFF;
+                RetryCount = 0;
+                FallbackFrames = 0;
+            }
+
+            [[nodiscard]] FORCE_INLINE bool IsValid() const noexcept
+            {
+                return WeaponId <= 8 && RetryCount != 0;
+            }
+        } m_weaponSwitchPending{};
+#endif
 
         // Warm scalars (checked per frame but not in aim hot path)
         bool     m_isRunningHook = false;
@@ -441,7 +477,12 @@ namespace MelonPrime {
         void RecalcAimFixedPoint();
         FORCE_INLINE void HandleGlobalHotkeys();
         void ProcessAimInputStylus(melonDS::NDS* nds);
-        void SwitchWeapon(int weaponIndex);
+        [[nodiscard]] bool SwitchWeapon(uint8_t weaponId);
+        [[nodiscard]] bool SwitchWeaponLegacyTouchFallback(uint8_t weaponId);
+        [[nodiscard]] bool CanRequestWeaponSwitch(uint8_t weaponId, bool showMessage);
+#ifdef MELONPRIME_DS
+        void QueueWeaponSwitchRequest(uint8_t weaponId) noexcept;
+#endif
         void ShowCursor(bool show);
         void FrameAdvanceTwice();
         FORCE_INLINE void FrameAdvanceOnce() { m_didFrameAdvanceSinceSnapshot = true; (this->*m_fnAdvance)(); }
