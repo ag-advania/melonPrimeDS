@@ -378,10 +378,10 @@ namespace MelonPrime {
     // =========================================================================
     // SwitchWeapon -- public entry; gates the request and dispatches.
     //
-    // Native path queues a pending request consumed by the ARM9 hook. The hook
-    // redirects into the game's existing TryEquipWeapon callsite, preserving
-    // the original return path. If the request is not consumed promptly, the
-    // frame hook falls back to the legacy touch route.
+    // Native path queues a request accepted by the ARM9 hook. A true return
+    // here means the request was accepted, not that currentWeapon changed
+    // synchronously. During native-only testing, an unconsumed request expires
+    // without falling back to the legacy touch route.
     // =========================================================================
     bool MelonPrimeCore::SwitchWeapon(uint8_t weaponId)
     {
@@ -403,6 +403,10 @@ namespace MelonPrime {
                 QueueWeaponSwitchRequest(weaponId);
                 return true;
             }
+
+            // Native-only test mode: don't hide hook/site failures behind the
+            // legacy touch fallback.
+            return false;
         }
 #endif
 

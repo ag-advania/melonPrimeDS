@@ -2,6 +2,7 @@
 #include "EmuInstance.h"
 #include "NDS.h"
 #include "main.h"
+#include "Platform.h"
 #include "Screen.h"
 #include "MelonPrimeDef.h"
 
