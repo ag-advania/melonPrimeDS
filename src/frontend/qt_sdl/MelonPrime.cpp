@@ -209,12 +209,16 @@ namespace MelonPrime {
         InstantAimFollow_RestoreOnce(emuInstance->getNDS(), m_currentRom.romGroupIndex);
         ShowHeadshotOnline_RestoreOnce(emuInstance->getNDS(), m_currentRom.romGroupIndex);
         ShowEnemyHpMeterOnline_RestoreOnce(emuInstance->getNDS(), m_currentRom.romGroupIndex);
+        DisableDoubleDamageMultiplier_RestoreOnce(emuInstance->getNDS(), m_currentRom.romGroupIndex);
+        NoPickingUpSpecificItems_RestoreOnce(emuInstance->getNDS(), m_currentRom.romGroupIndex);
         InGameAspectRatio_ResetPatchState();
         OsdColor_ResetPatchState();
         FixWifi_ResetPatchState();
         UseFirmwareLanguage_ResetPatchState();
         ShowHeadshotOnline_ResetPatchState();
         ShowEnemyHpMeterOnline_ResetPatchState();
+        DisableDoubleDamageMultiplier_ResetPatchState();
+        NoPickingUpSpecificItems_ResetPatchState();
         InstantAimFollow_ResetPatchState();
         ARM9Hook_ResetPatchState();
 #endif
@@ -250,12 +254,16 @@ namespace MelonPrime {
         InstantAimFollow_RestoreOnce(emuInstance->getNDS(), m_currentRom.romGroupIndex);
         ShowHeadshotOnline_RestoreOnce(emuInstance->getNDS(), m_currentRom.romGroupIndex);
         ShowEnemyHpMeterOnline_RestoreOnce(emuInstance->getNDS(), m_currentRom.romGroupIndex);
+        DisableDoubleDamageMultiplier_RestoreOnce(emuInstance->getNDS(), m_currentRom.romGroupIndex);
+        NoPickingUpSpecificItems_RestoreOnce(emuInstance->getNDS(), m_currentRom.romGroupIndex);
         InGameAspectRatio_ResetPatchState();
         OsdColor_ResetPatchState();
         FixWifi_ResetPatchState();
         UseFirmwareLanguage_ResetPatchState();
         ShowHeadshotOnline_ResetPatchState();
         ShowEnemyHpMeterOnline_ResetPatchState();
+        DisableDoubleDamageMultiplier_ResetPatchState();
+        NoPickingUpSpecificItems_ResetPatchState();
         InstantAimFollow_ResetPatchState();
         ARM9Hook_ResetPatchState();
 #endif
@@ -410,6 +418,14 @@ namespace MelonPrime {
                     emuInstance->getNDS(),
                     localCfg,
                     m_currentRom.romGroupIndex);
+                DisableDoubleDamageMultiplier_ApplyOnce(
+                    emuInstance->getNDS(),
+                    localCfg,
+                    m_currentRom.romGroupIndex);
+                NoPickingUpSpecificItems_ApplyOnce(
+                    emuInstance->getNDS(),
+                    localCfg,
+                    m_currentRom.romGroupIndex);
             }
             else if (m_flags.test(StateFlags::BIT_IN_GAME_INIT)) {
                 m_flags.clear(StateFlags::BIT_IN_GAME_INIT);
@@ -423,6 +439,8 @@ namespace MelonPrime {
                 InstantAimFollow_RestoreOnce(emuInstance->getNDS(), m_currentRom.romGroupIndex);
                 ShowHeadshotOnline_RestoreOnce(emuInstance->getNDS(), m_currentRom.romGroupIndex);
                 ShowEnemyHpMeterOnline_RestoreOnce(emuInstance->getNDS(), m_currentRom.romGroupIndex);
+                DisableDoubleDamageMultiplier_RestoreOnce(emuInstance->getNDS(), m_currentRom.romGroupIndex);
+                NoPickingUpSpecificItems_RestoreOnce(emuInstance->getNDS(), m_currentRom.romGroupIndex);
 #endif
                 OsdColor_RestoreOnce(emuInstance->getNDS(), m_currentRom);
             }
@@ -580,6 +598,14 @@ namespace MelonPrime {
             localCfg,
             m_currentRom.romGroupIndex);
         ShowEnemyHpMeterOnline_ApplyOnce(
+            emuInstance->getNDS(),
+            localCfg,
+            m_currentRom.romGroupIndex);
+        DisableDoubleDamageMultiplier_ApplyOnce(
+            emuInstance->getNDS(),
+            localCfg,
+            m_currentRom.romGroupIndex);
+        NoPickingUpSpecificItems_ApplyOnce(
             emuInstance->getNDS(),
             localCfg,
             m_currentRom.romGroupIndex);

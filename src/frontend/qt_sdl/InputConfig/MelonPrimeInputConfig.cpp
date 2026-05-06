@@ -191,6 +191,16 @@ void MelonPrimeInputConfig::setupSensitivityAndToggles(Config::Table& instcfg)
     ui->cbMetroidUseFirmwareLanguage->setChecked(instcfg.GetBool("Metroid.BugFix.UseFirmwareLanguage"));
     ui->cbMetroidShowHeadshotOnline->setChecked(instcfg.GetBool("Metroid.GameFeature.ShowHeadshotOnline"));
     ui->cbMetroidShowEnemyHpMeterOnline->setChecked(instcfg.GetBool("Metroid.GameFeature.ShowEnemyHpMeterOnline"));
+    ui->cbMetroidDisableDoubleDamageMultiplier->setChecked(
+        instcfg.GetBool("Metroid.GameFeature.DisableDoubleDamageMultiplier"));
+
+    // Disable features
+    ui->cbMetroidDisablePickupDoubleDamage->setChecked(
+        instcfg.GetBool("Metroid.DisableFeatures.NoPickingUpSpecificItems.DoubleDamage"));
+    ui->cbMetroidDisablePickupCloak->setChecked(
+        instcfg.GetBool("Metroid.DisableFeatures.NoPickingUpSpecificItems.Cloak"));
+    ui->cbMetroidDisablePickupDeathalt->setChecked(
+        instcfg.GetBool("Metroid.DisableFeatures.NoPickingUpSpecificItems.Deathalt"));
 
     // In-game scaling
     ui->cbMetroidInGameAspectRatio->setChecked(instcfg.GetBool("Metroid.Visual.InGameAspectRatio"));
@@ -252,6 +262,9 @@ void MelonPrimeInputConfig::setupCollapsibleSections(Config::Table& instcfg)
     setupToggle(ui->btnToggleSensitivity, ui->sectionSensitivity, "SENSITIVITY",      "Metroid.UI.SectionSensitivity");
     setupToggle(ui->btnToggleBugFix,        ui->sectionBugFix,        "BUG FIXES",                   "Metroid.UI.SectionBugFix");
     setupToggle(ui->btnToggleGameFeature,   ui->sectionGameFeature,   "GAME FEATURE IMPROVEMENTS",   "Metroid.UI.SectionGameFeature");
+    setupToggle(ui->btnToggleDisableFeatures, ui->sectionDisableFeatures, "DISABLE FEATURES",         "Metroid.UI.SectionDisableFeatures");
+    setupToggle(ui->btnToggleDisablePickingUpSpecificItems, ui->sectionDisablePickingUpSpecificItems,
+                "Disable Picking Up Specific Items", "Metroid.UI.SectionDisablePickingUpSpecificItems");
     setupToggle(ui->btnToggleGameplay,      ui->sectionGameplay,      "GAMEPLAY TOGGLES",             "Metroid.UI.SectionGameplay");
     setupToggle(ui->btnToggleVideo,       ui->sectionVideo,       "VIDEO QUALITY",    "Metroid.UI.SectionVideo");
     setupToggle(ui->btnToggleVolume,      ui->sectionVolume,      "VOLUME",           "Metroid.UI.SectionVolume");

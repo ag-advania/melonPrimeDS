@@ -367,6 +367,93 @@ The EU ROM has a hidden Japanese option — setting your DS firmware to Japanese
 												</property>
 											</widget>
 										</item>
+										<item>
+											<widget class="QCheckBox" name="cbMetroidDisableDoubleDamageMultiplier">
+												<property name="text">
+													<string>Disable Double Damage Multiplier</string>
+												</property>
+											</widget>
+										</item>
+										<item>
+											<widget class="QLabel" name="lblMetroidDisableDoubleDamageMultiplierDesc">
+												<property name="text">
+													<string>Keeps the Double Damage pickup, timer, HUD, sound, and visual effects, but changes its damage boost from 2x to 1x.</string>
+												</property>
+												<property name="wordWrap">
+													<bool>true</bool>
+												</property>
+											</widget>
+										</item>
+									</layout>
+								</widget>
+							</item>
+
+							<item>
+								<widget class="QPushButton" name="btnToggleDisableFeatures">
+									<property name="text"><string>▶ DISABLE FEATURES</string></property>
+									<property name="checkable"><bool>true</bool></property>
+									<property name="checked"><bool>false</bool></property>
+									<property name="flat"><bool>true</bool></property>
+									<property name="styleSheet"><string>QPushButton { text-align: left; font-weight: bold; padding: 4px; } QPushButton::checked { font-weight: bold; }</string></property>
+								</widget>
+							</item>
+							<item>
+								<widget class="QWidget" name="sectionDisableFeatures">
+									<layout class="QVBoxLayout" name="vboxDisableFeatures">
+										<property name="leftMargin"><number>8</number></property>
+										<property name="topMargin"><number>2</number></property>
+										<property name="rightMargin"><number>0</number></property>
+										<property name="bottomMargin"><number>4</number></property>
+										<item>
+											<widget class="QPushButton" name="btnToggleDisablePickingUpSpecificItems">
+												<property name="text"><string>▶ Disable Picking Up Specific Items</string></property>
+												<property name="checkable"><bool>true</bool></property>
+												<property name="checked"><bool>false</bool></property>
+												<property name="flat"><bool>true</bool></property>
+												<property name="styleSheet"><string>QPushButton { text-align: left; font-weight: bold; padding: 4px; } QPushButton::checked { font-weight: bold; }</string></property>
+											</widget>
+										</item>
+										<item>
+											<widget class="QWidget" name="sectionDisablePickingUpSpecificItems">
+												<layout class="QVBoxLayout" name="vboxDisablePickingUpSpecificItems">
+													<property name="leftMargin"><number>16</number></property>
+													<property name="topMargin"><number>2</number></property>
+													<property name="rightMargin"><number>0</number></property>
+													<property name="bottomMargin"><number>4</number></property>
+													<item>
+														<widget class="QLabel" name="lblMetroidDisablePickingUpSpecificItemsDesc">
+															<property name="text">
+																<string>When enabled, you cannot pick up the selected items, but online opponents can still pick them up. This setting only affects you and bots. Online opponents can pick up these items normally; on your screen, the item remains in place. If you touch one of these items, other players may see it as if you picked it up and removed it.</string>
+															</property>
+															<property name="wordWrap">
+																<bool>true</bool>
+															</property>
+														</widget>
+													</item>
+													<item>
+														<widget class="QCheckBox" name="cbMetroidDisablePickupDoubleDamage">
+															<property name="text">
+																<string>Double Damage</string>
+															</property>
+														</widget>
+													</item>
+													<item>
+														<widget class="QCheckBox" name="cbMetroidDisablePickupCloak">
+															<property name="text">
+																<string>Cloak</string>
+															</property>
+														</widget>
+													</item>
+													<item>
+														<widget class="QCheckBox" name="cbMetroidDisablePickupDeathalt">
+															<property name="text">
+																<string>DEATH ALT</string>
+															</property>
+														</widget>
+													</item>
+												</layout>
+											</widget>
+										</item>
 									</layout>
 								</widget>
 							</item>
