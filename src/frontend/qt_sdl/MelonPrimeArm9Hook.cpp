@@ -6,12 +6,20 @@
 #include "MelonPrimePatchShadowFreezeRuntimeHook.h"
 #include "MelonPrimePatchFixNoxusBladePersistence.h"
 #include "NDS.h"
+#include "Platform.h"
 
 #include <cstdint>
 
 namespace MelonPrime {
 
 namespace {
+
+#ifdef MELONPRIME_ENABLE_DEVELOPER_FEATURES
+#define MP_ARM9_HOOK_LOG(...) \
+    melonDS::Platform::Log(melonDS::Platform::LogLevel::Info, __VA_ARGS__)
+#else
+#define MP_ARM9_HOOK_LOG(...) do {} while (0)
+#endif
 
 enum DispatchMask : uint8_t
 {
@@ -51,71 +59,27 @@ static void AddDispatchAddress(uint32_t address, uint8_t mask) noexcept
     }
 
     if (s_dispatchCount >= melonDS::NDS::ARM9InstructionHookMaxAddresses)
+    {
+        MP_ARM9_HOOK_LOG(
+            "ARM9Hook RegisterDrop: address=%08X mask=%02X count=%u max=%u\n",
+            address,
+            mask,
+            s_dispatchCount,
+            melonDS::NDS::ARM9InstructionHookMaxAddresses);
         return;
+    }
 
     s_dispatchEntries[s_dispatchCount++] = {address, mask};
 }
 
 [[nodiscard]] static FORCE_INLINE uint8_t FindDispatchMask(uint32_t arm9ExecAddr) noexcept
 {
-    switch (s_dispatchCount)
+    for (uint32_t i = 0; i < s_dispatchCount; ++i)
     {
-    case 16:
-        if (s_dispatchEntries[15].Address == arm9ExecAddr) return s_dispatchEntries[15].Mask;
-        [[fallthrough]];
-    case 15:
-        if (s_dispatchEntries[14].Address == arm9ExecAddr) return s_dispatchEntries[14].Mask;
-        [[fallthrough]];
-    case 14:
-        if (s_dispatchEntries[13].Address == arm9ExecAddr) return s_dispatchEntries[13].Mask;
-        [[fallthrough]];
-    case 13:
-        if (s_dispatchEntries[12].Address == arm9ExecAddr) return s_dispatchEntries[12].Mask;
-        [[fallthrough]];
-    case 12:
-        if (s_dispatchEntries[11].Address == arm9ExecAddr) return s_dispatchEntries[11].Mask;
-        [[fallthrough]];
-    case 11:
-        if (s_dispatchEntries[10].Address == arm9ExecAddr) return s_dispatchEntries[10].Mask;
-        [[fallthrough]];
-    case 10:
-        if (s_dispatchEntries[9].Address == arm9ExecAddr) return s_dispatchEntries[9].Mask;
-        [[fallthrough]];
-    case 9:
-        if (s_dispatchEntries[8].Address == arm9ExecAddr) return s_dispatchEntries[8].Mask;
-        [[fallthrough]];
-    case 8:
-        if (s_dispatchEntries[7].Address == arm9ExecAddr) return s_dispatchEntries[7].Mask;
-        [[fallthrough]];
-    case 7:
-        if (s_dispatchEntries[6].Address == arm9ExecAddr) return s_dispatchEntries[6].Mask;
-        [[fallthrough]];
-    case 6:
-        if (s_dispatchEntries[5].Address == arm9ExecAddr) return s_dispatchEntries[5].Mask;
-        [[fallthrough]];
-    case 5:
-        if (s_dispatchEntries[4].Address == arm9ExecAddr) return s_dispatchEntries[4].Mask;
-        [[fallthrough]];
-    case 4:
-        if (s_dispatchEntries[0].Address == arm9ExecAddr) return s_dispatchEntries[0].Mask;
-        if (s_dispatchEntries[1].Address == arm9ExecAddr) return s_dispatchEntries[1].Mask;
-        if (s_dispatchEntries[2].Address == arm9ExecAddr) return s_dispatchEntries[2].Mask;
-        if (s_dispatchEntries[3].Address == arm9ExecAddr) return s_dispatchEntries[3].Mask;
-        return 0;
-    case 3:
-        if (s_dispatchEntries[0].Address == arm9ExecAddr) return s_dispatchEntries[0].Mask;
-        if (s_dispatchEntries[1].Address == arm9ExecAddr) return s_dispatchEntries[1].Mask;
-        if (s_dispatchEntries[2].Address == arm9ExecAddr) return s_dispatchEntries[2].Mask;
-        return 0;
-    case 2:
-        if (s_dispatchEntries[0].Address == arm9ExecAddr) return s_dispatchEntries[0].Mask;
-        if (s_dispatchEntries[1].Address == arm9ExecAddr) return s_dispatchEntries[1].Mask;
-        return 0;
-    case 1:
-        return (s_dispatchEntries[0].Address == arm9ExecAddr) ? s_dispatchEntries[0].Mask : 0;
-    default:
-        return 0;
+        if (s_dispatchEntries[i].Address == arm9ExecAddr)
+            return s_dispatchEntries[i].Mask;
     }
+    return 0;
 }
 
 static bool DispatcherCallback(
@@ -259,6 +223,20 @@ void ARM9Hook_Install(
     for (uint32_t i = 0; i < count; ++i)
         addresses[i] = s_dispatchEntries[i].Address;
 
+    MP_ARM9_HOOK_LOG(
+        "ARM9Hook Install: rom=%u count=%u max=%u\n",
+        romGroupIndex,
+        count,
+        melonDS::NDS::ARM9InstructionHookMaxAddresses);
+    for (uint32_t i = 0; i < count; ++i)
+    {
+        MP_ARM9_HOOK_LOG(
+            "ARM9Hook Address[%u]: %08X mask=%02X\n",
+            i,
+            s_dispatchEntries[i].Address,
+            s_dispatchEntries[i].Mask);
+    }
+
     if (count > 0)
     {
         nds->SetARM9InstructionHook(DispatcherCallback, core, addresses, count);
@@ -295,5 +273,7 @@ void ARM9Hook_ResetPatchState()
 }
 
 } // namespace MelonPrime
+
+#undef MP_ARM9_HOOK_LOG
 
 #endif // MELONPRIME_DS

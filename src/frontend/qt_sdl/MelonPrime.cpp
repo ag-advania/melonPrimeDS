@@ -531,11 +531,7 @@ namespace MelonPrime {
                 --m_weaponSwitchPending.FallbackFrames;
             }
             else {
-                const uint8_t weaponId = m_weaponSwitchPending.WeaponId;
                 m_weaponSwitchPending.Clear();
-                if (weaponId < 9 && *m_ptrs.currentWeapon != weaponId) {
-                    static_cast<void>(SwitchWeaponLegacyTouchFallback(weaponId));
-                }
             }
         }
 #endif
