@@ -70,6 +70,20 @@ void MelonPrimeInputConfig::saveConfig()
     instcfg.SetBool("Metroid.BugFix.UseFirmwareLanguage", ui->cbMetroidUseFirmwareLanguage->checkState() == Qt::Checked);
     instcfg.SetBool("Metroid.GameFeature.ShowHeadshotOnline", ui->cbMetroidShowHeadshotOnline->checkState() == Qt::Checked);
     instcfg.SetBool("Metroid.GameFeature.ShowEnemyHpMeterOnline", ui->cbMetroidShowEnemyHpMeterOnline->checkState() == Qt::Checked);
+    instcfg.SetBool(
+        "Metroid.GameFeature.DisableDoubleDamageMultiplier",
+        ui->cbMetroidDisableDoubleDamageMultiplier->checkState() == Qt::Checked);
+
+    // Disable features
+    instcfg.SetBool(
+        "Metroid.DisableFeatures.NoPickingUpSpecificItems.DoubleDamage",
+        ui->cbMetroidDisablePickupDoubleDamage->checkState() == Qt::Checked);
+    instcfg.SetBool(
+        "Metroid.DisableFeatures.NoPickingUpSpecificItems.Cloak",
+        ui->cbMetroidDisablePickupCloak->checkState() == Qt::Checked);
+    instcfg.SetBool(
+        "Metroid.DisableFeatures.NoPickingUpSpecificItems.Deathalt",
+        ui->cbMetroidDisablePickupDeathalt->checkState() == Qt::Checked);
 
     // SnapTap
     instcfg.SetBool("Metroid.Operation.SnapTap", ui->cbMetroidEnableSnapTap->checkState() == Qt::Checked);
@@ -172,6 +186,10 @@ void MelonPrimeInputConfig::saveConfig()
     instcfg.SetBool("Metroid.UI.SectionSensitivity",    ui->btnToggleSensitivity->isChecked());
     instcfg.SetBool("Metroid.UI.SectionBugFix",         ui->btnToggleBugFix->isChecked());
     instcfg.SetBool("Metroid.UI.SectionGameFeature",    ui->btnToggleGameFeature->isChecked());
+    instcfg.SetBool("Metroid.UI.SectionDisableFeatures", ui->btnToggleDisableFeatures->isChecked());
+    instcfg.SetBool(
+        "Metroid.UI.SectionDisablePickingUpSpecificItems",
+        ui->btnToggleDisablePickingUpSpecificItems->isChecked());
     instcfg.SetBool("Metroid.UI.SectionGameplay",       ui->btnToggleGameplay->isChecked());
     instcfg.SetBool("Metroid.UI.SectionVideo",          ui->btnToggleVideo->isChecked());
     instcfg.SetBool("Metroid.UI.SectionVolume",         ui->btnToggleVolume->isChecked());

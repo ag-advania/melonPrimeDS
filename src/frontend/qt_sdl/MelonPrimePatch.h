@@ -8,6 +8,8 @@
 #include "MelonPrimePatchUseFirmwareLanguage.h"
 #include "MelonPrimePatchShowHeadshotOnline.h"
 #include "MelonPrimePatchShowEnemyHpMeterOnline.h"
+#include "MelonPrimePatchDisableDoubleDamageMultiplier.h"
+#include "MelonPrimePatchNoPickingUpSpecificItems.h"
 #include "MelonPrimePatchShadowFreezeRuntimeHook.h"
 #include "MelonPrimePatchFixNoxusBladePersistence.h"
 #include "MelonPrimePatchInstantAimFollow.h"
