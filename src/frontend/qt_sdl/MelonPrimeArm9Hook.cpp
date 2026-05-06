@@ -6,7 +6,10 @@
 #include "MelonPrimePatchShadowFreezeRuntimeHook.h"
 #include "MelonPrimePatchFixNoxusBladePersistence.h"
 #include "NDS.h"
+
+#if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES) && defined(MELONPRIME_ARM9_HOOK_DEBUG_LOG)
 #include "Platform.h"
+#endif
 
 #include <cstdint>
 
@@ -14,7 +17,7 @@ namespace MelonPrime {
 
 namespace {
 
-#ifdef MELONPRIME_ENABLE_DEVELOPER_FEATURES
+#if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES) && defined(MELONPRIME_ARM9_HOOK_DEBUG_LOG)
 #define MP_ARM9_HOOK_LOG(...) \
     melonDS::Platform::Log(melonDS::Platform::LogLevel::Info, __VA_ARGS__)
 #else
@@ -39,10 +42,14 @@ struct DispatchEntry
 
 static DispatchEntry s_dispatchEntries[melonDS::NDS::ARM9InstructionHookMaxAddresses] = {};
 static uint32_t s_dispatchCount = 0;
+static uint32_t s_lastDispatchAddress = 0;
+static uint8_t s_lastDispatchMask = 0;
 
 static void ClearDispatchEntries() noexcept
 {
     s_dispatchCount = 0;
+    s_lastDispatchAddress = 0;
+    s_lastDispatchMask = 0;
     for (auto& entry : s_dispatchEntries)
         entry = {};
 }
@@ -74,10 +81,17 @@ static void AddDispatchAddress(uint32_t address, uint8_t mask) noexcept
 
 [[nodiscard]] static FORCE_INLINE uint8_t FindDispatchMask(uint32_t arm9ExecAddr) noexcept
 {
+    if (LIKELY(arm9ExecAddr == s_lastDispatchAddress))
+        return s_lastDispatchMask;
+
     for (uint32_t i = 0; i < s_dispatchCount; ++i)
     {
         if (s_dispatchEntries[i].Address == arm9ExecAddr)
+        {
+            s_lastDispatchAddress = arm9ExecAddr;
+            s_lastDispatchMask = s_dispatchEntries[i].Mask;
             return s_dispatchEntries[i].Mask;
+        }
     }
     return 0;
 }
@@ -95,9 +109,11 @@ static bool DispatcherCallback(
     if (UNLIKELY(mask == 0))
         return false;
 
+    auto* const core = static_cast<MelonPrimeCore*>(userdata);
+
     if ((mask & Dispatch_NativeAimDelta) != 0)
     {
-        if (auto* core = static_cast<MelonPrimeCore*>(userdata))
+        if (core)
         {
             if (core->GetNativeAimHookMode() == 2)
                 core->NativeAimDeltaHookPostFoldWrite_DispatchCheck(nds, arm9ExecAddr, regs);
@@ -108,7 +124,7 @@ static bool DispatcherCallback(
 
     if ((mask & Dispatch_ImmediateInputEdgeOverlay) != 0)
     {
-        if (auto* core = static_cast<MelonPrimeCore*>(userdata))
+        if (core)
             core->ImmediateInputEdgeOverlay_DispatchCheck(nds, arm9ExecAddr, regs);
     }
 
@@ -119,7 +135,7 @@ static bool DispatcherCallback(
     // Redirect hooks: may change execution address.
     if ((mask & Dispatch_TransformGate) != 0)
     {
-        if (auto* core = static_cast<MelonPrimeCore*>(userdata))
+        if (core)
         {
             if (core->TransformGateHook_DispatchCheckAndRedirect(
                     nds, arm9ExecAddr, regs, redirectExecAddr))
@@ -129,7 +145,7 @@ static bool DispatcherCallback(
 
     if ((mask & Dispatch_WeaponSwitch) != 0)
     {
-        if (auto* core = static_cast<MelonPrimeCore*>(userdata))
+        if (core)
         {
             if (core->WeaponSwitchHook_DispatchCheckAndRedirect(
                     nds, arm9ExecAddr, regs, redirectExecAddr))
