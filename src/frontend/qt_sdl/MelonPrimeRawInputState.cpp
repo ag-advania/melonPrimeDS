@@ -29,6 +29,7 @@ namespace MelonPrime {
             vk.store(0, std::memory_order_relaxed);
         m_mouseButtons.store(0, std::memory_order_relaxed);
         m_mouseButtonPresses.store(0, std::memory_order_relaxed);
+        m_mouseButtonDeferredPresses.store(0, std::memory_order_relaxed);
 
         m_accumMouseX.store(0, std::memory_order_relaxed);
         m_accumMouseY.store(0, std::memory_order_relaxed);
@@ -297,6 +298,7 @@ namespace MelonPrime {
         for (auto& vk : m_vkDown) vk.store(0, std::memory_order_relaxed);
         m_mouseButtons.store(0, std::memory_order_relaxed);
         m_mouseButtonPresses.store(0, std::memory_order_relaxed);
+        m_mouseButtonDeferredPresses.store(0, std::memory_order_relaxed);
         std::atomic_thread_fence(std::memory_order_release);
         m_hkPrev = 0;
     }
@@ -304,6 +306,7 @@ namespace MelonPrime {
     void InputState::resetMouseButtons() noexcept {
         m_mouseButtons.store(0, std::memory_order_release);
         m_mouseButtonPresses.store(0, std::memory_order_release);
+        m_mouseButtonDeferredPresses.store(0, std::memory_order_release);
     }
 
     // =========================================================================
@@ -318,6 +321,7 @@ namespace MelonPrime {
         for (auto& vk : m_vkDown) vk.store(0, std::memory_order_relaxed);
         m_mouseButtons.store(0, std::memory_order_relaxed);
         m_mouseButtonPresses.store(0, std::memory_order_relaxed);
+        m_mouseButtonDeferredPresses.store(0, std::memory_order_relaxed);
         std::atomic_thread_fence(std::memory_order_release);
         m_hkPrev = 0;
     }
@@ -508,7 +512,40 @@ namespace MelonPrime {
         int& outMouseX, int& outMouseY) noexcept
     {
         auto snap = takeSnapshot();  // acquire fence inside
-        snap.mouse |= m_mouseButtonPresses.exchange(0, std::memory_order_acquire);
+        const uint8_t physicalMouse = snap.mouse;
+        const uint8_t pendingMousePresses = static_cast<uint8_t>(
+            m_mouseButtonPresses.exchange(0, std::memory_order_acquire) |
+            m_mouseButtonDeferredPresses.exchange(0, std::memory_order_acquire));
+
+        // A very short click is represented as a one-frame mouse bit even when
+        // the physical button is already up.  If the same logical hotkey was
+        // down last frame, sending that bit immediately would merge two taps
+        // into one long hold.  Defer only those tap bits for one frame, creating
+        // a visible release frame first; this makes rapid fire/re-clicks reliable
+        // without affecting normal held mouse buttons.
+        uint8_t activeMousePresses = pendingMousePresses;
+        if (pendingMousePresses) {
+            const uint64_t physicalDown = scanBoundHotkeys(snap);
+            uint8_t deferMousePresses = 0;
+            uint8_t tapBits = static_cast<uint8_t>(pendingMousePresses & ~physicalMouse);
+
+            while (tapBits) {
+                const uint8_t bit = static_cast<uint8_t>(tapBits & -tapBits);
+                tapBits = static_cast<uint8_t>(tapBits & ~bit);
+
+                auto probe = snap;
+                probe.mouse = static_cast<uint8_t>(physicalMouse | bit);
+                const uint64_t hotkeysFromTap =
+                    static_cast<uint64_t>(scanBoundHotkeys(probe) & ~physicalDown);
+                if ((hotkeysFromTap & m_hkPrev) != 0)
+                    deferMousePresses = static_cast<uint8_t>(deferMousePresses | bit);
+            }
+
+            activeMousePresses = static_cast<uint8_t>(activeMousePresses & ~deferMousePresses);
+            if (deferMousePresses)
+                m_mouseButtonDeferredPresses.fetch_or(deferMousePresses, std::memory_order_release);
+        }
+        snap.mouse = static_cast<uint8_t>(snap.mouse | activeMousePresses);
 
         // clearStuck* runs AFTER takeSnapshot so that valid quick presses
         // (button pressed and released within one frame) are captured in the

@@ -136,6 +136,9 @@ namespace MelonPrime {
         // Mouse DOWN edges seen since the last outer-frame snapshot.
         // Preserves very short clicks whose DOWN+UP both arrive in one batch.
         std::atomic<uint8_t>  m_mouseButtonPresses{ 0 };
+        // Clicks deferred for one frame to force a visible release between
+        // consecutive short taps of the same logical action.
+        std::atomic<uint8_t>  m_mouseButtonDeferredPresses{ 0 };
 
         // =================================================================
         // Cache Line 1+: Read-Mostly / Consumer State
