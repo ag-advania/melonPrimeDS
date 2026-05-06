@@ -20,6 +20,7 @@ enum DispatchMask : uint8_t
     Dispatch_NoxusBlade                 = 1u << 2,
     Dispatch_ImmediateInputEdgeOverlay  = 1u << 3,
     Dispatch_TransformGate              = 1u << 4,
+    Dispatch_WeaponSwitch               = 1u << 5,
 };
 
 struct DispatchEntry
@@ -162,6 +163,16 @@ static bool DispatcherCallback(
         }
     }
 
+    if ((mask & Dispatch_WeaponSwitch) != 0)
+    {
+        if (auto* core = static_cast<MelonPrimeCore*>(userdata))
+        {
+            if (core->WeaponSwitchHook_DispatchCheckAndRedirect(
+                    nds, arm9ExecAddr, regs, redirectExecAddr))
+                return true;
+        }
+    }
+
     if ((mask & Dispatch_ShadowFreeze) != 0)
     {
         return ShadowFreezeRuntimeHook_DispatchCheckAndRedirect(
@@ -235,6 +246,13 @@ void ARM9Hook_Install(
         melonDS::NDS::ARM9InstructionHookMaxAddresses);
     for (uint32_t i = 0; i < moduleCount; ++i)
         AddDispatchAddress(moduleAddresses[i], Dispatch_TransformGate);
+
+    moduleCount = MelonPrimeCore::WeaponSwitchHook_GetAddresses(
+        romGroupIndex,
+        moduleAddresses,
+        melonDS::NDS::ARM9InstructionHookMaxAddresses);
+    for (uint32_t i = 0; i < moduleCount; ++i)
+        AddDispatchAddress(moduleAddresses[i], Dispatch_WeaponSwitch);
 
     uint32_t addresses[melonDS::NDS::ARM9InstructionHookMaxAddresses] = {};
     const uint32_t count = s_dispatchCount;
