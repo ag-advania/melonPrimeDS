@@ -1593,7 +1593,7 @@ void MelonPrimeInputConfig::setupCustomHudWidgets(Config::Table& instcfg)
             sb->setRange(p.min, p.max);
             sb->setSingleStep(p.step);
             sb->setValue(instcfg.GetInt(p.cfgKey));
-            sb->setFixedWidth(58);
+            sb->setFixedWidth(78);
 
             hlay->addWidget(slider, 1);
             hlay->addWidget(sb);
