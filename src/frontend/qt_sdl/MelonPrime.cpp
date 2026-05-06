@@ -365,7 +365,8 @@ namespace MelonPrime {
             // Use the lean updater: no press-map scan, no wheel fetch.
             const bool focused = isFocused.load(std::memory_order_acquire);
             UpdateInputStateReentrant(focused);
-            ProcessMoveAndButtonsFast();
+            ProcessMoveAndButtonsFastFromReset();
+            ApplyZoomBindingInput();
 
             const bool isStylusMode = this->isStylusMode;
             if (isStylusMode) {

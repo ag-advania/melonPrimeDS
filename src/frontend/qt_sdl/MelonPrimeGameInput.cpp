@@ -91,6 +91,14 @@ namespace MelonPrime {
         return press;
     }
 
+    [[nodiscard]] static FORCE_INLINE bool GameInput_IsMainRamRange(
+        uint32_t address, uint32_t size) noexcept
+    {
+        return size != 0
+            && address >= 0x02000000u
+            && size - 1u <= 0x023FFFFFu - address;
+    }
+
     // =========================================================================
     // UpdateInputStateImpl<kReentrant>
     //
@@ -224,13 +232,13 @@ namespace MelonPrime {
             mask = (m_inputMaskFast & 0xFF0Fu) | (static_cast<uint16_t>(lutResult) & 0x00F0u);
         }
 
-        // --- Branchless button merge (B/L/R) ---
-        constexpr uint16_t kModBits = (1u << INPUT_B) | (1u << INPUT_L) | (1u << INPUT_R);
+        // --- Branchless button merge (B/L) ---
+        // Zoom is preset-dependent and is applied by ApplyZoomBindingInput().
+        constexpr uint16_t kModBits = (1u << INPUT_B) | (1u << INPUT_L);
         const uint64_t nd = ~m_input.down;
         const uint16_t bBit = static_cast<uint16_t>(((nd >> 0) & 1u) << INPUT_B);
         const uint16_t lBit = static_cast<uint16_t>(((nd >> 1) & 1u) << INPUT_L);
-        const uint16_t rBit = static_cast<uint16_t>(((nd >> 2) & 1u) << INPUT_R);
-        m_inputMaskFast = (mask & ~kModBits) | bBit | lBit | rBit;
+        m_inputMaskFast = (mask & ~kModBits) | bBit | lBit;
     }
 
     HOT_FUNCTION void MelonPrimeCore::ProcessMoveAndButtonsFast()
@@ -241,6 +249,31 @@ namespace MelonPrime {
     HOT_FUNCTION void MelonPrimeCore::ProcessMoveAndButtonsFastFromReset()
     {
         ProcessMoveAndButtonsFastImpl<true>();
+    }
+
+    HOT_FUNCTION void MelonPrimeCore::ApplyZoomBindingInput()
+    {
+        if (!IsDown(IB_ZOOM))
+            return;
+
+        uint16_t zoomMask = static_cast<uint16_t>(1u << INPUT_R);
+
+        if (m_flags.test(StateFlags::BIT_IN_GAME_INIT)) {
+            if (auto* nds = emuInstance->getNDS()) {
+                const uint32_t offP = static_cast<uint32_t>(m_playerPosition)
+                                    * static_cast<uint32_t>(Consts::PLAYER_ADDR_INC);
+                const uint32_t zoomBindingAddr =
+                    m_currentRom.playerStructStart + offP + 0x3E0u;
+                if (GameInput_IsMainRamRange(zoomBindingAddr, sizeof(uint16_t))) {
+                    const uint16_t boundMask =
+                        static_cast<uint16_t>(Read16(nds->MainRAM, zoomBindingAddr) & 0x0FFFu);
+                    if (boundMask != 0)
+                        zoomMask = boundMask;
+                }
+            }
+        }
+
+        m_inputMaskFast = static_cast<uint16_t>(m_inputMaskFast & ~zoomMask);
     }
 
     void MelonPrimeCore::ProcessAimInputStylus(melonDS::NDS* nds)
