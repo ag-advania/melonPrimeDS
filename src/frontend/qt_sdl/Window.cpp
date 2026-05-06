@@ -685,6 +685,14 @@ MainWindow::MainWindow(int id, EmuInstance* inst, QWidget* parent) :
             actMetroidFixSF = menu->addAction("Disable SF (Shadow Freeze)");
             actMetroidFixSF->setCheckable(true);
             connect(actMetroidFixSF, &QAction::triggered, this, &MainWindow::onChangeMetroidFixSF);
+
+            actMetroidDisableDoubleDamageMultiplier = menu->addAction("Disable Double Damage Multiplier");
+            actMetroidDisableDoubleDamageMultiplier->setCheckable(true);
+            connect(
+                actMetroidDisableDoubleDamageMultiplier,
+                &QAction::triggered,
+                this,
+                &MainWindow::onChangeMetroidDisableDoubleDamageMultiplier);
         }
         /* } MelonPrimeDS */
 #endif // MELONPRIME_DS
@@ -798,6 +806,8 @@ MainWindow::MainWindow(int id, EmuInstance* inst, QWidget* parent) :
         actAudioSync->setChecked(emuInstance->doAudioSync);
 #ifdef MELONPRIME_DS
         actMetroidFixSF->setChecked(localCfg.GetBool("Metroid.BugFix.FixShadowFreeze"));
+        actMetroidDisableDoubleDamageMultiplier->setChecked(
+            localCfg.GetBool("Metroid.GameFeature.DisableDoubleDamageMultiplier"));
 #endif
 
         if (emuInstance->instanceID > 0)
@@ -1960,6 +1970,11 @@ void MainWindow::onChangeMetroidFixSF(bool checked)
     localCfg.SetBool("Metroid.BugFix.FixShadowFreeze", checked);
     MelonPrime::ShadowFreezeRuntimeHook_NotifyConfigChanged();
 }
+
+void MainWindow::onChangeMetroidDisableDoubleDamageMultiplier(bool checked)
+{
+    localCfg.SetBool("Metroid.GameFeature.DisableDoubleDamageMultiplier", checked);
+}
 /* } MelonPrimeDS*/
 #endif // MELONPRIME_DS
 
@@ -1968,6 +1983,8 @@ void MainWindow::onInputConfigFinished(int res)
     emuThread->emuUnpause();
 #ifdef MELONPRIME_DS
     actMetroidFixSF->setChecked(localCfg.GetBool("Metroid.BugFix.FixShadowFreeze"));
+    actMetroidDisableDoubleDamageMultiplier->setChecked(
+        localCfg.GetBool("Metroid.GameFeature.DisableDoubleDamageMultiplier"));
 #endif
 }
 

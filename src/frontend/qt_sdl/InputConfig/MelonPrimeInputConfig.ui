@@ -367,23 +367,6 @@ The EU ROM has a hidden Japanese option — setting your DS firmware to Japanese
 												</property>
 											</widget>
 										</item>
-										<item>
-											<widget class="QCheckBox" name="cbMetroidDisableDoubleDamageMultiplier">
-												<property name="text">
-													<string>Disable Double Damage Multiplier</string>
-												</property>
-											</widget>
-										</item>
-										<item>
-											<widget class="QLabel" name="lblMetroidDisableDoubleDamageMultiplierDesc">
-												<property name="text">
-													<string>Keeps the Double Damage pickup, timer, HUD, sound, and visual effects, but changes its damage boost from 2x to 1x.</string>
-												</property>
-												<property name="wordWrap">
-													<bool>true</bool>
-												</property>
-											</widget>
-										</item>
 									</layout>
 								</widget>
 							</item>
@@ -404,6 +387,23 @@ The EU ROM has a hidden Japanese option — setting your DS firmware to Japanese
 										<property name="topMargin"><number>2</number></property>
 										<property name="rightMargin"><number>0</number></property>
 										<property name="bottomMargin"><number>4</number></property>
+										<item>
+											<widget class="QCheckBox" name="cbMetroidDisableDoubleDamageMultiplier">
+												<property name="text">
+													<string>Disable Double Damage Multiplier</string>
+												</property>
+											</widget>
+										</item>
+										<item>
+											<widget class="QLabel" name="lblMetroidDisableDoubleDamageMultiplierDesc">
+												<property name="text">
+													<string>Keeps the Double Damage pickup, timer, HUD, sound, and visual effects, but changes its damage boost from 2x to 1x. Please use this only with your opponent's consent.</string>
+												</property>
+												<property name="wordWrap">
+													<bool>true</bool>
+												</property>
+											</widget>
+										</item>
 										<item>
 											<widget class="QPushButton" name="btnToggleDisablePickingUpSpecificItems">
 												<property name="text"><string>▶ Disable Picking Up Specific Items</string></property>
