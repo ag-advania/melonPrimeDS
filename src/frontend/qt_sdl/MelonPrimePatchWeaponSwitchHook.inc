@@ -2,7 +2,7 @@
 
     namespace {
 
-#ifdef MELONPRIME_ENABLE_DEVELOPER_FEATURES
+#if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES) && defined(MELONPRIME_WEAPON_SWITCH_DEBUG_LOG)
 #define MP_WEAPON_SWITCH_LOG(...) \
         melonDS::Platform::Log(melonDS::Platform::LogLevel::Info, __VA_ARGS__)
 #else
@@ -94,6 +94,7 @@
         m_weaponSwitchPending.RetryCount = 4;
         m_weaponSwitchPending.FallbackFrames = 12;
 
+#if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES) && defined(MELONPRIME_WEAPON_SWITCH_DEBUG_LOG)
         const uint8_t currentWeapon = m_ptrs.currentWeapon ? *m_ptrs.currentWeapon : 0xFFu;
         const uint8_t selectedWeapon = m_ptrs.selectedWeapon ? *m_ptrs.selectedWeapon : 0xFFu;
         MP_WEAPON_SWITCH_LOG(
@@ -102,6 +103,7 @@
             weaponId,
             currentWeapon,
             selectedWeapon);
+#endif
     }
 
     bool MelonPrimeCore::WeaponSwitchHook_DispatchCheckAndRedirect(
