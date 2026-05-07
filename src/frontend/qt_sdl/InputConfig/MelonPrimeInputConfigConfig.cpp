@@ -121,9 +121,16 @@ void MelonPrimeInputConfig::saveConfig()
         "Metroid.Input.Enable.ImmediateInputEdgeOverlay",
         kDeveloperOnlyFeaturesEnabled
             && ui->cbMetroidEnableImmediateInputEdgeOverlay->checkState() == Qt::Checked);
-    instcfg.SetBool("Metroid.Input.Enable.DirectAltFormTransform",    ui->cbMetroidEnableDirectAltFormTransform->checkState() == Qt::Checked);
-    if (m_comboMetroidWeaponSwitchMethod)
-        instcfg.SetInt("Metroid.Input.WeaponSwitchMethod", m_comboMetroidWeaponSwitchMethod->currentIndex());
+    instcfg.SetBool(
+        "Metroid.Input.Enable.DirectAltFormTransform",
+        m_cbMetroidUseNewTransformMethod
+            ? m_cbMetroidUseNewTransformMethod->isChecked()
+            : (ui->cbMetroidEnableDirectAltFormTransform->checkState() == Qt::Checked));
+    if (m_cbMetroidUseNewWeaponSwitchMethod) {
+        instcfg.SetInt(
+            "Metroid.Input.WeaponSwitchMethod",
+            m_cbMetroidUseNewWeaponSwitchMethod->isChecked() ? 0 : 1);
+    }
     // Original public behavior:
     // instcfg.SetBool("Metroid.Aim.Enable.InstantAimFollow", ui->cbMetroidEnableInstantAimFollow->checkState() == Qt::Checked);
     instcfg.SetBool(

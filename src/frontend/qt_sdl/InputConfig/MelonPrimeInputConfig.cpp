@@ -212,8 +212,13 @@ void MelonPrimeInputConfig::setupSensitivityAndToggles(Config::Table& instcfg)
 
 void MelonPrimeInputConfig::setupInputMethodSection(Config::Table& instcfg)
 {
-    if (m_btnToggleInputMethod || m_sectionInputMethod || m_comboMetroidWeaponSwitchMethod)
+    if (m_btnToggleInputMethod
+        || m_sectionInputMethod
+        || m_cbMetroidUseNewWeaponSwitchMethod
+        || m_cbMetroidUseNewTransformMethod)
+    {
         return;
+    }
 
     auto* parentLayout = qobject_cast<QVBoxLayout*>(ui->sectionInputSettings->parentWidget()->layout());
     if (!parentLayout)
@@ -231,29 +236,52 @@ void MelonPrimeInputConfig::setupInputMethodSection(Config::Table& instcfg)
     m_sectionInputMethod = new QWidget(this);
     auto* sectionLayout = new QVBoxLayout(m_sectionInputMethod);
 
-    auto* methodRow = new QHBoxLayout();
-    m_comboMetroidWeaponSwitchMethod = new QComboBox(m_sectionInputMethod);
-    m_comboMetroidWeaponSwitchMethod->setToolTip(
-        "Weapon switch method: New Method uses the native ARM9 game function hook. "
-        "Legacy Method uses the older touch/menu simulation path.");
-    m_comboMetroidWeaponSwitchMethod->addItem("New Method");
-    m_comboMetroidWeaponSwitchMethod->addItem("Legacy Method");
-    m_comboMetroidWeaponSwitchMethod->setCurrentIndex(
-        std::clamp(instcfg.GetInt("Metroid.Input.WeaponSwitchMethod"), 0, 1));
-
-    auto* methodLabel = new QLabel("Weapon Change Method - Default: New Method", m_sectionInputMethod);
-    methodRow->addWidget(m_comboMetroidWeaponSwitchMethod);
-    methodRow->addWidget(methodLabel);
-    methodRow->addStretch(1);
-    sectionLayout->addLayout(methodRow);
+    m_cbMetroidUseNewWeaponSwitchMethod = new QCheckBox(
+        "Use New Method for Weapon Change",
+        m_sectionInputMethod);
+    m_cbMetroidUseNewWeaponSwitchMethod->setToolTip(
+        "Checked: use the native ARM9 game function hook. "
+        "Unchecked: use the older touch/menu simulation path.");
+    m_cbMetroidUseNewWeaponSwitchMethod->setChecked(
+        std::clamp(instcfg.GetInt("Metroid.Input.WeaponSwitchMethod"), 0, 1) == 0);
+    sectionLayout->addWidget(m_cbMetroidUseNewWeaponSwitchMethod);
 
     auto* desc = new QLabel(
-        "New Method calls the game's native TryEquipWeapon path through an ARM9 hook. "
-        "Legacy Method keeps the older simulated touch/menu weapon switching path for compatibility testing.",
+        "Checked uses the game's native TryEquipWeapon path through an ARM9 hook. "
+        "Unchecked keeps the older simulated touch/menu weapon switching path for compatibility testing.",
         m_sectionInputMethod);
     desc->setWordWrap(true);
     desc->setStyleSheet("QLabel { margin-left: 20px; }");
     sectionLayout->addWidget(desc);
+
+    m_cbMetroidUseNewTransformMethod = new QCheckBox(
+        "Use New Method for Alt-Form Transform",
+        m_sectionInputMethod);
+    m_cbMetroidUseNewTransformMethod->setToolTip(
+        "Checked: use the native ARM9 TransformRequest hook. "
+        "Unchecked: use the older touch/menu simulation path.");
+    m_cbMetroidUseNewTransformMethod->setChecked(
+        instcfg.GetBool("Metroid.Input.Enable.DirectAltFormTransform"));
+    sectionLayout->addSpacing(6);
+    sectionLayout->addWidget(m_cbMetroidUseNewTransformMethod);
+
+    auto moveExistingWidget = [](QWidget* widget) {
+        if (!widget)
+            return;
+        if (QWidget* const parent = widget->parentWidget()) {
+            if (QLayout* const layout = parent->layout())
+                layout->removeWidget(widget);
+        }
+    };
+
+    moveExistingWidget(ui->cbMetroidEnableDirectAltFormTransform);
+    moveExistingWidget(ui->lblMetroidDirectAltFormTransformDesc);
+    ui->cbMetroidEnableDirectAltFormTransform->hide();
+    ui->lblMetroidDirectAltFormTransformDesc->setText(
+        "New Method redirects a short native input gate into the game's TransformRequest path. "
+        "Legacy Method keeps the older simulated touch/menu transform path.");
+    ui->lblMetroidDirectAltFormTransformDesc->setStyleSheet("QLabel { margin-left: 20px; }");
+    sectionLayout->addWidget(ui->lblMetroidDirectAltFormTransformDesc);
 
     int insertIndex = parentLayout->indexOf(ui->sectionInputSettings);
     if (insertIndex < 0)
@@ -285,8 +313,9 @@ void MelonPrimeInputConfig::updateAimControlsForStylusMode(bool stylusEnabled)
     ui->lblMetroidNativeAimRegisterInjectionDesc->setEnabled(enableRegisterInjection);
     ui->cbMetroidEnableImmediateInputEdgeOverlay->setEnabled(kDeveloperOnlyFeaturesEnabled && enableAimControls);
     ui->lblMetroidImmediateInputEdgeOverlayDesc->setEnabled(kDeveloperOnlyFeaturesEnabled && enableAimControls);
-    ui->cbMetroidEnableDirectAltFormTransform->setEnabled(enableAimControls);
-    ui->lblMetroidDirectAltFormTransformDesc->setEnabled(enableAimControls);
+    if (m_cbMetroidUseNewTransformMethod)
+        m_cbMetroidUseNewTransformMethod->setEnabled(true);
+    ui->lblMetroidDirectAltFormTransformDesc->setEnabled(true);
     // Original public behavior:
     // ui->cbMetroidEnableInstantAimFollow->setEnabled(enableAimControls);
     // ui->lblMetroidInstantAimFollowDesc->setEnabled(enableAimControls);
