@@ -134,11 +134,13 @@ void MelonPrimeInputConfig::saveConfig()
     if (m_cbMetroidUseNewBipedFireMethod) {
         instcfg.SetInt(
             "Metroid.Input.BipedFireMethod",
-            m_cbMetroidUseNewBipedFireMethod->isChecked() ? 0 : 1);
+            kDeveloperOnlyFeaturesEnabled && m_cbMetroidUseNewBipedFireMethod->isChecked() ? 0 : 1);
     }
     if (m_cbMetroidUseNewZoomMethod || m_cbMetroidUseNewZoomMethod2) {
         int zoomMethod = 1;
-        if (m_cbMetroidUseNewZoomMethod2 && m_cbMetroidUseNewZoomMethod2->isChecked())
+        if (kDeveloperOnlyFeaturesEnabled
+            && m_cbMetroidUseNewZoomMethod2
+            && m_cbMetroidUseNewZoomMethod2->isChecked())
             zoomMethod = 2;
         else if (m_cbMetroidUseNewZoomMethod && m_cbMetroidUseNewZoomMethod->isChecked())
             zoomMethod = 0;

@@ -238,6 +238,16 @@ void MelonPrimeInputConfig::setupInputMethodSection(Config::Table& instcfg)
 
     m_sectionInputMethod = new QWidget(this);
     auto* sectionLayout = new QVBoxLayout(m_sectionInputMethod);
+    auto* developerLayout = ui->vboxDeveloperOnly;
+    int developerInsertIndex = developerLayout->indexOf(ui->cbMetroidEnableNativeAimRegisterInjection);
+    if (developerInsertIndex < 0)
+        developerInsertIndex = developerLayout->count();
+    auto addDeveloperSpacing = [&developerLayout, &developerInsertIndex]() {
+        developerLayout->insertSpacing(developerInsertIndex++, 6);
+    };
+    auto addDeveloperWidget = [&developerLayout, &developerInsertIndex](QWidget* widget) {
+        developerLayout->insertWidget(developerInsertIndex++, widget);
+    };
 
     m_cbMetroidUseNewWeaponSwitchMethod = new QCheckBox(
         "Use New Method for Weapon Change",
@@ -259,23 +269,26 @@ void MelonPrimeInputConfig::setupInputMethodSection(Config::Table& instcfg)
 
     m_cbMetroidUseNewBipedFireMethod = new QCheckBox(
         "Use New Method for Biped Fire",
-        m_sectionInputMethod);
+        ui->sectionDeveloperOnly);
     m_cbMetroidUseNewBipedFireMethod->setToolTip(
         "Checked: inject a native fire edge inside the game's Biped fire update. "
         "Unchecked: use the older fixed input/overlay path.");
     m_cbMetroidUseNewBipedFireMethod->setChecked(
-        std::clamp(instcfg.GetInt("Metroid.Input.BipedFireMethod"), 0, 1) == 0);
-    sectionLayout->addSpacing(6);
-    sectionLayout->addWidget(m_cbMetroidUseNewBipedFireMethod);
+        kDeveloperOnlyFeaturesEnabled
+            && std::clamp(instcfg.GetInt("Metroid.Input.BipedFireMethod"), 0, 1) == 0);
+    m_cbMetroidUseNewBipedFireMethod->setEnabled(kDeveloperOnlyFeaturesEnabled);
+    addDeveloperSpacing();
+    addDeveloperWidget(m_cbMetroidUseNewBipedFireMethod);
 
     auto* fireDesc = new QLabel(
         "Checked sets the fire input-helper result true at the game's Biped fire edge hook, "
         "letting the original cooldown, ammo, projectile, HUD, and SFX path run naturally. "
         "Legacy Method keeps the older DS input/ImmediateInputEdgeOverlay fire path.",
-        m_sectionInputMethod);
+        ui->sectionDeveloperOnly);
     fireDesc->setWordWrap(true);
+    fireDesc->setEnabled(kDeveloperOnlyFeaturesEnabled);
     fireDesc->setStyleSheet("QLabel { margin-left: 20px; }");
-    sectionLayout->addWidget(fireDesc);
+    addDeveloperWidget(fireDesc);
 
     m_cbMetroidUseNewTransformMethod = new QCheckBox(
         "Use New Method for Alt-Form Transform",
@@ -319,12 +332,14 @@ void MelonPrimeInputConfig::setupInputMethodSection(Config::Table& instcfg)
 
     m_cbMetroidUseNewZoomMethod2 = new QCheckBox(
         "Use New Method 2 for Zoom",
-        m_sectionInputMethod);
+        ui->sectionDeveloperOnly);
     m_cbMetroidUseNewZoomMethod2->setToolTip(
         "Checked: toggle native weapon zoom by calling the game's SetPlayerScopeZoom setter. "
         "Unchecked with New Method also off: use Legacy fixed R-button input.");
-    m_cbMetroidUseNewZoomMethod2->setChecked(zoomMethod == 2);
-    sectionLayout->addWidget(m_cbMetroidUseNewZoomMethod2);
+    m_cbMetroidUseNewZoomMethod2->setChecked(kDeveloperOnlyFeaturesEnabled && zoomMethod == 2);
+    m_cbMetroidUseNewZoomMethod2->setEnabled(kDeveloperOnlyFeaturesEnabled);
+    addDeveloperSpacing();
+    addDeveloperWidget(m_cbMetroidUseNewZoomMethod2);
 
     connect(
         m_cbMetroidUseNewZoomMethod,
@@ -345,12 +360,20 @@ void MelonPrimeInputConfig::setupInputMethodSection(Config::Table& instcfg)
 
     auto* zoomDesc = new QLabel(
         "New Method reads the game's zoom binding table, so Touch and Dual presets can map zoom to different DS buttons. "
-        "New Method 2 toggles native zoom state through SetPlayerScopeZoom on each press. "
-        "With both boxes unchecked, Legacy Method always drives the fixed R button like the older input path.",
+        "If both this box and Developer Only's New Method 2 are unchecked, Legacy Method always drives the fixed R button like the older input path.",
         m_sectionInputMethod);
     zoomDesc->setWordWrap(true);
     zoomDesc->setStyleSheet("QLabel { margin-left: 20px; }");
     sectionLayout->addWidget(zoomDesc);
+
+    auto* zoom2Desc = new QLabel(
+        "New Method 2 toggles native zoom state through SetPlayerScopeZoom on each press. "
+        "It is mutually exclusive with Use New Method for Zoom in the Input Method section.",
+        ui->sectionDeveloperOnly);
+    zoom2Desc->setWordWrap(true);
+    zoom2Desc->setEnabled(kDeveloperOnlyFeaturesEnabled);
+    zoom2Desc->setStyleSheet("QLabel { margin-left: 20px; }");
+    addDeveloperWidget(zoom2Desc);
 
     int insertIndex = parentLayout->indexOf(ui->sectionInputSettings);
     if (insertIndex < 0)
@@ -385,11 +408,11 @@ void MelonPrimeInputConfig::updateAimControlsForStylusMode(bool stylusEnabled)
     if (m_cbMetroidUseNewTransformMethod)
         m_cbMetroidUseNewTransformMethod->setEnabled(true);
     if (m_cbMetroidUseNewBipedFireMethod)
-        m_cbMetroidUseNewBipedFireMethod->setEnabled(true);
+        m_cbMetroidUseNewBipedFireMethod->setEnabled(kDeveloperOnlyFeaturesEnabled);
     if (m_cbMetroidUseNewZoomMethod)
         m_cbMetroidUseNewZoomMethod->setEnabled(true);
     if (m_cbMetroidUseNewZoomMethod2)
-        m_cbMetroidUseNewZoomMethod2->setEnabled(true);
+        m_cbMetroidUseNewZoomMethod2->setEnabled(kDeveloperOnlyFeaturesEnabled);
     ui->lblMetroidDirectAltFormTransformDesc->setEnabled(true);
     // Original public behavior:
     // ui->cbMetroidEnableInstantAimFollow->setEnabled(enableAimControls);
