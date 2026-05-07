@@ -157,6 +157,7 @@ namespace MelonPrime {
         HOT_FUNCTION void RunFrameHook();
         void OnEmuStart();
         void OnEmuStop();
+        void ResetRuntimeStateForBoot();
         void OnEmuPause();
         void OnEmuUnpause();
         void OnReset();

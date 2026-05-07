@@ -239,6 +239,39 @@ namespace MelonPrime {
             m_cachedPanel = mw->panel;
     }
 
+    void MelonPrimeCore::ResetRuntimeStateForBoot()
+    {
+        m_flags.packed = 0;
+        m_isLayoutChangePending = true;
+        m_isWeaponCheckActive = false;
+        m_aimBlockBits = 0;
+#ifdef MELONPRIME_CUSTOM_HUD
+        CustomHud_ResetPatchState();
+#endif
+#ifdef MELONPRIME_DS
+        m_weaponSwitchPending.Clear();
+        ARM9Hook_Uninstall(emuInstance->getNDS());
+        InGameAspectRatio_ResetPatchState();
+        OsdColor_ResetPatchState();
+        FixWifi_ResetPatchState();
+        UseFirmwareLanguage_ResetPatchState();
+        ShowHeadshotOnline_ResetPatchState();
+        ShowEnemyHpMeterOnline_ResetPatchState();
+        DisableDoubleDamageMultiplier_ResetPatchState();
+        NoPickingUpSpecificItems_ResetPatchState();
+        InstantAimFollow_ResetPatchState();
+        ARM9Hook_ResetPatchState();
+#endif
+
+        InputReset();
+        m_aimResidualX = 0;
+        m_aimResidualY = 0;
+        m_nativeAimDeltaX = 0;
+        m_nativeAimDeltaY = 0;
+        m_immediateOverlayPrevHeld = 0;
+        m_directTransformPendingFrames = 0;
+    }
+
     void MelonPrimeCore::OnEmuStop()
     {
         m_flags.clear(StateFlags::BIT_IN_GAME);
