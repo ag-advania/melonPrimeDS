@@ -33,6 +33,7 @@ enum DispatchMask : uint8_t
     Dispatch_TransformGate              = 1u << 4,
     Dispatch_WeaponSwitch               = 1u << 5,
     Dispatch_NativeZoomToggle           = 1u << 6,
+    Dispatch_NativeBipedFire            = 1u << 7,
 };
 
 struct DispatchEntry
@@ -128,6 +129,16 @@ static bool DispatcherCallback(
         if (core)
         {
             if (core->NativeZoomToggleHook_DispatchCheckAndRedirect(
+                    nds, arm9ExecAddr, regs, redirectExecAddr))
+                return true;
+        }
+    }
+
+    if ((mask & Dispatch_NativeBipedFire) != 0)
+    {
+        if (core)
+        {
+            if (core->NativeBipedFireHook_DispatchCheckAndRedirect(
                     nds, arm9ExecAddr, regs, redirectExecAddr))
                 return true;
         }
@@ -237,6 +248,13 @@ void ARM9Hook_Install(
         melonDS::NDS::ARM9InstructionHookMaxAddresses);
     for (uint32_t i = 0; i < moduleCount; ++i)
         AddDispatchAddress(moduleAddresses[i], Dispatch_NativeZoomToggle);
+
+    moduleCount = MelonPrimeCore::NativeBipedFireHook_GetAddresses(
+        romGroupIndex,
+        moduleAddresses,
+        melonDS::NDS::ARM9InstructionHookMaxAddresses);
+    for (uint32_t i = 0; i < moduleCount; ++i)
+        AddDispatchAddress(moduleAddresses[i], Dispatch_NativeBipedFire);
 
     moduleCount = MelonPrimeCore::TransformGateHook_GetAddresses(
         romGroupIndex,

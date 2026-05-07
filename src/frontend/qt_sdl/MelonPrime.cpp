@@ -70,6 +70,12 @@ namespace MelonPrime {
         m_enableDirectAltFormTransform    = localCfg.GetBool(CfgKey::DirectAltFormTransform);
         if (!m_enableDirectAltFormTransform)
             m_directTransformPendingFrames = 0;
+        m_enableNativeBipedFire =
+            localCfg.GetInt(CfgKey::BipedFireMethod) != BipedFireMethod::LegacyInput;
+        if (!m_enableNativeBipedFire) {
+            m_nativeBipedFirePending = false;
+            m_nativeBipedFireDirectActive = false;
+        }
         const int zoomInputMethod = localCfg.GetInt(CfgKey::ZoomInputMethod);
         m_enableNewZoomInputMethod =
             zoomInputMethod == ZoomInputMethod::NewPresetBinding;
@@ -288,12 +294,16 @@ namespace MelonPrime {
         m_nativeAimDeltaY = 0;
         m_immediateOverlayPrevHeld = 0;
         m_directTransformPendingFrames = 0;
+        m_nativeBipedFirePending = false;
+        m_nativeBipedFireDirectActive = false;
     }
 
     void MelonPrimeCore::OnEmuStop()
     {
         m_flags.clear(StateFlags::BIT_IN_GAME);
         m_directTransformPendingFrames = 0;
+        m_nativeBipedFirePending = false;
+        m_nativeBipedFireDirectActive = false;
 #ifdef MELONPRIME_CUSTOM_HUD
         if (m_flags.test(StateFlags::BIT_ROM_DETECTED)) {
             CustomHud_EnsurePatchRestored(
@@ -419,6 +429,7 @@ namespace MelonPrime {
             const bool focused = isFocused.load(std::memory_order_acquire);
             UpdateInputStateReentrant(focused);
             ProcessMoveAndButtonsFastFromReset();
+            ApplyBipedFireInput();
             ApplyZoomBindingInput();
 
             const bool isStylusMode = this->isStylusMode;
@@ -485,6 +496,8 @@ namespace MelonPrime {
                 m_flags.clear(StateFlags::BIT_IN_GAME_INIT);
                 m_immediateOverlayPrevHeld = 0;
                 m_directTransformPendingFrames = 0;
+                m_nativeBipedFirePending = false;
+                m_nativeBipedFireDirectActive = false;
 #ifdef MELONPRIME_CUSTOM_HUD
                 CustomHud_EnsurePatchRestored(
                     emuInstance, localCfg, m_currentRom, m_playerPosition, false);
@@ -548,6 +561,8 @@ namespace MelonPrime {
                     m_input.press = 0;
                     m_input.moveIndex = 0;
                     m_directTransformPendingFrames = 0;
+                    m_nativeBipedFirePending = false;
+                    m_nativeBipedFireDirectActive = false;
 #ifdef _WIN32
                     // P-9: Single call replaces resetAllKeys + resetMouseButtons
                     // (one fence instead of two)
@@ -601,6 +616,8 @@ namespace MelonPrime {
         m_flags.set(StateFlags::BIT_IN_GAME_INIT);
         m_immediateOverlayPrevHeld = 0;
         m_directTransformPendingFrames = 0;
+        m_nativeBipedFirePending = false;
+        m_nativeBipedFireDirectActive = false;
 #ifdef MELONPRIME_DS
         m_weaponSwitchPending.Clear();
 #endif

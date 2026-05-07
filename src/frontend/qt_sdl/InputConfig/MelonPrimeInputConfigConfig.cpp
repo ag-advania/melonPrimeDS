@@ -131,6 +131,11 @@ void MelonPrimeInputConfig::saveConfig()
             "Metroid.Input.WeaponSwitchMethod",
             m_cbMetroidUseNewWeaponSwitchMethod->isChecked() ? 0 : 1);
     }
+    if (m_cbMetroidUseNewBipedFireMethod) {
+        instcfg.SetInt(
+            "Metroid.Input.BipedFireMethod",
+            m_cbMetroidUseNewBipedFireMethod->isChecked() ? 0 : 1);
+    }
     if (m_cbMetroidUseNewZoomMethod || m_cbMetroidUseNewZoomMethod2) {
         int zoomMethod = 1;
         if (m_cbMetroidUseNewZoomMethod2 && m_cbMetroidUseNewZoomMethod2->isChecked())
