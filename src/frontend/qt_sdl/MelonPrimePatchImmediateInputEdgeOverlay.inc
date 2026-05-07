@@ -117,7 +117,11 @@
             const uint16_t movBMask = ImmediateOverlay_ReadBindingLow(mainRAM, playerBase + 0x374u);
             const uint16_t fireMask = ImmediateOverlay_ReadBindingLow(mainRAM, playerBase + 0x398u);
             const uint16_t jumpMask = ImmediateOverlay_ReadBindingLow(mainRAM, playerBase + 0x39Cu);
-            const uint16_t zoomMask = ImmediateOverlay_ReadBindingLow(mainRAM, playerBase + 0x3E0u);
+            const uint16_t zoomMask = m_enableNativeZoomToggle
+                ? 0u
+                : (m_enableNewZoomInputMethod
+                    ? ImmediateOverlay_ReadBindingLow(mainRAM, playerBase + 0x3E0u)
+                    : static_cast<uint16_t>(1u << INPUT_R));
 
             const uint16_t managedMask = static_cast<uint16_t>(
                 movLMask | movRMask | movFMask | movBMask |

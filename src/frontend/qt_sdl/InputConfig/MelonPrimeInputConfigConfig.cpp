@@ -131,6 +131,16 @@ void MelonPrimeInputConfig::saveConfig()
             "Metroid.Input.WeaponSwitchMethod",
             m_cbMetroidUseNewWeaponSwitchMethod->isChecked() ? 0 : 1);
     }
+    if (m_cbMetroidUseNewZoomMethod || m_cbMetroidUseNewZoomMethod2) {
+        int zoomMethod = 1;
+        if (m_cbMetroidUseNewZoomMethod2 && m_cbMetroidUseNewZoomMethod2->isChecked())
+            zoomMethod = 2;
+        else if (m_cbMetroidUseNewZoomMethod && m_cbMetroidUseNewZoomMethod->isChecked())
+            zoomMethod = 0;
+        instcfg.SetInt(
+            "Metroid.Input.ZoomMethod",
+            zoomMethod);
+    }
     // Original public behavior:
     // instcfg.SetBool("Metroid.Aim.Enable.InstantAimFollow", ui->cbMetroidEnableInstantAimFollow->checkState() == Qt::Checked);
     instcfg.SetBool(

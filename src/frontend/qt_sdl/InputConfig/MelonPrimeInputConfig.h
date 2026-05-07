@@ -144,6 +144,8 @@ private:
     QWidget* m_sectionInputMethod = nullptr;
     QCheckBox* m_cbMetroidUseNewWeaponSwitchMethod = nullptr;
     QCheckBox* m_cbMetroidUseNewTransformMethod = nullptr;
+    QCheckBox* m_cbMetroidUseNewZoomMethod = nullptr;
+    QCheckBox* m_cbMetroidUseNewZoomMethod2 = nullptr;
 
     // Programmatic HUD settings widgets (config key → widget)
     std::unordered_map<std::string, QWidget*> m_hudWidgets;
