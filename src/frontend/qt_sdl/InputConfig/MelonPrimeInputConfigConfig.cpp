@@ -17,6 +17,7 @@
 #include "MelonPrimeHudRender.h"
 #endif
 #ifdef MELONPRIME_DS
+#include "MelonPrime.h"
 #include "MelonPrimePatch.h"
 #endif
 
@@ -235,6 +236,10 @@ void MelonPrimeInputConfig::saveConfig()
     MelonPrime::OsdColor_InvalidatePatch();
     MelonPrime::ShadowFreezeRuntimeHook_NotifyConfigChanged();
     MelonPrime::FixNoxusBladePersistence_NotifyConfigChanged();
+    if (auto* thread = emuInstance->getEmuThread()) {
+        if (auto* core = thread->GetMelonPrimeCore())
+            core->NotifyConfigChanged();
+    }
 #endif
 }
 

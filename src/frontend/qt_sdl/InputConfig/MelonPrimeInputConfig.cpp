@@ -360,6 +360,7 @@ void MelonPrimeInputConfig::setupInputMethodSection(Config::Table& instcfg)
 
     auto* zoomDesc = new QLabel(
         "New Method reads the game's zoom binding table, so Touch and Dual presets can map zoom to different DS buttons. "
+        "It is also slightly lower latency than Legacy Method. "
         "If both this box and Developer Only's New Method 2 are unchecked, Legacy Method always drives the fixed R button like the older input path.",
         m_sectionInputMethod);
     zoomDesc->setWordWrap(true);

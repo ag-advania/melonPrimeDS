@@ -370,6 +370,45 @@ namespace MelonPrime {
 
     void MelonPrimeCore::OnEmuPause() {}
 
+    void MelonPrimeCore::NotifyConfigChanged()
+    {
+        m_configReloadPending.store(true, std::memory_order_release);
+    }
+
+    COLD_FUNCTION void MelonPrimeCore::ApplyConfigReload()
+    {
+        const bool oldJoy2Key = m_flags.test(StateFlags::BIT_JOY2KEY);
+        ReloadConfigFlags();
+        const bool newJoy2Key = m_flags.test(StateFlags::BIT_JOY2KEY);
+        ApplyJoy2KeySupportAndQtFilter(newJoy2Key, oldJoy2Key != newJoy2Key);
+
+        RecalcAimSensitivityCache(localCfg);
+        ApplyAimAdjustSetting(localCfg);
+
+#ifdef _WIN32
+        if (m_rawFilter) {
+            BindMetroidHotkeysFromConfig(m_rawFilter.get(), emuInstance->getInstanceID());
+            m_rawFilter->resetHotkeyEdges();
+        }
+#endif
+
+#ifdef MELONPRIME_DS
+        if (m_flags.test(StateFlags::BIT_ROM_DETECTED)) {
+            melonDS::NDS* const nds = emuInstance->getNDS();
+            ARM9Hook_Install(
+                nds,
+                localCfg,
+                m_currentRom.romGroupIndex,
+                this);
+            InstantAimFollow_ApplyOnce(nds, localCfg, m_currentRom.romGroupIndex);
+            ShowHeadshotOnline_ApplyOnce(nds, localCfg, m_currentRom.romGroupIndex);
+            ShowEnemyHpMeterOnline_ApplyOnce(nds, localCfg, m_currentRom.romGroupIndex);
+            DisableDoubleDamageMultiplier_ApplyOnce(nds, localCfg, m_currentRom.romGroupIndex);
+            NoPickingUpSpecificItems_ApplyOnce(nds, localCfg, m_currentRom.romGroupIndex);
+        }
+#endif
+    }
+
     void MelonPrimeCore::OnEmuUnpause()
     {
         // ApplyJoy2KeySupportAndQtFilter runs with doReset=true (default),
@@ -452,6 +491,10 @@ namespace MelonPrime {
             return;
         }
 
+        if (UNLIKELY(m_configReloadPending.exchange(false, std::memory_order_acq_rel))) {
+            ApplyConfigReload();
+        }
+
         m_isRunningHook = true;
 
         // P-43: Cache isFocused in local variable.
@@ -483,22 +526,6 @@ namespace MelonPrime {
 
             if (LIKELY(isInGame)) {
                 OsdColor_ApplyOnce(emuInstance, localCfg, m_currentRom);
-                ShowHeadshotOnline_ApplyOnce(
-                    emuInstance->getNDS(),
-                    localCfg,
-                    m_currentRom.romGroupIndex);
-                ShowEnemyHpMeterOnline_ApplyOnce(
-                    emuInstance->getNDS(),
-                    localCfg,
-                    m_currentRom.romGroupIndex);
-                DisableDoubleDamageMultiplier_ApplyOnce(
-                    emuInstance->getNDS(),
-                    localCfg,
-                    m_currentRom.romGroupIndex);
-                NoPickingUpSpecificItems_ApplyOnce(
-                    emuInstance->getNDS(),
-                    localCfg,
-                    m_currentRom.romGroupIndex);
             }
             else if (m_flags.test(StateFlags::BIT_IN_GAME_INIT)) {
                 m_flags.clear(StateFlags::BIT_IN_GAME_INIT);
@@ -632,6 +659,20 @@ namespace MelonPrime {
         m_playerPosition = Read8(mainRAM, m_currentRom.playerPos);
 
         const uint32_t offP = static_cast<uint32_t>(m_playerPosition) * Consts::PLAYER_ADDR_INC;
+        const uint32_t playerBase = m_currentRom.playerStructStart + offP;
+
+        auto readBinding16 = [mainRAM](uint32_t address) -> uint16_t {
+            if (address < 0x02000000u || address > 0x023FFFFEu)
+                return 0;
+            return Read16(mainRAM, address);
+        };
+        m_bindingMoveL = readBinding16(playerBase + 0x368u);
+        m_bindingMoveR = readBinding16(playerBase + 0x36Cu);
+        m_bindingMoveF = readBinding16(playerBase + 0x370u);
+        m_bindingMoveB = readBinding16(playerBase + 0x374u);
+        m_bindingFire  = readBinding16(playerBase + 0x398u);
+        m_bindingJump  = readBinding16(playerBase + 0x39Cu);
+        m_bindingZoom  = readBinding16(playerBase + 0x3E0u);
 
         const uint32_t offA = static_cast<uint32_t>(m_playerPosition) * Consts::AIM_ADDR_INC;
 

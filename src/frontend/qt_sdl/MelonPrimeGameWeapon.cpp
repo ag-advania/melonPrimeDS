@@ -394,8 +394,6 @@ namespace MelonPrime {
         }
 
 #ifdef MELONPRIME_DS
-        m_enableNativeWeaponSwitch =
-            localCfg.GetInt(CfgKey::WeaponSwitchMethod) != WeaponSwitchMethod::LegacyTouch;
         if (m_enableNativeWeaponSwitch) {
             melonDS::NDS* const nds = emuInstance->getNDS();
             const uint8_t romIdx = m_currentRom.romGroupIndex;
