@@ -215,6 +215,7 @@ void MelonPrimeInputConfig::setupInputMethodSection(Config::Table& instcfg)
     if (m_btnToggleInputMethod
         || m_sectionInputMethod
         || m_cbMetroidUseNewWeaponSwitchMethod
+        || m_cbMetroidUseNewBipedFireMethod
         || m_cbMetroidUseNewTransformMethod
         || m_cbMetroidUseNewZoomMethod
         || m_cbMetroidUseNewZoomMethod2)
@@ -255,6 +256,26 @@ void MelonPrimeInputConfig::setupInputMethodSection(Config::Table& instcfg)
     desc->setWordWrap(true);
     desc->setStyleSheet("QLabel { margin-left: 20px; }");
     sectionLayout->addWidget(desc);
+
+    m_cbMetroidUseNewBipedFireMethod = new QCheckBox(
+        "Use New Method for Biped Fire",
+        m_sectionInputMethod);
+    m_cbMetroidUseNewBipedFireMethod->setToolTip(
+        "Checked: inject a native fire edge inside the game's Biped fire update. "
+        "Unchecked: use the older fixed input/overlay path.");
+    m_cbMetroidUseNewBipedFireMethod->setChecked(
+        std::clamp(instcfg.GetInt("Metroid.Input.BipedFireMethod"), 0, 1) == 0);
+    sectionLayout->addSpacing(6);
+    sectionLayout->addWidget(m_cbMetroidUseNewBipedFireMethod);
+
+    auto* fireDesc = new QLabel(
+        "Checked sets the fire input-helper result true at the game's Biped fire edge hook, "
+        "letting the original cooldown, ammo, projectile, HUD, and SFX path run naturally. "
+        "Legacy Method keeps the older DS input/ImmediateInputEdgeOverlay fire path.",
+        m_sectionInputMethod);
+    fireDesc->setWordWrap(true);
+    fireDesc->setStyleSheet("QLabel { margin-left: 20px; }");
+    sectionLayout->addWidget(fireDesc);
 
     m_cbMetroidUseNewTransformMethod = new QCheckBox(
         "Use New Method for Alt-Form Transform",
@@ -363,6 +384,8 @@ void MelonPrimeInputConfig::updateAimControlsForStylusMode(bool stylusEnabled)
     ui->lblMetroidImmediateInputEdgeOverlayDesc->setEnabled(kDeveloperOnlyFeaturesEnabled && enableAimControls);
     if (m_cbMetroidUseNewTransformMethod)
         m_cbMetroidUseNewTransformMethod->setEnabled(true);
+    if (m_cbMetroidUseNewBipedFireMethod)
+        m_cbMetroidUseNewBipedFireMethod->setEnabled(true);
     if (m_cbMetroidUseNewZoomMethod)
         m_cbMetroidUseNewZoomMethod->setEnabled(true);
     if (m_cbMetroidUseNewZoomMethod2)

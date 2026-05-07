@@ -234,11 +234,16 @@ namespace MelonPrime {
 
         // --- Branchless button merge (B/L) ---
         // Zoom is preset-dependent and is applied by ApplyZoomBindingInput().
-        constexpr uint16_t kModBits = (1u << INPUT_B) | (1u << INPUT_L);
+        // Native Biped Fire owns shoot via the ARM9 fire-edge hook, so it
+        // leaves INPUT_L released instead of synthesizing the legacy fire input.
+        const uint16_t modBits = m_enableNativeBipedFire
+            ? static_cast<uint16_t>(1u << INPUT_B)
+            : static_cast<uint16_t>((1u << INPUT_B) | (1u << INPUT_L));
         const uint64_t nd = ~m_input.down;
         const uint16_t bBit = static_cast<uint16_t>(((nd >> 0) & 1u) << INPUT_B);
         const uint16_t lBit = static_cast<uint16_t>(((nd >> 1) & 1u) << INPUT_L);
-        m_inputMaskFast = (mask & ~kModBits) | bBit | lBit;
+        const uint16_t nativeFireMask = m_enableNativeBipedFire ? 0u : lBit;
+        m_inputMaskFast = static_cast<uint16_t>((mask & ~modBits) | bBit | nativeFireMask);
     }
 
     HOT_FUNCTION void MelonPrimeCore::ProcessMoveAndButtonsFast()
@@ -249,6 +254,16 @@ namespace MelonPrime {
     HOT_FUNCTION void MelonPrimeCore::ProcessMoveAndButtonsFastFromReset()
     {
         ProcessMoveAndButtonsFastImpl<true>();
+    }
+
+    HOT_FUNCTION void MelonPrimeCore::ApplyBipedFireInput()
+    {
+        if (m_enableNativeBipedFire)
+            UpdateNativeBipedFireInput();
+        else {
+            m_nativeBipedFirePending = false;
+            m_nativeBipedFireDirectActive = false;
+        }
     }
 
     HOT_FUNCTION void MelonPrimeCore::ApplyZoomBindingInput()
@@ -351,6 +366,7 @@ namespace MelonPrime {
 
 #include "MelonPrimePatchNativeAimDeltaHookRegisterInjectionVersion.inc"
 #include "MelonPrimePatchNativeAimDeltaHookPostFoldWriteVersion.inc"
+#include "MelonPrimePatchNativeBipedFireHook.inc"
 #include "MelonPrimePatchNativeZoomToggleHook.inc"
 #include "MelonPrimePatchImmediateInputEdgeOverlay.inc"
 #include "MelonPrimePatchImmediateTransformGateHook.inc"

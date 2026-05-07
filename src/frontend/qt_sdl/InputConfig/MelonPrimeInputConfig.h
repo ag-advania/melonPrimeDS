@@ -143,6 +143,7 @@ private:
     QPushButton* m_btnToggleInputMethod = nullptr;
     QWidget* m_sectionInputMethod = nullptr;
     QCheckBox* m_cbMetroidUseNewWeaponSwitchMethod = nullptr;
+    QCheckBox* m_cbMetroidUseNewBipedFireMethod = nullptr;
     QCheckBox* m_cbMetroidUseNewTransformMethod = nullptr;
     QCheckBox* m_cbMetroidUseNewZoomMethod = nullptr;
     QCheckBox* m_cbMetroidUseNewZoomMethod2 = nullptr;

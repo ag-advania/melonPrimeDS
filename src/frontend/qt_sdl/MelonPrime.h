@@ -197,6 +197,16 @@ namespace MelonPrime {
             uint32_t arm9ExecAddr,
             uint32_t regs[16]);
 
+        static uint32_t NativeBipedFireHook_GetAddresses(
+            uint8_t romGroupIndex,
+            uint32_t* out,
+            uint32_t maxCount);
+        bool NativeBipedFireHook_DispatchCheckAndRedirect(
+            melonDS::NDS* nds,
+            uint32_t arm9ExecAddr,
+            uint32_t regs[16],
+            uint32_t& redirectExecAddr);
+
         static uint32_t NativeZoomToggleHook_GetAddresses(
             uint8_t romGroupIndex,
             uint32_t* out,
@@ -317,6 +327,7 @@ namespace MelonPrime {
         int8_t   m_nativeAimHookMode = 0;  // 0=off 1=RegisterInject 2=FoldDerived
         bool     m_enableImmediateInputEdgeOverlay = false;
         bool     m_enableDirectAltFormTransform = false;
+        bool     m_enableNativeBipedFire = true;
         bool     m_enableNewZoomInputMethod = true;
         bool     m_enableNativeZoomToggle = false;
 #ifdef MELONPRIME_DS
@@ -327,6 +338,8 @@ namespace MelonPrime {
         uint16_t m_immediateOverlayPrevHeld = 0;
         uint16_t m_immediateOverlayPreserveMask = 0;
         uint8_t  m_directTransformPendingFrames = 0;
+        bool     m_nativeBipedFirePending = false;
+        bool     m_nativeBipedFireDirectActive = false;
         bool     m_nativeZoomTogglePrevDown = false;
 #ifdef MELONPRIME_DS
         struct NativeZoomPendingCall {
@@ -484,6 +497,8 @@ namespace MelonPrime {
         template <bool kInputMaskReset> FORCE_INLINE void ProcessMoveAndButtonsFastImpl();
         HOT_FUNCTION void ProcessMoveAndButtonsFast();
         HOT_FUNCTION void ProcessMoveAndButtonsFastFromReset();
+        HOT_FUNCTION void ApplyBipedFireInput();
+        HOT_FUNCTION void UpdateNativeBipedFireInput();
         HOT_FUNCTION void ApplyZoomBindingInput();
         HOT_FUNCTION void UpdateNativeZoomToggleInput();
         HOT_FUNCTION void ProcessAimInputMouse();

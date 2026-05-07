@@ -27,6 +27,7 @@ namespace MelonPrime {
         inline constexpr const char* ImmediateInputEdgeOverlay = "Metroid.Input.Enable.ImmediateInputEdgeOverlay";
         inline constexpr const char* DirectAltFormTransform    = "Metroid.Input.Enable.DirectAltFormTransform";
         inline constexpr const char* WeaponSwitchMethod        = "Metroid.Input.WeaponSwitchMethod"; // 0=New native 1=Legacy touch
+        inline constexpr const char* BipedFireMethod           = "Metroid.Input.BipedFireMethod"; // 0=New native edge 1=Legacy input
         inline constexpr const char* ZoomInputMethod           = "Metroid.Input.ZoomMethod"; // 0=New preset binding 1=Legacy fixed R 2=New native toggle
         inline constexpr const char* ScreenSyncMode = "Metroid.Screen.SyncMode";
         inline constexpr const char* MphSens         = "Metroid.Sensitivity.Mph";
@@ -47,6 +48,11 @@ namespace MelonPrime {
     namespace WeaponSwitchMethod {
         inline constexpr int NewNative = 0;
         inline constexpr int LegacyTouch = 1;
+    }
+
+    namespace BipedFireMethod {
+        inline constexpr int NewNativeEdge = 0;
+        inline constexpr int LegacyInput = 1;
     }
 
     namespace ZoomInputMethod {
