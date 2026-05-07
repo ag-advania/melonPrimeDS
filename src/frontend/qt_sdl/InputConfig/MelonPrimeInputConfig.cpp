@@ -18,6 +18,7 @@
 #include <QCheckBox>
 #include <QColorDialog>
 #include <QHBoxLayout>
+#include <QVBoxLayout>
 #include <QSlider>
 #include <QPainter>
 #include <QImageReader>
@@ -67,6 +68,7 @@ MelonPrimeInputConfig::MelonPrimeInputConfig(EmuInstance* emu, QWidget* parent) 
 
     setupKeyBindings(instcfg, keycfg, joycfg);
     setupSensitivityAndToggles(instcfg);
+    setupInputMethodSection(instcfg);
     setupCollapsibleSections(instcfg);
     setupCustomHudWidgets(instcfg);
     setupPreviewConnections();
@@ -208,6 +210,62 @@ void MelonPrimeInputConfig::setupSensitivityAndToggles(Config::Table& instcfg)
 }
 
 
+void MelonPrimeInputConfig::setupInputMethodSection(Config::Table& instcfg)
+{
+    if (m_btnToggleInputMethod || m_sectionInputMethod || m_comboMetroidWeaponSwitchMethod)
+        return;
+
+    auto* parentLayout = qobject_cast<QVBoxLayout*>(ui->sectionInputSettings->parentWidget()->layout());
+    if (!parentLayout)
+        return;
+
+    m_btnToggleInputMethod = new QPushButton(this);
+    m_btnToggleInputMethod->setCheckable(true);
+    m_btnToggleInputMethod->setChecked(false);
+    m_btnToggleInputMethod->setFlat(true);
+    m_btnToggleInputMethod->setText(QString::fromUtf8("▶ INPUT METHOD"));
+    m_btnToggleInputMethod->setStyleSheet(
+        "QPushButton { text-align: left; font-weight: bold; padding: 4px; } "
+        "QPushButton::checked { font-weight: bold; }");
+
+    m_sectionInputMethod = new QWidget(this);
+    auto* sectionLayout = new QVBoxLayout(m_sectionInputMethod);
+
+    auto* methodRow = new QHBoxLayout();
+    m_comboMetroidWeaponSwitchMethod = new QComboBox(m_sectionInputMethod);
+    m_comboMetroidWeaponSwitchMethod->setToolTip(
+        "Weapon switch method: New Method uses the native ARM9 game function hook. "
+        "Legacy Method uses the older touch/menu simulation path.");
+    m_comboMetroidWeaponSwitchMethod->addItem("New Method");
+    m_comboMetroidWeaponSwitchMethod->addItem("Legacy Method");
+    m_comboMetroidWeaponSwitchMethod->setCurrentIndex(
+        std::clamp(instcfg.GetInt("Metroid.Input.WeaponSwitchMethod"), 0, 1));
+
+    auto* methodLabel = new QLabel("Weapon Change Method - Default: New Method", m_sectionInputMethod);
+    methodRow->addWidget(m_comboMetroidWeaponSwitchMethod);
+    methodRow->addWidget(methodLabel);
+    methodRow->addStretch(1);
+    sectionLayout->addLayout(methodRow);
+
+    auto* desc = new QLabel(
+        "New Method calls the game's native TryEquipWeapon path through an ARM9 hook. "
+        "Legacy Method keeps the older simulated touch/menu weapon switching path for compatibility testing.",
+        m_sectionInputMethod);
+    desc->setWordWrap(true);
+    desc->setStyleSheet("QLabel { margin-left: 20px; }");
+    sectionLayout->addWidget(desc);
+
+    int insertIndex = parentLayout->indexOf(ui->sectionInputSettings);
+    if (insertIndex < 0)
+        insertIndex = parentLayout->count();
+    else
+        ++insertIndex;
+
+    parentLayout->insertWidget(insertIndex, m_btnToggleInputMethod);
+    parentLayout->insertWidget(insertIndex + 1, m_sectionInputMethod);
+}
+
+
 
 void MelonPrimeInputConfig::updateAimControlsForStylusMode(bool stylusEnabled)
 {
@@ -254,6 +312,13 @@ void MelonPrimeInputConfig::setupCollapsibleSections(Config::Table& instcfg)
     };
     // Other Metroid Settings 2 tab
     setupToggle(ui->btnToggleInputSettings, ui->sectionInputSettings, "INPUT SETTINGS",   "Metroid.UI.SectionInputSettings");
+    if (m_btnToggleInputMethod && m_sectionInputMethod) {
+        setupToggle(
+            m_btnToggleInputMethod,
+            m_sectionInputMethod,
+            "INPUT METHOD",
+            "Metroid.UI.SectionInputMethod");
+    }
     setupToggle(ui->btnToggleScreenSync,    ui->sectionScreenSync,    "SCREEN SYNC",      "Metroid.UI.SectionScreenSync");
     setupToggle(ui->btnToggleCursorClipSettings, ui->sectionCursorClipSettings, "CURSOR CLIP SETTINGS",  "Metroid.UI.SectionCursorClipSettings");
     setupToggle(ui->btnToggleInGameApply, ui->sectionInGameApply, "IN-GAME APPLY",  "Metroid.UI.SectionInGameApply");

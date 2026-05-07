@@ -71,6 +71,13 @@ namespace MelonPrime {
         if (!m_enableDirectAltFormTransform)
             m_directTransformPendingFrames = 0;
 
+#ifdef MELONPRIME_DS
+        m_enableNativeWeaponSwitch =
+            localCfg.GetInt(CfgKey::WeaponSwitchMethod) != WeaponSwitchMethod::LegacyTouch;
+        if (!m_enableNativeWeaponSwitch)
+            m_weaponSwitchPending.Clear();
+#endif
+
         screenSyncMode = localCfg.GetInt(CfgKey::ScreenSyncMode);
     }
 

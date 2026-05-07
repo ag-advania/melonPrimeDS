@@ -547,6 +547,7 @@ namespace Config
         {"Instance*.Metroid.Aim.Enable.InstantAimFollow", false},
         {"Instance*.Metroid.Input.Enable.ImmediateInputEdgeOverlay", false},
         {"Instance*.Metroid.Input.Enable.DirectAltFormTransform",    false},
+        {"Instance*.Metroid.Input.WeaponSwitchMethod",               0},
         /* MelonPrimeDS Crosshair bools { */
         {"Instance*.Metroid.Visual.CustomHUD", false},
         // Per-element default-HUD hide patches (DisableDefaultHud section).
@@ -647,6 +648,7 @@ namespace Config
         {"Instance*.Metroid.UI.SectionBombLeft",       false},
         {"Instance*.Metroid.UI.SectionBombLeftIcon",   false},
         {"Instance*.Metroid.UI.SectionInputSettings",  false},
+        {"Instance*.Metroid.UI.SectionInputMethod",    false},
         {"Instance*.Metroid.UI.SectionScreenSync",     false},
         {"Instance*.Metroid.UI.SectionCursorClipSettings",  false},
         {"Instance*.Metroid.UI.SectionInGameApply",  false},

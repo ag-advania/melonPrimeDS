@@ -123,6 +123,7 @@ private:
     // Constructor setup helpers
     void setupKeyBindings(Config::Table& instcfg, Config::Table& keycfg, Config::Table& joycfg);
     void setupSensitivityAndToggles(Config::Table& instcfg);
+    void setupInputMethodSection(Config::Table& instcfg);
     void setupCollapsibleSections(Config::Table& instcfg);
     void setupPreviewConnections();
     void setupCustomHudCode();
@@ -139,6 +140,9 @@ private:
     QVariantMap m_visualSnapshot;
     bool m_applyPreviewEnabled = false;
     bool m_applyPreviewActive = false;
+    QPushButton* m_btnToggleInputMethod = nullptr;
+    QWidget* m_sectionInputMethod = nullptr;
+    QComboBox* m_comboMetroidWeaponSwitchMethod = nullptr;
 
     // Programmatic HUD settings widgets (config key → widget)
     std::unordered_map<std::string, QWidget*> m_hudWidgets;

@@ -26,6 +26,7 @@ namespace MelonPrime {
         inline constexpr const char* InstantAimFollow = "Metroid.Aim.Enable.InstantAimFollow";
         inline constexpr const char* ImmediateInputEdgeOverlay = "Metroid.Input.Enable.ImmediateInputEdgeOverlay";
         inline constexpr const char* DirectAltFormTransform    = "Metroid.Input.Enable.DirectAltFormTransform";
+        inline constexpr const char* WeaponSwitchMethod        = "Metroid.Input.WeaponSwitchMethod"; // 0=New native 1=Legacy touch
         inline constexpr const char* ScreenSyncMode = "Metroid.Screen.SyncMode";
         inline constexpr const char* MphSens         = "Metroid.Sensitivity.Mph";
         inline constexpr const char* Headphone       = "Metroid.Apply.Headphone";
@@ -40,6 +41,11 @@ namespace MelonPrime {
         inline constexpr const char* UseFwName       = "Metroid.Use.Firmware.Name";
         inline constexpr const char* DataUnlock      = "Metroid.Data.Unlock";
         inline constexpr const char* FixShadowFreeze = "Metroid.BugFix.FixShadowFreeze";
+    }
+
+    namespace WeaponSwitchMethod {
+        inline constexpr int NewNative = 0;
+        inline constexpr int LegacyTouch = 1;
     }
 
 
