@@ -142,7 +142,8 @@ private:
     bool m_applyPreviewActive = false;
     QPushButton* m_btnToggleInputMethod = nullptr;
     QWidget* m_sectionInputMethod = nullptr;
-    QComboBox* m_comboMetroidWeaponSwitchMethod = nullptr;
+    QCheckBox* m_cbMetroidUseNewWeaponSwitchMethod = nullptr;
+    QCheckBox* m_cbMetroidUseNewTransformMethod = nullptr;
 
     // Programmatic HUD settings widgets (config key → widget)
     std::unordered_map<std::string, QWidget*> m_hudWidgets;

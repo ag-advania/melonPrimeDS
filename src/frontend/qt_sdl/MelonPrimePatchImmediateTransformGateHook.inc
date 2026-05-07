@@ -131,8 +131,6 @@
             return false;
         if (!m_flags.test(StateFlags::BIT_LAST_FOCUSED))
             return false;
-        if (isStylusMode)
-            return false;
         if (m_aimBlockBits & AIMBLK_NOT_IN_GAME)
             return false;
 

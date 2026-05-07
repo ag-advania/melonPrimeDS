@@ -20,6 +20,39 @@
             uint32_t MainPlayerPtrGlobal;
         };
 
+        static constexpr uint32_t kWeaponSwitchTrampolineAddr = 0x02003EA0u;
+        static constexpr uint32_t kWeaponSwitchScratchAddr = 0x02003EE0u;
+
+        static constexpr uint32_t kWeaponSwitchScratchPlayer = 0u;
+        static constexpr uint32_t kWeaponSwitchScratchWeaponId = 4u;
+        static constexpr uint32_t kWeaponSwitchScratchTryEquip = 8u;
+        static constexpr uint32_t kWeaponSwitchScratchOriginalCallee = 12u;
+        static constexpr uint32_t kWeaponSwitchScratchAfter = 16u;
+
+        // ARM trampoline:
+        //   save r0-r12/lr
+        //   call TryEquipWeapon(player, pendingWeaponId, 0)
+        //   restore original hook-site regs
+        //   tail-call the original per-frame callee with lr=ActiveAfterAddr
+        //
+        // This keeps the original BL's work in the same frame instead of
+        // replacing it with the weapon switch native call.
+        static constexpr uint32_t kWeaponSwitchTrampolineCode[] = {
+            0xE92D5FFFu, // stmdb sp!, {r0-r12, lr}
+            0xE59FC024u, // ldr   r12, [pc, #0x24] ; scratch base literal
+            0xE59C0000u, // ldr   r0,  [r12, #0x00]
+            0xE5DC1004u, // ldrb  r1,  [r12, #0x04]
+            0xE3A02000u, // mov   r2,  #0
+            0xE59C3008u, // ldr   r3,  [r12, #0x08]
+            0xE12FFF33u, // blx   r3
+            0xE8BD5FFFu, // ldmia sp!, {r0-r12, lr}
+            0xE59FC008u, // ldr   r12, [pc, #0x08] ; scratch base literal
+            0xE59CE010u, // ldr   lr,  [r12, #0x10]
+            0xE59C300Cu, // ldr   r3,  [r12, #0x0C]
+            0xE12FFF13u, // bx    r3
+            kWeaponSwitchScratchAddr,
+        };
+
         // ROM group order: JP1_0=0, JP1_1=1, US1_0=2, US1_1=3,
         //                  EU1_0=4, EU1_1=5, KR1_0=6
         static constexpr WeaponSwitchActiveCallSite kWeaponSwitchActiveCallSites[] = {
@@ -47,6 +80,41 @@
             return size != 0
                 && address >= 0x02000000u
                 && size - 1u <= 0x023FFFFFu - address;
+        }
+
+        [[nodiscard]] static bool WeaponSwitchHook_EnsureTrampoline(melonDS::NDS* nds)
+        {
+            if (!nds)
+                return false;
+            if (!WeaponSwitchHook_IsMainRamRange(
+                    kWeaponSwitchTrampolineAddr,
+                    static_cast<uint32_t>(sizeof(kWeaponSwitchTrampolineCode))))
+            {
+                return false;
+            }
+            if (!WeaponSwitchHook_IsMainRamRange(kWeaponSwitchScratchAddr, 20u))
+                return false;
+
+            for (uint32_t i = 0; i < sizeof(kWeaponSwitchTrampolineCode) / sizeof(kWeaponSwitchTrampolineCode[0]); ++i) {
+                const uint32_t addr = kWeaponSwitchTrampolineAddr + i * sizeof(uint32_t);
+                const uint32_t word = kWeaponSwitchTrampolineCode[i];
+                if (nds->ARM9Read32(addr) != word)
+                    nds->ARM9Write32(addr, word);
+            }
+            return true;
+        }
+
+        static FORCE_INLINE void WeaponSwitchHook_WriteScratch(
+            melonDS::NDS* nds,
+            const WeaponSwitchActiveCallSite& site,
+            uint32_t player,
+            uint8_t weaponId)
+        {
+            Write32(nds->MainRAM, kWeaponSwitchScratchAddr + kWeaponSwitchScratchPlayer, player);
+            Write32(nds->MainRAM, kWeaponSwitchScratchAddr + kWeaponSwitchScratchWeaponId, weaponId);
+            Write32(nds->MainRAM, kWeaponSwitchScratchAddr + kWeaponSwitchScratchTryEquip, site.TryEquipAddr);
+            Write32(nds->MainRAM, kWeaponSwitchScratchAddr + kWeaponSwitchScratchOriginalCallee, site.OriginalTarget);
+            Write32(nds->MainRAM, kWeaponSwitchScratchAddr + kWeaponSwitchScratchAfter, site.ActiveAfterAddr);
         }
 
     } // anonymous namespace
@@ -80,7 +148,8 @@
         return nds
             && site
             && nds->ARM9Read32(site->ActiveCallAddr) == site->ExpectedActiveCall
-            && nds->ARM9Read32(site->TryEquipAddr) == site->ExpectedTryEquipEntry;
+            && nds->ARM9Read32(site->TryEquipAddr) == site->ExpectedTryEquipEntry
+            && WeaponSwitchHook_EnsureTrampoline(nds);
     }
 
     void MelonPrimeCore::QueueWeaponSwitchRequest(uint8_t weaponId) noexcept
@@ -236,17 +305,24 @@
             return false;
         }
 
-        regs[0] = player;
-        regs[1] = static_cast<uint32_t>(weaponId);
-        regs[2] = 0;
-        regs[14] = site->ActiveAfterAddr;
-        redirectExecAddr = site->TryEquipAddr;
+        if (!WeaponSwitchHook_EnsureTrampoline(nds)) {
+            MP_WEAPON_SWITCH_LOG(
+                "WeaponSwitch TrampolineFail: exec=%08X tramp=%08X scratch=%08X\n",
+                arm9ExecAddr,
+                kWeaponSwitchTrampolineAddr,
+                kWeaponSwitchScratchAddr);
+            return false;
+        }
+
+        WeaponSwitchHook_WriteScratch(nds, *site, player, weaponId);
+        redirectExecAddr = kWeaponSwitchTrampolineAddr;
 
         MP_WEAPON_SWITCH_LOG(
-            "WeaponSwitch NativeInvoke: exec=%08X player=%08X weapon=%u tryEquip=%08X lr=%08X original=%08X\n",
+            "WeaponSwitch NativeTrampoline: exec=%08X player=%08X weapon=%u tramp=%08X tryEquip=%08X after=%08X original=%08X\n",
             arm9ExecAddr,
             player,
             weaponId,
+            kWeaponSwitchTrampolineAddr,
             site->TryEquipAddr,
             site->ActiveAfterAddr,
             site->OriginalTarget);

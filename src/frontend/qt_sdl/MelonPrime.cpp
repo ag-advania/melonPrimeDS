@@ -553,8 +553,7 @@ namespace MelonPrime {
         if (m_directTransformPendingFrames != 0) {
             if (!focused
                 || !m_flags.test(StateFlags::BIT_IN_GAME)
-                || !m_enableDirectAltFormTransform
-                || isStylusMode)
+                || !m_enableDirectAltFormTransform)
             {
                 m_directTransformPendingFrames = 0;
             }
