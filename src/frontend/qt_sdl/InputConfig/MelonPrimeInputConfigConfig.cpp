@@ -122,6 +122,8 @@ void MelonPrimeInputConfig::saveConfig()
         kDeveloperOnlyFeaturesEnabled
             && ui->cbMetroidEnableImmediateInputEdgeOverlay->checkState() == Qt::Checked);
     instcfg.SetBool("Metroid.Input.Enable.DirectAltFormTransform",    ui->cbMetroidEnableDirectAltFormTransform->checkState() == Qt::Checked);
+    if (m_comboMetroidWeaponSwitchMethod)
+        instcfg.SetInt("Metroid.Input.WeaponSwitchMethod", m_comboMetroidWeaponSwitchMethod->currentIndex());
     // Original public behavior:
     // instcfg.SetBool("Metroid.Aim.Enable.InstantAimFollow", ui->cbMetroidEnableInstantAimFollow->checkState() == Qt::Checked);
     instcfg.SetBool(
@@ -179,6 +181,8 @@ void MelonPrimeInputConfig::saveConfig()
 
     // Section toggle states (existing UI sections)
     instcfg.SetBool("Metroid.UI.SectionInputSettings",  ui->btnToggleInputSettings->isChecked());
+    if (m_btnToggleInputMethod)
+        instcfg.SetBool("Metroid.UI.SectionInputMethod", m_btnToggleInputMethod->isChecked());
     instcfg.SetBool("Metroid.UI.SectionScreenSync",     ui->btnToggleScreenSync->isChecked());
     instcfg.SetBool("Metroid.UI.SectionCursorClipSettings",  ui->btnToggleCursorClipSettings->isChecked());
     instcfg.SetBool("Metroid.UI.SectionInGameApply",  ui->btnToggleInGameApply->isChecked());
