@@ -161,6 +161,7 @@ namespace MelonPrime {
         void OnEmuPause();
         void OnEmuUnpause();
         void OnReset();
+        void NotifyConfigChanged();
 
         void SetFrameAdvanceFunc(std::function<void()> func);
 
@@ -337,6 +338,13 @@ namespace MelonPrime {
         int16_t  m_nativeAimDeltaY = 0;
         uint16_t m_immediateOverlayPrevHeld = 0;
         uint16_t m_immediateOverlayPreserveMask = 0;
+        uint16_t m_bindingMoveL = 0;
+        uint16_t m_bindingMoveR = 0;
+        uint16_t m_bindingMoveF = 0;
+        uint16_t m_bindingMoveB = 0;
+        uint16_t m_bindingFire = 0;
+        uint16_t m_bindingJump = 0;
+        uint16_t m_bindingZoom = 0;
         uint8_t  m_directTransformPendingFrames = 0;
         bool     m_nativeBipedFirePending = false;
         bool     m_nativeBipedFireDirectActive = false;
@@ -380,6 +388,7 @@ namespace MelonPrime {
         bool     m_isRunningHook = false;
         bool     m_isWeaponCheckActive = false;
         bool     m_isLayoutChangePending = true;
+        std::atomic_bool m_configReloadPending{ false };
         // P-47: Set by FrameAdvanceOnce; cleared after PollAndSnapshot.
         // True  → LateLatch must call processRawInputBatched (events may have
         //          arrived during the FrameAdvance window: ~32–96 ms).
@@ -538,6 +547,7 @@ namespace MelonPrime {
         void SetupRawInput();
         void ApplyJoy2KeySupportAndQtFilter(bool enable, bool doReset = true);
         void ReloadConfigFlags();
+        COLD_FUNCTION void ApplyConfigReload();
     };
 
 } // namespace MelonPrime

@@ -165,15 +165,21 @@
         if (!m_enableNativeBipedFire
             || !m_flags.test(StateFlags::BIT_IN_GAME_INIT)
             || !m_flags.test(StateFlags::BIT_LAST_FOCUSED)
-            || (m_aimBlockBits & AIMBLK_NOT_IN_GAME)
-            || IsPlayerAltForm())
+            || (m_aimBlockBits & AIMBLK_NOT_IN_GAME))
         {
             m_nativeBipedFirePending = false;
             m_nativeBipedFireDirectActive = false;
             return;
         }
 
-        m_nativeBipedFirePending = (m_input.down & IB_SHOOT) != 0;
+        const bool shootDown = (m_input.down & IB_SHOOT) != 0;
+        if (!shootDown || IsPlayerAltForm()) {
+            m_nativeBipedFirePending = false;
+            m_nativeBipedFireDirectActive = false;
+            return;
+        }
+
+        m_nativeBipedFirePending = true;
     }
 
     bool MelonPrimeCore::NativeBipedFireHook_DispatchCheckAndRedirect(

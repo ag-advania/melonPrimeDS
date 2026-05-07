@@ -82,6 +82,7 @@
 #include "Window.h"
 #include "AboutDialog.h"
 #ifdef MELONPRIME_DS
+#include "MelonPrime.h"
 #include "MelonPrimePatchShadowFreezeRuntimeHook.h"
 #endif
 
@@ -1969,11 +1970,15 @@ void MainWindow::onChangeMetroidFixSF(bool checked)
 {
     localCfg.SetBool("Metroid.BugFix.FixShadowFreeze", checked);
     MelonPrime::ShadowFreezeRuntimeHook_NotifyConfigChanged();
+    if (auto* core = emuThread->GetMelonPrimeCore())
+        core->NotifyConfigChanged();
 }
 
 void MainWindow::onChangeMetroidDisableDoubleDamageMultiplier(bool checked)
 {
     localCfg.SetBool("Metroid.GameFeature.DisableDoubleDamageMultiplier", checked);
+    if (auto* core = emuThread->GetMelonPrimeCore())
+        core->NotifyConfigChanged();
 }
 /* } MelonPrimeDS*/
 #endif // MELONPRIME_DS
