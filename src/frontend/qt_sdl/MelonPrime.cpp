@@ -70,8 +70,12 @@ namespace MelonPrime {
         m_enableDirectAltFormTransform    = localCfg.GetBool(CfgKey::DirectAltFormTransform);
         if (!m_enableDirectAltFormTransform)
             m_directTransformPendingFrames = 0;
+#ifdef MELONPRIME_ENABLE_DEVELOPER_FEATURES
         m_enableNativeBipedFire =
             localCfg.GetInt(CfgKey::BipedFireMethod) != BipedFireMethod::LegacyInput;
+#else
+        m_enableNativeBipedFire = false;
+#endif
         if (!m_enableNativeBipedFire) {
             m_nativeBipedFirePending = false;
             m_nativeBipedFireDirectActive = false;
@@ -79,8 +83,12 @@ namespace MelonPrime {
         const int zoomInputMethod = localCfg.GetInt(CfgKey::ZoomInputMethod);
         m_enableNewZoomInputMethod =
             zoomInputMethod == ZoomInputMethod::NewPresetBinding;
+#ifdef MELONPRIME_ENABLE_DEVELOPER_FEATURES
         m_enableNativeZoomToggle =
             zoomInputMethod == ZoomInputMethod::NewNativeToggle;
+#else
+        m_enableNativeZoomToggle = false;
+#endif
         if (!m_enableNativeZoomToggle) {
             m_nativeZoomTogglePrevDown = false;
 #ifdef MELONPRIME_DS
