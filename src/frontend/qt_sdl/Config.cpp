@@ -86,6 +86,8 @@ namespace Config
         {"Instance*.Metroid.Volume.Music", 9},
         {"Instance*.Metroid.Screen.SyncMode", 0},
         {"Instance*.Metroid.Aim.NativeHookMode", 0},
+        {"Instance*.Metroid.Input.WeaponSwitchMethod", 0},
+        {"Instance*.Metroid.Input.ZoomMethod", 0},
         {"Instance*.Metroid.HunterLicense.Hunter.Selected", 0},
         {"Instance*.Metroid.HunterLicense.Color.Selected", 0},
         {"Instance*.Keyboard.HK_MetroidMoveForward",       Qt::Key_W},
@@ -493,6 +495,8 @@ namespace Config
         {"Instance*.Metroid.Sensitivity.Aim", {0,99999}},
         {"Instance*.Metroid.Volume.Music", {0,9}},
         {"Instance*.Metroid.Volume.SFX", {0,9}},
+        {"Instance*.Metroid.Input.WeaponSwitchMethod", {0,1}},
+        {"Instance*.Metroid.Input.ZoomMethod", {0,2}},
         //{"Instance*.Metroid.Sensitivity.Mph", {-5,155}},
         //{"Instance*.Metroid.Sensitivity.AimYAxisScale", {0.000001,100.000000}},
     #endif
@@ -547,7 +551,6 @@ namespace Config
         {"Instance*.Metroid.Aim.Enable.InstantAimFollow", false},
         {"Instance*.Metroid.Input.Enable.ImmediateInputEdgeOverlay", false},
         {"Instance*.Metroid.Input.Enable.DirectAltFormTransform",    false},
-        {"Instance*.Metroid.Input.WeaponSwitchMethod",               0},
         /* MelonPrimeDS Crosshair bools { */
         {"Instance*.Metroid.Visual.CustomHUD", false},
         // Per-element default-HUD hide patches (DisableDefaultHud section).

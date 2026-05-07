@@ -253,12 +253,17 @@ namespace MelonPrime {
 
     HOT_FUNCTION void MelonPrimeCore::ApplyZoomBindingInput()
     {
+        if (m_enableNativeZoomToggle) {
+            UpdateNativeZoomToggleInput();
+            return;
+        }
+
         if (!IsDown(IB_ZOOM))
             return;
 
         uint16_t zoomMask = static_cast<uint16_t>(1u << INPUT_R);
 
-        if (m_flags.test(StateFlags::BIT_IN_GAME_INIT)) {
+        if (m_enableNewZoomInputMethod && m_flags.test(StateFlags::BIT_IN_GAME_INIT)) {
             if (auto* nds = emuInstance->getNDS()) {
                 const uint32_t offP = static_cast<uint32_t>(m_playerPosition)
                                     * static_cast<uint32_t>(Consts::PLAYER_ADDR_INC);
@@ -346,6 +351,7 @@ namespace MelonPrime {
 
 #include "MelonPrimePatchNativeAimDeltaHookRegisterInjectionVersion.inc"
 #include "MelonPrimePatchNativeAimDeltaHookPostFoldWriteVersion.inc"
+#include "MelonPrimePatchNativeZoomToggleHook.inc"
 #include "MelonPrimePatchImmediateInputEdgeOverlay.inc"
 #include "MelonPrimePatchImmediateTransformGateHook.inc"
 #include "MelonPrimePatchWeaponSwitchHook.inc"

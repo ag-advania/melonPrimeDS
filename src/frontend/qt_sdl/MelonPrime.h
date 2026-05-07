@@ -197,6 +197,16 @@ namespace MelonPrime {
             uint32_t arm9ExecAddr,
             uint32_t regs[16]);
 
+        static uint32_t NativeZoomToggleHook_GetAddresses(
+            uint8_t romGroupIndex,
+            uint32_t* out,
+            uint32_t maxCount);
+        bool NativeZoomToggleHook_DispatchCheckAndRedirect(
+            melonDS::NDS* nds,
+            uint32_t arm9ExecAddr,
+            uint32_t regs[16],
+            uint32_t& redirectExecAddr);
+
         static uint32_t TransformGateHook_GetAddresses(
             uint8_t romGroupIndex,
             uint32_t* out,
@@ -307,6 +317,8 @@ namespace MelonPrime {
         int8_t   m_nativeAimHookMode = 0;  // 0=off 1=RegisterInject 2=FoldDerived
         bool     m_enableImmediateInputEdgeOverlay = false;
         bool     m_enableDirectAltFormTransform = false;
+        bool     m_enableNewZoomInputMethod = true;
+        bool     m_enableNativeZoomToggle = false;
 #ifdef MELONPRIME_DS
         bool     m_enableNativeWeaponSwitch = true;
 #endif
@@ -315,7 +327,23 @@ namespace MelonPrime {
         uint16_t m_immediateOverlayPrevHeld = 0;
         uint16_t m_immediateOverlayPreserveMask = 0;
         uint8_t  m_directTransformPendingFrames = 0;
+        bool     m_nativeZoomTogglePrevDown = false;
 #ifdef MELONPRIME_DS
+        struct NativeZoomPendingCall {
+            uint32_t FunctionAddr = 0;
+            uint32_t Player = 0;
+            uint8_t Enabled = 0;
+            bool Pending = false;
+
+            FORCE_INLINE void Clear() noexcept
+            {
+                FunctionAddr = 0;
+                Player = 0;
+                Enabled = 0;
+                Pending = false;
+            }
+        } m_nativeZoomPending{};
+
         struct WeaponSwitchPendingRequest {
             uint8_t WeaponId = 0xFF;
             uint8_t RetryCount = 0;
@@ -457,6 +485,7 @@ namespace MelonPrime {
         HOT_FUNCTION void ProcessMoveAndButtonsFast();
         HOT_FUNCTION void ProcessMoveAndButtonsFastFromReset();
         HOT_FUNCTION void ApplyZoomBindingInput();
+        HOT_FUNCTION void UpdateNativeZoomToggleInput();
         HOT_FUNCTION void ProcessAimInputMouse();
         HOT_FUNCTION bool ProcessWeaponSwitch();
         HOT_FUNCTION bool HandleMorphBallBoost();

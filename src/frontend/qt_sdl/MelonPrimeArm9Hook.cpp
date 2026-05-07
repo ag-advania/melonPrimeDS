@@ -32,6 +32,7 @@ enum DispatchMask : uint8_t
     Dispatch_ImmediateInputEdgeOverlay  = 1u << 3,
     Dispatch_TransformGate              = 1u << 4,
     Dispatch_WeaponSwitch               = 1u << 5,
+    Dispatch_NativeZoomToggle           = 1u << 6,
 };
 
 struct DispatchEntry
@@ -119,6 +120,16 @@ static bool DispatcherCallback(
                 core->NativeAimDeltaHookPostFoldWrite_DispatchCheck(nds, arm9ExecAddr, regs);
             else
                 core->NativeAimDeltaHookRegisterInjection_DispatchCheck(nds, arm9ExecAddr, regs);
+        }
+    }
+
+    if ((mask & Dispatch_NativeZoomToggle) != 0)
+    {
+        if (core)
+        {
+            if (core->NativeZoomToggleHook_DispatchCheckAndRedirect(
+                    nds, arm9ExecAddr, regs, redirectExecAddr))
+                return true;
         }
     }
 
@@ -219,6 +230,13 @@ void ARM9Hook_Install(
         melonDS::NDS::ARM9InstructionHookMaxAddresses);
     for (uint32_t i = 0; i < moduleCount; ++i)
         AddDispatchAddress(moduleAddresses[i], Dispatch_ImmediateInputEdgeOverlay);
+
+    moduleCount = MelonPrimeCore::NativeZoomToggleHook_GetAddresses(
+        romGroupIndex,
+        moduleAddresses,
+        melonDS::NDS::ARM9InstructionHookMaxAddresses);
+    for (uint32_t i = 0; i < moduleCount; ++i)
+        AddDispatchAddress(moduleAddresses[i], Dispatch_NativeZoomToggle);
 
     moduleCount = MelonPrimeCore::TransformGateHook_GetAddresses(
         romGroupIndex,

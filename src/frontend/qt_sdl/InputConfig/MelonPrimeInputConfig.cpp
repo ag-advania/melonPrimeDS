@@ -215,7 +215,9 @@ void MelonPrimeInputConfig::setupInputMethodSection(Config::Table& instcfg)
     if (m_btnToggleInputMethod
         || m_sectionInputMethod
         || m_cbMetroidUseNewWeaponSwitchMethod
-        || m_cbMetroidUseNewTransformMethod)
+        || m_cbMetroidUseNewTransformMethod
+        || m_cbMetroidUseNewZoomMethod
+        || m_cbMetroidUseNewZoomMethod2)
     {
         return;
     }
@@ -283,6 +285,52 @@ void MelonPrimeInputConfig::setupInputMethodSection(Config::Table& instcfg)
     ui->lblMetroidDirectAltFormTransformDesc->setStyleSheet("QLabel { margin-left: 20px; }");
     sectionLayout->addWidget(ui->lblMetroidDirectAltFormTransformDesc);
 
+    m_cbMetroidUseNewZoomMethod = new QCheckBox(
+        "Use New Method for Zoom",
+        m_sectionInputMethod);
+    m_cbMetroidUseNewZoomMethod->setToolTip(
+        "Checked: use the current in-game zoom binding from the player's control preset. "
+        "Unchecked: use the older fixed R-button path.");
+    const int zoomMethod = std::clamp(instcfg.GetInt("Metroid.Input.ZoomMethod"), 0, 2);
+    m_cbMetroidUseNewZoomMethod->setChecked(zoomMethod == 0);
+    sectionLayout->addSpacing(6);
+    sectionLayout->addWidget(m_cbMetroidUseNewZoomMethod);
+
+    m_cbMetroidUseNewZoomMethod2 = new QCheckBox(
+        "Use New Method 2 for Zoom",
+        m_sectionInputMethod);
+    m_cbMetroidUseNewZoomMethod2->setToolTip(
+        "Checked: toggle native weapon zoom by calling the game's SetPlayerScopeZoom setter. "
+        "Unchecked with New Method also off: use Legacy fixed R-button input.");
+    m_cbMetroidUseNewZoomMethod2->setChecked(zoomMethod == 2);
+    sectionLayout->addWidget(m_cbMetroidUseNewZoomMethod2);
+
+    connect(
+        m_cbMetroidUseNewZoomMethod,
+        &QCheckBox::checkStateChanged,
+        this,
+        [this](Qt::CheckState state) {
+            if (state == Qt::Checked && m_cbMetroidUseNewZoomMethod2)
+                m_cbMetroidUseNewZoomMethod2->setChecked(false);
+        });
+    connect(
+        m_cbMetroidUseNewZoomMethod2,
+        &QCheckBox::checkStateChanged,
+        this,
+        [this](Qt::CheckState state) {
+            if (state == Qt::Checked && m_cbMetroidUseNewZoomMethod)
+                m_cbMetroidUseNewZoomMethod->setChecked(false);
+        });
+
+    auto* zoomDesc = new QLabel(
+        "New Method reads the game's zoom binding table, so Touch and Dual presets can map zoom to different DS buttons. "
+        "New Method 2 toggles native zoom state through SetPlayerScopeZoom on each press. "
+        "With both boxes unchecked, Legacy Method always drives the fixed R button like the older input path.",
+        m_sectionInputMethod);
+    zoomDesc->setWordWrap(true);
+    zoomDesc->setStyleSheet("QLabel { margin-left: 20px; }");
+    sectionLayout->addWidget(zoomDesc);
+
     int insertIndex = parentLayout->indexOf(ui->sectionInputSettings);
     if (insertIndex < 0)
         insertIndex = parentLayout->count();
@@ -315,6 +363,10 @@ void MelonPrimeInputConfig::updateAimControlsForStylusMode(bool stylusEnabled)
     ui->lblMetroidImmediateInputEdgeOverlayDesc->setEnabled(kDeveloperOnlyFeaturesEnabled && enableAimControls);
     if (m_cbMetroidUseNewTransformMethod)
         m_cbMetroidUseNewTransformMethod->setEnabled(true);
+    if (m_cbMetroidUseNewZoomMethod)
+        m_cbMetroidUseNewZoomMethod->setEnabled(true);
+    if (m_cbMetroidUseNewZoomMethod2)
+        m_cbMetroidUseNewZoomMethod2->setEnabled(true);
     ui->lblMetroidDirectAltFormTransformDesc->setEnabled(true);
     // Original public behavior:
     // ui->cbMetroidEnableInstantAimFollow->setEnabled(enableAimControls);

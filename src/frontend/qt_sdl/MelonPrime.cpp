@@ -70,6 +70,17 @@ namespace MelonPrime {
         m_enableDirectAltFormTransform    = localCfg.GetBool(CfgKey::DirectAltFormTransform);
         if (!m_enableDirectAltFormTransform)
             m_directTransformPendingFrames = 0;
+        const int zoomInputMethod = localCfg.GetInt(CfgKey::ZoomInputMethod);
+        m_enableNewZoomInputMethod =
+            zoomInputMethod == ZoomInputMethod::NewPresetBinding;
+        m_enableNativeZoomToggle =
+            zoomInputMethod == ZoomInputMethod::NewNativeToggle;
+        if (!m_enableNativeZoomToggle) {
+            m_nativeZoomTogglePrevDown = false;
+#ifdef MELONPRIME_DS
+            m_nativeZoomPending.Clear();
+#endif
+        }
 
 #ifdef MELONPRIME_DS
         m_enableNativeWeaponSwitch =
