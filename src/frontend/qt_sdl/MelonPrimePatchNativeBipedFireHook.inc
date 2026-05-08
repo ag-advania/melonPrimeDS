@@ -162,8 +162,9 @@
 
     HOT_FUNCTION void MelonPrimeCore::UpdateNativeBipedFireInput()
     {
-        if (!m_enableNativeBipedFire
-            || !m_flags.test(StateFlags::BIT_IN_GAME_INIT)
+        // ApplyBipedFireInput already gates on m_enableNativeBipedFire, so by
+        // contract this function is never entered with the feature disabled.
+        if (!m_flags.test(StateFlags::BIT_IN_GAME_INIT)
             || !m_flags.test(StateFlags::BIT_LAST_FOCUSED)
             || (m_aimBlockBits & AIMBLK_NOT_IN_GAME))
         {
