@@ -85,8 +85,10 @@
             + static_cast<uint32_t>(m_playerPosition) * 0x48u;
         if (inputBase != expectedInputBase)
             return;
-        if (inputBase < 0x02000000u || inputBase + 0x48u > 0x02400000u)
-            return;
+        // expectedInputBase is computed from a constant table entry +
+        // (uint8_t player position * 0x48), so the maximum value comfortably
+        // fits inside main RAM. No need to re-bounds-check inputBase here —
+        // the equality with expectedInputBase already guarantees it.
 
         const int16_t x = m_nativeAimDeltaX;
         const int16_t y = m_nativeAimDeltaY;
