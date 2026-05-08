@@ -431,24 +431,41 @@ The EU ROM has a hidden Japanese option — setting your DS firmware to Japanese
 														</widget>
 													</item>
 													<item>
-														<widget class="QCheckBox" name="cbMetroidDisablePickupDoubleDamage">
+														<widget class="QCheckBox" name="cbMetroidDisablePickupPowerUps">
 															<property name="text">
-																<string>Double Damage</string>
+																<string>Disable Picking Up Power-Ups</string>
 															</property>
 														</widget>
 													</item>
 													<item>
-														<widget class="QCheckBox" name="cbMetroidDisablePickupCloak">
-															<property name="text">
-																<string>Cloak</string>
-															</property>
-														</widget>
-													</item>
-													<item>
-														<widget class="QCheckBox" name="cbMetroidDisablePickupDeathalt">
-															<property name="text">
-																<string>DEATH ALT</string>
-															</property>
+														<widget class="QWidget" name="widgetMetroidDisablePickupPowerUpChildren">
+															<layout class="QVBoxLayout" name="vboxMetroidDisablePickupPowerUpChildren">
+																<property name="leftMargin"><number>20</number></property>
+																<property name="topMargin"><number>0</number></property>
+																<property name="rightMargin"><number>0</number></property>
+																<property name="bottomMargin"><number>0</number></property>
+																<item>
+																	<widget class="QCheckBox" name="cbMetroidDisablePickupDoubleDamage">
+																		<property name="text">
+																			<string>Double Damage</string>
+																		</property>
+																	</widget>
+																</item>
+																<item>
+																	<widget class="QCheckBox" name="cbMetroidDisablePickupCloak">
+																		<property name="text">
+																			<string>Cloak</string>
+																		</property>
+																	</widget>
+																</item>
+																<item>
+																	<widget class="QCheckBox" name="cbMetroidDisablePickupDeathalt">
+																		<property name="text">
+																			<string>DEATH ALT</string>
+																		</property>
+																	</widget>
+																</item>
+															</layout>
 														</widget>
 													</item>
 												</layout>

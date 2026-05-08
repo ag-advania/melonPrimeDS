@@ -25,6 +25,8 @@ static constexpr const char* kCfgDisablePickupCloak =
     "Metroid.DisableFeatures.NoPickingUpSpecificItems.Cloak";
 static constexpr const char* kCfgDisablePickupDeathalt =
     "Metroid.DisableFeatures.NoPickingUpSpecificItems.Deathalt";
+static constexpr const char* kCfgDisablePickupPowerUps =
+    "Metroid.DisableFeatures.NoPickingUpPowerUps";
 
 // Item pickup switch entries for item type 3/17/20. Applying a word branches
 // directly to the next-item loop, leaving the item in the world.
@@ -79,6 +81,10 @@ static uint8_t s_appliedMask = 0;
 
 [[nodiscard]] static uint8_t DesiredMask(Config::Table& cfg)
 {
+    if (cfg.GetBool(kCfgDisablePickupPowerUps)) {
+        return static_cast<uint8_t>(PICKUP_DOUBLE_DAMAGE | PICKUP_CLOAK | PICKUP_DEATHALT);
+    }
+
     uint8_t mask = 0;
     if (cfg.GetBool(kCfgDisablePickupDoubleDamage))
         mask |= PICKUP_DOUBLE_DAMAGE;
@@ -87,6 +93,11 @@ static uint8_t s_appliedMask = 0;
     if (cfg.GetBool(kCfgDisablePickupDeathalt))
         mask |= PICKUP_DEATHALT;
     return mask;
+}
+
+[[nodiscard]] static bool IsArmUnconditionalBranch(uint32_t opcode) noexcept
+{
+    return (opcode & 0xFF000000u) == 0xEA000000u;
 }
 
 [[nodiscard]] static bool SetWordDesired(melonDS::NDS* nds, const PatchWord& word, bool apply)
@@ -99,8 +110,13 @@ static uint8_t s_appliedMask = 0;
     const uint32_t current = nds->ARM9Read32(word.address);
     if (current == desired)
         return true;
-    if (current != alternate)
-        return false;
+    if (current != alternate) {
+        // Restore is intentionally tolerant: older dev notes used an alternate
+        // branch for Cloak, and stale RAM can otherwise leave only that pickup
+        // disabled after the setting is turned off.
+        if (apply || !IsArmUnconditionalBranch(current))
+            return false;
+    }
 
     nds->ARM9Write32(word.address, desired);
     return true;
@@ -139,15 +155,14 @@ static void ApplyMask(melonDS::NDS* nds, uint8_t romGroupIndex, uint8_t desiredM
 void NoPickingUpSpecificItems_ApplyOnce(melonDS::NDS* nds, Config::Table& cfg, uint8_t romGroupIndex)
 {
     const uint8_t desiredMask = DesiredMask(cfg);
-    if (desiredMask == 0 && !s_hasAppliedRomGroup)
-        return;
-
+    // Always run through ApplyMask, even when disabled. Patch state can be
+    // reset independently of RAM contents, and this heals any stale entries.
     ApplyMask(nds, romGroupIndex, desiredMask);
 }
 
 void NoPickingUpSpecificItems_RestoreOnce(melonDS::NDS* nds, uint8_t romGroupIndex)
 {
-    if (!s_hasAppliedRomGroup || !nds)
+    if (!nds)
         return;
     if (IsValidRomGroup(s_appliedRomGroupIndex))
         romGroupIndex = s_appliedRomGroupIndex;

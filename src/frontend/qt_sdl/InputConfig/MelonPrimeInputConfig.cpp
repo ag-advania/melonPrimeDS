@@ -197,12 +197,33 @@ void MelonPrimeInputConfig::setupSensitivityAndToggles(Config::Table& instcfg)
         instcfg.GetBool("Metroid.GameFeature.DisableDoubleDamageMultiplier"));
 
     // Disable features
+    ui->cbMetroidDisablePickupPowerUps->setChecked(
+        instcfg.GetBool("Metroid.DisableFeatures.NoPickingUpPowerUps"));
     ui->cbMetroidDisablePickupDoubleDamage->setChecked(
         instcfg.GetBool("Metroid.DisableFeatures.NoPickingUpSpecificItems.DoubleDamage"));
     ui->cbMetroidDisablePickupCloak->setChecked(
         instcfg.GetBool("Metroid.DisableFeatures.NoPickingUpSpecificItems.Cloak"));
     ui->cbMetroidDisablePickupDeathalt->setChecked(
         instcfg.GetBool("Metroid.DisableFeatures.NoPickingUpSpecificItems.Deathalt"));
+    auto updatePickupPowerUpChildren = [this](bool disableAllPowerUps, bool syncChildren) {
+        if (syncChildren) {
+            ui->cbMetroidDisablePickupDoubleDamage->setChecked(disableAllPowerUps);
+            ui->cbMetroidDisablePickupCloak->setChecked(disableAllPowerUps);
+            ui->cbMetroidDisablePickupDeathalt->setChecked(disableAllPowerUps);
+        }
+        ui->cbMetroidDisablePickupDoubleDamage->setEnabled(!disableAllPowerUps);
+        ui->cbMetroidDisablePickupCloak->setEnabled(!disableAllPowerUps);
+        ui->cbMetroidDisablePickupDeathalt->setEnabled(!disableAllPowerUps);
+    };
+    connect(
+        ui->cbMetroidDisablePickupPowerUps,
+        &QCheckBox::toggled,
+        this,
+        [updatePickupPowerUpChildren](bool disableAllPowerUps) {
+            updatePickupPowerUpChildren(disableAllPowerUps, true);
+        });
+    const bool disableAllPowerUps = ui->cbMetroidDisablePickupPowerUps->isChecked();
+    updatePickupPowerUpChildren(disableAllPowerUps, disableAllPowerUps);
 
     // In-game scaling
     ui->cbMetroidInGameAspectRatio->setChecked(instcfg.GetBool("Metroid.Visual.InGameAspectRatio"));

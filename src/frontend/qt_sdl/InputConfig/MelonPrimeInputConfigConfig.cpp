@@ -77,6 +77,9 @@ void MelonPrimeInputConfig::saveConfig()
 
     // Disable features
     instcfg.SetBool(
+        "Metroid.DisableFeatures.NoPickingUpPowerUps",
+        ui->cbMetroidDisablePickupPowerUps->checkState() == Qt::Checked);
+    instcfg.SetBool(
         "Metroid.DisableFeatures.NoPickingUpSpecificItems.DoubleDamage",
         ui->cbMetroidDisablePickupDoubleDamage->checkState() == Qt::Checked);
     instcfg.SetBool(

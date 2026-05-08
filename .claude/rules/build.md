@@ -18,6 +18,12 @@
 ## Windows Build Command
 Windows-only AI build command. Do not rebuild, bootstrap, or reinstall `vcpkg/` unless the user explicitly asks for it.
 
+Preferred for AI agents: run the checked-in batch file and let it handle the MSYS2/MinGW PATH and CMake invocation:
+
+```bat
+.\.claude\skills\build-mingw.bat
+```
+
 Use MSYS bash and the existing CMake build preset. Put `/mingw64/bin` first in `PATH`; Qt's `moc.exe` depends on MinGW DLLs such as `libgcc_s_seh-1.dll` and `libstdc++-6.dll`, and can fail with `Process failed with return value 3221225781` if they are not discoverable.
 
 For MelonPrimeDS development, run CMake configure before building and pass `-DMELONPRIME_ENABLE_DEVELOPER_FEATURES=ON`. Use `-S . -B build/release-mingw-x86_64` for configure because the MinGW configure preset can be disabled when launched from a Windows-hosted shell.
