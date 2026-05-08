@@ -381,6 +381,13 @@ private:
     std::unique_ptr<melonDS::ARCodeFile> cheatFile;
     bool cheatsOn;
 
+#ifdef MELONPRIME_DS
+    // syncRTC() throttle: DS RTC ticks at 1Hz, so syncing to host time at
+    // 60Hz is wasteful. Skip 59 of 60 calls to avoid the per-frame
+    // QDateTime::currentDateTime() syscall + toml lookup + RTC write.
+    int rtcSyncSkipFrames = 0;
+#endif
+
     SDL_AudioDeviceID audioDevice;
     int audioFreq;
     int audioBufSize;

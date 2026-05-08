@@ -349,6 +349,12 @@ namespace MelonPrime {
         bool     m_nativeBipedFirePending = false;
         bool     m_nativeBipedFireDirectActive = false;
         bool     m_nativeZoomTogglePrevDown = false;
+        // Cached zoom-enabled state, updated whenever we read it.
+        // While zoom is known disabled (the common steady state) the per-frame
+        // auto-disable path can skip the IsZoomEnabled MainRAM read entirely:
+        // the game only flips zoom from disabled→enabled in response to a
+        // player edge press, which we observe directly via pressedEdge.
+        bool     m_nativeZoomLastKnownEnabled = false;
 #ifdef MELONPRIME_DS
         struct NativeZoomPendingCall {
             uint32_t FunctionAddr = 0;
