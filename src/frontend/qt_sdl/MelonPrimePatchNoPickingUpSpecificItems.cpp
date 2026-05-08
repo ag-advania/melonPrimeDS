@@ -19,16 +19,23 @@ struct PatchWord {
     uint32_t revertVal;
 };
 
-// Legacy config keys are kept so existing user settings continue to apply to
-// the new "pick up with no effect" behavior.
-static constexpr const char* kCfgDisablePickupDoubleDamage =
-    "Metroid.DisableFeatures.NoPickingUpSpecificItems.DoubleDamage";
-static constexpr const char* kCfgDisablePickupCloak =
-    "Metroid.DisableFeatures.NoPickingUpSpecificItems.Cloak";
-static constexpr const char* kCfgDisablePickupDeathalt =
-    "Metroid.DisableFeatures.NoPickingUpSpecificItems.Deathalt";
-static constexpr const char* kCfgDisablePickupPowerUps =
+static constexpr const char* kCfgPowerUpPickupNoEffect =
+    "Metroid.GameFeature.PowerUpPickupNoEffect";
+static constexpr const char* kCfgPowerUpPickupNoEffectDoubleDamage =
+    "Metroid.GameFeature.PowerUpPickupNoEffect.DoubleDamage";
+static constexpr const char* kCfgPowerUpPickupNoEffectCloak =
+    "Metroid.GameFeature.PowerUpPickupNoEffect.Cloak";
+static constexpr const char* kCfgPowerUpPickupNoEffectDeathalt =
+    "Metroid.GameFeature.PowerUpPickupNoEffect.Deathalt";
+
+static constexpr const char* kLegacyCfgDisablePickupPowerUps =
     "Metroid.DisableFeatures.NoPickingUpPowerUps";
+static constexpr const char* kLegacyCfgDisablePickupDoubleDamage =
+    "Metroid.DisableFeatures.NoPickingUpSpecificItems.DoubleDamage";
+static constexpr const char* kLegacyCfgDisablePickupCloak =
+    "Metroid.DisableFeatures.NoPickingUpSpecificItems.Cloak";
+static constexpr const char* kLegacyCfgDisablePickupDeathalt =
+    "Metroid.DisableFeatures.NoPickingUpSpecificItems.Deathalt";
 
 // Item pickup switch entries for item type 3/17/20. Applying a word branches
 // directly to the pickedUp=1 consume/delete exit. The item disappears, while
@@ -82,18 +89,42 @@ static uint8_t s_appliedMask = 0;
     return romGroupIndex < 7;
 }
 
+[[nodiscard]] static bool GetBoolWithLegacy(
+    Config::Table& cfg,
+    const char* key,
+    const char* legacyKey)
+{
+    if (cfg.HasKey(key))
+        return cfg.GetBool(key);
+    if (cfg.HasKey(legacyKey))
+        return cfg.GetBool(legacyKey);
+    return cfg.GetBool(key);
+}
+
 [[nodiscard]] static uint8_t DesiredMask(Config::Table& cfg)
 {
-    if (cfg.GetBool(kCfgDisablePickupPowerUps)) {
+    if (GetBoolWithLegacy(
+            cfg,
+            kCfgPowerUpPickupNoEffect,
+            kLegacyCfgDisablePickupPowerUps)) {
         return static_cast<uint8_t>(PICKUP_DOUBLE_DAMAGE | PICKUP_CLOAK | PICKUP_DEATHALT);
     }
 
     uint8_t mask = 0;
-    if (cfg.GetBool(kCfgDisablePickupDoubleDamage))
+    if (GetBoolWithLegacy(
+            cfg,
+            kCfgPowerUpPickupNoEffectDoubleDamage,
+            kLegacyCfgDisablePickupDoubleDamage))
         mask |= PICKUP_DOUBLE_DAMAGE;
-    if (cfg.GetBool(kCfgDisablePickupCloak))
+    if (GetBoolWithLegacy(
+            cfg,
+            kCfgPowerUpPickupNoEffectCloak,
+            kLegacyCfgDisablePickupCloak))
         mask |= PICKUP_CLOAK;
-    if (cfg.GetBool(kCfgDisablePickupDeathalt))
+    if (GetBoolWithLegacy(
+            cfg,
+            kCfgPowerUpPickupNoEffectDeathalt,
+            kLegacyCfgDisablePickupDeathalt))
         mask |= PICKUP_DEATHALT;
     return mask;
 }

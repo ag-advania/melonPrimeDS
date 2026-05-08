@@ -75,18 +75,18 @@ void MelonPrimeInputConfig::saveConfig()
         "Metroid.GameFeature.DisableDoubleDamageMultiplier",
         ui->cbMetroidDisableDoubleDamageMultiplier->checkState() == Qt::Checked);
 
-    // Disable features
+    // Pickup effect toggles
     instcfg.SetBool(
-        "Metroid.DisableFeatures.NoPickingUpPowerUps",
+        "Metroid.GameFeature.PowerUpPickupNoEffect",
         ui->cbMetroidDisablePickupPowerUps->checkState() == Qt::Checked);
     instcfg.SetBool(
-        "Metroid.DisableFeatures.NoPickingUpSpecificItems.DoubleDamage",
+        "Metroid.GameFeature.PowerUpPickupNoEffect.DoubleDamage",
         ui->cbMetroidDisablePickupDoubleDamage->checkState() == Qt::Checked);
     instcfg.SetBool(
-        "Metroid.DisableFeatures.NoPickingUpSpecificItems.Cloak",
+        "Metroid.GameFeature.PowerUpPickupNoEffect.Cloak",
         ui->cbMetroidDisablePickupCloak->checkState() == Qt::Checked);
     instcfg.SetBool(
-        "Metroid.DisableFeatures.NoPickingUpSpecificItems.Deathalt",
+        "Metroid.GameFeature.PowerUpPickupNoEffect.Deathalt",
         ui->cbMetroidDisablePickupDeathalt->checkState() == Qt::Checked);
 
     // SnapTap
@@ -220,7 +220,7 @@ void MelonPrimeInputConfig::saveConfig()
     instcfg.SetBool("Metroid.UI.SectionGameFeature",    ui->btnToggleGameFeature->isChecked());
     instcfg.SetBool("Metroid.UI.SectionDisableFeatures", ui->btnToggleDisableFeatures->isChecked());
     instcfg.SetBool(
-        "Metroid.UI.SectionDisablePickingUpSpecificItems",
+        "Metroid.UI.SectionPowerUpPickupEffects",
         ui->btnToggleDisablePickingUpSpecificItems->isChecked());
     instcfg.SetBool("Metroid.UI.SectionGameplay",       ui->btnToggleGameplay->isChecked());
     instcfg.SetBool("Metroid.UI.SectionVideo",          ui->btnToggleVideo->isChecked());

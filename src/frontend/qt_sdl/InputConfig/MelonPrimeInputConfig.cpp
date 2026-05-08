@@ -196,15 +196,31 @@ void MelonPrimeInputConfig::setupSensitivityAndToggles(Config::Table& instcfg)
     ui->cbMetroidDisableDoubleDamageMultiplier->setChecked(
         instcfg.GetBool("Metroid.GameFeature.DisableDoubleDamageMultiplier"));
 
+    auto getBoolWithLegacy = [&instcfg](const char* key, const char* legacyKey) {
+        if (instcfg.HasKey(key))
+            return instcfg.GetBool(key);
+        if (instcfg.HasKey(legacyKey))
+            return instcfg.GetBool(legacyKey);
+        return instcfg.GetBool(key);
+    };
+
     // Pickup effect toggles
     ui->cbMetroidDisablePickupPowerUps->setChecked(
-        instcfg.GetBool("Metroid.DisableFeatures.NoPickingUpPowerUps"));
+        getBoolWithLegacy(
+            "Metroid.GameFeature.PowerUpPickupNoEffect",
+            "Metroid.DisableFeatures.NoPickingUpPowerUps"));
     ui->cbMetroidDisablePickupDoubleDamage->setChecked(
-        instcfg.GetBool("Metroid.DisableFeatures.NoPickingUpSpecificItems.DoubleDamage"));
+        getBoolWithLegacy(
+            "Metroid.GameFeature.PowerUpPickupNoEffect.DoubleDamage",
+            "Metroid.DisableFeatures.NoPickingUpSpecificItems.DoubleDamage"));
     ui->cbMetroidDisablePickupCloak->setChecked(
-        instcfg.GetBool("Metroid.DisableFeatures.NoPickingUpSpecificItems.Cloak"));
+        getBoolWithLegacy(
+            "Metroid.GameFeature.PowerUpPickupNoEffect.Cloak",
+            "Metroid.DisableFeatures.NoPickingUpSpecificItems.Cloak"));
     ui->cbMetroidDisablePickupDeathalt->setChecked(
-        instcfg.GetBool("Metroid.DisableFeatures.NoPickingUpSpecificItems.Deathalt"));
+        getBoolWithLegacy(
+            "Metroid.GameFeature.PowerUpPickupNoEffect.Deathalt",
+            "Metroid.DisableFeatures.NoPickingUpSpecificItems.Deathalt"));
     auto updatePickupPowerUpChildren = [this](bool disableAllPowerUps, bool syncChildren) {
         if (syncChildren) {
             ui->cbMetroidDisablePickupDoubleDamage->setChecked(disableAllPowerUps);
@@ -478,7 +494,7 @@ void MelonPrimeInputConfig::setupCollapsibleSections(Config::Table& instcfg)
     setupToggle(ui->btnToggleGameFeature,   ui->sectionGameFeature,   "GAME FEATURE IMPROVEMENTS",   "Metroid.UI.SectionGameFeature");
     setupToggle(ui->btnToggleDisableFeatures, ui->sectionDisableFeatures, "DISABLE FEATURES",         "Metroid.UI.SectionDisableFeatures");
     setupToggle(ui->btnToggleDisablePickingUpSpecificItems, ui->sectionDisablePickingUpSpecificItems,
-                "Power-Up Pickup Effects", "Metroid.UI.SectionDisablePickingUpSpecificItems");
+                "Power-Up Pickup Effects", "Metroid.UI.SectionPowerUpPickupEffects");
     setupToggle(ui->btnToggleGameplay,      ui->sectionGameplay,      "GAMEPLAY TOGGLES",             "Metroid.UI.SectionGameplay");
     setupToggle(ui->btnToggleVideo,       ui->sectionVideo,       "VIDEO QUALITY",    "Metroid.UI.SectionVideo");
     setupToggle(ui->btnToggleVolume,      ui->sectionVolume,      "VOLUME",           "Metroid.UI.SectionVolume");
