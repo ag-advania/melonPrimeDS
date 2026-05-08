@@ -20,13 +20,13 @@ struct PatchWord {
 };
 
 static constexpr const char* kCfgPowerUpPickupNoEffect =
-    "Metroid.GameFeature.PowerUpPickupNoEffect";
+    "Metroid.GameFeature.PowerUpPickupNoEffectPowerUps";
 static constexpr const char* kCfgPowerUpPickupNoEffectDoubleDamage =
-    "Metroid.GameFeature.PowerUpPickupNoEffect.DoubleDamage";
+    "Metroid.GameFeature.PowerUpPickupNoEffectDoubleDamage";
 static constexpr const char* kCfgPowerUpPickupNoEffectCloak =
-    "Metroid.GameFeature.PowerUpPickupNoEffect.Cloak";
+    "Metroid.GameFeature.PowerUpPickupNoEffectCloak";
 static constexpr const char* kCfgPowerUpPickupNoEffectDeathalt =
-    "Metroid.GameFeature.PowerUpPickupNoEffect.Deathalt";
+    "Metroid.GameFeature.PowerUpPickupNoEffectDeathalt";
 
 // Item pickup switch entries for item type 3/17/20. Applying a word branches
 // directly to the pickedUp=1 consume/delete exit. The item disappears, while

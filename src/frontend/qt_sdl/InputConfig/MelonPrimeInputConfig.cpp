@@ -198,13 +198,13 @@ void MelonPrimeInputConfig::setupSensitivityAndToggles(Config::Table& instcfg)
 
     // Pickup effect toggles
     ui->cbMetroidDisablePickupPowerUps->setChecked(
-        instcfg.GetBool("Metroid.GameFeature.PowerUpPickupNoEffect"));
+        instcfg.GetBool("Metroid.GameFeature.PowerUpPickupNoEffectPowerUps"));
     ui->cbMetroidDisablePickupDoubleDamage->setChecked(
-        instcfg.GetBool("Metroid.GameFeature.PowerUpPickupNoEffect.DoubleDamage"));
+        instcfg.GetBool("Metroid.GameFeature.PowerUpPickupNoEffectDoubleDamage"));
     ui->cbMetroidDisablePickupCloak->setChecked(
-        instcfg.GetBool("Metroid.GameFeature.PowerUpPickupNoEffect.Cloak"));
+        instcfg.GetBool("Metroid.GameFeature.PowerUpPickupNoEffectCloak"));
     ui->cbMetroidDisablePickupDeathalt->setChecked(
-        instcfg.GetBool("Metroid.GameFeature.PowerUpPickupNoEffect.Deathalt"));
+        instcfg.GetBool("Metroid.GameFeature.PowerUpPickupNoEffectDeathalt"));
     auto updatePickupPowerUpChildren = [this](bool disableAllPowerUps, bool syncChildren) {
         if (syncChildren) {
             ui->cbMetroidDisablePickupDoubleDamage->setChecked(disableAllPowerUps);
