@@ -195,9 +195,14 @@
         uint32_t arm9ExecAddr,
         uint32_t regs[16])
     {
+        // ARM9Hook_Install gates registration on m_enableNativeAimDeltaHook
+        // (nativeAimHookMode == 1) AND m_disableMphAimSmoothing, so both
+        // runtime checks are dead. Stylus mode IS dynamic via ApplyConfigReload
+        // but ARM9Hook_Install does not gate on it, so the isStylusMode check
+        // remains meaningful.
         if (!nds || !regs)
             return;
-        if (!m_enableNativeAimDeltaHook || !m_disableMphAimSmoothing || isStylusMode)
+        if (isStylusMode)
             return;
         if ((m_aimBlockBits | static_cast<uint32_t>(m_isLayoutChangePending)) != 0)
             return;

@@ -251,7 +251,11 @@
         (void)regs;
         redirectExecAddr = 0;
 
-        if (!nds || !m_enableNativeZoomToggle || !m_nativeZoomPending.Pending)
+        // ARM9Hook_Install gates registration on m_enableNativeZoomToggle, so
+        // the runtime check here is dead. The pending check is the genuine
+        // hot-path early-out: pending is invalid for the vast majority of
+        // frames (only valid for one frame after a player edge press).
+        if (!nds || !m_nativeZoomPending.Pending)
             return false;
 
         const NativeZoomToggleSite* const site =
