@@ -250,12 +250,12 @@ namespace MelonPrime {
 
     HOT_FUNCTION void MelonPrimeCore::ApplyBipedFireInput()
     {
+        // m_native_BipedFire{Pending,DirectActive} are kept false elsewhere when
+        // the feature is OFF: ApplyConfigReload clears them on toggle-off, game
+        // exit / focus loss / game-join init also clear them, and they default
+        // to false on construction. Skip the per-frame redundant resets here.
         if (m_enableNativeBipedFire)
             UpdateNativeBipedFireInput();
-        else {
-            m_nativeBipedFirePending = false;
-            m_nativeBipedFireDirectActive = false;
-        }
     }
 
     HOT_FUNCTION void MelonPrimeCore::ApplyZoomBindingInput()

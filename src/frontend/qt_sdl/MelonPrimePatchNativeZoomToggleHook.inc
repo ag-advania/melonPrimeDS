@@ -181,14 +181,13 @@
 
     HOT_FUNCTION void MelonPrimeCore::UpdateNativeZoomToggleInput()
     {
+        // ApplyZoomBindingInput already gates on m_enableNativeZoomToggle, and
+        // ApplyConfigReload clears m_nativeZoomPending / m_nativeZoomTogglePrevDown
+        // when the feature is toggled off, so the inner !enableNativeZoomToggle
+        // branch was dead.
         const bool down = IsDown(IB_ZOOM);
         const bool pressedEdge = down && !m_nativeZoomTogglePrevDown;
         m_nativeZoomTogglePrevDown = down;
-
-        if (!m_enableNativeZoomToggle) {
-            m_nativeZoomPending.Clear();
-            return;
-        }
 
         if (!m_flags.test(StateFlags::BIT_IN_GAME_INIT)
             || !m_flags.test(StateFlags::BIT_LAST_FOCUSED)
