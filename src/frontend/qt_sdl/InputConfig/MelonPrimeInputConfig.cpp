@@ -196,7 +196,7 @@ void MelonPrimeInputConfig::setupSensitivityAndToggles(Config::Table& instcfg)
     ui->cbMetroidDisableDoubleDamageMultiplier->setChecked(
         instcfg.GetBool("Metroid.GameFeature.DisableDoubleDamageMultiplier"));
 
-    // Disable features
+    // Pickup effect toggles
     ui->cbMetroidDisablePickupPowerUps->setChecked(
         instcfg.GetBool("Metroid.DisableFeatures.NoPickingUpPowerUps"));
     ui->cbMetroidDisablePickupDoubleDamage->setChecked(
@@ -478,7 +478,7 @@ void MelonPrimeInputConfig::setupCollapsibleSections(Config::Table& instcfg)
     setupToggle(ui->btnToggleGameFeature,   ui->sectionGameFeature,   "GAME FEATURE IMPROVEMENTS",   "Metroid.UI.SectionGameFeature");
     setupToggle(ui->btnToggleDisableFeatures, ui->sectionDisableFeatures, "DISABLE FEATURES",         "Metroid.UI.SectionDisableFeatures");
     setupToggle(ui->btnToggleDisablePickingUpSpecificItems, ui->sectionDisablePickingUpSpecificItems,
-                "Disable Picking Up Specific Items", "Metroid.UI.SectionDisablePickingUpSpecificItems");
+                "Power-Up Pickup Effects", "Metroid.UI.SectionDisablePickingUpSpecificItems");
     setupToggle(ui->btnToggleGameplay,      ui->sectionGameplay,      "GAMEPLAY TOGGLES",             "Metroid.UI.SectionGameplay");
     setupToggle(ui->btnToggleVideo,       ui->sectionVideo,       "VIDEO QUALITY",    "Metroid.UI.SectionVideo");
     setupToggle(ui->btnToggleVolume,      ui->sectionVolume,      "VOLUME",           "Metroid.UI.SectionVolume");

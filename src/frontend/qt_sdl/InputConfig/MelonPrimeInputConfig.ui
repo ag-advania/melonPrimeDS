@@ -406,7 +406,7 @@ The EU ROM has a hidden Japanese option — setting your DS firmware to Japanese
 										</item>
 										<item>
 											<widget class="QPushButton" name="btnToggleDisablePickingUpSpecificItems">
-												<property name="text"><string>▶ Disable Picking Up Specific Items</string></property>
+												<property name="text"><string>▶ Power-Up Pickup Effects</string></property>
 												<property name="checkable"><bool>true</bool></property>
 												<property name="checked"><bool>false</bool></property>
 												<property name="flat"><bool>true</bool></property>
@@ -423,7 +423,7 @@ The EU ROM has a hidden Japanese option — setting your DS firmware to Japanese
 													<item>
 														<widget class="QLabel" name="lblMetroidDisablePickingUpSpecificItemsDesc">
 															<property name="text">
-																<string>When enabled, you cannot pick up the selected items, but online opponents can still pick them up. This setting only affects you and bots. Online opponents can pick up these items normally; on your screen, the item remains in place. If you touch one of these items, other players may see it as if you picked it up and removed it.</string>
+																<string>When enabled, selected power-ups are still picked up and removed, but their player-side effects are skipped. Double Damage, Cloak, and DEATH ALT timers, flags, HUD, sounds, and visual effects are not applied. This setting only affects you and bots; online opponents are not changed.</string>
 															</property>
 															<property name="wordWrap">
 																<bool>true</bool>
@@ -433,7 +433,7 @@ The EU ROM has a hidden Japanese option — setting your DS firmware to Japanese
 													<item>
 														<widget class="QCheckBox" name="cbMetroidDisablePickupPowerUps">
 															<property name="text">
-																<string>Disable Picking Up Power-Ups</string>
+																<string>Power-Ups: Pick Up With No Effect</string>
 															</property>
 														</widget>
 													</item>

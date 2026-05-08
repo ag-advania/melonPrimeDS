@@ -19,6 +19,8 @@ struct PatchWord {
     uint32_t revertVal;
 };
 
+// Legacy config keys are kept so existing user settings continue to apply to
+// the new "pick up with no effect" behavior.
 static constexpr const char* kCfgDisablePickupDoubleDamage =
     "Metroid.DisableFeatures.NoPickingUpSpecificItems.DoubleDamage";
 static constexpr const char* kCfgDisablePickupCloak =
@@ -29,44 +31,45 @@ static constexpr const char* kCfgDisablePickupPowerUps =
     "Metroid.DisableFeatures.NoPickingUpPowerUps";
 
 // Item pickup switch entries for item type 3/17/20. Applying a word branches
-// directly to the next-item loop, leaving the item in the world.
+// directly to the pickedUp=1 consume/delete exit. The item disappears, while
+// the power-up timer/flag/HUD/effect handler is skipped.
 // ROM group order: JP1_0=0, JP1_1=1, US1_0=2, US1_1=3, EU1_0=4, EU1_1=5, KR1_0=6
 // Entry order: Double Damage, Cloak, Deathalt.
 static constexpr PatchWord kPatchWords[7][3] = {
     { // JP1.0
-        { 0x02019CE0u, 0xEA0001C1u, 0xEA000139u },
-        { 0x02019D18u, 0xEA0001B3u, 0xEA00013Cu },
-        { 0x02019D24u, 0xEA0001B0u, 0xEA00014Au },
+        { 0x02019CE0u, 0xEA0001BCu, 0xEA000139u },
+        { 0x02019D18u, 0xEA0001AEu, 0xEA00013Cu },
+        { 0x02019D24u, 0xEA0001ABu, 0xEA00014Au },
     },
     { // JP1.1
-        { 0x02019CE0u, 0xEA0001C1u, 0xEA000139u },
-        { 0x02019D18u, 0xEA0001B3u, 0xEA00013Cu },
-        { 0x02019D24u, 0xEA0001B0u, 0xEA00014Au },
+        { 0x02019CE0u, 0xEA0001BCu, 0xEA000139u },
+        { 0x02019D18u, 0xEA0001AEu, 0xEA00013Cu },
+        { 0x02019D24u, 0xEA0001ABu, 0xEA00014Au },
     },
     { // US1.0
-        { 0x02019D04u, 0xEA0001C1u, 0xEA000139u },
-        { 0x02019D3Cu, 0xEA0001B3u, 0xEA00013Cu },
-        { 0x02019D48u, 0xEA0001B0u, 0xEA00014Au },
+        { 0x02019D04u, 0xEA0001BCu, 0xEA000139u },
+        { 0x02019D3Cu, 0xEA0001AEu, 0xEA00013Cu },
+        { 0x02019D48u, 0xEA0001ABu, 0xEA00014Au },
     },
     { // US1.1
-        { 0x02019D04u, 0xEA0001C1u, 0xEA000139u },
-        { 0x02019D3Cu, 0xEA0001B3u, 0xEA00013Cu },
-        { 0x02019D48u, 0xEA0001B0u, 0xEA00014Au },
+        { 0x02019D04u, 0xEA0001BCu, 0xEA000139u },
+        { 0x02019D3Cu, 0xEA0001AEu, 0xEA00013Cu },
+        { 0x02019D48u, 0xEA0001ABu, 0xEA00014Au },
     },
     { // EU1.0
-        { 0x02019CFCu, 0xEA0001C1u, 0xEA000139u },
-        { 0x02019D34u, 0xEA0001B3u, 0xEA00013Cu },
-        { 0x02019D40u, 0xEA0001B0u, 0xEA00014Au },
+        { 0x02019CFCu, 0xEA0001BCu, 0xEA000139u },
+        { 0x02019D34u, 0xEA0001AEu, 0xEA00013Cu },
+        { 0x02019D40u, 0xEA0001ABu, 0xEA00014Au },
     },
     { // EU1.1
-        { 0x02019D04u, 0xEA0001C1u, 0xEA000139u },
-        { 0x02019D3Cu, 0xEA0001B3u, 0xEA00013Cu },
-        { 0x02019D48u, 0xEA0001B0u, 0xEA00014Au },
+        { 0x02019D04u, 0xEA0001BCu, 0xEA000139u },
+        { 0x02019D3Cu, 0xEA0001AEu, 0xEA00013Cu },
+        { 0x02019D48u, 0xEA0001ABu, 0xEA00014Au },
     },
     { // KR1.0
-        { 0x02018C38u, 0xEA0001C7u, 0xEA000140u },
-        { 0x02018C70u, 0xEA0001B9u, 0xEA000142u },
-        { 0x02018C7Cu, 0xEA0001B6u, 0xEA00014Fu },
+        { 0x02018C38u, 0xEA0001C2u, 0xEA000140u },
+        { 0x02018C70u, 0xEA0001B4u, 0xEA000142u },
+        { 0x02018C7Cu, 0xEA0001B1u, 0xEA00014Fu },
     },
 };
 
@@ -111,10 +114,10 @@ static uint8_t s_appliedMask = 0;
     if (current == desired)
         return true;
     if (current != alternate) {
-        // Restore is intentionally tolerant: older dev notes used an alternate
-        // branch for Cloak, and stale RAM can otherwise leave only that pickup
-        // disabled after the setting is turned off.
-        if (apply || !IsArmUnconditionalBranch(current))
+        // These switch entries are ARM B instructions in every supported ROM.
+        // Accept any branch here so live reload can migrate from the previous
+        // skip-to-next implementation and restore from stale patched variants.
+        if (!IsArmUnconditionalBranch(current))
             return false;
     }
 
