@@ -83,10 +83,21 @@ void NDS::ClearARM9InstructionHook() noexcept
 
 #elif defined(MELONPRIME_ARM9_INSTRUCTION_HOOK_JIT_X64_TRAMPOLINE)
 
+// JIT-only fast path. Comp_ARM9InstructionHook() emits a trampoline call only
+// at addresses for which ARM9InstructionHookMatches() returned true at compile
+// time, and SetARM9InstructionHook() resets the JIT block cache whenever the
+// address list changes. So whenever this trampoline fires the address is by
+// construction still a registered hook -- skip ARM9InstructionHookAddressMatches
+// and call the user dispatcher directly. The interpreter path keeps using
+// ARM9InstructionHookCheckAndRedirect() because it has no compile-time gate.
 static u32 ARM9InstructionHookTrampoline(NDS* nds, ARMv5* cpu, u32 arm9ExecAddr)
 {
+    const auto hook = nds->ARM9InstructionHook;
+    if (!hook)
+        return 0;
+
     u32 redirectExecAddr = 0;
-    if (!nds->ARM9InstructionHookCheckAndRedirect(arm9ExecAddr, cpu->R, redirectExecAddr))
+    if (!hook(nds, nds->ARM9InstructionHookUserData, arm9ExecAddr, cpu->R, redirectExecAddr))
         return 0;
 
     cpu->JumpTo(redirectExecAddr);
