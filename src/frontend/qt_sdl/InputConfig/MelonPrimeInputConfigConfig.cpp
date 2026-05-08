@@ -77,16 +77,16 @@ void MelonPrimeInputConfig::saveConfig()
 
     // Pickup effect toggles
     instcfg.SetBool(
-        "Metroid.GameFeature.PowerUpPickupNoEffect",
+        "Metroid.GameFeature.PowerUpPickupNoEffectPowerUps",
         ui->cbMetroidDisablePickupPowerUps->checkState() == Qt::Checked);
     instcfg.SetBool(
-        "Metroid.GameFeature.PowerUpPickupNoEffect.DoubleDamage",
+        "Metroid.GameFeature.PowerUpPickupNoEffectDoubleDamage",
         ui->cbMetroidDisablePickupDoubleDamage->checkState() == Qt::Checked);
     instcfg.SetBool(
-        "Metroid.GameFeature.PowerUpPickupNoEffect.Cloak",
+        "Metroid.GameFeature.PowerUpPickupNoEffectCloak",
         ui->cbMetroidDisablePickupCloak->checkState() == Qt::Checked);
     instcfg.SetBool(
-        "Metroid.GameFeature.PowerUpPickupNoEffect.Deathalt",
+        "Metroid.GameFeature.PowerUpPickupNoEffectDeathalt",
         ui->cbMetroidDisablePickupDeathalt->checkState() == Qt::Checked);
 
     // SnapTap
