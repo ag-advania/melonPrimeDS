@@ -123,9 +123,9 @@
     {
         redirectExecAddr = 0;
 
+        // ARM9Hook_Install gates registration on m_enableDirectAltFormTransform,
+        // so the runtime check here is dead.
         if (!nds || !regs)
-            return false;
-        if (!m_enableDirectAltFormTransform)
             return false;
         if (!m_flags.test(StateFlags::BIT_IN_GAME_INIT))
             return false;

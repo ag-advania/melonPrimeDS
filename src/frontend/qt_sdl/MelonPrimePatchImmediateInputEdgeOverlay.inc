@@ -61,6 +61,13 @@
         uint32_t arm9ExecAddr,
         uint32_t regs[16])
     {
+        // ARM9Hook_Install only registers this handler when the feature is
+        // enabled and the rom is supported, and the dispatcher routes here
+        // only at the single registered ActionConsumer PC. So the runtime
+        // checks for m_enableImmediateInputEdgeOverlay, romIdx range, and
+        // arm9ExecAddr equality are dead — guarded at install time.
+        (void)arm9ExecAddr;
+
         if (!nds)
             return;
 
@@ -73,19 +80,10 @@
         if (m_aimBlockBits & AIMBLK_NOT_IN_GAME)
             return;
 
-        const uint8_t romIdx = m_currentRom.romGroupIndex;
-        constexpr uint8_t kRomCount =
-            sizeof(kImmediateOverlayActionConsumerPc) / sizeof(kImmediateOverlayActionConsumerPc[0]);
-        if (romIdx >= kRomCount)
-            return;
-
         uint8_t* const mainRAM = nds->MainRAM;
 
         // ── Action Consumer (Fire / Jump / Zoom / Movement) ──────────────────
-        if (arm9ExecAddr == kImmediateOverlayActionConsumerPc[romIdx]) {
-            if (!m_enableImmediateInputEdgeOverlay)
-                return;
-
+        {
             const uint32_t offP = static_cast<uint32_t>(m_playerPosition)
                                 * static_cast<uint32_t>(Consts::PLAYER_ADDR_INC);
             const uint32_t playerBase = m_currentRom.playerStructStart + offP;

@@ -191,7 +191,10 @@
     {
         redirectExecAddr = 0;
 
-        if (!nds || !regs || !m_enableNativeBipedFire)
+        // ARM9Hook_Install gates registration on m_enableNativeBipedFire AND
+        // a non-null GetSite for the current ROM, so both checks here are
+        // dead in practice.
+        if (!nds || !regs)
             return false;
 
         const NativeBipedFireSite* const site =

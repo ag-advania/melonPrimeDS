@@ -58,9 +58,17 @@
         uint32_t arm9ExecAddr,
         uint32_t regs[16])
     {
+        // ARM9Hook_Install gates registration on m_enableNativeAimDeltaHook
+        // (nativeAimHookMode == 2) AND m_disableMphAimSmoothing, so both
+        // runtime checks are dead. Stylus mode is dynamic and ARM9Hook_Install
+        // does not gate on it, so the isStylusMode check is kept. Single
+        // address registered per ROM, so the postFoldPc equality check is
+        // dead too.
+        (void)arm9ExecAddr;
+
         if (!nds || !regs)
             return;
-        if (!m_enableNativeAimDeltaHook || !m_disableMphAimSmoothing || isStylusMode)
+        if (isStylusMode)
             return;
         if ((m_aimBlockBits | static_cast<uint32_t>(m_isLayoutChangePending)) != 0)
             return;
@@ -70,12 +78,7 @@
             return;
 
         const uint8_t romIdx = m_currentRom.romGroupIndex;
-        if (romIdx >= sizeof(kAimFoldDerivedHookEntries) / sizeof(kAimFoldDerivedHookEntries[0]))
-            return;
-
         const auto& h = kAimFoldDerivedHookEntries[romIdx];
-        if (arm9ExecAddr != h.postFoldPc)
-            return;
 
         const uint32_t inputBase = regs[h.inputReg];
         const uint32_t expectedInputBase = h.inputBase1P
