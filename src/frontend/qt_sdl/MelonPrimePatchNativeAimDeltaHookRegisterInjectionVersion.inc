@@ -196,10 +196,11 @@
         uint32_t regs[16])
     {
         // ARM9Hook_Install gates registration on m_enableNativeAimDeltaHook
-        // (nativeAimHookMode == 1) AND m_disableMphAimSmoothing, so both
-        // runtime checks are dead. Stylus mode IS dynamic via ApplyConfigReload
-        // but ARM9Hook_Install does not gate on it, so the isStylusMode check
-        // remains meaningful.
+        // (nativeAimHookMode == 1) AND m_disableMphAimSmoothing AND a valid
+        // romGroupIndex, so those runtime checks are dead. Stylus mode is
+        // dynamic but ARM9Hook_Install does not gate on it, so isStylusMode
+        // is still checked. localPlayerPtrAddr values come from constant tables
+        // (always inside main RAM), so their IsMainRamRange checks are dead.
         if (!nds || !regs)
             return;
         if (isStylusMode)
@@ -213,19 +214,106 @@
             return;
 
         const uint8_t romIdx = m_currentRom.romGroupIndex;
-        if (romIdx >= sizeof(kNativeAimDeltaHooks) / sizeof(kNativeAimDeltaHooks[0]))
-            return;
-
         uint8_t* const mainRAM = nds->MainRAM;
+
+        // Dispatch by frequency. Register injection (Normal / AltInput
+        // spec108=1) fires every aim update during normal first-person play
+        // and is by far the most common path; check it first via the small
+        // 2-entry table so the hot case takes the LIKELY branch.
+        const NativeAimDeltaHookInfo* const info =
+            NativeAimDeltaHook_Find(romIdx, arm9ExecAddr);
+        if (LIKELY(info != nullptr)) {
+            if (IsPlayerTransforming())
+                return;
+            if (IsPlayerAltForm() != info->isAltFormPath)
+                return;
+
+            const uint32_t player = regs[info->playerReg];
+            uint32_t localPlayer = 0;
+            std::memcpy(&localPlayer,
+                        mainRAM + (info->localPlayerPtrAddr & 0x3FFFFFu),
+                        sizeof(localPlayer));
+            if (player != localPlayer)
+                return;
+            if (!NativeAimDeltaHook_IsMainRamRange(player, 0x400u))
+                return;
+
+            int32_t outX = m_nativeAimDeltaX;
+            int32_t outY = m_nativeAimDeltaY;
+            m_nativeAimDeltaX = 0;
+            m_nativeAimDeltaY = 0;
+
+#ifdef _WIN32
+            int lateX = 0;
+            int lateY = 0;
+            if (m_rawFilter)
+                m_rawFilter->LateLatchMouseDelta(lateX, lateY);
+
+            if ((lateX | lateY) != 0)
+            {
+                int64_t resX = m_aimResidualX + static_cast<int64_t>(lateX) * m_aimFixedScaleX;
+                int64_t resY = m_aimResidualY + static_cast<int64_t>(lateY) * m_aimFixedScaleY;
+                resX = ClampAimResidual(resX, AIM_MAX_RESIDUAL);
+                resY = ClampAimResidual(resY, AIM_MAX_RESIDUAL);
+
+                const int16_t lateOutX = static_cast<int16_t>(resX >> AIM_DIRECT_BITS);
+                const int16_t lateOutY = static_cast<int16_t>(resY >> AIM_DIRECT_BITS);
+
+                if ((lateOutX | lateOutY) != 0)
+                {
+                    resX -= static_cast<int64_t>(lateOutX) << AIM_DIRECT_BITS;
+                    resY -= static_cast<int64_t>(lateOutY) << AIM_DIRECT_BITS;
+
+                    outX += lateOutX;
+                    outY += lateOutY;
+
+                    if (!m_enableAimAccumulator)
+                    {
+                        resX = 0;
+                        resY = 0;
+                    }
+                }
+
+                m_aimResidualX = resX;
+                m_aimResidualY = resY;
+            }
+#endif
+
+            if ((outX | outY) == 0)
+                return;
+
+            const int16_t finalX = NativeAimDeltaHook_ClampToS16(outX);
+            const int16_t finalY = NativeAimDeltaHook_ClampToS16(outY);
+
+            // player+0x3F8/+0x3FC are inside the player+0x400 range we just
+            // verified, so skip the redundant per-read bounds check.
+            uint32_t sensXRaw = 0;
+            uint32_t sensYRaw = 0;
+            std::memcpy(&sensXRaw, mainRAM + ((player + 0x3F8u) & 0x3FFFFFu), sizeof(sensXRaw));
+            std::memcpy(&sensYRaw, mainRAM + ((player + 0x3FCu) & 0x3FFFFFu), sizeof(sensYRaw));
+
+            const int32_t sensX = static_cast<int32_t>(sensXRaw);
+            const int32_t sensY = static_cast<int32_t>(sensYRaw);
+            const int64_t horizontalScaled = static_cast<int64_t>(finalX) * static_cast<int64_t>(sensX);
+            const int64_t verticalScaled   = static_cast<int64_t>(finalY) * static_cast<int64_t>(sensY);
+
+            regs[info->horizontalReg] = static_cast<uint32_t>(horizontalScaled);
+            regs[info->verticalReg]   = static_cast<uint32_t>(verticalScaled);
+            return;
+        }
+
+        // Rare paths (VSteer + AltStored) only do work with a non-zero delta;
+        // gate both at once before any address compare or RAM read.
+        if ((m_nativeAimDeltaX | m_nativeAimDeltaY) == 0)
+            return;
 
         // ── AltForm VectorSteer input write (spec108==0: Samus/Kanden/Noxus/Spire) ──
         {
             const auto& vi = kAltFormVSteerInputHooks[romIdx];
-            if (arm9ExecAddr == vi.pc && (m_nativeAimDeltaX | m_nativeAimDeltaY) != 0) {
+            if (arm9ExecAddr == vi.pc) {
                 uint32_t localPlayer = 0;
-                if (!NativeAimDeltaHook_IsMainRamRange(vi.localPlayerPtrAddr, sizeof(localPlayer)))
-                    return;
-                std::memcpy(&localPlayer, mainRAM + (vi.localPlayerPtrAddr & 0x3FFFFFu),
+                std::memcpy(&localPlayer,
+                            mainRAM + (vi.localPlayerPtrAddr & 0x3FFFFFu),
                             sizeof(localPlayer));
                 const uint32_t player = regs[vi.playerReg];
                 if (player != localPlayer)
@@ -241,13 +329,9 @@
                 static constexpr int32_t kVSteerClamp = 128;
 
                 const int16_t dx = NativeAimDeltaHook_ClampScaledS16(
-                    m_nativeAimDeltaX,
-                    kVSteerGain,
-                    kVSteerClamp);
+                    m_nativeAimDeltaX, kVSteerGain, kVSteerClamp);
                 const int16_t dy = NativeAimDeltaHook_ClampScaledS16(
-                    m_nativeAimDeltaY,
-                    kVSteerGain,
-                    kVSteerClamp);
+                    m_nativeAimDeltaY, kVSteerGain, kVSteerClamp);
                 std::memcpy(mainRAM + (addrH & 0x3FFFFFu), &dx, sizeof(dx));
                 std::memcpy(mainRAM + (addrV & 0x3FFFFFu), &dy, sizeof(dy));
                 m_nativeAimDeltaX = 0;
@@ -258,125 +342,39 @@
 
         // ── AltForm StoredYaw / StoredPitch (transition fallback) ────────────
         // Fires during biped↔altform transformation (IsPlayerTransforming==true),
-        // when the register injection path is suppressed.  No IsPlayerTransforming
+        // when the register injection path is suppressed. No IsPlayerTransforming
         // guard here so this block is reachable in that state.
-        if ((m_nativeAimDeltaX | m_nativeAimDeltaY) != 0) {
+        {
             const auto& as = kAltStoredHooks[romIdx];
             const bool isYaw   = (arm9ExecAddr == as.yawPc);
             const bool isPitch = (arm9ExecAddr == as.pitchPc);
-
-            if (isYaw || isPitch) {
-                uint32_t localPlayer = 0;
-                if (!NativeAimDeltaHook_IsMainRamRange(as.localPlayerPtrAddr, sizeof(localPlayer)))
-                    return;
-                std::memcpy(&localPlayer, mainRAM + (as.localPlayerPtrAddr & 0x3FFFFFu),
-                            sizeof(localPlayer));
-                const uint32_t player = regs[as.playerReg];
-                if (player != localPlayer)
-                    return;
-                if (!NativeAimDeltaHook_IsMainRamRange(player + 0x3F8u, 8u))
-                    return;
-
-                uint32_t sensXRaw = 0, sensYRaw = 0;
-                std::memcpy(&sensXRaw, mainRAM + ((player + 0x3F8u) & 0x3FFFFFu), sizeof(sensXRaw));
-                std::memcpy(&sensYRaw, mainRAM + ((player + 0x3FCu) & 0x3FFFFFu), sizeof(sensYRaw));
-
-                if (isYaw) {
-                    regs[1] = static_cast<uint32_t>(
-                        static_cast<int64_t>(m_nativeAimDeltaX) * static_cast<int32_t>(sensXRaw));
-                } else {
-                    regs[1] = static_cast<uint32_t>(
-                        static_cast<int64_t>(m_nativeAimDeltaY) * static_cast<int32_t>(sensYRaw));
-                    m_nativeAimDeltaX = 0;
-                    m_nativeAimDeltaY = 0;
-                }
+            if (!(isYaw || isPitch))
                 return;
+
+            uint32_t localPlayer = 0;
+            std::memcpy(&localPlayer,
+                        mainRAM + (as.localPlayerPtrAddr & 0x3FFFFFu),
+                        sizeof(localPlayer));
+            const uint32_t player = regs[as.playerReg];
+            if (player != localPlayer)
+                return;
+            if (!NativeAimDeltaHook_IsMainRamRange(player + 0x3F8u, 8u))
+                return;
+
+            uint32_t sensXRaw = 0, sensYRaw = 0;
+            std::memcpy(&sensXRaw, mainRAM + ((player + 0x3F8u) & 0x3FFFFFu), sizeof(sensXRaw));
+            std::memcpy(&sensYRaw, mainRAM + ((player + 0x3FCu) & 0x3FFFFFu), sizeof(sensYRaw));
+
+            if (isYaw) {
+                regs[1] = static_cast<uint32_t>(
+                    static_cast<int64_t>(m_nativeAimDeltaX) * static_cast<int32_t>(sensXRaw));
+            } else {
+                regs[1] = static_cast<uint32_t>(
+                    static_cast<int64_t>(m_nativeAimDeltaY) * static_cast<int32_t>(sensYRaw));
+                m_nativeAimDeltaX = 0;
+                m_nativeAimDeltaY = 0;
             }
         }
-
-        // ── Register injection (Normal / AltInput spec108=1) ─────────────────
-        // Skip during transformation; VSteerInput/AltStored above handle those cases.
-        if (IsPlayerTransforming())
-            return;
-
-        const NativeAimDeltaHookInfo* const info =
-            NativeAimDeltaHook_Find(romIdx, arm9ExecAddr);
-        if (!info)
-            return;
-        if (IsPlayerAltForm() != info->isAltFormPath)
-            return;
-
-        const uint32_t player = regs[info->playerReg];
-        uint32_t localPlayer = 0;
-        if (!NativeAimDeltaHook_ReadMainRam32(nds, info->localPlayerPtrAddr, localPlayer))
-            return;
-        if (player != localPlayer)
-            return;
-        if (!NativeAimDeltaHook_IsMainRamRange(player, 0x400u))
-            return;
-
-        int32_t outX = m_nativeAimDeltaX;
-        int32_t outY = m_nativeAimDeltaY;
-        m_nativeAimDeltaX = 0;
-        m_nativeAimDeltaY = 0;
-
-#ifdef _WIN32
-        int lateX = 0;
-        int lateY = 0;
-        if (m_rawFilter)
-            m_rawFilter->LateLatchMouseDelta(lateX, lateY);
-
-        if ((lateX | lateY) != 0)
-        {
-            int64_t resX = m_aimResidualX + static_cast<int64_t>(lateX) * m_aimFixedScaleX;
-            int64_t resY = m_aimResidualY + static_cast<int64_t>(lateY) * m_aimFixedScaleY;
-            resX = ClampAimResidual(resX, AIM_MAX_RESIDUAL);
-            resY = ClampAimResidual(resY, AIM_MAX_RESIDUAL);
-
-            const int16_t lateOutX = static_cast<int16_t>(resX >> AIM_DIRECT_BITS);
-            const int16_t lateOutY = static_cast<int16_t>(resY >> AIM_DIRECT_BITS);
-
-            if ((lateOutX | lateOutY) != 0)
-            {
-                resX -= static_cast<int64_t>(lateOutX) << AIM_DIRECT_BITS;
-                resY -= static_cast<int64_t>(lateOutY) << AIM_DIRECT_BITS;
-
-                outX += lateOutX;
-                outY += lateOutY;
-
-                if (!m_enableAimAccumulator)
-                {
-                    resX = 0;
-                    resY = 0;
-                }
-            }
-
-            m_aimResidualX = resX;
-            m_aimResidualY = resY;
-        }
-#endif
-
-        if ((outX | outY) == 0)
-            return;
-
-        const int16_t finalX = NativeAimDeltaHook_ClampToS16(outX);
-        const int16_t finalY = NativeAimDeltaHook_ClampToS16(outY);
-
-        uint32_t sensXRaw = 0;
-        uint32_t sensYRaw = 0;
-        if (!NativeAimDeltaHook_ReadMainRam32(nds, player + 0x3F8u, sensXRaw)
-            || !NativeAimDeltaHook_ReadMainRam32(nds, player + 0x3FCu, sensYRaw))
-        {
-            return;
-        }
-
-        const int32_t sensX = static_cast<int32_t>(sensXRaw);
-        const int32_t sensY = static_cast<int32_t>(sensYRaw);
-        const int64_t horizontalScaled = static_cast<int64_t>(finalX) * static_cast<int64_t>(sensX);
-        const int64_t verticalScaled   = static_cast<int64_t>(finalY) * static_cast<int64_t>(sensY);
-
-        regs[info->horizontalReg] = static_cast<uint32_t>(horizontalScaled);
-        regs[info->verticalReg]   = static_cast<uint32_t>(verticalScaled);
     }
 
 #endif // MELONPRIME_DS
