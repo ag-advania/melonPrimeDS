@@ -196,31 +196,15 @@ void MelonPrimeInputConfig::setupSensitivityAndToggles(Config::Table& instcfg)
     ui->cbMetroidDisableDoubleDamageMultiplier->setChecked(
         instcfg.GetBool("Metroid.GameFeature.DisableDoubleDamageMultiplier"));
 
-    auto getBoolWithLegacy = [&instcfg](const char* key, const char* legacyKey) {
-        if (instcfg.HasKey(key))
-            return instcfg.GetBool(key);
-        if (instcfg.HasKey(legacyKey))
-            return instcfg.GetBool(legacyKey);
-        return instcfg.GetBool(key);
-    };
-
     // Pickup effect toggles
     ui->cbMetroidDisablePickupPowerUps->setChecked(
-        getBoolWithLegacy(
-            "Metroid.GameFeature.PowerUpPickupNoEffect",
-            "Metroid.DisableFeatures.NoPickingUpPowerUps"));
+        instcfg.GetBool("Metroid.GameFeature.PowerUpPickupNoEffect"));
     ui->cbMetroidDisablePickupDoubleDamage->setChecked(
-        getBoolWithLegacy(
-            "Metroid.GameFeature.PowerUpPickupNoEffect.DoubleDamage",
-            "Metroid.DisableFeatures.NoPickingUpSpecificItems.DoubleDamage"));
+        instcfg.GetBool("Metroid.GameFeature.PowerUpPickupNoEffect.DoubleDamage"));
     ui->cbMetroidDisablePickupCloak->setChecked(
-        getBoolWithLegacy(
-            "Metroid.GameFeature.PowerUpPickupNoEffect.Cloak",
-            "Metroid.DisableFeatures.NoPickingUpSpecificItems.Cloak"));
+        instcfg.GetBool("Metroid.GameFeature.PowerUpPickupNoEffect.Cloak"));
     ui->cbMetroidDisablePickupDeathalt->setChecked(
-        getBoolWithLegacy(
-            "Metroid.GameFeature.PowerUpPickupNoEffect.Deathalt",
-            "Metroid.DisableFeatures.NoPickingUpSpecificItems.Deathalt"));
+        instcfg.GetBool("Metroid.GameFeature.PowerUpPickupNoEffect.Deathalt"));
     auto updatePickupPowerUpChildren = [this](bool disableAllPowerUps, bool syncChildren) {
         if (syncChildren) {
             ui->cbMetroidDisablePickupDoubleDamage->setChecked(disableAllPowerUps);

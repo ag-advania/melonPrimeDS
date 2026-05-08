@@ -28,15 +28,6 @@ static constexpr const char* kCfgPowerUpPickupNoEffectCloak =
 static constexpr const char* kCfgPowerUpPickupNoEffectDeathalt =
     "Metroid.GameFeature.PowerUpPickupNoEffect.Deathalt";
 
-static constexpr const char* kLegacyCfgDisablePickupPowerUps =
-    "Metroid.DisableFeatures.NoPickingUpPowerUps";
-static constexpr const char* kLegacyCfgDisablePickupDoubleDamage =
-    "Metroid.DisableFeatures.NoPickingUpSpecificItems.DoubleDamage";
-static constexpr const char* kLegacyCfgDisablePickupCloak =
-    "Metroid.DisableFeatures.NoPickingUpSpecificItems.Cloak";
-static constexpr const char* kLegacyCfgDisablePickupDeathalt =
-    "Metroid.DisableFeatures.NoPickingUpSpecificItems.Deathalt";
-
 // Item pickup switch entries for item type 3/17/20. Applying a word branches
 // directly to the pickedUp=1 consume/delete exit. The item disappears, while
 // the power-up timer/flag/HUD/effect handler is skipped.
@@ -89,42 +80,18 @@ static uint8_t s_appliedMask = 0;
     return romGroupIndex < 7;
 }
 
-[[nodiscard]] static bool GetBoolWithLegacy(
-    Config::Table& cfg,
-    const char* key,
-    const char* legacyKey)
-{
-    if (cfg.HasKey(key))
-        return cfg.GetBool(key);
-    if (cfg.HasKey(legacyKey))
-        return cfg.GetBool(legacyKey);
-    return cfg.GetBool(key);
-}
-
 [[nodiscard]] static uint8_t DesiredMask(Config::Table& cfg)
 {
-    if (GetBoolWithLegacy(
-            cfg,
-            kCfgPowerUpPickupNoEffect,
-            kLegacyCfgDisablePickupPowerUps)) {
+    if (cfg.GetBool(kCfgPowerUpPickupNoEffect)) {
         return static_cast<uint8_t>(PICKUP_DOUBLE_DAMAGE | PICKUP_CLOAK | PICKUP_DEATHALT);
     }
 
     uint8_t mask = 0;
-    if (GetBoolWithLegacy(
-            cfg,
-            kCfgPowerUpPickupNoEffectDoubleDamage,
-            kLegacyCfgDisablePickupDoubleDamage))
+    if (cfg.GetBool(kCfgPowerUpPickupNoEffectDoubleDamage))
         mask |= PICKUP_DOUBLE_DAMAGE;
-    if (GetBoolWithLegacy(
-            cfg,
-            kCfgPowerUpPickupNoEffectCloak,
-            kLegacyCfgDisablePickupCloak))
+    if (cfg.GetBool(kCfgPowerUpPickupNoEffectCloak))
         mask |= PICKUP_CLOAK;
-    if (GetBoolWithLegacy(
-            cfg,
-            kCfgPowerUpPickupNoEffectDeathalt,
-            kLegacyCfgDisablePickupDeathalt))
+    if (cfg.GetBool(kCfgPowerUpPickupNoEffectDeathalt))
         mask |= PICKUP_DEATHALT;
     return mask;
 }
