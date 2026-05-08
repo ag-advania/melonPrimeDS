@@ -112,44 +112,36 @@ static bool DispatcherCallback(
     if (UNLIKELY(mask == 0))
         return false;
 
+    // ARM9Hook_Install() always passes a non-null MelonPrimeCore as userdata,
+    // and ClearARM9InstructionHook() detaches the dispatcher entirely, so when
+    // we get here core is by construction non-null. Skip the per-handler null
+    // checks that the previous design carried.
     auto* const core = static_cast<MelonPrimeCore*>(userdata);
 
     if ((mask & Dispatch_NativeAimDelta) != 0)
     {
-        if (core)
-        {
-            if (core->GetNativeAimHookMode() == 2)
-                core->NativeAimDeltaHookPostFoldWrite_DispatchCheck(nds, arm9ExecAddr, regs);
-            else
-                core->NativeAimDeltaHookRegisterInjection_DispatchCheck(nds, arm9ExecAddr, regs);
-        }
+        if (core->GetNativeAimHookMode() == 2)
+            core->NativeAimDeltaHookPostFoldWrite_DispatchCheck(nds, arm9ExecAddr, regs);
+        else
+            core->NativeAimDeltaHookRegisterInjection_DispatchCheck(nds, arm9ExecAddr, regs);
     }
 
     if ((mask & Dispatch_NativeZoomToggle) != 0)
     {
-        if (core)
-        {
-            if (core->NativeZoomToggleHook_DispatchCheckAndRedirect(
-                    nds, arm9ExecAddr, regs, redirectExecAddr))
-                return true;
-        }
+        if (core->NativeZoomToggleHook_DispatchCheckAndRedirect(
+                nds, arm9ExecAddr, regs, redirectExecAddr))
+            return true;
     }
 
     if ((mask & Dispatch_NativeBipedFire) != 0)
     {
-        if (core)
-        {
-            if (core->NativeBipedFireHook_DispatchCheckAndRedirect(
-                    nds, arm9ExecAddr, regs, redirectExecAddr))
-                return true;
-        }
+        if (core->NativeBipedFireHook_DispatchCheckAndRedirect(
+                nds, arm9ExecAddr, regs, redirectExecAddr))
+            return true;
     }
 
     if ((mask & Dispatch_ImmediateInputEdgeOverlay) != 0)
-    {
-        if (core)
-            core->ImmediateInputEdgeOverlay_DispatchCheck(nds, arm9ExecAddr, regs);
-    }
+        core->ImmediateInputEdgeOverlay_DispatchCheck(nds, arm9ExecAddr, regs);
 
     // Side-effect hook: runs regardless of whether a redirect follows.
     if ((mask & Dispatch_NoxusBlade) != 0)
@@ -158,22 +150,16 @@ static bool DispatcherCallback(
     // Redirect hooks: may change execution address.
     if ((mask & Dispatch_TransformGate) != 0)
     {
-        if (core)
-        {
-            if (core->TransformGateHook_DispatchCheckAndRedirect(
-                    nds, arm9ExecAddr, regs, redirectExecAddr))
-                return true;
-        }
+        if (core->TransformGateHook_DispatchCheckAndRedirect(
+                nds, arm9ExecAddr, regs, redirectExecAddr))
+            return true;
     }
 
     if ((mask & Dispatch_WeaponSwitch) != 0)
     {
-        if (core)
-        {
-            if (core->WeaponSwitchHook_DispatchCheckAndRedirect(
-                    nds, arm9ExecAddr, regs, redirectExecAddr))
-                return true;
-        }
+        if (core->WeaponSwitchHook_DispatchCheckAndRedirect(
+                nds, arm9ExecAddr, regs, redirectExecAddr))
+            return true;
     }
 
     if ((mask & Dispatch_ShadowFreeze) != 0)
