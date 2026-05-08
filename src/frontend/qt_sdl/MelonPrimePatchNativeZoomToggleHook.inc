@@ -199,6 +199,14 @@
         if (m_nativeZoomPending.Pending)
             return;
 
+        // Hot-path skip: when zoom is known disabled and the player did not
+        // just press the zoom edge, the auto-disable check has nothing to do.
+        // The game cannot flip zoom from disabled→enabled on its own (only
+        // the edge-triggered toggle below or our trampoline writes do that),
+        // so skipping the IsZoomEnabled MainRAM read here is sound.
+        if (!pressedEdge && !m_nativeZoomLastKnownEnabled)
+            return;
+
         melonDS::NDS* const nds = emuInstance->getNDS();
         const NativeZoomToggleSite* const site =
             NativeZoomToggle_GetSite(m_currentRom.romGroupIndex);
@@ -210,6 +218,7 @@
             return;
 
         const bool currentEnabled = NativeZoomToggle_IsZoomEnabled(nds, player);
+        m_nativeZoomLastKnownEnabled = currentEnabled;
 
         if (!pressedEdge) {
             if (currentEnabled && !NativeZoomToggle_IsCurrentWeaponZoomCapable(nds, player)) {
@@ -217,6 +226,7 @@
                 m_nativeZoomPending.Player = player;
                 m_nativeZoomPending.Enabled = 0;
                 m_nativeZoomPending.Pending = true;
+                m_nativeZoomLastKnownEnabled = false; // we are about to disable
             }
             return;
         }
@@ -229,6 +239,7 @@
         m_nativeZoomPending.Player = player;
         m_nativeZoomPending.Enabled = desiredEnabled ? 1u : 0u;
         m_nativeZoomPending.Pending = true;
+        m_nativeZoomLastKnownEnabled = desiredEnabled;
     }
 
     bool MelonPrimeCore::NativeZoomToggleHook_DispatchCheckAndRedirect(
