@@ -694,6 +694,14 @@ MainWindow::MainWindow(int id, EmuInstance* inst, QWidget* parent) :
                 &QAction::triggered,
                 this,
                 &MainWindow::onChangeMetroidDisableDoubleDamageMultiplier);
+
+            actMetroidDisablePickingUpPowerUps = menu->addAction("Disable Picking Up Power-Ups");
+            actMetroidDisablePickingUpPowerUps->setCheckable(true);
+            connect(
+                actMetroidDisablePickingUpPowerUps,
+                &QAction::triggered,
+                this,
+                &MainWindow::onChangeMetroidDisablePickingUpPowerUps);
         }
         /* } MelonPrimeDS */
 #endif // MELONPRIME_DS
@@ -809,6 +817,8 @@ MainWindow::MainWindow(int id, EmuInstance* inst, QWidget* parent) :
         actMetroidFixSF->setChecked(localCfg.GetBool("Metroid.BugFix.FixShadowFreeze"));
         actMetroidDisableDoubleDamageMultiplier->setChecked(
             localCfg.GetBool("Metroid.GameFeature.DisableDoubleDamageMultiplier"));
+        actMetroidDisablePickingUpPowerUps->setChecked(
+            localCfg.GetBool("Metroid.DisableFeatures.NoPickingUpPowerUps"));
 #endif
 
         if (emuInstance->instanceID > 0)
@@ -1980,6 +1990,16 @@ void MainWindow::onChangeMetroidDisableDoubleDamageMultiplier(bool checked)
     if (auto* core = emuThread->GetMelonPrimeCore())
         core->NotifyConfigChanged();
 }
+
+void MainWindow::onChangeMetroidDisablePickingUpPowerUps(bool checked)
+{
+    localCfg.SetBool("Metroid.DisableFeatures.NoPickingUpPowerUps", checked);
+    localCfg.SetBool("Metroid.DisableFeatures.NoPickingUpSpecificItems.DoubleDamage", checked);
+    localCfg.SetBool("Metroid.DisableFeatures.NoPickingUpSpecificItems.Cloak", checked);
+    localCfg.SetBool("Metroid.DisableFeatures.NoPickingUpSpecificItems.Deathalt", checked);
+    if (auto* core = emuThread->GetMelonPrimeCore())
+        core->NotifyConfigChanged();
+}
 /* } MelonPrimeDS*/
 #endif // MELONPRIME_DS
 
@@ -1990,6 +2010,8 @@ void MainWindow::onInputConfigFinished(int res)
     actMetroidFixSF->setChecked(localCfg.GetBool("Metroid.BugFix.FixShadowFreeze"));
     actMetroidDisableDoubleDamageMultiplier->setChecked(
         localCfg.GetBool("Metroid.GameFeature.DisableDoubleDamageMultiplier"));
+    actMetroidDisablePickingUpPowerUps->setChecked(
+        localCfg.GetBool("Metroid.DisableFeatures.NoPickingUpPowerUps"));
 #endif
 }
 

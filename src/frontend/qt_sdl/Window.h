@@ -191,6 +191,7 @@ private slots:
     void onOpenMetroidOtherSettings();
     void onChangeMetroidFixSF(bool checked);
     void onChangeMetroidDisableDoubleDamageMultiplier(bool checked);
+    void onChangeMetroidDisablePickingUpPowerUps(bool checked);
 #endif // MELONPRIME_DS
 
 private:
@@ -305,6 +306,7 @@ public:
 #ifdef MELONPRIME_DS
     QAction* actMetroidFixSF;
     QAction* actMetroidDisableDoubleDamageMultiplier;
+    QAction* actMetroidDisablePickingUpPowerUps;
 #endif
 
     QAction* actAbout;
