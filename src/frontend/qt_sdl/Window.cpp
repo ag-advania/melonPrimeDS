@@ -695,7 +695,7 @@ MainWindow::MainWindow(int id, EmuInstance* inst, QWidget* parent) :
                 this,
                 &MainWindow::onChangeMetroidDisableDoubleDamageMultiplier);
 
-            actMetroidDisablePickingUpPowerUps = menu->addAction("Disable Picking Up Power-Ups");
+            actMetroidDisablePickingUpPowerUps = menu->addAction("Power-Ups: Pick Up With No Effect");
             actMetroidDisablePickingUpPowerUps->setCheckable(true);
             connect(
                 actMetroidDisablePickingUpPowerUps,
