@@ -75,6 +75,9 @@ void MelonPrimeInputConfig::saveConfig()
     instcfg.SetBool(
         "Metroid.GameFeature.DisableDoubleDamageMultiplier",
         ui->cbMetroidDisableDoubleDamageMultiplier->checkState() == Qt::Checked);
+    instcfg.SetBool(
+        "Metroid.GameFeature.DamageNotifyPurple",
+        ui->cbMetroidDamageNotifyPurple->checkState() == Qt::Checked);
 
     // Pickup effect toggles
     instcfg.SetBool(

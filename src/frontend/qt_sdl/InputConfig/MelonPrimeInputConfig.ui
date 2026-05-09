@@ -397,11 +397,38 @@ The EU ROM has a hidden Japanese option — setting your DS firmware to Japanese
 										<item>
 											<widget class="QLabel" name="lblMetroidDisableDoubleDamageMultiplierDesc">
 												<property name="text">
-													<string>Keeps the Double Damage pickup, timer, HUD, sound, and visual effects, but changes its damage boost from 2x to 1x. Please use this only with your opponent's consent.</string>
+													<string>&lt;html&gt;&lt;body&gt;
+Keeps the Double Damage pickup, timer, HUD, sound, and visual effects, but changes the damage boost from 2x to 1x.&lt;br&gt;&lt;br&gt;
+&lt;font color=&quot;red&quot;&gt;&lt;b&gt;Important:&lt;/b&gt; the 2x → 1x change only applies on &lt;b&gt;your&lt;/b&gt; side. If your opponents do not also enable Damage 1x, your shots will still deal 2x damage to them while Double Damage is active.&lt;/font&gt;&lt;br&gt;&lt;br&gt;
+Please use this only with all participants' consent.
+&lt;/body&gt;&lt;/html&gt;</string>
 												</property>
 												<property name="wordWrap">
 													<bool>true</bool>
 												</property>
+											</widget>
+										</item>
+										<item>
+											<widget class="QCheckBox" name="cbMetroidDamageNotifyPurple">
+												<property name="text">
+													<string>Damage Notify Purple</string>
+												</property>
+												<property name="styleSheet"><string>QCheckBox { margin-left: 20px; }</string></property>
+											</widget>
+										</item>
+										<item>
+											<widget class="QLabel" name="lblMetroidDamageNotifyPurpleDesc">
+												<property name="text">
+													<string>&lt;html&gt;&lt;body&gt;
+Briefly flashes you in the Double Damage purple state when you take damage, so opponents can see you got hit.&lt;br&gt;&lt;br&gt;
+&lt;font color=&quot;red&quot;&gt;&lt;b&gt;Important:&lt;/b&gt; this writes a real Double Damage timer, so for a brief moment you actually &lt;b&gt;enter Double Damage state&lt;/b&gt; — your shots will deal 2x damage to opponents during that window unless they also have Damage 1x enabled.&lt;/font&gt;&lt;br&gt;&lt;br&gt;
+&lt;b&gt;Always get every participant's consent before using this in a match.&lt;/b&gt; Pair with &quot;Disable Double Damage Multiplier&quot; above to keep your own damage at 1x.
+&lt;/body&gt;&lt;/html&gt;</string>
+												</property>
+												<property name="wordWrap">
+													<bool>true</bool>
+												</property>
+												<property name="styleSheet"><string>QLabel { margin-left: 20px; }</string></property>
 											</widget>
 										</item>
 										<item>

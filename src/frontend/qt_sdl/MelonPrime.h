@@ -128,6 +128,10 @@ namespace MelonPrime {
         uint8_t* isBoosting;
         uint8_t* isInVisorOrMap;
         uint8_t* isMapOrUserActionPaused;
+
+        // [Tier 4: Damage Notify Purple — local-player HP watcher / DD timer write]
+        uint16_t* health;
+        uint16_t* doubleDamageTimer;
     };
 
     enum AimBlockBit : uint32_t {
@@ -408,6 +412,19 @@ namespace MelonPrime {
         float    m_aimCombinedY = 0.013333333f;
         float    m_aimAdjust = 0.5f;
 
+        // --- Damage Notify Purple ---
+        // Briefly drives the local player's Double Damage timer (CPlayer +0x4B0) to
+        // 10 frames whenever HP drops, producing a short purple flash so opponents
+        // can see "this player just got hit". Intended to be paired with the
+        // existing Disable Double Damage Multiplier feature so the flash does not
+        // become a real 2x boost. See:
+        //   .claude rules + 18-Damage-Notify-Purple-NonHook-AI-Implementation-Instructions.md
+        struct DamageNotifyPurpleState {
+            uint16_t previousHp = 0;
+            bool     valid = false;
+        } m_damageNotifyPurpleState{};
+        bool m_damageNotifyPurpleEnabled = false;
+
         struct alignas(4) StateFlags {
             uint32_t packed = 0;
             static constexpr uint32_t BIT_ROM_DETECTED = 1u << 0;
@@ -509,6 +526,7 @@ namespace MelonPrime {
         HOT_FUNCTION void UpdateInputStateReentrant(bool focused);  // re-entrant FrameAdvance path
         template <bool kReentrant> FORCE_INLINE void UpdateInputStateImpl(bool focused);
         HOT_FUNCTION void HandleInGameLogic();
+        HOT_FUNCTION void DamageNotifyPurpleTick();
         template <bool kInputMaskReset> FORCE_INLINE void ProcessMoveAndButtonsFastImpl();
         HOT_FUNCTION void ProcessMoveAndButtonsFast();
         HOT_FUNCTION void ProcessMoveAndButtonsFastFromReset();
