@@ -206,6 +206,37 @@ void MelonPrimeInputConfig::setupSensitivityAndToggles(Config::Table& instcfg)
     ui->cbMetroidDamageNotifyPurple->setChecked(
         instcfg.GetBool("Metroid.GameFeature.DamageNotifyPurple"));
 
+    // Parent-child: Damage Notify Purple requires Disable Double Damage Multiplier
+    // so the purple flash never becomes a real 2x boost.
+    //   parent ON  → child enabled, user picks freely
+    //   parent OFF → child disabled and forced OFF
+    //   child  ON  → parent auto-enabled (user wants them basically together)
+    //   child  OFF → parent untouched (user might want 1x without the flash)
+    auto syncDamageNotifyPurpleEnableState = [this](bool ddMultiplierOff) {
+        const bool parentOn = !ddMultiplierOff;
+        if (!parentOn)
+            ui->cbMetroidDamageNotifyPurple->setChecked(false);
+        ui->cbMetroidDamageNotifyPurple->setEnabled(parentOn);
+        ui->lblMetroidDamageNotifyPurpleDesc->setEnabled(parentOn);
+    };
+    connect(
+        ui->cbMetroidDisableDoubleDamageMultiplier,
+        &QCheckBox::toggled,
+        this,
+        [syncDamageNotifyPurpleEnableState](bool checked) {
+            syncDamageNotifyPurpleEnableState(!checked);
+        });
+    connect(
+        ui->cbMetroidDamageNotifyPurple,
+        &QCheckBox::toggled,
+        this,
+        [this](bool checked) {
+            if (checked && !ui->cbMetroidDisableDoubleDamageMultiplier->isChecked())
+                ui->cbMetroidDisableDoubleDamageMultiplier->setChecked(true);
+        });
+    syncDamageNotifyPurpleEnableState(
+        !ui->cbMetroidDisableDoubleDamageMultiplier->isChecked());
+
     // Pickup effect toggles
     ui->cbMetroidDisablePickupPowerUps->setChecked(
         instcfg.GetBool("Metroid.GameFeature.PowerUpPickupNoEffectPowerUps"));
