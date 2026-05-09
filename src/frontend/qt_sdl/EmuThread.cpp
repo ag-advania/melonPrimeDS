@@ -154,6 +154,19 @@ void EmuThread::run()
     double frameLimitError = 0.0;
     double lastMeasureTime = lastTime;
 
+#ifdef MELONPRIME_ENABLE_DEVELOPER_FEATURES
+    // Developer-only: per-frame interval statistics (jitter visualization).
+    // Reflected into the window title alongside FPS so P-12's hybrid
+    // Sleep+Spin behavior can be eyeballed without any extra UI.
+    const Uint64 perfFreqDev = SDL_GetPerformanceFrequency();
+    Uint64 prevFrameTickDev = SDL_GetPerformanceCounter();
+    double frameMsMinDev = 1.0e9;
+    double frameMsMaxDev = 0.0;
+    double frameMsSumDev = 0.0;
+    u32    frameMsCountDev = 0;
+    bool   frameMsPrimedDev = false; // skip first interval (start-of-run outlier)
+#endif
+
     u32 winUpdateCount = 0, winUpdateFreq = 1;
     u8 dsiVolumeLevel = 0x1F;
 
@@ -526,6 +539,24 @@ void EmuThread::run()
         }
 #endif // MELONPRIME_DS
 
+#ifdef MELONPRIME_ENABLE_DEVELOPER_FEATURES
+        // Developer-only: capture per-frame wall-clock interval.
+        // Cheap (one QPC + a few FP ops); never executed in release builds.
+        {
+            const Uint64 nowTickDev = SDL_GetPerformanceCounter();
+            if (frameMsPrimedDev) {
+                const double frameMs = static_cast<double>(nowTickDev - prevFrameTickDev)
+                                       * 1000.0 / static_cast<double>(perfFreqDev);
+                if (frameMs < frameMsMinDev) frameMsMinDev = frameMs;
+                if (frameMs > frameMsMaxDev) frameMsMaxDev = frameMs;
+                frameMsSumDev += frameMs;
+                ++frameMsCountDev;
+            }
+            prevFrameTickDev = nowTickDev;
+            frameMsPrimedDev = true;
+        }
+#endif
+
         nframes++;
         if (nframes >= 30)
         {
@@ -543,7 +574,24 @@ void EmuThread::run()
                 winUpdateFreq = 1;
 
             double actualfps = (59.8261 * 263.0) / nlines;
+#ifdef MELONPRIME_ENABLE_DEVELOPER_FEATURES
+            const double avgMsDev = frameMsCountDev > 0
+                ? frameMsSumDev / static_cast<double>(frameMsCountDev) : 0.0;
+            const double jitterMsDev = (frameMsCountDev > 0)
+                ? (frameMsMaxDev - frameMsMinDev) : 0.0;
+            const double showMinDev = (frameMsCountDev > 0) ? frameMsMinDev : 0.0;
+            const double showMaxDev = (frameMsCountDev > 0) ? frameMsMaxDev : 0.0;
+            snprintf(melontitle, sizeof(melontitle),
+                "[%d/%.0f min:%.2f avg:%.2f max:%.2fms jit:%.2f] melonDS " MELONDS_VERSION,
+                fps, actualfps,
+                showMinDev, avgMsDev, showMaxDev, jitterMsDev);
+            frameMsMinDev = 1.0e9;
+            frameMsMaxDev = 0.0;
+            frameMsSumDev = 0.0;
+            frameMsCountDev = 0;
+#else
             snprintf(melontitle, sizeof(melontitle), "[%d/%.0f] melonDS " MELONDS_VERSION, fps, actualfps);
+#endif
             changeWindowTitle(melontitle);
         }
         };
@@ -695,6 +743,15 @@ void EmuThread::run()
             nframes = 0;
             lastTime = SDL_GetPerformanceCounter() * perfCountsSec;
             lastMeasureTime = lastTime;
+#ifdef MELONPRIME_ENABLE_DEVELOPER_FEATURES
+            // Drop accumulated stats so the post-resume stats aren't polluted
+            // by the pause gap; re-prime on first frame after resume.
+            frameMsMinDev = 1.0e9;
+            frameMsMaxDev = 0.0;
+            frameMsSumDev = 0.0;
+            frameMsCountDev = 0;
+            frameMsPrimedDev = false;
+#endif
 
             emit windowUpdate();
 
