@@ -106,7 +106,13 @@ namespace MelonPrime {
 
         // Damage Notify Purple — disabled by default; cached so the per-frame
         // tick reads only one bool, never the config table.
-        const bool dnp = localCfg.GetBool("Metroid.GameFeature.DamageNotifyPurple");
+        // Parent gate: requires Disable Double Damage Multiplier ON so the
+        // 10-frame timer write can never become a real 2x boost. Even when the
+        // user/UI tries to enable Notify alone, force it OFF here as a safety
+        // net (handles hand-edited config files / mismatched upgrades).
+        const bool dnpRequested = localCfg.GetBool("Metroid.GameFeature.DamageNotifyPurple");
+        const bool ddMultDisabled = localCfg.GetBool("Metroid.GameFeature.DisableDoubleDamageMultiplier");
+        const bool dnp = dnpRequested && ddMultDisabled;
         if (m_damageNotifyPurpleEnabled && !dnp) {
             // Toggled off → drop accumulated baseline so a re-enable starts fresh.
             m_damageNotifyPurpleState.valid = false;

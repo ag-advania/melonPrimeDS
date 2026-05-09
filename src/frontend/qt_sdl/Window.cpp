@@ -823,10 +823,11 @@ MainWindow::MainWindow(int id, EmuInstance* inst, QWidget* parent) :
         actAudioSync->setChecked(emuInstance->doAudioSync);
 #ifdef MELONPRIME_DS
         actMetroidFixSF->setChecked(localCfg.GetBool("Metroid.BugFix.FixShadowFreeze"));
-        actMetroidDisableDoubleDamageMultiplier->setChecked(
-            localCfg.GetBool("Metroid.GameFeature.DisableDoubleDamageMultiplier"));
+        const bool ddMultiplierOff = !localCfg.GetBool("Metroid.GameFeature.DisableDoubleDamageMultiplier");
+        actMetroidDisableDoubleDamageMultiplier->setChecked(!ddMultiplierOff);
         actMetroidDamageNotifyPurple->setChecked(
-            localCfg.GetBool("Metroid.GameFeature.DamageNotifyPurple"));
+            !ddMultiplierOff && localCfg.GetBool("Metroid.GameFeature.DamageNotifyPurple"));
+        actMetroidDamageNotifyPurple->setEnabled(!ddMultiplierOff);
         actMetroidPowerUpPickupNoEffect->setChecked(
             localCfg.GetBool("Metroid.GameFeature.PowerUpPickupNoEffectPowerUps"));
 #endif
@@ -1997,6 +1998,12 @@ void MainWindow::onChangeMetroidFixSF(bool checked)
 void MainWindow::onChangeMetroidDisableDoubleDamageMultiplier(bool checked)
 {
     localCfg.SetBool("Metroid.GameFeature.DisableDoubleDamageMultiplier", checked);
+    // Parent OFF forces the Damage Notify Purple child off (cannot function safely).
+    if (!checked && localCfg.GetBool("Metroid.GameFeature.DamageNotifyPurple")) {
+        localCfg.SetBool("Metroid.GameFeature.DamageNotifyPurple", false);
+        actMetroidDamageNotifyPurple->setChecked(false);
+    }
+    actMetroidDamageNotifyPurple->setEnabled(checked);
     if (auto* core = emuThread->GetMelonPrimeCore())
         core->NotifyConfigChanged();
 }
@@ -2004,6 +2011,11 @@ void MainWindow::onChangeMetroidDisableDoubleDamageMultiplier(bool checked)
 void MainWindow::onChangeMetroidDamageNotifyPurple(bool checked)
 {
     localCfg.SetBool("Metroid.GameFeature.DamageNotifyPurple", checked);
+    // Child ON pulls parent ON (user wants them basically together).
+    if (checked && !localCfg.GetBool("Metroid.GameFeature.DisableDoubleDamageMultiplier")) {
+        localCfg.SetBool("Metroid.GameFeature.DisableDoubleDamageMultiplier", true);
+        actMetroidDisableDoubleDamageMultiplier->setChecked(true);
+    }
     if (auto* core = emuThread->GetMelonPrimeCore())
         core->NotifyConfigChanged();
 }
