@@ -3,15 +3,27 @@
 #include "MelonPrimeArm9Hook.h"
 #include "MelonPrime.h"
 #include "MelonPrimeCompilerHints.h"
+#include "MelonPrimeDef.h"
 #include "MelonPrimePatchShadowFreezeRuntimeHook.h"
 #include "MelonPrimePatchFixNoxusBladePersistence.h"
 #include "NDS.h"
+
+#if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES) && defined(MELONPRIME_ARM9_HOOK_DEBUG_LOG)
+#include "Platform.h"
+#endif
 
 #include <cstdint>
 
 namespace MelonPrime {
 
 namespace {
+
+#if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES) && defined(MELONPRIME_ARM9_HOOK_DEBUG_LOG)
+#define MP_ARM9_HOOK_LOG(...) \
+    melonDS::Platform::Log(melonDS::Platform::LogLevel::Info, __VA_ARGS__)
+#else
+#define MP_ARM9_HOOK_LOG(...) do {} while (0)
+#endif
 
 enum DispatchMask : uint8_t
 {
@@ -20,6 +32,9 @@ enum DispatchMask : uint8_t
     Dispatch_NoxusBlade                 = 1u << 2,
     Dispatch_ImmediateInputEdgeOverlay  = 1u << 3,
     Dispatch_TransformGate              = 1u << 4,
+    Dispatch_WeaponSwitch               = 1u << 5,
+    Dispatch_NativeZoomToggle           = 1u << 6,
+    Dispatch_NativeBipedFire            = 1u << 7,
 };
 
 struct DispatchEntry
@@ -30,10 +45,14 @@ struct DispatchEntry
 
 static DispatchEntry s_dispatchEntries[melonDS::NDS::ARM9InstructionHookMaxAddresses] = {};
 static uint32_t s_dispatchCount = 0;
+static uint32_t s_lastDispatchAddress = 0;
+static uint8_t s_lastDispatchMask = 0;
 
 static void ClearDispatchEntries() noexcept
 {
     s_dispatchCount = 0;
+    s_lastDispatchAddress = 0;
+    s_lastDispatchMask = 0;
     for (auto& entry : s_dispatchEntries)
         entry = {};
 }
@@ -50,71 +69,34 @@ static void AddDispatchAddress(uint32_t address, uint8_t mask) noexcept
     }
 
     if (s_dispatchCount >= melonDS::NDS::ARM9InstructionHookMaxAddresses)
+    {
+        MP_ARM9_HOOK_LOG(
+            "ARM9Hook RegisterDrop: address=%08X mask=%02X count=%u max=%u\n",
+            address,
+            mask,
+            s_dispatchCount,
+            melonDS::NDS::ARM9InstructionHookMaxAddresses);
         return;
+    }
 
     s_dispatchEntries[s_dispatchCount++] = {address, mask};
 }
 
 [[nodiscard]] static FORCE_INLINE uint8_t FindDispatchMask(uint32_t arm9ExecAddr) noexcept
 {
-    switch (s_dispatchCount)
+    if (LIKELY(arm9ExecAddr == s_lastDispatchAddress))
+        return s_lastDispatchMask;
+
+    for (uint32_t i = 0; i < s_dispatchCount; ++i)
     {
-    case 16:
-        if (s_dispatchEntries[15].Address == arm9ExecAddr) return s_dispatchEntries[15].Mask;
-        [[fallthrough]];
-    case 15:
-        if (s_dispatchEntries[14].Address == arm9ExecAddr) return s_dispatchEntries[14].Mask;
-        [[fallthrough]];
-    case 14:
-        if (s_dispatchEntries[13].Address == arm9ExecAddr) return s_dispatchEntries[13].Mask;
-        [[fallthrough]];
-    case 13:
-        if (s_dispatchEntries[12].Address == arm9ExecAddr) return s_dispatchEntries[12].Mask;
-        [[fallthrough]];
-    case 12:
-        if (s_dispatchEntries[11].Address == arm9ExecAddr) return s_dispatchEntries[11].Mask;
-        [[fallthrough]];
-    case 11:
-        if (s_dispatchEntries[10].Address == arm9ExecAddr) return s_dispatchEntries[10].Mask;
-        [[fallthrough]];
-    case 10:
-        if (s_dispatchEntries[9].Address == arm9ExecAddr) return s_dispatchEntries[9].Mask;
-        [[fallthrough]];
-    case 9:
-        if (s_dispatchEntries[8].Address == arm9ExecAddr) return s_dispatchEntries[8].Mask;
-        [[fallthrough]];
-    case 8:
-        if (s_dispatchEntries[7].Address == arm9ExecAddr) return s_dispatchEntries[7].Mask;
-        [[fallthrough]];
-    case 7:
-        if (s_dispatchEntries[6].Address == arm9ExecAddr) return s_dispatchEntries[6].Mask;
-        [[fallthrough]];
-    case 6:
-        if (s_dispatchEntries[5].Address == arm9ExecAddr) return s_dispatchEntries[5].Mask;
-        [[fallthrough]];
-    case 5:
-        if (s_dispatchEntries[4].Address == arm9ExecAddr) return s_dispatchEntries[4].Mask;
-        [[fallthrough]];
-    case 4:
-        if (s_dispatchEntries[0].Address == arm9ExecAddr) return s_dispatchEntries[0].Mask;
-        if (s_dispatchEntries[1].Address == arm9ExecAddr) return s_dispatchEntries[1].Mask;
-        if (s_dispatchEntries[2].Address == arm9ExecAddr) return s_dispatchEntries[2].Mask;
-        if (s_dispatchEntries[3].Address == arm9ExecAddr) return s_dispatchEntries[3].Mask;
-        return 0;
-    case 3:
-        if (s_dispatchEntries[0].Address == arm9ExecAddr) return s_dispatchEntries[0].Mask;
-        if (s_dispatchEntries[1].Address == arm9ExecAddr) return s_dispatchEntries[1].Mask;
-        if (s_dispatchEntries[2].Address == arm9ExecAddr) return s_dispatchEntries[2].Mask;
-        return 0;
-    case 2:
-        if (s_dispatchEntries[0].Address == arm9ExecAddr) return s_dispatchEntries[0].Mask;
-        if (s_dispatchEntries[1].Address == arm9ExecAddr) return s_dispatchEntries[1].Mask;
-        return 0;
-    case 1:
-        return (s_dispatchEntries[0].Address == arm9ExecAddr) ? s_dispatchEntries[0].Mask : 0;
-    default:
-        return 0;
+        if (s_dispatchEntries[i].Address == arm9ExecAddr)
+        {
+            s_lastDispatchAddress = arm9ExecAddr;
+            s_lastDispatchMask = s_dispatchEntries[i].Mask;
+            return s_dispatchEntries[i].Mask;
+        }
     }
+    return 0;
 }
 
 static bool DispatcherCallback(
@@ -130,22 +112,36 @@ static bool DispatcherCallback(
     if (UNLIKELY(mask == 0))
         return false;
 
+    // ARM9Hook_Install() always passes a non-null MelonPrimeCore as userdata,
+    // and ClearARM9InstructionHook() detaches the dispatcher entirely, so when
+    // we get here core is by construction non-null. Skip the per-handler null
+    // checks that the previous design carried.
+    auto* const core = static_cast<MelonPrimeCore*>(userdata);
+
     if ((mask & Dispatch_NativeAimDelta) != 0)
     {
-        if (auto* core = static_cast<MelonPrimeCore*>(userdata))
-        {
-            if (core->GetNativeAimHookMode() == 2)
-                core->NativeAimDeltaHookPostFoldWrite_DispatchCheck(nds, arm9ExecAddr, regs);
-            else
-                core->NativeAimDeltaHookRegisterInjection_DispatchCheck(nds, arm9ExecAddr, regs);
-        }
+        if (core->GetNativeAimHookMode() == 2)
+            core->NativeAimDeltaHookPostFoldWrite_DispatchCheck(nds, arm9ExecAddr, regs);
+        else
+            core->NativeAimDeltaHookRegisterInjection_DispatchCheck(nds, arm9ExecAddr, regs);
+    }
+
+    if ((mask & Dispatch_NativeZoomToggle) != 0)
+    {
+        if (core->NativeZoomToggleHook_DispatchCheckAndRedirect(
+                nds, arm9ExecAddr, regs, redirectExecAddr))
+            return true;
+    }
+
+    if ((mask & Dispatch_NativeBipedFire) != 0)
+    {
+        if (core->NativeBipedFireHook_DispatchCheckAndRedirect(
+                nds, arm9ExecAddr, regs, redirectExecAddr))
+            return true;
     }
 
     if ((mask & Dispatch_ImmediateInputEdgeOverlay) != 0)
-    {
-        if (auto* core = static_cast<MelonPrimeCore*>(userdata))
-            core->ImmediateInputEdgeOverlay_DispatchCheck(nds, arm9ExecAddr, regs);
-    }
+        core->ImmediateInputEdgeOverlay_DispatchCheck(nds, arm9ExecAddr, regs);
 
     // Side-effect hook: runs regardless of whether a redirect follows.
     if ((mask & Dispatch_NoxusBlade) != 0)
@@ -154,12 +150,16 @@ static bool DispatcherCallback(
     // Redirect hooks: may change execution address.
     if ((mask & Dispatch_TransformGate) != 0)
     {
-        if (auto* core = static_cast<MelonPrimeCore*>(userdata))
-        {
-            if (core->TransformGateHook_DispatchCheckAndRedirect(
-                    nds, arm9ExecAddr, regs, redirectExecAddr))
-                return true;
-        }
+        if (core->TransformGateHook_DispatchCheckAndRedirect(
+                nds, arm9ExecAddr, regs, redirectExecAddr))
+            return true;
+    }
+
+    if ((mask & Dispatch_WeaponSwitch) != 0)
+    {
+        if (core->WeaponSwitchHook_DispatchCheckAndRedirect(
+                nds, arm9ExecAddr, regs, redirectExecAddr))
+            return true;
     }
 
     if ((mask & Dispatch_ShadowFreeze) != 0)
@@ -194,52 +194,132 @@ void ARM9Hook_Install(
     uint32_t moduleAddresses[melonDS::NDS::ARM9InstructionHookMaxAddresses] = {};
     uint32_t moduleCount = 0;
 
-    // Register addresses for BOTH hook modes so mid-game mode switching works.
-    // DispatcherCallback checks GetNativeAimHookMode() at call time to route
-    // to the correct handler; whichever mode's PCs don't match will early-return
-    // inside their DispatchCheck without side effects.
-    moduleCount = MelonPrimeCore::NativeAimDeltaHookRegisterInjection_GetAddresses(
-        romGroupIndex, moduleAddresses, melonDS::NDS::ARM9InstructionHookMaxAddresses);
-    for (uint32_t i = 0; i < moduleCount; ++i)
-        AddDispatchAddress(moduleAddresses[i], Dispatch_NativeAimDelta);
+    auto addModuleAddresses = [&](uint8_t mask) {
+        for (uint32_t i = 0; i < moduleCount; ++i)
+            AddDispatchAddress(moduleAddresses[i], mask);
+    };
 
-    moduleCount = MelonPrimeCore::NativeAimDeltaHookPostFoldWrite_GetAddresses(
-        romGroupIndex, moduleAddresses, melonDS::NDS::ARM9InstructionHookMaxAddresses);
-    for (uint32_t i = 0; i < moduleCount; ++i)
-        AddDispatchAddress(moduleAddresses[i], Dispatch_NativeAimDelta);
+    int nativeAimHookMode = cfg.GetInt(CfgKey::NativeAimHookMode);
+#ifndef MELONPRIME_ENABLE_DEVELOPER_FEATURES
+    nativeAimHookMode = 0;
+#endif
+    if (!cfg.GetBool(CfgKey::DisableMphAimSmoothing))
+        nativeAimHookMode = 0;
 
+    // Register only hooks that can actually run for the current config. Each
+    // registered ARM9 PC becomes a JIT trampoline call site, so leaving disabled
+    // features registered is visible in the in-game hot path.
+#ifdef MELONPRIME_ENABLE_DEVELOPER_FEATURES
+    const bool enableImmediateOverlay = cfg.GetBool(CfgKey::ImmediateInputEdgeOverlay);
+    const bool enableNativeZoomToggle =
+        cfg.GetInt(CfgKey::ZoomInputMethod) == ZoomInputMethod::NewNativeToggle;
+    const bool enableNativeBipedFire =
+        cfg.GetInt(CfgKey::BipedFireMethod) != BipedFireMethod::LegacyInput;
+    const bool enableNoxusBlade =
+        cfg.GetBool("Metroid.BugFix.FixNoxusBladePersistence");
+#else
+    constexpr bool enableImmediateOverlay = false;
+    constexpr bool enableNativeZoomToggle = false;
+    constexpr bool enableNativeBipedFire = false;
+    constexpr bool enableNoxusBlade = false;
+#endif
+    const bool enableTransformGate = cfg.GetBool(CfgKey::DirectAltFormTransform);
+    const bool enableWeaponSwitch =
+        cfg.GetInt(CfgKey::WeaponSwitchMethod) != WeaponSwitchMethod::LegacyTouch;
+
+    if (nativeAimHookMode == 1)
+    {
+        moduleCount = MelonPrimeCore::NativeAimDeltaHookRegisterInjection_GetAddresses(
+            romGroupIndex, moduleAddresses, melonDS::NDS::ARM9InstructionHookMaxAddresses);
+        addModuleAddresses(Dispatch_NativeAimDelta);
+    }
+    else if (nativeAimHookMode == 2)
+    {
+        moduleCount = MelonPrimeCore::NativeAimDeltaHookPostFoldWrite_GetAddresses(
+            romGroupIndex, moduleAddresses, melonDS::NDS::ARM9InstructionHookMaxAddresses);
+        addModuleAddresses(Dispatch_NativeAimDelta);
+    }
+
+    // Keep ShadowFreeze registered even when disabled. The quick menu toggles
+    // this live, and the dispatch path already checks the cached config bit.
     moduleCount = ShadowFreezeRuntimeHook_GetAddresses(
         romGroupIndex,
         moduleAddresses,
         melonDS::NDS::ARM9InstructionHookMaxAddresses);
-    for (uint32_t i = 0; i < moduleCount; ++i)
-        AddDispatchAddress(moduleAddresses[i], Dispatch_ShadowFreeze);
+    addModuleAddresses(Dispatch_ShadowFreeze);
 
-    moduleCount = FixNoxusBladePersistence_GetAddresses(
-        romGroupIndex,
-        moduleAddresses,
-        melonDS::NDS::ARM9InstructionHookMaxAddresses);
-    for (uint32_t i = 0; i < moduleCount; ++i)
-        AddDispatchAddress(moduleAddresses[i], Dispatch_NoxusBlade);
+    if (enableNoxusBlade)
+    {
+        moduleCount = FixNoxusBladePersistence_GetAddresses(
+            romGroupIndex,
+            moduleAddresses,
+            melonDS::NDS::ARM9InstructionHookMaxAddresses);
+        addModuleAddresses(Dispatch_NoxusBlade);
+    }
 
-    moduleCount = MelonPrimeCore::ImmediateInputEdgeOverlay_GetAddresses(
-        romGroupIndex,
-        moduleAddresses,
-        melonDS::NDS::ARM9InstructionHookMaxAddresses);
-    for (uint32_t i = 0; i < moduleCount; ++i)
-        AddDispatchAddress(moduleAddresses[i], Dispatch_ImmediateInputEdgeOverlay);
+    if (enableImmediateOverlay)
+    {
+        moduleCount = MelonPrimeCore::ImmediateInputEdgeOverlay_GetAddresses(
+            romGroupIndex,
+            moduleAddresses,
+            melonDS::NDS::ARM9InstructionHookMaxAddresses);
+        addModuleAddresses(Dispatch_ImmediateInputEdgeOverlay);
+    }
 
-    moduleCount = MelonPrimeCore::TransformGateHook_GetAddresses(
-        romGroupIndex,
-        moduleAddresses,
-        melonDS::NDS::ARM9InstructionHookMaxAddresses);
-    for (uint32_t i = 0; i < moduleCount; ++i)
-        AddDispatchAddress(moduleAddresses[i], Dispatch_TransformGate);
+    if (enableNativeZoomToggle)
+    {
+        moduleCount = MelonPrimeCore::NativeZoomToggleHook_GetAddresses(
+            romGroupIndex,
+            moduleAddresses,
+            melonDS::NDS::ARM9InstructionHookMaxAddresses);
+        addModuleAddresses(Dispatch_NativeZoomToggle);
+    }
+
+    if (enableNativeBipedFire)
+    {
+        moduleCount = MelonPrimeCore::NativeBipedFireHook_GetAddresses(
+            romGroupIndex,
+            moduleAddresses,
+            melonDS::NDS::ARM9InstructionHookMaxAddresses);
+        addModuleAddresses(Dispatch_NativeBipedFire);
+    }
+
+    if (enableTransformGate)
+    {
+        moduleCount = MelonPrimeCore::TransformGateHook_GetAddresses(
+            romGroupIndex,
+            moduleAddresses,
+            melonDS::NDS::ARM9InstructionHookMaxAddresses);
+        addModuleAddresses(Dispatch_TransformGate);
+    }
+
+    if (enableWeaponSwitch)
+    {
+        moduleCount = MelonPrimeCore::WeaponSwitchHook_GetAddresses(
+            romGroupIndex,
+            moduleAddresses,
+            melonDS::NDS::ARM9InstructionHookMaxAddresses);
+        addModuleAddresses(Dispatch_WeaponSwitch);
+    }
 
     uint32_t addresses[melonDS::NDS::ARM9InstructionHookMaxAddresses] = {};
     const uint32_t count = s_dispatchCount;
     for (uint32_t i = 0; i < count; ++i)
         addresses[i] = s_dispatchEntries[i].Address;
+
+    MP_ARM9_HOOK_LOG(
+        "ARM9Hook Install: rom=%u count=%u max=%u\n",
+        romGroupIndex,
+        count,
+        melonDS::NDS::ARM9InstructionHookMaxAddresses);
+    for (uint32_t i = 0; i < count; ++i)
+    {
+        MP_ARM9_HOOK_LOG(
+            "ARM9Hook Address[%u]: %08X mask=%02X\n",
+            i,
+            s_dispatchEntries[i].Address,
+            s_dispatchEntries[i].Mask);
+    }
 
     if (count > 0)
     {
@@ -277,5 +357,7 @@ void ARM9Hook_ResetPatchState()
 }
 
 } // namespace MelonPrime
+
+#undef MP_ARM9_HOOK_LOG
 
 #endif // MELONPRIME_DS

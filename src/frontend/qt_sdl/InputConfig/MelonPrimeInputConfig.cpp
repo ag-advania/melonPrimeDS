@@ -18,6 +18,7 @@
 #include <QCheckBox>
 #include <QColorDialog>
 #include <QHBoxLayout>
+#include <QVBoxLayout>
 #include <QSlider>
 #include <QPainter>
 #include <QImageReader>
@@ -67,6 +68,7 @@ MelonPrimeInputConfig::MelonPrimeInputConfig(EmuInstance* emu, QWidget* parent) 
 
     setupKeyBindings(instcfg, keycfg, joycfg);
     setupSensitivityAndToggles(instcfg);
+    setupInputMethodSection(instcfg);
     setupCollapsibleSections(instcfg);
     setupCustomHudWidgets(instcfg);
     setupPreviewConnections();
@@ -134,8 +136,10 @@ void MelonPrimeInputConfig::setupSensitivityAndToggles(Config::Table& instcfg)
     ui->cbMetroidEnableStylusMode->setChecked(instcfg.GetBool("Metroid.Enable.stylusMode"));
     ui->cbMetroidDisableMphAimSmoothing->setChecked(instcfg.GetBool("Metroid.Aim.Disable.MphAimSmoothing"));
     ui->cbMetroidEnableAimAccumulator->setChecked(instcfg.GetBool("Metroid.Aim.Enable.Accumulator"));
-    const int nativeAimHookMode = instcfg.GetInt("Metroid.Aim.NativeHookMode");
-    ui->cbMetroidEnableNativeAimPostFoldWrite->setChecked(nativeAimHookMode == 2);
+    const int nativeAimHookMode =
+        kDeveloperOnlyFeaturesEnabled ? instcfg.GetInt("Metroid.Aim.NativeHookMode") : 0;
+    ui->cbMetroidEnableNativeAimPostFoldWrite->setChecked(
+        kDeveloperOnlyFeaturesEnabled && nativeAimHookMode == 2);
     ui->cbMetroidEnableNativeAimRegisterInjection->setChecked(
         kDeveloperOnlyFeaturesEnabled && nativeAimHookMode == 1);
     ui->cbMetroidEnableImmediateInputEdgeOverlay->setChecked(
@@ -183,18 +187,244 @@ void MelonPrimeInputConfig::setupSensitivityAndToggles(Config::Table& instcfg)
         ui->lblMetroidFixNoxusBladePersistenceWarning->setText(
             "Developer build only: this fix is unstable and the blade may still remain active in some cases, especially in the Korean version.");
         ui->cbMetroidEnableInstantAimFollow->setToolTip("Developer-only option enabled in this build.");
+        ui->cbMetroidEnableNativeAimPostFoldWrite->setToolTip("Developer-only option enabled in this build.");
         ui->cbMetroidEnableNativeAimRegisterInjection->setToolTip("Developer-only option enabled in this build.");
         ui->cbMetroidEnableImmediateInputEdgeOverlay->setToolTip("Developer-only option enabled in this build.");
         ui->lblMetroidInstantAimFollowDesc->setText(
             "The game normally moves currentAim only about 10% toward targetAim each update, which can feel like mouse lag. This patch makes currentAim follow targetAim instantly. Developer build only.");
     }
+    else {
+        ui->cbMetroidEnableNativeAimPostFoldWrite->setToolTip(
+            "Developer-only option. Build with MELONPRIME_ENABLE_DEVELOPER_FEATURES to enable it.");
+    }
     ui->cbMetroidUseFirmwareLanguage->setChecked(instcfg.GetBool("Metroid.BugFix.UseFirmwareLanguage"));
     ui->cbMetroidShowHeadshotOnline->setChecked(instcfg.GetBool("Metroid.GameFeature.ShowHeadshotOnline"));
     ui->cbMetroidShowEnemyHpMeterOnline->setChecked(instcfg.GetBool("Metroid.GameFeature.ShowEnemyHpMeterOnline"));
+    ui->cbMetroidDisableDoubleDamageMultiplier->setChecked(
+        instcfg.GetBool("Metroid.GameFeature.DisableDoubleDamageMultiplier"));
+
+    // Pickup effect toggles
+    ui->cbMetroidDisablePickupPowerUps->setChecked(
+        instcfg.GetBool("Metroid.GameFeature.PowerUpPickupNoEffectPowerUps"));
+    ui->cbMetroidDisablePickupDoubleDamage->setChecked(
+        instcfg.GetBool("Metroid.GameFeature.PowerUpPickupNoEffectDoubleDamage"));
+    ui->cbMetroidDisablePickupCloak->setChecked(
+        instcfg.GetBool("Metroid.GameFeature.PowerUpPickupNoEffectCloak"));
+    ui->cbMetroidDisablePickupDeathalt->setChecked(
+        instcfg.GetBool("Metroid.GameFeature.PowerUpPickupNoEffectDeathalt"));
+    auto updatePickupPowerUpChildren = [this](bool disableAllPowerUps, bool syncChildren) {
+        if (syncChildren) {
+            ui->cbMetroidDisablePickupDoubleDamage->setChecked(disableAllPowerUps);
+            ui->cbMetroidDisablePickupCloak->setChecked(disableAllPowerUps);
+            ui->cbMetroidDisablePickupDeathalt->setChecked(disableAllPowerUps);
+        }
+        ui->cbMetroidDisablePickupDoubleDamage->setEnabled(!disableAllPowerUps);
+        ui->cbMetroidDisablePickupCloak->setEnabled(!disableAllPowerUps);
+        ui->cbMetroidDisablePickupDeathalt->setEnabled(!disableAllPowerUps);
+    };
+    connect(
+        ui->cbMetroidDisablePickupPowerUps,
+        &QCheckBox::toggled,
+        this,
+        [updatePickupPowerUpChildren](bool disableAllPowerUps) {
+            updatePickupPowerUpChildren(disableAllPowerUps, true);
+        });
+    const bool disableAllPowerUps = ui->cbMetroidDisablePickupPowerUps->isChecked();
+    updatePickupPowerUpChildren(disableAllPowerUps, disableAllPowerUps);
 
     // In-game scaling
     ui->cbMetroidInGameAspectRatio->setChecked(instcfg.GetBool("Metroid.Visual.InGameAspectRatio"));
     ui->comboMetroidInGameAspectRatioMode->setCurrentIndex(instcfg.GetInt("Metroid.Visual.InGameAspectRatioMode"));
+}
+
+
+void MelonPrimeInputConfig::setupInputMethodSection(Config::Table& instcfg)
+{
+    if (m_btnToggleInputMethod
+        || m_sectionInputMethod
+        || m_cbMetroidUseNewWeaponSwitchMethod
+        || m_cbMetroidUseNewBipedFireMethod
+        || m_cbMetroidUseNewTransformMethod
+        || m_cbMetroidUseNewZoomMethod
+        || m_cbMetroidUseNewZoomMethod2)
+    {
+        return;
+    }
+
+    auto* parentLayout = qobject_cast<QVBoxLayout*>(ui->sectionInputSettings->parentWidget()->layout());
+    if (!parentLayout)
+        return;
+
+    m_btnToggleInputMethod = new QPushButton(this);
+    m_btnToggleInputMethod->setCheckable(true);
+    m_btnToggleInputMethod->setChecked(false);
+    m_btnToggleInputMethod->setFlat(true);
+    m_btnToggleInputMethod->setText(QString::fromUtf8("▶ INPUT METHOD"));
+    m_btnToggleInputMethod->setStyleSheet(
+        "QPushButton { text-align: left; font-weight: bold; padding: 4px; } "
+        "QPushButton::checked { font-weight: bold; }");
+
+    m_sectionInputMethod = new QWidget(this);
+    auto* sectionLayout = new QVBoxLayout(m_sectionInputMethod);
+    auto* developerLayout = ui->vboxDeveloperOnly;
+    int developerInsertIndex = developerLayout->indexOf(ui->cbMetroidEnableNativeAimRegisterInjection);
+    if (developerInsertIndex < 0)
+        developerInsertIndex = developerLayout->count();
+    auto addDeveloperSpacing = [&developerLayout, &developerInsertIndex]() {
+        developerLayout->insertSpacing(developerInsertIndex++, 6);
+    };
+    auto addDeveloperWidget = [&developerLayout, &developerInsertIndex](QWidget* widget) {
+        developerLayout->insertWidget(developerInsertIndex++, widget);
+    };
+    auto moveExistingWidget = [](QWidget* widget) {
+        if (!widget)
+            return;
+        if (QWidget* const parent = widget->parentWidget()) {
+            if (QLayout* const layout = parent->layout())
+                layout->removeWidget(widget);
+        }
+    };
+
+    moveExistingWidget(ui->cbMetroidEnableNativeAimPostFoldWrite);
+    moveExistingWidget(ui->lblMetroidNativeAimHookModeDesc);
+    ui->cbMetroidEnableNativeAimPostFoldWrite->setParent(ui->sectionDeveloperOnly);
+    ui->lblMetroidNativeAimHookModeDesc->setParent(ui->sectionDeveloperOnly);
+    ui->cbMetroidEnableNativeAimPostFoldWrite->setEnabled(false);
+    ui->lblMetroidNativeAimHookModeDesc->setEnabled(false);
+    ui->lblMetroidNativeAimHookModeDesc->setText(
+        "PostFold Write hooks after TouchInputProcessor and covers all AltForms including spec108=0 (Samus/Kanden/Noxus/Spire). Developer build only.");
+    ui->lblMetroidNativeAimHookModeDesc->setStyleSheet("QLabel { margin-left: 20px; }");
+    addDeveloperSpacing();
+    addDeveloperWidget(ui->cbMetroidEnableNativeAimPostFoldWrite);
+    addDeveloperWidget(ui->lblMetroidNativeAimHookModeDesc);
+
+    m_cbMetroidUseNewWeaponSwitchMethod = new QCheckBox(
+        "Use New Method for Weapon Change",
+        m_sectionInputMethod);
+    m_cbMetroidUseNewWeaponSwitchMethod->setToolTip(
+        "Checked: use the native ARM9 game function hook. "
+        "Unchecked: use the older touch/menu simulation path.");
+    m_cbMetroidUseNewWeaponSwitchMethod->setChecked(
+        std::clamp(instcfg.GetInt("Metroid.Input.WeaponSwitchMethod"), 0, 1) == 0);
+    sectionLayout->addWidget(m_cbMetroidUseNewWeaponSwitchMethod);
+
+    auto* desc = new QLabel(
+        "Checked uses the game's native TryEquipWeapon path through an ARM9 hook. "
+        "Unchecked keeps the older simulated touch/menu weapon switching path for compatibility testing.",
+        m_sectionInputMethod);
+    desc->setWordWrap(true);
+    desc->setStyleSheet("QLabel { margin-left: 20px; }");
+    sectionLayout->addWidget(desc);
+
+    m_cbMetroidUseNewBipedFireMethod = new QCheckBox(
+        "Use New Method for Biped Fire",
+        ui->sectionDeveloperOnly);
+    m_cbMetroidUseNewBipedFireMethod->setToolTip(
+        "Checked: inject a native fire edge inside the game's Biped fire update. "
+        "Unchecked: use the older fixed input/overlay path.");
+    m_cbMetroidUseNewBipedFireMethod->setChecked(
+        kDeveloperOnlyFeaturesEnabled
+            && std::clamp(instcfg.GetInt("Metroid.Input.BipedFireMethod"), 0, 1) == 0);
+    m_cbMetroidUseNewBipedFireMethod->setEnabled(kDeveloperOnlyFeaturesEnabled);
+    addDeveloperSpacing();
+    addDeveloperWidget(m_cbMetroidUseNewBipedFireMethod);
+
+    auto* fireDesc = new QLabel(
+        "Checked sets the fire input-helper result true at the game's Biped fire edge hook, "
+        "letting the original cooldown, ammo, projectile, HUD, and SFX path run naturally. "
+        "Legacy Method keeps the older DS input/ImmediateInputEdgeOverlay fire path.",
+        ui->sectionDeveloperOnly);
+    fireDesc->setWordWrap(true);
+    fireDesc->setEnabled(kDeveloperOnlyFeaturesEnabled);
+    fireDesc->setStyleSheet("QLabel { margin-left: 20px; }");
+    addDeveloperWidget(fireDesc);
+
+    m_cbMetroidUseNewTransformMethod = new QCheckBox(
+        "Use New Method for Alt-Form Transform",
+        m_sectionInputMethod);
+    m_cbMetroidUseNewTransformMethod->setToolTip(
+        "Checked: use the native ARM9 TransformRequest hook. "
+        "Unchecked: use the older touch/menu simulation path.");
+    m_cbMetroidUseNewTransformMethod->setChecked(
+        instcfg.GetBool("Metroid.Input.Enable.DirectAltFormTransform"));
+    sectionLayout->addSpacing(6);
+    sectionLayout->addWidget(m_cbMetroidUseNewTransformMethod);
+
+    moveExistingWidget(ui->cbMetroidEnableDirectAltFormTransform);
+    moveExistingWidget(ui->lblMetroidDirectAltFormTransformDesc);
+    ui->cbMetroidEnableDirectAltFormTransform->hide();
+    ui->lblMetroidDirectAltFormTransformDesc->setText(
+        "New Method redirects a short native input gate into the game's TransformRequest path. "
+        "Legacy Method keeps the older simulated touch/menu transform path.");
+    ui->lblMetroidDirectAltFormTransformDesc->setStyleSheet("QLabel { margin-left: 20px; }");
+    sectionLayout->addWidget(ui->lblMetroidDirectAltFormTransformDesc);
+
+    m_cbMetroidUseNewZoomMethod = new QCheckBox(
+        "Use New Method for Zoom",
+        m_sectionInputMethod);
+    m_cbMetroidUseNewZoomMethod->setToolTip(
+        "Checked: use the current in-game zoom binding from the player's control preset. "
+        "Unchecked: use the older fixed R-button path.");
+    const int zoomMethod = std::clamp(instcfg.GetInt("Metroid.Input.ZoomMethod"), 0, 2);
+    m_cbMetroidUseNewZoomMethod->setChecked(zoomMethod == 0);
+    sectionLayout->addSpacing(6);
+    sectionLayout->addWidget(m_cbMetroidUseNewZoomMethod);
+
+    m_cbMetroidUseNewZoomMethod2 = new QCheckBox(
+        "Use New Method 2 for Zoom",
+        ui->sectionDeveloperOnly);
+    m_cbMetroidUseNewZoomMethod2->setToolTip(
+        "Checked: toggle native weapon zoom by calling the game's SetPlayerScopeZoom setter. "
+        "Unchecked with New Method also off: use Legacy fixed R-button input.");
+    m_cbMetroidUseNewZoomMethod2->setChecked(kDeveloperOnlyFeaturesEnabled && zoomMethod == 2);
+    m_cbMetroidUseNewZoomMethod2->setEnabled(kDeveloperOnlyFeaturesEnabled);
+    addDeveloperSpacing();
+    addDeveloperWidget(m_cbMetroidUseNewZoomMethod2);
+
+    connect(
+        m_cbMetroidUseNewZoomMethod,
+        &QCheckBox::checkStateChanged,
+        this,
+        [this](Qt::CheckState state) {
+            if (state == Qt::Checked && m_cbMetroidUseNewZoomMethod2)
+                m_cbMetroidUseNewZoomMethod2->setChecked(false);
+        });
+    connect(
+        m_cbMetroidUseNewZoomMethod2,
+        &QCheckBox::checkStateChanged,
+        this,
+        [this](Qt::CheckState state) {
+            if (state == Qt::Checked && m_cbMetroidUseNewZoomMethod)
+                m_cbMetroidUseNewZoomMethod->setChecked(false);
+        });
+
+    auto* zoomDesc = new QLabel(
+        "New Method reads the game's zoom binding table, so Touch and Dual presets can map zoom to different DS buttons. "
+        "It is also slightly lower latency than Legacy Method. "
+        "If both this box and Developer Only's New Method 2 are unchecked, Legacy Method always drives the fixed R button like the older input path.",
+        m_sectionInputMethod);
+    zoomDesc->setWordWrap(true);
+    zoomDesc->setStyleSheet("QLabel { margin-left: 20px; }");
+    sectionLayout->addWidget(zoomDesc);
+
+    auto* zoom2Desc = new QLabel(
+        "New Method 2 toggles native zoom state through SetPlayerScopeZoom on each press. "
+        "It is mutually exclusive with Use New Method for Zoom in the Input Method section.",
+        ui->sectionDeveloperOnly);
+    zoom2Desc->setWordWrap(true);
+    zoom2Desc->setEnabled(kDeveloperOnlyFeaturesEnabled);
+    zoom2Desc->setStyleSheet("QLabel { margin-left: 20px; }");
+    addDeveloperWidget(zoom2Desc);
+
+    int insertIndex = parentLayout->indexOf(ui->sectionInputSettings);
+    if (insertIndex < 0)
+        insertIndex = parentLayout->count();
+    else
+        ++insertIndex;
+
+    parentLayout->insertWidget(insertIndex, m_btnToggleInputMethod);
+    parentLayout->insertWidget(insertIndex + 1, m_sectionInputMethod);
+    updateAimControlsForStylusMode(ui->cbMetroidEnableStylusMode->isChecked());
 }
 
 
@@ -209,16 +439,26 @@ void MelonPrimeInputConfig::updateAimControlsForStylusMode(bool stylusEnabled)
     ui->metroidAimAdjustSpinBox->setEnabled(enableAimControls);
     ui->metroidAimAdjustLabel->setEnabled(enableAimControls);
     ui->cbMetroidEnableAimAccumulator->setEnabled(enableAimControls);
-    const bool enableAimHooks = enableAimControls && ui->cbMetroidDisableMphAimSmoothing->isChecked();
-    const bool enableRegisterInjection = kDeveloperOnlyFeaturesEnabled && enableAimHooks;
+    const bool enableAimHooks =
+        kDeveloperOnlyFeaturesEnabled
+        && enableAimControls
+        && ui->cbMetroidDisableMphAimSmoothing->isChecked();
+    const bool enableRegisterInjection = enableAimHooks;
     ui->cbMetroidEnableNativeAimPostFoldWrite->setEnabled(enableAimHooks);
     ui->lblMetroidNativeAimHookModeDesc->setEnabled(enableAimHooks);
     ui->cbMetroidEnableNativeAimRegisterInjection->setEnabled(enableRegisterInjection);
     ui->lblMetroidNativeAimRegisterInjectionDesc->setEnabled(enableRegisterInjection);
     ui->cbMetroidEnableImmediateInputEdgeOverlay->setEnabled(kDeveloperOnlyFeaturesEnabled && enableAimControls);
     ui->lblMetroidImmediateInputEdgeOverlayDesc->setEnabled(kDeveloperOnlyFeaturesEnabled && enableAimControls);
-    ui->cbMetroidEnableDirectAltFormTransform->setEnabled(enableAimControls);
-    ui->lblMetroidDirectAltFormTransformDesc->setEnabled(enableAimControls);
+    if (m_cbMetroidUseNewTransformMethod)
+        m_cbMetroidUseNewTransformMethod->setEnabled(true);
+    if (m_cbMetroidUseNewBipedFireMethod)
+        m_cbMetroidUseNewBipedFireMethod->setEnabled(kDeveloperOnlyFeaturesEnabled);
+    if (m_cbMetroidUseNewZoomMethod)
+        m_cbMetroidUseNewZoomMethod->setEnabled(true);
+    if (m_cbMetroidUseNewZoomMethod2)
+        m_cbMetroidUseNewZoomMethod2->setEnabled(kDeveloperOnlyFeaturesEnabled);
+    ui->lblMetroidDirectAltFormTransformDesc->setEnabled(true);
     // Original public behavior:
     // ui->cbMetroidEnableInstantAimFollow->setEnabled(enableAimControls);
     // ui->lblMetroidInstantAimFollowDesc->setEnabled(enableAimControls);
@@ -244,6 +484,13 @@ void MelonPrimeInputConfig::setupCollapsibleSections(Config::Table& instcfg)
     };
     // Other Metroid Settings 2 tab
     setupToggle(ui->btnToggleInputSettings, ui->sectionInputSettings, "INPUT SETTINGS",   "Metroid.UI.SectionInputSettings");
+    if (m_btnToggleInputMethod && m_sectionInputMethod) {
+        setupToggle(
+            m_btnToggleInputMethod,
+            m_sectionInputMethod,
+            "INPUT METHOD",
+            "Metroid.UI.SectionInputMethod");
+    }
     setupToggle(ui->btnToggleScreenSync,    ui->sectionScreenSync,    "SCREEN SYNC",      "Metroid.UI.SectionScreenSync");
     setupToggle(ui->btnToggleCursorClipSettings, ui->sectionCursorClipSettings, "CURSOR CLIP SETTINGS",  "Metroid.UI.SectionCursorClipSettings");
     setupToggle(ui->btnToggleInGameApply, ui->sectionInGameApply, "IN-GAME APPLY",  "Metroid.UI.SectionInGameApply");
@@ -252,6 +499,9 @@ void MelonPrimeInputConfig::setupCollapsibleSections(Config::Table& instcfg)
     setupToggle(ui->btnToggleSensitivity, ui->sectionSensitivity, "SENSITIVITY",      "Metroid.UI.SectionSensitivity");
     setupToggle(ui->btnToggleBugFix,        ui->sectionBugFix,        "BUG FIXES",                   "Metroid.UI.SectionBugFix");
     setupToggle(ui->btnToggleGameFeature,   ui->sectionGameFeature,   "GAME FEATURE IMPROVEMENTS",   "Metroid.UI.SectionGameFeature");
+    setupToggle(ui->btnToggleDisableFeatures, ui->sectionDisableFeatures, "DISABLE FEATURES",         "Metroid.UI.SectionDisableFeatures");
+    setupToggle(ui->btnToggleDisablePickingUpSpecificItems, ui->sectionDisablePickingUpSpecificItems,
+                "Power-Up Pickup Effects", "Metroid.UI.SectionPowerUpPickupEffects");
     setupToggle(ui->btnToggleGameplay,      ui->sectionGameplay,      "GAMEPLAY TOGGLES",             "Metroid.UI.SectionGameplay");
     setupToggle(ui->btnToggleVideo,       ui->sectionVideo,       "VIDEO QUALITY",    "Metroid.UI.SectionVideo");
     setupToggle(ui->btnToggleVolume,      ui->sectionVolume,      "VOLUME",           "Metroid.UI.SectionVolume");
@@ -1580,7 +1830,7 @@ void MelonPrimeInputConfig::setupCustomHudWidgets(Config::Table& instcfg)
             sb->setRange(p.min, p.max);
             sb->setSingleStep(p.step);
             sb->setValue(instcfg.GetInt(p.cfgKey));
-            sb->setFixedWidth(58);
+            sb->setFixedWidth(78);
 
             hlay->addWidget(slider, 1);
             hlay->addWidget(sb);

@@ -190,6 +190,8 @@ private slots:
     void onOpenMetroidInputSettings();
     void onOpenMetroidOtherSettings();
     void onChangeMetroidFixSF(bool checked);
+    void onChangeMetroidDisableDoubleDamageMultiplier(bool checked);
+    void onChangeMetroidPowerUpPickupNoEffect(bool checked);
 #endif // MELONPRIME_DS
 
 private:
@@ -303,6 +305,8 @@ public:
     QAction* actAudioSync;
 #ifdef MELONPRIME_DS
     QAction* actMetroidFixSF;
+    QAction* actMetroidDisableDoubleDamageMultiplier;
+    QAction* actMetroidPowerUpPickupNoEffect;
 #endif
 
     QAction* actAbout;

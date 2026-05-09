@@ -17,6 +17,7 @@
 #include "MelonPrimeHudRender.h"
 #endif
 #ifdef MELONPRIME_DS
+#include "MelonPrime.h"
 #include "MelonPrimePatch.h"
 #endif
 
@@ -70,6 +71,23 @@ void MelonPrimeInputConfig::saveConfig()
     instcfg.SetBool("Metroid.BugFix.UseFirmwareLanguage", ui->cbMetroidUseFirmwareLanguage->checkState() == Qt::Checked);
     instcfg.SetBool("Metroid.GameFeature.ShowHeadshotOnline", ui->cbMetroidShowHeadshotOnline->checkState() == Qt::Checked);
     instcfg.SetBool("Metroid.GameFeature.ShowEnemyHpMeterOnline", ui->cbMetroidShowEnemyHpMeterOnline->checkState() == Qt::Checked);
+    instcfg.SetBool(
+        "Metroid.GameFeature.DisableDoubleDamageMultiplier",
+        ui->cbMetroidDisableDoubleDamageMultiplier->checkState() == Qt::Checked);
+
+    // Pickup effect toggles
+    instcfg.SetBool(
+        "Metroid.GameFeature.PowerUpPickupNoEffectPowerUps",
+        ui->cbMetroidDisablePickupPowerUps->checkState() == Qt::Checked);
+    instcfg.SetBool(
+        "Metroid.GameFeature.PowerUpPickupNoEffectDoubleDamage",
+        ui->cbMetroidDisablePickupDoubleDamage->checkState() == Qt::Checked);
+    instcfg.SetBool(
+        "Metroid.GameFeature.PowerUpPickupNoEffectCloak",
+        ui->cbMetroidDisablePickupCloak->checkState() == Qt::Checked);
+    instcfg.SetBool(
+        "Metroid.GameFeature.PowerUpPickupNoEffectDeathalt",
+        ui->cbMetroidDisablePickupDeathalt->checkState() == Qt::Checked);
 
     // SnapTap
     instcfg.SetBool("Metroid.Operation.SnapTap", ui->cbMetroidEnableSnapTap->checkState() == Qt::Checked);
@@ -95,19 +113,45 @@ void MelonPrimeInputConfig::saveConfig()
     instcfg.SetBool("Metroid.Enable.stylusMode", ui->cbMetroidEnableStylusMode->checkState() == Qt::Checked);
     instcfg.SetBool("Metroid.Aim.Disable.MphAimSmoothing", ui->cbMetroidDisableMphAimSmoothing->checkState() == Qt::Checked);
     instcfg.SetBool("Metroid.Aim.Enable.Accumulator", ui->cbMetroidEnableAimAccumulator->checkState() == Qt::Checked);
-    const bool enableRegisterInjection =
-        kDeveloperOnlyFeaturesEnabled
-            && ui->cbMetroidEnableNativeAimRegisterInjection->checkState() == Qt::Checked;
-    const int nativeAimHookMode =
-        enableRegisterInjection
-            ? 1
-            : (ui->cbMetroidEnableNativeAimPostFoldWrite->checkState() == Qt::Checked ? 2 : 0);
+    int nativeAimHookMode = 0;
+    if constexpr (kDeveloperOnlyFeaturesEnabled) {
+        if (ui->cbMetroidEnableNativeAimRegisterInjection->checkState() == Qt::Checked)
+            nativeAimHookMode = 1;
+        else if (ui->cbMetroidEnableNativeAimPostFoldWrite->checkState() == Qt::Checked)
+            nativeAimHookMode = 2;
+    }
     instcfg.SetInt("Metroid.Aim.NativeHookMode", nativeAimHookMode);
     instcfg.SetBool(
         "Metroid.Input.Enable.ImmediateInputEdgeOverlay",
         kDeveloperOnlyFeaturesEnabled
             && ui->cbMetroidEnableImmediateInputEdgeOverlay->checkState() == Qt::Checked);
-    instcfg.SetBool("Metroid.Input.Enable.DirectAltFormTransform",    ui->cbMetroidEnableDirectAltFormTransform->checkState() == Qt::Checked);
+    instcfg.SetBool(
+        "Metroid.Input.Enable.DirectAltFormTransform",
+        m_cbMetroidUseNewTransformMethod
+            ? m_cbMetroidUseNewTransformMethod->isChecked()
+            : (ui->cbMetroidEnableDirectAltFormTransform->checkState() == Qt::Checked));
+    if (m_cbMetroidUseNewWeaponSwitchMethod) {
+        instcfg.SetInt(
+            "Metroid.Input.WeaponSwitchMethod",
+            m_cbMetroidUseNewWeaponSwitchMethod->isChecked() ? 0 : 1);
+    }
+    if (m_cbMetroidUseNewBipedFireMethod) {
+        instcfg.SetInt(
+            "Metroid.Input.BipedFireMethod",
+            kDeveloperOnlyFeaturesEnabled && m_cbMetroidUseNewBipedFireMethod->isChecked() ? 0 : 1);
+    }
+    if (m_cbMetroidUseNewZoomMethod || m_cbMetroidUseNewZoomMethod2) {
+        int zoomMethod = 1;
+        if (kDeveloperOnlyFeaturesEnabled
+            && m_cbMetroidUseNewZoomMethod2
+            && m_cbMetroidUseNewZoomMethod2->isChecked())
+            zoomMethod = 2;
+        else if (m_cbMetroidUseNewZoomMethod && m_cbMetroidUseNewZoomMethod->isChecked())
+            zoomMethod = 0;
+        instcfg.SetInt(
+            "Metroid.Input.ZoomMethod",
+            zoomMethod);
+    }
     // Original public behavior:
     // instcfg.SetBool("Metroid.Aim.Enable.InstantAimFollow", ui->cbMetroidEnableInstantAimFollow->checkState() == Qt::Checked);
     instcfg.SetBool(
@@ -165,6 +209,8 @@ void MelonPrimeInputConfig::saveConfig()
 
     // Section toggle states (existing UI sections)
     instcfg.SetBool("Metroid.UI.SectionInputSettings",  ui->btnToggleInputSettings->isChecked());
+    if (m_btnToggleInputMethod)
+        instcfg.SetBool("Metroid.UI.SectionInputMethod", m_btnToggleInputMethod->isChecked());
     instcfg.SetBool("Metroid.UI.SectionScreenSync",     ui->btnToggleScreenSync->isChecked());
     instcfg.SetBool("Metroid.UI.SectionCursorClipSettings",  ui->btnToggleCursorClipSettings->isChecked());
     instcfg.SetBool("Metroid.UI.SectionInGameApply",  ui->btnToggleInGameApply->isChecked());
@@ -172,6 +218,10 @@ void MelonPrimeInputConfig::saveConfig()
     instcfg.SetBool("Metroid.UI.SectionSensitivity",    ui->btnToggleSensitivity->isChecked());
     instcfg.SetBool("Metroid.UI.SectionBugFix",         ui->btnToggleBugFix->isChecked());
     instcfg.SetBool("Metroid.UI.SectionGameFeature",    ui->btnToggleGameFeature->isChecked());
+    instcfg.SetBool("Metroid.UI.SectionDisableFeatures", ui->btnToggleDisableFeatures->isChecked());
+    instcfg.SetBool(
+        "Metroid.UI.SectionPowerUpPickupEffects",
+        ui->btnToggleDisablePickingUpSpecificItems->isChecked());
     instcfg.SetBool("Metroid.UI.SectionGameplay",       ui->btnToggleGameplay->isChecked());
     instcfg.SetBool("Metroid.UI.SectionVideo",          ui->btnToggleVideo->isChecked());
     instcfg.SetBool("Metroid.UI.SectionVolume",         ui->btnToggleVolume->isChecked());
@@ -189,6 +239,10 @@ void MelonPrimeInputConfig::saveConfig()
     MelonPrime::OsdColor_InvalidatePatch();
     MelonPrime::ShadowFreezeRuntimeHook_NotifyConfigChanged();
     MelonPrime::FixNoxusBladePersistence_NotifyConfigChanged();
+    if (auto* thread = emuInstance->getEmuThread()) {
+        if (auto* core = thread->GetMelonPrimeCore())
+            core->NotifyConfigChanged();
+    }
 #endif
 }
 

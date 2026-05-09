@@ -157,9 +157,11 @@ namespace MelonPrime {
         HOT_FUNCTION void RunFrameHook();
         void OnEmuStart();
         void OnEmuStop();
+        void ResetRuntimeStateForBoot();
         void OnEmuPause();
         void OnEmuUnpause();
         void OnReset();
+        void NotifyConfigChanged();
 
         void SetFrameAdvanceFunc(std::function<void()> func);
 
@@ -196,6 +198,26 @@ namespace MelonPrime {
             uint32_t arm9ExecAddr,
             uint32_t regs[16]);
 
+        static uint32_t NativeBipedFireHook_GetAddresses(
+            uint8_t romGroupIndex,
+            uint32_t* out,
+            uint32_t maxCount);
+        bool NativeBipedFireHook_DispatchCheckAndRedirect(
+            melonDS::NDS* nds,
+            uint32_t arm9ExecAddr,
+            uint32_t regs[16],
+            uint32_t& redirectExecAddr);
+
+        static uint32_t NativeZoomToggleHook_GetAddresses(
+            uint8_t romGroupIndex,
+            uint32_t* out,
+            uint32_t maxCount);
+        bool NativeZoomToggleHook_DispatchCheckAndRedirect(
+            melonDS::NDS* nds,
+            uint32_t arm9ExecAddr,
+            uint32_t regs[16],
+            uint32_t& redirectExecAddr);
+
         static uint32_t TransformGateHook_GetAddresses(
             uint8_t romGroupIndex,
             uint32_t* out,
@@ -205,6 +227,20 @@ namespace MelonPrime {
             uint32_t arm9ExecAddr,
             uint32_t regs[16],
             uint32_t& redirectExecAddr);
+
+        static uint32_t WeaponSwitchHook_GetAddresses(
+            uint8_t romGroupIndex,
+            uint32_t* out,
+            uint32_t maxCount);
+        bool WeaponSwitchHook_DispatchCheckAndRedirect(
+            melonDS::NDS* nds,
+            uint32_t arm9ExecAddr,
+            uint32_t regs[16],
+            uint32_t& redirectExecAddr);
+        [[nodiscard]] static bool WeaponSwitchHook_IsRomSupported(uint8_t romGroupIndex);
+        [[nodiscard]] static bool WeaponSwitchHook_IsSiteValid(
+            melonDS::NDS* nds,
+            uint8_t romGroupIndex);
 #endif
 
 #ifdef MELONPRIME_CUSTOM_HUD
@@ -292,16 +328,73 @@ namespace MelonPrime {
         int8_t   m_nativeAimHookMode = 0;  // 0=off 1=RegisterInject 2=FoldDerived
         bool     m_enableImmediateInputEdgeOverlay = false;
         bool     m_enableDirectAltFormTransform = false;
+        bool     m_enableNativeBipedFire = true;
+        bool     m_enableNewZoomInputMethod = true;
+        bool     m_enableNativeZoomToggle = false;
+#ifdef MELONPRIME_DS
+        bool     m_enableNativeWeaponSwitch = true;
+#endif
         int16_t  m_nativeAimDeltaX = 0;
         int16_t  m_nativeAimDeltaY = 0;
         uint16_t m_immediateOverlayPrevHeld = 0;
         uint16_t m_immediateOverlayPreserveMask = 0;
+        uint16_t m_bindingMoveL = 0;
+        uint16_t m_bindingMoveR = 0;
+        uint16_t m_bindingMoveF = 0;
+        uint16_t m_bindingMoveB = 0;
+        uint16_t m_bindingFire = 0;
+        uint16_t m_bindingJump = 0;
+        uint16_t m_bindingZoom = 0;
         uint8_t  m_directTransformPendingFrames = 0;
+        bool     m_nativeBipedFirePending = false;
+        bool     m_nativeBipedFireDirectActive = false;
+        bool     m_nativeZoomTogglePrevDown = false;
+        // Cached zoom-enabled state, updated whenever we read it.
+        // While zoom is known disabled (the common steady state) the per-frame
+        // auto-disable path can skip the IsZoomEnabled MainRAM read entirely:
+        // the game only flips zoom from disabled→enabled in response to a
+        // player edge press, which we observe directly via pressedEdge.
+        bool     m_nativeZoomLastKnownEnabled = false;
+#ifdef MELONPRIME_DS
+        struct NativeZoomPendingCall {
+            uint32_t FunctionAddr = 0;
+            uint32_t Player = 0;
+            uint8_t Enabled = 0;
+            bool Pending = false;
+
+            FORCE_INLINE void Clear() noexcept
+            {
+                FunctionAddr = 0;
+                Player = 0;
+                Enabled = 0;
+                Pending = false;
+            }
+        } m_nativeZoomPending{};
+
+        struct WeaponSwitchPendingRequest {
+            uint8_t WeaponId = 0xFF;
+            uint8_t RetryCount = 0;
+            uint8_t FallbackFrames = 0;
+
+            FORCE_INLINE void Clear() noexcept
+            {
+                WeaponId = 0xFF;
+                RetryCount = 0;
+                FallbackFrames = 0;
+            }
+
+            [[nodiscard]] FORCE_INLINE bool IsValid() const noexcept
+            {
+                return WeaponId <= 8 && RetryCount != 0;
+            }
+        } m_weaponSwitchPending{};
+#endif
 
         // Warm scalars (checked per frame but not in aim hot path)
         bool     m_isRunningHook = false;
         bool     m_isWeaponCheckActive = false;
         bool     m_isLayoutChangePending = true;
+        std::atomic_bool m_configReloadPending{ false };
         // P-47: Set by FrameAdvanceOnce; cleared after PollAndSnapshot.
         // True  → LateLatch must call processRawInputBatched (events may have
         //          arrived during the FrameAdvance window: ~32–96 ms).
@@ -419,6 +512,10 @@ namespace MelonPrime {
         template <bool kInputMaskReset> FORCE_INLINE void ProcessMoveAndButtonsFastImpl();
         HOT_FUNCTION void ProcessMoveAndButtonsFast();
         HOT_FUNCTION void ProcessMoveAndButtonsFastFromReset();
+        HOT_FUNCTION void ApplyBipedFireInput();
+        HOT_FUNCTION void UpdateNativeBipedFireInput();
+        HOT_FUNCTION void ApplyZoomBindingInput();
+        HOT_FUNCTION void UpdateNativeZoomToggleInput();
         HOT_FUNCTION void ProcessAimInputMouse();
         HOT_FUNCTION bool ProcessWeaponSwitch();
         HOT_FUNCTION bool HandleMorphBallBoost();
@@ -440,7 +537,12 @@ namespace MelonPrime {
         void RecalcAimFixedPoint();
         FORCE_INLINE void HandleGlobalHotkeys();
         void ProcessAimInputStylus(melonDS::NDS* nds);
-        void SwitchWeapon(int weaponIndex);
+        [[nodiscard]] bool SwitchWeapon(uint8_t weaponId);
+        [[nodiscard]] bool SwitchWeaponLegacyTouchFallback(uint8_t weaponId);
+        [[nodiscard]] bool CanRequestWeaponSwitch(uint8_t weaponId, bool showMessage);
+#ifdef MELONPRIME_DS
+        void QueueWeaponSwitchRequest(uint8_t weaponId) noexcept;
+#endif
         void ShowCursor(bool show);
         void FrameAdvanceTwice();
         FORCE_INLINE void FrameAdvanceOnce() { m_didFrameAdvanceSinceSnapshot = true; (this->*m_fnAdvance)(); }
@@ -451,6 +553,7 @@ namespace MelonPrime {
         void SetupRawInput();
         void ApplyJoy2KeySupportAndQtFilter(bool enable, bool doReset = true);
         void ReloadConfigFlags();
+        COLD_FUNCTION void ApplyConfigReload();
     };
 
 } // namespace MelonPrime

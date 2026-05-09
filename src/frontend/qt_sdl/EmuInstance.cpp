@@ -1257,6 +1257,19 @@ void EmuInstance::setDateTime()
 
 void EmuInstance::syncRTC()
 {
+#ifdef MELONPRIME_DS
+    // Throttle to ~1Hz: DS RTC self-ticks at 1Hz internally, so refreshing
+    // it from host time at 60Hz adds nothing but cost. Each refresh costs
+    // a QDateTime::currentDateTime() syscall, a toml tree walk for
+    // RTC.SyncToHost / RTC.Offset, and 7 RTC field writes. Once per second
+    // keeps host-RTC drift below 1s for any consumer of the DS RTC.
+    if (rtcSyncSkipFrames > 0) {
+        --rtcSyncSkipFrames;
+        return;
+    }
+    rtcSyncSkipFrames = 59;
+#endif
+
     if (!localCfg.GetBool("RTC.SyncToHost"))
         return;
 

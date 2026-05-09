@@ -16,6 +16,7 @@ This file is an index only. Keep detailed instructions in the linked Rules, Skil
 
 ## Skills
 - [.claude/skills/README.md](.claude/skills/README.md)
+- [.claude/skills/build-windows-mingw.md](.claude/skills/build-windows-mingw.md)
 - [.claude/skills/custom-hud-runtime.md](.claude/skills/custom-hud-runtime.md)
 - [.claude/skills/settings-ui-and-edit-mode.md](.claude/skills/settings-ui-and-edit-mode.md)
 

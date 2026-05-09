@@ -28,14 +28,6 @@
                 && size - 1u <= 0x023FFFFFu - address;
         }
 
-        [[nodiscard]] static FORCE_INLINE uint16_t ImmediateOverlay_ReadBindingLow(
-            const uint8_t* mainRAM, uint32_t addr) noexcept
-        {
-            uint32_t v = 0;
-            std::memcpy(&v, mainRAM + (addr & 0x3FFFFFu), sizeof(v));
-            return static_cast<uint16_t>(v & 0xFFFFu);
-        }
-
     } // anonymous namespace
 
     uint32_t MelonPrimeCore::ImmediateInputEdgeOverlay_GetAddresses(
@@ -69,6 +61,13 @@
         uint32_t arm9ExecAddr,
         uint32_t regs[16])
     {
+        // ARM9Hook_Install only registers this handler when the feature is
+        // enabled and the rom is supported, and the dispatcher routes here
+        // only at the single registered ActionConsumer PC. So the runtime
+        // checks for m_enableImmediateInputEdgeOverlay, romIdx range, and
+        // arm9ExecAddr equality are dead — guarded at install time.
+        (void)arm9ExecAddr;
+
         if (!nds)
             return;
 
@@ -81,19 +80,10 @@
         if (m_aimBlockBits & AIMBLK_NOT_IN_GAME)
             return;
 
-        const uint8_t romIdx = m_currentRom.romGroupIndex;
-        constexpr uint8_t kRomCount =
-            sizeof(kImmediateOverlayActionConsumerPc) / sizeof(kImmediateOverlayActionConsumerPc[0]);
-        if (romIdx >= kRomCount)
-            return;
-
         uint8_t* const mainRAM = nds->MainRAM;
 
         // ── Action Consumer (Fire / Jump / Zoom / Movement) ──────────────────
-        if (arm9ExecAddr == kImmediateOverlayActionConsumerPc[romIdx]) {
-            if (!m_enableImmediateInputEdgeOverlay)
-                return;
-
+        {
             const uint32_t offP = static_cast<uint32_t>(m_playerPosition)
                                 * static_cast<uint32_t>(Consts::PLAYER_ADDR_INC);
             const uint32_t playerBase = m_currentRom.playerStructStart + offP;
@@ -107,17 +97,25 @@
             // No morph injection is needed in this overlay.
 
             // ── General action bindings (ImmediateInputEdgeOverlay) ──────────
+            // Cached at game join; these control-preset fields do not change
+            // during a match, and this hook runs on a hot action-consumer path.
             //   +0x368  Move left         +0x36C  Move right
             //   +0x370  Move forward      +0x374  Move backward
             //   +0x398  Fire              +0x39C  Jump (normal binding path)
             //   +0x3E0  Zoom
-            const uint16_t movLMask = ImmediateOverlay_ReadBindingLow(mainRAM, playerBase + 0x368u);
-            const uint16_t movRMask = ImmediateOverlay_ReadBindingLow(mainRAM, playerBase + 0x36Cu);
-            const uint16_t movFMask = ImmediateOverlay_ReadBindingLow(mainRAM, playerBase + 0x370u);
-            const uint16_t movBMask = ImmediateOverlay_ReadBindingLow(mainRAM, playerBase + 0x374u);
-            const uint16_t fireMask = ImmediateOverlay_ReadBindingLow(mainRAM, playerBase + 0x398u);
-            const uint16_t jumpMask = ImmediateOverlay_ReadBindingLow(mainRAM, playerBase + 0x39Cu);
-            const uint16_t zoomMask = ImmediateOverlay_ReadBindingLow(mainRAM, playerBase + 0x3E0u);
+            const uint16_t movLMask = m_bindingMoveL;
+            const uint16_t movRMask = m_bindingMoveR;
+            const uint16_t movFMask = m_bindingMoveF;
+            const uint16_t movBMask = m_bindingMoveB;
+            const uint16_t fireMask = m_enableNativeBipedFire
+                ? 0u
+                : m_bindingFire;
+            const uint16_t jumpMask = m_bindingJump;
+            const uint16_t zoomMask = m_enableNativeZoomToggle
+                ? 0u
+                : (m_enableNewZoomInputMethod
+                    ? m_bindingZoom
+                    : static_cast<uint16_t>(1u << INPUT_R));
 
             const uint16_t managedMask = static_cast<uint16_t>(
                 movLMask | movRMask | movFMask | movBMask |
