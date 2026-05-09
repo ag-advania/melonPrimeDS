@@ -132,6 +132,11 @@ namespace MelonPrime {
         // [Tier 4: Damage Notify Purple — local-player HP watcher / DD timer write]
         uint16_t* health;
         uint16_t* doubleDamageTimer;
+        // Weavel proxy: only read when BIT_IS_WEAVEL is set. When the alt-form
+        // proxy is active, observed HP = mainHp + proxyHp (avoids false notify
+        // on transform HP-split).
+        uint32_t* moreFlags;       // CPlayer +0x4C8, bit5 = proxy active
+        uint32_t* weavelProxyPtr;  // CPlayer +0xF24, ARM9 pointer to proxy entity
     };
 
     enum AimBlockBit : uint32_t {
@@ -414,14 +419,24 @@ namespace MelonPrime {
 
         // --- Damage Notify Purple ---
         // Briefly drives the local player's Double Damage timer (CPlayer +0x4B0) to
-        // 10 frames whenever HP drops, producing a short purple flash so opponents
-        // can see "this player just got hit". Intended to be paired with the
-        // existing Disable Double Damage Multiplier feature so the flash does not
-        // become a real 2x boost. See:
-        //   .claude rules + 18-Damage-Notify-Purple-NonHook-AI-Implementation-Instructions.md
+        // 10 frames whenever the player's *effective* HP drops, producing a short
+        // purple flash so opponents can see "this player just got hit". Intended
+        // to be paired with the existing Disable Double Damage Multiplier feature
+        // so the flash does not become a real 2x boost.
+        //
+        // Weavel-aware: when the alt-form proxy is active (CPlayer +0x4C8 bit5),
+        // observed HP = mainHp + proxyHp so the transform-time HP split (100 →
+        // 50/50) does not produce a false notification.
+        // proxyActive attach AND detach edges are baseline-only frames so
+        // mainHp ↔ mainHp+proxyHp metric switches (e.g. 199 → 299 on attach,
+        // 299 → 199 on detach) never look like damage. See spec:
+        //   29-Damage-Notify-Purple-NonHook-AI-Implementation-Instructions-v4
         struct DamageNotifyPurpleState {
-            uint16_t previousHp = 0;
-            bool     valid = false;
+            uint16_t previousObservedHp = 0;
+            uint16_t previousMainHp = 0;
+            uint16_t previousProxyHp = 0;
+            bool     initialized = false;
+            bool     previousProxyActive = false;
         } m_damageNotifyPurpleState{};
         bool m_damageNotifyPurpleEnabled = false;
 

@@ -115,7 +115,7 @@ namespace MelonPrime {
         const bool dnp = dnpRequested && ddMultDisabled;
         if (m_damageNotifyPurpleEnabled && !dnp) {
             // Toggled off → drop accumulated baseline so a re-enable starts fresh.
-            m_damageNotifyPurpleState.valid = false;
+            m_damageNotifyPurpleState = {};
         }
         m_damageNotifyPurpleEnabled = dnp;
     }
@@ -457,55 +457,140 @@ namespace MelonPrime {
     }
 
     // =========================================================================
-    // Damage Notify Purple
+    // Damage Notify Purple — Weavel-aware effective HP watcher v4
     //
-    // Spec: 18-Damage-Notify-Purple-NonHook-AI-Implementation-Instructions.md
+    // Spec: 29-Damage-Notify-Purple-NonHook-AI-Implementation-Instructions-v4
     //
-    //   When the local player's HP drops below the previous frame's HP, write
-    //   10 to the local Double Damage timer (CPlayer +0x4B0). This produces a
-    //   short purple flash so opponents (and observers) can see "this player
-    //   just took damage". Pair with the existing Disable Double Damage
-    //   Multiplier feature so the flash does not become a real 2x boost.
+    //   When the local player's effective HP drops, write 10 to the local
+    //   Double Damage timer (CPlayer +0x4B0). This produces a short purple
+    //   flash so opponents can see "this player just took damage". Pair with
+    //   Disable Double Damage Multiplier so the flash never becomes a real 2x
+    //   boost.
     //
-    //   Always overwrite — do NOT read+protect the existing timer.
-    //   HP==0 (death/respawn) is treated as a baseline-only frame to avoid
-    //   firing during respawn cycles. >999 is treated as junk/uninitialised.
+    //   Observed HP metric:
+    //     non-Weavel             : observed = mainHp
+    //     Weavel proxy inactive  : observed = mainHp
+    //     Weavel proxy active    : observed = mainHp + proxyHp (no 199 clamp;
+    //                                          mainHp=199 + proxyHp=100 = 299
+    //                                          is a legitimate state)
+    //
+    //   Edge handling (v4 fix):
+    //     proxyActive false → true : metric switch (mainHp → mainHp+proxyHp).
+    //                                Baseline-only frame, do not compare.
+    //     proxyActive true  → false: metric switch (mainHp+proxyHp → mainHp).
+    //                                Baseline-only frame; this is what
+    //                                prevents the 299 → 199 false-notify on
+    //                                Weavel un-transform.
+    //
+    //   skipCompare cases (also baseline-only):
+    //     - proxy pointer not in ARM9 RAM range (still settling)
+    //     - proxyHpRaw > 100 (junk read; using mainHp here would create a
+    //       fake total drop on the next valid frame)
+    //
+    //   Threshold = 5: real damage in MPH is ≥10 HP; this filters single-frame
+    //   anomalies without missing real hits.
+    //
+    //   Always overwrites the existing DD timer — do NOT read+protect.
     //   Caller already gates this on isInGame, so ROM/pointer setup is valid.
     // =========================================================================
     HOT_FUNCTION void MelonPrimeCore::DamageNotifyPurpleTick()
     {
         if (!m_damageNotifyPurpleEnabled) {
-            // Always make sure the next enable starts from a clean baseline.
-            m_damageNotifyPurpleState.valid = false;
+            m_damageNotifyPurpleState = {};
             return;
         }
 
         if (UNLIKELY(!m_ptrs.health || !m_ptrs.doubleDamageTimer)) {
-            m_damageNotifyPurpleState.valid = false;
+            m_damageNotifyPurpleState = {};
             return;
         }
 
-        const uint16_t hp = *m_ptrs.health;
+        constexpr uint32_t PROXY_ACTIVE_BIT = 0x20u;        // moreFlags bit5
+        constexpr uint32_t PROXY_HP_OFF     = 0xD0u;        // proxy entity +0xD0
+        constexpr uint32_t ARM9_RAM_BASE    = 0x02000000u;
+        constexpr uint32_t ARM9_RAM_END     = 0x023FFFFEu;  // last addr that fits a u16
+        constexpr uint16_t PROXY_HP_MAX     = 100;
+        constexpr uint16_t NOTIFY_DURATION  = 10;
+        constexpr uint16_t DELTA_THRESHOLD  = 5;
 
-        if (hp == 0 || hp > 999) {
-            m_damageNotifyPurpleState.valid = false;
-            m_damageNotifyPurpleState.previousHp = hp;
+        DamageNotifyPurpleState& s = m_damageNotifyPurpleState;
+        const bool isWeavel = m_flags.test(StateFlags::BIT_IS_WEAVEL);
+
+        const uint16_t mainHp = *m_ptrs.health;
+        uint16_t observedHp = mainHp;
+        uint16_t proxyHp = 0;
+        bool proxyActive = false;
+        bool skipCompare = false;
+
+        if (isWeavel && m_ptrs.moreFlags && m_ptrs.weavelProxyPtr) {
+            proxyActive = (*m_ptrs.moreFlags & PROXY_ACTIVE_BIT) != 0;
+
+            if (proxyActive) {
+                const uint32_t proxyHpAddr = *m_ptrs.weavelProxyPtr + PROXY_HP_OFF;
+                const bool proxyAddrValid =
+                    proxyHpAddr >= ARM9_RAM_BASE && proxyHpAddr <= ARM9_RAM_END;
+
+                if (!proxyAddrValid) {
+                    skipCompare = true;
+                }
+                else {
+                    melonDS::u8* const mainRAM = emuInstance->getNDS()->MainRAM;
+                    if (UNLIKELY(mainRAM == nullptr)) {
+                        skipCompare = true;
+                    }
+                    else {
+                        const uint16_t proxyHpRaw = Read16(mainRAM, proxyHpAddr);
+                        if (proxyHpRaw > PROXY_HP_MAX) {
+                            // Junk read — observedHp stays as mainHp but skip
+                            // compare so the next valid frame does not look
+                            // like a sudden total drop.
+                            skipCompare = true;
+                        }
+                        else {
+                            proxyHp = proxyHpRaw;
+                            const uint32_t total =
+                                static_cast<uint32_t>(mainHp) +
+                                static_cast<uint32_t>(proxyHp);
+                            observedHp = (total > 0xFFFFu)
+                                ? 0xFFFFu : static_cast<uint16_t>(total);
+                        }
+                    }
+                }
+            }
+        }
+
+        const bool wasProxyActive = s.previousProxyActive;
+        const bool proxyJustAttached = isWeavel && !wasProxyActive && proxyActive;
+        const bool proxyJustDetached = isWeavel && wasProxyActive && !proxyActive;
+
+        // Always update baselines except on the compare path.
+        auto updateBaselines = [&]() {
+            s.previousObservedHp = observedHp;
+            s.previousMainHp = mainHp;
+            s.previousProxyHp = proxyHp;
+            s.previousProxyActive = proxyActive;
+        };
+
+        if (!s.initialized) {
+            s.initialized = true;
+            updateBaselines();
             return;
         }
 
-        if (!m_damageNotifyPurpleState.valid) {
-            m_damageNotifyPurpleState.valid = true;
-            m_damageNotifyPurpleState.previousHp = hp;
+        if (skipCompare || proxyJustAttached || proxyJustDetached) {
+            updateBaselines();
             return;
         }
 
-        const uint16_t prev = m_damageNotifyPurpleState.previousHp;
-        m_damageNotifyPurpleState.previousHp = hp;
+        const uint16_t prev = s.previousObservedHp;
+        updateBaselines();
 
-        if (hp >= prev) return;
-
-        constexpr uint16_t kDamageNotifyPurpleDuration = 10;
-        *m_ptrs.doubleDamageTimer = kDamageNotifyPurpleDuration;
+        if (prev > observedHp) {
+            const uint16_t delta = static_cast<uint16_t>(prev - observedHp);
+            if (delta > DELTA_THRESHOLD) {
+                *m_ptrs.doubleDamageTimer = NOTIFY_DURATION;
+            }
+        }
     }
 
     // 99%+ frames hit the early return (2 bit tests + branch).
@@ -781,8 +866,11 @@ namespace MelonPrime {
         // Damage Notify Purple: cache local-player HP and Double Damage timer pointers.
         m_ptrs.health = GetRamPointer<uint16_t>(mainRAM, m_currentRom.playerHP + offP);
         m_ptrs.doubleDamageTimer = GetRamPointer<uint16_t>(mainRAM, m_currentRom.playerDoubleDamageTimer + offP);
-        m_damageNotifyPurpleState.valid = false;
-        m_damageNotifyPurpleState.previousHp = 0;
+        // Weavel-only effective HP — these are read every frame but only consulted
+        // when BIT_IS_WEAVEL is set, so resolving them unconditionally is fine.
+        m_ptrs.moreFlags      = GetRamPointer<uint32_t>(mainRAM, playerBase + 0x4C8u);
+        m_ptrs.weavelProxyPtr = GetRamPointer<uint32_t>(mainRAM, playerBase + 0xF24u);
+        m_damageNotifyPurpleState = {};
 
         const uint8_t hunterID = Read8(mainRAM, m_addrHot.chosenHunter);
         m_hunterID = (hunterID <= 6) ? hunterID : 0;
