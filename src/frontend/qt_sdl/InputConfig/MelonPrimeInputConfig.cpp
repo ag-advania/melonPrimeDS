@@ -203,6 +203,8 @@ void MelonPrimeInputConfig::setupSensitivityAndToggles(Config::Table& instcfg)
     ui->cbMetroidShowEnemyHpMeterOnline->setChecked(instcfg.GetBool("Metroid.GameFeature.ShowEnemyHpMeterOnline"));
     ui->cbMetroidDisableDoubleDamageMultiplier->setChecked(
         instcfg.GetBool("Metroid.GameFeature.DisableDoubleDamageMultiplier"));
+    ui->cbMetroidDamageNotifyPurple->setChecked(
+        instcfg.GetBool("Metroid.GameFeature.DamageNotifyPurple"));
 
     // Pickup effect toggles
     ui->cbMetroidDisablePickupPowerUps->setChecked(

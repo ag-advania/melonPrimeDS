@@ -635,6 +635,7 @@ namespace Config
         {"Instance*.Metroid.GameFeature.ShowHeadshotOnline", false},
         {"Instance*.Metroid.GameFeature.ShowEnemyHpMeterOnline", false},
         {"Instance*.Metroid.GameFeature.DisableDoubleDamageMultiplier", false},
+        {"Instance*.Metroid.GameFeature.DamageNotifyPurple",            false},
         {"Instance*.Metroid.GameFeature.PowerUpPickupNoEffectPowerUps", false},
         {"Instance*.Metroid.GameFeature.PowerUpPickupNoEffectDoubleDamage", false},
         {"Instance*.Metroid.GameFeature.PowerUpPickupNoEffectCloak", false},
