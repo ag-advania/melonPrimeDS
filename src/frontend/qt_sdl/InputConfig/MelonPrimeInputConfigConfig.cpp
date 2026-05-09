@@ -13,6 +13,7 @@
 #include "MelonPrimeInputConfig.h"
 #include "ui_MelonPrimeInputConfig.h"
 #include "Config.h"
+#include "MelonPrimeDef.h"
 #ifdef MELONPRIME_CUSTOM_HUD
 #include "MelonPrimeHudRender.h"
 #endif
@@ -133,21 +134,25 @@ void MelonPrimeInputConfig::saveConfig()
     if (m_cbMetroidUseNewWeaponSwitchMethod) {
         instcfg.SetInt(
             "Metroid.Input.WeaponSwitchMethod",
-            m_cbMetroidUseNewWeaponSwitchMethod->isChecked() ? 0 : 1);
+            m_cbMetroidUseNewWeaponSwitchMethod->isChecked()
+                ? MelonPrime::WeaponSwitchMethod::NewNative
+                : MelonPrime::WeaponSwitchMethod::LegacyTouch);
     }
     if (m_cbMetroidUseNewBipedFireMethod) {
         instcfg.SetInt(
             "Metroid.Input.BipedFireMethod",
-            kDeveloperOnlyFeaturesEnabled && m_cbMetroidUseNewBipedFireMethod->isChecked() ? 0 : 1);
+            kDeveloperOnlyFeaturesEnabled && m_cbMetroidUseNewBipedFireMethod->isChecked()
+                ? MelonPrime::BipedFireMethod::NewNativeEdge
+                : MelonPrime::BipedFireMethod::LegacyInput);
     }
     if (m_cbMetroidUseNewZoomMethod || m_cbMetroidUseNewZoomMethod2) {
-        int zoomMethod = 1;
+        int zoomMethod = MelonPrime::ZoomInputMethod::LegacyFixedR;
         if (kDeveloperOnlyFeaturesEnabled
             && m_cbMetroidUseNewZoomMethod2
             && m_cbMetroidUseNewZoomMethod2->isChecked())
-            zoomMethod = 2;
+            zoomMethod = MelonPrime::ZoomInputMethod::NewNativeToggle;
         else if (m_cbMetroidUseNewZoomMethod && m_cbMetroidUseNewZoomMethod->isChecked())
-            zoomMethod = 0;
+            zoomMethod = MelonPrime::ZoomInputMethod::NewPresetBinding;
         instcfg.SetInt(
             "Metroid.Input.ZoomMethod",
             zoomMethod);
