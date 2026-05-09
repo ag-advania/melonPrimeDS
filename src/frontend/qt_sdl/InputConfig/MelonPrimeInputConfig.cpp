@@ -513,7 +513,14 @@ void MelonPrimeInputConfig::setupCollapsibleSections(Config::Table& instcfg)
     setupToggle(ui->btnToggleVolume,      ui->sectionVolume,      "VOLUME",           "Metroid.UI.SectionVolume");
     setupToggle(ui->btnToggleLicense,     ui->sectionLicense,     "LICENSE APPLY",    "Metroid.UI.SectionLicense");
     // Restore note: remove this toggle if the DEVELOPER ONLY section is removed.
-    setupToggle(ui->btnToggleDeveloperOnly, ui->sectionDeveloperOnly, "DEVELOPER ONLY", "Metroid.UI.SectionDeveloperOnly");
+    if constexpr (kDeveloperOnlyFeaturesEnabled) {
+        setupToggle(ui->btnToggleDeveloperOnly, ui->sectionDeveloperOnly, "DEVELOPER ONLY", "Metroid.UI.SectionDeveloperOnly");
+    } else {
+        // Non-developer build: hide the section entirely instead of greying it out.
+        // Child widgets parented to sectionDeveloperOnly are hidden along with it.
+        ui->btnToggleDeveloperOnly->setVisible(false);
+        ui->sectionDeveloperOnly->setVisible(false);
+    }
 }
 
 
