@@ -6,3 +6,4 @@
 - [Custom HUD Runtime](custom-hud-runtime.md)
 - [Settings UI and Edit Mode](settings-ui-and-edit-mode.md)
 - [Qt Menu Actions](qt-menu-actions.md)
+- [Merge Latest Commits from melonDS Upstream](merge-upstream-melonds.md)
