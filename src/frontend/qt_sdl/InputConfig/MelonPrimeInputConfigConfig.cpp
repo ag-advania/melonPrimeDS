@@ -113,13 +113,13 @@ void MelonPrimeInputConfig::saveConfig()
     instcfg.SetBool("Metroid.Enable.stylusMode", ui->cbMetroidEnableStylusMode->checkState() == Qt::Checked);
     instcfg.SetBool("Metroid.Aim.Disable.MphAimSmoothing", ui->cbMetroidDisableMphAimSmoothing->checkState() == Qt::Checked);
     instcfg.SetBool("Metroid.Aim.Enable.Accumulator", ui->cbMetroidEnableAimAccumulator->checkState() == Qt::Checked);
-    const bool enableRegisterInjection =
-        kDeveloperOnlyFeaturesEnabled
-            && ui->cbMetroidEnableNativeAimRegisterInjection->checkState() == Qt::Checked;
-    const int nativeAimHookMode =
-        enableRegisterInjection
-            ? 1
-            : (ui->cbMetroidEnableNativeAimPostFoldWrite->checkState() == Qt::Checked ? 2 : 0);
+    int nativeAimHookMode = 0;
+    if constexpr (kDeveloperOnlyFeaturesEnabled) {
+        if (ui->cbMetroidEnableNativeAimRegisterInjection->checkState() == Qt::Checked)
+            nativeAimHookMode = 1;
+        else if (ui->cbMetroidEnableNativeAimPostFoldWrite->checkState() == Qt::Checked)
+            nativeAimHookMode = 2;
+    }
     instcfg.SetInt("Metroid.Aim.NativeHookMode", nativeAimHookMode);
     instcfg.SetBool(
         "Metroid.Input.Enable.ImmediateInputEdgeOverlay",

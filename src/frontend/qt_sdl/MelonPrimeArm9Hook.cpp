@@ -201,8 +201,7 @@ void ARM9Hook_Install(
 
     int nativeAimHookMode = cfg.GetInt(CfgKey::NativeAimHookMode);
 #ifndef MELONPRIME_ENABLE_DEVELOPER_FEATURES
-    if (nativeAimHookMode == 1)
-        nativeAimHookMode = 0;
+    nativeAimHookMode = 0;
 #endif
     if (!cfg.GetBool(CfgKey::DisableMphAimSmoothing))
         nativeAimHookMode = 0;

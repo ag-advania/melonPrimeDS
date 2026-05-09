@@ -136,8 +136,10 @@ void MelonPrimeInputConfig::setupSensitivityAndToggles(Config::Table& instcfg)
     ui->cbMetroidEnableStylusMode->setChecked(instcfg.GetBool("Metroid.Enable.stylusMode"));
     ui->cbMetroidDisableMphAimSmoothing->setChecked(instcfg.GetBool("Metroid.Aim.Disable.MphAimSmoothing"));
     ui->cbMetroidEnableAimAccumulator->setChecked(instcfg.GetBool("Metroid.Aim.Enable.Accumulator"));
-    const int nativeAimHookMode = instcfg.GetInt("Metroid.Aim.NativeHookMode");
-    ui->cbMetroidEnableNativeAimPostFoldWrite->setChecked(nativeAimHookMode == 2);
+    const int nativeAimHookMode =
+        kDeveloperOnlyFeaturesEnabled ? instcfg.GetInt("Metroid.Aim.NativeHookMode") : 0;
+    ui->cbMetroidEnableNativeAimPostFoldWrite->setChecked(
+        kDeveloperOnlyFeaturesEnabled && nativeAimHookMode == 2);
     ui->cbMetroidEnableNativeAimRegisterInjection->setChecked(
         kDeveloperOnlyFeaturesEnabled && nativeAimHookMode == 1);
     ui->cbMetroidEnableImmediateInputEdgeOverlay->setChecked(
@@ -185,10 +187,15 @@ void MelonPrimeInputConfig::setupSensitivityAndToggles(Config::Table& instcfg)
         ui->lblMetroidFixNoxusBladePersistenceWarning->setText(
             "Developer build only: this fix is unstable and the blade may still remain active in some cases, especially in the Korean version.");
         ui->cbMetroidEnableInstantAimFollow->setToolTip("Developer-only option enabled in this build.");
+        ui->cbMetroidEnableNativeAimPostFoldWrite->setToolTip("Developer-only option enabled in this build.");
         ui->cbMetroidEnableNativeAimRegisterInjection->setToolTip("Developer-only option enabled in this build.");
         ui->cbMetroidEnableImmediateInputEdgeOverlay->setToolTip("Developer-only option enabled in this build.");
         ui->lblMetroidInstantAimFollowDesc->setText(
             "The game normally moves currentAim only about 10% toward targetAim each update, which can feel like mouse lag. This patch makes currentAim follow targetAim instantly. Developer build only.");
+    }
+    else {
+        ui->cbMetroidEnableNativeAimPostFoldWrite->setToolTip(
+            "Developer-only option. Build with MELONPRIME_ENABLE_DEVELOPER_FEATURES to enable it.");
     }
     ui->cbMetroidUseFirmwareLanguage->setChecked(instcfg.GetBool("Metroid.BugFix.UseFirmwareLanguage"));
     ui->cbMetroidShowHeadshotOnline->setChecked(instcfg.GetBool("Metroid.GameFeature.ShowHeadshotOnline"));
@@ -269,6 +276,27 @@ void MelonPrimeInputConfig::setupInputMethodSection(Config::Table& instcfg)
     auto addDeveloperWidget = [&developerLayout, &developerInsertIndex](QWidget* widget) {
         developerLayout->insertWidget(developerInsertIndex++, widget);
     };
+    auto moveExistingWidget = [](QWidget* widget) {
+        if (!widget)
+            return;
+        if (QWidget* const parent = widget->parentWidget()) {
+            if (QLayout* const layout = parent->layout())
+                layout->removeWidget(widget);
+        }
+    };
+
+    moveExistingWidget(ui->cbMetroidEnableNativeAimPostFoldWrite);
+    moveExistingWidget(ui->lblMetroidNativeAimHookModeDesc);
+    ui->cbMetroidEnableNativeAimPostFoldWrite->setParent(ui->sectionDeveloperOnly);
+    ui->lblMetroidNativeAimHookModeDesc->setParent(ui->sectionDeveloperOnly);
+    ui->cbMetroidEnableNativeAimPostFoldWrite->setEnabled(false);
+    ui->lblMetroidNativeAimHookModeDesc->setEnabled(false);
+    ui->lblMetroidNativeAimHookModeDesc->setText(
+        "PostFold Write hooks after TouchInputProcessor and covers all AltForms including spec108=0 (Samus/Kanden/Noxus/Spire). Developer build only.");
+    ui->lblMetroidNativeAimHookModeDesc->setStyleSheet("QLabel { margin-left: 20px; }");
+    addDeveloperSpacing();
+    addDeveloperWidget(ui->cbMetroidEnableNativeAimPostFoldWrite);
+    addDeveloperWidget(ui->lblMetroidNativeAimHookModeDesc);
 
     m_cbMetroidUseNewWeaponSwitchMethod = new QCheckBox(
         "Use New Method for Weapon Change",
@@ -321,15 +349,6 @@ void MelonPrimeInputConfig::setupInputMethodSection(Config::Table& instcfg)
         instcfg.GetBool("Metroid.Input.Enable.DirectAltFormTransform"));
     sectionLayout->addSpacing(6);
     sectionLayout->addWidget(m_cbMetroidUseNewTransformMethod);
-
-    auto moveExistingWidget = [](QWidget* widget) {
-        if (!widget)
-            return;
-        if (QWidget* const parent = widget->parentWidget()) {
-            if (QLayout* const layout = parent->layout())
-                layout->removeWidget(widget);
-        }
-    };
 
     moveExistingWidget(ui->cbMetroidEnableDirectAltFormTransform);
     moveExistingWidget(ui->lblMetroidDirectAltFormTransformDesc);
@@ -405,6 +424,7 @@ void MelonPrimeInputConfig::setupInputMethodSection(Config::Table& instcfg)
 
     parentLayout->insertWidget(insertIndex, m_btnToggleInputMethod);
     parentLayout->insertWidget(insertIndex + 1, m_sectionInputMethod);
+    updateAimControlsForStylusMode(ui->cbMetroidEnableStylusMode->isChecked());
 }
 
 
@@ -419,8 +439,11 @@ void MelonPrimeInputConfig::updateAimControlsForStylusMode(bool stylusEnabled)
     ui->metroidAimAdjustSpinBox->setEnabled(enableAimControls);
     ui->metroidAimAdjustLabel->setEnabled(enableAimControls);
     ui->cbMetroidEnableAimAccumulator->setEnabled(enableAimControls);
-    const bool enableAimHooks = enableAimControls && ui->cbMetroidDisableMphAimSmoothing->isChecked();
-    const bool enableRegisterInjection = kDeveloperOnlyFeaturesEnabled && enableAimHooks;
+    const bool enableAimHooks =
+        kDeveloperOnlyFeaturesEnabled
+        && enableAimControls
+        && ui->cbMetroidDisableMphAimSmoothing->isChecked();
+    const bool enableRegisterInjection = enableAimHooks;
     ui->cbMetroidEnableNativeAimPostFoldWrite->setEnabled(enableAimHooks);
     ui->lblMetroidNativeAimHookModeDesc->setEnabled(enableAimHooks);
     ui->cbMetroidEnableNativeAimRegisterInjection->setEnabled(enableRegisterInjection);
