@@ -187,33 +187,38 @@ namespace MelonPrime {
     //   Now: single function, single store to m_inputMaskFast, zero duplication.
     //   Also enables the compiler to keep m_inputMaskFast in a register across
     //   the move LUT lookup and button merge.
+    // SnapTap conflict resolution. Outlined as COLD_FUNCTION so the SnapTap-OFF
+    // hot path (the dominant case) keeps a tiny inline body and the bit-twiddling
+    // here lives off the hot icache region. ProcessMoveAndButtonsFastImpl already
+    // marks the !m_snapTapMode branch LIKELY.
+    [[nodiscard]] COLD_FUNCTION static uint32_t ResolveSnapTapInput(
+        uint32_t curr, uint16_t& snapState) noexcept
+    {
+        const uint32_t last = snapState & 0xFFu;
+        const uint32_t priority = snapState >> 8;
+        const uint32_t newPress = curr & ~last;
+
+        const uint32_t conflictFB = ((curr & 0x3u) == 0x3u) ? 0x3u : 0u;
+        const uint32_t conflictLR = ((curr & 0xCu) == 0xCu) ? 0xCu : 0u;
+        const uint32_t conflict = conflictFB | conflictLR;
+
+        const bool hasNewConflict = (newPress & conflict) != 0;
+        const uint32_t updateMask = hasNewConflict ? ~0u : 0u;
+
+        const uint32_t newPriority = (priority & ~(conflict & updateMask)) | (newPress & conflict & updateMask);
+        const uint32_t activePriority = newPriority & curr;
+
+        snapState = static_cast<uint16_t>((curr & 0xFFu) | ((activePriority & 0xFFu) << 8));
+        return (curr & ~conflict) | (activePriority & conflict);
+    }
+
     template <bool kInputMaskReset>
     FORCE_INLINE void MelonPrimeCore::ProcessMoveAndButtonsFastImpl()
     {
         const uint32_t curr = m_input.moveIndex;
-        uint32_t finalInput;
-
-        if (LIKELY(!m_snapTapMode)) {
-            finalInput = curr;
-        }
-        else {
-            const uint32_t last = m_snapState & 0xFFu;
-            const uint32_t priority = m_snapState >> 8;
-            const uint32_t newPress = curr & ~last;
-
-            const uint32_t conflictFB = ((curr & 0x3u) == 0x3u) ? 0x3u : 0u;
-            const uint32_t conflictLR = ((curr & 0xCu) == 0xCu) ? 0xCu : 0u;
-            const uint32_t conflict = conflictFB | conflictLR;
-
-            const bool hasNewConflict = (newPress & conflict) != 0;
-            const uint32_t updateMask = hasNewConflict ? ~0u : 0u;
-
-            const uint32_t newPriority = (priority & ~(conflict & updateMask)) | (newPress & conflict & updateMask);
-            const uint32_t activePriority = newPriority & curr;
-
-            m_snapState = static_cast<uint16_t>((curr & 0xFFu) | ((activePriority & 0xFFu) << 8));
-            finalInput = (curr & ~conflict) | (activePriority & conflict);
-        }
+        const uint32_t finalInput = LIKELY(!m_snapTapMode)
+            ? curr
+            : ResolveSnapTapInput(curr, m_snapState);
 
         const uint8_t lutResult = MoveLUT[finalInput & 0xF];
         uint16_t mask;
@@ -224,13 +229,18 @@ namespace MelonPrime {
             mask = (m_inputMaskFast & 0xFF0Fu) | (static_cast<uint16_t>(lutResult) & 0x00F0u);
         }
 
-        // --- Branchless button merge (B/L/R) ---
-        constexpr uint16_t kModBits = (1u << INPUT_B) | (1u << INPUT_L) | (1u << INPUT_R);
+        // --- Branchless button merge (B/L) ---
+        // Zoom is preset-dependent and is applied by ApplyZoomBindingInput().
+        // Native Biped Fire owns shoot via the ARM9 fire-edge hook, so it
+        // leaves INPUT_L released instead of synthesizing the legacy fire input.
+        const uint16_t modBits = m_enableNativeBipedFire
+            ? static_cast<uint16_t>(1u << INPUT_B)
+            : static_cast<uint16_t>((1u << INPUT_B) | (1u << INPUT_L));
         const uint64_t nd = ~m_input.down;
         const uint16_t bBit = static_cast<uint16_t>(((nd >> 0) & 1u) << INPUT_B);
         const uint16_t lBit = static_cast<uint16_t>(((nd >> 1) & 1u) << INPUT_L);
-        const uint16_t rBit = static_cast<uint16_t>(((nd >> 2) & 1u) << INPUT_R);
-        m_inputMaskFast = (mask & ~kModBits) | bBit | lBit | rBit;
+        const uint16_t nativeFireMask = m_enableNativeBipedFire ? 0u : lBit;
+        m_inputMaskFast = static_cast<uint16_t>((mask & ~modBits) | bBit | nativeFireMask);
     }
 
     HOT_FUNCTION void MelonPrimeCore::ProcessMoveAndButtonsFast()
@@ -241,6 +251,37 @@ namespace MelonPrime {
     HOT_FUNCTION void MelonPrimeCore::ProcessMoveAndButtonsFastFromReset()
     {
         ProcessMoveAndButtonsFastImpl<true>();
+    }
+
+    HOT_FUNCTION void MelonPrimeCore::ApplyBipedFireInput()
+    {
+        // m_native_BipedFire{Pending,DirectActive} are kept false elsewhere when
+        // the feature is OFF: ApplyConfigReload clears them on toggle-off, game
+        // exit / focus loss / game-join init also clear them, and they default
+        // to false on construction. Skip the per-frame redundant resets here.
+        if (m_enableNativeBipedFire)
+            UpdateNativeBipedFireInput();
+    }
+
+    HOT_FUNCTION void MelonPrimeCore::ApplyZoomBindingInput()
+    {
+        if (m_enableNativeZoomToggle) {
+            UpdateNativeZoomToggleInput();
+            return;
+        }
+
+        if (!IsDown(IB_ZOOM))
+            return;
+
+        uint16_t zoomMask = static_cast<uint16_t>(1u << INPUT_R);
+
+        if (m_enableNewZoomInputMethod && m_flags.test(StateFlags::BIT_IN_GAME_INIT)) {
+            const uint16_t boundMask = static_cast<uint16_t>(m_bindingZoom & 0x0FFFu);
+            if (boundMask != 0)
+                zoomMask = boundMask;
+        }
+
+        m_inputMaskFast = static_cast<uint16_t>(m_inputMaskFast & ~zoomMask);
     }
 
     void MelonPrimeCore::ProcessAimInputStylus(melonDS::NDS* nds)
@@ -313,8 +354,11 @@ namespace MelonPrime {
 
 #include "MelonPrimePatchNativeAimDeltaHookRegisterInjectionVersion.inc"
 #include "MelonPrimePatchNativeAimDeltaHookPostFoldWriteVersion.inc"
+#include "MelonPrimePatchNativeBipedFireHook.inc"
+#include "MelonPrimePatchNativeZoomToggleHook.inc"
 #include "MelonPrimePatchImmediateInputEdgeOverlay.inc"
 #include "MelonPrimePatchImmediateTransformGateHook.inc"
+#include "MelonPrimePatchWeaponSwitchHook.inc"
 
     // =========================================================================
     // ProcessAimInputMouse

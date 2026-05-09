@@ -858,6 +858,13 @@ void EmuThread::handleMessages()
             msgResult = 0;
             if (!emuInstance->loadROM(msg.param.value<QStringList>(), true, msgError)) break;
             assert(emuInstance->nds != nullptr);
+#ifdef MELONPRIME_DS
+            // bootROM() queues msg_EmuRun only after this message completes. If
+            // we boot over an active match, clear stale in-game pointers/hooks
+            // now so the running loop cannot enter one more frame with old ROM
+            // state before msg_EmuRun's normal OnEmuStart().
+            melonPrime->ResetRuntimeStateForBoot();
+#endif // MELONPRIME_DS
             emuInstance->nds->Start();
             msgResult = 1;
             break;
@@ -866,6 +873,9 @@ void EmuThread::handleMessages()
             msgResult = 0;
             if (!emuInstance->bootToMenu(msgError)) break;
             assert(emuInstance->nds != nullptr);
+#ifdef MELONPRIME_DS
+            melonPrime->ResetRuntimeStateForBoot();
+#endif // MELONPRIME_DS
             emuInstance->nds->Start();
             msgResult = 1;
             break;

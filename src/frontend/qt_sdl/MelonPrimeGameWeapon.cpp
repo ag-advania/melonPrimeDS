@@ -245,8 +245,11 @@ namespace MelonPrime {
                 targetIdx = lower ? BitScanRev(lower) : BitScanRev(candidates);
             }
 
-            SwitchWeapon(ORDERED_WEAPONS[targetIdx].id);
-            return true;
+            const bool switched = SwitchWeapon(ORDERED_WEAPONS[targetIdx].id);
+            if (!switched) {
+                m_flags.clear(StateFlags::BIT_BLOCK_STYLUS);
+            }
+            return switched;
         }
 
         // --- Case 2: Direct Weapon Hotkeys ---
@@ -264,8 +267,11 @@ namespace MelonPrime {
         // Special Weapon (Affinity) -- index 8
         if (UNLIKELY(firstSet == 8)) {
             if (isOmegaCannonFlagActive) {
-                SwitchWeapon(OMEGA_CANNON);
-                return true;
+                const bool switched = SwitchWeapon(OMEGA_CANNON);
+                if (!switched) {
+                    m_flags.clear(StateFlags::BIT_BLOCK_STYLUS);
+                }
+                return switched;
             }
 
             const uint8_t loaded = *m_ptrs.loadedSpecialWeapon;
@@ -274,8 +280,11 @@ namespace MelonPrime {
                 m_flags.clear(StateFlags::BIT_BLOCK_STYLUS);
                 return false;
             }
-            SwitchWeapon(loaded);
-            return true;
+            const bool switched = SwitchWeapon(loaded);
+            if (!switched) {
+                m_flags.clear(StateFlags::BIT_BLOCK_STYLUS);
+            }
+            return switched;
         }
 
         const uint8_t weaponID = HOTKEY_TO_ID[firstSet];
@@ -314,36 +323,109 @@ namespace MelonPrime {
             return false;
         }
 
-        SwitchWeapon(weaponID);
+        const bool switched = SwitchWeapon(weaponID);
+        if (!switched) {
+            m_flags.clear(StateFlags::BIT_BLOCK_STYLUS);
+        }
+        return switched;
+    }
+
+    // =========================================================================
+    // CanRequestWeaponSwitch -- shared gate for all weapon switch requests
+    //
+    // Returns false (with OSD if showMessage) when emulator-side rules block
+    // the request:
+    //   - invalid weapon id
+    //   - Omega Cannon restriction (Power Beam / Missile / Omega only while
+    //     Omega Cannon flag is set)
+    //   - Adventure pause (OSD)
+    //   - Adventure visor / map (silent)
+    //
+    // Owned/ammo checks are NOT done here -- ProcessWeaponSwitch keeps those
+    // because they have weapon-name-specific OSD wording.
+    // =========================================================================
+    bool MelonPrimeCore::CanRequestWeaponSwitch(uint8_t weaponId, bool showMessage)
+    {
+        using namespace WeaponData;
+
+        if (weaponId >= 9) {
+            return false;
+        }
+
+        if (UNLIKELY(HasOmegaCannonFlag(*m_ptrs.havingWeapons)
+            && !IsWeaponAllowedWhileOmegaCannonActive(weaponId))) {
+            if (showMessage) {
+                ShowOmegaWeaponSwitchBlockedMessage(emuInstance);
+            }
+            return false;
+        }
+
+        if (m_flags.test(StateFlags::BIT_IN_ADVENTURE)) {
+            if (m_flags.test(StateFlags::BIT_PAUSED)) {
+                if (showMessage) {
+                    emuInstance->osdAddMessage(0, "You can't switch weapon now!");
+                }
+                return false;
+            }
+            if ((*m_ptrs.isInVisorOrMap) == 0x1) {
+                return false;
+            }
+        }
+
         return true;
     }
 
     // =========================================================================
-    // SwitchWeapon -- executes the weapon change by manipulating game RAM
+    // SwitchWeapon -- public entry; gates the request and dispatches.
+    //
+    // Native path queues a request accepted by the ARM9 hook. A true return
+    // here means the request was accepted, not that currentWeapon changed
+    // synchronously. During native-only testing, an unconsumed request expires
+    // without falling back to the legacy touch route.
+    // =========================================================================
+    bool MelonPrimeCore::SwitchWeapon(uint8_t weaponId)
+    {
+        if (!CanRequestWeaponSwitch(weaponId, true)) {
+            return false;
+        }
+
+        if ((*m_ptrs.currentWeapon) == weaponId) {
+            return true;
+        }
+
+#ifdef MELONPRIME_DS
+        if (m_enableNativeWeaponSwitch) {
+            melonDS::NDS* const nds = emuInstance->getNDS();
+            const uint8_t romIdx = m_currentRom.romGroupIndex;
+            if (WeaponSwitchHook_IsRomSupported(romIdx)
+                && WeaponSwitchHook_IsSiteValid(nds, romIdx))
+            {
+                QueueWeaponSwitchRequest(weaponId);
+                return true;
+            }
+
+            // Native-only test mode: don't hide hook/site failures behind the
+            // legacy touch fallback.
+            return false;
+        }
+        m_weaponSwitchPending.Clear();
+#endif
+
+        return SwitchWeaponLegacyTouchFallback(weaponId);
+    }
+
+    // =========================================================================
+    // SwitchWeaponLegacyTouchFallback -- pre-hook implementation kept as a
+    // safety net for paths the ARM9 weapon-switch hook can't service.
+    //
+    // Caller MUST have already passed CanRequestWeaponSwitch and confirmed
+    // currentWeapon != weaponId. This function does no further gating.
     //
     // R2: Cache NDS pointer once at the top for consistency with
     //     HandleInGameLogic pattern. Eliminates 1 pointer chase.
     // =========================================================================
-    void MelonPrimeCore::SwitchWeapon(int weaponIndex)
+    bool MelonPrimeCore::SwitchWeaponLegacyTouchFallback(uint8_t weaponId)
     {
-        const uint8_t targetWeaponId = static_cast<uint8_t>(weaponIndex);
-
-        if (UNLIKELY(HasOmegaCannonFlag(*m_ptrs.havingWeapons)
-            && !IsWeaponAllowedWhileOmegaCannonActive(targetWeaponId))) {
-            ShowOmegaWeaponSwitchBlockedMessage(emuInstance);
-            return;
-        }
-
-        if ((*m_ptrs.selectedWeapon) == weaponIndex) return;
-
-        if (m_flags.test(StateFlags::BIT_IN_ADVENTURE)) {
-            if (m_flags.test(StateFlags::BIT_PAUSED)) {
-                emuInstance->osdAddMessage(0, "You can't switch weapon now!");
-                return;
-            }
-            if ((*m_ptrs.isInVisorOrMap) == 0x1) return;
-        }
-
         const uint8_t currentJumpFlags = *m_ptrs.jumpFlag;
         const bool isTransforming = (currentJumpFlags & 0x10) != 0;
         const uint8_t jumpFlag    = currentJumpFlags & 0x0F;
@@ -358,7 +440,7 @@ namespace MelonPrime {
         }
 
         *m_ptrs.weaponChange   = ((*m_ptrs.weaponChange) & 0xF0) | 0x0B;
-        *m_ptrs.selectedWeapon = static_cast<uint8_t>(weaponIndex);
+        *m_ptrs.selectedWeapon = weaponId;
 
         // R2: Cache NDS pointer once (was called twice via emuInstance->getNDS())
         auto* const nds = emuInstance->getNDS();
@@ -382,6 +464,8 @@ namespace MelonPrime {
             const uint8_t current = *m_ptrs.jumpFlag;
             *m_ptrs.jumpFlag = (current & 0xF0) | jumpFlag;
         }
+
+        return (*m_ptrs.currentWeapon) == weaponId;
     }
 
 } // namespace MelonPrime
