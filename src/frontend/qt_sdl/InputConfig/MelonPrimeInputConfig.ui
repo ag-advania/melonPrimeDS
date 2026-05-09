@@ -367,6 +367,23 @@ The EU ROM has a hidden Japanese option — setting your DS firmware to Japanese
 												</property>
 											</widget>
 										</item>
+										<item>
+											<widget class="QCheckBox" name="cbMetroidDamageNotifyPurple">
+												<property name="text">
+													<string>Damage Notify Purple</string>
+												</property>
+											</widget>
+										</item>
+										<item>
+											<widget class="QLabel" name="lblMetroidDamageNotifyPurpleDesc">
+												<property name="text">
+													<string>Briefly flashes the local player in the Double Damage purple state when you take damage, so opponents can see you got hit. Recommended to enable together with &quot;Disable Double Damage Multiplier&quot; so the flash never becomes a real 2x boost.</string>
+												</property>
+												<property name="wordWrap">
+													<bool>true</bool>
+												</property>
+											</widget>
+										</item>
 									</layout>
 								</widget>
 							</item>

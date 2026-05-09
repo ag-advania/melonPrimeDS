@@ -103,6 +103,15 @@ namespace MelonPrime {
 #endif
 
         screenSyncMode = localCfg.GetInt(CfgKey::ScreenSyncMode);
+
+        // Damage Notify Purple — disabled by default; cached so the per-frame
+        // tick reads only one bool, never the config table.
+        const bool dnp = localCfg.GetBool("Metroid.GameFeature.DamageNotifyPurple");
+        if (m_damageNotifyPurpleEnabled && !dnp) {
+            // Toggled off → drop accumulated baseline so a re-enable starts fresh.
+            m_damageNotifyPurpleState.valid = false;
+        }
+        m_damageNotifyPurpleEnabled = dnp;
     }
 
     void MelonPrimeCore::Initialize()
@@ -441,6 +450,58 @@ namespace MelonPrime {
         return m_flags.test(StateFlags::BIT_ROM_DETECTED) && !m_flags.test(StateFlags::BIT_IN_GAME);
     }
 
+    // =========================================================================
+    // Damage Notify Purple
+    //
+    // Spec: 18-Damage-Notify-Purple-NonHook-AI-Implementation-Instructions.md
+    //
+    //   When the local player's HP drops below the previous frame's HP, write
+    //   10 to the local Double Damage timer (CPlayer +0x4B0). This produces a
+    //   short purple flash so opponents (and observers) can see "this player
+    //   just took damage". Pair with the existing Disable Double Damage
+    //   Multiplier feature so the flash does not become a real 2x boost.
+    //
+    //   Always overwrite — do NOT read+protect the existing timer.
+    //   HP==0 (death/respawn) is treated as a baseline-only frame to avoid
+    //   firing during respawn cycles. >999 is treated as junk/uninitialised.
+    //   Caller already gates this on isInGame, so ROM/pointer setup is valid.
+    // =========================================================================
+    HOT_FUNCTION void MelonPrimeCore::DamageNotifyPurpleTick()
+    {
+        if (!m_damageNotifyPurpleEnabled) {
+            // Always make sure the next enable starts from a clean baseline.
+            m_damageNotifyPurpleState.valid = false;
+            return;
+        }
+
+        if (UNLIKELY(!m_ptrs.health || !m_ptrs.doubleDamageTimer)) {
+            m_damageNotifyPurpleState.valid = false;
+            return;
+        }
+
+        const uint16_t hp = *m_ptrs.health;
+
+        if (hp == 0 || hp > 999) {
+            m_damageNotifyPurpleState.valid = false;
+            m_damageNotifyPurpleState.previousHp = hp;
+            return;
+        }
+
+        if (!m_damageNotifyPurpleState.valid) {
+            m_damageNotifyPurpleState.valid = true;
+            m_damageNotifyPurpleState.previousHp = hp;
+            return;
+        }
+
+        const uint16_t prev = m_damageNotifyPurpleState.previousHp;
+        m_damageNotifyPurpleState.previousHp = hp;
+
+        if (hp >= prev) return;
+
+        constexpr uint16_t kDamageNotifyPurpleDuration = 10;
+        *m_ptrs.doubleDamageTimer = kDamageNotifyPurpleDuration;
+    }
+
     // 99%+ frames hit the early return (2 bit tests + branch).
     FORCE_INLINE void MelonPrimeCore::HandleGlobalHotkeys()
     {
@@ -525,6 +586,9 @@ namespace MelonPrime {
 
             if (LIKELY(isInGame)) {
                 OsdColor_ApplyOnce(emuInstance, localCfg, m_currentRom);
+                // Damage Notify Purple — runs whether or not the window is focused
+                // so HP drops during alt-tab still emit the purple flash.
+                DamageNotifyPurpleTick();
             }
             else if (m_flags.test(StateFlags::BIT_IN_GAME_INIT)) {
                 m_flags.clear(StateFlags::BIT_IN_GAME_INIT);
@@ -708,6 +772,11 @@ namespace MelonPrime {
         m_ptrs.aimY = GetRamPointer<uint16_t>(mainRAM, m_addrHot.aimY);
         m_ptrs.isInVisorOrMap = GetRamPointer<uint8_t>(mainRAM, m_addrHot.isInVisorOrMap);
         m_ptrs.isMapOrUserActionPaused = GetRamPointer<uint8_t>(mainRAM, m_addrHot.isMapOrUserActionPaused);
+        // Damage Notify Purple: cache local-player HP and Double Damage timer pointers.
+        m_ptrs.health = GetRamPointer<uint16_t>(mainRAM, m_currentRom.playerHP + offP);
+        m_ptrs.doubleDamageTimer = GetRamPointer<uint16_t>(mainRAM, m_currentRom.playerDoubleDamageTimer + offP);
+        m_damageNotifyPurpleState.valid = false;
+        m_damageNotifyPurpleState.previousHp = 0;
 
         const uint8_t hunterID = Read8(mainRAM, m_addrHot.chosenHunter);
         m_hunterID = (hunterID <= 6) ? hunterID : 0;

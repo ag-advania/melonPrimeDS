@@ -26,6 +26,8 @@ namespace MelonPrime {
     inline constexpr RomTable<uint32_t> LIST_PlayerPos = { 0x020DBB78, 0x020DBB38, 0x020D9CB8, 0x020DA538, 0x020DA558, 0x020DA5D8, 0x020D33A9 };
     inline constexpr RomTable<uint32_t> LIST_IsInVisorOrMap = { 0x020DB0BD, 0x020DB07D, 0x020D91FD, 0x020D9A7D, 0x020D9A9D, 0x020D9B1D, 0x020D28EE };
     inline constexpr RomTable<uint32_t> LIST_PlayerHP = { 0x020DC6AE, 0x020DC66E, 0x020DA7EE, 0x020DB06E, 0x020DB08E, 0x020DB10E, 0x020D3EBA };
+    // Slot-0 Double Damage timer (CPlayer +0x4B0). Used by Damage Notify Purple to flash purple on local damage.
+    inline constexpr RomTable<uint32_t> LIST_PlayerDoubleDamageTimer = { 0x020DCA84, 0x020DCA44, 0x020DABC4, 0x020DB444, 0x020DB464, 0x020DB4E4, 0x020D4290 };
     inline constexpr RomTable<uint32_t> LIST_BaseIsAltForm = { 0x020DC6D8, 0x020DC698, 0x020DA818, 0x020DB098, 0x020DB0B8, 0x020DB138, 0x020D3EE4 };
     inline constexpr RomTable<uint32_t> LIST_BoostGauge = { 0x020DC71C, 0x020DC6DC, 0x020DA85C, 0x020DB0DC, 0x020DB0FC, 0x020DB17C, 0x020D3F28 };
     inline constexpr RomTable<uint32_t> LIST_IsBoosting = { 0x020DC71E, 0x020DC6DE, 0x020DA85E, 0x020DB0DE, 0x020DB0FE, 0x020DB17E, 0x020D3F2A };
@@ -179,6 +181,7 @@ namespace MelonPrime {
         uint32_t playerPos;
         uint32_t isInVisorOrMap;
         uint32_t playerHP;
+        uint32_t playerDoubleDamageTimer;
         uint32_t baseIsAltForm;
         uint32_t boostGauge;
         uint32_t isBoosting;
@@ -252,6 +255,7 @@ namespace MelonPrime {
             static_cast<uint8_t>(i),
             LIST_PlayerStructStart[i], LIST_PlayerPos[i],
             LIST_IsInVisorOrMap[i], LIST_PlayerHP[i],
+            LIST_PlayerDoubleDamageTimer[i],
             LIST_BaseIsAltForm[i], LIST_BoostGauge[i],
             LIST_IsBoosting[i], LIST_BaseLoadedSpecialWeapon[i],
             LIST_BaseJumpFlag[i], LIST_BaseWeaponChange[i],
