@@ -496,7 +496,8 @@ namespace MelonPrime {
     HOT_FUNCTION void MelonPrimeCore::DamageNotifyPurpleTick()
     {
         if (!m_damageNotifyPurpleEnabled) {
-            m_damageNotifyPurpleState = {};
+            if (UNLIKELY(m_damageNotifyPurpleState.initialized))
+                m_damageNotifyPurpleState = {};
             return;
         }
 
@@ -517,12 +518,35 @@ namespace MelonPrime {
         const bool isWeavel = m_flags.test(StateFlags::BIT_IS_WEAVEL);
 
         const uint16_t mainHp = *m_ptrs.health;
+        if (LIKELY(!isWeavel)) {
+            if (!s.initialized) {
+                s.previousObservedHp = mainHp;
+                s.previousMainHp = mainHp;
+                s.previousProxyHp = 0;
+                s.previousProxyActive = false;
+                s.initialized = true;
+                return;
+            }
+
+            const uint16_t prev = s.previousObservedHp;
+            s.previousObservedHp = mainHp;
+            s.previousMainHp = mainHp;
+
+            if (prev > mainHp) {
+                const uint16_t delta = static_cast<uint16_t>(prev - mainHp);
+                if (delta > DELTA_THRESHOLD) {
+                    *m_ptrs.doubleDamageTimer = NOTIFY_DURATION;
+                }
+            }
+            return;
+        }
+
         uint16_t observedHp = mainHp;
         uint16_t proxyHp = 0;
         bool proxyActive = false;
         bool skipCompare = false;
 
-        if (isWeavel && m_ptrs.moreFlags && m_ptrs.weavelProxyPtr) {
+        if (m_ptrs.moreFlags && m_ptrs.weavelProxyPtr) {
             proxyActive = (*m_ptrs.moreFlags & PROXY_ACTIVE_BIT) != 0;
 
             if (proxyActive) {
@@ -560,8 +584,8 @@ namespace MelonPrime {
         }
 
         const bool wasProxyActive = s.previousProxyActive;
-        const bool proxyJustAttached = isWeavel && !wasProxyActive && proxyActive;
-        const bool proxyJustDetached = isWeavel && wasProxyActive && !proxyActive;
+        const bool proxyJustAttached = !wasProxyActive && proxyActive;
+        const bool proxyJustDetached = wasProxyActive && !proxyActive;
 
         // Always update baselines except on the compare path.
         auto updateBaselines = [&]() {
@@ -679,7 +703,8 @@ namespace MelonPrime {
                 OsdColor_ApplyOnce(emuInstance, localCfg, m_currentRom);
                 // Damage Notify Purple — runs whether or not the window is focused
                 // so HP drops during alt-tab still emit the purple flash.
-                DamageNotifyPurpleTick();
+                if (m_damageNotifyPurpleEnabled)
+                    DamageNotifyPurpleTick();
             }
             else if (m_flags.test(StateFlags::BIT_IN_GAME_INIT)) {
                 m_flags.clear(StateFlags::BIT_IN_GAME_INIT);
