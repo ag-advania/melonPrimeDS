@@ -328,11 +328,11 @@ namespace MelonPrime {
         int8_t   m_nativeAimHookMode = 0;  // 0=off 1=RegisterInject 2=FoldDerived
         bool     m_enableImmediateInputEdgeOverlay = false;
         bool     m_enableDirectAltFormTransform = false;
-        bool     m_enableNativeBipedFire = true;
-        bool     m_enableNewZoomInputMethod = true;
+        bool     m_enableNativeBipedFire = false;
+        bool     m_enableNewZoomInputMethod = false;
         bool     m_enableNativeZoomToggle = false;
 #ifdef MELONPRIME_DS
-        bool     m_enableNativeWeaponSwitch = true;
+        bool     m_enableNativeWeaponSwitch = false;
 #endif
         int16_t  m_nativeAimDeltaX = 0;
         int16_t  m_nativeAimDeltaY = 0;

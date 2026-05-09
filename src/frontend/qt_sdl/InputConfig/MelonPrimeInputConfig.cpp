@@ -29,6 +29,7 @@
 #include "MelonPrimeInputConfigInternal.h"
 #include "ui_MelonPrimeInputConfig.h"
 #include "Config.h"
+#include "MelonPrimeDef.h"
 #include "toml/toml.hpp"
 #ifdef MELONPRIME_CUSTOM_HUD
 #include "MelonPrimeHudRender.h"
@@ -305,7 +306,8 @@ void MelonPrimeInputConfig::setupInputMethodSection(Config::Table& instcfg)
         "Checked: use the native ARM9 game function hook. "
         "Unchecked: use the older touch/menu simulation path.");
     m_cbMetroidUseNewWeaponSwitchMethod->setChecked(
-        std::clamp(instcfg.GetInt("Metroid.Input.WeaponSwitchMethod"), 0, 1) == 0);
+        std::clamp(instcfg.GetInt("Metroid.Input.WeaponSwitchMethod"), 0, 1)
+            == MelonPrime::WeaponSwitchMethod::NewNative);
     sectionLayout->addWidget(m_cbMetroidUseNewWeaponSwitchMethod);
 
     auto* desc = new QLabel(
@@ -324,7 +326,8 @@ void MelonPrimeInputConfig::setupInputMethodSection(Config::Table& instcfg)
         "Unchecked: use the older fixed input/overlay path.");
     m_cbMetroidUseNewBipedFireMethod->setChecked(
         kDeveloperOnlyFeaturesEnabled
-            && std::clamp(instcfg.GetInt("Metroid.Input.BipedFireMethod"), 0, 1) == 0);
+            && std::clamp(instcfg.GetInt("Metroid.Input.BipedFireMethod"), 0, 1)
+                == MelonPrime::BipedFireMethod::NewNativeEdge);
     m_cbMetroidUseNewBipedFireMethod->setEnabled(kDeveloperOnlyFeaturesEnabled);
     addDeveloperSpacing();
     addDeveloperWidget(m_cbMetroidUseNewBipedFireMethod);
@@ -366,7 +369,8 @@ void MelonPrimeInputConfig::setupInputMethodSection(Config::Table& instcfg)
         "Checked: use the current in-game zoom binding from the player's control preset. "
         "Unchecked: use the older fixed R-button path.");
     const int zoomMethod = std::clamp(instcfg.GetInt("Metroid.Input.ZoomMethod"), 0, 2);
-    m_cbMetroidUseNewZoomMethod->setChecked(zoomMethod == 0);
+    m_cbMetroidUseNewZoomMethod->setChecked(
+        zoomMethod == MelonPrime::ZoomInputMethod::NewPresetBinding);
     sectionLayout->addSpacing(6);
     sectionLayout->addWidget(m_cbMetroidUseNewZoomMethod);
 
@@ -376,7 +380,9 @@ void MelonPrimeInputConfig::setupInputMethodSection(Config::Table& instcfg)
     m_cbMetroidUseNewZoomMethod2->setToolTip(
         "Checked: toggle native weapon zoom by calling the game's SetPlayerScopeZoom setter. "
         "Unchecked with New Method also off: use Legacy fixed R-button input.");
-    m_cbMetroidUseNewZoomMethod2->setChecked(kDeveloperOnlyFeaturesEnabled && zoomMethod == 2);
+    m_cbMetroidUseNewZoomMethod2->setChecked(
+        kDeveloperOnlyFeaturesEnabled
+        && zoomMethod == MelonPrime::ZoomInputMethod::NewNativeToggle);
     m_cbMetroidUseNewZoomMethod2->setEnabled(kDeveloperOnlyFeaturesEnabled);
     addDeveloperSpacing();
     addDeveloperWidget(m_cbMetroidUseNewZoomMethod2);
