@@ -61,6 +61,16 @@ namespace MelonPrime {
         m_nativeAimHookMode = 0;
 #endif
         m_enableNativeAimDeltaHook = (m_nativeAimHookMode != 0);
+        m_lowLatencyAimMode = static_cast<int8_t>(
+            std::clamp(localCfg.GetInt(CfgKey::LowLatencyAimMode),
+                       LowLatencyAimMode::Off,
+                       LowLatencyAimMode::MoonLikeAim));
+        m_moonLikeAimNormalStepQ12 = std::clamp(
+            localCfg.GetInt(CfgKey::MoonLikeAimNormalStepQ12), 1, 8192);
+        m_moonLikeAimFastStepQ12 = std::clamp(
+            localCfg.GetInt(CfgKey::MoonLikeAimFastStepQ12), 1, 8192);
+        m_moonLikeAimFastThresholdQ12 = std::clamp(
+            localCfg.GetInt(CfgKey::MoonLikeAimFastThresholdQ12), 1, 8192);
 #ifdef MELONPRIME_ENABLE_DEVELOPER_FEATURES
         m_enableImmediateInputEdgeOverlay = localCfg.GetBool(CfgKey::ImmediateInputEdgeOverlay);
 #else

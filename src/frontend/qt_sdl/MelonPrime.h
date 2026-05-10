@@ -198,6 +198,15 @@ namespace MelonPrime {
             uint32_t arm9ExecAddr,
             uint32_t regs[16]);
 
+        static uint32_t LowLatencyAimHook_GetAddresses(
+            uint8_t romGroupIndex,
+            uint32_t* out,
+            uint32_t maxCount);
+        void LowLatencyAimHook_DispatchCheck(
+            melonDS::NDS* nds,
+            uint32_t arm9ExecAddr,
+            uint32_t regs[16]);
+
         static uint32_t ImmediateInputEdgeOverlay_GetAddresses(
             uint8_t romGroupIndex,
             uint32_t* out,
@@ -335,6 +344,10 @@ namespace MelonPrime {
         bool     m_enableAimAccumulator = false;
         bool     m_enableNativeAimDeltaHook = false; // true when mode != 0
         int8_t   m_nativeAimHookMode = 0;  // 0=off 1=RegisterInject 2=FoldDerived
+        int8_t   m_lowLatencyAimMode = 0;  // 0=off 1=ImmediateSync 2=MoonLikeAim
+        int32_t  m_moonLikeAimNormalStepQ12 = 0x0165;
+        int32_t  m_moonLikeAimFastStepQ12 = 0x058F;
+        int32_t  m_moonLikeAimFastThresholdQ12 = 0x042E;
         bool     m_enableImmediateInputEdgeOverlay = false;
         bool     m_enableDirectAltFormTransform = false;
         bool     m_enableNativeBipedFire = false;

@@ -24,6 +24,10 @@ namespace MelonPrime {
         inline constexpr const char* NativeAimDeltaHook = "Metroid.Aim.Enable.NativeDeltaHook"; // legacy bool, kept for migration
         inline constexpr const char* NativeAimHookMode  = "Metroid.Aim.NativeHookMode"; // 0=off 1=RegisterInject 2=FoldDerived
         inline constexpr const char* InstantAimFollow = "Metroid.Aim.Enable.InstantAimFollow";
+        inline constexpr const char* LowLatencyAimMode = "Metroid.Aim.LowLatencyMode";
+        inline constexpr const char* MoonLikeAimNormalStepQ12 = "Metroid.Aim.MoonLikeAimNormalStepQ12";
+        inline constexpr const char* MoonLikeAimFastStepQ12 = "Metroid.Aim.MoonLikeAimFastStepQ12";
+        inline constexpr const char* MoonLikeAimFastThresholdQ12 = "Metroid.Aim.MoonLikeAimFastThresholdQ12";
         inline constexpr const char* ImmediateInputEdgeOverlay = "Metroid.Input.Enable.ImmediateInputEdgeOverlay";
         inline constexpr const char* DirectAltFormTransform    = "Metroid.Input.Enable.DirectAltFormTransform";
         inline constexpr const char* WeaponSwitchMethod        = "Metroid.Input.WeaponSwitchMethod"; // 0=Legacy touch 1=New native
@@ -59,6 +63,12 @@ namespace MelonPrime {
         inline constexpr int LegacyFixedR = 0;
         inline constexpr int NewPresetBinding = 1;
         inline constexpr int NewNativeToggle = 2;
+    }
+
+    namespace LowLatencyAimMode {
+        inline constexpr int Off = 0;
+        inline constexpr int ImmediateSync = 1;
+        inline constexpr int MoonLikeAim = 2;
     }
 
 

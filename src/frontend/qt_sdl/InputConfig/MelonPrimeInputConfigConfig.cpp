@@ -117,6 +117,10 @@ void MelonPrimeInputConfig::saveConfig()
     instcfg.SetBool("Metroid.Enable.stylusMode", ui->cbMetroidEnableStylusMode->checkState() == Qt::Checked);
     instcfg.SetBool("Metroid.Aim.Disable.MphAimSmoothing", ui->cbMetroidDisableMphAimSmoothing->checkState() == Qt::Checked);
     instcfg.SetBool("Metroid.Aim.Enable.Accumulator", ui->cbMetroidEnableAimAccumulator->checkState() == Qt::Checked);
+    const int lowLatencyAimMode = m_comboMetroidLowLatencyAimMode
+        ? m_comboMetroidLowLatencyAimMode->currentIndex()
+        : MelonPrime::LowLatencyAimMode::Off;
+    instcfg.SetInt("Metroid.Aim.LowLatencyMode", lowLatencyAimMode);
     int nativeAimHookMode = 0;
     if constexpr (kDeveloperOnlyFeaturesEnabled) {
         if (ui->cbMetroidEnableNativeAimRegisterInjection->checkState() == Qt::Checked)
@@ -165,6 +169,7 @@ void MelonPrimeInputConfig::saveConfig()
     instcfg.SetBool(
         "Metroid.Aim.Enable.InstantAimFollow",
         kDeveloperOnlyFeaturesEnabled
+            && lowLatencyAimMode == MelonPrime::LowLatencyAimMode::Off
             && ui->cbMetroidEnableInstantAimFollow->checkState() == Qt::Checked);
 
     // Screen Sync Mode
