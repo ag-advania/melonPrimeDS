@@ -513,21 +513,34 @@ namespace MelonPrime {
     {
         auto snap = takeSnapshot();  // acquire fence inside
         const uint8_t physicalMouse = snap.mouse;
-        const uint8_t pendingMousePresses = static_cast<uint8_t>(
-            m_mouseButtonPresses.exchange(0, std::memory_order_acquire) |
-            m_mouseButtonDeferredPresses.exchange(0, std::memory_order_acquire));
 
-        // A very short click is represented as a one-frame mouse bit even when
-        // the physical button is already up.  If the same logical hotkey was
-        // down last frame, sending that bit immediately would merge two taps
-        // into one long hold.  Defer only those tap bits for one frame, creating
-        // a visible release frame first; this makes rapid fire/re-clicks reliable
-        // without affecting normal held mouse buttons.
-        uint8_t activeMousePresses = pendingMousePresses;
-        if (pendingMousePresses) {
+        // Read deferred (queued from last frame) and new presses separately so
+        // we can distinguish "stacked" cases (same bit in both) and avoid
+        // collapsing multiple logical clicks into one bit via OR.
+        const uint8_t deferredFromPrev = m_mouseButtonDeferredPresses.exchange(0, std::memory_order_acquire);
+        const uint8_t newPresses       = m_mouseButtonPresses.exchange(0, std::memory_order_acquire);
+
+        // Active = bits forced into snap.mouse this frame.
+        // Defer  = bits queued for next frame (re-stored into deferred slot).
+        // forcePressEdge = hotkeys that should fire as a press edge even if
+        //                  m_hkPrev still has them (handles tap→hold and the
+        //                  deferred-resolution-while-hkPrev-still-set cases).
+        uint8_t activeMousePresses = deferredFromPrev;
+        uint8_t deferMousePresses  = 0;
+        uint64_t forcePressEdge    = 0;
+
+        // Stacked bits: both deferred-from-prev and new-press for the same
+        // button. The deferred portion fires this frame (already in
+        // activeMousePresses). The new portion is queued for next frame so
+        // each click gets its own visible activation.
+        const uint8_t stackedBits = static_cast<uint8_t>(deferredFromPrev & newPresses);
+        deferMousePresses |= stackedBits;
+
+        // Remaining new bits are evaluated normally (tap-defer logic).
+        const uint8_t newToConsider = static_cast<uint8_t>(newPresses & ~deferredFromPrev);
+        if (newToConsider) {
             const uint64_t physicalDown = scanBoundHotkeys(snap);
-            uint8_t deferMousePresses = 0;
-            uint8_t tapBits = static_cast<uint8_t>(pendingMousePresses & ~physicalMouse);
+            uint8_t tapBits = static_cast<uint8_t>(newToConsider & ~physicalMouse);
 
             while (tapBits) {
                 const uint8_t bit = static_cast<uint8_t>(tapBits & -tapBits);
@@ -538,14 +551,39 @@ namespace MelonPrime {
                 const uint64_t hotkeysFromTap =
                     static_cast<uint64_t>(scanBoundHotkeys(probe) & ~physicalDown);
                 if ((hotkeysFromTap & m_hkPrev) != 0)
-                    deferMousePresses = static_cast<uint8_t>(deferMousePresses | bit);
+                    deferMousePresses |= bit;
             }
 
-            activeMousePresses = static_cast<uint8_t>(activeMousePresses & ~deferMousePresses);
-            if (deferMousePresses)
-                m_mouseButtonDeferredPresses.fetch_or(deferMousePresses, std::memory_order_release);
+            // New bits not deferred fire this frame. Held-with-new-DOWN bits
+            // (in physicalMouse) are always activated (no defer logic), and
+            // their press edge is recovered via forcePressEdge below.
+            activeMousePresses |= static_cast<uint8_t>(newToConsider & ~deferMousePresses);
         }
-        snap.mouse = static_cast<uint8_t>(snap.mouse | activeMousePresses);
+
+        // forcePressEdge: any hotkey that is being "newly triggered" by an
+        // active press bit AND was already in m_hkPrev needs an explicit press
+        // edge, because the natural `newDown & ~m_hkPrev` would mask it out.
+        // Two real cases:
+        //   1. Deferred press resolves while m_hkPrev still has the hotkey
+        //      (after stacked-tap cycles).
+        //   2. User releases+repress within one frame and ends with the button
+        //      held (tap→hold). physicalMouse has the bit, hkPrev still has
+        //      the hotkey, the new DOWN must produce a press edge.
+        if (activeMousePresses) {
+            auto probeWith = snap;
+            probeWith.mouse = static_cast<uint8_t>(physicalMouse | activeMousePresses);
+            auto probeWithout = snap;
+            probeWithout.mouse = static_cast<uint8_t>(physicalMouse & ~activeMousePresses);
+
+            const uint64_t hotkeysTriggeredByPresses =
+                scanBoundHotkeys(probeWith) & ~scanBoundHotkeys(probeWithout);
+            forcePressEdge = hotkeysTriggeredByPresses & m_hkPrev;
+        }
+
+        if (deferMousePresses)
+            m_mouseButtonDeferredPresses.fetch_or(deferMousePresses, std::memory_order_release);
+
+        snap.mouse = static_cast<uint8_t>(physicalMouse | activeMousePresses);
 
         // clearStuck* runs AFTER takeSnapshot so that valid quick presses
         // (button pressed and released within one frame) are captured in the
@@ -567,7 +605,9 @@ namespace MelonPrime {
 
         const uint64_t newDown = scanBoundHotkeys(snap);
         outHk.down = newDown;
-        outHk.pressed = newDown & ~m_hkPrev;
+        // forcePressEdge bits are removed from m_hkPrev for this frame's edge
+        // calc so they appear as fresh presses.
+        outHk.pressed = newDown & ~(m_hkPrev & ~forcePressEdge);
 
         // If recovery cleared stale bits, keep edge tracking aligned with the
         // post-recovery held state. The frame output still preserves the
