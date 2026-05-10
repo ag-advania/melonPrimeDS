@@ -354,6 +354,7 @@ namespace MelonPrime {
 
 #include "MelonPrimePatchNativeAimDeltaHookRegisterInjectionVersion.inc"
 #include "MelonPrimePatchNativeAimDeltaHookPostFoldWriteVersion.inc"
+#include "MelonPrimePatchLowLatencyAimHook.inc"
 #include "MelonPrimePatchNativeBipedFireHook.inc"
 #include "MelonPrimePatchNativeZoomToggleHook.inc"
 #include "MelonPrimePatchImmediateInputEdgeOverlay.inc"

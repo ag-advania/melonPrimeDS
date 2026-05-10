@@ -77,6 +77,7 @@ set(SOURCES_QT_SDL
     MelonPrimeGameInput.cpp
     MelonPrimeGameSettings.cpp
     MelonPrimeGameWeapon.cpp
+    MelonPrimeDamageNotifyPurple.cpp
 
     InputConfig/MelonPrimeInputConfig.cpp
     InputConfig/MelonPrimeInputConfigConfig.cpp
