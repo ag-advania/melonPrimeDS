@@ -554,6 +554,7 @@ namespace MelonPrime {
         HOT_FUNCTION void UpdateInputStateReentrant(bool focused);  // re-entrant FrameAdvance path
         template <bool kReentrant> FORCE_INLINE void UpdateInputStateImpl(bool focused);
         HOT_FUNCTION void HandleInGameLogic();
+        COLD_FUNCTION void ReloadDamageNotifyPurpleConfig();
         HOT_FUNCTION void DamageNotifyPurpleTick();
         template <bool kInputMaskReset> FORCE_INLINE void ProcessMoveAndButtonsFastImpl();
         HOT_FUNCTION void ProcessMoveAndButtonsFast();
