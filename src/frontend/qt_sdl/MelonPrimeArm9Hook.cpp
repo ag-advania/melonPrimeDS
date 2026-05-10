@@ -25,7 +25,7 @@ namespace {
 #define MP_ARM9_HOOK_LOG(...) do {} while (0)
 #endif
 
-enum DispatchMask : uint8_t
+enum DispatchMask : uint16_t
 {
     Dispatch_NativeAimDelta             = 1u << 0,
     Dispatch_ShadowFreeze               = 1u << 1,
@@ -35,18 +35,19 @@ enum DispatchMask : uint8_t
     Dispatch_WeaponSwitch               = 1u << 5,
     Dispatch_NativeZoomToggle           = 1u << 6,
     Dispatch_NativeBipedFire            = 1u << 7,
+    Dispatch_LowLatencyAim              = 1u << 8,
 };
 
 struct DispatchEntry
 {
     uint32_t Address;
-    uint8_t Mask;
+    uint16_t Mask;
 };
 
 static DispatchEntry s_dispatchEntries[melonDS::NDS::ARM9InstructionHookMaxAddresses] = {};
 static uint32_t s_dispatchCount = 0;
 static uint32_t s_lastDispatchAddress = 0;
-static uint8_t s_lastDispatchMask = 0;
+static uint16_t s_lastDispatchMask = 0;
 
 static void ClearDispatchEntries() noexcept
 {
@@ -57,7 +58,7 @@ static void ClearDispatchEntries() noexcept
         entry = {};
 }
 
-static void AddDispatchAddress(uint32_t address, uint8_t mask) noexcept
+static void AddDispatchAddress(uint32_t address, uint16_t mask) noexcept
 {
     for (uint32_t i = 0; i < s_dispatchCount; ++i)
     {
@@ -73,7 +74,7 @@ static void AddDispatchAddress(uint32_t address, uint8_t mask) noexcept
         MP_ARM9_HOOK_LOG(
             "ARM9Hook RegisterDrop: address=%08X mask=%02X count=%u max=%u\n",
             address,
-            mask,
+            static_cast<unsigned>(mask),
             s_dispatchCount,
             melonDS::NDS::ARM9InstructionHookMaxAddresses);
         return;
@@ -82,7 +83,7 @@ static void AddDispatchAddress(uint32_t address, uint8_t mask) noexcept
     s_dispatchEntries[s_dispatchCount++] = {address, mask};
 }
 
-[[nodiscard]] static FORCE_INLINE uint8_t FindDispatchMask(uint32_t arm9ExecAddr) noexcept
+[[nodiscard]] static FORCE_INLINE uint16_t FindDispatchMask(uint32_t arm9ExecAddr) noexcept
 {
     if (LIKELY(arm9ExecAddr == s_lastDispatchAddress))
         return s_lastDispatchMask;
@@ -108,7 +109,7 @@ static bool DispatcherCallback(
 {
     redirectExecAddr = 0;
 
-    const uint8_t mask = FindDispatchMask(arm9ExecAddr);
+    const uint16_t mask = FindDispatchMask(arm9ExecAddr);
     if (UNLIKELY(mask == 0))
         return false;
 
@@ -125,6 +126,9 @@ static bool DispatcherCallback(
         else
             core->NativeAimDeltaHookRegisterInjection_DispatchCheck(nds, arm9ExecAddr, regs);
     }
+
+    if ((mask & Dispatch_LowLatencyAim) != 0)
+        core->LowLatencyAimHook_DispatchCheck(nds, arm9ExecAddr, regs);
 
     if ((mask & Dispatch_NativeZoomToggle) != 0)
     {
@@ -194,7 +198,7 @@ void ARM9Hook_Install(
     uint32_t moduleAddresses[melonDS::NDS::ARM9InstructionHookMaxAddresses] = {};
     uint32_t moduleCount = 0;
 
-    auto addModuleAddresses = [&](uint8_t mask) {
+    auto addModuleAddresses = [&](uint16_t mask) {
         for (uint32_t i = 0; i < moduleCount; ++i)
             AddDispatchAddress(moduleAddresses[i], mask);
     };
@@ -226,6 +230,9 @@ void ARM9Hook_Install(
     const bool enableTransformGate = cfg.GetBool(CfgKey::DirectAltFormTransform);
     const bool enableWeaponSwitch =
         cfg.GetInt(CfgKey::WeaponSwitchMethod) != WeaponSwitchMethod::LegacyTouch;
+    const bool enableLowLatencyAim =
+        !cfg.GetBool(CfgKey::StylusMode)
+        && cfg.GetInt(CfgKey::LowLatencyAimMode) != LowLatencyAimMode::Off;
 
     if (nativeAimHookMode == 1)
     {
@@ -238,6 +245,13 @@ void ARM9Hook_Install(
         moduleCount = MelonPrimeCore::NativeAimDeltaHookPostFoldWrite_GetAddresses(
             romGroupIndex, moduleAddresses, melonDS::NDS::ARM9InstructionHookMaxAddresses);
         addModuleAddresses(Dispatch_NativeAimDelta);
+    }
+
+    if (enableLowLatencyAim)
+    {
+        moduleCount = MelonPrimeCore::LowLatencyAimHook_GetAddresses(
+            romGroupIndex, moduleAddresses, melonDS::NDS::ARM9InstructionHookMaxAddresses);
+        addModuleAddresses(Dispatch_LowLatencyAim);
     }
 
     // Keep ShadowFreeze registered even when disabled. The quick menu toggles
@@ -318,7 +332,7 @@ void ARM9Hook_Install(
             "ARM9Hook Address[%u]: %08X mask=%02X\n",
             i,
             s_dispatchEntries[i].Address,
-            s_dispatchEntries[i].Mask);
+            static_cast<unsigned>(s_dispatchEntries[i].Mask));
     }
 
     if (count > 0)

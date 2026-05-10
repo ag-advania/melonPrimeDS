@@ -121,7 +121,9 @@ void InstantAimFollow_ApplyOnce(
 {
     // Original public behavior:
     // const bool shouldApply = cfg.GetBool(CfgKey::InstantAimFollow);
-    const bool shouldApply = kInstantAimFollowAvailable && cfg.GetBool(CfgKey::InstantAimFollow);
+    const bool shouldApply = kInstantAimFollowAvailable
+        && cfg.GetInt(CfgKey::LowLatencyAimMode) == LowLatencyAimMode::Off
+        && cfg.GetBool(CfgKey::InstantAimFollow);
 
     if (!shouldApply)
     {
