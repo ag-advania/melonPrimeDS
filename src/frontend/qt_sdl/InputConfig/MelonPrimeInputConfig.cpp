@@ -137,6 +137,40 @@ void MelonPrimeInputConfig::setupSensitivityAndToggles(Config::Table& instcfg)
     ui->cbMetroidEnableStylusMode->setChecked(instcfg.GetBool("Metroid.Enable.stylusMode"));
     ui->cbMetroidDisableMphAimSmoothing->setChecked(instcfg.GetBool("Metroid.Aim.Disable.MphAimSmoothing"));
     ui->cbMetroidEnableAimAccumulator->setChecked(instcfg.GetBool("Metroid.Aim.Enable.Accumulator"));
+    if (!m_comboMetroidLowLatencyAimMode) {
+        m_comboMetroidLowLatencyAimMode = new QComboBox(ui->sectionSensitivity);
+        m_comboMetroidLowLatencyAimMode->addItem(QStringLiteral("Off"));
+        m_comboMetroidLowLatencyAimMode->addItem(QStringLiteral("Immediate Sync"));
+        m_comboMetroidLowLatencyAimMode->addItem(QStringLiteral("MoonLike Aim"));
+        m_comboMetroidLowLatencyAimMode->setToolTip(
+            QStringLiteral("Controls how the game's current aim direction follows the target aim direction."));
+        m_comboMetroidLowLatencyAimMode->setCurrentIndex(
+            std::clamp(
+                instcfg.GetInt(MelonPrime::CfgKey::LowLatencyAimMode),
+                MelonPrime::LowLatencyAimMode::Off,
+                MelonPrime::LowLatencyAimMode::MoonLikeAim));
+
+        auto* modeLabel = new QLabel(QStringLiteral("Low-Latency Aim Mode"), ui->sectionSensitivity);
+        modeLabel->setToolTip(m_comboMetroidLowLatencyAimMode->toolTip());
+        m_lblMetroidLowLatencyAimDesc = new QLabel(
+            QStringLiteral("MoonLike Aim applies small aim movements immediately and limits only large aim jumps with a max-step chase."),
+            ui->sectionSensitivity);
+        m_lblMetroidLowLatencyAimDesc->setWordWrap(true);
+        m_lblMetroidLowLatencyAimDesc->setStyleSheet(QStringLiteral("QLabel { margin-left: 20px; }"));
+
+        if (auto* form = qobject_cast<QFormLayout*>(ui->sectionSensitivity->layout())) {
+            form->insertRow(3, modeLabel, m_comboMetroidLowLatencyAimMode);
+            form->insertRow(4, m_lblMetroidLowLatencyAimDesc);
+        }
+
+        connect(
+            m_comboMetroidLowLatencyAimMode,
+            QOverload<int>::of(&QComboBox::currentIndexChanged),
+            this,
+            [this](int) {
+                updateAimControlsForStylusMode(ui->cbMetroidEnableStylusMode->isChecked());
+            });
+    }
     const int nativeAimHookMode =
         kDeveloperOnlyFeaturesEnabled ? instcfg.GetInt("Metroid.Aim.NativeHookMode") : 0;
     ui->cbMetroidEnableNativeAimPostFoldWrite->setChecked(
@@ -478,6 +512,10 @@ void MelonPrimeInputConfig::updateAimControlsForStylusMode(bool stylusEnabled)
     ui->metroidAimAdjustSpinBox->setEnabled(enableAimControls);
     ui->metroidAimAdjustLabel->setEnabled(enableAimControls);
     ui->cbMetroidEnableAimAccumulator->setEnabled(enableAimControls);
+    if (m_comboMetroidLowLatencyAimMode)
+        m_comboMetroidLowLatencyAimMode->setEnabled(enableAimControls);
+    if (m_lblMetroidLowLatencyAimDesc)
+        m_lblMetroidLowLatencyAimDesc->setEnabled(enableAimControls);
     const bool enableAimHooks =
         kDeveloperOnlyFeaturesEnabled
         && enableAimControls
@@ -498,11 +536,18 @@ void MelonPrimeInputConfig::updateAimControlsForStylusMode(bool stylusEnabled)
     if (m_cbMetroidUseNewZoomMethod2)
         m_cbMetroidUseNewZoomMethod2->setEnabled(kDeveloperOnlyFeaturesEnabled);
     ui->lblMetroidDirectAltFormTransformDesc->setEnabled(true);
+    const bool lowLatencyAimOff =
+        !m_comboMetroidLowLatencyAimMode
+        || m_comboMetroidLowLatencyAimMode->currentIndex() == MelonPrime::LowLatencyAimMode::Off;
+    if (!lowLatencyAimOff && ui->cbMetroidEnableInstantAimFollow->isChecked())
+        ui->cbMetroidEnableInstantAimFollow->setChecked(false);
     // Original public behavior:
     // ui->cbMetroidEnableInstantAimFollow->setEnabled(enableAimControls);
     // ui->lblMetroidInstantAimFollowDesc->setEnabled(enableAimControls);
-    ui->cbMetroidEnableInstantAimFollow->setEnabled(kDeveloperOnlyFeaturesEnabled && enableAimControls);
-    ui->lblMetroidInstantAimFollowDesc->setEnabled(kDeveloperOnlyFeaturesEnabled && enableAimControls);
+    ui->cbMetroidEnableInstantAimFollow->setEnabled(
+        kDeveloperOnlyFeaturesEnabled && enableAimControls && lowLatencyAimOff);
+    ui->lblMetroidInstantAimFollowDesc->setEnabled(
+        kDeveloperOnlyFeaturesEnabled && enableAimControls && lowLatencyAimOff);
 }
 
 void MelonPrimeInputConfig::setupCollapsibleSections(Config::Table& instcfg)

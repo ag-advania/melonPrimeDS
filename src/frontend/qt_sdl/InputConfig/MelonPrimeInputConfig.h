@@ -147,6 +147,8 @@ private:
     QCheckBox* m_cbMetroidUseNewTransformMethod = nullptr;
     QCheckBox* m_cbMetroidUseNewZoomMethod = nullptr;
     QCheckBox* m_cbMetroidUseNewZoomMethod2 = nullptr;
+    QComboBox* m_comboMetroidLowLatencyAimMode = nullptr;
+    QLabel* m_lblMetroidLowLatencyAimDesc = nullptr;
 
     // Programmatic HUD settings widgets (config key → widget)
     std::unordered_map<std::string, QWidget*> m_hudWidgets;
