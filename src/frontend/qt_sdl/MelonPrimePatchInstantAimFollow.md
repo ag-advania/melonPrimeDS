@@ -13,6 +13,8 @@ Low-latency aim mode values:
 
 `Metroid.Aim.Enable.InstantAimFollow` is kept only as a legacy compatibility key. The settings UI writes it to `true` when mode `3` is selected and to `false` otherwise. Runtime apply also accepts the legacy `true` value when `LowLatencyMode` is still `0`, so old developer configs continue to work until the UI saves the migrated mode.
 
+All low-latency aim modes require `Metroid.Aim.Disable.MphAimSmoothing = true`. The UI disables the mode selector when that prerequisite is off, and runtime gates prevent stale config values from applying.
+
 Behavior differences:
 
 ```text
