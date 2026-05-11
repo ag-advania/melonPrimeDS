@@ -1016,21 +1016,6 @@ Briefly flashes you in the Double Damage purple state when you take damage, so o
 											<property name="styleSheet"><string>QLabel { margin-left: 20px; }</string></property>
 										</widget>
 									</item>
-									<item>
-										<widget class="QCheckBox" name="cbMetroidEnableInstantAimFollow">
-											<property name="enabled"><bool>false</bool></property>
-											<property name="text"><string>Enable Instant Aim Follow</string></property>
-											<property name="toolTip"><string>Developer-only option. Currently disabled.</string></property>
-										</widget>
-									</item>
-									<item>
-										<widget class="QLabel" name="lblMetroidInstantAimFollowDesc">
-											<property name="enabled"><bool>false</bool></property>
-											<property name="text"><string>The game normally moves currentAim only about 10% toward targetAim each update, which can feel like mouse lag. This patch makes currentAim follow targetAim instantly. Currently disabled for normal builds.</string></property>
-											<property name="wordWrap"><bool>true</bool></property>
-											<property name="styleSheet"><string>QLabel { margin-left: 20px; }</string></property>
-										</widget>
-									</item>
 								</layout>
 								</widget>
 							</item>

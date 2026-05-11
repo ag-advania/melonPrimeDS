@@ -9,6 +9,7 @@
 #include <QDoubleSpinBox>
 #include <QLineEdit>
 #include <QTimer>
+#include <QVariant>
 
 #include "MelonPrimeInputConfig.h"
 #include "ui_MelonPrimeInputConfig.h"
@@ -118,9 +119,9 @@ void MelonPrimeInputConfig::saveConfig()
     instcfg.SetBool("Metroid.Aim.Disable.MphAimSmoothing", ui->cbMetroidDisableMphAimSmoothing->checkState() == Qt::Checked);
     instcfg.SetBool("Metroid.Aim.Enable.Accumulator", ui->cbMetroidEnableAimAccumulator->checkState() == Qt::Checked);
     const int lowLatencyAimMode = m_comboMetroidLowLatencyAimMode
-        ? m_comboMetroidLowLatencyAimMode->currentIndex()
+        ? m_comboMetroidLowLatencyAimMode->currentData().toInt()
         : MelonPrime::LowLatencyAimMode::Off;
-    instcfg.SetInt("Metroid.Aim.LowLatencyMode", lowLatencyAimMode);
+    instcfg.SetInt(MelonPrime::CfgKey::LowLatencyAimMode, lowLatencyAimMode);
     int nativeAimHookMode = 0;
     if constexpr (kDeveloperOnlyFeaturesEnabled) {
         if (ui->cbMetroidEnableNativeAimRegisterInjection->checkState() == Qt::Checked)
@@ -164,13 +165,9 @@ void MelonPrimeInputConfig::saveConfig()
             "Metroid.Input.ZoomMethod",
             zoomMethod);
     }
-    // Original public behavior:
-    // instcfg.SetBool("Metroid.Aim.Enable.InstantAimFollow", ui->cbMetroidEnableInstantAimFollow->checkState() == Qt::Checked);
     instcfg.SetBool(
-        "Metroid.Aim.Enable.InstantAimFollow",
-        kDeveloperOnlyFeaturesEnabled
-            && lowLatencyAimMode == MelonPrime::LowLatencyAimMode::Off
-            && ui->cbMetroidEnableInstantAimFollow->checkState() == Qt::Checked);
+        MelonPrime::CfgKey::InstantAimFollow,
+        lowLatencyAimMode == MelonPrime::LowLatencyAimMode::InstantAimFollow);
 
     // Screen Sync Mode
     instcfg.SetInt("Metroid.Screen.SyncMode", ui->comboMetroidScreenSyncMode->currentIndex());

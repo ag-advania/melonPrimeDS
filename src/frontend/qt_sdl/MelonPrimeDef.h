@@ -69,6 +69,7 @@ namespace MelonPrime {
         inline constexpr int Off = 0;
         inline constexpr int ImmediateSync = 1;
         inline constexpr int MoonLikeAim = 2;
+        inline constexpr int InstantAimFollow = 3;
     }
 
 
