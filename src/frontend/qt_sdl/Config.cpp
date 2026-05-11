@@ -506,7 +506,7 @@ namespace Config
         {"Instance*.Metroid.Sensitivity.Aim", {0,99999}},
         {"Instance*.Metroid.Volume.Music", {0,9}},
         {"Instance*.Metroid.Volume.SFX", {0,9}},
-        {"Instance*.Metroid.Aim.LowLatencyMode", {0,2}},
+        {"Instance*.Metroid.Aim.LowLatencyMode", {0,3}},
         {"Instance*.Metroid.Aim.MoonLikeAimNormalStepQ12", {1,8192}},
         {"Instance*.Metroid.Aim.MoonLikeAimFastStepQ12", {1,8192}},
         {"Instance*.Metroid.Aim.MoonLikeAimFastThresholdQ12", {1,8192}},

@@ -230,9 +230,12 @@ void ARM9Hook_Install(
     const bool enableTransformGate = cfg.GetBool(CfgKey::DirectAltFormTransform);
     const bool enableWeaponSwitch =
         cfg.GetInt(CfgKey::WeaponSwitchMethod) != WeaponSwitchMethod::LegacyTouch;
+    const int lowLatencyAimMode = cfg.GetInt(CfgKey::LowLatencyAimMode);
     const bool enableLowLatencyAim =
-        !cfg.GetBool(CfgKey::StylusMode)
-        && cfg.GetInt(CfgKey::LowLatencyAimMode) != LowLatencyAimMode::Off;
+        cfg.GetBool(CfgKey::DisableMphAimSmoothing)
+        && !cfg.GetBool(CfgKey::StylusMode)
+        && (lowLatencyAimMode == LowLatencyAimMode::ImmediateSync
+            || lowLatencyAimMode == LowLatencyAimMode::MoonLikeAim);
 
     if (nativeAimHookMode == 1)
     {

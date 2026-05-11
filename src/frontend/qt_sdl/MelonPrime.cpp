@@ -64,7 +64,9 @@ namespace MelonPrime {
         m_lowLatencyAimMode = static_cast<int8_t>(
             std::clamp(localCfg.GetInt(CfgKey::LowLatencyAimMode),
                        LowLatencyAimMode::Off,
-                       LowLatencyAimMode::MoonLikeAim));
+                       LowLatencyAimMode::InstantAimFollow));
+        if (!m_disableMphAimSmoothing)
+            m_lowLatencyAimMode = LowLatencyAimMode::Off;
         m_moonLikeAimNormalStepQ12 = std::clamp(
             localCfg.GetInt(CfgKey::MoonLikeAimNormalStepQ12), 1, 8192);
         m_moonLikeAimFastStepQ12 = std::clamp(
