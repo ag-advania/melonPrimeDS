@@ -113,11 +113,13 @@ void InstantAimFollow_ApplyOnce(
     Config::Table& cfg,
     uint8_t romGroupIndex)
 {
+    const bool disableAimSmoothing = cfg.GetBool(CfgKey::DisableMphAimSmoothing);
     const int lowLatencyAimMode = cfg.GetInt(CfgKey::LowLatencyAimMode);
     const bool shouldApply =
-        lowLatencyAimMode == LowLatencyAimMode::InstantAimFollow
-        || (lowLatencyAimMode == LowLatencyAimMode::Off
-            && cfg.GetBool(CfgKey::InstantAimFollow));
+        disableAimSmoothing
+        && (lowLatencyAimMode == LowLatencyAimMode::InstantAimFollow
+            || (lowLatencyAimMode == LowLatencyAimMode::Off
+                && cfg.GetBool(CfgKey::InstantAimFollow)));
 
     if (!shouldApply)
     {

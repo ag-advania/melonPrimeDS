@@ -178,19 +178,20 @@ void MelonPrimeInputConfig::setupSensitivityAndToggles(Config::Table& instcfg)
             lowLatencyAimMode = MelonPrime::LowLatencyAimMode::InstantAimFollow;
         SetComboCurrentData(m_comboMetroidLowLatencyAimMode, lowLatencyAimMode);
 
-        auto* modeLabel = new QLabel(QStringLiteral("Low-Latency Aim Mode"), ui->sectionSensitivity);
-        modeLabel->setToolTip(m_comboMetroidLowLatencyAimMode->toolTip());
+        m_lblMetroidLowLatencyAimMode = new QLabel(QStringLiteral("Low-Latency Aim Mode"), ui->sectionSensitivity);
+        m_lblMetroidLowLatencyAimMode->setToolTip(m_comboMetroidLowLatencyAimMode->toolTip());
         m_lblMetroidLowLatencyAimDesc = new QLabel(
             QStringLiteral(
                 "Instant Aim Follow patches the game's original aim-follow routine so currentAim copies targetAim immediately. "
                 "Immediate Sync uses the low-latency ARM9 hook to sync currentAim to targetAim at the hook point and rebuild the aim basis. "
-                "MoonLike Aim applies small aim movements immediately and limits only large aim jumps with a max-step chase."),
+                "MoonLike Aim applies small aim movements immediately and limits only large aim jumps with a max-step chase. "
+                "Requires Disable Aim Smoothing."),
             ui->sectionSensitivity);
         m_lblMetroidLowLatencyAimDesc->setWordWrap(true);
         m_lblMetroidLowLatencyAimDesc->setStyleSheet(QStringLiteral("QLabel { margin-left: 20px; }"));
 
         if (auto* form = qobject_cast<QFormLayout*>(ui->sectionSensitivity->layout())) {
-            form->insertRow(3, modeLabel, m_comboMetroidLowLatencyAimMode);
+            form->insertRow(3, m_lblMetroidLowLatencyAimMode, m_comboMetroidLowLatencyAimMode);
             form->insertRow(4, m_lblMetroidLowLatencyAimDesc);
         }
 
@@ -536,10 +537,14 @@ void MelonPrimeInputConfig::updateAimControlsForStylusMode(bool stylusEnabled)
     ui->metroidAimAdjustSpinBox->setEnabled(enableAimControls);
     ui->metroidAimAdjustLabel->setEnabled(enableAimControls);
     ui->cbMetroidEnableAimAccumulator->setEnabled(enableAimControls);
+    const bool enableLowLatencyAimMode =
+        enableAimControls && ui->cbMetroidDisableMphAimSmoothing->isChecked();
+    if (m_lblMetroidLowLatencyAimMode)
+        m_lblMetroidLowLatencyAimMode->setEnabled(enableLowLatencyAimMode);
     if (m_comboMetroidLowLatencyAimMode)
-        m_comboMetroidLowLatencyAimMode->setEnabled(enableAimControls);
+        m_comboMetroidLowLatencyAimMode->setEnabled(enableLowLatencyAimMode);
     if (m_lblMetroidLowLatencyAimDesc)
-        m_lblMetroidLowLatencyAimDesc->setEnabled(enableAimControls);
+        m_lblMetroidLowLatencyAimDesc->setEnabled(enableLowLatencyAimMode);
     const bool enableAimHooks =
         kDeveloperOnlyFeaturesEnabled
         && enableAimControls

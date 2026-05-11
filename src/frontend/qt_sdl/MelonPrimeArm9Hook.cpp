@@ -232,7 +232,8 @@ void ARM9Hook_Install(
         cfg.GetInt(CfgKey::WeaponSwitchMethod) != WeaponSwitchMethod::LegacyTouch;
     const int lowLatencyAimMode = cfg.GetInt(CfgKey::LowLatencyAimMode);
     const bool enableLowLatencyAim =
-        !cfg.GetBool(CfgKey::StylusMode)
+        cfg.GetBool(CfgKey::DisableMphAimSmoothing)
+        && !cfg.GetBool(CfgKey::StylusMode)
         && (lowLatencyAimMode == LowLatencyAimMode::ImmediateSync
             || lowLatencyAimMode == LowLatencyAimMode::MoonLikeAim);
 
