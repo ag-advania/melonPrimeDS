@@ -69,12 +69,6 @@ static constexpr PatchWord kPatchWords[][5] = {
 };
 
 static constexpr uint8_t kPatchWordCounts[] = { 5, 5, 5, 5, 5, 5, 1 };
-// Restore note: remove this gate, or set it to true, when making Instant Aim Follow public again.
-#ifdef MELONPRIME_ENABLE_DEVELOPER_FEATURES
-static constexpr bool kInstantAimFollowAvailable = true;
-#else
-static constexpr bool kInstantAimFollowAvailable = false;
-#endif
 static bool s_applied = false;
 static uint8_t s_appliedRomGroupIndex = 0xFFu;
 
@@ -119,11 +113,13 @@ void InstantAimFollow_ApplyOnce(
     Config::Table& cfg,
     uint8_t romGroupIndex)
 {
-    // Original public behavior:
-    // const bool shouldApply = cfg.GetBool(CfgKey::InstantAimFollow);
-    const bool shouldApply = kInstantAimFollowAvailable
-        && cfg.GetInt(CfgKey::LowLatencyAimMode) == LowLatencyAimMode::Off
-        && cfg.GetBool(CfgKey::InstantAimFollow);
+    const bool disableAimSmoothing = cfg.GetBool(CfgKey::DisableMphAimSmoothing);
+    const int lowLatencyAimMode = cfg.GetInt(CfgKey::LowLatencyAimMode);
+    const bool shouldApply =
+        disableAimSmoothing
+        && (lowLatencyAimMode == LowLatencyAimMode::InstantAimFollow
+            || (lowLatencyAimMode == LowLatencyAimMode::Off
+                && cfg.GetBool(CfgKey::InstantAimFollow)));
 
     if (!shouldApply)
     {

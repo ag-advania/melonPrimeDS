@@ -311,7 +311,9 @@
     {
         if (!nds || !regs || !nds->MainRAM)
             return;
-        if (m_lowLatencyAimMode == LowLatencyAimMode::Off || isStylusMode)
+        if (isStylusMode
+            || (m_lowLatencyAimMode != LowLatencyAimMode::ImmediateSync
+                && m_lowLatencyAimMode != LowLatencyAimMode::MoonLikeAim))
             return;
         if (!m_flags.test(StateFlags::BIT_IN_GAME_INIT))
             return;
