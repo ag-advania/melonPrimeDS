@@ -266,6 +266,7 @@ namespace MelonPrime {
         DisableDoubleDamageMultiplier_ResetPatchState();
         NoPickingUpSpecificItems_ResetPatchState();
         InstantAimFollow_ResetPatchState();
+        ExpandStageMatrix_ResetPatchState();
         ARM9Hook_ResetPatchState();
 #endif
 
@@ -305,6 +306,7 @@ namespace MelonPrime {
         DisableDoubleDamageMultiplier_ResetPatchState();
         NoPickingUpSpecificItems_ResetPatchState();
         InstantAimFollow_ResetPatchState();
+        ExpandStageMatrix_ResetPatchState();
         ARM9Hook_ResetPatchState();
 #endif
 
@@ -349,6 +351,7 @@ namespace MelonPrime {
         DisableDoubleDamageMultiplier_ResetPatchState();
         NoPickingUpSpecificItems_ResetPatchState();
         InstantAimFollow_ResetPatchState();
+        ExpandStageMatrix_ResetPatchState();
         ARM9Hook_ResetPatchState();
 #endif
     }
@@ -580,6 +583,7 @@ namespace MelonPrime {
                         melonDS::NDS* const nds = emuInstance->getNDS();
                         FixWifi_ApplyOnce(nds, localCfg, m_currentRom.romGroupIndex);
                         UseFirmwareLanguage_ApplyOnce(nds, localCfg, m_currentRom.romGroupIndex, m_currentRom.isInAdventure);
+                        ExpandStageMatrix_ApplyIfLoaded(nds, localCfg, m_currentRom.romGroupIndex);
                     }
 #endif
                     ApplyGameSettingsOnce();
