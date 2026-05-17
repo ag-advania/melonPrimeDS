@@ -40,7 +40,6 @@ jobs:
         path: |
           C:/msys64/var/cache/pacman/pkg
           C:/msys64/etc/pacman.d/gnupg
-          ${{ github.workspace }}/vcpkg/downloads/tools/msys2
         key: ${{ runner.os }}-msys2-pacman-${{ hashFiles('CMakeLists.txt', 'cmake/**', 'vcpkg.json') }}
         restore-keys: |
           ${{ runner.os }}-msys2-pacman-
@@ -65,29 +64,31 @@ jobs:
           make:p
           pkgconf:p
 
+    - name: Restore vcpkg binary cache
+      id: restore-vcpkg-binary-cache
+      uses: actions/cache/restore@v4
+      with:
+        path: ${{ github.workspace }}/vcpkg_binary_cache
+        key: ${{ runner.os }}-vcpkg-binary-${{ env.VCPKG_COMMIT }}-${{ hashFiles('vcpkg.json', 'CMakePresets.json', 'cmake/ConfigureVcpkg.cmake', 'cmake/overlay-triplets/*.cmake', 'cmake/overlay-ports/**') }}
+        restore-keys: |
+          ${{ runner.os }}-vcpkg-binary-${{ env.VCPKG_COMMIT }}-
+
     - name: Ensure binary cache directory exists
       run: |
         mkdir -p "${{ github.workspace }}/vcpkg_binary_cache"
-
-    - name: Cache vcpkg
-      uses: actions/cache@v4
-      with:
-        path: |
-          ${{ github.workspace }}/vcpkg
-          ${{ github.workspace }}/vcpkg_installed
-          ${{ github.workspace }}/vcpkg/buildtrees
-          ${{ github.workspace }}/vcpkg/downloads
-          ${{ github.workspace }}/vcpkg/packages
-          ${{ github.workspace }}/vcpkg_binary_cache
-        key: ${{ runner.os }}-vcpkg-${{ env.VCPKG_COMMIT }}-${{ hashFiles('CMakeLists.txt', 'cmake/**', 'cmake/overlay-triplets/*.cmake', 'cmake/overlay-ports/**', 'vcpkg.json', 'CMakePresets.json') }}
-        restore-keys: |
-          ${{ runner.os }}-vcpkg-${{ env.VCPKG_COMMIT }}-${{ hashFiles('CMakeLists.txt', 'cmake/**', 'vcpkg.json') }}
-          ${{ runner.os }}-vcpkg-${{ env.VCPKG_COMMIT }}-
 
     - name: Set up vcpkg
       uses: lukka/run-vcpkg@v11
       with:
         vcpkgGitCommitId: ${{ env.VCPKG_COMMIT }}
+
+    - name: Cache vcpkg downloads
+      uses: actions/cache@v4
+      with:
+        path: ${{ github.workspace }}/vcpkg/downloads
+        key: ${{ runner.os }}-vcpkg-downloads-${{ env.VCPKG_COMMIT }}-${{ hashFiles('vcpkg.json', 'cmake/overlay-ports/**') }}
+        restore-keys: |
+          ${{ runner.os }}-vcpkg-downloads-${{ env.VCPKG_COMMIT }}-
 
     - name: Cache CMake build directory
       uses: actions/cache@v4
@@ -105,6 +106,14 @@ jobs:
           -DCMAKE_BUILD_PARALLEL_LEVEL=${{ env.CMAKE_BUILD_PARALLEL_LEVEL }}
       env:
         NINJA_STATUS: "[%f/%t %o/s %es] "
+
+    - name: Save vcpkg binary cache
+      if: steps.restore-vcpkg-binary-cache.outputs.cache-hit != 'true'
+      uses: actions/cache/save@v4
+      continue-on-error: true
+      with:
+        path: ${{ github.workspace }}/vcpkg_binary_cache
+        key: ${{ steps.restore-vcpkg-binary-cache.outputs.cache-primary-key }}
 
     - name: Build
       run: |
