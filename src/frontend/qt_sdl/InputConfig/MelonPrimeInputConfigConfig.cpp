@@ -73,6 +73,7 @@ void MelonPrimeInputConfig::saveConfig()
     instcfg.SetBool("Metroid.BugFix.UseFirmwareLanguage", ui->cbMetroidUseFirmwareLanguage->checkState() == Qt::Checked);
     instcfg.SetBool("Metroid.GameFeature.ShowHeadshotOnline", ui->cbMetroidShowHeadshotOnline->checkState() == Qt::Checked);
     instcfg.SetBool("Metroid.GameFeature.ShowEnemyHpMeterOnline", ui->cbMetroidShowEnemyHpMeterOnline->checkState() == Qt::Checked);
+    instcfg.SetBool("Metroid.GameFeature.ExpandStageMatrix", ui->cbMetroidExpandStageMatrix->checkState() == Qt::Checked);
     instcfg.SetBool(
         "Metroid.GameFeature.DisableDoubleDamageMultiplier",
         ui->cbMetroidDisableDoubleDamageMultiplier->checkState() == Qt::Checked);

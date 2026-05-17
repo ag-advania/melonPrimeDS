@@ -99,6 +99,7 @@ set(SOURCES_QT_SDL
     MelonPrimePatchShadowFreezeRuntimeHook.cpp
     MelonPrimePatchFixNoxusBladePersistence.cpp
     MelonPrimePatchInstantAimFollow.cpp
+    MelonPrimePatchExpandStageMatrix.cpp
     MelonPrimeArm9Hook.cpp
 
 
