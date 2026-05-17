@@ -260,6 +260,7 @@ void MelonPrimeInputConfig::setupSensitivityAndToggles(Config::Table& instcfg)
     ui->cbMetroidUseFirmwareLanguage->setChecked(instcfg.GetBool("Metroid.BugFix.UseFirmwareLanguage"));
     ui->cbMetroidShowHeadshotOnline->setChecked(instcfg.GetBool("Metroid.GameFeature.ShowHeadshotOnline"));
     ui->cbMetroidShowEnemyHpMeterOnline->setChecked(instcfg.GetBool("Metroid.GameFeature.ShowEnemyHpMeterOnline"));
+    ui->cbMetroidExpandStageMatrix->setChecked(instcfg.GetBool("Metroid.GameFeature.ExpandStageMatrix"));
     ui->cbMetroidDisableDoubleDamageMultiplier->setChecked(
         instcfg.GetBool("Metroid.GameFeature.DisableDoubleDamageMultiplier"));
     ui->cbMetroidDamageNotifyPurple->setChecked(

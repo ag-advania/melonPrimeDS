@@ -367,6 +367,40 @@ The EU ROM has a hidden Japanese option — setting your DS firmware to Japanese
 												</property>
 											</widget>
 										</item>
+										<item>
+											<widget class="QCheckBox" name="cbMetroidExpandStageMatrix">
+												<property name="text">
+													<string>Expand Stage Selection (Unlock Extra Stages)</string>
+												</property>
+											</widget>
+										</item>
+										<item>
+											<widget class="QLabel" name="lblMetroidExpandStageMatrixDesc">
+												<property name="text">
+													<string>&lt;html&gt;&lt;body&gt;
+Unlocks 14 stage/mode combinations verified as stable in real testing. Applied automatically while the stage select menu is open.&lt;br&gt;&lt;br&gt;
+&lt;b&gt;Battle / Node / Prime Hunter / Survival&lt;/b&gt;&lt;br&gt;
+&amp;nbsp;&amp;nbsp;Transfer Lock Wide — normal gravity&lt;br&gt;&lt;br&gt;
+&lt;b&gt;Bounty&lt;/b&gt;&lt;br&gt;
+&amp;nbsp;&amp;nbsp;Fuel Stack — Octolith present, items available&lt;br&gt;
+&amp;nbsp;&amp;nbsp;Alinos Gateway — Octolith present, best weapon spawns below the slope&lt;br&gt;&lt;br&gt;
+&lt;b&gt;Capture&lt;/b&gt;&lt;br&gt;
+&amp;nbsp;&amp;nbsp;Celestial Gateway — Octolith present, jumpers and items available&lt;br&gt;&lt;br&gt;
+&lt;b&gt;Defender&lt;/b&gt;&lt;br&gt;
+&amp;nbsp;&amp;nbsp;High Ground — items present, defender zone ring at bottom-left of Magmaul area&lt;br&gt;
+&amp;nbsp;&amp;nbsp;Transfer Lock — Volt Driver + Battlehammer weapons only&lt;br&gt;
+&amp;nbsp;&amp;nbsp;Compressor Room — no jumpers, no items&lt;br&gt;
+&amp;nbsp;&amp;nbsp;Incubator — items and jumpers present&lt;br&gt;
+&amp;nbsp;&amp;nbsp;Elder Passage — items present, defender zone ring at bottom-left of Magmaul area&lt;br&gt;
+&amp;nbsp;&amp;nbsp;Fuel Stack — no floating, Imperialist only&lt;br&gt;
+&amp;nbsp;&amp;nbsp;Head Shot — normal gravity, 2 jumpers, Alt Form corridor does not launch
+&lt;/body&gt;&lt;/html&gt;</string>
+												</property>
+												<property name="wordWrap">
+													<bool>true</bool>
+												</property>
+											</widget>
+										</item>
 									</layout>
 								</widget>
 							</item>
