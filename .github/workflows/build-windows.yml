@@ -6,9 +6,6 @@ on:
     branches:
       - master
       - ci/*
-  pull_request:
-    branches:
-      - master
 
 env:
   VCPKG_COMMIT: 55fab67aea1027f7179ae6b5c54a5ba9091c16aa
