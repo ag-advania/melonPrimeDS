@@ -134,15 +134,20 @@ than forcing a constant, and the `fontPx == kCustomHudFontSize` guards were gene
 
 **Hi-DPI text (system/file fonts):** to avoid a blurry result when auto-scale/hudScale magnify the
 glyphs, non-MPH text is re-rasterised at the final output resolution instead of upscaling the small
-base bitmap (analogous to the existing hi-res outline path). A frame-level `s_textRenderScale`
-(= `textDrawScale * hudScale`, capped at 16) is set once per frame in `CustomHud_Render` when
-`c.hiResText` (`HudFontMode != 0`). When `> 1`, `PrepareTextBitmapCached` renders the glyph with a
-font at `fontPx * s_textRenderScale`, stores origins in output-pixel space and `cache.renderScale`,
-and `DrawCachedText` draws that bitmap 1:1 (transform reset + DS-anchor→pixel mapping). The outline
-(`BuildDilatedOutlineBitmap`) dilates the already-output-res bitmap directly and inherits the render
-scale. Layout still uses native `s_frameFm` metrics (`MeasureTextCached`); only the rasterisation
-resolution changes, so positions are unaffected (the inventory width calc divides the hi-res bitmap
-width back out by `tc.renderScale`). MPH keeps `s_textRenderScale == 1` (its pixel-art upscale).
+base bitmap (analogous to the existing hi-res outline path). `s_textRenderScale`
+(= `effectiveTextPct/100`, capped at 16) and the output-resolution font/metrics `s_hiResFont` /
+`s_hiResFm` are built **event-driven in `RefreshCachedConfig`** — which only runs on a config change
+or window resize via `EnsureCachedConfigForFrame` (`!s_cache.valid || lastHudScale != hudScale`), so
+there is **no per-frame font work** (font size doesn't change per frame). When `s_textRenderScale > 1`
+(`c.hiResText`, i.e. `HudFontMode != 0`), `PrepareTextBitmapCached` rasterises the glyph with the
+cached `s_hiResFont`/`s_hiResFm` (no per-cache-miss `QFont`/`QFontMetrics` construction), stores
+origins in output-pixel space and `cache.renderScale`, and `DrawCachedText` draws that bitmap 1:1
+(transform reset + DS-anchor→pixel mapping — cheaper than a scaled blit, no interpolation). The
+glyph cache itself is still content-keyed, so rasterisation only happens when the displayed value
+changes. The outline (`BuildDilatedOutlineBitmap`) dilates the already-output-res bitmap directly and
+inherits the render scale. Layout still uses native `s_frameFm` metrics (`MeasureTextCached`); only
+the rasterisation resolution changes, so positions are unaffected (the inventory width calc divides
+the hi-res bitmap width back out by `tc.renderScale`). MPH keeps `s_textRenderScale == 1`.
 
 `MelonPrime::CustomHud_ResolveBaseFont(cfg)` (in `MelonPrimeHudRenderConfig.inc`, declared in
 `MelonPrimeHudRender.h`) is the single source of truth for the family — it returns a base `QFont`

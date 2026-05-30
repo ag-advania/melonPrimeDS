@@ -362,11 +362,16 @@ static void RebuildCrosshairOutlineStamp(const CrosshairHudConfig& ch);
 // generation so every cached glyph bitmap/measurement is treated as a miss and rebuilt.
 static int s_textCacheGen = 0;
 
-// Frame-level glyph render magnification (output px / native bitmap px). 1.0 = native bitmap
-// upscaled at draw time (MPH pixel font). >1.0 = re-rasterise the glyph at output resolution so
-// system/file fonts stay crisp after auto-scale/hudScale instead of being a blurry upscale.
-// Set once per frame in CustomHud_Render; capped to keep glyph bitmaps reasonable.
+// Glyph render magnification (output px / native bitmap px). 1.0 = native bitmap upscaled at
+// draw time (MPH pixel font). >1.0 = re-rasterise the glyph at output resolution so system/file
+// fonts stay crisp after auto-scale/hudScale instead of being a blurry upscale.
+// Computed event-driven in RefreshCachedConfig (config change / resize only) — never per frame.
 static float s_textRenderScale = 1.0f;
+// Output-resolution font + metrics for the hi-DPI text path, rebuilt alongside s_textRenderScale
+// only when the font or render scale changes. Avoids constructing a QFont/QFontMetrics per glyph
+// cache-miss (e.g. ammo ticking during fire).
+static QFont s_hiResFont;
+static QFontMetrics s_hiResFm{QFont{}};
 
 struct TextMeasureCache {
     int  fontPixelSize;
@@ -425,22 +430,19 @@ static inline void PrepareTextBitmapCached(const QFontMetrics& fm, const QFont& 
     {
         const QString qtext = QString::fromUtf8(text);
 
-        // Hi-DPI path: re-rasterise the glyph at output resolution (font px * rs) so the text
-        // stays crisp after auto-scale/hudScale. originX/Y are then in output-pixel space and
-        // DrawCachedText draws the bitmap 1:1 (no upscaling). rs == 1 keeps the native path.
+        // Hi-DPI path: rasterise the glyph at output resolution using the pre-built s_hiResFont /
+        // s_hiResFm (constructed event-driven in RefreshCachedConfig, not here). originX/Y are then
+        // in output-pixel space and DrawCachedText draws the bitmap 1:1. rs == 1 keeps native path.
         QRect bounds;
         if (rs > 1.0f) {
-            QFont hiFont = font;
-            hiFont.setPixelSize(std::max(1, static_cast<int>(std::lround(fontPixelSize * rs))));
-            const QFontMetrics hiFm(hiFont);
-            bounds = hiFm.boundingRect(qtext);
+            bounds = s_hiResFm.boundingRect(qtext);
             if (bounds.isEmpty())
-                bounds = QRect(0, -hiFm.ascent(), 1, hiFm.height());
+                bounds = QRect(0, -s_hiResFm.ascent(), 1, s_hiResFm.height());
 
             cache.bitmap = QImage(bounds.width(), bounds.height(), QImage::Format_ARGB32_Premultiplied);
             cache.bitmap.fill(Qt::transparent);
             QPainter painter(&cache.bitmap);
-            painter.setFont(hiFont);
+            painter.setFont(s_hiResFont);
             painter.setPen(color);
             painter.drawText(QPoint(-bounds.left(), -bounds.top()), qtext);
         } else {

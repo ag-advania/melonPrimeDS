@@ -112,13 +112,8 @@ HOT_FUNCTION QRect CustomHud_Render(
     // Visual text size is controlled by textDrawScale applied at draw time.
     EnsureHudFont(topPaint);
     const float textDrawScale = c.textDrawScale;
-
-    // Hi-DPI text: when a system/file font would be magnified (auto-scale/hudScale), rasterise the
-    // glyphs at output resolution instead of upscaling the small base bitmap. MPH stays native.
-    {
-        const float mag = textDrawScale * c.lastHudScale;
-        s_textRenderScale = (c.hiResText && mag > 1.0f) ? std::min(mag, 16.0f) : 1.0f;
-    }
+    // s_textRenderScale and the hi-DPI font were built event-driven in RefreshCachedConfig;
+    // nothing to recompute per frame here.
 
     DrawHP(topPaint, st.currentHP, st.maxHP, c, textDrawScale);
 

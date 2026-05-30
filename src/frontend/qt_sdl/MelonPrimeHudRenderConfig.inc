@@ -714,6 +714,19 @@ static void RefreshCachedConfig(Config::Table& cfg, float topStretchX = 1.0f, fl
                                                : effectiveTextPct / 100.0f;
     // Hi-DPI text: only system/file fonts benefit (MPH is a pixel font tuned for 6px upscale).
     c.hiResText           = (cfg.GetInt("Metroid.Visual.HudFontMode") != 0);
+    // Build the output-resolution glyph font here — RefreshCachedConfig only runs on a config
+    // change or window resize (via EnsureCachedConfigForFrame), so this is event-driven, never
+    // per frame. s_textRenderScale = glyph magnification (effectiveTextPct/100), capped.
+    {
+        const float mag = effectiveTextPct / 100.0f;
+        s_textRenderScale = (c.hiResText && mag > 1.0f) ? std::min(mag, 16.0f) : 1.0f;
+        if (s_textRenderScale > 1.0f) {
+            const int basePx = CustomHud_ResolveFontPixelSize(cfg);
+            s_hiResFont = CustomHud_ResolveBaseFont(cfg);
+            s_hiResFont.setPixelSize(std::max(1, static_cast<int>(std::lround(basePx * s_textRenderScale))));
+            s_hiResFm = QFontMetrics(s_hiResFont);
+        }
+    }
 
     // Recompute crosshair arm rects with auto-scale applied.
     // LoadCrosshairConfig computes rects using chScale only; we now
