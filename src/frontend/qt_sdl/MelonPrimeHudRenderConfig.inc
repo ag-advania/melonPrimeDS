@@ -265,6 +265,20 @@ static QString LoadAppFontFamilyCached(const QString& path)
     return family;
 }
 
+// Apply the user's style/effects (weight, italic, underline, strikeout) from the HUD FONT
+// picker. Only used for system/file fonts — MPH stays a clean pixel font.
+static void ApplyHudFontStyle(QFont& f, Config::Table& cfg)
+{
+    f.setStyleStrategy(QFont::PreferAntialias);
+    // Weight index 0..8 -> QFont::Weight Thin..Black.
+    static const int kWeights[9] = { 100, 200, 300, 400, 500, 600, 700, 800, 900 };
+    const int wi = std::clamp(cfg.GetInt("Metroid.Visual.HudFontWeight"), 0, 8);
+    f.setWeight(static_cast<QFont::Weight>(kWeights[wi]));
+    f.setItalic(cfg.GetBool("Metroid.Visual.HudFontItalic"));
+    f.setUnderline(cfg.GetBool("Metroid.Visual.HudFontUnderline"));
+    f.setStrikeOut(cfg.GetBool("Metroid.Visual.HudFontStrikeOut"));
+}
+
 QFont CustomHud_ResolveBaseFont(Config::Table& cfg)
 {
     const int mode = cfg.GetInt("Metroid.Visual.HudFontMode");
@@ -274,7 +288,7 @@ QFont CustomHud_ResolveBaseFont(Config::Table& cfg)
         const QString fam = QString::fromStdString(cfg.GetString("Metroid.Visual.HudFontFamily"));
         if (!fam.isEmpty()) {
             QFont f(fam);
-            f.setStyleStrategy(QFont::PreferAntialias);
+            ApplyHudFontStyle(f, cfg);
             return f;
         }
     } else if (mode == 2) {
@@ -284,7 +298,7 @@ QFont CustomHud_ResolveBaseFont(Config::Table& cfg)
             const QString fam = LoadAppFontFamilyCached(path);
             if (!fam.isEmpty()) {
                 QFont f(fam);
-                f.setStyleStrategy(QFont::PreferAntialias);
+                ApplyHudFontStyle(f, cfg);
                 return f;
             }
         }

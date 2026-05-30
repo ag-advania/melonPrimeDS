@@ -164,9 +164,10 @@ bumps `s_textCacheGen` (a trailing `gen` field on `TextBitmapCache`/`TextMeasure
 `PrepareTextBitmapCached`/`MeasureTextCached`/`PrepareOutlineBitmapCached`).
 
 The switch lives in the settings dialog's **HUD FONT** section (`kSecFont`); the System Font row is a
-`QFontComboBox` and the Font File row is a `QLineEdit` + Browse button. `QFontComboBox` is a
-`QComboBox`, so every generic `m_hudWidgets` loop (save/snapshot/restore/apply/refresh and the TOML
-export/import) special-cases it (family string) **before** the `QComboBox` branch.
+`QFontDialog` picker button (left) + an editable `QFontComboBox` (right), and the Font File row is a
+`QLineEdit` + Browse button. `QFontComboBox` is a `QComboBox`, so every generic `m_hudWidgets` loop
+(save/snapshot/restore/apply/refresh and the TOML export/import) special-cases it (family string)
+**before** the `QComboBox` branch.
 
 ### 9-point anchor system
 All HUD text/icon positions use a 9-point anchor + offset model.

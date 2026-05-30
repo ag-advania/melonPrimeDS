@@ -419,6 +419,19 @@ static inline void MeasureTextCached(const QFontMetrics& fm, int fontPixelSize,
     outH = cache.height * textDrawScale;
 }
 
+// Glyph bounds for the text bitmap. Underline/strikeout decorations sit outside the glyph ink
+// box, so when the font carries them, expand to the full line box (ascent..descent, advance width)
+// to avoid clipping. Bold/italic are already reflected in the styled QFontMetrics.
+static inline QRect TextBitmapBounds(const QFontMetrics& m, const QFont& fnt, const QString& t)
+{
+    QRect b = m.boundingRect(t);
+    if (fnt.underline() || fnt.strikeOut())
+        b = b.united(QRect(0, -m.ascent(), std::max(1, m.horizontalAdvance(t)), m.height()));
+    if (b.isEmpty())
+        b = QRect(0, -m.ascent(), 1, m.height());
+    return b;
+}
+
 static inline void PrepareTextBitmapCached(const QFontMetrics& fm, const QFont& font,
                                            int fontPixelSize, TextBitmapCache& cache,
                                            const char* text, const QColor& color)
@@ -435,9 +448,7 @@ static inline void PrepareTextBitmapCached(const QFontMetrics& fm, const QFont& 
         // in output-pixel space and DrawCachedText draws the bitmap 1:1. rs == 1 keeps native path.
         QRect bounds;
         if (rs > 1.0f) {
-            bounds = s_hiResFm.boundingRect(qtext);
-            if (bounds.isEmpty())
-                bounds = QRect(0, -s_hiResFm.ascent(), 1, s_hiResFm.height());
+            bounds = TextBitmapBounds(s_hiResFm, s_hiResFont, qtext);
 
             cache.bitmap = QImage(bounds.width(), bounds.height(), QImage::Format_ARGB32_Premultiplied);
             cache.bitmap.fill(Qt::transparent);
@@ -446,9 +457,7 @@ static inline void PrepareTextBitmapCached(const QFontMetrics& fm, const QFont& 
             painter.setPen(color);
             painter.drawText(QPoint(-bounds.left(), -bounds.top()), qtext);
         } else {
-            bounds = fm.boundingRect(qtext);
-            if (bounds.isEmpty())
-                bounds = QRect(0, -fm.ascent(), 1, fm.height());
+            bounds = TextBitmapBounds(fm, font, qtext);
 
             cache.bitmap = QImage(bounds.width(), bounds.height(), QImage::Format_ARGB32_Premultiplied);
             cache.bitmap.fill(Qt::transparent);

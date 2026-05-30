@@ -12,6 +12,7 @@
 #include <QLineEdit>
 #include <QComboBox>
 #include <QFontComboBox>
+#include <QFontDialog>
 #include <QFileDialog>
 #include <QPushButton>
 #include <QTimer>
@@ -787,8 +788,9 @@ enum class HWType { Bool, Int, Float, String, Anchor9, Align3, Color3, HorizVert
                     LabelPos5,     // 0=Above, 1=Below, 2=Left, 3=Right, 4=Center
                     Double,        // lo/hi/step stored as ×100 integers (e.g. 10,800,25 → 0.10–8.00 step 0.25)
                     FontMode,      // 0=Default(MPH), 1=System font, 2=Font file (int combo)
-                    FontFamily,    // QFontComboBox -> family string
+                    FontFamily,    // QFontComboBox + picker -> family string
                     FontFile,      // QLineEdit + Browse -> font-file path string
+                    FontWeight,    // combo index 0..8 -> Thin..Black
                   };
 
 struct HudWidgetProp {
@@ -838,6 +840,7 @@ struct HudMainSec {
 #define P_FONTMODE(lbl, key)          { lbl, HWType::FontMode,     key, 0,2,1, nullptr, nullptr }
 #define P_FONTFAMILY(lbl, key)        { lbl, HWType::FontFamily,   key, 0,0,0, nullptr, nullptr }
 #define P_FONTFILE(lbl, key)          { lbl, HWType::FontFile,     key, 0,0,0, nullptr, nullptr }
+#define P_FONTWEIGHT(lbl, key)        { lbl, HWType::FontWeight,   key, 0,8,1, nullptr, nullptr }
 
 // --- Section: DISABLE DEFAULT HUD (per-element ARM patches) ---
 // Each toggle hides one piece of the game's built-in HUD via a single
@@ -881,8 +884,13 @@ static const HudWidgetProp kSecFont[] = {
     P_FONTFAMILY("System Font", "Metroid.Visual.HudFontFamily"),
     P_FONTFILE("Font File", "Metroid.Visual.HudFontFile"),
     P_INT("Font Size (px)", "Metroid.Visual.HudFontSize", 4, 64, 1),
+    P_FONTWEIGHT("Font Weight", "Metroid.Visual.HudFontWeight"),
+    P_BOOL("Italic", "Metroid.Visual.HudFontItalic"),
+    P_BOOL("Underline", "Metroid.Visual.HudFontUnderline"),
+    P_BOOL("Strikethrough", "Metroid.Visual.HudFontStrikeOut"),
     P_LABEL("MPH (Default) is a 6px pixel font tuned for sharpness. For System/file fonts, "
-            "Font Size sets the base render px; HUD SCALE still applies on top."),
+            "Font Size sets the base render px (HUD SCALE still applies); weight/italic/effects "
+            "apply too. The “Aa…” button opens a full font picker."),
 };
 
 // --- Section 2: Crosshair ---
@@ -2044,19 +2052,86 @@ void MelonPrimeInputConfig::setupCustomHudWidgets(Config::Table& instcfg)
             break;
         }
         case HWType::FontFamily: {
-            // System-font picker. QFontComboBox is a QComboBox, so all generic loops that
-            // iterate m_hudWidgets special-case it (family string) BEFORE the QComboBox branch.
-            auto* combo = new QFontComboBox(parent);
+            // System-font picker: a "pick font" button (left) + an editable QFontComboBox (right).
+            // QFontComboBox is a QComboBox, so all generic loops that iterate m_hudWidgets
+            // special-case it (family string) BEFORE the QComboBox branch.
+            auto* rowW = new QWidget(parent);
+            auto* hlay = new QHBoxLayout(rowW);
+            hlay->setContentsMargins(0, 0, 0, 0);
+            hlay->setSpacing(4);
+
+            auto* pick = new QPushButton(QStringLiteral("Aa…"), rowW);
+            pick->setToolTip(QStringLiteral("Pick a system font…"));
+            pick->setFixedWidth(40);
+
+            auto* combo = new QFontComboBox(rowW);
             combo->setObjectName(objName);
             const QString fam = QString::fromStdString(instcfg.GetString(p.cfgKey));
             if (!fam.isEmpty())
                 combo->setCurrentFont(QFont(fam));
-            form->addRow(QString::fromUtf8(p.label), combo);
+
+            hlay->addWidget(pick);      // left: font picker button
+            hlay->addWidget(combo, 1);  // right: editable family combo
+
+            form->addRow(QString::fromUtf8(p.label), rowW);
             m_hudWidgets[p.cfgKey] = combo;
             connect(combo, &QFontComboBox::currentFontChanged, this, [this, key = std::string(p.cfgKey)](const QFont& f) {
                 if (!m_applyPreviewEnabled) return;
                 emuInstance->getLocalConfig().SetString(key, f.family().toStdString());
                 invalidateHudAndRefreshPreviews();
+            });
+            connect(pick, &QPushButton::clicked, this, [this, combo]() {
+                static const int kW[9] = { 100, 200, 300, 400, 500, 600, 700, 800, 900 };
+                auto& cfg = emuInstance->getLocalConfig();
+
+                // Open the dialog pre-filled with the current HUD font settings.
+                QFont init = combo->currentFont();
+                const int curSize = cfg.GetInt("Metroid.Visual.HudFontSize");
+                if (curSize > 0) init.setPointSize(std::clamp(curSize, 4, 64));
+                init.setWeight(static_cast<QFont::Weight>(kW[std::clamp(cfg.GetInt("Metroid.Visual.HudFontWeight"), 0, 8)]));
+                init.setItalic(cfg.GetBool("Metroid.Visual.HudFontItalic"));
+                init.setUnderline(cfg.GetBool("Metroid.Visual.HudFontUnderline"));
+                init.setStrikeOut(cfg.GetBool("Metroid.Visual.HudFontStrikeOut"));
+
+                bool ok = false;
+                const QFont chosen = QFontDialog::getFont(&ok, init, this, QStringLiteral("Select HUD Font"));
+                if (!ok) return;
+
+                // Apply the whole selection back into the section's widgets, which write config
+                // + refresh previews via their own change handlers.
+                auto setCombo = [this](const char* key, int idx) {
+                    auto it = m_hudWidgets.find(std::string(key));
+                    if (it != m_hudWidgets.end())
+                        if (auto* c = qobject_cast<QComboBox*>(it->second)) c->setCurrentIndex(idx);
+                };
+                auto setSpin = [this](const char* key, int v) {
+                    auto it = m_hudWidgets.find(std::string(key));
+                    if (it != m_hudWidgets.end())
+                        if (auto* sb = qobject_cast<QSpinBox*>(it->second)) sb->setValue(v);
+                };
+                auto setCheck = [this](const char* key, bool v) {
+                    auto it = m_hudWidgets.find(std::string(key));
+                    if (it != m_hudWidgets.end())
+                        if (auto* cb = qobject_cast<QCheckBox*>(it->second)) cb->setChecked(v);
+                };
+
+                combo->setCurrentFont(chosen);  // family -> currentFontChanged writes + refreshes
+
+                int sz = chosen.pointSize();
+                if (sz <= 0) sz = chosen.pixelSize();
+                if (sz > 0) setSpin("Metroid.Visual.HudFontSize", std::clamp(sz, 4, 64));
+
+                const int wval = chosen.weight();
+                int wIdx = 3, wBest = 1 << 30;
+                for (int i = 0; i < 9; ++i) {
+                    const int d = (kW[i] > wval) ? (kW[i] - wval) : (wval - kW[i]);
+                    if (d < wBest) { wBest = d; wIdx = i; }
+                }
+                setCombo("Metroid.Visual.HudFontWeight", wIdx);
+
+                setCheck("Metroid.Visual.HudFontItalic",    chosen.italic());
+                setCheck("Metroid.Visual.HudFontUnderline", chosen.underline());
+                setCheck("Metroid.Visual.HudFontStrikeOut", chosen.strikeOut());
             });
             break;
         }
@@ -2090,6 +2165,25 @@ void MelonPrimeInputConfig::setupCustomHudWidgets(Config::Table& instcfg)
                     QStringLiteral("Font files (*.ttf *.otf *.ttc);;All files (*)"));
                 if (!path.isEmpty())
                     le->setText(path);  // textChanged handler writes config + refreshes
+            });
+            break;
+        }
+        case HWType::FontWeight: {
+            // Stores the weight index 0..8 (Thin..Black); the resolver maps it to QFont::Weight.
+            auto* combo = new QComboBox(parent);
+            combo->setObjectName(objName);
+            static const char* kWeightLabels[9] = {
+                "Thin", "Extra Light", "Light", "Normal", "Medium",
+                "Semi Bold", "Bold", "Extra Bold", "Black" };
+            for (int wgt = 0; wgt < 9; ++wgt)
+                combo->addItem(QString::fromUtf8(kWeightLabels[wgt]));
+            combo->setCurrentIndex(std::clamp(instcfg.GetInt(p.cfgKey), 0, 8));
+            form->addRow(QString::fromUtf8(p.label), combo);
+            m_hudWidgets[p.cfgKey] = combo;
+            connect(combo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this, key = std::string(p.cfgKey)](int val) {
+                if (!m_applyPreviewEnabled) return;
+                emuInstance->getLocalConfig().SetInt(key, val);
+                invalidateHudAndRefreshPreviews();
             });
             break;
         }
@@ -2559,9 +2653,13 @@ void MelonPrimeInputConfig::setupCustomHudWidgets(Config::Table& instcfg)
                                 lw->setEnabled(enabled);
                 };
                 auto applyFontState = [setRowEnabled](int mode) {
-                    setRowEnabled("Metroid.Visual.HudFontFamily", mode == 1);
-                    setRowEnabled("Metroid.Visual.HudFontFile",   mode == 2);
-                    setRowEnabled("Metroid.Visual.HudFontSize",   mode != 0);
+                    setRowEnabled("Metroid.Visual.HudFontFamily",    mode == 1);
+                    setRowEnabled("Metroid.Visual.HudFontFile",      mode == 2);
+                    setRowEnabled("Metroid.Visual.HudFontSize",      mode != 0);
+                    setRowEnabled("Metroid.Visual.HudFontWeight",    mode != 0);
+                    setRowEnabled("Metroid.Visual.HudFontItalic",    mode != 0);
+                    setRowEnabled("Metroid.Visual.HudFontUnderline", mode != 0);
+                    setRowEnabled("Metroid.Visual.HudFontStrikeOut", mode != 0);
                 };
                 applyFontState(modeCombo->currentIndex());
                 connect(modeCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
