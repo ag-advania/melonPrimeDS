@@ -14,6 +14,7 @@ This file is an index only. Keep detailed instructions in the linked Rules, Skil
 - [.claude/rules/melonprime-click-handling.md](.claude/rules/melonprime-click-handling.md)
 - [.claude/rules/melonprime-patch-system.md](.claude/rules/melonprime-patch-system.md)
 - [.claude/rules/compute-renderer-mosaic-bug.md](.claude/rules/compute-renderer-mosaic-bug.md)
+- [.claude/rules/mphcodex-reference.md](.claude/rules/mphcodex-reference.md)
 
 ## Skills
 - [.claude/skills/README.md](.claude/skills/README.md)
