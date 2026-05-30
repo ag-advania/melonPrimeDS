@@ -21,6 +21,10 @@
 #include <QWidget>
 
 #include "MelonPrimeConstants.h"
+#include "Config.h"
+#ifdef MELONPRIME_CUSTOM_HUD
+#include "MelonPrimeHudRender.h"
+#endif
 
 // ─── Colour palette ────────────────────────────────────────────────────────
 
@@ -295,11 +299,23 @@ inline void bindPresetColorSync(QObject* owner, QComboBox* combo, QLineEdit* lin
 }
 
 // ─── HUD font helper ───────────────────────────────────────────────────────
-// Returns the mph.ttf font at kCustomHudFontSize scaled by textScalePct/100,
+// Returns the configured HUD font (default MPH / system font / font file, per
+// Metroid.Visual.HudFontMode) sized to kCustomHudFontSize scaled by HudTextScale/100,
 // matching the rendering used by the actual in-game HUD overlay.
-// textScalePct: value of Metroid.Visual.HudTextScale (default 100)
-inline QFont getMphHudFont(int textScalePct = 100)
+inline QFont getMphHudFont(Config::Table& cfg)
 {
+    const int textScalePct = cfg.GetInt("Metroid.Visual.HudTextScale");
+    const double tds = qBound(0.1, textScalePct / 100.0, 10.0);
+
+#ifdef MELONPRIME_CUSTOM_HUD
+    // Single source of truth shared with the runtime overlay (Screen.cpp): same family and
+    // same base pixel size (6 for MPH, HudFontSize for system/file fonts), scaled by TextScale.
+    const int px = qMax(3, static_cast<int>(MelonPrime::CustomHud_ResolveFontPixelSize(cfg) * tds));
+    QFont f = MelonPrime::CustomHud_ResolveBaseFont(cfg);
+    f.setPixelSize(px);
+    return f;
+#else
+    const int px = qMax(3, static_cast<int>(MelonPrime::kCustomHudFontSize * tds));
     static QString s_family;
     if (s_family.isEmpty()) {
         // Font may already be registered by Screen.cpp; addApplicationFont is idempotent.
@@ -310,13 +326,10 @@ inline QFont getMphHudFont(int textScalePct = 100)
                 s_family = families.at(0);
         }
     }
-
-    const double tds = qBound(0.1, textScalePct / 100.0, 10.0);
-    const int px = qMax(3, static_cast<int>(MelonPrime::kCustomHudFontSize * tds));
-
     QFont f(s_family.isEmpty() ? QStringLiteral("Consolas") : s_family, -1);
     f.setPixelSize(px);
     f.setStyleStrategy(QFont::NoAntialias);
     f.setHintingPreference(QFont::PreferFullHinting);
     return f;
+#endif
 }

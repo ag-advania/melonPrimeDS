@@ -5,6 +5,7 @@
 
 #include <QCheckBox>
 #include <QComboBox>
+#include <QFontComboBox>
 #include <QSpinBox>
 #include <QDoubleSpinBox>
 #include <QLineEdit>
@@ -41,6 +42,8 @@ void MelonPrimeInputConfig::snapshotVisualConfig()
             s[qk] = dsb->value();
         else if (auto* le = qobject_cast<QLineEdit*>(widget))
             s[qk] = le->text();
+        else if (auto* fc = qobject_cast<QFontComboBox*>(widget))   // before QComboBox: family string
+            s[qk] = fc->currentFont().family();
         else if (auto* combo = qobject_cast<QComboBox*>(widget))
             s[qk] = combo->currentIndex();
     }
@@ -80,6 +83,8 @@ void MelonPrimeInputConfig::restoreVisualSnapshot()
             dsb->setValue(it->toDouble());
         else if (auto* le = qobject_cast<QLineEdit*>(widget))
             le->setText(it->toString());
+        else if (auto* fc = qobject_cast<QFontComboBox*>(widget))   // before QComboBox: family string
+            fc->setCurrentFont(QFont(it->toString()));
         else if (auto* combo = qobject_cast<QComboBox*>(widget))
             combo->setCurrentIndex(it->toInt());
         widget->blockSignals(false);
@@ -111,6 +116,8 @@ void MelonPrimeInputConfig::applyVisualPreview()
             instcfg.SetDouble(key, dsb->value());
         else if (auto* le = qobject_cast<QLineEdit*>(widget))
             instcfg.SetString(key, le->text().toStdString());
+        else if (auto* fc = qobject_cast<QFontComboBox*>(widget))   // before QComboBox: family string
+            instcfg.SetString(key, fc->currentFont().family().toStdString());
         else if (auto* combo = qobject_cast<QComboBox*>(widget))
             instcfg.SetInt(key, combo->currentIndex());
     }

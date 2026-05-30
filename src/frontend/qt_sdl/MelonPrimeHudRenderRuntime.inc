@@ -326,20 +326,25 @@ static void ApplyHudPainterTransform(QPainter* p, const HudFrameTransform& xf)
 
 static void EnsureHudFont(QPainter* p)
 {
-    if (LIKELY(s_frameFpx == kCustomHudFontSize))
+    // Screen.cpp gives each painter an overlayFont already sized to the resolved HUD font
+    // pixel size (kCustomHudFontSize for MPH, Metroid.Visual.HudFontSize for system/file).
+    // Adopt that size directly instead of forcing a fixed constant, so a custom font size
+    // takes effect. A family/size change resets s_frameFpx to 0 in CustomHud_InvalidateConfigCache,
+    // which lands here and re-caches.
+    const int px = p->font().pixelSize();
+    if (LIKELY(s_frameFpx == px && px > 0))
         return;
 
-    // P-9 / OPT-HUD-6 / OPT-HUD-7: Cache font + metrics once for the fixed HUD font size.
-    // Screen.cpp now gives each painter a pixel-sized overlayFont, so the normal path avoids
-    // p->font() and p->setFont() entirely after the first cache fill.
-    QFont f = p->font();
-    if (f.pixelSize() != kCustomHudFontSize) {
-        f.setPixelSize(kCustomHudFontSize);
-        p->setFont(f);
+    // P-9 / OPT-HUD-6 / OPT-HUD-7: Cache font + metrics once for the current HUD font size.
+    // Bump s_textCacheGen so content-keyed glyph bitmaps (not keyed by family) are re-rasterised.
+    s_frameFont = p->font();
+    s_frameFpx  = (px > 0) ? px : kCustomHudFontSize;
+    if (px <= 0) {
+        s_frameFont.setPixelSize(s_frameFpx);
+        p->setFont(s_frameFont);
     }
-    s_frameFont = f;
-    s_frameFm   = QFontMetrics(f);
-    s_frameFpx  = kCustomHudFontSize;
+    s_frameFm   = QFontMetrics(s_frameFont);
+    ++s_textCacheGen;
 }
 
 static inline QRect CurrentHudDirtyRect(const HudFrameTransform& xf, bool includeFirstPersonHud)
@@ -771,6 +776,10 @@ void CustomHud_InvalidateConfigCache()
     for (int i = 0; i < 9; i++) s_weaponTintValid[i] = false;
     s_effectiveRadarHunterID = 0xFF; // P-13: force re-evaluation of effective radar color
     s_staticDirtyStale = true;       // OPT-DR1: force static dirty rect recomputation
+    // Force EnsureHudFont() to re-read the painter font next frame; Screen.cpp rebuilds
+    // overlayFont from CustomHud_ResolveBaseFont when the HUD-font setting changes, and the
+    // rebuild bumps s_textCacheGen so stale glyph bitmaps are re-rasterised.
+    s_frameFpx = 0;
     // Bump epoch immediately so Screen.cpp's m_hudEnabled cache refreshes on the
     // next frame. Without this, when CustomHUD is toggled off, the stale cache
     // keeps Render() running for one extra frame and re-applies NoHudPatch.

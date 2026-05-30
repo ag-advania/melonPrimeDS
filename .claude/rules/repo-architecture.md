@@ -96,6 +96,10 @@ MelonPrime-specific settings are primarily stored under:
 
 Important current groups include:
 - `Metroid.Visual.CustomHUD`
+- `Metroid.Visual.HudFontMode` - HUD font source (int, default 0): 0=bundled MPH, 1=system font, 2=font file
+- `Metroid.Visual.HudFontFamily` - system font family name (string, default ""), used when HudFontMode=1
+- `Metroid.Visual.HudFontFile` - path to a `.ttf`/`.otf` font (string, default ""), used when HudFontMode=2
+- `Metroid.Visual.HudFontSize` - base render px for system/file fonts (int, default 12, clamp 4-64); ignored for MPH (HudFontMode=0, fixed 6px)
 - `Metroid.Visual.HudTextScale` - text visual scale in percent (default 60, font always 6px)
 - `Metroid.Visual.HudAutoScaleEnable` - enable automatic HUD scaling (default true)
 - `Metroid.Visual.HudAutoScaleCap` - global auto-scale cap percent (default 800)
