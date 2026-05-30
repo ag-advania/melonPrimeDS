@@ -131,6 +131,7 @@ namespace Config
         /* MelonPrimeDS Custom HUD Crosshair defaults { */
         {"Instance*.Metroid.Visual.HudFontMode",            0},   // 0=Default(MPH), 1=System font, 2=Font file
         {"Instance*.Metroid.Visual.HudFontSize",            12},  // base render px for system/file fonts (mode != 0)
+        {"Instance*.Metroid.Visual.HudFontWeight",          3},   // weight index 0..8 -> Thin..Black, 3=Normal
         {"Instance*.Metroid.Visual.HudTextScale",           100},
         {"Instance*.Metroid.Visual.HudAutoScaleCap",       800},
         {"Instance*.Metroid.Visual.HudAutoScaleCapText",   500},
@@ -571,6 +572,10 @@ namespace Config
         {"Instance*.Metroid.Input.Enable.DirectAltFormTransform",    false},
         /* MelonPrimeDS Crosshair bools { */
         {"Instance*.Metroid.Visual.CustomHUD", false},
+        // HUD font style (system/file fonts only; set via the HUD FONT picker)
+        {"Instance*.Metroid.Visual.HudFontItalic", false},
+        {"Instance*.Metroid.Visual.HudFontUnderline", false},
+        {"Instance*.Metroid.Visual.HudFontStrikeOut", false},
         // Per-element default-HUD hide patches (DisableDefaultHud section).
         // Defaults match the legacy bulk-hide behavior so existing CustomHUD
         // users see no visual change on upgrade.
