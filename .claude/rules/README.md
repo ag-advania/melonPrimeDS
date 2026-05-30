@@ -10,3 +10,4 @@
 - [MelonPrime Click Handling — Investigation & Fix Log](melonprime-click-handling.md)
 - [MelonPrime Patch System](melonprime-patch-system.md)
 - [Compute Renderer Mosaic Bug — Investigation Log](compute-renderer-mosaic-bug.md)
+- [MphCodex Reference Workflow](mphcodex-reference.md)
