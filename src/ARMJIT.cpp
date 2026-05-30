@@ -690,10 +690,28 @@ void ARMJIT::CompileBlock(ARM* cpu) noexcept
                     || instrs[i].Info.Kind == ARMInstrInfo::ak_MOV_REG_LSL_IMM
                     || instrs[i].Info.Kind == ARMInstrInfo::ak_Nop
                     || instrs[i].Info.Kind == ARMInstrInfo::ak_UNK);
-                if (cpu->CheckCondition(instrs[i].Cond()))
-                    InterpretARM[instrs[i].Info.Kind](cpu);
-                else
-                    cpu->AddCycles_C();
+                bool melonPrimeHookRedirected = false;
+#ifdef MELONPRIME_DS
+                if (cpu->Num == 0)
+                {
+                    u32 redirectExecAddr = 0;
+                    if (cpu->NDS.ARM9InstructionHookCheckAndRedirect(
+                            instrs[i].Addr,
+                            cpu->R,
+                            redirectExecAddr))
+                    {
+                        cpu->JumpTo(redirectExecAddr);
+                        melonPrimeHookRedirected = true;
+                    }
+                }
+#endif
+                if (!melonPrimeHookRedirected)
+                {
+                    if (cpu->CheckCondition(instrs[i].Cond()))
+                        InterpretARM[instrs[i].Info.Kind](cpu);
+                    else
+                        cpu->AddCycles_C();
+                }
             }
         }
 
