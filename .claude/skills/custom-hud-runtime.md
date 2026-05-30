@@ -149,10 +149,15 @@ inherits the render scale. Layout still uses native `s_frameFm` metrics (`Measur
 the rasterisation resolution changes, so positions are unaffected (the inventory width calc divides
 the hi-res bitmap width back out by `tc.renderScale`). MPH keeps `s_textRenderScale == 1`.
 
+For system/file fonts it also applies style/effects via `ApplyHudFontStyle`: `HudFontWeight`
+(index 0..8 → `QFont::Weight` Thin..Black), `HudFontItalic`, `HudFontUnderline`, `HudFontStrikeOut`.
+Underline/strikeout sit outside the glyph ink box, so `TextBitmapBounds` expands the cached bitmap to
+the full line box when they are set. MPH (mode 0) ignores all of these.
+
 `MelonPrime::CustomHud_ResolveBaseFont(cfg)` (in `MelonPrimeHudRenderConfig.inc`, declared in
-`MelonPrimeHudRender.h`) is the single source of truth for the family — it returns a base `QFont`
-(family + style strategy; caller sets the pixel size via `CustomHud_ResolveFontPixelSize`). It is
-shared by:
+`MelonPrimeHudRender.h`) is the single source of truth for the family + style — it returns a base
+`QFont` (family + style strategy + weight/italic/effects; caller sets the pixel size via
+`CustomHud_ResolveFontPixelSize`). It is shared by:
 - the runtime overlay (`Screen.cpp` builds `overlayFont`; `MelonPrimeHud_RefreshOverlayFontIfNeeded`
   rebuilds it on config-epoch change via the new `m_hudFontEpoch`),
 - the settings-dialog previews (`getMphHudFont(cfg)` in `MelonPrimeInputConfigInternal.h`).
