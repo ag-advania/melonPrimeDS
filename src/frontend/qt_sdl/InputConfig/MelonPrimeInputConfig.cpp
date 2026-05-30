@@ -245,14 +245,8 @@ void MelonPrimeInputConfig::setupSensitivityAndToggles(Config::Table& instcfg)
     ui->cbMetroidFixWifiBitset->setChecked(instcfg.GetBool("Metroid.BugFix.WifiBitset"));
     ui->cbMetroidFixShadowFreeze->setChecked(instcfg.GetBool("Metroid.BugFix.FixShadowFreeze"));
     ui->cbMetroidFixNoxusBladePersistence->setChecked(
-        kDeveloperOnlyFeaturesEnabled && instcfg.GetBool("Metroid.BugFix.FixNoxusBladePersistence"));
-    ui->cbMetroidFixNoxusBladePersistence->setEnabled(kDeveloperOnlyFeaturesEnabled);
-    ui->lblMetroidFixNoxusBladePersistenceDesc->setEnabled(kDeveloperOnlyFeaturesEnabled);
-    ui->lblMetroidFixNoxusBladePersistenceWarning->setEnabled(kDeveloperOnlyFeaturesEnabled);
+        instcfg.GetBool("Metroid.BugFix.FixNoxusBladePersistence"));
     if constexpr (kDeveloperOnlyFeaturesEnabled) {
-        ui->cbMetroidFixNoxusBladePersistence->setToolTip("Developer-only option enabled in this build.");
-        ui->lblMetroidFixNoxusBladePersistenceWarning->setText(
-            "Developer build only: this fix is unstable and the blade may still remain active in some cases, especially in the Korean version.");
         ui->cbMetroidEnableNativeAimPostFoldWrite->setToolTip("Developer-only option enabled in this build.");
         ui->cbMetroidEnableNativeAimRegisterInjection->setToolTip("Developer-only option enabled in this build.");
         ui->cbMetroidEnableImmediateInputEdgeOverlay->setToolTip("Developer-only option enabled in this build.");

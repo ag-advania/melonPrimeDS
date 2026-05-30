@@ -69,8 +69,7 @@ void MelonPrimeInputConfig::saveConfig()
     instcfg.SetBool("Metroid.BugFix.FixShadowFreeze", ui->cbMetroidFixShadowFreeze->checkState() == Qt::Checked);
     instcfg.SetBool(
         "Metroid.BugFix.FixNoxusBladePersistence",
-        kDeveloperOnlyFeaturesEnabled
-            && ui->cbMetroidFixNoxusBladePersistence->checkState() == Qt::Checked);
+        ui->cbMetroidFixNoxusBladePersistence->checkState() == Qt::Checked);
     instcfg.SetBool("Metroid.BugFix.UseFirmwareLanguage", ui->cbMetroidUseFirmwareLanguage->checkState() == Qt::Checked);
     instcfg.SetBool("Metroid.GameFeature.ShowHeadshotOnline", ui->cbMetroidShowHeadshotOnline->checkState() == Qt::Checked);
     instcfg.SetBool("Metroid.GameFeature.ShowEnemyHpMeterOnline", ui->cbMetroidShowEnemyHpMeterOnline->checkState() == Qt::Checked);

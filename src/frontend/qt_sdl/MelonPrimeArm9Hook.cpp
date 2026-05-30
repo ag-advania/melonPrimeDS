@@ -219,14 +219,13 @@ void ARM9Hook_Install(
         cfg.GetInt(CfgKey::ZoomInputMethod) == ZoomInputMethod::NewNativeToggle;
     const bool enableNativeBipedFire =
         cfg.GetInt(CfgKey::BipedFireMethod) != BipedFireMethod::LegacyInput;
-    const bool enableNoxusBlade =
-        cfg.GetBool("Metroid.BugFix.FixNoxusBladePersistence");
 #else
     constexpr bool enableImmediateOverlay = false;
     constexpr bool enableNativeZoomToggle = false;
     constexpr bool enableNativeBipedFire = false;
-    constexpr bool enableNoxusBlade = false;
 #endif
+    const bool enableNoxusBlade =
+        cfg.GetBool("Metroid.BugFix.FixNoxusBladePersistence");
     const bool enableTransformGate = cfg.GetBool(CfgKey::DirectAltFormTransform);
     const bool enableWeaponSwitch =
         cfg.GetInt(CfgKey::WeaponSwitchMethod) != WeaponSwitchMethod::LegacyTouch;

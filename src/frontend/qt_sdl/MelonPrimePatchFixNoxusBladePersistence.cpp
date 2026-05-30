@@ -44,11 +44,6 @@ static constexpr RomDeathCleanupHooks kRomHooks[] = {
     {kHooks_KR1_0, 1},
 };
 
-#ifdef MELONPRIME_ENABLE_DEVELOPER_FEATURES
-static constexpr bool kFixNoxusBladePersistenceAvailable = true;
-#else
-static constexpr bool kFixNoxusBladePersistenceAvailable = false;
-#endif
 static constexpr uint32_t kOffAltAttackTimer = 0x704u;
 static constexpr uint32_t kOffHunterId       = 0x400u;
 static constexpr uint8_t  kHunterIdNoxus     = 4u;
@@ -123,9 +118,6 @@ static bool     s_enabledCached  = false; // emu thread only
 uint32_t FixNoxusBladePersistence_GetAddresses(
     uint8_t romGroupIndex, uint32_t* out, uint32_t maxCount)
 {
-    if (!kFixNoxusBladePersistenceAvailable)
-        return 0;
-
     if (romGroupIndex >= sizeof(kRomHooks) / sizeof(kRomHooks[0]) || maxCount == 0)
         return 0;
 
@@ -152,8 +144,7 @@ void FixNoxusBladePersistence_SetState(Config::Table* cfg, uint8_t romGroupIndex
     }
 
     const uint32_t gen = s_configGen.load(std::memory_order_acquire);
-    s_enabledCached = kFixNoxusBladePersistenceAvailable
-        && cfg
+    s_enabledCached = cfg
         && cfg->GetBool("Metroid.BugFix.FixNoxusBladePersistence");
     s_configGenSeen = gen;
 }
@@ -177,8 +168,7 @@ void FixNoxusBladePersistence_DispatchCheck(
     const uint32_t gen = s_configGen.load(std::memory_order_acquire);
     if (s_configGenSeen != gen)
     {
-        s_enabledCached = kFixNoxusBladePersistenceAvailable
-            && s_cfg->GetBool("Metroid.BugFix.FixNoxusBladePersistence");
+        s_enabledCached = s_cfg->GetBool("Metroid.BugFix.FixNoxusBladePersistence");
         s_configGenSeen = gen;
     }
     if (!s_enabledCached)
