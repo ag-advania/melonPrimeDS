@@ -129,6 +129,8 @@ namespace Config
         /* MelonPrimeDS } */
 
         /* MelonPrimeDS Custom HUD Crosshair defaults { */
+        {"Instance*.Metroid.Visual.HudFontMode",            0},   // 0=Default(MPH), 1=System font, 2=Font file
+        {"Instance*.Metroid.Visual.HudFontSize",            12},  // base render px for system/file fonts (mode != 0)
         {"Instance*.Metroid.Visual.HudTextScale",           100},
         {"Instance*.Metroid.Visual.HudAutoScaleCap",       800},
         {"Instance*.Metroid.Visual.HudAutoScaleCapText",   500},
@@ -724,6 +726,8 @@ namespace Config
         {"DSi.SD.ImagePath",                "dsisd.bin"},
         {"Instance*.Firmware.Username",     "melonDS"},
     #ifdef MELONPRIME_DS
+        {"Instance*.Metroid.Visual.HudFontFamily", ""},
+        {"Instance*.Metroid.Visual.HudFontFile", ""},
         {"Instance*.Metroid.Visual.HudHpPrefix", ""},
         {"Instance*.Metroid.Visual.HudAmmoPrefix", ""},
         {"Instance*.Metroid.Visual.HudBombLeftPrefix", "bombs"},

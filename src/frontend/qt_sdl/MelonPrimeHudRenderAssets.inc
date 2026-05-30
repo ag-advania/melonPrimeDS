@@ -357,12 +357,25 @@ static bool   s_staticDirtyStale   = true;
 struct CrosshairHudConfig;
 static void RebuildCrosshairOutlineStamp(const CrosshairHudConfig& ch);
 
+// Text caches are keyed by string/color/pixel-size — NOT by font family. When the
+// selectable HUD font changes (HudFontMode/Family/File), EnsureHudFont() bumps this
+// generation so every cached glyph bitmap/measurement is treated as a miss and rebuilt.
+static int s_textCacheGen = 0;
+
+// Frame-level glyph render magnification (output px / native bitmap px). 1.0 = native bitmap
+// upscaled at draw time (MPH pixel font). >1.0 = re-rasterise the glyph at output resolution so
+// system/file fonts stay crisp after auto-scale/hudScale instead of being a blurry upscale.
+// Set once per frame in CustomHud_Render; capped to keep glyph bitmaps reasonable.
+static float s_textRenderScale = 1.0f;
+
 struct TextMeasureCache {
     int  fontPixelSize;
     char text[64];
     int  width;
     int  height;
     bool valid;
+    int  gen;        // s_textCacheGen at build time (font-family generation); last so
+                     // existing positional aggregate initializers leave it 0.
 };
 
 struct TextBitmapCache {
@@ -375,6 +388,8 @@ struct TextBitmapCache {
     float  renderScale; // scale at which bitmap was rendered (for hi-res outline)
     bool   valid;
     QImage bitmap;
+    int    gen;      // s_textCacheGen at build time (font-family generation); last so
+                     // existing positional aggregate initializers leave it 0.
 };
 
 // textDrawScale: visual scale applied when drawing (textScalePct/100). Returned
@@ -384,12 +399,14 @@ static inline void MeasureTextCached(const QFontMetrics& fm, int fontPixelSize,
                                      TextMeasureCache& cache, const char* text,
                                      float& outW, float& outH, float textDrawScale = 1.0f)
 {
-    if (!cache.valid || cache.fontPixelSize != fontPixelSize || std::strcmp(cache.text, text) != 0) {
+    if (!cache.valid || cache.fontPixelSize != fontPixelSize || cache.gen != s_textCacheGen
+        || std::strcmp(cache.text, text) != 0) {
         cache.width = fm.horizontalAdvance(QString::fromUtf8(text));
         cache.height = fm.height();
         std::strncpy(cache.text, text, sizeof(cache.text) - 1);
         cache.text[sizeof(cache.text) - 1] = '\0';
         cache.fontPixelSize = fontPixelSize;
+        cache.gen = s_textCacheGen;
         cache.valid = true;
     }
 
@@ -401,21 +418,43 @@ static inline void PrepareTextBitmapCached(const QFontMetrics& fm, const QFont& 
                                            int fontPixelSize, TextBitmapCache& cache,
                                            const char* text, const QColor& color)
 {
-    if (!cache.valid || cache.fontPixelSize != fontPixelSize
+    const float rs = s_textRenderScale;
+    if (!cache.valid || cache.fontPixelSize != fontPixelSize || cache.gen != s_textCacheGen
+        || cache.renderScale != rs
         || cache.color != color || std::strcmp(cache.text, text) != 0)
     {
         const QString qtext = QString::fromUtf8(text);
-        QRect bounds = fm.boundingRect(qtext);
-        if (bounds.isEmpty())
-            bounds = QRect(0, -fm.ascent(), 1, fm.height());
 
-        cache.bitmap = QImage(bounds.width(), bounds.height(), QImage::Format_ARGB32_Premultiplied);
-        cache.bitmap.fill(Qt::transparent);
+        // Hi-DPI path: re-rasterise the glyph at output resolution (font px * rs) so the text
+        // stays crisp after auto-scale/hudScale. originX/Y are then in output-pixel space and
+        // DrawCachedText draws the bitmap 1:1 (no upscaling). rs == 1 keeps the native path.
+        QRect bounds;
+        if (rs > 1.0f) {
+            QFont hiFont = font;
+            hiFont.setPixelSize(std::max(1, static_cast<int>(std::lround(fontPixelSize * rs))));
+            const QFontMetrics hiFm(hiFont);
+            bounds = hiFm.boundingRect(qtext);
+            if (bounds.isEmpty())
+                bounds = QRect(0, -hiFm.ascent(), 1, hiFm.height());
 
-        QPainter painter(&cache.bitmap);
-        painter.setFont(font);
-        painter.setPen(color);
-        painter.drawText(QPoint(-bounds.left(), -bounds.top()), qtext);
+            cache.bitmap = QImage(bounds.width(), bounds.height(), QImage::Format_ARGB32_Premultiplied);
+            cache.bitmap.fill(Qt::transparent);
+            QPainter painter(&cache.bitmap);
+            painter.setFont(hiFont);
+            painter.setPen(color);
+            painter.drawText(QPoint(-bounds.left(), -bounds.top()), qtext);
+        } else {
+            bounds = fm.boundingRect(qtext);
+            if (bounds.isEmpty())
+                bounds = QRect(0, -fm.ascent(), 1, fm.height());
+
+            cache.bitmap = QImage(bounds.width(), bounds.height(), QImage::Format_ARGB32_Premultiplied);
+            cache.bitmap.fill(Qt::transparent);
+            QPainter painter(&cache.bitmap);
+            painter.setFont(font);
+            painter.setPen(color);
+            painter.drawText(QPoint(-bounds.left(), -bounds.top()), qtext);
+        }
 
         std::strncpy(cache.text, text, sizeof(cache.text) - 1);
         cache.text[sizeof(cache.text) - 1] = '\0';
@@ -423,7 +462,8 @@ static inline void PrepareTextBitmapCached(const QFontMetrics& fm, const QFont& 
         cache.color = color;
         cache.originX = bounds.left();
         cache.originY = bounds.top();
-        cache.renderScale = 1.0f;
+        cache.renderScale = rs;
+        cache.gen = s_textCacheGen;
         cache.valid = true;
     }
 }
@@ -432,6 +472,19 @@ static inline void DrawCachedText(QPainter* p, const TextBitmapCache& cache, flo
                                    float textDrawScale = 1.0f)
 {
     if (!cache.valid || cache.bitmap.isNull()) return;
+    if (cache.renderScale > 1.0f) {
+        // Hi-DPI: bitmap was rasterised at output resolution; draw it 1:1 in pixel space so the
+        // glyphs stay crisp (no upscaling). Map the DS-space anchor through the painter transform,
+        // then add the output-pixel origin. Mirrors the hi-res outline path.
+        const QTransform& xf = p->transform();
+        const float anchorPxX = xf.m11() * x + xf.m21() * baselineY + xf.dx();
+        const float anchorPxY = xf.m12() * x + xf.m22() * baselineY + xf.dy();
+        const QTransform saved = p->transform();
+        p->resetTransform();
+        p->drawImage(QPointF(anchorPxX + cache.originX, anchorPxY + cache.originY), cache.bitmap);
+        p->setTransform(saved);
+        return;
+    }
     if (textDrawScale == 1.0f) {
         p->drawImage(QPointF(x + cache.originX, baselineY + cache.originY), cache.bitmap);
     } else {
@@ -456,7 +509,16 @@ static void BuildDilatedOutlineBitmap(TextBitmapCache& dst,
                                        const QColor& color, int R,
                                        float renderScale = 1.0f)
 {
-    if (renderScale > 1.0f && !src.bitmap.isNull()) {
+    float effRs = renderScale;
+    if (src.renderScale > 1.0f && !src.bitmap.isNull()) {
+        // Hi-DPI main text: src is already at output resolution (originX/Y in output px).
+        // Dilate it directly — no extra upscale — and inherit its render scale so the draw
+        // routine takes the hi-res 1:1 path.
+        DilateSeparableTinted(dst.bitmap, src.bitmap, color, R);
+        dst.originX     = src.originX - R;
+        dst.originY     = src.originY - R;
+        effRs           = src.renderScale;
+    } else if (renderScale > 1.0f && !src.bitmap.isNull()) {
         // Scale the source bitmap to output resolution, dilate at that
         // resolution with exactly `thickness` pixels, then store.
         // originX/Y are in native (6px font) space and will be converted
@@ -474,9 +536,10 @@ static void BuildDilatedOutlineBitmap(TextBitmapCache& dst,
         dst.originY     = src.originY - R;
     }
     dst.expandR     = R;
-    dst.renderScale = renderScale;
+    dst.renderScale = effRs;
     dst.fontPixelSize = src.fontPixelSize;
     dst.color       = color;
+    dst.gen         = src.gen;
     std::strncpy(dst.text, src.text, sizeof(dst.text) - 1);
     dst.text[sizeof(dst.text) - 1] = '\0';
     dst.valid       = true;
@@ -493,11 +556,15 @@ static inline void PrepareOutlineBitmapCached(TextBitmapCache& outlineCache,
                                                float renderScale = 1.0f)
 {
     if (!mainCache.valid || mainCache.bitmap.isNull()) return;
+    // When the main text is hi-DPI, the outline inherits the main cache's render scale
+    // (it dilates the already-output-res bitmap), so compare against that for cache validity.
+    const float effRs = (mainCache.renderScale > 1.0f) ? mainCache.renderScale : renderScale;
     if (outlineCache.valid &&
         outlineCache.expandR       == thickness &&
-        outlineCache.renderScale   == renderScale &&
+        outlineCache.renderScale   == effRs &&
         outlineCache.color         == outlineColor &&
         outlineCache.fontPixelSize == mainCache.fontPixelSize &&
+        outlineCache.gen           == mainCache.gen &&
         std::strcmp(outlineCache.text, mainCache.text) == 0) return;
     BuildDilatedOutlineBitmap(outlineCache, mainCache, outlineColor, thickness, renderScale);
 }

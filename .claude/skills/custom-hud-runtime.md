@@ -120,6 +120,49 @@ Key design points:
 - Text bitmaps are drawn scaled via `DrawCachedText(..., tds)` where `tds = textDrawScale` (pre-computed from auto-scale + user TextScale).
 - The crosshair reads `cx/cy` from RAM in DS-space (`0-255`) and requires no manual `topStretchX` correction.
 
+### Selectable HUD font
+The HUD text font is chosen by `Metroid.Visual.HudFontMode`:
+- `0` = bundled MPH pixel font (`:/mph-font`, default, `NoAntialias` + full hinting — sharpest)
+- `1` = system font family from `Metroid.Visual.HudFontFamily` (anti-aliased)
+- `2` = font file from `Metroid.Visual.HudFontFile` (`.ttf`/`.otf`, registered via `addApplicationFont`, anti-aliased)
+
+Base render pixel size is `CustomHud_ResolveFontPixelSize(cfg)`: `kCustomHudFontSize` (6) for MPH,
+or `Metroid.Visual.HudFontSize` (clamped 4–64) for system/file fonts — so a vector font can be
+rasterised larger/sharper instead of upscaling a 6px bitmap. `HudTextScale`/auto-scale still apply
+on top via `textDrawScale`. `EnsureHudFont()` adopts the painter's `overlayFont` pixel size rather
+than forcing a constant, and the `fontPx == kCustomHudFontSize` guards were generalized to `> 0`.
+
+**Hi-DPI text (system/file fonts):** to avoid a blurry result when auto-scale/hudScale magnify the
+glyphs, non-MPH text is re-rasterised at the final output resolution instead of upscaling the small
+base bitmap (analogous to the existing hi-res outline path). A frame-level `s_textRenderScale`
+(= `textDrawScale * hudScale`, capped at 16) is set once per frame in `CustomHud_Render` when
+`c.hiResText` (`HudFontMode != 0`). When `> 1`, `PrepareTextBitmapCached` renders the glyph with a
+font at `fontPx * s_textRenderScale`, stores origins in output-pixel space and `cache.renderScale`,
+and `DrawCachedText` draws that bitmap 1:1 (transform reset + DS-anchor→pixel mapping). The outline
+(`BuildDilatedOutlineBitmap`) dilates the already-output-res bitmap directly and inherits the render
+scale. Layout still uses native `s_frameFm` metrics (`MeasureTextCached`); only the rasterisation
+resolution changes, so positions are unaffected (the inventory width calc divides the hi-res bitmap
+width back out by `tc.renderScale`). MPH keeps `s_textRenderScale == 1` (its pixel-art upscale).
+
+`MelonPrime::CustomHud_ResolveBaseFont(cfg)` (in `MelonPrimeHudRenderConfig.inc`, declared in
+`MelonPrimeHudRender.h`) is the single source of truth for the family — it returns a base `QFont`
+(family + style strategy; caller sets the pixel size via `CustomHud_ResolveFontPixelSize`). It is
+shared by:
+- the runtime overlay (`Screen.cpp` builds `overlayFont`; `MelonPrimeHud_RefreshOverlayFontIfNeeded`
+  rebuilds it on config-epoch change via the new `m_hudFontEpoch`),
+- the settings-dialog previews (`getMphHudFont(cfg)` in `MelonPrimeInputConfigInternal.h`).
+
+File loads are path-cached (`LoadAppFontFamilyCached`, mutex-guarded since the resolver runs on
+both the GUI and render paths). A font change must invalidate the content-keyed glyph caches:
+`CustomHud_InvalidateConfigCache()` resets `s_frameFpx = 0`, and the next `EnsureHudFont()` rebuild
+bumps `s_textCacheGen` (a trailing `gen` field on `TextBitmapCache`/`TextMeasureCache`, checked in
+`PrepareTextBitmapCached`/`MeasureTextCached`/`PrepareOutlineBitmapCached`).
+
+The switch lives in the settings dialog's **HUD FONT** section (`kSecFont`); the System Font row is a
+`QFontComboBox` and the Font File row is a `QLineEdit` + Browse button. `QFontComboBox` is a
+`QComboBox`, so every generic `m_hudWidgets` loop (save/snapshot/restore/apply/refresh and the TOML
+export/import) special-cases it (family string) **before** the `QComboBox` branch.
+
 ### 9-point anchor system
 All HUD text/icon positions use a 9-point anchor + offset model.
 

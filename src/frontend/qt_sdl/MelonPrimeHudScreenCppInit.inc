@@ -6,19 +6,14 @@ Overlay[0] = QImage(256, 192, QImage::Format_ARGB32_Premultiplied);
 Overlay[1] = QImage(256, 192, QImage::Format_ARGB32_Premultiplied);
 Overlay[0].fill(0x00000000);
 Overlay[1].fill(0x00000000);
-// Load custom font for HUD text.
-// Anti-aliasing is enabled so the font looks sharp at high output resolutions.
-// The font is a TTF (vector), so it renders cleanly at any pixel size.
+// Load the HUD text font. CustomHud_ResolveBaseFont honors the selectable font setting
+// (Metroid.Visual.HudFontMode: default MPH / system font / font file) and sets the family
+// + style strategy; we only add the fixed HUD pixel size here. The font is later rebuilt
+// per-frame via MelonPrimeHud_RefreshOverlayFontIfNeeded when the setting changes.
 {
-    int fontId = QFontDatabase::addApplicationFont(":/mph-font");
-    if (fontId >= 0) {
-        QFontDatabase fontDB;
-        QString family = fontDB.applicationFontFamilies(fontId).at(0);
-        overlayFont.setFamily(family);
-    }
-    overlayFont.setPixelSize(MelonPrime::kCustomHudFontSize);
-    overlayFont.setStyleStrategy(QFont::NoAntialias);
-    overlayFont.setHintingPreference(QFont::PreferFullHinting);
+    auto& hudCfg = emuInstance->getLocalConfig();
+    overlayFont = MelonPrime::CustomHud_ResolveBaseFont(hudCfg);
+    overlayFont.setPixelSize(MelonPrime::CustomHud_ResolveFontPixelSize(hudCfg));
 }
 m_hudEditPanel = new MelonPrimeHudConfigOnScreenEdit(this, emuInstance);
 MelonPrime::CustomHud_SetEditSelectionCallback([this](int idx) {

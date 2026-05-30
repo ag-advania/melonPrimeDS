@@ -73,6 +73,19 @@ static void MelonPrimeHud_RefreshHudEnabledIfNeeded(
         hudEnabled = MelonPrime::CustomHud_IsEnabled(instcfg);
 }
 
+// Rebuild overlayFont from the selectable HUD-font setting when the config epoch changes.
+// Cheap: only runs on a settings change (CustomHud_InvalidateConfigCache bumps the epoch).
+static void MelonPrimeHud_RefreshOverlayFontIfNeeded(
+    Config::Table& instcfg,
+    uint32_t& cachedEpoch,
+    QFont& overlayFont)
+{
+    if (!MelonPrimeHud_RefreshHudEpoch(cachedEpoch))
+        return;
+    overlayFont = MelonPrime::CustomHud_ResolveBaseFont(instcfg);
+    overlayFont.setPixelSize(MelonPrime::CustomHud_ResolveFontPixelSize(instcfg));
+}
+
 static void MelonPrimeHud_RefreshRadarConfigIfNeeded(
     Config::Table& instcfg,
     uint32_t& cachedEpoch,

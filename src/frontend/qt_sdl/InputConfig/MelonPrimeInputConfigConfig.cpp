@@ -5,6 +5,7 @@
 
 #include <QCheckBox>
 #include <QComboBox>
+#include <QFontComboBox>
 #include <QSpinBox>
 #include <QDoubleSpinBox>
 #include <QLineEdit>
@@ -214,6 +215,8 @@ void MelonPrimeInputConfig::saveConfig()
             instcfg.SetDouble(key, dsb->value());
         else if (auto* le = qobject_cast<QLineEdit*>(widget))
             instcfg.SetString(key, le->text().toStdString());
+        else if (auto* fc = qobject_cast<QFontComboBox*>(widget))   // before QComboBox: stores family string
+            instcfg.SetString(key, fc->currentFont().family().toStdString());
         else if (auto* combo = qobject_cast<QComboBox*>(widget))
             instcfg.SetInt(key, combo->currentIndex());
     }

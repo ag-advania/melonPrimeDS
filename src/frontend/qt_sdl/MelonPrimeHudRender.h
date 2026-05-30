@@ -11,6 +11,7 @@
 class EmuInstance;
 class QPainter;
 class QImage;
+class QFont;
 namespace Config { class Table; }
 
 namespace MelonPrime {
@@ -65,6 +66,18 @@ namespace MelonPrime {
 
     // Returns true if the custom HUD setting is enabled in config.
     bool CustomHud_IsEnabled(Config::Table& localCfg);
+
+    // Resolve the base HUD font (family + style strategy only; caller sets pixel size)
+    // from the Metroid.Visual.HudFont* config keys:
+    //   HudFontMode 0 = bundled MPH (default), 1 = system font family, 2 = font file.
+    // Falls back to the bundled MPH font on empty/invalid selection.
+    QFont CustomHud_ResolveBaseFont(Config::Table& localCfg);
+
+    // Resolve the base render pixel size for the HUD font:
+    //   mode 0 (MPH)  -> kCustomHudFontSize (6, the pixel font's native size).
+    //   mode 1/2      -> Metroid.Visual.HudFontSize (clamped), so system/file fonts can
+    //                    be rasterised larger and sharper. HudTextScale/auto-scale still apply.
+    int CustomHud_ResolveFontPixelSize(Config::Table& localCfg);
 
     // Returns true when the shared HUD hide condition is active.
     bool CustomHud_ShouldHideForGameplayState(EmuInstance* emu, const RomAddresses& rom, uint8_t playerPosition);

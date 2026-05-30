@@ -312,15 +312,16 @@ static void DrawWeaponInventory(QPainter* p,
         // Power Beam (divisor=0): no ammo shown
 
         // Prepare text bitmap (respects tds / TextScale / CapText via DrawCachedText scaling).
-        if (buf[0] && fontPx == kCustomHudFontSize)
+        if (buf[0] && fontPx > 0)
             PrepareTextBitmapCached(fm, s_frameFont, fontPx, s_invTextCache[si], buf, wi.textColor);
         else
             s_invTextCache[si].valid = false;
 
-        // Text dimensions in DS-space via bitmap * tds
+        // Text dimensions in DS-space via bitmap * tds. The bitmap may be hi-DPI
+        // (width = native * renderScale), so divide it back out to native px first.
         const TextBitmapCache& tc = s_invTextCache[si];
         const float textW = (tc.valid && !tc.bitmap.isNull())
-                            ? static_cast<float>(tc.bitmap.width())  * tds : 0.0f;
+                            ? static_cast<float>(tc.bitmap.width()) / tc.renderScale * tds : 0.0f;
 
         float px, py;
         float textX;
