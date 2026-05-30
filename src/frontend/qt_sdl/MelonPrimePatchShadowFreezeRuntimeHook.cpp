@@ -27,8 +27,6 @@ namespace {
 //   JP/US/EU decision sites keep target player in r6, beam in r7, threshold in r1.
 //   KR1_0 decision sites keep target player in r5, beam in r6, threshold in r10.
 
-static constexpr uint32_t kExpectedDecisionInstruction = 0xDA00000Au; // ble miss
-
 enum class IceWaveTargetKind : uint8_t
 {
     Body,
@@ -289,30 +287,23 @@ static bool ApplyHookForDecision(
     const uint32_t regs[16],
     uint32_t& redirectExecAddr)
 {
-    if (!nds || !hook || !regs)
-        return false;
-
-    if (nds->ARM9Read32(hook->DecisionAddress) != kExpectedDecisionInstruction)
+    if (!hook)
         return false;
 
     const uint32_t player      = regs[hook->PlayerReg];
     const uint32_t beam        = regs[hook->BeamReg];
     const int32_t thresholdQ12 = static_cast<int32_t>(regs[hook->ThresholdReg]);
 
-    // Once the enabled hook owns the real Ice Wave decision branch, prefer a
-    // conservative miss over falling back to the original lateral-angle bug.
-    redirectExecAddr = hook->MissAddress;
-
     if (!IsMainRamAddress(player) || !IsMainRamAddress(beam))
-        return true;
+        return false;
 
     uint32_t targetPositionAddress = 0;
     if (!GetTargetPositionAddress(nds, player, hook->Kind, targetPositionAddress))
-        return true;
+        return false;
 
     int32_t fullDotQ12 = 0;
     if (!ComputeFull3DIceWaveDotQ12(nds, beam, targetPositionAddress, fullDotQ12))
-        return true;
+        return false;
 
     // Original: cmp dot, threshold / ble miss / fallthrough hit
     redirectExecAddr = (fullDotQ12 > thresholdQ12) ? hook->HitAddress : hook->MissAddress;
