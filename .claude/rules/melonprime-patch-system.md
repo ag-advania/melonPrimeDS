@@ -123,7 +123,11 @@ void Foo_ResetPatchState()
 
 ### 2. Apply call site — `MelonPrime.cpp`
 
-`HandleGameJoinInit()` is the standard apply site (runs once per in-game join, cold path).
+Choose the apply site based on what the patch targets:
+
+#### A. Standard: `HandleGameJoinInit()` — once per in-game join (cold path)
+
+Used when the patch writes ARM9 code that persists until the game resets.
 Add after the existing `OsdColor_ApplyOnce` call:
 
 ```cpp
@@ -134,22 +138,53 @@ Add after the existing `OsdColor_ApplyOnce` call:
 #endif
 ```
 
-If the patch needs per-frame re-evaluation (rare, like OsdColor), call inside the `isInGame` block in `RunFrameHook` as well.
+#### B. Per-frame in-game: `isInGame` block in `RunFrameHook`
+
+Used when the patch needs re-evaluation every frame while the game is running
+(e.g. OsdColor which varies with game state).
+
+#### C. Per-frame outside game: `!isInGame` block in `RunFrameHook`
+
+Used when the patch targets data that is loaded/unloaded by the game's menu system
+and can be reset by screen transitions. The patch must include its own loaded-state
+guard so it is a no-op when the target data is not present.
+
+In the `!isInGame && focused` block (alongside `FixWifi_ApplyOnce` and
+`UseFirmwareLanguage_ApplyOnce`):
+
+```cpp
+#ifdef MELONPRIME_DS
+    {
+        melonDS::NDS* const nds = emuInstance->getNDS();
+        FixWifi_ApplyOnce(nds, localCfg, m_currentRom.romGroupIndex);
+        UseFirmwareLanguage_ApplyOnce(nds, localCfg, m_currentRom.romGroupIndex, m_currentRom.isInAdventure);
+        Foo_ApplyIfLoaded(nds, localCfg, m_currentRom.romGroupIndex);  // ← pattern C
+    }
+#endif
+```
+
+For pattern C, `ResetPatchState()` is a no-op (the guard re-detects each call; there is no
+persistent `s_applied` flag). The function signature is `Foo_ApplyIfLoaded` rather than
+`Foo_ApplyOnce` to signal this distinction.
 
 ### 3. Reset call sites — `MelonPrime.cpp`
 
-Two `#ifdef MELONPRIME_DS` reset blocks exist: one inside the **OnEmuStart/Reset** handler
-(search for `ReloadConfigFlags()` just below) and one inside `OnEmuStop()`.
-Add `Foo_ResetPatchState();` to **both**:
+**Three** `#ifdef MELONPRIME_DS` reset blocks exist. Add `Foo_ResetPatchState();` to **all three**:
+
+1. Inside `OnEmuStart` / soft-reset path (search for `ReloadConfigFlags()` just below the block)
+2. Inside `ResetRuntimeStateForBoot()` (search for the second reset block before `InputReset()`)
+3. Inside `OnEmuStop()`
 
 ```cpp
 #ifdef MELONPRIME_DS
     InGameAspectRatio_ResetPatchState();
     OsdColor_ResetPatchState();
     FixWifi_ResetPatchState();
-    Foo_ResetPatchState();   // ← add here
+    Foo_ResetPatchState();   // ← add here in all three blocks
 #endif
 ```
+
+Missing any one of the three blocks causes stale patch state to survive across stop/reset cycles.
 
 ### 4. Settings UI — `MelonPrimeInputConfig.ui`
 
@@ -184,6 +219,40 @@ ui->cbMetroidFoo->setChecked(instcfg.GetBool("Metroid.BugFix.Foo"));
 
 The BUG FIXES section toggle is already registered in `setupCollapsibleSections`.
 No extra `setupToggle` call is needed for new checkboxes inside the existing section.
+
+#### Checkbox dependencies (parent/child enable control)
+
+If a checkbox must control the enabled state of another checkbox, **do not use a lambda `connect` inside `setupSensitivityAndToggles`**. This causes crashes because signal/event ordering during dialog initialization is unpredictable.
+
+Instead, use the Qt auto-slot pattern:
+
+**`MelonPrimeInputConfig.h`** — add to the `private slots:` block alongside other `on_cbXxx_stateChanged` declarations:
+
+```cpp
+void on_cbMetroidFoo_stateChanged(int state);
+```
+
+**`MelonPrimeInputConfig.cpp`** — add the implementation near other `on_cbXxx_stateChanged` definitions (around line 760):
+
+```cpp
+void MelonPrimeInputConfig::on_cbMetroidFoo_stateChanged(int state)
+{
+    const bool checked = (state == Qt::Checked);
+    ui->cbMetroidFooChild->setEnabled(checked);
+    if (!checked)
+        ui->cbMetroidFooChild->setChecked(false);
+}
+```
+
+**`setupSensitivityAndToggles`** — set the initial enabled state after setting the check states:
+
+```cpp
+ui->cbMetroidFoo->setChecked(instcfg.GetBool("Metroid.BugFix.Foo"));
+ui->cbMetroidFooChild->setChecked(instcfg.GetBool("Metroid.BugFix.FooChild"));
+ui->cbMetroidFooChild->setEnabled(ui->cbMetroidFoo->isChecked());
+```
+
+Qt's `QMetaObject::connectSlotsByName` (called inside `ui->setupUi(this)`) automatically connects `on_cbMetroidFoo_stateChanged` to the widget's `stateChanged` signal. No manual `connect()` call is needed or wanted.
 
 ### 6. Save — `MelonPrimeInputConfigConfig.cpp`
 
@@ -233,6 +302,7 @@ Use `0xFFFFFFFFu` as the sentinel "not applicable" base address.
 | No-HUD | `MelonPrimePatchNoHud.*` | Called from Custom HUD render path | Per-frame apply/restore depending on HUD state |
 | No double-tap jump | `MelonPrimePatchNoDoubleTapJump.*` | `MelonPrimeGameWeapon.cpp` (transient, wraps `FrameAdvanceTwice`) | Not persistent; applied/restored around weapon-switch frames only |
 | Wi-Fi bitset fix | `MelonPrimePatchFixWifi.*` | `HandleGameJoinInit` | JP1_0 / US1_0 / EU1_0 only; 51-word patch; `FixWifi_ResetPatchState` on stop/reset |
+| Stage matrix expansion | `MelonPrimePatchExpandStageMatrix.*` | `!isInGame` per-frame block (pattern C) | Writes RAM data bytes, not ARM code; self-guarded via strict 3-point loaded-state check; `ResetPatchState` is a no-op; base (5 cells) + extra (9 cells) split across two config keys |
 
 ---
 

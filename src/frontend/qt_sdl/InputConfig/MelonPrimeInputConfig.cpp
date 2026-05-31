@@ -259,6 +259,8 @@ void MelonPrimeInputConfig::setupSensitivityAndToggles(Config::Table& instcfg)
     ui->cbMetroidShowHeadshotOnline->setChecked(instcfg.GetBool("Metroid.GameFeature.ShowHeadshotOnline"));
     ui->cbMetroidShowEnemyHpMeterOnline->setChecked(instcfg.GetBool("Metroid.GameFeature.ShowEnemyHpMeterOnline"));
     ui->cbMetroidExpandStageMatrix->setChecked(instcfg.GetBool("Metroid.GameFeature.ExpandStageMatrix"));
+    ui->cbMetroidExpandStageMatrixExtra->setChecked(instcfg.GetBool("Metroid.GameFeature.ExpandStageMatrixExtra"));
+    ui->cbMetroidExpandStageMatrixExtra->setEnabled(ui->cbMetroidExpandStageMatrix->isChecked());
     ui->cbMetroidDisableDoubleDamageMultiplier->setChecked(
         instcfg.GetBool("Metroid.GameFeature.DisableDoubleDamageMultiplier"));
     ui->cbMetroidDamageNotifyPurple->setChecked(
@@ -757,6 +759,14 @@ void MelonPrimeInputConfig::on_cbMetroidEnableStylusMode_stateChanged(int state)
 void MelonPrimeInputConfig::on_cbMetroidDisableMphAimSmoothing_stateChanged(int)
 {
     updateAimControlsForStylusMode(ui->cbMetroidEnableStylusMode->isChecked());
+}
+
+void MelonPrimeInputConfig::on_cbMetroidExpandStageMatrix_stateChanged(int state)
+{
+    const bool checked = (state == Qt::Checked);
+    ui->cbMetroidExpandStageMatrixExtra->setEnabled(checked);
+    if (!checked)
+        ui->cbMetroidExpandStageMatrixExtra->setChecked(false);
 }
 
 void MelonPrimeInputConfig::on_btnEditHudLayout_clicked()
