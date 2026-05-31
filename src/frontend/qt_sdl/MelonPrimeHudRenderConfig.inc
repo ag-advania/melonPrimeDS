@@ -187,6 +187,7 @@ struct CachedHudConfig {
     // DisableDefaultHud: bitmask of NoHudElement bits the user wants hidden.
     // Cached once per epoch so the hot path doesn't issue 12 GetBool per frame.
     uint16_t noHudMask;
+    bool hiResText;  // HudFontMode != 0: rasterise glyphs at output resolution (hi-DPI text)
     bool valid;
 };
 static CachedHudConfig s_cache = { .valid = false };
@@ -216,6 +217,108 @@ static QRect CrosshairBboxPx(int cx, int cy, const CrosshairHudConfig& ch)
 static QFontMetrics s_frameFm{QFont{}};
 static int s_frameFpx = 0;
 static QFont s_frameFont;
+
+// =========================================================================
+//  Selectable HUD font (default MPH / system font / font file)
+//  Single source of truth shared by the runtime render (overlayFont),
+//  the settings-dialog previews, and the render cache.
+// =========================================================================
+
+// Bundled MPH pixel font (:/mph-font). Loaded once; addApplicationFont is idempotent.
+static const QString& MphFontFamily()
+{
+    static QString s_mphFamily = []() -> QString {
+        const int id = QFontDatabase::addApplicationFont(QStringLiteral(":/mph-font"));
+        if (id >= 0) {
+            const QStringList fams = QFontDatabase::applicationFontFamilies(id);
+            if (!fams.isEmpty())
+                return fams.at(0);
+        }
+        return QString();
+    }();
+    return s_mphFamily;
+}
+
+// Register a font file once and return its family. Cached by absolute path so the
+// per-frame resolver never re-runs addApplicationFont for an already-loaded file.
+// Returns an empty string if the file cannot be loaded.
+// Guarded by a mutex: the resolver is called from both the GUI thread (settings
+// preview) and the screen render path, so the cache mutation must be serialized.
+static QString LoadAppFontFamilyCached(const QString& path)
+{
+    static QMutex s_mutex;
+    static QHash<QString, QString> s_fileFamilies;  // path -> family ("" = known-bad)
+    QMutexLocker lock(&s_mutex);
+
+    auto it = s_fileFamilies.find(path);
+    if (it != s_fileFamilies.end())
+        return it.value();
+
+    QString family;
+    const int id = QFontDatabase::addApplicationFont(path);
+    if (id >= 0) {
+        const QStringList fams = QFontDatabase::applicationFontFamilies(id);
+        if (!fams.isEmpty())
+            family = fams.at(0);
+    }
+    s_fileFamilies.insert(path, family);
+    return family;
+}
+
+// Apply the user's style/effects (weight, italic, underline, strikeout) from the HUD FONT
+// picker. Only used for system/file fonts — MPH stays a clean pixel font.
+static void ApplyHudFontStyle(QFont& f, Config::Table& cfg)
+{
+    f.setStyleStrategy(QFont::PreferAntialias);
+    // Weight index 0..8 -> QFont::Weight Thin..Black.
+    static const int kWeights[9] = { 100, 200, 300, 400, 500, 600, 700, 800, 900 };
+    const int wi = std::clamp(cfg.GetInt("Metroid.Visual.HudFontWeight"), 0, 8);
+    f.setWeight(static_cast<QFont::Weight>(kWeights[wi]));
+    f.setItalic(cfg.GetBool("Metroid.Visual.HudFontItalic"));
+    f.setUnderline(cfg.GetBool("Metroid.Visual.HudFontUnderline"));
+    f.setStrikeOut(cfg.GetBool("Metroid.Visual.HudFontStrikeOut"));
+}
+
+QFont CustomHud_ResolveBaseFont(Config::Table& cfg)
+{
+    const int mode = cfg.GetInt("Metroid.Visual.HudFontMode");
+
+    if (mode == 1) {
+        // System font family.
+        const QString fam = QString::fromStdString(cfg.GetString("Metroid.Visual.HudFontFamily"));
+        if (!fam.isEmpty()) {
+            QFont f(fam);
+            ApplyHudFontStyle(f, cfg);
+            return f;
+        }
+    } else if (mode == 2) {
+        // Font file on disk.
+        const QString path = QString::fromStdString(cfg.GetString("Metroid.Visual.HudFontFile"));
+        if (!path.isEmpty()) {
+            const QString fam = LoadAppFontFamilyCached(path);
+            if (!fam.isEmpty()) {
+                QFont f(fam);
+                ApplyHudFontStyle(f, cfg);
+                return f;
+            }
+        }
+    }
+
+    // Mode 0, or any empty/invalid selection: bundled MPH pixel font.
+    const QString& mph = MphFontFamily();
+    QFont f(mph.isEmpty() ? QStringLiteral("Consolas") : mph);
+    f.setStyleStrategy(QFont::NoAntialias);
+    f.setHintingPreference(QFont::PreferFullHinting);
+    return f;
+}
+
+int CustomHud_ResolveFontPixelSize(Config::Table& cfg)
+{
+    // MPH is tuned for its native 6px; only system/file fonts get a configurable size.
+    if (cfg.GetInt("Metroid.Visual.HudFontMode") == 0)
+        return kCustomHudFontSize;
+    return std::clamp(cfg.GetInt("Metroid.Visual.HudFontSize"), 4, 64);
+}
 
 static inline void CopyConfigString(char* dst, size_t dstSize, const std::string& value)
 {
@@ -623,6 +726,21 @@ static void RefreshCachedConfig(Config::Table& cfg, float topStretchX = 1.0f, fl
     const float effectiveTextPct = c.scaleText * 100.0f + (c.textScalePct - 100);
     c.textDrawScale       = (hudScale > 0.0f) ? (effectiveTextPct / 100.0f) / hudScale
                                                : effectiveTextPct / 100.0f;
+    // Hi-DPI text: only system/file fonts benefit (MPH is a pixel font tuned for 6px upscale).
+    c.hiResText           = (cfg.GetInt("Metroid.Visual.HudFontMode") != 0);
+    // Build the output-resolution glyph font here — RefreshCachedConfig only runs on a config
+    // change or window resize (via EnsureCachedConfigForFrame), so this is event-driven, never
+    // per frame. s_textRenderScale = glyph magnification (effectiveTextPct/100), capped.
+    {
+        const float mag = effectiveTextPct / 100.0f;
+        s_textRenderScale = (c.hiResText && mag > 1.0f) ? std::min(mag, 16.0f) : 1.0f;
+        if (s_textRenderScale > 1.0f) {
+            const int basePx = CustomHud_ResolveFontPixelSize(cfg);
+            s_hiResFont = CustomHud_ResolveBaseFont(cfg);
+            s_hiResFont.setPixelSize(std::max(1, static_cast<int>(std::lround(basePx * s_textRenderScale))));
+            s_hiResFm = QFontMetrics(s_hiResFont);
+        }
+    }
 
     // Recompute crosshair arm rects with auto-scale applied.
     // LoadCrosshairConfig computes rects using chScale only; we now

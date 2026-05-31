@@ -24,6 +24,10 @@
 #include <QRectF>
 #include <QColorDialog>
 #include <QInputDialog>
+#include <QFont>
+#include <QFontDatabase>
+#include <QHash>
+#include <QString>
 #include <algorithm>
 #include <string>
 #include <map>
