@@ -280,20 +280,43 @@ void DrawBottomScreenOverlay(Config::Table& localCfg, QPainter* topPaint, QImage
 
     // ① Radar HUD (crop from bottom screen, frontmost), if available.
     if (btmBuffer && !btmBuffer->isNull()) {
-        const int srcCenterX  = kBtmOverlaySrcCenterX;
-        const int srcCenterY  = kBtmOverlaySrcCenterY[hunterID];
-        const int srcRadius   = c.radar.radarSrcRadius;
-        const float bufScaleX = static_cast<float>(btmBuffer->width()) / 256.0f;
-        const float bufScaleY = static_cast<float>(btmBuffer->height()) / 192.0f;
+        const int srcRadius = c.radar.radarSrcRadius;
+        const int bufW = btmBuffer->width();
+        const int bufH = btmBuffer->height();
 
-        QRect srcRect(static_cast<int>((srcCenterX - srcRadius) * bufScaleX),
-                      static_cast<int>((srcCenterY - srcRadius) * bufScaleY),
-                      static_cast<int>(srcRadius * 2 * bufScaleX),
-                      static_cast<int>(srcRadius * 2 * bufScaleY));
+        // Cache the source crop rect. srcRect depends only on hunterID,
+        // radarSrcRadius (config), and the bottom-screen buffer size — none of
+        // which change every frame in steady state. Recompute only when one of
+        // those inputs changes; otherwise reuse the cached QRect and skip 2 float
+        // divisions + 4 casts each visible-radar frame. The cache key covers all
+        // inputs of the formula, so it is self-correcting (no external
+        // invalidation needed on hunter swap / config change / resolution change).
+        static QRect s_radarSrcRect;
+        static int   s_radarSrcHunterID = -1;
+        static int   s_radarSrcRadius   = -1;
+        static int   s_radarSrcBufW     = -1;
+        static int   s_radarSrcBufH     = -1;
+
+        if (hunterID != s_radarSrcHunterID || srcRadius != s_radarSrcRadius ||
+            bufW != s_radarSrcBufW || bufH != s_radarSrcBufH) {
+            const int srcCenterX  = kBtmOverlaySrcCenterX;
+            const int srcCenterY  = kBtmOverlaySrcCenterY[hunterID];
+            const float bufScaleX = static_cast<float>(bufW) / 256.0f;
+            const float bufScaleY = static_cast<float>(bufH) / 192.0f;
+
+            s_radarSrcRect = QRect(static_cast<int>((srcCenterX - srcRadius) * bufScaleX),
+                                   static_cast<int>((srcCenterY - srcRadius) * bufScaleY),
+                                   static_cast<int>(srcRadius * 2 * bufScaleX),
+                                   static_cast<int>(srcRadius * 2 * bufScaleY));
+            s_radarSrcHunterID = hunterID;
+            s_radarSrcRadius   = srcRadius;
+            s_radarSrcBufW     = bufW;
+            s_radarSrcBufH     = bufH;
+        }
 
         topPaint->setOpacity(c.radar.radarOpacity);
         topPaint->setClipPath(c.radar.radarClipPath);
-        topPaint->drawImage(c.radar.radarDstRect, *btmBuffer, srcRect);
+        topPaint->drawImage(c.radar.radarDstRect, *btmBuffer, s_radarSrcRect);
     }
 
     // OPT-SR2: Manual restore — only the attributes actually changed.

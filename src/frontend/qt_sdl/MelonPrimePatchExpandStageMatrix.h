@@ -14,6 +14,7 @@ namespace MelonPrime {
 // multiplayer stage select compatibility matrix.  Applied only when the guard
 // confirms the matrix data block is loaded (strict 3-point check).
 void ExpandStageMatrix_ApplyIfLoaded(melonDS::NDS* nds, Config::Table& cfg, uint8_t romGroupIndex);
+void ExpandStageMatrix_InvalidatePatch();
 void ExpandStageMatrix_ResetPatchState();
 
 } // namespace MelonPrime
