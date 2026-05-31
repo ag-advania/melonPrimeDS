@@ -91,7 +91,7 @@ jobs:
       uses: actions/cache@v4
       with:
         path: ${{ github.workspace }}/build
-        key: ${{ runner.os }}-cmake-build-${{ hashFiles('CMakeLists.txt', 'src/**', 'include/**', 'cmake/**', 'CMakePresets.json') }}
+        key: ${{ runner.os }}-cmake-build-${{ hashFiles('CMakeLists.txt', 'src/**', 'include/**', 'cmake/**', 'CMakePresets.json', 'vcpkg.json') }}
         restore-keys: |
           ${{ runner.os }}-cmake-build-${{ hashFiles('CMakeLists.txt') }}
           ${{ runner.os }}-cmake-build-
