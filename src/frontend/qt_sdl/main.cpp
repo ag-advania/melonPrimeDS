@@ -41,7 +41,7 @@
 #include <QSocketNotifier>
 #include <unistd.h>
 #include <sys/socket.h>
-#include <signal.h>
+#include <csignal>
 #endif
 
 #include <SDL2/SDL.h>
@@ -266,6 +266,14 @@ bool MelonApplication::event(QEvent *event)
     return QApplication::event(event);
 }
 
+#ifndef _WIN32
+static void signalHandler(int signal)
+{
+    std::signal(signal, SIG_DFL);
+    qApp->quit();
+}
+#endif
+
 int main(int argc, char** argv)
 {
     sysTimer.start();
@@ -316,6 +324,9 @@ int main(int argc, char** argv)
             freopen("NUL:", "w", stderr);
         }
     }
+#else
+    std::signal(SIGINT, signalHandler);
+    std::signal(SIGTERM, signalHandler);
 #endif
 
     printf("melonDS " MELONDS_VERSION "\n");
