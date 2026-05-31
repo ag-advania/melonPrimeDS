@@ -9,5 +9,6 @@
 - [MelonPrime Aim/Input (No CustomHud)](melonprime-aim-input.md)
 - [MelonPrime Click Handling — Investigation & Fix Log](melonprime-click-handling.md)
 - [MelonPrime Patch System](melonprime-patch-system.md)
+- [MelonPrime Developer Only Section](melonprime-developer-only-section.md)
 - [Compute Renderer Mosaic Bug — Investigation Log](compute-renderer-mosaic-bug.md)
 - [MphCodex Reference Workflow](mphcodex-reference.md)

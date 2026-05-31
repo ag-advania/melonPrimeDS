@@ -13,6 +13,7 @@ This file is an index only. Keep detailed instructions in the linked Rules, Skil
 - [.claude/rules/melonprime-aim-input.md](.claude/rules/melonprime-aim-input.md)
 - [.claude/rules/melonprime-click-handling.md](.claude/rules/melonprime-click-handling.md)
 - [.claude/rules/melonprime-patch-system.md](.claude/rules/melonprime-patch-system.md)
+- [.claude/rules/melonprime-developer-only-section.md](.claude/rules/melonprime-developer-only-section.md)
 - [.claude/rules/compute-renderer-mosaic-bug.md](.claude/rules/compute-renderer-mosaic-bug.md)
 - [.claude/rules/mphcodex-reference.md](.claude/rules/mphcodex-reference.md)
 
