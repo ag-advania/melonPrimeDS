@@ -7,3 +7,4 @@
 - [Settings UI and Edit Mode](settings-ui-and-edit-mode.md)
 - [Qt Menu Actions](qt-menu-actions.md)
 - [Merge Latest Commits from melonDS Upstream](merge-upstream-melonds.md)
+- [Release Notes Generation](release-notes.md)
