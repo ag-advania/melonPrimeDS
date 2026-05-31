@@ -123,7 +123,8 @@ Do not push without the user explicitly asking.
 - **`#ifdef _WIN32` block dropped by auto-merge in `main.cpp`** — when both sides edit nearby Windows-specific code, the auto-merger has dropped the `#ifdef _WIN32` opener while keeping the `#endif`. After merging, grep `main.cpp` for orphan `#endif` lines or build it.
 - **`ARM9InstructionHookMaxAddresses` and `FindDispatchMask` switch coverage** — if upstream changes invalidate the JIT cache or change hook behavior, ensure both switches in `MelonPrimeArm9Hook.cpp` and `MelonPrimeArm9InstructionHook.inc` still cover the current address count.
 - **CI files (`build-bsd.yml` etc.)** — always re-delete after upstream resurrects them; the fork is Windows MinGW only.
-- **`build-windows.yml`** — preserve the fork's MSYS2 cache configuration; merge only the trigger-list and action-version updates from upstream. See the prior merge commit `2375253d` for an example of cherry-picking only the workflow improvements.
+- **`build-windows.yml` — `VCPKG_COMMIT` must be kept in sync with `vcpkg.json` baseline** — `vcpkg.json` has a `baseline` field (the vcpkg registry snapshot for package version locking). `build-windows.yml` has `VCPKG_COMMIT` (the vcpkg tool version checked out by CI). When upstream bumps the vcpkg baseline in `vcpkg.json`, update `VCPKG_COMMIT` in `build-windows.yml` to the same commit hash; otherwise CI will try to resolve packages at a baseline the older tool doesn't know about and the build will fail. Upstream does not touch the fork's `build-windows.yml` directly (it uses a different toolchain), so this sync is always manual. Amend or follow up the merge commit with the `VCPKG_COMMIT` change.
+- **`build-windows.yml` — other content** — preserve the fork's MSYS2 cache configuration; merge only the trigger-list and action-version updates from upstream. See the prior merge commit `2375253d` for an example.
 
 ## What NOT to take from upstream
 
@@ -137,3 +138,4 @@ Do not push without the user explicitly asking.
 |---|---|
 | `e77cb43f` | Segfault fix, audio skew, FreeBIOS IRQ fix, RTC sync, console attach |
 | `d44fe08f` | SPU output buffer leak fix, Platform.cpp QFile abstraction |
+| `2603f1a4` | VRAMSTAT fix, UNIX signal handling cleanup, ROMInfoDialog dark theme, vcpkg bump |
