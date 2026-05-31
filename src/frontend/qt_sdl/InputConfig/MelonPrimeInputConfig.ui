@@ -290,6 +290,33 @@ Replaced with byte-indexed bitset matching JP1.1 / US1.1 / EU1.1 / KR1.0 behavio
 												</property>
 											</widget>
 										</item>
+										<item>
+											<widget class="QCheckBox" name="cbMetroidFixNoxusBladePersistence">
+												<property name="text">
+													<string>Fix Noxus Blade Persistence on Death</string>
+												</property>
+											</widget>
+										</item>
+										<item>
+											<widget class="QLabel" name="lblMetroidFixNoxusBladePersistenceDesc">
+												<property name="text">
+													<string>Fixes a bug where Noxus&apos;s Vhoscythe/blade attack continues dealing damage after death and respawn. When Noxus dies mid-blade-attack, the alt attack timer is not cleared, causing the blade hit detection to remain active after revival. This fix clears the timer at the moment of death.</string>
+												</property>
+												<property name="wordWrap">
+													<bool>true</bool>
+												</property>
+											</widget>
+										</item>
+										<item>
+											<widget class="QLabel" name="lblMetroidFixNoxusBladePersistenceWarning">
+												<property name="text">
+													<string>This fix is still unstable. The blade may still remain active in some cases, especially in the Korean version.</string>
+												</property>
+												<property name="wordWrap">
+													<bool>true</bool>
+												</property>
+											</widget>
+										</item>
 									</layout>
 								</widget>
 							</item>
@@ -1006,47 +1033,6 @@ Briefly flashes you in the Double Damage purple state when you take damage, so o
 											<property name="enabled"><bool>false</bool></property>
 											<property name="text"><string>Generate pressed/released edges on the emulator side and overlay them into MPH's internal input state before player actions are processed. Covers fire, jump, zoom, and movement. Button masks are read from the player's current control-preset binding table, so all presets (Touch R/L, Dual R/L) are supported automatically.</string></property>
 											<property name="wordWrap"><bool>true</bool></property>
-											<property name="styleSheet"><string>QLabel { margin-left: 20px; }</string></property>
-										</widget>
-									</item>
-									<item>
-										<widget class="QCheckBox" name="cbMetroidFixNoxusBladePersistence">
-											<property name="enabled">
-												<bool>false</bool>
-											</property>
-											<property name="text">
-												<string>Fix Noxus Blade Persistence on Death</string>
-											</property>
-											<property name="toolTip">
-												<string>Developer-only option. Currently disabled.</string>
-											</property>
-										</widget>
-									</item>
-									<item>
-										<widget class="QLabel" name="lblMetroidFixNoxusBladePersistenceDesc">
-											<property name="enabled">
-												<bool>false</bool>
-											</property>
-											<property name="text">
-												<string>Fixes a bug where Noxus&apos;s Vhoscythe/blade attack continues dealing damage after death and respawn. When Noxus dies mid-blade-attack, the alt attack timer is not cleared, causing the blade hit detection to remain active after revival. This fix clears the timer at the moment of death.</string>
-											</property>
-											<property name="wordWrap">
-												<bool>true</bool>
-											</property>
-											<property name="styleSheet"><string>QLabel { margin-left: 20px; }</string></property>
-										</widget>
-									</item>
-									<item>
-										<widget class="QLabel" name="lblMetroidFixNoxusBladePersistenceWarning">
-											<property name="enabled">
-												<bool>false</bool>
-											</property>
-											<property name="text">
-												<string>This fix is still unstable. The blade may still remain active in some cases, especially in the Korean version.</string>
-											</property>
-											<property name="wordWrap">
-												<bool>true</bool>
-											</property>
 											<property name="styleSheet"><string>QLabel { margin-left: 20px; }</string></property>
 										</widget>
 									</item>

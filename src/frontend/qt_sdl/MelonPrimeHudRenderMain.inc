@@ -107,10 +107,13 @@ HOT_FUNCTION QRect CustomHud_Render(
     //                          lands at the game-content left edge inside the full-window buffer.
     ApplyHudPainterTransform(topPaint, xf);
 
-    // Font locked at kCustomHudFontSize (6px) — optimal for this TTF.
+    // Font base size = the resolved HUD font px (6px for MPH; Metroid.Visual.HudFontSize for
+    // system/file fonts). EnsureHudFont adopts the painter's overlayFont size set by Screen.cpp.
     // Visual text size is controlled by textDrawScale applied at draw time.
     EnsureHudFont(topPaint);
     const float textDrawScale = c.textDrawScale;
+    // s_textRenderScale and the hi-DPI font were built event-driven in RefreshCachedConfig;
+    // nothing to recompute per frame here.
 
     DrawHP(topPaint, st.currentHP, st.maxHP, c, textDrawScale);
 

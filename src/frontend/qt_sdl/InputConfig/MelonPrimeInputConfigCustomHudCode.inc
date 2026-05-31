@@ -91,11 +91,25 @@ QString MelonPrimeInputConfig::buildCustomHudCode() const
     root["check_boxes"] = checkBoxes;
 
     toml::table comboBoxes;
-    ExportWidgetTable<QComboBox>(comboBoxes, ui->tabCrosshair, [](const QComboBox* widget)
+    // QFontComboBox is a QComboBox but stores a font family, not an index — export it
+    // separately below and skip it here so it isn't corrupted into a meaningless index.
+    for (QComboBox* widget : SortedChildren<QComboBox>(ui->tabCrosshair))
     {
-        return widget->currentIndex();
-    });
+        if (qobject_cast<QFontComboBox*>(widget))
+            continue;
+        const QString name = widget->objectName();
+        if (name.isEmpty() || name.startsWith("qt_"))
+            continue;
+        comboBoxes[name.toStdString()] = widget->currentIndex();
+    }
     root["combo_boxes"] = comboBoxes;
+
+    toml::table fontComboBoxes;
+    ExportWidgetTable<QFontComboBox>(fontComboBoxes, ui->tabCrosshair, [](const QFontComboBox* widget)
+    {
+        return widget->currentFont().family().toStdString();
+    });
+    root["font_combo_boxes"] = fontComboBoxes;
 
     toml::table spinBoxes;
     ExportWidgetTable<QSpinBox>(spinBoxes, ui->tabCrosshair, [](const QSpinBox* widget)
@@ -153,8 +167,17 @@ bool MelonPrimeInputConfig::applyCustomHudCode(const QString& code, QString* err
 
         ImportWidgetTable<QComboBox>(root, "combo_boxes", ui->tabCrosshair, [](QComboBox* widget, const toml::value& value)
         {
+            // QFontComboBox is handled via the font_combo_boxes table; never set it by index.
+            if (qobject_cast<QFontComboBox*>(widget))
+                return;
             if (value.is_integer())
                 widget->setCurrentIndex(static_cast<int>(value.as_integer()));
+        });
+
+        ImportWidgetTable<QFontComboBox>(root, "font_combo_boxes", ui->tabCrosshair, [](QFontComboBox* widget, const toml::value& value)
+        {
+            if (value.is_string())
+                widget->setCurrentFont(QFont(QString::fromStdString(value.as_string())));
         });
 
         ImportWidgetTable<QSpinBox>(root, "spin_boxes", ui->tabCrosshair, [](QSpinBox* widget, const toml::value& value)

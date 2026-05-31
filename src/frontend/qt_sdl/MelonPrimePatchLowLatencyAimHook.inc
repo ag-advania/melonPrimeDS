@@ -260,7 +260,7 @@
             {
                 side = LowLatencyAim_BuildFallbackSide(currentNorm);
                 const LowLatencyAimVec3 retryUp = LowLatencyAim_CrossQ12(currentNorm, side);
-                LowLatencyAim_TryNormalize(retryUp, up);
+                (void)LowLatencyAim_TryNormalize(retryUp, up);
             }
         }
 

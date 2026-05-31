@@ -160,12 +160,12 @@ static QRectF ComputeEditBounds(int idx, Config::Table& cfg, float topStretchX)
     }
 
     // ── Text elements ───────────────────────────────────────────────────────
-    // Use actual font metrics (s_frameFm = mph.ttf 6px) scaled by tds for accuracy.
+    // Use actual font metrics (s_frameFm at the resolved HUD font px) scaled by tds for accuracy.
     // fy is the text baseline — rendered glyphs sit above it (by ascent) with a small
     // descender margin below. Position the box to match the actual drawn region.
     float bw, bh, boxTop;
     const char* sampleTxt = (idx >= 0 && idx < kEditElemCount) ? kEditElemSampleText[idx] : nullptr;
-    if (sampleTxt && s_frameFpx == kCustomHudFontSize) {
+    if (sampleTxt && s_frameFpx > 0) {
         bw = std::max(14.0f, s_frameFm.horizontalAdvance(QString::fromUtf8(sampleTxt)) * tds + 4.0f);
         bh = std::max(5.0f,  s_frameFm.height() * tds + 2.0f);
         // Align box so text ascent sits just inside the top edge.
