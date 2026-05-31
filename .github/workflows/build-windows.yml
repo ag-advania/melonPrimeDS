@@ -8,7 +8,7 @@ on:
       - ci/*
 
 env:
-  VCPKG_COMMIT: 55fab67aea1027f7179ae6b5c54a5ba9091c16aa
+  VCPKG_COMMIT: 9b965a116838c6cdcd36bca60d1b81b030c8ab8d
   MELONDS_GIT_BRANCH: ${{ github.ref }}
   MELONDS_GIT_HASH: ${{ github.sha }}
   MELONDS_BUILD_PROVIDER: GitHub Actions

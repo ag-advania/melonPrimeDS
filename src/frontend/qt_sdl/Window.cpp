@@ -41,13 +41,6 @@
 #include <QVector>
 #include <QCommandLineParser>
 #include <QDesktopServices>
-#ifndef _WIN32
-#include <QGuiApplication>
-#include <QSocketNotifier>
-#include <unistd.h>
-#include <sys/socket.h>
-#include <signal.h>
-#endif
 
 #include "main.h"
 #include "CheatsDialog.h"
@@ -244,26 +237,6 @@ MainWindow::MainWindow(int id, EmuInstance* inst, QWidget* parent) :
     enabledSaved(false),
     focused(true)
 {
-#ifndef _WIN32
-    if (!parent)
-    {
-        if (socketpair(AF_UNIX, SOCK_STREAM, 0, signalFd))
-        {
-            qFatal("Couldn't create socketpair");
-        }
-
-        signalSn = new QSocketNotifier(signalFd[1], QSocketNotifier::Read, this);
-        connect(signalSn, SIGNAL(activated(int)), this, SLOT(onQuit()));
-
-        struct sigaction sa;
-
-        sa.sa_handler = signalHandler;
-        sigemptyset(&sa.sa_mask);
-        sa.sa_flags = 0;
-        sa.sa_flags |= SA_RESTART;
-        sigaction(SIGINT, &sa, 0);
-    }
-#endif
 
     showOSD = windowCfg.GetBool("ShowOSD");
 
@@ -1749,10 +1722,6 @@ void MainWindow::onImportSavefile()
 
 void MainWindow::onQuit()
 {
-#ifndef _WIN32
-    if (!parentWidget())
-        signalSn->setEnabled(false);
-#endif
     close();
 }
 
