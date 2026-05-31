@@ -55,11 +55,20 @@ static constexpr uint8_t kMatrixPrefixSignature[32] = {
     0x00u, 0x00u, 0x01u, 0x00u, 0x00u, 0x01u, 0x01u, 0x01u,
 };
 
-// 14 stage/mode cells verified playable in JP1_0 testing and cross-ported to
-// all versions (same row/column offsets; matrix structure is identical).
+// Stage/mode cells split into two groups.
+// Base: stable, broadly useful additions.
+// Extra: additional stages selectable via a second config key.
 struct MatrixCell { uint8_t row, column; };
-static constexpr MatrixCell kConfirmedOkCells[14] = {
+
+static constexpr MatrixCell kBaseCells[5] = {
     { 3, 3}, // Defender   — High Ground
+    {17, 3}, // Defender   — Elder Passage
+    {18, 1}, // Bounty     — Fuel Stack
+    {22, 2}, // Capture    — Celestial Gateway
+    {23, 1}, // Bounty     — Alinos Gateway
+};
+
+static constexpr MatrixCell kExtraCells[9] = {
     { 7, 0}, // Battle     — Transfer Lock wide
     { 7, 4}, // Node       — Transfer Lock wide
     { 7, 5}, // PrimeHunter— Transfer Lock wide
@@ -67,13 +76,14 @@ static constexpr MatrixCell kConfirmedOkCells[14] = {
     { 8, 3}, // Defender   — Transfer Lock
     {10, 3}, // Defender   — Compressor Room
     {11, 3}, // Defender   — Incubator
-    {17, 3}, // Defender   — Elder Passage
-    {18, 1}, // Bounty     — Fuel Stack
     {18, 3}, // Defender   — Fuel Stack
     {21, 3}, // Defender   — Head Shot
-    {22, 2}, // Capture    — Celestial Gateway
-    {23, 1}, // Bounty     — Alinos Gateway
 };
+
+static constexpr uint32_t MatrixAddr(const MatrixVersionInfo& info, const MatrixCell& cell) noexcept
+{
+    return info.matrixBase + static_cast<uint32_t>(cell.row) * 0x0Du + cell.column;
+}
 
 // ---- Guard ----
 
@@ -100,24 +110,48 @@ static bool StageMatrixLoadedStrict(melonDS::NDS* nds, const MatrixVersionInfo& 
 
 // ---- Public API ----
 
+static bool s_pendingRestore = false;
+
 void ExpandStageMatrix_ApplyIfLoaded(melonDS::NDS* nds, Config::Table& cfg, uint8_t romGroupIndex)
 {
-    if (!cfg.GetBool("Metroid.GameFeature.ExpandStageMatrix")) return;
+    const bool enabled = cfg.GetBool("Metroid.GameFeature.ExpandStageMatrix");
+
+    if (!s_pendingRestore && !enabled) return;
     if (romGroupIndex >= 7) return;
 
     const MatrixVersionInfo& info = kMatrixVersions[romGroupIndex];
     if (!StageMatrixLoadedStrict(nds, info)) return;
 
-    for (const auto& cell : kConfirmedOkCells) {
-        const uint32_t addr =
-            info.matrixBase + static_cast<uint32_t>(cell.row) * 0x0Du + cell.column;
-        nds->ARM9Write8(addr, 0x01u);
+    if (s_pendingRestore) {
+        // Write the correct state for every cell based on current settings.
+        // Handles: parent off, extra off, or any combination changing on save.
+        s_pendingRestore = false;
+        const bool extraEnabled = enabled && cfg.GetBool("Metroid.GameFeature.ExpandStageMatrixExtra");
+        for (const auto& cell : kBaseCells)
+            nds->ARM9Write8(MatrixAddr(info, cell), enabled ? 0x01u : 0x00u);
+        for (const auto& cell : kExtraCells)
+            nds->ARM9Write8(MatrixAddr(info, cell), extraEnabled ? 0x01u : 0x00u);
+        return;
     }
+
+    // Normal per-frame apply path.
+    for (const auto& cell : kBaseCells)
+        nds->ARM9Write8(MatrixAddr(info, cell), 0x01u);
+
+    if (cfg.GetBool("Metroid.GameFeature.ExpandStageMatrixExtra")) {
+        for (const auto& cell : kExtraCells)
+            nds->ARM9Write8(MatrixAddr(info, cell), 0x01u);
+    }
+}
+
+void ExpandStageMatrix_InvalidatePatch()
+{
+    s_pendingRestore = true;
 }
 
 void ExpandStageMatrix_ResetPatchState()
 {
-    // No persistent state — the guard re-detects on each call.
+    s_pendingRestore = false;
 }
 
 } // namespace MelonPrime

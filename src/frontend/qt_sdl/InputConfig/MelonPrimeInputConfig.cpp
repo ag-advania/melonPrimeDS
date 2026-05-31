@@ -259,6 +259,8 @@ void MelonPrimeInputConfig::setupSensitivityAndToggles(Config::Table& instcfg)
     ui->cbMetroidShowHeadshotOnline->setChecked(instcfg.GetBool("Metroid.GameFeature.ShowHeadshotOnline"));
     ui->cbMetroidShowEnemyHpMeterOnline->setChecked(instcfg.GetBool("Metroid.GameFeature.ShowEnemyHpMeterOnline"));
     ui->cbMetroidExpandStageMatrix->setChecked(instcfg.GetBool("Metroid.GameFeature.ExpandStageMatrix"));
+    ui->cbMetroidExpandStageMatrixExtra->setChecked(instcfg.GetBool("Metroid.GameFeature.ExpandStageMatrixExtra"));
+    ui->cbMetroidExpandStageMatrixExtra->setEnabled(ui->cbMetroidExpandStageMatrix->isChecked());
     ui->cbMetroidDisableDoubleDamageMultiplier->setChecked(
         instcfg.GetBool("Metroid.GameFeature.DisableDoubleDamageMultiplier"));
     ui->cbMetroidDamageNotifyPurple->setChecked(
@@ -453,17 +455,18 @@ void MelonPrimeInputConfig::setupInputMethodSection(Config::Table& instcfg)
     ui->lblMetroidDirectAltFormTransformDesc->setStyleSheet("QLabel { margin-left: 20px; }");
     sectionLayout->addWidget(ui->lblMetroidDirectAltFormTransformDesc);
 
+    const int zoomMethod = std::clamp(instcfg.GetInt("Metroid.Input.ZoomMethod"), 0, 2);
+
     m_cbMetroidUseNewZoomMethod = new QCheckBox(
         "Use New Method for Zoom",
-        m_sectionInputMethod);
+        ui->sectionDeveloperOnly);
     m_cbMetroidUseNewZoomMethod->setToolTip(
         "Checked: use the current in-game zoom binding from the player's control preset. "
         "Unchecked: use the older fixed R-button path.");
-    const int zoomMethod = std::clamp(instcfg.GetInt("Metroid.Input.ZoomMethod"), 0, 2);
     m_cbMetroidUseNewZoomMethod->setChecked(
-        zoomMethod == MelonPrime::ZoomInputMethod::NewPresetBinding);
-    sectionLayout->addSpacing(6);
-    sectionLayout->addWidget(m_cbMetroidUseNewZoomMethod);
+        kDeveloperOnlyFeaturesEnabled
+        && zoomMethod == MelonPrime::ZoomInputMethod::NewPresetBinding);
+    m_cbMetroidUseNewZoomMethod->setEnabled(kDeveloperOnlyFeaturesEnabled);
 
     m_cbMetroidUseNewZoomMethod2 = new QCheckBox(
         "Use New Method 2 for Zoom",
@@ -475,7 +478,9 @@ void MelonPrimeInputConfig::setupInputMethodSection(Config::Table& instcfg)
         kDeveloperOnlyFeaturesEnabled
         && zoomMethod == MelonPrime::ZoomInputMethod::NewNativeToggle);
     m_cbMetroidUseNewZoomMethod2->setEnabled(kDeveloperOnlyFeaturesEnabled);
+
     addDeveloperSpacing();
+    addDeveloperWidget(m_cbMetroidUseNewZoomMethod);
     addDeveloperWidget(m_cbMetroidUseNewZoomMethod2);
 
     connect(
@@ -498,19 +503,21 @@ void MelonPrimeInputConfig::setupInputMethodSection(Config::Table& instcfg)
     auto* zoomDesc = new QLabel(
         "New Method reads the game's zoom binding table, so Touch and Dual presets can map zoom to different DS buttons. "
         "It is also slightly lower latency than Legacy Method. "
-        "If both this box and Developer Only's New Method 2 are unchecked, Legacy Method always drives the fixed R button like the older input path.",
-        m_sectionInputMethod);
+        "If both boxes are unchecked, Legacy Method always drives the fixed R button like the older input path.",
+        ui->sectionDeveloperOnly);
     zoomDesc->setWordWrap(true);
+    zoomDesc->setEnabled(kDeveloperOnlyFeaturesEnabled);
     zoomDesc->setStyleSheet("QLabel { margin-left: 20px; }");
-    sectionLayout->addWidget(zoomDesc);
 
     auto* zoom2Desc = new QLabel(
         "New Method 2 toggles native zoom state through SetPlayerScopeZoom on each press. "
-        "It is mutually exclusive with Use New Method for Zoom in the Input Method section.",
+        "Mutually exclusive with New Method for Zoom.",
         ui->sectionDeveloperOnly);
     zoom2Desc->setWordWrap(true);
     zoom2Desc->setEnabled(kDeveloperOnlyFeaturesEnabled);
     zoom2Desc->setStyleSheet("QLabel { margin-left: 20px; }");
+
+    addDeveloperWidget(zoomDesc);
     addDeveloperWidget(zoom2Desc);
 
     int insertIndex = parentLayout->indexOf(ui->sectionInputSettings);
@@ -757,6 +764,14 @@ void MelonPrimeInputConfig::on_cbMetroidEnableStylusMode_stateChanged(int state)
 void MelonPrimeInputConfig::on_cbMetroidDisableMphAimSmoothing_stateChanged(int)
 {
     updateAimControlsForStylusMode(ui->cbMetroidEnableStylusMode->isChecked());
+}
+
+void MelonPrimeInputConfig::on_cbMetroidExpandStageMatrix_stateChanged(int state)
+{
+    const bool checked = (state == Qt::Checked);
+    ui->cbMetroidExpandStageMatrixExtra->setEnabled(checked);
+    if (!checked)
+        ui->cbMetroidExpandStageMatrixExtra->setChecked(false);
 }
 
 void MelonPrimeInputConfig::on_btnEditHudLayout_clicked()

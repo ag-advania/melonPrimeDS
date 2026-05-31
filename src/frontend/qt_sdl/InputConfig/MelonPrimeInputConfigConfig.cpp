@@ -74,6 +74,7 @@ void MelonPrimeInputConfig::saveConfig()
     instcfg.SetBool("Metroid.GameFeature.ShowHeadshotOnline", ui->cbMetroidShowHeadshotOnline->checkState() == Qt::Checked);
     instcfg.SetBool("Metroid.GameFeature.ShowEnemyHpMeterOnline", ui->cbMetroidShowEnemyHpMeterOnline->checkState() == Qt::Checked);
     instcfg.SetBool("Metroid.GameFeature.ExpandStageMatrix", ui->cbMetroidExpandStageMatrix->checkState() == Qt::Checked);
+    instcfg.SetBool("Metroid.GameFeature.ExpandStageMatrixExtra", ui->cbMetroidExpandStageMatrixExtra->checkState() == Qt::Checked);
     instcfg.SetBool(
         "Metroid.GameFeature.DisableDoubleDamageMultiplier",
         ui->cbMetroidDisableDoubleDamageMultiplier->checkState() == Qt::Checked);
@@ -250,6 +251,7 @@ void MelonPrimeInputConfig::saveConfig()
     MelonPrime::CustomHud_InvalidateConfigCache();
 #ifdef MELONPRIME_DS
     MelonPrime::OsdColor_InvalidatePatch();
+    MelonPrime::ExpandStageMatrix_InvalidatePatch();
     MelonPrime::ShadowFreezeRuntimeHook_NotifyConfigChanged();
     MelonPrime::FixNoxusBladePersistence_NotifyConfigChanged();
     if (auto* thread = emuInstance->getEmuThread()) {
