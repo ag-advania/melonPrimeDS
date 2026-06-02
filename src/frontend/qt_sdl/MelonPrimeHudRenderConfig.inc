@@ -12,6 +12,19 @@ struct HudOutlineConfig {
     float  opacity;
     int    thickness;
 };
+// Color-by-value ramp: when enabled, picks a color from `count` stops based on
+// the element's current percentage (value/max). Each stop is a "minimum percent"
+// threshold; eval picks the stop with the largest threshold <= pct. Used for
+// HP label/gauge and ammo label/gauge. kHudColorRampMax must match the UI
+// descriptor row count and the "Number of Colors" spinbox max in
+// MelonPrimeInputConfig.cpp.
+static constexpr int kHudColorRampMax = 6;
+struct HudColorRamp {
+    bool   enabled;
+    int    count;                            // active stops, clamped [1, kHudColorRampMax]
+    int    thresholdPct[kHudColorRampMax];   // 0..100 (minimum % for this color)
+    QColor color[kHudColorRampMax];
+};
 struct HpHudConfig {
     int hpX, hpY, hpAlign;          // final (computed from anchor + offset + stretch)
     int hpAnchor, hpOfsX, hpOfsY;   // raw config values
@@ -26,6 +39,8 @@ struct HpHudConfig {
     int hpTextAnchor;            // which side of gauge the text appears (mode 2 only)
     int hpTextOfsX, hpTextOfsY;  // text offset from gauge (mode 2 only)
     QColor hpGaugeColor;
+    HudColorRamp hpTextRamp;
+    HudColorRamp hpGaugeRamp;
     HudOutlineConfig outline;
     HudOutlineConfig gaugeOutline;
 };
@@ -49,6 +64,8 @@ struct WeaponHudConfig {
     int ammoTextAnchor;              // which side of gauge the text appears (mode 2 only)
     int ammoTextOfsX, ammoTextOfsY;  // text offset from gauge (mode 2 only)
     QColor ammoGaugeColor;
+    HudColorRamp ammoTextRamp;
+    HudColorRamp ammoGaugeRamp;
     HudOutlineConfig outline;
     HudOutlineConfig iconOutline;
     HudOutlineConfig gaugeOutline;
@@ -335,6 +352,27 @@ static inline QColor ReadOptionalSubColor(Config::Table& cfg, const char* keyOve
     if (cfg.GetBool(keyOverall)) return QColor();
     return ReadRgbColor(cfg, keyR, keyG, keyB);
 }
+// Loads a color-by-value ramp. `prefix` is the shared config-key stem, e.g.
+// "Metroid.Visual.HudHpTextRamp"; keys are <prefix>Enable / <prefix>Count and
+// per-stop <prefix>{1..N}Pct / {1..N}R / {1..N}G / {1..N}B. Cold path (config
+// change only), so snprintf key building is fine.
+static void LoadColorRamp(HudColorRamp& r, Config::Table& cfg, const char* prefix)
+{
+    char key[96];
+    std::snprintf(key, sizeof(key), "%sEnable", prefix);
+    r.enabled = cfg.GetBool(key);
+    std::snprintf(key, sizeof(key), "%sCount", prefix);
+    r.count = std::clamp(cfg.GetInt(key), 1, kHudColorRampMax);
+    for (int i = 0; i < kHudColorRampMax; i++) {
+        char kR[96], kG[96], kB[96];
+        std::snprintf(key, sizeof(key), "%s%dPct", prefix, i + 1);
+        r.thresholdPct[i] = std::clamp(cfg.GetInt(key), 0, 100);
+        std::snprintf(kR, sizeof(kR), "%s%dR", prefix, i + 1);
+        std::snprintf(kG, sizeof(kG), "%s%dG", prefix, i + 1);
+        std::snprintf(kB, sizeof(kB), "%s%dB", prefix, i + 1);
+        r.color[i] = ReadRgbColor(cfg, kR, kG, kB);
+    }
+}
 
 // ApplyAnchor: converts anchor index + offset into final coordinates.
 // anchor 0=TL 1=TC 2=TR 3=ML 4=MC 5=MR 6=BL 7=BC 8=BR
@@ -381,6 +419,8 @@ static void LoadHpConfig(HpHudConfig& hp, Config::Table& cfg)
     hp.hpTextOfsY = cfg.GetInt("Metroid.Visual.HudHpTextOffsetY");
     hp.hpAutoColor = cfg.GetBool("Metroid.Visual.HudHpGaugeAutoColor");
     hp.hpGaugeColor = ReadRgbColor(cfg, "Metroid.Visual.HudHpGaugeColorR", "Metroid.Visual.HudHpGaugeColorG", "Metroid.Visual.HudHpGaugeColorB");
+    LoadColorRamp(hp.hpTextRamp,  cfg, "Metroid.Visual.HudHpTextRamp");
+    LoadColorRamp(hp.hpGaugeRamp, cfg, "Metroid.Visual.HudHpGaugeRamp");
 }
 static void LoadWeaponConfig(WeaponHudConfig& weapon, Config::Table& cfg)
 {
@@ -431,6 +471,8 @@ static void LoadWeaponConfig(WeaponHudConfig& weapon, Config::Table& cfg)
     weapon.ammoTextOfsX = cfg.GetInt("Metroid.Visual.HudAmmoTextOffsetX");
     weapon.ammoTextOfsY = cfg.GetInt("Metroid.Visual.HudAmmoTextOffsetY");
     weapon.ammoGaugeColor = ReadRgbColor(cfg, "Metroid.Visual.HudAmmoGaugeColorR", "Metroid.Visual.HudAmmoGaugeColorG", "Metroid.Visual.HudAmmoGaugeColorB");
+    LoadColorRamp(weapon.ammoTextRamp,  cfg, "Metroid.Visual.HudAmmoTextRamp");
+    LoadColorRamp(weapon.ammoGaugeRamp, cfg, "Metroid.Visual.HudAmmoGaugeRamp");
 }
 static void LoadWeaponInventoryConfig(WeaponInventoryHudConfig& wi, Config::Table& cfg)
 {
