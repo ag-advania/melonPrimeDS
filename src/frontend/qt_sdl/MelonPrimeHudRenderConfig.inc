@@ -29,7 +29,7 @@ struct HpHudConfig {
     int hpX, hpY, hpAlign;          // final (computed from anchor + offset + stretch)
     int hpAnchor, hpOfsX, hpOfsY;   // raw config values
     char hpPrefix[48];
-    bool hpTextAutoColor, hpGauge, hpAutoColor;
+    bool hpGauge;
     QColor hpTextColor;
     int hpGaugeOri, hpGaugeLen, hpGaugeWid;
     int hpGaugeAlign;
@@ -400,7 +400,6 @@ static void LoadHpConfig(HpHudConfig& hp, Config::Table& cfg)
     hp.hpOfsY = cfg.GetInt("Metroid.Visual.HudHpY");
     hp.hpAlign = cfg.GetInt("Metroid.Visual.HudHpAlign");
     CopyConfigString(hp.hpPrefix, sizeof(hp.hpPrefix), cfg.GetString("Metroid.Visual.HudHpPrefix"));
-    hp.hpTextAutoColor = cfg.GetBool("Metroid.Visual.HudHpTextAutoColor");
     hp.hpTextColor = ReadRgbColor(cfg, "Metroid.Visual.HudHpTextColorR", "Metroid.Visual.HudHpTextColorG", "Metroid.Visual.HudHpTextColorB");
     hp.hpGauge = cfg.GetBool("Metroid.Visual.HudHpGauge");
     hp.hpGaugeOri = cfg.GetInt("Metroid.Visual.HudHpGaugeOrientation");
@@ -417,7 +416,6 @@ static void LoadHpConfig(HpHudConfig& hp, Config::Table& cfg)
     hp.hpTextAnchor = cfg.GetInt("Metroid.Visual.HudHpTextAnchor");
     hp.hpTextOfsX = cfg.GetInt("Metroid.Visual.HudHpTextOffsetX");
     hp.hpTextOfsY = cfg.GetInt("Metroid.Visual.HudHpTextOffsetY");
-    hp.hpAutoColor = cfg.GetBool("Metroid.Visual.HudHpGaugeAutoColor");
     hp.hpGaugeColor = ReadRgbColor(cfg, "Metroid.Visual.HudHpGaugeColorR", "Metroid.Visual.HudHpGaugeColorG", "Metroid.Visual.HudHpGaugeColorB");
     LoadColorRamp(hp.hpTextRamp,  cfg, "Metroid.Visual.HudHpTextRamp");
     LoadColorRamp(hp.hpGaugeRamp, cfg, "Metroid.Visual.HudHpGaugeRamp");

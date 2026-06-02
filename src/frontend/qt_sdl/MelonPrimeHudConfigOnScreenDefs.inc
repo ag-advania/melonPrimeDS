@@ -63,13 +63,11 @@ static QString EditEnumLabel(const char* items, int val) {
 static const HudEditPropDesc kPropsHp[] = {
     {"Prefix",    EditPropType::String, "Metroid.Visual.HudHpPrefix", 0, 0, 0, nullptr, nullptr, nullptr},
     {"Align",     EditPropType::Enum,   "Metroid.Visual.HudHpAlign", 0, 2, 1, kEnumAlign3, nullptr, nullptr},
-    {"Auto Color",EditPropType::Bool,   "Metroid.Visual.HudHpTextAutoColor", 0, 0, 0, nullptr, nullptr, nullptr},
     {"Opacity",   EditPropType::Float,  "Metroid.Visual.HudHpOpacity", 0, 100, 5, nullptr, nullptr, nullptr},
 };
 
 static const HudEditPropDesc kPropsHpGauge[] = {
     // Appearance
-    {"Auto Color",   EditPropType::Bool, "Metroid.Visual.HudHpGaugeAutoColor", 0, 0, 0, nullptr, nullptr, nullptr},
     {"Orient",       EditPropType::Enum, "Metroid.Visual.HudHpGaugeOrientation", 0, 1, 1, kEnumOrientation, nullptr, nullptr},
     {"Length",       EditPropType::Int,  "Metroid.Visual.HudHpGaugeLength", 1, 192, 1, nullptr, nullptr, nullptr},
     {"Width",        EditPropType::Int,  "Metroid.Visual.HudHpGaugeWidth", 1, 20, 1, nullptr, nullptr, nullptr},
