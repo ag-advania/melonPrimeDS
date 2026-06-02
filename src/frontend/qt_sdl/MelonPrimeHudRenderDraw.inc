@@ -41,14 +41,27 @@ static void DrawGauge(QPainter* p, int x, int y, float ratio,
     }
 }
 
-// P-10: Static const threshold colors — avoid per-call QColor construction.
-static inline const QColor& HpGaugeColor(uint16_t hp, const QColor& safeColor)
+// Color-by-value ramp evaluation: picks the stop whose threshold (minimum percent)
+// is the largest value still <= the element's current percentage (value/max).
+// Order-independent; falls back to `fallback` when max is 0 or no stop matches.
+// Division-free: compares cross-multiplied `value*100 >= threshold*max` instead of
+// computing pct (avoids the per-call IDIV); the cheap `t > bestThr` test short-circuits
+// the multiply, so a descending-sorted ramp does only 1-2 multiplies. Only runs when
+// the ramp is enabled (gated at the call site), so disabled HUDs pay nothing.
+static inline const QColor& EvalColorRamp(const HudColorRamp& r, uint16_t value,
+                                          uint16_t maxValue, const QColor& fallback)
 {
-    static const QColor kCritical(255, 0, 0);
-    static const QColor kWarning(255, 165, 0);
-    if (hp <= 25)      return kCritical;
-    else if (hp <= 50) return kWarning;
-    else               return safeColor;
+    if (maxValue == 0) return fallback;
+    const uint32_t scaled = static_cast<uint32_t>(value) * 100u;  // == pct * maxValue
+    int best = -1, bestThr = -1;
+    const int n = (r.count < kHudColorRampMax) ? r.count : kHudColorRampMax;
+    for (int i = 0; i < n; i++) {
+        const int t = r.thresholdPct[i];
+        if (t > bestThr && scaled >= static_cast<uint32_t>(t) * maxValue) {
+            bestThr = t; best = i;
+        }
+    }
+    return (best >= 0) ? r.color[best] : fallback;
 }
 
 static float CalcAlignedTextX(int anchorX, int align, float textW)
@@ -117,7 +130,11 @@ static void CalcTextPosFromGauge(int gx, int gy, int gaugeLen, int gaugeWid, int
 static inline void DrawHP(QPainter* p, uint16_t hp, uint16_t maxHP,
                            const CachedHudConfig& c, float tds)
 {
-    const QColor hpTextColor = c.hp.hpTextAutoColor ? HpGaugeColor(hp, c.hp.hpTextColor) : c.hp.hpTextColor;
+    // Color-by-value ramp (on by default) overrides the static color when enabled.
+    // const-ref binding: both branches are lvalues, so no QColor copy.
+    const QColor& hpTextColor = c.hp.hpTextRamp.enabled
+        ? EvalColorRamp(c.hp.hpTextRamp, hp, maxHP, c.hp.hpTextColor)
+        : c.hp.hpTextColor;
 
     static TextMeasureCache s_hpTextCache = { 0, "", 0, 0, false };
     static TextBitmapCache s_hpBitmapCache = { 0, QColor(), "", 0, 0, 0, 1.0f, false, QImage() };
@@ -161,7 +178,9 @@ static inline void DrawHP(QPainter* p, uint16_t hp, uint16_t maxHP,
 
     if (c.hp.hpGauge && maxHP > 0) {
         float ratio = static_cast<float>(hp) / static_cast<float>(maxHP);
-        QColor gc = c.hp.hpAutoColor ? HpGaugeColor(hp, c.hp.hpGaugeColor) : c.hp.hpGaugeColor;
+        const QColor& gc = c.hp.hpGaugeRamp.enabled
+            ? EvalColorRamp(c.hp.hpGaugeRamp, hp, maxHP, c.hp.hpGaugeColor)
+            : c.hp.hpGaugeColor;
         const float hs = c.lastHudScale;
         int gx, gy;
         if (c.hp.hpGaugePosMode == 0) {
@@ -488,7 +507,10 @@ static void DrawWeaponAmmo(QPainter* p,
         } else {
             textX = CalcAlignedTextX(c.weapon.wpnX, c.weapon.ammoAlign, textW);
         }
-        PrepareTextBitmapCached(fm, s_frameFont, fontPixelSize, s_ammoBitmapCache, buf, c.weapon.ammoTextColor);
+        const QColor& ammoTextColorEff = c.weapon.ammoTextRamp.enabled
+            ? EvalColorRamp(c.weapon.ammoTextRamp, ammo, maxAmmo, c.weapon.ammoTextColor)
+            : c.weapon.ammoTextColor;
+        PrepareTextBitmapCached(fm, s_frameFont, fontPixelSize, s_ammoBitmapCache, buf, ammoTextColorEff);
         { const HudOutlineConfig& _ol = EffOL(c, c.weapon.outline);
         if (_ol.enable && _ol.opacity > 0.0f) {
             const float renderScale = tds * hudScale;
@@ -541,7 +563,10 @@ static void DrawWeaponAmmo(QPainter* p,
           if (c.weapon.ammoGaugeOri == 0) gx -= gl_ds * c.weapon.ammoGaugeAlign / 2;
           else                            gy -= gl_ds * c.weapon.ammoGaugeAlign / 2; }
         if (c.ammoGaugeOpacity < 1.0f) p->setOpacity(c.ammoGaugeOpacity);
-        DrawGauge(p, gx, gy, ratio, c.weapon.ammoGaugeColor, c.weapon.ammoGaugeOri, (int)(c.weapon.ammoGaugeLen * c.scaleGauges), (int)(c.weapon.ammoGaugeWid * c.scaleGauges),
+        const QColor& ammoGaugeColorEff = c.weapon.ammoGaugeRamp.enabled
+            ? EvalColorRamp(c.weapon.ammoGaugeRamp, ammo, maxAmmo, c.weapon.ammoGaugeColor)
+            : c.weapon.ammoGaugeColor;
+        DrawGauge(p, gx, gy, ratio, ammoGaugeColorEff, c.weapon.ammoGaugeOri, (int)(c.weapon.ammoGaugeLen * c.scaleGauges), (int)(c.weapon.ammoGaugeWid * c.scaleGauges),
                   &EffOL(c, c.weapon.gaugeOutline), hudScale);
         if (c.ammoGaugeOpacity < 1.0f) p->setOpacity(1.0);
     }

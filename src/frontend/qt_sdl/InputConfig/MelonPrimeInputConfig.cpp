@@ -329,6 +329,15 @@ void MelonPrimeInputConfig::setupSensitivityAndToggles(Config::Table& instcfg)
     // In-game scaling
     ui->cbMetroidInGameAspectRatio->setChecked(instcfg.GetBool("Metroid.Visual.InGameAspectRatio"));
     ui->comboMetroidInGameAspectRatioMode->setCurrentIndex(instcfg.GetInt("Metroid.Visual.InGameAspectRatioMode"));
+
+    // Low HP warning threshold
+    ui->comboMetroidLowHpWarningMode->setCurrentIndex(instcfg.GetInt("Metroid.LowHpWarning.Mode"));
+    ui->spinMetroidLowHpWarningFixed->setValue(instcfg.GetInt("Metroid.LowHpWarning.Fixed"));
+    ui->spinMetroidLowHpWarningLow->setValue(instcfg.GetInt("Metroid.LowHpWarning.Low"));
+    ui->spinMetroidLowHpWarningMedium->setValue(instcfg.GetInt("Metroid.LowHpWarning.Medium"));
+    ui->spinMetroidLowHpWarningHigh->setValue(instcfg.GetInt("Metroid.LowHpWarning.High"));
+    ui->spinMetroidLowHpWarningAutoBase->setValue(instcfg.GetInt("Metroid.LowHpWarning.AutoBase"));
+    updateLowHpWarningControls(ui->comboMetroidLowHpWarningMode->currentIndex());
 }
 
 
@@ -602,6 +611,7 @@ void MelonPrimeInputConfig::setupCollapsibleSections(Config::Table& instcfg)
     setupToggle(ui->btnToggleCursorClipSettings, ui->sectionCursorClipSettings, "CURSOR CLIP SETTINGS",  "Metroid.UI.SectionCursorClipSettings");
     setupToggle(ui->btnToggleInGameApply, ui->sectionInGameApply, "IN-GAME APPLY",  "Metroid.UI.SectionInGameApply");
     setupToggle(ui->btnToggleInGameAspectRatio, ui->sectionInGameAspectRatio, "IN-GAME ASPECT RATIO",  "Metroid.UI.SectionInGameAspectRatio");
+    setupToggle(ui->btnToggleLowHpWarning, ui->sectionLowHpWarning, "LOW HP WARNING",  "Metroid.UI.SectionLowHpWarning");
     // Other Metroid Settings tab
     setupToggle(ui->btnToggleSensitivity, ui->sectionSensitivity, "SENSITIVITY",      "Metroid.UI.SectionSensitivity");
     setupToggle(ui->btnToggleBugFix,        ui->sectionBugFix,        "BUG FIXES",                   "Metroid.UI.SectionBugFix");
@@ -774,6 +784,29 @@ void MelonPrimeInputConfig::on_cbMetroidExpandStageMatrix_stateChanged(int state
         ui->cbMetroidExpandStageMatrixExtra->setChecked(false);
 }
 
+void MelonPrimeInputConfig::updateLowHpWarningControls(int mode)
+{
+    // Mode: 0=Disabled, 1=Fixed, 2=Per Damage, 3=Auto Scale
+    const bool fixed     = (mode == 1);
+    const bool perDamage = (mode == 2);
+    const bool autoScale = (mode == 3);
+    ui->lblMetroidLowHpWarningFixed->setEnabled(fixed);
+    ui->spinMetroidLowHpWarningFixed->setEnabled(fixed);
+    ui->lblMetroidLowHpWarningLow->setEnabled(perDamage);
+    ui->spinMetroidLowHpWarningLow->setEnabled(perDamage);
+    ui->lblMetroidLowHpWarningMedium->setEnabled(perDamage);
+    ui->spinMetroidLowHpWarningMedium->setEnabled(perDamage);
+    ui->lblMetroidLowHpWarningHigh->setEnabled(perDamage);
+    ui->spinMetroidLowHpWarningHigh->setEnabled(perDamage);
+    ui->lblMetroidLowHpWarningAutoBase->setEnabled(autoScale);
+    ui->spinMetroidLowHpWarningAutoBase->setEnabled(autoScale);
+}
+
+void MelonPrimeInputConfig::on_comboMetroidLowHpWarningMode_currentIndexChanged(int index)
+{
+    updateLowHpWarningControls(index);
+}
+
 void MelonPrimeInputConfig::on_btnEditHudLayout_clicked()
 {
     applyVisualPreview();
@@ -850,6 +883,14 @@ struct HudMainSec {
 #define P_FONTFAMILY(lbl, key)        { lbl, HWType::FontFamily,   key, 0,0,0, nullptr, nullptr }
 #define P_FONTFILE(lbl, key)          { lbl, HWType::FontFile,     key, 0,0,0, nullptr, nullptr }
 #define P_FONTWEIGHT(lbl, key)        { lbl, HWType::FontWeight,   key, 0,8,1, nullptr, nullptr }
+// Color-by-value ramp stop: a threshold-percent spinbox + an RGB color row.
+// `n` is the 1-based stop index as a string literal; `pfx` is the shared key stem
+// (e.g. "Metroid.Visual.HudHpTextRamp"). Keys become <pfx><n>Pct / <pfx><n>R/G/B
+// via adjacent string-literal concatenation. The stop count must match
+// kHudColorRampMax in MelonPrimeHudRenderConfig.inc.
+#define P_RAMP_STOP(n, pfx) \
+    P_INT("Threshold " n " (%)", pfx n "Pct", 0, 100, 1), \
+    P_CLR("Color " n,            pfx n "R", pfx n "G", pfx n "B")
 
 // --- Section: DISABLE DEFAULT HUD (per-element ARM patches) ---
 // Each toggle hides one piece of the game's built-in HUD via a single
@@ -944,7 +985,7 @@ static const HudWidgetProp kSecHp[] = {
     P_INT("Offset Y", "Metroid.Visual.HudHpY", -256, 256, 1),
     P_STR("Prefix", "Metroid.Visual.HudHpPrefix"),
     P_ALN("Align", "Metroid.Visual.HudHpAlign"),
-    P_BOOL("Auto Color", "Metroid.Visual.HudHpTextAutoColor"),
+    // Static fallback color (used when the "HP Label Color By Value" ramp is disabled).
     P_CLR("Color", "Metroid.Visual.HudHpTextColorR", "Metroid.Visual.HudHpTextColorG", "Metroid.Visual.HudHpTextColorB"),
     P_FLOAT("Opacity", "Metroid.Visual.HudHpOpacity"),
 };
@@ -953,7 +994,7 @@ static const HudWidgetProp kSecHp[] = {
 static const HudWidgetProp kSecHpGauge[] = {
     // Appearance
     P_BOOL("Enable",       "Metroid.Visual.HudHpGauge"),
-    P_BOOL("Auto Color",   "Metroid.Visual.HudHpGaugeAutoColor"),
+    // Static fallback color (used when the "HP Gauge Color By Value" ramp is disabled).
     P_CLR("Color",         "Metroid.Visual.HudHpGaugeColorR", "Metroid.Visual.HudHpGaugeColorG", "Metroid.Visual.HudHpGaugeColorB"),
     P_FLOAT("Opacity",     "Metroid.Visual.HudHpGaugeOpacity"),
     P_ORIENT("Orientation","Metroid.Visual.HudHpGaugeOrientation"),
@@ -1296,6 +1337,52 @@ static const HudWidgetProp kSecWeaponIconOutline[] = {
     P_INT("Thickness", "Metroid.Visual.HudWeaponIconOutlineThickness", 1, 10, 1),
 };
 
+// --- Color-by-value ramps (HP label/gauge, Ammo label/gauge) ---
+// Each ramp: Enable + "Number of Colors" + kHudColorRampMax (6) threshold/color stops.
+// Thresholds are percentages of the element's max (HP cap / weapon max ammo). Runtime
+// picks the stop with the largest threshold <= current percent. Reuses generic
+// Bool/Int/Color3 widgets, so save/snapshot/restore/TOML need no special handling.
+static const HudWidgetProp kSecHpTextRamp[] = {
+    P_BOOL("Enable",           "Metroid.Visual.HudHpTextRampEnable"),
+    P_INT ("Number of Colors", "Metroid.Visual.HudHpTextRampCount", 1, 6, 1),
+    P_RAMP_STOP("1", "Metroid.Visual.HudHpTextRamp"),
+    P_RAMP_STOP("2", "Metroid.Visual.HudHpTextRamp"),
+    P_RAMP_STOP("3", "Metroid.Visual.HudHpTextRamp"),
+    P_RAMP_STOP("4", "Metroid.Visual.HudHpTextRamp"),
+    P_RAMP_STOP("5", "Metroid.Visual.HudHpTextRamp"),
+    P_RAMP_STOP("6", "Metroid.Visual.HudHpTextRamp"),
+};
+static const HudWidgetProp kSecHpGaugeRamp[] = {
+    P_BOOL("Enable",           "Metroid.Visual.HudHpGaugeRampEnable"),
+    P_INT ("Number of Colors", "Metroid.Visual.HudHpGaugeRampCount", 1, 6, 1),
+    P_RAMP_STOP("1", "Metroid.Visual.HudHpGaugeRamp"),
+    P_RAMP_STOP("2", "Metroid.Visual.HudHpGaugeRamp"),
+    P_RAMP_STOP("3", "Metroid.Visual.HudHpGaugeRamp"),
+    P_RAMP_STOP("4", "Metroid.Visual.HudHpGaugeRamp"),
+    P_RAMP_STOP("5", "Metroid.Visual.HudHpGaugeRamp"),
+    P_RAMP_STOP("6", "Metroid.Visual.HudHpGaugeRamp"),
+};
+static const HudWidgetProp kSecAmmoTextRamp[] = {
+    P_BOOL("Enable",           "Metroid.Visual.HudAmmoTextRampEnable"),
+    P_INT ("Number of Colors", "Metroid.Visual.HudAmmoTextRampCount", 1, 6, 1),
+    P_RAMP_STOP("1", "Metroid.Visual.HudAmmoTextRamp"),
+    P_RAMP_STOP("2", "Metroid.Visual.HudAmmoTextRamp"),
+    P_RAMP_STOP("3", "Metroid.Visual.HudAmmoTextRamp"),
+    P_RAMP_STOP("4", "Metroid.Visual.HudAmmoTextRamp"),
+    P_RAMP_STOP("5", "Metroid.Visual.HudAmmoTextRamp"),
+    P_RAMP_STOP("6", "Metroid.Visual.HudAmmoTextRamp"),
+};
+static const HudWidgetProp kSecAmmoGaugeRamp[] = {
+    P_BOOL("Enable",           "Metroid.Visual.HudAmmoGaugeRampEnable"),
+    P_INT ("Number of Colors", "Metroid.Visual.HudAmmoGaugeRampCount", 1, 6, 1),
+    P_RAMP_STOP("1", "Metroid.Visual.HudAmmoGaugeRamp"),
+    P_RAMP_STOP("2", "Metroid.Visual.HudAmmoGaugeRamp"),
+    P_RAMP_STOP("3", "Metroid.Visual.HudAmmoGaugeRamp"),
+    P_RAMP_STOP("4", "Metroid.Visual.HudAmmoGaugeRamp"),
+    P_RAMP_STOP("5", "Metroid.Visual.HudAmmoGaugeRamp"),
+    P_RAMP_STOP("6", "Metroid.Visual.HudAmmoGaugeRamp"),
+};
+
 // ── CROSSHAIR sub-sections ──
 static const HudSubSec kSubsCrosshair[] = {
     SUB("Inner Lines",  "Metroid.UI.SectionHudCrosshairInner",  kSecCrosshairInner),
@@ -1304,18 +1391,22 @@ static const HudSubSec kSubsCrosshair[] = {
 
 // ── HP sub-sections ──
 static const HudSubSec kSubsHp[] = {
-    SUB("HP Number Position", "Metroid.UI.SectionHudHp",            kSecHp),
-    SUB("HP Outline",         "Metroid.UI.SectionHudHpOutline",      kSecHpOutline),
-    SUB("HP Gauge",           "Metroid.UI.SectionHudHpGauge",        kSecHpGauge),
-    SUB("HP Gauge Outline",   "Metroid.UI.SectionHudHpGaugeOutline", kSecHpGaugeOutline),
+    SUB("HP Number Position",     "Metroid.UI.SectionHudHp",            kSecHp),
+    SUB("HP Label Color By Value","Metroid.UI.SectionHudHpTextRamp",    kSecHpTextRamp),
+    SUB("HP Outline",             "Metroid.UI.SectionHudHpOutline",      kSecHpOutline),
+    SUB("HP Gauge",               "Metroid.UI.SectionHudHpGauge",        kSecHpGauge),
+    SUB("HP Gauge Color By Value","Metroid.UI.SectionHudHpGaugeRamp",    kSecHpGaugeRamp),
+    SUB("HP Gauge Outline",       "Metroid.UI.SectionHudHpGaugeOutline", kSecHpGaugeOutline),
 };
 
 // ── Ammo sub-sections ──
 static const HudSubSec kSubsAmmo[] = {
-    SUB("Ammo Number Position", "Metroid.UI.SectionHudWeaponAmmo",        kSecWeaponAmmo),
-    SUB("Ammo Outline",         "Metroid.UI.SectionHudWeaponOutline",      kSecWeaponOutline),
-    SUB("Ammo Gauge",           "Metroid.UI.SectionHudAmmoGauge",          kSecAmmoGauge),
-    SUB("Ammo Gauge Outline",   "Metroid.UI.SectionHudAmmoGaugeOutline",   kSecAmmoGaugeOutline),
+    SUB("Ammo Number Position",     "Metroid.UI.SectionHudWeaponAmmo",        kSecWeaponAmmo),
+    SUB("Ammo Label Color By Value","Metroid.UI.SectionHudAmmoTextRamp",      kSecAmmoTextRamp),
+    SUB("Ammo Outline",             "Metroid.UI.SectionHudWeaponOutline",      kSecWeaponOutline),
+    SUB("Ammo Gauge",               "Metroid.UI.SectionHudAmmoGauge",          kSecAmmoGauge),
+    SUB("Ammo Gauge Color By Value","Metroid.UI.SectionHudAmmoGaugeRamp",      kSecAmmoGaugeRamp),
+    SUB("Ammo Gauge Outline",       "Metroid.UI.SectionHudAmmoGaugeOutline",   kSecAmmoGaugeOutline),
 };
 
 // ── Weapon Icon sub-sections ──
