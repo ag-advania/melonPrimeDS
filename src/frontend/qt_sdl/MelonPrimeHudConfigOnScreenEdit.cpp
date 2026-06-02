@@ -511,7 +511,6 @@ void MelonPrimeHudConfigOnScreenEdit::populateHP()
         QStringLiteral("Offset X"), QStringLiteral("Offset Y"));
     addLineEdit(QStringLiteral("Prefix"), "Metroid.Visual.HudHpPrefix");
     addAlign3Combo(QStringLiteral("Align"), "Metroid.Visual.HudHpAlign");
-    addCheckBox(QStringLiteral("Auto Color"), "Metroid.Visual.HudHpTextAutoColor");
     addOpacitySlider(QStringLiteral("Opacity"), "Metroid.Visual.HudHpOpacity");
     addOutlineGroup("HudHp");
 }
@@ -528,7 +527,6 @@ void MelonPrimeHudConfigOnScreenEdit::populateHPGauge()
         {QStringLiteral("Start"), QStringLiteral("Center"), QStringLiteral("End")});
     addSpinBox(QStringLiteral("Length"), "Metroid.Visual.HudHpGaugeLength", 1, 192);
     addSpinBox(QStringLiteral("Width"), "Metroid.Visual.HudHpGaugeWidth", 1, 20);
-    addCheckBox(QStringLiteral("Auto Color"), "Metroid.Visual.HudHpGaugeAutoColor");
     addGaugePositionRows("Metroid.Visual.HudHpGaugePosMode",
         "Metroid.Visual.HudHpGaugeAnchor", "Metroid.Visual.HudHpGaugeOffsetX", "Metroid.Visual.HudHpGaugeOffsetY",
         "Metroid.Visual.HudHpGaugePosX", "Metroid.Visual.HudHpGaugePosY",

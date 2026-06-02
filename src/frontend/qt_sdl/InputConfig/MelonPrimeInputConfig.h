@@ -108,12 +108,16 @@ private slots:
     void on_cbMetroidEnableStylusMode_stateChanged(int state);
     void on_cbMetroidDisableMphAimSmoothing_stateChanged(int state);
     void on_cbMetroidExpandStageMatrix_stateChanged(int state);
+    void on_comboMetroidLowHpWarningMode_currentIndexChanged(int index);
     void on_btnEditHudLayout_clicked();
     void applyVisualPreview();
 
 private:
     Ui::MelonPrimeInputConfig* ui;
     EmuInstance* emuInstance;
+
+    // Enable only the spinboxes relevant to the selected Low HP Warning mode.
+    void updateLowHpWarningControls(int mode);
 
     int addonsMetroidKeyMap[kMetroidHotkeyCount];
     int addonsMetroidJoyMap[kMetroidHotkeyCount];
