@@ -329,6 +329,15 @@ void MelonPrimeInputConfig::setupSensitivityAndToggles(Config::Table& instcfg)
     // In-game scaling
     ui->cbMetroidInGameAspectRatio->setChecked(instcfg.GetBool("Metroid.Visual.InGameAspectRatio"));
     ui->comboMetroidInGameAspectRatioMode->setCurrentIndex(instcfg.GetInt("Metroid.Visual.InGameAspectRatioMode"));
+
+    // Low HP warning threshold
+    ui->comboMetroidLowHpWarningMode->setCurrentIndex(instcfg.GetInt("Metroid.LowHpWarning.Mode"));
+    ui->spinMetroidLowHpWarningFixed->setValue(instcfg.GetInt("Metroid.LowHpWarning.Fixed"));
+    ui->spinMetroidLowHpWarningLow->setValue(instcfg.GetInt("Metroid.LowHpWarning.Low"));
+    ui->spinMetroidLowHpWarningMedium->setValue(instcfg.GetInt("Metroid.LowHpWarning.Medium"));
+    ui->spinMetroidLowHpWarningHigh->setValue(instcfg.GetInt("Metroid.LowHpWarning.High"));
+    ui->spinMetroidLowHpWarningAutoBase->setValue(instcfg.GetInt("Metroid.LowHpWarning.AutoBase"));
+    updateLowHpWarningControls(ui->comboMetroidLowHpWarningMode->currentIndex());
 }
 
 
@@ -602,6 +611,7 @@ void MelonPrimeInputConfig::setupCollapsibleSections(Config::Table& instcfg)
     setupToggle(ui->btnToggleCursorClipSettings, ui->sectionCursorClipSettings, "CURSOR CLIP SETTINGS",  "Metroid.UI.SectionCursorClipSettings");
     setupToggle(ui->btnToggleInGameApply, ui->sectionInGameApply, "IN-GAME APPLY",  "Metroid.UI.SectionInGameApply");
     setupToggle(ui->btnToggleInGameAspectRatio, ui->sectionInGameAspectRatio, "IN-GAME ASPECT RATIO",  "Metroid.UI.SectionInGameAspectRatio");
+    setupToggle(ui->btnToggleLowHpWarning, ui->sectionLowHpWarning, "LOW HP WARNING",  "Metroid.UI.SectionLowHpWarning");
     // Other Metroid Settings tab
     setupToggle(ui->btnToggleSensitivity, ui->sectionSensitivity, "SENSITIVITY",      "Metroid.UI.SectionSensitivity");
     setupToggle(ui->btnToggleBugFix,        ui->sectionBugFix,        "BUG FIXES",                   "Metroid.UI.SectionBugFix");
@@ -772,6 +782,29 @@ void MelonPrimeInputConfig::on_cbMetroidExpandStageMatrix_stateChanged(int state
     ui->cbMetroidExpandStageMatrixExtra->setEnabled(checked);
     if (!checked)
         ui->cbMetroidExpandStageMatrixExtra->setChecked(false);
+}
+
+void MelonPrimeInputConfig::updateLowHpWarningControls(int mode)
+{
+    // Mode: 0=Disabled, 1=Fixed, 2=Per Damage, 3=Auto Scale
+    const bool fixed     = (mode == 1);
+    const bool perDamage = (mode == 2);
+    const bool autoScale = (mode == 3);
+    ui->lblMetroidLowHpWarningFixed->setEnabled(fixed);
+    ui->spinMetroidLowHpWarningFixed->setEnabled(fixed);
+    ui->lblMetroidLowHpWarningLow->setEnabled(perDamage);
+    ui->spinMetroidLowHpWarningLow->setEnabled(perDamage);
+    ui->lblMetroidLowHpWarningMedium->setEnabled(perDamage);
+    ui->spinMetroidLowHpWarningMedium->setEnabled(perDamage);
+    ui->lblMetroidLowHpWarningHigh->setEnabled(perDamage);
+    ui->spinMetroidLowHpWarningHigh->setEnabled(perDamage);
+    ui->lblMetroidLowHpWarningAutoBase->setEnabled(autoScale);
+    ui->spinMetroidLowHpWarningAutoBase->setEnabled(autoScale);
+}
+
+void MelonPrimeInputConfig::on_comboMetroidLowHpWarningMode_currentIndexChanged(int index)
+{
+    updateLowHpWarningControls(index);
 }
 
 void MelonPrimeInputConfig::on_btnEditHudLayout_clicked()

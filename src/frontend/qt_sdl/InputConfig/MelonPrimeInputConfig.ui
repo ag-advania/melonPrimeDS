@@ -1012,6 +1012,57 @@ Briefly flashes you in the Double Damage purple state when you take damage, so o
 								</widget>
 							</item>
 
+							<!-- LOW HP WARNING toggle -->
+							<item><widget class="QPushButton" name="btnToggleLowHpWarning">
+								<property name="text"><string>▶ LOW HP WARNING</string></property>
+								<property name="checkable"><bool>true</bool></property>
+								<property name="checked"><bool>false</bool></property>
+								<property name="flat"><bool>true</bool></property>
+								<property name="styleSheet"><string>QPushButton { text-align: left; font-weight: bold; padding: 4px; } QPushButton::checked { font-weight: bold; }</string></property>
+							</widget></item>
+							<item>
+								<widget class="QWidget" name="sectionLowHpWarning">
+								<layout class="QVBoxLayout">
+									<item>
+										<widget class="QLabel">
+											<property name="text"><string>Changes the HP value at which the low-HP warning sound and warning HUD state trigger (vanilla: 25). Applied at the start of each match based on the current Damage setting.</string></property>
+											<property name="wordWrap"><bool>true</bool></property>
+										</widget>
+									</item>
+									<item>
+										<layout class="QFormLayout" name="formLowHpWarning">
+											<item row="0" column="0"><widget class="QLabel"><property name="text"><string>Mode</string></property></widget></item>
+											<item row="0" column="1">
+												<widget class="QComboBox" name="comboMetroidLowHpWarningMode">
+													<item><property name="text"><string>Disabled (vanilla 25)</string></property></item>
+													<item><property name="text"><string>Fixed</string></property></item>
+													<item><property name="text"><string>Per Damage (Low / Medium / High)</string></property></item>
+													<item><property name="text"><string>Auto Scale (by Damage)</string></property></item>
+												</widget>
+											</item>
+											<item row="1" column="0"><widget class="QLabel" name="lblMetroidLowHpWarningFixed"><property name="text"><string>Fixed Threshold</string></property></widget></item>
+											<item row="1" column="1"><widget class="QSpinBox" name="spinMetroidLowHpWarningFixed"><property name="minimum"><number>0</number></property><property name="maximum"><number>255</number></property></widget></item>
+											<item row="2" column="0"><widget class="QLabel" name="lblMetroidLowHpWarningLow"><property name="text"><string>Per Damage — Low</string></property></widget></item>
+											<item row="2" column="1"><widget class="QSpinBox" name="spinMetroidLowHpWarningLow"><property name="minimum"><number>0</number></property><property name="maximum"><number>255</number></property></widget></item>
+											<item row="3" column="0"><widget class="QLabel" name="lblMetroidLowHpWarningMedium"><property name="text"><string>Per Damage — Medium</string></property></widget></item>
+											<item row="3" column="1"><widget class="QSpinBox" name="spinMetroidLowHpWarningMedium"><property name="minimum"><number>0</number></property><property name="maximum"><number>255</number></property></widget></item>
+											<item row="4" column="0"><widget class="QLabel" name="lblMetroidLowHpWarningHigh"><property name="text"><string>Per Damage — High</string></property></widget></item>
+											<item row="4" column="1"><widget class="QSpinBox" name="spinMetroidLowHpWarningHigh"><property name="minimum"><number>0</number></property><property name="maximum"><number>255</number></property></widget></item>
+											<item row="5" column="0"><widget class="QLabel" name="lblMetroidLowHpWarningAutoBase"><property name="text"><string>Auto Scale — Base</string></property></widget></item>
+											<item row="5" column="1"><widget class="QSpinBox" name="spinMetroidLowHpWarningAutoBase"><property name="minimum"><number>0</number></property><property name="maximum"><number>255</number></property></widget></item>
+										</layout>
+									</item>
+									<item>
+										<widget class="QLabel" name="lblMetroidLowHpWarningDesc">
+											<property name="text"><string>Auto Scale: Low = Base ×0.75, Medium = Base, High = Base ×1.25 (rounded). 0 effectively disables the warning. Range 0–255.</string></property>
+											<property name="wordWrap"><bool>true</bool></property>
+											<property name="indent"><number>20</number></property>
+										</widget>
+									</item>
+								</layout>
+								</widget>
+							</item>
+
 							<item><widget class="QPushButton" name="btnToggleDeveloperOnly">
 								<property name="text"><string>▶ DEVELOPER ONLY</string></property>
 								<property name="checkable"><bool>true</bool></property>

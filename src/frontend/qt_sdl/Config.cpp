@@ -425,6 +425,13 @@ namespace Config
         {"Instance*.Metroid.Visual.CrosshairScale",           100},
         {"Instance*.Metroid.Visual.InGameAspectRatioMode",     0},
         {"Instance*.Metroid.Visual.InGameScalingMode",         0},
+        /* Low HP warning threshold (Mode: 0=Disabled,1=Fixed,2=Per Damage,3=Auto Scale) */
+        {"Instance*.Metroid.LowHpWarning.Mode",                0},
+        {"Instance*.Metroid.LowHpWarning.Fixed",              25},
+        {"Instance*.Metroid.LowHpWarning.Low",               20},
+        {"Instance*.Metroid.LowHpWarning.Medium",            30},
+        {"Instance*.Metroid.LowHpWarning.High",              40},
+        {"Instance*.Metroid.LowHpWarning.AutoBase",          30},
         /* MelonPrimeDS Bottom Screen Overlay defaults { */
         {"Instance*.Metroid.Visual.BtmOverlayAnchor",           2},
         {"Instance*.Metroid.Visual.BtmOverlayDstX",            -61},
@@ -718,6 +725,7 @@ namespace Config
         {"Instance*.Metroid.UI.SectionCursorClipSettings",  false},
         {"Instance*.Metroid.UI.SectionInGameApply",  false},
         {"Instance*.Metroid.UI.SectionInGameAspectRatio",  false},
+        {"Instance*.Metroid.UI.SectionLowHpWarning",   false},
         {"Instance*.Metroid.UI.SectionSensitivity",    true},
         {"Instance*.Metroid.UI.SectionBugFix",         true},
         {"Instance*.Metroid.UI.SectionGameFeature",    true},
