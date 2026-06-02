@@ -100,6 +100,7 @@ set(SOURCES_QT_SDL
     MelonPrimePatchFixNoxusBladePersistence.cpp
     MelonPrimePatchInstantAimFollow.cpp
     MelonPrimePatchExpandStageMatrix.cpp
+    MelonPrimePatchLowHpWarning.cpp
     MelonPrimeArm9Hook.cpp
 
 

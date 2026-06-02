@@ -14,6 +14,7 @@
 #include "MelonPrimePatchFixNoxusBladePersistence.h"
 #include "MelonPrimePatchInstantAimFollow.h"
 #include "MelonPrimePatchExpandStageMatrix.h"
+#include "MelonPrimePatchLowHpWarning.h"
 #include "MelonPrimeArm9Hook.h"
 
 #endif // MELON_PRIME_PATCH_H

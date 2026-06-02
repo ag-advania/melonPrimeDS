@@ -177,6 +177,14 @@ void MelonPrimeInputConfig::saveConfig()
     // In-game scaling
     instcfg.SetBool("Metroid.Visual.InGameAspectRatio", ui->cbMetroidInGameAspectRatio->checkState() == Qt::Checked);
     instcfg.SetInt("Metroid.Visual.InGameAspectRatioMode", ui->comboMetroidInGameAspectRatioMode->currentIndex());
+
+    // Low HP warning threshold
+    instcfg.SetInt("Metroid.LowHpWarning.Mode",     ui->comboMetroidLowHpWarningMode->currentIndex());
+    instcfg.SetInt("Metroid.LowHpWarning.Fixed",    ui->spinMetroidLowHpWarningFixed->value());
+    instcfg.SetInt("Metroid.LowHpWarning.Low",      ui->spinMetroidLowHpWarningLow->value());
+    instcfg.SetInt("Metroid.LowHpWarning.Medium",   ui->spinMetroidLowHpWarningMedium->value());
+    instcfg.SetInt("Metroid.LowHpWarning.High",     ui->spinMetroidLowHpWarningHigh->value());
+    instcfg.SetInt("Metroid.LowHpWarning.AutoBase", ui->spinMetroidLowHpWarningAutoBase->value());
     const bool clipCursorToBottomScreenWhenNotInGame =
         (ui->cbMetroidClipCursorToBottomScreenWhenNotInGame->checkState() == Qt::Checked);
     instcfg.SetBool("Metroid.Visual.ClipCursorToBottomScreenWhenNotInGame", clipCursorToBottomScreenWhenNotInGame);

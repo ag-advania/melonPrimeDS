@@ -260,6 +260,7 @@ namespace MelonPrime {
         InGameAspectRatio_ResetPatchState();
         OsdColor_ResetPatchState();
         FixWifi_ResetPatchState();
+        LowHpWarning_ResetPatchState();
         UseFirmwareLanguage_ResetPatchState();
         ShowHeadshotOnline_ResetPatchState();
         ShowEnemyHpMeterOnline_ResetPatchState();
@@ -300,6 +301,7 @@ namespace MelonPrime {
         InGameAspectRatio_ResetPatchState();
         OsdColor_ResetPatchState();
         FixWifi_ResetPatchState();
+        LowHpWarning_ResetPatchState();
         UseFirmwareLanguage_ResetPatchState();
         ShowHeadshotOnline_ResetPatchState();
         ShowEnemyHpMeterOnline_ResetPatchState();
@@ -345,6 +347,7 @@ namespace MelonPrime {
         InGameAspectRatio_ResetPatchState();
         OsdColor_ResetPatchState();
         FixWifi_ResetPatchState();
+        LowHpWarning_ResetPatchState();
         UseFirmwareLanguage_ResetPatchState();
         ShowHeadshotOnline_ResetPatchState();
         ShowEnemyHpMeterOnline_ResetPatchState();
@@ -757,6 +760,7 @@ namespace MelonPrime {
         // Apply patches that need game-join context (player struct resolved)
         InGameAspectRatio_ApplyOnce(emuInstance, localCfg, m_currentRom);
         OsdColor_ApplyOnce(emuInstance, localCfg, m_currentRom);
+        LowHpWarning_ApplyOnce(emuInstance->getNDS(), localCfg, m_currentRom.romGroupIndex);
         InstantAimFollow_ApplyOnce(
             emuInstance->getNDS(),
             localCfg,
