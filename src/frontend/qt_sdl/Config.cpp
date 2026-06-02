@@ -634,10 +634,10 @@ namespace Config
         {"Instance*.Metroid.Visual.CrosshairOuterShow", true},
         {"Instance*.Metroid.Visual.CrosshairOuterLinkXY", true},
         {"Instance*.Metroid.Visual.HudHpGauge", true},
-        {"Instance*.Metroid.Visual.HudHpGaugeAutoColor", true},
-        {"Instance*.Metroid.Visual.HudHpTextAutoColor", true},
-        {"Instance*.Metroid.Visual.HudHpTextRampEnable", false},
-        {"Instance*.Metroid.Visual.HudHpGaugeRampEnable", false},
+        // HP color-by-value ramps default ON (they replace the old hardcoded HP Auto Color).
+        // Ammo ramps default OFF (ammo never had auto-color).
+        {"Instance*.Metroid.Visual.HudHpTextRampEnable", true},
+        {"Instance*.Metroid.Visual.HudHpGaugeRampEnable", true},
         {"Instance*.Metroid.Visual.HudAmmoTextRampEnable", false},
         {"Instance*.Metroid.Visual.HudAmmoGaugeRampEnable", false},
         {"Instance*.Metroid.Visual.HudWeaponIconShow", true},

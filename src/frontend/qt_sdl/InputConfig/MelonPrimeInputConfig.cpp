@@ -952,7 +952,7 @@ static const HudWidgetProp kSecHp[] = {
     P_INT("Offset Y", "Metroid.Visual.HudHpY", -256, 256, 1),
     P_STR("Prefix", "Metroid.Visual.HudHpPrefix"),
     P_ALN("Align", "Metroid.Visual.HudHpAlign"),
-    P_BOOL("Auto Color", "Metroid.Visual.HudHpTextAutoColor"),
+    // Static fallback color (used when the "HP Label Color By Value" ramp is disabled).
     P_CLR("Color", "Metroid.Visual.HudHpTextColorR", "Metroid.Visual.HudHpTextColorG", "Metroid.Visual.HudHpTextColorB"),
     P_FLOAT("Opacity", "Metroid.Visual.HudHpOpacity"),
 };
@@ -961,7 +961,7 @@ static const HudWidgetProp kSecHp[] = {
 static const HudWidgetProp kSecHpGauge[] = {
     // Appearance
     P_BOOL("Enable",       "Metroid.Visual.HudHpGauge"),
-    P_BOOL("Auto Color",   "Metroid.Visual.HudHpGaugeAutoColor"),
+    // Static fallback color (used when the "HP Gauge Color By Value" ramp is disabled).
     P_CLR("Color",         "Metroid.Visual.HudHpGaugeColorR", "Metroid.Visual.HudHpGaugeColorG", "Metroid.Visual.HudHpGaugeColorB"),
     P_FLOAT("Opacity",     "Metroid.Visual.HudHpGaugeOpacity"),
     P_ORIENT("Orientation","Metroid.Visual.HudHpGaugeOrientation"),
