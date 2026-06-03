@@ -329,11 +329,21 @@ static QImage s_chOutlineStamp;
 static QPoint s_chStampOrigin;   // offset from (pxCx, pxCy) to stamp top-left
 static bool   s_chStampValid = false;
 
-// ── OPT-DR1: Dirty-rect tracking ─────────────────────────────────────────────
-// Crosshair moves every frame with the aim.  Track previous pixel-space centre
-// so each frame only the union of (prev ∪ curr) crosshair bbox is dirty.
-// All other HUD elements have fixed positions (config-driven); their dirty rect
-// is pre-computed once in RefreshStaticHudDirty() and reused every frame.
+// ── OPT-DR1 / OPT-DR2: Dirty-rect tracking ───────────────────────────────────
+// OPT-DR1: the crosshair moves every frame with the aim, so its prev∪curr pixel
+//          bbox is tracked separately and unioned into the frame dirty rect.
+// OPT-DR2: every other HUD primitive (text, icons, gauges, radar frame) unions
+//          its *actual* device-space draw rect into s_drawnDirtyPx as it is
+//          drawn (funnelled through the low-level draw helpers below). This
+//          replaces the old fixed conservative per-element padding boxes, which
+//          were sized for the worst-case text scale (e.g. HP ±90×65 DS units →
+//          ~1000×730 px at 1080p) and uploaded in full every frame. The actual
+//          glyph/icon bbox is many times smaller, shrinking the per-frame
+//          overlay clear + GL texSubImage upload proportionally. Correct by
+//          construction: every visible pixel passes through one funnel, so the
+//          accumulated rect is a superset of what changed; the Screen-side
+//          prev∪curr clear/upload contract is unchanged, so appearance /
+//          disappearance / move / resize are all handled by the caller's union.
 // ─────────────────────────────────────────────────────────────────────────────
 
 // Crosshair position from the previous frame (pixel space, after resetTransform).
@@ -343,15 +353,36 @@ static int   s_chPrevPxCy = INT_MIN;
 // Accumulated dirty rect for the crosshair in the current frame (prev ∪ curr pos).
 static QRect s_chDirtyThisFrame;
 
-// Static dirty rect: covers all enabled non-crosshair HUD elements.
-// Recomputed in RefreshStaticHudDirty() whenever the config cache or transform changes.
-static QRect  s_staticHudDirtyPx;
-static QRect  s_staticHudFirstPersonDirtyPx;
-static float  s_staticDirtyHudScale = -1.0f;
-static float  s_staticDirtyTxDs    = 1e30f;
-static float  s_staticDirtyTyDs    = 1e30f;
-// Set to true by RefreshCachedConfig/RecomputeAnchorPositions to force recomputation.
-static bool   s_staticDirtyStale   = true;
+// OPT-DR2: accumulated device-pixel bbox of every non-crosshair primitive drawn
+// this frame. Reset at the top of CustomHud_Render.
+static QRect s_drawnDirtyPx;
+
+// Union an already-device-space rect into the frame dirty accumulator (+1px AA pad).
+static inline void AccumDirtyDevPx(const QRectF& dev)
+{
+    if (dev.isEmpty()) return;
+    s_drawnDirtyPx |= QRect(QPoint(static_cast<int>(std::floor(dev.left()))   - 1,
+                                   static_cast<int>(std::floor(dev.top()))    - 1),
+                            QPoint(static_cast<int>(std::ceil (dev.right()))  + 1,
+                                   static_cast<int>(std::ceil (dev.bottom())) + 1));
+}
+
+// Map a DS-space rect through the painter transform and union the device bbox.
+static inline void AccumDirtyDs(const QPainter* p, const QRectF& ds)
+{
+    if (ds.isEmpty()) return;
+    const QTransform& xf = p->transform();
+    qreal x0, y0, x1, y1, x2, y2, x3, y3;
+    xf.map(ds.left(),  ds.top(),    &x0, &y0);
+    xf.map(ds.right(), ds.top(),    &x1, &y1);
+    xf.map(ds.left(),  ds.bottom(), &x2, &y2);
+    xf.map(ds.right(), ds.bottom(), &x3, &y3);
+    const qreal minx = std::min(std::min(x0, x1), std::min(x2, x3));
+    const qreal maxx = std::max(std::max(x0, x1), std::max(x2, x3));
+    const qreal miny = std::min(std::min(y0, y1), std::min(y2, y3));
+    const qreal maxy = std::max(std::max(y0, y1), std::max(y2, y3));
+    AccumDirtyDevPx(QRectF(QPointF(minx, miny), QPointF(maxx, maxy)));
+}
 
 // Forward-declared; called from RefreshCachedConfig after crosshair geometry is final.
 struct CrosshairHudConfig;
@@ -494,16 +525,21 @@ static inline void DrawCachedText(QPainter* p, const TextBitmapCache& cache, flo
         p->resetTransform();
         p->drawImage(QPointF(anchorPxX + cache.originX, anchorPxY + cache.originY), cache.bitmap);
         p->setTransform(saved);
+        AccumDirtyDevPx(QRectF(anchorPxX + cache.originX, anchorPxY + cache.originY,
+                               cache.bitmap.width(), cache.bitmap.height())); // OPT-DR2
         return;
     }
     if (textDrawScale == 1.0f) {
         p->drawImage(QPointF(x + cache.originX, baselineY + cache.originY), cache.bitmap);
+        AccumDirtyDs(p, QRectF(x + cache.originX, baselineY + cache.originY,
+                               cache.bitmap.width(), cache.bitmap.height())); // OPT-DR2
     } else {
         const float ox = cache.originX * textDrawScale;
         const float oy = cache.originY * textDrawScale;
         const float dw = cache.bitmap.width()  * textDrawScale;
         const float dh = cache.bitmap.height() * textDrawScale;
         p->drawImage(QRectF(x + ox, baselineY + oy, dw, dh), cache.bitmap);
+        AccumDirtyDs(p, QRectF(x + ox, baselineY + oy, dw, dh)); // OPT-DR2
     }
 }
 
@@ -616,6 +652,8 @@ static inline void DrawCachedTextOutlined(QPainter* p,
             p->resetTransform();
             p->drawImage(QPointF(pxX, pxY), outlineCache.bitmap);
             p->setTransform(savedXform);
+            AccumDirtyDevPx(QRectF(pxX, pxY, outlineCache.bitmap.width(),
+                                   outlineCache.bitmap.height())); // OPT-DR2
         } else {
             DrawCachedText(p, outlineCache, x, baselineY, tds);
         }
@@ -637,11 +675,14 @@ static inline void DrawImageOutlined(QPainter* p,
 {
     if (icon.isNull()) return;
     if (outlineOpacity > 0.0f && !outlineIcon.isNull()) {
-        p->setOpacity(outlineOpacity);
-        p->drawImage(QRectF(dst.x() - expandDS, dst.y() - expandDS,
+        const QRectF olRect(dst.x() - expandDS, dst.y() - expandDS,
                             dst.width()  + expandDS * 2.0f,
-                            dst.height() + expandDS * 2.0f),
-                     outlineIcon);
+                            dst.height() + expandDS * 2.0f);
+        p->setOpacity(outlineOpacity);
+        p->drawImage(olRect, outlineIcon);
+        AccumDirtyDs(p, olRect); // OPT-DR2 (covers the icon rect too)
+    } else {
+        AccumDirtyDs(p, dst); // OPT-DR2
     }
     p->setOpacity(opacity < 1.0f ? opacity : 1.0f);
     p->drawImage(dst, icon);
