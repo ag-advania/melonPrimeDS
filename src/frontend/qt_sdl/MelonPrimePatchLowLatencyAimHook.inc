@@ -37,13 +37,6 @@
             return &kLowLatencyAimHookSites[romGroupIndex];
         }
 
-        [[nodiscard]] static FORCE_INLINE bool LowLatencyAim_IsHookPc(
-            const LowLatencyAimHookSites& sites,
-            uint32_t arm9ExecAddr) noexcept
-        {
-            return arm9ExecAddr == sites.ExitA || arm9ExecAddr == sites.ExitB;
-        }
-
         [[nodiscard]] static FORCE_INLINE bool LowLatencyAim_IsMainRamRange(
             uint32_t address,
             uint32_t size) noexcept
@@ -320,10 +313,12 @@
         if (!m_flags.test(StateFlags::BIT_LAST_FOCUSED))
             return;
 
-        const LowLatencyAimHookSites* const sites =
-            LowLatencyAim_GetSites(m_currentRom.romGroupIndex);
-        if (!sites || !LowLatencyAim_IsHookPc(*sites, arm9ExecAddr))
-            return;
+        // The ARM9 dispatcher only routes Dispatch_LowLatencyAim to this handler
+        // for PCs that LowLatencyAimHook_GetAddresses registered (ExitA/ExitB of
+        // the current ROM), so re-deriving the sites and re-matching the PC here
+        // is redundant — trust the dispatcher's mask match (cf. the PostFoldWrite
+        // handler's `(void)arm9ExecAddr`).
+        (void)arm9ExecAddr;
 
         const uint32_t player = regs[4];
         const uint32_t expectedPlayer = m_currentRom.playerStructStart
