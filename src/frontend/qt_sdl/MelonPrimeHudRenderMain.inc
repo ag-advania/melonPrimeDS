@@ -34,6 +34,8 @@ HOT_FUNCTION QRect CustomHud_Render(
 
     // OPT-DR1: Reset crosshair dirty accumulator for this frame.
     s_chDirtyThisFrame = QRect();
+    // OPT-DR2: Reset the actual-drawn-pixel accumulator for this frame.
+    s_drawnDirtyPx = QRect();
 
     // Edit mode: draw element overlay every frame, skip normal HUD rendering.
     if (UNLIKELY(s_editMode)) {
@@ -95,9 +97,6 @@ HOT_FUNCTION QRect CustomHud_Render(
     NoHudPatch_Sync(st.nds, st.romGroup, c.noHudMask);
     CustomHud_MarkNoHudPatchDesired();
 
-    // OPT-DR1: Refresh static dirty rect when transform or config changed.
-    EnsureStaticDirtyForFrame(c, xf);
-
     ReadHudRuntimeVisibleState(rom, addrHot, st);
 
     // hudScale = scaleY: DS Y-unit maps to hudScale px.
@@ -138,7 +137,7 @@ HOT_FUNCTION QRect CustomHud_Render(
         // OPT-DR1: Crosshair not drawn in third-person / alt-form.
         // If it was drawn last frame, include its previous bbox so Screen.cpp clears it.
         ClearPreviousCrosshairDirty(c.crosshair);
-        return CurrentHudDirtyRect(xf, false);
+        return CurrentHudDirtyRect(xf);
     }
 
     const uint8_t weaponIdx = (st.currentWeapon < 9) ? st.currentWeapon : 0;
@@ -172,7 +171,7 @@ HOT_FUNCTION QRect CustomHud_Render(
         ClearPreviousCrosshairDirty(c.crosshair);
     }
 
-    return CurrentHudDirtyRect(xf, true);
+    return CurrentHudDirtyRect(xf);
 }
 
 // =========================================================================
@@ -187,6 +186,7 @@ static void DrawRadarFrame(QPainter* topPaint, const CachedHudConfig& c)
 
     topPaint->setOpacity(c.radar.radarOpacity);
     topPaint->drawImage(c.radar.frameDstRect, s_radarFrameTinted);
+    AccumDirtyDs(topPaint, c.radar.frameDstRect); // OPT-DR2
 }
 
 static void DrawRadarCombinedOutlines(QPainter* topPaint, const CachedHudConfig& c)
@@ -207,7 +207,9 @@ static void DrawRadarCombinedOutlines(QPainter* topPaint, const CachedHudConfig&
         topPaint->setOpacity(_ol.opacity);
         topPaint->setPen(Qt::NoPen);
         topPaint->setBrush(_ol.colorWithAlpha); // P-14
-        topPaint->drawEllipse(QRectF(c.radar.radarDstRect).adjusted(-expandDS, -expandDS, expandDS, expandDS));
+        const QRectF circleRect = QRectF(c.radar.radarDstRect).adjusted(-expandDS, -expandDS, expandDS, expandDS);
+        topPaint->drawEllipse(circleRect);
+        AccumDirtyDs(topPaint, circleRect); // OPT-DR2
     }
 
     // SVG frame outline — independent settings via frameOutline
@@ -216,11 +218,12 @@ static void DrawRadarCombinedOutlines(QPainter* topPaint, const CachedHudConfig&
                                 ? static_cast<float>(std::max(1, _fol.thickness)) / c.lastHudScale : 0.0f;
         topPaint->setOpacity(_fol.opacity);
         const QRectF& fr = c.radar.frameDstRect;
-        topPaint->drawImage(QRectF(fr.x() - fExpandDS,
-                                   fr.y() - fExpandDS,
-                                   fr.width()  + fExpandDS * 2.0f,
-                                   fr.height() + fExpandDS * 2.0f),
-                            s_radarFrameOutline);
+        const QRectF frameOlRect(fr.x() - fExpandDS,
+                                 fr.y() - fExpandDS,
+                                 fr.width()  + fExpandDS * 2.0f,
+                                 fr.height() + fExpandDS * 2.0f);
+        topPaint->drawImage(frameOlRect, s_radarFrameOutline);
+        AccumDirtyDs(topPaint, frameOlRect); // OPT-DR2
     }
 }
 
@@ -317,6 +320,7 @@ void DrawBottomScreenOverlay(Config::Table& localCfg, QPainter* topPaint, QImage
         topPaint->setOpacity(c.radar.radarOpacity);
         topPaint->setClipPath(c.radar.radarClipPath);
         topPaint->drawImage(c.radar.radarDstRect, *btmBuffer, s_radarSrcRect);
+        AccumDirtyDs(topPaint, QRectF(c.radar.radarDstRect)); // OPT-DR2
     }
 
     // OPT-SR2: Manual restore — only the attributes actually changed.

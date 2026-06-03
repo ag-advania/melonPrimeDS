@@ -65,6 +65,9 @@ namespace MelonPrime {
 
         // Clears mouse button bits that are physically released.
         // Guards against stuck buttons caused by stale GetRawInputData returns.
+        // Debounced: a held bit is only cleared after GetAsyncKeyState reports it
+        // physically-up on two consecutive checks, so a single transient false-up
+        // cannot drop a genuinely-held button mid-charge (see m_mouseStuckCandidate).
         [[nodiscard]] bool clearStuckMouseButtons() noexcept;
 
         // Clears VK bits for keys that are physically released.
@@ -165,6 +168,13 @@ namespace MelonPrime {
 
         uint64_t m_hkPrev{};
         uint64_t m_boundHotkeys{};
+
+        // Debounce state for clearStuckMouseButtons (consumer thread only).
+        // Bit i = mouse button i was logically-down but read physically-up on the
+        // previous check. A bit is only cleared from m_mouseButtons once it is
+        // physically-up on two consecutive checks, so a single transient
+        // GetAsyncKeyState miss does not drop a held button (charge-hold fix).
+        uint8_t m_mouseStuckCandidate{ 0 };
 
         int64_t m_lastReadMouseX{ 0 };
         int64_t m_lastReadMouseY{ 0 };

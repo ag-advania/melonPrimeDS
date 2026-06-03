@@ -20,6 +20,15 @@ static void DrawGauge(QPainter* p, int x, int y, float ratio,
 
     static const QColor bgColor(0, 0, 0, 128); // P-4: construct once
 
+    // OPT-DR2: accumulate the outline-expanded full-bar bbox.
+    {
+        const float eDS = (outline && outline->enable && outline->opacity > 0.0f)
+                          ? static_cast<float>(outline->thickness) / hudScale : 0.0f;
+        const float w = (orientation == 0 ? barLength : barWidth)  + eDS * 2.0f;
+        const float h = (orientation == 0 ? barWidth  : barLength) + eDS * 2.0f;
+        AccumDirtyDs(p, QRectF(x - eDS, y - eDS, w, h));
+    }
+
     if (outline && outline->enable && outline->opacity > 0.0f) {
         const float expand = static_cast<float>(outline->thickness) / hudScale;
         const QColor& outlineColor = outline->colorWithAlpha; // P-14
@@ -394,6 +403,8 @@ static void DrawWeaponInventory(QPainter* p,
             p->setPen(hlPen);
             p->setBrush(Qt::NoBrush);
             p->drawRoundedRect(hlRect, radius, radius);
+            { const float t = static_cast<float>(wi.highlightThickness);
+              AccumDirtyDs(p, hlRect.adjusted(-t, -t, t, t)); } // OPT-DR2
             p->setPen(Qt::NoPen);
             p->setOpacity(eff);  // restore per-slot opacity for icon + text
         }
@@ -412,7 +423,9 @@ static void DrawWeaponInventory(QPainter* p,
                                   eff, invIconOutline.opacity);
                 p->setOpacity(eff); // DrawImageOutlined resets opacity to 1.0; restore for text
             } else {
-                p->drawImage(QRectF(px, py, drawIW, drawIH), icon);
+                const QRectF iconRect(px, py, drawIW, drawIH);
+                p->drawImage(iconRect, icon);
+                AccumDirtyDs(p, iconRect); // OPT-DR2
             }
         }
 
@@ -541,8 +554,10 @@ static void DrawWeaponAmmo(QPainter* p,
                               QRectF(ix, iy, dw, dh), (float)expandR / hudScale,
                               c.wpnIconOpacity, _ol.opacity);
         } else {
+            const QRectF iconRect(ix, iy, dw, dh);
             if (c.wpnIconOpacity < 1.0f) p->setOpacity(c.wpnIconOpacity);
-            p->drawImage(QRectF(ix, iy, dw, dh), icon);
+            p->drawImage(iconRect, icon);
+            AccumDirtyDs(p, iconRect); // OPT-DR2
             p->setOpacity(1.0f);
         } }
     }

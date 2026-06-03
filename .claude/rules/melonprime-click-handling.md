@@ -1,6 +1,7 @@
 # MelonPrime Click Handling — Investigation & Fix Log
 
-**Status:** Fix applied 2026-05-10. Targets two distinct dropped-click symptoms.
+**Status:** Click-drop fix 2026-05-10 (two dropped-click symptoms). Hold-drop fix 2026-06-03
+(charge-hold via `clearStuckMouseButtons` debounce — see "Hold-drop fix" below).
 **Branch:** `highres_fonts_v3`
 **File:** [src/frontend/qt_sdl/MelonPrimeRawInputState.cpp](../../src/frontend/qt_sdl/MelonPrimeRawInputState.cpp)
 
@@ -110,15 +111,63 @@ firing remains continuous.
 `processRawInput` / `processRawInputBatched` were **not** modified — same bitmask layout,
 same release-store semantics. The change is consumer-side only.
 
+## Hold-drop fix — `clearStuckMouseButtons` debounce (charge-hold)
+
+**Status:** Fix applied 2026-06-03.
+**Files:** [MelonPrimeRawInputState.cpp](../../src/frontend/qt_sdl/MelonPrimeRawInputState.cpp)
+(`clearStuckMouseButtons`), [MelonPrimeRawInputState.h](../../src/frontend/qt_sdl/MelonPrimeRawInputState.h)
+(`m_mouseStuckCandidate`).
+
+### Symptom reported
+- **押しっぱなし（hold）が時々検知されない**：チャージ武器でクリックを押し続けても、たまにチャージが
+  途切れる／始まらない。タップ（単発）は正常。
+
+### Root cause
+The held mouse-button `down` state traces **entirely** to `m_mouseButtons`
+(`snapshotInputFrame`'s `physicalMouse` → `scanBoundHotkeys` → `outHk.down`). The defer/press
+machinery only affects press *edges*, never the held `down` bit, so a dropped hold can only come
+from `m_mouseButtons` losing the bit. During a hold there is no UP event, so the only thing that
+clears it is `clearStuckMouseButtons`.
+
+The old `clearStuckMouseButtons` cleared a bit on a **single** `GetAsyncKeyState`-up read. A
+genuinely-held button can momentarily read physically-up via `GetAsyncKeyState` (frame
+boundaries / high poll rate / transient input-queue desync). That single false-up cleared the
+held bit, and because the button was still physically held (no new DOWN event) the bit stayed
+cleared → DS shoot input (`INPUT_L`) dropped → charge broke until the next physical press. This
+is exactly the "still-held button" risk the *Items intentionally NOT changed* section had flagged
+for "revisit if reported". "Tap works, hold drops" fits: the initial DOWN/press registers
+normally; only the *sustained* hold is clobbered by a later false-clear.
+
+### Fix
+Debounce the clear: a held bit is now cleared only after `GetAsyncKeyState` reports it
+physically-up on **two consecutive checks** (`toClear = physUp & m_mouseStuckCandidate`, with
+`m_mouseStuckCandidate` carrying the previous check's physically-up mask). A single transient
+false-up no longer drops the hold. Real stuck-down (button released, UP event lost to the
+`GetRawInputData` shared-buffer race, FIX-1) reads up persistently and is still cleared, one
+check (~16 ms) later. `m_mouseStuckCandidate` is consumer-thread-only (plain `uint8_t`), reset in
+`resetAll` / `resetMouseButtons` / `resetAllKeys`.
+
+### Trade-off
+Recovery of a genuinely-stuck mouse button is delayed by one check (~16 ms @ 60 fps) —
+imperceptible, and consistent with the existing "one frame of false-fire beats dropping a click"
+principle. If a longer multi-frame `GetAsyncKeyState` glitch is ever observed, widen the debounce
+to N consecutive checks (replace the 1-bit candidate mask with a per-button counter).
+
+### Not addressed
+- `clearStuckKeys` (keyboard) still uses a single-check clear — same theoretical hold-drop for a
+  keyboard-bound charge. Left as-is (report was mouse-only); apply the same debounce if reported.
+- A *lost initial DOWN* (producer-side) would drop both press and hold; not observed here (taps
+  work), so not covered by this fix.
+
 ## Items intentionally NOT changed
 
-- **`clearStuckMouseButtons` / `clearStuckKeys`** ([L429](../../src/frontend/qt_sdl/MelonPrimeRawInputState.cpp#L429),
-  [L465](../../src/frontend/qt_sdl/MelonPrimeRawInputState.cpp#L465)). These call
-  `GetAsyncKeyState` to clear logical state when the physical button is released. There is
-  a theoretical false-positive risk under unusual OS conditions (workstation lock, mouse
-  button swap settings, remote desktop) that could clear a still-held button. No user
-  reproduction tied to this path; left untouched. If a future report shows symptoms during
-  Alt+Tab / RDP / SwapMouseButton, revisit.
+- **`clearStuckMouseButtons`** — **NO LONGER unchanged.** The "still-held button" false-clear
+  risk was reported (charge-hold drop) and fixed via the two-consecutive-check debounce; see
+  "Hold-drop fix" above.
+- **`clearStuckKeys`** (keyboard). Calls `GetAsyncKeyState` to clear logical state when a key is
+  physically released. Same class of false-positive risk (workstation lock, remote desktop,
+  transient desync) that could clear a still-held key. Left untouched (the report was mouse-only);
+  apply the same debounce if a keyboard-held charge is ever reported.
 - **`drainMessagesOnly`** ([MelonPrimeRawInputWinFilter.cpp:75](../../src/frontend/qt_sdl/MelonPrimeRawInputWinFilter.cpp#L75)).
   Removes `WM_INPUT` from queue without dispatch. Comment notes P-35 was reverted because
   removing the prior `GetRawInputBuffer` caused stuck keys (FIX-1 shared-buffer semantics).
