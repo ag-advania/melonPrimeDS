@@ -299,6 +299,7 @@ namespace MelonPrime {
         m_mouseButtons.store(0, std::memory_order_relaxed);
         m_mouseButtonPresses.store(0, std::memory_order_relaxed);
         m_mouseButtonDeferredPresses.store(0, std::memory_order_relaxed);
+        m_mouseStuckCandidate = 0;
         std::atomic_thread_fence(std::memory_order_release);
         m_hkPrev = 0;
     }
@@ -307,6 +308,7 @@ namespace MelonPrime {
         m_mouseButtons.store(0, std::memory_order_release);
         m_mouseButtonPresses.store(0, std::memory_order_release);
         m_mouseButtonDeferredPresses.store(0, std::memory_order_release);
+        m_mouseStuckCandidate = 0;
     }
 
     // =========================================================================
@@ -322,6 +324,7 @@ namespace MelonPrime {
         m_mouseButtons.store(0, std::memory_order_relaxed);
         m_mouseButtonPresses.store(0, std::memory_order_relaxed);
         m_mouseButtonDeferredPresses.store(0, std::memory_order_relaxed);
+        m_mouseStuckCandidate = 0;
         std::atomic_thread_fence(std::memory_order_release);
         m_hkPrev = 0;
     }
@@ -428,22 +431,37 @@ namespace MelonPrime {
     // =========================================================================
     FORCE_INLINE bool InputState::clearStuckMouseButtons() noexcept {
         const uint8_t cur = m_mouseButtons.load(std::memory_order_relaxed);
-        if (!cur) return false;
+        if (!cur) {
+            m_mouseStuckCandidate = 0;
+            return false;
+        }
 
         static constexpr UINT kBitToVk[5] = {
             VK_LBUTTON, VK_RBUTTON, VK_MBUTTON, VK_XBUTTON1, VK_XBUTTON2
         };
 
-        uint8_t cleared = cur;
+        // physUp = bits that are logically-down here but GetAsyncKeyState reports
+        // as physically-up.
+        uint8_t physUp = 0;
         for (int i = 0; i < 5; ++i) {
-            if ((cur >> i) & 1u) {
-                if (!(GetAsyncKeyState(kBitToVk[i]) & 0x8000)) {
-                    cleared &= ~static_cast<uint8_t>(1u << i);
-                }
+            if (((cur >> i) & 1u) && !(GetAsyncKeyState(kBitToVk[i]) & 0x8000)) {
+                physUp |= static_cast<uint8_t>(1u << i);
             }
         }
-        if (cleared != cur) {
-            m_mouseButtons.store(cleared, std::memory_order_relaxed);
+
+        // Debounce: only clear a held bit once it has read physically-up on TWO
+        // consecutive checks (physUp now AND last check, via m_mouseStuckCandidate).
+        // Rationale: a genuinely-held mouse button (e.g. holding fire to charge)
+        // can momentarily read as up via GetAsyncKeyState at frame boundaries / under
+        // high poll rates; the old single-check clear would then drop the hold and
+        // break the charge until the next physical press. Real stuck-down (button
+        // released, UP event lost to the GetRawInputData shared-buffer race) reads up
+        // persistently and is still cleared, just one check (~16 ms) later.
+        const uint8_t toClear = static_cast<uint8_t>(physUp & m_mouseStuckCandidate);
+        m_mouseStuckCandidate = physUp;
+        if (toClear) {
+            m_mouseButtons.store(static_cast<uint8_t>(cur & ~toClear),
+                                 std::memory_order_relaxed);
             return true;
         }
         return false;
