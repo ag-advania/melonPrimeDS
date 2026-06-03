@@ -243,10 +243,6 @@ static inline const HudOutlineConfig& EffOL(const CachedHudConfig& c, const HudO
     return c.globalOutline.enable ? c.globalOutline : el;
 }
 
-static void RefreshStaticHudDirty(const CachedHudConfig& c,
-                                  float hs, float txDs, float tyDs,
-                                  int overlayW, int overlayH);
-
 struct HudFrameTransform {
     float topStretchX;
     float hudScale;
@@ -306,17 +302,6 @@ static void EnsureCachedConfigForFrame(Config::Table& cfg, const HudFrameTransfo
     }
 }
 
-static void EnsureStaticDirtyForFrame(const CachedHudConfig& c, const HudFrameTransform& xf)
-{
-    if (UNLIKELY(s_staticDirtyStale ||
-                 s_staticDirtyHudScale != xf.hudScale ||
-                 s_staticDirtyTxDs    != xf.txDs     ||
-                 s_staticDirtyTyDs    != xf.tyDs)) {
-        RefreshStaticHudDirty(c, xf.hudScale, xf.txDs, xf.tyDs,
-                              xf.overlayRect.width(), xf.overlayRect.height());
-    }
-}
-
 static void ApplyHudPainterTransform(QPainter* p, const HudFrameTransform& xf)
 {
     p->scale(xf.hudScale, xf.hudScale);
@@ -347,12 +332,14 @@ static void EnsureHudFont(QPainter* p)
     ++s_textCacheGen;
 }
 
-static inline QRect CurrentHudDirtyRect(const HudFrameTransform& xf, bool includeFirstPersonHud)
+// OPT-DR2: the dirty rect is the union of everything actually drawn this frame.
+// s_drawnDirtyPx is accumulated by the low-level draw funnels as each primitive is
+// drawn; s_chDirtyThisFrame carries the crosshair's prev∪curr bbox (it draws in
+// pixel space with its own tracking). Clamped to the overlay so the caller's
+// clear/upload stays in bounds.
+static inline QRect CurrentHudDirtyRect(const HudFrameTransform& xf)
 {
-    QRect dirty = s_staticHudDirtyPx | s_chDirtyThisFrame;
-    if (includeFirstPersonHud)
-        dirty |= s_staticHudFirstPersonDirtyPx;
-    return dirty & xf.overlayRect;
+    return (s_drawnDirtyPx | s_chDirtyThisFrame) & xf.overlayRect;
 }
 
 static void ClearPreviousCrosshairDirty(const CrosshairHudConfig& ch)
@@ -403,80 +390,6 @@ static void ReadHudRuntimeVisibleState(const RomAddresses& rom,
     out.isAlt = Read8(ram, addrHot.isAltForm) == 0x02;
     out.isTrans = isFirstPerson && (Read8(ram, addrHot.jumpFlag) & 0x10) != 0;
     out.isAdventure = Read8(ram, rom.isInAdventure) == 0x02;
-}
-
-// OPT-DR1: Computes conservative pixel-space dirty rects for non-crosshair elements.
-// The always-visible rect excludes first-person-only weapon HUD, so third-person
-// and alt-form frames clear/upload a smaller overlay region.
-static void RefreshStaticHudDirty(const CachedHudConfig& c,
-                                   float hs, float txDs, float tyDs,
-                                   int overlayW, int overlayH)
-{
-    // Expands dirty by a DS-space bbox centred at (cx, cy) with ±padX/±padY DS units.
-    QRect dirty;
-    QRect firstPersonDirty;
-    auto addDS = [&](QRect& dst, int cx, int cy, int padX, int padY) {
-        dst |= QRect(
-            QPoint(static_cast<int>((cx - padX + txDs) * hs),
-                   static_cast<int>((cy - padY + tyDs) * hs)),
-            QPoint(static_cast<int>((cx + padX + txDs) * hs) + 1,
-                   static_cast<int>((cy + padY + tyDs) * hs) + 1));
-    };
-
-    // HP — always drawn in-game (no show flag)
-    addDS(dirty, c.hp.hpX, c.hp.hpY, 90, 65);
-    if (c.hp.hpGauge)
-        addDS(dirty, c.hp.hpGaugePosX, c.hp.hpGaugePosY, c.hp.hpGaugeLen / 2 + 12, c.hp.hpGaugeWid / 2 + 12);
-
-    // Weapon + Ammo — first-person only.
-    addDS(firstPersonDirty, c.weapon.wpnX, c.weapon.wpnY, 90, 65);
-    if (c.weapon.iconShow) addDS(firstPersonDirty, c.weapon.iconPosX, c.weapon.iconPosY, 35, 35);
-    if (c.weapon.ammoGauge) addDS(firstPersonDirty, c.weapon.ammoGaugePosX, c.weapon.ammoGaugePosY, 65, 55);
-
-    // Weapon Inventory — first-person only.
-    if (c.weaponInventory.show) addDS(firstPersonDirty, c.weaponInventory.posX, c.weaponInventory.posY, 170, 170);
-
-    // Match Status
-    if (c.matchStatus.matchStatusShow) addDS(dirty, c.matchStatus.matchStatusX, c.matchStatus.matchStatusY, 110, 90);
-
-    // Bomb Left
-    if (c.bombLeft.bombLeftShow) {
-        addDS(dirty, c.bombLeft.bombLeftX, c.bombLeft.bombLeftY, 75, 45);
-        if (c.bombLeft.bombIconShow)
-            addDS(dirty, c.bombLeft.bombIconPosX, c.bombLeft.bombIconPosY, 35, 35);
-    }
-
-    // Rank & Time
-    if (c.rankTime.rankShow)      addDS(dirty, c.rankTime.rankX,      c.rankTime.rankY,      80, 28);
-    if (c.rankTime.timeLeftShow)  addDS(dirty, c.rankTime.timeLeftX,  c.rankTime.timeLeftY,  80, 28);
-    if (c.rankTime.timeLimitShow) addDS(dirty, c.rankTime.timeLimitX, c.rankTime.timeLimitY, 80, 28);
-
-    // Radar — use radarDstSize for radius, plus outline padding
-    if (c.radar.radarShow) {
-        const int s   = c.radar.radarDstSize;
-        const int pad = s / 2 + std::max(8, EffOL(c, c.radar.frameOutline).thickness + 5);
-        addDS(dirty, c.radar.radarDstX + s / 2, c.radar.radarDstY + s / 2, pad, pad);
-        // Also cover the (potentially larger) SVG frame
-        const QRectF& fr = c.radar.frameDstRect;
-        if (!fr.isEmpty()) {
-            const int fx = static_cast<int>(fr.x()) - 2;
-            const int fy = static_cast<int>(fr.y()) - 2;
-            const int fW = static_cast<int>(fr.width())  + 4;
-            const int fH = static_cast<int>(fr.height()) + 4;
-            dirty |= QRect(
-                QPoint(static_cast<int>((fx + txDs) * hs),
-                       static_cast<int>((fy + tyDs) * hs)),
-                QPoint(static_cast<int>((fx + fW + txDs) * hs) + 1,
-                       static_cast<int>((fy + fH + tyDs) * hs) + 1));
-        }
-    }
-
-    s_staticHudDirtyPx  = dirty & QRect(0, 0, overlayW, overlayH);
-    s_staticHudFirstPersonDirtyPx = firstPersonDirty & QRect(0, 0, overlayW, overlayH);
-    s_staticDirtyHudScale = hs;
-    s_staticDirtyTxDs   = txDs;
-    s_staticDirtyTyDs   = tyDs;
-    s_staticDirtyStale  = false;
 }
 
 static void DrawMatchStatusText(QPainter* p, const QFontMetrics& fm, int fontPixelSize, float tds,
@@ -614,8 +527,10 @@ static void DrawBombLeft(QPainter* p, melonDS::u8* ram, const RomAddresses& rom,
                                   QRectF(ix, iy, dw, dh), (float)expandR / hudScale,
                                   c.bombIconOpacity, _ol.opacity);
             } else {
+                const QRectF bombIconRect(ix, iy, dw, dh);
                 if (c.bombIconOpacity < 1.0f) p->setOpacity(c.bombIconOpacity);
-                p->drawImage(QRectF(ix, iy, dw, dh), icon);
+                p->drawImage(bombIconRect, icon);
+                AccumDirtyDs(p, bombIconRect); // OPT-DR2
                 p->setOpacity(1.0f);
             } }
         }
@@ -762,7 +677,6 @@ void CustomHud_ResetPatchState()
     NoHudPatch_ResetState();
     s_cache.valid = false;
     s_battleState.valid = false;
-    s_staticDirtyStale = true;
     s_chPrevPxCx = INT_MIN;
     s_chPrevPxCy = INT_MIN;
     s_hudPatchForceRestorePending = true;
@@ -775,7 +689,6 @@ void CustomHud_InvalidateConfigCache()
     s_bombTintCacheValid = false;
     for (int i = 0; i < 9; i++) s_weaponTintValid[i] = false;
     s_effectiveRadarHunterID = 0xFF; // P-13: force re-evaluation of effective radar color
-    s_staticDirtyStale = true;       // OPT-DR1: force static dirty rect recomputation
     // Force EnsureHudFont() to re-read the painter font next frame; Screen.cpp rebuilds
     // overlayFont from CustomHud_ResolveBaseFont when the HUD-font setting changes, and the
     // rebuild bumps s_textCacheGen so stale glyph bitmaps are re-rasterised.

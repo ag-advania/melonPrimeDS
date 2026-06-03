@@ -36,17 +36,11 @@ Custom HUD integration inside `Screen.cpp` is split into unity include fragments
 **Key statics in `MelonPrimeHudRender.cpp`**:
 - `s_chPrevPxCx / s_chPrevPxCy` — previous frame crosshair pixel center (`INT_MIN` = unset)
 - `s_chDirtyThisFrame` — union of current + previous crosshair bbox, computed in `DrawCrosshair`
-- `s_staticHudDirtyPx` — conservative pixel-space bbox covering all non-crosshair HUD elements; cached across frames
-- `s_staticDirtyStale` — set `true` when config or transform changes; triggers `RefreshStaticHudDirty()` at next frame start
+- `s_drawnDirtyPx` (**OPT-DR2**) — accumulated device-pixel bbox of every non-crosshair primitive actually drawn this frame; reset at the top of `CustomHud_Render`
 
 **`CrosshairBboxPx(cx, cy, ch)`**: computes exact pixel bbox from stamp (`s_chOutlineStamp`, `s_chStampOrigin`), pre-cached arm rects, and dot rect. Used to union prev + current crosshair positions.
 
-**`RefreshStaticHudDirty()`**: iterates over all enabled fixed-position HUD elements (HP, weapon, ammo, radar, match status, rank, time, bomb), converts their DS-space positions to pixel space, adds per-element padding, unions into `s_staticHudDirtyPx`. Called once per config/transform change (not every frame).
-
-**Stale flag triggers** (`s_staticDirtyStale = true`):
-- `RecomputeAnchorPositions` (positions changed)
-- `CustomHud_ResetPatchState` (emu stop/reset)
-- `CustomHud_InvalidateConfigCache` (settings saved)
+**OPT-DR2 — actual-drawn-rect accumulation** (supersedes the old conservative `RefreshStaticHudDirty()` / `s_staticHudDirtyPx` / `s_staticDirtyStale` machinery, now removed): `AccumDirtyDs(p, dsRect)` maps a DS-space rect through the painter transform and `AccumDirtyDevPx(devRect)` unions an already-device-space rect (both into `s_drawnDirtyPx`, +1px AA pad). They are called from the low-level draw funnels — `DrawCachedText`, the hi-res branch of `DrawCachedTextOutlined`, `DrawImageOutlined`, `DrawGauge` — plus the direct icon / inventory-highlight / radar-frame/outline/crop draw sites. Every visible overlay pixel passes through one funnel, so `s_drawnDirtyPx` is a superset of what changed but uses the *actual* glyph/icon footprint instead of worst-case padding. `CurrentHudDirtyRect(xf)` returns `(s_drawnDirtyPx | s_chDirtyThisFrame) & overlayRect`. No stale-flag / config-change recompute is needed (it is per-frame by construction).
 
 **Screen.cpp software path** (`ScreenPanelNative::paintEvent`):
 ```cpp

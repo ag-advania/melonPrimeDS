@@ -698,7 +698,6 @@ static void RecomputeAnchorPositions(float topStretchX)
                                       cropCenterY - frameSizeDS * 0.5f,
                                       frameSizeDS, frameSizeDS);
     }
-    s_staticDirtyStale = true; // OPT-DR1: element positions changed
 }
 
 static void RefreshCachedConfig(Config::Table& cfg, float topStretchX = 1.0f, float hudScale = 1.0f)
