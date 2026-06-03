@@ -2,6 +2,16 @@
 
 This document describes how to implement a new runtime ARM9 patch in MelonPrimeDS.
 
+There are **two distinct patch classes**:
+
+1. **Static write-patches** (the main body of this doc) — `*_ApplyOnce` rewrites ARM9
+   instructions/data once; the change persists until the game resets. Use for behavior that does
+   not depend on live state at a specific code point.
+2. **Runtime instruction hooks** (see the "ARM9 instruction-hook subsystem" section below) —
+   trampoline into C++ *every time* the ARM9 executes a specific PC, with access to live
+   registers/RAM and the option to redirect execution. Use when the effect depends on runtime
+   state or must conditionally change control flow.
+
 ## Overview
 
 Patches are standalone `.h` / `.cpp` pairs under `src/frontend/qt_sdl/MelonPrimePatch*.{h,cpp}`.
@@ -295,6 +305,10 @@ Use `0xFFFFFFFFu` as the sentinel "not applicable" base address.
 
 ## Existing patches — reference implementations
 
+These are all **static write-patches**. Instruction-hook patches (ShadowFreeze, FixNoxusBlade,
+WeaponSwitch, TransformGate, NativeAimDelta, etc.) are documented in the
+"ARM9 instruction-hook subsystem" section below instead.
+
 | Patch | Files | Apply site | Notes |
 |-------|-------|-----------|-------|
 | In-game aspect ratio | `MelonPrimePatchAspectRatio.*` | `HandleGameJoinInit` | Uses `MainRAM` read to detect/guard; `InGameAspectRatio_ResetPatchState` on stop/reset |
@@ -303,6 +317,95 @@ Use `0xFFFFFFFFu` as the sentinel "not applicable" base address.
 | No double-tap jump | `MelonPrimePatchNoDoubleTapJump.*` | `MelonPrimeGameWeapon.cpp` (transient, wraps `FrameAdvanceTwice`) | Not persistent; applied/restored around weapon-switch frames only |
 | Wi-Fi bitset fix | `MelonPrimePatchFixWifi.*` | `HandleGameJoinInit` | JP1_0 / US1_0 / EU1_0 only; 51-word patch; `FixWifi_ResetPatchState` on stop/reset |
 | Stage matrix expansion | `MelonPrimePatchExpandStageMatrix.*` | `!isInGame` per-frame block (pattern C) | Writes RAM data bytes, not ARM code; self-guarded via strict 3-point loaded-state check; `ResetPatchState` is a no-op; base (5 cells) + extra (9 cells) split across two config keys |
+| Low HP warning | `MelonPrimePatchLowHpWarning.*` | `HandleGameJoinInit` | `LowHpWarning_ResetPatchState` on stop/reset |
+| Use firmware language | `MelonPrimePatchUseFirmwareLanguage.*` | `!isInGame && focused` block | Adventure-aware; applied in menus |
+| Instant aim follow | `MelonPrimePatchInstantAimFollow.*` | `ApplyConfigReload` + game-join | `_RestoreOnce` on game leave; `_ResetPatchState` on stop/reset. (Distinct from the `LowLatencyMode` ImmediateSync/MoonLike instruction hook.) |
+| Show headshot online | `MelonPrimePatchShowHeadshotOnline.*` | `ApplyConfigReload` + game-join | `_RestoreOnce` on game leave |
+| Show enemy HP meter online | `MelonPrimePatchShowEnemyHpMeterOnline.*` | `ApplyConfigReload` + game-join | `_RestoreOnce` on game leave |
+| Disable double-damage multiplier | `MelonPrimePatchDisableDoubleDamageMultiplier.*` | `ApplyConfigReload` + game-join | `_RestoreOnce` on game leave; pairs with Damage-Notify-Purple |
+| No picking up specific items | `MelonPrimePatchNoPickingUpSpecificItems.*` | `ApplyConfigReload` + game-join | `_RestoreOnce` on game leave |
+
+---
+
+## ARM9 instruction-hook subsystem
+
+*Runtime trampoline hooks.*
+
+The patterns above cover **static write-patches**: `*_ApplyOnce` rewrites ARM9 instructions/data
+once and they persist until the game resets. A second, distinct class exists — **runtime
+instruction hooks** that trampoline into C++ *every time* the ARM9 executes a specific PC. Use a
+hook (not a write-patch) when the behavior depends on live state (registers / RAM / config) at the
+moment the game reaches a code point, or when you need to conditionally redirect execution.
+
+### Core mechanism
+
+- `src/frontend/qt_sdl/MelonPrimeArm9InstructionHook.inc` is a multi-section fragment included into
+  core melonDS files (`NDS.h`, `NDS.cpp`, `ARM.cpp`, `ARMJIT_x64/ARMJIT_Compiler.*`) behind
+  `#ifdef MELONPRIME_DS`. It adds one hook slot to `NDS`:
+  `SetARM9InstructionHook(fn, userdata, addresses[], count)` / `ClearARM9InstructionHook()`.
+  `ARM9InstructionHookMaxAddresses = 32`.
+- Hook fn signature:
+  `bool(NDS*, void* userdata, u32 arm9ExecAddr, u32 regs[16], u32& redirectExecAddr)`.
+  Return `true` + set `redirectExecAddr` → CPU `JumpTo(redirectExecAddr)` (redirect). Return
+  `false` → original instruction runs (side-effect-only hook).
+- **JIT path (default):** the compiler emits the trampoline call **only at addresses that matched at
+  compile time** (`ARM9InstructionHookMatches(addr)` in the compile loop), and
+  `SetARM9InstructionHook` resets the JIT block cache when the address list changes. Non-hooked
+  instructions cost **zero**; each hooked PC pays a `RegCache.Flush` + call when executed.
+- **Interpreter path:** every instruction runs `ARM9InstructionHookAddressMatches`, a hash-mask
+  early-out (`1u << ((addr>>2)&31)`) followed by a short linear scan.
+
+### Central dispatcher — `MelonPrimeArm9Hook.cpp`
+
+Owns the single hook slot and fans out to all registered MelonPrime hooks.
+
+- `ARM9Hook_Install(nds, cfg, romGroupIndex, core)` — called after ROM detection
+  (`DetectRomAndSetAddresses`) and again on every `ApplyConfigReload`, so a settings change
+  re-registers the active hook set. For each **enabled** hook it calls the module's
+  `Foo_GetAddresses(romGroupIndex, out, max)` and registers those PCs with a per-hook dispatch-mask
+  bit (`AddDispatchAddress` ORs masks when two hooks share a PC), then calls `SetARM9InstructionHook`
+  once with the union of addresses.
+- `ARM9Hook_Uninstall(nds)` and `ARM9Hook_ResetPatchState()` — wired into **all three** reset
+  blocks (the same blocks as the write-patch `*_ResetPatchState` calls; see §3).
+- `DispatcherCallback` looks up the address's mask (`FindDispatchMask`, 1-entry cache) and calls
+  each set hook's handler in a fixed priority order; side-effect hooks run unconditionally, redirect
+  hooks return early once one redirects.
+- **Registration is config-gated**: only hooks that can run for the current config are registered,
+  because every registered PC becomes a JIT trampoline call site. Developer-only hooks are forced
+  off in non-developer builds.
+
+### Per-hook module contract
+
+Each instruction-hook module provides:
+
+- `uint32_t Foo_GetAddresses(uint8_t romGroupIndex, uint32_t* out, uint32_t maxCount)` — fills the
+  ROM-specific hook PCs, returns the count.
+- a handler: side-effect `Foo_DispatchCheck(nds, arm9ExecAddr, regs)` **or** redirecting
+  `bool Foo_DispatchCheckAndRedirect(nds, arm9ExecAddr, regs, u32& redirectExecAddr)`.
+- The dispatcher only invokes a handler at that hook's own registered PCs, so re-deriving / re-matching
+  the PC inside the handler is redundant — a single-site side-effect handler can ignore
+  `arm9ExecAddr` (e.g. `(void)arm9ExecAddr;`); multi-site handlers still use it to select behavior.
+- Modules with their own config/ROM cache add `Foo_SetState` / `Foo_ClearState` /
+  `Foo_ResetPatchState` (e.g. `MelonPrimePatchFixNoxusBladePersistence`,
+  `MelonPrimePatchShadowFreezeRuntimeHook`), driven by `ARM9Hook_Install/Uninstall/ResetPatchState`.
+
+### Registered hooks (dispatch priority order)
+
+| Hook | File | Kind | Gating |
+|------|------|------|--------|
+| NativeAimDelta (RegisterInjection / PostFoldWrite) | `MelonPrimePatchNativeAimDeltaHook*Version.inc` | register side-effect | developer-only; `NativeHookMode`, direct-aim path |
+| LowLatencyAim | `MelonPrimePatchLowLatencyAimHook.inc` | RAM side-effect | `LowLatencyMode` ImmediateSync/MoonLike; requires `DisableMphAimSmoothing`, non-stylus |
+| NativeZoomToggle | `MelonPrimePatchNativeZoomToggleHook.inc` | redirect | developer-only |
+| NativeBipedFire | `MelonPrimePatchNativeBipedFireHook.inc` | redirect | developer-only |
+| ImmediateInputEdgeOverlay | `MelonPrimePatchImmediateInputEdgeOverlay.inc` | side-effect | developer-only |
+| FixNoxusBladePersistence | `MelonPrimePatchFixNoxusBladePersistence.cpp` | RAM side-effect | `Metroid.BugFix.FixNoxusBladePersistence` |
+| TransformGate | `MelonPrimePatchImmediateTransformGateHook.inc` | redirect | `DirectAltFormTransform` |
+| WeaponSwitch | `MelonPrimePatchWeaponSwitchHook.inc` | redirect | `WeaponSwitchMethod != LegacyTouch` |
+| ShadowFreezeRuntimeHook | `MelonPrimePatchShadowFreezeRuntimeHook.cpp` | redirect | **always registered**; the handler checks a cached config bit so the quick-menu toggle works live without a JIT block-cache reset |
+
+The `*.inc` handlers are unity-included into `MelonPrimeGameInput.cpp` (see its `#include` block);
+the two `.cpp` modules (`FixNoxusBladePersistence`, `ShadowFreezeRuntimeHook`) are standalone
+translation units listed in `CMakeLists.txt`.
 
 ---
 
