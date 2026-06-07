@@ -76,6 +76,7 @@
 #include "AboutDialog.h"
 #ifdef MELONPRIME_DS
 #include "MelonPrime.h"
+#include "MelonPrimeLocalization.h"
 #include "MelonPrimePatchShadowFreezeRuntimeHook.h"
 #endif
 
@@ -254,6 +255,10 @@ MainWindow::MainWindow(int id, EmuInstance* inst, QWidget* parent) :
 
     //hasMenu = (!parent);
     hasMenu = true;
+
+#ifdef MELONPRIME_DS
+    MelonPrime::UiText::SetMenuLanguageMode(localCfg.GetInt("Metroid.UI.MenuLanguage"));
+#endif
 
     if (hasMenu)
     {
@@ -698,8 +703,18 @@ MainWindow::MainWindow(int id, EmuInstance* inst, QWidget* parent) :
 
         setMenuBar(menubar);
 
+#ifdef MELONPRIME_DS
+        localizeMenuText();
+#endif
+
         if (localCfg.GetString("Firmware.Username") == "Arisotura")
+        {
+#ifdef MELONPRIME_DS
+            MelonPrime::UiText::SetLocalizedActionText(actMPNewInstance, QStringLiteral("Fart"));
+#else
             actMPNewInstance->setText("Fart");
+#endif
+        }
     }
 
 #ifdef Q_OS_MAC
@@ -836,6 +851,17 @@ MainWindow::~MainWindow()
         delete[] actScreenAspectBot;
     }
 }
+
+#ifdef MELONPRIME_DS
+void MainWindow::localizeMenuText()
+{
+    if (!hasMenu)
+        return;
+
+    MelonPrime::UiText::SetMenuLanguageMode(localCfg.GetInt("Metroid.UI.MenuLanguage"));
+    MelonPrime::UiText::LocalizeMenuBar(menuBar());
+}
+#endif
 
 void MainWindow::osdAddMessage(unsigned int color, const char* msg)
 {
@@ -1370,7 +1396,11 @@ void MainWindow::updateCartInserted(bool gba)
         emuInstance->doOnAllWindows([=](MainWindow* win)
             {
                 if (!win->hasMenu) return;
+#ifdef MELONPRIME_DS
+                MelonPrime::UiText::SetLocalizedActionText(win->actCurrentGBACart, label);
+#else
                 win->actCurrentGBACart->setText(label);
+#endif
                 win->actEjectGBACart->setEnabled(inserted);
             });
     }
@@ -1382,7 +1412,11 @@ void MainWindow::updateCartInserted(bool gba)
         emuInstance->doOnAllWindows([=](MainWindow* win)
             {
                 if (!win->hasMenu) return;
+#ifdef MELONPRIME_DS
+                MelonPrime::UiText::SetLocalizedActionText(win->actCurrentCart, label);
+#else
                 win->actCurrentCart->setText(label);
+#endif
                 win->actEjectCart->setEnabled(inserted);
                 win->actImportSavefile->setEnabled(inserted);
                 win->actEnableCheats->setEnabled(inserted);
@@ -1483,6 +1517,10 @@ void MainWindow::loadRecentFilesMenu(bool loadcfg)
 
     if (recentFileList.empty())
         actClearRecentList->setEnabled(false);
+
+#ifdef MELONPRIME_DS
+    MelonPrime::UiText::LocalizeMenu(recentMenu);
+#endif
 }
 
 void MainWindow::updateRecentFilesMenu()
@@ -1919,7 +1957,12 @@ void MainWindow::onEmuSettingsDialogFinished(int res)
     if (EmuSettingsDialog::needsReset)
         onReset();
 
-    actCurrentGBACart->setText("GBA slot: " + emuInstance->gbaCartLabel());
+    const QString gbaSlotLabel = "GBA slot: " + emuInstance->gbaCartLabel();
+#ifdef MELONPRIME_DS
+    MelonPrime::UiText::SetLocalizedActionText(actCurrentGBACart, gbaSlotLabel);
+#else
+    actCurrentGBACart->setText(gbaSlotLabel);
+#endif
 
     if (!emuThread->emuIsActive())
         actTitleManager->setEnabled(!globalCfg.GetString("DSi.NANDPath").empty());
@@ -2010,6 +2053,10 @@ void MainWindow::onInputConfigFinished(int res)
         localCfg.GetBool("Metroid.GameFeature.DisableDoubleDamageMultiplier"));
     actMetroidPowerUpPickupNoEffect->setChecked(
         localCfg.GetBool("Metroid.GameFeature.PowerUpPickupNoEffectPowerUps"));
+    emuInstance->doOnAllWindows([](MainWindow* win)
+        {
+            win->localizeMenuText();
+        });
 #endif
 }
 

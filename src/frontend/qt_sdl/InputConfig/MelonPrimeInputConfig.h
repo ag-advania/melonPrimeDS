@@ -127,6 +127,7 @@ private:
 
     // Constructor setup helpers
     void setupKeyBindings(Config::Table& instcfg, Config::Table& keycfg, Config::Table& joycfg);
+    void setupMenuLanguageControl(Config::Table& instcfg);
     void setupSensitivityAndToggles(Config::Table& instcfg);
     void setupInputMethodSection(Config::Table& instcfg);
     void setupCollapsibleSections(Config::Table& instcfg);
@@ -155,6 +156,9 @@ private:
     QLabel* m_lblMetroidLowLatencyAimMode = nullptr;
     QComboBox* m_comboMetroidLowLatencyAimMode = nullptr;
     QLabel* m_lblMetroidLowLatencyAimDesc = nullptr;
+    QWidget* m_menuLanguageWidget = nullptr;
+    QLabel* m_lblMenuLanguage = nullptr;
+    QComboBox* m_comboMenuLanguage = nullptr;
 
     // Programmatic HUD settings widgets (config key → widget)
     std::unordered_map<std::string, QWidget*> m_hudWidgets;

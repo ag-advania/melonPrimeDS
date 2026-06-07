@@ -90,6 +90,8 @@ MelonPrimeInputConfig::MelonPrimeInputConfig(EmuInstance* emu, QWidget* parent) 
     Config::Table keycfg = instcfg.GetTable("Keyboard");
     Config::Table joycfg = instcfg.GetTable("Joystick");
 
+    MelonPrime::UiText::SetMenuLanguageMode(instcfg.GetInt("Metroid.UI.MenuLanguage"));
+    setupMenuLanguageControl(instcfg);
     setupKeyBindings(instcfg, keycfg, joycfg);
     setupSensitivityAndToggles(instcfg);
     setupInputMethodSection(instcfg);
@@ -124,6 +126,39 @@ void MelonPrimeInputConfig::setupKeyBindings(Config::Table& instcfg, Config::Tab
 
     populatePage(ui->tabAddonsMetroid,  kMetroidHotkeys,  kMetroidHotkeyCount,  addonsMetroidKeyMap,  addonsMetroidJoyMap);
     populatePage(ui->tabAddonsMetroid2, kMetroidHotkeys2, kMetroidHotkey2Count, addonsMetroid2KeyMap, addonsMetroid2JoyMap);
+}
+
+void MelonPrimeInputConfig::setupMenuLanguageControl(Config::Table& instcfg)
+{
+    if (!MelonPrime::UiText::CanChooseMenuLanguage() || m_menuLanguageWidget)
+        return;
+
+    m_menuLanguageWidget = new QWidget(ui->scrollSettingsContents);
+    m_menuLanguageWidget->setObjectName(QStringLiteral("widgetMetroidMenuLanguage"));
+    auto* layout = new QHBoxLayout(m_menuLanguageWidget);
+    layout->setContentsMargins(8, 4, 0, 4);
+    layout->setSpacing(8);
+
+    m_lblMenuLanguage = new QLabel(QStringLiteral("Menu Language"), m_menuLanguageWidget);
+    m_comboMenuLanguage = new QComboBox(m_menuLanguageWidget);
+    m_comboMenuLanguage->addItem(QStringLiteral("Japanese"), MelonPrime::UiText::kMenuLanguageJapanese);
+    m_comboMenuLanguage->addItem(QStringLiteral("English"), MelonPrime::UiText::kMenuLanguageEnglish);
+    SetComboCurrentData(m_comboMenuLanguage, instcfg.GetInt("Metroid.UI.MenuLanguage"));
+
+    layout->addWidget(m_lblMenuLanguage);
+    layout->addWidget(m_comboMenuLanguage);
+    layout->addStretch(1);
+
+    ui->metroidVLayout->insertWidget(0, m_menuLanguageWidget);
+
+    connect(
+        m_comboMenuLanguage,
+        QOverload<int>::of(&QComboBox::currentIndexChanged),
+        this,
+        [this](int) {
+            MelonPrime::UiText::SetMenuLanguageMode(m_comboMenuLanguage->currentData().toInt());
+            MelonPrime::UiText::LocalizeWidgetTree(this);
+        });
 }
 
 void MelonPrimeInputConfig::setupSensitivityAndToggles(Config::Table& instcfg)
@@ -599,11 +634,10 @@ void MelonPrimeInputConfig::setupCollapsibleSections(Config::Table& instcfg)
         bool expanded = instcfg.GetBool(cfgKey);
         section->setVisible(expanded);
         btn->setChecked(expanded);
-        const QString displayLabel = MelonPrime::UiText::Tr(label);
-        btn->setText((expanded ? QString::fromUtf8("▼ ") : QString::fromUtf8("▶ ")) + displayLabel);
-        QObject::connect(btn, &QPushButton::toggled, [btn, section, displayLabel](bool checked) {
+        btn->setText((expanded ? QString::fromUtf8("▼ ") : QString::fromUtf8("▶ ")) + label);
+        QObject::connect(btn, &QPushButton::toggled, [btn, section, label](bool checked) {
             section->setVisible(checked);
-            btn->setText((checked ? QString::fromUtf8("▼ ") : QString::fromUtf8("▶ ")) + displayLabel);
+            btn->setText((checked ? QString::fromUtf8("▼ ") : QString::fromUtf8("▶ ")) + MelonPrime::UiText::Tr(label));
         });
     };
     // Other Metroid Settings 2 tab
@@ -654,6 +688,9 @@ void MelonPrimeInputConfig::setupPreviewConnections()
 
 MelonPrimeInputConfig::~MelonPrimeInputConfig()
 {
+    if (emuInstance)
+        MelonPrime::UiText::SetMenuLanguageMode(
+            emuInstance->getLocalConfig().GetInt("Metroid.UI.MenuLanguage"));
     delete ui;
 }
 
@@ -2552,11 +2589,13 @@ void MelonPrimeInputConfig::setupCustomHudWidgets(Config::Table& instcfg)
 
         bool expanded = instcfg.GetBool(cfgKey);
         btn->setChecked(expanded);
-        QString label = MelonPrime::UiText::Tr(title);
+        const QString label = QString::fromUtf8(title);
         btn->setText((expanded ? QString::fromUtf8("\u25BC ") : QString::fromUtf8("\u25B6 ")) + label);
 
         connect(btn, &QPushButton::toggled, [btn, label](bool checked) {
-            btn->setText((checked ? QString::fromUtf8("\u25BC ") : QString::fromUtf8("\u25B6 ")) + label);
+            btn->setText(
+                (checked ? QString::fromUtf8("\u25BC ") : QString::fromUtf8("\u25B6 "))
+                + MelonPrime::UiText::Tr(label));
         });
 
         m_hudToggles.push_back({btn, std::string(cfgKey)});
@@ -2607,11 +2646,13 @@ void MelonPrimeInputConfig::setupCustomHudWidgets(Config::Table& instcfg)
 
         bool expanded = instcfg.GetBool(sec.cfgToggleKey);
         mainBtn->setChecked(expanded);
-        QString label = MelonPrime::UiText::Tr(sec.title);
+        const QString label = QString::fromUtf8(sec.title);
         mainBtn->setText((expanded ? QString::fromUtf8("\u25BC ") : QString::fromUtf8("\u25B6 ")) + label);
 
         connect(mainBtn, &QPushButton::toggled, [mainBtn, label](bool checked) {
-            mainBtn->setText((checked ? QString::fromUtf8("\u25BC ") : QString::fromUtf8("\u25B6 ")) + label);
+            mainBtn->setText(
+                (checked ? QString::fromUtf8("\u25BC ") : QString::fromUtf8("\u25B6 "))
+                + MelonPrime::UiText::Tr(label));
         });
 
         m_hudToggles.push_back({mainBtn, std::string(sec.cfgToggleKey)});

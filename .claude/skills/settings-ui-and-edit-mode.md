@@ -54,6 +54,8 @@ MelonPrime settings labels support English and Japanese through `MelonPrimeLocal
 
 Current rules:
 - OS locale decides the UI language with `QLocale::system().language()`.
+- On Japanese OS, the Settings tab shows a `Menu Language` selector (`Metroid.UI.MenuLanguage`, `0=Japanese`, `1=English`), defaulting to Japanese.
+- On non-Japanese OS, the selector is hidden and MelonPrime UI text stays English regardless of the saved language value.
 - English source strings remain the default and are the lookup keys for short text in `MelonPrime::UiText::kTranslations`.
 - Long or HTML-rich description labels should use stable object names and Japanese entries in `MelonPrime::UiText::kObjectTextTranslations`.
 - Japanese strings are hand-authored; do not use machine-translated text.
