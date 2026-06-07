@@ -45,24 +45,26 @@ void ImportWidgetTable(const toml::value& root, const char* tableName, QWidget* 
 void MelonPrimeInputConfig::setupCustomHudCode()
 {
     refreshCustomHudCodeOutput();
-    setCustomHudCodeStatus("Generate sharable TOML for the current Custom HUD settings, or paste TOML below to apply it.", false);
+    setCustomHudCodeStatus(
+        MelonPrime::UiText::Tr("Generate sharable TOML for the current Custom HUD settings, or paste TOML below to apply it."),
+        false);
 
     connect(ui->btnMetroidCustomHudCodeGenerate, &QPushButton::clicked, this, [this]
     {
         refreshCustomHudCodeOutput();
-        setCustomHudCodeStatus("Output refreshed from the current Custom HUD settings.", false);
+        setCustomHudCodeStatus(MelonPrime::UiText::Tr("Output refreshed from the current Custom HUD settings."), false);
     });
 
     connect(ui->btnMetroidCustomHudCodeCopy, &QPushButton::clicked, this, [this]
     {
         QGuiApplication::clipboard()->setText(ui->pteMetroidCustomHudCodeOutput->toPlainText());
-        setCustomHudCodeStatus("Custom HUD code copied to the clipboard.", false);
+        setCustomHudCodeStatus(MelonPrime::UiText::Tr("Custom HUD code copied to the clipboard."), false);
     });
 
     connect(ui->btnMetroidCustomHudCodeUseOutput, &QPushButton::clicked, this, [this]
     {
         ui->pteMetroidCustomHudCodeInput->setPlainText(ui->pteMetroidCustomHudCodeOutput->toPlainText());
-        setCustomHudCodeStatus("Output copied into the input box.", false);
+        setCustomHudCodeStatus(MelonPrime::UiText::Tr("Output copied into the input box."), false);
     });
 
     connect(ui->btnMetroidCustomHudCodeApply, &QPushButton::clicked, this, [this]
@@ -75,7 +77,7 @@ void MelonPrimeInputConfig::setupCustomHudCode()
         }
 
         refreshCustomHudCodeOutput();
-        setCustomHudCodeStatus("Custom HUD code applied to the dialog.", false);
+        setCustomHudCodeStatus(MelonPrime::UiText::Tr("Custom HUD code applied to the dialog."), false);
     });
 }
 
@@ -140,7 +142,8 @@ bool MelonPrimeInputConfig::applyCustomHudCode(const QString& code, QString* err
     const QString trimmed = code.trimmed();
     if (trimmed.isEmpty())
     {
-        if (errorMessage) *errorMessage = "Paste Custom HUD TOML into the input box first.";
+        if (errorMessage)
+            *errorMessage = MelonPrime::UiText::Tr("Paste Custom HUD TOML into the input box first.");
         return false;
     }
 
@@ -153,7 +156,8 @@ bool MelonPrimeInputConfig::applyCustomHudCode(const QString& code, QString* err
 
         if (!root.is_table())
         {
-            if (errorMessage) *errorMessage = "The pasted Custom HUD code is not a TOML table.";
+            if (errorMessage)
+                *errorMessage = MelonPrime::UiText::Tr("The pasted Custom HUD code is not a TOML table.");
             return false;
         }
 
@@ -207,7 +211,9 @@ bool MelonPrimeInputConfig::applyCustomHudCode(const QString& code, QString* err
     catch (const std::exception& ex)
     {
         m_applyPreviewEnabled = prevApplyPreviewEnabled;
-        if (errorMessage) *errorMessage = QString("Failed to load Custom HUD code: %1").arg(QString::fromUtf8(ex.what()));
+        if (errorMessage)
+            *errorMessage = MelonPrime::UiText::Tr("Failed to load Custom HUD code: %1")
+                .arg(QString::fromUtf8(ex.what()));
         return false;
     }
 }

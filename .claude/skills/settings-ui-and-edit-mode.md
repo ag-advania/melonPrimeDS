@@ -24,6 +24,7 @@ When adding or modifying a HUD setting, touch all three:
 | `src/frontend/qt_sdl/InputConfig/MelonPrimeInputConfigConfig.cpp` | save logic and reset-to-default handlers |
 | `src/frontend/qt_sdl/InputConfig/MelonPrimeInputConfigPreview.cpp` | live preview rendering, preview apply flow, snapshot/restore |
 | `src/frontend/qt_sdl/InputConfig/MelonPrimeInputConfigInternal.h` | shared UI helpers, presets, color-sync helpers |
+| `src/frontend/qt_sdl/MelonPrimeLocalization.h` | MelonPrime-only English/Japanese UI labels selected from the OS locale |
 
 ### Tab structure
 
@@ -43,9 +44,25 @@ Current constructor flow in `MelonPrimeInputConfig.cpp` is:
 4. `setupCustomHudWidgets()` - programmatic creation of all HUD parameter widgets
 5. `setupPreviewConnections()`
 6. `setupCustomHudCode()`
-7. `snapshotVisualConfig()`
+7. `MelonPrime::UiText::LocalizeWidgetTree(this)`
+8. `snapshotVisualConfig()`
 
 This ordering matters because preview wiring assumes widgets are already initialized.
+
+### Localization
+MelonPrime settings labels support English and Japanese through `MelonPrimeLocalization.h`.
+
+Current rules:
+- OS locale decides the UI language with `QLocale::system().language()`.
+- English source strings remain the default and are the lookup keys for short text in `MelonPrime::UiText::kTranslations`.
+- Long or HTML-rich description labels should use stable object names and Japanese entries in `MelonPrime::UiText::kObjectTextTranslations`.
+- Japanese strings are hand-authored; do not use machine-translated text.
+- Config keys, TOML keys, object names, and enum/storage values remain English and must not be translated.
+- Static Qt Designer text and generated widget text are localized by `MelonPrime::UiText::LocalizeWidgetTree(this)` after all setup is complete.
+- Dynamic labels, toggle text, dialog titles, status messages, and in-game overlay text should call `MelonPrime::UiText::Tr(...)` at the point where the text is assigned or drawn.
+- The in-game DS-space overlay is tight; prefer concise Japanese labels and update text measurement code when changing drawn sample text.
+
+When adding or renaming visible MelonPrime UI text, update both the English call site and the Japanese entry in `MelonPrimeLocalization.h`. For C++-created description labels, set a stable object name before `LocalizeWidgetTree(this)` runs. The main call sites are `MelonPrimeInputConfig.cpp`, `MelonPrimeInputConfigCustomHudCode.inc`, `MelonPrimeHudConfigOnScreenEdit.cpp`, and the edit-mode `.inc` fragments (`Defs`, `Draw`, `Input`).
 
 ### Collapsible sections
 The settings UI uses toggle buttons and section widgets wired up in `setupCollapsibleSections()`. Toggle state is persisted under `Metroid.UI.Section*` config keys.
