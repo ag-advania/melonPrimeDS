@@ -12,6 +12,7 @@
 #include "toml/toml.hpp"
 #include "MelonPrime.h"
 #include "MelonPrimeDef.h"
+#include "MelonPrimeLocalization.h"
 
 #include <QPainter>
 #include <QPainterPath>

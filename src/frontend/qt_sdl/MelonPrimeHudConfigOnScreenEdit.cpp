@@ -2,6 +2,7 @@
 
 #include "MelonPrimeHudConfigOnScreenEdit.h"
 #include "MelonPrimeHudRender.h"
+#include "MelonPrimeLocalization.h"
 #include "EmuInstance.h"
 #include <QColorDialog>
 #include <QHBoxLayout>
@@ -120,7 +121,7 @@ QWidget* MelonPrimeHudConfigOnScreenEdit::addCheckBox(const QString& label, cons
     hlay->addWidget(off, 0);
     hlay->addStretch(1);
 
-    m_form->addRow(label, container);
+    m_form->addRow(MelonPrime::UiText::Tr(label), container);
     m_rows.append(container);
     return container;
 }
@@ -130,7 +131,7 @@ QWidget* MelonPrimeHudConfigOnScreenEdit::addCheckBox(const QString& label, cons
 QComboBox* MelonPrimeHudConfigOnScreenEdit::addComboBox(const QString& label, const char* key, const QStringList& items)
 {
     auto* cb = new QComboBox(this);
-    cb->addItems(items);
+    cb->addItems(MelonPrime::UiText::TrList(items));
     cb->setCurrentIndex(cfg().GetInt(key));
     std::string k(key);
     connect(cb, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this, k](int idx) {
@@ -138,7 +139,7 @@ QComboBox* MelonPrimeHudConfigOnScreenEdit::addComboBox(const QString& label, co
         cfg().SetInt(k, idx);
         MelonPrime::CustomHud_InvalidateConfigCache();
     });
-    m_form->addRow(label, cb);
+    m_form->addRow(MelonPrime::UiText::Tr(label), cb);
     m_rows.append(cb);
     return cb;
 }
@@ -156,7 +157,7 @@ QSpinBox* MelonPrimeHudConfigOnScreenEdit::addSpinBox(const QString& label, cons
         cfg().SetInt(k, v);
         MelonPrime::CustomHud_InvalidateConfigCache();
     });
-    m_form->addRow(label, sb);
+    m_form->addRow(MelonPrime::UiText::Tr(label), sb);
     m_rows.append(sb);
     return sb;
 }
@@ -176,7 +177,7 @@ QDoubleSpinBox* MelonPrimeHudConfigOnScreenEdit::addDoubleSpinBox(const QString&
         cfg().SetDouble(k, v);
         MelonPrime::CustomHud_InvalidateConfigCache();
     });
-    m_form->addRow(label, sb);
+    m_form->addRow(MelonPrime::UiText::Tr(label), sb);
     m_rows.append(sb);
     return sb;
 }
@@ -210,7 +211,7 @@ QSlider* MelonPrimeHudConfigOnScreenEdit::addOpacitySlider(const QString& label,
         MelonPrime::CustomHud_InvalidateConfigCache();
     });
 
-    m_form->addRow(label, container);
+    m_form->addRow(MelonPrime::UiText::Tr(label), container);
     m_rows.append(container);
     return slider;
 }
@@ -227,7 +228,7 @@ QLineEdit* MelonPrimeHudConfigOnScreenEdit::addLineEdit(const QString& label, co
         cfg().SetString(k, text.toStdString());
         MelonPrime::CustomHud_InvalidateConfigCache();
     });
-    m_form->addRow(label, le);
+    m_form->addRow(MelonPrime::UiText::Tr(label), le);
     m_rows.append(le);
     return le;
 }
@@ -249,7 +250,7 @@ QPushButton* MelonPrimeHudConfigOnScreenEdit::addColorPicker(const QString& labe
     std::string kR(keyR), kG(keyG), kB(keyB);
     connect(btn, &QPushButton::clicked, this, [this, btn, kR, kG, kB]() {
         QColor cur(cfg().GetInt(kR), cfg().GetInt(kG), cfg().GetInt(kB));
-        QColor picked = QColorDialog::getColor(cur, this, QStringLiteral("Pick Color"));
+        QColor picked = QColorDialog::getColor(cur, this, MelonPrime::UiText::Tr("Pick Color"));
         if (picked.isValid()) {
             cfg().SetInt(kR, picked.red());
             cfg().SetInt(kG, picked.green());
@@ -258,7 +259,7 @@ QPushButton* MelonPrimeHudConfigOnScreenEdit::addColorPicker(const QString& labe
             MelonPrime::CustomHud_InvalidateConfigCache();
         }
     });
-    m_form->addRow(label, btn);
+    m_form->addRow(MelonPrime::UiText::Tr(label), btn);
     m_rows.append(btn);
     return btn;
 }
@@ -274,8 +275,8 @@ void MelonPrimeHudConfigOnScreenEdit::addSubColor(const QString& label, const ch
     hlay->setSpacing(2);
 
     auto* combo = new QComboBox(container);
-    combo->addItem(QStringLiteral("Overall"));
-    combo->addItem(QStringLiteral("Custom"));
+    combo->addItem(MelonPrime::UiText::Tr("Overall"));
+    combo->addItem(MelonPrime::UiText::Tr("Custom"));
     bool isOverall = cfg().GetBool(overallKey);
     combo->setCurrentIndex(isOverall ? 0 : 1);
 
@@ -296,7 +297,7 @@ void MelonPrimeHudConfigOnScreenEdit::addSubColor(const QString& label, const ch
     });
     connect(btn, &QPushButton::clicked, this, [this, btn, kR, kG, kB]() {
         QColor cur(cfg().GetInt(kR), cfg().GetInt(kG), cfg().GetInt(kB));
-        QColor picked = QColorDialog::getColor(cur, this, QStringLiteral("Pick Color"));
+        QColor picked = QColorDialog::getColor(cur, this, MelonPrime::UiText::Tr("Pick Color"));
         if (picked.isValid()) {
             cfg().SetInt(kR, picked.red());
             cfg().SetInt(kG, picked.green());
@@ -306,7 +307,7 @@ void MelonPrimeHudConfigOnScreenEdit::addSubColor(const QString& label, const ch
         }
     });
 
-    m_form->addRow(label, container);
+    m_form->addRow(MelonPrime::UiText::Tr(label), container);
     m_rows.append(container);
 }
 
@@ -352,7 +353,7 @@ void MelonPrimeHudConfigOnScreenEdit::addColorOverlayRow(
     });
     connect(btn, &QPushButton::clicked, this, [this, btn, kR, kG, kB]() {
         QColor cur(cfg().GetInt(kR), cfg().GetInt(kG), cfg().GetInt(kB));
-        QColor picked = QColorDialog::getColor(cur, this, QStringLiteral("Pick Color"));
+        QColor picked = QColorDialog::getColor(cur, this, MelonPrime::UiText::Tr("Pick Color"));
         if (picked.isValid()) {
             cfg().SetInt(kR, picked.red());
             cfg().SetInt(kG, picked.green());
@@ -362,7 +363,7 @@ void MelonPrimeHudConfigOnScreenEdit::addColorOverlayRow(
         }
     });
 
-    m_form->addRow(label, container);
+    m_form->addRow(MelonPrime::UiText::Tr(label), container);
     m_rows.append(container);
 }
 
@@ -450,7 +451,7 @@ void MelonPrimeHudConfigOnScreenEdit::addGaugePositionRows(const char* posModeKe
 
 void MelonPrimeHudConfigOnScreenEdit::addSectionHeader(const QString& label)
 {
-    auto* hdr = new QLabel(label, this);
+    auto* hdr = new QLabel(MelonPrime::UiText::Tr(label), this);
     hdr->setStyleSheet("color: #fff; font-weight: bold; font-size: 9px;");
     m_form->addRow(hdr);
     m_rows.append(hdr);
@@ -476,7 +477,7 @@ void MelonPrimeHudConfigOnScreenEdit::populateForElement(int idx)
         return;
     }
 
-    m_title->setText(kElementNames[idx]);
+    m_title->setText(MelonPrime::UiText::Tr(kElementNames[idx]));
 
     switch (idx) {
     case 0:  populateHP(); break;
@@ -729,7 +730,7 @@ void MelonPrimeHudConfigOnScreenEdit::populateForCrosshair()
     m_populating = true;
     clearForm();
     m_currentElem = -2; // -2 = crosshair (not a regular element)
-    m_title->setText(QStringLiteral("Crosshair"));
+    m_title->setText(MelonPrime::UiText::Tr("Crosshair"));
 
     addColorPicker(QStringLiteral("Color"),
         "Metroid.Visual.CrosshairColorR",

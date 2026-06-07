@@ -44,6 +44,9 @@ void MelonPrimeInputConfig::saveConfig()
     Config::Table keycfg = instcfg.GetTable("Keyboard");
     Config::Table joycfg = instcfg.GetTable("Joystick");
 
+    if (m_comboMenuLanguage)
+        instcfg.SetInt("Metroid.UI.MenuLanguage", m_comboMenuLanguage->currentData().toInt());
+
     for (int i = 0; i < kMetroidHotkeyCount; ++i)
     {
         const char* btn = EmuInstance::hotkeyNames[kMetroidHotkeys[i].id];
