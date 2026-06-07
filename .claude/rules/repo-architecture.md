@@ -198,6 +198,7 @@ Current work is on the `highres_fonts_v3` branch. Main changes relative to `mast
   - `MelonPrimeHudConfigOnScreenDraw.inc` - bounds and overlay drawing
   - `MelonPrimeHudConfigOnScreenInput.inc` - public edit API and input handling
 - Classic settings dialog restored with 5 hierarchical main sections and live preview widgets on the right (except HUD Scale)
+- MelonPrime settings/edit-mode labels are localized through `MelonPrimeLocalization.h` for English/Japanese based on OS locale
 - Programmatic widget architecture via `HudMainSec` / `HudSubSec` / `HudWidgetProp`, enabling data-driven save/restore/TOML-export
 - Snapshot/restore covers all HUD widgets plus 3 global fields
 - HUD auto-scale system with per-category caps (text, icons, gauges, crosshair); radar excluded from auto-scale

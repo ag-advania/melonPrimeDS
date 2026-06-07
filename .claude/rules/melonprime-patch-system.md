@@ -202,6 +202,20 @@ Add a `QCheckBox` (and optional `QLabel` description) inside an existing or new 
 For bug fixes, the **BUG FIXES** section (`btnToggleBugFix` / `sectionBugFix`) already exists
 immediately above the GAMEPLAY TOGGLES section in the Settings tab.
 
+Visible MelonPrime settings text must also be registered for English/Japanese localization in
+`src/frontend/qt_sdl/MelonPrimeLocalization.h`:
+
+- Short labels, checkbox text, combo items, button text, tooltips, and anonymous descriptions go in
+  `MelonPrime::UiText::kTranslations` as English source text -> Japanese display text.
+- Long description labels should have a stable object name such as `lblMetroidFooDesc`, then use
+  `MelonPrime::UiText::kObjectTextTranslations` to map that object name to the Japanese text. This
+  avoids fragile exact matching for long or HTML-rich descriptions.
+- Dynamic labels created in C++ should either set a stable object name before
+  `MelonPrime::UiText::LocalizeWidgetTree(this)` runs, or assign text through
+  `MelonPrime::UiText::Tr(...)`.
+- Config keys, TOML keys, object names, and storage enum values stay English. Localization is only
+  for visible UI text.
+
 Add to `sectionBugFix`'s `QVBoxLayout`:
 
 ```xml
@@ -217,6 +231,9 @@ Add to `sectionBugFix`'s `QVBoxLayout`:
     </widget>
 </item>
 ```
+
+Then add the checkbox label and description text to `MelonPrimeLocalization.h`. For the description
+above, prefer the `lblMetroidFooDesc` object-name mapping.
 
 ### 5. Settings wiring — `MelonPrimeInputConfig.cpp`
 
