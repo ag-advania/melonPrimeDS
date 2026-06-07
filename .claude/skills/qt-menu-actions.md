@@ -12,6 +12,17 @@ Primary files:
 | `src/frontend/qt_sdl/Window.h` | Declares slot methods and stores `QAction*` members |
 | `src/frontend/qt_sdl/Config.cpp` | Owns default values for config keys |
 | `src/frontend/qt_sdl/InputConfig/*` | Optional settings-dialog mirror of the same config key |
+| `src/frontend/qt_sdl/MelonPrimeLocalization.h` | MelonPrime UI/menu translations and menu relocalization helpers |
+
+## Localization
+
+MelonPrime menu labels are localized through `MelonPrimeLocalization.h`.
+
+- Add every user-facing `QMenu`/`QAction` label to `kTranslations` when adding or renaming a menu item.
+- `MainWindow::localizeMenuText()` applies the saved `Metroid.UI.MenuLanguage` to the menubar.
+- For labels that change after construction, use `MelonPrime::UiText::SetLocalizedActionText(action, englishSourceText)` instead of raw `setText()` so the English source text stays available when switching between Japanese and English.
+- Dynamically rebuilt menus, such as `recentMenu`, should call `MelonPrime::UiText::LocalizeMenu(menu)` after repopulating actions.
+- The menu language selector appears only on Japanese OS locales; non-Japanese OS locales stay English-only.
 
 ## Pattern: Checkable MelonPrime Toggle
 
