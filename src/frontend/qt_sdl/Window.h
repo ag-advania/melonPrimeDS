@@ -210,6 +210,9 @@ private:
     void updateCartInserted(bool gba);
 
     void createScreenPanel();
+#ifdef MELONPRIME_DS
+    void localizeMenuText();
+#endif
 
     bool lanWarning(bool host);
 

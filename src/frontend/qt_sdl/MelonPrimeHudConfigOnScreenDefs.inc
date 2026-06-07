@@ -57,7 +57,7 @@ static QString EditEnumLabel(const char* items, int val) {
     }
     const char* end = p;
     while (*end && *end != '|') ++end;
-    return QString::fromUtf8(p, static_cast<int>(end - p));
+    return UiText::Tr(p, static_cast<int>(end - p));
 }
 
 static const HudEditPropDesc kPropsHp[] = {

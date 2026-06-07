@@ -166,7 +166,8 @@ static QRectF ComputeEditBounds(int idx, Config::Table& cfg, float topStretchX)
     float bw, bh, boxTop;
     const char* sampleTxt = (idx >= 0 && idx < kEditElemCount) ? kEditElemSampleText[idx] : nullptr;
     if (sampleTxt && s_frameFpx > 0) {
-        bw = std::max(14.0f, s_frameFm.horizontalAdvance(QString::fromUtf8(sampleTxt)) * tds + 4.0f);
+        const QString sampleDisplay = UiText::Tr(sampleTxt);
+        bw = std::max(14.0f, s_frameFm.horizontalAdvance(sampleDisplay) * tds + 4.0f);
         bh = std::max(5.0f,  s_frameFm.height() * tds + 2.0f);
         // Align box so text ascent sits just inside the top edge.
         boxTop = static_cast<float>(fy) - static_cast<float>(s_frameFm.ascent()) * tds - 1.0f;
@@ -430,7 +431,7 @@ static void DrawElemPropsPanel(QPainter* p, Config::Table& cfg,
             p->setFont(smallFont);
             p->setPen(kLabelColor);
             p->drawText(QRectF(rowX, rowY, kPropLabelW, kPropRowH),
-                         Qt::AlignLeft | Qt::AlignVCenter, QStringLiteral("Show"));
+                         Qt::AlignLeft | Qt::AlignVCenter, UiText::Tr("Show"));
             const bool visible = cfg.GetBool(d.showKey);
             QRectF btnR(ctrlX, rowY + 1.0f, ctrlW, kPropRowH - 2.0f);
             p->setBrush(visible ? kBtnOnBg : kBtnOffBg);
@@ -443,7 +444,7 @@ static void DrawElemPropsPanel(QPainter* p, Config::Table& cfg,
             p->setFont(smallFont);
             p->setPen(kLabelColor);
             p->drawText(QRectF(rowX, rowY, kPropLabelW, kPropRowH),
-                         Qt::AlignLeft | Qt::AlignVCenter, QStringLiteral("Color"));
+                         Qt::AlignLeft | Qt::AlignVCenter, UiText::Tr("Color"));
             QColor curColor(cfg.GetInt(d.colorRKey), cfg.GetInt(d.colorGKey), cfg.GetInt(d.colorBKey));
             QRectF swR(ctrlX, rowY + 1.0f, ctrlW, kPropRowH - 2.0f);
             p->setBrush(curColor); p->setPen(Qt::NoPen);
@@ -462,7 +463,7 @@ static void DrawElemPropsPanel(QPainter* p, Config::Table& cfg,
             p->setFont(smallFont);
             p->setPen(kLabelColor);
             p->drawText(QRectF(rowX, rowY, kPropLabelW, kPropRowH),
-                        Qt::AlignLeft | Qt::AlignVCenter, QStringLiteral("Anchor"));
+                        Qt::AlignLeft | Qt::AlignVCenter, UiText::Tr("Anchor"));
             p->setBrush(kCtrlBg); p->setPen(Qt::NoPen);
             p->drawRoundedRect(valR, 1.5, 1.5); p->setBrush(Qt::NoBrush);
             p->setBrush(s_anchorPickerOpen ? QColor(45, 100, 50, 230) : kBtnBg);
@@ -472,7 +473,7 @@ static void DrawElemPropsPanel(QPainter* p, Config::Table& cfg,
             p->setPen(kValueColor);
             p->drawText(valR, Qt::AlignCenter,
                 QString::fromUtf8(anchor >= 0 && anchor < 9 ? kAnchorArrow[anchor] : "?"));
-            p->drawText(btnR, Qt::AlignCenter, QStringLiteral("Chng"));
+            p->drawText(btnR, Qt::AlignCenter, UiText::Tr("Chng"));
         } else {
             int propIdx = rowIdx - builtinRows;
             if (propIdx < 0 || propIdx >= d.propCount) continue;
@@ -481,7 +482,7 @@ static void DrawElemPropsPanel(QPainter* p, Config::Table& cfg,
             p->setFont(smallFont);
             p->setPen(kLabelColor);
             p->drawText(QRectF(rowX, rowY, kPropLabelW, kPropRowH),
-                         Qt::AlignLeft | Qt::AlignVCenter, QString::fromUtf8(pr.label));
+                         Qt::AlignLeft | Qt::AlignVCenter, UiText::Tr(pr.label));
 
             switch (pr.type) {
             case EditPropType::Bool: {
@@ -571,7 +572,7 @@ static void DrawElemPropsPanel(QPainter* p, Config::Table& cfg,
                 p->setPen(Qt::NoPen);
                 p->drawRoundedRect(ovrR, 1.5, 1.5); p->setBrush(Qt::NoBrush);
                 p->setPen(overall ? QColor(220, 220, 130) : QColor(100, 100, 140));
-                p->drawText(ovrR, Qt::AlignCenter, QStringLiteral("OVR"));
+                p->drawText(ovrR, Qt::AlignCenter, UiText::Tr("OVR"));
                 QColor clr(cfg.GetInt(pr.extra1), cfg.GetInt(pr.extra2), cfg.GetInt(pr.extra3));
                 QRectF swR(ctrlX + ovrW + 2.0f, rowY + 1.0f, ctrlW - ovrW - 2.0f, kPropRowH - 2.0f);
                 p->setBrush(overall ? QColor(80, 80, 80) : clr);
@@ -712,7 +713,7 @@ static void DrawEditOverlay(QPainter* p, Config::Table& cfg, float topStretchX, 
                 p->drawImage(r, icon);
             } else {
                 p->setPen(Qt::white);
-                p->drawText(r, Qt::AlignCenter, QStringLiteral("WPN"));
+                p->drawText(r, Qt::AlignCenter, UiText::Tr("WPN"));
             }
         } else if (isBmbIcon && !hidden) {
             EnsureBombIconsLoaded();
@@ -721,7 +722,7 @@ static void DrawEditOverlay(QPainter* p, Config::Table& cfg, float topStretchX, 
                 p->drawImage(r, icon);
             } else {
                 p->setPen(Qt::white);
-                p->drawText(r, Qt::AlignCenter, QStringLiteral("BMB"));
+                p->drawText(r, Qt::AlignCenter, UiText::Tr("BMB"));
             }
         } else if (isRadar) {
             // Ensure radar SVG frame is loaded and draw it behind the crop circle.
@@ -812,10 +813,10 @@ static void DrawEditOverlay(QPainter* p, Config::Table& cfg, float topStretchX, 
                 p->translate(r.center());
                 p->rotate(-90);
                 QRectF textRect(-r.height() / 2.0, -r.width() / 2.0, r.height(), r.width());
-                p->drawText(textRect, Qt::AlignCenter, QString::fromUtf8(sampleText));
+                p->drawText(textRect, Qt::AlignCenter, UiText::Tr(sampleText));
                 p->restore();
             } else {
-                p->drawText(r, Qt::AlignCenter, QString::fromUtf8(sampleText));
+                p->drawText(r, Qt::AlignCenter, UiText::Tr(sampleText));
             }
         }
         p->setFont(normalFont);
@@ -881,9 +882,9 @@ static void DrawEditOverlay(QPainter* p, Config::Table& cfg, float topStretchX, 
     p->drawRoundedRect(kEditResetRect, kBtnCorner, kBtnCorner);
     p->setBrush(Qt::NoBrush);
     p->setPen(kValueColor);
-    p->drawText(kEditSaveRect,   Qt::AlignCenter, QStringLiteral("\u2713 Save"));
-    p->drawText(kEditCancelRect, Qt::AlignCenter, QStringLiteral("\u2717 Cancel"));
-    p->drawText(kEditResetRect,  Qt::AlignCenter, QStringLiteral("\u21ba Reset"));
+    p->drawText(kEditSaveRect,   Qt::AlignCenter, QStringLiteral("\u2713 ") + UiText::Tr("Save"));
+    p->drawText(kEditCancelRect, Qt::AlignCenter, QStringLiteral("\u2717 ") + UiText::Tr("Cancel"));
+    p->drawText(kEditResetRect,  Qt::AlignCenter, QStringLiteral("\u21ba ") + UiText::Tr("Reset"));
 
     // ── Text Scale slider ───────────────────────────────────────────────────
     {
@@ -901,7 +902,7 @@ static void DrawEditOverlay(QPainter* p, Config::Table& cfg, float topStretchX, 
         // Label
         p->setPen(kLabelColor);
         p->drawText(QRectF(tsX, tsY, kTsLabelW, tsH), Qt::AlignLeft | Qt::AlignVCenter,
-                    QStringLiteral("Text"));
+                    UiText::Tr("Text"));
 
         // Track
         const QRectF tr = TsTrackRect();
@@ -940,7 +941,7 @@ static void DrawEditOverlay(QPainter* p, Config::Table& cfg, float topStretchX, 
         // Label
         p->setPen(kLabelColor);
         p->drawText(QRectF(ascX, ascY, kAscLabelW, ascH), Qt::AlignLeft | Qt::AlignVCenter,
-                    QStringLiteral("Auto"));
+                    UiText::Tr("Auto"));
 
         // Track
         const QRectF atr = AscTrackRect();
@@ -972,8 +973,8 @@ static void DrawEditOverlay(QPainter* p, Config::Table& cfg, float topStretchX, 
         p->setFont(normalFont);
         p->setPen(s_crosshairPanelOpen ? kValueColor : kLabelColor);
         p->drawText(kEditCrosshairBtnRect, Qt::AlignCenter,
-                    s_crosshairPanelOpen ? QStringLiteral("Crosshair \u25bc")
-                                         : QStringLiteral("Crosshair \u25b6"));
+                    UiText::Tr("Crosshair")
+                        + (s_crosshairPanelOpen ? QStringLiteral(" \u25bc") : QStringLiteral(" \u25b6")));
     }
 
     // ── Preview toggle button ───────────────────────────────────────────────
@@ -985,8 +986,8 @@ static void DrawEditOverlay(QPainter* p, Config::Table& cfg, float topStretchX, 
         p->setFont(normalFont);
         p->setPen(s_editPreviewMode ? QColor(255, 210, 100) : kLabelColor);
         p->drawText(kEditPreviewBtnRect, Qt::AlignCenter,
-                    s_editPreviewMode ? QStringLiteral("\u25a0 Preview ON")
-                                      : QStringLiteral("\u25b6 Preview"));
+                    s_editPreviewMode ? QStringLiteral("\u25a0 ") + UiText::Tr("Preview ON")
+                                      : QStringLiteral("\u25b6 ") + UiText::Tr("Preview"));
     }
 
     // ── Crosshair panel (visible in both modes when open) ───────────────────
@@ -1037,7 +1038,7 @@ static void DrawEditOverlay(QPainter* p, Config::Table& cfg, float topStretchX, 
                 int b = cfg.GetInt("Metroid.Visual.CrosshairColorB");
                 p->setPen(kLabelColor);
                 p->drawText(QRectF(rowX, rowY, kPropLabelW, kPropRowH),
-                            Qt::AlignLeft | Qt::AlignVCenter, QStringLiteral("Color"));
+                            Qt::AlignLeft | Qt::AlignVCenter, UiText::Tr("Color"));
                 QRectF swR(ctrlX, rowY + 1.0f, ctrlW, kPropRowH - 2.0f);
                 p->setBrush(QColor(r, g, b));
                 p->setPen(Qt::NoPen);
@@ -1050,7 +1051,7 @@ static void DrawEditOverlay(QPainter* p, Config::Table& cfg, float topStretchX, 
                 p->setBrush(Qt::NoBrush);
                 p->setPen(s_innerSectionOpen ? kValueColor : kLabelColor);
                 p->drawText(hdrR, Qt::AlignCenter,
-                    s_innerSectionOpen ? QStringLiteral("Inner \u25c4") : QStringLiteral("Inner \u25ba"));
+                    UiText::Tr("Inner") + (s_innerSectionOpen ? QStringLiteral(" \u25c4") : QStringLiteral(" \u25ba")));
             } else if (isOuterHdr) {
                 QRectF hdrR(rowX, rowY + 0.5f, kPropLabelW + ctrlW, kPropRowH - 1.0f);
                 p->setBrush(s_outerSectionOpen ? QColor(35, 90, 45, 210) : kBtnBg);
@@ -1059,11 +1060,11 @@ static void DrawEditOverlay(QPainter* p, Config::Table& cfg, float topStretchX, 
                 p->setBrush(Qt::NoBrush);
                 p->setPen(s_outerSectionOpen ? kValueColor : kLabelColor);
                 p->drawText(hdrR, Qt::AlignCenter,
-                    s_outerSectionOpen ? QStringLiteral("Outer \u25c4") : QStringLiteral("Outer \u25ba"));
+                    UiText::Tr("Outer") + (s_outerSectionOpen ? QStringLiteral(" \u25c4") : QStringLiteral(" \u25ba")));
             } else if (pr) {
                 p->setPen(kLabelColor);
                 p->drawText(QRectF(rowX, rowY, kPropLabelW, kPropRowH),
-                            Qt::AlignLeft | Qt::AlignVCenter, QString::fromLatin1(pr->label));
+                            Qt::AlignLeft | Qt::AlignVCenter, UiText::Tr(pr->label));
                 switch (pr->type) {
                 case EditPropType::Bool: {
                     bool val = cfg.GetBool(pr->cfgKey);
@@ -1169,7 +1170,7 @@ static void DrawEditOverlay(QPainter* p, Config::Table& cfg, float topStretchX, 
                     const float rowY = kCrosshairPanelY + 2.0f + i * kPropRowH;
                     p->setPen(kLabelColor);
                     p->drawText(QRectF(sRowX, rowY, kPropLabelW, kPropRowH),
-                                Qt::AlignLeft | Qt::AlignVCenter, QString::fromLatin1(pr2.label));
+                                Qt::AlignLeft | Qt::AlignVCenter, UiText::Tr(pr2.label));
                     switch (pr2.type) {
                     case EditPropType::Bool: {
                         bool val = cfg.GetBool(pr2.cfgKey);
@@ -1295,7 +1296,7 @@ static void DrawEditOverlay(QPainter* p, Config::Table& cfg, float topStretchX, 
             p->setFont(smallFont);
             p->setPen(QColor(100, 100, 140));
             p->drawText(QRectF(pvX, pvY + pvS - kPropRowH, pvS, kPropRowH),
-                        Qt::AlignCenter, QStringLiteral("preview"));
+                        Qt::AlignCenter, UiText::Tr("preview"));
         }
 
         p->setFont(normalFont);

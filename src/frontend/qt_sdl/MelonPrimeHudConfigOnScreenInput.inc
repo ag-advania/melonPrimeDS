@@ -248,7 +248,7 @@ void CustomHud_EditMousePress(QPointF pt, Qt::MouseButton btn, Config::Table& cf
                     int g = cfg.GetInt("Metroid.Visual.CrosshairColorG");
                     int b = cfg.GetInt("Metroid.Visual.CrosshairColorB");
                     QColor chosen = QColorDialog::getColor(QColor(r, g, b), nullptr,
-                        QStringLiteral("Crosshair Color"));
+                        UiText::Tr("Crosshair Color"));
                     s_colorDialogOpen = false;
                     if (chosen.isValid()) {
                         cfg.SetInt("Metroid.Visual.CrosshairColorR", chosen.red());
@@ -418,7 +418,7 @@ void CustomHud_EditMousePress(QPointF pt, Qt::MouseButton btn, Config::Table& cf
                             if (s_colorDialogOpen) return;
                             QColor cur(cfg.GetInt(d.colorRKey), cfg.GetInt(d.colorGKey), cfg.GetInt(d.colorBKey));
                             s_colorDialogOpen = true;
-                            QColor picked = QColorDialog::getColor(cur, nullptr, QStringLiteral("Pick Color"));
+                            QColor picked = QColorDialog::getColor(cur, nullptr, UiText::Tr("Pick Color"));
                             s_colorDialogOpen = false;
                             if (picked.isValid()) {
                                 cfg.SetInt(d.colorRKey, picked.red());
@@ -473,9 +473,10 @@ void CustomHud_EditMousePress(QPointF pt, Qt::MouseButton btn, Config::Table& cf
                             s_colorDialogOpen = true;
                             QString cur = QString::fromStdString(cfg.GetString(pr.cfgKey));
                             bool ok = false;
+                            const QString propLabel = UiText::Tr(pr.label);
                             QString txt = QInputDialog::getText(nullptr,
-                                QStringLiteral("Edit ") + QString::fromUtf8(pr.label),
-                                QString::fromUtf8(pr.label), QLineEdit::Normal, cur, &ok);
+                                UiText::Tr("Edit") + QStringLiteral(" ") + propLabel,
+                                propLabel, QLineEdit::Normal, cur, &ok);
                             s_colorDialogOpen = false;
                             if (ok) {
                                 cfg.SetString(pr.cfgKey, txt.toStdString());
@@ -492,7 +493,7 @@ void CustomHud_EditMousePress(QPointF pt, Qt::MouseButton btn, Config::Table& cf
                                 QColor cur(cfg.GetInt(pr.extra1), cfg.GetInt(pr.extra2), cfg.GetInt(pr.extra3));
                                 s_colorDialogOpen = true;
                                 QColor picked = QColorDialog::getColor(cur, nullptr,
-                                    QStringLiteral("Pick ") + QString::fromUtf8(pr.label) + QStringLiteral(" Color"));
+                                    UiText::Tr("Pick Color") + QStringLiteral(": ") + UiText::Tr(pr.label));
                                 s_colorDialogOpen = false;
                                 if (picked.isValid()) {
                                     cfg.SetInt(pr.extra1, picked.red());

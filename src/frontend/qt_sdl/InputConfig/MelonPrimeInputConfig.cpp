@@ -35,6 +35,7 @@
 #include "ui_MelonPrimeInputConfig.h"
 #include "Config.h"
 #include "MelonPrimeDef.h"
+#include "MelonPrimeLocalization.h"
 #include "toml/toml.hpp"
 #ifdef MELONPRIME_CUSTOM_HUD
 #include "MelonPrimeHudRender.h"
@@ -89,6 +90,8 @@ MelonPrimeInputConfig::MelonPrimeInputConfig(EmuInstance* emu, QWidget* parent) 
     Config::Table keycfg = instcfg.GetTable("Keyboard");
     Config::Table joycfg = instcfg.GetTable("Joystick");
 
+    MelonPrime::UiText::SetMenuLanguageMode(instcfg.GetInt("Metroid.UI.MenuLanguage"));
+    setupMenuLanguageControl(instcfg);
     setupKeyBindings(instcfg, keycfg, joycfg);
     setupSensitivityAndToggles(instcfg);
     setupInputMethodSection(instcfg);
@@ -96,6 +99,7 @@ MelonPrimeInputConfig::MelonPrimeInputConfig(EmuInstance* emu, QWidget* parent) 
     setupCustomHudWidgets(instcfg);
     setupPreviewConnections();
     setupCustomHudCode();
+    MelonPrime::UiText::LocalizeWidgetTree(this);
 
     snapshotVisualConfig();
 
@@ -122,6 +126,39 @@ void MelonPrimeInputConfig::setupKeyBindings(Config::Table& instcfg, Config::Tab
 
     populatePage(ui->tabAddonsMetroid,  kMetroidHotkeys,  kMetroidHotkeyCount,  addonsMetroidKeyMap,  addonsMetroidJoyMap);
     populatePage(ui->tabAddonsMetroid2, kMetroidHotkeys2, kMetroidHotkey2Count, addonsMetroid2KeyMap, addonsMetroid2JoyMap);
+}
+
+void MelonPrimeInputConfig::setupMenuLanguageControl(Config::Table& instcfg)
+{
+    if (!MelonPrime::UiText::CanChooseMenuLanguage() || m_menuLanguageWidget)
+        return;
+
+    m_menuLanguageWidget = new QWidget(ui->scrollSettingsContents);
+    m_menuLanguageWidget->setObjectName(QStringLiteral("widgetMetroidMenuLanguage"));
+    auto* layout = new QHBoxLayout(m_menuLanguageWidget);
+    layout->setContentsMargins(8, 4, 0, 4);
+    layout->setSpacing(8);
+
+    m_lblMenuLanguage = new QLabel(QStringLiteral("Menu Language"), m_menuLanguageWidget);
+    m_comboMenuLanguage = new QComboBox(m_menuLanguageWidget);
+    m_comboMenuLanguage->addItem(QStringLiteral("Japanese"), MelonPrime::UiText::kMenuLanguageJapanese);
+    m_comboMenuLanguage->addItem(QStringLiteral("English"), MelonPrime::UiText::kMenuLanguageEnglish);
+    SetComboCurrentData(m_comboMenuLanguage, instcfg.GetInt("Metroid.UI.MenuLanguage"));
+
+    layout->addWidget(m_lblMenuLanguage);
+    layout->addWidget(m_comboMenuLanguage);
+    layout->addStretch(1);
+
+    ui->metroidVLayout->insertWidget(0, m_menuLanguageWidget);
+
+    connect(
+        m_comboMenuLanguage,
+        QOverload<int>::of(&QComboBox::currentIndexChanged),
+        this,
+        [this](int) {
+            MelonPrime::UiText::SetMenuLanguageMode(m_comboMenuLanguage->currentData().toInt());
+            MelonPrime::UiText::LocalizeWidgetTree(this);
+        });
 }
 
 void MelonPrimeInputConfig::setupSensitivityAndToggles(Config::Table& instcfg)
@@ -191,6 +228,7 @@ void MelonPrimeInputConfig::setupSensitivityAndToggles(Config::Table& instcfg)
                 "MoonLike Aim applies small aim movements immediately and limits only large aim jumps with a max-step chase. "
                 "Requires Disable Aim Smoothing."),
             ui->sectionSensitivity);
+        m_lblMetroidLowLatencyAimDesc->setObjectName(QStringLiteral("lblMetroidLowLatencyAimDesc"));
         m_lblMetroidLowLatencyAimDesc->setWordWrap(true);
         m_lblMetroidLowLatencyAimDesc->setStyleSheet(QStringLiteral("QLabel { margin-left: 20px; }"));
 
@@ -416,6 +454,7 @@ void MelonPrimeInputConfig::setupInputMethodSection(Config::Table& instcfg)
         "Checked uses the game's native TryEquipWeapon path through an ARM9 hook. "
         "Unchecked keeps the older simulated touch/menu weapon switching path for compatibility testing.",
         m_sectionInputMethod);
+    desc->setObjectName(QStringLiteral("lblMetroidWeaponSwitchMethodDesc"));
     desc->setWordWrap(true);
     desc->setStyleSheet("QLabel { margin-left: 20px; }");
     sectionLayout->addWidget(desc);
@@ -439,6 +478,7 @@ void MelonPrimeInputConfig::setupInputMethodSection(Config::Table& instcfg)
         "letting the original cooldown, ammo, projectile, HUD, and SFX path run naturally. "
         "Legacy Method keeps the older DS input/ImmediateInputEdgeOverlay fire path.",
         ui->sectionDeveloperOnly);
+    fireDesc->setObjectName(QStringLiteral("lblMetroidBipedFireMethodDesc"));
     fireDesc->setWordWrap(true);
     fireDesc->setEnabled(kDeveloperOnlyFeaturesEnabled);
     fireDesc->setStyleSheet("QLabel { margin-left: 20px; }");
@@ -514,6 +554,7 @@ void MelonPrimeInputConfig::setupInputMethodSection(Config::Table& instcfg)
         "It is also slightly lower latency than Legacy Method. "
         "If both boxes are unchecked, Legacy Method always drives the fixed R button like the older input path.",
         ui->sectionDeveloperOnly);
+    zoomDesc->setObjectName(QStringLiteral("lblMetroidZoomMethodDesc"));
     zoomDesc->setWordWrap(true);
     zoomDesc->setEnabled(kDeveloperOnlyFeaturesEnabled);
     zoomDesc->setStyleSheet("QLabel { margin-left: 20px; }");
@@ -522,6 +563,7 @@ void MelonPrimeInputConfig::setupInputMethodSection(Config::Table& instcfg)
         "New Method 2 toggles native zoom state through SetPlayerScopeZoom on each press. "
         "Mutually exclusive with New Method for Zoom.",
         ui->sectionDeveloperOnly);
+    zoom2Desc->setObjectName(QStringLiteral("lblMetroidZoomMethod2Desc"));
     zoom2Desc->setWordWrap(true);
     zoom2Desc->setEnabled(kDeveloperOnlyFeaturesEnabled);
     zoom2Desc->setStyleSheet("QLabel { margin-left: 20px; }");
@@ -595,7 +637,7 @@ void MelonPrimeInputConfig::setupCollapsibleSections(Config::Table& instcfg)
         btn->setText((expanded ? QString::fromUtf8("▼ ") : QString::fromUtf8("▶ ")) + label);
         QObject::connect(btn, &QPushButton::toggled, [btn, section, label](bool checked) {
             section->setVisible(checked);
-            btn->setText((checked ? QString::fromUtf8("▼ ") : QString::fromUtf8("▶ ")) + label);
+            btn->setText((checked ? QString::fromUtf8("▼ ") : QString::fromUtf8("▶ ")) + MelonPrime::UiText::Tr(label));
         });
     };
     // Other Metroid Settings 2 tab
@@ -646,6 +688,9 @@ void MelonPrimeInputConfig::setupPreviewConnections()
 
 MelonPrimeInputConfig::~MelonPrimeInputConfig()
 {
+    if (emuInstance)
+        MelonPrime::UiText::SetMenuLanguageMode(
+            emuInstance->getLocalConfig().GetInt("Metroid.UI.MenuLanguage"));
     delete ui;
 }
 
@@ -2194,7 +2239,8 @@ void MelonPrimeInputConfig::setupCustomHudWidgets(Config::Table& instcfg)
                 init.setStrikeOut(cfg.GetBool("Metroid.Visual.HudFontStrikeOut"));
 
                 bool ok = false;
-                const QFont chosen = QFontDialog::getFont(&ok, init, this, QStringLiteral("Select HUD Font"));
+                const QFont chosen = QFontDialog::getFont(
+                    &ok, init, this, MelonPrime::UiText::Tr("Select HUD Font"));
                 if (!ok) return;
 
                 // Apply the whole selection back into the section's widgets, which write config
@@ -2261,8 +2307,8 @@ void MelonPrimeInputConfig::setupCustomHudWidgets(Config::Table& instcfg)
             });
             connect(btn, &QPushButton::clicked, this, [this, le]() {
                 const QString path = QFileDialog::getOpenFileName(
-                    this, QStringLiteral("Select HUD Font File"), QString(),
-                    QStringLiteral("Font files (*.ttf *.otf *.ttc);;All files (*)"));
+                    this, MelonPrime::UiText::Tr("Select HUD Font File"), QString(),
+                    MelonPrime::UiText::Tr("Font files (*.ttf *.otf *.ttc);;All files (*)"));
                 if (!path.isEmpty())
                     le->setText(path);  // textChanged handler writes config + refreshes
             });
@@ -2511,7 +2557,7 @@ void MelonPrimeInputConfig::setupCustomHudWidgets(Config::Table& instcfg)
 
             connect(swatch, &QPushButton::clicked, this, [this, sbR, sbG, sbB, updateSwatch]() {
                 QColor init(sbR->value(), sbG->value(), sbB->value());
-                QColor c = QColorDialog::getColor(init, this, QStringLiteral("Pick Color"));
+                QColor c = QColorDialog::getColor(init, this, MelonPrime::UiText::Tr("Pick Color"));
                 if (c.isValid()) {
                     sbR->setValue(c.red());
                     sbG->setValue(c.green());
@@ -2543,11 +2589,13 @@ void MelonPrimeInputConfig::setupCustomHudWidgets(Config::Table& instcfg)
 
         bool expanded = instcfg.GetBool(cfgKey);
         btn->setChecked(expanded);
-        QString label = QString::fromUtf8(title);
+        const QString label = QString::fromUtf8(title);
         btn->setText((expanded ? QString::fromUtf8("\u25BC ") : QString::fromUtf8("\u25B6 ")) + label);
 
         connect(btn, &QPushButton::toggled, [btn, label](bool checked) {
-            btn->setText((checked ? QString::fromUtf8("\u25BC ") : QString::fromUtf8("\u25B6 ")) + label);
+            btn->setText(
+                (checked ? QString::fromUtf8("\u25BC ") : QString::fromUtf8("\u25B6 "))
+                + MelonPrime::UiText::Tr(label));
         });
 
         m_hudToggles.push_back({btn, std::string(cfgKey)});
@@ -2598,11 +2646,13 @@ void MelonPrimeInputConfig::setupCustomHudWidgets(Config::Table& instcfg)
 
         bool expanded = instcfg.GetBool(sec.cfgToggleKey);
         mainBtn->setChecked(expanded);
-        QString label = QString::fromUtf8(sec.title);
+        const QString label = QString::fromUtf8(sec.title);
         mainBtn->setText((expanded ? QString::fromUtf8("\u25BC ") : QString::fromUtf8("\u25B6 ")) + label);
 
         connect(mainBtn, &QPushButton::toggled, [mainBtn, label](bool checked) {
-            mainBtn->setText((checked ? QString::fromUtf8("\u25BC ") : QString::fromUtf8("\u25B6 ")) + label);
+            mainBtn->setText(
+                (checked ? QString::fromUtf8("\u25BC ") : QString::fromUtf8("\u25B6 "))
+                + MelonPrime::UiText::Tr(label));
         });
 
         m_hudToggles.push_back({mainBtn, std::string(sec.cfgToggleKey)});
