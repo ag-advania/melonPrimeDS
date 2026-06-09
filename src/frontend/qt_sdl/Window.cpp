@@ -665,6 +665,14 @@ MainWindow::MainWindow(int id, EmuInstance* inst, QWidget* parent) :
             actMetroidFixSF->setCheckable(true);
             connect(actMetroidFixSF, &QAction::triggered, this, &MainWindow::onChangeMetroidFixSF);
 
+            actMetroidInGameTopScreenOnly = menu->addAction("In-Game Top Screen Only");
+            actMetroidInGameTopScreenOnly->setCheckable(true);
+            connect(
+                actMetroidInGameTopScreenOnly,
+                &QAction::triggered,
+                this,
+                &MainWindow::onChangeMetroidInGameTopScreenOnly);
+
             actMetroidDisableDoubleDamageMultiplier = menu->addAction("Disable Double Damage Multiplier");
             actMetroidDisableDoubleDamageMultiplier->setCheckable(true);
             connect(
@@ -811,6 +819,7 @@ MainWindow::MainWindow(int id, EmuInstance* inst, QWidget* parent) :
         actAudioSync->setChecked(emuInstance->doAudioSync);
 #ifdef MELONPRIME_DS
         actMetroidFixSF->setChecked(localCfg.GetBool("Metroid.BugFix.FixShadowFreeze"));
+        actMetroidInGameTopScreenOnly->setChecked(localCfg.GetBool("Metroid.Visual.InGameTopScreenOnly"));
         const bool ddMultiplierOff = !localCfg.GetBool("Metroid.GameFeature.DisableDoubleDamageMultiplier");
         actMetroidDisableDoubleDamageMultiplier->setChecked(!ddMultiplierOff);
         actMetroidDamageNotifyPurple->setChecked(
@@ -2007,6 +2016,17 @@ void MainWindow::onChangeMetroidFixSF(bool checked)
         core->NotifyConfigChanged();
 }
 
+void MainWindow::onChangeMetroidInGameTopScreenOnly(bool checked)
+{
+    localCfg.SetBool("Metroid.Visual.InGameTopScreenOnly", checked);
+    emuInstance->doOnAllWindows([checked](MainWindow* win)
+        {
+            if (!win->hasMenu) return;
+            win->actMetroidInGameTopScreenOnly->setChecked(checked);
+            emit win->screenLayoutChange();
+        });
+}
+
 void MainWindow::onChangeMetroidDisableDoubleDamageMultiplier(bool checked)
 {
     localCfg.SetBool("Metroid.GameFeature.DisableDoubleDamageMultiplier", checked);
@@ -2049,12 +2069,16 @@ void MainWindow::onInputConfigFinished(int res)
     emuThread->emuUnpause();
 #ifdef MELONPRIME_DS
     actMetroidFixSF->setChecked(localCfg.GetBool("Metroid.BugFix.FixShadowFreeze"));
+    actMetroidInGameTopScreenOnly->setChecked(localCfg.GetBool("Metroid.Visual.InGameTopScreenOnly"));
     actMetroidDisableDoubleDamageMultiplier->setChecked(
         localCfg.GetBool("Metroid.GameFeature.DisableDoubleDamageMultiplier"));
     actMetroidPowerUpPickupNoEffect->setChecked(
         localCfg.GetBool("Metroid.GameFeature.PowerUpPickupNoEffectPowerUps"));
     emuInstance->doOnAllWindows([](MainWindow* win)
         {
+            if (win->hasMenu)
+                win->actMetroidInGameTopScreenOnly->setChecked(
+                    win->localCfg.GetBool("Metroid.Visual.InGameTopScreenOnly"));
             win->localizeMenuText();
         });
 #endif
