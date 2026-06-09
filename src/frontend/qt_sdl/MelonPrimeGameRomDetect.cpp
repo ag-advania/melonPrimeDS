@@ -11,46 +11,87 @@
 
 namespace MelonPrime {
 
-    COLD_FUNCTION void MelonPrimeCore::DetectRomAndSetAddresses()
-    {
-        struct RomInfo {
-            uint32_t    checksum;
-            const char* name;
-            RomGroup    group;
+    namespace {
+        // -------------------------------------------------------------------------
+        //  Detection is hybrid:
+        //
+        //  1. PRIMARY — full checksum (header + ARM9 + ARM7 CRC32, computed once at
+        //     ROM load). When it matches a known entry the RomGroup is authoritative,
+        //     so every shipped revision/variant (e.g. EU1.0 vs EU1.1, whose in-RAM
+        //     layouts differ by 0x80) selects the correct address table regardless of
+        //     what the header revision byte happens to contain.
+        //
+        //  2. FALLBACK — NDS header gameCode (@0x0C) + revision (@0x1E), used only
+        //     when the checksum is unrecognized (trimmed / modified / brand-new dump).
+        //     gameCode->region is authoritative (confirmed against MphRead's version
+        //     table: AMHE=USA, AMHP=EUR, AMHJ=JPN, AMHK=KOR). The revision byte is the
+        //     No-Intro rev convention and is only directly verified for a subset of
+        //     dumps, which is exactly why it is the fallback rather than the primary.
+        // -------------------------------------------------------------------------
+
+        // PRIMARY table: checksum -> authoritative RomGroup + exact OSD label.
+        struct ChecksumEntry { uint32_t checksum; RomGroup group; const char* name; };
+        constexpr ChecksumEntry CHECKSUM_TABLE[] = {
+            { RomVersions::US1_1,                  RomGroup::US1_1, "US1.1" },
+            { RomVersions::US1_1_ENCRYPTED,        RomGroup::US1_1, "US1.1 ENCRYPTED" },
+            { RomVersions::US1_0,                  RomGroup::US1_0, "US1.0" },
+            { RomVersions::US1_0_ENCRYPTED,        RomGroup::US1_0, "US1.0 ENCRYPTED" },
+            { RomVersions::EU1_1,                  RomGroup::EU1_1, "EU1.1" },
+            { RomVersions::EU1_1_ENCRYPTED,        RomGroup::EU1_1, "EU1.1 ENCRYPTED" },
+            { RomVersions::EU1_1_BALANCED,         RomGroup::EU1_1, "EU1.1 BALANCED" },
+            { RomVersions::EU1_1_BALANCED_V1_2_11, RomGroup::EU1_1, "EU1.1 BALANCED V1.2.11" },
+            { RomVersions::EU1_1_RUSSIANED,        RomGroup::EU1_1, "EU1.1 RUSSIANED" },
+            { RomVersions::EU1_0,                  RomGroup::EU1_0, "EU1.0" },
+            { RomVersions::EU1_0_ENCRYPTED,        RomGroup::EU1_0, "EU1.0 ENCRYPTED" },
+            { RomVersions::JP1_0,                  RomGroup::JP1_0, "JP1.0" },
+            { RomVersions::JP1_0_ENCRYPTED,        RomGroup::JP1_0, "JP1.0 ENCRYPTED" },
+            { RomVersions::JP1_1,                  RomGroup::JP1_1, "JP1.1" },
+            { RomVersions::JP1_1_ENCRYPTED,        RomGroup::JP1_1, "JP1.1 ENCRYPTED" },
+            { RomVersions::KR1_0,                  RomGroup::KR1_0, "KR1.0" },
+            { RomVersions::KR1_0_ENCRYPTED,        RomGroup::KR1_0, "KR1.0 ENCRYPTED" },
         };
 
-        static const std::array<RomInfo, 17> ROM_INFO_TABLE = { {
-            { RomVersions::US1_1,           "US1.1",           RomGroup::US1_1 },
-            { RomVersions::US1_1_ENCRYPTED, "US1.1 ENCRYPTED", RomGroup::US1_1 },
-            { RomVersions::US1_0,           "US1.0",           RomGroup::US1_0 },
-            { RomVersions::US1_0_ENCRYPTED, "US1.0 ENCRYPTED", RomGroup::US1_0 },
-            { RomVersions::EU1_1,           "EU1.1",           RomGroup::EU1_1 },
-            { RomVersions::EU1_1_ENCRYPTED, "EU1.1 ENCRYPTED", RomGroup::EU1_1 },
-            { RomVersions::EU1_1_BALANCED,  "EU1.1 BALANCED",  RomGroup::EU1_1 },
-            { RomVersions::EU1_1_BALANCED_V1_2_11, "EU1.1 BALANCED V1.2.11", RomGroup::EU1_1 },
-            { RomVersions::EU1_1_RUSSIANED, "EU1.1 RUSSIANED", RomGroup::EU1_1 },
-            { RomVersions::EU1_0,           "EU1.0",           RomGroup::EU1_0 },
-            { RomVersions::EU1_0_ENCRYPTED, "EU1.0 ENCRYPTED", RomGroup::EU1_0 },
-            { RomVersions::JP1_0,           "JP1.0",           RomGroup::JP1_0 },
-            { RomVersions::JP1_0_ENCRYPTED, "JP1.0 ENCRYPTED", RomGroup::JP1_0 },
-            { RomVersions::JP1_1,           "JP1.1",           RomGroup::JP1_1 },
-            { RomVersions::JP1_1_ENCRYPTED, "JP1.1 ENCRYPTED", RomGroup::JP1_1 },
-            { RomVersions::KR1_0,           "KR1.0",           RomGroup::KR1_0 },
-            { RomVersions::KR1_0_ENCRYPTED, "KR1.0 ENCRYPTED", RomGroup::KR1_0 },
-        } };
+        // FALLBACK: header gameCode + revision -> RomGroup.
+        struct HeaderMatch { bool matched; RomGroup group; const char* baseName; };
 
-        const RomInfo* romInfo = nullptr;
-        for (const auto& info : ROM_INFO_TABLE) {
-            if (globalChecksum == info.checksum) {
-                romInfo = &info;
-                break;
+        HeaderMatch MapHeaderToRomGroup(uint32_t gameCode, uint8_t romVersion) {
+            const bool rev1 = (romVersion != 0);
+            switch (gameCode) {
+            case MphGameCode::US: return { true, rev1 ? RomGroup::US1_1 : RomGroup::US1_0, rev1 ? "US1.1" : "US1.0" };
+            case MphGameCode::EU: return { true, rev1 ? RomGroup::EU1_1 : RomGroup::EU1_0, rev1 ? "EU1.1" : "EU1.0" };
+            case MphGameCode::JP: return { true, rev1 ? RomGroup::JP1_1 : RomGroup::JP1_0, rev1 ? "JP1.1" : "JP1.0" };
+            case MphGameCode::KR: return { true, RomGroup::KR1_0, "KR1.0" };
+            default:              return { false, RomGroup::JP1_0, "Unknown" };
             }
         }
+    } // namespace
 
-        if (!romInfo) return;
+    COLD_FUNCTION void MelonPrimeCore::DetectRomAndSetAddresses()
+    {
+        RomGroup    group;
+        const char* osdName;
+        bool        isVariant = false;  // true => matched by header fallback, not checksum
+
+        // --- 1. Primary: authoritative checksum match ---
+        const ChecksumEntry* hit = nullptr;
+        for (const auto& e : CHECKSUM_TABLE) {
+            if (globalChecksum == e.checksum) { hit = &e; break; }
+        }
+
+        if (hit) {
+            group   = hit->group;
+            osdName = hit->name;
+        } else {
+            // --- 2. Fallback: NDS header gameCode + revision ---
+            const HeaderMatch hm = MapHeaderToRomGroup(globalGameCode, globalRomVersion);
+            if (!hm.matched) return;  // not an MPH ROM
+            group     = hm.group;
+            osdName   = hm.baseName;
+            isVariant = true;
+        }
 
         // Copy the full address set for this ROM variant
-        m_currentRom = *getRomAddrsPtr(romInfo->group);
+        m_currentRom = *getRomAddrsPtr(group);
 
         // --- Initialize hot addresses from base values ---
         auto& hot = m_addrHot;
@@ -96,7 +137,13 @@ namespace MelonPrime {
 #endif
 
         char message[256];
-        snprintf(message, sizeof(message), "MPH Rom Detected: %s", romInfo->name);
+        if (isVariant) {
+            // Known region/revision but an unrecognized binary (mod / trim / new dump).
+            snprintf(message, sizeof(message),
+                "MPH Rom Detected: %s (variant, CRC 0x%08X)", osdName, globalChecksum);
+        } else {
+            snprintf(message, sizeof(message), "MPH Rom Detected: %s", osdName);
+        }
         emuInstance->osdAddMessage(0, message);
 
         RecalcAimSensitivityCache(localCfg);
