@@ -661,10 +661,6 @@ MainWindow::MainWindow(int id, EmuInstance* inst, QWidget* parent) :
 
             menu->addSeparator();
 
-            actMetroidFixSF = menu->addAction("Disable SF (Shadow Freeze)");
-            actMetroidFixSF->setCheckable(true);
-            connect(actMetroidFixSF, &QAction::triggered, this, &MainWindow::onChangeMetroidFixSF);
-
             actMetroidInGameTopScreenOnly = menu->addAction("In-Game Top Screen Only");
             actMetroidInGameTopScreenOnly->setCheckable(true);
             connect(
@@ -672,6 +668,10 @@ MainWindow::MainWindow(int id, EmuInstance* inst, QWidget* parent) :
                 &QAction::triggered,
                 this,
                 &MainWindow::onChangeMetroidInGameTopScreenOnly);
+
+            actMetroidFixSF = menu->addAction("Disable SF (Shadow Freeze)");
+            actMetroidFixSF->setCheckable(true);
+            connect(actMetroidFixSF, &QAction::triggered, this, &MainWindow::onChangeMetroidFixSF);
 
             actMetroidDisableDoubleDamageMultiplier = menu->addAction("Disable Double Damage Multiplier");
             actMetroidDisableDoubleDamageMultiplier->setCheckable(true);
