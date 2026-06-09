@@ -268,6 +268,7 @@ struct HudRuntimeState {
     bool isAlt;
     bool isTrans;
     bool isAdventure;
+    bool isMapOrUserActionPaused;
 };
 
 static inline QRect OverlayRectFor(const QImage* topBuffer)
@@ -372,6 +373,14 @@ static bool ReadHudRuntimeBaseState(EmuInstance* emu,
     return true;
 }
 
+static void ReadHudRuntimeAdventurePauseState(const RomAddresses& rom,
+                                             HudRuntimeState& out)
+{
+    out.isAdventure = Read8(out.ram, rom.isInAdventure) == 0x02;
+    out.isMapOrUserActionPaused = out.isAdventure &&
+        Read8(out.ram, rom.isMapOrUserActionPaused) == 0x01;
+}
+
 static void ReadHudRuntimeVisibleState(const RomAddresses& rom,
                                        const GameAddressesHot& addrHot,
                                        HudRuntimeState& out)
@@ -389,7 +398,6 @@ static void ReadHudRuntimeVisibleState(const RomAddresses& rom,
     out.isFirstPerson = isFirstPerson;
     out.isAlt = Read8(ram, addrHot.isAltForm) == 0x02;
     out.isTrans = isFirstPerson && (Read8(ram, addrHot.jumpFlag) & 0x10) != 0;
-    out.isAdventure = Read8(ram, rom.isInAdventure) == 0x02;
 }
 
 static void DrawMatchStatusText(QPainter* p, const QFontMetrics& fm, int fontPixelSize, float tds,
@@ -601,9 +609,16 @@ bool CustomHud_IsEnabled(Config::Table& localCfg)
     return localCfg.GetBool(kCfgCustomHud);
 }
 
-static inline bool ShouldHideForGameplayState(bool isStartPressed, uint16_t currentHP, bool isGameOver)
+static inline bool ShouldHideForGameplayState(bool isStartPressed,
+                                             uint16_t currentHP,
+                                             bool isGameOver,
+                                             bool isAdventure,
+                                             bool isMapOrUserActionPaused)
 {
-    return isStartPressed || currentHP == 0 || isGameOver;
+    return isStartPressed ||
+           (isAdventure && isMapOrUserActionPaused) ||
+           currentHP == 0 ||
+           isGameOver;
 }
 
 bool CustomHud_ShouldHideForGameplayState(EmuInstance* emu, const RomAddresses& rom, uint8_t playerPosition)
@@ -615,9 +630,17 @@ bool CustomHud_ShouldHideForGameplayState(EmuInstance* emu, const RomAddresses& 
     if (!ram) return true;
 
     const uint32_t offP = static_cast<uint32_t>(playerPosition) * Consts::PLAYER_ADDR_INC;
-    return ShouldHideForGameplayState(Read8(ram, rom.startPressed) == 0x01,
-                                      Read16(ram, rom.playerHP + offP),
-                                      Read8(ram, rom.gameOver) != 0x00);
+    const bool isStartPressed = Read8(ram, rom.startPressed) == 0x01;
+    const uint16_t currentHP = Read16(ram, rom.playerHP + offP);
+    const bool isGameOver = Read8(ram, rom.gameOver) != 0x00;
+    if (isStartPressed || currentHP == 0 || isGameOver)
+        return true;
+
+    const bool isAdventure = Read8(ram, rom.isInAdventure) == 0x02;
+    if (!isAdventure)
+        return false;
+
+    return Read8(ram, rom.isMapOrUserActionPaused) == 0x01;
 }
 
 bool CustomHud_ShouldDrawRadarOverlay(EmuInstance* emu, const RomAddresses& rom, uint8_t playerPosition)

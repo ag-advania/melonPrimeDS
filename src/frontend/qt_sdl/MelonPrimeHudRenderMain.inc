@@ -72,7 +72,14 @@ HOT_FUNCTION QRect CustomHud_Render(
         return QRect();
     }
 
-    if (ShouldHideForGameplayState(st.isStartPressed, st.currentHP, st.isGameOver)) {
+    if (!st.isStartPressed && st.currentHP != 0 && !st.isGameOver)
+        ReadHudRuntimeAdventurePauseState(rom, st);
+
+    if (ShouldHideForGameplayState(st.isStartPressed,
+                                   st.currentHP,
+                                   st.isGameOver,
+                                   st.isAdventure,
+                                   st.isMapOrUserActionPaused)) {
         // Per-element patches NOP individual ARM draw instructions, so the
         // start menu / death / game-over screens are unaffected by them — no
         // need to restore patches just because we're skipping our own overlay
