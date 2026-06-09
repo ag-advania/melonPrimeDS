@@ -6,7 +6,9 @@
 namespace MelonPrime {
 
     // Global state (set by EmuInstance)
-    extern uint32_t globalChecksum;
+    extern uint32_t globalChecksum;    // header + ARM9 + ARM7 CRC32 (variant label / fallback)
+    extern uint32_t globalGameCode;    // NDS header gameCode @0x0C, packed via GameCodeAsU32()
+    extern uint8_t  globalRomVersion;  // NDS header ROM revision @0x1E (0 = 1.0, 1 = 1.1)
     extern bool isRomDetected;
 
     // =========================================================================
@@ -115,6 +117,17 @@ namespace MelonPrime {
         constexpr uint32_t KR1_0_ENCRYPTED = 0xC26916F3;
         constexpr uint32_t US1_1_ENCRYPTED = 0x01476E8F;
         constexpr uint32_t US1_0_ENCRYPTED = 0xE048CD92;
+    }
+
+    // NDS header gameCode (offset 0x0C) packed by NDSHeader::GameCodeAsU32(),
+    // i.e. GameCode[0] | [1]<<8 | [2]<<16 | [3]<<24. MPH region codes are "AMHx".
+    // This is the primary ROM-version selector; the checksum above only refines
+    // the on-screen variant label (BALANCED / RUSSIANED / ENCRYPTED, etc.).
+    namespace MphGameCode {
+        constexpr uint32_t US = 0x45484D41; // "AMHE"
+        constexpr uint32_t EU = 0x50484D41; // "AMHP"
+        constexpr uint32_t JP = 0x4A484D41; // "AMHJ"
+        constexpr uint32_t KR = 0x4B484D41; // "AMHK"
     }
 
 } // namespace MelonPrime
