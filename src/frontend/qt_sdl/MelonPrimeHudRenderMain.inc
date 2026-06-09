@@ -72,6 +72,9 @@ HOT_FUNCTION QRect CustomHud_Render(
         return QRect();
     }
 
+    if (!st.isStartPressed && st.currentHP != 0 && !st.isGameOver)
+        ReadHudRuntimeAdventurePauseState(rom, st);
+
     if (ShouldHideForGameplayState(st.isStartPressed,
                                    st.currentHP,
                                    st.isGameOver,
