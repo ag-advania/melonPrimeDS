@@ -177,6 +177,7 @@ inline constexpr Translation kTranslations[] = {
     {"Input settings", "入力設定"},
     {"Other settings", "その他の設定"},
     {"Disable SF (Shadow Freeze)", "SF (シャドウフリーズ) を無効化"},
+    {"In-Game Top Screen Only", "ゲーム中は上画面のみ"},
     {"Help", "ヘルプ"},
     {"About...", "このアプリについて..."},
     {"Clear", "履歴を消去"},
