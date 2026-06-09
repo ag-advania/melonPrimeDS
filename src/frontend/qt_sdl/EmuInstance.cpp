@@ -54,6 +54,8 @@
 
 namespace MelonPrime {
     uint32_t globalChecksum = 0;
+    uint32_t globalGameCode = 0;
+    uint8_t  globalRomVersion = 0;
     bool isRomDetected = false;
 }
 #endif // MELONPRIME_DS
@@ -1987,35 +1989,31 @@ bool EmuInstance::loadROM(QStringList filepath, bool reset, QString& errorstr)
         return false;
     }
 
-    // MelonPrimeDS: ROM checksum detection
+    // MelonPrimeDS: ROM version detection
 #ifdef MELONPRIME_DS
-    MelonPrime::globalChecksum = cart->Checksum();
-    MelonPrime::isRomDetected = false;
+    {
+        // Primary key: NDS header gameCode (@0x0C) + ROM revision (@0x1E). The
+        // plaintext header is present even on encrypted dumps, so this selects the
+        // address table for every variant. The checksum is captured only so the
+        // detect message can show the exact variant (BALANCED / RUSSIANED / etc.).
+        const auto& mphHeader = cart->GetHeader();
+        MelonPrime::globalGameCode   = mphHeader.GameCodeAsU32();
+        MelonPrime::globalRomVersion = mphHeader.ROMVersion;
+        MelonPrime::globalChecksum   = cart->Checksum();
+        MelonPrime::isRomDetected    = false;
 
-    switch (MelonPrime::globalChecksum) {
-    case MelonPrime::RomVersions::US1_0:
-    case MelonPrime::RomVersions::US1_1:
-    case MelonPrime::RomVersions::EU1_0:
-    case MelonPrime::RomVersions::EU1_1:
-    case MelonPrime::RomVersions::JP1_0:
-    case MelonPrime::RomVersions::JP1_1:
-    case MelonPrime::RomVersions::KR1_0:
-    case MelonPrime::RomVersions::EU1_1_BALANCED:
-    case MelonPrime::RomVersions::EU1_1_BALANCED_V1_2_11:
-    case MelonPrime::RomVersions::EU1_1_RUSSIANED:
-    case MelonPrime::RomVersions::US1_0_ENCRYPTED:
-    case MelonPrime::RomVersions::US1_1_ENCRYPTED:
-    case MelonPrime::RomVersions::EU1_0_ENCRYPTED:
-    case MelonPrime::RomVersions::EU1_1_ENCRYPTED:
-    case MelonPrime::RomVersions::JP1_0_ENCRYPTED:
-    case MelonPrime::RomVersions::JP1_1_ENCRYPTED:
-    case MelonPrime::RomVersions::KR1_0_ENCRYPTED:
-        break;
-    default:
-        char message[256];
-        sprintf(message, "Unknown ROM (Checksum: 0x%08X). Please make sure to use the untrimmed and unmodified Metroid Prime Hunters ROM which is not encrypted.", MelonPrime::globalChecksum);
-        osdAddMessage(0xFFA0A0, message);
-        break;
+        switch (MelonPrime::globalGameCode) {
+        case MelonPrime::MphGameCode::US:
+        case MelonPrime::MphGameCode::EU:
+        case MelonPrime::MphGameCode::JP:
+        case MelonPrime::MphGameCode::KR:
+            break; // recognized Metroid Prime Hunters ROM
+        default:
+            char message[256];
+            sprintf(message, "Unknown ROM (GameCode: %.4s, Checksum: 0x%08X). Please make sure to use a Metroid Prime Hunters ROM.", mphHeader.GameCode, MelonPrime::globalChecksum);
+            osdAddMessage(0xFFA0A0, message);
+            break;
+        }
     }
 #endif // MELONPRIME_DS
 

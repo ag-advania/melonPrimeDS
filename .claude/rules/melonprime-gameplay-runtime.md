@@ -17,7 +17,11 @@ It focuses on in-game flow, weapon/morph handling, gameplay setting application,
 
 ## 2. ROM Detection and Address Resolution
 
-- `DetectRomAndSetAddresses()` (`src/frontend/qt_sdl/MelonPrimeGameRomDetect.cpp`) matches `globalChecksum` against the ROM table.
+- `DetectRomAndSetAddresses()` (`src/frontend/qt_sdl/MelonPrimeGameRomDetect.cpp`) selects the `RomGroup` using a **hybrid** scheme:
+  1. **Primary — checksum (authoritative).** `globalChecksum` (header + ARM9 + ARM7 CRC32, computed once at ROM load in `EmuInstance.cpp`) is matched against `CHECKSUM_TABLE`. A hit picks the `RomGroup` directly, so every shipped revision/variant — including EU1.0 vs EU1.1, whose in-RAM layouts differ by ~0x80 — selects the correct address table regardless of the header revision byte.
+  2. **Fallback — NDS header.** When the checksum is unrecognized (trimmed / modified / brand-new dump), it falls back to `MapHeaderToRomGroup(globalGameCode, globalRomVersion)`: gameCode `@0x0C` (`AMHE`=US, `AMHP`=EU, `AMHJ`=JP, `AMHK`=KR) + revision `@0x1E` (0 → x1.0, non-0 → x1.1). The OSD message tags these as `"<name> (variant, CRC 0x........)"`.
+- `globalGameCode` / `globalRomVersion` are captured from `cart->GetHeader()` at ROM load alongside `globalChecksum`. The `MphGameCode::*` constants live in `MelonPrimeDef.h`. The load-time "Unknown ROM" warning (`EmuInstance.cpp`) is gameCode-based — a known MPH gameCode with an unknown checksum still detects via the fallback.
+- gameCode→region mapping is confirmed against MphRead's version table; MphRead does **not** auto-derive the revision from `@0x1E` (it takes the version as a manual label), which is why the header revision is the fallback, not the primary, key.
 - On match, it copies `RomAddresses` into `m_currentRom`.
 - It initializes hot addresses in `m_addrHot` and resolves `m_ptrs.inGame` early.
 - It also recalculates aim sensitivity caches after detection.
