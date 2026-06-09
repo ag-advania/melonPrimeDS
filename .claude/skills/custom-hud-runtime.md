@@ -58,6 +58,7 @@ Icon caches are loaded lazily inside `DrawWeaponAmmo()` / `DrawBombLeft()` via `
 ### HUD hide rules
 `CustomHud_ShouldHideForGameplayState()` currently hides the HUD when:
 - START is pressed
+- Adventure map/user-action pause is active
 - player HP is zero
 - game-over flag is active
 
