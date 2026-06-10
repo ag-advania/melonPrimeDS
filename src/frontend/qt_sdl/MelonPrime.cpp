@@ -252,22 +252,11 @@ namespace MelonPrime {
 #ifdef MELONPRIME_DS
         m_weaponSwitchPending.Clear();
         ARM9Hook_Uninstall(emuInstance->getNDS());
-        InstantAimFollow_RestoreOnce(emuInstance->getNDS(), m_currentRom.romGroupIndex);
-        ShowHeadshotOnline_RestoreOnce(emuInstance->getNDS(), m_currentRom.romGroupIndex);
-        ShowEnemyHpMeterOnline_RestoreOnce(emuInstance->getNDS(), m_currentRom.romGroupIndex);
-        DisableDoubleDamageMultiplier_RestoreOnce(emuInstance->getNDS(), m_currentRom.romGroupIndex);
-        NoPickingUpSpecificItems_RestoreOnce(emuInstance->getNDS(), m_currentRom.romGroupIndex);
-        InGameAspectRatio_ResetPatchState();
-        OsdColor_ResetPatchState();
-        FixWifi_ResetPatchState();
-        LowHpWarning_ResetPatchState();
-        UseFirmwareLanguage_ResetPatchState();
-        ShowHeadshotOnline_ResetPatchState();
-        ShowEnemyHpMeterOnline_ResetPatchState();
-        DisableDoubleDamageMultiplier_ResetPatchState();
-        NoPickingUpSpecificItems_ResetPatchState();
-        InstantAimFollow_ResetPatchState();
-        ExpandStageMatrix_ResetPatchState();
+        {
+            const PatchCtx ctx{ emuInstance->getNDS(), emuInstance, localCfg, m_currentRom };
+            Patches_RestoreOnStop(ctx);
+        }
+        Patches_ResetAll();
         ARM9Hook_ResetPatchState();
 #endif
 
@@ -298,17 +287,8 @@ namespace MelonPrime {
 #ifdef MELONPRIME_DS
         m_weaponSwitchPending.Clear();
         ARM9Hook_Uninstall(emuInstance->getNDS());
-        InGameAspectRatio_ResetPatchState();
-        OsdColor_ResetPatchState();
-        FixWifi_ResetPatchState();
-        LowHpWarning_ResetPatchState();
-        UseFirmwareLanguage_ResetPatchState();
-        ShowHeadshotOnline_ResetPatchState();
-        ShowEnemyHpMeterOnline_ResetPatchState();
-        DisableDoubleDamageMultiplier_ResetPatchState();
-        NoPickingUpSpecificItems_ResetPatchState();
-        InstantAimFollow_ResetPatchState();
-        ExpandStageMatrix_ResetPatchState();
+        // boot reset: state only, no RAM restore (emu memory is being re-initialized)
+        Patches_ResetAll();
         ARM9Hook_ResetPatchState();
 #endif
 
@@ -339,22 +319,11 @@ namespace MelonPrime {
 #ifdef MELONPRIME_DS
         m_weaponSwitchPending.Clear();
         ARM9Hook_Uninstall(emuInstance->getNDS());
-        InstantAimFollow_RestoreOnce(emuInstance->getNDS(), m_currentRom.romGroupIndex);
-        ShowHeadshotOnline_RestoreOnce(emuInstance->getNDS(), m_currentRom.romGroupIndex);
-        ShowEnemyHpMeterOnline_RestoreOnce(emuInstance->getNDS(), m_currentRom.romGroupIndex);
-        DisableDoubleDamageMultiplier_RestoreOnce(emuInstance->getNDS(), m_currentRom.romGroupIndex);
-        NoPickingUpSpecificItems_RestoreOnce(emuInstance->getNDS(), m_currentRom.romGroupIndex);
-        InGameAspectRatio_ResetPatchState();
-        OsdColor_ResetPatchState();
-        FixWifi_ResetPatchState();
-        LowHpWarning_ResetPatchState();
-        UseFirmwareLanguage_ResetPatchState();
-        ShowHeadshotOnline_ResetPatchState();
-        ShowEnemyHpMeterOnline_ResetPatchState();
-        DisableDoubleDamageMultiplier_ResetPatchState();
-        NoPickingUpSpecificItems_ResetPatchState();
-        InstantAimFollow_ResetPatchState();
-        ExpandStageMatrix_ResetPatchState();
+        {
+            const PatchCtx ctx{ emuInstance->getNDS(), emuInstance, localCfg, m_currentRom };
+            Patches_RestoreOnStop(ctx);
+        }
+        Patches_ResetAll();
         ARM9Hook_ResetPatchState();
 #endif
     }
@@ -415,11 +384,8 @@ namespace MelonPrime {
                 localCfg,
                 m_currentRom.romGroupIndex,
                 this);
-            InstantAimFollow_ApplyOnce(nds, localCfg, m_currentRom.romGroupIndex);
-            ShowHeadshotOnline_ApplyOnce(nds, localCfg, m_currentRom.romGroupIndex);
-            ShowEnemyHpMeterOnline_ApplyOnce(nds, localCfg, m_currentRom.romGroupIndex);
-            DisableDoubleDamageMultiplier_ApplyOnce(nds, localCfg, m_currentRom.romGroupIndex);
-            NoPickingUpSpecificItems_ApplyOnce(nds, localCfg, m_currentRom.romGroupIndex);
+            const PatchCtx ctx{ nds, emuInstance, localCfg, m_currentRom };
+            Patches_Apply(PatchSite_ConfigReload, ctx);
         }
 #endif
     }
@@ -540,6 +506,7 @@ namespace MelonPrime {
             }
 
             if (LIKELY(isInGame)) {
+                // Per-frame re-evaluation (varies with game state) — intentionally bypasses the patch registry.
                 OsdColor_ApplyOnce(emuInstance, localCfg, m_currentRom);
                 // Damage Notify Purple — runs whether or not the window is focused
                 // so HP drops during alt-tab still emit the purple flash.
@@ -558,13 +525,12 @@ namespace MelonPrime {
 #endif
 #ifdef MELONPRIME_DS
                 m_weaponSwitchPending.Clear();
-                InstantAimFollow_RestoreOnce(emuInstance->getNDS(), m_currentRom.romGroupIndex);
-                ShowHeadshotOnline_RestoreOnce(emuInstance->getNDS(), m_currentRom.romGroupIndex);
-                ShowEnemyHpMeterOnline_RestoreOnce(emuInstance->getNDS(), m_currentRom.romGroupIndex);
-                DisableDoubleDamageMultiplier_RestoreOnce(emuInstance->getNDS(), m_currentRom.romGroupIndex);
-                NoPickingUpSpecificItems_RestoreOnce(emuInstance->getNDS(), m_currentRom.romGroupIndex);
+                // Covers OsdColor too (previously an unguarded standalone call here).
+                {
+                    const PatchCtx ctx{ emuInstance->getNDS(), emuInstance, localCfg, m_currentRom };
+                    Patches_RestoreOnLeave(ctx);
+                }
 #endif
-                OsdColor_RestoreOnce(emuInstance->getNDS(), m_currentRom);
             }
 
             if (focused) {
@@ -579,10 +545,10 @@ namespace MelonPrime {
                     SetAimBlockBranchless(AIMBLK_NOT_IN_GAME, true);
 #ifdef MELONPRIME_DS
                     {
-                        melonDS::NDS* const nds = emuInstance->getNDS();
-                        FixWifi_ApplyOnce(nds, localCfg, m_currentRom.romGroupIndex);
-                        UseFirmwareLanguage_ApplyOnce(nds, localCfg, m_currentRom.romGroupIndex, m_currentRom.isInAdventure);
-                        ExpandStageMatrix_ApplyIfLoaded(nds, localCfg, m_currentRom.romGroupIndex);
+                        // Per-frame menu site (cold path): a tight masked loop
+                        // over the registry; matching entries self-guard.
+                        const PatchCtx ctx{ emuInstance->getNDS(), emuInstance, localCfg, m_currentRom };
+                        Patches_Apply(PatchSite_OutOfGameFrame, ctx);
                     }
 #endif
                     ApplyGameSettingsOnce();
@@ -754,29 +720,10 @@ namespace MelonPrime {
 
 #ifdef MELONPRIME_DS
         // Apply patches that need game-join context (player struct resolved)
-        InGameAspectRatio_ApplyOnce(emuInstance, localCfg, m_currentRom);
-        OsdColor_ApplyOnce(emuInstance, localCfg, m_currentRom);
-        LowHpWarning_ApplyOnce(emuInstance->getNDS(), localCfg, m_currentRom.romGroupIndex);
-        InstantAimFollow_ApplyOnce(
-            emuInstance->getNDS(),
-            localCfg,
-            m_currentRom.romGroupIndex);
-        ShowHeadshotOnline_ApplyOnce(
-            emuInstance->getNDS(),
-            localCfg,
-            m_currentRom.romGroupIndex);
-        ShowEnemyHpMeterOnline_ApplyOnce(
-            emuInstance->getNDS(),
-            localCfg,
-            m_currentRom.romGroupIndex);
-        DisableDoubleDamageMultiplier_ApplyOnce(
-            emuInstance->getNDS(),
-            localCfg,
-            m_currentRom.romGroupIndex);
-        NoPickingUpSpecificItems_ApplyOnce(
-            emuInstance->getNDS(),
-            localCfg,
-            m_currentRom.romGroupIndex);
+        {
+            const PatchCtx ctx{ emuInstance->getNDS(), emuInstance, localCfg, m_currentRom };
+            Patches_Apply(PatchSite_GameJoin, ctx);
+        }
 #endif
 #ifdef MELONPRIME_CUSTOM_HUD
         // Cache battle settings for HUD display

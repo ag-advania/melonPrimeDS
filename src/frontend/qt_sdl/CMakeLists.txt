@@ -97,6 +97,7 @@ set(SOURCES_QT_SDL
     MelonPrimePatchInstantAimFollow.cpp
     MelonPrimePatchExpandStageMatrix.cpp
     MelonPrimePatchLowHpWarning.cpp
+    MelonPrimePatchRegistry.cpp
     MelonPrimeArm9Hook.cpp
 
 
