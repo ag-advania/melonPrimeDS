@@ -87,6 +87,8 @@ namespace MelonPrime {
         return weaponId == PowerBeam || weaponId == Missile || weaponId == OmegaCannon;
     }
 
+    constexpr uint32_t kPlayerDamageGuardInvincibilityOffset = 0xE1u;
+
     COLD_FUNCTION void ShowOmegaWeaponSwitchBlockedMessage(EmuInstance* emuInstance)
     {
         emuInstance->osdAddMessage(0, "You can't switch to that weapon while Omega Cannon is active!");
@@ -387,6 +389,16 @@ namespace MelonPrime {
 #ifdef MELONPRIME_DS
         if (m_enableNativeWeaponSwitch) {
             melonDS::NDS* const nds = emuInstance->getNDS();
+            const uint32_t playerBase =
+                m_currentRom.playerStructStart
+                + static_cast<uint32_t>(m_playerPosition) * Consts::PLAYER_ADDR_INC;
+            if (UNLIKELY(m_flags.test(StateFlags::BIT_IN_GAME_INIT)
+                && Read8(nds->MainRAM, playerBase + kPlayerDamageGuardInvincibilityOffset) != 0))
+            {
+                m_weaponSwitchPending.Clear();
+                return SwitchWeaponLegacyTouchFallback(weaponId);
+            }
+
             const uint8_t romIdx = m_currentRom.romGroupIndex;
             if (WeaponSwitchHook_IsRomSupported(romIdx)
                 && WeaponSwitchHook_IsSiteValid(nds, romIdx))
