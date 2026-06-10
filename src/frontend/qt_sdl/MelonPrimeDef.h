@@ -85,6 +85,7 @@ namespace MelonPrime {
         inline constexpr uint8_t Magmaul     = 6;
         inline constexpr uint8_t ShockCoil   = 7;
         inline constexpr uint8_t OmegaCannon = 8;
+        inline constexpr uint8_t None        = 0xFF; // sentinel: no weapon
     }
 
     namespace WeaponMask {
@@ -99,25 +100,9 @@ namespace MelonPrime {
         inline constexpr uint16_t OmegaCannon  = static_cast<uint16_t>(1u << WeaponId::OmegaCannon);
     }
 
-    namespace RomVersions {
-        constexpr uint32_t US1_0           = 0x218DA42C;
-        constexpr uint32_t US1_1           = 0x91B46577;
-        constexpr uint32_t EU1_0           = 0xA4A8FE5A;
-        constexpr uint32_t EU1_1           = 0x910018A5;
-        constexpr uint32_t EU1_1_BALANCED  = 0x948B1E48;
-        constexpr uint32_t EU1_1_BALANCED_V1_2_11 = 0x2970A14F;
-        constexpr uint32_t EU1_1_RUSSIANED = 0x9E20F3A8;
-        constexpr uint32_t JP1_0           = 0xD75F539D;
-        constexpr uint32_t JP1_1           = 0x42EBF348;
-        constexpr uint32_t KR1_0           = 0xE54682F3;
-        constexpr uint32_t EU1_1_ENCRYPTED = 0x31703770;
-        constexpr uint32_t EU1_0_ENCRYPTED = 0x979BB267;
-        constexpr uint32_t JP1_1_ENCRYPTED = 0x0A1203A5;
-        constexpr uint32_t JP1_0_ENCRYPTED = 0xE795A10C;
-        constexpr uint32_t KR1_0_ENCRYPTED = 0xC26916F3;
-        constexpr uint32_t US1_1_ENCRYPTED = 0x01476E8F;
-        constexpr uint32_t US1_0_ENCRYPTED = 0xE048CD92;
-    }
+    // ROM checksum literals previously lived here in `namespace RomVersions`.
+    // They are now inlined directly into CHECKSUM_TABLE in
+    // MelonPrimeGameRomDetect.cpp (single source of truth).
 
     // NDS header gameCode (offset 0x0C) packed by NDSHeader::GameCodeAsU32(),
     // i.e. GameCode[0] | [1]<<8 | [2]<<16 | [3]<<24. MPH region codes are "AMHx".
