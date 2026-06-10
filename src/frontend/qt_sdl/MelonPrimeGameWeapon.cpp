@@ -14,18 +14,9 @@ namespace MelonPrime {
 
     namespace WeaponData {
 
-        enum ID : uint8_t {
-            POWER_BEAM   = 0,
-            VOLT_DRIVER  = 1,
-            MISSILE      = 2,
-            BATTLEHAMMER = 3,
-            IMPERIALIST  = 4,
-            JUDICATOR    = 5,
-            MAGMAUL      = 6,
-            SHOCK_COIL   = 7,
-            OMEGA_CANNON = 8,
-            NONE         = 0xFF
-        };
+        // Weapon IDs and masks now live in MelonPrimeDef.h (WeaponId / WeaponMask).
+        // Pull them into this namespace so the existing local references resolve.
+        using namespace WeaponId;
 
         // Display names indexed by game-internal weapon ID (0-8).
         // NOTE: Game-internal IDs differ from the enum label names.
@@ -50,15 +41,15 @@ namespace MelonPrime {
         //   the masks/order correct but mismatched several minAmmo values, which
         //   changed the available-weapon set used by wheel / next / prev switching.
         constexpr std::array<Info, 9> ORDERED_WEAPONS = { {
-            { POWER_BEAM,    0x001, 0x00 }, // MIN_AMMO[0] = 0x00
-            { MISSILE,       0x004, 0x0A }, // MIN_AMMO[2] = 0x0A
-            { SHOCK_COIL,    0x080, 0x0A }, // MIN_AMMO[7] = 0x0A
-            { MAGMAUL,       0x040, 0x0A }, // MIN_AMMO[6] = 0x0A
-            { JUDICATOR,     0x020, 0x05 }, // MIN_AMMO[5] = 0x05
-            { IMPERIALIST,   0x010, 0x14 }, // MIN_AMMO[4] = 0x14
-            { BATTLEHAMMER,  0x008, 0x04 }, // MIN_AMMO[3] = 0x04 (Weavel: 0x05)
-            { VOLT_DRIVER,   0x002, 0x05 }, // MIN_AMMO[1] = 0x05
-            { OMEGA_CANNON,  0x100, 0x00 }  // MIN_AMMO[8] = 0x00
+            { PowerBeam,    WeaponMask::PowerBeam,    0x00 }, // MIN_AMMO[0] = 0x00
+            { Missile,      WeaponMask::Missile,      0x0A }, // MIN_AMMO[2] = 0x0A
+            { ShockCoil,    WeaponMask::ShockCoil,    0x0A }, // MIN_AMMO[7] = 0x0A
+            { Magmaul,      WeaponMask::Magmaul,      0x0A }, // MIN_AMMO[6] = 0x0A
+            { Judicator,    WeaponMask::Judicator,    0x05 }, // MIN_AMMO[5] = 0x05
+            { Imperialist,  WeaponMask::Imperialist,  0x14 }, // MIN_AMMO[4] = 0x14
+            { Battlehammer, WeaponMask::Battlehammer, 0x04 }, // MIN_AMMO[3] = 0x04 (Weavel: 0x05)
+            { VoltDriver,   WeaponMask::VoltDriver,   0x05 }, // MIN_AMMO[1] = 0x05
+            { OmegaCannon,  WeaponMask::OmegaCannon,  0x00 }  // MIN_AMMO[8] = 0x00
         } };
 
         constexpr uint64_t HOTKEY_BITS[] = {
@@ -68,8 +59,8 @@ namespace MelonPrime {
         };
 
         constexpr uint8_t HOTKEY_TO_ID[] = {
-            POWER_BEAM, MISSILE, SHOCK_COIL, MAGMAUL, JUDICATOR,
-            IMPERIALIST, BATTLEHAMMER, VOLT_DRIVER, NONE
+            PowerBeam, Missile, ShockCoil, Magmaul, Judicator,
+            Imperialist, Battlehammer, VoltDriver, None
         };
 
         // Weapon ID -> position in ORDERED_WEAPONS (constexpr LUT)
@@ -77,9 +68,9 @@ namespace MelonPrime {
 
         constexpr uint16_t kOmegaCannonOwnedBitMask = WeaponMask::OmegaCannon;
         constexpr uint16_t kOmegaRestrictedCycleBits =
-            static_cast<uint16_t>((1u << ID_TO_ORDERED_IDX[POWER_BEAM]) |
-                                  (1u << ID_TO_ORDERED_IDX[MISSILE]) |
-                                  (1u << ID_TO_ORDERED_IDX[OMEGA_CANNON]));
+            static_cast<uint16_t>((1u << ID_TO_ORDERED_IDX[PowerBeam]) |
+                                  (1u << ID_TO_ORDERED_IDX[Missile]) |
+                                  (1u << ID_TO_ORDERED_IDX[OmegaCannon]));
 
     } // namespace WeaponData
 
@@ -92,8 +83,8 @@ namespace MelonPrime {
 
     FORCE_INLINE bool IsWeaponAllowedWhileOmegaCannonActive(uint8_t weaponId)
     {
-        using namespace WeaponData;
-        return weaponId == POWER_BEAM || weaponId == MISSILE || weaponId == OMEGA_CANNON;
+        using namespace WeaponId;
+        return weaponId == PowerBeam || weaponId == Missile || weaponId == OmegaCannon;
     }
 
     COLD_FUNCTION void ShowOmegaWeaponSwitchBlockedMessage(EmuInstance* emuInstance)
@@ -111,19 +102,19 @@ namespace MelonPrime {
         using namespace WeaponData;
         constexpr const Info& info = ORDERED_WEAPONS[I];
 
-        if constexpr (info.id == POWER_BEAM) {
+        if constexpr (info.id == PowerBeam) {
             return (1u << I);
         }
-        else if constexpr (info.id == MISSILE) {
+        else if constexpr (info.id == Missile) {
             return (missileAmmo >= 0xA) ? (1u << I) : 0;
         }
-        else if constexpr (info.id == OMEGA_CANNON) {
+        else if constexpr (info.id == OmegaCannon) {
             return (having & info.mask) ? (1u << I) : 0;
         }
         else {
             if (!(having & info.mask)) return 0;
             uint8_t req = info.minAmmo;
-            if constexpr (info.id == BATTLEHAMMER) {
+            if constexpr (info.id == Battlehammer) {
                 if (isWeavel) req = 0x5;
             }
             return (weaponAmmo >= req) ? (1u << I) : 0;
@@ -267,7 +258,7 @@ namespace MelonPrime {
         // Special Weapon (Affinity) -- index 8
         if (UNLIKELY(firstSet == 8)) {
             if (isOmegaCannonFlagActive) {
-                const bool switched = SwitchWeapon(OMEGA_CANNON);
+                const bool switched = SwitchWeapon(OmegaCannon);
                 if (!switched) {
                     m_flags.clear(StateFlags::BIT_BLOCK_STYLUS);
                 }
@@ -298,7 +289,7 @@ namespace MelonPrime {
         }
 
         // Ownership check
-        const bool owned = (weaponID == POWER_BEAM || weaponID == MISSILE)
+        const bool owned = (weaponID == PowerBeam || weaponID == Missile)
                          || ((ws.having & info.mask) != 0);
 
         if (!owned) {
@@ -309,11 +300,11 @@ namespace MelonPrime {
 
         // Ammo check
         bool hasAmmo = true;
-        if (weaponID == MISSILE) {
+        if (weaponID == Missile) {
             hasAmmo = (ws.missileAmmo >= 0xA);
-        } else if (weaponID != POWER_BEAM && weaponID != OMEGA_CANNON) {
+        } else if (weaponID != PowerBeam && weaponID != OmegaCannon) {
             uint8_t required = info.minAmmo;
-            if (weaponID == BATTLEHAMMER && m_flags.test(StateFlags::BIT_IS_WEAVEL)) required = 0x5;
+            if (weaponID == Battlehammer && m_flags.test(StateFlags::BIT_IS_WEAVEL)) required = 0x5;
             hasAmmo = (ws.weaponAmmo >= required);
         }
 
