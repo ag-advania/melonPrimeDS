@@ -80,6 +80,7 @@ set(SOURCES_QT_SDL
     InputConfig/MelonPrimeInputConfigPreview.cpp
 
     MelonPrime.cpp
+    MelonPrimeLocalization.cpp
     MelonPrimeHudRender.cpp
     MelonPrimeHudConfigOnScreenEdit.cpp
     MelonPrimePatchAspectRatio.cpp
