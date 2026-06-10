@@ -367,8 +367,10 @@ moment the game reaches a code point, or when you need to conditionally redirect
   `false` → original instruction runs (side-effect-only hook).
 - **JIT path (default):** the compiler emits the trampoline call **only at addresses that matched at
   compile time** (`ARM9InstructionHookMatches(addr)` in the compile loop), and
-  `SetARM9InstructionHook` resets the JIT block cache when the address list changes. Non-hooked
-  instructions cost **zero**; each hooked PC pays a `RegCache.Flush` + call when executed.
+  `SetARM9InstructionHook` resets the JIT block cache when the installed address list changes.
+  `ARM9Hook_Install` must avoid calling `SetARM9InstructionHook` when the dispatcher, userdata, and
+  address list already match the currently installed hook set. Non-hooked instructions cost
+  **zero**; each hooked PC pays a `RegCache.Flush` + call when executed.
 - **Interpreter path:** every instruction runs `ARM9InstructionHookAddressMatches`, a hash-mask
   early-out (`1u << ((addr>>2)&31)`) followed by a short linear scan.
 
@@ -381,15 +383,19 @@ Owns the single hook slot and fans out to all registered MelonPrime hooks.
   re-registers the active hook set. For each **enabled** hook it calls the module's
   `Foo_GetAddresses(romGroupIndex, out, max)` and registers those PCs with a per-hook dispatch-mask
   bit (`AddDispatchAddress` ORs masks when two hooks share a PC), then calls `SetARM9InstructionHook`
-  once with the union of addresses.
+  once with the union of addresses **only if that union differs from the currently installed hook
+  set**. If the union is unchanged, do not reset the JIT block cache and do not write back hook-site
+  instructions just to invalidate blocks.
 - `ARM9Hook_Uninstall(nds)` and `ARM9Hook_ResetPatchState()` — wired into **all three** reset
   blocks (the same blocks as the write-patch `*_ResetPatchState` calls; see §3).
 - `DispatcherCallback` looks up the address's mask (`FindDispatchMask`, 1-entry cache) and calls
   each set hook's handler in a fixed priority order; side-effect hooks run unconditionally, redirect
   hooks return early once one redirects.
 - **Registration is config-gated**: only hooks that can run for the current config are registered,
-  because every registered PC becomes a JIT trampoline call site. Developer-only hooks are forced
-  off in non-developer builds.
+  because every registered PC becomes a JIT trampoline call site. A live settings toggle should call
+  `NotifyConfigChanged()` / `ApplyConfigReload()` so the hook set is rebuilt, rather than keeping a
+  disabled hook registered and branching out inside the handler. Developer-only hooks are forced off
+  in non-developer builds.
 
 ### Per-hook module contract
 
@@ -418,7 +424,7 @@ Each instruction-hook module provides:
 | FixNoxusBladePersistence | `MelonPrimePatchFixNoxusBladePersistence.cpp` | RAM side-effect | `Metroid.BugFix.FixNoxusBladePersistence` |
 | TransformGate | `MelonPrimePatchImmediateTransformGateHook.inc` | redirect | `DirectAltFormTransform` |
 | WeaponSwitch | `MelonPrimePatchWeaponSwitchHook.inc` | redirect | `WeaponSwitchMethod != LegacyTouch` |
-| ShadowFreezeRuntimeHook | `MelonPrimePatchShadowFreezeRuntimeHook.cpp` | redirect | **always registered**; the handler checks a cached config bit so the quick-menu toggle works live without a JIT block-cache reset |
+| ShadowFreezeRuntimeHook | `MelonPrimePatchShadowFreezeRuntimeHook.cpp` | redirect | `Metroid.BugFix.FixShadowFreeze` |
 
 The `*.inc` handlers are unity-included into `MelonPrimeGameInput.cpp` (see its `#include` block);
 the two `.cpp` modules (`FixNoxusBladePersistence`, `ShadowFreezeRuntimeHook`) are standalone
