@@ -367,10 +367,6 @@ namespace MelonPrime {
             m_cachedPanel = mw->panel;
     }
 
-    // P-33: PrePollRawInput implementation removed.
-    // P-19 (HiddenWndProc processRawInput) captures all WM_INPUT at dispatch.
-    // The function is now an empty inline in MelonPrime.h for source compat.
-
     // =========================================================================
     // P-22: DeferredDrainInput — drain WM_INPUT queue after RunFrame.
     //

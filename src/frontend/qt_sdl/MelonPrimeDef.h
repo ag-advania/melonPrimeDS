@@ -121,8 +121,10 @@ namespace MelonPrime {
 
     // NDS header gameCode (offset 0x0C) packed by NDSHeader::GameCodeAsU32(),
     // i.e. GameCode[0] | [1]<<8 | [2]<<16 | [3]<<24. MPH region codes are "AMHx".
-    // This is the primary ROM-version selector; the checksum above only refines
-    // the on-screen variant label (BALANCED / RUSSIANED / ENCRYPTED, etc.).
+    // ROM detection is hybrid (see MelonPrimeGameRomDetect.cpp): the checksum
+    // above is the PRIMARY authoritative selector; gameCode + header revision
+    // (@0x1E) is only the FALLBACK used when the checksum is unrecognized
+    // (trimmed / modified / brand-new dump).
     namespace MphGameCode {
         constexpr uint32_t US = 0x45484D41; // "AMHE"
         constexpr uint32_t EU = 0x50484D41; // "AMHP"

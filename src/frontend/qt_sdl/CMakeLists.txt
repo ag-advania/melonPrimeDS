@@ -64,10 +64,6 @@ set(SOURCES_QT_SDL
     #RawInputThread.cpp
     MelonPrimeRawInputWinFilter.cpp
     MelonPrimeRawHotkeyVkBinding.cpp
-    #MelonPrimeXInputFilter.cpp
-    #MelonPrimeXInputBinding.cpp
-    #MelonPrimeDirectInputFilter.cpp
-    #MelonPrimeDirectInputBinding.cpp
 
     MelonPrimeRawInputState.cpp
     MelonPrimeRawWinInternal.cpp
@@ -153,10 +149,6 @@ elseif (APPLE)
         #RawInputThread.cpp
         MelonPrimeRawInputWinFilter.cpp
         MelonPrimeRawHotkeyVkBinding.cpp
-        #MelonPrimeXInputFilter.cpp
-        #MelonPrimeXInputBinding.cpp
-        #MelonPrimeDirectInputFilter.cpp
-        #MelonPrimeDirectInputBinding.cpp
     )
 else()
     # Disable the Windows-only raw input sources on Linux.
@@ -165,10 +157,6 @@ else()
         #RawInputThread.cpp
         MelonPrimeRawInputWinFilter.cpp
         MelonPrimeRawHotkeyVkBinding.cpp
-        #MelonPrimeXInputFilter.cpp
-        #MelonPrimeXInputBinding.cpp
-        #MelonPrimeDirectInputFilter.cpp
-        #MelonPrimeDirectInputBinding.cpp
     )
 endif()
 
