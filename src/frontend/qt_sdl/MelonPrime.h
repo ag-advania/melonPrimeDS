@@ -180,6 +180,15 @@ namespace MelonPrime {
 
 #ifdef MELONPRIME_DS
         [[nodiscard]] int GetNativeAimHookMode() const noexcept { return m_nativeAimHookMode; }
+
+        // -----------------------------------------------------------------
+        // ARM9 instruction-hook module contracts (Foo_GetAddresses /
+        // Foo_DispatchCheck[AndRedirect]). Grouped by domain; signatures are
+        // fixed by MelonPrimeArm9Hook.cpp's dispatcher. Registered/dispatched
+        // there, implemented in the matching .inc / .cpp module.
+        // -----------------------------------------------------------------
+
+        // --- Aim hooks (side-effect: inject mouse delta / sync aim basis) ---
         static uint32_t NativeAimDeltaHookRegisterInjection_GetAddresses(
             uint8_t romGroupIndex,
             uint32_t* out,
@@ -207,6 +216,7 @@ namespace MelonPrime {
             uint32_t arm9ExecAddr,
             uint32_t regs[16]);
 
+        // --- Input-overlay hook (side-effect: overlay edges into input struct) ---
         static uint32_t ImmediateInputEdgeOverlay_GetAddresses(
             uint8_t romGroupIndex,
             uint32_t* out,
@@ -216,6 +226,7 @@ namespace MelonPrime {
             uint32_t arm9ExecAddr,
             uint32_t regs[16]);
 
+        // --- Fire & zoom hooks (redirect: native biped fire / zoom toggle) ---
         static uint32_t NativeBipedFireHook_GetAddresses(
             uint8_t romGroupIndex,
             uint32_t* out,
@@ -236,6 +247,7 @@ namespace MelonPrime {
             uint32_t regs[16],
             uint32_t& redirectExecAddr);
 
+        // --- Transform & weapon-switch hooks (redirect into native routines) ---
         static uint32_t TransformGateHook_GetAddresses(
             uint8_t romGroupIndex,
             uint32_t* out,
@@ -492,6 +504,48 @@ namespace MelonPrime {
         RomAddresses m_currentRom{};
         melonDS::u8  m_playerPosition = 0;
         uint8_t      m_hunterID = 0;
+
+        // =================================================================
+        // Transient input-state reset cluster (Phase 4-1)
+        //
+        // Six lifecycle sites (OnEmuStart / ResetRuntimeStateForBoot /
+        // OnEmuStop / RunFrameHook focus-loss / RunFrameHook game-leave /
+        // HandleGameJoinInit) each clear an overlapping-but-different subset
+        // of these transient fields. ResetTransientInputState(parts) clears
+        // exactly the requested subset so each site keeps its historical
+        // behavior verbatim; the bitmask just removes the copy-paste.
+        //
+        // NOTE: TR_AimResiduals also zeroes m_nativeAimDeltaX/Y — those two
+        // pairs always travelled together at every site that touched them.
+        // TR_WeaponSwitchPending is MELONPRIME_DS-only (the field is too).
+        // =================================================================
+        enum TransientReset : uint8_t {
+            TR_AimResiduals      = 1u << 0,  // m_aimResidualX/Y + m_nativeAimDeltaX/Y
+            TR_OverlayHeld       = 1u << 1,  // m_immediateOverlayPrevHeld
+            TR_DirectTransform   = 1u << 2,  // m_directTransformPendingFrames
+            TR_BipedFire         = 1u << 3,  // m_nativeBipedFirePending + DirectActive
+            TR_WeaponSwitchPending = 1u << 4, // m_weaponSwitchPending (DS only)
+        };
+        FORCE_INLINE void ResetTransientInputState(uint8_t parts) noexcept {
+            if (parts & TR_AimResiduals) {
+                m_aimResidualX = 0;
+                m_aimResidualY = 0;
+                m_nativeAimDeltaX = 0;
+                m_nativeAimDeltaY = 0;
+            }
+            if (parts & TR_OverlayHeld)
+                m_immediateOverlayPrevHeld = 0;
+            if (parts & TR_DirectTransform)
+                m_directTransformPendingFrames = 0;
+            if (parts & TR_BipedFire) {
+                m_nativeBipedFirePending = false;
+                m_nativeBipedFireDirectActive = false;
+            }
+#ifdef MELONPRIME_DS
+            if (parts & TR_WeaponSwitchPending)
+                m_weaponSwitchPending.Clear();
+#endif
+        }
 
         // =================================================================
         // Inline helpers
