@@ -148,43 +148,18 @@ Rules of thumb from recent fixes:
 - `Metroid.Visual.HudFontSize` is a legacy migration-only key read behind `HasKey()`; it does not need a new default unless migration logic changes.
 
 #### Audit Command (PowerShell, Metroid.*)
-Run from repo root. This lists missing defaults by accessor type and catches cross-list type mistakes:
+Checked in as [.claude/skills/audit-config-defaults.ps1](../skills/audit-config-defaults.ps1).
+Run from anywhere (it resolves the repo root from its own path):
 
 ```powershell
-$cfgPath = "src/frontend/qt_sdl/Config.cpp"
-$cfgLines = Get-Content $cfgPath
-$ints    = [System.Collections.Generic.HashSet[string]]::new()
-$doubles = [System.Collections.Generic.HashSet[string]]::new()
-$bools   = [System.Collections.Generic.HashSet[string]]::new()
-$state = ""
-foreach ($line in $cfgLines) {
-  if ($line -match "^\s*DefaultList<int>\s+DefaultInts") { $state = "int"; continue }
-  if ($line -match "^\s*DefaultList<double>\s+DefaultDoubles") { $state = "double"; continue }
-  if ($line -match "^\s*DefaultList<bool>\s+DefaultBools") { $state = "bool"; continue }
-  if ($state -ne "" -and $line -match "^\s*};\s*$") { $state = ""; continue }
-  if ($state -eq "") { continue }
-  if ($line -match "\{\"Instance\*\.Metroid\.([^\"]+)\"\s*,") {
-    $k = "Metroid." + $matches[1]
-    if ($state -eq "int")    { [void]$ints.Add($k) }
-    if ($state -eq "double") { [void]$doubles.Add($k) }
-    if ($state -eq "bool")   { [void]$bools.Add($k) }
-  }
-}
-
-$usageInt = rg -o "GetInt\(\"Metroid\.[^\"]+\"\)" src/frontend/qt_sdl -g"*.cpp" -g"*.h"  | % { if($_ -match "GetInt\(\"([^\"]+)\"\)"){ $matches[1] } } | sort -Unique
-$usageDbl = rg -o "GetDouble\(\"Metroid\.[^\"]+\"\)" src/frontend/qt_sdl -g"*.cpp" -g"*.h" | % { if($_ -match "GetDouble\(\"([^\"]+)\"\)"){ $matches[1] } } | sort -Unique
-$usageBol = rg -o "GetBool\(\"Metroid\.[^\"]+\"\)" src/frontend/qt_sdl -g"*.cpp" -g"*.h"   | % { if($_ -match "GetBool\(\"([^\"]+)\"\)"){ $matches[1] } } | sort -Unique
-
-"GetInt missing:";    $usageInt | ? { -not $ints.Contains($_) }
-"GetDouble missing:"; $usageDbl | ? { -not $doubles.Contains($_) }
-"GetBool missing:";   $usageBol | ? { -not $bools.Contains($_) }
-
-"GetInt in DefaultDoubles:";  $usageInt | ? { $doubles.Contains($_) }
-"GetInt in DefaultBools:";    $usageInt | ? { $bools.Contains($_) }
-"GetDouble in DefaultInts:";  $usageDbl | ? { $ints.Contains($_) }
-"GetBool in DefaultInts:";    $usageBol | ? { $ints.Contains($_) }
-"GetBool in DefaultDoubles:"; $usageBol | ? { $doubles.Contains($_) }
+.\.claude\skills\audit-config-defaults.ps1
 ```
+
+It lists missing defaults by accessor type and catches cross-list type mistakes (the same five
+sections as before: `GetXxx missing` for each accessor, plus the four cross-list mismatch
+sections). It has no external tool dependency (uses `Get-ChildItem` / `[regex]` instead of
+`rg`/`Select-String` patterns that need ripgrep). Exit code is `0` when every section is empty
+(fully covered, no cross-list mismatches), `1` otherwise.
 
 ## Active Branch: `highres_fonts_v3`
 Current work is on the `highres_fonts_v3` branch. Main changes relative to `master`:
