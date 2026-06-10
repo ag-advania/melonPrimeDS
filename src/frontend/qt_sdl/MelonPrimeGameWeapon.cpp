@@ -87,7 +87,7 @@ namespace MelonPrime {
         return weaponId == PowerBeam || weaponId == Missile || weaponId == OmegaCannon;
     }
 
-    constexpr uint32_t kPlayerDamageGuardInvincibilityOffset = 0xE1u;
+    constexpr uint32_t kPlayerSpawnInvincibilityOffset = 0xE1u;
 
     COLD_FUNCTION void ShowOmegaWeaponSwitchBlockedMessage(EmuInstance* emuInstance)
     {
@@ -393,7 +393,7 @@ namespace MelonPrime {
                 m_currentRom.playerStructStart
                 + static_cast<uint32_t>(m_playerPosition) * Consts::PLAYER_ADDR_INC;
             if (UNLIKELY(m_flags.test(StateFlags::BIT_IN_GAME_INIT)
-                && Read8(nds->MainRAM, playerBase + kPlayerDamageGuardInvincibilityOffset) != 0))
+                && Read8(nds->MainRAM, playerBase + kPlayerSpawnInvincibilityOffset) != 0))
             {
                 m_weaponSwitchPending.Clear();
                 return SwitchWeaponLegacyTouchFallback(weaponId);
