@@ -28,6 +28,11 @@
 #include "MelonPrimeRawHotkeyVkBinding.h"
 
 namespace MelonPrime {
+    // RawInputWinFilter is a refcounted singleton: Acquire()/Release() manage
+    // the shared instance, so there is no per-pointer delete. This custom
+    // deleter lets m_rawFilter (a unique_ptr) own one Acquire/Release pairing —
+    // the raw pointer is only a non-owning handle, hence it is intentionally
+    // ignored here; the singleton's own Release() does the teardown.
     void FilterDeleter::operator()(RawInputWinFilter* ptr) {
         if (ptr) RawInputWinFilter::Release();
     }
@@ -263,12 +268,13 @@ namespace MelonPrime {
         ReloadConfigFlags();
         ApplyJoy2KeySupportAndQtFilter(m_flags.test(StateFlags::BIT_JOY2KEY));
         InputReset();
-        m_aimResidualX = 0;
-        m_aimResidualY = 0;
-        m_nativeAimDeltaX = 0;
-        m_nativeAimDeltaY = 0;
-        m_immediateOverlayPrevHeld = 0;
-        m_directTransformPendingFrames = 0;
+        // NOTE (Phase 8 review): unlike the other sites this does NOT reset
+        // TR_BipedFire (m_nativeBipedFire*). Preserved verbatim — likely an
+        // accidental omission, left as-is to keep zero behavior change.
+        // weaponSwitchPending is cleared above (before ARM9Hook_Uninstall) where
+        // ordering matters, so it is not part of this cluster call.
+        ResetTransientInputState(
+            TR_AimResiduals | TR_OverlayHeld | TR_DirectTransform);
 
         // P-3: Cache panel pointer (avoids 3-level pointer chase every frame)
         if (auto* mw = emuInstance->getMainWindow())
@@ -293,22 +299,19 @@ namespace MelonPrime {
 #endif
 
         InputReset();
-        m_aimResidualX = 0;
-        m_aimResidualY = 0;
-        m_nativeAimDeltaX = 0;
-        m_nativeAimDeltaY = 0;
-        m_immediateOverlayPrevHeld = 0;
-        m_directTransformPendingFrames = 0;
-        m_nativeBipedFirePending = false;
-        m_nativeBipedFireDirectActive = false;
+        // weaponSwitchPending cleared above (before ARM9Hook_Uninstall) where
+        // ordering matters, so it is not part of this cluster call.
+        ResetTransientInputState(
+            TR_AimResiduals | TR_OverlayHeld | TR_DirectTransform | TR_BipedFire);
     }
 
     void MelonPrimeCore::OnEmuStop()
     {
         m_flags.clear(StateFlags::BIT_IN_GAME);
-        m_directTransformPendingFrames = 0;
-        m_nativeBipedFirePending = false;
-        m_nativeBipedFireDirectActive = false;
+        // NOTE (Phase 8 review): does NOT reset TR_AimResiduals / TR_OverlayHeld,
+        // unlike OnEmuStart / boot. Preserved verbatim. weaponSwitchPending is
+        // cleared in the DS block below (before ARM9Hook_Uninstall).
+        ResetTransientInputState(TR_DirectTransform | TR_BipedFire);
 #ifdef MELONPRIME_CUSTOM_HUD
         if (m_flags.test(StateFlags::BIT_ROM_DETECTED)) {
             CustomHud_EnsurePatchRestored(
@@ -515,10 +518,10 @@ namespace MelonPrime {
             }
             else if (m_flags.test(StateFlags::BIT_IN_GAME_INIT)) {
                 m_flags.clear(StateFlags::BIT_IN_GAME_INIT);
-                m_immediateOverlayPrevHeld = 0;
-                m_directTransformPendingFrames = 0;
-                m_nativeBipedFirePending = false;
-                m_nativeBipedFireDirectActive = false;
+                // weaponSwitchPending cleared in the DS block below (before
+                // Patches_RestoreOnLeave) where ordering matters.
+                ResetTransientInputState(
+                    TR_OverlayHeld | TR_DirectTransform | TR_BipedFire);
 #ifdef MELONPRIME_CUSTOM_HUD
                 CustomHud_EnsurePatchRestored(
                     emuInstance, localCfg, m_currentRom, m_playerPosition, false);
@@ -581,9 +584,8 @@ namespace MelonPrime {
                     m_input.down = 0;
                     m_input.press = 0;
                     m_input.moveIndex = 0;
-                    m_directTransformPendingFrames = 0;
-                    m_nativeBipedFirePending = false;
-                    m_nativeBipedFireDirectActive = false;
+                    // weaponSwitchPending cleared in the DS block below.
+                    ResetTransientInputState(TR_DirectTransform | TR_BipedFire);
 #ifdef _WIN32
                     // P-9: Single call replaces resetAllKeys + resetMouseButtons
                     // (one fence instead of two)
@@ -635,13 +637,8 @@ namespace MelonPrime {
         // mainRAM fetched here (cold path) instead of every frame in RunFrameHook
         melonDS::u8* const mainRAM = emuInstance->getNDS()->MainRAM;
         m_flags.set(StateFlags::BIT_IN_GAME_INIT);
-        m_immediateOverlayPrevHeld = 0;
-        m_directTransformPendingFrames = 0;
-        m_nativeBipedFirePending = false;
-        m_nativeBipedFireDirectActive = false;
-#ifdef MELONPRIME_DS
-        m_weaponSwitchPending.Clear();
-#endif
+        ResetTransientInputState(
+            TR_OverlayHeld | TR_DirectTransform | TR_BipedFire | TR_WeaponSwitchPending);
         m_playerPosition = Read8(mainRAM, m_currentRom.playerPos);
 
         const uint32_t offP = static_cast<uint32_t>(m_playerPosition) * Consts::PLAYER_ADDR_INC;
