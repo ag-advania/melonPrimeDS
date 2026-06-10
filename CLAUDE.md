@@ -9,6 +9,7 @@ This file is an index only. Keep detailed instructions in the linked Rules, Skil
 - [.claude/rules/repo-architecture.md](.claude/rules/repo-architecture.md)
 - [.claude/rules/git-workflow.md](.claude/rules/git-workflow.md)
 - [.claude/rules/melonprime-refactoring.md](.claude/rules/melonprime-refactoring.md)
+- [.claude/rules/melonprime-full-refactor-plan.md](.claude/rules/melonprime-full-refactor-plan.md)
 - [.claude/rules/melonprime-gameplay-runtime.md](.claude/rules/melonprime-gameplay-runtime.md)
 - [.claude/rules/melonprime-aim-input.md](.claude/rules/melonprime-aim-input.md)
 - [.claude/rules/melonprime-click-handling.md](.claude/rules/melonprime-click-handling.md)
