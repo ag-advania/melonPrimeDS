@@ -123,65 +123,70 @@ namespace MelonPrime {
 #ifdef MELONPRIME_DS
 
 #include "MelonPrimePatchFoo.h"
+#include "MelonPrimePatchCommon.h"
 #include "Config.h"
-#include "NDS.h"
 
 namespace MelonPrime {
+namespace {
 
-// Per-ROM base addresses. Use 0xFFFFFFFFu for ROM versions where the patch
-// does not apply (already fixed upstream, or different code layout).
+static constexpr const char* kCfgFoo = "Metroid.BugFix.Foo";
+
 // ROM group order: JP1_0=0, JP1_1=1, US1_0=2, US1_1=3, EU1_0=4, EU1_1=5, KR1_0=6
-static constexpr uint32_t kBase[7] = {
-    0x0206XXXX, // JP1_0
-    0xFFFFFFFF, // JP1_1  (not applicable)
-    0x0206XXXX, // US1_0
-    0xFFFFFFFF, // US1_1  (not applicable)
-    0x0206XXXX, // EU1_0
-    0xFFFFFFFF, // EU1_1  (not applicable)
-    0xFFFFFFFF, // KR1_0  (not applicable)
-};
-
-// Patch entries: byte offset from base, value to write (apply), original value (revert).
-// If all ROM versions share the same instruction values (common), store offsets+values once.
-// If values differ per ROM, use a per-ROM table instead.
-struct PatchWord { uint32_t offset, applyVal, revertVal; };
-static constexpr PatchWord kWords[] = {
-    {0x000u, 0xXXXXXXXX, 0xXXXXXXXX},
+static constexpr PatchWord kPatchWords[7][2] = {
+    { // JP1_0
+        { 0x0206XXXXu, 0xE1A00000u, 0xXXXXXXXXu },
+        { 0x0206XXXXu, 0xE1A00000u, 0xXXXXXXXXu },
+    },
+    { // JP1_1
+        { 0x0206XXXXu, 0xE1A00000u, 0xXXXXXXXXu },
+        { 0x0206XXXXu, 0xE1A00000u, 0xXXXXXXXXu },
+    },
     // ...
 };
 
-static bool s_applied = false;
+// count == 0 means this ROM group is unsupported.
+static constexpr RomPatchSpan kPatchSpans[7] = {
+    { &kPatchWords[0][0], 2 },
+    { &kPatchWords[1][0], 2 },
+    { nullptr, 0 }, // US1_0 unsupported
+    { nullptr, 0 }, // US1_1 unsupported
+    { nullptr, 0 }, // EU1_0 unsupported
+    { nullptr, 0 }, // EU1_1 unsupported
+    { nullptr, 0 }, // KR1_0 unsupported
+};
+
+static StaticWordPatch s_patch(kPatchSpans);
+
+} // namespace
 
 void Foo_ApplyOnce(melonDS::NDS* nds, Config::Table& cfg, uint8_t romGroupIndex)
 {
-    if (s_applied) return;
-    if (!cfg.GetBool("Metroid.BugFix.Foo")) return;
-    if (romGroupIndex >= 7 || kBase[romGroupIndex] == 0xFFFFFFFFu) return;
-    const uint32_t base = kBase[romGroupIndex];
-    for (const auto& w : kWords)
-        nds->ARM9Write32(base + w.offset, w.applyVal);
-    s_applied = true;
+    if (!cfg.GetBool(kCfgFoo))
+    {
+        s_patch.RestoreOnce(nds, romGroupIndex);
+        return;
+    }
+
+    s_patch.ApplyOnce(nds, romGroupIndex);
+}
+
+void Foo_RestoreOnce(melonDS::NDS* nds, uint8_t romGroupIndex)
+{
+    s_patch.RestoreOnce(nds, romGroupIndex);
 }
 
 void Foo_ResetPatchState()
 {
-    s_applied = false;
+    s_patch.ResetState();
 }
-
-// Optional: mid-session restore (e.g. on game exit)
-// void Foo_RestoreOnce(melonDS::NDS* nds, uint8_t romGroupIndex)
-// {
-//     if (!s_applied || kBase[romGroupIndex] == 0xFFFFFFFFu) return;
-//     const uint32_t base = kBase[romGroupIndex];
-//     for (const auto& w : kWords)
-//         nds->ARM9Write32(base + w.offset, w.revertVal);
-//     s_applied = false;
-// }
 
 } // namespace MelonPrime
 
 #endif // MELONPRIME_DS
 ```
+
+Historical note: older modules may still hand-roll `s_applied` / `CanWritePatch` when they have
+patch-specific mechanics; new all-or-nothing static word-patches should use `StaticWordPatch`.
 
 ---
 
