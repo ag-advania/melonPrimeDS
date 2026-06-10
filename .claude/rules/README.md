@@ -5,6 +5,7 @@
 - [Repo Architecture](repo-architecture.md)
 - [Git Workflow](git-workflow.md)
 - [MelonPrime Refactoring / Performance History](melonprime-refactoring.md)
+- [MelonPrime Full Refactor Plan (Phase 0–8)](melonprime-full-refactor-plan.md)
 - [MelonPrime Gameplay Runtime (No CustomHud)](melonprime-gameplay-runtime.md)
 - [MelonPrime Aim/Input (No CustomHud)](melonprime-aim-input.md)
 - [MelonPrime Click Handling — Investigation & Fix Log](melonprime-click-handling.md)
