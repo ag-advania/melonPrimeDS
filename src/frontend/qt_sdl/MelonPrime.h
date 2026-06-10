@@ -279,11 +279,6 @@ namespace MelonPrime {
 
         void NotifyLayoutChange();  // P-3: impl in .cpp (needs complete EmuInstance type)
 
-        // P-14/P-33: PrePollRawInput retired. P-19 (HiddenWndProc) captures
-        // all WM_INPUT at dispatch time, making pre-drain unnecessary.
-        // Kept as empty inline for source compatibility; remove in future cleanup.
-        void PrePollRawInput() {}
-
         // P-22: Drain WM_INPUT queue after RunFrame.
         void DeferredDrainInput();
 

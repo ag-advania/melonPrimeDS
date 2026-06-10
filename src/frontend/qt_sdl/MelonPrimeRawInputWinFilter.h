@@ -28,9 +28,6 @@ namespace MelonPrime {
         void setJoy2KeySupport(bool enable);
         void setRawInputTarget(HWND hwnd);
 
-        // Frame-synchronous update
-        void Poll();
-
         // Merged Poll + snapshot in single call
         void PollAndSnapshot(FrameHotkeyState& outHk, int& outMouseX, int& outMouseY);
 
@@ -54,9 +51,7 @@ namespace MelonPrime {
         void pollHotkeys(FrameHotkeyState& out);
         void snapshotInputFrame(FrameHotkeyState& outHk, int& outMouseX, int& outMouseY);
         void snapshotInputFrameNoEdges(FrameHotkeyState& outHk, int& outMouseX, int& outMouseY);
-        void resetAllKeys();
         void resetAll();  // P-9: combined reset (single fence)
-        void resetMouseButtons();
         void resetHotkeyEdges();
         void fetchMouseDelta(int& outX, int& outY);
 
@@ -68,7 +63,8 @@ namespace MelonPrime {
         static LRESULT CALLBACK HiddenWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
 
         /// Drain pending WM_INPUT messages from the hidden window queue.
-        /// Shared between Poll() and PollAndSnapshot() to eliminate duplication.
+        /// Used by DeferredDrain() and resetAll(). Runs processRawInputBatched
+        /// (GetRawInputBuffer) before the PeekMessage loop per FIX-1.
         void drainPendingMessages() noexcept;
 
         /// P-35 (REVERTED): PeekMessage-only drain (no GetRawInputBuffer).
