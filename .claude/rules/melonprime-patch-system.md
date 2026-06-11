@@ -48,7 +48,7 @@ enum PatchApplySite : uint8_t {  // where Patches_Apply fires the entry
 };
 enum PatchRestoreFlag : uint8_t {        // which restore API fires the entry
     RF_None = 0,
-    RF_OnLeave = 1u << 0,                // Patches_RestoreOnLeave (game-leave block)
+    RF_OnLeave = 1u << 0,                // Patches_RestoreOnLeave (isEndOfGame window)
     RF_OnStop  = 1u << 1,                // Patches_RestoreOnStop (OnEmuStart / OnEmuStop)
 };
 
@@ -69,9 +69,11 @@ restorable modules instead of after them — safe, all modules write disjoint ad
 **Call sites in `MelonPrime.cpp`:** `HandleGameJoinInit` → `Patches_Apply(PatchSite_GameJoin)`;
 `ApplyConfigReload` (inside the `BIT_ROM_DETECTED` gate, after `ARM9Hook_Install`) →
 `Patches_Apply(PatchSite_ConfigReload)`; `RunFrameHook` `!isInGame && focused` →
-`Patches_Apply(PatchSite_OutOfGameFrame)`; game-leave block → `Patches_RestoreOnLeave`;
-`OnEmuStart` / `OnEmuStop` → `Patches_RestoreOnStop` + `Patches_ResetAll`;
-`ResetRuntimeStateForBoot` → `Patches_ResetAll` only (boot reset: state only, no RAM restore).
+`Patches_Apply(PatchSite_OutOfGameFrame)`; **match-end window** (`isEndOfGame &&
+`BIT_IN_GAME_INIT`) → `Patches_RestoreOnLeave` (not on generic `!isInGame`; see
+[notes/MelonPrimeBattleFlowState.md](notes/MelonPrimeBattleFlowState.md)); `OnEmuStart` /
+`OnEmuStop` → `Patches_RestoreOnStop` + `Patches_ResetAll`; `ResetRuntimeStateForBoot` →
+`Patches_ResetAll` only (boot reset: state only, no RAM restore).
 
 **Statics:** module `s_applied` state is per-process; melonDS multi-instance runs as separate
 processes, so the per-process singleton assumption holds.
@@ -214,8 +216,9 @@ table row — see the "Patch registry" section below), choosing:
     block (pattern C). The module must include its own loaded-state guard so it is a no-op when
     the target data is not present; name the function `Foo_ApplyIfLoaded` rather than
     `Foo_ApplyOnce` to signal this distinction (`ResetPatchState()` is then typically a no-op).
-- **Restore flags** (`PatchRestoreFlag`): `RF_OnLeave` (restored in `RunFrameHook`'s game-leave
-  block), `RF_OnStop` (restored in `OnEmuStart` / `OnEmuStop`), or `RF_None`.
+- **Restore flags** (`PatchRestoreFlag`): `RF_OnLeave` (restored when `isEndOfGame` —
+  `currentMode == 0x0E && (flowState == 1 || flowState == 2)` — while `BIT_IN_GAME_INIT` is
+  still set), `RF_OnStop` (restored in `OnEmuStart` / `OnEmuStop`), or `RF_None`.
 - **resetState**: point it at `Foo_ResetPatchState` (wire it even for pattern C no-ops).
 
 Table order = apply/restore order. Insert the entry at the position matching its site grouping
@@ -227,10 +230,10 @@ site; transient patches (NoDoubleTapJump) and HUD-owned patches (NoHud) keep the
 
 ### 3. Lifecycle — automatic via the registry
 
-No `MelonPrime.cpp` edits are needed for restore/reset. The three lifecycle blocks
-(`OnEmuStart`, `ResetRuntimeStateForBoot`, `OnEmuStop`) and the game-leave block call the
-registry (`Patches_RestoreOnStop` / `Patches_RestoreOnLeave` / `Patches_ResetAll`), so the entry
-from step 2 wires the whole lifecycle — restore-on-stop/leave and reset×3 are automatic.
+No `MelonPrime.cpp` edits are needed for restore/reset. The lifecycle blocks (`OnEmuStart`,
+`ResetRuntimeStateForBoot`, `OnEmuStop`) and the match-end `Patches_RestoreOnLeave` call wire
+restore-on-stop/leave; `Patches_ResetAll` on boot/stop is automatic from the registry entry in
+step 2.
 (`ResetRuntimeStateForBoot` intentionally resets state **without** restoring RAM: emulated memory
 is being re-initialized.)
 

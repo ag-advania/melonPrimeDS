@@ -97,6 +97,8 @@ namespace MelonPrime {
         melonDS::u32 isInVisorOrMap;
         melonDS::u32 isMapOrUserActionPaused;
         melonDS::u32 inGame;
+        melonDS::u32 currentMode;
+        melonDS::u32 battleFlowState;
         melonDS::u32 chosenHunter;
         melonDS::u32 inGameSensi;
     };
@@ -108,6 +110,8 @@ namespace MelonPrime {
     struct alignas(64) HotPointers {
         // [Tier 0: Every Frame (Always) - frame gate check]
         uint16_t* inGame;
+        uint8_t* currentMode;       // isEndOfGame only
+        uint8_t* battleFlowState; // isEndOfGame only
 
         // [Tier 1: Every Frame (Always)]
         uint16_t* aimX;

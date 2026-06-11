@@ -9,6 +9,7 @@
 #include "Platform.h"
 #include "MelonPrimeDef.h"
 #include "MelonPrimeGameRomAddrTable.h"
+#include "MelonPrimeBattleFlowState.h"
 
 #ifdef MELONPRIME_CUSTOM_HUD
 #include "MelonPrimeHudRender.h"
@@ -501,12 +502,23 @@ namespace MelonPrime {
         }
 
         if (LIKELY(m_flags.test(StateFlags::BIT_ROM_DETECTED))) {
+            const uint8_t currentMode = *m_ptrs.currentMode;
+            const uint8_t flowState   = *m_ptrs.battleFlowState;
             const bool isInGame = (*m_ptrs.inGame) == 0x0001;
+            const bool isEndOfGame = BattleFlow::IsEndOfGame(currentMode, flowState);
             m_flags.assign(StateFlags::BIT_IN_GAME, isInGame);
 
             if (isInGame && !m_flags.test(StateFlags::BIT_IN_GAME_INIT)) {
                 HandleGameJoinInit();
             }
+
+#ifdef MELONPRIME_DS
+            // End-of-game patch restore: flowState 1|2 while still in battle runtime (isInGame true).
+            if (isEndOfGame && m_flags.test(StateFlags::BIT_IN_GAME_INIT)) {
+                const PatchCtx ctx{ emuInstance->getNDS(), emuInstance, localCfg, m_currentRom };
+                Patches_RestoreOnLeave(ctx);
+            }
+#endif
 
             if (LIKELY(isInGame)) {
                 // Per-frame re-evaluation (varies with game state) — intentionally bypasses the patch registry.
@@ -518,8 +530,7 @@ namespace MelonPrime {
             }
             else if (m_flags.test(StateFlags::BIT_IN_GAME_INIT)) {
                 m_flags.clear(StateFlags::BIT_IN_GAME_INIT);
-                // weaponSwitchPending cleared in the DS block below (before
-                // Patches_RestoreOnLeave) where ordering matters.
+                // weaponSwitchPending cleared in the DS block below where ordering matters.
                 ResetTransientInputState(
                     TR_OverlayHeld | TR_DirectTransform | TR_BipedFire);
 #ifdef MELONPRIME_CUSTOM_HUD
@@ -528,11 +539,6 @@ namespace MelonPrime {
 #endif
 #ifdef MELONPRIME_DS
                 m_weaponSwitchPending.Clear();
-                // Covers OsdColor too (previously an unguarded standalone call here).
-                {
-                    const PatchCtx ctx{ emuInstance->getNDS(), emuInstance, localCfg, m_currentRom };
-                    Patches_RestoreOnLeave(ctx);
-                }
 #endif
             }
 

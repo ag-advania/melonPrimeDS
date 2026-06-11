@@ -306,7 +306,7 @@ AIMBLK_NOT_IN_GAME ビットが立っていない
 | タイミング | 場所 |
 | --- | --- |
 | emu start / reset | `OnEmuStart()` |
-| ゲーム離脱時 (BIT_IN_GAME_INIT クリア) | `RunFrameHook()` |
+| battle runtime 離脱時 (`currentMode != 0x0E`, `BIT_IN_GAME_INIT` クリア) | `RunFrameHook()` |
 | game join 初期化 | `HandleGameJoinInit()` |
 
 ---
