@@ -854,7 +854,7 @@ When reading this unified edition, treat the following four points as fixed rule
 | `MelonPrime.cpp` | OPT D/E/K/L/O/W/Z1/Z2/Z3/Z4, FIX-3, P-20b, P-20c, P-22 (`DeferredDrainInput()` implementation), P-33 (remove PrePoll implementation), P-43 (focused local cache) |
 | `MelonPrimeGameInput.cpp` | OPT F/O/Q/Z2/Z3, FIX-2, P-3, P-17, P-18, P-44 (zero-delta skip), P-47 (clear `m_didFrameAdvanceSinceSnapshot` after PollAndSnapshot) |
 | `MelonPrimeInGame.cpp` | OPT A/B/G/H/J/Z2/Z5, R1 constexpr tables, P-36 (HandleMorphBallBoost branch unification), P-47 (gate LateLatch on `m_didFrameAdvanceSinceSnapshot`) |
-| `EmuThread.cpp` | P-11, P-12, P-13, P-15, P-16, P-22, P-24, P-25, P-26a, P-27, P-32, P-33, P-38, P-39, P-40, P-41, P-45 (QPC spin-loop reuse), P-46 (`handleMessages` acquire fast-path + `sendMessage` release store); owns `EmuThreadMelonPrime*.inc` unity fragments |
+| `EmuThread.cpp` | P-11, P-12, P-13, P-15, P-16, P-22, P-24, P-25, P-26a, P-27, P-32, P-33, P-38, P-39, P-40, P-41, P-45 (QPC spin-loop reuse), P-46 (`handleMessages` acquire fast-path + `sendMessage` release store); owns `MelonPrimeEmuThread*.inc` unity fragments |
 | `EmuThread.h` | P-46 (`std::atomic<bool> msgPending`) |
 | `MelonPrimeGameWeapon.cpp` | OPT A, R2 NDS cache |
 | `MelonPrimeGameRomDetect.cpp` | OPT L |
@@ -886,7 +886,7 @@ When reading this unified edition, treat the following four points as fixed rule
 | `MelonPrimeHudScreenCppOverlayOfGl.inc` | GL HUD overlay upload/composite and GL-native bottom radar overlay. Dirty upload / GL-state skip; OPT-HUD-3 (direct-pointer partial upload) |
 | `MelonPrimeHudScreenCppGlInit.inc` / `MelonPrimeHudScreenCppGlDeinit.inc` | Custom HUD GL resource init/deinit |
 | `MelonPrimeHudScreenCppInit.inc` / `Layout.inc` / `Mouse*.inc` / `EditPanel*.inc` | Screen-panel setup, layout cache, edit-mode input forwarding, floating-panel placement |
-| `EmuThreadMelonPrime*.inc` | Self-contained MelonPrime integration fragments included only by `EmuThread.cpp` (includes, constructor/run setup, frame state declarations, message queue atomics, renderer VSync preservation). Frame-pacing logic remains inline. |
+| `MelonPrimeEmuThread*.inc` | Self-contained MelonPrime integration fragments included only by `EmuThread.cpp` (includes, constructor/run setup, frame state declarations, message queue atomics, renderer VSync preservation). Frame-pacing logic remains inline. |
 
 ---
 
