@@ -522,17 +522,20 @@ namespace MelonPrime {
             }
 
 #ifdef MELONPRIME_DS
-            // Cold: poll for end-of-game while match patches are live. Latch only after
-            // mode==0x0E && flow==0 (live match). Stale flow!=0 from the prior match at join
-            // must not trigger restore on the same frame as HandleGameJoinInit.
-            if (UNLIKELY(m_flags.test(StateFlags::BIT_IN_GAME_INIT)
-                    && !m_flags.test(StateFlags::BIT_END_OF_GAME_PATCH_RESTORED))) {
-                if (!m_flags.test(StateFlags::BIT_BATTLE_RUNTIME_MODE)
-                    && *m_ptrs.currentMode == BattleFlow::MODE_BATTLE_RUNTIME
-                    && *m_ptrs.battleFlowState == BattleFlow::FLOW_ACTIVE_MATCH) {
-                    HandleBattleRuntimeEnter();
-                }
-                if (m_flags.test(StateFlags::BIT_BATTLE_RUNTIME_MODE)) {
+            // Cold: battle-runtime latch + match-end poll. One flags load; RAM reads:
+            //   pre-latch lobby: currentMode only (skip flow until mode==0x0E)
+            //   post-latch live match: battleFlowState only
+            const uint32_t matchLifecycleFlags = m_flags.packed;
+            if (UNLIKELY((matchLifecycleFlags & StateFlags::BIT_IN_GAME_INIT)
+                    && !(matchLifecycleFlags & StateFlags::BIT_END_OF_GAME_PATCH_RESTORED))) {
+                if (!(matchLifecycleFlags & StateFlags::BIT_BATTLE_RUNTIME_MODE)) {
+                    const uint8_t mode = *m_ptrs.currentMode;
+                    if (mode == BattleFlow::MODE_BATTLE_RUNTIME) {
+                        const uint8_t flowState = *m_ptrs.battleFlowState;
+                        if (flowState == BattleFlow::FLOW_ACTIVE_MATCH)
+                            HandleBattleRuntimeEnter();
+                    }
+                } else {
                     const uint8_t flowState = *m_ptrs.battleFlowState;
                     if (flowState != BattleFlow::FLOW_ACTIVE_MATCH) {
                         melonDS::NDS* const nds = emuInstance->getNDS();
@@ -548,7 +551,7 @@ namespace MelonPrime {
 
             if (LIKELY(isInGame)) {
                 if (m_flags.test(StateFlags::BIT_BATTLE_RUNTIME_MODE)) {
-                    // Per-frame re-evaluation (varies with game state) — intentionally bypasses the patch registry.
+                    // Per-frame re-evaluation — bypasses registry; gated to skip lobby RAM work.
                     OsdColor_ApplyOnce(emuInstance, localCfg, m_currentRom);
                 }
                 // Damage Notify Purple — runs whether or not the window is focused
@@ -681,8 +684,8 @@ namespace MelonPrime {
     // =========================================================================
     COLD_FUNCTION void MelonPrimeCore::HandleGameJoinInit()
     {
-        // mainRAM fetched here (cold path) instead of every frame in RunFrameHook
-        melonDS::u8* const mainRAM = emuInstance->getNDS()->MainRAM;
+        melonDS::NDS* const nds = emuInstance->getNDS();
+        melonDS::u8* const mainRAM = nds->MainRAM;
         m_flags.clear(StateFlags::BIT_END_OF_GAME_PATCH_RESTORED);
         m_flags.clear(StateFlags::BIT_BATTLE_RUNTIME_MODE);
         m_flags.set(StateFlags::BIT_IN_GAME_INIT);
@@ -759,17 +762,13 @@ namespace MelonPrime {
         m_flags.assign(StateFlags::BIT_IN_ADVENTURE, isAdventure);
 
         MelonPrimeGameSettings::ApplyMphSensitivity(
-            emuInstance->getNDS(), localCfg, m_currentRom.sensitivity, m_addrHot.inGameSensi, true);
+            nds, localCfg, m_currentRom.sensitivity, m_addrHot.inGameSensi, true);
 
-        MelonPrimeGameSettings::ApplyAimSmoothingPatch(
-            emuInstance->getNDS(), m_currentRom, m_disableMphAimSmoothing);
+        MelonPrimeGameSettings::ApplyAimSmoothingPatch(nds, m_currentRom, m_disableMphAimSmoothing);
 
 #ifdef MELONPRIME_DS
         // Game-join patches only (aspect ratio). Battle-runtime patches/hooks wait for mode 0x0E.
-        {
-            const PatchCtx ctx{ emuInstance->getNDS(), emuInstance, localCfg, m_currentRom };
-            Patches_Apply(PatchSite_GameJoin, ctx);
-        }
+        Patches_Apply(PatchSite_GameJoin, PatchCtx{ nds, emuInstance, localCfg, m_currentRom });
 #endif
 #ifdef MELONPRIME_CUSTOM_HUD
         // Cache battle settings for HUD display

@@ -42,9 +42,11 @@ It focuses on in-game flow, weapon/morph handling, gameplay setting application,
   `試合中かmenuかの判定/5_End-Match-Detection-Condition-Update-FlowState1Or2-AllVersions/`.
 - `BIT_IN_GAME_INIT` is set in `HandleGameJoinInit()` and cleared when `!isInGame`, not when
   `isEndOfGame` becomes true. Hooks gate on `BIT_IN_GAME_INIT`.
-- Performance: mode/flow poll only while `BIT_IN_GAME_INIT && !BIT_END_OF_GAME_PATCH_RESTORED`.
-  latch `BIT_BATTLE_RUNTIME_MODE` on `currentMode == 0x0E && flowState == 0`; then only
-  `flowState` until match end. Menu = single `inGame` read. Patch restore is edge-triggered once.
+- Performance: mode/flow poll only while `BIT_IN_GAME_INIT && !BIT_END_OF_GAME_PATCH_RESTORED`
+  (single `m_flags.packed` load for the gate). Pre-latch lobby: read `currentMode` only; read
+  `battleFlowState` only when `mode==0x0E`. Post-latch live match: read `flowState` only. Menu =
+  single `inGame` read. Patch restore is edge-triggered once. Battle patches/hooks and per-frame
+  OsdColor skip lobby frames (`BIT_BATTLE_RUNTIME_MODE` gate).
 
 ## 3. ROM Detection and Address Resolution
 
@@ -123,7 +125,17 @@ It focuses on in-game flow, weapon/morph handling, gameplay setting application,
 - The patch is registry-managed at `PatchSite_GameJoin`. On stop/reset lifecycle paths,
   `Patches_ResetAll()` calls `InGameAspectRatio_ResetPatchState()`.
 
-## 9. Reference Files
+## 9. Frame-hook performance habits
+
+When touching `RunFrameHook` or match lifecycle code:
+
+- Batch `StateFlags` checks via one `m_flags.packed` load when multiple bits gate the same cold block.
+- Poll game RAM with the minimum reads: `inGame` every frame; `currentMode` before `battleFlowState`;
+  after `BIT_BATTLE_RUNTIME_MODE` latch, only `battleFlowState` until match end.
+- Defer battle patches, ARM9 hooks, and per-frame OsdColor until `BIT_BATTLE_RUNTIME_MODE` (not join).
+- Keep join / battle-enter / restore paths in `COLD_FUNCTION` outlined helpers so the hot path stays lean.
+
+## 10. Reference Files
 
 - `src/frontend/qt_sdl/MelonPrime.h`
 - `src/frontend/qt_sdl/MelonPrime.cpp`
