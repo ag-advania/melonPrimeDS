@@ -192,4 +192,5 @@ Current work is on the `highres_fonts_v3` branch. Main changes relative to `mast
   - setup/layout/input fragments for edit-mode forwarding and floating panel placement
   - software overlay fragment for `ScreenPanelNative::paintEvent`
   - GL init/deinit/overlay fragments for texture/shader resources, HUD upload/composite, and native radar overlay
+- EmuThread integration has small self-contained MelonPrime fragments in `EmuThreadMelonPrime*.inc` for includes, constructor setup, run setup, message queue atomics, and renderer VSync preservation. The frame limiter and frame pacing body remain inline in `EmuThread.cpp`.
 - Unity include ownership is checked by `.claude/skills/check-inc-ownership.ps1`; it verifies one parent per unity `.inc`, verifies the fixed parent set for the macro-section `MelonPrimeArm9InstructionHook.inc`, rejects `#include "*.cpp"`, and rejects `.inc` entries in `CMakeLists.txt`
