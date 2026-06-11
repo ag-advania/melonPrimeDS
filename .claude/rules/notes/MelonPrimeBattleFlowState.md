@@ -14,19 +14,27 @@ mphCodex handoff:
 
 | Concept | Condition |
 |---|---|
-| `isEndOfGame` | `currentMode == 0x0E && (flowState == 1 \|\| flowState == 2)` |
+| `isEndOfGame` | `currentMode == 0x0E && flowState != 0` |
 
 Addresses: `currentMode`, `battleFlowState` in `MelonPrimeGameRomAddrTable.h`; resolved at ROM
 detect into `m_ptrs.currentMode` / `m_ptrs.battleFlowState`.
 
-`flowState == 2` alone is unsafe — always use the `currentMode == 0x0E` guard.
+`flowState != 0` alone is unsafe in menu — always use the `currentMode == 0x0E` guard.
+Matches game active-match gates (`flowState == 0` = live match, including START scoreboard).
 
 ## Patch restore on match end
 
-`RunFrameHook`: when `isEndOfGame && BIT_IN_GAME_INIT` → `Patches_RestoreOnLeave()` (while
-`isInGame` may still be true). Not tied to `!isInGame`.
+`RunFrameHook` (cold path): while `BIT_IN_GAME_INIT && !BIT_END_OF_GAME_PATCH_RESTORED`:
+
+1. Until `BIT_BATTLE_RUNTIME_MODE`: read `currentMode` once per frame; latch when `== 0x0E`.
+2. After latch: read only `battleFlowState` until `flow != 0`.
+3. On first end-of-game frame: `Patches_RestoreOnLeave()` once, set `BIT_END_OF_GAME_PATCH_RESTORED`.
+
+Menu frames skip all mode/flow reads. During a match after latch: one `flowState` read per frame.
 
 `BIT_IN_GAME_INIT` is cleared when `!isInGame` (left legacy in-game gate), not on `isEndOfGame`.
+`BIT_END_OF_GAME_PATCH_RESTORED` and `BIT_BATTLE_RUNTIME_MODE` are cleared on game join and when
+init is cleared.
 
 ## `RunFrameHook()` sequencing (ROM detected)
 

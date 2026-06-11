@@ -217,7 +217,7 @@ table row — see the "Patch registry" section below), choosing:
     the target data is not present; name the function `Foo_ApplyIfLoaded` rather than
     `Foo_ApplyOnce` to signal this distinction (`ResetPatchState()` is then typically a no-op).
 - **Restore flags** (`PatchRestoreFlag`): `RF_OnLeave` (restored when `isEndOfGame` —
-  `currentMode == 0x0E && (flowState == 1 || flowState == 2)` — while `BIT_IN_GAME_INIT` is
+  `currentMode == 0x0E && flowState != 0` — while `BIT_IN_GAME_INIT` is
   still set), `RF_OnStop` (restored in `OnEmuStart` / `OnEmuStop`), or `RF_None`.
 - **resetState**: point it at `Foo_ResetPatchState` (wire it even for pattern C no-ops).
 

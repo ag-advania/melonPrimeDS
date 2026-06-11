@@ -12,11 +12,13 @@ namespace MelonPrime::BattleFlow {
     constexpr uint8_t FLOW_END_CAMERA     = 1u;
     constexpr uint8_t FLOW_RESULT         = 2u;
 
-    // isEndOfGame: currentMode guard required (flowState==2 alone is unsafe).
+    // isEndOfGame: currentMode guard required (flowState alone is unsafe in menu).
+    // After mode==0x0E is known, flow!=0 matches game active-match gates (0..3, only 0 is live).
     [[nodiscard]] FORCE_INLINE bool IsEndOfGame(uint8_t currentMode, uint8_t flowState) noexcept
     {
-        return currentMode == MODE_BATTLE_RUNTIME
-            && (flowState == FLOW_END_CAMERA || flowState == FLOW_RESULT);
+        if (currentMode != MODE_BATTLE_RUNTIME)
+            return false;
+        return flowState != FLOW_ACTIVE_MATCH;
     }
 
 } // namespace MelonPrime::BattleFlow
