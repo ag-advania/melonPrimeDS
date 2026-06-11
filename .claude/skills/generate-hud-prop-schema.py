@@ -906,9 +906,10 @@ def parse_side_panel(props: dict[str, Prop], extra_refs: dict[str, list[Meta]], 
     for name, args in function_calls(text, call_names):
         origin = f"side:{name}"
         if name == "addOutlineGroup" and len(args) >= 1:
-            prefix = cpp_string_value(args[0])
-            if prefix:
-                add_outline_group(props, extra_refs, prefix, "side", origin)
+            # Call sites are addOutlineGroup(MP_OUTLINE_KEYS(Prefix)); pull the prefix token.
+            m = re.search(r"MP_OUTLINE_KEYS\(\s*(\w+)\s*\)", args[0])
+            if m:
+                add_outline_group(props, extra_refs, m.group(1), "side", origin)
         elif name == "addBuiltins" and len(args) >= 5:
             add_meta(props, extra_refs, dialog_key_from_expr(args[0], ident_to_key), "side", "Bool", "Show", "Builtins", origin=origin)
             add_color3(props, extra_refs, [dialog_key_from_expr(args[1], ident_to_key), dialog_key_from_expr(args[2], ident_to_key), dialog_key_from_expr(args[3], ident_to_key)], "side", "Color", "Builtins", origin)
@@ -945,9 +946,9 @@ def parse_side_panel(props: dict[str, Prop], extra_refs: dict[str, list[Meta]], 
             add_meta(props, extra_refs, dialog_key_from_expr(args[7], ident_to_key), "side", "Int", "Text Offset X", "GaugePositionRows", -128, 128, 1, origin)
             add_meta(props, extra_refs, dialog_key_from_expr(args[8], ident_to_key), "side", "Int", "Text Offset Y", "GaugePositionRows", -128, 128, 1, origin)
 
-    if "HudWeaponIconColorOverlay%s" in text:
-        add_weapon_tints(props, extra_refs, "side", "side:weaponTintLoop")
-
+    # The per-weapon tint keys are no longer built via a "...%s" snprintf loop;
+    # they are now MP_HUD_PROP_KEY_* macro references, picked up by the generic
+    # macro pass below.
     for match in re.finditer(r'"(Metroid\.Visual\.[^"]+)"', text):
         key = match.group(1)
         if key in props:

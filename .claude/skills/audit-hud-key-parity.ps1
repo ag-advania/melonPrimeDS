@@ -238,12 +238,11 @@ function Extract-SidePanelKeys {
         if ($key) { Add-Key $set $key }
     }
 
-    foreach ($m in [regex]::Matches($text, 'addOutlineGroup\("([^"]+)"\)')) {
+    foreach ($m in [regex]::Matches($text, 'addOutlineGroup\(MP_OUTLINE_KEYS\(\s*(\w+)\s*\)\)')) {
         Add-OutlineKeys $set $m.Groups[1].Value
     }
-    if ($text -match 'HudWeaponIconColorOverlay%s') {
-        Add-WeaponTintKeys $set
-    }
+    # Per-weapon tint keys are now MP_HUD_PROP_KEY_* macros (resolved by the macro
+    # pass above), not a "...%s" snprintf loop.
 
     return ,$set
 }
