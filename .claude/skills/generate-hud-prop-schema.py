@@ -29,6 +29,7 @@ CONFIG_CPP = QT_SDL / "Config.cpp"
 DIALOG_CPP = QT_SDL / "InputConfig/MelonPrimeInputConfig.cpp"
 DIALOG_PROPS_INC = QT_SDL / "InputConfig/MelonPrimeInputConfigHudDialogProps.inc"
 EDIT_DEFS = QT_SDL / "MelonPrimeHudConfigOnScreenDefs.inc"
+EDIT_PROPS_INC = QT_SDL / "MelonPrimeHudConfigOnScreenEditProps.inc"
 SIDE_PANEL_CPP = QT_SDL / "MelonPrimeHudConfigOnScreenEdit.cpp"
 RUNTIME_INC = QT_SDL / "MelonPrimeHudRenderConfig.inc"
 SCHEMA_OUT = QT_SDL / "MelonPrimeHudPropSchema.inc"
@@ -150,6 +151,43 @@ class DialogRow:
 class DialogSection:
     name: str
     rows: list[DialogRow]
+
+
+@dataclass
+class EditPropRow:
+    label: str
+    prop_type: str
+    cfg_key: str | None
+    min_value: str
+    max_value: str
+    step: str
+    extra1: str | None = None
+    extra2: str | None = None
+    extra3: str | None = None
+
+
+@dataclass
+class EditPropArray:
+    name: str
+    rows: list[EditPropRow]
+
+
+@dataclass
+class EditElemRow:
+    name: str
+    anchor_key: str | None
+    ofs_x_key: str | None
+    ofs_y_key: str | None
+    orient_key: str | None
+    length_key: str | None
+    width_key: str | None
+    pos_mode_key: str | None
+    show_key: str | None
+    color_r_key: str | None
+    color_g_key: str | None
+    color_b_key: str | None
+    props_expr: str
+    prop_count_expr: str
 
 
 def read(path: Path) -> str:
@@ -735,59 +773,130 @@ def parse_dialog(props: dict[str, Prop], extra_refs: dict[str, list[Meta]], iden
     return sections
 
 
-def parse_edit_descriptors(props: dict[str, Prop], extra_refs: dict[str, list[Meta]]) -> None:
-    text = strip_comments(read(EDIT_DEFS))
+def edit_value_from_expr(expr: str, ident_to_key: dict[str, str]) -> str | None:
+    key = dialog_key_from_expr(expr, ident_to_key)
+    if key:
+        return key
+    token = expr.strip()
+    if token == "nullptr":
+        return None
+    return token
+
+
+def parse_edit_descriptor_tables_from_text(
+    text: str,
+    ident_to_key: dict[str, str],
+) -> tuple[list[EditPropArray], list[EditElemRow]]:
+    prop_arrays: list[EditPropArray] = []
     for array_name, block in array_blocks(text, "HudEditPropDesc"):
+        rows: list[EditPropRow] = []
         for entry in brace_entries(block):
             args = split_top_level_args(entry)
-            if len(args) < 6:
+            if len(args) < 9:
                 continue
-            label = literal_label(args[0])
-            kind = args[1].replace("EditPropType::", "").strip()
-            key = literal_key(args[2])
-            origin = f"edit:{array_name}"
-            if kind == "Bool":
-                add_meta(props, extra_refs, key, "edit", "Bool", label, kind, origin=origin)
-            elif kind in {"Int", "Enum"}:
-                add_meta(props, extra_refs, key, "edit", "Int", label, kind, args[3], args[4], args[5], origin)
-            elif kind == "Float":
-                add_meta(props, extra_refs, key, "edit", "Double", label, kind, args[3], args[4], args[5], origin)
-            elif kind == "String":
-                add_meta(props, extra_refs, key, "edit", "String", label, kind, origin=origin)
-            elif kind == "SubColor":
-                add_meta(props, extra_refs, key, "edit", "Bool", label, kind, origin=origin)
-                extra_keys = [literal_key(arg) for arg in args[6:9]]
-                add_color3(props, extra_refs, extra_keys, "edit", label, kind, origin)
-            elif kind == "Color":
-                add_meta(props, extra_refs, key, "edit", "Int", label, kind, args[3], args[4], args[5], origin)
+            rows.append(EditPropRow(
+                literal_label(args[0]),
+                args[1].replace("EditPropType::", "").strip(),
+                edit_value_from_expr(args[2], ident_to_key),
+                args[3].strip(),
+                args[4].strip(),
+                args[5].strip(),
+                edit_value_from_expr(args[6], ident_to_key),
+                edit_value_from_expr(args[7], ident_to_key),
+                edit_value_from_expr(args[8], ident_to_key),
+            ))
+        if rows:
+            prop_arrays.append(EditPropArray(array_name, rows))
 
-    for array_name, block in array_blocks(text, "HudEditElemDesc", r"kEditElems"):
+    edit_elems: list[EditElemRow] = []
+    for _, block in array_blocks(text, "HudEditElemDesc", r"kEditElems"):
         for entry in brace_entries(block):
             args = split_top_level_args(entry)
-            if len(args) < 12:
+            if len(args) < 14:
                 continue
-            elem = literal_label(args[0])
-            origin = f"edit:{array_name}:{elem}"
-            add_meta(props, extra_refs, literal_key(args[1]), "edit", "Int", "Anchor", "EditElemAnchor", 0, 8, 1, origin)
-            add_meta(props, extra_refs, literal_key(args[2]), "edit", "Int", "Offset X", "EditElemOffset", origin=origin)
-            add_meta(props, extra_refs, literal_key(args[3]), "edit", "Int", "Offset Y", "EditElemOffset", origin=origin)
-            add_meta(props, extra_refs, literal_key(args[4]), "edit", "Int", "Orientation", "EditElemOrient", 0, 1, 1, origin)
-            add_meta(props, extra_refs, literal_key(args[5]), "edit", "Int", "Length", "EditElemSize", origin=origin)
-            add_meta(props, extra_refs, literal_key(args[6]), "edit", "Int", "Width", "EditElemSize", origin=origin)
-            add_meta(props, extra_refs, literal_key(args[7]), "edit", "Int", "Position Mode", "EditElemPosMode", 0, 2, 1, origin)
-            add_meta(props, extra_refs, literal_key(args[8]), "edit", "Bool", "Show", "EditElemShow", origin=origin)
-            add_color3(
-                props,
-                extra_refs,
-                [literal_key(args[9]), literal_key(args[10]), literal_key(args[11])],
-                "edit",
-                "Color",
-                "EditElemColor",
-                origin,
-            )
+            edit_elems.append(EditElemRow(
+                literal_label(args[0]),
+                edit_value_from_expr(args[1], ident_to_key),
+                edit_value_from_expr(args[2], ident_to_key),
+                edit_value_from_expr(args[3], ident_to_key),
+                edit_value_from_expr(args[4], ident_to_key),
+                edit_value_from_expr(args[5], ident_to_key),
+                edit_value_from_expr(args[6], ident_to_key),
+                edit_value_from_expr(args[7], ident_to_key),
+                edit_value_from_expr(args[8], ident_to_key),
+                edit_value_from_expr(args[9], ident_to_key),
+                edit_value_from_expr(args[10], ident_to_key),
+                edit_value_from_expr(args[11], ident_to_key),
+                args[12].strip(),
+                args[13].strip(),
+            ))
+    return prop_arrays, edit_elems
 
 
-def parse_side_panel(props: dict[str, Prop], extra_refs: dict[str, list[Meta]]) -> None:
+def parse_edit_descriptor_tables(ident_to_key: dict[str, str]) -> tuple[list[EditPropArray], list[EditElemRow]]:
+    source_tables = parse_edit_descriptor_tables_from_text(strip_comments(read(EDIT_DEFS)), ident_to_key)
+    if source_tables[0] and source_tables[1]:
+        return source_tables
+    if EDIT_PROPS_INC.exists():
+        return parse_edit_descriptor_tables_from_text(strip_comments(read(EDIT_PROPS_INC)), ident_to_key)
+    return [], []
+
+
+def add_edit_prop_meta(
+    props: dict[str, Prop],
+    extra_refs: dict[str, list[Meta]],
+    array_name: str,
+    row: EditPropRow,
+) -> None:
+    origin = f"edit:{array_name}"
+    if row.prop_type == "Bool":
+        add_meta(props, extra_refs, row.cfg_key, "edit", "Bool", row.label, row.prop_type, origin=origin)
+    elif row.prop_type in {"Int", "Enum"}:
+        add_meta(props, extra_refs, row.cfg_key, "edit", "Int", row.label, row.prop_type, row.min_value, row.max_value, row.step, origin)
+    elif row.prop_type == "Float":
+        add_meta(props, extra_refs, row.cfg_key, "edit", "Double", row.label, row.prop_type, row.min_value, row.max_value, row.step, origin)
+    elif row.prop_type == "String":
+        add_meta(props, extra_refs, row.cfg_key, "edit", "String", row.label, row.prop_type, origin=origin)
+    elif row.prop_type == "SubColor":
+        add_meta(props, extra_refs, row.cfg_key, "edit", "Bool", row.label, row.prop_type, origin=origin)
+        add_color3(props, extra_refs, [row.extra1, row.extra2, row.extra3], "edit", row.label, row.prop_type, origin)
+    elif row.prop_type == "Color":
+        add_meta(props, extra_refs, row.cfg_key, "edit", "Int", row.label, row.prop_type, row.min_value, row.max_value, row.step, origin)
+
+
+def parse_edit_descriptors(
+    props: dict[str, Prop],
+    extra_refs: dict[str, list[Meta]],
+    ident_to_key: dict[str, str],
+) -> tuple[list[EditPropArray], list[EditElemRow]]:
+    prop_arrays, edit_elems = parse_edit_descriptor_tables(ident_to_key)
+    for prop_array in prop_arrays:
+        for row in prop_array.rows:
+            add_edit_prop_meta(props, extra_refs, prop_array.name, row)
+
+    for row in edit_elems:
+        origin = f"edit:kEditElems:{row.name}"
+        add_meta(props, extra_refs, row.anchor_key, "edit", "Int", "Anchor", "EditElemAnchor", 0, 8, 1, origin)
+        add_meta(props, extra_refs, row.ofs_x_key, "edit", "Int", "Offset X", "EditElemOffset", origin=origin)
+        add_meta(props, extra_refs, row.ofs_y_key, "edit", "Int", "Offset Y", "EditElemOffset", origin=origin)
+        add_meta(props, extra_refs, row.orient_key, "edit", "Int", "Orientation", "EditElemOrient", 0, 1, 1, origin)
+        add_meta(props, extra_refs, row.length_key, "edit", "Int", "Length", "EditElemSize", origin=origin)
+        add_meta(props, extra_refs, row.width_key, "edit", "Int", "Width", "EditElemSize", origin=origin)
+        add_meta(props, extra_refs, row.pos_mode_key, "edit", "Int", "Position Mode", "EditElemPosMode", 0, 2, 1, origin)
+        add_meta(props, extra_refs, row.show_key, "edit", "Bool", "Show", "EditElemShow", origin=origin)
+        add_color3(
+            props,
+            extra_refs,
+            [row.color_r_key, row.color_g_key, row.color_b_key],
+            "edit",
+            "Color",
+            "EditElemColor",
+            origin,
+        )
+    return prop_arrays, edit_elems
+
+
+def parse_side_panel(props: dict[str, Prop], extra_refs: dict[str, list[Meta]], ident_to_key: dict[str, str]) -> None:
     text = strip_comments(read(SIDE_PANEL_CPP))
     call_names = {
         "addOutlineGroup", "addBuiltins", "addOffsetRows", "addLineEdit",
@@ -801,40 +910,40 @@ def parse_side_panel(props: dict[str, Prop], extra_refs: dict[str, list[Meta]]) 
             if prefix:
                 add_outline_group(props, extra_refs, prefix, "side", origin)
         elif name == "addBuiltins" and len(args) >= 5:
-            add_meta(props, extra_refs, literal_key(args[0]), "side", "Bool", "Show", "Builtins", origin=origin)
-            add_color3(props, extra_refs, [literal_key(args[1]), literal_key(args[2]), literal_key(args[3])], "side", "Color", "Builtins", origin)
-            add_meta(props, extra_refs, literal_key(args[4]), "side", "Int", "Anchor", "Builtins", 0, 8, 1, origin)
+            add_meta(props, extra_refs, dialog_key_from_expr(args[0], ident_to_key), "side", "Bool", "Show", "Builtins", origin=origin)
+            add_color3(props, extra_refs, [dialog_key_from_expr(args[1], ident_to_key), dialog_key_from_expr(args[2], ident_to_key), dialog_key_from_expr(args[3], ident_to_key)], "side", "Color", "Builtins", origin)
+            add_meta(props, extra_refs, dialog_key_from_expr(args[4], ident_to_key), "side", "Int", "Anchor", "Builtins", 0, 8, 1, origin)
         elif name == "addOffsetRows" and len(args) >= 4:
-            add_meta(props, extra_refs, literal_key(args[0]), "side", "Int", "Offset X", "OffsetRows", args[2], args[3], 1, origin)
-            add_meta(props, extra_refs, literal_key(args[1]), "side", "Int", "Offset Y", "OffsetRows", args[2], args[3], 1, origin)
+            add_meta(props, extra_refs, dialog_key_from_expr(args[0], ident_to_key), "side", "Int", "Offset X", "OffsetRows", args[2], args[3], 1, origin)
+            add_meta(props, extra_refs, dialog_key_from_expr(args[1], ident_to_key), "side", "Int", "Offset Y", "OffsetRows", args[2], args[3], 1, origin)
         elif name == "addLineEdit" and len(args) >= 2:
-            add_meta(props, extra_refs, literal_key(args[1]), "side", "String", literal_label(args[0]), "LineEdit", origin=origin)
+            add_meta(props, extra_refs, dialog_key_from_expr(args[1], ident_to_key), "side", "String", literal_label(args[0]), "LineEdit", origin=origin)
         elif name == "addAlign3Combo" and len(args) >= 2:
-            add_meta(props, extra_refs, literal_key(args[1]), "side", "Int", literal_label(args[0]), "Align3", 0, 2, 1, origin)
+            add_meta(props, extra_refs, dialog_key_from_expr(args[1], ident_to_key), "side", "Int", literal_label(args[0]), "Align3", 0, 2, 1, origin)
         elif name == "addOpacitySlider" and len(args) >= 2:
-            add_meta(props, extra_refs, literal_key(args[1]), "side", "Double", literal_label(args[0]), "OpacitySlider", 0, 100, 5, origin)
+            add_meta(props, extra_refs, dialog_key_from_expr(args[1], ident_to_key), "side", "Double", literal_label(args[0]), "OpacitySlider", 0, 100, 5, origin)
         elif name == "addSpinBox" and len(args) >= 4:
-            add_meta(props, extra_refs, literal_key(args[1]), "side", "Int", literal_label(args[0]), "SpinBox", args[2], args[3], 1, origin)
+            add_meta(props, extra_refs, dialog_key_from_expr(args[1], ident_to_key), "side", "Int", literal_label(args[0]), "SpinBox", args[2], args[3], 1, origin)
         elif name == "addDoubleSpinBox" and len(args) >= 5:
-            add_meta(props, extra_refs, literal_key(args[1]), "side", "Double", literal_label(args[0]), "DoubleSpinBox", args[2], args[3], args[4], origin)
+            add_meta(props, extra_refs, dialog_key_from_expr(args[1], ident_to_key), "side", "Double", literal_label(args[0]), "DoubleSpinBox", args[2], args[3], args[4], origin)
         elif name == "addCheckBox" and len(args) >= 2:
-            add_meta(props, extra_refs, literal_key(args[1]), "side", "Bool", literal_label(args[0]), "CheckBox", origin=origin)
+            add_meta(props, extra_refs, dialog_key_from_expr(args[1], ident_to_key), "side", "Bool", literal_label(args[0]), "CheckBox", origin=origin)
         elif name == "addColorPicker" and len(args) >= 4:
-            add_color3(props, extra_refs, [literal_key(args[1]), literal_key(args[2]), literal_key(args[3])], "side", literal_label(args[0]), "ColorPicker", origin)
+            add_color3(props, extra_refs, [dialog_key_from_expr(args[1], ident_to_key), dialog_key_from_expr(args[2], ident_to_key), dialog_key_from_expr(args[3], ident_to_key)], "side", literal_label(args[0]), "ColorPicker", origin)
         elif name == "addComboBox" and len(args) >= 2:
             items = re.findall(r'QStringLiteral\("', args[2]) if len(args) >= 3 else []
             max_value = len(items) - 1 if items else None
-            add_meta(props, extra_refs, literal_key(args[1]), "side", "Int", literal_label(args[0]), "ComboBox", 0 if items else None, max_value, 1 if items else None, origin)
+            add_meta(props, extra_refs, dialog_key_from_expr(args[1], ident_to_key), "side", "Int", literal_label(args[0]), "ComboBox", 0 if items else None, max_value, 1 if items else None, origin)
         elif name == "addGaugePositionRows" and len(args) >= 9:
-            add_meta(props, extra_refs, literal_key(args[0]), "side", "Int", "Position Mode", "GaugePositionRows", 0, 2, 1, origin)
-            add_meta(props, extra_refs, literal_key(args[1]), "side", "Int", "Gauge Side", "GaugePositionRows", 0, 4, 1, origin)
-            add_meta(props, extra_refs, literal_key(args[2]), "side", "Int", "Offset X", "GaugePositionRows", -128, 128, 1, origin)
-            add_meta(props, extra_refs, literal_key(args[3]), "side", "Int", "Offset Y", "GaugePositionRows", -128, 128, 1, origin)
-            add_meta(props, extra_refs, literal_key(args[4]), "side", "Int", "Gauge X", "GaugePositionRows", -256, 256, 1, origin)
-            add_meta(props, extra_refs, literal_key(args[5]), "side", "Int", "Gauge Y", "GaugePositionRows", -256, 256, 1, origin)
-            add_meta(props, extra_refs, literal_key(args[6]), "side", "Int", "Text Side", "GaugePositionRows", 0, 4, 1, origin)
-            add_meta(props, extra_refs, literal_key(args[7]), "side", "Int", "Text Offset X", "GaugePositionRows", -128, 128, 1, origin)
-            add_meta(props, extra_refs, literal_key(args[8]), "side", "Int", "Text Offset Y", "GaugePositionRows", -128, 128, 1, origin)
+            add_meta(props, extra_refs, dialog_key_from_expr(args[0], ident_to_key), "side", "Int", "Position Mode", "GaugePositionRows", 0, 2, 1, origin)
+            add_meta(props, extra_refs, dialog_key_from_expr(args[1], ident_to_key), "side", "Int", "Gauge Side", "GaugePositionRows", 0, 4, 1, origin)
+            add_meta(props, extra_refs, dialog_key_from_expr(args[2], ident_to_key), "side", "Int", "Offset X", "GaugePositionRows", -128, 128, 1, origin)
+            add_meta(props, extra_refs, dialog_key_from_expr(args[3], ident_to_key), "side", "Int", "Offset Y", "GaugePositionRows", -128, 128, 1, origin)
+            add_meta(props, extra_refs, dialog_key_from_expr(args[4], ident_to_key), "side", "Int", "Gauge X", "GaugePositionRows", -256, 256, 1, origin)
+            add_meta(props, extra_refs, dialog_key_from_expr(args[5], ident_to_key), "side", "Int", "Gauge Y", "GaugePositionRows", -256, 256, 1, origin)
+            add_meta(props, extra_refs, dialog_key_from_expr(args[6], ident_to_key), "side", "Int", "Text Side", "GaugePositionRows", 0, 4, 1, origin)
+            add_meta(props, extra_refs, dialog_key_from_expr(args[7], ident_to_key), "side", "Int", "Text Offset X", "GaugePositionRows", -128, 128, 1, origin)
+            add_meta(props, extra_refs, dialog_key_from_expr(args[8], ident_to_key), "side", "Int", "Text Offset Y", "GaugePositionRows", -128, 128, 1, origin)
 
     if "HudWeaponIconColorOverlay%s" in text:
         add_weapon_tints(props, extra_refs, "side", "side:weaponTintLoop")
@@ -843,6 +952,10 @@ def parse_side_panel(props: dict[str, Prop], extra_refs: dict[str, list[Meta]]) 
         key = match.group(1)
         if key in props:
             add_meta(props, extra_refs, key, "side", origin="side:literal")
+    for match in re.finditer(r'\bMP_HUD_PROP_KEY_(\w+)\b', text):
+        key = ident_to_key.get(match.group(1))
+        if key in props:
+            add_meta(props, extra_refs, key, "side", origin="side:keyMacro")
 
 
 def parse_runtime(props: dict[str, Prop], extra_refs: dict[str, list[Meta]]) -> None:
@@ -1021,6 +1134,85 @@ def write_dialog_props(sections: list[DialogSection], key_to_ident: dict[str, st
     path.write_text("\n".join(lines), encoding="utf-8")
 
 
+def edit_ref_expr(value: str | None, key_to_ident: dict[str, str]) -> str:
+    if value is None:
+        return "nullptr"
+    ident = key_to_ident.get(value)
+    if ident:
+        return f"MP_HUD_PROP_KEY_{ident}"
+    return value
+
+
+def write_edit_props(
+    prop_arrays: list[EditPropArray],
+    edit_elems: list[EditElemRow],
+    key_to_ident: dict[str, str],
+    path: Path,
+) -> None:
+    lines: list[str] = [
+        "// Generated by .claude/skills/generate-hud-prop-schema.py.",
+        "// On-screen edit-mode HudEditPropDesc/HudEditElemDesc tables.",
+        "// Requires MelonPrimeHudPropSchema.inc and HUD_EDIT_PROP_COUNT to be defined first.",
+        "// Do not edit rows by hand; regenerate from the HUD schema source surfaces.",
+        "",
+        "#ifndef MELONPRIME_HUD_CONFIG_ON_SCREEN_EDIT_PROPS_INC",
+        "#define MELONPRIME_HUD_CONFIG_ON_SCREEN_EDIT_PROPS_INC",
+        "",
+    ]
+    for prop_array in prop_arrays:
+        lines.append(f"static const HudEditPropDesc {prop_array.name}[] = {{")
+        for row in prop_array.rows:
+            lines.append(
+                "    {"
+                f"{cpp_quote(row.label)}, EditPropType::{row.prop_type}, {edit_ref_expr(row.cfg_key, key_to_ident)}, "
+                f"{row.min_value}, {row.max_value}, {row.step}, "
+                f"{edit_ref_expr(row.extra1, key_to_ident)}, {edit_ref_expr(row.extra2, key_to_ident)}, {edit_ref_expr(row.extra3, key_to_ident)}"
+                "},"
+            )
+        lines.append("};")
+        lines.append("")
+
+    count_names = {
+        "kPropsCrosshairMain": "kCrosshairMainCount",
+        "kPropsCrosshairInner": "kCrosshairInnerCount",
+        "kPropsCrosshairOuter": "kCrosshairOuterCount",
+    }
+    for prop_array in prop_arrays:
+        if prop_array.name in count_names:
+            lines.append(f"static constexpr int {count_names[prop_array.name]} = HUD_EDIT_PROP_COUNT({prop_array.name});")
+    lines.append("")
+
+    lines.append("static const HudEditElemDesc kEditElems[kEditElemCount] = {")
+    for row in edit_elems:
+        lines.append("    {")
+        lines.append(f"        {cpp_quote(row.name)},")
+        lines.append(
+            "        "
+            f"{edit_ref_expr(row.anchor_key, key_to_ident)}, {edit_ref_expr(row.ofs_x_key, key_to_ident)}, {edit_ref_expr(row.ofs_y_key, key_to_ident)},"
+        )
+        lines.append(
+            "        "
+            f"{edit_ref_expr(row.orient_key, key_to_ident)}, {edit_ref_expr(row.length_key, key_to_ident)}, "
+            f"{edit_ref_expr(row.width_key, key_to_ident)}, {edit_ref_expr(row.pos_mode_key, key_to_ident)},"
+        )
+        lines.append(f"        {edit_ref_expr(row.show_key, key_to_ident)},")
+        lines.append(
+            "        "
+            f"{edit_ref_expr(row.color_r_key, key_to_ident)}, {edit_ref_expr(row.color_g_key, key_to_ident)}, {edit_ref_expr(row.color_b_key, key_to_ident)},"
+        )
+        lines.append(f"        {row.props_expr}, {row.prop_count_expr}")
+        lines.append("    },")
+    lines.append("};")
+    lines.append("")
+    lines.extend([
+        "#undef HUD_EDIT_PROP_COUNT",
+        "",
+        "#endif // MELONPRIME_HUD_CONFIG_ON_SCREEN_EDIT_PROPS_INC",
+        "",
+    ])
+    path.write_text("\n".join(lines), encoding="utf-8")
+
+
 def set_for_surface(props: dict[str, Prop], surface: str) -> set[str]:
     return {key for key, prop in props.items() if surface in prop.surfaces()}
 
@@ -1123,6 +1315,7 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--schema", type=Path, default=SCHEMA_OUT)
     parser.add_argument("--dialog-props", type=Path, default=DIALOG_PROPS_INC)
+    parser.add_argument("--edit-props", type=Path, default=EDIT_PROPS_INC)
     parser.add_argument("--report", type=Path, default=REPORT_OUT)
     parser.add_argument("--defaults-source", type=Path, default=CONFIG_CPP)
     parser.add_argument("--no-write", action="store_true")
@@ -1134,13 +1327,14 @@ def main() -> int:
     key_to_ident, ident_to_key = build_identifier_maps(order)
     extra_refs: dict[str, list[Meta]] = {}
     dialog_sections = parse_dialog(props, extra_refs, ident_to_key)
-    parse_edit_descriptors(props, extra_refs)
-    parse_side_panel(props, extra_refs)
+    edit_prop_arrays, edit_elems = parse_edit_descriptors(props, extra_refs, ident_to_key)
+    parse_side_panel(props, extra_refs, ident_to_key)
     parse_runtime(props, extra_refs)
 
     if not args.no_write:
         write_schema(order, props, args.schema)
         write_dialog_props(dialog_sections, key_to_ident, args.dialog_props)
+        write_edit_props(edit_prop_arrays, edit_elems, key_to_ident, args.edit_props)
         write_report(order, props, extra_refs, args.report)
 
     surface_counts = {
@@ -1156,6 +1350,7 @@ def main() -> int:
     if not args.no_write:
         print(f"wrote {args.schema}")
         print(f"wrote {args.dialog_props}")
+        print(f"wrote {args.edit_props}")
         print(f"wrote {args.report}")
     return 0
 

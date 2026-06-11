@@ -28,6 +28,7 @@ $qtSdl = Join-Path $repoRoot 'src/frontend/qt_sdl'
 $configPath = Join-Path $qtSdl 'Config.cpp'
 $hudSchemaPath = Join-Path $qtSdl 'MelonPrimeHudPropSchema.inc'
 $hudDialogPropsPath = Join-Path $qtSdl 'InputConfig/MelonPrimeInputConfigHudDialogProps.inc'
+$hudEditPropsPath = Join-Path $qtSdl 'MelonPrimeHudConfigOnScreenEditProps.inc'
 
 function New-Set {
     return ,[System.Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
@@ -213,13 +214,29 @@ function Extract-DialogKeys {
 
 function Extract-EditDescriptorKeys {
     $path = Join-Path $qtSdl 'MelonPrimeHudConfigOnScreenDefs.inc'
-    return ,(Extract-VisualLiterals (Read-Text $path))
+    $set = Extract-VisualLiterals (Read-Text $path)
+    if (Test-Path -LiteralPath $hudEditPropsPath) {
+        $editText = Read-Text $hudEditPropsPath
+        $schemaKeyMacros = Get-SchemaKeyMacros
+        foreach ($m in [regex]::Matches($editText, '\bMP_HUD_PROP_KEY_(\w+)\b')) {
+            $key = $schemaKeyMacros[$m.Groups[1].Value]
+            if ($key) { Add-Key $set $key }
+        }
+        $literalKeys = Extract-VisualLiterals $editText
+        foreach ($key in $literalKeys) { Add-Key $set $key }
+    }
+    return ,$set
 }
 
 function Extract-SidePanelKeys {
     $path = Join-Path $qtSdl 'MelonPrimeHudConfigOnScreenEdit.cpp'
     $text = Read-Text $path
     $set = Extract-VisualLiterals $text
+    $schemaKeyMacros = Get-SchemaKeyMacros
+    foreach ($m in [regex]::Matches($text, '\bMP_HUD_PROP_KEY_(\w+)\b')) {
+        $key = $schemaKeyMacros[$m.Groups[1].Value]
+        if ($key) { Add-Key $set $key }
+    }
 
     foreach ($m in [regex]::Matches($text, 'addOutlineGroup\("([^"]+)"\)')) {
         Add-OutlineKeys $set $m.Groups[1].Value
