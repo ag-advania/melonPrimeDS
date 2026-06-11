@@ -3,6 +3,8 @@
 #include "MelonPrimePatchOsdColor.h"
 #include "MelonPrimeInternal.h"
 #include "MelonPrimeGameRomAddrTable.h"
+#include "MelonPrimeHudPropSchema.inc"
+#include "MelonPrimeOsdColorSchema.inc"
 #include "EmuInstance.h"
 #include "NDS.h"
 
@@ -30,12 +32,12 @@ namespace MelonPrime {
 //  literal, so it gets its own 10-instruction color-encoding shim.
 // =========================================================================
 
-static constexpr const char* kCfgOsdColorEnable      = "Metroid.Visual.OsdColor";
-static constexpr const char* kCfgOsdColorApplyGlobal  = "Metroid.Visual.OsdColorApplyGlobal";
-static constexpr const char* kCfgOsdColorH211Enable   = "Metroid.Visual.OsdColorH211";
-static constexpr const char* kCfgOsdColorH211R        = "Metroid.Visual.OsdColorH211R";
-static constexpr const char* kCfgOsdColorH211G        = "Metroid.Visual.OsdColorH211G";
-static constexpr const char* kCfgOsdColorH211B        = "Metroid.Visual.OsdColorH211B";
+static constexpr const char* kCfgOsdColorEnable       = MP_HUD_PROP_KEY_OsdColor;
+static constexpr const char* kCfgOsdColorApplyGlobal  = MP_HUD_PROP_KEY_OsdColorApplyGlobal;
+static constexpr const char* kCfgOsdColorH211Enable   = MP_HUD_PROP_KEY_OsdColorH211;
+static constexpr const char* kCfgOsdColorH211R        = MP_HUD_PROP_KEY_OsdColorH211R;
+static constexpr const char* kCfgOsdColorH211G        = MP_HUD_PROP_KEY_OsdColorH211G;
+static constexpr const char* kCfgOsdColorH211B        = MP_HUD_PROP_KEY_OsdColorH211B;
 
 // -------------------------------------------------------------------------
 //  Runtime slot addresses — entry+0x10, halfword (BGR555)
@@ -162,17 +164,10 @@ void OsdColor_RestoreOnce(melonDS::NDS* nds, const RomAddresses& rom)
     const size_t idx = rom.romGroupIndex;
 
     if (s_osdColorPatchApplied) {
-        Write32(ram, LIST_OsdLiteral_LostLives[idx],    kOsdOrigLit);
-        Write32(ram, LIST_OsdLiteral_KillDeath[idx],    kOsdOrigLit);
-        Write32(ram, LIST_OsdLiteral_ReturnBase[idx],   kOsdOrigLit);
-        Write32(ram, LIST_OsdLiteral_NoAmmo[idx],       kOsdOrigLitNoAmmo);
-        Write32(ram, LIST_OsdLiteral_CowardDetect[idx], kOsdOrigLit);
-        Write32(ram, LIST_OsdLiteral_AcquiringNode[idx],kOsdOrigLit);
-        Write32(ram, LIST_OsdLiteral_Turret[idx],       kOsdOrigLit);
-        Write32(ram, LIST_OsdLiteral_OctoReset[idx],    kOsdOrigLit);
-        Write32(ram, LIST_OsdLiteral_OctoDrop[idx],     kOsdOrigLit);
-        Write32(ram, LIST_OsdLiteral_OctoCond[idx],     kOsdOrigLit);
-        Write32(ram, LIST_OsdLiteral_OctoMissing[idx],  kOsdOrigLit);
+#define MP_OSD_COLOR_RESTORE_LITERAL(id, dialogLabel, keyPrefix, literalList, restoreValue) \
+        Write32(ram, LIST_##literalList[idx], restoreValue);
+        MP_OSD_COLOR_LITERAL_ROWS(MP_OSD_COLOR_RESTORE_LITERAL)
+#undef MP_OSD_COLOR_RESTORE_LITERAL
         s_osdColorPatchApplied = false;
     }
 
@@ -204,7 +199,7 @@ void OsdColor_ApplyOnce(EmuInstance* emu, Config::Table& localCfg,
 
     // OsdColor patches are part of the Custom HUD feature; force-disable when
     // CustomHUD itself is off so toggling it cleanly restores all OSD literals.
-    const bool customHudEnabled = localCfg.GetBool("Metroid.Visual.CustomHUD");
+    const bool customHudEnabled = localCfg.GetBool(MP_HUD_PROP_KEY_CustomHUD);
     const bool globalEnabled = customHudEnabled && localCfg.GetBool(kCfgOsdColorEnable);
     const bool h211Enabled   = customHudEnabled && localCfg.GetBool(kCfgOsdColorH211Enable);
 
@@ -220,24 +215,18 @@ void OsdColor_ApplyOnce(EmuInstance* emu, Config::Table& localCfg,
     if (globalEnabled) {
         const bool applyGlobal = localCfg.GetBool(kCfgOsdColorApplyGlobal);
         const uint32_t globalColor = ToBgr555(
-            localCfg.GetInt("Metroid.Visual.OsdColorR"),
-            localCfg.GetInt("Metroid.Visual.OsdColorG"),
-            localCfg.GetInt("Metroid.Visual.OsdColorB"));
+            localCfg.GetInt(MP_HUD_PROP_KEY_OsdColorR),
+            localCfg.GetInt(MP_HUD_PROP_KEY_OsdColorG),
+            localCfg.GetInt(MP_HUD_PROP_KEY_OsdColorB));
         auto litColor = [&](const char* rk, const char* gk, const char* bk) -> uint32_t {
             return applyGlobal ? globalColor : CatColor(localCfg, rk, gk, bk);
         };
 
-        Write32(ram, LIST_OsdLiteral_LostLives[idx],    litColor("Metroid.Visual.OsdColorLostLivesR",    "Metroid.Visual.OsdColorLostLivesG",    "Metroid.Visual.OsdColorLostLivesB"));
-        Write32(ram, LIST_OsdLiteral_KillDeath[idx],    litColor("Metroid.Visual.OsdColorKillDeathR",    "Metroid.Visual.OsdColorKillDeathG",    "Metroid.Visual.OsdColorKillDeathB"));
-        Write32(ram, LIST_OsdLiteral_ReturnBase[idx],   litColor("Metroid.Visual.OsdColorReturnBaseR",   "Metroid.Visual.OsdColorReturnBaseG",   "Metroid.Visual.OsdColorReturnBaseB"));
-        Write32(ram, LIST_OsdLiteral_NoAmmo[idx],       litColor("Metroid.Visual.OsdColorNoAmmoR",       "Metroid.Visual.OsdColorNoAmmoG",       "Metroid.Visual.OsdColorNoAmmoB"));
-        Write32(ram, LIST_OsdLiteral_CowardDetect[idx], litColor("Metroid.Visual.OsdColorCowardDetectR", "Metroid.Visual.OsdColorCowardDetectG", "Metroid.Visual.OsdColorCowardDetectB"));
-        Write32(ram, LIST_OsdLiteral_AcquiringNode[idx],litColor("Metroid.Visual.OsdColorAcquiringNodeR","Metroid.Visual.OsdColorAcquiringNodeG","Metroid.Visual.OsdColorAcquiringNodeB"));
-        Write32(ram, LIST_OsdLiteral_Turret[idx],       litColor("Metroid.Visual.OsdColorTurretR",       "Metroid.Visual.OsdColorTurretG",       "Metroid.Visual.OsdColorTurretB"));
-        Write32(ram, LIST_OsdLiteral_OctoReset[idx],    litColor("Metroid.Visual.OsdColorOctoResetR",    "Metroid.Visual.OsdColorOctoResetG",    "Metroid.Visual.OsdColorOctoResetB"));
-        Write32(ram, LIST_OsdLiteral_OctoDrop[idx],     litColor("Metroid.Visual.OsdColorOctoDropR",     "Metroid.Visual.OsdColorOctoDropG",     "Metroid.Visual.OsdColorOctoDropB"));
-        Write32(ram, LIST_OsdLiteral_OctoCond[idx],     litColor("Metroid.Visual.OsdColorOctoCondR",     "Metroid.Visual.OsdColorOctoCondG",     "Metroid.Visual.OsdColorOctoCondB"));
-        Write32(ram, LIST_OsdLiteral_OctoMissing[idx],  litColor("Metroid.Visual.OsdColorOctoMissingR",  "Metroid.Visual.OsdColorOctoMissingG",  "Metroid.Visual.OsdColorOctoMissingB"));
+#define MP_OSD_COLOR_APPLY_LITERAL(id, dialogLabel, keyPrefix, literalList, restoreValue) \
+        Write32(ram, LIST_##literalList[idx], \
+                litColor(MP_OSD_COLOR_KEY_R(keyPrefix), MP_OSD_COLOR_KEY_G(keyPrefix), MP_OSD_COLOR_KEY_B(keyPrefix)));
+        MP_OSD_COLOR_LITERAL_ROWS(MP_OSD_COLOR_APPLY_LITERAL)
+#undef MP_OSD_COLOR_APPLY_LITERAL
         s_osdColorPatchApplied = true;
 
         // Immediately update currently displayed OSD slots.
@@ -247,21 +236,21 @@ void OsdColor_ApplyOnce(EmuInstance* emu, Config::Table& localCfg,
             ApplySlotOverrideAll(ram, idx, static_cast<uint16_t>(globalColor));
         } else {
             const uint16_t colKD  = static_cast<uint16_t>(ToBgr555(
-                localCfg.GetInt("Metroid.Visual.OsdColorSlotKillDeathR"),
-                localCfg.GetInt("Metroid.Visual.OsdColorSlotKillDeathG"),
-                localCfg.GetInt("Metroid.Visual.OsdColorSlotKillDeathB")));
+                localCfg.GetInt(MP_HUD_PROP_KEY_OsdColorSlotKillDeathR),
+                localCfg.GetInt(MP_HUD_PROP_KEY_OsdColorSlotKillDeathG),
+                localCfg.GetInt(MP_HUD_PROP_KEY_OsdColorSlotKillDeathB)));
             const uint16_t colNode = static_cast<uint16_t>(ToBgr555(
-                localCfg.GetInt("Metroid.Visual.OsdColorSlotNodeR"),
-                localCfg.GetInt("Metroid.Visual.OsdColorSlotNodeG"),
-                localCfg.GetInt("Metroid.Visual.OsdColorSlotNodeB")));
+                localCfg.GetInt(MP_HUD_PROP_KEY_OsdColorSlotNodeR),
+                localCfg.GetInt(MP_HUD_PROP_KEY_OsdColorSlotNodeG),
+                localCfg.GetInt(MP_HUD_PROP_KEY_OsdColorSlotNodeB)));
             const uint16_t colObj  = static_cast<uint16_t>(ToBgr555(
-                localCfg.GetInt("Metroid.Visual.OsdColorSlotObjectiveR"),
-                localCfg.GetInt("Metroid.Visual.OsdColorSlotObjectiveG"),
-                localCfg.GetInt("Metroid.Visual.OsdColorSlotObjectiveB")));
+                localCfg.GetInt(MP_HUD_PROP_KEY_OsdColorSlotObjectiveR),
+                localCfg.GetInt(MP_HUD_PROP_KEY_OsdColorSlotObjectiveG),
+                localCfg.GetInt(MP_HUD_PROP_KEY_OsdColorSlotObjectiveB)));
             const uint16_t colSys  = static_cast<uint16_t>(ToBgr555(
-                localCfg.GetInt("Metroid.Visual.OsdColorSlotSystemR"),
-                localCfg.GetInt("Metroid.Visual.OsdColorSlotSystemG"),
-                localCfg.GetInt("Metroid.Visual.OsdColorSlotSystemB")));
+                localCfg.GetInt(MP_HUD_PROP_KEY_OsdColorSlotSystemR),
+                localCfg.GetInt(MP_HUD_PROP_KEY_OsdColorSlotSystemG),
+                localCfg.GetInt(MP_HUD_PROP_KEY_OsdColorSlotSystemB)));
             ApplySlotOverridePerFlag(ram, idx, colKD, colNode, colObj, colSys);
         }
     }

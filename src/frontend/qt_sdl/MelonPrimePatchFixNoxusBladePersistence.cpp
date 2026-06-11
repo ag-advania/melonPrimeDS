@@ -2,6 +2,7 @@
 
 #include "MelonPrimePatchFixNoxusBladePersistence.h"
 #include "Config.h"
+#include "MelonPrimeGameRomAddrTable.h"
 #include "NDS.h"
 
 #include <atomic>
@@ -43,6 +44,21 @@ static constexpr RomDeathCleanupHooks kRomHooks[] = {
     {kHooks_EU1_0, 1}, {kHooks_EU1_1, 1},
     {kHooks_KR1_0, 1},
 };
+static_assert(
+    sizeof(kRomHooks) / sizeof(kRomHooks[0]) == static_cast<uint32_t>(RomGroup::COUNT),
+    "Noxus blade death-cleanup hook table must cover every ROM group");
+static constexpr bool NoxusBlade_HookSitesInMainRam() noexcept
+{
+    for (const auto& group : kRomHooks) {
+        for (std::size_t i = 0; i < group.Count; ++i) {
+            if (!RomAddrDetail::InMainRam(group.Hooks[i].Address))
+                return false;
+        }
+    }
+    return true;
+}
+static_assert(NoxusBlade_HookSitesInMainRam(),
+              "Noxus blade death-cleanup hook table contains a non-main-RAM address");
 
 static constexpr uint32_t kOffAltAttackTimer = 0x704u;
 static constexpr uint32_t kOffHunterId       = 0x400u;

@@ -269,9 +269,10 @@ namespace MelonPrime {
         ReloadConfigFlags();
         ApplyJoy2KeySupportAndQtFilter(m_flags.test(StateFlags::BIT_JOY2KEY));
         InputReset();
-        // NOTE (Phase 8 review): unlike the other sites this does NOT reset
-        // TR_BipedFire (m_nativeBipedFire*). Preserved verbatim — likely an
-        // accidental omission, left as-is to keep zero behavior change.
+        // Intentional historical asymmetry: this startup path leaves
+        // TR_BipedFire untouched. Other lifecycle sites reset it at game/boot
+        // boundaries; changing this would alter input reset timing and needs a
+        // dedicated S7/S8 behavior pass.
         // weaponSwitchPending is cleared above (before ARM9Hook_Uninstall) where
         // ordering matters, so it is not part of this cluster call.
         ResetTransientInputState(
@@ -309,9 +310,12 @@ namespace MelonPrime {
     void MelonPrimeCore::OnEmuStop()
     {
         m_flags.clear(StateFlags::BIT_IN_GAME);
-        // NOTE (Phase 8 review): does NOT reset TR_AimResiduals / TR_OverlayHeld,
-        // unlike OnEmuStart / boot. Preserved verbatim. weaponSwitchPending is
-        // cleared in the DS block below (before ARM9Hook_Uninstall).
+        // Intentional historical asymmetry: stop clears transform/fire
+        // transients but leaves aim residuals and overlay-held state alone.
+        // OnEmuStart/boot perform broader resets; changing this stop-time
+        // subset would need a dedicated S7/S8 behavior pass.
+        // weaponSwitchPending is cleared in the DS block below (before
+        // ARM9Hook_Uninstall).
         ResetTransientInputState(TR_DirectTransform | TR_BipedFire);
 #ifdef MELONPRIME_CUSTOM_HUD
         if (m_flags.test(StateFlags::BIT_ROM_DETECTED)) {
@@ -346,6 +350,9 @@ namespace MelonPrime {
     // With P-19, each dispatched WM_INPUT triggers processRawInput in
     // HiddenWndProc, so draining also captures any straggler events.
     // Runs every frame to keep the queue clean.
+    //
+    // P-48: DeferredDrain also runs the stuck-state recovery scans
+    // (clearStuckPostFrame) here, off the input→RunFrame latency path.
     // =========================================================================
     void MelonPrimeCore::DeferredDrainInput()
     {
@@ -554,6 +561,14 @@ namespace MelonPrime {
                     // Per-frame re-evaluation — bypasses registry; gated to skip lobby RAM work.
                     OsdColor_ApplyOnce(emuInstance, localCfg, m_currentRom);
                 }
+#ifdef MELONPRIME_CUSTOM_HUD
+                // Before RunFrame: hold the helmet layers off across the spawn
+                // window. The game's own clamp (patched helmet site) early-outs
+                // during spawn states, so init writers can briefly restore the
+                // BG1-3 layers and flash the native visor for a frame.
+                CustomHud_ClampHelmetLayersPreFrame(
+                    emuInstance, m_currentRom, m_playerPosition);
+#endif
                 // Damage Notify Purple — runs whether or not the window is focused
                 // so HP drops during alt-tab still emit the purple flash.
                 if (m_damageNotifyPurpleEnabled)

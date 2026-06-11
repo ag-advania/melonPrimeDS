@@ -289,20 +289,20 @@ static void ApplyHudFontStyle(QFont& f, Config::Table& cfg)
     f.setStyleStrategy(QFont::PreferAntialias);
     // Weight index 0..8 -> QFont::Weight Thin..Black.
     static const int kWeights[9] = { 100, 200, 300, 400, 500, 600, 700, 800, 900 };
-    const int wi = std::clamp(cfg.GetInt("Metroid.Visual.HudFontWeight"), 0, 8);
+    const int wi = std::clamp(cfg.GetInt(MP_HUD_PROP_KEY_HudFontWeight), 0, 8);
     f.setWeight(static_cast<QFont::Weight>(kWeights[wi]));
-    f.setItalic(cfg.GetBool("Metroid.Visual.HudFontItalic"));
-    f.setUnderline(cfg.GetBool("Metroid.Visual.HudFontUnderline"));
-    f.setStrikeOut(cfg.GetBool("Metroid.Visual.HudFontStrikeOut"));
+    f.setItalic(cfg.GetBool(MP_HUD_PROP_KEY_HudFontItalic));
+    f.setUnderline(cfg.GetBool(MP_HUD_PROP_KEY_HudFontUnderline));
+    f.setStrikeOut(cfg.GetBool(MP_HUD_PROP_KEY_HudFontStrikeOut));
 }
 
 QFont CustomHud_ResolveBaseFont(Config::Table& cfg)
 {
-    const int mode = cfg.GetInt("Metroid.Visual.HudFontMode");
+    const int mode = cfg.GetInt(MP_HUD_PROP_KEY_HudFontMode);
 
     if (mode == 1) {
         // System font family.
-        const QString fam = QString::fromStdString(cfg.GetString("Metroid.Visual.HudFontFamily"));
+        const QString fam = QString::fromStdString(cfg.GetString(MP_HUD_PROP_KEY_HudFontFamily));
         if (!fam.isEmpty()) {
             QFont f(fam);
             ApplyHudFontStyle(f, cfg);
@@ -310,7 +310,7 @@ QFont CustomHud_ResolveBaseFont(Config::Table& cfg)
         }
     } else if (mode == 2) {
         // Font file on disk.
-        const QString path = QString::fromStdString(cfg.GetString("Metroid.Visual.HudFontFile"));
+        const QString path = QString::fromStdString(cfg.GetString(MP_HUD_PROP_KEY_HudFontFile));
         if (!path.isEmpty()) {
             const QString fam = LoadAppFontFamilyCached(path);
             if (!fam.isEmpty()) {
@@ -332,9 +332,9 @@ QFont CustomHud_ResolveBaseFont(Config::Table& cfg)
 int CustomHud_ResolveFontPixelSize(Config::Table& cfg)
 {
     // MPH is tuned for its native 6px; only system/file fonts get a configurable size.
-    if (cfg.GetInt("Metroid.Visual.HudFontMode") == 0)
+    if (cfg.GetInt(MP_HUD_PROP_KEY_HudFontMode) == 0)
         return kCustomHudFontSize;
-    return std::clamp(cfg.GetInt("Metroid.Visual.HudFontSize"), 4, 64);
+    return std::clamp(cfg.GetInt(MP_HUD_PROP_KEY_HudFontSize), 4, 64);
 }
 
 static inline void CopyConfigString(char* dst, size_t dstSize, const std::string& value)
@@ -352,25 +352,32 @@ static inline QColor ReadOptionalSubColor(Config::Table& cfg, const char* keyOve
     if (cfg.GetBool(keyOverall)) return QColor();
     return ReadRgbColor(cfg, keyR, keyG, keyB);
 }
-// Loads a color-by-value ramp. `prefix` is the shared config-key stem, e.g.
-// "Metroid.Visual.HudHpTextRamp"; keys are <prefix>Enable / <prefix>Count and
-// per-stop <prefix>{1..N}Pct / {1..N}R / {1..N}G / {1..N}B. Cold path (config
-// change only), so snprintf key building is fine.
-static void LoadColorRamp(HudColorRamp& r, Config::Table& cfg, const char* prefix)
+struct HudColorRampKeys {
+    const char* enable;
+    const char* count;
+    const char* pct[kHudColorRampMax];
+    const char* colorR[kHudColorRampMax];
+    const char* colorG[kHudColorRampMax];
+    const char* colorB[kHudColorRampMax];
+};
+
+#define MP_HUD_RAMP_KEYS(prefix) { \
+    MP_HUD_PROP_KEY_##prefix##Enable, \
+    MP_HUD_PROP_KEY_##prefix##Count, \
+    { MP_HUD_PROP_KEY_##prefix##1Pct, MP_HUD_PROP_KEY_##prefix##2Pct, MP_HUD_PROP_KEY_##prefix##3Pct, MP_HUD_PROP_KEY_##prefix##4Pct, MP_HUD_PROP_KEY_##prefix##5Pct, MP_HUD_PROP_KEY_##prefix##6Pct }, \
+    { MP_HUD_PROP_KEY_##prefix##1R, MP_HUD_PROP_KEY_##prefix##2R, MP_HUD_PROP_KEY_##prefix##3R, MP_HUD_PROP_KEY_##prefix##4R, MP_HUD_PROP_KEY_##prefix##5R, MP_HUD_PROP_KEY_##prefix##6R }, \
+    { MP_HUD_PROP_KEY_##prefix##1G, MP_HUD_PROP_KEY_##prefix##2G, MP_HUD_PROP_KEY_##prefix##3G, MP_HUD_PROP_KEY_##prefix##4G, MP_HUD_PROP_KEY_##prefix##5G, MP_HUD_PROP_KEY_##prefix##6G }, \
+    { MP_HUD_PROP_KEY_##prefix##1B, MP_HUD_PROP_KEY_##prefix##2B, MP_HUD_PROP_KEY_##prefix##3B, MP_HUD_PROP_KEY_##prefix##4B, MP_HUD_PROP_KEY_##prefix##5B, MP_HUD_PROP_KEY_##prefix##6B } \
+}
+
+// Loads a color-by-value ramp. Cold path (config change only).
+static void LoadColorRamp(HudColorRamp& r, Config::Table& cfg, const HudColorRampKeys& keys)
 {
-    char key[96];
-    std::snprintf(key, sizeof(key), "%sEnable", prefix);
-    r.enabled = cfg.GetBool(key);
-    std::snprintf(key, sizeof(key), "%sCount", prefix);
-    r.count = std::clamp(cfg.GetInt(key), 1, kHudColorRampMax);
+    r.enabled = cfg.GetBool(keys.enable);
+    r.count = std::clamp(cfg.GetInt(keys.count), 1, kHudColorRampMax);
     for (int i = 0; i < kHudColorRampMax; i++) {
-        char kR[96], kG[96], kB[96];
-        std::snprintf(key, sizeof(key), "%s%dPct", prefix, i + 1);
-        r.thresholdPct[i] = std::clamp(cfg.GetInt(key), 0, 100);
-        std::snprintf(kR, sizeof(kR), "%s%dR", prefix, i + 1);
-        std::snprintf(kG, sizeof(kG), "%s%dG", prefix, i + 1);
-        std::snprintf(kB, sizeof(kB), "%s%dB", prefix, i + 1);
-        r.color[i] = ReadRgbColor(cfg, kR, kG, kB);
+        r.thresholdPct[i] = std::clamp(cfg.GetInt(keys.pct[i]), 0, 100);
+        r.color[i] = ReadRgbColor(cfg, keys.colorR[i], keys.colorG[i], keys.colorB[i]);
     }
 }
 
@@ -395,110 +402,145 @@ static inline void ApplyAnchor(int anchor, int offsetX, int offsetY,
 
 static void LoadHpConfig(HpHudConfig& hp, Config::Table& cfg)
 {
-    hp.hpAnchor = cfg.GetInt("Metroid.Visual.HudHpAnchor");
-    hp.hpOfsX = cfg.GetInt("Metroid.Visual.HudHpX");
-    hp.hpOfsY = cfg.GetInt("Metroid.Visual.HudHpY");
-    hp.hpAlign = cfg.GetInt("Metroid.Visual.HudHpAlign");
-    CopyConfigString(hp.hpPrefix, sizeof(hp.hpPrefix), cfg.GetString("Metroid.Visual.HudHpPrefix"));
-    hp.hpTextColor = ReadRgbColor(cfg, "Metroid.Visual.HudHpTextColorR", "Metroid.Visual.HudHpTextColorG", "Metroid.Visual.HudHpTextColorB");
-    hp.hpGauge = cfg.GetBool("Metroid.Visual.HudHpGauge");
-    hp.hpGaugeOri = cfg.GetInt("Metroid.Visual.HudHpGaugeOrientation");
-    hp.hpGaugeLen = cfg.GetInt("Metroid.Visual.HudHpGaugeLength");
-    hp.hpGaugeWid = cfg.GetInt("Metroid.Visual.HudHpGaugeWidth");
-    hp.hpGaugeAlign = cfg.GetInt("Metroid.Visual.HudHpGaugeAlign");
-    hp.hpGaugeOfsX = cfg.GetInt("Metroid.Visual.HudHpGaugeOffsetX");
-    hp.hpGaugeOfsY = cfg.GetInt("Metroid.Visual.HudHpGaugeOffsetY");
-    hp.hpGaugeAnchor = cfg.GetInt("Metroid.Visual.HudHpGaugeAnchor");
-    hp.hpGaugePosMode = cfg.GetInt("Metroid.Visual.HudHpGaugePosMode");
-    hp.hpGaugePosAnchor = cfg.GetInt("Metroid.Visual.HudHpGaugePosAnchor");
-    hp.hpGaugePosOfsX = cfg.GetInt("Metroid.Visual.HudHpGaugePosX");
-    hp.hpGaugePosOfsY = cfg.GetInt("Metroid.Visual.HudHpGaugePosY");
-    hp.hpTextAnchor = cfg.GetInt("Metroid.Visual.HudHpTextAnchor");
-    hp.hpTextOfsX = cfg.GetInt("Metroid.Visual.HudHpTextOffsetX");
-    hp.hpTextOfsY = cfg.GetInt("Metroid.Visual.HudHpTextOffsetY");
-    hp.hpGaugeColor = ReadRgbColor(cfg, "Metroid.Visual.HudHpGaugeColorR", "Metroid.Visual.HudHpGaugeColorG", "Metroid.Visual.HudHpGaugeColorB");
-    LoadColorRamp(hp.hpTextRamp,  cfg, "Metroid.Visual.HudHpTextRamp");
-    LoadColorRamp(hp.hpGaugeRamp, cfg, "Metroid.Visual.HudHpGaugeRamp");
+    hp.hpAnchor = cfg.GetInt(MP_HUD_PROP_KEY_HudHpAnchor);
+    hp.hpOfsX = cfg.GetInt(MP_HUD_PROP_KEY_HudHpX);
+    hp.hpOfsY = cfg.GetInt(MP_HUD_PROP_KEY_HudHpY);
+    hp.hpAlign = cfg.GetInt(MP_HUD_PROP_KEY_HudHpAlign);
+    CopyConfigString(hp.hpPrefix, sizeof(hp.hpPrefix), cfg.GetString(MP_HUD_PROP_KEY_HudHpPrefix));
+    hp.hpTextColor = ReadRgbColor(cfg, MP_HUD_PROP_KEY_HudHpTextColorR, MP_HUD_PROP_KEY_HudHpTextColorG, MP_HUD_PROP_KEY_HudHpTextColorB);
+    hp.hpGauge = cfg.GetBool(MP_HUD_PROP_KEY_HudHpGauge);
+    hp.hpGaugeOri = cfg.GetInt(MP_HUD_PROP_KEY_HudHpGaugeOrientation);
+    hp.hpGaugeLen = cfg.GetInt(MP_HUD_PROP_KEY_HudHpGaugeLength);
+    hp.hpGaugeWid = cfg.GetInt(MP_HUD_PROP_KEY_HudHpGaugeWidth);
+    hp.hpGaugeAlign = cfg.GetInt(MP_HUD_PROP_KEY_HudHpGaugeAlign);
+    hp.hpGaugeOfsX = cfg.GetInt(MP_HUD_PROP_KEY_HudHpGaugeOffsetX);
+    hp.hpGaugeOfsY = cfg.GetInt(MP_HUD_PROP_KEY_HudHpGaugeOffsetY);
+    hp.hpGaugeAnchor = cfg.GetInt(MP_HUD_PROP_KEY_HudHpGaugeAnchor);
+    hp.hpGaugePosMode = cfg.GetInt(MP_HUD_PROP_KEY_HudHpGaugePosMode);
+    hp.hpGaugePosAnchor = cfg.GetInt(MP_HUD_PROP_KEY_HudHpGaugePosAnchor);
+    hp.hpGaugePosOfsX = cfg.GetInt(MP_HUD_PROP_KEY_HudHpGaugePosX);
+    hp.hpGaugePosOfsY = cfg.GetInt(MP_HUD_PROP_KEY_HudHpGaugePosY);
+    hp.hpTextAnchor = cfg.GetInt(MP_HUD_PROP_KEY_HudHpTextAnchor);
+    hp.hpTextOfsX = cfg.GetInt(MP_HUD_PROP_KEY_HudHpTextOffsetX);
+    hp.hpTextOfsY = cfg.GetInt(MP_HUD_PROP_KEY_HudHpTextOffsetY);
+    hp.hpGaugeColor = ReadRgbColor(cfg, MP_HUD_PROP_KEY_HudHpGaugeColorR, MP_HUD_PROP_KEY_HudHpGaugeColorG, MP_HUD_PROP_KEY_HudHpGaugeColorB);
+    LoadColorRamp(hp.hpTextRamp,  cfg, MP_HUD_RAMP_KEYS(HudHpTextRamp));
+    LoadColorRamp(hp.hpGaugeRamp, cfg, MP_HUD_RAMP_KEYS(HudHpGaugeRamp));
 }
 static void LoadWeaponConfig(WeaponHudConfig& weapon, Config::Table& cfg)
 {
-    weapon.wpnAnchor = cfg.GetInt("Metroid.Visual.HudWeaponAnchor");
-    weapon.wpnOfsX = cfg.GetInt("Metroid.Visual.HudWeaponX");
-    weapon.wpnOfsY = cfg.GetInt("Metroid.Visual.HudWeaponY");
-    weapon.ammoAlign = cfg.GetInt("Metroid.Visual.HudAmmoAlign");
-    CopyConfigString(weapon.ammoPrefix, sizeof(weapon.ammoPrefix), cfg.GetString("Metroid.Visual.HudAmmoPrefix"));
-    weapon.ammoTextColor = ReadRgbColor(cfg, "Metroid.Visual.HudAmmoTextColorR", "Metroid.Visual.HudAmmoTextColorG", "Metroid.Visual.HudAmmoTextColorB");
-    weapon.iconShow = cfg.GetBool("Metroid.Visual.HudWeaponIconShow");
+    weapon.wpnAnchor = cfg.GetInt(MP_HUD_PROP_KEY_HudWeaponAnchor);
+    weapon.wpnOfsX = cfg.GetInt(MP_HUD_PROP_KEY_HudWeaponX);
+    weapon.wpnOfsY = cfg.GetInt(MP_HUD_PROP_KEY_HudWeaponY);
+    weapon.ammoAlign = cfg.GetInt(MP_HUD_PROP_KEY_HudAmmoAlign);
+    CopyConfigString(weapon.ammoPrefix, sizeof(weapon.ammoPrefix), cfg.GetString(MP_HUD_PROP_KEY_HudAmmoPrefix));
+    weapon.ammoTextColor = ReadRgbColor(cfg, MP_HUD_PROP_KEY_HudAmmoTextColorR, MP_HUD_PROP_KEY_HudAmmoTextColorG, MP_HUD_PROP_KEY_HudAmmoTextColorB);
+    weapon.iconShow = cfg.GetBool(MP_HUD_PROP_KEY_HudWeaponIconShow);
     {
-        static const char* kWpnNames[9] = {
-            "PowerBeam","VoltDriver","Missile","BattleHammer",
-            "Imperialist","Judicator","Magmaul","ShockCoil","OmegaCannon"
+        static const char* kOverlayEnable[9] = {
+            MP_HUD_PROP_KEY_HudWeaponIconColorOverlayPowerBeam,
+            MP_HUD_PROP_KEY_HudWeaponIconColorOverlayVoltDriver,
+            MP_HUD_PROP_KEY_HudWeaponIconColorOverlayMissile,
+            MP_HUD_PROP_KEY_HudWeaponIconColorOverlayBattleHammer,
+            MP_HUD_PROP_KEY_HudWeaponIconColorOverlayImperialist,
+            MP_HUD_PROP_KEY_HudWeaponIconColorOverlayJudicator,
+            MP_HUD_PROP_KEY_HudWeaponIconColorOverlayMagmaul,
+            MP_HUD_PROP_KEY_HudWeaponIconColorOverlayShockCoil,
+            MP_HUD_PROP_KEY_HudWeaponIconColorOverlayOmegaCannon
+        };
+        static const char* kOverlayR[9] = {
+            MP_HUD_PROP_KEY_HudWeaponIconOverlayColorRPowerBeam,
+            MP_HUD_PROP_KEY_HudWeaponIconOverlayColorRVoltDriver,
+            MP_HUD_PROP_KEY_HudWeaponIconOverlayColorRMissile,
+            MP_HUD_PROP_KEY_HudWeaponIconOverlayColorRBattleHammer,
+            MP_HUD_PROP_KEY_HudWeaponIconOverlayColorRImperialist,
+            MP_HUD_PROP_KEY_HudWeaponIconOverlayColorRJudicator,
+            MP_HUD_PROP_KEY_HudWeaponIconOverlayColorRMagmaul,
+            MP_HUD_PROP_KEY_HudWeaponIconOverlayColorRShockCoil,
+            MP_HUD_PROP_KEY_HudWeaponIconOverlayColorROmegaCannon
+        };
+        static const char* kOverlayG[9] = {
+            MP_HUD_PROP_KEY_HudWeaponIconOverlayColorGPowerBeam,
+            MP_HUD_PROP_KEY_HudWeaponIconOverlayColorGVoltDriver,
+            MP_HUD_PROP_KEY_HudWeaponIconOverlayColorGMissile,
+            MP_HUD_PROP_KEY_HudWeaponIconOverlayColorGBattleHammer,
+            MP_HUD_PROP_KEY_HudWeaponIconOverlayColorGImperialist,
+            MP_HUD_PROP_KEY_HudWeaponIconOverlayColorGJudicator,
+            MP_HUD_PROP_KEY_HudWeaponIconOverlayColorGMagmaul,
+            MP_HUD_PROP_KEY_HudWeaponIconOverlayColorGShockCoil,
+            MP_HUD_PROP_KEY_HudWeaponIconOverlayColorGOmegaCannon
+        };
+        static const char* kOverlayB[9] = {
+            MP_HUD_PROP_KEY_HudWeaponIconOverlayColorBPowerBeam,
+            MP_HUD_PROP_KEY_HudWeaponIconOverlayColorBVoltDriver,
+            MP_HUD_PROP_KEY_HudWeaponIconOverlayColorBMissile,
+            MP_HUD_PROP_KEY_HudWeaponIconOverlayColorBBattleHammer,
+            MP_HUD_PROP_KEY_HudWeaponIconOverlayColorBImperialist,
+            MP_HUD_PROP_KEY_HudWeaponIconOverlayColorBJudicator,
+            MP_HUD_PROP_KEY_HudWeaponIconOverlayColorBMagmaul,
+            MP_HUD_PROP_KEY_HudWeaponIconOverlayColorBShockCoil,
+            MP_HUD_PROP_KEY_HudWeaponIconOverlayColorBOmegaCannon
         };
         for (int i = 0; i < 9; i++) {
-            char kE[80], kR[80], kG[80], kB[80];
-            std::snprintf(kE, sizeof(kE), "Metroid.Visual.HudWeaponIconColorOverlay%s", kWpnNames[i]);
-            std::snprintf(kR, sizeof(kR), "Metroid.Visual.HudWeaponIconOverlayColorR%s", kWpnNames[i]);
-            std::snprintf(kG, sizeof(kG), "Metroid.Visual.HudWeaponIconOverlayColorG%s", kWpnNames[i]);
-            std::snprintf(kB, sizeof(kB), "Metroid.Visual.HudWeaponIconOverlayColorB%s", kWpnNames[i]);
-            weapon.iconOverlayEnable[i] = cfg.GetBool(kE);
-            weapon.iconOverlayColor[i]  = ReadRgbColor(cfg, kR, kG, kB);
+            weapon.iconOverlayEnable[i] = cfg.GetBool(kOverlayEnable[i]);
+            weapon.iconOverlayColor[i]  = ReadRgbColor(cfg, kOverlayR[i], kOverlayG[i], kOverlayB[i]);
         }
     }
-    weapon.iconHeight = cfg.GetInt("Metroid.Visual.HudWeaponIconHeight");
-    weapon.iconMode = cfg.GetInt("Metroid.Visual.HudWeaponIconMode");
-    weapon.iconOfsX = cfg.GetInt("Metroid.Visual.HudWeaponIconOffsetX");
-    weapon.iconOfsY = cfg.GetInt("Metroid.Visual.HudWeaponIconOffsetY");
-    weapon.iconPosAnchor = cfg.GetInt("Metroid.Visual.HudWeaponIconPosAnchor");
-    weapon.iconPosOfsX = cfg.GetInt("Metroid.Visual.HudWeaponIconPosX");
-    weapon.iconPosOfsY = cfg.GetInt("Metroid.Visual.HudWeaponIconPosY");
-    weapon.iconAnchorX = cfg.GetInt("Metroid.Visual.HudWeaponIconAnchorX");
-    weapon.iconAnchorY = cfg.GetInt("Metroid.Visual.HudWeaponIconAnchorY");
-    weapon.ammoGauge = cfg.GetBool("Metroid.Visual.HudAmmoGauge");
-    weapon.ammoGaugeOri = cfg.GetInt("Metroid.Visual.HudAmmoGaugeOrientation");
-    weapon.ammoGaugeLen = cfg.GetInt("Metroid.Visual.HudAmmoGaugeLength");
-    weapon.ammoGaugeWid = cfg.GetInt("Metroid.Visual.HudAmmoGaugeWidth");
-    weapon.ammoGaugeAlign = cfg.GetInt("Metroid.Visual.HudAmmoGaugeAlign");
-    weapon.ammoGaugeOfsX = cfg.GetInt("Metroid.Visual.HudAmmoGaugeOffsetX");
-    weapon.ammoGaugeOfsY = cfg.GetInt("Metroid.Visual.HudAmmoGaugeOffsetY");
-    weapon.ammoGaugeAnchor = cfg.GetInt("Metroid.Visual.HudAmmoGaugeAnchor");
-    weapon.ammoGaugePosMode = cfg.GetInt("Metroid.Visual.HudAmmoGaugePosMode");
-    weapon.ammoGaugePosAnchor = cfg.GetInt("Metroid.Visual.HudAmmoGaugePosAnchor");
-    weapon.ammoGaugePosOfsX = cfg.GetInt("Metroid.Visual.HudAmmoGaugePosX");
-    weapon.ammoGaugePosOfsY = cfg.GetInt("Metroid.Visual.HudAmmoGaugePosY");
-    weapon.ammoTextAnchor = cfg.GetInt("Metroid.Visual.HudAmmoTextAnchor");
-    weapon.ammoTextOfsX = cfg.GetInt("Metroid.Visual.HudAmmoTextOffsetX");
-    weapon.ammoTextOfsY = cfg.GetInt("Metroid.Visual.HudAmmoTextOffsetY");
-    weapon.ammoGaugeColor = ReadRgbColor(cfg, "Metroid.Visual.HudAmmoGaugeColorR", "Metroid.Visual.HudAmmoGaugeColorG", "Metroid.Visual.HudAmmoGaugeColorB");
-    LoadColorRamp(weapon.ammoTextRamp,  cfg, "Metroid.Visual.HudAmmoTextRamp");
-    LoadColorRamp(weapon.ammoGaugeRamp, cfg, "Metroid.Visual.HudAmmoGaugeRamp");
+    weapon.iconHeight = cfg.GetInt(MP_HUD_PROP_KEY_HudWeaponIconHeight);
+    weapon.iconMode = cfg.GetInt(MP_HUD_PROP_KEY_HudWeaponIconMode);
+    weapon.iconOfsX = cfg.GetInt(MP_HUD_PROP_KEY_HudWeaponIconOffsetX);
+    weapon.iconOfsY = cfg.GetInt(MP_HUD_PROP_KEY_HudWeaponIconOffsetY);
+    weapon.iconPosAnchor = cfg.GetInt(MP_HUD_PROP_KEY_HudWeaponIconPosAnchor);
+    weapon.iconPosOfsX = cfg.GetInt(MP_HUD_PROP_KEY_HudWeaponIconPosX);
+    weapon.iconPosOfsY = cfg.GetInt(MP_HUD_PROP_KEY_HudWeaponIconPosY);
+    weapon.iconAnchorX = cfg.GetInt(MP_HUD_PROP_KEY_HudWeaponIconAnchorX);
+    weapon.iconAnchorY = cfg.GetInt(MP_HUD_PROP_KEY_HudWeaponIconAnchorY);
+    weapon.ammoGauge = cfg.GetBool(MP_HUD_PROP_KEY_HudAmmoGauge);
+    weapon.ammoGaugeOri = cfg.GetInt(MP_HUD_PROP_KEY_HudAmmoGaugeOrientation);
+    weapon.ammoGaugeLen = cfg.GetInt(MP_HUD_PROP_KEY_HudAmmoGaugeLength);
+    weapon.ammoGaugeWid = cfg.GetInt(MP_HUD_PROP_KEY_HudAmmoGaugeWidth);
+    weapon.ammoGaugeAlign = cfg.GetInt(MP_HUD_PROP_KEY_HudAmmoGaugeAlign);
+    weapon.ammoGaugeOfsX = cfg.GetInt(MP_HUD_PROP_KEY_HudAmmoGaugeOffsetX);
+    weapon.ammoGaugeOfsY = cfg.GetInt(MP_HUD_PROP_KEY_HudAmmoGaugeOffsetY);
+    weapon.ammoGaugeAnchor = cfg.GetInt(MP_HUD_PROP_KEY_HudAmmoGaugeAnchor);
+    weapon.ammoGaugePosMode = cfg.GetInt(MP_HUD_PROP_KEY_HudAmmoGaugePosMode);
+    weapon.ammoGaugePosAnchor = cfg.GetInt(MP_HUD_PROP_KEY_HudAmmoGaugePosAnchor);
+    weapon.ammoGaugePosOfsX = cfg.GetInt(MP_HUD_PROP_KEY_HudAmmoGaugePosX);
+    weapon.ammoGaugePosOfsY = cfg.GetInt(MP_HUD_PROP_KEY_HudAmmoGaugePosY);
+    weapon.ammoTextAnchor = cfg.GetInt(MP_HUD_PROP_KEY_HudAmmoTextAnchor);
+    weapon.ammoTextOfsX = cfg.GetInt(MP_HUD_PROP_KEY_HudAmmoTextOffsetX);
+    weapon.ammoTextOfsY = cfg.GetInt(MP_HUD_PROP_KEY_HudAmmoTextOffsetY);
+    weapon.ammoGaugeColor = ReadRgbColor(cfg, MP_HUD_PROP_KEY_HudAmmoGaugeColorR, MP_HUD_PROP_KEY_HudAmmoGaugeColorG, MP_HUD_PROP_KEY_HudAmmoGaugeColorB);
+    LoadColorRamp(weapon.ammoTextRamp,  cfg, MP_HUD_RAMP_KEYS(HudAmmoTextRamp));
+    LoadColorRamp(weapon.ammoGaugeRamp, cfg, MP_HUD_RAMP_KEYS(HudAmmoGaugeRamp));
 }
 static void LoadWeaponInventoryConfig(WeaponInventoryHudConfig& wi, Config::Table& cfg)
 {
-    wi.show        = cfg.GetBool("Metroid.Visual.HudWeaponInventoryShow");
-    wi.anchor      = cfg.GetInt ("Metroid.Visual.HudWeaponInventoryAnchor");
-    wi.ofsX        = cfg.GetInt ("Metroid.Visual.HudWeaponInventoryX");
-    wi.ofsY        = cfg.GetInt ("Metroid.Visual.HudWeaponInventoryY");
-    wi.align       = cfg.GetInt ("Metroid.Visual.HudWeaponInventoryAlign");
-    wi.orientation = cfg.GetInt ("Metroid.Visual.HudWeaponInventoryOrientation");
-    wi.iconHeight  = std::max(4, cfg.GetInt("Metroid.Visual.HudWeaponInventoryIconHeight"));
-    wi.spacing     = std::max(0, cfg.GetInt("Metroid.Visual.HudWeaponInventorySpacing"));
-    wi.opacity        = static_cast<float>(std::clamp(cfg.GetDouble("Metroid.Visual.HudWeaponInventoryOpacity"), 0.0, 1.0));
-    wi.notOwnedOpacity= static_cast<float>(std::clamp(cfg.GetDouble("Metroid.Visual.HudWeaponInventoryNotOwnedOpacity"), 0.0, 1.0));
-    wi.textColor   = QColor(cfg.GetInt("Metroid.Visual.HudWeaponInventoryColorR"),
-                            cfg.GetInt("Metroid.Visual.HudWeaponInventoryColorG"),
-                            cfg.GetInt("Metroid.Visual.HudWeaponInventoryColorB"));
-    wi.highlightEnable  = cfg.GetBool("Metroid.Visual.HudWeaponInventoryHighlightEnable");
-    wi.highlightColor   = QColor(cfg.GetInt("Metroid.Visual.HudWeaponInventoryHighlightColorR"),
-                                 cfg.GetInt("Metroid.Visual.HudWeaponInventoryHighlightColorG"),
-                                 cfg.GetInt("Metroid.Visual.HudWeaponInventoryHighlightColorB"));
-    wi.highlightOpacity       = static_cast<float>(std::clamp(cfg.GetDouble("Metroid.Visual.HudWeaponInventoryHighlightOpacity"), 0.0, 1.0));
-    wi.highlightThickness     = static_cast<float>(std::clamp(cfg.GetDouble("Metroid.Visual.HudWeaponInventoryHighlightThickness"), 0.1, 8.0));
-    wi.highlightPadding       = std::max(0, cfg.GetInt("Metroid.Visual.HudWeaponInventoryHighlightPadding"));
-    wi.highlightCornerRadius  = std::max(0, cfg.GetInt("Metroid.Visual.HudWeaponInventoryHighlightCornerRadius"));
-    wi.highlightOffsetLeft   = cfg.GetInt("Metroid.Visual.HudWeaponInventoryHighlightSizeOffsetLeft");
-    wi.highlightOffsetRight  = cfg.GetInt("Metroid.Visual.HudWeaponInventoryHighlightSizeOffsetRight");
-    wi.highlightOffsetTop    = cfg.GetInt("Metroid.Visual.HudWeaponInventoryHighlightSizeOffsetTop");
-    wi.highlightOffsetBottom = cfg.GetInt("Metroid.Visual.HudWeaponInventoryHighlightSizeOffsetBottom");
+    wi.show        = cfg.GetBool(MP_HUD_PROP_KEY_HudWeaponInventoryShow);
+    wi.anchor      = cfg.GetInt (MP_HUD_PROP_KEY_HudWeaponInventoryAnchor);
+    wi.ofsX        = cfg.GetInt (MP_HUD_PROP_KEY_HudWeaponInventoryX);
+    wi.ofsY        = cfg.GetInt (MP_HUD_PROP_KEY_HudWeaponInventoryY);
+    wi.align       = cfg.GetInt (MP_HUD_PROP_KEY_HudWeaponInventoryAlign);
+    wi.orientation = cfg.GetInt (MP_HUD_PROP_KEY_HudWeaponInventoryOrientation);
+    wi.iconHeight  = std::max(4, cfg.GetInt(MP_HUD_PROP_KEY_HudWeaponInventoryIconHeight));
+    wi.spacing     = std::max(0, cfg.GetInt(MP_HUD_PROP_KEY_HudWeaponInventorySpacing));
+    wi.opacity        = static_cast<float>(std::clamp(cfg.GetDouble(MP_HUD_PROP_KEY_HudWeaponInventoryOpacity), 0.0, 1.0));
+    wi.notOwnedOpacity= static_cast<float>(std::clamp(cfg.GetDouble(MP_HUD_PROP_KEY_HudWeaponInventoryNotOwnedOpacity), 0.0, 1.0));
+    wi.textColor   = QColor(cfg.GetInt(MP_HUD_PROP_KEY_HudWeaponInventoryColorR),
+                            cfg.GetInt(MP_HUD_PROP_KEY_HudWeaponInventoryColorG),
+                            cfg.GetInt(MP_HUD_PROP_KEY_HudWeaponInventoryColorB));
+    wi.highlightEnable  = cfg.GetBool(MP_HUD_PROP_KEY_HudWeaponInventoryHighlightEnable);
+    wi.highlightColor   = QColor(cfg.GetInt(MP_HUD_PROP_KEY_HudWeaponInventoryHighlightColorR),
+                                 cfg.GetInt(MP_HUD_PROP_KEY_HudWeaponInventoryHighlightColorG),
+                                 cfg.GetInt(MP_HUD_PROP_KEY_HudWeaponInventoryHighlightColorB));
+    wi.highlightOpacity       = static_cast<float>(std::clamp(cfg.GetDouble(MP_HUD_PROP_KEY_HudWeaponInventoryHighlightOpacity), 0.0, 1.0));
+    wi.highlightThickness     = static_cast<float>(std::clamp(cfg.GetDouble(MP_HUD_PROP_KEY_HudWeaponInventoryHighlightThickness), 0.1, 8.0));
+    wi.highlightPadding       = std::max(0, cfg.GetInt(MP_HUD_PROP_KEY_HudWeaponInventoryHighlightPadding));
+    wi.highlightCornerRadius  = std::max(0, cfg.GetInt(MP_HUD_PROP_KEY_HudWeaponInventoryHighlightCornerRadius));
+    wi.highlightOffsetLeft   = cfg.GetInt(MP_HUD_PROP_KEY_HudWeaponInventoryHighlightSizeOffsetLeft);
+    wi.highlightOffsetRight  = cfg.GetInt(MP_HUD_PROP_KEY_HudWeaponInventoryHighlightSizeOffsetRight);
+    wi.highlightOffsetTop    = cfg.GetInt(MP_HUD_PROP_KEY_HudWeaponInventoryHighlightSizeOffsetTop);
+    wi.highlightOffsetBottom = cfg.GetInt(MP_HUD_PROP_KEY_HudWeaponInventoryHighlightSizeOffsetBottom);
     // posX/posY computed in RecomputeAnchorPositions
 }
 
@@ -511,27 +553,27 @@ static void CollectArmRects(QRect* out, int& n, int cx, int cy,
 // in pixel coordinates, completely bypassing the painter's DS→pixel transform.
 static void LoadCrosshairConfig(CrosshairHudConfig& crosshair, Config::Table& cfg, float hudScale = 1.0f)
 {
-    crosshair.chColor = ReadRgbColor(cfg, "Metroid.Visual.CrosshairColorR", "Metroid.Visual.CrosshairColorG", "Metroid.Visual.CrosshairColorB");
-    crosshair.chOutline = cfg.GetBool("Metroid.Visual.CrosshairOutline");
-    crosshair.chOutlineOpacity = cfg.GetDouble("Metroid.Visual.CrosshairOutlineOpacity");
-    crosshair.chOutlineThickness = cfg.GetInt("Metroid.Visual.CrosshairOutlineThickness"); if (crosshair.chOutlineThickness <= 0) crosshair.chOutlineThickness = 1;
-    crosshair.chCenterDot = cfg.GetBool("Metroid.Visual.CrosshairCenterDot");
-    crosshair.chDotOpacity = cfg.GetDouble("Metroid.Visual.CrosshairDotOpacity");
-    crosshair.chDotThickness = cfg.GetInt("Metroid.Visual.CrosshairDotThickness"); if (crosshair.chDotThickness <= 0) crosshair.chDotThickness = 1;
-    crosshair.chTStyle = cfg.GetBool("Metroid.Visual.CrosshairTStyle");
-    crosshair.chInnerShow = cfg.GetBool("Metroid.Visual.CrosshairInnerShow");
-    crosshair.chInnerOpacity = cfg.GetDouble("Metroid.Visual.CrosshairInnerOpacity");
-    crosshair.chInnerLengthX = cfg.GetInt("Metroid.Visual.CrosshairInnerLengthX");
-    crosshair.chInnerLengthY = cfg.GetInt("Metroid.Visual.CrosshairInnerLengthY");
-    crosshair.chInnerThickness = cfg.GetInt("Metroid.Visual.CrosshairInnerThickness"); if (crosshair.chInnerThickness <= 0) crosshair.chInnerThickness = 1;
-    crosshair.chInnerOffset = cfg.GetInt("Metroid.Visual.CrosshairInnerOffset");
-    crosshair.chOuterShow = cfg.GetBool("Metroid.Visual.CrosshairOuterShow");
-    crosshair.chOuterOpacity = cfg.GetDouble("Metroid.Visual.CrosshairOuterOpacity");
-    crosshair.chOuterLengthX = cfg.GetInt("Metroid.Visual.CrosshairOuterLengthX");
-    crosshair.chOuterLengthY = cfg.GetInt("Metroid.Visual.CrosshairOuterLengthY");
-    crosshair.chOuterThickness = cfg.GetInt("Metroid.Visual.CrosshairOuterThickness"); if (crosshair.chOuterThickness <= 0) crosshair.chOuterThickness = 1;
-    crosshair.chOuterOffset = cfg.GetInt("Metroid.Visual.CrosshairOuterOffset");
-    crosshair.chScale = std::max(100, cfg.GetInt("Metroid.Visual.CrosshairScale")) / 100.0;
+    crosshair.chColor = ReadRgbColor(cfg, MP_HUD_PROP_KEY_CrosshairColorR, MP_HUD_PROP_KEY_CrosshairColorG, MP_HUD_PROP_KEY_CrosshairColorB);
+    crosshair.chOutline = cfg.GetBool(MP_HUD_PROP_KEY_CrosshairOutline);
+    crosshair.chOutlineOpacity = cfg.GetDouble(MP_HUD_PROP_KEY_CrosshairOutlineOpacity);
+    crosshair.chOutlineThickness = cfg.GetInt(MP_HUD_PROP_KEY_CrosshairOutlineThickness); if (crosshair.chOutlineThickness <= 0) crosshair.chOutlineThickness = 1;
+    crosshair.chCenterDot = cfg.GetBool(MP_HUD_PROP_KEY_CrosshairCenterDot);
+    crosshair.chDotOpacity = cfg.GetDouble(MP_HUD_PROP_KEY_CrosshairDotOpacity);
+    crosshair.chDotThickness = cfg.GetInt(MP_HUD_PROP_KEY_CrosshairDotThickness); if (crosshair.chDotThickness <= 0) crosshair.chDotThickness = 1;
+    crosshair.chTStyle = cfg.GetBool(MP_HUD_PROP_KEY_CrosshairTStyle);
+    crosshair.chInnerShow = cfg.GetBool(MP_HUD_PROP_KEY_CrosshairInnerShow);
+    crosshair.chInnerOpacity = cfg.GetDouble(MP_HUD_PROP_KEY_CrosshairInnerOpacity);
+    crosshair.chInnerLengthX = cfg.GetInt(MP_HUD_PROP_KEY_CrosshairInnerLengthX);
+    crosshair.chInnerLengthY = cfg.GetInt(MP_HUD_PROP_KEY_CrosshairInnerLengthY);
+    crosshair.chInnerThickness = cfg.GetInt(MP_HUD_PROP_KEY_CrosshairInnerThickness); if (crosshair.chInnerThickness <= 0) crosshair.chInnerThickness = 1;
+    crosshair.chInnerOffset = cfg.GetInt(MP_HUD_PROP_KEY_CrosshairInnerOffset);
+    crosshair.chOuterShow = cfg.GetBool(MP_HUD_PROP_KEY_CrosshairOuterShow);
+    crosshair.chOuterOpacity = cfg.GetDouble(MP_HUD_PROP_KEY_CrosshairOuterOpacity);
+    crosshair.chOuterLengthX = cfg.GetInt(MP_HUD_PROP_KEY_CrosshairOuterLengthX);
+    crosshair.chOuterLengthY = cfg.GetInt(MP_HUD_PROP_KEY_CrosshairOuterLengthY);
+    crosshair.chOuterThickness = cfg.GetInt(MP_HUD_PROP_KEY_CrosshairOuterThickness); if (crosshair.chOuterThickness <= 0) crosshair.chOuterThickness = 1;
+    crosshair.chOuterOffset = cfg.GetInt(MP_HUD_PROP_KEY_CrosshairOuterOffset);
+    crosshair.chScale = std::max(100, cfg.GetInt(MP_HUD_PROP_KEY_CrosshairScale)) / 100.0;
     // P-11: Pre-compute arm/dot colors with alpha
     crosshair.chInnerColor = crosshair.chColor;
     crosshair.chInnerColor.setAlphaF(crosshair.chInnerOpacity);
@@ -568,85 +610,85 @@ static void LoadCrosshairConfig(CrosshairHudConfig& crosshair, Config::Table& cf
 }
 static void LoadMatchStatusConfig(MatchStatusHudConfig& matchStatus, Config::Table& cfg)
 {
-    matchStatus.matchStatusShow = cfg.GetBool("Metroid.Visual.HudMatchStatusShow");
-    matchStatus.matchStatusAnchor = cfg.GetInt("Metroid.Visual.HudMatchStatusAnchor");
-    matchStatus.matchStatusOfsX = cfg.GetInt("Metroid.Visual.HudMatchStatusX");
-    matchStatus.matchStatusOfsY = cfg.GetInt("Metroid.Visual.HudMatchStatusY");
-    matchStatus.matchStatusLabelOfsX = cfg.GetInt("Metroid.Visual.HudMatchStatusLabelOfsX");
-    matchStatus.matchStatusLabelOfsY = cfg.GetInt("Metroid.Visual.HudMatchStatusLabelOfsY");
-    matchStatus.matchStatusLabelPos = cfg.GetInt("Metroid.Visual.HudMatchStatusLabelPos");
-    CopyConfigString(matchStatus.matchStatusLabelPoints, sizeof(matchStatus.matchStatusLabelPoints), cfg.GetString("Metroid.Visual.HudMatchStatusLabelPoints"));
-    CopyConfigString(matchStatus.matchStatusLabelOctoliths, sizeof(matchStatus.matchStatusLabelOctoliths), cfg.GetString("Metroid.Visual.HudMatchStatusLabelOctoliths"));
-    CopyConfigString(matchStatus.matchStatusLabelLives, sizeof(matchStatus.matchStatusLabelLives), cfg.GetString("Metroid.Visual.HudMatchStatusLabelLives"));
-    CopyConfigString(matchStatus.matchStatusLabelRingTime, sizeof(matchStatus.matchStatusLabelRingTime), cfg.GetString("Metroid.Visual.HudMatchStatusLabelRingTime"));
-    CopyConfigString(matchStatus.matchStatusLabelPrimeTime, sizeof(matchStatus.matchStatusLabelPrimeTime), cfg.GetString("Metroid.Visual.HudMatchStatusLabelPrimeTime"));
-    matchStatus.matchStatusColor = ReadRgbColor(cfg, "Metroid.Visual.HudMatchStatusColorR", "Metroid.Visual.HudMatchStatusColorG", "Metroid.Visual.HudMatchStatusColorB");
-    matchStatus.matchStatusLabelColor = ReadOptionalSubColor(cfg, "Metroid.Visual.HudMatchStatusLabelColorOverall", "Metroid.Visual.HudMatchStatusLabelColorR", "Metroid.Visual.HudMatchStatusLabelColorG", "Metroid.Visual.HudMatchStatusLabelColorB");
-    matchStatus.matchStatusValueColor = ReadOptionalSubColor(cfg, "Metroid.Visual.HudMatchStatusValueColorOverall", "Metroid.Visual.HudMatchStatusValueColorR", "Metroid.Visual.HudMatchStatusValueColorG", "Metroid.Visual.HudMatchStatusValueColorB");
-    matchStatus.matchStatusSepColor = ReadOptionalSubColor(cfg, "Metroid.Visual.HudMatchStatusSepColorOverall", "Metroid.Visual.HudMatchStatusSepColorR", "Metroid.Visual.HudMatchStatusSepColorG", "Metroid.Visual.HudMatchStatusSepColorB");
-    matchStatus.matchStatusGoalColor = ReadOptionalSubColor(cfg, "Metroid.Visual.HudMatchStatusGoalColorOverall", "Metroid.Visual.HudMatchStatusGoalColorR", "Metroid.Visual.HudMatchStatusGoalColorG", "Metroid.Visual.HudMatchStatusGoalColorB");
+    matchStatus.matchStatusShow = cfg.GetBool(MP_HUD_PROP_KEY_HudMatchStatusShow);
+    matchStatus.matchStatusAnchor = cfg.GetInt(MP_HUD_PROP_KEY_HudMatchStatusAnchor);
+    matchStatus.matchStatusOfsX = cfg.GetInt(MP_HUD_PROP_KEY_HudMatchStatusX);
+    matchStatus.matchStatusOfsY = cfg.GetInt(MP_HUD_PROP_KEY_HudMatchStatusY);
+    matchStatus.matchStatusLabelOfsX = cfg.GetInt(MP_HUD_PROP_KEY_HudMatchStatusLabelOfsX);
+    matchStatus.matchStatusLabelOfsY = cfg.GetInt(MP_HUD_PROP_KEY_HudMatchStatusLabelOfsY);
+    matchStatus.matchStatusLabelPos = cfg.GetInt(MP_HUD_PROP_KEY_HudMatchStatusLabelPos);
+    CopyConfigString(matchStatus.matchStatusLabelPoints, sizeof(matchStatus.matchStatusLabelPoints), cfg.GetString(MP_HUD_PROP_KEY_HudMatchStatusLabelPoints));
+    CopyConfigString(matchStatus.matchStatusLabelOctoliths, sizeof(matchStatus.matchStatusLabelOctoliths), cfg.GetString(MP_HUD_PROP_KEY_HudMatchStatusLabelOctoliths));
+    CopyConfigString(matchStatus.matchStatusLabelLives, sizeof(matchStatus.matchStatusLabelLives), cfg.GetString(MP_HUD_PROP_KEY_HudMatchStatusLabelLives));
+    CopyConfigString(matchStatus.matchStatusLabelRingTime, sizeof(matchStatus.matchStatusLabelRingTime), cfg.GetString(MP_HUD_PROP_KEY_HudMatchStatusLabelRingTime));
+    CopyConfigString(matchStatus.matchStatusLabelPrimeTime, sizeof(matchStatus.matchStatusLabelPrimeTime), cfg.GetString(MP_HUD_PROP_KEY_HudMatchStatusLabelPrimeTime));
+    matchStatus.matchStatusColor = ReadRgbColor(cfg, MP_HUD_PROP_KEY_HudMatchStatusColorR, MP_HUD_PROP_KEY_HudMatchStatusColorG, MP_HUD_PROP_KEY_HudMatchStatusColorB);
+    matchStatus.matchStatusLabelColor = ReadOptionalSubColor(cfg, MP_HUD_PROP_KEY_HudMatchStatusLabelColorOverall, MP_HUD_PROP_KEY_HudMatchStatusLabelColorR, MP_HUD_PROP_KEY_HudMatchStatusLabelColorG, MP_HUD_PROP_KEY_HudMatchStatusLabelColorB);
+    matchStatus.matchStatusValueColor = ReadOptionalSubColor(cfg, MP_HUD_PROP_KEY_HudMatchStatusValueColorOverall, MP_HUD_PROP_KEY_HudMatchStatusValueColorR, MP_HUD_PROP_KEY_HudMatchStatusValueColorG, MP_HUD_PROP_KEY_HudMatchStatusValueColorB);
+    matchStatus.matchStatusSepColor = ReadOptionalSubColor(cfg, MP_HUD_PROP_KEY_HudMatchStatusSepColorOverall, MP_HUD_PROP_KEY_HudMatchStatusSepColorR, MP_HUD_PROP_KEY_HudMatchStatusSepColorG, MP_HUD_PROP_KEY_HudMatchStatusSepColorB);
+    matchStatus.matchStatusGoalColor = ReadOptionalSubColor(cfg, MP_HUD_PROP_KEY_HudMatchStatusGoalColorOverall, MP_HUD_PROP_KEY_HudMatchStatusGoalColorR, MP_HUD_PROP_KEY_HudMatchStatusGoalColorG, MP_HUD_PROP_KEY_HudMatchStatusGoalColorB);
 }
 static void LoadBombLeftConfig(BombLeftHudConfig& bombLeft, Config::Table& cfg)
 {
-    bombLeft.bombLeftShow = cfg.GetBool("Metroid.Visual.HudBombLeftShow");
-    bombLeft.bombLeftTextShow = cfg.GetBool("Metroid.Visual.HudBombLeftTextShow");
-    bombLeft.bombLeftAnchor = cfg.GetInt("Metroid.Visual.HudBombLeftAnchor");
-    bombLeft.bombLeftOfsX = cfg.GetInt("Metroid.Visual.HudBombLeftX");
-    bombLeft.bombLeftOfsY = cfg.GetInt("Metroid.Visual.HudBombLeftY");
-    bombLeft.bombLeftAlign = cfg.GetInt("Metroid.Visual.HudBombLeftAlign");
-    bombLeft.bombLeftColor = ReadRgbColor(cfg, "Metroid.Visual.HudBombLeftColorR", "Metroid.Visual.HudBombLeftColorG", "Metroid.Visual.HudBombLeftColorB");
-    CopyConfigString(bombLeft.bombLeftPrefix, sizeof(bombLeft.bombLeftPrefix), cfg.GetString("Metroid.Visual.HudBombLeftPrefix"));
-    CopyConfigString(bombLeft.bombLeftSuffix, sizeof(bombLeft.bombLeftSuffix), cfg.GetString("Metroid.Visual.HudBombLeftSuffix"));
-    bombLeft.bombIconShow = cfg.GetBool("Metroid.Visual.HudBombLeftIconShow");
-    bombLeft.bombIconColorOverlay = cfg.GetBool("Metroid.Visual.HudBombLeftIconColorOverlay");
-    bombLeft.bombIconHeight = cfg.GetInt("Metroid.Visual.HudBombIconHeight");
-    bombLeft.bombIconColor = ReadRgbColor(cfg, "Metroid.Visual.HudBombLeftIconColorR", "Metroid.Visual.HudBombLeftIconColorG", "Metroid.Visual.HudBombLeftIconColorB");
-    bombLeft.bombIconMode = cfg.GetInt("Metroid.Visual.HudBombLeftIconMode");
-    bombLeft.bombIconOfsX = cfg.GetInt("Metroid.Visual.HudBombLeftIconOfsX");
-    bombLeft.bombIconOfsY = cfg.GetInt("Metroid.Visual.HudBombLeftIconOfsY");
-    bombLeft.bombIconPosAnchor = cfg.GetInt("Metroid.Visual.HudBombLeftIconPosAnchor");
-    bombLeft.bombIconPosOfsX = cfg.GetInt("Metroid.Visual.HudBombLeftIconPosX");
-    bombLeft.bombIconPosOfsY = cfg.GetInt("Metroid.Visual.HudBombLeftIconPosY");
-    bombLeft.bombIconAnchorX = cfg.GetInt("Metroid.Visual.HudBombLeftIconAnchorX");
-    bombLeft.bombIconAnchorY = cfg.GetInt("Metroid.Visual.HudBombLeftIconAnchorY");
+    bombLeft.bombLeftShow = cfg.GetBool(MP_HUD_PROP_KEY_HudBombLeftShow);
+    bombLeft.bombLeftTextShow = cfg.GetBool(MP_HUD_PROP_KEY_HudBombLeftTextShow);
+    bombLeft.bombLeftAnchor = cfg.GetInt(MP_HUD_PROP_KEY_HudBombLeftAnchor);
+    bombLeft.bombLeftOfsX = cfg.GetInt(MP_HUD_PROP_KEY_HudBombLeftX);
+    bombLeft.bombLeftOfsY = cfg.GetInt(MP_HUD_PROP_KEY_HudBombLeftY);
+    bombLeft.bombLeftAlign = cfg.GetInt(MP_HUD_PROP_KEY_HudBombLeftAlign);
+    bombLeft.bombLeftColor = ReadRgbColor(cfg, MP_HUD_PROP_KEY_HudBombLeftColorR, MP_HUD_PROP_KEY_HudBombLeftColorG, MP_HUD_PROP_KEY_HudBombLeftColorB);
+    CopyConfigString(bombLeft.bombLeftPrefix, sizeof(bombLeft.bombLeftPrefix), cfg.GetString(MP_HUD_PROP_KEY_HudBombLeftPrefix));
+    CopyConfigString(bombLeft.bombLeftSuffix, sizeof(bombLeft.bombLeftSuffix), cfg.GetString(MP_HUD_PROP_KEY_HudBombLeftSuffix));
+    bombLeft.bombIconShow = cfg.GetBool(MP_HUD_PROP_KEY_HudBombLeftIconShow);
+    bombLeft.bombIconColorOverlay = cfg.GetBool(MP_HUD_PROP_KEY_HudBombLeftIconColorOverlay);
+    bombLeft.bombIconHeight = cfg.GetInt(MP_HUD_PROP_KEY_HudBombIconHeight);
+    bombLeft.bombIconColor = ReadRgbColor(cfg, MP_HUD_PROP_KEY_HudBombLeftIconColorR, MP_HUD_PROP_KEY_HudBombLeftIconColorG, MP_HUD_PROP_KEY_HudBombLeftIconColorB);
+    bombLeft.bombIconMode = cfg.GetInt(MP_HUD_PROP_KEY_HudBombLeftIconMode);
+    bombLeft.bombIconOfsX = cfg.GetInt(MP_HUD_PROP_KEY_HudBombLeftIconOfsX);
+    bombLeft.bombIconOfsY = cfg.GetInt(MP_HUD_PROP_KEY_HudBombLeftIconOfsY);
+    bombLeft.bombIconPosAnchor = cfg.GetInt(MP_HUD_PROP_KEY_HudBombLeftIconPosAnchor);
+    bombLeft.bombIconPosOfsX = cfg.GetInt(MP_HUD_PROP_KEY_HudBombLeftIconPosX);
+    bombLeft.bombIconPosOfsY = cfg.GetInt(MP_HUD_PROP_KEY_HudBombLeftIconPosY);
+    bombLeft.bombIconAnchorX = cfg.GetInt(MP_HUD_PROP_KEY_HudBombLeftIconAnchorX);
+    bombLeft.bombIconAnchorY = cfg.GetInt(MP_HUD_PROP_KEY_HudBombLeftIconAnchorY);
 }
 static void LoadRankTimeConfig(RankTimeHudConfig& rankTime, Config::Table& cfg)
 {
-    rankTime.rankShow = cfg.GetBool("Metroid.Visual.HudRankShow");
-    rankTime.rankAnchor = cfg.GetInt("Metroid.Visual.HudRankAnchor");
-    rankTime.rankOfsX = cfg.GetInt("Metroid.Visual.HudRankX");
-    rankTime.rankOfsY = cfg.GetInt("Metroid.Visual.HudRankY");
-    rankTime.rankAlign = cfg.GetInt("Metroid.Visual.HudRankAlign");
-    rankTime.rankColor = ReadRgbColor(cfg, "Metroid.Visual.HudRankColorR", "Metroid.Visual.HudRankColorG", "Metroid.Visual.HudRankColorB");
-    CopyConfigString(rankTime.rankPrefix, sizeof(rankTime.rankPrefix), cfg.GetString("Metroid.Visual.HudRankPrefix"));
-    rankTime.rankShowOrdinal = cfg.GetBool("Metroid.Visual.HudRankShowOrdinal");
-    CopyConfigString(rankTime.rankSuffix, sizeof(rankTime.rankSuffix), cfg.GetString("Metroid.Visual.HudRankSuffix"));
-    rankTime.timeLeftShow = cfg.GetBool("Metroid.Visual.HudTimeLeftShow");
-    rankTime.timeLeftAnchor = cfg.GetInt("Metroid.Visual.HudTimeLeftAnchor");
-    rankTime.timeLeftOfsX = cfg.GetInt("Metroid.Visual.HudTimeLeftX");
-    rankTime.timeLeftOfsY = cfg.GetInt("Metroid.Visual.HudTimeLeftY");
-    rankTime.timeLeftAlign = cfg.GetInt("Metroid.Visual.HudTimeLeftAlign");
-    rankTime.timeLeftColor = ReadRgbColor(cfg, "Metroid.Visual.HudTimeLeftColorR", "Metroid.Visual.HudTimeLeftColorG", "Metroid.Visual.HudTimeLeftColorB");
-    rankTime.timeLimitShow = cfg.GetBool("Metroid.Visual.HudTimeLimitShow");
-    rankTime.timeLimitAnchor = cfg.GetInt("Metroid.Visual.HudTimeLimitAnchor");
-    rankTime.timeLimitOfsX = cfg.GetInt("Metroid.Visual.HudTimeLimitX");
-    rankTime.timeLimitOfsY = cfg.GetInt("Metroid.Visual.HudTimeLimitY");
-    rankTime.timeLimitAlign = cfg.GetInt("Metroid.Visual.HudTimeLimitAlign");
-    rankTime.timeLimitColor = ReadRgbColor(cfg, "Metroid.Visual.HudTimeLimitColorR", "Metroid.Visual.HudTimeLimitColorG", "Metroid.Visual.HudTimeLimitColorB");
+    rankTime.rankShow = cfg.GetBool(MP_HUD_PROP_KEY_HudRankShow);
+    rankTime.rankAnchor = cfg.GetInt(MP_HUD_PROP_KEY_HudRankAnchor);
+    rankTime.rankOfsX = cfg.GetInt(MP_HUD_PROP_KEY_HudRankX);
+    rankTime.rankOfsY = cfg.GetInt(MP_HUD_PROP_KEY_HudRankY);
+    rankTime.rankAlign = cfg.GetInt(MP_HUD_PROP_KEY_HudRankAlign);
+    rankTime.rankColor = ReadRgbColor(cfg, MP_HUD_PROP_KEY_HudRankColorR, MP_HUD_PROP_KEY_HudRankColorG, MP_HUD_PROP_KEY_HudRankColorB);
+    CopyConfigString(rankTime.rankPrefix, sizeof(rankTime.rankPrefix), cfg.GetString(MP_HUD_PROP_KEY_HudRankPrefix));
+    rankTime.rankShowOrdinal = cfg.GetBool(MP_HUD_PROP_KEY_HudRankShowOrdinal);
+    CopyConfigString(rankTime.rankSuffix, sizeof(rankTime.rankSuffix), cfg.GetString(MP_HUD_PROP_KEY_HudRankSuffix));
+    rankTime.timeLeftShow = cfg.GetBool(MP_HUD_PROP_KEY_HudTimeLeftShow);
+    rankTime.timeLeftAnchor = cfg.GetInt(MP_HUD_PROP_KEY_HudTimeLeftAnchor);
+    rankTime.timeLeftOfsX = cfg.GetInt(MP_HUD_PROP_KEY_HudTimeLeftX);
+    rankTime.timeLeftOfsY = cfg.GetInt(MP_HUD_PROP_KEY_HudTimeLeftY);
+    rankTime.timeLeftAlign = cfg.GetInt(MP_HUD_PROP_KEY_HudTimeLeftAlign);
+    rankTime.timeLeftColor = ReadRgbColor(cfg, MP_HUD_PROP_KEY_HudTimeLeftColorR, MP_HUD_PROP_KEY_HudTimeLeftColorG, MP_HUD_PROP_KEY_HudTimeLeftColorB);
+    rankTime.timeLimitShow = cfg.GetBool(MP_HUD_PROP_KEY_HudTimeLimitShow);
+    rankTime.timeLimitAnchor = cfg.GetInt(MP_HUD_PROP_KEY_HudTimeLimitAnchor);
+    rankTime.timeLimitOfsX = cfg.GetInt(MP_HUD_PROP_KEY_HudTimeLimitX);
+    rankTime.timeLimitOfsY = cfg.GetInt(MP_HUD_PROP_KEY_HudTimeLimitY);
+    rankTime.timeLimitAlign = cfg.GetInt(MP_HUD_PROP_KEY_HudTimeLimitAlign);
+    rankTime.timeLimitColor = ReadRgbColor(cfg, MP_HUD_PROP_KEY_HudTimeLimitColorR, MP_HUD_PROP_KEY_HudTimeLimitColorG, MP_HUD_PROP_KEY_HudTimeLimitColorB);
 }
 static void LoadRadarOverlayConfig(RadarOverlayConfig& radar, Config::Table& cfg)
 {
-    radar.radarShow = cfg.GetBool("Metroid.Visual.BtmOverlayEnable");
-    radar.radarAnchor = cfg.GetInt("Metroid.Visual.BtmOverlayAnchor");
-    radar.radarOfsX = cfg.GetInt("Metroid.Visual.BtmOverlayDstX");
-    radar.radarOfsY = cfg.GetInt("Metroid.Visual.BtmOverlayDstY");
-    radar.radarDstSize = std::max(cfg.GetInt("Metroid.Visual.BtmOverlayDstSize"), 1);
-    radar.radarOpacity = std::clamp(cfg.GetDouble("Metroid.Visual.BtmOverlayOpacity"), 0.0, 1.0);
-    radar.radarSrcRadius = std::max(cfg.GetInt("Metroid.Visual.BtmOverlaySrcRadius"), 1);
-    radar.radarFrameColor = ReadRgbColor(cfg, "Metroid.Visual.BtmOverlayRadarColorR",
-                                              "Metroid.Visual.BtmOverlayRadarColorG",
-                                              "Metroid.Visual.BtmOverlayRadarColorB");
-    radar.radarFrameColorUseHunter = cfg.GetBool("Metroid.Visual.BtmOverlayRadarColorUseHunter");
+    radar.radarShow = cfg.GetBool(MP_HUD_PROP_KEY_BtmOverlayEnable);
+    radar.radarAnchor = cfg.GetInt(MP_HUD_PROP_KEY_BtmOverlayAnchor);
+    radar.radarOfsX = cfg.GetInt(MP_HUD_PROP_KEY_BtmOverlayDstX);
+    radar.radarOfsY = cfg.GetInt(MP_HUD_PROP_KEY_BtmOverlayDstY);
+    radar.radarDstSize = std::max(cfg.GetInt(MP_HUD_PROP_KEY_BtmOverlayDstSize), 1);
+    radar.radarOpacity = std::clamp(cfg.GetDouble(MP_HUD_PROP_KEY_BtmOverlayOpacity), 0.0, 1.0);
+    radar.radarSrcRadius = std::max(cfg.GetInt(MP_HUD_PROP_KEY_BtmOverlaySrcRadius), 1);
+    radar.radarFrameColor = ReadRgbColor(cfg, MP_HUD_PROP_KEY_BtmOverlayRadarColorR,
+                                              MP_HUD_PROP_KEY_BtmOverlayRadarColorG,
+                                              MP_HUD_PROP_KEY_BtmOverlayRadarColorB);
+    radar.radarFrameColorUseHunter = cfg.GetBool(MP_HUD_PROP_KEY_BtmOverlayRadarColorUseHunter);
     // radarDstRect and radarClipPath are recomputed in RecomputeAnchorPositions()
 }
 // Recompute all final X/Y positions from stored anchor + offset + topStretchX.
@@ -712,48 +754,56 @@ static void RefreshCachedConfig(Config::Table& cfg, float topStretchX = 1.0f, fl
     LoadRankTimeConfig(c.rankTime, cfg);
     LoadRadarOverlayConfig(c.radar, cfg);
     // Per-element outlines
-    auto loadOL = [&](HudOutlineConfig& ol, const char* pfx) {
-        char k[80];
-        auto key = [&](const char* s) { std::snprintf(k, sizeof(k), "Metroid.Visual.%s%s", pfx, s); return k; };
-        ol.enable    = cfg.GetBool(key("Outline"));
-        ol.color     = ReadRgbColor(cfg, key("OutlineColorR"), key("OutlineColorG"), key("OutlineColorB"));
-        ol.opacity   = (float)std::clamp(cfg.GetDouble(key("OutlineOpacity")), 0.0, 1.0);
-        ol.thickness = std::max(1, cfg.GetInt(key("OutlineThickness")));
+#define MP_HUD_OUTLINE_KEYS(prefix) \
+    MP_HUD_PROP_KEY_##prefix##Outline, \
+    MP_HUD_PROP_KEY_##prefix##OutlineColorR, \
+    MP_HUD_PROP_KEY_##prefix##OutlineColorG, \
+    MP_HUD_PROP_KEY_##prefix##OutlineColorB, \
+    MP_HUD_PROP_KEY_##prefix##OutlineOpacity, \
+    MP_HUD_PROP_KEY_##prefix##OutlineThickness
+    auto loadOL = [&](HudOutlineConfig& ol, const char* enableKey,
+                      const char* colorRKey, const char* colorGKey, const char* colorBKey,
+                      const char* opacityKey, const char* thicknessKey) {
+        ol.enable    = cfg.GetBool(enableKey);
+        ol.color     = ReadRgbColor(cfg, colorRKey, colorGKey, colorBKey);
+        ol.opacity   = (float)std::clamp(cfg.GetDouble(opacityKey), 0.0, 1.0);
+        ol.thickness = std::max(1, cfg.GetInt(thicknessKey));
         ol.colorWithAlpha = ol.color;
         ol.colorWithAlpha.setAlphaF(ol.opacity);
     };
-    loadOL(c.globalOutline,        "HudGlobal");
-    loadOL(c.hp.outline,           "HudHp");
-    loadOL(c.hp.gaugeOutline,      "HudHpGauge");
-    loadOL(c.weapon.outline,       "HudWeapon");
-    loadOL(c.weapon.iconOutline,   "HudWeaponIcon");
-    loadOL(c.weapon.gaugeOutline,  "HudAmmoGauge");
-    loadOL(c.matchStatus.outline,  "HudMatchStatus");
-    loadOL(c.rankTime.rankOutline,      "HudRank");
-    loadOL(c.rankTime.timeLeftOutline,   "HudTimeLeft");
-    loadOL(c.rankTime.timeLimitOutline,  "HudTimeLimit");
-    loadOL(c.weaponInventory.outline,     "HudWeaponInventory");
-    loadOL(c.weaponInventory.iconOutline, "HudWeaponInventoryIcon");
-    loadOL(c.bombLeft.outline,      "HudBombLeft");
-    loadOL(c.bombLeft.iconOutline,  "HudBombIcon");
-    loadOL(c.radar.outline,        "BtmOverlay");
-    loadOL(c.radar.frameOutline,   "BtmOverlayFrame");
-    c.textScalePct        = std::max(100, cfg.GetInt("Metroid.Visual.HudTextScale"));
-    const bool autoScaleEnable = cfg.GetBool("Metroid.Visual.HudAutoScaleEnable");
+    loadOL(c.globalOutline,        MP_HUD_OUTLINE_KEYS(HudGlobal));
+    loadOL(c.hp.outline,           MP_HUD_OUTLINE_KEYS(HudHp));
+    loadOL(c.hp.gaugeOutline,      MP_HUD_OUTLINE_KEYS(HudHpGauge));
+    loadOL(c.weapon.outline,       MP_HUD_OUTLINE_KEYS(HudWeapon));
+    loadOL(c.weapon.iconOutline,   MP_HUD_OUTLINE_KEYS(HudWeaponIcon));
+    loadOL(c.weapon.gaugeOutline,  MP_HUD_OUTLINE_KEYS(HudAmmoGauge));
+    loadOL(c.matchStatus.outline,  MP_HUD_OUTLINE_KEYS(HudMatchStatus));
+    loadOL(c.rankTime.rankOutline,      MP_HUD_OUTLINE_KEYS(HudRank));
+    loadOL(c.rankTime.timeLeftOutline,   MP_HUD_OUTLINE_KEYS(HudTimeLeft));
+    loadOL(c.rankTime.timeLimitOutline,  MP_HUD_OUTLINE_KEYS(HudTimeLimit));
+    loadOL(c.weaponInventory.outline,     MP_HUD_OUTLINE_KEYS(HudWeaponInventory));
+    loadOL(c.weaponInventory.iconOutline, MP_HUD_OUTLINE_KEYS(HudWeaponInventoryIcon));
+    loadOL(c.bombLeft.outline,      MP_HUD_OUTLINE_KEYS(HudBombLeft));
+    loadOL(c.bombLeft.iconOutline,  MP_HUD_OUTLINE_KEYS(HudBombIcon));
+    loadOL(c.radar.outline,        MP_HUD_OUTLINE_KEYS(BtmOverlay));
+    loadOL(c.radar.frameOutline,   MP_HUD_OUTLINE_KEYS(BtmOverlayFrame));
+#undef MP_HUD_OUTLINE_KEYS
+    c.textScalePct        = std::max(100, cfg.GetInt(MP_HUD_PROP_KEY_HudTextScale));
+    const bool autoScaleEnable = cfg.GetBool(MP_HUD_PROP_KEY_HudAutoScaleEnable);
     if (autoScaleEnable) {
         // Auto-scale: integer resolution multiplier, capped by user preferences.
         // autoScaleInt = floor(hudScale), i.e. at 2.3x DS res -> 2.
         const int autoScaleInt = std::max(1, static_cast<int>(std::floor(hudScale)));
         const int autoScalePct = autoScaleInt * 100;
-        const int globalCap    = std::clamp(cfg.GetInt("Metroid.Visual.HudAutoScaleCap"),      100, 800);
+        const int globalCap    = std::clamp(cfg.GetInt(MP_HUD_PROP_KEY_HudAutoScaleCap),      100, 800);
         auto capScale = [&](const char* catKey) -> float {
             int catCap = std::clamp(cfg.GetInt(catKey), 100, 800);
             return std::min({autoScalePct, globalCap, catCap}) / 100.0f;
         };
-        c.scaleText      = capScale("Metroid.Visual.HudAutoScaleCapText");
-        c.scaleIcons     = capScale("Metroid.Visual.HudAutoScaleCapIcons");
-        c.scaleGauges    = capScale("Metroid.Visual.HudAutoScaleCapGauges");
-        c.scaleCrosshair = capScale("Metroid.Visual.HudAutoScaleCapCrosshair");
+        c.scaleText      = capScale(MP_HUD_PROP_KEY_HudAutoScaleCapText);
+        c.scaleIcons     = capScale(MP_HUD_PROP_KEY_HudAutoScaleCapIcons);
+        c.scaleGauges    = capScale(MP_HUD_PROP_KEY_HudAutoScaleCapGauges);
+        c.scaleCrosshair = capScale(MP_HUD_PROP_KEY_HudAutoScaleCapCrosshair);
     } else {
         c.scaleText = 1.0f;
         c.scaleIcons = 1.0f;
@@ -766,7 +816,7 @@ static void RefreshCachedConfig(Config::Table& cfg, float topStretchX = 1.0f, fl
     c.textDrawScale       = (hudScale > 0.0f) ? (effectiveTextPct / 100.0f) / hudScale
                                                : effectiveTextPct / 100.0f;
     // Hi-DPI text: only system/file fonts benefit (MPH is a pixel font tuned for 6px upscale).
-    c.hiResText           = (cfg.GetInt("Metroid.Visual.HudFontMode") != 0);
+    c.hiResText           = (cfg.GetInt(MP_HUD_PROP_KEY_HudFontMode) != 0);
     // Build the output-resolution glyph font here — RefreshCachedConfig only runs on a config
     // change or window resize (via EnsureCachedConfigForFrame), so this is event-driven, never
     // per frame. s_textRenderScale = glyph magnification (effectiveTextPct/100), capped.
@@ -808,32 +858,32 @@ static void RefreshCachedConfig(Config::Table& cfg, float topStretchX = 1.0f, fl
         ch.cachedDotHalfPx = dotSz / 2;
     }
     c.lastHudScale        = hudScale;
-    c.hpOpacity           = (float)cfg.GetDouble("Metroid.Visual.HudHpOpacity");
-    c.weaponOpacity       = (float)cfg.GetDouble("Metroid.Visual.HudWeaponOpacity");
-    c.matchStatusOpacity  = (float)cfg.GetDouble("Metroid.Visual.HudMatchStatusOpacity");
-    c.rankOpacity         = (float)cfg.GetDouble("Metroid.Visual.HudRankOpacity");
-    c.bombLeftOpacity     = (float)cfg.GetDouble("Metroid.Visual.HudBombLeftOpacity");
-    c.hpGaugeOpacity      = (float)cfg.GetDouble("Metroid.Visual.HudHpGaugeOpacity");
-    c.wpnIconOpacity      = (float)cfg.GetDouble("Metroid.Visual.HudWpnIconOpacity");
-    c.ammoGaugeOpacity    = (float)cfg.GetDouble("Metroid.Visual.HudAmmoGaugeOpacity");
-    c.bombIconOpacity     = (float)cfg.GetDouble("Metroid.Visual.HudBombIconOpacity");
-    c.timeLeftOpacity     = (float)cfg.GetDouble("Metroid.Visual.HudTimeLeftOpacity");
-    c.timeLimitOpacity    = (float)cfg.GetDouble("Metroid.Visual.HudTimeLimitOpacity");
+    c.hpOpacity           = (float)cfg.GetDouble(MP_HUD_PROP_KEY_HudHpOpacity);
+    c.weaponOpacity       = (float)cfg.GetDouble(MP_HUD_PROP_KEY_HudWeaponOpacity);
+    c.matchStatusOpacity  = (float)cfg.GetDouble(MP_HUD_PROP_KEY_HudMatchStatusOpacity);
+    c.rankOpacity         = (float)cfg.GetDouble(MP_HUD_PROP_KEY_HudRankOpacity);
+    c.bombLeftOpacity     = (float)cfg.GetDouble(MP_HUD_PROP_KEY_HudBombLeftOpacity);
+    c.hpGaugeOpacity      = (float)cfg.GetDouble(MP_HUD_PROP_KEY_HudHpGaugeOpacity);
+    c.wpnIconOpacity      = (float)cfg.GetDouble(MP_HUD_PROP_KEY_HudWpnIconOpacity);
+    c.ammoGaugeOpacity    = (float)cfg.GetDouble(MP_HUD_PROP_KEY_HudAmmoGaugeOpacity);
+    c.bombIconOpacity     = (float)cfg.GetDouble(MP_HUD_PROP_KEY_HudBombIconOpacity);
+    c.timeLeftOpacity     = (float)cfg.GetDouble(MP_HUD_PROP_KEY_HudTimeLeftOpacity);
+    c.timeLimitOpacity    = (float)cfg.GetDouble(MP_HUD_PROP_KEY_HudTimeLimitOpacity);
     {
         uint16_t m = 0;
-        if (cfg.GetBool("Metroid.Visual.DisableDefaultHud.Helmet"))            m |= (1u << NOHUD_HELMET);
-        if (cfg.GetBool("Metroid.Visual.DisableDefaultHud.Ammo"))              m |= (1u << NOHUD_AMMO);
-        if (cfg.GetBool("Metroid.Visual.DisableDefaultHud.WeaponIcon"))        m |= (1u << NOHUD_WEAPONICON);
-        if (cfg.GetBool("Metroid.Visual.DisableDefaultHud.HP"))                m |= (1u << NOHUD_HP);
-        if (cfg.GetBool("Metroid.Visual.DisableDefaultHud.Crosshair"))         m |= (1u << NOHUD_CROSSHAIR);
-        if (cfg.GetBool("Metroid.Visual.DisableDefaultHud.ScoreBattle"))       m |= (1u << NOHUD_SCORE_BATTLE);
-        if (cfg.GetBool("Metroid.Visual.DisableDefaultHud.ScoreSurvival"))     m |= (1u << NOHUD_SCORE_SURVIVAL);
-        if (cfg.GetBool("Metroid.Visual.DisableDefaultHud.ScorePrimeHunter"))  m |= (1u << NOHUD_SCORE_PRIMEHUNTER);
-        if (cfg.GetBool("Metroid.Visual.DisableDefaultHud.ScoreBounty"))       m |= (1u << NOHUD_SCORE_BOUNTY);
-        if (cfg.GetBool("Metroid.Visual.DisableDefaultHud.ScoreCapture"))      m |= (1u << NOHUD_SCORE_CAPTURE);
-        if (cfg.GetBool("Metroid.Visual.DisableDefaultHud.ScoreDefender"))     m |= (1u << NOHUD_SCORE_DEFENDER);
-        if (cfg.GetBool("Metroid.Visual.DisableDefaultHud.ScoreNode"))         m |= (1u << NOHUD_SCORE_NODE);
-        if (cfg.GetBool("Metroid.Visual.DisableDefaultHud.Bomb"))              m |= (1u << NOHUD_BOMB);
+        if (cfg.GetBool(MP_HUD_PROP_KEY_DisableDefaultHud_Helmet))            m |= (1u << NOHUD_HELMET);
+        if (cfg.GetBool(MP_HUD_PROP_KEY_DisableDefaultHud_Ammo))              m |= (1u << NOHUD_AMMO);
+        if (cfg.GetBool(MP_HUD_PROP_KEY_DisableDefaultHud_WeaponIcon))        m |= (1u << NOHUD_WEAPONICON);
+        if (cfg.GetBool(MP_HUD_PROP_KEY_DisableDefaultHud_HP))                m |= (1u << NOHUD_HP);
+        if (cfg.GetBool(MP_HUD_PROP_KEY_DisableDefaultHud_Crosshair))         m |= (1u << NOHUD_CROSSHAIR);
+        if (cfg.GetBool(MP_HUD_PROP_KEY_DisableDefaultHud_ScoreBattle))       m |= (1u << NOHUD_SCORE_BATTLE);
+        if (cfg.GetBool(MP_HUD_PROP_KEY_DisableDefaultHud_ScoreSurvival))     m |= (1u << NOHUD_SCORE_SURVIVAL);
+        if (cfg.GetBool(MP_HUD_PROP_KEY_DisableDefaultHud_ScorePrimeHunter))  m |= (1u << NOHUD_SCORE_PRIMEHUNTER);
+        if (cfg.GetBool(MP_HUD_PROP_KEY_DisableDefaultHud_ScoreBounty))       m |= (1u << NOHUD_SCORE_BOUNTY);
+        if (cfg.GetBool(MP_HUD_PROP_KEY_DisableDefaultHud_ScoreCapture))      m |= (1u << NOHUD_SCORE_CAPTURE);
+        if (cfg.GetBool(MP_HUD_PROP_KEY_DisableDefaultHud_ScoreDefender))     m |= (1u << NOHUD_SCORE_DEFENDER);
+        if (cfg.GetBool(MP_HUD_PROP_KEY_DisableDefaultHud_ScoreNode))         m |= (1u << NOHUD_SCORE_NODE);
+        if (cfg.GetBool(MP_HUD_PROP_KEY_DisableDefaultHud_Bomb))              m |= (1u << NOHUD_BOMB);
         c.noHudMask = m;
     }
     RecomputeAnchorPositions(topStretchX);

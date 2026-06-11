@@ -74,6 +74,13 @@ namespace MelonPrime {
         // Same root cause as clearStuckMouseButtons — stale KEY_DOWN from GetRawInputData.
         // Only iterates over set bits, so overhead scales with currently-held key count.
         [[nodiscard]] bool clearStuckKeys() noexcept;
+
+        // P-48: Post-frame stuck-state recovery (clearStuckMouseButtons +
+        // clearStuckKeys + edge realignment on clear). Called from
+        // RawInputWinFilter::DeferredDrain after drawScreen so the
+        // GetAsyncKeyState syscalls stay off the input→RunFrame latency path.
+        // Consumer (emu) thread only.
+        void clearStuckPostFrame() noexcept;
         [[nodiscard]] bool hotkeyDown(int id) const noexcept;
         void resetHotkeyEdges() noexcept;
 

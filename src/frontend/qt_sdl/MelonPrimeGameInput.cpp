@@ -4,7 +4,9 @@
 #include "main.h"
 #include "Screen.h"
 #include "MelonPrimeDef.h"
+#include "MelonPrimeGameRomAddrTable.h"
 
+#include <cstddef>
 #include <cstdint>
 #include <cstring>
 #include <utility>

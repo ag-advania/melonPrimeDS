@@ -1527,3 +1527,55 @@ a clean-build benchmark; it is the Phase 8 verification measurement.
   the dispatcher/registry for those hooks.
 - Manual smoke checks are still tracked per phase in
   `completed/melonprime-full-refactor-plan.md`; Phase 8 changed documentation only.
+
+---
+
+## 22. Structural Refactor V2 2026-06
+
+## 22.1 Central theme
+
+Structural Refactor V2 focused on HUD property ownership, custom-HUD file shape, instruction-hook
+site tables, and the remaining lifecycle decisions from V1. The intent was to reduce duplicated
+string/address ownership while preserving runtime behavior, dispatcher priority, trampoline code,
+and existing patch lifecycle call sites.
+
+Phase 7 was skipped by design: there is no active upstream-merge plan, and the remaining
+`Screen.cpp` / `Window.cpp` MelonPrime blocks are not worth moving purely for churn reduction.
+
+## 22.2 Integrated results
+
+| Area | Result |
+|---|---|
+| HUD property schema | `MelonPrimeHudPropSchema.inc` now owns HUD visual keys, `MP_HUD_PROP_KEY_*` macros, typed default views, and surface metadata. Config defaults, dialog descriptors, edit descriptors, snapshot fixed keys, side panel key references, and runtime HUD config reads use schema-derived macros. |
+| OSD color domain | `MelonPrimeOsdColorSchema.inc` owns OSD literal-message rows and slot override rows. The settings dialog and `MelonPrimePatchOsdColor.cpp` expand from the same row list while preserving `OsdColor_InvalidatePatch`, per-frame re-apply, and H211 shim write order. |
+| Settings UI shape | `MelonPrimeInputConfig.cpp` was split into unity fragments for HUD tables, preview widgets, and `setupCustomHudWidgets()` body. The main file is below the V2 target of 1,200 lines. |
+| Hook-site tables | Shared hook PCs/pointers moved into `MelonPrimeGameRomAddrTable.h` rows (`HookLocalPlayerPtrGlobal`, `HookActionConsumerPc`, `HookPlayerUpdateActiveCall*`). KR NativeZoom remains module-local because it is a different function from the shared action-consumer PC. Hook tables gained ROM-count and main-RAM range assertions. |
+| Runtime lifecycle decisions | `OnEmuStart` / `OnEmuStop` transient reset asymmetry is intentionally preserved and commented in code. `FixWifi` keeps the first-word canary model for its 51-word patch; full verification is treated as a separate behavior/performance change. |
+
+## 22.3 Final metrics snapshot
+
+Measured on 2026-06-11 with Cursor tools. The shell runner stopped returning exit status during
+Phases 4-8, so build and executable-size verification are not trustworthy from this session.
+
+| Metric | Phase 0 snapshot | V2 final snapshot | Delta |
+|---|---:|---:|---:|
+| Quoted `"Metroid.*"` literals under `src/frontend/qt_sdl` | 1,802 | 1,040 | -762 |
+| `MelonPrimeInputConfig.cpp` line count | 2,665 | 995 | -1,670 |
+| HUD schema rows | 549 | 549 | 0 |
+| HUD parity missing defaults | 0 | 0 | 0 |
+
+Literal count still includes the 549 canonical `MP_HUD_PROP_KEY_*` owner literals in
+`MelonPrimeHudPropSchema.inc` plus non-HUD settings that remain outside the HUD schema. The largest
+practical win is ownership: HUD visual strings are now concentrated in schema/row-list files rather
+than mirrored across runtime, UI, edit mode, defaults, and patch code.
+
+## 22.4 Remaining caution points
+
+- The Phase 4-8 edits have `ReadLints` coverage but no reliable build result from this session
+  because the shell runner returned no exit status for build commands.
+- Manual smoke checks S1-S15 remain continuing regression checks, not blockers for closing the V2
+  structural refactor plan.
+- Future HUD settings should enter through `MelonPrimeHudPropSchema.inc`; OSD message/slot colors
+  should enter through `MelonPrimeOsdColorSchema.inc`.
+- Future instruction hooks should reuse shared `LIST_Hook*` tables only for proven identical logical
+  sites; KR address differences need mphCodex-backed comments.

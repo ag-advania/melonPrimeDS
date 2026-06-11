@@ -1,7 +1,8 @@
 # MelonPrime Click Handling — Investigation & Fix Log
 
 **Status:** Click-drop fix 2026-05-10 (two dropped-click symptoms). Hold-drop fix 2026-06-03
-(charge-hold via `clearStuckMouseButtons` debounce — see "Hold-drop fix" below).
+(charge-hold via `clearStuckMouseButtons` debounce — see "Hold-drop fix" below). P-48
+click-path latency/perf optimization 2026-06-11 (see "P-48" below).
 **Branch:** `highres_fonts_v3`
 **File:** [src/frontend/qt_sdl/MelonPrimeRawInputState.cpp](../../src/frontend/qt_sdl/MelonPrimeRawInputState.cpp)
 
@@ -158,6 +159,68 @@ to N consecutive checks (replace the 1-bit candidate mask with a per-button coun
   keyboard-bound charge. Left as-is (report was mouse-only); apply the same debounce if reported.
 - A *lost initial DOWN* (producer-side) would drop both press and hold; not observed here (taps
   work), so not covered by this fix.
+
+## P-48 — Click-path latency/perf optimization (2026-06-11)
+
+**Files:** [MelonPrimeRawInputState.cpp](../../src/frontend/qt_sdl/MelonPrimeRawInputState.cpp)
+(`snapshotInputFrame`, new `clearStuckPostFrame`),
+[MelonPrimeRawInputState.h](../../src/frontend/qt_sdl/MelonPrimeRawInputState.h),
+[MelonPrimeRawInputWinFilter.cpp](../../src/frontend/qt_sdl/MelonPrimeRawInputWinFilter.cpp)
+(`DeferredDrain`).
+
+Two behavior-preserving optimizations on the input→RunFrame critical path, following the
+established P-22/P-28/P-32 pattern ("move work off the pre-frame path").
+
+### P-48a — Load-first press-slot reads (removes 2 lock-prefixed RMWs per frame)
+
+`snapshotInputFrame` previously did two unconditional `exchange(0, acquire)` (lock-prefixed
+`XCHG`, full barrier) on `m_mouseButtonDeferredPresses` and `m_mouseButtonPresses` every frame,
+even though both are zero on the vast majority of frames. Now:
+
+- Both slots are read with a relaxed load first; the expensive op runs only when nonzero.
+- `m_mouseButtonDeferredPresses` is consumer-thread-only (single-writer discipline,
+  refactoring §3.2), so `load` + `store(0)` fully replaces `exchange`, and the later
+  re-queue (`fetch_or`) became a plain `store` (slot is provably 0 at that point).
+- `m_mouseButtonPresses` can be written concurrently (GUI thread in joy2key mode), so a
+  nonzero load is still claimed via `exchange(0, acquire)` — no press can be lost. A press
+  arriving between a zero load and the snapshot is consumed next frame, the same window
+  that existed between snapshot and exchange before.
+
+### P-48b — `clearStuck*` moved off the pre-frame path
+
+`clearStuckMouseButtons` + `clearStuckKeys` issue 1–6 `GetAsyncKeyState` syscalls per frame
+while any button/key is held — i.e. constantly during combat (WASD + fire). They ran inside
+`snapshotInputFrame`, directly on the input→RunFrame latency path, yet their effect is only
+ever visible to the **next** frame's snapshot ("stuck bits are cleared for the next frame").
+
+They now run in `InputState::clearStuckPostFrame()`, called from
+`RawInputWinFilter::DeferredDrain()` (after RunFrame + drawScreen, P-32 site). Invariants
+preserved:
+
+- Still after the frame's snapshot → quick presses are captured before any clearing.
+- Still before the next snapshot → stuck bits cleared with the same 1-frame bound.
+- Same once-per-frame cadence for the `m_mouseStuckCandidate` two-consecutive-check
+  debounce (hold-drop fix unchanged).
+- On clear, `m_hkPrev` is realigned from a fresh physical scan — the same realignment
+  `snapshotInputFrame` used to do inline.
+- Runs in **both** input modes: only the message drain inside `DeferredDrain` is
+  hidden-window-specific; `clearStuckPostFrame` is unconditional (joy2key mode previously
+  got its clears via `snapshotInputFrame`, so it must be covered here too).
+- `snapshotInputFrameNoEdges` (re-entrant path) keeps its own pre-snapshot `clearStuck*`
+  calls — it needs physical held state for the current nested frame.
+
+Note: during re-entrant FrameAdvance windows the recovery scan can run more than once per
+outer frame (NoEdges pre-clear + per-nested-frame DeferredDrain). Consecutive checks closer
+than 16 ms already occurred pre-P-48 (outer snapshot + NoEdges within the same frame), so
+this is not a new debounce risk class.
+
+### What P-48 does NOT change
+
+- Latency of click *registration* is already architecturally minimal: P-13 polls input
+  immediately after the frame-limiter sleep, right before RunFrame. The 1-frame defer for
+  rapid same-button taps is required by the game's 60 Hz edge sampling and is untouched.
+- Producer side (`processRawInput` / `processRawInputBatched`): unchanged.
+- Defer / stacked-tap / `forcePressEdge` logic: unchanged.
 
 ## Items intentionally NOT changed
 
