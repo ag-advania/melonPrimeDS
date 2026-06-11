@@ -2,14 +2,14 @@
 #
 # Verifies the unity-include ownership rule from .claude/rules (repo-architecture.md,
 # melonprime-full-refactor-plan.md Phase 0 / Phase 6):
-#   every *.inc under src/frontend/qt_sdl must be #include'd by EXACTLY ONE file under src/.
+#   every unity *.inc under src/frontend/qt_sdl must be #include'd by EXACTLY ONE file under src/.
+#   known macro-section injection fragments must match their explicit parent set.
+#   no src/frontend/qt_sdl *.cpp file may be #include'd as a unity fragment.
+#   no *.inc file may be listed as a CMake translation unit.
 #
 # Output: a table of inc file -> including parent(s) -> status.
-# Exit code: 1 if any .inc has 0 (ORPHAN) or >1 (MULTI) including files, 0 otherwise.
+# Exit code: 1 if any ownership rule fails, 0 otherwise.
 #
-# Known quirk (informational, non-failing, until Phase 6):
-#   MelonPrimeHudConfigOnScreen.cpp is a .cpp that is unity-included by MelonPrimeHudRender.cpp.
-
 $ErrorActionPreference = 'Stop'
 
 # .claude/skills -> repo root
@@ -28,7 +28,27 @@ foreach ($d in $dupNames) {
 # One pass over all source-ish files under src/, building: included basename -> list of including files.
 $sourceFiles  = Get-ChildItem -Path $srcRoot -Recurse -File -Include '*.cpp','*.h','*.hpp','*.c','*.inc'
 $includeMap   = @{}
+$cppIncludes  = @{}
 $includeRegex = [regex]'#\s*include\s+"(?:[^"]*[/\\])?([^"/\\]+)"'
+
+$expectedMultiParentMap = @{
+    'melonprimearm9instructionhook.inc' = @(
+        'src/ARM.cpp',
+        'src/ARMJIT_x64/ARMJIT_Compiler.cpp',
+        'src/ARMJIT_x64/ARMJIT_Compiler.h',
+        'src/NDS.cpp',
+        'src/NDS.h'
+    )
+}
+
+function Test-SameStringSet {
+    param(
+        [string[]] $Actual,
+        [string[]] $Expected
+    )
+    $diff = Compare-Object -ReferenceObject ($Expected | Sort-Object) -DifferenceObject ($Actual | Sort-Object)
+    return $null -eq $diff
+}
 
 foreach ($f in $sourceFiles) {
     $rel = [System.IO.Path]::GetRelativePath($repoRoot, $f.FullName) -replace '\\', '/'
@@ -43,19 +63,37 @@ foreach ($f in $sourceFiles) {
         if (-not $includeMap[$name].Contains($rel)) {
             $includeMap[$name].Add($rel)
         }
+        if ($name.EndsWith('.cpp')) {
+            if (-not $cppIncludes.ContainsKey($name)) {
+                $cppIncludes[$name] = [System.Collections.Generic.List[string]]::new()
+            }
+            if (-not $cppIncludes[$name].Contains($rel)) {
+                $cppIncludes[$name].Add($rel)
+            }
+        }
     }
 }
 
-$violations = 0
+$violations = $dupNames.Count
 $rows = foreach ($inc in ($incFiles | Sort-Object Name)) {
     $key     = $inc.Name.ToLowerInvariant()
     $parents = if ($includeMap.ContainsKey($key)) { $includeMap[$key] } else { @() }
-    $status  = switch ($parents.Count) {
-        0       { 'ORPHAN' }
-        1       { 'OK' }
-        default { 'MULTI' }
+
+    if ($expectedMultiParentMap.ContainsKey($key)) {
+        $status = if (Test-SameStringSet -Actual $parents -Expected $expectedMultiParentMap[$key]) {
+            'OK_EXPECTED_MULTI'
+        } else {
+            'BAD_EXPECTED_MULTI'
+        }
+        if ($status -ne 'OK_EXPECTED_MULTI') { $violations++ }
+    } else {
+        $status  = switch ($parents.Count) {
+            0       { 'ORPHAN' }
+            1       { 'OK' }
+            default { 'MULTI' }
+        }
+        if ($parents.Count -ne 1) { $violations++ }
     }
-    if ($parents.Count -ne 1) { $violations++ }
     [pscustomobject]@{
         Inc     = $inc.Name
         Parents = if ($parents.Count) { $parents -join '; ' } else { '(none)' }
@@ -65,16 +103,37 @@ $rows = foreach ($inc in ($incFiles | Sort-Object Name)) {
 
 $rows | Format-Table -AutoSize | Out-String -Width 400 | Write-Host
 
-# Informational known quirk (until Phase 6).
-$quirkKey = 'melonprimehudconfigonscreen.cpp'
-Write-Host 'INFO: MelonPrimeHudConfigOnScreen.cpp is a .cpp unity-included by MelonPrimeHudRender.cpp (known quirk until Phase 6).'
-if ($includeMap.ContainsKey($quirkKey)) {
-    Write-Host ("INFO:   actual includer(s): " + ($includeMap[$quirkKey] -join '; '))
+$cppIncludeRows = foreach ($key in ($cppIncludes.Keys | Sort-Object)) {
+    [pscustomobject]@{
+        IncludedCpp = $key
+        Parents     = $cppIncludes[$key] -join '; '
+        Status      = 'FORBIDDEN'
+    }
+}
+if ($cppIncludeRows) {
+    $cppIncludeRows | Format-Table -AutoSize | Out-String -Width 400 | Write-Host
+    $violations += $cppIncludeRows.Count
+}
+
+$cmakePath = Join-Path $qtSdl 'CMakeLists.txt'
+$cmakeText = if (Test-Path $cmakePath) { [System.IO.File]::ReadAllText($cmakePath) } else { '' }
+$cmakeIncRows = foreach ($inc in ($incFiles | Sort-Object Name)) {
+    if ($cmakeText.Contains($inc.Name)) {
+        [pscustomobject]@{
+            Inc    = $inc.Name
+            Listed = 'src/frontend/qt_sdl/CMakeLists.txt'
+            Status = 'FORBIDDEN'
+        }
+    }
+}
+if ($cmakeIncRows) {
+    $cmakeIncRows | Format-Table -AutoSize | Out-String -Width 400 | Write-Host
+    $violations += $cmakeIncRows.Count
 }
 
 if ($violations -gt 0) {
-    Write-Host "FAIL: $violations .inc file(s) have 0 or >1 including parents."
+    Write-Host "FAIL: $violations unity ownership violation(s) found."
     exit 1
 }
-Write-Host "PASS: all $($incFiles.Count) .inc files have exactly one including parent."
+Write-Host "PASS: all $($incFiles.Count) .inc files match ownership rules; no included .cpp or CMake-listed .inc files found."
 exit 0

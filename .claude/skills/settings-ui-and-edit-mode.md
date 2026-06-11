@@ -145,7 +145,7 @@ Important side effects in `saveConfig()`:
 HUD settings are saved from both the settings dialog (`saveConfig()`) and the in-game edit mode (`CustomHud_ExitEditMode(true, cfg)` -> `Config::Save()`). Both write the same config keys. When the dialog reopens, `setupCustomHudWidgets()` reads the latest config values, ensuring sync.
 
 ### Reset/default handlers
-Default reset from the settings dialog is not implemented. Resetting to defaults happens through the in-game edit mode Reset button (`ResetEditToDefaults()` in `MelonPrimeHudConfigOnScreen.cpp`).
+Default reset from the settings dialog is not implemented. Resetting to defaults happens through the in-game edit mode Reset button (`ResetEditToDefaults()` in `MelonPrimeHudConfigOnScreenUnity.inc`).
 
 ### 9-point anchor widgets
 In the settings dialog, 9-point anchors are `QComboBox` widgets with 9 items (Top Left through Bottom Right), created programmatically. In the in-game edit mode, anchors use an embedded `3x3` grid picker.
@@ -163,19 +163,19 @@ These replaced the older `hk_tabAddonsMetroid*` naming.
 HUD element positioning, crosshair configuration, and text scaling can also be configured through a visual in-game edit mode overlay (entered via `CustomHud_EnterEditMode()`, triggered by the `Edit HUD Layout` button in the settings dialog). This is the modern editor; the settings dialog provides the classic form-based editor. Both write the same config keys.
 
 ### Source location
-The in-game edit mode is a unity-include module rooted at `MelonPrimeHudConfigOnScreen.cpp` (included by `MelonPrimeHudRender.cpp`), within the `namespace MelonPrime` block.
+The in-game edit mode is a unity-include module rooted at `MelonPrimeHudConfigOnScreenUnity.inc` (included by `MelonPrimeHudRender.cpp`), within the `namespace MelonPrime` block.
 
 File split:
 
 | File | Purpose |
 |------|---------|
-| `MelonPrimeHudConfigOnScreen.cpp` | Unity entry point plus shared edit-mode state, layout constants, theme colors, and coordinate conversion |
+| `MelonPrimeHudConfigOnScreenUnity.inc` | Unity entry point plus shared edit-mode state, layout constants, theme colors, and coordinate conversion |
 | `MelonPrimeHudConfigOnScreenDefs.inc` | Element/property descriptor types, enum labels, `kProps*` arrays, `kEditElems`, sample preview text |
 | `MelonPrimeHudConfigOnScreenSnapshot.inc` | `SnapshotEditConfig()`, `RestoreEditSnapshot()`, `ResetEditToDefaults()` |
 | `MelonPrimeHudConfigOnScreenDraw.inc` | `ComputeEditBounds()`, properties panel drawing, live HUD preview, edit overlay drawing |
 | `MelonPrimeHudConfigOnScreenInput.inc` | Public edit-mode API, hit testing, mouse press/move/release/wheel handlers |
 
-Do not add these `.inc` files to `CMakeLists.txt`; they are included only through `MelonPrimeHudConfigOnScreen.cpp`.
+Do not add these `.inc` files to `CMakeLists.txt`; they are included only through `MelonPrimeHudConfigOnScreenUnity.inc`.
 
 ### Public API
 

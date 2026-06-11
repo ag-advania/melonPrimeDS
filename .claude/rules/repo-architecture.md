@@ -167,7 +167,7 @@ Current work is on the `highres_fonts_v3` branch. Main changes relative to `mast
 - All `*X`/`*Y` HUD config values are offsets from anchor, not absolute DS-space coordinates
 - `ApplyAnchor()` helper in `MelonPrimeHudRender.cpp` is called once per element in `Load*Config()`, transparent to draw functions
 - In-game HUD edit mode with drag-and-drop editor, properties panels, crosshair panel with side panels, and live previews
-- Edit mode code rooted at `MelonPrimeHudConfigOnScreen.cpp` (unity-build included by `MelonPrimeHudRender.cpp`) and split into `.inc` fragments:
+- Edit mode code rooted at `MelonPrimeHudConfigOnScreenUnity.inc` (unity-build included by `MelonPrimeHudRender.cpp`) and split into `.inc` fragments:
   - `MelonPrimeHudConfigOnScreenDefs.inc` - definition tables
   - `MelonPrimeHudConfigOnScreenSnapshot.inc` - snapshot/restore/reset
   - `MelonPrimeHudConfigOnScreenDraw.inc` - bounds and overlay drawing
@@ -192,3 +192,4 @@ Current work is on the `highres_fonts_v3` branch. Main changes relative to `mast
   - setup/layout/input fragments for edit-mode forwarding and floating panel placement
   - software overlay fragment for `ScreenPanelNative::paintEvent`
   - GL init/deinit/overlay fragments for texture/shader resources, HUD upload/composite, and native radar overlay
+- Unity include ownership is checked by `.claude/skills/check-inc-ownership.ps1`; it verifies one parent per unity `.inc`, verifies the fixed parent set for the macro-section `MelonPrimeArm9InstructionHook.inc`, rejects `#include "*.cpp"`, and rejects `.inc` entries in `CMakeLists.txt`

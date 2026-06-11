@@ -15,6 +15,19 @@
 #include "MelonPrimeRawInputState.h"
 #endif
 
+// Unity-owned hook fragments in this file:
+// - MelonPrimePatchNativeAimDeltaHookRegisterInjectionVersion.inc
+// - MelonPrimePatchNativeAimDeltaHookPostFoldWriteVersion.inc
+// - MelonPrimePatchLowLatencyAimHook.inc
+// - MelonPrimePatchNativeBipedFireHook.inc
+// - MelonPrimePatchNativeZoomToggleHook.inc
+// - MelonPrimePatchImmediateInputEdgeOverlay.inc
+// - MelonPrimePatchImmediateTransformGateHook.inc
+// - MelonPrimePatchWeaponSwitchHook.inc
+//
+// Keep them under this unity parent. They depend on the local aim/input helper
+// scope in this file, including ApplyAim and nearby MelonPrimeCore methods.
+
 namespace MelonPrime {
 
     alignas(64) static constexpr std::array<uint8_t, 16> MoveLUT = {
@@ -352,6 +365,12 @@ namespace MelonPrime {
         );
     }
 
+    // =========================================================================
+    // Hook implementation unity fragments.
+    //
+    // These are intentionally included after the local aim helpers above. Do not
+    // move them to standalone translation units or add them to CMakeLists.txt.
+    // =========================================================================
 #include "MelonPrimePatchNativeAimDeltaHookRegisterInjectionVersion.inc"
 #include "MelonPrimePatchNativeAimDeltaHookPostFoldWriteVersion.inc"
 #include "MelonPrimePatchLowLatencyAimHook.inc"
