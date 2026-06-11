@@ -417,6 +417,8 @@ namespace MelonPrime {
 
         if (m_flags.test(StateFlags::BIT_IN_GAME)) {
             m_flags.clear(StateFlags::BIT_IN_GAME_INIT);
+            m_flags.clear(StateFlags::BIT_END_OF_GAME_PATCH_RESTORED);
+            m_flags.clear(StateFlags::BIT_BATTLE_RUNTIME_MODE);
         }
     }
 
@@ -502,10 +504,7 @@ namespace MelonPrime {
         }
 
         if (LIKELY(m_flags.test(StateFlags::BIT_ROM_DETECTED))) {
-            const uint8_t currentMode = *m_ptrs.currentMode;
-            const uint8_t flowState   = *m_ptrs.battleFlowState;
             const bool isInGame = (*m_ptrs.inGame) == 0x0001;
-            const bool isEndOfGame = BattleFlow::IsEndOfGame(currentMode, flowState);
             m_flags.assign(StateFlags::BIT_IN_GAME, isInGame);
 
             if (isInGame && !m_flags.test(StateFlags::BIT_IN_GAME_INIT)) {
@@ -513,10 +512,22 @@ namespace MelonPrime {
             }
 
 #ifdef MELONPRIME_DS
-            // End-of-game patch restore: flowState 1|2 while still in battle runtime (isInGame true).
-            if (isEndOfGame && m_flags.test(StateFlags::BIT_IN_GAME_INIT)) {
-                const PatchCtx ctx{ emuInstance->getNDS(), emuInstance, localCfg, m_currentRom };
-                Patches_RestoreOnLeave(ctx);
+            // Cold: poll for end-of-game while match patches are live. currentMode is read once
+            // after join until 0x0E is seen; then only flowState until flow != 0.
+            if (UNLIKELY(m_flags.test(StateFlags::BIT_IN_GAME_INIT)
+                    && !m_flags.test(StateFlags::BIT_END_OF_GAME_PATCH_RESTORED))) {
+                if (!m_flags.test(StateFlags::BIT_BATTLE_RUNTIME_MODE)
+                    && *m_ptrs.currentMode == BattleFlow::MODE_BATTLE_RUNTIME) {
+                    m_flags.set(StateFlags::BIT_BATTLE_RUNTIME_MODE);
+                }
+                if (m_flags.test(StateFlags::BIT_BATTLE_RUNTIME_MODE)) {
+                    const uint8_t flowState = *m_ptrs.battleFlowState;
+                    if (flowState != BattleFlow::FLOW_ACTIVE_MATCH) {
+                        const PatchCtx ctx{ emuInstance->getNDS(), emuInstance, localCfg, m_currentRom };
+                        Patches_RestoreOnLeave(ctx);
+                        m_flags.set(StateFlags::BIT_END_OF_GAME_PATCH_RESTORED);
+                    }
+                }
             }
 #endif
 
@@ -530,6 +541,8 @@ namespace MelonPrime {
             }
             else if (m_flags.test(StateFlags::BIT_IN_GAME_INIT)) {
                 m_flags.clear(StateFlags::BIT_IN_GAME_INIT);
+                m_flags.clear(StateFlags::BIT_END_OF_GAME_PATCH_RESTORED);
+                m_flags.clear(StateFlags::BIT_BATTLE_RUNTIME_MODE);
                 // weaponSwitchPending cleared in the DS block below where ordering matters.
                 ResetTransientInputState(
                     TR_OverlayHeld | TR_DirectTransform | TR_BipedFire);
@@ -642,6 +655,8 @@ namespace MelonPrime {
     {
         // mainRAM fetched here (cold path) instead of every frame in RunFrameHook
         melonDS::u8* const mainRAM = emuInstance->getNDS()->MainRAM;
+        m_flags.clear(StateFlags::BIT_END_OF_GAME_PATCH_RESTORED);
+        m_flags.clear(StateFlags::BIT_BATTLE_RUNTIME_MODE);
         m_flags.set(StateFlags::BIT_IN_GAME_INIT);
         ResetTransientInputState(
             TR_OverlayHeld | TR_DirectTransform | TR_BipedFire | TR_WeaponSwitchPending);

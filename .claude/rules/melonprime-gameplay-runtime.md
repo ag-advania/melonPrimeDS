@@ -30,13 +30,16 @@ It focuses on in-game flow, weapon/morph handling, gameplay setting application,
 | Flag | Condition | Stored / exposed |
 |---|---|---|
 | `isInGame` | `(*m_ptrs.inGame) == 0x0001` | `BIT_IN_GAME`, `IsInGame()` |
-| `isEndOfGame` | `currentMode == 0x0E && (flowState == 1 \|\| flowState == 2)` | local in `RunFrameHook`; `BattleFlow::IsEndOfGame` |
+| `isEndOfGame` | `currentMode == 0x0E && flowState != 0` | local in `RunFrameHook`; `BattleFlow::IsEndOfGame` |
 
 - `isEndOfGame` uses `currentMode` / `battleFlowState` from `MelonPrimeGameRomAddrTable.h`
   (`m_ptrs` resolved at ROM detect). mphCodex:
   `試合中かmenuかの判定/5_End-Match-Detection-Condition-Update-FlowState1Or2-AllVersions/`.
 - `BIT_IN_GAME_INIT` is set in `HandleGameJoinInit()` and cleared when `!isInGame`, not when
   `isEndOfGame` becomes true. Hooks gate on `BIT_IN_GAME_INIT`.
+- Performance: mode/flow poll only while `BIT_IN_GAME_INIT && !BIT_END_OF_GAME_PATCH_RESTORED`.
+  `currentMode` is read until `0x0E` is latched (`BIT_BATTLE_RUNTIME_MODE`); then only
+  `flowState` until match end. Menu = single `inGame` read. Patch restore is edge-triggered once.
 
 ## 3. ROM Detection and Address Resolution
 
