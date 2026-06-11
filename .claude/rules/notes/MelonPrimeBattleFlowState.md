@@ -42,19 +42,26 @@ unpause re-init when `!BIT_IN_GAME_INIT && !BIT_END_OF_GAME_PATCH_RESTORED`. Lea
 `BIT_END_OF_GAME_PATCH_RESTORED` and `BIT_BATTLE_RUNTIME_MODE` are cleared on game join and when
 init is cleared.
 
-## `HandleGameJoinInit()` (patches + match hooks)
+## `HandleGameJoinInit()` (join-only patches)
 
-After pointer resolve and `Patches_Apply(PatchSite_GameJoin)`:
+After pointer resolve: `Patches_Apply(PatchSite_GameJoin)` — **InGameAspectRatio only**.
+Battle-runtime patches and hooks wait for `HandleBattleRuntimeEnter()`.
 
-- `ARM9Hook_SetMatchHooksActive(true)` — all match-scoped instruction hooks (TransformGate,
-  WeaponSwitch, etc.).
-- If native weapon switch enabled: `WeaponSwitchHook_IsSiteValid()` — rewrites trampoline RAM at
-  `0x02003EA0` and validates hook-site words (required each join; trampolines are not registry
-  patches).
+## `HandleBattleRuntimeEnter()` (battle patches + match hooks)
+
+On first `mode==0x0E && flow==0` after join (same latch as `BIT_BATTLE_RUNTIME_MODE`):
+
+- `Patches_Apply(PatchSite_BattleRuntime)` — OsdColor, LowHpWarning, InstantAimFollow,
+  ShowHeadshotOnline, ShowEnemyHpMeterOnline, DisableDoubleDamageMultiplier,
+  NoPickingUpSpecificItems.
+- `ARM9Hook_SetMatchHooksActive(true)` — all match-scoped instruction hooks.
+- If native weapon switch enabled: `WeaponSwitchHook_IsSiteValid()` at `0x02003EA0`.
+
+Per-frame `OsdColor_ApplyOnce` in `RunFrameHook` runs only while `BIT_BATTLE_RUNTIME_MODE`.
 
 ## ARM9 match hooks (lifecycle)
 
-- **Install:** `HandleGameJoinInit` (and `ApplyConfigReload` when `BIT_IN_GAME`).
+- **Install:** `HandleBattleRuntimeEnter` (and `ApplyConfigReload` when `BIT_BATTLE_RUNTIME_MODE`).
 - **Clear:** first `flow != 0` after latch (match end) and `!isInGame` (menu leave).
 - **Not** left registered in menus between matches.
 - Re-attach always calls `SetARM9InstructionHook` + hook-PC write-back so JIT trampolines work
@@ -69,7 +76,7 @@ and patch registry apply/restore (see `melonprime-patch-system.md`).
 2. **Join:** `isInGame && !BIT_IN_GAME_INIT` and (`!wasInGame` **or** `!BIT_END_OF_GAME_PATCH_RESTORED`)
    → `HandleGameJoinInit()`. Rising edge always re-inits even if `RESTORED` was stale.
 3. **Match-end poll** (only while `BIT_IN_GAME_INIT && !BIT_END_OF_GAME_PATCH_RESTORED`):
-   latch `BIT_BATTLE_RUNTIME_MODE` on `mode==0x0E && flow==0`; then `flow!=0` →
+   latch on `mode==0x0E && flow==0` → `HandleBattleRuntimeEnter()`; then `flow!=0` →
    `Patches_RestoreOnLeave()` + `ARM9Hook_SetMatchHooksActive(false)` + set `RESTORED`.
    Stale `flow!=0` from the previous round at join must **not** latch on `0x0E` alone (that caused
    register+unregister on the same frame on rematch).
