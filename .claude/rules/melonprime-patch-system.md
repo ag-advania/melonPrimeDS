@@ -48,7 +48,7 @@ enum PatchApplySite : uint8_t {  // where Patches_Apply fires the entry
 };
 enum PatchRestoreFlag : uint8_t {        // which restore API fires the entry
     RF_None = 0,
-    RF_OnLeave = 1u << 0,                // Patches_RestoreOnLeave (game-leave block)
+    RF_OnLeave = 1u << 0,                // Patches_RestoreOnLeave (isEndOfGame window)
     RF_OnStop  = 1u << 1,                // Patches_RestoreOnStop (OnEmuStart / OnEmuStop)
 };
 
@@ -60,18 +60,21 @@ void Patches_ResetAll();   // state flags only, never touches emulated RAM
 
 **Ordering guarantee:** `kPatchRegistry[]` iteration order defines apply and restore order. The
 table is ordered so each site's apply order matches the pre-registry call lists exactly:
-GameJoin = AspectRatio, OsdColor, LowHpWarning, InstantAimFollow, ShowHeadshotOnline,
-ShowEnemyHpMeterOnline, DisableDoubleDamageMultiplier, NoPickingUpSpecificItems; ConfigReload =
-the InstantAimFollow..NoPickingUp subset; OutOfGameFrame = FixWifi, UseFirmwareLanguage,
-ExpandStageMatrix. (One known delta: restore-on-leave now runs OsdColor before the other five
-restorable modules instead of after them — safe, all modules write disjoint addresses.)
+GameJoin = AspectRatio; BattleRuntime = OsdColor, LowHpWarning, InstantAimFollow,
+ShowHeadshotOnline, ShowEnemyHpMeterOnline, DisableDoubleDamageMultiplier,
+NoPickingUpSpecificItems; ConfigReload = InstantAimFollow..NoPickingUp (only while
+`BIT_BATTLE_RUNTIME_MODE`); OutOfGameFrame = FixWifi, UseFirmwareLanguage, ExpandStageMatrix.
 
-**Call sites in `MelonPrime.cpp`:** `HandleGameJoinInit` → `Patches_Apply(PatchSite_GameJoin)`;
-`ApplyConfigReload` (inside the `BIT_ROM_DETECTED` gate, after `ARM9Hook_Install`) →
+**Call sites in `MelonPrime.cpp`:** `HandleGameJoinInit` → `Patches_Apply(PatchSite_GameJoin)`
+(InGameAspectRatio only); `HandleBattleRuntimeEnter` (first `mode==0x0E && flow==0`) →
+`Patches_Apply(PatchSite_BattleRuntime)` + match hooks; `ApplyConfigReload` (when
+`BIT_BATTLE_RUNTIME_MODE`, after `ARM9Hook_SetMatchHooksActive`) →
 `Patches_Apply(PatchSite_ConfigReload)`; `RunFrameHook` `!isInGame && focused` →
-`Patches_Apply(PatchSite_OutOfGameFrame)`; game-leave block → `Patches_RestoreOnLeave`;
-`OnEmuStart` / `OnEmuStop` → `Patches_RestoreOnStop` + `Patches_ResetAll`;
-`ResetRuntimeStateForBoot` → `Patches_ResetAll` only (boot reset: state only, no RAM restore).
+`Patches_Apply(PatchSite_OutOfGameFrame)`; **match-end poll** (`flow!=0` after latch) →
+`Patches_RestoreOnLeave` (not on generic `!isInGame`; see
+[notes/MelonPrimeBattleFlowState.md](notes/MelonPrimeBattleFlowState.md)); `OnEmuStart` /
+`OnEmuStop` → `Patches_RestoreOnStop` + `Patches_ResetAll`; `ResetRuntimeStateForBoot` →
+`Patches_ResetAll` only (boot reset: state only, no RAM restore).
 
 **Statics:** module `s_applied` state is per-process; melonDS multi-instance runs as separate
 processes, so the per-process singleton assumption holds.
@@ -214,8 +217,10 @@ table row — see the "Patch registry" section below), choosing:
     block (pattern C). The module must include its own loaded-state guard so it is a no-op when
     the target data is not present; name the function `Foo_ApplyIfLoaded` rather than
     `Foo_ApplyOnce` to signal this distinction (`ResetPatchState()` is then typically a no-op).
-- **Restore flags** (`PatchRestoreFlag`): `RF_OnLeave` (restored in `RunFrameHook`'s game-leave
-  block), `RF_OnStop` (restored in `OnEmuStart` / `OnEmuStop`), or `RF_None`.
+- **Restore flags** (`PatchRestoreFlag`): `RF_OnLeave` (restored on match end — latch
+  `mode==0x0E && flow==0`, then first `flow!=0` while `BIT_IN_GAME_INIT &&
+  !BIT_END_OF_GAME_PATCH_RESTORED`), `RF_OnStop` (restored in `OnEmuStart` / `OnEmuStop`), or
+  `RF_None`.
 - **resetState**: point it at `Foo_ResetPatchState` (wire it even for pattern C no-ops).
 
 Table order = apply/restore order. Insert the entry at the position matching its site grouping
@@ -227,10 +232,10 @@ site; transient patches (NoDoubleTapJump) and HUD-owned patches (NoHud) keep the
 
 ### 3. Lifecycle — automatic via the registry
 
-No `MelonPrime.cpp` edits are needed for restore/reset. The three lifecycle blocks
-(`OnEmuStart`, `ResetRuntimeStateForBoot`, `OnEmuStop`) and the game-leave block call the
-registry (`Patches_RestoreOnStop` / `Patches_RestoreOnLeave` / `Patches_ResetAll`), so the entry
-from step 2 wires the whole lifecycle — restore-on-stop/leave and reset×3 are automatic.
+No `MelonPrime.cpp` edits are needed for restore/reset. The lifecycle blocks (`OnEmuStart`,
+`ResetRuntimeStateForBoot`, `OnEmuStop`) and the match-end `Patches_RestoreOnLeave` call wire
+restore-on-stop/leave; `Patches_ResetAll` on boot/stop is automatic from the registry entry in
+step 2.
 (`ResetRuntimeStateForBoot` intentionally resets state **without** restoring RAM: emulated memory
 is being re-initialized.)
 
@@ -387,18 +392,18 @@ WeaponSwitch, TransformGate, NativeAimDelta, etc.) are documented in the
 | Patch | Files | Apply site (registry mask) | Notes |
 |-------|-------|-----------|-------|
 | In-game aspect ratio | `MelonPrimePatchAspectRatio.*` | Registry: `GameJoin` | Uses `MainRAM` read to detect/guard; registry resets state on stop/reset |
-| OSD color | `MelonPrimePatchOsdColor.*` | Registry: `GameJoin` (`RF_OnLeave`) + per-frame `isInGame` re-apply outside the registry | `OsdColor_InvalidatePatch` on settings save |
+| OSD color | `MelonPrimePatchOsdColor.*` | Registry: `BattleRuntime` (`RF_OnLeave`) + per-frame `isInGame` re-apply when `BIT_BATTLE_RUNTIME_MODE` | `OsdColor_InvalidatePatch` on settings save |
 | No-HUD | `MelonPrimePatchNoHud.*` | Outside registry: called from Custom HUD render path | Per-frame apply/restore depending on HUD state |
 | No double-tap jump | `MelonPrimePatchNoDoubleTapJump.*` | Outside registry: `MelonPrimeGameWeapon.cpp` (transient, wraps `FrameAdvanceTwice`) | Not persistent; applied/restored around weapon-switch frames only |
 | Wi-Fi bitset fix | `MelonPrimePatchFixWifi.*` | Registry: `OutOfGameFrame` | JP1_0 / US1_0 / EU1_0 only; 51-word patch |
 | Stage matrix expansion | `MelonPrimePatchExpandStageMatrix.*` | Registry: `OutOfGameFrame` (pattern C) | Writes RAM data bytes, not ARM code; self-guarded via strict 3-point loaded-state check; `ResetPatchState` is a no-op (still wired in the registry); base (5 cells) + extra (9 cells) split across two config keys |
-| Low HP warning | `MelonPrimePatchLowHpWarning.*` | Registry: `GameJoin` | Registry resets state on stop/reset |
+| Low HP warning | `MelonPrimePatchLowHpWarning.*` | Registry: `BattleRuntime` | Registry: `RF_OnLeave \| RF_OnStop` |
 | Use firmware language | `MelonPrimePatchUseFirmwareLanguage.*` | Registry: `OutOfGameFrame` | Adventure-aware; applied in menus; adapter passes `rom.isInAdventure` as 4th arg |
-| Instant aim follow | `MelonPrimePatchInstantAimFollow.*` | Registry: `GameJoin \| ConfigReload` (`RF_OnLeave \| RF_OnStop`) | (Distinct from the `LowLatencyMode` ImmediateSync/MoonLike instruction hook.) |
-| Show headshot online | `MelonPrimePatchShowHeadshotOnline.*` | Registry: `GameJoin \| ConfigReload` (`RF_OnLeave \| RF_OnStop`) | |
-| Show enemy HP meter online | `MelonPrimePatchShowEnemyHpMeterOnline.*` | Registry: `GameJoin \| ConfigReload` (`RF_OnLeave \| RF_OnStop`) | |
-| Disable double-damage multiplier | `MelonPrimePatchDisableDoubleDamageMultiplier.*` | Registry: `GameJoin \| ConfigReload` (`RF_OnLeave \| RF_OnStop`) | Pairs with Damage-Notify-Purple |
-| No picking up specific items | `MelonPrimePatchNoPickingUpSpecificItems.*` | Registry: `GameJoin \| ConfigReload` (`RF_OnLeave \| RF_OnStop`) | |
+| Instant aim follow | `MelonPrimePatchInstantAimFollow.*` | Registry: `BattleRuntime \| ConfigReload` (`RF_OnLeave \| RF_OnStop`) | (Distinct from the `LowLatencyMode` ImmediateSync/MoonLike instruction hook.) |
+| Show headshot online | `MelonPrimePatchShowHeadshotOnline.*` | Registry: `BattleRuntime \| ConfigReload` (`RF_OnLeave \| RF_OnStop`) | |
+| Show enemy HP meter online | `MelonPrimePatchShowEnemyHpMeterOnline.*` | Registry: `BattleRuntime \| ConfigReload` (`RF_OnLeave \| RF_OnStop`) | |
+| Disable double-damage multiplier | `MelonPrimePatchDisableDoubleDamageMultiplier.*` | Registry: `BattleRuntime \| ConfigReload` (`RF_OnLeave \| RF_OnStop`) | Pairs with Damage-Notify-Purple |
+| No picking up specific items | `MelonPrimePatchNoPickingUpSpecificItems.*` | Registry: `BattleRuntime \| ConfigReload` (`RF_OnLeave \| RF_OnStop`) | |
 
 ---
 
@@ -436,17 +441,29 @@ moment the game reaches a code point, or when you need to conditionally redirect
 
 Owns the single hook slot and fans out to all registered MelonPrime hooks.
 
-- `ARM9Hook_Install(nds, cfg, romGroupIndex, core)` — called after ROM detection
-  (`DetectRomAndSetAddresses`) and again on every `ApplyConfigReload`, so a settings change
-  re-registers the active hook set. For each **enabled** hook it calls the module's
-  `Foo_GetAddresses(romGroupIndex, out, max)` and registers those PCs with a per-hook dispatch-mask
-  bit (`AddDispatchAddress` ORs masks when two hooks share a PC), then calls `SetARM9InstructionHook`
-  once with the union of addresses **only if that union differs from the currently installed hook
-  set**. If the union is unchanged, do not reset the JIT block cache and do not write back hook-site
-  instructions just to invalidate blocks.
-- `ARM9Hook_Uninstall(nds)` and `ARM9Hook_ResetPatchState()` — wired into **all three** reset
-  blocks, dispatched manually alongside the registry's `Patches_ResetAll()` in those blocks
+- `ARM9Hook_SetMatchHooksActive(nds, cfg, romGroupIndex, core, active, osdEmu)` — installs or
+  clears **match-scoped** hooks (`ARM9HookScope_InMatch`). Today every registered hook is
+  match-scoped. `true` from `HandleBattleRuntimeEnter`; `false` on match-end and `!isInGame`.
+  `ApplyConfigReload` when `BIT_BATTLE_RUNTIME_MODE`. ROM detect calls `false`. Future out-of-match
+  hooks can use a new `ARM9HookScope` bit.
+- `ARM9Hook_Install(..., activeScope, osdEmu)` — builds the enabled hook PC list for the scope,
+  then **always** calls `SetARM9InstructionHook` when `count > 0` and write-backs every hook PC
+  (needed so JIT blocks pick up trampolines after match-end `ClearARM9InstructionHook`; skipping
+  `SetARM9InstructionHook` when the address list matches left rematch hooks dead). Match-end latch
+  requires `mode==0x0E && flow==0` before polling `flow!=0` so stale post-match `flow` does not
+  unregister on the same frame as join (see
+  [notes/MelonPrimeBattleFlowState.md](notes/MelonPrimeBattleFlowState.md)).
+- `ARM9Hook_Uninstall(nds, osdEmu)` and `ARM9Hook_ResetPatchState()` — wired into **all three**
+  reset blocks, dispatched manually alongside the registry's `Patches_ResetAll()` in those blocks
   (`ARM9Hook_Uninstall` before the registry restore/reset, `ARM9Hook_ResetPatchState` after; see §3).
+  Developer OSD: posts `ARM9 hooks: unregistered` when MelonPrime still had a registered hook set
+  (`s_dispatchCount > 0`) or the NDS hook slot was active — including after `emuInstance->reset()`
+  clears the NDS slot before `OnEmuStart` runs.
+- Developer builds (`MELONPRIME_ENABLE_DEVELOPER_FEATURES`): match hook install/clear posts
+  `osdAddMessage` — `ARM9 hooks: registered (N PCs)` / `ARM9 hooks: unregistered` (only on
+  actual hook attach/detach, not on redundant `SetMatchHooksActive(false)` no-ops).
+- Same builds: patch registry posts `Patches: applied (GameJoin|ConfigReload, N entries)` and
+  `Patches: restored (match end|emu stop, N entries)`. `OutOfGameFrame` apply is silent (per-frame).
 - `DispatcherCallback` looks up the address's mask (`FindDispatchMask`, 1-entry cache) and calls
   each set hook's handler in a fixed priority order; side-effect hooks run unconditionally, redirect
   hooks return early once one redirects.
@@ -484,6 +501,10 @@ Each instruction-hook module provides:
 | TransformGate | `MelonPrimePatchImmediateTransformGateHook.inc` | redirect | `DirectAltFormTransform` |
 | WeaponSwitch | `MelonPrimePatchWeaponSwitchHook.inc` | redirect | `WeaponSwitchMethod != LegacyTouch` |
 | ShadowFreezeRuntimeHook | `MelonPrimePatchShadowFreezeRuntimeHook.cpp` | redirect | `Metroid.BugFix.FixShadowFreeze` |
+
+**WeaponSwitch trampoline RAM** (`0x02003EA0` / scratch `0x02003EE0`) is outside the patch registry.
+`HandleBattleRuntimeEnter` calls `WeaponSwitchHook_IsSiteValid()` when native weapon switch is
+enabled so trampolines are rewritten each battle-runtime entry.
 
 The `*.inc` handlers are unity-included into `MelonPrimeGameInput.cpp` (see its `#include` block);
 the two `.cpp` modules (`FixNoxusBladePersistence`, `ShadowFreezeRuntimeHook`) are standalone

@@ -36,7 +36,7 @@ namespace MelonPrime {
     //    btmPaint       — QPainter for the bottom-screen overlay
     //    topBuffer      — QImage backing the top overlay (cleared inside)
     //    btmBuffer      — QImage backing the bottom overlay (cleared inside)
-    //    isInGame       — whether the game is currently in a match
+    //    isInGame      — whether the game is currently in a match
     //    topStretchX    — widescreen X stretch factor (1.0=4:3, >1.0=wide)
     //    hudOriginXds   — left black-bar width in DS units (m_hudOriginX / hudScale).
     //                     Non-zero when game content is pillarboxed inside the window.

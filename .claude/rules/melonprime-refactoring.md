@@ -299,7 +299,7 @@ After this was added, later changes moved its placement to after `drawScreen()`.
 | I | Remove per-frame `setRawInputTarget` | ~7–10 cyc/frame | Eliminate redundant HWND updates |
 | J | NDS pointer cache | ~3–5 cyc/frame | Reduce repeated chasing of `emuInstance->getNDS()` etc. |
 | K | `BIT_LAST_FOCUSED` change guard | ~1–2 cyc/frame | Reduce unnecessary focus-change detection |
-| L | Promote inGame pointers to HotPointers | ~4–10 cyc/frame | Improve cache locality of frequently used addresses |
+| L | Promote inGame / mode/flow pointers to HotPointers | ~4–10 cyc/frame | `inGame` for gate; mode/flow for `isEndOfGame` |
 | M | Single-load of `m_rawFilter` | ~4–6 cyc/frame | Reduce rereads of the pointer within the same frame |
 | N | Remove dead code for `BIT_LAYOUT_PENDING` | Quality improvement | Remove unnecessary code |
 | O | Fixed-point aim pipeline | ~14 cyc/frame | Replace float-based path with Q14 fixed point |

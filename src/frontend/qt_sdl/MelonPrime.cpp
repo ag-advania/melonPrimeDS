@@ -9,6 +9,7 @@
 #include "Platform.h"
 #include "MelonPrimeDef.h"
 #include "MelonPrimeGameRomAddrTable.h"
+#include "MelonPrimeBattleFlowState.h"
 
 #ifdef MELONPRIME_CUSTOM_HUD
 #include "MelonPrimeHudRender.h"
@@ -256,7 +257,7 @@ namespace MelonPrime {
 #endif
 #ifdef MELONPRIME_DS
         m_weaponSwitchPending.Clear();
-        ARM9Hook_Uninstall(emuInstance->getNDS());
+        ARM9Hook_Uninstall(emuInstance->getNDS(), emuInstance);
         {
             const PatchCtx ctx{ emuInstance->getNDS(), emuInstance, localCfg, m_currentRom };
             Patches_RestoreOnStop(ctx);
@@ -292,7 +293,7 @@ namespace MelonPrime {
 #endif
 #ifdef MELONPRIME_DS
         m_weaponSwitchPending.Clear();
-        ARM9Hook_Uninstall(emuInstance->getNDS());
+        ARM9Hook_Uninstall(emuInstance->getNDS(), emuInstance);
         // boot reset: state only, no RAM restore (emu memory is being re-initialized)
         Patches_ResetAll();
         ARM9Hook_ResetPatchState();
@@ -321,7 +322,7 @@ namespace MelonPrime {
 #endif
 #ifdef MELONPRIME_DS
         m_weaponSwitchPending.Clear();
-        ARM9Hook_Uninstall(emuInstance->getNDS());
+        ARM9Hook_Uninstall(emuInstance->getNDS(), emuInstance);
         {
             const PatchCtx ctx{ emuInstance->getNDS(), emuInstance, localCfg, m_currentRom };
             Patches_RestoreOnStop(ctx);
@@ -380,13 +381,16 @@ namespace MelonPrime {
 #endif
 
 #ifdef MELONPRIME_DS
-        if (m_flags.test(StateFlags::BIT_ROM_DETECTED)) {
+        if (m_flags.test(StateFlags::BIT_ROM_DETECTED)
+                && m_flags.test(StateFlags::BIT_BATTLE_RUNTIME_MODE)) {
             melonDS::NDS* const nds = emuInstance->getNDS();
-            ARM9Hook_Install(
+            ARM9Hook_SetMatchHooksActive(
                 nds,
                 localCfg,
                 m_currentRom.romGroupIndex,
-                this);
+                this,
+                true,
+                emuInstance);
             const PatchCtx ctx{ nds, emuInstance, localCfg, m_currentRom };
             Patches_Apply(PatchSite_ConfigReload, ctx);
         }
@@ -416,6 +420,8 @@ namespace MelonPrime {
 
         if (m_flags.test(StateFlags::BIT_IN_GAME)) {
             m_flags.clear(StateFlags::BIT_IN_GAME_INIT);
+            m_flags.clear(StateFlags::BIT_END_OF_GAME_PATCH_RESTORED);
+            m_flags.clear(StateFlags::BIT_BATTLE_RUNTIME_MODE);
         }
     }
 
@@ -502,24 +508,73 @@ namespace MelonPrime {
 
         if (LIKELY(m_flags.test(StateFlags::BIT_ROM_DETECTED))) {
             const bool isInGame = (*m_ptrs.inGame) == 0x0001;
+            const bool wasInGame = m_flags.test(StateFlags::BIT_IN_GAME);
             m_flags.assign(StateFlags::BIT_IN_GAME, isInGame);
 
+            // Join / rematch: legacy inGame rising edge, or unpause clearing INIT.
+            // Rising edge always re-inits (lobby / rematch) even if RESTORED was left set.
+            // Unpause re-init only while not in the post-match scoreboard window.
             if (isInGame && !m_flags.test(StateFlags::BIT_IN_GAME_INIT)) {
-                HandleGameJoinInit();
+                if (!wasInGame
+                    || !m_flags.test(StateFlags::BIT_END_OF_GAME_PATCH_RESTORED)) {
+                    HandleGameJoinInit();
+                }
             }
 
+#ifdef MELONPRIME_DS
+            // Cold: battle-runtime latch + match-end poll. One flags load; RAM reads:
+            //   pre-latch lobby: currentMode only (skip flow until mode==0x0E)
+            //   post-latch live match: battleFlowState only
+            const uint32_t matchLifecycleFlags = m_flags.packed;
+            if (UNLIKELY((matchLifecycleFlags & StateFlags::BIT_IN_GAME_INIT)
+                    && !(matchLifecycleFlags & StateFlags::BIT_END_OF_GAME_PATCH_RESTORED))) {
+                if (!(matchLifecycleFlags & StateFlags::BIT_BATTLE_RUNTIME_MODE)) {
+                    const uint8_t mode = *m_ptrs.currentMode;
+                    if (mode == BattleFlow::MODE_BATTLE_RUNTIME) {
+                        const uint8_t flowState = *m_ptrs.battleFlowState;
+                        if (flowState == BattleFlow::FLOW_ACTIVE_MATCH)
+                            HandleBattleRuntimeEnter();
+                    }
+                } else {
+                    const uint8_t flowState = *m_ptrs.battleFlowState;
+                    if (flowState != BattleFlow::FLOW_ACTIVE_MATCH) {
+                        melonDS::NDS* const nds = emuInstance->getNDS();
+                        const PatchCtx ctx{ nds, emuInstance, localCfg, m_currentRom };
+                        Patches_RestoreOnLeave(ctx);
+                        ARM9Hook_SetMatchHooksActive(
+                            nds, localCfg, m_currentRom.romGroupIndex, this, false, emuInstance);
+                        m_flags.set(StateFlags::BIT_END_OF_GAME_PATCH_RESTORED);
+                    }
+                }
+            }
+#endif
+
             if (LIKELY(isInGame)) {
-                // Per-frame re-evaluation (varies with game state) — intentionally bypasses the patch registry.
-                OsdColor_ApplyOnce(emuInstance, localCfg, m_currentRom);
+                if (m_flags.test(StateFlags::BIT_BATTLE_RUNTIME_MODE)) {
+                    // Per-frame re-evaluation — bypasses registry; gated to skip lobby RAM work.
+                    OsdColor_ApplyOnce(emuInstance, localCfg, m_currentRom);
+                }
                 // Damage Notify Purple — runs whether or not the window is focused
                 // so HP drops during alt-tab still emit the purple flash.
                 if (m_damageNotifyPurpleEnabled)
                     DamageNotifyPurpleTick();
             }
-            else if (m_flags.test(StateFlags::BIT_IN_GAME_INIT)) {
+            else if (!isInGame
+                && (m_flags.test(StateFlags::BIT_IN_GAME_INIT)
+                    || m_flags.test(StateFlags::BIT_END_OF_GAME_PATCH_RESTORED))) {
                 m_flags.clear(StateFlags::BIT_IN_GAME_INIT);
-                // weaponSwitchPending cleared in the DS block below (before
-                // Patches_RestoreOnLeave) where ordering matters.
+                m_flags.clear(StateFlags::BIT_END_OF_GAME_PATCH_RESTORED);
+                m_flags.clear(StateFlags::BIT_BATTLE_RUNTIME_MODE);
+#ifdef MELONPRIME_DS
+                ARM9Hook_SetMatchHooksActive(
+                    emuInstance->getNDS(),
+                    localCfg,
+                    m_currentRom.romGroupIndex,
+                    this,
+                    false,
+                    emuInstance);
+#endif
+                // weaponSwitchPending cleared in the DS block below where ordering matters.
                 ResetTransientInputState(
                     TR_OverlayHeld | TR_DirectTransform | TR_BipedFire);
 #ifdef MELONPRIME_CUSTOM_HUD
@@ -528,11 +583,6 @@ namespace MelonPrime {
 #endif
 #ifdef MELONPRIME_DS
                 m_weaponSwitchPending.Clear();
-                // Covers OsdColor too (previously an unguarded standalone call here).
-                {
-                    const PatchCtx ctx{ emuInstance->getNDS(), emuInstance, localCfg, m_currentRom };
-                    Patches_RestoreOnLeave(ctx);
-                }
 #endif
             }
 
@@ -634,8 +684,10 @@ namespace MelonPrime {
     // =========================================================================
     COLD_FUNCTION void MelonPrimeCore::HandleGameJoinInit()
     {
-        // mainRAM fetched here (cold path) instead of every frame in RunFrameHook
-        melonDS::u8* const mainRAM = emuInstance->getNDS()->MainRAM;
+        melonDS::NDS* const nds = emuInstance->getNDS();
+        melonDS::u8* const mainRAM = nds->MainRAM;
+        m_flags.clear(StateFlags::BIT_END_OF_GAME_PATCH_RESTORED);
+        m_flags.clear(StateFlags::BIT_BATTLE_RUNTIME_MODE);
         m_flags.set(StateFlags::BIT_IN_GAME_INIT);
         ResetTransientInputState(
             TR_OverlayHeld | TR_DirectTransform | TR_BipedFire | TR_WeaponSwitchPending);
@@ -710,21 +762,31 @@ namespace MelonPrime {
         m_flags.assign(StateFlags::BIT_IN_ADVENTURE, isAdventure);
 
         MelonPrimeGameSettings::ApplyMphSensitivity(
-            emuInstance->getNDS(), localCfg, m_currentRom.sensitivity, m_addrHot.inGameSensi, true);
+            nds, localCfg, m_currentRom.sensitivity, m_addrHot.inGameSensi, true);
 
-        MelonPrimeGameSettings::ApplyAimSmoothingPatch(
-            emuInstance->getNDS(), m_currentRom, m_disableMphAimSmoothing);
+        MelonPrimeGameSettings::ApplyAimSmoothingPatch(nds, m_currentRom, m_disableMphAimSmoothing);
 
 #ifdef MELONPRIME_DS
-        // Apply patches that need game-join context (player struct resolved)
-        {
-            const PatchCtx ctx{ emuInstance->getNDS(), emuInstance, localCfg, m_currentRom };
-            Patches_Apply(PatchSite_GameJoin, ctx);
-        }
+        // Game-join patches only (aspect ratio). Battle-runtime patches/hooks wait for mode 0x0E.
+        Patches_Apply(PatchSite_GameJoin, PatchCtx{ nds, emuInstance, localCfg, m_currentRom });
 #endif
 #ifdef MELONPRIME_CUSTOM_HUD
         // Cache battle settings for HUD display
         CustomHud_OnMatchJoin(mainRAM, m_currentRom);
+#endif
+    }
+
+    COLD_FUNCTION void MelonPrimeCore::HandleBattleRuntimeEnter()
+    {
+        m_flags.set(StateFlags::BIT_BATTLE_RUNTIME_MODE);
+#ifdef MELONPRIME_DS
+        melonDS::NDS* const nds = emuInstance->getNDS();
+        const PatchCtx ctx{ nds, emuInstance, localCfg, m_currentRom };
+        Patches_Apply(PatchSite_BattleRuntime, ctx);
+        ARM9Hook_SetMatchHooksActive(
+            nds, localCfg, m_currentRom.romGroupIndex, this, true, emuInstance);
+        if (m_enableNativeWeaponSwitch)
+            (void)WeaponSwitchHook_IsSiteValid(nds, m_currentRom.romGroupIndex);
 #endif
     }
 

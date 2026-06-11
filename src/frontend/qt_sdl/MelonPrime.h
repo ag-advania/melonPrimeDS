@@ -97,6 +97,8 @@ namespace MelonPrime {
         melonDS::u32 isInVisorOrMap;
         melonDS::u32 isMapOrUserActionPaused;
         melonDS::u32 inGame;
+        melonDS::u32 currentMode;
+        melonDS::u32 battleFlowState;
         melonDS::u32 chosenHunter;
         melonDS::u32 inGameSensi;
     };
@@ -122,6 +124,8 @@ namespace MelonPrime {
         uint8_t* weaponChange;
 
         // [Tier 3: Conditional / Rare]
+        uint8_t* currentMode;       // isEndOfGame poll (only while in-game init, pre-restore)
+        uint8_t* battleFlowState;
         uint8_t* selectedWeapon;
         uint8_t* loadedSpecialWeapon;
         uint8_t* boostGauge;
@@ -465,6 +469,9 @@ namespace MelonPrime {
             static constexpr uint32_t BIT_ROM_DETECTED = 1u << 0;
             static constexpr uint32_t BIT_IN_GAME = 1u << 1;
             static constexpr uint32_t BIT_IN_GAME_INIT = 1u << 2;
+            static constexpr uint32_t BIT_END_OF_GAME_PATCH_RESTORED = 1u << 12;
+            // Latched on first mode==0x0E && flow==0 after join; battle patches/hooks apply here.
+            static constexpr uint32_t BIT_BATTLE_RUNTIME_MODE = 1u << 15;
             static constexpr uint32_t BIT_PAUSED = 1u << 3;
             static constexpr uint32_t BIT_IN_ADVENTURE = 1u << 4;
             static constexpr uint32_t BIT_WAS_IN_GAME_RENDERER = 1u << 5;
@@ -625,6 +632,7 @@ namespace MelonPrime {
         COLD_FUNCTION void HandleAdventureMode();
 
         COLD_FUNCTION void HandleGameJoinInit();
+        COLD_FUNCTION void HandleBattleRuntimeEnter();
         COLD_FUNCTION void DetectRomAndSetAddresses();
         COLD_FUNCTION void ApplyGameSettingsOnce();
 
