@@ -12,16 +12,16 @@ It focuses on in-game flow, weapon/morph handling, gameplay setting application,
   3. If ROM is not detected, run `DetectRomAndSetAddresses()`.
   4. If ROM is detected, evaluate `isInGame` (`inGame == 0x0001`) and `isEndOfGame` (mode/flow;
      see §2).
-  5. On legacy `inGame` rising edge or `!BIT_IN_GAME_INIT` (unpause), when not
-     `BIT_END_OF_GAME_PATCH_RESTORED`, run `HandleGameJoinInit()` (patches, match hooks,
-     pointer resolve). Rematch assumes `inGame` drops between matches.
-  6. If `isEndOfGame` while `BIT_IN_GAME_INIT`, call `Patches_RestoreOnLeave()` and
-     `ARM9Hook_SetMatchHooksActive(false)` (match-end
-     patch restore; `isInGame` may still be true).
+  5. **Join:** `isInGame && !BIT_IN_GAME_INIT` and (`inGame` rising edge **or** unpause with
+     `!BIT_END_OF_GAME_PATCH_RESTORED`) → `HandleGameJoinInit()` (patches, match hooks, pointer
+     resolve, weapon-switch trampoline when enabled). Leaving `!isInGame` clears `RESTORED` even if
+     `INIT` was already clear (e.g. unpause during scoreboard).
+  6. **Match-end poll** while `BIT_IN_GAME_INIT && !BIT_END_OF_GAME_PATCH_RESTORED`: latch on
+     `mode==0x0E && flow==0`; then `flow!=0` → `Patches_RestoreOnLeave()` +
+     `ARM9Hook_SetMatchHooksActive(false)` (`isInGame` may still be true).
   7. If `isInGame`, re-apply the game-state-dependent OSD color patch and run damage-notify.
-  8. If not `isInGame` but `BIT_IN_GAME_INIT` (left battle runtime), clear init state,
-     `ARM9Hook_SetMatchHooksActive(false)`, and transient gameplay state — **without**
-     `Patches_RestoreOnLeave`.
+  8. If `!isInGame` and (`BIT_IN_GAME_INIT` or `BIT_END_OF_GAME_PATCH_RESTORED`), clear flags,
+     `ARM9Hook_SetMatchHooksActive(false)`, transient reset — **without** `Patches_RestoreOnLeave`.
   9. If focused and `isInGame`, run `HandleInGameLogic()`.
   10. If focused and not `isInGame`, run the registry out-of-game patch site, then
      `ApplyGameSettingsOnce()`.
@@ -67,6 +67,9 @@ It focuses on in-game flow, weapon/morph handling, gameplay setting application,
 - It also applies hunter/adventure state, MPH sensitivity, aim-smoothing patch, and in-game aspect ratio patch.
 - Static write-patches that need game-join context are applied through
   `Patches_Apply(PatchSite_GameJoin, ctx)` in `MelonPrimePatchRegistry`.
+- Match-scoped ARM9 instruction hooks: `ARM9Hook_SetMatchHooksActive(true)` after patch apply.
+- Native weapon switch: `WeaponSwitchHook_IsSiteValid()` rewrites trampoline RAM at join (not
+  registry-managed). See [melonprime-patch-system.md](melonprime-patch-system.md) § ARM9 hooks.
 
 ## 5. In-Game Hot Path
 

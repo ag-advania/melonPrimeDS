@@ -42,11 +42,38 @@ unpause re-init when `!BIT_IN_GAME_INIT && !BIT_END_OF_GAME_PATCH_RESTORED`. Lea
 `BIT_END_OF_GAME_PATCH_RESTORED` and `BIT_BATTLE_RUNTIME_MODE` are cleared on game join and when
 init is cleared.
 
+## `HandleGameJoinInit()` (patches + match hooks)
+
+After pointer resolve and `Patches_Apply(PatchSite_GameJoin)`:
+
+- `ARM9Hook_SetMatchHooksActive(true)` — all match-scoped instruction hooks (TransformGate,
+  WeaponSwitch, etc.).
+- If native weapon switch enabled: `WeaponSwitchHook_IsSiteValid()` — rewrites trampoline RAM at
+  `0x02003EA0` and validates hook-site words (required each join; trampolines are not registry
+  patches).
+
+## ARM9 match hooks (lifecycle)
+
+- **Install:** `HandleGameJoinInit` (and `ApplyConfigReload` when `BIT_IN_GAME`).
+- **Clear:** first `flow != 0` after latch (match end) and `!isInGame` (menu leave).
+- **Not** left registered in menus between matches.
+- Re-attach always calls `SetARM9InstructionHook` + hook-PC write-back so JIT trampolines work
+  after a prior match-end `ClearARM9InstructionHook`.
+
+Developer builds (`MELONPRIME_ENABLE_DEVELOPER_FEATURES`): `osdAddMessage` for hook register/clear
+and patch registry apply/restore (see `melonprime-patch-system.md`).
+
 ## `RunFrameHook()` sequencing (ROM detected)
 
-1. `isInGame` from `inGame` flag; `isEndOfGame` from mode/flow; set `BIT_IN_GAME`.
-2. If `isInGame && !BIT_IN_GAME_INIT` → `HandleGameJoinInit()`.
-3. If `isEndOfGame && BIT_IN_GAME_INIT` → `Patches_RestoreOnLeave()`.
+1. Read `inGame`; set `BIT_IN_GAME` (keep `wasInGame` for rising-edge join).
+2. **Join:** `isInGame && !BIT_IN_GAME_INIT` and (`!wasInGame` **or** `!BIT_END_OF_GAME_PATCH_RESTORED`)
+   → `HandleGameJoinInit()`. Rising edge always re-inits even if `RESTORED` was stale.
+3. **Match-end poll** (only while `BIT_IN_GAME_INIT && !BIT_END_OF_GAME_PATCH_RESTORED`):
+   latch `BIT_BATTLE_RUNTIME_MODE` on `mode==0x0E && flow==0`; then `flow!=0` →
+   `Patches_RestoreOnLeave()` + `ARM9Hook_SetMatchHooksActive(false)` + set `RESTORED`.
+   Stale `flow!=0` from the previous round at join must **not** latch on `0x0E` alone (that caused
+   register+unregister on the same frame on rematch).
 4. If `isInGame` → `OsdColor_ApplyOnce`, damage-notify purple.
-5. Else if `BIT_IN_GAME_INIT` → clear init, transient reset (no patch restore).
+5. If `!isInGame && (BIT_IN_GAME_INIT || BIT_END_OF_GAME_PATCH_RESTORED)` → clear init/RESTORED,
+   deactivate hooks, transient reset — **no** `Patches_RestoreOnLeave`.
 6. Focused: `isInGame` → `HandleInGameLogic()`; else → out-of-game patches + settings.

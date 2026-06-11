@@ -69,8 +69,9 @@ restorable modules instead of after them — safe, all modules write disjoint ad
 **Call sites in `MelonPrime.cpp`:** `HandleGameJoinInit` → `Patches_Apply(PatchSite_GameJoin)`;
 `ApplyConfigReload` (inside the `BIT_ROM_DETECTED` gate, after `ARM9Hook_SetMatchHooksActive`) →
 `Patches_Apply(PatchSite_ConfigReload)`; `RunFrameHook` `!isInGame && focused` →
-`Patches_Apply(PatchSite_OutOfGameFrame)`; **match-end window** (`isEndOfGame &&
-`BIT_IN_GAME_INIT`) → `Patches_RestoreOnLeave` (not on generic `!isInGame`; see
+`Patches_Apply(PatchSite_OutOfGameFrame)`; **match-end poll** (`BIT_IN_GAME_INIT &&
+!BIT_END_OF_GAME_PATCH_RESTORED`, latch `mode==0x0E && flow==0`, then `flow!=0`) →
+`Patches_RestoreOnLeave` (not on generic `!isInGame`; see
 [notes/MelonPrimeBattleFlowState.md](notes/MelonPrimeBattleFlowState.md)); `OnEmuStart` /
 `OnEmuStop` → `Patches_RestoreOnStop` + `Patches_ResetAll`; `ResetRuntimeStateForBoot` →
 `Patches_ResetAll` only (boot reset: state only, no RAM restore).
@@ -216,9 +217,10 @@ table row — see the "Patch registry" section below), choosing:
     block (pattern C). The module must include its own loaded-state guard so it is a no-op when
     the target data is not present; name the function `Foo_ApplyIfLoaded` rather than
     `Foo_ApplyOnce` to signal this distinction (`ResetPatchState()` is then typically a no-op).
-- **Restore flags** (`PatchRestoreFlag`): `RF_OnLeave` (restored when `isEndOfGame` —
-  `currentMode == 0x0E && flowState != 0` — while `BIT_IN_GAME_INIT` is
-  still set), `RF_OnStop` (restored in `OnEmuStart` / `OnEmuStop`), or `RF_None`.
+- **Restore flags** (`PatchRestoreFlag`): `RF_OnLeave` (restored on match end — latch
+  `mode==0x0E && flow==0`, then first `flow!=0` while `BIT_IN_GAME_INIT &&
+  !BIT_END_OF_GAME_PATCH_RESTORED`), `RF_OnStop` (restored in `OnEmuStart` / `OnEmuStop`), or
+  `RF_None`.
 - **resetState**: point it at `Foo_ResetPatchState` (wire it even for pattern C no-ops).
 
 Table order = apply/restore order. Insert the entry at the position matching its site grouping
@@ -439,19 +441,18 @@ moment the game reaches a code point, or when you need to conditionally redirect
 
 Owns the single hook slot and fans out to all registered MelonPrime hooks.
 
-- `ARM9Hook_SetMatchHooksActive(nds, cfg, romGroupIndex, core, active)` — installs or clears
-  **match-scoped** hooks (`ARM9HookScope_InMatch`). Today every registered hook is match-scoped.
-  `true` from `HandleGameJoinInit`; `false` on `isEndOfGame` and `!isInGame` (init clear).
-  `ApplyConfigReload` calls it with `BIT_IN_GAME` so a live settings toggle updates hooks only
-  while in a match. ROM detect calls `false` (menu after load). Future out-of-match hooks can use
-  a new `ARM9HookScope` bit and a separate install path.
-- `ARM9Hook_Install(nds, cfg, romGroupIndex, core, activeScope)` — low-level scope mask.
-  For each **enabled** hook in the active scope it calls the module's
-  `Foo_GetAddresses(romGroupIndex, out, max)` and registers those PCs with a per-hook dispatch-mask
-  bit (`AddDispatchAddress` ORs masks when two hooks share a PC), then calls `SetARM9InstructionHook`
-  once with the union of addresses **only if that union differs from the currently installed hook
-  set**. If the union is unchanged, do not reset the JIT block cache and do not write back hook-site
-  instructions just to invalidate blocks.
+- `ARM9Hook_SetMatchHooksActive(nds, cfg, romGroupIndex, core, active, osdEmu)` — installs or
+  clears **match-scoped** hooks (`ARM9HookScope_InMatch`). Today every registered hook is
+  match-scoped. `true` from `HandleGameJoinInit` (after `Patches_Apply(GameJoin)`); `false` on
+  match-end (`flow!=0` after latch) and `!isInGame`. `ApplyConfigReload` uses `BIT_IN_GAME`. ROM
+  detect calls `false`. Future out-of-match hooks can use a new `ARM9HookScope` bit.
+- `ARM9Hook_Install(..., activeScope, osdEmu)` — builds the enabled hook PC list for the scope,
+  then **always** calls `SetARM9InstructionHook` when `count > 0` and write-backs every hook PC
+  (needed so JIT blocks pick up trampolines after match-end `ClearARM9InstructionHook`; skipping
+  `SetARM9InstructionHook` when the address list matches left rematch hooks dead). Match-end latch
+  requires `mode==0x0E && flow==0` before polling `flow!=0` so stale post-match `flow` does not
+  unregister on the same frame as join (see
+  [notes/MelonPrimeBattleFlowState.md](notes/MelonPrimeBattleFlowState.md)).
 - `ARM9Hook_Uninstall(nds)` and `ARM9Hook_ResetPatchState()` — wired into **all three** reset
   blocks, dispatched manually alongside the registry's `Patches_ResetAll()` in those blocks
   (`ARM9Hook_Uninstall` before the registry restore/reset, `ARM9Hook_ResetPatchState` after; see §3).
@@ -497,6 +498,10 @@ Each instruction-hook module provides:
 | TransformGate | `MelonPrimePatchImmediateTransformGateHook.inc` | redirect | `DirectAltFormTransform` |
 | WeaponSwitch | `MelonPrimePatchWeaponSwitchHook.inc` | redirect | `WeaponSwitchMethod != LegacyTouch` |
 | ShadowFreezeRuntimeHook | `MelonPrimePatchShadowFreezeRuntimeHook.cpp` | redirect | `Metroid.BugFix.FixShadowFreeze` |
+
+**WeaponSwitch trampoline RAM** (`0x02003EA0` / scratch `0x02003EE0`) is outside the patch registry.
+`HandleGameJoinInit` calls `WeaponSwitchHook_IsSiteValid()` when native weapon switch is enabled so
+trampolines are rewritten each join.
 
 The `*.inc` handlers are unity-included into `MelonPrimeGameInput.cpp` (see its `#include` block);
 the two `.cpp` modules (`FixNoxusBladePersistence`, `ShadowFreezeRuntimeHook`) are standalone
