@@ -153,6 +153,27 @@ class DialogSection:
     rows: list[DialogRow]
 
 
+OSD_DIALOG_SECTION_NAMES = {
+    "kSecOsdH211",
+    "kSecOsdLostLives",
+    "kSecOsdKillDeath",
+    "kSecOsdReturnBase",
+    "kSecOsdNoAmmo",
+    "kSecOsdCowardDetect",
+    "kSecOsdAcquiringNode",
+    "kSecOsdTurret",
+    "kSecOsdOctoReset",
+    "kSecOsdOctoDrop",
+    "kSecOsdOctoCond",
+    "kSecOsdOctoMissing",
+    "kSecOsdGlobal",
+    "kSecOsdSlotKillDeath",
+    "kSecOsdSlotNode",
+    "kSecOsdSlotObjective",
+    "kSecOsdSlotSystem",
+}
+
+
 @dataclass
 class EditPropRow:
     label: str
@@ -707,13 +728,77 @@ def parse_dialog_sections_from_generated(text: str, ident_to_key: dict[str, str]
     return sections
 
 
+def osd_dialog_sections() -> list[DialogSection]:
+    def color_row(label: str, prefix: str) -> DialogRow:
+        return DialogRow(label, "Color3", f"Metroid.Visual.{prefix}R", "0", "255", "1",
+                         f"Metroid.Visual.{prefix}G", f"Metroid.Visual.{prefix}B")
+
+    sections: list[DialogSection] = [
+        DialogSection("kSecOsdH211", [
+            DialogRow("Enable Separate Color", "Bool", "Metroid.Visual.OsdColorH211", "0", "0", "0"),
+            color_row("Color (Default: Red)", "OsdColorH211"),
+        ]),
+        DialogSection("kSecOsdGlobal", [
+            DialogRow("Enable OSD Color Patch", "Bool", "Metroid.Visual.OsdColor", "0", "0", "0"),
+            color_row("Global Color", "OsdColor"),
+            DialogRow("Use Global Color for All", "Bool", "Metroid.Visual.OsdColorApplyGlobal", "0", "0", "0"),
+        ]),
+    ]
+
+    literal_sections = [
+        ("kSecOsdLostLives", "OsdColorLostLives"),
+        ("kSecOsdKillDeath", "OsdColorKillDeath"),
+        ("kSecOsdReturnBase", "OsdColorReturnBase"),
+        ("kSecOsdNoAmmo", "OsdColorNoAmmo"),
+        ("kSecOsdCowardDetect", "OsdColorCowardDetect"),
+        ("kSecOsdAcquiringNode", "OsdColorAcquiringNode"),
+        ("kSecOsdTurret", "OsdColorTurret"),
+        ("kSecOsdOctoReset", "OsdColorOctoReset"),
+        ("kSecOsdOctoDrop", "OsdColorOctoDrop"),
+        ("kSecOsdOctoCond", "OsdColorOctoCond"),
+        ("kSecOsdOctoMissing", "OsdColorOctoMissing"),
+    ]
+    sections[1:1] = [
+        DialogSection(section_name, [color_row("Color", prefix)])
+        for section_name, prefix in literal_sections
+    ]
+
+    slot_sections = [
+        ("kSecOsdSlotKillDeath", "OsdColorSlotKillDeath",
+         "Applied once on settings close to currently displayed messages (flags=0x02).\nNew messages use the 'Kill / Death' literal color above.",
+         "Color  (YOU KILLED / KILLED YOU / 5-kill / prime hunter / teammate)"),
+        ("kSecOsdSlotNode", "OsdColorSlotNode",
+         "Applied once on settings close to currently displayed messages (flags=0x11).\nNew messages use 'Acquiring Node' or 'Node Stolen' literal colors above.",
+         "Color  (acquiring node / node stolen H211)"),
+        ("kSecOsdSlotObjective", "OsdColorSlotObjective",
+         "Applied once on settings close to currently displayed messages (flags=0x01).\nNew messages use their individual literal colors above (No Ammo / Return to Base / Octo ...).",
+         "Color  (AMMO DEPLETED / return to base / bounty / octolith events)"),
+        ("kSecOsdSlotSystem", "OsdColorSlotSystem",
+         "Applied once on settings close to currently displayed messages (flags=0x00).\nNew messages use their individual literal colors above (Lost Lives / Coward Detect / Turret ...).\nNote: HEADSHOT! (H228) is flags=0x00, not 0x02.",
+         "Color  (HEADSHOT! / FACE OFF! / RETURN TO BATTLE! / COWARD DETECTED / turret)"),
+    ]
+    sections.extend(
+        DialogSection(section_name, [
+            DialogRow(description, "Label", None, "0", "0", "0"),
+            color_row(color_label, prefix),
+        ])
+        for section_name, prefix, description, color_label in slot_sections
+    )
+    return sections
+
+
 def parse_dialog_sections(ident_to_key: dict[str, str]) -> list[DialogSection]:
     source_text = strip_comments(read(DIALOG_CPP))
     legacy_sections = parse_dialog_sections_from_legacy(source_text)
     if legacy_sections:
         return legacy_sections
     if DIALOG_PROPS_INC.exists():
-        return parse_dialog_sections_from_generated(strip_comments(read(DIALOG_PROPS_INC)), ident_to_key)
+        sections = [
+            section for section in parse_dialog_sections_from_generated(strip_comments(read(DIALOG_PROPS_INC)), ident_to_key)
+            if section.name not in OSD_DIALOG_SECTION_NAMES
+        ]
+        sections.extend(osd_dialog_sections())
+        return sections
     return []
 
 
@@ -1117,7 +1202,18 @@ def write_dialog_props(sections: list[DialogSection], key_to_ident: dict[str, st
         "#define MELONPRIME_INPUT_CONFIG_HUD_DIALOG_PROPS_INC",
         "",
     ]
+    emitted_osd_include = False
     for section in sections:
+        if section.name in OSD_DIALOG_SECTION_NAMES:
+            if not emitted_osd_include:
+                lines.extend([
+                    "#define MELONPRIME_OSD_COLOR_EMIT_DIALOG_PROPS",
+                    "#include \"../MelonPrimeOsdColorSchema.inc\"",
+                    "#undef MELONPRIME_OSD_COLOR_EMIT_DIALOG_PROPS",
+                    "",
+                ])
+                emitted_osd_include = True
+            continue
         lines.append(f"static const HudWidgetProp {section.name}[] = {{")
         for row in section.rows:
             cfg_key = dialog_key_expr(row.cfg_key, key_to_ident, '""')

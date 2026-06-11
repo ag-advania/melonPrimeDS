@@ -2,6 +2,7 @@
 
 #include "MelonPrimePatchShadowFreezeRuntimeHook.h"
 #include "Config.h"
+#include "MelonPrimeGameRomAddrTable.h"
 #include "NDS.h"
 
 #include <algorithm>
@@ -96,6 +97,26 @@ static constexpr IceWaveRomHooks kRomHooks[] = {
     {kHooks_EU1_1, sizeof(kHooks_EU1_1) / sizeof(kHooks_EU1_1[0])},
     {kHooks_KR1_0, sizeof(kHooks_KR1_0) / sizeof(kHooks_KR1_0[0])},
 };
+static_assert(
+    sizeof(kRomHooks) / sizeof(kRomHooks[0]) == static_cast<uint32_t>(RomGroup::COUNT),
+    "Shadow Freeze ice-wave hook table must cover every ROM group");
+static constexpr bool ShadowFreeze_HookSitesInMainRam() noexcept
+{
+    for (const auto& group : kRomHooks) {
+        for (std::size_t i = 0; i < group.Count; ++i) {
+            const IceWaveDecisionHook& hook = group.Hooks[i];
+            if (!RomAddrDetail::InMainRam(hook.DecisionAddress)
+                || !RomAddrDetail::InMainRam(hook.HitAddress)
+                || !RomAddrDetail::InMainRam(hook.MissAddress))
+            {
+                return false;
+            }
+        }
+    }
+    return true;
+}
+static_assert(ShadowFreeze_HookSitesInMainRam(),
+              "Shadow Freeze ice-wave hook table contains a non-main-RAM address");
 
 static bool IsMainRamAddress(uint32_t address)
 {

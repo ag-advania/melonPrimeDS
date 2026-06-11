@@ -109,6 +109,17 @@ namespace MelonPrime {
     X(ADDR, battleSettings,           BattleSettings,            0x020CD3B8u, 0x020CD378u, 0x020CB57Cu, 0x020CBE04u, 0x020CBE24u, 0x020CBEA4u, 0x020C4BE8u) /* +4 = time limit settings */ \
     X(ADDR, basePoint,                BasePoint,                 0x020E9C6Cu, 0x020E9C2Cu, 0x020E7B2Cu, 0x020E85ECu, 0x020E860Cu, 0x020E868Cu, 0x020E1428u) /* -0xB0 = lives, -0x180 = time (per-player: +4 * playerIdx) */
 
+    // Shared ARM9 instruction-hook sites (expanded under #ifdef MELONPRIME_DS)
+    // KR1_0 note: HookActionConsumerPc is the post-poll player action consumer (mphCodex
+    // Input-Direct-Injection-Consolidated-AllVersions.md lists KR1_0 0200F6DC). NativeZoom's
+    // KR WeaponActionUpdate remains separate at 0200D07C because it hooks a different function.
+#define MP_ROM_FIELDS_DS_HOOK_SHARED(X) \
+    X(ADDR, hookLocalPlayerPtrGlobal,       HookLocalPlayerPtrGlobal,       0x020BE790u, 0x020BE750u, 0x020BCA70u, 0x020BD2D0u, 0x020BD2F0u, 0x020BD370u, 0x020B6240u) \
+    X(ADDR, hookActionConsumerPc,           HookActionConsumerPc,           0x02024174u, 0x02024174u, 0x02024198u, 0x02024198u, 0x02024190u, 0x02024198u, 0x0200F6DCu) \
+    X(ADDR, hookPlayerUpdateActiveCallAddr, HookPlayerUpdateActiveCallAddr, 0x020263DCu, 0x020263DCu, 0x02026400u, 0x02026400u, 0x020263F8u, 0x02026400u, 0x0200CF1Cu) \
+    X(DATA, hookPlayerUpdateActiveCallExpected, HookPlayerUpdateActiveCallExpected, 0xEB000206u, 0xEB000206u, 0xEB000206u, 0xEB000206u, 0xEB000206u, 0xEB000206u, 0xEBFFFCDEu) \
+    X(ADDR, hookPlayerUpdateActiveAfter,    HookPlayerUpdateActiveAfter,    0x020263E0u, 0x020263E0u, 0x02026404u, 0x02026404u, 0x020263FCu, 0x02026404u, 0x0200CF20u)
+
     // =========================================================================
     //  OSD Color Patch — literal pool addresses (expanded under #ifdef MELONPRIME_DS)
     //  Each OsdLiteral_* address holds a 32-bit value 0x0000CCCC (BGR555 color).
@@ -176,6 +187,9 @@ namespace MelonPrime {
     MP_ROM_FIELDS_DS_BATTLE(MP_ROM_EMIT_LIST)
 #endif
 #ifdef MELONPRIME_DS
+    MP_ROM_FIELDS_DS_HOOK_SHARED(MP_ROM_EMIT_LIST)
+#endif
+#ifdef MELONPRIME_DS
     MP_ROM_LISTS_DS_OSD(MP_ROM_EMIT_LIST)
 
     // ── OSD color patch revert: original ARM values from ROM dump ──
@@ -227,6 +241,7 @@ namespace MelonPrime {
     MP_ROM_FIELDS_HUD(MP_ROM_CHECK_RANGE)
     MP_ROM_FIELDS_DS_SCALE(MP_ROM_CHECK_RANGE)
     MP_ROM_FIELDS_DS_BATTLE(MP_ROM_CHECK_RANGE)
+    MP_ROM_FIELDS_DS_HOOK_SHARED(MP_ROM_CHECK_RANGE)
     MP_ROM_LISTS_DS_OSD(MP_ROM_CHECK_RANGE)
     MP_ROM_FIELDS_AIM(MP_ROM_CHECK_RANGE)
 
@@ -250,6 +265,9 @@ namespace MelonPrime {
 #ifdef MELONPRIME_DS
         MP_ROM_FIELDS_DS_BATTLE(MP_ROM_EMIT_FIELD)
 #endif
+#ifdef MELONPRIME_DS
+        MP_ROM_FIELDS_DS_HOOK_SHARED(MP_ROM_EMIT_FIELD)
+#endif
         MP_ROM_FIELDS_AIM(MP_ROM_EMIT_FIELD)
     };
 
@@ -270,6 +288,9 @@ namespace MelonPrime {
 #endif
 #ifdef MELONPRIME_DS
             MP_ROM_FIELDS_DS_BATTLE(MP_ROM_EMIT_INIT)
+#endif
+#ifdef MELONPRIME_DS
+            MP_ROM_FIELDS_DS_HOOK_SHARED(MP_ROM_EMIT_INIT)
 #endif
             MP_ROM_FIELDS_AIM(MP_ROM_EMIT_INIT)
         };
@@ -306,6 +327,7 @@ namespace MelonPrime {
 #undef MP_ROM_FIELDS_HUD
 #undef MP_ROM_FIELDS_DS_SCALE
 #undef MP_ROM_FIELDS_DS_BATTLE
+#undef MP_ROM_FIELDS_DS_HOOK_SHARED
 #undef MP_ROM_LISTS_DS_OSD
 #undef MP_ROM_FIELDS_AIM
 
