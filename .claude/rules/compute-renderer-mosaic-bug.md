@@ -1,6 +1,6 @@
 # Compute Renderer Mosaic Bug — Investigation Log
 
-**Status:** Open. No working fix yet.
+**Status:** RESOLVED 2026-06-11. Two-part root cause, both from upstream (#2047): Fix D (dispatch split) removed the general mosaic; Fix E (work-tile budget clamp) removed the residual mosaic when inside effects (ghost pass-through, point-blank). Both confirmed fixed by manual test. Upstream report draft: `c:\tmp\melonds-issue-2047-fix-report.md`.
 **First investigated:** 2026-04-24
 **Branch:** `highres_fonts_v3`
 
@@ -92,7 +92,101 @@ This hypothesis matched all the symptoms (Magmaul/death effects produce many tal
 - The `YSpanIndices` overflow hypothesis is **wrong** (or at least not the dominant cause). Either no overflow is happening in practice, or overflow happens and the dropped polygons are somewhere other than the corrupting effect.
 - All three single-buffer overflow hypotheses (`MaxWorkTiles` global pool, binning sort buffer, `YSpanIndices`) have been eliminated by direct testing. The bug is almost certainly **not a buffer overflow**.
 
-## Things to investigate next
+## Root cause identified (2026-06-11) — upstream issue #2047
+
+This is a **known upstream melonDS bug**, reproduced in vanilla, **NVIDIA-specific**:
+[melonDS-emu/melonDS#2047 "Compute renderer displays garbage at high IRs"](https://github.com/melonDS-emu/melonDS/issues/2047) (still open upstream as of 2026-06).
+
+### Mechanism
+
+The per-variant rasterise pass is dispatched with
+`glDispatchComputeIndirect(offsetof(BinResultHeader, VariantWorkCount) + i*16)`, and the
+indirect args are `(x=1, y=1, z=count)` where `count` is the variant's work-tile count
+accumulated by the binning shader. **NVIDIA caps the Y and Z work-group dimensions at the GL
+minimum of 65535** (X is much larger); exceeding it on an indirect dispatch raises no GL error
+and silently produces garbage. FireNX70 captured `glDispatchComputeIndirect(<1, 1, 79414>)` in
+RenderDoc on the upstream repro. AMD / Intel / llvmpipe expose higher Y/Z limits and are
+unaffected — matching "Compute-only, machine-dependent".
+
+This explains every observation here:
+
+- **Magmaul blast / death effects up close** — several large alpha quads of the *same variant*
+  (same texture/palette) each cover nearly all screen tiles. At a 128x96 tile grid (e.g. 4x with
+  8px tiles, 8x with 16px tiles, 16x with 32px tiles = 12,288 tiles), ~6 overlapping full-screen
+  polygons of one variant exceed 65535. Upstream's worst repro (MKDS fireballs driven through at
+  close range) is the same shape as ours.
+- **Why Attempt A failed** — `MaxWorkTiles` sizes buffers, not the dispatch. FireNX70 also
+  reported doubling it does nothing.
+- **Why Attempt B failed** — the CAS cap bounded the *global* counter at `MaxWorkTiles`
+  (= 196,608 at that grid), which never clips a per-variant count of ~80k, so the Z overflow
+  persisted; the dropped-group inconsistencies just added new artifacts.
+- **Why Attempt C failed** — `YSpanIndices` is per-polygon-row, unrelated to the per-variant
+  dispatch.
+
+### Attempt D (applied): split the rasterise dispatch across Y and Z
+
+RSDuck's suggested direction in #2047 ("spread the index across the other axes"), implemented
+behind `#ifdef MELONPRIME_DS`:
+
+- `CalcOffsets` shader now rewrites each variant's indirect args to
+  `(1, ceil(count/32768), min(count, 32768))` and stores the raw count in a new
+  `VariantWorkRealCount[MaxVariants]` field (`BinResultHeader` extended in both GLSL and C++).
+  `VariantWorkCount[0].w` (global work counter) and `[1].w` (sorted-offset accumulator) are
+  untouched — only `.y`/`.z` are rewritten, after the value is read.
+- `Rasterise` shader rebuilds `linearWorkIdx = gl_WorkGroupID.y * 32768 + gl_WorkGroupID.z` and
+  early-returns work groups `>= VariantWorkRealCount[CurVariant]` (uniform per work group, no
+  barriers in the shader, so safe). Applies to all rasterise variants incl. ShadowMask (same
+  shader source).
+- Chunk 32768 keeps Z <= 32768 and worst-case Y around 6 at 16x — far below 65535 on both axes.
+  Overdispatch waste is at most 32767 empty groups per variant.
+
+Build verified 2026-06-11 (full MinGW build, link OK). **Manual repro test pending**: trigger a
+Magmaul blast point-blank with the compute renderer at the previously-failing scale. Also record
+the GPU vendor of the repro machine — if it is *not* NVIDIA, this diagnosis needs re-examination
+(the bounds check is harmless either way).
+
+### Manual test result for Fix D (2026-06-11, user)
+
+Large improvement — the general mosaic is gone. **Residual repro:** passing *through* ghosts
+(point-blank, player position inside the effect) still produces mosaic. This matches the second
+known weakness RSDuck acknowledged in #2047: the `MaxWorkTiles = tiles*16` budget overflow,
+which was masked before Fix D because the dispatch-limit corruption dominated (this is why
+Attempt A's doubling appeared to do nothing at the time).
+
+### Attempt E (applied): clamp the work-tile allocation to the MaxWorkTiles budget
+
+Inside an effect, a dozen-plus same-variant translucent quads each cover ~all screen tiles
+(128x96 grid = 12,288 tiles at 4x/8x/16x), so total allocated work
+(`VariantWorkCount[0].w`) exceeds `MaxWorkTiles` (= tiles*16 = 196,608). Then:
+
+- the binning shader writes `WorkDescs[workOffset + idx]` past the unsorted region (overwriting
+  the *sorted* region, since `WorkDescsSortedStart = MaxWorkTiles`), and
+- rasterise writes `ColorTiles[workIdx * TileSize^2]` past `TileMemory`.
+
+Both are classic tile-shaped garbage. Unlike Attempt B (CAS loop, reverted), this clamp is a
+plain `atomicAdd` followed by a post-trim, restructured so the trimmed mask is decided *before*
+any of the mask / coarse-mask / work-offset stores (all behind `#ifdef MELONPRIME_DS`):
+
+- **BinCombined**: after `workOffset = atomicAdd(...)`, if `workOffset >= MaxWorkTiles` the
+  whole group's `binnedMask` is zeroed; if it straddles the boundary, the mask is trimmed
+  MSB-first to exactly the remaining budget. Allocated slot ranges are kept dense (each range
+  is either fully kept or trimmed flush to the boundary — no gaps, no partially-paired masks).
+  Per-variant counts (`VariantWorkCount[v].z`) are only incremented for kept bits, so Fix D's
+  dispatch split and the sorted-offset prefix sums stay consistent automatically.
+- **CalcOffsets**: `SortWorkWorkCount` now uses `min(VariantWorkCount[0].w, MaxWorkTiles)`
+  (the global counter may overshoot; only the first `MaxWorkTiles` unsorted entries exist).
+- **SortWork**: the guard uses the same `min()`.
+
+Degradation mode when the budget is exhausted: the *last-allocated* polygon/tile pairs drop
+(missing translucent layer in some tiles for that frame) instead of frame-wide corruption.
+
+Build verified 2026-06-11. **Manual repro test pending**: walk through a ghost / stand inside a
+Magmaul blast at the previously-failing scale. If a *missing-layer flicker* is visible and
+objectionable at extreme close range, the next lever is raising the budget multiplier (VRAM
+trade-off: `TileMemory` is `4 * TileSize^2 * MaxWorkTiles` bytes per layer) — but only now that
+overflow is graceful.
+
+## Things to investigate next (superseded by root-cause section above; kept for history)
 
 **Strong negative result from C:** with three buffer-overflow hypotheses all empirically refuted, redirect investigation away from buffer sizing and toward shader-side numerical / pipeline issues.
 
@@ -120,5 +214,5 @@ This hypothesis matched all the symptoms (Magmaul/death effects produce many tal
 ## Files touched and reverted in this investigation
 
 - [src/GPU3D_Compute.cpp](../../src/GPU3D_Compute.cpp) — Attempts A and C (both reverted)
-- [src/GPU3D_Compute_shaders.h](../../src/GPU3D_Compute_shaders.h) — Attempt B (reverted)
-- [src/GPU3D_Compute.h](../../src/GPU3D_Compute.h) — Attempt C (reverted; added `MaxYSpanIndicesAllocated` member)
+- [src/GPU3D_Compute_shaders.h](../../src/GPU3D_Compute_shaders.h) — Attempt B (reverted); **Attempt D (live)**: `BinningBuffer` layout + `RasteriseChunkSize`, `CalcOffsets` dispatch split, `Rasterise` linear index + bounds check; **Attempt E (live)**: `BinCombined` allocation clamp + mask trim, `CalcOffsets`/`SortWork` `min(w, MaxWorkTiles)` clamps (all behind `#ifdef MELONPRIME_DS`)
+- [src/GPU3D_Compute.h](../../src/GPU3D_Compute.h) — Attempt C (reverted; added `MaxYSpanIndicesAllocated` member); **Attempt D (live)**: `BinResultHeader::VariantWorkRealCount[MaxVariants]` behind `#ifdef MELONPRIME_DS`
