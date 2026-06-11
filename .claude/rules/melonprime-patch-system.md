@@ -488,6 +488,31 @@ Each instruction-hook module provides:
   `Foo_ResetPatchState` (e.g. `MelonPrimePatchFixNoxusBladePersistence`,
   `MelonPrimePatchShadowFreezeRuntimeHook`), driven by `ARM9Hook_Install/Uninstall/ResetPatchState`.
 
+### Shared hook-site tables
+
+Phase 4 of Structural Refactor V2 moved hook PCs that are shared across multiple instruction-hook
+modules into `MelonPrimeGameRomAddrTable.h`. Use these generated `LIST_*` arrays before adding a
+module-local per-ROM table:
+
+| Shared list | Meaning | Current consumers |
+|---|---|---|
+| `LIST_HookLocalPlayerPtrGlobal` | per-ROM global pointer-to-local-player address | NativeAimDelta, TransformGate, NativeZoomToggle, NativeBipedFire, WeaponSwitch |
+| `LIST_HookActionConsumerPc` | post-poll player action consumer PC | ImmediateInputEdgeOverlay, NativeZoomToggle for JP/US/EU rows |
+| `LIST_HookPlayerUpdateActiveCallAddr` | reliable player-update active call hook PC | WeaponSwitch, NativeBipedFire |
+| `LIST_HookPlayerUpdateActiveCallExpected` | original BL word expected at the active call hook | WeaponSwitch, NativeBipedFire |
+| `LIST_HookPlayerUpdateActiveAfter` | return PC immediately after the active call hook | WeaponSwitch |
+
+Do not merge tables only because the numeric addresses are near each other. KR1_0 is the standing
+example: `LIST_HookActionConsumerPc[KR1_0]` is `0x0200F6DC` (post-poll action consumer), while
+NativeZoomToggle's KR weapon-update hook remains module-local at `0x0200D07C` because it is a
+different function. Keep this distinction unless a new mphCodex audit proves otherwise.
+
+Hook tables should have two compile-time checks where practical:
+
+- ROM count equals `RomGroup::COUNT`.
+- ADDR fields are in main RAM via `RomAddrDetail::InMainRam()`; DATA fields such as instruction
+  encodings are not range-checked.
+
 ### Registered hooks (dispatch priority order)
 
 | Hook | File | Kind | Gating |
