@@ -21,7 +21,10 @@ It focuses on in-game flow, weapon/morph handling, gameplay setting application,
      weapon-switch trampoline). Then `flow!=0` → `Patches_RestoreOnLeave()` +
      `ARM9Hook_SetMatchHooksActive(false)` (`isInGame` may still be true).
   7. If `isInGame` and `BIT_BATTLE_RUNTIME_MODE`, re-apply OSD color; damage-notify runs whenever
-     `isInGame`.
+     `isInGame`. (`MELONPRIME_CUSTOM_HUD` builds also call
+     `CustomHud_ClampHelmetLayersPreFrame()` here — helmet spawn-flash layer clamp, gated to a
+     single static read when the helmet hide patch is not applied; see
+     [notes/CustomHudHelmetSpawnFlash.md](notes/CustomHudHelmetSpawnFlash.md).)
   8. If `!isInGame` and (`BIT_IN_GAME_INIT` or `BIT_END_OF_GAME_PATCH_RESTORED`), clear flags,
      `ARM9Hook_SetMatchHooksActive(false)`, transient reset — **without** `Patches_RestoreOnLeave`.
   9. If focused and `isInGame`, run `HandleInGameLogic()`.
@@ -134,6 +137,10 @@ When touching `RunFrameHook` or match lifecycle code:
   after `BIT_BATTLE_RUNTIME_MODE` latch, only `battleFlowState` until match end.
 - Defer battle patches, ARM9 hooks, and per-frame OsdColor until `BIT_BATTLE_RUNTIME_MODE` (not join).
 - Keep join / battle-enter / restore paths in `COLD_FUNCTION` outlined helpers so the hot path stays lean.
+- Per-frame helpers added to the in-game block must gate on cheap state first (static tracker /
+  flag bit), never a per-frame `Config::Table` lookup. Example: the Custom HUD helmet layer clamp
+  checks `NoHudPatch_GetAppliedMask()` before any RAM read, costs ~5 RAM reads + 2 `ARM9Read32`
+  when active, and writes only during the few spawn frames.
 
 ## 10. Reference Files
 
