@@ -453,9 +453,12 @@ Owns the single hook slot and fans out to all registered MelonPrime hooks.
   requires `mode==0x0E && flow==0` before polling `flow!=0` so stale post-match `flow` does not
   unregister on the same frame as join (see
   [notes/MelonPrimeBattleFlowState.md](notes/MelonPrimeBattleFlowState.md)).
-- `ARM9Hook_Uninstall(nds)` and `ARM9Hook_ResetPatchState()` — wired into **all three** reset
-  blocks, dispatched manually alongside the registry's `Patches_ResetAll()` in those blocks
+- `ARM9Hook_Uninstall(nds, osdEmu)` and `ARM9Hook_ResetPatchState()` — wired into **all three**
+  reset blocks, dispatched manually alongside the registry's `Patches_ResetAll()` in those blocks
   (`ARM9Hook_Uninstall` before the registry restore/reset, `ARM9Hook_ResetPatchState` after; see §3).
+  Developer OSD: posts `ARM9 hooks: unregistered` when MelonPrime still had a registered hook set
+  (`s_dispatchCount > 0`) or the NDS hook slot was active — including after `emuInstance->reset()`
+  clears the NDS slot before `OnEmuStart` runs.
 - Developer builds (`MELONPRIME_ENABLE_DEVELOPER_FEATURES`): match hook install/clear posts
   `osdAddMessage` — `ARM9 hooks: registered (N PCs)` / `ARM9 hooks: unregistered` (only on
   actual hook attach/detach, not on redundant `SetMatchHooksActive(false)` no-ops).
