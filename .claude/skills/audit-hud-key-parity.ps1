@@ -26,6 +26,7 @@ $ErrorActionPreference = 'Stop'
 $repoRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 $qtSdl = Join-Path $repoRoot 'src/frontend/qt_sdl'
 $configPath = Join-Path $qtSdl 'Config.cpp'
+$hudSchemaPath = Join-Path $qtSdl 'MelonPrimeHudPropSchema.inc'
 
 function New-Set {
     return ,[System.Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
@@ -115,6 +116,14 @@ function Extract-Defaults {
         Double = 0
     }
 
+    function Add-Default([string]$Key, [string]$Type, [string]$Value) {
+        $defaults[$Key] = [pscustomobject]@{
+            Key = $Key
+            Type = $Type
+            Value = $Value
+        }
+    }
+
     $state = ''
     foreach ($line in [System.IO.File]::ReadLines($configPath)) {
         if ($line -match '^\s*DefaultList<int>\s+DefaultInts') { $state = 'Int'; continue }
@@ -127,13 +136,23 @@ function Extract-Defaults {
         foreach ($m in [regex]::Matches($line, '\{\s*"Instance\*\.(Metroid\.[^"]+)"\s*,\s*([^}]+?)\s*\}')) {
             $key = $m.Groups[1].Value
             $value = $m.Groups[2].Value.Trim()
-            $defaults[$key] = [pscustomobject]@{
-                Key = $key
-                Type = $state
-                Value = $value
-            }
-            $counts[$state]++
+            Add-Default $key $state $value
         }
+    }
+
+    if (Test-Path -LiteralPath $hudSchemaPath) {
+        foreach ($line in [System.IO.File]::ReadLines($hudSchemaPath)) {
+            foreach ($m in [regex]::Matches($line, '\bX\([^,]+,\s*"(Metroid\.Visual\.[^"]+)",\s*(Int|Bool|String|Double),\s*([^,]+),')) {
+                $key = $m.Groups[1].Value
+                $type = $m.Groups[2].Value
+                $value = $m.Groups[3].Value.Trim()
+                Add-Default $key $type $value
+            }
+        }
+    }
+
+    foreach ($item in $defaults.Values) {
+        $counts[$item.Type]++
     }
 
     return [pscustomobject]@{

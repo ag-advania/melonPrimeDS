@@ -17,6 +17,7 @@ $ErrorActionPreference = 'Stop'
 $repoRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 $qtSdl    = Join-Path $repoRoot 'src/frontend/qt_sdl'
 $cfgPath  = Join-Path $qtSdl 'Config.cpp'
+$hudSchemaPath = Join-Path $qtSdl 'MelonPrimeHudPropSchema.inc'
 
 $cfgLines = Get-Content $cfgPath
 $ints    = [System.Collections.Generic.HashSet[string]]::new()
@@ -34,6 +35,18 @@ foreach ($line in $cfgLines) {
     if ($state -eq "int")    { [void]$ints.Add($k) }
     if ($state -eq "double") { [void]$doubles.Add($k) }
     if ($state -eq "bool")   { [void]$bools.Add($k) }
+  }
+}
+
+if (Test-Path -LiteralPath $hudSchemaPath) {
+  foreach ($line in [System.IO.File]::ReadLines($hudSchemaPath)) {
+    if ($line -match '\bX\([^,]+,\s*"(Metroid\.Visual\.[^"]+)",\s*(Int|Bool|String|Double),') {
+      $key = $matches[1]
+      $type = $matches[2]
+      if ($type -eq "Int")    { [void]$ints.Add($key) }
+      if ($type -eq "Double") { [void]$doubles.Add($key) }
+      if ($type -eq "Bool")   { [void]$bools.Add($key) }
+    }
   }
 }
 
