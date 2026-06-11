@@ -48,7 +48,7 @@
 #include "Savestate.h"
 #include "EmuInstance.h"
 
-#include "EmuThreadMelonPrimeIncludes.inc"
+#include "MelonPrimeEmuThreadIncludes.inc"
 
 using namespace melonDS;
 
@@ -59,7 +59,7 @@ EmuThread::EmuThread(EmuInstance* inst, QObject* parent) : QThread(parent)
     emuPauseStack = emuPauseStackRunning;
     emuActive = false;
 
-#include "EmuThreadMelonPrimeConstructor.inc"
+#include "MelonPrimeEmuThreadConstructor.inc"
 }
 
 EmuThread::~EmuThread()
@@ -109,7 +109,7 @@ void EmuThread::run()
     Config::Table& globalCfg = emuInstance->getGlobalConfig();
     u32 mainScreenPos[3];
 
-#include "EmuThreadMelonPrimeRunSetup.inc"
+#include "MelonPrimeEmuThreadRunSetup.inc"
 
     mainScreenPos[0] = 0;
     mainScreenPos[1] = 0;
@@ -163,7 +163,7 @@ void EmuThread::run()
     emuInstance->fastForwardToggled = false;
     emuInstance->slowmoToggled = false;
 
-#include "EmuThreadMelonPrimeFrameState.inc"
+#include "MelonPrimeEmuThreadFrameState.inc"
 
     // --- Frame Advance (lambda so MelonPrime can call it externally) ---
     auto frameAdvanceOnce = [&]() {
@@ -745,7 +745,7 @@ void EmuThread::sendMessage(Message msg)
     msgMutex.lock();
     msgQueue.enqueue(msg);
     msgMutex.unlock();
-#include "EmuThreadMelonPrimeSendMessage.inc"
+#include "MelonPrimeEmuThreadSendMessage.inc"
 }
 
 void EmuThread::waitMessage(int num)
@@ -763,7 +763,7 @@ void EmuThread::waitAllMessages()
 
 void EmuThread::handleMessages()
 {
-#include "EmuThreadMelonPrimeHandleMessagesFastPath.inc"
+#include "MelonPrimeEmuThreadHandleMessagesFastPath.inc"
 
     bool glborrow = false;
 
@@ -958,7 +958,7 @@ void EmuThread::handleMessages()
 
         msgSemaphore.release();
     }
-#include "EmuThreadMelonPrimeHandleMessagesDrained.inc"
+#include "MelonPrimeEmuThreadHandleMessagesDrained.inc"
     msgMutex.unlock();
 
     if (glborrow)
@@ -1159,7 +1159,7 @@ void EmuThread::updateRenderer()
 
     auto& cfg = emuInstance->getGlobalConfig();
 
-#include "EmuThreadMelonPrimeUpdateRendererBefore.inc"
+#include "MelonPrimeEmuThreadUpdateRendererBefore.inc"
 
     if (videoRenderer != lastVideoRenderer)
     {
@@ -1187,7 +1187,7 @@ void EmuThread::updateRenderer()
     };
     nds->GetRenderer().SetRenderSettings(settings);
 
-#include "EmuThreadMelonPrimeUpdateRendererAfter.inc"
+#include "MelonPrimeEmuThreadUpdateRendererAfter.inc"
 }
 
 void EmuThread::compileShaders()
