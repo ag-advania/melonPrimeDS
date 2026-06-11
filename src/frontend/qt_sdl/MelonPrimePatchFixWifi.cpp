@@ -5,6 +5,7 @@
 #include "NDS.h"
 
 namespace MelonPrime {
+namespace {
 
 // Base address of the first patched word for each ROM group.
 // JP1_0=0, JP1_1=1, US1_0=2, US1_1=3, EU1_0=4, EU1_1=5, KR1_0=6
@@ -82,6 +83,8 @@ static constexpr PatchWord kWords[] = {
     {0x8ECu, 0xE1A00000u, 0xE1520001u},
     {0x8F0u, 0xE1A00000u, 0x01500001u},
 };
+
+} // namespace
 
 void FixWifi_ApplyOnce(melonDS::NDS* nds, Config::Table& cfg, uint8_t romGroupIndex)
 {

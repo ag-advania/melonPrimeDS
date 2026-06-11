@@ -854,7 +854,7 @@ When reading this unified edition, treat the following four points as fixed rule
 | `MelonPrime.cpp` | OPT D/E/K/L/O/W/Z1/Z2/Z3/Z4, FIX-3, P-20b, P-20c, P-22 (`DeferredDrainInput()` implementation), P-33 (remove PrePoll implementation), P-43 (focused local cache) |
 | `MelonPrimeGameInput.cpp` | OPT F/O/Q/Z2/Z3, FIX-2, P-3, P-17, P-18, P-44 (zero-delta skip), P-47 (clear `m_didFrameAdvanceSinceSnapshot` after PollAndSnapshot) |
 | `MelonPrimeInGame.cpp` | OPT A/B/G/H/J/Z2/Z5, R1 constexpr tables, P-36 (HandleMorphBallBoost branch unification), P-47 (gate LateLatch on `m_didFrameAdvanceSinceSnapshot`) |
-| `EmuThread.cpp` | P-11, P-12, P-13, P-15, P-16, P-22, P-24, P-25, P-26a, P-27, P-32, P-33, P-38, P-39, P-40, P-41, P-45 (QPC spin-loop reuse), P-46 (`handleMessages` acquire fast-path + `sendMessage` release store) |
+| `EmuThread.cpp` | P-11, P-12, P-13, P-15, P-16, P-22, P-24, P-25, P-26a, P-27, P-32, P-33, P-38, P-39, P-40, P-41, P-45 (QPC spin-loop reuse), P-46 (`handleMessages` acquire fast-path + `sendMessage` release store); owns `MelonPrimeEmuThread*.inc` unity fragments |
 | `EmuThread.h` | P-46 (`std::atomic<bool> msgPending`) |
 | `MelonPrimeGameWeapon.cpp` | OPT A, R2 NDS cache |
 | `MelonPrimeGameRomDetect.cpp` | OPT L |
@@ -874,7 +874,7 @@ When reading this unified edition, treat the following four points as fixed rule
 | `MelonPrimeHudRenderRuntime.inc` | Battle/match state, runtime helpers, hide rules, NoHUD patch, static dirty rect; OPT-HUD-6 (`EnsureHudFont` populates `s_frameFont`) |
 | `MelonPrimeHudRenderDraw.inc` | Drawing of HUD elements such as HP/weapon/ammo/radar/crosshair; OPT-HUD-6 (removed `p->font()` copies in 3 draw functions) |
 | `MelonPrimeHudRenderMain.inc` | `CustomHud_Render()`, edit-mode forward state, radar-frame drawing |
-| `MelonPrimeHudConfigOnScreen.cpp` | In-game HUD editor unity entry point. Holds shared edit-mode state and include ordering |
+| `MelonPrimeHudConfigOnScreenUnity.inc` | In-game HUD editor unity entry point. Holds shared edit-mode state and include ordering |
 | `MelonPrimeHudConfigOnScreenDefs.inc` | Edit-mode definition tables / property descriptors / element table |
 | `MelonPrimeHudConfigOnScreenSnapshot.inc` | Edit-mode snapshot / restore / reset |
 | `MelonPrimeHudConfigOnScreenDraw.inc` | Edit-mode bounds / overlay drawing / previews |
@@ -886,6 +886,7 @@ When reading this unified edition, treat the following four points as fixed rule
 | `MelonPrimeHudScreenCppOverlayOfGl.inc` | GL HUD overlay upload/composite and GL-native bottom radar overlay. Dirty upload / GL-state skip; OPT-HUD-3 (direct-pointer partial upload) |
 | `MelonPrimeHudScreenCppGlInit.inc` / `MelonPrimeHudScreenCppGlDeinit.inc` | Custom HUD GL resource init/deinit |
 | `MelonPrimeHudScreenCppInit.inc` / `Layout.inc` / `Mouse*.inc` / `EditPanel*.inc` | Screen-panel setup, layout cache, edit-mode input forwarding, floating-panel placement |
+| `MelonPrimeEmuThread*.inc` | Self-contained MelonPrime integration fragments included only by `EmuThread.cpp` (includes, constructor/run setup, frame state declarations, message queue atomics, renderer VSync preservation). Frame-pacing logic remains inline. |
 
 ---
 
@@ -1327,13 +1328,15 @@ Note: P-47 effect for joystick is minimal because `LateLatchMouseDelta` is only 
 
 ## 18.1 Central theme
 
-Originally, large amounts of processing were concentrated in `MelonPrimeHudRender.cpp` / `MelonPrimeHudConfigOnScreen.cpp` / `Screen.cpp`. In the current implementation, responsibilities are split into unity include fragments, improving readability without increasing the number of build units.
+Originally, large amounts of processing were concentrated in `MelonPrimeHudRender.cpp` / the on-screen HUD editor unity fragment / `Screen.cpp`. In the current implementation, responsibilities are split into unity include fragments, improving readability without increasing the number of build units.
 
 Important rules:
 - `MelonPrimeHudRender*.inc` must only be included from `MelonPrimeHudRender.cpp`
-- `MelonPrimeHudConfigOnScreen*.inc` must only be included from `MelonPrimeHudConfigOnScreen.cpp`
+- `MelonPrimeHudConfigOnScreenUnity.inc` must only be included from `MelonPrimeHudRender.cpp`
+- `MelonPrimeHudConfigOnScreen*.inc` fragments must only be included from `MelonPrimeHudConfigOnScreenUnity.inc`
 - `MelonPrimeHudScreenCpp*.inc` must only be included from `Screen.cpp`
 - These `.inc` files are not standalone translation units, so they must not be added to `CMakeLists.txt`
+- `#include "*.cpp"` is forbidden for unity fragments; use `.inc` instead
 
 ## 18.2 Runtime HUD split
 
@@ -1349,10 +1352,11 @@ Important rules:
 
 ## 18.3 On-screen HUD Editor split
 
-`MelonPrimeHudConfigOnScreen.cpp` is the unity entry point for the in-game editor, and holds shared edit-mode state and the include order.
+`MelonPrimeHudConfigOnScreenUnity.inc` is the unity entry point for the in-game editor, and holds shared edit-mode state and the include order.
 
 | File | Responsibility |
 |---|---|
+| `MelonPrimeHudConfigOnScreenUnity.inc` | editor unity entry point, shared edit-mode state/constants, include order |
 | `MelonPrimeHudConfigOnScreenDefs.inc` | edit-element table, property definitions, sample text |
 | `MelonPrimeHudConfigOnScreenSnapshot.inc` | snapshot / restore / reset-to-default |
 | `MelonPrimeHudConfigOnScreenDraw.inc` | hit bounds, selection box, property panel, preview drawing |
@@ -1403,7 +1407,7 @@ The current runtime caches the following.
 | Text bitmap / measurement cache | Reuse pixmap/measurement results for repeated text drawing |
 | Weapon/bomb icon cache | Reuse SVG/icon rasterization and tinting |
 | Radar-frame cache | Regenerate SVG frame, tint, and outline only when size/color changes |
-| Static dirty rect | Recompute dirty rects for fixed-position HUD elements only when config/transform changes |
+| Drawn dirty rect | Accumulate actual drawn glyph/icon/gauge footprints each frame via `s_drawnDirtyPx`; union with crosshair dirty rect |
 | Crosshair dirty rect | Union of previous/current crosshair bounding boxes |
 | `s_frameFont` (OPT-HUD-6) | Cached `QFont` populated once in `EnsureHudFont()`; eliminates 6 per-frame `p->font()` CoW copies |
 
@@ -1471,3 +1475,55 @@ On the Screen-integration side, per-frame costs outside the HUD overlay itself a
 - `m_hudCfgEpoch` and `m_radarCfgEpoch` are intentionally separated so that the software path and the GL radar path do not invalidate each other’s cache refreshes.
 - `m_hudTopMatrix` depends on the result of `setupScreenLayout()`. If a change bypasses layout updates, watch out for missed updates to this cache.
 - `.inc` fragments are not compiled on their own. They depend on the scope of the including file, local variables, and `#ifdef MELONPRIME_CUSTOM_HUD`.
+
+---
+
+## 21. Structural Refactor 2026-06
+
+## 21.1 Central theme
+
+The Phase 0-8 structural refactor removed stale references, centralized duplicated lifecycle
+wiring, and made ownership boundaries explicit while preserving the hot-path design described in
+Rounds 6-9. The work intentionally avoided changing frame pacing, aim math, raw-input memory
+ordering, and `MelonPrime.h` member layout.
+
+## 21.2 Integrated results
+
+| Area | Result |
+|---|---|
+| Dead code / stale docs | Removed the empty `PrePollRawInput()` path, unused raw-input wrappers, stale CMake dead-file comments, and source-tree investigation notes. Notes now live under `.claude/rules/notes/`. |
+| Static write-patches | Added `MelonPrimePatchCommon.h` (`StaticWordPatch`) and `MelonPrimePatchRegistry.h/.cpp`. `MelonPrime.cpp` now calls registry APIs instead of maintaining per-module apply/restore/reset lists. |
+| ROM / weapon tables | `MelonPrimeGameRomAddrTable.h` is an X-macro source of truth for address lists, `RomAddresses`, and `CreateRomAddress()`. Weapon IDs and masks are owned by `MelonPrimeDef.h`. |
+| Runtime lifecycle | Added `ResetTransientInputState()` with explicit bitmask subsets so the six transient reset sites preserve their historical differences without copy-pasted field clusters. |
+| Settings / localization | Moved localization tables to `MelonPrimeLocalization.cpp`; non-HUD mirrored settings now use `MelonPrimeInputConfig::buildSettingBindings()` for load/save; default coverage audit is checked in as `.claude/skills/audit-config-defaults.ps1`. |
+| Unity fragments | Replaced the included HUD `.cpp` with `MelonPrimeHudConfigOnScreenUnity.inc`; strengthened `.inc` ownership checks; documented `MelonPrimeGameInput.cpp`, `Screen.cpp`, `MelonPrimeHudRender.cpp`, and `EmuThread.cpp` as unity parents. |
+| EmuThread integration | Added `MelonPrimeEmuThread*.inc` for self-contained MelonPrime integration points while leaving frame pacing, RunFrameHook calls, hotkey branches, and DSi/layout bypass logic inline. |
+
+## 21.3 Final metrics snapshot
+
+Measured on 2026-06-11, branch `highres_fonts_v3`, MinGW preset `release-mingw-x86_64`, developer
+features enabled.
+
+| Metric | Phase 0 snapshot | Final snapshot | Delta |
+|---|---:|---:|---:|
+| `src/frontend/qt_sdl/MelonPrime*` all files | 21,612 lines | 20,828 lines | -784 |
+| `src/frontend/qt_sdl/MelonPrime*` code only | 20,504 lines | 20,828 lines | +324 |
+| `InputConfig/MelonPrime*` excluding `.ui` | 3,996 lines | 4,022 lines | +26 |
+| `MelonPrimeInputConfig.ui` | 1,239 lines | 1,239 lines | 0 |
+| Combined comparable set | 26,847 lines | 26,089 lines | -758 |
+| `melonDS.exe` | 48,609,280 bytes | 48,606,208 bytes | -3,072 bytes |
+
+Build verification at final snapshot: `.\.claude\skills\build-mingw.bat --tail 80` succeeded in
+4.7 seconds on an up-to-date tree (configure + vcpkg check + no-op Ninja build). This timing is not
+a clean-build benchmark; it is the Phase 8 verification measurement.
+
+## 21.4 Remaining caution points
+
+- Phase 4 preserved historical transient reset differences, including the documented omission of
+  `TR_BipedFire` from `OnEmuStart` and `TR_AimResiduals` / `TR_OverlayHeld` from `OnEmuStop`.
+- `NoPickingUpSpecificItems` and `FixWifi` intentionally keep custom patch state machines because
+  they do not match the all-or-nothing `StaticWordPatch` shape.
+- Runtime instruction hooks remain outside `MelonPrimePatchRegistry`; `MelonPrimeArm9Hook.cpp` is
+  the dispatcher/registry for those hooks.
+- Manual smoke checks are still tracked per phase in
+  `completed/melonprime-full-refactor-plan.md`; Phase 8 changed documentation only.

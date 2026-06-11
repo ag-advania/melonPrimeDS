@@ -148,43 +148,39 @@ Rules of thumb from recent fixes:
 - `Metroid.Visual.HudFontSize` is a legacy migration-only key read behind `HasKey()`; it does not need a new default unless migration logic changes.
 
 #### Audit Command (PowerShell, Metroid.*)
-Run from repo root. This lists missing defaults by accessor type and catches cross-list type mistakes:
+Checked in as [.claude/skills/audit-config-defaults.ps1](../skills/audit-config-defaults.ps1).
+Run from anywhere (it resolves the repo root from its own path):
 
 ```powershell
-$cfgPath = "src/frontend/qt_sdl/Config.cpp"
-$cfgLines = Get-Content $cfgPath
-$ints    = [System.Collections.Generic.HashSet[string]]::new()
-$doubles = [System.Collections.Generic.HashSet[string]]::new()
-$bools   = [System.Collections.Generic.HashSet[string]]::new()
-$state = ""
-foreach ($line in $cfgLines) {
-  if ($line -match "^\s*DefaultList<int>\s+DefaultInts") { $state = "int"; continue }
-  if ($line -match "^\s*DefaultList<double>\s+DefaultDoubles") { $state = "double"; continue }
-  if ($line -match "^\s*DefaultList<bool>\s+DefaultBools") { $state = "bool"; continue }
-  if ($state -ne "" -and $line -match "^\s*};\s*$") { $state = ""; continue }
-  if ($state -eq "") { continue }
-  if ($line -match "\{\"Instance\*\.Metroid\.([^\"]+)\"\s*,") {
-    $k = "Metroid." + $matches[1]
-    if ($state -eq "int")    { [void]$ints.Add($k) }
-    if ($state -eq "double") { [void]$doubles.Add($k) }
-    if ($state -eq "bool")   { [void]$bools.Add($k) }
-  }
-}
-
-$usageInt = rg -o "GetInt\(\"Metroid\.[^\"]+\"\)" src/frontend/qt_sdl -g"*.cpp" -g"*.h"  | % { if($_ -match "GetInt\(\"([^\"]+)\"\)"){ $matches[1] } } | sort -Unique
-$usageDbl = rg -o "GetDouble\(\"Metroid\.[^\"]+\"\)" src/frontend/qt_sdl -g"*.cpp" -g"*.h" | % { if($_ -match "GetDouble\(\"([^\"]+)\"\)"){ $matches[1] } } | sort -Unique
-$usageBol = rg -o "GetBool\(\"Metroid\.[^\"]+\"\)" src/frontend/qt_sdl -g"*.cpp" -g"*.h"   | % { if($_ -match "GetBool\(\"([^\"]+)\"\)"){ $matches[1] } } | sort -Unique
-
-"GetInt missing:";    $usageInt | ? { -not $ints.Contains($_) }
-"GetDouble missing:"; $usageDbl | ? { -not $doubles.Contains($_) }
-"GetBool missing:";   $usageBol | ? { -not $bools.Contains($_) }
-
-"GetInt in DefaultDoubles:";  $usageInt | ? { $doubles.Contains($_) }
-"GetInt in DefaultBools:";    $usageInt | ? { $bools.Contains($_) }
-"GetDouble in DefaultInts:";  $usageDbl | ? { $ints.Contains($_) }
-"GetBool in DefaultInts:";    $usageBol | ? { $ints.Contains($_) }
-"GetBool in DefaultDoubles:"; $usageBol | ? { $doubles.Contains($_) }
+.\.claude\skills\audit-config-defaults.ps1
 ```
+
+It lists missing defaults by accessor type and catches cross-list type mistakes (the same five
+sections as before: `GetXxx missing` for each accessor, plus the four cross-list mismatch
+sections). It has no external tool dependency (uses `Get-ChildItem` / `[regex]` instead of
+`rg`/`Select-String` patterns that need ripgrep). Exit code is `0` when every section is empty
+(fully covered, no cross-list mismatches), `1` otherwise.
+
+## MelonPrime Structural Refactor 2026-06
+
+The Phase 0-8 structural refactor finished on 2026-06-11. Current ownership points:
+
+- Static write-patch lifecycle is centralized in `MelonPrimePatchRegistry.h/.cpp`. New persistent
+  write-patches should add a module plus one registry row; `MelonPrime.cpp` should not regain
+  per-module apply/restore/reset lists.
+- Shared all-or-nothing word patches should use `MelonPrimePatchCommon.h` / `StaticWordPatch`.
+  Patch-specific state machines such as mask-selected or canary-based patches may stay custom.
+- ROM address definitions live in `MelonPrimeGameRomAddrTable.h` as a single X-macro source of
+  truth. The `LIST_*` arrays, `RomAddresses` fields, and `CreateRomAddress()` are generated from
+  the same rows.
+- Weapon IDs and masks come from `MelonPrimeDef.h`; `MelonPrimeGameWeapon.cpp` should not define a
+  second weapon enum.
+- Non-HUD settings use `MelonPrimeInputConfig::buildSettingBindings()` for mirrored load/save.
+  Manual save/load code is reserved for migrations, dynamic combo data, invalidation-coupled keys,
+  and developer-only guarded settings.
+- Visible localization tables live in `MelonPrimeLocalization.cpp`; `MelonPrimeLocalization.h`
+  exposes the translation API only.
+- Historical implementation notes live under `.claude/rules/notes/`, not in `src/frontend/qt_sdl/`.
 
 ## Active Branch: `highres_fonts_v3`
 Current work is on the `highres_fonts_v3` branch. Main changes relative to `master`:
@@ -192,13 +188,13 @@ Current work is on the `highres_fonts_v3` branch. Main changes relative to `mast
 - All `*X`/`*Y` HUD config values are offsets from anchor, not absolute DS-space coordinates
 - `ApplyAnchor()` helper in `MelonPrimeHudRender.cpp` is called once per element in `Load*Config()`, transparent to draw functions
 - In-game HUD edit mode with drag-and-drop editor, properties panels, crosshair panel with side panels, and live previews
-- Edit mode code rooted at `MelonPrimeHudConfigOnScreen.cpp` (unity-build included by `MelonPrimeHudRender.cpp`) and split into `.inc` fragments:
+- Edit mode code rooted at `MelonPrimeHudConfigOnScreenUnity.inc` (unity-build included by `MelonPrimeHudRender.cpp`) and split into `.inc` fragments:
   - `MelonPrimeHudConfigOnScreenDefs.inc` - definition tables
   - `MelonPrimeHudConfigOnScreenSnapshot.inc` - snapshot/restore/reset
   - `MelonPrimeHudConfigOnScreenDraw.inc` - bounds and overlay drawing
   - `MelonPrimeHudConfigOnScreenInput.inc` - public edit API and input handling
 - Classic settings dialog restored with 5 hierarchical main sections and live preview widgets on the right (except HUD Scale)
-- MelonPrime settings/edit-mode labels are localized through `MelonPrimeLocalization.h` for English/Japanese based on OS locale
+- MelonPrime settings/edit-mode labels are localized through `MelonPrimeLocalization.h/.cpp` for English/Japanese based on OS locale
 - Programmatic widget architecture via `HudMainSec` / `HudSubSec` / `HudWidgetProp`, enabling data-driven save/restore/TOML-export
 - Snapshot/restore covers all HUD widgets plus 3 global fields
 - HUD auto-scale system with per-category caps (text, icons, gauges, crosshair); radar excluded from auto-scale
@@ -217,3 +213,5 @@ Current work is on the `highres_fonts_v3` branch. Main changes relative to `mast
   - setup/layout/input fragments for edit-mode forwarding and floating panel placement
   - software overlay fragment for `ScreenPanelNative::paintEvent`
   - GL init/deinit/overlay fragments for texture/shader resources, HUD upload/composite, and native radar overlay
+- EmuThread integration has small self-contained MelonPrime fragments in `MelonPrimeEmuThread*.inc` for includes, constructor setup, run setup, message queue atomics, and renderer VSync preservation. The frame limiter and frame pacing body remain inline in `EmuThread.cpp`.
+- Unity include ownership is checked by `.claude/skills/check-inc-ownership.ps1`; it verifies one parent per unity `.inc`, verifies the fixed parent set for the macro-section `MelonPrimeArm9InstructionHook.inc`, rejects `#include "*.cpp"`, and rejects `.inc` entries in `CMakeLists.txt`

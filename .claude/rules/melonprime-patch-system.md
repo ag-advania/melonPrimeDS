@@ -26,6 +26,69 @@ more than a tiny call site, put the MelonPrime-specific body in a
 
 ---
 
+## Patch registry (`MelonPrimePatchRegistry`)
+
+`MelonPrimePatchRegistry.h/.cpp` centralizes the write-patch lifecycle. `MelonPrime.cpp` no
+longer lists per-module calls; it builds a `PatchCtx` and calls the registry at each lifecycle
+site. Modules keep their existing public functions untouched; the registry holds one
+`kPatchRegistry[]` entry per module with thin adapters mapping `PatchCtx` onto each module's
+signature.
+
+```cpp
+struct PatchCtx {            // unified context, built by the caller per call
+    melonDS::NDS* nds;
+    EmuInstance* emu;
+    Config::Table& cfg;
+    const RomAddresses& rom; // rom.romGroupIndex / rom.isInAdventure etc. for adapters
+};
+enum PatchApplySite : uint8_t {  // where Patches_Apply fires the entry
+    PatchSite_GameJoin       = 1u << 0,  // HandleGameJoinInit (once per join)
+    PatchSite_ConfigReload   = 1u << 1,  // ApplyConfigReload (ROM detected)
+    PatchSite_OutOfGameFrame = 1u << 2,  // RunFrameHook !isInGame && focused (per frame, self-guarded)
+};
+enum PatchRestoreFlag : uint8_t {        // which restore API fires the entry
+    RF_None = 0,
+    RF_OnLeave = 1u << 0,                // Patches_RestoreOnLeave (game-leave block)
+    RF_OnStop  = 1u << 1,                // Patches_RestoreOnStop (OnEmuStart / OnEmuStop)
+};
+
+void Patches_Apply(uint8_t siteMask, const PatchCtx&);
+void Patches_RestoreOnLeave(const PatchCtx&);
+void Patches_RestoreOnStop(const PatchCtx&);
+void Patches_ResetAll();   // state flags only, never touches emulated RAM
+```
+
+**Ordering guarantee:** `kPatchRegistry[]` iteration order defines apply and restore order. The
+table is ordered so each site's apply order matches the pre-registry call lists exactly:
+GameJoin = AspectRatio, OsdColor, LowHpWarning, InstantAimFollow, ShowHeadshotOnline,
+ShowEnemyHpMeterOnline, DisableDoubleDamageMultiplier, NoPickingUpSpecificItems; ConfigReload =
+the InstantAimFollow..NoPickingUp subset; OutOfGameFrame = FixWifi, UseFirmwareLanguage,
+ExpandStageMatrix. (One known delta: restore-on-leave now runs OsdColor before the other five
+restorable modules instead of after them — safe, all modules write disjoint addresses.)
+
+**Call sites in `MelonPrime.cpp`:** `HandleGameJoinInit` → `Patches_Apply(PatchSite_GameJoin)`;
+`ApplyConfigReload` (inside the `BIT_ROM_DETECTED` gate, after `ARM9Hook_Install`) →
+`Patches_Apply(PatchSite_ConfigReload)`; `RunFrameHook` `!isInGame && focused` →
+`Patches_Apply(PatchSite_OutOfGameFrame)`; game-leave block → `Patches_RestoreOnLeave`;
+`OnEmuStart` / `OnEmuStop` → `Patches_RestoreOnStop` + `Patches_ResetAll`;
+`ResetRuntimeStateForBoot` → `Patches_ResetAll` only (boot reset: state only, no RAM restore).
+
+**Statics:** module `s_applied` state is per-process; melonDS multi-instance runs as separate
+processes, so the per-process singleton assumption holds.
+
+**Intentionally outside the registry:**
+
+- the per-frame `OsdColor_ApplyOnce` re-apply in `RunFrameHook`'s `isInGame` branch (pattern B —
+  game-state-dependent re-evaluation; the registry covers only its game-join apply + leave restore)
+- ARM9 instruction hooks — `ARM9Hook_Install/Uninstall/ResetPatchState` is its own registry
+- Custom HUD patch state (`CustomHud_*`) — HUD-owned lifecycle
+- `NoDoubleTapJump` — transient, wraps weapon-switch frames in `MelonPrimeGameWeapon.cpp`
+- `NoHud` — driven by the Custom HUD render path
+- `OsdColor_InvalidatePatch` / `ExpandStageMatrix_InvalidatePatch` on settings save
+  (`MelonPrimeInputConfigConfig.cpp`)
+
+---
+
 ## File structure
 
 ### Header pattern (`MelonPrimePatchFoo.h`)
@@ -60,65 +123,70 @@ namespace MelonPrime {
 #ifdef MELONPRIME_DS
 
 #include "MelonPrimePatchFoo.h"
+#include "MelonPrimePatchCommon.h"
 #include "Config.h"
-#include "NDS.h"
 
 namespace MelonPrime {
+namespace {
 
-// Per-ROM base addresses. Use 0xFFFFFFFFu for ROM versions where the patch
-// does not apply (already fixed upstream, or different code layout).
+static constexpr const char* kCfgFoo = "Metroid.BugFix.Foo";
+
 // ROM group order: JP1_0=0, JP1_1=1, US1_0=2, US1_1=3, EU1_0=4, EU1_1=5, KR1_0=6
-static constexpr uint32_t kBase[7] = {
-    0x0206XXXX, // JP1_0
-    0xFFFFFFFF, // JP1_1  (not applicable)
-    0x0206XXXX, // US1_0
-    0xFFFFFFFF, // US1_1  (not applicable)
-    0x0206XXXX, // EU1_0
-    0xFFFFFFFF, // EU1_1  (not applicable)
-    0xFFFFFFFF, // KR1_0  (not applicable)
-};
-
-// Patch entries: byte offset from base, value to write (apply), original value (revert).
-// If all ROM versions share the same instruction values (common), store offsets+values once.
-// If values differ per ROM, use a per-ROM table instead.
-struct PatchWord { uint32_t offset, applyVal, revertVal; };
-static constexpr PatchWord kWords[] = {
-    {0x000u, 0xXXXXXXXX, 0xXXXXXXXX},
+static constexpr PatchWord kPatchWords[7][2] = {
+    { // JP1_0
+        { 0x0206XXXXu, 0xE1A00000u, 0xXXXXXXXXu },
+        { 0x0206XXXXu, 0xE1A00000u, 0xXXXXXXXXu },
+    },
+    { // JP1_1
+        { 0x0206XXXXu, 0xE1A00000u, 0xXXXXXXXXu },
+        { 0x0206XXXXu, 0xE1A00000u, 0xXXXXXXXXu },
+    },
     // ...
 };
 
-static bool s_applied = false;
+// count == 0 means this ROM group is unsupported.
+static constexpr RomPatchSpan kPatchSpans[7] = {
+    { &kPatchWords[0][0], 2 },
+    { &kPatchWords[1][0], 2 },
+    { nullptr, 0 }, // US1_0 unsupported
+    { nullptr, 0 }, // US1_1 unsupported
+    { nullptr, 0 }, // EU1_0 unsupported
+    { nullptr, 0 }, // EU1_1 unsupported
+    { nullptr, 0 }, // KR1_0 unsupported
+};
+
+static StaticWordPatch s_patch(kPatchSpans);
+
+} // namespace
 
 void Foo_ApplyOnce(melonDS::NDS* nds, Config::Table& cfg, uint8_t romGroupIndex)
 {
-    if (s_applied) return;
-    if (!cfg.GetBool("Metroid.BugFix.Foo")) return;
-    if (romGroupIndex >= 7 || kBase[romGroupIndex] == 0xFFFFFFFFu) return;
-    const uint32_t base = kBase[romGroupIndex];
-    for (const auto& w : kWords)
-        nds->ARM9Write32(base + w.offset, w.applyVal);
-    s_applied = true;
+    if (!cfg.GetBool(kCfgFoo))
+    {
+        s_patch.RestoreOnce(nds, romGroupIndex);
+        return;
+    }
+
+    s_patch.ApplyOnce(nds, romGroupIndex);
+}
+
+void Foo_RestoreOnce(melonDS::NDS* nds, uint8_t romGroupIndex)
+{
+    s_patch.RestoreOnce(nds, romGroupIndex);
 }
 
 void Foo_ResetPatchState()
 {
-    s_applied = false;
+    s_patch.ResetState();
 }
-
-// Optional: mid-session restore (e.g. on game exit)
-// void Foo_RestoreOnce(melonDS::NDS* nds, uint8_t romGroupIndex)
-// {
-//     if (!s_applied || kBase[romGroupIndex] == 0xFFFFFFFFu) return;
-//     const uint32_t base = kBase[romGroupIndex];
-//     for (const auto& w : kWords)
-//         nds->ARM9Write32(base + w.offset, w.revertVal);
-//     s_applied = false;
-// }
 
 } // namespace MelonPrime
 
 #endif // MELONPRIME_DS
 ```
+
+Historical note: older modules may still hand-roll `s_applied` / `CanWritePatch` when they have
+patch-specific mechanics; new all-or-nothing static word-patches should use `StaticWordPatch`.
 
 ---
 
@@ -131,70 +199,40 @@ void Foo_ResetPatchState()
 - [ ] Add `#include "MelonPrimePatchFoo.h"` to `MelonPrimePatch.h`
 - [ ] Add `MelonPrimePatchFoo.cpp` to `CMakeLists.txt` inside the `MELONPRIME_DS` source list (around line 88–91)
 
-### 2. Apply call site — `MelonPrime.cpp`
+### 2. Registry entry — `MelonPrimePatchRegistry.cpp`
 
-Choose the apply site based on what the patch targets:
+Add **one entry** to `kPatchRegistry` (a thin `Apply_Foo` / `Restore_Foo` adapter pair plus the
+table row — see the "Patch registry" section below), choosing:
 
-#### A. Standard: `HandleGameJoinInit()` — once per in-game join (cold path)
+- **Apply site mask** (`PatchApplySite`):
+  - `PatchSite_GameJoin` — standard: applied once per in-game join from `HandleGameJoinInit()`
+    (cold path). Use when the patch writes ARM9 code that persists until the game resets.
+  - `PatchSite_ConfigReload` — also re-applied from `ApplyConfigReload()` (only when a ROM is
+    detected) so a live settings toggle takes effect without rejoining. Usually combined with
+    `PatchSite_GameJoin` and `RF_OnLeave | RF_OnStop`.
+  - `PatchSite_OutOfGameFrame` — applied per frame in `RunFrameHook`'s `!isInGame && focused`
+    block (pattern C). The module must include its own loaded-state guard so it is a no-op when
+    the target data is not present; name the function `Foo_ApplyIfLoaded` rather than
+    `Foo_ApplyOnce` to signal this distinction (`ResetPatchState()` is then typically a no-op).
+- **Restore flags** (`PatchRestoreFlag`): `RF_OnLeave` (restored in `RunFrameHook`'s game-leave
+  block), `RF_OnStop` (restored in `OnEmuStart` / `OnEmuStop`), or `RF_None`.
+- **resetState**: point it at `Foo_ResetPatchState` (wire it even for pattern C no-ops).
 
-Used when the patch writes ARM9 code that persists until the game resets.
-Add after the existing `OsdColor_ApplyOnce` call:
+Table order = apply/restore order. Insert the entry at the position matching its site grouping
+(GameJoin entries first, then the GameJoin+ConfigReload subset, then OutOfGameFrame entries).
 
-```cpp
-#ifdef MELONPRIME_DS
-    InGameAspectRatio_ApplyOnce(emuInstance, localCfg, m_currentRom);
-    OsdColor_ApplyOnce(emuInstance, localCfg, m_currentRom);
-    Foo_ApplyOnce(emuInstance->getNDS(), localCfg, m_currentRom.romGroupIndex);
-#endif
-```
+Stays outside the registry: per-frame **in-game** re-evaluation (pattern B — e.g. the
+`OsdColor_ApplyOnce` call in `RunFrameHook`'s `isInGame` branch) remains a direct call at that
+site; transient patches (NoDoubleTapJump) and HUD-owned patches (NoHud) keep their own call sites.
 
-#### B. Per-frame in-game: `isInGame` block in `RunFrameHook`
+### 3. Lifecycle — automatic via the registry
 
-Used when the patch needs re-evaluation every frame while the game is running
-(e.g. OsdColor which varies with game state).
-
-#### C. Per-frame outside game: `!isInGame` block in `RunFrameHook`
-
-Used when the patch targets data that is loaded/unloaded by the game's menu system
-and can be reset by screen transitions. The patch must include its own loaded-state
-guard so it is a no-op when the target data is not present.
-
-In the `!isInGame && focused` block (alongside `FixWifi_ApplyOnce` and
-`UseFirmwareLanguage_ApplyOnce`):
-
-```cpp
-#ifdef MELONPRIME_DS
-    {
-        melonDS::NDS* const nds = emuInstance->getNDS();
-        FixWifi_ApplyOnce(nds, localCfg, m_currentRom.romGroupIndex);
-        UseFirmwareLanguage_ApplyOnce(nds, localCfg, m_currentRom.romGroupIndex, m_currentRom.isInAdventure);
-        Foo_ApplyIfLoaded(nds, localCfg, m_currentRom.romGroupIndex);  // ← pattern C
-    }
-#endif
-```
-
-For pattern C, `ResetPatchState()` is a no-op (the guard re-detects each call; there is no
-persistent `s_applied` flag). The function signature is `Foo_ApplyIfLoaded` rather than
-`Foo_ApplyOnce` to signal this distinction.
-
-### 3. Reset call sites — `MelonPrime.cpp`
-
-**Three** `#ifdef MELONPRIME_DS` reset blocks exist. Add `Foo_ResetPatchState();` to **all three**:
-
-1. Inside `OnEmuStart` / soft-reset path (search for `ReloadConfigFlags()` just below the block)
-2. Inside `ResetRuntimeStateForBoot()` (search for the second reset block before `InputReset()`)
-3. Inside `OnEmuStop()`
-
-```cpp
-#ifdef MELONPRIME_DS
-    InGameAspectRatio_ResetPatchState();
-    OsdColor_ResetPatchState();
-    FixWifi_ResetPatchState();
-    Foo_ResetPatchState();   // ← add here in all three blocks
-#endif
-```
-
-Missing any one of the three blocks causes stale patch state to survive across stop/reset cycles.
+No `MelonPrime.cpp` edits are needed for restore/reset. The three lifecycle blocks
+(`OnEmuStart`, `ResetRuntimeStateForBoot`, `OnEmuStop`) and the game-leave block call the
+registry (`Patches_RestoreOnStop` / `Patches_RestoreOnLeave` / `Patches_ResetAll`), so the entry
+from step 2 wires the whole lifecycle — restore-on-stop/leave and reset×3 are automatic.
+(`ResetRuntimeStateForBoot` intentionally resets state **without** restoring RAM: emulated memory
+is being re-initialized.)
 
 ### 4. Settings UI — `MelonPrimeInputConfig.ui`
 
@@ -203,7 +241,8 @@ For bug fixes, the **BUG FIXES** section (`btnToggleBugFix` / `sectionBugFix`) a
 immediately above the GAMEPLAY TOGGLES section in the Settings tab.
 
 Visible MelonPrime settings text must also be registered for English/Japanese localization in
-`src/frontend/qt_sdl/MelonPrimeLocalization.h`:
+`src/frontend/qt_sdl/MelonPrimeLocalization.cpp` (the public API stays in
+`MelonPrimeLocalization.h`):
 
 - Short labels, checkbox text, combo items, button text, tooltips, and anonymous descriptions go in
   `MelonPrime::UiText::kTranslations` as English source text -> Japanese display text.
@@ -232,20 +271,30 @@ Add to `sectionBugFix`'s `QVBoxLayout`:
 </item>
 ```
 
-Then add the checkbox label and description text to `MelonPrimeLocalization.h`. For the description
-above, prefer the `lblMetroidFooDesc` object-name mapping.
+Then add the checkbox label and description text to `MelonPrimeLocalization.cpp`. For the
+description above, prefer the `lblMetroidFooDesc` object-name mapping.
 
-### 5. Settings wiring — `MelonPrimeInputConfig.cpp`
+### 5. Settings wiring — `CfgKey` + `MelonPrimeInputConfig.cpp`
 
-In `setupSensitivityAndToggles(instcfg)`, add:
+Add a config-key constant to `MelonPrimeDef.h` under `namespace MelonPrime::CfgKey`:
 
 ```cpp
-// Bug fixes
-ui->cbMetroidFoo->setChecked(instcfg.GetBool("Metroid.BugFix.Foo"));
+inline constexpr const char* Foo = "Metroid.BugFix.Foo";
 ```
 
-The BUG FIXES section toggle is already registered in `setupCollapsibleSections`.
-No extra `setupToggle` call is needed for new checkboxes inside the existing section.
+For a straightforward mirrored setting (checkbox, combo index, int spin box, or double spin box),
+add one row to `MelonPrimeInputConfig::buildSettingBindings()` in the matching segment:
+
+```cpp
+{ C::Foo, K::CheckBool, ui->cbMetroidFoo },
+```
+
+`loadBindingsRange()` and `saveBindings()` then handle the load/save path. Keep the row in the
+same segment where the old manual load would have lived; some segment boundaries preserve
+observable slot side effects and parent/child enable ordering.
+
+The BUG FIXES section toggle is already registered in `setupCollapsibleSections`. No extra
+`setupToggle` call is needed for new checkboxes inside the existing section.
 
 #### Checkbox dependencies (parent/child enable control)
 
@@ -274,8 +323,7 @@ void MelonPrimeInputConfig::on_cbMetroidFoo_stateChanged(int state)
 **`setupSensitivityAndToggles`** — set the initial enabled state after setting the check states:
 
 ```cpp
-ui->cbMetroidFoo->setChecked(instcfg.GetBool("Metroid.BugFix.Foo"));
-ui->cbMetroidFooChild->setChecked(instcfg.GetBool("Metroid.BugFix.FooChild"));
+// The checked states should normally come from buildSettingBindings() + loadBindingsRange().
 ui->cbMetroidFooChild->setEnabled(ui->cbMetroidFoo->isChecked());
 ```
 
@@ -283,10 +331,14 @@ Qt's `QMetaObject::connectSlotsByName` (called inside `ui->setupUi(this)`) autom
 
 ### 6. Save — `MelonPrimeInputConfigConfig.cpp`
 
-In `saveConfig()`, inside the "Bug fixes" block:
+For generic bindings from step 5, no manual save line is needed; `saveBindings()` writes the key.
+Only add direct `instcfg.Set*()` code for special cases that are intentionally outside the binding
+table (legacy migrations, old/new invalidation coupling, dynamic combo data, or developer-only
+guarded settings). If a special case is needed, keep it near the related block and use `CfgKey::*`
+where available:
 
 ```cpp
-instcfg.SetBool("Metroid.BugFix.Foo", ui->cbMetroidFoo->checkState() == Qt::Checked);
+instcfg.SetBool(MelonPrime::CfgKey::Foo, ui->cbMetroidFoo->checkState() == Qt::Checked);
 ```
 
 ### 7. Config defaults — `Config.cpp`
@@ -300,6 +352,12 @@ In `DefaultBools`, add inside the `#ifdef MELONPRIME_DS` block
 
 If the config key uses `GetInt` or `GetDouble`, add it to `DefaultInts` / `DefaultDoubles` instead
 (see repo-architecture.md "Default value type classification" for the type-list rule).
+
+Run the checked-in default coverage audit after adding settings:
+
+```powershell
+.\.claude\skills\audit-config-defaults.ps1
+```
 
 ---
 
@@ -326,21 +384,21 @@ These are all **static write-patches**. Instruction-hook patches (ShadowFreeze, 
 WeaponSwitch, TransformGate, NativeAimDelta, etc.) are documented in the
 "ARM9 instruction-hook subsystem" section below instead.
 
-| Patch | Files | Apply site | Notes |
+| Patch | Files | Apply site (registry mask) | Notes |
 |-------|-------|-----------|-------|
-| In-game aspect ratio | `MelonPrimePatchAspectRatio.*` | `HandleGameJoinInit` | Uses `MainRAM` read to detect/guard; `InGameAspectRatio_ResetPatchState` on stop/reset |
-| OSD color | `MelonPrimePatchOsdColor.*` | `HandleGameJoinInit` + per-frame `isInGame` block | `OsdColor_RestoreOnce` on game exit; `OsdColor_InvalidatePatch` on settings save |
-| No-HUD | `MelonPrimePatchNoHud.*` | Called from Custom HUD render path | Per-frame apply/restore depending on HUD state |
-| No double-tap jump | `MelonPrimePatchNoDoubleTapJump.*` | `MelonPrimeGameWeapon.cpp` (transient, wraps `FrameAdvanceTwice`) | Not persistent; applied/restored around weapon-switch frames only |
-| Wi-Fi bitset fix | `MelonPrimePatchFixWifi.*` | `HandleGameJoinInit` | JP1_0 / US1_0 / EU1_0 only; 51-word patch; `FixWifi_ResetPatchState` on stop/reset |
-| Stage matrix expansion | `MelonPrimePatchExpandStageMatrix.*` | `!isInGame` per-frame block (pattern C) | Writes RAM data bytes, not ARM code; self-guarded via strict 3-point loaded-state check; `ResetPatchState` is a no-op; base (5 cells) + extra (9 cells) split across two config keys |
-| Low HP warning | `MelonPrimePatchLowHpWarning.*` | `HandleGameJoinInit` | `LowHpWarning_ResetPatchState` on stop/reset |
-| Use firmware language | `MelonPrimePatchUseFirmwareLanguage.*` | `!isInGame && focused` block | Adventure-aware; applied in menus |
-| Instant aim follow | `MelonPrimePatchInstantAimFollow.*` | `ApplyConfigReload` + game-join | `_RestoreOnce` on game leave; `_ResetPatchState` on stop/reset. (Distinct from the `LowLatencyMode` ImmediateSync/MoonLike instruction hook.) |
-| Show headshot online | `MelonPrimePatchShowHeadshotOnline.*` | `ApplyConfigReload` + game-join | `_RestoreOnce` on game leave |
-| Show enemy HP meter online | `MelonPrimePatchShowEnemyHpMeterOnline.*` | `ApplyConfigReload` + game-join | `_RestoreOnce` on game leave |
-| Disable double-damage multiplier | `MelonPrimePatchDisableDoubleDamageMultiplier.*` | `ApplyConfigReload` + game-join | `_RestoreOnce` on game leave; pairs with Damage-Notify-Purple |
-| No picking up specific items | `MelonPrimePatchNoPickingUpSpecificItems.*` | `ApplyConfigReload` + game-join | `_RestoreOnce` on game leave |
+| In-game aspect ratio | `MelonPrimePatchAspectRatio.*` | Registry: `GameJoin` | Uses `MainRAM` read to detect/guard; registry resets state on stop/reset |
+| OSD color | `MelonPrimePatchOsdColor.*` | Registry: `GameJoin` (`RF_OnLeave`) + per-frame `isInGame` re-apply outside the registry | `OsdColor_InvalidatePatch` on settings save |
+| No-HUD | `MelonPrimePatchNoHud.*` | Outside registry: called from Custom HUD render path | Per-frame apply/restore depending on HUD state |
+| No double-tap jump | `MelonPrimePatchNoDoubleTapJump.*` | Outside registry: `MelonPrimeGameWeapon.cpp` (transient, wraps `FrameAdvanceTwice`) | Not persistent; applied/restored around weapon-switch frames only |
+| Wi-Fi bitset fix | `MelonPrimePatchFixWifi.*` | Registry: `OutOfGameFrame` | JP1_0 / US1_0 / EU1_0 only; 51-word patch |
+| Stage matrix expansion | `MelonPrimePatchExpandStageMatrix.*` | Registry: `OutOfGameFrame` (pattern C) | Writes RAM data bytes, not ARM code; self-guarded via strict 3-point loaded-state check; `ResetPatchState` is a no-op (still wired in the registry); base (5 cells) + extra (9 cells) split across two config keys |
+| Low HP warning | `MelonPrimePatchLowHpWarning.*` | Registry: `GameJoin` | Registry resets state on stop/reset |
+| Use firmware language | `MelonPrimePatchUseFirmwareLanguage.*` | Registry: `OutOfGameFrame` | Adventure-aware; applied in menus; adapter passes `rom.isInAdventure` as 4th arg |
+| Instant aim follow | `MelonPrimePatchInstantAimFollow.*` | Registry: `GameJoin \| ConfigReload` (`RF_OnLeave \| RF_OnStop`) | (Distinct from the `LowLatencyMode` ImmediateSync/MoonLike instruction hook.) |
+| Show headshot online | `MelonPrimePatchShowHeadshotOnline.*` | Registry: `GameJoin \| ConfigReload` (`RF_OnLeave \| RF_OnStop`) | |
+| Show enemy HP meter online | `MelonPrimePatchShowEnemyHpMeterOnline.*` | Registry: `GameJoin \| ConfigReload` (`RF_OnLeave \| RF_OnStop`) | |
+| Disable double-damage multiplier | `MelonPrimePatchDisableDoubleDamageMultiplier.*` | Registry: `GameJoin \| ConfigReload` (`RF_OnLeave \| RF_OnStop`) | Pairs with Damage-Notify-Purple |
+| No picking up specific items | `MelonPrimePatchNoPickingUpSpecificItems.*` | Registry: `GameJoin \| ConfigReload` (`RF_OnLeave \| RF_OnStop`) | |
 
 ---
 
@@ -367,8 +425,10 @@ moment the game reaches a code point, or when you need to conditionally redirect
   `false` → original instruction runs (side-effect-only hook).
 - **JIT path (default):** the compiler emits the trampoline call **only at addresses that matched at
   compile time** (`ARM9InstructionHookMatches(addr)` in the compile loop), and
-  `SetARM9InstructionHook` resets the JIT block cache when the address list changes. Non-hooked
-  instructions cost **zero**; each hooked PC pays a `RegCache.Flush` + call when executed.
+  `SetARM9InstructionHook` resets the JIT block cache when the installed address list changes.
+  `ARM9Hook_Install` must avoid calling `SetARM9InstructionHook` when the dispatcher, userdata, and
+  address list already match the currently installed hook set. Non-hooked instructions cost
+  **zero**; each hooked PC pays a `RegCache.Flush` + call when executed.
 - **Interpreter path:** every instruction runs `ARM9InstructionHookAddressMatches`, a hash-mask
   early-out (`1u << ((addr>>2)&31)`) followed by a short linear scan.
 
@@ -381,15 +441,20 @@ Owns the single hook slot and fans out to all registered MelonPrime hooks.
   re-registers the active hook set. For each **enabled** hook it calls the module's
   `Foo_GetAddresses(romGroupIndex, out, max)` and registers those PCs with a per-hook dispatch-mask
   bit (`AddDispatchAddress` ORs masks when two hooks share a PC), then calls `SetARM9InstructionHook`
-  once with the union of addresses.
+  once with the union of addresses **only if that union differs from the currently installed hook
+  set**. If the union is unchanged, do not reset the JIT block cache and do not write back hook-site
+  instructions just to invalidate blocks.
 - `ARM9Hook_Uninstall(nds)` and `ARM9Hook_ResetPatchState()` — wired into **all three** reset
-  blocks (the same blocks as the write-patch `*_ResetPatchState` calls; see §3).
+  blocks, dispatched manually alongside the registry's `Patches_ResetAll()` in those blocks
+  (`ARM9Hook_Uninstall` before the registry restore/reset, `ARM9Hook_ResetPatchState` after; see §3).
 - `DispatcherCallback` looks up the address's mask (`FindDispatchMask`, 1-entry cache) and calls
   each set hook's handler in a fixed priority order; side-effect hooks run unconditionally, redirect
   hooks return early once one redirects.
 - **Registration is config-gated**: only hooks that can run for the current config are registered,
-  because every registered PC becomes a JIT trampoline call site. Developer-only hooks are forced
-  off in non-developer builds.
+  because every registered PC becomes a JIT trampoline call site. A live settings toggle should call
+  `NotifyConfigChanged()` / `ApplyConfigReload()` so the hook set is rebuilt, rather than keeping a
+  disabled hook registered and branching out inside the handler. Developer-only hooks are forced off
+  in non-developer builds.
 
 ### Per-hook module contract
 
@@ -418,7 +483,7 @@ Each instruction-hook module provides:
 | FixNoxusBladePersistence | `MelonPrimePatchFixNoxusBladePersistence.cpp` | RAM side-effect | `Metroid.BugFix.FixNoxusBladePersistence` |
 | TransformGate | `MelonPrimePatchImmediateTransformGateHook.inc` | redirect | `DirectAltFormTransform` |
 | WeaponSwitch | `MelonPrimePatchWeaponSwitchHook.inc` | redirect | `WeaponSwitchMethod != LegacyTouch` |
-| ShadowFreezeRuntimeHook | `MelonPrimePatchShadowFreezeRuntimeHook.cpp` | redirect | **always registered**; the handler checks a cached config bit so the quick-menu toggle works live without a JIT block-cache reset |
+| ShadowFreezeRuntimeHook | `MelonPrimePatchShadowFreezeRuntimeHook.cpp` | redirect | `Metroid.BugFix.FixShadowFreeze` |
 
 The `*.inc` handlers are unity-included into `MelonPrimeGameInput.cpp` (see its `#include` block);
 the two `.cpp` modules (`FixNoxusBladePersistence`, `ShadowFreezeRuntimeHook`) are standalone

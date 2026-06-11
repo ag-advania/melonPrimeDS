@@ -13,10 +13,23 @@ enum PickupPatchBit : uint8_t {
     PICKUP_DEATHALT      = 1u << 2,
 };
 
+enum PickupItemType : uint8_t {
+    ITEM_DOUBLE_DAMAGE = 3,
+    ITEM_CLOAK         = 17,
+    ITEM_DEATHALT      = 20,
+};
+
 struct PatchWord {
-    uint32_t address;
+    uint8_t itemType;
     uint32_t applyVal;
     uint32_t revertVal;
+    uint32_t legacySkipVal;
+};
+
+struct PatchSet {
+    uint32_t cmpAddress;
+    uint32_t addLsAddress;
+    PatchWord words[3];
 };
 
 static constexpr const char* kCfgPowerUpPickupNoEffect =
@@ -28,47 +41,34 @@ static constexpr const char* kCfgPowerUpPickupNoEffectCloak =
 static constexpr const char* kCfgPowerUpPickupNoEffectDeathalt =
     "Metroid.GameFeature.PowerUpPickupNoEffectDeathalt";
 
+static constexpr uint32_t kCmpItemTypeMaxWord = 0xE3500015u; // cmp r0,#0x15
+static constexpr uint32_t kAddLsPcPcItemTypeWord = 0x908FF100u; // addls pc,pc,r0,lsl #2
+static constexpr uint32_t kSwitchTablePcBias = 8u;
+
+static constexpr PatchWord kJpUsEuWords[3] = {
+    { ITEM_DOUBLE_DAMAGE, 0xEA0001BCu, 0xEA000139u, 0xEA0001C1u },
+    { ITEM_CLOAK,         0xEA0001AEu, 0xEA00013Cu, 0xEA0001B3u },
+    { ITEM_DEATHALT,      0xEA0001ABu, 0xEA00014Au, 0xEA0001B0u },
+};
+
+static constexpr PatchWord kKrWords[3] = {
+    { ITEM_DOUBLE_DAMAGE, 0xEA0001C2u, 0xEA000140u, 0xEA0001C7u },
+    { ITEM_CLOAK,         0xEA0001B4u, 0xEA000142u, 0xEA0001B9u },
+    { ITEM_DEATHALT,      0xEA0001B1u, 0xEA00014Fu, 0xEA0001B6u },
+};
+
 // Item pickup switch entries for item type 3/17/20. Applying a word branches
 // directly to the pickedUp=1 consume/delete exit. The item disappears, while
 // the power-up timer/flag/HUD/effect handler is skipped.
 // ROM group order: JP1_0=0, JP1_1=1, US1_0=2, US1_1=3, EU1_0=4, EU1_1=5, KR1_0=6
-// Entry order: Double Damage, Cloak, Deathalt.
-static constexpr PatchWord kPatchWords[7][3] = {
-    { // JP1.0
-        { 0x02019CE0u, 0xEA0001BCu, 0xEA000139u },
-        { 0x02019D18u, 0xEA0001AEu, 0xEA00013Cu },
-        { 0x02019D24u, 0xEA0001ABu, 0xEA00014Au },
-    },
-    { // JP1.1
-        { 0x02019CE0u, 0xEA0001BCu, 0xEA000139u },
-        { 0x02019D18u, 0xEA0001AEu, 0xEA00013Cu },
-        { 0x02019D24u, 0xEA0001ABu, 0xEA00014Au },
-    },
-    { // US1.0
-        { 0x02019D04u, 0xEA0001BCu, 0xEA000139u },
-        { 0x02019D3Cu, 0xEA0001AEu, 0xEA00013Cu },
-        { 0x02019D48u, 0xEA0001ABu, 0xEA00014Au },
-    },
-    { // US1.1
-        { 0x02019D04u, 0xEA0001BCu, 0xEA000139u },
-        { 0x02019D3Cu, 0xEA0001AEu, 0xEA00013Cu },
-        { 0x02019D48u, 0xEA0001ABu, 0xEA00014Au },
-    },
-    { // EU1.0
-        { 0x02019CFCu, 0xEA0001BCu, 0xEA000139u },
-        { 0x02019D34u, 0xEA0001AEu, 0xEA00013Cu },
-        { 0x02019D40u, 0xEA0001ABu, 0xEA00014Au },
-    },
-    { // EU1.1
-        { 0x02019D04u, 0xEA0001BCu, 0xEA000139u },
-        { 0x02019D3Cu, 0xEA0001AEu, 0xEA00013Cu },
-        { 0x02019D48u, 0xEA0001ABu, 0xEA00014Au },
-    },
-    { // KR1.0
-        { 0x02018C38u, 0xEA0001C2u, 0xEA000140u },
-        { 0x02018C70u, 0xEA0001B4u, 0xEA000142u },
-        { 0x02018C7Cu, 0xEA0001B1u, 0xEA00014Fu },
-    },
+static constexpr PatchSet kPatchSets[7] = {
+    { 0x02019CC8u, 0x02019CCCu, { kJpUsEuWords[0], kJpUsEuWords[1], kJpUsEuWords[2] } },
+    { 0x02019CC8u, 0x02019CCCu, { kJpUsEuWords[0], kJpUsEuWords[1], kJpUsEuWords[2] } },
+    { 0x02019CECu, 0x02019CF0u, { kJpUsEuWords[0], kJpUsEuWords[1], kJpUsEuWords[2] } },
+    { 0x02019CECu, 0x02019CF0u, { kJpUsEuWords[0], kJpUsEuWords[1], kJpUsEuWords[2] } },
+    { 0x02019CE4u, 0x02019CE8u, { kJpUsEuWords[0], kJpUsEuWords[1], kJpUsEuWords[2] } },
+    { 0x02019CECu, 0x02019CF0u, { kJpUsEuWords[0], kJpUsEuWords[1], kJpUsEuWords[2] } },
+    { 0x02018C20u, 0x02018C24u, { kKrWords[0], kKrWords[1], kKrWords[2] } },
 };
 
 static bool s_hasAppliedRomGroup = false;
@@ -77,7 +77,7 @@ static uint8_t s_appliedMask = 0;
 
 [[nodiscard]] static bool IsValidRomGroup(uint8_t romGroupIndex) noexcept
 {
-    return romGroupIndex < 7;
+    return romGroupIndex < sizeof(kPatchSets) / sizeof(kPatchSets[0]);
 }
 
 [[nodiscard]] static uint8_t DesiredMask(Config::Table& cfg)
@@ -96,30 +96,65 @@ static uint8_t s_appliedMask = 0;
     return mask;
 }
 
-[[nodiscard]] static bool IsArmUnconditionalBranch(uint32_t opcode) noexcept
+[[nodiscard]] static constexpr uint32_t EntryAddress(const PatchSet& set, const PatchWord& word) noexcept
 {
-    return (opcode & 0xFF000000u) == 0xEA000000u;
+    return set.addLsAddress + kSwitchTablePcBias + static_cast<uint32_t>(word.itemType) * sizeof(uint32_t);
 }
 
-[[nodiscard]] static bool SetWordDesired(melonDS::NDS* nds, const PatchWord& word, bool apply)
-{
-    if (!nds)
-        return false;
+static_assert(EntryAddress(kPatchSets[0], kPatchSets[0].words[0]) == 0x02019CE0u, "JP1.0 Double Damage slot");
+static_assert(EntryAddress(kPatchSets[0], kPatchSets[0].words[1]) == 0x02019D18u, "JP1.0 Cloak slot");
+static_assert(EntryAddress(kPatchSets[0], kPatchSets[0].words[2]) == 0x02019D24u, "JP1.0 Deathalt slot");
+static_assert(EntryAddress(kPatchSets[1], kPatchSets[1].words[0]) == 0x02019CE0u, "JP1.1 Double Damage slot");
+static_assert(EntryAddress(kPatchSets[1], kPatchSets[1].words[1]) == 0x02019D18u, "JP1.1 Cloak slot");
+static_assert(EntryAddress(kPatchSets[1], kPatchSets[1].words[2]) == 0x02019D24u, "JP1.1 Deathalt slot");
+static_assert(EntryAddress(kPatchSets[2], kPatchSets[2].words[0]) == 0x02019D04u, "US1.0 Double Damage slot");
+static_assert(EntryAddress(kPatchSets[2], kPatchSets[2].words[1]) == 0x02019D3Cu, "US1.0 Cloak slot");
+static_assert(EntryAddress(kPatchSets[2], kPatchSets[2].words[2]) == 0x02019D48u, "US1.0 Deathalt slot");
+static_assert(EntryAddress(kPatchSets[3], kPatchSets[3].words[0]) == 0x02019D04u, "US1.1 Double Damage slot");
+static_assert(EntryAddress(kPatchSets[3], kPatchSets[3].words[1]) == 0x02019D3Cu, "US1.1 Cloak slot");
+static_assert(EntryAddress(kPatchSets[3], kPatchSets[3].words[2]) == 0x02019D48u, "US1.1 Deathalt slot");
+static_assert(EntryAddress(kPatchSets[4], kPatchSets[4].words[0]) == 0x02019CFCu, "EU1.0 Double Damage slot");
+static_assert(EntryAddress(kPatchSets[4], kPatchSets[4].words[1]) == 0x02019D34u, "EU1.0 Cloak slot");
+static_assert(EntryAddress(kPatchSets[4], kPatchSets[4].words[2]) == 0x02019D40u, "EU1.0 Deathalt slot");
+static_assert(EntryAddress(kPatchSets[5], kPatchSets[5].words[0]) == 0x02019D04u, "EU1.1 Double Damage slot");
+static_assert(EntryAddress(kPatchSets[5], kPatchSets[5].words[1]) == 0x02019D3Cu, "EU1.1 Cloak slot");
+static_assert(EntryAddress(kPatchSets[5], kPatchSets[5].words[2]) == 0x02019D48u, "EU1.1 Deathalt slot");
+static_assert(EntryAddress(kPatchSets[6], kPatchSets[6].words[0]) == 0x02018C38u, "KR Double Damage slot");
+static_assert(EntryAddress(kPatchSets[6], kPatchSets[6].words[1]) == 0x02018C70u, "KR Cloak slot");
+static_assert(EntryAddress(kPatchSets[6], kPatchSets[6].words[2]) == 0x02018C7Cu, "KR Deathalt slot");
 
+[[nodiscard]] static bool ValidateSwitchLayout(melonDS::NDS* nds, const PatchSet& set)
+{
+    return nds
+        && nds->ARM9Read32(set.cmpAddress) == kCmpItemTypeMaxWord
+        && nds->ARM9Read32(set.addLsAddress) == kAddLsPcPcItemTypeWord;
+}
+
+[[nodiscard]] static bool CanTransitionWord(uint32_t current, const PatchWord& word, bool apply) noexcept
+{
     const uint32_t desired = apply ? word.applyVal : word.revertVal;
-    const uint32_t alternate = apply ? word.revertVal : word.applyVal;
-    const uint32_t current = nds->ARM9Read32(word.address);
     if (current == desired)
         return true;
-    if (current != alternate) {
-        // These switch entries are ARM B instructions in every supported ROM.
-        // Accept any branch here so live reload can migrate from the previous
-        // skip-to-next implementation and restore from stale patched variants.
-        if (!IsArmUnconditionalBranch(current))
-            return false;
-    }
 
-    nds->ARM9Write32(word.address, desired);
+    const uint32_t alternate = apply ? word.revertVal : word.applyVal;
+    return current == alternate || current == word.legacySkipVal;
+}
+
+[[nodiscard]] static bool SetWordDesired(
+    melonDS::NDS* nds,
+    const PatchSet& set,
+    const PatchWord& word,
+    bool apply)
+{
+    const uint32_t address = EntryAddress(set, word);
+    const uint32_t desired = apply ? word.applyVal : word.revertVal;
+    const uint32_t current = nds->ARM9Read32(address);
+    if (current == desired)
+        return true;
+    if (!CanTransitionWord(current, word, apply))
+        return false;
+
+    nds->ARM9Write32(address, desired);
     return true;
 }
 
@@ -131,13 +166,17 @@ static void ApplyMask(melonDS::NDS* nds, uint8_t romGroupIndex, uint8_t desiredM
     if (s_hasAppliedRomGroup && s_appliedRomGroupIndex != romGroupIndex)
         NoPickingUpSpecificItems_RestoreOnce(nds, s_appliedRomGroupIndex);
 
-    uint8_t newAppliedMask = s_appliedMask;
-    const auto& words = kPatchWords[romGroupIndex];
+    const auto& set = kPatchSets[romGroupIndex];
+    if (!ValidateSwitchLayout(nds, set))
+        return;
+
+    uint8_t newAppliedMask =
+        (s_hasAppliedRomGroup && s_appliedRomGroupIndex == romGroupIndex) ? s_appliedMask : 0;
     for (uint8_t i = 0; i < 3; ++i)
     {
         const uint8_t bit = static_cast<uint8_t>(1u << i);
         const bool shouldApply = (desiredMask & bit) != 0;
-        if (!SetWordDesired(nds, words[i], shouldApply))
+        if (!SetWordDesired(nds, set, set.words[i], shouldApply))
             continue;
 
         if (shouldApply)

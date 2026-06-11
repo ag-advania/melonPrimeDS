@@ -175,6 +175,35 @@ static bool DispatcherCallback(
     return false;
 }
 
+[[nodiscard]] static bool InstalledDispatcherMatches(
+    melonDS::NDS* nds,
+    MelonPrimeCore* core,
+    const uint32_t* addresses,
+    uint32_t count) noexcept
+{
+    if (!nds
+        || nds->ARM9InstructionHook != DispatcherCallback
+        || nds->ARM9InstructionHookUserData != core
+        || nds->ARM9InstructionHookAddrCount != count)
+    {
+        return false;
+    }
+
+    for (uint32_t i = 0; i < count; ++i)
+    {
+        if (nds->ARM9InstructionHookAddresses[i] != addresses[i])
+            return false;
+    }
+    return true;
+}
+
+[[nodiscard]] static bool HasInstalledInstructionHook(melonDS::NDS* nds) noexcept
+{
+    return nds
+        && (nds->ARM9InstructionHook != nullptr
+            || nds->ARM9InstructionHookAddrCount != 0);
+}
+
 } // anonymous namespace
 
 void ARM9Hook_Install(
@@ -191,9 +220,6 @@ void ARM9Hook_Install(
         FixNoxusBladePersistence_ClearState();
         return;
     }
-
-    ShadowFreezeRuntimeHook_SetState(&cfg, romGroupIndex);
-    FixNoxusBladePersistence_SetState(&cfg, romGroupIndex);
 
     uint32_t moduleAddresses[melonDS::NDS::ARM9InstructionHookMaxAddresses] = {};
     uint32_t moduleCount = 0;
@@ -226,6 +252,7 @@ void ARM9Hook_Install(
 #endif
     const bool enableNoxusBlade =
         cfg.GetBool("Metroid.BugFix.FixNoxusBladePersistence");
+    const bool enableShadowFreeze = cfg.GetBool(CfgKey::FixShadowFreeze);
     const bool enableTransformGate = cfg.GetBool(CfgKey::DirectAltFormTransform);
     const bool enableWeaponSwitch =
         cfg.GetInt(CfgKey::WeaponSwitchMethod) != WeaponSwitchMethod::LegacyTouch;
@@ -235,6 +262,16 @@ void ARM9Hook_Install(
         && !cfg.GetBool(CfgKey::StylusMode)
         && (lowLatencyAimMode == LowLatencyAimMode::ImmediateSync
             || lowLatencyAimMode == LowLatencyAimMode::MoonLikeAim);
+
+    if (enableShadowFreeze)
+        ShadowFreezeRuntimeHook_SetState(&cfg, romGroupIndex);
+    else
+        ShadowFreezeRuntimeHook_ClearState();
+
+    if (enableNoxusBlade)
+        FixNoxusBladePersistence_SetState(&cfg, romGroupIndex);
+    else
+        FixNoxusBladePersistence_ClearState();
 
     if (nativeAimHookMode == 1)
     {
@@ -256,13 +293,14 @@ void ARM9Hook_Install(
         addModuleAddresses(Dispatch_LowLatencyAim);
     }
 
-    // Keep ShadowFreeze registered even when disabled. The quick menu toggles
-    // this live, and the dispatch path already checks the cached config bit.
-    moduleCount = ShadowFreezeRuntimeHook_GetAddresses(
-        romGroupIndex,
-        moduleAddresses,
-        melonDS::NDS::ARM9InstructionHookMaxAddresses);
-    addModuleAddresses(Dispatch_ShadowFreeze);
+    if (enableShadowFreeze)
+    {
+        moduleCount = ShadowFreezeRuntimeHook_GetAddresses(
+            romGroupIndex,
+            moduleAddresses,
+            melonDS::NDS::ARM9InstructionHookMaxAddresses);
+        addModuleAddresses(Dispatch_ShadowFreeze);
+    }
 
     if (enableNoxusBlade)
     {
@@ -339,7 +377,10 @@ void ARM9Hook_Install(
 
     if (count > 0)
     {
-        nds->SetARM9InstructionHook(DispatcherCallback, core, addresses, count);
+        const bool hookInstallChanged =
+            !InstalledDispatcherMatches(nds, core, addresses, count);
+        if (hookInstallChanged)
+            nds->SetARM9InstructionHook(DispatcherCallback, core, addresses, count);
 
         // Force JIT cache invalidation for every registered address.
         // The death cleanup code (NoxusBlade hook) may have been JIT-compiled
@@ -347,14 +388,16 @@ void ARM9Hook_Install(
         // block has no hook call.  Writing back the same instruction value
         // triggers melonDS to discard and recompile the affected block with the
         // hook in place.
-        for (uint32_t i = 0; i < count; ++i)
+        for (uint32_t i = 0; hookInstallChanged && i < count; ++i)
         {
             const uint32_t addr = addresses[i] & ~3u;
             nds->ARM9Write32(addr, nds->ARM9Read32(addr));
         }
     }
-    else
+    else if (HasInstalledInstructionHook(nds))
+    {
         nds->ClearARM9InstructionHook();
+    }
 }
 
 void ARM9Hook_Uninstall(melonDS::NDS* nds)

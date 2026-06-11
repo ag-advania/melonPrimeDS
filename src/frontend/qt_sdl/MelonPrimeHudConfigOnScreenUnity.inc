@@ -1,9 +1,9 @@
-// MelonPrimeCustomHudScreenConfig.cpp
+// MelonPrimeHudConfigOnScreenUnity.inc
 // ============================================================
-// In-game HUD layout editor — on-screen config mode.
+// In-game HUD layout editor - on-screen config mode.
 //
 // This file is NOT a standalone translation unit.
-// It is #include-d near the bottom of MelonPrimeCustomHud.cpp
+// It is #include-d near the bottom of MelonPrimeHudRender.cpp
 // (inside namespace MelonPrime, inside #ifdef MELONPRIME_CUSTOM_HUD)
 // and therefore shares all statics, types, and draw functions
 // defined in that file.  Do NOT add it to CMakeLists.txt.

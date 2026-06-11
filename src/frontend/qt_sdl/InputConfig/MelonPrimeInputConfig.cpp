@@ -161,41 +161,130 @@ void MelonPrimeInputConfig::setupMenuLanguageControl(Config::Table& instcfg)
         });
 }
 
+// ── Non-HUD settings binding table (Phase 5b) ───────────────────────────────
+// Single source of truth for symmetric simple settings: load and save both
+// iterate the same rows so the two sides can never drift. Only plain mirrors
+// live here (setChecked<->SetBool(checkState==Checked), setCurrentIndex<->
+// SetInt(currentIndex), setValue<->SetInt/SetDouble(value)). Anything with a
+// transform / dev-only gate / migration / invalidate-couple / non-mirror save
+// stays out of the table and keeps its original code.
+//
+// Order is IDENTICAL to the original setupSensitivityAndToggles load order so
+// the segmented load below reproduces the exact sequence of widget loads
+// (slot side-effects and parent/child enable wiring are observable). The named
+// segment-boundary constants index this table.
+void MelonPrimeInputConfig::buildSettingBindings()
+{
+    using K = SettingKind;
+    namespace C = MelonPrime::CfgKey;
+    m_settingBindings = {
+        // Segment 1: sensitivities + toggles, up to (not incl.) the dynamic
+        // Low-Latency Aim Mode combo block.
+        { C::MphSens,        K::DoubleSpinDouble, ui->metroidMphSensitvitySpinBox },     // 0
+        { C::AimSens,        K::SpinInt,          ui->metroidAimSensitvitySpinBox },     // 1
+        { C::AimYScale,      K::DoubleSpinDouble, ui->metroidAimYAxisScaleSpinBox },     // 2
+        { C::AimAdjust,      K::DoubleSpinDouble, ui->metroidAimAdjustSpinBox },         // 3
+        { C::SnapTap,        K::CheckBool,        ui->cbMetroidEnableSnapTap },          // 4
+        { C::DataUnlock,     K::CheckBool,        ui->cbMetroidUnlockAll },              // 5
+        { C::Headphone,      K::CheckBool,        ui->cbMetroidApplyHeadphone },         // 6
+        { C::UseFwName,      K::CheckBool,        ui->cbMetroidUseFirmwareName },        // 7
+        { C::HunterApply,    K::CheckBool,        ui->cbMetroidApplyHunter },            // 8
+        { C::HunterSel,      K::ComboIndexInt,    ui->comboMetroidSelectedHunter },      // 9
+        { C::LicColorApply,  K::CheckBool,        ui->cbMetroidApplyColor },             // 10
+        { C::LicColorSel,    K::ComboIndexInt,    ui->comboMetroidSelectedColor },       // 11
+        { C::SfxVolApply,    K::CheckBool,        ui->cbMetroidApplySfxVolume },         // 12
+        { C::SfxVol,         K::SpinInt,          ui->spinMetroidVolumeSFX },            // 13
+        { C::MusicVolApply,  K::CheckBool,        ui->cbMetroidApplyMusicVolume },       // 14
+        { C::MusicVol,       K::SpinInt,          ui->spinMetroidVolumeMusic },          // 15
+        { C::Joy2Key,        K::CheckBool,        ui->cbMetroidApplyJoy2KeySupport },    // 16
+        { C::StylusMode,     K::CheckBool,        ui->cbMetroidEnableStylusMode },       // 17
+        { C::DisableMphAimSmoothing, K::CheckBool, ui->cbMetroidDisableMphAimSmoothing }, // 18
+        { C::AimAccumulator, K::CheckBool,        ui->cbMetroidEnableAimAccumulator },   // 19
+        // Segment 2: Screen Sync Mode (after the native-hook block).
+        { C::ScreenSyncMode, K::ComboIndexInt,    ui->comboMetroidScreenSyncMode },      // 20
+        // Segment 3a: bug fixes (before the developer-only tooltip block).
+        { C::WifiBitset,     K::CheckBool,        ui->cbMetroidFixWifiBitset },          // 21
+        { C::FixShadowFreeze, K::CheckBool,       ui->cbMetroidFixShadowFreeze },        // 22
+        { C::FixNoxusBladePersistence, K::CheckBool, ui->cbMetroidFixNoxusBladePersistence }, // 23
+        // Segment 3b: more bug fixes + game features (before the
+        // ExpandStageMatrixExtra enable line). ExpandStageMatrix MUST precede
+        // ExpandStageMatrixExtra so its slot doesn't clobber the loaded Extra.
+        { C::UseFirmwareLanguage, K::CheckBool,   ui->cbMetroidUseFirmwareLanguage },    // 24
+        { C::ShowHeadshotOnline, K::CheckBool,    ui->cbMetroidShowHeadshotOnline },     // 25
+        { C::ShowEnemyHpMeterOnline, K::CheckBool, ui->cbMetroidShowEnemyHpMeterOnline }, // 26
+        { C::ExpandStageMatrix, K::CheckBool,     ui->cbMetroidExpandStageMatrix },      // 27
+        { C::ExpandStageMatrixExtra, K::CheckBool, ui->cbMetroidExpandStageMatrixExtra }, // 28
+        // Segment 3c: double-damage pair (before the parent/child sync wiring).
+        { C::DisableDoubleDamageMultiplier, K::CheckBool, ui->cbMetroidDisableDoubleDamageMultiplier }, // 29
+        { C::DamageNotifyPurple, K::CheckBool,    ui->cbMetroidDamageNotifyPurple },     // 30
+        // Segment 3d: pickup toggles (before the pickup parent/child wiring).
+        { C::PowerUpPickupNoEffectPowerUps, K::CheckBool, ui->cbMetroidDisablePickupPowerUps }, // 31
+        { C::PowerUpPickupNoEffectDoubleDamage, K::CheckBool, ui->cbMetroidDisablePickupDoubleDamage }, // 32
+        { C::PowerUpPickupNoEffectCloak, K::CheckBool, ui->cbMetroidDisablePickupCloak }, // 33
+        { C::PowerUpPickupNoEffectDeathalt, K::CheckBool, ui->cbMetroidDisablePickupDeathalt }, // 34
+        // Segment 3e: in-game scaling.
+        { C::InGameAspectRatio, K::CheckBool,     ui->cbMetroidInGameAspectRatio },      // 35
+        { C::InGameAspectRatioMode, K::ComboIndexInt, ui->comboMetroidInGameAspectRatioMode }, // 36
+        // Segment 3f: Low HP warning (before updateLowHpWarningControls).
+        { C::LowHpWarningMode,   K::ComboIndexInt, ui->comboMetroidLowHpWarningMode },   // 37
+        { C::LowHpWarningFixed,  K::SpinInt,       ui->spinMetroidLowHpWarningFixed },   // 38
+        { C::LowHpWarningLow,    K::SpinInt,       ui->spinMetroidLowHpWarningLow },     // 39
+        { C::LowHpWarningMedium, K::SpinInt,       ui->spinMetroidLowHpWarningMedium },  // 40
+        { C::LowHpWarningHigh,   K::SpinInt,       ui->spinMetroidLowHpWarningHigh },    // 41
+        { C::LowHpWarningAutoBase, K::SpinInt,     ui->spinMetroidLowHpWarningAutoBase }, // 42
+    };
+}
+
+void MelonPrimeInputConfig::loadBindingsRange(Config::Table& instcfg, int begin, int end)
+{
+    for (int i = begin; i < end; ++i) {
+        const SettingBinding& b = m_settingBindings[i];
+        switch (b.kind) {
+        case SettingKind::CheckBool:
+            static_cast<QCheckBox*>(b.widget)->setChecked(instcfg.GetBool(b.key));
+            break;
+        case SettingKind::ComboIndexInt:
+            static_cast<QComboBox*>(b.widget)->setCurrentIndex(instcfg.GetInt(b.key));
+            break;
+        case SettingKind::SpinInt:
+            static_cast<QSpinBox*>(b.widget)->setValue(instcfg.GetInt(b.key));
+            break;
+        case SettingKind::DoubleSpinDouble:
+            static_cast<QDoubleSpinBox*>(b.widget)->setValue(instcfg.GetDouble(b.key));
+            break;
+        }
+    }
+}
+
+void MelonPrimeInputConfig::saveBindings(Config::Table& instcfg)
+{
+    for (const SettingBinding& b : m_settingBindings) {
+        switch (b.kind) {
+        case SettingKind::CheckBool:
+            instcfg.SetBool(b.key,
+                static_cast<QCheckBox*>(b.widget)->checkState() == Qt::Checked);
+            break;
+        case SettingKind::ComboIndexInt:
+            instcfg.SetInt(b.key, static_cast<QComboBox*>(b.widget)->currentIndex());
+            break;
+        case SettingKind::SpinInt:
+            instcfg.SetInt(b.key, static_cast<QSpinBox*>(b.widget)->value());
+            break;
+        case SettingKind::DoubleSpinDouble:
+            instcfg.SetDouble(b.key, static_cast<QDoubleSpinBox*>(b.widget)->value());
+            break;
+        }
+    }
+}
+
 void MelonPrimeInputConfig::setupSensitivityAndToggles(Config::Table& instcfg)
 {
-    // Sensitivities
-    ui->metroidMphSensitvitySpinBox->setValue(instcfg.GetDouble("Metroid.Sensitivity.Mph"));
-    ui->metroidAimSensitvitySpinBox->setValue(instcfg.GetInt("Metroid.Sensitivity.Aim"));
-    ui->metroidAimYAxisScaleSpinBox->setValue(instcfg.GetDouble("Metroid.Sensitivity.AimYAxisScale"));
-    ui->metroidAimAdjustSpinBox->setValue(instcfg.GetDouble("Metroid.Aim.Adjust"));
+    buildSettingBindings();
 
-    // Toggles
-    ui->cbMetroidEnableSnapTap->setChecked(instcfg.GetBool("Metroid.Operation.SnapTap"));
-    ui->cbMetroidUnlockAll->setChecked(instcfg.GetBool("Metroid.Data.Unlock"));
-    ui->cbMetroidApplyHeadphone->setChecked(instcfg.GetBool("Metroid.Apply.Headphone"));
-    ui->cbMetroidUseFirmwareName->setChecked(instcfg.GetBool("Metroid.Use.Firmware.Name"));
-
-    // Hunter license
-    ui->cbMetroidApplyHunter->setChecked(instcfg.GetBool("Metroid.HunterLicense.Hunter.Apply"));
-    ui->comboMetroidSelectedHunter->setCurrentIndex(
-        instcfg.GetInt("Metroid.HunterLicense.Hunter.Selected"));
-
-    ui->cbMetroidApplyColor->setChecked(instcfg.GetBool("Metroid.HunterLicense.Color.Apply"));
-    ui->comboMetroidSelectedColor->setCurrentIndex(
-        instcfg.GetInt("Metroid.HunterLicense.Color.Selected"));
-
-    // Volume
-    ui->cbMetroidApplySfxVolume->setChecked(instcfg.GetBool("Metroid.Apply.SfxVolume"));
-    ui->spinMetroidVolumeSFX->setValue(instcfg.GetInt("Metroid.Volume.SFX"));
-
-    ui->cbMetroidApplyMusicVolume->setChecked(instcfg.GetBool("Metroid.Apply.MusicVolume"));
-    ui->spinMetroidVolumeMusic->setValue(instcfg.GetInt("Metroid.Volume.Music"));
-
-    // Other Metroid Settings 2 Tab
-    ui->cbMetroidApplyJoy2KeySupport->setChecked(instcfg.GetBool("Metroid.Apply.joy2KeySupport"));
-    ui->cbMetroidEnableStylusMode->setChecked(instcfg.GetBool("Metroid.Enable.stylusMode"));
-    ui->cbMetroidDisableMphAimSmoothing->setChecked(instcfg.GetBool("Metroid.Aim.Disable.MphAimSmoothing"));
-    ui->cbMetroidEnableAimAccumulator->setChecked(instcfg.GetBool("Metroid.Aim.Enable.Accumulator"));
+    // Segment 1 [0,20): sensitivities + toggles, up to the dynamic
+    // Low-Latency Aim Mode combo block. (setChecked on stylus/smoothing fires
+    // slots that cross-read each other; order is preserved by the table order.)
+    loadBindingsRange(instcfg, 0, 20);
     if (!m_comboMetroidLowLatencyAimMode) {
         m_comboMetroidLowLatencyAimMode = new QComboBox(ui->sectionSensitivity);
         m_comboMetroidLowLatencyAimMode->addItem(
@@ -214,6 +303,9 @@ void MelonPrimeInputConfig::setupSensitivityAndToggles(Config::Table& instcfg)
             QStringLiteral("Controls how the game's current aim direction follows the target aim direction."));
         int lowLatencyAimMode = ClampLowLatencyAimMode(
             instcfg.GetInt(MelonPrime::CfgKey::LowLatencyAimMode));
+        // Legacy key migration — do not add new reads; remove after a release cycle.
+        // Old configs only had the InstantAimFollow bool; map it onto the new
+        // LowLatencyAimMode enum when the new key is still at its Off default.
         if (lowLatencyAimMode == MelonPrime::LowLatencyAimMode::Off
             && instcfg.GetBool(MelonPrime::CfgKey::InstantAimFollow))
             lowLatencyAimMode = MelonPrime::LowLatencyAimMode::InstantAimFollow;
@@ -274,16 +366,15 @@ void MelonPrimeInputConfig::setupSensitivityAndToggles(Config::Table& instcfg)
         });
     updateAimControlsForStylusMode(ui->cbMetroidEnableStylusMode->isChecked());
 
-    // Screen Sync Mode
-    ui->comboMetroidScreenSyncMode->setCurrentIndex(instcfg.GetInt("Metroid.Screen.SyncMode"));
+    // Segment 2 [20,21): Screen Sync Mode.
+    loadBindingsRange(instcfg, 20, 21);
+    // Clip/TopScreen stay outside the table: their save side is coupled to an
+    // invalidate (old != new comparison), so they keep their original form.
     ui->cbMetroidClipCursorToBottomScreenWhenNotInGame->setChecked(instcfg.GetBool("Metroid.Visual.ClipCursorToBottomScreenWhenNotInGame"));
     ui->cbMetroidInGameTopScreenOnly->setChecked(instcfg.GetBool("Metroid.Visual.InGameTopScreenOnly"));
 
-    // Bug fixes
-    ui->cbMetroidFixWifiBitset->setChecked(instcfg.GetBool("Metroid.BugFix.WifiBitset"));
-    ui->cbMetroidFixShadowFreeze->setChecked(instcfg.GetBool("Metroid.BugFix.FixShadowFreeze"));
-    ui->cbMetroidFixNoxusBladePersistence->setChecked(
-        instcfg.GetBool("Metroid.BugFix.FixNoxusBladePersistence"));
+    // Segment 3a [21,24): bug fixes (before the developer-only tooltip block).
+    loadBindingsRange(instcfg, 21, 24);
     if constexpr (kDeveloperOnlyFeaturesEnabled) {
         ui->cbMetroidEnableNativeAimPostFoldWrite->setToolTip("Developer-only option enabled in this build.");
         ui->cbMetroidEnableNativeAimRegisterInjection->setToolTip("Developer-only option enabled in this build.");
@@ -293,16 +384,13 @@ void MelonPrimeInputConfig::setupSensitivityAndToggles(Config::Table& instcfg)
         ui->cbMetroidEnableNativeAimPostFoldWrite->setToolTip(
             "Developer-only option. Build with MELONPRIME_ENABLE_DEVELOPER_FEATURES to enable it.");
     }
-    ui->cbMetroidUseFirmwareLanguage->setChecked(instcfg.GetBool("Metroid.BugFix.UseFirmwareLanguage"));
-    ui->cbMetroidShowHeadshotOnline->setChecked(instcfg.GetBool("Metroid.GameFeature.ShowHeadshotOnline"));
-    ui->cbMetroidShowEnemyHpMeterOnline->setChecked(instcfg.GetBool("Metroid.GameFeature.ShowEnemyHpMeterOnline"));
-    ui->cbMetroidExpandStageMatrix->setChecked(instcfg.GetBool("Metroid.GameFeature.ExpandStageMatrix"));
-    ui->cbMetroidExpandStageMatrixExtra->setChecked(instcfg.GetBool("Metroid.GameFeature.ExpandStageMatrixExtra"));
+    // Segment 3b [24,29): more bug fixes + game features. ExpandStageMatrix is
+    // loaded before ExpandStageMatrixExtra (table order) so its slot doesn't
+    // clobber the loaded Extra value; the Extra enable line follows after.
+    loadBindingsRange(instcfg, 24, 29);
     ui->cbMetroidExpandStageMatrixExtra->setEnabled(ui->cbMetroidExpandStageMatrix->isChecked());
-    ui->cbMetroidDisableDoubleDamageMultiplier->setChecked(
-        instcfg.GetBool("Metroid.GameFeature.DisableDoubleDamageMultiplier"));
-    ui->cbMetroidDamageNotifyPurple->setChecked(
-        instcfg.GetBool("Metroid.GameFeature.DamageNotifyPurple"));
+    // Segment 3c [29,31): double-damage pair (before the parent/child wiring).
+    loadBindingsRange(instcfg, 29, 31);
 
     // Parent-child: Damage Notify Purple requires Disable Double Damage Multiplier
     // so the purple flash never becomes a real 2x boost.
@@ -335,15 +423,9 @@ void MelonPrimeInputConfig::setupSensitivityAndToggles(Config::Table& instcfg)
     syncDamageNotifyPurpleEnableState(
         !ui->cbMetroidDisableDoubleDamageMultiplier->isChecked());
 
-    // Pickup effect toggles
-    ui->cbMetroidDisablePickupPowerUps->setChecked(
-        instcfg.GetBool("Metroid.GameFeature.PowerUpPickupNoEffectPowerUps"));
-    ui->cbMetroidDisablePickupDoubleDamage->setChecked(
-        instcfg.GetBool("Metroid.GameFeature.PowerUpPickupNoEffectDoubleDamage"));
-    ui->cbMetroidDisablePickupCloak->setChecked(
-        instcfg.GetBool("Metroid.GameFeature.PowerUpPickupNoEffectCloak"));
-    ui->cbMetroidDisablePickupDeathalt->setChecked(
-        instcfg.GetBool("Metroid.GameFeature.PowerUpPickupNoEffectDeathalt"));
+    // Segment 3d [31,35): pickup effect toggles (before the pickup parent/child
+    // wiring). The parent (PowerUps) is loaded first, matching original order.
+    loadBindingsRange(instcfg, 31, 35);
     auto updatePickupPowerUpChildren = [this](bool disableAllPowerUps, bool syncChildren) {
         if (syncChildren) {
             ui->cbMetroidDisablePickupDoubleDamage->setChecked(disableAllPowerUps);
@@ -364,17 +446,10 @@ void MelonPrimeInputConfig::setupSensitivityAndToggles(Config::Table& instcfg)
     const bool disableAllPowerUps = ui->cbMetroidDisablePickupPowerUps->isChecked();
     updatePickupPowerUpChildren(disableAllPowerUps, disableAllPowerUps);
 
-    // In-game scaling
-    ui->cbMetroidInGameAspectRatio->setChecked(instcfg.GetBool("Metroid.Visual.InGameAspectRatio"));
-    ui->comboMetroidInGameAspectRatioMode->setCurrentIndex(instcfg.GetInt("Metroid.Visual.InGameAspectRatioMode"));
-
-    // Low HP warning threshold
-    ui->comboMetroidLowHpWarningMode->setCurrentIndex(instcfg.GetInt("Metroid.LowHpWarning.Mode"));
-    ui->spinMetroidLowHpWarningFixed->setValue(instcfg.GetInt("Metroid.LowHpWarning.Fixed"));
-    ui->spinMetroidLowHpWarningLow->setValue(instcfg.GetInt("Metroid.LowHpWarning.Low"));
-    ui->spinMetroidLowHpWarningMedium->setValue(instcfg.GetInt("Metroid.LowHpWarning.Medium"));
-    ui->spinMetroidLowHpWarningHigh->setValue(instcfg.GetInt("Metroid.LowHpWarning.High"));
-    ui->spinMetroidLowHpWarningAutoBase->setValue(instcfg.GetInt("Metroid.LowHpWarning.AutoBase"));
+    // Segment 3e [35,37): in-game scaling.
+    // Segment 3f [37,43): Low HP warning thresholds.
+    // Both are contiguous with no interleaved special logic, so apply [35,43).
+    loadBindingsRange(instcfg, 35, 43);
     updateLowHpWarningControls(ui->comboMetroidLowHpWarningMode->currentIndex());
 }
 
