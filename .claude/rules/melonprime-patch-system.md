@@ -241,7 +241,8 @@ For bug fixes, the **BUG FIXES** section (`btnToggleBugFix` / `sectionBugFix`) a
 immediately above the GAMEPLAY TOGGLES section in the Settings tab.
 
 Visible MelonPrime settings text must also be registered for English/Japanese localization in
-`src/frontend/qt_sdl/MelonPrimeLocalization.h`:
+`src/frontend/qt_sdl/MelonPrimeLocalization.cpp` (the public API stays in
+`MelonPrimeLocalization.h`):
 
 - Short labels, checkbox text, combo items, button text, tooltips, and anonymous descriptions go in
   `MelonPrime::UiText::kTranslations` as English source text -> Japanese display text.
@@ -270,20 +271,30 @@ Add to `sectionBugFix`'s `QVBoxLayout`:
 </item>
 ```
 
-Then add the checkbox label and description text to `MelonPrimeLocalization.h`. For the description
-above, prefer the `lblMetroidFooDesc` object-name mapping.
+Then add the checkbox label and description text to `MelonPrimeLocalization.cpp`. For the
+description above, prefer the `lblMetroidFooDesc` object-name mapping.
 
-### 5. Settings wiring — `MelonPrimeInputConfig.cpp`
+### 5. Settings wiring — `CfgKey` + `MelonPrimeInputConfig.cpp`
 
-In `setupSensitivityAndToggles(instcfg)`, add:
+Add a config-key constant to `MelonPrimeDef.h` under `namespace MelonPrime::CfgKey`:
 
 ```cpp
-// Bug fixes
-ui->cbMetroidFoo->setChecked(instcfg.GetBool("Metroid.BugFix.Foo"));
+inline constexpr const char* Foo = "Metroid.BugFix.Foo";
 ```
 
-The BUG FIXES section toggle is already registered in `setupCollapsibleSections`.
-No extra `setupToggle` call is needed for new checkboxes inside the existing section.
+For a straightforward mirrored setting (checkbox, combo index, int spin box, or double spin box),
+add one row to `MelonPrimeInputConfig::buildSettingBindings()` in the matching segment:
+
+```cpp
+{ C::Foo, K::CheckBool, ui->cbMetroidFoo },
+```
+
+`loadBindingsRange()` and `saveBindings()` then handle the load/save path. Keep the row in the
+same segment where the old manual load would have lived; some segment boundaries preserve
+observable slot side effects and parent/child enable ordering.
+
+The BUG FIXES section toggle is already registered in `setupCollapsibleSections`. No extra
+`setupToggle` call is needed for new checkboxes inside the existing section.
 
 #### Checkbox dependencies (parent/child enable control)
 
@@ -312,8 +323,7 @@ void MelonPrimeInputConfig::on_cbMetroidFoo_stateChanged(int state)
 **`setupSensitivityAndToggles`** — set the initial enabled state after setting the check states:
 
 ```cpp
-ui->cbMetroidFoo->setChecked(instcfg.GetBool("Metroid.BugFix.Foo"));
-ui->cbMetroidFooChild->setChecked(instcfg.GetBool("Metroid.BugFix.FooChild"));
+// The checked states should normally come from buildSettingBindings() + loadBindingsRange().
 ui->cbMetroidFooChild->setEnabled(ui->cbMetroidFoo->isChecked());
 ```
 
@@ -321,10 +331,14 @@ Qt's `QMetaObject::connectSlotsByName` (called inside `ui->setupUi(this)`) autom
 
 ### 6. Save — `MelonPrimeInputConfigConfig.cpp`
 
-In `saveConfig()`, inside the "Bug fixes" block:
+For generic bindings from step 5, no manual save line is needed; `saveBindings()` writes the key.
+Only add direct `instcfg.Set*()` code for special cases that are intentionally outside the binding
+table (legacy migrations, old/new invalidation coupling, dynamic combo data, or developer-only
+guarded settings). If a special case is needed, keep it near the related block and use `CfgKey::*`
+where available:
 
 ```cpp
-instcfg.SetBool("Metroid.BugFix.Foo", ui->cbMetroidFoo->checkState() == Qt::Checked);
+instcfg.SetBool(MelonPrime::CfgKey::Foo, ui->cbMetroidFoo->checkState() == Qt::Checked);
 ```
 
 ### 7. Config defaults — `Config.cpp`
@@ -338,6 +352,12 @@ In `DefaultBools`, add inside the `#ifdef MELONPRIME_DS` block
 
 If the config key uses `GetInt` or `GetDouble`, add it to `DefaultInts` / `DefaultDoubles` instead
 (see repo-architecture.md "Default value type classification" for the type-list rule).
+
+Run the checked-in default coverage audit after adding settings:
+
+```powershell
+.\.claude\skills\audit-config-defaults.ps1
+```
 
 ---
 

@@ -17,6 +17,7 @@ This file is an index only. Keep detailed instructions in the linked Rules, Skil
 - [.claude/rules/melonprime-developer-only-section.md](.claude/rules/melonprime-developer-only-section.md)
 - [.claude/rules/compute-renderer-mosaic-bug.md](.claude/rules/compute-renderer-mosaic-bug.md)
 - [.claude/rules/mphcodex-reference.md](.claude/rules/mphcodex-reference.md)
+- [.claude/rules/notes/README.md](.claude/rules/notes/README.md)
 
 ## Skills
 - [.claude/skills/README.md](.claude/skills/README.md)

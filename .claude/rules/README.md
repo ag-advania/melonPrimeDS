@@ -13,3 +13,4 @@
 - [MelonPrime Developer Only Section](melonprime-developer-only-section.md)
 - [Compute Renderer Mosaic Bug — Investigation Log](compute-renderer-mosaic-bug.md)
 - [MphCodex Reference Workflow](mphcodex-reference.md)
+- [Historical Implementation Notes](notes/README.md)

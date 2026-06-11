@@ -1407,7 +1407,7 @@ The current runtime caches the following.
 | Text bitmap / measurement cache | Reuse pixmap/measurement results for repeated text drawing |
 | Weapon/bomb icon cache | Reuse SVG/icon rasterization and tinting |
 | Radar-frame cache | Regenerate SVG frame, tint, and outline only when size/color changes |
-| Static dirty rect | Recompute dirty rects for fixed-position HUD elements only when config/transform changes |
+| Drawn dirty rect | Accumulate actual drawn glyph/icon/gauge footprints each frame via `s_drawnDirtyPx`; union with crosshair dirty rect |
 | Crosshair dirty rect | Union of previous/current crosshair bounding boxes |
 | `s_frameFont` (OPT-HUD-6) | Cached `QFont` populated once in `EnsureHudFont()`; eliminates 6 per-frame `p->font()` CoW copies |
 
@@ -1475,3 +1475,55 @@ On the Screen-integration side, per-frame costs outside the HUD overlay itself a
 - `m_hudCfgEpoch` and `m_radarCfgEpoch` are intentionally separated so that the software path and the GL radar path do not invalidate each other’s cache refreshes.
 - `m_hudTopMatrix` depends on the result of `setupScreenLayout()`. If a change bypasses layout updates, watch out for missed updates to this cache.
 - `.inc` fragments are not compiled on their own. They depend on the scope of the including file, local variables, and `#ifdef MELONPRIME_CUSTOM_HUD`.
+
+---
+
+## 21. Structural Refactor 2026-06
+
+## 21.1 Central theme
+
+The Phase 0-8 structural refactor removed stale references, centralized duplicated lifecycle
+wiring, and made ownership boundaries explicit while preserving the hot-path design described in
+Rounds 6-9. The work intentionally avoided changing frame pacing, aim math, raw-input memory
+ordering, and `MelonPrime.h` member layout.
+
+## 21.2 Integrated results
+
+| Area | Result |
+|---|---|
+| Dead code / stale docs | Removed the empty `PrePollRawInput()` path, unused raw-input wrappers, stale CMake dead-file comments, and source-tree investigation notes. Notes now live under `.claude/rules/notes/`. |
+| Static write-patches | Added `MelonPrimePatchCommon.h` (`StaticWordPatch`) and `MelonPrimePatchRegistry.h/.cpp`. `MelonPrime.cpp` now calls registry APIs instead of maintaining per-module apply/restore/reset lists. |
+| ROM / weapon tables | `MelonPrimeGameRomAddrTable.h` is an X-macro source of truth for address lists, `RomAddresses`, and `CreateRomAddress()`. Weapon IDs and masks are owned by `MelonPrimeDef.h`. |
+| Runtime lifecycle | Added `ResetTransientInputState()` with explicit bitmask subsets so the six transient reset sites preserve their historical differences without copy-pasted field clusters. |
+| Settings / localization | Moved localization tables to `MelonPrimeLocalization.cpp`; non-HUD mirrored settings now use `MelonPrimeInputConfig::buildSettingBindings()` for load/save; default coverage audit is checked in as `.claude/skills/audit-config-defaults.ps1`. |
+| Unity fragments | Replaced the included HUD `.cpp` with `MelonPrimeHudConfigOnScreenUnity.inc`; strengthened `.inc` ownership checks; documented `MelonPrimeGameInput.cpp`, `Screen.cpp`, `MelonPrimeHudRender.cpp`, and `EmuThread.cpp` as unity parents. |
+| EmuThread integration | Added `MelonPrimeEmuThread*.inc` for self-contained MelonPrime integration points while leaving frame pacing, RunFrameHook calls, hotkey branches, and DSi/layout bypass logic inline. |
+
+## 21.3 Final metrics snapshot
+
+Measured on 2026-06-11, branch `highres_fonts_v3`, MinGW preset `release-mingw-x86_64`, developer
+features enabled.
+
+| Metric | Phase 0 snapshot | Final snapshot | Delta |
+|---|---:|---:|---:|
+| `src/frontend/qt_sdl/MelonPrime*` all files | 21,612 lines | 20,828 lines | -784 |
+| `src/frontend/qt_sdl/MelonPrime*` code only | 20,504 lines | 20,828 lines | +324 |
+| `InputConfig/MelonPrime*` excluding `.ui` | 3,996 lines | 4,022 lines | +26 |
+| `MelonPrimeInputConfig.ui` | 1,239 lines | 1,239 lines | 0 |
+| Combined comparable set | 26,847 lines | 26,089 lines | -758 |
+| `melonDS.exe` | 48,609,280 bytes | 48,606,208 bytes | -3,072 bytes |
+
+Build verification at final snapshot: `.\.claude\skills\build-mingw.bat --tail 80` succeeded in
+4.7 seconds on an up-to-date tree (configure + vcpkg check + no-op Ninja build). This timing is not
+a clean-build benchmark; it is the Phase 8 verification measurement.
+
+## 21.4 Remaining caution points
+
+- Phase 4 preserved historical transient reset differences, including the documented omission of
+  `TR_BipedFire` from `OnEmuStart` and `TR_AimResiduals` / `TR_OverlayHeld` from `OnEmuStop`.
+- `NoPickingUpSpecificItems` and `FixWifi` intentionally keep custom patch state machines because
+  they do not match the all-or-nothing `StaticWordPatch` shape.
+- Runtime instruction hooks remain outside `MelonPrimePatchRegistry`; `MelonPrimeArm9Hook.cpp` is
+  the dispatcher/registry for those hooks.
+- Manual smoke checks are still tracked per phase in `melonprime-full-refactor-plan.md`; Phase 8
+  changed documentation only.
