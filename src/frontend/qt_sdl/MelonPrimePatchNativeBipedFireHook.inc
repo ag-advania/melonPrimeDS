@@ -51,15 +51,39 @@
         // DirectCallHookAddr matches the reliable player-update BL used by
         // WeaponSwitchHook.  The inner edge hook only forces r0=1 during the
         // trampoline's direct PlayerFireUpdate call.
+#define MP_NATIVE_BIPED_FIRE_SITE(i, fireUpdateAddr, innerEdgeHookAddr, expectedInnerEdgeMovs) \
+        { LIST_HookPlayerUpdateActiveCallAddr[i], LIST_HookPlayerUpdateActiveCallExpected[i], \
+          fireUpdateAddr, innerEdgeHookAddr, expectedInnerEdgeMovs, \
+          LIST_HookLocalPlayerPtrGlobal[i] }
         static constexpr NativeBipedFireSite kNativeBipedFireSites[] = {
-            { 0x020263DCu, 0xEB000206u, 0x020271E0u, 0x02027234u, 0xE1B06000u, 0x020BE790u },
-            { 0x020263DCu, 0xEB000206u, 0x020271E0u, 0x02027234u, 0xE1B06000u, 0x020BE750u },
-            { 0x02026400u, 0xEB000206u, 0x02027204u, 0x02027258u, 0xE1B06000u, 0x020BCA70u },
-            { 0x02026400u, 0xEB000206u, 0x02027204u, 0x02027258u, 0xE1B06000u, 0x020BD2D0u },
-            { 0x020263F8u, 0xEB000206u, 0x020271FCu, 0x02027250u, 0xE1B06000u, 0x020BD2F0u },
-            { 0x02026400u, 0xEB000206u, 0x02027204u, 0x02027258u, 0xE1B06000u, 0x020BD370u },
-            { 0x0200CF1Cu, 0xEBFFFCDEu, 0x0200BD28u, 0x0200BD78u, 0xE1B04000u, 0x020B6240u },
+            MP_NATIVE_BIPED_FIRE_SITE(0, 0x020271E0u, 0x02027234u, 0xE1B06000u),
+            MP_NATIVE_BIPED_FIRE_SITE(1, 0x020271E0u, 0x02027234u, 0xE1B06000u),
+            MP_NATIVE_BIPED_FIRE_SITE(2, 0x02027204u, 0x02027258u, 0xE1B06000u),
+            MP_NATIVE_BIPED_FIRE_SITE(3, 0x02027204u, 0x02027258u, 0xE1B06000u),
+            MP_NATIVE_BIPED_FIRE_SITE(4, 0x020271FCu, 0x02027250u, 0xE1B06000u),
+            MP_NATIVE_BIPED_FIRE_SITE(5, 0x02027204u, 0x02027258u, 0xE1B06000u),
+            MP_NATIVE_BIPED_FIRE_SITE(6, 0x0200BD28u, 0x0200BD78u, 0xE1B04000u),
         };
+#undef MP_NATIVE_BIPED_FIRE_SITE
+        static_assert(
+            sizeof(kNativeBipedFireSites) / sizeof(kNativeBipedFireSites[0])
+                == static_cast<uint32_t>(RomGroup::COUNT),
+            "Native biped-fire hook-site table must cover every ROM group");
+        static constexpr bool NativeBipedFire_SitesInMainRam() noexcept
+        {
+            for (const auto& site : kNativeBipedFireSites) {
+                if (!RomAddrDetail::InMainRam(site.DirectCallHookAddr)
+                    || !RomAddrDetail::InMainRam(site.FireUpdateAddr)
+                    || !RomAddrDetail::InMainRam(site.InnerEdgeHookAddr)
+                    || !RomAddrDetail::InMainRam(site.LocalPlayerPtrGlobal))
+                {
+                    return false;
+                }
+            }
+            return true;
+        }
+        static_assert(NativeBipedFire_SitesInMainRam(),
+                      "Native biped-fire hook-site table contains a non-main-RAM address");
 
         [[nodiscard]] static FORCE_INLINE const NativeBipedFireSite*
         NativeBipedFire_GetSite(uint8_t romGroupIndex) noexcept

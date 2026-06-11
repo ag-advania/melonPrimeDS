@@ -132,25 +132,18 @@ static const HudSubSec kSubsRadar[] = {
 };
 
 // IN-GAME OSD COLOR sub-sections
+#define MP_OSD_COLOR_EMIT_LITERAL_SUBSECTION(id, dialogLabel, sectionKey, propArray) \
+    SUB(dialogLabel, sectionKey, propArray),
+#define MP_OSD_COLOR_EMIT_SLOT_SUBSECTION(id, dialogLabel, sectionKey, propArray, keyPrefix, description, colorLabel) \
+    SUB(dialogLabel, sectionKey, propArray),
 static const HudSubSec kSubsOsdColor[] = {
     SUB("Node Stolen (H211)",  "Metroid.UI.SectionOsdH211",         kSecOsdH211),
-    SUB("Lost Lives",          "Metroid.UI.SectionOsdLostLives",    kSecOsdLostLives),
-    SUB("Kill / Death",        "Metroid.UI.SectionOsdKillDeath",    kSecOsdKillDeath),
-    SUB("Return to Base",      "Metroid.UI.SectionOsdReturnBase",   kSecOsdReturnBase),
-    SUB("No Ammo",             "Metroid.UI.SectionOsdNoAmmo",       kSecOsdNoAmmo),
-    SUB("Coward Detect",       "Metroid.UI.SectionOsdCowardDetect", kSecOsdCowardDetect),
-    SUB("Acquiring Node",      "Metroid.UI.SectionOsdAcquiringNode",kSecOsdAcquiringNode),
-    SUB("Turret",              "Metroid.UI.SectionOsdTurret",       kSecOsdTurret),
-    SUB("Octo Reset",          "Metroid.UI.SectionOsdOctoReset",    kSecOsdOctoReset),
-    SUB("Octo Drop",           "Metroid.UI.SectionOsdOctoDrop",     kSecOsdOctoDrop),
-    SUB("Octo Condition",      "Metroid.UI.SectionOsdOctoCond",     kSecOsdOctoCond),
-    SUB("Octo Missing",        "Metroid.UI.SectionOsdOctoMissing",  kSecOsdOctoMissing),
+    MP_OSD_COLOR_LITERAL_SUBSECTIONS(MP_OSD_COLOR_EMIT_LITERAL_SUBSECTION)
     // Slot override colors (flags-based, effective when "Use Global Color for All" is OFF)
-    SUB("Slot: Kill / Death  [flags=0x02]",    "Metroid.UI.SectionOsdSlotKillDeath", kSecOsdSlotKillDeath),
-    SUB("Slot: Node Capture  [flags=0x11]",    "Metroid.UI.SectionOsdSlotNode",      kSecOsdSlotNode),
-    SUB("Slot: Objective     [flags=0x01]",    "Metroid.UI.SectionOsdSlotObjective", kSecOsdSlotObjective),
-    SUB("Slot: System / Misc [flags=0x00]",    "Metroid.UI.SectionOsdSlotSystem",    kSecOsdSlotSystem),
+    MP_OSD_COLOR_SLOT_ROWS(MP_OSD_COLOR_EMIT_SLOT_SUBSECTION)
 };
+#undef MP_OSD_COLOR_EMIT_LITERAL_SUBSECTION
+#undef MP_OSD_COLOR_EMIT_SLOT_SUBSECTION
 
 // Main section groups
 static const HudMainSec kHudMainSections[] = {

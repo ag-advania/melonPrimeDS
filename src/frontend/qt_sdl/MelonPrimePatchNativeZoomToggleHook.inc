@@ -47,14 +47,34 @@
         // ROM group order: JP1_0=0, JP1_1=1, US1_0=2, US1_1=3,
         //                  EU1_0=4, EU1_1=5, KR1_0=6
         static constexpr NativeZoomToggleSite kNativeZoomToggleSites[] = {
-            { 0x020BE790u, 0x02015C98u, 0x02024174u },
-            { 0x020BE750u, 0x02015C98u, 0x02024174u },
-            { 0x020BCA70u, 0x02015CB8u, 0x02024198u },
-            { 0x020BD2D0u, 0x02015CBCu, 0x02024198u },
-            { 0x020BD2F0u, 0x02015CB0u, 0x02024190u },
-            { 0x020BD370u, 0x02015CBCu, 0x02024198u },
-            { 0x020B6240u, 0x0201CEBCu, 0x0200D07Cu },
+            { LIST_HookLocalPlayerPtrGlobal[0], 0x02015C98u, LIST_HookActionConsumerPc[0] },
+            { LIST_HookLocalPlayerPtrGlobal[1], 0x02015C98u, LIST_HookActionConsumerPc[1] },
+            { LIST_HookLocalPlayerPtrGlobal[2], 0x02015CB8u, LIST_HookActionConsumerPc[2] },
+            { LIST_HookLocalPlayerPtrGlobal[3], 0x02015CBCu, LIST_HookActionConsumerPc[3] },
+            { LIST_HookLocalPlayerPtrGlobal[4], 0x02015CB0u, LIST_HookActionConsumerPc[4] },
+            { LIST_HookLocalPlayerPtrGlobal[5], 0x02015CBCu, LIST_HookActionConsumerPc[5] },
+            // KR uses a NativeZoom-specific weapon update hook, not the shared
+            // post-poll action consumer at LIST_HookActionConsumerPc[6].
+            { LIST_HookLocalPlayerPtrGlobal[6], 0x0201CEBCu, 0x0200D07Cu },
         };
+        static_assert(
+            sizeof(kNativeZoomToggleSites) / sizeof(kNativeZoomToggleSites[0])
+                == static_cast<uint32_t>(RomGroup::COUNT),
+            "Native zoom hook-site table must cover every ROM group");
+        static constexpr bool NativeZoomToggle_SitesInMainRam() noexcept
+        {
+            for (const auto& site : kNativeZoomToggleSites) {
+                if (!RomAddrDetail::InMainRam(site.LocalPlayerPtrGlobal)
+                    || !RomAddrDetail::InMainRam(site.ScopeZoomSetter)
+                    || !RomAddrDetail::InMainRam(site.WeaponActionUpdate))
+                {
+                    return false;
+                }
+            }
+            return true;
+        }
+        static_assert(NativeZoomToggle_SitesInMainRam(),
+                      "Native zoom hook-site table contains a non-main-RAM address");
 
         [[nodiscard]] static FORCE_INLINE const NativeZoomToggleSite*
         NativeZoomToggle_GetSite(uint8_t romGroupIndex) noexcept

@@ -480,79 +480,8 @@ static const HudWidgetProp kSecAmmoGaugeRamp[] = {
     { "Color 6", HWType::Color3, MP_HUD_PROP_KEY_HudAmmoGaugeRamp6R, 0, 255, 1, MP_HUD_PROP_KEY_HudAmmoGaugeRamp6G, MP_HUD_PROP_KEY_HudAmmoGaugeRamp6B },
 };
 
-static const HudWidgetProp kSecOsdH211[] = {
-    { "Enable Separate Color", HWType::Bool, MP_HUD_PROP_KEY_OsdColorH211, 0, 0, 0, nullptr, nullptr },
-    { "Color (Default: Red)", HWType::Color3, MP_HUD_PROP_KEY_OsdColorH211R, 0, 255, 1, MP_HUD_PROP_KEY_OsdColorH211G, MP_HUD_PROP_KEY_OsdColorH211B },
-};
-
-static const HudWidgetProp kSecOsdLostLives[] = {
-    { "Color", HWType::Color3, MP_HUD_PROP_KEY_OsdColorLostLivesR, 0, 255, 1, MP_HUD_PROP_KEY_OsdColorLostLivesG, MP_HUD_PROP_KEY_OsdColorLostLivesB },
-};
-
-static const HudWidgetProp kSecOsdKillDeath[] = {
-    { "Color", HWType::Color3, MP_HUD_PROP_KEY_OsdColorKillDeathR, 0, 255, 1, MP_HUD_PROP_KEY_OsdColorKillDeathG, MP_HUD_PROP_KEY_OsdColorKillDeathB },
-};
-
-static const HudWidgetProp kSecOsdReturnBase[] = {
-    { "Color", HWType::Color3, MP_HUD_PROP_KEY_OsdColorReturnBaseR, 0, 255, 1, MP_HUD_PROP_KEY_OsdColorReturnBaseG, MP_HUD_PROP_KEY_OsdColorReturnBaseB },
-};
-
-static const HudWidgetProp kSecOsdNoAmmo[] = {
-    { "Color", HWType::Color3, MP_HUD_PROP_KEY_OsdColorNoAmmoR, 0, 255, 1, MP_HUD_PROP_KEY_OsdColorNoAmmoG, MP_HUD_PROP_KEY_OsdColorNoAmmoB },
-};
-
-static const HudWidgetProp kSecOsdCowardDetect[] = {
-    { "Color", HWType::Color3, MP_HUD_PROP_KEY_OsdColorCowardDetectR, 0, 255, 1, MP_HUD_PROP_KEY_OsdColorCowardDetectG, MP_HUD_PROP_KEY_OsdColorCowardDetectB },
-};
-
-static const HudWidgetProp kSecOsdAcquiringNode[] = {
-    { "Color", HWType::Color3, MP_HUD_PROP_KEY_OsdColorAcquiringNodeR, 0, 255, 1, MP_HUD_PROP_KEY_OsdColorAcquiringNodeG, MP_HUD_PROP_KEY_OsdColorAcquiringNodeB },
-};
-
-static const HudWidgetProp kSecOsdTurret[] = {
-    { "Color", HWType::Color3, MP_HUD_PROP_KEY_OsdColorTurretR, 0, 255, 1, MP_HUD_PROP_KEY_OsdColorTurretG, MP_HUD_PROP_KEY_OsdColorTurretB },
-};
-
-static const HudWidgetProp kSecOsdOctoReset[] = {
-    { "Color", HWType::Color3, MP_HUD_PROP_KEY_OsdColorOctoResetR, 0, 255, 1, MP_HUD_PROP_KEY_OsdColorOctoResetG, MP_HUD_PROP_KEY_OsdColorOctoResetB },
-};
-
-static const HudWidgetProp kSecOsdOctoDrop[] = {
-    { "Color", HWType::Color3, MP_HUD_PROP_KEY_OsdColorOctoDropR, 0, 255, 1, MP_HUD_PROP_KEY_OsdColorOctoDropG, MP_HUD_PROP_KEY_OsdColorOctoDropB },
-};
-
-static const HudWidgetProp kSecOsdOctoCond[] = {
-    { "Color", HWType::Color3, MP_HUD_PROP_KEY_OsdColorOctoCondR, 0, 255, 1, MP_HUD_PROP_KEY_OsdColorOctoCondG, MP_HUD_PROP_KEY_OsdColorOctoCondB },
-};
-
-static const HudWidgetProp kSecOsdOctoMissing[] = {
-    { "Color", HWType::Color3, MP_HUD_PROP_KEY_OsdColorOctoMissingR, 0, 255, 1, MP_HUD_PROP_KEY_OsdColorOctoMissingG, MP_HUD_PROP_KEY_OsdColorOctoMissingB },
-};
-
-static const HudWidgetProp kSecOsdGlobal[] = {
-    { "Enable OSD Color Patch", HWType::Bool, MP_HUD_PROP_KEY_OsdColor, 0, 0, 0, nullptr, nullptr },
-    { "Global Color", HWType::Color3, MP_HUD_PROP_KEY_OsdColorR, 0, 255, 1, MP_HUD_PROP_KEY_OsdColorG, MP_HUD_PROP_KEY_OsdColorB },
-    { "Use Global Color for All", HWType::Bool, MP_HUD_PROP_KEY_OsdColorApplyGlobal, 0, 0, 0, nullptr, nullptr },
-};
-
-static const HudWidgetProp kSecOsdSlotKillDeath[] = {
-    { "Applied once on settings close to currently displayed messages (flags=0x02).\nNew messages use the 'Kill / Death' literal color above.", HWType::Label, "", 0, 0, 0, nullptr, nullptr },
-    { "Color  (YOU KILLED / KILLED YOU / 5-kill / prime hunter / teammate)", HWType::Color3, MP_HUD_PROP_KEY_OsdColorSlotKillDeathR, 0, 255, 1, MP_HUD_PROP_KEY_OsdColorSlotKillDeathG, MP_HUD_PROP_KEY_OsdColorSlotKillDeathB },
-};
-
-static const HudWidgetProp kSecOsdSlotNode[] = {
-    { "Applied once on settings close to currently displayed messages (flags=0x11).\nNew messages use 'Acquiring Node' or 'Node Stolen' literal colors above.", HWType::Label, "", 0, 0, 0, nullptr, nullptr },
-    { "Color  (acquiring node / node stolen H211)", HWType::Color3, MP_HUD_PROP_KEY_OsdColorSlotNodeR, 0, 255, 1, MP_HUD_PROP_KEY_OsdColorSlotNodeG, MP_HUD_PROP_KEY_OsdColorSlotNodeB },
-};
-
-static const HudWidgetProp kSecOsdSlotObjective[] = {
-    { "Applied once on settings close to currently displayed messages (flags=0x01).\nNew messages use their individual literal colors above (No Ammo / Return to Base / Octo ...).", HWType::Label, "", 0, 0, 0, nullptr, nullptr },
-    { "Color  (AMMO DEPLETED / return to base / bounty / octolith events)", HWType::Color3, MP_HUD_PROP_KEY_OsdColorSlotObjectiveR, 0, 255, 1, MP_HUD_PROP_KEY_OsdColorSlotObjectiveG, MP_HUD_PROP_KEY_OsdColorSlotObjectiveB },
-};
-
-static const HudWidgetProp kSecOsdSlotSystem[] = {
-    { "Applied once on settings close to currently displayed messages (flags=0x00).\nNew messages use their individual literal colors above (Lost Lives / Coward Detect / Turret ...).\nNote: HEADSHOT! (H228) is flags=0x00, not 0x02.", HWType::Label, "", 0, 0, 0, nullptr, nullptr },
-    { "Color  (HEADSHOT! / FACE OFF! / RETURN TO BATTLE! / COWARD DETECTED / turret)", HWType::Color3, MP_HUD_PROP_KEY_OsdColorSlotSystemR, 0, 255, 1, MP_HUD_PROP_KEY_OsdColorSlotSystemG, MP_HUD_PROP_KEY_OsdColorSlotSystemB },
-};
+#define MELONPRIME_OSD_COLOR_EMIT_DIALOG_PROPS
+#include "../MelonPrimeOsdColorSchema.inc"
+#undef MELONPRIME_OSD_COLOR_EMIT_DIALOG_PROPS
 
 #endif // MELONPRIME_INPUT_CONFIG_HUD_DIALOG_PROPS_INC
