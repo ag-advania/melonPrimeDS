@@ -60,9 +60,14 @@ that repo to be updated.
    function address. These files are usually the fastest bridge from one
    address to role, registers, side effects, and patch risks.
 
-4. Use `mnt/data/mphAnalysis/_JP1_0/` for broader struct and behavior maps.
+4. Use `mnt/data/analysis/mphAnalysis/_JP1_0/` for broader struct and behavior maps.
    Common anchors include player struct, hunter data, damage flow, weapon data,
-   input flow, and patch-specific investigation reports.
+   input flow, and patch-specific investigation reports. HUD / NoHud work usually
+   starts in that folder with:
+   - `HUD-Selective-Hide-JP1_0.md` / `HUD-Selective-Hide-AllVersions.md`
+   - `HUD_NoHud_Patch_Analysis-JP1_0.md` / `HUD_NoHud_Patch_Reverse_Analysis-AllVersions.md`
+   - per-element notes (`HUD-HP-Ammo-Display-JP1_0.md`, `HUD-Crosshair-JP1_0.md`, etc.)
+   - `addresses-JP1_0.md` for cross-topic address lookup
 
 5. Use `mnt/data/MphReadSource/` when behavior needs source-level confirmation.
    It is especially useful for projectile, hunter, affliction, model, and draw
