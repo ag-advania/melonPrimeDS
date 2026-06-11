@@ -67,7 +67,7 @@ ExpandStageMatrix. (One known delta: restore-on-leave now runs OsdColor before t
 restorable modules instead of after them — safe, all modules write disjoint addresses.)
 
 **Call sites in `MelonPrime.cpp`:** `HandleGameJoinInit` → `Patches_Apply(PatchSite_GameJoin)`;
-`ApplyConfigReload` (inside the `BIT_ROM_DETECTED` gate, after `ARM9Hook_Install`) →
+`ApplyConfigReload` (inside the `BIT_ROM_DETECTED` gate, after `ARM9Hook_SetMatchHooksActive`) →
 `Patches_Apply(PatchSite_ConfigReload)`; `RunFrameHook` `!isInGame && focused` →
 `Patches_Apply(PatchSite_OutOfGameFrame)`; **match-end window** (`isEndOfGame &&
 `BIT_IN_GAME_INIT`) → `Patches_RestoreOnLeave` (not on generic `!isInGame`; see
@@ -395,7 +395,7 @@ WeaponSwitch, TransformGate, NativeAimDelta, etc.) are documented in the
 | No double-tap jump | `MelonPrimePatchNoDoubleTapJump.*` | Outside registry: `MelonPrimeGameWeapon.cpp` (transient, wraps `FrameAdvanceTwice`) | Not persistent; applied/restored around weapon-switch frames only |
 | Wi-Fi bitset fix | `MelonPrimePatchFixWifi.*` | Registry: `OutOfGameFrame` | JP1_0 / US1_0 / EU1_0 only; 51-word patch |
 | Stage matrix expansion | `MelonPrimePatchExpandStageMatrix.*` | Registry: `OutOfGameFrame` (pattern C) | Writes RAM data bytes, not ARM code; self-guarded via strict 3-point loaded-state check; `ResetPatchState` is a no-op (still wired in the registry); base (5 cells) + extra (9 cells) split across two config keys |
-| Low HP warning | `MelonPrimePatchLowHpWarning.*` | Registry: `GameJoin` | Registry resets state on stop/reset |
+| Low HP warning | `MelonPrimePatchLowHpWarning.*` | Registry: `GameJoin` | Registry: `RF_OnLeave \| RF_OnStop` |
 | Use firmware language | `MelonPrimePatchUseFirmwareLanguage.*` | Registry: `OutOfGameFrame` | Adventure-aware; applied in menus; adapter passes `rom.isInAdventure` as 4th arg |
 | Instant aim follow | `MelonPrimePatchInstantAimFollow.*` | Registry: `GameJoin \| ConfigReload` (`RF_OnLeave \| RF_OnStop`) | (Distinct from the `LowLatencyMode` ImmediateSync/MoonLike instruction hook.) |
 | Show headshot online | `MelonPrimePatchShowHeadshotOnline.*` | Registry: `GameJoin \| ConfigReload` (`RF_OnLeave \| RF_OnStop`) | |
@@ -439,9 +439,14 @@ moment the game reaches a code point, or when you need to conditionally redirect
 
 Owns the single hook slot and fans out to all registered MelonPrime hooks.
 
-- `ARM9Hook_Install(nds, cfg, romGroupIndex, core)` — called after ROM detection
-  (`DetectRomAndSetAddresses`) and again on every `ApplyConfigReload`, so a settings change
-  re-registers the active hook set. For each **enabled** hook it calls the module's
+- `ARM9Hook_SetMatchHooksActive(nds, cfg, romGroupIndex, core, active)` — installs or clears
+  **match-scoped** hooks (`ARM9HookScope_InMatch`). Today every registered hook is match-scoped.
+  `true` from `HandleGameJoinInit`; `false` on `isEndOfGame` and `!isInGame` (init clear).
+  `ApplyConfigReload` calls it with `BIT_IN_GAME` so a live settings toggle updates hooks only
+  while in a match. ROM detect calls `false` (menu after load). Future out-of-match hooks can use
+  a new `ARM9HookScope` bit and a separate install path.
+- `ARM9Hook_Install(nds, cfg, romGroupIndex, core, activeScope)` — low-level scope mask.
+  For each **enabled** hook in the active scope it calls the module's
   `Foo_GetAddresses(romGroupIndex, out, max)` and registers those PCs with a per-hook dispatch-mask
   bit (`AddDispatchAddress` ORs masks when two hooks share a PC), then calls `SetARM9InstructionHook`
   once with the union of addresses **only if that union differs from the currently installed hook
@@ -450,6 +455,11 @@ Owns the single hook slot and fans out to all registered MelonPrime hooks.
 - `ARM9Hook_Uninstall(nds)` and `ARM9Hook_ResetPatchState()` — wired into **all three** reset
   blocks, dispatched manually alongside the registry's `Patches_ResetAll()` in those blocks
   (`ARM9Hook_Uninstall` before the registry restore/reset, `ARM9Hook_ResetPatchState` after; see §3).
+- Developer builds (`MELONPRIME_ENABLE_DEVELOPER_FEATURES`): match hook install/clear posts
+  `osdAddMessage` — `ARM9 hooks: registered (N PCs)` / `ARM9 hooks: unregistered` (only on
+  actual hook attach/detach, not on redundant `SetMatchHooksActive(false)` no-ops).
+- Same builds: patch registry posts `Patches: applied (GameJoin|ConfigReload, N entries)` and
+  `Patches: restored (match end|emu stop, N entries)`. `OutOfGameFrame` apply is silent (per-frame).
 - `DispatcherCallback` looks up the address's mask (`FindDispatchMask`, 1-entry cache) and calls
   each set hook's handler in a fixed priority order; side-effect hooks run unconditionally, redirect
   hooks return early once one redirects.

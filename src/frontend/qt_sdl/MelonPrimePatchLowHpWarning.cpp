@@ -17,6 +17,7 @@ enum LowHpWarningMode {
 };
 
 static constexpr uint32_t kCmpBase = 0xE3500000u; // cmp r0,#imm template (vanilla = 0xE3500019, HP < 25)
+static constexpr uint32_t kCmpVanilla = 0xE3500019u;
 
 // Per-ROM addresses, indexed by romGroupIndex.
 // JP1_0=0, JP1_1=1, US1_0=2, US1_1=3, EU1_0=4, EU1_1=5, KR1_0=6
@@ -83,6 +84,17 @@ void LowHpWarning_ApplyOnce(melonDS::NDS* nds, Config::Table& cfg, uint8_t romGr
 
     const uint32_t word = kCmpBase | threshold;
     nds->ARM9Write32(a.cmp, word);
+}
+
+void LowHpWarning_RestoreOnce(melonDS::NDS* nds, uint8_t romGroupIndex)
+{
+    if (!nds || romGroupIndex >= 7)
+        return;
+
+    const uint32_t addr = kAddr[romGroupIndex].cmp;
+    const uint32_t current = nds->ARM9Read32(addr);
+    if ((current & 0xFFFFFF00u) == kCmpBase && current != kCmpVanilla)
+        nds->ARM9Write32(addr, kCmpVanilla);
 }
 
 void LowHpWarning_ResetPatchState()
