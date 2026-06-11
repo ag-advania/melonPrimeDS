@@ -62,20 +62,20 @@ static void SnapshotEditConfig(Config::Table& cfg)
     for (int i = 0; i < kEditElemCount; ++i)
         snapshotPropArray(kEditElems[i].props, kEditElems[i].propCount);
 
-    s_editSnapshot["Metroid.Visual.CrosshairColorR"] = cfg.GetInt("Metroid.Visual.CrosshairColorR");
-    s_editSnapshot["Metroid.Visual.CrosshairColorG"] = cfg.GetInt("Metroid.Visual.CrosshairColorG");
-    s_editSnapshot["Metroid.Visual.CrosshairColorB"] = cfg.GetInt("Metroid.Visual.CrosshairColorB");
+    s_editSnapshot[MP_HUD_PROP_KEY_CrosshairColorR] = cfg.GetInt(MP_HUD_PROP_KEY_CrosshairColorR);
+    s_editSnapshot[MP_HUD_PROP_KEY_CrosshairColorG] = cfg.GetInt(MP_HUD_PROP_KEY_CrosshairColorG);
+    s_editSnapshot[MP_HUD_PROP_KEY_CrosshairColorB] = cfg.GetInt(MP_HUD_PROP_KEY_CrosshairColorB);
     snapshotPropArray(kPropsCrosshairMain,  kCrosshairMainCount);
     snapshotPropArray(kPropsCrosshairInner, kCrosshairInnerCount);
     snapshotPropArray(kPropsCrosshairOuter, kCrosshairOuterCount);
-    s_editSnapshot["Metroid.Visual.HudTextScale"] = cfg.GetInt("Metroid.Visual.HudTextScale");
-    s_editSnapshot["Metroid.Visual.HudAutoScaleEnable"] = cfg.GetBool("Metroid.Visual.HudAutoScaleEnable") ? 1 : 0;
-    s_editSnapshotBools.insert("Metroid.Visual.HudAutoScaleEnable");
-    s_editSnapshot["Metroid.Visual.HudAutoScaleCap"]       = cfg.GetInt("Metroid.Visual.HudAutoScaleCap");
-    s_editSnapshot["Metroid.Visual.HudAutoScaleCapText"]   = cfg.GetInt("Metroid.Visual.HudAutoScaleCapText");
-    s_editSnapshot["Metroid.Visual.HudAutoScaleCapIcons"]  = cfg.GetInt("Metroid.Visual.HudAutoScaleCapIcons");
-    s_editSnapshot["Metroid.Visual.HudAutoScaleCapGauges"]    = cfg.GetInt("Metroid.Visual.HudAutoScaleCapGauges");
-    s_editSnapshot["Metroid.Visual.HudAutoScaleCapCrosshair"] = cfg.GetInt("Metroid.Visual.HudAutoScaleCapCrosshair");
+    s_editSnapshot[MP_HUD_PROP_KEY_HudTextScale] = cfg.GetInt(MP_HUD_PROP_KEY_HudTextScale);
+    s_editSnapshot[MP_HUD_PROP_KEY_HudAutoScaleEnable] = cfg.GetBool(MP_HUD_PROP_KEY_HudAutoScaleEnable) ? 1 : 0;
+    s_editSnapshotBools.insert(MP_HUD_PROP_KEY_HudAutoScaleEnable);
+    s_editSnapshot[MP_HUD_PROP_KEY_HudAutoScaleCap]       = cfg.GetInt(MP_HUD_PROP_KEY_HudAutoScaleCap);
+    s_editSnapshot[MP_HUD_PROP_KEY_HudAutoScaleCapText]   = cfg.GetInt(MP_HUD_PROP_KEY_HudAutoScaleCapText);
+    s_editSnapshot[MP_HUD_PROP_KEY_HudAutoScaleCapIcons]  = cfg.GetInt(MP_HUD_PROP_KEY_HudAutoScaleCapIcons);
+    s_editSnapshot[MP_HUD_PROP_KEY_HudAutoScaleCapGauges]    = cfg.GetInt(MP_HUD_PROP_KEY_HudAutoScaleCapGauges);
+    s_editSnapshot[MP_HUD_PROP_KEY_HudAutoScaleCapCrosshair] = cfg.GetInt(MP_HUD_PROP_KEY_HudAutoScaleCapCrosshair);
 }
 
 static void RestoreEditSnapshot(Config::Table& cfg)
@@ -142,18 +142,18 @@ static void ResetEditToDefaults(Config::Table& cfg)
             }
         }
     };
-    cfg.SetInt("Metroid.Visual.CrosshairColorR", defaults.GetInt("Metroid.Visual.CrosshairColorR"));
-    cfg.SetInt("Metroid.Visual.CrosshairColorG", defaults.GetInt("Metroid.Visual.CrosshairColorG"));
-    cfg.SetInt("Metroid.Visual.CrosshairColorB", defaults.GetInt("Metroid.Visual.CrosshairColorB"));
+    cfg.SetInt(MP_HUD_PROP_KEY_CrosshairColorR, defaults.GetInt(MP_HUD_PROP_KEY_CrosshairColorR));
+    cfg.SetInt(MP_HUD_PROP_KEY_CrosshairColorG, defaults.GetInt(MP_HUD_PROP_KEY_CrosshairColorG));
+    cfg.SetInt(MP_HUD_PROP_KEY_CrosshairColorB, defaults.GetInt(MP_HUD_PROP_KEY_CrosshairColorB));
     resetPropArray(kPropsCrosshairMain,  kCrosshairMainCount);
     resetPropArray(kPropsCrosshairInner, kCrosshairInnerCount);
     resetPropArray(kPropsCrosshairOuter, kCrosshairOuterCount);
-    cfg.SetInt("Metroid.Visual.HudTextScale", defaults.GetInt("Metroid.Visual.HudTextScale"));
-    cfg.SetBool("Metroid.Visual.HudAutoScaleEnable", defaults.GetBool("Metroid.Visual.HudAutoScaleEnable"));
-    cfg.SetInt("Metroid.Visual.HudAutoScaleCap",       defaults.GetInt("Metroid.Visual.HudAutoScaleCap"));
-    cfg.SetInt("Metroid.Visual.HudAutoScaleCapText",   defaults.GetInt("Metroid.Visual.HudAutoScaleCapText"));
-    cfg.SetInt("Metroid.Visual.HudAutoScaleCapIcons",  defaults.GetInt("Metroid.Visual.HudAutoScaleCapIcons"));
-    cfg.SetInt("Metroid.Visual.HudAutoScaleCapGauges",    defaults.GetInt("Metroid.Visual.HudAutoScaleCapGauges"));
-    cfg.SetInt("Metroid.Visual.HudAutoScaleCapCrosshair", defaults.GetInt("Metroid.Visual.HudAutoScaleCapCrosshair"));
+    cfg.SetInt(MP_HUD_PROP_KEY_HudTextScale, defaults.GetInt(MP_HUD_PROP_KEY_HudTextScale));
+    cfg.SetBool(MP_HUD_PROP_KEY_HudAutoScaleEnable, defaults.GetBool(MP_HUD_PROP_KEY_HudAutoScaleEnable));
+    cfg.SetInt(MP_HUD_PROP_KEY_HudAutoScaleCap,       defaults.GetInt(MP_HUD_PROP_KEY_HudAutoScaleCap));
+    cfg.SetInt(MP_HUD_PROP_KEY_HudAutoScaleCapText,   defaults.GetInt(MP_HUD_PROP_KEY_HudAutoScaleCapText));
+    cfg.SetInt(MP_HUD_PROP_KEY_HudAutoScaleCapIcons,  defaults.GetInt(MP_HUD_PROP_KEY_HudAutoScaleCapIcons));
+    cfg.SetInt(MP_HUD_PROP_KEY_HudAutoScaleCapGauges,    defaults.GetInt(MP_HUD_PROP_KEY_HudAutoScaleCapGauges));
+    cfg.SetInt(MP_HUD_PROP_KEY_HudAutoScaleCapCrosshair, defaults.GetInt(MP_HUD_PROP_KEY_HudAutoScaleCapCrosshair));
 }
 
