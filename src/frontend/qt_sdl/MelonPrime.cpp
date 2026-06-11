@@ -383,11 +383,13 @@ namespace MelonPrime {
 #ifdef MELONPRIME_DS
         if (m_flags.test(StateFlags::BIT_ROM_DETECTED)) {
             melonDS::NDS* const nds = emuInstance->getNDS();
-            ARM9Hook_Install(
+            ARM9Hook_SetMatchHooksActive(
                 nds,
                 localCfg,
                 m_currentRom.romGroupIndex,
-                this);
+                this,
+                m_flags.test(StateFlags::BIT_IN_GAME),
+                emuInstance);
             const PatchCtx ctx{ nds, emuInstance, localCfg, m_currentRom };
             Patches_Apply(PatchSite_ConfigReload, ctx);
         }
@@ -505,26 +507,38 @@ namespace MelonPrime {
 
         if (LIKELY(m_flags.test(StateFlags::BIT_ROM_DETECTED))) {
             const bool isInGame = (*m_ptrs.inGame) == 0x0001;
+            const bool wasInGame = m_flags.test(StateFlags::BIT_IN_GAME);
             m_flags.assign(StateFlags::BIT_IN_GAME, isInGame);
 
+            // Join / rematch: legacy inGame rising edge, or unpause clearing INIT.
+            // Rising edge always re-inits (lobby / rematch) even if RESTORED was left set.
+            // Unpause re-init only while not in the post-match scoreboard window.
             if (isInGame && !m_flags.test(StateFlags::BIT_IN_GAME_INIT)) {
-                HandleGameJoinInit();
+                if (!wasInGame
+                    || !m_flags.test(StateFlags::BIT_END_OF_GAME_PATCH_RESTORED)) {
+                    HandleGameJoinInit();
+                }
             }
 
 #ifdef MELONPRIME_DS
-            // Cold: poll for end-of-game while match patches are live. currentMode is read once
-            // after join until 0x0E is seen; then only flowState until flow != 0.
+            // Cold: poll for end-of-game while match patches are live. Latch only after
+            // mode==0x0E && flow==0 (live match). Stale flow!=0 from the prior match at join
+            // must not trigger restore on the same frame as HandleGameJoinInit.
             if (UNLIKELY(m_flags.test(StateFlags::BIT_IN_GAME_INIT)
                     && !m_flags.test(StateFlags::BIT_END_OF_GAME_PATCH_RESTORED))) {
                 if (!m_flags.test(StateFlags::BIT_BATTLE_RUNTIME_MODE)
-                    && *m_ptrs.currentMode == BattleFlow::MODE_BATTLE_RUNTIME) {
+                    && *m_ptrs.currentMode == BattleFlow::MODE_BATTLE_RUNTIME
+                    && *m_ptrs.battleFlowState == BattleFlow::FLOW_ACTIVE_MATCH) {
                     m_flags.set(StateFlags::BIT_BATTLE_RUNTIME_MODE);
                 }
                 if (m_flags.test(StateFlags::BIT_BATTLE_RUNTIME_MODE)) {
                     const uint8_t flowState = *m_ptrs.battleFlowState;
                     if (flowState != BattleFlow::FLOW_ACTIVE_MATCH) {
-                        const PatchCtx ctx{ emuInstance->getNDS(), emuInstance, localCfg, m_currentRom };
+                        melonDS::NDS* const nds = emuInstance->getNDS();
+                        const PatchCtx ctx{ nds, emuInstance, localCfg, m_currentRom };
                         Patches_RestoreOnLeave(ctx);
+                        ARM9Hook_SetMatchHooksActive(
+                            nds, localCfg, m_currentRom.romGroupIndex, this, false, emuInstance);
                         m_flags.set(StateFlags::BIT_END_OF_GAME_PATCH_RESTORED);
                     }
                 }
@@ -539,10 +553,21 @@ namespace MelonPrime {
                 if (m_damageNotifyPurpleEnabled)
                     DamageNotifyPurpleTick();
             }
-            else if (m_flags.test(StateFlags::BIT_IN_GAME_INIT)) {
+            else if (!isInGame
+                && (m_flags.test(StateFlags::BIT_IN_GAME_INIT)
+                    || m_flags.test(StateFlags::BIT_END_OF_GAME_PATCH_RESTORED))) {
                 m_flags.clear(StateFlags::BIT_IN_GAME_INIT);
                 m_flags.clear(StateFlags::BIT_END_OF_GAME_PATCH_RESTORED);
                 m_flags.clear(StateFlags::BIT_BATTLE_RUNTIME_MODE);
+#ifdef MELONPRIME_DS
+                ARM9Hook_SetMatchHooksActive(
+                    emuInstance->getNDS(),
+                    localCfg,
+                    m_currentRom.romGroupIndex,
+                    this,
+                    false,
+                    emuInstance);
+#endif
                 // weaponSwitchPending cleared in the DS block below where ordering matters.
                 ResetTransientInputState(
                     TR_OverlayHeld | TR_DirectTransform | TR_BipedFire);
@@ -739,8 +764,13 @@ namespace MelonPrime {
 #ifdef MELONPRIME_DS
         // Apply patches that need game-join context (player struct resolved)
         {
-            const PatchCtx ctx{ emuInstance->getNDS(), emuInstance, localCfg, m_currentRom };
+            melonDS::NDS* const nds = emuInstance->getNDS();
+            const PatchCtx ctx{ nds, emuInstance, localCfg, m_currentRom };
             Patches_Apply(PatchSite_GameJoin, ctx);
+            ARM9Hook_SetMatchHooksActive(
+                nds, localCfg, m_currentRom.romGroupIndex, this, true, emuInstance);
+            if (m_enableNativeWeaponSwitch)
+                (void)WeaponSwitchHook_IsSiteValid(nds, m_currentRom.romGroupIndex);
         }
 #endif
 #ifdef MELONPRIME_CUSTOM_HUD

@@ -133,11 +133,13 @@ namespace MelonPrime {
         }
 
 #ifdef MELONPRIME_DS
-        ARM9Hook_Install(
+        ARM9Hook_SetMatchHooksActive(
             emuInstance->getNDS(),
             localCfg,
             m_currentRom.romGroupIndex,
-            this);
+            this,
+            false,
+            emuInstance);
 #endif
 
         char message[256];

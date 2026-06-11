@@ -26,13 +26,19 @@ Matches game active-match gates (`flowState == 0` = live match, including START 
 
 `RunFrameHook` (cold path): while `BIT_IN_GAME_INIT && !BIT_END_OF_GAME_PATCH_RESTORED`:
 
-1. Until `BIT_BATTLE_RUNTIME_MODE`: read `currentMode` once per frame; latch when `== 0x0E`.
+1. Until `BIT_BATTLE_RUNTIME_MODE`: latch when `currentMode == 0x0E && flowState == 0` (live
+   match; ignores stale post-match flow left over from the previous round).
 2. After latch: read only `battleFlowState` until `flow != 0`.
-3. On first end-of-game frame: `Patches_RestoreOnLeave()` once, set `BIT_END_OF_GAME_PATCH_RESTORED`.
+3. On first end-of-game frame: `Patches_RestoreOnLeave()` and
+   `ARM9Hook_SetMatchHooksActive(false)` once, set `BIT_END_OF_GAME_PATCH_RESTORED`.
 
 Menu frames skip all mode/flow reads. During a match after latch: one `flowState` read per frame.
 
 `BIT_IN_GAME_INIT` is cleared when `!isInGame` (left legacy in-game gate), not on `isEndOfGame`.
+`HandleGameJoinInit` runs on legacy `inGame` rising edge (always when `!BIT_IN_GAME_INIT`) or
+unpause re-init when `!BIT_IN_GAME_INIT && !BIT_END_OF_GAME_PATCH_RESTORED`. Leaving
+`!isInGame` clears `BIT_END_OF_GAME_PATCH_RESTORED` even if `BIT_IN_GAME_INIT` was already clear
+(e.g. unpause during scoreboard), so lobby rematch cannot stall with RESTORED blocking join.
 `BIT_END_OF_GAME_PATCH_RESTORED` and `BIT_BATTLE_RUNTIME_MODE` are cleared on game join and when
 init is cleared.
 
