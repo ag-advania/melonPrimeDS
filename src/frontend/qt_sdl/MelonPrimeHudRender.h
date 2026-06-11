@@ -85,6 +85,14 @@ namespace MelonPrime {
     // Returns true when the radar overlay should be drawn on the top screen.
     bool CustomHud_ShouldDrawRadarOverlay(EmuInstance* emu, const RomAddresses& rom, uint8_t playerPosition);
 
+    // Per-frame, before RunFrame: keep the native helmet layers off across the
+    // spawn window. No-op unless the helmet hide patch is currently applied;
+    // start/death/pause frames are left untouched so native UI stays intact.
+    void CustomHud_ClampHelmetLayersPreFrame(
+        EmuInstance* emu,
+        const RomAddresses& rom,
+        uint8_t playerPosition);
+
     // Ensure the no-HUD patch is reverted when custom HUD is disabled.
     // Call every frame from Screen.cpp even when the HUD overlay is not rendered.
     void CustomHud_EnsurePatchRestored(

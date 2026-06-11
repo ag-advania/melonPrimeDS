@@ -138,6 +138,34 @@ static constexpr NoHudElemEntry kHudPatch[7][NOHUD_ELEMENT_COUNT] = {
       {0x02029D40u, 0xEA000031u, 0x0A000031u} },
 };
 
+// hudToggle (`020DB090` family): low 5 bits mirror into main DISPCNT bits
+// 8-12 each frame (JP1.0 `02007560-0200757C`). Bits 0x0E = top-screen BG1-3,
+// where the helmet/visor frame lives. Same RomGroup order as kHudPatch.
+static constexpr uint32_t kHudToggleAddr[7] = {
+    0x020DB090u, 0x020DB050u, 0x020D91D0u, 0x020D9A50u,
+    0x020D9A70u, 0x020D9AF0u, 0x020D31C0u,
+};
+
+void NoHudPatch_ClampHelmetLayers(melonDS::NDS* nds, uint8_t romGroup)
+{
+    if (!nds || romGroup >= 7)
+        return;
+
+    // RAM value: stop the next reflection from re-enabling helmet layers.
+    const uint32_t toggleAddr = kHudToggleAddr[romGroup];
+    const uint32_t toggle = nds->ARM9Read32(toggleAddr);
+    if (toggle & 0x0Eu)
+        nds->ARM9Write32(toggleAddr, toggle & ~0x0Eu);
+
+    // Already-reflected register: spawn-frame VBlank logic may have pushed
+    // 0x0E00 into DISPCNT before this hook ran; clear it before this frame's
+    // scanlines render. Steady state both reads are no-ops.
+    constexpr uint32_t kDispcntMain = 0x04000000u;
+    const uint32_t dispcnt = nds->ARM9Read32(kDispcntMain);
+    if (dispcnt & 0x0E00u)
+        nds->ARM9Write32(kDispcntMain, dispcnt & ~0x0E00u);
+}
+
 static uint16_t s_appliedMask = 0;
 
 void NoHudPatch_ResetState()

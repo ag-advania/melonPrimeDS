@@ -554,6 +554,14 @@ namespace MelonPrime {
                     // Per-frame re-evaluation — bypasses registry; gated to skip lobby RAM work.
                     OsdColor_ApplyOnce(emuInstance, localCfg, m_currentRom);
                 }
+#ifdef MELONPRIME_CUSTOM_HUD
+                // Before RunFrame: hold the helmet layers off across the spawn
+                // window. The game's own clamp (patched helmet site) early-outs
+                // during spawn states, so init writers can briefly restore the
+                // BG1-3 layers and flash the native visor for a frame.
+                CustomHud_ClampHelmetLayersPreFrame(
+                    emuInstance, m_currentRom, m_playerPosition);
+#endif
                 // Damage Notify Purple — runs whether or not the window is focused
                 // so HP drops during alt-tab still emit the purple flash.
                 if (m_damageNotifyPurpleEnabled)

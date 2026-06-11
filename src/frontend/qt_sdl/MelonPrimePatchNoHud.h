@@ -43,6 +43,15 @@ namespace MelonPrime {
     void NoHudPatch_Sync(melonDS::NDS* nds, uint8_t romGroup,
                          uint16_t desiredMask);
 
+    // Host-side helmet layer clamp. Clears hudToggle bits 0x0E and the
+    // already-reflected main-DISPCNT bits 0x0E00 (top-screen BG1-3 — the
+    // helmet/visor layers). The game's own clamp (the patched helmet site)
+    // early-outs during spawn/death states, letting init writers briefly
+    // restore those layers before the next HUD update; calling this every
+    // frame before RunFrame closes that window. BG0/OBJ are untouched, so
+    // other HUD elements and the pause/score UI are unaffected.
+    void NoHudPatch_ClampHelmetLayers(melonDS::NDS* nds, uint8_t romGroup);
+
     // Force-restore every element regardless of the internal tracker.
     // Used when CustomHUD is disabled to guarantee a clean ARM9 state
     // even if the tracker is out of sync (savestate / persistent RAM /
