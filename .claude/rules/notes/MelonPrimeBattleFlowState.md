@@ -32,7 +32,9 @@ Matches game active-match gates (`flowState == 0` = live match, including START 
 3. On first end-of-game frame: `Patches_RestoreOnLeave()` and
    `ARM9Hook_SetMatchHooksActive(false)` once, set `BIT_END_OF_GAME_PATCH_RESTORED`.
 
-Menu frames skip all mode/flow reads. During a match after latch: one `flowState` read per frame.
+Menu frames skip all mode/flow reads. During a match after latch: one `flowState` read per frame. Before latch (lobby,
+`INIT` set): one `currentMode` read per frame; `battleFlowState` is skipped until
+`mode==0x0E`.
 
 `BIT_IN_GAME_INIT` is cleared when `!isInGame` (left legacy in-game gate), not on `isEndOfGame`.
 `HandleGameJoinInit` runs on legacy `inGame` rising edge (always when `!BIT_IN_GAME_INIT`) or
