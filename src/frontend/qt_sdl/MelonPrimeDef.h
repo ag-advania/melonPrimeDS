@@ -49,6 +49,30 @@ namespace MelonPrime {
         inline constexpr const char* UseFwName       = "Metroid.Use.Firmware.Name";
         inline constexpr const char* DataUnlock      = "Metroid.Data.Unlock";
         inline constexpr const char* FixShadowFreeze = "Metroid.BugFix.FixShadowFreeze";
+
+        // Phase 5b — keys driven by the non-HUD settings binding table.
+        // Storage names are byte-identical to the original literals (TOML compat).
+        inline constexpr const char* WifiBitset                       = "Metroid.BugFix.WifiBitset";
+        inline constexpr const char* FixNoxusBladePersistence         = "Metroid.BugFix.FixNoxusBladePersistence";
+        inline constexpr const char* UseFirmwareLanguage             = "Metroid.BugFix.UseFirmwareLanguage";
+        inline constexpr const char* ShowHeadshotOnline             = "Metroid.GameFeature.ShowHeadshotOnline";
+        inline constexpr const char* ShowEnemyHpMeterOnline         = "Metroid.GameFeature.ShowEnemyHpMeterOnline";
+        inline constexpr const char* ExpandStageMatrix               = "Metroid.GameFeature.ExpandStageMatrix";
+        inline constexpr const char* ExpandStageMatrixExtra         = "Metroid.GameFeature.ExpandStageMatrixExtra";
+        inline constexpr const char* DisableDoubleDamageMultiplier   = "Metroid.GameFeature.DisableDoubleDamageMultiplier";
+        inline constexpr const char* DamageNotifyPurple             = "Metroid.GameFeature.DamageNotifyPurple";
+        inline constexpr const char* PowerUpPickupNoEffectPowerUps   = "Metroid.GameFeature.PowerUpPickupNoEffectPowerUps";
+        inline constexpr const char* PowerUpPickupNoEffectDoubleDamage = "Metroid.GameFeature.PowerUpPickupNoEffectDoubleDamage";
+        inline constexpr const char* PowerUpPickupNoEffectCloak       = "Metroid.GameFeature.PowerUpPickupNoEffectCloak";
+        inline constexpr const char* PowerUpPickupNoEffectDeathalt   = "Metroid.GameFeature.PowerUpPickupNoEffectDeathalt";
+        inline constexpr const char* InGameAspectRatio               = "Metroid.Visual.InGameAspectRatio";
+        inline constexpr const char* InGameAspectRatioMode           = "Metroid.Visual.InGameAspectRatioMode";
+        inline constexpr const char* LowHpWarningMode                 = "Metroid.LowHpWarning.Mode";
+        inline constexpr const char* LowHpWarningFixed               = "Metroid.LowHpWarning.Fixed";
+        inline constexpr const char* LowHpWarningLow                 = "Metroid.LowHpWarning.Low";
+        inline constexpr const char* LowHpWarningMedium             = "Metroid.LowHpWarning.Medium";
+        inline constexpr const char* LowHpWarningHigh               = "Metroid.LowHpWarning.High";
+        inline constexpr const char* LowHpWarningAutoBase           = "Metroid.LowHpWarning.AutoBase";
     }
 
     namespace WeaponSwitchMethod {

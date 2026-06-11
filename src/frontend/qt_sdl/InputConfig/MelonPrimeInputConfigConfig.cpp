@@ -61,68 +61,12 @@ void MelonPrimeInputConfig::saveConfig()
         joycfg.SetInt(btn, addonsMetroid2JoyMap[i]);
     }
 
-    // Sensitivities
-    instcfg.SetInt("Metroid.Sensitivity.Aim", ui->metroidAimSensitvitySpinBox->value());
-    instcfg.SetDouble("Metroid.Sensitivity.Mph", ui->metroidMphSensitvitySpinBox->value());
-    instcfg.SetDouble("Metroid.Sensitivity.AimYAxisScale", ui->metroidAimYAxisScaleSpinBox->value());
-    instcfg.SetDouble("Metroid.Aim.Adjust", ui->metroidAimAdjustSpinBox->value());
+    // Phase 5b: all symmetric simple non-HUD settings (sensitivities, toggles,
+    // bug fixes, game features, pickup toggles, hunter license, volume, screen
+    // sync, in-game scaling, low-HP thresholds) are saved here from the same
+    // binding table used to load them. Keys are disjoint so order is irrelevant.
+    saveBindings(instcfg);
 
-    // Bug fixes
-    instcfg.SetBool("Metroid.BugFix.WifiBitset", ui->cbMetroidFixWifiBitset->checkState() == Qt::Checked);
-    instcfg.SetBool("Metroid.BugFix.FixShadowFreeze", ui->cbMetroidFixShadowFreeze->checkState() == Qt::Checked);
-    instcfg.SetBool(
-        "Metroid.BugFix.FixNoxusBladePersistence",
-        ui->cbMetroidFixNoxusBladePersistence->checkState() == Qt::Checked);
-    instcfg.SetBool("Metroid.BugFix.UseFirmwareLanguage", ui->cbMetroidUseFirmwareLanguage->checkState() == Qt::Checked);
-    instcfg.SetBool("Metroid.GameFeature.ShowHeadshotOnline", ui->cbMetroidShowHeadshotOnline->checkState() == Qt::Checked);
-    instcfg.SetBool("Metroid.GameFeature.ShowEnemyHpMeterOnline", ui->cbMetroidShowEnemyHpMeterOnline->checkState() == Qt::Checked);
-    instcfg.SetBool("Metroid.GameFeature.ExpandStageMatrix", ui->cbMetroidExpandStageMatrix->checkState() == Qt::Checked);
-    instcfg.SetBool("Metroid.GameFeature.ExpandStageMatrixExtra", ui->cbMetroidExpandStageMatrixExtra->checkState() == Qt::Checked);
-    instcfg.SetBool(
-        "Metroid.GameFeature.DisableDoubleDamageMultiplier",
-        ui->cbMetroidDisableDoubleDamageMultiplier->checkState() == Qt::Checked);
-    instcfg.SetBool(
-        "Metroid.GameFeature.DamageNotifyPurple",
-        ui->cbMetroidDamageNotifyPurple->checkState() == Qt::Checked);
-
-    // Pickup effect toggles
-    instcfg.SetBool(
-        "Metroid.GameFeature.PowerUpPickupNoEffectPowerUps",
-        ui->cbMetroidDisablePickupPowerUps->checkState() == Qt::Checked);
-    instcfg.SetBool(
-        "Metroid.GameFeature.PowerUpPickupNoEffectDoubleDamage",
-        ui->cbMetroidDisablePickupDoubleDamage->checkState() == Qt::Checked);
-    instcfg.SetBool(
-        "Metroid.GameFeature.PowerUpPickupNoEffectCloak",
-        ui->cbMetroidDisablePickupCloak->checkState() == Qt::Checked);
-    instcfg.SetBool(
-        "Metroid.GameFeature.PowerUpPickupNoEffectDeathalt",
-        ui->cbMetroidDisablePickupDeathalt->checkState() == Qt::Checked);
-
-    // SnapTap
-    instcfg.SetBool("Metroid.Operation.SnapTap", ui->cbMetroidEnableSnapTap->checkState() == Qt::Checked);
-    instcfg.SetBool("Metroid.Data.Unlock", ui->cbMetroidUnlockAll->checkState() == Qt::Checked);
-    instcfg.SetBool("Metroid.Apply.Headphone", ui->cbMetroidApplyHeadphone->checkState() == Qt::Checked);
-    instcfg.SetBool("Metroid.Use.Firmware.Name", ui->cbMetroidUseFirmwareName->checkState() == Qt::Checked);
-
-    // Hunter license
-    instcfg.SetBool("Metroid.HunterLicense.Hunter.Apply", ui->cbMetroidApplyHunter->checkState() == Qt::Checked);
-    instcfg.SetInt("Metroid.HunterLicense.Hunter.Selected", ui->comboMetroidSelectedHunter->currentIndex());
-
-    instcfg.SetBool("Metroid.HunterLicense.Color.Apply", ui->cbMetroidApplyColor->checkState() == Qt::Checked);
-    instcfg.SetInt("Metroid.HunterLicense.Color.Selected", ui->comboMetroidSelectedColor->currentIndex());
-
-    // Volume
-    instcfg.SetBool("Metroid.Apply.SfxVolume", ui->cbMetroidApplySfxVolume->checkState() == Qt::Checked);
-    instcfg.SetInt("Metroid.Volume.SFX", ui->spinMetroidVolumeSFX->value());
-    instcfg.SetBool("Metroid.Apply.MusicVolume", ui->cbMetroidApplyMusicVolume->checkState() == Qt::Checked);
-    instcfg.SetInt("Metroid.Volume.Music", ui->spinMetroidVolumeMusic->value());
-
-    // Other Metroid Settings 2 Tab
-    instcfg.SetBool("Metroid.Apply.joy2KeySupport", ui->cbMetroidApplyJoy2KeySupport->checkState() == Qt::Checked);
-    instcfg.SetBool("Metroid.Enable.stylusMode", ui->cbMetroidEnableStylusMode->checkState() == Qt::Checked);
-    instcfg.SetBool("Metroid.Aim.Disable.MphAimSmoothing", ui->cbMetroidDisableMphAimSmoothing->checkState() == Qt::Checked);
-    instcfg.SetBool("Metroid.Aim.Enable.Accumulator", ui->cbMetroidEnableAimAccumulator->checkState() == Qt::Checked);
     const int lowLatencyAimMode = m_comboMetroidLowLatencyAimMode
         ? m_comboMetroidLowLatencyAimMode->currentData().toInt()
         : MelonPrime::LowLatencyAimMode::Off;
@@ -177,20 +121,9 @@ void MelonPrimeInputConfig::saveConfig()
         MelonPrime::CfgKey::InstantAimFollow,
         lowLatencyAimMode == MelonPrime::LowLatencyAimMode::InstantAimFollow);
 
-    // Screen Sync Mode
-    instcfg.SetInt("Metroid.Screen.SyncMode", ui->comboMetroidScreenSyncMode->currentIndex());
-
-    // In-game scaling
-    instcfg.SetBool("Metroid.Visual.InGameAspectRatio", ui->cbMetroidInGameAspectRatio->checkState() == Qt::Checked);
-    instcfg.SetInt("Metroid.Visual.InGameAspectRatioMode", ui->comboMetroidInGameAspectRatioMode->currentIndex());
-
-    // Low HP warning threshold
-    instcfg.SetInt("Metroid.LowHpWarning.Mode",     ui->comboMetroidLowHpWarningMode->currentIndex());
-    instcfg.SetInt("Metroid.LowHpWarning.Fixed",    ui->spinMetroidLowHpWarningFixed->value());
-    instcfg.SetInt("Metroid.LowHpWarning.Low",      ui->spinMetroidLowHpWarningLow->value());
-    instcfg.SetInt("Metroid.LowHpWarning.Medium",   ui->spinMetroidLowHpWarningMedium->value());
-    instcfg.SetInt("Metroid.LowHpWarning.High",     ui->spinMetroidLowHpWarningHigh->value());
-    instcfg.SetInt("Metroid.LowHpWarning.AutoBase", ui->spinMetroidLowHpWarningAutoBase->value());
+    // Screen Sync Mode, In-game scaling, and Low HP warning thresholds are all
+    // saved via saveBindings() above (binding table). Clip/TopScreen stay below
+    // because their save is coupled to an old!=new invalidate.
     const bool clipCursorToBottomScreenWhenNotInGame =
         (ui->cbMetroidClipCursorToBottomScreenWhenNotInGame->checkState() == Qt::Checked);
     instcfg.SetBool("Metroid.Visual.ClipCursorToBottomScreenWhenNotInGame", clipCursorToBottomScreenWhenNotInGame);
