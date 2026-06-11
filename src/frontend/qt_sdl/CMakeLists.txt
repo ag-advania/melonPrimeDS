@@ -2,6 +2,11 @@ include(CMakeDependentOption)
 
 include(FixInterfaceIncludes)
 
+set(MELONPRIME_WINDOWS_ONLY_SOURCES
+    MelonPrimeRawInputWinFilter.cpp
+    MelonPrimeRawHotkeyVkBinding.cpp
+)
+
 set(SOURCES_QT_SDL
     main.cpp
     main_shaders.h
@@ -62,12 +67,7 @@ set(SOURCES_QT_SDL
     NetplayDialog.cpp
     #rawinput/rawinput_common.c
     #RawInputThread.cpp
-    MelonPrimeRawInputWinFilter.cpp
-    MelonPrimeRawHotkeyVkBinding.cpp
-    #MelonPrimeXInputFilter.cpp
-    #MelonPrimeXInputBinding.cpp
-    #MelonPrimeDirectInputFilter.cpp
-    #MelonPrimeDirectInputBinding.cpp
+    ${MELONPRIME_WINDOWS_ONLY_SOURCES}
 
     MelonPrimeRawInputState.cpp
     MelonPrimeRawWinInternal.cpp
@@ -84,6 +84,7 @@ set(SOURCES_QT_SDL
     InputConfig/MelonPrimeInputConfigPreview.cpp
 
     MelonPrime.cpp
+    MelonPrimeLocalization.cpp
     MelonPrimeHudRender.cpp
     MelonPrimeHudConfigOnScreenEdit.cpp
     MelonPrimePatchAspectRatio.cpp
@@ -101,6 +102,7 @@ set(SOURCES_QT_SDL
     MelonPrimePatchInstantAimFollow.cpp
     MelonPrimePatchExpandStageMatrix.cpp
     MelonPrimePatchLowHpWarning.cpp
+    MelonPrimePatchRegistry.cpp
     MelonPrimeArm9Hook.cpp
 
 
@@ -151,24 +153,14 @@ elseif (APPLE)
     list(REMOVE_ITEM SOURCES_QT_SDL
         #rawinput/rawinput_common.c
         #RawInputThread.cpp
-        MelonPrimeRawInputWinFilter.cpp
-        MelonPrimeRawHotkeyVkBinding.cpp
-        #MelonPrimeXInputFilter.cpp
-        #MelonPrimeXInputBinding.cpp
-        #MelonPrimeDirectInputFilter.cpp
-        #MelonPrimeDirectInputBinding.cpp
+        ${MELONPRIME_WINDOWS_ONLY_SOURCES}
     )
 else()
     # Disable the Windows-only raw input sources on Linux.
     list(REMOVE_ITEM SOURCES_QT_SDL
         #rawinput/rawinput_common.c
         #RawInputThread.cpp
-        MelonPrimeRawInputWinFilter.cpp
-        MelonPrimeRawHotkeyVkBinding.cpp
-        #MelonPrimeXInputFilter.cpp
-        #MelonPrimeXInputBinding.cpp
-        #MelonPrimeDirectInputFilter.cpp
-        #MelonPrimeDirectInputBinding.cpp
+        ${MELONPRIME_WINDOWS_ONLY_SOURCES}
     )
 endif()
 

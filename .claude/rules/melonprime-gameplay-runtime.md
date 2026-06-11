@@ -12,8 +12,10 @@ It focuses on in-game flow, weapon/morph handling, gameplay setting application,
   3. If ROM is not detected, run `DetectRomAndSetAddresses()`.
   4. If ROM is detected, evaluate the `inGame` flag.
   5. On game join, run `HandleGameJoinInit()` to resolve player-relative pointers.
-  6. If focused and in-game, run `HandleInGameLogic()`.
-  7. If not in-game, run `ApplyGameSettingsOnce()`.
+  6. If in-game, re-apply the game-state-dependent OSD color patch and run damage-notify.
+  7. On game leave, restore registry-managed leave patches and clear transient gameplay state.
+  8. If focused and in-game, run `HandleInGameLogic()`.
+  9. If focused and not in-game, run the registry out-of-game patch site, then `ApplyGameSettingsOnce()`.
 
 ## 2. ROM Detection and Address Resolution
 
@@ -35,6 +37,8 @@ It focuses on in-game flow, weapon/morph handling, gameplay setting application,
   - Aim-region offset via `AIM_ADDR_INC (0x48)`
 - It then resolves `m_ptrs` (`aimX/aimY/weapon/...`) with those offsets.
 - It also applies hunter/adventure state, MPH sensitivity, aim-smoothing patch, and in-game aspect ratio patch.
+- Static write-patches that need game-join context are applied through
+  `Patches_Apply(PatchSite_GameJoin, ctx)` in `MelonPrimePatchRegistry`.
 
 ## 4. In-Game Hot Path
 
@@ -74,13 +78,18 @@ It focuses on in-game flow, weapon/morph handling, gameplay setting application,
   - SFX/BGM volume
 - The concrete operations are in `src/frontend/qt_sdl/MelonPrimeGameSettings.cpp`.
 - One-time applications are guarded by `m_appliedFlags`.
+- Before this runs, `RunFrameHook()` calls `Patches_Apply(PatchSite_OutOfGameFrame, ctx)` while
+  focused and out of game. That registry site owns menu/out-of-game static patches such as the
+  Wi-Fi bitset fix, firmware language application, and stage matrix expansion. Each entry is
+  self-guarded, so the per-frame menu call is a cheap cold-path check.
 
 ## 7. In-Game Aspect Ratio Patch
 
-- Implementation: `src/frontend/qt_sdl/MelonPrimePatch.cpp` (under `MELONPRIME_DS`).
+- Implementation: `src/frontend/qt_sdl/MelonPrimePatchAspectRatio.cpp` (under `MELONPRIME_DS`).
 - `InGameAspectRatio_ApplyOnce()` rewrites ARM instructions/values per selected mode.
 - In `Auto` mode, it reads `ScreenAspectTop` and applies only when needed.
-- On stop/reset lifecycle paths, `InGameAspectRatio_ResetPatchState()` clears patch state.
+- The patch is registry-managed at `PatchSite_GameJoin`. On stop/reset lifecycle paths,
+  `Patches_ResetAll()` calls `InGameAspectRatio_ResetPatchState()`.
 
 ## 8. Reference Files
 
@@ -92,4 +101,6 @@ It focuses on in-game flow, weapon/morph handling, gameplay setting application,
 - `src/frontend/qt_sdl/MelonPrimeGameRomDetect.cpp`
 - `src/frontend/qt_sdl/MelonPrimeGameRomAddrTable.h`
 - `src/frontend/qt_sdl/MelonPrimeInternal.h`
-- `src/frontend/qt_sdl/MelonPrimePatch.cpp`
+- `src/frontend/qt_sdl/MelonPrimePatchRegistry.h`
+- `src/frontend/qt_sdl/MelonPrimePatchRegistry.cpp`
+- `src/frontend/qt_sdl/MelonPrimePatchAspectRatio.cpp`

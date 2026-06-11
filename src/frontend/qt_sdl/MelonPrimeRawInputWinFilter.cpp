@@ -83,20 +83,16 @@ namespace MelonPrime {
     }
 
     // =========================================================================
-    // REFACTORED (R1): drainPendingMessages -- extracted from Poll()/PollAndSnapshot()
-    // Retained with full GetRawInputBuffer for Poll() backward compatibility.
+    // REFACTORED (R1): drainPendingMessages -- shared WM_INPUT drain helper,
+    // used by DeferredDrain() and resetAll(). The processRawInputBatched
+    // (GetRawInputBuffer) call before the PeekMessage loop is required by the
+    // FIX-1 shared-buffer semantics (see DeferredDrain banner below).
     // =========================================================================
     FORCE_INLINE void RawInputWinFilter::drainPendingMessages() noexcept {
         if (m_state && !m_joy2KeySupport) {
             m_state->processRawInputBatched();
         }
         drainMessagesOnly();
-    }
-
-    void RawInputWinFilter::Poll() {
-        if (m_joy2KeySupport) return;
-
-        drainPendingMessages();
     }
 
     // =========================================================================
@@ -326,14 +322,11 @@ namespace MelonPrime {
     {
         m_state->snapshotInputFrameNoEdges(outHk, outMouseX, outMouseY);
     }
-    void RawInputWinFilter::resetAllKeys() { m_state->resetAllKeys(); }
-    void RawInputWinFilter::resetMouseButtons() { m_state->resetMouseButtons(); }
-
     // P-9: Combined reset — single call replaces resetAllKeys + resetMouseButtons.
     //
     // Hidden-window mode can have WM_INPUT messages queued after the last
     // snapshot. Drain/capture them before clearing state so an old DOWN cannot
-    // be replayed into m_state on the next DeferredDrain/Poll cycle.
+    // be replayed into m_state on the next DeferredDrain/PollAndSnapshot cycle.
     void RawInputWinFilter::resetAll()
     {
         if (!m_joy2KeySupport) {

@@ -31,24 +31,26 @@ namespace MelonPrime {
 
         // PRIMARY table: checksum -> authoritative RomGroup + exact OSD label.
         struct ChecksumEntry { uint32_t checksum; RomGroup group; const char* name; };
+        // Checksum literals are inlined here (single source of truth; the old
+        // RomVersions:: constant block in MelonPrimeDef.h was folded in).
         constexpr ChecksumEntry CHECKSUM_TABLE[] = {
-            { RomVersions::US1_1,                  RomGroup::US1_1, "US1.1" },
-            { RomVersions::US1_1_ENCRYPTED,        RomGroup::US1_1, "US1.1 ENCRYPTED" },
-            { RomVersions::US1_0,                  RomGroup::US1_0, "US1.0" },
-            { RomVersions::US1_0_ENCRYPTED,        RomGroup::US1_0, "US1.0 ENCRYPTED" },
-            { RomVersions::EU1_1,                  RomGroup::EU1_1, "EU1.1" },
-            { RomVersions::EU1_1_ENCRYPTED,        RomGroup::EU1_1, "EU1.1 ENCRYPTED" },
-            { RomVersions::EU1_1_BALANCED,         RomGroup::EU1_1, "EU1.1 BALANCED" },
-            { RomVersions::EU1_1_BALANCED_V1_2_11, RomGroup::EU1_1, "EU1.1 BALANCED V1.2.11" },
-            { RomVersions::EU1_1_RUSSIANED,        RomGroup::EU1_1, "EU1.1 RUSSIANED" },
-            { RomVersions::EU1_0,                  RomGroup::EU1_0, "EU1.0" },
-            { RomVersions::EU1_0_ENCRYPTED,        RomGroup::EU1_0, "EU1.0 ENCRYPTED" },
-            { RomVersions::JP1_0,                  RomGroup::JP1_0, "JP1.0" },
-            { RomVersions::JP1_0_ENCRYPTED,        RomGroup::JP1_0, "JP1.0 ENCRYPTED" },
-            { RomVersions::JP1_1,                  RomGroup::JP1_1, "JP1.1" },
-            { RomVersions::JP1_1_ENCRYPTED,        RomGroup::JP1_1, "JP1.1 ENCRYPTED" },
-            { RomVersions::KR1_0,                  RomGroup::KR1_0, "KR1.0" },
-            { RomVersions::KR1_0_ENCRYPTED,        RomGroup::KR1_0, "KR1.0 ENCRYPTED" },
+            { 0x91B46577u, RomGroup::US1_1, "US1.1" },
+            { 0x01476E8Fu, RomGroup::US1_1, "US1.1 ENCRYPTED" },
+            { 0x218DA42Cu, RomGroup::US1_0, "US1.0" },
+            { 0xE048CD92u, RomGroup::US1_0, "US1.0 ENCRYPTED" },
+            { 0x910018A5u, RomGroup::EU1_1, "EU1.1" },
+            { 0x31703770u, RomGroup::EU1_1, "EU1.1 ENCRYPTED" },
+            { 0x948B1E48u, RomGroup::EU1_1, "EU1.1 BALANCED" },
+            { 0x2970A14Fu, RomGroup::EU1_1, "EU1.1 BALANCED V1.2.11" },
+            { 0x9E20F3A8u, RomGroup::EU1_1, "EU1.1 RUSSIANED" },
+            { 0xA4A8FE5Au, RomGroup::EU1_0, "EU1.0" },
+            { 0x979BB267u, RomGroup::EU1_0, "EU1.0 ENCRYPTED" },
+            { 0xD75F539Du, RomGroup::JP1_0, "JP1.0" },
+            { 0xE795A10Cu, RomGroup::JP1_0, "JP1.0 ENCRYPTED" },
+            { 0x42EBF348u, RomGroup::JP1_1, "JP1.1" },
+            { 0x0A1203A5u, RomGroup::JP1_1, "JP1.1 ENCRYPTED" },
+            { 0xE54682F3u, RomGroup::KR1_0, "KR1.0" },
+            { 0xC26916F3u, RomGroup::KR1_0, "KR1.0 ENCRYPTED" },
         };
 
         // FALLBACK: header gameCode + revision -> RomGroup.

@@ -49,6 +49,30 @@ namespace MelonPrime {
         inline constexpr const char* UseFwName       = "Metroid.Use.Firmware.Name";
         inline constexpr const char* DataUnlock      = "Metroid.Data.Unlock";
         inline constexpr const char* FixShadowFreeze = "Metroid.BugFix.FixShadowFreeze";
+
+        // Phase 5b — keys driven by the non-HUD settings binding table.
+        // Storage names are byte-identical to the original literals (TOML compat).
+        inline constexpr const char* WifiBitset                       = "Metroid.BugFix.WifiBitset";
+        inline constexpr const char* FixNoxusBladePersistence         = "Metroid.BugFix.FixNoxusBladePersistence";
+        inline constexpr const char* UseFirmwareLanguage             = "Metroid.BugFix.UseFirmwareLanguage";
+        inline constexpr const char* ShowHeadshotOnline             = "Metroid.GameFeature.ShowHeadshotOnline";
+        inline constexpr const char* ShowEnemyHpMeterOnline         = "Metroid.GameFeature.ShowEnemyHpMeterOnline";
+        inline constexpr const char* ExpandStageMatrix               = "Metroid.GameFeature.ExpandStageMatrix";
+        inline constexpr const char* ExpandStageMatrixExtra         = "Metroid.GameFeature.ExpandStageMatrixExtra";
+        inline constexpr const char* DisableDoubleDamageMultiplier   = "Metroid.GameFeature.DisableDoubleDamageMultiplier";
+        inline constexpr const char* DamageNotifyPurple             = "Metroid.GameFeature.DamageNotifyPurple";
+        inline constexpr const char* PowerUpPickupNoEffectPowerUps   = "Metroid.GameFeature.PowerUpPickupNoEffectPowerUps";
+        inline constexpr const char* PowerUpPickupNoEffectDoubleDamage = "Metroid.GameFeature.PowerUpPickupNoEffectDoubleDamage";
+        inline constexpr const char* PowerUpPickupNoEffectCloak       = "Metroid.GameFeature.PowerUpPickupNoEffectCloak";
+        inline constexpr const char* PowerUpPickupNoEffectDeathalt   = "Metroid.GameFeature.PowerUpPickupNoEffectDeathalt";
+        inline constexpr const char* InGameAspectRatio               = "Metroid.Visual.InGameAspectRatio";
+        inline constexpr const char* InGameAspectRatioMode           = "Metroid.Visual.InGameAspectRatioMode";
+        inline constexpr const char* LowHpWarningMode                 = "Metroid.LowHpWarning.Mode";
+        inline constexpr const char* LowHpWarningFixed               = "Metroid.LowHpWarning.Fixed";
+        inline constexpr const char* LowHpWarningLow                 = "Metroid.LowHpWarning.Low";
+        inline constexpr const char* LowHpWarningMedium             = "Metroid.LowHpWarning.Medium";
+        inline constexpr const char* LowHpWarningHigh               = "Metroid.LowHpWarning.High";
+        inline constexpr const char* LowHpWarningAutoBase           = "Metroid.LowHpWarning.AutoBase";
     }
 
     namespace WeaponSwitchMethod {
@@ -85,6 +109,7 @@ namespace MelonPrime {
         inline constexpr uint8_t Magmaul     = 6;
         inline constexpr uint8_t ShockCoil   = 7;
         inline constexpr uint8_t OmegaCannon = 8;
+        inline constexpr uint8_t None        = 0xFF; // sentinel: no weapon
     }
 
     namespace WeaponMask {
@@ -99,30 +124,16 @@ namespace MelonPrime {
         inline constexpr uint16_t OmegaCannon  = static_cast<uint16_t>(1u << WeaponId::OmegaCannon);
     }
 
-    namespace RomVersions {
-        constexpr uint32_t US1_0           = 0x218DA42C;
-        constexpr uint32_t US1_1           = 0x91B46577;
-        constexpr uint32_t EU1_0           = 0xA4A8FE5A;
-        constexpr uint32_t EU1_1           = 0x910018A5;
-        constexpr uint32_t EU1_1_BALANCED  = 0x948B1E48;
-        constexpr uint32_t EU1_1_BALANCED_V1_2_11 = 0x2970A14F;
-        constexpr uint32_t EU1_1_RUSSIANED = 0x9E20F3A8;
-        constexpr uint32_t JP1_0           = 0xD75F539D;
-        constexpr uint32_t JP1_1           = 0x42EBF348;
-        constexpr uint32_t KR1_0           = 0xE54682F3;
-        constexpr uint32_t EU1_1_ENCRYPTED = 0x31703770;
-        constexpr uint32_t EU1_0_ENCRYPTED = 0x979BB267;
-        constexpr uint32_t JP1_1_ENCRYPTED = 0x0A1203A5;
-        constexpr uint32_t JP1_0_ENCRYPTED = 0xE795A10C;
-        constexpr uint32_t KR1_0_ENCRYPTED = 0xC26916F3;
-        constexpr uint32_t US1_1_ENCRYPTED = 0x01476E8F;
-        constexpr uint32_t US1_0_ENCRYPTED = 0xE048CD92;
-    }
+    // ROM checksum literals previously lived here in `namespace RomVersions`.
+    // They are now inlined directly into CHECKSUM_TABLE in
+    // MelonPrimeGameRomDetect.cpp (single source of truth).
 
     // NDS header gameCode (offset 0x0C) packed by NDSHeader::GameCodeAsU32(),
     // i.e. GameCode[0] | [1]<<8 | [2]<<16 | [3]<<24. MPH region codes are "AMHx".
-    // This is the primary ROM-version selector; the checksum above only refines
-    // the on-screen variant label (BALANCED / RUSSIANED / ENCRYPTED, etc.).
+    // ROM detection is hybrid (see MelonPrimeGameRomDetect.cpp): the checksum
+    // above is the PRIMARY authoritative selector; gameCode + header revision
+    // (@0x1E) is only the FALLBACK used when the checksum is unrecognized
+    // (trimmed / modified / brand-new dump).
     namespace MphGameCode {
         constexpr uint32_t US = 0x45484D41; // "AMHE"
         constexpr uint32_t EU = 0x50484D41; // "AMHP"

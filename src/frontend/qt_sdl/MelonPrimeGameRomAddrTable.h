@@ -19,115 +19,162 @@ namespace MelonPrime {
     using RomTable = std::array<T, static_cast<size_t>(RomGroup::COUNT)>;
 
     // =========================================================================
-    //  Address definition tables
+    //  Single-source address definition (X-macro)
+    //
+    //  Row format:
+    //    X(KIND, fieldName, ListName, JP1_0, JP1_1, US1_0, US1_1, EU1_0, EU1_1, KR1_0)
+    //
+    //  KIND:
+    //    ADDR = main-RAM / code address; every value is static_assert'd into
+    //           0x02000000-0x023FFFFF below
+    //    DATA = raw 32-bit value (ARM instruction encoding etc.); no range check
+    //
+    //  Each row of the MP_ROM_FIELDS_* lists generates all three of:
+    //    - inline constexpr RomTable<uint32_t> LIST_<ListName>
+    //    - the RomAddresses::<fieldName> member (in row order)
+    //    - the matching CreateRomAddress() initializer entry
+    //  MP_ROM_LISTS_DS_OSD rows generate only the LIST_<ListName> array
+    //  (consumed directly by MelonPrimePatchOsdColor.cpp; not in the struct).
+    //
+    //  Adding an address = adding ONE row to the right group below.
+    //  Note: comments inside the macro bodies must be /* */ style; a //
+    //  comment would swallow the line-continuation backslash.
     // =========================================================================
 
-    inline constexpr RomTable<uint32_t> LIST_PlayerStructStart = { 0x020DC5D4, 0x020DC594, 0x020DA714, 0x020DAF94, 0x020DAFB4, 0x020DB034, 0x020D3DE0 };
-    inline constexpr RomTable<uint32_t> LIST_PlayerPos = { 0x020DBB78, 0x020DBB38, 0x020D9CB8, 0x020DA538, 0x020DA558, 0x020DA5D8, 0x020D33A9 };
-    inline constexpr RomTable<uint32_t> LIST_IsInVisorOrMap = { 0x020DB0BD, 0x020DB07D, 0x020D91FD, 0x020D9A7D, 0x020D9A9D, 0x020D9B1D, 0x020D28EE };
-    inline constexpr RomTable<uint32_t> LIST_PlayerHP = { 0x020DC6AE, 0x020DC66E, 0x020DA7EE, 0x020DB06E, 0x020DB08E, 0x020DB10E, 0x020D3EBA };
-    // Slot-0 Double Damage timer (CPlayer +0x4B0). Used by Damage Notify Purple to flash purple on local damage.
-    inline constexpr RomTable<uint32_t> LIST_PlayerDoubleDamageTimer = { 0x020DCA84, 0x020DCA44, 0x020DABC4, 0x020DB444, 0x020DB464, 0x020DB4E4, 0x020D4290 };
-    inline constexpr RomTable<uint32_t> LIST_BaseIsAltForm = { 0x020DC6D8, 0x020DC698, 0x020DA818, 0x020DB098, 0x020DB0B8, 0x020DB138, 0x020D3EE4 };
-    inline constexpr RomTable<uint32_t> LIST_BoostGauge = { 0x020DC71C, 0x020DC6DC, 0x020DA85C, 0x020DB0DC, 0x020DB0FC, 0x020DB17C, 0x020D3F28 };
-    inline constexpr RomTable<uint32_t> LIST_IsBoosting = { 0x020DC71E, 0x020DC6DE, 0x020DA85E, 0x020DB0DE, 0x020DB0FE, 0x020DB17E, 0x020D3F2A };
-    inline constexpr RomTable<uint32_t> LIST_BaseLoadedSpecialWeapon = { 0x020DC72E, 0x020DC6EE, 0x020DA86E, 0x020DB0EE, 0x020DB10E, 0x020DB18E, 0x020D3F3A };
-    inline constexpr RomTable<uint32_t> LIST_BaseJumpFlag = { 0x020DCA99, 0x020DCA59, 0x020DABD9, 0x020DB459, 0x020DB479, 0x020DB4F9, 0x020D42A5 };
-    inline constexpr RomTable<uint32_t> LIST_BaseWeaponChange = { 0x020DCA9B, 0x020DCA5B, 0x020DABDB, 0x020DB45B, 0x020DB47B, 0x020DB4FB, 0x020D42A7 };
-    inline constexpr RomTable<uint32_t> LIST_BaseSelectedWeapon = { 0x020DCAA3, 0x020DCA63, 0x020DABE3, 0x020DB463, 0x020DB483, 0x020DB503, 0x020D42AF };
+#define MP_ROM_FIELDS_CORE(X) \
+    X(ADDR, playerStructStart,        PlayerStructStart,         0x020DC5D4u, 0x020DC594u, 0x020DA714u, 0x020DAF94u, 0x020DAFB4u, 0x020DB034u, 0x020D3DE0u) \
+    X(ADDR, playerPos,                PlayerPos,                 0x020DBB78u, 0x020DBB38u, 0x020D9CB8u, 0x020DA538u, 0x020DA558u, 0x020DA5D8u, 0x020D33A9u) \
+    X(ADDR, isInVisorOrMap,           IsInVisorOrMap,            0x020DB0BDu, 0x020DB07Du, 0x020D91FDu, 0x020D9A7Du, 0x020D9A9Du, 0x020D9B1Du, 0x020D28EEu) \
+    X(ADDR, playerHP,                 PlayerHP,                  0x020DC6AEu, 0x020DC66Eu, 0x020DA7EEu, 0x020DB06Eu, 0x020DB08Eu, 0x020DB10Eu, 0x020D3EBAu) \
+    X(ADDR, playerDoubleDamageTimer,  PlayerDoubleDamageTimer,   0x020DCA84u, 0x020DCA44u, 0x020DABC4u, 0x020DB444u, 0x020DB464u, 0x020DB4E4u, 0x020D4290u) /* Slot-0 Double Damage timer (CPlayer +0x4B0); Damage Notify Purple local-damage flash */ \
+    X(ADDR, baseIsAltForm,            BaseIsAltForm,             0x020DC6D8u, 0x020DC698u, 0x020DA818u, 0x020DB098u, 0x020DB0B8u, 0x020DB138u, 0x020D3EE4u) \
+    X(ADDR, boostGauge,               BoostGauge,                0x020DC71Cu, 0x020DC6DCu, 0x020DA85Cu, 0x020DB0DCu, 0x020DB0FCu, 0x020DB17Cu, 0x020D3F28u) \
+    X(ADDR, isBoosting,               IsBoosting,                0x020DC71Eu, 0x020DC6DEu, 0x020DA85Eu, 0x020DB0DEu, 0x020DB0FEu, 0x020DB17Eu, 0x020D3F2Au) \
+    X(ADDR, baseLoadedSpecialWeapon,  BaseLoadedSpecialWeapon,   0x020DC72Eu, 0x020DC6EEu, 0x020DA86Eu, 0x020DB0EEu, 0x020DB10Eu, 0x020DB18Eu, 0x020D3F3Au) \
+    X(ADDR, baseJumpFlag,             BaseJumpFlag,              0x020DCA99u, 0x020DCA59u, 0x020DABD9u, 0x020DB459u, 0x020DB479u, 0x020DB4F9u, 0x020D42A5u) \
+    X(ADDR, baseWeaponChange,         BaseWeaponChange,          0x020DCA9Bu, 0x020DCA5Bu, 0x020DABDBu, 0x020DB45Bu, 0x020DB47Bu, 0x020DB4FBu, 0x020D42A7u) \
+    X(ADDR, baseSelectedWeapon,       BaseSelectedWeapon,        0x020DCAA3u, 0x020DCA63u, 0x020DABE3u, 0x020DB463u, 0x020DB483u, 0x020DB503u, 0x020D42AFu) \
+    X(ADDR, baseCurrentWeapon,        BaseCurrentWeapon,         0x020DCAA2u, 0x020DCA62u, 0x020DABE2u, 0x020DB462u, 0x020DB482u, 0x020DB502u, 0x020D42AEu) \
+    X(ADDR, baseHavingWeapons,        BaseHavingWeapons,         0x020DCAA6u, 0x020DCA66u, 0x020DABE6u, 0x020DB466u, 0x020DB486u, 0x020DB506u, 0x020D42B2u) \
+    X(ADDR, baseWeaponAmmo,           BaseWeaponAmmo,            0x020DC720u, 0x020DC6E0u, 0x020DA860u, 0x020DB0E0u, 0x020DB100u, 0x020DB180u, 0x020D3F2Cu) \
+    X(ADDR, weaponDataCurrent,        WeaponDataCurrent,         0x020DCE2Cu, 0x020DCDECu, 0x020DAF6Cu, 0x020DB7ECu, 0x020DB80Cu, 0x020DB88Cu, 0x020D4638u) \
+    X(ADDR, baseAimX,                 BaseAimX,                  0x020E03E6u, 0x020E03A6u, 0x020DE526u, 0x020DEDA6u, 0x020DEDC6u, 0x020DEE46u, 0x020D7C0Eu) \
+    X(ADDR, baseAimY,                 BaseAimY,                  0x020E03EEu, 0x020E03AEu, 0x020DE52Eu, 0x020DEDAEu, 0x020DEDCEu, 0x020DEE4Eu, 0x020D7C16u) \
+    X(ADDR, baseChosenHunter,         BaseChosenHunter,          0x020CD358u, 0x020CD318u, 0x020CB51Cu, 0x020CBDA4u, 0x020CBDC4u, 0x020CBE44u, 0x020C4B88u) \
+    X(ADDR, inGame,                   InGame,                    0x020F0BB0u, 0x020F0B70u, 0x020EEA70u, 0x020EF530u, 0x020EF550u, 0x020EF5D0u, 0x020E81B4u) \
+    X(ADDR, isInAdventure,            IsInAdventure,             0x020E9A3Cu, 0x020E99FCu, 0x020E78FCu, 0x020E83BCu, 0x020E83DCu, 0x020E845Cu, 0x020E11F8u) \
+    X(ADDR, isMapOrUserActionPaused,  IsMapOrUserActionPaused,   0x020FD598u, 0x020FD558u, 0x020FB458u, 0x020FBF18u, 0x020FBF38u, 0x020FBFB8u, 0x020F4CF8u) \
+    X(ADDR, operationAndSound,        OperationAndSound,         0x020E9998u, 0x020E9958u, 0x020E7858u, 0x020E8318u, 0x020E8338u, 0x020E83B8u, 0x020E1154u) \
+    X(ADDR, unlockMapsHunters,        UnlockMapsHunters,         0x020E9999u, 0x020E9959u, 0x020E7859u, 0x020E8319u, 0x020E8339u, 0x020E83B9u, 0x020E1155u) \
+    X(ADDR, volSfx8Bit,               VolSfx8Bit,                0x020E9999u, 0x020E9959u, 0x020E7859u, 0x020E8319u, 0x020E8339u, 0x020E83B9u, 0x020E1155u) \
+    X(ADDR, volMusic8Bit,             VolMusic8Bit,              0x020E999Au, 0x020E995Au, 0x020E785Au, 0x020E831Au, 0x020E833Au, 0x020E83BAu, 0x020E1156u) \
+    X(ADDR, unlockMapsHunters2,       UnlockMapsHunters2,        0x020E999Cu, 0x020E995Cu, 0x020E785Cu, 0x020E831Cu, 0x020E833Cu, 0x020E83BCu, 0x020E1158u) \
+    X(ADDR, unlockMapsHunters3,       UnlockMapsHunters3,        0x020E99A0u, 0x020E9960u, 0x020E7860u, 0x020E8320u, 0x020E8340u, 0x020E83C0u, 0x020E115Cu) \
+    X(ADDR, unlockMapsHunters4,       UnlockMapsHunters4,        0x020E99A4u, 0x020E9964u, 0x020E7864u, 0x020E8324u, 0x020E8344u, 0x020E83C4u, 0x020E1160u) \
+    X(ADDR, unlockMapsHunters5,       UnlockMapsHunters5,        0x020E99A8u, 0x020E9968u, 0x020E7868u, 0x020E8328u, 0x020E8348u, 0x020E83C8u, 0x020E1164u) \
+    X(ADDR, dsNameFlagAndMicVolume,   DsNameFlagAndMicVolume,    0x020E99A9u, 0x020E9969u, 0x020E7869u, 0x020E8329u, 0x020E8349u, 0x020E83C9u, 0x020E1165u) \
+    X(ADDR, sensitivity,              Sensitivity,               0x020E99ACu, 0x020E996Cu, 0x020E786Cu, 0x020E832Cu, 0x020E834Cu, 0x020E83CCu, 0x020E1168u) \
+    X(ADDR, baseInGameSensi,          BaseInGameSensi,           0x020E9A60u, 0x020E9A20u, 0x020E7920u, 0x020E83E0u, 0x020E8400u, 0x020E8480u, 0x020E121Cu) \
+    X(ADDR, mainHunter,               MainHunter,                0x020ECF40u, 0x020ECF00u, 0x020EAE00u, 0x020EB8C0u, 0x020EB8E0u, 0x020EB960u, 0x020E44BCu) \
+    X(ADDR, rankColor,                RankColor,                 0x020ECF43u, 0x020ECF03u, 0x020EAE03u, 0x020EB8C3u, 0x020EB8E3u, 0x020EB963u, 0x020E44BFu)
 
-    inline constexpr RomTable<uint32_t> LIST_BaseCurrentWeapon = { 0x020DCAA2, 0x020DCA62, 0x020DABE2, 0x020DB462, 0x020DB482, 0x020DB502, 0x020D42AE };
-    inline constexpr RomTable<uint32_t> LIST_BaseHavingWeapons = { 0x020DCAA6, 0x020DCA66, 0x020DABE6, 0x020DB466, 0x020DB486, 0x020DB506, 0x020D42B2 };
-    inline constexpr RomTable<uint32_t> LIST_BaseWeaponAmmo = { 0x020DC720, 0x020DC6E0, 0x020DA860, 0x020DB0E0, 0x020DB100, 0x020DB180, 0x020D3F2C };
+    // Custom HUD addresses (expanded under #ifdef MELONPRIME_CUSTOM_HUD)
+#define MP_ROM_FIELDS_HUD(X) \
+    X(ADDR, hudToggle,                HudToggle,                 0x020DB090u, 0x020DB050u, 0x020D91D0u, 0x020D9A50u, 0x020D9A70u, 0x020D9AF0u, 0x020D31C0u) \
+    X(ADDR, currentAmmoSpecial,       CurrentAmmoSpecial,        0x020DC720u, 0x020DC6E0u, 0x020DA860u, 0x020DB0E0u, 0x020DB100u, 0x020DB180u, 0x020D3F2Cu) /* player struct relative (+0xF30) */ \
+    X(ADDR, currentAmmoMissile,       CurrentAmmoMissile,        0x020DC722u, 0x020DC6E2u, 0x020DA862u, 0x020DB0E2u, 0x020DB102u, 0x020DB182u, 0x020D3F2Eu) /* player struct relative (+0xF30) */ \
+    X(ADDR, startPressed,             StartPressed,              0x020E0538u, 0x020E04F8u, 0x020DE634u, 0x020DEEB4u, 0x020DEED4u, 0x020DEF54u, 0x020D7D29u) \
+    X(ADDR, gameOver,                 GameOver,                  0x020E6B48u, 0x020E6B08u, 0x020E4A1Cu, 0x020E54E4u, 0x020E5504u, 0x020E5584u, 0x020DE330u) \
+    X(ADDR, baseViewMode,             BaseViewMode,              0x020DCAAAu, 0x020DCA6Au, 0x020DABEAu, 0x020DB46Au, 0x020DB48Au, 0x020DB50Au, 0x020D42B6u) /* player struct relative (+0xF30) */ \
+    X(ADDR, crosshairPosX,            CrosshairPosX,             0x020E05C0u, 0x020E0580u, 0x020DE7A4u, 0x020DF024u, 0x020DF044u, 0x020DF0C4u, 0x020D7D7Cu) \
+    X(ADDR, crosshairPosY,            CrosshairPosY,             0x020E05C2u, 0x020E0582u, 0x020DE7A6u, 0x020DF026u, 0x020DF046u, 0x020DF0C6u, 0x020D7D7Eu) \
+    X(ADDR, maxHP,                    MaxHP,                     0x020DC6B0u, 0x020DC670u, 0x020DA7F0u, 0x020DB070u, 0x020DB090u, 0x020DB110u, 0x020D3EBCu) /* player struct relative (+0xF30) */ \
+    X(ADDR, maxAmmoSpecial,           MaxAmmoSpecial,            0x020DC724u, 0x020DC6E4u, 0x020DA864u, 0x020DB0E4u, 0x020DB104u, 0x020DB184u, 0x020D3F30u) /* player struct relative (+0xF30) */ \
+    X(ADDR, maxAmmoMissile,           MaxAmmoMissile,            0x020DC726u, 0x020DC6E6u, 0x020DA866u, 0x020DB0E6u, 0x020DB106u, 0x020DB186u, 0x020D3F32u) /* player struct relative (+0xF30) */ \
+    X(ADDR, baseBomb,                 BaseBomb,                  0x020DCB10u, 0x020DCAD0u, 0x020DAC50u, 0x020DB4D0u, 0x020DB4F0u, 0x020DB570u, 0x020D431Cu) /* u32 00000X00: bits[11:8]=bombs available (alt-form only); player struct relative (+0xF30) */ \
+    X(ADDR, matchRank,                MatchRank,                 0x020E9C8Cu, 0x020E9C4Cu, 0x020E7B4Cu, 0x020E860Cu, 0x020E862Cu, 0x020E86ACu, 0x020E1448u) /* u32 ZZYYXXVV: byte0=P1..byte3=P4 rank (0=1st 1=2nd 2=3rd 3=4th/absent) */ \
+    X(ADDR, timeLeft,                 TimeLeft,                  0x020E6B68u, 0x020E6B28u, 0x020E4A3Cu, 0x020E5504u, 0x020E5524u, 0x020E55A4u, 0x020DE350u) /* u32 remaining time; time limit setting = battleSettings+4: 0000XXYZ XX=minutes*4 (battle) or *A (other); wifi adds +0x20 */
 
-    inline constexpr RomTable<uint32_t> LIST_WeaponDataCurrent = { 0x020DCE2C, 0x020DCDEC, 0x020DAF6C, 0x020DB7EC, 0x020DB80C, 0x020DB88C, 0x020D4638 };
-    inline constexpr RomTable<uint32_t> LIST_BaseAimX = { 0x020E03E6, 0x020E03A6, 0x020DE526, 0x020DEDA6, 0x020DEDC6, 0x020DEE46, 0x020D7C0E };
-    inline constexpr RomTable<uint32_t> LIST_BaseAimY = { 0x020E03EE, 0x020E03AE, 0x020DE52E, 0x020DEDAE, 0x020DEDCE, 0x020DEE4E, 0x020D7C16 };
+    // In-game aspect ratio scaling patch addresses (expanded under #ifdef MELONPRIME_DS)
+#define MP_ROM_FIELDS_DS_SCALE(X) \
+    X(ADDR, scalePatchAddr1,          ScalePatchAddr1,           0x0211313Cu, 0x021130FCu, 0x02110FFCu, 0x02111ABCu, 0x02111ADCu, 0x02111B5Cu, 0x02109B64u) \
+    X(ADDR, scalePatchAddr2,          ScalePatchAddr2,           0x0211E7E8u, 0x0211E7A8u, 0x0211C638u, 0x0211D168u, 0x0211D114u, 0x0211D208u, 0x02114838u) \
+    X(ADDR, scaleValueAddr,           ScaleValueAddr,            0x02112960u, 0x02112920u, 0x02110820u, 0x021112E0u, 0x02111300u, 0x02111380u, 0x021091A4u) /* 16-bit write target */
 
-    inline constexpr RomTable<uint32_t> LIST_BaseChosenHunter = { 0x020CD358, 0x020CD318, 0x020CB51C, 0x020CBDA4, 0x020CBDC4, 0x020CBE44, 0x020C4B88 };
-    inline constexpr RomTable<uint32_t> LIST_InGame = { 0x020F0BB0, 0x020F0B70, 0x020EEA70, 0x020EF530, 0x020EF550, 0x020EF5D0, 0x020E81B4 };
-    inline constexpr RomTable<uint32_t> LIST_IsInAdventure = { 0x020E9A3C, 0x020E99FC, 0x020E78FC, 0x020E83BC, 0x020E83DC, 0x020E845C, 0x020E11F8 };
-    inline constexpr RomTable<uint32_t> LIST_IsMapOrUserActionPaused = { 0x020FD598, 0x020FD558, 0x020FB458, 0x020FBF18, 0x020FBF38, 0x020FBFB8, 0x020F4CF8 };
-    inline constexpr RomTable<uint32_t> LIST_OperationAndSound = { 0x020E9998, 0x020E9958, 0x020E7858, 0x020E8318, 0x020E8338, 0x020E83B8, 0x020E1154 };
-    inline constexpr RomTable<uint32_t> LIST_UnlockMapsHunters = { 0x020E9999, 0x020E9959, 0x020E7859, 0x020E8319, 0x020E8339, 0x020E83B9, 0x020E1155 };
-    inline constexpr RomTable<uint32_t> LIST_VolSfx8Bit = { 0x020E9999, 0x020E9959, 0x020E7859, 0x020E8319, 0x020E8339, 0x020E83B9, 0x020E1155 };
-    inline constexpr RomTable<uint32_t> LIST_VolMusic8Bit = { 0x020E999A, 0x020E995A, 0x020E785A, 0x020E831A, 0x020E833A, 0x020E83BA, 0x020E1156 };
-    inline constexpr RomTable<uint32_t> LIST_UnlockMapsHunters2 = { 0x020E999C, 0x020E995C, 0x020E785C, 0x020E831C, 0x020E833C, 0x020E83BC, 0x020E1158 };
-    inline constexpr RomTable<uint32_t> LIST_UnlockMapsHunters3 = { 0x020E99A0, 0x020E9960, 0x020E7860, 0x020E8320, 0x020E8340, 0x020E83C0, 0x020E115C };
-    inline constexpr RomTable<uint32_t> LIST_UnlockMapsHunters4 = { 0x020E99A4, 0x020E9964, 0x020E7864, 0x020E8324, 0x020E8344, 0x020E83C4, 0x020E1160 };
-    inline constexpr RomTable<uint32_t> LIST_UnlockMapsHunters5 = { 0x020E99A8, 0x020E9968, 0x020E7868, 0x020E8328, 0x020E8348, 0x020E83C8, 0x020E1164 };
-    inline constexpr RomTable<uint32_t> LIST_DsNameFlagAndMicVolume = { 0x020E99A9, 0x020E9969, 0x020E7869, 0x020E8329, 0x020E8349, 0x020E83C9, 0x020E1165 };
-    inline constexpr RomTable<uint32_t> LIST_Sensitivity = { 0x020E99AC, 0x020E996C, 0x020E786C, 0x020E832C, 0x020E834C, 0x020E83CC, 0x020E1168 };
-    inline constexpr RomTable<uint32_t> LIST_BaseInGameSensi = { 0x020E9A60, 0x020E9A20, 0x020E7920, 0x020E83E0, 0x020E8400, 0x020E8480, 0x020E121C };
-    inline constexpr RomTable<uint32_t> LIST_MainHunter = { 0x020ECF40, 0x020ECF00, 0x020EAE00, 0x020EB8C0, 0x020EB8E0, 0x020EB960, 0x020E44BC };
-    inline constexpr RomTable<uint32_t> LIST_RankColor = { 0x020ECF43, 0x020ECF03, 0x020EAE03, 0x020EB8C3, 0x020EB8E3, 0x020EB963, 0x020E44BF };
+    // Battle mode HUD addresses (expanded under #ifdef MELONPRIME_DS)
+#define MP_ROM_FIELDS_DS_BATTLE(X) \
+    X(ADDR, battleMode,               BattleMode,                0x020CD344u, 0x020CD304u, 0x020CB508u, 0x020CBD90u, 0x020CBDB0u, 0x020CBE30u, 0x020C4B74u) \
+    X(ADDR, battleSettings,           BattleSettings,            0x020CD3B8u, 0x020CD378u, 0x020CB57Cu, 0x020CBE04u, 0x020CBE24u, 0x020CBEA4u, 0x020C4BE8u) /* +4 = time limit settings */ \
+    X(ADDR, basePoint,                BasePoint,                 0x020E9C6Cu, 0x020E9C2Cu, 0x020E7B2Cu, 0x020E85ECu, 0x020E860Cu, 0x020E868Cu, 0x020E1428u) /* -0xB0 = lives, -0x180 = time (per-player: +4 * playerIdx) */
 
+    // =========================================================================
+    //  OSD Color Patch — literal pool addresses (expanded under #ifdef MELONPRIME_DS)
+    //  Each OsdLiteral_* address holds a 32-bit value 0x0000CCCC (BGR555 color).
+    //
+    //  H211 "node stolen" shim: 4 ARM instructions that redirect H211's hardcoded
+    //  immediate color load to the same literal pool entry as the return/base/complete
+    //  group, so H211 uses the patched color without a separate literal.
+    //  instr1 (E3A0301F = mov r3,#0x1F alpha) and instr2 (E98D000C = stmib sp,{r2,r3}) are constant.
+    //
+    //  H211 Separate Color: 10-instruction shim that encodes the color directly in
+    //  mov/orr immediates, allowing H211 to use a color independent from other OSD msgs.
+    //  instr0 = E3A020LL (mov r2,#ll) and instr1 = E3822CHH (orr r2,r2,#hh<<8) are built at runtime.
+    //  instr2-3 (alpha/store) and instr6-9 (timer/flags/ptr) are constant across versions.
+    //
+    //  Original (pre-patch) values for revert live in the OsdH211*Orig* DATA rows
+    //  below and in the scalar k* constants next to the generated tables.
+    // =========================================================================
+#define MP_ROM_LISTS_DS_OSD(X) \
+    X(ADDR, osdLiteral_LostLives,     OsdLiteral_LostLives,      0x0200FED4u, 0x0200FED4u, 0x0200FF18u, 0x0200FEA4u, 0x0200FF10u, 0x0200FEA4u, 0x02021844u) \
+    X(ADDR, osdLiteral_KillDeath,     OsdLiteral_KillDeath,      0x02018268u, 0x02018268u, 0x02018288u, 0x0201828Cu, 0x02018280u, 0x0201828Cu, 0x0201A7F8u) \
+    X(ADDR, osdLiteral_ReturnBase,    OsdLiteral_ReturnBase,     0x0202DE50u, 0x0202DE50u, 0x0202DE2Cu, 0x0202DE2Cu, 0x0202DE24u, 0x0202DE2Cu, 0x02036AC8u) \
+    X(ADDR, osdLiteral_NoAmmo,        OsdLiteral_NoAmmo,         0x0202DE68u, 0x0202DE68u, 0x0202DE44u, 0x0202DE44u, 0x0202DE3Cu, 0x0202DE44u, 0x02036AD4u) \
+    X(ADDR, osdLiteral_CowardDetect,  OsdLiteral_CowardDetect,   0x02030534u, 0x02030534u, 0x0203051Cu, 0x020304E8u, 0x020304E0u, 0x020304E8u, 0x02033D98u) \
+    X(ADDR, osdLiteral_AcquiringNode, OsdLiteral_AcquiringNode,  0x02031D0Cu, 0x02031D0Cu, 0x02031BF8u, 0x02031BA8u, 0x02031BA0u, 0x02031BA8u, 0x0203285Cu) \
+    X(ADDR, osdLiteral_Turret,        OsdLiteral_Turret,         0x02111F6Cu, 0x02111F2Cu, 0x0210FE2Cu, 0x021108ECu, 0x0211090Cu, 0x0211098Cu, 0x02108C28u) \
+    X(ADDR, osdLiteral_OctoReset,     OsdLiteral_OctoReset,      0x0212F6D8u, 0x0212F698u, 0x0212D538u, 0x0212E058u, 0x0212E018u, 0x0212E0F8u, 0x021251C4u) \
+    X(ADDR, osdLiteral_OctoDrop,      OsdLiteral_OctoDrop,       0x0212FA64u, 0x0212FA24u, 0x0212D8C4u, 0x0212E3E4u, 0x0212E3A4u, 0x0212E484u, 0x02124F98u) \
+    X(ADDR, osdLiteral_OctoCond,      OsdLiteral_OctoCond,       0x0212FBCCu, 0x0212FB8Cu, 0x0212DA2Cu, 0x0212E54Cu, 0x0212E50Cu, 0x0212E5ECu, 0x02124D6Cu) \
+    X(ADDR, osdLiteral_OctoMissing,   OsdLiteral_OctoMissing,    0x0213042Cu, 0x021303ECu, 0x0212E28Cu, 0x0212EDACu, 0x0212ED6Cu, 0x0212EE4Cu, 0x02126268u) \
+    X(ADDR, osdH211ShimAddr,          OsdH211ShimAddr,           0x0202D88Cu, 0x0202D88Cu, 0x0202D8B0u, 0x0202D8B0u, 0x0202D8A8u, 0x0202D8B0u, 0x020365F8u) \
+    X(DATA, osdH211ShimInstr0,        OsdH211ShimInstr0,         0xE59F25BCu, 0xE59F25BCu, 0xE59F2574u, 0xE59F2574u, 0xE59F2574u, 0xE59F2574u, 0xE59F24C8u) /* ldr r2,[pc,#offset] -> ReturnBase literal */ \
+    X(DATA, osdH211ShimInstr3,        OsdH211ShimInstr3,         0xE59F15B4u, 0xE59F15B4u, 0xE59F156Cu, 0xE59F156Cu, 0xE59F156Cu, 0xE59F156Cu, 0xE59F1488u) /* ldr r1,[pc,#offset] -> font pointer restore */ \
+    X(DATA, osdH211SepInstr4,         OsdH211SepInstr4,          0xE59F15B0u, 0xE59F15B0u, 0xE59F1568u, 0xE59F1568u, 0xE59F1568u, 0xE59F1568u, 0xE59F1484u) /* ldr r1,[pc,#offset] -> font ptr holder */ \
+    X(DATA, osdH211SepInstr5,         OsdH211SepInstr5,          0xE5911000u, 0xE5911000u, 0xE5911000u, 0xE5911000u, 0xE5911000u, 0xE5911000u, 0xE59110A8u) /* ldr r1,[r1,...] (KR offset differs) */ \
+    X(DATA, osdH211OrigShimInstr2,    OsdH211OrigShimInstr2,     0xE59F15B8u, 0xE59F15B8u, 0xE59F1570u, 0xE59F1570u, 0xE59F1570u, 0xE59F1570u, 0xE59F148Cu) /* original instr at shim +0x08 (varies by ROM) */ \
+    X(DATA, osdH211SepOrigInstr4,     OsdH211SepOrigInstr4,      0xE5912000u, 0xE5912000u, 0xE5912000u, 0xE5912000u, 0xE5912000u, 0xE5912000u, 0xE59120A8u) /* original instr at sep +0x10 (KR ldr offset differs) */
+
+    // =========================================================================
+    //  Aim Smoothing Patch target addresses & original instructions
+    // =========================================================================
+#define MP_ROM_FIELDS_AIM(X) \
+    X(ADDR, aimPatchAddrX,            AimPatchAddrX,             0x02029FE0u, 0x02029FE0u, 0x0202A004u, 0x0202A004u, 0x02029FFCu, 0x0202A004u, 0x02028020u) \
+    X(DATA, aimPatchOrigX1,           AimPatchOrigX1,            0xE1D703FEu, 0xE1D703FEu, 0xE1D703FEu, 0xE1D703FEu, 0xE1D703FEu, 0xE1D703FEu, 0xE1D613F8u) \
+    X(DATA, aimPatchOrigX2,           AimPatchOrigX2,            0xE1D783FCu, 0xE1D783FCu, 0xE1D783FCu, 0xE1D783FCu, 0xE1D783FCu, 0xE1D783FCu, 0xE1D603FAu) \
+    X(DATA, aimPatchX1,               AimPatchX1,                0xE1D703FCu, 0xE1D703FCu, 0xE1D703FCu, 0xE1D703FCu, 0xE1D703FCu, 0xE1D703FCu, 0xE1D603FCu) \
+    X(ADDR, aimPatchAddrY,            AimPatchAddrY,             0x0202A008u, 0x0202A008u, 0x0202A02Cu, 0x0202A02Cu, 0x0202A024u, 0x0202A02Cu, 0x02028048u) \
+    X(DATA, aimPatchOrigY1,           AimPatchOrigY1,            0xE1D704F6u, 0xE1D704F6u, 0xE1D704F6u, 0xE1D704F6u, 0xE1D704F6u, 0xE1D704F6u, 0xE1D614F0u) \
+    X(DATA, aimPatchOrigY2,           AimPatchOrigY2,            0xE1D784F4u, 0xE1D784F4u, 0xE1D784F4u, 0xE1D784F4u, 0xE1D784F4u, 0xE1D784F4u, 0xE1D604F2u) \
+    X(DATA, aimPatchY1,               AimPatchY1,                0xE1D704F4u, 0xE1D704F4u, 0xE1D704F4u, 0xE1D704F4u, 0xE1D704F4u, 0xE1D704F4u, 0xE1D604F4u)
+
+    // =========================================================================
+    //  Generated LIST_* tables (same names/types as the former hand-written ones)
+    // =========================================================================
+#define MP_ROM_EMIT_LIST(kind, field, Name, jp10, jp11, us10, us11, eu10, eu11, kr10) \
+    inline constexpr RomTable<uint32_t> LIST_##Name = { jp10, jp11, us10, us11, eu10, eu11, kr10 };
+
+    MP_ROM_FIELDS_CORE(MP_ROM_EMIT_LIST)
 #ifdef MELONPRIME_CUSTOM_HUD
-    // Custom HUD addresses
-    inline constexpr RomTable<uint32_t> LIST_HudToggle        = { 0x020DB090, 0x020DB050, 0x020D91D0, 0x020D9A50, 0x020D9A70, 0x020D9AF0, 0x020D31C0 };
-    inline constexpr RomTable<uint32_t> LIST_CurrentAmmoSpecial = { 0x020DC720, 0x020DC6E0, 0x020DA860, 0x020DB0E0, 0x020DB100, 0x020DB180, 0x020D3F2C }; // player struct relative (+0xF30)
-    inline constexpr RomTable<uint32_t> LIST_CurrentAmmoMissile = { 0x020DC722, 0x020DC6E2, 0x020DA862, 0x020DB0E2, 0x020DB102, 0x020DB182, 0x020D3F2E }; // player struct relative (+0xF30)
-    inline constexpr RomTable<uint32_t> LIST_StartPressed      = { 0x020E0538, 0x020E04F8, 0x020DE634, 0x020DEEB4, 0x020DEED4, 0x020DEF54, 0x020D7D29 };
-    inline constexpr RomTable<uint32_t> LIST_GameOver          = { 0x020E6B48, 0x020E6B08, 0x020E4A1C, 0x020E54E4, 0x020E5504, 0x020E5584, 0x020DE330 };
-    inline constexpr RomTable<uint32_t> LIST_BaseViewMode      = { 0x020DCAAA, 0x020DCA6A, 0x020DABEA, 0x020DB46A, 0x020DB48A, 0x020DB50A, 0x020D42B6 }; // player struct relative (+0xF30)
-    inline constexpr RomTable<uint32_t> LIST_CrosshairPosX     = { 0x020E05C0, 0x020E0580, 0x020DE7A4, 0x020DF024, 0x020DF044, 0x020DF0C4, 0x020D7D7C };
-    inline constexpr RomTable<uint32_t> LIST_CrosshairPosY     = { 0x020E05C2, 0x020E0582, 0x020DE7A6, 0x020DF026, 0x020DF046, 0x020DF0C6, 0x020D7D7E };
-    inline constexpr RomTable<uint32_t> LIST_MaxHP             = { 0x020DC6B0, 0x020DC670, 0x020DA7F0, 0x020DB070, 0x020DB090, 0x020DB110, 0x020D3EBC }; // player struct relative (+0xF30)
-    inline constexpr RomTable<uint32_t> LIST_MaxAmmoSpecial    = { 0x020DC724, 0x020DC6E4, 0x020DA864, 0x020DB0E4, 0x020DB104, 0x020DB184, 0x020D3F30 }; // player struct relative (+0xF30)
-    inline constexpr RomTable<uint32_t> LIST_MaxAmmoMissile    = { 0x020DC726, 0x020DC6E6, 0x020DA866, 0x020DB0E6, 0x020DB106, 0x020DB186, 0x020D3F32 }; // player struct relative (+0xF30)
-    // u32 00000X00: bits[11:8] = bombs currently available (alt-form only); player struct relative (+0xF30)
-    inline constexpr RomTable<uint32_t> LIST_BaseBomb          = { 0x020DCB10, 0x020DCAD0, 0x020DAC50, 0x020DB4D0, 0x020DB4F0, 0x020DB570, 0x020D431C };
-    // u32 ZZYYXXVV: byte0=P1 byte1=P2 byte2=P3 byte3=P4 rank (0=1st 1=2nd 2=3rd 3=4th/absent)
-    inline constexpr RomTable<uint32_t> LIST_MatchRank         = { 0x020E9C8C, 0x020E9C4C, 0x020E7B4C, 0x020E860C, 0x020E862C, 0x020E86AC, 0x020E1448 };
-    inline constexpr RomTable<uint32_t> LIST_TimeLeft          = { 0x020E6B68, 0x020E6B28, 0x020E4A3C, 0x020E5504, 0x020E5524, 0x020E55A4, 0x020DE350 };
-    // Time limit setting: battleSettings+4  format: 0000XXYZ  XX=minutes*4(battle) or *A(other); wifi adds +0x20
+    MP_ROM_FIELDS_HUD(MP_ROM_EMIT_LIST)
 #endif
-
 #ifdef MELONPRIME_DS
-    // In-game aspect ratio scaling patch addresses
-    inline constexpr RomTable<uint32_t> LIST_ScalePatchAddr1   = { 0x0211313C, 0x021130FC, 0x02110FFC, 0x02111ABC, 0x02111ADC, 0x02111B5C, 0x02109B64 };
-    inline constexpr RomTable<uint32_t> LIST_ScalePatchAddr2   = { 0x0211E7E8, 0x0211E7A8, 0x0211C638, 0x0211D168, 0x0211D114, 0x0211D208, 0x02114838 };
-    inline constexpr RomTable<uint32_t> LIST_ScaleValueAddr    = { 0x02112960, 0x02112920, 0x02110820, 0x021112E0, 0x02111300, 0x02111380, 0x021091A4 }; // 16-bit
+    MP_ROM_FIELDS_DS_SCALE(MP_ROM_EMIT_LIST)
 #endif
-
 #ifdef MELONPRIME_DS
-    // Battle mode HUD addresses
-    inline constexpr RomTable<uint32_t> LIST_BattleMode       = { 0x020CD344, 0x020CD304, 0x020CB508, 0x020CBD90, 0x020CBDB0, 0x020CBE30, 0x020C4B74 };
-    inline constexpr RomTable<uint32_t> LIST_BattleSettings    = { 0x020CD3B8, 0x020CD378, 0x020CB57C, 0x020CBE04, 0x020CBE24, 0x020CBEA4, 0x020C4BE8 };
-    inline constexpr RomTable<uint32_t> LIST_BasePoint         = { 0x020E9C6C, 0x020E9C2C, 0x020E7B2C, 0x020E85EC, 0x020E860C, 0x020E868C, 0x020E1428 };
-    // Lives offset = basePoint - 0xB0, Time offset = basePoint - 0x180 (per-player: +4 * playerIdx)
+    MP_ROM_FIELDS_DS_BATTLE(MP_ROM_EMIT_LIST)
 #endif
-
 #ifdef MELONPRIME_DS
-    // =========================================================================
-    //  OSD Color Patch — literal pool addresses
-    //  Order: JP1.0, JP1.1, US1.0, US1.1, EU1.0, EU1.1, KR1.0
-    //  Each address holds a 32-bit value 0x0000CCCC (BGR555 color).
-    // =========================================================================
-    inline constexpr RomTable<uint32_t> LIST_OsdLiteral_LostLives    = { 0x0200FED4, 0x0200FED4, 0x0200FF18, 0x0200FEA4, 0x0200FF10, 0x0200FEA4, 0x02021844 };
-    inline constexpr RomTable<uint32_t> LIST_OsdLiteral_KillDeath    = { 0x02018268, 0x02018268, 0x02018288, 0x0201828C, 0x02018280, 0x0201828C, 0x0201A7F8 };
-    inline constexpr RomTable<uint32_t> LIST_OsdLiteral_ReturnBase   = { 0x0202DE50, 0x0202DE50, 0x0202DE2C, 0x0202DE2C, 0x0202DE24, 0x0202DE2C, 0x02036AC8 };
-    inline constexpr RomTable<uint32_t> LIST_OsdLiteral_NoAmmo       = { 0x0202DE68, 0x0202DE68, 0x0202DE44, 0x0202DE44, 0x0202DE3C, 0x0202DE44, 0x02036AD4 };
-    inline constexpr RomTable<uint32_t> LIST_OsdLiteral_CowardDetect = { 0x02030534, 0x02030534, 0x0203051C, 0x020304E8, 0x020304E0, 0x020304E8, 0x02033D98 };
-    inline constexpr RomTable<uint32_t> LIST_OsdLiteral_AcquiringNode= { 0x02031D0C, 0x02031D0C, 0x02031BF8, 0x02031BA8, 0x02031BA0, 0x02031BA8, 0x0203285C };
-    inline constexpr RomTable<uint32_t> LIST_OsdLiteral_Turret       = { 0x02111F6C, 0x02111F2C, 0x0210FE2C, 0x021108EC, 0x0211090C, 0x0211098C, 0x02108C28 };
-    inline constexpr RomTable<uint32_t> LIST_OsdLiteral_OctoReset    = { 0x0212F6D8, 0x0212F698, 0x0212D538, 0x0212E058, 0x0212E018, 0x0212E0F8, 0x021251C4 };
-    inline constexpr RomTable<uint32_t> LIST_OsdLiteral_OctoDrop     = { 0x0212FA64, 0x0212FA24, 0x0212D8C4, 0x0212E3E4, 0x0212E3A4, 0x0212E484, 0x02124F98 };
-    inline constexpr RomTable<uint32_t> LIST_OsdLiteral_OctoCond     = { 0x0212FBCC, 0x0212FB8C, 0x0212DA2C, 0x0212E54C, 0x0212E50C, 0x0212E5EC, 0x02124D6C };
-    inline constexpr RomTable<uint32_t> LIST_OsdLiteral_OctoMissing  = { 0x0213042C, 0x021303EC, 0x0212E28C, 0x0212EDAC, 0x0212ED6C, 0x0212EE4C, 0x02126268 };
-    // H211 "node stolen" shim: 4 ARM instructions that redirect H211's hardcoded
-    // immediate color load to the same literal pool entry as the return/base/complete
-    // group, so H211 uses the patched color without a separate literal.
-    inline constexpr RomTable<uint32_t> LIST_OsdH211ShimAddr   = { 0x0202D88C, 0x0202D88C, 0x0202D8B0, 0x0202D8B0, 0x0202D8A8, 0x0202D8B0, 0x020365F8 };
-    inline constexpr RomTable<uint32_t> LIST_OsdH211ShimInstr0 = { 0xE59F25BC, 0xE59F25BC, 0xE59F2574, 0xE59F2574, 0xE59F2574, 0xE59F2574, 0xE59F24C8 }; // ldr r2,[pc,#offset] -> ReturnBase literal
-    inline constexpr RomTable<uint32_t> LIST_OsdH211ShimInstr3 = { 0xE59F15B4, 0xE59F15B4, 0xE59F156C, 0xE59F156C, 0xE59F156C, 0xE59F156C, 0xE59F1488 }; // ldr r1,[pc,#offset] -> font pointer restore
-    // instr1 (E3A0301F = mov r3,#0x1F alpha) and instr2 (E98D000C = stmib sp,{r2,r3}) are constant.
-    // H211 Separate Color: 10-instruction shim that encodes the color directly in
-    // mov/orr immediates, allowing H211 to use a color independent from other OSD msgs.
-    // instr0 = E3A020LL (mov r2,#ll) and instr1 = E3822CHH (orr r2,r2,#hh<<8) are built at runtime.
-    // instr2-3 (alpha/store) and instr6-9 (timer/flags/ptr) are constant across versions.
-    inline constexpr RomTable<uint32_t> LIST_OsdH211SepInstr4 = { 0xE59F15B0, 0xE59F15B0, 0xE59F1568, 0xE59F1568, 0xE59F1568, 0xE59F1568, 0xE59F1484 }; // ldr r1,[pc,#offset] -> font ptr holder
-    inline constexpr RomTable<uint32_t> LIST_OsdH211SepInstr5 = { 0xE5911000, 0xE5911000, 0xE5911000, 0xE5911000, 0xE5911000, 0xE5911000, 0xE59110A8 }; // ldr r1,[r1,...] (KR offset differs)
+    MP_ROM_LISTS_DS_OSD(MP_ROM_EMIT_LIST)
 
     // ── OSD color patch revert: original ARM values from ROM dump ──
     // Default OSD colors before any patch
@@ -135,162 +182,98 @@ namespace MelonPrime {
     static constexpr uint32_t kOsdOrigLitNoAmmo   = 0x0000295Fu; // default no-ammo red (H009 only)
     // H211 shim revert: original 4 instructions at the shim site
     // instr0 (+0x00) / instr1 (+0x04) / instr3 (+0x0C) are identical for all ROMs
+    // (instr2 at +0x08 varies by ROM: see the OsdH211OrigShimInstr2 DATA row)
     static constexpr uint32_t kH211OrigInstr0     = 0xE3A0201Fu; // mov r2,#0x1F
     static constexpr uint32_t kH211OrigInstr1     = 0xE58D2004u; // str r2,[sp,#4]
-    // instr2 (+0x08) varies by ROM:
-    inline constexpr RomTable<uint32_t> LIST_OsdH211OrigShimInstr2 = {
-        0xE59F15B8u, 0xE59F15B8u,  // JP1.0, JP1.1
-        0xE59F1570u, 0xE59F1570u,  // US1.0, US1.1
-        0xE59F1570u, 0xE59F1570u,  // EU1.0, EU1.1
-        0xE59F148Cu,               // KR1.0
-    };
     static constexpr uint32_t kH211OrigInstr3     = 0xE58D2008u; // str r2,[sp,#8]
-    // H211 separate-color revert: instr at +0x10 varies by ROM (instructions +0x14..+0x24 are constant)
-    inline constexpr RomTable<uint32_t> LIST_OsdH211SepOrigInstr4 = {
-        0xE5912000u, 0xE5912000u,  // JP1.0, JP1.1
-        0xE5912000u, 0xE5912000u,  // US1.0, US1.1
-        0xE5912000u, 0xE5912000u,  // EU1.0, EU1.1
-        0xE59120A8u,               // KR1.0 (different ldr offset)
-    };
+    // H211 separate-color revert: instr at +0x10 varies by ROM (OsdH211SepOrigInstr4 row);
+    // instructions +0x14..+0x24 are constant:
     static constexpr uint32_t kH211SepOrigInstr5  = 0xE3A0105Au; // +0x14
     static constexpr uint32_t kH211SepOrigInstr6  = 0xE58D200Cu; // +0x18
     static constexpr uint32_t kH211SepOrigInstr7  = 0xE58D1010u; // +0x1C
     static constexpr uint32_t kH211SepOrigInstr8  = 0xE3A01011u; // +0x20
     static constexpr uint32_t kH211SepOrigInstr9  = 0xE58D1014u; // +0x24
 #endif
+    MP_ROM_FIELDS_AIM(MP_ROM_EMIT_LIST)
+
+#undef MP_ROM_EMIT_LIST
 
     // =========================================================================
-    //  Aim Smoothing Patch Target Addresses & Original Instructions
+    //  Compile-time validation: every ADDR row must lie in main RAM
+    //  (DATA rows are instruction encodings and are deliberately not checked.)
     // =========================================================================
-    inline constexpr RomTable<uint32_t> LIST_AimPatchAddrX = { 0x02029FE0, 0x02029FE0, 0x0202A004, 0x0202A004, 0x02029FFC, 0x0202A004, 0x02028020 };
-    inline constexpr RomTable<uint32_t> LIST_AimPatchOrigX1 = { 0xE1D703FE, 0xE1D703FE, 0xE1D703FE, 0xE1D703FE, 0xE1D703FE, 0xE1D703FE, 0xE1D613F8 };
-    inline constexpr RomTable<uint32_t> LIST_AimPatchOrigX2 = { 0xE1D783FC, 0xE1D783FC, 0xE1D783FC, 0xE1D783FC, 0xE1D783FC, 0xE1D783FC, 0xE1D603FA };
-    inline constexpr RomTable<uint32_t> LIST_AimPatchX1 = { 0xE1D703FC, 0xE1D703FC, 0xE1D703FC, 0xE1D703FC, 0xE1D703FC, 0xE1D703FC, 0xE1D603FC };
+    namespace RomAddrDetail {
+        constexpr bool InMainRam(uint32_t v) noexcept {
+            return v >= 0x02000000u && v <= 0x023FFFFFu;
+        }
+        constexpr bool RangeOk_ADDR(uint32_t a, uint32_t b, uint32_t c, uint32_t d,
+                                    uint32_t e, uint32_t f, uint32_t g) noexcept {
+            return InMainRam(a) && InMainRam(b) && InMainRam(c) && InMainRam(d)
+                && InMainRam(e) && InMainRam(f) && InMainRam(g);
+        }
+        constexpr bool RangeOk_DATA(uint32_t, uint32_t, uint32_t, uint32_t,
+                                    uint32_t, uint32_t, uint32_t) noexcept {
+            return true;
+        }
+    } // namespace RomAddrDetail
 
-    inline constexpr RomTable<uint32_t> LIST_AimPatchAddrY = { 0x0202A008, 0x0202A008, 0x0202A02C, 0x0202A02C, 0x0202A024, 0x0202A02C, 0x02028048 };
-    inline constexpr RomTable<uint32_t> LIST_AimPatchOrigY1 = { 0xE1D704F6, 0xE1D704F6, 0xE1D704F6, 0xE1D704F6, 0xE1D704F6, 0xE1D704F6, 0xE1D614F0 };
-    inline constexpr RomTable<uint32_t> LIST_AimPatchOrigY2 = { 0xE1D784F4, 0xE1D784F4, 0xE1D784F4, 0xE1D784F4, 0xE1D784F4, 0xE1D784F4, 0xE1D604F2 };
-    inline constexpr RomTable<uint32_t> LIST_AimPatchY1 = { 0xE1D704F4, 0xE1D704F4, 0xE1D704F4, 0xE1D704F4, 0xE1D704F4, 0xE1D704F4, 0xE1D604F4 };
+#define MP_ROM_CHECK_RANGE(kind, field, Name, jp10, jp11, us10, us11, eu10, eu11, kr10) \
+    static_assert(RomAddrDetail::RangeOk_##kind(jp10, jp11, us10, us11, eu10, eu11, kr10), \
+                  "LIST_" #Name ": address outside main RAM 0x02000000-0x023FFFFF");
+
+    MP_ROM_FIELDS_CORE(MP_ROM_CHECK_RANGE)
+    MP_ROM_FIELDS_HUD(MP_ROM_CHECK_RANGE)
+    MP_ROM_FIELDS_DS_SCALE(MP_ROM_CHECK_RANGE)
+    MP_ROM_FIELDS_DS_BATTLE(MP_ROM_CHECK_RANGE)
+    MP_ROM_LISTS_DS_OSD(MP_ROM_CHECK_RANGE)
+    MP_ROM_FIELDS_AIM(MP_ROM_CHECK_RANGE)
+
+#undef MP_ROM_CHECK_RANGE
 
     // =========================================================================
-    //  Struct + constexpr builder
+    //  Struct + constexpr builder (generated from the same rows)
     // =========================================================================
+#define MP_ROM_EMIT_FIELD(kind, field, Name, jp10, jp11, us10, us11, eu10, eu11, kr10) \
+    uint32_t field;
+
     struct RomAddresses {
         uint8_t  romGroupIndex;  // index into RomGroup enum (for patch tables etc.)
-        uint32_t playerStructStart;
-        uint32_t playerPos;
-        uint32_t isInVisorOrMap;
-        uint32_t playerHP;
-        uint32_t playerDoubleDamageTimer;
-        uint32_t baseIsAltForm;
-        uint32_t boostGauge;
-        uint32_t isBoosting;
-        uint32_t baseLoadedSpecialWeapon;
-        uint32_t baseJumpFlag;
-        uint32_t baseWeaponChange;
-        uint32_t baseSelectedWeapon;
-        uint32_t baseCurrentWeapon;
-        uint32_t baseHavingWeapons;
-        uint32_t baseWeaponAmmo;
-        uint32_t weaponDataCurrent;
-        uint32_t baseAimX;
-        uint32_t baseAimY;
-        uint32_t baseChosenHunter;
-        uint32_t inGame;
-        uint32_t isInAdventure;
-        uint32_t isMapOrUserActionPaused;
-        uint32_t operationAndSound;
-        uint32_t unlockMapsHunters;
-        uint32_t volSfx8Bit;
-        uint32_t volMusic8Bit;
-        uint32_t unlockMapsHunters2;
-        uint32_t unlockMapsHunters3;
-        uint32_t unlockMapsHunters4;
-        uint32_t unlockMapsHunters5;
-        uint32_t dsNameFlagAndMicVolume;
-        uint32_t sensitivity;
-        uint32_t baseInGameSensi;
-        uint32_t mainHunter;
-        uint32_t rankColor;
-
+        MP_ROM_FIELDS_CORE(MP_ROM_EMIT_FIELD)
 #ifdef MELONPRIME_CUSTOM_HUD
-        uint32_t hudToggle;
-        uint32_t currentAmmoSpecial;  // player struct relative (+0xF30)
-        uint32_t currentAmmoMissile;  // player struct relative (+0xF30)
-        uint32_t startPressed;
-        uint32_t gameOver;
-        uint32_t baseViewMode;        // player struct relative (+0xF30)
-        uint32_t crosshairPosX;
-        uint32_t crosshairPosY;
-        uint32_t maxHP;             // player struct relative (+0xF30)
-        uint32_t maxAmmoSpecial;    // player struct relative (+0xF30)
-        uint32_t maxAmmoMissile;    // player struct relative (+0xF30)
-        uint32_t baseBomb;          // u32 00000X00: bits[11:8]=bomb count; player struct relative (+0xF30)
-        uint32_t matchRank;         // u32 ZZYYXXVV: each byte = player rank (0=1st..3=4th/absent)
-        uint32_t timeLeft;          // u32 remaining time; time limit setting = battleSettings+4
+        MP_ROM_FIELDS_HUD(MP_ROM_EMIT_FIELD)
 #endif
 #ifdef MELONPRIME_DS
-        uint32_t scalePatchAddr1;
-        uint32_t scalePatchAddr2;
-        uint32_t scaleValueAddr;   // 16-bit write target
+        MP_ROM_FIELDS_DS_SCALE(MP_ROM_EMIT_FIELD)
 #endif
 #ifdef MELONPRIME_DS
-        uint32_t battleMode;
-        uint32_t battleSettings;   // +4 = time limit settings
-        uint32_t basePoint;        // -0xB0 = lives, -0x180 = time
+        MP_ROM_FIELDS_DS_BATTLE(MP_ROM_EMIT_FIELD)
 #endif
-
-        uint32_t aimPatchAddrX;
-        uint32_t aimPatchOrigX1;
-        uint32_t aimPatchOrigX2;
-        uint32_t aimPatchX1;
-        uint32_t aimPatchAddrY;
-        uint32_t aimPatchOrigY1;
-        uint32_t aimPatchOrigY2;
-        uint32_t aimPatchY1;
+        MP_ROM_FIELDS_AIM(MP_ROM_EMIT_FIELD)
     };
+
+#undef MP_ROM_EMIT_FIELD
+
+#define MP_ROM_EMIT_INIT(kind, field, Name, jp10, jp11, us10, us11, eu10, eu11, kr10) \
+    LIST_##Name[i],
 
     constexpr RomAddresses CreateRomAddress(size_t i) {
         return {
             static_cast<uint8_t>(i),
-            LIST_PlayerStructStart[i], LIST_PlayerPos[i],
-            LIST_IsInVisorOrMap[i], LIST_PlayerHP[i],
-            LIST_PlayerDoubleDamageTimer[i],
-            LIST_BaseIsAltForm[i], LIST_BoostGauge[i],
-            LIST_IsBoosting[i], LIST_BaseLoadedSpecialWeapon[i],
-            LIST_BaseJumpFlag[i], LIST_BaseWeaponChange[i],
-            LIST_BaseSelectedWeapon[i],
-            LIST_BaseCurrentWeapon[i], LIST_BaseHavingWeapons[i],
-            LIST_BaseWeaponAmmo[i],
-            LIST_WeaponDataCurrent[i], LIST_BaseAimX[i], LIST_BaseAimY[i],
-            LIST_BaseChosenHunter[i], LIST_InGame[i],
-            LIST_IsInAdventure[i], LIST_IsMapOrUserActionPaused[i],
-            LIST_OperationAndSound[i], LIST_UnlockMapsHunters[i],
-            LIST_VolSfx8Bit[i], LIST_VolMusic8Bit[i],
-            LIST_UnlockMapsHunters2[i], LIST_UnlockMapsHunters3[i],
-            LIST_UnlockMapsHunters4[i], LIST_UnlockMapsHunters5[i],
-            LIST_DsNameFlagAndMicVolume[i], LIST_Sensitivity[i],
-            LIST_BaseInGameSensi[i], LIST_MainHunter[i], LIST_RankColor[i],
-
+            MP_ROM_FIELDS_CORE(MP_ROM_EMIT_INIT)
 #ifdef MELONPRIME_CUSTOM_HUD
-            LIST_HudToggle[i], LIST_CurrentAmmoSpecial[i],
-            LIST_CurrentAmmoMissile[i], LIST_StartPressed[i],
-            LIST_GameOver[i], LIST_BaseViewMode[i],
-            LIST_CrosshairPosX[i], LIST_CrosshairPosY[i],
-            LIST_MaxHP[i], LIST_MaxAmmoSpecial[i], LIST_MaxAmmoMissile[i],
-            LIST_BaseBomb[i], LIST_MatchRank[i], LIST_TimeLeft[i],
+            MP_ROM_FIELDS_HUD(MP_ROM_EMIT_INIT)
 #endif
 #ifdef MELONPRIME_DS
-            LIST_ScalePatchAddr1[i], LIST_ScalePatchAddr2[i], LIST_ScaleValueAddr[i],
+            MP_ROM_FIELDS_DS_SCALE(MP_ROM_EMIT_INIT)
 #endif
 #ifdef MELONPRIME_DS
-            LIST_BattleMode[i], LIST_BattleSettings[i], LIST_BasePoint[i],
+            MP_ROM_FIELDS_DS_BATTLE(MP_ROM_EMIT_INIT)
 #endif
-
-            LIST_AimPatchAddrX[i], LIST_AimPatchOrigX1[i], LIST_AimPatchOrigX2[i], LIST_AimPatchX1[i],
-            LIST_AimPatchAddrY[i], LIST_AimPatchOrigY1[i], LIST_AimPatchOrigY2[i], LIST_AimPatchY1[i]
+            MP_ROM_FIELDS_AIM(MP_ROM_EMIT_INIT)
         };
     }
+
+#undef MP_ROM_EMIT_INIT
 
     inline constexpr RomTable<RomAddresses> ROM_INSTANCES = {
         CreateRomAddress(0), CreateRomAddress(1), CreateRomAddress(2),
@@ -298,11 +281,31 @@ namespace MelonPrime {
         CreateRomAddress(6)
     };
 
+    // Permanent sanity check: each instance's romGroupIndex equals its table index.
+    namespace RomAddrDetail {
+        constexpr bool RomGroupIndexOk() noexcept {
+            for (size_t i = 0; i < ROM_INSTANCES.size(); ++i)
+                if (ROM_INSTANCES[i].romGroupIndex != static_cast<uint8_t>(i)) return false;
+            return true;
+        }
+    } // namespace RomAddrDetail
+    static_assert(RomAddrDetail::RomGroupIndexOk(),
+                  "ROM_INSTANCES[i].romGroupIndex must equal i");
+
     [[nodiscard]] static inline const RomAddresses* getRomAddrsPtr(RomGroup group) noexcept {
         const size_t idx = static_cast<size_t>(group);
         assert(idx < ROM_INSTANCES.size());
         return &ROM_INSTANCES[idx];
     }
+
+
+    // The X-macro row lists are private to this header.
+#undef MP_ROM_FIELDS_CORE
+#undef MP_ROM_FIELDS_HUD
+#undef MP_ROM_FIELDS_DS_SCALE
+#undef MP_ROM_FIELDS_DS_BATTLE
+#undef MP_ROM_LISTS_DS_OSD
+#undef MP_ROM_FIELDS_AIM
 
 } // namespace MelonPrime
 

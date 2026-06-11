@@ -6,8 +6,8 @@ MelonPrimeDS currently has three zoom input methods.
 
 | UI state | Config value | Runtime mode | Behavior |
 | --- | ---: | --- | --- |
-| `Use New Method for Zoom` checked | `0` | New | Read the in-game zoom binding at `player+0x3E0` and press that DS input bit. |
-| both zoom boxes unchecked | `1` | Legacy | Always press the fixed DS `R` bit for zoom. |
+| both zoom boxes unchecked | `0` | Legacy | Always press the fixed DS `R` bit for zoom. |
+| `Use New Method for Zoom` checked | `1` | New | Read the in-game zoom binding at `player+0x3E0` and press that DS input bit. |
 | `Use New Method 2 for Zoom` checked | `2` | New2 | Toggle native zoom state by calling `SetPlayerScopeZoom(player, enabled)` through an ARM9 trampoline. |
 
 `Use New Method for Zoom` and `Use New Method 2 for Zoom` are mutually exclusive checkboxes. If both are off, the saved method is Legacy.
@@ -16,8 +16,8 @@ Relevant config:
 
 ```cpp
 Metroid.Input.ZoomMethod
-0 = New preset binding
-1 = Legacy fixed R
+0 = Legacy fixed R
+1 = New preset binding
 2 = New native toggle
 ```
 
@@ -28,7 +28,7 @@ The default is `0` and the config range is `0..2`.
 `ReloadConfigFlags()` maps `Metroid.Input.ZoomMethod` to hot runtime booleans.
 
 ```cpp
-m_enableNewZoomInputMethod = (ZoomMethod == 0);
+m_enableNewZoomInputMethod = (ZoomMethod == 1);
 m_enableNativeZoomToggle   = (ZoomMethod == 2);
 ```
 

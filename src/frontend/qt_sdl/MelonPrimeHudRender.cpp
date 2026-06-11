@@ -57,16 +57,11 @@ namespace MelonPrime {
 #include "MelonPrimeHudRenderMain.inc"
 
 // =========================================================================
-//  P-7: HUD Layout Editor — implementation lives in a separate file.
-//  This is a unity-build include: HudConfigScreen shares all statics above.
+//  P-7: HUD Layout Editor unity fragment.
+//  The on-screen editor shares the runtime HUD statics and helpers above.
 // =========================================================================
-#include "MelonPrimeHudConfigOnScreen.cpp"
+#include "MelonPrimeHudConfigOnScreenUnity.inc"
 
 } // namespace MelonPrime
 
 #endif // MELONPRIME_CUSTOM_HUD
-
-
-
-
-

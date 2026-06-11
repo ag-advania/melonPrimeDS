@@ -1,17 +1,11 @@
 #ifdef MELONPRIME_DS
 
 #include "MelonPrimePatchShowEnemyHpMeterOnline.h"
+#include "MelonPrimePatchCommon.h"
 #include "Config.h"
-#include "NDS.h"
 
 namespace MelonPrime {
 namespace {
-
-struct PatchWord {
-    uint32_t address;
-    uint32_t applyVal;
-    uint32_t revertVal;
-};
 
 static constexpr const char* kCfgShowEnemyHpMeterOnline = "Metroid.GameFeature.ShowEnemyHpMeterOnline";
 
@@ -55,41 +49,17 @@ static constexpr PatchWord kPatchWords[7][3] = {
     },
 };
 
-static constexpr uint8_t kPatchWordCounts[7] = { 3, 3, 3, 3, 3, 3, 2 };
+static constexpr RomPatchSpan kPatchSpans[7] = {
+    { &kPatchWords[0][0], 3 },
+    { &kPatchWords[1][0], 3 },
+    { &kPatchWords[2][0], 3 },
+    { &kPatchWords[3][0], 3 },
+    { &kPatchWords[4][0], 3 },
+    { &kPatchWords[5][0], 3 },
+    { &kPatchWords[6][0], 2 },
+};
 
-static bool s_applied = false;
-static uint8_t s_appliedRomGroupIndex = 0xFFu;
-
-[[nodiscard]] static bool IsValidRomGroup(uint8_t romGroupIndex) noexcept
-{
-    return romGroupIndex < 7;
-}
-
-[[nodiscard]] static bool CanWritePatch(melonDS::NDS* nds, uint8_t romGroupIndex, bool apply)
-{
-    if (!nds || !IsValidRomGroup(romGroupIndex))
-        return false;
-
-    const auto& words = kPatchWords[romGroupIndex];
-    const uint8_t count = kPatchWordCounts[romGroupIndex];
-    for (uint8_t i = 0; i < count; ++i)
-    {
-        const uint32_t current = nds->ARM9Read32(words[i].address);
-        const uint32_t expected = apply ? words[i].revertVal : words[i].applyVal;
-        const uint32_t already = apply ? words[i].applyVal : words[i].revertVal;
-        if (current != expected && current != already)
-            return false;
-    }
-    return true;
-}
-
-static void WritePatch(melonDS::NDS* nds, uint8_t romGroupIndex, bool apply)
-{
-    const auto& words = kPatchWords[romGroupIndex];
-    const uint8_t count = kPatchWordCounts[romGroupIndex];
-    for (uint8_t i = 0; i < count; ++i)
-        nds->ARM9Write32(words[i].address, apply ? words[i].applyVal : words[i].revertVal);
-}
+static StaticWordPatch s_patch(kPatchSpans);
 
 } // namespace
 
@@ -97,44 +67,21 @@ void ShowEnemyHpMeterOnline_ApplyOnce(melonDS::NDS* nds, Config::Table& cfg, uin
 {
     if (!cfg.GetBool(kCfgShowEnemyHpMeterOnline))
     {
-        ShowEnemyHpMeterOnline_RestoreOnce(nds, s_appliedRomGroupIndex);
+        s_patch.RestoreOnce(nds, romGroupIndex);
         return;
     }
 
-    if (!IsValidRomGroup(romGroupIndex))
-        return;
-    if (s_applied && s_appliedRomGroupIndex == romGroupIndex)
-        return;
-    if (s_applied)
-        ShowEnemyHpMeterOnline_RestoreOnce(nds, s_appliedRomGroupIndex);
-    if (!CanWritePatch(nds, romGroupIndex, true))
-        return;
-
-    WritePatch(nds, romGroupIndex, true);
-    s_applied = true;
-    s_appliedRomGroupIndex = romGroupIndex;
+    s_patch.ApplyOnce(nds, romGroupIndex);
 }
 
 void ShowEnemyHpMeterOnline_RestoreOnce(melonDS::NDS* nds, uint8_t romGroupIndex)
 {
-    if (!s_applied || !nds)
-        return;
-    if (IsValidRomGroup(s_appliedRomGroupIndex))
-        romGroupIndex = s_appliedRomGroupIndex;
-    if (!IsValidRomGroup(romGroupIndex))
-        return;
-    if (!CanWritePatch(nds, romGroupIndex, false))
-        return;
-
-    WritePatch(nds, romGroupIndex, false);
-    s_applied = false;
-    s_appliedRomGroupIndex = 0xFFu;
+    s_patch.RestoreOnce(nds, romGroupIndex);
 }
 
 void ShowEnemyHpMeterOnline_ResetPatchState()
 {
-    s_applied = false;
-    s_appliedRomGroupIndex = 0xFFu;
+    s_patch.ResetState();
 }
 
 } // namespace MelonPrime
