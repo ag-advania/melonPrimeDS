@@ -176,7 +176,13 @@ private:
     {
         u32 VariantWorkCount[MaxVariants*4];
         u32 SortedWorkOffset[MaxVariants];
-
+#ifdef MELONPRIME_DS
+        // Real per-variant work item count. VariantWorkCount[v].y/.z hold a
+        // split (Y*Z) indirect dispatch pair instead of the raw count, because
+        // NVIDIA caps the Y/Z work group dimensions at 65535 and silently
+        // renders garbage past that (melonDS issue #2047).
+        u32 VariantWorkRealCount[MaxVariants];
+#endif
         u32 SortWorkWorkCount[4];
     };
 

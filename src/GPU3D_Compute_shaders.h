@@ -273,7 +273,14 @@ layout (std430, binding = 6) buffer BinResultBuffer
 {
     uvec4 VariantWorkCount[MaxVariants];
     uint SortedWorkOffset[MaxVariants];
-
+)"
+#ifdef MELONPRIME_DS
+// MelonPrimeDS: see BinResultHeader in GPU3D_Compute.h - keeps the real work
+// count while VariantWorkCount[v].y/.z carry the split dispatch pair.
+R"(    uint VariantWorkRealCount[MaxVariants];
+)"
+#endif
+R"(
     uvec4 SortWorkWorkCount;
 
     uint BinningMaskAndOffset[];
@@ -281,6 +288,15 @@ layout (std430, binding = 6) buffer BinResultBuffer
     //uint BinnedMask[TilesPerLine*TileLines*BinStride];
     //uint WorkOffsets[TilesPerLine*TileLines*BinStride];
 };
+)"
+#ifdef MELONPRIME_DS
+// MelonPrimeDS: max Z group count per rasterise dispatch. Must stay <= 65535
+// (GL minimum / NVIDIA hard limit for the Y and Z dimensions).
+R"(
+const uint RasteriseChunkSize = 32768U;
+)"
+#endif
+R"(
 
 const int BinningCoarseMaskStart = 0;
 const int BinningMaskStart = BinningCoarseMaskStart+TilesPerLine*TileLines*CoarseBinStride;
@@ -977,7 +993,47 @@ void main()
     }
 
     int linearTile = fineTile.x + fineTile.y * TilesPerLine + coarseTile.x * CoarseTileCountX + coarseTile.y * TilesPerLine * CoarseTileCountY;
+)"
+#ifdef MELONPRIME_DS
+// MelonPrimeDS: clamp the work-tile allocation to the MaxWorkTiles budget.
+// TileMemory and WorkDescs are sized for MaxWorkTiles entries, but the
+// heuristic (tiles * 16) can be exceeded when many same-screen-filling
+// translucent polygons stack up (point-blank explosion / death effects),
+// which previously caused out-of-bounds tile writes -> mosaic garbage.
+// The allocation is trimmed *before* the mask/coarse-mask/offset stores so
+// every downstream consumer (DepthBlend pairs mask bits with sequential
+// slots) sees a consistent, fully-written set. Excess polygons in a tile
+// drop gracefully (missing layer) instead of corrupting the frame.
+// VariantWorkCount[0].w may overshoot MaxWorkTiles; both consumers
+// (SortWorkWorkCount in CalcOffsets, the SortWork guard) clamp with min().
+R"(
+    uint workOffset = 0U;
+    if (binnedMask != 0U)
+    {
+        workOffset = atomicAdd(VariantWorkCount[0].w, uint(bitCount(binnedMask)));
+        if (workOffset >= uint(MaxWorkTiles))
+        {
+            binnedMask = 0U;
+        }
+        else
+        {
+            uint keepCount = uint(MaxWorkTiles) - workOffset;
+            while (uint(bitCount(binnedMask)) > keepCount)
+                binnedMask &= ~(1U << uint(findMSB(binnedMask)));
+        }
+    }
 
+    BinningMaskAndOffset[BinningMaskStart + linearTile * BinStride + groupIdx] = binnedMask;
+    int coarseMaskIdx = linearTile * CoarseBinStride + (groupIdx >> 5);
+    if (binnedMask != 0U)
+        atomicOr(BinningMaskAndOffset[BinningCoarseMaskStart + coarseMaskIdx], 1U << (groupIdx & 0x1F));
+
+    if (binnedMask != 0U)
+    {
+        BinningMaskAndOffset[BinningWorkOffsetsStart + linearTile * BinStride + groupIdx] = workOffset;
+)"
+#else
+R"(
     BinningMaskAndOffset[BinningMaskStart + linearTile * BinStride + groupIdx] = binnedMask;
     int coarseMaskIdx = linearTile * CoarseBinStride + (groupIdx >> 5);
     if (binnedMask != 0U)
@@ -987,7 +1043,9 @@ void main()
     {
         uint workOffset = atomicAdd(VariantWorkCount[0].w, uint(bitCount(binnedMask)));
         BinningMaskAndOffset[BinningWorkOffsetsStart + linearTile * BinStride + groupIdx] = workOffset;
-
+)"
+#endif
+R"(
         uint tilePositionCombined = bitfieldInsert(fineTileTopLeft.x, fineTileTopLeft.y, 16, 16);
 
         int idx = 0;
@@ -1021,9 +1079,36 @@ void main()
         if (gl_GlobalInvocationID.x == 0)
         {
             // a bit of a cheat putting this here, but this shader won't run that often
+)"
+#ifdef MELONPRIME_DS
+// MelonPrimeDS: [0].w can overshoot MaxWorkTiles when the binning shader
+// clamps the allocation; only the first MaxWorkTiles entries were written.
+R"(
+            SortWorkWorkCount = uvec4((min(VariantWorkCount[0].w, uint(MaxWorkTiles)) + 31) / 32, 1, 1, 0);
+)"
+#else
+R"(
             SortWorkWorkCount = uvec4((VariantWorkCount[0].w + 31) / 32, 1, 1, 0);
+)"
+#endif
+R"(
         }
         SortedWorkOffset[gl_GlobalInvocationID.x] = atomicAdd(VariantWorkCount[1].w, VariantWorkCount[gl_GlobalInvocationID.x].z);
+)"
+#ifdef MELONPRIME_DS
+// MelonPrimeDS: split the per-variant rasterise dispatch across the Y and Z
+// axes so neither exceeds the 65535 group limit (melonDS issue #2047). The
+// raw count is preserved in VariantWorkRealCount for the bounds check in the
+// rasterise shader. Only .y/.z are rewritten; [0].w (global work counter) and
+// [1].w (sorted-offset accumulator) stay untouched.
+R"(
+        uint realCount = VariantWorkCount[gl_GlobalInvocationID.x].z;
+        VariantWorkRealCount[gl_GlobalInvocationID.x] = realCount;
+        VariantWorkCount[gl_GlobalInvocationID.x].y = (realCount + RasteriseChunkSize - 1U) / RasteriseChunkSize;
+        VariantWorkCount[gl_GlobalInvocationID.x].z = min(realCount, RasteriseChunkSize);
+)"
+#endif
+R"(
     }
 }
 
@@ -1039,7 +1124,19 @@ layout (local_size_x = 32) in;
 
 void main()
 {
+)"
+#ifdef MELONPRIME_DS
+// MelonPrimeDS: same clamp as SortWorkWorkCount - entries past MaxWorkTiles
+// were dropped by the binning shader and must not be read.
+R"(
+    if (gl_GlobalInvocationID.x < min(VariantWorkCount[0].w, uint(MaxWorkTiles)))
+)"
+#else
+R"(
     if (gl_GlobalInvocationID.x < VariantWorkCount[0].w)
+)"
+#endif
+R"(
     {
         uvec2 workDesc = WorkDescs[WorkDescsUnsortedStart + gl_GlobalInvocationID.x];
         int inVariantOffset = int(bitfieldExtract(workDesc.y, 11, 21));
@@ -1073,7 +1170,26 @@ layout (location = 3) uniform float CaptureYOffset;
 
 void main()
 {
+)"
+#ifdef MELONPRIME_DS
+// MelonPrimeDS: the dispatch is split as (1, ceil(count/chunk), min(count, chunk))
+// to respect the 65535 Y/Z group limit (melonDS issue #2047). Rebuild the
+// linear work index and drop the overdispatched tail work groups. The early
+// return is uniform across the work group (it only depends on gl_WorkGroupID)
+// and the shader has no barriers, so this is safe.
+R"(
+    uint linearWorkIdx = gl_WorkGroupID.y * RasteriseChunkSize + gl_WorkGroupID.z;
+    if (linearWorkIdx >= VariantWorkRealCount[CurVariant])
+        return;
+
+    uvec2 workDesc = WorkDescs[WorkDescsSortedStart + SortedWorkOffset[CurVariant] + linearWorkIdx];
+)"
+#else
+R"(
     uvec2 workDesc = WorkDescs[WorkDescsSortedStart + SortedWorkOffset[CurVariant] + gl_WorkGroupID.z];
+)"
+#endif
+R"(
     Polygon polygon = Polygons[bitfieldExtract(workDesc.y, 0, 11)];
     ivec2 position = ivec2(bitfieldExtract(workDesc.x, 0, 16), bitfieldExtract(workDesc.x, 16, 16)) + ivec2(gl_LocalInvocationID.xy);
     int tileOffset = int(bitfieldExtract(workDesc.y, 11, 21)) * TileSize * TileSize + TileSize * int(gl_LocalInvocationID.y) + int(gl_LocalInvocationID.x);
