@@ -163,6 +163,12 @@ namespace MelonPrime {
         if (!m_joy2KeySupport) {
             drainPendingMessages();
         }
+        // P-48: Stuck-state recovery moved here from snapshotInputFrame.
+        // Runs in BOTH modes (joy2key included — only the message drain is
+        // hidden-window-specific). Ordering matters: drain first so genuine
+        // UP events captured above clear buttons normally before the
+        // GetAsyncKeyState-based recovery scan runs.
+        m_state->clearStuckPostFrame();
     }
 
     // =========================================================================

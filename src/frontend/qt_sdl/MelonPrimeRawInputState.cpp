@@ -535,8 +535,24 @@ namespace MelonPrime {
         // Read deferred (queued from last frame) and new presses separately so
         // we can distinguish "stacked" cases (same bit in both) and avoid
         // collapsing multiple logical clicks into one bit via OR.
-        const uint8_t deferredFromPrev = m_mouseButtonDeferredPresses.exchange(0, std::memory_order_acquire);
-        const uint8_t newPresses       = m_mouseButtonPresses.exchange(0, std::memory_order_acquire);
+        //
+        // P-48: Load-first instead of unconditional exchange. Both slots are
+        // zero on the vast majority of frames (no clicks), so two relaxed
+        // loads replace two lock-prefixed RMWs (full-barrier XCHG, ~20+ cyc
+        // each) on the input→RunFrame critical path.
+        //   - m_mouseButtonDeferredPresses is consumer-thread-only (single-
+        //     writer discipline), so load + store(0) fully replaces exchange.
+        //   - m_mouseButtonPresses can be written concurrently (GUI thread in
+        //     joy2key mode), so when nonzero it must still be claimed with an
+        //     atomic exchange — bits OR'd in between the load and the exchange
+        //     are picked up by the exchange; a press arriving just after a
+        //     zero load is simply consumed next frame (same window as before).
+        const uint8_t deferredFromPrev = m_mouseButtonDeferredPresses.load(std::memory_order_relaxed);
+        if (deferredFromPrev)
+            m_mouseButtonDeferredPresses.store(0, std::memory_order_relaxed);
+        uint8_t newPresses = m_mouseButtonPresses.load(std::memory_order_relaxed);
+        if (newPresses)
+            newPresses = m_mouseButtonPresses.exchange(0, std::memory_order_acquire);
 
         // Active = bits forced into snap.mouse this frame.
         // Defer  = bits queued for next frame (re-stored into deferred slot).
@@ -598,18 +614,21 @@ namespace MelonPrime {
             forcePressEdge = hotkeysTriggeredByPresses & m_hkPrev;
         }
 
+        // P-48: The deferred slot is guaranteed 0 here (consumed above,
+        // consumer-thread-only writer), so a plain store replaces fetch_or.
         if (deferMousePresses)
-            m_mouseButtonDeferredPresses.fetch_or(deferMousePresses, std::memory_order_release);
+            m_mouseButtonDeferredPresses.store(deferMousePresses, std::memory_order_release);
 
         snap.mouse = static_cast<uint8_t>(physicalMouse | activeMousePresses);
 
-        // clearStuck* runs AFTER takeSnapshot so that valid quick presses
-        // (button pressed and released within one frame) are captured in the
-        // snapshot before being cleared.  Stuck bits are cleared for the
-        // next frame — one frame of false-fire from a stuck button is
-        // preferable to silently dropping a genuine click.
-        const bool clearedMouse = clearStuckMouseButtons();
-        const bool clearedKeys = clearStuckKeys();
+        // P-48: clearStuckMouseButtons / clearStuckKeys no longer run here.
+        // Their GetAsyncKeyState syscalls (1-6 per frame while keys/buttons
+        // are held — i.e. constantly during gameplay) sat directly on the
+        // input→RunFrame latency path, yet their effect is only ever visible
+        // to the NEXT frame's snapshot ("stuck bits are cleared for the next
+        // frame"). They now run post-frame in clearStuckPostFrame(), called
+        // from DeferredDrain after drawScreen — same once-per-frame cadence,
+        // same "after the snapshot was taken" ordering, zero pre-frame cost.
 
         // Mouse loads are now sequenced after the acquire fence,
         // guaranteeing consistency with the VK snapshot.
@@ -627,13 +646,30 @@ namespace MelonPrime {
         // calc so they appear as fresh presses.
         outHk.pressed = newDown & ~(m_hkPrev & ~forcePressEdge);
 
-        // If recovery cleared stale bits, keep edge tracking aligned with the
-        // post-recovery held state. The frame output still preserves the
-        // pre-clear snapshot so short clicks are not dropped.
+        m_hkPrev = newDown;
+    }
+
+    // =========================================================================
+    // P-48: clearStuckPostFrame — stuck-state recovery off the critical path.
+    //
+    // Runs the GetAsyncKeyState recovery scans (clearStuckMouseButtons +
+    // clearStuckKeys) AFTER RunFrame/drawScreen instead of inside
+    // snapshotInputFrame. Semantics are unchanged:
+    //   - The scans still run after the frame's snapshot was taken, so valid
+    //     quick presses were already captured before any clearing.
+    //   - Stuck bits are still cleared before the NEXT snapshot — one frame
+    //     of false-fire from a stuck button remains preferable to silently
+    //     dropping a genuine click.
+    //   - The two-consecutive-check debounce (m_mouseStuckCandidate) keeps
+    //     its once-per-frame cadence.
+    //   - If recovery cleared stale bits, edge tracking is realigned with the
+    //     post-recovery held state (same realignment snapshotInputFrame did).
+    // =========================================================================
+    void InputState::clearStuckPostFrame() noexcept {
+        const bool clearedMouse = clearStuckMouseButtons();
+        const bool clearedKeys = clearStuckKeys();
         if (UNLIKELY(clearedMouse || clearedKeys)) {
             m_hkPrev = scanBoundHotkeys(takeSnapshot());
-        } else {
-            m_hkPrev = newDown;
         }
     }
 
