@@ -1525,5 +1525,5 @@ a clean-build benchmark; it is the Phase 8 verification measurement.
   they do not match the all-or-nothing `StaticWordPatch` shape.
 - Runtime instruction hooks remain outside `MelonPrimePatchRegistry`; `MelonPrimeArm9Hook.cpp` is
   the dispatcher/registry for those hooks.
-- Manual smoke checks are still tracked per phase in `melonprime-full-refactor-plan.md`; Phase 8
-  changed documentation only.
+- Manual smoke checks are still tracked per phase in
+  `completed/melonprime-full-refactor-plan.md`; Phase 8 changed documentation only.
