@@ -48,12 +48,7 @@
 #include "Savestate.h"
 #include "EmuInstance.h"
 
-#ifdef MELONPRIME_DS
-#include "MelonPrime.h"
-#ifdef _WIN32
-#include "MelonPrimeRawWinInternal.h"  // P-11: WinInternal::SetHighTimerResolution()
-#endif
-#endif // MELONPRIME_DS
+#include "EmuThreadMelonPrimeIncludes.inc"
 
 using namespace melonDS;
 
@@ -64,9 +59,7 @@ EmuThread::EmuThread(EmuInstance* inst, QObject* parent) : QThread(parent)
     emuPauseStack = emuPauseStackRunning;
     emuActive = false;
 
-#ifdef MELONPRIME_DS
-    melonPrime = std::make_unique<MelonPrime::MelonPrimeCore>(inst);
-#endif // MELONPRIME_DS
+#include "EmuThreadMelonPrimeConstructor.inc"
 }
 
 EmuThread::~EmuThread()
@@ -116,14 +109,7 @@ void EmuThread::run()
     Config::Table& globalCfg = emuInstance->getGlobalConfig();
     u32 mainScreenPos[3];
 
-#ifdef MELONPRIME_DS
-    melonPrime->Initialize();
-    // P-11: Set 0.5ms timer resolution for precision frame pacing.
-    // Must be called before frame loop. Without this, SDL_Delay(1) ≈ 15.6ms.
-#ifdef _WIN32
-    MelonPrime::WinInternal::SetHighTimerResolution();
-#endif
-#endif // MELONPRIME_DS
+#include "EmuThreadMelonPrimeRunSetup.inc"
 
     mainScreenPos[0] = 0;
     mainScreenPos[1] = 0;
@@ -177,17 +163,7 @@ void EmuThread::run()
     emuInstance->fastForwardToggled = false;
     emuInstance->slowmoToggled = false;
 
-#ifdef MELONPRIME_DS
-    // P-13: Late-poll state.
-    // storedFrametimeStep carries the previous frame's timing for the
-    // early limiter. This enables sleeping BEFORE input polling so raw
-    // input is sampled as close to RunFrame as possible.
-    double storedFrametimeStep = 1.0 / 60.0;
-    bool isFirstLimiterFrame = true;
-    // P-39: Once shaders finish compiling, NeedsShaderCompile() always returns
-    // false. Cache this to skip the virtual dispatch (~15-25 cyc) every frame.
-    bool shadersReady = false;
-#endif
+#include "EmuThreadMelonPrimeFrameState.inc"
 
     // --- Frame Advance (lambda so MelonPrime can call it externally) ---
     auto frameAdvanceOnce = [&]() {
@@ -769,13 +745,7 @@ void EmuThread::sendMessage(Message msg)
     msgMutex.lock();
     msgQueue.enqueue(msg);
     msgMutex.unlock();
-#ifdef MELONPRIME_DS
-    // P-46: Store true AFTER unlock so the enqueue is always visible to the
-    // emu thread when it sees true (release pairs with the acquire load in
-    // handleMessages). Storing before lock would allow emu to see true, lock
-    // an empty queue, clear the flag, and then lose the message.
-    msgPending.store(true, std::memory_order_release);
-#endif
+#include "EmuThreadMelonPrimeSendMessage.inc"
 }
 
 void EmuThread::waitMessage(int num)
@@ -793,15 +763,7 @@ void EmuThread::waitAllMessages()
 
 void EmuThread::handleMessages()
 {
-#ifdef MELONPRIME_DS
-    // P-46: Atomic fast-path — skip mutex entirely when no messages pending.
-    // sendMessage() stores true (release) before enqueue; we load (acquire)
-    // here so any enqueued message is visible if we see true.
-    // On 99%+ of frames this returns immediately, saving the uncontended
-    // QMutex lock/unlock overhead (~20-50 cyc/frame).
-    if (!msgPending.load(std::memory_order_acquire))
-        return;
-#endif
+#include "EmuThreadMelonPrimeHandleMessagesFastPath.inc"
 
     bool glborrow = false;
 
@@ -996,14 +958,7 @@ void EmuThread::handleMessages()
 
         msgSemaphore.release();
     }
-#ifdef MELONPRIME_DS
-    // P-46: Clear flag INSIDE the mutex after draining.
-    // Clearing inside the lock ensures sendMessage cannot enqueue between the
-    // drain and the clear, which would otherwise cause that message to be
-    // missed until the flag is set again. Relaxed is sufficient here because
-    // the subsequent mutex unlock provides the necessary release ordering.
-    msgPending.store(false, std::memory_order_relaxed);
-#endif
+#include "EmuThreadMelonPrimeHandleMessagesDrained.inc"
     msgMutex.unlock();
 
     if (glborrow)
@@ -1204,10 +1159,7 @@ void EmuThread::updateRenderer()
 
     auto& cfg = emuInstance->getGlobalConfig();
 
-#ifdef MELONPRIME_DS
-    bool vsyncFlag = cfg.GetBool("Screen.VSync");
-    emuInstance->setVSyncGL(vsyncFlag);
-#endif // MELONPRIME_DS
+#include "EmuThreadMelonPrimeUpdateRendererBefore.inc"
 
     if (videoRenderer != lastVideoRenderer)
     {
@@ -1235,9 +1187,7 @@ void EmuThread::updateRenderer()
     };
     nds->GetRenderer().SetRenderSettings(settings);
 
-#ifdef MELONPRIME_DS
-    emuInstance->setVSyncGL(vsyncFlag);
-#endif // MELONPRIME_DS
+#include "EmuThreadMelonPrimeUpdateRendererAfter.inc"
 }
 
 void EmuThread::compileShaders()
