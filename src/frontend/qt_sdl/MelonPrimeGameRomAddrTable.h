@@ -61,6 +61,8 @@ namespace MelonPrime {
     X(ADDR, baseAimX,                 BaseAimX,                  0x020E03E6u, 0x020E03A6u, 0x020DE526u, 0x020DEDA6u, 0x020DEDC6u, 0x020DEE46u, 0x020D7C0Eu) \
     X(ADDR, baseAimY,                 BaseAimY,                  0x020E03EEu, 0x020E03AEu, 0x020DE52Eu, 0x020DEDAEu, 0x020DEDCEu, 0x020DEE4Eu, 0x020D7C16u) \
     X(ADDR, baseChosenHunter,         BaseChosenHunter,          0x020CD358u, 0x020CD318u, 0x020CB51Cu, 0x020CBDA4u, 0x020CBDC4u, 0x020CBE44u, 0x020C4B88u) \
+    X(ADDR, currentMode,              CurrentMode,               0x020E6B30u, 0x020E6AF0u, 0x020E4A04u, 0x020E54CCu, 0x020E54ECu, 0x020E556Cu, 0x020DE31Au) \
+    X(ADDR, battleFlowState,          BattleFlowState,           0x020E6B48u, 0x020E6B08u, 0x020E4A1Cu, 0x020E54E4u, 0x020E5504u, 0x020E5584u, 0x020DE330u) \
     X(ADDR, inGame,                   InGame,                    0x020F0BB0u, 0x020F0B70u, 0x020EEA70u, 0x020EF530u, 0x020EF550u, 0x020EF5D0u, 0x020E81B4u) \
     X(ADDR, isInAdventure,            IsInAdventure,             0x020E9A3Cu, 0x020E99FCu, 0x020E78FCu, 0x020E83BCu, 0x020E83DCu, 0x020E845Cu, 0x020E11F8u) \
     X(ADDR, isMapOrUserActionPaused,  IsMapOrUserActionPaused,   0x020FD598u, 0x020FD558u, 0x020FB458u, 0x020FBF18u, 0x020FBF38u, 0x020FBFB8u, 0x020F4CF8u) \

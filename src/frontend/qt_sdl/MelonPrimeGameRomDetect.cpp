@@ -100,6 +100,8 @@ namespace MelonPrime {
         const auto& rom = m_currentRom;
 
         hot.inGame                  = rom.inGame;
+        hot.currentMode             = rom.currentMode;
+        hot.battleFlowState         = rom.battleFlowState;
         hot.isMapOrUserActionPaused = rom.isMapOrUserActionPaused;
 
         // Player-relative (base values, recalculated on player position change)
@@ -121,13 +123,13 @@ namespace MelonPrime {
 
         m_flags.set(StateFlags::BIT_ROM_DETECTED);
 
-        // OPT-L: Resolve inGame pointer immediately — it's read every frame
-        //   before the in-game init block runs, so it must be available as soon
-        //   as BIT_ROM_DETECTED is set. Other m_ptrs.* are resolved later in
-        //   the per-game-join init block (player-position dependent).
+        // OPT-L: Resolve inGame + mode/flow pointers immediately — read every frame
+        //   before the per-game-join init block runs.
         {
             melonDS::u8* ram = emuInstance->getNDS()->MainRAM;
-            m_ptrs.inGame = GetRamPointer<uint16_t>(ram, m_addrHot.inGame);
+            m_ptrs.inGame           = GetRamPointer<uint16_t>(ram, m_addrHot.inGame);
+            m_ptrs.currentMode      = GetRamPointer<uint8_t>(ram, m_addrHot.currentMode);
+            m_ptrs.battleFlowState  = GetRamPointer<uint8_t>(ram, m_addrHot.battleFlowState);
         }
 
 #ifdef MELONPRIME_DS

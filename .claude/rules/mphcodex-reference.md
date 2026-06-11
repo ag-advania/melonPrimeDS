@@ -68,6 +68,12 @@ that repo to be updated.
    It is especially useful for projectile, hunter, affliction, model, and draw
    flow semantics.
 
+6. For **match-end detection** (`isEndOfGame`: `currentMode`, `flowState` in MelonPrimeDS), start with
+   `mnt/data/mphAnalysis/_Commons/試合中かmenuかの判定/`. The current implementation
+   handoff is folder `5_End-Match-Detection-Condition-Update-FlowState1Or2-AllVersions`
+   (`MphEndMatchScoreboardCameraDetection.h`, address maps). MelonPrime runtime notes:
+   [notes/MelonPrimeBattleFlowState.md](notes/MelonPrimeBattleFlowState.md).
+
 ## Raw Dump Handling
 
 The files in `mnt/data/mphDump/*.txt` are large and may be UTF-16LE. Do not open
