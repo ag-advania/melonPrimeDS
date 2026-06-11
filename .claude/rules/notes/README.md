@@ -9,3 +9,4 @@ Implementation/investigation notes moved out of `src/frontend/qt_sdl/` on 2026-0
 - [MelonPrimePatchNoPickingUpSpecificItems.md](MelonPrimePatchNoPickingUpSpecificItems.md) — no-picking-up-specific-items patch notes
 - [MelonPrimePatchShadowFreezeRuntimeHook.md](MelonPrimePatchShadowFreezeRuntimeHook.md) — shadow freeze runtime hook notes
 - [MelonPrimePatchNativeAimDeltaHookRegisterInjectionVersion.md](MelonPrimePatchNativeAimDeltaHookRegisterInjectionVersion.md) — native aim delta hook (RegisterInjection) notes
+- [CustomHudHelmetSpawnFlash.md](CustomHudHelmetSpawnFlash.md) — Custom HUD spawn helmet flash: root cause (game clamp early-outs in spawn states), host-side BG1-3 layer clamp fix, rejected Full-NoHud approaches
