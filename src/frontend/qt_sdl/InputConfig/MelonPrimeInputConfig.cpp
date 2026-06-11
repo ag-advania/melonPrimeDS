@@ -303,7 +303,8 @@ void MelonPrimeInputConfig::setupSensitivityAndToggles(Config::Table& instcfg)
             QStringLiteral("Controls how the game's current aim direction follows the target aim direction."));
         int lowLatencyAimMode = ClampLowLatencyAimMode(
             instcfg.GetInt(MelonPrime::CfgKey::LowLatencyAimMode));
-        // Legacy key migration — do not add new reads; remove after a release cycle.
+        // Legacy key migration — planned removal after the next release.
+        // Do not add new reads.
         // Old configs only had the InstantAimFollow bool; map it onto the new
         // LowLatencyAimMode enum when the new key is still at its Off default.
         if (lowLatencyAimMode == MelonPrime::LowLatencyAimMode::Off

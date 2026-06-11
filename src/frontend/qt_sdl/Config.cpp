@@ -605,7 +605,6 @@ namespace Config
         {"Instance*.Metroid.Enable.stylusMode", false},
         {"Instance*.Metroid.Aim.Disable.MphAimSmoothing", false},
         {"Instance*.Metroid.Aim.Enable.Accumulator", false},
-        {"Instance*.Metroid.Aim.Enable.NativeDeltaHook", false},
         {"Instance*.Metroid.Aim.Enable.InstantAimFollow", false},
         {"Instance*.Metroid.Input.Enable.ImmediateInputEdgeOverlay", false},
         {"Instance*.Metroid.Input.Enable.DirectAltFormTransform",    false},

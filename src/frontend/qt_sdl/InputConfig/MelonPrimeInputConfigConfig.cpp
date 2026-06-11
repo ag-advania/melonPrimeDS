@@ -114,7 +114,8 @@ void MelonPrimeInputConfig::saveConfig()
             "Metroid.Input.ZoomMethod",
             zoomMethod);
     }
-    // Legacy key migration — do not add new reads; remove after a release cycle.
+    // Legacy key migration — planned removal after the next release.
+    // Do not add new reads.
     // Mirror the migrated mode back into the legacy InstantAimFollow bool so a
     // downgrade to an older build keeps working until the key is dropped.
     instcfg.SetBool(

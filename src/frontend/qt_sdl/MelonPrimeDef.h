@@ -23,7 +23,6 @@ namespace MelonPrime {
         inline constexpr const char* AimAdjust       = "Metroid.Aim.Adjust";
         inline constexpr const char* DisableMphAimSmoothing = "Metroid.Aim.Disable.MphAimSmoothing";
         inline constexpr const char* AimAccumulator = "Metroid.Aim.Enable.Accumulator";
-        inline constexpr const char* NativeAimDeltaHook = "Metroid.Aim.Enable.NativeDeltaHook"; // legacy bool, kept for migration
         inline constexpr const char* NativeAimHookMode  = "Metroid.Aim.NativeHookMode"; // 0=off 1=RegisterInject 2=FoldDerived
         inline constexpr const char* InstantAimFollow = "Metroid.Aim.Enable.InstantAimFollow";
         inline constexpr const char* LowLatencyAimMode = "Metroid.Aim.LowLatencyMode";
