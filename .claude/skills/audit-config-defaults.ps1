@@ -39,10 +39,23 @@ foreach ($line in $cfgLines) {
 }
 
 if (Test-Path -LiteralPath $hudSchemaPath) {
+  $schemaKeyMacros = @{}
   foreach ($line in [System.IO.File]::ReadLines($hudSchemaPath)) {
-    if ($line -match '\bX\([^,]+,\s*"(Metroid\.Visual\.[^"]+)",\s*(Int|Bool|String|Double),') {
-      $key = $matches[1]
-      $type = $matches[2]
+    if ($line -match '#define\s+MP_HUD_PROP_KEY_(\w+)\s+"(Metroid\.Visual\.[^"]+)"') {
+      $schemaKeyMacros[$matches[1]] = $matches[2]
+    }
+  }
+  foreach ($line in [System.IO.File]::ReadLines($hudSchemaPath)) {
+    foreach ($m in [regex]::Matches($line, '\bX\([^,]+,\s*([^,]+),\s*(Int|Bool|String|Double),')) {
+      $keyToken = $m.Groups[1].Value.Trim()
+      $key = $null
+      if ($keyToken -match '^"(Metroid\.Visual\.[^"]+)"$') {
+        $key = $matches[1]
+      } elseif ($keyToken -match '^MP_HUD_PROP_KEY_(\w+)$') {
+        $key = $schemaKeyMacros[$matches[1]]
+      }
+      if ([string]::IsNullOrWhiteSpace($key)) { continue }
+      $type = $m.Groups[2].Value
       if ($type -eq "Int")    { [void]$ints.Add($key) }
       if ($type -eq "Double") { [void]$doubles.Add($key) }
       if ($type -eq "Bool")   { [void]$bools.Add($key) }

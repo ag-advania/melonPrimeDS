@@ -27,6 +27,7 @@ $repoRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 $qtSdl = Join-Path $repoRoot 'src/frontend/qt_sdl'
 $configPath = Join-Path $qtSdl 'Config.cpp'
 $hudSchemaPath = Join-Path $qtSdl 'MelonPrimeHudPropSchema.inc'
+$hudDialogPropsPath = Join-Path $qtSdl 'InputConfig/MelonPrimeInputConfigHudDialogProps.inc'
 
 function New-Set {
     return ,[System.Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
@@ -92,6 +93,17 @@ function Read-Text {
     return [System.IO.File]::ReadAllText($Path)
 }
 
+function Get-SchemaKeyMacros {
+    $map = @{}
+    if (-not (Test-Path -LiteralPath $hudSchemaPath)) { return $map }
+    foreach ($line in [System.IO.File]::ReadLines($hudSchemaPath)) {
+        if ($line -match '#define\s+MP_HUD_PROP_KEY_(\w+)\s+"(Metroid\.Visual\.[^"]+)"') {
+            $map[$matches[1]] = $matches[2]
+        }
+    }
+    return $map
+}
+
 function Extract-VisualLiterals {
     param(
         [string]$Text,
@@ -141,9 +153,17 @@ function Extract-Defaults {
     }
 
     if (Test-Path -LiteralPath $hudSchemaPath) {
+        $schemaKeyMacros = Get-SchemaKeyMacros
         foreach ($line in [System.IO.File]::ReadLines($hudSchemaPath)) {
-            foreach ($m in [regex]::Matches($line, '\bX\([^,]+,\s*"(Metroid\.Visual\.[^"]+)",\s*(Int|Bool|String|Double),\s*([^,]+),')) {
-                $key = $m.Groups[1].Value
+            foreach ($m in [regex]::Matches($line, '\bX\([^,]+,\s*([^,]+),\s*(Int|Bool|String|Double),\s*([^,]+),')) {
+                $keyToken = $m.Groups[1].Value.Trim()
+                $key = $null
+                if ($keyToken -match '^"(Metroid\.Visual\.[^"]+)"$') {
+                    $key = $matches[1]
+                } elseif ($keyToken -match '^MP_HUD_PROP_KEY_(\w+)$') {
+                    $key = $schemaKeyMacros[$matches[1]]
+                }
+                if ([string]::IsNullOrWhiteSpace($key)) { continue }
                 $type = $m.Groups[2].Value
                 $value = $m.Groups[3].Value.Trim()
                 Add-Default $key $type $value
@@ -170,6 +190,16 @@ function Extract-DialogKeys {
     }
 
     $set = Extract-VisualLiterals $text $ignore
+    if (Test-Path -LiteralPath $hudDialogPropsPath) {
+        $dialogText = Read-Text $hudDialogPropsPath
+        $schemaKeyMacros = Get-SchemaKeyMacros
+        foreach ($m in [regex]::Matches($dialogText, '\bMP_HUD_PROP_KEY_(\w+)\b')) {
+            $key = $schemaKeyMacros[$m.Groups[1].Value]
+            if ($key) { Add-Key $set $key }
+        }
+        $literalKeys = Extract-VisualLiterals $dialogText
+        foreach ($key in $literalKeys) { Add-Key $set $key }
+    }
     foreach ($m in [regex]::Matches($text, 'P_RAMP_STOP\("([1-6])",\s*"(Metroid\.Visual\.[^"]+)"\)')) {
         $n = $m.Groups[1].Value
         $pfx = $m.Groups[2].Value

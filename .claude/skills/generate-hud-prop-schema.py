@@ -27,6 +27,7 @@ ROOT = Path(__file__).resolve().parents[2]
 QT_SDL = ROOT / "src/frontend/qt_sdl"
 CONFIG_CPP = QT_SDL / "Config.cpp"
 DIALOG_CPP = QT_SDL / "InputConfig/MelonPrimeInputConfig.cpp"
+DIALOG_PROPS_INC = QT_SDL / "InputConfig/MelonPrimeInputConfigHudDialogProps.inc"
 EDIT_DEFS = QT_SDL / "MelonPrimeHudConfigOnScreenDefs.inc"
 SIDE_PANEL_CPP = QT_SDL / "MelonPrimeHudConfigOnScreenEdit.cpp"
 RUNTIME_INC = QT_SDL / "MelonPrimeHudRenderConfig.inc"
@@ -131,6 +132,24 @@ class Prop:
                 continue
             ranges.setdefault(rng, []).append(meta)
         return ranges if len(ranges) > 1 else {}
+
+
+@dataclass
+class DialogRow:
+    label: str
+    widget_type: str
+    cfg_key: str | None
+    min_value: str
+    max_value: str
+    step: str
+    cfg_key_g: str | None = None
+    cfg_key_b: str | None = None
+
+
+@dataclass
+class DialogSection:
+    name: str
+    rows: list[DialogRow]
 
 
 def read(path: Path) -> str:
@@ -527,80 +546,193 @@ def parse_existing_schema(path: Path) -> tuple[list[str], dict[str, Prop]]:
     text = read(path)
     props: dict[str, Prop] = {}
     order: list[str] = []
-    pattern = re.compile(
-        r'\bX\([^,]+,\s*"(?P<key>Metroid\.Visual\.[^"]+)",\s*'
-        r'(?P<type>Int|Bool|String|Double),\s*(?P<default>[^,]+),'
-    )
+    key_macros = {
+        match.group(1): match.group(2)
+        for match in re.finditer(r'#define\s+MP_HUD_PROP_KEY_(\w+)\s+"(Metroid\.Visual\.[^"]+)"', text)
+    }
+    pattern = re.compile(r'#define\s+MP_HUD_PROP_ROW_(\w+)\(X\)\s+X\((.*)\)')
     for match in pattern.finditer(text):
-        key = match.group("key")
+        args = split_top_level_args(match.group(2))
+        if len(args) < 4:
+            continue
+        key_token = args[1].strip()
+        key = cpp_string_value(key_token)
+        if key is None and key_token.startswith("MP_HUD_PROP_KEY_"):
+            key = key_macros.get(key_token.removeprefix("MP_HUD_PROP_KEY_"))
+        if not key:
+            continue
         if key in props:
+            continue
+        cfg_type = args[2].strip()
+        if cfg_type not in {"Int", "Bool", "String", "Double"}:
             continue
         order.append(key)
         props[key] = Prop(
             key=key,
-            cfg_type=match.group("type"),
-            default_expr=match.group("default").strip(),
+            cfg_type=cfg_type,
+            default_expr=args[3].strip(),
         )
     return order, props
 
 
-def parse_dialog(props: dict[str, Prop], extra_refs: dict[str, list[Meta]]) -> None:
-    text = strip_comments(read(DIALOG_CPP))
+def dialog_key_from_expr(expr: str, ident_to_key: dict[str, str] | None = None) -> str | None:
+    key = literal_key(expr)
+    if key:
+        return key
+    token = expr.strip()
+    if token.startswith("MP_HUD_PROP_KEY_") and ident_to_key is not None:
+        return ident_to_key.get(token.removeprefix("MP_HUD_PROP_KEY_"))
+    return None
+
+
+def parse_dialog_sections_from_legacy(text: str) -> list[DialogSection]:
     macro_names = {
-        "P_BOOL", "P_INT", "P_FLOAT", "P_DOUBLE", "P_STR", "P_ANC", "P_ALN",
+        "P_LABEL", "P_BOOL", "P_INT", "P_FLOAT", "P_DOUBLE", "P_STR", "P_ANC", "P_ALN",
         "P_CLR", "P_ORIENT", "P_RELINDEP", "P_POSMODE3", "P_GANCHOR",
         "P_ANCHY", "P_LPOS", "P_FONTMODE", "P_FONTFAMILY", "P_FONTFILE",
         "P_FONTWEIGHT", "P_RAMP_STOP",
     }
+    sections: list[DialogSection] = []
     for section_name, block in array_blocks(text, "HudWidgetProp"):
+        rows: list[DialogRow] = []
         for name, args in function_calls(block, macro_names):
-            origin = f"dialog:{section_name}"
-            if name == "P_BOOL" and len(args) >= 2:
-                add_meta(props, extra_refs, literal_key(args[1]), "dialog", "Bool", literal_label(args[0]), "Bool", origin=origin)
+            if name == "P_LABEL" and len(args) >= 1:
+                rows.append(DialogRow(literal_label(args[0]), "Label", None, "0", "0", "0"))
+            elif name == "P_BOOL" and len(args) >= 2:
+                rows.append(DialogRow(literal_label(args[0]), "Bool", literal_key(args[1]), "0", "0", "0"))
             elif name == "P_INT" and len(args) >= 5:
-                add_meta(props, extra_refs, literal_key(args[1]), "dialog", "Int", literal_label(args[0]), "Int", args[2], args[3], args[4], origin)
+                rows.append(DialogRow(literal_label(args[0]), "Int", literal_key(args[1]), args[2].strip(), args[3].strip(), args[4].strip()))
             elif name == "P_FLOAT" and len(args) >= 2:
-                add_meta(props, extra_refs, literal_key(args[1]), "dialog", "Double", literal_label(args[0]), "Float", 0, 100, 5, origin)
+                rows.append(DialogRow(literal_label(args[0]), "Float", literal_key(args[1]), "0", "100", "5"))
             elif name == "P_DOUBLE" and len(args) >= 5:
-                add_meta(props, extra_refs, literal_key(args[1]), "dialog", "Double", literal_label(args[0]), "Double", args[2], args[3], args[4], origin)
+                rows.append(DialogRow(literal_label(args[0]), "Double", literal_key(args[1]), args[2].strip(), args[3].strip(), args[4].strip()))
             elif name == "P_STR" and len(args) >= 2:
-                add_meta(props, extra_refs, literal_key(args[1]), "dialog", "String", literal_label(args[0]), "String", origin=origin)
+                rows.append(DialogRow(literal_label(args[0]), "String", literal_key(args[1]), "0", "0", "0"))
             elif name == "P_ANC" and len(args) >= 2:
-                add_meta(props, extra_refs, literal_key(args[1]), "dialog", "Int", literal_label(args[0]), "Anchor9", 0, 8, 1, origin)
+                rows.append(DialogRow(literal_label(args[0]), "Anchor9", literal_key(args[1]), "0", "8", "1"))
             elif name == "P_ALN" and len(args) >= 2:
-                add_meta(props, extra_refs, literal_key(args[1]), "dialog", "Int", literal_label(args[0]), "Align3", 0, 2, 1, origin)
+                rows.append(DialogRow(literal_label(args[0]), "Align3", literal_key(args[1]), "0", "2", "1"))
             elif name == "P_CLR" and len(args) >= 4:
-                add_color3(props, extra_refs, [literal_key(args[1]), literal_key(args[2]), literal_key(args[3])], "dialog", literal_label(args[0]), "Color3", origin)
+                rows.append(DialogRow(literal_label(args[0]), "Color3", literal_key(args[1]), "0", "255", "1", literal_key(args[2]), literal_key(args[3])))
             elif name == "P_ORIENT" and len(args) >= 2:
-                add_meta(props, extra_refs, literal_key(args[1]), "dialog", "Int", literal_label(args[0]), "HorizVert", 0, 1, 1, origin)
+                rows.append(DialogRow(literal_label(args[0]), "HorizVert", literal_key(args[1]), "0", "1", "1"))
             elif name == "P_RELINDEP" and len(args) >= 2:
-                add_meta(props, extra_refs, literal_key(args[1]), "dialog", "Int", literal_label(args[0]), "RelIndep", 0, 1, 1, origin)
+                rows.append(DialogRow(literal_label(args[0]), "RelIndep", literal_key(args[1]), "0", "1", "1"))
             elif name == "P_POSMODE3" and len(args) >= 2:
-                add_meta(props, extra_refs, literal_key(args[1]), "dialog", "Int", literal_label(args[0]), "PosMode3", 0, 2, 1, origin)
+                rows.append(DialogRow(literal_label(args[0]), "PosMode3", literal_key(args[1]), "0", "2", "1"))
             elif name == "P_GANCHOR" and len(args) >= 2:
-                add_meta(props, extra_refs, literal_key(args[1]), "dialog", "Int", literal_label(args[0]), "GaugeAnchor5", 0, 4, 1, origin)
+                rows.append(DialogRow(literal_label(args[0]), "GaugeAnchor5", literal_key(args[1]), "0", "4", "1"))
             elif name == "P_ANCHY" and len(args) >= 2:
-                add_meta(props, extra_refs, literal_key(args[1]), "dialog", "Int", literal_label(args[0]), "AnchorY3", 0, 2, 1, origin)
+                rows.append(DialogRow(literal_label(args[0]), "AnchorY3", literal_key(args[1]), "0", "2", "1"))
             elif name == "P_LPOS" and len(args) >= 2:
-                add_meta(props, extra_refs, literal_key(args[1]), "dialog", "Int", literal_label(args[0]), "LabelPos5", 0, 4, 1, origin)
+                rows.append(DialogRow(literal_label(args[0]), "LabelPos5", literal_key(args[1]), "0", "4", "1"))
             elif name == "P_FONTMODE" and len(args) >= 2:
-                add_meta(props, extra_refs, literal_key(args[1]), "dialog", "Int", literal_label(args[0]), "FontMode", 0, 2, 1, origin)
+                rows.append(DialogRow(literal_label(args[0]), "FontMode", literal_key(args[1]), "0", "2", "1"))
             elif name == "P_FONTFAMILY" and len(args) >= 2:
-                add_meta(props, extra_refs, literal_key(args[1]), "dialog", "String", literal_label(args[0]), "FontFamily", origin=origin)
+                rows.append(DialogRow(literal_label(args[0]), "FontFamily", literal_key(args[1]), "0", "0", "0"))
             elif name == "P_FONTFILE" and len(args) >= 2:
-                add_meta(props, extra_refs, literal_key(args[1]), "dialog", "String", literal_label(args[0]), "FontFile", origin=origin)
+                rows.append(DialogRow(literal_label(args[0]), "FontFile", literal_key(args[1]), "0", "0", "0"))
             elif name == "P_FONTWEIGHT" and len(args) >= 2:
-                add_meta(props, extra_refs, literal_key(args[1]), "dialog", "Int", literal_label(args[0]), "FontWeight", 0, 8, 1, origin)
+                rows.append(DialogRow(literal_label(args[0]), "FontWeight", literal_key(args[1]), "0", "8", "1"))
             elif name == "P_RAMP_STOP" and len(args) >= 2:
                 index = cpp_string_value(args[0])
                 prefix = cpp_string_value(args[1])
                 if index and prefix:
-                    add_ramp_stop(props, extra_refs, prefix, index, "dialog", origin)
+                    rows.append(DialogRow(f"Threshold {index} (%)", "Int", f"{prefix}{index}Pct", "0", "100", "1"))
+                    rows.append(DialogRow(f"Color {index}", "Color3", f"{prefix}{index}R", "0", "255", "1", f"{prefix}{index}G", f"{prefix}{index}B"))
+        if rows:
+            sections.append(DialogSection(section_name, rows))
+    return sections
+
+
+def parse_dialog_sections_from_generated(text: str, ident_to_key: dict[str, str]) -> list[DialogSection]:
+    sections: list[DialogSection] = []
+    for section_name, block in array_blocks(text, "HudWidgetProp"):
+        rows: list[DialogRow] = []
+        for entry in brace_entries(block):
+            args = split_top_level_args(entry)
+            if len(args) < 8:
+                continue
+            widget_type = args[1].strip().removeprefix("HWType::")
+            rows.append(DialogRow(
+                literal_label(args[0]),
+                widget_type,
+                dialog_key_from_expr(args[2], ident_to_key),
+                args[3].strip(),
+                args[4].strip(),
+                args[5].strip(),
+                dialog_key_from_expr(args[6], ident_to_key),
+                dialog_key_from_expr(args[7], ident_to_key),
+            ))
+        if rows:
+            sections.append(DialogSection(section_name, rows))
+    return sections
+
+
+def parse_dialog_sections(ident_to_key: dict[str, str]) -> list[DialogSection]:
+    source_text = strip_comments(read(DIALOG_CPP))
+    legacy_sections = parse_dialog_sections_from_legacy(source_text)
+    if legacy_sections:
+        return legacy_sections
+    if DIALOG_PROPS_INC.exists():
+        return parse_dialog_sections_from_generated(strip_comments(read(DIALOG_PROPS_INC)), ident_to_key)
+    return []
+
+
+def add_dialog_row_meta(
+    props: dict[str, Prop],
+    extra_refs: dict[str, list[Meta]],
+    section_name: str,
+    row: DialogRow,
+) -> None:
+    origin = f"dialog:{section_name}"
+    if row.widget_type == "Label":
+        return
+    if row.widget_type == "Color3":
+        add_color3(props, extra_refs, [row.cfg_key, row.cfg_key_g, row.cfg_key_b], "dialog", row.label, "Color3", origin)
+        return
+
+    type_kind = {
+        "Bool": ("Bool", "Bool", False),
+        "Int": ("Int", "Int", True),
+        "Float": ("Double", "Float", True),
+        "Double": ("Double", "Double", True),
+        "String": ("String", "String", False),
+        "Anchor9": ("Int", "Anchor9", True),
+        "Align3": ("Int", "Align3", True),
+        "HorizVert": ("Int", "HorizVert", True),
+        "RelIndep": ("Int", "RelIndep", True),
+        "PosMode3": ("Int", "PosMode3", True),
+        "GaugeAnchor5": ("Int", "GaugeAnchor5", True),
+        "AnchorY3": ("Int", "AnchorY3", True),
+        "LabelPos5": ("Int", "LabelPos5", True),
+        "FontMode": ("Int", "FontMode", True),
+        "FontFamily": ("String", "FontFamily", False),
+        "FontFile": ("String", "FontFile", False),
+        "FontWeight": ("Int", "FontWeight", True),
+    }
+    if row.widget_type not in type_kind:
+        return
+    inferred_type, ui_kind, has_range = type_kind[row.widget_type]
+    if has_range:
+        add_meta(props, extra_refs, row.cfg_key, "dialog", inferred_type, row.label, ui_kind, row.min_value, row.max_value, row.step, origin)
+    else:
+        add_meta(props, extra_refs, row.cfg_key, "dialog", inferred_type, row.label, ui_kind, origin=origin)
+
+
+def parse_dialog(props: dict[str, Prop], extra_refs: dict[str, list[Meta]], ident_to_key: dict[str, str]) -> list[DialogSection]:
+    sections = parse_dialog_sections(ident_to_key)
+    for section in sections:
+        for row in section.rows:
+            add_dialog_row_meta(props, extra_refs, section.name, row)
+
+    text = strip_comments(read(DIALOG_CPP))
 
     for match in re.finditer(r'"(Metroid\.Visual\.[^"]+)"', text):
         key = match.group(1)
         if key in props:
             add_meta(props, extra_refs, key, "dialog", origin="dialog:literal")
+    return sections
 
 
 def parse_edit_descriptors(props: dict[str, Prop], extra_refs: dict[str, list[Meta]]) -> None:
@@ -764,6 +896,17 @@ def make_identifier(key: str, used: set[str]) -> str:
     return ident
 
 
+def build_identifier_maps(order: list[str]) -> tuple[dict[str, str], dict[str, str]]:
+    used: set[str] = set()
+    key_to_ident: dict[str, str] = {}
+    ident_to_key: dict[str, str] = {}
+    for key in order:
+        ident = make_identifier(key, used)
+        key_to_ident[key] = ident
+        ident_to_key[ident] = key
+    return key_to_ident, ident_to_key
+
+
 def surface_expr(surfaces: set[str]) -> str:
     parts = [SURFACES[name] for name in ("default", "dialog", "edit", "side", "runtime") if name in surfaces]
     return "(" + " | ".join(parts) + ")"
@@ -778,7 +921,7 @@ def schema_row(prop: Prop, ident: str) -> str:
         flags |= FLAG_TYPE_DRIFT
     return (
         "    X("
-        f"{ident}, {cpp_quote(prop.key)}, {prop.cfg_type}, {prop.default_expr}, "
+        f"{ident}, MP_HUD_PROP_KEY_{ident}, {prop.cfg_type}, {prop.default_expr}, "
         f"{ui_min}, {ui_max}, {ui_step}, "
         f"{cpp_quote(prop.preferred_label())}, {cpp_quote(prop.preferred_kind())}, "
         f"{surface_expr(prop.surfaces())}, 0x{flags:02X})"
@@ -793,11 +936,11 @@ def append_schema_macro(lines: list[str], name: str, row_refs: list[str]) -> Non
 
 
 def write_schema(order: list[str], props: dict[str, Prop], path: Path) -> None:
-    used: set[str] = set()
+    key_to_ident, _ = build_identifier_maps(order)
     row_records: list[tuple[Prop, str, str]] = []
     for key in order:
         prop = props[key]
-        ident = make_identifier(key, used)
+        ident = key_to_ident[key]
         row_records.append((prop, ident, schema_row(prop, ident)))
 
     lines: list[str] = [
@@ -817,8 +960,14 @@ def write_schema(order: list[str], props: dict[str, Prop], path: Path) -> None:
         "#define MP_HUD_PROP_FLAG_RANGE_DRIFT 0x01",
         "#define MP_HUD_PROP_FLAG_TYPE_DRIFT  0x02",
         "",
-        "// X(identifier, key, cfgType, defaultExpr, uiMin, uiMax, uiStep, label, uiKind, surfaceMask, flags)",
+        "// Key literals live here. Generated consumers should reference MP_HUD_PROP_KEY_*.",
     ]
+    for prop, ident, _ in row_records:
+        lines.append(f"#define MP_HUD_PROP_KEY_{ident} {cpp_quote(prop.key)}")
+    lines.extend([
+        "",
+        "// X(identifier, key, cfgType, defaultExpr, uiMin, uiMax, uiStep, label, uiKind, surfaceMask, flags)",
+    ])
     for _, ident, row in row_records:
         lines.append(f"#define MP_HUD_PROP_ROW_{ident}(X) {row.strip()}")
     lines.append("")
@@ -831,6 +980,44 @@ def write_schema(order: list[str], props: dict[str, Prop], path: Path) -> None:
         append_schema_macro(lines, f"MP_HUD_PROP_SCHEMA_{cfg_type.upper()}", typed_rows)
         lines.append("")
     lines.extend(["#endif // MELONPRIME_HUD_PROP_SCHEMA_INC", ""])
+    path.write_text("\n".join(lines), encoding="utf-8")
+
+
+def dialog_key_expr(key: str | None, key_to_ident: dict[str, str], empty_expr: str) -> str:
+    if not key:
+        return empty_expr
+    ident = key_to_ident.get(key)
+    if ident:
+        return f"MP_HUD_PROP_KEY_{ident}"
+    return cpp_quote(key)
+
+
+def write_dialog_props(sections: list[DialogSection], key_to_ident: dict[str, str], path: Path) -> None:
+    lines: list[str] = [
+        "// Generated by .claude/skills/generate-hud-prop-schema.py.",
+        "// Dialog HudWidgetProp tables for MelonPrimeInputConfig.cpp.",
+        "// Requires MelonPrimeHudPropSchema.inc to be included first.",
+        "// Do not edit rows by hand; regenerate from the HUD schema source surfaces.",
+        "",
+        "#ifndef MELONPRIME_INPUT_CONFIG_HUD_DIALOG_PROPS_INC",
+        "#define MELONPRIME_INPUT_CONFIG_HUD_DIALOG_PROPS_INC",
+        "",
+    ]
+    for section in sections:
+        lines.append(f"static const HudWidgetProp {section.name}[] = {{")
+        for row in section.rows:
+            cfg_key = dialog_key_expr(row.cfg_key, key_to_ident, '""')
+            cfg_key_g = dialog_key_expr(row.cfg_key_g, key_to_ident, "nullptr")
+            cfg_key_b = dialog_key_expr(row.cfg_key_b, key_to_ident, "nullptr")
+            lines.append(
+                "    { "
+                f"{cpp_quote(row.label)}, HWType::{row.widget_type}, {cfg_key}, "
+                f"{row.min_value}, {row.max_value}, {row.step}, {cfg_key_g}, {cfg_key_b}"
+                " },"
+            )
+        lines.append("};")
+        lines.append("")
+    lines.extend(["#endif // MELONPRIME_INPUT_CONFIG_HUD_DIALOG_PROPS_INC", ""])
     path.write_text("\n".join(lines), encoding="utf-8")
 
 
@@ -935,6 +1122,7 @@ def extra_refs_for_surface(extra_refs: dict[str, list[Meta]], surface: str) -> s
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--schema", type=Path, default=SCHEMA_OUT)
+    parser.add_argument("--dialog-props", type=Path, default=DIALOG_PROPS_INC)
     parser.add_argument("--report", type=Path, default=REPORT_OUT)
     parser.add_argument("--defaults-source", type=Path, default=CONFIG_CPP)
     parser.add_argument("--no-write", action="store_true")
@@ -943,14 +1131,16 @@ def main() -> int:
     order, props = parse_defaults(args.defaults_source)
     if not order:
         order, props = parse_existing_schema(args.schema)
+    key_to_ident, ident_to_key = build_identifier_maps(order)
     extra_refs: dict[str, list[Meta]] = {}
-    parse_dialog(props, extra_refs)
+    dialog_sections = parse_dialog(props, extra_refs, ident_to_key)
     parse_edit_descriptors(props, extra_refs)
     parse_side_panel(props, extra_refs)
     parse_runtime(props, extra_refs)
 
     if not args.no_write:
         write_schema(order, props, args.schema)
+        write_dialog_props(dialog_sections, key_to_ident, args.dialog_props)
         write_report(order, props, extra_refs, args.report)
 
     surface_counts = {
@@ -965,6 +1155,7 @@ def main() -> int:
     print(f"range drift rows: {sum(1 for prop in props.values() if prop.range_drift())}")
     if not args.no_write:
         print(f"wrote {args.schema}")
+        print(f"wrote {args.dialog_props}")
         print(f"wrote {args.report}")
     return 0
 
