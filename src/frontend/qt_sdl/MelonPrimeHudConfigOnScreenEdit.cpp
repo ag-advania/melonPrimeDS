@@ -379,21 +379,28 @@ void MelonPrimeHudConfigOnScreenEdit::addSeparator()
     m_rows.append(line);
 }
 
-void MelonPrimeHudConfigOnScreenEdit::addOutlineGroup(const char* prefix)
+// MP_OUTLINE_KEYS(pfx) expands a HUD element prefix to the six outline config-key
+// macros (enable, color R/G/B, opacity, thickness) defined in MelonPrimeHudPropSchema.inc.
+// The token paste yields e.g. MP_HUD_PROP_KEY_HudHpOutline, which the preprocessor then
+// rescans into the Metroid.Visual.HudHpOutline string literal. A wrong prefix pastes an
+// undefined macro name -> compile error (the intended drift guard).
+#define MP_OUTLINE_KEYS(pfx)                  \
+    MP_HUD_PROP_KEY_##pfx##Outline,           \
+    MP_HUD_PROP_KEY_##pfx##OutlineColorR,     \
+    MP_HUD_PROP_KEY_##pfx##OutlineColorG,     \
+    MP_HUD_PROP_KEY_##pfx##OutlineColorB,     \
+    MP_HUD_PROP_KEY_##pfx##OutlineOpacity,    \
+    MP_HUD_PROP_KEY_##pfx##OutlineThickness
+
+void MelonPrimeHudConfigOnScreenEdit::addOutlineGroup(const char* enableKey,
+    const char* colorR, const char* colorG, const char* colorB,
+    const char* opacityKey, const char* thicknessKey)
 {
-    // prefix e.g. "HudHp" → keys MP_HUD_PROP_KEY_HudHpOutline, "...OutlineColorR" etc.
-    char kE[80], kR[80], kG[80], kB[80], kO[80], kT[80];
-    std::snprintf(kE, sizeof(kE), "Metroid.Visual.%sOutline", prefix);
-    std::snprintf(kR, sizeof(kR), "Metroid.Visual.%sOutlineColorR", prefix);
-    std::snprintf(kG, sizeof(kG), "Metroid.Visual.%sOutlineColorG", prefix);
-    std::snprintf(kB, sizeof(kB), "Metroid.Visual.%sOutlineColorB", prefix);
-    std::snprintf(kO, sizeof(kO), "Metroid.Visual.%sOutlineOpacity", prefix);
-    std::snprintf(kT, sizeof(kT), "Metroid.Visual.%sOutlineThickness", prefix);
     addSeparator();
-    addCheckBox(QStringLiteral("Outline"), kE);
-    addColorPicker(QStringLiteral("Outline Color"), kR, kG, kB);
-    addOpacitySlider(QStringLiteral("Outline Opacity"), kO);
-    addSpinBox(QStringLiteral("Outline Thick."), kT, 1, 10);
+    addCheckBox(QStringLiteral("Outline"), enableKey);
+    addColorPicker(QStringLiteral("Outline Color"), colorR, colorG, colorB);
+    addOpacitySlider(QStringLiteral("Outline Opacity"), opacityKey);
+    addSpinBox(QStringLiteral("Outline Thick."), thicknessKey, 1, 10);
 }
 
 // ─── Built-ins: Show / Color / Anchor ───────────────────────────────────────
@@ -514,7 +521,7 @@ void MelonPrimeHudConfigOnScreenEdit::populateHP()
     addLineEdit(QStringLiteral("Prefix"), MP_HUD_PROP_KEY_HudHpPrefix);
     addAlign3Combo(QStringLiteral("Align"), MP_HUD_PROP_KEY_HudHpAlign);
     addOpacitySlider(QStringLiteral("Opacity"), MP_HUD_PROP_KEY_HudHpOpacity);
-    addOutlineGroup("HudHp");
+    addOutlineGroup(MP_OUTLINE_KEYS(HudHp));
 }
 
 void MelonPrimeHudConfigOnScreenEdit::populateHPGauge()
@@ -533,7 +540,7 @@ void MelonPrimeHudConfigOnScreenEdit::populateHPGauge()
         MP_HUD_PROP_KEY_HudHpGaugeAnchor, MP_HUD_PROP_KEY_HudHpGaugeOffsetX, MP_HUD_PROP_KEY_HudHpGaugeOffsetY,
         MP_HUD_PROP_KEY_HudHpGaugePosX, MP_HUD_PROP_KEY_HudHpGaugePosY,
         MP_HUD_PROP_KEY_HudHpTextAnchor, MP_HUD_PROP_KEY_HudHpTextOffsetX, MP_HUD_PROP_KEY_HudHpTextOffsetY);
-    addOutlineGroup("HudHpGauge");
+    addOutlineGroup(MP_OUTLINE_KEYS(HudHpGauge));
 }
 
 void MelonPrimeHudConfigOnScreenEdit::populateWeaponAmmo()
@@ -548,7 +555,7 @@ void MelonPrimeHudConfigOnScreenEdit::populateWeaponAmmo()
     addComboBox(QStringLiteral("Layout"), MP_HUD_PROP_KEY_HudWeaponLayout,
         {QStringLiteral("Standard"), QStringLiteral("Alternative")});
     addOpacitySlider(QStringLiteral("Opacity"), MP_HUD_PROP_KEY_HudWeaponOpacity);
-    addOutlineGroup("HudWeapon");
+    addOutlineGroup(MP_OUTLINE_KEYS(HudWeapon));
 }
 
 void MelonPrimeHudConfigOnScreenEdit::populateWpnIcon()
@@ -567,28 +574,24 @@ void MelonPrimeHudConfigOnScreenEdit::populateWpnIcon()
     addComboBox(QStringLiteral("Align Y"), MP_HUD_PROP_KEY_HudWeaponIconAnchorY,
         {QStringLiteral("Top"), QStringLiteral("Center"), QStringLiteral("Bottom")});
     addOpacitySlider(QStringLiteral("Opacity"), MP_HUD_PROP_KEY_HudWpnIconOpacity);
-    addOutlineGroup("HudWeaponIcon");
+    addOutlineGroup(MP_OUTLINE_KEYS(HudWeaponIcon));
     addSeparator();
-    // Per-weapon icon tint (enable + color per weapon)
-    struct { const char* label; const char* wpn; } kWeapons[9] = {
-        {"Power Beam",    "PowerBeam"},
-        {"Volt Driver",   "VoltDriver"},
-        {"Missile",       "Missile"},
-        {"Battle Hammer", "BattleHammer"},
-        {"Imperialist",   "Imperialist"},
-        {"Judicator",     "Judicator"},
-        {"Magmaul",       "Magmaul"},
-        {"Shock Coil",    "ShockCoil"},
-        {"Omega Cannon",  "OmegaCannon"},
+    // Per-weapon icon tint (enable + color per weapon).
+    // Keys reference MelonPrimeHudPropSchema.inc macros so a typo fails to compile.
+    struct WeaponTintRow { const char* label; const char* enableKey; const char* rKey; const char* gKey; const char* bKey; };
+    static const WeaponTintRow kWeaponTints[9] = {
+        {"Power Beam",    MP_HUD_PROP_KEY_HudWeaponIconColorOverlayPowerBeam,    MP_HUD_PROP_KEY_HudWeaponIconOverlayColorRPowerBeam,    MP_HUD_PROP_KEY_HudWeaponIconOverlayColorGPowerBeam,    MP_HUD_PROP_KEY_HudWeaponIconOverlayColorBPowerBeam},
+        {"Volt Driver",   MP_HUD_PROP_KEY_HudWeaponIconColorOverlayVoltDriver,   MP_HUD_PROP_KEY_HudWeaponIconOverlayColorRVoltDriver,   MP_HUD_PROP_KEY_HudWeaponIconOverlayColorGVoltDriver,   MP_HUD_PROP_KEY_HudWeaponIconOverlayColorBVoltDriver},
+        {"Missile",       MP_HUD_PROP_KEY_HudWeaponIconColorOverlayMissile,      MP_HUD_PROP_KEY_HudWeaponIconOverlayColorRMissile,      MP_HUD_PROP_KEY_HudWeaponIconOverlayColorGMissile,      MP_HUD_PROP_KEY_HudWeaponIconOverlayColorBMissile},
+        {"Battle Hammer", MP_HUD_PROP_KEY_HudWeaponIconColorOverlayBattleHammer, MP_HUD_PROP_KEY_HudWeaponIconOverlayColorRBattleHammer, MP_HUD_PROP_KEY_HudWeaponIconOverlayColorGBattleHammer, MP_HUD_PROP_KEY_HudWeaponIconOverlayColorBBattleHammer},
+        {"Imperialist",   MP_HUD_PROP_KEY_HudWeaponIconColorOverlayImperialist,  MP_HUD_PROP_KEY_HudWeaponIconOverlayColorRImperialist,  MP_HUD_PROP_KEY_HudWeaponIconOverlayColorGImperialist,  MP_HUD_PROP_KEY_HudWeaponIconOverlayColorBImperialist},
+        {"Judicator",     MP_HUD_PROP_KEY_HudWeaponIconColorOverlayJudicator,    MP_HUD_PROP_KEY_HudWeaponIconOverlayColorRJudicator,    MP_HUD_PROP_KEY_HudWeaponIconOverlayColorGJudicator,    MP_HUD_PROP_KEY_HudWeaponIconOverlayColorBJudicator},
+        {"Magmaul",       MP_HUD_PROP_KEY_HudWeaponIconColorOverlayMagmaul,      MP_HUD_PROP_KEY_HudWeaponIconOverlayColorRMagmaul,      MP_HUD_PROP_KEY_HudWeaponIconOverlayColorGMagmaul,      MP_HUD_PROP_KEY_HudWeaponIconOverlayColorBMagmaul},
+        {"Shock Coil",    MP_HUD_PROP_KEY_HudWeaponIconColorOverlayShockCoil,    MP_HUD_PROP_KEY_HudWeaponIconOverlayColorRShockCoil,    MP_HUD_PROP_KEY_HudWeaponIconOverlayColorGShockCoil,    MP_HUD_PROP_KEY_HudWeaponIconOverlayColorBShockCoil},
+        {"Omega Cannon",  MP_HUD_PROP_KEY_HudWeaponIconColorOverlayOmegaCannon,  MP_HUD_PROP_KEY_HudWeaponIconOverlayColorROmegaCannon,  MP_HUD_PROP_KEY_HudWeaponIconOverlayColorGOmegaCannon,  MP_HUD_PROP_KEY_HudWeaponIconOverlayColorBOmegaCannon},
     };
-    char kE[80], kR[80], kG[80], kB[80];
-    for (auto& w : kWeapons) {
-        std::snprintf(kE, sizeof(kE), "Metroid.Visual.HudWeaponIconColorOverlay%s", w.wpn);
-        std::snprintf(kR, sizeof(kR), "Metroid.Visual.HudWeaponIconOverlayColorR%s", w.wpn);
-        std::snprintf(kG, sizeof(kG), "Metroid.Visual.HudWeaponIconOverlayColorG%s", w.wpn);
-        std::snprintf(kB, sizeof(kB), "Metroid.Visual.HudWeaponIconOverlayColorB%s", w.wpn);
-        addColorOverlayRow(QString::fromUtf8(w.label), kE, kR, kG, kB);
-    }
+    for (const auto& w : kWeaponTints)
+        addColorOverlayRow(QString::fromUtf8(w.label), w.enableKey, w.rKey, w.gKey, w.bKey);
 }
 
 void MelonPrimeHudConfigOnScreenEdit::populateAmmoGauge()
@@ -607,7 +610,7 @@ void MelonPrimeHudConfigOnScreenEdit::populateAmmoGauge()
         MP_HUD_PROP_KEY_HudAmmoGaugeAnchor, MP_HUD_PROP_KEY_HudAmmoGaugeOffsetX, MP_HUD_PROP_KEY_HudAmmoGaugeOffsetY,
         MP_HUD_PROP_KEY_HudAmmoGaugePosX, MP_HUD_PROP_KEY_HudAmmoGaugePosY,
         MP_HUD_PROP_KEY_HudAmmoTextAnchor, MP_HUD_PROP_KEY_HudAmmoTextOffsetX, MP_HUD_PROP_KEY_HudAmmoTextOffsetY);
-    addOutlineGroup("HudAmmoGauge");
+    addOutlineGroup(MP_OUTLINE_KEYS(HudAmmoGauge));
 }
 
 void MelonPrimeHudConfigOnScreenEdit::populateMatchStatus()
@@ -649,7 +652,7 @@ void MelonPrimeHudConfigOnScreenEdit::populateMatchStatus()
         MP_HUD_PROP_KEY_HudMatchStatusGoalColorR,
         MP_HUD_PROP_KEY_HudMatchStatusGoalColorG,
         MP_HUD_PROP_KEY_HudMatchStatusGoalColorB);
-    addOutlineGroup("HudMatchStatus");
+    addOutlineGroup(MP_OUTLINE_KEYS(HudMatchStatus));
 }
 
 void MelonPrimeHudConfigOnScreenEdit::populateRank()
@@ -664,7 +667,7 @@ void MelonPrimeHudConfigOnScreenEdit::populateRank()
     addLineEdit(QStringLiteral("Suffix"), MP_HUD_PROP_KEY_HudRankSuffix);
     addAlign3Combo(QStringLiteral("Align"), MP_HUD_PROP_KEY_HudRankAlign);
     addOpacitySlider(QStringLiteral("Opacity"), MP_HUD_PROP_KEY_HudRankOpacity);
-    addOutlineGroup("HudRank");
+    addOutlineGroup(MP_OUTLINE_KEYS(HudRank));
 }
 
 void MelonPrimeHudConfigOnScreenEdit::populateTimeLeft()
@@ -676,7 +679,7 @@ void MelonPrimeHudConfigOnScreenEdit::populateTimeLeft()
         QStringLiteral("Offset X"), QStringLiteral("Offset Y"));
     addOpacitySlider(QStringLiteral("Opacity"), MP_HUD_PROP_KEY_HudTimeLeftOpacity);
     addAlign3Combo(QStringLiteral("Align"), MP_HUD_PROP_KEY_HudTimeLeftAlign);
-    addOutlineGroup("HudTimeLeft");
+    addOutlineGroup(MP_OUTLINE_KEYS(HudTimeLeft));
 }
 
 void MelonPrimeHudConfigOnScreenEdit::populateTimeLimit()
@@ -688,7 +691,7 @@ void MelonPrimeHudConfigOnScreenEdit::populateTimeLimit()
         QStringLiteral("Offset X"), QStringLiteral("Offset Y"));
     addOpacitySlider(QStringLiteral("Opacity"), MP_HUD_PROP_KEY_HudTimeLimitOpacity);
     addAlign3Combo(QStringLiteral("Align"), MP_HUD_PROP_KEY_HudTimeLimitAlign);
-    addOutlineGroup("HudTimeLimit");
+    addOutlineGroup(MP_OUTLINE_KEYS(HudTimeLimit));
 }
 
 void MelonPrimeHudConfigOnScreenEdit::populateBombLeft()
@@ -703,7 +706,7 @@ void MelonPrimeHudConfigOnScreenEdit::populateBombLeft()
     addLineEdit(QStringLiteral("Prefix"), MP_HUD_PROP_KEY_HudBombLeftPrefix);
     addLineEdit(QStringLiteral("Suffix"), MP_HUD_PROP_KEY_HudBombLeftSuffix);
     addOpacitySlider(QStringLiteral("Opacity"), MP_HUD_PROP_KEY_HudBombLeftOpacity);
-    addOutlineGroup("HudBombLeft");
+    addOutlineGroup(MP_OUTLINE_KEYS(HudBombLeft));
 }
 
 void MelonPrimeHudConfigOnScreenEdit::populateBombIcon()
@@ -723,7 +726,7 @@ void MelonPrimeHudConfigOnScreenEdit::populateBombIcon()
     addAlign3Combo(QStringLiteral("Align X"), MP_HUD_PROP_KEY_HudBombLeftIconAnchorX);
     addComboBox(QStringLiteral("Align Y"), MP_HUD_PROP_KEY_HudBombLeftIconAnchorY,
         {QStringLiteral("Top"), QStringLiteral("Center"), QStringLiteral("Bottom")});
-    addOutlineGroup("HudBombIcon");
+    addOutlineGroup(MP_OUTLINE_KEYS(HudBombIcon));
 }
 
 void MelonPrimeHudConfigOnScreenEdit::populateForCrosshair()
@@ -788,8 +791,8 @@ void MelonPrimeHudConfigOnScreenEdit::populateWeaponInventory()
     addOpacitySlider(QStringLiteral("Opacity"), MP_HUD_PROP_KEY_HudWeaponInventoryOpacity);
     addOpacitySlider(QStringLiteral("Not Owned Opacity"), MP_HUD_PROP_KEY_HudWeaponInventoryNotOwnedOpacity);
     addSeparator();
-    addOutlineGroup("HudWeaponInventory");
-    addOutlineGroup("HudWeaponInventoryIcon");
+    addOutlineGroup(MP_OUTLINE_KEYS(HudWeaponInventory));
+    addOutlineGroup(MP_OUTLINE_KEYS(HudWeaponInventoryIcon));
     addSeparator();
     addCheckBox(QStringLiteral("Highlight Current Weapon"), MP_HUD_PROP_KEY_HudWeaponInventoryHighlightEnable);
     addColorPicker(QStringLiteral("Highlight Color"),
@@ -821,8 +824,8 @@ void MelonPrimeHudConfigOnScreenEdit::populateRadar()
         MP_HUD_PROP_KEY_BtmOverlayRadarColorG,
         MP_HUD_PROP_KEY_BtmOverlayRadarColorB);
     addCheckBox(QStringLiteral("Use Hunter Color"), MP_HUD_PROP_KEY_BtmOverlayRadarColorUseHunter);
-    addOutlineGroup("BtmOverlay");
-    addOutlineGroup("BtmOverlayFrame");
+    addOutlineGroup(MP_OUTLINE_KEYS(BtmOverlay));
+    addOutlineGroup(MP_OUTLINE_KEYS(BtmOverlayFrame));
 }
 
 #endif // MELONPRIME_CUSTOM_HUD
