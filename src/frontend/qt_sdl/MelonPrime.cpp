@@ -269,9 +269,10 @@ namespace MelonPrime {
         ReloadConfigFlags();
         ApplyJoy2KeySupportAndQtFilter(m_flags.test(StateFlags::BIT_JOY2KEY));
         InputReset();
-        // NOTE (Phase 8 review): unlike the other sites this does NOT reset
-        // TR_BipedFire (m_nativeBipedFire*). Preserved verbatim — likely an
-        // accidental omission, left as-is to keep zero behavior change.
+        // Intentional historical asymmetry: this startup path leaves
+        // TR_BipedFire untouched. Other lifecycle sites reset it at game/boot
+        // boundaries; changing this would alter input reset timing and needs a
+        // dedicated S7/S8 behavior pass.
         // weaponSwitchPending is cleared above (before ARM9Hook_Uninstall) where
         // ordering matters, so it is not part of this cluster call.
         ResetTransientInputState(
@@ -309,9 +310,12 @@ namespace MelonPrime {
     void MelonPrimeCore::OnEmuStop()
     {
         m_flags.clear(StateFlags::BIT_IN_GAME);
-        // NOTE (Phase 8 review): does NOT reset TR_AimResiduals / TR_OverlayHeld,
-        // unlike OnEmuStart / boot. Preserved verbatim. weaponSwitchPending is
-        // cleared in the DS block below (before ARM9Hook_Uninstall).
+        // Intentional historical asymmetry: stop clears transform/fire
+        // transients but leaves aim residuals and overlay-held state alone.
+        // OnEmuStart/boot perform broader resets; changing this stop-time
+        // subset would need a dedicated S7/S8 behavior pass.
+        // weaponSwitchPending is cleared in the DS block below (before
+        // ARM9Hook_Uninstall).
         ResetTransientInputState(TR_DirectTransform | TR_BipedFire);
 #ifdef MELONPRIME_CUSTOM_HUD
         if (m_flags.test(StateFlags::BIT_ROM_DETECTED)) {
