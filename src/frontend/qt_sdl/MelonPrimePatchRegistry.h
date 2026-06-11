@@ -47,6 +47,7 @@ namespace MelonPrime {
         PatchSite_GameJoin       = 1u << 0,  // HandleGameJoinInit (once per in-game join)
         PatchSite_ConfigReload   = 1u << 1,  // ApplyConfigReload (only when ROM detected)
         PatchSite_OutOfGameFrame = 1u << 2,  // RunFrameHook !isInGame && focused (per frame; entries self-guard)
+        PatchSite_BattleRuntime  = 1u << 3,  // first frame with mode==0x0E && flow==0 after join
     };
 
     // Restore behavior flags (bitmask). Entries without flags have no RAM

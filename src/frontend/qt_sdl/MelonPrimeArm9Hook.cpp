@@ -4,6 +4,7 @@
 #include "MelonPrime.h"
 #include "MelonPrimeCompilerHints.h"
 #include "MelonPrimeDef.h"
+#include "EmuInstance.h"
 #include "MelonPrimePatchShadowFreezeRuntimeHook.h"
 #include "MelonPrimePatchFixNoxusBladePersistence.h"
 #include "NDS.h"
@@ -204,13 +205,29 @@ static bool DispatcherCallback(
             || nds->ARM9InstructionHookAddrCount != 0);
 }
 
+#if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+static void DevOsdHookRegistered(EmuInstance* emu, uint32_t pcCount) noexcept
+{
+    if (emu)
+        emu->osdAddMessage(0, "ARM9 hooks: registered (%u PCs)", pcCount);
+}
+
+static void DevOsdHookUnregistered(EmuInstance* emu) noexcept
+{
+    if (emu)
+        emu->osdAddMessage(0, "ARM9 hooks: unregistered");
+}
+#endif
+
 } // anonymous namespace
 
 void ARM9Hook_Install(
     melonDS::NDS* nds,
     Config::Table& cfg,
     uint8_t romGroupIndex,
-    MelonPrimeCore* core)
+    MelonPrimeCore* core,
+    uint8_t activeScope,
+    EmuInstance* osdEmu)
 {
     ClearDispatchEntries();
 
@@ -218,6 +235,20 @@ void ARM9Hook_Install(
     {
         ShadowFreezeRuntimeHook_ClearState();
         FixNoxusBladePersistence_ClearState();
+        return;
+    }
+
+    if ((activeScope & ARM9HookScope_InMatch) == 0)
+    {
+        ShadowFreezeRuntimeHook_ClearState();
+        FixNoxusBladePersistence_ClearState();
+        if (HasInstalledInstructionHook(nds))
+        {
+            nds->ClearARM9InstructionHook();
+#if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+            DevOsdHookUnregistered(osdEmu);
+#endif
+        }
         return;
     }
 
@@ -377,36 +408,69 @@ void ARM9Hook_Install(
 
     if (count > 0)
     {
+        const bool hadHook = HasInstalledInstructionHook(nds);
         const bool hookInstallChanged =
             !InstalledDispatcherMatches(nds, core, addresses, count);
-        if (hookInstallChanged)
-            nds->SetARM9InstructionHook(DispatcherCallback, core, addresses, count);
 
-        // Force JIT cache invalidation for every registered address.
-        // The death cleanup code (NoxusBlade hook) may have been JIT-compiled
-        // during game initialization before hook registration, so its compiled
-        // block has no hook call.  Writing back the same instruction value
-        // triggers melonDS to discard and recompile the affected block with the
-        // hook in place.
-        for (uint32_t i = 0; hookInstallChanged && i < count; ++i)
+        // Always re-attach after match-end Clear: skipping SetARM9InstructionHook when
+        // the address list matches leaves JIT blocks compiled without trampolines.
+        nds->SetARM9InstructionHook(DispatcherCallback, core, addresses, count);
+
+        // Re-touch every hook PC so affected JIT blocks recompile with trampolines.
+        for (uint32_t i = 0; i < count; ++i)
         {
             const uint32_t addr = addresses[i] & ~3u;
             nds->ARM9Write32(addr, nds->ARM9Read32(addr));
         }
+
+#if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+        if (!hadHook || hookInstallChanged)
+            DevOsdHookRegistered(osdEmu, count);
+#endif
     }
     else if (HasInstalledInstructionHook(nds))
     {
         nds->ClearARM9InstructionHook();
+#if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+        DevOsdHookUnregistered(osdEmu);
+#endif
     }
 }
 
-void ARM9Hook_Uninstall(melonDS::NDS* nds)
+void ARM9Hook_SetMatchHooksActive(
+    melonDS::NDS* nds,
+    Config::Table& cfg,
+    uint8_t romGroupIndex,
+    MelonPrimeCore* core,
+    bool active,
+    EmuInstance* osdEmu)
 {
+    ARM9Hook_Install(
+        nds,
+        cfg,
+        romGroupIndex,
+        core,
+        active ? ARM9HookScope_InMatch : 0,
+        osdEmu);
+}
+
+void ARM9Hook_Uninstall(melonDS::NDS* nds, EmuInstance* osdEmu)
+{
+#if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+    // emuInstance->reset() clears the NDS hook slot before OnEmuStart, but
+    // s_dispatchCount still reflects MelonPrime's last registered hook set.
+    const bool hadHooks =
+        s_dispatchCount > 0 || HasInstalledInstructionHook(nds);
+#endif
     ClearDispatchEntries();
     ShadowFreezeRuntimeHook_ClearState();
     FixNoxusBladePersistence_ClearState();
     if (nds)
         nds->ClearARM9InstructionHook();
+#if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+    if (osdEmu && hadHooks)
+        DevOsdHookUnregistered(osdEmu);
+#endif
 }
 
 void ARM9Hook_ResetPatchState()

@@ -16,6 +16,7 @@ namespace MelonPrime {
     // word. No dynamic hook / code cave; the in-match low-HP check stays vanilla
     // `cmp r0,#imm`. Mode=Disabled is a no-op.
     void LowHpWarning_ApplyOnce(melonDS::NDS* nds, Config::Table& cfg, uint8_t romGroupIndex);
+    void LowHpWarning_RestoreOnce(melonDS::NDS* nds, uint8_t romGroupIndex);
     void LowHpWarning_ResetPatchState();
 
 } // namespace MelonPrime
