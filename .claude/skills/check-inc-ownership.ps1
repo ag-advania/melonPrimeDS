@@ -1,7 +1,7 @@
 # check-inc-ownership.ps1
 #
 # Verifies the unity-include ownership rule from .claude/rules (repo-architecture.md,
-# melonprime-full-refactor-plan.md Phase 0 / Phase 6):
+# completed/melonprime-full-refactor-plan.md Phase 0 / Phase 6):
 #   every unity *.inc under src/frontend/qt_sdl must be #include'd by EXACTLY ONE file under src/.
 #   known macro-section injection fragments must match their explicit parent set.
 #   no src/frontend/qt_sdl *.cpp file may be #include'd as a unity fragment.
