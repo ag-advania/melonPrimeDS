@@ -1,4 +1,4 @@
-// This file is a unity-build fragment included by MelonPrimeHudConfigOnScreen.cpp.
+// This file is a unity-build fragment included by MelonPrimeHudConfigOnScreenUnity.inc.
 // Do not add it to CMakeLists.txt.
 
 // ── Snapshot / restore ──────────────────────────────────────────────────────

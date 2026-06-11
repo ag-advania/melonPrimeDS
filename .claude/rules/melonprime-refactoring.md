@@ -874,7 +874,7 @@ When reading this unified edition, treat the following four points as fixed rule
 | `MelonPrimeHudRenderRuntime.inc` | Battle/match state, runtime helpers, hide rules, NoHUD patch, static dirty rect; OPT-HUD-6 (`EnsureHudFont` populates `s_frameFont`) |
 | `MelonPrimeHudRenderDraw.inc` | Drawing of HUD elements such as HP/weapon/ammo/radar/crosshair; OPT-HUD-6 (removed `p->font()` copies in 3 draw functions) |
 | `MelonPrimeHudRenderMain.inc` | `CustomHud_Render()`, edit-mode forward state, radar-frame drawing |
-| `MelonPrimeHudConfigOnScreen.cpp` | In-game HUD editor unity entry point. Holds shared edit-mode state and include ordering |
+| `MelonPrimeHudConfigOnScreenUnity.inc` | In-game HUD editor unity entry point. Holds shared edit-mode state and include ordering |
 | `MelonPrimeHudConfigOnScreenDefs.inc` | Edit-mode definition tables / property descriptors / element table |
 | `MelonPrimeHudConfigOnScreenSnapshot.inc` | Edit-mode snapshot / restore / reset |
 | `MelonPrimeHudConfigOnScreenDraw.inc` | Edit-mode bounds / overlay drawing / previews |
@@ -1327,13 +1327,15 @@ Note: P-47 effect for joystick is minimal because `LateLatchMouseDelta` is only 
 
 ## 18.1 Central theme
 
-Originally, large amounts of processing were concentrated in `MelonPrimeHudRender.cpp` / `MelonPrimeHudConfigOnScreen.cpp` / `Screen.cpp`. In the current implementation, responsibilities are split into unity include fragments, improving readability without increasing the number of build units.
+Originally, large amounts of processing were concentrated in `MelonPrimeHudRender.cpp` / the on-screen HUD editor unity fragment / `Screen.cpp`. In the current implementation, responsibilities are split into unity include fragments, improving readability without increasing the number of build units.
 
 Important rules:
 - `MelonPrimeHudRender*.inc` must only be included from `MelonPrimeHudRender.cpp`
-- `MelonPrimeHudConfigOnScreen*.inc` must only be included from `MelonPrimeHudConfigOnScreen.cpp`
+- `MelonPrimeHudConfigOnScreenUnity.inc` must only be included from `MelonPrimeHudRender.cpp`
+- `MelonPrimeHudConfigOnScreen*.inc` fragments must only be included from `MelonPrimeHudConfigOnScreenUnity.inc`
 - `MelonPrimeHudScreenCpp*.inc` must only be included from `Screen.cpp`
 - These `.inc` files are not standalone translation units, so they must not be added to `CMakeLists.txt`
+- `#include "*.cpp"` is forbidden for unity fragments; use `.inc` instead
 
 ## 18.2 Runtime HUD split
 
@@ -1349,10 +1351,11 @@ Important rules:
 
 ## 18.3 On-screen HUD Editor split
 
-`MelonPrimeHudConfigOnScreen.cpp` is the unity entry point for the in-game editor, and holds shared edit-mode state and the include order.
+`MelonPrimeHudConfigOnScreenUnity.inc` is the unity entry point for the in-game editor, and holds shared edit-mode state and the include order.
 
 | File | Responsibility |
 |---|---|
+| `MelonPrimeHudConfigOnScreenUnity.inc` | editor unity entry point, shared edit-mode state/constants, include order |
 | `MelonPrimeHudConfigOnScreenDefs.inc` | edit-element table, property definitions, sample text |
 | `MelonPrimeHudConfigOnScreenSnapshot.inc` | snapshot / restore / reset-to-default |
 | `MelonPrimeHudConfigOnScreenDraw.inc` | hit bounds, selection box, property panel, preview drawing |
