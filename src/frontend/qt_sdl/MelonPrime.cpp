@@ -257,7 +257,7 @@ namespace MelonPrime {
 #endif
 #ifdef MELONPRIME_DS
         m_weaponSwitchPending.Clear();
-        ARM9Hook_Uninstall(emuInstance->getNDS());
+        ARM9Hook_Uninstall(emuInstance->getNDS(), emuInstance);
         {
             const PatchCtx ctx{ emuInstance->getNDS(), emuInstance, localCfg, m_currentRom };
             Patches_RestoreOnStop(ctx);
@@ -293,7 +293,7 @@ namespace MelonPrime {
 #endif
 #ifdef MELONPRIME_DS
         m_weaponSwitchPending.Clear();
-        ARM9Hook_Uninstall(emuInstance->getNDS());
+        ARM9Hook_Uninstall(emuInstance->getNDS(), emuInstance);
         // boot reset: state only, no RAM restore (emu memory is being re-initialized)
         Patches_ResetAll();
         ARM9Hook_ResetPatchState();
@@ -322,7 +322,7 @@ namespace MelonPrime {
 #endif
 #ifdef MELONPRIME_DS
         m_weaponSwitchPending.Clear();
-        ARM9Hook_Uninstall(emuInstance->getNDS());
+        ARM9Hook_Uninstall(emuInstance->getNDS(), emuInstance);
         {
             const PatchCtx ctx{ emuInstance->getNDS(), emuInstance, localCfg, m_currentRom };
             Patches_RestoreOnStop(ctx);

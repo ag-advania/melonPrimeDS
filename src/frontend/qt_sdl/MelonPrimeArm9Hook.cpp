@@ -454,13 +454,23 @@ void ARM9Hook_SetMatchHooksActive(
         osdEmu);
 }
 
-void ARM9Hook_Uninstall(melonDS::NDS* nds)
+void ARM9Hook_Uninstall(melonDS::NDS* nds, EmuInstance* osdEmu)
 {
+#if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+    // emuInstance->reset() clears the NDS hook slot before OnEmuStart, but
+    // s_dispatchCount still reflects MelonPrime's last registered hook set.
+    const bool hadHooks =
+        s_dispatchCount > 0 || HasInstalledInstructionHook(nds);
+#endif
     ClearDispatchEntries();
     ShadowFreezeRuntimeHook_ClearState();
     FixNoxusBladePersistence_ClearState();
     if (nds)
         nds->ClearARM9InstructionHook();
+#if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+    if (osdEmu && hadHooks)
+        DevOsdHookUnregistered(osdEmu);
+#endif
 }
 
 void ARM9Hook_ResetPatchState()
