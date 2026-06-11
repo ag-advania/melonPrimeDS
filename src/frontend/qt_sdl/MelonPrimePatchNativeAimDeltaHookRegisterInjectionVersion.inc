@@ -15,32 +15,32 @@
         // JP1_0=0, JP1_1=1, US1_0=2, US1_1=3, EU1_0=4, EU1_1=5, KR1_0=6
         static constexpr NativeAimDeltaHookInfo kNativeAimDeltaHooks[][2] = {
             {
-                { 0x02024318u, 10, 4, 6, 0x020BE790u, false },
-                { 0x020220F8u,  5, 6, 7, 0x020BE790u, true  },
+                { 0x02024318u, 10, 4, 6, LIST_HookLocalPlayerPtrGlobal[0], false },
+                { 0x020220F8u,  5, 6, 7, LIST_HookLocalPlayerPtrGlobal[0], true  },
             },
             {
-                { 0x02024318u, 10, 4, 6, 0x020BE750u, false },
-                { 0x020220F8u,  5, 6, 7, 0x020BE750u, true  },
+                { 0x02024318u, 10, 4, 6, LIST_HookLocalPlayerPtrGlobal[1], false },
+                { 0x020220F8u,  5, 6, 7, LIST_HookLocalPlayerPtrGlobal[1], true  },
             },
             {
-                { 0x0202433Cu, 10, 4, 6, 0x020BCA70u, false },
-                { 0x0202211Cu,  5, 6, 7, 0x020BCA70u, true  },
+                { 0x0202433Cu, 10, 4, 6, LIST_HookLocalPlayerPtrGlobal[2], false },
+                { 0x0202211Cu,  5, 6, 7, LIST_HookLocalPlayerPtrGlobal[2], true  },
             },
             {
-                { 0x0202433Cu, 10, 4, 6, 0x020BD2D0u, false },
-                { 0x0202211Cu,  5, 6, 7, 0x020BD2D0u, true  },
+                { 0x0202433Cu, 10, 4, 6, LIST_HookLocalPlayerPtrGlobal[3], false },
+                { 0x0202211Cu,  5, 6, 7, LIST_HookLocalPlayerPtrGlobal[3], true  },
             },
             {
-                { 0x02024334u, 10, 4, 6, 0x020BD2F0u, false },
-                { 0x02022114u,  5, 6, 7, 0x020BD2F0u, true  },
+                { 0x02024334u, 10, 4, 6, LIST_HookLocalPlayerPtrGlobal[4], false },
+                { 0x02022114u,  5, 6, 7, LIST_HookLocalPlayerPtrGlobal[4], true  },
             },
             {
-                { 0x0202433Cu, 10, 4, 6, 0x020BD370u, false },
-                { 0x0202211Cu,  5, 6, 7, 0x020BD370u, true  },
+                { 0x0202433Cu, 10, 4, 6, LIST_HookLocalPlayerPtrGlobal[5], false },
+                { 0x0202211Cu,  5, 6, 7, LIST_HookLocalPlayerPtrGlobal[5], true  },
             },
             {
-                { 0x0200D208u, 10, 5, 6, 0x020B6240u, false },
-                { 0x0200FBA0u,  7, 9, 8, 0x020B6240u, true  },
+                { 0x0200D208u, 10, 5, 6, LIST_HookLocalPlayerPtrGlobal[6], false },
+                { 0x0200FBA0u,  7, 9, 8, LIST_HookLocalPlayerPtrGlobal[6], true  },
             },
         };
 
@@ -59,13 +59,13 @@
         };
 
         static constexpr AltFormVSteerInputHook kAltFormVSteerInputHooks[] = {
-            { 0x02021DACu, 5u, 0x020BE790u }, // JP1_0
-            { 0x02021DACu, 5u, 0x020BE750u }, // JP1_1
-            { 0x02021DD0u, 5u, 0x020BCA70u }, // US1_0
-            { 0x02021DD0u, 5u, 0x020BD2D0u }, // US1_1
-            { 0x02021DC8u, 5u, 0x020BD2F0u }, // EU1_0
-            { 0x02021DD0u, 5u, 0x020BD370u }, // EU1_1
-            { 0x0200F884u, 7u, 0x020B6240u }, // KR1_0
+            { 0x02021DACu, 5u, LIST_HookLocalPlayerPtrGlobal[0] }, // JP1_0
+            { 0x02021DACu, 5u, LIST_HookLocalPlayerPtrGlobal[1] }, // JP1_1
+            { 0x02021DD0u, 5u, LIST_HookLocalPlayerPtrGlobal[2] }, // US1_0
+            { 0x02021DD0u, 5u, LIST_HookLocalPlayerPtrGlobal[3] }, // US1_1
+            { 0x02021DC8u, 5u, LIST_HookLocalPlayerPtrGlobal[4] }, // EU1_0
+            { 0x02021DD0u, 5u, LIST_HookLocalPlayerPtrGlobal[5] }, // EU1_1
+            { 0x0200F884u, 7u, LIST_HookLocalPlayerPtrGlobal[6] }, // KR1_0
         };
 
         // ── AltForm StoredYaw / StoredPitch (transition fallback) ────────────
@@ -83,13 +83,13 @@
         };
 
         static constexpr AltStoredHookSet kAltStoredHooks[] = {
-            { 5u, 0x020BE790u, 0x020221D0u, 0x020221DCu }, // JP1_0
-            { 5u, 0x020BE750u, 0x020221D0u, 0x020221DCu }, // JP1_1
-            { 5u, 0x020BCA70u, 0x020221F4u, 0x02022200u }, // US1_0
-            { 5u, 0x020BD2D0u, 0x020221F4u, 0x02022200u }, // US1_1
-            { 5u, 0x020BD2F0u, 0x020221ECu, 0x020221F8u }, // EU1_0
-            { 5u, 0x020BD370u, 0x020221F4u, 0x02022200u }, // EU1_1
-            { 7u, 0x020B6240u, 0x0200FC78u, 0x0200FC84u }, // KR1_0
+            { 5u, LIST_HookLocalPlayerPtrGlobal[0], 0x020221D0u, 0x020221DCu }, // JP1_0
+            { 5u, LIST_HookLocalPlayerPtrGlobal[1], 0x020221D0u, 0x020221DCu }, // JP1_1
+            { 5u, LIST_HookLocalPlayerPtrGlobal[2], 0x020221F4u, 0x02022200u }, // US1_0
+            { 5u, LIST_HookLocalPlayerPtrGlobal[3], 0x020221F4u, 0x02022200u }, // US1_1
+            { 5u, LIST_HookLocalPlayerPtrGlobal[4], 0x020221ECu, 0x020221F8u }, // EU1_0
+            { 5u, LIST_HookLocalPlayerPtrGlobal[5], 0x020221F4u, 0x02022200u }, // EU1_1
+            { 7u, LIST_HookLocalPlayerPtrGlobal[6], 0x0200FC78u, 0x0200FC84u }, // KR1_0
         };
 
         static_assert(
@@ -100,6 +100,40 @@
             sizeof(kAltStoredHooks) / sizeof(kAltStoredHooks[0])
                 == sizeof(kNativeAimDeltaHooks) / sizeof(kNativeAimDeltaHooks[0]),
             "kAltStoredHooks ROM count mismatch");
+        static_assert(
+            sizeof(kNativeAimDeltaHooks) / sizeof(kNativeAimDeltaHooks[0])
+                == static_cast<uint32_t>(RomGroup::COUNT),
+            "Native aim-delta hook table must cover every ROM group");
+        static constexpr bool NativeAimDeltaHook_SitesInMainRam() noexcept
+        {
+            for (const auto& group : kNativeAimDeltaHooks) {
+                for (const auto& info : group) {
+                    if (!RomAddrDetail::InMainRam(info.hookPc)
+                        || !RomAddrDetail::InMainRam(info.localPlayerPtrAddr))
+                    {
+                        return false;
+                    }
+                }
+            }
+            for (const auto& hook : kAltFormVSteerInputHooks) {
+                if (!RomAddrDetail::InMainRam(hook.pc)
+                    || !RomAddrDetail::InMainRam(hook.localPlayerPtrAddr))
+                {
+                    return false;
+                }
+            }
+            for (const auto& hook : kAltStoredHooks) {
+                if (!RomAddrDetail::InMainRam(hook.localPlayerPtrAddr)
+                    || !RomAddrDetail::InMainRam(hook.yawPc)
+                    || !RomAddrDetail::InMainRam(hook.pitchPc))
+                {
+                    return false;
+                }
+            }
+            return true;
+        }
+        static_assert(NativeAimDeltaHook_SitesInMainRam(),
+                      "Native aim-delta hook table contains a non-main-RAM address");
 
         [[nodiscard]] static FORCE_INLINE bool NativeAimDeltaHook_IsMainRamRange(
             uint32_t address,

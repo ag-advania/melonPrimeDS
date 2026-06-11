@@ -727,6 +727,18 @@ bool CheatListModel::dropMimeData(const QMimeData* mime, Qt::DropAction action, 
             newit++;
         }
 
+#ifdef MELONPRIME_DS
+        // Same-parent move dropped onto the dragged item's own position:
+        // newit would be invalidated by the erase below, and the following
+        // emplace(newit, ...) on the dangling iterator corrupts the list
+        // (self-looping node -> infinite Save() output, melonDS issue #2597).
+        // Skipping past the dragged element keeps the same insertion point.
+        if (newit != newparent->Children.end()
+            && std::holds_alternative<ARCodeCat>(*newit)
+            && &std::get<ARCodeCat>(*newit) == cat)
+            newit++;
+#endif
+
         // create new category
         ARCodeCat newcat = {
             .Parent = newparent,
@@ -791,6 +803,15 @@ bool CheatListModel::dropMimeData(const QMimeData* mime, Qt::DropAction action, 
             if (i == row) break;
             newit++;
         }
+
+#ifdef MELONPRIME_DS
+        // Same-parent move dropped onto the dragged item's own position:
+        // see the matching guard in the category branch above (issue #2597).
+        if (newit != newparent->Children.end()
+            && std::holds_alternative<ARCode>(*newit)
+            && &std::get<ARCode>(*newit) == code)
+            newit++;
+#endif
 
         // create new code
         ARCode newcode = {

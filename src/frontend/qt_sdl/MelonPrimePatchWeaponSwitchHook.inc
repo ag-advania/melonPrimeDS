@@ -55,15 +55,40 @@
 
         // ROM group order: JP1_0=0, JP1_1=1, US1_0=2, US1_1=3,
         //                  EU1_0=4, EU1_1=5, KR1_0=6
+#define MP_WEAPON_SWITCH_SITE(i, originalTarget, tryEquipAddr, expectedTryEquipEntry) \
+        { LIST_HookPlayerUpdateActiveCallAddr[i], LIST_HookPlayerUpdateActiveCallExpected[i], \
+          LIST_HookPlayerUpdateActiveAfter[i], originalTarget, tryEquipAddr, \
+          expectedTryEquipEntry, LIST_HookLocalPlayerPtrGlobal[i] }
         static constexpr WeaponSwitchActiveCallSite kWeaponSwitchActiveCallSites[] = {
-            { 0x020263DCu, 0xEB000206u, 0x020263E0u, 0x02026BFCu, 0x0200C5FCu, 0xE92D47F0u, 0x020BE790u },
-            { 0x020263DCu, 0xEB000206u, 0x020263E0u, 0x02026BFCu, 0x0200C5FCu, 0xE92D47F0u, 0x020BE750u },
-            { 0x02026400u, 0xEB000206u, 0x02026404u, 0x02026C20u, 0x0200C5FCu, 0xE92D47F0u, 0x020BCA70u },
-            { 0x02026400u, 0xEB000206u, 0x02026404u, 0x02026C20u, 0x0200C5FCu, 0xE92D47F0u, 0x020BD2D0u },
-            { 0x020263F8u, 0xEB000206u, 0x020263FCu, 0x02026C18u, 0x0200C600u, 0xE92D47F0u, 0x020BD2F0u },
-            { 0x02026400u, 0xEB000206u, 0x02026404u, 0x02026C20u, 0x0200C5FCu, 0xE92D47F0u, 0x020BD370u },
-            { 0x0200CF1Cu, 0xEBFFFCDEu, 0x0200CF20u, 0x0200C29Cu, 0x02025DBCu, 0xE92D47F0u, 0x020B6240u },
+            MP_WEAPON_SWITCH_SITE(0, 0x02026BFCu, 0x0200C5FCu, 0xE92D47F0u),
+            MP_WEAPON_SWITCH_SITE(1, 0x02026BFCu, 0x0200C5FCu, 0xE92D47F0u),
+            MP_WEAPON_SWITCH_SITE(2, 0x02026C20u, 0x0200C5FCu, 0xE92D47F0u),
+            MP_WEAPON_SWITCH_SITE(3, 0x02026C20u, 0x0200C5FCu, 0xE92D47F0u),
+            MP_WEAPON_SWITCH_SITE(4, 0x02026C18u, 0x0200C600u, 0xE92D47F0u),
+            MP_WEAPON_SWITCH_SITE(5, 0x02026C20u, 0x0200C5FCu, 0xE92D47F0u),
+            MP_WEAPON_SWITCH_SITE(6, 0x0200C29Cu, 0x02025DBCu, 0xE92D47F0u),
         };
+#undef MP_WEAPON_SWITCH_SITE
+        static_assert(
+            sizeof(kWeaponSwitchActiveCallSites) / sizeof(kWeaponSwitchActiveCallSites[0])
+                == static_cast<uint32_t>(RomGroup::COUNT),
+            "Weapon switch active-call table must cover every ROM group");
+        static constexpr bool WeaponSwitchHook_SitesInMainRam() noexcept
+        {
+            for (const auto& site : kWeaponSwitchActiveCallSites) {
+                if (!RomAddrDetail::InMainRam(site.ActiveCallAddr)
+                    || !RomAddrDetail::InMainRam(site.ActiveAfterAddr)
+                    || !RomAddrDetail::InMainRam(site.OriginalTarget)
+                    || !RomAddrDetail::InMainRam(site.TryEquipAddr)
+                    || !RomAddrDetail::InMainRam(site.MainPlayerPtrGlobal))
+                {
+                    return false;
+                }
+            }
+            return true;
+        }
+        static_assert(WeaponSwitchHook_SitesInMainRam(),
+                      "Weapon switch hook-site table contains a non-main-RAM address");
 
         [[nodiscard]] static FORCE_INLINE const WeaponSwitchActiveCallSite*
         WeaponSwitchHook_GetSite(uint8_t romGroupIndex) noexcept

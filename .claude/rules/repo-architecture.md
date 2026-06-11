@@ -147,6 +147,37 @@ Rules of thumb from recent fixes:
 - Non-Visual `Metroid.*` keys used by InputConfig/MelonPrimeCore also need defaults (not just `Metroid.Visual.*`).
 - `Metroid.Visual.HudFontSize` is a legacy migration-only key read behind `HasKey()`; it does not need a new default unless migration logic changes.
 
+### HUD Property Schema Ownership
+
+HUD visual settings are owned by `src/frontend/qt_sdl/MelonPrimeHudPropSchema.inc`.
+It is the single source for `Metroid.Visual.*` HUD keys, default type views, key macros, and
+surface coverage metadata. Generated or schema-driven consumers should include this file rather
+than spelling HUD config strings by hand.
+
+Ownership flow:
+
+```text
+MelonPrimeHudPropSchema.inc
+  -> Config.cpp typed defaults via MP_HUD_PROP_SCHEMA_INT/BOOL/STRING/DOUBLE
+  -> InputConfig/MelonPrimeInputConfigHudDialogProps.inc dialog rows
+  -> MelonPrimeHudConfigOnScreenEditProps.inc edit descriptors
+  -> MelonPrimeHudConfigOnScreenSnapshot.inc snapshot/reset fixed keys
+  -> MelonPrimeHudRenderConfig.inc runtime load key references
+```
+
+OSD color rows are a small sub-domain under the HUD schema. `MelonPrimeOsdColorSchema.inc` owns
+the message/slot row list and expands into both the settings dialog OSD sections and
+`MelonPrimePatchOsdColor.cpp`; it still uses `MP_HUD_PROP_KEY_*` for the actual keys.
+
+To add a new HUD property:
+
+1. Add or regenerate the property in `MelonPrimeHudPropSchema.inc`, preserving the correct
+   accessor type (`Int`, `Bool`, `String`, or `Double`) and surface metadata.
+2. Wire the intended consumer through an existing schema view or descriptor table, rather than
+   adding a new `"Metroid.Visual.*"` literal at the use site.
+3. Run `.claude/skills/audit-hud-key-parity.ps1` and the default coverage audit before testing the
+   relevant UI/runtime path.
+
 #### Audit Command (PowerShell, Metroid.*)
 Checked in as [.claude/skills/audit-config-defaults.ps1](../skills/audit-config-defaults.ps1).
 Run from anywhere (it resolves the repo root from its own path):

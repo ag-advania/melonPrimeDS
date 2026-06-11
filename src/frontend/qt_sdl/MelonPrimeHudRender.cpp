@@ -13,6 +13,7 @@
 #include "MelonPrime.h"
 #include "MelonPrimeDef.h"
 #include "MelonPrimeLocalization.h"
+#include "MelonPrimeHudPropSchema.inc"
 
 #include <QPainter>
 #include <QPainterPath>

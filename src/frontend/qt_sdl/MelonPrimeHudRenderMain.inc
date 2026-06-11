@@ -75,24 +75,6 @@ HOT_FUNCTION QRect CustomHud_Render(
     if (!st.isStartPressed && st.currentHP != 0 && !st.isGameOver)
         ReadHudRuntimeAdventurePauseState(rom, st);
 
-    if (ShouldHideForGameplayState(st.isStartPressed,
-                                   st.currentHP,
-                                   st.isGameOver,
-                                   st.isAdventure,
-                                   st.isMapOrUserActionPaused)) {
-        // Per-element patches NOP individual ARM draw instructions, so the
-        // start menu / death / game-over screens are unaffected by them — no
-        // need to restore patches just because we're skipping our own overlay
-        // for this frame.
-        // If settings were saved while the HUD is hidden, still refresh once so
-        // Screen.cpp's epoch-based CustomHUD enable cache observes the change.
-        if (UNLIKELY(!s_cache.valid)) {
-            EnsureCachedConfigForFrame(localCfg, xf);
-            s_cache.valid = true;
-        }
-        return QRect();
-    }
-
     // P-3: Refresh config cache only when invalidated, or recompute anchor
     //       positions when topStretchX changes (window resize).
     //       Also refresh when hudScale changes — crosshair rects and textDrawScale
@@ -101,8 +83,21 @@ HOT_FUNCTION QRect CustomHud_Render(
     EnsureCachedConfigForFrame(localCfg, xf);
     const CachedHudConfig& c = s_cache;
 
+    // Sync BEFORE the gameplay-state early return so the helmet bit is already
+    // applied (and tracked) during loading/spawn frames — the pre-frame layer
+    // clamp in RunFrameHook gates on the applied mask. Per-element patches NOP
+    // individual ARM draw instructions, so the start menu / death / game-over
+    // screens are unaffected by leaving them applied.
     NoHudPatch_Sync(st.nds, st.romGroup, c.noHudMask);
     CustomHud_MarkNoHudPatchDesired();
+
+    if (ShouldHideForGameplayState(st.isStartPressed,
+                                   st.currentHP,
+                                   st.isGameOver,
+                                   st.isAdventure,
+                                   st.isMapOrUserActionPaused)) {
+        return QRect();
+    }
 
     ReadHudRuntimeVisibleState(rom, addrHot, st);
 

@@ -2,21 +2,14 @@
 
     namespace {
 
-        // ROM group order:
-        // JP1_0=0, JP1_1=1, US1_0=2, US1_1=3, EU1_0=4, EU1_1=5, KR1_0=6
-        //
         // Hook at the action consumer entry.  Fires AFTER the input poll has written
         // fresh values into player+0x464, and BEFORE any action handler (morph check,
         // fire gate, jump gate, etc.) reads from it.
-        static constexpr uint32_t kImmediateOverlayActionConsumerPc[] = {
-            0x02024174u,  // JP1_0
-            0x02024174u,  // JP1_1
-            0x02024198u,  // US1_0
-            0x02024198u,  // US1_1
-            0x02024190u,  // EU1_0
-            0x02024198u,  // EU1_1
-            0x0200F6DCu,  // KR1_0
-        };
+        static constexpr const auto& kImmediateOverlayActionConsumerPc =
+            LIST_HookActionConsumerPc;
+        static_assert(
+            kImmediateOverlayActionConsumerPc.size() == static_cast<uint32_t>(RomGroup::COUNT),
+            "Immediate overlay action-consumer table must cover every ROM group");
 
         // ── Shared helpers ───────────────────────────────────────────────────
 

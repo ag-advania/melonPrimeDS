@@ -24,6 +24,23 @@
             { 0x020282ECu, 0x02028568u }, // EU1_1
             { 0x0200B454u, 0x0200B6B0u }, // KR1_0
         };
+        static_assert(
+            sizeof(kLowLatencyAimHookSites) / sizeof(kLowLatencyAimHookSites[0])
+                == static_cast<uint32_t>(RomGroup::COUNT),
+            "Low-latency aim hook-site table must cover every ROM group");
+        static constexpr bool LowLatencyAim_SitesInMainRam() noexcept
+        {
+            for (const auto& site : kLowLatencyAimHookSites) {
+                if (!RomAddrDetail::InMainRam(site.ExitA)
+                    || !RomAddrDetail::InMainRam(site.ExitB))
+                {
+                    return false;
+                }
+            }
+            return true;
+        }
+        static_assert(LowLatencyAim_SitesInMainRam(),
+                      "Low-latency aim hook-site table contains a non-main-RAM address");
 
         static constexpr int32_t kLowLatencyAimQ12One = 0x1000;
         static constexpr int32_t kLowLatencyAimVecComponentLimit = 0x20000;

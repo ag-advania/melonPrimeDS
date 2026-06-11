@@ -31,34 +31,54 @@
         // CmpAddr = GateEntryAddr + 0x0C; TransformCallAddr = GateEntryAddr + 0x44.
         static constexpr TransformGateEntry kTransformGateEntries[][2] = {
             {   // JP1_0
-                { 0x02023B3Cu, 0x02023B74u, 0x020BE790u, 5 },   // Gate A
-                { 0x02025F94u, 0x02025FCCu, 0x020BE790u, 10 },  // Gate B
+                { 0x02023B3Cu, 0x02023B74u, LIST_HookLocalPlayerPtrGlobal[0], 5 },   // Gate A
+                { 0x02025F94u, 0x02025FCCu, LIST_HookLocalPlayerPtrGlobal[0], 10 },  // Gate B
             },
             {   // JP1_1
-                { 0x02023B3Cu, 0x02023B74u, 0x020BE750u, 5 },
-                { 0x02025F94u, 0x02025FCCu, 0x020BE750u, 10 },
+                { 0x02023B3Cu, 0x02023B74u, LIST_HookLocalPlayerPtrGlobal[1], 5 },
+                { 0x02025F94u, 0x02025FCCu, LIST_HookLocalPlayerPtrGlobal[1], 10 },
             },
             {   // US1_0
-                { 0x02023B60u, 0x02023B98u, 0x020BCA70u, 5 },
-                { 0x02025FB8u, 0x02025FF0u, 0x020BCA70u, 10 },
+                { 0x02023B60u, 0x02023B98u, LIST_HookLocalPlayerPtrGlobal[2], 5 },
+                { 0x02025FB8u, 0x02025FF0u, LIST_HookLocalPlayerPtrGlobal[2], 10 },
             },
             {   // US1_1
-                { 0x02023B60u, 0x02023B98u, 0x020BD2D0u, 5 },
-                { 0x02025FB8u, 0x02025FF0u, 0x020BD2D0u, 10 },
+                { 0x02023B60u, 0x02023B98u, LIST_HookLocalPlayerPtrGlobal[3], 5 },
+                { 0x02025FB8u, 0x02025FF0u, LIST_HookLocalPlayerPtrGlobal[3], 10 },
             },
             {   // EU1_0
-                { 0x02023B58u, 0x02023B90u, 0x020BD2F0u, 5 },
-                { 0x02025FB0u, 0x02025FE8u, 0x020BD2F0u, 10 },
+                { 0x02023B58u, 0x02023B90u, LIST_HookLocalPlayerPtrGlobal[4], 5 },
+                { 0x02025FB0u, 0x02025FE8u, LIST_HookLocalPlayerPtrGlobal[4], 10 },
             },
             {   // EU1_1
-                { 0x02023B60u, 0x02023B98u, 0x020BD370u, 5 },
-                { 0x02025FB8u, 0x02025FF0u, 0x020BD370u, 10 },
+                { 0x02023B60u, 0x02023B98u, LIST_HookLocalPlayerPtrGlobal[5], 5 },
+                { 0x02025FB8u, 0x02025FF0u, LIST_HookLocalPlayerPtrGlobal[5], 10 },
             },
             {   // KR1_0
-                { 0x02011598u, 0x020115D0u, 0x020B6240u, 7 },
-                { 0x0200EE54u, 0x0200EE8Cu, 0x020B6240u, 10 },
+                { 0x02011598u, 0x020115D0u, LIST_HookLocalPlayerPtrGlobal[6], 7 },
+                { 0x0200EE54u, 0x0200EE8Cu, LIST_HookLocalPlayerPtrGlobal[6], 10 },
             },
         };
+        static_assert(
+            sizeof(kTransformGateEntries) / sizeof(kTransformGateEntries[0])
+                == static_cast<uint32_t>(RomGroup::COUNT),
+            "Transform gate hook table must cover every ROM group");
+        static constexpr bool TransformGate_SitesInMainRam() noexcept
+        {
+            for (const auto& group : kTransformGateEntries) {
+                for (const auto& entry : group) {
+                    if (!RomAddrDetail::InMainRam(entry.CmpAddr)
+                        || !RomAddrDetail::InMainRam(entry.TransformCallAddr)
+                        || !RomAddrDetail::InMainRam(entry.LocalPlayerPtrAddr))
+                    {
+                        return false;
+                    }
+                }
+            }
+            return true;
+        }
+        static_assert(TransformGate_SitesInMainRam(),
+                      "Transform gate hook table contains a non-main-RAM address");
 
         [[nodiscard]] static FORCE_INLINE bool TransformGate_IsMainRamRange(
             uint32_t address,

@@ -45,10 +45,14 @@ Current high-level flow inside `CustomHud_Render()`:
 1. If edit mode, draw element overlay and return immediately.
 2. Return immediately if not in-game.
 3. If custom HUD is disabled, restore the native HUD patch state and exit.
-4. Apply the no-HUD patch.
-5. Refresh cached HUD config when invalidated, or recompute anchors if `topStretchX` changed.
-6. Read current gameplay values from RAM.
-7. Hide HUD entirely for certain gameplay states.
+4. Refresh cached HUD config when invalidated, or recompute anchors if `topStretchX` changed.
+5. Apply the no-HUD patch (`NoHudPatch_Sync` with the cached `noHudMask`). This runs
+   **before** the gameplay-state hide check so the helmet bit is applied and tracked from
+   the first loading/spawn frame — the pre-frame helmet layer clamp in `RunFrameHook`
+   gates on `NoHudPatch_GetAppliedMask()`. Per-element patches NOP individual draw
+   instructions, so leaving them applied does not affect the start/death/game-over UI.
+6. Hide HUD entirely for certain gameplay states (early return; patches stay applied).
+7. Read current gameplay values from RAM.
 8. Set up painter (scale + translate + font); P-9 caches `QFontMetrics` on first call.
 9. Draw HP, bomb-left, match-status, and rank/time.
 10. If first-person, additionally draw weapon/ammo, crosshair, and radar overlay.
@@ -206,12 +210,28 @@ Useful implementation notes for future edits:
 - Time-left is read from raw frame-based RAM time and converted to seconds.
 - Time-limit is derived from battle settings / cached match-join state and formatted as `M:00`.
 
-### No-HUD patch
+### No-HUD patch (selective, per-element)
 The runtime custom HUD disables pieces of the original game HUD by writing ARM NOPs to ROM-version-specific addresses.
 
 Relevant details:
-- patch table lives in `MelonPrimeHudRender.cpp`
-- keyed by `romGroupIndex`
+- module: `MelonPrimePatchNoHud.h` / `MelonPrimePatchNoHud.cpp` (table `kHudPatch[7][NOHUD_ELEMENT_COUNT]`, keyed by `romGroupIndex`)
+- one `NoHudElement` bit per element (helmet, ammo, weapon icon, HP, crosshair, per-mode score rows, bomb); the desired mask comes from the `Metroid.Visual.DisableDefaultHud.*` config keys via `BuildNoHudMaskFromConfig` (cached in `CachedHudConfig::noHudMask`)
+- `NoHudPatch_Sync(nds, romGroup, desiredMask)` is diff-based: steady state is one static read + XOR, no RAM writes
+- **Full NoHud (the 17-writer cheat + `hudToggle=0x01`) is intentionally NOT used** — it would override per-element selection and break the pause/score UI. See `.claude/rules/notes/CustomHudHelmetSpawnFlash.md`.
+
+### Helmet spawn-flash layer clamp
+The helmet hide patch flips the game's own per-frame layer clamp (JP1.0 `0202F934`), but that
+game code early-outs during spawn/death states, so init writers can briefly restore the
+top-screen BG1-3 layers and flash the native visor. Fix (host-side, selective):
+
+- `NoHudPatch_ClampHelmetLayers(nds, romGroup)` clears `hudToggle & 0x0E` (RAM) and main
+  `DISPCNT & 0x0E00` (already-reflected register) — BG0/OBJ untouched.
+- Called every frame **before `RunFrame`** from `RunFrameHook` via
+  `CustomHud_ClampHelmetLayersPreFrame(emu, rom, playerPosition)` (`MelonPrimeHudRenderRuntime.inc`).
+- Gating order (hot-path friendly): `NoHudPatch_GetAppliedMask() & NOHUD_HELMET` (static read,
+  no config lookup) → base-state reads → skip on start pressed / HP 0 / game over / adventure
+  pause (native UI keeps normal layers) → clamp (2 reads, writes only during spawn frames).
+- Full analysis and rejected alternatives: `.claude/rules/notes/CustomHudHelmetSpawnFlash.md`.
 
 ### Performance optimizations (P-9 through P-12, OPT-DR1)
 
@@ -257,8 +277,6 @@ UI locations:
 - Settings dialog: `HUD SCALE` section with enable checkbox + 5 cap spinboxes (global, text, icons, gauges, crosshair)
 - Edit mode: `Auto` slider (global cap, `100-800`, step `25`)
 - Edit mode snapshot/restore/reset covers all auto-scale keys
-- guarded by `s_hudPatchApplied`
-- restored automatically when custom HUD is no longer active
 
 ### Radar overlay note
 The software radar overlay path takes `hunterID` and uses `kBtmOverlaySrcCenterY[hunterID]` to pick the crop center. That means the source crop is intentionally not identical for all hunters.
@@ -292,6 +310,9 @@ QRect CustomHud_Render(
 bool CustomHud_IsEnabled(Config::Table& localCfg);
 bool CustomHud_ShouldHideForGameplayState(EmuInstance* emu, const RomAddresses& rom, uint8_t playerPosition);
 bool CustomHud_ShouldDrawRadarOverlay(EmuInstance* emu, const RomAddresses& rom, uint8_t playerPosition);
+// Per-frame from RunFrameHook (before RunFrame): helmet spawn-flash layer clamp.
+void CustomHud_ClampHelmetLayersPreFrame(EmuInstance* emu, const RomAddresses& rom, uint8_t playerPosition);
+void CustomHud_EnsurePatchRestored(EmuInstance* emu, Config::Table& localCfg, const RomAddresses& rom, uint8_t playerPosition, bool isInGame);
 void CustomHud_ResetPatchState();
 void CustomHud_InvalidateConfigCache();
 void CustomHud_OnMatchJoin(uint8_t* ram, const RomAddresses& rom);

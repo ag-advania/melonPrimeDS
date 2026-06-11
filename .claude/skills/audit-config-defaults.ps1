@@ -17,6 +17,7 @@ $ErrorActionPreference = 'Stop'
 $repoRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 $qtSdl    = Join-Path $repoRoot 'src/frontend/qt_sdl'
 $cfgPath  = Join-Path $qtSdl 'Config.cpp'
+$hudSchemaPath = Join-Path $qtSdl 'MelonPrimeHudPropSchema.inc'
 
 $cfgLines = Get-Content $cfgPath
 $ints    = [System.Collections.Generic.HashSet[string]]::new()
@@ -34,6 +35,31 @@ foreach ($line in $cfgLines) {
     if ($state -eq "int")    { [void]$ints.Add($k) }
     if ($state -eq "double") { [void]$doubles.Add($k) }
     if ($state -eq "bool")   { [void]$bools.Add($k) }
+  }
+}
+
+if (Test-Path -LiteralPath $hudSchemaPath) {
+  $schemaKeyMacros = @{}
+  foreach ($line in [System.IO.File]::ReadLines($hudSchemaPath)) {
+    if ($line -match '#define\s+MP_HUD_PROP_KEY_(\w+)\s+"(Metroid\.Visual\.[^"]+)"') {
+      $schemaKeyMacros[$matches[1]] = $matches[2]
+    }
+  }
+  foreach ($line in [System.IO.File]::ReadLines($hudSchemaPath)) {
+    foreach ($m in [regex]::Matches($line, '\bX\([^,]+,\s*([^,]+),\s*(Int|Bool|String|Double),')) {
+      $keyToken = $m.Groups[1].Value.Trim()
+      $key = $null
+      if ($keyToken -match '^"(Metroid\.Visual\.[^"]+)"$') {
+        $key = $matches[1]
+      } elseif ($keyToken -match '^MP_HUD_PROP_KEY_(\w+)$') {
+        $key = $schemaKeyMacros[$matches[1]]
+      }
+      if ([string]::IsNullOrWhiteSpace($key)) { continue }
+      $type = $m.Groups[2].Value
+      if ($type -eq "Int")    { [void]$ints.Add($key) }
+      if ($type -eq "Double") { [void]$doubles.Add($key) }
+      if ($type -eq "Bool")   { [void]$bools.Add($key) }
+    }
   }
 }
 
