@@ -136,6 +136,21 @@ private:
     void setupCustomHudWidgets(Config::Table& instcfg);
     void updateAimControlsForStylusMode(bool stylusEnabled);
 
+    // ── Non-HUD settings binding table (Phase 5b) ───────────────────────────
+    // One row per symmetric simple setting; drives both load and save so the
+    // two sides can never drift. Storage key names are unchanged.
+    enum class SettingKind { CheckBool, ComboIndexInt, SpinInt, DoubleSpinDouble };
+    struct SettingBinding { const char* key; SettingKind kind; QWidget* widget; };
+    // Built once in setupSensitivityAndToggles (after setupUi) in code order.
+    std::vector<SettingBinding> m_settingBindings;
+    void buildSettingBindings();
+    // Apply load over the half-open binding index range [begin, end).
+    // Ranges preserve the original load order so interleaved special logic
+    // (slot side-effects, parent/child enable wiring) stays in place.
+    void loadBindingsRange(Config::Table& instcfg, int begin, int end);
+    // Save every binding (order-independent; each writes one disjoint key).
+    void saveBindings(Config::Table& instcfg);
+
     void populatePage(QWidget* page, const HotkeyEntry* entries, int count, int* keymap, int* joymap);
     QString buildCustomHudCode() const;
     bool applyCustomHudCode(const QString& code, QString* errorMessage = nullptr);
