@@ -13,6 +13,5 @@
 - [MelonPrime Developer Only Section](melonprime-developer-only-section.md)
 - [Compute Renderer Mosaic Bug — Investigation Log](compute-renderer-mosaic-bug.md)
 - [MphCodex Reference Workflow](mphcodex-reference.md)
-- [MelonPrime Full Refactor Plan V2 (Phase 0-8)](melonprime-full-refactor-plan-v2.md)
 - [Historical Implementation Notes](notes/README.md)
 - [Completed Rules / Plans](completed/README.md)
