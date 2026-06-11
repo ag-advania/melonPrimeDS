@@ -1,6 +1,6 @@
 # Compute Renderer Mosaic Bug — Investigation Log
 
-**Status:** Two-part root cause, both from upstream (#2047). Fix D (dispatch split, 2026-06-11) confirmed a major improvement by manual test. Residual mosaic at point-blank/inside effects addressed by Fix E (work-tile budget clamp, 2026-06-11), build OK, awaiting manual repro test.
+**Status:** RESOLVED 2026-06-11. Two-part root cause, both from upstream (#2047): Fix D (dispatch split) removed the general mosaic; Fix E (work-tile budget clamp) removed the residual mosaic when inside effects (ghost pass-through, point-blank). Both confirmed fixed by manual test. Upstream report draft: `c:\tmp\melonds-issue-2047-fix-report.md`.
 **First investigated:** 2026-04-24
 **Branch:** `highres_fonts_v3`
 
