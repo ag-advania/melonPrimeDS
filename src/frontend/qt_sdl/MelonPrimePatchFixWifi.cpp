@@ -93,8 +93,11 @@ void FixWifi_ApplyOnce(melonDS::NDS* nds, Config::Table& cfg, uint8_t romGroupIn
 
     const uint32_t base = kBase[romGroupIndex];
 
-    // Canary check: if the first word already matches, all 51 words are assumed
-    // correct and we skip the entire write pass (no-op on most frames).
+    // Canary check: the first word is the representative for the full 51-word
+    // patch. If it already matches, assume the remaining words still match and
+    // skip the write pass; this keeps the per-frame menu apply path cheap.
+    // Full-word verification would be a behavior/perf change and should be
+    // separated from this lifecycle cleanup.
     if (nds->ARM9Read32(base + kWords[0].offset) == kWords[0].applyVal) return;
 
     for (const auto& w : kWords)
