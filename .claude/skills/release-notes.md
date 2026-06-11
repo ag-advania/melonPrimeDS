@@ -46,6 +46,18 @@ Skip internal-only commits from the release notes entirely.
 
 Use the template below. Fill only the `## Changes:` bullet list and keep the rest of the boilerplate unchanged.
 
+**Language — English only for `## Changes:`**
+
+- The `## Changes:` section must be written in **English**, even when the user chats in Japanese.
+- The bilingual `## Information:` table (English / 日本語) is the only place for Japanese prose in the release body.
+
+**Audience — simple, end-user focused**
+
+- Write for players, not developers. Describe what changed in gameplay or settings, not how the code was reorganized.
+- Use short bullets: bold the feature or fix name, then one plain sentence on what it does or what was wrong.
+- Avoid internal terms (registry, latch, hook dispatcher, refactor, phase, `RunFrameHook`, etc.).
+- Skip developer-only behavior (e.g. debug OSD messages).
+
 **Writing style:**
 - Bold the feature/fix name, then explain concisely in plain English.
 - For upstream merges, group all upstream fixes into one bullet: `Merged upstream melonDS: <list>`.
