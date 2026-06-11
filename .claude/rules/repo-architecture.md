@@ -161,6 +161,27 @@ sections). It has no external tool dependency (uses `Get-ChildItem` / `[regex]` 
 `rg`/`Select-String` patterns that need ripgrep). Exit code is `0` when every section is empty
 (fully covered, no cross-list mismatches), `1` otherwise.
 
+## MelonPrime Structural Refactor 2026-06
+
+The Phase 0-8 structural refactor finished on 2026-06-11. Current ownership points:
+
+- Static write-patch lifecycle is centralized in `MelonPrimePatchRegistry.h/.cpp`. New persistent
+  write-patches should add a module plus one registry row; `MelonPrime.cpp` should not regain
+  per-module apply/restore/reset lists.
+- Shared all-or-nothing word patches should use `MelonPrimePatchCommon.h` / `StaticWordPatch`.
+  Patch-specific state machines such as mask-selected or canary-based patches may stay custom.
+- ROM address definitions live in `MelonPrimeGameRomAddrTable.h` as a single X-macro source of
+  truth. The `LIST_*` arrays, `RomAddresses` fields, and `CreateRomAddress()` are generated from
+  the same rows.
+- Weapon IDs and masks come from `MelonPrimeDef.h`; `MelonPrimeGameWeapon.cpp` should not define a
+  second weapon enum.
+- Non-HUD settings use `MelonPrimeInputConfig::buildSettingBindings()` for mirrored load/save.
+  Manual save/load code is reserved for migrations, dynamic combo data, invalidation-coupled keys,
+  and developer-only guarded settings.
+- Visible localization tables live in `MelonPrimeLocalization.cpp`; `MelonPrimeLocalization.h`
+  exposes the translation API only.
+- Historical implementation notes live under `.claude/rules/notes/`, not in `src/frontend/qt_sdl/`.
+
 ## Active Branch: `highres_fonts_v3`
 Current work is on the `highres_fonts_v3` branch. Main changes relative to `master`:
 - Full 9-point anchor system for all HUD element positions
@@ -173,7 +194,7 @@ Current work is on the `highres_fonts_v3` branch. Main changes relative to `mast
   - `MelonPrimeHudConfigOnScreenDraw.inc` - bounds and overlay drawing
   - `MelonPrimeHudConfigOnScreenInput.inc` - public edit API and input handling
 - Classic settings dialog restored with 5 hierarchical main sections and live preview widgets on the right (except HUD Scale)
-- MelonPrime settings/edit-mode labels are localized through `MelonPrimeLocalization.h` for English/Japanese based on OS locale
+- MelonPrime settings/edit-mode labels are localized through `MelonPrimeLocalization.h/.cpp` for English/Japanese based on OS locale
 - Programmatic widget architecture via `HudMainSec` / `HudSubSec` / `HudWidgetProp`, enabling data-driven save/restore/TOML-export
 - Snapshot/restore covers all HUD widgets plus 3 global fields
 - HUD auto-scale system with per-category caps (text, icons, gauges, crosshair); radar excluded from auto-scale
