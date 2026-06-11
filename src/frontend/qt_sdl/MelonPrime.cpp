@@ -381,14 +381,15 @@ namespace MelonPrime {
 #endif
 
 #ifdef MELONPRIME_DS
-        if (m_flags.test(StateFlags::BIT_ROM_DETECTED)) {
+        if (m_flags.test(StateFlags::BIT_ROM_DETECTED)
+                && m_flags.test(StateFlags::BIT_BATTLE_RUNTIME_MODE)) {
             melonDS::NDS* const nds = emuInstance->getNDS();
             ARM9Hook_SetMatchHooksActive(
                 nds,
                 localCfg,
                 m_currentRom.romGroupIndex,
                 this,
-                m_flags.test(StateFlags::BIT_IN_GAME),
+                true,
                 emuInstance);
             const PatchCtx ctx{ nds, emuInstance, localCfg, m_currentRom };
             Patches_Apply(PatchSite_ConfigReload, ctx);
@@ -529,7 +530,7 @@ namespace MelonPrime {
                 if (!m_flags.test(StateFlags::BIT_BATTLE_RUNTIME_MODE)
                     && *m_ptrs.currentMode == BattleFlow::MODE_BATTLE_RUNTIME
                     && *m_ptrs.battleFlowState == BattleFlow::FLOW_ACTIVE_MATCH) {
-                    m_flags.set(StateFlags::BIT_BATTLE_RUNTIME_MODE);
+                    HandleBattleRuntimeEnter();
                 }
                 if (m_flags.test(StateFlags::BIT_BATTLE_RUNTIME_MODE)) {
                     const uint8_t flowState = *m_ptrs.battleFlowState;
@@ -546,8 +547,10 @@ namespace MelonPrime {
 #endif
 
             if (LIKELY(isInGame)) {
-                // Per-frame re-evaluation (varies with game state) — intentionally bypasses the patch registry.
-                OsdColor_ApplyOnce(emuInstance, localCfg, m_currentRom);
+                if (m_flags.test(StateFlags::BIT_BATTLE_RUNTIME_MODE)) {
+                    // Per-frame re-evaluation (varies with game state) — intentionally bypasses the patch registry.
+                    OsdColor_ApplyOnce(emuInstance, localCfg, m_currentRom);
+                }
                 // Damage Notify Purple — runs whether or not the window is focused
                 // so HP drops during alt-tab still emit the purple flash.
                 if (m_damageNotifyPurpleEnabled)
@@ -762,20 +765,29 @@ namespace MelonPrime {
             emuInstance->getNDS(), m_currentRom, m_disableMphAimSmoothing);
 
 #ifdef MELONPRIME_DS
-        // Apply patches that need game-join context (player struct resolved)
+        // Game-join patches only (aspect ratio). Battle-runtime patches/hooks wait for mode 0x0E.
         {
-            melonDS::NDS* const nds = emuInstance->getNDS();
-            const PatchCtx ctx{ nds, emuInstance, localCfg, m_currentRom };
+            const PatchCtx ctx{ emuInstance->getNDS(), emuInstance, localCfg, m_currentRom };
             Patches_Apply(PatchSite_GameJoin, ctx);
-            ARM9Hook_SetMatchHooksActive(
-                nds, localCfg, m_currentRom.romGroupIndex, this, true, emuInstance);
-            if (m_enableNativeWeaponSwitch)
-                (void)WeaponSwitchHook_IsSiteValid(nds, m_currentRom.romGroupIndex);
         }
 #endif
 #ifdef MELONPRIME_CUSTOM_HUD
         // Cache battle settings for HUD display
         CustomHud_OnMatchJoin(mainRAM, m_currentRom);
+#endif
+    }
+
+    COLD_FUNCTION void MelonPrimeCore::HandleBattleRuntimeEnter()
+    {
+        m_flags.set(StateFlags::BIT_BATTLE_RUNTIME_MODE);
+#ifdef MELONPRIME_DS
+        melonDS::NDS* const nds = emuInstance->getNDS();
+        const PatchCtx ctx{ nds, emuInstance, localCfg, m_currentRom };
+        Patches_Apply(PatchSite_BattleRuntime, ctx);
+        ARM9Hook_SetMatchHooksActive(
+            nds, localCfg, m_currentRom.romGroupIndex, this, true, emuInstance);
+        if (m_enableNativeWeaponSwitch)
+            (void)WeaponSwitchHook_IsSiteValid(nds, m_currentRom.romGroupIndex);
 #endif
     }
 

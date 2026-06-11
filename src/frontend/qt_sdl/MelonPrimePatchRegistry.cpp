@@ -107,8 +107,9 @@ namespace MelonPrime {
         //
         //  - Iteration order defines apply order. The table order preserves all
         //    three pre-registry apply-site orderings exactly:
-        //      GameJoin       = entries 1-8  (AspectRatio .. NoPickingUp)
-        //      ConfigReload   = entries 4-8  (InstantAimFollow .. NoPickingUp)
+        //      GameJoin       = entry 1     (InGameAspectRatio)
+        //      BattleRuntime  = entries 2-8 (OsdColor .. NoPickingUp)
+        //      ConfigReload   = entries 4-8 (InstantAimFollow .. NoPickingUp)
         //      OutOfGameFrame = entries 9-11 (FixWifi .. ExpandStageMatrix)
         //  - Restore order also follows the table. Safe: all modules write disjoint ARM9
         //    addresses, so restore order between modules cannot matter.
@@ -135,34 +136,34 @@ namespace MelonPrime {
               &Apply_InGameAspectRatio, nullptr,
               &InGameAspectRatio_ResetPatchState },
             // OsdColor is additionally re-applied per frame in RunFrameHook's
-            // isInGame branch (game-state-dependent); that call bypasses the
-            // registry by design. GameJoin apply + game-leave restore live here.
+            // isInGame branch after battle runtime latch (game-state-dependent);
+            // that call bypasses the registry by design.
             { "OsdColor",
-              PatchSite_GameJoin, RF_OnLeave,
+              PatchSite_BattleRuntime, RF_OnLeave,
               &Apply_OsdColor, &Restore_OsdColor,
               &OsdColor_ResetPatchState },
             { "LowHpWarning",
-              PatchSite_GameJoin, RF_OnLeave | RF_OnStop,
+              PatchSite_BattleRuntime, RF_OnLeave | RF_OnStop,
               &Apply_LowHpWarning, &Restore_LowHpWarning,
               &LowHpWarning_ResetPatchState },
             { "InstantAimFollow",
-              PatchSite_GameJoin | PatchSite_ConfigReload, RF_OnLeave | RF_OnStop,
+              PatchSite_BattleRuntime | PatchSite_ConfigReload, RF_OnLeave | RF_OnStop,
               &Apply_InstantAimFollow, &Restore_InstantAimFollow,
               &InstantAimFollow_ResetPatchState },
             { "ShowHeadshotOnline",
-              PatchSite_GameJoin | PatchSite_ConfigReload, RF_OnLeave | RF_OnStop,
+              PatchSite_BattleRuntime | PatchSite_ConfigReload, RF_OnLeave | RF_OnStop,
               &Apply_ShowHeadshotOnline, &Restore_ShowHeadshotOnline,
               &ShowHeadshotOnline_ResetPatchState },
             { "ShowEnemyHpMeterOnline",
-              PatchSite_GameJoin | PatchSite_ConfigReload, RF_OnLeave | RF_OnStop,
+              PatchSite_BattleRuntime | PatchSite_ConfigReload, RF_OnLeave | RF_OnStop,
               &Apply_ShowEnemyHpMeterOnline, &Restore_ShowEnemyHpMeterOnline,
               &ShowEnemyHpMeterOnline_ResetPatchState },
             { "DisableDoubleDamageMultiplier",
-              PatchSite_GameJoin | PatchSite_ConfigReload, RF_OnLeave | RF_OnStop,
+              PatchSite_BattleRuntime | PatchSite_ConfigReload, RF_OnLeave | RF_OnStop,
               &Apply_DisableDoubleDamageMultiplier, &Restore_DisableDoubleDamageMultiplier,
               &DisableDoubleDamageMultiplier_ResetPatchState },
             { "NoPickingUpSpecificItems",
-              PatchSite_GameJoin | PatchSite_ConfigReload, RF_OnLeave | RF_OnStop,
+              PatchSite_BattleRuntime | PatchSite_ConfigReload, RF_OnLeave | RF_OnStop,
               &Apply_NoPickingUpSpecificItems, &Restore_NoPickingUpSpecificItems,
               &NoPickingUpSpecificItems_ResetPatchState },
             { "FixWifi",
@@ -186,6 +187,7 @@ namespace MelonPrime {
             case PatchSite_GameJoin:       return "GameJoin";
             case PatchSite_ConfigReload:   return "ConfigReload";
             case PatchSite_OutOfGameFrame: return "OutOfGameFrame";
+            case PatchSite_BattleRuntime:  return "BattleRuntime";
             default:                       return "site";
             }
         }

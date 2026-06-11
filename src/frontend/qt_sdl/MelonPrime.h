@@ -470,7 +470,7 @@ namespace MelonPrime {
             static constexpr uint32_t BIT_IN_GAME = 1u << 1;
             static constexpr uint32_t BIT_IN_GAME_INIT = 1u << 2;
             static constexpr uint32_t BIT_END_OF_GAME_PATCH_RESTORED = 1u << 12;
-            // After isInGame join, currentMode==0x0E seen once; held until flow 1|2 (no re-read).
+            // Latched on first mode==0x0E && flow==0 after join; battle patches/hooks apply here.
             static constexpr uint32_t BIT_BATTLE_RUNTIME_MODE = 1u << 15;
             static constexpr uint32_t BIT_PAUSED = 1u << 3;
             static constexpr uint32_t BIT_IN_ADVENTURE = 1u << 4;
@@ -632,6 +632,7 @@ namespace MelonPrime {
         COLD_FUNCTION void HandleAdventureMode();
 
         COLD_FUNCTION void HandleGameJoinInit();
+        COLD_FUNCTION void HandleBattleRuntimeEnter();
         COLD_FUNCTION void DetectRomAndSetAddresses();
         COLD_FUNCTION void ApplyGameSettingsOnce();
 

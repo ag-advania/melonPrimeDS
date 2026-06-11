@@ -20,7 +20,7 @@ class MelonPrimeCore;
 // MelonPrime runtime hooks in priority order.
 //
 // Match-scoped hooks (today: all listed hooks) are installed only while
-// isInGame via ARM9Hook_SetMatchHooksActive(true) from HandleGameJoinInit and
+// battle runtime latch via ARM9Hook_SetMatchHooksActive(true) from HandleBattleRuntimeEnter and
 // cleared on isEndOfGame / !isInGame. Future out-of-match hooks can use a new
 // ARM9HookScope bit without changing the match lifecycle.
 
