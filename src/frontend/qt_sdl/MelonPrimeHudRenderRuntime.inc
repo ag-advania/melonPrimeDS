@@ -674,6 +674,31 @@ static void CustomHud_RestoreNativeHudState(const RomAddresses& /*rom*/,
     }
 }
 
+void CustomHud_ClampHelmetLayersPreFrame(
+    EmuInstance* emu,
+    const RomAddresses& rom,
+    uint8_t playerPosition)
+{
+    // Gate on the tracker, not the config: the helmet bit is only ever applied
+    // by Render() while CustomHUD is enabled, and this avoids a per-frame toml
+    // lookup on the hot path.
+    if (!(NoHudPatch_GetAppliedMask() & (1u << NOHUD_HELMET)))
+        return;
+
+    HudRuntimeState st = {};
+    if (!ReadHudRuntimeBaseState(emu, rom, playerPosition, st))
+        return;
+
+    // Native pause/score/death/game-over UI needs the normal layer state.
+    if (st.isStartPressed || st.isGameOver || st.currentHP == 0)
+        return;
+    ReadHudRuntimeAdventurePauseState(rom, st);
+    if (st.isAdventure && st.isMapOrUserActionPaused)
+        return;
+
+    NoHudPatch_ClampHelmetLayers(st.nds, st.romGroup);
+}
+
 void CustomHud_EnsurePatchRestored(
     EmuInstance* emu,
     Config::Table& localCfg,
