@@ -350,6 +350,9 @@ namespace MelonPrime {
     // With P-19, each dispatched WM_INPUT triggers processRawInput in
     // HiddenWndProc, so draining also captures any straggler events.
     // Runs every frame to keep the queue clean.
+    //
+    // P-48: DeferredDrain also runs the stuck-state recovery scans
+    // (clearStuckPostFrame) here, off the input→RunFrame latency path.
     // =========================================================================
     void MelonPrimeCore::DeferredDrainInput()
     {
