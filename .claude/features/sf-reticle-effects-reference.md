@@ -26,7 +26,7 @@ radius follows zoom progress alone.
 | 12 | Tactical Lock | Target Box Acquisition + Lock-on Ring Convergence + corner brackets + hit probability |
 | 13 | Sniper Optics | Optical Zoom Aperture + Focus Bracket Breathing + rangefinder |
 | 14 | Drone LIDAR | LIDAR Point Cloud + Material Analysis Grid + wireframe box |
-| 15 | Cyber Jam | Scan Disturb + glitch jitter + signal dropout blink |
+| 15 | Glitch2 | Scan-heavy glitch overload + scan disturb + corner brackets |
 | 16 | Beam Charge | Charge Ring Fill + Railgun Alignment Lines + Energy Surge Pulse |
 | 17 | Wireframe | Wireframe box + material grid |
 | 18 | Data Link | Data HUD strip + Hit Probability arc + soft lock halo + converging rings |
@@ -60,7 +60,7 @@ Target Box → Ring Convergence → corner brackets → hit probability arc
 ### Drone / robot POV → style 14
 LIDAR Point Cloud → Wireframe → Material grid
 
-### Cyber jamming → style 15
+### Glitch2 (scan overload) → style 15
 Scan Disturb → Glitch jitter → Signal Dropout
 
 ### Energy weapon → style 16

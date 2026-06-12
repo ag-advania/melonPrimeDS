@@ -1020,7 +1020,7 @@ static void DrawZoomTransitionFx(QPainter* p, int pxCx, int pxCy,
         DrawFxMaterialGrid(p, pxCx, pxCy, maxR, lockT, midFx, ch.chColor);
         break;
     }
-    case 15: { // Cyber Jam — scan-disturb overload + tactical brackets
+    case 15: { // Glitch2 — scan-disturb overload + tactical brackets
         p->setRenderHint(QPainter::Antialiasing, false);
         const double lockT = std::clamp(zoomT, 0.0, 1.0);
         static uint32_t s_chCyberPhase = 0xC088E001u;
@@ -1198,13 +1198,17 @@ static void DrawCrosshair(QPainter* p, melonDS::u8* ram,
     if (c.crosshair.cachedZoomAffectsVisual) {
         const float targetZoom =
             std::clamp(static_cast<float>(zoomAmount), 0.0f, 1.0f);
-        if (!s_chCrosshairDrawnLastFrame)
+        if (targetZoom <= 0.001f) {
+            // Fully unzoomed — snap display so zoom scale never sticks on the base reticle.
+            s_chDisplayZoom = 0.0f;
+        } else if (!s_chCrosshairDrawnLastFrame) {
             s_chDisplayZoom = targetZoom;
-        else if (c.crosshair.chZoomTransitionEnable)
+        } else if (c.crosshair.chZoomTransitionEnable) {
             s_chDisplayZoom = ZoomStatus::AdvanceDisplayZoom(
                 s_chDisplayZoom, targetZoom, c.crosshair.chZoomTransitionStep);
-        else
+        } else {
             s_chDisplayZoom = targetZoom;
+        }
 
         const float t = s_chDisplayZoom;
         if (c.crosshair.chZoomTransitionEnable) {

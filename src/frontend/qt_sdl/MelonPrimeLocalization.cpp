@@ -383,7 +383,7 @@ constexpr Translation kTranslations[] = {
     {"Tactical Lock", "戦術ロック"},
     {"Sniper Optics", "スナイパー光学"},
     {"Drone LIDAR", "ドローンLIDAR"},
-    {"Cyber Jam", "サイバージャミング"},
+    {"Glitch2", "グリッチ2"},
     {"Beam Charge", "ビームチャージ"},
     {"Wireframe", "ワイヤーフレーム"},
     {"Data Link", "データリンク"},

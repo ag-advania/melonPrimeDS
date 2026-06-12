@@ -371,7 +371,7 @@ static void DrawFxGlitchFlash(QPainter* p, int cx, int cy, int maxR, double midF
     p->drawEllipse(QRect(cx - maxR, cy - maxR, maxR * 2, maxR * 2));
 }
 
-// variant 0 = Glitch (balanced), 1 = Cyber Jam (scan-heavy overload).
+// variant 0 = Glitch (balanced), 1 = Glitch2 (scan-heavy overload).
 static void DrawFxGlitchArtOverlay(QPainter* p, int cx, int cy, int maxR, double lockT,
                                    double midFx, int penW, uint32_t& phase, int variant)
 {

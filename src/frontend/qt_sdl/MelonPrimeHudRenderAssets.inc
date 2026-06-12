@@ -392,6 +392,7 @@ static inline void AccumDirtyDs(const QPainter* p, const QRectF& ds)
 static void NotifyCrosshairZoomNotDrawn()
 {
     s_chCrosshairDrawnLastFrame = false;
+    s_chDisplayZoom = 0.0f;
 }
 
 static void ResetCrosshairZoomDisplay(float target = 0.0f)
