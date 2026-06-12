@@ -1,6 +1,8 @@
 #ifndef MELON_PRIME_ZOOM_STATUS_H
 #define MELON_PRIME_ZOOM_STATUS_H
 
+#include <algorithm>
+#include <cmath>
 #include <cstdint>
 #include "MelonPrimeInternal.h"
 
@@ -53,16 +55,75 @@ namespace MelonPrime::ZoomStatus {
              >> 14;
     }
 
+    [[nodiscard]] FORCE_INLINE float SmoothStep(float t) noexcept
+    {
+        t = std::clamp(t, 0.0f, 1.0f);
+        return t * t * (3.0f - 2.0f * t);
+    }
+
+    struct CrosshairZoomBlend {
+        float geom = 0.0f;      // eased geometry scale driver
+        float baseAlpha = 1.0f; // base crosshair opacity multiplier
+        float scope = 0.0f;     // scope reticle reveal 0..1
+        float pulse = 0.0f;     // transition ring FX strength
+    };
+
+    // Staged crosshair↔scope blend: base fades first, scope expands in after.
+    [[nodiscard]] FORCE_INLINE CrosshairZoomBlend ComputeCrosshairZoomBlend(float t,
+                                                                            float baseZoomOpacity,
+                                                                            float pulseStrength = 1.0f) noexcept
+    {
+        CrosshairZoomBlend b{};
+        t = std::clamp(t, 0.0f, 1.0f);
+        pulseStrength = std::clamp(pulseStrength, 0.0f, 1.0f);
+        b.geom = SmoothStep(t);
+
+        const float baseFade =
+            1.0f - SmoothStep(std::clamp((t - 0.10f) / 0.55f, 0.0f, 1.0f));
+        const float opacityTarget = 1.0f + (baseZoomOpacity - 1.0f) * b.geom;
+        b.baseAlpha = opacityTarget * baseFade;
+
+        b.scope = SmoothStep(std::clamp((t - 0.28f) / 0.72f, 0.0f, 1.0f));
+        b.pulse = (t > 0.03f && t < 0.97f)
+            ? std::sin(t * 3.14159265f) * pulseStrength
+            : 0.0f;
+        return b;
+    }
+
+    // Host-side temporal smoothing so instant scoped-bit flips still animate.
+    [[nodiscard]] FORCE_INLINE float AdvanceDisplayZoom(float display,
+                                                          float target,
+                                                          float maxStep) noexcept
+    {
+        maxStep = std::max(0.001f, maxStep);
+        const float diff = target - display;
+        if (std::abs(diff) <= 0.001f)
+            return target;
+        if (diff > 0.0f)
+            return std::min(target, display + maxStep);
+        return std::max(target, display - maxStep);
+    }
+
     [[nodiscard]] FORCE_INLINE float ComputeReticleAmount(bool scoped,
                                                           uint16_t currentFrame,
                                                           bool animActive) noexcept
     {
         if (!animActive)
             return scoped ? 1.0f : 0.0f;
-        if (currentFrame <= 2)
-            return static_cast<float>(currentFrame) * 0.5f;
-        if (currentFrame >= 0x10 && currentFrame <= 0x12)
-            return 1.0f - static_cast<float>(currentFrame - 0x10) * 0.5f;
+
+        constexpr uint16_t kZoomInEnd = 4;
+        if (currentFrame <= kZoomInEnd)
+            return SmoothStep(static_cast<float>(currentFrame)
+                            / static_cast<float>(kZoomInEnd));
+
+        constexpr uint16_t kZoomOutStart = 0x10;
+        constexpr uint16_t kZoomOutEnd = 0x14;
+        if (currentFrame >= kZoomOutStart && currentFrame <= kZoomOutEnd) {
+            const float t = static_cast<float>(currentFrame - kZoomOutStart)
+                          / static_cast<float>(kZoomOutEnd - kZoomOutStart);
+            return 1.0f - SmoothStep(t);
+        }
+
         return scoped ? 1.0f : 0.0f;
     }
 

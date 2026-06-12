@@ -348,10 +348,13 @@ static bool   s_chStampValid = false;
 
 // Crosshair position from the previous frame (pixel space, after resetTransform).
 // INT_MIN = not drawn yet / reset.
+static float s_chDisplayZoom = 0.0f;
+static bool  s_chCrosshairDrawnLastFrame = false;
 static int   s_chPrevPxCx = INT_MIN;
 static int   s_chPrevPxCy = INT_MIN;
 static double s_chPrevGeomScale = 1.0;
 static double s_chPrevZoomT = 0.0;
+static double s_chPrevScopeT = 0.0;
 // Accumulated dirty rect for the crosshair in the current frame (prev ∪ curr pos).
 static QRect s_chDirtyThisFrame;
 
@@ -386,7 +389,16 @@ static inline void AccumDirtyDs(const QPainter* p, const QRectF& ds)
     AccumDirtyDevPx(QRectF(QPointF(minx, miny), QPointF(maxx, maxy)));
 }
 
-// Forward-declared; called from RefreshCachedConfig after crosshair geometry is final.
+static void NotifyCrosshairZoomNotDrawn()
+{
+    s_chCrosshairDrawnLastFrame = false;
+}
+
+static void ResetCrosshairZoomDisplay(float target = 0.0f)
+{
+    s_chDisplayZoom = target;
+    s_chCrosshairDrawnLastFrame = false;
+}
 struct CrosshairHudConfig;
 static void RebuildCrosshairOutlineStamp(const CrosshairHudConfig& ch);
 

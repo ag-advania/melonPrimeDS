@@ -724,17 +724,54 @@ static QRect TopScreenContentClipPx(const QTransform& xf, float topStretchX)
     return xf.mapRect(dsRect).toAlignedRect();
 }
 
+static void DrawZoomTransitionPulse(QPainter* p, int pxCx, int pxCy,
+                                    const CrosshairHudConfig& ch,
+                                    double zoomT, double pulseT,
+                                    const QRect& topScreenClipPx)
+{
+    if (pulseT <= 0.01 || !ch.cachedZoomScopeRenderable || !ch.chZoomTransitionPulseEnable)
+        return;
+
+    const int maxR = ch.chZoomScopeRadius;
+    const int r0 = std::max(4, maxR / 8);
+    const int ringR = r0 + static_cast<int>((maxR - r0) * std::clamp(zoomT, 0.0, 1.0) + 0.5);
+    const double outerAlpha = pulseT * 0.38;
+    const double innerAlpha = pulseT * 0.16;
+
+    p->save();
+    if (!topScreenClipPx.isEmpty())
+        p->setClipRect(topScreenClipPx, Qt::IntersectClip);
+
+    p->setRenderHint(QPainter::Antialiasing, true);
+    QPen pen(ch.chColor);
+    pen.setWidth(std::max(1, ch.chZoomScopeThickness));
+    p->setPen(pen);
+    p->setBrush(Qt::NoBrush);
+    p->setOpacity(outerAlpha);
+    p->drawEllipse(QRect(pxCx - ringR, pxCy - ringR, ringR * 2, ringR * 2));
+
+    if (pulseT > 0.35 * ch.chZoomTransitionPulseStrength) {
+        const int innerR = std::max(2, ringR / 2);
+        p->setOpacity(innerAlpha);
+        p->drawEllipse(QRect(pxCx - innerR, pxCy - innerR, innerR * 2, innerR * 2));
+    }
+
+    p->restore();
+}
+
 static void DrawZoomScopeReticle(QPainter* p, int pxCx, int pxCy,
-                                 const CrosshairHudConfig& ch, double zoomT,
+                                 const CrosshairHudConfig& ch, double scopeT,
                                  const QRect& topScreenClipPx)
 {
-    const double scopeOpacity = zoomT * ch.chZoomScopeOpacity;
+    const double scopeGeom = std::clamp(scopeT, 0.0, 1.0);
+    const double scopeOpacity = scopeGeom * ch.chZoomScopeOpacity;
     if (!ch.cachedZoomScopeRenderable || scopeOpacity <= 0.001)
         return;
 
-    const int radius = ch.chZoomScopeRadius;
-    const int lineEnd = ch.cachedZoomScopeLineEndPx;
-    const int gap = ch.cachedZoomScopeGapPx;
+    const int radius = std::max(1, static_cast<int>(ch.chZoomScopeRadius * scopeGeom + 0.5));
+    const int lineEnd = std::max(1, static_cast<int>(ch.cachedZoomScopeLineEndPx * scopeGeom + 0.5));
+    const int gap = std::min(ch.cachedZoomScopeGapPx,
+                             std::max(0, lineEnd - 1));
     const int thickness = ch.chZoomScopeThickness;
 
     p->save();
@@ -801,11 +838,39 @@ static void DrawCrosshair(QPainter* p, melonDS::u8* ram,
     double zoomT = 0.0;
     double geomScale = 1.0;
     double opacityMul = 1.0;
-    if (c.crosshair.cachedZoomAffectsVisual && zoomAmount > 0.0f) {
-        zoomT = std::clamp(static_cast<double>(zoomAmount), 0.0, 1.0);
-        geomScale = 1.0 + (c.crosshair.chZoomScale - 1.0) * zoomT;
-        opacityMul = std::clamp(
-            1.0 + (c.crosshair.chZoomOpacity - 1.0) * zoomT, 0.0, 1.0);
+    double scopeT = 0.0;
+    double pulseT = 0.0;
+    if (c.crosshair.cachedZoomAffectsVisual) {
+        const float targetZoom =
+            std::clamp(static_cast<float>(zoomAmount), 0.0f, 1.0f);
+        if (!s_chCrosshairDrawnLastFrame)
+            s_chDisplayZoom = targetZoom;
+        else if (c.crosshair.chZoomTransitionEnable)
+            s_chDisplayZoom = ZoomStatus::AdvanceDisplayZoom(
+                s_chDisplayZoom, targetZoom, c.crosshair.chZoomTransitionStep);
+        else
+            s_chDisplayZoom = targetZoom;
+
+        const float t = s_chDisplayZoom;
+        if (c.crosshair.chZoomTransitionEnable) {
+            const ZoomStatus::CrosshairZoomBlend blend =
+                ZoomStatus::ComputeCrosshairZoomBlend(
+                    t,
+                    static_cast<float>(c.crosshair.chZoomOpacity),
+                    static_cast<float>(c.crosshair.chZoomTransitionPulseStrength));
+            zoomT = t;
+            geomScale = 1.0 + (c.crosshair.chZoomScale - 1.0) * blend.geom;
+            opacityMul = blend.baseAlpha;
+            scopeT = blend.scope;
+            pulseT = c.crosshair.chZoomTransitionPulseEnable ? blend.pulse : 0.0;
+        } else {
+            zoomT = t;
+            geomScale = 1.0 + (c.crosshair.chZoomScale - 1.0) * t;
+            opacityMul = std::clamp(
+                1.0 + (c.crosshair.chZoomOpacity - 1.0) * t, 0.0, 1.0);
+            scopeT = t;
+            pulseT = 0.0;
+        }
     }
     const bool scaledGeometry = std::abs(geomScale - 1.0) >= 0.001;
 
@@ -823,14 +888,18 @@ static void DrawCrosshair(QPainter* p, melonDS::u8* ram,
     // OPT-DR1: Update crosshair dirty rect (prev ∪ curr position).
     // This is accumulated into s_chDirtyThisFrame so CustomHud_Render can return it.
     {
-        const QRect currBbox = CrosshairBboxPx(pxCx, pxCy, c.crosshair, geomScale, zoomT, scopeClipPx);
+        const QRect currBbox = CrosshairBboxPx(pxCx, pxCy, c.crosshair, geomScale,
+                                               zoomT, scopeT, pulseT, scopeClipPx);
         s_chDirtyThisFrame = currBbox;
         if (s_chPrevPxCx != INT_MIN)
-            s_chDirtyThisFrame |= CrosshairBboxPx(s_chPrevPxCx, s_chPrevPxCy, c.crosshair, s_chPrevGeomScale, s_chPrevZoomT, scopeClipPx);
+            s_chDirtyThisFrame |= CrosshairBboxPx(s_chPrevPxCx, s_chPrevPxCy, c.crosshair,
+                                                  s_chPrevGeomScale, s_chPrevZoomT,
+                                                  s_chPrevScopeT, 0.0, scopeClipPx);
         s_chPrevPxCx = pxCx;
         s_chPrevPxCy = pxCy;
         s_chPrevGeomScale = geomScale;
         s_chPrevZoomT = zoomT;
+        s_chPrevScopeT = scopeT;
     }
 
     // Save/restore only what we change (transform + opacity).
@@ -869,9 +938,11 @@ static void DrawCrosshair(QPainter* p, melonDS::u8* ram,
             const int ds = c.crosshair.cachedDotSizePx;
             fillScaled(QRect(-dh, -dh, ds, ds), c.crosshair.chDotColor);
         }
-        DrawZoomScopeReticle(p, pxCx, pxCy, c.crosshair, zoomT, scopeClipPx);
+        DrawZoomTransitionPulse(p, pxCx, pxCy, c.crosshair, zoomT, pulseT, scopeClipPx);
+        DrawZoomScopeReticle(p, pxCx, pxCy, c.crosshair, scopeT, scopeClipPx);
         p->setTransform(savedXform);
         p->setOpacity(savedOpacity);
+        s_chCrosshairDrawnLastFrame = true;
         return;
     }
 
@@ -903,10 +974,12 @@ static void DrawCrosshair(QPainter* p, melonDS::u8* ram,
         p->fillRect(QRect(pxCx - dh, pxCy - dh, ds, ds), c.crosshair.chDotColor);
     }
 
-    DrawZoomScopeReticle(p, pxCx, pxCy, c.crosshair, zoomT, scopeClipPx);
+    DrawZoomTransitionPulse(p, pxCx, pxCy, c.crosshair, zoomT, pulseT, scopeClipPx);
+    DrawZoomScopeReticle(p, pxCx, pxCy, c.crosshair, scopeT, scopeClipPx);
 
     // Restore painter state.
     p->setTransform(savedXform);
     p->setOpacity(savedOpacity);
+    s_chCrosshairDrawnLastFrame = true;
 }
 

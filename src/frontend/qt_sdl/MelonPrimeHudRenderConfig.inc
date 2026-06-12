@@ -113,6 +113,9 @@ struct CrosshairHudConfig {
     int chZoomScopeRadius, chZoomScopeLineLength, chZoomScopeGap, chZoomScopeThickness;
     int chZoomScopeDotSize;
     double chZoomScopeDotOpacity, chZoomScopeOpacity;
+    bool chZoomTransitionEnable, chZoomTransitionPulseEnable;
+    float chZoomTransitionStep;
+    double chZoomTransitionPulseStrength;
     // P-11: Pre-computed arm/dot colors with alpha set (avoids per-frame QColor copy + setAlphaF)
     QColor chInnerColor, chOuterColor, chDotColor;
     // Cached arm rects in output pixels, centred at (0,0).
@@ -239,12 +242,34 @@ static QRect ScaleRectAroundOrigin(const QRect& r, double scale)
 }
 
 static QRect CrosshairScopeBboxPx(int cx, int cy, const CrosshairHudConfig& ch,
-                                  double zoomT, const QRect& scopeClipPx = QRect())
+                                  double scopeT, const QRect& scopeClipPx = QRect())
 {
-    if (!ch.cachedZoomScopeRenderable || zoomT <= 0.001)
+    if (!ch.cachedZoomScopeRenderable || scopeT <= 0.001)
         return QRect();
-    const QRect scopeBbox = ch.cachedZoomScopeBboxPx.translated(cx, cy);
+    const double geom = std::clamp(scopeT, 0.0, 1.0);
+    QRect scopeBbox;
+    if (geom >= 0.999) {
+        scopeBbox = ch.cachedZoomScopeBboxPx;
+    } else {
+        const int w = std::max(1, static_cast<int>(ch.cachedZoomScopeBboxPx.width() * geom + 0.5));
+        const int h = std::max(1, static_cast<int>(ch.cachedZoomScopeBboxPx.height() * geom + 0.5));
+        scopeBbox = QRect(-w / 2, -h / 2, w, h);
+    }
+    scopeBbox.translate(cx, cy);
     return scopeClipPx.isEmpty() ? scopeBbox : (scopeBbox & scopeClipPx);
+}
+
+static QRect CrosshairPulseBboxPx(int cx, int cy, const CrosshairHudConfig& ch,
+                                  double zoomT, double pulseT)
+{
+    if (pulseT <= 0.01 || !ch.cachedZoomScopeRenderable)
+        return QRect();
+    const int maxR = ch.chZoomScopeRadius;
+    const int r0 = std::max(4, maxR / 8);
+    const int ringR = r0 + static_cast<int>((maxR - r0) * std::clamp(zoomT, 0.0, 1.0) + 0.5);
+    const int pad = std::max(2, ch.chZoomScopeThickness + 1);
+    return QRect(cx - ringR - pad, cy - ringR - pad,
+                 ringR * 2 + pad * 2 + 1, ringR * 2 + pad * 2 + 1);
 }
 
 // OPT-DR1: Returns the pixel-space bounding rect of the crosshair rendered at (cx, cy).
@@ -252,6 +277,7 @@ static QRect CrosshairScopeBboxPx(int cx, int cy, const CrosshairHudConfig& ch,
 // Result is in overlay pixel space (same as Overlay[0]).
 static QRect CrosshairBboxPx(int cx, int cy, const CrosshairHudConfig& ch,
                              double geomScale = 1.0, double zoomT = 0.0,
+                             double scopeT = 0.0, double pulseT = 0.0,
                              const QRect& scopeClipPx = QRect())
 {
     QRect r;
@@ -277,7 +303,8 @@ static QRect CrosshairBboxPx(int cx, int cy, const CrosshairHudConfig& ch,
             r |= dot.adjusted(-olT, -olT, olT, olT).translated(cx, cy);
         r |= dot.translated(cx, cy);
     }
-    r |= CrosshairScopeBboxPx(cx, cy, ch, zoomT, scopeClipPx);
+    r |= CrosshairScopeBboxPx(cx, cy, ch, scopeT, scopeClipPx);
+    r |= CrosshairPulseBboxPx(cx, cy, ch, zoomT, pulseT);
     return r;
 }
 
@@ -680,6 +707,16 @@ static void LoadCrosshairConfig(CrosshairHudConfig& crosshair, Config::Table& cf
     crosshair.chZoomScopeDotSize = std::clamp(cfg.GetInt(MP_HUD_PROP_KEY_CrosshairZoomScopeDotSize), 1, 32);
     crosshair.chZoomScopeDotOpacity = std::clamp(cfg.GetInt(MP_HUD_PROP_KEY_CrosshairZoomScopeDotOpacity), 0, 100) / 100.0;
     crosshair.chZoomScopeOpacity = std::clamp(cfg.GetInt(MP_HUD_PROP_KEY_CrosshairZoomScopeOpacity), 0, 100) / 100.0;
+    crosshair.chZoomTransitionEnable = cfg.GetBool(MP_HUD_PROP_KEY_CrosshairZoomTransitionEnable);
+    const int transitionSpeedPct =
+        std::clamp(cfg.GetInt(MP_HUD_PROP_KEY_CrosshairZoomTransitionSpeed), 25, 400);
+    crosshair.chZoomTransitionStep =
+        0.125f * (static_cast<float>(transitionSpeedPct) / 100.0f);
+    crosshair.chZoomTransitionPulseEnable =
+        cfg.GetBool(MP_HUD_PROP_KEY_CrosshairZoomTransitionPulseEnable);
+    crosshair.chZoomTransitionPulseStrength =
+        std::clamp(cfg.GetInt(MP_HUD_PROP_KEY_CrosshairZoomTransitionPulseStrength), 0, 100)
+        / 100.0;
     RebuildCrosshairZoomScopeCache(crosshair);
     // P-11: Pre-compute arm/dot colors with alpha
     crosshair.chInnerColor = crosshair.chColor;

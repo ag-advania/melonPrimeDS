@@ -753,6 +753,10 @@ void MelonPrimeHudConfigOnScreenEdit::populateForCrosshair()
     addSpinBox(QStringLiteral("Scope Dot Size"), MP_HUD_PROP_KEY_CrosshairZoomScopeDotSize, 1, 32);
     addSpinBox(QStringLiteral("Scope Dot Opacity %"), MP_HUD_PROP_KEY_CrosshairZoomScopeDotOpacity, 0, 100);
     addSpinBox(QStringLiteral("Scope Opacity %"), MP_HUD_PROP_KEY_CrosshairZoomScopeOpacity, 0, 100);
+    addCheckBox(QStringLiteral("Zoom Transition"), MP_HUD_PROP_KEY_CrosshairZoomTransitionEnable);
+    addSpinBox(QStringLiteral("Transition Speed %"), MP_HUD_PROP_KEY_CrosshairZoomTransitionSpeed, 25, 400);
+    addCheckBox(QStringLiteral("Pulse Ring"), MP_HUD_PROP_KEY_CrosshairZoomTransitionPulseEnable);
+    addSpinBox(QStringLiteral("Pulse Strength %"), MP_HUD_PROP_KEY_CrosshairZoomTransitionPulseStrength, 0, 100);
     addCheckBox(QStringLiteral("Outline"), MP_HUD_PROP_KEY_CrosshairOutline);
     addOpacitySlider(QStringLiteral("Outline Opacity"), MP_HUD_PROP_KEY_CrosshairOutlineOpacity);
     addSpinBox(QStringLiteral("Outline Thick."), MP_HUD_PROP_KEY_CrosshairOutlineThickness, 1, 10);
