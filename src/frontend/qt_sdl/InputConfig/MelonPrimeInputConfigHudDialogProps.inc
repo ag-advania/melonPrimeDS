@@ -49,6 +49,16 @@ static const HudWidgetProp kSecFont[] = {
 static const HudWidgetProp kSecCrosshair[] = {
     { "Color", HWType::Color3, MP_HUD_PROP_KEY_CrosshairColorR, 0, 255, 1, MP_HUD_PROP_KEY_CrosshairColorG, MP_HUD_PROP_KEY_CrosshairColorB },
     { "Scale %", HWType::Int, MP_HUD_PROP_KEY_CrosshairScale, 100, 800, 1, nullptr, nullptr },
+    { "Outline", HWType::Bool, MP_HUD_PROP_KEY_CrosshairOutline, 0, 0, 0, nullptr, nullptr },
+    { "Outline Opacity", HWType::Float, MP_HUD_PROP_KEY_CrosshairOutlineOpacity, 0, 100, 5, nullptr, nullptr },
+    { "Outline Thickness", HWType::Int, MP_HUD_PROP_KEY_CrosshairOutlineThickness, 1, 10, 1, nullptr, nullptr },
+    { "Center Dot", HWType::Bool, MP_HUD_PROP_KEY_CrosshairCenterDot, 0, 0, 0, nullptr, nullptr },
+    { "Dot Opacity", HWType::Float, MP_HUD_PROP_KEY_CrosshairDotOpacity, 0, 100, 5, nullptr, nullptr },
+    { "Dot Thickness", HWType::Int, MP_HUD_PROP_KEY_CrosshairDotThickness, 1, 10, 1, nullptr, nullptr },
+    { "T-Style", HWType::Bool, MP_HUD_PROP_KEY_CrosshairTStyle, 0, 0, 0, nullptr, nullptr },
+};
+
+static const HudWidgetProp kSecCrosshairZoom[] = {
     { "Zoom Stage", HWType::Bool, MP_HUD_PROP_KEY_CrosshairZoomStageEnable, 0, 0, 0, nullptr, nullptr },
     { "Zoom Scale %", HWType::Int, MP_HUD_PROP_KEY_CrosshairZoomScale, 10, 200, 1, nullptr, nullptr },
     { "Zoom Base Opacity %", HWType::Int, MP_HUD_PROP_KEY_CrosshairZoomOpacity, 0, 100, 1, nullptr, nullptr },
@@ -60,18 +70,14 @@ static const HudWidgetProp kSecCrosshair[] = {
     { "Scope Center Dot", HWType::Bool, MP_HUD_PROP_KEY_CrosshairZoomScopeCenterDot, 0, 0, 0, nullptr, nullptr },
     { "Scope Dot Size", HWType::Int, MP_HUD_PROP_KEY_CrosshairZoomScopeDotSize, 1, 32, 1, nullptr, nullptr },
     { "Scope Dot Opacity %", HWType::Int, MP_HUD_PROP_KEY_CrosshairZoomScopeDotOpacity, 0, 100, 1, nullptr, nullptr },
+    { "Custom Scope Dot Color", HWType::Bool, MP_HUD_PROP_KEY_CrosshairZoomScopeDotCustomColor, 0, 0, 0, nullptr, nullptr },
+    { "Scope Dot Color", HWType::Color3, MP_HUD_PROP_KEY_CrosshairZoomScopeDotColorR, 0, 255, 1, MP_HUD_PROP_KEY_CrosshairZoomScopeDotColorG, MP_HUD_PROP_KEY_CrosshairZoomScopeDotColorB },
     { "Scope Opacity %", HWType::Int, MP_HUD_PROP_KEY_CrosshairZoomScopeOpacity, 0, 100, 1, nullptr, nullptr },
     { "Zoom Transition", HWType::Bool, MP_HUD_PROP_KEY_CrosshairZoomTransitionEnable, 0, 0, 0, nullptr, nullptr },
-    { "Zoom Transition Speed %", HWType::Int, MP_HUD_PROP_KEY_CrosshairZoomTransitionSpeed, 25, 400, 5, nullptr, nullptr },
-    { "Zoom Pulse Ring", HWType::Bool, MP_HUD_PROP_KEY_CrosshairZoomTransitionPulseEnable, 0, 0, 0, nullptr, nullptr },
-    { "Zoom Pulse Strength %", HWType::Int, MP_HUD_PROP_KEY_CrosshairZoomTransitionPulseStrength, 0, 100, 1, nullptr, nullptr },
-    { "Outline", HWType::Bool, MP_HUD_PROP_KEY_CrosshairOutline, 0, 0, 0, nullptr, nullptr },
-    { "Outline Opacity", HWType::Float, MP_HUD_PROP_KEY_CrosshairOutlineOpacity, 0, 100, 5, nullptr, nullptr },
-    { "Outline Thickness", HWType::Int, MP_HUD_PROP_KEY_CrosshairOutlineThickness, 1, 10, 1, nullptr, nullptr },
-    { "Center Dot", HWType::Bool, MP_HUD_PROP_KEY_CrosshairCenterDot, 0, 0, 0, nullptr, nullptr },
-    { "Dot Opacity", HWType::Float, MP_HUD_PROP_KEY_CrosshairDotOpacity, 0, 100, 5, nullptr, nullptr },
-    { "Dot Thickness", HWType::Int, MP_HUD_PROP_KEY_CrosshairDotThickness, 1, 10, 1, nullptr, nullptr },
-    { "T-Style", HWType::Bool, MP_HUD_PROP_KEY_CrosshairTStyle, 0, 0, 0, nullptr, nullptr },
+    { "Transition Style", HWType::ZoomTransitionStyle, MP_HUD_PROP_KEY_CrosshairZoomTransitionStyle, 0, 18, 1, nullptr, nullptr },
+    { "Transition Speed %", HWType::Int, MP_HUD_PROP_KEY_CrosshairZoomTransitionSpeed, 25, 400, 5, nullptr, nullptr },
+    { "Pulse Ring", HWType::Bool, MP_HUD_PROP_KEY_CrosshairZoomTransitionPulseEnable, 0, 0, 0, nullptr, nullptr },
+    { "Pulse Strength %", HWType::Int, MP_HUD_PROP_KEY_CrosshairZoomTransitionPulseStrength, 0, 100, 1, nullptr, nullptr },
 };
 
 static const HudWidgetProp kSecCrosshairInner[] = {

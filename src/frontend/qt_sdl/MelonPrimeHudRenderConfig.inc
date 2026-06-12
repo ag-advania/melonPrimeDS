@@ -114,8 +114,11 @@ struct CrosshairHudConfig {
     int chZoomScopeDotSize;
     double chZoomScopeDotOpacity, chZoomScopeOpacity;
     bool chZoomTransitionEnable, chZoomTransitionPulseEnable;
+    int chZoomTransitionStyle;
     float chZoomTransitionStep;
     double chZoomTransitionPulseStrength;
+    bool chZoomScopeDotCustomColor;
+    QColor chZoomScopeDotColor, chZoomScopeDotDrawColor;
     // P-11: Pre-computed arm/dot colors with alpha set (avoids per-frame QColor copy + setAlphaF)
     QColor chInnerColor, chOuterColor, chDotColor;
     // Cached arm rects in output pixels, centred at (0,0).
@@ -319,23 +322,22 @@ static void RebuildCrosshairZoomScopeCache(CrosshairHudConfig& crosshair)
         && (std::abs(crosshair.chZoomScale - 1.0) >= 0.001
             || std::abs(crosshair.chZoomOpacity - 1.0) >= 0.001
             || crosshair.cachedZoomScopeRenderable);
-    crosshair.cachedZoomScopeLineEndPx =
-        crosshair.chZoomScopeRadius + crosshair.chZoomScopeLineLength;
+    crosshair.cachedZoomScopeLineEndPx = crosshair.chZoomScopeRadius;
     crosshair.cachedZoomScopeGapPx = crosshair.chZoomScopeGap;
     crosshair.cachedZoomScopeBboxPx = QRect();
     if (!crosshair.cachedZoomScopeRenderable)
         return;
 
     const int radius = crosshair.chZoomScopeRadius;
-    const int lineEnd = crosshair.cachedZoomScopeLineEndPx;
+    const int armEnd = crosshair.cachedZoomScopeLineEndPx;
     const int gap = crosshair.cachedZoomScopeGapPx;
     const int halfT = (crosshair.chZoomScopeThickness + 1) / 2;
     QRect r(-radius, -radius, radius * 2 + 1, radius * 2 + 1);
-    if (lineEnd > gap) {
-        r |= QRect(-lineEnd, -halfT, lineEnd - gap, halfT * 2 + 1);
-        r |= QRect(gap, -halfT, lineEnd - gap, halfT * 2 + 1);
-        r |= QRect(-halfT, -lineEnd, halfT * 2 + 1, lineEnd - gap);
-        r |= QRect(-halfT, gap, halfT * 2 + 1, lineEnd - gap);
+    if (armEnd > gap) {
+        r |= QRect(-armEnd, -halfT, armEnd - gap, halfT * 2 + 1);
+        r |= QRect(gap, -halfT, armEnd - gap, halfT * 2 + 1);
+        r |= QRect(-halfT, -armEnd, halfT * 2 + 1, armEnd - gap);
+        r |= QRect(-halfT, gap, halfT * 2 + 1, armEnd - gap);
     }
     if (crosshair.chZoomScopeCenterDot && crosshair.chZoomScopeDotOpacity > 0.0) {
         const int dotSize = std::max(1, crosshair.chZoomScopeDotSize);
@@ -708,6 +710,11 @@ static void LoadCrosshairConfig(CrosshairHudConfig& crosshair, Config::Table& cf
     crosshair.chZoomScopeDotOpacity = std::clamp(cfg.GetInt(MP_HUD_PROP_KEY_CrosshairZoomScopeDotOpacity), 0, 100) / 100.0;
     crosshair.chZoomScopeOpacity = std::clamp(cfg.GetInt(MP_HUD_PROP_KEY_CrosshairZoomScopeOpacity), 0, 100) / 100.0;
     crosshair.chZoomTransitionEnable = cfg.GetBool(MP_HUD_PROP_KEY_CrosshairZoomTransitionEnable);
+    crosshair.chZoomTransitionStyle = ZoomStatus::RemapCrosshairZoomTransitionStyle(
+        cfg.GetInt(MP_HUD_PROP_KEY_CrosshairZoomTransitionStyle));
+    crosshair.chZoomTransitionStyle =
+        std::clamp(crosshair.chZoomTransitionStyle, 0,
+                   ZoomStatus::kCrosshairZoomTransitionStyleCount - 1);
     const int transitionSpeedPct =
         std::clamp(cfg.GetInt(MP_HUD_PROP_KEY_CrosshairZoomTransitionSpeed), 25, 400);
     crosshair.chZoomTransitionStep =
@@ -717,6 +724,16 @@ static void LoadCrosshairConfig(CrosshairHudConfig& crosshair, Config::Table& cf
     crosshair.chZoomTransitionPulseStrength =
         std::clamp(cfg.GetInt(MP_HUD_PROP_KEY_CrosshairZoomTransitionPulseStrength), 0, 100)
         / 100.0;
+    crosshair.chZoomScopeDotCustomColor =
+        cfg.GetBool(MP_HUD_PROP_KEY_CrosshairZoomScopeDotCustomColor);
+    crosshair.chZoomScopeDotColor =
+        ReadRgbColor(cfg, MP_HUD_PROP_KEY_CrosshairZoomScopeDotColorR,
+                     MP_HUD_PROP_KEY_CrosshairZoomScopeDotColorG,
+                     MP_HUD_PROP_KEY_CrosshairZoomScopeDotColorB);
+    crosshair.chZoomScopeDotDrawColor = crosshair.chZoomScopeDotCustomColor
+        ? crosshair.chZoomScopeDotColor
+        : crosshair.chColor;
+    crosshair.chZoomScopeDotDrawColor.setAlphaF(crosshair.chZoomScopeDotOpacity);
     RebuildCrosshairZoomScopeCache(crosshair);
     // P-11: Pre-compute arm/dot colors with alpha
     crosshair.chInnerColor = crosshair.chColor;

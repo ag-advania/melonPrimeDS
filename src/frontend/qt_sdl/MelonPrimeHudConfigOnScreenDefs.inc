@@ -47,6 +47,9 @@ static const char* kEnumLabelPos    = "Above|Below|Left|Right|Center";
 static const char* kEnumLayout      = "Standard|Alternative";
 static const char* kEnumOrientation = "Horiz|Vert";
 static const char* kEnumGaugeAlign  = "Start|Center|End";
+static const char* kEnumZoomTransitionStyle =
+    "Staged|Fade|Glitch|Snap|Expand|Contract|Scanline|Digital|Pulse|Crossfade|Magic Circle|SF Movie|"
+    "Tactical Lock|Sniper Optics|Drone LIDAR|Cyber Jam|Beam Charge|Wireframe|Data Link";
 
 static QString EditEnumLabel(const char* items, int val) {
     if (!items || val < 0) return QString::number(val);
@@ -65,6 +68,7 @@ static QString EditEnumLabel(const char* items, int val) {
 
 // Crosshair panel state
 static bool s_crosshairPanelOpen  = false;
+static bool s_zoomSectionOpen     = false;
 static bool s_innerSectionOpen    = false;
 static bool s_outerSectionOpen    = false;
 static int  s_crosshairPanelScroll = 0;
@@ -76,17 +80,20 @@ static bool s_textScaleDragging = false;
 static bool s_autoScaleCapDragging = false;
 
 static int CountCrosshairRows() {
-    return 1 + kCrosshairMainCount + 2; // color + main props + Inner header + Outer header
+    return 1 + kCrosshairNormalCount + 3; // color + normal props + Zoom/Inner/Outer headers
 }
 
 static const HudEditPropDesc* GetCrosshairPropForRow(int rowIdx, bool& isColorRow,
+                                                     bool& isZoomHeader,
                                                      bool& isInnerHeader, bool& isOuterHeader)
 {
-    isColorRow = isInnerHeader = isOuterHeader = false;
+    isColorRow = isZoomHeader = isInnerHeader = isOuterHeader = false;
     if (rowIdx == 0) { isColorRow = true; return nullptr; }
     int idx = rowIdx - 1;
-    if (idx < kCrosshairMainCount) return &kPropsCrosshairMain[idx];
-    idx -= kCrosshairMainCount;
+    if (idx < kCrosshairNormalCount) return &kPropsCrosshairNormal[idx];
+    idx -= kCrosshairNormalCount;
+    if (idx == 0) { isZoomHeader = true; return nullptr; }
+    idx -= 1;
     if (idx == 0) { isInnerHeader = true; return nullptr; }
     idx -= 1;
     if (idx == 0) { isOuterHeader = true; return nullptr; }

@@ -127,6 +127,38 @@
             });
             break;
         }
+        case HWType::ZoomTransitionStyle: {
+            auto* combo = new QComboBox(parent);
+            combo->setObjectName(objName);
+            combo->addItem(QStringLiteral("Staged"));
+            combo->addItem(QStringLiteral("Fade"));
+            combo->addItem(QStringLiteral("Glitch"));
+            combo->addItem(QStringLiteral("Snap"));
+            combo->addItem(QStringLiteral("Expand"));
+            combo->addItem(QStringLiteral("Contract"));
+            combo->addItem(QStringLiteral("Scanline"));
+            combo->addItem(QStringLiteral("Digital"));
+            combo->addItem(QStringLiteral("Pulse Wave"));
+            combo->addItem(QStringLiteral("Crossfade"));
+            combo->addItem(QStringLiteral("Magic Circle"));
+            combo->addItem(QStringLiteral("SF Movie"));
+            combo->addItem(QStringLiteral("Tactical Lock"));
+            combo->addItem(QStringLiteral("Sniper Optics"));
+            combo->addItem(QStringLiteral("Drone LIDAR"));
+            combo->addItem(QStringLiteral("Cyber Jam"));
+            combo->addItem(QStringLiteral("Beam Charge"));
+            combo->addItem(QStringLiteral("Wireframe"));
+            combo->addItem(QStringLiteral("Data Link"));
+            combo->setCurrentIndex(std::clamp(instcfg.GetInt(p.cfgKey), p.min, p.max));
+            form->addRow(QString::fromUtf8(p.label), combo);
+            m_hudWidgets[p.cfgKey] = combo;
+            connect(combo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this, key = std::string(p.cfgKey)](int val) {
+                if (!m_applyPreviewEnabled) return;
+                emuInstance->getLocalConfig().SetInt(key, val);
+                invalidateHudAndRefreshPreviews();
+            });
+            break;
+        }
         case HWType::FontFamily: {
             // System-font picker: a "pick font" button (left) + an editable QFontComboBox (right).
             // QFontComboBox is a QComboBox, so all generic loops that iterate m_hudWidgets
