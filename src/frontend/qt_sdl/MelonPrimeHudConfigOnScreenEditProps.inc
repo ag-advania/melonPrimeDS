@@ -166,7 +166,7 @@ static const HudEditPropDesc kPropsCrosshairZoom[] = {
     {"Scope Dot Color", EditPropType::Color, MP_HUD_PROP_KEY_CrosshairZoomScopeDotColorR, 0, 255, 1, MP_HUD_PROP_KEY_CrosshairZoomScopeDotColorG, MP_HUD_PROP_KEY_CrosshairZoomScopeDotColorB, nullptr},
     {"Scope Opacity %", EditPropType::Int, MP_HUD_PROP_KEY_CrosshairZoomScopeOpacity, 0, 100, 1, nullptr, nullptr, nullptr},
     {"Zoom Transition", EditPropType::Bool, MP_HUD_PROP_KEY_CrosshairZoomTransitionEnable, 0, 0, 0, nullptr, nullptr, nullptr},
-    {"Transition Style", EditPropType::Enum, MP_HUD_PROP_KEY_CrosshairZoomTransitionStyle, 0, 18, 1, kEnumZoomTransitionStyle, nullptr, nullptr},
+    {"Transition Style", EditPropType::Enum, MP_HUD_PROP_KEY_CrosshairZoomTransitionStyle, 0, 15, 1, kEnumZoomTransitionStyle, nullptr, nullptr},
     {"Transition Speed %", EditPropType::Int, MP_HUD_PROP_KEY_CrosshairZoomTransitionSpeed, 25, 400, 5, nullptr, nullptr, nullptr},
     {"Pulse Ring", EditPropType::Bool, MP_HUD_PROP_KEY_CrosshairZoomTransitionPulseEnable, 0, 0, 0, nullptr, nullptr, nullptr},
     {"Pulse Strength %", EditPropType::Int, MP_HUD_PROP_KEY_CrosshairZoomTransitionPulseStrength, 0, 100, 1, nullptr, nullptr, nullptr},
