@@ -690,6 +690,79 @@ static void RebuildCrosshairOutlineStamp(const CrosshairHudConfig& ch)
     s_chStampValid = true;
 }
 
+static float ReadCrosshairZoomAmount(melonDS::u8* ram, const RomAddresses& rom)
+{
+#ifdef MELONPRIME_DS
+    const ZoomStatus::ScopeState scope =
+        ZoomStatus::ReadScopeState(ram, rom.hookLocalPlayerPtrGlobal);
+    if (!scope.valid)
+        return 0.0f;
+
+    bool animActive = false;
+    const uint32_t activeAddr = rom.crosshairControl + ZoomStatus::kCrosshairAnimActiveOffset;
+    if (ZoomStatus::IsMainRamRange(activeAddr, sizeof(uint16_t)))
+        animActive = Read16(ram, activeAddr) != 0;
+
+    uint16_t currentFrame = 0xFFFF;
+    const uint32_t frameAddr = rom.crosshairControl + ZoomStatus::kCrosshairCurrentFrameOffset;
+    if (ZoomStatus::IsMainRamRange(frameAddr, sizeof(uint16_t)))
+        currentFrame = Read16(ram, frameAddr);
+    return ZoomStatus::ComputeReticleAmount(scope.scoped, currentFrame, animActive);
+#else
+    (void)ram;
+    (void)rom;
+    return 0.0f;
+#endif
+}
+
+static void DrawZoomScopeReticle(QPainter* p, int pxCx, int pxCy,
+                                 const CrosshairHudConfig& ch, double zoomT)
+{
+    const double scopeOpacity = zoomT * ch.chZoomScopeOpacity;
+    if (!ch.chZoomStageEnable || !ch.chZoomScopeEnable || scopeOpacity <= 0.001)
+        return;
+
+    const QPen savedPen = p->pen();
+    const QBrush savedBrush = p->brush();
+    const qreal savedOpacity = p->opacity();
+    const bool savedAntialias = p->testRenderHint(QPainter::Antialiasing);
+
+    const int radius = std::max(1, ch.chZoomScopeRadius);
+    const int lineEnd = radius + std::max(0, ch.chZoomScopeLineLength);
+    const int gap = std::max(0, ch.chZoomScopeGap);
+    const int thickness = std::max(1, ch.chZoomScopeThickness);
+
+    auto drawPass = [&](const QColor& color, int width, double opacity) {
+        QPen pen(color);
+        pen.setWidth(std::max(1, width));
+        pen.setCapStyle(Qt::SquareCap);
+        p->setPen(pen);
+        p->setBrush(Qt::NoBrush);
+        p->setOpacity(opacity);
+        p->drawEllipse(QRect(pxCx - radius, pxCy - radius, radius * 2, radius * 2));
+        if (lineEnd > gap) {
+            p->drawLine(QPoint(pxCx - lineEnd, pxCy), QPoint(pxCx - gap, pxCy));
+            p->drawLine(QPoint(pxCx + gap, pxCy), QPoint(pxCx + lineEnd, pxCy));
+            p->drawLine(QPoint(pxCx, pxCy - lineEnd), QPoint(pxCx, pxCy - gap));
+            p->drawLine(QPoint(pxCx, pxCy + gap), QPoint(pxCx, pxCy + lineEnd));
+        }
+    };
+
+    p->setRenderHint(QPainter::Antialiasing, true);
+    if (ch.chOutline && ch.chOutlineOpacity > 0.0) {
+        static const QColor solidBlack(0, 0, 0, 255);
+        drawPass(solidBlack,
+                 thickness + std::max(1, ch.chOutlineThickness) * 2,
+                 ch.chOutlineOpacity * scopeOpacity);
+    }
+    drawPass(ch.chColor, thickness, scopeOpacity);
+
+    p->setRenderHint(QPainter::Antialiasing, savedAntialias);
+    p->setBrush(savedBrush);
+    p->setPen(savedPen);
+    p->setOpacity(savedOpacity);
+}
+
 // P-8: Draws the crosshair entirely in integer pixel coordinates.
 // Cached arm rects (from LoadCrosshairConfig) are in output pixels centred at
 // (0,0).  The DS-space crosshair position (cx,cy) is mapped to pixel space via
@@ -699,10 +772,19 @@ static void RebuildCrosshairOutlineStamp(const CrosshairHudConfig& ch)
 static void DrawCrosshair(QPainter* p, melonDS::u8* ram,
                           const RomAddresses& rom,
                           const CachedHudConfig& c,
-                          float hudScale, float topStretchX)
+                          float hudScale, float topStretchX,
+                          float zoomAmount = 0.0f)
 {
     const float dsCx = static_cast<float>(Read8(ram, rom.crosshairPosX));
     const float dsCy = static_cast<float>(Read8(ram, rom.crosshairPosY));
+    const double zoomT = c.crosshair.chZoomStageEnable
+        ? std::clamp(static_cast<double>(zoomAmount), 0.0, 1.0)
+        : 0.0;
+    const double geomScale =
+        1.0 + (c.crosshair.chZoomScale - 1.0) * zoomT;
+    const double opacityMul =
+        std::clamp(1.0 + (c.crosshair.chZoomOpacity - 1.0) * zoomT, 0.0, 1.0);
+    const bool scaledGeometry = std::abs(geomScale - 1.0) >= 0.001;
 
     // Map DS-space centre → output pixel centre (integer).
     const QTransform& xf = p->transform();
@@ -717,12 +799,14 @@ static void DrawCrosshair(QPainter* p, melonDS::u8* ram,
     // OPT-DR1: Update crosshair dirty rect (prev ∪ curr position).
     // This is accumulated into s_chDirtyThisFrame so CustomHud_Render can return it.
     {
-        const QRect currBbox = CrosshairBboxPx(pxCx, pxCy, c.crosshair);
+        const QRect currBbox = CrosshairBboxPx(pxCx, pxCy, c.crosshair, geomScale, zoomT);
         s_chDirtyThisFrame = currBbox;
         if (s_chPrevPxCx != INT_MIN)
-            s_chDirtyThisFrame |= CrosshairBboxPx(s_chPrevPxCx, s_chPrevPxCy, c.crosshair);
+            s_chDirtyThisFrame |= CrosshairBboxPx(s_chPrevPxCx, s_chPrevPxCy, c.crosshair, s_chPrevGeomScale, s_chPrevZoomT);
         s_chPrevPxCx = pxCx;
         s_chPrevPxCy = pxCy;
+        s_chPrevGeomScale = geomScale;
+        s_chPrevZoomT = zoomT;
     }
 
     // Save/restore only what we change (transform + opacity).
@@ -733,33 +817,69 @@ static void DrawCrosshair(QPainter* p, melonDS::u8* ram,
     // P-17: Outline pass — composite the pre-rendered stamp at the current pixel centre.
     // Stamp is built once in RebuildCrosshairOutlineStamp (called from RefreshCachedConfig);
     // each frame is a single drawImage, no QPainter creation or per-rect fillRect.
+    if (scaledGeometry) {
+        auto fillScaled = [&](const QRect& base, const QColor& color) {
+            p->fillRect(ScaleRectAroundOrigin(base, geomScale).translated(pxCx, pxCy), color);
+        };
+        if (c.crosshair.chOutline && c.crosshair.chOutlineOpacity > 0.0) {
+            p->setOpacity(c.crosshair.chOutlineOpacity * opacityMul);
+            static const QColor solidBlack(0, 0, 0, 255);
+            const int olT = std::max(1, c.crosshair.chOutlineThickness);
+            for (int i = 0; i < nInner; i++)
+                p->fillRect(ScaleRectAroundOrigin(innerRects[i], geomScale).adjusted(-olT, -olT, olT, olT).translated(pxCx, pxCy), solidBlack);
+            for (int i = 0; i < nOuter; i++)
+                p->fillRect(ScaleRectAroundOrigin(outerRects[i], geomScale).adjusted(-olT, -olT, olT, olT).translated(pxCx, pxCy), solidBlack);
+            if (c.crosshair.chCenterDot) {
+                const int dh = c.crosshair.cachedDotHalfPx;
+                const int ds = c.crosshair.cachedDotSizePx;
+                p->fillRect(ScaleRectAroundOrigin(QRect(-dh, -dh, ds, ds), geomScale).adjusted(-olT, -olT, olT, olT).translated(pxCx, pxCy), solidBlack);
+            }
+        }
+        p->setOpacity(opacityMul);
+        for (int i = 0; i < nInner; i++)
+            fillScaled(innerRects[i], c.crosshair.chInnerColor);
+        for (int i = 0; i < nOuter; i++)
+            fillScaled(outerRects[i], c.crosshair.chOuterColor);
+        if (c.crosshair.chCenterDot) {
+            const int dh = c.crosshair.cachedDotHalfPx;
+            const int ds = c.crosshair.cachedDotSizePx;
+            fillScaled(QRect(-dh, -dh, ds, ds), c.crosshair.chDotColor);
+        }
+        DrawZoomScopeReticle(p, pxCx, pxCy, c.crosshair, zoomT);
+        p->setTransform(savedXform);
+        p->setOpacity(savedOpacity);
+        return;
+    }
+
     if (c.crosshair.chOutline && c.crosshair.chOutlineOpacity > 0.0 &&
         s_chStampValid && !s_chOutlineStamp.isNull()) {
-        p->setOpacity(c.crosshair.chOutlineOpacity);
+        p->setOpacity(c.crosshair.chOutlineOpacity * opacityMul);
         p->drawImage(QPoint(pxCx + s_chStampOrigin.x(), pxCy + s_chStampOrigin.y()), s_chOutlineStamp);
     }
 
     // Inner arms — chInnerColor already has alpha baked in (P-11)
     if (nInner > 0) {
-        p->setOpacity(1.0);
+        p->setOpacity(opacityMul);
         for (int i = 0; i < nInner; i++)
             p->fillRect(innerRects[i].translated(pxCx, pxCy), c.crosshair.chInnerColor);
     }
 
     // Outer arms
     if (nOuter > 0) {
-        p->setOpacity(1.0);
+        p->setOpacity(opacityMul);
         for (int i = 0; i < nOuter; i++)
             p->fillRect(outerRects[i].translated(pxCx, pxCy), c.crosshair.chOuterColor);
     }
 
     // Center dot
     if (c.crosshair.chCenterDot) {
-        p->setOpacity(1.0);
+        p->setOpacity(opacityMul);
         const int dh = c.crosshair.cachedDotHalfPx;
         const int ds = c.crosshair.cachedDotSizePx;
         p->fillRect(QRect(pxCx - dh, pxCy - dh, ds, ds), c.crosshair.chDotColor);
     }
+
+    DrawZoomScopeReticle(p, pxCx, pxCy, c.crosshair, zoomT);
 
     // Restore painter state.
     p->setTransform(savedXform);

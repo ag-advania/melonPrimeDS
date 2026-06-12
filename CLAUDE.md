@@ -27,6 +27,11 @@ This file is an index only. Keep detailed instructions in the linked Rules, Skil
 - [.claude/skills/settings-ui-and-edit-mode.md](.claude/skills/settings-ui-and-edit-mode.md)
 - [.claude/skills/release-notes.md](.claude/skills/release-notes.md)
 
+## Features
+- [.claude/features/README.md](.claude/features/README.md)
+- [.claude/features/zoom-aim-sensitivity.md](.claude/features/zoom-aim-sensitivity.md)
+- [.claude/features/custom-hud-zoom-crosshair.md](.claude/features/custom-hud-zoom-crosshair.md)
+
 ## Hooks
 - [.claude/hooks/README.md](.claude/hooks/README.md)
 

@@ -741,6 +741,15 @@ void MelonPrimeHudConfigOnScreenEdit::populateForCrosshair()
         MP_HUD_PROP_KEY_CrosshairColorG,
         MP_HUD_PROP_KEY_CrosshairColorB);
     addSpinBox(QStringLiteral("Scale %"), MP_HUD_PROP_KEY_CrosshairScale, 100, 800);
+    addCheckBox(QStringLiteral("Zoom Stage"), MP_HUD_PROP_KEY_CrosshairZoomStageEnable);
+    addSpinBox(QStringLiteral("Zoom Scale %"), MP_HUD_PROP_KEY_CrosshairZoomScale, 10, 200);
+    addSpinBox(QStringLiteral("Zoom Opacity %"), MP_HUD_PROP_KEY_CrosshairZoomOpacity, 0, 100);
+    addCheckBox(QStringLiteral("Zoom Scope"), MP_HUD_PROP_KEY_CrosshairZoomScopeEnable);
+    addSpinBox(QStringLiteral("Scope Radius"), MP_HUD_PROP_KEY_CrosshairZoomScopeRadius, 4, 128);
+    addSpinBox(QStringLiteral("Scope Line Len"), MP_HUD_PROP_KEY_CrosshairZoomScopeLineLength, 0, 128);
+    addSpinBox(QStringLiteral("Scope Gap"), MP_HUD_PROP_KEY_CrosshairZoomScopeGap, 0, 64);
+    addSpinBox(QStringLiteral("Scope Thick."), MP_HUD_PROP_KEY_CrosshairZoomScopeThickness, 1, 12);
+    addSpinBox(QStringLiteral("Scope Opacity %"), MP_HUD_PROP_KEY_CrosshairZoomScopeOpacity, 0, 100);
     addCheckBox(QStringLiteral("Outline"), MP_HUD_PROP_KEY_CrosshairOutline);
     addOpacitySlider(QStringLiteral("Outline Opacity"), MP_HUD_PROP_KEY_CrosshairOutlineOpacity);
     addSpinBox(QStringLiteral("Outline Thick."), MP_HUD_PROP_KEY_CrosshairOutlineThickness, 1, 10);
