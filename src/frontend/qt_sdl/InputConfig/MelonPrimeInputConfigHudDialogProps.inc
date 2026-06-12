@@ -74,7 +74,7 @@ static const HudWidgetProp kSecCrosshairZoom[] = {
     { "Scope Dot Color", HWType::Color3, MP_HUD_PROP_KEY_CrosshairZoomScopeDotColorR, 0, 255, 1, MP_HUD_PROP_KEY_CrosshairZoomScopeDotColorG, MP_HUD_PROP_KEY_CrosshairZoomScopeDotColorB },
     { "Scope Opacity %", HWType::Int, MP_HUD_PROP_KEY_CrosshairZoomScopeOpacity, 0, 100, 1, nullptr, nullptr },
     { "Zoom Transition", HWType::Bool, MP_HUD_PROP_KEY_CrosshairZoomTransitionEnable, 0, 0, 0, nullptr, nullptr },
-    { "Transition Style", HWType::ZoomTransitionStyle, MP_HUD_PROP_KEY_CrosshairZoomTransitionStyle, 0, 15, 1, nullptr, nullptr },
+    { "Transition Style", HWType::ZoomTransitionStyle, MP_HUD_PROP_KEY_CrosshairZoomTransitionStyle, 0, 12, 1, nullptr, nullptr },
     { "Transition Speed %", HWType::Int, MP_HUD_PROP_KEY_CrosshairZoomTransitionSpeed, 25, 400, 5, nullptr, nullptr },
     { "Pulse Ring", HWType::Bool, MP_HUD_PROP_KEY_CrosshairZoomTransitionPulseEnable, 0, 0, 0, nullptr, nullptr },
     { "Pulse Strength %", HWType::Int, MP_HUD_PROP_KEY_CrosshairZoomTransitionPulseStrength, 0, 100, 1, nullptr, nullptr },

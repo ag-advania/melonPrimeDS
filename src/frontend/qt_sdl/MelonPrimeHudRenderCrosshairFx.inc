@@ -448,42 +448,6 @@ static void DrawFxEnergySurge(QPainter* p, int cx, int cy, int maxR, double lock
     }
 }
 
-static void DrawFxDataHudStrip(QPainter* p, int cx, int cy, int maxR, double lockT,
-                               double midFx, const QColor& color)
-{
-    QPen pen(color);
-    pen.setWidth(1);
-    p->setPen(pen);
-    const int x0 = cx + std::max(12, maxR / 3);
-    const int y0 = cy - std::max(8, maxR / 4);
-    const int lines = 3 + static_cast<int>(lockT * 2.0);
-    for (int i = 0; i < lines; ++i) {
-        const int len = 8 + i * 6 + static_cast<int>(lockT * 12);
-        p->setOpacity(0.28 * midFx);
-        p->drawLine(QPoint(x0, y0 + i * 5), QPoint(x0 + len, y0 + i * 5));
-    }
-}
-
-static void DrawFxHitProbabilityArc(QPainter* p, int cx, int cy, int maxR, double lockT,
-                                    double midFx, const QColor& color, int penW)
-{
-    const int r = std::max(8, static_cast<int>(maxR * 0.72 * lockT + 0.5));
-    QPen pen(color);
-    pen.setWidth(std::max(1, penW));
-    p->setPen(pen);
-    p->setBrush(Qt::NoBrush);
-    p->setOpacity(0.30 * midFx);
-    p->drawArc(QRect(cx - r, cy - r, r * 2, r * 2), 200 * 16,
-               static_cast<int>(lockT * 140.0 * 16.0));
-}
-
-static void DrawFxSoftLockHalo(QPainter* p, int cx, int cy, int maxR, double lockT,
-                               double midFx, const QColor& color)
-{
-    const int r = std::max(8, static_cast<int>(maxR * 0.55 * lockT + 0.5));
-    DrawCrosshairGlowRing(p, cx, cy, r, color, 1, 0.20 * midFx);
-}
-
 static void DrawFxRadarSweep(QPainter* p, int cx, int cy, int maxR, double lockT,
                              double midFx, const QColor& color, int penW)
 {
@@ -495,16 +459,4 @@ static void DrawFxRadarSweep(QPainter* p, int cx, int cy, int maxR, double lockT
     const int sweepStart = static_cast<int>((lockT * 720.0) * 16.0);
     p->drawArc(QRect(cx - sweepR, cy - sweepR, sweepR * 2, sweepR * 2),
                sweepStart, static_cast<int>(52.0 * 16.0));
-}
-
-static void DrawFxVerticalScan(QPainter* p, int cx, int cy, int maxR, double lockT,
-                               double midFx, const QColor& color, int penW)
-{
-    QPen pen(color);
-    pen.setWidth(std::max(1, penW));
-    p->setPen(pen);
-    const double phase = lockT * 1.4;
-    const int x = cx + static_cast<int>((phase - std::floor(phase) - 0.5) * maxR * 1.6);
-    p->setOpacity(0.28 * midFx);
-    p->drawLine(QPoint(x, cy - maxR), QPoint(x, cy + maxR));
 }

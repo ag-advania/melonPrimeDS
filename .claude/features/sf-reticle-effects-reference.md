@@ -7,26 +7,23 @@ extending zoom crosshair transition styles or future lock-on HUD work.
 glow, and breathing belong in `DrawZoomTransitionFx()` only. Scope reticle
 radius follows zoom progress alone.
 
-## Zoom transition style map (0–15)
+## Zoom transition style map (0–12)
 
 | ID | Style | Catalog preset / effects used |
 |---|---|---|
-| 0 | Staged | Original staged blend + optional pulse ring |
-| 1 | Fade | Opacity crossfade only |
+| 0 | Fade | Opacity crossfade only |
+| 1 | Staged | Original staged blend + optional pulse ring |
 | 2 | Glitch | RGB break, slices, scan bars, blocks, noise, pixel grid |
 | 3 | Glitch2 | Scan-heavy glitch overload + scan disturb + corner brackets |
 | 4 | Snap | Instant scope pop |
-| 5 | Expand | Radial expand |
-| 6 | Contract | Radial contract |
-| 7 | Digital | Pixel crush + glitch noise/grid |
-| 8 | Pulse Wave | Pulse ring (optional) |
-| 9 | Crossfade | Opacity blend, no flash |
-| 10 | Magic Circle | Rotating arc segments |
-| 11 | SF Movie | Lock rings, orbit, radar sweep, rangefinder, brackets |
-| 12 | Tactical Lock | Target box + lock rings + brackets |
-| 13 | Sniper Optics | Iris aperture + focus brackets + rangefinder |
-| 14 | Drone LIDAR | LIDAR point cloud + wireframe + material grid |
-| 15 | Beam Charge | Charge ring + railgun lines + energy surge |
+| 5 | Digital | Pixel crush + glitch noise/grid |
+| 6 | Pulse Wave | Pulse ring (optional) |
+| 7 | Magic Circle | Rotating arc segments |
+| 8 | SF Movie | Lock rings, orbit, radar sweep, rangefinder, brackets |
+| 9 | Tactical Lock | Target box + lock rings + brackets |
+| 10 | Sniper Optics | Iris aperture + focus brackets + rangefinder |
+| 11 | Drone LIDAR | LIDAR point cloud + wireframe + material grid |
+| 12 | Beam Charge | Charge ring + railgun lines + energy surge |
 
 Helpers live in `MelonPrimeHudRenderCrosshairFx.inc`.
 

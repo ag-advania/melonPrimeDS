@@ -746,7 +746,7 @@ static CrosshairGlitchJitter ComputeCrosshairGlitchJitter(int fxStyle, double zo
                                                           uint32_t& phase)
 {
     CrosshairGlitchJitter j{};
-    if (fxStyle != 2 && fxStyle != 15)
+    if (fxStyle != 2 && fxStyle != 3) // Glitch (2) / Glitch2 (3)
         return j;
 
     const double fx = CrosshairTransitionMidIntensity(zoomT);
@@ -818,7 +818,7 @@ static void DrawZoomTransitionFx(QPainter* p, int pxCx, int pxCy,
             p->setClipRect(topScreenClipPx, Qt::IntersectClip);
 
         switch (fxStyle) {
-    case 1: // Fade — opacity-only; no overlay FX
+    case 1: // Staged — opacity-only; pulse ring (if enabled) handled below
         break;
     case 2: { // Glitch — AniGlitchArtFX-style RGB break / slices / scan bars
         static uint32_t s_chGlitchFxPhase = 0xC0FFEE01u;
@@ -849,27 +849,7 @@ static void DrawZoomTransitionFx(QPainter* p, int pxCx, int pxCy,
         p->drawEllipse(QRect(pxCx - ghostR, pxCy - ghostR, ghostR * 2, ghostR * 2));
         break;
     }
-    case 5: { // Expand
-        p->setRenderHint(QPainter::Antialiasing, true);
-        const int r = std::max(6, static_cast<int>(maxR * std::clamp(zoomT / 0.55, 0.0, 1.0) + 0.5));
-        QPen pen(ch.chColor);
-        pen.setWidth(std::max(1, ch.chZoomScopeThickness));
-        p->setPen(pen);
-        p->setBrush(Qt::NoBrush);
-        p->setOpacity(0.55 * midFx);
-        p->drawEllipse(QRect(pxCx - r, pxCy - r, r * 2, r * 2));
-        break;
-    }
-    case 6: { // Contract
-        p->setRenderHint(QPainter::Antialiasing, false);
-        const int half = std::max(4, static_cast<int>((maxR * 0.55) * (1.0 - zoomT) + 0.5));
-        p->setPen(QPen(ch.chColor, std::max(1, ch.chZoomScopeThickness)));
-        p->setBrush(Qt::NoBrush);
-        p->setOpacity(0.65 * midFx);
-        p->drawRect(QRect(pxCx - half, pxCy - half, half * 2, half * 2));
-        break;
-    }
-    case 7: { // Digital — pixel crush + block noise
+    case 5: { // Digital — pixel crush + block noise
         p->setRenderHint(QPainter::Antialiasing, false);
         static uint32_t s_chDigitalPhase = 0x12345678u;
         s_chDigitalPhase = AdvanceCrosshairFxPhase(s_chDigitalPhase);
@@ -895,7 +875,7 @@ static void DrawZoomTransitionFx(QPainter* p, int pxCx, int pxCy,
         DrawFxGlitchNoise(p, pxCx, pxCy, maxR, midFx * 0.45, s_chDigitalPhase, 8);
         break;
     }
-    case 8: { // Pulse Wave
+    case 6: { // Pulse Wave
         p->setRenderHint(QPainter::Antialiasing, true);
         QPen pen(ch.chColor);
         pen.setWidth(std::max(1, ch.chZoomScopeThickness));
@@ -911,9 +891,7 @@ static void DrawZoomTransitionFx(QPainter* p, int pxCx, int pxCy,
         }
         break;
     }
-    case 9: // Crossfade — opacity-only; no overlay FX
-        break;
-    case 10: { // Magic Circle
+    case 7: { // Magic Circle
         p->setRenderHint(QPainter::Antialiasing, true);
         const double rot = zoomT * 540.0;
         const int outerR = std::max(10, static_cast<int>(maxR * std::clamp(zoomT, 0.0, 1.0) + 0.5));
@@ -957,7 +935,7 @@ static void DrawZoomTransitionFx(QPainter* p, int pxCx, int pxCy,
         }
         break;
     }
-    case 11: { // SF Movie
+    case 8: { // SF Movie
         p->setRenderHint(QPainter::Antialiasing, true);
         const double lockT = std::clamp(zoomT, 0.0, 1.0);
         const QColor glowColor(ch.chColor.red(), ch.chColor.green(), ch.chColor.blue(), 255);
@@ -972,7 +950,7 @@ static void DrawZoomTransitionFx(QPainter* p, int pxCx, int pxCy,
         DrawFxCornerBrackets(p, pxCx, pxCy, maxR, lockT, midFx, glowColor, ch.chZoomScopeThickness);
         break;
     }
-    case 12: { // Tactical Lock
+    case 9: { // Tactical Lock
         p->setRenderHint(QPainter::Antialiasing, true);
         const double lockT = std::clamp(zoomT, 0.0, 1.0);
         static uint32_t s_chTacticalPhase = 0xCA471CA1u;
@@ -988,7 +966,7 @@ static void DrawZoomTransitionFx(QPainter* p, int pxCx, int pxCy,
         }
         break;
     }
-    case 13: { // Sniper Optics
+    case 10: { // Sniper Optics
         p->setRenderHint(QPainter::Antialiasing, true);
         const double lockT = std::clamp(zoomT, 0.0, 1.0);
         DrawFxIrisAperture(p, pxCx, pxCy, maxR, lockT, midFx, ch.chColor, ch.chZoomScopeThickness);
@@ -1006,7 +984,7 @@ static void DrawZoomTransitionFx(QPainter* p, int pxCx, int pxCy,
         }
         break;
     }
-    case 14: { // Drone LIDAR
+    case 11: { // Drone LIDAR
         p->setRenderHint(QPainter::Antialiasing, false);
         const double lockT = std::clamp(zoomT, 0.0, 1.0);
         static uint32_t s_chLidarPhase = 0x11DA0001u;
@@ -1015,7 +993,7 @@ static void DrawZoomTransitionFx(QPainter* p, int pxCx, int pxCy,
         DrawFxMaterialGrid(p, pxCx, pxCy, maxR, lockT, midFx, ch.chColor);
         break;
     }
-    case 15: { // Beam Charge
+    case 12: { // Beam Charge
         p->setRenderHint(QPainter::Antialiasing, true);
         const double lockT = std::clamp(zoomT, 0.0, 1.0);
         DrawFxChargeRingFill(p, pxCx, pxCy, maxR, lockT, midFx, ch.chColor, ch.chZoomScopeThickness);
@@ -1032,8 +1010,8 @@ static void DrawZoomTransitionFx(QPainter* p, int pxCx, int pxCy,
 
     const bool drawPulseRing = ch.chZoomTransitionPulseEnable
         && pulseT > 0.01
-        && (fxStyle == 0 || fxStyle == 8 || fxStyle == 11 || fxStyle == 12
-            || fxStyle == 15);
+        && (fxStyle == 1 || fxStyle == 6 || fxStyle == 8 || fxStyle == 9
+            || fxStyle == 12);
     if (!drawPulseRing)
         return;
 
