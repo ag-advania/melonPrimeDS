@@ -1061,6 +1061,94 @@ static void DrawZoomTransitionFx(QPainter* p, int pxCx, int pxCy,
     p->restore();
 }
 
+static void RebuildZoomScopeStamp(const CrosshairHudConfig& ch)
+{
+    s_chScopeStampValid = false;
+    if (ch.chZoomScopeRadius > 512)
+        return;
+
+    const QRect bbox = ch.cachedZoomScopeBboxPx;
+    if (bbox.isEmpty())
+        return;
+
+    s_chScopeStampOrigin = bbox.topLeft() - QPoint(1, 1);
+    const QSize imageSize = bbox.size() + QSize(2, 2);
+    s_chScopeStamp = QImage(imageSize, QImage::Format_ARGB32_Premultiplied);
+    s_chScopeStamp.fill(Qt::transparent);
+
+    QPainter sp(&s_chScopeStamp);
+    sp.setRenderHint(QPainter::Antialiasing, true);
+
+    const int pxCx = -s_chScopeStampOrigin.x();
+    const int pxCy = -s_chScopeStampOrigin.y();
+    const int radius = ch.chZoomScopeRadius;
+    const int gap = std::min(ch.cachedZoomScopeGapPx, std::max(0, radius - 1));
+    const int armEnd = std::max(gap + 1, radius);
+    const int thickness = ch.chZoomScopeThickness;
+    QPainterPath circleClip;
+    circleClip.addEllipse(QRect(pxCx - radius, pxCy - radius, radius * 2, radius * 2));
+
+    auto drawArms = [&](const QColor& color, int width, double opacity) {
+        if (armEnd <= gap)
+            return;
+        sp.save();
+        sp.setClipPath(circleClip, Qt::IntersectClip);
+        QPen pen(color);
+        pen.setWidth(std::max(1, width));
+        pen.setCapStyle(Qt::SquareCap);
+        sp.setPen(pen);
+        sp.setBrush(Qt::NoBrush);
+        sp.setOpacity(opacity);
+        sp.drawLine(QPoint(pxCx - armEnd, pxCy), QPoint(pxCx - gap, pxCy));
+        sp.drawLine(QPoint(pxCx + gap, pxCy), QPoint(pxCx + armEnd, pxCy));
+        sp.drawLine(QPoint(pxCx, pxCy - armEnd), QPoint(pxCx, pxCy - gap));
+        sp.drawLine(QPoint(pxCx, pxCy + gap), QPoint(pxCx, pxCy + armEnd));
+        sp.restore();
+    };
+    auto drawCirclePass = [&](const QColor& color, int width, double opacity) {
+        QPen pen(color);
+        pen.setWidth(std::max(1, width));
+        pen.setCapStyle(Qt::SquareCap);
+        sp.setPen(pen);
+        sp.setBrush(Qt::NoBrush);
+        sp.setOpacity(opacity);
+        sp.drawEllipse(QRect(pxCx - radius, pxCy - radius, radius * 2, radius * 2));
+    };
+    auto drawDotPass = [&](const QColor& color, int size, double opacity) {
+        if (!ch.chZoomScopeCenterDot || ch.chZoomScopeDotOpacity <= 0.0)
+            return;
+        const int dotSize = std::max(1, size);
+        const int dotHalf = dotSize / 2;
+        const QRect dotRect(pxCx - dotHalf, pxCy - dotHalf, dotSize, dotSize);
+        sp.setPen(Qt::NoPen);
+        sp.setBrush(color);
+        sp.setOpacity(opacity);
+        if (ch.chZoomScopeDotShape == 1)
+            sp.drawEllipse(dotRect);
+        else
+            sp.drawRect(dotRect);
+    };
+
+    if (ch.chOutline && ch.chOutlineOpacity > 0.0) {
+        static const QColor solidBlack(0, 0, 0, 255);
+        drawArms(solidBlack,
+                 thickness + std::max(1, ch.chOutlineThickness) * 2,
+                 ch.chOutlineOpacity);
+        drawCirclePass(solidBlack,
+                       thickness + std::max(1, ch.chOutlineThickness) * 2,
+                       ch.chOutlineOpacity);
+        drawDotPass(solidBlack,
+                    ch.chZoomScopeDotSize + std::max(1, ch.chOutlineThickness) * 2,
+                    ch.chOutlineOpacity);
+    }
+    drawArms(ch.chColor, thickness, 1.0);
+    drawCirclePass(ch.chColor, thickness, 1.0);
+    drawDotPass(ch.chZoomScopeDotDrawColor, ch.chZoomScopeDotSize, 1.0);
+
+    sp.end();
+    s_chScopeStampValid = true;
+}
+
 static void DrawZoomScopeReticle(QPainter* p, int pxCx, int pxCy,
                                  const CrosshairHudConfig& ch, double scopeT,
                                  const QRect& topScreenClipPx,
@@ -1078,15 +1166,34 @@ static void DrawZoomScopeReticle(QPainter* p, int pxCx, int pxCy,
     const int armEnd = std::max(gap + 1, radius);
     const int thickness = ch.chZoomScopeThickness;
 
+    // The stamp pre-composites overlapping reticle primitives. Use it only when
+    // final opacity is effectively full; semi-transparent scope opacity falls
+    // back to the procedural passes so source-over overlaps stay pixel-matched.
+    if (scopeGeom >= 0.999 && radius == ch.chZoomScopeRadius && scopeOpacity >= 0.999999) {
+        if (!s_chScopeStampValid)
+            RebuildZoomScopeStamp(ch);
+        if (s_chScopeStampValid && !s_chScopeStamp.isNull()) {
+            p->save();
+            if (!topScreenClipPx.isEmpty())
+                p->setClipRect(topScreenClipPx, Qt::IntersectClip);
+            p->setOpacity(scopeOpacity);
+            p->drawImage(QPoint(pxCx + s_chScopeStampOrigin.x(),
+                                pxCy + s_chScopeStampOrigin.y()), s_chScopeStamp);
+            p->restore();
+            return;
+        }
+        // Stamp unavailable (radius > 512); fall through to procedural path.
+    }
+
     p->save();
     if (!topScreenClipPx.isEmpty())
         p->setClipRect(topScreenClipPx, Qt::IntersectClip);
 
+    QPainterPath circleClip;
+    circleClip.addEllipse(QRect(pxCx - radius, pxCy - radius, radius * 2, radius * 2));
     auto drawArms = [&](const QColor& color, int width, double opacity) {
         if (armEnd <= gap)
             return;
-        QPainterPath circleClip;
-        circleClip.addEllipse(QRect(pxCx - radius, pxCy - radius, radius * 2, radius * 2));
         p->save();
         p->setClipPath(circleClip, Qt::IntersectClip);
         QPen pen(color);

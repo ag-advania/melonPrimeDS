@@ -329,6 +329,7 @@ static QRect CrosshairBboxPx(int cx, int cy, const CrosshairHudConfig& ch,
 
 static void RebuildCrosshairZoomScopeCache(CrosshairHudConfig& crosshair)
 {
+    s_chScopeStampValid = false;
     crosshair.cachedZoomScopeRenderable =
         crosshair.chZoomStageEnable
         && crosshair.chZoomScopeEnable
