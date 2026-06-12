@@ -36,6 +36,7 @@ void CustomHud_ExitEditMode(bool save, Config::Table& cfg)
     s_textScaleDragging     = false;
     s_anchorPickerOpen      = false;
     s_crosshairPanelOpen    = false;
+    s_zoomSectionOpen       = false;
     s_innerSectionOpen      = false;
     s_outerSectionOpen      = false;
     s_crosshairPanelScroll  = 0;
@@ -239,8 +240,8 @@ void CustomHud_EditMousePress(QPointF pt, Qt::MouseButton btn, Config::Table& cf
                 QRectF rowRect(rowX, rowY, kPropLabelW + ctrlW, kPropRowH);
                 if (!rowRect.contains(ds)) continue;
 
-                bool isColorRow, isInnerHdr, isOuterHdr;
-                const HudEditPropDesc* pr = GetCrosshairPropForRow(rowIdx, isColorRow, isInnerHdr, isOuterHdr);
+                bool isColorRow, isZoomHdr, isInnerHdr, isOuterHdr;
+                const HudEditPropDesc* pr = GetCrosshairPropForRow(rowIdx, isColorRow, isZoomHdr, isInnerHdr, isOuterHdr);
                 if (isColorRow) {
                     if (s_colorDialogOpen) return;
                     s_colorDialogOpen = true;
@@ -258,14 +259,28 @@ void CustomHud_EditMousePress(QPointF pt, Qt::MouseButton btn, Config::Table& cf
                     }
                     return;
                 }
+                if (isZoomHdr) {
+                    s_zoomSectionOpen = !s_zoomSectionOpen;
+                    if (s_zoomSectionOpen) {
+                        s_innerSectionOpen = false;
+                        s_outerSectionOpen = false;
+                    }
+                    return;
+                }
                 if (isInnerHdr) {
                     s_innerSectionOpen = !s_innerSectionOpen;
-                    if (s_innerSectionOpen) s_outerSectionOpen = false;
+                    if (s_innerSectionOpen) {
+                        s_zoomSectionOpen = false;
+                        s_outerSectionOpen = false;
+                    }
                     return;
                 }
                 if (isOuterHdr) {
                     s_outerSectionOpen = !s_outerSectionOpen;
-                    if (s_outerSectionOpen) s_innerSectionOpen = false;
+                    if (s_outerSectionOpen) {
+                        s_zoomSectionOpen = false;
+                        s_innerSectionOpen = false;
+                    }
                     return;
                 }
                 if (!pr) return;
@@ -312,7 +327,9 @@ void CustomHud_EditMousePress(QPointF pt, Qt::MouseButton btn, Config::Table& cf
         {
             const HudEditPropDesc* sideClickProps = nullptr;
             int sideClickCount = 0;
-            if (s_innerSectionOpen) {
+            if (s_zoomSectionOpen) {
+                sideClickProps = kPropsCrosshairZoom; sideClickCount = kCrosshairZoomCount;
+            } else if (s_innerSectionOpen) {
                 sideClickProps = kPropsCrosshairInner; sideClickCount = kCrosshairInnerCount;
             } else if (s_outerSectionOpen) {
                 sideClickProps = kPropsCrosshairOuter; sideClickCount = kCrosshairOuterCount;

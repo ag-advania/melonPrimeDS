@@ -65,7 +65,8 @@ static void SnapshotEditConfig(Config::Table& cfg)
     s_editSnapshot[MP_HUD_PROP_KEY_CrosshairColorR] = cfg.GetInt(MP_HUD_PROP_KEY_CrosshairColorR);
     s_editSnapshot[MP_HUD_PROP_KEY_CrosshairColorG] = cfg.GetInt(MP_HUD_PROP_KEY_CrosshairColorG);
     s_editSnapshot[MP_HUD_PROP_KEY_CrosshairColorB] = cfg.GetInt(MP_HUD_PROP_KEY_CrosshairColorB);
-    snapshotPropArray(kPropsCrosshairMain,  kCrosshairMainCount);
+    snapshotPropArray(kPropsCrosshairNormal, kCrosshairNormalCount);
+    snapshotPropArray(kPropsCrosshairZoom,   kCrosshairZoomCount);
     snapshotPropArray(kPropsCrosshairInner, kCrosshairInnerCount);
     snapshotPropArray(kPropsCrosshairOuter, kCrosshairOuterCount);
     s_editSnapshot[MP_HUD_PROP_KEY_HudTextScale] = cfg.GetInt(MP_HUD_PROP_KEY_HudTextScale);
@@ -145,7 +146,8 @@ static void ResetEditToDefaults(Config::Table& cfg)
     cfg.SetInt(MP_HUD_PROP_KEY_CrosshairColorR, defaults.GetInt(MP_HUD_PROP_KEY_CrosshairColorR));
     cfg.SetInt(MP_HUD_PROP_KEY_CrosshairColorG, defaults.GetInt(MP_HUD_PROP_KEY_CrosshairColorG));
     cfg.SetInt(MP_HUD_PROP_KEY_CrosshairColorB, defaults.GetInt(MP_HUD_PROP_KEY_CrosshairColorB));
-    resetPropArray(kPropsCrosshairMain,  kCrosshairMainCount);
+    resetPropArray(kPropsCrosshairNormal, kCrosshairNormalCount);
+    resetPropArray(kPropsCrosshairZoom,   kCrosshairZoomCount);
     resetPropArray(kPropsCrosshairInner, kCrosshairInnerCount);
     resetPropArray(kPropsCrosshairOuter, kCrosshairOuterCount);
     cfg.SetInt(MP_HUD_PROP_KEY_HudTextScale, defaults.GetInt(MP_HUD_PROP_KEY_HudTextScale));

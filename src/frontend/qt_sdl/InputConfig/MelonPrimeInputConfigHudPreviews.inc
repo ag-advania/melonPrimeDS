@@ -116,9 +116,20 @@ protected:
         if (c.GetBool("Metroid.Visual.CrosshairCenterDot")) {
             float dotOp = c.GetDouble("Metroid.Visual.CrosshairDotOpacity");
             int dotThick = c.GetInt("Metroid.Visual.CrosshairDotThickness");
-            QColor dc = col; dc.setAlphaF(dotOp);
+            QColor dc = c.GetBool("Metroid.Visual.CrosshairDotCustomColor")
+                ? readColor("Metroid.Visual.CrosshairDotColorR", "Metroid.Visual.CrosshairDotColorG", "Metroid.Visual.CrosshairDotColorB")
+                : col;
+            dc.setAlphaF(dotOp);
             int ds = qMax(1, static_cast<int>(dotThick * scale));
-            p.fillRect(QRect(cx - ds/2, cy - ds/2, ds, ds), dc);
+            const QRect dotRect(cx - ds/2, cy - ds/2, ds, ds);
+            if (c.GetInt("Metroid.Visual.CrosshairDotShape") == 1) {
+                p.setPen(Qt::NoPen);
+                p.setBrush(dc);
+                p.drawEllipse(dotRect);
+                p.setBrush(Qt::NoBrush);
+            } else {
+                p.fillRect(dotRect, dc);
+            }
         }
     }
 };

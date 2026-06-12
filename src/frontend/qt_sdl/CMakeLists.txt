@@ -132,13 +132,29 @@ find_package(Threads REQUIRED)
 find_package(PkgConfig REQUIRED)
 
 if (BUILD_STATIC)
-    list(APPEND PKG_CONFIG_EXECUTABLE "--static")
+    set(PKG_CONFIG_ARGN "--static")
+endif()
+
+# MSYS2 pkg-config can shadow vcpkg and return a libarchive that omits zlib
+# from the final link line on static MinGW builds (CI: build-windows.yml).
+if (USE_VCPKG AND WIN32 AND MINGW)
+    set(_vcpkg_pc "${CMAKE_BINARY_DIR}/vcpkg_installed/${VCPKG_TARGET_TRIPLET}/lib/pkgconfig")
+    if (IS_DIRECTORY "${_vcpkg_pc}")
+        set(ENV{PKG_CONFIG_PATH} "${_vcpkg_pc}${CMAKE_LIST_SEPARATOR}$ENV{PKG_CONFIG_PATH}")
+    endif()
+    set(_vcpkg_pkgconf "${CMAKE_BINARY_DIR}/vcpkg_installed/${VCPKG_TARGET_TRIPLET}/tools/pkgconf/pkgconf.exe")
+    if (EXISTS "${_vcpkg_pkgconf}")
+        set(PKG_CONFIG_EXECUTABLE "${_vcpkg_pkgconf}" CACHE FILEPATH "pkg-config executable" FORCE)
+    endif()
 endif()
 
 pkg_check_modules(SDL2 REQUIRED IMPORTED_TARGET sdl2)
 pkg_check_modules(LibArchive REQUIRED IMPORTED_TARGET libarchive)
 pkg_check_modules(Zstd REQUIRED IMPORTED_TARGET libzstd)
 pkg_check_modules(Faad REQUIRED IMPORTED_TARGET faad2)
+if (WIN32 AND MINGW AND BUILD_STATIC AND USE_VCPKG)
+    pkg_check_modules(LibZ REQUIRED IMPORTED_TARGET zlib)
+endif()
 
 fix_interface_includes(PkgConfig::SDL2 PkgConfig::LibArchive)
 
@@ -269,6 +285,9 @@ else()
 endif()
 target_link_libraries(melonDS PRIVATE core)
 target_link_libraries(melonDS PRIVATE PkgConfig::SDL2 PkgConfig::LibArchive PkgConfig::Zstd PkgConfig::Faad)
+if (TARGET PkgConfig::LibZ)
+    target_link_libraries(melonDS PRIVATE PkgConfig::LibZ)
+endif()
 target_link_libraries(melonDS PRIVATE ${QT_LINK_LIBS} ${CMAKE_DL_LIBS})
 
 if (WIN32)

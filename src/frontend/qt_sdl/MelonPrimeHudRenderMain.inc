@@ -96,6 +96,7 @@ HOT_FUNCTION QRect CustomHud_Render(
                                    st.isGameOver,
                                    st.isAdventure,
                                    st.isMapOrUserActionPaused)) {
+        NotifyCrosshairZoomNotDrawn();
         return QRect();
     }
 

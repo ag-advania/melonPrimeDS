@@ -12,6 +12,8 @@ enum class HWType { Bool, Int, Float, String, Anchor9, Align3, Color3, HorizVert
                     FontFamily,    // QFontComboBox + picker -> family string
                     FontFile,      // QLineEdit + Browse -> font-file path string
                     FontWeight,    // combo index 0..8 -> Thin..Black
+                    ZoomTransitionStyle, // 0..12 crosshair zoom transition presets
+                    DotShape,      // 0=Square, 1=Circle (center-dot shape)
                   };
 
 struct HudWidgetProp {
@@ -51,6 +53,7 @@ struct HudMainSec {
 
 // CROSSHAIR sub-sections
 static const HudSubSec kSubsCrosshair[] = {
+    SUB("Zoom Crosshair", "Metroid.UI.SectionHudCrosshairZoom", kSecCrosshairZoom),
     SUB("Inner Lines",  "Metroid.UI.SectionHudCrosshairInner",  kSecCrosshairInner),
     SUB("Outer Lines",  "Metroid.UI.SectionHudCrosshairOuter",  kSecCrosshairOuter),
 };

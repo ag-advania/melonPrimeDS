@@ -345,12 +345,18 @@ static inline QRect CurrentHudDirtyRect(const HudFrameTransform& xf)
 
 static void ClearPreviousCrosshairDirty(const CrosshairHudConfig& ch)
 {
-    if (s_chPrevPxCx == INT_MIN) return;
-    s_chDirtyThisFrame = CrosshairBboxPx(s_chPrevPxCx, s_chPrevPxCy, ch, s_chPrevGeomScale, s_chPrevZoomT);
+    if (s_chPrevPxCx == INT_MIN) {
+        NotifyCrosshairZoomNotDrawn();
+        return;
+    }
+    s_chDirtyThisFrame = CrosshairBboxPx(s_chPrevPxCx, s_chPrevPxCy, ch,
+                                         s_chPrevGeomScale, s_chPrevZoomT, s_chPrevScopeT);
     s_chPrevPxCx = INT_MIN;
     s_chPrevPxCy = INT_MIN;
     s_chPrevGeomScale = 1.0;
     s_chPrevZoomT = 0.0;
+    s_chPrevScopeT = 0.0;
+    NotifyCrosshairZoomNotDrawn();
 }
 
 static bool ReadHudRuntimeBaseState(EmuInstance* emu,
@@ -729,6 +735,7 @@ void CustomHud_ResetPatchState()
     s_battleState.valid = false;
     s_chPrevPxCx = INT_MIN;
     s_chPrevPxCy = INT_MIN;
+    ResetCrosshairZoomDisplay(0.0f);
     s_hudPatchForceRestorePending = true;
 }
 

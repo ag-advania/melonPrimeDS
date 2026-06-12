@@ -382,6 +382,15 @@
 #define MP_HUD_PROP_KEY_CrosshairZoomScopeDotSize "Metroid.Visual.CrosshairZoomScopeDotSize"
 #define MP_HUD_PROP_KEY_CrosshairZoomScopeDotOpacity "Metroid.Visual.CrosshairZoomScopeDotOpacity"
 #define MP_HUD_PROP_KEY_CrosshairZoomScopeOpacity "Metroid.Visual.CrosshairZoomScopeOpacity"
+#define MP_HUD_PROP_KEY_CrosshairZoomTransitionEnable "Metroid.Visual.CrosshairZoomTransitionEnable"
+#define MP_HUD_PROP_KEY_CrosshairZoomTransitionSpeed "Metroid.Visual.CrosshairZoomTransitionSpeed"
+#define MP_HUD_PROP_KEY_CrosshairZoomTransitionPulseEnable "Metroid.Visual.CrosshairZoomTransitionPulseEnable"
+#define MP_HUD_PROP_KEY_CrosshairZoomTransitionPulseStrength "Metroid.Visual.CrosshairZoomTransitionPulseStrength"
+#define MP_HUD_PROP_KEY_CrosshairZoomTransitionStyle "Metroid.Visual.CrosshairZoomTransitionStyle"
+#define MP_HUD_PROP_KEY_CrosshairZoomScopeDotCustomColor "Metroid.Visual.CrosshairZoomScopeDotCustomColor"
+#define MP_HUD_PROP_KEY_CrosshairZoomScopeDotColorR "Metroid.Visual.CrosshairZoomScopeDotColorR"
+#define MP_HUD_PROP_KEY_CrosshairZoomScopeDotColorG "Metroid.Visual.CrosshairZoomScopeDotColorG"
+#define MP_HUD_PROP_KEY_CrosshairZoomScopeDotColorB "Metroid.Visual.CrosshairZoomScopeDotColorB"
 #define MP_HUD_PROP_KEY_InGameAspectRatioMode "Metroid.Visual.InGameAspectRatioMode"
 #define MP_HUD_PROP_KEY_InGameScalingMode "Metroid.Visual.InGameScalingMode"
 #define MP_HUD_PROP_KEY_BtmOverlayAnchor "Metroid.Visual.BtmOverlayAnchor"
@@ -463,6 +472,12 @@
 #define MP_HUD_PROP_KEY_HudAutoScaleEnable "Metroid.Visual.HudAutoScaleEnable"
 #define MP_HUD_PROP_KEY_CrosshairOutline "Metroid.Visual.CrosshairOutline"
 #define MP_HUD_PROP_KEY_CrosshairCenterDot "Metroid.Visual.CrosshairCenterDot"
+#define MP_HUD_PROP_KEY_CrosshairDotCustomColor "Metroid.Visual.CrosshairDotCustomColor"
+#define MP_HUD_PROP_KEY_CrosshairDotColorR "Metroid.Visual.CrosshairDotColorR"
+#define MP_HUD_PROP_KEY_CrosshairDotColorG "Metroid.Visual.CrosshairDotColorG"
+#define MP_HUD_PROP_KEY_CrosshairDotColorB "Metroid.Visual.CrosshairDotColorB"
+#define MP_HUD_PROP_KEY_CrosshairDotShape "Metroid.Visual.CrosshairDotShape"
+#define MP_HUD_PROP_KEY_CrosshairZoomScopeDotShape "Metroid.Visual.CrosshairZoomScopeDotShape"
 #define MP_HUD_PROP_KEY_CrosshairTStyle "Metroid.Visual.CrosshairTStyle"
 #define MP_HUD_PROP_KEY_CrosshairZoomStageEnable "Metroid.Visual.CrosshairZoomStageEnable"
 #define MP_HUD_PROP_KEY_CrosshairZoomScopeEnable "Metroid.Visual.CrosshairZoomScopeEnable"
@@ -945,6 +960,12 @@
 #define MP_HUD_PROP_ROW_CrosshairZoomScopeDotSize(X) X(CrosshairZoomScopeDotSize, MP_HUD_PROP_KEY_CrosshairZoomScopeDotSize, Int, 2, 1, 32, 1, "Scope Dot Size", "Int", (MP_HUD_SURFACE_DEFAULT | MP_HUD_SURFACE_DIALOG | MP_HUD_SURFACE_EDIT | MP_HUD_SURFACE_SIDE_PANEL | MP_HUD_SURFACE_RUNTIME_LOAD), 0x00)
 #define MP_HUD_PROP_ROW_CrosshairZoomScopeDotOpacity(X) X(CrosshairZoomScopeDotOpacity, MP_HUD_PROP_KEY_CrosshairZoomScopeDotOpacity, Int, 100, 0, 100, 1, "Scope Dot Opacity %", "Int", (MP_HUD_SURFACE_DEFAULT | MP_HUD_SURFACE_DIALOG | MP_HUD_SURFACE_EDIT | MP_HUD_SURFACE_SIDE_PANEL | MP_HUD_SURFACE_RUNTIME_LOAD), 0x00)
 #define MP_HUD_PROP_ROW_CrosshairZoomScopeOpacity(X) X(CrosshairZoomScopeOpacity, MP_HUD_PROP_KEY_CrosshairZoomScopeOpacity, Int, 100, 0, 100, 1, "Scope Opacity %", "Int", (MP_HUD_SURFACE_DEFAULT | MP_HUD_SURFACE_DIALOG | MP_HUD_SURFACE_EDIT | MP_HUD_SURFACE_SIDE_PANEL | MP_HUD_SURFACE_RUNTIME_LOAD), 0x00)
+#define MP_HUD_PROP_ROW_CrosshairZoomTransitionSpeed(X) X(CrosshairZoomTransitionSpeed, MP_HUD_PROP_KEY_CrosshairZoomTransitionSpeed, Int, 100, 25, 400, 5, "Zoom Transition Speed %", "Int", (MP_HUD_SURFACE_DEFAULT | MP_HUD_SURFACE_DIALOG | MP_HUD_SURFACE_EDIT | MP_HUD_SURFACE_SIDE_PANEL | MP_HUD_SURFACE_RUNTIME_LOAD), 0x00)
+#define MP_HUD_PROP_ROW_CrosshairZoomTransitionStyle(X) X(CrosshairZoomTransitionStyle, MP_HUD_PROP_KEY_CrosshairZoomTransitionStyle, Int, 0, 0, 12, 1, "Zoom Transition Style", "Int", (MP_HUD_SURFACE_DEFAULT | MP_HUD_SURFACE_DIALOG | MP_HUD_SURFACE_EDIT | MP_HUD_SURFACE_SIDE_PANEL | MP_HUD_SURFACE_RUNTIME_LOAD), 0x00)
+#define MP_HUD_PROP_ROW_CrosshairZoomTransitionPulseStrength(X) X(CrosshairZoomTransitionPulseStrength, MP_HUD_PROP_KEY_CrosshairZoomTransitionPulseStrength, Int, 38, 0, 100, 1, "Zoom Pulse Strength %", "Int", (MP_HUD_SURFACE_DEFAULT | MP_HUD_SURFACE_DIALOG | MP_HUD_SURFACE_EDIT | MP_HUD_SURFACE_SIDE_PANEL | MP_HUD_SURFACE_RUNTIME_LOAD), 0x00)
+#define MP_HUD_PROP_ROW_CrosshairZoomScopeDotColorR(X) X(CrosshairZoomScopeDotColorR, MP_HUD_PROP_KEY_CrosshairZoomScopeDotColorR, Int, 0, 0, 255, 1, "Scope Dot Color R", "Int", (MP_HUD_SURFACE_DEFAULT | MP_HUD_SURFACE_DIALOG | MP_HUD_SURFACE_EDIT | MP_HUD_SURFACE_SIDE_PANEL | MP_HUD_SURFACE_RUNTIME_LOAD), 0x00)
+#define MP_HUD_PROP_ROW_CrosshairZoomScopeDotColorG(X) X(CrosshairZoomScopeDotColorG, MP_HUD_PROP_KEY_CrosshairZoomScopeDotColorG, Int, 255, 0, 255, 1, "Scope Dot Color G", "Int", (MP_HUD_SURFACE_DEFAULT | MP_HUD_SURFACE_DIALOG | MP_HUD_SURFACE_EDIT | MP_HUD_SURFACE_SIDE_PANEL | MP_HUD_SURFACE_RUNTIME_LOAD), 0x00)
+#define MP_HUD_PROP_ROW_CrosshairZoomScopeDotColorB(X) X(CrosshairZoomScopeDotColorB, MP_HUD_PROP_KEY_CrosshairZoomScopeDotColorB, Int, 255, 0, 255, 1, "Scope Dot Color B", "Int", (MP_HUD_SURFACE_DEFAULT | MP_HUD_SURFACE_DIALOG | MP_HUD_SURFACE_EDIT | MP_HUD_SURFACE_SIDE_PANEL | MP_HUD_SURFACE_RUNTIME_LOAD), 0x00)
 #define MP_HUD_PROP_ROW_InGameAspectRatioMode(X) X(InGameAspectRatioMode, MP_HUD_PROP_KEY_InGameAspectRatioMode, Int, 0, 0, 0, 0, "", "", (MP_HUD_SURFACE_DEFAULT), 0x00)
 #define MP_HUD_PROP_ROW_InGameScalingMode(X) X(InGameScalingMode, MP_HUD_PROP_KEY_InGameScalingMode, Int, 0, 0, 0, 0, "", "", (MP_HUD_SURFACE_DEFAULT), 0x00)
 #define MP_HUD_PROP_ROW_BtmOverlayAnchor(X) X(BtmOverlayAnchor, MP_HUD_PROP_KEY_BtmOverlayAnchor, Int, 2, 0, 8, 1, "Anchor", "Anchor9", (MP_HUD_SURFACE_DEFAULT | MP_HUD_SURFACE_DIALOG | MP_HUD_SURFACE_EDIT | MP_HUD_SURFACE_SIDE_PANEL | MP_HUD_SURFACE_RUNTIME_LOAD), 0x00)
@@ -1026,9 +1047,18 @@
 #define MP_HUD_PROP_ROW_HudAutoScaleEnable(X) X(HudAutoScaleEnable, MP_HUD_PROP_KEY_HudAutoScaleEnable, Bool, true, 0, 0, 0, "Auto Scale Enable", "Bool", (MP_HUD_SURFACE_DEFAULT | MP_HUD_SURFACE_DIALOG | MP_HUD_SURFACE_RUNTIME_LOAD), 0x00)
 #define MP_HUD_PROP_ROW_CrosshairOutline(X) X(CrosshairOutline, MP_HUD_PROP_KEY_CrosshairOutline, Bool, true, 0, 0, 0, "Outline", "Bool", (MP_HUD_SURFACE_DEFAULT | MP_HUD_SURFACE_DIALOG | MP_HUD_SURFACE_EDIT | MP_HUD_SURFACE_SIDE_PANEL | MP_HUD_SURFACE_RUNTIME_LOAD), 0x00)
 #define MP_HUD_PROP_ROW_CrosshairCenterDot(X) X(CrosshairCenterDot, MP_HUD_PROP_KEY_CrosshairCenterDot, Bool, true, 0, 0, 0, "Center Dot", "Bool", (MP_HUD_SURFACE_DEFAULT | MP_HUD_SURFACE_DIALOG | MP_HUD_SURFACE_EDIT | MP_HUD_SURFACE_SIDE_PANEL | MP_HUD_SURFACE_RUNTIME_LOAD), 0x00)
+#define MP_HUD_PROP_ROW_CrosshairDotCustomColor(X) X(CrosshairDotCustomColor, MP_HUD_PROP_KEY_CrosshairDotCustomColor, Bool, true, 0, 0, 0, "Custom Dot Color", "Bool", (MP_HUD_SURFACE_DEFAULT | MP_HUD_SURFACE_DIALOG | MP_HUD_SURFACE_EDIT | MP_HUD_SURFACE_SIDE_PANEL | MP_HUD_SURFACE_RUNTIME_LOAD), 0x00)
+#define MP_HUD_PROP_ROW_CrosshairDotColorR(X) X(CrosshairDotColorR, MP_HUD_PROP_KEY_CrosshairDotColorR, Int, 0, 0, 255, 1, "Dot Color R", "Int", (MP_HUD_SURFACE_DEFAULT | MP_HUD_SURFACE_DIALOG | MP_HUD_SURFACE_EDIT | MP_HUD_SURFACE_SIDE_PANEL | MP_HUD_SURFACE_RUNTIME_LOAD), 0x00)
+#define MP_HUD_PROP_ROW_CrosshairDotColorG(X) X(CrosshairDotColorG, MP_HUD_PROP_KEY_CrosshairDotColorG, Int, 255, 0, 255, 1, "Dot Color G", "Int", (MP_HUD_SURFACE_DEFAULT | MP_HUD_SURFACE_DIALOG | MP_HUD_SURFACE_EDIT | MP_HUD_SURFACE_SIDE_PANEL | MP_HUD_SURFACE_RUNTIME_LOAD), 0x00)
+#define MP_HUD_PROP_ROW_CrosshairDotColorB(X) X(CrosshairDotColorB, MP_HUD_PROP_KEY_CrosshairDotColorB, Int, 255, 0, 255, 1, "Dot Color B", "Int", (MP_HUD_SURFACE_DEFAULT | MP_HUD_SURFACE_DIALOG | MP_HUD_SURFACE_EDIT | MP_HUD_SURFACE_SIDE_PANEL | MP_HUD_SURFACE_RUNTIME_LOAD), 0x00)
+#define MP_HUD_PROP_ROW_CrosshairDotShape(X) X(CrosshairDotShape, MP_HUD_PROP_KEY_CrosshairDotShape, Int, 0, 0, 1, 1, "Dot Shape", "Int", (MP_HUD_SURFACE_DEFAULT | MP_HUD_SURFACE_DIALOG | MP_HUD_SURFACE_EDIT | MP_HUD_SURFACE_SIDE_PANEL | MP_HUD_SURFACE_RUNTIME_LOAD), 0x00)
+#define MP_HUD_PROP_ROW_CrosshairZoomScopeDotShape(X) X(CrosshairZoomScopeDotShape, MP_HUD_PROP_KEY_CrosshairZoomScopeDotShape, Int, 1, 0, 1, 1, "Scope Dot Shape", "Int", (MP_HUD_SURFACE_DEFAULT | MP_HUD_SURFACE_DIALOG | MP_HUD_SURFACE_EDIT | MP_HUD_SURFACE_SIDE_PANEL | MP_HUD_SURFACE_RUNTIME_LOAD), 0x00)
 #define MP_HUD_PROP_ROW_CrosshairTStyle(X) X(CrosshairTStyle, MP_HUD_PROP_KEY_CrosshairTStyle, Bool, true, 0, 0, 0, "T-Style", "Bool", (MP_HUD_SURFACE_DEFAULT | MP_HUD_SURFACE_DIALOG | MP_HUD_SURFACE_EDIT | MP_HUD_SURFACE_SIDE_PANEL | MP_HUD_SURFACE_RUNTIME_LOAD), 0x00)
 #define MP_HUD_PROP_ROW_CrosshairZoomStageEnable(X) X(CrosshairZoomStageEnable, MP_HUD_PROP_KEY_CrosshairZoomStageEnable, Bool, true, 0, 0, 0, "Zoom Stage", "Bool", (MP_HUD_SURFACE_DEFAULT | MP_HUD_SURFACE_DIALOG | MP_HUD_SURFACE_EDIT | MP_HUD_SURFACE_SIDE_PANEL | MP_HUD_SURFACE_RUNTIME_LOAD), 0x00)
 #define MP_HUD_PROP_ROW_CrosshairZoomScopeEnable(X) X(CrosshairZoomScopeEnable, MP_HUD_PROP_KEY_CrosshairZoomScopeEnable, Bool, true, 0, 0, 0, "Zoom Scope Reticle", "Bool", (MP_HUD_SURFACE_DEFAULT | MP_HUD_SURFACE_DIALOG | MP_HUD_SURFACE_EDIT | MP_HUD_SURFACE_SIDE_PANEL | MP_HUD_SURFACE_RUNTIME_LOAD), 0x00)
+#define MP_HUD_PROP_ROW_CrosshairZoomTransitionEnable(X) X(CrosshairZoomTransitionEnable, MP_HUD_PROP_KEY_CrosshairZoomTransitionEnable, Bool, true, 0, 0, 0, "Zoom Transition", "Bool", (MP_HUD_SURFACE_DEFAULT | MP_HUD_SURFACE_DIALOG | MP_HUD_SURFACE_EDIT | MP_HUD_SURFACE_SIDE_PANEL | MP_HUD_SURFACE_RUNTIME_LOAD), 0x00)
+#define MP_HUD_PROP_ROW_CrosshairZoomTransitionPulseEnable(X) X(CrosshairZoomTransitionPulseEnable, MP_HUD_PROP_KEY_CrosshairZoomTransitionPulseEnable, Bool, false, 0, 0, 0, "Zoom Pulse Ring", "Bool", (MP_HUD_SURFACE_DEFAULT | MP_HUD_SURFACE_DIALOG | MP_HUD_SURFACE_EDIT | MP_HUD_SURFACE_SIDE_PANEL | MP_HUD_SURFACE_RUNTIME_LOAD), 0x00)
+#define MP_HUD_PROP_ROW_CrosshairZoomScopeDotCustomColor(X) X(CrosshairZoomScopeDotCustomColor, MP_HUD_PROP_KEY_CrosshairZoomScopeDotCustomColor, Bool, true, 0, 0, 0, "Custom Scope Dot Color", "Bool", (MP_HUD_SURFACE_DEFAULT | MP_HUD_SURFACE_DIALOG | MP_HUD_SURFACE_EDIT | MP_HUD_SURFACE_SIDE_PANEL | MP_HUD_SURFACE_RUNTIME_LOAD), 0x00)
 #define MP_HUD_PROP_ROW_CrosshairInnerShow(X) X(CrosshairInnerShow, MP_HUD_PROP_KEY_CrosshairInnerShow, Bool, true, 0, 0, 0, "Show", "Bool", (MP_HUD_SURFACE_DEFAULT | MP_HUD_SURFACE_DIALOG | MP_HUD_SURFACE_EDIT | MP_HUD_SURFACE_SIDE_PANEL | MP_HUD_SURFACE_RUNTIME_LOAD), 0x00)
 #define MP_HUD_PROP_ROW_CrosshairInnerLinkXY(X) X(CrosshairInnerLinkXY, MP_HUD_PROP_KEY_CrosshairInnerLinkXY, Bool, true, 0, 0, 0, "Link XY", "Bool", (MP_HUD_SURFACE_DEFAULT | MP_HUD_SURFACE_DIALOG | MP_HUD_SURFACE_EDIT | MP_HUD_SURFACE_SIDE_PANEL), 0x00)
 #define MP_HUD_PROP_ROW_CrosshairOuterShow(X) X(CrosshairOuterShow, MP_HUD_PROP_KEY_CrosshairOuterShow, Bool, true, 0, 0, 0, "Show", "Bool", (MP_HUD_SURFACE_DEFAULT | MP_HUD_SURFACE_DIALOG | MP_HUD_SURFACE_EDIT | MP_HUD_SURFACE_SIDE_PANEL | MP_HUD_SURFACE_RUNTIME_LOAD), 0x00)
@@ -1509,6 +1539,17 @@
     MP_HUD_PROP_ROW_CrosshairZoomScopeDotSize(X) \
     MP_HUD_PROP_ROW_CrosshairZoomScopeDotOpacity(X) \
     MP_HUD_PROP_ROW_CrosshairZoomScopeOpacity(X) \
+    MP_HUD_PROP_ROW_CrosshairZoomTransitionSpeed(X) \
+    MP_HUD_PROP_ROW_CrosshairZoomTransitionStyle(X) \
+    MP_HUD_PROP_ROW_CrosshairZoomTransitionPulseStrength(X) \
+    MP_HUD_PROP_ROW_CrosshairZoomScopeDotColorR(X) \
+    MP_HUD_PROP_ROW_CrosshairZoomScopeDotColorG(X) \
+    MP_HUD_PROP_ROW_CrosshairZoomScopeDotColorB(X) \
+    MP_HUD_PROP_ROW_CrosshairDotColorR(X) \
+    MP_HUD_PROP_ROW_CrosshairDotColorG(X) \
+    MP_HUD_PROP_ROW_CrosshairDotColorB(X) \
+    MP_HUD_PROP_ROW_CrosshairDotShape(X) \
+    MP_HUD_PROP_ROW_CrosshairZoomScopeDotShape(X) \
     MP_HUD_PROP_ROW_InGameAspectRatioMode(X) \
     MP_HUD_PROP_ROW_InGameScalingMode(X) \
     MP_HUD_PROP_ROW_BtmOverlayAnchor(X) \
@@ -1593,6 +1634,10 @@
     MP_HUD_PROP_ROW_CrosshairTStyle(X) \
     MP_HUD_PROP_ROW_CrosshairZoomStageEnable(X) \
     MP_HUD_PROP_ROW_CrosshairZoomScopeEnable(X) \
+    MP_HUD_PROP_ROW_CrosshairZoomTransitionEnable(X) \
+    MP_HUD_PROP_ROW_CrosshairZoomTransitionPulseEnable(X) \
+    MP_HUD_PROP_ROW_CrosshairZoomScopeDotCustomColor(X) \
+    MP_HUD_PROP_ROW_CrosshairDotCustomColor(X) \
     MP_HUD_PROP_ROW_CrosshairInnerShow(X) \
     MP_HUD_PROP_ROW_CrosshairInnerLinkXY(X) \
     MP_HUD_PROP_ROW_CrosshairOuterShow(X) \
@@ -2072,6 +2117,17 @@
     MP_HUD_PROP_ROW_CrosshairZoomScopeDotSize(X) \
     MP_HUD_PROP_ROW_CrosshairZoomScopeDotOpacity(X) \
     MP_HUD_PROP_ROW_CrosshairZoomScopeOpacity(X) \
+    MP_HUD_PROP_ROW_CrosshairZoomTransitionSpeed(X) \
+    MP_HUD_PROP_ROW_CrosshairZoomTransitionStyle(X) \
+    MP_HUD_PROP_ROW_CrosshairZoomTransitionPulseStrength(X) \
+    MP_HUD_PROP_ROW_CrosshairZoomScopeDotColorR(X) \
+    MP_HUD_PROP_ROW_CrosshairZoomScopeDotColorG(X) \
+    MP_HUD_PROP_ROW_CrosshairZoomScopeDotColorB(X) \
+    MP_HUD_PROP_ROW_CrosshairDotColorR(X) \
+    MP_HUD_PROP_ROW_CrosshairDotColorG(X) \
+    MP_HUD_PROP_ROW_CrosshairDotColorB(X) \
+    MP_HUD_PROP_ROW_CrosshairDotShape(X) \
+    MP_HUD_PROP_ROW_CrosshairZoomScopeDotShape(X) \
     MP_HUD_PROP_ROW_InGameAspectRatioMode(X) \
     MP_HUD_PROP_ROW_InGameScalingMode(X) \
     MP_HUD_PROP_ROW_BtmOverlayAnchor(X) \
@@ -2159,6 +2215,10 @@
     MP_HUD_PROP_ROW_CrosshairTStyle(X) \
     MP_HUD_PROP_ROW_CrosshairZoomStageEnable(X) \
     MP_HUD_PROP_ROW_CrosshairZoomScopeEnable(X) \
+    MP_HUD_PROP_ROW_CrosshairZoomTransitionEnable(X) \
+    MP_HUD_PROP_ROW_CrosshairZoomTransitionPulseEnable(X) \
+    MP_HUD_PROP_ROW_CrosshairZoomScopeDotCustomColor(X) \
+    MP_HUD_PROP_ROW_CrosshairDotCustomColor(X) \
     MP_HUD_PROP_ROW_CrosshairInnerShow(X) \
     MP_HUD_PROP_ROW_CrosshairInnerLinkXY(X) \
     MP_HUD_PROP_ROW_CrosshairOuterShow(X) \

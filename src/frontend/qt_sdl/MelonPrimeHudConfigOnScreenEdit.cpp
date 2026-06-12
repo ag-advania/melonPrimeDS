@@ -741,6 +741,23 @@ void MelonPrimeHudConfigOnScreenEdit::populateForCrosshair()
         MP_HUD_PROP_KEY_CrosshairColorG,
         MP_HUD_PROP_KEY_CrosshairColorB);
     addSpinBox(QStringLiteral("Scale %"), MP_HUD_PROP_KEY_CrosshairScale, 100, 800);
+    addCheckBox(QStringLiteral("Outline"), MP_HUD_PROP_KEY_CrosshairOutline);
+    addOpacitySlider(QStringLiteral("Outline Opacity"), MP_HUD_PROP_KEY_CrosshairOutlineOpacity);
+    addSpinBox(QStringLiteral("Outline Thick."), MP_HUD_PROP_KEY_CrosshairOutlineThickness, 1, 10);
+    addCheckBox(QStringLiteral("Center Dot"), MP_HUD_PROP_KEY_CrosshairCenterDot);
+    addOpacitySlider(QStringLiteral("Dot Opacity"), MP_HUD_PROP_KEY_CrosshairDotOpacity);
+    addSpinBox(QStringLiteral("Dot Thick."), MP_HUD_PROP_KEY_CrosshairDotThickness, 1, 10);
+    addComboBox(QStringLiteral("Dot Shape"), MP_HUD_PROP_KEY_CrosshairDotShape,
+        {QStringLiteral("Square"), QStringLiteral("Circle")});
+    addCheckBox(QStringLiteral("Custom Dot Color"), MP_HUD_PROP_KEY_CrosshairDotCustomColor);
+    addColorPicker(QStringLiteral("Dot Color"),
+        MP_HUD_PROP_KEY_CrosshairDotColorR,
+        MP_HUD_PROP_KEY_CrosshairDotColorG,
+        MP_HUD_PROP_KEY_CrosshairDotColorB);
+    addCheckBox(QStringLiteral("T-Style"), MP_HUD_PROP_KEY_CrosshairTStyle);
+
+    addSeparator();
+    addSectionHeader(QStringLiteral("Zoom Crosshair"));
     addCheckBox(QStringLiteral("Zoom Stage"), MP_HUD_PROP_KEY_CrosshairZoomStageEnable);
     addSpinBox(QStringLiteral("Zoom Scale %"), MP_HUD_PROP_KEY_CrosshairZoomScale, 10, 200);
     addSpinBox(QStringLiteral("Zoom Base Opacity %"), MP_HUD_PROP_KEY_CrosshairZoomOpacity, 0, 100);
@@ -750,16 +767,26 @@ void MelonPrimeHudConfigOnScreenEdit::populateForCrosshair()
     addSpinBox(QStringLiteral("Scope Gap"), MP_HUD_PROP_KEY_CrosshairZoomScopeGap, 0, 64);
     addSpinBox(QStringLiteral("Scope Thick."), MP_HUD_PROP_KEY_CrosshairZoomScopeThickness, 1, 12);
     addCheckBox(QStringLiteral("Scope Center Dot"), MP_HUD_PROP_KEY_CrosshairZoomScopeCenterDot);
+    addComboBox(QStringLiteral("Scope Dot Shape"), MP_HUD_PROP_KEY_CrosshairZoomScopeDotShape,
+        {QStringLiteral("Square"), QStringLiteral("Circle")});
     addSpinBox(QStringLiteral("Scope Dot Size"), MP_HUD_PROP_KEY_CrosshairZoomScopeDotSize, 1, 32);
     addSpinBox(QStringLiteral("Scope Dot Opacity %"), MP_HUD_PROP_KEY_CrosshairZoomScopeDotOpacity, 0, 100);
+    addCheckBox(QStringLiteral("Custom Scope Dot Color"), MP_HUD_PROP_KEY_CrosshairZoomScopeDotCustomColor);
+    addColorPicker(QStringLiteral("Scope Dot Color"),
+        MP_HUD_PROP_KEY_CrosshairZoomScopeDotColorR,
+        MP_HUD_PROP_KEY_CrosshairZoomScopeDotColorG,
+        MP_HUD_PROP_KEY_CrosshairZoomScopeDotColorB);
     addSpinBox(QStringLiteral("Scope Opacity %"), MP_HUD_PROP_KEY_CrosshairZoomScopeOpacity, 0, 100);
-    addCheckBox(QStringLiteral("Outline"), MP_HUD_PROP_KEY_CrosshairOutline);
-    addOpacitySlider(QStringLiteral("Outline Opacity"), MP_HUD_PROP_KEY_CrosshairOutlineOpacity);
-    addSpinBox(QStringLiteral("Outline Thick."), MP_HUD_PROP_KEY_CrosshairOutlineThickness, 1, 10);
-    addCheckBox(QStringLiteral("Center Dot"), MP_HUD_PROP_KEY_CrosshairCenterDot);
-    addOpacitySlider(QStringLiteral("Dot Opacity"), MP_HUD_PROP_KEY_CrosshairDotOpacity);
-    addSpinBox(QStringLiteral("Dot Thick."), MP_HUD_PROP_KEY_CrosshairDotThickness, 1, 10);
-    addCheckBox(QStringLiteral("T-Style"), MP_HUD_PROP_KEY_CrosshairTStyle);
+    addCheckBox(QStringLiteral("Zoom Transition"), MP_HUD_PROP_KEY_CrosshairZoomTransitionEnable);
+    addComboBox(QStringLiteral("Transition Style"), MP_HUD_PROP_KEY_CrosshairZoomTransitionStyle,
+        {QStringLiteral("Fade"), QStringLiteral("Staged"), QStringLiteral("Glitch"),
+         QStringLiteral("Glitch2"), QStringLiteral("Snap"), QStringLiteral("Digital"),
+         QStringLiteral("Pulse Wave"), QStringLiteral("Magic Circle"), QStringLiteral("SF Movie"),
+         QStringLiteral("Tactical Lock"), QStringLiteral("Sniper Optics"),
+         QStringLiteral("Drone LIDAR"), QStringLiteral("Beam Charge")});
+    addSpinBox(QStringLiteral("Transition Speed %"), MP_HUD_PROP_KEY_CrosshairZoomTransitionSpeed, 25, 400);
+    addCheckBox(QStringLiteral("Pulse Ring"), MP_HUD_PROP_KEY_CrosshairZoomTransitionPulseEnable);
+    addSpinBox(QStringLiteral("Pulse Strength %"), MP_HUD_PROP_KEY_CrosshairZoomTransitionPulseStrength, 0, 100);
 
     addSeparator();
     // Inner Lines
