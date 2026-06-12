@@ -106,6 +106,15 @@ namespace MelonPrime {
 #else
         m_enableNativeZoomToggle = false;
 #endif
+        m_enableZoomAimScale = localCfg.GetBool(CfgKey::ZoomAimScaleEnable);
+        const int zoomAimScalePct = std::clamp(localCfg.GetInt(CfgKey::ZoomAimScalePct), 10, 300);
+        m_zoomAimScaleQ14 = static_cast<uint32_t>(
+            (static_cast<int64_t>(zoomAimScalePct) * AIM_ONE_FP + 50) / 100);
+        if (!m_enableZoomAimScale) {
+            m_activeZoomAimScaleQ14 = static_cast<uint32_t>(AIM_ONE_FP);
+            RecalcAimEffectiveFixedScale();
+        }
+
         if (!m_enableNativeZoomToggle) {
             m_nativeZoomTogglePrevDown = false;
 #ifdef MELONPRIME_DS
@@ -225,6 +234,7 @@ namespace MelonPrime {
     {
         m_aimFixedScaleX = static_cast<int32_t>(m_aimSensiFactor * AIM_ONE_FP + 0.5f);
         m_aimFixedScaleY = static_cast<int32_t>(m_aimCombinedY * AIM_ONE_FP + 0.5f);
+        RecalcAimEffectiveFixedScale();
 
         if (m_aimAdjust > 0.0f) {
             m_aimFixedAdjust = static_cast<int64_t>(m_aimAdjust * AIM_ONE_FP + 0.5f);

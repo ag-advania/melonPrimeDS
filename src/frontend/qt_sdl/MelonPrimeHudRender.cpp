@@ -6,6 +6,7 @@
 #include "MelonPrimeGameRomAddrTable.h"
 #include "MelonPrimeCompilerHints.h"
 #include "MelonPrimeConstants.h"
+#include "MelonPrimeZoomStatus.h"
 #include "EmuInstance.h"
 #include "NDS.h"
 #include "Config.h"
@@ -17,6 +18,8 @@
 
 #include <QPainter>
 #include <QPainterPath>
+#include <QPen>
+#include <QBrush>
 #include <QImage>
 #include <QImageReader>
 #include <QMutex>

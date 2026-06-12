@@ -372,6 +372,13 @@
 #define MP_HUD_PROP_KEY_CrosshairInnerThickness "Metroid.Visual.CrosshairInnerThickness"
 #define MP_HUD_PROP_KEY_CrosshairOuterThickness "Metroid.Visual.CrosshairOuterThickness"
 #define MP_HUD_PROP_KEY_CrosshairScale "Metroid.Visual.CrosshairScale"
+#define MP_HUD_PROP_KEY_CrosshairZoomScale "Metroid.Visual.CrosshairZoomScale"
+#define MP_HUD_PROP_KEY_CrosshairZoomOpacity "Metroid.Visual.CrosshairZoomOpacity"
+#define MP_HUD_PROP_KEY_CrosshairZoomScopeRadius "Metroid.Visual.CrosshairZoomScopeRadius"
+#define MP_HUD_PROP_KEY_CrosshairZoomScopeLineLength "Metroid.Visual.CrosshairZoomScopeLineLength"
+#define MP_HUD_PROP_KEY_CrosshairZoomScopeGap "Metroid.Visual.CrosshairZoomScopeGap"
+#define MP_HUD_PROP_KEY_CrosshairZoomScopeThickness "Metroid.Visual.CrosshairZoomScopeThickness"
+#define MP_HUD_PROP_KEY_CrosshairZoomScopeOpacity "Metroid.Visual.CrosshairZoomScopeOpacity"
 #define MP_HUD_PROP_KEY_InGameAspectRatioMode "Metroid.Visual.InGameAspectRatioMode"
 #define MP_HUD_PROP_KEY_InGameScalingMode "Metroid.Visual.InGameScalingMode"
 #define MP_HUD_PROP_KEY_BtmOverlayAnchor "Metroid.Visual.BtmOverlayAnchor"
@@ -454,6 +461,8 @@
 #define MP_HUD_PROP_KEY_CrosshairOutline "Metroid.Visual.CrosshairOutline"
 #define MP_HUD_PROP_KEY_CrosshairCenterDot "Metroid.Visual.CrosshairCenterDot"
 #define MP_HUD_PROP_KEY_CrosshairTStyle "Metroid.Visual.CrosshairTStyle"
+#define MP_HUD_PROP_KEY_CrosshairZoomStageEnable "Metroid.Visual.CrosshairZoomStageEnable"
+#define MP_HUD_PROP_KEY_CrosshairZoomScopeEnable "Metroid.Visual.CrosshairZoomScopeEnable"
 #define MP_HUD_PROP_KEY_CrosshairInnerShow "Metroid.Visual.CrosshairInnerShow"
 #define MP_HUD_PROP_KEY_CrosshairInnerLinkXY "Metroid.Visual.CrosshairInnerLinkXY"
 #define MP_HUD_PROP_KEY_CrosshairOuterShow "Metroid.Visual.CrosshairOuterShow"
@@ -923,6 +932,13 @@
 #define MP_HUD_PROP_ROW_CrosshairInnerThickness(X) X(CrosshairInnerThickness, MP_HUD_PROP_KEY_CrosshairInnerThickness, Int, 1, 1, 10, 1, "Thickness", "Int", (MP_HUD_SURFACE_DEFAULT | MP_HUD_SURFACE_DIALOG | MP_HUD_SURFACE_EDIT | MP_HUD_SURFACE_SIDE_PANEL | MP_HUD_SURFACE_RUNTIME_LOAD), 0x00)
 #define MP_HUD_PROP_ROW_CrosshairOuterThickness(X) X(CrosshairOuterThickness, MP_HUD_PROP_KEY_CrosshairOuterThickness, Int, 1, 1, 10, 1, "Thickness", "Int", (MP_HUD_SURFACE_DEFAULT | MP_HUD_SURFACE_DIALOG | MP_HUD_SURFACE_EDIT | MP_HUD_SURFACE_SIDE_PANEL | MP_HUD_SURFACE_RUNTIME_LOAD), 0x00)
 #define MP_HUD_PROP_ROW_CrosshairScale(X) X(CrosshairScale, MP_HUD_PROP_KEY_CrosshairScale, Int, 100, 100, 800, 1, "Scale %", "Int", (MP_HUD_SURFACE_DEFAULT | MP_HUD_SURFACE_DIALOG | MP_HUD_SURFACE_EDIT | MP_HUD_SURFACE_SIDE_PANEL | MP_HUD_SURFACE_RUNTIME_LOAD), 0x00)
+#define MP_HUD_PROP_ROW_CrosshairZoomScale(X) X(CrosshairZoomScale, MP_HUD_PROP_KEY_CrosshairZoomScale, Int, 82, 10, 200, 1, "Zoom Scale %", "Int", (MP_HUD_SURFACE_DEFAULT | MP_HUD_SURFACE_DIALOG | MP_HUD_SURFACE_EDIT | MP_HUD_SURFACE_SIDE_PANEL | MP_HUD_SURFACE_RUNTIME_LOAD), 0x00)
+#define MP_HUD_PROP_ROW_CrosshairZoomOpacity(X) X(CrosshairZoomOpacity, MP_HUD_PROP_KEY_CrosshairZoomOpacity, Int, 100, 0, 100, 1, "Zoom Opacity %", "Int", (MP_HUD_SURFACE_DEFAULT | MP_HUD_SURFACE_DIALOG | MP_HUD_SURFACE_EDIT | MP_HUD_SURFACE_SIDE_PANEL | MP_HUD_SURFACE_RUNTIME_LOAD), 0x00)
+#define MP_HUD_PROP_ROW_CrosshairZoomScopeRadius(X) X(CrosshairZoomScopeRadius, MP_HUD_PROP_KEY_CrosshairZoomScopeRadius, Int, 20, 4, 128, 1, "Scope Radius", "Int", (MP_HUD_SURFACE_DEFAULT | MP_HUD_SURFACE_DIALOG | MP_HUD_SURFACE_EDIT | MP_HUD_SURFACE_SIDE_PANEL | MP_HUD_SURFACE_RUNTIME_LOAD), 0x00)
+#define MP_HUD_PROP_ROW_CrosshairZoomScopeLineLength(X) X(CrosshairZoomScopeLineLength, MP_HUD_PROP_KEY_CrosshairZoomScopeLineLength, Int, 16, 0, 128, 1, "Scope Line Length", "Int", (MP_HUD_SURFACE_DEFAULT | MP_HUD_SURFACE_DIALOG | MP_HUD_SURFACE_EDIT | MP_HUD_SURFACE_SIDE_PANEL | MP_HUD_SURFACE_RUNTIME_LOAD), 0x00)
+#define MP_HUD_PROP_ROW_CrosshairZoomScopeGap(X) X(CrosshairZoomScopeGap, MP_HUD_PROP_KEY_CrosshairZoomScopeGap, Int, 4, 0, 64, 1, "Scope Gap", "Int", (MP_HUD_SURFACE_DEFAULT | MP_HUD_SURFACE_DIALOG | MP_HUD_SURFACE_EDIT | MP_HUD_SURFACE_SIDE_PANEL | MP_HUD_SURFACE_RUNTIME_LOAD), 0x00)
+#define MP_HUD_PROP_ROW_CrosshairZoomScopeThickness(X) X(CrosshairZoomScopeThickness, MP_HUD_PROP_KEY_CrosshairZoomScopeThickness, Int, 1, 1, 12, 1, "Scope Thickness", "Int", (MP_HUD_SURFACE_DEFAULT | MP_HUD_SURFACE_DIALOG | MP_HUD_SURFACE_EDIT | MP_HUD_SURFACE_SIDE_PANEL | MP_HUD_SURFACE_RUNTIME_LOAD), 0x00)
+#define MP_HUD_PROP_ROW_CrosshairZoomScopeOpacity(X) X(CrosshairZoomScopeOpacity, MP_HUD_PROP_KEY_CrosshairZoomScopeOpacity, Int, 100, 0, 100, 1, "Scope Opacity %", "Int", (MP_HUD_SURFACE_DEFAULT | MP_HUD_SURFACE_DIALOG | MP_HUD_SURFACE_EDIT | MP_HUD_SURFACE_SIDE_PANEL | MP_HUD_SURFACE_RUNTIME_LOAD), 0x00)
 #define MP_HUD_PROP_ROW_InGameAspectRatioMode(X) X(InGameAspectRatioMode, MP_HUD_PROP_KEY_InGameAspectRatioMode, Int, 0, 0, 0, 0, "", "", (MP_HUD_SURFACE_DEFAULT), 0x00)
 #define MP_HUD_PROP_ROW_InGameScalingMode(X) X(InGameScalingMode, MP_HUD_PROP_KEY_InGameScalingMode, Int, 0, 0, 0, 0, "", "", (MP_HUD_SURFACE_DEFAULT), 0x00)
 #define MP_HUD_PROP_ROW_BtmOverlayAnchor(X) X(BtmOverlayAnchor, MP_HUD_PROP_KEY_BtmOverlayAnchor, Int, 2, 0, 8, 1, "Anchor", "Anchor9", (MP_HUD_SURFACE_DEFAULT | MP_HUD_SURFACE_DIALOG | MP_HUD_SURFACE_EDIT | MP_HUD_SURFACE_SIDE_PANEL | MP_HUD_SURFACE_RUNTIME_LOAD), 0x00)
@@ -1005,6 +1021,8 @@
 #define MP_HUD_PROP_ROW_CrosshairOutline(X) X(CrosshairOutline, MP_HUD_PROP_KEY_CrosshairOutline, Bool, true, 0, 0, 0, "Outline", "Bool", (MP_HUD_SURFACE_DEFAULT | MP_HUD_SURFACE_DIALOG | MP_HUD_SURFACE_EDIT | MP_HUD_SURFACE_SIDE_PANEL | MP_HUD_SURFACE_RUNTIME_LOAD), 0x00)
 #define MP_HUD_PROP_ROW_CrosshairCenterDot(X) X(CrosshairCenterDot, MP_HUD_PROP_KEY_CrosshairCenterDot, Bool, true, 0, 0, 0, "Center Dot", "Bool", (MP_HUD_SURFACE_DEFAULT | MP_HUD_SURFACE_DIALOG | MP_HUD_SURFACE_EDIT | MP_HUD_SURFACE_SIDE_PANEL | MP_HUD_SURFACE_RUNTIME_LOAD), 0x00)
 #define MP_HUD_PROP_ROW_CrosshairTStyle(X) X(CrosshairTStyle, MP_HUD_PROP_KEY_CrosshairTStyle, Bool, true, 0, 0, 0, "T-Style", "Bool", (MP_HUD_SURFACE_DEFAULT | MP_HUD_SURFACE_DIALOG | MP_HUD_SURFACE_EDIT | MP_HUD_SURFACE_SIDE_PANEL | MP_HUD_SURFACE_RUNTIME_LOAD), 0x00)
+#define MP_HUD_PROP_ROW_CrosshairZoomStageEnable(X) X(CrosshairZoomStageEnable, MP_HUD_PROP_KEY_CrosshairZoomStageEnable, Bool, true, 0, 0, 0, "Zoom Stage", "Bool", (MP_HUD_SURFACE_DEFAULT | MP_HUD_SURFACE_DIALOG | MP_HUD_SURFACE_EDIT | MP_HUD_SURFACE_SIDE_PANEL | MP_HUD_SURFACE_RUNTIME_LOAD), 0x00)
+#define MP_HUD_PROP_ROW_CrosshairZoomScopeEnable(X) X(CrosshairZoomScopeEnable, MP_HUD_PROP_KEY_CrosshairZoomScopeEnable, Bool, true, 0, 0, 0, "Zoom Scope Reticle", "Bool", (MP_HUD_SURFACE_DEFAULT | MP_HUD_SURFACE_DIALOG | MP_HUD_SURFACE_EDIT | MP_HUD_SURFACE_SIDE_PANEL | MP_HUD_SURFACE_RUNTIME_LOAD), 0x00)
 #define MP_HUD_PROP_ROW_CrosshairInnerShow(X) X(CrosshairInnerShow, MP_HUD_PROP_KEY_CrosshairInnerShow, Bool, true, 0, 0, 0, "Show", "Bool", (MP_HUD_SURFACE_DEFAULT | MP_HUD_SURFACE_DIALOG | MP_HUD_SURFACE_EDIT | MP_HUD_SURFACE_SIDE_PANEL | MP_HUD_SURFACE_RUNTIME_LOAD), 0x00)
 #define MP_HUD_PROP_ROW_CrosshairInnerLinkXY(X) X(CrosshairInnerLinkXY, MP_HUD_PROP_KEY_CrosshairInnerLinkXY, Bool, true, 0, 0, 0, "Link XY", "Bool", (MP_HUD_SURFACE_DEFAULT | MP_HUD_SURFACE_DIALOG | MP_HUD_SURFACE_EDIT | MP_HUD_SURFACE_SIDE_PANEL), 0x00)
 #define MP_HUD_PROP_ROW_CrosshairOuterShow(X) X(CrosshairOuterShow, MP_HUD_PROP_KEY_CrosshairOuterShow, Bool, true, 0, 0, 0, "Show", "Bool", (MP_HUD_SURFACE_DEFAULT | MP_HUD_SURFACE_DIALOG | MP_HUD_SURFACE_EDIT | MP_HUD_SURFACE_SIDE_PANEL | MP_HUD_SURFACE_RUNTIME_LOAD), 0x00)
@@ -1475,6 +1493,13 @@
     MP_HUD_PROP_ROW_CrosshairInnerThickness(X) \
     MP_HUD_PROP_ROW_CrosshairOuterThickness(X) \
     MP_HUD_PROP_ROW_CrosshairScale(X) \
+    MP_HUD_PROP_ROW_CrosshairZoomScale(X) \
+    MP_HUD_PROP_ROW_CrosshairZoomOpacity(X) \
+    MP_HUD_PROP_ROW_CrosshairZoomScopeRadius(X) \
+    MP_HUD_PROP_ROW_CrosshairZoomScopeLineLength(X) \
+    MP_HUD_PROP_ROW_CrosshairZoomScopeGap(X) \
+    MP_HUD_PROP_ROW_CrosshairZoomScopeThickness(X) \
+    MP_HUD_PROP_ROW_CrosshairZoomScopeOpacity(X) \
     MP_HUD_PROP_ROW_InGameAspectRatioMode(X) \
     MP_HUD_PROP_ROW_InGameScalingMode(X) \
     MP_HUD_PROP_ROW_BtmOverlayAnchor(X) \
@@ -1557,6 +1582,8 @@
     MP_HUD_PROP_ROW_CrosshairOutline(X) \
     MP_HUD_PROP_ROW_CrosshairCenterDot(X) \
     MP_HUD_PROP_ROW_CrosshairTStyle(X) \
+    MP_HUD_PROP_ROW_CrosshairZoomStageEnable(X) \
+    MP_HUD_PROP_ROW_CrosshairZoomScopeEnable(X) \
     MP_HUD_PROP_ROW_CrosshairInnerShow(X) \
     MP_HUD_PROP_ROW_CrosshairInnerLinkXY(X) \
     MP_HUD_PROP_ROW_CrosshairOuterShow(X) \
@@ -2027,6 +2054,13 @@
     MP_HUD_PROP_ROW_CrosshairInnerThickness(X) \
     MP_HUD_PROP_ROW_CrosshairOuterThickness(X) \
     MP_HUD_PROP_ROW_CrosshairScale(X) \
+    MP_HUD_PROP_ROW_CrosshairZoomScale(X) \
+    MP_HUD_PROP_ROW_CrosshairZoomOpacity(X) \
+    MP_HUD_PROP_ROW_CrosshairZoomScopeRadius(X) \
+    MP_HUD_PROP_ROW_CrosshairZoomScopeLineLength(X) \
+    MP_HUD_PROP_ROW_CrosshairZoomScopeGap(X) \
+    MP_HUD_PROP_ROW_CrosshairZoomScopeThickness(X) \
+    MP_HUD_PROP_ROW_CrosshairZoomScopeOpacity(X) \
     MP_HUD_PROP_ROW_InGameAspectRatioMode(X) \
     MP_HUD_PROP_ROW_InGameScalingMode(X) \
     MP_HUD_PROP_ROW_BtmOverlayAnchor(X) \
@@ -2111,6 +2145,8 @@
     MP_HUD_PROP_ROW_CrosshairOutline(X) \
     MP_HUD_PROP_ROW_CrosshairCenterDot(X) \
     MP_HUD_PROP_ROW_CrosshairTStyle(X) \
+    MP_HUD_PROP_ROW_CrosshairZoomStageEnable(X) \
+    MP_HUD_PROP_ROW_CrosshairZoomScopeEnable(X) \
     MP_HUD_PROP_ROW_CrosshairInnerShow(X) \
     MP_HUD_PROP_ROW_CrosshairInnerLinkXY(X) \
     MP_HUD_PROP_ROW_CrosshairOuterShow(X) \
