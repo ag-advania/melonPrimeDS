@@ -747,6 +747,13 @@ void MelonPrimeHudConfigOnScreenEdit::populateForCrosshair()
     addCheckBox(QStringLiteral("Center Dot"), MP_HUD_PROP_KEY_CrosshairCenterDot);
     addOpacitySlider(QStringLiteral("Dot Opacity"), MP_HUD_PROP_KEY_CrosshairDotOpacity);
     addSpinBox(QStringLiteral("Dot Thick."), MP_HUD_PROP_KEY_CrosshairDotThickness, 1, 10);
+    addComboBox(QStringLiteral("Dot Shape"), MP_HUD_PROP_KEY_CrosshairDotShape,
+        {QStringLiteral("Square"), QStringLiteral("Circle")});
+    addCheckBox(QStringLiteral("Custom Dot Color"), MP_HUD_PROP_KEY_CrosshairDotCustomColor);
+    addColorPicker(QStringLiteral("Dot Color"),
+        MP_HUD_PROP_KEY_CrosshairDotColorR,
+        MP_HUD_PROP_KEY_CrosshairDotColorG,
+        MP_HUD_PROP_KEY_CrosshairDotColorB);
     addCheckBox(QStringLiteral("T-Style"), MP_HUD_PROP_KEY_CrosshairTStyle);
 
     addSeparator();
@@ -760,6 +767,8 @@ void MelonPrimeHudConfigOnScreenEdit::populateForCrosshair()
     addSpinBox(QStringLiteral("Scope Gap"), MP_HUD_PROP_KEY_CrosshairZoomScopeGap, 0, 64);
     addSpinBox(QStringLiteral("Scope Thick."), MP_HUD_PROP_KEY_CrosshairZoomScopeThickness, 1, 12);
     addCheckBox(QStringLiteral("Scope Center Dot"), MP_HUD_PROP_KEY_CrosshairZoomScopeCenterDot);
+    addComboBox(QStringLiteral("Scope Dot Shape"), MP_HUD_PROP_KEY_CrosshairZoomScopeDotShape,
+        {QStringLiteral("Square"), QStringLiteral("Circle")});
     addSpinBox(QStringLiteral("Scope Dot Size"), MP_HUD_PROP_KEY_CrosshairZoomScopeDotSize, 1, 32);
     addSpinBox(QStringLiteral("Scope Dot Opacity %"), MP_HUD_PROP_KEY_CrosshairZoomScopeDotOpacity, 0, 100);
     addCheckBox(QStringLiteral("Custom Scope Dot Color"), MP_HUD_PROP_KEY_CrosshairZoomScopeDotCustomColor);

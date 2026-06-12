@@ -97,6 +97,8 @@ struct WeaponInventoryHudConfig {
 struct CrosshairHudConfig {
     QColor chColor;
     bool chOutline, chCenterDot, chTStyle;
+    int chDotShape;          // 0=Square, 1=Circle
+    int chZoomScopeDotShape; // 0=Square, 1=Circle
     double chOutlineOpacity, chDotOpacity;
     int chOutlineThickness, chDotThickness;
     bool chInnerShow;
@@ -695,6 +697,7 @@ static void LoadCrosshairConfig(CrosshairHudConfig& crosshair, Config::Table& cf
     crosshair.chOutlineOpacity = cfg.GetDouble(MP_HUD_PROP_KEY_CrosshairOutlineOpacity);
     crosshair.chOutlineThickness = cfg.GetInt(MP_HUD_PROP_KEY_CrosshairOutlineThickness); if (crosshair.chOutlineThickness <= 0) crosshair.chOutlineThickness = 1;
     crosshair.chCenterDot = cfg.GetBool(MP_HUD_PROP_KEY_CrosshairCenterDot);
+    crosshair.chDotShape = std::clamp(cfg.GetInt(MP_HUD_PROP_KEY_CrosshairDotShape), 0, 1);
     crosshair.chDotOpacity = cfg.GetDouble(MP_HUD_PROP_KEY_CrosshairDotOpacity);
     crosshair.chDotThickness = cfg.GetInt(MP_HUD_PROP_KEY_CrosshairDotThickness); if (crosshair.chDotThickness <= 0) crosshair.chDotThickness = 1;
     crosshair.chTStyle = cfg.GetBool(MP_HUD_PROP_KEY_CrosshairTStyle);
@@ -720,6 +723,7 @@ static void LoadCrosshairConfig(CrosshairHudConfig& crosshair, Config::Table& cf
     crosshair.chZoomScopeGap = std::clamp(cfg.GetInt(MP_HUD_PROP_KEY_CrosshairZoomScopeGap), 0, 64);
     crosshair.chZoomScopeThickness = std::clamp(cfg.GetInt(MP_HUD_PROP_KEY_CrosshairZoomScopeThickness), 1, 12);
     crosshair.chZoomScopeCenterDot = cfg.GetBool(MP_HUD_PROP_KEY_CrosshairZoomScopeCenterDot);
+    crosshair.chZoomScopeDotShape = std::clamp(cfg.GetInt(MP_HUD_PROP_KEY_CrosshairZoomScopeDotShape), 0, 1);
     crosshair.chZoomScopeDotSize = std::clamp(cfg.GetInt(MP_HUD_PROP_KEY_CrosshairZoomScopeDotSize), 1, 32);
     crosshair.chZoomScopeDotOpacity = std::clamp(cfg.GetInt(MP_HUD_PROP_KEY_CrosshairZoomScopeDotOpacity), 0, 100) / 100.0;
     crosshair.chZoomScopeOpacity = std::clamp(cfg.GetInt(MP_HUD_PROP_KEY_CrosshairZoomScopeOpacity), 0, 100) / 100.0;
@@ -754,7 +758,12 @@ static void LoadCrosshairConfig(CrosshairHudConfig& crosshair, Config::Table& cf
     crosshair.chInnerColor.setAlphaF(crosshair.chInnerOpacity);
     crosshair.chOuterColor = crosshair.chColor;
     crosshair.chOuterColor.setAlphaF(crosshair.chOuterOpacity);
-    crosshair.chDotColor = crosshair.chColor;
+    const bool dotCustomColor = cfg.GetBool(MP_HUD_PROP_KEY_CrosshairDotCustomColor);
+    crosshair.chDotColor = dotCustomColor
+        ? ReadRgbColor(cfg, MP_HUD_PROP_KEY_CrosshairDotColorR,
+                       MP_HUD_PROP_KEY_CrosshairDotColorG,
+                       MP_HUD_PROP_KEY_CrosshairDotColorB)
+        : crosshair.chColor;
     crosshair.chDotColor.setAlphaF(crosshair.chDotOpacity);
 
     // Pre-compute arm rects in actual output pixels, centred at (0,0).

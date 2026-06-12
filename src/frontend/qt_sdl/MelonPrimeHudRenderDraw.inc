@@ -632,6 +632,25 @@ static void CollectArmRectsF(QRectF* out, int& n, float cx, float cy,
     }
 }
 
+// Fills a center-dot rect as a square (legacy fillRect) or circle (anti-aliased
+// brush ellipse). Respects the painter's current opacity. The circle path
+// temporarily enables antialiasing and restores the prior hint/brush.
+static inline void DrawCenterDotShape(QPainter* p, const QRect& rc,
+                                      const QColor& color, bool circle)
+{
+    if (!circle) {
+        p->fillRect(rc, color);
+        return;
+    }
+    const bool prevAA = p->testRenderHint(QPainter::Antialiasing);
+    p->setRenderHint(QPainter::Antialiasing, true);
+    p->setPen(Qt::NoPen);
+    p->setBrush(color);
+    p->drawEllipse(rc);
+    p->setBrush(Qt::NoBrush);
+    p->setRenderHint(QPainter::Antialiasing, prevAA);
+}
+
 // P-17: Rebuild the crosshair outline stamp from the cached arm geometry.
 // Called once from RefreshCachedConfig whenever crosshair config changes.
 static void RebuildCrosshairOutlineStamp(const CrosshairHudConfig& ch)
@@ -684,7 +703,8 @@ static void RebuildCrosshairOutlineStamp(const CrosshairHudConfig& ch)
         sp.fillRect(ch.cachedOuterRects[i].adjusted(-olT,-olT,olT,olT).translated(ox,oy), solidBlack);
     if (ch.chCenterDot) {
         const int dh = dotHalf;
-        sp.fillRect(QRect(ox - dh, oy - dh, dh * 2, dh * 2), solidBlack);
+        DrawCenterDotShape(&sp, QRect(ox - dh, oy - dh, dh * 2, dh * 2), solidBlack,
+                           ch.chDotShape == 1);
     }
     sp.end();
     s_chStampValid = true;
@@ -1095,10 +1115,14 @@ static void DrawZoomScopeReticle(QPainter* p, int pxCx, int pxCy,
             return;
         const int dotSize = std::max(1, size);
         const int dotHalf = dotSize / 2;
+        const QRect dotRect(pxCx - dotHalf, pxCy - dotHalf, dotSize, dotSize);
         p->setPen(Qt::NoPen);
         p->setBrush(color);
         p->setOpacity(opacity);
-        p->drawEllipse(QRect(pxCx - dotHalf, pxCy - dotHalf, dotSize, dotSize));
+        if (ch.chZoomScopeDotShape == 1)
+            p->drawEllipse(dotRect);
+        else
+            p->drawRect(dotRect);
     };
 
     p->setRenderHint(QPainter::Antialiasing, true);
@@ -1252,7 +1276,7 @@ static void DrawCrosshair(QPainter* p, melonDS::u8* ram,
             if (c.crosshair.chCenterDot) {
                 const int dh = c.crosshair.cachedDotHalfPx;
                 const int ds = c.crosshair.cachedDotSizePx;
-                p->fillRect(ScaleRectAroundOrigin(QRect(-dh, -dh, ds, ds), geomScale).adjusted(-olT, -olT, olT, olT).translated(drawCx, drawCy), solidBlack);
+                DrawCenterDotShape(p, ScaleRectAroundOrigin(QRect(-dh, -dh, ds, ds), geomScale).adjusted(-olT, -olT, olT, olT).translated(drawCx, drawCy), solidBlack, c.crosshair.chDotShape == 1);
             }
         }
         p->setOpacity(opacityMul);
@@ -1263,7 +1287,7 @@ static void DrawCrosshair(QPainter* p, melonDS::u8* ram,
         if (c.crosshair.chCenterDot) {
             const int dh = c.crosshair.cachedDotHalfPx;
             const int ds = c.crosshair.cachedDotSizePx;
-            fillScaled(QRect(-dh, -dh, ds, ds), c.crosshair.chDotColor);
+            DrawCenterDotShape(p, ScaleRectAroundOrigin(QRect(-dh, -dh, ds, ds), geomScale).translated(drawCx, drawCy), c.crosshair.chDotColor, c.crosshair.chDotShape == 1);
         }
         DrawZoomTransitionFx(p, pxCx, pxCy, c.crosshair, zoomT, pulseT, transitionFxStyle, scopeClipPx);
         DrawZoomScopeReticle(p, pxCx, pxCy, c.crosshair, scopeT, scopeClipPx,
@@ -1299,7 +1323,7 @@ static void DrawCrosshair(QPainter* p, melonDS::u8* ram,
         p->setOpacity(opacityMul);
         const int dh = c.crosshair.cachedDotHalfPx;
         const int ds = c.crosshair.cachedDotSizePx;
-        p->fillRect(QRect(drawCx - dh, drawCy - dh, ds, ds), c.crosshair.chDotColor);
+        DrawCenterDotShape(p, QRect(drawCx - dh, drawCy - dh, ds, ds), c.crosshair.chDotColor, c.crosshair.chDotShape == 1);
     }
 
     DrawZoomTransitionFx(p, pxCx, pxCy, c.crosshair, zoomT, pulseT, transitionFxStyle, scopeClipPx);

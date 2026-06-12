@@ -46,6 +46,7 @@ static const char* kEnumAnchorY     = "Top|Center|Bottom";
 static const char* kEnumLabelPos    = "Above|Below|Left|Right|Center";
 static const char* kEnumLayout      = "Standard|Alternative";
 static const char* kEnumOrientation = "Horiz|Vert";
+static const char* kEnumDotShape    = "Square|Circle";
 static const char* kEnumGaugeAlign  = "Start|Center|End";
 static const char* kEnumZoomTransitionStyle =
     "Fade|Staged|Glitch|Glitch2|Snap|Digital|Pulse|Magic Circle|SF Movie|"
