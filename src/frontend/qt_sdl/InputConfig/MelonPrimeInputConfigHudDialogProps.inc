@@ -55,6 +55,9 @@ static const HudWidgetProp kSecCrosshair[] = {
     { "Center Dot", HWType::Bool, MP_HUD_PROP_KEY_CrosshairCenterDot, 0, 0, 0, nullptr, nullptr },
     { "Dot Opacity", HWType::Float, MP_HUD_PROP_KEY_CrosshairDotOpacity, 0, 100, 5, nullptr, nullptr },
     { "Dot Thickness", HWType::Int, MP_HUD_PROP_KEY_CrosshairDotThickness, 1, 10, 1, nullptr, nullptr },
+    { "Dot Shape", HWType::DotShape, MP_HUD_PROP_KEY_CrosshairDotShape, 0, 1, 1, nullptr, nullptr },
+    { "Custom Dot Color", HWType::Bool, MP_HUD_PROP_KEY_CrosshairDotCustomColor, 0, 0, 0, nullptr, nullptr },
+    { "Dot Color", HWType::Color3, MP_HUD_PROP_KEY_CrosshairDotColorR, 0, 255, 1, MP_HUD_PROP_KEY_CrosshairDotColorG, MP_HUD_PROP_KEY_CrosshairDotColorB },
     { "T-Style", HWType::Bool, MP_HUD_PROP_KEY_CrosshairTStyle, 0, 0, 0, nullptr, nullptr },
 };
 
@@ -68,6 +71,7 @@ static const HudWidgetProp kSecCrosshairZoom[] = {
     { "Scope Gap", HWType::Int, MP_HUD_PROP_KEY_CrosshairZoomScopeGap, 0, 64, 1, nullptr, nullptr },
     { "Scope Thickness", HWType::Int, MP_HUD_PROP_KEY_CrosshairZoomScopeThickness, 1, 12, 1, nullptr, nullptr },
     { "Scope Center Dot", HWType::Bool, MP_HUD_PROP_KEY_CrosshairZoomScopeCenterDot, 0, 0, 0, nullptr, nullptr },
+    { "Scope Dot Shape", HWType::DotShape, MP_HUD_PROP_KEY_CrosshairZoomScopeDotShape, 0, 1, 1, nullptr, nullptr },
     { "Scope Dot Size", HWType::Int, MP_HUD_PROP_KEY_CrosshairZoomScopeDotSize, 1, 32, 1, nullptr, nullptr },
     { "Scope Dot Opacity %", HWType::Int, MP_HUD_PROP_KEY_CrosshairZoomScopeDotOpacity, 0, 100, 1, nullptr, nullptr },
     { "Custom Scope Dot Color", HWType::Bool, MP_HUD_PROP_KEY_CrosshairZoomScopeDotCustomColor, 0, 0, 0, nullptr, nullptr },

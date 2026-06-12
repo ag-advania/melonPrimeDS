@@ -13,6 +13,7 @@ enum class HWType { Bool, Int, Float, String, Anchor9, Align3, Color3, HorizVert
                     FontFile,      // QLineEdit + Browse -> font-file path string
                     FontWeight,    // combo index 0..8 -> Thin..Black
                     ZoomTransitionStyle, // 0..12 crosshair zoom transition presets
+                    DotShape,      // 0=Square, 1=Circle (center-dot shape)
                   };
 
 struct HudWidgetProp {

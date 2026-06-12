@@ -320,6 +320,21 @@
             });
             break;
         }
+        case HWType::DotShape: {
+            auto* combo = new QComboBox(parent);
+            combo->setObjectName(objName);
+            combo->addItem(QStringLiteral("Square"));
+            combo->addItem(QStringLiteral("Circle"));
+            combo->setCurrentIndex(std::clamp(instcfg.GetInt(p.cfgKey), 0, 1));
+            form->addRow(QString::fromUtf8(p.label), combo);
+            m_hudWidgets[p.cfgKey] = combo;
+            connect(combo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this, key = std::string(p.cfgKey)](int val) {
+                if (!m_applyPreviewEnabled) return;
+                emuInstance->getLocalConfig().SetInt(key, val);
+                invalidateHudAndRefreshPreviews();
+            });
+            break;
+        }
         case HWType::HorizVert: {
             auto* combo = new QComboBox(parent);
             combo->setObjectName(objName);

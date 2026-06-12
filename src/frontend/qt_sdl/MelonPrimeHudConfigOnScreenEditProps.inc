@@ -147,6 +147,9 @@ static const HudEditPropDesc kPropsCrosshairNormal[] = {
     {"Center Dot", EditPropType::Bool, MP_HUD_PROP_KEY_CrosshairCenterDot, 0, 0, 0, nullptr, nullptr, nullptr},
     {"Dot Opacity", EditPropType::Float, MP_HUD_PROP_KEY_CrosshairDotOpacity, 0, 100, 5, nullptr, nullptr, nullptr},
     {"Dot Thick.", EditPropType::Int, MP_HUD_PROP_KEY_CrosshairDotThickness, 1, 10, 1, nullptr, nullptr, nullptr},
+    {"Dot Shape", EditPropType::Enum, MP_HUD_PROP_KEY_CrosshairDotShape, 0, 1, 1, kEnumDotShape, nullptr, nullptr},
+    {"Custom Dot Color", EditPropType::Bool, MP_HUD_PROP_KEY_CrosshairDotCustomColor, 0, 0, 0, nullptr, nullptr, nullptr},
+    {"Dot Color", EditPropType::Color, MP_HUD_PROP_KEY_CrosshairDotColorR, 0, 255, 1, MP_HUD_PROP_KEY_CrosshairDotColorG, MP_HUD_PROP_KEY_CrosshairDotColorB, nullptr},
     {"T-Style", EditPropType::Bool, MP_HUD_PROP_KEY_CrosshairTStyle, 0, 0, 0, nullptr, nullptr, nullptr},
 };
 
@@ -160,6 +163,7 @@ static const HudEditPropDesc kPropsCrosshairZoom[] = {
     {"Scope Gap", EditPropType::Int, MP_HUD_PROP_KEY_CrosshairZoomScopeGap, 0, 64, 1, nullptr, nullptr, nullptr},
     {"Scope Thick.", EditPropType::Int, MP_HUD_PROP_KEY_CrosshairZoomScopeThickness, 1, 12, 1, nullptr, nullptr, nullptr},
     {"Scope Center Dot", EditPropType::Bool, MP_HUD_PROP_KEY_CrosshairZoomScopeCenterDot, 0, 0, 0, nullptr, nullptr, nullptr},
+    {"Scope Dot Shape", EditPropType::Enum, MP_HUD_PROP_KEY_CrosshairZoomScopeDotShape, 0, 1, 1, kEnumDotShape, nullptr, nullptr},
     {"Scope Dot Size", EditPropType::Int, MP_HUD_PROP_KEY_CrosshairZoomScopeDotSize, 1, 32, 1, nullptr, nullptr, nullptr},
     {"Scope Dot Opacity %", EditPropType::Int, MP_HUD_PROP_KEY_CrosshairZoomScopeDotOpacity, 0, 100, 1, nullptr, nullptr, nullptr},
     {"Custom Dot Color", EditPropType::Bool, MP_HUD_PROP_KEY_CrosshairZoomScopeDotCustomColor, 0, 0, 0, nullptr, nullptr, nullptr},
