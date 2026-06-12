@@ -200,38 +200,40 @@ void MelonPrimeInputConfig::buildSettingBindings()
         { C::StylusMode,     K::CheckBool,        ui->cbMetroidEnableStylusMode },       // 17
         { C::DisableMphAimSmoothing, K::CheckBool, ui->cbMetroidDisableMphAimSmoothing }, // 18
         { C::AimAccumulator, K::CheckBool,        ui->cbMetroidEnableAimAccumulator },   // 19
+        { C::ZoomAimScaleEnable, K::CheckBool,    m_cbMetroidZoomAimScaleEnable },       // 20
+        { C::ZoomAimScalePct, K::SpinInt,         m_spinMetroidZoomAimScalePct },         // 21
         // Segment 2: Screen Sync Mode (after the native-hook block).
-        { C::ScreenSyncMode, K::ComboIndexInt,    ui->comboMetroidScreenSyncMode },      // 20
+        { C::ScreenSyncMode, K::ComboIndexInt,    ui->comboMetroidScreenSyncMode },      // 22
         // Segment 3a: bug fixes (before the developer-only tooltip block).
-        { C::WifiBitset,     K::CheckBool,        ui->cbMetroidFixWifiBitset },          // 21
-        { C::FixShadowFreeze, K::CheckBool,       ui->cbMetroidFixShadowFreeze },        // 22
-        { C::FixNoxusBladePersistence, K::CheckBool, ui->cbMetroidFixNoxusBladePersistence }, // 23
+        { C::WifiBitset,     K::CheckBool,        ui->cbMetroidFixWifiBitset },          // 23
+        { C::FixShadowFreeze, K::CheckBool,       ui->cbMetroidFixShadowFreeze },        // 24
+        { C::FixNoxusBladePersistence, K::CheckBool, ui->cbMetroidFixNoxusBladePersistence }, // 25
         // Segment 3b: more bug fixes + game features (before the
         // ExpandStageMatrixExtra enable line). ExpandStageMatrix MUST precede
         // ExpandStageMatrixExtra so its slot doesn't clobber the loaded Extra.
-        { C::UseFirmwareLanguage, K::CheckBool,   ui->cbMetroidUseFirmwareLanguage },    // 24
-        { C::ShowHeadshotOnline, K::CheckBool,    ui->cbMetroidShowHeadshotOnline },     // 25
-        { C::ShowEnemyHpMeterOnline, K::CheckBool, ui->cbMetroidShowEnemyHpMeterOnline }, // 26
-        { C::ExpandStageMatrix, K::CheckBool,     ui->cbMetroidExpandStageMatrix },      // 27
-        { C::ExpandStageMatrixExtra, K::CheckBool, ui->cbMetroidExpandStageMatrixExtra }, // 28
+        { C::UseFirmwareLanguage, K::CheckBool,   ui->cbMetroidUseFirmwareLanguage },    // 26
+        { C::ShowHeadshotOnline, K::CheckBool,    ui->cbMetroidShowHeadshotOnline },     // 27
+        { C::ShowEnemyHpMeterOnline, K::CheckBool, ui->cbMetroidShowEnemyHpMeterOnline }, // 28
+        { C::ExpandStageMatrix, K::CheckBool,     ui->cbMetroidExpandStageMatrix },      // 29
+        { C::ExpandStageMatrixExtra, K::CheckBool, ui->cbMetroidExpandStageMatrixExtra }, // 30
         // Segment 3c: double-damage pair (before the parent/child sync wiring).
-        { C::DisableDoubleDamageMultiplier, K::CheckBool, ui->cbMetroidDisableDoubleDamageMultiplier }, // 29
-        { C::DamageNotifyPurple, K::CheckBool,    ui->cbMetroidDamageNotifyPurple },     // 30
+        { C::DisableDoubleDamageMultiplier, K::CheckBool, ui->cbMetroidDisableDoubleDamageMultiplier }, // 31
+        { C::DamageNotifyPurple, K::CheckBool,    ui->cbMetroidDamageNotifyPurple },     // 32
         // Segment 3d: pickup toggles (before the pickup parent/child wiring).
-        { C::PowerUpPickupNoEffectPowerUps, K::CheckBool, ui->cbMetroidDisablePickupPowerUps }, // 31
-        { C::PowerUpPickupNoEffectDoubleDamage, K::CheckBool, ui->cbMetroidDisablePickupDoubleDamage }, // 32
-        { C::PowerUpPickupNoEffectCloak, K::CheckBool, ui->cbMetroidDisablePickupCloak }, // 33
-        { C::PowerUpPickupNoEffectDeathalt, K::CheckBool, ui->cbMetroidDisablePickupDeathalt }, // 34
+        { C::PowerUpPickupNoEffectPowerUps, K::CheckBool, ui->cbMetroidDisablePickupPowerUps }, // 33
+        { C::PowerUpPickupNoEffectDoubleDamage, K::CheckBool, ui->cbMetroidDisablePickupDoubleDamage }, // 34
+        { C::PowerUpPickupNoEffectCloak, K::CheckBool, ui->cbMetroidDisablePickupCloak }, // 35
+        { C::PowerUpPickupNoEffectDeathalt, K::CheckBool, ui->cbMetroidDisablePickupDeathalt }, // 36
         // Segment 3e: in-game scaling.
-        { C::InGameAspectRatio, K::CheckBool,     ui->cbMetroidInGameAspectRatio },      // 35
-        { C::InGameAspectRatioMode, K::ComboIndexInt, ui->comboMetroidInGameAspectRatioMode }, // 36
+        { C::InGameAspectRatio, K::CheckBool,     ui->cbMetroidInGameAspectRatio },      // 37
+        { C::InGameAspectRatioMode, K::ComboIndexInt, ui->comboMetroidInGameAspectRatioMode }, // 38
         // Segment 3f: Low HP warning (before updateLowHpWarningControls).
-        { C::LowHpWarningMode,   K::ComboIndexInt, ui->comboMetroidLowHpWarningMode },   // 37
-        { C::LowHpWarningFixed,  K::SpinInt,       ui->spinMetroidLowHpWarningFixed },   // 38
-        { C::LowHpWarningLow,    K::SpinInt,       ui->spinMetroidLowHpWarningLow },     // 39
-        { C::LowHpWarningMedium, K::SpinInt,       ui->spinMetroidLowHpWarningMedium },  // 40
-        { C::LowHpWarningHigh,   K::SpinInt,       ui->spinMetroidLowHpWarningHigh },    // 41
-        { C::LowHpWarningAutoBase, K::SpinInt,     ui->spinMetroidLowHpWarningAutoBase }, // 42
+        { C::LowHpWarningMode,   K::ComboIndexInt, ui->comboMetroidLowHpWarningMode },   // 39
+        { C::LowHpWarningFixed,  K::SpinInt,       ui->spinMetroidLowHpWarningFixed },   // 40
+        { C::LowHpWarningLow,    K::SpinInt,       ui->spinMetroidLowHpWarningLow },     // 41
+        { C::LowHpWarningMedium, K::SpinInt,       ui->spinMetroidLowHpWarningMedium },  // 42
+        { C::LowHpWarningHigh,   K::SpinInt,       ui->spinMetroidLowHpWarningHigh },    // 43
+        { C::LowHpWarningAutoBase, K::SpinInt,     ui->spinMetroidLowHpWarningAutoBase }, // 44
     };
 }
 
@@ -279,12 +281,58 @@ void MelonPrimeInputConfig::saveBindings(Config::Table& instcfg)
 
 void MelonPrimeInputConfig::setupSensitivityAndToggles(Config::Table& instcfg)
 {
+    if (!m_cbMetroidZoomAimScaleEnable) {
+        m_cbMetroidZoomAimScaleEnable = new QCheckBox(
+            QStringLiteral("Scale aim sensitivity while zoomed"),
+            ui->sectionSensitivity);
+        m_cbMetroidZoomAimScaleEnable->setObjectName(
+            QStringLiteral("cbMetroidZoomAimScaleEnable"));
+
+        m_spinMetroidZoomAimScalePct = new QSpinBox(ui->sectionSensitivity);
+        m_spinMetroidZoomAimScalePct->setObjectName(
+            QStringLiteral("spinMetroidZoomAimScalePct"));
+        m_spinMetroidZoomAimScalePct->setRange(10, 300);
+        m_spinMetroidZoomAimScalePct->setSingleStep(1);
+        m_spinMetroidZoomAimScalePct->setSuffix(QStringLiteral("%"));
+
+        m_lblMetroidZoomAimScalePct = new QLabel(
+            QStringLiteral("Zoom Aim Scale %"),
+            ui->sectionSensitivity);
+        m_lblMetroidZoomAimScalePct->setObjectName(
+            QStringLiteral("lblMetroidZoomAimScalePct"));
+        m_lblMetroidZoomAimScalePct->setBuddy(m_spinMetroidZoomAimScalePct);
+
+        m_lblMetroidZoomAimScaleDesc = new QLabel(
+            QStringLiteral(
+                "Applies only while the game's native zoom state is active. "
+                "100% keeps normal mouse sensitivity; lower values slow down zoom aiming and higher values speed it up."),
+            ui->sectionSensitivity);
+        m_lblMetroidZoomAimScaleDesc->setObjectName(
+            QStringLiteral("lblMetroidZoomAimScaleDesc"));
+        m_lblMetroidZoomAimScaleDesc->setWordWrap(true);
+        m_lblMetroidZoomAimScaleDesc->setStyleSheet(QStringLiteral("QLabel { margin-left: 20px; }"));
+
+        if (auto* form = qobject_cast<QFormLayout*>(ui->sectionSensitivity->layout())) {
+            form->insertRow(14, m_cbMetroidZoomAimScaleEnable);
+            form->insertRow(15, m_lblMetroidZoomAimScalePct, m_spinMetroidZoomAimScalePct);
+            form->insertRow(16, m_lblMetroidZoomAimScaleDesc);
+        }
+
+        connect(
+            m_cbMetroidZoomAimScaleEnable,
+            &QCheckBox::toggled,
+            this,
+            [this](bool) {
+                updateAimControlsForStylusMode(ui->cbMetroidEnableStylusMode->isChecked());
+            });
+    }
+
     buildSettingBindings();
 
-    // Segment 1 [0,20): sensitivities + toggles, up to the dynamic
+    // Segment 1 [0,22): sensitivities + toggles, up to the dynamic
     // Low-Latency Aim Mode combo block. (setChecked on stylus/smoothing fires
     // slots that cross-read each other; order is preserved by the table order.)
-    loadBindingsRange(instcfg, 0, 20);
+    loadBindingsRange(instcfg, 0, 22);
     if (!m_comboMetroidLowLatencyAimMode) {
         m_comboMetroidLowLatencyAimMode = new QComboBox(ui->sectionSensitivity);
         m_comboMetroidLowLatencyAimMode->addItem(
@@ -367,15 +415,15 @@ void MelonPrimeInputConfig::setupSensitivityAndToggles(Config::Table& instcfg)
         });
     updateAimControlsForStylusMode(ui->cbMetroidEnableStylusMode->isChecked());
 
-    // Segment 2 [20,21): Screen Sync Mode.
-    loadBindingsRange(instcfg, 20, 21);
+    // Segment 2 [22,23): Screen Sync Mode.
+    loadBindingsRange(instcfg, 22, 23);
     // Clip/TopScreen stay outside the table: their save side is coupled to an
     // invalidate (old != new comparison), so they keep their original form.
     ui->cbMetroidClipCursorToBottomScreenWhenNotInGame->setChecked(instcfg.GetBool("Metroid.Visual.ClipCursorToBottomScreenWhenNotInGame"));
     ui->cbMetroidInGameTopScreenOnly->setChecked(instcfg.GetBool("Metroid.Visual.InGameTopScreenOnly"));
 
-    // Segment 3a [21,24): bug fixes (before the developer-only tooltip block).
-    loadBindingsRange(instcfg, 21, 24);
+    // Segment 3a [23,26): bug fixes (before the developer-only tooltip block).
+    loadBindingsRange(instcfg, 23, 26);
     if constexpr (kDeveloperOnlyFeaturesEnabled) {
         ui->cbMetroidEnableNativeAimPostFoldWrite->setToolTip("Developer-only option enabled in this build.");
         ui->cbMetroidEnableNativeAimRegisterInjection->setToolTip("Developer-only option enabled in this build.");
@@ -385,13 +433,13 @@ void MelonPrimeInputConfig::setupSensitivityAndToggles(Config::Table& instcfg)
         ui->cbMetroidEnableNativeAimPostFoldWrite->setToolTip(
             "Developer-only option. Build with MELONPRIME_ENABLE_DEVELOPER_FEATURES to enable it.");
     }
-    // Segment 3b [24,29): more bug fixes + game features. ExpandStageMatrix is
+    // Segment 3b [26,31): more bug fixes + game features. ExpandStageMatrix is
     // loaded before ExpandStageMatrixExtra (table order) so its slot doesn't
     // clobber the loaded Extra value; the Extra enable line follows after.
-    loadBindingsRange(instcfg, 24, 29);
+    loadBindingsRange(instcfg, 26, 31);
     ui->cbMetroidExpandStageMatrixExtra->setEnabled(ui->cbMetroidExpandStageMatrix->isChecked());
-    // Segment 3c [29,31): double-damage pair (before the parent/child wiring).
-    loadBindingsRange(instcfg, 29, 31);
+    // Segment 3c [31,33): double-damage pair (before the parent/child wiring).
+    loadBindingsRange(instcfg, 31, 33);
 
     // Parent-child: Damage Notify Purple requires Disable Double Damage Multiplier
     // so the purple flash never becomes a real 2x boost.
@@ -424,9 +472,9 @@ void MelonPrimeInputConfig::setupSensitivityAndToggles(Config::Table& instcfg)
     syncDamageNotifyPurpleEnableState(
         !ui->cbMetroidDisableDoubleDamageMultiplier->isChecked());
 
-    // Segment 3d [31,35): pickup effect toggles (before the pickup parent/child
+    // Segment 3d [33,37): pickup effect toggles (before the pickup parent/child
     // wiring). The parent (PowerUps) is loaded first, matching original order.
-    loadBindingsRange(instcfg, 31, 35);
+    loadBindingsRange(instcfg, 33, 37);
     auto updatePickupPowerUpChildren = [this](bool disableAllPowerUps, bool syncChildren) {
         if (syncChildren) {
             ui->cbMetroidDisablePickupDoubleDamage->setChecked(disableAllPowerUps);
@@ -447,10 +495,10 @@ void MelonPrimeInputConfig::setupSensitivityAndToggles(Config::Table& instcfg)
     const bool disableAllPowerUps = ui->cbMetroidDisablePickupPowerUps->isChecked();
     updatePickupPowerUpChildren(disableAllPowerUps, disableAllPowerUps);
 
-    // Segment 3e [35,37): in-game scaling.
-    // Segment 3f [37,43): Low HP warning thresholds.
-    // Both are contiguous with no interleaved special logic, so apply [35,43).
-    loadBindingsRange(instcfg, 35, 43);
+    // Segment 3e [37,39): in-game scaling.
+    // Segment 3f [39,45): Low HP warning thresholds.
+    // Both are contiguous with no interleaved special logic, so apply [37,45).
+    loadBindingsRange(instcfg, 37, 45);
     updateLowHpWarningControls(ui->comboMetroidLowHpWarningMode->currentIndex());
 }
 
@@ -670,6 +718,18 @@ void MelonPrimeInputConfig::updateAimControlsForStylusMode(bool stylusEnabled)
     ui->metroidAimAdjustSpinBox->setEnabled(enableAimControls);
     ui->metroidAimAdjustLabel->setEnabled(enableAimControls);
     ui->cbMetroidEnableAimAccumulator->setEnabled(enableAimControls);
+    if (m_cbMetroidZoomAimScaleEnable)
+        m_cbMetroidZoomAimScaleEnable->setEnabled(enableAimControls);
+    const bool enableZoomAimScale =
+        enableAimControls
+        && m_cbMetroidZoomAimScaleEnable
+        && m_cbMetroidZoomAimScaleEnable->isChecked();
+    if (m_lblMetroidZoomAimScalePct)
+        m_lblMetroidZoomAimScalePct->setEnabled(enableZoomAimScale);
+    if (m_spinMetroidZoomAimScalePct)
+        m_spinMetroidZoomAimScalePct->setEnabled(enableZoomAimScale);
+    if (m_lblMetroidZoomAimScaleDesc)
+        m_lblMetroidZoomAimScaleDesc->setEnabled(enableZoomAimScale);
     const bool enableLowLatencyAimMode =
         enableAimControls && ui->cbMetroidDisableMphAimSmoothing->isChecked();
     if (m_lblMetroidLowLatencyAimMode)
@@ -819,6 +879,10 @@ void MelonPrimeInputConfig::on_metroidResetSensitivityValues_clicked()
     ui->metroidAimSensitvitySpinBox->setValue(63);
     ui->metroidAimYAxisScaleSpinBox->setValue(1.514700);
     ui->metroidAimAdjustSpinBox->setValue(0.010000);
+    if (m_cbMetroidZoomAimScaleEnable)
+        m_cbMetroidZoomAimScaleEnable->setChecked(false);
+    if (m_spinMetroidZoomAimScalePct)
+        m_spinMetroidZoomAimScalePct->setValue(75);
 }
 
 void MelonPrimeInputConfig::on_metroidSetVideoQualityToLow_clicked()

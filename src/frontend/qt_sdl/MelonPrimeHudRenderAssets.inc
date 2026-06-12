@@ -350,6 +350,8 @@ static bool   s_chStampValid = false;
 // INT_MIN = not drawn yet / reset.
 static int   s_chPrevPxCx = INT_MIN;
 static int   s_chPrevPxCy = INT_MIN;
+static double s_chPrevGeomScale = 1.0;
+static double s_chPrevZoomT = 0.0;
 // Accumulated dirty rect for the crosshair in the current frame (prev ∪ curr pos).
 static QRect s_chDirtyThisFrame;
 

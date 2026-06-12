@@ -91,6 +91,7 @@ namespace Config
     #ifdef MELONPRIME_DS
         /* MelonPrimeDS { */ // Sensitivity & Custom Hotkeys
         {"Instance*.Metroid.Sensitivity.Aim", 63},
+        {"Instance*.Metroid.Aim.ZoomScale.Percent", 75},
         {"Instance*.Metroid.Volume.SFX", 9},
         {"Instance*.Metroid.Volume.Music", 9},
         {"Instance*.Metroid.Screen.SyncMode", 0},
@@ -171,6 +172,7 @@ namespace Config
     #ifdef MELONPRIME_DS
         /* MelonPrimeDS. this is not for input. this is for loading. */
         {"Instance*.Metroid.Sensitivity.Aim", {0,99999}},
+        {"Instance*.Metroid.Aim.ZoomScale.Percent", {10,300}},
         {"Instance*.Metroid.Volume.Music", {0,9}},
         {"Instance*.Metroid.Volume.SFX", {0,9}},
         {"Instance*.Metroid.Aim.LowLatencyMode", {0,3}},
@@ -230,6 +232,7 @@ namespace Config
         {"Instance*.Metroid.Enable.stylusMode", false},
         {"Instance*.Metroid.Aim.Disable.MphAimSmoothing", false},
         {"Instance*.Metroid.Aim.Enable.Accumulator", false},
+        {"Instance*.Metroid.Aim.ZoomScale.Enable", false},
         {"Instance*.Metroid.Aim.Enable.InstantAimFollow", false},
         {"Instance*.Metroid.Input.Enable.ImmediateInputEdgeOverlay", false},
         {"Instance*.Metroid.Input.Enable.DirectAltFormTransform",    false},

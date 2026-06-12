@@ -5,6 +5,7 @@
 #include "Screen.h"
 #include "MelonPrimeDef.h"
 #include "MelonPrimeGameRomAddrTable.h"
+#include "MelonPrimeZoomStatus.h"
 
 #include <cstddef>
 #include <cstdint>
@@ -367,6 +368,43 @@ namespace MelonPrime {
         );
     }
 
+    void MelonPrimeCore::RecalcAimEffectiveFixedScale()
+    {
+        if (m_activeZoomAimScaleQ14 == static_cast<uint32_t>(AIM_ONE_FP)) {
+            m_aimEffectiveFixedScaleX = m_aimFixedScaleX;
+            m_aimEffectiveFixedScaleY = m_aimFixedScaleY;
+            return;
+        }
+
+        m_aimEffectiveFixedScaleX = static_cast<int32_t>(
+            ZoomStatus::ApplyQ14Scale(m_aimFixedScaleX, m_activeZoomAimScaleQ14));
+        m_aimEffectiveFixedScaleY = static_cast<int32_t>(
+            ZoomStatus::ApplyQ14Scale(m_aimFixedScaleY, m_activeZoomAimScaleQ14));
+    }
+
+    void MelonPrimeCore::UpdateZoomAimEffectiveScale()
+    {
+        if (LIKELY(!m_enableZoomAimScale))
+            return;
+
+        uint32_t nextScaleQ14 = static_cast<uint32_t>(AIM_ONE_FP);
+#ifdef MELONPRIME_DS
+        melonDS::NDS* nds = emuInstance ? emuInstance->getNDS() : nullptr;
+        const melonDS::u8* ram = nds ? nds->MainRAM : nullptr;
+        const ZoomStatus::ScopeState scope =
+            ZoomStatus::ReadScopeState(ram, m_currentRom.hookLocalPlayerPtrGlobal);
+        if (scope.valid && scope.scoped)
+            nextScaleQ14 = m_zoomAimScaleQ14;
+#endif
+        if (LIKELY(nextScaleQ14 == m_activeZoomAimScaleQ14))
+            return;
+
+        m_activeZoomAimScaleQ14 = nextScaleQ14;
+        RecalcAimEffectiveFixedScale();
+        m_aimResidualX = 0;
+        m_aimResidualY = 0;
+    }
+
     // =========================================================================
     // Hook implementation unity fragments.
     //
@@ -418,6 +456,11 @@ namespace MelonPrime {
             const bool hasDelta = (deltaX | deltaY) != 0;
             int64_t resX = m_aimResidualX;
             int64_t resY = m_aimResidualY;
+            if (UNLIKELY(m_enableZoomAimScale) && (hasDelta || ((resX | resY) != 0))) {
+                UpdateZoomAimEffectiveScale();
+                resX = m_aimResidualX;
+                resY = m_aimResidualY;
+            }
 
             // P-44: Skip IMUL + clamp when mouse is completely at rest.
             // With 8kHz mouse this is rarely zero, but at standard poll rates
@@ -426,8 +469,8 @@ namespace MelonPrime {
             // but skipping accumulation avoids touching the residual accumulators.
             if (LIKELY(hasDelta)) {
                 // P-17: Accumulate into residual (Q14 fixed-point).
-                resX += static_cast<int64_t>(deltaX) * m_aimFixedScaleX;
-                resY += static_cast<int64_t>(deltaY) * m_aimFixedScaleY;
+                resX += static_cast<int64_t>(deltaX) * m_aimEffectiveFixedScaleX;
+                resY += static_cast<int64_t>(deltaY) * m_aimEffectiveFixedScaleY;
 
                 // P-29a: Clamp only when residual escapes the normal range.
                 resX = ClampAimResidual(resX, AIM_MAX_RESIDUAL);

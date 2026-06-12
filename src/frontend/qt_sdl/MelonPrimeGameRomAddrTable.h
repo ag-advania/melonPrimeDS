@@ -88,6 +88,7 @@ namespace MelonPrime {
     X(ADDR, startPressed,             StartPressed,              0x020E0538u, 0x020E04F8u, 0x020DE634u, 0x020DEEB4u, 0x020DEED4u, 0x020DEF54u, 0x020D7D29u) \
     X(ADDR, gameOver,                 GameOver,                  0x020E6B48u, 0x020E6B08u, 0x020E4A1Cu, 0x020E54E4u, 0x020E5504u, 0x020E5584u, 0x020DE330u) \
     X(ADDR, baseViewMode,             BaseViewMode,              0x020DCAAAu, 0x020DCA6Au, 0x020DABEAu, 0x020DB46Au, 0x020DB48Au, 0x020DB50Au, 0x020D42B6u) /* player struct relative (+0xF30) */ \
+    X(ADDR, crosshairControl,         CrosshairControl,          0x020E0938u, 0x020E08F8u, 0x020DEA90u, 0x020DF310u, 0x020DF330u, 0x020DF3B0u, 0x020D7FC0u) \
     X(ADDR, crosshairPosX,            CrosshairPosX,             0x020E05C0u, 0x020E0580u, 0x020DE7A4u, 0x020DF024u, 0x020DF044u, 0x020DF0C4u, 0x020D7D7Cu) \
     X(ADDR, crosshairPosY,            CrosshairPosY,             0x020E05C2u, 0x020E0582u, 0x020DE7A6u, 0x020DF026u, 0x020DF046u, 0x020DF0C6u, 0x020D7D7Eu) \
     X(ADDR, maxHP,                    MaxHP,                     0x020DC6B0u, 0x020DC670u, 0x020DA7F0u, 0x020DB070u, 0x020DB090u, 0x020DB110u, 0x020D3EBCu) /* player struct relative (+0xF30) */ \
