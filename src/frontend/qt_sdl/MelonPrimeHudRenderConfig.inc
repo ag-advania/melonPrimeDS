@@ -109,9 +109,10 @@ struct CrosshairHudConfig {
     bool chZoomStageEnable;
     double chZoomScale;   // target multiplier while fully zoomed
     double chZoomOpacity; // target opacity multiplier while fully zoomed
-    bool chZoomScopeEnable;
+    bool chZoomScopeEnable, chZoomScopeCenterDot;
     int chZoomScopeRadius, chZoomScopeLineLength, chZoomScopeGap, chZoomScopeThickness;
-    double chZoomScopeOpacity;
+    int chZoomScopeDotSize;
+    double chZoomScopeDotOpacity, chZoomScopeOpacity;
     // P-11: Pre-computed arm/dot colors with alpha set (avoids per-frame QColor copy + setAlphaF)
     QColor chInnerColor, chOuterColor, chDotColor;
     // Cached arm rects in output pixels, centred at (0,0).
@@ -120,6 +121,11 @@ struct CrosshairHudConfig {
     int   cachedInnerCount, cachedOuterCount;
     int   cachedDotHalfPx;   // half-size of the centre dot in output pixels
     int   cachedDotSizePx;   // full size of the centre dot in output pixels
+    bool  cachedZoomAffectsVisual;
+    bool  cachedZoomScopeRenderable;
+    int   cachedZoomScopeLineEndPx;
+    int   cachedZoomScopeGapPx;
+    QRect cachedZoomScopeBboxPx;
 };
 struct MatchStatusHudConfig {
     bool matchStatusShow;
@@ -232,33 +238,21 @@ static QRect ScaleRectAroundOrigin(const QRect& r, double scale)
     return QRect(left, top, std::max(1, right - left), std::max(1, bottom - top));
 }
 
-static QRect CrosshairScopeBboxPx(int cx, int cy, const CrosshairHudConfig& ch, double zoomT)
+static QRect CrosshairScopeBboxPx(int cx, int cy, const CrosshairHudConfig& ch,
+                                  double zoomT, const QRect& scopeClipPx = QRect())
 {
-    if (!ch.chZoomStageEnable || !ch.chZoomScopeEnable || zoomT <= 0.001 || ch.chZoomScopeOpacity <= 0.0)
+    if (!ch.cachedZoomScopeRenderable || zoomT <= 0.001)
         return QRect();
-
-    const int radius = std::max(1, ch.chZoomScopeRadius);
-    const int lineEnd = radius + std::max(0, ch.chZoomScopeLineLength);
-    const int gap = std::max(0, ch.chZoomScopeGap);
-    const int halfT = (std::max(1, ch.chZoomScopeThickness) + 1) / 2;
-    QRect r(cx - radius, cy - radius, radius * 2 + 1, radius * 2 + 1);
-    if (lineEnd > gap) {
-        r |= QRect(cx - lineEnd, cy - halfT, lineEnd - gap, halfT * 2 + 1);
-        r |= QRect(cx + gap, cy - halfT, lineEnd - gap, halfT * 2 + 1);
-        r |= QRect(cx - halfT, cy - lineEnd, halfT * 2 + 1, lineEnd - gap);
-        r |= QRect(cx - halfT, cy + gap, halfT * 2 + 1, lineEnd - gap);
-    }
-
-    int pad = halfT + 1;
-    if (ch.chOutline && ch.chOutlineOpacity > 0.0)
-        pad += std::max(1, ch.chOutlineThickness);
-    return r.adjusted(-pad, -pad, pad, pad);
+    const QRect scopeBbox = ch.cachedZoomScopeBboxPx.translated(cx, cy);
+    return scopeClipPx.isEmpty() ? scopeBbox : (scopeBbox & scopeClipPx);
 }
 
 // OPT-DR1: Returns the pixel-space bounding rect of the crosshair rendered at (cx, cy).
 // Uses the pre-computed stamp, arm rects, and dot size from CrosshairHudConfig.
 // Result is in overlay pixel space (same as Overlay[0]).
-static QRect CrosshairBboxPx(int cx, int cy, const CrosshairHudConfig& ch, double geomScale = 1.0, double zoomT = 0.0)
+static QRect CrosshairBboxPx(int cx, int cy, const CrosshairHudConfig& ch,
+                             double geomScale = 1.0, double zoomT = 0.0,
+                             const QRect& scopeClipPx = QRect())
 {
     QRect r;
     const bool scaled = std::abs(geomScale - 1.0) >= 0.001;
@@ -283,8 +277,49 @@ static QRect CrosshairBboxPx(int cx, int cy, const CrosshairHudConfig& ch, doubl
             r |= dot.adjusted(-olT, -olT, olT, olT).translated(cx, cy);
         r |= dot.translated(cx, cy);
     }
-    r |= CrosshairScopeBboxPx(cx, cy, ch, zoomT);
+    r |= CrosshairScopeBboxPx(cx, cy, ch, zoomT, scopeClipPx);
     return r;
+}
+
+static void RebuildCrosshairZoomScopeCache(CrosshairHudConfig& crosshair)
+{
+    crosshair.cachedZoomScopeRenderable =
+        crosshair.chZoomStageEnable
+        && crosshair.chZoomScopeEnable
+        && crosshair.chZoomScopeOpacity > 0.0;
+    crosshair.cachedZoomAffectsVisual =
+        crosshair.chZoomStageEnable
+        && (std::abs(crosshair.chZoomScale - 1.0) >= 0.001
+            || std::abs(crosshair.chZoomOpacity - 1.0) >= 0.001
+            || crosshair.cachedZoomScopeRenderable);
+    crosshair.cachedZoomScopeLineEndPx =
+        crosshair.chZoomScopeRadius + crosshair.chZoomScopeLineLength;
+    crosshair.cachedZoomScopeGapPx = crosshair.chZoomScopeGap;
+    crosshair.cachedZoomScopeBboxPx = QRect();
+    if (!crosshair.cachedZoomScopeRenderable)
+        return;
+
+    const int radius = crosshair.chZoomScopeRadius;
+    const int lineEnd = crosshair.cachedZoomScopeLineEndPx;
+    const int gap = crosshair.cachedZoomScopeGapPx;
+    const int halfT = (crosshair.chZoomScopeThickness + 1) / 2;
+    QRect r(-radius, -radius, radius * 2 + 1, radius * 2 + 1);
+    if (lineEnd > gap) {
+        r |= QRect(-lineEnd, -halfT, lineEnd - gap, halfT * 2 + 1);
+        r |= QRect(gap, -halfT, lineEnd - gap, halfT * 2 + 1);
+        r |= QRect(-halfT, -lineEnd, halfT * 2 + 1, lineEnd - gap);
+        r |= QRect(-halfT, gap, halfT * 2 + 1, lineEnd - gap);
+    }
+    if (crosshair.chZoomScopeCenterDot && crosshair.chZoomScopeDotOpacity > 0.0) {
+        const int dotSize = std::max(1, crosshair.chZoomScopeDotSize);
+        const int dotHalf = dotSize / 2;
+        r |= QRect(-dotHalf, -dotHalf, dotSize, dotSize);
+    }
+
+    int pad = halfT + 1;
+    if (crosshair.chOutline && crosshair.chOutlineOpacity > 0.0)
+        pad += crosshair.chOutlineThickness;
+    crosshair.cachedZoomScopeBboxPx = r.adjusted(-pad, -pad, pad, pad);
 }
 
 // P-9: Frame-level font metrics — set once in CustomHud_Render, shared by all draw sub-functions.
@@ -637,11 +672,15 @@ static void LoadCrosshairConfig(CrosshairHudConfig& crosshair, Config::Table& cf
     crosshair.chZoomScale = std::clamp(cfg.GetInt(MP_HUD_PROP_KEY_CrosshairZoomScale), 10, 200) / 100.0;
     crosshair.chZoomOpacity = std::clamp(cfg.GetInt(MP_HUD_PROP_KEY_CrosshairZoomOpacity), 0, 100) / 100.0;
     crosshair.chZoomScopeEnable = cfg.GetBool(MP_HUD_PROP_KEY_CrosshairZoomScopeEnable);
-    crosshair.chZoomScopeRadius = std::clamp(cfg.GetInt(MP_HUD_PROP_KEY_CrosshairZoomScopeRadius), 4, 128);
+    crosshair.chZoomScopeRadius = std::clamp(cfg.GetInt(MP_HUD_PROP_KEY_CrosshairZoomScopeRadius), 4, 1024);
     crosshair.chZoomScopeLineLength = std::clamp(cfg.GetInt(MP_HUD_PROP_KEY_CrosshairZoomScopeLineLength), 0, 128);
     crosshair.chZoomScopeGap = std::clamp(cfg.GetInt(MP_HUD_PROP_KEY_CrosshairZoomScopeGap), 0, 64);
     crosshair.chZoomScopeThickness = std::clamp(cfg.GetInt(MP_HUD_PROP_KEY_CrosshairZoomScopeThickness), 1, 12);
+    crosshair.chZoomScopeCenterDot = cfg.GetBool(MP_HUD_PROP_KEY_CrosshairZoomScopeCenterDot);
+    crosshair.chZoomScopeDotSize = std::clamp(cfg.GetInt(MP_HUD_PROP_KEY_CrosshairZoomScopeDotSize), 1, 32);
+    crosshair.chZoomScopeDotOpacity = std::clamp(cfg.GetInt(MP_HUD_PROP_KEY_CrosshairZoomScopeDotOpacity), 0, 100) / 100.0;
     crosshair.chZoomScopeOpacity = std::clamp(cfg.GetInt(MP_HUD_PROP_KEY_CrosshairZoomScopeOpacity), 0, 100) / 100.0;
+    RebuildCrosshairZoomScopeCache(crosshair);
     // P-11: Pre-compute arm/dot colors with alpha
     crosshair.chInnerColor = crosshair.chColor;
     crosshair.chInnerColor.setAlphaF(crosshair.chInnerOpacity);
@@ -924,6 +963,19 @@ static void RefreshCachedConfig(Config::Table& cfg, float topStretchX = 1.0f, fl
         const int dotSz = std::max(1, static_cast<int>(ch.chDotThickness * cs));
         ch.cachedDotSizePx = dotSz;
         ch.cachedDotHalfPx = dotSz / 2;
+
+        const double scopeScale = static_cast<double>(c.scaleCrosshair);
+        ch.chZoomScopeRadius = std::max(
+            1, static_cast<int>(std::lround(ch.chZoomScopeRadius * scopeScale)));
+        ch.chZoomScopeLineLength = std::max(
+            0, static_cast<int>(std::lround(ch.chZoomScopeLineLength * scopeScale)));
+        ch.chZoomScopeGap = std::max(
+            0, static_cast<int>(std::lround(ch.chZoomScopeGap * scopeScale)));
+        ch.chZoomScopeThickness = std::max(
+            1, static_cast<int>(std::lround(ch.chZoomScopeThickness * scopeScale)));
+        ch.chZoomScopeDotSize = std::max(
+            1, static_cast<int>(std::lround(ch.chZoomScopeDotSize * scopeScale)));
+        RebuildCrosshairZoomScopeCache(ch);
     }
     c.lastHudScale        = hudScale;
     c.hpOpacity           = (float)cfg.GetDouble(MP_HUD_PROP_KEY_HudHpOpacity);

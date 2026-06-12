@@ -26,6 +26,10 @@ Aim scaling is cached as Q14 fixed-point:
 directly. They only recalculate the effective scale when the scoped state changes,
 so the hot path does not apply an extra zoom multiplier every mouse input.
 
+If the configured percent resolves to exactly 100%, runtime treats the feature as
+disabled even if the checkbox is on. This avoids reading zoom state for a no-op
+scale.
+
 ## Verification
 - `.claude/skills/audit-config-defaults.ps1`
 - `.claude/skills/build-mingw.bat --tail 120`
