@@ -49,7 +49,7 @@ static const char* kEnumOrientation = "Horiz|Vert";
 static const char* kEnumGaugeAlign  = "Start|Center|End";
 static const char* kEnumZoomTransitionStyle =
     "Staged|Fade|Glitch|Snap|Expand|Contract|Scanline|Digital|Pulse|Crossfade|Magic Circle|SF Movie|"
-    "Tactical Lock|Sniper Optics|Drone LIDAR|Cyber Jam|Beam Charge|Wireframe|Data Link";
+    "Tactical Lock|Sniper Optics|Drone LIDAR|Glitch2|Beam Charge|Wireframe|Data Link";
 
 static QString EditEnumLabel(const char* items, int val) {
     if (!items || val < 0) return QString::number(val);

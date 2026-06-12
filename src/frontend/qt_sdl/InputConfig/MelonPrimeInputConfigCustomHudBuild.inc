@@ -145,7 +145,7 @@
             combo->addItem(QStringLiteral("Tactical Lock"));
             combo->addItem(QStringLiteral("Sniper Optics"));
             combo->addItem(QStringLiteral("Drone LIDAR"));
-            combo->addItem(QStringLiteral("Cyber Jam"));
+            combo->addItem(QStringLiteral("Glitch2"));
             combo->addItem(QStringLiteral("Beam Charge"));
             combo->addItem(QStringLiteral("Wireframe"));
             combo->addItem(QStringLiteral("Data Link"));

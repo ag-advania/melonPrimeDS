@@ -775,7 +775,7 @@ void MelonPrimeHudConfigOnScreenEdit::populateForCrosshair()
          QStringLiteral("Scanline"), QStringLiteral("Digital"), QStringLiteral("Pulse Wave"),
          QStringLiteral("Crossfade"), QStringLiteral("Magic Circle"), QStringLiteral("SF Movie"),
          QStringLiteral("Tactical Lock"), QStringLiteral("Sniper Optics"),
-         QStringLiteral("Drone LIDAR"), QStringLiteral("Cyber Jam"), QStringLiteral("Beam Charge"),
+         QStringLiteral("Drone LIDAR"), QStringLiteral("Glitch2"), QStringLiteral("Beam Charge"),
          QStringLiteral("Wireframe"), QStringLiteral("Data Link")});
     addSpinBox(QStringLiteral("Transition Speed %"), MP_HUD_PROP_KEY_CrosshairZoomTransitionSpeed, 25, 400);
     addCheckBox(QStringLiteral("Pulse Ring"), MP_HUD_PROP_KEY_CrosshairZoomTransitionPulseEnable);

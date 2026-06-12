@@ -151,13 +151,13 @@ namespace MelonPrime::ZoomStatus {
         }
         case 4: { // Expand
             b.scope = SmoothStep(std::clamp(t / 0.72f, 0.0f, 1.0f));
-            b.geom = 1.0f + (baseZoomOpacity - 1.0f) * 0.15f * b.scope;
+            b.geom = b.scope;
             b.baseAlpha = (1.0f + (baseZoomOpacity - 1.0f) * t) * (1.0f - b.scope);
             break;
         }
-        case 5: { // Contract
+        case 5: { // Contract — geom must be 0 when t=0 (not zoomed)
             const float shrink = SmoothStep(std::clamp(t / 0.55f, 0.0f, 1.0f));
-            b.geom = 1.0f - shrink * 0.35f;
+            b.geom = shrink * (1.0f - 0.35f * shrink);
             b.baseAlpha = (1.0f + (baseZoomOpacity - 1.0f) * shrink) * (1.0f - shrink);
             b.scope = SmoothStep(std::clamp((t - 0.40f) / 0.60f, 0.0f, 1.0f));
             break;
@@ -237,10 +237,10 @@ namespace MelonPrime::ZoomStatus {
             b.pulse = pulseStrength * 0.4f;
             break;
         }
-        case 15: { // Cyber Jam — scan overload flicker
+        case 15: { // Glitch2 — scan overload flicker (jam affects alpha only, not geom)
             const float staged = SmoothStep(t);
             const float jam = 0.84f + 0.16f * std::abs(std::sin(t * 30.0f));
-            b.geom = staged * jam;
+            b.geom = staged;
             b.baseAlpha = (1.0f + (baseZoomOpacity - 1.0f) * staged)
                         * (1.0f - SmoothStep(std::clamp((t - 0.04f) / 0.68f, 0.0f, 1.0f)))
                         * jam;
