@@ -1033,8 +1033,8 @@ static void DrawEditOverlay(QPainter* p, Config::Table& cfg, float topStretchX, 
         for (int vi = 0; vi < visCount; ++vi) {
             const int rowIdx = vi + scrollOfs;
             const float rowY = kCrosshairPanelY + 2.0f + vi * kPropRowH;
-            bool isColorRow, isInnerHdr, isOuterHdr;
-            const HudEditPropDesc* pr = GetCrosshairPropForRow(rowIdx, isColorRow, isInnerHdr, isOuterHdr);
+            bool isColorRow, isZoomHdr, isInnerHdr, isOuterHdr;
+            const HudEditPropDesc* pr = GetCrosshairPropForRow(rowIdx, isColorRow, isZoomHdr, isInnerHdr, isOuterHdr);
 
             if (isColorRow) {
                 int r = cfg.GetInt("Metroid.Visual.CrosshairColorR");
@@ -1047,6 +1047,15 @@ static void DrawEditOverlay(QPainter* p, Config::Table& cfg, float topStretchX, 
                 p->setBrush(QColor(r, g, b));
                 p->setPen(Qt::NoPen);
                 p->drawRoundedRect(swR, 1.5, 1.5); p->setBrush(Qt::NoBrush);
+            } else if (isZoomHdr) {
+                QRectF hdrR(rowX, rowY + 0.5f, kPropLabelW + ctrlW, kPropRowH - 1.0f);
+                p->setBrush(s_zoomSectionOpen ? QColor(35, 90, 45, 210) : kBtnBg);
+                p->setPen(Qt::NoPen);
+                p->drawRoundedRect(hdrR, 1.5, 1.5);
+                p->setBrush(Qt::NoBrush);
+                p->setPen(s_zoomSectionOpen ? kValueColor : kLabelColor);
+                p->drawText(hdrR, Qt::AlignCenter,
+                    UiText::Tr("Zoom") + (s_zoomSectionOpen ? QStringLiteral(" \u25c4") : QStringLiteral(" \u25ba")));
             } else if (isInnerHdr) {
                 QRectF hdrR(rowX, rowY + 0.5f, kPropLabelW + ctrlW, kPropRowH - 1.0f);
                 p->setBrush(s_innerSectionOpen ? QColor(35, 90, 45, 210) : kBtnBg);
@@ -1148,7 +1157,9 @@ static void DrawEditOverlay(QPainter* p, Config::Table& cfg, float topStretchX, 
         {
             const HudEditPropDesc* sideProps = nullptr;
             int sidePropCount = 0;
-            if (s_innerSectionOpen) {
+            if (s_zoomSectionOpen) {
+                sideProps = kPropsCrosshairZoom; sidePropCount = kCrosshairZoomCount;
+            } else if (s_innerSectionOpen) {
                 sideProps = kPropsCrosshairInner; sidePropCount = kCrosshairInnerCount;
             } else if (s_outerSectionOpen) {
                 sideProps = kPropsCrosshairOuter; sidePropCount = kCrosshairOuterCount;

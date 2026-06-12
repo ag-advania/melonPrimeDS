@@ -53,7 +53,7 @@ jobs:
       with:
         msystem: ucrt64
         update: false
-        path-type: inherit
+        path-type: minimal
         pacboy: >-
           gcc:p
           cmake:p

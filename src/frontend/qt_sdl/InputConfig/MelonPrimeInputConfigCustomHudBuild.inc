@@ -127,6 +127,32 @@
             });
             break;
         }
+        case HWType::ZoomTransitionStyle: {
+            auto* combo = new QComboBox(parent);
+            combo->setObjectName(objName);
+            combo->addItem(QStringLiteral("Fade"));
+            combo->addItem(QStringLiteral("Staged"));
+            combo->addItem(QStringLiteral("Glitch"));
+            combo->addItem(QStringLiteral("Glitch2"));
+            combo->addItem(QStringLiteral("Snap"));
+            combo->addItem(QStringLiteral("Digital"));
+            combo->addItem(QStringLiteral("Pulse Wave"));
+            combo->addItem(QStringLiteral("Magic Circle"));
+            combo->addItem(QStringLiteral("SF Movie"));
+            combo->addItem(QStringLiteral("Tactical Lock"));
+            combo->addItem(QStringLiteral("Sniper Optics"));
+            combo->addItem(QStringLiteral("Drone LIDAR"));
+            combo->addItem(QStringLiteral("Beam Charge"));
+            combo->setCurrentIndex(std::clamp(instcfg.GetInt(p.cfgKey), p.min, p.max));
+            form->addRow(QString::fromUtf8(p.label), combo);
+            m_hudWidgets[p.cfgKey] = combo;
+            connect(combo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this, key = std::string(p.cfgKey)](int val) {
+                if (!m_applyPreviewEnabled) return;
+                emuInstance->getLocalConfig().SetInt(key, val);
+                invalidateHudAndRefreshPreviews();
+            });
+            break;
+        }
         case HWType::FontFamily: {
             // System-font picker: a "pick font" button (left) + an editable QFontComboBox (right).
             // QFontComboBox is a QComboBox, so all generic loops that iterate m_hudWidgets
@@ -285,6 +311,21 @@
             for (int a = 0; a < 3; ++a)
                 combo->addItem(QString::fromUtf8(kAlignLabels[a]));
             combo->setCurrentIndex(instcfg.GetInt(p.cfgKey));
+            form->addRow(QString::fromUtf8(p.label), combo);
+            m_hudWidgets[p.cfgKey] = combo;
+            connect(combo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this, key = std::string(p.cfgKey)](int val) {
+                if (!m_applyPreviewEnabled) return;
+                emuInstance->getLocalConfig().SetInt(key, val);
+                invalidateHudAndRefreshPreviews();
+            });
+            break;
+        }
+        case HWType::DotShape: {
+            auto* combo = new QComboBox(parent);
+            combo->setObjectName(objName);
+            combo->addItem(QStringLiteral("Square"));
+            combo->addItem(QStringLiteral("Circle"));
+            combo->setCurrentIndex(std::clamp(instcfg.GetInt(p.cfgKey), 0, 1));
             form->addRow(QString::fromUtf8(p.label), combo);
             m_hudWidgets[p.cfgKey] = combo;
             connect(combo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this, key = std::string(p.cfgKey)](int val) {
