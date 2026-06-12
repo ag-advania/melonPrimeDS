@@ -133,10 +133,10 @@
             combo->addItem(QStringLiteral("Staged"));
             combo->addItem(QStringLiteral("Fade"));
             combo->addItem(QStringLiteral("Glitch"));
+            combo->addItem(QStringLiteral("Glitch2"));
             combo->addItem(QStringLiteral("Snap"));
             combo->addItem(QStringLiteral("Expand"));
             combo->addItem(QStringLiteral("Contract"));
-            combo->addItem(QStringLiteral("Scanline"));
             combo->addItem(QStringLiteral("Digital"));
             combo->addItem(QStringLiteral("Pulse Wave"));
             combo->addItem(QStringLiteral("Crossfade"));
@@ -145,10 +145,7 @@
             combo->addItem(QStringLiteral("Tactical Lock"));
             combo->addItem(QStringLiteral("Sniper Optics"));
             combo->addItem(QStringLiteral("Drone LIDAR"));
-            combo->addItem(QStringLiteral("Glitch2"));
             combo->addItem(QStringLiteral("Beam Charge"));
-            combo->addItem(QStringLiteral("Wireframe"));
-            combo->addItem(QStringLiteral("Data Link"));
             combo->setCurrentIndex(std::clamp(instcfg.GetInt(p.cfgKey), p.min, p.max));
             form->addRow(QString::fromUtf8(p.label), combo);
             m_hudWidgets[p.cfgKey] = combo;

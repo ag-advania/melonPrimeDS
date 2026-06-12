@@ -13,7 +13,7 @@ namespace MelonPrime::ZoomStatus {
     inline constexpr uint32_t kCrosshairAnimActiveOffset = 0x04;
     inline constexpr uint32_t kCrosshairCurrentFrameOffset = 0x06;
     inline constexpr uint32_t kQ14One = 1u << 14;
-    inline constexpr int kCrosshairZoomTransitionStyleCount = 19;
+    inline constexpr int kCrosshairZoomTransitionStyleCount = 16;
 
     [[nodiscard]] FORCE_INLINE bool IsMainRamRange(uint32_t addr, uint32_t size) noexcept
     {
@@ -98,11 +98,15 @@ namespace MelonPrime::ZoomStatus {
 
     [[nodiscard]] FORCE_INLINE int RemapCrosshairZoomTransitionStyle(int style) noexcept
     {
-        // Thermal Scan (17) removed: old 17 -> Beam Charge, 18 -> Wireframe, 19 -> Data Link.
-        if (style <= 16) return style;
-        if (style == 17) return 16;
-        if (style == 18) return 17;
-        return 18;
+        // Only remap legacy IDs from the old 0..18 list. Current schema is 0..15;
+        // do not remap in-range values (Glitch2 is 3 in the new list, not old Snap).
+        if (style <= 15)
+            return style;
+        if (style == 16)
+            return 15; // Beam Charge
+        if (style == 17)
+            return 14; // Wireframe -> Drone LIDAR
+        return 12;     // Data Link / unknown -> Tactical Lock
     }
 
     [[nodiscard]] FORCE_INLINE CrosshairZoomBlend ComputeCrosshairZoomBlend(
@@ -141,7 +145,20 @@ namespace MelonPrime::ZoomStatus {
                 : 0.0f;
             break;
         }
-        case 3: { // Snap
+        case 3: { // Glitch2 — scan overload flicker (jam affects alpha only, not geom)
+            const float staged = SmoothStep(t);
+            const float jam = 0.84f + 0.16f * std::abs(std::sin(t * 30.0f));
+            b.geom = staged;
+            b.baseAlpha = (1.0f + (baseZoomOpacity - 1.0f) * staged)
+                        * (1.0f - SmoothStep(std::clamp((t - 0.04f) / 0.68f, 0.0f, 1.0f)))
+                        * jam;
+            b.scope = SmoothStep(std::clamp((t - 0.12f) / 0.78f, 0.0f, 1.0f));
+            b.pulse = (t > 0.02f && t < 0.98f)
+                ? std::abs(std::sin(t * 24.0f)) * pulseStrength * 0.50f
+                : 0.0f;
+            break;
+        }
+        case 4: { // Snap
             const float qt = QuantizeSteps(t, 5);
             b.geom = qt;
             b.baseAlpha = (1.0f + (baseZoomOpacity - 1.0f) * qt) * (1.0f - qt);
@@ -149,25 +166,17 @@ namespace MelonPrime::ZoomStatus {
             b.pulse = (qt > 0.01f && qt < 0.99f) ? pulseStrength * 0.5f : 0.0f;
             break;
         }
-        case 4: { // Expand
+        case 5: { // Expand
             b.scope = SmoothStep(std::clamp(t / 0.72f, 0.0f, 1.0f));
             b.geom = b.scope;
             b.baseAlpha = (1.0f + (baseZoomOpacity - 1.0f) * t) * (1.0f - b.scope);
             break;
         }
-        case 5: { // Contract — geom must be 0 when t=0 (not zoomed)
+        case 6: { // Contract — geom must be 0 when t=0 (not zoomed)
             const float shrink = SmoothStep(std::clamp(t / 0.55f, 0.0f, 1.0f));
             b.geom = shrink * (1.0f - 0.35f * shrink);
             b.baseAlpha = (1.0f + (baseZoomOpacity - 1.0f) * shrink) * (1.0f - shrink);
             b.scope = SmoothStep(std::clamp((t - 0.40f) / 0.60f, 0.0f, 1.0f));
-            break;
-        }
-        case 6: { // Scanline
-            const float staged = SmoothStep(t);
-            b.geom = staged;
-            b.baseAlpha = (1.0f + (baseZoomOpacity - 1.0f) * staged) * (1.0f - staged);
-            b.scope = SmoothStep(std::clamp((t - 0.22f) / 0.78f, 0.0f, 1.0f));
-            b.pulse = (t > 0.04f && t < 0.96f) ? pulseStrength * 0.85f : 0.0f;
             break;
         }
         case 7: { // Digital
@@ -237,43 +246,13 @@ namespace MelonPrime::ZoomStatus {
             b.pulse = pulseStrength * 0.4f;
             break;
         }
-        case 15: { // Glitch2 — scan overload flicker (jam affects alpha only, not geom)
-            const float staged = SmoothStep(t);
-            const float jam = 0.84f + 0.16f * std::abs(std::sin(t * 30.0f));
-            b.geom = staged;
-            b.baseAlpha = (1.0f + (baseZoomOpacity - 1.0f) * staged)
-                        * (1.0f - SmoothStep(std::clamp((t - 0.04f) / 0.68f, 0.0f, 1.0f)))
-                        * jam;
-            b.scope = SmoothStep(std::clamp((t - 0.12f) / 0.78f, 0.0f, 1.0f));
-            b.pulse = (t > 0.02f && t < 0.98f)
-                ? std::abs(std::sin(t * 24.0f)) * pulseStrength * 0.50f
-                : 0.0f;
-            break;
-        }
-        case 16: { // Beam Charge
+        case 15: { // Beam Charge
             const float staged = SmoothStep(t);
             b.geom = staged;
             b.baseAlpha = (1.0f + (baseZoomOpacity - 1.0f) * staged)
                         * (1.0f - SmoothStep(std::clamp((t - 0.18f) / 0.72f, 0.0f, 1.0f)));
             b.scope = SmoothStep(std::clamp((t - 0.30f) / 0.70f, 0.0f, 1.0f));
             b.pulse = std::sin(t * 3.14159265f) * pulseStrength * 0.85f;
-            break;
-        }
-        case 17: { // Wireframe
-            const float staged = SmoothStep(t);
-            b.geom = staged;
-            b.baseAlpha = (1.0f + (baseZoomOpacity - 1.0f) * staged)
-                        * (1.0f - SmoothStep(std::clamp((t - 0.10f) / 0.64f, 0.0f, 1.0f)));
-            b.scope = SmoothStep(std::clamp((t - 0.18f) / 0.82f, 0.0f, 1.0f));
-            break;
-        }
-        case 18: { // Data Link
-            const float staged = SmoothStep(t);
-            b.geom = staged;
-            b.baseAlpha = (1.0f + (baseZoomOpacity - 1.0f) * staged)
-                        * (1.0f - SmoothStep(std::clamp((t - 0.08f) / 0.60f, 0.0f, 1.0f)));
-            b.scope = SmoothStep(std::clamp((t - 0.14f) / 0.86f, 0.0f, 1.0f));
-            b.pulse = pulseStrength * 0.35f;
             break;
         }
         }

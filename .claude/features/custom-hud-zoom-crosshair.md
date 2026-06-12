@@ -15,11 +15,10 @@ Numeric keys:
 - `Metroid.Visual.CrosshairZoomScale`
 - `Metroid.Visual.CrosshairZoomOpacity`, default `0` (base crosshair hidden while fully zoomed)
 - `Metroid.Visual.CrosshairZoomTransitionSpeed`, default `100`, range `25..400`
-- `Metroid.Visual.CrosshairZoomTransitionStyle`, default `0` (Staged), range `0..18`
-  - `0` Staged, `1` Fade, `2` Glitch, `3` Snap, `4` Expand, `5` Contract,
-    `6` Scanline, `7` Digital, `8` Pulse Wave, `9` Crossfade, `10` Magic Circle,
-    `11` SF Movie, `12` Tactical Lock, `13` Sniper Optics, `14` Drone LIDAR,
-    `15` Glitch2, `16` Beam Charge, `17` Wireframe, `18` Data Link
+- `Metroid.Visual.CrosshairZoomTransitionStyle`, default `0` (Staged), range `0..15`
+  - `0` Staged, `1` Fade, `2` Glitch, `3` Glitch2, `4` Snap, `5` Expand, `6` Contract,
+    `7` Digital, `8` Pulse Wave, `9` Crossfade, `10` Magic Circle, `11` SF Movie,
+    `12` Tactical Lock, `13` Sniper Optics, `14` Drone LIDAR, `15` Beam Charge
 - `Metroid.Visual.CrosshairZoomTransitionPulseStrength`, default `38`, range `0..100`
 - `Metroid.Visual.CrosshairZoomScopeRadius`, default `128`, range `4..1024`
 - `Metroid.Visual.CrosshairZoomScopeLineLength`
@@ -68,9 +67,9 @@ scope reticle in one step. Instead:
 3. **Transition FX** — style-specific overlays during mid-transition. The pulse
    ring (styles that use it) is gated by `CrosshairZoomTransitionPulseEnable` and
    scaled by `CrosshairZoomTransitionPulseStrength`. Pick the overall feel with
-   `CrosshairZoomTransitionStyle` (Staged, Fade, Glitch, Snap, Expand, Contract,
-   Scanline, Digital, Pulse Wave, Crossfade, Magic Circle, SF Movie, Tactical Lock,
-   Sniper Optics, Drone LIDAR, Glitch2, Beam Charge, Wireframe, Data Link).
+   `CrosshairZoomTransitionStyle` (Staged, Fade, Glitch, Glitch2, Snap, Expand, Contract,
+   Digital, Pulse Wave, Crossfade, Magic Circle, SF Movie, Tactical Lock,
+   Sniper Optics, Drone LIDAR, Beam Charge).
    Fade and Crossfade use opacity-only blending (no darkening or flash overlays).
    Glitch uses AniGlitchArtFX-inspired RGB break, horizontal slices, scan bars,
    scanlines, block collapse, noise, and pixel grid (cyan #42e8ff / magenta #ff4fd8).
@@ -78,12 +77,8 @@ scope reticle in one step. Instead:
    SF Movie adds lock-on convergence rings, orbit ring, radar sweep,
    rangefinder ticks, chromatic glow, and corner brackets (overlay only —
    scope reticle size is never modulated by FX pulse).
-   Styles 12–18 are SF catalog presets: Tactical Lock (target box + lock rings),
-   Sniper Optics (iris aperture + focus brackets + rangefinder), Drone LIDAR
-   (point cloud + material grid), Glitch2 (scan disturb + glitch overload),
-   Beam Charge (charge ring + railgun lines + energy surge),
-   Wireframe (wireframe box + material grid),
-   Data Link (data HUD strip + hit probability arc + vertical scan).
+   Styles 12–15 are SF catalog presets: Tactical Lock, Sniper Optics, Drone LIDAR,
+   Beam Charge.
    See also `.claude/features/sf-reticle-effects-reference.md` for the full catalog.
 
 Toggle `CrosshairZoomTransitionEnable` to disable all transition animation and
