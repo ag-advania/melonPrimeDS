@@ -13,6 +13,7 @@ namespace MelonPrime::ZoomStatus {
     inline constexpr uint32_t kCrosshairAnimActiveOffset = 0x04;
     inline constexpr uint32_t kCrosshairCurrentFrameOffset = 0x06;
     inline constexpr uint32_t kQ14One = 1u << 14;
+    inline constexpr int kCrosshairZoomTransitionStyleCount = 19;
 
     [[nodiscard]] FORCE_INLINE bool IsMainRamRange(uint32_t addr, uint32_t size) noexcept
     {
@@ -61,28 +62,33 @@ namespace MelonPrime::ZoomStatus {
         return t * t * (3.0f - 2.0f * t);
     }
 
+    [[nodiscard]] FORCE_INLINE float QuantizeSteps(float t, int steps) noexcept
+    {
+        if (steps <= 1)
+            return t;
+        t = std::clamp(t, 0.0f, 1.0f);
+        return std::floor(t * static_cast<float>(steps) + 0.001f) / static_cast<float>(steps);
+    }
+
     struct CrosshairZoomBlend {
-        float geom = 0.0f;      // eased geometry scale driver
-        float baseAlpha = 1.0f; // base crosshair opacity multiplier
-        float scope = 0.0f;     // scope reticle reveal 0..1
-        float pulse = 0.0f;     // transition ring FX strength
+        float geom = 0.0f;
+        float baseAlpha = 1.0f;
+        float scope = 0.0f;
+        float pulse = 0.0f;
+        int fxStyle = 0; // mirrors transition style for optional draw FX
     };
 
-    // Staged crosshair↔scope blend: base fades first, scope expands in after.
-    [[nodiscard]] FORCE_INLINE CrosshairZoomBlend ComputeCrosshairZoomBlend(float t,
-                                                                            float baseZoomOpacity,
-                                                                            float pulseStrength = 1.0f) noexcept
+    [[nodiscard]] FORCE_INLINE CrosshairZoomBlend ComputeCrosshairZoomBlendStaged(
+        float t, float baseZoomOpacity, float pulseStrength) noexcept
     {
         CrosshairZoomBlend b{};
         t = std::clamp(t, 0.0f, 1.0f);
         pulseStrength = std::clamp(pulseStrength, 0.0f, 1.0f);
         b.geom = SmoothStep(t);
-
         const float baseFade =
             1.0f - SmoothStep(std::clamp((t - 0.10f) / 0.55f, 0.0f, 1.0f));
         const float opacityTarget = 1.0f + (baseZoomOpacity - 1.0f) * b.geom;
         b.baseAlpha = opacityTarget * baseFade;
-
         b.scope = SmoothStep(std::clamp((t - 0.28f) / 0.72f, 0.0f, 1.0f));
         b.pulse = (t > 0.03f && t < 0.97f)
             ? std::sin(t * 3.14159265f) * pulseStrength
@@ -90,7 +96,191 @@ namespace MelonPrime::ZoomStatus {
         return b;
     }
 
-    // Host-side temporal smoothing so instant scoped-bit flips still animate.
+    [[nodiscard]] FORCE_INLINE int RemapCrosshairZoomTransitionStyle(int style) noexcept
+    {
+        // Thermal Scan (17) removed: old 17 -> Beam Charge, 18 -> Wireframe, 19 -> Data Link.
+        if (style <= 16) return style;
+        if (style == 17) return 16;
+        if (style == 18) return 17;
+        return 18;
+    }
+
+    [[nodiscard]] FORCE_INLINE CrosshairZoomBlend ComputeCrosshairZoomBlend(
+        float t, float baseZoomOpacity, float pulseStrength, int style) noexcept
+    {
+        style = RemapCrosshairZoomTransitionStyle(style);
+        style = std::clamp(style, 0, kCrosshairZoomTransitionStyleCount - 1);
+        t = std::clamp(t, 0.0f, 1.0f);
+        pulseStrength = std::clamp(pulseStrength, 0.0f, 1.0f);
+
+        CrosshairZoomBlend b{};
+        b.fxStyle = style;
+
+        switch (style) {
+        default:
+        case 0: // Staged
+            return ComputeCrosshairZoomBlendStaged(t, baseZoomOpacity, pulseStrength);
+
+        case 1: { // Fade — opacity crossfade only
+            const float fade = SmoothStep(t);
+            b.geom = fade;
+            b.baseAlpha = (1.0f + (baseZoomOpacity - 1.0f) * fade) * (1.0f - fade);
+            b.scope = fade;
+            break;
+        }
+        case 2: { // Glitch — RGB break / slice bursts during mid-transition
+            const float staged = SmoothStep(t);
+            const float slice = 0.88f + 0.12f * std::sin(t * 26.0f);
+            b.geom = staged;
+            b.baseAlpha = (1.0f + (baseZoomOpacity - 1.0f) * staged)
+                        * (1.0f - SmoothStep(std::clamp((t - 0.06f) / 0.70f, 0.0f, 1.0f)))
+                        * slice;
+            b.scope = SmoothStep(std::clamp((t - 0.14f) / 0.80f, 0.0f, 1.0f));
+            b.pulse = (t > 0.04f && t < 0.96f)
+                ? std::abs(std::sin(t * 22.0f)) * pulseStrength * 0.42f
+                : 0.0f;
+            break;
+        }
+        case 3: { // Snap
+            const float qt = QuantizeSteps(t, 5);
+            b.geom = qt;
+            b.baseAlpha = (1.0f + (baseZoomOpacity - 1.0f) * qt) * (1.0f - qt);
+            b.scope = qt;
+            b.pulse = (qt > 0.01f && qt < 0.99f) ? pulseStrength * 0.5f : 0.0f;
+            break;
+        }
+        case 4: { // Expand
+            b.scope = SmoothStep(std::clamp(t / 0.72f, 0.0f, 1.0f));
+            b.geom = 1.0f + (baseZoomOpacity - 1.0f) * 0.15f * b.scope;
+            b.baseAlpha = (1.0f + (baseZoomOpacity - 1.0f) * t) * (1.0f - b.scope);
+            break;
+        }
+        case 5: { // Contract
+            const float shrink = SmoothStep(std::clamp(t / 0.55f, 0.0f, 1.0f));
+            b.geom = 1.0f - shrink * 0.35f;
+            b.baseAlpha = (1.0f + (baseZoomOpacity - 1.0f) * shrink) * (1.0f - shrink);
+            b.scope = SmoothStep(std::clamp((t - 0.40f) / 0.60f, 0.0f, 1.0f));
+            break;
+        }
+        case 6: { // Scanline
+            const float staged = SmoothStep(t);
+            b.geom = staged;
+            b.baseAlpha = (1.0f + (baseZoomOpacity - 1.0f) * staged) * (1.0f - staged);
+            b.scope = SmoothStep(std::clamp((t - 0.22f) / 0.78f, 0.0f, 1.0f));
+            b.pulse = (t > 0.04f && t < 0.96f) ? pulseStrength * 0.85f : 0.0f;
+            break;
+        }
+        case 7: { // Digital
+            const float qt = QuantizeSteps(t, 8);
+            b.geom = qt;
+            b.baseAlpha = (1.0f + (baseZoomOpacity - 1.0f) * qt) * (1.0f - qt);
+            b.scope = qt;
+            break;
+        }
+        case 8: { // Pulse Wave
+            const float wave = 0.5f + 0.5f * std::sin(t * 6.2831853f * 2.0f);
+            b.geom = SmoothStep(t);
+            b.baseAlpha = (1.0f + (baseZoomOpacity - 1.0f) * b.geom) * (1.0f - t) * wave;
+            b.scope = SmoothStep(t);
+            b.pulse = wave * pulseStrength;
+            break;
+        }
+        case 9: { // Crossfade — both layers overlap by opacity
+            const float fade = SmoothStep(t);
+            b.geom = fade;
+            b.baseAlpha = (1.0f + (baseZoomOpacity - 1.0f) * fade) * (1.0f - fade);
+            b.scope = fade;
+            break;
+        }
+        case 10: { // Magic Circle
+            const float staged = SmoothStep(t);
+            b.geom = staged;
+            b.baseAlpha = (1.0f + (baseZoomOpacity - 1.0f) * staged)
+                        * (1.0f - SmoothStep(std::clamp((t - 0.12f) / 0.58f, 0.0f, 1.0f)));
+            b.scope = SmoothStep(std::clamp((t - 0.22f) / 0.78f, 0.0f, 1.0f));
+            b.pulse = std::sin(t * 3.14159265f) * pulseStrength * 0.45f;
+            break;
+        }
+        case 11: { // SF Movie — scope geometry follows zoomT; glow is FX-only
+            const float staged = SmoothStep(t);
+            const float glow = 0.55f + 0.45f * std::sin(t * 6.2831853f);
+            b.geom = staged;
+            b.baseAlpha = (1.0f + (baseZoomOpacity - 1.0f) * staged)
+                        * (1.0f - SmoothStep(std::clamp((t - 0.05f) / 0.65f, 0.0f, 1.0f)));
+            b.scope = SmoothStep(std::clamp((t - 0.12f) / 0.88f, 0.0f, 1.0f));
+            b.pulse = glow * pulseStrength * 0.75f;
+            break;
+        }
+        case 12: { // Tactical Lock
+            const float staged = SmoothStep(t);
+            b.geom = staged;
+            b.baseAlpha = (1.0f + (baseZoomOpacity - 1.0f) * staged)
+                        * (1.0f - SmoothStep(std::clamp((t - 0.10f) / 0.62f, 0.0f, 1.0f)));
+            b.scope = SmoothStep(std::clamp((t - 0.16f) / 0.84f, 0.0f, 1.0f));
+            b.pulse = std::sin(t * 3.14159265f) * pulseStrength * 0.5f;
+            break;
+        }
+        case 13: { // Sniper Optics
+            const float staged = SmoothStep(t);
+            b.geom = staged;
+            b.baseAlpha = (1.0f + (baseZoomOpacity - 1.0f) * staged)
+                        * (1.0f - SmoothStep(std::clamp((t - 0.08f) / 0.70f, 0.0f, 1.0f)));
+            b.scope = SmoothStep(std::clamp((t - 0.20f) / 0.80f, 0.0f, 1.0f));
+            break;
+        }
+        case 14: { // Drone LIDAR
+            const float staged = SmoothStep(t);
+            b.geom = staged;
+            b.baseAlpha = (1.0f + (baseZoomOpacity - 1.0f) * staged)
+                        * (1.0f - SmoothStep(std::clamp((t - 0.14f) / 0.66f, 0.0f, 1.0f)));
+            b.scope = SmoothStep(std::clamp((t - 0.24f) / 0.76f, 0.0f, 1.0f));
+            b.pulse = pulseStrength * 0.4f;
+            break;
+        }
+        case 15: { // Cyber Jam — scan overload flicker
+            const float staged = SmoothStep(t);
+            const float jam = 0.84f + 0.16f * std::abs(std::sin(t * 30.0f));
+            b.geom = staged * jam;
+            b.baseAlpha = (1.0f + (baseZoomOpacity - 1.0f) * staged)
+                        * (1.0f - SmoothStep(std::clamp((t - 0.04f) / 0.68f, 0.0f, 1.0f)))
+                        * jam;
+            b.scope = SmoothStep(std::clamp((t - 0.12f) / 0.78f, 0.0f, 1.0f));
+            b.pulse = (t > 0.02f && t < 0.98f)
+                ? std::abs(std::sin(t * 24.0f)) * pulseStrength * 0.50f
+                : 0.0f;
+            break;
+        }
+        case 16: { // Beam Charge
+            const float staged = SmoothStep(t);
+            b.geom = staged;
+            b.baseAlpha = (1.0f + (baseZoomOpacity - 1.0f) * staged)
+                        * (1.0f - SmoothStep(std::clamp((t - 0.18f) / 0.72f, 0.0f, 1.0f)));
+            b.scope = SmoothStep(std::clamp((t - 0.30f) / 0.70f, 0.0f, 1.0f));
+            b.pulse = std::sin(t * 3.14159265f) * pulseStrength * 0.85f;
+            break;
+        }
+        case 17: { // Wireframe
+            const float staged = SmoothStep(t);
+            b.geom = staged;
+            b.baseAlpha = (1.0f + (baseZoomOpacity - 1.0f) * staged)
+                        * (1.0f - SmoothStep(std::clamp((t - 0.10f) / 0.64f, 0.0f, 1.0f)));
+            b.scope = SmoothStep(std::clamp((t - 0.18f) / 0.82f, 0.0f, 1.0f));
+            break;
+        }
+        case 18: { // Data Link
+            const float staged = SmoothStep(t);
+            b.geom = staged;
+            b.baseAlpha = (1.0f + (baseZoomOpacity - 1.0f) * staged)
+                        * (1.0f - SmoothStep(std::clamp((t - 0.08f) / 0.60f, 0.0f, 1.0f)));
+            b.scope = SmoothStep(std::clamp((t - 0.14f) / 0.86f, 0.0f, 1.0f));
+            b.pulse = pulseStrength * 0.35f;
+            break;
+        }
+        }
+
+        return b;
+    }
+
     [[nodiscard]] FORCE_INLINE float AdvanceDisplayZoom(float display,
                                                           float target,
                                                           float maxStep) noexcept

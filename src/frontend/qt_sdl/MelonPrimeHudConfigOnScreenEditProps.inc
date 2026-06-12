@@ -139,8 +139,18 @@ static const HudEditPropDesc kPropsRadar[] = {
     {"Src Radius", EditPropType::Int, MP_HUD_PROP_KEY_BtmOverlaySrcRadius, 10, 96, 1, nullptr, nullptr, nullptr},
 };
 
-static const HudEditPropDesc kPropsCrosshairMain[] = {
+static const HudEditPropDesc kPropsCrosshairNormal[] = {
     {"Scale %", EditPropType::Int, MP_HUD_PROP_KEY_CrosshairScale, 100, 800, 1, nullptr, nullptr, nullptr},
+    {"Outline", EditPropType::Bool, MP_HUD_PROP_KEY_CrosshairOutline, 0, 0, 0, nullptr, nullptr, nullptr},
+    {"Outline Opacity", EditPropType::Float, MP_HUD_PROP_KEY_CrosshairOutlineOpacity, 0, 100, 5, nullptr, nullptr, nullptr},
+    {"Outline Thick.", EditPropType::Int, MP_HUD_PROP_KEY_CrosshairOutlineThickness, 1, 10, 1, nullptr, nullptr, nullptr},
+    {"Center Dot", EditPropType::Bool, MP_HUD_PROP_KEY_CrosshairCenterDot, 0, 0, 0, nullptr, nullptr, nullptr},
+    {"Dot Opacity", EditPropType::Float, MP_HUD_PROP_KEY_CrosshairDotOpacity, 0, 100, 5, nullptr, nullptr, nullptr},
+    {"Dot Thick.", EditPropType::Int, MP_HUD_PROP_KEY_CrosshairDotThickness, 1, 10, 1, nullptr, nullptr, nullptr},
+    {"T-Style", EditPropType::Bool, MP_HUD_PROP_KEY_CrosshairTStyle, 0, 0, 0, nullptr, nullptr, nullptr},
+};
+
+static const HudEditPropDesc kPropsCrosshairZoom[] = {
     {"Zoom Stage", EditPropType::Bool, MP_HUD_PROP_KEY_CrosshairZoomStageEnable, 0, 0, 0, nullptr, nullptr, nullptr},
     {"Zoom Scale %", EditPropType::Int, MP_HUD_PROP_KEY_CrosshairZoomScale, 10, 200, 1, nullptr, nullptr, nullptr},
     {"Zoom Base Opacity %", EditPropType::Int, MP_HUD_PROP_KEY_CrosshairZoomOpacity, 0, 100, 1, nullptr, nullptr, nullptr},
@@ -152,18 +162,14 @@ static const HudEditPropDesc kPropsCrosshairMain[] = {
     {"Scope Center Dot", EditPropType::Bool, MP_HUD_PROP_KEY_CrosshairZoomScopeCenterDot, 0, 0, 0, nullptr, nullptr, nullptr},
     {"Scope Dot Size", EditPropType::Int, MP_HUD_PROP_KEY_CrosshairZoomScopeDotSize, 1, 32, 1, nullptr, nullptr, nullptr},
     {"Scope Dot Opacity %", EditPropType::Int, MP_HUD_PROP_KEY_CrosshairZoomScopeDotOpacity, 0, 100, 1, nullptr, nullptr, nullptr},
+    {"Custom Dot Color", EditPropType::Bool, MP_HUD_PROP_KEY_CrosshairZoomScopeDotCustomColor, 0, 0, 0, nullptr, nullptr, nullptr},
+    {"Scope Dot Color", EditPropType::Color, MP_HUD_PROP_KEY_CrosshairZoomScopeDotColorR, 0, 255, 1, MP_HUD_PROP_KEY_CrosshairZoomScopeDotColorG, MP_HUD_PROP_KEY_CrosshairZoomScopeDotColorB, nullptr},
     {"Scope Opacity %", EditPropType::Int, MP_HUD_PROP_KEY_CrosshairZoomScopeOpacity, 0, 100, 1, nullptr, nullptr, nullptr},
     {"Zoom Transition", EditPropType::Bool, MP_HUD_PROP_KEY_CrosshairZoomTransitionEnable, 0, 0, 0, nullptr, nullptr, nullptr},
+    {"Transition Style", EditPropType::Enum, MP_HUD_PROP_KEY_CrosshairZoomTransitionStyle, 0, 18, 1, kEnumZoomTransitionStyle, nullptr, nullptr},
     {"Transition Speed %", EditPropType::Int, MP_HUD_PROP_KEY_CrosshairZoomTransitionSpeed, 25, 400, 5, nullptr, nullptr, nullptr},
     {"Pulse Ring", EditPropType::Bool, MP_HUD_PROP_KEY_CrosshairZoomTransitionPulseEnable, 0, 0, 0, nullptr, nullptr, nullptr},
     {"Pulse Strength %", EditPropType::Int, MP_HUD_PROP_KEY_CrosshairZoomTransitionPulseStrength, 0, 100, 1, nullptr, nullptr, nullptr},
-    {"Outline", EditPropType::Bool, MP_HUD_PROP_KEY_CrosshairOutline, 0, 0, 0, nullptr, nullptr, nullptr},
-    {"Outline Opacity", EditPropType::Float, MP_HUD_PROP_KEY_CrosshairOutlineOpacity, 0, 100, 5, nullptr, nullptr, nullptr},
-    {"Outline Thick.", EditPropType::Int, MP_HUD_PROP_KEY_CrosshairOutlineThickness, 1, 10, 1, nullptr, nullptr, nullptr},
-    {"Center Dot", EditPropType::Bool, MP_HUD_PROP_KEY_CrosshairCenterDot, 0, 0, 0, nullptr, nullptr, nullptr},
-    {"Dot Opacity", EditPropType::Float, MP_HUD_PROP_KEY_CrosshairDotOpacity, 0, 100, 5, nullptr, nullptr, nullptr},
-    {"Dot Thick.", EditPropType::Int, MP_HUD_PROP_KEY_CrosshairDotThickness, 1, 10, 1, nullptr, nullptr, nullptr},
-    {"T-Style", EditPropType::Bool, MP_HUD_PROP_KEY_CrosshairTStyle, 0, 0, 0, nullptr, nullptr, nullptr},
 };
 
 static const HudEditPropDesc kPropsCrosshairInner[] = {
@@ -186,7 +192,8 @@ static const HudEditPropDesc kPropsCrosshairOuter[] = {
     {"Offset", EditPropType::Int, MP_HUD_PROP_KEY_CrosshairOuterOffset, 0, 64, 1, nullptr, nullptr, nullptr},
 };
 
-static constexpr int kCrosshairMainCount = HUD_EDIT_PROP_COUNT(kPropsCrosshairMain);
+static constexpr int kCrosshairNormalCount = HUD_EDIT_PROP_COUNT(kPropsCrosshairNormal);
+static constexpr int kCrosshairZoomCount = HUD_EDIT_PROP_COUNT(kPropsCrosshairZoom);
 static constexpr int kCrosshairInnerCount = HUD_EDIT_PROP_COUNT(kPropsCrosshairInner);
 static constexpr int kCrosshairOuterCount = HUD_EDIT_PROP_COUNT(kPropsCrosshairOuter);
 

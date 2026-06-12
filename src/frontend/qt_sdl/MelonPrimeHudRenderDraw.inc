@@ -724,15 +724,350 @@ static QRect TopScreenContentClipPx(const QTransform& xf, float topStretchX)
     return xf.mapRect(dsRect).toAlignedRect();
 }
 
-static void DrawZoomTransitionPulse(QPainter* p, int pxCx, int pxCy,
-                                    const CrosshairHudConfig& ch,
-                                    double zoomT, double pulseT,
-                                    const QRect& topScreenClipPx)
+static double CrosshairTransitionMidIntensity(double zoomT)
 {
-    if (pulseT <= 0.01 || !ch.cachedZoomScopeRenderable || !ch.chZoomTransitionPulseEnable)
+    zoomT = std::clamp(zoomT, 0.0, 1.0);
+    return 4.0 * zoomT * (1.0 - zoomT);
+}
+
+static uint32_t AdvanceCrosshairFxPhase(uint32_t phase) noexcept
+{
+    return phase * 1664525u + 1013904223u;
+}
+
+struct CrosshairGlitchJitter {
+    int baseOx = 0;
+    int baseOy = 0;
+    int scopeOx = 0;
+    int scopeOy = 0;
+};
+
+static CrosshairGlitchJitter ComputeCrosshairGlitchJitter(int fxStyle, double zoomT,
+                                                          uint32_t& phase)
+{
+    CrosshairGlitchJitter j{};
+    if (fxStyle != 2 && fxStyle != 15)
+        return j;
+
+    const double fx = CrosshairTransitionMidIntensity(zoomT);
+    if (fx < 0.03)
+        return j;
+
+    phase = AdvanceCrosshairFxPhase(phase);
+    const int bucket = static_cast<int>((phase >> 4) & 7u);
+    if (bucket == 0)
+        return j;
+
+    const int mag = std::max(1, static_cast<int>(std::lround(1.0 + fx * (fxStyle == 15 ? 6.0 : 5.0))));
+    const int dir = ((phase >> 7) & 1u) ? 1 : -1;
+    const int rgbMode = static_cast<int>((phase >> 11) & 3u);
+
+    switch (rgbMode) {
+    case 0:
+        j.scopeOx = -dir * mag;
+        j.baseOx = -dir * std::max(1, mag / 2);
+        break;
+    case 1:
+        j.scopeOx = dir * mag;
+        j.baseOx = dir * std::max(1, mag / 2);
+        break;
+    case 2:
+        j.scopeOx = dir * mag;
+        j.scopeOy = -dir * std::max(1, mag / 2);
+        j.baseOx = j.scopeOx / 2;
+        j.baseOy = j.scopeOy / 2;
+        break;
+    default:
+        j.scopeOx = -dir * std::max(1, mag / 2);
+        j.scopeOy = dir * std::max(1, mag / 3);
+        j.baseOx = j.scopeOx;
+        j.baseOy = j.scopeOy / 2;
+        break;
+    }
+    return j;
+}
+
+static void DrawCrosshairGlowRing(QPainter* p, int cx, int cy, int radius,
+                                  const QColor& color, int baseWidth, double alpha)
+{
+    if (radius <= 0 || alpha <= 0.001)
+        return;
+    p->setBrush(Qt::NoBrush);
+    for (int pass = 3; pass >= 0; --pass) {
+        QPen pen(color);
+        pen.setWidth(std::max(1, baseWidth + pass * 2));
+        p->setPen(pen);
+        p->setOpacity(alpha * (0.18 + pass * 0.12));
+        p->drawEllipse(QRect(cx - radius, cy - radius, radius * 2, radius * 2));
+    }
+}
+
+#include "MelonPrimeHudRenderCrosshairFx.inc"
+
+static void DrawZoomTransitionFx(QPainter* p, int pxCx, int pxCy,
+                                 const CrosshairHudConfig& ch,
+                                 double zoomT, double pulseT, int fxStyle,
+                                 const QRect& topScreenClipPx)
+{
+    const double midFx = CrosshairTransitionMidIntensity(zoomT);
+    const int maxR = ch.chZoomScopeRadius;
+
+    if (midFx >= 0.015 && ch.cachedZoomScopeRenderable) {
+        p->save();
+        if (!topScreenClipPx.isEmpty())
+            p->setClipRect(topScreenClipPx, Qt::IntersectClip);
+
+        switch (fxStyle) {
+    case 1: // Fade — opacity-only; no overlay FX
+        break;
+    case 2: { // Glitch — AniGlitchArtFX-style RGB break / slices / scan bars
+        static uint32_t s_chGlitchFxPhase = 0xC0FFEE01u;
+        DrawFxGlitchArtOverlay(p, pxCx, pxCy, maxR, std::clamp(zoomT, 0.0, 1.0), midFx,
+                               ch.chZoomScopeThickness, s_chGlitchFxPhase, 0);
+        break;
+    }
+    case 3: { // Snap
+        p->setRenderHint(QPainter::Antialiasing, true);
+        const float qt = ZoomStatus::QuantizeSteps(static_cast<float>(zoomT), 5);
+        const int ghostR = std::max(4, static_cast<int>(maxR * qt + 0.5));
+        QPen pen(ch.chColor);
+        pen.setWidth(std::max(1, ch.chZoomScopeThickness));
+        pen.setStyle(Qt::DashLine);
+        p->setPen(pen);
+        p->setBrush(Qt::NoBrush);
+        p->setOpacity(0.45 * midFx);
+        p->drawEllipse(QRect(pxCx - ghostR, pxCy - ghostR, ghostR * 2, ghostR * 2));
+        break;
+    }
+    case 4: { // Expand
+        p->setRenderHint(QPainter::Antialiasing, true);
+        const int r = std::max(6, static_cast<int>(maxR * std::clamp(zoomT / 0.55, 0.0, 1.0) + 0.5));
+        QPen pen(ch.chColor);
+        pen.setWidth(std::max(1, ch.chZoomScopeThickness));
+        p->setPen(pen);
+        p->setBrush(Qt::NoBrush);
+        p->setOpacity(0.55 * midFx);
+        p->drawEllipse(QRect(pxCx - r, pxCy - r, r * 2, r * 2));
+        break;
+    }
+    case 5: { // Contract
+        p->setRenderHint(QPainter::Antialiasing, false);
+        const int half = std::max(4, static_cast<int>((maxR * 0.55) * (1.0 - zoomT) + 0.5));
+        p->setPen(QPen(ch.chColor, std::max(1, ch.chZoomScopeThickness)));
+        p->setBrush(Qt::NoBrush);
+        p->setOpacity(0.65 * midFx);
+        p->drawRect(QRect(pxCx - half, pxCy - half, half * 2, half * 2));
+        break;
+    }
+    case 6: { // Scanline
+        p->setRenderHint(QPainter::Antialiasing, false);
+        QPen pen(ch.chColor);
+        pen.setWidth(std::max(1, ch.chZoomScopeThickness));
+        p->setPen(pen);
+        const int lines = 3;
+        for (int i = 0; i < lines; ++i) {
+            const double phase = zoomT * 1.6 + i * (1.0 / lines);
+            const int yOff = static_cast<int>((phase - std::floor(phase) - 0.5) * maxR * 1.8);
+            p->setOpacity((0.25 + 0.35 * midFx) * (1.0 - i * 0.18));
+            p->drawLine(QPoint(pxCx - maxR, pxCy + yOff), QPoint(pxCx + maxR, pxCy + yOff));
+        }
+        DrawFxVerticalScan(p, pxCx, pxCy, maxR, zoomT, midFx, ch.chColor, ch.chZoomScopeThickness);
+        break;
+    }
+    case 7: { // Digital — pixel crush + block noise
+        p->setRenderHint(QPainter::Antialiasing, false);
+        static uint32_t s_chDigitalPhase = 0x12345678u;
+        s_chDigitalPhase = AdvanceCrosshairFxPhase(s_chDigitalPhase);
+        const int blocks = 10 + static_cast<int>((s_chDigitalPhase >> 6) & 11u);
+        p->setPen(Qt::NoPen);
+        for (int i = 0; i < blocks; ++i) {
+            s_chDigitalPhase = AdvanceCrosshairFxPhase(s_chDigitalPhase);
+            const int bx = pxCx + static_cast<int>(((s_chDigitalPhase >> 3) & 31u) - 16)
+                         * std::max(1, maxR / 14);
+            const int by = pxCy + static_cast<int>(((s_chDigitalPhase >> 9) & 31u) - 16)
+                         * std::max(1, maxR / 14);
+            const int bw = 2 + static_cast<int>((s_chDigitalPhase >> 14) & 9u);
+            const int bh = 2 + static_cast<int>((s_chDigitalPhase >> 18) & 9u);
+            const QColor pxColor = ((s_chDigitalPhase >> 22) & 1u)
+                ? kGlitchMagenta
+                : kGlitchCyan;
+            p->setBrush(QColor(pxColor.red(), pxColor.green(), pxColor.blue(),
+                               static_cast<int>(150 + 80 * midFx)));
+            p->setOpacity(0.85 * midFx);
+            p->drawRect(QRect(bx, by, bw, bh));
+        }
+        DrawFxGlitchPixelGrid(p, pxCx, pxCy, maxR, midFx * 0.65, s_chDigitalPhase);
+        DrawFxGlitchNoise(p, pxCx, pxCy, maxR, midFx * 0.45, s_chDigitalPhase, 8);
+        break;
+    }
+    case 8: { // Pulse Wave
+        p->setRenderHint(QPainter::Antialiasing, true);
+        QPen pen(ch.chColor);
+        pen.setWidth(std::max(1, ch.chZoomScopeThickness));
+        p->setPen(pen);
+        p->setBrush(Qt::NoBrush);
+        for (int wave = 0; wave < 3; ++wave) {
+            const double phase = zoomT * 2.0 + wave * 0.33;
+            const float w = 0.5f + 0.5f * std::sin(static_cast<float>(phase * 6.2831853));
+            const int r = std::max(4, static_cast<int>((maxR / 6)
+                + (maxR - maxR / 6) * w * std::clamp(zoomT, 0.0, 1.0) + 0.5));
+            p->setOpacity((0.12 + 0.28 * midFx) * (1.0 - wave * 0.22));
+            p->drawEllipse(QRect(pxCx - r, pxCy - r, r * 2, r * 2));
+        }
+        break;
+    }
+    case 9: // Crossfade — opacity-only; no overlay FX
+        break;
+    case 10: { // Magic Circle
+        p->setRenderHint(QPainter::Antialiasing, true);
+        const double rot = zoomT * 540.0;
+        const int outerR = std::max(10, static_cast<int>(maxR * std::clamp(zoomT, 0.0, 1.0) + 0.5));
+        const int innerR = std::max(6, outerR * 3 / 5);
+        QPen pen(ch.chColor);
+        pen.setWidth(std::max(1, ch.chZoomScopeThickness));
+        p->setPen(pen);
+        p->setBrush(Qt::NoBrush);
+
+        for (int ring = 0; ring < 2; ++ring) {
+            const int r = (ring == 0) ? outerR : innerR;
+            const double ringRot = rot * (ring == 0 ? 1.0 : -1.35);
+            for (int i = 0; i < 6; ++i) {
+                const int start = static_cast<int>((ringRot + i * 60.0 + 8.0) * 16.0);
+                const int span = static_cast<int>(34.0 * 16.0);
+                p->setOpacity((0.34 - ring * 0.08) * midFx);
+                p->drawArc(QRect(pxCx - r, pxCy - r, r * 2, r * 2), start, span);
+            }
+        }
+
+        p->save();
+        p->translate(pxCx, pxCy);
+        p->rotate(rot * 0.5);
+        pen.setWidth(std::max(1, ch.chZoomScopeThickness - 1));
+        p->setPen(pen);
+        p->setOpacity(0.42 * midFx);
+        const int sq = std::max(6, innerR * 2 / 3);
+        p->drawRect(QRect(-sq, -sq, sq * 2, sq * 2));
+        p->restore();
+
+        pen.setWidth(1);
+        p->setPen(pen);
+        for (int i = 0; i < 8; ++i) {
+            const double ang = (rot * 0.35 + i * 45.0) * 3.14159265 / 180.0;
+            const int x0 = pxCx + static_cast<int>(std::cos(ang) * (innerR - 4));
+            const int y0 = pxCy + static_cast<int>(std::sin(ang) * (innerR - 4));
+            const int x1 = pxCx + static_cast<int>(std::cos(ang) * (innerR + 2));
+            const int y1 = pxCy + static_cast<int>(std::sin(ang) * (innerR + 2));
+            p->setOpacity(0.38 * midFx);
+            p->drawLine(QPoint(x0, y0), QPoint(x1, y1));
+        }
+        break;
+    }
+    case 11: { // SF Movie
+        p->setRenderHint(QPainter::Antialiasing, true);
+        const double lockT = std::clamp(zoomT, 0.0, 1.0);
+        const QColor glowColor(ch.chColor.red(), ch.chColor.green(), ch.chColor.blue(), 255);
+        const QColor cyan(72, 220, 255);
+        const QColor warm(255, 148, 96);
+        DrawFxConvergingRings(p, pxCx, pxCy, maxR, lockT, midFx, glowColor, ch.chZoomScopeThickness);
+        DrawFxRadarSweep(p, pxCx, pxCy, maxR, lockT, midFx, glowColor, ch.chZoomScopeThickness);
+        DrawFxRangefinderTicks(p, pxCx, pxCy, maxR, lockT, midFx, glowColor);
+        const int glowR = std::max(8, static_cast<int>(maxR * lockT + 0.5));
+        DrawCrosshairGlowRing(p, pxCx - 1, pxCy, glowR, cyan, 1, 0.22 * midFx);
+        DrawCrosshairGlowRing(p, pxCx + 1, pxCy, glowR, warm, 1, 0.18 * midFx);
+        DrawFxCornerBrackets(p, pxCx, pxCy, maxR, lockT, midFx, glowColor, ch.chZoomScopeThickness);
+        break;
+    }
+    case 12: { // Tactical Lock
+        p->setRenderHint(QPainter::Antialiasing, true);
+        const double lockT = std::clamp(zoomT, 0.0, 1.0);
+        static uint32_t s_chTacticalPhase = 0xCA471CA1u;
+        DrawFxTargetBoxAcquisition(p, pxCx, pxCy, maxR, lockT, midFx, ch.chColor,
+                                   ch.chZoomScopeThickness, s_chTacticalPhase);
+        DrawFxConvergingRings(p, pxCx, pxCy, maxR, lockT, midFx, ch.chColor, ch.chZoomScopeThickness);
+        DrawFxCornerBrackets(p, pxCx, pxCy, maxR, lockT, midFx, ch.chColor, ch.chZoomScopeThickness, 0.04f);
+        if (lockT > 0.82) {
+            p->setPen(Qt::NoPen);
+            p->setBrush(ch.chColor);
+            p->setOpacity(0.55 * midFx);
+            p->drawEllipse(QRect(pxCx - 2, pxCy - 2, 5, 5));
+        }
+        break;
+    }
+    case 13: { // Sniper Optics
+        p->setRenderHint(QPainter::Antialiasing, true);
+        const double lockT = std::clamp(zoomT, 0.0, 1.0);
+        DrawFxIrisAperture(p, pxCx, pxCy, maxR, lockT, midFx, ch.chColor, ch.chZoomScopeThickness);
+        DrawFxCornerBrackets(p, pxCx, pxCy, maxR, lockT, midFx, ch.chColor, ch.chZoomScopeThickness);
+        DrawFxRangefinderTicks(p, pxCx, pxCy, maxR, lockT, midFx, ch.chColor);
+        QPen pen(ch.chColor);
+        pen.setWidth(1);
+        p->setPen(pen);
+        const int ladderX = pxCx + std::max(14, maxR / 3);
+        const int ladderH = std::max(12, static_cast<int>(maxR * 0.5 * lockT));
+        for (int i = -3; i <= 3; ++i) {
+            p->setOpacity(0.22 * midFx);
+            p->drawLine(QPoint(ladderX, pxCy + i * ladderH / 3),
+                        QPoint(ladderX + (i == 0 ? 8 : 4), pxCy + i * ladderH / 3));
+        }
+        break;
+    }
+    case 14: { // Drone LIDAR
+        p->setRenderHint(QPainter::Antialiasing, false);
+        const double lockT = std::clamp(zoomT, 0.0, 1.0);
+        static uint32_t s_chLidarPhase = 0x11DA0001u;
+        DrawFxLidarCloud(p, pxCx, pxCy, maxR, lockT, midFx, ch.chColor, s_chLidarPhase);
+        DrawFxWireframeBox(p, pxCx, pxCy, maxR, lockT, midFx, ch.chColor, ch.chZoomScopeThickness);
+        DrawFxMaterialGrid(p, pxCx, pxCy, maxR, lockT, midFx, ch.chColor);
+        break;
+    }
+    case 15: { // Cyber Jam — scan-disturb overload + tactical brackets
+        p->setRenderHint(QPainter::Antialiasing, false);
+        const double lockT = std::clamp(zoomT, 0.0, 1.0);
+        static uint32_t s_chCyberPhase = 0xC088E001u;
+        DrawFxGlitchArtOverlay(p, pxCx, pxCy, maxR, lockT, midFx,
+                               ch.chZoomScopeThickness, s_chCyberPhase, 1);
+        DrawFxScanDisturb(p, pxCx, pxCy, maxR, lockT, midFx * 0.9, ch.chColor, s_chCyberPhase);
+        DrawFxCornerBrackets(p, pxCx + 3, pxCy - 1, maxR, lockT, midFx * 0.65, ch.chColor, 1);
+        break;
+    }
+    case 16: { // Beam Charge
+        p->setRenderHint(QPainter::Antialiasing, true);
+        const double lockT = std::clamp(zoomT, 0.0, 1.0);
+        DrawFxChargeRingFill(p, pxCx, pxCy, maxR, lockT, midFx, ch.chColor, ch.chZoomScopeThickness);
+        DrawFxEnergySurge(p, pxCx, pxCy, maxR, lockT, midFx, ch.chColor, ch.chZoomScopeThickness);
+        DrawFxRailgunLines(p, pxCx, pxCy, maxR, lockT, midFx, ch.chColor, ch.chZoomScopeThickness);
+        break;
+    }
+    case 17: { // Wireframe
+        p->setRenderHint(QPainter::Antialiasing, true);
+        const double lockT = std::clamp(zoomT, 0.0, 1.0);
+        DrawFxWireframeBox(p, pxCx, pxCy, maxR, lockT, midFx, ch.chColor, ch.chZoomScopeThickness);
+        DrawFxMaterialGrid(p, pxCx, pxCy, maxR, lockT * 0.9, midFx, ch.chColor);
+        break;
+    }
+    case 18: { // Data Link
+        p->setRenderHint(QPainter::Antialiasing, true);
+        const double lockT = std::clamp(zoomT, 0.0, 1.0);
+        DrawFxSoftLockHalo(p, pxCx, pxCy, maxR, lockT, midFx, ch.chColor);
+        DrawFxDataHudStrip(p, pxCx, pxCy, maxR, lockT, midFx, ch.chColor);
+        DrawFxHitProbabilityArc(p, pxCx, pxCy, maxR, lockT, midFx, ch.chColor, ch.chZoomScopeThickness);
+        DrawFxConvergingRings(p, pxCx, pxCy, maxR, lockT, midFx * 0.85, ch.chColor, 1);
+        break;
+    }
+        default:
+            break;
+        }
+
+        p->restore();
+    }
+
+    const bool drawPulseRing = ch.chZoomTransitionPulseEnable
+        && pulseT > 0.01
+        && (fxStyle == 0 || fxStyle == 8 || fxStyle == 11 || fxStyle == 12
+            || fxStyle == 16 || fxStyle == 18);
+    if (!drawPulseRing)
         return;
 
-    const int maxR = ch.chZoomScopeRadius;
     const int r0 = std::max(4, maxR / 8);
     const int ringR = r0 + static_cast<int>((maxR - r0) * std::clamp(zoomT, 0.0, 1.0) + 0.5);
     const double outerAlpha = pulseT * 0.38;
@@ -761,24 +1096,45 @@ static void DrawZoomTransitionPulse(QPainter* p, int pxCx, int pxCy,
 
 static void DrawZoomScopeReticle(QPainter* p, int pxCx, int pxCy,
                                  const CrosshairHudConfig& ch, double scopeT,
-                                 const QRect& topScreenClipPx)
+                                 const QRect& topScreenClipPx,
+                                 int glitchOx = 0, int glitchOy = 0)
 {
+    pxCx += glitchOx;
+    pxCy += glitchOy;
     const double scopeGeom = std::clamp(scopeT, 0.0, 1.0);
     const double scopeOpacity = scopeGeom * ch.chZoomScopeOpacity;
     if (!ch.cachedZoomScopeRenderable || scopeOpacity <= 0.001)
         return;
 
     const int radius = std::max(1, static_cast<int>(ch.chZoomScopeRadius * scopeGeom + 0.5));
-    const int lineEnd = std::max(1, static_cast<int>(ch.cachedZoomScopeLineEndPx * scopeGeom + 0.5));
-    const int gap = std::min(ch.cachedZoomScopeGapPx,
-                             std::max(0, lineEnd - 1));
+    const int gap = std::min(ch.cachedZoomScopeGapPx, std::max(0, radius - 1));
+    const int armEnd = std::max(gap + 1, radius);
     const int thickness = ch.chZoomScopeThickness;
 
     p->save();
     if (!topScreenClipPx.isEmpty())
         p->setClipRect(topScreenClipPx, Qt::IntersectClip);
 
-    auto drawPass = [&](const QColor& color, int width, double opacity) {
+    auto drawArms = [&](const QColor& color, int width, double opacity) {
+        if (armEnd <= gap)
+            return;
+        QPainterPath circleClip;
+        circleClip.addEllipse(QRect(pxCx - radius, pxCy - radius, radius * 2, radius * 2));
+        p->save();
+        p->setClipPath(circleClip, Qt::IntersectClip);
+        QPen pen(color);
+        pen.setWidth(std::max(1, width));
+        pen.setCapStyle(Qt::SquareCap);
+        p->setPen(pen);
+        p->setBrush(Qt::NoBrush);
+        p->setOpacity(opacity);
+        p->drawLine(QPoint(pxCx - armEnd, pxCy), QPoint(pxCx - gap, pxCy));
+        p->drawLine(QPoint(pxCx + gap, pxCy), QPoint(pxCx + armEnd, pxCy));
+        p->drawLine(QPoint(pxCx, pxCy - armEnd), QPoint(pxCx, pxCy - gap));
+        p->drawLine(QPoint(pxCx, pxCy + gap), QPoint(pxCx, pxCy + armEnd));
+        p->restore();
+    };
+    auto drawCirclePass = [&](const QColor& color, int width, double opacity) {
         QPen pen(color);
         pen.setWidth(std::max(1, width));
         pen.setCapStyle(Qt::SquareCap);
@@ -786,12 +1142,6 @@ static void DrawZoomScopeReticle(QPainter* p, int pxCx, int pxCy,
         p->setBrush(Qt::NoBrush);
         p->setOpacity(opacity);
         p->drawEllipse(QRect(pxCx - radius, pxCy - radius, radius * 2, radius * 2));
-        if (lineEnd > gap) {
-            p->drawLine(QPoint(pxCx - lineEnd, pxCy), QPoint(pxCx - gap, pxCy));
-            p->drawLine(QPoint(pxCx + gap, pxCy), QPoint(pxCx + lineEnd, pxCy));
-            p->drawLine(QPoint(pxCx, pxCy - lineEnd), QPoint(pxCx, pxCy - gap));
-            p->drawLine(QPoint(pxCx, pxCy + gap), QPoint(pxCx, pxCy + lineEnd));
-        }
     };
     auto drawDotPass = [&](const QColor& color, int size, double opacity) {
         if (!ch.chZoomScopeCenterDot || ch.chZoomScopeDotOpacity <= 0.0)
@@ -800,22 +1150,26 @@ static void DrawZoomScopeReticle(QPainter* p, int pxCx, int pxCy,
         const int dotHalf = dotSize / 2;
         p->setPen(Qt::NoPen);
         p->setBrush(color);
-        p->setOpacity(opacity * ch.chZoomScopeDotOpacity);
+        p->setOpacity(opacity);
         p->drawEllipse(QRect(pxCx - dotHalf, pxCy - dotHalf, dotSize, dotSize));
     };
 
     p->setRenderHint(QPainter::Antialiasing, true);
     if (ch.chOutline && ch.chOutlineOpacity > 0.0) {
         static const QColor solidBlack(0, 0, 0, 255);
-        drawPass(solidBlack,
+        drawArms(solidBlack,
                  thickness + std::max(1, ch.chOutlineThickness) * 2,
                  ch.chOutlineOpacity * scopeOpacity);
+        drawCirclePass(solidBlack,
+                       thickness + std::max(1, ch.chOutlineThickness) * 2,
+                       ch.chOutlineOpacity * scopeOpacity);
         drawDotPass(solidBlack,
                     ch.chZoomScopeDotSize + std::max(1, ch.chOutlineThickness) * 2,
                     ch.chOutlineOpacity * scopeOpacity);
     }
-    drawPass(ch.chColor, thickness, scopeOpacity);
-    drawDotPass(ch.chColor, ch.chZoomScopeDotSize, scopeOpacity);
+    drawArms(ch.chColor, thickness, scopeOpacity);
+    drawCirclePass(ch.chColor, thickness, scopeOpacity);
+    drawDotPass(ch.chZoomScopeDotDrawColor, ch.chZoomScopeDotSize, scopeOpacity);
 
     p->restore();
 }
@@ -840,6 +1194,7 @@ static void DrawCrosshair(QPainter* p, melonDS::u8* ram,
     double opacityMul = 1.0;
     double scopeT = 0.0;
     double pulseT = 0.0;
+    int transitionFxStyle = 0;
     if (c.crosshair.cachedZoomAffectsVisual) {
         const float targetZoom =
             std::clamp(static_cast<float>(zoomAmount), 0.0f, 1.0f);
@@ -857,12 +1212,14 @@ static void DrawCrosshair(QPainter* p, melonDS::u8* ram,
                 ZoomStatus::ComputeCrosshairZoomBlend(
                     t,
                     static_cast<float>(c.crosshair.chZoomOpacity),
-                    static_cast<float>(c.crosshair.chZoomTransitionPulseStrength));
+                    static_cast<float>(c.crosshair.chZoomTransitionPulseStrength),
+                    c.crosshair.chZoomTransitionStyle);
             zoomT = t;
             geomScale = 1.0 + (c.crosshair.chZoomScale - 1.0) * blend.geom;
             opacityMul = blend.baseAlpha;
             scopeT = blend.scope;
             pulseT = c.crosshair.chZoomTransitionPulseEnable ? blend.pulse : 0.0;
+            transitionFxStyle = blend.fxStyle;
         } else {
             zoomT = t;
             geomScale = 1.0 + (c.crosshair.chZoomScale - 1.0) * t;
@@ -879,6 +1236,22 @@ static void DrawCrosshair(QPainter* p, melonDS::u8* ram,
     const QRect scopeClipPx = TopScreenContentClipPx(xf, topStretchX);
     const int pxCx = static_cast<int>(std::round(xf.m11() * dsCx + xf.m21() * dsCy + xf.dx()));
     const int pxCy = static_cast<int>(std::round(xf.m12() * dsCx + xf.m22() * dsCy + xf.dy()));
+    int glitchOx = 0;
+    int glitchOy = 0;
+    int scopeGlitchOx = 0;
+    int scopeGlitchOy = 0;
+    static uint32_t s_chGlitchPhase = 0xA341316Cu;
+    if (c.crosshair.chZoomTransitionEnable
+        && (transitionFxStyle == 2 || transitionFxStyle == 15)) {
+        const CrosshairGlitchJitter jitter =
+            ComputeCrosshairGlitchJitter(transitionFxStyle, zoomT, s_chGlitchPhase);
+        glitchOx = jitter.baseOx;
+        glitchOy = jitter.baseOy;
+        scopeGlitchOx = jitter.scopeOx;
+        scopeGlitchOy = jitter.scopeOy;
+    }
+    const int drawCx = pxCx + glitchOx;
+    const int drawCy = pxCy + glitchOy;
 
     const QRect* innerRects = c.crosshair.cachedInnerRects;
     const QRect* outerRects = c.crosshair.cachedOuterRects;
@@ -891,6 +1264,9 @@ static void DrawCrosshair(QPainter* p, melonDS::u8* ram,
         const QRect currBbox = CrosshairBboxPx(pxCx, pxCy, c.crosshair, geomScale,
                                                zoomT, scopeT, pulseT, scopeClipPx);
         s_chDirtyThisFrame = currBbox;
+        if (glitchOx != 0 || glitchOy != 0 || scopeGlitchOx != 0 || scopeGlitchOy != 0)
+            s_chDirtyThisFrame |= CrosshairBboxPx(drawCx, drawCy, c.crosshair, geomScale,
+                                                  zoomT, 0.0, 0.0, scopeClipPx);
         if (s_chPrevPxCx != INT_MIN)
             s_chDirtyThisFrame |= CrosshairBboxPx(s_chPrevPxCx, s_chPrevPxCy, c.crosshair,
                                                   s_chPrevGeomScale, s_chPrevZoomT,
@@ -912,20 +1288,20 @@ static void DrawCrosshair(QPainter* p, melonDS::u8* ram,
     // each frame is a single drawImage, no QPainter creation or per-rect fillRect.
     if (scaledGeometry) {
         auto fillScaled = [&](const QRect& base, const QColor& color) {
-            p->fillRect(ScaleRectAroundOrigin(base, geomScale).translated(pxCx, pxCy), color);
+            p->fillRect(ScaleRectAroundOrigin(base, geomScale).translated(drawCx, drawCy), color);
         };
         if (c.crosshair.chOutline && c.crosshair.chOutlineOpacity > 0.0) {
             p->setOpacity(c.crosshair.chOutlineOpacity * opacityMul);
             static const QColor solidBlack(0, 0, 0, 255);
             const int olT = std::max(1, c.crosshair.chOutlineThickness);
             for (int i = 0; i < nInner; i++)
-                p->fillRect(ScaleRectAroundOrigin(innerRects[i], geomScale).adjusted(-olT, -olT, olT, olT).translated(pxCx, pxCy), solidBlack);
+                p->fillRect(ScaleRectAroundOrigin(innerRects[i], geomScale).adjusted(-olT, -olT, olT, olT).translated(drawCx, drawCy), solidBlack);
             for (int i = 0; i < nOuter; i++)
-                p->fillRect(ScaleRectAroundOrigin(outerRects[i], geomScale).adjusted(-olT, -olT, olT, olT).translated(pxCx, pxCy), solidBlack);
+                p->fillRect(ScaleRectAroundOrigin(outerRects[i], geomScale).adjusted(-olT, -olT, olT, olT).translated(drawCx, drawCy), solidBlack);
             if (c.crosshair.chCenterDot) {
                 const int dh = c.crosshair.cachedDotHalfPx;
                 const int ds = c.crosshair.cachedDotSizePx;
-                p->fillRect(ScaleRectAroundOrigin(QRect(-dh, -dh, ds, ds), geomScale).adjusted(-olT, -olT, olT, olT).translated(pxCx, pxCy), solidBlack);
+                p->fillRect(ScaleRectAroundOrigin(QRect(-dh, -dh, ds, ds), geomScale).adjusted(-olT, -olT, olT, olT).translated(drawCx, drawCy), solidBlack);
             }
         }
         p->setOpacity(opacityMul);
@@ -938,8 +1314,9 @@ static void DrawCrosshair(QPainter* p, melonDS::u8* ram,
             const int ds = c.crosshair.cachedDotSizePx;
             fillScaled(QRect(-dh, -dh, ds, ds), c.crosshair.chDotColor);
         }
-        DrawZoomTransitionPulse(p, pxCx, pxCy, c.crosshair, zoomT, pulseT, scopeClipPx);
-        DrawZoomScopeReticle(p, pxCx, pxCy, c.crosshair, scopeT, scopeClipPx);
+        DrawZoomTransitionFx(p, pxCx, pxCy, c.crosshair, zoomT, pulseT, transitionFxStyle, scopeClipPx);
+        DrawZoomScopeReticle(p, pxCx, pxCy, c.crosshair, scopeT, scopeClipPx,
+                             scopeGlitchOx, scopeGlitchOy);
         p->setTransform(savedXform);
         p->setOpacity(savedOpacity);
         s_chCrosshairDrawnLastFrame = true;
@@ -949,21 +1326,21 @@ static void DrawCrosshair(QPainter* p, melonDS::u8* ram,
     if (c.crosshair.chOutline && c.crosshair.chOutlineOpacity > 0.0 &&
         s_chStampValid && !s_chOutlineStamp.isNull()) {
         p->setOpacity(c.crosshair.chOutlineOpacity * opacityMul);
-        p->drawImage(QPoint(pxCx + s_chStampOrigin.x(), pxCy + s_chStampOrigin.y()), s_chOutlineStamp);
+        p->drawImage(QPoint(drawCx + s_chStampOrigin.x(), drawCy + s_chStampOrigin.y()), s_chOutlineStamp);
     }
 
     // Inner arms — chInnerColor already has alpha baked in (P-11)
     if (nInner > 0) {
         p->setOpacity(opacityMul);
         for (int i = 0; i < nInner; i++)
-            p->fillRect(innerRects[i].translated(pxCx, pxCy), c.crosshair.chInnerColor);
+            p->fillRect(innerRects[i].translated(drawCx, drawCy), c.crosshair.chInnerColor);
     }
 
     // Outer arms
     if (nOuter > 0) {
         p->setOpacity(opacityMul);
         for (int i = 0; i < nOuter; i++)
-            p->fillRect(outerRects[i].translated(pxCx, pxCy), c.crosshair.chOuterColor);
+            p->fillRect(outerRects[i].translated(drawCx, drawCy), c.crosshair.chOuterColor);
     }
 
     // Center dot
@@ -971,11 +1348,12 @@ static void DrawCrosshair(QPainter* p, melonDS::u8* ram,
         p->setOpacity(opacityMul);
         const int dh = c.crosshair.cachedDotHalfPx;
         const int ds = c.crosshair.cachedDotSizePx;
-        p->fillRect(QRect(pxCx - dh, pxCy - dh, ds, ds), c.crosshair.chDotColor);
+        p->fillRect(QRect(drawCx - dh, drawCy - dh, ds, ds), c.crosshair.chDotColor);
     }
 
-    DrawZoomTransitionPulse(p, pxCx, pxCy, c.crosshair, zoomT, pulseT, scopeClipPx);
-    DrawZoomScopeReticle(p, pxCx, pxCy, c.crosshair, scopeT, scopeClipPx);
+    DrawZoomTransitionFx(p, pxCx, pxCy, c.crosshair, zoomT, pulseT, transitionFxStyle, scopeClipPx);
+    DrawZoomScopeReticle(p, pxCx, pxCy, c.crosshair, scopeT, scopeClipPx,
+                         scopeGlitchOx, scopeGlitchOy);
 
     // Restore painter state.
     p->setTransform(savedXform);
