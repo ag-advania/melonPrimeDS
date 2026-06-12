@@ -130,16 +130,13 @@
         case HWType::ZoomTransitionStyle: {
             auto* combo = new QComboBox(parent);
             combo->setObjectName(objName);
-            combo->addItem(QStringLiteral("Staged"));
             combo->addItem(QStringLiteral("Fade"));
+            combo->addItem(QStringLiteral("Staged"));
             combo->addItem(QStringLiteral("Glitch"));
             combo->addItem(QStringLiteral("Glitch2"));
             combo->addItem(QStringLiteral("Snap"));
-            combo->addItem(QStringLiteral("Expand"));
-            combo->addItem(QStringLiteral("Contract"));
             combo->addItem(QStringLiteral("Digital"));
             combo->addItem(QStringLiteral("Pulse Wave"));
-            combo->addItem(QStringLiteral("Crossfade"));
             combo->addItem(QStringLiteral("Magic Circle"));
             combo->addItem(QStringLiteral("SF Movie"));
             combo->addItem(QStringLiteral("Tactical Lock"));

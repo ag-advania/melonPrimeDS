@@ -48,7 +48,7 @@ static const char* kEnumLayout      = "Standard|Alternative";
 static const char* kEnumOrientation = "Horiz|Vert";
 static const char* kEnumGaugeAlign  = "Start|Center|End";
 static const char* kEnumZoomTransitionStyle =
-    "Staged|Fade|Glitch|Glitch2|Snap|Expand|Contract|Digital|Pulse|Crossfade|Magic Circle|SF Movie|"
+    "Fade|Staged|Glitch|Glitch2|Snap|Digital|Pulse|Magic Circle|SF Movie|"
     "Tactical Lock|Sniper Optics|Drone LIDAR|Beam Charge";
 
 static QString EditEnumLabel(const char* items, int val) {

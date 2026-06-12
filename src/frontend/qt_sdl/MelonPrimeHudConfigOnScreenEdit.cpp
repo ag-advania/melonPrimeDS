@@ -770,10 +770,9 @@ void MelonPrimeHudConfigOnScreenEdit::populateForCrosshair()
     addSpinBox(QStringLiteral("Scope Opacity %"), MP_HUD_PROP_KEY_CrosshairZoomScopeOpacity, 0, 100);
     addCheckBox(QStringLiteral("Zoom Transition"), MP_HUD_PROP_KEY_CrosshairZoomTransitionEnable);
     addComboBox(QStringLiteral("Transition Style"), MP_HUD_PROP_KEY_CrosshairZoomTransitionStyle,
-        {QStringLiteral("Staged"), QStringLiteral("Fade"), QStringLiteral("Glitch"),
-         QStringLiteral("Glitch2"), QStringLiteral("Snap"), QStringLiteral("Expand"),
-         QStringLiteral("Contract"), QStringLiteral("Digital"), QStringLiteral("Pulse Wave"),
-         QStringLiteral("Crossfade"), QStringLiteral("Magic Circle"), QStringLiteral("SF Movie"),
+        {QStringLiteral("Fade"), QStringLiteral("Staged"), QStringLiteral("Glitch"),
+         QStringLiteral("Glitch2"), QStringLiteral("Snap"), QStringLiteral("Digital"),
+         QStringLiteral("Pulse Wave"), QStringLiteral("Magic Circle"), QStringLiteral("SF Movie"),
          QStringLiteral("Tactical Lock"), QStringLiteral("Sniper Optics"),
          QStringLiteral("Drone LIDAR"), QStringLiteral("Beam Charge")});
     addSpinBox(QStringLiteral("Transition Speed %"), MP_HUD_PROP_KEY_CrosshairZoomTransitionSpeed, 25, 400);

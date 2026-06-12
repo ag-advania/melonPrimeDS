@@ -13,7 +13,7 @@ namespace MelonPrime::ZoomStatus {
     inline constexpr uint32_t kCrosshairAnimActiveOffset = 0x04;
     inline constexpr uint32_t kCrosshairCurrentFrameOffset = 0x06;
     inline constexpr uint32_t kQ14One = 1u << 14;
-    inline constexpr int kCrosshairZoomTransitionStyleCount = 16;
+    inline constexpr int kCrosshairZoomTransitionStyleCount = 13;
 
     [[nodiscard]] FORCE_INLINE bool IsMainRamRange(uint32_t addr, uint32_t size) noexcept
     {
@@ -98,15 +98,15 @@ namespace MelonPrime::ZoomStatus {
 
     [[nodiscard]] FORCE_INLINE int RemapCrosshairZoomTransitionStyle(int style) noexcept
     {
-        // Only remap legacy IDs from the old 0..18 list. Current schema is 0..15;
-        // do not remap in-range values (Glitch2 is 3 in the new list, not old Snap).
-        if (style <= 15)
-            return style;
-        if (style == 16)
-            return 15; // Beam Charge
-        if (style == 17)
-            return 14; // Wireframe -> Drone LIDAR
-        return 12;     // Data Link / unknown -> Tactical Lock
+        // Current schema is 0..12 (Expand/Contract/Crossfade and older presets
+        // removed). Clamp any legacy/out-of-range id into range; this matches the
+        // std::clamp(0, count-1) the dialog/edit/runtime callers apply, so all
+        // surfaces resolve an unknown id to the same value.
+        if (style < 0)
+            return 0;
+        if (style > kCrosshairZoomTransitionStyleCount - 1)
+            return kCrosshairZoomTransitionStyleCount - 1;
+        return style;
     }
 
     [[nodiscard]] FORCE_INLINE CrosshairZoomBlend ComputeCrosshairZoomBlend(
@@ -122,15 +122,19 @@ namespace MelonPrime::ZoomStatus {
 
         switch (style) {
         default:
-        case 0: // Staged
-            return ComputeCrosshairZoomBlendStaged(t, baseZoomOpacity, pulseStrength);
-
-        case 1: { // Fade — opacity crossfade only
+        case 0: { // Fade — opacity crossfade only
             const float fade = SmoothStep(t);
             b.geom = fade;
             b.baseAlpha = (1.0f + (baseZoomOpacity - 1.0f) * fade) * (1.0f - fade);
             b.scope = fade;
             break;
+        }
+
+        case 1: { // Staged
+            CrosshairZoomBlend st =
+                ComputeCrosshairZoomBlendStaged(t, baseZoomOpacity, pulseStrength);
+            st.fxStyle = 1;
+            return st;
         }
         case 2: { // Glitch — RGB break / slice bursts during mid-transition
             const float staged = SmoothStep(t);
@@ -166,27 +170,14 @@ namespace MelonPrime::ZoomStatus {
             b.pulse = (qt > 0.01f && qt < 0.99f) ? pulseStrength * 0.5f : 0.0f;
             break;
         }
-        case 5: { // Expand
-            b.scope = SmoothStep(std::clamp(t / 0.72f, 0.0f, 1.0f));
-            b.geom = b.scope;
-            b.baseAlpha = (1.0f + (baseZoomOpacity - 1.0f) * t) * (1.0f - b.scope);
-            break;
-        }
-        case 6: { // Contract — geom must be 0 when t=0 (not zoomed)
-            const float shrink = SmoothStep(std::clamp(t / 0.55f, 0.0f, 1.0f));
-            b.geom = shrink * (1.0f - 0.35f * shrink);
-            b.baseAlpha = (1.0f + (baseZoomOpacity - 1.0f) * shrink) * (1.0f - shrink);
-            b.scope = SmoothStep(std::clamp((t - 0.40f) / 0.60f, 0.0f, 1.0f));
-            break;
-        }
-        case 7: { // Digital
+        case 5: { // Digital
             const float qt = QuantizeSteps(t, 8);
             b.geom = qt;
             b.baseAlpha = (1.0f + (baseZoomOpacity - 1.0f) * qt) * (1.0f - qt);
             b.scope = qt;
             break;
         }
-        case 8: { // Pulse Wave
+        case 6: { // Pulse Wave
             const float wave = 0.5f + 0.5f * std::sin(t * 6.2831853f * 2.0f);
             b.geom = SmoothStep(t);
             b.baseAlpha = (1.0f + (baseZoomOpacity - 1.0f) * b.geom) * (1.0f - t) * wave;
@@ -194,14 +185,7 @@ namespace MelonPrime::ZoomStatus {
             b.pulse = wave * pulseStrength;
             break;
         }
-        case 9: { // Crossfade — both layers overlap by opacity
-            const float fade = SmoothStep(t);
-            b.geom = fade;
-            b.baseAlpha = (1.0f + (baseZoomOpacity - 1.0f) * fade) * (1.0f - fade);
-            b.scope = fade;
-            break;
-        }
-        case 10: { // Magic Circle
+        case 7: { // Magic Circle
             const float staged = SmoothStep(t);
             b.geom = staged;
             b.baseAlpha = (1.0f + (baseZoomOpacity - 1.0f) * staged)
@@ -210,7 +194,7 @@ namespace MelonPrime::ZoomStatus {
             b.pulse = std::sin(t * 3.14159265f) * pulseStrength * 0.45f;
             break;
         }
-        case 11: { // SF Movie — scope geometry follows zoomT; glow is FX-only
+        case 8: { // SF Movie — scope geometry follows zoomT; glow is FX-only
             const float staged = SmoothStep(t);
             const float glow = 0.55f + 0.45f * std::sin(t * 6.2831853f);
             b.geom = staged;
@@ -220,7 +204,7 @@ namespace MelonPrime::ZoomStatus {
             b.pulse = glow * pulseStrength * 0.75f;
             break;
         }
-        case 12: { // Tactical Lock
+        case 9: { // Tactical Lock
             const float staged = SmoothStep(t);
             b.geom = staged;
             b.baseAlpha = (1.0f + (baseZoomOpacity - 1.0f) * staged)
@@ -229,7 +213,7 @@ namespace MelonPrime::ZoomStatus {
             b.pulse = std::sin(t * 3.14159265f) * pulseStrength * 0.5f;
             break;
         }
-        case 13: { // Sniper Optics
+        case 10: { // Sniper Optics
             const float staged = SmoothStep(t);
             b.geom = staged;
             b.baseAlpha = (1.0f + (baseZoomOpacity - 1.0f) * staged)
@@ -237,7 +221,7 @@ namespace MelonPrime::ZoomStatus {
             b.scope = SmoothStep(std::clamp((t - 0.20f) / 0.80f, 0.0f, 1.0f));
             break;
         }
-        case 14: { // Drone LIDAR
+        case 11: { // Drone LIDAR
             const float staged = SmoothStep(t);
             b.geom = staged;
             b.baseAlpha = (1.0f + (baseZoomOpacity - 1.0f) * staged)
@@ -246,7 +230,7 @@ namespace MelonPrime::ZoomStatus {
             b.pulse = pulseStrength * 0.4f;
             break;
         }
-        case 15: { // Beam Charge
+        case 12: { // Beam Charge
             const float staged = SmoothStep(t);
             b.geom = staged;
             b.baseAlpha = (1.0f + (baseZoomOpacity - 1.0f) * staged)

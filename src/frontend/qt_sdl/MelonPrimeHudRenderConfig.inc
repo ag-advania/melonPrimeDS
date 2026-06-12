@@ -308,6 +308,20 @@ static QRect CrosshairBboxPx(int cx, int cy, const CrosshairHudConfig& ch,
     }
     r |= CrosshairScopeBboxPx(cx, cy, ch, scopeT, scopeClipPx);
     r |= CrosshairPulseBboxPx(cx, cy, ch, zoomT, pulseT);
+    // Transition FX overlays (DrawZoomTransitionFx) are drawn out to the full
+    // scope radius during mid-transition regardless of scopeT, so the scope-
+    // reticle bbox above (which scales with scopeT) does not cover them. Include
+    // the full-radius extent so the dirty-rect upload region clears/uploads the
+    // whole FX and avoids clipping/trails. Inlined midFx>=0.015 gate mirrors
+    // DrawZoomTransitionFx (CrosshairTransitionMidIntensity is defined later in
+    // the unity build, so the 4*t*(1-t) form is spelled out here).
+    if (ch.chZoomTransitionEnable && ch.cachedZoomScopeRenderable
+        && 4.0 * zoomT * (1.0 - zoomT) >= 0.015) {
+        const int pad = std::max(4, ch.chZoomScopeThickness + 2);
+        QRect fx = ch.cachedZoomScopeBboxPx.adjusted(-pad, -pad, pad, pad)
+                       .translated(cx, cy);
+        r |= scopeClipPx.isEmpty() ? fx : (fx & scopeClipPx);
+    }
     return r;
 }
 
