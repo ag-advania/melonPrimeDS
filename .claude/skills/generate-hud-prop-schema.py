@@ -1044,29 +1044,78 @@ def parse_side_panel(props: dict[str, Prop], extra_refs: dict[str, list[Meta]], 
             add_meta(props, extra_refs, key, "side", origin="side:keyMacro")
 
 
-def parse_runtime(props: dict[str, Prop], extra_refs: dict[str, list[Meta]]) -> None:
+def parse_runtime(
+    props: dict[str, Prop],
+    extra_refs: dict[str, list[Meta]],
+    ident_to_key: dict[str, str],
+) -> None:
     text = strip_comments(read(RUNTIME_INC))
 
     for accessor, cfg_type in (("GetInt", "Int"), ("GetBool", "Bool"), ("GetDouble", "Double"), ("GetString", "String")):
         for match in re.finditer(rf"\bcfg\.{accessor}\s*\(\s*\"(Metroid\.Visual\.[^\"]+)\"", text):
             add_meta(props, extra_refs, match.group(1), "runtime", cfg_type, ui_kind=accessor, origin=f"runtime:{accessor}")
+        for _, args in function_calls(text, [accessor]):
+            if not args:
+                continue
+            key = dialog_key_from_expr(args[0], ident_to_key)
+            if key:
+                add_meta(props, extra_refs, key, "runtime", cfg_type, ui_kind=accessor, origin=f"runtime:{accessor}")
 
     for match in re.finditer(r"ReadRgbColor\s*\(\s*cfg\s*,\s*([^)]*)\)", text, re.DOTALL):
         args = split_top_level_args(match.group(1))
         if len(args) >= 3:
-            add_color3(props, extra_refs, [literal_key(args[0]), literal_key(args[1]), literal_key(args[2])], "runtime", "RGB", "ReadRgbColor", "runtime:ReadRgbColor")
+            add_color3(
+                props,
+                extra_refs,
+                [
+                    dialog_key_from_expr(args[0], ident_to_key),
+                    dialog_key_from_expr(args[1], ident_to_key),
+                    dialog_key_from_expr(args[2], ident_to_key),
+                ],
+                "runtime",
+                "RGB",
+                "ReadRgbColor",
+                "runtime:ReadRgbColor",
+            )
 
     for match in re.finditer(r"ReadOptionalSubColor\s*\(\s*cfg\s*,\s*([^)]*)\)", text, re.DOTALL):
         args = split_top_level_args(match.group(1))
         if len(args) >= 4:
-            add_meta(props, extra_refs, literal_key(args[0]), "runtime", "Bool", "Overall", "ReadOptionalSubColor", origin="runtime:ReadOptionalSubColor")
-            add_color3(props, extra_refs, [literal_key(args[1]), literal_key(args[2]), literal_key(args[3])], "runtime", "SubColor", "ReadOptionalSubColor", "runtime:ReadOptionalSubColor")
+            add_meta(
+                props,
+                extra_refs,
+                dialog_key_from_expr(args[0], ident_to_key),
+                "runtime",
+                "Bool",
+                "Overall",
+                "ReadOptionalSubColor",
+                origin="runtime:ReadOptionalSubColor",
+            )
+            add_color3(
+                props,
+                extra_refs,
+                [
+                    dialog_key_from_expr(args[1], ident_to_key),
+                    dialog_key_from_expr(args[2], ident_to_key),
+                    dialog_key_from_expr(args[3], ident_to_key),
+                ],
+                "runtime",
+                "SubColor",
+                "ReadOptionalSubColor",
+                "runtime:ReadOptionalSubColor",
+            )
 
     for match in re.finditer(r'LoadColorRamp\([^;]+,\s*"((?:Metroid\.Visual\.)[^"]+)"\)', text):
         add_ramp_family(props, extra_refs, match.group(1), "runtime", "runtime:LoadColorRamp")
+    for match in re.finditer(r"MP_HUD_RAMP_KEYS\(\s*(\w+)\s*\)", text):
+        if match.group(1) != "prefix":
+            add_ramp_family(props, extra_refs, f"{VISUAL_PREFIX}{match.group(1)}", "runtime", "runtime:MP_HUD_RAMP_KEYS")
 
     for match in re.finditer(r'loadOL\([^,]+,\s*"([^"]+)"\)', text):
         add_outline_group(props, extra_refs, match.group(1), "runtime", "runtime:loadOL")
+    for match in re.finditer(r"MP_HUD_OUTLINE_KEYS\(\s*(\w+)\s*\)", text):
+        if match.group(1) != "prefix":
+            add_outline_group(props, extra_refs, match.group(1), "runtime", "runtime:MP_HUD_OUTLINE_KEYS")
 
     if "HudWeaponIconColorOverlay%s" in text:
         add_weapon_tints(props, extra_refs, "runtime", "runtime:weaponTintLoop")
@@ -1079,6 +1128,10 @@ def parse_runtime(props: dict[str, Prop], extra_refs: dict[str, list[Meta]]) -> 
         key = match.group(1)
         if key in props:
             add_meta(props, extra_refs, key, "runtime", origin="runtime:literal")
+    for match in re.finditer(r'\bMP_HUD_PROP_KEY_(\w+)\b', text):
+        key = ident_to_key.get(match.group(1))
+        if key in props:
+            add_meta(props, extra_refs, key, "runtime", origin="runtime:keyMacro")
 
 
 def make_identifier(key: str, used: set[str]) -> str:
@@ -1426,7 +1479,7 @@ def main() -> int:
     dialog_sections = parse_dialog(props, extra_refs, ident_to_key)
     edit_prop_arrays, edit_elems = parse_edit_descriptors(props, extra_refs, ident_to_key)
     parse_side_panel(props, extra_refs, ident_to_key)
-    parse_runtime(props, extra_refs)
+    parse_runtime(props, extra_refs, ident_to_key)
 
     if not args.no_write:
         write_schema(order, props, args.schema)

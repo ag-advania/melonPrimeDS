@@ -167,7 +167,7 @@ HOT_FUNCTION QRect CustomHud_Render(
     }
 
     if (!st.isTrans && !st.isAlt) {
-        const float crosshairZoomAmount = c.crosshair.chZoomStageEnable
+        const float crosshairZoomAmount = c.crosshair.cachedZoomAffectsVisual
             ? ReadCrosshairZoomAmount(st.ram, rom)
             : 0.0f;
         DrawCrosshair(topPaint, st.ram, rom, c, hudScale, topStretchX, crosshairZoomAmount);

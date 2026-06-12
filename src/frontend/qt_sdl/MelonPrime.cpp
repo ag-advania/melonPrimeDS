@@ -106,13 +106,25 @@ namespace MelonPrime {
 #else
         m_enableNativeZoomToggle = false;
 #endif
-        m_enableZoomAimScale = localCfg.GetBool(CfgKey::ZoomAimScaleEnable);
         const int zoomAimScalePct = std::clamp(localCfg.GetInt(CfgKey::ZoomAimScalePct), 10, 300);
         m_zoomAimScaleQ14 = static_cast<uint32_t>(
             (static_cast<int64_t>(zoomAimScalePct) * AIM_ONE_FP + 50) / 100);
+        m_enableZoomAimScale =
+            localCfg.GetBool(CfgKey::ZoomAimScaleEnable)
+            && m_zoomAimScaleQ14 != static_cast<uint32_t>(AIM_ONE_FP);
         if (!m_enableZoomAimScale) {
-            m_activeZoomAimScaleQ14 = static_cast<uint32_t>(AIM_ONE_FP);
+            if (m_activeZoomAimScaleQ14 != static_cast<uint32_t>(AIM_ONE_FP)) {
+                m_activeZoomAimScaleQ14 = static_cast<uint32_t>(AIM_ONE_FP);
+                RecalcAimEffectiveFixedScale();
+                m_aimResidualX = 0;
+                m_aimResidualY = 0;
+            }
+        } else if (m_activeZoomAimScaleQ14 != static_cast<uint32_t>(AIM_ONE_FP)
+                   && m_activeZoomAimScaleQ14 != m_zoomAimScaleQ14) {
+            m_activeZoomAimScaleQ14 = m_zoomAimScaleQ14;
             RecalcAimEffectiveFixedScale();
+            m_aimResidualX = 0;
+            m_aimResidualY = 0;
         }
 
         if (!m_enableNativeZoomToggle) {

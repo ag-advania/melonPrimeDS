@@ -366,7 +366,7 @@ static void DrawEditHudPreview(QPainter* p, Config::Table& cfg, float tds, float
 
         const bool isTrans = (Read8(ram, addrHot.jumpFlag) & 0x10) != 0;
         if (!isTrans && !isAlt) {
-            const float crosshairZoomAmount = c.crosshair.chZoomStageEnable
+            const float crosshairZoomAmount = c.crosshair.cachedZoomAffectsVisual
                 ? ReadCrosshairZoomAmount(ram, rom)
                 : 0.0f;
             DrawCrosshair(p, ram, rom, c, hudScale, topStretchX, crosshairZoomAmount);
