@@ -328,6 +328,9 @@ static void EnsureRadarFrameLoaded(int dstSize, int srcRadius, float hudScale,
 static QImage s_chOutlineStamp;
 static QPoint s_chStampOrigin;   // offset from (pxCx, pxCy) to stamp top-left
 static bool   s_chStampValid = false;
+static QImage s_chScopeStamp;
+static QPoint s_chScopeStampOrigin; // added to (pxCx, pxCy) for drawImage top-left
+static bool   s_chScopeStampValid = false;
 
 // ── OPT-DR1 / OPT-DR2: Dirty-rect tracking ───────────────────────────────────
 // OPT-DR1: the crosshair moves every frame with the aim, so its prev∪curr pixel
