@@ -341,6 +341,8 @@ namespace MelonPrime {
 
         int32_t  m_aimFixedScaleX = 164;
         int32_t  m_aimFixedScaleY = 218;
+        int32_t  m_aimEffectiveFixedScaleX = 164;
+        int32_t  m_aimEffectiveFixedScaleY = 218;
         int64_t  m_aimFixedAdjust = 8192;
         int64_t  m_aimFixedSnapThresh = AIM_ONE_FP;
 
@@ -353,6 +355,9 @@ namespace MelonPrime {
         // ProcessAimInputMouse reads these every frame right after residuals.
         bool     m_disableMphAimSmoothing = false;
         bool     m_enableAimAccumulator = false;
+        bool     m_enableZoomAimScale = false;
+        uint32_t m_zoomAimScaleQ14 = static_cast<uint32_t>(AIM_ONE_FP);
+        uint32_t m_activeZoomAimScaleQ14 = static_cast<uint32_t>(AIM_ONE_FP);
         bool     m_enableNativeAimDeltaHook = false; // true when mode != 0
         int8_t   m_nativeAimHookMode = 0;  // 0=off 1=RegisterInject 2=FoldDerived
         int8_t   m_lowLatencyAimMode = 0;  // 0=off 1=ImmediateSync 2=MoonLikeAim 3=InstantAimFollow
@@ -639,6 +644,8 @@ namespace MelonPrime {
         void RecalcAimSensitivityCache(Config::Table& cfg);
         void ApplyAimAdjustSetting(Config::Table& cfg);
         void RecalcAimFixedPoint();
+        void RecalcAimEffectiveFixedScale();
+        void UpdateZoomAimEffectiveScale();
         FORCE_INLINE void HandleGlobalHotkeys();
         void ProcessAimInputStylus(melonDS::NDS* nds);
         [[nodiscard]] bool SwitchWeapon(uint8_t weaponId);

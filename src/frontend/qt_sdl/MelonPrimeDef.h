@@ -21,6 +21,8 @@ namespace MelonPrime {
         inline constexpr const char* AimSens         = "Metroid.Sensitivity.Aim";
         inline constexpr const char* AimYScale       = "Metroid.Sensitivity.AimYAxisScale";
         inline constexpr const char* AimAdjust       = "Metroid.Aim.Adjust";
+        inline constexpr const char* ZoomAimScaleEnable = "Metroid.Aim.ZoomScale.Enable";
+        inline constexpr const char* ZoomAimScalePct = "Metroid.Aim.ZoomScale.Percent";
         inline constexpr const char* DisableMphAimSmoothing = "Metroid.Aim.Disable.MphAimSmoothing";
         inline constexpr const char* AimAccumulator = "Metroid.Aim.Enable.Accumulator";
         inline constexpr const char* NativeAimHookMode  = "Metroid.Aim.NativeHookMode"; // 0=off 1=RegisterInject 2=FoldDerived

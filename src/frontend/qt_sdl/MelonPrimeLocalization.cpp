@@ -228,6 +228,8 @@ constexpr Translation kTranslations[] = {
     {"Enable Stylus Mode (Leave this unchecked unless you want to play with the stylus)", "スタイラスモードを有効化 (スタイラス操作で遊ぶ場合以外はオフ推奨)"},
     {"Disable MPH Aim Smoothing (Disables the in-game aim smoothing. Note: Sensitivity will be reduced to 25% in Stylus Mode)", "MPHのエイム補間を無効化 (ゲーム内のエイム補間を無効化。スタイラスモードでは感度が25%になります)"},
     {"Enable Aim Sub-pixel Accumulator (Carry fractional mouse movement across frames. Enable for smoother low-sensitivity aiming)", "エイムのサブピクセル蓄積を有効化 (小数のマウス移動を次フレームへ持ち越し。低感度エイムが滑らかになります)"},
+    {"Scale aim sensitivity while zoomed", "ズーム中のエイム感度を倍率変更"},
+    {"Zoom Aim Scale %", "ズーム時エイム倍率 %"},
     {"Enable Direct Alt-Form Transform", "直接トランスフォーム変形を有効化"},
     {"Enable Immediate Input Edge Overlay", "即時入力エッジ合成を有効化"},
     {"Enable Native Aim Delta Hook (PostFold Write)", "ネイティブエイムデルタHookを有効化 (PostFold書き込み)"},
@@ -339,6 +341,18 @@ constexpr Translation kTranslations[] = {
     {"Strikethrough", "取り消し線"},
     {"Color", "色"},
     {"Scale %", "スケール %"},
+    {"Zoom Stage", "ズーム段階"},
+    {"Zoom Scale %", "ズーム時スケール %"},
+    {"Zoom Opacity %", "ズーム時不透明度 %"},
+    {"Zoom Scope Reticle", "ズームスコープ照準"},
+    {"Zoom Scope", "ズームスコープ"},
+    {"Scope Radius", "スコープ半径"},
+    {"Scope Line Length", "スコープ線長"},
+    {"Scope Line Len", "スコープ線長"},
+    {"Scope Gap", "スコープ隙間"},
+    {"Scope Thickness", "スコープ太さ"},
+    {"Scope Thick.", "スコープ太さ"},
+    {"Scope Opacity %", "スコープ不透明度 %"},
     {"Outline", "アウトライン"},
     {"Outline Color", "アウトライン色"},
     {"Outline Opacity", "アウトライン不透明度"},
@@ -679,6 +693,10 @@ constexpr ObjectTextTranslation kObjectTextTranslations[] = {
     {
         "lblMetroidLowLatencyAimDesc",
         "即時エイム追従は、ゲーム本来の照準追従処理をパッチして、現在の照準を目標の照準へ即座に合わせます。即時同期は低遅延ARM9フックで現在の照準を目標の照準へ同期し、照準基準を再構築します。MoonLikeエイムは小さなエイム移動を即時反映し、大きなジャンプだけ最大ステップ付きで追従します。MPHのエイム補間無効化が必要です。"
+    },
+    {
+        "lblMetroidZoomAimScaleDesc",
+        "ゲーム本来のズーム状態が有効な間だけ適用します。100%で通常のマウス感度、100%未満でズーム中のエイムが遅くなり、100%超で速くなります。"
     },
     {
         "lblMetroidNativeAimHookModeDesc",

@@ -171,6 +171,10 @@ private:
     QLabel* m_lblMetroidLowLatencyAimMode = nullptr;
     QComboBox* m_comboMetroidLowLatencyAimMode = nullptr;
     QLabel* m_lblMetroidLowLatencyAimDesc = nullptr;
+    QCheckBox* m_cbMetroidZoomAimScaleEnable = nullptr;
+    QLabel* m_lblMetroidZoomAimScalePct = nullptr;
+    QSpinBox* m_spinMetroidZoomAimScalePct = nullptr;
+    QLabel* m_lblMetroidZoomAimScaleDesc = nullptr;
     QWidget* m_menuLanguageWidget = nullptr;
     QLabel* m_lblMenuLanguage = nullptr;
     QComboBox* m_comboMenuLanguage = nullptr;

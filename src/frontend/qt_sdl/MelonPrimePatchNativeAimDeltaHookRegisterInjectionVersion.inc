@@ -285,8 +285,11 @@
 
             if ((lateX | lateY) != 0)
             {
-                int64_t resX = m_aimResidualX + static_cast<int64_t>(lateX) * m_aimFixedScaleX;
-                int64_t resY = m_aimResidualY + static_cast<int64_t>(lateY) * m_aimFixedScaleY;
+                if (UNLIKELY(m_enableZoomAimScale))
+                    UpdateZoomAimEffectiveScale();
+
+                int64_t resX = m_aimResidualX + static_cast<int64_t>(lateX) * m_aimEffectiveFixedScaleX;
+                int64_t resY = m_aimResidualY + static_cast<int64_t>(lateY) * m_aimEffectiveFixedScaleY;
                 resX = ClampAimResidual(resX, AIM_MAX_RESIDUAL);
                 resY = ClampAimResidual(resY, AIM_MAX_RESIDUAL);
 

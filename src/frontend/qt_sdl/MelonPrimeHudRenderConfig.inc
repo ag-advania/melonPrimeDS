@@ -106,6 +106,12 @@ struct CrosshairHudConfig {
     double chOuterOpacity;
     int chOuterLengthX, chOuterLengthY, chOuterThickness, chOuterOffset;
     double chScale; // visual scale multiplier (1.0 = 100%)
+    bool chZoomStageEnable;
+    double chZoomScale;   // target multiplier while fully zoomed
+    double chZoomOpacity; // target opacity multiplier while fully zoomed
+    bool chZoomScopeEnable;
+    int chZoomScopeRadius, chZoomScopeLineLength, chZoomScopeGap, chZoomScopeThickness;
+    double chZoomScopeOpacity;
     // P-11: Pre-computed arm/dot colors with alpha set (avoids per-frame QColor copy + setAlphaF)
     QColor chInnerColor, chOuterColor, chDotColor;
     // Cached arm rects in output pixels, centred at (0,0).
@@ -210,21 +216,74 @@ struct CachedHudConfig {
 static CachedHudConfig s_cache = { .valid = false };
 static uint32_t s_cacheEpoch = 1;
 
+static QRect ScaleRectAroundOrigin(const QRect& r, double scale)
+{
+    if (std::abs(scale - 1.0) < 0.001)
+        return r;
+
+    const double x1 = static_cast<double>(r.left()) * scale;
+    const double y1 = static_cast<double>(r.top()) * scale;
+    const double x2 = static_cast<double>(r.left() + r.width()) * scale;
+    const double y2 = static_cast<double>(r.top() + r.height()) * scale;
+    const int left = static_cast<int>(std::floor(std::min(x1, x2)));
+    const int top = static_cast<int>(std::floor(std::min(y1, y2)));
+    const int right = static_cast<int>(std::ceil(std::max(x1, x2)));
+    const int bottom = static_cast<int>(std::ceil(std::max(y1, y2)));
+    return QRect(left, top, std::max(1, right - left), std::max(1, bottom - top));
+}
+
+static QRect CrosshairScopeBboxPx(int cx, int cy, const CrosshairHudConfig& ch, double zoomT)
+{
+    if (!ch.chZoomStageEnable || !ch.chZoomScopeEnable || zoomT <= 0.001 || ch.chZoomScopeOpacity <= 0.0)
+        return QRect();
+
+    const int radius = std::max(1, ch.chZoomScopeRadius);
+    const int lineEnd = radius + std::max(0, ch.chZoomScopeLineLength);
+    const int gap = std::max(0, ch.chZoomScopeGap);
+    const int halfT = (std::max(1, ch.chZoomScopeThickness) + 1) / 2;
+    QRect r(cx - radius, cy - radius, radius * 2 + 1, radius * 2 + 1);
+    if (lineEnd > gap) {
+        r |= QRect(cx - lineEnd, cy - halfT, lineEnd - gap, halfT * 2 + 1);
+        r |= QRect(cx + gap, cy - halfT, lineEnd - gap, halfT * 2 + 1);
+        r |= QRect(cx - halfT, cy - lineEnd, halfT * 2 + 1, lineEnd - gap);
+        r |= QRect(cx - halfT, cy + gap, halfT * 2 + 1, lineEnd - gap);
+    }
+
+    int pad = halfT + 1;
+    if (ch.chOutline && ch.chOutlineOpacity > 0.0)
+        pad += std::max(1, ch.chOutlineThickness);
+    return r.adjusted(-pad, -pad, pad, pad);
+}
+
 // OPT-DR1: Returns the pixel-space bounding rect of the crosshair rendered at (cx, cy).
 // Uses the pre-computed stamp, arm rects, and dot size from CrosshairHudConfig.
 // Result is in overlay pixel space (same as Overlay[0]).
-static QRect CrosshairBboxPx(int cx, int cy, const CrosshairHudConfig& ch)
+static QRect CrosshairBboxPx(int cx, int cy, const CrosshairHudConfig& ch, double geomScale = 1.0, double zoomT = 0.0)
 {
     QRect r;
-    if (s_chStampValid && !s_chOutlineStamp.isNull())
+    const bool scaled = std::abs(geomScale - 1.0) >= 0.001;
+    if (!scaled && s_chStampValid && !s_chOutlineStamp.isNull())
         r = QRect(cx + s_chStampOrigin.x(), cy + s_chStampOrigin.y(),
                   s_chOutlineStamp.width(), s_chOutlineStamp.height());
-    for (int i = 0; i < ch.cachedInnerCount; ++i) r |= ch.cachedInnerRects[i].translated(cx, cy);
-    for (int i = 0; i < ch.cachedOuterCount; ++i) r |= ch.cachedOuterRects[i].translated(cx, cy);
+    const int olT = (ch.chOutline && ch.chOutlineOpacity > 0.0)
+        ? std::max(1, ch.chOutlineThickness)
+        : 0;
+    auto addRect = [&](const QRect& base) {
+        QRect scaledRect = ScaleRectAroundOrigin(base, geomScale);
+        if (scaled && olT > 0)
+            r |= scaledRect.adjusted(-olT, -olT, olT, olT).translated(cx, cy);
+        r |= scaledRect.translated(cx, cy);
+    };
+    for (int i = 0; i < ch.cachedInnerCount; ++i) addRect(ch.cachedInnerRects[i]);
+    for (int i = 0; i < ch.cachedOuterCount; ++i) addRect(ch.cachedOuterRects[i]);
     if (ch.chCenterDot) {
         const int dh = ch.cachedDotHalfPx, ds = ch.cachedDotSizePx;
-        r |= QRect(cx - dh, cy - dh, ds, ds);
+        QRect dot = ScaleRectAroundOrigin(QRect(-dh, -dh, ds, ds), geomScale);
+        if (scaled && olT > 0)
+            r |= dot.adjusted(-olT, -olT, olT, olT).translated(cx, cy);
+        r |= dot.translated(cx, cy);
     }
+    r |= CrosshairScopeBboxPx(cx, cy, ch, zoomT);
     return r;
 }
 
@@ -574,6 +633,15 @@ static void LoadCrosshairConfig(CrosshairHudConfig& crosshair, Config::Table& cf
     crosshair.chOuterThickness = cfg.GetInt(MP_HUD_PROP_KEY_CrosshairOuterThickness); if (crosshair.chOuterThickness <= 0) crosshair.chOuterThickness = 1;
     crosshair.chOuterOffset = cfg.GetInt(MP_HUD_PROP_KEY_CrosshairOuterOffset);
     crosshair.chScale = std::max(100, cfg.GetInt(MP_HUD_PROP_KEY_CrosshairScale)) / 100.0;
+    crosshair.chZoomStageEnable = cfg.GetBool(MP_HUD_PROP_KEY_CrosshairZoomStageEnable);
+    crosshair.chZoomScale = std::clamp(cfg.GetInt(MP_HUD_PROP_KEY_CrosshairZoomScale), 10, 200) / 100.0;
+    crosshair.chZoomOpacity = std::clamp(cfg.GetInt(MP_HUD_PROP_KEY_CrosshairZoomOpacity), 0, 100) / 100.0;
+    crosshair.chZoomScopeEnable = cfg.GetBool(MP_HUD_PROP_KEY_CrosshairZoomScopeEnable);
+    crosshair.chZoomScopeRadius = std::clamp(cfg.GetInt(MP_HUD_PROP_KEY_CrosshairZoomScopeRadius), 4, 128);
+    crosshair.chZoomScopeLineLength = std::clamp(cfg.GetInt(MP_HUD_PROP_KEY_CrosshairZoomScopeLineLength), 0, 128);
+    crosshair.chZoomScopeGap = std::clamp(cfg.GetInt(MP_HUD_PROP_KEY_CrosshairZoomScopeGap), 0, 64);
+    crosshair.chZoomScopeThickness = std::clamp(cfg.GetInt(MP_HUD_PROP_KEY_CrosshairZoomScopeThickness), 1, 12);
+    crosshair.chZoomScopeOpacity = std::clamp(cfg.GetInt(MP_HUD_PROP_KEY_CrosshairZoomScopeOpacity), 0, 100) / 100.0;
     // P-11: Pre-compute arm/dot colors with alpha
     crosshair.chInnerColor = crosshair.chColor;
     crosshair.chInnerColor.setAlphaF(crosshair.chInnerOpacity);

@@ -167,7 +167,10 @@ HOT_FUNCTION QRect CustomHud_Render(
     }
 
     if (!st.isTrans && !st.isAlt) {
-        DrawCrosshair(topPaint, st.ram, rom, c, hudScale, topStretchX);
+        const float crosshairZoomAmount = c.crosshair.chZoomStageEnable
+            ? ReadCrosshairZoomAmount(st.ram, rom)
+            : 0.0f;
+        DrawCrosshair(topPaint, st.ram, rom, c, hudScale, topStretchX, crosshairZoomAmount);
     } else {
         // OPT-DR1: Crosshair not drawn this frame (transition/alt) but was last frame.
         ClearPreviousCrosshairDirty(c.crosshair);
