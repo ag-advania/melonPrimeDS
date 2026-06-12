@@ -1182,33 +1182,43 @@ static void DrawCrosshair(QPainter* p, melonDS::u8* ram,
         }
 
         const float t = s_chDisplayZoom;
-        if (c.crosshair.chZoomTransitionEnable) {
-            const ZoomStatus::CrosshairZoomBlend blend =
-                ZoomStatus::ComputeCrosshairZoomBlend(
-                    t,
-                    static_cast<float>(c.crosshair.chZoomOpacity),
-                    static_cast<float>(c.crosshair.chZoomTransitionPulseStrength),
-                    c.crosshair.chZoomTransitionStyle);
-            zoomT = t;
-            geomScale = 1.0 + (c.crosshair.chZoomScale - 1.0) * blend.geom;
-            opacityMul = blend.baseAlpha;
-            scopeT = blend.scope;
-            pulseT = c.crosshair.chZoomTransitionPulseEnable ? blend.pulse : 0.0;
-            transitionFxStyle = blend.fxStyle;
-        } else {
-            zoomT = t;
-            geomScale = 1.0 + (c.crosshair.chZoomScale - 1.0) * t;
-            opacityMul = std::clamp(
-                1.0 + (c.crosshair.chZoomOpacity - 1.0) * t, 0.0, 1.0);
-            scopeT = t;
-            pulseT = 0.0;
+        // Fast path: fully unzoomed (the common in-game state when the zoom stage
+        // is enabled but the player is not scoped). The neutral defaults above
+        // already describe an unmodified base crosshair, so skip the per-frame
+        // blend math, trig, and FX/scope setup entirely.
+        if (t > 0.001f) {
+            if (c.crosshair.chZoomTransitionEnable) {
+                const ZoomStatus::CrosshairZoomBlend blend =
+                    ZoomStatus::ComputeCrosshairZoomBlend(
+                        t,
+                        static_cast<float>(c.crosshair.chZoomOpacity),
+                        static_cast<float>(c.crosshair.chZoomTransitionPulseStrength),
+                        c.crosshair.chZoomTransitionStyle);
+                zoomT = t;
+                geomScale = 1.0 + (c.crosshair.chZoomScale - 1.0) * blend.geom;
+                opacityMul = blend.baseAlpha;
+                scopeT = blend.scope;
+                pulseT = c.crosshair.chZoomTransitionPulseEnable ? blend.pulse : 0.0;
+                transitionFxStyle = blend.fxStyle;
+            } else {
+                zoomT = t;
+                geomScale = 1.0 + (c.crosshair.chZoomScale - 1.0) * t;
+                opacityMul = std::clamp(
+                    1.0 + (c.crosshair.chZoomOpacity - 1.0) * t, 0.0, 1.0);
+                scopeT = t;
+                pulseT = 0.0;
+            }
         }
     }
     const bool scaledGeometry = std::abs(geomScale - 1.0) >= 0.001;
 
     // Map DS-space centre → output pixel centre (integer).
     const QTransform& xf = p->transform();
-    const QRect scopeClipPx = TopScreenContentClipPx(xf, topStretchX);
+    // Only the scope reticle / transition FX need the top-screen content clip,
+    // and only while the zoom visual is active. Skip the rect-map when unzoomed.
+    const QRect scopeClipPx = (zoomT > 0.001 || scopeT > 0.001)
+        ? TopScreenContentClipPx(xf, topStretchX)
+        : QRect();
     const int pxCx = static_cast<int>(std::round(xf.m11() * dsCx + xf.m21() * dsCy + xf.dx()));
     const int pxCy = static_cast<int>(std::round(xf.m12() * dsCx + xf.m22() * dsCy + xf.dy()));
     int glitchOx = 0;
