@@ -17,8 +17,24 @@
 // forces a rebuild of every version.h consumer the way a configure-time
 // string(TIMESTAMP) would.
 
-// App name + version as a plain string literal, usable in literal concatenation.
-#define MELONPRIMEDS_NAME_VER "MelonPrimeDS " MELONDS_VERSION
+// Build-machine UTC offset (e.g. "GMT+9"), supplied by CMake as a compile
+// definition. Fallback keeps the header usable if the define is ever missing.
+#ifndef MELONPRIMEDS_BUILD_TZ
+#define MELONPRIMEDS_BUILD_TZ "GMT?"
+#endif
+
+// App title pieces (plain string literals, usable in literal concatenation).
+// The full title is assembled as:
+//
+//   MelonPrimeDS (build <YYYY-MM-DD HH:MM:SS> GMT+9) (melonDS <ver>)
+//
+// The version number belongs to the upstream melonDS base, so it is shown as a
+// trailing "(melonDS <ver>)" rather than right after "MelonPrimeDS", where it
+// would look like a MelonPrimeDS version. The build timestamp (kBuildStamp)
+// goes between PREFIX and SUFFIX, inserted by each call site (usually via %s);
+// the timezone offset is part of SUFFIX so it appears right after the time.
+#define MELONPRIMEDS_TITLE_PREFIX "MelonPrimeDS (build "
+#define MELONPRIMEDS_TITLE_SUFFIX " " MELONPRIMEDS_BUILD_TZ ") (melonDS " MELONDS_VERSION ")"
 
 namespace MelonPrime {
 namespace detail {

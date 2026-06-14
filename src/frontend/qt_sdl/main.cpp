@@ -331,7 +331,7 @@ int main(int argc, char** argv)
 #endif
 
 #ifdef MELONPRIME_DS
-    printf(MELONPRIMEDS_NAME_VER " (%s)\n", MelonPrime::kBuildStamp);
+    printf(MELONPRIMEDS_TITLE_PREFIX "%s" MELONPRIMEDS_TITLE_SUFFIX "\n", MelonPrime::kBuildStamp);
 #else
     printf("melonDS " MELONDS_VERSION "\n");
 #endif
