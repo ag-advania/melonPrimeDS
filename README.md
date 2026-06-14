@@ -4,9 +4,7 @@
 
 Modded version of [melonDS](https://melonds.kuribo64.net/) emulator to play Metroid Prime Hunters.
 
-It's a bit of a hack but the goal is to make the game as fun as possible using mouse and keyboard.
-
-I originally made this for controller but because there's no lock-on, it wasn't really fun to play.
+It brings full mouse-and-keyboard FPS controls to the game, along with a customizable HUD and many quality-of-life features.
 
 **Please read the instructions carefully.**
 
@@ -84,6 +82,18 @@ Releases for [Windows, Linux and macOS here!](https://github.com/makidoll/melonP
     The DS touchscreen isn't very precise, so setting it to lowest helps  
 -   Also recommended to set audio settings in-game to headphones
 
+-   **Custom HUD** (optional): in `Metroid → Other settings`, enable **Custom HUD** to
+    replace the native HUD with a customizable overlay (crosshair, HP, weapon/ammo,
+    match status, rank/timer, bomb count) and the bottom-screen radar overlay.
+    -   Press **Edit HUD Layout** in the same dialog to enter the interactive in-game
+        editor: drag elements to reposition them and tweak each one in the properties panel.
+    -   You can share or import a setup as TOML text via **Custom HUD Input/Output**.
+
+-   **Bug fixes & gameplay options** (optional): the `Metroid` menu has quick toggles
+    (Shadow Freeze fix, Disable Double Damage Multiplier, Power-Ups: Pick Up With No
+    Effect, In-Game Top Screen Only, …), and `Metroid → Other settings` holds the full set,
+    including the **In-Game Aspect Ratio** patch (Auto / 5:3 / 16:10 / 16:9 / 21:9).
+
   
 | Function                              | Key Binding                         |
 |---------------------------------------|-------------------------------------|
@@ -123,51 +133,87 @@ Releases for [Windows, Linux and macOS here!](https://github.com/makidoll/melonP
 ### Default settings changed from melonDS
 
 -   Fullscreen toggle set to `F11`
--   Screen layout set to **horizontal**
--   Screen sizing set to **emphasize top**
 -   Screen filter set to **false**
 -   3D renderer set to **OpenGL**
 -   JIT recompiler set to **enabled** _(helps with performance)_
 
-VSync was already disabled but keeping it off also helps with performance
+For a large top screen during FPS play, enable the optional **In-Game Top Screen Only**
+(in the `Metroid` menu): while in-game it temporarily switches to Top Only / Natural layout
+and restores your normal window settings in menus. The base screen layout/sizing defaults are
+left at melonDS' stock values, so you can also set them yourself in `Config → Screen` settings.
+
+VSync defaults to off, which helps latency and performance. MelonPrimeDS now respects your `Screen.VSync` setting instead of forcing it off, so you can turn it back on if you want.
 
 ### Build
 
-I modified melonDS and played Hunters on Linux. Building is straightforward
+Downloadable builds are produced with GitHub Actions. Windows is the primary
+supported platform; the project now uses **CMake presets** with **vcpkg** (a
+submodule) for dependencies.
+
+**Windows (MSYS2 / MinGW UCRT64):**
 
 ```bash
-mkdir build
-cd build
+git submodule update --init --recursive   # fetch vcpkg
+cmake --preset=release-mingw-x86_64
+cmake --build --preset=release-mingw-x86_64
+```
+
+**Linux (generic, no longer CI-tested):**
+
+```bash
+mkdir build && cd build
 cmake .. -DCMAKE_BUILD_TYPE=Release -GNinja
 ninja
 ```
 
-Downloadable builds were made using GitHub actions
+### Features
 
-### Features:
+**Compatibility & performance**
 
 - Compatible with all ROM versions (ensure the ROM is unmodified, untrimmed, and unencrypted):
-  - USA, USA rev1 (Australian version shares the same binary as the USA)
+  - USA, USA rev1 (the Australian version shares the same binary as the USA)
   - EU, EU rev1
   - Japan, Japan rev1
   - Korea
-
 - Gameplay remains smooth and problem-free regardless of player role, whether as the host or as a guest player (P2, P3, or P4).
-- The process has been reviewed for more comfortable game controls such as AIM.
-- Optimized morph ball boosting. Press and hold Shift-key to continue boosting at a higher speed.
-   You can still boost with right-click as before, but holding Shift-key will activate faster boosting.
--  Optimized the process by not loading the adventure function in multiplayer.
-- Prevents jumping when switching weapons rapidly.
-- Automatically toggles the virtual stylus on or off depending on whether you are in-game.
-- Implemented a key for switching to the last used special weapon or Omega Cannon.
-- Implemented keys for real-time sensitivity adjustment.
-- Implemented keys for clicking “YES” or “NO” in Adventure Mode.
- - Quick Stop Movement: You can now stop more quickly by pressing both left and right movement keys simultaneously, or both forward and backward movement keys at the same time. This allows for faster halts during gameplay.
- - You can now switch to the next or previous weapon in the order using the mouse wheel or designated keys.
-- The LR functionality is now available on the Hunter License screen. You can use it by assigning keys to UI Left / Right in the key configuration menu.
+- Optimized so the adventure function is not loaded during multiplayer.
 - Menu flickering has been resolved.
-- VSync is now forcibly disabled internally to minimize latency (this also reduces latency in OpenGL Classic mode).
-- The newly implemented SnapTap feature enables faster directional key switching, allowing for smoother technical movements such as strafing. This feature can be enabled from the settings menu. Learn more about SnapTap in this video: [SnapTap Introduction](https://www.youtube.com/watch?v=wDcRf4uCzuM).
+- VSync defaults to off to minimize latency (this also lowers latency in OpenGL Classic mode), and now follows your `Screen.VSync` setting, so you can re-enable it if you prefer.
+- Heavily optimized input-latency and frame-pacing path for the lowest possible mouse-to-screen delay.
+
+**Aim & input**
+
+- The aim pipeline has been reworked for more comfortable mouse control (sub-pixel accumulation, optional aim-smoothing disable, and low-latency aim options).
+- Optimized morph ball boosting. Hold the Shift key to continue boosting at a higher speed; right-click still boosts as before.
+- Prevents jumping when switching weapons rapidly.
+- The mouse cursor controls aiming directly rather than through a virtual stylus, so aiming stays responsive. An optional **Stylus Mode** (off by default, in `Metroid → Other settings`) is available if you prefer to play with the stylus.
+- Key for switching to the last-used special weapon or Omega Cannon, plus next/previous weapon cycling with the mouse wheel or dedicated keys.
+- Keys for real-time aim-sensitivity adjustment.
+- Keys for clicking "YES"/"NO" in Adventure Mode, and L/R navigation on the Hunter License screen (assign UI Left/Right in the key config).
+- Quick Stop Movement: press both opposing movement keys (left+right or forward+back) at once to halt faster.
+- SnapTap for faster directional switching and smoother strafing (toggle in settings). Learn more: [SnapTap Introduction](https://www.youtube.com/watch?v=wDcRf4uCzuM).
+
+**Custom HUD & visuals**
+
+- Fully customizable Custom HUD — crosshair, HP, weapon/ammo, match status, rank/timer, and alt-form bomb count — with an in-game drag-and-drop **edit mode** and live preview.
+- Bottom-screen **radar overlay** drawn on top of the top screen, with a hunter-colored frame and configurable position, size, and opacity.
+- **In-game aspect ratio** patch (Auto / 5:3 / 16:10 / 16:9 / 21:9) to widen the gameplay field of view.
+- High-resolution HUD fonts: the bundled MPH font, or your own system / file font.
+- Customizable OSD message colors and an optional low-HP warning.
+- English / Japanese UI text, selected automatically from your OS locale.
+
+**Bug fixes (toggleable, under BUG FIXES)**
+
+- Friend/Rival Wi-Fi active bitset fix.
+- Shadow Freeze fix (Ice Wave full 3D angle check).
+- Noxus Blade persistence-on-death fix (still experimental).
+
+**Gameplay options (toggleable)**
+
+- Show Headshot notification online, and an enemy HP meter online. Note: the HP value is generally not updated, so it is unreliable — treat it only as a rough indicator of who you hit.
+- Disable the Double Damage multiplier.
+- Pick up specific power-ups (Double Damage / Cloak / Death Alt) with no effect — affects only you and bots, not online opponents.
+- Use firmware language/name, headphone audio mode, and unlock-all options.
 
 
 <p align="center"><img src="./res/icon/melon_128x128.png"></p>
@@ -175,8 +221,7 @@ Downloadable builds were made using GitHub actions
   
 
 [melonDS](https://melonds.kuribo64.net/)エミュレータの改造版で、Metroid Prime Huntersをプレイするためのもの。
-少しハック的ですが、マウスとキーボードを使ってできるだけ楽しくゲームをプレイすることが目的です。
-元々はコントローラー用に作りましたが、ロックオン機能がないため、あまり楽しくありませんでした。
+マウスとキーボードによる本格的なFPS操作に加え、カスタマイズ可能なHUDや多数の便利機能を備えています。
 **説明をよくお読みください。**
 
 melonPrimeDS の元の作者、Makidoll をサポートする：
@@ -238,6 +283,17 @@ melonPrimeDS の元の作者、Makidoll をサポートする：
    DSのタッチスクリーンはあまり精密ではないので、最低に設定すると役立ちます  
 -   ゲーム内でのオーディオ設定をヘッドフォンに設定することもおすすめします
 
+-   **カスタムHUD**（任意）：`Metroid → Other settings` で **Custom HUD** を有効にすると、
+    ゲーム内のHUDをカスタマイズ可能なオーバーレイ（クロスヘア、HP、武器/弾数、試合ステータス、
+    ランク/タイマー、ボム数）と下画面レーダーオーバーレイに置き換えられます。
+    -   同じダイアログの **Edit HUD Layout** を押すと、対話式のゲーム内エディターに入れます。
+        要素をドラッグして配置し、プロパティパネルで個別に調整できます。
+    -   設定は **Custom HUD Input/Output** からTOMLテキストとして共有・読み込みできます。
+
+-   **バグ修正とゲームプレイオプション**（任意）：`Metroid` メニューにクイックトグル
+    （Shadow Freeze修正、ダブルダメージ倍率の無効化、パワーアップの無効取得、上画面のみ表示 など）があり、
+    `Metroid → Other settings` には **In-Game Aspect Ratio** パッチ（Auto / 5:3 / 16:10 / 16:9 / 21:9）を含む全項目があります。
+
   
 
 | 機能                                   | キー設定                             |
@@ -278,46 +334,83 @@ melonPrimeDS の元の作者、Makidoll をサポートする：
 ### melonDSからのデフォルト設定の変更点
 
 -   フルスクリーン切り替えを`F11`に設定
--   画面レイアウトを**横向き**に設定
--   画面サイズを**上画面を強調**に設定
 -   画面フィルターを**無効**に設定
 -   3Dレンダラーを**OpenGL**に設定
 -   JITリコンパイラを**有効**に設定 *（パフォーマンス向上に役立ちます）*
 
-VSyncはすでに無効になっていましたが、オフのままにするとパフォーマンスの向上に役立ちます
+FPSプレイで上画面を大きくしたい場合は、任意機能の **In-Game Top Screen Only**（`Metroid` メニュー）を
+有効にしてください。ゲーム中だけ一時的に Top Only / Natural レイアウトに切り替わり、メニューでは
+通常のウィンドウ設定に戻ります。基本の画面レイアウト/サイズはmelonDS標準のままなので、
+`Config → Screen` 設定で自分で変更することもできます。
+
+VSyncはデフォルトでオフで、これによりレイテンシーとパフォーマンスが改善します。現在のMelonPrimeDSは強制オフにせずユーザーの `Screen.VSync` 設定を尊重するため、必要なら再度オンにできます
 
 ### ビルド
 
-melonDSを修正し、LinuxでHuntersをプレイしました。ビルドは簡単です
+ダウンロード可能なビルドはGitHub Actionsで作成されています。現在の主対応プラットフォームは
+**Windows** で、依存関係には **CMakeプリセット** と **vcpkg**（サブモジュール）を使用します。
+
+**Windows（MSYS2 / MinGW UCRT64）：**
 
 ```bash
-mkdir build
-cd build
+git submodule update --init --recursive   # vcpkg を取得
+cmake --preset=release-mingw-x86_64
+cmake --build --preset=release-mingw-x86_64
+```
+
+**Linux（汎用・CI検証対象外）：**
+
+```bash
+mkdir build && cd build
 cmake .. -DCMAKE_BUILD_TYPE=Release -GNinja
 ninja
 ```
 
-ダウンロード可能なビルドはGitHub actionsを使用して作成されました
+# 機能
 
-# 機能：
+**互換性とパフォーマンス**
+
 - すべてのROMバージョンと互換性があります（ROMが未修正、未トリム、未暗号化であることを確認してください）：
   - アメリカ版、アメリカ版rev1（オーストラリア版はアメリカ版と同じバイナリを共有）
   - ヨーロッパ版、ヨーロッパ版rev1
   - 日本版、日本版rev1
   - 韓国版
 - ホストとしても、ゲストプレイヤー（P2、P3、P4）としても、プレイヤーの役割に関係なくゲームプレイはスムーズで問題ありません
-- AIMなどのゲームコントロールをより快適にするためにプロセスが見直されています
-- モーフボールブーストの最適化。Shiftキーを押し続けることで、より高速なブーストを継続できます
-   従来通り右クリックでブーストすることもできますが、Shiftキーを押すとより速いブーストが作動します
-- マルチプレイヤーでアドベンチャー機能を読み込まないようにプロセスを最適化
-- 武器の素早い切り替え時にジャンプするのを防止
-- ゲーム内かどうかに応じて、自動的に仮想スタイラスをオン/オフにします
-- 最後に使用した特殊武器またはオメガキャノンに切り替えるキーを実装
-- リアルタイム感度調整用のキーを実装
-- アドベンチャーモードで「はい」または「いいえ」をクリックするためのキーを実装
-- クイック停止移動：左右の移動キーを同時に押す、または前後の移動キーを同時に押すことで、より素早く停止できるようになりました。これにより、ゲームプレイ中の素早い停止が可能になります
-- マウスホイールまたは指定されたキーを使用して、順番に次または前の武器に切り替えることができるようになりました
-- ハンターライセンス画面でLR機能が利用可能になりました。キー設定メニューでUI左/右にキーを割り当てることで使用できます
+- マルチプレイヤーでアドベンチャー機能を読み込まないように最適化
 - メニューのちらつきが解決されました
-- レイテンシーを最小限に抑えるために、VSyncが内部で強制的に無効化されています（これにより、OpenGL Classicモードでもレイテンシーが減少します）
-- 新しく実装されたSnapTap機能により、方向キーの切り替えがより速くなり、ストレイフィングなどの技術的な動きがよりスムーズになります。この機能は設定メニューから有効にできます。SnapTapについて詳しくは、こちらの動画をご覧ください：[SnapTap紹介](https://www.youtube.com/watch?v=wDcRf4uCzuM)
+- レイテンシーを抑えるためVSyncはデフォルトでオフです（OpenGL Classicモードでもレイテンシーが減少します）。現在はユーザーの `Screen.VSync` 設定に従うため、必要なら再度オンにできます
+- 入力遅延とフレームペーシングの処理を徹底的に最適化し、マウスから画面までの遅延を可能な限り小さくしています
+
+**エイムと入力**
+
+- マウス操作をより快適にするためエイム処理を見直しています（サブピクセル蓄積、エイムスムージングの無効化オプション、低遅延エイムオプション）
+- モーフボールブーストの最適化。Shiftキーを押し続けると高速ブーストを継続できます（従来通り右クリックでもブースト可能）
+- 武器の素早い切り替え時にジャンプするのを防止
+- マウスカーソルは仮想スタイラスを介さず直接エイムを操作するため、操作が軽快です。スタイラスで遊びたい場合は任意の **Stylus Mode**（デフォルトはオフ、`Metroid → Other settings`）を利用できます
+- 最後に使用した特殊武器またはオメガキャノンに切り替えるキー、マウスホイールや専用キーでの次/前の武器切り替え
+- リアルタイムでエイム感度を調整するキー
+- アドベンチャーモードで「はい」/「いいえ」を押すキー、ハンターライセンス画面でのL/R操作（キー設定でUI左/右を割り当て）
+- クイック停止移動：左右（または前後）の移動キーを同時に押すことで、より素早く停止できます
+- SnapTap：方向キーの切り替えを高速化し、ストレイフィングなどをよりスムーズにします（設定から有効化）。詳しくは：[SnapTap紹介](https://www.youtube.com/watch?v=wDcRf4uCzuM)
+
+**カスタムHUDと表示**
+
+- フルカスタマイズ可能なカスタムHUD（クロスヘア、HP、武器/弾数、試合ステータス、ランク/タイマー、オルトフォームのボム数）。ゲーム内のドラッグ＆ドロップ式**編集モード**とライブプレビュー付き
+- 上画面に重ねて表示する下画面の**レーダーオーバーレイ**。ハンターカラーのフレーム、位置・サイズ・不透明度を設定可能
+- **ゲーム内アスペクト比**パッチ（Auto / 5:3 / 16:10 / 16:9 / 21:9）で視野を横に広げられます
+- 高解像度HUDフォント：同梱のMPHフォント、またはシステム/ファイルの任意フォント
+- カスタマイズ可能なOSDメッセージの色、および任意の低HP警告
+- OSのロケールに応じて自動選択される英語/日本語のUI表示
+
+**バグ修正（BUG FIXESから個別にON/OFF可能）**
+
+- フレンド/ライバルのWi-Fiアクティブビットセット修正
+- Shadow Freeze修正（アイスウェーブの完全な3D角度判定）
+- Noxus Bladeの死亡後持続バグ修正（まだ実験的）
+
+**ゲームプレイオプション（個別にON/OFF可能）**
+
+- オンラインでのヘッドショット通知表示、および敵HPメーター表示。なお、HP情報は基本的に更新されないため信頼性は高くなく、誰に当てたかを見る大まかな目安としてのみ使えます
+- ダブルダメージ倍率の無効化
+- 特定のパワーアップ（ダブルダメージ / クローク / デスオルト）を効果なしで取得（自分とボットのみに影響、オンラインの相手には影響しません）
+- ファームウェアの言語/名前の使用、ヘッドフォン音声モード、すべて解放などのオプション
