@@ -51,6 +51,7 @@
 
 #include "main.h"
 #include "version.h"
+#include "MelonPrimeBuildInfo.h"
 
 #include "Config.h"
 
@@ -329,7 +330,11 @@ int main(int argc, char** argv)
     std::signal(SIGTERM, signalHandler);
 #endif
 
+#ifdef MELONPRIME_DS
+    printf(MELONPRIMEDS_NAME_VER " (%s)\n", MelonPrime::kBuildStamp);
+#else
     printf("melonDS " MELONDS_VERSION "\n");
+#endif
     printf(MELONDS_URL "\n");
 
     // easter egg - not worth checking other cases for something so dumb
