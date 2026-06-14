@@ -16,12 +16,12 @@ FILETYPE VFT_APP
 		{
 			VALUE "CompanyName", "Melon Factory of Kuribo64"
 			VALUE "FileVersion", "${melonDS_VERSION}"
-			VALUE "FileDescription", "melonDS emulator"
+			VALUE "FileDescription", "MelonPrimeDS emulator"
 			VALUE "InternalName", "SDnolem"
 			VALUE "LegalCopyright", "2016-2025 melonDS team"
 			VALUE "LegalTrademarks", ""
-			VALUE "OriginalFilename", "melonDS.exe"
-			VALUE "ProductName", "melonDS"
+			VALUE "OriginalFilename", "melonPrimeDS.exe"
+			VALUE "ProductName", "MelonPrimeDS"
 			VALUE "ProductVersion", "${melonDS_VERSION}"
 		}
 	}

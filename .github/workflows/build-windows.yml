@@ -121,5 +121,5 @@ jobs:
     - name: Upload artifact
       uses: actions/upload-artifact@v7
       with:
-        name: melonDS-windows-x86_64
-        path: ./build/release-mingw-x86_64/melonDS.exe
+        name: melonPrimeDS-windows-x86_64
+        path: ./build/release-mingw-x86_64/melonPrimeDS.exe
