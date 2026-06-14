@@ -182,6 +182,11 @@ endif()
 
 add_executable(melonDS ${SOURCES_QT_SDL})
 
+# MelonPrimeDS: keep the CMake target name "melonDS" (so all the target_* calls
+# below stay untouched), but emit the binary as "melonPrimeDS" (melonPrimeDS.exe
+# on Windows). The Apple block further down overrides OUTPUT_NAME for the bundle.
+set_target_properties(melonDS PROPERTIES OUTPUT_NAME melonPrimeDS)
+
 if (MELONPRIME_ENABLE_DEVELOPER_FEATURES)
     target_compile_definitions(melonDS PRIVATE MELONPRIME_ENABLE_DEVELOPER_FEATURES)
 endif()
@@ -333,7 +338,7 @@ if (APPLE)
     set_target_properties(melonDS PROPERTIES
         MACOSX_BUNDLE true
         MACOSX_BUNDLE_INFO_PLIST ${CMAKE_SOURCE_DIR}/res/melon.plist.in
-        OUTPUT_NAME melonDS
+        OUTPUT_NAME melonPrimeDS  # MelonPrimeDS: bundle/binary name
         RESOURCE "${RESOURCE_FILES}")
 
 

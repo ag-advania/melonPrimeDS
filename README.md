@@ -130,6 +130,15 @@ Releases for [Windows, Linux and macOS here!](https://github.com/makidoll/melonP
 | Aim Sensitivity Down                  | PageDown                           |
 
 
+### Gameplay tips
+
+-   **Rapid-firing the Volt Driver (and other tap-fire weapons):** don't mash the fire
+    button as fast as you can. Instead, fire your next shot *after you see the previous
+    shot leave the gun*. Pacing your clicks to the visible shots gives a more consistent,
+    faster sustained rate than spamming, because the game only registers a new shot once
+    the previous one has been emitted.
+
+
 ### Default settings changed from melonDS
 
 -   Fullscreen toggle set to `F11`
@@ -329,6 +338,14 @@ melonPrimeDS の元の作者、Makidoll をサポートする：
 | メニュー/マップ                          | Tabキー                             |
 | エイム感度アップ                         | PageUpキー                          |
 | エイム感度ダウン                         | PageDownキー                        |
+
+
+### ゲームプレイのコツ
+
+-   **ボルトドライバー（など連射武器）の連射：** 射撃ボタンをただ高速で連打するのではなく、
+    *前の弾が銃から出たのが見えてから*次の弾を撃つと連射しやすくなります。見えた弾に合わせて
+    クリックのリズムを取ると、闇雲な連打よりも安定して速い連射になります。ゲーム側は前の弾が
+    発射されて初めて次の射撃を受け付けるためです。
 
 
 ### melonDSからのデフォルト設定の変更点
