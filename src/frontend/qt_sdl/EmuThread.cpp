@@ -558,7 +558,7 @@ void EmuThread::run()
             const double showMinDev = (frameMsCountDev > 0) ? frameMsMinDev : 0.0;
             const double showMaxDev = (frameMsCountDev > 0) ? frameMsMaxDev : 0.0;
             snprintf(melontitle, sizeof(melontitle),
-                "[%d/%.0f min:%.2f avg:%.2f max:%.2fms jit:%.2f] " MELONPRIMEDS_NAME_VER " (%s)",
+                "[%d/%.0f min:%.2f avg:%.2f max:%.2fms jit:%.2f] " MELONPRIMEDS_TITLE_PREFIX "%s" MELONPRIMEDS_TITLE_SUFFIX,
                 fps, actualfps,
                 showMinDev, avgMsDev, showMaxDev, jitterMsDev, MelonPrime::kBuildStamp);
             frameMsMinDev = 1.0e9;
@@ -566,7 +566,7 @@ void EmuThread::run()
             frameMsSumDev = 0.0;
             frameMsCountDev = 0;
 #elif defined(MELONPRIME_DS)
-            snprintf(melontitle, sizeof(melontitle), "[%d/%.0f] " MELONPRIMEDS_NAME_VER " (%s)", fps, actualfps, MelonPrime::kBuildStamp);
+            snprintf(melontitle, sizeof(melontitle), "[%d/%.0f] " MELONPRIMEDS_TITLE_PREFIX "%s" MELONPRIMEDS_TITLE_SUFFIX, fps, actualfps, MelonPrime::kBuildStamp);
 #else
             snprintf(melontitle, sizeof(melontitle), "[%d/%.0f] melonDS " MELONDS_VERSION, fps, actualfps);
 #endif
@@ -732,7 +732,7 @@ void EmuThread::run()
             emit windowUpdate();
 
 #ifdef MELONPRIME_DS
-            snprintf(melontitle, sizeof(melontitle), MELONPRIMEDS_NAME_VER " (%s)", MelonPrime::kBuildStamp);
+            snprintf(melontitle, sizeof(melontitle), MELONPRIMEDS_TITLE_PREFIX "%s" MELONPRIMEDS_TITLE_SUFFIX, MelonPrime::kBuildStamp);
 #else
             snprintf(melontitle, sizeof(melontitle), "melonDS " MELONDS_VERSION);
 #endif
