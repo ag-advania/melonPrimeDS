@@ -63,6 +63,7 @@
 #include "Platform.h"
 #include "Config.h"
 #include "version.h"
+#include "MelonPrimeBuildInfo.h"
 #include "Savestate.h"
 #include "MPInterface.h"
 #include "LANDialog.h"
@@ -241,7 +242,11 @@ MainWindow::MainWindow(int id, EmuInstance* inst, QWidget* parent) :
 
     showOSD = windowCfg.GetBool("ShowOSD");
 
+#ifdef MELONPRIME_DS
+    setWindowTitle(QString(MELONPRIMEDS_NAME_VER " (") + MelonPrime::kBuildStamp + ")");
+#else
     setWindowTitle("melonDS " MELONDS_VERSION);
+#endif
     setAttribute(Qt::WA_DeleteOnClose);
     setAcceptDrops(true);
     setFocusPolicy(Qt::ClickFocus);
