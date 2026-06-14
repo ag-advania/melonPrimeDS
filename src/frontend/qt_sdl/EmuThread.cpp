@@ -28,6 +28,7 @@
 #include "main.h"
 #include "types.h"
 #include "version.h"
+#include "MelonPrimeBuildInfo.h"
 #include "ScreenLayout.h"
 #include "Args.h"
 #include "NDS.h"
@@ -156,7 +157,7 @@ void EmuThread::run()
     u32 winUpdateCount = 0, winUpdateFreq = 1;
     u8 dsiVolumeLevel = 0x1F;
 
-    char melontitle[100];
+    char melontitle[160];
 
     bool fastforward = false;
     bool slowmo = false;
@@ -557,13 +558,15 @@ void EmuThread::run()
             const double showMinDev = (frameMsCountDev > 0) ? frameMsMinDev : 0.0;
             const double showMaxDev = (frameMsCountDev > 0) ? frameMsMaxDev : 0.0;
             snprintf(melontitle, sizeof(melontitle),
-                "[%d/%.0f min:%.2f avg:%.2f max:%.2fms jit:%.2f] melonDS " MELONDS_VERSION,
+                "[%d/%.0f min:%.2f avg:%.2f max:%.2fms jit:%.2f] " MELONPRIMEDS_NAME_VER " (%s)",
                 fps, actualfps,
-                showMinDev, avgMsDev, showMaxDev, jitterMsDev);
+                showMinDev, avgMsDev, showMaxDev, jitterMsDev, MelonPrime::kBuildStamp);
             frameMsMinDev = 1.0e9;
             frameMsMaxDev = 0.0;
             frameMsSumDev = 0.0;
             frameMsCountDev = 0;
+#elif defined(MELONPRIME_DS)
+            snprintf(melontitle, sizeof(melontitle), "[%d/%.0f] " MELONPRIMEDS_NAME_VER " (%s)", fps, actualfps, MelonPrime::kBuildStamp);
 #else
             snprintf(melontitle, sizeof(melontitle), "[%d/%.0f] melonDS " MELONDS_VERSION, fps, actualfps);
 #endif
@@ -728,7 +731,11 @@ void EmuThread::run()
 
             emit windowUpdate();
 
+#ifdef MELONPRIME_DS
+            snprintf(melontitle, sizeof(melontitle), MELONPRIMEDS_NAME_VER " (%s)", MelonPrime::kBuildStamp);
+#else
             snprintf(melontitle, sizeof(melontitle), "melonDS " MELONDS_VERSION);
+#endif
             changeWindowTitle(melontitle);
 
             SDL_Delay(75);
