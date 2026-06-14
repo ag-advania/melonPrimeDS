@@ -243,7 +243,7 @@ MainWindow::MainWindow(int id, EmuInstance* inst, QWidget* parent) :
     showOSD = windowCfg.GetBool("ShowOSD");
 
 #ifdef MELONPRIME_DS
-    setWindowTitle(QString(MELONPRIMEDS_NAME_VER " (") + MelonPrime::kBuildStamp + ")");
+    setWindowTitle(QString(MELONPRIMEDS_TITLE_PREFIX) + MelonPrime::kBuildStamp + MELONPRIMEDS_TITLE_SUFFIX);
 #else
     setWindowTitle("melonDS " MELONDS_VERSION);
 #endif
