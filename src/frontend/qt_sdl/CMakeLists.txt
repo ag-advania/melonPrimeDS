@@ -187,6 +187,42 @@ add_executable(melonDS ${SOURCES_QT_SDL})
 # on Windows). The Apple block further down overrides OUTPUT_NAME for the bundle.
 set_target_properties(melonDS PROPERTIES OUTPUT_NAME melonPrimeDS)
 
+# MelonPrimeDS: the build timestamp shown in the title comes from the compiler's
+# __DATE__/__TIME__ (build-machine local time), but C/C++ has no macro for the
+# UTC offset. Compute it here from the difference between local and UTC wall
+# clocks and pass it as a compile definition (e.g. "GMT+9"). The value is stable
+# for a given timezone, so it does not churn incremental builds.
+string(TIMESTAMP _mp_loc_h "%H")
+string(TIMESTAMP _mp_loc_m "%M")
+string(TIMESTAMP _mp_utc_h "%H" UTC)
+string(TIMESTAMP _mp_utc_m "%M" UTC)
+foreach(_v _mp_loc_h _mp_loc_m _mp_utc_h _mp_utc_m)
+    string(REGEX REPLACE "^0([0-9])" "\\1" ${_v} "${${_v}}")  # strip single leading zero for math()
+endforeach()
+math(EXPR _mp_off_min "(${_mp_loc_h} - ${_mp_utc_h}) * 60 + (${_mp_loc_m} - ${_mp_utc_m})")
+# Pick the representative offset within a day (real offsets are -12h..+14h).
+if(_mp_off_min GREATER 720)
+    math(EXPR _mp_off_min "${_mp_off_min} - 1440")
+elseif(_mp_off_min LESS_EQUAL -720)
+    math(EXPR _mp_off_min "${_mp_off_min} + 1440")
+endif()
+set(_mp_tz_sign "+")
+if(_mp_off_min LESS 0)
+    set(_mp_tz_sign "-")
+    math(EXPR _mp_off_min "0 - ${_mp_off_min}")
+endif()
+math(EXPR _mp_tz_h "${_mp_off_min} / 60")
+math(EXPR _mp_tz_m "${_mp_off_min} % 60")
+if(_mp_tz_m EQUAL 0)
+    set(_mp_build_tz "GMT${_mp_tz_sign}${_mp_tz_h}")
+else()
+    if(_mp_tz_m LESS 10)
+        set(_mp_tz_m "0${_mp_tz_m}")
+    endif()
+    set(_mp_build_tz "GMT${_mp_tz_sign}${_mp_tz_h}:${_mp_tz_m}")
+endif()
+target_compile_definitions(melonDS PRIVATE MELONPRIMEDS_BUILD_TZ="${_mp_build_tz}")
+
 if (MELONPRIME_ENABLE_DEVELOPER_FEATURES)
     target_compile_definitions(melonDS PRIVATE MELONPRIME_ENABLE_DEVELOPER_FEATURES)
 endif()
