@@ -129,11 +129,14 @@ Releases for [Windows, Linux and macOS here!](https://github.com/makidoll/melonP
 ### Default settings changed from melonDS
 
 -   Fullscreen toggle set to `F11`
--   Screen layout set to **horizontal**
--   Screen sizing set to **emphasize top**
 -   Screen filter set to **false**
 -   3D renderer set to **OpenGL**
 -   JIT recompiler set to **enabled** _(helps with performance)_
+
+For a large top screen during FPS play, enable the optional **In-Game Top Screen Only**
+(in the `Metroid` menu): while in-game it temporarily switches to Top Only / Natural layout
+and restores your normal window settings in menus. The base screen layout/sizing defaults are
+left at melonDS' stock values, so you can also set them yourself in `Config → Screen` settings.
 
 VSync defaults to off, which helps latency and performance. MelonPrimeDS now respects your `Screen.VSync` setting instead of forcing it off, so you can turn it back on if you want.
 
@@ -203,7 +206,7 @@ ninja
 
 **Gameplay options (toggleable)**
 
-- Show Headshot notification online; show enemy HP meter online.
+- Show Headshot notification online, and an enemy HP meter online. Note: the HP value is generally not updated, so it is unreliable — treat it only as a rough indicator of who you hit.
 - Disable the Double Damage multiplier.
 - Pick up specific power-ups (Double Damage / Cloak / Death Alt) with no effect — affects only you and bots, not online opponents.
 - Use firmware language/name, headphone audio mode, and unlock-all options.
@@ -327,11 +330,14 @@ melonPrimeDS の元の作者、Makidoll をサポートする：
 ### melonDSからのデフォルト設定の変更点
 
 -   フルスクリーン切り替えを`F11`に設定
--   画面レイアウトを**横向き**に設定
--   画面サイズを**上画面を強調**に設定
 -   画面フィルターを**無効**に設定
 -   3Dレンダラーを**OpenGL**に設定
 -   JITリコンパイラを**有効**に設定 *（パフォーマンス向上に役立ちます）*
+
+FPSプレイで上画面を大きくしたい場合は、任意機能の **In-Game Top Screen Only**（`Metroid` メニュー）を
+有効にしてください。ゲーム中だけ一時的に Top Only / Natural レイアウトに切り替わり、メニューでは
+通常のウィンドウ設定に戻ります。基本の画面レイアウト/サイズはmelonDS標準のままなので、
+`Config → Screen` 設定で自分で変更することもできます。
 
 VSyncはデフォルトでオフで、これによりレイテンシーとパフォーマンスが改善します。現在のMelonPrimeDSは強制オフにせずユーザーの `Screen.VSync` 設定を尊重するため、必要なら再度オンにできます
 
@@ -400,7 +406,7 @@ ninja
 
 **ゲームプレイオプション（個別にON/OFF可能）**
 
-- オンラインでのヘッドショット通知表示、敵HPメーター表示
+- オンラインでのヘッドショット通知表示、および敵HPメーター表示。なお、HP情報は基本的に更新されないため信頼性は高くなく、誰に当てたかを見る大まかな目安としてのみ使えます
 - ダブルダメージ倍率の無効化
 - 特定のパワーアップ（ダブルダメージ / クローク / デスオルト）を効果なしで取得（自分とボットのみに影響、オンラインの相手には影響しません）
 - ファームウェアの言語/名前の使用、ヘッドフォン音声モード、すべて解放などのオプション
