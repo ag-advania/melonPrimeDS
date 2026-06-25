@@ -94,6 +94,12 @@ public:
     void refreshAfterHudEditSave();
     QTabWidget* getTabWidget();
 
+protected:
+    // Redirects wheel events on combo/spin/slider controls to the enclosing
+    // scroll area when the control isn't focused, so scrolling the settings
+    // page doesn't accidentally change a value the cursor happens to hover.
+    bool eventFilter(QObject* obj, QEvent* event) override;
+
 private slots:
     void on_metroidResetSensitivityValues_clicked();
     void on_metroidSetVideoQualityToLow_clicked();
@@ -134,6 +140,9 @@ private:
     void setupPreviewConnections();
     void setupCustomHudCode();
     void setupCustomHudWidgets(Config::Table& instcfg);
+    // Install the wheel-event guard on every wheel-sensitive control so hovering
+    // a combo/spin/slider while scrolling does not change its value.
+    void installWheelScrollGuards();
     void updateAimControlsForStylusMode(bool stylusEnabled);
 
     // ── Non-HUD settings binding table (Phase 5b) ───────────────────────────

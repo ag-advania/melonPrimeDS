@@ -27,6 +27,11 @@
 #include <QPainter>
 #include <QImageReader>
 #include <QVariant>
+#include <QApplication>
+#include <QEvent>
+#include <QWheelEvent>
+#include <QAbstractSpinBox>
+#include <QAbstractScrollArea>
 #include <algorithm>
 #include <sstream>
 
@@ -103,7 +108,59 @@ MelonPrimeInputConfig::MelonPrimeInputConfig(EmuInstance* emu, QWidget* parent) 
 
     snapshotVisualConfig();
 
+    // Must run after every widget (UI-defined and programmatic) exists so the
+    // guard reaches all of them.
+    installWheelScrollGuards();
+
     m_applyPreviewEnabled = true;
+}
+
+void MelonPrimeInputConfig::installWheelScrollGuards()
+{
+    // Combo boxes, spin boxes and sliders default to Qt::WheelFocus, which both
+    // steals focus on hover and changes their value when the wheel is turned.
+    // Demote them to Qt::StrongFocus (click/tab only) and install this object as
+    // an event filter so wheel scrolling over an unfocused control is forwarded
+    // to the surrounding scroll area instead. QFontComboBox derives from
+    // QComboBox, and QSpinBox/QDoubleSpinBox from QAbstractSpinBox, so these
+    // three queries cover every wheel-sensitive settings control.
+    const auto guard = [this](QWidget* w)
+    {
+        if (w->focusPolicy() == Qt::WheelFocus)
+            w->setFocusPolicy(Qt::StrongFocus);
+        w->installEventFilter(this);
+    };
+
+    for (QComboBox* w : findChildren<QComboBox*>())
+        guard(w);
+    for (QAbstractSpinBox* w : findChildren<QAbstractSpinBox*>())
+        guard(w);
+    for (QSlider* w : findChildren<QSlider*>())
+        guard(w);
+}
+
+bool MelonPrimeInputConfig::eventFilter(QObject* obj, QEvent* event)
+{
+    if (event->type() == QEvent::Wheel)
+    {
+        QWidget* w = qobject_cast<QWidget*>(obj);
+        if (w && !w->hasFocus())
+        {
+            // The user is scrolling the page, not adjusting this control.
+            // Forward the wheel to the enclosing scroll area's viewport so the
+            // page scrolls, and swallow it here so the value never changes.
+            for (QWidget* p = w->parentWidget(); p; p = p->parentWidget())
+            {
+                if (auto* area = qobject_cast<QAbstractScrollArea*>(p))
+                {
+                    QApplication::sendEvent(area->viewport(), event);
+                    break;
+                }
+            }
+            return true;
+        }
+    }
+    return QWidget::eventFilter(obj, event);
 }
 
 
