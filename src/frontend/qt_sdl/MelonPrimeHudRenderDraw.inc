@@ -710,38 +710,37 @@ static void RebuildCrosshairOutlineStamp(const CrosshairHudConfig& ch)
     s_chStampValid = true;
 }
 
-static float ReadCrosshairZoomAmount(melonDS::u8* ram, const RomAddresses& rom)
+static void UpdateCrosshairZoomAmountForGameFrame(melonDS::u8* ram,
+                                                  const RomAddresses& rom,
+                                                  uint32_t gameFrame)
 {
 #ifdef MELONPRIME_DS
+    if (s_chZoomReticleState.lastGameFrame == gameFrame)
+        return;
+    s_chZoomReticleState.lastGameFrame = gameFrame;
+
     const ZoomStatus::ScopeState scope =
-        ZoomStatus::ReadScopeState(ram, rom.hookLocalPlayerPtrGlobal);
+        ZoomStatus::ReadScopeState(
+            ram, rom.hookLocalPlayerPtrGlobal, s_chZoomReticleState.canZoomCache);
     if (!scope.valid) {
         s_chZoomReticleState = {};
-        return 0.0f;
+        return;
     }
 
-    const bool visible = ZoomStatus::UpdateReticleVisibilityState(
+    ZoomStatus::UpdateReticleVisibilityState(
         s_chZoomReticleState, scope.rawVisible);
-    if (!visible)
-        return 0.0f;
-
-    bool animActive = false;
-    const uint32_t activeAddr = rom.crosshairControl + ZoomStatus::kCrosshairAnimActiveOffset;
-    if (ZoomStatus::IsMainRamRange(activeAddr, sizeof(uint16_t)))
-        animActive = Read16(ram, activeAddr) != 0;
-    if (!animActive)
-        return scope.scoped ? 1.0f : 0.0f;
-
-    uint16_t currentFrame = 0xFFFF;
-    const uint32_t frameAddr = rom.crosshairControl + ZoomStatus::kCrosshairCurrentFrameOffset;
-    if (ZoomStatus::IsMainRamRange(frameAddr, sizeof(uint16_t)))
-        currentFrame = Read16(ram, frameAddr);
-    return ZoomStatus::ComputeReticleAmount(visible, scope.scoped, currentFrame, animActive);
 #else
     (void)ram;
     (void)rom;
-    return 0.0f;
+    (void)gameFrame;
 #endif
+}
+
+static float ReadCrosshairZoomAmount(melonDS::u8* ram, const RomAddresses& rom)
+{
+    (void)ram;
+    (void)rom;
+    return s_chZoomReticleState.amount;
 }
 
 static QRect TopScreenContentClipPx(const QTransform& xf, float topStretchX)

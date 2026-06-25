@@ -323,9 +323,12 @@ static void DrawEditHudPreview(QPainter* p, Config::Table& cfg, float tds, float
     const bool    isFirstPerson = (viewMode == 0x00);
     const bool    canDrawCrosshair = isFirstPerson && !isAlt;
     if (canDrawCrosshair && ((Read8(ram, addrHot.jumpFlag) & 0x10) == 0)) {
-        const float crosshairZoomAmount = c.crosshair.cachedZoomAffectsVisual
-            ? ReadCrosshairZoomAmount(ram, rom)
-            : 0.0f;
+        float crosshairZoomAmount = 0.0f;
+        if (c.crosshair.cachedZoomAffectsVisual) {
+            UpdateCrosshairZoomAmountForGameFrame(
+                ram, rom, nds ? nds->NumFrames : 0);
+            crosshairZoomAmount = ReadCrosshairZoomAmount(ram, rom);
+        }
         DrawCrosshair(p, ram, rom, c, hudScale, topStretchX, crosshairZoomAmount);
     }
 

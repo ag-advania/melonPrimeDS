@@ -121,9 +121,12 @@ HOT_FUNCTION QRect CustomHud_Render(
     // radar, and other Custom HUD elements.
     const bool drawCrosshairThisFrame = st.isFirstPerson && !st.isTrans && !st.isAlt;
     if (drawCrosshairThisFrame) {
-        const float crosshairZoomAmount = c.crosshair.cachedZoomAffectsVisual
-            ? ReadCrosshairZoomAmount(st.ram, rom)
-            : 0.0f;
+        float crosshairZoomAmount = 0.0f;
+        if (c.crosshair.cachedZoomAffectsVisual) {
+            UpdateCrosshairZoomAmountForGameFrame(
+                st.ram, rom, st.nds ? st.nds->NumFrames : 0);
+            crosshairZoomAmount = ReadCrosshairZoomAmount(st.ram, rom);
+        }
         DrawCrosshair(topPaint, st.ram, rom, c, hudScale, topStretchX, crosshairZoomAmount);
     }
 
