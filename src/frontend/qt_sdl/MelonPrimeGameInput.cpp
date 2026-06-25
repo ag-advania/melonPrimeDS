@@ -393,7 +393,7 @@ namespace MelonPrime {
         const melonDS::u8* ram = nds ? nds->MainRAM : nullptr;
         const ZoomStatus::ScopeState scope =
             ZoomStatus::ReadScopeState(ram, m_currentRom.hookLocalPlayerPtrGlobal);
-        if (scope.valid && scope.scoped)
+        if (scope.valid && scope.rawVisible)
             nextScaleQ14 = m_zoomAimScaleQ14;
 #endif
         if (LIKELY(nextScaleQ14 == m_activeZoomAimScaleQ14))

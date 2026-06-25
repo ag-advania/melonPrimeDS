@@ -9,11 +9,17 @@
 namespace MelonPrime::ZoomStatus {
 
     inline constexpr uint32_t kPlayerScopeFlagsOffset = 0x850;
+    inline constexpr uint32_t kPlayerCurrentWeaponPtrOffset = 0x858;
+    inline constexpr uint32_t kWeaponFlagsOffset = 0x08;
+    inline constexpr uint32_t kWeaponZoomFovOffset = 0x54;
     inline constexpr uint8_t  kScopeZoomEnabledBit = 0x01;
+    inline constexpr uint32_t kWeaponFlagZoomCapable = 0x00000800u;
     inline constexpr uint32_t kCrosshairAnimActiveOffset = 0x04;
     inline constexpr uint32_t kCrosshairCurrentFrameOffset = 0x06;
     inline constexpr uint32_t kQ14One = 1u << 14;
     inline constexpr int kCrosshairZoomTransitionStyleCount = 13;
+    inline constexpr uint8_t kReticleVisibleDebounceFrames = 2;
+    inline constexpr uint8_t kReticleZoomOutGraceFrames = 3;
 
     [[nodiscard]] FORCE_INLINE bool IsMainRamRange(uint32_t addr, uint32_t size) noexcept
     {
@@ -22,9 +28,22 @@ namespace MelonPrime::ZoomStatus {
 
     struct ScopeState {
         uint32_t player = 0;
+        uint32_t weapon = 0;
+        uint32_t weaponFlags = 0;
+        int32_t zoomFov = 0;
         uint8_t scopeFlags = 0;
         bool valid = false;
         bool scoped = false;
+        bool weaponValid = false;
+        bool canZoom = false;
+        bool rawVisible = false;
+    };
+
+    struct ReticleVisibilityState {
+        bool visible = false;
+        bool lastRawVisible = false;
+        uint8_t visibleDebounce = 0;
+        uint8_t zoomOutGrace = 0;
     };
 
     [[nodiscard]] FORCE_INLINE uint32_t ReadLocalPlayer(const melonDS::u8* ram,
@@ -47,6 +66,20 @@ namespace MelonPrime::ZoomStatus {
         state.scopeFlags = Read8(ram, state.player + kPlayerScopeFlagsOffset);
         state.valid = true;
         state.scoped = (state.scopeFlags & kScopeZoomEnabledBit) != 0;
+
+        if (IsMainRamRange(state.player + kPlayerCurrentWeaponPtrOffset, sizeof(uint32_t))) {
+            state.weapon = Read32(ram, state.player + kPlayerCurrentWeaponPtrOffset);
+            if (state.weapon
+                && IsMainRamRange(state.weapon, kWeaponZoomFovOffset + sizeof(uint32_t))) {
+                state.weaponValid = true;
+                state.weaponFlags = Read32(ram, state.weapon + kWeaponFlagsOffset);
+                state.zoomFov = static_cast<int32_t>(
+                    Read32(ram, state.weapon + kWeaponZoomFovOffset));
+                state.canZoom = (state.weaponFlags & kWeaponFlagZoomCapable) != 0;
+            }
+        }
+
+        state.rawVisible = state.scoped && state.canZoom && state.zoomFov > 0;
         return state;
     }
 
@@ -257,20 +290,50 @@ namespace MelonPrime::ZoomStatus {
         return std::max(target, display - maxStep);
     }
 
-    [[nodiscard]] FORCE_INLINE float ComputeReticleAmount(bool scoped,
+    FORCE_INLINE bool UpdateReticleVisibilityState(ReticleVisibilityState& state,
+                                                   bool rawVisible) noexcept
+    {
+        const bool wasVisible = state.visible;
+        if (rawVisible) {
+            if (state.visibleDebounce < kReticleVisibleDebounceFrames)
+                ++state.visibleDebounce;
+            if (state.visibleDebounce >= kReticleVisibleDebounceFrames)
+                state.visible = true;
+            state.zoomOutGrace = 0;
+        } else {
+            state.visibleDebounce = 0;
+            if (wasVisible && state.lastRawVisible)
+                state.zoomOutGrace = kReticleZoomOutGraceFrames;
+            if (state.zoomOutGrace > 0) {
+                --state.zoomOutGrace;
+                state.visible = true;
+            } else {
+                state.visible = false;
+            }
+        }
+
+        state.lastRawVisible = rawVisible;
+        return state.visible;
+    }
+
+    [[nodiscard]] FORCE_INLINE float ComputeReticleAmount(bool visible,
+                                                          bool scoped,
                                                           uint16_t currentFrame,
                                                           bool animActive) noexcept
     {
+        if (!visible)
+            return 0.0f;
+
         if (!animActive)
             return scoped ? 1.0f : 0.0f;
 
-        constexpr uint16_t kZoomInEnd = 4;
+        constexpr uint16_t kZoomInEnd = 2;
         if (currentFrame <= kZoomInEnd)
             return SmoothStep(static_cast<float>(currentFrame)
                             / static_cast<float>(kZoomInEnd));
 
         constexpr uint16_t kZoomOutStart = 0x10;
-        constexpr uint16_t kZoomOutEnd = 0x14;
+        constexpr uint16_t kZoomOutEnd = 0x12;
         if (currentFrame >= kZoomOutStart && currentFrame <= kZoomOutEnd) {
             const float t = static_cast<float>(currentFrame - kZoomOutStart)
                           / static_cast<float>(kZoomOutEnd - kZoomOutStart);

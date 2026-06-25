@@ -15,6 +15,12 @@ The reset button should restore the percent to `75`.
 Zoom state is read from MPH runtime state through `MelonPrime::ZoomStatus`:
 - local player pointer from `RomAddresses::hookLocalPlayerPtrGlobal`
 - scope flag at `player + 0x850`, bit `0`
+- current weapon pointer at `player + 0x858`
+- CanZoom flag at `weapon + 0x08`, bit `0x800`
+- zoom FOV at `weapon + 0x54`
+
+The runtime multiplier uses `scope && canZoom && zoomFov > 0`, not the scope bit
+alone, so stale scope state after weapon switches does not keep aim scaled.
 
 Aim scaling is cached as Q14 fixed-point:
 - base aim scale: `m_aimFixedScaleX/Y`
