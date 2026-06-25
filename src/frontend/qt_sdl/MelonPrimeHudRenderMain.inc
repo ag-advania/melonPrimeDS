@@ -117,6 +117,16 @@ HOT_FUNCTION QRect CustomHud_Render(
     // s_textRenderScale and the hi-DPI font were built event-driven in RefreshCachedConfig;
     // nothing to recompute per frame here.
 
+    // Draw crosshair/scope first so large zoom reticles sit behind HP, ammo,
+    // radar, and other Custom HUD elements.
+    const bool drawCrosshairThisFrame = st.isFirstPerson && !st.isTrans && !st.isAlt;
+    if (drawCrosshairThisFrame) {
+        const float crosshairZoomAmount = c.crosshair.cachedZoomAffectsVisual
+            ? ReadCrosshairZoomAmount(st.ram, rom)
+            : 0.0f;
+        DrawCrosshair(topPaint, st.ram, rom, c, hudScale, topStretchX, crosshairZoomAmount);
+    }
+
     DrawHP(topPaint, st.currentHP, st.maxHP, c, textDrawScale);
 
     // Bomb count: Samus/Sylux in alt form only
@@ -167,12 +177,7 @@ HOT_FUNCTION QRect CustomHud_Render(
                             c, textDrawScale, hudScale);
     }
 
-    if (!st.isTrans && !st.isAlt) {
-        const float crosshairZoomAmount = c.crosshair.cachedZoomAffectsVisual
-            ? ReadCrosshairZoomAmount(st.ram, rom)
-            : 0.0f;
-        DrawCrosshair(topPaint, st.ram, rom, c, hudScale, topStretchX, crosshairZoomAmount);
-    } else {
+    if (!drawCrosshairThisFrame) {
         // OPT-DR1: Crosshair not drawn this frame (transition/alt) but was last frame.
         ClearPreviousCrosshairDirty(c.crosshair);
     }
