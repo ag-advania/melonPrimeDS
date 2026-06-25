@@ -1272,8 +1272,13 @@ static void DrawCrosshair(QPainter* p, melonDS::u8* ram,
                           float zoomAmount = 0.0f)
 {
     (void)hudScale;
-    const float dsCx = static_cast<float>(Read8(ram, rom.crosshairPosX));
-    const float dsCy = static_cast<float>(Read8(ram, rom.crosshairPosY));
+    if (s_chAimFrame != gameFrame) {
+        s_chAimFrame = gameFrame;
+        s_chAimDsCx = static_cast<float>(Read8(ram, rom.crosshairPosX));
+        s_chAimDsCy = static_cast<float>(Read8(ram, rom.crosshairPosY));
+    }
+    const float dsCx = s_chAimDsCx;
+    const float dsCy = s_chAimDsCy;
     double zoomT = 0.0;
     double geomScale = 1.0;
     double opacityMul = 1.0;

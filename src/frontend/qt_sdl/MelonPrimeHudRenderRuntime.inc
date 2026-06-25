@@ -271,6 +271,40 @@ struct HudRuntimeState {
     bool isMapOrUserActionPaused;
 };
 
+struct HudRuntimeFrameCache {
+    melonDS::NDS* nds = nullptr;
+    melonDS::u8* ram = nullptr;
+    uint32_t gameFrame = 0xFFFFFFFFu;
+    uint32_t offP = 0;
+    uint8_t romGroup = 0xFFu;
+    bool baseValid = false;
+    bool adventureValid = false;
+    bool visibleValid = false;
+    HudRuntimeState state = {};
+};
+
+static HudRuntimeFrameCache s_hudRuntimeFrameCache;
+
+static inline bool HudRuntimeFrameCacheMatches(melonDS::NDS* nds,
+                                               melonDS::u8* ram,
+                                               uint32_t gameFrame,
+                                               uint32_t offP,
+                                               uint8_t romGroup)
+{
+    return s_hudRuntimeFrameCache.nds == nds
+        && s_hudRuntimeFrameCache.ram == ram
+        && s_hudRuntimeFrameCache.gameFrame == gameFrame
+        && s_hudRuntimeFrameCache.offP == offP
+        && s_hudRuntimeFrameCache.romGroup == romGroup;
+}
+
+static inline bool HudRuntimeFrameCacheMatches(const HudRuntimeState& st)
+{
+    return st.nds
+        && HudRuntimeFrameCacheMatches(st.nds, st.ram, st.nds->NumFrames,
+                                       st.offP, st.romGroup);
+}
+
 static inline QRect OverlayRectFor(const QImage* topBuffer)
 {
     const int overlayW = topBuffer ? topBuffer->width()  : 1;
@@ -371,6 +405,13 @@ static bool ReadHudRuntimeBaseState(EmuInstance* emu,
     if (!ram) return false;
 
     const uint32_t offP = static_cast<uint32_t>(playerPosition) * Consts::PLAYER_ADDR_INC;
+    const uint32_t gameFrame = nds->NumFrames;
+    if (HudRuntimeFrameCacheMatches(nds, ram, gameFrame, offP, rom.romGroupIndex)
+        && s_hudRuntimeFrameCache.baseValid) {
+        out = s_hudRuntimeFrameCache.state;
+        return true;
+    }
+
     out.nds = nds;
     out.ram = ram;
     out.offP = offP;
@@ -378,21 +419,57 @@ static bool ReadHudRuntimeBaseState(EmuInstance* emu,
     out.currentHP = Read16(ram, rom.playerHP + offP);
     out.isStartPressed = Read8(ram, rom.startPressed) == 0x01;
     out.isGameOver = Read8(ram, rom.gameOver) != 0x00;
+
+    s_hudRuntimeFrameCache.nds = nds;
+    s_hudRuntimeFrameCache.ram = ram;
+    s_hudRuntimeFrameCache.gameFrame = gameFrame;
+    s_hudRuntimeFrameCache.offP = offP;
+    s_hudRuntimeFrameCache.romGroup = rom.romGroupIndex;
+    s_hudRuntimeFrameCache.baseValid = true;
+    s_hudRuntimeFrameCache.adventureValid = false;
+    s_hudRuntimeFrameCache.visibleValid = false;
+    s_hudRuntimeFrameCache.state = out;
     return true;
 }
 
 static void ReadHudRuntimeAdventurePauseState(const RomAddresses& rom,
                                              HudRuntimeState& out)
 {
+    if (HudRuntimeFrameCacheMatches(out) && s_hudRuntimeFrameCache.adventureValid) {
+        out.isAdventure = s_hudRuntimeFrameCache.state.isAdventure;
+        out.isMapOrUserActionPaused =
+            s_hudRuntimeFrameCache.state.isMapOrUserActionPaused;
+        return;
+    }
+
     out.isAdventure = Read8(out.ram, rom.isInAdventure) == 0x02;
     out.isMapOrUserActionPaused = out.isAdventure &&
         Read8(out.ram, rom.isMapOrUserActionPaused) == 0x01;
+
+    if (HudRuntimeFrameCacheMatches(out)) {
+        s_hudRuntimeFrameCache.state.isAdventure = out.isAdventure;
+        s_hudRuntimeFrameCache.state.isMapOrUserActionPaused =
+            out.isMapOrUserActionPaused;
+        s_hudRuntimeFrameCache.adventureValid = true;
+    }
 }
 
 static void ReadHudRuntimeVisibleState(const RomAddresses& rom,
                                        const GameAddressesHot& addrHot,
                                        HudRuntimeState& out)
 {
+    if (HudRuntimeFrameCacheMatches(out) && s_hudRuntimeFrameCache.visibleValid) {
+        out.maxHP = s_hudRuntimeFrameCache.state.maxHP;
+        out.maxAmmoSpecial = s_hudRuntimeFrameCache.state.maxAmmoSpecial;
+        out.maxAmmoMissile = s_hudRuntimeFrameCache.state.maxAmmoMissile;
+        out.hunterID = s_hudRuntimeFrameCache.state.hunterID;
+        out.currentWeapon = s_hudRuntimeFrameCache.state.currentWeapon;
+        out.isFirstPerson = s_hudRuntimeFrameCache.state.isFirstPerson;
+        out.isAlt = s_hudRuntimeFrameCache.state.isAlt;
+        out.isTrans = s_hudRuntimeFrameCache.state.isTrans;
+        return;
+    }
+
     melonDS::u8* ram = out.ram;
     const uint32_t offP = out.offP;
     const uint8_t viewMode = Read8(ram, rom.baseViewMode + offP);
@@ -406,6 +483,18 @@ static void ReadHudRuntimeVisibleState(const RomAddresses& rom,
     out.isFirstPerson = isFirstPerson;
     out.isAlt = Read8(ram, addrHot.isAltForm) == 0x02;
     out.isTrans = isFirstPerson && (Read8(ram, addrHot.jumpFlag) & 0x10) != 0;
+
+    if (HudRuntimeFrameCacheMatches(out)) {
+        s_hudRuntimeFrameCache.state.maxHP = out.maxHP;
+        s_hudRuntimeFrameCache.state.maxAmmoSpecial = out.maxAmmoSpecial;
+        s_hudRuntimeFrameCache.state.maxAmmoMissile = out.maxAmmoMissile;
+        s_hudRuntimeFrameCache.state.hunterID = out.hunterID;
+        s_hudRuntimeFrameCache.state.currentWeapon = out.currentWeapon;
+        s_hudRuntimeFrameCache.state.isFirstPerson = out.isFirstPerson;
+        s_hudRuntimeFrameCache.state.isAlt = out.isAlt;
+        s_hudRuntimeFrameCache.state.isTrans = out.isTrans;
+        s_hudRuntimeFrameCache.visibleValid = true;
+    }
 }
 
 static void DrawMatchStatusText(QPainter* p, const QFontMetrics& fm, int fontPixelSize, float tds,

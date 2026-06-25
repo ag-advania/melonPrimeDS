@@ -6,6 +6,7 @@
 - [Git Workflow](git-workflow.md)
 - [Non-MelonPrime Upstream Diff](non-melonprime-upstream-diff.md)
 - [MelonPrime Refactoring / Performance History](melonprime-refactoring.md)
+- [MelonPrime Performance Rules](melonprime-performance.md)
 - [MelonPrime Gameplay Runtime (No CustomHud)](melonprime-gameplay-runtime.md)
 - [MelonPrime Aim/Input (No CustomHud)](melonprime-aim-input.md)
 - [MelonPrime Click Handling — Investigation & Fix Log](melonprime-click-handling.md)

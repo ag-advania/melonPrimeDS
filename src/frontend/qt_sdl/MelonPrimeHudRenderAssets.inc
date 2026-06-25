@@ -353,6 +353,9 @@ static bool   s_chScopeStampValid = false;
 // INT_MIN = not drawn yet / reset.
 static float s_chDisplayZoom = 0.0f;
 static uint32_t s_chDisplayZoomFrame = 0xFFFFFFFFu;
+static uint32_t s_chAimFrame = 0xFFFFFFFFu;
+static float s_chAimDsCx = 0.0f;
+static float s_chAimDsCy = 0.0f;
 static ZoomStatus::ReticleVisibilityState s_chZoomReticleState;
 static bool  s_chCrosshairDrawnLastFrame = false;
 static int   s_chPrevPxCx = INT_MIN;
@@ -399,6 +402,7 @@ static void NotifyCrosshairZoomNotDrawn()
     s_chCrosshairDrawnLastFrame = false;
     s_chDisplayZoom = 0.0f;
     s_chDisplayZoomFrame = 0xFFFFFFFFu;
+    s_chAimFrame = 0xFFFFFFFFu;
     s_chZoomReticleState = {};
 }
 
@@ -406,6 +410,7 @@ static void ResetCrosshairZoomDisplay(float target = 0.0f)
 {
     s_chDisplayZoom = target;
     s_chDisplayZoomFrame = 0xFFFFFFFFu;
+    s_chAimFrame = 0xFFFFFFFFu;
     s_chZoomReticleState = {};
     s_chCrosshairDrawnLastFrame = false;
 }
