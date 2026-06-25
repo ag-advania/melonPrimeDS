@@ -341,7 +341,9 @@ static void DrawEditHudPreview(QPainter* p, Config::Table& cfg, float tds, float
     const bool    isBomber = (hunterID == static_cast<uint8_t>(HunterId::Samus) ||
                               hunterID == static_cast<uint8_t>(HunterId::Sylux));
     if (isBomber && isAlt)
-        DrawBombLeft(p, ram, rom, offP, c, tds, hudScale);
+        DrawBombLeft(p,
+                     static_cast<uint8_t>((Read32(ram, rom.baseBomb + offP) >> 8) & 0xF),
+                     c, tds, hudScale);
 
     const bool isAdventure = Read8(ram, rom.isInAdventure) == 0x02;
     DrawMatchStatusHud(p, ram, rom, s_editPlayerPosCopy, isAdventure, c);

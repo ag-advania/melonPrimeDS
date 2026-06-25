@@ -139,13 +139,14 @@ HOT_FUNCTION QRect CustomHud_Render(
         const bool isBomber = (st.hunterID == static_cast<uint8_t>(HunterId::Samus) ||
                                st.hunterID == static_cast<uint8_t>(HunterId::Sylux));
         if (isBomber && st.isAlt) {
-            DrawBombLeft(topPaint, st.ram, rom, st.offP, c, textDrawScale, hudScale);
+            DrawBombLeft(topPaint, ReadHudRuntimeBombCount(rom, st),
+                         c, textDrawScale, hudScale);
         }
     }
 
     // Match Status + Rank & Time HUDs (non-adventure only, visible in all camera modes)
-    DrawMatchStatusHud(topPaint, st.ram, rom, playerPosition, st.isAdventure, c);
-    DrawRankAndTime(topPaint, st.ram, rom, playerPosition, st.isAdventure, c, textDrawScale);
+    DrawMatchStatusHud(topPaint, st.ram, rom, playerPosition, st.isAdventure, c, &st);
+    DrawRankAndTime(topPaint, st.ram, rom, playerPosition, st.isAdventure, c, textDrawScale, &st);
 
     // Draw bottom screen overlay on top screen (visible in all camera modes incl. alt form)
     if (c.radar.radarShow)
@@ -164,18 +165,17 @@ HOT_FUNCTION QRect CustomHud_Render(
     uint16_t currentAmmoMissile = 0;
     if (c.weaponInventory.show ||
         (weaponInfo.divisor > 0 && !weaponInfo.isMissile && weaponIdx != WeaponId::OmegaCannon))
-        currentAmmoSpecial = Read16(st.ram, rom.currentAmmoSpecial + st.offP);
+        currentAmmoSpecial = ReadHudRuntimeCurrentAmmoSpecial(rom, st);
     if (c.weaponInventory.show ||
         weaponInfo.isMissile)
-        currentAmmoMissile = Read16(st.ram, rom.currentAmmoMissile + st.offP);
+        currentAmmoMissile = ReadHudRuntimeCurrentAmmoMissile(rom, st);
 
     DrawWeaponAmmo(topPaint, st.currentWeapon,
                    currentAmmoSpecial, currentAmmoMissile,
                    st.maxAmmoSpecial, st.maxAmmoMissile, c, textDrawScale, hudScale);
 
     if (c.weaponInventory.show) {
-        const uint16_t havingWeapons = static_cast<uint16_t>(
-            Read16(st.ram, addrHot.havingWeapons));
+        const uint16_t havingWeapons = ReadHudRuntimeHavingWeapons(addrHot, st);
         DrawWeaponInventory(topPaint,
                             havingWeapons, st.currentWeapon,
                             currentAmmoSpecial, currentAmmoMissile,

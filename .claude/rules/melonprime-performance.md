@@ -38,6 +38,8 @@ Every cache needs a clear invalidation owner:
 ## Current Examples
 
 - Custom HUD zoom amount, crosshair DS aim position, and `s_chDisplayZoom` are game-frame keyed.
-- Custom HUD runtime state caches base/adventure/visible reads within a game frame.
+- Custom HUD runtime state caches base/adventure/visible reads within a game
+  frame, and lazily caches optional element values such as ammo, owned weapons,
+  bombs, match status, rank, and time only when those elements are drawn.
 - Zoom status uses scope bit + cached CanZoom and intentionally avoids zoom FOV / HUD animation reads on the hot path.
 - Aim sensitivity stores an effective scale and keeps floating-point percentage math out of `ProcessAimInputMouse()`.
