@@ -41,6 +41,10 @@ Update zoom state once per emulated game frame, not once per draw:
 - 120/240Hz presentation should reuse the cached zoom amount for repeated draws
   of the same emulated frame.
 - Debounce timers are game-frame timers. Do not advance them per render frame.
+- Custom HUD display smoothing (`s_chDisplayZoom`) is also keyed by
+  `NDS::NumFrames`. Repeated draws of the same emulated frame reuse the same
+  visual zoom amount, so a 2-frame transition remains 2 game frames instead of
+  shrinking at high presentation rates.
 
 Rendering should consume cached state:
 - `ReadCrosshairZoomAmount()` returns the cached amount only.

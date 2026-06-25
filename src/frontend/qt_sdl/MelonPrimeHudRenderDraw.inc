@@ -1268,6 +1268,7 @@ static void DrawCrosshair(QPainter* p, melonDS::u8* ram,
                           const RomAddresses& rom,
                           const CachedHudConfig& c,
                           float hudScale, float topStretchX,
+                          uint32_t gameFrame,
                           float zoomAmount = 0.0f)
 {
     (void)hudScale;
@@ -1282,16 +1283,19 @@ static void DrawCrosshair(QPainter* p, melonDS::u8* ram,
     if (c.crosshair.cachedZoomAffectsVisual) {
         const float targetZoom =
             std::clamp(static_cast<float>(zoomAmount), 0.0f, 1.0f);
-        if (targetZoom <= 0.001f) {
-            // Fully unzoomed — snap display so zoom scale never sticks on the base reticle.
-            s_chDisplayZoom = 0.0f;
-        } else if (!s_chCrosshairDrawnLastFrame) {
-            s_chDisplayZoom = targetZoom;
-        } else if (c.crosshair.chZoomTransitionEnable) {
-            s_chDisplayZoom = ZoomStatus::AdvanceDisplayZoom(
-                s_chDisplayZoom, targetZoom, c.crosshair.chZoomTransitionStep);
-        } else {
-            s_chDisplayZoom = targetZoom;
+        if (s_chDisplayZoomFrame != gameFrame) {
+            s_chDisplayZoomFrame = gameFrame;
+            if (targetZoom <= 0.001f) {
+                // Fully unzoomed — snap display so zoom scale never sticks on the base reticle.
+                s_chDisplayZoom = 0.0f;
+            } else if (!s_chCrosshairDrawnLastFrame) {
+                s_chDisplayZoom = targetZoom;
+            } else if (c.crosshair.chZoomTransitionEnable) {
+                s_chDisplayZoom = ZoomStatus::AdvanceDisplayZoom(
+                    s_chDisplayZoom, targetZoom, c.crosshair.chZoomTransitionStep);
+            } else {
+                s_chDisplayZoom = targetZoom;
+            }
         }
 
         const float t = s_chDisplayZoom;
