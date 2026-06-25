@@ -54,6 +54,40 @@ static void MelonPrimeHud_PrepareTopOverlay(
     }
 }
 
+// OPT-DR3: FNV-1a hash of an overlay sub-region, used to skip a redundant GPU
+// upload when the rendered HUD pixels are byte-identical to the last uploaded
+// region. The motivating case is holding a zoom scope still: the large scope
+// reticle bbox is otherwise re-uploaded via glTexSubImage2D every frame even
+// though its pixels never change. Hashing the region (cache-warm CPU read) is
+// cheaper than a multi-MB PCIe upload + driver sync at high internal
+// resolutions. Pixel-exact, so it can never leave the HUD stale.
+static uint64_t MelonPrimeHud_HashImageRegion(const QImage& img, const QRect& r)
+{
+    uint64_t h = 1469598103934665603ull; // FNV-1a offset basis
+    const int left  = std::max(0, r.left());
+    const int right = std::min(img.width()  - 1, r.right());
+    const int top   = std::max(0, r.top());
+    const int bot   = std::min(img.height() - 1, r.bottom());
+    if (left > right || top > bot)
+        return h;
+
+    const int rowBytes = (right - left + 1) * 4; // ARGB32 = 4 bytes/pixel
+    for (int y = top; y <= bot; ++y) {
+        const uchar* row = img.scanLine(y) + left * 4;
+        int i = 0;
+        for (; i + 8 <= rowBytes; i += 8) {
+            uint64_t chunk;
+            std::memcpy(&chunk, row + i, 8);
+            h = (h ^ chunk) * 1099511628211ull;
+        }
+        for (; i < rowBytes; ++i)
+            h = (h ^ static_cast<uint64_t>(row[i])) * 1099511628211ull;
+    }
+    // Fold geometry so a same-pixels region move is never mistaken for unchanged.
+    h ^= (static_cast<uint64_t>(r.width()) << 32) ^ static_cast<uint64_t>(r.height());
+    return h;
+}
+
 static bool MelonPrimeHud_RefreshHudEpoch(uint32_t& cachedEpoch)
 {
     const uint32_t epoch = MelonPrime::CustomHud_GetCacheEpoch();

@@ -72,6 +72,29 @@ if (!uploadRect.isEmpty()) {
 s_hudPrevDirtyGL = curDirty;
 ```
 
+### OPT-DR3 — Skip the GL upload when the dirty region is unchanged
+
+`glTexSubImage2D` of the `uploadRect` runs every frame even when the rendered HUD pixels are
+identical to the previous frame. The expensive case is holding a **zoom scope** still: the scope
+reticle bbox expands `curDirty` to a large region ([MelonPrimeHudRenderConfig.inc](../../src/frontend/qt_sdl/MelonPrimeHudRenderConfig.inc) `CrosshairScopeBboxPx`), so a
+multi-MB region is re-uploaded over PCIe every frame for static content.
+
+OPT-DR3 (GL path only, [MelonPrimeHudScreenCppOverlayOfGl.inc](../../src/frontend/qt_sdl/MelonPrimeHudScreenCppOverlayOfGl.inc)) gates the partial
+`glTexSubImage2D` on a content hash:
+
+- Statics `s_hudUploadedRectGL` / `s_hudUploadedHashGL` / `s_hudUploadedValidGL` remember the last
+  uploaded region and its FNV-1a hash (`MelonPrimeHud_HashImageRegion` in
+  [MelonPrimeHudScreenCppHelpers.inc](../../src/frontend/qt_sdl/MelonPrimeHudScreenCppHelpers.inc)).
+- Only when `uploadRect` area `>= 256*256` is the hash computed; if the rect and hash both match
+  the last upload, the `glTexSubImage2D` is skipped. Small regions upload unconditionally (not
+  worth hashing) and reset tracking.
+- The composite (`glDrawArrays`) still runs every frame, sampling the unchanged GL texture, so the
+  HUD stays drawn. The CPU clear + overlay re-render are unchanged.
+
+Pixel-exact, so it can never leave the HUD stale (no input-signature enumeration). Texture
+re-allocation on resize sets `s_hudUploadedValidGL = false`. The software path is **not** covered:
+its composite reads the overlay image directly every frame, so there is no separable upload to skip.
+
 Additional Screen-fragment caches:
 - `m_hudEnabled` is refreshed by `m_hudCfgEpoch` instead of reading `Metroid.Visual.CustomHUD` every frame.
 - `m_radarCfgEpoch` owns GL radar config refresh separately from the top HUD enable cache.

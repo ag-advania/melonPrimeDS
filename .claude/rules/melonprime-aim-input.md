@@ -147,6 +147,12 @@ unless `MELONPRIME_ENABLE_DEVELOPER_FEATURES`.
   - minimum delta values
   - snap/deadzone thresholds
   and clears stale residuals.
+- Zoom aim sensitivity uses `MelonPrime::ZoomStatus` with cached CanZoom:
+  - common unscoped case reads only local player + `player+0x850`
+  - weapon flags are read only while scoped and only when `player+0x858` changes
+  - do not add `weapon+0x54` zoom FOV, HUD animation reads, or per-mouse-delta
+    floating-point math back into this path
+  - shared rationale lives in `.claude/features/zoom-status-performance.md`
 
 ## 10. Main Config Keys
 
