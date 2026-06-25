@@ -335,9 +335,22 @@ namespace MelonPrime {
         // This preserves 2 extra fractional bits, giving 4x resolution (±1 vs ±4).
         static constexpr int AIM_DIRECT_BITS = AIM_FRAC_BITS - 2;  // 12
 
-        // P-18c: Residual clamp prevents wind-up during rapid direction changes.
-        // 128 DS-units at Q14 = a large but bounded rotation.
-        static constexpr int64_t AIM_MAX_RESIDUAL = 128LL << AIM_FRAC_BITS;
+        // P-18c: Residual clamp. Set to the largest residual whose per-frame
+        // output still fits the signed-16-bit aim register. The direct path emits
+        // resX >> AIM_DIRECT_BITS, so the ceiling is INT16_MAX << AIM_DIRECT_BITS.
+        // This is the maximally-permissive safe bound:
+        //   * It no longer clips real flicks. Below this ceiling the residual
+        //     accumulation is linear, so a fast flick and a slow flick of the
+        //     same physical distance emit the same total motion. The old
+        //     128-unit clamp discarded the excess on high-sensitivity fast
+        //     flicks (residual was clamped, then ~zeroed by the carry subtract,
+        //     so the overflow was lost, not carried) — that made fast aiming
+        //     register less rotation than slow aiming.
+        //   * It still prevents the int16 output from wrapping on a pathological
+        //     single-frame delta spike (alt-tab/sensor burst), which would flip
+        //     the aim direction. Such a spike is capped here, not spread across
+        //     frames.
+        static constexpr int64_t AIM_MAX_RESIDUAL = 32767LL << AIM_DIRECT_BITS;
 
         int32_t  m_aimFixedScaleX = 164;
         int32_t  m_aimFixedScaleY = 218;
