@@ -37,6 +37,7 @@ namespace MelonPrime {
         0xF0, 0xB0, 0x70, 0xF0,  0xD0, 0x90, 0x50, 0xD0,
         0xE0, 0xA0, 0x60, 0xE0,  0xF0, 0xB0, 0x70, 0xF0,
     };
+    static ZoomStatus::ZoomCapabilityCache s_zoomAimCanZoomCache;
 
     // V7: Grouped bit projection.
     //
@@ -392,8 +393,11 @@ namespace MelonPrime {
         melonDS::NDS* nds = emuInstance ? emuInstance->getNDS() : nullptr;
         const melonDS::u8* ram = nds ? nds->MainRAM : nullptr;
         const ZoomStatus::ScopeState scope =
-            ZoomStatus::ReadScopeState(ram, m_currentRom.hookLocalPlayerPtrGlobal);
-        if (scope.valid && scope.scoped)
+            ZoomStatus::ReadScopeState(
+                ram, m_currentRom.hookLocalPlayerPtrGlobal, s_zoomAimCanZoomCache);
+        if (!scope.valid)
+            s_zoomAimCanZoomCache = {};
+        if (scope.valid && scope.rawVisible)
             nextScaleQ14 = m_zoomAimScaleQ14;
 #endif
         if (LIKELY(nextScaleQ14 == m_activeZoomAimScaleQ14))

@@ -317,16 +317,33 @@ static void DrawEditHudPreview(QPainter* p, Config::Table& cfg, float tds, float
     const GameAddressesHot& addrHot = s_editAddrHotCopy;
     const uint32_t offP = static_cast<uint32_t>(s_editPlayerPosCopy) * Consts::PLAYER_ADDR_INC;
 
+    const uint8_t hunterID = Read8(ram, addrHot.chosenHunter);
+    const bool    isAlt    = Read8(ram, addrHot.isAltForm) == 0x02;
+    const uint8_t viewMode = Read8(ram, rom.baseViewMode + offP);
+    const bool    isFirstPerson = (viewMode == 0x00);
+    const bool    canDrawCrosshair = isFirstPerson && !isAlt;
+    if (canDrawCrosshair && ((Read8(ram, addrHot.jumpFlag) & 0x10) == 0)) {
+        const uint32_t gameFrame = nds ? nds->NumFrames : 0;
+        float crosshairZoomAmount = 0.0f;
+        if (c.crosshair.cachedZoomAffectsVisual) {
+            UpdateCrosshairZoomAmountForGameFrame(
+                ram, rom, gameFrame);
+            crosshairZoomAmount = ReadCrosshairZoomAmount(ram, rom);
+        }
+        DrawCrosshair(p, ram, rom, c, hudScale, topStretchX,
+                      gameFrame, crosshairZoomAmount);
+    }
+
     const uint16_t currentHP = Read16(ram, rom.playerHP + offP);
     const uint16_t maxHP     = Read16(ram, rom.maxHP     + offP);
     DrawHP(p, currentHP, maxHP, c, tds);
 
-    const uint8_t hunterID = Read8(ram, addrHot.chosenHunter);
-    const bool    isAlt    = Read8(ram, addrHot.isAltForm) == 0x02;
     const bool    isBomber = (hunterID == static_cast<uint8_t>(HunterId::Samus) ||
                               hunterID == static_cast<uint8_t>(HunterId::Sylux));
     if (isBomber && isAlt)
-        DrawBombLeft(p, ram, rom, offP, c, tds, hudScale);
+        DrawBombLeft(p,
+                     static_cast<uint8_t>((Read32(ram, rom.baseBomb + offP) >> 8) & 0xF),
+                     c, tds, hudScale);
 
     const bool isAdventure = Read8(ram, rom.isInAdventure) == 0x02;
     DrawMatchStatusHud(p, ram, rom, s_editPlayerPosCopy, isAdventure, c);
@@ -335,8 +352,6 @@ static void DrawEditHudPreview(QPainter* p, Config::Table& cfg, float tds, float
     // Mirror the normal HUD path so preview mode includes the live radar frame/crop.
     DrawBottomScreenOverlay(cfg, p, btmBuffer, (hunterID <= 6) ? hunterID : 0);
 
-    const uint8_t viewMode    = Read8(ram, rom.baseViewMode + offP);
-    const bool    isFirstPerson = (viewMode == 0x00);
     if (isFirstPerson) {
         const uint8_t  weapon          = Read8(ram, addrHot.currentWeapon);
         const uint8_t  weaponIdx       = (weapon < 9) ? weapon : 0;
@@ -364,13 +379,6 @@ static void DrawEditHudPreview(QPainter* p, Config::Table& cfg, float tds, float
                                 c, tds, hudScale);
         }
 
-        const bool isTrans = (Read8(ram, addrHot.jumpFlag) & 0x10) != 0;
-        if (!isTrans && !isAlt) {
-            const float crosshairZoomAmount = c.crosshair.cachedZoomAffectsVisual
-                ? ReadCrosshairZoomAmount(ram, rom)
-                : 0.0f;
-            DrawCrosshair(p, ram, rom, c, hudScale, topStretchX, crosshairZoomAmount);
-        }
     }
 }
 

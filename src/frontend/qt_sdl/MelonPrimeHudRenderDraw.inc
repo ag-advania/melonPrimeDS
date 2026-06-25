@@ -710,31 +710,37 @@ static void RebuildCrosshairOutlineStamp(const CrosshairHudConfig& ch)
     s_chStampValid = true;
 }
 
-static float ReadCrosshairZoomAmount(melonDS::u8* ram, const RomAddresses& rom)
+static void UpdateCrosshairZoomAmountForGameFrame(melonDS::u8* ram,
+                                                  const RomAddresses& rom,
+                                                  uint32_t gameFrame)
 {
 #ifdef MELONPRIME_DS
+    if (s_chZoomReticleState.lastGameFrame == gameFrame)
+        return;
+    s_chZoomReticleState.lastGameFrame = gameFrame;
+
     const ZoomStatus::ScopeState scope =
-        ZoomStatus::ReadScopeState(ram, rom.hookLocalPlayerPtrGlobal);
-    if (!scope.valid)
-        return 0.0f;
+        ZoomStatus::ReadScopeState(
+            ram, rom.hookLocalPlayerPtrGlobal, s_chZoomReticleState.canZoomCache);
+    if (!scope.valid) {
+        s_chZoomReticleState = {};
+        return;
+    }
 
-    bool animActive = false;
-    const uint32_t activeAddr = rom.crosshairControl + ZoomStatus::kCrosshairAnimActiveOffset;
-    if (ZoomStatus::IsMainRamRange(activeAddr, sizeof(uint16_t)))
-        animActive = Read16(ram, activeAddr) != 0;
-    if (!animActive)
-        return scope.scoped ? 1.0f : 0.0f;
-
-    uint16_t currentFrame = 0xFFFF;
-    const uint32_t frameAddr = rom.crosshairControl + ZoomStatus::kCrosshairCurrentFrameOffset;
-    if (ZoomStatus::IsMainRamRange(frameAddr, sizeof(uint16_t)))
-        currentFrame = Read16(ram, frameAddr);
-    return ZoomStatus::ComputeReticleAmount(scope.scoped, currentFrame, animActive);
+    ZoomStatus::UpdateReticleVisibilityState(
+        s_chZoomReticleState, scope.rawVisible);
 #else
     (void)ram;
     (void)rom;
-    return 0.0f;
+    (void)gameFrame;
 #endif
+}
+
+static float ReadCrosshairZoomAmount(melonDS::u8* ram, const RomAddresses& rom)
+{
+    (void)ram;
+    (void)rom;
+    return s_chZoomReticleState.amount;
 }
 
 static QRect TopScreenContentClipPx(const QTransform& xf, float topStretchX)
@@ -1262,11 +1268,17 @@ static void DrawCrosshair(QPainter* p, melonDS::u8* ram,
                           const RomAddresses& rom,
                           const CachedHudConfig& c,
                           float hudScale, float topStretchX,
+                          uint32_t gameFrame,
                           float zoomAmount = 0.0f)
 {
     (void)hudScale;
-    const float dsCx = static_cast<float>(Read8(ram, rom.crosshairPosX));
-    const float dsCy = static_cast<float>(Read8(ram, rom.crosshairPosY));
+    if (s_chAimFrame != gameFrame) {
+        s_chAimFrame = gameFrame;
+        s_chAimDsCx = static_cast<float>(Read8(ram, rom.crosshairPosX));
+        s_chAimDsCy = static_cast<float>(Read8(ram, rom.crosshairPosY));
+    }
+    const float dsCx = s_chAimDsCx;
+    const float dsCy = s_chAimDsCy;
     double zoomT = 0.0;
     double geomScale = 1.0;
     double opacityMul = 1.0;
@@ -1276,16 +1288,19 @@ static void DrawCrosshair(QPainter* p, melonDS::u8* ram,
     if (c.crosshair.cachedZoomAffectsVisual) {
         const float targetZoom =
             std::clamp(static_cast<float>(zoomAmount), 0.0f, 1.0f);
-        if (targetZoom <= 0.001f) {
-            // Fully unzoomed — snap display so zoom scale never sticks on the base reticle.
-            s_chDisplayZoom = 0.0f;
-        } else if (!s_chCrosshairDrawnLastFrame) {
-            s_chDisplayZoom = targetZoom;
-        } else if (c.crosshair.chZoomTransitionEnable) {
-            s_chDisplayZoom = ZoomStatus::AdvanceDisplayZoom(
-                s_chDisplayZoom, targetZoom, c.crosshair.chZoomTransitionStep);
-        } else {
-            s_chDisplayZoom = targetZoom;
+        if (s_chDisplayZoomFrame != gameFrame) {
+            s_chDisplayZoomFrame = gameFrame;
+            if (targetZoom <= 0.001f) {
+                // Fully unzoomed — snap display so zoom scale never sticks on the base reticle.
+                s_chDisplayZoom = 0.0f;
+            } else if (!s_chCrosshairDrawnLastFrame) {
+                s_chDisplayZoom = targetZoom;
+            } else if (c.crosshair.chZoomTransitionEnable) {
+                s_chDisplayZoom = ZoomStatus::AdvanceDisplayZoom(
+                    s_chDisplayZoom, targetZoom, c.crosshair.chZoomTransitionStep);
+            } else {
+                s_chDisplayZoom = targetZoom;
+            }
         }
 
         const float t = s_chDisplayZoom;

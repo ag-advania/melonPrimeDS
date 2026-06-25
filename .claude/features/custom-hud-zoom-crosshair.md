@@ -36,18 +36,25 @@ All Custom HUD visual keys should be added through
 defaults, dialog properties, edit mode, side panel, and runtime load.
 
 ## Runtime
-Zoom amount is read in `ReadCrosshairZoomAmount()`:
+See also [Zoom status performance](zoom-status-performance.md) for the shared
+hot-path rules behind this design.
+
+Zoom state is updated once per emulated game frame, then
+`ReadCrosshairZoomAmount()` returns the cached amount during rendering:
 - scoped bit from `player + 0x850`
-- exact HUD animation state from `crosshairControl + 0x04`
-- exact HUD current frame from `crosshairControl + 0x06`
+- current weapon pointer from `player + 0x858`
+- cached CanZoom flag from `weapon + 0x08`, bit `0x800`
 
-If the HUD animation flag is inactive, the renderer falls back to the scoped bit.
-This avoids treating a stable `currentFrame == 0` as "not zoomed" after zoom has
-already completed.
+Visibility is gated by `scoped && cachedCanZoom`, with a 2-game-frame debounce.
+When scoped is false, weapon data is not read. When scoped is true, CanZoom is
+re-read only if `player + 0x858` points to a different weapon than the cached
+one. The renderer no longer reads zoom FOV or HUD animation frame state; host
+smoothing in `DrawCrosshair()` handles visual zoom-in/zoom-out from the cached
+0/1 amount. This keeps charge-shot/shoot animation noise from flashing the zoom
+reticle without doing per-draw memory polling.
 
-For non-animated frames, the renderer returns from scoped state directly and skips
-the current-frame read. Crosshair zoom geometry that does not change per frame is
-cached in `CrosshairHudConfig`, including the scope reticle bbox.
+Crosshair zoom geometry that does not change per frame is cached in
+`CrosshairHudConfig`, including the scope reticle bbox.
 The scope reticle is clipped to the top-screen content rectangle so it does not
 draw into letterbox/pillarbox areas. Scope reticle radius, line length, gap,
 thickness, and center-dot size are part of the crosshair auto-scale category and
@@ -88,9 +95,6 @@ stage values, but without smoothing or staged curves).
 After the crosshair stops drawing (death, HUD hide, third-person, transform), the
 display zoom snaps to the current target on the next draw so respawn does not
 replay a zoom-out animation.
-
-Game-side frame mapping in `ComputeReticleAmount()` uses smoothstep over frames
-0–4 (zoom in) and 0x10–0x14 (zoom out) when the HUD animation flag is active.
 
 Settings UI keys (Custom HUD tab + in-game edit mode):
 - Normal crosshair section: color, scale, outline, center dot, T-style

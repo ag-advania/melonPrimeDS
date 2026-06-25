@@ -10,5 +10,6 @@ Keep each feature note small and practical:
 - known caveats for future changes
 
 ## Notes
+- [Zoom status performance](zoom-status-performance.md)
 - [Zoom aim sensitivity](zoom-aim-sensitivity.md)
 - [Custom HUD zoom crosshair](custom-hud-zoom-crosshair.md)

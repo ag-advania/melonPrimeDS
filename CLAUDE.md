@@ -10,6 +10,7 @@ This file is an index only. Keep detailed instructions in the linked Rules, Skil
 - [.claude/rules/git-workflow.md](.claude/rules/git-workflow.md)
 - [.claude/rules/non-melonprime-upstream-diff.md](.claude/rules/non-melonprime-upstream-diff.md)
 - [.claude/rules/melonprime-refactoring.md](.claude/rules/melonprime-refactoring.md)
+- [.claude/rules/melonprime-performance.md](.claude/rules/melonprime-performance.md)
 - [.claude/rules/melonprime-gameplay-runtime.md](.claude/rules/melonprime-gameplay-runtime.md)
 - [.claude/rules/melonprime-aim-input.md](.claude/rules/melonprime-aim-input.md)
 - [.claude/rules/melonprime-click-handling.md](.claude/rules/melonprime-click-handling.md)
@@ -29,6 +30,7 @@ This file is an index only. Keep detailed instructions in the linked Rules, Skil
 
 ## Features
 - [.claude/features/README.md](.claude/features/README.md)
+- [.claude/features/zoom-status-performance.md](.claude/features/zoom-status-performance.md)
 - [.claude/features/zoom-aim-sensitivity.md](.claude/features/zoom-aim-sensitivity.md)
 - [.claude/features/custom-hud-zoom-crosshair.md](.claude/features/custom-hud-zoom-crosshair.md)
 

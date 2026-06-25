@@ -271,6 +271,56 @@ struct HudRuntimeState {
     bool isMapOrUserActionPaused;
 };
 
+struct HudRuntimeFrameCache {
+    melonDS::NDS* nds = nullptr;
+    melonDS::u8* ram = nullptr;
+    uint32_t gameFrame = 0xFFFFFFFFu;
+    uint32_t offP = 0;
+    uint8_t romGroup = 0xFFu;
+    bool baseValid = false;
+    bool adventureValid = false;
+    bool visibleValid = false;
+    bool currentAmmoSpecialValid = false;
+    bool currentAmmoMissileValid = false;
+    bool havingWeaponsValid = false;
+    bool bombCountValid = false;
+    bool matchStatusValid = false;
+    bool rankByteValid = false;
+    bool timeLeftSecondsValid = false;
+    bool timeLimitMinutesValid = false;
+    HudRuntimeState state = {};
+    uint16_t currentAmmoSpecial = 0;
+    uint16_t currentAmmoMissile = 0;
+    uint16_t havingWeapons = 0;
+    uint8_t bombCount = 0;
+    MatchStatusResolvedState matchStatus = {};
+    uint8_t rankByte = 0xFFu;
+    int timeLeftSeconds = 0;
+    int timeLimitMinutes = 0;
+};
+
+static HudRuntimeFrameCache s_hudRuntimeFrameCache;
+
+static inline bool HudRuntimeFrameCacheMatches(melonDS::NDS* nds,
+                                               melonDS::u8* ram,
+                                               uint32_t gameFrame,
+                                               uint32_t offP,
+                                               uint8_t romGroup)
+{
+    return s_hudRuntimeFrameCache.nds == nds
+        && s_hudRuntimeFrameCache.ram == ram
+        && s_hudRuntimeFrameCache.gameFrame == gameFrame
+        && s_hudRuntimeFrameCache.offP == offP
+        && s_hudRuntimeFrameCache.romGroup == romGroup;
+}
+
+static inline bool HudRuntimeFrameCacheMatches(const HudRuntimeState& st)
+{
+    return st.nds
+        && HudRuntimeFrameCacheMatches(st.nds, st.ram, st.nds->NumFrames,
+                                       st.offP, st.romGroup);
+}
+
 static inline QRect OverlayRectFor(const QImage* topBuffer)
 {
     const int overlayW = topBuffer ? topBuffer->width()  : 1;
@@ -371,6 +421,13 @@ static bool ReadHudRuntimeBaseState(EmuInstance* emu,
     if (!ram) return false;
 
     const uint32_t offP = static_cast<uint32_t>(playerPosition) * Consts::PLAYER_ADDR_INC;
+    const uint32_t gameFrame = nds->NumFrames;
+    if (HudRuntimeFrameCacheMatches(nds, ram, gameFrame, offP, rom.romGroupIndex)
+        && s_hudRuntimeFrameCache.baseValid) {
+        out = s_hudRuntimeFrameCache.state;
+        return true;
+    }
+
     out.nds = nds;
     out.ram = ram;
     out.offP = offP;
@@ -378,21 +435,65 @@ static bool ReadHudRuntimeBaseState(EmuInstance* emu,
     out.currentHP = Read16(ram, rom.playerHP + offP);
     out.isStartPressed = Read8(ram, rom.startPressed) == 0x01;
     out.isGameOver = Read8(ram, rom.gameOver) != 0x00;
+
+    s_hudRuntimeFrameCache.nds = nds;
+    s_hudRuntimeFrameCache.ram = ram;
+    s_hudRuntimeFrameCache.gameFrame = gameFrame;
+    s_hudRuntimeFrameCache.offP = offP;
+    s_hudRuntimeFrameCache.romGroup = rom.romGroupIndex;
+    s_hudRuntimeFrameCache.baseValid = true;
+    s_hudRuntimeFrameCache.adventureValid = false;
+    s_hudRuntimeFrameCache.visibleValid = false;
+    s_hudRuntimeFrameCache.currentAmmoSpecialValid = false;
+    s_hudRuntimeFrameCache.currentAmmoMissileValid = false;
+    s_hudRuntimeFrameCache.havingWeaponsValid = false;
+    s_hudRuntimeFrameCache.bombCountValid = false;
+    s_hudRuntimeFrameCache.matchStatusValid = false;
+    s_hudRuntimeFrameCache.rankByteValid = false;
+    s_hudRuntimeFrameCache.timeLeftSecondsValid = false;
+    s_hudRuntimeFrameCache.timeLimitMinutesValid = false;
+    s_hudRuntimeFrameCache.state = out;
     return true;
 }
 
 static void ReadHudRuntimeAdventurePauseState(const RomAddresses& rom,
                                              HudRuntimeState& out)
 {
+    if (HudRuntimeFrameCacheMatches(out) && s_hudRuntimeFrameCache.adventureValid) {
+        out.isAdventure = s_hudRuntimeFrameCache.state.isAdventure;
+        out.isMapOrUserActionPaused =
+            s_hudRuntimeFrameCache.state.isMapOrUserActionPaused;
+        return;
+    }
+
     out.isAdventure = Read8(out.ram, rom.isInAdventure) == 0x02;
     out.isMapOrUserActionPaused = out.isAdventure &&
         Read8(out.ram, rom.isMapOrUserActionPaused) == 0x01;
+
+    if (HudRuntimeFrameCacheMatches(out)) {
+        s_hudRuntimeFrameCache.state.isAdventure = out.isAdventure;
+        s_hudRuntimeFrameCache.state.isMapOrUserActionPaused =
+            out.isMapOrUserActionPaused;
+        s_hudRuntimeFrameCache.adventureValid = true;
+    }
 }
 
 static void ReadHudRuntimeVisibleState(const RomAddresses& rom,
                                        const GameAddressesHot& addrHot,
                                        HudRuntimeState& out)
 {
+    if (HudRuntimeFrameCacheMatches(out) && s_hudRuntimeFrameCache.visibleValid) {
+        out.maxHP = s_hudRuntimeFrameCache.state.maxHP;
+        out.maxAmmoSpecial = s_hudRuntimeFrameCache.state.maxAmmoSpecial;
+        out.maxAmmoMissile = s_hudRuntimeFrameCache.state.maxAmmoMissile;
+        out.hunterID = s_hudRuntimeFrameCache.state.hunterID;
+        out.currentWeapon = s_hudRuntimeFrameCache.state.currentWeapon;
+        out.isFirstPerson = s_hudRuntimeFrameCache.state.isFirstPerson;
+        out.isAlt = s_hudRuntimeFrameCache.state.isAlt;
+        out.isTrans = s_hudRuntimeFrameCache.state.isTrans;
+        return;
+    }
+
     melonDS::u8* ram = out.ram;
     const uint32_t offP = out.offP;
     const uint8_t viewMode = Read8(ram, rom.baseViewMode + offP);
@@ -406,6 +507,149 @@ static void ReadHudRuntimeVisibleState(const RomAddresses& rom,
     out.isFirstPerson = isFirstPerson;
     out.isAlt = Read8(ram, addrHot.isAltForm) == 0x02;
     out.isTrans = isFirstPerson && (Read8(ram, addrHot.jumpFlag) & 0x10) != 0;
+
+    if (HudRuntimeFrameCacheMatches(out)) {
+        s_hudRuntimeFrameCache.state.maxHP = out.maxHP;
+        s_hudRuntimeFrameCache.state.maxAmmoSpecial = out.maxAmmoSpecial;
+        s_hudRuntimeFrameCache.state.maxAmmoMissile = out.maxAmmoMissile;
+        s_hudRuntimeFrameCache.state.hunterID = out.hunterID;
+        s_hudRuntimeFrameCache.state.currentWeapon = out.currentWeapon;
+        s_hudRuntimeFrameCache.state.isFirstPerson = out.isFirstPerson;
+        s_hudRuntimeFrameCache.state.isAlt = out.isAlt;
+        s_hudRuntimeFrameCache.state.isTrans = out.isTrans;
+        s_hudRuntimeFrameCache.visibleValid = true;
+    }
+}
+
+static uint16_t ReadHudRuntimeCurrentAmmoSpecial(const RomAddresses& rom,
+                                                 const HudRuntimeState& st)
+{
+    if (HudRuntimeFrameCacheMatches(st)
+        && s_hudRuntimeFrameCache.currentAmmoSpecialValid)
+        return s_hudRuntimeFrameCache.currentAmmoSpecial;
+
+    const uint16_t value = Read16(st.ram, rom.currentAmmoSpecial + st.offP);
+    if (HudRuntimeFrameCacheMatches(st)) {
+        s_hudRuntimeFrameCache.currentAmmoSpecial = value;
+        s_hudRuntimeFrameCache.currentAmmoSpecialValid = true;
+    }
+    return value;
+}
+
+static uint16_t ReadHudRuntimeCurrentAmmoMissile(const RomAddresses& rom,
+                                                 const HudRuntimeState& st)
+{
+    if (HudRuntimeFrameCacheMatches(st)
+        && s_hudRuntimeFrameCache.currentAmmoMissileValid)
+        return s_hudRuntimeFrameCache.currentAmmoMissile;
+
+    const uint16_t value = Read16(st.ram, rom.currentAmmoMissile + st.offP);
+    if (HudRuntimeFrameCacheMatches(st)) {
+        s_hudRuntimeFrameCache.currentAmmoMissile = value;
+        s_hudRuntimeFrameCache.currentAmmoMissileValid = true;
+    }
+    return value;
+}
+
+static uint16_t ReadHudRuntimeHavingWeapons(const GameAddressesHot& addrHot,
+                                            const HudRuntimeState& st)
+{
+    if (HudRuntimeFrameCacheMatches(st)
+        && s_hudRuntimeFrameCache.havingWeaponsValid)
+        return s_hudRuntimeFrameCache.havingWeapons;
+
+    const uint16_t value = static_cast<uint16_t>(Read16(st.ram, addrHot.havingWeapons));
+    if (HudRuntimeFrameCacheMatches(st)) {
+        s_hudRuntimeFrameCache.havingWeapons = value;
+        s_hudRuntimeFrameCache.havingWeaponsValid = true;
+    }
+    return value;
+}
+
+static uint8_t ReadHudRuntimeBombCount(const RomAddresses& rom,
+                                       const HudRuntimeState& st)
+{
+    if (HudRuntimeFrameCacheMatches(st)
+        && s_hudRuntimeFrameCache.bombCountValid)
+        return s_hudRuntimeFrameCache.bombCount;
+
+    const uint8_t value =
+        static_cast<uint8_t>((Read32(st.ram, rom.baseBomb + st.offP) >> 8) & 0xF);
+    if (HudRuntimeFrameCacheMatches(st)) {
+        s_hudRuntimeFrameCache.bombCount = value;
+        s_hudRuntimeFrameCache.bombCountValid = true;
+    }
+    return value;
+}
+
+static bool ReadHudRuntimeMatchStatusState(const RomAddresses& rom,
+                                           uint8_t playerPos,
+                                           const HudRuntimeState& st,
+                                           MatchStatusResolvedState& out)
+{
+    if (HudRuntimeFrameCacheMatches(st)
+        && s_hudRuntimeFrameCache.matchStatusValid) {
+        out = s_hudRuntimeFrameCache.matchStatus;
+        return true;
+    }
+
+    if (!ComputeMatchStatusState(st.ram, rom, playerPos, out))
+        return false;
+
+    if (HudRuntimeFrameCacheMatches(st)) {
+        s_hudRuntimeFrameCache.matchStatus = out;
+        s_hudRuntimeFrameCache.matchStatusValid = true;
+    }
+    return true;
+}
+
+static uint8_t ReadHudRuntimeRankByte(const RomAddresses& rom,
+                                      uint8_t playerPos,
+                                      const HudRuntimeState& st)
+{
+    if (HudRuntimeFrameCacheMatches(st)
+        && s_hudRuntimeFrameCache.rankByteValid)
+        return s_hudRuntimeFrameCache.rankByte;
+
+    const uint32_t rankWord = Read32(st.ram, rom.matchRank);
+    const uint8_t value = static_cast<uint8_t>((rankWord >> (playerPos * 8)) & 0xFF);
+    if (HudRuntimeFrameCacheMatches(st)) {
+        s_hudRuntimeFrameCache.rankByte = value;
+        s_hudRuntimeFrameCache.rankByteValid = true;
+    }
+    return value;
+}
+
+static int ReadHudRuntimeTimeLeftSeconds(const RomAddresses& rom,
+                                         const HudRuntimeState& st)
+{
+    if (HudRuntimeFrameCacheMatches(st)
+        && s_hudRuntimeFrameCache.timeLeftSecondsValid)
+        return s_hudRuntimeFrameCache.timeLeftSeconds;
+
+    const int value = static_cast<int>(Read32(st.ram, rom.timeLeft)) / 60;
+    if (HudRuntimeFrameCacheMatches(st)) {
+        s_hudRuntimeFrameCache.timeLeftSeconds = value;
+        s_hudRuntimeFrameCache.timeLeftSecondsValid = true;
+    }
+    return value;
+}
+
+static int ReadHudRuntimeTimeLimitMinutes(const RomAddresses& rom,
+                                          const HudRuntimeState& st)
+{
+    if (HudRuntimeFrameCacheMatches(st)
+        && s_hudRuntimeFrameCache.timeLimitMinutesValid)
+        return s_hudRuntimeFrameCache.timeLimitMinutes;
+
+    const int value = s_battleState.valid
+        ? s_battleState.timeLimitMinutes
+        : LookupTimeLimitMin((Read32(st.ram, rom.battleSettings + 4) >> 8) & 0xFF);
+    if (HudRuntimeFrameCacheMatches(st)) {
+        s_hudRuntimeFrameCache.timeLimitMinutes = value;
+        s_hudRuntimeFrameCache.timeLimitMinutesValid = true;
+    }
+    return value;
 }
 
 static void DrawMatchStatusText(QPainter* p, const QFontMetrics& fm, int fontPixelSize, float tds,
@@ -455,13 +699,19 @@ static void DrawMatchStatusText(QPainter* p, const QFontMetrics& fm, int fontPix
     PrepareTextBitmapCached(fm, s_frameFont, fontPixelSize, s_labelBitmapCache, label, eff(c.matchStatusLabelColor));
     drawText(s_labelBitmapCache, s_labelOlCache, lx, ly);
 }
-static void DrawMatchStatusHud(QPainter* p, melonDS::u8* ram, const RomAddresses& rom, uint8_t playerPos, bool isAdventure, const CachedHudConfig& c)
+static void DrawMatchStatusHud(QPainter* p, melonDS::u8* ram, const RomAddresses& rom,
+                               uint8_t playerPos, bool isAdventure,
+                               const CachedHudConfig& c,
+                               const HudRuntimeState* st = nullptr)
 {
     if (!c.matchStatus.matchStatusShow || isAdventure)
         return;
 
     MatchStatusResolvedState state = {};
-    if (!ComputeMatchStatusState(ram, rom, playerPos, state))
+    const bool hasState = st
+        ? ReadHudRuntimeMatchStatusState(rom, playerPos, *st, state)
+        : ComputeMatchStatusState(ram, rom, playerPos, state);
+    if (!hasState)
         return;
 
     DrawMatchStatusText(p, s_frameFm, s_frameFpx, c.textDrawScale,
@@ -494,9 +744,10 @@ static void DrawCachedAlignedText(QPainter* p, const QFontMetrics& fm, int fontP
 // =========================================================================
 //  Bomb Left HUD
 // =========================================================================
-static void DrawBombLeft(QPainter* p, melonDS::u8* ram, const RomAddresses& rom, uint32_t offP, const CachedHudConfig& c, float tds, float hudScale)
+static void DrawBombLeft(QPainter* p, uint8_t bombs,
+                         const CachedHudConfig& c, float tds, float hudScale)
 {
-    if (!c.bombLeft.bombLeftShow) return; uint8_t bombs = static_cast<uint8_t>((Read32(ram, rom.baseBomb + offP) >> 8) & 0xF);
+    if (!c.bombLeft.bombLeftShow) return;
     {
         static TextBitmapCache s_bombBitmapCache = { 0, QColor(), "", 0, 0, 0, 1.0f, false, QImage() };
         static TextBitmapCache s_bombOutlineCache = { 0, QColor(), "", 0, 0, 0, 1.0f, false, QImage() };
@@ -554,7 +805,10 @@ static void DrawBombLeft(QPainter* p, melonDS::u8* ram, const RomAddresses& rom,
 }
 //  Rank & Time HUD
 // =========================================================================
-static void DrawRankAndTime(QPainter* p, melonDS::u8* ram, const RomAddresses& rom, uint8_t playerPos, bool isAdventure, const CachedHudConfig& c, float tds)
+static void DrawRankAndTime(QPainter* p, melonDS::u8* ram, const RomAddresses& rom,
+                            uint8_t playerPos, bool isAdventure,
+                            const CachedHudConfig& c, float tds,
+                            const HudRuntimeState* st = nullptr)
 {
     if (isAdventure)
         return;
@@ -567,8 +821,9 @@ static void DrawRankAndTime(QPainter* p, melonDS::u8* ram, const RomAddresses& r
         static TextBitmapCache s_rankOutlineCache = { 0, QColor(), "", 0, 0, 0, 1.0f, false, QImage() };
         static TextMeasureCache s_rankMeasure = { 0, "", 0, 0, false };
 
-        const uint32_t rankWord = Read32(ram, rom.matchRank);
-        const uint8_t rankByte = (rankWord >> (playerPos * 8)) & 0xFF;
+        const uint8_t rankByte = st
+            ? ReadHudRuntimeRankByte(rom, playerPos, *st)
+            : static_cast<uint8_t>((Read32(ram, rom.matchRank) >> (playerPos * 8)) & 0xFF);
         if (rankByte <= 3) {
             DrawCachedAlignedText(p, s_frameFm, s_frameFpx, tds,
                                   s_rankMeasure, s_rankCache, s_rankOutlineCache,
@@ -584,7 +839,9 @@ static void DrawRankAndTime(QPainter* p, melonDS::u8* ram, const RomAddresses& r
         static TextBitmapCache s_timeLeftOutlineCache = { 0, QColor(), "", 0, 0, 0, 1.0f, false, QImage() };
         static TextMeasureCache s_timeLeftMeasure = { 0, "", 0, 0, false };
 
-        const int seconds = static_cast<int>(Read32(ram, rom.timeLeft)) / 60;
+        const int seconds = st
+            ? ReadHudRuntimeTimeLeftSeconds(rom, *st)
+            : static_cast<int>(Read32(ram, rom.timeLeft)) / 60;
         DrawCachedAlignedText(p, s_frameFm, s_frameFpx, tds,
                               s_timeLeftMeasure, s_timeLeftCache, s_timeLeftOutlineCache,
                               UpdateTimeString(s_timeLeftStringCache, seconds, false),
@@ -598,9 +855,11 @@ static void DrawRankAndTime(QPainter* p, melonDS::u8* ram, const RomAddresses& r
         static TextBitmapCache s_timeLimitOutlineCache = { 0, QColor(), "", 0, 0, 0, 1.0f, false, QImage() };
         static TextMeasureCache s_timeLimitMeasure = { 0, "", 0, 0, false };
 
-        const int goalMinutes = s_battleState.valid
-            ? s_battleState.timeLimitMinutes
-            : LookupTimeLimitMin((Read32(ram, rom.battleSettings + 4) >> 8) & 0xFF);
+        const int goalMinutes = st
+            ? ReadHudRuntimeTimeLimitMinutes(rom, *st)
+            : (s_battleState.valid
+                ? s_battleState.timeLimitMinutes
+                : LookupTimeLimitMin((Read32(ram, rom.battleSettings + 4) >> 8) & 0xFF));
         DrawCachedAlignedText(p, s_frameFm, s_frameFpx, tds,
                               s_timeLimitMeasure, s_timeLimitCache, s_timeLimitOutlineCache,
                               UpdateTimeString(s_timeLimitStringCache, goalMinutes, true),

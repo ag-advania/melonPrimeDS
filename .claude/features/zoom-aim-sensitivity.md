@@ -12,9 +12,19 @@ The settings UI lives in `src/frontend/qt_sdl/InputConfig/MelonPrimeInputConfig.
 The reset button should restore the percent to `75`.
 
 ## Runtime
+See also [Zoom status performance](zoom-status-performance.md) for the shared
+hot-path rules behind this design.
+
 Zoom state is read from MPH runtime state through `MelonPrime::ZoomStatus`:
 - local player pointer from `RomAddresses::hookLocalPlayerPtrGlobal`
 - scope flag at `player + 0x850`, bit `0`
+- current weapon pointer at `player + 0x858`
+- cached CanZoom flag at `weapon + 0x08`, bit `0x800`
+
+The runtime multiplier uses `scope && cachedCanZoom`, not the scope bit alone,
+so stale scope state on non-zoom weapons does not keep aim scaled. When scoped is
+false, weapon data is not read. While scoped, CanZoom is re-read only when the
+current weapon pointer changes.
 
 Aim scaling is cached as Q14 fixed-point:
 - base aim scale: `m_aimFixedScaleX/Y`
