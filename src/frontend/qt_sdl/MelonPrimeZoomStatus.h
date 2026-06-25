@@ -66,6 +66,8 @@ namespace MelonPrime::ZoomStatus {
         state.scopeFlags = Read8(ram, state.player + kPlayerScopeFlagsOffset);
         state.valid = true;
         state.scoped = (state.scopeFlags & kScopeZoomEnabledBit) != 0;
+        if (!state.scoped)
+            return state;
 
         if (IsMainRamRange(state.player + kPlayerCurrentWeaponPtrOffset, sizeof(uint32_t))) {
             state.weapon = Read32(ram, state.player + kPlayerCurrentWeaponPtrOffset);
@@ -73,13 +75,14 @@ namespace MelonPrime::ZoomStatus {
                 && IsMainRamRange(state.weapon, kWeaponZoomFovOffset + sizeof(uint32_t))) {
                 state.weaponValid = true;
                 state.weaponFlags = Read32(ram, state.weapon + kWeaponFlagsOffset);
-                state.zoomFov = static_cast<int32_t>(
-                    Read32(ram, state.weapon + kWeaponZoomFovOffset));
                 state.canZoom = (state.weaponFlags & kWeaponFlagZoomCapable) != 0;
+                if (state.canZoom)
+                    state.zoomFov = static_cast<int32_t>(
+                        Read32(ram, state.weapon + kWeaponZoomFovOffset));
             }
         }
 
-        state.rawVisible = state.scoped && state.canZoom && state.zoomFov > 0;
+        state.rawVisible = state.canZoom && state.zoomFov > 0;
         return state;
     }
 
