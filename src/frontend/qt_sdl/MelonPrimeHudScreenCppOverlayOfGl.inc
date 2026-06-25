@@ -33,6 +33,11 @@
 
                 // OPT-DR1: Track dirty rect to limit CPU clear + GL texture upload.
                 static QRect s_hudPrevDirtyGL;
+                // OPT-DR3: Track the last uploaded region + its content hash so a
+                // large but unchanged region (held zoom scope) can skip re-upload.
+                static QRect    s_hudUploadedRectGL;
+                static uint64_t s_hudUploadedHashGL  = 0;
+                static bool     s_hudUploadedValidGL = false;
                 MelonPrimeHud_PrepareTopOverlay(Overlay[0], topOutW, topOutH, s_hudPrevDirtyGL);
 
                 // Per-frame painter (must end before GL upload reads image bits)
@@ -54,21 +59,48 @@
                             GL_BGRA, GL_UNSIGNED_BYTE, Overlay[0].constBits());
                         overlayTexW = topOutW;
                         overlayTexH = topOutH;
+                        s_hudUploadedValidGL = false; // texture re-allocated; drop tracking
                     } else {
-                        // OPT-DR1 / OPT-HUD-3: Partial upload — direct pointer
-                        // into QImage data eliminates GL_UNPACK_SKIP_PIXELS and
-                        // GL_UNPACK_SKIP_ROWS (4 driver calls → 0).
-                        // Only GL_UNPACK_ROW_LENGTH is needed so the driver
-                        // advances by a full row between upload rows.
-                        const uchar* uploadPtr = Overlay[0].constBits()
-                            + uploadRect.y() * Overlay[0].bytesPerLine()
-                            + uploadRect.x() * 4;
-                        glPixelStorei(GL_UNPACK_ROW_LENGTH, topOutW);
-                        glTexSubImage2D(GL_TEXTURE_2D, 0,
-                            uploadRect.x(), uploadRect.y(),
-                            uploadRect.width(), uploadRect.height(),
-                            GL_BGRA, GL_UNSIGNED_BYTE, uploadPtr);
-                        glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
+                        // OPT-DR3: For a large dirty region (held zoom scope is the
+                        // motivating case), skip the multi-MB upload when the pixels
+                        // are byte-identical to the last upload of the same region.
+                        // The composite (glDrawArrays below) still runs every frame,
+                        // sampling the unchanged GL texture — so the HUD stays drawn.
+                        // Small regions upload unconditionally (not worth hashing).
+                        bool doUpload = true;
+                        const int dirtyArea = uploadRect.width() * uploadRect.height();
+                        if (dirtyArea >= 256 * 256) {
+                            const uint64_t dirtyHash =
+                                MelonPrimeHud_HashImageRegion(Overlay[0], uploadRect);
+                            if (s_hudUploadedValidGL
+                                && uploadRect == s_hudUploadedRectGL
+                                && dirtyHash == s_hudUploadedHashGL) {
+                                doUpload = false;
+                            } else {
+                                s_hudUploadedRectGL  = uploadRect;
+                                s_hudUploadedHashGL  = dirtyHash;
+                                s_hudUploadedValidGL = true;
+                            }
+                        } else {
+                            s_hudUploadedValidGL = false; // small region; resume tracking later
+                        }
+
+                        if (doUpload) {
+                            // OPT-DR1 / OPT-HUD-3: Partial upload — direct pointer
+                            // into QImage data eliminates GL_UNPACK_SKIP_PIXELS and
+                            // GL_UNPACK_SKIP_ROWS (4 driver calls → 0).
+                            // Only GL_UNPACK_ROW_LENGTH is needed so the driver
+                            // advances by a full row between upload rows.
+                            const uchar* uploadPtr = Overlay[0].constBits()
+                                + uploadRect.y() * Overlay[0].bytesPerLine()
+                                + uploadRect.x() * 4;
+                            glPixelStorei(GL_UNPACK_ROW_LENGTH, topOutW);
+                            glTexSubImage2D(GL_TEXTURE_2D, 0,
+                                uploadRect.x(), uploadRect.y(),
+                                uploadRect.width(), uploadRect.height(),
+                                GL_BGRA, GL_UNSIGNED_BYTE, uploadPtr);
+                            glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
+                        }
                     }
 
                     // Switch to OSD shader for HUD overlay compositing.
