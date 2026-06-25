@@ -36,6 +36,9 @@ All Custom HUD visual keys should be added through
 defaults, dialog properties, edit mode, side panel, and runtime load.
 
 ## Runtime
+See also [Zoom status performance](zoom-status-performance.md) for the shared
+hot-path rules behind this design.
+
 Zoom state is updated once per emulated game frame, then
 `ReadCrosshairZoomAmount()` returns the cached amount during rendering:
 - scoped bit from `player + 0x850`

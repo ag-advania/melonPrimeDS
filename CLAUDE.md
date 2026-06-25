@@ -29,6 +29,7 @@ This file is an index only. Keep detailed instructions in the linked Rules, Skil
 
 ## Features
 - [.claude/features/README.md](.claude/features/README.md)
+- [.claude/features/zoom-status-performance.md](.claude/features/zoom-status-performance.md)
 - [.claude/features/zoom-aim-sensitivity.md](.claude/features/zoom-aim-sensitivity.md)
 - [.claude/features/custom-hud-zoom-crosshair.md](.claude/features/custom-hud-zoom-crosshair.md)
 

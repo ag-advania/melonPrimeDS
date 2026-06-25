@@ -12,6 +12,9 @@ The settings UI lives in `src/frontend/qt_sdl/InputConfig/MelonPrimeInputConfig.
 The reset button should restore the percent to `75`.
 
 ## Runtime
+See also [Zoom status performance](zoom-status-performance.md) for the shared
+hot-path rules behind this design.
+
 Zoom state is read from MPH runtime state through `MelonPrime::ZoomStatus`:
 - local player pointer from `RomAddresses::hookLocalPlayerPtrGlobal`
 - scope flag at `player + 0x850`, bit `0`
