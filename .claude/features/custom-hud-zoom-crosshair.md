@@ -38,12 +38,21 @@ defaults, dialog properties, edit mode, side panel, and runtime load.
 ## Runtime
 Zoom amount is read in `ReadCrosshairZoomAmount()`:
 - scoped bit from `player + 0x850`
+- current weapon pointer from `player + 0x858`
+- CanZoom flag from `weapon + 0x08`, bit `0x800`
+- zoom FOV from `weapon + 0x54`
 - exact HUD animation state from `crosshairControl + 0x04`
 - exact HUD current frame from `crosshairControl + 0x06`
 
-If the HUD animation flag is inactive, the renderer falls back to the scoped bit.
-This avoids treating a stable `currentFrame == 0` as "not zoomed" after zoom has
-already completed.
+Visibility is gated by `scoped && canZoom && zoomFov > 0`, with a 2-frame
+debounce. HUD animation frames are used only after that gate is open, plus a
+short zoom-out grace window after real scope exit. This prevents charge-shot,
+shoot, or weapon-switch HUD animation noise from flashing the custom zoom
+reticle for one frame.
+
+If the HUD animation flag is inactive, the renderer falls back to the gated
+scoped state. This avoids treating a stable `currentFrame == 0` as "not zoomed"
+after zoom has already completed.
 
 For non-animated frames, the renderer returns from scoped state directly and skips
 the current-frame read. Crosshair zoom geometry that does not change per frame is
@@ -90,7 +99,7 @@ display zoom snaps to the current target on the next draw so respawn does not
 replay a zoom-out animation.
 
 Game-side frame mapping in `ComputeReticleAmount()` uses smoothstep over frames
-0–4 (zoom in) and 0x10–0x14 (zoom out) when the HUD animation flag is active.
+0–2 (zoom in) and 0x10–0x12 (zoom out) when the HUD animation flag is active.
 
 Settings UI keys (Custom HUD tab + in-game edit mode):
 - Normal crosshair section: color, scale, outline, center dot, T-style

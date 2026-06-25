@@ -715,7 +715,14 @@ static float ReadCrosshairZoomAmount(melonDS::u8* ram, const RomAddresses& rom)
 #ifdef MELONPRIME_DS
     const ZoomStatus::ScopeState scope =
         ZoomStatus::ReadScopeState(ram, rom.hookLocalPlayerPtrGlobal);
-    if (!scope.valid)
+    if (!scope.valid) {
+        s_chZoomReticleState = {};
+        return 0.0f;
+    }
+
+    const bool visible = ZoomStatus::UpdateReticleVisibilityState(
+        s_chZoomReticleState, scope.rawVisible);
+    if (!visible)
         return 0.0f;
 
     bool animActive = false;
@@ -729,7 +736,7 @@ static float ReadCrosshairZoomAmount(melonDS::u8* ram, const RomAddresses& rom)
     const uint32_t frameAddr = rom.crosshairControl + ZoomStatus::kCrosshairCurrentFrameOffset;
     if (ZoomStatus::IsMainRamRange(frameAddr, sizeof(uint16_t)))
         currentFrame = Read16(ram, frameAddr);
-    return ZoomStatus::ComputeReticleAmount(scope.scoped, currentFrame, animActive);
+    return ZoomStatus::ComputeReticleAmount(visible, scope.scoped, currentFrame, animActive);
 #else
     (void)ram;
     (void)rom;
