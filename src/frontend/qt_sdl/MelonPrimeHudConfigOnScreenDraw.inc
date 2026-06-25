@@ -321,8 +321,8 @@ static void DrawEditHudPreview(QPainter* p, Config::Table& cfg, float tds, float
     const bool    isAlt    = Read8(ram, addrHot.isAltForm) == 0x02;
     const uint8_t viewMode = Read8(ram, rom.baseViewMode + offP);
     const bool    isFirstPerson = (viewMode == 0x00);
-    const bool    isTrans = (Read8(ram, addrHot.jumpFlag) & 0x10) != 0;
-    if (isFirstPerson && !isTrans && !isAlt) {
+    const bool    canDrawCrosshair = isFirstPerson && !isAlt;
+    if (canDrawCrosshair && ((Read8(ram, addrHot.jumpFlag) & 0x10) == 0)) {
         const float crosshairZoomAmount = c.crosshair.cachedZoomAffectsVisual
             ? ReadCrosshairZoomAmount(ram, rom)
             : 0.0f;
