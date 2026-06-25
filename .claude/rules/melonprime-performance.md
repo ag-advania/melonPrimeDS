@@ -27,6 +27,29 @@ Keep math out of inner loops:
 - move expensive painter setup, image generation, dilation, text rasterization, and lookup-table construction out of per-frame paths
 - use dirty rects and actual drawn bboxes so unchanged pixels are not cleared, composited, or uploaded
 
+## Input / Aim Latency Path
+
+The input→`RunFrame` path is latency-bound, not throughput-bound. Keep it short, and
+keep work that only the *next* frame can observe off it:
+- do not issue a syscall on the pre-frame path when a later post-present site can do the
+  same work. Stuck-key recovery (`clearStuck*`) and message draining run after `RunFrame` +
+  `drawScreen` (`DeferredDrain` / `clearStuckPostFrame`), because their effect is only ever
+  read by the next snapshot.
+- gate optional per-frame syscalls on a cheap flag instead of running them unconditionally.
+  LateLatch re-drains the raw-input buffer only when a `FrameAdvance` opened a wide window
+  (`m_didFrameAdvanceSinceSnapshot`); normal frames skip the `GetRawInputBuffer` call.
+- early-out the aim path on zero work: a zero mouse delta with zero residual returns before
+  any IMUL / clamp / output.
+
+Respect the Single-Writer atomic discipline (one writer thread per Raw Input mode):
+- prefer relaxed load + release store over locked RMW (`fetch_or` / `exchange` / CAS).
+- load a press/edge slot relaxed first and pay the lock-prefixed op only when it is nonzero;
+  consumer-thread-only slots can use plain load + `store(0)`.
+
+See [melonprime-aim-input.md](melonprime-aim-input.md) and
+[melonprime-click-handling.md](melonprime-click-handling.md) for the full pipeline and the
+P-44 / P-47 / P-48 rationale.
+
 ## Invalidations
 
 Every cache needs a clear invalidation owner:
@@ -43,3 +66,6 @@ Every cache needs a clear invalidation owner:
   bombs, match status, rank, and time only when those elements are drawn.
 - Zoom status uses scope bit + cached CanZoom and intentionally avoids zoom FOV / HUD animation reads on the hot path.
 - Aim sensitivity stores an effective scale and keeps floating-point percentage math out of `ProcessAimInputMouse()`.
+- `ProcessAimInputMouse()` skips IMUL / clamp / output on zero-delta frames and returns immediately when delta and residuals are both zero (P-44).
+- LateLatch's `GetRawInputBuffer` syscall is gated on `m_didFrameAdvanceSinceSnapshot`, so normal in-game frames skip it (P-47).
+- `clearStuck*` and message draining run post-present in `DeferredDrain` / `clearStuckPostFrame`, off the input→`RunFrame` latency path (P-48b).
