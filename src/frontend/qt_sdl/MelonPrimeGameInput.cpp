@@ -303,6 +303,24 @@ namespace MelonPrime {
 
     HOT_FUNCTION void MelonPrimeCore::ApplyZoomBindingInput()
     {
+        // In Morph Ball / Alt Form the R input drives Morph Ball Boost, not zoom
+        // (zoom does not exist in alt form). The game reads the boost binding
+        // (player+0x3B4 = R in the standard presets), so always press the legacy
+        // R bit here and bypass the newer zoom methods. The native zoom toggle
+        // would otherwise just flip scope state, and the new-method remap would
+        // press the zoom binding instead of R — both left R unpressed in alt
+        // form, so pressing and releasing R after transforming produced no boost.
+        if (IsPlayerAltForm()) {
+            // Keep the native-toggle press edge in sync so leaving alt form mid
+            // hold does not fire a stale toggle on the next biped frame.
+            if (m_enableNativeZoomToggle)
+                m_nativeZoomTogglePrevDown = IsDown(IB_ZOOM);
+
+            if (IsDown(IB_ZOOM))
+                m_inputMaskFast = static_cast<uint16_t>(m_inputMaskFast & ~(1u << INPUT_R));
+            return;
+        }
+
         if (m_enableNativeZoomToggle) {
             UpdateNativeZoomToggleInput();
             return;
