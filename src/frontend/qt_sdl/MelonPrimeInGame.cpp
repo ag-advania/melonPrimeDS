@@ -96,6 +96,9 @@ namespace MelonPrime {
         ApplyZoomBindingInput();
 
         // --- Morph Boost & Aim (Hot Path) ---
+        // Boost no longer blocks mouse aim: the aim + center-touch path below must
+        // keep running so the Morph Ball steering direction updates during both the
+        // charge and the roll.
         HandleMorphBallBoost();
 
         if (isStylusMode) {
@@ -257,10 +260,19 @@ namespace MelonPrime {
 
         if (isAltForm) {
             const uint8_t boostGauge = *m_ptrs.boostGauge;
-            const bool isBoosting = (*m_ptrs.isBoosting) != 0x00;
+            // NOTE: m_ptrs.isBoosting currently points at player+0x14A, which is
+            // the Boost cooldown/busy timer (not player+0x4C4 bit26 Boosting).
+            // It is read as a "boost busy" gate for the auto charge/release cycle;
+            // keep the same pointer to preserve the existing cycle timing.
+            const bool boostCooldownActive = (*m_ptrs.isBoosting) != 0x00;
             const bool gaugeEnough = boostGauge > 0x0A;
 
-            SetAimBlockBranchless(AIMBLK_MORPHBALL_BOOST, true);
+            // Do NOT raise AIMBLK_MORPHBALL_BOOST. Boost speed is applied along the
+            // current Morph Ball direction vector, which the game only updates while
+            // mouse aim + the center touch keep running. Blocking aim here left that
+            // direction stale (boost fired but did not move right after morphing, and
+            // steering during the roll was lost). ProcessAimInputMouse() and the
+            // center-touch reset in HandleInGameLogic now run normally during boost.
 
             if (!IsDown(IB_WEAPON_CHECK)) {
                 emuInstance->getNDS()->ReleaseScreen();
@@ -271,11 +283,8 @@ namespace MelonPrime {
             // that also manage R (for example Zoom) preserve the boost input.
             m_immediateOverlayPreserveMask =
                 static_cast<uint16_t>(m_immediateOverlayPreserveMask | (1u << INPUT_R));
-            InputSetBranchless(INPUT_R, !isBoosting && gaugeEnough);
+            InputSetBranchless(INPUT_R, !boostCooldownActive && gaugeEnough);
 
-            if (isBoosting) {
-                SetAimBlockBranchless(AIMBLK_MORPHBALL_BOOST, false);
-            }
             return true;
         }
 
