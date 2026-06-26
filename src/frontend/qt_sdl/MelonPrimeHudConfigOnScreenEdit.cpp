@@ -12,6 +12,15 @@
 #include <QFrame>
 #include <QRadioButton>
 
+namespace
+{
+constexpr int kPanelWidth = 300;
+constexpr int kRadioOnWidth = 48;
+constexpr int kRadioOffWidth = 58;
+constexpr int kColorButtonWidth = 74;
+constexpr int kSliderValueWidth = 38;
+} // namespace
+
 // ─── Construction ───────────────────────────────────────────────────────────
 
 MelonPrimeHudConfigOnScreenEdit::MelonPrimeHudConfigOnScreenEdit(QWidget* parent, EmuInstance* emu)
@@ -61,7 +70,7 @@ MelonPrimeHudConfigOnScreenEdit::MelonPrimeHudConfigOnScreenEdit(QWidget* parent
     m_form->setFieldGrowthPolicy(QFormLayout::ExpandingFieldsGrow);
     m_scroll->setWidget(m_inner);
 
-    setFixedWidth(260);
+    setFixedWidth(kPanelWidth);
     hide();
 }
 
@@ -111,8 +120,8 @@ QWidget* MelonPrimeHudConfigOnScreenEdit::addCheckBox(const QString& label, cons
 
     auto* on = new QRadioButton(QStringLiteral("ON"), container);
     auto* off = new QRadioButton(QStringLiteral("OFF"), container);
-    on->setMinimumWidth(44);
-    off->setMinimumWidth(50);
+    on->setMinimumWidth(kRadioOnWidth);
+    off->setMinimumWidth(kRadioOffWidth);
     on->setCursor(Qt::PointingHandCursor);
     off->setCursor(Qt::PointingHandCursor);
 
@@ -215,7 +224,7 @@ QSlider* MelonPrimeHudConfigOnScreenEdit::addOpacitySlider(const QString& label,
     slider->setValue(initVal);
 
     auto* lbl = new QLabel(QString::number(initVal) + QStringLiteral("%"), container);
-    lbl->setFixedWidth(32);
+    lbl->setFixedWidth(kSliderValueWidth);
     lbl->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
 
     hlay->addWidget(slider, 1);
@@ -260,11 +269,12 @@ static void updateColorButton(QPushButton* btn, int r, int g, int b)
     const int luma = (color.red() * 299 + color.green() * 587 + color.blue() * 114) / 1000;
     const QString textColor = (luma >= 128) ? QStringLiteral("#000") : QStringLiteral("#fff");
     const QString colorName = color.name();
-    btn->setMinimumWidth(70);
+    btn->setMinimumWidth(kColorButtonWidth);
     btn->setStyleSheet(QStringLiteral(
         "font-size: 9px; color: %1; background-color: %2; border: 1px solid #888;"
-        "min-width: 70px; min-height: 16px; padding: 1px 4px;")
-        .arg(textColor, colorName));
+        "min-width: %3px; min-height: 16px; padding: 1px 4px;")
+        .arg(textColor, colorName)
+        .arg(kColorButtonWidth));
     btn->setText(colorName);
 }
 
@@ -351,8 +361,8 @@ void MelonPrimeHudConfigOnScreenEdit::addColorOverlayRow(
 
     auto* on = new QRadioButton(QStringLiteral("ON"), container);
     auto* off = new QRadioButton(QStringLiteral("OFF"), container);
-    on->setMinimumWidth(44);
-    off->setMinimumWidth(50);
+    on->setMinimumWidth(kRadioOnWidth);
+    off->setMinimumWidth(kRadioOffWidth);
     on->setCursor(Qt::PointingHandCursor);
     off->setCursor(Qt::PointingHandCursor);
 
