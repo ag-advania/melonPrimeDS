@@ -5,7 +5,9 @@
 #include "MelonPrimeHudRender.h"
 #include "MelonPrimeLocalization.h"
 #include "EmuInstance.h"
+#include <QApplication>
 #include <QColorDialog>
+#include <QFont>
 #include <QHBoxLayout>
 #include <QFrame>
 #include <QRadioButton>
@@ -16,24 +18,23 @@ MelonPrimeHudConfigOnScreenEdit::MelonPrimeHudConfigOnScreenEdit(QWidget* parent
     : QWidget(parent), m_emu(emu)
 {
     setWindowFlags(Qt::Tool | Qt::FramelessWindowHint | Qt::WindowStaysOnTopHint);
-    setAttribute(Qt::WA_StyledBackground, true);
-    setStyleSheet(
-        "MelonPrimeHudConfigOnScreenEdit { background: rgba(24,24,32,210); border: 1px solid #555; border-radius: 4px; }"
-        "QLabel { color: #000; font-size: 9px; }"
-        "QRadioButton { color: #000; font-size: 9px; }"
-        "QComboBox { font-size: 9px; color: #000; }"
-        "QSpinBox { font-size: 9px; color: #000; }"
-        "QDoubleSpinBox { font-size: 9px; color: #000; }"
-        "QLineEdit { font-size: 9px; background: #fff; color: #000; border: 1px solid #555; }"
-        "QPushButton { font-size: 9px; }"
-    );
+    setAutoFillBackground(true);
+    setBackgroundRole(QPalette::Window);
+    setPalette(QApplication::palette());
+
+    QFont panelFont = font();
+    panelFont.setPixelSize(9);
+    setFont(panelFont);
 
     auto* outerLayout = new QVBoxLayout(this);
     outerLayout->setContentsMargins(6, 4, 6, 4);
     outerLayout->setSpacing(2);
 
     m_title = new QLabel(this);
-    m_title->setStyleSheet("color: #fff; font-size: 10px; font-weight: bold;");
+    QFont titleFont = panelFont;
+    titleFont.setBold(true);
+    titleFont.setPixelSize(10);
+    m_title->setFont(titleFont);
     m_title->setAlignment(Qt::AlignCenter);
     outerLayout->addWidget(m_title);
 
@@ -41,11 +42,17 @@ MelonPrimeHudConfigOnScreenEdit::MelonPrimeHudConfigOnScreenEdit(QWidget* parent
     m_scroll->setWidgetResizable(true);
     m_scroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     m_scroll->setFrameShape(QFrame::NoFrame);
-    m_scroll->setStyleSheet("QScrollArea { background: transparent; }");
+    m_scroll->setPalette(palette());
+    m_scroll->setBackgroundRole(QPalette::Window);
+    m_scroll->viewport()->setPalette(palette());
+    m_scroll->viewport()->setBackgroundRole(QPalette::Window);
+    m_scroll->viewport()->setAutoFillBackground(true);
     outerLayout->addWidget(m_scroll);
 
     m_inner = new QWidget();
-    m_inner->setStyleSheet("background: transparent;");
+    m_inner->setPalette(palette());
+    m_inner->setBackgroundRole(QPalette::Window);
+    m_inner->setAutoFillBackground(true);
     m_form = new QFormLayout(m_inner);
     m_form->setContentsMargins(0, 0, 0, 0);
     m_form->setSpacing(3);
@@ -238,9 +245,15 @@ QLineEdit* MelonPrimeHudConfigOnScreenEdit::addLineEdit(const QString& label, co
 
 static void updateColorButton(QPushButton* btn, int r, int g, int b)
 {
-    btn->setStyleSheet(QStringLiteral("background-color: %1; border: 1px solid #888; min-width: 30px; min-height: 16px;")
-        .arg(QColor(r, g, b).name()));
-    btn->setText(QColor(r, g, b).name());
+    const QColor color(r, g, b);
+    const int luma = (color.red() * 299 + color.green() * 587 + color.blue() * 114) / 1000;
+    const QString textColor = (luma >= 128) ? QStringLiteral("#000") : QStringLiteral("#fff");
+    const QString colorName = color.name();
+    btn->setStyleSheet(QStringLiteral(
+        "font-size: 9px; color: %1; background-color: %2; border: 1px solid #888;"
+        "min-width: 30px; min-height: 16px; padding: 1px 4px;")
+        .arg(textColor, colorName));
+    btn->setText(colorName);
 }
 
 QPushButton* MelonPrimeHudConfigOnScreenEdit::addColorPicker(const QString& label, const char* keyR, const char* keyG, const char* keyB)
@@ -374,7 +387,7 @@ void MelonPrimeHudConfigOnScreenEdit::addSeparator()
 {
     auto* line = new QFrame(this);
     line->setFrameShape(QFrame::HLine);
-    line->setStyleSheet("color: #555;");
+    line->setFrameShadow(QFrame::Sunken);
     m_form->addRow(line);
     m_rows.append(line);
 }
@@ -460,7 +473,9 @@ void MelonPrimeHudConfigOnScreenEdit::addGaugePositionRows(const char* posModeKe
 void MelonPrimeHudConfigOnScreenEdit::addSectionHeader(const QString& label)
 {
     auto* hdr = new QLabel(MelonPrime::UiText::Tr(label), this);
-    hdr->setStyleSheet("color: #fff; font-weight: bold; font-size: 9px;");
+    QFont headerFont = hdr->font();
+    headerFont.setBold(true);
+    hdr->setFont(headerFont);
     m_form->addRow(hdr);
     m_rows.append(hdr);
 }
