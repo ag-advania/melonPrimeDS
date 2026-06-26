@@ -105,10 +105,12 @@ unless `MELONPRIME_ENABLE_DEVELOPER_FEATURES`.
 - Forced `Off` unless `DisableMphAimSmoothing=true`; also inert in stylus mode.
 - A **separate** aim mechanism: at the aim-function exit PCs it rewrites the player's orientation
   basis (forward/side/up vectors at `CPlayer +0x4C / +0x58 / +0x64`) directly.
-- Modes: `ImmediateSync` (snap orientation straight to the target), `MoonLikeAim` (chase the target
-  with tunable Q12 step sizes: `MoonLikeAimNormalStepQ12` / `FastStepQ12` / `FastThresholdQ12`), and
-  `InstantAimFollow` (a related mode backed by the separate `MelonPrimePatchInstantAimFollow` patch,
-  not the runtime exit-PC hook).
+- Release-available modes: `ImmediateSync` (snap orientation straight to the target) and
+  `MoonLikeAim` (chase the target with tunable Q12 step sizes:
+  `MoonLikeAimNormalStepQ12` / `FastStepQ12` / `FastThresholdQ12`).
+- `InstantAimFollow` is developer-only (`LowLatencyMode = 3`) and is backed by the separate
+  `MelonPrimePatchInstantAimFollow` patch, not the runtime exit-PC hook. Public builds normalize
+  existing `InstantAimFollow` configs to `ImmediateSync`.
 - Hook implemented in `MelonPrimePatchLowLatencyAimHook.inc`; registered/dispatched via
   `MelonPrimeArm9Hook.cpp`.
 
@@ -162,7 +164,7 @@ unless `MELONPRIME_ENABLE_DEVELOPER_FEATURES`.
 - `Metroid.Aim.Disable.MphAimSmoothing`
 - `Metroid.Aim.Enable.Accumulator`
 - `Metroid.Aim.NativeHookMode` — §6.1 (developer-only; forced `0` in release)
-- `Metroid.Aim.LowLatencyMode` — §6.2 (`Off` / `ImmediateSync` / `MoonLikeAim` / `InstantAimFollow`; requires `DisableMphAimSmoothing`)
+- `Metroid.Aim.LowLatencyMode` — §6.2 (`Off` / `ImmediateSync` / `MoonLikeAim`; `InstantAimFollow` is developer-only and public builds migrate it to `ImmediateSync`; requires `DisableMphAimSmoothing`)
 - `Metroid.Enable.stylusMode`
 - `Metroid.Operation.SnapTap`
 - `Metroid.Apply.joy2KeySupport`

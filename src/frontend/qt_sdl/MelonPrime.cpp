@@ -67,10 +67,18 @@ namespace MelonPrime {
         m_nativeAimHookMode = 0;
 #endif
         m_enableNativeAimDeltaHook = (m_nativeAimHookMode != 0);
-        m_lowLatencyAimMode = static_cast<int8_t>(
+        int lowLatencyAimMode =
             std::clamp(localCfg.GetInt(CfgKey::LowLatencyAimMode),
                        LowLatencyAimMode::Off,
-                       LowLatencyAimMode::InstantAimFollow));
+                       LowLatencyAimMode::InstantAimFollow);
+        if (lowLatencyAimMode == LowLatencyAimMode::Off
+            && localCfg.GetBool(CfgKey::InstantAimFollow))
+            lowLatencyAimMode = LowLatencyAimMode::ImmediateSync;
+#ifndef MELONPRIME_ENABLE_DEVELOPER_FEATURES
+        if (lowLatencyAimMode == LowLatencyAimMode::InstantAimFollow)
+            lowLatencyAimMode = LowLatencyAimMode::ImmediateSync;
+#endif
+        m_lowLatencyAimMode = static_cast<int8_t>(lowLatencyAimMode);
         if (!m_disableMphAimSmoothing)
             m_lowLatencyAimMode = LowLatencyAimMode::Off;
         m_moonLikeAimNormalStepQ12 = std::clamp(
@@ -642,6 +650,11 @@ namespace MelonPrime {
                     }
 #endif
                     ApplyGameSettingsOnce();
+                    // Out-of-game screens (e.g. the Adventure planet/region map)
+                    // still accept WASD movement so the player can navigate.
+                    // Movement only — fire/jump/aim stay released and cursor mode
+                    // keeps driving the touch screen for menu selection.
+                    ProcessMovementOnlyFromReset();
                 }
 
                 const bool isAdventure = m_flags.test(StateFlags::BIT_IN_ADVENTURE);

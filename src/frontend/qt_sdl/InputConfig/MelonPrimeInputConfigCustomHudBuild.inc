@@ -661,17 +661,36 @@
         bodyLayout->addStretch();
         hbox->addWidget(leftCol, 1);
 
-        // Right column: preview widget
-        HudPreviewWidget* preview = nullptr;
-        switch (sec.previewKind) {
-        case 1: preview = new CrosshairPreviewWidget(emuInstance, mainBody); break;
-        case 2: preview = new HpAmmoPreviewWidget(emuInstance, mainBody); break;
-        case 3: preview = new MatchStatusPreviewWidget(emuInstance, mainBody); break;
-        case 4: preview = new RadarPreviewWidget(emuInstance, mainBody); break;
-        }
-        if (preview) {
-            hbox->addWidget(preview, 0);
-            m_hudPreviews.push_back(preview);
+        // Right column: preview widget(s)
+        if (sec.previewKind == 1) {
+            // Crosshair: stack the normal crosshair preview and the fully-scoped
+            // zoom-scope reticle preview, each with a small caption.
+            auto* col = new QWidget(mainBody);
+            auto* colLay = new QVBoxLayout(col);
+            colLay->setContentsMargins(0, 0, 0, 0);
+            colLay->setSpacing(2);
+            auto addLabeledPreview = [&](const char* caption, HudPreviewWidget* pw) {
+                auto* lbl = new QLabel(QString::fromUtf8(caption), col);
+                lbl->setStyleSheet(QStringLiteral("color: #aaa; font-size: 8pt;"));
+                colLay->addWidget(lbl);
+                colLay->addWidget(pw);
+                m_hudPreviews.push_back(pw);
+            };
+            addLabeledPreview("Normal", new CrosshairPreviewWidget(emuInstance, col));
+            addLabeledPreview("Zoomed (Scope)", new ZoomScopePreviewWidget(emuInstance, col));
+            colLay->addStretch();
+            hbox->addWidget(col, 0);
+        } else {
+            HudPreviewWidget* preview = nullptr;
+            switch (sec.previewKind) {
+            case 2: preview = new HpAmmoPreviewWidget(emuInstance, mainBody); break;
+            case 3: preview = new MatchStatusPreviewWidget(emuInstance, mainBody); break;
+            case 4: preview = new RadarPreviewWidget(emuInstance, mainBody); break;
+            }
+            if (preview) {
+                hbox->addWidget(preview, 0);
+                m_hudPreviews.push_back(preview);
+            }
         }
 
         vlay->insertWidget(insertPos++, mainBody);

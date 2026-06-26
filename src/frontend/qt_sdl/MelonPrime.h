@@ -373,7 +373,7 @@ namespace MelonPrime {
         uint32_t m_activeZoomAimScaleQ14 = static_cast<uint32_t>(AIM_ONE_FP);
         bool     m_enableNativeAimDeltaHook = false; // true when mode != 0
         int8_t   m_nativeAimHookMode = 0;  // 0=off 1=RegisterInject 2=FoldDerived
-        int8_t   m_lowLatencyAimMode = 0;  // 0=off 1=ImmediateSync 2=MoonLikeAim 3=InstantAimFollow
+        int8_t   m_lowLatencyAimMode = 0;  // 0=off 1=ImmediateSync 2=MoonLikeAim 3=InstantAimFollow(dev-only)
         int32_t  m_moonLikeAimNormalStepQ12 = 0x0165;
         int32_t  m_moonLikeAimFastStepQ12 = 0x058F;
         int32_t  m_moonLikeAimFastThresholdQ12 = 0x042E;
@@ -453,6 +453,11 @@ namespace MelonPrime {
         //          empty on a normal frame (~40–100 ns window). Skip the
         //          GetRawInputBuffer syscall entirely (~500–2000 cyc saved).
         bool     m_didFrameAdvanceSinceSnapshot = false;
+        // True when the V-default ScanShoot key (HK_MetroidScanShoot) is held this
+        // frame. Used to keep the shoot/scan/map-expand input working during the
+        // Adventure map/user-action pause while the Mouse-Left ShootScan key stays
+        // touch-only (a left click must not fire there). Set in UpdateInputStateImpl.
+        bool     m_scanShootKeyDown = false;
 
         // Cold: float intermediates (config change only)
         float    m_aimSensiFactor = 0.01f;
@@ -633,6 +638,10 @@ namespace MelonPrime {
         template <bool kInputMaskReset> FORCE_INLINE void ProcessMoveAndButtonsFastImpl();
         HOT_FUNCTION void ProcessMoveAndButtonsFast();
         HOT_FUNCTION void ProcessMoveAndButtonsFastFromReset();
+        // Movement-only (D-pad from moveIndex; buttons/aim untouched). Used on
+        // out-of-game screens such as the Adventure planet/region map so WASD can
+        // navigate without synthesizing fire/jump.
+        HOT_FUNCTION void ProcessMovementOnlyFromReset();
         HOT_FUNCTION void ApplyBipedFireInput();
         HOT_FUNCTION void UpdateNativeBipedFireInput();
         HOT_FUNCTION void ApplyZoomBindingInput();

@@ -51,6 +51,15 @@ namespace MelonPrime {
             const bool isPaused = (*m_ptrs.isMapOrUserActionPaused) == 0x1;
             m_flags.assign(StateFlags::BIT_PAUSED, isPaused);
 
+            // During the map / user-action pause, the Mouse-Left ShootScan key must
+            // not fire (a left click stays touch-only there). Only the V-default
+            // ScanShoot key triggers shoot/scan/map-expand. IB_SHOOT is the OR of
+            // both keys in ProjectDownState, so rebuild it from the V key alone.
+            if (isPaused) {
+                m_input.down = (m_input.down & ~IB_SHOOT)
+                    | (m_scanShootKeyDown ? IB_SHOOT : 0ULL);
+            }
+
             if (IsAnyPressed(IB_SCAN_VISOR | IB_UI_ANY)) {
                 HandleAdventureMode();
             }
