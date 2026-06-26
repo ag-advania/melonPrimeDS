@@ -453,6 +453,11 @@ namespace MelonPrime {
         //          empty on a normal frame (~40–100 ns window). Skip the
         //          GetRawInputBuffer syscall entirely (~500–2000 cyc saved).
         bool     m_didFrameAdvanceSinceSnapshot = false;
+        // True when the V-default ScanShoot key (HK_MetroidScanShoot) is held this
+        // frame. Used to keep the shoot/scan/map-expand input working during the
+        // Adventure map/user-action pause while the Mouse-Left ShootScan key stays
+        // touch-only (a left click must not fire there). Set in UpdateInputStateImpl.
+        bool     m_scanShootKeyDown = false;
 
         // Cold: float intermediates (config change only)
         float    m_aimSensiFactor = 0.01f;
@@ -633,6 +638,10 @@ namespace MelonPrime {
         template <bool kInputMaskReset> FORCE_INLINE void ProcessMoveAndButtonsFastImpl();
         HOT_FUNCTION void ProcessMoveAndButtonsFast();
         HOT_FUNCTION void ProcessMoveAndButtonsFastFromReset();
+        // Movement-only (D-pad from moveIndex; buttons/aim untouched). Used on
+        // out-of-game screens such as the Adventure planet/region map so WASD can
+        // navigate without synthesizing fire/jump.
+        HOT_FUNCTION void ProcessMovementOnlyFromReset();
         HOT_FUNCTION void ApplyBipedFireInput();
         HOT_FUNCTION void UpdateNativeBipedFireInput();
         HOT_FUNCTION void ApplyZoomBindingInput();

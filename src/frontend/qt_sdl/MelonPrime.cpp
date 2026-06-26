@@ -642,6 +642,11 @@ namespace MelonPrime {
                     }
 #endif
                     ApplyGameSettingsOnce();
+                    // Out-of-game screens (e.g. the Adventure planet/region map)
+                    // still accept WASD movement so the player can navigate.
+                    // Movement only — fire/jump/aim stay released and cursor mode
+                    // keeps driving the touch screen for menu selection.
+                    ProcessMovementOnlyFromReset();
                 }
 
                 const bool isAdventure = m_flags.test(StateFlags::BIT_IN_ADVENTURE);
