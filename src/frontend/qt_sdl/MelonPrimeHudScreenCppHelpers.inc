@@ -11,16 +11,42 @@ static void MelonPrimeHud_PositionEditPanel(
     if (!host || !panel)
         return;
 
-    const int maxH = host->height() - 8;
+    QWidget* boundsWidget = host->window();
+    const QRect bounds = boundsWidget
+        ? QRect(boundsWidget->mapToGlobal(QPoint(0, 0)), boundsWidget->size())
+        : QRect(host->mapToGlobal(QPoint(0, 0)), host->size());
+    const int maxH = std::max(120, bounds.height() - 8);
     if (setMaximumHeight)
         panel->setMaximumHeight(maxH);
     if (adjustSize)
         panel->adjustSize();
 
-    const int panelH = std::min(panel->height(), maxH);
-    const int px = host->width() - panel->width() - 4;
-    const int py = (host->height() - panelH) / 2;
-    panel->move(host->mapToGlobal(QPoint(px, std::max(4, py))));
+    const int desiredH = setMaximumHeight ? panel->sizeHint().height() : panel->height();
+    const int panelH = std::min(desiredH, maxH);
+    if (panel->height() != panelH)
+        panel->resize(panel->width(), panelH);
+
+    const auto* screenPanel = qobject_cast<const ScreenPanel*>(host);
+    const std::optional<QRect> topScreenLocal = screenPanel
+        ? screenPanel->getTopScreenWidgetRect()
+        : std::nullopt;
+    const QRect targetLocal = topScreenLocal.value_or(host->rect());
+    const QRect targetGlobal(host->mapToGlobal(targetLocal.topLeft()), targetLocal.size());
+
+    const int outsideTopX = targetGlobal.right() + 1 + 12;
+    const int insideTopX = targetGlobal.right() + 1 - panel->width() - 24;
+    const int preferredX = (outsideTopX + panel->width() <= bounds.right() + 1 - 4)
+        ? outsideTopX
+        : insideTopX;
+    const int minX = bounds.left() + 4;
+    const int maxX = bounds.right() - panel->width() + 1 - 4;
+    const int px = std::clamp(preferredX, minX, std::max(minX, maxX));
+
+    const int preferredY = bounds.top() + (bounds.height() - panelH) / 2;
+    const int minY = bounds.top() + 4;
+    const int maxY = bounds.bottom() - panelH + 1 - 4;
+    const int py = std::clamp(preferredY, minY, std::max(minY, maxY));
+    panel->move(QPoint(px, py));
 }
 
 static void MelonPrimeHud_PrepareTopOverlay(

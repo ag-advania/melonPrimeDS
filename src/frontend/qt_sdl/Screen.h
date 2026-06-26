@@ -85,6 +85,10 @@ public:
 #ifdef MELONPRIME_DS
     void unfocus();
 
+#ifdef MELONPRIME_CUSTOM_HUD
+    std::optional<QRect> getTopScreenWidgetRect() const;
+#endif
+
     int getDelta() {
         // Store and reset in one operation for optimal performance
         int currentDelta = wheelDelta;
@@ -236,6 +240,7 @@ protected:
 private:
     void applyInGameTopScreenOnlyOverride(int& layout, int& sizing) const;
     bool shouldConfineCursorToBottomScreen() const;
+    std::optional<QRect> getScreenWidgetRect(int wantedScreenKind) const;
     std::optional<QRect> getBottomScreenWidgetRect() const;
     void clipCursorToBottomScreen();
     void setClipWanted(bool value);

@@ -220,14 +220,14 @@ bool ScreenPanel::shouldConfineCursorToBottomScreen() const
     return emuInstance->getLocalConfig().GetBool("Metroid.Visual.ClipCursorToBottomScreenWhenNotInGame");
 }
 
-std::optional<QRect> ScreenPanel::getBottomScreenWidgetRect() const
+std::optional<QRect> ScreenPanel::getScreenWidgetRect(int wantedScreenKind) const
 {
     QRectF bounds;
     bool found = false;
     const QRectF screenRect(0.0, 0.0, 256.0, 192.0);
 
     for (int i = 0; i < numScreens; i++) {
-        if (screenKind[i] != 1) continue;
+        if (screenKind[i] != wantedScreenKind) continue;
         const float* mtx = screenMatrix[i];
         QTransform transform(mtx[0], mtx[1], 0.0,
                              mtx[2], mtx[3], 0.0,
@@ -247,6 +247,18 @@ std::optional<QRect> ScreenPanel::getBottomScreenWidgetRect() const
     if (rect.isEmpty()) return std::nullopt;
     return rect;
 }
+
+std::optional<QRect> ScreenPanel::getBottomScreenWidgetRect() const
+{
+    return getScreenWidgetRect(1);
+}
+
+#ifdef MELONPRIME_CUSTOM_HUD
+std::optional<QRect> ScreenPanel::getTopScreenWidgetRect() const
+{
+    return getScreenWidgetRect(0);
+}
+#endif
 
 void ScreenPanel::clipCursorToBottomScreen() {
     setCursor(Qt::ArrowCursor);
