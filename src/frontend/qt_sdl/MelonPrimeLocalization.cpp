@@ -221,6 +221,7 @@ constexpr Translation kTranslations[] = {
     {"Mode", "モード"},
     {"Low-Latency Aim Mode", "低遅延エイム方式"},
     {"Instant Aim Follow", "即時エイム追従"},
+    {"Instant Aim Follow (Developer Only)", "即時エイム追従（開発者専用）"},
     {"Immediate Sync", "即時同期"},
     {"MoonLike Aim", "MoonLikeエイム"},
     {"Enable SnapTap (Faster directional switching for smooth strafing — may slightly increase input delay)", "SnapTapを有効化 (ストレイフの方向切替を高速化。入力遅延が少し増える場合あり)"},
@@ -748,7 +749,7 @@ constexpr ObjectTextTranslation kObjectTextTranslations[] = {
     },
     {
         "lblMetroidLowLatencyAimDesc",
-        "即時エイム追従は、ゲーム本来の照準追従処理をパッチして、現在の照準を目標の照準へ即座に合わせます。即時同期は低遅延ARM9フックで現在の照準を目標の照準へ同期し、照準基準を再構築します。MoonLikeエイムは小さなエイム移動を即時反映し、大きなジャンプだけ最大ステップ付きで追従します。MPHのエイム補間無効化が必要です。"
+        "即時同期は低遅延ARM9フックで現在の照準を目標の照準へ同期し、照準基準を再構築します。MoonLikeエイムは小さなエイム移動を即時反映し、大きなジャンプだけ最大ステップ付きで追従します。MPHのエイム補間無効化が必要です。"
     },
     {
         "lblMetroidZoomAimScaleDesc",

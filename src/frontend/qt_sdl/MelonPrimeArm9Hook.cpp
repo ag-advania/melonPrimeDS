@@ -287,7 +287,14 @@ void ARM9Hook_Install(
     const bool enableTransformGate = cfg.GetBool(CfgKey::DirectAltFormTransform);
     const bool enableWeaponSwitch =
         cfg.GetInt(CfgKey::WeaponSwitchMethod) != WeaponSwitchMethod::LegacyTouch;
-    const int lowLatencyAimMode = cfg.GetInt(CfgKey::LowLatencyAimMode);
+    int lowLatencyAimMode = cfg.GetInt(CfgKey::LowLatencyAimMode);
+    if (lowLatencyAimMode == LowLatencyAimMode::Off
+        && cfg.GetBool(CfgKey::InstantAimFollow))
+        lowLatencyAimMode = LowLatencyAimMode::ImmediateSync;
+#ifndef MELONPRIME_ENABLE_DEVELOPER_FEATURES
+    if (lowLatencyAimMode == LowLatencyAimMode::InstantAimFollow)
+        lowLatencyAimMode = LowLatencyAimMode::ImmediateSync;
+#endif
     const bool enableLowLatencyAim =
         cfg.GetBool(CfgKey::DisableMphAimSmoothing)
         && !cfg.GetBool(CfgKey::StylusMode)
