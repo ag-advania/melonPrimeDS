@@ -25,6 +25,7 @@
 #include <QVBoxLayout>
 #include <QSlider>
 #include <QPainter>
+#include <QPainterPath>
 #include <QImageReader>
 #include <QVariant>
 #include <QApplication>
