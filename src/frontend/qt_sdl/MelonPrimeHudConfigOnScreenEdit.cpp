@@ -41,6 +41,7 @@ MelonPrimeHudConfigOnScreenEdit::MelonPrimeHudConfigOnScreenEdit(QWidget* parent
     m_scroll = new QScrollArea(this);
     m_scroll->setWidgetResizable(true);
     m_scroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    m_scroll->setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
     m_scroll->setFrameShape(QFrame::NoFrame);
     m_scroll->setPalette(palette());
     m_scroll->setBackgroundRole(QPalette::Window);
@@ -57,9 +58,10 @@ MelonPrimeHudConfigOnScreenEdit::MelonPrimeHudConfigOnScreenEdit(QWidget* parent
     m_form->setContentsMargins(0, 0, 0, 0);
     m_form->setSpacing(3);
     m_form->setLabelAlignment(Qt::AlignRight | Qt::AlignVCenter);
+    m_form->setFieldGrowthPolicy(QFormLayout::ExpandingFieldsGrow);
     m_scroll->setWidget(m_inner);
 
-    setFixedWidth(210);
+    setFixedWidth(260);
     hide();
 }
 
@@ -102,10 +104,15 @@ QWidget* MelonPrimeHudConfigOnScreenEdit::addCheckBox(const QString& label, cons
     auto* container = new QWidget(this);
     auto* hlay = new QHBoxLayout(container);
     hlay->setContentsMargins(0, 0, 0, 0);
-    hlay->setSpacing(8);
+    hlay->setSpacing(6);
+
+    auto* rowLabel = new QLabel(MelonPrime::UiText::Tr(label), container);
+    rowLabel->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
 
     auto* on = new QRadioButton(QStringLiteral("ON"), container);
     auto* off = new QRadioButton(QStringLiteral("OFF"), container);
+    on->setMinimumWidth(44);
+    off->setMinimumWidth(50);
     on->setCursor(Qt::PointingHandCursor);
     off->setCursor(Qt::PointingHandCursor);
 
@@ -125,11 +132,11 @@ QWidget* MelonPrimeHudConfigOnScreenEdit::addCheckBox(const QString& label, cons
         MelonPrime::CustomHud_InvalidateConfigCache();
     });
 
+    hlay->addWidget(rowLabel, 1);
     hlay->addWidget(on, 0);
     hlay->addWidget(off, 0);
-    hlay->addStretch(1);
 
-    m_form->addRow(MelonPrime::UiText::Tr(label), container);
+    m_form->addRow(container);
     m_rows.append(container);
     return container;
 }
@@ -139,6 +146,7 @@ QWidget* MelonPrimeHudConfigOnScreenEdit::addCheckBox(const QString& label, cons
 QComboBox* MelonPrimeHudConfigOnScreenEdit::addComboBox(const QString& label, const char* key, const QStringList& items)
 {
     auto* cb = new QComboBox(this);
+    cb->setMinimumWidth(78);
     cb->addItems(MelonPrime::UiText::TrList(items));
     cb->setCurrentIndex(cfg().GetInt(key));
     std::string k(key);
@@ -157,6 +165,7 @@ QComboBox* MelonPrimeHudConfigOnScreenEdit::addComboBox(const QString& label, co
 QSpinBox* MelonPrimeHudConfigOnScreenEdit::addSpinBox(const QString& label, const char* key, int min, int max)
 {
     auto* sb = new QSpinBox(this);
+    sb->setMinimumWidth(64);
     sb->setRange(min, max);
     sb->setValue(cfg().GetInt(key));
     std::string k(key);
@@ -175,6 +184,7 @@ QSpinBox* MelonPrimeHudConfigOnScreenEdit::addSpinBox(const QString& label, cons
 QDoubleSpinBox* MelonPrimeHudConfigOnScreenEdit::addDoubleSpinBox(const QString& label, const char* key, double min, double max, double step)
 {
     auto* sb = new QDoubleSpinBox(this);
+    sb->setMinimumWidth(64);
     sb->setRange(min, max);
     sb->setSingleStep(step);
     sb->setDecimals(2);
@@ -229,6 +239,7 @@ QSlider* MelonPrimeHudConfigOnScreenEdit::addOpacitySlider(const QString& label,
 QLineEdit* MelonPrimeHudConfigOnScreenEdit::addLineEdit(const QString& label, const char* key)
 {
     auto* le = new QLineEdit(this);
+    le->setMinimumWidth(78);
     le->setText(QString::fromStdString(cfg().GetString(key)));
     std::string k(key);
     connect(le, &QLineEdit::textChanged, this, [this, k](const QString& text) {
@@ -249,9 +260,10 @@ static void updateColorButton(QPushButton* btn, int r, int g, int b)
     const int luma = (color.red() * 299 + color.green() * 587 + color.blue() * 114) / 1000;
     const QString textColor = (luma >= 128) ? QStringLiteral("#000") : QStringLiteral("#fff");
     const QString colorName = color.name();
+    btn->setMinimumWidth(70);
     btn->setStyleSheet(QStringLiteral(
         "font-size: 9px; color: %1; background-color: %2; border: 1px solid #888;"
-        "min-width: 30px; min-height: 16px; padding: 1px 4px;")
+        "min-width: 70px; min-height: 16px; padding: 1px 4px;")
         .arg(textColor, colorName));
     btn->setText(colorName);
 }
@@ -334,8 +346,13 @@ void MelonPrimeHudConfigOnScreenEdit::addColorOverlayRow(
     hlay->setContentsMargins(0, 0, 0, 0);
     hlay->setSpacing(4);
 
+    auto* rowLabel = new QLabel(MelonPrime::UiText::Tr(label), container);
+    rowLabel->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
+
     auto* on = new QRadioButton(QStringLiteral("ON"), container);
     auto* off = new QRadioButton(QStringLiteral("OFF"), container);
+    on->setMinimumWidth(44);
+    off->setMinimumWidth(50);
     on->setCursor(Qt::PointingHandCursor);
     off->setCursor(Qt::PointingHandCursor);
 
@@ -348,6 +365,7 @@ void MelonPrimeHudConfigOnScreenEdit::addColorOverlayRow(
     updateColorButton(btn, r, g, b);
     btn->setEnabled(enabled);
 
+    hlay->addWidget(rowLabel, 1);
     hlay->addWidget(on, 0);
     hlay->addWidget(off, 0);
     hlay->addWidget(btn, 1);
@@ -377,7 +395,7 @@ void MelonPrimeHudConfigOnScreenEdit::addColorOverlayRow(
         }
     });
 
-    m_form->addRow(MelonPrime::UiText::Tr(label), container);
+    m_form->addRow(container);
     m_rows.append(container);
 }
 
