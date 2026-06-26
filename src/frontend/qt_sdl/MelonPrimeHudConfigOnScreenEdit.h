@@ -73,6 +73,9 @@ private:
     // Call with MP_OUTLINE_KEYS(Prefix) so the six keys are checked at compile time.
     void addOutlineGroup(const char* enableKey, const char* colorR, const char* colorG, const char* colorB,
                          const char* opacityKey, const char* thicknessKey);
+    void addOutlineGroupSection(const QString& sectionLabel,
+                                const char* enableKey, const char* colorR, const char* colorG, const char* colorB,
+                                const char* opacityKey, const char* thicknessKey);
 
     // Per-element populate functions
     void populateHP();

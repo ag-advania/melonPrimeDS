@@ -179,6 +179,10 @@ namespace MelonPrime {
         const ProjectedDownState downState = ProjectDownState(hotDownMask);
         m_input.down = downState.mask;
         m_input.moveIndex = downState.moveIndex;
+        // Track the V-default ScanShoot key separately from the merged IB_SHOOT bit
+        // so the Adventure map/user-action pause can drop the Mouse-Left ShootScan
+        // contribution while keeping this one.
+        m_scanShootKeyDown = ((hotDownMask >> HK_MetroidScanShoot) & 1ULL) != 0;
 
 #if !defined(_WIN32)
         const QPoint currentPos = QCursor::pos();
@@ -268,6 +272,23 @@ namespace MelonPrime {
     HOT_FUNCTION void MelonPrimeCore::ProcessMoveAndButtonsFastFromReset()
     {
         ProcessMoveAndButtonsFastImpl<true>();
+    }
+
+    // Movement-only update: synthesize the D-pad bits from moveIndex and leave
+    // every other DS button released. Used on out-of-game screens (e.g. the
+    // Adventure planet/region map) so WASD can move the cursor/ship while cursor
+    // mode keeps the mouse driving the touch screen. Fire/jump/zoom are not
+    // synthesized here, matching "movement only" intent.
+    HOT_FUNCTION void MelonPrimeCore::ProcessMovementOnlyFromReset()
+    {
+        const uint32_t curr = m_input.moveIndex;
+        const uint32_t finalInput = LIKELY(!m_snapTapMode)
+            ? curr
+            : ResolveSnapTapInput(curr, m_snapState);
+        const uint8_t lutResult = MoveLUT[finalInput & 0xF];
+        // 0xFF0F = all non-D-pad bits released; OR in the released D-pad bits so
+        // only currently-held directions stay pressed (cleared).
+        m_inputMaskFast = static_cast<uint16_t>(0xFF0Fu | (static_cast<uint16_t>(lutResult) & 0x00F0u));
     }
 
     HOT_FUNCTION void MelonPrimeCore::ApplyBipedFireInput()

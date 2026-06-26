@@ -155,11 +155,10 @@ static const HudEditPropDesc kPropsCrosshairNormal[] = {
 
 static const HudEditPropDesc kPropsCrosshairZoom[] = {
     {"Zoom Stage", EditPropType::Bool, MP_HUD_PROP_KEY_CrosshairZoomStageEnable, 0, 0, 0, nullptr, nullptr, nullptr},
-    {"Zoom Scale %", EditPropType::Int, MP_HUD_PROP_KEY_CrosshairZoomScale, 10, 200, 1, nullptr, nullptr, nullptr},
+    {"Zoom Base Scale %", EditPropType::Int, MP_HUD_PROP_KEY_CrosshairZoomScale, 10, 200, 1, nullptr, nullptr, nullptr},
     {"Zoom Base Opacity %", EditPropType::Int, MP_HUD_PROP_KEY_CrosshairZoomOpacity, 0, 100, 1, nullptr, nullptr, nullptr},
     {"Zoom Scope", EditPropType::Bool, MP_HUD_PROP_KEY_CrosshairZoomScopeEnable, 0, 0, 0, nullptr, nullptr, nullptr},
     {"Scope Radius", EditPropType::Int, MP_HUD_PROP_KEY_CrosshairZoomScopeRadius, 4, 1024, 1, nullptr, nullptr, nullptr},
-    {"Scope Line Len", EditPropType::Int, MP_HUD_PROP_KEY_CrosshairZoomScopeLineLength, 0, 128, 1, nullptr, nullptr, nullptr},
     {"Scope Gap", EditPropType::Int, MP_HUD_PROP_KEY_CrosshairZoomScopeGap, 0, 64, 1, nullptr, nullptr, nullptr},
     {"Scope Thick.", EditPropType::Int, MP_HUD_PROP_KEY_CrosshairZoomScopeThickness, 1, 12, 1, nullptr, nullptr, nullptr},
     {"Scope Center Dot", EditPropType::Bool, MP_HUD_PROP_KEY_CrosshairZoomScopeCenterDot, 0, 0, 0, nullptr, nullptr, nullptr},

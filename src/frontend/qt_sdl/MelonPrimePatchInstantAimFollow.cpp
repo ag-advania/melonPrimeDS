@@ -85,13 +85,17 @@ void InstantAimFollow_ApplyOnce(
     const int lowLatencyAimMode = cfg.GetInt(CfgKey::LowLatencyAimMode);
     // Legacy key migration — planned removal after the next release.
     // Do not add new reads.
-    // Honor the old InstantAimFollow bool only while the new LowLatencyAimMode
-    // key is still Off, so unmigrated developer configs keep applying the patch.
+    // Public builds migrate InstantAimFollow users to ImmediateSync; keep this
+    // patch path available only for developer builds with the explicit mode.
+#ifdef MELONPRIME_ENABLE_DEVELOPER_FEATURES
     const bool shouldApply =
         disableAimSmoothing
-        && (lowLatencyAimMode == LowLatencyAimMode::InstantAimFollow
-            || (lowLatencyAimMode == LowLatencyAimMode::Off
-                && cfg.GetBool(CfgKey::InstantAimFollow)));
+        && lowLatencyAimMode == LowLatencyAimMode::InstantAimFollow;
+#else
+    constexpr bool shouldApply = false;
+    (void)disableAimSmoothing;
+    (void)lowLatencyAimMode;
+#endif
 
     if (!shouldApply)
     {

@@ -1,6 +1,7 @@
 # Instant Aim Follow - LowLatencyAimMode note
 
-`Instant Aim Follow` is exposed as `Metroid.Aim.LowLatencyMode = 3`.
+`Instant Aim Follow` is developer-only and is stored as
+`Metroid.Aim.LowLatencyMode = 3` only in developer builds.
 
 Low-latency aim mode values:
 
@@ -8,10 +9,10 @@ Low-latency aim mode values:
 0 = Off
 1 = Immediate Sync
 2 = MoonLike Aim
-3 = Instant Aim Follow
+3 = Instant Aim Follow (developer-only)
 ```
 
-`Metroid.Aim.Enable.InstantAimFollow` is kept only as a legacy compatibility key. The settings UI writes it to `true` when mode `3` is selected and to `false` otherwise. Runtime apply also accepts the legacy `true` value when `LowLatencyMode` is still `0`, so old developer configs continue to work until the UI saves the migrated mode.
+`Metroid.Aim.Enable.InstantAimFollow` is kept only as a legacy compatibility key. Public builds migrate old `InstantAimFollow` users to `Immediate Sync`: `LowLatencyMode = 3` is normalized to `1`, and the legacy bool maps to `1` when the enum is still `0`. Saving from a public build writes the legacy bool back to `false`. Developer builds may still expose mode `3` for local testing.
 
 All low-latency aim modes require `Metroid.Aim.Disable.MphAimSmoothing = true`. The UI disables the mode selector when that prerequisite is off, and runtime gates prevent stale config values from applying.
 
@@ -27,4 +28,4 @@ Immediate Sync:
   at the hook point, then rebuilds the aim side/up basis.
 ```
 
-`Immediate Sync` and `MoonLike Aim` install the LowLatencyAim hook addresses. `Instant Aim Follow` does not install that hook; it uses `MelonPrimePatchInstantAimFollow.cpp` patch words instead.
+`Immediate Sync` and `MoonLike Aim` install the LowLatencyAim hook addresses. `Instant Aim Follow` does not install that hook; developer builds use `MelonPrimePatchInstantAimFollow.cpp` patch words instead.
