@@ -576,6 +576,8 @@ constexpr Translation kTranslations[] = {
     {"Weapon Inventory Icon Outline", "武器インベントリのアイコンのアウトライン"},
     {"Match Status", "試合情報"},
     {"Score", "スコア"},
+    {"Score Labels", "スコアラベル"},
+    {"Score Colors", "スコアの色"},
     {"Score Outline", "スコアのアウトライン"},
     {"Rank / Time", "順位 / 時間"},
     {"Rank", "順位"},
