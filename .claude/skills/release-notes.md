@@ -80,7 +80,7 @@ Write the result to `C:\tmp\release-notes.md`.
 
 ---
 ### Known Issues
-- In Compute shader mode, when you approach ghosts or blasts, there can be issues with how they are displayed.
+- Please let me know if you have any problems.
 
 ---
 ## Information:

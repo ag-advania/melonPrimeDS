@@ -649,12 +649,19 @@ namespace MelonPrime {
                         Patches_Apply(PatchSite_OutOfGameFrame, ctx);
                     }
 #endif
-                    ApplyGameSettingsOnce();
                     // Out-of-game screens (e.g. the Adventure planet/region map)
                     // still accept WASD movement so the player can navigate.
                     // Movement only — fire/jump/aim stay released and cursor mode
                     // keeps driving the touch screen for menu selection.
+                    //
+                    // Order matters: ProcessMovementOnlyFromReset() does a full
+                    // m_inputMaskFast assignment (releases every non-D-pad button),
+                    // so it must run BEFORE ApplyGameSettingsOnce(), which applies
+                    // the UI Left/Right buttons (License L/R, Adventure left/right)
+                    // on top via single-bit InputSetBranchless. Running it after
+                    // wiped those bits and broke the Hunter License L/R navigation.
                     ProcessMovementOnlyFromReset();
+                    ApplyGameSettingsOnce();
                 }
 
                 const bool isAdventure = m_flags.test(StateFlags::BIT_IN_ADVENTURE);

@@ -13,3 +13,4 @@ Keep each feature note small and practical:
 - [Zoom status performance](zoom-status-performance.md)
 - [Zoom aim sensitivity](zoom-aim-sensitivity.md)
 - [Custom HUD zoom crosshair](custom-hud-zoom-crosshair.md)
+- [Morph ball boost](morph-ball-boost.md)
