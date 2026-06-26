@@ -21,7 +21,6 @@ Numeric keys:
     `10` Sniper Optics, `11` Drone LIDAR, `12` Beam Charge
 - `Metroid.Visual.CrosshairZoomTransitionPulseStrength`, default `38`, range `0..100`
 - `Metroid.Visual.CrosshairZoomScopeRadius`, default `128`, range `4..1024`
-- `Metroid.Visual.CrosshairZoomScopeLineLength`
 - `Metroid.Visual.CrosshairZoomScopeGap`, default `0`
 - `Metroid.Visual.CrosshairZoomScopeThickness`
 - `Metroid.Visual.CrosshairZoomScopeCenterDot`, default `true`
@@ -110,9 +109,9 @@ Settings UI keys (Custom HUD tab + in-game edit mode):
 - `Metroid.Visual.CrosshairZoomScopeDotColorR/G/B`
 
 Scope reticle cross lines are clipped to the scope radius circle (they do not
-extend outside the ring). Arms reach from the configured gap to the circle edge;
-`CrosshairZoomScopeLineLength` is kept for legacy configs but no longer extends
-lines outside the ring.
+extend outside the ring). Arms reach from the configured gap to the circle edge.
+The former `CrosshairZoomScopeLineLength` setting was removed (it was dead: the
+arm end was always the scope radius, never this value).
 
 The same zoom amount must be passed to `DrawCrosshair()` from both:
 - normal Custom HUD render path

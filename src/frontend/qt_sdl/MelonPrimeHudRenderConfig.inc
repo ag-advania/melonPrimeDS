@@ -112,7 +112,7 @@ struct CrosshairHudConfig {
     double chZoomScale;   // target multiplier while fully zoomed
     double chZoomOpacity; // target opacity multiplier while fully zoomed
     bool chZoomScopeEnable, chZoomScopeCenterDot;
-    int chZoomScopeRadius, chZoomScopeLineLength, chZoomScopeGap, chZoomScopeThickness;
+    int chZoomScopeRadius, chZoomScopeGap, chZoomScopeThickness;
     int chZoomScopeDotSize;
     double chZoomScopeDotOpacity, chZoomScopeOpacity;
     bool chZoomTransitionEnable, chZoomTransitionPulseEnable;
@@ -720,7 +720,6 @@ static void LoadCrosshairConfig(CrosshairHudConfig& crosshair, Config::Table& cf
     crosshair.chZoomOpacity = std::clamp(cfg.GetInt(MP_HUD_PROP_KEY_CrosshairZoomOpacity), 0, 100) / 100.0;
     crosshair.chZoomScopeEnable = cfg.GetBool(MP_HUD_PROP_KEY_CrosshairZoomScopeEnable);
     crosshair.chZoomScopeRadius = std::clamp(cfg.GetInt(MP_HUD_PROP_KEY_CrosshairZoomScopeRadius), 4, 1024);
-    crosshair.chZoomScopeLineLength = std::clamp(cfg.GetInt(MP_HUD_PROP_KEY_CrosshairZoomScopeLineLength), 0, 128);
     crosshair.chZoomScopeGap = std::clamp(cfg.GetInt(MP_HUD_PROP_KEY_CrosshairZoomScopeGap), 0, 64);
     crosshair.chZoomScopeThickness = std::clamp(cfg.GetInt(MP_HUD_PROP_KEY_CrosshairZoomScopeThickness), 1, 12);
     crosshair.chZoomScopeCenterDot = cfg.GetBool(MP_HUD_PROP_KEY_CrosshairZoomScopeCenterDot);
@@ -1045,8 +1044,6 @@ static void RefreshCachedConfig(Config::Table& cfg, float topStretchX = 1.0f, fl
         const double scopeScale = static_cast<double>(c.scaleCrosshair);
         ch.chZoomScopeRadius = std::max(
             1, static_cast<int>(std::lround(ch.chZoomScopeRadius * scopeScale)));
-        ch.chZoomScopeLineLength = std::max(
-            0, static_cast<int>(std::lround(ch.chZoomScopeLineLength * scopeScale)));
         ch.chZoomScopeGap = std::max(
             0, static_cast<int>(std::lround(ch.chZoomScopeGap * scopeScale)));
         ch.chZoomScopeThickness = std::max(

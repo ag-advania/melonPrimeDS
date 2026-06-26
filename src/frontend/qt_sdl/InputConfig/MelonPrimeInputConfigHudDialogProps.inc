@@ -63,11 +63,10 @@ static const HudWidgetProp kSecCrosshair[] = {
 
 static const HudWidgetProp kSecCrosshairZoom[] = {
     { "Zoom Stage", HWType::Bool, MP_HUD_PROP_KEY_CrosshairZoomStageEnable, 0, 0, 0, nullptr, nullptr },
-    { "Zoom Scale %", HWType::Int, MP_HUD_PROP_KEY_CrosshairZoomScale, 10, 200, 1, nullptr, nullptr },
+    { "Zoom Base Scale %", HWType::Int, MP_HUD_PROP_KEY_CrosshairZoomScale, 10, 200, 1, nullptr, nullptr },
     { "Zoom Base Opacity %", HWType::Int, MP_HUD_PROP_KEY_CrosshairZoomOpacity, 0, 100, 1, nullptr, nullptr },
     { "Zoom Scope Reticle", HWType::Bool, MP_HUD_PROP_KEY_CrosshairZoomScopeEnable, 0, 0, 0, nullptr, nullptr },
     { "Scope Radius", HWType::Int, MP_HUD_PROP_KEY_CrosshairZoomScopeRadius, 4, 1024, 1, nullptr, nullptr },
-    { "Scope Line Length", HWType::Int, MP_HUD_PROP_KEY_CrosshairZoomScopeLineLength, 0, 128, 1, nullptr, nullptr },
     { "Scope Gap", HWType::Int, MP_HUD_PROP_KEY_CrosshairZoomScopeGap, 0, 64, 1, nullptr, nullptr },
     { "Scope Thickness", HWType::Int, MP_HUD_PROP_KEY_CrosshairZoomScopeThickness, 1, 12, 1, nullptr, nullptr },
     { "Scope Center Dot", HWType::Bool, MP_HUD_PROP_KEY_CrosshairZoomScopeCenterDot, 0, 0, 0, nullptr, nullptr },

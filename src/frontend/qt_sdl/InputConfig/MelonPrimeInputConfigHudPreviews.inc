@@ -66,6 +66,54 @@ protected:
         p.fillRect(QRect(x, y, orient == 0 ? len : wid, orient == 0 ? wid : len), QColor(0,0,0,100));
         p.fillRect(QRect(fx, fy, fw, fh), color);
     }
+
+    // Draw the base crosshair (inner/outer arms + center dot) centred at (cx,cy).
+    // `scale` already includes the preview magnification and any user scale
+    // factors; `opacityMul` multiplies every element's opacity (the zoomed
+    // preview passes Zoom Base Opacity here to show the faded base crosshair).
+    void drawBaseCrosshair(QPainter& p, int cx, int cy, float scale, float opacityMul) {
+        if (opacityMul <= 0.0f || scale <= 0.0f) return;
+        auto& c = cfg();
+        const QColor col = readColor("Metroid.Visual.CrosshairColorR", "Metroid.Visual.CrosshairColorG", "Metroid.Visual.CrosshairColorB");
+        const bool tStyle = c.GetBool("Metroid.Visual.CrosshairTStyle");
+
+        auto arms = [&](const char* showKey, const char* opacityKey, const char* lxKey, const char* lyKey,
+                        const char* thickKey, const char* ofsKey) {
+            if (!c.GetBool(showKey)) return;
+            QColor ac = col;
+            ac.setAlphaF(qBound(0.0f, static_cast<float>(c.GetDouble(opacityKey)) * opacityMul, 1.0f));
+            const int lx  = c.GetInt(lxKey);
+            const int ly  = c.GetInt(lyKey);
+            const int ofs = c.GetInt(ofsKey);
+            const int t   = qMax(1, static_cast<int>(c.GetInt(thickKey) * scale));
+            const int ht  = t / 2;
+            p.fillRect(QRect(cx + static_cast<int>(ofs * scale), cy - ht, static_cast<int>(lx * scale), t), ac);
+            p.fillRect(QRect(cx - static_cast<int>(ofs * scale) - static_cast<int>(lx * scale), cy - ht, static_cast<int>(lx * scale), t), ac);
+            p.fillRect(QRect(cx - ht, cy + static_cast<int>(ofs * scale), t, static_cast<int>(ly * scale)), ac);
+            if (!tStyle)
+                p.fillRect(QRect(cx - ht, cy - static_cast<int>(ofs * scale) - static_cast<int>(ly * scale), t, static_cast<int>(ly * scale)), ac);
+        };
+        arms("Metroid.Visual.CrosshairInnerShow", "Metroid.Visual.CrosshairInnerOpacity",
+             "Metroid.Visual.CrosshairInnerLengthX", "Metroid.Visual.CrosshairInnerLengthY",
+             "Metroid.Visual.CrosshairInnerThickness", "Metroid.Visual.CrosshairInnerOffset");
+        arms("Metroid.Visual.CrosshairOuterShow", "Metroid.Visual.CrosshairOuterOpacity",
+             "Metroid.Visual.CrosshairOuterLengthX", "Metroid.Visual.CrosshairOuterLengthY",
+             "Metroid.Visual.CrosshairOuterThickness", "Metroid.Visual.CrosshairOuterOffset");
+
+        if (c.GetBool("Metroid.Visual.CrosshairCenterDot")) {
+            QColor dc = c.GetBool("Metroid.Visual.CrosshairDotCustomColor")
+                ? readColor("Metroid.Visual.CrosshairDotColorR", "Metroid.Visual.CrosshairDotColorG", "Metroid.Visual.CrosshairDotColorB")
+                : col;
+            dc.setAlphaF(qBound(0.0f, static_cast<float>(c.GetDouble("Metroid.Visual.CrosshairDotOpacity")) * opacityMul, 1.0f));
+            const int ds = qMax(1, static_cast<int>(c.GetInt("Metroid.Visual.CrosshairDotThickness") * scale));
+            const QRect dotRect(cx - ds/2, cy - ds/2, ds, ds);
+            if (c.GetInt("Metroid.Visual.CrosshairDotShape") == 1) {
+                p.setPen(Qt::NoPen); p.setBrush(dc); p.drawEllipse(dotRect); p.setBrush(Qt::NoBrush);
+            } else {
+                p.fillRect(dotRect, dc);
+            }
+        }
+    }
 };
 
 class CrosshairPreviewWidget : public HudPreviewWidget
@@ -80,61 +128,10 @@ protected:
         drawBackground(p, r);
 
         auto& c = cfg();
-        QColor col = readColor("Metroid.Visual.CrosshairColorR", "Metroid.Visual.CrosshairColorG", "Metroid.Visual.CrosshairColorB");
-
-        int cx = r.center().x();
-        int cy = r.center().y();
-        // Base preview magnification, multiplied by the user Crosshair Scale %
-        // (matches the runtime chScale = CrosshairScale/100 applied in
-        // LoadCrosshairConfig). Without this the preview ignored Scale %.
+        // Preview magnification × user Crosshair Scale % (matches the runtime
+        // chScale = CrosshairScale/100 applied in LoadCrosshairConfig).
         const float cs = qMax(100, c.GetInt("Metroid.Visual.CrosshairScale")) / 100.0f;
-        float scale = 2.0f * cs;
-
-        auto drawArms = [&](const char* showKey, const char* opacityKey, const char* lxKey, const char* lyKey,
-                            const char* thickKey, const char* ofsKey) {
-            if (!c.GetBool(showKey)) return;
-            float opacity = c.GetDouble(opacityKey);
-            int lx = c.GetInt(lxKey);
-            int ly = c.GetInt(lyKey);
-            int thick = c.GetInt(thickKey);
-            int ofs = c.GetInt(ofsKey);
-            QColor ac = col;
-            ac.setAlphaF(opacity);
-            int t = qMax(1, static_cast<int>(thick * scale));
-            int ht = t / 2;
-            bool tStyle = c.GetBool("Metroid.Visual.CrosshairTStyle");
-            p.fillRect(QRect(cx + static_cast<int>(ofs * scale), cy - ht, static_cast<int>(lx * scale), t), ac);
-            p.fillRect(QRect(cx - static_cast<int>(ofs * scale) - static_cast<int>(lx * scale), cy - ht, static_cast<int>(lx * scale), t), ac);
-            p.fillRect(QRect(cx - ht, cy + static_cast<int>(ofs * scale), t, static_cast<int>(ly * scale)), ac);
-            if (!tStyle)
-                p.fillRect(QRect(cx - ht, cy - static_cast<int>(ofs * scale) - static_cast<int>(ly * scale), t, static_cast<int>(ly * scale)), ac);
-        };
-
-        drawArms("Metroid.Visual.CrosshairInnerShow", "Metroid.Visual.CrosshairInnerOpacity",
-                 "Metroid.Visual.CrosshairInnerLengthX", "Metroid.Visual.CrosshairInnerLengthY",
-                 "Metroid.Visual.CrosshairInnerThickness", "Metroid.Visual.CrosshairInnerOffset");
-        drawArms("Metroid.Visual.CrosshairOuterShow", "Metroid.Visual.CrosshairOuterOpacity",
-                 "Metroid.Visual.CrosshairOuterLengthX", "Metroid.Visual.CrosshairOuterLengthY",
-                 "Metroid.Visual.CrosshairOuterThickness", "Metroid.Visual.CrosshairOuterOffset");
-
-        if (c.GetBool("Metroid.Visual.CrosshairCenterDot")) {
-            float dotOp = c.GetDouble("Metroid.Visual.CrosshairDotOpacity");
-            int dotThick = c.GetInt("Metroid.Visual.CrosshairDotThickness");
-            QColor dc = c.GetBool("Metroid.Visual.CrosshairDotCustomColor")
-                ? readColor("Metroid.Visual.CrosshairDotColorR", "Metroid.Visual.CrosshairDotColorG", "Metroid.Visual.CrosshairDotColorB")
-                : col;
-            dc.setAlphaF(dotOp);
-            int ds = qMax(1, static_cast<int>(dotThick * scale));
-            const QRect dotRect(cx - ds/2, cy - ds/2, ds, ds);
-            if (c.GetInt("Metroid.Visual.CrosshairDotShape") == 1) {
-                p.setPen(Qt::NoPen);
-                p.setBrush(dc);
-                p.drawEllipse(dotRect);
-                p.setBrush(Qt::NoBrush);
-            } else {
-                p.fillRect(dotRect, dc);
-            }
-        }
+        drawBaseCrosshair(p, r.center().x(), r.center().y(), 2.0f * cs, 1.0f);
     }
 };
 
@@ -175,6 +172,17 @@ protected:
         const int cx = r.center().x();
         const int cy = r.center().y();
         if (scopeOpacity <= 0.001) return;
+
+        // Faded, zoom-scaled base crosshair underneath the scope ring. This makes
+        // Zoom Base Scale % and Zoom Base Opacity % visibly functional. The default
+        // Zoom Base Opacity is 0 (base hidden while fully scoped, as in-game), so
+        // nothing shows until the user raises it — then it scales by Zoom Base Scale %.
+        {
+            const float cs = qMax(100, c.GetInt("Metroid.Visual.CrosshairScale")) / 100.0f;
+            const float zoomScale = qBound(10, c.GetInt("Metroid.Visual.CrosshairZoomScale"), 200) / 100.0f;
+            const float zoomBaseOpacity = qBound(0, c.GetInt("Metroid.Visual.CrosshairZoomOpacity"), 100) / 100.0f;
+            drawBaseCrosshair(p, cx, cy, 2.0f * cs * zoomScale, zoomBaseOpacity);
+        }
 
         // Screen-accurate scale (preview box maps the 256-wide DS top screen).
         // No auto-fit, so the ring size tracks Scope Radius.
