@@ -806,6 +806,7 @@ namespace MelonPrime {
         m_ptrs.doubleDamageTimer = GetRamPointer<uint16_t>(mainRAM, m_currentRom.playerDoubleDamageTimer + offP);
         // Weavel-only effective HP — these are read every frame but only consulted
         // when BIT_IS_WEAVEL is set, so resolving them unconditionally is fine.
+        m_ptrs.flags1         = GetRamPointer<uint32_t>(mainRAM, playerBase + 0x4C4u);
         m_ptrs.moreFlags      = GetRamPointer<uint32_t>(mainRAM, playerBase + 0x4C8u);
         m_ptrs.weavelProxyPtr = GetRamPointer<uint32_t>(mainRAM, playerBase + 0xF24u);
         m_damageNotifyPurpleState = {};
