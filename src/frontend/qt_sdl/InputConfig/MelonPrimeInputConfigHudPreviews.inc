@@ -407,6 +407,121 @@ protected:
                 drawGaugeDS(p, gx, gy, gc, ori, glen, gwid, galign);
             }
         }
+
+        // ── Weapon Inventory ──
+        // Representative layout preview: all 9 weapon icons in display order with
+        // the configured orientation/align/spacing/icon-height, owned vs not-owned
+        // opacity, and the selection highlight box. (Per-icon ammo text is omitted;
+        // the separate Ammo element above already previews ammo styling.)
+        if (c.GetBool("Metroid.Visual.HudWeaponInventoryShow")) {
+            // weaponId per display slot — matches runtime kInventoryOrder.
+            static const int kOrder[9] = { 0, 2, 7, 6, 5, 4, 3, 1, 8 };
+            // icon resource indexed by weaponId — matches runtime EnsureIconsLoaded.
+            static const char* kIconAlias[9] = {
+                ":/mph-icon-pb", ":/mph-icon-volt", ":/mph-icon-missile",
+                ":/mph-icon-battlehammer", ":/mph-icon-imperialist",
+                ":/mph-icon-judicator", ":/mph-icon-magmaul",
+                ":/mph-icon-shock", ":/mph-icon-omega"
+            };
+            // Representative ownership by display slot: last three shown as not-owned
+            // so the Not Owned Opacity is visible in the preview.
+            static const bool kOwned[9] = { true, true, true, true, true, true, false, false, false };
+            const int highlightWeaponId = kOrder[0]; // highlight the first slot
+
+            const int iconH   = qBound(4, c.GetInt("Metroid.Visual.HudWeaponInventoryIconHeight"), 48);
+            const int spacing = qMax(0, c.GetInt("Metroid.Visual.HudWeaponInventorySpacing"));
+            const int orient  = c.GetInt("Metroid.Visual.HudWeaponInventoryOrientation"); // 0=horiz 1=vert
+            const int align   = c.GetInt("Metroid.Visual.HudWeaponInventoryAlign");        // 0/1/2
+            const float opOwned    = static_cast<float>(c.GetDouble("Metroid.Visual.HudWeaponInventoryOpacity"));
+            const float opNotOwned = static_cast<float>(c.GetDouble("Metroid.Visual.HudWeaponInventoryNotOwnedOpacity"));
+            const QPoint pos = dsPos(c.GetInt("Metroid.Visual.HudWeaponInventoryAnchor"),
+                                     c.GetInt("Metroid.Visual.HudWeaponInventoryX"),
+                                     c.GetInt("Metroid.Visual.HudWeaponInventoryY"));
+
+            // Icon cache keyed by requested height (rendered at 2x for crispness).
+            static QImage s_invIcons[9];
+            static int s_invIconH = 0;
+            const int loadH = qMax(1, iconH * 2);
+            if (s_invIconH != loadH) {
+                for (int i = 0; i < 9; ++i) {
+                    QImageReader rd(QString::fromLatin1(kIconAlias[i]));
+                    QSize sz = rd.size(); if (sz.isEmpty()) sz = QSize(loadH, loadH);
+                    rd.setScaledSize(QSize(qMax(1, sz.width() * loadH / qMax(1, sz.height())), loadH));
+                    s_invIcons[i] = rd.read();
+                }
+                s_invIconH = loadH;
+            }
+
+            float maxAspect = 1.0f;
+            for (int i = 0; i < 9; ++i)
+                if (!s_invIcons[i].isNull() && s_invIcons[i].height() > 0)
+                    maxAspect = qMax(maxAspect, float(s_invIcons[i].width()) / s_invIcons[i].height());
+            const float maxDrawIW = iconH * maxAspect;
+
+            const float startX = pos.x();
+            const float startY = pos.y();
+            const float iconCenterX = (orient == 1)
+                ? (align == 1 ? startX
+                 : align == 2 ? startX - maxDrawIW * 0.5f
+                 :              startX + maxDrawIW * 0.5f)
+                : 0.0f;
+
+            const bool  hlEnable    = c.GetBool("Metroid.Visual.HudWeaponInventoryHighlightEnable");
+            const float hlOpacity   = static_cast<float>(c.GetDouble("Metroid.Visual.HudWeaponInventoryHighlightOpacity"));
+            const float hlThickness = static_cast<float>(c.GetDouble("Metroid.Visual.HudWeaponInventoryHighlightThickness"));
+            const int   hlPad       = qMax(0, c.GetInt("Metroid.Visual.HudWeaponInventoryHighlightPadding"));
+            const int   hlCorner    = qMax(0, c.GetInt("Metroid.Visual.HudWeaponInventoryHighlightCornerRadius"));
+            const int   ofsL = c.GetInt("Metroid.Visual.HudWeaponInventoryHighlightSizeOffsetLeft");
+            const int   ofsR = c.GetInt("Metroid.Visual.HudWeaponInventoryHighlightSizeOffsetRight");
+            const int   ofsT = c.GetInt("Metroid.Visual.HudWeaponInventoryHighlightSizeOffsetTop");
+            const int   ofsB = c.GetInt("Metroid.Visual.HudWeaponInventoryHighlightSizeOffsetBottom");
+            const QColor hlColor = readColor("Metroid.Visual.HudWeaponInventoryHighlightColorR",
+                                             "Metroid.Visual.HudWeaponInventoryHighlightColorG",
+                                             "Metroid.Visual.HudWeaponInventoryHighlightColorB");
+
+            p.setRenderHint(QPainter::Antialiasing, true);
+            p.setRenderHint(QPainter::SmoothPixmapTransform, true);
+            float curX = startX, curY = startY;
+            for (int si = 0; si < 9; ++si) {
+                const int wid = kOrder[si];
+                const QImage& icon = s_invIcons[wid];
+                const float drawIH = iconH;
+                const float drawIW = (!icon.isNull() && icon.height() > 0)
+                                     ? drawIH * float(icon.width()) / icon.height() : drawIH;
+                const float eff = kOwned[si] ? opOwned : opNotOwned;
+
+                float px, py;
+                if (orient == 1) {
+                    px = iconCenterX - drawIW * 0.5f;
+                    py = curY;
+                } else {
+                    px = curX;
+                    py = align == 1 ? startY - drawIH * 0.5f
+                       : align == 2 ? startY - drawIH
+                       :              startY;
+                }
+
+                if (eff > 0.0f) {
+                    if (hlEnable && wid == highlightWeaponId && hlOpacity > 0.0f) {
+                        const QRectF hlRect(px - hlPad - ofsL, py - hlPad - ofsT,
+                                            drawIW + 2 * hlPad + ofsL + ofsR,
+                                            drawIH + 2 * hlPad + ofsT + ofsB);
+                        p.setOpacity(hlOpacity);
+                        QPen hlPen(hlColor); hlPen.setWidthF(hlThickness);
+                        p.setPen(hlPen); p.setBrush(Qt::NoBrush);
+                        p.drawRoundedRect(hlRect, hlCorner, hlCorner);
+                    }
+                    if (!icon.isNull()) {
+                        p.setOpacity(eff);
+                        p.drawImage(QRectF(px, py, drawIW, drawIH), icon);
+                    }
+                }
+
+                if (orient == 1) curY += drawIH + spacing;
+                else             curX += drawIW + spacing;
+            }
+            p.setOpacity(1.0);
+        }
     }
 };
 
