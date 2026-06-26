@@ -624,6 +624,24 @@ constexpr Translation kTranslations[] = {
     {"Slot: Node Capture  [flags=0x11]", "スロット: ノード取得 [flags=0x11]"},
     {"Slot: Objective     [flags=0x01]", "スロット: 目標 [flags=0x01]"},
     {"Slot: System / Misc [flags=0x00]", "スロット: システム/その他 [flags=0x00]"},
+    // OSD slot description labels (multi-line)
+    {"Applied once on settings close to currently displayed messages (flags=0x02).\nNew messages use the 'Kill / Death' literal color above.",
+     "設定を閉じたとき、現在表示中のメッセージへ一度だけ適用されます (flags=0x02)。\n新しいメッセージは上の「キル / デス」個別色を使用します。"},
+    {"Applied once on settings close to currently displayed messages (flags=0x11).\nNew messages use 'Acquiring Node' or 'Node Stolen' literal colors above.",
+     "設定を閉じたとき、現在表示中のメッセージへ一度だけ適用されます (flags=0x11)。\n新しいメッセージは上の「ノード取得中」または「ノード奪取」の個別色を使用します。"},
+    {"Applied once on settings close to currently displayed messages (flags=0x01).\nNew messages use their individual literal colors above (No Ammo / Return to Base / Octo ...).",
+     "設定を閉じたとき、現在表示中のメッセージへ一度だけ適用されます (flags=0x01)。\n新しいメッセージはそれぞれの個別色を使用します (弾薬なし / 基地へ戻れ / オクト系 ...)。"},
+    {"Applied once on settings close to currently displayed messages (flags=0x00).\nNew messages use their individual literal colors above (Lost Lives / Coward Detect / Turret ...).\nNote: HEADSHOT! (H228) is flags=0x00, not 0x02.",
+     "設定を閉じたとき、現在表示中のメッセージへ一度だけ適用されます (flags=0x00)。\n新しいメッセージはそれぞれの個別色を使用します (ライフ喪失 / 臆病者検出 / タレット ...)。\n注: HEADSHOT! (H228) は flags=0x00 で、0x02 ではありません。"},
+    // OSD slot color labels
+    {"Color  (YOU KILLED / KILLED YOU / 5-kill / prime hunter / teammate)",
+     "色  (YOU KILLED / KILLED YOU / 5キル / プライムハンター / 味方)"},
+    {"Color  (acquiring node / node stolen H211)",
+     "色  (ノード取得中 / ノード奪取 H211)"},
+    {"Color  (AMMO DEPLETED / return to base / bounty / octolith events)",
+     "色  (AMMO DEPLETED / 基地へ戻れ / バウンティ / オクトリスイベント)"},
+    {"Color  (HEADSHOT! / FACE OFF! / RETURN TO BATTLE! / COWARD DETECTED / turret)",
+     "色  (HEADSHOT! / FACE OFF! / RETURN TO BATTLE! / COWARD DETECTED / タレット)"},
 
     // Color presets and weapon labels
     {"White", "白"},
