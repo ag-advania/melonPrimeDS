@@ -242,21 +242,41 @@ namespace MelonPrime {
 
     HOT_FUNCTION bool MelonPrimeCore::HandleMorphBallBoost()
     {
-        // P-36: Combined early exit — skip both samus check AND boost-down check
-        // in a single branch. ~70%+ of frames hit this (non-Samus or no boost key).
-        // Original had nested if/else with the aimBlock cleanup duplicated in the
-        // else branch; now the common fast path (no boost) is a single LIKELY test.
-        if (LIKELY(!m_flags.test(StateFlags::BIT_IS_SAMUS) || !IsDown(IB_MORPH_BOOST))) {
-            // Guard redundant store - 99%+ of frames this bit is already 0.
-            if (UNLIKELY(m_aimBlockBits & AIMBLK_MORPHBALL_BOOST)) {
-                SetAimBlockBranchless(AIMBLK_MORPHBALL_BOOST, false);
-            }
+        // Boost is Samus-only; bail for every other hunter on the cheapest check.
+        if (LIKELY(!m_flags.test(StateFlags::BIT_IS_SAMUS))) {
             return false;
         }
 
-        // Samus + boost key held — full logic (rare path)
         const bool isAltForm = (*m_ptrs.isAltForm) == 0x02;
         m_flags.assign(StateFlags::BIT_IS_ALT_FORM, isAltForm);
+
+        if (isAltForm && m_ptrs.flags1) {
+            // Boost path arbitration. MelonPrime holds a static center touch every
+            // frame for aim, so the game's boost gate cannot pick the right path on
+            // its own. The gate (around 020235C8) routes to the R hold-charge path
+            // only when CanTouchBoost (CPlayer +0x4C4 bit27) is clear; when it is
+            // set it takes the touch/aim path, which boosts when the aim-delta
+            // magnitude is large (a fast mouse flick = "aim boost"). With the touch
+            // held the game never re-arms CanTouchBoost on its own, so we drive it:
+            //  - button boost requested (right-click R, Shift auto-cycle, or a
+            //    charge already building) → clear it so the R path runs. The charge
+            //    counter (boostGauge = player+0x148) keeps it cleared through the
+            //    release frame so the boost actually fires.
+            //  - otherwise → set it so a fast aim flick still triggers the aim boost.
+            const bool buttonBoost = IsDown(IB_ZOOM)
+                || IsDown(IB_MORPH_BOOST)
+                || (*m_ptrs.boostGauge != 0);
+            if (buttonBoost)
+                *m_ptrs.flags1 &= ~0x08000000u;
+            else
+                *m_ptrs.flags1 |= 0x08000000u;
+        }
+
+        // Shift hold-to-boost auto-cycle (separate from the manual right-click R
+        // boost handled by ApplyZoomBindingInput).
+        if (!IsDown(IB_MORPH_BOOST)) {
+            return false;
+        }
 
         if (isAltForm) {
             const uint8_t boostGauge = *m_ptrs.boostGauge;

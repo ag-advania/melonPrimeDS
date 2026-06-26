@@ -139,6 +139,7 @@ namespace MelonPrime {
         // Weavel proxy: only read when BIT_IS_WEAVEL is set. When the alt-form
         // proxy is active, observed HP = mainHp + proxyHp (avoids false notify
         // on transform HP-split).
+        uint32_t* flags1;          // CPlayer +0x4C4, bit26 = Boosting, bit27 = CanTouchBoost
         uint32_t* moreFlags;       // CPlayer +0x4C8, bit5 = proxy active
         uint32_t* weavelProxyPtr;  // CPlayer +0xF24, ARM9 pointer to proxy entity
     };
