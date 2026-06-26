@@ -69,10 +69,14 @@ namespace {
 
     [[nodiscard]] int ClampLowLatencyAimMode(int mode) noexcept
     {
-        return std::clamp(
+        const int clamped = std::clamp(
             mode,
             MelonPrime::LowLatencyAimMode::Off,
             MelonPrime::LowLatencyAimMode::InstantAimFollow);
+        if (!kDeveloperOnlyFeaturesEnabled
+            && clamped == MelonPrime::LowLatencyAimMode::InstantAimFollow)
+            return MelonPrime::LowLatencyAimMode::ImmediateSync;
+        return clamped;
     }
 
     void SetComboCurrentData(QComboBox* combo, int value)
@@ -397,14 +401,16 @@ void MelonPrimeInputConfig::setupSensitivityAndToggles(Config::Table& instcfg)
             QStringLiteral("Off"),
             MelonPrime::LowLatencyAimMode::Off);
         m_comboMetroidLowLatencyAimMode->addItem(
-            QStringLiteral("Instant Aim Follow"),
-            MelonPrime::LowLatencyAimMode::InstantAimFollow);
-        m_comboMetroidLowLatencyAimMode->addItem(
             QStringLiteral("Immediate Sync"),
             MelonPrime::LowLatencyAimMode::ImmediateSync);
         m_comboMetroidLowLatencyAimMode->addItem(
             QStringLiteral("MoonLike Aim"),
             MelonPrime::LowLatencyAimMode::MoonLikeAim);
+        if constexpr (kDeveloperOnlyFeaturesEnabled) {
+            m_comboMetroidLowLatencyAimMode->addItem(
+                QStringLiteral("Instant Aim Follow (Developer Only)"),
+                MelonPrime::LowLatencyAimMode::InstantAimFollow);
+        }
         m_comboMetroidLowLatencyAimMode->setToolTip(
             QStringLiteral("Controls how the game's current aim direction follows the target aim direction."));
         int lowLatencyAimMode = ClampLowLatencyAimMode(
@@ -412,21 +418,19 @@ void MelonPrimeInputConfig::setupSensitivityAndToggles(Config::Table& instcfg)
         // Legacy key migration — planned removal after the next release.
         // Do not add new reads.
         // Old configs only had the InstantAimFollow bool; map it onto the new
-        // LowLatencyAimMode enum when the new key is still at its Off default.
+        // public replacement when the new key is still at its Off default.
         if (lowLatencyAimMode == MelonPrime::LowLatencyAimMode::Off
             && instcfg.GetBool(MelonPrime::CfgKey::InstantAimFollow))
-            lowLatencyAimMode = MelonPrime::LowLatencyAimMode::InstantAimFollow;
+            lowLatencyAimMode = MelonPrime::LowLatencyAimMode::ImmediateSync;
         SetComboCurrentData(m_comboMetroidLowLatencyAimMode, lowLatencyAimMode);
 
         m_lblMetroidLowLatencyAimMode = new QLabel(QStringLiteral("Low-Latency Aim Mode"), ui->sectionSensitivity);
         m_lblMetroidLowLatencyAimMode->setToolTip(m_comboMetroidLowLatencyAimMode->toolTip());
-        m_lblMetroidLowLatencyAimDesc = new QLabel(
-            QStringLiteral(
-                "Instant Aim Follow patches the game's original aim-follow routine so currentAim copies targetAim immediately. "
-                "Immediate Sync uses the low-latency ARM9 hook to sync currentAim to targetAim at the hook point and rebuild the aim basis. "
-                "MoonLike Aim applies small aim movements immediately and limits only large aim jumps with a max-step chase. "
-                "Requires Disable Aim Smoothing."),
-            ui->sectionSensitivity);
+        QString lowLatencyAimDesc = QStringLiteral(
+            "Immediate Sync uses the low-latency ARM9 hook to sync currentAim to targetAim at the hook point and rebuild the aim basis. "
+            "MoonLike Aim applies small aim movements immediately and limits only large aim jumps with a max-step chase. "
+            "Requires Disable Aim Smoothing.");
+        m_lblMetroidLowLatencyAimDesc = new QLabel(lowLatencyAimDesc, ui->sectionSensitivity);
         m_lblMetroidLowLatencyAimDesc->setObjectName(QStringLiteral("lblMetroidLowLatencyAimDesc"));
         m_lblMetroidLowLatencyAimDesc->setWordWrap(true);
         m_lblMetroidLowLatencyAimDesc->setStyleSheet(QStringLiteral("QLabel { margin-left: 20px; }"));

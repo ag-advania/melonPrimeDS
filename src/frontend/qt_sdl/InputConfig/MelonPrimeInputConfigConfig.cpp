@@ -67,9 +67,12 @@ void MelonPrimeInputConfig::saveConfig()
     // binding table used to load them. Keys are disjoint so order is irrelevant.
     saveBindings(instcfg);
 
-    const int lowLatencyAimMode = m_comboMetroidLowLatencyAimMode
+    int lowLatencyAimMode = m_comboMetroidLowLatencyAimMode
         ? m_comboMetroidLowLatencyAimMode->currentData().toInt()
         : MelonPrime::LowLatencyAimMode::Off;
+    if (!kDeveloperOnlyFeaturesEnabled
+        && lowLatencyAimMode == MelonPrime::LowLatencyAimMode::InstantAimFollow)
+        lowLatencyAimMode = MelonPrime::LowLatencyAimMode::ImmediateSync;
     instcfg.SetInt(MelonPrime::CfgKey::LowLatencyAimMode, lowLatencyAimMode);
     int nativeAimHookMode = 0;
     if constexpr (kDeveloperOnlyFeaturesEnabled) {
@@ -116,11 +119,12 @@ void MelonPrimeInputConfig::saveConfig()
     }
     // Legacy key migration — planned removal after the next release.
     // Do not add new reads.
-    // Mirror the migrated mode back into the legacy InstantAimFollow bool so a
-    // downgrade to an older build keeps working until the key is dropped.
+    // Keep the legacy InstantAimFollow bool off in public builds. Developer
+    // builds may still mirror the developer-only mode for local test configs.
     instcfg.SetBool(
         MelonPrime::CfgKey::InstantAimFollow,
-        lowLatencyAimMode == MelonPrime::LowLatencyAimMode::InstantAimFollow);
+        kDeveloperOnlyFeaturesEnabled
+            && lowLatencyAimMode == MelonPrime::LowLatencyAimMode::InstantAimFollow);
 
     // Screen Sync Mode, In-game scaling, and Low HP warning thresholds are all
     // saved via saveBindings() above (binding table). Clip/TopScreen stay below

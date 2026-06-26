@@ -373,7 +373,7 @@ namespace MelonPrime {
         uint32_t m_activeZoomAimScaleQ14 = static_cast<uint32_t>(AIM_ONE_FP);
         bool     m_enableNativeAimDeltaHook = false; // true when mode != 0
         int8_t   m_nativeAimHookMode = 0;  // 0=off 1=RegisterInject 2=FoldDerived
-        int8_t   m_lowLatencyAimMode = 0;  // 0=off 1=ImmediateSync 2=MoonLikeAim 3=InstantAimFollow
+        int8_t   m_lowLatencyAimMode = 0;  // 0=off 1=ImmediateSync 2=MoonLikeAim 3=InstantAimFollow(dev-only)
         int32_t  m_moonLikeAimNormalStepQ12 = 0x0165;
         int32_t  m_moonLikeAimFastStepQ12 = 0x058F;
         int32_t  m_moonLikeAimFastThresholdQ12 = 0x042E;
