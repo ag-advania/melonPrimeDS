@@ -250,22 +250,38 @@ namespace MelonPrime {
         const bool isAltForm = (*m_ptrs.isAltForm) == 0x02;
         m_flags.assign(StateFlags::BIT_IS_ALT_FORM, isAltForm);
 
-        if (isAltForm && m_ptrs.flags1) {
-            // Boost path arbitration. MelonPrime holds a static center touch every
-            // frame for aim, so the game's boost gate cannot pick the right path on
-            // its own. The gate (around 020235C8) routes to the R hold-charge path
-            // only when CanTouchBoost (CPlayer +0x4C4 bit27) is clear; when it is
-            // set it takes the touch/aim path, which boosts when the aim-delta
-            // magnitude is large (a fast mouse flick = "aim boost"). With the touch
-            // held the game never re-arms CanTouchBoost on its own, so we drive it:
-            //  - button boost requested (right-click R, Shift auto-cycle, or a
-            //    charge already building) → clear it so the R path runs. The charge
-            //    counter (boostGauge = player+0x148) keeps it cleared through the
-            //    release frame so the boost actually fires.
-            //  - otherwise → set it so a fast aim flick still triggers the aim boost.
-            const bool buttonBoost = IsDown(IB_ZOOM)
-                || IsDown(IB_MORPH_BOOST)
-                || (*m_ptrs.boostGauge != 0);
+        // Boost path arbitration — MOUSE MODE ONLY. In mouse mode MelonPrime holds
+        // a static center touch every frame for aim, which pins the game's "touch
+        // active" state on, so the boost gate (around 020235C8) can no longer tell a
+        // button boost from a swipe boost on its own. The gate routes to the R
+        // hold-charge path only when CanTouchBoost (CPlayer +0x4C4 bit27) is clear;
+        // when it is set it takes the touch/aim branch, which boosts when the steer
+        // delta magnitude clears the game's threshold (a fast aim flick = swipe
+        // boost). We emulate the real-hardware discriminator (stylus down vs up):
+        //  - swiping (steer delta over the game's threshold) → leave CanTouchBoost
+        //    set so the swipe boost fires.
+        //  - not swiping, but a button boost is wanted (R held, or a charge is
+        //    already building, or the Shift auto-cycle) → clear it so the R path
+        //    runs. boostGauge (player+0x148) keeps it cleared through the release
+        //    frame so the boost actually fires.
+        //  - otherwise → set it (re-arm) so the next fast flick swipe-boosts.
+        // This makes "hold R + swipe + release R" produce both a swipe boost and an
+        // R boost, like real hardware, instead of R suppressing the swipe.
+        //
+        // Stylus mode is excluded entirely: the real stylus drives the touch state,
+        // so the game arbitrates correctly with no help from us.
+        if (isAltForm && !isStylusMode && m_ptrs.flags1) {
+            bool swiping = false;
+            if (m_ptrs.altSteerDelta) {
+                // Previous-frame steer delta (input +0x2A/+0x2C, s16); for a held
+                // swipe it tracks the current gesture. 0x1FA4 is the game's own
+                // touch-boost magnitude threshold (sum of squares).
+                const int32_t sdx = m_ptrs.altSteerDelta[0];
+                const int32_t sdy = m_ptrs.altSteerDelta[1];
+                swiping = (sdx * sdx + sdy * sdy) > 0x1FA4;
+            }
+            const bool buttonBoost = !swiping
+                && (IsDown(IB_ZOOM) || IsDown(IB_MORPH_BOOST) || (*m_ptrs.boostGauge != 0));
             if (buttonBoost)
                 *m_ptrs.flags1 &= ~0x08000000u;
             else
