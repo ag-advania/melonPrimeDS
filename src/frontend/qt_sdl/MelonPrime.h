@@ -140,6 +140,7 @@ namespace MelonPrime {
         // proxy is active, observed HP = mainHp + proxyHp (avoids false notify
         // on transform HP-split).
         uint32_t* flags1;          // CPlayer +0x4C4, bit26 = Boosting, bit27 = CanTouchBoost
+        int16_t*  altSteerDelta;   // input (CPlayer +0x464) +0x2A/+0x2C, alt-form steer delta X/Y
         uint32_t* moreFlags;       // CPlayer +0x4C8, bit5 = proxy active
         uint32_t* weavelProxyPtr;  // CPlayer +0xF24, ARM9 pointer to proxy entity
     };
