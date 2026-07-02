@@ -2,6 +2,7 @@
 
 #include "MelonPrimePatchShadowFreezeRuntimeHook.h"
 #include "Config.h"
+#include "MelonPrimeDef.h"
 #include "MelonPrimeGameRomAddrTable.h"
 #include "NDS.h"
 
@@ -376,7 +377,7 @@ void ShadowFreezeRuntimeHook_SetState(Config::Table* cfg, uint8_t romGroupIndex)
     }
 
     const uint32_t gen = s_configGen.load(std::memory_order_acquire);
-    s_enabledCached = cfg && cfg->GetBool("Metroid.BugFix.FixShadowFreeze");
+    s_enabledCached = cfg && cfg->GetBool(MelonPrime::CfgKey::FixShadowFreeze);
     s_configGenSeen = gen;
 }
 
@@ -401,7 +402,7 @@ bool ShadowFreezeRuntimeHook_DispatchCheckAndRedirect(
     const uint32_t gen = s_configGen.load(std::memory_order_acquire);
     if (s_configGenSeen != gen)
     {
-        s_enabledCached = s_cfg->GetBool("Metroid.BugFix.FixShadowFreeze");
+        s_enabledCached = s_cfg->GetBool(MelonPrime::CfgKey::FixShadowFreeze);
         s_configGenSeen = gen;
     }
     if (!s_enabledCached)
@@ -427,7 +428,7 @@ bool ShadowFreezeRuntimeHook_CheckAndRedirect(
     if (!nds || !regs)
         return false;
 
-    if (!cfg.GetBool("Metroid.BugFix.FixShadowFreeze"))
+    if (!cfg.GetBool(MelonPrime::CfgKey::FixShadowFreeze))
         return false;
 
     return ApplyHook(nds, romGroupIndex, arm9ExecAddr, regs, redirectExecAddr);

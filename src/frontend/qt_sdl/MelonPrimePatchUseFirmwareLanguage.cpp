@@ -2,6 +2,7 @@
 
 #include "MelonPrimePatchUseFirmwareLanguage.h"
 #include "Config.h"
+#include "MelonPrimeDef.h"
 #include "NDS.h"
 #include "SPI_Firmware.h"
 
@@ -52,7 +53,7 @@ static constexpr uint32_t kLangAddr[7] = {
 
 void UseFirmwareLanguage_ApplyOnce(melonDS::NDS* nds, Config::Table& cfg, uint8_t romGroupIndex, uint32_t isInAdventureAddr)
 {
-    if (!cfg.GetBool("Metroid.BugFix.UseFirmwareLanguage")) return;
+    if (!cfg.GetBool(MelonPrime::CfgKey::UseFirmwareLanguage)) return;
     if (romGroupIndex >= 7) return;
 
     const uint32_t addr = kLangAddr[romGroupIndex];

@@ -16,6 +16,7 @@
 #include "ui_MelonPrimeInputConfig.h"
 #include "Config.h"
 #include "MelonPrimeDef.h"
+#include "../MelonPrimeHudPropSchema.inc"
 #ifdef MELONPRIME_CUSTOM_HUD
 #include "MelonPrimeHudRender.h"
 #endif
@@ -38,14 +39,14 @@ void MelonPrimeInputConfig::saveConfig()
 {
     Config::Table& instcfg = emuInstance->getLocalConfig();
     const bool oldClipCursorToBottomScreenWhenNotInGame =
-        instcfg.GetBool("Metroid.Visual.ClipCursorToBottomScreenWhenNotInGame");
+        instcfg.GetBool(MP_HUD_PROP_KEY_ClipCursorToBottomScreenWhenNotInGame);
     const bool oldInGameTopScreenOnly =
-        instcfg.GetBool("Metroid.Visual.InGameTopScreenOnly");
+        instcfg.GetBool(MP_HUD_PROP_KEY_InGameTopScreenOnly);
     Config::Table keycfg = instcfg.GetTable("Keyboard");
     Config::Table joycfg = instcfg.GetTable("Joystick");
 
     if (m_comboMenuLanguage)
-        instcfg.SetInt("Metroid.UI.MenuLanguage", m_comboMenuLanguage->currentData().toInt());
+        instcfg.SetInt(MelonPrime::CfgKey::MenuLanguage, m_comboMenuLanguage->currentData().toInt());
 
     for (int i = 0; i < kMetroidHotkeyCount; ++i)
     {
@@ -81,26 +82,26 @@ void MelonPrimeInputConfig::saveConfig()
         else if (ui->cbMetroidEnableNativeAimPostFoldWrite->checkState() == Qt::Checked)
             nativeAimHookMode = 2;
     }
-    instcfg.SetInt("Metroid.Aim.NativeHookMode", nativeAimHookMode);
+    instcfg.SetInt(MelonPrime::CfgKey::NativeAimHookMode, nativeAimHookMode);
     instcfg.SetBool(
-        "Metroid.Input.Enable.ImmediateInputEdgeOverlay",
+        MelonPrime::CfgKey::ImmediateInputEdgeOverlay,
         kDeveloperOnlyFeaturesEnabled
             && ui->cbMetroidEnableImmediateInputEdgeOverlay->checkState() == Qt::Checked);
     instcfg.SetBool(
-        "Metroid.Input.Enable.DirectAltFormTransform",
+        MelonPrime::CfgKey::DirectAltFormTransform,
         m_cbMetroidUseNewTransformMethod
             ? m_cbMetroidUseNewTransformMethod->isChecked()
             : (ui->cbMetroidEnableDirectAltFormTransform->checkState() == Qt::Checked));
     if (m_cbMetroidUseNewWeaponSwitchMethod) {
         instcfg.SetInt(
-            "Metroid.Input.WeaponSwitchMethod",
+            MelonPrime::CfgKey::WeaponSwitchMethod,
             m_cbMetroidUseNewWeaponSwitchMethod->isChecked()
                 ? MelonPrime::WeaponSwitchMethod::NewNative
                 : MelonPrime::WeaponSwitchMethod::LegacyTouch);
     }
     if (m_cbMetroidUseNewBipedFireMethod) {
         instcfg.SetInt(
-            "Metroid.Input.BipedFireMethod",
+            MelonPrime::CfgKey::BipedFireMethod,
             kDeveloperOnlyFeaturesEnabled && m_cbMetroidUseNewBipedFireMethod->isChecked()
                 ? MelonPrime::BipedFireMethod::NewNativeEdge
                 : MelonPrime::BipedFireMethod::LegacyInput);
@@ -114,7 +115,7 @@ void MelonPrimeInputConfig::saveConfig()
         else if (m_cbMetroidUseNewZoomMethod && m_cbMetroidUseNewZoomMethod->isChecked())
             zoomMethod = MelonPrime::ZoomInputMethod::NewPresetBinding;
         instcfg.SetInt(
-            "Metroid.Input.ZoomMethod",
+            MelonPrime::CfgKey::ZoomInputMethod,
             zoomMethod);
     }
     // Legacy key migration — planned removal after the next release.
@@ -131,10 +132,10 @@ void MelonPrimeInputConfig::saveConfig()
     // because their save is coupled to an old!=new invalidate.
     const bool clipCursorToBottomScreenWhenNotInGame =
         (ui->cbMetroidClipCursorToBottomScreenWhenNotInGame->checkState() == Qt::Checked);
-    instcfg.SetBool("Metroid.Visual.ClipCursorToBottomScreenWhenNotInGame", clipCursorToBottomScreenWhenNotInGame);
+    instcfg.SetBool(MP_HUD_PROP_KEY_ClipCursorToBottomScreenWhenNotInGame, clipCursorToBottomScreenWhenNotInGame);
     const bool inGameTopScreenOnly =
         (ui->cbMetroidInGameTopScreenOnly->checkState() == Qt::Checked);
-    instcfg.SetBool("Metroid.Visual.InGameTopScreenOnly", inGameTopScreenOnly);
+    instcfg.SetBool(MP_HUD_PROP_KEY_InGameTopScreenOnly, inGameTopScreenOnly);
     if (oldClipCursorToBottomScreenWhenNotInGame != clipCursorToBottomScreenWhenNotInGame) {
         for (int i = 0; i < emuInstance->getNumWindows(); ++i) {
             MainWindow* win = emuInstance->getWindow(i);
@@ -155,7 +156,7 @@ void MelonPrimeInputConfig::saveConfig()
     }
 
     // Custom HUD
-    instcfg.SetBool("Metroid.Visual.CustomHUD", ui->cbMetroidEnableCustomHud->checkState() == Qt::Checked);
+    instcfg.SetBool(MP_HUD_PROP_KEY_CustomHUD, ui->cbMetroidEnableCustomHud->checkState() == Qt::Checked);
 
     // Save all programmatic HUD widgets
     for (auto& [key, widget] : m_hudWidgets) {
@@ -174,26 +175,26 @@ void MelonPrimeInputConfig::saveConfig()
     }
 
     // Section toggle states (existing UI sections)
-    instcfg.SetBool("Metroid.UI.SectionInputSettings",  ui->btnToggleInputSettings->isChecked());
+    instcfg.SetBool(MelonPrime::CfgKey::SectionInputSettings,  ui->btnToggleInputSettings->isChecked());
     if (m_btnToggleInputMethod)
-        instcfg.SetBool("Metroid.UI.SectionInputMethod", m_btnToggleInputMethod->isChecked());
-    instcfg.SetBool("Metroid.UI.SectionScreenSync",     ui->btnToggleScreenSync->isChecked());
-    instcfg.SetBool("Metroid.UI.SectionCursorClipSettings",  ui->btnToggleCursorClipSettings->isChecked());
-    instcfg.SetBool("Metroid.UI.SectionInGameApply",  ui->btnToggleInGameApply->isChecked());
-    instcfg.SetBool("Metroid.UI.SectionInGameAspectRatio",  ui->btnToggleInGameAspectRatio->isChecked());
-    instcfg.SetBool("Metroid.UI.SectionSensitivity",    ui->btnToggleSensitivity->isChecked());
-    instcfg.SetBool("Metroid.UI.SectionBugFix",         ui->btnToggleBugFix->isChecked());
-    instcfg.SetBool("Metroid.UI.SectionGameFeature",    ui->btnToggleGameFeature->isChecked());
-    instcfg.SetBool("Metroid.UI.SectionDisableFeatures", ui->btnToggleDisableFeatures->isChecked());
+        instcfg.SetBool(MelonPrime::CfgKey::SectionInputMethod, m_btnToggleInputMethod->isChecked());
+    instcfg.SetBool(MelonPrime::CfgKey::SectionScreenSync,     ui->btnToggleScreenSync->isChecked());
+    instcfg.SetBool(MelonPrime::CfgKey::SectionCursorClipSettings,  ui->btnToggleCursorClipSettings->isChecked());
+    instcfg.SetBool(MelonPrime::CfgKey::SectionInGameApply,  ui->btnToggleInGameApply->isChecked());
+    instcfg.SetBool(MelonPrime::CfgKey::SectionInGameAspectRatio,  ui->btnToggleInGameAspectRatio->isChecked());
+    instcfg.SetBool(MelonPrime::CfgKey::SectionSensitivity,    ui->btnToggleSensitivity->isChecked());
+    instcfg.SetBool(MelonPrime::CfgKey::SectionBugFix,         ui->btnToggleBugFix->isChecked());
+    instcfg.SetBool(MelonPrime::CfgKey::SectionGameFeature,    ui->btnToggleGameFeature->isChecked());
+    instcfg.SetBool(MelonPrime::CfgKey::SectionDisableFeatures, ui->btnToggleDisableFeatures->isChecked());
     instcfg.SetBool(
-        "Metroid.UI.SectionPowerUpPickupEffects",
+        MelonPrime::CfgKey::SectionPowerUpPickupEffects,
         ui->btnToggleDisablePickingUpSpecificItems->isChecked());
-    instcfg.SetBool("Metroid.UI.SectionGameplay",       ui->btnToggleGameplay->isChecked());
-    instcfg.SetBool("Metroid.UI.SectionVideo",          ui->btnToggleVideo->isChecked());
-    instcfg.SetBool("Metroid.UI.SectionVolume",         ui->btnToggleVolume->isChecked());
-    instcfg.SetBool("Metroid.UI.SectionLicense",        ui->btnToggleLicense->isChecked());
+    instcfg.SetBool(MelonPrime::CfgKey::SectionGameplay,       ui->btnToggleGameplay->isChecked());
+    instcfg.SetBool(MelonPrime::CfgKey::SectionVideo,          ui->btnToggleVideo->isChecked());
+    instcfg.SetBool(MelonPrime::CfgKey::SectionVolume,         ui->btnToggleVolume->isChecked());
+    instcfg.SetBool(MelonPrime::CfgKey::SectionLicense,        ui->btnToggleLicense->isChecked());
     // Restore note: remove this entry if the DEVELOPER ONLY section is removed.
-    instcfg.SetBool("Metroid.UI.SectionDeveloperOnly",  ui->btnToggleDeveloperOnly->isChecked());
+    instcfg.SetBool(MelonPrime::CfgKey::SectionDeveloperOnly,  ui->btnToggleDeveloperOnly->isChecked());
 
     // HUD section toggle states (programmatic sections)
     for (auto& [btn, cfgKey] : m_hudToggles)
@@ -212,4 +213,3 @@ void MelonPrimeInputConfig::saveConfig()
     }
 #endif
 }
-

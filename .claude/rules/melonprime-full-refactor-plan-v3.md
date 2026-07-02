@@ -2,7 +2,7 @@
 
 **作成日:** 2026-07-02
 **対象:** master（zip展開版で実測。実行は実gitリポジトリ + Windows MinGW環境で行うこと）
-**ステータス:** 進行中（Phase 1 完了）
+**ステータス:** 進行中（Phase 2 完了）
 **前提:** [V1計画（2026-06-11完了）](completed/melonprime-full-refactor-plan.md) /
 [V2計画（2026-06-11完了）](completed/melonprime-full-refactor-plan-v2.md) の後継。
 V1/V2 が解消した負債（パッチレジストリ / StaticWordPatch / ROMアドレス X-macro / HUDプロパティスキーマ /
@@ -330,7 +330,7 @@ Screen.h 15（`MELONPRIME` 出現数）。やる場合は Screen.cpp / Window.cp
 |---|---|---|---|---|
 | 0 | ベースライン + 監査 CI 化 | 完了 | 2026-07-02 | 実リポジトリで再計測。Windows workflow に監査ステップを追加し、非 canonical `"Metroid.*"` リテラル予算 519 を初期値として固定。schema generator の現行 crosshair count / side-panel outline 検出漏れを補正し、再生成出力を更新。`ci/phase0-refactor-audits` の `cdcb5fde` で Windows/macOS/Ubuntu/BSD 全 workflow 成功、Windows の audit/schema/build/upload 各 step 成功。 |
 | 1 | 死活整理・V2 検証消し込み | 完了 | 2026-07-02 | `crosshair-smooth.md` は現行コード未実装（`CrosshairSmooth` / `chSmooth` は提案内のみ）と確認し、破棄ではなく保留提案として明記。V2 completed の Phase 2/3/4/5/6/8 は、V2当時の個別コミット再ビルドではなく、V2成果を含む現行treeが Windows CI run 28588126394 / 28587404877 の full configure/build + audit/schema checks とローカル macOS build を通過済みとして消し込み。公開 API 再スイープ: `RawInputWinFilter::Poll` 定義/呼び出しゼロ、`resetAllKeys`/`resetMouseButtons` は `InputState` 内部実装のみ、`drainMessagesOnly` は `drainPendingMessages()` 内で使用中のため維持。手動 S10 は V1/V2 と同じく継続回帰項目。 |
-| 2 | リテラル解消 + ラチェット固定（本丸A） | 未着手 | — | — |
+| 2 | リテラル解消 + ラチェット固定（本丸A） | 完了 | 2026-07-02 | 非 canonical `"Metroid.*"` 519件を機械分類（HUD schema 365 / 既存 CfgKey 62 / 新規 UI CfgKey 86 / `MenuLanguage` 6）。HUD visual は `MP_HUD_PROP_KEY_*`、非HUD・UIセクションは `CfgKey::*` に置換し、`Metroid.UI.*` 定数を `MelonPrimeDef.h` へ追加。`generate-hud-prop-schema.py` は dialog macro-ref scan に対応。非 canonical リテラルは 1件のみ（`Config.cpp` の固定長 legacy migration row `Metroid.Sensitivity.Aim`）として意図的残置し、CI literal budget を 519→1 にラチェット。ローカル macOS build 成功、schema regeneration は dialog 562 / edit 230 / side 370 / runtime 505 を維持。手動 S10/S13/S14 は継続回帰項目。 |
 | 3 | HUD プレビュー共有化（本丸B） | 未着手 | — | — |
 | 4 | migration 一元化 + legacy 決着 | 未着手 | — | — |
 | 5 | ファイル整理（任意） | 未着手 | — | — |
@@ -340,9 +340,10 @@ Screen.h 15（`MELONPRIME` 出現数）。やる場合は Screen.cpp / Window.cp
 ### Phase 0 計測値（実リポジトリ実測 2026-07-02）
 
 - `MelonPrime*` ファイル: 126 / 31,618 行（.ui 除く）
-- `"Metroid.*"` quoted リテラル: 1,165
-  （canonical: HudPropSchema.inc 575 + OsdColorSchema.inc 15 + Def.h 56 = 646。
-  非 canonical 519。非 canonical 上位: HudPreviews 194 / OnScreenDraw 62 /
+- `"Metroid.*"` quoted リテラル: 1,165（Phase 2 後: 718）
+  （Phase 2 後 canonical: HudPropSchema.inc 575 + OsdColorSchema.inc 15 + Def.h 127 = 717。
+  Phase 2 前の非 canonical 519。Phase 2 後の非 canonical 1:
+  `Config.cpp` の固定長 legacy migration row `Metroid.Sensitivity.Aim`。Phase 2 前の非 canonical 上位: HudPreviews 194 / OnScreenDraw 62 /
   HudTables 53 / CustomHudBuild 48 / InputConfig.cpp 35 / ConfigConfig 28 /
   Window.cpp 24 / EmuInstance.cpp 17 / OnScreenInput 14 / HudScreenCppHelpers 7）
 - HUD schema generator: rows 575 / dialog 562 / edit 230 / side 370 / runtime 505 /

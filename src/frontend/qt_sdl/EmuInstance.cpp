@@ -51,6 +51,7 @@
 #include "NDSCart/CartSD.h"
 #ifdef MELONPRIME_DS
 #include "MelonPrimeDef.h"
+#include "MelonPrimeHudPropSchema.inc"
 
 namespace MelonPrime {
     uint32_t globalChecksum = 0;
@@ -86,34 +87,34 @@ EmuInstance::EmuInstance(int inst) : deleting(false),
     // Migrate pre-anchor-system configs. Detection: HudHpAnchor absent AND
     // HudHpX explicitly saved — the latter distinguishes old configs from a
     // completely fresh/blank config (which has neither key yet).
-    if (!localCfg.HasKey("Metroid.Visual.HudHpAnchor") &&
-         localCfg.HasKey("Metroid.Visual.HudHpX"))
+    if (!localCfg.HasKey(MP_HUD_PROP_KEY_HudHpAnchor) &&
+         localCfg.HasKey(MP_HUD_PROP_KEY_HudHpX))
     {
         // Setting all screen-anchor keys to 0 (TL, base 0,0) makes old
         // absolute X/Y values work correctly as offsets from the TL corner.
         static const char* const kAnchorKeys[] = {
-            "Metroid.Visual.HudHpAnchor",
-            "Metroid.Visual.HudHpGaugePosAnchor",
-            "Metroid.Visual.HudWeaponAnchor",
-            "Metroid.Visual.HudWeaponIconPosAnchor",
-            "Metroid.Visual.HudAmmoGaugePosAnchor",
-            "Metroid.Visual.HudMatchStatusAnchor",
-            "Metroid.Visual.HudRankAnchor",
-            "Metroid.Visual.HudTimeLeftAnchor",
-            "Metroid.Visual.HudTimeLimitAnchor",
-            "Metroid.Visual.HudBombLeftAnchor",
-            "Metroid.Visual.HudBombLeftIconPosAnchor",
-            "Metroid.Visual.BtmOverlayAnchor",
+            MP_HUD_PROP_KEY_HudHpAnchor,
+            MP_HUD_PROP_KEY_HudHpGaugePosAnchor,
+            MP_HUD_PROP_KEY_HudWeaponAnchor,
+            MP_HUD_PROP_KEY_HudWeaponIconPosAnchor,
+            MP_HUD_PROP_KEY_HudAmmoGaugePosAnchor,
+            MP_HUD_PROP_KEY_HudMatchStatusAnchor,
+            MP_HUD_PROP_KEY_HudRankAnchor,
+            MP_HUD_PROP_KEY_HudTimeLeftAnchor,
+            MP_HUD_PROP_KEY_HudTimeLimitAnchor,
+            MP_HUD_PROP_KEY_HudBombLeftAnchor,
+            MP_HUD_PROP_KEY_HudBombLeftIconPosAnchor,
+            MP_HUD_PROP_KEY_BtmOverlayAnchor,
         };
         for (const char* key : kAnchorKeys)
             localCfg.SetInt(key, 0);
 
         // Map legacy HudFontSize (pixel size) to HudTextScale (% of 6px baseline).
-        if (localCfg.HasKey("Metroid.Visual.HudFontSize"))
+        if (localCfg.HasKey(MP_HUD_PROP_KEY_HudFontSize))
         {
-            const int oldPx = localCfg.GetInt("Metroid.Visual.HudFontSize");
+            const int oldPx = localCfg.GetInt(MP_HUD_PROP_KEY_HudFontSize);
             if (oldPx > 0)
-                localCfg.SetInt("Metroid.Visual.HudTextScale", (oldPx * 100 + 3) / 6);
+                localCfg.SetInt(MP_HUD_PROP_KEY_HudTextScale, (oldPx * 100 + 3) / 6);
         }
         Config::Save();
     }

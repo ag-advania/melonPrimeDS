@@ -2,6 +2,7 @@
 
 #include "MelonPrimePatchFixNoxusBladePersistence.h"
 #include "Config.h"
+#include "MelonPrimeDef.h"
 #include "MelonPrimeGameRomAddrTable.h"
 #include "NDS.h"
 
@@ -161,7 +162,7 @@ void FixNoxusBladePersistence_SetState(Config::Table* cfg, uint8_t romGroupIndex
 
     const uint32_t gen = s_configGen.load(std::memory_order_acquire);
     s_enabledCached = cfg
-        && cfg->GetBool("Metroid.BugFix.FixNoxusBladePersistence");
+        && cfg->GetBool(MelonPrime::CfgKey::FixNoxusBladePersistence);
     s_configGenSeen = gen;
 }
 
@@ -184,7 +185,7 @@ void FixNoxusBladePersistence_DispatchCheck(
     const uint32_t gen = s_configGen.load(std::memory_order_acquire);
     if (s_configGenSeen != gen)
     {
-        s_enabledCached = s_cfg->GetBool("Metroid.BugFix.FixNoxusBladePersistence");
+        s_enabledCached = s_cfg->GetBool(MelonPrime::CfgKey::FixNoxusBladePersistence);
         s_configGenSeen = gen;
     }
     if (!s_enabledCached)

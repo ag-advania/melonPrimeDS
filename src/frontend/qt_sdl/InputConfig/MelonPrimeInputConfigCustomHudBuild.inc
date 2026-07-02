@@ -188,12 +188,12 @@
 
                 // Open the dialog pre-filled with the current HUD font settings.
                 QFont init = combo->currentFont();
-                const int curSize = cfg.GetInt("Metroid.Visual.HudFontSize");
+                const int curSize = cfg.GetInt(MP_HUD_PROP_KEY_HudFontSize);
                 if (curSize > 0) init.setPointSize(std::clamp(curSize, 4, 64));
-                init.setWeight(static_cast<QFont::Weight>(kW[std::clamp(cfg.GetInt("Metroid.Visual.HudFontWeight"), 0, 8)]));
-                init.setItalic(cfg.GetBool("Metroid.Visual.HudFontItalic"));
-                init.setUnderline(cfg.GetBool("Metroid.Visual.HudFontUnderline"));
-                init.setStrikeOut(cfg.GetBool("Metroid.Visual.HudFontStrikeOut"));
+                init.setWeight(static_cast<QFont::Weight>(kW[std::clamp(cfg.GetInt(MP_HUD_PROP_KEY_HudFontWeight), 0, 8)]));
+                init.setItalic(cfg.GetBool(MP_HUD_PROP_KEY_HudFontItalic));
+                init.setUnderline(cfg.GetBool(MP_HUD_PROP_KEY_HudFontUnderline));
+                init.setStrikeOut(cfg.GetBool(MP_HUD_PROP_KEY_HudFontStrikeOut));
 
                 bool ok = false;
                 const QFont chosen = QFontDialog::getFont(
@@ -222,7 +222,7 @@
 
                 int sz = chosen.pointSize();
                 if (sz <= 0) sz = chosen.pixelSize();
-                if (sz > 0) setSpin("Metroid.Visual.HudFontSize", std::clamp(sz, 4, 64));
+                if (sz > 0) setSpin(MP_HUD_PROP_KEY_HudFontSize, std::clamp(sz, 4, 64));
 
                 const int wval = chosen.weight();
                 int wIdx = 3, wBest = 1 << 30;
@@ -230,11 +230,11 @@
                     const int d = (kW[i] > wval) ? (kW[i] - wval) : (wval - kW[i]);
                     if (d < wBest) { wBest = d; wIdx = i; }
                 }
-                setCombo("Metroid.Visual.HudFontWeight", wIdx);
+                setCombo(MP_HUD_PROP_KEY_HudFontWeight, wIdx);
 
-                setCheck("Metroid.Visual.HudFontItalic",    chosen.italic());
-                setCheck("Metroid.Visual.HudFontUnderline", chosen.underline());
-                setCheck("Metroid.Visual.HudFontStrikeOut", chosen.strikeOut());
+                setCheck(MP_HUD_PROP_KEY_HudFontItalic,    chosen.italic());
+                setCheck(MP_HUD_PROP_KEY_HudFontUnderline, chosen.underline());
+                setCheck(MP_HUD_PROP_KEY_HudFontStrikeOut, chosen.strikeOut());
             });
             break;
         }
@@ -735,47 +735,47 @@
                 this, [applyState](int val) { applyState(val); });
     };
 
-    wirePosModeGrayout("Metroid.Visual.HudHpGaugePosMode",
-        {"Metroid.Visual.HudHpGaugeAnchor",
-         "Metroid.Visual.HudHpGaugeOffsetX",
-         "Metroid.Visual.HudHpGaugeOffsetY"},
-        {"Metroid.Visual.HudHpGaugePosX",
-         "Metroid.Visual.HudHpGaugePosY"},
-        {"Metroid.Visual.HudHpTextAnchor",
-         "Metroid.Visual.HudHpTextOffsetX",
-         "Metroid.Visual.HudHpTextOffsetY"});
+    wirePosModeGrayout(MP_HUD_PROP_KEY_HudHpGaugePosMode,
+        {MP_HUD_PROP_KEY_HudHpGaugeAnchor,
+         MP_HUD_PROP_KEY_HudHpGaugeOffsetX,
+         MP_HUD_PROP_KEY_HudHpGaugeOffsetY},
+        {MP_HUD_PROP_KEY_HudHpGaugePosX,
+         MP_HUD_PROP_KEY_HudHpGaugePosY},
+        {MP_HUD_PROP_KEY_HudHpTextAnchor,
+         MP_HUD_PROP_KEY_HudHpTextOffsetX,
+         MP_HUD_PROP_KEY_HudHpTextOffsetY});
 
-    wirePosModeGrayout("Metroid.Visual.HudAmmoGaugePosMode",
-        {"Metroid.Visual.HudAmmoGaugeAnchor",
-         "Metroid.Visual.HudAmmoGaugeOffsetX",
-         "Metroid.Visual.HudAmmoGaugeOffsetY"},
-        {"Metroid.Visual.HudAmmoGaugePosX",
-         "Metroid.Visual.HudAmmoGaugePosY"},
-        {"Metroid.Visual.HudAmmoTextAnchor",
-         "Metroid.Visual.HudAmmoTextOffsetX",
-         "Metroid.Visual.HudAmmoTextOffsetY"});
+    wirePosModeGrayout(MP_HUD_PROP_KEY_HudAmmoGaugePosMode,
+        {MP_HUD_PROP_KEY_HudAmmoGaugeAnchor,
+         MP_HUD_PROP_KEY_HudAmmoGaugeOffsetX,
+         MP_HUD_PROP_KEY_HudAmmoGaugeOffsetY},
+        {MP_HUD_PROP_KEY_HudAmmoGaugePosX,
+         MP_HUD_PROP_KEY_HudAmmoGaugePosY},
+        {MP_HUD_PROP_KEY_HudAmmoTextAnchor,
+         MP_HUD_PROP_KEY_HudAmmoTextOffsetX,
+         MP_HUD_PROP_KEY_HudAmmoTextOffsetY});
 
     // Weapon Icon Position: mode 0=Relative (offset from text), 1=Independent (own anchor+pos)
-    wirePosModeGrayout("Metroid.Visual.HudWeaponIconMode",
-        {"Metroid.Visual.HudWeaponIconOffsetX",
-         "Metroid.Visual.HudWeaponIconOffsetY"},
-        {"Metroid.Visual.HudWeaponIconPosAnchor",
-         "Metroid.Visual.HudWeaponIconPosX",
-         "Metroid.Visual.HudWeaponIconPosY"},
+    wirePosModeGrayout(MP_HUD_PROP_KEY_HudWeaponIconMode,
+        {MP_HUD_PROP_KEY_HudWeaponIconOffsetX,
+         MP_HUD_PROP_KEY_HudWeaponIconOffsetY},
+        {MP_HUD_PROP_KEY_HudWeaponIconPosAnchor,
+         MP_HUD_PROP_KEY_HudWeaponIconPosX,
+         MP_HUD_PROP_KEY_HudWeaponIconPosY},
         {});
 
     // Bomb Icon Position: mode 0=Relative (offset from bomb text), 1=Independent (own anchor+pos)
-    wirePosModeGrayout("Metroid.Visual.HudBombLeftIconMode",
-        {"Metroid.Visual.HudBombLeftIconOfsX",
-         "Metroid.Visual.HudBombLeftIconOfsY"},
-        {"Metroid.Visual.HudBombLeftIconPosAnchor",
-         "Metroid.Visual.HudBombLeftIconPosX",
-         "Metroid.Visual.HudBombLeftIconPosY"},
+    wirePosModeGrayout(MP_HUD_PROP_KEY_HudBombLeftIconMode,
+        {MP_HUD_PROP_KEY_HudBombLeftIconOfsX,
+         MP_HUD_PROP_KEY_HudBombLeftIconOfsY},
+        {MP_HUD_PROP_KEY_HudBombLeftIconPosAnchor,
+         MP_HUD_PROP_KEY_HudBombLeftIconPosX,
+         MP_HUD_PROP_KEY_HudBombLeftIconPosY},
         {});
 
     // HUD Font: enable the System Font picker only in mode 1, the Font File row only in mode 2.
     {
-        auto it = m_hudWidgets.find(std::string("Metroid.Visual.HudFontMode"));
+        auto it = m_hudWidgets.find(std::string(MP_HUD_PROP_KEY_HudFontMode));
         if (it != m_hudWidgets.end()) {
             if (auto* modeCombo = qobject_cast<QComboBox*>(it->second)) {
                 auto setRowEnabled = [this](const char* key, bool enabled) {
@@ -794,13 +794,13 @@
                                 lw->setEnabled(enabled);
                 };
                 auto applyFontState = [setRowEnabled](int mode) {
-                    setRowEnabled("Metroid.Visual.HudFontFamily",    mode == 1);
-                    setRowEnabled("Metroid.Visual.HudFontFile",      mode == 2);
-                    setRowEnabled("Metroid.Visual.HudFontSize",      mode != 0);
-                    setRowEnabled("Metroid.Visual.HudFontWeight",    mode != 0);
-                    setRowEnabled("Metroid.Visual.HudFontItalic",    mode != 0);
-                    setRowEnabled("Metroid.Visual.HudFontUnderline", mode != 0);
-                    setRowEnabled("Metroid.Visual.HudFontStrikeOut", mode != 0);
+                    setRowEnabled(MP_HUD_PROP_KEY_HudFontFamily,    mode == 1);
+                    setRowEnabled(MP_HUD_PROP_KEY_HudFontFile,      mode == 2);
+                    setRowEnabled(MP_HUD_PROP_KEY_HudFontSize,      mode != 0);
+                    setRowEnabled(MP_HUD_PROP_KEY_HudFontWeight,    mode != 0);
+                    setRowEnabled(MP_HUD_PROP_KEY_HudFontItalic,    mode != 0);
+                    setRowEnabled(MP_HUD_PROP_KEY_HudFontUnderline, mode != 0);
+                    setRowEnabled(MP_HUD_PROP_KEY_HudFontStrikeOut, mode != 0);
                 };
                 applyFontState(modeCombo->currentIndex());
                 connect(modeCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),

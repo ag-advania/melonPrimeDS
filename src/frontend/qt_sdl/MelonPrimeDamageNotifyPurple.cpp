@@ -12,9 +12,9 @@ namespace MelonPrime {
         // Disabled by default; cached so the per-frame tick reads only one bool,
         // never the config table.
         const bool dnpRequested =
-            localCfg.GetBool("Metroid.GameFeature.DamageNotifyPurple");
+            localCfg.GetBool(MelonPrime::CfgKey::DamageNotifyPurple);
         const bool ddMultDisabled =
-            localCfg.GetBool("Metroid.GameFeature.DisableDoubleDamageMultiplier");
+            localCfg.GetBool(MelonPrime::CfgKey::DisableDoubleDamageMultiplier);
         const bool dnp = dnpRequested && ddMultDisabled;
 
         if (m_damageNotifyPurpleEnabled && !dnp)

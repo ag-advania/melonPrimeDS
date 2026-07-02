@@ -40,7 +40,7 @@ jobs:
         .\.claude\skills\audit-config-defaults.ps1
         .\.claude\skills\audit-hud-key-parity.ps1 -Strict
         .\.claude\skills\check-inc-ownership.ps1
-        .\.claude\skills\audit-metroid-literal-budget.ps1 -Budget 519
+        .\.claude\skills\audit-metroid-literal-budget.ps1 -Budget 1
 
     - name: Verify generated HUD schema
       shell: pwsh
