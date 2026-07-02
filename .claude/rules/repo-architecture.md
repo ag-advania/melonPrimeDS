@@ -188,6 +188,31 @@ MelonPrimeHudPropSchema.inc
   -> MelonPrimeHudRenderConfig.inc runtime load key references
 ```
 
+HUD geometry helpers live in `src/frontend/qt_sdl/MelonPrimeHudGeometry.h`. The
+header is Qt-free and state-free; it owns shared calculations such as 9-point
+anchor resolution, aligned text X positions, and gauge relative positioning.
+Consumers:
+
+```text
+MelonPrimeHudGeometry.h
+  -> MelonPrimeHudRenderConfig.inc / MelonPrimeHudRenderDraw.inc runtime helpers
+  -> InputConfig/MelonPrimeInputConfigHudPreviews.inc dialog preview helpers
+  -> MelonPrimeHudConfigOnScreen*.inc edit/runtime preview code as needed
+```
+
+When adding a new HUD element or preview:
+
+1. Add the key/default/surface metadata to `MelonPrimeHudPropSchema.inc` through
+   the generator path.
+2. Put shared coordinate or alignment math in `MelonPrimeHudGeometry.h` when the
+   runtime and preview need the same interpretation.
+3. Keep runtime drawing caches and dirty-rect ownership in the runtime render
+   fragments; previews may call the same geometry helpers without adopting the
+   runtime cache model.
+4. Run the CI audits listed in [build.md](build.md), then compare the settings
+   dialog preview, in-game edit preview, and runtime HUD visually when the
+   element has user-facing rendering.
+
 OSD color rows are a small sub-domain under the HUD schema. `MelonPrimeOsdColorSchema.inc` owns
 the message/slot row list and expands into both the settings dialog OSD sections and
 `MelonPrimePatchOsdColor.cpp`; it still uses `MP_HUD_PROP_KEY_*` for the actual keys.

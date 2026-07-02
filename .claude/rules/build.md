@@ -16,6 +16,29 @@
 - The project has been built on Windows and via MinGW cross-compilation from WSL, and (since 2026-07) natively on macOS (Intel) — see the macOS Build section below
 - `vcpkg/` is used for dependencies in the Windows setup; the macOS build uses Homebrew packages with `USE_VCPKG=OFF` (the default)
 
+## CI Audits
+
+The Windows GitHub Actions workflow is the canonical CI gate for MelonPrime
+config/schema discipline. It runs before the Windows build:
+
+- `.claude/skills/audit-config-defaults.ps1`
+- `.claude/skills/audit-hud-key-parity.ps1 -Strict`
+- `.claude/skills/check-inc-ownership.ps1`
+- `.claude/skills/audit-metroid-literal-budget.ps1 -Budget 1`
+- `.claude/skills/generate-hud-prop-schema.py` followed by `git diff --exit-code`
+
+Rules:
+
+- The non-canonical `"Metroid.*"` literal budget is a ratchet. Lowering it is
+  allowed; raising it requires a review note explaining why the new literal
+  cannot live in `MelonPrimeHudPropSchema.inc`, `MelonPrimeOsdColorSchema.inc`,
+  or `MelonPrimeDef.h`.
+- Generated HUD schema files must be byte-identical after regeneration. If the
+  generator output changes, commit both the source change and generated files in
+  the same change.
+- `.inc` fragments remain unity-build includes owned by their parent `.cpp` or
+  `.inc`; do not add them directly to CMake.
+
 ## macOS Build (Homebrew, Intel/ARM)
 
 Native macOS build added 2026-07. Uses Homebrew dependencies; vcpkg is not involved
