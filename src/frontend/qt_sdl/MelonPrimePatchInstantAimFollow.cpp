@@ -83,7 +83,8 @@ void InstantAimFollow_ApplyOnce(
 {
     const bool disableAimSmoothing = cfg.GetBool(CfgKey::DisableMphAimSmoothing);
     const int lowLatencyAimMode = cfg.GetInt(CfgKey::LowLatencyAimMode);
-    // Legacy key migration — planned removal after the next release.
+    // Legacy key migration. Keep until the first post-V3 release gives old
+    // configs a save cycle; see the Phase 4 migration ledger.
     // Do not add new reads.
     // Public builds migrate InstantAimFollow users to ImmediateSync; keep this
     // patch path available only for developer builds with the explicit mode.
