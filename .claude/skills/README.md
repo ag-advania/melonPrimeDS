@@ -1,13 +1,13 @@
 # Skills
 
-- [Windows MinGW Build](build-windows-mingw.md)
+- [Windows MinGW Build](build-windows-mingw.md) — build MelonPrimeDS on the Windows dev machine
   - `build-mingw.bat`: configure + build
   - `build-mingw-existing.bat`: build existing tree only, no configure/vcpkg
-- [Custom HUD Runtime](custom-hud-runtime.md)
-- [Settings UI and Edit Mode](settings-ui-and-edit-mode.md)
-- [Qt Menu Actions](qt-menu-actions.md)
-- [Merge Latest Commits from melonDS Upstream](merge-upstream-melonds.md)
-- [Release Notes Generation](release-notes.md)
+- [Custom HUD Runtime](custom-hud-runtime.md) — reference for runtime HUD rendering, caches, fonts, no-HUD patch, radar overlay
+- [Settings UI and Edit Mode](settings-ui-and-edit-mode.md) — settings dialog and in-game HUD edit mode; how to add a HUD setting surface
+- [Qt Menu Actions](qt-menu-actions.md) — add a menu item / checkable MelonPrime toggle to the Qt menubar
+- [Merge Latest Commits from melonDS Upstream](merge-upstream-melonds.md) — pull `melonDS-emu/melonDS:master` into this fork
+- [Release Notes Generation](release-notes.md) — generate GitHub release notes from a commit range
 
 ## Utilities
 
