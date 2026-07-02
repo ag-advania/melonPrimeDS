@@ -32,6 +32,8 @@ namespace MelonPrime {
     class RawInputWinFilter;
 #elif defined(__APPLE__)
     class MacRawInputFilter;
+#elif defined(__linux__)
+    class LinuxRawInputFilter;
 #endif
 
     enum InputCacheBit : uint64_t {
@@ -586,6 +588,10 @@ namespace MelonPrime {
         // MelonPrime.h layout rule; guarded so Windows layout is untouched.
         // Owned via Acquire/Release refcount (see MelonPrimeRawInputMacFilter.h).
         MacRawInputFilter* m_macRawFilter = nullptr;
+#elif defined(__linux__)
+        // Linux raw mouse input (XInput2 RawMotion). Available only on X11;
+        // Wayland/non-XInput2 sessions use the QCursor center-delta fallback.
+        LinuxRawInputFilter* m_linuxRawFilter = nullptr;
 #endif
 
         // =================================================================

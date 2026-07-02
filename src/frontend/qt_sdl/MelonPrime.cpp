@@ -22,6 +22,7 @@
 #include <algorithm>
 #include <QCoreApplication>
 #include <QCursor>
+#include <QGuiApplication>
 
 #ifdef _WIN32
 #include "MelonPrimeRawInputWinFilter.h"
@@ -40,6 +41,8 @@ namespace MelonPrime {
 }
 #elif defined(__APPLE__)
 #include "MelonPrimeRawInputMacFilter.h"
+#elif defined(__linux__)
+#include "MelonPrimeRawInputLinuxFilter.h"
 #endif
 
 namespace MelonPrime {
@@ -67,6 +70,14 @@ namespace MelonPrime {
         if (m_macRawFilter) {
             MacRawInputFilter::Release();
             m_macRawFilter = nullptr;
+        }
+    }
+#elif defined(__linux__)
+    MelonPrimeCore::~MelonPrimeCore()
+    {
+        if (m_linuxRawFilter) {
+            LinuxRawInputFilter::Release();
+            m_linuxRawFilter = nullptr;
         }
     }
 #else
@@ -189,6 +200,11 @@ namespace MelonPrime {
         // denied / no mouse); see MelonPrimeRawInputMacFilter.h.
         if (!m_macRawFilter)
             m_macRawFilter = MacRawInputFilter::Acquire();
+#elif defined(__linux__)
+        // Linux RawInput-equivalent aim path: XInput2 RawMotion on X11.
+        // Wayland and unavailable XInput2 fall back to the QCursor delta path.
+        if (QGuiApplication::platformName() == QStringLiteral("xcb") && !m_linuxRawFilter)
+            m_linuxRawFilter = LinuxRawInputFilter::Acquire();
 #endif
     }
 
@@ -731,6 +747,12 @@ namespace MelonPrime {
                     // cannot produce an aim jump (same intent as FIX-3).
                     if (m_macRawFilter) {
                         m_macRawFilter->resetAll();
+                    }
+#elif defined(__linux__)
+                    // Drop XInput2 deltas accumulated while unfocused so
+                    // refocus cannot produce an aim jump.
+                    if (m_linuxRawFilter) {
+                        m_linuxRawFilter->resetAll();
                     }
 #endif
 #ifdef MELONPRIME_DS

@@ -68,6 +68,7 @@
 #endif // MELONPRIME_DS
 
 
+
 #ifdef MELONPRIME_DS
 #ifdef _WIN32
 // 仮想デスクトップ矩形取得用ヘルパー
@@ -136,7 +137,7 @@ inline RECT shrinkRectHeightToHalfCentered(RECT r) {
 
 using namespace melonDS;
 
-#if !defined(_WIN32) && !defined(APPLE)
+#if !defined(_WIN32) && !defined(__APPLE__)
 #if QT_VERSION >= QT_VERSION_CHECK(6, 5, 0)
 using namespace QNativeInterface;
 #else
@@ -1651,6 +1652,8 @@ void ScreenPanelGL::drawScreen()
     //   - UNLIKELY ensures branch predictor skips the block when Off
     //   - Runs after SwapBuffers (heavy sync point), so no pipeline impact
     //   - Forced off during FastForward/SlowMo (isFastForward set by EmuThread)
+    //   - DwmFlush mode is normalized away on non-Windows (Linux/macOS expose
+    //     only Off/glFinish in settings)
     if (auto* core = emuThread->GetMelonPrimeCore();
         core && UNLIKELY(core->screenSyncMode != 0) && !core->isFastForward)
     {
@@ -1835,4 +1838,3 @@ __attribute__((always_inline)) inline bool ScreenPanel::getClipWanted() const
     return emuInstance->getEmuThread()->GetMelonPrimeCore()->isClipWanted;
 }
 #endif // MELONPRIME_DS
-
