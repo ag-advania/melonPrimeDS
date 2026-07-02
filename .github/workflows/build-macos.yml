@@ -64,13 +64,13 @@ jobs:
         shell: bash
         run: |
           cd build/release-mac-${{ matrix.arch }}
-          zip -r -y ../../macOS-${{ matrix.arch }}.zip melonPrimeDS.app
+          zip -r -y ../../melonPrimeDS-macOS-${{ matrix.arch }}.zip melonPrimeDS.app
 
       - name: Upload artifact
         uses: actions/upload-artifact@v7
         with:
-          name: macOS-${{ matrix.arch }}
-          path: macOS-${{ matrix.arch }}.zip
+          name: melonPrimeDS-macOS-${{ matrix.arch }}
+          path: melonPrimeDS-macOS-${{ matrix.arch }}.zip
           retention-days: 1
           archive: false
 
@@ -92,14 +92,14 @@ jobs:
       - name: Download x86_64
         uses: actions/download-artifact@v8
         with:
-          name: macOS-x86_64
+          name: melonPrimeDS-macOS-x86_64
           path: x86_64
           skip-decompress: true
 
       - name: Download arm64
         uses: actions/download-artifact@v8
         with:
-          name: macOS-arm64
+          name: melonPrimeDS-macOS-arm64
           path: arm64
           skip-decompress: true
 
@@ -112,11 +112,26 @@ jobs:
           cp -a arm64/melonPrimeDS.app melonPrimeDS.app
           cp melonPrimeDS melonPrimeDS.app/Contents/MacOS/melonPrimeDS
           codesign -s - --deep melonPrimeDS.app
-          zip -r -y macOS-universal.zip melonPrimeDS.app
+          zip -r -y melonPrimeDS-macOS-universal.zip melonPrimeDS.app
 
       - name: Upload artifact
         uses: actions/upload-artifact@v7
         with:
-          name: macOS-universal
-          path: macOS-universal.zip
+          name: melonPrimeDS-macOS-universal
+          path: melonPrimeDS-macOS-universal.zip
+          archive: false
+
+      - name: Bundle all macOS artifacts
+        shell: bash
+        run: |
+          zip -j melonPrimeDS-macOS-all.zip \
+            x86_64/melonPrimeDS-macOS-x86_64.zip \
+            arm64/melonPrimeDS-macOS-arm64.zip \
+            melonPrimeDS-macOS-universal.zip
+
+      - name: Upload bundled macOS artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: melonPrimeDS-macOS-all
+          path: melonPrimeDS-macOS-all.zip
           archive: false
