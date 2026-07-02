@@ -17,6 +17,7 @@ env:
 
 jobs:
   build:
+    continue-on-error: true
     strategy:
       fail-fast: false
       matrix:
@@ -117,21 +118,24 @@ jobs:
 
     steps:
     - name: Download FreeBSD x86_64
-      uses: actions/download-artifact@v7
+      uses: actions/download-artifact@v8
+      continue-on-error: true
       with:
         name: melonPrimeDS-bsd-freebsd-x86_64.zip
         path: bsd-freebsd-x86_64
         skip-decompress: true
 
     - name: Download NetBSD x86_64
-      uses: actions/download-artifact@v7
+      uses: actions/download-artifact@v8
+      continue-on-error: true
       with:
         name: melonPrimeDS-bsd-netbsd-x86_64.zip
         path: bsd-netbsd-x86_64
         skip-decompress: true
 
     - name: Download OpenBSD x86_64
-      uses: actions/download-artifact@v7
+      uses: actions/download-artifact@v8
+      continue-on-error: true
       with:
         name: melonPrimeDS-bsd-openbsd-x86_64.zip
         path: bsd-openbsd-x86_64
@@ -139,10 +143,21 @@ jobs:
 
     - name: Bundle all BSD artifacts
       run: |
-        zip -j melonPrimeDS-bsd-all.zip \
+        artifacts=()
+        for f in \
           bsd-freebsd-x86_64/melonPrimeDS-bsd-freebsd-x86_64.zip \
           bsd-netbsd-x86_64/melonPrimeDS-bsd-netbsd-x86_64.zip \
           bsd-openbsd-x86_64/melonPrimeDS-bsd-openbsd-x86_64.zip
+        do
+          if [ -f "$f" ]; then
+            artifacts+=("$f")
+          fi
+        done
+        if [ ${#artifacts[@]} -eq 0 ]; then
+          echo "No BSD artifacts available to bundle"
+          exit 1
+        fi
+        zip -j melonPrimeDS-bsd-all.zip "${artifacts[@]}"
 
     - name: Upload bundled BSD artifacts
       uses: actions/upload-artifact@v7
