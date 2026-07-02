@@ -1,18 +1,28 @@
 # Settings UI and Edit Mode
 
+Use this when working on the MelonPrime settings dialog (`MelonPrimeInputConfig`), the in-game HUD edit mode, or when adding/changing a HUD setting's UI surface.
+
 ## Settings UI Architecture (`MelonPrimeInputConfig`)
 
 ### HUD settings entry points
-When adding or modifying a HUD setting, touch all three:
+**A new HUD visual property enters through the schema first** — see
+`.claude/rules/repo-architecture.md` "HUD Property Schema Ownership". The descriptor tables
+below are generated; do not hand-edit them.
 
-| File | Role | Radar example |
-|------|------|---------------|
-| `InputConfig/MelonPrimeInputConfig.cpp` | Classic settings dialog - descriptor arrays (`kSecRadar[]`) | `P_BOOL` / `P_INT` / `P_CLR` entries |
-| `MelonPrimeHudConfigOnScreenEdit.cpp` | In-game edit side panel - `populate*()` methods | `populateRadar()` with `addCheckBox` / `addSpinBox` / `addColorPicker` |
-| `MelonPrimeHudConfigOnScreenDefs.inc` | In-game HUD config screen - element/property definitions | Element definitions for `Radar`, `kPropsRadar[]` |
-| `MelonPrimeHudConfigOnScreenSnapshot.inc` | In-game HUD config screen - snapshot/restore/reset coverage | Reset defaults for radar keys |
-| `MelonPrimeHudConfigOnScreenDraw.inc` | In-game HUD config screen - element bounds and on-screen drawing | Radar edit rectangle and preview drawing |
-| `MelonPrimeHudConfigOnScreenInput.inc` | In-game HUD config screen - mouse/wheel editing behavior | Radar selection, drag, resize, and property clicks |
+| File | Role | Notes |
+|------|------|-------|
+| `MelonPrimeHudPropSchema.inc` | Single source for `Metroid.Visual.*` HUD keys, types, defaults, surface metadata | Add/regenerate the property here first (`generate-hud-prop-schema.py`) |
+| `InputConfig/MelonPrimeInputConfigHudDialogProps.inc` | Classic settings dialog - `HudWidgetProp kSec*` tables | **Generated** from the schema; do not edit rows by hand |
+| `InputConfig/MelonPrimeInputConfigHudTables.inc` | Dialog section structure (`kSubs*` / `kHudMainSections`), anchor/align labels | Hand-maintained section wiring |
+| `InputConfig/MelonPrimeInputConfigCustomHudBuild.inc` | `setupCustomHudWidgets()` body - builds the dialog widgets from the tables | Include fragment of `MelonPrimeInputConfig.cpp` |
+| `MelonPrimeHudConfigOnScreenEditProps.inc` | In-game edit mode - `kProps*` / `kEditElems` descriptors | **Generated** from the schema; do not edit rows by hand |
+| `MelonPrimeHudConfigOnScreenEdit.cpp` | In-game edit side panel - `populate*()` methods | `addCheckBox` / `addSpinBox` / `addColorPicker` rows via `MP_HUD_PROP_KEY_*` macros |
+| `MelonPrimeHudConfigOnScreenSnapshot.inc` | In-game edit mode - snapshot/restore/reset coverage | Iterates the descriptors; fixed keys use schema macros |
+| `MelonPrimeHudConfigOnScreenDraw.inc` | In-game edit mode - element bounds and on-screen drawing | Edit rectangle and preview drawing |
+| `MelonPrimeHudConfigOnScreenInput.inc` | In-game edit mode - mouse/wheel editing behavior | Selection, drag, resize, and property clicks |
+
+After schema changes, run `.claude/skills/audit-hud-key-parity.ps1` and
+`.claude/skills/audit-config-defaults.ps1`.
 
 ### Files
 
@@ -20,11 +30,17 @@ When adding or modifying a HUD setting, touch all three:
 |------|---------|
 | `src/frontend/qt_sdl/InputConfig/MelonPrimeInputConfig.ui` | Qt Designer UI XML |
 | `src/frontend/qt_sdl/InputConfig/MelonPrimeInputConfig.h` | class declaration, slots, setup helpers, hotkey tables |
-| `src/frontend/qt_sdl/InputConfig/MelonPrimeInputConfig.cpp` | constructor/setup logic, section wiring, most widget initialization |
+| `src/frontend/qt_sdl/InputConfig/MelonPrimeInputConfig.cpp` | constructor/setup logic, section wiring, non-HUD setting bindings (`buildSettingBindings()`) |
 | `src/frontend/qt_sdl/InputConfig/MelonPrimeInputConfigConfig.cpp` | save logic and reset-to-default handlers |
+| `src/frontend/qt_sdl/InputConfig/MelonPrimeInputConfigHudTables.inc` | HUD dialog section/descriptor wiring (include fragment) |
+| `src/frontend/qt_sdl/InputConfig/MelonPrimeInputConfigHudDialogProps.inc` | generated `kSec*` property tables (do not hand-edit) |
+| `src/frontend/qt_sdl/InputConfig/MelonPrimeInputConfigCustomHudBuild.inc` | `setupCustomHudWidgets()` body (include fragment) |
+| `src/frontend/qt_sdl/InputConfig/MelonPrimeInputConfigHudPreviews.inc` | preview widget classes (`CrosshairPreviewWidget`, `HpAmmoPreviewWidget`, `MatchStatusPreviewWidget`, `RadarPreviewWidget`) |
+| `src/frontend/qt_sdl/InputConfig/MelonPrimeInputConfigCustomHudCode.inc` | Custom HUD TOML export/import tab (include fragment) |
 | `src/frontend/qt_sdl/InputConfig/MelonPrimeInputConfigPreview.cpp` | live preview rendering, preview apply flow, snapshot/restore |
 | `src/frontend/qt_sdl/InputConfig/MelonPrimeInputConfigInternal.h` | shared UI helpers, presets, color-sync helpers |
-| `src/frontend/qt_sdl/MelonPrimeLocalization.h` | MelonPrime-only English/Japanese UI labels selected from the OS locale |
+| `src/frontend/qt_sdl/MelonPrimeLocalization.h` | localization API (`Tr`, `LocalizeWidgetTree`, ...) — declarations only |
+| `src/frontend/qt_sdl/MelonPrimeLocalization.cpp` | English/Japanese translation tables (`kTranslations`, `kObjectTextTranslations`) |
 
 ### Tab structure
 
@@ -33,24 +49,27 @@ When adding or modifying a HUD setting, touch all three:
 | Controls | `tabAddonsMetroid` | Hotkey mappings page 1 |
 | Controls 2 | `tabAddonsMetroid2` | Hotkey mappings page 2 |
 | Settings | `tabMetroid` | Sensitivity, toggles, hunter license, volume, video, screen sync, in-game aspect ratio, and related settings |
-| Custom HUD | `tabCrosshair` | Enable checkbox + Edit HUD Layout button + 5 hierarchical main sections with nested sub-sections and preview widgets synchronized with in-game edit mode |
+| Custom HUD | `tabCrosshair` | Enable checkbox + Edit HUD Layout button + hierarchical main sections (`kHudMainSections`, currently 9) with nested sub-sections and preview widgets synchronized with in-game edit mode |
 | Custom HUD Input/Output | `tabCustomHudCode` | TOML export/import of all Custom HUD settings (auto-discovers widgets in `tabCrosshair`) |
 
 ### Constructor/setup flow
 Current constructor flow in `MelonPrimeInputConfig.cpp` is:
-1. `setupKeyBindings()`
-2. `setupSensitivityAndToggles()`
-3. `setupCollapsibleSections()`
-4. `setupCustomHudWidgets()` - programmatic creation of all HUD parameter widgets
-5. `setupPreviewConnections()`
-6. `setupCustomHudCode()`
-7. `MelonPrime::UiText::LocalizeWidgetTree(this)`
-8. `snapshotVisualConfig()`
+1. `MelonPrime::UiText::SetMenuLanguageMode(...)` + `setupMenuLanguageControl()`
+2. `setupKeyBindings()`
+3. `setupSensitivityAndToggles()` - calls `buildSettingBindings()` internally (non-HUD load/save binding table)
+4. `setupInputMethodSection()`
+5. `setupCollapsibleSections()`
+6. `setupCustomHudWidgets()` - programmatic creation of all HUD parameter widgets
+7. `setupPreviewConnections()`
+8. `setupCustomHudCode()`
+9. `MelonPrime::UiText::LocalizeWidgetTree(this)`
+10. `snapshotVisualConfig()`
 
 This ordering matters because preview wiring assumes widgets are already initialized.
 
 ### Localization
-MelonPrime settings labels support English and Japanese through `MelonPrimeLocalization.h`.
+MelonPrime settings labels support English and Japanese through the `MelonPrime::UiText` API
+(`MelonPrimeLocalization.h`); the translation tables live in `MelonPrimeLocalization.cpp`.
 
 Current rules:
 - OS locale decides the UI language with `QLocale::system().language()`.
@@ -64,7 +83,7 @@ Current rules:
 - Dynamic labels, toggle text, dialog titles, status messages, and in-game overlay text should call `MelonPrime::UiText::Tr(...)` at the point where the text is assigned or drawn.
 - The in-game DS-space overlay is tight; prefer concise Japanese labels and update text measurement code when changing drawn sample text.
 
-When adding or renaming visible MelonPrime UI text, update both the English call site and the Japanese entry in `MelonPrimeLocalization.h`. For C++-created description labels, set a stable object name before `LocalizeWidgetTree(this)` runs. The main call sites are `MelonPrimeInputConfig.cpp`, `MelonPrimeInputConfigCustomHudCode.inc`, `MelonPrimeHudConfigOnScreenEdit.cpp`, and the edit-mode `.inc` fragments (`Defs`, `Draw`, `Input`).
+When adding or renaming visible MelonPrime UI text, update both the English call site and the Japanese entry in `MelonPrimeLocalization.cpp`. For C++-created description labels, set a stable object name before `LocalizeWidgetTree(this)` runs. The main call sites are `MelonPrimeInputConfig.cpp`, `MelonPrimeInputConfigCustomHudCode.inc`, `MelonPrimeHudConfigOnScreenEdit.cpp`, and the edit-mode `.inc` fragments (`Defs`, `Draw`, `Input`).
 
 ### Collapsible sections
 The settings UI uses toggle buttons and section widgets wired up in `setupCollapsibleSections()`. Toggle state is persisted under `Metroid.UI.Section*` config keys.
@@ -85,12 +104,16 @@ Supported widget types:
 - `Align3` (`QComboBox` L/C/R)
 - `Color3` (3 x `QSpinBox` R/G/B + swatch `QPushButton`)
 
-Main sections:
+Main sections (`kHudMainSections` in `MelonPrimeInputConfigHudTables.inc`, currently 9):
+- `DISABLE DEFAULT HUD` - per-element native HUD hide toggles (no preview)
+- `OUTLINE OVERRIDE` - global outline override settings (no preview)
 - `HUD SCALE` - auto-scale enable, text scale, global + per-category auto-scale caps (no preview)
+- `HUD FONT` - font mode / system family / font file / size / weight / style (no preview)
 - `CROSSHAIR` - color/outline/dot/T-style properties + sub: Inner Lines, Outer Lines (`CrosshairPreviewWidget`)
 - `HP / AMMO` - sub: HP Number Position, Ammo Number Position, Weapon Icon, HP Gauge, Ammo Gauge (`HpAmmoPreviewWidget`)
 - `MATCH STATUS HUD` - sub: Score, Rank/Time (nested: Rank, Time Left, Time Limit), Bomb Left, Bomb Icon (`MatchStatusPreviewWidget`)
 - `HUD RADAR` - all radar settings (`RadarPreviewWidget`)
+- `IN-GAME OSD COLOR` - OSD message/slot colors (rows expand from `MelonPrimeOsdColorSchema.inc`; no preview)
 
 Each main section except text scale displays a preview widget on the right side of its expanded section. Preview widgets read directly from config via `EmuInstance`. Previews automatically refresh whenever widget values change via `invalidateHudAndRefreshPreviews()`.
 
@@ -145,7 +168,7 @@ Important side effects in `saveConfig()`:
 HUD settings are saved from both the settings dialog (`saveConfig()`) and the in-game edit mode (`CustomHud_ExitEditMode(true, cfg)` -> `Config::Save()`). Both write the same config keys. When the dialog reopens, `setupCustomHudWidgets()` reads the latest config values, ensuring sync.
 
 ### Reset/default handlers
-Default reset from the settings dialog is not implemented. Resetting to defaults happens through the in-game edit mode Reset button (`ResetEditToDefaults()` in `MelonPrimeHudConfigOnScreenUnity.inc`).
+Default reset from the settings dialog is not implemented. Resetting to defaults happens through the in-game edit mode Reset button (`ResetEditToDefaults()` in `MelonPrimeHudConfigOnScreenSnapshot.inc`).
 
 ### 9-point anchor widgets
 In the settings dialog, 9-point anchors are `QComboBox` widgets with 9 items (Top Left through Bottom Right), created programmatically. In the in-game edit mode, anchors use an embedded `3x3` grid picker.
@@ -170,7 +193,8 @@ File split:
 | File | Purpose |
 |------|---------|
 | `MelonPrimeHudConfigOnScreenUnity.inc` | Unity entry point plus shared edit-mode state, layout constants, theme colors, and coordinate conversion |
-| `MelonPrimeHudConfigOnScreenDefs.inc` | Element/property descriptor types, enum labels, `kProps*` arrays, `kEditElems`, sample preview text |
+| `MelonPrimeHudConfigOnScreenDefs.inc` | Element/property descriptor types, enum labels, sample preview text |
+| `MelonPrimeHudConfigOnScreenEditProps.inc` | **Generated** `kProps*` arrays and `kEditElems` (regenerate via `generate-hud-prop-schema.py`; do not hand-edit) |
 | `MelonPrimeHudConfigOnScreenSnapshot.inc` | `SnapshotEditConfig()`, `RestoreEditSnapshot()`, `ResetEditToDefaults()` |
 | `MelonPrimeHudConfigOnScreenDraw.inc` | `ComputeEditBounds()`, properties panel drawing, live HUD preview, edit overlay drawing |
 | `MelonPrimeHudConfigOnScreenInput.inc` | Public edit-mode API, hit testing, mouse press/move/release/wheel handlers |
@@ -220,8 +244,10 @@ kCrosshairPreviewX   = kCrosshairSidePanelX + kPropPanelW + 2.0f // = 176
 kCrosshairPreviewSize = 64
 ```
 
-### 12 editable HUD elements
-Defined in `kEditElems[kEditElemCount]`:
+### 14 editable HUD elements
+Defined in `kEditElems[kEditElemCount]` (`kEditElemCount = 14`, declared in
+`MelonPrimeHudRenderMain.inc`; the table itself is generated into
+`MelonPrimeHudConfigOnScreenEditProps.inc`):
 
 | Index | Name | Anchor default | Notes |
 |-------|------|----------------|-------|
@@ -237,6 +263,8 @@ Defined in `kEditElems[kEditElemCount]`:
 | 9 | Bomb Left | 8 (BR) | Text element |
 | 10 | Bomb Icon | 8 (BR) | Icon element (`16x16`, cached icon preview) |
 | 11 | Radar | 2 (TR) | Radar element (circle preview) |
+| 12 | Weapon Inventory | 8 (BR) | Weapon inventory strip |
+| 13 | Crosshair | — | Aim-following; edited via the crosshair panel, not anchor/offset |
 
 ### Element box live previews
 Instead of text labels, element boxes render live previews:

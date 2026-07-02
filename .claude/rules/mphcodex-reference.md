@@ -4,6 +4,10 @@
 for MPH reverse-engineering notes, disassembly dumps, address databases, and
 implementation handoff notes used by this repo.
 
+Note: this checkout exists on the Windows dev machine only. On other machines
+(e.g. the macOS clone of MelonPrimeDS), the path is unavailable — ask the user
+where (or whether) mphCodex is checked out before relying on it.
+
 Use it as read-mostly source material when a MelonPrimeDS change depends on
 game behavior, ARM addresses, ROM-version offsets, or prior investigation
 results. Do not edit files in `mphCodex` unless the user explicitly asks for
