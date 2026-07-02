@@ -9,7 +9,14 @@
     <key>CFBundleIdentifier</key>
     <string>net.kuribo64.melonDS</string>
     <key>CFBundleDevelopmentRegion</key>
-    <string>English</string>
+    <string>en</string>
+    <key>CFBundleAllowMixedLocalizations</key>
+    <true/>
+    <key>CFBundleLocalizations</key>
+    <array>
+        <string>en</string>
+        <string>ja</string>
+    </array>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleVersion</key>
