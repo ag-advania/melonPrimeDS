@@ -76,7 +76,7 @@ function Get-MetroidKeyUsages([string]$accessor, [System.IO.FileInfo[]]$files) {
             }
         }
     }
-    return @($found) | sort -Unique
+    return @($found) | Sort-Object -Unique
 }
 
 $usageInt = Get-MetroidKeyUsages 'GetInt'    $qtSdlFiles

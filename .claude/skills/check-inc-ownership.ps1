@@ -41,11 +41,19 @@ $expectedMultiParentMap = @{
     )
     'melonprimehudpropschema.inc' = @(
         'src/frontend/qt_sdl/Config.cpp',
+        'src/frontend/qt_sdl/EmuInstance.cpp',
         'src/frontend/qt_sdl/InputConfig/MelonPrimeInputConfigHudTables.inc',
+        'src/frontend/qt_sdl/InputConfig/MelonPrimeInputConfig.cpp',
+        'src/frontend/qt_sdl/InputConfig/MelonPrimeInputConfigConfig.cpp',
+        'src/frontend/qt_sdl/InputConfig/MelonPrimeInputConfigInternal.h',
+        'src/frontend/qt_sdl/InputConfig/MelonPrimeInputConfigPreview.cpp',
         'src/frontend/qt_sdl/MelonPrimeHudConfigOnScreenDefs.inc',
         'src/frontend/qt_sdl/MelonPrimeHudConfigOnScreenEdit.cpp',
         'src/frontend/qt_sdl/MelonPrimeHudRender.cpp',
-        'src/frontend/qt_sdl/MelonPrimePatchOsdColor.cpp'
+        'src/frontend/qt_sdl/MelonPrimePatchAspectRatio.cpp',
+        'src/frontend/qt_sdl/MelonPrimePatchOsdColor.cpp',
+        'src/frontend/qt_sdl/Screen.cpp',
+        'src/frontend/qt_sdl/Window.cpp'
     )
     'melonprimeosdcolorschema.inc' = @(
         'src/frontend/qt_sdl/InputConfig/MelonPrimeInputConfigHudDialogProps.inc',
