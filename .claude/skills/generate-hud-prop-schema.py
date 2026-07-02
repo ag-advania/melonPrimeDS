@@ -855,6 +855,10 @@ def parse_dialog(props: dict[str, Prop], extra_refs: dict[str, list[Meta]], iden
         key = match.group(1)
         if key in props:
             add_meta(props, extra_refs, key, "dialog", origin="dialog:literal")
+    for match in re.finditer(r'\bMP_HUD_PROP_KEY_(\w+)\b', text):
+        key = ident_to_key.get(match.group(1))
+        if key in props:
+            add_meta(props, extra_refs, key, "dialog", origin="dialog:macro-ref")
     return sections
 
 

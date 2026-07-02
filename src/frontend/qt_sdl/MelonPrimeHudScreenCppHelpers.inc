@@ -162,13 +162,13 @@ static void MelonPrimeHud_RefreshRadarConfigIfNeeded(
     if (!MelonPrimeHud_RefreshHudEpoch(cachedEpoch))
         return;
 
-    radarEnable    = instcfg.GetBool("Metroid.Visual.BtmOverlayEnable");
-    radarAnchor    = instcfg.GetInt("Metroid.Visual.BtmOverlayAnchor");
-    radarDstX      = instcfg.GetInt("Metroid.Visual.BtmOverlayDstX");
-    radarDstY      = instcfg.GetInt("Metroid.Visual.BtmOverlayDstY");
-    radarDstSize   = std::max(instcfg.GetInt("Metroid.Visual.BtmOverlayDstSize"), 1);
-    radarOpacity   = std::clamp((float)instcfg.GetDouble("Metroid.Visual.BtmOverlayOpacity"), 0.0f, 1.0f);
-    radarSrcRadius = instcfg.GetInt("Metroid.Visual.BtmOverlaySrcRadius");
+    radarEnable    = instcfg.GetBool(MP_HUD_PROP_KEY_BtmOverlayEnable);
+    radarAnchor    = instcfg.GetInt(MP_HUD_PROP_KEY_BtmOverlayAnchor);
+    radarDstX      = instcfg.GetInt(MP_HUD_PROP_KEY_BtmOverlayDstX);
+    radarDstY      = instcfg.GetInt(MP_HUD_PROP_KEY_BtmOverlayDstY);
+    radarDstSize   = std::max(instcfg.GetInt(MP_HUD_PROP_KEY_BtmOverlayDstSize), 1);
+    radarOpacity   = std::clamp((float)instcfg.GetDouble(MP_HUD_PROP_KEY_BtmOverlayOpacity), 0.0f, 1.0f);
+    radarSrcRadius = instcfg.GetInt(MP_HUD_PROP_KEY_BtmOverlaySrcRadius);
     radarAnchorDsX = (radarAnchor % 3) * 128.0f;
     radarAnchorDsY = (radarAnchor / 3) * 96.0f;
 }

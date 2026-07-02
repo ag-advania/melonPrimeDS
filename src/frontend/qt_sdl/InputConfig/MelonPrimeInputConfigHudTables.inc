@@ -53,85 +53,85 @@ struct HudMainSec {
 
 // CROSSHAIR sub-sections
 static const HudSubSec kSubsCrosshair[] = {
-    SUB("Zoom Crosshair", "Metroid.UI.SectionHudCrosshairZoom", kSecCrosshairZoom),
-    SUB("Inner Lines",  "Metroid.UI.SectionHudCrosshairInner",  kSecCrosshairInner),
-    SUB("Outer Lines",  "Metroid.UI.SectionHudCrosshairOuter",  kSecCrosshairOuter),
+    SUB("Zoom Crosshair", MelonPrime::CfgKey::SectionHudCrosshairZoom, kSecCrosshairZoom),
+    SUB("Inner Lines",  MelonPrime::CfgKey::SectionHudCrosshairInner,  kSecCrosshairInner),
+    SUB("Outer Lines",  MelonPrime::CfgKey::SectionHudCrosshairOuter,  kSecCrosshairOuter),
 };
 
 // HP sub-sections
 static const HudSubSec kSubsHp[] = {
-    SUB("HP Number Position",     "Metroid.UI.SectionHudHp",            kSecHp),
-    SUB("HP Label Color By Value","Metroid.UI.SectionHudHpTextRamp",    kSecHpTextRamp),
-    SUB("HP Outline",             "Metroid.UI.SectionHudHpOutline",      kSecHpOutline),
-    SUB("HP Gauge",               "Metroid.UI.SectionHudHpGauge",        kSecHpGauge),
-    SUB("HP Gauge Color By Value","Metroid.UI.SectionHudHpGaugeRamp",    kSecHpGaugeRamp),
-    SUB("HP Gauge Outline",       "Metroid.UI.SectionHudHpGaugeOutline", kSecHpGaugeOutline),
+    SUB("HP Number Position",     MelonPrime::CfgKey::SectionHudHp,            kSecHp),
+    SUB("HP Label Color By Value",MelonPrime::CfgKey::SectionHudHpTextRamp,    kSecHpTextRamp),
+    SUB("HP Outline",             MelonPrime::CfgKey::SectionHudHpOutline,      kSecHpOutline),
+    SUB("HP Gauge",               MelonPrime::CfgKey::SectionHudHpGauge,        kSecHpGauge),
+    SUB("HP Gauge Color By Value",MelonPrime::CfgKey::SectionHudHpGaugeRamp,    kSecHpGaugeRamp),
+    SUB("HP Gauge Outline",       MelonPrime::CfgKey::SectionHudHpGaugeOutline, kSecHpGaugeOutline),
 };
 
 // Ammo sub-sections
 static const HudSubSec kSubsAmmo[] = {
-    SUB("Ammo Number Position",     "Metroid.UI.SectionHudWeaponAmmo",        kSecWeaponAmmo),
-    SUB("Ammo Label Color By Value","Metroid.UI.SectionHudAmmoTextRamp",      kSecAmmoTextRamp),
-    SUB("Ammo Outline",             "Metroid.UI.SectionHudWeaponOutline",      kSecWeaponOutline),
-    SUB("Ammo Gauge",               "Metroid.UI.SectionHudAmmoGauge",          kSecAmmoGauge),
-    SUB("Ammo Gauge Color By Value","Metroid.UI.SectionHudAmmoGaugeRamp",      kSecAmmoGaugeRamp),
-    SUB("Ammo Gauge Outline",       "Metroid.UI.SectionHudAmmoGaugeOutline",   kSecAmmoGaugeOutline),
+    SUB("Ammo Number Position",     MelonPrime::CfgKey::SectionHudWeaponAmmo,        kSecWeaponAmmo),
+    SUB("Ammo Label Color By Value",MelonPrime::CfgKey::SectionHudAmmoTextRamp,      kSecAmmoTextRamp),
+    SUB("Ammo Outline",             MelonPrime::CfgKey::SectionHudWeaponOutline,      kSecWeaponOutline),
+    SUB("Ammo Gauge",               MelonPrime::CfgKey::SectionHudAmmoGauge,          kSecAmmoGauge),
+    SUB("Ammo Gauge Color By Value",MelonPrime::CfgKey::SectionHudAmmoGaugeRamp,      kSecAmmoGaugeRamp),
+    SUB("Ammo Gauge Outline",       MelonPrime::CfgKey::SectionHudAmmoGaugeOutline,   kSecAmmoGaugeOutline),
 };
 
 // Weapon Icon sub-sections
 static const HudSubSec kSubsWpnIcon[] = {
-    SUB("Weapon Icon",               "Metroid.UI.SectionHudWpnIcon",              kSecWpnIcon),
-    SUB("Weapon Icon Outline",       "Metroid.UI.SectionHudWeaponIconOutline",    kSecWeaponIconOutline),
-    SUB("Weapon Icon Color Overlay", "Metroid.UI.SectionHudWpnIconTints",         kSecWpnIconTints),
+    SUB("Weapon Icon",               MelonPrime::CfgKey::SectionHudWpnIcon,              kSecWpnIcon),
+    SUB("Weapon Icon Outline",       MelonPrime::CfgKey::SectionHudWeaponIconOutline,    kSecWeaponIconOutline),
+    SUB("Weapon Icon Color Overlay", MelonPrime::CfgKey::SectionHudWpnIconTints,         kSecWpnIconTints),
 };
 
 // Weapon Inventory sub-sections
 static const HudSubSec kSubsWpnInventory[] = {
-    SUB("Weapon Inventory",              "Metroid.UI.SectionHudWeaponInventory",              kSecWeaponInventory),
-    SUB("Weapon Inventory Highlight",    "Metroid.UI.SectionHudWeaponInventoryHighlight",     kSecWeaponInventoryHighlight),
-    SUB("Weapon Inventory Outline",      "Metroid.UI.SectionHudWeaponInventoryOutline",       kSecWeaponInventoryOutline),
-    SUB("Weapon Inventory Icon Outline", "Metroid.UI.SectionHudWeaponInventoryIconOutline",   kSecWeaponInventoryIconOutline),
+    SUB("Weapon Inventory",              MelonPrime::CfgKey::SectionHudWeaponInventory,              kSecWeaponInventory),
+    SUB("Weapon Inventory Highlight",    MelonPrime::CfgKey::SectionHudWeaponInventoryHighlight,     kSecWeaponInventoryHighlight),
+    SUB("Weapon Inventory Outline",      MelonPrime::CfgKey::SectionHudWeaponInventoryOutline,       kSecWeaponInventoryOutline),
+    SUB("Weapon Inventory Icon Outline", MelonPrime::CfgKey::SectionHudWeaponInventoryIconOutline,   kSecWeaponInventoryIconOutline),
 };
 
 // HP / AMMO sub-sections
 static const HudSubSec kSubsHpAmmo[] = {
-    SUB_NEST("HP",               "Metroid.UI.SectionHudHpGrp",       kSubsHp),
-    SUB_NEST("Ammo",             "Metroid.UI.SectionHudAmmoGrp",     kSubsAmmo),
-    SUB_NEST("Weapon Icon",      "Metroid.UI.SectionHudWpnIconGrp",  kSubsWpnIcon),
-    SUB_NEST("Weapon Inventory", "Metroid.UI.SectionHudWpnInvGrp",   kSubsWpnInventory),
+    SUB_NEST("HP",               MelonPrime::CfgKey::SectionHudHpGrp,       kSubsHp),
+    SUB_NEST("Ammo",             MelonPrime::CfgKey::SectionHudAmmoGrp,     kSubsAmmo),
+    SUB_NEST("Weapon Icon",      MelonPrime::CfgKey::SectionHudWpnIconGrp,  kSubsWpnIcon),
+    SUB_NEST("Weapon Inventory", MelonPrime::CfgKey::SectionHudWpnInvGrp,   kSubsWpnInventory),
 };
 
 // Rank/Time sub-sub-sections
 static const HudSubSec kSubsRankTime[] = {
-    SUB("Rank",            "Metroid.UI.SectionHudRank",          kSecRank),
-    SUB("Time Left",       "Metroid.UI.SectionHudTimeLeft",       kSecTimeLeft),
-    SUB("Time Limit",      "Metroid.UI.SectionHudTimeLimit",      kSecTimeLimit),
-    SUB("Rank Outline",       "Metroid.UI.SectionHudRankOutline",      kSecRankOutline),
-    SUB("Time Left Outline",  "Metroid.UI.SectionHudTimeLeftOutline",  kSecTimeLeftOutline),
-    SUB("Time Limit Outline", "Metroid.UI.SectionHudTimeLimitOutline", kSecTimeLimitOutline),
+    SUB("Rank",            MelonPrime::CfgKey::SectionHudRank,          kSecRank),
+    SUB("Time Left",       MelonPrime::CfgKey::SectionHudTimeLeft,       kSecTimeLeft),
+    SUB("Time Limit",      MelonPrime::CfgKey::SectionHudTimeLimit,      kSecTimeLimit),
+    SUB("Rank Outline",       MelonPrime::CfgKey::SectionHudRankOutline,      kSecRankOutline),
+    SUB("Time Left Outline",  MelonPrime::CfgKey::SectionHudTimeLeftOutline,  kSecTimeLeftOutline),
+    SUB("Time Limit Outline", MelonPrime::CfgKey::SectionHudTimeLimitOutline, kSecTimeLimitOutline),
 };
 
 // Bomb sub-sections
 static const HudSubSec kSubsBomb[] = {
-    SUB("Bomb Left",         "Metroid.UI.SectionHudBombLeft",        kSecBombLeft),
-    SUB("Bomb Left Outline", "Metroid.UI.SectionHudBombLeftOutline", kSecBombLeftOutline),
-    SUB("Bomb Icon",         "Metroid.UI.SectionHudBombIcon",        kSecBombIcon),
-    SUB("Bomb Icon Outline", "Metroid.UI.SectionHudBombIconOutline", kSecBombIconOutline),
+    SUB("Bomb Left",         MelonPrime::CfgKey::SectionHudBombLeft,        kSecBombLeft),
+    SUB("Bomb Left Outline", MelonPrime::CfgKey::SectionHudBombLeftOutline, kSecBombLeftOutline),
+    SUB("Bomb Icon",         MelonPrime::CfgKey::SectionHudBombIcon,        kSecBombIcon),
+    SUB("Bomb Icon Outline", MelonPrime::CfgKey::SectionHudBombIconOutline, kSecBombIconOutline),
 };
 
 // MATCH STATUS HUD sub-sections
 static const HudSubSec kSubsMatchStatus[] = {
-    SUB("Score",                    "Metroid.UI.SectionHudMatchStatus",       kSecMatchStatus),
-    SUB("Score Outline",            "Metroid.UI.SectionHudMatchStatusOutline", kSecMatchStatusOutline),
-    SUB_NEST("Rank / Time",         "Metroid.UI.SectionHudRankTime",          kSubsRankTime),
-    SUB_NEST("Bomb",                "Metroid.UI.SectionHudBombGrp",           kSubsBomb),
+    SUB("Score",                    MelonPrime::CfgKey::SectionHudMatchStatus,       kSecMatchStatus),
+    SUB("Score Outline",            MelonPrime::CfgKey::SectionHudMatchStatusOutline, kSecMatchStatusOutline),
+    SUB_NEST("Rank / Time",         MelonPrime::CfgKey::SectionHudRankTime,          kSubsRankTime),
+    SUB_NEST("Bomb",                MelonPrime::CfgKey::SectionHudBombGrp,           kSubsBomb),
 };
 
 // HUD RADAR sub-sections
 static const HudSubSec kSubsRadar[] = {
-    SUB("Radar Settings",       "Metroid.UI.SectionHudRadarSettings",      kSecRadar),
-    SUB("Radar Outline",        "Metroid.UI.SectionHudRadarOutline",       kSecRadarOutline),
-    SUB("Frame Outline",        "Metroid.UI.SectionHudRadarFrameOutline",  kSecRadarFrameOutline),
+    SUB("Radar Settings",       MelonPrime::CfgKey::SectionHudRadarSettings,      kSecRadar),
+    SUB("Radar Outline",        MelonPrime::CfgKey::SectionHudRadarOutline,       kSecRadarOutline),
+    SUB("Frame Outline",        MelonPrime::CfgKey::SectionHudRadarFrameOutline,  kSecRadarFrameOutline),
 };
 
 // IN-GAME OSD COLOR sub-sections
@@ -140,7 +140,7 @@ static const HudSubSec kSubsRadar[] = {
 #define MP_OSD_COLOR_EMIT_SLOT_SUBSECTION(id, dialogLabel, sectionKey, propArray, keyPrefix, description, colorLabel) \
     SUB(dialogLabel, sectionKey, propArray),
 static const HudSubSec kSubsOsdColor[] = {
-    SUB("Node Stolen (H211)",  "Metroid.UI.SectionOsdH211",         kSecOsdH211),
+    SUB("Node Stolen (H211)",  MelonPrime::CfgKey::SectionOsdH211,         kSecOsdH211),
     MP_OSD_COLOR_LITERAL_SUBSECTIONS(MP_OSD_COLOR_EMIT_LITERAL_SUBSECTION)
     // Slot override colors (flags-based, effective when "Use Global Color for All" is OFF)
     MP_OSD_COLOR_SLOT_ROWS(MP_OSD_COLOR_EMIT_SLOT_SUBSECTION)
@@ -150,23 +150,23 @@ static const HudSubSec kSubsOsdColor[] = {
 
 // Main section groups
 static const HudMainSec kHudMainSections[] = {
-    { "DISABLE DEFAULT HUD", "Metroid.UI.SectionDisableDefaultHud",
+    { "DISABLE DEFAULT HUD", MelonPrime::CfgKey::SectionDisableDefaultHud,
       _P(kSecDisableDefaultHud), nullptr, 0, /*preview*/ 0 },
-    { "OUTLINE OVERRIDE",  "Metroid.UI.SectionHudGlobalOutline",
+    { "OUTLINE OVERRIDE",  MelonPrime::CfgKey::SectionHudGlobalOutline,
       _P(kSecGlobalOutline), nullptr, 0, /*preview*/ 0 },
-        { "HUD SCALE",         "Metroid.UI.SectionHudTextScale",
+        { "HUD SCALE",         MelonPrime::CfgKey::SectionHudTextScale,
       _P(kSecTextScale), nullptr, 0, /*preview*/ 0 },
-    { "HUD FONT",          "Metroid.UI.SectionHudFont",
+    { "HUD FONT",          MelonPrime::CfgKey::SectionHudFont,
       _P(kSecFont), nullptr, 0, /*preview*/ 0 },
-    { "CROSSHAIR",         "Metroid.UI.SectionHudCrosshair",
+    { "CROSSHAIR",         MelonPrime::CfgKey::SectionHudCrosshair,
       _P(kSecCrosshair), kSubsCrosshair, static_cast<int>(sizeof(kSubsCrosshair)/sizeof(kSubsCrosshair[0])), /*preview*/ 1 },
-    { "HP / AMMO",         "Metroid.UI.SectionHudHpAmmo",
+    { "HP / AMMO",         MelonPrime::CfgKey::SectionHudHpAmmo,
       nullptr, 0, kSubsHpAmmo, static_cast<int>(sizeof(kSubsHpAmmo)/sizeof(kSubsHpAmmo[0])), /*preview*/ 2 },
-    { "MATCH STATUS HUD",  "Metroid.UI.SectionHudMatchStatusGrp",
+    { "MATCH STATUS HUD",  MelonPrime::CfgKey::SectionHudMatchStatusGrp,
       nullptr, 0, kSubsMatchStatus, static_cast<int>(sizeof(kSubsMatchStatus)/sizeof(kSubsMatchStatus[0])), /*preview*/ 3 },
-    { "HUD RADAR",         "Metroid.UI.SectionHudRadar",
+    { "HUD RADAR",         MelonPrime::CfgKey::SectionHudRadar,
       nullptr, 0, kSubsRadar, static_cast<int>(sizeof(kSubsRadar)/sizeof(kSubsRadar[0])), /*preview*/ 4 },
-    { "IN-GAME OSD COLOR", "Metroid.UI.SectionOsdColor",
+    { "IN-GAME OSD COLOR", MelonPrime::CfgKey::SectionOsdColor,
       _P(kSecOsdGlobal), kSubsOsdColor, static_cast<int>(sizeof(kSubsOsdColor)/sizeof(kSubsOsdColor[0])), /*preview*/ 0 },
 };
 static constexpr int kHudMainSectionCount = static_cast<int>(sizeof(kHudMainSections) / sizeof(kHudMainSections[0]));

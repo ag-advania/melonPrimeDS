@@ -3,12 +3,13 @@
 #include "MelonPrimePatchDisableDoubleDamageMultiplier.h"
 #include "MelonPrimePatchCommon.h"
 #include "Config.h"
+#include "MelonPrimeDef.h"
 
 namespace MelonPrime {
 namespace {
 
 static constexpr const char* kCfgDisableDoubleDamageMultiplier =
-    "Metroid.GameFeature.DisableDoubleDamageMultiplier";
+    MelonPrime::CfgKey::DisableDoubleDamageMultiplier;
 
 // Double Damage 2x -> 1x while keeping the status, timer, HUD, SFX and effects.
 // ROM group order: JP1_0=0, JP1_1=1, US1_0=2, US1_1=3, EU1_0=4, EU1_1=5, KR1_0=6

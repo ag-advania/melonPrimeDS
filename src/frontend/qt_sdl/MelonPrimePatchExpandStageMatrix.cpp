@@ -2,6 +2,7 @@
 
 #include "MelonPrimePatchExpandStageMatrix.h"
 #include "Config.h"
+#include "MelonPrimeDef.h"
 #include "NDS.h"
 
 namespace MelonPrime {
@@ -114,7 +115,7 @@ static bool s_pendingRestore = false;
 
 void ExpandStageMatrix_ApplyIfLoaded(melonDS::NDS* nds, Config::Table& cfg, uint8_t romGroupIndex)
 {
-    const bool enabled = cfg.GetBool("Metroid.GameFeature.ExpandStageMatrix");
+    const bool enabled = cfg.GetBool(MelonPrime::CfgKey::ExpandStageMatrix);
 
     if (!s_pendingRestore && !enabled) return;
     if (romGroupIndex >= 7) return;
@@ -126,7 +127,7 @@ void ExpandStageMatrix_ApplyIfLoaded(melonDS::NDS* nds, Config::Table& cfg, uint
         // Write the correct state for every cell based on current settings.
         // Handles: parent off, extra off, or any combination changing on save.
         s_pendingRestore = false;
-        const bool extraEnabled = enabled && cfg.GetBool("Metroid.GameFeature.ExpandStageMatrixExtra");
+        const bool extraEnabled = enabled && cfg.GetBool(MelonPrime::CfgKey::ExpandStageMatrixExtra);
         for (const auto& cell : kBaseCells)
             nds->ARM9Write8(MatrixAddr(info, cell), enabled ? 0x01u : 0x00u);
         for (const auto& cell : kExtraCells)
@@ -138,7 +139,7 @@ void ExpandStageMatrix_ApplyIfLoaded(melonDS::NDS* nds, Config::Table& cfg, uint
     for (const auto& cell : kBaseCells)
         nds->ARM9Write8(MatrixAddr(info, cell), 0x01u);
 
-    if (cfg.GetBool("Metroid.GameFeature.ExpandStageMatrixExtra")) {
+    if (cfg.GetBool(MelonPrime::CfgKey::ExpandStageMatrixExtra)) {
         for (const auto& cell : kExtraCells)
             nds->ARM9Write8(MatrixAddr(info, cell), 0x01u);
     }

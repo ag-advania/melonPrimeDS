@@ -49,6 +49,7 @@
 // MelonPrimeDS Integration
 #ifdef MELONPRIME_DS
 #include "MelonPrime.h"
+#include "MelonPrimeHudPropSchema.inc"
 
 #ifdef MELONPRIME_CUSTOM_HUD
 #include "MelonPrimeConstants.h"
@@ -219,7 +220,7 @@ bool ScreenPanel::shouldConfineCursorToBottomScreen() const
     if (!core->IsRomDetected()) return false;
     if (getClipWanted()) return false;
     if (core->IsInGame()) return false;
-    return emuInstance->getLocalConfig().GetBool("Metroid.Visual.ClipCursorToBottomScreenWhenNotInGame");
+    return emuInstance->getLocalConfig().GetBool(MP_HUD_PROP_KEY_ClipCursorToBottomScreenWhenNotInGame);
 }
 
 std::optional<QRect> ScreenPanel::getScreenWidgetRect(int wantedScreenKind) const
@@ -402,7 +403,7 @@ void ScreenPanel::loadConfig()
     integerScaling = cfg.GetBool("IntegerScaling");
     screenAspectTop = cfg.GetInt("ScreenAspectTop");
     screenAspectBot = cfg.GetInt("ScreenAspectBot");
-    inGameTopScreenOnly = emuInstance->getLocalConfig().GetBool("Metroid.Visual.InGameTopScreenOnly");
+    inGameTopScreenOnly = emuInstance->getLocalConfig().GetBool(MP_HUD_PROP_KEY_InGameTopScreenOnly);
 }
 
 void ScreenPanel::setFilter(bool filter)

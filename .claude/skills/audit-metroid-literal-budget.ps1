@@ -6,7 +6,7 @@
 # lower it as literals move to MP_HUD_PROP_KEY_* / CfgKey::* references.
 
 param(
-    [int]$Budget = 519,
+    [int]$Budget = 1,
     [int]$MaxList = 40,
     [switch]$Json
 )

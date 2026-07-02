@@ -78,6 +78,8 @@
 #include "AboutDialog.h"
 #ifdef MELONPRIME_DS
 #include "MelonPrime.h"
+#include "MelonPrimeDef.h"
+#include "MelonPrimeHudPropSchema.inc"
 #include "MelonPrimeLocalization.h"
 #include "MelonPrimePatchShadowFreezeRuntimeHook.h"
 #endif
@@ -263,7 +265,7 @@ MainWindow::MainWindow(int id, EmuInstance* inst, QWidget* parent) :
     hasMenu = true;
 
 #ifdef MELONPRIME_DS
-    MelonPrime::UiText::SetMenuLanguageMode(localCfg.GetInt("Metroid.UI.MenuLanguage"));
+    MelonPrime::UiText::SetMenuLanguageMode(localCfg.GetInt(MelonPrime::CfgKey::MenuLanguage));
 #endif
 
     if (hasMenu)
@@ -824,15 +826,15 @@ MainWindow::MainWindow(int id, EmuInstance* inst, QWidget* parent) :
         actLimitFramerate->setChecked(emuInstance->doLimitFPS);
         actAudioSync->setChecked(emuInstance->doAudioSync);
 #ifdef MELONPRIME_DS
-        actMetroidFixSF->setChecked(localCfg.GetBool("Metroid.BugFix.FixShadowFreeze"));
-        actMetroidInGameTopScreenOnly->setChecked(localCfg.GetBool("Metroid.Visual.InGameTopScreenOnly"));
-        const bool ddMultiplierOff = !localCfg.GetBool("Metroid.GameFeature.DisableDoubleDamageMultiplier");
+        actMetroidFixSF->setChecked(localCfg.GetBool(MelonPrime::CfgKey::FixShadowFreeze));
+        actMetroidInGameTopScreenOnly->setChecked(localCfg.GetBool(MP_HUD_PROP_KEY_InGameTopScreenOnly));
+        const bool ddMultiplierOff = !localCfg.GetBool(MelonPrime::CfgKey::DisableDoubleDamageMultiplier);
         actMetroidDisableDoubleDamageMultiplier->setChecked(!ddMultiplierOff);
         actMetroidDamageNotifyPurple->setChecked(
-            !ddMultiplierOff && localCfg.GetBool("Metroid.GameFeature.DamageNotifyPurple"));
+            !ddMultiplierOff && localCfg.GetBool(MelonPrime::CfgKey::DamageNotifyPurple));
         actMetroidDamageNotifyPurple->setEnabled(!ddMultiplierOff);
         actMetroidPowerUpPickupNoEffect->setChecked(
-            localCfg.GetBool("Metroid.GameFeature.PowerUpPickupNoEffectPowerUps"));
+            localCfg.GetBool(MelonPrime::CfgKey::PowerUpPickupNoEffectPowerUps));
 #endif
 
         if (emuInstance->instanceID > 0)
@@ -873,7 +875,7 @@ void MainWindow::localizeMenuText()
     if (!hasMenu)
         return;
 
-    MelonPrime::UiText::SetMenuLanguageMode(localCfg.GetInt("Metroid.UI.MenuLanguage"));
+    MelonPrime::UiText::SetMenuLanguageMode(localCfg.GetInt(MelonPrime::CfgKey::MenuLanguage));
     MelonPrime::UiText::LocalizeMenuBar(menuBar());
 }
 #endif
@@ -2021,7 +2023,7 @@ void MainWindow::onOpenMetroidOtherSettings()
 }
 void MainWindow::onChangeMetroidFixSF(bool checked)
 {
-    localCfg.SetBool("Metroid.BugFix.FixShadowFreeze", checked);
+    localCfg.SetBool(MelonPrime::CfgKey::FixShadowFreeze, checked);
     MelonPrime::ShadowFreezeRuntimeHook_NotifyConfigChanged();
     if (auto* core = emuThread->GetMelonPrimeCore())
         core->NotifyConfigChanged();
@@ -2029,7 +2031,7 @@ void MainWindow::onChangeMetroidFixSF(bool checked)
 
 void MainWindow::onChangeMetroidInGameTopScreenOnly(bool checked)
 {
-    localCfg.SetBool("Metroid.Visual.InGameTopScreenOnly", checked);
+    localCfg.SetBool(MP_HUD_PROP_KEY_InGameTopScreenOnly, checked);
     emuInstance->doOnAllWindows([checked](MainWindow* win)
         {
             if (!win->hasMenu) return;
@@ -2040,10 +2042,10 @@ void MainWindow::onChangeMetroidInGameTopScreenOnly(bool checked)
 
 void MainWindow::onChangeMetroidDisableDoubleDamageMultiplier(bool checked)
 {
-    localCfg.SetBool("Metroid.GameFeature.DisableDoubleDamageMultiplier", checked);
+    localCfg.SetBool(MelonPrime::CfgKey::DisableDoubleDamageMultiplier, checked);
     // Parent OFF forces the Damage Notify Purple child off (cannot function safely).
-    if (!checked && localCfg.GetBool("Metroid.GameFeature.DamageNotifyPurple")) {
-        localCfg.SetBool("Metroid.GameFeature.DamageNotifyPurple", false);
+    if (!checked && localCfg.GetBool(MelonPrime::CfgKey::DamageNotifyPurple)) {
+        localCfg.SetBool(MelonPrime::CfgKey::DamageNotifyPurple, false);
         actMetroidDamageNotifyPurple->setChecked(false);
     }
     actMetroidDamageNotifyPurple->setEnabled(checked);
@@ -2053,10 +2055,10 @@ void MainWindow::onChangeMetroidDisableDoubleDamageMultiplier(bool checked)
 
 void MainWindow::onChangeMetroidDamageNotifyPurple(bool checked)
 {
-    localCfg.SetBool("Metroid.GameFeature.DamageNotifyPurple", checked);
+    localCfg.SetBool(MelonPrime::CfgKey::DamageNotifyPurple, checked);
     // Child ON pulls parent ON (user wants them basically together).
-    if (checked && !localCfg.GetBool("Metroid.GameFeature.DisableDoubleDamageMultiplier")) {
-        localCfg.SetBool("Metroid.GameFeature.DisableDoubleDamageMultiplier", true);
+    if (checked && !localCfg.GetBool(MelonPrime::CfgKey::DisableDoubleDamageMultiplier)) {
+        localCfg.SetBool(MelonPrime::CfgKey::DisableDoubleDamageMultiplier, true);
         actMetroidDisableDoubleDamageMultiplier->setChecked(true);
     }
     if (auto* core = emuThread->GetMelonPrimeCore())
@@ -2065,10 +2067,10 @@ void MainWindow::onChangeMetroidDamageNotifyPurple(bool checked)
 
 void MainWindow::onChangeMetroidPowerUpPickupNoEffect(bool checked)
 {
-    localCfg.SetBool("Metroid.GameFeature.PowerUpPickupNoEffectPowerUps", checked);
-    localCfg.SetBool("Metroid.GameFeature.PowerUpPickupNoEffectDoubleDamage", checked);
-    localCfg.SetBool("Metroid.GameFeature.PowerUpPickupNoEffectCloak", checked);
-    localCfg.SetBool("Metroid.GameFeature.PowerUpPickupNoEffectDeathalt", checked);
+    localCfg.SetBool(MelonPrime::CfgKey::PowerUpPickupNoEffectPowerUps, checked);
+    localCfg.SetBool(MelonPrime::CfgKey::PowerUpPickupNoEffectDoubleDamage, checked);
+    localCfg.SetBool(MelonPrime::CfgKey::PowerUpPickupNoEffectCloak, checked);
+    localCfg.SetBool(MelonPrime::CfgKey::PowerUpPickupNoEffectDeathalt, checked);
     if (auto* core = emuThread->GetMelonPrimeCore())
         core->NotifyConfigChanged();
 }
@@ -2079,17 +2081,17 @@ void MainWindow::onInputConfigFinished(int res)
 {
     emuThread->emuUnpause();
 #ifdef MELONPRIME_DS
-    actMetroidFixSF->setChecked(localCfg.GetBool("Metroid.BugFix.FixShadowFreeze"));
-    actMetroidInGameTopScreenOnly->setChecked(localCfg.GetBool("Metroid.Visual.InGameTopScreenOnly"));
+    actMetroidFixSF->setChecked(localCfg.GetBool(MelonPrime::CfgKey::FixShadowFreeze));
+    actMetroidInGameTopScreenOnly->setChecked(localCfg.GetBool(MP_HUD_PROP_KEY_InGameTopScreenOnly));
     actMetroidDisableDoubleDamageMultiplier->setChecked(
-        localCfg.GetBool("Metroid.GameFeature.DisableDoubleDamageMultiplier"));
+        localCfg.GetBool(MelonPrime::CfgKey::DisableDoubleDamageMultiplier));
     actMetroidPowerUpPickupNoEffect->setChecked(
-        localCfg.GetBool("Metroid.GameFeature.PowerUpPickupNoEffectPowerUps"));
+        localCfg.GetBool(MelonPrime::CfgKey::PowerUpPickupNoEffectPowerUps));
     emuInstance->doOnAllWindows([](MainWindow* win)
         {
             if (win->hasMenu)
                 win->actMetroidInGameTopScreenOnly->setChecked(
-                    win->localCfg.GetBool("Metroid.Visual.InGameTopScreenOnly"));
+                    win->localCfg.GetBool(MP_HUD_PROP_KEY_InGameTopScreenOnly));
             win->localizeMenuText();
         });
 #endif

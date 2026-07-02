@@ -13,6 +13,7 @@
 #include "MelonPrimeInputConfig.h"
 #include "ui_MelonPrimeInputConfig.h"
 #include "Config.h"
+#include "../MelonPrimeHudPropSchema.inc"
 #ifdef MELONPRIME_CUSTOM_HUD
 #include "MelonPrimeHudRender.h"
 #endif
@@ -101,10 +102,10 @@ void MelonPrimeInputConfig::applyVisualPreview()
     m_applyPreviewActive = true;
 
     Config::Table& instcfg = emuInstance->getLocalConfig();
-    instcfg.SetBool("Metroid.Visual.CustomHUD",              ui->cbMetroidEnableCustomHud->isChecked());
-    instcfg.SetBool("Metroid.Visual.InGameAspectRatio",      ui->cbMetroidInGameAspectRatio->isChecked());
-    instcfg.SetInt ("Metroid.Visual.InGameAspectRatioMode",  ui->comboMetroidInGameAspectRatioMode->currentIndex());
-    instcfg.SetBool("Metroid.Visual.ClipCursorToBottomScreenWhenNotInGame", ui->cbMetroidClipCursorToBottomScreenWhenNotInGame->isChecked());
+    instcfg.SetBool(MP_HUD_PROP_KEY_CustomHUD,              ui->cbMetroidEnableCustomHud->isChecked());
+    instcfg.SetBool(MP_HUD_PROP_KEY_InGameAspectRatio,      ui->cbMetroidInGameAspectRatio->isChecked());
+    instcfg.SetInt (MP_HUD_PROP_KEY_InGameAspectRatioMode,  ui->comboMetroidInGameAspectRatioMode->currentIndex());
+    instcfg.SetBool(MP_HUD_PROP_KEY_ClipCursorToBottomScreenWhenNotInGame, ui->cbMetroidClipCursorToBottomScreenWhenNotInGame->isChecked());
 
     // Write all programmatic HUD widget values to config
     for (auto& [key, widget] : m_hudWidgets) {

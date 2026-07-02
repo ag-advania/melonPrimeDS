@@ -282,7 +282,7 @@ void ARM9Hook_Install(
     constexpr bool enableNativeBipedFire = false;
 #endif
     const bool enableNoxusBlade =
-        cfg.GetBool("Metroid.BugFix.FixNoxusBladePersistence");
+        cfg.GetBool(MelonPrime::CfgKey::FixNoxusBladePersistence);
     const bool enableShadowFreeze = cfg.GetBool(CfgKey::FixShadowFreeze);
     const bool enableTransformGate = cfg.GetBool(CfgKey::DirectAltFormTransform);
     const bool enableWeaponSwitch =
