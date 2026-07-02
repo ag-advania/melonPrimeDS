@@ -33,7 +33,9 @@ protected:
 
     // 9-point anchor + offset → DS-space QPoint (0-255, 0-191)
     static QPoint dsPos(int anchor, int ofsX, int ofsY) {
-        return QPoint((anchor % 3) * 128 + ofsX, (anchor / 3) * 96 + ofsY);
+        int x = 0, y = 0;
+        MelonPrime::HudGeometry::ApplyAnchor(anchor, ofsX, ofsY, x, y);
+        return QPoint(x, y);
     }
 
     // Apply DS-space transform (call after drawBackground, before DS-space drawing)
@@ -48,17 +50,14 @@ protected:
 
     // Alignment-adjusted X in DS-space: 0=left, 1=center, 2=right
     int alignedX(int anchorX, int align, int textW) const {
-        if (align == 1) return anchorX - textW / 2;
-        if (align == 2) return anchorX - textW;
-        return anchorX;
+        return MelonPrime::HudGeometry::AlignedTextXInt(anchorX, align, textW);
     }
 
     // Draw a gauge bar in DS-space at 50% fill
     static void drawGaugeDS(QPainter& p, int x, int y, const QColor& color, int orient, int len, int wid, int align = 0) {
         if (len <= 0) len = 28;
         if (wid <= 0) wid = 3;
-        if (orient == 0) x -= len * align / 2;
-        else             y -= len * align / 2;
+        MelonPrime::HudGeometry::ApplyGaugeAlign(x, y, orient, len, align);
         int fw = (orient == 0) ? len / 2 : wid;
         int fh = (orient == 0) ? wid    : len / 2;
         int fx = x;

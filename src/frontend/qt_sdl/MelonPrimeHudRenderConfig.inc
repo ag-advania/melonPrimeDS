@@ -530,14 +530,7 @@ static void LoadColorRamp(HudColorRamp& r, Config::Table& cfg, const HudColorRam
 static inline void ApplyAnchor(int anchor, int offsetX, int offsetY,
                                 int& outX, int& outY, float topStretchX = 1.0f)
 {
-    static constexpr int H = 192;
-    const int col = anchor % 3;
-    const float baseX = (col == 0) ? -(topStretchX - 1.0f) * 128.0f
-                      : (col == 1) ?  128.0f
-                      :               128.0f * (topStretchX + 1.0f);
-    const int baseY = (anchor / 3 == 0) ? 0 : (anchor / 3 == 1) ? H / 2 : H;
-    outX = static_cast<int>(baseX) + offsetX;
-    outY = baseY + offsetY;
+    HudGeometry::ApplyAnchor(anchor, offsetX, offsetY, outX, outY, topStretchX);
 }
 
 static void LoadHpConfig(HpHudConfig& hp, Config::Table& cfg)
@@ -1087,4 +1080,3 @@ static void RefreshCachedConfig(Config::Table& cfg, float topStretchX = 1.0f, fl
     ++s_cacheEpoch;
     if (s_cacheEpoch == 0) s_cacheEpoch = 1;
 }
-

@@ -41,6 +41,7 @@
 #include "ui_MelonPrimeInputConfig.h"
 #include "Config.h"
 #include "MelonPrimeDef.h"
+#include "../MelonPrimeHudGeometry.h"
 #include "../MelonPrimeHudPropSchema.inc"
 #include "MelonPrimeLocalization.h"
 #include "toml/toml.hpp"
