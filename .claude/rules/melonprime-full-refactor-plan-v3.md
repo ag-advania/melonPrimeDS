@@ -2,7 +2,7 @@
 
 **作成日:** 2026-07-02
 **対象:** master（zip展開版で実測。実行は実gitリポジトリ + Windows MinGW環境で行うこと）
-**ステータス:** 進行中（Phase 5 完了）
+**ステータス:** 進行中（Phase 6 完了）
 **前提:** [V1計画（2026-06-11完了）](completed/melonprime-full-refactor-plan.md) /
 [V2計画（2026-06-11完了）](completed/melonprime-full-refactor-plan-v2.md) の後継。
 V1/V2 が解消した負債（パッチレジストリ / StaticWordPatch / ROMアドレス X-macro / HUDプロパティスキーマ /
@@ -334,7 +334,7 @@ Screen.h 15（`MELONPRIME` 出現数）。やる場合は Screen.cpp / Window.cp
 | 3 | HUD プレビュー共有化（本丸B） | 完了（3cは見送り判断） | 2026-07-02 | `MelonPrimeHudPreviewDriftPhase3a.md` を作成し、runtime / in-game edit / dialog preview の乖離を棚卸し。`MelonPrimeHudGeometry.h` を新設し、アンカー解決・text align・gauge relative position/alignmentをQt非依存の純関数として共有。runtime `ApplyAnchor` / `CalcAlignedTextX` / `CalcGaugePos` と dialog preview `dsPos` / `alignedX` / `drawGaugeDS` は同じ helper を使用し、dialog側の整数丸めは維持。runtime `CachedHudConfig` の公開化は dirty-rect/cache/font/crosshair事前計算に絡むため見送り、dialog previewの簡略描画はPhase3aの現状維持対象として温存。ローカル macOS build 成功。手動 S9/S10/S16 は継続回帰項目。 |
 | 4 | migration 一元化 + legacy 決着 | 完了 | 2026-07-02 | `MelonPrimeMigrationLedgerPhase4.md` を作成し、`InstantAimFollow` 互換読み、pre-anchor HUD migration、`HudFontSize` migration、LowLatency/WeaponSwitch/BipedFire/Zoom/DirectTransform の enum/gate 変換を棚卸し。最新ローカルタグは `Release3.4.1`（2026-06-27）だが、未保存の旧TOMLユーザーが post-V3 build へ直接移行するケースを壊さないため `InstantAimFollow` 削除は保留し、「post-V3 release で1回保存機会を与えた後に再判定」と決定。`EmuInstance.cpp` のアンカー migration 判定を `ShouldMigrateLegacyHudAnchors()` に整理（挙動不変）。ローカル macOS build 成功。S17 は削除なしのためコードパスレビュー扱い、将来の削除コミットで migrated/unmigrated TOML 実機確認必須。 |
 | 5 | ファイル整理（任意） | 完了 | 2026-07-02 | `MelonPrimeDeclutterPhase5.md` を作成し、肥大ファイルを再計測。`MelonPrime.cpp` は984行で1,000行のsoft threshold手前のため `.inc` 化せず、config/platform setup・lifecycle reset・per-frame hook の節見出しだけ追加。`InputConfig.cpp` は1,160行でV2目標1,200行以内、残る非binding config操作は migration / developer-only / enum transform / invalidate-couple / renderer preset / preview/schema dynamic path と確認し温存。`HudRenderConfig.inc` / `HudRenderRuntime.inc` は既存バナーで所有境界が十分なため分割なし。Localization duplicate scan は `kTranslations` 675行中5件（短語の文脈違い）で、機械統合は見送り。 |
-| 6 | upstream 統合点（任意） | 未着手 | — | — |
+| 6 | upstream 統合点（任意） | 完了（スキップ判断） | 2026-07-02 | `MelonPrimeUpstreamIntegrationPhase6.md` を作成し、upstream-owned frontend ファイルの `MELONPRIME` 出現数を再計測（EmuThread.cpp 48 / Screen.cpp 29 / Window.cpp 20 / Config.cpp 17 / EmuInstance.h 16 / Screen.h 15）。現時点ではupstream merge targetがなく、残るブロックは機能的hook siteであり、追加 `.inc` 化は所有/順序コストの方が大きいと判断してコード抽出はスキップ。次回upstream mergeで繰り返しconflict hotspotになった連続自己完結ブロックのみ再検討する。 |
 | 7 | ドキュメント + 最終計測 | 未着手 | — | — |
 
 ### Phase 0 計測値（実リポジトリ実測 2026-07-02）

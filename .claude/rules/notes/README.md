@@ -15,3 +15,4 @@ Implementation/investigation notes moved out of `src/frontend/qt_sdl/` on 2026-0
 - [MelonPrimeHudPreviewDriftPhase3a.md](MelonPrimeHudPreviewDriftPhase3a.md) — V3 Phase 3a runtime/edit/dialog HUD preview drift baseline
 - [MelonPrimeMigrationLedgerPhase4.md](MelonPrimeMigrationLedgerPhase4.md) — V3 Phase 4 migration ledger and legacy-key deletion decisions
 - [MelonPrimeDeclutterPhase5.md](MelonPrimeDeclutterPhase5.md) — V3 Phase 5 file-size, binding, and localization declutter audit
+- [MelonPrimeUpstreamIntegrationPhase6.md](MelonPrimeUpstreamIntegrationPhase6.md) — V3 Phase 6 upstream-owned hook-site recount and skip decision
