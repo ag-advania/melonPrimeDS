@@ -118,7 +118,8 @@ void MelonPrimeInputConfig::saveConfig()
             MelonPrime::CfgKey::ZoomInputMethod,
             zoomMethod);
     }
-    // Legacy key migration — planned removal after the next release.
+    // Legacy key migration. Keep until the first post-V3 release gives old
+    // configs a save cycle; see the Phase 4 migration ledger.
     // Do not add new reads.
     // Keep the legacy InstantAimFollow bool off in public builds. Developer
     // builds may still mirror the developer-only mode for local test configs.

@@ -53,6 +53,18 @@
 #include "MelonPrimeDef.h"
 #include "MelonPrimeHudPropSchema.inc"
 
+namespace {
+
+bool ShouldMigrateLegacyHudAnchors(Config::Table& cfg)
+{
+    // HudHpAnchor absent + HudHpX present identifies pre-anchor configs
+    // without touching fresh configs that have not saved any HUD keys yet.
+    return !cfg.HasKey(MP_HUD_PROP_KEY_HudHpAnchor) &&
+           cfg.HasKey(MP_HUD_PROP_KEY_HudHpX);
+}
+
+} // namespace
+
 namespace MelonPrime {
     uint32_t globalChecksum = 0;
     uint32_t globalGameCode = 0;
@@ -84,11 +96,8 @@ EmuInstance::EmuInstance(int inst) : deleting(false),
 {
     consoleType = globalCfg.GetInt("Emu.ConsoleType");
 
-    // Migrate pre-anchor-system configs. Detection: HudHpAnchor absent AND
-    // HudHpX explicitly saved — the latter distinguishes old configs from a
-    // completely fresh/blank config (which has neither key yet).
-    if (!localCfg.HasKey(MP_HUD_PROP_KEY_HudHpAnchor) &&
-         localCfg.HasKey(MP_HUD_PROP_KEY_HudHpX))
+    // Migrate pre-anchor-system configs.
+    if (ShouldMigrateLegacyHudAnchors(localCfg))
     {
         // Setting all screen-anchor keys to 0 (TL, base 0,0) makes old
         // absolute X/Y values work correctly as offsets from the TL corner.
