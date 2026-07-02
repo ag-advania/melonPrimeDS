@@ -18,6 +18,8 @@
 #include "MelonPrimeRawInputState.h"
 #elif defined(__APPLE__)
 #include "MelonPrimeRawInputMacFilter.h"
+#elif defined(__linux__)
+#include "MelonPrimeRawInputLinuxFilter.h"
 #endif
 
 // Unity-owned hook fragments in this file:
@@ -193,6 +195,12 @@ namespace MelonPrime {
         // manager is unavailable (Input Monitoring permission not granted).
         if (m_macRawFilter && m_macRawFilter->isAvailable()) {
             m_macRawFilter->fetchMouseDelta(m_input.mouseX, m_input.mouseY);
+        } else
+#elif defined(__linux__)
+        // RawInput-equivalent path: XInput2 RawMotion on X11. Wayland and
+        // unavailable XInput2 fall back to QCursor center-delta below.
+        if (m_linuxRawFilter && m_linuxRawFilter->isAvailable()) {
+            m_linuxRawFilter->fetchMouseDelta(m_input.mouseX, m_input.mouseY);
         } else
 #endif
         {

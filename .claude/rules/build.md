@@ -34,9 +34,7 @@ cmake --build build-mac --parallel 4
 The bundle is produced at `build-mac/melonPrimeDS.app`.
 
 macOS platform notes:
-- `MelonPrimeRawInputState.cpp` / `MelonPrimeRawWinInternal.cpp` are `#ifdef _WIN32`-guarded
-  (empty TUs on macOS); `MelonPrimeRawInputWinFilter.cpp` / `MelonPrimeRawHotkeyVkBinding.cpp`
-  are removed from the source list on APPLE.
+- Windows-only RawInput sources are removed from the source list on APPLE.
 - The RawInput-equivalent aim path is `MelonPrimeRawInputMacFilter.{h,cpp}` (IOHIDManager,
   `#ifdef __APPLE__`-guarded TU). It needs the macOS **Input Monitoring** permission; when the
   permission is denied the aim path falls back to the QCursor center-delta method automatically.
@@ -46,6 +44,15 @@ macOS platform notes:
   per-frame cursor recenter (`QCursor::setPos`) instead.
 - Frame pacing uses the same portable SDL hybrid sleep+spin limiter; the spin loop issues
   `pause`/`yield` on x86/ARM (P-11 timer-resolution setup is Windows-only and not needed on macOS).
+
+Linux platform notes:
+- Windows/macOS native input sources are removed from Linux builds.
+- The RawInput-equivalent aim path is `MelonPrimeRawInputLinuxFilter.{h,cpp}` (XInput2
+  `XI_RawMotion` on X11). It captures only relative mouse X/Y deltas; mouse buttons and keyboard
+  hotkeys stay on the Qt/SDL path to avoid duplicate press edges.
+- Wayland does not expose the needed global raw mouse stream to normal clients. On Wayland, missing
+  XInput2, or unavailable X11 display, the aim path falls back to the QCursor center-delta method.
+- Linux builds need the XInput2 development library (`libxi-dev` on Ubuntu).
 
 ## Windows Build Command
 Windows-only AI build command. Do not rebuild, bootstrap, or reinstall `vcpkg/` unless the user explicitly asks for it.

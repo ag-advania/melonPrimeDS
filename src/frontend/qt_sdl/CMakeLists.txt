@@ -5,6 +5,16 @@ include(FixInterfaceIncludes)
 set(MELONPRIME_WINDOWS_ONLY_SOURCES
     MelonPrimeRawInputWinFilter.cpp
     MelonPrimeRawHotkeyVkBinding.cpp
+    MelonPrimeRawInputState.cpp
+    MelonPrimeRawWinInternal.cpp
+)
+
+set(MELONPRIME_MACOS_ONLY_SOURCES
+    MelonPrimeRawInputMacFilter.cpp
+)
+
+set(MELONPRIME_LINUX_ONLY_SOURCES
+    MelonPrimeRawInputLinuxFilter.cpp
 )
 
 set(SOURCES_QT_SDL
@@ -68,12 +78,8 @@ set(SOURCES_QT_SDL
     #rawinput/rawinput_common.c
     #RawInputThread.cpp
     ${MELONPRIME_WINDOWS_ONLY_SOURCES}
-
-    MelonPrimeRawInputState.cpp
-    MelonPrimeRawWinInternal.cpp
-    # Self-guarded by #ifdef __APPLE__ (empty TU elsewhere), same pattern as
-    # the two _WIN32-guarded files above.
-    MelonPrimeRawInputMacFilter.cpp
+    ${MELONPRIME_MACOS_ONLY_SOURCES}
+    ${MELONPRIME_LINUX_ONLY_SOURCES}
 
     MelonPrimeGameRomDetect.cpp
     MelonPrimeInGame.cpp
@@ -166,20 +172,27 @@ add_compile_definitions(MELONPRIME_DS) # MelonPrimeDS
 add_compile_definitions(MELONPRIME_CUSTOM_HUD ) # MelonPrimeDS
 
 if (WIN32)
-    # No Windows-specific source exclusions are needed here.
+    # No Windows RawInput source exclusions are needed here.
+    list(REMOVE_ITEM SOURCES_QT_SDL
+        ${MELONPRIME_MACOS_ONLY_SOURCES}
+        ${MELONPRIME_LINUX_ONLY_SOURCES}
+    )
 elseif (APPLE)
     # Disable the Windows-only raw input sources on macOS.
     list(REMOVE_ITEM SOURCES_QT_SDL
         #rawinput/rawinput_common.c
         #RawInputThread.cpp
         ${MELONPRIME_WINDOWS_ONLY_SOURCES}
+        ${MELONPRIME_LINUX_ONLY_SOURCES}
     )
 else()
-    # Disable the Windows-only raw input sources on Linux.
+    # Linux has its own XInput2 RawMotion path. Disable the Windows and macOS
+    # native input sources; Wayland/non-X11 falls back to the Qt/QCursor path.
     list(REMOVE_ITEM SOURCES_QT_SDL
         #rawinput/rawinput_common.c
         #RawInputThread.cpp
         ${MELONPRIME_WINDOWS_ONLY_SOURCES}
+        ${MELONPRIME_MACOS_ONLY_SOURCES}
     )
 endif()
 
@@ -274,7 +287,7 @@ elseif (APPLE)
         PROPERTIES COMPILE_OPTIONS "-Wno-deprecated-declarations"
     )
 else()
-    find_package(X11 REQUIRED)
+    find_package(X11 REQUIRED COMPONENTS Xi)
     find_package(EGL REQUIRED)
 
     option(ENABLE_WAYLAND "Enable Wayland support" ON)
@@ -303,8 +316,8 @@ else()
         ../glad/glad_egl.c
         ../glad/glad_glx.c  
     )
-    target_link_libraries(melonDS PRIVATE "${X11_LIBRARIES}" "${EGL_LIBRARIES}")
-    target_include_directories(melonDS PRIVATE "${X11_INCLUDE_DIR}")
+    target_link_libraries(melonDS PRIVATE "${X11_LIBRARIES}" "${X11_Xi_LIB}" "${EGL_LIBRARIES}")
+    target_include_directories(melonDS PRIVATE "${X11_INCLUDE_DIR}" "${X11_Xi_INCLUDE_PATH}")
     add_compile_definitions(QAPPLICATION_CLASS=QApplication)
 endif()
 
