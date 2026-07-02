@@ -328,7 +328,7 @@ Screen.h 15（`MELONPRIME` 出現数）。やる場合は Screen.cpp / Window.cp
 
 | Phase | 内容 | 状態 | 完了日 | 結果メモ |
 |---|---|---|---|---|
-| 0 | ベースライン + 監査 CI 化 | 実装中（CI検証待ち） | 2026-07-02 | 実リポジトリで再計測。Windows workflow に監査ステップを追加し、非 canonical `"Metroid.*"` リテラル予算 519 を初期値として固定。schema generator の現行 crosshair count / side-panel outline 検出漏れを補正し、再生成出力を更新。 |
+| 0 | ベースライン + 監査 CI 化 | 完了 | 2026-07-02 | 実リポジトリで再計測。Windows workflow に監査ステップを追加し、非 canonical `"Metroid.*"` リテラル予算 519 を初期値として固定。schema generator の現行 crosshair count / side-panel outline 検出漏れを補正し、再生成出力を更新。`ci/phase0-refactor-audits` の `cdcb5fde` で Windows/macOS/Ubuntu/BSD 全 workflow 成功、Windows の audit/schema/build/upload 各 step 成功。 |
 | 1 | 死活整理・V2 検証消し込み | 未着手 | — | — |
 | 2 | リテラル解消 + ラチェット固定（本丸A） | 未着手 | — | — |
 | 3 | HUD プレビュー共有化（本丸B） | 未着手 | — | — |
@@ -355,7 +355,11 @@ Screen.h 15（`MELONPRIME` 出現数）。やる場合は Screen.cpp / Window.cp
 - unity `.inc`: 50
 - ローカル macOS バイナリサイズ: 7,064,496 bytes
   (`build-mac/melonPrimeDS.app/Contents/MacOS/melonPrimeDS`)
-- Windows exe サイズ / Windows CI: Phase 0 CI push 後に GitHub Actions で確認
+- Windows exe サイズ: 50,150,912 bytes
+  (`melonPrimeDS-windows-x86_64` artifact from `ci/phase0-refactor-audits` run 28587404877)
+- CI 検証: `cdcb5fde` on `ci/phase0-refactor-audits`
+  - Windows: audit config/defaults + HUD parity + `.inc` ownership + literal budget + schema regeneration + build + artifact upload 成功
+  - macOS / Ubuntu / BSD: 成功
 
 ---
 
