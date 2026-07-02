@@ -12,3 +12,4 @@ Implementation/investigation notes moved out of `src/frontend/qt_sdl/` on 2026-0
 - [CustomHudHelmetSpawnFlash.md](CustomHudHelmetSpawnFlash.md) — Custom HUD spawn helmet flash: root cause (game clamp early-outs in spawn states), host-side BG1-3 layer clamp fix, rejected Full-NoHud approaches
 - [MelonPrimeHudPropSchemaPhase2a.md](MelonPrimeHudPropSchemaPhase2a.md) — V2 Phase 2a generated HUD property schema extraction report and surface drift baseline
 - [MelonPrimeLiteralClassificationPhase2a.md](MelonPrimeLiteralClassificationPhase2a.md) — V3 Phase 2a non-canonical `"Metroid.*"` literal classification and residual budget
+- [MelonPrimeHudPreviewDriftPhase3a.md](MelonPrimeHudPreviewDriftPhase3a.md) — V3 Phase 3a runtime/edit/dialog HUD preview drift baseline

@@ -75,26 +75,15 @@ static inline const QColor& EvalColorRamp(const HudColorRamp& r, uint16_t value,
 
 static float CalcAlignedTextX(int anchorX, int align, float textW)
 {
-    switch (align) {
-    case 1: return anchorX - textW * 0.5f;
-    case 2: return anchorX - textW;
-    default: return static_cast<float>(anchorX);
-    }
+    return HudGeometry::AlignedTextX(static_cast<float>(anchorX), align, textW);
 }
 
 static void CalcGaugePos(float textX, float textY, float textW, float textH, int anchor,
                          int ofsX, int ofsY, float gaugeLen, float gaugeWid, int ori,
                          int& outX, int& outY)
 {
-    const float gL = gaugeLen, gW = gaugeWid;
-    switch (anchor) {
-    case 0: outX = static_cast<int>(textX) + ofsX;                       outY = static_cast<int>(textY) + 2 + ofsY; break;
-    case 1: outX = static_cast<int>(textX) + ofsX;                       outY = static_cast<int>(std::round(textY - textH - (ori==0?gW:gL))) + ofsY; break;
-    case 2: outX = static_cast<int>(std::round(textX + textW)) + ofsX;   outY = static_cast<int>(std::round(textY - textH*0.5f - (ori==0?gW:gL)*0.5f)) + ofsY; break;
-    case 3: outX = static_cast<int>(std::round(textX - (ori==0?gL:gW))) + ofsX; outY = static_cast<int>(std::round(textY - textH*0.5f - (ori==0?gW:gL)*0.5f)) + ofsY; break;
-    case 4: outX = static_cast<int>(std::round(textX + textW*0.5f - (ori==0?gL:gW)*0.5f)) + ofsX; outY = static_cast<int>(std::round(textY - textH*0.5f - (ori==0?gW:gL)*0.5f)) + ofsY; break;
-    default: outX = static_cast<int>(textX) + ofsX;                      outY = static_cast<int>(textY) + 2 + ofsY; break;
-    }
+    HudGeometry::CalcGaugePos(textX, textY, textW, textH, anchor, ofsX, ofsY,
+                              gaugeLen, gaugeWid, ori, outX, outY);
 }
 
 // Inverse of CalcGaugePos: given the gauge's effective top-left and dimensions,
@@ -1467,4 +1456,3 @@ static void DrawCrosshair(QPainter* p, melonDS::u8* ram,
     p->setOpacity(savedOpacity);
     s_chCrosshairDrawnLastFrame = true;
 }
-
