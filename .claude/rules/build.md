@@ -13,8 +13,46 @@
   - Its `MelonPrimeHudConfigOnScreen*.inc` fragments are also unity include fragments pulled in by `MelonPrimeHudConfigOnScreenUnity.inc`; do not add those to `CMakeLists.txt` either
 - `MelonPrimeHudScreenCpp*.inc` files are unity include fragments pulled into `Screen.cpp`; do not add them to `CMakeLists.txt`
 - `MelonPrimeEmuThread*.inc` files are unity include fragments pulled into `EmuThread.cpp`; do not add them to `CMakeLists.txt`
-- The project has been built on Windows and via MinGW cross-compilation from WSL
-- `vcpkg/` is used for dependencies in this repo setup
+- The project has been built on Windows and via MinGW cross-compilation from WSL, and (since 2026-07) natively on macOS (Intel) — see the macOS Build section below
+- `vcpkg/` is used for dependencies in the Windows setup; the macOS build uses Homebrew packages with `USE_VCPKG=OFF` (the default)
+
+## macOS Build (Homebrew, Intel/ARM)
+
+Native macOS build added 2026-07. Uses Homebrew dependencies; vcpkg is not involved
+(`USE_VCPKG` defaults `OFF`).
+
+1. Dependencies (one-time): `brew install cmake ninja pkgconf sdl2 qt libarchive enet zstd faad2 libslirp`
+   (recent Homebrew installs `sdl2-compat`, which satisfies the `sdl2` pkg-config check).
+2. Configure + build from the repo root:
+
+```zsh
+cmake -B build-mac -G Ninja -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_PREFIX_PATH="$(brew --prefix qt);$(brew --prefix libarchive)" -DUSE_QT6=ON
+cmake --build build-mac --parallel 4
+```
+
+The bundle is produced at `build-mac/melonPrimeDS.app`.
+
+macOS platform notes:
+- Windows-only RawInput sources are removed from the source list on APPLE.
+- The RawInput-equivalent aim path is `MelonPrimeRawInputMacFilter.{h,cpp}` (IOHIDManager,
+  `#ifdef __APPLE__`-guarded TU). It needs the macOS **Input Monitoring** permission; when the
+  permission is denied the aim path falls back to the QCursor center-delta method automatically.
+- Mouse buttons / keyboard hotkeys use the Qt event path (`EmuInstance::onMousePress` etc.) —
+  intentionally not HID-driven, to avoid double press edges (see MelonPrimeRawInputMacFilter.h).
+- Cursor clipping (`ClipCursor`) is Windows-only; on macOS the in-game path relies on the
+  per-frame cursor recenter (`QCursor::setPos`) instead.
+- Frame pacing uses the same portable SDL hybrid sleep+spin limiter; the spin loop issues
+  `pause`/`yield` on x86/ARM (P-11 timer-resolution setup is Windows-only and not needed on macOS).
+
+Linux platform notes:
+- Windows/macOS native input sources are removed from Linux builds.
+- The RawInput-equivalent aim path is `MelonPrimeRawInputLinuxFilter.{h,cpp}` (XInput2
+  `XI_RawMotion` on X11). It captures only relative mouse X/Y deltas; mouse buttons and keyboard
+  hotkeys stay on the Qt/SDL path to avoid duplicate press edges.
+- Wayland does not expose the needed global raw mouse stream to normal clients. On Wayland, missing
+  XInput2, or unavailable X11 display, the aim path falls back to the QCursor center-delta method.
+- Linux builds need the XInput2 development library (`libxi-dev` on Ubuntu).
 
 ## Windows Build Command
 Windows-only AI build command. Do not rebuild, bootstrap, or reinstall `vcpkg/` unless the user explicitly asks for it.

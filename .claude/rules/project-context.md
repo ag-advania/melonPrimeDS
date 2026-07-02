@@ -19,22 +19,22 @@ Current source region behavior:
 - Y center is hunter-specific via `kBtmOverlaySrcCenterY[]` in `MelonPrimeConstants.h`
 - Radius is configurable via `Metroid.Visual.BtmOverlaySrcRadius` (default `46`)
 
-Config keys (`Instance*.Metroid.Visual.*`):
+Config keys (`Instance*.Metroid.Visual.*`; defaults mirror `MelonPrimeHudPropSchema.inc` — that schema is the source of truth when this table drifts):
 
 | Key | Default | Description |
 |-----|---------|-------------|
-| `BtmOverlayEnable` | false | Enable overlay |
+| `BtmOverlayEnable` | true | Enable overlay |
 | `BtmOverlayAnchor` | 2 (TR) | 9-point anchor for overlay destination |
-| `BtmOverlayDstX` | 190 | X offset from anchor |
-| `BtmOverlayDstY` | 0 | Y offset from anchor |
+| `BtmOverlayDstX` | -61 | X offset from anchor |
+| `BtmOverlayDstY` | 2 | Y offset from anchor |
 | `BtmOverlayDstSize` | 64 | Output size of the circular overlay |
 | `BtmOverlayOpacity` | 0.85 | Opacity (`0.0-1.0`) |
 | `BtmOverlaySrcRadius` | 46 | Source radius on the DS bottom screen |
-| `BtmOverlayRadarColorR` | 185 | Radar frame SVG tint color red (independent) |
-| `BtmOverlayRadarColorG` | 0 | Radar frame SVG tint color green |
-| `BtmOverlayRadarColorB` | 5 | Radar frame SVG tint color blue |
+| `BtmOverlayRadarColorR` | 80 | Radar frame SVG tint color red (independent) |
+| `BtmOverlayRadarColorG` | 152 | Radar frame SVG tint color green |
+| `BtmOverlayRadarColorB` | 208 | Radar frame SVG tint color blue |
 | `BtmOverlayRadarColorUseHunter` | false | Use current hunter's color instead of manual frame color |
-| `BtmOverlayFrameOutlineEnable` | true | Enable/disable SVG frame outline behind radar |
+| `BtmOverlayFrameOutline` | false | Enable/disable SVG frame outline behind radar |
 
 ### 2. Custom HUD System
 Drawn with `QPainter` over the top screen buffer. The current HUD system includes:

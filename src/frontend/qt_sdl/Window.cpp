@@ -41,6 +41,7 @@
 #include <QVector>
 #include <QCommandLineParser>
 #include <QDesktopServices>
+#include <QSocketNotifier>
 
 #include "main.h"
 #include "CheatsDialog.h"
@@ -892,6 +893,11 @@ void MainWindow::saveEnabled(bool enabled)
 
 void MainWindow::closeEvent(QCloseEvent* event)
 {
+#ifdef MELONPRIME_DS
+    if (panel)
+        panel->beginClose();
+#endif
+
     if (emuInstance)
     {
         if (windowID == 0)

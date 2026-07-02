@@ -1,9 +1,10 @@
 #ifndef MELON_PRIME_ROM_ADDR_TABLE_H
 #define MELON_PRIME_ROM_ADDR_TABLE_H
 
-#include <cstdint>
 #include <array>
 #include <cassert>
+#include <cstddef>
+#include <cstdint>
 
 namespace MelonPrime {
 
@@ -16,7 +17,7 @@ namespace MelonPrime {
     }
 
     template<typename T>
-    using RomTable = std::array<T, static_cast<size_t>(RomGroup::COUNT)>;
+    using RomTable = std::array<T, static_cast<std::size_t>(RomGroup::COUNT)>;
 
     // =========================================================================
     //  Single-source address definition (X-macro)
@@ -277,7 +278,7 @@ namespace MelonPrime {
 #define MP_ROM_EMIT_INIT(kind, field, Name, jp10, jp11, us10, us11, eu10, eu11, kr10) \
     LIST_##Name[i],
 
-    constexpr RomAddresses CreateRomAddress(size_t i) {
+    constexpr RomAddresses CreateRomAddress(std::size_t i) {
         return {
             static_cast<uint8_t>(i),
             MP_ROM_FIELDS_CORE(MP_ROM_EMIT_INIT)
@@ -308,7 +309,7 @@ namespace MelonPrime {
     // Permanent sanity check: each instance's romGroupIndex equals its table index.
     namespace RomAddrDetail {
         constexpr bool RomGroupIndexOk() noexcept {
-            for (size_t i = 0; i < ROM_INSTANCES.size(); ++i)
+            for (std::size_t i = 0; i < ROM_INSTANCES.size(); ++i)
                 if (ROM_INSTANCES[i].romGroupIndex != static_cast<uint8_t>(i)) return false;
             return true;
         }
@@ -317,7 +318,7 @@ namespace MelonPrime {
                   "ROM_INSTANCES[i].romGroupIndex must equal i");
 
     [[nodiscard]] static inline const RomAddresses* getRomAddrsPtr(RomGroup group) noexcept {
-        const size_t idx = static_cast<size_t>(group);
+        const std::size_t idx = static_cast<std::size_t>(group);
         assert(idx < ROM_INSTANCES.size());
         return &ROM_INSTANCES[idx];
     }

@@ -2,6 +2,15 @@
 
 This document tracks the MelonPrime path from input capture to frame input state and final aim RAM writes.
 
+Platform scope: the sections below describe the Windows Raw Input path. On macOS (added
+2026-07), `MelonPrimeRawInputMacFilter.{h,cpp}` provides the RawInput-equivalent aim deltas via
+IOHIDManager (unaccelerated HID X/Y counts, fetch-and-clear at frame snapshot). On Linux/X11,
+`MelonPrimeRawInputLinuxFilter.{h,cpp}` provides the equivalent through XInput2 `XI_RawMotion`.
+Mouse buttons and keyboard hotkeys stay on the Qt event / SDL path (`EmuInstance::onMousePress`,
+`emuInstance->hotkeyMask`), and the QCursor center-delta method remains the fallback when the
+macOS Input Monitoring permission is not granted, Linux is running on Wayland, or XInput2 is
+unavailable. See the macOS/Linux notes in [build.md](build.md).
+
 ## 1. End-to-End Pipeline
 
 1. `RawInputWinFilter` / `InputState` capture RawInput (Windows).

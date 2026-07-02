@@ -84,6 +84,7 @@ public:
 
 #ifdef MELONPRIME_DS
     void unfocus();
+    void beginClose() { closing = true; }
 
 #ifdef MELONPRIME_CUSTOM_HUD
     std::optional<QRect> getTopScreenWidgetRect() const;
@@ -251,6 +252,7 @@ private:
     bool m_hasLastClipInGameState = false;
     bool m_lastClipFocusedState = false;
     bool m_hasLastClipFocusedState = false;
+    bool closing = false;
 #endif
 };
 
