@@ -84,6 +84,10 @@ namespace MelonPrime {
     MelonPrimeCore::~MelonPrimeCore() = default;
 #endif
 
+    // =========================================================================
+    // Runtime config and platform input setup
+    // =========================================================================
+
     void MelonPrimeCore::ReloadConfigFlags()
     {
         m_flags.assign(StateFlags::BIT_JOY2KEY, localCfg.GetBool(CfgKey::Joy2Key));
@@ -316,6 +320,10 @@ namespace MelonPrime {
         m_nativeAimDeltaY = 0;
     }
 
+    // =========================================================================
+    // Emulator lifecycle resets
+    // =========================================================================
+
     void MelonPrimeCore::OnEmuStart()
     {
         m_flags.packed = 0;
@@ -511,6 +519,10 @@ namespace MelonPrime {
     {
         return m_flags.test(StateFlags::BIT_ROM_DETECTED) && !m_flags.test(StateFlags::BIT_IN_GAME);
     }
+
+    // =========================================================================
+    // Per-frame hook and global hotkeys
+    // =========================================================================
 
     // 99%+ frames hit the early return (2 bit tests + branch).
     FORCE_INLINE void MelonPrimeCore::HandleGlobalHotkeys()
