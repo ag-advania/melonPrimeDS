@@ -16,6 +16,8 @@
 #ifdef _WIN32
 #include "MelonPrimeRawInputWinFilter.h"
 #include "MelonPrimeRawInputState.h"
+#elif defined(__APPLE__)
+#include "MelonPrimeRawInputMacFilter.h"
 #endif
 
 // Unity-owned hook fragments in this file:
@@ -185,9 +187,19 @@ namespace MelonPrime {
         m_scanShootKeyDown = ((hotDownMask >> HK_MetroidScanShoot) & 1ULL) != 0;
 
 #if !defined(_WIN32)
-        const QPoint currentPos = QCursor::pos();
-        m_input.mouseX = currentPos.x() - m_aimData.centerX;
-        m_input.mouseY = currentPos.y() - m_aimData.centerY;
+#if defined(__APPLE__)
+        // RawInput-equivalent path: unaccelerated HID deltas accumulated since
+        // the last snapshot. Falls back to the QCursor delta when the HID
+        // manager is unavailable (Input Monitoring permission not granted).
+        if (m_macRawFilter && m_macRawFilter->isAvailable()) {
+            m_macRawFilter->fetchMouseDelta(m_input.mouseX, m_input.mouseY);
+        } else
+#endif
+        {
+            const QPoint currentPos = QCursor::pos();
+            m_input.mouseX = currentPos.x() - m_aimData.centerX;
+            m_input.mouseY = currentPos.y() - m_aimData.centerY;
+        }
 #endif
 
         if constexpr (!kReentrant)
