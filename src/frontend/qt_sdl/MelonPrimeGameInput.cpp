@@ -385,6 +385,19 @@ namespace MelonPrime {
             m_isLayoutChangePending = false;
 #ifdef _WIN32
             if (m_rawFilter) m_rawFilter->discardDeltas();
+#else
+            const QPoint center = GetAdjustedCenter();
+            m_aimData.centerX = center.x();
+            m_aimData.centerY = center.y();
+            QCursor::setPos(center);
+
+#if defined(__APPLE__)
+            if (m_macRawFilter)
+                m_macRawFilter->resetAll();
+#elif defined(__linux__)
+            if (m_linuxRawFilter)
+                m_linuxRawFilter->resetAll();
+#endif
 #endif
         }
     }

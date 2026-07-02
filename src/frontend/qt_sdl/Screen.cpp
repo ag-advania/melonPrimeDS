@@ -24,6 +24,7 @@
 
 #include <QPaintEvent>
 #include <QPainter>
+#include <QCursor>
 
 #include <QDateTime>
 
@@ -277,6 +278,11 @@ void ScreenPanel::clipCursorToBottomScreen() {
 void ScreenPanel::clipCursorCenter1px() {
     setClipWanted(true);
     setCursor(Qt::BlankCursor);
+
+#if !defined(_WIN32)
+    if (isVisible() && window() && window()->isActiveWindow())
+        QCursor::setPos(mapToGlobal(rect().center()));
+#endif
 
 #ifdef _WIN32
     if (!isVisible() || !window() || !window()->isActiveWindow()) return;
