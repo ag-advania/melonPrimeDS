@@ -22,7 +22,7 @@ but active guidance has been consolidated into:
 
 ## Verification Note
 
-`ReadLints` was green for the Phase 4-8 edited files. Build verification from the agent session is
-not reliable because the shell runner returned no exit status for the build commands. Manual smoke
-checks S1-S15 remain continuing regression checks rather than blockers for closing this structural
-refactor.
+`ReadLints` was green for the Phase 4-8 edited files. V3 Phase 1 later verified the current tree
+containing these changes through Windows CI full configure/build and audit/schema checks
+(runs 28588126394 / 28587404877), plus a local macOS build. Manual smoke checks S1-S15 remain
+continuing regression checks rather than blockers for closing this structural refactor.
