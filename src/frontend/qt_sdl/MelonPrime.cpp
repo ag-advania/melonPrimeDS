@@ -951,7 +951,12 @@ namespace MelonPrime {
                 if (show) panel->unclip();
                 else {
                     panel->clipCursorCenter1px();
-#if !defined(_WIN32)
+#if defined(__APPLE__)
+                    // QCursor::setPos needs the Accessibility permission on
+                    // macOS (CGEventPost); CGWarp does not. See WarpCursorTo.
+                    if (hasCenter)
+                        MacWarpCursorGlobal(center.x(), center.y());
+#elif !defined(_WIN32)
                     if (hasCenter)
                         QCursor::setPos(center);
 #endif

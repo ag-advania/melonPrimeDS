@@ -58,13 +58,21 @@ The bundle is produced at `build-mac/melonPrimeDS.app`.
 
 macOS platform notes:
 - Windows-only RawInput sources are removed from the source list on APPLE.
-- The RawInput-equivalent aim path is `MelonPrimeRawInputMacFilter.{h,cpp}` (IOHIDManager,
-  `#ifdef __APPLE__`-guarded TU). It needs the macOS **Input Monitoring** permission; when the
-  permission is denied the aim path falls back to the QCursor center-delta method automatically.
+- The RawInput-equivalent aim path is `MelonPrimeRawInputMacFilter.{h,mm}` (`#ifdef __APPLE__`
+  TU, ObjC++/ARC). Backend order: **GCMouse** (GameController framework, macOS 11+, raw
+  unaccelerated deltas, **no TCC permission needed**, frontmost-only delivery) → **IOHIDManager**
+  (started only if no GCMouse appears within ~3s; needs the Input Monitoring permission, and
+  unsigned dev builds lose that TCC grant on every rebuild — the reason GCMouse is primary) →
+  QCursor center-delta fallback. `gcActive` gates the IOHID callback so the backends can never
+  double-count. Backend selection is logged to stderr as `[MelonPrime] mac input: ...`.
 - Mouse buttons / keyboard hotkeys use the Qt event path (`EmuInstance::onMousePress` etc.) —
   intentionally not HID-driven, to avoid double press edges (see MelonPrimeRawInputMacFilter.h).
 - Cursor clipping (`ClipCursor`) is Windows-only; on macOS the in-game path relies on the
-  per-frame cursor recenter (`QCursor::setPos`) instead.
+  per-frame cursor recenter instead. **The recenter must use
+  `MelonPrime::MacWarpCursorGlobal` (CGWarpMouseCursorPosition), never `QCursor::setPos`**:
+  Qt implements `setPos` with `CGEventPost`, which is silently dropped without the
+  Accessibility permission — a failed recenter re-applies the cursor-minus-center delta
+  every frame and spins the aim to the pitch limits (bug found 2026-07-03).
 - Frame pacing uses the same portable SDL hybrid sleep+spin limiter; the spin loop issues
   `pause`/`yield` on x86/ARM (P-11 timer-resolution setup is Windows-only and not needed on macOS).
 

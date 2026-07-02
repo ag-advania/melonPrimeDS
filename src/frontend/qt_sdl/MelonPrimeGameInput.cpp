@@ -37,6 +37,22 @@
 
 namespace MelonPrime {
 
+#if !defined(_WIN32)
+    // Recenter the OS cursor for the fallback (QCursor-delta) aim path.
+    // macOS: QCursor::setPos is CGEventPost-based and is silently dropped
+    // without the Accessibility permission — a failed recenter re-applies the
+    // cursor-minus-center delta every frame and spins the view to the pitch
+    // limits. CGWarpMouseCursorPosition needs no permission, so use it there.
+    static FORCE_INLINE void WarpCursorTo(int x, int y)
+    {
+#if defined(__APPLE__)
+        MacWarpCursorGlobal(x, y);
+#else
+        QCursor::setPos(x, y);
+#endif
+    }
+#endif
+
     alignas(64) static constexpr std::array<uint8_t, 16> MoveLUT = {
         0xF0, 0xB0, 0x70, 0xF0,  0xD0, 0x90, 0x50, 0xD0,
         0xE0, 0xA0, 0x60, 0xE0,  0xF0, 0xB0, 0x70, 0xF0,
@@ -389,7 +405,7 @@ namespace MelonPrime {
             const QPoint center = GetAdjustedCenter();
             m_aimData.centerX = center.x();
             m_aimData.centerY = center.y();
-            QCursor::setPos(center);
+            WarpCursorTo(center.x(), center.y());
 
 #if defined(__APPLE__)
             if (m_macRawFilter)
@@ -648,7 +664,7 @@ namespace MelonPrime {
             m_aimResidualY = resY;
 
 #if !defined(_WIN32)
-            QCursor::setPos(m_aimData.centerX, m_aimData.centerY);
+            WarpCursorTo(m_aimData.centerX, m_aimData.centerY);
 #endif
             return;
         }
@@ -657,7 +673,7 @@ namespace MelonPrime {
         const QPoint center = GetAdjustedCenter();
         m_aimData.centerX = center.x();
         m_aimData.centerY = center.y();
-        QCursor::setPos(center);
+        WarpCursorTo(center.x(), center.y());
 #endif
         m_isLayoutChangePending = false;
         m_aimResidualX = 0;
