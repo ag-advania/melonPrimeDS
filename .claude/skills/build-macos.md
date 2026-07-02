@@ -75,3 +75,20 @@ cmake --build build-mac --parallel 4
 ```
 
 The post-build bundling step uses `tools/mac-libs.rb`.
+
+## GitHub Actions
+
+The CI workflow is `.github/workflows/build-macos.yml`, adapted from upstream
+melonDS for the MelonPrimeDS bundle name. It builds both existing macOS presets:
+
+- `release-mac-x86_64`
+- `release-mac-arm64`
+
+The architecture-specific artifacts are zipped as `melonPrimeDS.app`, then the
+workflow combines them with `lipo` into a universal `melonPrimeDS.app`.
+
+If the bundle name or executable name changes, update all of these together:
+
+- `src/frontend/qt_sdl/CMakeLists.txt` `OUTPUT_NAME`
+- `res/melon.plist.in` `CFBundleExecutable`
+- `.github/workflows/build-macos.yml` bundle paths and `lipo` target
