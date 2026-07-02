@@ -2,7 +2,7 @@
 
 **作成日:** 2026-07-02
 **対象:** master（zip展開版で実測。実行は実gitリポジトリ + Windows MinGW環境で行うこと）
-**ステータス:** 未着手
+**ステータス:** 進行中（Phase 1 完了）
 **前提:** [V1計画（2026-06-11完了）](completed/melonprime-full-refactor-plan.md) /
 [V2計画（2026-06-11完了）](completed/melonprime-full-refactor-plan-v2.md) の後継。
 V1/V2 が解消した負債（パッチレジストリ / StaticWordPatch / ROMアドレス X-macro / HUDプロパティスキーマ /
@@ -329,7 +329,7 @@ Screen.h 15（`MELONPRIME` 出現数）。やる場合は Screen.cpp / Window.cp
 | Phase | 内容 | 状態 | 完了日 | 結果メモ |
 |---|---|---|---|---|
 | 0 | ベースライン + 監査 CI 化 | 完了 | 2026-07-02 | 実リポジトリで再計測。Windows workflow に監査ステップを追加し、非 canonical `"Metroid.*"` リテラル予算 519 を初期値として固定。schema generator の現行 crosshair count / side-panel outline 検出漏れを補正し、再生成出力を更新。`ci/phase0-refactor-audits` の `cdcb5fde` で Windows/macOS/Ubuntu/BSD 全 workflow 成功、Windows の audit/schema/build/upload 各 step 成功。 |
-| 1 | 死活整理・V2 検証消し込み | 未着手 | — | — |
+| 1 | 死活整理・V2 検証消し込み | 完了 | 2026-07-02 | `crosshair-smooth.md` は現行コード未実装（`CrosshairSmooth` / `chSmooth` は提案内のみ）と確認し、破棄ではなく保留提案として明記。V2 completed の Phase 2/3/4/5/6/8 は、V2当時の個別コミット再ビルドではなく、V2成果を含む現行treeが Windows CI run 28588126394 / 28587404877 の full configure/build + audit/schema checks とローカル macOS build を通過済みとして消し込み。公開 API 再スイープ: `RawInputWinFilter::Poll` 定義/呼び出しゼロ、`resetAllKeys`/`resetMouseButtons` は `InputState` 内部実装のみ、`drainMessagesOnly` は `drainPendingMessages()` 内で使用中のため維持。手動 S10 は V1/V2 と同じく継続回帰項目。 |
 | 2 | リテラル解消 + ラチェット固定（本丸A） | 未着手 | — | — |
 | 3 | HUD プレビュー共有化（本丸B） | 未着手 | — | — |
 | 4 | migration 一元化 + legacy 決着 | 未着手 | — | — |
