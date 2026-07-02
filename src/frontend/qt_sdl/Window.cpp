@@ -41,6 +41,7 @@
 #include <QVector>
 #include <QCommandLineParser>
 #include <QDesktopServices>
+#include <QSocketNotifier>
 
 #include "main.h"
 #include "CheatsDialog.h"
