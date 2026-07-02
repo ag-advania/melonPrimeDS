@@ -908,11 +908,44 @@ namespace MelonPrime {
     {
         auto* panel = emuInstance->getMainWindow()->panel;
         if (!panel) return;
-        QMetaObject::invokeMethod(panel, [panel, show]() {
-            panel->setCursor(show ? Qt::ArrowCursor : Qt::BlankCursor);
-            if (show) panel->unclip();
-            else panel->clipCursorCenter1px();
-            }, Qt::ConnectionType::QueuedConnection);
+
+#if !defined(_WIN32)
+        QPoint center;
+        bool hasCenter = false;
+
+        if (!show) {
+            center = GetAdjustedCenter();
+            m_aimData.centerX = center.x();
+            m_aimData.centerY = center.y();
+            hasCenter = true;
+
+#if defined(__APPLE__)
+            if (m_macRawFilter)
+                m_macRawFilter->resetAll();
+#elif defined(__linux__)
+            if (m_linuxRawFilter)
+                m_linuxRawFilter->resetAll();
+#endif
+        }
+#endif
+
+        QMetaObject::invokeMethod(panel,
+#if !defined(_WIN32)
+            [panel, show, center, hasCenter]() {
+#else
+            [panel, show]() {
+#endif
+                panel->setCursor(show ? Qt::ArrowCursor : Qt::BlankCursor);
+                if (show) panel->unclip();
+                else {
+                    panel->clipCursorCenter1px();
+#if !defined(_WIN32)
+                    if (hasCenter)
+                        QCursor::setPos(center);
+#endif
+                }
+            },
+            Qt::ConnectionType::QueuedConnection);
     }
 
     void MelonPrimeCore::FrameAdvanceCustom() { m_frameAdvanceFunc(); }
