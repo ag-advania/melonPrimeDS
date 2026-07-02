@@ -39,6 +39,18 @@ $expectedMultiParentMap = @{
         'src/NDS.cpp',
         'src/NDS.h'
     )
+    'melonprimehudpropschema.inc' = @(
+        'src/frontend/qt_sdl/Config.cpp',
+        'src/frontend/qt_sdl/InputConfig/MelonPrimeInputConfigHudTables.inc',
+        'src/frontend/qt_sdl/MelonPrimeHudConfigOnScreenDefs.inc',
+        'src/frontend/qt_sdl/MelonPrimeHudConfigOnScreenEdit.cpp',
+        'src/frontend/qt_sdl/MelonPrimeHudRender.cpp',
+        'src/frontend/qt_sdl/MelonPrimePatchOsdColor.cpp'
+    )
+    'melonprimeosdcolorschema.inc' = @(
+        'src/frontend/qt_sdl/InputConfig/MelonPrimeInputConfigHudDialogProps.inc',
+        'src/frontend/qt_sdl/MelonPrimePatchOsdColor.cpp'
+    )
 }
 
 function Test-SameStringSet {

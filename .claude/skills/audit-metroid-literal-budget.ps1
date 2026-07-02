@@ -45,7 +45,7 @@ foreach ($file in $sourceFiles) {
     }
 }
 
-$rows = @($rows | Sort-Object Count -Descending, File)
+$rows = @($rows | Sort-Object -Property @{ Expression = { $_.Count }; Descending = $true }, @{ Expression = { $_.File }; Ascending = $true })
 
 if ($Json) {
     [pscustomobject]@{
