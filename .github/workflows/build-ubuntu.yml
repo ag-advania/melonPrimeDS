@@ -91,28 +91,32 @@ jobs:
 
     steps:
     - name: Download x86_64 binary
-      uses: actions/download-artifact@v7
+      uses: actions/download-artifact@v8
+      continue-on-error: true
       with:
         name: melonPrimeDS-linux-x86_64.zip
         path: linux-x86_64
         skip-decompress: true
 
     - name: Download aarch64 binary
-      uses: actions/download-artifact@v7
+      uses: actions/download-artifact@v8
+      continue-on-error: true
       with:
         name: melonPrimeDS-linux-aarch64.zip
         path: linux-aarch64
         skip-decompress: true
 
     - name: Download x86_64 AppImage
-      uses: actions/download-artifact@v7
+      uses: actions/download-artifact@v8
+      continue-on-error: true
       with:
         name: melonPrimeDS-linux-appimage-x86_64.zip
         path: linux-appimage-x86_64
         skip-decompress: true
 
     - name: Download aarch64 AppImage
-      uses: actions/download-artifact@v7
+      uses: actions/download-artifact@v8
+      continue-on-error: true
       with:
         name: melonPrimeDS-linux-appimage-aarch64.zip
         path: linux-appimage-aarch64
@@ -120,11 +124,22 @@ jobs:
 
     - name: Bundle all Linux artifacts
       run: |
-        zip -j melonPrimeDS-linux-all.zip \
+        artifacts=()
+        for f in \
           linux-x86_64/melonPrimeDS-linux-x86_64.zip \
           linux-aarch64/melonPrimeDS-linux-aarch64.zip \
           linux-appimage-x86_64/melonPrimeDS-linux-appimage-x86_64.zip \
           linux-appimage-aarch64/melonPrimeDS-linux-appimage-aarch64.zip
+        do
+          if [ -f "$f" ]; then
+            artifacts+=("$f")
+          fi
+        done
+        if [ ${#artifacts[@]} -eq 0 ]; then
+          echo "No Linux artifacts available to bundle"
+          exit 1
+        fi
+        zip -j melonPrimeDS-linux-all.zip "${artifacts[@]}"
 
     - name: Upload bundled Linux artifacts
       uses: actions/upload-artifact@v7
