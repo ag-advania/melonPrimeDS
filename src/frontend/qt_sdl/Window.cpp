@@ -893,6 +893,11 @@ void MainWindow::saveEnabled(bool enabled)
 
 void MainWindow::closeEvent(QCloseEvent* event)
 {
+#ifdef MELONPRIME_DS
+    if (panel)
+        panel->beginClose();
+#endif
+
     if (emuInstance)
     {
         if (windowID == 0)

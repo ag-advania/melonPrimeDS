@@ -18,6 +18,7 @@ This file is an index only. Keep detailed instructions in the linked Rules, Skil
 - [.claude/rules/melonprime-patch-system.md](.claude/rules/melonprime-patch-system.md)
 - [.claude/rules/melonprime-developer-only-section.md](.claude/rules/melonprime-developer-only-section.md)
 - [.claude/rules/compute-renderer-mosaic-bug.md](.claude/rules/compute-renderer-mosaic-bug.md)
+- [.claude/rules/macos-window-rounded-corners.md](.claude/rules/macos-window-rounded-corners.md)
 - [.claude/rules/mphcodex-reference.md](.claude/rules/mphcodex-reference.md)
 - [.claude/rules/notes/README.md](.claude/rules/notes/README.md)
 - [.claude/rules/completed/README.md](.claude/rules/completed/README.md)

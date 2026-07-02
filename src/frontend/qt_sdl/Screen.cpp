@@ -1790,6 +1790,17 @@ void ScreenPanel::unfocus()
     if (auto* core = emuInstance->getEmuThread()->GetMelonPrimeCore())
         core->isFocused = false;
 
+    if (!qApp || qApp->closingDown())
+        return;
+
+#ifdef Q_OS_MAC
+    if (closing)
+        return;
+#endif
+
+    if (!isVisible())
+        return;
+
     setCursor(Qt::ArrowCursor);
 #if defined(_WIN32)
     unclip();
@@ -1807,6 +1818,7 @@ void ScreenPanel::focusInEvent(QFocusEvent * event)
 void ScreenPanel::focusOutEvent(QFocusEvent * event)
 {
     unfocus();
+    QWidget::focusOutEvent(event);
 }
 
 void ScreenPanel::enterEvent(QEnterEvent * event)
