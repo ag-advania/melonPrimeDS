@@ -60,8 +60,8 @@ Highest merge-conflict risk lives in `EmuThread.cpp`, `Screen.cpp`, `Config.cpp`
 
 | Files | Difference from upstream |
 | --- | --- |
-| `.github/workflows/build-bsd.yml`, `.github/workflows/build-macos.yml`, `.github/workflows/build-ubuntu.yml` | Removed from the fork. Current CI focus is Windows. |
-| `.github/workflows/build-windows.yml` | Replaced upstream matrix workflow with a Windows x86_64 MSYS2/UCRT64 + MinGW + pinned vcpkg flow, with explicit binary/download/build caches and `release-mingw-x86_64` preset use. |
+| `.github/workflows/build-bsd.yml`, `.github/workflows/build-macos.yml`, `.github/workflows/build-ubuntu.yml` | Restored from upstream and adapted for MelonPrimeDS artifact naming/packaging. |
+| `.github/workflows/build-windows.yml` | Replaced upstream matrix workflow with a Windows x86_64 MSYS2/UCRT64 + MinGW + pinned vcpkg flow, explicit binary/download/build caches, `release-mingw-x86_64` preset use, and MelonPrime config/schema/literal audits. |
 | `cmake/overlay-triplets/x64-mingw-static-release.cmake` | Uses `VCPKG_ENV_PASSTHROUGH_UNTRACKED PATH` for the MinGW static-release triplet. |
 | `vcpkg` | Adds a vcpkg submodule pointer at `dd3097e3`. |
 | `.gitignore` | Adds local IDE, vcpkg, Claude workspace, and old asset ignore entries. |

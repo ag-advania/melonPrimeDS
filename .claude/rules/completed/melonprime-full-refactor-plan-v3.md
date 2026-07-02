@@ -2,7 +2,7 @@
 
 **作成日:** 2026-07-02
 **対象:** master（zip展開版で実測。実行は実gitリポジトリ + Windows MinGW環境で行うこと）
-**ステータス:** 進行中（Phase 6 完了）
+**ステータス:** 完了（2026-07-02）
 **前提:** [V1計画（2026-06-11完了）](completed/melonprime-full-refactor-plan.md) /
 [V2計画（2026-06-11完了）](completed/melonprime-full-refactor-plan-v2.md) の後継。
 V1/V2 が解消した負債（パッチレジストリ / StaticWordPatch / ROMアドレス X-macro / HUDプロパティスキーマ /
@@ -335,7 +335,7 @@ Screen.h 15（`MELONPRIME` 出現数）。やる場合は Screen.cpp / Window.cp
 | 4 | migration 一元化 + legacy 決着 | 完了 | 2026-07-02 | `MelonPrimeMigrationLedgerPhase4.md` を作成し、`InstantAimFollow` 互換読み、pre-anchor HUD migration、`HudFontSize` migration、LowLatency/WeaponSwitch/BipedFire/Zoom/DirectTransform の enum/gate 変換を棚卸し。最新ローカルタグは `Release3.4.1`（2026-06-27）だが、未保存の旧TOMLユーザーが post-V3 build へ直接移行するケースを壊さないため `InstantAimFollow` 削除は保留し、「post-V3 release で1回保存機会を与えた後に再判定」と決定。`EmuInstance.cpp` のアンカー migration 判定を `ShouldMigrateLegacyHudAnchors()` に整理（挙動不変）。ローカル macOS build 成功。S17 は削除なしのためコードパスレビュー扱い、将来の削除コミットで migrated/unmigrated TOML 実機確認必須。 |
 | 5 | ファイル整理（任意） | 完了 | 2026-07-02 | `MelonPrimeDeclutterPhase5.md` を作成し、肥大ファイルを再計測。`MelonPrime.cpp` は984行で1,000行のsoft threshold手前のため `.inc` 化せず、config/platform setup・lifecycle reset・per-frame hook の節見出しだけ追加。`InputConfig.cpp` は1,160行でV2目標1,200行以内、残る非binding config操作は migration / developer-only / enum transform / invalidate-couple / renderer preset / preview/schema dynamic path と確認し温存。`HudRenderConfig.inc` / `HudRenderRuntime.inc` は既存バナーで所有境界が十分なため分割なし。Localization duplicate scan は `kTranslations` 675行中5件（短語の文脈違い）で、機械統合は見送り。 |
 | 6 | upstream 統合点（任意） | 完了（スキップ判断） | 2026-07-02 | `MelonPrimeUpstreamIntegrationPhase6.md` を作成し、upstream-owned frontend ファイルの `MELONPRIME` 出現数を再計測（EmuThread.cpp 48 / Screen.cpp 29 / Window.cpp 20 / Config.cpp 17 / EmuInstance.h 16 / Screen.h 15）。現時点ではupstream merge targetがなく、残るブロックは機能的hook siteであり、追加 `.inc` 化は所有/順序コストの方が大きいと判断してコード抽出はスキップ。次回upstream mergeで繰り返しconflict hotspotになった連続自己完結ブロックのみ再検討する。 |
-| 7 | ドキュメント + 最終計測 | 未着手 | — | — |
+| 7 | ドキュメント + 最終計測 | 完了 | 2026-07-02 | `melonprime-refactoring.md` に V3 結果節、`repo-architecture.md` に `MelonPrimeHudGeometry.h` 共有コア所有点、`build.md` に Windows CI audit 運用ルールを追記。Rules/Completed index と `CLAUDE.md` を completed 参照へ更新し、本計画を `completed/` へ移動。最終計測: `MelonPrime*` 127 files / 31,786 lines（.ui除く）、source `"Metroid.*"` 718、非 canonical 1、HUD schema rows 575、dialog 562 / edit 230 / side 370 / runtime 505、missing defaults 0、type drift 0、range drift 5、macOS binary 7,064,504 bytes。ローカル `generate-hud-prop-schema.py` / literal recount / `git diff --check` / `cmake --build build-mac --parallel 4` 成功。 |
 
 ### Phase 0 計測値（実リポジトリ実測 2026-07-02）
 
@@ -361,6 +361,29 @@ Screen.h 15（`MELONPRIME` 出現数）。やる場合は Screen.cpp / Window.cp
 - CI 検証: `cdcb5fde` on `ci/phase0-refactor-audits`
   - Windows: audit config/defaults + HUD parity + `.inc` ownership + literal budget + schema regeneration + build + artifact upload 成功
   - macOS / Ubuntu / BSD: 成功
+
+### Phase 7 最終計測値（実リポジトリ実測 2026-07-02）
+
+- `MelonPrime*` ファイル: 127 / 31,786 行（.ui 除く）
+- `MelonPrime*` ファイル: 128 / 33,025 行（.ui 含む）
+- `"Metroid.*"` quoted リテラル: 718
+  - canonical: HudPropSchema.inc 575 + OsdColorSchema.inc 15 + Def.h 127 = 717
+  - 非 canonical: 1（`Config.cpp` の固定長 legacy migration row `Metroid.Sensitivity.Aim`）
+- HUD schema generator: rows 575 / dialog 562 / edit 230 / side 370 / runtime 505 /
+  missing defaults 0 / type drift 0 / range drift 5
+- 主要ファイル: MelonPrime.cpp 996 / InputConfig.cpp 1,160 /
+  HudRenderConfig.inc 1,082 / HudRenderRuntime.inc 1,022 / Localization.cpp 1,337
+- ローカル macOS バイナリサイズ: 7,064,504 bytes
+  (`build-mac/melonPrimeDS.app/Contents/MacOS/melonPrimeDS`)
+- ローカル検証:
+  - `python3 .claude/skills/generate-hud-prop-schema.py`
+  - source literal recount（非 canonical 1）
+  - `git diff --check`
+  - `cmake --build build-mac --parallel 4`
+- GitHub Actions:
+  - Windows CI audit gate is checked into `.github/workflows/build-windows.yml`.
+  - `highres_fonts_v3` direct pushes do not trigger the Windows push workflow;
+    PR/master/`ci/*` runs are the remote enforcement path.
 
 ---
 
