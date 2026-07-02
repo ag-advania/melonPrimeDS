@@ -66,6 +66,8 @@
 #include <windows.h>
 #include <dwmapi.h>
 #pragma comment(lib, "dwmapi.lib")
+#elif defined(__APPLE__)
+#include "MelonPrimeRawInputMacFilter.h"  // MacWarpCursorGlobal
 #endif
 #endif // MELONPRIME_DS
 
@@ -280,7 +282,14 @@ void ScreenPanel::clipCursorCenter1px() {
     setClipWanted(true);
     setCursor(Qt::BlankCursor);
 
-#if !defined(_WIN32)
+#if defined(__APPLE__)
+    // QCursor::setPos is CGEventPost-based on macOS and silently fails without
+    // the Accessibility permission; CGWarp needs no permission.
+    if (isVisible() && window() && window()->isActiveWindow()) {
+        const QPoint c = mapToGlobal(rect().center());
+        MelonPrime::MacWarpCursorGlobal(c.x(), c.y());
+    }
+#elif !defined(_WIN32)
     if (isVisible() && window() && window()->isActiveWindow())
         QCursor::setPos(mapToGlobal(rect().center()));
 #endif
