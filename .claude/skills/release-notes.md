@@ -66,7 +66,7 @@ Use the template below. Fill only the `## Changes:` bullet list and keep the res
 
 ### 5. Output destination
 
-Write the result to `C:\tmp\release-notes.md`.
+Write the result to `C:\tmp\release-notes.md` on the Windows dev machine. On other environments, write to `/tmp/release-notes.md` (or ask the user for a destination). Do not commit the release notes file into the repository.
 
 ---
 

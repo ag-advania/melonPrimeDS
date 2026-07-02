@@ -1,0 +1,152 @@
+name: macOS
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - master
+      - ci/*
+  pull_request:
+    branches:
+      - master
+
+env:
+  MELONDS_GIT_BRANCH: ${{ github.ref }}
+  MELONDS_GIT_HASH: ${{ github.sha }}
+  MELONDS_BUILD_PROVIDER: GitHub Actions
+#  MELONDS_VERSION_SUFFIX: " RC"
+
+jobs:
+  build-macos:
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [x86_64, arm64]
+
+    name: ${{ matrix.arch }}
+    runs-on: macos-26
+
+    env:
+      VCPKG_BINARY_SOURCES: clear;files,${{ github.workspace }}/vcpkg_cache,readwrite
+
+    steps:
+      - name: Check out sources
+        uses: actions/checkout@v6
+
+      - name: Install dependencies for package building
+        run: |
+          brew install autoconf automake autoconf-archive libtool python-setuptools
+
+      - name: Set up CMake
+        uses: lukka/get-cmake@latest
+
+      - name: Restore vcpkg cache
+        id: restore-vcpkg-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ github.workspace }}/vcpkg_cache
+          key: vcpkg-${{ matrix.arch }}-osx-${{ hashFiles('vcpkg.json', 'CMakePresets.json', 'cmake/ConfigureVcpkg.cmake', 'cmake/overlay-triplets/*.cmake', 'cmake/overlay-ports/**') }}
+          restore-keys: vcpkg-${{ matrix.arch }}-osx-
+
+      - name: Set up vcpkg
+        uses: lukka/run-vcpkg@v11
+        with:
+          vcpkgJsonGlob: vcpkg.json
+
+      - name: Build
+        uses: lukka/run-cmake@v10
+        with:
+          configurePreset: release-mac-${{ matrix.arch }}
+          buildPreset: release-mac-${{ matrix.arch }}
+          configurePresetAdditionalArgs: "['-DMELONDS_EMBED_BUILD_INFO=ON']"
+
+      - name: Compress app bundle
+        shell: bash
+        run: |
+          cd build/release-mac-${{ matrix.arch }}
+          zip -r -y ../../melonPrimeDS-macOS-${{ matrix.arch }}.zip melonPrimeDS.app
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: melonPrimeDS-macOS-${{ matrix.arch }}
+          path: melonPrimeDS-macOS-${{ matrix.arch }}.zip
+          retention-days: 1
+          archive: false
+
+      - name: Save vcpkg cache
+        if: steps.restore-vcpkg-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        continue-on-error: true
+        with:
+          path: ${{ github.workspace }}/vcpkg_cache
+          key: ${{ steps.restore-vcpkg-cache.outputs.cache-primary-key }}
+
+  universal-binary:
+    name: Universal binary
+    needs: [build-macos]
+    runs-on: macos-26
+    continue-on-error: true
+
+    steps:
+      - name: Download x86_64
+        uses: actions/download-artifact@v8
+        with:
+          name: melonPrimeDS-macOS-x86_64.zip
+          path: x86_64
+          skip-decompress: true
+
+      - name: Download arm64
+        uses: actions/download-artifact@v8
+        with:
+          name: melonPrimeDS-macOS-arm64.zip
+          path: arm64
+          skip-decompress: true
+
+      - name: Combine app bundles
+        shell: bash
+        run: |
+          x86_zip=x86_64/melonPrimeDS-macOS-x86_64.zip
+          arm64_zip=arm64/melonPrimeDS-macOS-arm64.zip
+          [ -f "$x86_zip" ] || { echo "x86_64 artifact not found at $x86_zip"; exit 1; }
+          [ -f "$arm64_zip" ] || { echo "arm64 artifact not found at $arm64_zip"; exit 1; }
+          unzip "$x86_zip" -d x86_64
+          unzip "$arm64_zip" -d arm64
+          lipo {x86_64,arm64}/melonPrimeDS.app/Contents/MacOS/melonPrimeDS -create -output melonPrimeDS
+          cp -a arm64/melonPrimeDS.app melonPrimeDS.app
+          cp melonPrimeDS melonPrimeDS.app/Contents/MacOS/melonPrimeDS
+          codesign -s - --deep melonPrimeDS.app
+          zip -r -y melonPrimeDS-macOS-universal.zip melonPrimeDS.app
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: melonPrimeDS-macOS-universal
+          path: melonPrimeDS-macOS-universal.zip
+          archive: false
+
+      - name: Bundle all macOS artifacts
+        shell: bash
+        run: |
+          artifacts=()
+          for f in \
+            x86_64/melonPrimeDS-macOS-x86_64.zip \
+            arm64/melonPrimeDS-macOS-arm64.zip \
+            melonPrimeDS-macOS-universal.zip
+          do
+            if [ -f "$f" ]; then
+              artifacts+=("$f")
+            fi
+          done
+          if [ ${#artifacts[@]} -eq 0 ]; then
+            echo "No macOS artifacts available to bundle"
+            exit 1
+          fi
+          zip -j melonPrimeDS-macOS-all.zip "${artifacts[@]}"
+
+      - name: Upload bundled macOS artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: melonPrimeDS-macOS-all
+          path: melonPrimeDS-macOS-all.zip
+          archive: false

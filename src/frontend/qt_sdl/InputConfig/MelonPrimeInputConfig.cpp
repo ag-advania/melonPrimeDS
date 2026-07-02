@@ -47,6 +47,12 @@
 #include "MelonPrimeHudRender.h"
 #endif
 
+#if QT_VERSION >= QT_VERSION_CHECK(6, 7, 0)
+#define MELONPRIME_CHECKBOX_STATE_CHANGED_SIGNAL &QCheckBox::checkStateChanged
+#else
+#define MELONPRIME_CHECKBOX_STATE_CHANGED_SIGNAL QOverload<int>::of(&QCheckBox::stateChanged)
+#endif
+
 // InputConfigDialog must be fully defined before including MapButton.h.
 // MapButton accesses parentDialog directly, so a forward declaration is not enough.
 #include "InputConfigDialog.h" 
@@ -87,6 +93,27 @@ namespace {
         combo->setCurrentIndex(index >= 0 ? index : 0);
     }
 
+    void ConfigureScreenSyncControlsForPlatform(
+        QComboBox* combo,
+        QLabel* description)
+    {
+#ifndef _WIN32
+        if (combo) {
+            if (combo->count() > 2)
+                combo->removeItem(2);
+            combo->setToolTip(MelonPrime::UiText::Tr(
+                "Screen Sync Mode: Off = no sync call, glFinish = wait for GL commands to complete"));
+        }
+        if (description) {
+            description->setText(MelonPrime::UiText::Tr(
+                "Off: No sync (lowest latency, but the display may look choppy). glFinish: Smoother display by waiting for rendering to fully complete each frame. Automatically disabled during FastForward/SlowMo."));
+        }
+#else
+        (void)combo;
+        (void)description;
+#endif
+    }
+
 }
 
 MelonPrimeInputConfig::MelonPrimeInputConfig(EmuInstance* emu, QWidget* parent) :
@@ -110,6 +137,9 @@ MelonPrimeInputConfig::MelonPrimeInputConfig(EmuInstance* emu, QWidget* parent) 
     setupPreviewConnections();
     setupCustomHudCode();
     MelonPrime::UiText::LocalizeWidgetTree(this);
+    ConfigureScreenSyncControlsForPlatform(
+        ui->comboMetroidScreenSyncMode,
+        ui->labelMetroidScreenSyncDesc);
 
     snapshotVisualConfig();
 
@@ -308,8 +338,16 @@ void MelonPrimeInputConfig::loadBindingsRange(Config::Table& instcfg, int begin,
             static_cast<QCheckBox*>(b.widget)->setChecked(instcfg.GetBool(b.key));
             break;
         case SettingKind::ComboIndexInt:
-            static_cast<QComboBox*>(b.widget)->setCurrentIndex(instcfg.GetInt(b.key));
+        {
+            auto* combo = static_cast<QComboBox*>(b.widget);
+            int index = instcfg.GetInt(b.key);
+#ifndef _WIN32
+            if (combo == ui->comboMetroidScreenSyncMode && index == 2)
+                index = 0;
+#endif
+            combo->setCurrentIndex((index >= 0 && index < combo->count()) ? index : 0);
             break;
+        }
         case SettingKind::SpinInt:
             static_cast<QSpinBox*>(b.widget)->setValue(instcfg.GetInt(b.key));
             break;
@@ -459,18 +497,18 @@ void MelonPrimeInputConfig::setupSensitivityAndToggles(Config::Table& instcfg)
     ui->cbMetroidEnableDirectAltFormTransform->setChecked(instcfg.GetBool("Metroid.Input.Enable.DirectAltFormTransform"));
     connect(
         ui->cbMetroidEnableNativeAimRegisterInjection,
-        &QCheckBox::checkStateChanged,
+        MELONPRIME_CHECKBOX_STATE_CHANGED_SIGNAL,
         this,
-        [this](Qt::CheckState state) {
+        [this](auto state) {
             if (state == Qt::Checked && ui->cbMetroidEnableNativeAimPostFoldWrite->isChecked())
                 ui->cbMetroidEnableNativeAimPostFoldWrite->setChecked(false);
             updateAimControlsForStylusMode(ui->cbMetroidEnableStylusMode->isChecked());
         });
     connect(
         ui->cbMetroidEnableNativeAimPostFoldWrite,
-        &QCheckBox::checkStateChanged,
+        MELONPRIME_CHECKBOX_STATE_CHANGED_SIGNAL,
         this,
-        [this](Qt::CheckState state) {
+        [this](auto state) {
             if (state == Qt::Checked && ui->cbMetroidEnableNativeAimRegisterInjection->isChecked())
                 ui->cbMetroidEnableNativeAimRegisterInjection->setChecked(false);
             updateAimControlsForStylusMode(ui->cbMetroidEnableStylusMode->isChecked());
@@ -720,17 +758,17 @@ void MelonPrimeInputConfig::setupInputMethodSection(Config::Table& instcfg)
 
     connect(
         m_cbMetroidUseNewZoomMethod,
-        &QCheckBox::checkStateChanged,
+        MELONPRIME_CHECKBOX_STATE_CHANGED_SIGNAL,
         this,
-        [this](Qt::CheckState state) {
+        [this](auto state) {
             if (state == Qt::Checked && m_cbMetroidUseNewZoomMethod2)
                 m_cbMetroidUseNewZoomMethod2->setChecked(false);
         });
     connect(
         m_cbMetroidUseNewZoomMethod2,
-        &QCheckBox::checkStateChanged,
+        MELONPRIME_CHECKBOX_STATE_CHANGED_SIGNAL,
         this,
-        [this](Qt::CheckState state) {
+        [this](auto state) {
             if (state == Qt::Checked && m_cbMetroidUseNewZoomMethod)
                 m_cbMetroidUseNewZoomMethod->setChecked(false);
         });
@@ -878,8 +916,8 @@ void MelonPrimeInputConfig::setupCollapsibleSections(Config::Table& instcfg)
 void MelonPrimeInputConfig::setupPreviewConnections()
 {
     // --- Global (affects visual preview) ---
-    connect(ui->cbMetroidEnableCustomHud, &QCheckBox::checkStateChanged, this, [this](Qt::CheckState) { applyVisualPreview(); });
-    connect(ui->cbMetroidInGameAspectRatio, &QCheckBox::checkStateChanged, this, [this](Qt::CheckState) { applyVisualPreview(); });
+    connect(ui->cbMetroidEnableCustomHud, MELONPRIME_CHECKBOX_STATE_CHANGED_SIGNAL, this, [this](auto) { applyVisualPreview(); });
+    connect(ui->cbMetroidInGameAspectRatio, MELONPRIME_CHECKBOX_STATE_CHANGED_SIGNAL, this, [this](auto) { applyVisualPreview(); });
     connect(ui->comboMetroidInGameAspectRatioMode, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this](int) { applyVisualPreview(); });
 }
 
@@ -1117,4 +1155,3 @@ void MelonPrimeInputConfig::refreshAfterHudEditSave()
     m_applyPreviewEnabled = true;
     snapshotVisualConfig();
 }
-
