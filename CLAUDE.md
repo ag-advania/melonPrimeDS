@@ -6,6 +6,7 @@ This file is an index only. Keep detailed instructions in the linked Rules, Skil
 - [.claude/rules/README.md](.claude/rules/README.md)
 - [.claude/rules/project-context.md](.claude/rules/project-context.md)
 - [.claude/rules/build.md](.claude/rules/build.md)
+- [.claude/rules/linux-vm-build.md](.claude/rules/linux-vm-build.md)
 - [.claude/rules/repo-architecture.md](.claude/rules/repo-architecture.md)
 - [.claude/rules/git-workflow.md](.claude/rules/git-workflow.md)
 - [.claude/rules/non-melonprime-upstream-diff.md](.claude/rules/non-melonprime-upstream-diff.md)

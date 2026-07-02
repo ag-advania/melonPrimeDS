@@ -84,6 +84,8 @@ Linux platform notes:
 - Wayland does not expose the needed global raw mouse stream to normal clients. On Wayland, missing
   XInput2, or unavailable X11 display, the aim path falls back to the QCursor center-delta method.
 - Linux builds need the XInput2 development library (`libxi-dev` on Ubuntu).
+- **Linux VM testing on Mac**: see [linux-vm-build.md](linux-vm-build.md) — VirtualBox +
+  Ubuntu 22.04 scripts under `tools/linux-vm/` (`01`…`04` in execution order).
 
 ## Windows Build Command
 Windows-only AI build command. Do not rebuild, bootstrap, or reinstall `vcpkg/` unless the user explicitly asks for it.

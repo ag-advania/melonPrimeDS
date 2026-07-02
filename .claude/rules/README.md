@@ -2,6 +2,7 @@
 
 - [Project Context](project-context.md)
 - [Build](build.md)
+- [Linux VM Build (VirtualBox)](linux-vm-build.md)
 - [Repo Architecture](repo-architecture.md)
 - [Git Workflow](git-workflow.md)
 - [Non-MelonPrime Upstream Diff](non-melonprime-upstream-diff.md)
