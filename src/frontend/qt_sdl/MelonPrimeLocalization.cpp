@@ -88,7 +88,7 @@ bool DetectJapaneseSystemLocale()
         return true;
 #endif
 
-    for (const char* envName : {"LANG", "LC_ALL", "LC_MESSAGES"}) {
+    for (const char* envName : {"LANG", "LC_ALL", "LC_MESSAGES", "LANGUAGE"}) {
         const QByteArray env = qgetenv(envName);
         if (LanguageTagIsJapanese(QString::fromLatin1(env)))
             return true;
