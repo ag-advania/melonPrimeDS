@@ -328,7 +328,7 @@ Screen.h 15（`MELONPRIME` 出現数）。やる場合は Screen.cpp / Window.cp
 
 | Phase | 内容 | 状態 | 完了日 | 結果メモ |
 |---|---|---|---|---|
-| 0 | ベースライン + 監査 CI 化 | 未着手 | — | — |
+| 0 | ベースライン + 監査 CI 化 | 実装中（CI検証待ち） | 2026-07-02 | 実リポジトリで再計測。Windows workflow に監査ステップを追加し、非 canonical `"Metroid.*"` リテラル予算 519 を初期値として固定。schema generator の現行 crosshair count / side-panel outline 検出漏れを補正し、再生成出力を更新。 |
 | 1 | 死活整理・V2 検証消し込み | 未着手 | — | — |
 | 2 | リテラル解消 + ラチェット固定（本丸A） | 未着手 | — | — |
 | 3 | HUD プレビュー共有化（本丸B） | 未着手 | — | — |
@@ -337,20 +337,25 @@ Screen.h 15（`MELONPRIME` 出現数）。やる場合は Screen.cpp / Window.cp
 | 6 | upstream 統合点（任意） | 未着手 | — | — |
 | 7 | ドキュメント + 最終計測 | 未着手 | — | — |
 
-### Phase 0 計測値（zip 実測 2026-07-02。実機で取り直すこと）
+### Phase 0 計測値（実リポジトリ実測 2026-07-02）
 
-- `MelonPrime*` ファイル: 123 / 30,877 行（.ui 除く）
+- `MelonPrime*` ファイル: 126 / 31,618 行（.ui 除く）
 - `"Metroid.*"` quoted リテラル: 1,165
-  （canonical: HudPropSchema.inc 575 + Def.h 56。非 canonical 上位: HudPreviews 144 /
-  OnScreenDraw 62 / HudTables 53 / CustomHudBuild 48 / InputConfig.cpp 35 / ConfigConfig 28 /
-  Window.cpp 24 / EmuInstance.cpp 17）
+  （canonical: HudPropSchema.inc 575 + OsdColorSchema.inc 15 + Def.h 56 = 646。
+  非 canonical 519。非 canonical 上位: HudPreviews 194 / OnScreenDraw 62 /
+  HudTables 53 / CustomHudBuild 48 / InputConfig.cpp 35 / ConfigConfig 28 /
+  Window.cpp 24 / EmuInstance.cpp 17 / OnScreenInput 14 / HudScreenCppHelpers 7）
+- HUD schema generator: rows 575 / dialog 562 / edit 230 / side 370 / runtime 505 /
+  missing defaults 0 / type drift 0 / range drift 5
 - 主要ファイル: HudPropSchema.inc 2,333 / HudRenderDraw.inc 1,470 / HudConfigOnScreenDraw.inc 1,328 /
-  Localization.cpp 1,245 / InputConfig.cpp 1,120 / HudRenderConfig.inc 1,090 / HudRenderRuntime.inc 1,022 /
-  MelonPrime.cpp 896
-- `MELONPRIME` 出現数（upstream ファイル）: EmuThread 48 / Screen 29 / Window 19 / Config 17 /
+  Localization.cpp 1,337 / InputConfig.cpp 1,157 / HudRenderConfig.inc 1,090 / HudRenderRuntime.inc 1,022 /
+  MelonPrime.cpp 984
+- `MELONPRIME` 出現数（upstream ファイル）: EmuThread 51 / Screen 29 / Window 21 / Config 17 /
   EmuInstance.h 16 / Screen.h 15
 - unity `.inc`: 50
-- ビルド時間 / exe サイズ: 未計測（macOS zip 環境のため。実機 Phase 0 で記録）
+- ローカル macOS バイナリサイズ: 7,064,496 bytes
+  (`build-mac/melonPrimeDS.app/Contents/MacOS/melonPrimeDS`)
+- Windows exe サイズ / Windows CI: Phase 0 CI push 後に GitHub Actions で確認
 
 ---
 
