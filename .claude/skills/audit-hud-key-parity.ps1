@@ -250,6 +250,7 @@ function Extract-SidePanelKeys {
 function Extract-RuntimeLoadKeys {
     $path = Join-Path $qtSdl 'MelonPrimeHudRenderConfig.inc'
     $text = Read-Text $path
+    $schemaKeyMacros = Get-SchemaKeyMacros
     $ignore = New-Set
     foreach ($m in [regex]::Matches($text, 'LoadColorRamp\([^;]+,\s*"((?:Metroid\.Visual\.)[^"]+)"\)')) {
         [void]$ignore.Add($m.Groups[1].Value)
@@ -265,6 +266,22 @@ function Extract-RuntimeLoadKeys {
     }
     if ($text -match 'HudWeaponIconColorOverlay%s') {
         Add-WeaponTintKeys $set
+    }
+    foreach ($m in [regex]::Matches($text, '\bMP_HUD_PROP_KEY_(\w+)\b')) {
+        $key = $schemaKeyMacros[$m.Groups[1].Value]
+        if ($key) { Add-Key $set $key }
+    }
+    foreach ($m in [regex]::Matches($text, '\bMP_HUD_RAMP_KEYS\(\s*(\w+)\s*\)')) {
+        $prefix = $m.Groups[1].Value
+        if ($prefix -ne 'prefix') {
+            Add-RampKeys $set "Metroid.Visual.$prefix"
+        }
+    }
+    foreach ($m in [regex]::Matches($text, '\bMP_HUD_OUTLINE_KEYS\(\s*(\w+)\s*\)')) {
+        $prefix = $m.Groups[1].Value
+        if ($prefix -ne 'prefix') {
+            Add-OutlineKeys $set $prefix
+        }
     }
 
     return ,$set

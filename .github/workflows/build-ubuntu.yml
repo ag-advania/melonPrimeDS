@@ -17,7 +17,35 @@ env:
 #  MELONDS_VERSION_SUFFIX: " RC"
 
 jobs:
+  audit:
+    name: Audits
+    runs-on: ubuntu-22.04
+
+    steps:
+    - uses: actions/checkout@v6
+      name: Check out sources
+
+    - name: Audit MelonPrime config discipline
+      shell: pwsh
+      run: |
+        ./.claude/skills/audit-config-defaults.ps1
+        ./.claude/skills/audit-hud-key-parity.ps1 -Strict
+        ./.claude/skills/check-inc-ownership.ps1
+        ./.claude/skills/audit-metroid-literal-budget.ps1 -Budget 1
+        ./.claude/skills/audit-platform-scatter-budget.ps1 -Budget 31
+
+    - name: Verify generated HUD schema
+      shell: pwsh
+      run: |
+        python ./.claude/skills/generate-hud-prop-schema.py
+        git diff --exit-code -- \
+          src/frontend/qt_sdl/MelonPrimeHudPropSchema.inc \
+          src/frontend/qt_sdl/InputConfig/MelonPrimeInputConfigHudDialogProps.inc \
+          src/frontend/qt_sdl/MelonPrimeHudConfigOnScreenEditProps.inc \
+          .claude/rules/notes/MelonPrimeHudPropSchemaPhase2a.md
+
   build:
+    needs: [audit]
     continue-on-error: true
     strategy:
       matrix:
