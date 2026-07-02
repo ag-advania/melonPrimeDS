@@ -91,30 +91,30 @@ jobs:
 
     steps:
     - name: Download x86_64 binary
-      uses: actions/download-artifact@v8
+      uses: actions/download-artifact@v7
       with:
-        name: melonPrimeDS-linux-x86_64
+        name: melonPrimeDS-linux-x86_64.zip
         path: linux-x86_64
         skip-decompress: true
 
     - name: Download aarch64 binary
-      uses: actions/download-artifact@v8
+      uses: actions/download-artifact@v7
       with:
-        name: melonPrimeDS-linux-aarch64
+        name: melonPrimeDS-linux-aarch64.zip
         path: linux-aarch64
         skip-decompress: true
 
     - name: Download x86_64 AppImage
-      uses: actions/download-artifact@v8
+      uses: actions/download-artifact@v7
       with:
-        name: melonPrimeDS-linux-appimage-x86_64
+        name: melonPrimeDS-linux-appimage-x86_64.zip
         path: linux-appimage-x86_64
         skip-decompress: true
 
     - name: Download aarch64 AppImage
-      uses: actions/download-artifact@v8
+      uses: actions/download-artifact@v7
       with:
-        name: melonPrimeDS-linux-appimage-aarch64
+        name: melonPrimeDS-linux-appimage-aarch64.zip
         path: linux-appimage-aarch64
         skip-decompress: true
 

@@ -90,16 +90,16 @@ jobs:
 
     steps:
       - name: Download x86_64
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@v7
         with:
-          name: melonPrimeDS-macOS-x86_64
+          name: melonPrimeDS-macOS-x86_64.zip
           path: x86_64
           skip-decompress: true
 
       - name: Download arm64
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@v7
         with:
-          name: melonPrimeDS-macOS-arm64
+          name: melonPrimeDS-macOS-arm64.zip
           path: arm64
           skip-decompress: true
 
