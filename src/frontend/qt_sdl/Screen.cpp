@@ -295,7 +295,13 @@ void ScreenPanel::unclip() {
 }
 
 void ScreenPanel::updateClipIfNeeded() {
-    auto* core = emuInstance->getEmuThread()->GetMelonPrimeCore();
+    if (closing || !qApp || qApp->closingDown())
+        return;
+
+    auto* emu = emuInstance;
+    auto* thread = emu ? emu->getEmuThread() : nullptr;
+    auto* core = thread ? thread->GetMelonPrimeCore() : nullptr;
+
     if (core && !core->isFocused) {
         setCursor(Qt::ArrowCursor);
         unclip();
@@ -1787,16 +1793,15 @@ void ScreenPanelGL::transferLayout()
 /* MelonPrimeDS */
 void ScreenPanel::unfocus()
 {
-    if (auto* core = emuInstance->getEmuThread()->GetMelonPrimeCore())
+    if (closing || !qApp || qApp->closingDown())
+        return;
+
+    auto* emu = emuInstance;
+    auto* thread = emu ? emu->getEmuThread() : nullptr;
+    auto* core = thread ? thread->GetMelonPrimeCore() : nullptr;
+
+    if (core)
         core->isFocused = false;
-
-    if (!qApp || qApp->closingDown())
-        return;
-
-#ifdef Q_OS_MAC
-    if (closing)
-        return;
-#endif
 
     if (!isVisible())
         return;
@@ -1817,6 +1822,12 @@ void ScreenPanel::focusInEvent(QFocusEvent * event)
 
 void ScreenPanel::focusOutEvent(QFocusEvent * event)
 {
+    if (closing || !qApp || qApp->closingDown())
+    {
+        QWidget::focusOutEvent(event);
+        return;
+    }
+
     unfocus();
     QWidget::focusOutEvent(event);
 }
