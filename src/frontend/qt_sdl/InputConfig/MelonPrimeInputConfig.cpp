@@ -47,6 +47,12 @@
 #include "MelonPrimeHudRender.h"
 #endif
 
+#if QT_VERSION >= QT_VERSION_CHECK(6, 7, 0)
+#define MELONPRIME_CHECKBOX_STATE_CHANGED_SIGNAL &QCheckBox::checkStateChanged
+#else
+#define MELONPRIME_CHECKBOX_STATE_CHANGED_SIGNAL QOverload<int>::of(&QCheckBox::stateChanged)
+#endif
+
 // InputConfigDialog must be fully defined before including MapButton.h.
 // MapButton accesses parentDialog directly, so a forward declaration is not enough.
 #include "InputConfigDialog.h" 
@@ -491,18 +497,18 @@ void MelonPrimeInputConfig::setupSensitivityAndToggles(Config::Table& instcfg)
     ui->cbMetroidEnableDirectAltFormTransform->setChecked(instcfg.GetBool("Metroid.Input.Enable.DirectAltFormTransform"));
     connect(
         ui->cbMetroidEnableNativeAimRegisterInjection,
-        &QCheckBox::checkStateChanged,
+        MELONPRIME_CHECKBOX_STATE_CHANGED_SIGNAL,
         this,
-        [this](Qt::CheckState state) {
+        [this](auto state) {
             if (state == Qt::Checked && ui->cbMetroidEnableNativeAimPostFoldWrite->isChecked())
                 ui->cbMetroidEnableNativeAimPostFoldWrite->setChecked(false);
             updateAimControlsForStylusMode(ui->cbMetroidEnableStylusMode->isChecked());
         });
     connect(
         ui->cbMetroidEnableNativeAimPostFoldWrite,
-        &QCheckBox::checkStateChanged,
+        MELONPRIME_CHECKBOX_STATE_CHANGED_SIGNAL,
         this,
-        [this](Qt::CheckState state) {
+        [this](auto state) {
             if (state == Qt::Checked && ui->cbMetroidEnableNativeAimRegisterInjection->isChecked())
                 ui->cbMetroidEnableNativeAimRegisterInjection->setChecked(false);
             updateAimControlsForStylusMode(ui->cbMetroidEnableStylusMode->isChecked());
@@ -752,17 +758,17 @@ void MelonPrimeInputConfig::setupInputMethodSection(Config::Table& instcfg)
 
     connect(
         m_cbMetroidUseNewZoomMethod,
-        &QCheckBox::checkStateChanged,
+        MELONPRIME_CHECKBOX_STATE_CHANGED_SIGNAL,
         this,
-        [this](Qt::CheckState state) {
+        [this](auto state) {
             if (state == Qt::Checked && m_cbMetroidUseNewZoomMethod2)
                 m_cbMetroidUseNewZoomMethod2->setChecked(false);
         });
     connect(
         m_cbMetroidUseNewZoomMethod2,
-        &QCheckBox::checkStateChanged,
+        MELONPRIME_CHECKBOX_STATE_CHANGED_SIGNAL,
         this,
-        [this](Qt::CheckState state) {
+        [this](auto state) {
             if (state == Qt::Checked && m_cbMetroidUseNewZoomMethod)
                 m_cbMetroidUseNewZoomMethod->setChecked(false);
         });
@@ -910,8 +916,8 @@ void MelonPrimeInputConfig::setupCollapsibleSections(Config::Table& instcfg)
 void MelonPrimeInputConfig::setupPreviewConnections()
 {
     // --- Global (affects visual preview) ---
-    connect(ui->cbMetroidEnableCustomHud, &QCheckBox::checkStateChanged, this, [this](Qt::CheckState) { applyVisualPreview(); });
-    connect(ui->cbMetroidInGameAspectRatio, &QCheckBox::checkStateChanged, this, [this](Qt::CheckState) { applyVisualPreview(); });
+    connect(ui->cbMetroidEnableCustomHud, MELONPRIME_CHECKBOX_STATE_CHANGED_SIGNAL, this, [this](auto) { applyVisualPreview(); });
+    connect(ui->cbMetroidInGameAspectRatio, MELONPRIME_CHECKBOX_STATE_CHANGED_SIGNAL, this, [this](auto) { applyVisualPreview(); });
     connect(ui->comboMetroidInGameAspectRatioMode, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this](int) { applyVisualPreview(); });
 }
 
