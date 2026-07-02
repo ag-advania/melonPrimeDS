@@ -3,6 +3,7 @@
 - [Windows MinGW Build](build-windows-mingw.md) — build MelonPrimeDS on the Windows dev machine
   - `build-mingw.bat`: configure + build
   - `build-mingw-existing.bat`: build existing tree only, no configure/vcpkg
+- [macOS Build](build-macos.md) — configure, build, and launch-test MelonPrimeDS on macOS
 - [Custom HUD Runtime](custom-hud-runtime.md) — reference for runtime HUD rendering, caches, fonts, no-HUD patch, radar overlay
 - [Settings UI and Edit Mode](settings-ui-and-edit-mode.md) — settings dialog and in-game HUD edit mode; how to add a HUD setting surface
 - [Qt Menu Actions](qt-menu-actions.md) — add a menu item / checkable MelonPrime toggle to the Qt menubar

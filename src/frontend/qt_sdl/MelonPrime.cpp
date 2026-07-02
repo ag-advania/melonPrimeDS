@@ -38,9 +38,20 @@ namespace MelonPrime {
         if (ptr) RawInputWinFilter::Release();
     }
 }
+#elif defined(__APPLE__)
+#include "MelonPrimeRawInputMacFilter.h"
 #endif
 
 namespace MelonPrime {
+
+    [[nodiscard]] static int NormalizeScreenSyncMode(int mode) noexcept
+    {
+#ifdef _WIN32
+        return (mode >= 0 && mode <= 2) ? mode : 0;
+#else
+        return (mode == 1) ? 1 : 0;
+#endif
+    }
 
     MelonPrimeCore::MelonPrimeCore(EmuInstance* instance)
         : emuInstance(instance)
@@ -50,7 +61,17 @@ namespace MelonPrime {
         m_flags.packed = 0;
     }
 
+#ifdef __APPLE__
+    MelonPrimeCore::~MelonPrimeCore()
+    {
+        if (m_macRawFilter) {
+            MacRawInputFilter::Release();
+            m_macRawFilter = nullptr;
+        }
+    }
+#else
     MelonPrimeCore::~MelonPrimeCore() = default;
+#endif
 
     void MelonPrimeCore::ReloadConfigFlags()
     {
@@ -149,7 +170,7 @@ namespace MelonPrime {
             m_weaponSwitchPending.Clear();
 #endif
 
-        screenSyncMode = localCfg.GetInt(CfgKey::ScreenSyncMode);
+        screenSyncMode = NormalizeScreenSyncMode(localCfg.GetInt(CfgKey::ScreenSyncMode));
 
         ReloadDamageNotifyPurpleConfig();
     }
@@ -162,6 +183,12 @@ namespace MelonPrime {
 
 #ifdef _WIN32
         SetupRawInput();
+#elif defined(__APPLE__)
+        // macOS RawInput-equivalent aim path: IOHIDManager delta capture.
+        // Falls back to the QCursor delta path when unavailable (permission
+        // denied / no mouse); see MelonPrimeRawInputMacFilter.h.
+        if (!m_macRawFilter)
+            m_macRawFilter = MacRawInputFilter::Acquire();
 #endif
     }
 
@@ -698,6 +725,12 @@ namespace MelonPrime {
                     // (one fence instead of two)
                     if (m_rawFilter) {
                         m_rawFilter->resetAll();
+                    }
+#elif defined(__APPLE__)
+                    // Drop deltas accumulated while unfocused so refocus
+                    // cannot produce an aim jump (same intent as FIX-3).
+                    if (m_macRawFilter) {
+                        m_macRawFilter->resetAll();
                     }
 #endif
 #ifdef MELONPRIME_DS

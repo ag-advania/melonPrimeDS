@@ -71,6 +71,9 @@ set(SOURCES_QT_SDL
 
     MelonPrimeRawInputState.cpp
     MelonPrimeRawWinInternal.cpp
+    # Self-guarded by #ifdef __APPLE__ (empty TU elsewhere), same pattern as
+    # the two _WIN32-guarded files above.
+    MelonPrimeRawInputMacFilter.cpp
 
     MelonPrimeGameRomDetect.cpp
     MelonPrimeInGame.cpp
@@ -259,6 +262,10 @@ elseif (APPLE)
     endif()
     find_library(OPENGL_LIB OpenGL)
     target_link_libraries(melonDS PRIVATE ${OPENGL_LIB})
+    # MelonPrimeDS: IOHIDManager raw mouse input (MelonPrimeRawInputMacFilter)
+    find_library(IOKIT_LIB IOKit)
+    find_library(COREFOUNDATION_LIB CoreFoundation)
+    target_link_libraries(melonDS PRIVATE ${IOKIT_LIB} ${COREFOUNDATION_LIB})
     target_sources(melonDS PRIVATE
         ../duckstation/gl/context_agl.mm
     )

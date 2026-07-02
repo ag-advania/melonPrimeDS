@@ -87,6 +87,27 @@ namespace {
         combo->setCurrentIndex(index >= 0 ? index : 0);
     }
 
+    void ConfigureScreenSyncControlsForPlatform(
+        QComboBox* combo,
+        QLabel* description)
+    {
+#ifndef _WIN32
+        if (combo) {
+            if (combo->count() > 2)
+                combo->removeItem(2);
+            combo->setToolTip(MelonPrime::UiText::Tr(
+                "Screen Sync Mode: Off = no sync call, glFinish = wait for GL commands to complete"));
+        }
+        if (description) {
+            description->setText(MelonPrime::UiText::Tr(
+                "Off: No sync (lowest latency, but the display may look choppy). glFinish: Smoother display by waiting for rendering to fully complete each frame. Automatically disabled during FastForward/SlowMo."));
+        }
+#else
+        (void)combo;
+        (void)description;
+#endif
+    }
+
 }
 
 MelonPrimeInputConfig::MelonPrimeInputConfig(EmuInstance* emu, QWidget* parent) :
@@ -110,6 +131,9 @@ MelonPrimeInputConfig::MelonPrimeInputConfig(EmuInstance* emu, QWidget* parent) 
     setupPreviewConnections();
     setupCustomHudCode();
     MelonPrime::UiText::LocalizeWidgetTree(this);
+    ConfigureScreenSyncControlsForPlatform(
+        ui->comboMetroidScreenSyncMode,
+        ui->labelMetroidScreenSyncDesc);
 
     snapshotVisualConfig();
 
@@ -308,8 +332,16 @@ void MelonPrimeInputConfig::loadBindingsRange(Config::Table& instcfg, int begin,
             static_cast<QCheckBox*>(b.widget)->setChecked(instcfg.GetBool(b.key));
             break;
         case SettingKind::ComboIndexInt:
-            static_cast<QComboBox*>(b.widget)->setCurrentIndex(instcfg.GetInt(b.key));
+        {
+            auto* combo = static_cast<QComboBox*>(b.widget);
+            int index = instcfg.GetInt(b.key);
+#ifndef _WIN32
+            if (combo == ui->comboMetroidScreenSyncMode && index == 2)
+                index = 0;
+#endif
+            combo->setCurrentIndex((index >= 0 && index < combo->count()) ? index : 0);
             break;
+        }
         case SettingKind::SpinInt:
             static_cast<QSpinBox*>(b.widget)->setValue(instcfg.GetInt(b.key));
             break;
@@ -1117,4 +1149,3 @@ void MelonPrimeInputConfig::refreshAfterHudEditSave()
     m_applyPreviewEnabled = true;
     snapshotVisualConfig();
 }
-

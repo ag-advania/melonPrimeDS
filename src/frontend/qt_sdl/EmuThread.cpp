@@ -231,6 +231,10 @@ void EmuThread::run()
                 while ((curTick = SDL_GetPerformanceCounter()) < targetTick) {
 #ifdef _WIN32
                     YieldProcessor();
+#elif defined(__x86_64__) || defined(__i386__)
+                    __builtin_ia32_pause();
+#elif defined(__aarch64__)
+                    asm volatile("yield");
 #endif
                 }
 

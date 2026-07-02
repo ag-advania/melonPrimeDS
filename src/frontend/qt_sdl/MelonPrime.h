@@ -30,6 +30,8 @@ namespace MelonPrime {
 
 #ifdef _WIN32
     class RawInputWinFilter;
+#elif defined(__APPLE__)
+    class MacRawInputFilter;
 #endif
 
     enum InputCacheBit : uint64_t {
@@ -578,6 +580,13 @@ namespace MelonPrime {
                 m_weaponSwitchPending.Clear();
 #endif
         }
+
+#ifdef __APPLE__
+        // macOS raw mouse input (IOHIDManager). Cold-section member per the
+        // MelonPrime.h layout rule; guarded so Windows layout is untouched.
+        // Owned via Acquire/Release refcount (see MelonPrimeRawInputMacFilter.h).
+        MacRawInputFilter* m_macRawFilter = nullptr;
+#endif
 
         // =================================================================
         // Inline helpers
