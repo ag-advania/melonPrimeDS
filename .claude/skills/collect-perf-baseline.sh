@@ -75,7 +75,8 @@ MELONPRIME_PERF=1 "$binary" "$@" 2>&1 | tee "$log"
 app_status=${PIPESTATUS[0]}
 set -e
 
-python3 "$repo_root/.claude/skills/summarize-melonprime-perf.py" "$log" | tee "$summary"
+python3 "$repo_root/.claude/skills/summarize-melonprime-perf.py" \
+    --markdown-platform "$label" "$log" | tee "$summary"
 echo "Wrote perf summary: $summary"
 
 exit "$app_status"

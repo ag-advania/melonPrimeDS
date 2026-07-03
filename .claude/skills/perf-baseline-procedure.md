@@ -94,7 +94,10 @@ python3 .claude/skills/summarize-melonprime-perf.py artifacts/perf-baseline/<log
 ```
 
 Record the shutdown `p50/p95/p99/max`, the `draw` value from "section median of
-1 Hz averages", and the counter rates into:
+1 Hz averages", and the counter rates into the files below. The collection
+wrappers call the summarizer with `--markdown-platform`, so each `.summary.txt`
+contains ready-to-paste V6/V5 table rows plus the counter cells for that
+platform.
 
 - `.claude/rules/melonprime-full-refactor-plan-v6.md` §8
 - `.claude/rules/completed/melonprime-full-refactor-plan-v5.md` Phase 0 table

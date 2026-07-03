@@ -42,7 +42,7 @@ finally {
     $env:MELONPRIME_PERF = $oldPerf
 }
 
-& $python.Source $summarizer $log | Tee-Object -FilePath $summary
+& $python.Source $summarizer --markdown-platform $Label $log | Tee-Object -FilePath $summary
 Write-Host "Wrote perf summary: $summary"
 
 exit $appStatus
