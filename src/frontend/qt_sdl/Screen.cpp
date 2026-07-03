@@ -51,6 +51,7 @@
 // MelonPrimeDS Integration
 #ifdef MELONPRIME_DS
 #include "MelonPrime.h"
+#include "MelonPrimePlatformInput.h"
 #include "MelonPrimeHudPropSchema.inc"
 
 #ifdef MELONPRIME_CUSTOM_HUD
@@ -68,10 +69,6 @@
 #include <windows.h>
 #include <dwmapi.h>
 #pragma comment(lib, "dwmapi.lib")
-#elif defined(__APPLE__)
-#include "MelonPrimeRawInputMacFilter.h"  // MacWarpCursorGlobal
-#elif defined(__linux__)
-#include "MelonPrimeRawInputLinuxFilter.h"  // LinuxWarpCursorGlobal
 #endif
 #endif // MELONPRIME_DS
 
@@ -289,24 +286,11 @@ void ScreenPanel::clipCursorCenter1px() {
     resetAimMouseDelta();
 #endif
 
-#if defined(__APPLE__)
-    // QCursor::setPos is CGEventPost-based on macOS and silently fails without
-    // the Accessibility permission; CGWarp needs no permission.
+#if !defined(_WIN32)
     if (isVisible() && window() && window()->isActiveWindow()) {
         const QPoint c = mapToGlobal(rect().center());
-        MelonPrime::MacWarpCursorGlobal(c.x(), c.y());
+        MelonPrime::PlatformInput_WarpCursor(c.x(), c.y());
     }
-#elif defined(__linux__)
-    if (isVisible() && window() && window()->isActiveWindow()) {
-        const QPoint c = mapToGlobal(rect().center());
-        if (QGuiApplication::platformName() == QStringLiteral("xcb"))
-            MelonPrime::LinuxWarpCursorGlobal(c.x(), c.y());
-        else
-            QCursor::setPos(c);
-    }
-#elif !defined(_WIN32)
-    if (isVisible() && window() && window()->isActiveWindow())
-        QCursor::setPos(mapToGlobal(rect().center()));
 #endif
 
 #ifdef _WIN32
@@ -717,10 +701,7 @@ void ScreenPanel::mouseMoveEvent(QMouseEvent* event)
             // never counted as motion (and VirtualBox's follow-up re-sync
             // event just re-seeds instead of producing a spurious delta).
             aimLastGlobalValid.store(false, std::memory_order_release);
-            if (QGuiApplication::platformName() == QStringLiteral("xcb"))
-                MelonPrime::LinuxWarpCursorGlobal(center.x(), center.y());
-            else
-                QCursor::setPos(center);
+            MelonPrime::PlatformInput_WarpCursor(center.x(), center.y());
         };
 
         if (core->IsLinuxRawAimActive()) {
@@ -729,12 +710,8 @@ void ScreenPanel::mouseMoveEvent(QMouseEvent* event)
             // when it strays — warping every event fights VirtualBox's
             // host-position re-sync and storms events.
             aimLastGlobalValid.store(false, std::memory_order_release);
-            if (strayed) {
-                if (QGuiApplication::platformName() == QStringLiteral("xcb"))
-                    MelonPrime::LinuxWarpCursorGlobal(center.x(), center.y());
-                else
-                    QCursor::setPos(center);
-            }
+            if (strayed)
+                MelonPrime::PlatformInput_WarpCursor(center.x(), center.y());
             return;
         }
 
