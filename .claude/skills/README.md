@@ -20,6 +20,7 @@
 - `audit-metroid-literal-budget.ps1`: enforce the non-canonical quoted `"Metroid.*"` literal ratchet budget
 - `audit-platform-scatter-budget.ps1`: enforce the V4 macOS/Linux platform-condition scatter ratchet and macOS cursor-warp guard
 - `apply-perf-baseline.py`: apply perf `.summary.txt` files to the V6/V5 baseline markdown tables
+- `compare-perf-repro.py`: compare two perf logs/summaries for V6 S24 p50/p99 reproducibility
 - `collect-perf-baseline.sh` / `.ps1`: run a developer build with `MELONPRIME_PERF=1`, tee the log, and write a summary for V6 Phase 0
 - `generate-hud-prop-schema.py`: generate the V2 Phase 2 HUD property schema, dialog prop include, on-screen edit prop include, and drift report
 - `check-inc-ownership.ps1`: verify `.inc` ownership expectations
