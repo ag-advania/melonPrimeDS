@@ -1,5 +1,22 @@
 # melonPrimeDS `highres_fonts_v3` リファクタリング調査・ロードマップ
 
+> **ステータス（2026-07-04 照合）:** 本ノートの有効な提案は
+> [melonprime-full-refactor-plan-v5.md](../melonprime-full-refactor-plan-v5.md) に統合済み。
+> **アクティブな計画は V5 のみ**（本ノートは調査記録として保存）。照合結果:
+>
+> | 本ノートの項目 | 判定 | 理由 / 統合先 |
+> |---|---|---|
+> | Phase 0（カウンタ群） | ✅ 採用 | V5 Phase 0 に統合（フレームタイム percentile と併設） |
+> | Phase 2（per-frame patch / OsdColor） | ✅ 採用（計測ゲート） | V5 §2 W7 + Phase 6。ただし gameplay-runtime.md §7 が「意図的な cheap cold-path」と明記しており、OsdColor は pattern B（ゲームがRAMを上書き）のため edge 化は安全性検証が前提 |
+> | Phase 3（入力source enum / fallback限定 / warp整理） | ✅ 採用 | V5 Phase 2 (4) に統合 |
+> | Phase 4（RAM read 予算） | ✅ 採用（計測ゲート） | V5 Phase 6 |
+> | Phase 5（HUD element-level render cache + pixel-hash 検証） | ✅ 採用（計測ゲート） | V5 §2 W8 + Phase 4b。QPainter 支配が計測で確認された場合のみ |
+> | Phase 1（Core 責務分離） | △ ストレッチ採用 | V5 Phase 6。メンバ配置・RunFrameHook 分岐不変が条件 |
+> | Phase 6（HUD schema/default型監査/UIテーブル統合） | ❌ 大半が既済 | default 型監査は CI 稼働中（`audit-config-defaults.ps1`）、テーブル重複は V2/V3 で生成ファイル化済み。ジオメトリ残りは V4 Phase 3 完了監査済み |
+> | Phase 8（`.inc` を通常 `.cpp` へ） | ❌ 不採用 | unity 断片は意図的規約（inc-ownership CI 検査・upstream diff 衛生）。clip 重複整理と `getScreenWidgetRect` キャッシュのみ V5 Phase 6 へ採用 |
+> | Phase 9（static→instance 所有化） | ❌ 不採用 | melonDS のマルチインスタンスは別プロセス（patch-system.md 明記）で動機が弱く、diff リスク過大。V1 で per-process 前提を文書化済み |
+> | Phase 7 / 10（分類・監査固定） | △ 部分採用 | site 分類・registry は実装済み。予算系は V5 Phase 7 のラチェットに統合 |
+
 ## 調査結果の要約
 
 `highres_fonts_v3` は、単に高解像度フォントを追加しただけのブランチではなく、既に **入力・HUD・プラットフォーム入力・ROMパッチ・CI監査・配布整備** までかなり踏み込んだリファクタリング作業が入っているブランチです。
