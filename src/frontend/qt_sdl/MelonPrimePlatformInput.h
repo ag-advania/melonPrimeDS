@@ -1,6 +1,8 @@
 #ifndef MELONPRIME_PLATFORM_INPUT_H
 #define MELONPRIME_PLATFORM_INPUT_H
 
+#include "MelonPrimePerfProbe.h"
+
 #include <cstdint>
 
 #if !defined(_WIN32)
@@ -77,6 +79,9 @@ inline void PlatformInput_ResetRawFilter(PlatformRawFilter* filter)
 #if !defined(_WIN32)
 inline void PlatformInput_WarpCursor(int x, int y)
 {
+#if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+    MelonPrimePerf::CountWarp();
+#endif
 #if defined(__APPLE__)
     MacWarpCursorGlobal(x, y);
 #elif defined(__linux__)

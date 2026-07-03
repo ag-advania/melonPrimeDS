@@ -47,6 +47,8 @@
                     topStretchX, hudScale,
                     m_hudOriginX, m_hudOriginY);
                 const QRect uploadRect = s_hudPrevDirtyGL.united(curDirty);
+                if (MelonPrimePerf::IsFrameActive() && !uploadRect.isEmpty())
+                    MelonPrimePerf::AddHudDirtyArea(uploadRect.width() * uploadRect.height());
                 bool hudGlStateChanged = false;
 
                 if (!uploadRect.isEmpty() && fullLogW > 0 && fullLogH > 0) {
@@ -55,6 +57,8 @@
                     // OPT-TX1: GL_BGRA matches QImage native byte order — driver fast-path.
                     if (topOutW != overlayTexW || topOutH != overlayTexH) {
                         // Full upload on size change — texture must be re-allocated.
+                        MelonPrimePerf::AddGlUploadBytes(
+                            static_cast<uint64_t>(topOutW) * static_cast<uint64_t>(topOutH) * 4u);
                         glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, topOutW, topOutH, 0,
                             GL_BGRA, GL_UNSIGNED_BYTE, Overlay[0].constBits());
                         overlayTexW = topOutW;
@@ -76,6 +80,7 @@
                                 && uploadRect == s_hudUploadedRectGL
                                 && dirtyHash == s_hudUploadedHashGL) {
                                 doUpload = false;
+                                MelonPrimePerf::CountDr3HashSkip();
                             } else {
                                 s_hudUploadedRectGL  = uploadRect;
                                 s_hudUploadedHashGL  = dirtyHash;
@@ -86,6 +91,10 @@
                         }
 
                         if (doUpload) {
+                            const uint64_t uploadBytes =
+                                static_cast<uint64_t>(uploadRect.width())
+                                * static_cast<uint64_t>(uploadRect.height()) * 4u;
+                            MelonPrimePerf::AddGlUploadBytes(uploadBytes);
                             // OPT-DR1 / OPT-HUD-3: Partial upload — direct pointer
                             // into QImage data eliminates GL_UNPACK_SKIP_PIXELS and
                             // GL_UNPACK_SKIP_ROWS (4 driver calls → 0).

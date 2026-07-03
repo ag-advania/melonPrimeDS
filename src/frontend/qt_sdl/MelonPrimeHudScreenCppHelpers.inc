@@ -214,7 +214,8 @@ static QRect MelonPrimeHud_RenderTopOverlay(
 
     QPainter topP(&overlay);
     topP.setFont(overlayFont);
-    return MelonPrime::CustomHud_Render(
+    const Uint64 hudRenderStart = MelonPrimePerf::ReadTicksIfActive();
+    const QRect hudDirty = MelonPrime::CustomHud_Render(
         emuInstance, instcfg,
         mp->GetCurrentRom(), mp->GetAddrHot(),
         mp->GetPlayerPosition(),
@@ -223,5 +224,10 @@ static QRect MelonPrimeHud_RenderTopOverlay(
         mp->IsInGame(),
         topStretchX, hudScale,
         hudOriginXds, hudOriginYds);
+    if (hudRenderStart)
+        MelonPrimePerf::AddCustomHudRenderTicks(MelonPrimePerf::ReadTicksIfActive() - hudRenderStart);
+    if (MelonPrimePerf::IsFrameActive() && !hudDirty.isEmpty())
+        MelonPrimePerf::AddHudDirtyArea(hudDirty.width() * hudDirty.height());
+    return hudDirty;
 }
 #endif
