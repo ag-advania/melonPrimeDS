@@ -16,3 +16,4 @@ Implementation/investigation notes moved out of `src/frontend/qt_sdl/` on 2026-0
 - [MelonPrimeMigrationLedgerPhase4.md](MelonPrimeMigrationLedgerPhase4.md) — V3 Phase 4 migration ledger and legacy-key deletion decisions
 - [MelonPrimeDeclutterPhase5.md](MelonPrimeDeclutterPhase5.md) — V3 Phase 5 file-size, binding, and localization declutter audit
 - [MelonPrimeUpstreamIntegrationPhase6.md](MelonPrimeUpstreamIntegrationPhase6.md) — V3 Phase 6 upstream-owned hook-site recount and skip decision
+- [melonprime-highres-fonts-v3-refactor-roadmap.md](melonprime-highres-fonts-v3-refactor-roadmap.md) — `highres_fonts_v3` branch investigation and post-V4 refactor roadmap (Phases 0–10)
