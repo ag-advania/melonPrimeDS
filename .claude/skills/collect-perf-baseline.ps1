@@ -21,6 +21,13 @@ $timestamp = Get-Date -Format 'yyyyMMdd-HHmmss'
 $log = Join-Path $OutDir "$Label-perf-$timestamp.log"
 $summary = [System.IO.Path]::ChangeExtension($log, '.summary.txt')
 $summarizer = Join-Path $repoRoot '.claude/skills/summarize-melonprime-perf.py'
+$python = Get-Command python -ErrorAction SilentlyContinue
+if (-not $python) {
+    $python = Get-Command python3 -ErrorAction SilentlyContinue
+}
+if (-not $python) {
+    throw 'python or python3 is required to summarize MelonPrime perf logs.'
+}
 
 Write-Host "Writing perf log: $log"
 Write-Host "After the app opens, load the ROM, enter the agreed in-game scene, soak for 10 minutes, then quit cleanly."
@@ -35,7 +42,7 @@ finally {
     $env:MELONPRIME_PERF = $oldPerf
 }
 
-python $summarizer $log | Tee-Object -FilePath $summary
+& $python.Source $summarizer $log | Tee-Object -FilePath $summary
 Write-Host "Wrote perf summary: $summary"
 
 exit $appStatus
