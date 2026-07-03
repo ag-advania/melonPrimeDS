@@ -855,6 +855,10 @@ def parse_dialog(props: dict[str, Prop], extra_refs: dict[str, list[Meta]], iden
         key = match.group(1)
         if key in props:
             add_meta(props, extra_refs, key, "dialog", origin="dialog:literal")
+    for match in re.finditer(r'\bMP_HUD_PROP_KEY_(\w+)\b', text):
+        key = ident_to_key.get(match.group(1))
+        if key in props:
+            add_meta(props, extra_refs, key, "dialog", origin="dialog:macro-ref")
     return sections
 
 
@@ -984,15 +988,21 @@ def parse_edit_descriptors(
 def parse_side_panel(props: dict[str, Prop], extra_refs: dict[str, list[Meta]], ident_to_key: dict[str, str]) -> None:
     text = strip_comments(read(SIDE_PANEL_CPP))
     call_names = {
-        "addOutlineGroup", "addBuiltins", "addOffsetRows", "addLineEdit",
-        "addAlign3Combo", "addOpacitySlider", "addSpinBox", "addDoubleSpinBox",
-        "addCheckBox", "addColorPicker", "addComboBox", "addGaugePositionRows",
+        "addOutlineGroup", "addOutlineGroupSection", "addBuiltins",
+        "addOffsetRows", "addLineEdit", "addAlign3Combo", "addOpacitySlider",
+        "addSpinBox", "addDoubleSpinBox", "addCheckBox", "addColorPicker",
+        "addComboBox", "addGaugePositionRows",
     }
     for name, args in function_calls(text, call_names):
         origin = f"side:{name}"
         if name == "addOutlineGroup" and len(args) >= 1:
             # Call sites are addOutlineGroup(MP_OUTLINE_KEYS(Prefix)); pull the prefix token.
             m = re.search(r"MP_OUTLINE_KEYS\(\s*(\w+)\s*\)", args[0])
+            if m:
+                add_outline_group(props, extra_refs, m.group(1), "side", origin)
+        elif name == "addOutlineGroupSection" and len(args) >= 2:
+            # Call sites are addOutlineGroupSection(Label, MP_OUTLINE_KEYS(Prefix)).
+            m = re.search(r"MP_OUTLINE_KEYS\(\s*(\w+)\s*\)", args[1])
             if m:
                 add_outline_group(props, extra_refs, m.group(1), "side", origin)
         elif name == "addBuiltins" and len(args) >= 5:
@@ -1324,6 +1334,8 @@ def write_edit_props(
 
     count_names = {
         "kPropsCrosshairMain": "kCrosshairMainCount",
+        "kPropsCrosshairNormal": "kCrosshairNormalCount",
+        "kPropsCrosshairZoom": "kCrosshairZoomCount",
         "kPropsCrosshairInner": "kCrosshairInnerCount",
         "kPropsCrosshairOuter": "kCrosshairOuterCount",
     }

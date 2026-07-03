@@ -3,14 +3,15 @@
 #include "MelonPrimePatchAspectRatio.h"
 #include "MelonPrimeInternal.h"
 #include "MelonPrimeGameRomAddrTable.h"
+#include "MelonPrimeHudPropSchema.inc"
 #include "EmuInstance.h"
 #include "Window.h"
 #include "NDS.h"
 
 namespace MelonPrime {
 
-static constexpr const char* kCfgAspectRatioEnabled = "Metroid.Visual.InGameAspectRatio";
-static constexpr const char* kCfgAspectRatioMode    = "Metroid.Visual.InGameAspectRatioMode";
+static constexpr const char* kCfgAspectRatioEnabled = MP_HUD_PROP_KEY_InGameAspectRatio;
+static constexpr const char* kCfgAspectRatioMode    = MP_HUD_PROP_KEY_InGameAspectRatioMode;
 
 static constexpr uint32_t kScaleOrig1  = 0xE5991664;
 static constexpr uint32_t kScaleOrig2  = 0xE59A1664;

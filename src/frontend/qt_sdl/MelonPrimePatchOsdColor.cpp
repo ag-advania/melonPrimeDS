@@ -5,6 +5,7 @@
 #include "MelonPrimeGameRomAddrTable.h"
 #include "MelonPrimeHudPropSchema.inc"
 #include "MelonPrimeOsdColorSchema.inc"
+#include "MelonPrimePerfProbe.h"
 #include "EmuInstance.h"
 #include "NDS.h"
 
@@ -194,7 +195,13 @@ void OsdColor_RestoreOnce(melonDS::NDS* nds, const RomAddresses& rom)
 void OsdColor_ApplyOnce(EmuInstance* emu, Config::Table& localCfg,
                          const RomAddresses& rom)
 {
+#if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+    MelonPrimePerf::CountOsdColorApply();
+#endif
     if (!s_osdConfigDirty) return;
+#if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+    MelonPrimePerf::CountOsdColorWrite();
+#endif
     s_osdConfigDirty = false;
 
     // OsdColor patches are part of the Custom HUD feature; force-disable when

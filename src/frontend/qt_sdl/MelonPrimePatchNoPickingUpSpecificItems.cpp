@@ -2,6 +2,7 @@
 
 #include "MelonPrimePatchNoPickingUpSpecificItems.h"
 #include "Config.h"
+#include "MelonPrimeDef.h"
 #include "NDS.h"
 
 namespace MelonPrime {
@@ -33,13 +34,13 @@ struct PatchSet {
 };
 
 static constexpr const char* kCfgPowerUpPickupNoEffect =
-    "Metroid.GameFeature.PowerUpPickupNoEffectPowerUps";
+    MelonPrime::CfgKey::PowerUpPickupNoEffectPowerUps;
 static constexpr const char* kCfgPowerUpPickupNoEffectDoubleDamage =
-    "Metroid.GameFeature.PowerUpPickupNoEffectDoubleDamage";
+    MelonPrime::CfgKey::PowerUpPickupNoEffectDoubleDamage;
 static constexpr const char* kCfgPowerUpPickupNoEffectCloak =
-    "Metroid.GameFeature.PowerUpPickupNoEffectCloak";
+    MelonPrime::CfgKey::PowerUpPickupNoEffectCloak;
 static constexpr const char* kCfgPowerUpPickupNoEffectDeathalt =
-    "Metroid.GameFeature.PowerUpPickupNoEffectDeathalt";
+    MelonPrime::CfgKey::PowerUpPickupNoEffectDeathalt;
 
 static constexpr uint32_t kCmpItemTypeMaxWord = 0xE3500015u; // cmp r0,#0x15
 static constexpr uint32_t kAddLsPcPcItemTypeWord = 0x908FF100u; // addls pc,pc,r0,lsl #2

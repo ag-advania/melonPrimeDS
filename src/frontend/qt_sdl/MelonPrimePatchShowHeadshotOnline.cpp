@@ -3,11 +3,12 @@
 #include "MelonPrimePatchShowHeadshotOnline.h"
 #include "MelonPrimePatchCommon.h"
 #include "Config.h"
+#include "MelonPrimeDef.h"
 
 namespace MelonPrime {
 namespace {
 
-static constexpr const char* kCfgShowHeadshotOnline = "Metroid.GameFeature.ShowHeadshotOnline";
+static constexpr const char* kCfgShowHeadshotOnline = MelonPrime::CfgKey::ShowHeadshotOnline;
 
 // H228 HEADSHOT WiFi Force Standalone Display
 // ROM group order: JP1_0=0, JP1_1=1, US1_0=2, US1_1=3, EU1_0=4, EU1_1=5, KR1_0=6

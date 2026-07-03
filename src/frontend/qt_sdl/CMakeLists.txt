@@ -10,7 +10,7 @@ set(MELONPRIME_WINDOWS_ONLY_SOURCES
 )
 
 set(MELONPRIME_MACOS_ONLY_SOURCES
-    MelonPrimeRawInputMacFilter.cpp
+    MelonPrimeRawInputMacFilter.mm
 )
 
 set(MELONPRIME_LINUX_ONLY_SOURCES
@@ -275,10 +275,18 @@ elseif (APPLE)
     endif()
     find_library(OPENGL_LIB OpenGL)
     target_link_libraries(melonDS PRIVATE ${OPENGL_LIB})
-    # MelonPrimeDS: IOHIDManager raw mouse input (MelonPrimeRawInputMacFilter)
+    # MelonPrimeDS: GCMouse/IOHID raw mouse input + CGWarp cursor recenter
+    # (MelonPrimeRawInputMacFilter.mm, compiled with ARC)
     find_library(IOKIT_LIB IOKit)
     find_library(COREFOUNDATION_LIB CoreFoundation)
-    target_link_libraries(melonDS PRIVATE ${IOKIT_LIB} ${COREFOUNDATION_LIB})
+    find_library(COREGRAPHICS_LIB CoreGraphics)
+    find_library(GAMECONTROLLER_LIB GameController)
+    target_link_libraries(melonDS PRIVATE
+        ${IOKIT_LIB} ${COREFOUNDATION_LIB} ${COREGRAPHICS_LIB} ${GAMECONTROLLER_LIB})
+    set_source_files_properties(
+        MelonPrimeRawInputMacFilter.mm
+        PROPERTIES COMPILE_OPTIONS "-fobjc-arc"
+    )
     target_sources(melonDS PRIVATE
         ../duckstation/gl/context_agl.mm
     )
@@ -400,6 +408,7 @@ if (APPLE)
 
     option(MACOS_BUNDLE_LIBS "Bundle libraries with the app on macOS" OFF)
     option(MACOS_BUILD_DMG "Build DMG image of the macOS application bundle" OFF)
+    option(MACOS_ADHOC_SIGN_BUNDLE "Ad-hoc sign the macOS app bundle after build" ON)
 
     if (MACOS_BUNDLE_LIBS)
         if (MACOS_BUILD_DMG)
@@ -408,6 +417,17 @@ if (APPLE)
         add_custom_command(TARGET melonDS POST_BUILD
             COMMAND ${CMAKE_SOURCE_DIR}/tools/mac-libs.rb ${DMGARG} ${CMAKE_BINARY_DIR}
             COMMENT "Bundling macOS libraries...")
+    endif()
+
+    if (MACOS_ADHOC_SIGN_BUNDLE)
+        find_program(CODESIGN_EXECUTABLE codesign)
+        if (CODESIGN_EXECUTABLE)
+            add_custom_command(TARGET melonDS POST_BUILD
+                COMMAND ${CODESIGN_EXECUTABLE} --force --sign - --deep "$<TARGET_BUNDLE_DIR:melonDS>"
+                COMMENT "Ad-hoc signing macOS app bundle...")
+        else()
+            message(WARNING "codesign not found; macOS app bundle will not be ad-hoc signed")
+        endif()
     endif()
 endif()
 

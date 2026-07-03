@@ -124,15 +124,21 @@ Write the result to `C:\tmp\release-notes.md` on the Windows dev machine. On oth
       <strong>📦 Download Files</strong>
       <p>ℹ️ Expand the Assets section and download:</p>
       <ul>
-        <li><strong>Windows users</strong>: melonDS-windows-x86_64.zip</li>
+        <li><strong>Windows users</strong>: melonPrimeDS-windows-x86_64.zip</li>
+        <li><strong>macOS users</strong>: melonPrimeDS-macOS-universal.zip (or the arch-specific zip if needed)</li>
+        <li><strong>Linux users</strong>: melonPrimeDS-linux-appimage-x86_64.zip (or the matching aarch64 zip)</li>
       </ul>
+      <p>macOS builds are ad-hoc signed and may still show a Gatekeeper warning.</p>
     </td>
     <td>
       <strong>📦 ダウンロードファイル</strong>
       <p>ℹ️ Assetsセクションを展開して、以下をダウンロードしてください:</p>
       <ul>
-        <li><strong>Windows ユーザー</strong>: melonDS-windows-x86_64.zip</li>
+        <li><strong>Windows ユーザー</strong>: melonPrimeDS-windows-x86_64.zip</li>
+        <li><strong>macOS ユーザー</strong>: melonPrimeDS-macOS-universal.zip（必要に応じてCPU別zip）</li>
+        <li><strong>Linux ユーザー</strong>: melonPrimeDS-linux-appimage-x86_64.zip（aarch64環境では対応するzip）</li>
       </ul>
+      <p>macOS版はad-hoc署名のため、Gatekeeperの警告が出る場合があります。</p>
     </td>
   </tr>
 </table>

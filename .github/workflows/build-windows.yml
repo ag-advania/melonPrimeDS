@@ -6,6 +6,9 @@ on:
     branches:
       - master
       - ci/*
+  pull_request:
+    branches:
+      - master
 
 env:
   VCPKG_COMMIT: 9b965a116838c6cdcd36bca60d1b81b030c8ab8d
@@ -30,6 +33,25 @@ jobs:
       uses: actions/checkout@v6
       with:
         fetch-depth: 1
+
+    - name: Audit MelonPrime config discipline
+      shell: pwsh
+      run: |
+        .\.claude\skills\audit-config-defaults.ps1
+        .\.claude\skills\audit-hud-key-parity.ps1 -Strict
+        .\.claude\skills\check-inc-ownership.ps1
+        .\.claude\skills\audit-metroid-literal-budget.ps1 -Budget 1
+        .\.claude\skills\audit-platform-scatter-budget.ps1 -Budget 30
+
+    - name: Verify generated HUD schema
+      shell: pwsh
+      run: |
+        python .\.claude\skills\generate-hud-prop-schema.py
+        git diff --exit-code -- `
+          src/frontend/qt_sdl/MelonPrimeHudPropSchema.inc `
+          src/frontend/qt_sdl/InputConfig/MelonPrimeInputConfigHudDialogProps.inc `
+          src/frontend/qt_sdl/MelonPrimeHudConfigOnScreenEditProps.inc `
+          .claude/rules/notes/MelonPrimeHudPropSchemaPhase2a.md
 
     - name: Cache MSYS2 packages
       uses: actions/cache@v4

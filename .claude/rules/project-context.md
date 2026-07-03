@@ -3,7 +3,11 @@
 ## Project Overview
 MelonPrimeDS is a fork of melonDS tailored for Metroid Prime Hunters DS with mouse/keyboard-focused FPS controls and game-specific emulator/UI patches.
 
-Primary target: Windows. The repo has also been used with MinGW cross-compilation from Ubuntu WSL.
+Primary target: Windows, with native macOS and Linux support now maintained for
+testing and distribution. Windows remains the main gameplay tuning target and
+uses the MinGW/MSYS2 workflow; macOS uses the GCMouse/IOHID/QCursor input stack,
+Linux uses XInput2 on X11 with a Qt fallback, and BSD is kept as a build-only CI
+target. Release artifacts are expected for Windows, macOS, and Linux.
 
 ## Key Custom Features Implemented
 

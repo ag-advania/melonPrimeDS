@@ -69,3 +69,47 @@ Every cache needs a clear invalidation owner:
 - `ProcessAimInputMouse()` skips IMUL / clamp / output on zero-delta frames and returns immediately when delta and residuals are both zero (P-44).
 - LateLatch's `GetRawInputBuffer` syscall is gated on `m_didFrameAdvanceSinceSnapshot`, so normal in-game frames skip it (P-47).
 - `clearStuck*` and message draining run post-present in `DeferredDrain` / `clearStuckPostFrame`, off the input→`RunFrame` latency path (P-48b).
+
+## Invalidation Ledger (V5 Phase 5)
+
+Every row must have an explicit owner. Adding a cache without a ledger row is a review blocker.
+
+| Cache | Location | Invalidation trigger | Owner |
+|---|---|---|---|
+| `CachedHudConfig` / `CustomHud_GetCacheEpoch()` | `MelonPrimeHudRenderConfig.inc` | Config reload, TOML import, edit-mode snapshot apply | `CustomHud_RefreshConfigIfNeeded` |
+| `m_hudCfgEpoch` / `m_hudEnabled` | `Screen.h` + `MelonPrimeHudScreenCppHelpers.inc:117-124` | `Metroid.Visual.CustomHUD` change | `MelonPrimeHud_RefreshHudEnabledIfNeeded` |
+| `m_hudFontEpoch` / `overlayFont` | `Screen.h` + helpers | HUD font property change | `MelonPrimeHud_RefreshOverlayFontIfNeeded` |
+| `m_radarCfgEpoch` / radar GL fields | `Screen.h` + helpers | Radar property change | `MelonPrimeHud_RefreshRadarConfigIfNeeded` |
+| `m_hudTopMatrix` / layout scale | `Screen.h` + `MelonPrimeHudScreenCppLayout.inc:5-17` | `setupScreenLayout()` | `ScreenPanel::setupScreenLayout` |
+| `m_radarAnchorDsX/Y` | `Screen.h` + helpers | Radar config epoch refresh | `MelonPrimeHud_RefreshRadarConfigIfNeeded` |
+| Dirty rect / `s_drawnDirtyPx` | `MelonPrimeHudRenderAssets.inc` | Top of each `CustomHud_Render` | `CustomHud_Render` |
+| OPT-DR3 upload hash | `MelonPrimeHudScreenCppOverlayOfGl.inc:36-40` | Resize / full reupload / content change | GL overlay path (same file) |
+| `s_zoomAimCanZoomCache` | `MelonPrimeGameInput.cpp:51` | ROM detect / layout / scope state edge | `UpdateZoomAimEffectiveScale` |
+| `m_aimEffectiveFixedScale*` | `MelonPrime.h` | Sensitivity / zoom-aim config reload | `RecalcAimFixedPoint` / zoom update |
+| `m_aimResidualX/Y` | `MelonPrime.h` | Sensitivity, layout, aim block, focus (not `InputReset`) | `HandleAimEarlyReset`, explicit lifecycle |
+| `m_cachedPanel` (P-3) | `MelonPrime.h` | `OnEmuStart`, `NotifyLayoutChange` | `MelonPrimeCore` lifecycle |
+| Linux panel `aimMouseDelta*` | `Screen.h:109-110` | `resetAimMouseDelta`, panel→raw edge (`GameInput.cpp:205-206`) | `ScreenPanel` + `UpdateInputStateImpl` |
+| Linux `absBaseInvalid` | `MelonPrimeRawInputLinuxFilter.cpp:87` | `resetAll`, `NotifyCursorWarp` | `LinuxRawInputFilter` |
+| Mac raw `lastReadX/Y` | `MelonPrimeRawInputMacFilter.mm:46-47` | `resetAll`, filter stop | `MacRawInputFilter::resetAll` |
+| Linux raw `lastReadX/Y` | `MelonPrimeRawInputLinuxFilter.cpp:54-55` | `resetAll` | `LinuxRawInputFilter::resetAll` |
+| Win raw mouse snapshot | `MelonPrimeRawInputState.cpp:283-289` | `discardDeltas`, `resetAll` | `InputState::fetchMouseDelta` |
+| `m_platformRawAimWasActive` | `MelonPrime.h:594` | N/A (edge detector); cleared on emu stop via filter reset | `UpdateInputStateImpl` |
+| `BattleMatchState` | `MelonPrimeHudRenderRuntime.inc` | Match join/leave, config epoch | `CustomHud_RefreshBattleStateIfNeeded` |
+| Text/icon/radar-frame caches | `MelonPrimeHudRenderAssets.inc` | Signature change (size/color/text) | Per-cache prepare helpers |
+| `shadersReady` | `MelonPrimeEmuThreadFrameState.inc` | `videoSettingsDirty` / renderer switch | `EmuThread.cpp` limiter block |
+
+## Per-Frame Syscall Budget (V5 Phase 7 ratchet)
+
+Review must not increase steady-state per-frame syscalls without Phase 0 before/after numbers.
+
+| Platform | Path | Budget (post-V5 Phase 2) | Notes |
+|---|---|---|---|
+| Windows | Raw input | `GetRawInputBuffer` via Poll + DeferredDrain; LateLatch gated (P-47) | Unchanged do-not-touch path |
+| Windows | Warp | `ClipCursor` on clip setup only | No per-frame SetCursorPos in aim |
+| macOS | Raw aim active | **0** CGWarp per aim frame | Threshold warp in `Screen.cpp` >96px only |
+| macOS | QCursor fallback | CGWarp per aim frame (Accessibility path) | Intentional |
+| Linux raw | Aim | **0** XWarp per aim frame | Threshold containment >96px |
+| Linux panel | Aim | 0 warps; atomic panel delta | Edge reset on panel→raw |
+| All (dev) | Perf probe | 0 in release; gated in dev | S22 verified |
+
+Increasing any row requires `MELONPRIME_PERF=1` before/after attached to the PR.
