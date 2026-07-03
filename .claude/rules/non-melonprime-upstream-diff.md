@@ -56,6 +56,21 @@ Watch these files closely during upstream merges. CPU decode, JIT block generati
 
 Highest merge-conflict risk lives in `EmuThread.cpp`, `Screen.cpp`, `Config.cpp`, and `Window.cpp` because upstream also changes these for event loop, renderer, config, and menu work.
 
+V6 Phase 1 marker snapshot (2026-07-04, `highres_fonts_v3` @ `d90cc1ec`):
+
+| File | `MELONPRIME` marker count |
+|---|---:|
+| `src/frontend/qt_sdl/EmuThread.cpp` | 53 |
+| `src/frontend/qt_sdl/Screen.cpp` | 32 |
+| `src/frontend/qt_sdl/Window.cpp` | 20 |
+| `src/frontend/qt_sdl/Config.cpp` | 17 |
+| `src/frontend/qt_sdl/EmuInstance.h` | 16 |
+| `src/frontend/qt_sdl/Screen.h` | 16 |
+| `src/frontend/qt_sdl/EmuInstanceInput.cpp` | 13 |
+
+These are recorded for future upstream merge triage only; V6 does not reduce
+hook sites without a concrete upstream merge target.
+
 ## Build, CI, and Tooling
 
 | Files | Difference from upstream |
