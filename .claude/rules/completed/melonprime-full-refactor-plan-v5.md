@@ -2,7 +2,7 @@
 
 **作成日:** 2026-07-04
 **対象ブランチ:** `highres_fonts_v3`
-**ステータス:** 完了（2026-07-04）— `completed/melonprime-full-refactor-plan-v5.md` へ移動
+**ステータス:** 実装・文書化済み / **検証 pending**（2026-07-04）— ROM 基準値・S21・CI green 待ち。`completed/` へ移動済みだが全 Phase 完了扱いではない。
 **前提:** [V1](completed/melonprime-full-refactor-plan.md)〜[V4](completed/melonprime-full-refactor-plan-v4.md) の後継。
 構造的負債（リテラル・パッチライフサイクル・HUDスキーマ・プラットフォーム散乱）は V1–V4 の
 ラチェットで固定済み。**V5 はパフォーマンス（低遅延・低CPU・フレームタイム安定）を主目的**とする。
@@ -258,14 +258,14 @@ V1 S1–S12 / V2 S13–S15 / V3 S16–S17 / V4 S18–S20 を継承。V5 追加:
 
 | Phase | 内容 | 状態 | 完了日 | 結果メモ |
 |---|---|---|---|---|
-| 0 | 計測基盤 + 3プラットフォーム基準値 | 完了 | 2026-07-04 | `MelonPrimePerfProbe.h` + EmuThread 区間プローブ + カウンタ群 + `summarize-melonprime-perf.py`。mac dev ビルド green。基準値は ROM 実行後に追記 |
+| 0 | 計測基盤 + 3プラットフォーム基準値 | **pending**（基盤完了） | — | `MelonPrimePerfProbe.h` + EmuThread 区間プローブ + カウンタ群 + `summarize-melonprime-perf.py`。mac dev ビルド green。**3 platform baseline: 未取得** |
 | 1 | ホットパス網羅監査（証拠表） | 完了 | 2026-07-04 | §9 証拠表 45 行。RED×3（W1–W3）、YELLOW×17、WHITE×25。Phase 2 優先: P1-001→002→003 |
-| 2 | 入力ホットパス残渣除去（本丸A） | 完了 | 2026-07-04 | W1 mac raw時warp廃止+閾値格納 / W2 panel→rawエッジreset / W3 IsXcb static / AimInputSource enum / P-48a load-first |
-| 3 | ペーシング調律（本丸B・計測ゲート） | 完了 | 2026-07-04 | 非Win coarse margin 1.0→0.5ms（Windows 1.0ms 不変）。ROM 基準値は未計測 |
-| 4 | HUD/描画残渣（計測ゲート） | 完了 | 2026-07-04 | 4a: Phase 1 新規REDなし（既存 OPT-DR/SC/HRT 網内）。4b: ROM計測未実施のため element-cache 不着手 |
+| 2 | 入力ホットパス残渣除去（本丸A） | 完了 | 2026-07-04 | W1 mac raw時warp廃止+閾値格納 / W2 panel→rawエッジreset / W3 IsXcb static / AimInputSource enum / P-48a load-first。completion audit: scatter 36→24（PlatformInput facade へ集約） |
+| 3 | ペーシング調律（本丸B・計測ゲート） | **pending**（実装済み） | — | 非Win coarse margin 1.0→0.5ms（Windows 1.0ms 不変）。**ROM perf validation: 未取得** |
+| 4 | HUD/描画残渣（計測ゲート） | **pending**（監査済み） | — | 4a: Phase 1 新規REDなし（既存 OPT-DR/SC/HRT 網内）。4b: ROM計測未実施のため element-cache 不着手 |
 | 5 | invalidation 台帳 | 完了 | 2026-07-04 | `melonprime-performance.md` §Invalidation Ledger + §Syscall Budget |
-| 6 | ストレッチ（計測ゲート） | 完了 | 2026-07-04 | 全候補「ROM計測未実施・効果未確認」で閉じ（W7/OsdColor edge化、RAM予算、GCMouse queue 等） |
-| 7 | 文書化 + 基準値固定 | 完了 | 2026-07-04 | Round 10 追記、`completed/` 移動、README/CLAUDE 更新 |
+| 6 | ストレッチ（計測ゲート） | **pending** | — | 全候補「ROM計測未実施・効果未確認」— 計測なしに完了扱いしない |
+| 7 | 文書化 + 基準値固定 | **pending** | — | Round 10 追記、`completed/` 移動、README/CLAUDE 更新済み。**CI green / S21 / S22 検証 pending** |
 
 ### 初期実測値（2026-07-04、計画作成時）
 
@@ -273,7 +273,19 @@ V1 S1–S12 / V2 S13–S15 / V3 S16–S17 / V4 S18–S20 を継承。V5 追加:
 - Linux raw時: ~~毎フレーム `resetAimMouseDelta()`~~ **Phase 2 修正済** — panel→raw エッジのみ
 - `platformName()` QString比較: ~~PlatformInput.h 2箇所~~ **Phase 2 修正済** — `PlatformInput_IsXcb()` static
 - ホットパス gameplay ファイルの per-frame Config 参照: 0件（規律維持を確認）
-- 計測基盤: **`MelonPrimePerfProbe.h`**（`MELONPRIME_ENABLE_DEVELOPER_FEATURES` + `MELONPRIME_PERF=1`）。リリース構成ではシンボル/文字列ゼロを確認済み（S22）
+- 計測基盤: **`MelonPrimePerfProbe.h`**（`MELONPRIME_ENABLE_DEVELOPER_FEATURES` + `MELONPRIME_PERF=1`）
+
+### S22 リリース痕跡ゼロ（2026-07-04 completion audit）
+
+Release 構成（`MELONPRIME_ENABLE_DEVELOPER_FEATURES=OFF`, macOS Release）:
+
+```text
+strings build-release-audit/melonPrimeDS.app/Contents/MacOS/melonPrimeDS \
+  | rg 'MelonPrimePerf|MELONPRIME_PERF|\[MelonPrimePerf\]'  → (none)
+nm … | rg MelonPrimePerf  → (none)
+```
+
+Windows/Ubuntu CI でも同手順で再確認 pending。
 
 ### Phase 0 基準値（計測手順 — ROM 実行後に数値を追記）
 
@@ -282,9 +294,9 @@ developer ビルドで `MELONPRIME_PERF=1 ./melonPrimeDS 2>&1 | tee perf.log`。
 
 | プラットフォーム | p50 | p95 | p99 | max | 備考 |
 |---|---:|---:|---:|---:|---|
-| macOS | — | — | — | — | dev build 導入済み。要 ROM ソーク |
-| Linux VM | — | — | — | — | 未計測 |
-| Windows | — | — | — | — | 未計測 |
+| macOS | 未取得 | 未取得 | 未取得 | 未取得 | dev build 導入済み。要 ROM ソーク |
+| Linux VM | 未取得 | 未取得 | 未取得 | 未取得 | 未計測 |
+| Windows | 未取得 | 未取得 | 未取得 | 未取得 | 未計測 |
 
 - ドメインLOC: raw入力 2,366 / HUD 12,410 / パッチ・フック 6,239 / ゲーム層 4,747 / 設定UI 5,675
 
