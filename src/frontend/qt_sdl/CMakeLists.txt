@@ -408,6 +408,7 @@ if (APPLE)
 
     option(MACOS_BUNDLE_LIBS "Bundle libraries with the app on macOS" OFF)
     option(MACOS_BUILD_DMG "Build DMG image of the macOS application bundle" OFF)
+    option(MACOS_ADHOC_SIGN_BUNDLE "Ad-hoc sign the macOS app bundle after build" ON)
 
     if (MACOS_BUNDLE_LIBS)
         if (MACOS_BUILD_DMG)
@@ -416,6 +417,17 @@ if (APPLE)
         add_custom_command(TARGET melonDS POST_BUILD
             COMMAND ${CMAKE_SOURCE_DIR}/tools/mac-libs.rb ${DMGARG} ${CMAKE_BINARY_DIR}
             COMMENT "Bundling macOS libraries...")
+    endif()
+
+    if (MACOS_ADHOC_SIGN_BUNDLE)
+        find_program(CODESIGN_EXECUTABLE codesign)
+        if (CODESIGN_EXECUTABLE)
+            add_custom_command(TARGET melonDS POST_BUILD
+                COMMAND ${CODESIGN_EXECUTABLE} --force --sign - --deep "$<TARGET_BUNDLE_DIR:melonDS>"
+                COMMENT "Ad-hoc signing macOS app bundle...")
+        else()
+            message(WARNING "codesign not found; macOS app bundle will not be ad-hoc signed")
+        endif()
     endif()
 endif()
 

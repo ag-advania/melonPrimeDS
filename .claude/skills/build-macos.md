@@ -25,6 +25,10 @@ cmake -B build-mac -G Ninja -DCMAKE_BUILD_TYPE=Release \
 
 If CMake input files or bundle metadata changed, rerun the configure command
 before building. The app bundle is generated at `build-mac/melonPrimeDS.app`.
+By default, CMake ad-hoc signs the bundle after each successful macOS build
+(`MACOS_ADHOC_SIGN_BUNDLE=ON`). This stabilizes local/CI bundle identity but is
+not Developer ID notarization, so Gatekeeper may still warn on downloaded
+release zips.
 
 ## Build
 
@@ -38,6 +42,7 @@ For a concise status check:
 cmake --build build-mac --parallel 4
 plutil -p build-mac/melonPrimeDS.app/Contents/Info.plist | grep CFBundleExecutable
 ls -la build-mac/melonPrimeDS.app/Contents/MacOS/
+codesign --verify --deep --strict build-mac/melonPrimeDS.app
 ```
 
 `CFBundleExecutable` must match the executable in `Contents/MacOS`:
@@ -86,6 +91,9 @@ melonDS for the MelonPrimeDS bundle name. It builds both existing macOS presets:
 
 The architecture-specific artifacts are zipped as `melonPrimeDS.app`, then the
 workflow combines them with `lipo` into a universal `melonPrimeDS.app`.
+The architecture-specific and universal bundles are ad-hoc signed and verified
+before upload. CI explicitly configures release artifacts with
+`MELONPRIME_ENABLE_DEVELOPER_FEATURES=OFF`.
 
 If the bundle name or executable name changes, update all of these together:
 
