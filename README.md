@@ -34,6 +34,10 @@ https://ko-fi.com/zection
 
 ## If you’d like to see new HUD features added, you can also support Livetek .
 https://ko-fi.com/livetek 
+      <a href="https://ko-fi.com/livetek">
+<img width="1536" height="1024" alt="image" src="https://github.com/user-attachments/assets/ec6a2871-2b67-4de0-8b1a-ac6740c8d388" />
+
+      </a>
 
 
 [melonPrimeDS.webm](https://github.com/makidoll/melonPrimeDS/assets/8362329/69ab26bb-7205-451a-a11c-70a2ca0b549d)
