@@ -275,6 +275,9 @@ The Phase 0-8 structural refactor finished on 2026-06-11. Current ownership poin
 - Static write-patch lifecycle is centralized in `MelonPrimePatchRegistry.h/.cpp`. New persistent
   write-patches should add a module plus one registry row; `MelonPrime.cpp` should not regain
   per-module apply/restore/reset lists.
+- Cold `MelonPrimeCore` lifecycle/config bodies live in `MelonPrimeLifecycle.cpp`. Keep
+  `RunFrameHook`, `HandleGameJoinInit`, and `HandleBattleRuntimeEnter` in `MelonPrime.cpp` unless a
+  dedicated code-generation comparison is part of the change.
 - Shared all-or-nothing word patches should use `MelonPrimePatchCommon.h` / `StaticWordPatch`.
   Patch-specific state machines such as mask-selected or canary-based patches may stay custom.
 - ROM address definitions live in `MelonPrimeGameRomAddrTable.h` as a single X-macro source of

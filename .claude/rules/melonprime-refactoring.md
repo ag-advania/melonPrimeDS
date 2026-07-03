@@ -131,7 +131,7 @@ In particular, the following items should be read by separating the **document-s
 ## 3.1 Target modules
 
 - Raw Input layer: `MelonPrimeRawInputState` / `MelonPrimeRawInputWinFilter`
-- Game-logic layer: `MelonPrime.h` / `MelonPrime.cpp` / `MelonPrimeInGame.cpp` / `MelonPrimeGameInput.cpp` / `MelonPrimeGameWeapon.cpp`
+- Game-logic layer: `MelonPrime.h` / `MelonPrime.cpp` / `MelonPrimeLifecycle.cpp` / `MelonPrimeInGame.cpp` / `MelonPrimeGameInput.cpp` / `MelonPrimeGameWeapon.cpp`
 - ROM-detection layer: `MelonPrimeGameRomDetect.cpp`
 
 ## 3.2 Threading model
@@ -852,6 +852,7 @@ When reading this unified edition, treat the following four points as fixed rule
 | `MelonPrimeCompilerHints.h` | R1: common macro integration, P-5 |
 | `MelonPrime.h` | OPT C/D/G/L/O/W, P-3, P-17, P-18, P-33 (empty-inline PrePollRawInput), P-46 (`msgPending` atomic), P-47 (`m_didFrameAdvanceSinceSnapshot` + `FrameAdvanceOnce` set) |
 | `MelonPrime.cpp` | OPT D/E/K/L/O/W/Z1/Z2/Z3/Z4, FIX-3, P-20b, P-20c, P-22 (`DeferredDrainInput()` implementation), P-33 (remove PrePoll implementation), P-43 (focused local cache) |
+| `MelonPrimeLifecycle.cpp` | V6 Phase 4: cold `MelonPrimeCore` lifecycle/config bodies (`OnEmuStart` / stop / pause / unpause / boot reset / config reload / init / destructor) moved out of `MelonPrime.cpp` without moving `RunFrameHook` join/battle helpers |
 | `MelonPrimeGameInput.cpp` | OPT F/O/Q/Z2/Z3, FIX-2, P-3, P-17, P-18, P-44 (zero-delta skip), P-47 (clear `m_didFrameAdvanceSinceSnapshot` after PollAndSnapshot) |
 | `MelonPrimeInGame.cpp` | OPT A/B/G/H/J/Z2/Z5, R1 constexpr tables, P-36 (HandleMorphBallBoost branch unification), P-47 (gate LateLatch on `m_didFrameAdvanceSinceSnapshot`) |
 | `EmuThread.cpp` | P-11, P-12, P-13, P-15, P-16, P-22, P-24, P-25, P-26a, P-27, P-32, P-33, P-38, P-39, P-40, P-41, P-45 (QPC spin-loop reuse), P-46 (`handleMessages` acquire fast-path + `sendMessage` release store); owns `MelonPrimeEmuThread*.inc` unity fragments |

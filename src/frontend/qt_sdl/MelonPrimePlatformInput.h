@@ -21,9 +21,11 @@
 namespace MelonPrime {
 
 #if defined(__APPLE__) || defined(__linux__)
+#define MELONPRIME_PLATFORM_RAW_FILTER_ENABLED 1
 #define MELONPRIME_RAW_FILTER_PTR(core) ((core)->m_platformRawFilter)
 #define MELONPRIME_RAW_AIM_WAS_ACTIVE_PTR(core) (&(core)->m_platformRawAimWasActive)
 #else
+#define MELONPRIME_PLATFORM_RAW_FILTER_ENABLED 0
 #define MELONPRIME_RAW_FILTER_PTR(core) (static_cast<void*>(nullptr))
 #define MELONPRIME_RAW_AIM_WAS_ACTIVE_PTR(core) (static_cast<uint8_t*>(nullptr))
 #endif
