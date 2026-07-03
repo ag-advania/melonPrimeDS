@@ -2,7 +2,7 @@
 
 **作成日:** 2026-07-03
 **対象ブランチ:** `highres_fonts_v3`（HEAD `2977aa46` 時点で再実測）
-**ステータス:** Phase 0 完了
+**ステータス:** Phase 1 完了
 **前提:** [V1](completed/melonprime-full-refactor-plan.md) / [V2](completed/melonprime-full-refactor-plan-v2.md) /
 [V3](completed/melonprime-full-refactor-plan-v3.md) の後継。V1–V3 が解消した負債
 （パッチレジストリ / ROM X-macro / HUDスキーマ / リテラルラチェット / migration台帳）は対象外。
@@ -307,7 +307,7 @@ Screen.cpp / Window.cpp の連続・自己完結ブロックのみ、include 位
 | Phase | 内容 | 状態 | 完了日 | 結果メモ |
 |---|---|---|---|---|
 | 0 | ベースライン + 散乱予算 + CI拡張 | 完了 | 2026-07-03 | `audit-platform-scatter-budget.ps1` 追加。Ubuntu CI に Windows と同等の独立 audit job + HUD schema 再生成検証を併設し、build job は audit 成功後に実行。既存監査も非Windows `pwsh` で有効に動くよう補正（`Sort-Object -Unique`、HUD runtime macro 展開、HUD schema expected owners 更新）。Linux raw-input修正後の現HEADで再計測し、散乱予算を 31→36 に更新。ローカル確認: PowerShell監査一式 green / workflow YAML parse green / 散乱予算 36/36 / macOS `QCursor::setPos` ガード clean / HUD schema 再生成 diffなし / macOS build green。Windows/Ubuntu は workflow 上の audit gate として次回PR/対象branch pushで実行。 |
-| 1 | 衛生・ドキュメント同期 | 未着手 | — | — |
+| 1 | 衛生・ドキュメント同期 | 完了 | 2026-07-03 | `merge-upstream-melonds.md` を現行CI方針へ更新し、macOS/Ubuntu/BSD workflow は維持、fork版workflowを優先して小さなupstream maintenanceだけ手動移植する手順へ変更。`project-context.md` にWindows主軸 + macOS/Linux配布対応 + BSD build-only CIの現状を追記。`melonprime-aim-input.md` はGCMouse優先・IOHID fallback・TCC不要/必要の理由を明記。`release-notes.md` の Download Files 節を Windows / macOS / Linux artifact 名へ更新し、macOS ad-hoc署名のGatekeeper警告を既知制約として追加。 |
 | 2 | プラットフォーム入力ファサード（本丸A） | 未着手 | — | — |
 | 3 | HUDジオメトリ消費の完遂（本丸B） | 未着手 | — | — |
 | 4 | フィルタ内部共通化（任意） | 未着手 | — | — |
