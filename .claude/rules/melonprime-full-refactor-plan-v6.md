@@ -324,7 +324,7 @@ Rejected として §6 に記録（実装しない）。
 | 3 | HUD element cache / layer 分離（本丸 A・二重ゲート） | 未着手 | — | |
 | 4 | コールドライフサイクル TU 分離（本丸 B） | 実装完了 / 実機スモーク待ち | 2026-07-04 | `MelonPrimeLifecycle.cpp` 追加。`OnEmuStart` / stop / pause / unpause / boot reset / config reload / config flags / initialize / destructor を純移動し、`HandleGameJoinInit` / `HandleBattleRuntimeEnter` / `RunFrameHook` は `MelonPrime.cpp` に保持。`MelonPrime.cpp` 976→683行。macOS dev/release build、scatter 22/24、inc ownership、literal budget、diff check、nm 所在確認は通過。S2/S6/S7/S8 は ROM 実機操作待ち |
 | 5 | per-frame 再評価の縮減（計測ゲート） | 未着手 | — | |
-| 6 | 小粒 declutter（任意） | 未着手 | — | |
+| 6 | 小粒 declutter（任意） | 完了 | 2026-07-04 | `MelonPrime.cpp` の未使用 `Platform.h` include を機械的に除去。macOS dev build、scatter 22/24、inc ownership、literal budget、diff check 通過 |
 | 7 | ドキュメント + ラチェット固定 | 未着手 | — | |
 
 ### 計測により不採用（Rejected — Phase 3/5 で数値が効果なしを示した場合にここへ記録）

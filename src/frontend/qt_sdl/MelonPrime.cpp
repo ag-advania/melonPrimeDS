@@ -6,7 +6,6 @@
 #include "GPU.h"
 #include "main.h"
 #include "Screen.h"
-#include "Platform.h"
 #include "MelonPrimeDef.h"
 #include "MelonPrimePlatformInput.h"
 #include "MelonPrimeGameRomAddrTable.h"
