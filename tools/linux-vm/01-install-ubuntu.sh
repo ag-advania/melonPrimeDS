@@ -156,8 +156,7 @@ configure_shared_folder() {
   fi
   VBoxManage sharedfolder add "$VM_NAME" \
     --name "$SHARE_NAME" \
-    --hostpath "$HOST_REPO" \
-    --automount
+    --hostpath "$HOST_REPO"
 }
 
 wait_for_install() {

@@ -22,6 +22,8 @@
 #include <optional>
 #include <deque>
 #include <map>
+#include <atomic>
+#include <cstdint>
 
 #include <QWidget>
 #include <QImage>
@@ -97,6 +99,16 @@ public:
         return currentDelta;
     }
 
+    void getAimMouseDelta(std::int32_t& outDx, std::int32_t& outDy) {
+        outDx = aimMouseDeltaX.exchange(0, std::memory_order_acquire);
+        outDy = aimMouseDeltaY.exchange(0, std::memory_order_acquire);
+    }
+
+    void resetAimMouseDelta() {
+        aimMouseDeltaX.store(0, std::memory_order_release);
+        aimMouseDeltaY.store(0, std::memory_order_release);
+    }
+
 public slots:
     void clipCursorCenter1px();
     void unclip();
@@ -159,6 +171,8 @@ protected:
 
 #ifdef MELONPRIME_DS
     int wheelDelta = 0;
+    std::atomic<std::int32_t> aimMouseDeltaX{ 0 };
+    std::atomic<std::int32_t> aimMouseDeltaY{ 0 };
     void wheelEvent(QWheelEvent* event) override;
 #endif
 

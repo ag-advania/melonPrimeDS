@@ -25,6 +25,7 @@
 #include <QPaintEvent>
 #include <QPainter>
 #include <QCursor>
+#include <QGuiApplication>
 
 #include <QDateTime>
 
@@ -68,6 +69,8 @@
 #pragma comment(lib, "dwmapi.lib")
 #elif defined(__APPLE__)
 #include "MelonPrimeRawInputMacFilter.h"  // MacWarpCursorGlobal
+#elif defined(__linux__)
+#include "MelonPrimeRawInputLinuxFilter.h"  // LinuxWarpCursorGlobal
 #endif
 #endif // MELONPRIME_DS
 
@@ -281,6 +284,9 @@ void ScreenPanel::clipCursorToBottomScreen() {
 void ScreenPanel::clipCursorCenter1px() {
     setClipWanted(true);
     setCursor(Qt::BlankCursor);
+#if defined(__linux__)
+    resetAimMouseDelta();
+#endif
 
 #if defined(__APPLE__)
     // QCursor::setPos is CGEventPost-based on macOS and silently fails without
@@ -288,6 +294,14 @@ void ScreenPanel::clipCursorCenter1px() {
     if (isVisible() && window() && window()->isActiveWindow()) {
         const QPoint c = mapToGlobal(rect().center());
         MelonPrime::MacWarpCursorGlobal(c.x(), c.y());
+    }
+#elif defined(__linux__)
+    if (isVisible() && window() && window()->isActiveWindow()) {
+        const QPoint c = mapToGlobal(rect().center());
+        if (QGuiApplication::platformName() == QStringLiteral("xcb"))
+            MelonPrime::LinuxWarpCursorGlobal(c.x(), c.y());
+        else
+            QCursor::setPos(c);
     }
 #elif !defined(_WIN32)
     if (isVisible() && window() && window()->isActiveWindow())
@@ -305,6 +319,9 @@ void ScreenPanel::clipCursorCenter1px() {
 
 void ScreenPanel::unclip() {
     setClipWanted(false);
+#if defined(__linux__)
+    resetAimMouseDelta();
+#endif
 #ifdef _WIN32
     ClipCursor(nullptr);
 #endif
@@ -394,9 +411,7 @@ ScreenPanel::ScreenPanel(QWidget* parent) : QWidget(parent)
 ScreenPanel::~ScreenPanel()
 {
 #ifdef MELONPRIME_DS
-#if defined(_WIN32)
     unclip();
-#endif
 #endif
 }
 
@@ -651,6 +666,35 @@ void ScreenPanel::mouseMoveEvent(QMouseEvent* event)
         return;
 
 #include "MelonPrimeHudScreenCppMouseMove.inc"
+
+#if defined(MELONPRIME_DS) && defined(__linux__)
+    auto* const thread = emu->getEmuThread();
+    auto* const core = thread ? thread->GetMelonPrimeCore() : nullptr;
+    if (core
+        && core->isFocused.load(std::memory_order_acquire)
+        && !core->isStylusMode
+        && !core->isCursorMode
+        && core->IsInGame())
+    {
+        const QPoint center = mapToGlobal(rect().center());
+#if QT_VERSION_MAJOR == 6
+        const QPoint global = event->globalPosition().toPoint();
+#else
+        const QPoint global = event->globalPos();
+#endif
+        const int dx = global.x() - center.x();
+        const int dy = global.y() - center.y();
+        if ((dx | dy) != 0) {
+            aimMouseDeltaX.fetch_add(dx, std::memory_order_release);
+            aimMouseDeltaY.fetch_add(dy, std::memory_order_release);
+            if (QGuiApplication::platformName() == QStringLiteral("xcb"))
+                MelonPrime::LinuxWarpCursorGlobal(center.x(), center.y());
+            else
+                QCursor::setPos(center);
+        }
+        return;
+    }
+#endif
 
     if (!touching)
         return;
@@ -1823,9 +1867,7 @@ void ScreenPanel::unfocus()
         return;
 
     setCursor(Qt::ArrowCursor);
-#if defined(_WIN32)
     unclip();
-#endif
 }
 
 void ScreenPanel::focusInEvent(QFocusEvent * event)

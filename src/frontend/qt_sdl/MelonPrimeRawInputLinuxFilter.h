@@ -17,6 +17,14 @@
 
 namespace MelonPrime {
 
+// Recenter the OS cursor for the fallback (QCursor-delta) aim path and after
+// each consumed aim delta. Uses XWarpPointer on a thread-local Display so the
+// emu thread can warp without marshaling to Qt's GUI thread (same role as
+// MacWarpCursorGlobal). QCursor::setPos can fail to recenter under VirtualBox
+// guest mouse integration or when invoked off the GUI thread — a failed
+// recenter re-applies the cursor-minus-center delta every frame and spins aim.
+void LinuxWarpCursorGlobal(int x, int y);
+
 class LinuxRawInputFilter
 {
 public:
@@ -24,6 +32,7 @@ public:
     static void Release();
 
     bool isAvailable() const;
+    bool hasReceivedMotion() const;
     void fetchMouseDelta(int32_t& outDx, int32_t& outDy);
     void resetAll();
 
