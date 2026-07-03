@@ -166,7 +166,10 @@ void ScreenPanel::wheelEvent(QWheelEvent* event)
 
 void ScreenPanel::refreshClipForGameStateChange()
 {
-    auto* core = emuInstance->getEmuThread()->GetMelonPrimeCore();
+    if (closing || !qApp || qApp->closingDown())
+        return;
+
+    auto* core = melonPrimeCore();
     const bool hasState = (core != nullptr);
     const bool isInGame = hasState && core->IsInGame();
     const bool isFocused = hasState && core->isFocused;
@@ -206,7 +209,10 @@ void ScreenPanel::refreshClipForGameStateChange()
 
 void ScreenPanel::applyInGameTopScreenOnlyOverride(int& layout, int& sizing) const
 {
-    auto* core = emuInstance->getEmuThread()->GetMelonPrimeCore();
+    if (closing || !qApp || qApp->closingDown())
+        return;
+
+    auto* core = melonPrimeCore();
     if (!core) return;
     if (!core->IsRomDetected()) return;
     if (!core->IsInGame()) return;
@@ -218,12 +224,18 @@ void ScreenPanel::applyInGameTopScreenOnlyOverride(int& layout, int& sizing) con
 
 bool ScreenPanel::shouldConfineCursorToBottomScreen() const
 {
-    auto* core = emuInstance->getEmuThread()->GetMelonPrimeCore();
+    if (closing || !qApp || qApp->closingDown())
+        return false;
+
+    auto* core = melonPrimeCore();
     if (!core) return false;
     if (!core->IsRomDetected()) return false;
     if (getClipWanted()) return false;
     if (core->IsInGame()) return false;
-    return emuInstance->getLocalConfig().GetBool(MP_HUD_PROP_KEY_ClipCursorToBottomScreenWhenNotInGame);
+
+    auto* emu = emuInstance;
+    if (!emu) return false;
+    return emu->getLocalConfig().GetBool(MP_HUD_PROP_KEY_ClipCursorToBottomScreenWhenNotInGame);
 }
 
 std::optional<QRect> ScreenPanel::getScreenWidgetRect(int wantedScreenKind) const
@@ -396,7 +408,12 @@ ScreenPanel::ScreenPanel(QWidget* parent) : QWidget(parent)
 ScreenPanel::~ScreenPanel()
 {
 #ifdef MELONPRIME_DS
+    closing = true;
+#if defined(_WIN32)
     unclip();
+#elif defined(__linux__)
+    resetAimMouseDelta();
+#endif
 #endif
 }
 
@@ -470,8 +487,10 @@ void ScreenPanel::setupScreenLayout()
 
 #ifdef MELONPRIME_DS
     // Notify layout change
-    if (auto* core = emuInstance->getEmuThread()->GetMelonPrimeCore()) {
-        core->NotifyLayoutChange();
+    if (!closing && qApp && !qApp->closingDown()) {
+        if (auto* core = melonPrimeCore()) {
+            core->NotifyLayoutChange();
+        }
     }
 #if defined(_WIN32)
     updateClipIfNeeded();
@@ -1949,13 +1968,21 @@ void ScreenPanel::moveEvent(QMoveEvent * e) {
 
 __attribute__((always_inline)) inline void ScreenPanel::setClipWanted(bool value)
 {
-    if (emuInstance->getEmuThread()->GetMelonPrimeCore())
-        emuInstance->getEmuThread()->GetMelonPrimeCore()->isClipWanted = value;
+    if (auto* core = melonPrimeCore())
+        core->isClipWanted = value;
 }
 
 __attribute__((always_inline)) inline bool ScreenPanel::getClipWanted() const
 {
-    if (!emuInstance->getEmuThread()->GetMelonPrimeCore()) return false;
-    return emuInstance->getEmuThread()->GetMelonPrimeCore()->isClipWanted;
+    if (auto* core = melonPrimeCore())
+        return core->isClipWanted;
+    return false;
+}
+
+MelonPrime::MelonPrimeCore* ScreenPanel::melonPrimeCore() const
+{
+    auto* emu = emuInstance;
+    auto* thread = emu ? emu->getEmuThread() : nullptr;
+    return thread ? thread->GetMelonPrimeCore() : nullptr;
 }
 #endif // MELONPRIME_DS
