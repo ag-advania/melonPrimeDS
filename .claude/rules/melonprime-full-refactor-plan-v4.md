@@ -1,8 +1,8 @@
 # MelonPrime 全面リファクタリング計画 V4（Phase 0–7）
 
 **作成日:** 2026-07-03
-**対象ブランチ:** `highres_fonts_v3`（HEAD `77088431` 時点で実測）
-**ステータス:** Phase 0 進行中
+**対象ブランチ:** `highres_fonts_v3`（HEAD `2977aa46` 時点で再実測）
+**ステータス:** Phase 0 完了
 **前提:** [V1](completed/melonprime-full-refactor-plan.md) / [V2](completed/melonprime-full-refactor-plan-v2.md) /
 [V3](completed/melonprime-full-refactor-plan-v3.md) の後継。V1–V3 が解消した負債
 （パッチレジストリ / ROM X-macro / HUDスキーマ / リテラルラチェット / migration台帳）は対象外。
@@ -45,11 +45,11 @@
 
 | 指標 | V3完了時 | 今回実測 | 備考 |
 |---|---:|---:|---|
-| `MelonPrime*` LOC（.ui除く） | 約31,000 | 31,979 | 増分はプラットフォームフィルタ654行が主 |
+| `MelonPrime*` LOC（.ui除く） | 約31,000 | 32,306 | 増分はプラットフォームフィルタとLinux raw-input修正が主 |
 | 非canonical `"Metroid.*"` リテラル | 1 | **1** | ✅ V3ラチェット維持を確認 |
-| `MelonPrime.cpp` | 908 | **1,001** | プラットフォーム起動/リセット処理で再肥大 |
-| プラットフォーム条件マーカー | — | MelonPrime.cpp **24** / GameInput.cpp **15** / MelonPrime.h 7 | 新負債 |
-| `m_macRawFilter` / `m_linuxRawFilter` 参照 | 0 | **26箇所** | 〃 |
+| `MelonPrime.cpp` | 908 | **1,021** | プラットフォーム起動/リセット処理で再肥大 |
+| プラットフォーム条件マーカー | — | MelonPrime.cpp **12** / GameInput.cpp **10** / MelonPrime.h 5（散乱予算スクリプト基準） | 新負債 |
+| `m_macRawFilter` / `m_linuxRawFilter` 参照 | 0 | **36箇所** | 〃 |
 
 ### V4-W1. プラットフォーム入力層の三重化 + 呼び出し側の #ifdef 散乱（最大の負債）
 
@@ -306,7 +306,7 @@ Screen.cpp / Window.cpp の連続・自己完結ブロックのみ、include 位
 
 | Phase | 内容 | 状態 | 完了日 | 結果メモ |
 |---|---|---|---|---|
-| 0 | ベースライン + 散乱予算 + CI拡張 | 進行中 | — | `audit-platform-scatter-budget.ps1` 追加。Ubuntu CI に Windows と同等の独立 audit job + HUD schema 再生成検証を併設し、build job は audit 成功後に実行。既存監査も非Windows `pwsh` で有効に動くよう補正（`Sort-Object -Unique`、HUD runtime macro 展開、HUD schema expected owners 更新）。ローカル確認: PowerShell監査一式 green / workflow YAML parse green / 散乱予算 31/31 / macOS `QCursor::setPos` ガード clean / HUD schema 再生成 diffなし / `cmake --build build-mac --parallel 4` green。未push変更のため Windows/Ubuntu CI は未実行。 |
+| 0 | ベースライン + 散乱予算 + CI拡張 | 完了 | 2026-07-03 | `audit-platform-scatter-budget.ps1` 追加。Ubuntu CI に Windows と同等の独立 audit job + HUD schema 再生成検証を併設し、build job は audit 成功後に実行。既存監査も非Windows `pwsh` で有効に動くよう補正（`Sort-Object -Unique`、HUD runtime macro 展開、HUD schema expected owners 更新）。Linux raw-input修正後の現HEADで再計測し、散乱予算を 31→36 に更新。ローカル確認: PowerShell監査一式 green / workflow YAML parse green / 散乱予算 36/36 / macOS `QCursor::setPos` ガード clean / HUD schema 再生成 diffなし / macOS build green。Windows/Ubuntu は workflow 上の audit gate として次回PR/対象branch pushで実行。 |
 | 1 | 衛生・ドキュメント同期 | 未着手 | — | — |
 | 2 | プラットフォーム入力ファサード（本丸A） | 未着手 | — | — |
 | 3 | HUDジオメトリ消費の完遂（本丸B） | 未着手 | — | — |
@@ -315,18 +315,19 @@ Screen.cpp / Window.cpp の連続・自己完結ブロックのみ、include 位
 | 6 | upstream統合点（任意） | 未着手 | — | — |
 | 7 | ドキュメント + 最終計測 | 未着手 | — | — |
 
-### Phase 0 計測値（2026-07-03、HEAD `77088431`）
+### Phase 0 計測値（2026-07-03、HEAD `2977aa46`）
 
-- `MelonPrime*` LOC（.ui除く）: 31,979
+- `MelonPrime*` LOC（.ui除く）: 32,306
 - 非canonical `"Metroid.*"` リテラル: **1**（V3ラチェット維持 ✅）
-- プラットフォーム条件マーカー: MelonPrime.cpp **24** / GameInput.cpp **15** / MelonPrime.h 7
+- プラットフォーム条件マーカー（散乱予算スクリプト基準）: MelonPrime.cpp **12** / GameInput.cpp **10** / MelonPrime.h 5
 - 散乱予算スクリプト基準: `MelonPrime*.{cpp,h}` の `__APPLE__|__linux__` 一致数 **31**
-  （MelonPrime.cpp 11 / GameInput.cpp 7 / MelonPrime.h 4 / Localization.cpp 3 /
+  → Linux raw-input修正後の現HEADでは **36**
+  （MelonPrime.cpp 12 / GameInput.cpp 10 / MelonPrime.h 5 / Localization.cpp 3 /
   RawInputLinuxFilter.cpp 2 / RawInputLinuxFilter.h 2 / RawInputMacFilter.h 2）
-- `m_macRawFilter`/`m_linuxRawFilter` 参照: 26箇所 / resetAll 分岐クラスタ: 5サイト
+- `m_macRawFilter`/`m_linuxRawFilter` 参照: 36箇所 / resetAll 分岐クラスタ: 5サイト
 - フィルタLOC: mac 349+75 / linux 187+43 = 計654行（公開API同一・共有抽象なし）
 - `MelonPrimeHudGeometry.h` 消費者: 2TU（InputConfig.cpp / HudRender.cpp）— OnScreenDraw.inc 未消費
-- 主要ファイル: MelonPrime.cpp 1,001 / Localization.cpp 1,337 / HudConfigOnScreenDraw.inc 1,328
+- 主要ファイル: MelonPrime.cpp 1,021 / Localization.cpp 1,337 / HudConfigOnScreenDraw.inc 1,328
 - CI: windows（監査あり）/ macos / ubuntu / **bsd（要確認）** — 監査はWindowsのみ
 - upstream `MELONPRIME` マーカー: EmuThread 48 / Screen 29 / Window 20 / Config 17
 

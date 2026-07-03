@@ -8,7 +8,7 @@
 # Windows Raw Input sites are not part of this budget.
 
 param(
-    [int]$Budget = 31,
+    [int]$Budget = 36,
     [int]$MaxList = 40,
     [switch]$Json
 )
