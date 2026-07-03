@@ -218,6 +218,77 @@ def median(values: list[float]) -> float:
     return (sorted_values[mid - 1] + sorted_values[mid]) / 2.0
 
 
+def percentile(values: list[float], p: float) -> float:
+    if not values:
+        return 0.0
+    sorted_values = sorted(values)
+    idx = p * float(len(sorted_values) - 1)
+    lo = int(idx)
+    hi = min(lo + 1, len(sorted_values) - 1)
+    frac = idx - float(lo)
+    return sorted_values[lo] * (1.0 - frac) + sorted_values[hi] * frac
+
+
+def format_num(value: float, suffix: str = "") -> str:
+    return f"{value:.3f}{suffix}"
+
+
+def summarize_for_tables(report: Report, platform: str) -> list[str]:
+    if not report.shutdown and not report.windows:
+        return ["No [MelonPrimePerf] data available for markdown rows."]
+
+    frame = report.shutdown or report.windows[-1]
+    section_windows = [w for w in report.windows if w.draw_ms is not None]
+    draw_ms = median([w.draw_ms or 0.0 for w in section_windows]) if section_windows else 0.0
+
+    total_frames = sum(w.n for w in report.windows)
+    total_minutes = max(len(report.windows) / 60.0, 1.0 / 60.0)
+    oog_per_min = sum(w.oog_patch for w in report.windows) / total_minutes
+    osd_write_per_min = sum(w.osd_write for w in report.windows) / total_minutes
+    hud_dirty_per_frame = (
+        sum(w.hud_dirty_px for w in report.windows) / total_frames if total_frames else 0.0
+    )
+    gl_upload_per_frame = (
+        sum(w.gl_up_b for w in report.windows) / total_frames if total_frames else 0.0
+    )
+    dr3_skip_per_frame = (
+        sum(w.dr3_skip for w in report.windows) / total_frames if total_frames else 0.0
+    )
+    hud_render = [w.hud_render_us for w in report.windows if w.hud_render_us is not None]
+
+    return [
+        "V6 §8 frame row:",
+        "| {} | {} | {} | {} | {} | {} | |".format(
+            platform,
+            format_num(frame.p50),
+            format_num(frame.p95),
+            format_num(frame.p99),
+            format_num(frame.max_ms),
+            format_num(draw_ms),
+        ),
+        "",
+        "V6 §8 counter cells for this platform:",
+        f"- `Patches_Apply(OutOfGameFrame)` / min: {oog_per_min:.1f}",
+        f"- `OsdColor_ApplyOnce` write / min: {osd_write_per_min:.1f}",
+        f"- HUD dirty area avg px/frame: {hud_dirty_per_frame:.1f}",
+        f"- GL upload bytes/frame: {gl_upload_per_frame:.1f}",
+        f"- DR3 hash skip/frame: {dr3_skip_per_frame:.3f}",
+        "- `CustomHud_Render` p50/p99 us: {:.1f}/{:.1f}".format(
+            percentile(hud_render, 0.50),
+            percentile(hud_render, 0.99),
+        ),
+        "",
+        "V5 Phase 0 frame row:",
+        "| {} | {} | {} | {} | {} | |".format(
+            platform,
+            format_num(frame.p50),
+            format_num(frame.p95),
+            format_num(frame.p99),
+            format_num(frame.max_ms),
+        ),
+    ]
+
+
 def print_window_details(windows: list[WindowSample], out: TextIO) -> None:
     section_windows = [w for w in windows if w.draw_ms is not None]
     if section_windows:
@@ -289,6 +360,11 @@ def main() -> int:
         nargs="?",
         help="perf log file (default: stdin)",
     )
+    parser.add_argument(
+        "--markdown-platform",
+        metavar="NAME",
+        help="also print V6/V5 markdown table rows for the named platform",
+    )
     args = parser.parse_args()
 
     if args.log:
@@ -298,6 +374,10 @@ def main() -> int:
         report = parse_lines(sys.stdin)
 
     print_report(report, sys.stdout)
+    if args.markdown_platform:
+        print("", file=sys.stdout)
+        for line in summarize_for_tables(report, args.markdown_platform):
+            print(line, file=sys.stdout)
     return 0
 
 

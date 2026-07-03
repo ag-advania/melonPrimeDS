@@ -318,7 +318,7 @@ Rejected として §6 に記録（実装しない）。
 
 | Phase | 内容 | 状態 | 完了日 | 結果メモ |
 |---|---|---|---|---|
-| 0 | V5 検証負債の完済（基準値・S21/S22・V5 確定） | 一部完了 / 実機ソーク待ち | 2026-07-04 | 0-1 完了: `.claude/skills/perf-baseline-procedure.md` 追加、集計スクリプトを sections/counters 出力対応、`collect-perf-baseline.{sh,ps1}` でログ保存+集計を自動化、`artifacts/` を ignore。0-2 以降は ROM 10分ソークログ待ち |
+| 0 | V5 検証負債の完済（基準値・S21/S22・V5 確定） | 一部完了 / 実機ソーク待ち | 2026-07-04 | 0-1 完了: `.claude/skills/perf-baseline-procedure.md` 追加、集計スクリプトを sections/counters と V6/V5 markdown 行出力に対応、`collect-perf-baseline.{sh,ps1}` でログ保存+集計を自動化、`artifacts/` を ignore。0-2 以降は ROM 10分ソークログ待ち |
 | 1 | 監査・ドキュメント衛生（CrosshairFx 表記・scatter 24 ラチェット） | 完了 | 2026-07-04 | CrosshairFx 所有表/ネスト `.inc` 規約追記、scatter 24/24 に固定、Windows/Ubuntu CI 更新、upstream marker snapshot と kTranslations 707行/重複5件を記録 |
 | 2 | HUD ゴールデン描画ハーネス（本丸 A 土台） | 完了 | 2026-07-04 | Developer-only `--melonprime-hud-golden` 追加、macOS dev build で golden一致、release CI に harness痕跡ゼロ検査を追加 |
 | 3 | HUD element cache / layer 分離（本丸 A・二重ゲート） | 未着手 | — | |
