@@ -114,6 +114,16 @@ python3 .claude/skills/apply-perf-baseline.py \
 Omit any platform that has not been measured yet; the script updates only the
 provided platform rows/cells.
 
+For S24, compare two runs from the same platform:
+
+```bash
+python3 .claude/skills/compare-perf-repro.py \
+  artifacts/perf-baseline/macos-perf-run1.summary.txt \
+  artifacts/perf-baseline/macos-perf-run2.summary.txt
+```
+
+The command exits non-zero if p50 or p99 differs by more than +/-10%.
+
 For S22 release-trace checks, build with developer features disabled and verify
 that the release binary does not contain perf probe strings:
 
