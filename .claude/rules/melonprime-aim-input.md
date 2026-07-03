@@ -13,9 +13,11 @@ Mouse buttons and keyboard hotkeys stay on the Qt event / SDL path (`EmuInstance
 raw-delta filters so a physical click cannot create duplicate press edges.
 
 The QCursor center-delta method remains the fallback when the macOS raw backends are unavailable.
-On Linux the runtime source of truth is the Qt mouse-move event accumulator in `ScreenPanel`,
-because frame-time absolute cursor polling and XInput2 raw deltas are both fragile around cursor
-warps on some X11/VM stacks. See the macOS/Linux notes in [build.md](build.md).
+On Linux the source of truth is the XInput2 raw filter when available (2026-07-03): relative
+axes are used as-is, absolute pointing devices (VirtualBox's integrated tablet) are converted to
+deltas per-device inside the filter, so cursor warps and VBox host re-syncs cannot corrupt aim.
+The Qt mouse-move accumulator in `ScreenPanel` is the non-XCB (Wayland) fallback. See §9 and the
+macOS/Linux notes in [build.md](build.md).
 
 ## 1. End-to-End Pipeline
 
@@ -103,10 +105,13 @@ Main implementation files:
   `FrameAdvance` happened this frame, opening a ~32–96 ms window). It re-drains the kernel buffer
   and **adds** any newly-arrived delta. Normal frames skip it (~40–100 ns window not worth the syscall).
 - Non-Windows cursor recenter:
-  - Cursor-delta fallback needs the cursor returned to `m_aimData.centerX/Y` after any consumed
-    movement, including early returns where residuals changed but output was still zero.
-  - Linux always recenters while mouse aim is focused. `unfocus()` must call `unclip()` on Linux
-    too; otherwise Escape leaves the cursor hidden/locked.
+  - The cursor-delta **fallback** needs the cursor returned to `m_aimData.centerX/Y` after any
+    consumed movement, including early returns where residuals changed but output was still zero.
+  - Linux with the XInput2 raw filter active skips the per-frame recenter
+    (`warpCursorAfterAim == false`); containment is handled by the panel's >96px threshold warp.
+    See §9. The Wayland fallback recenters on every event as before.
+  - `unfocus()` must call `unclip()` on Linux too; otherwise Escape leaves the cursor
+    hidden/locked.
 
 ## 6. Native / Low-Latency Aim Injection Mechanisms (newer)
 
@@ -163,44 +168,56 @@ unless `MELONPRIME_ENABLE_DEVELOPER_FEATURES`.
 
 ## 9. Linux Raw / Relative Aim Notes
 
-Linux aim intentionally uses an event-driven cursor-delta path until raw input can be proven safe
-across the X11/VM stacks this project tests on. This follows the practical shape of SDL/GLFW/FPS
-input: handle a motion event, convert it to a relative delta, and recenter immediately.
+Since 2026-07-03, Linux aim uses XInput2 `XI_RawMotion` as the source of truth when available.
+The key insight is to synthesize deltas at the **device level**, which makes them immune to
+cursor warps: `XWarpPointer` and VirtualBox's host-position re-sync move the *cursor*, never a
+device's own axis state.
 
-The attempted SDL/ioquake-style raw-relative promotion exposed a Linux-specific trap:
-`XWarpPointer` can itself produce `XI_RawMotion` on some X11/VirtualBox setups. If the runtime treats
-that as real mouse movement, the recenter becomes bogus aim input and the QCursor fallback can be
-suppressed. Current policy: drain/log XInput2 for diagnostics, but use Qt mouse-move events plus
-`LinuxWarpCursorGlobal` as the actual aim source.
+History of the two failed schemes (do not regress to either):
 
-Key implementation points:
+1. *Center-delta polling / warp-per-event Qt accumulation*: under VirtualBox mouse integration
+   the guest cursor is slaved to the **host** pointer's absolute position. Warping to center is
+   undone by the next host event, so the full `hostPos - center` offset was re-added on every
+   event instead of the increment — a constant bottom-right drift with no aim control.
+2. *Naive raw-relative promotion*: `raw_values` from an **absolute** pointing device (the VBox
+   tablet) are positions, not deltas. Treating them as deltas produced the same drift; the
+   "XWarpPointer emits RawMotion" observation was this absolute-device behavior, not a real
+   warp echo.
 
-- `MelonPrimeCore::Initialize()` only acquires `LinuxRawInputFilter` when
-  `QGuiApplication::platformName() == "xcb"`. Wayland does not expose the required global raw
-  mouse stream to normal clients.
-- `LinuxRawInputFilter::isAvailable()` means `XOpenDisplay`, XInput2 version/query, and
-  `XISelectEvents(..., XI_RawMotion)` succeeded.
-- `LinuxRawInputFilter::hasReceivedMotion()` means at least one non-zero raw delta actually arrived.
-  This is diagnostic only at the moment; do not use it to switch Linux aim into raw mode without
-  also filtering out warp-generated motion.
-- In `UpdateInputStateImpl`:
-  - Linux drains `m_linuxRawFilter` if present so stale raw events do not accumulate;
-  - Linux then consumes `ScreenPanel::getAimMouseDelta()` for the actual frame delta;
-  - if no event delta is available, Linux falls back to `QCursor::pos() - m_aimData.centerX/Y`.
-- In `ScreenPanel::mouseMoveEvent` on Linux aim frames:
-  - ignore touch handling and treat the mouse move as aim input when focused, in-game, not stylus
-    mode, and not cursor mode;
-  - compute `globalPos - mapToGlobal(rect().center())`;
-  - accumulate that delta atomically for the emu thread;
-  - immediately recenter with `LinuxWarpCursorGlobal` on X11 (or `QCursor::setPos` on non-X11).
-- `ScreenPanel::clipCursorCenter1px()` hides the cursor and recenters it. Do not use
-  `grabMouse(Qt::BlankCursor)` here unless Escape/unfocus and keyboard delivery are re-tested on
-  Linux; a previous attempt left the cursor hidden after Escape in the VM.
+Current implementation:
+
+- `LinuxRawInputFilter` (`MelonPrimeRawInputLinuxFilter.cpp`):
+  - queries each source device's valuator modes once via `XIQueryDevice` (`sourceid`-keyed cache,
+    filter-thread-only);
+  - relative axes 0/1 accumulate as-is; **absolute axes accumulate the difference of successive
+    values** (first event seeds the baseline);
+  - axes above 0/1 (scroll-wheel valuators on many drivers) are never fed into aim;
+  - `resetAll()` also invalidates the absolute baselines (`absBaseInvalid`) so a focus gap cannot
+    produce one huge catch-up delta;
+  - `isAvailable()` means `XOpenDisplay` + XInput2 query + `XISelectEvents(XI_RawMotion)` succeeded.
+- `MelonPrimeCore::Initialize()` only acquires the filter when
+  `QGuiApplication::platformName() == "xcb"`. Wayland does not expose a global raw mouse stream.
+- In `UpdateInputStateImpl` (Linux): if the filter is available, `fetchMouseDelta()` is the aim
+  delta and the panel accumulator is dropped (`resetAimMouseDelta()`); otherwise the Qt
+  mouse-move accumulator (`ScreenPanel::getAimMouseDelta()`) is consumed, with plain
+  `QCursor::pos() - center` as the last resort.
+- `ScreenPanel::mouseMoveEvent` (Linux aim frames, gated by `core->IsLinuxRawAimActive()`):
+  - raw active → containment only: warp back to center when the hidden cursor strays >96px
+    (warping every event fights VBox's re-sync and storms events);
+  - raw inactive (Wayland fallback) → original behavior: accumulate `globalPos - center`
+    atomically and recenter immediately on every event.
+- `ProcessAimInputMouse` skips its per-frame recenter when the raw filter is active
+  (`warpCursorAfterAim`); the fallback path keeps it.
 - X11 recenter uses `MelonPrime::LinuxWarpCursorGlobal` (`XWarpPointer` on a thread-local
   `Display*`). Do not use `QCursor::setPos` on X11; it can fail under VirtualBox guest mouse
   integration or when called off the GUI thread.
-- Non-X11 Linux keeps the Qt fallback path (`QCursor::setPos`) because `XWarpPointer` is not
-  available there. This is best-effort; for reliable Linux aim testing, use an Xorg session.
+- `ScreenPanel::clipCursorCenter1px()` hides the cursor and recenters it. Do not use
+  `grabMouse(Qt::BlankCursor)` here unless Escape/unfocus and keyboard delivery are re-tested on
+  Linux; a previous attempt left the cursor hidden after Escape in the VM.
+- Known limitation with absolute devices (VBox integration ON): when the **host** cursor hits a
+  screen edge, deltas stop — turning range is bounded. Disabling VBox mouse integration
+  (Host+I) exposes a relative device and removes the limit. Real Linux hardware mice are
+  relative and unaffected.
 
 RawMotion parsing rules:
 

@@ -187,6 +187,11 @@ namespace MelonPrime {
         [[nodiscard]] FORCE_INLINE bool IsInGame() const { return m_flags.test(StateFlags::BIT_IN_GAME); }
         [[nodiscard]] bool ShouldForceSoftwareRenderer() const;
         [[nodiscard]] uint16_t GetInputMaskFast() const { return m_inputMaskFast; }
+#if defined(__linux__)
+        // True when the XInput2 raw filter owns aim deltas. ScreenPanel uses
+        // this to skip the Qt center-delta accumulation/warp (fallback-only).
+        [[nodiscard]] bool IsLinuxRawAimActive() const;
+#endif
 
 #ifdef MELONPRIME_DS
         [[nodiscard]] int GetNativeAimHookMode() const noexcept { return m_nativeAimHookMode; }
