@@ -40,9 +40,11 @@ void MacWarpCursorGlobal(int x, int y)
 struct MacRawInputFilter::Impl
 {
     // Writers: GC handler queue or HID runloop thread (one backend active at
-    // a time). Reader: emu thread (exchange-to-zero).
+    // a time). Reader: emu thread (P-48a load-first delta, single consumer).
     std::atomic<int32_t> accX{ 0 };
     std::atomic<int32_t> accY{ 0 };
+    int32_t lastReadX = 0;
+    int32_t lastReadY = 0;
     // GC deltas are float; carry the fractional part so slow motions are not
     // truncated away. Touched only from the GC handler queue.
     float gcFracX = 0.0f;
@@ -307,14 +309,20 @@ bool MacRawInputFilter::isAvailable() const
 
 void MacRawInputFilter::fetchMouseDelta(int32_t& outDx, int32_t& outDy)
 {
-    outDx = m->accX.exchange(0, std::memory_order_acquire);
-    outDy = m->accY.exchange(0, std::memory_order_acquire);
+    const int32_t curX = m->accX.load(std::memory_order_acquire);
+    const int32_t curY = m->accY.load(std::memory_order_acquire);
+    outDx = curX - m->lastReadX;
+    outDy = curY - m->lastReadY;
+    m->lastReadX = curX;
+    m->lastReadY = curY;
 }
 
 void MacRawInputFilter::resetAll()
 {
     m->accX.store(0, std::memory_order_release);
     m->accY.store(0, std::memory_order_release);
+    m->lastReadX = 0;
+    m->lastReadY = 0;
 }
 
 // ---------------------------------------------------------------------------

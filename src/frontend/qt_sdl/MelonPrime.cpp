@@ -65,15 +65,15 @@ namespace MelonPrime {
         PlatformInput_ReleaseRawFilter(m_platformRawFilter);
     }
 
-#if defined(__linux__)
-    bool MelonPrimeCore::IsLinuxRawAimActive() const
+    bool MelonPrimeCore::IsPlatformRawAimActive() const
     {
+#if defined(__linux__)
         // hasReceivedMotion guards against sessions where XI2 selection
         // succeeds but raw events are never delivered (XWayland). Until the
         // first real raw delta arrives, the Qt fallback path owns aim.
+#endif
         return PlatformInput_IsRawAimActive(m_platformRawFilter);
     }
-#endif
 #else
     MelonPrimeCore::~MelonPrimeCore() = default;
 #endif
