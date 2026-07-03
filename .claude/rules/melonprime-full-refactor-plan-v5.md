@@ -259,7 +259,7 @@ V1 S1–S12 / V2 S13–S15 / V3 S16–S17 / V4 S18–S20 を継承。V5 追加:
 | Phase | 内容 | 状態 | 完了日 | 結果メモ |
 |---|---|---|---|---|
 | 0 | 計測基盤 + 3プラットフォーム基準値 | 完了 | 2026-07-04 | `MelonPrimePerfProbe.h` + EmuThread 区間プローブ + カウンタ群 + `summarize-melonprime-perf.py`。mac dev ビルド green。基準値は ROM 実行後に追記 |
-| 1 | ホットパス網羅監査（証拠表） | 未着手 | — | — |
+| 1 | ホットパス網羅監査（証拠表） | 完了 | 2026-07-04 | §9 証拠表 45 行。RED×3（W1–W3）、YELLOW×17、WHITE×25。Phase 2 優先: P1-001→002→003 |
 | 2 | 入力ホットパス残渣除去（本丸A） | 未着手 | — | — |
 | 3 | ペーシング調律（本丸B・計測ゲート） | 未着手 | — | — |
 | 4 | HUD/描画残渣（計測ゲート） | 未着手 | — | — |
@@ -269,7 +269,7 @@ V1 S1–S12 / V2 S13–S15 / V3 S16–S17 / V4 S18–S20 を継承。V5 追加:
 
 ### 初期実測値（2026-07-04、計画作成時）
 
-- mac: `warpCursorAfterAim = true`（GameInput.cpp:585）→ raw時も毎エイムフレーム CGWarp
+- mac: `warpCursorAfterAim = true`（GameInput.cpp:607）→ raw時も毎エイムフレーム CGWarp
 - Linux raw時: `resetAimMouseDelta()` 毎フレーム（GameInput.cpp:227）
 - `platformName()` QString比較: PlatformInput.h 2箇所
 - ホットパス gameplay ファイルの per-frame Config 参照: 0件（規律維持を確認）
@@ -285,7 +285,89 @@ developer ビルドで `MELONPRIME_PERF=1 ./melonPrimeDS 2>&1 | tee perf.log`。
 | macOS | — | — | — | — | dev build 導入済み。要 ROM ソーク |
 | Linux VM | — | — | — | — | 未計測 |
 | Windows | — | — | — | — | 未計測 |
+
 - ドメインLOC: raw入力 2,366 / HUD 12,410 / パッチ・フック 6,239 / ゲーム層 4,747 / 設定UI 5,675
+
+---
+
+## 9. Phase 1 証拠表（2026-07-04 監査 / `highres_fonts_v3` @ 9ff53250）
+
+監査対象: `MelonPrimeGameInput.cpp` / `MelonPrimeInGame.cpp` / `MelonPrime.cpp` /
+`MelonPrimePlatformInput.h` / RawInput 3フィルタ / `Screen.cpp`（非Win断片）/
+`MelonPrimeHudScreenCpp*.inc` / `EmuThread.cpp`。**コード変更なし。**
+
+**Severity:** RED = Phase 2 確定 / YELLOW = 計測ゲート / WHITE = 監査済み・規律準拠
+
+**§2 クロスチェック:** W1–W3 RED 確認 / W4 解消（Phase 0）/ W5–W8 YELLOW or WHITE
+
+### mac GL vs software HUD（毎フレーム差分）
+
+| 観点 | GL (`MelonPrimeHudScreenCppOverlayOfGl.inc`) | Software (`MelonPrimeHudScreenCppOverlayOfSoftware.inc`) |
+|---|---|---|
+| CPU render | 共有: `QPainter` + `CustomHud_Render` | 同左 |
+| Dirty clear | 共有: `MelonPrimeHud_PrepareTopOverlay` memset (OPT-HUD-1) | 同左 |
+| Composite | `glTexSubImage2D` / full `glTexImage2D` + OSD shader `glDrawArrays`（dirty 時） | `painter.drawImage(compositeRect)` |
+| Upload skip | OPT-DR3 FNV hash（≥256×256  unchanged） | N/A |
+| 追加描画 | GL-native radar overlay（有効時） | なし |
+
+両パスとも **CPU 側 QPainter 再描画は残る**（W8 / P1-012）。
+
+### 証拠表
+
+| ID | Sev | Cat | File:Line | One-line evidence | Phase action |
+|---|---|---|---|---|---|
+| P1-001 | RED | syscall | `MelonPrimeGameInput.cpp:607,674,709,731,752` | mac `warpCursorAfterAim=true`; エイム delta 毎フレーム `WarpCursorTo` → CGWarp (**W1**) | Phase 2: raw-active 時 false + 閾値格納 |
+| P1-002 | RED | atomic | `MelonPrimeGameInput.cpp:232` | Linux raw 毎フレーム `resetAimMouseDelta()`（panel 未使用時も）(**W2**) | Phase 2: panel→raw 遷移エッジのみ |
+| P1-003 | RED | syscall/Qt | `MelonPrimePlatformInput.h:88` | `PlatformInput_WarpCursor` 呼び出し毎 `platformName()==xcb` (**W3**) | Phase 2: static `PlatformInput_IsXcb()` |
+| P1-004 | YELLOW | Qt | `MelonPrimeGameInput.cpp:267-269` | QCursor fallback: raw 不可時 `QCursor::pos()` / frame | Phase 2: fallback 条件を構造化 |
+| P1-005 | YELLOW | atomic | `MelonPrimeRawInputMacFilter.mm:310-311` | mac snapshot: `accX/Y.exchange(0)` (RMW) | Phase 2: Win 同型 load+store (P-48a) |
+| P1-006 | YELLOW | atomic | `MelonPrimeRawInputLinuxFilter.cpp:333-334` | Linux snapshot: `exchange(0)` (RMW) | Phase 2: 同左 |
+| P1-007 | YELLOW | atomic | `Screen.h:109-110` | panel `getAimMouseDelta`: `exchange(0)` | Phase 2: load+store 検討 |
+| P1-008 | YELLOW | atomic | `Screen.cpp:747-748` | panel `mouseMoveEvent`: `fetch_add` per event | 計測（イベント率） |
+| P1-009 | YELLOW | syscall | `MelonPrimeRawInputMacFilter.mm:36-37` | `MacWarpCursorGlobal` → CGWarp | P1-001 解消で間接削減 |
+| P1-010 | YELLOW | syscall | `MelonPrimeRawInputLinuxFilter.cpp:46-47` | 閾値 containment: `XWarpPointer`+`XFlush` | 計測（低頻度想定） |
+| P1-011 | YELLOW | Qt | `MelonPrime.cpp:918-940` | `ShowCursor`: `QMetaObject::invokeMethod` on edge | コールド; 必要時計測 |
+| P1-012 | YELLOW | HUD/Qt | `MelonPrimeHudScreenCppHelpers.inc:215-226` | 毎フレーム `QPainter` + `CustomHud_Render` (**W8**) | Phase 4: draw 区間計測 |
+| P1-013 | YELLOW | HUD/GL | `MelonPrimeHudScreenCppOverlayOfGl.inc:44-133` | DR3 skip 後も GL composite 毎フレーム | Phase 4: 計測 |
+| P1-014 | YELLOW | HUD/GL | `MelonPrimeHudScreenCppOverlayOfGl.inc:140-216` | GL-native radar pass（有効時） | Phase 4: 計測 |
+| P1-015 | YELLOW | HUD/Qt | `MelonPrimeHudScreenCppOverlayOfSoftware.inc:32-44` | software `drawImage` composite | Phase 4: 計測 |
+| P1-016 | YELLOW | pacing | `EmuThread.cpp:215-218` | coarse margin `- 1.0` ms 全プラットフォーム固定 (**W5**) | Phase 3: 実測ベース縮小 |
+| P1-017 | YELLOW | pacing | `EmuThread.cpp:237-245` | spin loop 毎 limited frame | Phase 3: 計測後調律 |
+| P1-018 | YELLOW | RAM | `MelonPrimeGameInput.cpp:624-628` | zoom-aim 有効時 `ZoomStatus::ReadScopeState` | Phase 6 ストレッチ |
+| P1-019 | YELLOW | string | `MelonPrimePlatformInput.h:33` | `ShouldAcquireRawFilter` 内 `platformName()` | Phase 2: static cache (W3) |
+| P1-020 | YELLOW | string | `Screen.cpp:1827-1848` | `getWindowInfo` cold `platformName()` | 低優先 |
+| P1-021 | WHITE | intentional | `MelonPrimeGameInput.cpp:605,643-647` | Linux `warpCursorAfterAim=false`; P-44 zero-delta skip | 規律準拠 |
+| P1-022 | WHITE | intentional | `Screen.cpp:717-734` | Linux 閾値 warp >96px のみ | 規律準拠; mac Phase 2 移植対象 |
+| P1-023 | WHITE | intentional | `MelonPrime.cpp:632-633` | battle `OsdColor_ApplyOnce` 毎フレーム (**W7**) | 計測; edge 化は Phase 6 |
+| P1-024 | WHITE | intentional | `MelonPrime.cpp:687-690` | OutOfGame `Patches_Apply` 毎フレーム (**W7**) | 計測; Phase 6 stretch |
+| P1-025 | WHITE | intentional | `MelonPrimeInGame.cpp:118-122` | 毎フレーム center `TouchScreen` | do-not-touch |
+| P1-026 | WHITE | atomic | `MelonPrime.cpp:574,729-730` | `isFocused.load(acquire)` 1回/frame | 規律準拠 |
+| P1-027 | WHITE | atomic | `MelonPrime.cpp:562` | `m_configReloadPending.exchange` cold only | 規律準拠 |
+| P1-028 | WHITE | W6 | `MelonPrimeGameInput.cpp` | per-frame `Config::Table` 参照 **0件** | 監査済み |
+| P1-029 | WHITE | W6 | `MelonPrimeInGame.cpp` | per-frame `Config::Table` 参照 **0件** | 監査済み |
+| P1-030 | WHITE | W6 | `MelonPrimeHudScreenCppHelpers.inc:117-124` | epoch gate before config/font/radar refresh | OPT-DR 規律 |
+| P1-031 | WHITE | W6 | `MelonPrimeHudScreenCppHelpers.inc:66-79` | dirty clear = scanline memset (OPT-HUD-1) | 規律準拠 |
+| P1-032 | WHITE | W6 | `MelonPrimeHudScreenCppOverlayOfGl.inc:76-83` | OPT-DR3 hash skip | 規律準拠 |
+| P1-033 | WHITE | W6 | `MelonPrimeHudScreenCppLayout.inc:5-17` | layout 時キャッシュ; paint は member 読み | 規律準拠 |
+| P1-034 | WHITE | W6 | `MelonPrimeHudScreenCppHelpers.inc:172-173` | `% 3`/`/ 3` は epoch-gated refresh 内のみ | 規律準拠 |
+| P1-035 | WHITE | W4 | `MelonPrimePerfProbe.h` + `EmuThread.cpp` | Phase 0 区間プローブ; 二重ゲート | 基準値取得待ち |
+| P1-036 | WHITE | W4 | `MelonPrimeGameInput.cpp:271-286` | `CountInputSource` perf counter | 規律準拠 |
+| P1-037 | WHITE | compare | `MelonPrimeRawInputState.cpp:283-289` | Win delta: load-first (P-48a) | mac/Linux 収束目標 |
+| P1-038 | WHITE | compare | `MelonPrimeGameInput.cpp:599-605` | Win/Lin 無 warp; mac のみ outlier | Phase 2 対象 |
+| P1-039 | WHITE | intentional | `MelonPrimeInGame.cpp:273-288` | morph boost: shift/compare, 除算なし | 規律準拠 |
+| P1-040 | WHITE | intentional | `MelonPrimeGameInput.cpp:341,662-667` | MoveLUT `& 0xF`; aim `>>` shifts | 規律準拠 |
+| P1-041 | WHITE | intentional | `Screen.cpp:1935-1963` | `updateClipIfNeeded` Windows-only | mac/Linux は warp-on-clip |
+| P1-042 | WHITE | intentional | `MelonPrimeRawInputMacFilter.mm:76-77` | writer `fetch_add` (GCMouse/IOHID) | single-writer OK |
+| P1-043 | WHITE | intentional | `MelonPrimeRawInputLinuxFilter.cpp:264-285` | filter thread `poll(100ms)` off emu path | Phase 6 optional |
+| P1-044 | WHITE | heap | hot-path TUs | per-frame heap alloc なし（監査範囲） | 規律準拠 |
+| P1-045 | WHITE | edit-cold | `MelonPrimeHudScreenCppMouse*.inc` | edit mode only `getLocalConfig()` | gameplay 外 |
+
+### Phase 2 優先キュー（RED 由来）
+
+1. **P1-001** — mac raw-active 時 warp 廃止（最大 per-frame syscall 削減）
+2. **P1-002** — Linux `resetAimMouseDelta` 遷移エッジ化
+3. **P1-003 / P1-019** — `platformName()` static 1回確定
+4. **P1-005 / P1-006 / P1-007** — exchange → load+store（Win 同型）
 
 ---
 
