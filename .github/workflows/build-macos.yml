@@ -91,7 +91,6 @@ jobs:
     name: Universal binary
     needs: [build-macos]
     runs-on: macos-26
-    continue-on-error: true
 
     steps:
       - name: Download x86_64
@@ -111,6 +110,7 @@ jobs:
       - name: Combine app bundles
         shell: bash
         run: |
+          set -euo pipefail
           x86_zip=x86_64/melonPrimeDS-macOS-x86_64.zip
           arm64_zip=arm64/melonPrimeDS-macOS-arm64.zip
           [ -f "$x86_zip" ] || { echo "x86_64 artifact not found at $x86_zip"; exit 1; }
@@ -120,7 +120,9 @@ jobs:
           lipo {x86_64,arm64}/melonPrimeDS.app/Contents/MacOS/melonPrimeDS -create -output melonPrimeDS
           cp -a arm64/melonPrimeDS.app melonPrimeDS.app
           cp melonPrimeDS melonPrimeDS.app/Contents/MacOS/melonPrimeDS
-          codesign -s - --deep melonPrimeDS.app
+          # Arch builds are ad-hoc signed in CMake (MACOS_ADHOC_SIGN_BUNDLE); lipo
+          # replaces the main binary so the bundle must be re-signed with --force.
+          codesign --force --sign - --deep --timestamp=none melonPrimeDS.app
           codesign --verify --deep --strict melonPrimeDS.app
           zip -r -y melonPrimeDS-macOS-universal.zip melonPrimeDS.app
 
