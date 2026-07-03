@@ -40,7 +40,7 @@ https://ko-fi.com/livetek
 
 ### Download
 
-Releases for [Windows, Linux and macOS here!](https://github.com/makidoll/melonPrimeDS/releases)
+Releases for [Windows, Linux and macOS here!](https://github.com/ag-advania/melonPrimeDS/releases)
 
 [![aur](https://img.shields.io/aur/version/melonprimeds-bin?style=flat&logo=archlinux)](https://aur.archlinux.org/packages/melonprimeds-bin)
 
@@ -256,7 +256,7 @@ melonPrimeDS の元の作者、Makidoll をサポートする：
 
 ### ダウンロード
 
-[Windows、Linux、macOS用のリリースはこちら！](https://github.com/makidoll/melonPrimeDS/releases)
+[Windows、Linux、macOS用のリリースはこちら！](https://github.com/ag-advania/melonPrimeDS/releases)
 
 [![aur](https://img.shields.io/aur/version/melonprimeds-bin?style=flat&logo=archlinux)](https://aur.archlinux.org/packages/melonprimeds-bin)
 
