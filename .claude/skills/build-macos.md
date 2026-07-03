@@ -91,8 +91,11 @@ melonDS for the MelonPrimeDS bundle name. It builds both existing macOS presets:
 
 The architecture-specific artifacts are zipped as `melonPrimeDS.app`, then the
 workflow combines them with `lipo` into a universal `melonPrimeDS.app`.
-The architecture-specific and universal bundles are ad-hoc signed and verified
-before upload. CI explicitly configures release artifacts with
+Per-arch bundles are ad-hoc signed in CMake (`MACOS_ADHOC_SIGN_BUNDLE`, with
+`codesign --force`); the universal job re-signs with `--force` after `lipo`
+because replacing the main binary invalidates the copied arm64 signature.
+All bundles are verified with `codesign --verify --deep --strict` before upload.
+CI explicitly configures release artifacts with
 `MELONPRIME_ENABLE_DEVELOPER_FEATURES=OFF`.
 
 If the bundle name or executable name changes, update all of these together:
