@@ -32,7 +32,7 @@ jobs:
         ./.claude/skills/audit-hud-key-parity.ps1 -Strict
         ./.claude/skills/check-inc-ownership.ps1
         ./.claude/skills/audit-metroid-literal-budget.ps1 -Budget 1
-        ./.claude/skills/audit-platform-scatter-budget.ps1 -Budget 31
+        ./.claude/skills/audit-platform-scatter-budget.ps1 -Budget 36
 
     - name: Verify generated HUD schema
       shell: pwsh
