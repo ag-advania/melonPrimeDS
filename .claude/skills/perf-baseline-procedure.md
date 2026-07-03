@@ -102,6 +102,18 @@ platform.
 - `.claude/rules/melonprime-full-refactor-plan-v6.md` §8
 - `.claude/rules/completed/melonprime-full-refactor-plan-v5.md` Phase 0 table
 
+When one or more summaries are ready, apply them mechanically:
+
+```bash
+python3 .claude/skills/apply-perf-baseline.py \
+  --macos artifacts/perf-baseline/macos-perf-YYYYMMDD-HHMMSS.summary.txt \
+  --windows artifacts/perf-baseline/windows-perf-YYYYMMDD-HHMMSS.summary.txt \
+  --linux artifacts/perf-baseline/linux-vm-perf-YYYYMMDD-HHMMSS.summary.txt
+```
+
+Omit any platform that has not been measured yet; the script updates only the
+provided platform rows/cells.
+
 For S22 release-trace checks, build with developer features disabled and verify
 that the release binary does not contain perf probe strings:
 
