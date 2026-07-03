@@ -322,7 +322,7 @@ Rejected として §6 に記録（実装しない）。
 | 1 | 監査・ドキュメント衛生（CrosshairFx 表記・scatter 24 ラチェット） | 完了 | 2026-07-04 | CrosshairFx 所有表/ネスト `.inc` 規約追記、scatter 24/24 に固定、Windows/Ubuntu CI 更新、upstream marker snapshot と kTranslations 707行/重複5件を記録 |
 | 2 | HUD ゴールデン描画ハーネス（本丸 A 土台） | 完了 | 2026-07-04 | Developer-only `--melonprime-hud-golden` 追加、macOS dev build で golden一致、release CI に harness痕跡ゼロ検査を追加 |
 | 3 | HUD element cache / layer 分離（本丸 A・二重ゲート） | 未着手 | — | |
-| 4 | コールドライフサイクル TU 分離（本丸 B） | 未着手 | — | |
+| 4 | コールドライフサイクル TU 分離（本丸 B） | 実装完了 / 実機スモーク待ち | 2026-07-04 | `MelonPrimeLifecycle.cpp` 追加。`OnEmuStart` / stop / pause / unpause / boot reset / config reload / config flags / initialize / destructor を純移動し、`HandleGameJoinInit` / `HandleBattleRuntimeEnter` / `RunFrameHook` は `MelonPrime.cpp` に保持。`MelonPrime.cpp` 976→683行。macOS dev/release build、scatter 22/24、inc ownership、literal budget、diff check、nm 所在確認は通過。S2/S6/S7/S8 は ROM 実機操作待ち |
 | 5 | per-frame 再評価の縮減（計測ゲート） | 未着手 | — | |
 | 6 | 小粒 declutter（任意） | 未着手 | — | |
 | 7 | ドキュメント + ラチェット固定 | 未着手 | — | |
