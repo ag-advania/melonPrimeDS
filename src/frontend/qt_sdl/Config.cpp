@@ -32,6 +32,7 @@
 #include "main.h"
 
 #ifdef MELONPRIME_DS
+#include "MelonPrimeDef.h"
 #include "MelonPrimeHudPropSchema.inc"
 #endif
 
@@ -636,7 +637,7 @@ namespace Config
         {"GdbARM9BreakOnStartup", 1, "Gdb.ARM9.BreakOnStartup", true},
     #endif
     #ifdef MELONPRIME_DS
-        { "MetroidAimSensitivity", 0, "Metroid.Sensitivity.Aim",  true }, // MelonPrimeDS
+        { "MetroidAimSensitivity", 0, "Metroid.Sensitivity.Aim",  true }, // MelonPrimeDS; fixed-size legacy migration row
     #endif
         {"Camera0_InputType", 0, "DSi.Camera0.InputType", false},
         {"Camera0_ImagePath", 2, "DSi.Camera0.ImagePath", false},
@@ -1165,5 +1166,3 @@ namespace Config
     }
 
 }
-
-

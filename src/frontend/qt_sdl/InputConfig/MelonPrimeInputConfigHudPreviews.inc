@@ -33,7 +33,9 @@ protected:
 
     // 9-point anchor + offset → DS-space QPoint (0-255, 0-191)
     static QPoint dsPos(int anchor, int ofsX, int ofsY) {
-        return QPoint((anchor % 3) * 128 + ofsX, (anchor / 3) * 96 + ofsY);
+        int x = 0, y = 0;
+        MelonPrime::HudGeometry::ApplyAnchor(anchor, ofsX, ofsY, x, y);
+        return QPoint(x, y);
     }
 
     // Apply DS-space transform (call after drawBackground, before DS-space drawing)
@@ -48,17 +50,14 @@ protected:
 
     // Alignment-adjusted X in DS-space: 0=left, 1=center, 2=right
     int alignedX(int anchorX, int align, int textW) const {
-        if (align == 1) return anchorX - textW / 2;
-        if (align == 2) return anchorX - textW;
-        return anchorX;
+        return MelonPrime::HudGeometry::AlignedTextXInt(anchorX, align, textW);
     }
 
     // Draw a gauge bar in DS-space at 50% fill
     static void drawGaugeDS(QPainter& p, int x, int y, const QColor& color, int orient, int len, int wid, int align = 0) {
         if (len <= 0) len = 28;
         if (wid <= 0) wid = 3;
-        if (orient == 0) x -= len * align / 2;
-        else             y -= len * align / 2;
+        MelonPrime::HudGeometry::ApplyGaugeAlign(x, y, orient, len, align);
         int fw = (orient == 0) ? len / 2 : wid;
         int fh = (orient == 0) ? wid    : len / 2;
         int fx = x;
@@ -74,8 +73,8 @@ protected:
     void drawBaseCrosshair(QPainter& p, int cx, int cy, float scale, float opacityMul) {
         if (opacityMul <= 0.0f || scale <= 0.0f) return;
         auto& c = cfg();
-        const QColor col = readColor("Metroid.Visual.CrosshairColorR", "Metroid.Visual.CrosshairColorG", "Metroid.Visual.CrosshairColorB");
-        const bool tStyle = c.GetBool("Metroid.Visual.CrosshairTStyle");
+        const QColor col = readColor(MP_HUD_PROP_KEY_CrosshairColorR, MP_HUD_PROP_KEY_CrosshairColorG, MP_HUD_PROP_KEY_CrosshairColorB);
+        const bool tStyle = c.GetBool(MP_HUD_PROP_KEY_CrosshairTStyle);
 
         auto arms = [&](const char* showKey, const char* opacityKey, const char* lxKey, const char* lyKey,
                         const char* thickKey, const char* ofsKey) {
@@ -93,21 +92,21 @@ protected:
             if (!tStyle)
                 p.fillRect(QRect(cx - ht, cy - static_cast<int>(ofs * scale) - static_cast<int>(ly * scale), t, static_cast<int>(ly * scale)), ac);
         };
-        arms("Metroid.Visual.CrosshairInnerShow", "Metroid.Visual.CrosshairInnerOpacity",
-             "Metroid.Visual.CrosshairInnerLengthX", "Metroid.Visual.CrosshairInnerLengthY",
-             "Metroid.Visual.CrosshairInnerThickness", "Metroid.Visual.CrosshairInnerOffset");
-        arms("Metroid.Visual.CrosshairOuterShow", "Metroid.Visual.CrosshairOuterOpacity",
-             "Metroid.Visual.CrosshairOuterLengthX", "Metroid.Visual.CrosshairOuterLengthY",
-             "Metroid.Visual.CrosshairOuterThickness", "Metroid.Visual.CrosshairOuterOffset");
+        arms(MP_HUD_PROP_KEY_CrosshairInnerShow, MP_HUD_PROP_KEY_CrosshairInnerOpacity,
+             MP_HUD_PROP_KEY_CrosshairInnerLengthX, MP_HUD_PROP_KEY_CrosshairInnerLengthY,
+             MP_HUD_PROP_KEY_CrosshairInnerThickness, MP_HUD_PROP_KEY_CrosshairInnerOffset);
+        arms(MP_HUD_PROP_KEY_CrosshairOuterShow, MP_HUD_PROP_KEY_CrosshairOuterOpacity,
+             MP_HUD_PROP_KEY_CrosshairOuterLengthX, MP_HUD_PROP_KEY_CrosshairOuterLengthY,
+             MP_HUD_PROP_KEY_CrosshairOuterThickness, MP_HUD_PROP_KEY_CrosshairOuterOffset);
 
-        if (c.GetBool("Metroid.Visual.CrosshairCenterDot")) {
-            QColor dc = c.GetBool("Metroid.Visual.CrosshairDotCustomColor")
-                ? readColor("Metroid.Visual.CrosshairDotColorR", "Metroid.Visual.CrosshairDotColorG", "Metroid.Visual.CrosshairDotColorB")
+        if (c.GetBool(MP_HUD_PROP_KEY_CrosshairCenterDot)) {
+            QColor dc = c.GetBool(MP_HUD_PROP_KEY_CrosshairDotCustomColor)
+                ? readColor(MP_HUD_PROP_KEY_CrosshairDotColorR, MP_HUD_PROP_KEY_CrosshairDotColorG, MP_HUD_PROP_KEY_CrosshairDotColorB)
                 : col;
-            dc.setAlphaF(qBound(0.0f, static_cast<float>(c.GetDouble("Metroid.Visual.CrosshairDotOpacity")) * opacityMul, 1.0f));
-            const int ds = qMax(1, static_cast<int>(c.GetInt("Metroid.Visual.CrosshairDotThickness") * scale));
+            dc.setAlphaF(qBound(0.0f, static_cast<float>(c.GetDouble(MP_HUD_PROP_KEY_CrosshairDotOpacity)) * opacityMul, 1.0f));
+            const int ds = qMax(1, static_cast<int>(c.GetInt(MP_HUD_PROP_KEY_CrosshairDotThickness) * scale));
             const QRect dotRect(cx - ds/2, cy - ds/2, ds, ds);
-            if (c.GetInt("Metroid.Visual.CrosshairDotShape") == 1) {
+            if (c.GetInt(MP_HUD_PROP_KEY_CrosshairDotShape) == 1) {
                 p.setPen(Qt::NoPen); p.setBrush(dc); p.drawEllipse(dotRect); p.setBrush(Qt::NoBrush);
             } else {
                 p.fillRect(dotRect, dc);
@@ -130,7 +129,7 @@ protected:
         auto& c = cfg();
         // Preview magnification × user Crosshair Scale % (matches the runtime
         // chScale = CrosshairScale/100 applied in LoadCrosshairConfig).
-        const float cs = qMax(100, c.GetInt("Metroid.Visual.CrosshairScale")) / 100.0f;
+        const float cs = qMax(100, c.GetInt(MP_HUD_PROP_KEY_CrosshairScale)) / 100.0f;
         drawBaseCrosshair(p, r.center().x(), r.center().y(), 2.0f * cs, 1.0f);
     }
 };
@@ -155,8 +154,8 @@ protected:
         auto& c = cfg();
         // Match the runtime cachedZoomScopeRenderable gate: stage + scope enabled.
         const bool renderable =
-            c.GetBool("Metroid.Visual.CrosshairZoomStageEnable") &&
-            c.GetBool("Metroid.Visual.CrosshairZoomScopeEnable");
+            c.GetBool(MP_HUD_PROP_KEY_CrosshairZoomStageEnable) &&
+            c.GetBool(MP_HUD_PROP_KEY_CrosshairZoomScopeEnable);
         if (!renderable) {
             p.setPen(QColor(120, 120, 140));
             p.drawText(r, Qt::AlignCenter,
@@ -164,10 +163,10 @@ protected:
             return;
         }
 
-        const double scopeOpacity = qBound(0, c.GetInt("Metroid.Visual.CrosshairZoomScopeOpacity"), 100) / 100.0;
-        const int radius    = qBound(4, c.GetInt("Metroid.Visual.CrosshairZoomScopeRadius"), 1024);
-        const int gap       = qBound(0, c.GetInt("Metroid.Visual.CrosshairZoomScopeGap"), 64);
-        const int thickness = qBound(1, c.GetInt("Metroid.Visual.CrosshairZoomScopeThickness"), 12);
+        const double scopeOpacity = qBound(0, c.GetInt(MP_HUD_PROP_KEY_CrosshairZoomScopeOpacity), 100) / 100.0;
+        const int radius    = qBound(4, c.GetInt(MP_HUD_PROP_KEY_CrosshairZoomScopeRadius), 1024);
+        const int gap       = qBound(0, c.GetInt(MP_HUD_PROP_KEY_CrosshairZoomScopeGap), 64);
+        const int thickness = qBound(1, c.GetInt(MP_HUD_PROP_KEY_CrosshairZoomScopeThickness), 12);
 
         const int cx = r.center().x();
         const int cy = r.center().y();
@@ -178,9 +177,9 @@ protected:
         // Zoom Base Opacity is 0 (base hidden while fully scoped, as in-game), so
         // nothing shows until the user raises it — then it scales by Zoom Base Scale %.
         {
-            const float cs = qMax(100, c.GetInt("Metroid.Visual.CrosshairScale")) / 100.0f;
-            const float zoomScale = qBound(10, c.GetInt("Metroid.Visual.CrosshairZoomScale"), 200) / 100.0f;
-            const float zoomBaseOpacity = qBound(0, c.GetInt("Metroid.Visual.CrosshairZoomOpacity"), 100) / 100.0f;
+            const float cs = qMax(100, c.GetInt(MP_HUD_PROP_KEY_CrosshairScale)) / 100.0f;
+            const float zoomScale = qBound(10, c.GetInt(MP_HUD_PROP_KEY_CrosshairZoomScale), 200) / 100.0f;
+            const float zoomBaseOpacity = qBound(0, c.GetInt(MP_HUD_PROP_KEY_CrosshairZoomOpacity), 100) / 100.0f;
             drawBaseCrosshair(p, cx, cy, 2.0f * cs * zoomScale, zoomBaseOpacity);
         }
 
@@ -192,7 +191,7 @@ protected:
         const int dArmEnd = qMax(dGap + 1, dRadius);
         const int dThick  = qMax(1, static_cast<int>(thickness * scale + 0.5));
 
-        const QColor baseCol = readColor("Metroid.Visual.CrosshairColorR", "Metroid.Visual.CrosshairColorG", "Metroid.Visual.CrosshairColorB");
+        const QColor baseCol = readColor(MP_HUD_PROP_KEY_CrosshairColorR, MP_HUD_PROP_KEY_CrosshairColorG, MP_HUD_PROP_KEY_CrosshairColorB);
 
         QPainterPath circleClip;
         circleClip.addEllipse(QRect(cx - dRadius, cy - dRadius, dRadius * 2, dRadius * 2));
@@ -214,9 +213,9 @@ protected:
             p.setPen(pen); p.setBrush(Qt::NoBrush); p.setOpacity(opacity);
             p.drawEllipse(QRect(cx - dRadius, cy - dRadius, dRadius * 2, dRadius * 2));
         };
-        const bool hasDot = c.GetBool("Metroid.Visual.CrosshairZoomScopeCenterDot")
-                            && c.GetInt("Metroid.Visual.CrosshairZoomScopeDotOpacity") > 0;
-        const bool dotEllipse = c.GetInt("Metroid.Visual.CrosshairZoomScopeDotShape") == 1;
+        const bool hasDot = c.GetBool(MP_HUD_PROP_KEY_CrosshairZoomScopeCenterDot)
+                            && c.GetInt(MP_HUD_PROP_KEY_CrosshairZoomScopeDotOpacity) > 0;
+        const bool dotEllipse = c.GetInt(MP_HUD_PROP_KEY_CrosshairZoomScopeDotShape) == 1;
         auto drawDot = [&](const QColor& color, int size, double opacity) {
             if (!hasDot) return;
             const int dotSize = qMax(1, size);
@@ -227,18 +226,18 @@ protected:
             else            p.drawRect(dotRect);
         };
 
-        const int dotSizeDs = qBound(1, c.GetInt("Metroid.Visual.CrosshairZoomScopeDotSize"), 32);
+        const int dotSizeDs = qBound(1, c.GetInt(MP_HUD_PROP_KEY_CrosshairZoomScopeDotSize), 32);
         const int dDotSize  = qMax(1, static_cast<int>(dotSizeDs * scale + 0.5));
-        const double dotOpacity = qBound(0, c.GetInt("Metroid.Visual.CrosshairZoomScopeDotOpacity"), 100) / 100.0;
-        QColor dotColor = c.GetBool("Metroid.Visual.CrosshairZoomScopeDotCustomColor")
-            ? readColor("Metroid.Visual.CrosshairZoomScopeDotColorR", "Metroid.Visual.CrosshairZoomScopeDotColorG", "Metroid.Visual.CrosshairZoomScopeDotColorB")
+        const double dotOpacity = qBound(0, c.GetInt(MP_HUD_PROP_KEY_CrosshairZoomScopeDotOpacity), 100) / 100.0;
+        QColor dotColor = c.GetBool(MP_HUD_PROP_KEY_CrosshairZoomScopeDotCustomColor)
+            ? readColor(MP_HUD_PROP_KEY_CrosshairZoomScopeDotColorR, MP_HUD_PROP_KEY_CrosshairZoomScopeDotColorG, MP_HUD_PROP_KEY_CrosshairZoomScopeDotColorB)
             : baseCol;
 
         // Outline pass (matches runtime: width = thickness + outlineThickness*2).
-        if (c.GetBool("Metroid.Visual.CrosshairOutline")) {
-            const double olOpacity = c.GetDouble("Metroid.Visual.CrosshairOutlineOpacity");
+        if (c.GetBool(MP_HUD_PROP_KEY_CrosshairOutline)) {
+            const double olOpacity = c.GetDouble(MP_HUD_PROP_KEY_CrosshairOutlineOpacity);
             if (olOpacity > 0.0) {
-                const int olT = qMax(1, c.GetInt("Metroid.Visual.CrosshairOutlineThickness"));
+                const int olT = qMax(1, c.GetInt(MP_HUD_PROP_KEY_CrosshairOutlineThickness));
                 const QColor black(0, 0, 0, 255);
                 const double oa = olOpacity * scopeOpacity;
                 drawArms(black, dThick + olT * 2, oa);
@@ -268,50 +267,44 @@ protected:
 
         // ── HP text ──
         {
-            float op = c.GetDouble("Metroid.Visual.HudHpOpacity");
-            QColor col = readColor("Metroid.Visual.HudHpTextColorR", "Metroid.Visual.HudHpTextColorG", "Metroid.Visual.HudHpTextColorB", op);
-            QPoint pos = dsPos(c.GetInt("Metroid.Visual.HudHpAnchor"), c.GetInt("Metroid.Visual.HudHpX"), c.GetInt("Metroid.Visual.HudHpY"));
-            QString str = QString::fromStdString(c.GetString("Metroid.Visual.HudHpPrefix")) + "100";
+            float op = c.GetDouble(MP_HUD_PROP_KEY_HudHpOpacity);
+            QColor col = readColor(MP_HUD_PROP_KEY_HudHpTextColorR, MP_HUD_PROP_KEY_HudHpTextColorG, MP_HUD_PROP_KEY_HudHpTextColorB, op);
+            QPoint pos = dsPos(c.GetInt(MP_HUD_PROP_KEY_HudHpAnchor), c.GetInt(MP_HUD_PROP_KEY_HudHpX), c.GetInt(MP_HUD_PROP_KEY_HudHpY));
+            QString str = QString::fromStdString(c.GetString(MP_HUD_PROP_KEY_HudHpPrefix)) + "100";
             int tw = textWidthDS(p, str);
             int th = static_cast<int>(p.fontMetrics().height() * 192.0f / height());
 
-            bool showGauge = c.GetBool("Metroid.Visual.HudHpGauge");
-            int mode = showGauge ? c.GetInt("Metroid.Visual.HudHpGaugePosMode") : 0;
-            int ori  = c.GetInt("Metroid.Visual.HudHpGaugeOrientation");
-            int glen = c.GetInt("Metroid.Visual.HudHpGaugeLength");
-            int gwid = c.GetInt("Metroid.Visual.HudHpGaugeWidth");
-            int galign = c.GetInt("Metroid.Visual.HudHpGaugeAlign");
+            bool showGauge = c.GetBool(MP_HUD_PROP_KEY_HudHpGauge);
+            int mode = showGauge ? c.GetInt(MP_HUD_PROP_KEY_HudHpGaugePosMode) : 0;
+            int ori  = c.GetInt(MP_HUD_PROP_KEY_HudHpGaugeOrientation);
+            int glen = c.GetInt(MP_HUD_PROP_KEY_HudHpGaugeLength);
+            int gwid = c.GetInt(MP_HUD_PROP_KEY_HudHpGaugeWidth);
+            int galign = c.GetInt(MP_HUD_PROP_KEY_HudHpGaugeAlign);
 
             int tx, textY;
             int gx = 0, gy = 0;
 
             if (showGauge && mode == 2) {
                 // Text → Gauge: gauge at independent pos, text derived from gauge
-                QPoint gp = dsPos(c.GetInt("Metroid.Visual.HudHpGaugePosAnchor"), c.GetInt("Metroid.Visual.HudHpGaugePosX"), c.GetInt("Metroid.Visual.HudHpGaugePosY"));
+                QPoint gp = dsPos(c.GetInt(MP_HUD_PROP_KEY_HudHpGaugePosAnchor), c.GetInt(MP_HUD_PROP_KEY_HudHpGaugePosX), c.GetInt(MP_HUD_PROP_KEY_HudHpGaugePosY));
                 gx = gp.x(); gy = gp.y();
-                int egx = gx - (ori == 0 ? glen * galign / 2 : 0);
-                int egy = gy - (ori == 1 ? glen * galign / 2 : 0);
-                int gW  = (ori == 0) ? glen : gwid;
-                int gH  = (ori == 0) ? gwid : glen;
-                int tAnc = c.GetInt("Metroid.Visual.HudHpTextAnchor");
-                int ofsX = c.GetInt("Metroid.Visual.HudHpTextOffsetX");
-                int ofsY = c.GetInt("Metroid.Visual.HudHpTextOffsetY");
-                switch (tAnc) {
-                case 1: tx = egx + gW/2 - tw/2 + ofsX; textY = egy                  + ofsY; break; // Above
-                case 2: tx = egx + gW       + ofsX;    textY = egy + gH/2 + th/2 + ofsY; break; // Right
-                case 3: tx = egx - tw       + ofsX;    textY = egy + gH/2 + th/2 + ofsY; break; // Left
-                case 4: tx = egx + gW/2 - tw/2 + ofsX; textY = egy + gH/2 + th/2 + ofsY; break; // Center
-                default:tx = egx + gW/2 - tw/2 + ofsX; textY = egy + gH + th + 2 + ofsY; break; // Below
-                }
+                int egx = gx, egy = gy;
+                MelonPrime::HudGeometry::ApplyGaugeAlign(egx, egy, ori, glen, galign);
+                int tAnc = c.GetInt(MP_HUD_PROP_KEY_HudHpTextAnchor);
+                int ofsX = c.GetInt(MP_HUD_PROP_KEY_HudHpTextOffsetX);
+                int ofsY = c.GetInt(MP_HUD_PROP_KEY_HudHpTextOffsetY);
+                MelonPrime::HudGeometry::CalcTextPosFromGaugeInt(egx, egy, glen, gwid, ori,
+                                                                  tAnc, ofsX, ofsY,
+                                                                  tw, th, tx, textY);
             } else {
-                tx    = alignedX(pos.x(), c.GetInt("Metroid.Visual.HudHpAlign"), tw);
+                tx    = alignedX(pos.x(), c.GetInt(MP_HUD_PROP_KEY_HudHpAlign), tw);
                 textY = pos.y();
                 if (showGauge && mode == 1) {
-                    QPoint gp = dsPos(c.GetInt("Metroid.Visual.HudHpGaugePosAnchor"), c.GetInt("Metroid.Visual.HudHpGaugePosX"), c.GetInt("Metroid.Visual.HudHpGaugePosY"));
+                    QPoint gp = dsPos(c.GetInt(MP_HUD_PROP_KEY_HudHpGaugePosAnchor), c.GetInt(MP_HUD_PROP_KEY_HudHpGaugePosX), c.GetInt(MP_HUD_PROP_KEY_HudHpGaugePosY));
                     gx = gp.x(); gy = gp.y();
                 } else if (showGauge) { // mode 0: gauge relative to text
-                    gx = tx    + c.GetInt("Metroid.Visual.HudHpGaugeOffsetX");
-                    gy = pos.y() + c.GetInt("Metroid.Visual.HudHpGaugeOffsetY") + 2;
+                    gx = tx    + c.GetInt(MP_HUD_PROP_KEY_HudHpGaugeOffsetX);
+                    gy = pos.y() + c.GetInt(MP_HUD_PROP_KEY_HudHpGaugeOffsetY) + 2;
                 }
             }
 
@@ -319,17 +312,17 @@ protected:
             p.drawText(QPoint(tx, textY), str);
 
             if (showGauge) {
-                float gop = c.GetDouble("Metroid.Visual.HudHpGaugeOpacity");
-                QColor gc = readColor("Metroid.Visual.HudHpGaugeColorR", "Metroid.Visual.HudHpGaugeColorG", "Metroid.Visual.HudHpGaugeColorB", gop);
+                float gop = c.GetDouble(MP_HUD_PROP_KEY_HudHpGaugeOpacity);
+                QColor gc = readColor(MP_HUD_PROP_KEY_HudHpGaugeColorR, MP_HUD_PROP_KEY_HudHpGaugeColorG, MP_HUD_PROP_KEY_HudHpGaugeColorB, gop);
                 drawGaugeDS(p, gx, gy, gc, ori, glen, gwid, galign);
             }
         }
 
         // ── Weapon icon ──
-        if (c.GetInt("Metroid.Visual.HudWeaponIconMode") != 0) {
+        if (c.GetInt(MP_HUD_PROP_KEY_HudWeaponIconMode) != 0) {
             static QImage s_magmaul;
             static int s_magmaulH = 0;
-            int wantH = c.GetInt("Metroid.Visual.HudWeaponIconHeight");
+            int wantH = c.GetInt(MP_HUD_PROP_KEY_HudWeaponIconHeight);
             if (s_magmaul.isNull() || s_magmaulH != wantH) {
                 QImageReader rd(QStringLiteral(":/mph-icon-magmaul"));
                 QSize sz = rd.size(); if (sz.isEmpty()) sz = QSize(wantH, wantH);
@@ -337,64 +330,58 @@ protected:
                 s_magmaul = rd.read(); s_magmaulH = wantH;
             }
             if (!s_magmaul.isNull()) {
-                QPoint ip = dsPos(c.GetInt("Metroid.Visual.HudWeaponIconPosAnchor"),
-                                  c.GetInt("Metroid.Visual.HudWeaponIconPosX"),
-                                  c.GetInt("Metroid.Visual.HudWeaponIconPosY"));
-                int ancX = c.GetInt("Metroid.Visual.HudWeaponIconAnchorX");
-                int ancY = c.GetInt("Metroid.Visual.HudWeaponIconAnchorY");
+                QPoint ip = dsPos(c.GetInt(MP_HUD_PROP_KEY_HudWeaponIconPosAnchor),
+                                  c.GetInt(MP_HUD_PROP_KEY_HudWeaponIconPosX),
+                                  c.GetInt(MP_HUD_PROP_KEY_HudWeaponIconPosY));
+                int ancX = c.GetInt(MP_HUD_PROP_KEY_HudWeaponIconAnchorX);
+                int ancY = c.GetInt(MP_HUD_PROP_KEY_HudWeaponIconAnchorY);
                 int iw = s_magmaul.width(), ih = s_magmaul.height();
-                int ix = ip.x() - (ancX == 1 ? iw/2 : ancX == 2 ? iw : 0);
-                int iy = ip.y() - (ancY == 1 ? ih/2 : ancY == 2 ? ih : 0);
+                int ix = ip.x(), iy = ip.y();
+                MelonPrime::HudGeometry::ApplyRectAnchor(ix, iy, iw, ih, ancX, ancY);
                 p.drawImage(QRectF(ix, iy, iw, ih), s_magmaul);
             }
         }
 
         // ── Ammo text ──
         {
-            float op = c.GetDouble("Metroid.Visual.HudWeaponOpacity");
-            QColor col = readColor("Metroid.Visual.HudAmmoTextColorR", "Metroid.Visual.HudAmmoTextColorG", "Metroid.Visual.HudAmmoTextColorB", op);
-            QPoint pos = dsPos(c.GetInt("Metroid.Visual.HudWeaponAnchor"), c.GetInt("Metroid.Visual.HudWeaponX"), c.GetInt("Metroid.Visual.HudWeaponY"));
-            QString str = QString::fromStdString(c.GetString("Metroid.Visual.HudAmmoPrefix")) + "50";
+            float op = c.GetDouble(MP_HUD_PROP_KEY_HudWeaponOpacity);
+            QColor col = readColor(MP_HUD_PROP_KEY_HudAmmoTextColorR, MP_HUD_PROP_KEY_HudAmmoTextColorG, MP_HUD_PROP_KEY_HudAmmoTextColorB, op);
+            QPoint pos = dsPos(c.GetInt(MP_HUD_PROP_KEY_HudWeaponAnchor), c.GetInt(MP_HUD_PROP_KEY_HudWeaponX), c.GetInt(MP_HUD_PROP_KEY_HudWeaponY));
+            QString str = QString::fromStdString(c.GetString(MP_HUD_PROP_KEY_HudAmmoPrefix)) + "50";
             int tw = textWidthDS(p, str);
             int th = static_cast<int>(p.fontMetrics().height() * 192.0f / height());
 
-            bool showGauge = c.GetBool("Metroid.Visual.HudAmmoGauge");
-            int mode = showGauge ? c.GetInt("Metroid.Visual.HudAmmoGaugePosMode") : 0;
-            int ori  = c.GetInt("Metroid.Visual.HudAmmoGaugeOrientation");
-            int glen = c.GetInt("Metroid.Visual.HudAmmoGaugeLength");
-            int gwid = c.GetInt("Metroid.Visual.HudAmmoGaugeWidth");
-            int galign = c.GetInt("Metroid.Visual.HudAmmoGaugeAlign");
+            bool showGauge = c.GetBool(MP_HUD_PROP_KEY_HudAmmoGauge);
+            int mode = showGauge ? c.GetInt(MP_HUD_PROP_KEY_HudAmmoGaugePosMode) : 0;
+            int ori  = c.GetInt(MP_HUD_PROP_KEY_HudAmmoGaugeOrientation);
+            int glen = c.GetInt(MP_HUD_PROP_KEY_HudAmmoGaugeLength);
+            int gwid = c.GetInt(MP_HUD_PROP_KEY_HudAmmoGaugeWidth);
+            int galign = c.GetInt(MP_HUD_PROP_KEY_HudAmmoGaugeAlign);
 
             int tx, textY;
             int gx = 0, gy = 0;
 
             if (showGauge && mode == 2) {
                 // Text → Gauge: gauge at independent pos, text derived from gauge
-                QPoint gp = dsPos(c.GetInt("Metroid.Visual.HudAmmoGaugePosAnchor"), c.GetInt("Metroid.Visual.HudAmmoGaugePosX"), c.GetInt("Metroid.Visual.HudAmmoGaugePosY"));
+                QPoint gp = dsPos(c.GetInt(MP_HUD_PROP_KEY_HudAmmoGaugePosAnchor), c.GetInt(MP_HUD_PROP_KEY_HudAmmoGaugePosX), c.GetInt(MP_HUD_PROP_KEY_HudAmmoGaugePosY));
                 gx = gp.x(); gy = gp.y();
-                int egx = gx - (ori == 0 ? glen * galign / 2 : 0);
-                int egy = gy - (ori == 1 ? glen * galign / 2 : 0);
-                int gW  = (ori == 0) ? glen : gwid;
-                int gH  = (ori == 0) ? gwid : glen;
-                int tAnc = c.GetInt("Metroid.Visual.HudAmmoTextAnchor");
-                int ofsX = c.GetInt("Metroid.Visual.HudAmmoTextOffsetX");
-                int ofsY = c.GetInt("Metroid.Visual.HudAmmoTextOffsetY");
-                switch (tAnc) {
-                case 1: tx = egx + gW/2 - tw/2 + ofsX; textY = egy                  + ofsY; break; // Above
-                case 2: tx = egx + gW       + ofsX;    textY = egy + gH/2 + th/2 + ofsY; break; // Right
-                case 3: tx = egx - tw       + ofsX;    textY = egy + gH/2 + th/2 + ofsY; break; // Left
-                case 4: tx = egx + gW/2 - tw/2 + ofsX; textY = egy + gH/2 + th/2 + ofsY; break; // Center
-                default:tx = egx + gW/2 - tw/2 + ofsX; textY = egy + gH + th + 2 + ofsY; break; // Below
-                }
+                int egx = gx, egy = gy;
+                MelonPrime::HudGeometry::ApplyGaugeAlign(egx, egy, ori, glen, galign);
+                int tAnc = c.GetInt(MP_HUD_PROP_KEY_HudAmmoTextAnchor);
+                int ofsX = c.GetInt(MP_HUD_PROP_KEY_HudAmmoTextOffsetX);
+                int ofsY = c.GetInt(MP_HUD_PROP_KEY_HudAmmoTextOffsetY);
+                MelonPrime::HudGeometry::CalcTextPosFromGaugeInt(egx, egy, glen, gwid, ori,
+                                                                  tAnc, ofsX, ofsY,
+                                                                  tw, th, tx, textY);
             } else {
-                tx    = alignedX(pos.x(), c.GetInt("Metroid.Visual.HudAmmoAlign"), tw);
+                tx    = alignedX(pos.x(), c.GetInt(MP_HUD_PROP_KEY_HudAmmoAlign), tw);
                 textY = pos.y();
                 if (showGauge && mode == 1) {
-                    QPoint gp = dsPos(c.GetInt("Metroid.Visual.HudAmmoGaugePosAnchor"), c.GetInt("Metroid.Visual.HudAmmoGaugePosX"), c.GetInt("Metroid.Visual.HudAmmoGaugePosY"));
+                    QPoint gp = dsPos(c.GetInt(MP_HUD_PROP_KEY_HudAmmoGaugePosAnchor), c.GetInt(MP_HUD_PROP_KEY_HudAmmoGaugePosX), c.GetInt(MP_HUD_PROP_KEY_HudAmmoGaugePosY));
                     gx = gp.x(); gy = gp.y();
                 } else if (showGauge) { // mode 0: gauge relative to text
-                    gx = tx    + c.GetInt("Metroid.Visual.HudAmmoGaugeOffsetX");
-                    gy = pos.y() + c.GetInt("Metroid.Visual.HudAmmoGaugeOffsetY") + 2;
+                    gx = tx    + c.GetInt(MP_HUD_PROP_KEY_HudAmmoGaugeOffsetX);
+                    gy = pos.y() + c.GetInt(MP_HUD_PROP_KEY_HudAmmoGaugeOffsetY) + 2;
                 }
             }
 
@@ -402,8 +389,8 @@ protected:
             p.drawText(QPoint(tx, textY), str);
 
             if (showGauge) {
-                float gop = c.GetDouble("Metroid.Visual.HudAmmoGaugeOpacity");
-                QColor gc = readColor("Metroid.Visual.HudAmmoGaugeColorR", "Metroid.Visual.HudAmmoGaugeColorG", "Metroid.Visual.HudAmmoGaugeColorB", gop);
+                float gop = c.GetDouble(MP_HUD_PROP_KEY_HudAmmoGaugeOpacity);
+                QColor gc = readColor(MP_HUD_PROP_KEY_HudAmmoGaugeColorR, MP_HUD_PROP_KEY_HudAmmoGaugeColorG, MP_HUD_PROP_KEY_HudAmmoGaugeColorB, gop);
                 drawGaugeDS(p, gx, gy, gc, ori, glen, gwid, galign);
             }
         }
@@ -413,7 +400,7 @@ protected:
         // the configured orientation/align/spacing/icon-height, owned vs not-owned
         // opacity, and the selection highlight box. (Per-icon ammo text is omitted;
         // the separate Ammo element above already previews ammo styling.)
-        if (c.GetBool("Metroid.Visual.HudWeaponInventoryShow")) {
+        if (c.GetBool(MP_HUD_PROP_KEY_HudWeaponInventoryShow)) {
             // weaponId per display slot — matches runtime kInventoryOrder.
             static const int kOrder[9] = { 0, 2, 7, 6, 5, 4, 3, 1, 8 };
             // icon resource indexed by weaponId — matches runtime EnsureIconsLoaded.
@@ -428,15 +415,15 @@ protected:
             static const bool kOwned[9] = { true, true, true, true, true, true, false, false, false };
             const int highlightWeaponId = kOrder[0]; // highlight the first slot
 
-            const int iconH   = qBound(4, c.GetInt("Metroid.Visual.HudWeaponInventoryIconHeight"), 48);
-            const int spacing = qMax(0, c.GetInt("Metroid.Visual.HudWeaponInventorySpacing"));
-            const int orient  = c.GetInt("Metroid.Visual.HudWeaponInventoryOrientation"); // 0=horiz 1=vert
-            const int align   = c.GetInt("Metroid.Visual.HudWeaponInventoryAlign");        // 0/1/2
-            const float opOwned    = static_cast<float>(c.GetDouble("Metroid.Visual.HudWeaponInventoryOpacity"));
-            const float opNotOwned = static_cast<float>(c.GetDouble("Metroid.Visual.HudWeaponInventoryNotOwnedOpacity"));
-            const QPoint pos = dsPos(c.GetInt("Metroid.Visual.HudWeaponInventoryAnchor"),
-                                     c.GetInt("Metroid.Visual.HudWeaponInventoryX"),
-                                     c.GetInt("Metroid.Visual.HudWeaponInventoryY"));
+            const int iconH   = qBound(4, c.GetInt(MP_HUD_PROP_KEY_HudWeaponInventoryIconHeight), 48);
+            const int spacing = qMax(0, c.GetInt(MP_HUD_PROP_KEY_HudWeaponInventorySpacing));
+            const int orient  = c.GetInt(MP_HUD_PROP_KEY_HudWeaponInventoryOrientation); // 0=horiz 1=vert
+            const int align   = c.GetInt(MP_HUD_PROP_KEY_HudWeaponInventoryAlign);        // 0/1/2
+            const float opOwned    = static_cast<float>(c.GetDouble(MP_HUD_PROP_KEY_HudWeaponInventoryOpacity));
+            const float opNotOwned = static_cast<float>(c.GetDouble(MP_HUD_PROP_KEY_HudWeaponInventoryNotOwnedOpacity));
+            const QPoint pos = dsPos(c.GetInt(MP_HUD_PROP_KEY_HudWeaponInventoryAnchor),
+                                     c.GetInt(MP_HUD_PROP_KEY_HudWeaponInventoryX),
+                                     c.GetInt(MP_HUD_PROP_KEY_HudWeaponInventoryY));
 
             // Icon cache keyed by requested height (rendered at 2x for crispness).
             static QImage s_invIcons[9];
@@ -466,18 +453,18 @@ protected:
                  :              startX + maxDrawIW * 0.5f)
                 : 0.0f;
 
-            const bool  hlEnable    = c.GetBool("Metroid.Visual.HudWeaponInventoryHighlightEnable");
-            const float hlOpacity   = static_cast<float>(c.GetDouble("Metroid.Visual.HudWeaponInventoryHighlightOpacity"));
-            const float hlThickness = static_cast<float>(c.GetDouble("Metroid.Visual.HudWeaponInventoryHighlightThickness"));
-            const int   hlPad       = qMax(0, c.GetInt("Metroid.Visual.HudWeaponInventoryHighlightPadding"));
-            const int   hlCorner    = qMax(0, c.GetInt("Metroid.Visual.HudWeaponInventoryHighlightCornerRadius"));
-            const int   ofsL = c.GetInt("Metroid.Visual.HudWeaponInventoryHighlightSizeOffsetLeft");
-            const int   ofsR = c.GetInt("Metroid.Visual.HudWeaponInventoryHighlightSizeOffsetRight");
-            const int   ofsT = c.GetInt("Metroid.Visual.HudWeaponInventoryHighlightSizeOffsetTop");
-            const int   ofsB = c.GetInt("Metroid.Visual.HudWeaponInventoryHighlightSizeOffsetBottom");
-            const QColor hlColor = readColor("Metroid.Visual.HudWeaponInventoryHighlightColorR",
-                                             "Metroid.Visual.HudWeaponInventoryHighlightColorG",
-                                             "Metroid.Visual.HudWeaponInventoryHighlightColorB");
+            const bool  hlEnable    = c.GetBool(MP_HUD_PROP_KEY_HudWeaponInventoryHighlightEnable);
+            const float hlOpacity   = static_cast<float>(c.GetDouble(MP_HUD_PROP_KEY_HudWeaponInventoryHighlightOpacity));
+            const float hlThickness = static_cast<float>(c.GetDouble(MP_HUD_PROP_KEY_HudWeaponInventoryHighlightThickness));
+            const int   hlPad       = qMax(0, c.GetInt(MP_HUD_PROP_KEY_HudWeaponInventoryHighlightPadding));
+            const int   hlCorner    = qMax(0, c.GetInt(MP_HUD_PROP_KEY_HudWeaponInventoryHighlightCornerRadius));
+            const int   ofsL = c.GetInt(MP_HUD_PROP_KEY_HudWeaponInventoryHighlightSizeOffsetLeft);
+            const int   ofsR = c.GetInt(MP_HUD_PROP_KEY_HudWeaponInventoryHighlightSizeOffsetRight);
+            const int   ofsT = c.GetInt(MP_HUD_PROP_KEY_HudWeaponInventoryHighlightSizeOffsetTop);
+            const int   ofsB = c.GetInt(MP_HUD_PROP_KEY_HudWeaponInventoryHighlightSizeOffsetBottom);
+            const QColor hlColor = readColor(MP_HUD_PROP_KEY_HudWeaponInventoryHighlightColorR,
+                                             MP_HUD_PROP_KEY_HudWeaponInventoryHighlightColorG,
+                                             MP_HUD_PROP_KEY_HudWeaponInventoryHighlightColorB);
 
             p.setRenderHint(QPainter::Antialiasing, true);
             p.setRenderHint(QPainter::SmoothPixmapTransform, true);
@@ -540,57 +527,57 @@ protected:
         p.setFont(getMphHudFont(c));
 
         // ── Score ──
-        if (c.GetBool("Metroid.Visual.HudMatchStatusShow")) {
-            float op = c.GetDouble("Metroid.Visual.HudMatchStatusOpacity");
-            QColor col = readColor("Metroid.Visual.HudMatchStatusColorR", "Metroid.Visual.HudMatchStatusColorG", "Metroid.Visual.HudMatchStatusColorB", op);
-            QPoint pos = dsPos(c.GetInt("Metroid.Visual.HudMatchStatusAnchor"), c.GetInt("Metroid.Visual.HudMatchStatusX"), c.GetInt("Metroid.Visual.HudMatchStatusY"));
+        if (c.GetBool(MP_HUD_PROP_KEY_HudMatchStatusShow)) {
+            float op = c.GetDouble(MP_HUD_PROP_KEY_HudMatchStatusOpacity);
+            QColor col = readColor(MP_HUD_PROP_KEY_HudMatchStatusColorR, MP_HUD_PROP_KEY_HudMatchStatusColorG, MP_HUD_PROP_KEY_HudMatchStatusColorB, op);
+            QPoint pos = dsPos(c.GetInt(MP_HUD_PROP_KEY_HudMatchStatusAnchor), c.GetInt(MP_HUD_PROP_KEY_HudMatchStatusX), c.GetInt(MP_HUD_PROP_KEY_HudMatchStatusY));
             p.setPen(col);
             p.drawText(pos, "3 / 7");
         }
 
         // ── Rank ──
-        if (c.GetBool("Metroid.Visual.HudRankShow")) {
-            float op = c.GetDouble("Metroid.Visual.HudRankOpacity");
-            QColor col = readColor("Metroid.Visual.HudRankColorR", "Metroid.Visual.HudRankColorG", "Metroid.Visual.HudRankColorB", op);
-            QPoint pos = dsPos(c.GetInt("Metroid.Visual.HudRankAnchor"), c.GetInt("Metroid.Visual.HudRankX"), c.GetInt("Metroid.Visual.HudRankY"));
-            QString prefix = QString::fromStdString(c.GetString("Metroid.Visual.HudRankPrefix"));
-            QString suffix = QString::fromStdString(c.GetString("Metroid.Visual.HudRankSuffix"));
+        if (c.GetBool(MP_HUD_PROP_KEY_HudRankShow)) {
+            float op = c.GetDouble(MP_HUD_PROP_KEY_HudRankOpacity);
+            QColor col = readColor(MP_HUD_PROP_KEY_HudRankColorR, MP_HUD_PROP_KEY_HudRankColorG, MP_HUD_PROP_KEY_HudRankColorB, op);
+            QPoint pos = dsPos(c.GetInt(MP_HUD_PROP_KEY_HudRankAnchor), c.GetInt(MP_HUD_PROP_KEY_HudRankX), c.GetInt(MP_HUD_PROP_KEY_HudRankY));
+            QString prefix = QString::fromStdString(c.GetString(MP_HUD_PROP_KEY_HudRankPrefix));
+            QString suffix = QString::fromStdString(c.GetString(MP_HUD_PROP_KEY_HudRankSuffix));
             QString str = prefix + "1st" + suffix;
-            int tx = alignedX(pos.x(), c.GetInt("Metroid.Visual.HudRankAlign"), textWidthDS(p, str));
+            int tx = alignedX(pos.x(), c.GetInt(MP_HUD_PROP_KEY_HudRankAlign), textWidthDS(p, str));
             p.setPen(col);
             p.drawText(QPoint(tx, pos.y()), str);
         }
 
         // ── Time Left ──
-        if (c.GetBool("Metroid.Visual.HudTimeLeftShow")) {
-            float op = c.GetDouble("Metroid.Visual.HudTimeLeftOpacity");
-            QColor col = readColor("Metroid.Visual.HudTimeLeftColorR", "Metroid.Visual.HudTimeLeftColorG", "Metroid.Visual.HudTimeLeftColorB", op);
-            QPoint pos = dsPos(c.GetInt("Metroid.Visual.HudTimeLeftAnchor"), c.GetInt("Metroid.Visual.HudTimeLeftX"), c.GetInt("Metroid.Visual.HudTimeLeftY"));
+        if (c.GetBool(MP_HUD_PROP_KEY_HudTimeLeftShow)) {
+            float op = c.GetDouble(MP_HUD_PROP_KEY_HudTimeLeftOpacity);
+            QColor col = readColor(MP_HUD_PROP_KEY_HudTimeLeftColorR, MP_HUD_PROP_KEY_HudTimeLeftColorG, MP_HUD_PROP_KEY_HudTimeLeftColorB, op);
+            QPoint pos = dsPos(c.GetInt(MP_HUD_PROP_KEY_HudTimeLeftAnchor), c.GetInt(MP_HUD_PROP_KEY_HudTimeLeftX), c.GetInt(MP_HUD_PROP_KEY_HudTimeLeftY));
             QString str = QStringLiteral("4:32");
-            int tx = alignedX(pos.x(), c.GetInt("Metroid.Visual.HudTimeLeftAlign"), textWidthDS(p, str));
+            int tx = alignedX(pos.x(), c.GetInt(MP_HUD_PROP_KEY_HudTimeLeftAlign), textWidthDS(p, str));
             p.setPen(col);
             p.drawText(QPoint(tx, pos.y()), str);
         }
 
         // ── Bomb Left ── (text + icon)
-        if (c.GetBool("Metroid.Visual.HudBombLeftShow")) {
-            float op = c.GetDouble("Metroid.Visual.HudBombLeftOpacity");
-            QColor col = readColor("Metroid.Visual.HudBombLeftColorR", "Metroid.Visual.HudBombLeftColorG", "Metroid.Visual.HudBombLeftColorB", op);
-            QPoint pos = dsPos(c.GetInt("Metroid.Visual.HudBombLeftAnchor"), c.GetInt("Metroid.Visual.HudBombLeftX"), c.GetInt("Metroid.Visual.HudBombLeftY"));
-            QString prefix = QString::fromStdString(c.GetString("Metroid.Visual.HudBombLeftPrefix"));
-            QString suffix = QString::fromStdString(c.GetString("Metroid.Visual.HudBombLeftSuffix"));
-            QString str = c.GetBool("Metroid.Visual.HudBombLeftTextShow") ? prefix + "3" + suffix : prefix + suffix;
+        if (c.GetBool(MP_HUD_PROP_KEY_HudBombLeftShow)) {
+            float op = c.GetDouble(MP_HUD_PROP_KEY_HudBombLeftOpacity);
+            QColor col = readColor(MP_HUD_PROP_KEY_HudBombLeftColorR, MP_HUD_PROP_KEY_HudBombLeftColorG, MP_HUD_PROP_KEY_HudBombLeftColorB, op);
+            QPoint pos = dsPos(c.GetInt(MP_HUD_PROP_KEY_HudBombLeftAnchor), c.GetInt(MP_HUD_PROP_KEY_HudBombLeftX), c.GetInt(MP_HUD_PROP_KEY_HudBombLeftY));
+            QString prefix = QString::fromStdString(c.GetString(MP_HUD_PROP_KEY_HudBombLeftPrefix));
+            QString suffix = QString::fromStdString(c.GetString(MP_HUD_PROP_KEY_HudBombLeftSuffix));
+            QString str = c.GetBool(MP_HUD_PROP_KEY_HudBombLeftTextShow) ? prefix + "3" + suffix : prefix + suffix;
             if (!str.isEmpty()) {
-                int tx = alignedX(pos.x(), c.GetInt("Metroid.Visual.HudBombLeftAlign"), textWidthDS(p, str));
+                int tx = alignedX(pos.x(), c.GetInt(MP_HUD_PROP_KEY_HudBombLeftAlign), textWidthDS(p, str));
                 p.setPen(col);
                 p.drawText(QPoint(tx, pos.y()), str);
             }
 
             // Bomb icon
-            if (c.GetBool("Metroid.Visual.HudBombLeftIconShow")) {
+            if (c.GetBool(MP_HUD_PROP_KEY_HudBombLeftIconShow)) {
                 static QImage s_bombIcon;
                 static int s_bombIconH = 0;
-                int wantBH = c.GetInt("Metroid.Visual.HudBombIconHeight");
+                int wantBH = c.GetInt(MP_HUD_PROP_KEY_HudBombIconHeight);
                 if (s_bombIcon.isNull() || s_bombIconH != wantBH) {
                     QImageReader rd(QStringLiteral(":/mph-icon-bombs3"));
                     QSize sz = rd.size(); if (sz.isEmpty()) sz = QSize(wantBH, wantBH);
@@ -599,20 +586,20 @@ protected:
                 }
                 if (!s_bombIcon.isNull()) {
                     QPoint ip;
-                    if (c.GetInt("Metroid.Visual.HudBombLeftIconMode") == 0) {
+                    if (c.GetInt(MP_HUD_PROP_KEY_HudBombLeftIconMode) == 0) {
                         // relative to text anchor
-                        ip = QPoint(pos.x() + c.GetInt("Metroid.Visual.HudBombLeftIconOfsX"),
-                                    pos.y() + c.GetInt("Metroid.Visual.HudBombLeftIconOfsY"));
+                        ip = QPoint(pos.x() + c.GetInt(MP_HUD_PROP_KEY_HudBombLeftIconOfsX),
+                                    pos.y() + c.GetInt(MP_HUD_PROP_KEY_HudBombLeftIconOfsY));
                     } else {
-                        ip = dsPos(c.GetInt("Metroid.Visual.HudBombLeftIconPosAnchor"),
-                                   c.GetInt("Metroid.Visual.HudBombLeftIconPosX"),
-                                   c.GetInt("Metroid.Visual.HudBombLeftIconPosY"));
+                        ip = dsPos(c.GetInt(MP_HUD_PROP_KEY_HudBombLeftIconPosAnchor),
+                                   c.GetInt(MP_HUD_PROP_KEY_HudBombLeftIconPosX),
+                                   c.GetInt(MP_HUD_PROP_KEY_HudBombLeftIconPosY));
                     }
-                    int ancX = c.GetInt("Metroid.Visual.HudBombLeftIconAnchorX");
-                    int ancY = c.GetInt("Metroid.Visual.HudBombLeftIconAnchorY");
+                    int ancX = c.GetInt(MP_HUD_PROP_KEY_HudBombLeftIconAnchorX);
+                    int ancY = c.GetInt(MP_HUD_PROP_KEY_HudBombLeftIconAnchorY);
                     int iw = s_bombIcon.width(), ih = s_bombIcon.height();
-                    int ix = ip.x() - (ancX == 1 ? iw/2 : ancX == 2 ? iw : 0);
-                    int iy = ip.y() - (ancY == 1 ? ih/2 : ancY == 2 ? ih : 0);
+                    int ix = ip.x(), iy = ip.y();
+                    MelonPrime::HudGeometry::ApplyRectAnchor(ix, iy, iw, ih, ancX, ancY);
                     p.setOpacity(op);
                     p.drawImage(QRectF(ix, iy, iw, ih), s_bombIcon);
                     p.setOpacity(1.0);
@@ -634,15 +621,15 @@ protected:
         drawBackground(p, r);
 
         auto& c = cfg();
-        if (!c.GetBool("Metroid.Visual.BtmOverlayEnable")) return;
+        if (!c.GetBool(MP_HUD_PROP_KEY_BtmOverlayEnable)) return;
 
         setupDsTransform(p);
 
-        float op  = c.GetDouble("Metroid.Visual.BtmOverlayOpacity");
-        int   sz  = c.GetInt("Metroid.Visual.BtmOverlayDstSize");
-        QPoint pos = dsPos(c.GetInt("Metroid.Visual.BtmOverlayAnchor"),
-                           c.GetInt("Metroid.Visual.BtmOverlayDstX"),
-                           c.GetInt("Metroid.Visual.BtmOverlayDstY"));
+        float op  = c.GetDouble(MP_HUD_PROP_KEY_BtmOverlayOpacity);
+        int   sz  = c.GetInt(MP_HUD_PROP_KEY_BtmOverlayDstSize);
+        QPoint pos = dsPos(c.GetInt(MP_HUD_PROP_KEY_BtmOverlayAnchor),
+                           c.GetInt(MP_HUD_PROP_KEY_BtmOverlayDstX),
+                           c.GetInt(MP_HUD_PROP_KEY_BtmOverlayDstY));
         // Rect top-left = pos, circle centered in rect
         int cx = pos.x() + sz / 2;
         int cy = pos.y() + sz / 2;

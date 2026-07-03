@@ -14,5 +14,7 @@
 
 - `audit-config-defaults.ps1`: verify Metroid config read/default type coverage, including HUD schema defaults
 - `audit-hud-key-parity.ps1`: compare HUD key references across schema-aware defaults, dialog, edit descriptors, side panel, and runtime load
+- `audit-metroid-literal-budget.ps1`: enforce the non-canonical quoted `"Metroid.*"` literal ratchet budget
+- `audit-platform-scatter-budget.ps1`: enforce the V4 macOS/Linux platform-condition scatter ratchet and macOS cursor-warp guard
 - `generate-hud-prop-schema.py`: generate the V2 Phase 2 HUD property schema, dialog prop include, on-screen edit prop include, and drift report
 - `check-inc-ownership.ps1`: verify `.inc` ownership expectations

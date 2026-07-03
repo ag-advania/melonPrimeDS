@@ -17,6 +17,7 @@ class ScreenPanel;  // P-3: forward decl for cached panel pointer
 #include "types.h"
 #include "Config.h"
 #include "MelonPrimeCompilerHints.h"  // Centralised macros (was inline here)
+#include "MelonPrimePlatformInput.h"
 #include "MelonPrimeGameSettings.h"
 #include "MelonPrimeGameRomAddrTable.h"
 #ifdef MELONPRIME_DS
@@ -30,10 +31,6 @@ namespace MelonPrime {
 
 #ifdef _WIN32
     class RawInputWinFilter;
-#elif defined(__APPLE__)
-    class MacRawInputFilter;
-#elif defined(__linux__)
-    class LinuxRawInputFilter;
 #endif
 
     enum InputCacheBit : uint64_t {
@@ -187,6 +184,14 @@ namespace MelonPrime {
         [[nodiscard]] FORCE_INLINE bool IsInGame() const { return m_flags.test(StateFlags::BIT_IN_GAME); }
         [[nodiscard]] bool ShouldForceSoftwareRenderer() const;
         [[nodiscard]] uint16_t GetInputMaskFast() const { return m_inputMaskFast; }
+#if defined(__APPLE__) || defined(__linux__)
+        // True when the platform raw filter owns aim deltas. ScreenPanel uses
+        // this for threshold containment warps (fallback uses Qt/panel path).
+        [[nodiscard]] bool IsPlatformRawAimActive() const;
+#if defined(__linux__)
+        [[nodiscard]] bool IsLinuxRawAimActive() const { return IsPlatformRawAimActive(); }
+#endif
+#endif
 
 #ifdef MELONPRIME_DS
         [[nodiscard]] int GetNativeAimHookMode() const noexcept { return m_nativeAimHookMode; }
@@ -583,15 +588,13 @@ namespace MelonPrime {
 #endif
         }
 
-#ifdef __APPLE__
-        // macOS raw mouse input (IOHIDManager). Cold-section member per the
+#if defined(__APPLE__) || defined(__linux__)
+        // Non-Windows raw mouse input. Cold-section member per the
         // MelonPrime.h layout rule; guarded so Windows layout is untouched.
-        // Owned via Acquire/Release refcount (see MelonPrimeRawInputMacFilter.h).
-        MacRawInputFilter* m_macRawFilter = nullptr;
-#elif defined(__linux__)
-        // Linux raw mouse input (XInput2 RawMotion). Available only on X11;
-        // Wayland/non-XInput2 sessions use the QCursor center-delta fallback.
-        LinuxRawInputFilter* m_linuxRawFilter = nullptr;
+        // Owned via PlatformInput_AcquireRawFilter/ReleaseRawFilter.
+        PlatformRawFilter* m_platformRawFilter = nullptr;
+        // Edge detect panel→raw transition for stale panel delta discard (V5 W2).
+        uint8_t m_platformRawAimWasActive = 0;
 #endif
 
         // =================================================================

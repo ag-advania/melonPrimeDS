@@ -4,11 +4,15 @@
 #include "main.h"
 #include "Screen.h"
 #include "MelonPrimeDef.h"
+#include "MelonPrimePlatformInput.h"
+#include "MelonPrimePerfProbe.h"
 #include "MelonPrimeGameRomAddrTable.h"
 #include "MelonPrimeZoomStatus.h"
 
 #include <cstddef>
 #include <cstdint>
+#include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <utility>
 #include <QCursor>
@@ -16,10 +20,6 @@
 #ifdef _WIN32
 #include "MelonPrimeRawInputWinFilter.h"
 #include "MelonPrimeRawInputState.h"
-#elif defined(__APPLE__)
-#include "MelonPrimeRawInputMacFilter.h"
-#elif defined(__linux__)
-#include "MelonPrimeRawInputLinuxFilter.h"
 #endif
 
 // Unity-owned hook fragments in this file:
@@ -172,6 +172,10 @@ namespace MelonPrime {
             m_input.press = ProjectPressMask(hk.pressed | emuInstance->joyHotkeyPress);
         else
             m_input.press = 0;
+#if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+        if (MelonPrimePerf::IsFrameActive() && rawFilter)
+            MelonPrimePerf::CountInputSource(MelonPrimePerf::InputSource::WinRaw);
+#endif
 #else
         const uint64_t hotDownMask = emuInstance->hotkeyMask;
         if constexpr (!kReentrant)
@@ -189,25 +193,16 @@ namespace MelonPrime {
         m_scanShootKeyDown = ((hotDownMask >> HK_MetroidScanShoot) & 1ULL) != 0;
 
 #if !defined(_WIN32)
-#if defined(__APPLE__)
-        // RawInput-equivalent path: unaccelerated HID deltas accumulated since
-        // the last snapshot. Falls back to the QCursor delta when the HID
-        // manager is unavailable (Input Monitoring permission not granted).
-        if (m_macRawFilter && m_macRawFilter->isAvailable()) {
-            m_macRawFilter->fetchMouseDelta(m_input.mouseX, m_input.mouseY);
-        } else
-#elif defined(__linux__)
-        // RawInput-equivalent path: XInput2 RawMotion on X11. Wayland and
-        // unavailable XInput2 fall back to QCursor center-delta below.
-        if (m_linuxRawFilter && m_linuxRawFilter->isAvailable()) {
-            m_linuxRawFilter->fetchMouseDelta(m_input.mouseX, m_input.mouseY);
-        } else
-#endif
-        {
-            const QPoint currentPos = QCursor::pos();
-            m_input.mouseX = currentPos.x() - m_aimData.centerX;
-            m_input.mouseY = currentPos.y() - m_aimData.centerY;
-        }
+        bool haveMouseDelta = false;
+        PlatformInput_UpdateMouseDelta(
+            MELONPRIME_RAW_FILTER_PTR(this),
+            m_cachedPanel,
+            MELONPRIME_RAW_AIM_WAS_ACTIVE_PTR(this),
+            haveMouseDelta,
+            m_input.mouseX,
+            m_input.mouseY,
+            m_aimData.centerX,
+            m_aimData.centerY);
 #endif
 
         if constexpr (!kReentrant)
@@ -389,15 +384,9 @@ namespace MelonPrime {
             const QPoint center = GetAdjustedCenter();
             m_aimData.centerX = center.x();
             m_aimData.centerY = center.y();
-            QCursor::setPos(center);
-
-#if defined(__APPLE__)
-            if (m_macRawFilter)
-                m_macRawFilter->resetAll();
-#elif defined(__linux__)
-            if (m_linuxRawFilter)
-                m_linuxRawFilter->resetAll();
-#endif
+            PlatformInput_WarpCursor(center.x(), center.y());
+            PlatformInput_ResetAfterLayoutWarp(
+                MELONPRIME_RAW_FILTER_PTR(this), m_cachedPanel);
 #endif
         }
     }
@@ -517,6 +506,11 @@ namespace MelonPrime {
     {
         m_nativeAimDeltaX = 0;
         m_nativeAimDeltaY = 0;
+#if !defined(_WIN32)
+        const bool warpCursorAfterAim =
+            PlatformInput_ShouldWarpCursorAfterAim(
+                MELONPRIME_RAW_FILTER_PTR(this));
+#endif
 
         // P-29b: Combined early-exit gate.
         // Single branch covers both aimBlock (morph/weapon) and layout change.
@@ -581,6 +575,10 @@ namespace MelonPrime {
                     if (hasDelta) {
                         m_aimResidualX = resX;
                         m_aimResidualY = resY;
+#if !defined(_WIN32)
+                        if (warpCursorAfterAim)
+                            PlatformInput_WarpCursor(m_aimData.centerX, m_aimData.centerY);
+#endif
                     }
                     return;
                 }
@@ -612,6 +610,10 @@ namespace MelonPrime {
                         if (hasDelta) {
                             m_aimResidualX = resX;
                             m_aimResidualY = resY;
+#if !defined(_WIN32)
+                            if (warpCursorAfterAim)
+                                PlatformInput_WarpCursor(m_aimData.centerX, m_aimData.centerY);
+#endif
                         }
                         return;
                     }
@@ -630,6 +632,10 @@ namespace MelonPrime {
                     if (hasDelta) {
                         m_aimResidualX = resX;
                         m_aimResidualY = resY;
+#if !defined(_WIN32)
+                        if (warpCursorAfterAim)
+                            PlatformInput_WarpCursor(m_aimData.centerX, m_aimData.centerY);
+#endif
                     }
                     return;
                 }
@@ -648,7 +654,8 @@ namespace MelonPrime {
             m_aimResidualY = resY;
 
 #if !defined(_WIN32)
-            QCursor::setPos(m_aimData.centerX, m_aimData.centerY);
+            if (warpCursorAfterAim)
+                PlatformInput_WarpCursor(m_aimData.centerX, m_aimData.centerY);
 #endif
             return;
         }
@@ -657,7 +664,8 @@ namespace MelonPrime {
         const QPoint center = GetAdjustedCenter();
         m_aimData.centerX = center.x();
         m_aimData.centerY = center.y();
-        QCursor::setPos(center);
+        PlatformInput_WarpCursor(center.x(), center.y());
+        PlatformInput_ResetPanelAfterWarp(m_cachedPanel);
 #endif
         m_isLayoutChangePending = false;
         m_aimResidualX = 0;

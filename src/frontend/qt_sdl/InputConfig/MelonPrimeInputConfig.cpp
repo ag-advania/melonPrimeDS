@@ -41,6 +41,8 @@
 #include "ui_MelonPrimeInputConfig.h"
 #include "Config.h"
 #include "MelonPrimeDef.h"
+#include "../MelonPrimeHudGeometry.h"
+#include "../MelonPrimeHudPropSchema.inc"
 #include "MelonPrimeLocalization.h"
 #include "toml/toml.hpp"
 #ifdef MELONPRIME_CUSTOM_HUD
@@ -127,7 +129,7 @@ MelonPrimeInputConfig::MelonPrimeInputConfig(EmuInstance* emu, QWidget* parent) 
     Config::Table keycfg = instcfg.GetTable("Keyboard");
     Config::Table joycfg = instcfg.GetTable("Joystick");
 
-    MelonPrime::UiText::SetMenuLanguageMode(instcfg.GetInt("Metroid.UI.MenuLanguage"));
+    MelonPrime::UiText::SetMenuLanguageMode(instcfg.GetInt(MelonPrime::CfgKey::MenuLanguage));
     setupMenuLanguageControl(instcfg);
     setupKeyBindings(instcfg, keycfg, joycfg);
     setupSensitivityAndToggles(instcfg);
@@ -235,7 +237,7 @@ void MelonPrimeInputConfig::setupMenuLanguageControl(Config::Table& instcfg)
     m_comboMenuLanguage = new QComboBox(m_menuLanguageWidget);
     m_comboMenuLanguage->addItem(QStringLiteral("Japanese"), MelonPrime::UiText::kMenuLanguageJapanese);
     m_comboMenuLanguage->addItem(QStringLiteral("English"), MelonPrime::UiText::kMenuLanguageEnglish);
-    SetComboCurrentData(m_comboMenuLanguage, instcfg.GetInt("Metroid.UI.MenuLanguage"));
+    SetComboCurrentData(m_comboMenuLanguage, instcfg.GetInt(MelonPrime::CfgKey::MenuLanguage));
 
     layout->addWidget(m_lblMenuLanguage);
     layout->addWidget(m_comboMenuLanguage);
@@ -453,7 +455,8 @@ void MelonPrimeInputConfig::setupSensitivityAndToggles(Config::Table& instcfg)
             QStringLiteral("Controls how the game's current aim direction follows the target aim direction."));
         int lowLatencyAimMode = ClampLowLatencyAimMode(
             instcfg.GetInt(MelonPrime::CfgKey::LowLatencyAimMode));
-        // Legacy key migration — planned removal after the next release.
+        // Legacy key migration. Keep until the first post-V3 release gives
+        // old configs a save cycle; see the Phase 4 migration ledger.
         // Do not add new reads.
         // Old configs only had the InstantAimFollow bool; map it onto the new
         // public replacement when the new key is still at its Off default.
@@ -487,14 +490,14 @@ void MelonPrimeInputConfig::setupSensitivityAndToggles(Config::Table& instcfg)
             });
     }
     const int nativeAimHookMode =
-        kDeveloperOnlyFeaturesEnabled ? instcfg.GetInt("Metroid.Aim.NativeHookMode") : 0;
+        kDeveloperOnlyFeaturesEnabled ? instcfg.GetInt(MelonPrime::CfgKey::NativeAimHookMode) : 0;
     ui->cbMetroidEnableNativeAimPostFoldWrite->setChecked(
         kDeveloperOnlyFeaturesEnabled && nativeAimHookMode == 2);
     ui->cbMetroidEnableNativeAimRegisterInjection->setChecked(
         kDeveloperOnlyFeaturesEnabled && nativeAimHookMode == 1);
     ui->cbMetroidEnableImmediateInputEdgeOverlay->setChecked(
-        kDeveloperOnlyFeaturesEnabled && instcfg.GetBool("Metroid.Input.Enable.ImmediateInputEdgeOverlay"));
-    ui->cbMetroidEnableDirectAltFormTransform->setChecked(instcfg.GetBool("Metroid.Input.Enable.DirectAltFormTransform"));
+        kDeveloperOnlyFeaturesEnabled && instcfg.GetBool(MelonPrime::CfgKey::ImmediateInputEdgeOverlay));
+    ui->cbMetroidEnableDirectAltFormTransform->setChecked(instcfg.GetBool(MelonPrime::CfgKey::DirectAltFormTransform));
     connect(
         ui->cbMetroidEnableNativeAimRegisterInjection,
         MELONPRIME_CHECKBOX_STATE_CHANGED_SIGNAL,
@@ -519,8 +522,8 @@ void MelonPrimeInputConfig::setupSensitivityAndToggles(Config::Table& instcfg)
     loadBindingsRange(instcfg, 22, 23);
     // Clip/TopScreen stay outside the table: their save side is coupled to an
     // invalidate (old != new comparison), so they keep their original form.
-    ui->cbMetroidClipCursorToBottomScreenWhenNotInGame->setChecked(instcfg.GetBool("Metroid.Visual.ClipCursorToBottomScreenWhenNotInGame"));
-    ui->cbMetroidInGameTopScreenOnly->setChecked(instcfg.GetBool("Metroid.Visual.InGameTopScreenOnly"));
+    ui->cbMetroidClipCursorToBottomScreenWhenNotInGame->setChecked(instcfg.GetBool(MP_HUD_PROP_KEY_ClipCursorToBottomScreenWhenNotInGame));
+    ui->cbMetroidInGameTopScreenOnly->setChecked(instcfg.GetBool(MP_HUD_PROP_KEY_InGameTopScreenOnly));
 
     // Segment 3a [23,26): bug fixes (before the developer-only tooltip block).
     loadBindingsRange(instcfg, 23, 26);
@@ -670,7 +673,7 @@ void MelonPrimeInputConfig::setupInputMethodSection(Config::Table& instcfg)
         "Checked: use the native ARM9 game function hook. "
         "Unchecked: use the older touch/menu simulation path.");
     m_cbMetroidUseNewWeaponSwitchMethod->setChecked(
-        std::clamp(instcfg.GetInt("Metroid.Input.WeaponSwitchMethod"), 0, 1)
+        std::clamp(instcfg.GetInt(MelonPrime::CfgKey::WeaponSwitchMethod), 0, 1)
             == MelonPrime::WeaponSwitchMethod::NewNative);
     sectionLayout->addWidget(m_cbMetroidUseNewWeaponSwitchMethod);
 
@@ -691,7 +694,7 @@ void MelonPrimeInputConfig::setupInputMethodSection(Config::Table& instcfg)
         "Unchecked: use the older fixed input/overlay path.");
     m_cbMetroidUseNewBipedFireMethod->setChecked(
         kDeveloperOnlyFeaturesEnabled
-            && std::clamp(instcfg.GetInt("Metroid.Input.BipedFireMethod"), 0, 1)
+            && std::clamp(instcfg.GetInt(MelonPrime::CfgKey::BipedFireMethod), 0, 1)
                 == MelonPrime::BipedFireMethod::NewNativeEdge);
     m_cbMetroidUseNewBipedFireMethod->setEnabled(kDeveloperOnlyFeaturesEnabled);
     addDeveloperSpacing();
@@ -715,7 +718,7 @@ void MelonPrimeInputConfig::setupInputMethodSection(Config::Table& instcfg)
         "Checked: use the native ARM9 TransformRequest hook. "
         "Unchecked: use the older touch/menu simulation path.");
     m_cbMetroidUseNewTransformMethod->setChecked(
-        instcfg.GetBool("Metroid.Input.Enable.DirectAltFormTransform"));
+        instcfg.GetBool(MelonPrime::CfgKey::DirectAltFormTransform));
     sectionLayout->addSpacing(6);
     sectionLayout->addWidget(m_cbMetroidUseNewTransformMethod);
 
@@ -728,7 +731,7 @@ void MelonPrimeInputConfig::setupInputMethodSection(Config::Table& instcfg)
     ui->lblMetroidDirectAltFormTransformDesc->setStyleSheet("QLabel { margin-left: 20px; }");
     sectionLayout->addWidget(ui->lblMetroidDirectAltFormTransformDesc);
 
-    const int zoomMethod = std::clamp(instcfg.GetInt("Metroid.Input.ZoomMethod"), 0, 2);
+    const int zoomMethod = std::clamp(instcfg.GetInt(MelonPrime::CfgKey::ZoomInputMethod), 0, 2);
 
     m_cbMetroidUseNewZoomMethod = new QCheckBox(
         "Use New Method for Zoom",
@@ -863,7 +866,7 @@ void MelonPrimeInputConfig::updateAimControlsForStylusMode(bool stylusEnabled)
 void MelonPrimeInputConfig::setupCollapsibleSections(Config::Table& instcfg)
 {
     // Custom HUD
-    ui->cbMetroidEnableCustomHud->setChecked(instcfg.GetBool("Metroid.Visual.CustomHUD"));
+    ui->cbMetroidEnableCustomHud->setChecked(instcfg.GetBool(MP_HUD_PROP_KEY_CustomHUD));
 
     // --- Collapsible sections: remember expand/collapse state ---
     auto setupToggle = [&instcfg](QPushButton* btn, QWidget* section, const QString& label, const char* cfgKey) {
@@ -877,33 +880,33 @@ void MelonPrimeInputConfig::setupCollapsibleSections(Config::Table& instcfg)
         });
     };
     // Other Metroid Settings 2 tab
-    setupToggle(ui->btnToggleInputSettings, ui->sectionInputSettings, "INPUT SETTINGS",   "Metroid.UI.SectionInputSettings");
+    setupToggle(ui->btnToggleInputSettings, ui->sectionInputSettings, "INPUT SETTINGS",   MelonPrime::CfgKey::SectionInputSettings);
     if (m_btnToggleInputMethod && m_sectionInputMethod) {
         setupToggle(
             m_btnToggleInputMethod,
             m_sectionInputMethod,
             "INPUT METHOD",
-            "Metroid.UI.SectionInputMethod");
+            MelonPrime::CfgKey::SectionInputMethod);
     }
-    setupToggle(ui->btnToggleScreenSync,    ui->sectionScreenSync,    "SCREEN SYNC",      "Metroid.UI.SectionScreenSync");
-    setupToggle(ui->btnToggleCursorClipSettings, ui->sectionCursorClipSettings, "CURSOR CLIP SETTINGS",  "Metroid.UI.SectionCursorClipSettings");
-    setupToggle(ui->btnToggleInGameApply, ui->sectionInGameApply, "IN-GAME APPLY",  "Metroid.UI.SectionInGameApply");
-    setupToggle(ui->btnToggleInGameAspectRatio, ui->sectionInGameAspectRatio, "IN-GAME ASPECT RATIO",  "Metroid.UI.SectionInGameAspectRatio");
-    setupToggle(ui->btnToggleLowHpWarning, ui->sectionLowHpWarning, "LOW HP WARNING",  "Metroid.UI.SectionLowHpWarning");
+    setupToggle(ui->btnToggleScreenSync,    ui->sectionScreenSync,    "SCREEN SYNC",      MelonPrime::CfgKey::SectionScreenSync);
+    setupToggle(ui->btnToggleCursorClipSettings, ui->sectionCursorClipSettings, "CURSOR CLIP SETTINGS",  MelonPrime::CfgKey::SectionCursorClipSettings);
+    setupToggle(ui->btnToggleInGameApply, ui->sectionInGameApply, "IN-GAME APPLY",  MelonPrime::CfgKey::SectionInGameApply);
+    setupToggle(ui->btnToggleInGameAspectRatio, ui->sectionInGameAspectRatio, "IN-GAME ASPECT RATIO",  MelonPrime::CfgKey::SectionInGameAspectRatio);
+    setupToggle(ui->btnToggleLowHpWarning, ui->sectionLowHpWarning, "LOW HP WARNING",  MelonPrime::CfgKey::SectionLowHpWarning);
     // Other Metroid Settings tab
-    setupToggle(ui->btnToggleSensitivity, ui->sectionSensitivity, "SENSITIVITY",      "Metroid.UI.SectionSensitivity");
-    setupToggle(ui->btnToggleBugFix,        ui->sectionBugFix,        "BUG FIXES",                   "Metroid.UI.SectionBugFix");
-    setupToggle(ui->btnToggleGameFeature,   ui->sectionGameFeature,   "GAME FEATURE IMPROVEMENTS",   "Metroid.UI.SectionGameFeature");
-    setupToggle(ui->btnToggleDisableFeatures, ui->sectionDisableFeatures, "DISABLE FEATURES",         "Metroid.UI.SectionDisableFeatures");
+    setupToggle(ui->btnToggleSensitivity, ui->sectionSensitivity, "SENSITIVITY",      MelonPrime::CfgKey::SectionSensitivity);
+    setupToggle(ui->btnToggleBugFix,        ui->sectionBugFix,        "BUG FIXES",                   MelonPrime::CfgKey::SectionBugFix);
+    setupToggle(ui->btnToggleGameFeature,   ui->sectionGameFeature,   "GAME FEATURE IMPROVEMENTS",   MelonPrime::CfgKey::SectionGameFeature);
+    setupToggle(ui->btnToggleDisableFeatures, ui->sectionDisableFeatures, "DISABLE FEATURES",         MelonPrime::CfgKey::SectionDisableFeatures);
     setupToggle(ui->btnToggleDisablePickingUpSpecificItems, ui->sectionDisablePickingUpSpecificItems,
-                "Power-Up Pickup Effects", "Metroid.UI.SectionPowerUpPickupEffects");
-    setupToggle(ui->btnToggleGameplay,      ui->sectionGameplay,      "GAMEPLAY TOGGLES",             "Metroid.UI.SectionGameplay");
-    setupToggle(ui->btnToggleVideo,       ui->sectionVideo,       "VIDEO QUALITY",    "Metroid.UI.SectionVideo");
-    setupToggle(ui->btnToggleVolume,      ui->sectionVolume,      "VOLUME",           "Metroid.UI.SectionVolume");
-    setupToggle(ui->btnToggleLicense,     ui->sectionLicense,     "LICENSE APPLY",    "Metroid.UI.SectionLicense");
+                "Power-Up Pickup Effects", MelonPrime::CfgKey::SectionPowerUpPickupEffects);
+    setupToggle(ui->btnToggleGameplay,      ui->sectionGameplay,      "GAMEPLAY TOGGLES",             MelonPrime::CfgKey::SectionGameplay);
+    setupToggle(ui->btnToggleVideo,       ui->sectionVideo,       "VIDEO QUALITY",    MelonPrime::CfgKey::SectionVideo);
+    setupToggle(ui->btnToggleVolume,      ui->sectionVolume,      "VOLUME",           MelonPrime::CfgKey::SectionVolume);
+    setupToggle(ui->btnToggleLicense,     ui->sectionLicense,     "LICENSE APPLY",    MelonPrime::CfgKey::SectionLicense);
     // Restore note: remove this toggle if the DEVELOPER ONLY section is removed.
     if constexpr (kDeveloperOnlyFeaturesEnabled) {
-        setupToggle(ui->btnToggleDeveloperOnly, ui->sectionDeveloperOnly, "DEVELOPER ONLY", "Metroid.UI.SectionDeveloperOnly");
+        setupToggle(ui->btnToggleDeveloperOnly, ui->sectionDeveloperOnly, "DEVELOPER ONLY", MelonPrime::CfgKey::SectionDeveloperOnly);
     } else {
         // Non-developer build: hide the section entirely instead of greying it out.
         // Child widgets parented to sectionDeveloperOnly are hidden along with it.
@@ -926,7 +929,7 @@ MelonPrimeInputConfig::~MelonPrimeInputConfig()
 {
     if (emuInstance)
         MelonPrime::UiText::SetMenuLanguageMode(
-            emuInstance->getLocalConfig().GetInt("Metroid.UI.MenuLanguage"));
+            emuInstance->getLocalConfig().GetInt(MelonPrime::CfgKey::MenuLanguage));
     delete ui;
 }
 
@@ -1024,31 +1027,31 @@ void MelonPrimeInputConfig::on_metroidSetVideoQualityToHigh2_clicked()
 void MelonPrimeInputConfig::on_cbMetroidEnableSnapTap_stateChanged(int state)
 {
     auto& cfg = emuInstance->getGlobalConfig();
-    cfg.SetBool("Metroid.Operation.SnapTap", state != 0);
+    cfg.SetBool(MelonPrime::CfgKey::SnapTap, state != 0);
 }
 
 void MelonPrimeInputConfig::on_cbMetroidUnlockAll_stateChanged(int state)
 {
     auto& cfg = emuInstance->getGlobalConfig();
-    cfg.SetBool("Metroid.Data.Unlock", state != 0);
+    cfg.SetBool(MelonPrime::CfgKey::DataUnlock, state != 0);
 }
 
 void MelonPrimeInputConfig::on_cbMetroidApplyHeadphone_stateChanged(int state)
 {
     auto& cfg = emuInstance->getGlobalConfig();
-    cfg.SetBool("Metroid.Apply.Headphone", state != 0);
+    cfg.SetBool(MelonPrime::CfgKey::Headphone, state != 0);
 }
 
 void MelonPrimeInputConfig::on_cbMetroidUseFirmwareName_stateChanged(int state)
 {
     auto& cfg = emuInstance->getGlobalConfig();
-    cfg.SetBool("Metroid.Use.Firmware.Name", state != 0);
+    cfg.SetBool(MelonPrime::CfgKey::UseFwName, state != 0);
 }
 
 void MelonPrimeInputConfig::on_cbMetroidEnableCustomHud_stateChanged(int state)
 {
     auto& cfg = emuInstance->getLocalConfig();
-    cfg.SetBool("Metroid.Visual.CustomHUD", state != 0);
+    cfg.SetBool(MP_HUD_PROP_KEY_CustomHUD, state != 0);
 }
 
 void MelonPrimeInputConfig::on_cbMetroidEnableStylusMode_stateChanged(int state)

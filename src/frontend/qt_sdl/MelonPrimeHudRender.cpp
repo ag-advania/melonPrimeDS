@@ -13,6 +13,8 @@
 #include "toml/toml.hpp"
 #include "MelonPrime.h"
 #include "MelonPrimeDef.h"
+#include "MelonPrimeHudGeometry.h"
+#include "MelonPrimePerfProbe.h"
 #include "MelonPrimeLocalization.h"
 #include "MelonPrimeHudPropSchema.inc"
 

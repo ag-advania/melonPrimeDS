@@ -12,8 +12,98 @@
 
 #include <utility>
 
+#ifdef __APPLE__
+#include <CoreFoundation/CoreFoundation.h>
+#endif
+
 namespace MelonPrime::UiText
 {
+
+namespace {
+
+bool LanguageTagIsJapanese(const QString& tag)
+{
+    if (tag.isEmpty())
+        return false;
+
+    const QString lower = tag.toLower();
+    return lower.startsWith(QStringLiteral("ja"));
+}
+
+#ifdef __APPLE__
+bool ApplePreferredLanguagesContainJapanese()
+{
+    CFPropertyListRef value = CFPreferencesCopyValue(
+        CFSTR("AppleLanguages"),
+        kCFPreferencesAnyApplication,
+        kCFPreferencesCurrentUser,
+        kCFPreferencesAnyHost);
+    if (!value)
+        return false;
+
+    bool found = false;
+    if (CFGetTypeID(value) == CFArrayGetTypeID()) {
+        const CFArrayRef langs = static_cast<CFArrayRef>(value);
+        const CFIndex count = CFArrayGetCount(langs);
+        for (CFIndex i = 0; i < count; ++i) {
+            const CFStringRef lang =
+                static_cast<CFStringRef>(CFArrayGetValueAtIndex(langs, i));
+            if (!lang)
+                continue;
+
+            char buf[32];
+            if (!CFStringGetCString(lang, buf, sizeof(buf), kCFStringEncodingUTF8))
+                continue;
+
+            if (LanguageTagIsJapanese(QString::fromUtf8(buf))) {
+                found = true;
+                break;
+            }
+        }
+    }
+
+    CFRelease(value);
+    return found;
+}
+#endif
+
+bool DetectJapaneseSystemLocale()
+{
+    const QLocale sys = QLocale::system();
+    if (sys.language() == QLocale::Japanese)
+        return true;
+
+    for (const QString& tag : sys.uiLanguages()) {
+        if (LanguageTagIsJapanese(tag))
+            return true;
+    }
+
+    if (LanguageTagIsJapanese(sys.name()))
+        return true;
+
+#ifdef __APPLE__
+    // QLocale::system() can stay English when Info.plist pins
+    // CFBundleDevelopmentRegion (QTBUG-72491). Read macOS prefs directly.
+    if (ApplePreferredLanguagesContainJapanese())
+        return true;
+#endif
+
+    for (const char* envName : {"LANG", "LC_ALL", "LC_MESSAGES", "LANGUAGE"}) {
+        const QByteArray env = qgetenv(envName);
+        if (LanguageTagIsJapanese(QString::fromLatin1(env)))
+            return true;
+    }
+
+    return false;
+}
+
+} // namespace
+
+bool IsJapaneseSystemLocale()
+{
+    static const bool isJapanese = DetectJapaneseSystemLocale();
+    return isJapanese;
+}
 
 struct Translation
 {

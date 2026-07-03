@@ -2,6 +2,7 @@
 
 #include "MelonPrimePatchFixWifi.h"
 #include "Config.h"
+#include "MelonPrimeDef.h"
 #include "NDS.h"
 
 namespace MelonPrime {
@@ -88,7 +89,7 @@ static constexpr PatchWord kWords[] = {
 
 void FixWifi_ApplyOnce(melonDS::NDS* nds, Config::Table& cfg, uint8_t romGroupIndex)
 {
-    if (!cfg.GetBool("Metroid.BugFix.WifiBitset")) return;
+    if (!cfg.GetBool(MelonPrime::CfgKey::WifiBitset)) return;
     if (romGroupIndex >= 7 || kBase[romGroupIndex] == 0xFFFFFFFFu) return;
 
     const uint32_t base = kBase[romGroupIndex];

@@ -22,6 +22,7 @@
 
 #include "MelonPrimeConstants.h"
 #include "Config.h"
+#include "../MelonPrimeHudPropSchema.inc"
 #ifdef MELONPRIME_CUSTOM_HUD
 #include "MelonPrimeHudRender.h"
 #endif
@@ -304,7 +305,7 @@ inline void bindPresetColorSync(QObject* owner, QComboBox* combo, QLineEdit* lin
 // matching the rendering used by the actual in-game HUD overlay.
 inline QFont getMphHudFont(Config::Table& cfg)
 {
-    const int textScalePct = cfg.GetInt("Metroid.Visual.HudTextScale");
+    const int textScalePct = cfg.GetInt(MP_HUD_PROP_KEY_HudTextScale);
     const double tds = qBound(0.1, textScalePct / 100.0, 10.0);
 
 #ifdef MELONPRIME_CUSTOM_HUD

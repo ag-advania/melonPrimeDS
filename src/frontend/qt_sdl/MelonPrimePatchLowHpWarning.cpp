@@ -2,6 +2,7 @@
 
 #include "MelonPrimePatchLowHpWarning.h"
 #include "Config.h"
+#include "MelonPrimeDef.h"
 #include "NDS.h"
 
 #include <algorithm>
@@ -47,7 +48,7 @@ void LowHpWarning_ApplyOnce(melonDS::NDS* nds, Config::Table& cfg, uint8_t romGr
 {
     if (romGroupIndex >= 7) return;
 
-    const int mode = cfg.GetInt("Metroid.LowHpWarning.Mode");
+    const int mode = cfg.GetInt(MelonPrime::CfgKey::LowHpWarningMode);
     // Disabled: leave the game's code untouched (do NOT write vanilla). The cmp
     // addresses are still under verification; writing on the default config would
     // risk corrupting an unrelated location until they are confirmed.
@@ -58,18 +59,18 @@ void LowHpWarning_ApplyOnce(melonDS::NDS* nds, Config::Table& cfg, uint8_t romGr
     uint32_t threshold;
     switch (mode) {
     case MODE_FIXED:
-        threshold = ClampThreshold(cfg.GetInt("Metroid.LowHpWarning.Fixed"));
+        threshold = ClampThreshold(cfg.GetInt(MelonPrime::CfgKey::LowHpWarningFixed));
         break;
     case MODE_PER_DAMAGE: {
         const int dl = nds->ARM9Read8(a.damageRead);
-        const char* key = (dl == 0) ? "Metroid.LowHpWarning.Low"
-                        : (dl == 2) ? "Metroid.LowHpWarning.High"
-                        :             "Metroid.LowHpWarning.Medium"; // 1 or unexpected
+        const char* key = (dl == 0) ? MelonPrime::CfgKey::LowHpWarningLow
+                        : (dl == 2) ? MelonPrime::CfgKey::LowHpWarningHigh
+                        :             MelonPrime::CfgKey::LowHpWarningMedium; // 1 or unexpected
         threshold = ClampThreshold(cfg.GetInt(key));
         break;
     }
     case MODE_AUTO_SCALE: {
-        const int base = std::clamp(cfg.GetInt("Metroid.LowHpWarning.AutoBase"), 0, 255);
+        const int base = std::clamp(cfg.GetInt(MelonPrime::CfgKey::LowHpWarningAutoBase), 0, 255);
         const int dl = nds->ARM9Read8(a.damageRead);
         int scaled;
         if (dl == 0)      scaled = (base * 3 + 2) / 4;   // Low  ~0.75x (rounded)

@@ -16,6 +16,29 @@
 - The project has been built on Windows and via MinGW cross-compilation from WSL, and (since 2026-07) natively on macOS (Intel) — see the macOS Build section below
 - `vcpkg/` is used for dependencies in the Windows setup; the macOS build uses Homebrew packages with `USE_VCPKG=OFF` (the default)
 
+## CI Audits
+
+The Windows GitHub Actions workflow is the canonical CI gate for MelonPrime
+config/schema discipline. It runs before the Windows build:
+
+- `.claude/skills/audit-config-defaults.ps1`
+- `.claude/skills/audit-hud-key-parity.ps1 -Strict`
+- `.claude/skills/check-inc-ownership.ps1`
+- `.claude/skills/audit-metroid-literal-budget.ps1 -Budget 1`
+- `.claude/skills/generate-hud-prop-schema.py` followed by `git diff --exit-code`
+
+Rules:
+
+- The non-canonical `"Metroid.*"` literal budget is a ratchet. Lowering it is
+  allowed; raising it requires a review note explaining why the new literal
+  cannot live in `MelonPrimeHudPropSchema.inc`, `MelonPrimeOsdColorSchema.inc`,
+  or `MelonPrimeDef.h`.
+- Generated HUD schema files must be byte-identical after regeneration. If the
+  generator output changes, commit both the source change and generated files in
+  the same change.
+- `.inc` fragments remain unity-build includes owned by their parent `.cpp` or
+  `.inc`; do not add them directly to CMake.
+
 ## macOS Build (Homebrew, Intel/ARM)
 
 Native macOS build added 2026-07. Uses Homebrew dependencies; vcpkg is not involved
@@ -35,24 +58,57 @@ The bundle is produced at `build-mac/melonPrimeDS.app`.
 
 macOS platform notes:
 - Windows-only RawInput sources are removed from the source list on APPLE.
-- The RawInput-equivalent aim path is `MelonPrimeRawInputMacFilter.{h,cpp}` (IOHIDManager,
-  `#ifdef __APPLE__`-guarded TU). It needs the macOS **Input Monitoring** permission; when the
-  permission is denied the aim path falls back to the QCursor center-delta method automatically.
+- The RawInput-equivalent aim path is `MelonPrimeRawInputMacFilter.{h,mm}` (`#ifdef __APPLE__`
+  TU, ObjC++/ARC). Backend order: **GCMouse** (GameController framework, macOS 11+, raw
+  unaccelerated deltas, **no TCC permission needed**, frontmost-only delivery) → **IOHIDManager**
+  (started only if no GCMouse appears within ~3s; needs the Input Monitoring permission, and
+  unsigned dev builds lose that TCC grant on every rebuild — the reason GCMouse is primary) →
+  QCursor center-delta fallback. `gcActive` gates the IOHID callback so the backends can never
+  double-count. Backend selection is logged to stderr as `[MelonPrime] mac input: ...`.
 - Mouse buttons / keyboard hotkeys use the Qt event path (`EmuInstance::onMousePress` etc.) —
   intentionally not HID-driven, to avoid double press edges (see MelonPrimeRawInputMacFilter.h).
 - Cursor clipping (`ClipCursor`) is Windows-only; on macOS the in-game path relies on the
-  per-frame cursor recenter (`QCursor::setPos`) instead.
+  per-frame cursor recenter instead. **The recenter must use
+  `MelonPrime::MacWarpCursorGlobal` (CGWarpMouseCursorPosition), never `QCursor::setPos`**:
+  Qt implements `setPos` with `CGEventPost`, which is silently dropped without the
+  Accessibility permission — a failed recenter re-applies the cursor-minus-center delta
+  every frame and spins the aim to the pitch limits (bug found 2026-07-03).
 - Frame pacing uses the same portable SDL hybrid sleep+spin limiter; the spin loop issues
   `pause`/`yield` on x86/ARM (P-11 timer-resolution setup is Windows-only and not needed on macOS).
 
 Linux platform notes:
 - Windows/macOS native input sources are removed from Linux builds.
 - The RawInput-equivalent aim path is `MelonPrimeRawInputLinuxFilter.{h,cpp}` (XInput2
-  `XI_RawMotion` on X11). It captures only relative mouse X/Y deltas; mouse buttons and keyboard
-  hotkeys stay on the Qt/SDL path to avoid duplicate press edges.
+  `XI_RawMotion` on X11). Raw mode engages only when `isAvailable() && hasReceivedMotion()` —
+  XWayland sessions accept the XI2 selection but never deliver raw events, so trusting
+  availability alone froze aim (2026-07-03). Relative axes are used as-is. **Absolute pointing
+  devices — VirtualBox's integrated tablet pointer — are converted to deltas per-device**
+  (successive-value differencing, axis modes queried via `XIQueryDevice`, baselines re-seeded by
+  `resetAll()`). Axes above 0/1 (scroll wheel valuators) are never fed into aim.
+- Why device-level deltas: warps never change a device's own axis state, so `XWarpPointer`
+  echoes and VBox host-position re-syncs cannot corrupt them. The previous center-delta +
+  warp-per-event scheme fought VBox's re-sync — the full host-minus-center offset was re-added
+  on every host mouse event, producing a constant bottom-right drift with no aim control.
+- The Qt fallback (raw silent / non-XCB) uses **previous-position differencing** in
+  `ScreenPanel::mouseMoveEvent` — never center-delta + warp-per-event (drift, see above). All
+  warps re-seed the baseline via `resetAimMouseDelta()` so jumps are never counted as motion.
+- Linux never warps per-frame in `ProcessAimInputMouse` (`warpCursorAfterAim == false`);
+  containment is the panel's >96px threshold warp. See `melonprime-aim-input.md` §9 for the
+  full design and the three historical failure modes.
+- Mouse buttons and keyboard hotkeys stay on the Qt/SDL path to avoid duplicate press edges.
 - Wayland does not expose the needed global raw mouse stream to normal clients. On Wayland, missing
-  XInput2, or unavailable X11 display, the aim path falls back to the QCursor center-delta method.
+  XInput2, unavailable X11 display, or an XInput2 path that never emits raw motion, the aim path
+  falls back to the Qt previous-position-differencing accumulator. Wayland warp behavior is
+  compositor-dependent; use an Xorg session for reliable Linux FPS aim testing.
+- **The recenter must use `MelonPrime::LinuxWarpCursorGlobal` (XWarpPointer) on X11, never
+  `QCursor::setPos` there**: Qt's setPos can fail under VirtualBox guest mouse integration or
+  when called off the GUI thread — a failed recenter re-applies the cursor-minus-center delta
+  every frame and spins aim. Non-X11 Linux keeps the Qt fallback path.
+- `ScreenPanel::unfocus()` and `unclip()` must run on Linux as well as Windows. Escape should always
+  restore the arrow cursor and release any platform cursor confinement state.
 - Linux builds need the XInput2 development library (`libxi-dev` on Ubuntu).
+- **Linux VM testing on Mac**: see [linux-vm-build.md](linux-vm-build.md) — VirtualBox +
+  Ubuntu 22.04 scripts under `tools/linux-vm/` (`01`…`05`; `05` is shared-folder remount only).
 
 ## Windows Build Command
 Windows-only AI build command. Do not rebuild, bootstrap, or reinstall `vcpkg/` unless the user explicitly asks for it.

@@ -21,15 +21,15 @@ static QRectF ComputeEditBounds(int idx, Config::Table& cfg, float topStretchX)
     // Falls back to bare formula only before first cache fill.
     const float tds = s_cache.valid
         ? s_cache.textDrawScale
-        : std::max(0.3f, cfg.GetInt("Metroid.Visual.HudTextScale") / 100.0f) / hs;
+        : std::max(0.3f, cfg.GetInt(MP_HUD_PROP_KEY_HudTextScale) / 100.0f) / hs;
 
     // ── Radar (idx=11) — must come before gauge branch (radar reuses lengthKey for square resize) ──
     if (idx == 11) {
         if (s_cache.valid)
             return QRectF(s_cache.radar.radarDstRect).united(s_cache.radar.frameDstRect);
 
-        const int dstSize = std::max(cfg.GetInt("Metroid.Visual.BtmOverlayDstSize"), 1);
-        const int srcRadius = std::max(cfg.GetInt("Metroid.Visual.BtmOverlaySrcRadius"), 1);
+        const int dstSize = std::max(cfg.GetInt(MP_HUD_PROP_KEY_BtmOverlayDstSize), 1);
+        const int srcRadius = std::max(cfg.GetInt(MP_HUD_PROP_KEY_BtmOverlaySrcRadius), 1);
         const int srcDiameter = srcRadius * 2;
         const float frameSizeDS = static_cast<float>(kRadarArtSize) * dstSize
                                   / static_cast<float>(srcDiameter);
@@ -46,11 +46,11 @@ static QRectF ComputeEditBounds(int idx, Config::Table& cfg, float topStretchX)
     if (idx == 12) {
         const float hs = (s_editHudScale > 0.0f) ? s_editHudScale : 1.0f;
         const float iconScale = s_cache.valid ? s_cache.scaleIcons : 1.0f;
-        const int iconH = std::max(4, cfg.GetInt("Metroid.Visual.HudWeaponInventoryIconHeight"));
+        const int iconH = std::max(4, cfg.GetInt(MP_HUD_PROP_KEY_HudWeaponInventoryIconHeight));
         const float iH = static_cast<float>(iconH) * iconScale / hs;
-        const float spacing = static_cast<float>(std::max(0, cfg.GetInt("Metroid.Visual.HudWeaponInventorySpacing")));
+        const float spacing = static_cast<float>(std::max(0, cfg.GetInt(MP_HUD_PROP_KEY_HudWeaponInventorySpacing)));
         const float rowH = iH + spacing;
-        const int ori = cfg.GetInt("Metroid.Visual.HudWeaponInventoryOrientation");
+        const int ori = cfg.GetInt(MP_HUD_PROP_KEY_HudWeaponInventoryOrientation);
         // Assume worst-case: all 9 weapons visible
         if (ori == 1) // Vertical
             return QRectF(static_cast<float>(fx), static_cast<float>(fy),
@@ -67,8 +67,8 @@ static QRectF ComputeEditBounds(int idx, Config::Table& cfg, float topStretchX)
         const float wid = std::max(1.0f, cfg.GetInt(d.widthKey) * gaugeScale / hs);
         const int ori     = (d.orientKey != nullptr) ? cfg.GetInt(d.orientKey) : 0;
         const int posMode = d.posModeKey ? cfg.GetInt(d.posModeKey) : 1;
-        const int align   = cfg.GetInt((idx == 1) ? "Metroid.Visual.HudHpGaugeAlign"
-                                                   : "Metroid.Visual.HudAmmoGaugeAlign");
+        const int align   = cfg.GetInt((idx == 1) ? MP_HUD_PROP_KEY_HudHpGaugeAlign
+                                                   : MP_HUD_PROP_KEY_HudAmmoGaugeAlign);
 
         if (posMode == 0) {
             // Relative to parent text element
@@ -79,30 +79,28 @@ static QRectF ComputeEditBounds(int idx, Config::Table& cfg, float topStretchX)
                         tx, ty, topStretchX);
             const int approxW = static_cast<int>(30.0f * tds);
             const int approxH = static_cast<int>(12.0f * tds);
-            const char* gaugeAnchorKey = (idx == 1) ? "Metroid.Visual.HudHpGaugeAnchor"
-                                                     : "Metroid.Visual.HudAmmoGaugeAnchor";
-            const char* gaugeOfsXKey   = (idx == 1) ? "Metroid.Visual.HudHpGaugeOffsetX"
-                                                     : "Metroid.Visual.HudAmmoGaugeOffsetX";
-            const char* gaugeOfsYKey   = (idx == 1) ? "Metroid.Visual.HudHpGaugeOffsetY"
-                                                     : "Metroid.Visual.HudAmmoGaugeOffsetY";
+            const char* gaugeAnchorKey = (idx == 1) ? MP_HUD_PROP_KEY_HudHpGaugeAnchor
+                                                     : MP_HUD_PROP_KEY_HudAmmoGaugeAnchor;
+            const char* gaugeOfsXKey   = (idx == 1) ? MP_HUD_PROP_KEY_HudHpGaugeOffsetX
+                                                     : MP_HUD_PROP_KEY_HudAmmoGaugeOffsetX;
+            const char* gaugeOfsYKey   = (idx == 1) ? MP_HUD_PROP_KEY_HudHpGaugeOffsetY
+                                                     : MP_HUD_PROP_KEY_HudAmmoGaugeOffsetY;
             int gx, gy;
             CalcGaugePos(tx, ty, approxW, approxH,
                          cfg.GetInt(gaugeAnchorKey), cfg.GetInt(gaugeOfsXKey), cfg.GetInt(gaugeOfsYKey),
                          len, wid, ori, gx, gy);
-            if (ori == 0) gx -= static_cast<int>(len * align / 2);
-            else          gy -= static_cast<int>(len * align / 2);
+            HudGeometry::ApplyGaugeAlignTrunc(gx, gy, ori, len, align);
             return (ori == 1) ? QRectF(gx, gy, wid, len) : QRectF(gx, gy, len, wid);
         }
         // Independent: fx/fy come from PosAnchor + PosX/Y
         float bx = static_cast<float>(fx), by = static_cast<float>(fy);
-        if (ori == 0) bx -= len * align / 2;
-        else          by -= len * align / 2;
+        HudGeometry::ApplyGaugeAlignF(bx, by, ori, len, align);
         return (ori == 1) ? QRectF(bx, by, wid, len) : QRectF(bx, by, len, wid);
     }
 
     // ── Weapon icon (idx=3) ─────────────────────────────────────────────────
     if (idx == 3) {
-        const int iconH = std::max(4, cfg.GetInt("Metroid.Visual.HudWeaponIconHeight"));
+        const int iconH = std::max(4, cfg.GetInt(MP_HUD_PROP_KEY_HudWeaponIconHeight));
         const float iconScale = s_cache.valid ? s_cache.scaleIcons : 1.0f;
         const float dh  = static_cast<float>(iconH) * iconScale / hs;
         // Use cached icon aspect ratio (don't reload); fall back to square
@@ -111,28 +109,27 @@ static QRectF ComputeEditBounds(int idx, Config::Table& cfg, float topStretchX)
                          ? dh * static_cast<float>(icon.width()) / static_cast<float>(icon.height())
                          : dh;
         float ix, iy;
-        if (cfg.GetInt("Metroid.Visual.HudWeaponIconMode") == 0) {
+        if (cfg.GetInt(MP_HUD_PROP_KEY_HudWeaponIconMode) == 0) {
             // Relative to Weapon/Ammo text (idx=2)
             const HudEditElemDesc& td = kEditElems[2];
             int tx, ty;
             ApplyAnchor(cfg.GetInt(td.anchorKey), cfg.GetInt(td.ofsXKey), cfg.GetInt(td.ofsYKey),
                         tx, ty, topStretchX);
-            ix = static_cast<float>(tx) + cfg.GetInt("Metroid.Visual.HudWeaponIconOffsetX");
-            iy = static_cast<float>(ty) + cfg.GetInt("Metroid.Visual.HudWeaponIconOffsetY");
+            ix = static_cast<float>(tx) + cfg.GetInt(MP_HUD_PROP_KEY_HudWeaponIconOffsetX);
+            iy = static_cast<float>(ty) + cfg.GetInt(MP_HUD_PROP_KEY_HudWeaponIconOffsetY);
         } else {
             ix = static_cast<float>(fx);
             iy = static_cast<float>(fy);
         }
-        const int ancX = cfg.GetInt("Metroid.Visual.HudWeaponIconAnchorX");
-        const int ancY = cfg.GetInt("Metroid.Visual.HudWeaponIconAnchorY");
-        if (ancX == 1) ix -= dw * 0.5f; else if (ancX == 2) ix -= dw;
-        if (ancY == 1) iy -= dh * 0.5f; else if (ancY == 2) iy -= dh;
+        const int ancX = cfg.GetInt(MP_HUD_PROP_KEY_HudWeaponIconAnchorX);
+        const int ancY = cfg.GetInt(MP_HUD_PROP_KEY_HudWeaponIconAnchorY);
+        HudGeometry::ApplyRectAnchorF(ix, iy, dw, dh, ancX, ancY);
         return QRectF(ix, iy, dw, dh);
     }
 
     // ── Bomb icon (idx=10) ──────────────────────────────────────────────────
     if (idx == 10) {
-        const int iconH = std::max(4, cfg.GetInt("Metroid.Visual.HudBombIconHeight"));
+        const int iconH = std::max(4, cfg.GetInt(MP_HUD_PROP_KEY_HudBombIconHeight));
         const float iconScale = s_cache.valid ? s_cache.scaleIcons : 1.0f;
         const float dh  = static_cast<float>(iconH) * iconScale / hs;
         const QImage& icon = s_bombIcons[3];
@@ -140,22 +137,21 @@ static QRectF ComputeEditBounds(int idx, Config::Table& cfg, float topStretchX)
                          ? dh * static_cast<float>(icon.width()) / static_cast<float>(icon.height())
                          : dh;
         float ix, iy;
-        if (cfg.GetInt("Metroid.Visual.HudBombLeftIconMode") == 0) {
+        if (cfg.GetInt(MP_HUD_PROP_KEY_HudBombLeftIconMode) == 0) {
             // Relative to BombLeft text (idx=9)
             const HudEditElemDesc& td = kEditElems[9];
             int tx, ty;
             ApplyAnchor(cfg.GetInt(td.anchorKey), cfg.GetInt(td.ofsXKey), cfg.GetInt(td.ofsYKey),
                         tx, ty, topStretchX);
-            ix = static_cast<float>(tx) + cfg.GetInt("Metroid.Visual.HudBombLeftIconOfsX");
-            iy = static_cast<float>(ty) + cfg.GetInt("Metroid.Visual.HudBombLeftIconOfsY");
+            ix = static_cast<float>(tx) + cfg.GetInt(MP_HUD_PROP_KEY_HudBombLeftIconOfsX);
+            iy = static_cast<float>(ty) + cfg.GetInt(MP_HUD_PROP_KEY_HudBombLeftIconOfsY);
         } else {
             ix = static_cast<float>(fx);
             iy = static_cast<float>(fy);
         }
-        const int ancX = cfg.GetInt("Metroid.Visual.HudBombLeftIconAnchorX");
-        const int ancY = cfg.GetInt("Metroid.Visual.HudBombLeftIconAnchorY");
-        if (ancX == 1) ix -= dw * 0.5f; else if (ancX == 2) ix -= dw;
-        if (ancY == 1) iy -= dh * 0.5f; else if (ancY == 2) iy -= dh;
+        const int ancX = cfg.GetInt(MP_HUD_PROP_KEY_HudBombLeftIconAnchorX);
+        const int ancY = cfg.GetInt(MP_HUD_PROP_KEY_HudBombLeftIconAnchorY);
+        HudGeometry::ApplyRectAnchorF(ix, iy, dw, dh, ancX, ancY);
         return QRectF(ix, iy, dw, dh);
     }
 
@@ -183,12 +179,12 @@ static QRectF ComputeEditBounds(int idx, Config::Table& cfg, float topStretchX)
     // 1=center (text centered on fx), 2=right (text ends at fx).
     // Match Status (idx=5) is always left-anchored (no alignment setting).
     static const struct { int idx; const char* key; } kAlignMap[] = {
-        {0, "Metroid.Visual.HudHpAlign"},
-        {2, "Metroid.Visual.HudAmmoAlign"},
-        {6, "Metroid.Visual.HudRankAlign"},
-        {7, "Metroid.Visual.HudTimeLeftAlign"},
-        {8, "Metroid.Visual.HudTimeLimitAlign"},
-        {9, "Metroid.Visual.HudBombLeftAlign"},
+        {0, MP_HUD_PROP_KEY_HudHpAlign},
+        {2, MP_HUD_PROP_KEY_HudAmmoAlign},
+        {6, MP_HUD_PROP_KEY_HudRankAlign},
+        {7, MP_HUD_PROP_KEY_HudTimeLeftAlign},
+        {8, MP_HUD_PROP_KEY_HudTimeLimitAlign},
+        {9, MP_HUD_PROP_KEY_HudBombLeftAlign},
     };
     int textAlign = 1; // default: center
     if (idx == 5) { textAlign = 0; } // Match Status: always left
@@ -196,10 +192,7 @@ static QRectF ComputeEditBounds(int idx, Config::Table& cfg, float topStretchX)
         for (auto& ka : kAlignMap)
             if (ka.idx == idx) { textAlign = cfg.GetInt(ka.key); break; }
     }
-    float boxLeft;
-    if      (textAlign == 0) boxLeft = static_cast<float>(fx);               // left
-    else if (textAlign == 2) boxLeft = static_cast<float>(fx) - bw;          // right
-    else                     boxLeft = static_cast<float>(fx) - bw * 0.5f;   // center
+    const float boxLeft = HudGeometry::AlignedTextX(static_cast<float>(fx), textAlign, bw);
     return QRectF(boxLeft, boxTop, bw, bh);
 }
 
@@ -648,7 +641,7 @@ static void DrawEditOverlay(QPainter* p, Config::Table& cfg, float topStretchX, 
     // Use exact textDrawScale from cache (includes auto-scale + user TextScale, divided by hudScale).
     const float tds = s_cache.valid
         ? s_cache.textDrawScale
-        : std::max(0.3f, cfg.GetInt("Metroid.Visual.HudTextScale") / 100.0f) / hs;
+        : std::max(0.3f, cfg.GetInt(MP_HUD_PROP_KEY_HudTextScale) / 100.0f) / hs;
 
     QFont smallFont = p->font();
     smallFont.setPixelSize(4);
@@ -766,7 +759,7 @@ static void DrawEditOverlay(QPainter* p, Config::Table& cfg, float topStretchX, 
         } else if (i == 12) {
             // Weapon Inventory: draw mini icon grid preview
             EnsureIconsLoaded();
-            const int ori = cfg.GetInt("Metroid.Visual.HudWeaponInventoryOrientation");
+            const int ori = cfg.GetInt(MP_HUD_PROP_KEY_HudWeaponInventoryOrientation);
             const float gap = 1.0f;
             const int numIcons = 9;
             float iconSz;
@@ -793,9 +786,9 @@ static void DrawEditOverlay(QPainter* p, Config::Table& cfg, float topStretchX, 
             if (s_cache.valid) {
                 DrawEditCrosshairActual(p, r, s_cache);
             } else {
-                const QColor cc(cfg.GetInt("Metroid.Visual.CrosshairColorR"),
-                                cfg.GetInt("Metroid.Visual.CrosshairColorG"),
-                                cfg.GetInt("Metroid.Visual.CrosshairColorB"));
+                const QColor cc(cfg.GetInt(MP_HUD_PROP_KEY_CrosshairColorR),
+                                cfg.GetInt(MP_HUD_PROP_KEY_CrosshairColorG),
+                                cfg.GetInt(MP_HUD_PROP_KEY_CrosshairColorB));
                 const float cx = static_cast<float>(r.center().x());
                 const float cy = static_cast<float>(r.center().y());
                 const float arm = static_cast<float>(r.width()) * 0.38f;
@@ -804,7 +797,7 @@ static void DrawEditOverlay(QPainter* p, Config::Table& cfg, float topStretchX, 
                 p->setPen(chPen);
                 p->drawLine(QPointF(cx - arm, cy), QPointF(cx + arm, cy));
                 p->drawLine(QPointF(cx, cy - arm), QPointF(cx, cy + arm));
-                if (cfg.GetBool("Metroid.Visual.CrosshairCenterDot")) {
+                if (cfg.GetBool(MP_HUD_PROP_KEY_CrosshairCenterDot)) {
                     p->setPen(Qt::NoPen);
                     p->setBrush(cc);
                     p->drawEllipse(QPointF(cx, cy), 1.8f, 1.8f);
@@ -900,7 +893,7 @@ static void DrawEditOverlay(QPainter* p, Config::Table& cfg, float topStretchX, 
 
     // ── Text Scale slider ───────────────────────────────────────────────────
     {
-        int txSc = std::max(kTsMin, std::min(kTsMax, cfg.GetInt("Metroid.Visual.HudTextScale")));
+        int txSc = std::max(kTsMin, std::min(kTsMax, cfg.GetInt(MP_HUD_PROP_KEY_HudTextScale)));
         p->setBrush(kPanelBg);
         p->setPen(QPen(kPanelBorder, 0.3));
         p->drawRoundedRect(kEditTextScaleRect, kBtnCorner, kBtnCorner);
@@ -939,7 +932,7 @@ static void DrawEditOverlay(QPainter* p, Config::Table& cfg, float topStretchX, 
 
     // ── Auto-Scale Global Cap slider ────────────────────────────────────────
     {
-        int ascVal = std::clamp(cfg.GetInt("Metroid.Visual.HudAutoScaleCap"), kAscMin, kAscMax);
+        int ascVal = std::clamp(cfg.GetInt(MP_HUD_PROP_KEY_HudAutoScaleCap), kAscMin, kAscMax);
         p->setBrush(kPanelBg);
         p->setPen(QPen(kPanelBorder, 0.3));
         p->drawRoundedRect(kEditAutoScaleCapRect, kBtnCorner, kBtnCorner);
@@ -1045,9 +1038,9 @@ static void DrawEditOverlay(QPainter* p, Config::Table& cfg, float topStretchX, 
             const HudEditPropDesc* pr = GetCrosshairPropForRow(rowIdx, isColorRow, isZoomHdr, isInnerHdr, isOuterHdr);
 
             if (isColorRow) {
-                int r = cfg.GetInt("Metroid.Visual.CrosshairColorR");
-                int g = cfg.GetInt("Metroid.Visual.CrosshairColorG");
-                int b = cfg.GetInt("Metroid.Visual.CrosshairColorB");
+                int r = cfg.GetInt(MP_HUD_PROP_KEY_CrosshairColorR);
+                int g = cfg.GetInt(MP_HUD_PROP_KEY_CrosshairColorG);
+                int b = cfg.GetInt(MP_HUD_PROP_KEY_CrosshairColorB);
                 p->setPen(kLabelColor);
                 p->drawText(QRectF(rowX, rowY, kPropLabelW, kPropRowH),
                             Qt::AlignLeft | Qt::AlignVCenter, UiText::Tr("Color"));
@@ -1264,13 +1257,13 @@ static void DrawEditOverlay(QPainter* p, Config::Table& cfg, float topStretchX, 
             p->drawRoundedRect(QRectF(pvX, pvY, pvS, pvS), kBtnCorner, kBtnCorner);
             p->setBrush(Qt::NoBrush);
 
-            const int cr  = cfg.GetInt("Metroid.Visual.CrosshairColorR");
-            const int cg  = cfg.GetInt("Metroid.Visual.CrosshairColorG");
-            const int cb2 = cfg.GetInt("Metroid.Visual.CrosshairColorB");
-            const bool tStyle    = cfg.GetBool("Metroid.Visual.CrosshairTStyle");
-            const bool innerShow = cfg.GetBool("Metroid.Visual.CrosshairInnerShow");
-            const bool outerShow = cfg.GetBool("Metroid.Visual.CrosshairOuterShow");
-            const bool centerDot = cfg.GetBool("Metroid.Visual.CrosshairCenterDot");
+            const int cr  = cfg.GetInt(MP_HUD_PROP_KEY_CrosshairColorR);
+            const int cg  = cfg.GetInt(MP_HUD_PROP_KEY_CrosshairColorG);
+            const int cb2 = cfg.GetInt(MP_HUD_PROP_KEY_CrosshairColorB);
+            const bool tStyle    = cfg.GetBool(MP_HUD_PROP_KEY_CrosshairTStyle);
+            const bool innerShow = cfg.GetBool(MP_HUD_PROP_KEY_CrosshairInnerShow);
+            const bool outerShow = cfg.GetBool(MP_HUD_PROP_KEY_CrosshairOuterShow);
+            const bool centerDot = cfg.GetBool(MP_HUD_PROP_KEY_CrosshairCenterDot);
             constexpr float PVS = 2.0f;
 
             // Helper lambda: draw arms using float rects with properly scaled center gap
@@ -1290,26 +1283,26 @@ static void DrawEditOverlay(QPainter* p, Config::Table& cfg, float topStretchX, 
 
             p->setClipRect(QRectF(pvX + 1.0f, pvY + 1.0f, pvS - 2.0f, pvS - 2.0f));
             if (outerShow) {
-                const float oLenX  = cfg.GetInt("Metroid.Visual.CrosshairOuterLengthX") * PVS;
-                const float oLenY  = cfg.GetInt("Metroid.Visual.CrosshairOuterLengthY") * PVS;
-                const float oThick = std::max(1.0f, cfg.GetInt("Metroid.Visual.CrosshairOuterThickness") * PVS);
-                const float oOfs   = cfg.GetInt("Metroid.Visual.CrosshairOuterOffset") * PVS;
-                const float oOpac  = static_cast<float>(cfg.GetDouble("Metroid.Visual.CrosshairOuterOpacity"));
+                const float oLenX  = cfg.GetInt(MP_HUD_PROP_KEY_CrosshairOuterLengthX) * PVS;
+                const float oLenY  = cfg.GetInt(MP_HUD_PROP_KEY_CrosshairOuterLengthY) * PVS;
+                const float oThick = std::max(1.0f, cfg.GetInt(MP_HUD_PROP_KEY_CrosshairOuterThickness) * PVS);
+                const float oOfs   = cfg.GetInt(MP_HUD_PROP_KEY_CrosshairOuterOffset) * PVS;
+                const float oOpac  = static_cast<float>(cfg.GetDouble(MP_HUD_PROP_KEY_CrosshairOuterOpacity));
                 drawArms(oLenX, oLenY, oOfs, oThick, tStyle,
                          QColor(cr, cg, cb2, static_cast<int>(oOpac * 255.0f)));
             }
             if (innerShow) {
-                const float iLenX  = cfg.GetInt("Metroid.Visual.CrosshairInnerLengthX") * PVS;
-                const float iLenY  = cfg.GetInt("Metroid.Visual.CrosshairInnerLengthY") * PVS;
-                const float iThick = std::max(1.0f, cfg.GetInt("Metroid.Visual.CrosshairInnerThickness") * PVS);
-                const float iOfs   = cfg.GetInt("Metroid.Visual.CrosshairInnerOffset") * PVS;
-                const float iOpac  = static_cast<float>(cfg.GetDouble("Metroid.Visual.CrosshairInnerOpacity"));
+                const float iLenX  = cfg.GetInt(MP_HUD_PROP_KEY_CrosshairInnerLengthX) * PVS;
+                const float iLenY  = cfg.GetInt(MP_HUD_PROP_KEY_CrosshairInnerLengthY) * PVS;
+                const float iThick = std::max(1.0f, cfg.GetInt(MP_HUD_PROP_KEY_CrosshairInnerThickness) * PVS);
+                const float iOfs   = cfg.GetInt(MP_HUD_PROP_KEY_CrosshairInnerOffset) * PVS;
+                const float iOpac  = static_cast<float>(cfg.GetDouble(MP_HUD_PROP_KEY_CrosshairInnerOpacity));
                 drawArms(iLenX, iLenY, iOfs, iThick, tStyle,
                          QColor(cr, cg, cb2, static_cast<int>(iOpac * 255.0f)));
             }
             if (centerDot) {
-                const float dotThick = std::max(1.0f, cfg.GetInt("Metroid.Visual.CrosshairDotThickness") * PVS);
-                const float dotOpac = static_cast<float>(cfg.GetDouble("Metroid.Visual.CrosshairDotOpacity"));
+                const float dotThick = std::max(1.0f, cfg.GetInt(MP_HUD_PROP_KEY_CrosshairDotThickness) * PVS);
+                const float dotOpac = static_cast<float>(cfg.GetDouble(MP_HUD_PROP_KEY_CrosshairDotOpacity));
                 const float dh = dotThick * 0.5f;
                 QColor dotColor(cr, cg, cb2, static_cast<int>(dotOpac * 255.0f));
                 p->fillRect(QRectF(fcx - dh, fcy - dh, dotThick, dotThick), dotColor);
@@ -1325,4 +1318,3 @@ static void DrawEditOverlay(QPainter* p, Config::Table& cfg, float topStretchX, 
         p->setFont(normalFont);
     }
 }
-

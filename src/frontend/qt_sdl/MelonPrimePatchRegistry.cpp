@@ -6,6 +6,7 @@
 
 #include "MelonPrimePatchAspectRatio.h"
 #include "MelonPrimePatchOsdColor.h"
+#include "MelonPrimePerfProbe.h"
 #include "MelonPrimePatchLowHpWarning.h"
 #include "MelonPrimePatchInstantAimFollow.h"
 #include "MelonPrimePatchShowHeadshotOnline.h"
@@ -215,6 +216,10 @@ namespace MelonPrime {
 
     void Patches_Apply(uint8_t siteMask, const PatchCtx& ctx)
     {
+#if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+        if (siteMask & PatchSite_OutOfGameFrame)
+            MelonPrimePerf::CountOutOfGamePatchApply();
+#endif
         uint32_t applied = 0;
         for (const PatchEntry& entry : kPatchRegistry) {
             if (entry.applySites & siteMask) {

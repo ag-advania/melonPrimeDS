@@ -168,6 +168,9 @@ void EmuThread::run()
 
     // --- Frame Advance (lambda so MelonPrime can call it externally) ---
     auto frameAdvanceOnce = [&]() {
+#ifdef MELONPRIME_DS
+        MelonPrimePerf::FrameBegin();
+#endif
 
 #ifdef MELONPRIME_DS
         // =================================================================
@@ -206,12 +209,20 @@ void EmuThread::run()
             {
                 double targetTime = curtime + frameLimitError;
 
-                // Coarse sleep: SDL_Delay with 1.0ms safety margin for spin.
-                // P-11's NtSetTimerResolution(0.5ms) makes this tight margin safe.
-                // (Was 1.5ms with timeBeginPeriod(1ms).)
-                double coarseMs = frameLimitError * 1000.0 - 1.0;
+                // Coarse sleep: SDL_Delay with a platform-specific safety margin
+                // before the QPC spin phase (P-12). Windows keeps 1.0ms for
+                // NtSetTimerResolution(0.5ms). Non-Windows uses 0.5ms (V5 Phase 3)
+                // until Phase 0 ROM baselines validate a tighter value.
+#ifdef _WIN32
+                constexpr double kCoarseSleepMarginMs = 1.0;
+#else
+                constexpr double kCoarseSleepMarginMs = 0.5;
+#endif
+                double coarseMs = frameLimitError * 1000.0 - kCoarseSleepMarginMs;
+                MelonPrimePerf::SectionBegin(MelonPrimePerf::Section::LimiterSleep);
                 if (coarseMs > 0.5)
                     SDL_Delay(static_cast<Uint32>(coarseMs));
+                MelonPrimePerf::SectionEnd(MelonPrimePerf::Section::LimiterSleep);
 
                 // P-27: Integer spin comparison.
                 // Old: SDL_GetPerformanceCounter() * perfCountsSec < targetTime
@@ -228,6 +239,7 @@ void EmuThread::run()
                 // Saves 1 QPC call (~20-40 cyc) per frame when limiting is active.
                 const Uint64 targetTick = static_cast<Uint64>(targetTime * perfCountsFreq);
                 Uint64 curTick;
+                MelonPrimePerf::SectionBegin(MelonPrimePerf::Section::LimiterSpin);
                 while ((curTick = SDL_GetPerformanceCounter()) < targetTick) {
 #ifdef _WIN32
                     YieldProcessor();
@@ -237,6 +249,7 @@ void EmuThread::run()
                     asm volatile("yield");
 #endif
                 }
+                MelonPrimePerf::SectionEnd(MelonPrimePerf::Section::LimiterSpin);
 
                 curtime = static_cast<double>(curTick) * perfCountsSec;
                 frameLimitError = targetTime - curtime;  // residual overshoot
@@ -261,6 +274,7 @@ void EmuThread::run()
         // joyHotkeyMask and inputMask. Edge detection is untouched.
         //
         // P-33: PrePollRawInput removed (P-19 HiddenWndProc captures WM_INPUT at dispatch).
+        MelonPrimePerf::SectionBegin(MelonPrimePerf::Section::Input);
         emuInstance->inputRefreshJoystickState();
 #endif
 
@@ -297,6 +311,7 @@ void EmuThread::run()
             melonPrime->RunFrameHook();
             emuInstance->nds->SetKeyMask(melonPrime->GetInputMaskFast());
         }
+        MelonPrimePerf::SectionEnd(MelonPrimePerf::Section::Input);
 #endif
 
         if (useOpenGL)
@@ -351,6 +366,9 @@ void EmuThread::run()
         }
 #endif // MELONPRIME_DS
 
+#ifdef MELONPRIME_DS
+        MelonPrimePerf::SectionBegin(MelonPrimePerf::Section::RunFrame);
+#endif
         if (UNLIKELY(needsCompile))
         {
             compileShaders();
@@ -391,7 +409,16 @@ void EmuThread::run()
         if (emuInstance->firmwareSave) emuInstance->firmwareSave->CheckFlush();
 #endif
 
+#ifdef MELONPRIME_DS
+        MelonPrimePerf::SectionEnd(MelonPrimePerf::Section::RunFrame);
+        MelonPrimePerf::SectionBegin(MelonPrimePerf::Section::Draw);
+#endif
         emuInstance->drawScreen();
+
+#ifdef MELONPRIME_DS
+        MelonPrimePerf::SectionEnd(MelonPrimePerf::Section::Draw);
+        MelonPrimePerf::SectionBegin(MelonPrimePerf::Section::DeferredDrain);
+#endif
 
 #ifdef MELONPRIME_DS
         // P-32: DeferredDrain AFTER drawScreen.
@@ -399,6 +426,7 @@ void EmuThread::run()
         // next frame's PrePoll starts with the cleanest possible queue.
         // Completely removed from the input→RunFrame latency path.
         melonPrime->DeferredDrainInput();
+        MelonPrimePerf::SectionEnd(MelonPrimePerf::Section::DeferredDrain);
 #endif
 
 #ifdef MELONCAP
@@ -535,6 +563,10 @@ void EmuThread::run()
             prevFrameTickDev = nowTickDev;
             frameMsPrimedDev = true;
         }
+#endif
+
+#ifdef MELONPRIME_DS
+        MelonPrimePerf::FrameEnd();
 #endif
 
         nframes++;
@@ -749,6 +781,8 @@ void EmuThread::run()
 
         handleMessages();
     }
+
+#include "MelonPrimeEmuThreadPerfShutdown.inc"
 }
 
 void EmuThread::sendMessage(Message msg)

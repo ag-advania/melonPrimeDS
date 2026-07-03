@@ -1579,3 +1579,169 @@ than mirrored across runtime, UI, edit mode, defaults, and patch code.
   should enter through `MelonPrimeOsdColorSchema.inc`.
 - Future instruction hooks should reuse shared `LIST_Hook*` tables only for proven identical logical
   sites; KR address differences need mphCodex-backed comments.
+
+---
+
+## 23. Structural Refactor V3 2026-07
+
+## 23.1 Central theme
+
+Structural Refactor V3 turned the V1/V2 discipline into CI-enforced rules. The
+main problem was drift: `"Metroid.*"` literals had started to reappear outside
+their owners, preview geometry had three interpretations, and compatibility
+migrations were scattered without a current deletion ledger.
+
+## 23.2 Integrated results
+
+| Area | Result |
+|---|---|
+| CI ratchet | Windows CI now runs config-default, HUD parity, `.inc` ownership, literal-budget, and generated-schema checks before building. The non-canonical `"Metroid.*"` budget is fixed at 1. |
+| Literal ownership | HUD visual keys use `MP_HUD_PROP_KEY_*`; non-HUD settings use `MelonPrime::CfgKey::*`. The only intentional source residual is the fixed-size legacy INI migration row in `Config.cpp`. |
+| Preview geometry | `MelonPrimeHudGeometry.h` owns shared Qt-free helpers for anchor resolution, text alignment, and gauge positioning. Runtime and dialog preview wrappers now consume the same calculations while preserving existing rounding and cache behavior. |
+| Migration ledger | `MelonPrimeMigrationLedgerPhase4.md` records compatibility reads and deletion conditions. `InstantAimFollow` migration is deliberately kept until a post-V3 release gives old configs a save cycle. |
+| Declutter / upstream | Phase 5 kept large files intact with documented reasons and added only section banners. Phase 6 skipped upstream hook extraction because there is no active upstream merge target. |
+
+## 23.3 Final metrics snapshot
+
+Measured on 2026-07-02, branch `highres_fonts_v3`, local macOS build tree
+`build-mac`.
+
+| Metric | Phase 0 snapshot | V3 final snapshot | Delta |
+|---|---:|---:|---:|
+| `MelonPrime*` files excluding `.ui` | 126 / 31,618 lines | 127 / 31,786 lines | +1 / +168 |
+| `MelonPrime*` files including `.ui` | — | 128 / 33,025 lines | — |
+| Quoted `"Metroid.*"` literals under `src/frontend/qt_sdl` | 1,165 | 718 | -447 |
+| Non-canonical source `"Metroid.*"` literals | 519 | 1 | -518 |
+| HUD schema rows | 575 | 575 | 0 |
+| HUD schema generator coverage | dialog 562 / edit 230 / side 370 / runtime 505 | same, missing defaults 0, type drift 0, range drift 5 | unchanged |
+| Local macOS binary | 7,064,496 bytes | 7,064,504 bytes | +8 bytes |
+
+Local verification at final snapshot:
+
+- `python3 .claude/skills/generate-hud-prop-schema.py`
+- source literal recount: non-canonical count = 1
+- `git diff --check`
+- `cmake --build build-mac --parallel 4`
+
+GitHub Actions note: the Windows CI audit gate is checked into
+`.github/workflows/build-windows.yml`. Branch pushes to `highres_fonts_v3` do not
+trigger the Windows push workflow directly; PR or master/`ci/*` runs are the
+remote enforcement path.
+
+## 23.4 Remaining caution points
+
+- Manual smoke checks S9/S10/S13/S14/S16/S17 remain continuing regression checks
+  where GUI/ROM interaction is required.
+- Do not delete `Metroid.Aim.Enable.InstantAimFollow` compatibility reads until
+  a post-V3 release has shipped and S17 has been run with migrated and
+  unmigrated TOML samples.
+- Dialog HUD previews still use simplified drawing for some elements. Shared
+  geometry prevents coordinate drift, but it is not a full runtime renderer.
+- Raising the literal budget above 1 needs a review note and should be treated
+  as a regression unless the residual is another fixed-size migration table.
+
+---
+
+## 24. Structural Refactor V4 2026-07
+
+## 24.1 Central theme
+
+Structural Refactor V4 cleaned up the macOS/Linux support that landed after V3:
+non-Windows raw mouse call sites were branching on platform filter types,
+workflow/audit coverage had expanded without matching documentation, and macOS
+distribution still needed a stable ad-hoc signature.
+
+## 24.2 Integrated results
+
+| Area | Result |
+|---|---|
+| Platform input facade | `MelonPrimePlatformInput.h` now owns macOS/Linux raw filter acquire/release/reset/fetch checks and the non-Windows cursor-warp entry point. Windows `RawInputWinFilter` remains untouched. |
+| Scatter ratchet | `.claude/skills/audit-platform-scatter-budget.ps1` is fixed at 30 call-site markers, excluding the facade as the canonical dispatch owner. Windows and Ubuntu CI both run the ratchet. |
+| Linux raw aim | The Linux path keeps XInput2 RawMotion on X11, gates raw mode on first real motion, converts absolute-device values to deltas, and leaves Wayland/non-XCB on the Qt panel fallback. |
+| HUD geometry sharing | `MelonPrimeHudGeometry.h` now also owns gauge alignment, gauge-to-text positioning, and rect anchoring used by runtime wrappers, in-game edit bounds, and settings previews. Preview-only simplifications remain intentional. |
+| CI / docs | macOS, Ubuntu, BSD, and Windows workflows are documented as fork-owned CI. Release notes and macOS build docs list the current artifact names and Gatekeeper constraint. |
+| Distribution | macOS app bundles are ad-hoc signed in the CMake post-build step and verified in CI; macOS/Linux release workflows explicitly configure `MELONPRIME_ENABLE_DEVELOPER_FEATURES=OFF`. |
+| Optional phases | Filter-internal commonization and upstream-block extraction were reviewed and skipped: the remaining duplication is lower risk than cross-backend lifecycle churn, and no upstream merge is active. |
+
+## 24.3 Final metrics snapshot
+
+Measured on 2026-07-03, branch `highres_fonts_v3`, local macOS build tree
+`build-mac`.
+
+| Metric | Phase 0 snapshot | V4 final snapshot | Delta |
+|---|---:|---:|---:|
+| `MelonPrime*` files excluding `.ui` | 32,306 lines | 128 / 32,531 lines | +225 lines |
+| `MelonPrime*` files including `.ui` | — | 129 / 33,771 lines | — |
+| Platform scatter budget | 36 | 30 | -6 |
+| `m_macRawFilter` / `m_linuxRawFilter` references | 36 | 0 | -36 |
+| `MelonPrime.cpp` line count | 1,021 | 977 | -44 |
+| HUD schema rows | 575 | 575 | 0 |
+| Non-canonical `"Metroid.*"` literal budget | 1 | 1 | 0 |
+
+Local verification at final snapshot:
+
+- `python3 .claude/skills/generate-hud-prop-schema.py` (schema rows 575; missing defaults 0)
+- PowerShell audit set: config defaults, HUD key parity, `.inc` ownership,
+  literal budget, platform scatter budget
+- workflow YAML parse for Windows/macOS/Ubuntu/BSD
+- `git diff --check`
+- `cmake -B build-mac ... -DUSE_QT6=ON`
+- `cmake --build build-mac --parallel 4`
+- `codesign --verify --deep --strict build-mac/melonPrimeDS.app`
+- `codesign -dv build-mac/melonPrimeDS.app` showed `Signature=adhoc`
+
+## 24.4 Remaining caution points
+
+- Manual smoke checks S18/S19 (macOS aim/lifecycle), S20 (Linux/Wayland), and
+  S9/S13/S16 (HUD visual comparison) remain user/ROM dependent.
+- Developer ID signing and notarization are out of scope; release zips may still
+  show Gatekeeper warnings despite ad-hoc signing.
+- `MelonPrimePlatformInput.h` is the only intended place for future macOS/Linux
+  raw-delta dispatch branching. Raising the platform scatter budget above 30
+  should be treated as a regression.
+
+## 24.5 Post-V4 roadmap
+
+V4 is complete (`completed/melonprime-full-refactor-plan-v4.md`). V5 performance
+work (Phase 0–7) is complete (`completed/melonprime-full-refactor-plan-v5.md`).
+Follow-on investigation notes remain in
+[notes/melonprime-highres-fonts-v3-refactor-roadmap.md](notes/melonprime-highres-fonts-v3-refactor-roadmap.md).
+
+---
+
+## 25. Round 10 (V5) — Measured performance pass (2026-07-04)
+
+**Central theme:** Non-Windows hot-path waste removal + frame-time measurement
+infrastructure. Windows do-not-touch paths (P-11..P-47, aim math, RunFrameHook
+structure) were not modified.
+
+**Measurement policy:** From Round 10 onward, optimization effect columns in this
+document should cite `MELONPRIME_PERF=1` numbers when available. Estimated cycle
+tables remain historical context for Rounds 1–9.
+
+### 25.1 Status list
+
+| ID | Category | Status | Target | Effect (expected / pending ROM) |
+|---|---|---|---|---|
+| V5-0 | Measurement | ✅ | `MelonPrimePerfProbe.h`, `EmuThread.cpp` | Section timers + counters; release binary clean (S22) |
+| V5-2a | Syscall | ✅ | mac raw aim | CGWarp per aim frame → 0 @ raw active |
+| V5-2b | Atomic | ✅ | Linux panel | `resetAimMouseDelta` per frame → panel→raw edge only |
+| V5-2c | String/Qt | ✅ | `PlatformInput_IsXcb()` | `platformName()` once at static init |
+| V5-2d | Atomic | ✅ | mac/Linux filters | `exchange(0)` → load-first delta (P-48a) |
+| V5-2e | Structure | ✅ | `AimInputSource` enum | Single resolve point in `PlatformInput_ResolveAimSource` |
+| V5-3 | Pacing | ✅ | `EmuThread.cpp` non-Win | Coarse sleep margin 1.0→0.5 ms |
+| V5-4b | HUD CPU | ⏸ | element render cache | Deferred — QPainter dominance not confirmed by ROM perf log |
+| V5-6 | Stretch | ❌ Closed | W7/OsdColor edge, RAM budget, GCMouse queue | No ROM baseline; no change |
+
+### 25.2 Commits (branch `highres_fonts_v3`)
+
+- `9ff53250` Phase 0 perf probe
+- `314513b3` Phase 1 audit table
+- `d8313ea0` Phase 2 input hot path
+- `59a5ca4c` Phase 3 pacing margin
+
+### 25.3 Remaining manual verification
+
+- S18/S19/S20 smoke (mac/Linux aim lifecycle)
+- S21 frame-time before/after with `MELONPRIME_PERF=1` + ROM soak
+- Fill Phase 0 baseline table in completed V5 plan after measurement

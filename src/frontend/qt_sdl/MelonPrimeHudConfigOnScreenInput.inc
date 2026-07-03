@@ -186,7 +186,7 @@ void CustomHud_EditMousePress(QPointF pt, Qt::MouseButton btn, Config::Table& cf
     if (kEditTextScaleRect.contains(ds)) {
         const QRectF tr = TsTrackRect();
         if (tr.contains(ds)) {
-            cfg.SetInt("Metroid.Visual.HudTextScale", TsValueFromX(static_cast<float>(ds.x())));
+            cfg.SetInt(MP_HUD_PROP_KEY_HudTextScale, TsValueFromX(static_cast<float>(ds.x())));
             CustomHud_InvalidateConfigCache();
             s_textScaleDragging = true;
         }
@@ -197,7 +197,7 @@ void CustomHud_EditMousePress(QPointF pt, Qt::MouseButton btn, Config::Table& cf
     if (kEditAutoScaleCapRect.contains(ds)) {
         const QRectF atr = AscTrackRect();
         if (atr.contains(ds)) {
-            cfg.SetInt("Metroid.Visual.HudAutoScaleCap", AscValueFromX(static_cast<float>(ds.x())));
+            cfg.SetInt(MP_HUD_PROP_KEY_HudAutoScaleCap, AscValueFromX(static_cast<float>(ds.x())));
             CustomHud_InvalidateConfigCache();
             s_autoScaleCapDragging = true;
         }
@@ -245,16 +245,16 @@ void CustomHud_EditMousePress(QPointF pt, Qt::MouseButton btn, Config::Table& cf
                 if (isColorRow) {
                     if (s_colorDialogOpen) return;
                     s_colorDialogOpen = true;
-                    int r = cfg.GetInt("Metroid.Visual.CrosshairColorR");
-                    int g = cfg.GetInt("Metroid.Visual.CrosshairColorG");
-                    int b = cfg.GetInt("Metroid.Visual.CrosshairColorB");
+                    int r = cfg.GetInt(MP_HUD_PROP_KEY_CrosshairColorR);
+                    int g = cfg.GetInt(MP_HUD_PROP_KEY_CrosshairColorG);
+                    int b = cfg.GetInt(MP_HUD_PROP_KEY_CrosshairColorB);
                     QColor chosen = QColorDialog::getColor(QColor(r, g, b), nullptr,
                         UiText::Tr("Crosshair Color"));
                     s_colorDialogOpen = false;
                     if (chosen.isValid()) {
-                        cfg.SetInt("Metroid.Visual.CrosshairColorR", chosen.red());
-                        cfg.SetInt("Metroid.Visual.CrosshairColorG", chosen.green());
-                        cfg.SetInt("Metroid.Visual.CrosshairColorB", chosen.blue());
+                        cfg.SetInt(MP_HUD_PROP_KEY_CrosshairColorR, chosen.red());
+                        cfg.SetInt(MP_HUD_PROP_KEY_CrosshairColorG, chosen.green());
+                        cfg.SetInt(MP_HUD_PROP_KEY_CrosshairColorB, chosen.blue());
                         CustomHud_InvalidateConfigCache();
                     }
                     return;
@@ -633,13 +633,13 @@ void CustomHud_EditMouseMove(QPointF pt, Config::Table& cfg)
     const QPointF ds = WidgetToDS(pt);
 
     if (s_textScaleDragging) {
-        cfg.SetInt("Metroid.Visual.HudTextScale", TsValueFromX(static_cast<float>(ds.x())));
+        cfg.SetInt(MP_HUD_PROP_KEY_HudTextScale, TsValueFromX(static_cast<float>(ds.x())));
         CustomHud_InvalidateConfigCache();
         return;
     }
 
     if (s_autoScaleCapDragging) {
-        cfg.SetInt("Metroid.Visual.HudAutoScaleCap", AscValueFromX(static_cast<float>(ds.x())));
+        cfg.SetInt(MP_HUD_PROP_KEY_HudAutoScaleCap, AscValueFromX(static_cast<float>(ds.x())));
         CustomHud_InvalidateConfigCache();
         return;
     }
@@ -708,18 +708,18 @@ void CustomHud_EditMouseWheel(QPointF pt, int delta, Config::Table& cfg)
 
     // Text Scale slider wheel
     if (kEditTextScaleRect.contains(ds)) {
-        int val = cfg.GetInt("Metroid.Visual.HudTextScale");
+        int val = cfg.GetInt(MP_HUD_PROP_KEY_HudTextScale);
         val = std::max(kTsMin, std::min(kTsMax, val + (delta > 0 ? 5 : -5)));
-        cfg.SetInt("Metroid.Visual.HudTextScale", val);
+        cfg.SetInt(MP_HUD_PROP_KEY_HudTextScale, val);
         CustomHud_InvalidateConfigCache();
         return;
     }
 
     // Auto-Scale Cap slider wheel
     if (kEditAutoScaleCapRect.contains(ds)) {
-        int val = cfg.GetInt("Metroid.Visual.HudAutoScaleCap");
+        int val = cfg.GetInt(MP_HUD_PROP_KEY_HudAutoScaleCap);
         val = std::clamp(val + (delta > 0 ? 25 : -25), kAscMin, kAscMax);
-        cfg.SetInt("Metroid.Visual.HudAutoScaleCap", val);
+        cfg.SetInt(MP_HUD_PROP_KEY_HudAutoScaleCap, val);
         CustomHud_InvalidateConfigCache();
         return;
     }

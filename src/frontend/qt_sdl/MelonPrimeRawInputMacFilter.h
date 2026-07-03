@@ -1,25 +1,26 @@
 // MelonPrimeDS - macOS raw mouse input (RawInput-equivalent aim path)
 //
-// IOHIDManager-based unaccelerated mouse delta capture. This is the macOS
-// counterpart of the Windows Raw Input aim path: it reads relative X/Y counts
-// straight from the HID reports, so pointer acceleration and cursor-warp
-// suppression never distort the aim delta.
+// Unaccelerated mouse delta capture, macOS counterpart of the Windows Raw
+// Input aim path. Two backends (see the .mm for details):
+//   1. GCMouse (GameController framework, macOS 11+) — raw deltas, delivered
+//      while the app is frontmost, NO TCC permission required. Default.
+//   2. IOHIDManager — global capture, requires the Input Monitoring TCC
+//      permission (and unsigned dev builds lose the grant on every rebuild).
+//      Fallback for macOS < 11.
 //
-// Scope (v1, intentional):
+// Scope (intentional):
 //   - Mouse X/Y deltas only. Buttons and keyboard stay on the existing
 //     Qt event / SDL hotkey path (EmuInstance::onMousePress etc.), which
-//     already maintains hotkeyMask. Feeding button edges from HID as well
-//     would double-fire press edges against the Qt path; if HID buttons are
+//     already maintains hotkeyMask. Feeding button edges from here as well
+//     would double-fire press edges against the Qt path; if raw buttons are
 //     ever wanted, the Qt mouse-hotkey path must be gated off first.
-//   - Threading: one writer (the HID runloop thread) accumulates deltas into
-//     atomics; the emu thread fetches-and-clears once per frame at snapshot
-//     time. This mirrors the Joy2Key-ON single-writer model of the Windows
-//     filter, not its hidden-window batched drain.
+//   - Threading: one writer (GC handler queue or the HID runloop thread)
+//     accumulates deltas into atomics; the emu thread fetches-and-clears
+//     once per frame at snapshot time.
 //
-// Permission: opening the HID manager requires the "Input Monitoring" TCC
-// permission (macOS 10.15+). The first launch triggers the system prompt.
-// When permission is denied or no mouse is present, isAvailable() stays
-// false and callers must fall back to the QCursor delta path.
+// When no backend is active (no mouse / permission denied on the IOHID
+// path), isAvailable() stays false and callers fall back to the QCursor
+// center-delta path.
 
 #ifndef MELONPRIME_RAW_INPUT_MAC_FILTER_H
 #define MELONPRIME_RAW_INPUT_MAC_FILTER_H
@@ -29,6 +30,15 @@
 #include <cstdint>
 
 namespace MelonPrime {
+
+// Warp the cursor to a global position WITHOUT requiring any TCC permission.
+// Qt's QCursor::setPos is implemented with CGEventPost on macOS, which is
+// silently dropped unless the app has the Accessibility permission — a failed
+// recenter warp makes the QCursor fallback aim path spin continuously (the
+// cursor-minus-center delta is re-applied every frame). This helper uses
+// CGWarpMouseCursorPosition, which needs no permission. Qt global coordinates
+// and CG global coordinates share the same top-left-origin point space.
+void MacWarpCursorGlobal(int x, int y);
 
 class MacRawInputFilter
 {

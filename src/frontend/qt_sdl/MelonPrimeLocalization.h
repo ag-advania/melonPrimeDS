@@ -13,12 +13,7 @@ namespace MelonPrime::UiText
 inline constexpr int kMenuLanguageJapanese = 0;
 inline constexpr int kMenuLanguageEnglish = 1;
 
-inline bool IsJapaneseSystemLocale()
-{
-    static const bool isJapanese =
-        QLocale::system().language() == QLocale::Japanese;
-    return isJapanese;
-}
+bool IsJapaneseSystemLocale();
 
 inline int& MenuLanguageModeStorage()
 {

@@ -870,7 +870,7 @@ static void DrawRankAndTime(QPainter* p, melonDS::u8* ram, const RomAddresses& r
 // =========================================================================
 //  Config key (only for IsEnabled — hot path uses s_cache)
 // =========================================================================
-static constexpr const char* kCfgCustomHud = "Metroid.Visual.CustomHUD";
+static constexpr const char* kCfgCustomHud = MP_HUD_PROP_KEY_CustomHUD;
 bool CustomHud_IsEnabled(Config::Table& localCfg)
 {
     return localCfg.GetBool(kCfgCustomHud);

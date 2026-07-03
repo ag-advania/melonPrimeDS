@@ -104,6 +104,34 @@ Additional Screen-fragment caches:
 
 **Removed dead code**: `GetOutlineBuffer()`, `s_outlineBuf`, `s_prevOutlineDirty` — were declared but never called; deleted.
 
+## Platform Input
+
+Windows keeps the original Raw Input stack (`RawInputWinFilter` + `InputState`)
+because it has extra polling, snapshot, and late-latch behavior. Non-Windows raw
+mouse delta capture is routed through `MelonPrimePlatformInput.h`, a header-only
+facade for macOS and Linux only.
+
+Ownership flow:
+
+```text
+MelonPrimeCore / MelonPrimeGameInput / ScreenPanel
+  -> MelonPrimePlatformInput.h
+       -> macOS: MelonPrimeRawInputMacFilter.mm + MacWarpCursorGlobal
+       -> Linux/X11: MelonPrimeRawInputLinuxFilter.cpp + LinuxWarpCursorGlobal
+       -> other non-Windows sessions: QCursor fallback for cursor warp only
+```
+
+Rules:
+
+1. Do not route Windows `RawInputWinFilter` through the facade.
+2. Non-Windows call sites should use `PlatformInput_ResetRawFilter`,
+   `PlatformInput_FetchRawMouseDelta`, and `PlatformInput_WarpCursor` instead
+   of branching directly on macOS/Linux filter types.
+3. macOS cursor recentering must remain `MacWarpCursorGlobal`; `QCursor::setPos`
+   under `__APPLE__` is guarded by `.claude/skills/audit-platform-scatter-budget.ps1`.
+4. The platform scatter budget excludes `MelonPrimePlatformInput.h` as the
+   canonical dispatch owner and currently ratchets call-site scatter at 30.
+
 ## Config System
 Default values live in `src/frontend/qt_sdl/Config.cpp`.
 
@@ -187,6 +215,31 @@ MelonPrimeHudPropSchema.inc
   -> MelonPrimeHudConfigOnScreenSnapshot.inc snapshot/reset fixed keys
   -> MelonPrimeHudRenderConfig.inc runtime load key references
 ```
+
+HUD geometry helpers live in `src/frontend/qt_sdl/MelonPrimeHudGeometry.h`. The
+header is Qt-free and state-free; it owns shared calculations such as 9-point
+anchor resolution, aligned text X positions, and gauge relative positioning.
+Consumers:
+
+```text
+MelonPrimeHudGeometry.h
+  -> MelonPrimeHudRenderConfig.inc / MelonPrimeHudRenderDraw.inc runtime helpers
+  -> InputConfig/MelonPrimeInputConfigHudPreviews.inc dialog preview helpers
+  -> MelonPrimeHudConfigOnScreen*.inc edit/runtime preview code as needed
+```
+
+When adding a new HUD element or preview:
+
+1. Add the key/default/surface metadata to `MelonPrimeHudPropSchema.inc` through
+   the generator path.
+2. Put shared coordinate or alignment math in `MelonPrimeHudGeometry.h` when the
+   runtime and preview need the same interpretation.
+3. Keep runtime drawing caches and dirty-rect ownership in the runtime render
+   fragments; previews may call the same geometry helpers without adopting the
+   runtime cache model.
+4. Run the CI audits listed in [build.md](build.md), then compare the settings
+   dialog preview, in-game edit preview, and runtime HUD visually when the
+   element has user-facing rendering.
 
 OSD color rows are a small sub-domain under the HUD schema. `MelonPrimeOsdColorSchema.inc` owns
 the message/slot row list and expands into both the settings dialog OSD sections and
