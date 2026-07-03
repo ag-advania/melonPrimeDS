@@ -140,6 +140,10 @@ jobs:
       env:
         NINJA_STATUS: "[%f/%t %o/s %es] "
 
+    - name: Verify developer HUD golden harness is absent from release binary
+      run: |
+        ! strings ./build/release-mingw-x86_64/melonPrimeDS.exe | grep -E 'melonprime-hud-golden|MelonPrime HUD golden|CustomHud_RunGoldenHarness'
+
     - name: Upload artifact
       uses: actions/upload-artifact@v7
       with:

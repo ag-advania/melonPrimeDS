@@ -76,6 +76,10 @@ jobs:
         cmake --build build
         DESTDIR=AppDir cmake --install build
 
+    - name: Verify developer HUD golden harness is absent from release binary
+      run: |
+        ! strings AppDir/usr/bin/melonPrimeDS | grep -E 'melonprime-hud-golden|MelonPrime HUD golden|CustomHud_RunGoldenHarness'
+
     - name: Compress binary
       run: |
         zip -j melonPrimeDS-linux-${{ matrix.arch.name }}.zip AppDir/usr/bin/melonPrimeDS
