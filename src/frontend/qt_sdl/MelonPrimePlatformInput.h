@@ -169,9 +169,9 @@ inline void PlatformInput_CountPerfAimSource(AimInputSource aimSrc)
 #endif
 }
 
-// Consumption-side aim delta resolution for macOS/Linux (V5 Phase 2 facade).
+// macOS/Linux aim delta path (V5 Phase 2 facade implementation).
 template<typename AimPanel>
-inline void PlatformInput_UpdateNonWinMouseDelta(
+inline void PlatformInput_UpdateMouseDeltaMacLinux(
     PlatformRawFilter* filter,
     AimPanel* panel,
     uint8_t& platformRawAimWasActive,
@@ -238,7 +238,7 @@ inline void PlatformInput_UpdateNonWinMouseDelta(
 }
 
 template<typename AimPanel>
-inline void PlatformInput_ResetAfterLayoutWarp(
+inline void PlatformInput_ResetAfterLayoutWarpMacLinux(
     PlatformRawFilter* filter,
     AimPanel* panel)
 {
@@ -249,39 +249,10 @@ inline void PlatformInput_ResetAfterLayoutWarp(
 #endif
 }
 
-template<typename AimPanel>
-inline void PlatformInput_ResetPanelAfterWarp(AimPanel* panel)
-{
-#if defined(__linux__)
-    if (panel)
-        panel->resetAimMouseDelta();
-#endif
-}
-
-inline bool PlatformInput_ShouldWarpCursorAfterAim(
-    const PlatformRawFilter* filter)
-{
-#if defined(__linux__)
-    (void)filter;
-    return false;
-#else
-    return !PlatformInput_IsRawAimActive(filter);
-#endif
-}
 #endif // defined(__APPLE__) || defined(__linux__)
 
 #if !defined(_WIN32)
-template<typename AimPanel>
-inline void PlatformInput_ResetPanelAfterWarpNonWin(AimPanel* panel)
-{
-#if defined(__APPLE__) || defined(__linux__)
-    PlatformInput_ResetPanelAfterWarp(panel);
-#else
-    (void)panel;
-#endif
-}
-
-inline bool PlatformInput_ShouldWarpCursorAfterAimNonWin(
+inline bool PlatformInput_ShouldWarpCursorAfterAim(
     const void* filterOpaque)
 {
 #if defined(__linux__)
@@ -297,7 +268,7 @@ inline bool PlatformInput_ShouldWarpCursorAfterAimNonWin(
 }
 
 template<typename AimPanel>
-inline void PlatformInput_UpdateNonWinMouseDeltaNonWin(
+inline void PlatformInput_UpdateMouseDelta(
     void* filterOpaque,
     AimPanel* panel,
     uint8_t* platformRawAimWasActive,
@@ -310,7 +281,7 @@ inline void PlatformInput_UpdateNonWinMouseDeltaNonWin(
 #if defined(__APPLE__) || defined(__linux__)
     uint8_t localWasActive =
         platformRawAimWasActive ? *platformRawAimWasActive : 0;
-    PlatformInput_UpdateNonWinMouseDelta(
+    PlatformInput_UpdateMouseDeltaMacLinux(
         static_cast<PlatformRawFilter*>(filterOpaque),
         panel,
         localWasActive,
@@ -334,16 +305,25 @@ inline void PlatformInput_UpdateNonWinMouseDeltaNonWin(
 }
 
 template<typename AimPanel>
-inline void PlatformInput_ResetAfterLayoutWarpNonWin(
+inline void PlatformInput_ResetAfterLayoutWarp(
     void* filterOpaque,
     AimPanel* panel)
 {
 #if defined(__APPLE__) || defined(__linux__)
-    PlatformInput_ResetAfterLayoutWarp(
+    PlatformInput_ResetAfterLayoutWarpMacLinux(
         static_cast<PlatformRawFilter*>(filterOpaque), panel);
 #else
     (void)filterOpaque;
     (void)panel;
+#endif
+}
+
+template<typename AimPanel>
+inline void PlatformInput_ResetPanelAfterWarp(AimPanel* panel)
+{
+#if defined(__linux__)
+    if (panel)
+        panel->resetAimMouseDelta();
 #endif
 }
 

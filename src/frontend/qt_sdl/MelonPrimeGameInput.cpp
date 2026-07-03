@@ -194,7 +194,7 @@ namespace MelonPrime {
 
 #if !defined(_WIN32)
         bool haveMouseDelta = false;
-        PlatformInput_UpdateNonWinMouseDeltaNonWin(
+        PlatformInput_UpdateMouseDelta(
             MELONPRIME_RAW_FILTER_PTR(this),
             m_cachedPanel,
             MELONPRIME_RAW_AIM_WAS_ACTIVE_PTR(this),
@@ -385,7 +385,7 @@ namespace MelonPrime {
             m_aimData.centerX = center.x();
             m_aimData.centerY = center.y();
             PlatformInput_WarpCursor(center.x(), center.y());
-            PlatformInput_ResetAfterLayoutWarpNonWin(
+            PlatformInput_ResetAfterLayoutWarp(
                 MELONPRIME_RAW_FILTER_PTR(this), m_cachedPanel);
 #endif
         }
@@ -508,7 +508,7 @@ namespace MelonPrime {
         m_nativeAimDeltaY = 0;
 #if !defined(_WIN32)
         const bool warpCursorAfterAim =
-            PlatformInput_ShouldWarpCursorAfterAimNonWin(
+            PlatformInput_ShouldWarpCursorAfterAim(
                 MELONPRIME_RAW_FILTER_PTR(this));
 #endif
 
@@ -665,7 +665,7 @@ namespace MelonPrime {
         m_aimData.centerX = center.x();
         m_aimData.centerY = center.y();
         PlatformInput_WarpCursor(center.x(), center.y());
-        PlatformInput_ResetPanelAfterWarpNonWin(m_cachedPanel);
+        PlatformInput_ResetPanelAfterWarp(m_cachedPanel);
 #endif
         m_isLayoutChangePending = false;
         m_aimResidualX = 0;
