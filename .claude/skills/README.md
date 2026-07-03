@@ -4,6 +4,9 @@
   - `build-mingw.bat`: configure + build
   - `build-mingw-existing.bat`: build existing tree only, no configure/vcpkg
 - [macOS Build](build-macos.md) — configure, build, and launch-test MelonPrimeDS on macOS
+  - `build-macos-dev.sh`: canonical dev configure + build (`DEVELOPER_FEATURES=ON`, parallel 4)
+  - `build-macos-dev-existing.sh`: build existing `build-mac` tree only
+  - `build-macos.sh`: optional wrapper (`--release`, `--jobs`, `--open`, …)
 - [Custom HUD Runtime](custom-hud-runtime.md) — reference for runtime HUD rendering, caches, fonts, no-HUD patch, radar overlay
 - [Settings UI and Edit Mode](settings-ui-and-edit-mode.md) — settings dialog and in-game HUD edit mode; how to add a HUD setting surface
 - [Qt Menu Actions](qt-menu-actions.md) — add a menu item / checkable MelonPrime toggle to the Qt menubar
