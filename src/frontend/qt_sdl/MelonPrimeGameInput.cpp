@@ -12,6 +12,7 @@
 #include <cstring>
 #include <utility>
 #include <QCursor>
+#include <QGuiApplication>
 
 #ifdef _WIN32
 #include "MelonPrimeRawInputWinFilter.h"
@@ -43,10 +44,18 @@ namespace MelonPrime {
     // without the Accessibility permission — a failed recenter re-applies the
     // cursor-minus-center delta every frame and spins the view to the pitch
     // limits. CGWarpMouseCursorPosition needs no permission, so use it there.
+    // Linux/X11: QCursor::setPos can fail under VBox guest integration or off
+    // the GUI thread; XWarpPointer via LinuxWarpCursorGlobal avoids runaway
+    // aim. Non-X11 Linux keeps the Qt fallback path.
     static FORCE_INLINE void WarpCursorTo(int x, int y)
     {
 #if defined(__APPLE__)
         MacWarpCursorGlobal(x, y);
+#elif defined(__linux__)
+        if (QGuiApplication::platformName() == QStringLiteral("xcb"))
+            LinuxWarpCursorGlobal(x, y);
+        else
+            QCursor::setPos(x, y);
 #else
         QCursor::setPos(x, y);
 #endif
@@ -205,20 +214,32 @@ namespace MelonPrime {
         m_scanShootKeyDown = ((hotDownMask >> HK_MetroidScanShoot) & 1ULL) != 0;
 
 #if !defined(_WIN32)
+        bool haveMouseDelta = false;
 #if defined(__APPLE__)
         // RawInput-equivalent path: unaccelerated HID deltas accumulated since
         // the last snapshot. Falls back to the QCursor delta when the HID
         // manager is unavailable (Input Monitoring permission not granted).
         if (m_macRawFilter && m_macRawFilter->isAvailable()) {
             m_macRawFilter->fetchMouseDelta(m_input.mouseX, m_input.mouseY);
-        } else
+            haveMouseDelta = true;
+        }
 #elif defined(__linux__)
-        // RawInput-equivalent path: XInput2 RawMotion on X11. Wayland and
-        // unavailable XInput2 fall back to QCursor center-delta below.
+        // Linux/X11 follows the same event-driven shape as SDL/GLFW relative
+        // mouse input: ScreenPanel::mouseMoveEvent accumulates center-relative
+        // movement and recenters immediately. XInput2 is still drained for
+        // diagnostics/stale-event control, but not used as runtime aim input
+        // because XWarpPointer can itself produce XI_RawMotion on some stacks.
         if (m_linuxRawFilter && m_linuxRawFilter->isAvailable()) {
-            m_linuxRawFilter->fetchMouseDelta(m_input.mouseX, m_input.mouseY);
-        } else
+            int32_t ignoredX = 0;
+            int32_t ignoredY = 0;
+            m_linuxRawFilter->fetchMouseDelta(ignoredX, ignoredY);
+        }
+        if (m_cachedPanel) {
+            m_cachedPanel->getAimMouseDelta(m_input.mouseX, m_input.mouseY);
+            haveMouseDelta = (m_input.mouseX | m_input.mouseY) != 0;
+        }
 #endif
+        if (!haveMouseDelta)
         {
             const QPoint currentPos = QCursor::pos();
             m_input.mouseX = currentPos.x() - m_aimData.centerX;
@@ -533,6 +554,11 @@ namespace MelonPrime {
     {
         m_nativeAimDeltaX = 0;
         m_nativeAimDeltaY = 0;
+#if defined(__linux__)
+        constexpr bool warpCursorAfterAim = true;
+#elif !defined(_WIN32)
+        constexpr bool warpCursorAfterAim = true;
+#endif
 
         // P-29b: Combined early-exit gate.
         // Single branch covers both aimBlock (morph/weapon) and layout change.
@@ -597,6 +623,10 @@ namespace MelonPrime {
                     if (hasDelta) {
                         m_aimResidualX = resX;
                         m_aimResidualY = resY;
+#if !defined(_WIN32)
+                        if (warpCursorAfterAim)
+                            WarpCursorTo(m_aimData.centerX, m_aimData.centerY);
+#endif
                     }
                     return;
                 }
@@ -628,6 +658,10 @@ namespace MelonPrime {
                         if (hasDelta) {
                             m_aimResidualX = resX;
                             m_aimResidualY = resY;
+#if !defined(_WIN32)
+                            if (warpCursorAfterAim)
+                                WarpCursorTo(m_aimData.centerX, m_aimData.centerY);
+#endif
                         }
                         return;
                     }
@@ -646,6 +680,10 @@ namespace MelonPrime {
                     if (hasDelta) {
                         m_aimResidualX = resX;
                         m_aimResidualY = resY;
+#if !defined(_WIN32)
+                        if (warpCursorAfterAim)
+                            WarpCursorTo(m_aimData.centerX, m_aimData.centerY);
+#endif
                     }
                     return;
                 }
@@ -664,7 +702,8 @@ namespace MelonPrime {
             m_aimResidualY = resY;
 
 #if !defined(_WIN32)
-            WarpCursorTo(m_aimData.centerX, m_aimData.centerY);
+            if (warpCursorAfterAim)
+                WarpCursorTo(m_aimData.centerX, m_aimData.centerY);
 #endif
             return;
         }

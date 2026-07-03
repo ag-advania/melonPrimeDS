@@ -2,14 +2,20 @@
 
 This document tracks the MelonPrime path from input capture to frame input state and final aim RAM writes.
 
-Platform scope: the sections below describe the Windows Raw Input path. On macOS (added
-2026-07), `MelonPrimeRawInputMacFilter.{h,cpp}` provides the RawInput-equivalent aim deltas via
-IOHIDManager (unaccelerated HID X/Y counts, fetch-and-clear at frame snapshot). On Linux/X11,
-`MelonPrimeRawInputLinuxFilter.{h,cpp}` provides the equivalent through XInput2 `XI_RawMotion`.
+Platform scope: the sections below describe the Windows Raw Input path first. On macOS (added
+2026-07), `MelonPrimeRawInputMacFilter.{h,mm}` provides RawInput-equivalent aim deltas via
+GCMouse first, then IOHIDManager as a fallback (unaccelerated HID X/Y counts, fetch-and-clear at
+frame snapshot). On Linux/X11, `MelonPrimeRawInputLinuxFilter.{h,cpp}` provides the equivalent
+through XInput2 `XI_RawMotion`.
+
 Mouse buttons and keyboard hotkeys stay on the Qt event / SDL path (`EmuInstance::onMousePress`,
-`emuInstance->hotkeyMask`), and the QCursor center-delta method remains the fallback when the
-macOS Input Monitoring permission is not granted, Linux is running on Wayland, or XInput2 is
-unavailable. See the macOS/Linux notes in [build.md](build.md).
+`emuInstance->hotkeyMask`) on non-Windows platforms. They are intentionally not captured by the
+raw-delta filters so a physical click cannot create duplicate press edges.
+
+The QCursor center-delta method remains the fallback when the macOS raw backends are unavailable.
+On Linux the runtime source of truth is the Qt mouse-move event accumulator in `ScreenPanel`,
+because frame-time absolute cursor polling and XInput2 raw deltas are both fragile around cursor
+warps on some X11/VM stacks. See the macOS/Linux notes in [build.md](build.md).
 
 ## 1. End-to-End Pipeline
 
@@ -28,6 +34,9 @@ Main implementation files:
 - `src/frontend/qt_sdl/MelonPrimeGameInput.cpp`
 - `src/frontend/qt_sdl/MelonPrimeRawInputWinFilter.cpp`
 - `src/frontend/qt_sdl/MelonPrimeRawInputState.cpp`
+- `src/frontend/qt_sdl/MelonPrimeRawInputMacFilter.mm`
+- `src/frontend/qt_sdl/MelonPrimeRawInputLinuxFilter.cpp`
+- `src/frontend/qt_sdl/Screen.cpp` (non-Windows cursor grab/recenter)
 
 ## 2. FrameInputState and Input Bits
 
@@ -93,6 +102,11 @@ Main implementation files:
   `ProcessAimInputMouse` **only** when `m_didFrameAdvanceSinceSnapshot` is set (a morph/weapon
   `FrameAdvance` happened this frame, opening a ~32–96 ms window). It re-drains the kernel buffer
   and **adds** any newly-arrived delta. Normal frames skip it (~40–100 ns window not worth the syscall).
+- Non-Windows cursor recenter:
+  - Cursor-delta fallback needs the cursor returned to `m_aimData.centerX/Y` after any consumed
+    movement, including early returns where residuals changed but output was still zero.
+  - Linux always recenters while mouse aim is focused. `unfocus()` must call `unclip()` on Linux
+    too; otherwise Escape leaves the cursor hidden/locked.
 
 ## 6. Native / Low-Latency Aim Injection Mechanisms (newer)
 
@@ -147,7 +161,69 @@ unless `MELONPRIME_ENABLE_DEVELOPER_FEATURES`.
   - Prebuilds hotkey masks via `setHotkeyVks()`
   - `snapshotInputFrameNoEdges()` preserves outer `m_hkPrev` state
 
-## 9. Sensitivity Cache and Recalculation
+## 9. Linux Raw / Relative Aim Notes
+
+Linux aim intentionally uses an event-driven cursor-delta path until raw input can be proven safe
+across the X11/VM stacks this project tests on. This follows the practical shape of SDL/GLFW/FPS
+input: handle a motion event, convert it to a relative delta, and recenter immediately.
+
+The attempted SDL/ioquake-style raw-relative promotion exposed a Linux-specific trap:
+`XWarpPointer` can itself produce `XI_RawMotion` on some X11/VirtualBox setups. If the runtime treats
+that as real mouse movement, the recenter becomes bogus aim input and the QCursor fallback can be
+suppressed. Current policy: drain/log XInput2 for diagnostics, but use Qt mouse-move events plus
+`LinuxWarpCursorGlobal` as the actual aim source.
+
+Key implementation points:
+
+- `MelonPrimeCore::Initialize()` only acquires `LinuxRawInputFilter` when
+  `QGuiApplication::platformName() == "xcb"`. Wayland does not expose the required global raw
+  mouse stream to normal clients.
+- `LinuxRawInputFilter::isAvailable()` means `XOpenDisplay`, XInput2 version/query, and
+  `XISelectEvents(..., XI_RawMotion)` succeeded.
+- `LinuxRawInputFilter::hasReceivedMotion()` means at least one non-zero raw delta actually arrived.
+  This is diagnostic only at the moment; do not use it to switch Linux aim into raw mode without
+  also filtering out warp-generated motion.
+- In `UpdateInputStateImpl`:
+  - Linux drains `m_linuxRawFilter` if present so stale raw events do not accumulate;
+  - Linux then consumes `ScreenPanel::getAimMouseDelta()` for the actual frame delta;
+  - if no event delta is available, Linux falls back to `QCursor::pos() - m_aimData.centerX/Y`.
+- In `ScreenPanel::mouseMoveEvent` on Linux aim frames:
+  - ignore touch handling and treat the mouse move as aim input when focused, in-game, not stylus
+    mode, and not cursor mode;
+  - compute `globalPos - mapToGlobal(rect().center())`;
+  - accumulate that delta atomically for the emu thread;
+  - immediately recenter with `LinuxWarpCursorGlobal` on X11 (or `QCursor::setPos` on non-X11).
+- `ScreenPanel::clipCursorCenter1px()` hides the cursor and recenters it. Do not use
+  `grabMouse(Qt::BlankCursor)` here unless Escape/unfocus and keyboard delivery are re-tested on
+  Linux; a previous attempt left the cursor hidden after Escape in the VM.
+- X11 recenter uses `MelonPrime::LinuxWarpCursorGlobal` (`XWarpPointer` on a thread-local
+  `Display*`). Do not use `QCursor::setPos` on X11; it can fail under VirtualBox guest mouse
+  integration or when called off the GUI thread.
+- Non-X11 Linux keeps the Qt fallback path (`QCursor::setPos`) because `XWarpPointer` is not
+  available there. This is best-effort; for reliable Linux aim testing, use an Xorg session.
+
+RawMotion parsing rules:
+
+- XInput2 reports one `raw_values` entry for each set bit in `valuators.mask`.
+- Axis 0 maps to X and axis 1 maps to Y. Do not treat "first received value" as X unconditionally:
+  a Y-only event would become horizontal aim.
+- If axis 0/1 are absent, the code keeps a conservative first-two-relative-values fallback for
+  unusual devices, but normal mouse devices should hit the explicit axis 0/1 path.
+- The filter captures only relative motion. Buttons and keyboard state remain owned by Qt/SDL
+  hotkey handling to avoid double press edges.
+
+Troubleshooting signals:
+
+- Launch from a terminal and look for `[MelonPrime] linux input: XInput2 RawMotion active`.
+- That log only proves XInput2 selection succeeded. Aim should still work without using raw deltas,
+  because Linux input is mouseMoveEvent accumulation + recenter.
+- In a VM, disable host mouse integration or switch the Ubuntu login session to **Ubuntu on Xorg**
+  before testing. Wayland sessions are not the primary supported path for FPS aim.
+- If the view spins, inspect recenter paths first: the Linux mouseMoveEvent path must ignore
+  zero-delta warp events and recenter through `LinuxWarpCursorGlobal`. If the view does not move at
+  all, inspect whether `ScreenPanel::mouseMoveEvent` is firing while the core is focused/in-game.
+
+## 10. Sensitivity Cache and Recalculation
 
 - `RecalcAimSensitivityCache()`:
   - Recomputes `m_aimSensiFactor` / `m_aimCombinedY` from `AimSens` and `AimYScale`
@@ -165,7 +241,7 @@ unless `MELONPRIME_ENABLE_DEVELOPER_FEATURES`.
     floating-point math back into this path
   - shared rationale lives in `.claude/features/zoom-status-performance.md`
 
-## 10. Main Config Keys
+## 11. Main Config Keys
 
 - `Metroid.Sensitivity.Aim`
 - `Metroid.Sensitivity.AimYAxisScale`

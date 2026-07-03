@@ -956,6 +956,13 @@ namespace MelonPrime {
                     // macOS (CGEventPost); CGWarp does not. See WarpCursorTo.
                     if (hasCenter)
                         MacWarpCursorGlobal(center.x(), center.y());
+#elif defined(__linux__)
+                    if (hasCenter) {
+                        if (QGuiApplication::platformName() == QStringLiteral("xcb"))
+                            LinuxWarpCursorGlobal(center.x(), center.y());
+                        else
+                            QCursor::setPos(center);
+                    }
 #elif !defined(_WIN32)
                     if (hasCenter)
                         QCursor::setPos(center);

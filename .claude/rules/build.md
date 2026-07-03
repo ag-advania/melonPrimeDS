@@ -79,13 +79,29 @@ macOS platform notes:
 Linux platform notes:
 - Windows/macOS native input sources are removed from Linux builds.
 - The RawInput-equivalent aim path is `MelonPrimeRawInputLinuxFilter.{h,cpp}` (XInput2
-  `XI_RawMotion` on X11). It captures only relative mouse X/Y deltas; mouse buttons and keyboard
-  hotkeys stay on the Qt/SDL path to avoid duplicate press edges.
+  `XI_RawMotion` on X11), but Linux runtime aim currently uses Qt mouse-move events as the source
+  of truth. RawMotion is drained/logged for diagnostics only.
+- Linux fallback aim mirrors SDL/GLFW disabled-cursor behavior: `ScreenPanel::mouseMoveEvent`
+  accumulates the cursor offset from the current aim center, immediately recenters the cursor, and
+  `UpdateInputStateImpl` consumes that accumulated delta once per frame. Plain `QCursor::pos() -
+  center` remains only a last-resort fallback when no move event delta is available.
+- Do not promote Linux aim to XInput2 raw deltas without re-testing recenter behavior. On some
+  X11/VirtualBox stacks, `XWarpPointer` itself can emit `XI_RawMotion`, which makes recentering
+  look like aim input and can suppress the cursor-delta fallback.
+- Mouse buttons and keyboard hotkeys stay on the Qt/SDL path to avoid duplicate press edges.
 - Wayland does not expose the needed global raw mouse stream to normal clients. On Wayland, missing
-  XInput2, or unavailable X11 display, the aim path falls back to the QCursor center-delta method.
+  XInput2, unavailable X11 display, or an XInput2 path that never emits raw motion, the aim path
+  falls back to the QCursor center-delta method. Wayland recenter behavior is compositor-dependent;
+  use an Xorg session for reliable Linux FPS aim testing.
+- **The recenter must use `MelonPrime::LinuxWarpCursorGlobal` (XWarpPointer) on X11, never
+  `QCursor::setPos` there**: Qt's setPos can fail under VirtualBox guest mouse integration or
+  when called off the GUI thread — a failed recenter re-applies the cursor-minus-center delta
+  every frame and spins aim. Non-X11 Linux keeps the Qt fallback path.
+- `ScreenPanel::unfocus()` and `unclip()` must run on Linux as well as Windows. Escape should always
+  restore the arrow cursor and release any platform cursor confinement state.
 - Linux builds need the XInput2 development library (`libxi-dev` on Ubuntu).
 - **Linux VM testing on Mac**: see [linux-vm-build.md](linux-vm-build.md) — VirtualBox +
-  Ubuntu 22.04 scripts under `tools/linux-vm/` (`01`…`04` in execution order).
+  Ubuntu 22.04 scripts under `tools/linux-vm/` (`01`…`05`; `05` is shared-folder remount only).
 
 ## Windows Build Command
 Windows-only AI build command. Do not rebuild, bootstrap, or reinstall `vcpkg/` unless the user explicitly asks for it.

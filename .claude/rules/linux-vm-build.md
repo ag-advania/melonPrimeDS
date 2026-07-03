@@ -20,10 +20,34 @@ Scripts live in `tools/linux-vm/`. Run in order:
 | **02** | `02-guest-finish.command` | Guest Additions; VM may reboot |
 | **03** | `03-fix-shared-folder.command` | **Optional** — if MelonPrimeDS share won't open |
 | **04** | `04-guest-build.command` | cmake + ninja → `build-linux/melonPrimeDS` |
+| **05** | `05-mount-share.command` | **Shared folder only** — no build (after reboot) |
 
 Default guest login: `melon` / `melon` (fixed; scripts do not prompt)
 
 At the Ubuntu login screen choose **Ubuntu on Xorg** (not Wayland-only) for XInput2 raw aim.
+
+## After reboot — mount shared folder (no build)
+
+Inside Ubuntu terminal:
+
+```bash
+bash ~/mount-mp.sh
+```
+
+From Mac (Terminal.app, VM logged in):
+
+```bash
+/Users/admin/git/MelonPrimeDS/tools/linux-vm/05-mount-share.command
+```
+
+`~/mount-mp.sh` is installed by step **02** (guest finish). If missing, run step 05 once from Mac or mount manually:
+
+```bash
+sudo modprobe vboxsf
+sudo mkdir -p /mnt/mp
+sudo mount -t vboxsf MelonPrimeDS /mnt/mp
+ls /mnt/mp
+```
 
 ## After build — run in guest
 
@@ -50,9 +74,12 @@ Shared folder paths (first match wins):
 If Mac-side `guestcontrol` automation fails, run inside Ubuntu (Ctrl+Alt+T):
 
 ```bash
-sudo modprobe vboxsf
-sudo mkdir -p /mnt/mp
-sudo mount -t vboxsf MelonPrimeDS /mnt/mp
+bash ~/mount-mp.sh
+```
+
+Build (optional):
+
+```bash
 bash /mnt/mp/tools/linux-vm/guest/guest-build-only.sh
 ```
 
@@ -77,6 +104,7 @@ tools/linux-vm/
   02-guest-finish.{command,sh}      → 02-guest-finish-from-host.sh
   03-fix-shared-folder.{command,sh}
   04-guest-build.{command,sh}       → 04-guest-build-from-host.sh
+  05-mount-share.{command,sh}       → 05-mount-share-from-host.sh
   lib/
     vbox-guest-common.sh            # shared host helpers
     vbox-create-ubuntu.sh           # manual VM create (no unattended)
@@ -104,8 +132,29 @@ CI Ubuntu workflow uses the same dependency set; see [build.md](build.md) Linux 
 
 ## Linux runtime notes
 
-- Aim path: `MelonPrimeRawInputLinuxFilter` (XInput2 on X11)
-- Wayland falls back to QCursor center-delta
+- Aim path: `MelonPrimeRawInputLinuxFilter` (XInput2 `XI_RawMotion` on X11/xcb).
+- At the Ubuntu login screen, click the gear and choose **Ubuntu on Xorg**. Check inside the guest:
+  ```bash
+  echo "$XDG_SESSION_TYPE"
+  ```
+  Expected for raw aim testing: `x11`.
+- Launch from a terminal so backend logs are visible:
+  ```bash
+  cd /mnt/mp/build-linux
+  ./melonPrimeDS 2>&1 | tee /tmp/melonprime-linux.log
+  ```
+- Good XInput2 startup log:
+  ```text
+  [MelonPrime] linux input: XInput2 RawMotion active
+  ```
+- That log means XInput2 selection succeeded, but Linux aim currently uses Qt mouse-move events
+  accumulated by `ScreenPanel` as the source of truth. RawMotion is drained/logged for diagnostics only because
+  `XWarpPointer` can generate RawMotion on some X11/VM stacks.
+- On X11 the recenter must go through `MelonPrime::LinuxWarpCursorGlobal` (`XWarpPointer`), not
+  `QCursor::setPos`.
+- Escape should call `ScreenPanel::unfocus()` and `unclip()` on Linux, restoring the arrow cursor.
+- Wayland falls back to QCursor center-delta and may be compositor-limited. Treat Wayland aim as
+  best-effort; use Xorg for reliable testing.
 - Japanese UI: `IsJapaneseSystemLocale()` + `LANG=ja_JP.UTF-8`; see locale fixes in `MelonPrimeLocalization.cpp`
 
 ## Troubleshooting
@@ -114,10 +163,15 @@ CI Ubuntu workflow uses the same dependency set; see [build.md](build.md) Linux 
 |---------|-----|
 | `VBoxManage: Failed to create VirtualBox object` | Open VirtualBox.app from Finder; use Terminal.app |
 | VM state `poweroff` not starting | Fixed in scripts — re-run step 01 or 02 |
-| Shared folder icon won't open | Step 03, then `guest/guest-mount-share.sh` in guest |
+| Shared folder gone after reboot | `bash ~/mount-mp.sh` in guest, or Mac: `05-mount-share.command` |
+| Shared folder icon won't open | Step 03 or 05, then `guest/guest-mount-share.sh` in guest |
 | `guestcontrol` waits forever | Log into Ubuntu **desktop** first |
 | CMake embed build info error | Use `guest/guest-build-only.sh` (clears stale cache, passes `-D` flags) |
 | `Protocol error` on `/mnt/mp` | Share is already mounted; build can still proceed |
+| Aim does not move | Confirm `echo "$XDG_SESSION_TYPE"` is `x11`; launch from terminal and check `/tmp/melonprime-linux.log`; Linux should use `ScreenPanel::mouseMoveEvent` deltas even if RawMotion logs active |
+| Aim spins or drifts | Suspect failed recenter in fallback mode; on X11 all recenter paths must use `LinuxWarpCursorGlobal` / `XWarpPointer` |
+| Cursor stays hidden after Escape | `ScreenPanel::unfocus()` must call `unclip()` on Linux, not only on Windows |
+| RawMotion never appears in VM | This is no longer fatal for aim; use **Ubuntu on Xorg** and test after clicking the game panel so Qt focus is active |
 
 ## Alternative: git clone inside guest
 
