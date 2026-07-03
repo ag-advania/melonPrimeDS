@@ -80,6 +80,123 @@ inline void ApplyGaugeAlign(int& x, int& y, int orient, int len, int align)
         y -= len * align / 2;
 }
 
+inline int GaugeAlignOffsetTrunc(float len, int align)
+{
+    return static_cast<int>(len * align / 2);
+}
+
+inline void ApplyGaugeAlignTrunc(int& x, int& y, int orient, float len, int align)
+{
+    const int offset = GaugeAlignOffsetTrunc(len, align);
+    if (orient == 0)
+        x -= offset;
+    else
+        y -= offset;
+}
+
+inline void ApplyGaugeAlignF(float& x, float& y, int orient, float len, int align)
+{
+    const float offset = len * static_cast<float>(align) * 0.5f;
+    if (orient == 0)
+        x -= offset;
+    else
+        y -= offset;
+}
+
+inline void GaugeSize(float gaugeLen, float gaugeWid, int orient, float& outW, float& outH)
+{
+    outW = (orient == 0) ? gaugeLen : gaugeWid;
+    outH = (orient == 0) ? gaugeWid : gaugeLen;
+}
+
+inline void CalcTextPosFromGauge(float gx, float gy, float gaugeLen, float gaugeWid, int orient,
+                                 int anchor, int ofsX, int ofsY,
+                                 float textW, float textH,
+                                 float& outTextX, float& outTextY)
+{
+    float gW, gH;
+    GaugeSize(gaugeLen, gaugeWid, orient, gW, gH);
+    switch (anchor) {
+    case 1:
+        outTextX = gx + gW * 0.5f - textW * 0.5f + ofsX;
+        outTextY = gy + ofsY;
+        break;
+    case 2:
+        outTextX = gx + gW + ofsX;
+        outTextY = gy + gH * 0.5f + textH * 0.5f + ofsY;
+        break;
+    case 3:
+        outTextX = gx - textW + ofsX;
+        outTextY = gy + gH * 0.5f + textH * 0.5f + ofsY;
+        break;
+    case 4:
+        outTextX = gx + gW * 0.5f - textW * 0.5f + ofsX;
+        outTextY = gy + gH * 0.5f + textH * 0.5f + ofsY;
+        break;
+    default:
+        outTextX = gx + gW * 0.5f - textW * 0.5f + ofsX;
+        outTextY = gy + gH + textH + 2 + ofsY;
+        break;
+    }
+}
+
+inline void CalcTextPosFromGaugeInt(int gx, int gy, int gaugeLen, int gaugeWid, int orient,
+                                    int anchor, int ofsX, int ofsY,
+                                    int textW, int textH,
+                                    int& outTextX, int& outTextY)
+{
+    const int gW = (orient == 0) ? gaugeLen : gaugeWid;
+    const int gH = (orient == 0) ? gaugeWid : gaugeLen;
+    switch (anchor) {
+    case 1:
+        outTextX = gx + gW / 2 - textW / 2 + ofsX;
+        outTextY = gy + ofsY;
+        break;
+    case 2:
+        outTextX = gx + gW + ofsX;
+        outTextY = gy + gH / 2 + textH / 2 + ofsY;
+        break;
+    case 3:
+        outTextX = gx - textW + ofsX;
+        outTextY = gy + gH / 2 + textH / 2 + ofsY;
+        break;
+    case 4:
+        outTextX = gx + gW / 2 - textW / 2 + ofsX;
+        outTextY = gy + gH / 2 + textH / 2 + ofsY;
+        break;
+    default:
+        outTextX = gx + gW / 2 - textW / 2 + ofsX;
+        outTextY = gy + gH + textH + 2 + ofsY;
+        break;
+    }
+}
+
+inline void ApplyRectAnchorF(float& x, float& y, float width, float height, int anchorX, int anchorY)
+{
+    if (anchorX == 1)
+        x -= width * 0.5f;
+    else if (anchorX == 2)
+        x -= width;
+
+    if (anchorY == 1)
+        y -= height * 0.5f;
+    else if (anchorY == 2)
+        y -= height;
+}
+
+inline void ApplyRectAnchor(int& x, int& y, int width, int height, int anchorX, int anchorY)
+{
+    if (anchorX == 1)
+        x -= width / 2;
+    else if (anchorX == 2)
+        x -= width;
+
+    if (anchorY == 1)
+        y -= height / 2;
+    else if (anchorY == 2)
+        y -= height;
+}
+
 } // namespace MelonPrime::HudGeometry
 
 #endif // MELON_PRIME_HUD_GEOMETRY_H
