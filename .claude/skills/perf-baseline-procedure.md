@@ -39,12 +39,13 @@ cmake -B build-mac -G Ninja -DCMAKE_BUILD_TYPE=Release \
 cmake --build build-mac --parallel 4
 ```
 
-Run and capture stderr/stdout:
+Run and capture stderr/stdout. The wrapper starts the app with
+`MELONPRIME_PERF=1`, writes the raw log under `artifacts/perf-baseline/`, then
+automatically writes a `.summary.txt` file after the app exits:
 
 ```zsh
-mkdir -p artifacts/perf-baseline
-MELONPRIME_PERF=1 build-mac/melonPrimeDS.app/Contents/MacOS/melonPrimeDS \
-  2>&1 | tee artifacts/perf-baseline/macos-perf-$(date +%Y%m%d-%H%M%S).log
+.claude/skills/collect-perf-baseline.sh --label macos -- \
+  build-mac/melonPrimeDS.app/Contents/MacOS/melonPrimeDS
 ```
 
 ## Windows
@@ -58,9 +59,9 @@ Use the checked-in MinGW build wrapper from a Windows shell:
 Run from the repo root or the built binary directory:
 
 ```bat
-mkdir artifacts\perf-baseline
-set MELONPRIME_PERF=1
-build\release-mingw-x86_64\src\frontend\qt_sdl\melonPrimeDS.exe > artifacts\perf-baseline\windows-perf.log 2>&1
+powershell -ExecutionPolicy Bypass -File .\.claude\skills\collect-perf-baseline.ps1 `
+  -Label windows `
+  -Binary build\release-mingw-x86_64\src\frontend\qt_sdl\melonPrimeDS.exe
 ```
 
 If the binary path differs, use the path printed by the build wrapper.
@@ -80,9 +81,8 @@ Run in the guest:
 
 ```bash
 cd /mnt/mp
-mkdir -p artifacts/perf-baseline
-MELONPRIME_PERF=1 build-linux/melonPrimeDS \
-  2>&1 | tee artifacts/perf-baseline/linux-vm-perf-$(date +%Y%m%d-%H%M%S).log
+.claude/skills/collect-perf-baseline.sh --label linux-vm -- \
+  build-linux/melonPrimeDS
 ```
 
 ## Summarize
