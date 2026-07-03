@@ -83,7 +83,12 @@ namespace MelonPrime {
 
     bool MelonPrimeCore::IsLinuxRawAimActive() const
     {
-        return m_linuxRawFilter && m_linuxRawFilter->isAvailable();
+        // hasReceivedMotion guards against sessions where XI2 selection
+        // succeeds but raw events are never delivered (XWayland). Until the
+        // first real raw delta arrives, the Qt fallback path owns aim.
+        return m_linuxRawFilter
+            && m_linuxRawFilter->isAvailable()
+            && m_linuxRawFilter->hasReceivedMotion();
     }
 #else
     MelonPrimeCore::~MelonPrimeCore() = default;
@@ -963,6 +968,9 @@ namespace MelonPrime {
                         MacWarpCursorGlobal(center.x(), center.y());
 #elif defined(__linux__)
                     if (hasCenter) {
+                        // Drop the fallback's prev-position baseline first so
+                        // this warp is never counted as motion.
+                        panel->resetAimMouseDelta();
                         if (QGuiApplication::platformName() == QStringLiteral("xcb"))
                             LinuxWarpCursorGlobal(center.x(), center.y());
                         else

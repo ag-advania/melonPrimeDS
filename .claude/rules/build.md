@@ -79,25 +79,27 @@ macOS platform notes:
 Linux platform notes:
 - Windows/macOS native input sources are removed from Linux builds.
 - The RawInput-equivalent aim path is `MelonPrimeRawInputLinuxFilter.{h,cpp}` (XInput2
-  `XI_RawMotion` on X11) and it is the aim source of truth when available (2026-07-03).
-  Relative axes are used as-is. **Absolute pointing devices — VirtualBox's integrated tablet
-  pointer — are converted to deltas per-device** (successive-value differencing, axis modes
-  queried via `XIQueryDevice`, baselines re-seeded by `resetAll()` so focus gaps cannot produce
-  a catch-up jump). Axes above 0/1 (scroll wheel valuators) are never fed into aim.
+  `XI_RawMotion` on X11). Raw mode engages only when `isAvailable() && hasReceivedMotion()` —
+  XWayland sessions accept the XI2 selection but never deliver raw events, so trusting
+  availability alone froze aim (2026-07-03). Relative axes are used as-is. **Absolute pointing
+  devices — VirtualBox's integrated tablet pointer — are converted to deltas per-device**
+  (successive-value differencing, axis modes queried via `XIQueryDevice`, baselines re-seeded by
+  `resetAll()`). Axes above 0/1 (scroll wheel valuators) are never fed into aim.
 - Why device-level deltas: warps never change a device's own axis state, so `XWarpPointer`
   echoes and VBox host-position re-syncs cannot corrupt them. The previous center-delta +
   warp-per-event scheme fought VBox's re-sync — the full host-minus-center offset was re-added
   on every host mouse event, producing a constant bottom-right drift with no aim control.
-- With XInput2 active, `ScreenPanel::mouseMoveEvent` no longer accumulates aim deltas; it only
-  warps the hidden cursor back to center when it strays more than ~96px (containment). The
-  per-frame recenter in `ProcessAimInputMouse` is likewise skipped (`warpCursorAfterAim`).
-- The Qt center-delta accumulation + warp-per-event remains as the fallback for non-XCB
-  sessions (Wayland) where XInput2 raw motion is unavailable.
+- The Qt fallback (raw silent / non-XCB) uses **previous-position differencing** in
+  `ScreenPanel::mouseMoveEvent` — never center-delta + warp-per-event (drift, see above). All
+  warps re-seed the baseline via `resetAimMouseDelta()` so jumps are never counted as motion.
+- Linux never warps per-frame in `ProcessAimInputMouse` (`warpCursorAfterAim == false`);
+  containment is the panel's >96px threshold warp. See `melonprime-aim-input.md` §9 for the
+  full design and the three historical failure modes.
 - Mouse buttons and keyboard hotkeys stay on the Qt/SDL path to avoid duplicate press edges.
 - Wayland does not expose the needed global raw mouse stream to normal clients. On Wayland, missing
   XInput2, unavailable X11 display, or an XInput2 path that never emits raw motion, the aim path
-  falls back to the QCursor center-delta method. Wayland recenter behavior is compositor-dependent;
-  use an Xorg session for reliable Linux FPS aim testing.
+  falls back to the Qt previous-position-differencing accumulator. Wayland warp behavior is
+  compositor-dependent; use an Xorg session for reliable Linux FPS aim testing.
 - **The recenter must use `MelonPrime::LinuxWarpCursorGlobal` (XWarpPointer) on X11, never
   `QCursor::setPos` there**: Qt's setPos can fail under VirtualBox guest mouse integration or
   when called off the GUI thread — a failed recenter re-applies the cursor-minus-center delta

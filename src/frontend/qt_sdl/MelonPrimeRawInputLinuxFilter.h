@@ -31,6 +31,11 @@ public:
     static LinuxRawInputFilter* Acquire();
     static void Release();
 
+    // Called by LinuxWarpCursorGlobal: re-seeds absolute-device baselines so
+    // a warp that propagates into the pointer position (or its VirtualBox
+    // re-sync) is never differenced into aim motion.
+    static void NotifyCursorWarp();
+
     bool isAvailable() const;
     bool hasReceivedMotion() const;
     void fetchMouseDelta(int32_t& outDx, int32_t& outDy);
