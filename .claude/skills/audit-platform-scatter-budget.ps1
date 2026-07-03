@@ -1,8 +1,8 @@
 # audit-platform-scatter-budget.ps1
 #
 # Counts platform condition markers added by the macOS/Linux input paths. This
-# is a ratchet for melonprime-full-refactor-plan-v4: Phase 0 fixes the current
-# scatter count, and Phase 2 lowers it after introducing the platform facade.
+# is a ratchet for melonprime-full-refactor-plan-v4/v6: V4 introduced the
+# platform facade, and V6 fixes the current post-Linux/macOS count.
 #
 # Scope is intentionally narrow: MelonPrime*.cpp/h under src/frontend/qt_sdl,
 # excluding MelonPrimePlatformInput.h because that file is the canonical
@@ -10,7 +10,7 @@
 # Input sites are not part of this budget.
 
 param(
-    [int]$Budget = 30,
+    [int]$Budget = 24,
     [int]$MaxList = 40,
     [switch]$Json
 )
