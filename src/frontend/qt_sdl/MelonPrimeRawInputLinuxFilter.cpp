@@ -51,6 +51,8 @@ struct LinuxRawInputFilter::Impl
 {
     std::atomic<int32_t> accX{ 0 };
     std::atomic<int32_t> accY{ 0 };
+    int32_t lastReadX = 0;
+    int32_t lastReadY = 0;
     std::atomic<bool>    available{ false };
     std::atomic<bool>    receivedMotion{ false };
     std::atomic<bool>    quit{ false };
@@ -330,14 +332,20 @@ bool LinuxRawInputFilter::hasReceivedMotion() const
 
 void LinuxRawInputFilter::fetchMouseDelta(int32_t& outDx, int32_t& outDy)
 {
-    outDx = m->accX.exchange(0, std::memory_order_acquire);
-    outDy = m->accY.exchange(0, std::memory_order_acquire);
+    const int32_t curX = m->accX.load(std::memory_order_acquire);
+    const int32_t curY = m->accY.load(std::memory_order_acquire);
+    outDx = curX - m->lastReadX;
+    outDy = curY - m->lastReadY;
+    m->lastReadX = curX;
+    m->lastReadY = curY;
 }
 
 void LinuxRawInputFilter::resetAll()
 {
     m->accX.store(0, std::memory_order_release);
     m->accY.store(0, std::memory_order_release);
+    m->lastReadX = 0;
+    m->lastReadY = 0;
     // receivedMotion is intentionally NOT cleared: it is a static property of
     // the session ("this X connection actually delivers raw motion") used to
     // gate raw-vs-fallback aim. Clearing it on every focus loss would flap

@@ -260,7 +260,7 @@ V1 S1–S12 / V2 S13–S15 / V3 S16–S17 / V4 S18–S20 を継承。V5 追加:
 |---|---|---|---|---|
 | 0 | 計測基盤 + 3プラットフォーム基準値 | 完了 | 2026-07-04 | `MelonPrimePerfProbe.h` + EmuThread 区間プローブ + カウンタ群 + `summarize-melonprime-perf.py`。mac dev ビルド green。基準値は ROM 実行後に追記 |
 | 1 | ホットパス網羅監査（証拠表） | 完了 | 2026-07-04 | §9 証拠表 45 行。RED×3（W1–W3）、YELLOW×17、WHITE×25。Phase 2 優先: P1-001→002→003 |
-| 2 | 入力ホットパス残渣除去（本丸A） | 未着手 | — | — |
+| 2 | 入力ホットパス残渣除去（本丸A） | 完了 | 2026-07-04 | W1 mac raw時warp廃止+閾値格納 / W2 panel→rawエッジreset / W3 IsXcb static / AimInputSource enum / P-48a load-first |
 | 3 | ペーシング調律（本丸B・計測ゲート） | 未着手 | — | — |
 | 4 | HUD/描画残渣（計測ゲート） | 未着手 | — | — |
 | 5 | invalidation 台帳 | 未着手 | — | — |

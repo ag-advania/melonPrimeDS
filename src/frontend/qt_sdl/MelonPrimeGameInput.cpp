@@ -37,14 +37,6 @@
 
 namespace MelonPrime {
 
-#if !defined(_WIN32)
-    // Recenter the OS cursor for the fallback (QCursor-delta) aim path.
-    static FORCE_INLINE void WarpCursorTo(int x, int y)
-    {
-        PlatformInput_WarpCursor(x, y);
-    }
-#endif
-
     alignas(64) static constexpr std::array<uint8_t, 16> MoveLUT = {
         0xF0, 0xB0, 0x70, 0xF0,  0xD0, 0x90, 0x50, 0xD0,
         0xE0, 0xA0, 0x60, 0xE0,  0xF0, 0xB0, 0x70, 0xF0,
@@ -203,41 +195,20 @@ namespace MelonPrime {
 #if !defined(_WIN32)
         bool haveMouseDelta = false;
 #if defined(__APPLE__) || defined(__linux__)
-#if defined(__APPLE__)
-        // RawInput-equivalent path: unaccelerated HID deltas accumulated since
-        // the last snapshot. Falls back to the QCursor delta when the HID
-        // manager is unavailable (Input Monitoring permission not granted).
-        if (PlatformInput_IsRawAimActive(m_platformRawFilter)) {
-            PlatformInput_FetchRawMouseDelta(m_platformRawFilter, m_input.mouseX, m_input.mouseY);
-            haveMouseDelta = true;
-        }
-#else
-        // Linux/X11: XInput2 raw deltas are the aim source. Relative axes are
-        // used as-is; absolute pointing devices (VirtualBox's integrated
-        // tablet) are converted to deltas per-device inside the filter, so
-        // XWarpPointer echoes and VBox host-position re-syncs cannot corrupt
-        // aim — warps never change a device's own axis state. The previous
-        // center-delta + warp-per-event scheme fought VBox's re-sync and
-        // produced a constant drift (host-pos minus center re-added forever).
-        // The Qt panel accumulator stays as the non-XCB/Wayland fallback.
-        // hasReceivedMotion: XWayland sessions accept the XI2 selection but
-        // never deliver raw events; the Qt fallback owns aim until the first
-        // real raw delta proves the session delivers them.
-        bool usedRawSource = false;
-        if (PlatformInput_IsRawAimActive(m_platformRawFilter)) {
-            PlatformInput_FetchRawMouseDelta(m_platformRawFilter, m_input.mouseX, m_input.mouseY);
-            haveMouseDelta = true;
-            usedRawSource = true;
-            if (m_cachedPanel)
-                m_cachedPanel->resetAimMouseDelta();   // fallback source unused; drop stale
-        } else if (m_cachedPanel) {
+        const bool hasPanel = (m_cachedPanel != nullptr);
+        const AimInputSource aimSrc = PlatformInput_ResolveAimSource(
+            m_platformRawFilter, hasPanel, haveMouseDelta,
+            m_input.mouseX, m_input.mouseY);
+
+#if defined(__linux__)
+        const bool rawActive = (aimSrc == AimInputSource::LinuxRaw);
+        if (rawActive && !m_platformRawAimWasActive && m_cachedPanel)
+            m_cachedPanel->resetAimMouseDelta();
+        m_platformRawAimWasActive = rawActive ? 1 : 0;
+
+        if (aimSrc == AimInputSource::PanelDelta)
             m_cachedPanel->getAimMouseDelta(m_input.mouseX, m_input.mouseY);
-            // The panel accumulator is authoritative even when zero (idle):
-            // falling through to QCursor::pos()-center would re-introduce a
-            // constant offset drift now that the cursor is no longer warped
-            // to center on every event.
-            haveMouseDelta = true;
-        }
+
         // MELONPRIME_INPUT_DEBUG=1: 1 Hz consumption-side stats (which source
         // feeds aim, and how much delta it produced). Debug-only cold branch.
         {
@@ -248,9 +219,14 @@ namespace MelonPrime {
                 s_sumX += m_input.mouseX;
                 s_sumY += m_input.mouseY;
                 if (++s_frames >= 60) {
+                    const char* srcName = "qcur";
+                    if (aimSrc == AimInputSource::LinuxRaw)
+                        srcName = "raw";
+                    else if (aimSrc == AimInputSource::PanelDelta)
+                        srcName = "panel";
                     fprintf(stderr,
                         "[MelonPrime] linux aim: src=%s have=%d sum60=(%d,%d) rawAvail=%d rawMotion=%d panel=%d\n",
-                        usedRawSource ? "raw" : "panel",
+                        srcName,
                         haveMouseDelta ? 1 : 0, s_sumX, s_sumY,
                         PlatformInput_IsRawAvailable(m_platformRawFilter) ? 1 : 0,
                         PlatformInput_IsRawAimActive(m_platformRawFilter) ? 1 : 0,
@@ -261,29 +237,34 @@ namespace MelonPrime {
             }
         }
 #endif
-#endif
         if (!haveMouseDelta)
         {
-            const QPoint currentPos = QCursor::pos();
-            m_input.mouseX = currentPos.x() - m_aimData.centerX;
-            m_input.mouseY = currentPos.y() - m_aimData.centerY;
+#if defined(__linux__)
+            if (!m_cachedPanel)
+#endif
+            {
+                const QPoint currentPos = QCursor::pos();
+                m_input.mouseX = currentPos.x() - m_aimData.centerX;
+                m_input.mouseY = currentPos.y() - m_aimData.centerY;
+            }
         }
 #if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
         if (MelonPrimePerf::IsFrameActive()) {
 #if defined(__APPLE__)
-            if (PlatformInput_IsRawAimActive(m_platformRawFilter) && haveMouseDelta)
+            if (aimSrc == AimInputSource::MacRaw)
                 MelonPrimePerf::CountInputSource(MelonPrimePerf::InputSource::MacRaw);
             else
                 MelonPrimePerf::CountInputSource(MelonPrimePerf::InputSource::QCursorFallback);
 #elif defined(__linux__)
-            if (usedRawSource)
+            if (aimSrc == AimInputSource::LinuxRaw)
                 MelonPrimePerf::CountInputSource(MelonPrimePerf::InputSource::LinuxRaw);
-            else if (m_cachedPanel)
+            else if (aimSrc == AimInputSource::PanelDelta)
                 MelonPrimePerf::CountInputSource(MelonPrimePerf::InputSource::PanelDelta);
             else
                 MelonPrimePerf::CountInputSource(MelonPrimePerf::InputSource::QCursorFallback);
 #endif
         }
+#endif
 #endif
 #endif
 
@@ -466,7 +447,7 @@ namespace MelonPrime {
             const QPoint center = GetAdjustedCenter();
             m_aimData.centerX = center.x();
             m_aimData.centerY = center.y();
-            WarpCursorTo(center.x(), center.y());
+            PlatformInput_WarpCursor(center.x(), center.y());
 
 #if defined(__APPLE__) || defined(__linux__)
             PlatformInput_ResetRawFilter(m_platformRawFilter);
@@ -603,8 +584,11 @@ namespace MelonPrime {
         // (the jump would be counted as motion). Cursor containment is the
         // panel's threshold warp, which re-seeds its own baseline.
         constexpr bool warpCursorAfterAim = false;
-#elif !defined(_WIN32)
-        constexpr bool warpCursorAfterAim = true;
+#elif defined(__APPLE__)
+        // V5 W1: raw-active mac uses GCMouse/IOHID deltas (warp-immune).
+        // QCursor fallback keeps per-frame recenter (Accessibility path).
+        const bool warpCursorAfterAim =
+            !PlatformInput_IsRawAimActive(m_platformRawFilter);
 #endif
 
         // P-29b: Combined early-exit gate.
@@ -672,7 +656,7 @@ namespace MelonPrime {
                         m_aimResidualY = resY;
 #if !defined(_WIN32)
                         if (warpCursorAfterAim)
-                            WarpCursorTo(m_aimData.centerX, m_aimData.centerY);
+                            PlatformInput_WarpCursor(m_aimData.centerX, m_aimData.centerY);
 #endif
                     }
                     return;
@@ -707,7 +691,7 @@ namespace MelonPrime {
                             m_aimResidualY = resY;
 #if !defined(_WIN32)
                             if (warpCursorAfterAim)
-                                WarpCursorTo(m_aimData.centerX, m_aimData.centerY);
+                                PlatformInput_WarpCursor(m_aimData.centerX, m_aimData.centerY);
 #endif
                         }
                         return;
@@ -729,7 +713,7 @@ namespace MelonPrime {
                         m_aimResidualY = resY;
 #if !defined(_WIN32)
                         if (warpCursorAfterAim)
-                            WarpCursorTo(m_aimData.centerX, m_aimData.centerY);
+                            PlatformInput_WarpCursor(m_aimData.centerX, m_aimData.centerY);
 #endif
                     }
                     return;
@@ -750,7 +734,7 @@ namespace MelonPrime {
 
 #if !defined(_WIN32)
             if (warpCursorAfterAim)
-                WarpCursorTo(m_aimData.centerX, m_aimData.centerY);
+                PlatformInput_WarpCursor(m_aimData.centerX, m_aimData.centerY);
 #endif
             return;
         }
@@ -759,7 +743,7 @@ namespace MelonPrime {
         const QPoint center = GetAdjustedCenter();
         m_aimData.centerX = center.x();
         m_aimData.centerY = center.y();
-        WarpCursorTo(center.x(), center.y());
+        PlatformInput_WarpCursor(center.x(), center.y());
 #if defined(__linux__)
         // See HandleAimEarlyReset: the warp must not be counted as motion.
         if (m_cachedPanel)

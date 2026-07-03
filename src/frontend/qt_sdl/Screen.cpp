@@ -301,8 +301,14 @@ void ScreenPanel::clipCursorCenter1px() {
 
 #if !defined(_WIN32)
     if (isVisible() && window() && window()->isActiveWindow()) {
-        const QPoint c = mapToGlobal(rect().center());
-        MelonPrime::PlatformInput_WarpCursor(c.x(), c.y());
+#if defined(__APPLE__) || defined(__linux__)
+        const auto* core = melonPrimeCore();
+        if (!core || !core->IsPlatformRawAimActive())
+#endif
+        {
+            const QPoint c = mapToGlobal(rect().center());
+            MelonPrime::PlatformInput_WarpCursor(c.x(), c.y());
+        }
     }
 #endif
 
@@ -672,7 +678,7 @@ void ScreenPanel::mouseMoveEvent(QMouseEvent* event)
 
 #include "MelonPrimeHudScreenCppMouseMove.inc"
 
-#if defined(MELONPRIME_DS) && defined(__linux__)
+#if defined(MELONPRIME_DS) && (defined(__linux__) || defined(__APPLE__))
     auto* const thread = emu->getEmuThread();
     auto* const core = thread ? thread->GetMelonPrimeCore() : nullptr;
     // MELONPRIME_INPUT_DEBUG=1: 1 Hz gate/event diagnostics for the Qt aim path.
@@ -695,7 +701,7 @@ void ScreenPanel::mouseMoveEvent(QMouseEvent* event)
                 core ? (core->isStylusMode ? 1 : 0) : -1,
                 core ? (core->isCursorMode ? 1 : 0) : -1,
                 core ? (core->IsInGame() ? 1 : 0) : -1,
-                core ? (core->IsLinuxRawAimActive() ? 1 : 0) : -1);
+                core ? (core->IsPlatformRawAimActive() ? 1 : 0) : -1);
             s_events = s_blocked = 0;
             s_lastLog = now;
         }
@@ -716,26 +722,22 @@ void ScreenPanel::mouseMoveEvent(QMouseEvent* event)
         const int offY = global.y() - center.y();
         const bool strayed = offX > 96 || offX < -96 || offY > 96 || offY < -96;
 
-        const auto warpToCenter = [&]() {
-            // Any warp invalidates the prev-position baseline so the jump is
-            // never counted as motion (and VirtualBox's follow-up re-sync
-            // event just re-seeds instead of producing a spurious delta).
+        if (core->IsPlatformRawAimActive()) {
+            // Platform raw owns aim deltas (warp-immune). Threshold containment only.
+#if defined(__linux__)
             aimLastGlobalValid.store(false, std::memory_order_release);
-            MelonPrime::PlatformInput_WarpCursor(center.x(), center.y());
-        };
-
-        if (core->IsLinuxRawAimActive()) {
-            // XInput2 owns aim deltas (warp-immune; see GameInput.cpp). The
-            // panel only keeps the hidden cursor inside the window, and only
-            // when it strays — warping every event fights VirtualBox's
-            // host-position re-sync and storms events.
-            aimLastGlobalValid.store(false, std::memory_order_release);
+#endif
             if (strayed)
                 MelonPrime::PlatformInput_WarpCursor(center.x(), center.y());
             return;
         }
 
+#if defined(__linux__)
         // Qt fallback (XWayland / sessions where raw motion never arrives):
+        const auto warpToCenter = [&]() {
+            aimLastGlobalValid.store(false, std::memory_order_release);
+            MelonPrime::PlatformInput_WarpCursor(center.x(), center.y());
+        };
         // previous-position differencing. Unlike the old center-delta +
         // warp-per-event scheme, consecutive positions are pure pointer
         // motion, so VirtualBox host re-syncs and our own containment warps
@@ -753,6 +755,11 @@ void ScreenPanel::mouseMoveEvent(QMouseEvent* event)
         if (strayed)
             warpToCenter();
         return;
+#elif defined(__APPLE__)
+        // QCursor fallback: delta from QCursor::pos() in GameInput; per-frame
+        // recenter stays in ProcessAimInputMouse when raw is unavailable.
+        return;
+#endif
     }
 #endif
 

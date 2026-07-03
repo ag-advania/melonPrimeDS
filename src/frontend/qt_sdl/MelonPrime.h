@@ -184,10 +184,13 @@ namespace MelonPrime {
         [[nodiscard]] FORCE_INLINE bool IsInGame() const { return m_flags.test(StateFlags::BIT_IN_GAME); }
         [[nodiscard]] bool ShouldForceSoftwareRenderer() const;
         [[nodiscard]] uint16_t GetInputMaskFast() const { return m_inputMaskFast; }
+#if defined(__APPLE__) || defined(__linux__)
+        // True when the platform raw filter owns aim deltas. ScreenPanel uses
+        // this for threshold containment warps (fallback uses Qt/panel path).
+        [[nodiscard]] bool IsPlatformRawAimActive() const;
 #if defined(__linux__)
-        // True when the XInput2 raw filter owns aim deltas. ScreenPanel uses
-        // this to skip the Qt center-delta accumulation/warp (fallback-only).
-        [[nodiscard]] bool IsLinuxRawAimActive() const;
+        [[nodiscard]] bool IsLinuxRawAimActive() const { return IsPlatformRawAimActive(); }
+#endif
 #endif
 
 #ifdef MELONPRIME_DS
@@ -590,6 +593,8 @@ namespace MelonPrime {
         // MelonPrime.h layout rule; guarded so Windows layout is untouched.
         // Owned via PlatformInput_AcquireRawFilter/ReleaseRawFilter.
         PlatformRawFilter* m_platformRawFilter = nullptr;
+        // Edge detect panel→raw transition for stale panel delta discard (V5 W2).
+        uint8_t m_platformRawAimWasActive = 0;
 #endif
 
         // =================================================================
