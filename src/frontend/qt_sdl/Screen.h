@@ -107,6 +107,11 @@ public:
     void resetAimMouseDelta() {
         aimMouseDeltaX.store(0, std::memory_order_release);
         aimMouseDeltaY.store(0, std::memory_order_release);
+#if defined(__linux__)
+        // Also drop the prev-position baseline so an external cursor jump
+        // (layout change, explicit warp) is never counted as motion.
+        aimLastGlobalValid.store(false, std::memory_order_release);
+#endif
     }
 
 public slots:
@@ -173,6 +178,13 @@ protected:
     int wheelDelta = 0;
     std::atomic<std::int32_t> aimMouseDeltaX{ 0 };
     std::atomic<std::int32_t> aimMouseDeltaY{ 0 };
+#if defined(__linux__)
+    // Previous-position differencing baseline for the Qt fallback aim path.
+    // aimLastGlobal is GUI-thread-only; the validity flag is atomic because
+    // the emu thread invalidates it via resetAimMouseDelta().
+    QPoint aimLastGlobal;
+    std::atomic<bool> aimLastGlobalValid{ false };
+#endif
     void wheelEvent(QWheelEvent* event) override;
 #endif
 

@@ -9,6 +9,8 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <utility>
 #include <QCursor>
@@ -232,14 +234,46 @@ namespace MelonPrime {
         // center-delta + warp-per-event scheme fought VBox's re-sync and
         // produced a constant drift (host-pos minus center re-added forever).
         // The Qt panel accumulator stays as the non-XCB/Wayland fallback.
-        if (m_linuxRawFilter && m_linuxRawFilter->isAvailable()) {
+        // hasReceivedMotion: XWayland sessions accept the XI2 selection but
+        // never deliver raw events; the Qt fallback owns aim until the first
+        // real raw delta proves the session delivers them.
+        bool usedRawSource = false;
+        if (m_linuxRawFilter && m_linuxRawFilter->isAvailable()
+            && m_linuxRawFilter->hasReceivedMotion()) {
             m_linuxRawFilter->fetchMouseDelta(m_input.mouseX, m_input.mouseY);
             haveMouseDelta = true;
+            usedRawSource = true;
             if (m_cachedPanel)
                 m_cachedPanel->resetAimMouseDelta();   // fallback source unused; drop stale
         } else if (m_cachedPanel) {
             m_cachedPanel->getAimMouseDelta(m_input.mouseX, m_input.mouseY);
-            haveMouseDelta = (m_input.mouseX | m_input.mouseY) != 0;
+            // The panel accumulator is authoritative even when zero (idle):
+            // falling through to QCursor::pos()-center would re-introduce a
+            // constant offset drift now that the cursor is no longer warped
+            // to center on every event.
+            haveMouseDelta = true;
+        }
+        // MELONPRIME_INPUT_DEBUG=1: 1 Hz consumption-side stats (which source
+        // feeds aim, and how much delta it produced). Debug-only cold branch.
+        {
+            static const bool s_inputDbg = std::getenv("MELONPRIME_INPUT_DEBUG") != nullptr;
+            if (UNLIKELY(s_inputDbg)) {
+                static int32_t s_sumX = 0, s_sumY = 0;
+                static int s_frames = 0;
+                s_sumX += m_input.mouseX;
+                s_sumY += m_input.mouseY;
+                if (++s_frames >= 60) {
+                    fprintf(stderr,
+                        "[MelonPrime] linux aim: src=%s have=%d sum60=(%d,%d) rawAvail=%d rawMotion=%d panel=%d\n",
+                        usedRawSource ? "raw" : "panel",
+                        haveMouseDelta ? 1 : 0, s_sumX, s_sumY,
+                        (m_linuxRawFilter && m_linuxRawFilter->isAvailable()) ? 1 : 0,
+                        (m_linuxRawFilter && m_linuxRawFilter->hasReceivedMotion()) ? 1 : 0,
+                        m_cachedPanel ? 1 : 0);
+                    s_sumX = s_sumY = 0;
+                    s_frames = 0;
+                }
+            }
         }
 #endif
         if (!haveMouseDelta)
@@ -437,6 +471,10 @@ namespace MelonPrime {
 #elif defined(__linux__)
             if (m_linuxRawFilter)
                 m_linuxRawFilter->resetAll();
+            // Drop the panel fallback's prev-position baseline too: the warp
+            // above must not be counted as motion by the next mouse event.
+            if (m_cachedPanel)
+                m_cachedPanel->resetAimMouseDelta();
 #endif
 #endif
         }
@@ -558,12 +596,12 @@ namespace MelonPrime {
         m_nativeAimDeltaX = 0;
         m_nativeAimDeltaY = 0;
 #if defined(__linux__)
-        // With XInput2 active, deltas are warp-immune (device-level) and the
-        // panel's threshold warp handles cursor containment; a per-frame warp
-        // here would just fight VirtualBox's host-position re-sync. Only the
-        // QCursor fallback needs the per-frame recenter for its center-delta.
-        const bool warpCursorAfterAim =
-            !(m_linuxRawFilter && m_linuxRawFilter->isAvailable());
+        // Never warp per-frame on Linux. XInput2 deltas are warp-immune
+        // (device-level); the Qt fallback uses previous-position differencing
+        // in ScreenPanel::mouseMoveEvent, which a warp here would corrupt
+        // (the jump would be counted as motion). Cursor containment is the
+        // panel's threshold warp, which re-seeds its own baseline.
+        constexpr bool warpCursorAfterAim = false;
 #elif !defined(_WIN32)
         constexpr bool warpCursorAfterAim = true;
 #endif
@@ -721,6 +759,11 @@ namespace MelonPrime {
         m_aimData.centerX = center.x();
         m_aimData.centerY = center.y();
         WarpCursorTo(center.x(), center.y());
+#if defined(__linux__)
+        // See HandleAimEarlyReset: the warp must not be counted as motion.
+        if (m_cachedPanel)
+            m_cachedPanel->resetAimMouseDelta();
+#endif
 #endif
         m_isLayoutChangePending = false;
         m_aimResidualX = 0;

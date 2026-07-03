@@ -11,10 +11,18 @@
 #include <chrono>
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
 #include <mutex>
 #include <poll.h>
 #include <thread>
 #include <unordered_map>
+
+// MELONPRIME_INPUT_DEBUG=1 enables 1 Hz pipeline diagnostics on stderr.
+static bool MelonPrimeInputDebug()
+{
+    static const bool enabled = std::getenv("MELONPRIME_INPUT_DEBUG") != nullptr;
+    return enabled;
+}
 
 namespace MelonPrime {
 
@@ -29,6 +37,10 @@ void LinuxWarpCursorGlobal(int x, int y)
         s_warpDisplay = XOpenDisplay(nullptr);
     if (!s_warpDisplay)
         return;
+
+    // Before the warp: the position jump (or VBox's follow-up re-sync) must
+    // never be differenced into aim motion by the absolute-device path.
+    LinuxRawInputFilter::NotifyCursorWarp();
 
     const Window root = DefaultRootWindow(s_warpDisplay);
     XWarpPointer(s_warpDisplay, None, root, 0, 0, 0, 0, x, y);
@@ -65,9 +77,14 @@ struct LinuxRawInputFilter::Impl
         bool absolute[2] = { false, false };
         bool hasLast[2] = { false, false };
         double last[2] = { 0.0, 0.0 };
+        // Absolute axes report device units (VBox tablet: 0..32767 across the
+        // screen). Scale converts a device-unit diff into screen pixels so
+        // sensitivity matches relative mice (~17x too fast otherwise —
+        // observed as an instant pitch slam on game join).
+        double scale[2] = { 1.0, 1.0 };
     };
     std::unordered_map<int, AxisState> axisStates;   // key: sourceid
-    std::atomic<bool> absBaseInvalid{ false };       // set by resetAll()
+    std::atomic<bool> absBaseInvalid{ false };       // set by resetAll()/warps
 
     static void QueryAxisModes(Display* dpy, int sourceid, AxisState& st)
     {
@@ -76,18 +93,31 @@ struct LinuxRawInputFilter::Impl
         XIDeviceInfo* info = XIQueryDevice(dpy, sourceid, &count);
         if (!info)
             return;
+        const int screen = DefaultScreen(dpy);
+        const double screenDim[2] = {
+            static_cast<double>(DisplayWidth(dpy, screen)),
+            static_cast<double>(DisplayHeight(dpy, screen)),
+        };
         for (int i = 0; i < count; ++i) {
             for (int c = 0; c < info[i].num_classes; ++c) {
                 const XIAnyClassInfo* cls = info[i].classes[c];
                 if (cls->type != XIValuatorClass)
                     continue;
                 const auto* v = reinterpret_cast<const XIValuatorClassInfo*>(cls);
-                if (v->number == 0 || v->number == 1)
-                    st.absolute[v->number] = (v->mode == XIModeAbsolute);
+                if (v->number != 0 && v->number != 1)
+                    continue;
+                st.absolute[v->number] = (v->mode == XIModeAbsolute);
+                if (st.absolute[v->number] && v->max > v->min)
+                    st.scale[v->number] = screenDim[v->number] / (v->max - v->min);
             }
         }
         XIFreeDeviceInfo(info);
     }
+
+    // 1 Hz debug counters (filter thread only).
+    long long dbgEvents = 0;
+    double dbgSumX = 0.0, dbgSumY = 0.0;
+    std::chrono::steady_clock::time_point dbgLast = std::chrono::steady_clock::now();
 
     void AccumulateRawMotion(Display* dpy, const XIRawEvent* raw)
     {
@@ -102,40 +132,84 @@ struct LinuxRawInputFilter::Impl
         }
 
         AxisState& st = axisStates[raw->sourceid];
-        if (!st.known)
+        if (!st.known) {
             QueryAxisModes(dpy, raw->sourceid, st);
+            if (MelonPrimeInputDebug())
+                std::fprintf(stderr,
+                    "[MelonPrime] linux input: raw source %d axis modes: X=%s Y=%s\n",
+                    raw->sourceid,
+                    st.absolute[0] ? "abs" : "rel",
+                    st.absolute[1] ? "abs" : "rel");
+        }
 
         // XInput2 reports one value per set bit in valuators.mask, in axis
-        // order. Only axes 0 (X) and 1 (Y) are aim input; higher axes are
-        // scroll wheel / tilt on many drivers and must never reach the aim
-        // path (the previous fallback fed wheel motion into X).
-        const double* values = raw->raw_values;
+        // order, in BOTH arrays: raw_values (untransformed device values) and
+        // valuators.values (transformed). Only axes 0 (X) and 1 (Y) are aim
+        // input; higher axes are scroll wheel / tilt on many drivers and must
+        // never reach the aim path.
+        //
+        // For ABSOLUTE devices use valuators.values: some virtual pointers
+        // (VirtualBox tablet) deliver zeros in raw_values while the real
+        // position is only present in the transformed array. For RELATIVE
+        // devices prefer raw_values (unaccelerated), falling back to the
+        // transformed value when the raw one is zero.
+        const double* rawVals = raw->raw_values;
+        const double* xfVals  = raw->valuators.values;
         double d[2] = { 0.0, 0.0 };
         for (int axis = 0; axis < raw->valuators.mask_len * 8; ++axis) {
             if (!TestBit(raw->valuators.mask, axis))
                 continue;
-            const double value = *values++;
+            const double rawValue = *rawVals++;
+            const double xfValue  = *xfVals++;
             if (axis > 1)
                 continue;
             if (st.absolute[axis]) {
-                if (st.hasLast[axis])
-                    d[axis] = value - st.last[axis];
+                const double value = (xfValue != 0.0) ? xfValue : rawValue;
+                if (st.hasLast[axis]) {
+                    const double diffPx = (value - st.last[axis]) * st.scale[axis];
+                    // Teleport guard: a window re-entry / warp re-sync shows up
+                    // as one huge positional jump. Re-seed instead of slamming
+                    // the aim (observed: a single +18786-unit event pinned the
+                    // pitch on game join).
+                    if (diffPx > -300.0 && diffPx < 300.0)
+                        d[axis] = diffPx;
+                }
                 st.last[axis] = value;
                 st.hasLast[axis] = true;
             } else {
-                d[axis] = value;
+                d[axis] = (rawValue != 0.0) ? rawValue : xfValue;
             }
         }
 
         const int32_t dx = static_cast<int32_t>(std::llround(d[0]));
         const int32_t dy = static_cast<int32_t>(std::llround(d[1]));
 
-        if ((dx | dy) != 0)
+        if ((dx | dy) != 0) {
+            if (MelonPrimeInputDebug()
+                && !receivedMotion.load(std::memory_order_relaxed))
+                std::fprintf(stderr,
+                    "[MelonPrime] linux input: first raw motion (src %d, dx=%d dy=%d)\n",
+                    raw->sourceid, dx, dy);
             receivedMotion.store(true, std::memory_order_release);
+        }
         if (dx != 0)
             accX.fetch_add(dx, std::memory_order_release);
         if (dy != 0)
             accY.fetch_add(dy, std::memory_order_release);
+
+        if (MelonPrimeInputDebug()) {
+            ++dbgEvents;
+            dbgSumX += d[0];
+            dbgSumY += d[1];
+            const auto now = std::chrono::steady_clock::now();
+            if (now - dbgLast >= std::chrono::seconds(1)) {
+                std::fprintf(stderr,
+                    "[MelonPrime] linux input: raw 1s: events=%lld sumX=%.1f sumY=%.1f\n",
+                    dbgEvents, dbgSumX, dbgSumY);
+                dbgEvents = 0; dbgSumX = dbgSumY = 0.0;
+                dbgLast = now;
+            }
+        }
     }
 
     void ThreadMain()
@@ -264,7 +338,10 @@ void LinuxRawInputFilter::resetAll()
 {
     m->accX.store(0, std::memory_order_release);
     m->accY.store(0, std::memory_order_release);
-    m->receivedMotion.store(false, std::memory_order_release);
+    // receivedMotion is intentionally NOT cleared: it is a static property of
+    // the session ("this X connection actually delivers raw motion") used to
+    // gate raw-vs-fallback aim. Clearing it on every focus loss would flap
+    // the aim source. Only the accumulators and abs baselines are transient.
     // Re-seed absolute-device baselines on the next event so a focus gap
     // cannot produce one huge catch-up delta.
     m->absBaseInvalid.store(true, std::memory_order_release);
@@ -274,6 +351,13 @@ namespace {
     std::mutex s_singletonMutex;
     LinuxRawInputFilter* s_instance = nullptr;
     int s_refCount = 0;
+}
+
+void LinuxRawInputFilter::NotifyCursorWarp()
+{
+    std::lock_guard<std::mutex> lock(s_singletonMutex);
+    if (s_instance)
+        s_instance->m->absBaseInvalid.store(true, std::memory_order_release);
 }
 
 LinuxRawInputFilter* LinuxRawInputFilter::Acquire()

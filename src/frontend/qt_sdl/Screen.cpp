@@ -28,6 +28,7 @@
 #include <QGuiApplication>
 
 #include <QDateTime>
+#include <cstdlib>
 
 #include "OpenGLSupport.h"
 #include "duckstation/gl/context.h"
@@ -670,6 +671,31 @@ void ScreenPanel::mouseMoveEvent(QMouseEvent* event)
 #if defined(MELONPRIME_DS) && defined(__linux__)
     auto* const thread = emu->getEmuThread();
     auto* const core = thread ? thread->GetMelonPrimeCore() : nullptr;
+    // MELONPRIME_INPUT_DEBUG=1: 1 Hz gate/event diagnostics for the Qt aim path.
+    static const bool s_aimDbg = getenv("MELONPRIME_INPUT_DEBUG") != nullptr;
+    if (Q_UNLIKELY(s_aimDbg)) {
+        static int s_events = 0, s_blocked = 0;
+        static qint64 s_lastLog = 0;
+        const bool gateOk = core
+            && core->isFocused.load(std::memory_order_acquire)
+            && !core->isStylusMode && !core->isCursorMode && core->IsInGame();
+        gateOk ? ++s_events : ++s_blocked;
+        const qint64 now = QDateTime::currentMSecsSinceEpoch();
+        if (now - s_lastLog >= 1000) {
+            fprintf(stderr,
+                "[MelonPrime] linux panel: 1s moveEvents gateOk=%d blocked=%d"
+                " (core=%d focused=%d stylus=%d cursor=%d inGame=%d rawActive=%d)\n",
+                s_events, s_blocked,
+                core ? 1 : 0,
+                core ? (core->isFocused.load(std::memory_order_acquire) ? 1 : 0) : -1,
+                core ? (core->isStylusMode ? 1 : 0) : -1,
+                core ? (core->isCursorMode ? 1 : 0) : -1,
+                core ? (core->IsInGame() ? 1 : 0) : -1,
+                core ? (core->IsLinuxRawAimActive() ? 1 : 0) : -1);
+            s_events = s_blocked = 0;
+            s_lastLog = now;
+        }
+    }
     if (core
         && core->isFocused.load(std::memory_order_acquire)
         && !core->isStylusMode
@@ -682,14 +708,28 @@ void ScreenPanel::mouseMoveEvent(QMouseEvent* event)
 #else
         const QPoint global = event->globalPos();
 #endif
-        const int dx = global.x() - center.x();
-        const int dy = global.y() - center.y();
+        const int offX = global.x() - center.x();
+        const int offY = global.y() - center.y();
+        const bool strayed = offX > 96 || offX < -96 || offY > 96 || offY < -96;
+
+        const auto warpToCenter = [&]() {
+            // Any warp invalidates the prev-position baseline so the jump is
+            // never counted as motion (and VirtualBox's follow-up re-sync
+            // event just re-seeds instead of producing a spurious delta).
+            aimLastGlobalValid.store(false, std::memory_order_release);
+            if (QGuiApplication::platformName() == QStringLiteral("xcb"))
+                MelonPrime::LinuxWarpCursorGlobal(center.x(), center.y());
+            else
+                QCursor::setPos(center);
+        };
+
         if (core->IsLinuxRawAimActive()) {
             // XInput2 owns aim deltas (warp-immune; see GameInput.cpp). The
             // panel only keeps the hidden cursor inside the window, and only
             // when it strays — warping every event fights VirtualBox's
             // host-position re-sync and storms events.
-            if (dx > 96 || dx < -96 || dy > 96 || dy < -96) {
+            aimLastGlobalValid.store(false, std::memory_order_release);
+            if (strayed) {
                 if (QGuiApplication::platformName() == QStringLiteral("xcb"))
                     MelonPrime::LinuxWarpCursorGlobal(center.x(), center.y());
                 else
@@ -697,14 +737,24 @@ void ScreenPanel::mouseMoveEvent(QMouseEvent* event)
             }
             return;
         }
-        if ((dx | dy) != 0) {
-            aimMouseDeltaX.fetch_add(dx, std::memory_order_release);
-            aimMouseDeltaY.fetch_add(dy, std::memory_order_release);
-            if (QGuiApplication::platformName() == QStringLiteral("xcb"))
-                MelonPrime::LinuxWarpCursorGlobal(center.x(), center.y());
-            else
-                QCursor::setPos(center);
+
+        // Qt fallback (XWayland / sessions where raw motion never arrives):
+        // previous-position differencing. Unlike the old center-delta +
+        // warp-per-event scheme, consecutive positions are pure pointer
+        // motion, so VirtualBox host re-syncs and our own containment warps
+        // cannot be double-counted (the baseline is re-seeded around warps).
+        if (aimLastGlobalValid.load(std::memory_order_acquire)) {
+            const int dx = global.x() - aimLastGlobal.x();
+            const int dy = global.y() - aimLastGlobal.y();
+            if ((dx | dy) != 0) {
+                aimMouseDeltaX.fetch_add(dx, std::memory_order_release);
+                aimMouseDeltaY.fetch_add(dy, std::memory_order_release);
+            }
         }
+        aimLastGlobal = global;
+        aimLastGlobalValid.store(true, std::memory_order_release);
+        if (strayed)
+            warpToCenter();
         return;
     }
 #endif

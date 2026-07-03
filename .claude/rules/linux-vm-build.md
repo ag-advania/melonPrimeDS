@@ -168,10 +168,31 @@ CI Ubuntu workflow uses the same dependency set; see [build.md](build.md) Linux 
 | `guestcontrol` waits forever | Log into Ubuntu **desktop** first |
 | CMake embed build info error | Use `guest/guest-build-only.sh` (clears stale cache, passes `-D` flags) |
 | `Protocol error` on `/mnt/mp` | Share is already mounted; build can still proceed |
-| Aim does not move | Confirm `echo "$XDG_SESSION_TYPE"` is `x11`; launch from terminal and check `/tmp/melonprime-linux.log`; Linux should use `ScreenPanel::mouseMoveEvent` deltas even if RawMotion logs active |
+| Aim does not move | **Turn VirtualBox mouse integration OFF** (Mac host key = Left ⌘ → **Left ⌘ + I**, then click into the VM to capture). See the section below — verified 2026-07-03 |
 | Aim spins or drifts | Suspect failed recenter in fallback mode; on X11 all recenter paths must use `LinuxWarpCursorGlobal` / `XWarpPointer` |
 | Cursor stays hidden after Escape | `ScreenPanel::unfocus()` must call `unclip()` on Linux, not only on Windows |
-| RawMotion never appears in VM | This is no longer fatal for aim; use **Ubuntu on Xorg** and test after clicking the game panel so Qt focus is active |
+| RawMotion never appears in VM | Run with `MELONPRIME_INPUT_DEBUG=1` and read the `[MelonPrime] linux input:` lines; use **Ubuntu on Xorg** and test after clicking the game panel so Qt focus is active |
+
+## Mouse integration and aim testing (verified 2026-07-03)
+
+With VirtualBox **mouse integration ON**, the guest pointer is an absolute tablet device
+(`MELONPRIME_INPUT_DEBUG=1` shows `raw source N axis modes: X=abs Y=abs`). FPS mouse-look
+cannot work in that mode: the guest only receives events while the **host** cursor is over the
+VM window, and the guest cannot recenter the host cursor — the (hidden) pointer leaves the
+window or pegs at a screen edge within a second and input stops. The runtime handles the abs
+device as well as possible (pixel scaling from the XI axis range, ±300px teleport guard, warp
+re-seeding), but sustained turning is structurally impossible.
+
+For aim testing, disable integration so VBox exposes a **relative** mouse:
+
+1. Focus the VM window and press **Host + I** (Mac host: **Left ⌘ + I**), then click into the
+   VM to capture the mouse (release with the Host key). Permanent alternative:
+   `VBoxManage modifyvm "melonprime-ubuntu" --mouse ps2`.
+2. Verify with `MELONPRIME_INPUT_DEBUG=1 ./melonPrimeDS 2>&1 | grep MelonPrime`:
+   a new `raw source N axis modes: X=rel Y=rel` line appears, `raw 1s:` lines keep flowing
+   while moving, and `linux aim: src=raw sum60=(...)` shows nonzero consumption in-game.
+
+Real Linux hardware mice are relative devices from the start; this constraint is VM-only.
 
 ## Alternative: git clone inside guest
 
