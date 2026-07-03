@@ -1702,7 +1702,46 @@ Local verification at final snapshot:
 
 ## 24.5 Post-V4 roadmap
 
-V4 is complete (`completed/melonprime-full-refactor-plan-v4.md`). The next
-investigation and phase plan for `highres_fonts_v3` lives in
-[notes/melonprime-highres-fonts-v3-refactor-roadmap.md](notes/melonprime-highres-fonts-v3-refactor-roadmap.md)
-(per-frame patch reduction, input/warp cleanup, HUD CPU redraw, Phases 0–10).
+V4 is complete (`completed/melonprime-full-refactor-plan-v4.md`). V5 performance
+work (Phase 0–7) is complete (`completed/melonprime-full-refactor-plan-v5.md`).
+Follow-on investigation notes remain in
+[notes/melonprime-highres-fonts-v3-refactor-roadmap.md](notes/melonprime-highres-fonts-v3-refactor-roadmap.md).
+
+---
+
+## 25. Round 10 (V5) — Measured performance pass (2026-07-04)
+
+**Central theme:** Non-Windows hot-path waste removal + frame-time measurement
+infrastructure. Windows do-not-touch paths (P-11..P-47, aim math, RunFrameHook
+structure) were not modified.
+
+**Measurement policy:** From Round 10 onward, optimization effect columns in this
+document should cite `MELONPRIME_PERF=1` numbers when available. Estimated cycle
+tables remain historical context for Rounds 1–9.
+
+### 25.1 Status list
+
+| ID | Category | Status | Target | Effect (expected / pending ROM) |
+|---|---|---|---|---|
+| V5-0 | Measurement | ✅ | `MelonPrimePerfProbe.h`, `EmuThread.cpp` | Section timers + counters; release binary clean (S22) |
+| V5-2a | Syscall | ✅ | mac raw aim | CGWarp per aim frame → 0 @ raw active |
+| V5-2b | Atomic | ✅ | Linux panel | `resetAimMouseDelta` per frame → panel→raw edge only |
+| V5-2c | String/Qt | ✅ | `PlatformInput_IsXcb()` | `platformName()` once at static init |
+| V5-2d | Atomic | ✅ | mac/Linux filters | `exchange(0)` → load-first delta (P-48a) |
+| V5-2e | Structure | ✅ | `AimInputSource` enum | Single resolve point in `PlatformInput_ResolveAimSource` |
+| V5-3 | Pacing | ✅ | `EmuThread.cpp` non-Win | Coarse sleep margin 1.0→0.5 ms |
+| V5-4b | HUD CPU | ⏸ | element render cache | Deferred — QPainter dominance not confirmed by ROM perf log |
+| V5-6 | Stretch | ❌ Closed | W7/OsdColor edge, RAM budget, GCMouse queue | No ROM baseline; no change |
+
+### 25.2 Commits (branch `highres_fonts_v3`)
+
+- `9ff53250` Phase 0 perf probe
+- `314513b3` Phase 1 audit table
+- `d8313ea0` Phase 2 input hot path
+- `59a5ca4c` Phase 3 pacing margin
+
+### 25.3 Remaining manual verification
+
+- S18/S19/S20 smoke (mac/Linux aim lifecycle)
+- S21 frame-time before/after with `MELONPRIME_PERF=1` + ROM soak
+- Fill Phase 0 baseline table in completed V5 plan after measurement
