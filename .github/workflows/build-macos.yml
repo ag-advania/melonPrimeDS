@@ -58,7 +58,12 @@ jobs:
         with:
           configurePreset: release-mac-${{ matrix.arch }}
           buildPreset: release-mac-${{ matrix.arch }}
-          configurePresetAdditionalArgs: "['-DMELONDS_EMBED_BUILD_INFO=ON']"
+          configurePresetAdditionalArgs: "['-DMELONDS_EMBED_BUILD_INFO=ON', '-DMELONPRIME_ENABLE_DEVELOPER_FEATURES=OFF']"
+
+      - name: Verify app signature
+        shell: bash
+        run: |
+          codesign --verify --deep --strict build/release-mac-${{ matrix.arch }}/melonPrimeDS.app
 
       - name: Compress app bundle
         shell: bash
@@ -116,6 +121,7 @@ jobs:
           cp -a arm64/melonPrimeDS.app melonPrimeDS.app
           cp melonPrimeDS melonPrimeDS.app/Contents/MacOS/melonPrimeDS
           codesign -s - --deep melonPrimeDS.app
+          codesign --verify --deep --strict melonPrimeDS.app
           zip -r -y melonPrimeDS-macOS-universal.zip melonPrimeDS.app
 
       - name: Upload artifact
