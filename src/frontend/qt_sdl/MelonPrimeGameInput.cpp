@@ -5,6 +5,7 @@
 #include "Screen.h"
 #include "MelonPrimeDef.h"
 #include "MelonPrimePlatformInput.h"
+#include "MelonPrimePerfProbe.h"
 #include "MelonPrimeGameRomAddrTable.h"
 #include "MelonPrimeZoomStatus.h"
 
@@ -179,6 +180,10 @@ namespace MelonPrime {
             m_input.press = ProjectPressMask(hk.pressed | emuInstance->joyHotkeyPress);
         else
             m_input.press = 0;
+#if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+        if (MelonPrimePerf::IsFrameActive() && rawFilter)
+            MelonPrimePerf::CountInputSource(MelonPrimePerf::InputSource::WinRaw);
+#endif
 #else
         const uint64_t hotDownMask = emuInstance->hotkeyMask;
         if constexpr (!kReentrant)
@@ -263,6 +268,23 @@ namespace MelonPrime {
             m_input.mouseX = currentPos.x() - m_aimData.centerX;
             m_input.mouseY = currentPos.y() - m_aimData.centerY;
         }
+#if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+        if (MelonPrimePerf::IsFrameActive()) {
+#if defined(__APPLE__)
+            if (PlatformInput_IsRawAimActive(m_platformRawFilter) && haveMouseDelta)
+                MelonPrimePerf::CountInputSource(MelonPrimePerf::InputSource::MacRaw);
+            else
+                MelonPrimePerf::CountInputSource(MelonPrimePerf::InputSource::QCursorFallback);
+#elif defined(__linux__)
+            if (usedRawSource)
+                MelonPrimePerf::CountInputSource(MelonPrimePerf::InputSource::LinuxRaw);
+            else if (m_cachedPanel)
+                MelonPrimePerf::CountInputSource(MelonPrimePerf::InputSource::PanelDelta);
+            else
+                MelonPrimePerf::CountInputSource(MelonPrimePerf::InputSource::QCursorFallback);
+#endif
+        }
+#endif
 #endif
 
         if constexpr (!kReentrant)

@@ -2,7 +2,7 @@
 
 **作成日:** 2026-07-04
 **対象ブランチ:** `highres_fonts_v3`
-**ステータス:** 未着手
+**ステータス:** Phase 0 完了（2026-07-04）
 **前提:** [V1](completed/melonprime-full-refactor-plan.md)〜[V4](completed/melonprime-full-refactor-plan-v4.md) の後継。
 構造的負債（リテラル・パッチライフサイクル・HUDスキーマ・プラットフォーム散乱）は V1–V4 の
 ラチェットで固定済み。**V5 はパフォーマンス（低遅延・低CPU・フレームタイム安定）を主目的**とする。
@@ -258,7 +258,7 @@ V1 S1–S12 / V2 S13–S15 / V3 S16–S17 / V4 S18–S20 を継承。V5 追加:
 
 | Phase | 内容 | 状態 | 完了日 | 結果メモ |
 |---|---|---|---|---|
-| 0 | 計測基盤 + 3プラットフォーム基準値 | 未着手 | — | — |
+| 0 | 計測基盤 + 3プラットフォーム基準値 | 完了 | 2026-07-04 | `MelonPrimePerfProbe.h` + EmuThread 区間プローブ + カウンタ群 + `summarize-melonprime-perf.py`。mac dev ビルド green。基準値は ROM 実行後に追記 |
 | 1 | ホットパス網羅監査（証拠表） | 未着手 | — | — |
 | 2 | 入力ホットパス残渣除去（本丸A） | 未着手 | — | — |
 | 3 | ペーシング調律（本丸B・計測ゲート） | 未着手 | — | — |
@@ -273,7 +273,18 @@ V1 S1–S12 / V2 S13–S15 / V3 S16–S17 / V4 S18–S20 を継承。V5 追加:
 - Linux raw時: `resetAimMouseDelta()` 毎フレーム（GameInput.cpp:227）
 - `platformName()` QString比較: PlatformInput.h 2箇所
 - ホットパス gameplay ファイルの per-frame Config 参照: 0件（規律維持を確認）
-- 計測基盤: 存在せず（`MELONPRIME_PERF` 等 0件）
+- 計測基盤: **`MelonPrimePerfProbe.h`**（`MELONPRIME_ENABLE_DEVELOPER_FEATURES` + `MELONPRIME_PERF=1`）。リリース構成ではシンボル/文字列ゼロを確認済み（S22）
+
+### Phase 0 基準値（計測手順 — ROM 実行後に数値を追記）
+
+developer ビルドで `MELONPRIME_PERF=1 ./melonPrimeDS 2>&1 | tee perf.log`。終了時に stderr へ histogram。
+集計: `python3 .claude/skills/summarize-melonprime-perf.py perf.log`
+
+| プラットフォーム | p50 | p95 | p99 | max | 備考 |
+|---|---:|---:|---:|---:|---|
+| macOS | — | — | — | — | dev build 導入済み。要 ROM ソーク |
+| Linux VM | — | — | — | — | 未計測 |
+| Windows | — | — | — | — | 未計測 |
 - ドメインLOC: raw入力 2,366 / HUD 12,410 / パッチ・フック 6,239 / ゲーム層 4,747 / 設定UI 5,675
 
 ---

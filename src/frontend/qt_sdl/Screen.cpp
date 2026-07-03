@@ -52,6 +52,7 @@
 #ifdef MELONPRIME_DS
 #include "MelonPrime.h"
 #include "MelonPrimePlatformInput.h"
+#include "MelonPrimePerfProbe.h"
 #include "MelonPrimeHudPropSchema.inc"
 
 #ifdef MELONPRIME_CUSTOM_HUD
