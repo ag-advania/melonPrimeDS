@@ -209,10 +209,16 @@ void EmuThread::run()
             {
                 double targetTime = curtime + frameLimitError;
 
-                // Coarse sleep: SDL_Delay with 1.0ms safety margin for spin.
-                // P-11's NtSetTimerResolution(0.5ms) makes this tight margin safe.
-                // (Was 1.5ms with timeBeginPeriod(1ms).)
-                double coarseMs = frameLimitError * 1000.0 - 1.0;
+                // Coarse sleep: SDL_Delay with a platform-specific safety margin
+                // before the QPC spin phase (P-12). Windows keeps 1.0ms for
+                // NtSetTimerResolution(0.5ms). Non-Windows uses 0.5ms (V5 Phase 3)
+                // until Phase 0 ROM baselines validate a tighter value.
+#ifdef _WIN32
+                constexpr double kCoarseSleepMarginMs = 1.0;
+#else
+                constexpr double kCoarseSleepMarginMs = 0.5;
+#endif
+                double coarseMs = frameLimitError * 1000.0 - kCoarseSleepMarginMs;
                 MelonPrimePerf::SectionBegin(MelonPrimePerf::Section::LimiterSleep);
                 if (coarseMs > 0.5)
                     SDL_Delay(static_cast<Uint32>(coarseMs));
