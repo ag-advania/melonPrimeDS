@@ -288,20 +288,14 @@ protected:
                 // Text → Gauge: gauge at independent pos, text derived from gauge
                 QPoint gp = dsPos(c.GetInt(MP_HUD_PROP_KEY_HudHpGaugePosAnchor), c.GetInt(MP_HUD_PROP_KEY_HudHpGaugePosX), c.GetInt(MP_HUD_PROP_KEY_HudHpGaugePosY));
                 gx = gp.x(); gy = gp.y();
-                int egx = gx - (ori == 0 ? glen * galign / 2 : 0);
-                int egy = gy - (ori == 1 ? glen * galign / 2 : 0);
-                int gW  = (ori == 0) ? glen : gwid;
-                int gH  = (ori == 0) ? gwid : glen;
+                int egx = gx, egy = gy;
+                MelonPrime::HudGeometry::ApplyGaugeAlign(egx, egy, ori, glen, galign);
                 int tAnc = c.GetInt(MP_HUD_PROP_KEY_HudHpTextAnchor);
                 int ofsX = c.GetInt(MP_HUD_PROP_KEY_HudHpTextOffsetX);
                 int ofsY = c.GetInt(MP_HUD_PROP_KEY_HudHpTextOffsetY);
-                switch (tAnc) {
-                case 1: tx = egx + gW/2 - tw/2 + ofsX; textY = egy                  + ofsY; break; // Above
-                case 2: tx = egx + gW       + ofsX;    textY = egy + gH/2 + th/2 + ofsY; break; // Right
-                case 3: tx = egx - tw       + ofsX;    textY = egy + gH/2 + th/2 + ofsY; break; // Left
-                case 4: tx = egx + gW/2 - tw/2 + ofsX; textY = egy + gH/2 + th/2 + ofsY; break; // Center
-                default:tx = egx + gW/2 - tw/2 + ofsX; textY = egy + gH + th + 2 + ofsY; break; // Below
-                }
+                MelonPrime::HudGeometry::CalcTextPosFromGaugeInt(egx, egy, glen, gwid, ori,
+                                                                  tAnc, ofsX, ofsY,
+                                                                  tw, th, tx, textY);
             } else {
                 tx    = alignedX(pos.x(), c.GetInt(MP_HUD_PROP_KEY_HudHpAlign), tw);
                 textY = pos.y();
@@ -342,8 +336,8 @@ protected:
                 int ancX = c.GetInt(MP_HUD_PROP_KEY_HudWeaponIconAnchorX);
                 int ancY = c.GetInt(MP_HUD_PROP_KEY_HudWeaponIconAnchorY);
                 int iw = s_magmaul.width(), ih = s_magmaul.height();
-                int ix = ip.x() - (ancX == 1 ? iw/2 : ancX == 2 ? iw : 0);
-                int iy = ip.y() - (ancY == 1 ? ih/2 : ancY == 2 ? ih : 0);
+                int ix = ip.x(), iy = ip.y();
+                MelonPrime::HudGeometry::ApplyRectAnchor(ix, iy, iw, ih, ancX, ancY);
                 p.drawImage(QRectF(ix, iy, iw, ih), s_magmaul);
             }
         }
@@ -371,20 +365,14 @@ protected:
                 // Text → Gauge: gauge at independent pos, text derived from gauge
                 QPoint gp = dsPos(c.GetInt(MP_HUD_PROP_KEY_HudAmmoGaugePosAnchor), c.GetInt(MP_HUD_PROP_KEY_HudAmmoGaugePosX), c.GetInt(MP_HUD_PROP_KEY_HudAmmoGaugePosY));
                 gx = gp.x(); gy = gp.y();
-                int egx = gx - (ori == 0 ? glen * galign / 2 : 0);
-                int egy = gy - (ori == 1 ? glen * galign / 2 : 0);
-                int gW  = (ori == 0) ? glen : gwid;
-                int gH  = (ori == 0) ? gwid : glen;
+                int egx = gx, egy = gy;
+                MelonPrime::HudGeometry::ApplyGaugeAlign(egx, egy, ori, glen, galign);
                 int tAnc = c.GetInt(MP_HUD_PROP_KEY_HudAmmoTextAnchor);
                 int ofsX = c.GetInt(MP_HUD_PROP_KEY_HudAmmoTextOffsetX);
                 int ofsY = c.GetInt(MP_HUD_PROP_KEY_HudAmmoTextOffsetY);
-                switch (tAnc) {
-                case 1: tx = egx + gW/2 - tw/2 + ofsX; textY = egy                  + ofsY; break; // Above
-                case 2: tx = egx + gW       + ofsX;    textY = egy + gH/2 + th/2 + ofsY; break; // Right
-                case 3: tx = egx - tw       + ofsX;    textY = egy + gH/2 + th/2 + ofsY; break; // Left
-                case 4: tx = egx + gW/2 - tw/2 + ofsX; textY = egy + gH/2 + th/2 + ofsY; break; // Center
-                default:tx = egx + gW/2 - tw/2 + ofsX; textY = egy + gH + th + 2 + ofsY; break; // Below
-                }
+                MelonPrime::HudGeometry::CalcTextPosFromGaugeInt(egx, egy, glen, gwid, ori,
+                                                                  tAnc, ofsX, ofsY,
+                                                                  tw, th, tx, textY);
             } else {
                 tx    = alignedX(pos.x(), c.GetInt(MP_HUD_PROP_KEY_HudAmmoAlign), tw);
                 textY = pos.y();
@@ -610,8 +598,8 @@ protected:
                     int ancX = c.GetInt(MP_HUD_PROP_KEY_HudBombLeftIconAnchorX);
                     int ancY = c.GetInt(MP_HUD_PROP_KEY_HudBombLeftIconAnchorY);
                     int iw = s_bombIcon.width(), ih = s_bombIcon.height();
-                    int ix = ip.x() - (ancX == 1 ? iw/2 : ancX == 2 ? iw : 0);
-                    int iy = ip.y() - (ancY == 1 ? ih/2 : ancY == 2 ? ih : 0);
+                    int ix = ip.x(), iy = ip.y();
+                    MelonPrime::HudGeometry::ApplyRectAnchor(ix, iy, iw, ih, ancX, ancY);
                     p.setOpacity(op);
                     p.drawImage(QRectF(ix, iy, iw, ih), s_bombIcon);
                     p.setOpacity(1.0);

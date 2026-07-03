@@ -2,7 +2,7 @@
 
 **作成日:** 2026-07-03
 **対象ブランチ:** `highres_fonts_v3`（HEAD `2977aa46` 時点で再実測）
-**ステータス:** Phase 2 コード完了（S18/S19 実機スモーク未実施）
+**ステータス:** Phase 3 コード完了（手動スモーク未実施）
 **前提:** [V1](completed/melonprime-full-refactor-plan.md) / [V2](completed/melonprime-full-refactor-plan-v2.md) /
 [V3](completed/melonprime-full-refactor-plan-v3.md) の後継。V1–V3 が解消した負債
 （パッチレジストリ / ROM X-macro / HUDスキーマ / リテラルラチェット / migration台帳）は対象外。
@@ -256,6 +256,12 @@ S18/S19 は実機/ROM が必要なため未実施。
 **DoD:** 3系統ビルド + S9 / S13 / S16（プレビュー⇔実描画⇔編集モードの目視一致）。
 **期待削減:** 約 -200〜-400 行 + ジオメトリ変更時の触り箇所 3→1。
 
+**実施結果（2026-07-03）:** `MelonPrimeHudGeometry.h` に gauge align / gauge→text 逆算 /
+rect anchor の純粋ヘルパーを追加し、runtime wrapper、編集モード bounds、設定ダイアログ previews の
+重複式を共有化。V3 Phase 3a で intentional とした runtime crosshair cache / dirty rect /
+zoom transition / preview simplification は変更なし。mac ローカルビルド green。
+S9/S13/S16 の目視スモークは未実施。
+
 ---
 
 ### Phase 4: フィルタ内部の共通化（0.5–1日 / リスク低 / 任意）
@@ -323,7 +329,7 @@ Screen.cpp / Window.cpp の連続・自己完結ブロックのみ、include 位
 | 0 | ベースライン + 散乱予算 + CI拡張 | 完了 | 2026-07-03 | `audit-platform-scatter-budget.ps1` 追加。Ubuntu CI に Windows と同等の独立 audit job + HUD schema 再生成検証を併設し、build job は audit 成功後に実行。既存監査も非Windows `pwsh` で有効に動くよう補正（`Sort-Object -Unique`、HUD runtime macro 展開、HUD schema expected owners 更新）。Linux raw-input修正後の現HEADで再計測し、散乱予算を 31→36 に更新。ローカル確認: PowerShell監査一式 green / workflow YAML parse green / 散乱予算 36/36 / macOS `QCursor::setPos` ガード clean / HUD schema 再生成 diffなし / macOS build green。Windows/Ubuntu は workflow 上の audit gate として次回PR/対象branch pushで実行。 |
 | 1 | 衛生・ドキュメント同期 | 完了 | 2026-07-03 | `merge-upstream-melonds.md` を現行CI方針へ更新し、macOS/Ubuntu/BSD workflow は維持、fork版workflowを優先して小さなupstream maintenanceだけ手動移植する手順へ変更。`project-context.md` にWindows主軸 + macOS/Linux配布対応 + BSD build-only CIの現状を追記。`melonprime-aim-input.md` はGCMouse優先・IOHID fallback・TCC不要/必要の理由を明記。`release-notes.md` の Download Files 節を Windows / macOS / Linux artifact 名へ更新し、macOS ad-hoc署名のGatekeeper警告を既知制約として追加。 |
 | 2 | プラットフォーム入力ファサード（本丸A） | コード完了 | 2026-07-03 | `MelonPrimePlatformInput.h` で mac/Linux raw filter と cursor warp の入口を統合。旧 `m_macRawFilter` / `m_linuxRawFilter` 参照は 0。散乱予算は canonical facade を除外して 30/30 に更新し、Windows/Ubuntu audit gate も 30 へラチェット。mac ローカルビルド green。S18/S19 実機スモークは未実施、S20 Wayland は検証保留。 |
-| 3 | HUDジオメトリ消費の完遂（本丸B） | 未着手 | — | — |
+| 3 | HUDジオメトリ消費の完遂（本丸B） | コード完了 | 2026-07-03 | `MelonPrimeHudGeometry.h` の消費を runtime wrapper / on-screen edit bounds / settings previews に拡張。gauge align、gauge→text 逆算、rect anchor、text alignment の重複式を共有化し、preview-only の意図的簡略化は維持。mac ローカルビルド green。S9/S13/S16 目視スモークは未実施。 |
 | 4 | フィルタ内部共通化（任意） | 未着手 | — | — |
 | 5 | mac/Linux配布整備 | 未着手 | — | — |
 | 6 | upstream統合点（任意） | 未着手 | — | — |

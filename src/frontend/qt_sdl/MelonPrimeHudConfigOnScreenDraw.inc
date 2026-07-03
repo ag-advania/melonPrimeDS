@@ -89,14 +89,12 @@ static QRectF ComputeEditBounds(int idx, Config::Table& cfg, float topStretchX)
             CalcGaugePos(tx, ty, approxW, approxH,
                          cfg.GetInt(gaugeAnchorKey), cfg.GetInt(gaugeOfsXKey), cfg.GetInt(gaugeOfsYKey),
                          len, wid, ori, gx, gy);
-            if (ori == 0) gx -= static_cast<int>(len * align / 2);
-            else          gy -= static_cast<int>(len * align / 2);
+            HudGeometry::ApplyGaugeAlignTrunc(gx, gy, ori, len, align);
             return (ori == 1) ? QRectF(gx, gy, wid, len) : QRectF(gx, gy, len, wid);
         }
         // Independent: fx/fy come from PosAnchor + PosX/Y
         float bx = static_cast<float>(fx), by = static_cast<float>(fy);
-        if (ori == 0) bx -= len * align / 2;
-        else          by -= len * align / 2;
+        HudGeometry::ApplyGaugeAlignF(bx, by, ori, len, align);
         return (ori == 1) ? QRectF(bx, by, wid, len) : QRectF(bx, by, len, wid);
     }
 
@@ -125,8 +123,7 @@ static QRectF ComputeEditBounds(int idx, Config::Table& cfg, float topStretchX)
         }
         const int ancX = cfg.GetInt(MP_HUD_PROP_KEY_HudWeaponIconAnchorX);
         const int ancY = cfg.GetInt(MP_HUD_PROP_KEY_HudWeaponIconAnchorY);
-        if (ancX == 1) ix -= dw * 0.5f; else if (ancX == 2) ix -= dw;
-        if (ancY == 1) iy -= dh * 0.5f; else if (ancY == 2) iy -= dh;
+        HudGeometry::ApplyRectAnchorF(ix, iy, dw, dh, ancX, ancY);
         return QRectF(ix, iy, dw, dh);
     }
 
@@ -154,8 +151,7 @@ static QRectF ComputeEditBounds(int idx, Config::Table& cfg, float topStretchX)
         }
         const int ancX = cfg.GetInt(MP_HUD_PROP_KEY_HudBombLeftIconAnchorX);
         const int ancY = cfg.GetInt(MP_HUD_PROP_KEY_HudBombLeftIconAnchorY);
-        if (ancX == 1) ix -= dw * 0.5f; else if (ancX == 2) ix -= dw;
-        if (ancY == 1) iy -= dh * 0.5f; else if (ancY == 2) iy -= dh;
+        HudGeometry::ApplyRectAnchorF(ix, iy, dw, dh, ancX, ancY);
         return QRectF(ix, iy, dw, dh);
     }
 
@@ -196,10 +192,7 @@ static QRectF ComputeEditBounds(int idx, Config::Table& cfg, float topStretchX)
         for (auto& ka : kAlignMap)
             if (ka.idx == idx) { textAlign = cfg.GetInt(ka.key); break; }
     }
-    float boxLeft;
-    if      (textAlign == 0) boxLeft = static_cast<float>(fx);               // left
-    else if (textAlign == 2) boxLeft = static_cast<float>(fx) - bw;          // right
-    else                     boxLeft = static_cast<float>(fx) - bw * 0.5f;   // center
+    const float boxLeft = HudGeometry::AlignedTextX(static_cast<float>(fx), textAlign, bw);
     return QRectF(boxLeft, boxTop, bw, bh);
 }
 
@@ -1325,4 +1318,3 @@ static void DrawEditOverlay(QPainter* p, Config::Table& cfg, float topStretchX, 
         p->setFont(normalFont);
     }
 }
-

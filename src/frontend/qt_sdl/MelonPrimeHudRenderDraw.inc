@@ -96,30 +96,10 @@ static void CalcTextPosFromGauge(int gx, int gy, int gaugeLen, int gaugeWid, int
                                   float textW, float textH,
                                   float& outTextX, float& outTextY)
 {
-    const float gW = static_cast<float>((ori == 0) ? gaugeLen : gaugeWid);
-    const float gH = static_cast<float>((ori == 0) ? gaugeWid : gaugeLen);
-    switch (anchor) {
-    case 1: // Above — text bottom at gauge top
-        outTextX = gx + gW * 0.5f - textW * 0.5f + ofsX;
-        outTextY = gy + ofsY;
-        break;
-    case 2: // Right — text vertically centered on gauge
-        outTextX = gx + gW + ofsX;
-        outTextY = gy + gH * 0.5f + textH * 0.5f + ofsY;
-        break;
-    case 3: // Left — text vertically centered on gauge
-        outTextX = gx - textW + ofsX;
-        outTextY = gy + gH * 0.5f + textH * 0.5f + ofsY;
-        break;
-    case 4: // Center — text centered on gauge
-        outTextX = gx + gW * 0.5f - textW * 0.5f + ofsX;
-        outTextY = gy + gH * 0.5f + textH * 0.5f + ofsY;
-        break;
-    default: // 0 = Below — text top at gauge bottom + 2px gap
-        outTextX = gx + gW * 0.5f - textW * 0.5f + ofsX;
-        outTextY = gy + gH + textH + 2 + ofsY;
-        break;
-    }
+    HudGeometry::CalcTextPosFromGauge(static_cast<float>(gx), static_cast<float>(gy),
+                                      static_cast<float>(gaugeLen), static_cast<float>(gaugeWid),
+                                      ori, anchor, ofsX, ofsY, textW, textH,
+                                      outTextX, outTextY);
 }
 
 // =========================================================================
