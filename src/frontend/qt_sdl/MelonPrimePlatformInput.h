@@ -4,6 +4,8 @@
 #include "MelonPrimePerfProbe.h"
 
 #include <cstdint>
+#include <cstdio>
+#include <cstdlib>
 
 #if !defined(_WIN32)
 #include <QCursor>
@@ -17,6 +19,14 @@
 #endif
 
 namespace MelonPrime {
+
+#if defined(__APPLE__) || defined(__linux__)
+#define MELONPRIME_RAW_FILTER_PTR(core) ((core)->m_platformRawFilter)
+#define MELONPRIME_RAW_AIM_WAS_ACTIVE_PTR(core) (&(core)->m_platformRawAimWasActive)
+#else
+#define MELONPRIME_RAW_FILTER_PTR(core) (static_cast<void*>(nullptr))
+#define MELONPRIME_RAW_AIM_WAS_ACTIVE_PTR(core) (static_cast<uint8_t*>(nullptr))
+#endif
 
 // Resolved once per UpdateInputState frame (V5 Phase 2).
 enum class AimInputSource : uint8_t {
@@ -131,9 +141,212 @@ inline AimInputSource PlatformInput_ResolveAimSource(
     return AimInputSource::QCursorFallback;
 #endif
 }
+
+inline void PlatformInput_CountPerfAimSource(AimInputSource aimSrc)
+{
+#if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+    if (!MelonPrimePerf::IsFrameActive())
+        return;
+
+    MelonPrimePerf::InputSource perfSrc =
+        MelonPrimePerf::InputSource::QCursorFallback;
+    switch (aimSrc) {
+    case AimInputSource::MacRaw:
+        perfSrc = MelonPrimePerf::InputSource::MacRaw;
+        break;
+    case AimInputSource::LinuxRaw:
+        perfSrc = MelonPrimePerf::InputSource::LinuxRaw;
+        break;
+    case AimInputSource::PanelDelta:
+        perfSrc = MelonPrimePerf::InputSource::PanelDelta;
+        break;
+    default:
+        break;
+    }
+    MelonPrimePerf::CountInputSource(perfSrc);
+#else
+    (void)aimSrc;
+#endif
+}
+
+// Consumption-side aim delta resolution for macOS/Linux (V5 Phase 2 facade).
+template<typename AimPanel>
+inline void PlatformInput_UpdateNonWinMouseDelta(
+    PlatformRawFilter* filter,
+    AimPanel* panel,
+    uint8_t& platformRawAimWasActive,
+    bool& haveMouseDelta,
+    int32_t& mouseX,
+    int32_t& mouseY,
+    int32_t centerX,
+    int32_t centerY)
+{
+    const bool hasPanel = (panel != nullptr);
+    const AimInputSource aimSrc = PlatformInput_ResolveAimSource(
+        filter, hasPanel, haveMouseDelta, mouseX, mouseY);
+
+#if defined(__linux__)
+    const bool rawActive = (aimSrc == AimInputSource::LinuxRaw);
+    if (rawActive && !platformRawAimWasActive && panel)
+        panel->resetAimMouseDelta();
+    platformRawAimWasActive = rawActive ? 1 : 0;
+
+    if (aimSrc == AimInputSource::PanelDelta)
+        panel->getAimMouseDelta(mouseX, mouseY);
+
+    {
+        static const bool s_inputDbg =
+            std::getenv("MELONPRIME_INPUT_DEBUG") != nullptr;
+        if (s_inputDbg) {
+            static int32_t s_sumX = 0, s_sumY = 0;
+            static int s_frames = 0;
+            s_sumX += mouseX;
+            s_sumY += mouseY;
+            if (++s_frames >= 60) {
+                const char* srcName = "qcur";
+                if (aimSrc == AimInputSource::LinuxRaw)
+                    srcName = "raw";
+                else if (aimSrc == AimInputSource::PanelDelta)
+                    srcName = "panel";
+                fprintf(stderr,
+                    "[MelonPrime] linux aim: src=%s have=%d sum60=(%d,%d) "
+                    "rawAvail=%d rawMotion=%d panel=%d\n",
+                    srcName,
+                    haveMouseDelta ? 1 : 0, s_sumX, s_sumY,
+                    PlatformInput_IsRawAvailable(filter) ? 1 : 0,
+                    PlatformInput_IsRawAimActive(filter) ? 1 : 0,
+                    panel ? 1 : 0);
+                s_sumX = s_sumY = 0;
+                s_frames = 0;
+            }
+        }
+    }
+#endif
+
+    if (!haveMouseDelta) {
+#if defined(__linux__)
+        if (!panel)
+#endif
+        {
+            const QPoint currentPos = QCursor::pos();
+            mouseX = currentPos.x() - centerX;
+            mouseY = currentPos.y() - centerY;
+        }
+    }
+
+    PlatformInput_CountPerfAimSource(aimSrc);
+}
+
+template<typename AimPanel>
+inline void PlatformInput_ResetAfterLayoutWarp(
+    PlatformRawFilter* filter,
+    AimPanel* panel)
+{
+    PlatformInput_ResetRawFilter(filter);
+#if defined(__linux__)
+    if (panel)
+        panel->resetAimMouseDelta();
+#endif
+}
+
+template<typename AimPanel>
+inline void PlatformInput_ResetPanelAfterWarp(AimPanel* panel)
+{
+#if defined(__linux__)
+    if (panel)
+        panel->resetAimMouseDelta();
+#endif
+}
+
+inline bool PlatformInput_ShouldWarpCursorAfterAim(
+    const PlatformRawFilter* filter)
+{
+#if defined(__linux__)
+    (void)filter;
+    return false;
+#else
+    return !PlatformInput_IsRawAimActive(filter);
+#endif
+}
 #endif // defined(__APPLE__) || defined(__linux__)
 
 #if !defined(_WIN32)
+template<typename AimPanel>
+inline void PlatformInput_ResetPanelAfterWarpNonWin(AimPanel* panel)
+{
+#if defined(__APPLE__) || defined(__linux__)
+    PlatformInput_ResetPanelAfterWarp(panel);
+#else
+    (void)panel;
+#endif
+}
+
+inline bool PlatformInput_ShouldWarpCursorAfterAimNonWin(
+    const void* filterOpaque)
+{
+#if defined(__linux__)
+    (void)filterOpaque;
+    return false;
+#elif defined(__APPLE__)
+    return !PlatformInput_IsRawAimActive(
+        static_cast<const PlatformRawFilter*>(filterOpaque));
+#else
+    (void)filterOpaque;
+    return true;
+#endif
+}
+
+template<typename AimPanel>
+inline void PlatformInput_UpdateNonWinMouseDeltaNonWin(
+    void* filterOpaque,
+    AimPanel* panel,
+    uint8_t* platformRawAimWasActive,
+    bool& haveMouseDelta,
+    int32_t& mouseX,
+    int32_t& mouseY,
+    int32_t centerX,
+    int32_t centerY)
+{
+#if defined(__APPLE__) || defined(__linux__)
+    uint8_t localWasActive =
+        platformRawAimWasActive ? *platformRawAimWasActive : 0;
+    PlatformInput_UpdateNonWinMouseDelta(
+        static_cast<PlatformRawFilter*>(filterOpaque),
+        panel,
+        localWasActive,
+        haveMouseDelta,
+        mouseX,
+        mouseY,
+        centerX,
+        centerY);
+    if (platformRawAimWasActive)
+        *platformRawAimWasActive = localWasActive;
+#else
+    (void)filterOpaque;
+    (void)platformRawAimWasActive;
+    (void)panel;
+    if (!haveMouseDelta) {
+        const QPoint currentPos = QCursor::pos();
+        mouseX = currentPos.x() - centerX;
+        mouseY = currentPos.y() - centerY;
+    }
+#endif
+}
+
+template<typename AimPanel>
+inline void PlatformInput_ResetAfterLayoutWarpNonWin(
+    void* filterOpaque,
+    AimPanel* panel)
+{
+#if defined(__APPLE__) || defined(__linux__)
+    PlatformInput_ResetAfterLayoutWarp(
+        static_cast<PlatformRawFilter*>(filterOpaque), panel);
+#else
+    (void)filterOpaque;
+    (void)panel;
+#endif
+}
+
 inline void PlatformInput_WarpCursor(int x, int y)
 {
 #if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
