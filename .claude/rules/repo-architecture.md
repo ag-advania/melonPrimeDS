@@ -316,6 +316,7 @@ Current work is on the `highres_fonts_v3` branch. Main changes relative to `mast
   - `MelonPrimeHudRenderDraw.inc` - HUD element drawing
   - `MelonPrimeHudRenderCrosshairFx.inc` - nested draw helper included only by `MelonPrimeHudRenderDraw.inc`
   - `MelonPrimeHudRenderMain.inc` - `CustomHud_Render`, radar overlay, edit-mode forward state
+  - `MelonPrimeHudGoldenHarness.inc` - developer-only golden hash harness, included only by `MelonPrimeHudRender.cpp` and gated by `MELONPRIME_ENABLE_DEVELOPER_FEATURES`
 - Screen integration code rooted at `Screen.cpp` and split into `MelonPrimeHudScreenCpp*.inc` fragments:
   - `Helpers` fragment for common edit-panel placement, epoch refresh, top overlay clear/render, and patch restore helpers
   - setup/layout/input fragments for edit-mode forwarding and floating panel placement

@@ -35,6 +35,8 @@
 #include <QFontDatabase>
 #include <QHash>
 #include <QString>
+#include <QFile>
+#include <QTextStream>
 #include <algorithm>
 #include <string>
 #include <map>
@@ -67,6 +69,9 @@ namespace MelonPrime {
 //  The on-screen editor shares the runtime HUD statics and helpers above.
 // =========================================================================
 #include "MelonPrimeHudConfigOnScreenUnity.inc"
+
+// Developer-only golden hash harness.
+#include "MelonPrimeHudGoldenHarness.inc"
 
 } // namespace MelonPrime
 

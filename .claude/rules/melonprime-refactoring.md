@@ -875,6 +875,7 @@ When reading this unified edition, treat the following four points as fixed rule
 | `MelonPrimeHudRenderDraw.inc` | Drawing of HUD elements such as HP/weapon/ammo/radar/crosshair; OPT-HUD-6 (removed `p->font()` copies in 3 draw functions) |
 | `MelonPrimeHudRenderCrosshairFx.inc` | Crosshair/scope effect helpers owned by `MelonPrimeHudRenderDraw.inc` as a nested unity fragment |
 | `MelonPrimeHudRenderMain.inc` | `CustomHud_Render()`, edit-mode forward state, radar-frame drawing |
+| `MelonPrimeHudGoldenHarness.inc` | Developer-only HUD golden hash harness; compiled only when `MELONPRIME_ENABLE_DEVELOPER_FEATURES` is on |
 | `MelonPrimeHudConfigOnScreenUnity.inc` | In-game HUD editor unity entry point. Holds shared edit-mode state and include ordering |
 | `MelonPrimeHudConfigOnScreenDefs.inc` | Edit-mode definition tables / property descriptors / element table |
 | `MelonPrimeHudConfigOnScreenSnapshot.inc` | Edit-mode snapshot / restore / reset |
@@ -1352,6 +1353,7 @@ Important rules:
 | `MelonPrimeHudRenderDraw.inc` | HUD element drawing |
 | `MelonPrimeHudRenderCrosshairFx.inc` | Crosshair/scope effect helpers, included only by `MelonPrimeHudRenderDraw.inc` |
 | `MelonPrimeHudRenderMain.inc` | `CustomHud_Render()`, edit-mode forward state, radar-frame drawing |
+| `MelonPrimeHudGoldenHarness.inc` | Developer-only `--melonprime-hud-golden` hash harness |
 
 ## 18.3 On-screen HUD Editor split
 

@@ -1,0 +1,6 @@
+# MelonPrime HUD golden hashes
+# format: case fnv1a64
+mph-100-outline-off 0xf156daa5564eddd4
+mph-200-outline-on 0xeb66f6a3516bb405
+system-100-outline-on 0xdb9ecd79b249ee56
+file-fallback-200-outline-off 0x2696e4b0fd99bf90

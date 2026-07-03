@@ -52,6 +52,9 @@
 #include "main.h"
 #include "version.h"
 #include "MelonPrimeBuildInfo.h"
+#ifdef MELONPRIME_CUSTOM_HUD
+#include "MelonPrimeHudRender.h"
+#endif
 
 #include "Config.h"
 
@@ -275,6 +278,20 @@ static void signalHandler(int signal)
 }
 #endif
 
+static std::optional<QString> melonPrimeHudGoldenOutputPath(int argc, char** argv)
+{
+#if defined(MELONPRIME_CUSTOM_HUD) && defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+    for (int i = 1; i < argc; ++i)
+    {
+        if (strcmp(argv[i], "--melonprime-hud-golden") == 0 && i + 1 < argc)
+            return QString::fromLocal8Bit(argv[i + 1]);
+    }
+#endif
+    (void)argc;
+    (void)argv;
+    return std::nullopt;
+}
+
 int main(int argc, char** argv)
 {
     sysTimer.start();
@@ -343,6 +360,18 @@ int main(int argc, char** argv)
 
     MelonApplication melon(argc, argv);
     pathInit();
+
+#if defined(MELONPRIME_CUSTOM_HUD) && defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+    if (const auto goldenOut = melonPrimeHudGoldenOutputPath(argc, argv); goldenOut.has_value())
+    {
+        if (!Config::Load())
+        {
+            fprintf(stderr, "Unable to write to config.\n");
+            return 1;
+        }
+        return MelonPrime::CustomHud_RunGoldenHarness(*goldenOut);
+    }
+#endif
 
     CLI::CommandLineOptions* options = CLI::ManageArgs(melon);
 
