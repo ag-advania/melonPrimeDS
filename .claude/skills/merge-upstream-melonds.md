@@ -62,7 +62,8 @@ git diff --stat HEAD~50..HEAD -- src/path/to/SharedFile.cpp
 
 ### 5. Run the merge
 
-Use `-X ours` so deleted-in-fork files (CI workflows, fork-stripped assets) stay deleted instead of resurrecting upstream's version.
+Use `-X ours` so fork-owned files (CI workflows, fork-stripped assets) keep the
+fork version instead of being replaced by upstream's version.
 
 ```bash
 git merge upstream/master -X ours --no-edit \
@@ -71,14 +72,28 @@ git merge upstream/master -X ours --no-edit \
 
 Compose the commit message summary from the actual upstream commit log (e.g., "SPU buffer leak fix, Platform.cpp QFile" or "RTC sync, console attach, FreeBIOS").
 
-### 6. Resolve `modify/delete` conflicts (CI workflows)
+### 6. Resolve CI workflow conflicts
 
-Upstream's `.github/workflows/build-bsd.yml`, `build-macos.yml`, `build-ubuntu.yml` are deleted in this fork. If the merge surfaces them as conflicts, keep the deletion:
+This fork intentionally keeps four workflow files:
+
+- `.github/workflows/build-windows.yml` — fork-owned MinGW/MSYS2 build plus MelonPrime audits
+- `.github/workflows/build-macos.yml` — fork-adapted macOS artifacts
+- `.github/workflows/build-ubuntu.yml` — fork-adapted Linux/AppImage artifacts plus MelonPrime audits
+- `.github/workflows/build-bsd.yml` — fork-adapted BSD artifacts
+
+If the merge surfaces workflow conflicts, keep the fork workflow and manually
+port only safe upstream maintenance changes such as trigger syntax or action
+version bumps. Do not delete the macOS/Ubuntu/BSD workflows.
 
 ```bash
-git rm .github/workflows/build-bsd.yml \
-       .github/workflows/build-macos.yml \
-       .github/workflows/build-ubuntu.yml
+git checkout --ours .github/workflows/build-windows.yml \
+                    .github/workflows/build-macos.yml \
+                    .github/workflows/build-ubuntu.yml \
+                    .github/workflows/build-bsd.yml
+git add .github/workflows/build-windows.yml \
+        .github/workflows/build-macos.yml \
+        .github/workflows/build-ubuntu.yml \
+        .github/workflows/build-bsd.yml
 ```
 
 ### 7. Verify upstream changes were applied
@@ -122,14 +137,17 @@ Do not push without the user explicitly asking.
 
 - **`#ifdef _WIN32` block dropped by auto-merge in `main.cpp`** — when both sides edit nearby Windows-specific code, the auto-merger has dropped the `#ifdef _WIN32` opener while keeping the `#endif`. After merging, grep `main.cpp` for orphan `#endif` lines or build it.
 - **`ARM9InstructionHookMaxAddresses` and `FindDispatchMask` switch coverage** — if upstream changes invalidate the JIT cache or change hook behavior, ensure both switches in `MelonPrimeArm9Hook.cpp` and `MelonPrimeArm9InstructionHook.inc` still cover the current address count.
-- **CI files (`build-bsd.yml` etc.)** — always re-delete after upstream resurrects them; the fork is Windows MinGW only.
+- **CI files (`build-bsd.yml` etc.)** — keep the fork versions. The fork now
+  builds Windows, macOS, Linux, and BSD artifacts; Windows/Ubuntu also carry
+  MelonPrime audit gates. Only port upstream workflow changes deliberately.
 - **`build-windows.yml` — `VCPKG_COMMIT` must be kept in sync with `vcpkg.json` baseline** — `vcpkg.json` has a `baseline` field (the vcpkg registry snapshot for package version locking). `build-windows.yml` has `VCPKG_COMMIT` (the vcpkg tool version checked out by CI). When upstream bumps the vcpkg baseline in `vcpkg.json`, update `VCPKG_COMMIT` in `build-windows.yml` to the same commit hash; otherwise CI will try to resolve packages at a baseline the older tool doesn't know about and the build will fail. Upstream does not touch the fork's `build-windows.yml` directly (it uses a different toolchain), so this sync is always manual. Amend or follow up the merge commit with the `VCPKG_COMMIT` change.
 - **`build-windows.yml` — other content** — preserve the fork's MSYS2 cache configuration; merge only the trigger-list and action-version updates from upstream. See the prior merge commit `2375253d` for an example.
 
 ## What NOT to take from upstream
 
 - The full `.github/workflows/build-windows.yml` rewrite (upstream switched to Windows SDK + Clang; the fork uses MinGW)
-- Ubuntu / macOS / BSD CI workflows
+- Full upstream Ubuntu / macOS / BSD workflow rewrites. Keep the fork-adapted
+  workflows and port only small maintenance updates deliberately.
 - Any `.codex/` or upstream `.claude/` configuration
 
 ## Reference: prior merges

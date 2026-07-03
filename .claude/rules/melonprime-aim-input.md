@@ -5,8 +5,9 @@ This document tracks the MelonPrime path from input capture to frame input state
 Platform scope: the sections below describe the Windows Raw Input path first. On macOS (added
 2026-07), `MelonPrimeRawInputMacFilter.{h,mm}` provides RawInput-equivalent aim deltas via
 GCMouse first, then IOHIDManager as a fallback (unaccelerated HID X/Y counts, fetch-and-clear at
-frame snapshot). On Linux/X11, `MelonPrimeRawInputLinuxFilter.{h,cpp}` provides the equivalent
-through XInput2 `XI_RawMotion`.
+frame snapshot). GCMouse is primary because it does not need the Input Monitoring TCC permission;
+IOHID is only opened after a short grace period when no GCMouse backend appears. On Linux/X11,
+`MelonPrimeRawInputLinuxFilter.{h,cpp}` provides the equivalent through XInput2 `XI_RawMotion`.
 
 Mouse buttons and keyboard hotkeys stay on the Qt event / SDL path (`EmuInstance::onMousePress`,
 `emuInstance->hotkeyMask`) on non-Windows platforms. They are intentionally not captured by the
