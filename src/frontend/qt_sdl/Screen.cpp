@@ -684,6 +684,19 @@ void ScreenPanel::mouseMoveEvent(QMouseEvent* event)
 #endif
         const int dx = global.x() - center.x();
         const int dy = global.y() - center.y();
+        if (core->IsLinuxRawAimActive()) {
+            // XInput2 owns aim deltas (warp-immune; see GameInput.cpp). The
+            // panel only keeps the hidden cursor inside the window, and only
+            // when it strays — warping every event fights VirtualBox's
+            // host-position re-sync and storms events.
+            if (dx > 96 || dx < -96 || dy > 96 || dy < -96) {
+                if (QGuiApplication::platformName() == QStringLiteral("xcb"))
+                    MelonPrime::LinuxWarpCursorGlobal(center.x(), center.y());
+                else
+                    QCursor::setPos(center);
+            }
+            return;
+        }
         if ((dx | dy) != 0) {
             aimMouseDeltaX.fetch_add(dx, std::memory_order_release);
             aimMouseDeltaY.fetch_add(dy, std::memory_order_release);

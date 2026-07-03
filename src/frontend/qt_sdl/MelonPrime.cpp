@@ -80,6 +80,11 @@ namespace MelonPrime {
             m_linuxRawFilter = nullptr;
         }
     }
+
+    bool MelonPrimeCore::IsLinuxRawAimActive() const
+    {
+        return m_linuxRawFilter && m_linuxRawFilter->isAvailable();
+    }
 #else
     MelonPrimeCore::~MelonPrimeCore() = default;
 #endif

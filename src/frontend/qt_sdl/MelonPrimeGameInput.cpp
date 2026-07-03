@@ -224,17 +224,20 @@ namespace MelonPrime {
             haveMouseDelta = true;
         }
 #elif defined(__linux__)
-        // Linux/X11 follows the same event-driven shape as SDL/GLFW relative
-        // mouse input: ScreenPanel::mouseMoveEvent accumulates center-relative
-        // movement and recenters immediately. XInput2 is still drained for
-        // diagnostics/stale-event control, but not used as runtime aim input
-        // because XWarpPointer can itself produce XI_RawMotion on some stacks.
+        // Linux/X11: XInput2 raw deltas are the aim source. Relative axes are
+        // used as-is; absolute pointing devices (VirtualBox's integrated
+        // tablet) are converted to deltas per-device inside the filter, so
+        // XWarpPointer echoes and VBox host-position re-syncs cannot corrupt
+        // aim — warps never change a device's own axis state. The previous
+        // center-delta + warp-per-event scheme fought VBox's re-sync and
+        // produced a constant drift (host-pos minus center re-added forever).
+        // The Qt panel accumulator stays as the non-XCB/Wayland fallback.
         if (m_linuxRawFilter && m_linuxRawFilter->isAvailable()) {
-            int32_t ignoredX = 0;
-            int32_t ignoredY = 0;
-            m_linuxRawFilter->fetchMouseDelta(ignoredX, ignoredY);
-        }
-        if (m_cachedPanel) {
+            m_linuxRawFilter->fetchMouseDelta(m_input.mouseX, m_input.mouseY);
+            haveMouseDelta = true;
+            if (m_cachedPanel)
+                m_cachedPanel->resetAimMouseDelta();   // fallback source unused; drop stale
+        } else if (m_cachedPanel) {
             m_cachedPanel->getAimMouseDelta(m_input.mouseX, m_input.mouseY);
             haveMouseDelta = (m_input.mouseX | m_input.mouseY) != 0;
         }
@@ -555,7 +558,12 @@ namespace MelonPrime {
         m_nativeAimDeltaX = 0;
         m_nativeAimDeltaY = 0;
 #if defined(__linux__)
-        constexpr bool warpCursorAfterAim = true;
+        // With XInput2 active, deltas are warp-immune (device-level) and the
+        // panel's threshold warp handles cursor containment; a per-frame warp
+        // here would just fight VirtualBox's host-position re-sync. Only the
+        // QCursor fallback needs the per-frame recenter for its center-delta.
+        const bool warpCursorAfterAim =
+            !(m_linuxRawFilter && m_linuxRawFilter->isAvailable());
 #elif !defined(_WIN32)
         constexpr bool warpCursorAfterAim = true;
 #endif

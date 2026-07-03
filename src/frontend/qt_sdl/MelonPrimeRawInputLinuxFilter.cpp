@@ -14,6 +14,7 @@
 #include <mutex>
 #include <poll.h>
 #include <thread>
+#include <unordered_map>
 
 namespace MelonPrime {
 
@@ -49,48 +50,92 @@ struct LinuxRawInputFilter::Impl
         return (mask[bit / 8] & (1 << (bit % 8))) != 0;
     }
 
-    static void AccumulateRawMotion(Impl* self, const XIRawEvent* raw)
+    // Per-source-device axis info. Filter-thread-only (no locking needed).
+    //
+    // Absolute pointing devices — most importantly VirtualBox's integrated
+    // tablet pointer — report absolute positions in raw_values, not deltas.
+    // Feeding those into the aim path as deltas produced a constant
+    // bottom-right drift (positions are always positive, drained through the
+    // residual clamp a few units per frame). Convert absolute axes to deltas
+    // by differencing successive values per device. This is also immune to
+    // XWarpPointer / VBox host-position re-sync: warping the cursor never
+    // changes the device's own axis state.
+    struct AxisState {
+        bool known = false;
+        bool absolute[2] = { false, false };
+        bool hasLast[2] = { false, false };
+        double last[2] = { 0.0, 0.0 };
+    };
+    std::unordered_map<int, AxisState> axisStates;   // key: sourceid
+    std::atomic<bool> absBaseInvalid{ false };       // set by resetAll()
+
+    static void QueryAxisModes(Display* dpy, int sourceid, AxisState& st)
     {
-        const double* values = raw->raw_values;
-        double axisX = 0.0;
-        double axisY = 0.0;
-        bool hasAxisX = false;
-        bool hasAxisY = false;
+        st.known = true;
+        int count = 0;
+        XIDeviceInfo* info = XIQueryDevice(dpy, sourceid, &count);
+        if (!info)
+            return;
+        for (int i = 0; i < count; ++i) {
+            for (int c = 0; c < info[i].num_classes; ++c) {
+                const XIAnyClassInfo* cls = info[i].classes[c];
+                if (cls->type != XIValuatorClass)
+                    continue;
+                const auto* v = reinterpret_cast<const XIValuatorClassInfo*>(cls);
+                if (v->number == 0 || v->number == 1)
+                    st.absolute[v->number] = (v->mode == XIModeAbsolute);
+            }
+        }
+        XIFreeDeviceInfo(info);
+    }
 
-        // XInput2 reports one value for each set bit in valuators.mask. Map
-        // valuator 0/1 explicitly to X/Y so single-axis motion cannot turn a
-        // Y-only event into horizontal aim.
-        double firstRel[2] = { 0.0, 0.0 };
-        int firstRelCount = 0;
-
-        for (int axis = 0; axis < raw->valuators.mask_len * 8; ++axis) {
-            if (!TestBit(raw->valuators.mask, axis))
-                continue;
-
-            const double value = *values++;
-            if (firstRelCount < 2)
-                firstRel[firstRelCount++] = value;
-
-            if (axis == 0) {
-                axisX += value;
-                hasAxisX = true;
-            } else if (axis == 1) {
-                axisY += value;
-                hasAxisY = true;
+    void AccumulateRawMotion(Display* dpy, const XIRawEvent* raw)
+    {
+        // resetAll() (focus loss / layout change) invalidates the absolute
+        // baselines so the first event after a gap re-seeds instead of
+        // producing one huge catch-up delta.
+        if (absBaseInvalid.exchange(false, std::memory_order_acq_rel)) {
+            for (auto& kv : axisStates) {
+                kv.second.hasLast[0] = false;
+                kv.second.hasLast[1] = false;
             }
         }
 
-        const double dxRaw = (hasAxisX || hasAxisY) ? axisX : (firstRelCount >= 1 ? firstRel[0] : 0.0);
-        const double dyRaw = (hasAxisX || hasAxisY) ? axisY : (firstRelCount >= 2 ? firstRel[1] : 0.0);
-        const int32_t dx = static_cast<int32_t>(std::llround(dxRaw));
-        const int32_t dy = static_cast<int32_t>(std::llround(dyRaw));
+        AxisState& st = axisStates[raw->sourceid];
+        if (!st.known)
+            QueryAxisModes(dpy, raw->sourceid, st);
+
+        // XInput2 reports one value per set bit in valuators.mask, in axis
+        // order. Only axes 0 (X) and 1 (Y) are aim input; higher axes are
+        // scroll wheel / tilt on many drivers and must never reach the aim
+        // path (the previous fallback fed wheel motion into X).
+        const double* values = raw->raw_values;
+        double d[2] = { 0.0, 0.0 };
+        for (int axis = 0; axis < raw->valuators.mask_len * 8; ++axis) {
+            if (!TestBit(raw->valuators.mask, axis))
+                continue;
+            const double value = *values++;
+            if (axis > 1)
+                continue;
+            if (st.absolute[axis]) {
+                if (st.hasLast[axis])
+                    d[axis] = value - st.last[axis];
+                st.last[axis] = value;
+                st.hasLast[axis] = true;
+            } else {
+                d[axis] = value;
+            }
+        }
+
+        const int32_t dx = static_cast<int32_t>(std::llround(d[0]));
+        const int32_t dy = static_cast<int32_t>(std::llround(d[1]));
 
         if ((dx | dy) != 0)
-            self->receivedMotion.store(true, std::memory_order_release);
+            receivedMotion.store(true, std::memory_order_release);
         if (dx != 0)
-            self->accX.fetch_add(dx, std::memory_order_release);
+            accX.fetch_add(dx, std::memory_order_release);
         if (dy != 0)
-            self->accY.fetch_add(dy, std::memory_order_release);
+            accY.fetch_add(dy, std::memory_order_release);
     }
 
     void ThreadMain()
@@ -155,7 +200,7 @@ struct LinuxRawInputFilter::Impl
                 if (XGetEventData(display, &ev.xcookie)) {
                     const auto* raw = static_cast<const XIRawEvent*>(ev.xcookie.data);
                     if (raw)
-                        AccumulateRawMotion(this, raw);
+                        AccumulateRawMotion(display, raw);
                     XFreeEventData(display, &ev.xcookie);
                 }
             }
@@ -220,6 +265,9 @@ void LinuxRawInputFilter::resetAll()
     m->accX.store(0, std::memory_order_release);
     m->accY.store(0, std::memory_order_release);
     m->receivedMotion.store(false, std::memory_order_release);
+    // Re-seed absolute-device baselines on the next event so a focus gap
+    // cannot produce one huge catch-up delta.
+    m->absBaseInvalid.store(true, std::memory_order_release);
 }
 
 namespace {
