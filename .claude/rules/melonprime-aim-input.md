@@ -8,6 +8,8 @@ GCMouse first, then IOHIDManager as a fallback (unaccelerated HID X/Y counts, fe
 frame snapshot). GCMouse is primary because it does not need the Input Monitoring TCC permission;
 IOHID is only opened after a short grace period when no GCMouse backend appears. On Linux/X11,
 `MelonPrimeRawInputLinuxFilter.{h,cpp}` provides the equivalent through XInput2 `XI_RawMotion`.
+The macOS/Linux call sites go through `MelonPrimePlatformInput.h`; Windows Raw Input remains on
+the original `RawInputWinFilter` / `InputState` path and is not wrapped by that facade.
 
 Mouse buttons and keyboard hotkeys stay on the Qt event / SDL path (`EmuInstance::onMousePress`,
 `emuInstance->hotkeyMask`) on non-Windows platforms. They are intentionally not captured by the
@@ -37,6 +39,7 @@ Main implementation files:
 - `src/frontend/qt_sdl/MelonPrimeGameInput.cpp`
 - `src/frontend/qt_sdl/MelonPrimeRawInputWinFilter.cpp`
 - `src/frontend/qt_sdl/MelonPrimeRawInputState.cpp`
+- `src/frontend/qt_sdl/MelonPrimePlatformInput.h` (macOS/Linux raw delta and warp facade)
 - `src/frontend/qt_sdl/MelonPrimeRawInputMacFilter.mm`
 - `src/frontend/qt_sdl/MelonPrimeRawInputLinuxFilter.cpp`
 - `src/frontend/qt_sdl/Screen.cpp` (non-Windows cursor grab/recenter)

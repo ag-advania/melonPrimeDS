@@ -104,6 +104,34 @@ Additional Screen-fragment caches:
 
 **Removed dead code**: `GetOutlineBuffer()`, `s_outlineBuf`, `s_prevOutlineDirty` — were declared but never called; deleted.
 
+## Platform Input
+
+Windows keeps the original Raw Input stack (`RawInputWinFilter` + `InputState`)
+because it has extra polling, snapshot, and late-latch behavior. Non-Windows raw
+mouse delta capture is routed through `MelonPrimePlatformInput.h`, a header-only
+facade for macOS and Linux only.
+
+Ownership flow:
+
+```text
+MelonPrimeCore / MelonPrimeGameInput / ScreenPanel
+  -> MelonPrimePlatformInput.h
+       -> macOS: MelonPrimeRawInputMacFilter.mm + MacWarpCursorGlobal
+       -> Linux/X11: MelonPrimeRawInputLinuxFilter.cpp + LinuxWarpCursorGlobal
+       -> other non-Windows sessions: QCursor fallback for cursor warp only
+```
+
+Rules:
+
+1. Do not route Windows `RawInputWinFilter` through the facade.
+2. Non-Windows call sites should use `PlatformInput_ResetRawFilter`,
+   `PlatformInput_FetchRawMouseDelta`, and `PlatformInput_WarpCursor` instead
+   of branching directly on macOS/Linux filter types.
+3. macOS cursor recentering must remain `MacWarpCursorGlobal`; `QCursor::setPos`
+   under `__APPLE__` is guarded by `.claude/skills/audit-platform-scatter-budget.ps1`.
+4. The platform scatter budget excludes `MelonPrimePlatformInput.h` as the
+   canonical dispatch owner and currently ratchets call-site scatter at 30.
+
 ## Config System
 Default values live in `src/frontend/qt_sdl/Config.cpp`.
 

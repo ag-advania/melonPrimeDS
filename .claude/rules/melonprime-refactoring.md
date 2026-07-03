@@ -1639,3 +1639,63 @@ remote enforcement path.
   geometry prevents coordinate drift, but it is not a full runtime renderer.
 - Raising the literal budget above 1 needs a review note and should be treated
   as a regression unless the residual is another fixed-size migration table.
+
+---
+
+## 24. Structural Refactor V4 2026-07
+
+## 24.1 Central theme
+
+Structural Refactor V4 cleaned up the macOS/Linux support that landed after V3:
+non-Windows raw mouse call sites were branching on platform filter types,
+workflow/audit coverage had expanded without matching documentation, and macOS
+distribution still needed a stable ad-hoc signature.
+
+## 24.2 Integrated results
+
+| Area | Result |
+|---|---|
+| Platform input facade | `MelonPrimePlatformInput.h` now owns macOS/Linux raw filter acquire/release/reset/fetch checks and the non-Windows cursor-warp entry point. Windows `RawInputWinFilter` remains untouched. |
+| Scatter ratchet | `.claude/skills/audit-platform-scatter-budget.ps1` is fixed at 30 call-site markers, excluding the facade as the canonical dispatch owner. Windows and Ubuntu CI both run the ratchet. |
+| Linux raw aim | The Linux path keeps XInput2 RawMotion on X11, gates raw mode on first real motion, converts absolute-device values to deltas, and leaves Wayland/non-XCB on the Qt panel fallback. |
+| HUD geometry sharing | `MelonPrimeHudGeometry.h` now also owns gauge alignment, gauge-to-text positioning, and rect anchoring used by runtime wrappers, in-game edit bounds, and settings previews. Preview-only simplifications remain intentional. |
+| CI / docs | macOS, Ubuntu, BSD, and Windows workflows are documented as fork-owned CI. Release notes and macOS build docs list the current artifact names and Gatekeeper constraint. |
+| Distribution | macOS app bundles are ad-hoc signed in the CMake post-build step and verified in CI; macOS/Linux release workflows explicitly configure `MELONPRIME_ENABLE_DEVELOPER_FEATURES=OFF`. |
+| Optional phases | Filter-internal commonization and upstream-block extraction were reviewed and skipped: the remaining duplication is lower risk than cross-backend lifecycle churn, and no upstream merge is active. |
+
+## 24.3 Final metrics snapshot
+
+Measured on 2026-07-03, branch `highres_fonts_v3`, local macOS build tree
+`build-mac`.
+
+| Metric | Phase 0 snapshot | V4 final snapshot | Delta |
+|---|---:|---:|---:|
+| `MelonPrime*` files excluding `.ui` | 32,306 lines | 128 / 32,531 lines | +225 lines |
+| `MelonPrime*` files including `.ui` | — | 129 / 33,771 lines | — |
+| Platform scatter budget | 36 | 30 | -6 |
+| `m_macRawFilter` / `m_linuxRawFilter` references | 36 | 0 | -36 |
+| `MelonPrime.cpp` line count | 1,021 | 977 | -44 |
+| HUD schema rows | 575 | 575 | 0 |
+| Non-canonical `"Metroid.*"` literal budget | 1 | 1 | 0 |
+
+Local verification at final snapshot:
+
+- `python3 .claude/skills/generate-hud-prop-schema.py` (schema rows 575; missing defaults 0)
+- PowerShell audit set: config defaults, HUD key parity, `.inc` ownership,
+  literal budget, platform scatter budget
+- workflow YAML parse for Windows/macOS/Ubuntu/BSD
+- `git diff --check`
+- `cmake -B build-mac ... -DUSE_QT6=ON`
+- `cmake --build build-mac --parallel 4`
+- `codesign --verify --deep --strict build-mac/melonPrimeDS.app`
+- `codesign -dv build-mac/melonPrimeDS.app` showed `Signature=adhoc`
+
+## 24.4 Remaining caution points
+
+- Manual smoke checks S18/S19 (macOS aim/lifecycle), S20 (Linux/Wayland), and
+  S9/S13/S16 (HUD visual comparison) remain user/ROM dependent.
+- Developer ID signing and notarization are out of scope; release zips may still
+  show Gatekeeper warnings despite ad-hoc signing.
+- `MelonPrimePlatformInput.h` is the only intended place for future macOS/Linux
+  raw-delta dispatch branching. Raising the platform scatter budget above 30
+  should be treated as a regression.
