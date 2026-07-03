@@ -290,6 +290,9 @@ Windows/Ubuntu CI でも同手順で再確認 pending。
 ### Phase 0 基準値（計測手順 — ROM 実行後に数値を追記）
 
 developer ビルドで `MELONPRIME_PERF=1 ./melonPrimeDS 2>&1 | tee perf.log`。終了時に stderr へ histogram。
+V6 Phase 0 で 3 プラットフォーム手順を
+[`perf-baseline-procedure.md`](../../skills/perf-baseline-procedure.md) に固定済み
+（2026-07-04）。数値は実機 10 分ソークログ取得後に確定する。
 集計: `python3 .claude/skills/summarize-melonprime-perf.py perf.log`
 
 | プラットフォーム | p50 | p95 | p99 | max | 備考 |
