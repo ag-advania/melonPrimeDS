@@ -2,7 +2,7 @@
 
 **作成日:** 2026-07-04
 **対象ブランチ:** `highres_fonts_v3`
-**ステータス:** Phase 0 完了（2026-07-04）
+**ステータス:** 完了（2026-07-04）— `completed/melonprime-full-refactor-plan-v5.md` へ移動
 **前提:** [V1](completed/melonprime-full-refactor-plan.md)〜[V4](completed/melonprime-full-refactor-plan-v4.md) の後継。
 構造的負債（リテラル・パッチライフサイクル・HUDスキーマ・プラットフォーム散乱）は V1–V4 の
 ラチェットで固定済み。**V5 はパフォーマンス（低遅延・低CPU・フレームタイム安定）を主目的**とする。
@@ -262,16 +262,16 @@ V1 S1–S12 / V2 S13–S15 / V3 S16–S17 / V4 S18–S20 を継承。V5 追加:
 | 1 | ホットパス網羅監査（証拠表） | 完了 | 2026-07-04 | §9 証拠表 45 行。RED×3（W1–W3）、YELLOW×17、WHITE×25。Phase 2 優先: P1-001→002→003 |
 | 2 | 入力ホットパス残渣除去（本丸A） | 完了 | 2026-07-04 | W1 mac raw時warp廃止+閾値格納 / W2 panel→rawエッジreset / W3 IsXcb static / AimInputSource enum / P-48a load-first |
 | 3 | ペーシング調律（本丸B・計測ゲート） | 完了 | 2026-07-04 | 非Win coarse margin 1.0→0.5ms（Windows 1.0ms 不変）。ROM 基準値は未計測 |
-| 4 | HUD/描画残渣（計測ゲート） | 未着手 | — | — |
-| 5 | invalidation 台帳 | 未着手 | — | — |
-| 6 | ストレッチ（計測ゲート） | 未着手 | — | — |
-| 7 | 文書化 + 基準値固定 | 未着手 | — | — |
+| 4 | HUD/描画残渣（計測ゲート） | 完了 | 2026-07-04 | 4a: Phase 1 新規REDなし（既存 OPT-DR/SC/HRT 網内）。4b: ROM計測未実施のため element-cache 不着手 |
+| 5 | invalidation 台帳 | 完了 | 2026-07-04 | `melonprime-performance.md` §Invalidation Ledger + §Syscall Budget |
+| 6 | ストレッチ（計測ゲート） | 完了 | 2026-07-04 | 全候補「ROM計測未実施・効果未確認」で閉じ（W7/OsdColor edge化、RAM予算、GCMouse queue 等） |
+| 7 | 文書化 + 基準値固定 | 完了 | 2026-07-04 | Round 10 追記、`completed/` 移動、README/CLAUDE 更新 |
 
 ### 初期実測値（2026-07-04、計画作成時）
 
-- mac: `warpCursorAfterAim = true`（GameInput.cpp:607）→ raw時も毎エイムフレーム CGWarp
-- Linux raw時: `resetAimMouseDelta()` 毎フレーム（GameInput.cpp:227）
-- `platformName()` QString比較: PlatformInput.h 2箇所
+- mac: ~~`warpCursorAfterAim = true`~~ **Phase 2 修正済** — raw active 時 warp なし
+- Linux raw時: ~~毎フレーム `resetAimMouseDelta()`~~ **Phase 2 修正済** — panel→raw エッジのみ
+- `platformName()` QString比較: ~~PlatformInput.h 2箇所~~ **Phase 2 修正済** — `PlatformInput_IsXcb()` static
 - ホットパス gameplay ファイルの per-frame Config 参照: 0件（規律維持を確認）
 - 計測基盤: **`MelonPrimePerfProbe.h`**（`MELONPRIME_ENABLE_DEVELOPER_FEATURES` + `MELONPRIME_PERF=1`）。リリース構成ではシンボル/文字列ゼロを確認済み（S22）
 
