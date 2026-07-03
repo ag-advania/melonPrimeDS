@@ -45,6 +45,12 @@
 class MainWindow;
 class EmuInstance;
 
+#ifdef MELONPRIME_DS
+namespace MelonPrime {
+class MelonPrimeCore;
+}
+#endif
+
 
 const struct { int id; float ratio; const char* label; } aspectRatios[] =
 {
@@ -265,6 +271,7 @@ protected:
     void refreshClipForGameStateChange();
 
 private:
+    MelonPrime::MelonPrimeCore* melonPrimeCore() const;
     void applyInGameTopScreenOnlyOverride(int& layout, int& sizing) const;
     bool shouldConfineCursorToBottomScreen() const;
     std::optional<QRect> getScreenWidgetRect(int wantedScreenKind) const;
