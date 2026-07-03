@@ -7,6 +7,7 @@
 - [Git Workflow](git-workflow.md)
 - [Non-MelonPrime Upstream Diff](non-melonprime-upstream-diff.md)
 - [MelonPrime Refactoring / Performance History](melonprime-refactoring.md)
+- [MelonPrime Full Refactor Plan V6 (Phase 0-7, active)](melonprime-full-refactor-plan-v6.md)
 - [MelonPrime Full Refactor Plan V5 (completed)](completed/melonprime-full-refactor-plan-v5.md)
 - [MelonPrime Performance Rules](melonprime-performance.md)
 - [MelonPrime Gameplay Runtime (No CustomHud)](melonprime-gameplay-runtime.md)
