@@ -1662,7 +1662,7 @@ distribution still needed a stable ad-hoc signature.
 | Area | Result |
 |---|---|
 | Platform input facade | `MelonPrimePlatformInput.h` now owns macOS/Linux raw filter acquire/release/reset/fetch checks and the non-Windows cursor-warp entry point. Windows `RawInputWinFilter` remains untouched. |
-| Scatter ratchet | `.claude/skills/audit-platform-scatter-budget.ps1` is fixed at 24 call-site markers as of V6 Phase 1, excluding the facade as the canonical dispatch owner. Windows and Ubuntu CI both run the ratchet. |
+| Scatter ratchet | `.claude/skills/audit-platform-scatter-budget.ps1` is fixed at 22 call-site markers as of V6 Phase 7, excluding the facade as the canonical dispatch owner. Windows and Ubuntu CI both run the ratchet. |
 | Linux raw aim | The Linux path keeps XInput2 RawMotion on X11, gates raw mode on first real motion, converts absolute-device values to deltas, and leaves Wayland/non-XCB on the Qt panel fallback. |
 | HUD geometry sharing | `MelonPrimeHudGeometry.h` now also owns gauge alignment, gauge-to-text positioning, and rect anchoring used by runtime wrappers, in-game edit bounds, and settings previews. Preview-only simplifications remain intentional. |
 | CI / docs | macOS, Ubuntu, BSD, and Windows workflows are documented as fork-owned CI. Release notes and macOS build docs list the current artifact names and Gatekeeper constraint. |
@@ -1703,13 +1703,54 @@ Local verification at final snapshot:
 - Developer ID signing and notarization are out of scope; release zips may still
   show Gatekeeper warnings despite ad-hoc signing.
 - `MelonPrimePlatformInput.h` is the only intended place for future macOS/Linux
-  raw-delta dispatch branching. Raising the platform scatter budget above 24
+  raw-delta dispatch branching. Raising the platform scatter budget above 22
   should be treated as a regression.
 
 ## 24.5 Post-V4 roadmap
 
 V4 is complete (`completed/melonprime-full-refactor-plan-v4.md`). V5 performance
 work (Phase 0–7) is complete (`completed/melonprime-full-refactor-plan-v5.md`).
+
+---
+
+## 25. Structural Refactor V6 2026-07
+
+V6 is partially complete. Measurement-independent phases are committed, while
+the measured optimization phases remain gated on ROM soak logs.
+
+| Area | Result |
+|---|---|
+| Perf baseline prep | `.claude/skills/perf-baseline-procedure.md` and the perf summarizer support section/counter output. Canonical 10-minute ROM soaks are still pending. |
+| HUD golden harness | Developer-only `--melonprime-hud-golden` emits stable hashes and release builds are checked for zero harness traces. Golden changes are restricted to intentional visual commits. |
+| Lifecycle split | Cold `MelonPrimeCore` lifecycle/config bodies moved to `MelonPrimeLifecycle.cpp`; `RunFrameHook`, `HandleGameJoinInit`, and `HandleBattleRuntimeEnter` remain in `MelonPrime.cpp`. |
+| Scatter ratchet | The platform scatter budget was lowered from 24 to 22 after the lifecycle split removed call-site platform markers. |
+| Declutter | `MelonPrime.cpp` no longer includes the unused `Platform.h`. |
+
+### V6 Current Metrics
+
+Measured on 2026-07-04, branch `highres_fonts_v3`, local macOS build trees
+`build-mac` and `build-mac-release`, HEAD `74e1d6cf`.
+
+| Metric | Value |
+|---|---:|
+| `MelonPrime*` files excluding `.ui` | 132 / 33,362 lines |
+| `MelonPrime.cpp` | 682 lines |
+| `MelonPrimeLifecycle.cpp` | 316 lines |
+| `MelonPrimePerfProbe.h` | 455 lines |
+| Platform scatter budget | 22 / 22 |
+| Non-canonical `"Metroid.*"` literal budget | 1 / 1 |
+| `.inc` ownership | PASS (52 fragments) |
+| macOS dev binary | 7.0M |
+| macOS release binary | 6.8M |
+
+### V6 Remaining Gates
+
+- Phase 0 canonical macOS/Windows/Linux ROM soak logs are pending.
+- Phase 3 HUD cache/layer work and Phase 5 per-frame reevaluation reductions
+  must not proceed without Phase 0 before/after numbers.
+- Phase 4 manual S2/S6/S7/S8 ROM smoke remains user-dependent.
+- The V6 plan stays in `.claude/rules/` rather than `completed/` until those
+  gates are closed.
 Follow-on investigation notes remain in
 [notes/melonprime-highres-fonts-v3-refactor-roadmap.md](notes/melonprime-highres-fonts-v3-refactor-roadmap.md).
 

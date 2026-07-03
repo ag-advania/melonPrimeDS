@@ -113,3 +113,12 @@ Review must not increase steady-state per-frame syscalls without Phase 0 before/
 | All (dev) | Perf probe | 0 in release; gated in dev | S22 verified |
 
 Increasing any row requires `MELONPRIME_PERF=1` before/after attached to the PR.
+
+### V6 Measurement Gate
+
+V6 Phase 0 prepared the `MELONPRIME_PERF=1` baseline procedure and parser, but
+the canonical 10-minute ROM soaks for macOS, Windows, and Linux are still the
+gate for Phase 3 and Phase 5 performance changes. Until those logs are attached,
+HUD element caching, per-frame patch/write edge changes, and input queue timing
+changes must stay in the planning state or be committed only as measurement
+harness work.

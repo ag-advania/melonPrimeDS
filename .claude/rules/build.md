@@ -25,6 +25,7 @@ config/schema discipline. It runs before the Windows build:
 - `.claude/skills/audit-hud-key-parity.ps1 -Strict`
 - `.claude/skills/check-inc-ownership.ps1`
 - `.claude/skills/audit-metroid-literal-budget.ps1 -Budget 1`
+- `.claude/skills/audit-platform-scatter-budget.ps1 -Budget 22`
 - `.claude/skills/generate-hud-prop-schema.py` followed by `git diff --exit-code`
 
 Rules:
@@ -38,6 +39,18 @@ Rules:
   the same change.
 - `.inc` fragments remain unity-build includes owned by their parent `.cpp` or
   `.inc`; do not add them directly to CMake.
+- The macOS/Linux platform-condition scatter budget is also a ratchet. It is
+  fixed at 22 call-site markers; future platform branching belongs in
+  `MelonPrimePlatformInput.h` unless a review explicitly accepts the new call
+  site.
+
+## HUD Golden Harness
+
+The hidden `--melonprime-hud-golden <out>` CLI is developer-only and must leave
+no release-binary symbols or strings. Update golden hashes only in a commit whose
+purpose is an intentional visual change, and attach before/after screenshots or
+hash output in the review notes. Refactors that claim visual identity should run
+the harness without changing `src/frontend/qt_sdl/tests/melonprime-hud-golden.txt`.
 
 ## macOS Build (Homebrew, Intel/ARM)
 

@@ -10,7 +10,7 @@
 # Input sites are not part of this budget.
 
 param(
-    [int]$Budget = 24,
+    [int]$Budget = 22,
     [int]$MaxList = 40,
     [switch]$Json
 )
