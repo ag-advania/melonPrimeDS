@@ -4,11 +4,13 @@
 # is a ratchet for melonprime-full-refactor-plan-v4: Phase 0 fixes the current
 # scatter count, and Phase 2 lowers it after introducing the platform facade.
 #
-# Scope is intentionally narrow: MelonPrime*.cpp/h under src/frontend/qt_sdl.
-# Windows Raw Input sites are not part of this budget.
+# Scope is intentionally narrow: MelonPrime*.cpp/h under src/frontend/qt_sdl,
+# excluding MelonPrimePlatformInput.h because that file is the canonical
+# platform-dispatch owner created to reduce call-site scatter. Windows Raw
+# Input sites are not part of this budget.
 
 param(
-    [int]$Budget = 36,
+    [int]$Budget = 30,
     [int]$MaxList = 40,
     [switch]$Json
 )
@@ -107,7 +109,8 @@ function Find-MacQCursorSetPos {
     return $hits
 }
 
-$sourceFiles = Get-ChildItem -Path $qtSdl -Recurse -File -Include 'MelonPrime*.cpp','MelonPrime*.h'
+$sourceFiles = Get-ChildItem -Path $qtSdl -Recurse -File -Include 'MelonPrime*.cpp','MelonPrime*.h' |
+    Where-Object { $_.Name -ne 'MelonPrimePlatformInput.h' }
 $cursorGuardFiles = Get-ChildItem -Path $qtSdl -Recurse -File -Include '*.cpp','*.h','*.hpp','*.inc'
 $rows = @()
 $total = 0

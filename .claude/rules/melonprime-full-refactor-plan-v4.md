@@ -2,7 +2,7 @@
 
 **作成日:** 2026-07-03
 **対象ブランチ:** `highres_fonts_v3`（HEAD `2977aa46` 時点で再実測）
-**ステータス:** Phase 1 完了
+**ステータス:** Phase 2 コード完了（S18/S19 実機スモーク未実施）
 **前提:** [V1](completed/melonprime-full-refactor-plan.md) / [V2](completed/melonprime-full-refactor-plan-v2.md) /
 [V3](completed/melonprime-full-refactor-plan-v3.md) の後継。V1–V3 が解消した負債
 （パッチレジストリ / ROM X-macro / HUDスキーマ / リテラルラチェット / migration台帳）は対象外。
@@ -216,6 +216,13 @@ namespace MelonPrime {
   QCursor フォールバックのエイムを **AIMBLK 系でブロック + OSD 通知1回**
   （mac で実証済みの「ワープ失敗→無限回転」と同型の事故の防御。実機検証は S20 / **要確認**）
 
+**実装結果メモ（2026-07-03）:** 直前の Linux raw-input 修正（`2977aa46`）で、
+XInput2 raw が実際に `hasReceivedMotion()` するまで ScreenPanel の前回位置ベース fallback が
+エイムを所有し、毎フレーム center warp しない形になっている。Phase 2 ではその挙動を維持し、
+`PlatformInput_ShouldAcquireRawFilter()` を XCB に限定、warp の入口だけ
+`PlatformInput_WarpCursor` に統一した。Wayland 実機検証手段がないため、新規 AIMBLK/OSD は
+追加せず、S20 の Wayland 検証は保留として記録する。
+
 #### 2c. 起動/終了処理の移設
 
 - `Initialize()` / デストラクタ / フォーカス喪失の分岐を ファサード呼びへ置換し、
@@ -227,6 +234,13 @@ namespace MelonPrime {
 **DoD:** Windows CI green（コード生成不変の確認: Windows側は差分ゼロが原則）+
 mac ローカルビルド + S18 / S19（+可能なら S20）+ Phase 0 の散乱予算を新値でラチェット。
 **期待削減:** 約 -120〜-200 行 + 分岐サイト 5→1。
+
+**実施結果（2026-07-03）:** `MelonPrimePlatformInput.h` を追加し、mac/Linux raw filter の
+Acquire/Release/isAvailable/fetch/reset と non-Windows warp 入口を一本化。`m_macRawFilter` /
+`m_linuxRawFilter` 参照は 36→0、呼び出し側は `m_platformRawFilter` に統合。
+散乱予算はファサード本体を canonical owner として除外し、36→30 にラチェット。
+`MelonPrime.cpp` は 1,021→976 行。mac ローカルビルド green、監査 green。
+S18/S19 は実機/ROM が必要なため未実施。
 
 ---
 
@@ -308,7 +322,7 @@ Screen.cpp / Window.cpp の連続・自己完結ブロックのみ、include 位
 |---|---|---|---|---|
 | 0 | ベースライン + 散乱予算 + CI拡張 | 完了 | 2026-07-03 | `audit-platform-scatter-budget.ps1` 追加。Ubuntu CI に Windows と同等の独立 audit job + HUD schema 再生成検証を併設し、build job は audit 成功後に実行。既存監査も非Windows `pwsh` で有効に動くよう補正（`Sort-Object -Unique`、HUD runtime macro 展開、HUD schema expected owners 更新）。Linux raw-input修正後の現HEADで再計測し、散乱予算を 31→36 に更新。ローカル確認: PowerShell監査一式 green / workflow YAML parse green / 散乱予算 36/36 / macOS `QCursor::setPos` ガード clean / HUD schema 再生成 diffなし / macOS build green。Windows/Ubuntu は workflow 上の audit gate として次回PR/対象branch pushで実行。 |
 | 1 | 衛生・ドキュメント同期 | 完了 | 2026-07-03 | `merge-upstream-melonds.md` を現行CI方針へ更新し、macOS/Ubuntu/BSD workflow は維持、fork版workflowを優先して小さなupstream maintenanceだけ手動移植する手順へ変更。`project-context.md` にWindows主軸 + macOS/Linux配布対応 + BSD build-only CIの現状を追記。`melonprime-aim-input.md` はGCMouse優先・IOHID fallback・TCC不要/必要の理由を明記。`release-notes.md` の Download Files 節を Windows / macOS / Linux artifact 名へ更新し、macOS ad-hoc署名のGatekeeper警告を既知制約として追加。 |
-| 2 | プラットフォーム入力ファサード（本丸A） | 未着手 | — | — |
+| 2 | プラットフォーム入力ファサード（本丸A） | コード完了 | 2026-07-03 | `MelonPrimePlatformInput.h` で mac/Linux raw filter と cursor warp の入口を統合。旧 `m_macRawFilter` / `m_linuxRawFilter` 参照は 0。散乱予算は canonical facade を除外して 30/30 に更新し、Windows/Ubuntu audit gate も 30 へラチェット。mac ローカルビルド green。S18/S19 実機スモークは未実施、S20 Wayland は検証保留。 |
 | 3 | HUDジオメトリ消費の完遂（本丸B） | 未着手 | — | — |
 | 4 | フィルタ内部共通化（任意） | 未着手 | — | — |
 | 5 | mac/Linux配布整備 | 未着手 | — | — |

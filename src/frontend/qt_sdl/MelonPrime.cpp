@@ -8,6 +8,7 @@
 #include "Screen.h"
 #include "Platform.h"
 #include "MelonPrimeDef.h"
+#include "MelonPrimePlatformInput.h"
 #include "MelonPrimeGameRomAddrTable.h"
 #include "MelonPrimeBattleFlowState.h"
 
@@ -21,8 +22,6 @@
 #include <cmath>
 #include <algorithm>
 #include <QCoreApplication>
-#include <QCursor>
-#include <QGuiApplication>
 
 #ifdef _WIN32
 #include "MelonPrimeRawInputWinFilter.h"
@@ -39,10 +38,6 @@ namespace MelonPrime {
         if (ptr) RawInputWinFilter::Release();
     }
 }
-#elif defined(__APPLE__)
-#include "MelonPrimeRawInputMacFilter.h"
-#elif defined(__linux__)
-#include "MelonPrimeRawInputLinuxFilter.h"
 #endif
 
 namespace MelonPrime {
@@ -64,32 +59,21 @@ namespace MelonPrime {
         m_flags.packed = 0;
     }
 
-#ifdef __APPLE__
+#if defined(__APPLE__) || defined(__linux__)
     MelonPrimeCore::~MelonPrimeCore()
     {
-        if (m_macRawFilter) {
-            MacRawInputFilter::Release();
-            m_macRawFilter = nullptr;
-        }
-    }
-#elif defined(__linux__)
-    MelonPrimeCore::~MelonPrimeCore()
-    {
-        if (m_linuxRawFilter) {
-            LinuxRawInputFilter::Release();
-            m_linuxRawFilter = nullptr;
-        }
+        PlatformInput_ReleaseRawFilter(m_platformRawFilter);
     }
 
+#if defined(__linux__)
     bool MelonPrimeCore::IsLinuxRawAimActive() const
     {
         // hasReceivedMotion guards against sessions where XI2 selection
         // succeeds but raw events are never delivered (XWayland). Until the
         // first real raw delta arrives, the Qt fallback path owns aim.
-        return m_linuxRawFilter
-            && m_linuxRawFilter->isAvailable()
-            && m_linuxRawFilter->hasReceivedMotion();
+        return PlatformInput_IsRawAimActive(m_platformRawFilter);
     }
+#endif
 #else
     MelonPrimeCore::~MelonPrimeCore() = default;
 #endif
@@ -208,17 +192,9 @@ namespace MelonPrime {
 
 #ifdef _WIN32
         SetupRawInput();
-#elif defined(__APPLE__)
-        // macOS RawInput-equivalent aim path: IOHIDManager delta capture.
-        // Falls back to the QCursor delta path when unavailable (permission
-        // denied / no mouse); see MelonPrimeRawInputMacFilter.h.
-        if (!m_macRawFilter)
-            m_macRawFilter = MacRawInputFilter::Acquire();
-#elif defined(__linux__)
-        // Linux RawInput-equivalent aim path: XInput2 RawMotion on X11.
-        // Wayland and unavailable XInput2 fall back to the QCursor delta path.
-        if (QGuiApplication::platformName() == QStringLiteral("xcb") && !m_linuxRawFilter)
-            m_linuxRawFilter = LinuxRawInputFilter::Acquire();
+#elif defined(__APPLE__) || defined(__linux__)
+        if (PlatformInput_ShouldAcquireRawFilter() && !m_platformRawFilter)
+            m_platformRawFilter = PlatformInput_AcquireRawFilter();
 #endif
     }
 
@@ -764,18 +740,10 @@ namespace MelonPrime {
                     if (m_rawFilter) {
                         m_rawFilter->resetAll();
                     }
-#elif defined(__APPLE__)
-                    // Drop deltas accumulated while unfocused so refocus
+#elif defined(__APPLE__) || defined(__linux__)
+                    // Drop raw deltas accumulated while unfocused so refocus
                     // cannot produce an aim jump (same intent as FIX-3).
-                    if (m_macRawFilter) {
-                        m_macRawFilter->resetAll();
-                    }
-#elif defined(__linux__)
-                    // Drop XInput2 deltas accumulated while unfocused so
-                    // refocus cannot produce an aim jump.
-                    if (m_linuxRawFilter) {
-                        m_linuxRawFilter->resetAll();
-                    }
+                    PlatformInput_ResetRawFilter(m_platformRawFilter);
 #endif
 #ifdef MELONPRIME_DS
                     m_weaponSwitchPending.Clear();
@@ -941,12 +909,8 @@ namespace MelonPrime {
             m_aimData.centerY = center.y();
             hasCenter = true;
 
-#if defined(__APPLE__)
-            if (m_macRawFilter)
-                m_macRawFilter->resetAll();
-#elif defined(__linux__)
-            if (m_linuxRawFilter)
-                m_linuxRawFilter->resetAll();
+#if defined(__APPLE__) || defined(__linux__)
+            PlatformInput_ResetRawFilter(m_platformRawFilter);
 #endif
         }
 #endif
@@ -961,24 +925,15 @@ namespace MelonPrime {
                 if (show) panel->unclip();
                 else {
                     panel->clipCursorCenter1px();
-#if defined(__APPLE__)
-                    // QCursor::setPos needs the Accessibility permission on
-                    // macOS (CGEventPost); CGWarp does not. See WarpCursorTo.
-                    if (hasCenter)
-                        MacWarpCursorGlobal(center.x(), center.y());
-#elif defined(__linux__)
+#if !defined(_WIN32)
                     if (hasCenter) {
+#if defined(__linux__)
                         // Drop the fallback's prev-position baseline first so
                         // this warp is never counted as motion.
                         panel->resetAimMouseDelta();
-                        if (QGuiApplication::platformName() == QStringLiteral("xcb"))
-                            LinuxWarpCursorGlobal(center.x(), center.y());
-                        else
-                            QCursor::setPos(center);
+#endif
+                        PlatformInput_WarpCursor(center.x(), center.y());
                     }
-#elif !defined(_WIN32)
-                    if (hasCenter)
-                        QCursor::setPos(center);
 #endif
                 }
             },
