@@ -1,0 +1,267 @@
+# MelonPrime 全面リファクタリング計画 V5（Phase 0–7）— パフォーマンス主目的
+
+**作成日:** 2026-07-04
+**対象ブランチ:** `highres_fonts_v3`
+**ステータス:** 未着手
+**前提:** [V1](completed/melonprime-full-refactor-plan.md)〜[V4](completed/melonprime-full-refactor-plan-v4.md) の後継。
+構造的負債（リテラル・パッチライフサイクル・HUDスキーマ・プラットフォーム散乱）は V1–V4 の
+ラチェットで固定済み。**V5 はパフォーマンス（低遅延・低CPU・フレームタイム安定）を主目的**とする。
+
+**最重要の前提認識:** Windows のホットパスは Rounds 1–9 / OPT A–Z5 / P-1〜P-48 /
+Custom HUD Perf（[melonprime-refactoring.md](melonprime-refactoring.md) が正典）で徹底最適化済みで、
+V1 §2.1 の do-not-touch リストが生きている。**V5 の主戦場はそこではなく、
+(a) 2026-07 に追加された macOS / Linux 経路（正しさ優先で書かれ、性能監査が一度もない）、
+(b) 計測基盤の不在（歴代 Round は概算サイクルで進めており、フレームタイム分布を実測する仕組みが
+リポジトリに存在しない — `grep MELONPRIME_PERF` = 0件で確認済み）** の2つである。
+
+---
+
+## 0. コードベース俯瞰 — MelonPrime 固有処理の散在マップ（2026-07-04 実測）
+
+| ドメイン | 主なファイル | LOC | ホットパス関与 |
+|---|---|---:|---|
+| 入力（raw層） | `MelonPrimeRawInput{State,WinFilter,MacFilter,LinuxFilter}` + `PlatformInput.h` | 2,366 | ◎ 毎フレーム + 毎イベント |
+| 入力（ゲーム層） | `MelonPrime.{cpp,h}` / `MelonPrimeInGame.cpp` / `MelonPrimeGameInput.cpp` / `MelonPrimeGame*` | 4,747 | ◎ `RunFrameHook`/`HandleInGameLogic` |
+| HUD/描画 | `MelonPrimeHud*`（render/config/edit/screen断片） | 12,410 | ◎ 毎プレゼンテーションフレーム |
+| ROMパッチ/フック | `MelonPrimePatch*` / `MelonPrimeArm9*` | 6,239 | ○ コールドパス中心 + JITトランポリン |
+| 設定UI | `InputConfig/MelonPrime*` | 5,675 | × ダイアログ時のみ |
+| フレーム更新 | `EmuThread.cpp`（+ `MelonPrimeEmuThread*.inc`） | — | ◎ フレームリミッタ/ペーシング |
+
+毎フレーム経路の全体像（プラットフォーム別）は [melonprime-aim-input.md](melonprime-aim-input.md) と
+[melonprime-gameplay-runtime.md](melonprime-gameplay-runtime.md) §1/§9 が正典。
+
+---
+
+## 1. ゴールと非ゴール
+
+### ゴール
+1. **毎フレーム実行される不要処理の排除** — 特に非Windowsの新経路に残る per-frame
+   syscall / Qt呼び出し / atomic / 文字列比較（§2 に実測済みの初期リスト）
+2. **フレームタイム計測基盤の導入** — p50/p99/最大、区間別タイマ。以後の全最適化を
+   「概算」ではなく実測で判定できる状態にする（Round 10 以降の土台）
+3. **非Windowsのフレームペーシング最適化** — P-11/P-12 相当の検討が mac/Linux で未実施
+4. **キャッシュ/invalidation 規律の台帳化** — [melonprime-performance.md](melonprime-performance.md)
+   の原則に V4 以降の新規コードを照合し、invalidation owner を明文化
+5. 結果: 非Windowsで **per-frame syscall −1以上・不要atomic除去・スピンCPU削減**、
+   全プラットフォームで**フレームタイム分布の可視化と基準値の記録**
+
+### 非ゴール（やらないこと）
+- **V1 §2.1 do-not-touch リストの再最適化**（`ProcessAimInputMouse` の数式、
+  `snapshotInputFrame`、`RunFrameHook` 分岐構造、`MoveLUT`、EmuThread フレームループの
+  P-11..P-47 適用部、`MelonPrime.h` メンバ順、JITトランポリン）。触る場合は
+  歴代どおり「単独コミット + 計測必須」だが、V5 では計画しない
+- **計測なき最適化**。Phase 0 の基盤なしに Phase 3 以降の変更をコミットしない
+- 機能追加・挙動変更（early-out追加等はすべて出力不変であること）
+- melonDS コア（`src/` 直下）の変更（コンピュートレンダラ含む — 済みの Fix D/E を維持）
+
+---
+
+## 2. 無駄の棚卸し（初期実測 2026-07-04・証拠付き。Phase 1 で網羅化）
+
+### V5-W1. mac: エイム毎フレームの CGWarp syscall（最有力・実測済み）
+- [MelonPrimeGameInput.cpp:585](../../src/frontend/qt_sdl/MelonPrimeGameInput.cpp) —
+  mac は `warpCursorAfterAim = true` のままで、**エイム出力のある毎フレーム
+  `CGWarpMouseCursorPosition`（syscall 相当）を発行**している
+- GCMouse/IOHID デルタはワープ不変（デバイスレベル）なので、Linux で実証済みの
+  「毎フレームワープ廃止 + パネル閾値ワープで格納」方式（V4/aim-input §9）を
+  mac にも適用可能。P-33/P-47 と同クラスの per-frame syscall 削減
+- 注意: mac の QCursor フォールバック（権限なし時）だけは再センターが必要 —
+  Linux と同じく「rawアクティブ時のみワープ省略」のゲートにする
+
+### V5-W2. Linux: rawモード時の毎フレーム `resetAimMouseDelta()`（実測済み）
+- [MelonPrimeGameInput.cpp:227](../../src/frontend/qt_sdl/MelonPrimeGameInput.cpp) —
+  raw アクティブの毎フレーム、パネル蓄積の破棄に **atomic release store ×2 +
+  baseline flag store** を無条件実行
+- パネル側は raw アクティブ中は蓄積しない（V4 で mouseMoveEvent 側をゲート済み）ので、
+  毎フレームの破棄は冗長。**モード遷移エッジ（panel→raw 切替時）に1回**で足りる
+
+### V5-W3. `platformName()` の都度 QString 比較（実測: PlatformInput.h 2箇所）
+- [MelonPrimePlatformInput.h:31,83](../../src/frontend/qt_sdl/MelonPrimePlatformInput.h) —
+  Linux のワープ/取得判定が呼び出しごとに `QGuiApplication::platformName() ==
+  QStringLiteral("xcb")`（QString 生成+比較）。ワープは閾値化済みでコールド寄りだが、
+  プラットフォーム名はプロセス起動後不変 — **static bool に1回で確定**できる
+
+### V5-W4. 計測基盤の不在（実測: 該当シンボル 0件）
+- フレームタイムのヒストグラム/percentile/区間タイマが存在しない。歴代 Round の
+  効果推定はすべて概算サイクル。ペーシング比較（Phase 3）や回帰検知が現状不可能
+
+### V5-W5. 非Windowsフレームペーシングの未調律（コード根拠）
+- [EmuThread.cpp](../../src/frontend/qt_sdl/EmuThread.cpp) のハイブリッドリミッタは
+  coarse sleep のマージン **1.0ms が Windows の NtSetTimerResolution(0.5ms) 前提**
+  （P-11/P-12 のコメントに明記）。mac/Linux の nanosleep 系は粒度が桁で細かい可能性が
+  高く、マージン縮小 = スピン時間（busy CPU）削減の余地。**要計測**（Phase 0 依存）
+- mac: GCMouse ハンドラはデフォルトでメインキューに配送 — 専用 dispatch queue 化で
+  配送ジッタを下げられる可能性（**要計測**、挙動同一が条件）
+
+### V5-W6. 規律コンプライアンスは現状良好（監査で確認済みの非・問題）
+- ホットパス gameplay ファイルの per-frame `Config::Table` 参照: **0件**（実測）
+- HUD の epoch/dirty-rect/game-frame キャッシュ群（OPT-DR1..DR3/SC1/ZOOM1/HRT1）は
+  プラットフォーム非依存実装で mac/Linux にもそのまま効いている
+- → Phase 1 は「壊れている前提」ではなく、**新規コード（V4 ファサード、HudGeometry
+  消費者、mac/Linux フィルタ）が既存規律に完全準拠しているかの網羅確認**として行う
+
+---
+
+## 3. 不変条件
+
+**V1 §2 / V2 §2 / V3 §2 / V4 §2 を全文継承**。V5 固有:
+
+1. **計測ファースト**: Phase 3 以降の各変更は、Phase 0 の計測で before/after を取り、
+   数値をコミットメッセージに残す（歴代 Round の「推定値表」文化を実測に格上げ）
+2. 計測コードは `MELONPRIME_ENABLE_DEVELOPER_FEATURES` + 実行時
+   `MELONPRIME_PERF=1` の二重ゲート。**リリースビルドのホットパスに1命令も残さない**
+   （コンパイル時除去を確認）
+3. 出力不変: early-out/キャッシュ追加はエミュレーション出力・エイム出力・HUD描画結果を
+   1bitも変えない。変える最適化は本計画のスコープ外として分離
+4. mac の CGWarp 廃止（W1）は「raw アクティブ時のみ」。QCursor フォールバックの
+   再センター（Accessibility 事故の再発防止ルール、[build.md](build.md)）は不変
+5. 検証は3系統: Windows CI / mac ローカル / Linux VM（S20 手順は
+   [linux-vm-build.md](linux-vm-build.md) — マウス統合オフ必須）
+
+---
+
+## 4. フェーズ計画
+
+### Phase 0: フレームタイム計測基盤（1–1.5日 / リスクなし / **全フェーズの前提**）
+
+| 項目 | 内容 |
+|---|---|
+| 対象ファイル | `EmuThread.cpp`（`MelonPrimeEmuThread*.inc` 断片として追加）、新規 `MelonPrimePerfProbe.h`、`.claude/skills/`（集計スクリプト） |
+| 目的 | フレームタイム p50/p95/p99/max と区間タイマ（input / RunFrame / draw / limiter-sleep / limiter-spin）を取得可能にする |
+| 作業 | (1) `MelonPrimePerfProbe.h`: QPC/`SDL_GetPerformanceCounter` ベースの軽量区間タイマ + リングバッファ。二重ゲート（コンパイル時+環境変数）。(2) frameAdvanceOnce の既存境界（P-13 の Sleep→Poll→RunFrame→draw→DeferredDrain）にプローブ挿入 — **既存コードの並びは変えない**。(3) 1Hz で stderr に集計行、終了時にヒストグラム出力。(4) 3プラットフォームでベースライン取得し本ファイル末尾に記録 |
+| 期待効果 | 以後の全最適化が実測判定に。回帰検知が可能に |
+| リスク | 極小。プローブ自体のオーバーヘッド（ゲート内でも ~2 QPC/区間）は PERF=1 時のみ |
+| 検証 | リリース構成で `nm`/逆アセンブルによりプローブ痕跡ゼロを確認。PERF=1 で 60fps 維持 |
+
+### Phase 1: ホットパス網羅監査（1日 / リスクなし / 変更なし）
+
+| 項目 | 内容 |
+|---|---|
+| 対象ファイル | 監査のみ: `MelonPrimeGameInput.cpp` / `MelonPrimeInGame.cpp` / `MelonPrime.cpp` / `PlatformInput.h` / 3フィルタ / `Screen.cpp` 非Win断片 / `MelonPrimeHudScreenCpp*.inc` / `EmuThread.cpp` |
+| 目的 | §2 の初期リストを網羅化。「毎フレーム/毎イベントに実行されるもの」を全列挙し、syscall / Qt呼び出し / atomic / ヒープ / 文字列 / 除算 の観点で分類した**証拠表**を作る |
+| 作業 | チェックリスト駆動 grep + 読解: (a) per-frame syscall（warp/GetAsyncKeyState相当/GetRawInputBuffer相当の非Win版）、(b) per-event の Qt オブジェクト生成、(c) atomic RMW vs load-first（P-48a 規律）、(d) epoch/dirty ゲートの漏れ（[melonprime-performance.md](melonprime-performance.md) の Invalidations 原則と突合）、(e) mac GL / software 両描画パスの per-frame 差 |
+| 期待効果 | Phase 2–4 の作業項目が確定。非対象（規律準拠済み）も「監査済み・白」として記録され再調査コストが消える |
+| リスク | なし（コード変更なし） |
+| 検証 | 証拠表を本ファイルに追記。各項目に file:line を付す |
+
+### Phase 2: プラットフォーム入力ホットパスの残渣除去（1–1.5日 / リスク低中 / **本丸A**）
+
+| 項目 | 内容 |
+|---|---|
+| 対象ファイル | `MelonPrimeGameInput.cpp` / `MelonPrimePlatformInput.h` / `MelonPrimeRawInputMacFilter.mm` / `Screen.cpp`(mac断片) |
+| 目的 | W1/W2/W3 の除去 + Phase 1 で追加確定した項目 |
+| 作業 | (1) **W1**: mac の `warpCursorAfterAim` を「rawアクティブ時 false」に（Linux と同型）。パネル側に mac 用の閾値格納ワープを追加（`clipCursorCenter1px` 相当の既存 CGWarp を流用、>96px 時のみ）。QCursor フォールバック時は現行どおり毎フレーム再センター維持。(2) **W2**: `resetAimMouseDelta()` を rawモード遷移エッジのみに（`m_platformRawAimWasActive` 1バイトで判定）。(3) **W3**: `PlatformInput_IsXcb()` を static 初期化1回に。(4) Phase 1 検出分 |
+| 期待効果 | mac: per-frame syscall −1（60/s の CGWarp 全廃 @raw時）。Linux: per-frame atomic store −3。歴代基準で P-33/P-48 クラス |
+| リスク | mac のカーソル格納が閾値式になることで、ウィンドウ外クリック事故の余地（Linux で運用実績あり。格納閾値は Linux と同じ 96px）。フォールバック経路の退行（→ ゲートを raw 限定にすることで構造的に回避） |
+| 検証 | S18/S19（macエイム/ライフサイクル）+ S20（Linux VM）+ `MELONPRIME_INPUT_DEBUG=1` でモード遷移ログ確認 + Phase 0 計測で input 区間の before/after |
+
+### Phase 3: 非Windowsフレームペーシング調律（1–2日 / リスク中 / **本丸B・計測ゲート**）
+
+| 項目 | 内容 |
+|---|---|
+| 対象ファイル | `EmuThread.cpp`（リミッタの非Win分岐のみ）、必要なら `MelonPrimeRawWinInternal` 相当の mac/linux 版（新規、任意） |
+| 目的 | W5。スピン時間（busy CPU）の削減とフレームタイム分散の縮小 |
+| 作業 | (1) Phase 0 でプラットフォーム別に sleep 粒度・オーバーシュートを実測。(2) 非Win の coarse マージン 1.0ms を実測値ベースで縮小（`#ifdef` でプラットフォーム別定数、Windows 値は不変）。(3) 効果が出る場合のみ: mac `mach_wait_until` / Linux `clock_nanosleep(TIMER_ABSTIME)` による絶対期限スリープを検討（別コミット）。(4) mac GCMouse ハンドラの専用キュー化は計測で配送ジッタが確認できた場合のみ |
+| 期待効果 | スピン削減 = CPU/電力低下。p99 フレームタイムの安定化 |
+| リスク | ペーシング退行（音ズレ/テアリング体感）。**Windows 分岐は1文字も触らない**ことで既存環境を隔離 |
+| 検証 | Phase 0 ヒストグラムの before/after 必須（p50/p99/max + スピン時間区間）。60fps 長時間（10分）で分散悪化なし |
+
+### Phase 4: HUD/描画 per-frame 残渣（0.5–1.5日 / リスク低 / 計測ゲート）
+
+| 項目 | 内容 |
+|---|---|
+| 対象ファイル | Phase 1 の証拠表で確定（候補: `MelonPrimeHudScreenCpp*` の mac GL パス、software パスの mac 特有コスト） |
+| 目的 | 既存の epoch/dirty 網から漏れた per-frame 処理の除去（**新規検出分のみ**。OPT-DR/SC/HRT 済み領域の再設計はしない） |
+| 作業 | Phase 1 検出分に限定して、既存パターン（epoch ゲート / 静的キャッシュ / dirty rect）を適用。各修正は melonprime-performance.md の「Invalidation owner 必須」原則に従い owner を明記 |
+| 期待効果 | 検出内容次第（推定は書かない — 計測で確定） |
+| リスク | キャッシュの invalidation 漏れ → 表示 stale。owner 明記 + S9/S16 で検証 |
+| 検証 | S9（HUD全般）/ S13 / S16（プレビュー一致）+ Phase 0 の draw 区間計測 |
+
+### Phase 5: キャッシュ/invalidation 台帳（0.5日 / リスクなし）
+
+| 項目 | 内容 |
+|---|---|
+| 対象ファイル | [melonprime-performance.md](melonprime-performance.md)（追記）、コードは変更なし |
+| 目的 | 「どのキャッシュを誰が無効化するか」を1つの表に固定し、今後の機能追加時の invalidation 漏れを構造的に防ぐ |
+| 作業 | 全キャッシュ（HUD config epoch群 / 3フィルタの蓄積・基準 / ZoomStatus / BattleMatchState / aim 残差 / P-3 panel / HudGeometry 消費側）について「キャッシュ名 / 保持場所 / 無効化トリガ / owner関数」の台帳を作成。V4 新規分（`absBaseInvalid`、`NotifyCursorWarp`、`gcActive`）を必ず含める |
+| 期待効果 | stale バグの予防。レビュー基準の明文化 |
+| リスク | なし |
+| 検証 | 台帳の各行に file:line。リンクチェッカー green |
+
+### Phase 6: 任意・計測ゲートのストレッチ
+
+- Linux フィルタの poll ウェイクアップ調律、mac IOHID グレース定数、
+  `snapshotInputFrame` 系の非Win簡易版統合など、**Phase 0 計測で有意差が出たものだけ**
+- 出なければ「計測済み・効果なし」と記録して閉じる（歴代の Rejected 表と同じ流儀）
+
+### Phase 7: ドキュメント + 基準値固定（0.5日 / リスクなし）
+
+1. [melonprime-refactoring.md](melonprime-refactoring.md) に「Round 10 (V5) — Measured」節を追記
+   （変更ごとの実測値表。以後この文書の効果欄は実測値で書く、という運用転換を明記）
+2. [melonprime-performance.md](melonprime-performance.md) に Phase 5 台帳と
+   「per-frame syscall 予算表（プラットフォーム別・現在値）」を追加 —
+   増やす変更はレビュー必須というラチェット
+3. 3プラットフォームのフレームタイム基準値（Phase 0/3 の最終値）を本ファイルに記録し
+   `completed/` へ移動
+4. CLAUDE.md / rules README 更新
+
+---
+
+## 5. リスクと対策
+
+| リスク | 該当 | 対策 |
+|---|---|---|
+| プローブ挿入が P-13 のフレーム順序を乱す | 0 | 既存境界に読み取り専用で挿入。順序・呼び出しは不変。リリースでコンパイル時除去を機械確認 |
+| mac ワープ廃止でカーソルが画面外へ | 2 | Linux で運用実績のある閾値格納方式を同値移植。フォールバック時は従来動作。S18 で Alt-Tab/復帰含め確認 |
+| 遷移エッジ化した reset の漏れ（stale 蓄積） | 2 | 遷移判定は1バイトの前回値比較のみ。`MELONPRIME_INPUT_DEBUG` に遷移ログを既設 — panel→raw 切替時の破棄を目視確認 |
+| ペーシング変更の環境依存退行 | 3 | プラットフォーム別 `#ifdef` 定数で Windows 完全隔離。計測必須 + 10分ソーク |
+| 計測基盤自体の観測者効果 | 0,3 | PERF=0 で完全無効。PERF=1 同士で before/after を比較（絶対値でなく差分で判断） |
+| 「最適化したい病」で do-not-touch へ踏み込む | 全 | 変更前チェック: 対象が V1 §2.1 リストに載っていれば PR 分離 + 計測添付が必須（本計画では扱わない） |
+
+---
+
+## 6. スモークチェックリスト
+
+V1 S1–S12 / V2 S13–S15 / V3 S16–S17 / V4 S18–S20 を継承。V5 追加:
+
+| # | 項目 | 確認内容 |
+|---|---|---|
+| S21 | フレームタイム比較 | Phase 0 基盤で before/after の p50/p99/max を取得し、悪化なしを数値で確認（Phase 2/3/4 の DoD） |
+| S22 | リリース痕跡ゼロ | リリース構成バイナリに perf プローブのシンボル/文字列が残らない |
+
+---
+
+## 7. 進捗トラッキング
+
+| Phase | 内容 | 状態 | 完了日 | 結果メモ |
+|---|---|---|---|---|
+| 0 | 計測基盤 + 3プラットフォーム基準値 | 未着手 | — | — |
+| 1 | ホットパス網羅監査（証拠表） | 未着手 | — | — |
+| 2 | 入力ホットパス残渣除去（本丸A） | 未着手 | — | — |
+| 3 | ペーシング調律（本丸B・計測ゲート） | 未着手 | — | — |
+| 4 | HUD/描画残渣（計測ゲート） | 未着手 | — | — |
+| 5 | invalidation 台帳 | 未着手 | — | — |
+| 6 | ストレッチ（計測ゲート） | 未着手 | — | — |
+| 7 | 文書化 + 基準値固定 | 未着手 | — | — |
+
+### 初期実測値（2026-07-04、計画作成時）
+
+- mac: `warpCursorAfterAim = true`（GameInput.cpp:585）→ raw時も毎エイムフレーム CGWarp
+- Linux raw時: `resetAimMouseDelta()` 毎フレーム（GameInput.cpp:227）
+- `platformName()` QString比較: PlatformInput.h 2箇所
+- ホットパス gameplay ファイルの per-frame Config 参照: 0件（規律維持を確認）
+- 計測基盤: 存在せず（`MELONPRIME_PERF` 等 0件）
+- ドメインLOC: raw入力 2,366 / HUD 12,410 / パッチ・フック 6,239 / ゲーム層 4,747 / 設定UI 5,675
+
+---
+
+## 8. 推奨着手順序
+
+```
+0 (計測) → 1 (監査) → 2 (本丸A) → 3 (本丸B) → 4 → 5 → (6) → 7
+```
+
+- **0 が絶対の先頭**。これなしに 3/4/6 は着手禁止（不変条件1）
+- 2 は計測前でも正当化できる唯一の実装フェーズ（syscall/atomic の存在自体が証拠のため）
+  だが、効果の記録には 0 を使う
+- 5 は独立・随時可能。総見積り: **必須（0–5, 7）で約5.5–8日相当**

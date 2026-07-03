@@ -1699,3 +1699,10 @@ Local verification at final snapshot:
 - `MelonPrimePlatformInput.h` is the only intended place for future macOS/Linux
   raw-delta dispatch branching. Raising the platform scatter budget above 30
   should be treated as a regression.
+
+## 24.5 Post-V4 roadmap
+
+V4 is complete (`completed/melonprime-full-refactor-plan-v4.md`). The next
+investigation and phase plan for `highres_fonts_v3` lives in
+[notes/melonprime-highres-fonts-v3-refactor-roadmap.md](notes/melonprime-highres-fonts-v3-refactor-roadmap.md)
+(per-frame patch reduction, input/warp cleanup, HUD CPU redraw, Phases 0–10).
