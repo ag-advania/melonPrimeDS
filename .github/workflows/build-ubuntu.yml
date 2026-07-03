@@ -32,7 +32,7 @@ jobs:
         ./.claude/skills/audit-hud-key-parity.ps1 -Strict
         ./.claude/skills/check-inc-ownership.ps1
         ./.claude/skills/audit-metroid-literal-budget.ps1 -Budget 1
-        ./.claude/skills/audit-platform-scatter-budget.ps1 -Budget 30
+        ./.claude/skills/audit-platform-scatter-budget.ps1 -Budget 22
 
     - name: Verify generated HUD schema
       shell: pwsh
@@ -75,6 +75,10 @@ jobs:
       run: |
         cmake --build build
         DESTDIR=AppDir cmake --install build
+
+    - name: Verify developer HUD golden harness is absent from release binary
+      run: |
+        ! strings AppDir/usr/bin/melonPrimeDS | grep -E 'melonprime-hud-golden|MelonPrime HUD golden|CustomHud_RunGoldenHarness'
 
     - name: Compress binary
       run: |

@@ -93,6 +93,7 @@ set(SOURCES_QT_SDL
     InputConfig/MelonPrimeInputConfigPreview.cpp
 
     MelonPrime.cpp
+    MelonPrimeLifecycle.cpp
     MelonPrimeLocalization.cpp
     MelonPrimeHudRender.cpp
     MelonPrimeHudConfigOnScreenEdit.cpp

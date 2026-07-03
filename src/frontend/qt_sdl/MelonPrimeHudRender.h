@@ -12,6 +12,7 @@ class EmuInstance;
 class QPainter;
 class QImage;
 class QFont;
+class QString;
 namespace Config { class Table; }
 
 namespace MelonPrime {
@@ -162,8 +163,12 @@ namespace MelonPrime {
     // Returns the currently selected element index (-1 = none).
     int  CustomHud_GetSelectedElement();
 
+#ifdef MELONPRIME_ENABLE_DEVELOPER_FEATURES
+    // Developer-only CLI hook: render deterministic HUD cases and write hashes.
+    int CustomHud_RunGoldenHarness(const QString& outputPath);
+#endif
+
 } // namespace MelonPrime
 
 #endif // MELONPRIME_CUSTOM_HUD
 #endif // MELON_PRIME_HUD_RENDER_H
-

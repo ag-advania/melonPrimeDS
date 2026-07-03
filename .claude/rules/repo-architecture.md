@@ -130,7 +130,7 @@ Rules:
 3. macOS cursor recentering must remain `MacWarpCursorGlobal`; `QCursor::setPos`
    under `__APPLE__` is guarded by `.claude/skills/audit-platform-scatter-budget.ps1`.
 4. The platform scatter budget excludes `MelonPrimePlatformInput.h` as the
-   canonical dispatch owner and currently ratchets call-site scatter at 30.
+   canonical dispatch owner and currently ratchets call-site scatter at 22.
 
 ## Config System
 Default values live in `src/frontend/qt_sdl/Config.cpp`.
@@ -275,6 +275,9 @@ The Phase 0-8 structural refactor finished on 2026-06-11. Current ownership poin
 - Static write-patch lifecycle is centralized in `MelonPrimePatchRegistry.h/.cpp`. New persistent
   write-patches should add a module plus one registry row; `MelonPrime.cpp` should not regain
   per-module apply/restore/reset lists.
+- Cold `MelonPrimeCore` lifecycle/config bodies live in `MelonPrimeLifecycle.cpp`. Keep
+  `RunFrameHook`, `HandleGameJoinInit`, and `HandleBattleRuntimeEnter` in `MelonPrime.cpp` unless a
+  dedicated code-generation comparison is part of the change.
 - Shared all-or-nothing word patches should use `MelonPrimePatchCommon.h` / `StaticWordPatch`.
   Patch-specific state machines such as mask-selected or canary-based patches may stay custom.
 - ROM address definitions live in `MelonPrimeGameRomAddrTable.h` as a single X-macro source of
@@ -314,7 +317,9 @@ Current work is on the `highres_fonts_v3` branch. Main changes relative to `mast
   - `MelonPrimeHudRenderConfig.inc` - cached config structs/loaders and anchor recomputation
   - `MelonPrimeHudRenderRuntime.inc` - battle state, frame helpers, hide rules, NoHUD patch/cache lifecycle
   - `MelonPrimeHudRenderDraw.inc` - HUD element drawing
+  - `MelonPrimeHudRenderCrosshairFx.inc` - nested draw helper included only by `MelonPrimeHudRenderDraw.inc`
   - `MelonPrimeHudRenderMain.inc` - `CustomHud_Render`, radar overlay, edit-mode forward state
+  - `MelonPrimeHudGoldenHarness.inc` - developer-only golden hash harness, included only by `MelonPrimeHudRender.cpp` and gated by `MELONPRIME_ENABLE_DEVELOPER_FEATURES`
 - Screen integration code rooted at `Screen.cpp` and split into `MelonPrimeHudScreenCpp*.inc` fragments:
   - `Helpers` fragment for common edit-panel placement, epoch refresh, top overlay clear/render, and patch restore helpers
   - setup/layout/input fragments for edit-mode forwarding and floating panel placement
@@ -322,3 +327,4 @@ Current work is on the `highres_fonts_v3` branch. Main changes relative to `mast
   - GL init/deinit/overlay fragments for texture/shader resources, HUD upload/composite, and native radar overlay
 - EmuThread integration has small self-contained MelonPrime fragments in `MelonPrimeEmuThread*.inc` for includes, constructor setup, run setup, message queue atomics, and renderer VSync preservation. The frame limiter and frame pacing body remain inline in `EmuThread.cpp`.
 - Unity include ownership is checked by `.claude/skills/check-inc-ownership.ps1`; it verifies one parent per unity `.inc`, verifies the fixed parent set for the macro-section `MelonPrimeArm9InstructionHook.inc`, rejects `#include "*.cpp"`, and rejects `.inc` entries in `CMakeLists.txt`
+- Nested `.inc` fragments are allowed only when the child has exactly one `.inc` parent and is documented as owned by that parent. `MelonPrimeHudRenderCrosshairFx.inc` is the current example: it is included by `MelonPrimeHudRenderDraw.inc`, not directly by `MelonPrimeHudRender.cpp`.

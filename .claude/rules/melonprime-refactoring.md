@@ -131,7 +131,7 @@ In particular, the following items should be read by separating the **document-s
 ## 3.1 Target modules
 
 - Raw Input layer: `MelonPrimeRawInputState` / `MelonPrimeRawInputWinFilter`
-- Game-logic layer: `MelonPrime.h` / `MelonPrime.cpp` / `MelonPrimeInGame.cpp` / `MelonPrimeGameInput.cpp` / `MelonPrimeGameWeapon.cpp`
+- Game-logic layer: `MelonPrime.h` / `MelonPrime.cpp` / `MelonPrimeLifecycle.cpp` / `MelonPrimeInGame.cpp` / `MelonPrimeGameInput.cpp` / `MelonPrimeGameWeapon.cpp`
 - ROM-detection layer: `MelonPrimeGameRomDetect.cpp`
 
 ## 3.2 Threading model
@@ -852,6 +852,7 @@ When reading this unified edition, treat the following four points as fixed rule
 | `MelonPrimeCompilerHints.h` | R1: common macro integration, P-5 |
 | `MelonPrime.h` | OPT C/D/G/L/O/W, P-3, P-17, P-18, P-33 (empty-inline PrePollRawInput), P-46 (`msgPending` atomic), P-47 (`m_didFrameAdvanceSinceSnapshot` + `FrameAdvanceOnce` set) |
 | `MelonPrime.cpp` | OPT D/E/K/L/O/W/Z1/Z2/Z3/Z4, FIX-3, P-20b, P-20c, P-22 (`DeferredDrainInput()` implementation), P-33 (remove PrePoll implementation), P-43 (focused local cache) |
+| `MelonPrimeLifecycle.cpp` | V6 Phase 4: cold `MelonPrimeCore` lifecycle/config bodies (`OnEmuStart` / stop / pause / unpause / boot reset / config reload / init / destructor) moved out of `MelonPrime.cpp` without moving `RunFrameHook` join/battle helpers |
 | `MelonPrimeGameInput.cpp` | OPT F/O/Q/Z2/Z3, FIX-2, P-3, P-17, P-18, P-44 (zero-delta skip), P-47 (clear `m_didFrameAdvanceSinceSnapshot` after PollAndSnapshot) |
 | `MelonPrimeInGame.cpp` | OPT A/B/G/H/J/Z2/Z5, R1 constexpr tables, P-36 (HandleMorphBallBoost branch unification), P-47 (gate LateLatch on `m_didFrameAdvanceSinceSnapshot`) |
 | `EmuThread.cpp` | P-11, P-12, P-13, P-15, P-16, P-22, P-24, P-25, P-26a, P-27, P-32, P-33, P-38, P-39, P-40, P-41, P-45 (QPC spin-loop reuse), P-46 (`handleMessages` acquire fast-path + `sendMessage` release store); owns `MelonPrimeEmuThread*.inc` unity fragments |
@@ -873,7 +874,9 @@ When reading this unified edition, treat the following four points as fixed rule
 | `MelonPrimeHudRenderConfig.inc` | Cached HUD config, anchor recomputation, auto-scale setup; OPT-HUD-6 (`s_frameFont` static) |
 | `MelonPrimeHudRenderRuntime.inc` | Battle/match state, runtime helpers, hide rules, NoHUD patch, static dirty rect; OPT-HUD-6 (`EnsureHudFont` populates `s_frameFont`) |
 | `MelonPrimeHudRenderDraw.inc` | Drawing of HUD elements such as HP/weapon/ammo/radar/crosshair; OPT-HUD-6 (removed `p->font()` copies in 3 draw functions) |
+| `MelonPrimeHudRenderCrosshairFx.inc` | Crosshair/scope effect helpers owned by `MelonPrimeHudRenderDraw.inc` as a nested unity fragment |
 | `MelonPrimeHudRenderMain.inc` | `CustomHud_Render()`, edit-mode forward state, radar-frame drawing |
+| `MelonPrimeHudGoldenHarness.inc` | Developer-only HUD golden hash harness; compiled only when `MELONPRIME_ENABLE_DEVELOPER_FEATURES` is on |
 | `MelonPrimeHudConfigOnScreenUnity.inc` | In-game HUD editor unity entry point. Holds shared edit-mode state and include ordering |
 | `MelonPrimeHudConfigOnScreenDefs.inc` | Edit-mode definition tables / property descriptors / element table |
 | `MelonPrimeHudConfigOnScreenSnapshot.inc` | Edit-mode snapshot / restore / reset |
@@ -1332,6 +1335,7 @@ Originally, large amounts of processing were concentrated in `MelonPrimeHudRende
 
 Important rules:
 - `MelonPrimeHudRender*.inc` must only be included from `MelonPrimeHudRender.cpp`
+- A nested runtime fragment may be included from another runtime `.inc` only when it has a single documented parent; currently `MelonPrimeHudRenderCrosshairFx.inc` is owned by `MelonPrimeHudRenderDraw.inc`
 - `MelonPrimeHudConfigOnScreenUnity.inc` must only be included from `MelonPrimeHudRender.cpp`
 - `MelonPrimeHudConfigOnScreen*.inc` fragments must only be included from `MelonPrimeHudConfigOnScreenUnity.inc`
 - `MelonPrimeHudScreenCpp*.inc` must only be included from `Screen.cpp`
@@ -1348,7 +1352,9 @@ Important rules:
 | `MelonPrimeHudRenderConfig.inc` | `CachedHudConfig`, config load, anchor recomputation, auto-scale |
 | `MelonPrimeHudRenderRuntime.inc` | runtime state, battle state, hide rules, NoHUD patch, dirty-rect computation |
 | `MelonPrimeHudRenderDraw.inc` | HUD element drawing |
+| `MelonPrimeHudRenderCrosshairFx.inc` | Crosshair/scope effect helpers, included only by `MelonPrimeHudRenderDraw.inc` |
 | `MelonPrimeHudRenderMain.inc` | `CustomHud_Render()`, edit-mode forward state, radar-frame drawing |
+| `MelonPrimeHudGoldenHarness.inc` | Developer-only `--melonprime-hud-golden` hash harness |
 
 ## 18.3 On-screen HUD Editor split
 
@@ -1656,7 +1662,7 @@ distribution still needed a stable ad-hoc signature.
 | Area | Result |
 |---|---|
 | Platform input facade | `MelonPrimePlatformInput.h` now owns macOS/Linux raw filter acquire/release/reset/fetch checks and the non-Windows cursor-warp entry point. Windows `RawInputWinFilter` remains untouched. |
-| Scatter ratchet | `.claude/skills/audit-platform-scatter-budget.ps1` is fixed at 30 call-site markers, excluding the facade as the canonical dispatch owner. Windows and Ubuntu CI both run the ratchet. |
+| Scatter ratchet | `.claude/skills/audit-platform-scatter-budget.ps1` is fixed at 22 call-site markers as of V6 Phase 7, excluding the facade as the canonical dispatch owner. Windows and Ubuntu CI both run the ratchet. |
 | Linux raw aim | The Linux path keeps XInput2 RawMotion on X11, gates raw mode on first real motion, converts absolute-device values to deltas, and leaves Wayland/non-XCB on the Qt panel fallback. |
 | HUD geometry sharing | `MelonPrimeHudGeometry.h` now also owns gauge alignment, gauge-to-text positioning, and rect anchoring used by runtime wrappers, in-game edit bounds, and settings previews. Preview-only simplifications remain intentional. |
 | CI / docs | macOS, Ubuntu, BSD, and Windows workflows are documented as fork-owned CI. Release notes and macOS build docs list the current artifact names and Gatekeeper constraint. |
@@ -1672,7 +1678,7 @@ Measured on 2026-07-03, branch `highres_fonts_v3`, local macOS build tree
 |---|---:|---:|---:|
 | `MelonPrime*` files excluding `.ui` | 32,306 lines | 128 / 32,531 lines | +225 lines |
 | `MelonPrime*` files including `.ui` | — | 129 / 33,771 lines | — |
-| Platform scatter budget | 36 | 30 | -6 |
+| Platform scatter budget | 36 | 24 | -12 |
 | `m_macRawFilter` / `m_linuxRawFilter` references | 36 | 0 | -36 |
 | `MelonPrime.cpp` line count | 1,021 | 977 | -44 |
 | HUD schema rows | 575 | 575 | 0 |
@@ -1697,13 +1703,54 @@ Local verification at final snapshot:
 - Developer ID signing and notarization are out of scope; release zips may still
   show Gatekeeper warnings despite ad-hoc signing.
 - `MelonPrimePlatformInput.h` is the only intended place for future macOS/Linux
-  raw-delta dispatch branching. Raising the platform scatter budget above 30
+  raw-delta dispatch branching. Raising the platform scatter budget above 22
   should be treated as a regression.
 
 ## 24.5 Post-V4 roadmap
 
 V4 is complete (`completed/melonprime-full-refactor-plan-v4.md`). V5 performance
 work (Phase 0–7) is complete (`completed/melonprime-full-refactor-plan-v5.md`).
+
+---
+
+## 25. Structural Refactor V6 2026-07
+
+V6 is partially complete. Measurement-independent phases are committed, while
+the measured optimization phases remain gated on ROM soak logs.
+
+| Area | Result |
+|---|---|
+| Perf baseline prep | `.claude/skills/perf-baseline-procedure.md` and the perf summarizer support section/counter output. Canonical 10-minute ROM soaks are still pending. |
+| HUD golden harness | Developer-only `--melonprime-hud-golden` emits stable hashes and release builds are checked for zero harness traces. Golden changes are restricted to intentional visual commits. |
+| Lifecycle split | Cold `MelonPrimeCore` lifecycle/config bodies moved to `MelonPrimeLifecycle.cpp`; `RunFrameHook`, `HandleGameJoinInit`, and `HandleBattleRuntimeEnter` remain in `MelonPrime.cpp`. |
+| Scatter ratchet | The platform scatter budget was lowered from 24 to 22 after the lifecycle split removed call-site platform markers. |
+| Declutter | `MelonPrime.cpp` no longer includes the unused `Platform.h`. |
+
+### V6 Current Metrics
+
+Measured on 2026-07-04, branch `highres_fonts_v3`, local macOS build trees
+`build-mac` and `build-mac-release`, HEAD `74e1d6cf`.
+
+| Metric | Value |
+|---|---:|
+| `MelonPrime*` files excluding `.ui` | 132 / 33,362 lines |
+| `MelonPrime.cpp` | 682 lines |
+| `MelonPrimeLifecycle.cpp` | 316 lines |
+| `MelonPrimePerfProbe.h` | 455 lines |
+| Platform scatter budget | 22 / 22 |
+| Non-canonical `"Metroid.*"` literal budget | 1 / 1 |
+| `.inc` ownership | PASS (52 fragments) |
+| macOS dev binary | 7.0M |
+| macOS release binary | 6.8M |
+
+### V6 Remaining Gates
+
+- Phase 0 canonical macOS/Windows/Linux ROM soak logs are pending.
+- Phase 3 HUD cache/layer work and Phase 5 per-frame reevaluation reductions
+  must not proceed without Phase 0 before/after numbers.
+- Phase 4 manual S2/S6/S7/S8 ROM smoke remains user-dependent.
+- The V6 plan stays in `.claude/rules/` rather than `completed/` until those
+  gates are closed.
 Follow-on investigation notes remain in
 [notes/melonprime-highres-fonts-v3-refactor-roadmap.md](notes/melonprime-highres-fonts-v3-refactor-roadmap.md).
 
