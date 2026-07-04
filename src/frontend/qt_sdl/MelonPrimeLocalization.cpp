@@ -12,10 +12,16 @@
 #include <QItemSelectionModel>
 #include <QDialogButtonBox>
 #include <QEvent>
+#include <QInputDialog>
+#include <QMessageBox>
+#include <QPointer>
 #include <QStandardItemModel>
 #include <QTabWidget>
+#include <QTimer>
 #include <QTreeView>
 #include <QVariant>
+
+#include <QApplication>
 
 #include <utility>
 
@@ -1435,6 +1441,104 @@ void wireMelonDsDialogDynamicLabels(QWidget* dialog)
     relocalizeOption();
 }
 
+class MelonDsLanPopupLocalizer final : public QObject
+{
+public:
+    explicit MelonDsLanPopupLocalizer(QWidget* owner)
+        : QObject(owner)
+        , m_owner(owner)
+    {
+        qApp->installEventFilter(this);
+    }
+
+    ~MelonDsLanPopupLocalizer() override
+    {
+        qApp->removeEventFilter(this);
+    }
+
+protected:
+    bool eventFilter(QObject* watched, QEvent* event) override
+    {
+        if (!IsJapaneseLocale() || event->type() != QEvent::Show || !m_owner)
+            return QObject::eventFilter(watched, event);
+
+        if (auto* box = qobject_cast<QMessageBox*>(watched))
+        {
+            if (box->parentWidget() != m_owner)
+                return QObject::eventFilter(watched, event);
+
+            const QString text = box->text();
+            const QString translated = Tr(text);
+            if (translated != text)
+                box->setText(translated);
+        }
+        else if (auto* input = qobject_cast<QInputDialog*>(watched))
+        {
+            if (input->parentWidget() != m_owner)
+                return QObject::eventFilter(watched, event);
+
+            input->setWindowTitle(Tr(input->windowTitle()));
+            input->setLabelText(Tr(input->labelText()));
+        }
+
+        return QObject::eventFilter(watched, event);
+    }
+
+private:
+    QPointer<QWidget> m_owner;
+};
+
+class MelonDsLanClientDiscoveryLocalizer final : public QObject
+{
+public:
+    MelonDsLanClientDiscoveryLocalizer(QTreeView* tree, QWidget* parent)
+        : QObject(parent)
+        , m_tree(tree)
+    {
+        m_timer.setInterval(500);
+        connect(&m_timer, &QTimer::timeout, this, &MelonDsLanClientDiscoveryLocalizer::relocalizeStatusColumn);
+        m_timer.start();
+        relocalizeStatusColumn();
+    }
+
+private:
+    void relocalizeStatusColumn()
+    {
+        if (!IsJapaneseLocale() || !m_tree)
+            return;
+
+        auto* model = qobject_cast<QStandardItemModel*>(m_tree->model());
+        if (!model)
+            return;
+
+        for (int row = 0; row < model->rowCount(); ++row)
+        {
+            QStandardItem* item = model->item(row, 2);
+            if (!item)
+                continue;
+
+            static constexpr int kLanStatusSourceRole = Qt::UserRole + 30002;
+            const QVariant stored = item->data(kLanStatusSourceRole);
+            const QString source = stored.isValid() ? stored.toString() : item->text();
+            if (!stored.isValid())
+                item->setData(source, kLanStatusSourceRole);
+            item->setText(Tr(source));
+        }
+    }
+
+    QPointer<QTreeView> m_tree;
+    QTimer m_timer;
+};
+
+void ensureLanRuntimeHooks(QWidget* dialog)
+{
+    if (!dialog || dialog->property("_melonprime_lan_runtime_hook").toBool())
+        return;
+
+    dialog->setProperty("_melonprime_lan_runtime_hook", true);
+    new MelonDsLanPopupLocalizer(dialog);
+}
+
 void wireMelonDsLANDialogLabels(QWidget* dialog)
 {
     if (!dialog || !IsJapaneseLocale())
@@ -1456,6 +1560,7 @@ void wireMelonDsLANDialogLabels(QWidget* dialog)
     if (dialogName == QStringLiteral("LANStartHostDialog"))
     {
         localizeLanWarning(dialog->findChild<QLabel*>(QStringLiteral("label_3")));
+        ensureLanRuntimeHooks(dialog);
         return;
     }
 
@@ -1463,6 +1568,7 @@ void wireMelonDsLANDialogLabels(QWidget* dialog)
         return;
 
     localizeLanWarning(dialog->findChild<QLabel*>(QStringLiteral("label_2")));
+    ensureLanRuntimeHooks(dialog);
 
     if (auto* box = dialog->findChild<QDialogButtonBox*>(QStringLiteral("buttonBox")))
     {
@@ -1505,6 +1611,8 @@ void wireMelonDsLANDialogLabels(QWidget* dialog)
                 translated.append(Tr(header));
             model->setHorizontalHeaderLabels(translated);
         }
+
+        new MelonDsLanClientDiscoveryLocalizer(tree, dialog);
     }
 }
 
