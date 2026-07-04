@@ -135,6 +135,7 @@ public:
     void switchTabToAddons();
     void switchTabToMetroid();
     void switchTabToMetroid2();
+    void switchTabToCustomHud();
     void refreshAfterHudEditSave();
     /* } MelonPrimeDS*/
 #endif

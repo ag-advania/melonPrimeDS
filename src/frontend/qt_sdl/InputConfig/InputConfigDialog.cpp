@@ -347,6 +347,11 @@ void InputConfigDialog::switchTabToMetroid2() {
     if (tab) ui->tabWidget->setCurrentWidget(tab);
 }
 
+void InputConfigDialog::switchTabToCustomHud() {
+    QWidget* tab = ui->tabWidget->findChild<QWidget*>("tabCrosshair");
+    if (tab) ui->tabWidget->setCurrentWidget(tab);
+}
+
 void InputConfigDialog::refreshAfterHudEditSave()
 {
     if (melonPrimeInputConfig) {

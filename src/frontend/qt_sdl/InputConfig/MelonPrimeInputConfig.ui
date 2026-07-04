@@ -45,7 +45,7 @@
 					</widget>
 
 					<widget class="QWidget" name="tabMetroid">
-						<attribute name="title"><string>Metroid Settings</string></attribute>
+						<attribute name="title"><string>MelonPrime Settings</string></attribute>
 						<layout class="QVBoxLayout" name="metroidOuterVLayout">
 							<property name="leftMargin"><number>0</number></property>
 							<property name="topMargin"><number>0</number></property>

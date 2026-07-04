@@ -35,8 +35,17 @@
 #include "ui_LANStartClientDialog.h"
 #include "ui_LANDialog.h"
 
-using namespace melonDS;
+#ifdef MELONPRIME_DS
+#include "MelonPrimeLocalization.h"
+#endif
 
+#ifdef MELONPRIME_DS
+#define MP_LAN_TR(text) MelonPrime::UiText::Tr(text)
+#else
+#define MP_LAN_TR(text) (text)
+#endif
+
+using namespace melonDS;
 
 LANStartClientDialog* lanClientDlg = nullptr;
 LANDialog* lanDlg = nullptr;
@@ -75,7 +84,7 @@ void LANStartHostDialog::done(int r)
     {
         if (ui->txtPlayerName->text().trimmed().isEmpty())
         {
-            QMessageBox::warning(this, "melonDS", "Please enter a player name.");
+            QMessageBox::warning(this, "melonDS", MP_LAN_TR("Please enter a player name."));
             return;
         }
 
@@ -84,7 +93,7 @@ void LANStartHostDialog::done(int r)
 
         if (!lan().StartHost(player.c_str(), numplayers))
         {
-            QMessageBox::warning(this, "melonDS", "Failed to start LAN game.");
+            QMessageBox::warning(this, "melonDS", MP_LAN_TR("Failed to start LAN game."));
             return;
         }
 
@@ -164,11 +173,11 @@ void LANStartClientDialog::onDirectConnect()
 {
     if (ui->txtPlayerName->text().trimmed().isEmpty())
     {
-        QMessageBox::warning(this, "melonDS", "Please enter a player name before connecting.");
+        QMessageBox::warning(this, "melonDS", MP_LAN_TR("Please enter a player name before connecting."));
         return;
     }
 
-    QString host = QInputDialog::getText(this, "Direct connect", "Host address:");
+    QString host = QInputDialog::getText(this, MP_LAN_TR("Direct connect"), MP_LAN_TR("Host address:"));
     if (host.isEmpty()) return;
 
     std::string hostname = host.toStdString();
@@ -178,7 +187,7 @@ void LANStartClientDialog::onDirectConnect()
     lan().EndDiscovery();
     if (!lan().StartClient(player.c_str(), hostname.c_str()))
     {
-        QString msg = QString("Failed to connect to the host %0.").arg(QString::fromStdString(hostname));
+        QString msg = MP_LAN_TR("Failed to connect to the host %0.").arg(QString::fromStdString(hostname));
         QMessageBox::warning(this, "melonDS", msg);
         setEnabled(true);
         lan().StartDiscovery();
@@ -202,7 +211,7 @@ void LANStartClientDialog::done(int r)
     {
         if (ui->txtPlayerName->text().trimmed().isEmpty())
         {
-            QMessageBox::warning(this, "melonDS", "Please enter a player name before connecting.");
+            QMessageBox::warning(this, "melonDS", MP_LAN_TR("Please enter a player name before connecting."));
             return;
         }
 
@@ -221,7 +230,7 @@ void LANStartClientDialog::done(int r)
         lan().EndDiscovery();
         if (!lan().StartClient(player.c_str(), hostname))
         {
-            QString msg = QString("Failed to connect to the host %0.").arg(QString(hostname));
+            QString msg = MP_LAN_TR("Failed to connect to the host %0.").arg(QString(hostname));
             QMessageBox::warning(this, "melonDS", msg);
             setEnabled(true);
             lan().StartDiscovery();
@@ -285,8 +294,8 @@ void LANStartClientDialog::doUpdateDiscoveryList()
         QString status;
         switch (data.Status)
         {
-            case 0: status = "Idle"; break;
-            case 1: status = "Playing"; break;
+            case 0: status = MP_LAN_TR("Idle"); break;
+            case 1: status = MP_LAN_TR("Playing"); break;
         }
         model->item(i, 2)->setText(status);
 

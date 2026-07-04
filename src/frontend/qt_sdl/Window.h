@@ -189,6 +189,7 @@ private slots:
     /* MelonPrimeDS */
     void onOpenMetroidInputSettings();
     void onOpenMetroidOtherSettings();
+    void onOpenMetroidCustomHudSettings();
     void onChangeMetroidFixSF(bool checked);
     void onChangeMetroidInGameTopScreenOnly(bool checked);
     void onChangeMetroidDisableDoubleDamageMultiplier(bool checked);
@@ -310,6 +311,7 @@ public:
     QAction* actAudioSync;
 #ifdef MELONPRIME_DS
     QAction* actMetroidFixSF;
+    QAction* actMetroidCustomHudSettings;
     QAction* actMetroidInGameTopScreenOnly;
     QAction* actMetroidDisableDoubleDamageMultiplier;
     QAction* actMetroidDamageNotifyPurple;

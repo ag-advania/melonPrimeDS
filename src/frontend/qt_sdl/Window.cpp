@@ -83,8 +83,10 @@
 #include "MelonPrimeLocalization.h"
 #include "MelonPrimePatchShadowFreezeRuntimeHook.h"
 #define MP_OPEN_MELONDS_DLG(Type, parent) MelonPrime::UiText::OpenLocalizedMelonDsDialog<Type>(parent)
+#define MP_OPEN_MELONDS_DLG_ONCE(Type, parent) MelonPrime::UiText::OpenLocalizedMelonDsDialogOnce<Type>(parent)
 #else
 #define MP_OPEN_MELONDS_DLG(Type, parent) Type::openDlg(parent)
+#define MP_OPEN_MELONDS_DLG_ONCE(Type, parent) Type::openDlg(parent)
 #endif
 
 using namespace melonDS;
@@ -662,13 +664,16 @@ MainWindow::MainWindow(int id, EmuInstance* inst, QWidget* parent) :
 #ifdef MELONPRIME_DS
         /* MelonPrimeDS { */
         {
-            QMenu* menu = menubar->addMenu("Metroid");
+            QMenu* menu = menubar->addMenu("MelonPrime");
 
             actEmuSettings = menu->addAction("Input settings");
             connect(actEmuSettings, &QAction::triggered, this, &MainWindow::onOpenMetroidInputSettings);
 
-            actInputConfig = menu->addAction("Other settings");
+            actInputConfig = menu->addAction("MelonPrime settings");
             connect(actInputConfig, &QAction::triggered, this, &MainWindow::onOpenMetroidOtherSettings);
+
+            actMetroidCustomHudSettings = menu->addAction("Custom HUD settings");
+            connect(actMetroidCustomHudSettings, &QAction::triggered, this, &MainWindow::onOpenMetroidCustomHudSettings);
 
             menu->addSeparator();
 
@@ -1898,13 +1903,13 @@ void MainWindow::onMPNewInstance()
 void MainWindow::onLANStartHost()
 {
     if (!lanWarning(true)) return;
-    LANStartHostDialog::openDlg(this);
+    MP_OPEN_MELONDS_DLG_ONCE(LANStartHostDialog, this);
 }
 
 void MainWindow::onLANStartClient()
 {
     if (!lanWarning(false)) return;
-    LANStartClientDialog::openDlg(this);
+    MP_OPEN_MELONDS_DLG_ONCE(LANStartClientDialog, this);
 }
 
 void MainWindow::onNPStartHost()
@@ -2025,6 +2030,16 @@ void MainWindow::onOpenMetroidOtherSettings()
 
     InputConfigDialog* dlg = MP_OPEN_MELONDS_DLG(InputConfigDialog, this);
     dlg->switchTabToMetroid();
+
+    connect(dlg, &InputConfigDialog::finished, this, &MainWindow::onInputConfigFinished);
+}
+
+void MainWindow::onOpenMetroidCustomHudSettings()
+{
+    emuThread->emuPause();
+
+    InputConfigDialog* dlg = MP_OPEN_MELONDS_DLG(InputConfigDialog, this);
+    dlg->switchTabToCustomHud();
 
     connect(dlg, &InputConfigDialog::finished, this, &MainWindow::onInputConfigFinished);
 }
