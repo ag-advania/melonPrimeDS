@@ -25,6 +25,8 @@
 
 #include <utility>
 
+#include <cstring>
+
 #ifdef __APPLE__
 #include <CoreFoundation/CoreFoundation.h>
 #endif
@@ -172,6 +174,8 @@ constexpr Translation kTranslations[] = {
     // Main menu bar
     {"File", "ファイル"},
     {"Open ROM...", "ROMを開く..."},
+    {"File->Open ROM...", "ファイル → ROMを開く..."},
+    {"to get started", "で始めよう"},
     {"Open recent", "最近使ったROM"},
     {"Boot firmware", "ファームウェアを起動"},
     {"DS slot", "DSスロット"},
@@ -1661,6 +1665,22 @@ void LocalizeMelonDsDialog(QWidget* dialog)
     LocalizeWidgetTree(dialog);
     wireMelonDsLANDialogLabels(dialog);
     wireMelonDsDialogDynamicLabels(dialog);
+}
+
+void ApplyNoRomSplashLocalization(char line0[256], char line1[256])
+{
+    static constexpr const char kLine0En[] = "File->Open ROM...";
+    static constexpr const char kLine1En[] = "to get started";
+
+    const QString q0 = IsJapaneseLocale() ? Tr(kLine0En) : QString::fromUtf8(kLine0En);
+    const QString q1 = IsJapaneseLocale() ? Tr(kLine1En) : QString::fromUtf8(kLine1En);
+
+    const QByteArray b0 = q0.toUtf8();
+    const QByteArray b1 = q1.toUtf8();
+    std::strncpy(line0, b0.constData(), 255);
+    line0[255] = '\0';
+    std::strncpy(line1, b1.constData(), 255);
+    line1[255] = '\0';
 }
 
 } // namespace MelonPrime::UiText

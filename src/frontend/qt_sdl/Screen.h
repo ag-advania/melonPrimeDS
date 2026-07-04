@@ -120,6 +120,8 @@ public:
 #endif
     }
 
+    void reloadNoRomSplashLocalization();
+
 public slots:
     void clipCursorCenter1px();
     void unclip();

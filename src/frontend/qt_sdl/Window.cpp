@@ -888,6 +888,8 @@ void MainWindow::localizeMenuText()
 
     MelonPrime::UiText::SetMenuLanguageMode(localCfg.GetInt(MelonPrime::CfgKey::MenuLanguage));
     MelonPrime::UiText::LocalizeMenuBar(menuBar());
+    if (panel)
+        panel->reloadNoRomSplashLocalization();
 }
 #endif
 

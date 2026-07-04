@@ -51,6 +51,7 @@
 // MelonPrimeDS Integration
 #ifdef MELONPRIME_DS
 #include "MelonPrime.h"
+#include "MelonPrimeLocalization.h"
 #include "MelonPrimePlatformInput.h"
 #include "MelonPrimePerfProbe.h"
 #include "MelonPrimeHudPropSchema.inc"
@@ -402,6 +403,10 @@ ScreenPanel::ScreenPanel(QWidget* parent) : QWidget(parent)
     splashText[1].rendered = false;
     splashText[1].rainbowstart = -1;
 
+#ifdef MELONPRIME_DS
+    MelonPrime::UiText::ApplyNoRomSplashLocalization(splashText[0].text, splashText[1].text);
+#endif
+
     std::string url = MELONDS_URL;
     int urlpos = url.find("://");
     urlpos = (urlpos == std::string::npos) ? 0 : urlpos + 3;
@@ -423,6 +428,22 @@ ScreenPanel::~ScreenPanel()
 #endif
 #endif
 }
+
+#ifdef MELONPRIME_DS
+void ScreenPanel::reloadNoRomSplashLocalization()
+{
+    MelonPrime::UiText::ApplyNoRomSplashLocalization(splashText[0].text, splashText[1].text);
+    osdMutex.lock();
+    for (int i = 0; i < 2; ++i)
+    {
+        splashText[i].rendered = false;
+        splashText[i].bitmap = QImage();
+    }
+    m_splashRendered = false;
+    osdMutex.unlock();
+    update();
+}
+#endif
 
 void ScreenPanel::loadConfig()
 {
