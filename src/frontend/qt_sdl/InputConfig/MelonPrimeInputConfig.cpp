@@ -60,6 +60,7 @@
 #include "InputConfigDialog.h" 
 
 #include "MapButton.h"
+#include "../Window.h"
 #include "Platform.h"
 #include "VideoSettingsDialog.h"
 #ifdef MELONPRIME_CUSTOM_HUD
@@ -254,6 +255,8 @@ void MelonPrimeInputConfig::setupMenuLanguageControl(Config::Table& instcfg)
             MelonPrime::UiText::LocalizeWidgetTree(this);
             if (InputConfigDialog::currentDlg)
                 MelonPrime::UiText::LocalizeMelonDsDialog(InputConfigDialog::currentDlg);
+            if (auto* mw = qobject_cast<MainWindow*>(window()); mw && mw->panel)
+                mw->panel->reloadNoRomSplashLocalization();
         });
 }
 

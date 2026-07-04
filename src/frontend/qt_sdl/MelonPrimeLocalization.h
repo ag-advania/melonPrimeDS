@@ -93,5 +93,7 @@ void SetLocalizedActionText(QAction* action, const QString& sourceText);
 void LocalizeAction(QAction* action);
 void LocalizeMenu(QMenu* menu);
 void LocalizeMenuBar(QMenuBar* menuBar);
+// No-ROM splash lines (ScreenPanel::splashText[0/1]); English source keys stay upstream-owned.
+void ApplyNoRomSplashLocalization(char line0[256], char line1[256]);
 
 } // namespace MelonPrime::UiText
