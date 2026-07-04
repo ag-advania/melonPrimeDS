@@ -86,9 +86,13 @@ def load_lookup() -> dict[str, dict]:
     manual = SCRIPTS / "loc_manual_fixes_full.json"
     if manual.exists():
         for row in json.loads(manual.read_text(encoding="utf-8")):
-            lookup[row["en"]] = row
+            base = lookup.get(row["en"], {})
+            merged = {**base, **row}
+            if "ja" not in row and "ja" in base:
+                merged["ja"] = base["ja"]
+            lookup[row["en"]] = merged
             for variant in key_variants(row["en"]):
-                lookup.setdefault(variant, row)
+                lookup[variant] = merged
     return lookup
 
 

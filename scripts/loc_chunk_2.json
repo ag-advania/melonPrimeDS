@@ -1,217 +1,217 @@
 [
   {
     "en": "Off",
-    "ja": "ãªã",
+    "ja": "オフ",
     "section": "core"
   },
   {
     "en": "Copy Output",
-    "ja": "åºåãã³ãã¼",
+    "ja": "出力をコピー",
     "section": "core"
   },
   {
     "en": "Select HUD Font File",
-    "ja": "HUDãã©ã³ããã¡ã¤ã«ãé¸æ",
+    "ja": "HUDフォントファイルを選択",
     "section": "core"
   },
   {
     "en": "Chng",
-    "ja": "å¤æ´",
+    "ja": "変更",
     "section": "core"
   },
   {
     "en": "Normal",
-    "ja": "éå¸¸",
+    "ja": "通常",
     "section": "core"
   },
   {
     "en": "Overall",
-    "ja": "å¨ä½",
+    "ja": "全体",
     "section": "core"
   },
   {
     "en": "Font files (*.ttf *.otf *.ttc);;All files (*)",
-    "ja": "ãã©ã³ããã¡ã¤ã« (*.ttf *.otf *.ttc);;ãã¹ã¦ã®ãã¡ã¤ã« (*)",
+    "ja": "フォントファイル (*.ttf *.otf *.ttc);;すべてのファイル (*)",
     "section": "core"
   },
   {
     "en": "Open ROM...",
-    "ja": "ROMãéã...",
+    "ja": "ROMを開く...",
     "section": "core"
   },
   {
     "en": "DS slot",
-    "ja": "DSã¹ã­ãã",
+    "ja": "DSスロット",
     "section": "core"
   },
   {
     "en": "Insert add-on cart",
-    "ja": "ã¢ããªã³ã«ã¼ããªãã¸ãæ¿å¥",
+    "ja": "アドオンカートリッジを挿入",
     "section": "core"
   },
   {
     "en": "Undo state load",
-    "ja": "ã¹ãã¼ãèª­ã¿è¾¼ã¿ãåãæ¶ã",
+    "ja": "ステート読み込みを取り消す",
     "section": "core"
   },
   {
     "en": "Stop",
-    "ja": "åæ­¢",
+    "ja": "停止",
     "section": "core"
   },
   {
     "en": "Setup cheat codes",
-    "ja": "ãã¼ãã³ã¼ãè¨­å®",
+    "ja": "チートコード設定",
     "section": "core"
   },
   {
     "en": "Launch new instance",
-    "ja": "æ°ããã¤ã³ã¹ã¿ã³ã¹ãèµ·å",
+    "ja": "新しいインスタンスを起動",
     "section": "core"
   },
   {
     "en": "Screen rotation",
-    "ja": "ç»é¢åè»¢",
+    "ja": "画面回転",
     "section": "core"
   },
   {
     "en": "Horizontal",
-    "ja": "æ¨ª",
+    "ja": "横",
     "section": "core"
   },
   {
     "en": "Emphasize top",
-    "ja": "ä¸ç»é¢ãéè¦",
+    "ja": "上画面を重視",
     "section": "core"
   },
   {
     "en": "Aspect ratio",
-    "ja": "ã¢ã¹ãã¯ãæ¯",
+    "ja": "アスペクト比",
     "section": "core"
   },
   {
     "en": "Emu settings",
-    "ja": "ã¨ãã¥ã¬ã¼ã¿ã¼è¨­å®",
+    "ja": "エミュレーター設定",
     "section": "core"
   },
   {
     "en": "Audio settings",
-    "ja": "é³å£°è¨­å®",
+    "ja": "音声設定",
     "section": "core"
   },
   {
     "en": "Path settings",
-    "ja": "ãã¹è¨­å®",
+    "ja": "パス設定",
     "section": "core"
   },
   {
     "en": "Other settings",
-    "ja": "MelonPrimeè¨­å®",
+    "ja": "MelonPrime設定",
     "section": "core"
   },
   {
     "en": "Help",
-    "ja": "ãã«ã",
+    "ja": "ヘルプ",
     "section": "core"
   },
   {
     "en": "Controls 2",
-    "ja": "æä½ 2",
+    "ja": "操作 2",
     "section": "core"
   },
   {
     "en": "INPUT SETTINGS",
-    "ja": "å¥åè¨­å®",
+    "ja": "入力設定",
     "section": "core"
   },
   {
     "en": "IN-GAME ASPECT RATIO",
-    "ja": "ã²ã¼ã åã¢ã¹ãã¯ãæ¯",
+    "ja": "ゲーム内アスペクト比",
     "section": "core"
   },
   {
     "en": "DISABLE FEATURES",
-    "ja": "æ©è½ç¡å¹å",
+    "ja": "機能無効化",
     "section": "core"
   },
   {
     "en": "LICENSE APPLY",
-    "ja": "ã©ã¤ã»ã³ã¹åæ ",
+    "ja": "ライセンス反映",
     "section": "core"
   },
   {
     "en": "HUD FONT",
-    "ja": "HUDãã©ã³ã",
+    "ja": "HUDフォント",
     "section": "core"
   },
   {
     "en": "IN-GAME OSD COLOR",
-    "ja": "ã²ã¼ã åOSDè²",
+    "ja": "ゲーム内OSD色",
     "section": "core"
   },
   {
     "en": "[Metroid] (S) Move Back",
-    "ja": "[Metroid] (S) å¾é",
+    "ja": "[Metroid] (S) 後退",
     "section": "core"
   },
   {
     "en": "[Metroid] (Mouse Right) Imperialist Zoom, Map Zoom Out, Morph Ball Boost",
-    "ja": "[Metroid] (ãã¦ã¹å³) ã¤ã³ããªã¢ãªã¹ããºã¼ã ããããç¸®å°ãã¢ã¼ããã¼ã«ãã¼ã¹ã",
+    "ja": "[Metroid] (マウス右) インペリアリストズーム、マップ縮小、モーフボールブースト",
     "section": "core"
   },
   {
     "en": "[Metroid] (Mouse 4, Side Bottom) Weapon Missile",
-    "ja": "[Metroid] (Mouse 4/ãµã¤ãä¸) ããµã¤ã«",
+    "ja": "[Metroid] (Mouse 4/サイド下) ミサイル",
     "section": "core"
   },
   {
     "en": "[Metroid] (5) Weapon 5. Battlehammer",
-    "ja": "[Metroid] (5) æ­¦å¨5: ããã«ãã³ãã¼",
+    "ja": "[Metroid] (5) 武器5: バトルハンマー",
     "section": "core"
   },
   {
     "en": "[Metroid] (PgDown) AimSensitivity Down",
-    "ja": "[Metroid] (PgDown) ã¨ã¤ã æåº¦ãä¸ãã",
+    "ja": "[Metroid] (PgDown) エイム感度を下げる",
     "section": "core"
   },
   {
     "en": "[Metroid] (X) UI Right (Adventure Right Arrow / Hunter License R)",
-    "ja": "[Metroid] (X) UIå³ (ã¢ããã³ãã£ã¼å³/ã©ã¤ã»ã³ã¹R)",
+    "ja": "[Metroid] (X) UI右 (アドベンチャー右/ライセンスR)",
     "section": "core"
   },
   {
     "en": "MPH Sensitivity (default: -3)",
-    "ja": "MPHæåº¦ (æ¢å®: -3)",
+    "ja": "MPH感度 (既定: -3)",
     "section": "core"
   },
   {
     "en": "Instant Aim Follow",
-    "ja": "å³æã¨ã¤ã è¿½å¾",
+    "ja": "即時エイム追従",
     "section": "core"
   },
   {
     "en": "Unlock All Hunters/Maps/SoundTest/Gallery (Change a setting in MPH and save to update the save data. Uncheck this option after saving)",
-    "ja": "å¨ãã³ã¿ã¼/ããã/ãµã¦ã³ããã¹ã/ã®ã£ã©ãªã¼ãè§£æ¾ (MPHå´ã§è¨­å®ãå¤æ´ãã¦ä¿å­ããã¨ã»ã¼ãã«åæ ãä¿å­å¾ã¯ãªãæ¨å¥¨)",
+    "ja": "全ハンター/マップ/サウンドテスト/ギャラリーを解放 (MPH側で設定を変更して保存するとセーブに反映。保存後はオフ推奨)",
     "section": "core"
   },
   {
     "en": "Disable MPH Aim Smoothing (Disables the in-game aim smoothing. Note: Sensitivity will be reduced to 25% in Stylus Mode)",
-    "ja": "MPHã®ã¨ã¤ã è£éãç¡å¹å (ã²ã¼ã åã®ã¨ã¤ã è£éãç¡å¹åãã¹ã¿ã¤ã©ã¹ã¢ã¼ãã§ã¯æåº¦ã25%ã«ãªãã¾ã)",
+    "ja": "MPHのエイム補間を無効化 (ゲーム内のエイム補間を無効化。スタイラスモードでは感度が25%になります)",
     "section": "core"
   },
   {
     "en": "Enable Immediate Input Edge Overlay",
-    "ja": "å³æå¥åã¨ãã¸åæãæå¹å",
+    "ja": "即時入力エッジ合成を有効化",
     "section": "core"
   },
   {
     "en": "Screen Sync Mode",
-    "ja": "ç»é¢åææ¹å¼",
+    "ja": "画面同期方式",
     "section": "core"
   },
   {
     "en": "Aspect Ratio Mode",
-    "ja": "ã¢ã¹ãã¯ãæ¯ã¢ã¼ã",
+    "ja": "アスペクト比モード",
     "section": "core"
   },
   {
@@ -221,142 +221,142 @@
   },
   {
     "en": "Friend/Rival Wi-Fi Active Bitset Fix (v2)",
-    "ja": "ãã¬ã³ã/ã©ã¤ãã«Wi-Fiæå¹ãããä¿®æ­£ (v2)",
+    "ja": "フレンド/ライバルWi-Fi有効ビット修正 (v2)",
     "section": "core"
   },
   {
     "en": "Damage Notify Purple",
-    "ja": "ãã¡ã¼ã¸éç¥ãç´«ã«ãã",
+    "ja": "ダメージ通知を紫にする",
     "section": "core"
   },
   {
     "en": "Reset sensitivity values",
-    "ja": "æåº¦ãæ¢å®å¤ã«æ»ã",
+    "ja": "感度を既定値に戻す",
     "section": "core"
   },
   {
     "en": "Apply music volume",
-    "ja": "BGMé³éãåæ ",
+    "ja": "BGM音量を反映",
     "section": "core"
   },
   {
     "en": "Red(JP,KR)",
-    "ja": "èµ¤ (JP,KR)",
+    "ja": "赤 (JP,KR)",
     "section": "core"
   },
   {
     "en": "Disabled (vanilla 25)",
-    "ja": "ç¡å¹ (ããã©25)",
+    "ja": "無効 (バニラ25)",
     "section": "core"
   },
   {
-    "en": "Per Damage â Medium",
-    "ja": "ãã¡ã¼ã¸å¥ - ä¸­",
+    "en": "Per Damage — Medium",
+    "ja": "ダメージ別 - 中",
     "section": "core"
   },
   {
     "en": "Features in this section are still in development and are not ready for public release. They may or may not be released.",
-    "ja": "ãã®ã»ã¯ã·ã§ã³ã®æ©è½ã¯éçºä¸­ã§ãå¬éãªãªã¼ã¹ã®æºåã¯ã¾ã ã§ãã¦ãã¾ãããä»å¾å¬éãããã¨ã¯éãã¾ããã",
+    "ja": "このセクションの機能は開発中で、公開リリースの準備はまだできていません。今後公開されるとは限りません。",
     "section": "core"
   },
   {
     "en": "Checked: use the current in-game zoom binding from the player's control preset. Unchecked: use the older fixed R-button path.",
-    "ja": "ãªã³: ç¾å¨ã®æä½ããªã»ããã«ããã²ã¼ã åãºã¼ã å²ãå½ã¦ãä½¿ãã¾ãããªã: å¾æ¥ã®åºå®Rãã¿ã³çµè·¯ãä½¿ãã¾ãã",
+    "ja": "オン: 現在の操作プリセットにあるゲーム内ズーム割り当てを使います。オフ: 従来の固定Rボタン経路を使います。",
     "section": "core"
   },
   {
-    "en": "Setting Key: Metroid.Volume.Music (0â9)",
-    "ja": "è¨­å®ã­ã¼: Metroid.Volume.Music (0-9)",
+    "en": "Setting Key: Metroid.Volume.Music (0–9)",
+    "ja": "設定キー: Metroid.Volume.Music (0-9)",
     "section": "core"
   },
   {
     "en": "Windows only. Applies only while the bottom screen is actually being drawn. Press ESC to release the cursor.",
-    "ja": "Windowsã®ã¿ãä¸ç»é¢ãå®éã«æç»ããã¦ããéã ãé©ç¨ããã¾ããESCã§ã«ã¼ã½ã«å¶éãè§£é¤ãã¾ãã",
+    "ja": "Windowsのみ。下画面が実際に描画されている間だけ適用されます。ESCでカーソル制限を解除します。",
     "section": "core"
   },
   {
     "en": "Hide this dialog and enter the interactive HUD position editor",
-    "ja": "ãã®ãã¤ã¢ã­ã°ãé ãã¦ãå¯¾è©±å¼HUDéç½®ã¨ãã£ã¿ã¼ã«å¥ãã¾ã",
+    "ja": "このダイアログを隠して、対話式HUD配置エディターに入ります",
     "section": "core"
   },
   {
-    "en": "â Common HUD â",
-    "ja": "- å±éHUD -",
+    "en": "— Common HUD —",
+    "ja": "- 共通HUD -",
     "section": "core"
   },
   {
     "en": "Hide HP",
-    "ja": "HPãéè¡¨ç¤º",
+    "ja": "HPを非表示",
     "section": "core"
   },
   {
     "en": "Hide Score: Prime Hunter",
-    "ja": "ã¹ã³ã¢éè¡¨ç¤º: ãã©ã¤ã ãã³ã¿ã¼",
+    "ja": "スコア非表示: プライムハンター",
     "section": "core"
   },
   {
     "en": "Text Scale (Base %)",
-    "ja": "æå­ã¹ã±ã¼ã« (åºæº %)",
+    "ja": "文字スケール (基準 %)",
     "section": "core"
   },
   {
     "en": "Auto Scale Gauge Cap %",
-    "ja": "èªåã¹ã±ã¼ã«ã²ã¼ã¸ä¸é %",
+    "ja": "自動スケールゲージ上限 %",
     "section": "core"
   },
   {
     "en": "Italic",
-    "ja": "ã¤ã¿ãªãã¯",
+    "ja": "イタリック",
     "section": "core"
   },
   {
     "en": "Zoom Stage",
-    "ja": "ãºã¼ã æ®µé",
+    "ja": "ズーム段階",
     "section": "core"
   },
   {
     "en": "Zoom Scope",
-    "ja": "ãºã¼ã ã¹ã³ã¼ã",
+    "ja": "ズームスコープ",
     "section": "core"
   },
   {
     "en": "Scope Center Dot",
-    "ja": "ã¹ã³ã¼ãä¸­å¤®ããã",
+    "ja": "スコープ中央ドット",
     "section": "core"
   },
   {
     "en": "Zoom Transition Speed %",
-    "ja": "ãºã¼ã é·ç§»éåº¦ %",
+    "ja": "ズーム遷移速度 %",
     "section": "core"
   },
   {
     "en": "Pulse Strength %",
-    "ja": "ãã«ã¹å¼·åº¦ %",
+    "ja": "パルス強度 %",
     "section": "core"
   },
   {
     "en": "Staged",
-    "ja": "æ®µé",
+    "ja": "段階",
     "section": "core"
   },
   {
     "en": "Digital",
-    "ja": "ãã¸ã¿ã«",
+    "ja": "デジタル",
     "section": "core"
   },
   {
     "en": "Sniper Optics",
-    "ja": "ã¹ãã¤ãã¼åå­¦",
+    "ja": "スナイパー光学",
     "section": "core"
   },
   {
     "en": "Outline Color",
-    "ja": "ã¢ã¦ãã©ã¤ã³è²",
+    "ja": "アウトライン色",
     "section": "core"
   },
   {
     "en": "Custom Dot Color",
-    "ja": "ãããè²ãåå¥æå®",
+    "ja": "ドット色を個別指定",
     "section": "core"
   },
   {
@@ -366,42 +366,42 @@
   },
   {
     "en": "Inner",
-    "ja": "åå´",
+    "ja": "内側",
     "section": "core"
   },
   {
     "en": "Show Text",
-    "ja": "æå­ãè¡¨ç¤º",
+    "ja": "文字を表示",
     "section": "core"
   },
   {
     "en": "Length",
-    "ja": "é·ã",
+    "ja": "長さ",
     "section": "core"
   },
   {
     "en": "Offset",
-    "ja": "ãªãã»ãã",
+    "ja": "オフセット",
     "section": "core"
   },
   {
     "en": "Top Center",
-    "ja": "ä¸ä¸­å¤®",
+    "ja": "上中央",
     "section": "core"
   },
   {
     "en": "Bottom Left",
-    "ja": "å·¦ä¸",
+    "ja": "左下",
     "section": "core"
   },
   {
     "en": "Mid Right",
-    "ja": "å³ä¸­å¤®",
+    "ja": "右中央",
     "section": "core"
   },
   {
     "en": "Center",
-    "ja": "ä¸­å¤®",
+    "ja": "中央",
     "section": "core"
   },
   {
@@ -411,107 +411,107 @@
   },
   {
     "en": "Horiz",
-    "ja": "æ¨ª",
+    "ja": "横",
     "section": "core"
   },
   {
-    "en": "GaugeâText",
-    "ja": "ã²ã¼ã¸âæå­",
+    "en": "Gauge→Text",
+    "ja": "ゲージ→文字",
     "section": "core"
   },
   {
     "en": "Pos Mode",
-    "ja": "ä½ç½®ã¢ã¼ã",
+    "ja": "位置モード",
     "section": "core"
   },
   {
     "en": "Gauge Y",
-    "ja": "ã²ã¼ã¸ Y",
+    "ja": "ゲージ Y",
     "section": "core"
   },
   {
     "en": "Prefix",
-    "ja": "æ¥é ­è¾",
+    "ja": "接頭辞",
     "section": "core"
   },
   {
     "en": "Orientation",
-    "ja": "åã",
+    "ja": "向き",
     "section": "core"
   },
   {
     "en": "Icon Position",
-    "ja": "ã¢ã¤ã³ã³ä½ç½®",
+    "ja": "アイコン位置",
     "section": "core"
   },
   {
     "en": "Layout",
-    "ja": "ã¬ã¤ã¢ã¦ã",
+    "ja": "レイアウト",
     "section": "core"
   },
   {
     "en": "Label Pos",
-    "ja": "ã©ãã«ä½ç½®",
+    "ja": "ラベル位置",
     "section": "core"
   },
   {
     "en": "Label: Points",
-    "ja": "ã©ãã«: ãã¤ã³ã",
+    "ja": "ラベル: ポイント",
     "section": "core"
   },
   {
     "en": "Battle",
-    "ja": "ããã«",
+    "ja": "バトル",
     "section": "core"
   },
   {
     "en": "Label",
-    "ja": "ã©ãã«",
+    "ja": "ラベル",
     "section": "core"
   },
   {
     "en": "Label Color",
-    "ja": "ã©ãã«è²",
+    "ja": "ラベル色",
     "section": "core"
   },
   {
     "en": "Sep Color: Overall",
-    "ja": "åºåãè²: å¨ä½",
+    "ja": "区切り色: 全体",
     "section": "core"
   },
   {
     "en": "Color Overlay",
-    "ja": "è²ãªã¼ãã¼ã¬ã¤",
+    "ja": "色オーバーレイ",
     "section": "core"
   },
   {
     "en": "Dst X",
-    "ja": "è¡¨ç¤º X",
+    "ja": "表示 X",
     "section": "core"
   },
   {
     "en": "Padding",
-    "ja": "ä½ç½",
+    "ja": "余白",
     "section": "core"
   },
   {
     "en": "Highlight Color",
-    "ja": "ãã¤ã©ã¤ãè²",
+    "ja": "ハイライト色",
     "section": "core"
   },
   {
     "en": "Highlight Offset Left",
-    "ja": "ãã¤ã©ã¤ãå·¦ãªãã»ãã",
+    "ja": "ハイライト左オフセット",
     "section": "core"
   },
   {
     "en": "Size Offset Right",
-    "ja": "ãµã¤ãºå³ãªãã»ãã",
+    "ja": "サイズ右オフセット",
     "section": "core"
   },
   {
     "en": "Hl Padding",
-    "ja": "HLä½ç½",
+    "ja": "HL余白",
     "section": "core"
   },
   {
@@ -521,187 +521,187 @@
   },
   {
     "en": "HP Gauge",
-    "ja": "HPã²ã¼ã¸",
+    "ja": "HPゲージ",
     "section": "core"
   },
   {
     "en": "Ammo Label Color By Value",
-    "ja": "å¼¾è¬ã©ãã«ã®è² (å¤é£å)",
+    "ja": "弾薬ラベルの色 (値連動)",
     "section": "core"
   },
   {
     "en": "Weapon/Ammo",
-    "ja": "æ­¦å¨/å¼¾è¬",
+    "ja": "武器/弾薬",
     "section": "core"
   },
   {
     "en": "Weapon Inventory Highlight",
-    "ja": "æ­¦å¨ã¤ã³ãã³ããªã®ãã¤ã©ã¤ã",
+    "ja": "武器インベントリのハイライト",
     "section": "core"
   },
   {
     "en": "Score Labels",
-    "ja": "ã¹ã³ã¢ã©ãã«",
+    "ja": "スコアラベル",
     "section": "core"
   },
   {
     "en": "Rank Outline",
-    "ja": "é ä½ã®ã¢ã¦ãã©ã¤ã³",
+    "ja": "順位のアウトライン",
     "section": "core"
   },
   {
     "en": "Bomb",
-    "ja": "ãã ",
+    "ja": "ボム",
     "section": "core"
   },
   {
     "en": "Radar",
-    "ja": "ã¬ã¼ãã¼",
+    "ja": "レーダー",
     "section": "core"
   },
   {
     "en": "Wpn\nIcon",
-    "ja": "æ­¦å¨\nã¢ã¤ã³ã³",
+    "ja": "武器\nアイコン",
     "section": "core"
   },
   {
     "en": "points",
-    "ja": "å¾ç¹",
+    "ja": "得点",
     "section": "core"
   },
   {
     "en": "Enable Separate Color",
-    "ja": "åå¥è²ãæå¹å",
+    "ja": "個別色を有効化",
     "section": "core"
   },
   {
     "en": "Return to Base",
-    "ja": "åºå°ã¸æ»ã",
+    "ja": "基地へ戻れ",
     "section": "core"
   },
   {
     "en": "Octo Reset",
-    "ja": "ãªã¯ããªã¹ãªã»ãã",
+    "ja": "オクトリスリセット",
     "section": "core"
   },
   {
     "en": "Slot: Node Capture  [flags=0x11]",
-    "ja": "ã¹ã­ãã: ãã¼ãåå¾ [flags=0x11]",
+    "ja": "スロット: ノード取得 [flags=0x11]",
     "section": "core"
   },
   {
     "en": "Applied once on settings close to currently displayed messages (flags=0x01).\nNew messages use their individual literal colors above (No Ammo / Return to Base / Octo ...).",
-    "ja": "è¨­å®ãéããã¨ããç¾å¨è¡¨ç¤ºä¸­ã®ã¡ãã»ã¼ã¸ã¸ä¸åº¦ã ãé©ç¨ããã¾ã (flags=0x01)ã\næ°ããã¡ãã»ã¼ã¸ã¯ããããã®åå¥è²ãä½¿ç¨ãã¾ã (å¼¾è¬ãªã / åºå°ã¸æ»ã / ãªã¯ãç³» ...)ã",
+    "ja": "設定を閉じたとき、現在表示中のメッセージへ一度だけ適用されます (flags=0x01)。\n新しいメッセージはそれぞれの個別色を使用します (弾薬なし / 基地へ戻れ / オクト系 ...)。",
     "section": "core"
   },
   {
     "en": "Color  (HEADSHOT! / FACE OFF! / RETURN TO BATTLE! / COWARD DETECTED / turret)",
-    "ja": "è²  (HEADSHOT! / FACE OFF! / RETURN TO BATTLE! / COWARD DETECTED / ã¿ã¬ãã)",
+    "ja": "色  (HEADSHOT! / FACE OFF! / RETURN TO BATTLE! / COWARD DETECTED / タレット)",
     "section": "core"
   },
   {
     "en": "Yellow",
-    "ja": "é»",
+    "ja": "黄",
     "section": "core"
   },
   {
     "en": "Orange",
-    "ja": "ãªã¬ã³ã¸",
+    "ja": "オレンジ",
     "section": "core"
   },
   {
     "en": "Spire Hud Outline",
-    "ja": "ã¹ãã¤ã¢HUDã®ã¢ã¦ãã©ã¤ã³",
+    "ja": "スパイアHUDのアウトライン",
     "section": "core"
   },
   {
     "en": "Sylux Crosshair",
-    "ja": "ãµã¤ã©ãã¯ã¹ç§æº",
+    "ja": "サイラックス照準",
     "section": "core"
   },
   {
     "en": "OSD No-Ammo Red",
-    "ja": "OSDå¼¾è¬ãªãèµ¤",
+    "ja": "OSD弾薬なし赤",
     "section": "core"
   },
   {
     "en": "Battle Hammer",
-    "ja": "ããã«ãã³ãã¼",
+    "ja": "バトルハンマー",
     "section": "core"
   },
   {
     "en": "Shock Coil",
-    "ja": "ã·ã§ãã¯ã³ã¤ã«",
+    "ja": "ショックコイル",
     "section": "core"
   },
   {
     "en": "MSL Color",
-    "ja": "MSLè²",
+    "ja": "MSL色",
     "section": "core"
   },
   {
     "en": "SCL Color",
-    "ja": "SCLè²",
+    "ja": "SCL色",
     "section": "core"
   },
   {
     "en": "Normal",
-    "ja": "æ¨æº",
+    "ja": "標準",
     "section": "core"
   },
   {
     "en": "Black",
-    "ja": "é»å¤ª",
+    "ja": "黒太",
     "section": "core"
   },
   {
     "en": "Threshold 4 (%)",
-    "ja": "ãããå¤ 4 (%)",
+    "ja": "しきい値 4 (%)",
     "section": "core"
   },
   {
     "en": "Color 3",
-    "ja": "è² 3",
+    "ja": "色 3",
     "section": "core"
   },
   {
     "en": "Output refreshed from the current Custom HUD settings.",
-    "ja": "ç¾å¨ã®ã«ã¹ã¿ã HUDè¨­å®ããåºåãæ´æ°ãã¾ããã",
+    "ja": "現在のカスタムHUD設定から出力を更新しました。",
     "section": "core"
   },
   {
     "en": "The pasted Custom HUD code is not a TOML table.",
-    "ja": "è²¼ãä»ããããã«ã¹ã¿ã HUDã³ã¼ãã¯TOMLãã¼ãã«ã§ã¯ããã¾ããã",
+    "ja": "貼り付けられたカスタムHUDコードはTOMLテーブルではありません。",
     "section": "core"
   },
   {
     "en": "Use New Method for Zoom",
-    "ja": "ãºã¼ã ã«æ°æ¹å¼ãä½¿ã",
+    "ja": "ズームに新方式を使う",
     "section": "core"
   },
   {
     "en": "Audio settings - melonDS",
-    "ja": "é³å£°è¨­å® - melonDS",
+    "ja": "音声設定 - melonDS",
     "section": "melonds"
   },
   {
     "en": "DSi-mode",
-    "ja": "DSiã¢ã¼ã",
+    "ja": "DSiモード",
     "section": "melonds"
   },
   {
     "en": "Boot game directly",
-    "ja": "ã²ã¼ã ãç´æ¥èµ·å",
+    "ja": "ゲームを直接起動",
     "section": "melonds"
   },
   {
     "en": "DS firmware:",
-    "ja": "DSãã¡ã¼ã ã¦ã§ã¢:",
+    "ja": "DSファームウェア:",
     "section": "melonds"
   },
   {
     "en": "Enable DSi SD card",
-    "ja": "DSi SDã«ã¼ããæå¹å",
+    "ja": "DSi SDカードを有効化",
     "section": "melonds"
   },
   {
@@ -711,117 +711,117 @@
   },
   {
     "en": "Fast memory",
-    "ja": "é«éã¡ã¢ãª",
+    "ja": "高速メモリ",
     "section": "melonds"
   },
   {
     "en": "Break on startup",
-    "ja": "èµ·åæã«ãã¬ã¼ã¯",
+    "ja": "起動時にブレーク",
     "section": "melonds"
   },
   {
     "en": "Auto",
-    "ja": "èªå",
+    "ja": "自動",
     "section": "melonds"
   },
   {
     "en": "Software",
-    "ja": "ã½ããã¦ã§ã¢",
+    "ja": "ソフトウェア",
     "section": "melonds"
   },
   {
     "en": "VSync interval:",
-    "ja": "VSyncéé:",
+    "ja": "VSync間隔:",
     "section": "melonds"
   },
   {
     "en": "Configure emulated camera:",
-    "ja": "ã¨ãã¥ã¬ã¼ãã«ã¡ã©ãè¨­å®:",
+    "ja": "エミュレートカメラを設定:",
     "section": "melonds"
   },
   {
     "en": "Image file:",
-    "ja": "ç»åãã¡ã¤ã«:",
+    "ja": "画像ファイル:",
     "section": "melonds"
   },
   {
     "en": "Audio output",
-    "ja": "é³å£°åºå",
+    "ja": "音声出力",
     "section": "melonds"
   },
   {
     "en": "Sync with DSi volume",
-    "ja": "DSié³éã¨åæ",
+    "ja": "DSi音量と同期",
     "section": "melonds"
   },
   {
     "en": "Gaussian (SNES)",
-    "ja": "ã¬ã¦ã¹ (SNES)",
+    "ja": "ガウス (SNES)",
     "section": "melonds"
   },
   {
     "en": "Blow noise",
-    "ja": "å¹ãè¾¼ã¿ãã¤ãº",
+    "ja": "吹き込みノイズ",
     "section": "melonds"
   },
   {
     "en": "Reset",
-    "ja": "ãªã»ãã",
+    "ja": "リセット",
     "section": "melonds"
   },
   {
     "en": "Toggle slow mo",
-    "ja": "ã¹ã­ã¼ã¢ã¼ã·ã§ã³åæ¿",
+    "ja": "スローモーション切替",
     "section": "melonds"
   },
   {
     "en": "Swap screens",
-    "ja": "ä¸ä¸ç»é¢å¥æ¿",
+    "ja": "上下画面入替",
     "section": "melonds"
   },
   {
     "en": "Toggle audio mute",
-    "ja": "é³å£°ãã¥ã¼ãåæ¿",
+    "ja": "音声ミュート切替",
     "section": "melonds"
   },
   {
     "en": "Active instance only",
-    "ja": "ã¢ã¯ãã£ããªã¤ã³ã¹ã¿ã³ã¹ã®ã¿",
+    "ja": "アクティブなインスタンスのみ",
     "section": "melonds"
   },
   {
     "en": "Indirect mode (uses libslirp, recommended)",
-    "ja": "éæ¥ã¢ã¼ã (libslirpä½¿ç¨ãæ¨å¥¨)",
+    "ja": "間接モード (libslirp使用、推奨)",
     "section": "melonds"
   },
   {
     "en": "IP address:",
-    "ja": "IPã¢ãã¬ã¹:",
+    "ja": "IPアドレス:",
     "section": "melonds"
   },
   {
     "en": "Username:",
-    "ja": "ã¦ã¼ã¶ã¼å:",
+    "ja": "ユーザー名:",
     "section": "melonds"
   },
   {
     "en": "Network settings",
-    "ja": "ãããã¯ã¼ã¯è¨­å®",
+    "ja": "ネットワーク設定",
     "section": "melonds"
   },
   {
     "en": "System default",
-    "ja": "ã·ã¹ãã æ¨æº",
+    "ja": "システム標準",
     "section": "melonds"
   },
   {
     "en": "Mute audio while fast forwarding",
-    "ja": "æ©éãä¸­ã¯é³å£°ããã¥ã¼ã",
+    "ja": "早送り中は音声をミュート",
     "section": "melonds"
   },
   {
     "en": "Slow-Mo",
-    "ja": "ã¹ã­ã¼ã¢ã¼ã·ã§ã³",
+    "ja": "スローモーション",
     "section": "melonds"
   },
   {
@@ -831,132 +831,132 @@
   },
   {
     "en": "Savestates path:",
-    "ja": "ã¹ãã¼ãã»ã¼ãã®ãã¹:",
+    "ja": "ステートセーブのパス:",
     "section": "melonds"
   },
   {
     "en": "New AR code",
-    "ja": "æ°ããARã³ã¼ã",
+    "ja": "新しいARコード",
     "section": "melonds"
   },
   {
     "en": "Name:",
-    "ja": "åå:",
+    "ja": "名前:",
     "section": "melonds"
   },
   {
     "en": "Power management - melonDS",
-    "ja": "é»æºç®¡ç - melonDS",
+    "ja": "電源管理 - melonDS",
     "section": "melonds"
   },
   {
     "en": "Full",
-    "ja": "æºåé»",
+    "ja": "満充電",
     "section": "melonds"
   },
   {
     "en": "Date and time",
-    "ja": "æ¥ä»ã¨æå»",
+    "ja": "日付と時刻",
     "section": "melonds"
   },
   {
     "en": "ROM info - melonDS",
-    "ja": "ROMæå ± - melonDS",
+    "ja": "ROM情報 - melonDS",
     "section": "melonds"
   },
   {
     "en": "German title:",
-    "ja": "ãã¤ãèªã¿ã¤ãã«:",
+    "ja": "ドイツ語タイトル:",
     "section": "melonds"
   },
   {
     "en": "ARM7 and ARM9 binaries",
-    "ja": "ARM7/ARM9ãã¤ããª",
+    "ja": "ARM7/ARM9バイナリ",
     "section": "melonds"
   },
   {
     "en": "ARM7 ROM offset: ",
-    "ja": "ARM7 ROMãªãã»ãã: ",
+    "ja": "ARM7 ROMオフセット: ",
     "section": "melonds"
   },
   {
     "en": "FNT offset:",
-    "ja": "FNTãªãã»ãã:",
+    "ja": "FNTオフセット:",
     "section": "melonds"
   },
   {
     "en": "Game title:",
-    "ja": "ã²ã¼ã ã¿ã¤ãã«:",
+    "ja": "ゲームタイトル:",
     "section": "melonds"
   },
   {
     "en": "Save animated icon",
-    "ja": "ã»ã¼ãã¢ãã¡ã¼ã·ã§ã³ã¢ã¤ã³ã³",
+    "ja": "セーブアニメーションアイコン",
     "section": "melonds"
   },
   {
     "en": "2bytes",
-    "ja": "2ãã¤ã",
+    "ja": "2バイト",
     "section": "melonds"
   },
   {
     "en": "Found:",
-    "ja": "æ¤åº:",
+    "ja": "検出:",
     "section": "melonds"
   },
   {
     "en": "Connect",
-    "ja": "æ¥ç¶",
+    "ja": "接続",
     "section": "melonds"
   },
   {
     "en": "Players",
-    "ja": "ãã¬ã¤ã¤ã¼",
+    "ja": "プレイヤー",
     "section": "melonds"
   },
   {
     "en": "Please enter a player name.",
-    "ja": "ãã¬ã¤ã¤ã¼åãå¥åãã¦ãã ããã",
+    "ja": "プレイヤー名を入力してください。",
     "section": "melonds"
   },
   {
     "en": "Visit the &website",
-    "ja": "ã¦ã§ããµã¤ã(&W)",
+    "ja": "ウェブサイト(&W)",
     "section": "melonds"
   },
   {
     "en": "Brown",
-    "ja": "è¶è²",
+    "ja": "茶色",
     "section": "melonds"
   },
   {
     "en": "Lime",
-    "ja": "ã©ã¤ã ",
+    "ja": "ライム",
     "section": "melonds"
   },
   {
     "en": "Blue",
-    "ja": "é",
+    "ja": "青",
     "section": "melonds"
   },
   {
     "en": "French",
-    "ja": "ãã©ã³ã¹èª",
+    "ja": "フランス語",
     "section": "melonds"
   },
   {
     "en": "January",
-    "ja": "1æ",
+    "ja": "1月",
     "section": "melonds"
   },
   {
     "en": "June",
-    "ja": "6æ",
+    "ja": "6月",
     "section": "melonds"
   },
   {
     "en": "November",
-    "ja": "11æ",
+    "ja": "11月",
     "section": "melonds"
   }
 ]
