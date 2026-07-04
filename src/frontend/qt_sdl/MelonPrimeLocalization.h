@@ -7,6 +7,8 @@
 #include <QStringList>
 #include <QWidget>
 
+class QImage;
+
 namespace MelonPrime::UiText
 {
 
@@ -95,5 +97,8 @@ void LocalizeMenu(QMenu* menu);
 void LocalizeMenuBar(QMenuBar* menuBar);
 // No-ROM splash lines (ScreenPanel::splashText[0/1]); English source keys stay upstream-owned.
 void ApplyNoRomSplashLocalization(char line0[256], char line1[256]);
+// Bitmap OSD font is ASCII-only; render localized splash lines with a CJK-capable Qt font.
+bool TryRenderNoRomSplashOsdItem(unsigned int id, const char* text, unsigned int color,
+    int rainbowstart, int& rainbowend, int maxWidth, QImage* outBitmap);
 
 } // namespace MelonPrime::UiText

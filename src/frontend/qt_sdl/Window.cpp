@@ -763,7 +763,6 @@ MainWindow::MainWindow(int id, EmuInstance* inst, QWidget* parent) :
     }
     show();
 
-    panel = nullptr;
     createScreenPanel();
 
     if (hasMenu)
