@@ -33,6 +33,33 @@ REPRESENTATIVE_KEYS = [
 EXPECTED_TRANSLATION_FIELDS = 26
 EXPECTED_OBJECT_FIELDS = 26
 RAW_STRING_RE = re.compile(r'R"(?P<delim>[A-Za-z0-9_]*)\(')
+LANGUAGE_COLUMNS = [
+    ("Japanese", "ja"),
+    ("German", "de"),
+    ("Spanish", "es"),
+    ("French", "fr"),
+    ("Italian", "it"),
+    ("Dutch", "nl"),
+    ("Portuguese", "pt"),
+    ("Russian", "ru"),
+    ("ChineseSimplified", "zh-Hans"),
+    ("Korean", "ko"),
+    ("Arabic", "ar"),
+    ("Indonesian", "id"),
+    ("Ukrainian", "uk"),
+    ("Greek", "el"),
+    ("Swedish", "sv"),
+    ("Thai", "th"),
+    ("Czech", "cs"),
+    ("Danish", "da"),
+    ("Turkish", "tr"),
+    ("Norwegian", "nb"),
+    ("Hungarian", "hu"),
+    ("Finnish", "fi"),
+    ("Vietnamese", "vi"),
+    ("Polish", "pl"),
+    ("Romanian", "ro"),
+]
 
 
 def read_text(path: Path, seen: set[Path] | None = None) -> str:
@@ -199,8 +226,36 @@ def split_top_level_entries(body: str) -> list[str]:
     return entries
 
 
-def cpp_unescape_normal(s: str) -> str:
-    return bytes(s, "utf-8").decode("unicode_escape")
+def decode_cpp_escape(s: str, i: int) -> tuple[str, int]:
+    if i >= len(s):
+        return "\\", i
+    ch = s[i]
+    simple = {
+        "n": "\n",
+        "r": "\r",
+        "t": "\t",
+        '"': '"',
+        "'": "'",
+        "\\": "\\",
+        "0": "\0",
+    }
+    if ch in simple:
+        return simple[ch], i + 1
+    if ch == "x":
+        j = i + 1
+        while j < len(s) and s[j] in "0123456789abcdefABCDEF":
+            j += 1
+        if j > i + 1:
+            return chr(int(s[i + 1 : j], 16)), j
+    if ch == "u" and i + 4 < len(s):
+        digits = s[i + 1 : i + 5]
+        if all(c in "0123456789abcdefABCDEF" for c in digits):
+            return chr(int(digits, 16)), i + 5
+    if ch == "U" and i + 8 < len(s):
+        digits = s[i + 1 : i + 9]
+        if all(c in "0123456789abcdefABCDEF" for c in digits):
+            return chr(int(digits, 16)), i + 9
+    return ch, i + 1
 
 
 def parse_cpp_strings(entry: str) -> list[str]:
@@ -223,20 +278,17 @@ def parse_cpp_strings(entry: str) -> list[str]:
 
         i += 1
         chars: list[str] = []
-        escape = False
         while i < len(entry):
             ch = entry[i]
-            if escape:
-                chars.append("\\" + ch)
-                escape = False
-            elif ch == "\\":
-                escape = True
-            elif ch == '"':
+            if ch == "\\":
+                decoded, i = decode_cpp_escape(entry, i + 1)
+                chars.append(decoded)
+                continue
+            if ch == '"':
                 break
-            else:
-                chars.append(ch)
+            chars.append(ch)
             i += 1
-        values.append(cpp_unescape_normal("".join(chars)))
+        values.append("".join(chars))
         i += 1
     return values
 
@@ -286,6 +338,34 @@ def function_body(source: str, signature: str) -> str:
             if depth == 0:
                 return source[start + 1 : i]
     raise RuntimeError(f"Function body not closed: {signature}")
+
+
+def covered_count(rows: list[list[str]], column_index: int) -> int:
+    return sum(1 for row in rows if len(row) > column_index and bool(row[column_index]))
+
+
+def print_coverage_report(exact_rows: list[list[str]], object_rows: list[list[str]]) -> None:
+    exact_total = len(exact_rows)
+    object_total = len(object_rows)
+    print("[INFO] Coverage:")
+    for idx, (_name, code) in enumerate(LANGUAGE_COLUMNS, start=1):
+        print(
+            f"[INFO]   {code}: "
+            f"exact {covered_count(exact_rows, idx)}/{exact_total}, "
+            f"object {covered_count(object_rows, idx)}/{object_total}"
+        )
+
+    print("[INFO] Fallbacks:")
+    print("[INFO]   en-GB -> en, en-US -> en")
+    print("[INFO]   es-419 -> es, fr-CA -> fr, pt-BR -> pt")
+    print("[INFO]   zh-Hant -> zh-Hans (ChineseTraditional not selectable)")
+
+    legacy_dynamic = "ja/de/es/fr/it/nl/pt/ru/zh-Hans/ko"
+    print("[INFO] Dynamic text coverage:")
+    print(f"[INFO]   instance dialog labels: {legacy_dynamic}; other languages fallback to English")
+    print(f"[INFO]   special dynamic labels ((none), Direct mode, native/camera): {legacy_dynamic}; other languages fallback to English")
+    print("[INFO]   slot/screen prefixes: catalog-backed for all audited base languages")
+    print("[INFO]   LAN warnings: catalog-backed for all audited base languages")
 
 
 def main() -> int:
@@ -379,6 +459,7 @@ def main() -> int:
     print(f"[INFO] Selectable languages audited: {len(selectable)}")
     print(f"[INFO] Exact translation keys: {len(exact_rows)}")
     print(f"[INFO] Object translation keys: {len(object_rows)}")
+    print_coverage_report(exact_rows, object_rows)
     return 0
 
 
