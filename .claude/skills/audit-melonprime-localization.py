@@ -92,8 +92,14 @@ def source_files() -> list[Path]:
 
 
 def all_source_text() -> str:
-    parts = [read_text(HEADER)]
-    parts.extend(read_text(path) for path in source_files())
+    # Share one `seen` set across every file so a `.inc` fragment already
+    # pulled in via `#include` expansion from a `.cpp` is not concatenated a
+    # second time when it is also picked up directly by source_files()'s glob.
+    # Without this, array bodies spanning the duplicate boundary could over-count
+    # rows (e.g. reporting 966 translation keys when the real source has 703).
+    seen: set[Path] = set()
+    parts = [read_text(HEADER, seen)]
+    parts.extend(read_text(path, seen) for path in source_files())
     return "\n".join(parts)
 
 
