@@ -29,7 +29,7 @@ constexpr LanguageInfo kLanguageInfos[] = {
     {MenuLangId::Thai, "th", "ไทย", MenuLangId::Thai, true, TextDirection::LeftToRight, true, SplashFontGroup::Thai},
     {MenuLangId::Czech, "cs", "Čeština", MenuLangId::Czech, true, TextDirection::LeftToRight, false, SplashFontGroup::Latin},
     {MenuLangId::ChineseSimplified, "zh-Hans", "中文（简体）", MenuLangId::ChineseSimplified, true, TextDirection::LeftToRight, false, SplashFontGroup::ChineseSimplified},
-    {MenuLangId::ChineseTraditional, "zh-Hant", "中文（繁體，简体fallback）", MenuLangId::ChineseSimplified, false, TextDirection::LeftToRight, false, SplashFontGroup::ChineseTraditional},
+    {MenuLangId::ChineseTraditional, "zh-Hant", "中文（繁體）", MenuLangId::ChineseSimplified, true, TextDirection::LeftToRight, false, SplashFontGroup::ChineseTraditional},
     {MenuLangId::Danish, "da", "Dansk", MenuLangId::Danish, true, TextDirection::LeftToRight, false, SplashFontGroup::Latin},
     {MenuLangId::German, "de", "Deutsch", MenuLangId::German, true, TextDirection::LeftToRight, false, SplashFontGroup::Latin},
     {MenuLangId::Turkish, "tr", "Türkçe", MenuLangId::Turkish, true, TextDirection::LeftToRight, false, SplashFontGroup::Latin},
