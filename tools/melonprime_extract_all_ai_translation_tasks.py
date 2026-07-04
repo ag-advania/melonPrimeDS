@@ -14,6 +14,7 @@ This only extracts tasks. It does not call any MT API.
 from __future__ import annotations
 
 import argparse
+import html
 import json
 import re
 from pathlib import Path
@@ -22,9 +23,83 @@ RAW_STRING_RE = re.compile(r'R"(?P<delim>[A-Za-z0-9_]*)\(')
 ROW_START_RE = re.compile(r'\{\s*"(?P<key>(?:\\.|[^"\\])*)"\s*,\s*\{', re.S)
 LANG_VALUE_RE = re.compile(r'\{MenuLangId::(?P<lang>[A-Za-z0-9_]+),\s*"(?P<text>(?:\\.|[^"\\])*)"\},')
 
+OBJECT_SOURCE_OVERRIDES = {
+    "lblMetroidLowLatencyAimDesc": (
+        "Immediate Sync uses the low-latency ARM9 hook to sync currentAim to targetAim at the hook point "
+        "and rebuild the aim basis. MoonLike Aim applies small aim movements immediately and limits only "
+        "large aim jumps with a max-step chase. Requires Disable Aim Smoothing."
+    ),
+    "lblMetroidZoomAimScaleDesc": (
+        "Applies only while the game's native zoom state is active. 100% keeps normal mouse sensitivity; "
+        "lower values slow down zoom aiming and higher values speed it up."
+    ),
+    "lblMetroidDisablePickingUpSpecificItemsDesc": (
+        "When enabled, selected power-ups are still picked up and removed, but their player-side effects are skipped. "
+        "Double Damage, Cloak, and DEATH ALT timers, flags, HUD, sounds, and visual effects are not applied. "
+        "This setting only affects you and bots; online opponents are not changed."
+    ),
+    "lblMetroidWeaponSwitchMethodDesc": (
+        "Checked uses the game's native TryEquipWeapon path through an ARM9 hook. Unchecked keeps the older "
+        "simulated touch/menu weapon switching path for compatibility testing."
+    ),
+    "lblMetroidBipedFireMethodDesc": (
+        "Checked sets the fire input-helper result true at the game's Biped fire edge hook, letting the original "
+        "cooldown, ammo, projectile, HUD, and SFX path run naturally. Legacy Method keeps the older DS input/"
+        "ImmediateInputEdgeOverlay fire path."
+    ),
+    "lblMetroidZoomMethodDesc": (
+        "New Method reads the game's zoom binding table, so Touch and Dual presets can map zoom to different "
+        "DS buttons. It is also slightly lower latency than Legacy Method. If both boxes are unchecked, "
+        "Legacy Method always drives the fixed R button like the older input path."
+    ),
+    "lblMetroidZoomMethod2Desc": (
+        "New Method 2 toggles native zoom state through SetPlayerScopeZoom on each press. Mutually exclusive "
+        "with New Method for Zoom."
+    ),
+}
+
+def decode_cpp_escape(s: str, i: int) -> tuple[str, int]:
+    if i >= len(s):
+        return "\\", i
+    ch = s[i]
+    simple = {
+        "n": "\n",
+        "r": "\r",
+        "t": "\t",
+        '"': '"',
+        "'": "'",
+        "\\": "\\",
+        "0": "\0",
+    }
+    if ch in simple:
+        return simple[ch], i + 1
+    if ch == "x":
+        j = i + 1
+        while j < len(s) and s[j] in "0123456789abcdefABCDEF":
+            j += 1
+        if j > i + 1:
+            return chr(int(s[i + 1:j], 16)), j
+    if ch == "u" and i + 4 < len(s):
+        digits = s[i + 1:i + 5]
+        if all(c in "0123456789abcdefABCDEF" for c in digits):
+            return chr(int(digits, 16)), i + 5
+    if ch == "U" and i + 8 < len(s):
+        digits = s[i + 1:i + 9]
+        if all(c in "0123456789abcdefABCDEF" for c in digits):
+            return chr(int(digits, 16)), i + 9
+    return ch, i + 1
+
 def cpp_unescape(s: str) -> str:
-    # good enough for the generated normal string literals in these tables
-    return bytes(s, "utf-8").decode("unicode_escape")
+    chars: list[str] = []
+    i = 0
+    while i < len(s):
+        if s[i] == "\\":
+            decoded, i = decode_cpp_escape(s, i + 1)
+            chars.append(decoded)
+            continue
+        chars.append(s[i])
+        i += 1
+    return "".join(chars)
 
 def find_array_body(text: str, name: str) -> str:
     marker = re.search(rf"\b{name}\s*\[\]\s*=\s*\{{", text)
@@ -97,6 +172,31 @@ def parse_rows_in_text(body: str, surface: str):
         parsed.append({"surface": surface, "key": key, "values": values})
     return parsed
 
+def collect_ui_object_sources(repo: Path) -> dict[str, str]:
+    sources = dict(OBJECT_SOURCE_OVERRIDES)
+    widget_re = re.compile(
+        r'<widget\b[^>]*\bname="(?P<name>[^"]+)"[^>]*>(?P<body>.*?)</widget>',
+        re.S,
+    )
+    string_re = re.compile(
+        r'<property name="(?:text|toolTip|whatsThis)">\s*<string[^>]*>(?P<text>.*?)</string>',
+        re.S,
+    )
+    for path in (repo / "src/frontend/qt_sdl").glob("**/*.ui"):
+        text = path.read_text(encoding="utf-8")
+        for widget in widget_re.finditer(text):
+            name = widget.group("name")
+            if name in sources:
+                continue
+            strings = [
+                html.unescape(re.sub(r"\s+", " ", m.group("text")).strip())
+                for m in string_re.finditer(widget.group("body"))
+            ]
+            strings = [s for s in strings if s]
+            if strings:
+                sources[name] = strings[0]
+    return sources
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--repo", type=Path, default=Path("."))
@@ -119,6 +219,7 @@ def main() -> int:
     exact = parse_rows_in_array(exact_path, "kTranslations", "exact")
     exact += parse_rows_in_text(melonds_dialogs_path.read_text(encoding="utf-8"), "exact")
     obj = parse_rows_in_array(object_path, "kObjectTextTranslations", "object")
+    object_sources = collect_ui_object_sources(repo)
 
     outdir = repo / "artifacts/localization-ai"
     by_lang = outdir / "by-language"
@@ -131,9 +232,8 @@ def main() -> int:
         with all_out.open("w", encoding="utf-8") as all_f:
             for row in exact + obj:
                 source_text = row["key"]
-                # For object rows, if English is ever added later, prefer it.
                 if row["surface"] == "object":
-                    source_text = row["values"].get("English", row["key"])
+                    source_text = row["values"].get("English", object_sources.get(row["key"], row["key"]))
 
                 for lang in languages:
                     if row["values"].get(lang):
