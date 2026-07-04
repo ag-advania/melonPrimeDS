@@ -24,7 +24,7 @@ It includes upstream-owned files that now contain MelonPrime integration points,
 
 When adding MelonPrime behavior, **prefer MelonPrime-side code** (`MelonPrime*.cpp/.h/.inc`, `Window.cpp` / `InputConfigDialog.cpp` blocks already listed below, `MelonPrimeLocalization.cpp`) over editing upstream melonDS sources.
 
-**UI localization example:** call `MelonPrime::UiText::LocalizeMelonDsDialog()` from `Window.cpp` after `openDlg()`. If upstream code sets widget text at runtime (e.g. `CheatsDialog` selection handlers), wire re-localization from `MelonPrimeLocalization.cpp` (signal/`QueuedConnection`), **not** by adding `MP_TR()` or `#include "MelonPrime*.h"` inside upstream `.cpp` files.
+**UI localization example:** open melonDS settings with `MelonPrime::UiText::OpenLocalizedMelonDsDialog<Type>(parent)` from `Window.cpp`. It installs a one-shot `Show` event localizer (Japanese text before first paint, no English flash). Do not call `LocalizeMelonDsDialog()` before the widget tree is shown — that can break standard buttons (e.g. RAM search Clear). If upstream code sets widget text at runtime (e.g. `CheatsDialog` selection handlers), wire re-localization from `MelonPrimeLocalization.cpp` (signal/`QueuedConnection`), **not** by adding `MP_TR()` or `#include "MelonPrime*.h"` inside upstream `.cpp` files.
 
 When an upstream-owned file **must** be changed (existing `#ifdef MELONPRIME_DS` hook sites, upstream bugfixes carried by the fork):
 

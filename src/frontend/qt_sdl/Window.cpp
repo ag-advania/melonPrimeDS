@@ -82,6 +82,9 @@
 #include "MelonPrimeHudPropSchema.inc"
 #include "MelonPrimeLocalization.h"
 #include "MelonPrimePatchShadowFreezeRuntimeHook.h"
+#define MP_OPEN_MELONDS_DLG(Type, parent) MelonPrime::UiText::OpenLocalizedMelonDsDialog<Type>(parent)
+#else
+#define MP_OPEN_MELONDS_DLG(Type, parent) Type::openDlg(parent)
 #endif
 
 using namespace melonDS;
@@ -1828,10 +1831,7 @@ void MainWindow::onFrameStep()
 
 void MainWindow::onOpenDateTime()
 {
-    DateTimeDialog* dlg = DateTimeDialog::openDlg(this);
-#ifdef MELONPRIME_DS
-    MelonPrime::UiText::LocalizeMelonDsDialog(dlg);
-#endif
+    DateTimeDialog* dlg = MP_OPEN_MELONDS_DLG(DateTimeDialog, this);
     connect(dlg, &DateTimeDialog::finished, this, &MainWindow::onDateTimeDialogFinished);
 }
 
@@ -1845,10 +1845,7 @@ void MainWindow::onDateTimeDialogFinished(int res)
 
 void MainWindow::onOpenPowerManagement()
 {
-    PowerManagementDialog* dlg = PowerManagementDialog::openDlg(this);
-#ifdef MELONPRIME_DS
-    MelonPrime::UiText::LocalizeMelonDsDialog(dlg);
-#endif
+    PowerManagementDialog* dlg = MP_OPEN_MELONDS_DLG(PowerManagementDialog, this);
 }
 
 void MainWindow::onEnableCheats(bool checked)
@@ -1866,10 +1863,7 @@ void MainWindow::onSetupCheats()
 {
     emuThread->emuPause();
 
-    CheatsDialog* dlg = CheatsDialog::openDlg(this);
-#ifdef MELONPRIME_DS
-    MelonPrime::UiText::LocalizeMelonDsDialog(dlg);
-#endif
+    CheatsDialog* dlg = MP_OPEN_MELONDS_DLG(CheatsDialog, this);
     connect(dlg, &CheatsDialog::finished, this, &MainWindow::onCheatsDialogFinished);
 }
 
@@ -1882,19 +1876,13 @@ void MainWindow::onROMInfo()
 {
     auto cart = emuInstance->nds->NDSCartSlot.GetCart();
     if (cart) {
-        ROMInfoDialog* dlg = ROMInfoDialog::openDlg(this);
-#ifdef MELONPRIME_DS
-        MelonPrime::UiText::LocalizeMelonDsDialog(dlg);
-#endif
+        ROMInfoDialog* dlg = MP_OPEN_MELONDS_DLG(ROMInfoDialog, this);
     }
 }
 
 void MainWindow::onRAMInfo()
 {
-    RAMInfoDialog* dlg = RAMInfoDialog::openDlg(this);
-#ifdef MELONPRIME_DS
-    MelonPrime::UiText::LocalizeMelonDsDialog(dlg);
-#endif
+    RAMInfoDialog* dlg = MP_OPEN_MELONDS_DLG(RAMInfoDialog, this);
 }
 
 void MainWindow::onOpenTitleManager()
@@ -1974,10 +1962,7 @@ void MainWindow::onOpenEmuSettings()
 {
     emuThread->emuPause();
 
-    EmuSettingsDialog* dlg = EmuSettingsDialog::openDlg(this);
-#ifdef MELONPRIME_DS
-    MelonPrime::UiText::LocalizeMelonDsDialog(dlg);
-#endif
+    EmuSettingsDialog* dlg = MP_OPEN_MELONDS_DLG(EmuSettingsDialog, this);
     connect(dlg, &EmuSettingsDialog::finished, this, &MainWindow::onEmuSettingsDialogFinished);
 }
 
@@ -2018,7 +2003,7 @@ void MainWindow::onOpenInputConfig()
 {
     emuThread->emuPause();
 
-    InputConfigDialog* dlg = InputConfigDialog::openDlg(this);
+    InputConfigDialog* dlg = MP_OPEN_MELONDS_DLG(InputConfigDialog, this);
     connect(dlg, &InputConfigDialog::finished, this, &MainWindow::onInputConfigFinished);
 }
 
@@ -2028,7 +2013,7 @@ void MainWindow::onOpenMetroidInputSettings()
 {
     emuThread->emuPause();
 
-    InputConfigDialog* dlg = InputConfigDialog::openDlg(this);
+    InputConfigDialog* dlg = MP_OPEN_MELONDS_DLG(InputConfigDialog, this);
     dlg->switchTabToAddons();
 
     connect(dlg, &InputConfigDialog::finished, this, &MainWindow::onInputConfigFinished);
@@ -2038,7 +2023,7 @@ void MainWindow::onOpenMetroidOtherSettings()
 {
     emuThread->emuPause();
 
-    InputConfigDialog* dlg = InputConfigDialog::openDlg(this);
+    InputConfigDialog* dlg = MP_OPEN_MELONDS_DLG(InputConfigDialog, this);
     dlg->switchTabToMetroid();
 
     connect(dlg, &InputConfigDialog::finished, this, &MainWindow::onInputConfigFinished);
@@ -2121,10 +2106,7 @@ void MainWindow::onInputConfigFinished(int res)
 
 void MainWindow::onOpenVideoSettings()
 {
-    VideoSettingsDialog* dlg = VideoSettingsDialog::openDlg(this);
-#ifdef MELONPRIME_DS
-    MelonPrime::UiText::LocalizeMelonDsDialog(dlg);
-#endif
+    VideoSettingsDialog* dlg = MP_OPEN_MELONDS_DLG(VideoSettingsDialog, this);
     connect(dlg, &VideoSettingsDialog::updateVideoSettings, this, &MainWindow::onUpdateVideoSettings);
 }
 
@@ -2137,10 +2119,7 @@ void MainWindow::onOpenCameraSettings()
     if (camStarted[0]) camManager[0]->stop();
     if (camStarted[1]) camManager[1]->stop();
 
-    CameraSettingsDialog* dlg = CameraSettingsDialog::openDlg(this);
-#ifdef MELONPRIME_DS
-    MelonPrime::UiText::LocalizeMelonDsDialog(dlg);
-#endif
+    CameraSettingsDialog* dlg = MP_OPEN_MELONDS_DLG(CameraSettingsDialog, this);
     connect(dlg, &CameraSettingsDialog::finished, this, &MainWindow::onCameraSettingsFinished);
 }
 
@@ -2154,10 +2133,7 @@ void MainWindow::onCameraSettingsFinished(int res)
 
 void MainWindow::onOpenAudioSettings()
 {
-    AudioSettingsDialog* dlg = AudioSettingsDialog::openDlg(this);
-#ifdef MELONPRIME_DS
-    MelonPrime::UiText::LocalizeMelonDsDialog(dlg);
-#endif
+    AudioSettingsDialog* dlg = MP_OPEN_MELONDS_DLG(AudioSettingsDialog, this);
     connect(emuThread, &EmuThread::syncVolumeLevel, dlg, &AudioSettingsDialog::onSyncVolumeLevel);
     connect(emuThread, &EmuThread::windowEmuStart, dlg, &AudioSettingsDialog::onConsoleReset);
     connect(dlg, &AudioSettingsDialog::updateAudioVolume, this, &MainWindow::onUpdateAudioVolume);
@@ -2169,10 +2145,7 @@ void MainWindow::onOpenFirmwareSettings()
 {
     emuThread->emuPause();
 
-    FirmwareSettingsDialog* dlg = FirmwareSettingsDialog::openDlg(this);
-#ifdef MELONPRIME_DS
-    MelonPrime::UiText::LocalizeMelonDsDialog(dlg);
-#endif
+    FirmwareSettingsDialog* dlg = MP_OPEN_MELONDS_DLG(FirmwareSettingsDialog, this);
     connect(dlg, &FirmwareSettingsDialog::finished, this, &MainWindow::onFirmwareSettingsFinished);
 }
 
@@ -2188,10 +2161,7 @@ void MainWindow::onOpenPathSettings()
 {
     emuThread->emuPause();
 
-    PathSettingsDialog* dlg = PathSettingsDialog::openDlg(this);
-#ifdef MELONPRIME_DS
-    MelonPrime::UiText::LocalizeMelonDsDialog(dlg);
-#endif
+    PathSettingsDialog* dlg = MP_OPEN_MELONDS_DLG(PathSettingsDialog, this);
     connect(dlg, &PathSettingsDialog::finished, this, &MainWindow::onPathSettingsFinished);
 }
 
@@ -2233,10 +2203,7 @@ void MainWindow::onOpenMPSettings()
 {
     emuThread->emuPause();
 
-    MPSettingsDialog* dlg = MPSettingsDialog::openDlg(this);
-#ifdef MELONPRIME_DS
-    MelonPrime::UiText::LocalizeMelonDsDialog(dlg);
-#endif
+    MPSettingsDialog* dlg = MP_OPEN_MELONDS_DLG(MPSettingsDialog, this);
     connect(dlg, &MPSettingsDialog::finished, this, &MainWindow::onMPSettingsFinished);
 }
 
@@ -2253,10 +2220,7 @@ void MainWindow::onOpenWifiSettings()
 {
     emuThread->emuPause();
 
-    WifiSettingsDialog* dlg = WifiSettingsDialog::openDlg(this);
-#ifdef MELONPRIME_DS
-    MelonPrime::UiText::LocalizeMelonDsDialog(dlg);
-#endif
+    WifiSettingsDialog* dlg = MP_OPEN_MELONDS_DLG(WifiSettingsDialog, this);
     connect(dlg, &WifiSettingsDialog::finished, this, &MainWindow::onWifiSettingsFinished);
 }
 
@@ -2271,10 +2235,7 @@ void MainWindow::onWifiSettingsFinished(int res)
 void MainWindow::onOpenInterfaceSettings()
 {
     emuThread->emuPause();
-    InterfaceSettingsDialog* dlg = InterfaceSettingsDialog::openDlg(this);
-#ifdef MELONPRIME_DS
-    MelonPrime::UiText::LocalizeMelonDsDialog(dlg);
-#endif
+    InterfaceSettingsDialog* dlg = MP_OPEN_MELONDS_DLG(InterfaceSettingsDialog, this);
     connect(dlg, &InterfaceSettingsDialog::finished, this, &MainWindow::onInterfaceSettingsFinished);
     connect(dlg, &InterfaceSettingsDialog::updateInterfaceSettings, this, &MainWindow::onUpdateInterfaceSettings);
 }
