@@ -8,15 +8,16 @@
 namespace MelonPrime::UiText
 {
 
-QString Tr(const QString& text)
+namespace {
+
+QString TrExact(const QString& text)
 {
-    if (!IsMenuTranslationActive() || text.isEmpty())
-        return text;
-
     const QString exact = TranslateExact(text);
-    if (exact != text)
-        return exact;
+    return exact != text ? exact : QString();
+}
 
+QString TrDecorated(const QString& text)
+{
     const QStringList prefixes = {
         QStringLiteral("\u25B6 "),
         QStringLiteral("\u25BC "),
@@ -51,6 +52,11 @@ QString Tr(const QString& text)
             return translated + QLatin1Char(':');
     }
 
+    return QString();
+}
+
+QString TrInstanceDialogText(const QString& text)
+{
     if (text.startsWith(QStringLiteral("Configuring settings for instance ")))
     {
         const QString arg = text.mid(35);
@@ -167,6 +173,11 @@ QString Tr(const QString& text)
         }
     }
 
+    return QString();
+}
+
+QString TrSpecialDynamicText(const QString& text)
+{
     if (text == QStringLiteral("(none)"))
     {
         switch (ActiveMenuLanguage()) {
@@ -314,6 +325,11 @@ QString Tr(const QString& text)
             return cameraText;
     }
 
+    return QString();
+}
+
+QString TrSlotAndScreenPrefixText(const QString& text)
+{
     struct DynamicPrefix {
         const char* enPrefix;
         const char* sourceKey;
@@ -352,6 +368,45 @@ QString Tr(const QString& text)
         }
         return localizedPrefix + Tr(text.mid(enPrefix.size()));
     }
+
+    return QString();
+}
+
+QString TrDynamic(const QString& text)
+{
+    const QString instanceDialog = TrInstanceDialogText(text);
+    if (!instanceDialog.isNull())
+        return instanceDialog;
+
+    const QString special = TrSpecialDynamicText(text);
+    if (!special.isNull())
+        return special;
+
+    const QString slotAndScreenPrefix = TrSlotAndScreenPrefixText(text);
+    if (!slotAndScreenPrefix.isNull())
+        return slotAndScreenPrefix;
+
+    return QString();
+}
+
+} // namespace
+
+QString Tr(const QString& text)
+{
+    if (!IsMenuTranslationActive() || text.isEmpty())
+        return text;
+
+    const QString exact = TrExact(text);
+    if (!exact.isNull())
+        return exact;
+
+    const QString decorated = TrDecorated(text);
+    if (!decorated.isNull())
+        return decorated;
+
+    const QString dynamic = TrDynamic(text);
+    if (!dynamic.isNull())
+        return dynamic;
 
     return text;
 }

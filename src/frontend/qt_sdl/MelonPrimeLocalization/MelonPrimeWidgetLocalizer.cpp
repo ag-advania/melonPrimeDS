@@ -24,14 +24,24 @@
 namespace MelonPrime::UiText
 {
 
+namespace {
+
+QString TrObjectName(const QWidget* widget, const QString& text)
+{
+    const QString objectTranslated = TranslateByObjectName(widget, text);
+    return objectTranslated != text ? objectTranslated : QString();
+}
+
+} // namespace
+
 QString TrWidgetText(const QWidget* widget, const QString& text)
 {
     if (!IsMenuTranslationActive() || text.isEmpty())
         return text;
 
-    const QString objectTranslated = TranslateByObjectName(widget, text);
-    if (objectTranslated != text)
-        return objectTranslated;
+    const QString objectName = TrObjectName(widget, text);
+    if (!objectName.isNull())
+        return objectName;
 
     return Tr(text);
 }
