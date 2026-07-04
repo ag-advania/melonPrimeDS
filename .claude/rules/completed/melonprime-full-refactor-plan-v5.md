@@ -258,14 +258,14 @@ V1 S1–S12 / V2 S13–S15 / V3 S16–S17 / V4 S18–S20 を継承。V5 追加:
 
 | Phase | 内容 | 状態 | 完了日 | 結果メモ |
 |---|---|---|---|---|
-| 0 | 計測基盤 + 3プラットフォーム基準値 | **pending**（基盤完了） | — | `MelonPrimePerfProbe.h` + EmuThread 区間プローブ + カウンタ群 + `summarize-melonprime-perf.py`。mac dev ビルド green。**3 platform baseline: 未取得** |
+| 0 | 計測基盤 + 3プラットフォーム基準値 | **部分完了**（Windows・S24 pending） | 2026-07-04 | 基盤完了。macOS / Linux VM baseline 取得済み（V6 §8 から書き戻し）。**Windows: 未取得**。S24 再現性未確認（mac 1 本のみ） |
 | 1 | ホットパス網羅監査（証拠表） | 完了 | 2026-07-04 | §9 証拠表 45 行。RED×3（W1–W3）、YELLOW×17、WHITE×25。Phase 2 優先: P1-001→002→003 |
 | 2 | 入力ホットパス残渣除去（本丸A） | 完了 | 2026-07-04 | W1 mac raw時warp廃止+閾値格納 / W2 panel→rawエッジreset / W3 IsXcb static / AimInputSource enum / P-48a load-first。completion audit: scatter 36→24（PlatformInput facade へ集約） |
 | 3 | ペーシング調律（本丸B・計測ゲート） | **pending**（実装済み） | — | 非Win coarse margin 1.0→0.5ms（Windows 1.0ms 不変）。**ROM perf validation: 未取得** |
 | 4 | HUD/描画残渣（計測ゲート） | **pending**（監査済み） | — | 4a: Phase 1 新規REDなし（既存 OPT-DR/SC/HRT 網内）。4b: ROM計測未実施のため element-cache 不着手 |
 | 5 | invalidation 台帳 | 完了 | 2026-07-04 | `melonprime-performance.md` §Invalidation Ledger + §Syscall Budget |
 | 6 | ストレッチ（計測ゲート） | **pending** | — | 全候補「ROM計測未実施・効果未確認」— 計測なしに完了扱いしない |
-| 7 | 文書化 + 基準値固定 | **pending** | — | Round 10 追記、`completed/` 移動、README/CLAUDE 更新済み。**CI green / S21 / S22 検証 pending** |
+| 7 | 文書化 + 基準値固定 | **pending** | — | Round 10 追記、`completed/` 移動、README/CLAUDE 更新済み。**Phase 0 表: mac/Linux 反映済み、Windows pending**。CI green / S21 / S22 / S24 / V6 Phase 0 最終確定 pending |
 
 ### 初期実測値（2026-07-04、計画作成時）
 
@@ -287,19 +287,31 @@ nm … | rg MelonPrimePerf  → (none)
 
 Windows/Ubuntu CI でも同手順で再確認 pending。
 
-### Phase 0 基準値（計測手順 — ROM 実行後に数値を追記）
+### Phase 0 基準値（V6 Phase 0 から書き戻し — 2026-07-04）
 
 developer ビルドで `MELONPRIME_PERF=1 ./melonPrimeDS 2>&1 | tee perf.log`。終了時に stderr へ histogram。
-V6 Phase 0 で 3 プラットフォーム手順を
-[`perf-baseline-procedure.md`](../../skills/perf-baseline-procedure.md) に固定済み
-（2026-07-04）。数値は実機 10 分ソークログ取得後に確定する。
+手順: [`perf-baseline-procedure.md`](../../skills/perf-baseline-procedure.md)。
 集計: `python3 .claude/skills/summarize-melonprime-perf.py perf.log`
+正典の詳細・カウンタ表: [V6 §8](../melonprime-full-refactor-plan-v6.md#8-phase-0-基準値)
+
+**計測条件:** macOS / Linux VM 初回ソークは **OSD 設定 OFF の可能性**あり。
+Windows は mac/Linux と **同一 OSD 設定**で取得すること（比較のため）。
 
 | プラットフォーム | p50 | p95 | p99 | max | 備考 |
 |---|---:|---:|---:|---:|---|
-| macOS | 未取得 | 未取得 | 未取得 | 未取得 | dev build 導入済み。要 ROM ソーク |
-| Linux VM | 未取得 | 未取得 | 未取得 | 未取得 | 未計測 |
-| Windows | 未取得 | 未取得 | 未取得 | 未取得 | 未計測 |
+| macOS | 16.689 | 22.829 | 24.929 | 173.172 | 2026-07-04。GCMouse。draw p50=0.732ms。8192 frames。OSD OFF の可能性 |
+| Linux VM | 49.216 | 103.792 | 141.452 | 290.728 | 2026-07-04。XInput2 RawMotion。**VM llvmpipe 参考値**（低 FPS）。性能ゲート非使用 |
+| Windows | 未取得 | 未取得 | 未取得 | 未取得 | **pending** — Phase 0 閉鎖・S21 の前提 |
+
+カウンタ（V6 §8 参照 — macOS / Linux VM）:
+
+| カウンタ | macOS | Linux VM | 備考 |
+|---|---:|---:|---|
+| `Patches_Apply(OutOfGameFrame)` / 分 | 166.9 | 137.6 | Linux VM は参考値 |
+| `OsdColor_ApplyOnce` 実 write / 分 | 0.1 | 0.4 | **OSD OFF の可能性 — edge 化判断不可** |
+| HUD dirty px/frame | 80580.9 | 75831.6 | |
+| GL upload B/frame | 161184.4 | 151663.1 | |
+| `CustomHud_Render` p50/p99 µs | 219.6 / 381.2 | 338.6 / 3064.5 | mac: Phase 4b 不採用方向 |
 
 - ドメインLOC: raw入力 2,366 / HUD 12,410 / パッチ・フック 6,239 / ゲーム層 4,747 / 設定UI 5,675
 
