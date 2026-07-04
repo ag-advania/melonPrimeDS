@@ -252,6 +252,14 @@ def require(condition: bool, message: str) -> None:
 def main() -> int:
     enum_values = parse_menu_lang_values()
     source = all_source_text()
+    chinese_traditional_unselectable = (
+        "lang == MenuLangId::ChineseTraditional" in source
+        and re.search(r"if\s*\(\s*lang\s*==\s*MenuLangId::ChineseTraditional\s*\)\s*continue\s*;", source)
+    ) or re.search(
+        r"\{\s*MenuLangId::ChineseTraditional\b[^{};]*MenuLangId::ChineseSimplified\s*,\s*false\s*,",
+        source,
+        re.S,
+    )
 
     require(enum_values.get("First", -1) >= 100, "MenuLangId::First >= 100")
     require(enum_values["Arabic"] >= 100, "Arabic persisted value >= 100")
@@ -267,11 +275,7 @@ def main() -> int:
         and "kMenuLanguageLegacyEnglish" in source,
         "Legacy 0/1 migration constants are present",
     )
-    require(
-        "lang == MenuLangId::ChineseTraditional" in source
-        and re.search(r"if\s*\(\s*lang\s*==\s*MenuLangId::ChineseTraditional\s*\)\s*continue\s*;", source),
-        "ChineseTraditional is not selectable",
-    )
+    require(chinese_traditional_unselectable, "ChineseTraditional is not selectable")
 
     exact_rows = parse_rows("kTranslations", EXPECTED_TRANSLATION_FIELDS)
     object_rows = parse_rows("kObjectTextTranslations", EXPECTED_OBJECT_FIELDS)

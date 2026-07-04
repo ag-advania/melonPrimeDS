@@ -12,6 +12,45 @@ namespace MelonPrime::UiText
 
 namespace {
 
+constexpr LanguageInfo kLanguageInfos[] = {
+    {MenuLangId::Arabic, "ar", "العربية", MenuLangId::Arabic, true, TextDirection::RightToLeft, true, SplashFontGroup::Arabic},
+    {MenuLangId::Italian, "it", "Italiano", MenuLangId::Italian, true, TextDirection::LeftToRight, false, SplashFontGroup::Latin},
+    {MenuLangId::Indonesian, "id", "Bahasa Indonesia", MenuLangId::Indonesian, true, TextDirection::LeftToRight, false, SplashFontGroup::Latin},
+    {MenuLangId::Ukrainian, "uk", "Українська", MenuLangId::Ukrainian, true, TextDirection::LeftToRight, false, SplashFontGroup::Latin},
+    {MenuLangId::English, "en", "English", MenuLangId::English, true, TextDirection::LeftToRight, false, SplashFontGroup::Latin},
+    {MenuLangId::EnglishGB, "en-GB", "English (UK)", MenuLangId::English, true, TextDirection::LeftToRight, false, SplashFontGroup::Latin},
+    {MenuLangId::EnglishUS, "en-US", "English (US)", MenuLangId::English, true, TextDirection::LeftToRight, false, SplashFontGroup::Latin},
+    {MenuLangId::Dutch, "nl", "Nederlands", MenuLangId::Dutch, true, TextDirection::LeftToRight, false, SplashFontGroup::Latin},
+    {MenuLangId::Greek, "el", "Ελληνικά", MenuLangId::Greek, true, TextDirection::LeftToRight, false, SplashFontGroup::Latin},
+    {MenuLangId::Korean, "ko", "한국어", MenuLangId::Korean, true, TextDirection::LeftToRight, false, SplashFontGroup::Korean},
+    {MenuLangId::Swedish, "sv", "Svenska", MenuLangId::Swedish, true, TextDirection::LeftToRight, false, SplashFontGroup::Latin},
+    {MenuLangId::Spanish, "es", "Español (España)", MenuLangId::Spanish, true, TextDirection::LeftToRight, false, SplashFontGroup::Latin},
+    {MenuLangId::SpanishLatAm, "es-419", "Español (Latinoamérica)", MenuLangId::Spanish, true, TextDirection::LeftToRight, false, SplashFontGroup::Latin},
+    {MenuLangId::Thai, "th", "ไทย", MenuLangId::Thai, true, TextDirection::LeftToRight, true, SplashFontGroup::Thai},
+    {MenuLangId::Czech, "cs", "Čeština", MenuLangId::Czech, true, TextDirection::LeftToRight, false, SplashFontGroup::Latin},
+    {MenuLangId::ChineseSimplified, "zh-Hans", "中文（简体）", MenuLangId::ChineseSimplified, true, TextDirection::LeftToRight, false, SplashFontGroup::ChineseSimplified},
+    {MenuLangId::ChineseTraditional, "zh-Hant", "中文（繁體，简体fallback）", MenuLangId::ChineseSimplified, false, TextDirection::LeftToRight, false, SplashFontGroup::ChineseTraditional},
+    {MenuLangId::Danish, "da", "Dansk", MenuLangId::Danish, true, TextDirection::LeftToRight, false, SplashFontGroup::Latin},
+    {MenuLangId::German, "de", "Deutsch", MenuLangId::German, true, TextDirection::LeftToRight, false, SplashFontGroup::Latin},
+    {MenuLangId::Turkish, "tr", "Türkçe", MenuLangId::Turkish, true, TextDirection::LeftToRight, false, SplashFontGroup::Latin},
+    {MenuLangId::Japanese, "ja", "日本語", MenuLangId::Japanese, true, TextDirection::LeftToRight, false, SplashFontGroup::Japanese},
+    {MenuLangId::Norwegian, "nb", "Norsk", MenuLangId::Norwegian, true, TextDirection::LeftToRight, false, SplashFontGroup::Latin},
+    {MenuLangId::Hungarian, "hu", "Magyar", MenuLangId::Hungarian, true, TextDirection::LeftToRight, false, SplashFontGroup::Latin},
+    {MenuLangId::Finnish, "fi", "Suomi", MenuLangId::Finnish, true, TextDirection::LeftToRight, false, SplashFontGroup::Latin},
+    {MenuLangId::French, "fr", "Français (France)", MenuLangId::French, true, TextDirection::LeftToRight, false, SplashFontGroup::Latin},
+    {MenuLangId::FrenchCanada, "fr-CA", "Français (Canada)", MenuLangId::French, true, TextDirection::LeftToRight, false, SplashFontGroup::Latin},
+    {MenuLangId::Vietnamese, "vi", "Tiếng Việt", MenuLangId::Vietnamese, true, TextDirection::LeftToRight, false, SplashFontGroup::Latin},
+    {MenuLangId::Polish, "pl", "Polski", MenuLangId::Polish, true, TextDirection::LeftToRight, false, SplashFontGroup::Latin},
+    {MenuLangId::Portuguese, "pt", "Português (Portugal)", MenuLangId::Portuguese, true, TextDirection::LeftToRight, false, SplashFontGroup::Latin},
+    {MenuLangId::PortugueseBrazil, "pt-BR", "Português (Brasil)", MenuLangId::Portuguese, true, TextDirection::LeftToRight, false, SplashFontGroup::Latin},
+    {MenuLangId::Romanian, "ro", "Română", MenuLangId::Romanian, true, TextDirection::LeftToRight, false, SplashFontGroup::Latin},
+    {MenuLangId::Russian, "ru", "Русский", MenuLangId::Russian, true, TextDirection::LeftToRight, false, SplashFontGroup::Latin},
+};
+
+} // namespace
+
+namespace {
+
 bool LanguageTagMatches(const QString& tag, const char* prefix)
 {
     if (tag.isEmpty())
@@ -246,23 +285,41 @@ MenuLangId DetectLanguageFromEnvironment()
 
 } // namespace
 
+const LanguageInfo* FindLanguageInfo(MenuLangId id)
+{
+    for (const LanguageInfo& info : kLanguageInfos)
+    {
+        if (info.id == id)
+            return &info;
+    }
+    return nullptr;
+}
+
+const LanguageInfo& LanguageInfoOrEnglish(MenuLangId id)
+{
+    if (const LanguageInfo* info = FindLanguageInfo(id))
+        return *info;
+    return *FindLanguageInfo(MenuLangId::English);
+}
+
 MenuLangId ResolveTranslationLanguage(MenuLangId lang)
 {
-    switch (lang) {
-    case MenuLangId::EnglishGB:
-    case MenuLangId::EnglishUS:
-        return MenuLangId::English;
-    case MenuLangId::SpanishLatAm:
-        return MenuLangId::Spanish;
-    case MenuLangId::FrenchCanada:
-        return MenuLangId::French;
-    case MenuLangId::PortugueseBrazil:
-        return MenuLangId::Portuguese;
-    case MenuLangId::ChineseTraditional:
-        return MenuLangId::ChineseSimplified;
-    default:
-        return lang;
-    }
+    return LanguageInfoOrEnglish(lang).translationBase;
+}
+
+bool IsRightToLeftLanguage(MenuLangId lang)
+{
+    return LanguageInfoOrEnglish(lang).direction == TextDirection::RightToLeft;
+}
+
+bool RequiresShapedSplashText(MenuLangId lang)
+{
+    return LanguageInfoOrEnglish(lang).requiresShapedSplash;
+}
+
+SplashFontGroup SplashFontGroupForLanguage(MenuLangId lang)
+{
+    return LanguageInfoOrEnglish(lang).splashFontGroup;
 }
 
 int NormalizeMenuLanguageConfig(int storedValue)
@@ -281,14 +338,7 @@ int NormalizeMenuLanguageConfig(int storedValue)
 
 bool IsEnglishMenuLanguage(MenuLangId lang)
 {
-    switch (lang) {
-    case MenuLangId::English:
-    case MenuLangId::EnglishGB:
-    case MenuLangId::EnglishUS:
-        return true;
-    default:
-        return false;
-    }
+    return ResolveTranslationLanguage(lang) == MenuLangId::English;
 }
 
 MenuLangId DetectSystemMenuLanguage()
@@ -330,41 +380,7 @@ MenuLangId ActiveMenuLanguage()
 
 QString MenuLanguageDisplayName(MenuLangId lang)
 {
-    switch (lang) {
-    case MenuLangId::Arabic: return QStringLiteral("العربية");
-    case MenuLangId::Italian: return QStringLiteral("Italiano");
-    case MenuLangId::Indonesian: return QStringLiteral("Bahasa Indonesia");
-    case MenuLangId::Ukrainian: return QStringLiteral("Українська");
-    case MenuLangId::English: return QStringLiteral("English");
-    case MenuLangId::EnglishGB: return QStringLiteral("English (UK)");
-    case MenuLangId::EnglishUS: return QStringLiteral("English (US)");
-    case MenuLangId::Dutch: return QStringLiteral("Nederlands");
-    case MenuLangId::Greek: return QStringLiteral("Ελληνικά");
-    case MenuLangId::Korean: return QStringLiteral("한국어");
-    case MenuLangId::Swedish: return QStringLiteral("Svenska");
-    case MenuLangId::Spanish: return QStringLiteral("Español (España)");
-    case MenuLangId::SpanishLatAm: return QStringLiteral("Español (Latinoamérica)");
-    case MenuLangId::Thai: return QStringLiteral("ไทย");
-    case MenuLangId::Czech: return QStringLiteral("Čeština");
-    case MenuLangId::ChineseSimplified: return QStringLiteral("中文（简体）");
-    case MenuLangId::ChineseTraditional: return QStringLiteral("中文（繁體，简体fallback）");
-    case MenuLangId::Danish: return QStringLiteral("Dansk");
-    case MenuLangId::German: return QStringLiteral("Deutsch");
-    case MenuLangId::Turkish: return QStringLiteral("Türkçe");
-    case MenuLangId::Japanese: return QStringLiteral("日本語");
-    case MenuLangId::Norwegian: return QStringLiteral("Norsk");
-    case MenuLangId::Hungarian: return QStringLiteral("Magyar");
-    case MenuLangId::Finnish: return QStringLiteral("Suomi");
-    case MenuLangId::French: return QStringLiteral("Français (France)");
-    case MenuLangId::FrenchCanada: return QStringLiteral("Français (Canada)");
-    case MenuLangId::Vietnamese: return QStringLiteral("Tiếng Việt");
-    case MenuLangId::Polish: return QStringLiteral("Polski");
-    case MenuLangId::Portuguese: return QStringLiteral("Português (Portugal)");
-    case MenuLangId::PortugueseBrazil: return QStringLiteral("Português (Brasil)");
-    case MenuLangId::Romanian: return QStringLiteral("Română");
-    case MenuLangId::Russian: return QStringLiteral("Русский");
-    default: return QStringLiteral("English");
-    }
+    return QString::fromUtf8(LanguageInfoOrEnglish(lang).displayName);
 }
 
 QString MenuLanguageNativeLabel()
@@ -376,14 +392,10 @@ QList<MenuLangId> AllSelectableMenuLanguages()
 {
     QList<MenuLangId> langs;
     langs.reserve(static_cast<int>(MenuLangId::Count) - static_cast<int>(MenuLangId::First));
-    for (int i = static_cast<int>(MenuLangId::First);
-        i < static_cast<int>(MenuLangId::Count);
-        ++i)
+    for (const LanguageInfo& info : kLanguageInfos)
     {
-        const MenuLangId lang = static_cast<MenuLangId>(i);
-        if (lang == MenuLangId::ChineseTraditional)
-            continue;
-        langs.append(lang);
+        if (info.selectable)
+            langs.append(info.id);
     }
     return langs;
 }

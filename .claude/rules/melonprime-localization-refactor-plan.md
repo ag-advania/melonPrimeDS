@@ -562,7 +562,7 @@ MelonPrimeLocalization/MelonPrimeObjectTranslations.inc
 |---|---|---:|---|---|
 | Phase 0 | 完了 | 2026-07-04 | `python3 .claude/skills/audit-melonprime-localization.py`; `cmake --build build-mac --parallel 4` | 監査スクリプト追加。既存の完全重複 exact keys を削除し、代表キー `OK` / `Input Config` を追加。 |
 | Phase 1 | 完了 | 2026-07-04 | `python3 .claude/skills/audit-melonprime-localization.py`; `cmake --build build-mac --parallel 4`; no-ROM起動→quit | `MelonPrimeLocalization/` へ LanguageRegistry / TranslationCatalog / Dynamic / WidgetLocalizer / Splash を物理分割。外部APIと翻訳データ形式は維持。 |
-| Phase 2 | 未着手 | — | — | LanguageInfo metadata |
+| Phase 2 | 完了 | 2026-07-04 | `python3 .claude/skills/audit-melonprime-localization.py`; `cmake --build build-mac --parallel 4`; no-ROM起動→quit | `LanguageInfo` metadataを導入し、表示名/selectable/翻訳fallback/RTL/splash shaping/font groupを一元化。 |
 | Phase 3 | 未着手 | — | — | Tr responsibility split |
 | Phase 4 | 未着手 | — | — | catalog Map化 |
 | Phase 5 | 未着手 | — | — | key/value翻訳形式 |
