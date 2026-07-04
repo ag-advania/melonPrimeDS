@@ -1,0 +1,252 @@
+[
+  {
+    "id": "Afrikaans",
+    "code": "af",
+    "display": "Afrikaans"
+  },
+  {
+    "id": "Irish",
+    "code": "ga",
+    "display": "Gaeilge"
+  },
+  {
+    "id": "Icelandic",
+    "code": "is",
+    "display": "Íslenska"
+  },
+  {
+    "id": "Azerbaijani",
+    "code": "az",
+    "display": "Azərbaycanca"
+  },
+  {
+    "id": "Assamese",
+    "code": "as",
+    "display": "অসমীয়া"
+  },
+  {
+    "id": "Amharic",
+    "code": "am",
+    "display": "አማርኛ"
+  },
+  {
+    "id": "Albanian",
+    "code": "sq",
+    "display": "Shqip"
+  },
+  {
+    "id": "Armenian",
+    "code": "hy",
+    "display": "Հայերեն"
+  },
+  {
+    "id": "Uzbek",
+    "code": "uz",
+    "display": "Oʻzbekcha"
+  },
+  {
+    "id": "Urdu",
+    "code": "ur",
+    "display": "اردو"
+  },
+  {
+    "id": "Estonian",
+    "code": "et",
+    "display": "Eesti"
+  },
+  {
+    "id": "Odia",
+    "code": "or",
+    "display": "ଓଡ଼ିଆ"
+  },
+  {
+    "id": "Kazakh",
+    "code": "kk",
+    "display": "Қазақша"
+  },
+  {
+    "id": "Catalan",
+    "code": "ca",
+    "display": "Català"
+  },
+  {
+    "id": "Kannada",
+    "code": "kn",
+    "display": "ಕನ್ನಡ"
+  },
+  {
+    "id": "Kyrgyz",
+    "code": "ky",
+    "display": "Кыргызча"
+  },
+  {
+    "id": "Gujarati",
+    "code": "gu",
+    "display": "ગુજરાતી"
+  },
+  {
+    "id": "Khmer",
+    "code": "km",
+    "display": "ខ្មែរ"
+  },
+  {
+    "id": "Croatian",
+    "code": "hr",
+    "display": "Hrvatski"
+  },
+  {
+    "id": "Georgian",
+    "code": "ka",
+    "display": "ქართული"
+  },
+  {
+    "id": "Sinhala",
+    "code": "si",
+    "display": "සිංහල"
+  },
+  {
+    "id": "Swahili",
+    "code": "sw",
+    "display": "Kiswahili"
+  },
+  {
+    "id": "Slovak",
+    "code": "sk",
+    "display": "Slovenčina"
+  },
+  {
+    "id": "Slovenian",
+    "code": "sl",
+    "display": "Slovenščina"
+  },
+  {
+    "id": "Zulu",
+    "code": "zu",
+    "display": "isiZulu"
+  },
+  {
+    "id": "Serbian",
+    "code": "sr",
+    "display": "Српски"
+  },
+  {
+    "id": "Tamil",
+    "code": "ta",
+    "display": "தமிழ்"
+  },
+  {
+    "id": "ChineseHongKong",
+    "code": "zh-HK",
+    "display": "中文（香港）"
+  },
+  {
+    "id": "Telugu",
+    "code": "te",
+    "display": "తెలుగు"
+  },
+  {
+    "id": "Nepali",
+    "code": "ne",
+    "display": "नेपाली"
+  },
+  {
+    "id": "Basque",
+    "code": "eu",
+    "display": "Euskara"
+  },
+  {
+    "id": "Punjabi",
+    "code": "pa",
+    "display": "ਪੰਜਾਬੀ"
+  },
+  {
+    "id": "Hindi",
+    "code": "hi",
+    "display": "हिन्दी"
+  },
+  {
+    "id": "Filipino",
+    "code": "fil",
+    "display": "Filipino"
+  },
+  {
+    "id": "Bulgarian",
+    "code": "bg",
+    "display": "Български"
+  },
+  {
+    "id": "Hebrew",
+    "code": "he",
+    "display": "עברית"
+  },
+  {
+    "id": "Belarusian",
+    "code": "be",
+    "display": "Беларуская"
+  },
+  {
+    "id": "Bengali",
+    "code": "bn",
+    "display": "বাংলা"
+  },
+  {
+    "id": "Persian",
+    "code": "fa",
+    "display": "فارسی"
+  },
+  {
+    "id": "Bosnian",
+    "code": "bs",
+    "display": "Bosanski"
+  },
+  {
+    "id": "Macedonian",
+    "code": "mk",
+    "display": "Македонски"
+  },
+  {
+    "id": "Marathi",
+    "code": "mr",
+    "display": "मराठी"
+  },
+  {
+    "id": "Malayalam",
+    "code": "ml",
+    "display": "മലയാളം"
+  },
+  {
+    "id": "Maltese",
+    "code": "mt",
+    "display": "Malti"
+  },
+  {
+    "id": "Malay",
+    "code": "ms",
+    "display": "Bahasa Melayu"
+  },
+  {
+    "id": "Burmese",
+    "code": "my",
+    "display": "မြန်မာ"
+  },
+  {
+    "id": "Mongolian",
+    "code": "mn",
+    "display": "Монгол"
+  },
+  {
+    "id": "Lao",
+    "code": "lo",
+    "display": "ລາວ"
+  },
+  {
+    "id": "Latvian",
+    "code": "lv",
+    "display": "Latviešu"
+  },
+  {
+    "id": "Lithuanian",
+    "code": "lt",
+    "display": "Lietuvių"
+  }
+]
