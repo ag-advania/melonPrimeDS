@@ -60,6 +60,10 @@ public:
     // Emu-thread only (frame-start snapshot semantics).
     void fetchMouseDelta(int32_t& outDx, int32_t& outDy);
 
+    // True while a GCMouse device is connected (external mouse). Internal
+    // trackpads use the IOHID fallback and must not use cursor disassociation.
+    bool isGcMouseActive() const;
+
     // Drop any accumulated delta (focus loss / emu start / layout change).
     void resetAll();
 

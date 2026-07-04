@@ -188,6 +188,11 @@ namespace MelonPrime {
         // True when the platform raw filter owns aim deltas. ScreenPanel uses
         // this for threshold containment warps (fallback uses Qt/panel path).
         [[nodiscard]] bool IsPlatformRawAimActive() const;
+#if defined(__APPLE__)
+        // True when GCMouse (external mouse) owns raw aim. Internal trackpads
+        // use IOHID and must not disassociate the OS cursor from motion.
+        [[nodiscard]] bool IsGcMouseAimActive() const;
+#endif
 #if defined(__linux__)
         [[nodiscard]] bool IsLinuxRawAimActive() const { return IsPlatformRawAimActive(); }
 #endif
