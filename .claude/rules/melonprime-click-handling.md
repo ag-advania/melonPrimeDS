@@ -2,7 +2,8 @@
 
 **Status:** Click-drop fix 2026-05-10 (two dropped-click symptoms). Hold-drop fix 2026-06-03
 (charge-hold via `clearStuckMouseButtons` debounce — see "Hold-drop fix" below). P-48
-click-path latency/perf optimization 2026-06-11 (see "P-48" below).
+click-path latency/perf optimization 2026-06-11 (see "P-48" below). macOS trackpad stuck-click
+fix 2026-07-04 (see "macOS trackpad stuck-click fix" below).
 **Branch:** `highres_fonts_v3`
 **File:** [src/frontend/qt_sdl/MelonPrimeRawInputState.cpp](../../src/frontend/qt_sdl/MelonPrimeRawInputState.cpp)
 
@@ -222,7 +223,51 @@ this is not a new debounce risk class.
 - Producer side (`processRawInput` / `processRawInputBatched`): unchanged.
 - Defer / stacked-tap / `forcePressEdge` logic: unchanged.
 
-## Items intentionally NOT changed
+## macOS trackpad stuck-click fix (2026-07-04)
+
+**Status:** Fix applied 2026-07-04.
+**Files:** [Screen.cpp](../../src/frontend/qt_sdl/Screen.cpp),
+[MelonPrimeRawInputMacFilter.mm](../../src/frontend/qt_sdl/MelonPrimeRawInputMacFilter.mm),
+[EmuInstanceInput.cpp](../../src/frontend/qt_sdl/EmuInstanceInput.cpp),
+[melonprime-aim-input.md](melonprime-aim-input.md) §10.
+
+### Symptom reported
+
+- **クリックがたまに押しっぱなし**: MacBook Pro 2018 built-in trackpad (no external mouse).
+  Shoot/zoom (mouse-mapped hotkeys) or DS touch could remain logically down after the physical
+  release.
+
+### Root cause
+
+Two related issues on the macOS Qt hotkey path (`keyHotkeyMask`, not Windows `InputState`):
+
+1. **Cursor disassociation on IOHID trackpad**: A 2026-07-04 cursor-flash fix applied
+   `MacSetAimCursorCaptured(true)` (`CGAssociateMouseAndMouseCursorPosition(false)` +
+   `CGDisplayHideCursor`) whenever `IsPlatformRawAimActive()` was true. Built-in trackpads use
+   the IOHID fallback, not GCMouse — disassociation is correct for external GCMouse mice only.
+   On trackpad it dropped Qt `mouseRelease` events while `onMousePress` had already set
+   `keyHotkeyMask`.
+2. **No stuck recovery on non-Windows**: Windows has `clearStuckMouseButtons` via
+   `GetAsyncKeyState`; macOS had no equivalent when release events were lost.
+
+### Fix
+
+1. **`IsGcMouseAimActive()` gate**: `MacSetAimCursorCaptured(true)` and the containment-warp
+   skip in `containAimCursorIfNeeded()` apply only when GCMouse is connected. IOHID trackpad
+   keeps the OS cursor associated and uses containment warps to `aimContainmentLocalRect()`.
+2. **`syncMouseHotkeysFromQtButtons()`**: On macOS GUI thread, reconcile `keyHotkeyMask` /
+   `keyInputMask` against `QGuiApplication::mouseButtons()` — clear mouse-mapped bits when
+   physically up. Called from `ScreenPanel` on press, move, and `unfocus()`.
+3. **`unfocus()` touch cleanup**: Release DS touch (`releaseScreen()`) when `touching` is still
+   set after focus loss.
+
+### Items intentionally NOT changed
+
+- Windows `clearStuckMouseButtons` debounce — unchanged; mac recovery is Qt-state-based on the
+  GUI thread only.
+- GCMouse cursor capture behavior — unchanged; external mice still use disassociation + hide.
+
+## Items intentionally NOT changed (Windows click pipeline)
 
 - **`clearStuckMouseButtons`** — **NO LONGER unchanged.** The "still-held button" false-clear
   risk was reported (charge-hold drop) and fixed via the two-consecutive-check debounce; see

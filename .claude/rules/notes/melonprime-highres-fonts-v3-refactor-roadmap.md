@@ -393,7 +393,7 @@ Raw Input / macOS / Linux / Qt fallback / QCursor fallback の責務を明確に
 ## 検証方法
 
 - Windows Raw Input: aim, hotkey, Joy2Key, focus loss。
-- macOS: GCMouse backend、IOHID fallback、Alt-Tab、layout変更。
+- macOS: GCMouse backend、IOHID fallback（内蔵トラックパッド）、`MacSetAimCursorCaptured` は GCMouse のみ、Alt-Tab、layout変更、trackpad クリック押しっぱなしなし。
 - Linux X11: XInput2 raw、VirtualBox、panel fallback。
 - Wayland: raw不可時に暴走しないこと。
 - 1分間のsource counterで不要な `QCursorFallback` が出ないこと。

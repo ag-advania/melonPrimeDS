@@ -5,7 +5,9 @@ MelonPrimeDS is a fork of melonDS tailored for Metroid Prime Hunters DS with mou
 
 Primary target: Windows, with native macOS and Linux support now maintained for
 testing and distribution. Windows remains the main gameplay tuning target and
-uses the MinGW/MSYS2 workflow; macOS uses the GCMouse/IOHID/QCursor input stack,
+uses the MinGW/MSYS2 workflow; macOS uses the GCMouse/IOHID/QCursor input stack (GCMouse-only
+cursor capture for in-game aim; built-in trackpads stay on IOHID + Qt button recovery — see
+melonprime-aim-input.md §10),
 Linux uses XInput2 on X11 with a Qt fallback, and BSD is kept as a build-only CI
 target. Release artifacts are expected for Windows, macOS, and Linux.
 
