@@ -114,7 +114,10 @@ Main implementation files:
   - Linux never recenters per-frame (`warpCursorAfterAim == false` — the Qt fallback uses
     previous-position differencing, which a warp here would corrupt). Containment is the
     panel's >96px threshold warp; every warp re-seeds the fallback baseline. See §9.
-  - `unfocus()` must call `unclip()` on Linux too; otherwise Escape leaves the cursor
+  - macOS: GCMouse deltas are warp-immune; IOHID (trackpad) and QCursor fallback use panel
+    containment warps. Cursor disassociation/hide (`MacSetAimCursorCaptured`) is **GCMouse
+    only** — see §10.
+  - `unfocus()` must call `unclip()` on Linux and macOS; otherwise Escape leaves the cursor
     hidden/locked.
 
 ## 6. Native / Low-Latency Aim Injection Mechanisms (newer)
@@ -261,7 +264,46 @@ Troubleshooting signals:
   zero-delta warp events and recenter through `LinuxWarpCursorGlobal`. If the view does not move at
   all, inspect whether `ScreenPanel::mouseMoveEvent` is firing while the core is focused/in-game.
 
-## 10. Sensitivity Cache and Recalculation
+## 10. macOS Raw / Cursor Notes
+
+Since 2026-07-04, macOS in-game aim uses backend-specific cursor handling. macOS has no
+`ClipCursor`; containment and hiding are implemented in `ScreenPanel` via
+`aimContainmentLocalRect()`, `containAimCursorIfNeeded()`, and `MacWarpCursorGlobal`
+(`CGWarpMouseCursorPosition`, no TCC permission — do not use `QCursor::setPos`).
+
+Backend split (see `MelonPrimeRawInputMacFilter.mm`, `IsGcMouseAimActive()`):
+
+- **GCMouse (external USB/BT mouse, macOS 11+)**: Raw deltas are warp-immune (GameController).
+  While aim is clipped, `MacSetAimCursorCaptured(true)` disassociates hardware motion from the
+  OS cursor (`CGAssociateMouseAndMouseCursorPosition(false)`) and hides it
+  (`CGDisplayHideCursor`). Containment warps are skipped — the parked cursor must not be warped
+  every frame or it flashes on the DS screens.
+- **IOHID (built-in trackpad, trackballs, macOS < 11 fallback)**: Raw deltas via HID, but
+  **must not** call `MacSetAimCursorCaptured(true)`. Disassociating the cursor on the trackpad
+  path drops Qt `mouseRelease` events and leaves `keyHotkeyMask` stuck (shoot/zoom held). IOHID
+  uses containment warps to `aimContainmentLocalRect().center()` instead.
+- **QCursor fallback**: When `isAvailable()` is false (no permission, no device). Per-frame
+  recenter in `ProcessAimInputMouse` when raw is inactive; panel containment warps otherwise.
+
+Mouse buttons and keyboard hotkeys stay on the Qt path (`EmuInstance::onMousePress` /
+`onMouseRelease` → `keyHotkeyMask`). They are intentionally not read from GCMouse/IOHID.
+
+Stuck-click recovery (2026-07-04, trackpad report): `EmuInstance::syncMouseHotkeysFromQtButtons()`
+clears mouse-mapped hotkey bits when `QGuiApplication::mouseButtons()` shows the button physically
+up but a release event was lost. Called from `ScreenPanel` on macOS during press, move, and
+`unfocus()` (which also releases a stuck DS touch via `releaseScreen()`). See
+[melonprime-click-handling.md](melonprime-click-handling.md) § "macOS trackpad stuck-click fix".
+
+Troubleshooting:
+
+- Launch from a terminal and look for `[MelonPrime] mac input: GCMouse backend` vs
+  `IOHID backend`. Built-in MacBook trackpads use IOHID, not GCMouse.
+- Cursor flash on mouse move with an external mouse → verify GCMouse is active and
+  `MacSetAimCursorCaptured` is gated on `IsGcMouseAimActive()` only.
+- Click stuck down on trackpad → verify cursor disassociation is **not** applied for IOHID;
+  confirm `syncMouseHotkeysFromQtButtons` runs on the GUI thread.
+
+## 11. Sensitivity Cache and Recalculation
 
 - `RecalcAimSensitivityCache()`:
   - Recomputes `m_aimSensiFactor` / `m_aimCombinedY` from `AimSens` and `AimYScale`
@@ -279,7 +321,7 @@ Troubleshooting signals:
     floating-point math back into this path
   - shared rationale lives in `.claude/features/zoom-status-performance.md`
 
-## 11. Main Config Keys
+## 12. Main Config Keys
 
 - `Metroid.Sensitivity.Aim`
 - `Metroid.Sensitivity.AimYAxisScale`
