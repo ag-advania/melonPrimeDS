@@ -303,6 +303,8 @@ QRect ScreenPanel::aimContainmentLocalRect() const
 
 void ScreenPanel::containAimCursorIfNeeded()
 {
+    if (closing || !qApp || qApp->closingDown())
+        return;
     if (!getClipWanted())
         return;
     if (!isVisible() || !window() || !window()->isActiveWindow())
@@ -326,6 +328,8 @@ void ScreenPanel::containAimCursorIfNeeded()
 }
 
 void ScreenPanel::clipCursorToBottomScreen() {
+    if (closing || !qApp || qApp->closingDown())
+        return;
     setCursor(Qt::ArrowCursor);
 #ifdef _WIN32
     if (!isVisible() || !window() || !window()->isActiveWindow()) return;
@@ -339,6 +343,8 @@ void ScreenPanel::clipCursorToBottomScreen() {
 }
 
 void ScreenPanel::clipCursorCenter1px() {
+    if (closing || !qApp || qApp->closingDown())
+        return;
     setClipWanted(true);
     setCursor(Qt::BlankCursor);
 #if defined(__linux__)
@@ -373,6 +379,8 @@ void ScreenPanel::clipCursorCenter1px() {
 }
 
 void ScreenPanel::unclip() {
+    if (closing || !qApp || qApp->closingDown())
+        return;
     setClipWanted(false);
 #if defined(__APPLE__)
     MelonPrime::MacSetAimCursorCaptured(false);
@@ -383,6 +391,28 @@ void ScreenPanel::unclip() {
 #ifdef _WIN32
     ClipCursor(nullptr);
 #endif
+}
+
+void ScreenPanel::releaseCursorStateForClose()
+{
+    setClipWanted(false);
+#if defined(__APPLE__)
+    MelonPrime::MacSetAimCursorCaptured(false);
+#endif
+#if defined(__linux__)
+    resetAimMouseDelta();
+#endif
+#ifdef _WIN32
+    ClipCursor(nullptr);
+#endif
+}
+
+void ScreenPanel::beginClose()
+{
+    if (closing)
+        return;
+    closing = true;
+    releaseCursorStateForClose();
 }
 
 void ScreenPanel::updateClipIfNeeded() {
@@ -477,11 +507,6 @@ ScreenPanel::~ScreenPanel()
 {
 #ifdef MELONPRIME_DS
     closing = true;
-#if defined(_WIN32) || defined(__APPLE__)
-    unclip();
-#elif defined(__linux__)
-    resetAimMouseDelta();
-#endif
 #endif
 }
 

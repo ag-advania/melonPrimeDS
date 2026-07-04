@@ -92,7 +92,7 @@ public:
 
 #ifdef MELONPRIME_DS
     void unfocus();
-    void beginClose() { closing = true; }
+    void beginClose();
 
 #ifdef MELONPRIME_CUSTOM_HUD
     std::optional<QRect> getTopScreenWidgetRect() const;
@@ -280,6 +280,7 @@ private:
     std::optional<QRect> getScreenWidgetRect(int wantedScreenKind) const;
     std::optional<QRect> getBottomScreenWidgetRect() const;
     void clipCursorToBottomScreen();
+    void releaseCursorStateForClose();
     QRect aimContainmentLocalRect() const;
     void setClipWanted(bool value);
     bool getClipWanted() const;
