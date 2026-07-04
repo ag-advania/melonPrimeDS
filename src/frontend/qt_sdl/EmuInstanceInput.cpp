@@ -459,6 +459,27 @@ void EmuInstance::onMouseRelease(QMouseEvent* event)
         if (key == hkKeyMapping[i])
             keyHotkeyMask &= ~(1ULL << i);
 }
+
+void EmuInstance::syncMouseHotkeysFromQtButtons(Qt::MouseButtons physical)
+{
+    auto releaseIfUp = [&](Qt::MouseButton btn) {
+        if (physical & btn)
+            return;
+        const int key = static_cast<int>(btn) | 0xF0000000;
+        for (int i = 0; i < 12; i++)
+            if (key == hkKeyMapping[i])
+                keyInputMask |= (1u << i);
+        for (int i = 0; i < HK_MAX; i++)
+            if (key == hkKeyMapping[i])
+                keyHotkeyMask &= ~(1ULL << i);
+    };
+
+    releaseIfUp(Qt::LeftButton);
+    releaseIfUp(Qt::RightButton);
+    releaseIfUp(Qt::MiddleButton);
+    releaseIfUp(Qt::XButton1);
+    releaseIfUp(Qt::XButton2);
+}
 #endif // MELONPRIME_DS
 
 void EmuInstance::keyReleaseAll()

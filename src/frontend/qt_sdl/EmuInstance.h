@@ -134,6 +134,7 @@ public:
 #ifdef MELONPRIME_DS
     void onMousePress(QMouseEvent* event);
     void onMouseRelease(QMouseEvent* event);
+    void syncMouseHotkeysFromQtButtons(Qt::MouseButtons physical);
 #endif // MELONPRIME_DS
 
     int getInstanceID() { return instanceID; }

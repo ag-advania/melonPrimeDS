@@ -98,6 +98,13 @@ inline bool PlatformInput_IsRawAimActive(const PlatformRawFilter* filter)
 #endif
 }
 
+#if defined(__APPLE__)
+inline bool PlatformInput_IsGcMouseAimActive(const PlatformRawFilter* filter)
+{
+    return filter && filter->isGcMouseActive();
+}
+#endif
+
 inline void PlatformInput_FetchRawMouseDelta(PlatformRawFilter* filter,
                                              int32_t& outDx,
                                              int32_t& outDy)

@@ -310,7 +310,7 @@ void ScreenPanel::containAimCursorIfNeeded()
 
 #if defined(__APPLE__)
     const auto* core = melonPrimeCore();
-    if (core && core->IsPlatformRawAimActive())
+    if (core && core->IsGcMouseAimActive())
         return;
 #endif
 
@@ -349,13 +349,9 @@ void ScreenPanel::clipCursorCenter1px() {
     if (isVisible() && window() && window()->isActiveWindow()) {
         const auto* core = melonPrimeCore();
         const QPoint c = mapToGlobal(aimContainmentLocalRect().center());
-        if (core && core->IsPlatformRawAimActive()) {
-            MelonPrime::PlatformInput_WarpCursor(c.x(), c.y());
-            MelonPrime::MacSetAimCursorCaptured(true);
-        } else {
-            MelonPrime::MacSetAimCursorCaptured(false);
-            MelonPrime::PlatformInput_WarpCursor(c.x(), c.y());
-        }
+        const bool gcMouseActive = core && core->IsGcMouseAimActive();
+        MelonPrime::PlatformInput_WarpCursor(c.x(), c.y());
+        MelonPrime::MacSetAimCursorCaptured(gcMouseActive);
     }
 #elif !defined(_WIN32)
     if (isVisible() && window() && window()->isActiveWindow()) {
@@ -678,6 +674,9 @@ void ScreenPanel::mousePressEvent(QMouseEvent* event)
 #include "MelonPrimeHudScreenCppMousePress.inc"
 
 #ifdef MELONPRIME_DS
+#if defined(__APPLE__)
+    emu->syncMouseHotkeysFromQtButtons(QGuiApplication::mouseButtons());
+#endif
     // Click sets focus
     if (core) core->isFocused = true;
 
@@ -756,6 +755,10 @@ void ScreenPanel::mouseMoveEvent(QMouseEvent* event)
 
     if (Q_UNLIKELY(!emu->emuIsActive()))
         return;
+
+#if defined(MELONPRIME_DS) && defined(__APPLE__)
+    emu->syncMouseHotkeysFromQtButtons(QGuiApplication::mouseButtons());
+#endif
 
 #include "MelonPrimeHudScreenCppMouseMove.inc"
 
@@ -2031,6 +2034,16 @@ void ScreenPanel::unfocus()
 
     if (core)
         core->isFocused = false;
+
+#if defined(MELONPRIME_DS) && defined(__APPLE__)
+    if (emu) {
+        emu->syncMouseHotkeysFromQtButtons(QGuiApplication::mouseButtons());
+        if (touching) {
+            emu->releaseScreen();
+            touching = false;
+        }
+    }
+#endif
 
     if (!isVisible())
         return;

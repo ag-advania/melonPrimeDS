@@ -332,6 +332,11 @@ void MacRawInputFilter::fetchMouseDelta(int32_t& outDx, int32_t& outDy)
     m->lastReadY = curY;
 }
 
+bool MacRawInputFilter::isGcMouseActive() const
+{
+    return m->gcActive.load(std::memory_order_acquire);
+}
+
 void MacRawInputFilter::resetAll()
 {
     m->accX.store(0, std::memory_order_release);
