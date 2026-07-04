@@ -1,5 +1,7 @@
 #include "MelonPrimeSplashLocalization.h"
 
+#include "MelonPrimeLanguageRegistry.h"
+
 #include <QColor>
 #include <QDateTime>
 #include <QFont>
@@ -60,8 +62,8 @@ constexpr unsigned kNoRomSplashIdLine1 = 0x80000001u;
 [[nodiscard]] QFont NoRomSplashUiFont()
 {
     QFont font;
-    switch (ActiveMenuLanguage()) {
-    case MenuLangId::Japanese:
+    switch (SplashFontGroupForLanguage(ActiveMenuLanguage())) {
+    case SplashFontGroup::Japanese:
         font.setFamilies({
             QStringLiteral("Hiragino Sans"),
             QStringLiteral("Hiragino Kaku Gothic ProN"),
@@ -71,7 +73,7 @@ constexpr unsigned kNoRomSplashIdLine1 = 0x80000001u;
             QStringLiteral("Segoe UI"),
         });
         break;
-    case MenuLangId::ChineseSimplified:
+    case SplashFontGroup::ChineseSimplified:
         font.setFamilies({
             QStringLiteral("PingFang SC"),
             QStringLiteral("Noto Sans CJK SC"),
@@ -80,7 +82,7 @@ constexpr unsigned kNoRomSplashIdLine1 = 0x80000001u;
             QStringLiteral("Segoe UI"),
         });
         break;
-    case MenuLangId::ChineseTraditional:
+    case SplashFontGroup::ChineseTraditional:
         font.setFamilies({
             QStringLiteral("PingFang TC"),
             QStringLiteral("Noto Sans CJK TC"),
@@ -89,7 +91,7 @@ constexpr unsigned kNoRomSplashIdLine1 = 0x80000001u;
             QStringLiteral("Segoe UI"),
         });
         break;
-    case MenuLangId::Korean:
+    case SplashFontGroup::Korean:
         font.setFamilies({
             QStringLiteral("Apple SD Gothic Neo"),
             QStringLiteral("Noto Sans CJK KR"),
@@ -98,7 +100,7 @@ constexpr unsigned kNoRomSplashIdLine1 = 0x80000001u;
             QStringLiteral("Segoe UI"),
         });
         break;
-    case MenuLangId::Arabic:
+    case SplashFontGroup::Arabic:
         font.setFamilies({
             QStringLiteral("Geeza Pro"),
             QStringLiteral("Noto Sans Arabic"),
@@ -106,7 +108,7 @@ constexpr unsigned kNoRomSplashIdLine1 = 0x80000001u;
             QStringLiteral("Segoe UI"),
         });
         break;
-    case MenuLangId::Thai:
+    case SplashFontGroup::Thai:
         font.setFamilies({
             QStringLiteral("Thonburi"),
             QStringLiteral("Noto Sans Thai"),
@@ -178,8 +180,7 @@ bool TryRenderNoRomSplashOsdItem(unsigned int id, const char* text, unsigned int
 
     const int baseline = fm.ascent();
     const QColor shadowColor(0, 0, 0, 224);
-    const bool needsShapedText = ActiveMenuLanguage() == MenuLangId::Arabic
-        || ActiveMenuLanguage() == MenuLangId::Thai;
+    const bool needsShapedText = RequiresShapedSplashText(ActiveMenuLanguage());
 
     if (needsShapedText)
     {
@@ -187,7 +188,7 @@ bool TryRenderNoRomSplashOsdItem(unsigned int id, const char* text, unsigned int
                                         : (color | 0xFF000000u);
         QTextOption option;
         option.setWrapMode(QTextOption::NoWrap);
-        if (ActiveMenuLanguage() == MenuLangId::Arabic)
+        if (IsRightToLeftLanguage(ActiveMenuLanguage()))
         {
             option.setTextDirection(Qt::RightToLeft);
             option.setAlignment(Qt::AlignRight | Qt::AlignTop);
