@@ -116,6 +116,145 @@ constexpr unsigned kNoRomSplashIdLine1 = 0x80000001u;
             QStringLiteral("Segoe UI"),
         });
         break;
+    // 50-language expansion. "Nirmala UI" (Windows 8+) covers most Indic
+    // scripts (Devanagari/Bengali/Gujarati/Gurmukhi/Kannada/Malayalam/
+    // Odia/Tamil/Telugu); macOS entries use the per-script "Sangam MN" /
+    // "Kohinoor" family names where Apple ships a dedicated one. "Noto Sans
+    // <Script>" is the universal fallback if neither is installed.
+    case SplashFontGroup::Devanagari:
+        font.setFamilies({
+            QStringLiteral("Kohinoor Devanagari"),
+            QStringLiteral("Nirmala UI"),
+            QStringLiteral("Noto Sans Devanagari"),
+            QStringLiteral("Segoe UI"),
+        });
+        break;
+    case SplashFontGroup::Bengali:
+        font.setFamilies({
+            QStringLiteral("Kohinoor Bangla"),
+            QStringLiteral("Nirmala UI"),
+            QStringLiteral("Noto Sans Bengali"),
+            QStringLiteral("Segoe UI"),
+        });
+        break;
+    case SplashFontGroup::Gurmukhi:
+        font.setFamilies({
+            QStringLiteral("Gurmukhi MN"),
+            QStringLiteral("Nirmala UI"),
+            QStringLiteral("Noto Sans Gurmukhi"),
+            QStringLiteral("Segoe UI"),
+        });
+        break;
+    case SplashFontGroup::Gujarati:
+        font.setFamilies({
+            QStringLiteral("Gujarati Sangam MN"),
+            QStringLiteral("Nirmala UI"),
+            QStringLiteral("Noto Sans Gujarati"),
+            QStringLiteral("Segoe UI"),
+        });
+        break;
+    case SplashFontGroup::Odia:
+        font.setFamilies({
+            QStringLiteral("Oriya Sangam MN"),
+            QStringLiteral("Nirmala UI"),
+            QStringLiteral("Noto Sans Oriya"),
+            QStringLiteral("Segoe UI"),
+        });
+        break;
+    case SplashFontGroup::Kannada:
+        font.setFamilies({
+            QStringLiteral("Kannada Sangam MN"),
+            QStringLiteral("Nirmala UI"),
+            QStringLiteral("Noto Sans Kannada"),
+            QStringLiteral("Segoe UI"),
+        });
+        break;
+    case SplashFontGroup::Malayalam:
+        font.setFamilies({
+            QStringLiteral("Malayalam Sangam MN"),
+            QStringLiteral("Nirmala UI"),
+            QStringLiteral("Noto Sans Malayalam"),
+            QStringLiteral("Segoe UI"),
+        });
+        break;
+    case SplashFontGroup::Tamil:
+        font.setFamilies({
+            QStringLiteral("Tamil Sangam MN"),
+            QStringLiteral("Nirmala UI"),
+            QStringLiteral("Noto Sans Tamil"),
+            QStringLiteral("Segoe UI"),
+        });
+        break;
+    case SplashFontGroup::Telugu:
+        font.setFamilies({
+            QStringLiteral("Telugu Sangam MN"),
+            QStringLiteral("Nirmala UI"),
+            QStringLiteral("Noto Sans Telugu"),
+            QStringLiteral("Segoe UI"),
+        });
+        break;
+    case SplashFontGroup::Sinhala:
+        font.setFamilies({
+            QStringLiteral("Sinhala Sangam MN"),
+            QStringLiteral("Iskoola Pota"),
+            QStringLiteral("Noto Sans Sinhala"),
+            QStringLiteral("Segoe UI"),
+        });
+        break;
+    case SplashFontGroup::Khmer:
+        font.setFamilies({
+            QStringLiteral("Khmer Sangam MN"),
+            QStringLiteral("Leelawadee UI"),
+            QStringLiteral("Noto Sans Khmer"),
+            QStringLiteral("Segoe UI"),
+        });
+        break;
+    case SplashFontGroup::Lao:
+        font.setFamilies({
+            QStringLiteral("Lao Sangam MN"),
+            QStringLiteral("Leelawadee UI"),
+            QStringLiteral("Noto Sans Lao"),
+            QStringLiteral("Segoe UI"),
+        });
+        break;
+    case SplashFontGroup::Myanmar:
+        font.setFamilies({
+            QStringLiteral("Myanmar Sangam MN"),
+            QStringLiteral("Myanmar Text"),
+            QStringLiteral("Noto Sans Myanmar"),
+            QStringLiteral("Segoe UI"),
+        });
+        break;
+    case SplashFontGroup::Hebrew:
+        font.setFamilies({
+            QStringLiteral("Arial Hebrew"),
+            QStringLiteral("Noto Sans Hebrew"),
+            QStringLiteral("Segoe UI"),
+            QStringLiteral("Arial"),
+        });
+        break;
+    case SplashFontGroup::Ethiopic:
+        font.setFamilies({
+            QStringLiteral("Kefa"),
+            QStringLiteral("Nyala"),
+            QStringLiteral("Noto Sans Ethiopic"),
+            QStringLiteral("Segoe UI"),
+        });
+        break;
+    case SplashFontGroup::Georgian:
+        font.setFamilies({
+            QStringLiteral("Noto Sans Georgian"),
+            QStringLiteral("Sylfaen"),
+            QStringLiteral("Segoe UI"),
+        });
+        break;
+    case SplashFontGroup::Armenian:
+        font.setFamilies({
+            QStringLiteral("Noto Sans Armenian"),
+            QStringLiteral("Sylfaen"),
+            QStringLiteral("Segoe UI"),
+        });
+        break;
     default:
         font.setFamilies({
             QStringLiteral("Segoe UI"),

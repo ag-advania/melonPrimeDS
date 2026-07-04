@@ -20,6 +20,28 @@ enum class SplashFontGroup
     Korean,
     Arabic,
     Thai,
+
+    // Added for the 50-language expansion. Persian and Urdu reuse Arabic
+    // (shared Perso-Arabic Unicode block); ChineseHongKong reuses
+    // ChineseTraditional (same script); other new languages using a simple
+    // Latin/Cyrillic alphabet reuse Latin.
+    Devanagari,
+    Bengali,
+    Gurmukhi,
+    Gujarati,
+    Odia,
+    Kannada,
+    Malayalam,
+    Tamil,
+    Telugu,
+    Sinhala,
+    Khmer,
+    Lao,
+    Myanmar,
+    Hebrew,
+    Ethiopic,
+    Georgian,
+    Armenian,
 };
 
 struct LanguageInfo
