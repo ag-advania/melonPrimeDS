@@ -54,7 +54,7 @@ Implementation details worth knowing:
 - `MelonPrimeHudRender.cpp` caches HUD config and several rendered assets to avoid repeated per-frame work.
 - Weapon icons and bomb icons are cached and optionally tint-overlaid.
 - The custom HUD also applies a No HUD patch to suppress parts of the game's native HUD while custom elements are active.
-- MelonPrime UI labels use `MelonPrimeLocalization.h/.cpp` for English/Japanese display text selected by OS locale (`QLocale::system()`); this is display-only and does not translate config/TOML keys.
+- MelonPrime UI labels use `MelonPrimeLocalization.h/.cpp` for English/Japanese display text selected by OS locale (`QLocale::system()`); this is display-only and does not translate config/TOML keys. melonDS-owned dialogs are localized via `LocalizeMelonDsDialog()` from `Window.cpp` — see [non-melonprime-upstream-diff.md](non-melonprime-upstream-diff.md) (do not patch upstream `.cpp` for UI text).
 
 ### 3. In-game Aspect Ratio Patch
 `MelonPrimePatchAspectRatio.cpp` patches the game's projection/scaling setup so gameplay FOV better matches the emulator aspect ratio. It is applied through `MelonPrimePatchRegistry` at the game-join site.

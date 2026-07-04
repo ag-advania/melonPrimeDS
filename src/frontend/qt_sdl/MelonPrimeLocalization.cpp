@@ -1,13 +1,16 @@
 #include "MelonPrimeLocalization.h"
 
 #include <QAbstractButton>
+#include <QCheckBox>
 #include <QComboBox>
 #include <QFontComboBox>
 #include <QGroupBox>
 #include <QLabel>
 #include <QLineEdit>
 #include <QPlainTextEdit>
+#include <QItemSelectionModel>
 #include <QTabWidget>
+#include <QTreeView>
 #include <QVariant>
 
 #include <utility>
@@ -829,6 +832,8 @@ constexpr Translation kTranslations[] = {
     {"Use New Method for Alt-Form Transform", "トランスフォーム変形に新方式を使う"},
     {"Use New Method for Zoom", "ズームに新方式を使う"},
     {"Use New Method 2 for Zoom", "ズームに新方式2を使う"},
+
+#include "MelonPrimeLocalizationMelondsDialogs.inc"
 };
 
 constexpr ObjectTextTranslation kObjectTextTranslations[] = {
@@ -982,6 +987,7 @@ EU ROMには隠し日本語オプションがあり、DSファームウェアを
         "lblMetroidZoomMethod2Desc",
         "新方式2は、押すたびにゲーム本来のズーム状態を切り替えます。「ズームに新方式を使う」とは同時に使えません。"
     },
+    {"btnClear", "クリア"},
 };
 
 QString TranslateExact(const QString& text)
@@ -1052,6 +1058,46 @@ QString Tr(const QString& text)
         const QString translated = Tr(base);
         if (translated != base)
             return translated + QLatin1Char(':');
+    }
+
+    if (text.startsWith(QStringLiteral("Configuring settings for instance ")))
+        return QStringLiteral("インスタンス %1 の設定")
+            .arg(text.mid(35));
+
+    if (text.startsWith(QStringLiteral("Configuring mappings for instance ")))
+        return QStringLiteral("インスタンス %1 の割り当て")
+            .arg(text.mid(35));
+
+    if (text.startsWith(QStringLiteral("Configuring paths for instance ")))
+        return QStringLiteral("インスタンス %1 のパス")
+            .arg(text.mid(32));
+
+    if (text.startsWith(QStringLiteral("Setting battery levels for instance ")))
+        return QStringLiteral("インスタンス %1 のバッテリー残量")
+            .arg(text.mid(36));
+
+    if (text == QStringLiteral("(none)"))
+        return QStringLiteral("(なし)");
+
+    if (text.startsWith(QStringLiteral("Direct mode (requires "))
+        && text.endsWith(QStringLiteral(" and ethernet connection)")))
+    {
+        const QString middle = text.mid(22, text.size() - 22 - 25);
+        return QStringLiteral("ダイレクトモード (要 %1・イーサネット接続)").arg(middle);
+    }
+
+    const int nativeIdx = text.indexOf(QStringLiteral(" native ("));
+    if (nativeIdx > 0)
+        return text.left(nativeIdx) + QStringLiteral(" ネイティブ (") + text.mid(nativeIdx + 9);
+
+    {
+        QString cameraText = text;
+        if (cameraText.contains(QStringLiteral(" (inner camera)")))
+            cameraText.replace(QStringLiteral(" (inner camera)"), QStringLiteral(" (内側カメラ)"));
+        if (cameraText.contains(QStringLiteral(" (outer camera)")))
+            cameraText.replace(QStringLiteral(" (outer camera)"), QStringLiteral(" (外側カメラ)"));
+        if (cameraText != text)
+            return cameraText;
     }
 
     const std::pair<QString, QString> dynamicPrefixes[] = {
@@ -1337,6 +1383,61 @@ void LocalizeMenuBar(QMenuBar* menuBar)
 
     for (QAction* action : menuBar->actions())
         LocalizeAction(action);
+}
+
+namespace {
+
+void wireMelonDsDialogDynamicLabels(QWidget* dialog)
+{
+    if (!dialog || !IsJapaneseLocale())
+        return;
+
+    // CheatsDialog sets chkItemOption text in selection handlers (upstream .cpp).
+    // Re-translate after each selection change from MelonPrime side only.
+    if (dialog->objectName() != QStringLiteral("CheatsDialog"))
+        return;
+
+    auto* tree = dialog->findChild<QTreeView*>(QStringLiteral("tvCodeList"));
+    auto* chk = dialog->findChild<QCheckBox*>(QStringLiteral("chkItemOption"));
+    if (!tree || !chk)
+        return;
+
+    auto* sel = tree->selectionModel();
+    if (!sel)
+        return;
+
+    const char* hookKey = "_melonprime_cheats_option_hook";
+    if (dialog->property(hookKey).toBool())
+        return;
+    dialog->setProperty(hookKey, true);
+
+    auto relocalizeOption = [chk]() {
+        if (!IsJapaneseLocale() || !chk)
+            return;
+        const QString raw = chk->text();
+        const QString translated = Tr(raw);
+        if (translated != raw)
+            chk->setText(translated);
+    };
+
+    QObject::connect(
+        sel,
+        &QItemSelectionModel::selectionChanged,
+        dialog,
+        relocalizeOption,
+        Qt::QueuedConnection);
+
+    relocalizeOption();
+}
+
+} // namespace
+
+void LocalizeMelonDsDialog(QWidget* dialog)
+{
+    if (!IsJapaneseLocale() || !dialog)
+        return;
+    LocalizeWidgetTree(dialog);
+    wireMelonDsDialogDynamicLabels(dialog);
 }
 
 } // namespace MelonPrime::UiText

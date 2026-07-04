@@ -35,6 +35,10 @@
 #include "MelonPrimeInputConfig.h"
 #endif
 
+#ifdef MELONPRIME_DS
+#include "MelonPrimeLocalization.h"
+#endif
+
 using namespace melonDS;
 InputConfigDialog* InputConfigDialog::currentDlg = nullptr;
 
@@ -145,6 +149,10 @@ InputConfigDialog::InputConfigDialog(QWidget* parent) : QDialog(parent), ui(new 
         ui->lblInstanceNum->setText(QString("Configuring mappings for instance %1").arg(inst + 1));
     else
         ui->lblInstanceNum->hide();
+
+#ifdef MELONPRIME_DS
+    MelonPrime::UiText::LocalizeMelonDsDialog(this);
+#endif
 }
 
 InputConfigDialog::~InputConfigDialog()
@@ -193,7 +201,11 @@ void InputConfigDialog::populatePage(QWidget* page,
     QGroupBox* group;
     QGridLayout* group_layout;
 
+#ifdef MELONPRIME_DS
+    group = new QGroupBox("Keyboard && mouse mappings:");
+#else
     group = new QGroupBox("Keyboard mappings:");
+#endif
     main_layout->addWidget(group);
     group_layout = new QGridLayout();
     group_layout->setSpacing(1);

@@ -252,6 +252,8 @@ void MelonPrimeInputConfig::setupMenuLanguageControl(Config::Table& instcfg)
         [this](int) {
             MelonPrime::UiText::SetMenuLanguageMode(m_comboMenuLanguage->currentData().toInt());
             MelonPrime::UiText::LocalizeWidgetTree(this);
+            if (InputConfigDialog::currentDlg)
+                MelonPrime::UiText::LocalizeMelonDsDialog(InputConfigDialog::currentDlg);
         });
 }
 

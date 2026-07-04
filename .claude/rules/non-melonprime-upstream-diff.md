@@ -20,6 +20,21 @@ This note intentionally excludes the primary MelonPrime implementation files who
 
 It includes upstream-owned files that now contain MelonPrime integration points, plus fork-only documentation, assets, CI, and build metadata whose filenames do not start with `MelonPrime`.
 
+## Upstream-owned file modification policy
+
+When adding MelonPrime behavior, **prefer MelonPrime-side code** (`MelonPrime*.cpp/.h/.inc`, `Window.cpp` / `InputConfigDialog.cpp` blocks already listed below, `MelonPrimeLocalization.cpp`) over editing upstream melonDS sources.
+
+**UI localization example:** call `MelonPrime::UiText::LocalizeMelonDsDialog()` from `Window.cpp` after `openDlg()`. If upstream code sets widget text at runtime (e.g. `CheatsDialog` selection handlers), wire re-localization from `MelonPrimeLocalization.cpp` (signal/`QueuedConnection`), **not** by adding `MP_TR()` or `#include "MelonPrime*.h"` inside upstream `.cpp` files.
+
+When an upstream-owned file **must** be changed (existing `#ifdef MELONPRIME_DS` hook sites, upstream bugfixes carried by the fork):
+
+1. Wrap **all** fork-specific edits in `#ifdef MELONPRIME_DS` … `#endif`.
+2. Provide `#else` (or leave the non-`MELONPRIME_DS` path) so a build **without** `MELONPRIME_DS` matches upstream behavior.
+3. Do **not** include MelonPrime headers or call MelonPrime APIs outside `#ifdef MELONPRIME_DS`.
+4. Keep diffs minimal; document new hook sites in this file when they are merge-conflict hotspots.
+
+Files whose basename starts with `MelonPrime` under `src/frontend/qt_sdl/` are fork-owned and not subject to this restriction.
+
 The captured non-MelonPrime diff was 133 files, about 15k insertions and 2.5k deletions. Most of the meaningful risk is concentrated in core hook sites, `EmuThread`, `Screen`, `Config`, and input/menu plumbing.
 
 ## Core Runtime
