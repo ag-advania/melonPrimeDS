@@ -22,10 +22,17 @@
 #include <QVariant>
 
 #include <QApplication>
+#include <QColor>
+#include <QDateTime>
+#include <QFont>
+#include <QFontMetrics>
+#include <QImage>
+#include <QPainter>
 
 #include <utility>
 
 #include <cstring>
+#include <algorithm>
 
 #ifdef __APPLE__
 #include <CoreFoundation/CoreFoundation.h>
@@ -1681,6 +1688,105 @@ void ApplyNoRomSplashLocalization(char line0[256], char line1[256])
     line0[255] = '\0';
     std::strncpy(line1, b1.constData(), 255);
     line1[255] = '\0';
+}
+
+namespace {
+
+constexpr unsigned kNoRomSplashIdLine0 = 0x80000000u;
+constexpr unsigned kNoRomSplashIdLine1 = 0x80000001u;
+
+[[nodiscard]] unsigned int SplashOsdRainbowColor(int inc) noexcept
+{
+    if (inc < 100) return 0xFFFF9B9B + (static_cast<unsigned int>(inc) << 8);
+    if (inc < 200) return 0xFFFFFF9B - (static_cast<unsigned int>(inc - 100) << 16);
+    if (inc < 300) return 0xFF9BFF9B + static_cast<unsigned int>(inc - 200);
+    if (inc < 400) return 0xFF9BFFFF - (static_cast<unsigned int>(inc - 300) << 8);
+    if (inc < 500) return 0xFF9B9BFF + (static_cast<unsigned int>(inc - 400) << 16);
+    return 0xFFFF9BFF - static_cast<unsigned int>(inc - 500);
+}
+
+[[nodiscard]] QFont NoRomSplashUiFont()
+{
+    QFont font;
+    font.setFamilies({
+        QStringLiteral("Hiragino Sans"),
+        QStringLiteral("Hiragino Kaku Gothic ProN"),
+        QStringLiteral("Noto Sans CJK JP"),
+        QStringLiteral("Yu Gothic UI"),
+        QStringLiteral("Meiryo UI"),
+        QStringLiteral("Segoe UI"),
+    });
+    font.setPixelSize(12);
+    font.setStyleStrategy(QFont::PreferAntialias);
+    return font;
+}
+
+} // namespace
+
+bool TryRenderNoRomSplashOsdItem(unsigned int id, const char* text, unsigned int color,
+    int rainbowstart, int& rainbowend, int maxWidth, QImage* outBitmap)
+{
+    if (!outBitmap || !text || !text[0])
+        return false;
+    if (!IsJapaneseLocale())
+        return false;
+    if (id != kNoRomSplashIdLine0 && id != kNoRomSplashIdLine1)
+        return false;
+
+    const QString qtext = QString::fromUtf8(text);
+    if (qtext.isEmpty())
+        return false;
+
+    const QFont font = NoRomSplashUiFont();
+    const QFontMetrics fm(font);
+
+    const bool rainbow = (color == 0);
+    unsigned int rainbowinc = 0;
+    if (rainbowstart == -1)
+    {
+        const unsigned int ticks = static_cast<unsigned int>(QDateTime::currentMSecsSinceEpoch());
+        rainbowinc = ((static_cast<unsigned char>(text[0]) * 17u) + (ticks * 13u)) % 600u;
+    }
+    else
+    {
+        rainbowinc = static_cast<unsigned int>(rainbowstart);
+    }
+
+    const int shadowPad = 1;
+    int w = fm.horizontalAdvance(qtext);
+    if (maxWidth > 0)
+        w = std::min(w, maxWidth);
+    const int h = fm.height();
+    QImage bitmap(w + shadowPad, h + shadowPad, QImage::Format_ARGB32_Premultiplied);
+    bitmap.fill(Qt::transparent);
+
+    QPainter painter(&bitmap);
+    painter.setFont(font);
+    painter.setRenderHint(QPainter::TextAntialiasing, true);
+
+    const int baseline = fm.ascent();
+    int x = 0;
+    for (const QChar ch : qtext)
+    {
+        const unsigned int rgba = rainbow ? SplashOsdRainbowColor(static_cast<int>(rainbowinc))
+                                        : (color | 0xFF000000u);
+        const QColor mainColor(static_cast<QRgb>(rgba));
+        const QColor shadowColor(0, 0, 0, 224);
+
+        const QString glyph(ch);
+        painter.setPen(shadowColor);
+        painter.drawText(x + shadowPad, baseline + shadowPad, glyph);
+        painter.setPen(mainColor);
+        painter.drawText(x, baseline, glyph);
+
+        x += fm.horizontalAdvance(glyph);
+        if (rainbow && ch != QLatin1Char(' '))
+            rainbowinc = (rainbowinc + 30u) % 600u;
+    }
+
+    rainbowend = static_cast<int>(rainbowinc);
+    *outBitmap = std::move(bitmap);
+    return true;
 }
 
 } // namespace MelonPrime::UiText

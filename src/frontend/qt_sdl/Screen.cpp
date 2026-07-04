@@ -990,6 +990,21 @@ void ScreenPanel::osdRenderItem(OSDItem * item)
     char* text = item->text;
     u32 color = item->color;
 
+#ifdef MELONPRIME_DS
+    {
+        QImage qtBitmap;
+        int rainbowEnd = item->rainbowstart;
+        const int maxw = ((QWidget*)this)->width() - (kOSDMargin * 2);
+        if (MelonPrime::UiText::TryRenderNoRomSplashOsdItem(
+                item->id, text, color, item->rainbowstart, rainbowEnd, maxw, &qtBitmap))
+        {
+            item->bitmap = std::move(qtBitmap);
+            item->rainbowend = rainbowEnd;
+            return;
+        }
+    }
+#endif
+
     bool rainbow = (color == 0);
     u32 rainbowinc;
     if (item->rainbowstart == -1)
@@ -1203,7 +1218,15 @@ void ScreenPanel::calcSplashLayout()
     int ylogo = (h - kLogoWidth) / 2;
 
     int totalwidth = splashText[0].bitmap.width() + 6 + splashText[1].bitmap.width();
-    if (totalwidth >= w)
+#ifdef MELONPRIME_DS
+    // Localized splash uses a proportional CJK font that can fit on one row even
+    // when the upstream bitmap-font English pair stacks; keep line 1 / line 2 layout.
+    const bool splashStackVertically =
+        (totalwidth >= w) || MelonPrime::UiText::IsJapaneseLocale();
+#else
+    const bool splashStackVertically = (totalwidth >= w);
+#endif
+    if (splashStackVertically)
     {
         splashPos[0].setX((width() - splashText[0].bitmap.width()) / 2);
         splashPos[1].setX((width() - splashText[1].bitmap.width()) / 2);

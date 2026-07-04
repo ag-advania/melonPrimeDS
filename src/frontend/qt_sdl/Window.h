@@ -238,7 +238,7 @@ private:
     Config::Table windowCfg;
 
 public:
-    ScreenPanel* panel;
+    ScreenPanel* panel = nullptr;
 
     bool hasMenu;
 
