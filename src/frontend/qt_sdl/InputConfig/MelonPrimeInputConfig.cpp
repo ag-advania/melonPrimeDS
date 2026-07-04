@@ -4,6 +4,7 @@
 */
 
 #include <QGroupBox>
+#include <QGroupBox>
 #include <QLabel>
 #include <QGridLayout>
 #include <QTabWidget>
@@ -130,7 +131,9 @@ MelonPrimeInputConfig::MelonPrimeInputConfig(EmuInstance* emu, QWidget* parent) 
     Config::Table keycfg = instcfg.GetTable("Keyboard");
     Config::Table joycfg = instcfg.GetTable("Joystick");
 
-    MelonPrime::UiText::SetMenuLanguageMode(instcfg.GetInt(MelonPrime::CfgKey::MenuLanguage));
+    MelonPrime::UiText::SetMenuLanguageSelection(
+        MelonPrime::UiText::NormalizeMenuLanguageConfig(
+            instcfg.GetInt(MelonPrime::CfgKey::MenuLanguage)));
     setupMenuLanguageControl(instcfg);
     setupKeyBindings(instcfg, keycfg, joycfg);
     setupSensitivityAndToggles(instcfg);
@@ -225,35 +228,50 @@ void MelonPrimeInputConfig::setupKeyBindings(Config::Table& instcfg, Config::Tab
 
 void MelonPrimeInputConfig::setupMenuLanguageControl(Config::Table& instcfg)
 {
-    if (!MelonPrime::UiText::CanChooseMenuLanguage() || m_menuLanguageWidget)
+    if (m_menuLanguageGroup)
         return;
 
-    m_menuLanguageWidget = new QWidget(ui->scrollSettingsContents);
-    m_menuLanguageWidget->setObjectName(QStringLiteral("widgetMetroidMenuLanguage"));
-    auto* layout = new QHBoxLayout(m_menuLanguageWidget);
-    layout->setContentsMargins(8, 4, 0, 4);
-    layout->setSpacing(8);
+    m_menuLanguageGroup = new QGroupBox(QStringLiteral("Language"), ui->scrollSettingsContents);
+    m_menuLanguageGroup->setObjectName(QStringLiteral("groupMetroidMenuLanguage"));
+    auto* layout = new QVBoxLayout(m_menuLanguageGroup);
+    layout->setContentsMargins(8, 8, 8, 8);
+    layout->setSpacing(6);
 
-    m_lblMenuLanguage = new QLabel(QStringLiteral("Menu Language"), m_menuLanguageWidget);
-    m_comboMenuLanguage = new QComboBox(m_menuLanguageWidget);
+    m_lblMenuLanguage = new QLabel(QStringLiteral("Menu Language"), m_menuLanguageGroup);
+    m_comboMenuLanguage = new QComboBox(m_menuLanguageGroup);
+    m_comboMenuLanguage->setObjectName(QStringLiteral("comboMetroidMenuLanguage"));
+
+    const MelonPrime::UiText::MenuLangId systemLang = MelonPrime::UiText::DetectSystemMenuLanguage();
+    const QString systemLabel = MelonPrime::UiText::MenuLanguageDisplayName(systemLang);
     m_comboMenuLanguage->addItem(
-        MelonPrime::UiText::MenuLanguageNativeLabel(),
-        MelonPrime::UiText::kMenuLanguageNative);
-    m_comboMenuLanguage->addItem(QStringLiteral("English"), MelonPrime::UiText::kMenuLanguageEnglish);
-    SetComboCurrentData(m_comboMenuLanguage, instcfg.GetInt(MelonPrime::CfgKey::MenuLanguage));
+        QStringLiteral("System default (%1)").arg(systemLabel),
+        MelonPrime::UiText::kMenuLanguageSystemDefault);
+    m_comboMenuLanguage->insertSeparator(1);
+
+    for (MelonPrime::UiText::MenuLangId lang : MelonPrime::UiText::AllSelectableMenuLanguages())
+    {
+        m_comboMenuLanguage->addItem(
+            MelonPrime::UiText::MenuLanguageDisplayName(lang),
+            static_cast<int>(lang));
+    }
+
+    SetComboCurrentData(
+        m_comboMenuLanguage,
+        MelonPrime::UiText::NormalizeMenuLanguageConfig(
+            instcfg.GetInt(MelonPrime::CfgKey::MenuLanguage)));
 
     layout->addWidget(m_lblMenuLanguage);
     layout->addWidget(m_comboMenuLanguage);
-    layout->addStretch(1);
 
-    ui->metroidVLayout->insertWidget(0, m_menuLanguageWidget);
+    ui->metroidVLayout->insertWidget(0, m_menuLanguageGroup);
 
     connect(
         m_comboMenuLanguage,
         QOverload<int>::of(&QComboBox::currentIndexChanged),
         this,
         [this](int) {
-            MelonPrime::UiText::SetMenuLanguageMode(m_comboMenuLanguage->currentData().toInt());
+            MelonPrime::UiText::SetMenuLanguageSelection(
+                m_comboMenuLanguage->currentData().toInt());
             MelonPrime::UiText::LocalizeWidgetTree(this);
             if (InputConfigDialog::currentDlg)
                 MelonPrime::UiText::LocalizeMelonDsDialog(InputConfigDialog::currentDlg);
@@ -936,8 +954,9 @@ void MelonPrimeInputConfig::setupPreviewConnections()
 MelonPrimeInputConfig::~MelonPrimeInputConfig()
 {
     if (emuInstance)
-        MelonPrime::UiText::SetMenuLanguageMode(
-            emuInstance->getLocalConfig().GetInt(MelonPrime::CfgKey::MenuLanguage));
+        MelonPrime::UiText::SetMenuLanguageSelection(
+            MelonPrime::UiText::NormalizeMenuLanguageConfig(
+                emuInstance->getLocalConfig().GetInt(MelonPrime::CfgKey::MenuLanguage)));
     delete ui;
 }
 

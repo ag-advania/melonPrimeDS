@@ -1,0 +1,1538 @@
+[
+  {
+    "en": "Off",
+    "ja": "ãªã",
+    "section": "core",
+    "de": "Aus",
+    "es": "Off",
+    "fr": "Off"
+  },
+  {
+    "en": "Copy Output",
+    "ja": "åºåãã³ãã¼",
+    "section": "core",
+    "de": "Ausgabe kopieren",
+    "es": "Copiar salida",
+    "fr": "Copier la sortie"
+  },
+  {
+    "en": "Select HUD Font File",
+    "ja": "HUDãã©ã³ããã¡ã¤ã«ãé¸æ",
+    "section": "core",
+    "de": "HUD-Schriftdatei auswählen",
+    "es": "Seleccionar archivo de fuente HUD",
+    "fr": "Sélectionner le fichier de police HUD"
+  },
+  {
+    "en": "Chng",
+    "ja": "å¤æ´",
+    "section": "core",
+    "de": "Änd.",
+    "es": "Camb.",
+    "fr": "Mod."
+  },
+  {
+    "en": "Normal",
+    "ja": "éå¸¸",
+    "section": "core",
+    "de": "Normal",
+    "es": "Normal",
+    "fr": "Normal"
+  },
+  {
+    "en": "Overall",
+    "ja": "å¨ä½",
+    "section": "core",
+    "de": "Gesamt",
+    "es": "General",
+    "fr": "Global"
+  },
+  {
+    "en": "Font files (*.ttf *.otf *.ttc);;All files (*)",
+    "ja": "ãã©ã³ããã¡ã¤ã« (*.ttf *.otf *.ttc);;ãã¹ã¦ã®ãã¡ã¤ã« (*)",
+    "section": "core",
+    "de": "Schriftdateien (*.ttf *.otf *.ttc);;Alle Dateien (*)",
+    "es": "Archivos de fuente (*.ttf *.otf *.ttc);;Todos los archivos (*)",
+    "fr": "Fichiers de polices (*.ttf *.otf *.ttc);;Tous les fichiers (*)"
+  },
+  {
+    "en": "Open ROM...",
+    "ja": "ROMãéã...",
+    "section": "core",
+    "de": "ROM öffnen...",
+    "es": "Abrir ROM...",
+    "fr": "Ouvrir une ROM..."
+  },
+  {
+    "en": "DS slot",
+    "ja": "DSã¹ã­ãã",
+    "section": "core",
+    "de": "DS-Steckplatz",
+    "es": "Ranura DS",
+    "fr": "Emplacement DS"
+  },
+  {
+    "en": "Insert add-on cart",
+    "ja": "ã¢ããªã³ã«ã¼ããªãã¸ãæ¿å¥",
+    "section": "core",
+    "de": "Add-on-Karte einlegen",
+    "es": "Insertar cartucho add-on",
+    "fr": "Insérer la cartouche add-on"
+  },
+  {
+    "en": "Undo state load",
+    "ja": "ã¹ãã¼ãèª­ã¿è¾¼ã¿ãåãæ¶ã",
+    "section": "core",
+    "de": "Zustandsladen rückgängig",
+    "es": "Deshacer carga de estado",
+    "fr": "Annuler le chargement d'état"
+  },
+  {
+    "en": "Stop",
+    "ja": "åæ­¢",
+    "section": "core",
+    "de": "Stopp",
+    "es": "Detener",
+    "fr": "Arrêter"
+  },
+  {
+    "en": "Setup cheat codes",
+    "ja": "ãã¼ãã³ã¼ãè¨­å®",
+    "section": "core",
+    "de": "Cheat-Codes einrichten",
+    "es": "Configurar códigos de trucos",
+    "fr": "Configurer les codes triche"
+  },
+  {
+    "en": "Launch new instance",
+    "ja": "æ°ããã¤ã³ã¹ã¿ã³ã¹ãèµ·å",
+    "section": "core",
+    "de": "Neue Instanz starten",
+    "es": "Iniciar nueva instancia",
+    "fr": "Lancer une nouvelle instance"
+  },
+  {
+    "en": "Screen rotation",
+    "ja": "ç»é¢åè»¢",
+    "section": "core",
+    "de": "Bildschirmdrehung",
+    "es": "Rotación de pantalla",
+    "fr": "Rotation de l'écran"
+  },
+  {
+    "en": "Horizontal",
+    "ja": "æ¨ª",
+    "section": "core",
+    "de": "Horizontal",
+    "es": "Horizontal",
+    "fr": "Horizontal"
+  },
+  {
+    "en": "Emphasize top",
+    "ja": "ä¸ç»é¢ãéè¦",
+    "section": "core",
+    "de": "Oberen Bildschirm betonen",
+    "es": "Enfatizar pantalla superior",
+    "fr": "Mettre en avant l'écran du haut"
+  },
+  {
+    "en": "Aspect ratio",
+    "ja": "ã¢ã¹ãã¯ãæ¯",
+    "section": "core",
+    "de": "Seitenverhältnis",
+    "es": "Relación de aspecto",
+    "fr": "Format d'image"
+  },
+  {
+    "en": "Emu settings",
+    "ja": "ã¨ãã¥ã¬ã¼ã¿ã¼è¨­å®",
+    "section": "core",
+    "de": "Emulator-Einstellungen",
+    "es": "Ajustes del emulador",
+    "fr": "Paramètres de l'émulateur"
+  },
+  {
+    "en": "Audio settings",
+    "ja": "é³å£°è¨­å®",
+    "section": "core",
+    "de": "Audio-Einstellungen",
+    "es": "Ajustes de audio",
+    "fr": "Paramètres audio"
+  },
+  {
+    "en": "Path settings",
+    "ja": "ãã¹è¨­å®",
+    "section": "core",
+    "de": "Pfad-Einstellungen",
+    "es": "Ajustes de rutas",
+    "fr": "Paramètres des chemins"
+  },
+  {
+    "en": "Other settings",
+    "ja": "MelonPrimeè¨­å®",
+    "section": "core",
+    "de": "MelonPrime-Einstellungen",
+    "es": "Ajustes de MelonPrime",
+    "fr": "Paramètres MelonPrime"
+  },
+  {
+    "en": "Help",
+    "ja": "ãã«ã",
+    "section": "core",
+    "de": "Hilfe",
+    "es": "Ayuda",
+    "fr": "Aide"
+  },
+  {
+    "en": "Controls 2",
+    "ja": "æä½ 2",
+    "section": "core",
+    "de": "Steuerung 2",
+    "es": "Controles 2",
+    "fr": "Commandes 2"
+  },
+  {
+    "en": "INPUT SETTINGS",
+    "ja": "å¥åè¨­å®",
+    "section": "core",
+    "de": "EINGABE-EINSTELLUNGEN",
+    "es": "AJUSTES DE ENTRADA",
+    "fr": "PARAMÈTRES D'ENTRÉE"
+  },
+  {
+    "en": "IN-GAME ASPECT RATIO",
+    "ja": "ã²ã¼ã åã¢ã¹ãã¯ãæ¯",
+    "section": "core",
+    "de": "SEITENVERHÄLTNIS IM SPIEL",
+    "es": "RELACIÓN DE ASPECTO EN EL JUEGO",
+    "fr": "FORMAT D'IMAGE EN JEU"
+  },
+  {
+    "en": "DISABLE FEATURES",
+    "ja": "æ©è½ç¡å¹å",
+    "section": "core",
+    "de": "FUNKTIONEN DEAKTIVIEREN",
+    "es": "DESACTIVAR FUNCIONES",
+    "fr": "DÉSACTIVER DES FONCTIONS"
+  },
+  {
+    "en": "LICENSE APPLY",
+    "ja": "ã©ã¤ã»ã³ã¹åæ ",
+    "section": "core",
+    "de": "LIZENZ ANWENDEN",
+    "es": "APLICAR LICENCIA",
+    "fr": "APPLIQUER LA LICENCE"
+  },
+  {
+    "en": "HUD FONT",
+    "ja": "HUDãã©ã³ã",
+    "section": "core",
+    "de": "HUD-SCHRIFT",
+    "es": "FUENTE HUD",
+    "fr": "POLICE HUD"
+  },
+  {
+    "en": "IN-GAME OSD COLOR",
+    "ja": "ã²ã¼ã åOSDè²",
+    "section": "core",
+    "de": "OSD-FARBE IM SPIEL",
+    "es": "COLOR OSD EN EL JUEGO",
+    "fr": "COULEUR OSD EN JEU"
+  },
+  {
+    "en": "[Metroid] (S) Move Back",
+    "ja": "[Metroid] (S) å¾é",
+    "section": "core",
+    "de": "[Metroid] (S) Zurück",
+    "es": "[Metroid] (S) Retroceder",
+    "fr": "[Metroid] (S) Reculer"
+  },
+  {
+    "en": "[Metroid] (Mouse Right) Imperialist Zoom, Map Zoom Out, Morph Ball Boost",
+    "ja": "[Metroid] (ãã¦ã¹å³) ã¤ã³ããªã¢ãªã¹ããºã¼ã ããããç¸®å°ãã¢ã¼ããã¼ã«ãã¼ã¹ã",
+    "section": "core",
+    "de": "[Metroid] (Rechte Maustaste) Imperialist-Zoom, Karte verkleinern, Morph Ball Boost",
+    "es": "[Metroid] (Clic derecho) Zoom Imperialist, alejar mapa, impulso Morph Ball",
+    "fr": "[Metroid] (Clic droit) Zoom Imperialist, dézoom carte, boost Morph Ball"
+  },
+  {
+    "en": "[Metroid] (Mouse 4, Side Bottom) Weapon Missile",
+    "ja": "[Metroid] (Mouse 4/ãµã¤ãä¸) ããµã¤ã«",
+    "section": "core",
+    "de": "[Metroid] (Maustaste 4, Seitentaste unten) Waffe Rakete",
+    "es": "[Metroid] (Ratón 4, lateral inferior) Arma misil",
+    "fr": "[Metroid] (Souris 4, latéral bas) Arme missile"
+  },
+  {
+    "en": "[Metroid] (5) Weapon 5. Battlehammer",
+    "ja": "[Metroid] (5) æ­¦å¨5: ããã«ãã³ãã¼",
+    "section": "core",
+    "de": "[Metroid] (5) Waffe 5: Battlehammer",
+    "es": "[Metroid] (5) Arma 5: Battlehammer",
+    "fr": "[Metroid] (5) Arme 5 : Battlehammer"
+  },
+  {
+    "en": "[Metroid] (PgDown) AimSensitivity Down",
+    "ja": "[Metroid] (PgDown) ã¨ã¤ã æåº¦ãä¸ãã",
+    "section": "core",
+    "de": "[Metroid] (PgDown) Ziel-Empfindlichkeit verringern",
+    "es": "[Metroid] (RePág) Reducir sensibilidad de puntería",
+    "fr": "[Metroid] (PgBas) Diminuer la sensibilité de visée"
+  },
+  {
+    "en": "[Metroid] (X) UI Right (Adventure Right Arrow / Hunter License R)",
+    "ja": "[Metroid] (X) UIå³ (ã¢ããã³ãã£ã¼å³/ã©ã¤ã»ã³ã¹R)",
+    "section": "core",
+    "de": "[Metroid] (X) UI rechts (Abenteuer-Pfeil rechts / Hunter-Lizenz R)",
+    "es": "[Metroid] (X) UI derecha (Flecha derecha aventura / Licencia Hunter R)",
+    "fr": "[Metroid] (X) UI droite (Flèche droite aventure / Licence Hunter R)"
+  },
+  {
+    "en": "MPH Sensitivity (default: -3)",
+    "ja": "MPHæåº¦ (æ¢å®: -3)",
+    "section": "core",
+    "de": "MPH-Empfindlichkeit (Standard: -3)",
+    "es": "Sensibilidad MPH (predeterminado: -3)",
+    "fr": "Sensibilité MPH (par défaut : -3)"
+  },
+  {
+    "en": "Instant Aim Follow",
+    "ja": "å³æã¨ã¤ã è¿½å¾",
+    "section": "core",
+    "de": "Sofortige Zielverfolgung",
+    "es": "Seguimiento de puntería instantáneo",
+    "fr": "Suivi de visée instantané"
+  },
+  {
+    "en": "Unlock All Hunters/Maps/SoundTest/Gallery (Change a setting in MPH and save to update the save data. Uncheck this option after saving)",
+    "ja": "å¨ãã³ã¿ã¼/ããã/ãµã¦ã³ããã¹ã/ã®ã£ã©ãªã¼ãè§£æ¾ (MPHå´ã§è¨­å®ãå¤æ´ãã¦ä¿å­ããã¨ã»ã¼ãã«åæ ãä¿å­å¾ã¯ãªãæ¨å¥¨)",
+    "section": "core",
+    "de": "Alle Hunter/Karten/Soundtest/Galerie freischalten (Einstellung in MPH ändern und speichern, um Speicherdaten zu aktualisieren. Option nach dem Speichern deaktivieren)",
+    "es": "Desbloquear todos los cazadores/mapas/prueba de sonido/galería (Cambia un ajuste en MPH y guarda para actualizar los datos. Desmarca esta opción tras guardar)",
+    "fr": "Débloquer tous les chasseurs/cartes/test audio/galerie (Modifiez un paramètre dans MPH et sauvegardez pour mettre à jour les données. Décochez cette option après la sauvegarde)"
+  },
+  {
+    "en": "Disable MPH Aim Smoothing (Disables the in-game aim smoothing. Note: Sensitivity will be reduced to 25% in Stylus Mode)",
+    "ja": "MPHã®ã¨ã¤ã è£éãç¡å¹å (ã²ã¼ã åã®ã¨ã¤ã è£éãç¡å¹åãã¹ã¿ã¤ã©ã¹ã¢ã¼ãã§ã¯æåº¦ã25%ã«ãªãã¾ã)",
+    "section": "core",
+    "de": "MPH-Zielglättung deaktivieren (Deaktiviert die Zielglättung im Spiel. Hinweis: Empfindlichkeit wird im Stylus-Modus auf 25 % reduziert)",
+    "es": "Desactivar suavizado de puntería MPH (Desactiva el suavizado de puntería en el juego. Nota: la sensibilidad se reduce al 25 % en modo stylus)",
+    "fr": "Désactiver le lissage de visée MPH (Désactive le lissage de visée en jeu. Remarque : la sensibilité passe à 25 % en mode stylet)"
+  },
+  {
+    "en": "Enable Immediate Input Edge Overlay",
+    "ja": "å³æå¥åã¨ãã¸åæãæå¹å",
+    "section": "core",
+    "de": "Sofortige Eingabe-Kantenüberlagerung aktivieren",
+    "es": "Activar superposición de bordes de entrada inmediata",
+    "fr": "Activer la superposition immédiate des bords d'entrée"
+  },
+  {
+    "en": "Screen Sync Mode",
+    "ja": "ç»é¢åææ¹å¼",
+    "section": "core",
+    "de": "Bildschirm-Synchronisationsmodus",
+    "es": "Modo de sincronización de pantalla",
+    "fr": "Mode de synchronisation d'écran"
+  },
+  {
+    "en": "Aspect Ratio Mode",
+    "ja": "ã¢ã¹ãã¯ãæ¯ã¢ã¼ã",
+    "section": "core",
+    "de": "Seitenverhältnis-Modus",
+    "es": "Modo de relación de aspecto",
+    "fr": "Mode de format d'image"
+  },
+  {
+    "en": "21:9",
+    "ja": "21:9",
+    "section": "core",
+    "de": "21:9",
+    "es": "21:9",
+    "fr": "21:9"
+  },
+  {
+    "en": "Friend/Rival Wi-Fi Active Bitset Fix (v2)",
+    "ja": "ãã¬ã³ã/ã©ã¤ãã«Wi-Fiæå¹ãããä¿®æ­£ (v2)",
+    "section": "core",
+    "de": "Freund/Rivale Wi-Fi-Aktiv-Bitset-Fix (v2)",
+    "es": "Corrección de bitset activo Wi-Fi amigo/rival (v2)",
+    "fr": "Correctif bitset actif Wi-Fi ami/rival (v2)"
+  },
+  {
+    "en": "Damage Notify Purple",
+    "ja": "ãã¡ã¼ã¸éç¥ãç´«ã«ãã",
+    "section": "core",
+    "de": "Schadensmeldung violett",
+    "es": "Notificación de daño en púrpura",
+    "fr": "Notification de dégâts en violet"
+  },
+  {
+    "en": "Reset sensitivity values",
+    "ja": "æåº¦ãæ¢å®å¤ã«æ»ã",
+    "section": "core",
+    "de": "Empfindlichkeitswerte zurücksetzen",
+    "es": "Restablecer valores de sensibilidad",
+    "fr": "Réinitialiser les valeurs de sensibilité"
+  },
+  {
+    "en": "Apply music volume",
+    "ja": "BGMé³éãåæ ",
+    "section": "core",
+    "de": "Musiklautstärke anwenden",
+    "es": "Aplicar volumen de música",
+    "fr": "Appliquer le volume de la musique"
+  },
+  {
+    "en": "Red(JP,KR)",
+    "ja": "èµ¤ (JP,KR)",
+    "section": "core",
+    "de": "Rot (JP,KR)",
+    "es": "Rojo (JP,KR)",
+    "fr": "Rouge (JP,KR)"
+  },
+  {
+    "en": "Disabled (vanilla 25)",
+    "ja": "ç¡å¹ (ããã©25)",
+    "section": "core",
+    "de": "Deaktiviert (Vanilla 25)",
+    "es": "Desactivado (vanilla 25)",
+    "fr": "Désactivé (vanilla 25)"
+  },
+  {
+    "en": "Per Damage â Medium",
+    "ja": "ãã¡ã¼ã¸å¥ - ä¸­",
+    "section": "core",
+    "de": "Pro Schaden — Mittel",
+    "es": "Por daño — Medio",
+    "fr": "Par dégât — Moyen"
+  },
+  {
+    "en": "Features in this section are still in development and are not ready for public release. They may or may not be released.",
+    "ja": "ãã®ã»ã¯ã·ã§ã³ã®æ©è½ã¯éçºä¸­ã§ãå¬éãªãªã¼ã¹ã®æºåã¯ã¾ã ã§ãã¦ãã¾ãããä»å¾å¬éãããã¨ã¯éãã¾ããã",
+    "section": "core",
+    "de": "Funktionen in diesem Abschnitt befinden sich noch in der Entwicklung und sind nicht für die Veröffentlichung bereit. Eine Veröffentlichung ist nicht garantiert.",
+    "es": "Las funciones de esta sección aún están en desarrollo y no están listas para su lanzamiento público. Puede que se publiquen o no.",
+    "fr": "Les fonctionnalités de cette section sont encore en développement et ne sont pas prêtes pour une diffusion publique. Elles pourront être publiées ou non."
+  },
+  {
+    "en": "Checked: use the current in-game zoom binding from the player's control preset. Unchecked: use the older fixed R-button path.",
+    "ja": "ãªã³: ç¾å¨ã®æä½ããªã»ããã«ããã²ã¼ã åãºã¼ã å²ãå½ã¦ãä½¿ãã¾ãããªã: å¾æ¥ã®åºå®Rãã¿ã³çµè·¯ãä½¿ãã¾ãã",
+    "section": "core",
+    "de": "Aktiviert: aktuelle Zoom-Belegung aus dem Steuerungs-Preset verwenden. Deaktiviert: älteren festen R-Tasten-Pfad verwenden.",
+    "es": "Marcado: usa la asignación de zoom en el juego del preset de controles del jugador. Desmarcado: usa la ruta fija antigua del botón R.",
+    "fr": "Coché : utilise la touche de zoom en jeu du preset de contrôles du joueur. Décoché : utilise l'ancien chemin fixe du bouton R."
+  },
+  {
+    "en": "Setting Key: Metroid.Volume.Music (0â9)",
+    "ja": "è¨­å®ã­ã¼: Metroid.Volume.Music (0-9)",
+    "section": "core",
+    "de": "Einstellungsschlüssel: Metroid.Volume.Music (0–9)",
+    "es": "Clave de ajuste: Metroid.Volume.Music (0–9)",
+    "fr": "Clé de paramètre : Metroid.Volume.Music (0–9)"
+  },
+  {
+    "en": "Windows only. Applies only while the bottom screen is actually being drawn. Press ESC to release the cursor.",
+    "ja": "Windowsã®ã¿ãä¸ç»é¢ãå®éã«æç»ããã¦ããéã ãé©ç¨ããã¾ããESCã§ã«ã¼ã½ã«å¶éãè§£é¤ãã¾ãã",
+    "section": "core",
+    "de": "Nur Windows. Gilt nur, solange der untere Bildschirm tatsächlich gezeichnet wird. ESC drücken, um den Cursor freizugeben.",
+    "es": "Solo Windows. Se aplica solo mientras se dibuja la pantalla inferior. Pulsa ESC para liberar el cursor.",
+    "fr": "Windows uniquement. S'applique uniquement tant que l'écran du bas est réellement affiché. Appuyez sur Échap pour libérer le curseur."
+  },
+  {
+    "en": "Hide this dialog and enter the interactive HUD position editor",
+    "ja": "ãã®ãã¤ã¢ã­ã°ãé ãã¦ãå¯¾è©±å¼HUDéç½®ã¨ãã£ã¿ã¼ã«å¥ãã¾ã",
+    "section": "core",
+    "de": "Diesen Dialog ausblenden und interaktiven HUD-Positionseditor öffnen",
+    "es": "Ocultar este diálogo y entrar en el editor interactivo de posición HUD",
+    "fr": "Masquer cette boîte de dialogue et ouvrir l'éditeur interactif de position HUD"
+  },
+  {
+    "en": "â Common HUD â",
+    "ja": "- å±éHUD -",
+    "section": "core",
+    "de": "— Gemeinsames HUD —",
+    "es": "— HUD común —",
+    "fr": "— HUD commun —"
+  },
+  {
+    "en": "Hide HP",
+    "ja": "HPãéè¡¨ç¤º",
+    "section": "core",
+    "de": "HP ausblenden",
+    "es": "Ocultar HP",
+    "fr": "Masquer les PV"
+  },
+  {
+    "en": "Hide Score: Prime Hunter",
+    "ja": "ã¹ã³ã¢éè¡¨ç¤º: ãã©ã¤ã ãã³ã¿ã¼",
+    "section": "core",
+    "de": "Punkte ausblenden: Prime Hunter",
+    "es": "Ocultar puntuación: Prime Hunter",
+    "fr": "Masquer le score : Prime Hunter"
+  },
+  {
+    "en": "Text Scale (Base %)",
+    "ja": "æå­ã¹ã±ã¼ã« (åºæº %)",
+    "section": "core",
+    "de": "Textskalierung (Basis %)",
+    "es": "Escala de texto (base %)",
+    "fr": "Échelle du texte (base %)"
+  },
+  {
+    "en": "Auto Scale Gauge Cap %",
+    "ja": "èªåã¹ã±ã¼ã«ã²ã¼ã¸ä¸é %",
+    "section": "core",
+    "de": "Auto-Skalierung Anzeige-Obergrenze %",
+    "es": "Tope de escala automática del indicador %",
+    "fr": "Plafond d'échelle auto de la jauge %"
+  },
+  {
+    "en": "Italic",
+    "ja": "ã¤ã¿ãªãã¯",
+    "section": "core",
+    "de": "Kursiv",
+    "es": "Cursiva",
+    "fr": "Italique"
+  },
+  {
+    "en": "Zoom Stage",
+    "ja": "ãºã¼ã æ®µé",
+    "section": "core",
+    "de": "Zoom-Stufe",
+    "es": "Etapa de zoom",
+    "fr": "Niveau de zoom"
+  },
+  {
+    "en": "Zoom Scope",
+    "ja": "ãºã¼ã ã¹ã³ã¼ã",
+    "section": "core",
+    "de": "Zoom-Visier",
+    "es": "Visor de zoom",
+    "fr": "Lunette de zoom"
+  },
+  {
+    "en": "Scope Center Dot",
+    "ja": "ã¹ã³ã¼ãä¸­å¤®ããã",
+    "section": "core",
+    "de": "Visier-Mittelpunkt",
+    "es": "Punto central del visor",
+    "fr": "Point central du viseur"
+  },
+  {
+    "en": "Zoom Transition Speed %",
+    "ja": "ãºã¼ã é·ç§»éåº¦ %",
+    "section": "core",
+    "de": "Zoom-Übergangsgeschwindigkeit %",
+    "es": "Velocidad de transición de zoom %",
+    "fr": "Vitesse de transition du zoom %"
+  },
+  {
+    "en": "Pulse Strength %",
+    "ja": "ãã«ã¹å¼·åº¦ %",
+    "section": "core",
+    "de": "Pulsstärke %",
+    "es": "Intensidad del pulso %",
+    "fr": "Intensité de pulsation %"
+  },
+  {
+    "en": "Staged",
+    "ja": "æ®µé",
+    "section": "core",
+    "de": "Gestuft",
+    "es": "Por etapas",
+    "fr": "Par étapes"
+  },
+  {
+    "en": "Digital",
+    "ja": "ãã¸ã¿ã«",
+    "section": "core",
+    "de": "Digital",
+    "es": "Digital",
+    "fr": "Numérique"
+  },
+  {
+    "en": "Sniper Optics",
+    "ja": "ã¹ãã¤ãã¼åå­¦",
+    "section": "core",
+    "de": "Scharfschützenoptik",
+    "es": "Óptica de francotirador",
+    "fr": "Optique de sniper"
+  },
+  {
+    "en": "Outline Color",
+    "ja": "ã¢ã¦ãã©ã¤ã³è²",
+    "section": "core",
+    "de": "Umrissfarbe",
+    "es": "Color del contorno",
+    "fr": "Couleur du contour"
+  },
+  {
+    "en": "Custom Dot Color",
+    "ja": "ãããè²ãåå¥æå®",
+    "section": "core",
+    "de": "Eigene Punktfarbe",
+    "es": "Color de punto personalizado",
+    "fr": "Couleur de point personnalisée"
+  },
+  {
+    "en": "Circle",
+    "ja": "ä¸¸",
+    "section": "core",
+    "de": "Kreis",
+    "es": "Círculo",
+    "fr": "Cercle"
+  },
+  {
+    "en": "Inner",
+    "ja": "åå´",
+    "section": "core",
+    "de": "Innen",
+    "es": "Interior",
+    "fr": "Intérieur"
+  },
+  {
+    "en": "Show Text",
+    "ja": "æå­ãè¡¨ç¤º",
+    "section": "core",
+    "de": "Text anzeigen",
+    "es": "Mostrar texto",
+    "fr": "Afficher le texte"
+  },
+  {
+    "en": "Length",
+    "ja": "é·ã",
+    "section": "core",
+    "de": "Länge",
+    "es": "Longitud",
+    "fr": "Longueur"
+  },
+  {
+    "en": "Offset",
+    "ja": "ãªãã»ãã",
+    "section": "core",
+    "de": "Versatz",
+    "es": "Desplazamiento",
+    "fr": "Décalage"
+  },
+  {
+    "en": "Top Center",
+    "ja": "ä¸ä¸­å¤®",
+    "section": "core",
+    "de": "Oben Mitte",
+    "es": "Arriba centro",
+    "fr": "Haut centre"
+  },
+  {
+    "en": "Bottom Left",
+    "ja": "å·¦ä¸",
+    "section": "core",
+    "de": "Unten links",
+    "es": "Abajo izquierda",
+    "fr": "Bas gauche"
+  },
+  {
+    "en": "Mid Right",
+    "ja": "å³ä¸­å¤®",
+    "section": "core",
+    "de": "Mitte rechts",
+    "es": "Centro derecha",
+    "fr": "Milieu droite"
+  },
+  {
+    "en": "Center",
+    "ja": "ä¸­å¤®",
+    "section": "core",
+    "de": "Mitte",
+    "es": "Centro",
+    "fr": "Centre"
+  },
+  {
+    "en": "Below",
+    "ja": "ä¸",
+    "section": "core",
+    "de": "Darunter",
+    "es": "Debajo",
+    "fr": "En dessous"
+  },
+  {
+    "en": "Horiz",
+    "ja": "æ¨ª",
+    "section": "core",
+    "de": "Horiz.",
+    "es": "Horiz.",
+    "fr": "Horiz."
+  },
+  {
+    "en": "GaugeâText",
+    "ja": "ã²ã¼ã¸âæå­",
+    "section": "core",
+    "de": "Anzeige→Text",
+    "es": "Indicador→Texto",
+    "fr": "Jauge→Texte"
+  },
+  {
+    "en": "Pos Mode",
+    "ja": "ä½ç½®ã¢ã¼ã",
+    "section": "core",
+    "de": "Positionsmodus",
+    "es": "Modo de posición",
+    "fr": "Mode de position"
+  },
+  {
+    "en": "Gauge Y",
+    "ja": "ã²ã¼ã¸ Y",
+    "section": "core",
+    "de": "Anzeige Y",
+    "es": "Indicador Y",
+    "fr": "Jauge Y"
+  },
+  {
+    "en": "Prefix",
+    "ja": "æ¥é ­è¾",
+    "section": "core",
+    "de": "Präfix",
+    "es": "Prefijo",
+    "fr": "Préfixe"
+  },
+  {
+    "en": "Orientation",
+    "ja": "åã",
+    "section": "core",
+    "de": "Ausrichtung",
+    "es": "Orientación",
+    "fr": "Orientation"
+  },
+  {
+    "en": "Icon Position",
+    "ja": "ã¢ã¤ã³ã³ä½ç½®",
+    "section": "core",
+    "de": "Symbolposition",
+    "es": "Posición del icono",
+    "fr": "Position de l'icône"
+  },
+  {
+    "en": "Layout",
+    "ja": "ã¬ã¤ã¢ã¦ã",
+    "section": "core",
+    "de": "Layout",
+    "es": "Diseño",
+    "fr": "Disposition"
+  },
+  {
+    "en": "Label Pos",
+    "ja": "ã©ãã«ä½ç½®",
+    "section": "core",
+    "de": "Label-Position",
+    "es": "Posición de etiqueta",
+    "fr": "Position de l'étiquette"
+  },
+  {
+    "en": "Label: Points",
+    "ja": "ã©ãã«: ãã¤ã³ã",
+    "section": "core",
+    "de": "Label: Punkte",
+    "es": "Etiqueta: Puntos",
+    "fr": "Étiquette : Points"
+  },
+  {
+    "en": "Battle",
+    "ja": "ããã«",
+    "section": "core",
+    "de": "Kampf",
+    "es": "Batalla",
+    "fr": "Combat"
+  },
+  {
+    "en": "Label",
+    "ja": "ã©ãã«",
+    "section": "core",
+    "de": "Label",
+    "es": "Etiqueta",
+    "fr": "Étiquette"
+  },
+  {
+    "en": "Label Color",
+    "ja": "ã©ãã«è²",
+    "section": "core",
+    "de": "Labelfarbe",
+    "es": "Color de etiqueta",
+    "fr": "Couleur de l'étiquette"
+  },
+  {
+    "en": "Sep Color: Overall",
+    "ja": "åºåãè²: å¨ä½",
+    "section": "core",
+    "de": "Trennfarbe: Gesamt",
+    "es": "Color de separación: General",
+    "fr": "Couleur de séparation : Global"
+  },
+  {
+    "en": "Color Overlay",
+    "ja": "è²ãªã¼ãã¼ã¬ã¤",
+    "section": "core",
+    "de": "Farbüberlagerung",
+    "es": "Superposición de color",
+    "fr": "Superposition de couleur"
+  },
+  {
+    "en": "Dst X",
+    "ja": "è¡¨ç¤º X",
+    "section": "core",
+    "de": "Ziel X",
+    "es": "Dest. X",
+    "fr": "Dest. X"
+  },
+  {
+    "en": "Padding",
+    "ja": "ä½ç½",
+    "section": "core",
+    "de": "Abstand",
+    "es": "Relleno",
+    "fr": "Marge"
+  },
+  {
+    "en": "Highlight Color",
+    "ja": "ãã¤ã©ã¤ãè²",
+    "section": "core",
+    "de": "Hervorhebungsfarbe",
+    "es": "Color de resaltado",
+    "fr": "Couleur de surbrillance"
+  },
+  {
+    "en": "Highlight Offset Left",
+    "ja": "ãã¤ã©ã¤ãå·¦ãªãã»ãã",
+    "section": "core",
+    "de": "Hervorhebung Versatz links",
+    "es": "Desplazamiento izquierdo de resaltado",
+    "fr": "Décalage gauche de surbrillance"
+  },
+  {
+    "en": "Size Offset Right",
+    "ja": "ãµã¤ãºå³ãªãã»ãã",
+    "section": "core",
+    "de": "Größenversatz rechts",
+    "es": "Desplazamiento derecho de tamaño",
+    "fr": "Décalage droit de taille"
+  },
+  {
+    "en": "Hl Padding",
+    "ja": "HLä½ç½",
+    "section": "core",
+    "de": "HL-Abstand",
+    "es": "Relleno HL",
+    "fr": "Marge HL"
+  },
+  {
+    "en": "Hl Ofs Bottom",
+    "ja": "HLä¸Ofs",
+    "section": "core",
+    "de": "HL-Versatz unten",
+    "es": "Despl. inf. HL",
+    "fr": "Décal. bas HL"
+  },
+  {
+    "en": "HP Gauge",
+    "ja": "HPã²ã¼ã¸",
+    "section": "core",
+    "de": "HP-Anzeige",
+    "es": "Indicador de HP",
+    "fr": "Jauge de PV"
+  },
+  {
+    "en": "Ammo Label Color By Value",
+    "ja": "å¼¾è¬ã©ãã«ã®è² (å¤é£å)",
+    "section": "core",
+    "de": "Munitionslabel-Farbe nach Wert",
+    "es": "Color de etiqueta de munición según valor",
+    "fr": "Couleur d'étiquette munitions selon la valeur"
+  },
+  {
+    "en": "Weapon/Ammo",
+    "ja": "æ­¦å¨/å¼¾è¬",
+    "section": "core",
+    "de": "Waffe/Munition",
+    "es": "Arma/Munición",
+    "fr": "Arme/Munitions"
+  },
+  {
+    "en": "Weapon Inventory Highlight",
+    "ja": "æ­¦å¨ã¤ã³ãã³ããªã®ãã¤ã©ã¤ã",
+    "section": "core",
+    "de": "Waffen-Inventar-Hervorhebung",
+    "es": "Resaltado del inventario de armas",
+    "fr": "Surbrillance de l'inventaire d'armes"
+  },
+  {
+    "en": "Score Labels",
+    "ja": "ã¹ã³ã¢ã©ãã«",
+    "section": "core",
+    "de": "Punkte-Labels",
+    "es": "Etiquetas de puntuación",
+    "fr": "Étiquettes de score"
+  },
+  {
+    "en": "Rank Outline",
+    "ja": "é ä½ã®ã¢ã¦ãã©ã¤ã³",
+    "section": "core",
+    "de": "Rang-Umriss",
+    "es": "Contorno de rango",
+    "fr": "Contour du rang"
+  },
+  {
+    "en": "Bomb",
+    "ja": "ãã ",
+    "section": "core",
+    "de": "Bombe",
+    "es": "Bomba",
+    "fr": "Bombe"
+  },
+  {
+    "en": "Radar",
+    "ja": "ã¬ã¼ãã¼",
+    "section": "core",
+    "de": "Radar",
+    "es": "Radar",
+    "fr": "Radar"
+  },
+  {
+    "en": "Wpn\nIcon",
+    "ja": "æ­¦å¨\nã¢ã¤ã³ã³",
+    "section": "core",
+    "de": "Wpn\nSymbol",
+    "es": "Arma\nIcono",
+    "fr": "Arme\nIcône"
+  },
+  {
+    "en": "points",
+    "ja": "å¾ç¹",
+    "section": "core",
+    "de": "Punkte",
+    "es": "puntos",
+    "fr": "points"
+  },
+  {
+    "en": "Enable Separate Color",
+    "ja": "åå¥è²ãæå¹å",
+    "section": "core",
+    "de": "Separate Farbe aktivieren",
+    "es": "Activar color separado",
+    "fr": "Activer une couleur séparée"
+  },
+  {
+    "en": "Return to Base",
+    "ja": "åºå°ã¸æ»ã",
+    "section": "core",
+    "de": "Zur Basis zurück",
+    "es": "Volver a la base",
+    "fr": "Retour à la base"
+  },
+  {
+    "en": "Octo Reset",
+    "ja": "ãªã¯ããªã¹ãªã»ãã",
+    "section": "core",
+    "de": "Octo-Reset",
+    "es": "Reinicio Octo",
+    "fr": "Réinitialisation Octo"
+  },
+  {
+    "en": "Slot: Node Capture  [flags=0x11]",
+    "ja": "ã¹ã­ãã: ãã¼ãåå¾ [flags=0x11]",
+    "section": "core",
+    "de": "Slot: Knotenerfassung  [flags=0x11]",
+    "es": "Ranura: Captura de nodo  [flags=0x11]",
+    "fr": "Emplacement : Capture de nœud  [flags=0x11]"
+  },
+  {
+    "en": "Applied once on settings close to currently displayed messages (flags=0x01).\nNew messages use their individual literal colors above (No Ammo / Return to Base / Octo ...).",
+    "ja": "è¨­å®ãéããã¨ããç¾å¨è¡¨ç¤ºä¸­ã®ã¡ãã»ã¼ã¸ã¸ä¸åº¦ã ãé©ç¨ããã¾ã (flags=0x01)ã\næ°ããã¡ãã»ã¼ã¸ã¯ããããã®åå¥è²ãä½¿ç¨ãã¾ã (å¼¾è¬ãªã / åºå°ã¸æ»ã / ãªã¯ãç³» ...)ã",
+    "section": "core",
+    "de": "Einmal beim Schließen der Einstellungen auf aktuell angezeigte Meldungen angewendet (flags=0x01).\nNeue Meldungen verwenden ihre individuellen Farben oben (Keine Munition / Zur Basis zurück / Octo ...).",
+    "es": "Se aplica una vez al cerrar los ajustes a los mensajes mostrados (flags=0x01).\nLos mensajes nuevos usan sus colores individuales arriba (Sin munición / Volver a la base / Octo ...).",
+    "fr": "Appliqué une fois à la fermeture des paramètres aux messages affichés (flags=0x01).\nLes nouveaux messages utilisent leurs couleurs individuelles ci-dessus (Plus de munitions / Retour à la base / Octo ...)."
+  },
+  {
+    "en": "Color  (HEADSHOT! / FACE OFF! / RETURN TO BATTLE! / COWARD DETECTED / turret)",
+    "ja": "è²  (HEADSHOT! / FACE OFF! / RETURN TO BATTLE! / COWARD DETECTED / ã¿ã¬ãã)",
+    "section": "core",
+    "de": "Farbe  (HEADSHOT! / FACE OFF! / RETURN TO BATTLE! / COWARD DETECTED / Turm)",
+    "es": "Color  (HEADSHOT! / FACE OFF! / RETURN TO BATTLE! / COWARD DETECTED / torreta)",
+    "fr": "Couleur  (HEADSHOT! / FACE OFF! / RETURN TO BATTLE! / COWARD DETECTED / tourelle)"
+  },
+  {
+    "en": "Yellow",
+    "ja": "é»",
+    "section": "core",
+    "de": "Gelb",
+    "es": "Amarillo",
+    "fr": "Jaune"
+  },
+  {
+    "en": "Orange",
+    "ja": "ãªã¬ã³ã¸",
+    "section": "core",
+    "de": "Orange",
+    "es": "Naranja",
+    "fr": "Orange"
+  },
+  {
+    "en": "Spire Hud Outline",
+    "ja": "ã¹ãã¤ã¢HUDã®ã¢ã¦ãã©ã¤ã³",
+    "section": "core",
+    "de": "Spire-HUD-Umriss",
+    "es": "Contorno HUD Spire",
+    "fr": "Contour HUD Spire"
+  },
+  {
+    "en": "Sylux Crosshair",
+    "ja": "ãµã¤ã©ãã¯ã¹ç§æº",
+    "section": "core",
+    "de": "Sylux-Fadenkreuz",
+    "es": "Retícula Sylux",
+    "fr": "Réticule Sylux"
+  },
+  {
+    "en": "OSD No-Ammo Red",
+    "ja": "OSDå¼¾è¬ãªãèµ¤",
+    "section": "core",
+    "de": "OSD Keine-Munition Rot",
+    "es": "OSD sin munición rojo",
+    "fr": "OSD plus de munitions rouge"
+  },
+  {
+    "en": "Battle Hammer",
+    "ja": "ããã«ãã³ãã¼",
+    "section": "core",
+    "de": "Battlehammer",
+    "es": "Battlehammer",
+    "fr": "Battlehammer"
+  },
+  {
+    "en": "Shock Coil",
+    "ja": "ã·ã§ãã¯ã³ã¤ã«",
+    "section": "core",
+    "de": "Shock Coil",
+    "es": "Shock Coil",
+    "fr": "Shock Coil"
+  },
+  {
+    "en": "MSL Color",
+    "ja": "MSLè²",
+    "section": "core",
+    "de": "MSL-Farbe",
+    "es": "Color MSL",
+    "fr": "Couleur MSL"
+  },
+  {
+    "en": "SCL Color",
+    "ja": "SCLè²",
+    "section": "core",
+    "de": "SCL-Farbe",
+    "es": "Color SCL",
+    "fr": "Couleur SCL"
+  },
+  {
+    "en": "Normal",
+    "ja": "æ¨æº",
+    "section": "core",
+    "de": "Standard",
+    "es": "Estándar",
+    "fr": "Standard"
+  },
+  {
+    "en": "Black",
+    "ja": "é»å¤ª",
+    "section": "core",
+    "de": "Schwarz",
+    "es": "Negro",
+    "fr": "Noir"
+  },
+  {
+    "en": "Threshold 4 (%)",
+    "ja": "ãããå¤ 4 (%)",
+    "section": "core",
+    "de": "Schwellenwert 4 (%)",
+    "es": "Umbral 4 (%)",
+    "fr": "Seuil 4 (%)"
+  },
+  {
+    "en": "Color 3",
+    "ja": "è² 3",
+    "section": "core",
+    "de": "Farbe 3",
+    "es": "Color 3",
+    "fr": "Couleur 3"
+  },
+  {
+    "en": "Output refreshed from the current Custom HUD settings.",
+    "ja": "ç¾å¨ã®ã«ã¹ã¿ã HUDè¨­å®ããåºåãæ´æ°ãã¾ããã",
+    "section": "core",
+    "de": "Ausgabe aus den aktuellen Custom-HUD-Einstellungen aktualisiert.",
+    "es": "Salida actualizada desde los ajustes actuales del HUD personalizado.",
+    "fr": "Sortie actualisée à partir des paramètres HUD personnalisés actuels."
+  },
+  {
+    "en": "The pasted Custom HUD code is not a TOML table.",
+    "ja": "è²¼ãä»ããããã«ã¹ã¿ã HUDã³ã¼ãã¯TOMLãã¼ãã«ã§ã¯ããã¾ããã",
+    "section": "core",
+    "de": "Der eingefügte Custom-HUD-Code ist keine TOML-Tabelle.",
+    "es": "El código HUD personalizado pegado no es una tabla TOML.",
+    "fr": "Le code HUD personnalisé collé n'est pas une table TOML."
+  },
+  {
+    "en": "Use New Method for Zoom",
+    "ja": "ãºã¼ã ã«æ°æ¹å¼ãä½¿ã",
+    "section": "core",
+    "de": "Neue Zoom-Methode verwenden",
+    "es": "Usar nuevo método de zoom",
+    "fr": "Utiliser la nouvelle méthode de zoom"
+  },
+  {
+    "en": "Audio settings - melonDS",
+    "ja": "é³å£°è¨­å® - melonDS",
+    "section": "melonds",
+    "de": "Audio-Einstellungen - melonDS",
+    "es": "Ajustes de audio - melonDS",
+    "fr": "Paramètres audio - melonDS"
+  },
+  {
+    "en": "DSi-mode",
+    "ja": "DSiã¢ã¼ã",
+    "section": "melonds",
+    "de": "DSi-Modus",
+    "es": "Modo DSi",
+    "fr": "Mode DSi"
+  },
+  {
+    "en": "Boot game directly",
+    "ja": "ã²ã¼ã ãç´æ¥èµ·å",
+    "section": "melonds",
+    "de": "Spiel direkt starten",
+    "es": "Iniciar juego directamente",
+    "fr": "Démarrer le jeu directement"
+  },
+  {
+    "en": "DS firmware:",
+    "ja": "DSãã¡ã¼ã ã¦ã§ã¢:",
+    "section": "melonds",
+    "de": "DS-Firmware:",
+    "es": "Firmware DS:",
+    "fr": "Firmware DS :"
+  },
+  {
+    "en": "Enable DSi SD card",
+    "ja": "DSi SDã«ã¼ããæå¹å",
+    "section": "melonds",
+    "de": "DSi-SD-Karte aktivieren",
+    "es": "Activar tarjeta SD DSi",
+    "fr": "Activer la carte SD DSi"
+  },
+  {
+    "en": "DSP HLE",
+    "ja": "DSP HLE",
+    "section": "melonds",
+    "de": "DSP HLE",
+    "es": "DSP HLE",
+    "fr": "DSP HLE"
+  },
+  {
+    "en": "Fast memory",
+    "ja": "é«éã¡ã¢ãª",
+    "section": "melonds",
+    "de": "Schneller Speicher",
+    "es": "Memoria rápida",
+    "fr": "Mémoire rapide"
+  },
+  {
+    "en": "Break on startup",
+    "ja": "èµ·åæã«ãã¬ã¼ã¯",
+    "section": "melonds",
+    "de": "Beim Start anhalten",
+    "es": "Pausar al iniciar",
+    "fr": "Arrêt au démarrage"
+  },
+  {
+    "en": "Auto",
+    "ja": "èªå",
+    "section": "melonds",
+    "de": "Automatisch",
+    "es": "Automático",
+    "fr": "Auto"
+  },
+  {
+    "en": "Software",
+    "ja": "ã½ããã¦ã§ã¢",
+    "section": "melonds",
+    "de": "Software",
+    "es": "Software",
+    "fr": "Logiciel"
+  },
+  {
+    "en": "VSync interval:",
+    "ja": "VSyncéé:",
+    "section": "melonds",
+    "de": "VSync-Intervall:",
+    "es": "Intervalo VSync:",
+    "fr": "Intervalle VSync :"
+  },
+  {
+    "en": "Configure emulated camera:",
+    "ja": "ã¨ãã¥ã¬ã¼ãã«ã¡ã©ãè¨­å®:",
+    "section": "melonds",
+    "de": "Emulierte Kamera konfigurieren:",
+    "es": "Configurar cámara emulada:",
+    "fr": "Configurer la caméra émulée :"
+  },
+  {
+    "en": "Image file:",
+    "ja": "ç»åãã¡ã¤ã«:",
+    "section": "melonds",
+    "de": "Bilddatei:",
+    "es": "Archivo de imagen:",
+    "fr": "Fichier image :"
+  },
+  {
+    "en": "Audio output",
+    "ja": "é³å£°åºå",
+    "section": "melonds",
+    "de": "Audioausgabe",
+    "es": "Salida de audio",
+    "fr": "Sortie audio"
+  },
+  {
+    "en": "Sync with DSi volume",
+    "ja": "DSié³éã¨åæ",
+    "section": "melonds",
+    "de": "Mit DSi-Lautstärke synchronisieren",
+    "es": "Sincronizar con volumen DSi",
+    "fr": "Synchroniser avec le volume DSi"
+  },
+  {
+    "en": "Gaussian (SNES)",
+    "ja": "ã¬ã¦ã¹ (SNES)",
+    "section": "melonds",
+    "de": "Gauß (SNES)",
+    "es": "Gaussiano (SNES)",
+    "fr": "Gaussien (SNES)"
+  },
+  {
+    "en": "Blow noise",
+    "ja": "å¹ãè¾¼ã¿ãã¤ãº",
+    "section": "melonds",
+    "de": "Blasgeräusch",
+    "es": "Ruido de soplido",
+    "fr": "Bruit de souffle"
+  },
+  {
+    "en": "Reset",
+    "ja": "ãªã»ãã",
+    "section": "melonds",
+    "de": "Zurücksetzen",
+    "es": "Restablecer",
+    "fr": "Réinitialiser"
+  },
+  {
+    "en": "Toggle slow mo",
+    "ja": "ã¹ã­ã¼ã¢ã¼ã·ã§ã³åæ¿",
+    "section": "melonds",
+    "de": "Zeitlupe umschalten",
+    "es": "Alternar cámara lenta",
+    "fr": "Basculer ralenti"
+  },
+  {
+    "en": "Swap screens",
+    "ja": "ä¸ä¸ç»é¢å¥æ¿",
+    "section": "melonds",
+    "de": "Bildschirme tauschen",
+    "es": "Intercambiar pantallas",
+    "fr": "Échanger les écrans"
+  },
+  {
+    "en": "Toggle audio mute",
+    "ja": "é³å£°ãã¥ã¼ãåæ¿",
+    "section": "melonds",
+    "de": "Stummschaltung umschalten",
+    "es": "Alternar silencio de audio",
+    "fr": "Basculer la sourdine audio"
+  },
+  {
+    "en": "Active instance only",
+    "ja": "ã¢ã¯ãã£ããªã¤ã³ã¹ã¿ã³ã¹ã®ã¿",
+    "section": "melonds",
+    "de": "Nur aktive Instanz",
+    "es": "Solo instancia activa",
+    "fr": "Instance active uniquement"
+  },
+  {
+    "en": "Indirect mode (uses libslirp, recommended)",
+    "ja": "éæ¥ã¢ã¼ã (libslirpä½¿ç¨ãæ¨å¥¨)",
+    "section": "melonds",
+    "de": "Indirekter Modus (verwendet libslirp, empfohlen)",
+    "es": "Modo indirecto (usa libslirp, recomendado)",
+    "fr": "Mode indirect (utilise libslirp, recommandé)"
+  },
+  {
+    "en": "IP address:",
+    "ja": "IPã¢ãã¬ã¹:",
+    "section": "melonds",
+    "de": "IP-Adresse:",
+    "es": "Dirección IP:",
+    "fr": "Adresse IP :"
+  },
+  {
+    "en": "Username:",
+    "ja": "ã¦ã¼ã¶ã¼å:",
+    "section": "melonds",
+    "de": "Benutzername:",
+    "es": "Nombre de usuario:",
+    "fr": "Nom d'utilisateur :"
+  },
+  {
+    "en": "Network settings",
+    "ja": "ãããã¯ã¼ã¯è¨­å®",
+    "section": "melonds",
+    "de": "Netzwerk-Einstellungen",
+    "es": "Ajustes de red",
+    "fr": "Paramètres réseau"
+  },
+  {
+    "en": "System default",
+    "ja": "ã·ã¹ãã æ¨æº",
+    "section": "melonds",
+    "de": "Systemstandard",
+    "es": "Predeterminado del sistema",
+    "fr": "Par défaut du système"
+  },
+  {
+    "en": "Mute audio while fast forwarding",
+    "ja": "æ©éãä¸­ã¯é³å£°ããã¥ã¼ã",
+    "section": "melonds",
+    "de": "Audio beim Vorspulen stummschalten",
+    "es": "Silenciar audio al avanzar rápido",
+    "fr": "Couper l'audio pendant l'avance rapide"
+  },
+  {
+    "en": "Slow-Mo",
+    "ja": "ã¹ã­ã¼ã¢ã¼ã·ã§ã³",
+    "section": "melonds",
+    "de": "Zeitlupe",
+    "es": "Cámara lenta",
+    "fr": "Ralenti"
+  },
+  {
+    "en": "2x",
+    "ja": "2x",
+    "section": "melonds",
+    "de": "2x",
+    "es": "2x",
+    "fr": "2x"
+  },
+  {
+    "en": "Savestates path:",
+    "ja": "ã¹ãã¼ãã»ã¼ãã®ãã¹:",
+    "section": "melonds",
+    "de": "Pfad für Zustände:",
+    "es": "Ruta de estados guardados:",
+    "fr": "Chemin des sauvegardes d'état :"
+  },
+  {
+    "en": "New AR code",
+    "ja": "æ°ããARã³ã¼ã",
+    "section": "melonds",
+    "de": "Neuer AR-Code",
+    "es": "Nuevo código AR",
+    "fr": "Nouveau code AR"
+  },
+  {
+    "en": "Name:",
+    "ja": "åå:",
+    "section": "melonds",
+    "de": "Name:",
+    "es": "Nombre:",
+    "fr": "Nom :"
+  },
+  {
+    "en": "Power management - melonDS",
+    "ja": "é»æºç®¡ç - melonDS",
+    "section": "melonds",
+    "de": "Energieverwaltung - melonDS",
+    "es": "Gestión de energía - melonDS",
+    "fr": "Gestion de l'alimentation - melonDS"
+  },
+  {
+    "en": "Full",
+    "ja": "æºåé»",
+    "section": "melonds",
+    "de": "Voll",
+    "es": "Completa",
+    "fr": "Pleine"
+  },
+  {
+    "en": "Date and time",
+    "ja": "æ¥ä»ã¨æå»",
+    "section": "melonds",
+    "de": "Datum und Uhrzeit",
+    "es": "Fecha y hora",
+    "fr": "Date et heure"
+  },
+  {
+    "en": "ROM info - melonDS",
+    "ja": "ROMæå ± - melonDS",
+    "section": "melonds",
+    "de": "ROM-Info - melonDS",
+    "es": "Info de ROM - melonDS",
+    "fr": "Infos ROM - melonDS"
+  },
+  {
+    "en": "German title:",
+    "ja": "ãã¤ãèªã¿ã¤ãã«:",
+    "section": "melonds",
+    "de": "Deutscher Titel:",
+    "es": "Título en alemán:",
+    "fr": "Titre allemand :"
+  },
+  {
+    "en": "ARM7 and ARM9 binaries",
+    "ja": "ARM7/ARM9ãã¤ããª",
+    "section": "melonds",
+    "de": "ARM7- und ARM9-Binärdateien",
+    "es": "Binarios ARM7 y ARM9",
+    "fr": "Binaires ARM7 et ARM9"
+  },
+  {
+    "en": "ARM7 ROM offset: ",
+    "ja": "ARM7 ROMãªãã»ãã: ",
+    "section": "melonds",
+    "de": "ARM7-ROM-Offset: ",
+    "es": "Desplazamiento ROM ARM7: ",
+    "fr": "Décalage ROM ARM7 : "
+  },
+  {
+    "en": "FNT offset:",
+    "ja": "FNTãªãã»ãã:",
+    "section": "melonds",
+    "de": "FNT-Offset:",
+    "es": "Desplazamiento FNT:",
+    "fr": "Décalage FNT :"
+  },
+  {
+    "en": "Game title:",
+    "ja": "ã²ã¼ã ã¿ã¤ãã«:",
+    "section": "melonds",
+    "de": "Spieltitel:",
+    "es": "Título del juego:",
+    "fr": "Titre du jeu :"
+  },
+  {
+    "en": "Save animated icon",
+    "ja": "ã»ã¼ãã¢ãã¡ã¼ã·ã§ã³ã¢ã¤ã³ã³",
+    "section": "melonds",
+    "de": "Animiertes Symbol speichern",
+    "es": "Guardar icono animado",
+    "fr": "Enregistrer l'icône animée"
+  },
+  {
+    "en": "2bytes",
+    "ja": "2ãã¤ã",
+    "section": "melonds",
+    "de": "2 Bytes",
+    "es": "2 bytes",
+    "fr": "2 octets"
+  },
+  {
+    "en": "Found:",
+    "ja": "æ¤åº:",
+    "section": "melonds",
+    "de": "Gefunden:",
+    "es": "Encontrado:",
+    "fr": "Trouvé :"
+  },
+  {
+    "en": "Connect",
+    "ja": "æ¥ç¶",
+    "section": "melonds",
+    "de": "Verbinden",
+    "es": "Conectar",
+    "fr": "Connecter"
+  },
+  {
+    "en": "Players",
+    "ja": "ãã¬ã¤ã¤ã¼",
+    "section": "melonds",
+    "de": "Spieler",
+    "es": "Jugadores",
+    "fr": "Joueurs"
+  },
+  {
+    "en": "Please enter a player name.",
+    "ja": "ãã¬ã¤ã¤ã¼åãå¥åãã¦ãã ããã",
+    "section": "melonds",
+    "de": "Bitte einen Spielernamen eingeben.",
+    "es": "Introduce un nombre de jugador.",
+    "fr": "Veuillez saisir un nom de joueur."
+  },
+  {
+    "en": "Visit the &website",
+    "ja": "ã¦ã§ããµã¤ã(&W)",
+    "section": "melonds",
+    "de": "&Website besuchen",
+    "es": "Visitar el &sitio web",
+    "fr": "Visiter le &site web"
+  },
+  {
+    "en": "Brown",
+    "ja": "è¶è²",
+    "section": "melonds",
+    "de": "Braun",
+    "es": "Marrón",
+    "fr": "Marron"
+  },
+  {
+    "en": "Lime",
+    "ja": "ã©ã¤ã ",
+    "section": "melonds",
+    "de": "Limette",
+    "es": "Lima",
+    "fr": "Citron vert"
+  },
+  {
+    "en": "Blue",
+    "ja": "é",
+    "section": "melonds",
+    "de": "Blau",
+    "es": "Azul",
+    "fr": "Bleu"
+  },
+  {
+    "en": "French",
+    "ja": "ãã©ã³ã¹èª",
+    "section": "melonds",
+    "de": "Französisch",
+    "es": "Francés",
+    "fr": "Français"
+  },
+  {
+    "en": "January",
+    "ja": "1æ",
+    "section": "melonds",
+    "de": "Januar",
+    "es": "Enero",
+    "fr": "Janvier"
+  },
+  {
+    "en": "June",
+    "ja": "6æ",
+    "section": "melonds",
+    "de": "Juni",
+    "es": "Junio",
+    "fr": "Juin"
+  },
+  {
+    "en": "November",
+    "ja": "11æ",
+    "section": "melonds",
+    "de": "November",
+    "es": "Noviembre",
+    "fr": "Novembre"
+  }
+]

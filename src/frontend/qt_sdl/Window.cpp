@@ -270,7 +270,9 @@ MainWindow::MainWindow(int id, EmuInstance* inst, QWidget* parent) :
     hasMenu = true;
 
 #ifdef MELONPRIME_DS
-    MelonPrime::UiText::SetMenuLanguageMode(localCfg.GetInt(MelonPrime::CfgKey::MenuLanguage));
+    MelonPrime::UiText::SetMenuLanguageSelection(
+        MelonPrime::UiText::NormalizeMenuLanguageConfig(
+            localCfg.GetInt(MelonPrime::CfgKey::MenuLanguage)));
 #endif
 
     if (hasMenu)
@@ -885,7 +887,9 @@ void MainWindow::localizeMenuText()
     if (!hasMenu)
         return;
 
-    MelonPrime::UiText::SetMenuLanguageMode(localCfg.GetInt(MelonPrime::CfgKey::MenuLanguage));
+    MelonPrime::UiText::SetMenuLanguageSelection(
+        MelonPrime::UiText::NormalizeMenuLanguageConfig(
+            localCfg.GetInt(MelonPrime::CfgKey::MenuLanguage)));
     MelonPrime::UiText::LocalizeMenuBar(menuBar());
     if (panel)
         panel->reloadNoRomSplashLocalization();

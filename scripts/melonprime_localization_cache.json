@@ -1,0 +1,1402 @@
+{
+  " FPS": {
+    "de": "FPS",
+    "es": "FPS",
+    "fr": "FPS"
+  },
+  "&Close": {
+    "de": "&Schließen",
+    "es": "&Cerca",
+    "fr": "&Fermer"
+  },
+  "(leave empty to use default MAC)": {
+    "de": "(Leer lassen, um Standard-MAC zu verwenden)",
+    "es": "(déjelo vacío para usar la MAC predeterminada)",
+    "fr": "(laissez vide pour utiliser le MAC par défaut)"
+  },
+  "(no joysticks available)": {
+    "de": "(keine Joysticks verfügbar)",
+    "es": "(no hay joysticks disponibles)",
+    "fr": "(pas de joysticks disponibles)"
+  },
+  "(none)": {
+    "de": "(keiner)",
+    "es": "(ninguno)",
+    "fr": "(aucun)"
+  },
+  "1/2": {
+    "de": "1/2",
+    "es": "1/2",
+    "fr": "1/2"
+  },
+  "1/4": {
+    "de": "1/4",
+    "es": "1/4",
+    "fr": "1/4"
+  },
+  "10-bit": {
+    "de": "10-Bit",
+    "es": "10 bits",
+    "fr": "10 bits"
+  },
+  "16-bit": {
+    "de": "16-Bit",
+    "es": "16 bits",
+    "fr": "16 bits"
+  },
+  "1byte": {
+    "de": "1 Byte",
+    "es": "1 byte",
+    "fr": "1 octet"
+  },
+  "2bytes": {
+    "de": "2 Byte",
+    "es": "2 bytes",
+    "fr": "2 octets"
+  },
+  "2x": {
+    "de": "2x",
+    "es": "2x",
+    "fr": "2x"
+  },
+  "3x": {
+    "de": "3x",
+    "es": "3x",
+    "fr": "3x"
+  },
+  "4bytes": {
+    "de": "4 Byte",
+    "es": "4 bytes",
+    "fr": "4 octets"
+  },
+  "ARM7 RAM address:": {
+    "de": "ARM7-RAM-Adresse:",
+    "es": "Dirección RAM ARM7:",
+    "fr": "Adresse RAM ARM7 :"
+  },
+  "ARM7 ROM offset: ": {
+    "de": "ARM7 ROM-Offset:",
+    "es": "Desplazamiento de ROM ARM7:",
+    "fr": "Décalage de la ROM ARM7 :"
+  },
+  "ARM7 and ARM9 binaries": {
+    "de": "ARM7- und ARM9-Binärdateien",
+    "es": "Binarios ARM7 y ARM9",
+    "fr": "Binaires ARM7 et ARM9"
+  },
+  "ARM7 entry address:": {
+    "de": "ARM7-Eintragsadresse:",
+    "es": "Dirección de entrada ARM7:",
+    "fr": "Adresse d'entrée ARM7 :"
+  },
+  "ARM7 port": {
+    "de": "ARM7-Port",
+    "es": "Puerto ARM7",
+    "fr": "Port ARM7"
+  },
+  "ARM7 size:": {
+    "de": "ARM7-Größe:",
+    "es": "Tamaño ARM7:",
+    "fr": "Taille ARM7 :"
+  },
+  "ARM9 RAM address:": {
+    "de": "ARM9-RAM-Adresse:",
+    "es": "Dirección RAM ARM9:",
+    "fr": "Adresse RAM ARM9 :"
+  },
+  "ARM9 ROM offset: ": {
+    "de": "ARM9 ROM-Offset:",
+    "es": "Desplazamiento de ROM ARM9:",
+    "fr": "Décalage de la ROM ARM9 :"
+  },
+  "ARM9 entry address:": {
+    "de": "ARM9-Eintragsadresse:",
+    "es": "Dirección de entrada ARM9:",
+    "fr": "Adresse d'entrée ARM9 :"
+  },
+  "ARM9 port": {
+    "de": "ARM9-Port",
+    "es": "Puerto ARM9",
+    "fr": "Port ARM9"
+  },
+  "ARM9 size:": {
+    "de": "ARM9-Größe:",
+    "es": "Tamaño ARM9:",
+    "fr": "Taille ARM9 :"
+  },
+  "About melonDS": {
+    "de": "Über melonDS",
+    "es": "Acerca de melonDS",
+    "fr": "À propos de melonDS"
+  },
+  "Accurate": {
+    "de": "Genau",
+    "es": "Preciso",
+    "fr": "Précis"
+  },
+  "Active instance only": {
+    "de": "Nur aktive Instanz",
+    "es": "Solo instancia activa",
+    "fr": "Instance active uniquement"
+  },
+  "Address": {
+    "de": "Adresse",
+    "es": "DIRECCIÓN",
+    "fr": "Adresse"
+  },
+  "After": {
+    "de": "Nach",
+    "es": "Después",
+    "fr": "Après"
+  },
+  "All instances": {
+    "de": "Alle Instanzen",
+    "es": "Todas las instancias",
+    "fr": "Toutes les instances"
+  },
+  "Almost Empty": {
+    "de": "Fast leer",
+    "es": "Casi vacío",
+    "fr": "Presque vide"
+  },
+  "April": {
+    "de": "April",
+    "es": "Abril",
+    "fr": "Avril"
+  },
+  "Audio output": {
+    "de": "Audioausgabe",
+    "es": "Salida de audio",
+    "fr": "Sortie audio"
+  },
+  "Audio settings - melonDS": {
+    "de": "Audioeinstellungen – melonDS",
+    "es": "Configuración de audio - melonDS",
+    "fr": "Paramètres audio - melonDS"
+  },
+  "August": {
+    "de": "August",
+    "es": "Agosto",
+    "fr": "Août"
+  },
+  "Auto": {
+    "de": "Auto",
+    "es": "Auto",
+    "fr": "Auto"
+  },
+  "Automatic": {
+    "de": "Automatisch",
+    "es": "Automático",
+    "fr": "Automatique"
+  },
+  "Battery Level": {
+    "de": "Batteriestand",
+    "es": "Nivel de batería",
+    "fr": "Niveau de batterie"
+  },
+  "Birthday:": {
+    "de": "Geburtstag:",
+    "es": "Cumpleaños:",
+    "fr": "Anniversaire:"
+  },
+  "Bit depth:": {
+    "de": "Bittiefe:",
+    "es": "Profundidad de bits:",
+    "fr": "Profondeur de bits :"
+  },
+  "Blow noise": {
+    "de": "Blasgeräusch",
+    "es": "Ruido de golpe",
+    "fr": "Bruit de coup"
+  },
+  "Blue": {
+    "de": "Blau",
+    "es": "Azul",
+    "fr": "Bleu"
+  },
+  "Boot game directly": {
+    "de": "Spiel direkt starten",
+    "es": "Arrancar el juego directamente",
+    "fr": "Démarrer le jeu directement"
+  },
+  "Branch optimisations": {
+    "de": "Filialoptimierungen",
+    "es": "Optimizaciones de sucursales",
+    "fr": "Optimisations des succursales"
+  },
+  "Break on startup": {
+    "de": "Pause beim Start",
+    "es": "Romper al iniciar",
+    "fr": "Pause au démarrage"
+  },
+  "Brown": {
+    "de": "Braun",
+    "es": "Marrón",
+    "fr": "Brun"
+  },
+  "Browse...": {
+    "de": "Durchsuchen...",
+    "es": "Navegar...",
+    "fr": "Parcourir..."
+  },
+  "CPU emulation": {
+    "de": "CPU-Emulation",
+    "es": "emulación de CPU",
+    "fr": "Émulation du processeur"
+  },
+  "Camera settings - melonDS": {
+    "de": "Kameraeinstellungen – melonDS",
+    "es": "Configuración de la cámara - melonDS",
+    "fr": "Paramètres de l'appareil photo - melonDS"
+  },
+  "Cancel edit": {
+    "de": "Bearbeitung abbrechen",
+    "es": "Cancelar edición",
+    "fr": "Annuler la modification"
+  },
+  "Card size:": {
+    "de": "Kartengröße:",
+    "es": "Tamaño de tarjeta:",
+    "fr": "Taille de la carte :"
+  },
+  "Change to:": {
+    "de": "Ändern zu:",
+    "es": "Cambiar a:",
+    "fr": "Remplacer par :"
+  },
+  "Charging": {
+    "de": "Aufladen",
+    "es": "Cargando",
+    "fr": "Chargement"
+  },
+  "Cheat code editor - melonDS": {
+    "de": "Cheat-Code-Editor – melonDS",
+    "es": "Editor de códigos de trucos - melonDS",
+    "fr": "Éditeur de code de triche - melonDS"
+  },
+  "Cheat files path:": {
+    "de": "Pfad der Cheat-Dateien:",
+    "es": "Ruta de los archivos de trucos:",
+    "fr": "Chemin des fichiers de triche :"
+  },
+  "Chinese": {
+    "de": "chinesisch",
+    "es": "Chino",
+    "fr": "Chinois"
+  },
+  "Chinese title:": {
+    "de": "Chinesischer Titel:",
+    "es": "Título chino:",
+    "fr": "Titre chinois :"
+  },
+  "Clean": {
+    "de": "Sauber",
+    "es": "Limpio",
+    "fr": "Faire le ménage"
+  },
+  "Close": {
+    "de": "Schließen",
+    "es": "Cerca",
+    "fr": "Fermer"
+  },
+  "Close/open lid": {
+    "de": "Deckel schließen/öffnen",
+    "es": "Cerrar/abrir tapa",
+    "fr": "Fermer/ouvrir le couvercle"
+  },
+  "Code:": {
+    "de": "Code:",
+    "es": "Código:",
+    "fr": "Code:"
+  },
+  "Color:": {
+    "de": "Farbe:",
+    "es": "Color:",
+    "fr": "Couleur:"
+  },
+  "Configure emulated camera:": {
+    "de": "Emulierte Kamera konfigurieren:",
+    "es": "Configurar cámara emulada:",
+    "fr": "Configurer la caméra émulée :"
+  },
+  "Connect": {
+    "de": "Verbinden",
+    "es": "Conectar",
+    "fr": "Connecter"
+  },
+  "Console type:": {
+    "de": "Konsolentyp:",
+    "es": "Tipo de consola:",
+    "fr": "Type de console :"
+  },
+  "Cosine": {
+    "de": "Kosinus",
+    "es": "Coseno",
+    "fr": "Cosinus"
+  },
+  "Cubic": {
+    "de": "Kubisch",
+    "es": "Cúbico",
+    "fr": "Cubique"
+  },
+  "Current value:": {
+    "de": "Aktueller Wert:",
+    "es": "Valor actual:",
+    "fr": "Valeur actuelle :"
+  },
+  "DLDI": {
+    "de": "DLDI",
+    "es": "DLDI",
+    "fr": "DLDI"
+  },
+  "DS": {
+    "de": "DS",
+    "es": "DS",
+    "fr": "DS"
+  },
+  "DS ARM7 BIOS:": {
+    "de": "DS ARM7 BIOS:",
+    "es": "BIOS ARM7:",
+    "fr": "BIOS DSARM7 :"
+  },
+  "DS ARM9 BIOS:": {
+    "de": "DS ARM9 BIOS:",
+    "es": "BIOS ARM9:",
+    "fr": "BIOS DS-ARM9 :"
+  },
+  "DS Battery": {
+    "de": "DS-Batterie",
+    "es": "Batería DS",
+    "fr": "Batterie DS"
+  },
+  "DS firmware:": {
+    "de": "DS-Firmware:",
+    "es": "Firmware DS:",
+    "fr": "Micrologiciel DS :"
+  },
+  "DS-mode": {
+    "de": "DS-Modus",
+    "es": "modo DS",
+    "fr": "Mode DS"
+  },
+  "DSP HLE": {
+    "de": "DSP HLE",
+    "es": "DSP HLE",
+    "fr": "DSP HLE"
+  },
+  "DSi (experimental)": {
+    "de": "DSi (experimentell)",
+    "es": "DSi (experimental)",
+    "fr": "DSi (expérimental)"
+  },
+  "DSi ARM7 BIOS:": {
+    "de": "DSi ARM7 BIOS:",
+    "es": "BIOS DSi ARM7:",
+    "fr": "BIOS DSiARM7 :"
+  },
+  "DSi ARM9 BIOS:": {
+    "de": "DSi ARM9 BIOS:",
+    "es": "BIOS DSi ARM9:",
+    "fr": "BIOS DSiARM9 :"
+  },
+  "DSi Battery": {
+    "de": "DSi-Akku",
+    "es": "Batería DSi",
+    "fr": "Batterie DSi"
+  },
+  "DSi NAND:": {
+    "de": "DSi-NAND:",
+    "es": "DSi NAND:",
+    "fr": "NAND DSi :"
+  },
+  "DSi Power button": {
+    "de": "DSi-Power-Taste",
+    "es": "Botón de encendido DSi",
+    "fr": "Bouton d'alimentation DSi"
+  },
+  "DSi Volume down": {
+    "de": "DSi-Lautstärke verringern",
+    "es": "Bajar volumen DSi",
+    "fr": "DSi Baisser le volume"
+  },
+  "DSi Volume up": {
+    "de": "DSi-Lautstärke erhöhen",
+    "es": "Subir volumen DSi",
+    "fr": "DSi Augmenter le volume"
+  },
+  "DSi firmware:": {
+    "de": "DSi-Firmware:",
+    "es": "Firmware DSi:",
+    "fr": "Micrologiciel DSi :"
+  },
+  "DSi inner camera": {
+    "de": "DSi-Innenkamera",
+    "es": "Cámara interior DSi",
+    "fr": "Caméra intérieure DSi"
+  },
+  "DSi outer camera": {
+    "de": "DSi-Außenkamera",
+    "es": "cámara exterior dsi",
+    "fr": "Caméra extérieure DSi"
+  },
+  "DSi-mode": {
+    "de": "DSi-Modus",
+    "es": "modo DSi",
+    "fr": "Mode DSi"
+  },
+  "Dark blue": {
+    "de": "Dunkelblau",
+    "es": "azul oscuro",
+    "fr": "Bleu foncé"
+  },
+  "Dark green": {
+    "de": "Dunkelgrün",
+    "es": "verde oscuro",
+    "fr": "Vert foncé"
+  },
+  "Dark pink": {
+    "de": "Dunkelrosa",
+    "es": "rosa oscuro",
+    "fr": "Rose foncé"
+  },
+  "Dark purple": {
+    "de": "Dunkelviolett",
+    "es": "morado oscuro",
+    "fr": "Violet foncé"
+  },
+  "Data reception timeout: ": {
+    "de": "Zeitüberschreitung beim Datenempfang:",
+    "es": "Tiempo de espera de recepción de datos:",
+    "fr": "Délai d'expiration de la réception des données :"
+  },
+  "Date and time": {
+    "de": "Datum und Uhrzeit",
+    "es": "Fecha y hora",
+    "fr": "Date et heure"
+  },
+  "Date and time - melonDS": {
+    "de": "Datum und Uhrzeit – melonDS",
+    "es": "Fecha y hora - melónDS",
+    "fr": "Date et heure - melonDS"
+  },
+  "December": {
+    "de": "Dezember",
+    "es": "Diciembre",
+    "fr": "Décembre"
+  },
+  "Delete": {
+    "de": "Löschen",
+    "es": "Borrar",
+    "fr": "Supprimer"
+  },
+  "Description:": {
+    "de": "Beschreibung:",
+    "es": "Descripción:",
+    "fr": "Description:"
+  },
+  "Devtools": {
+    "de": "Devtools",
+    "es": "Herramientas de desarrollo",
+    "fr": "Outils de développement"
+  },
+  "Direct connect": {
+    "de": "Direkte Verbindung",
+    "es": "Conexión directa",
+    "fr": "Connexion directe"
+  },
+  "Direct connect...": {
+    "de": "Direktverbindung...",
+    "es": "Conexión directa...",
+    "fr": "Connexion directe..."
+  },
+  "Direct mode [TEXT PLACEHOLDER]": {
+    "de": "Direktmodus [TEXT PLATZHALTER]",
+    "es": "Modo directo [MARCADOR DE TEXTO]",
+    "fr": "Mode direct [TEXT PLACEHOLDER]"
+  },
+  "Direct mode settings": {
+    "de": "Direktmodus-Einstellungen",
+    "es": "Configuración del modo directo",
+    "fr": "Paramètres du mode direct"
+  },
+  "Display settings": {
+    "de": "Anzeigeeinstellungen",
+    "es": "Configuración de pantalla",
+    "fr": "Paramètres d'affichage"
+  },
+  "Edit": {
+    "de": "Bearbeiten",
+    "es": "Editar",
+    "fr": "Modifier"
+  },
+  "Emu settings - melonDS": {
+    "de": "Emu-Einstellungen – melonDS",
+    "es": "Configuración de la UEM - melonDS",
+    "fr": "Paramètres Emu - melonDS"
+  },
+  "Enable DLDI (for homebrew)": {
+    "de": "DLDI aktivieren (für Homebrew)",
+    "es": "Habilitar DLDI (para cerveza casera)",
+    "fr": "Activer DLDI (pour homebrew)"
+  },
+  "Enable DSi SD card": {
+    "de": "Aktivieren Sie die DSi-SD-Karte",
+    "es": "Habilitar tarjeta SD DSi",
+    "fr": "Activer la carte SD DSi"
+  },
+  "Enable GDB stub": {
+    "de": "GDB-Stub aktivieren",
+    "es": "Habilitar código auxiliar de GDB",
+    "fr": "Activer le stub GDB"
+  },
+  "Enable JIT recompiler": {
+    "de": "Aktivieren Sie den JIT-Recompiler",
+    "es": "Habilitar el recompilador JIT",
+    "fr": "Activer le recompilateur JIT"
+  },
+  "Enabled": {
+    "de": "Ermöglicht",
+    "es": "Activado",
+    "fr": "Activé"
+  },
+  "English title:": {
+    "de": "Englischer Titel:",
+    "es": "Título en inglés:",
+    "fr": "Titre anglais :"
+  },
+  "External microphone": {
+    "de": "Externes Mikrofon",
+    "es": "micrófono externo",
+    "fr": "Microphone externe"
+  },
+  "FAT offset:": {
+    "de": "FAT-Offset:",
+    "es": "Compensación de grasa:",
+    "fr": "Compensation FAT :"
+  },
+  "FAT size:": {
+    "de": "FAT-Größe:",
+    "es": "Tamaño GRASA:",
+    "fr": "Taille de graisse :"
+  },
+  "FNT offset:": {
+    "de": "FNT-Offset:",
+    "es": "Compensación FNT:",
+    "fr": "Décalage FNT :"
+  },
+  "FNT size:": {
+    "de": "FNT-Größe:",
+    "es": "Tamaño FNT:",
+    "fr": "Taille FNT :"
+  },
+  "Failed to connect to the host %0.": {
+    "de": "Es konnte keine Verbindung zum Host %0 hergestellt werden.",
+    "es": "No se pudo conectar con el host %0.",
+    "fr": "Échec de la connexion à l'hôte %0."
+  },
+  "Failed to start LAN game.": {
+    "de": "Failed to start LAN game.",
+    "es": "No se pudo iniciar el juego LAN.",
+    "fr": "Échec du démarrage du jeu LAN."
+  },
+  "Fast forward": {
+    "de": "Schneller Vorlauf",
+    "es": "Avance rápido",
+    "fr": "Avance rapide"
+  },
+  "Fast memory": {
+    "de": "Schneller Speicher",
+    "es": "memoria rapida",
+    "fr": "Mémoire rapide"
+  },
+  "Fast-Forward": {
+    "de": "Schneller Vorlauf",
+    "es": "Avance rápido",
+    "fr": "Avance rapide"
+  },
+  "February": {
+    "de": "Februar",
+    "es": "Febrero",
+    "fr": "Février"
+  },
+  "Filesystem": {
+    "de": "Dateisystem",
+    "es": "Sistema de archivos",
+    "fr": "Système de fichiers"
+  },
+  "Firmware settings - melonDS": {
+    "de": "Firmware-Einstellungen – melonDS",
+    "es": "Configuración del firmware - melonDS",
+    "fr": "Paramètres du micrologiciel - melonDS"
+  },
+  "Flip horizontally": {
+    "de": "Horizontal spiegeln",
+    "es": "Voltear horizontalmente",
+    "fr": "Retourner horizontalement"
+  },
+  "Found:": {
+    "de": "Gefunden:",
+    "es": "Encontró:",
+    "fr": "Trouvé:"
+  },
+  "Frame step": {
+    "de": "Rahmenstufe",
+    "es": "Paso de marco",
+    "fr": "Étape du cadre"
+  },
+  "Framerate ": {
+    "de": "Framerate",
+    "es": "Velocidad de fotogramas",
+    "fr": "Fréquence d'images"
+  },
+  "French": {
+    "de": "Französisch",
+    "es": "Francés",
+    "fr": "Français"
+  },
+  "French title:": {
+    "de": "Französischer Titel:",
+    "es": "Título francés:",
+    "fr": "Titre français :"
+  },
+  "Full": {
+    "de": "Voll",
+    "es": "Lleno",
+    "fr": "Complet"
+  },
+  "Game code:": {
+    "de": "Spielcode:",
+    "es": "Código del juego:",
+    "fr": "Code du jeu :"
+  },
+  "Game title:": {
+    "de": "Spieltitel:",
+    "es": "Título del juego:",
+    "fr": "Titre du jeu :"
+  },
+  "Gaussian (SNES)": {
+    "de": "Gauß (SNES)",
+    "es": "Gaussiano (SNES)",
+    "fr": "Gaussienne (SNES)"
+  },
+  "General": {
+    "de": "Allgemein",
+    "es": "General",
+    "fr": "Général"
+  },
+  "General hotkeys": {
+    "de": "Allgemeine Hotkeys",
+    "es": "Teclas de acceso rápido generales",
+    "fr": "Raccourcis généraux"
+  },
+  "General info": {
+    "de": "Allgemeine Informationen",
+    "es": "Información general",
+    "fr": "Informations générales"
+  },
+  "German": {
+    "de": "Deutsch",
+    "es": "Alemán",
+    "fr": "Allemand"
+  },
+  "German title:": {
+    "de": "Deutscher Titel:",
+    "es": "Título alemán:",
+    "fr": "Titre allemand :"
+  },
+  "Greyish blue": {
+    "de": "Graublau",
+    "es": "Azul grisáceo",
+    "fr": "Bleu grisâtre"
+  },
+  "Hide mouse after inactivity": {
+    "de": "Maus nach Inaktivität ausblenden",
+    "es": "Ocultar el mouse después de la inactividad",
+    "fr": "Masquer la souris après inactivité"
+  },
+  "Host IP": {
+    "de": "Host-IP",
+    "es": "IP del host",
+    "fr": "IP de l'hôte"
+  },
+  "Host LAN game - melonDS": {
+    "de": "Host-LAN-Spiel – melonDS",
+    "es": "Anfitrión del juego LAN - melonDS",
+    "fr": "Jeu LAN hôte - melonDS"
+  },
+  "Host address:": {
+    "de": "Host-Adresse:",
+    "es": "Dirección del anfitrión:",
+    "fr": "Adresse de l'hôte :"
+  },
+  "IP address:": {
+    "de": "IP-Adresse:",
+    "es": "dirección IP:",
+    "fr": "Adresse IP :"
+  },
+  "Idle": {
+    "de": "Leerlauf",
+    "es": "Inactivo",
+    "fr": "Inactif"
+  },
+  "Image file:": {
+    "de": "Bilddatei:",
+    "es": "Archivo de imagen:",
+    "fr": "Fichier image :"
+  },
+  "Image size:": {
+    "de": "Bildgröße:",
+    "es": "Tamaño de imagen:",
+    "fr": "Taille de l'image :"
+  },
+  "Import...": {
+    "de": "Import...",
+    "es": "Importar...",
+    "fr": "Importer..."
+  },
+  "Improved polygon splitting": {
+    "de": "Verbesserte Polygonaufteilung",
+    "es": "División de polígonos mejorada",
+    "fr": "Division améliorée des polygones"
+  },
+  "Indirect mode (uses libslirp, recommended)": {
+    "de": "Indirekter Modus (verwendet libslirp, empfohlen)",
+    "es": "Modo indirecto (usa libslirp, recomendado)",
+    "fr": "Mode indirect (utilise libslirp, recommandé)"
+  },
+  "Input and hotkeys - melonDS": {
+    "de": "Eingabe und Hotkeys – melonDS",
+    "es": "Entrada y teclas de acceso rápido - melonDS",
+    "fr": "Saisie et raccourcis clavier - melonDS"
+  },
+  "Instance 1 only": {
+    "de": "Nur Instanz 1",
+    "es": "Solo instancia 1",
+    "fr": "Instance 1 uniquement"
+  },
+  "Interface settings - melonDS": {
+    "de": "Schnittstelleneinstellungen – melonDS",
+    "es": "Configuración de la interfaz - melonDS",
+    "fr": "Paramètres de l'interface - melonDS"
+  },
+  "Internal resolution:": {
+    "de": "Interne Auflösung:",
+    "es": "Resolución interna:",
+    "fr": "Résolution interne :"
+  },
+  "Interpolation:": {
+    "de": "Interpolation:",
+    "es": "Interpolación:",
+    "fr": "Interpolation:"
+  },
+  "Italian": {
+    "de": "Italienisch",
+    "es": "italiano",
+    "fr": "italien"
+  },
+  "Italian title:": {
+    "de": "Italienischer Titel:",
+    "es": "Título italiano:",
+    "fr": "Titre italien :"
+  },
+  "January": {
+    "de": "Januar",
+    "es": "Enero",
+    "fr": "Janvier"
+  },
+  "Japanese title:": {
+    "de": "Japanischer Titel:",
+    "es": "Título japonés:",
+    "fr": "Titre japonais :"
+  },
+  "Join LAN game - melonDS": {
+    "de": "Nehmen Sie am LAN-Spiel teil – melonDS",
+    "es": "Unirse al juego LAN - melonDS",
+    "fr": "Rejoignez le jeu LAN - melonDS"
+  },
+  "Joystick:": {
+    "de": "Joystick:",
+    "es": "Palanca de mando:",
+    "fr": "Manette :"
+  },
+  "July": {
+    "de": "Juli",
+    "es": "Julio",
+    "fr": "Juillet"
+  },
+  "June": {
+    "de": "Juni",
+    "es": "Junio",
+    "fr": "Juin"
+  },
+  "Korean title:": {
+    "de": "Koreanischer Titel:",
+    "es": "Título coreano:",
+    "fr": "Titre coréen :"
+  },
+  "Language:": {
+    "de": "Sprache:",
+    "es": "Idioma:",
+    "fr": "Langue:"
+  },
+  "Leave a path blank to use the current ROM's path.": {
+    "de": "Lassen Sie einen Pfad leer, um den Pfad des aktuellen ROM zu verwenden.",
+    "es": "Deje una ruta en blanco para usar la ruta de la ROM actual.",
+    "fr": "Laissez un chemin vide pour utiliser le chemin de la ROM actuelle."
+  },
+  "Light blue": {
+    "de": "Hellblau",
+    "es": "azul claro",
+    "fr": "Bleu clair"
+  },
+  "Light green": {
+    "de": "Hellgrün",
+    "es": "Verde claro",
+    "fr": "Vert clair"
+  },
+  "Light pink": {
+    "de": "Hellrosa",
+    "es": "rosa claro",
+    "fr": "Rose clair"
+  },
+  "Light purple": {
+    "de": "Hellviolett",
+    "es": "violeta claro",
+    "fr": "Violet clair"
+  },
+  "Lime": {
+    "de": "Kalk",
+    "es": "Cal",
+    "fr": "Citron vert"
+  },
+  "Linear": {
+    "de": "Linear",
+    "es": "Lineal",
+    "fr": "Linéaire"
+  },
+  "Literal optimisations": {
+    "de": "Wörtliche Optimierungen",
+    "es": "Optimizaciones literales",
+    "fr": "Optimisations littérales"
+  },
+  "Low": {
+    "de": "Niedrig",
+    "es": "Bajo",
+    "fr": "Faible"
+  },
+  "MAC address:": {
+    "de": "MAC-Adresse:",
+    "es": "Dirección MAC:",
+    "fr": "Adresse MAC :"
+  },
+  "MAX": {
+    "de": "MAX",
+    "es": "MÁXIMO",
+    "fr": "MAXIMUM"
+  },
+  "Maker code:": {
+    "de": "Herstellercode:",
+    "es": "Código del fabricante:",
+    "fr": "Code du fabricant :"
+  },
+  "March": {
+    "de": "Marsch",
+    "es": "Marzo",
+    "fr": "Mars"
+  },
+  "Maximum JIT block size:": {
+    "de": "Maximale JIT-Blockgröße:",
+    "es": "Tamaño máximo de bloque JIT:",
+    "fr": "Taille maximale du bloc JIT :"
+  },
+  "May": {
+    "de": "Mai",
+    "es": "Puede",
+    "fr": "Peut"
+  },
+  "Message:": {
+    "de": "Nachricht:",
+    "es": "Mensaje:",
+    "fr": "Message:"
+  },
+  "Microphone": {
+    "de": "Mikrofon",
+    "es": "Micrófono",
+    "fr": "Microphone"
+  },
+  "Microphone input": {
+    "de": "Mikrofoneingang",
+    "es": "Entrada de micrófono",
+    "fr": "Entrée micro"
+  },
+  "Multiplayer settings - melonDS": {
+    "de": "Multiplayer-Einstellungen – melonDS",
+    "es": "Configuración multijugador - melonDS",
+    "fr": "Paramètres multijoueurs - melonDS"
+  },
+  "Mute audio while fast forwarding": {
+    "de": "Schalten Sie den Ton beim schnellen Vorlauf stumm",
+    "es": "Silenciar el audio durante el avance rápido",
+    "fr": "Couper le son pendant l'avance rapide"
+  },
+  "Name": {
+    "de": "Name",
+    "es": "Nombre",
+    "fr": "Nom"
+  },
+  "Name:": {
+    "de": "Name:",
+    "es": "Nombre:",
+    "fr": "Nom:"
+  },
+  "Network": {
+    "de": "Netzwerk",
+    "es": "Red",
+    "fr": "Réseau"
+  },
+  "Network adapter:": {
+    "de": "Netzwerkadapter:",
+    "es": "Adaptador de red:",
+    "fr": "Adaptateur réseau :"
+  },
+  "Network mode": {
+    "de": "Netzwerkmodus",
+    "es": "Modo de red",
+    "fr": "Mode réseau"
+  },
+  "Network settings": {
+    "de": "Netzwerkeinstellungen",
+    "es": "Configuración de red",
+    "fr": "Paramètres réseau"
+  },
+  "New AR code": {
+    "de": "Neuer AR-Code",
+    "es": "Nuevo código AR",
+    "fr": "Nouveau code AR"
+  },
+  "New category": {
+    "de": "Neue Kategorie",
+    "es": "Nueva categoría",
+    "fr": "Nouvelle catégorie"
+  },
+  "None": {
+    "de": "Keiner",
+    "es": "Ninguno",
+    "fr": "Aucun"
+  },
+  "None (blank)": {
+    "de": "Keine (leer)",
+    "es": "Ninguno (en blanco)",
+    "fr": "Aucun (vide)"
+  },
+  "Note: GDB stub cannot be used together with the JIT recompiler": {
+    "de": "Hinweis: GDB-Stub kann nicht zusammen mit dem JIT-Recompiler verwendet werden",
+    "es": "Nota: El código auxiliar de GDB no se puede utilizar junto con el recompilador JIT.",
+    "fr": "Remarque : le stub GDB ne peut pas être utilisé avec le recompilateur JIT."
+  },
+  "Note: melonDS must be restarted in order for these changes to have effect": {
+    "de": "Hinweis: melonDS muss neu gestartet werden, damit diese Änderungen wirksam werden",
+    "es": "Nota: melonDS debe reiniciarse para que estos cambios surtan efecto",
+    "fr": "Remarque : melonDS doit être redémarré pour que ces modifications prennent effet."
+  },
+  "November": {
+    "de": "November",
+    "es": "Noviembre",
+    "fr": "Novembre"
+  },
+  "Number of players:": {
+    "de": "Anzahl Spieler:",
+    "es": "Número de jugadores:",
+    "fr": "Nombre de joueurs :"
+  },
+  "October": {
+    "de": "Oktober",
+    "es": "Octubre",
+    "fr": "Octobre"
+  },
+  "Okay": {
+    "de": "Okay",
+    "es": "Bueno",
+    "fr": "D'accord"
+  },
+  "Only allow one code enabled": {
+    "de": "Nur einen aktivierten Code zulassen",
+    "es": "Solo permitir un código habilitado",
+    "fr": "Autoriser un seul code activé"
+  },
+  "OpenGL (Classic)": {
+    "de": "OpenGL (klassisch)",
+    "es": "OpenGL (clásico)",
+    "fr": "OpenGL (classique)"
+  },
+  "OpenGL (Compute shader)": {
+    "de": "OpenGL (Compute-Shader)",
+    "es": "OpenGL (sombreador informático)",
+    "fr": "OpenGL (shader de calcul)"
+  },
+  "OpenGL display": {
+    "de": "OpenGL-Anzeige",
+    "es": "Pantalla OpenGL",
+    "fr": "Affichage OpenGL"
+  },
+  "OpenGL renderer": {
+    "de": "OpenGL-Renderer",
+    "es": "Representador OpenGL",
+    "fr": "Moteur de rendu OpenGL"
+  },
+  "Orange": {
+    "de": "Orange",
+    "es": "Naranja",
+    "fr": "Orange"
+  },
+  "Override settings from external firmware": {
+    "de": "Überschreiben Sie die Einstellungen der externen Firmware",
+    "es": "Anular la configuración del firmware externo",
+    "fr": "Remplacer les paramètres du micrologiciel externe"
+  },
+  "Path settings - melonDS": {
+    "de": "Pfadeinstellungen – melonDS",
+    "es": "Configuración de ruta - melonDS",
+    "fr": "Paramètres du chemin - melonDS"
+  },
+  "Pause emulation when window is not in focus": {
+    "de": "Unterbrechen Sie die Emulation, wenn das Fenster nicht im Fokus ist",
+    "es": "Pausar la emulación cuando la ventana no está enfocada",
+    "fr": "Suspendre l'émulation lorsque la fenêtre n'est pas mise au point"
+  },
+  "Pause/resume": {
+    "de": "Anhalten/fortsetzen",
+    "es": "Pausar/reanudar",
+    "fr": "Pause/reprise"
+  },
+  "Physical camera:": {
+    "de": "Physische Kamera:",
+    "es": "Cámara física:",
+    "fr": "Caméra physique :"
+  },
+  "Picture settings": {
+    "de": "Bildeinstellungen",
+    "es": "Configuración de imagen",
+    "fr": "Paramètres d'image"
+  },
+  "Picture source": {
+    "de": "Bildquelle",
+    "es": "fuente de la imagen",
+    "fr": "Source de l'image"
+  },
+  "Player name:": {
+    "de": "Spielername:",
+    "es": "Nombre del jugador:",
+    "fr": "Nom du joueur :"
+  },
+  "Players": {
+    "de": "Spieler",
+    "es": "Jugadores",
+    "fr": "Joueurs"
+  },
+  "Playing": {
+    "de": "Spielen",
+    "es": "Jugando",
+    "fr": "Jouant"
+  },
+  "Please enter a player name before connecting.": {
+    "de": "Bitte geben Sie einen Spielernamen ein, bevor Sie eine Verbindung herstellen.",
+    "es": "Ingrese el nombre de un jugador antes de conectarse.",
+    "fr": "Veuillez entrer un nom de joueur avant de vous connecter."
+  },
+  "Please enter a player name.": {
+    "de": "Bitte geben Sie einen Spielernamen ein.",
+    "es": "Por favor ingresa un nombre de jugador.",
+    "fr": "Veuillez entrer un nom de joueur."
+  },
+  "Power management - melonDS": {
+    "de": "Energieverwaltung – melonDS",
+    "es": "Gestión de energía - melonDS",
+    "fr": "Gestion de l'alimentation - melonDS"
+  },
+  "Preview": {
+    "de": "Vorschau",
+    "es": "Avance",
+    "fr": "Aperçu"
+  },
+  "Previous": {
+    "de": "Vorherige",
+    "es": "Anterior",
+    "fr": "Précédent"
+  },
+  "RAM info - melonDS": {
+    "de": "RAM-Info – melonDS",
+    "es": "Información de RAM - melónDS",
+    "fr": "Informations sur la RAM - melonDS"
+  },
+  "ROM info - melonDS": {
+    "de": "ROM info - melonDS",
+    "es": "Información ROM - melónDS",
+    "fr": "Informations ROM - melonDS"
+  },
+  "Read-only SD": {
+    "de": "Read-only SD",
+    "es": "SD de solo lectura",
+    "fr": "SD en lecture seule"
+  },
+  "Red": {
+    "de": "Rot",
+    "es": "Rojo",
+    "fr": "Rouge"
+  },
+  "Renderer:": {
+    "de": "Renderer:",
+    "es": "Renderizador:",
+    "fr": "Moteur de rendu :"
+  },
+  "Reset": {
+    "de": "Zurücksetzen",
+    "es": "Reiniciar",
+    "fr": "Réinitialiser"
+  },
+  "Reset to system date and time": {
+    "de": "Zurücksetzen auf Systemdatum und -uhrzeit",
+    "es": "Restablecer la fecha y hora del sistema",
+    "fr": "Réinitialiser la date et l'heure du système"
+  },
+  "SD card image:": {
+    "de": "SD card image:",
+    "es": "Imagen de la tarjeta SD:",
+    "fr": "SD card image:"
+  },
+  "Save animated icon": {
+    "de": "Animiertes Symbol speichern",
+    "es": "Guardar icono animado",
+    "fr": "Enregistrer l'icône animée"
+  },
+  "Save files path:": {
+    "de": "Dateipfad speichern:",
+    "es": "Ruta para guardar archivos:",
+    "fr": "Chemin d'enregistrement des fichiers :"
+  },
+  "Save icon": {
+    "de": "Save icon",
+    "es": "Guardar icono",
+    "fr": "Icône Enregistrer"
+  },
+  "Savestates path:": {
+    "de": "Savestates path:",
+    "es": "Ruta de estados guardados:",
+    "fr": "Chemin des états de sauvegarde :"
+  },
+  "Search": {
+    "de": "Suchen",
+    "es": "Buscar",
+    "fr": "Recherche"
+  },
+  "September": {
+    "de": "September",
+    "es": "Septiembre",
+    "fr": "Septembre"
+  },
+  "Slow mo": {
+    "de": "Langsam",
+    "es": "cámara lenta",
+    "fr": "Mouvement lent"
+  },
+  "Slow-Mo": {
+    "de": "Zeitlupe",
+    "es": "cámara lenta",
+    "fr": "Ralenti"
+  },
+  "Software": {
+    "de": "Software",
+    "es": "Software",
+    "fr": "Logiciel"
+  },
+  "Software renderer": {
+    "de": "Software-Renderer",
+    "es": "renderizador de software",
+    "fr": "Logiciel de rendu"
+  },
+  "Spanish": {
+    "de": "Spanisch",
+    "es": "Español",
+    "fr": "Espagnol"
+  },
+  "Spanish title:": {
+    "de": "Spanischer Titel:",
+    "es": "Título en español:",
+    "fr": "Titre espagnol :"
+  },
+  "Status": {
+    "de": "Status",
+    "es": "Estado",
+    "fr": "Statut"
+  },
+  "Swap screen emphasis": {
+    "de": "Bildschirmbetonung vertauschen",
+    "es": "Cambiar énfasis de pantalla",
+    "fr": "Changer l'accentuation de l'écran"
+  },
+  "Swap screens": {
+    "de": "Bildschirme austauschen",
+    "es": "Cambiar pantallas",
+    "fr": "Échanger les écrans"
+  },
+  "Sync SD to folder:": {
+    "de": "SD mit Ordner synchronisieren:",
+    "es": "Sincronizar SD con la carpeta:",
+    "fr": "Synchroniser la SD avec le dossier :"
+  },
+  "Sync with DSi volume": {
+    "de": "Mit DSi-Volume synchronisieren",
+    "es": "Sincronizar con el volumen DSi",
+    "fr": "Synchroniser avec le volume DSi"
+  },
+  "Synchronize to system date and time": {
+    "de": "Synchronisieren Sie Datum und Uhrzeit mit dem System",
+    "es": "Sincronizar con la fecha y hora del sistema",
+    "fr": "Synchroniser avec la date et l'heure du système"
+  },
+  "System default": {
+    "de": "Systemstandard",
+    "es": "Valor predeterminado del sistema",
+    "fr": "Valeur par défaut du système"
+  },
+  "Target FPS": {
+    "de": "Ziel-FPS",
+    "es": "FPS objetivo",
+    "fr": "Cibler les FPS"
+  },
+  "Theme": {
+    "de": "Thema",
+    "es": "Tema",
+    "fr": "Thème"
+  },
+  "Titles": {
+    "de": "Titel",
+    "es": "Títulos",
+    "fr": "Titres"
+  },
+  "Toggle FPS limit": {
+    "de": "FPS-Limit umschalten",
+    "es": "Alternar límite de FPS",
+    "fr": "Basculer la limite FPS"
+  },
+  "Toggle audio mute": {
+    "de": "Schalten Sie die Audio-Stummschaltung um",
+    "es": "Alternar silencio de audio",
+    "fr": "Activer la sourdine audio"
+  },
+  "Toggle fast forward": {
+    "de": "Schnellvorlauf umschalten",
+    "es": "Alternar avance rápido",
+    "fr": "Activer l'avance rapide"
+  },
+  "Toggle fullscreen": {
+    "de": "Vollbild umschalten",
+    "es": "Alternar pantalla completa",
+    "fr": "Basculer en plein écran"
+  },
+  "Toggle slow mo": {
+    "de": "Zeitlupe umschalten",
+    "es": "Alternar cámara lenta",
+    "fr": "Basculer au ralenti"
+  },
+  "Turquoise": {
+    "de": "Türkis",
+    "es": "Turquesa",
+    "fr": "Turquoise"
+  },
+  "Use external BIOS/firmware files": {
+    "de": "Verwenden Sie externe BIOS-/Firmwaredateien",
+    "es": "Utilice archivos de BIOS/firmware externos",
+    "fr": "Utiliser des fichiers BIOS/firmware externes"
+  },
+  "Use high resolution coordinates": {
+    "de": "Verwenden Sie hochauflösende Koordinaten",
+    "es": "Utilice coordenadas de alta resolución.",
+    "fr": "Utiliser des coordonnées haute résolution"
+  },
+  "Use separate thread": {
+    "de": "Separaten Thread verwenden",
+    "es": "Usar hilo separado",
+    "fr": "Utiliser un fil de discussion séparé"
+  },
+  "User interface": {
+    "de": "Benutzeroberfläche",
+    "es": "Interfaz de usuario",
+    "fr": "Interface utilisateur"
+  },
+  "User settings": {
+    "de": "Benutzereinstellungen",
+    "es": "Configuraciones de usuario",
+    "fr": "Paramètres utilisateur"
+  },
+  "Username:": {
+    "de": "Benutzername:",
+    "es": "Nombre de usuario:",
+    "fr": "Nom d'utilisateur:"
+  },
+  "VSync": {
+    "de": "VSync",
+    "es": "sincronización virtual",
+    "fr": "Synchronisation virtuelle"
+  },
+  "VSync interval:": {
+    "de": "VSync-Intervall:",
+    "es": "Intervalo VSync:",
+    "fr": "Intervalle de synchronisation V :"
+  },
+  "Value": {
+    "de": "Wert",
+    "es": "Valor",
+    "fr": "Valeur"
+  },
+  "Value:": {
+    "de": "Wert:",
+    "es": "Valor:",
+    "fr": "Valeur:"
+  },
+  "Video settings - melonDS": {
+    "de": "Videoeinstellungen – melonDS",
+    "es": "Configuración de vídeo - melonDS",
+    "fr": "Paramètres vidéo - melonDS"
+  },
+  "View on &GitHub": {
+    "de": "Auf &GitHub ansehen",
+    "es": "Ver en &GitHub",
+    "fr": "Afficher sur &GitHub"
+  },
+  "Visit the &website": {
+    "de": "Besuchen Sie die &Website",
+    "es": "Visita el sitio web",
+    "fr": "Visitez le &site Web"
+  },
+  "Volume:": {
+    "de": "Volumen:",
+    "es": "Volumen:",
+    "fr": "Volume:"
+  },
+  "WAV file:": {
+    "de": "WAV-Datei:",
+    "es": "Archivo WAV:",
+    "fr": "Fichier WAV :"
+  },
+  "Wifi settings - melonDS": {
+    "de": "WLAN-Einstellungen – melonDS",
+    "es": "Configuración wifi - melonDS",
+    "fr": "Paramètres Wifi - melonDS"
+  },
+  "Yellow": {
+    "de": "Gelb",
+    "es": "Amarillo",
+    "fr": "Jaune"
+  },
+  "milliseconds": {
+    "de": "Millisekunden",
+    "es": "milisegundos",
+    "fr": "millisecondes"
+  },
+  "seconds": {
+    "de": "Sekunden",
+    "es": "artículos de segunda clase",
+    "fr": "secondes"
+  }
+}

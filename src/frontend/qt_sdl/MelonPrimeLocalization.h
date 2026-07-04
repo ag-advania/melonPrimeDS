@@ -2,6 +2,7 @@
 
 #include <QAction>
 #include <QLocale>
+#include <QList>
 #include <QMenu>
 #include <QMenuBar>
 #include <QStringList>
@@ -14,19 +15,56 @@ namespace MelonPrime::UiText
 
 enum class MenuLangId : int
 {
-    English = 0,
-    Japanese,
-    German,
+    Arabic = 0,
+    Italian,
+    Indonesian,
+    Ukrainian,
+    English,
+    EnglishGB,
+    EnglishUS,
+    Dutch,
+    Greek,
+    Korean,
+    Swedish,
     Spanish,
+    SpanishLatAm,
+    Thai,
+    Czech,
+    ChineseSimplified,
+    ChineseTraditional,
+    Danish,
+    German,
+    Turkish,
+    Japanese,
+    Norwegian,
+    Hungarian,
+    Finnish,
     French,
+    FrenchCanada,
+    Vietnamese,
+    Polish,
+    Portuguese,
+    PortugueseBrazil,
+    Romanian,
+    Russian,
+
+    Count
 };
 
-// Config: 0 = OS native menu language, 1 = force English.
-inline constexpr int kMenuLanguageNative = 0;
-inline constexpr int kMenuLanguageEnglish = 1;
+// Config: -1 = follow OS locale, otherwise an explicit MenuLangId value.
+inline constexpr int kMenuLanguageSystemDefault = -1;
 
-// Legacy aliases (config value 0 always meant "native", not "Japanese only").
-inline constexpr int kMenuLanguageJapanese = kMenuLanguageNative;
+// Legacy config values (Metroid.UI.MenuLanguage migration).
+inline constexpr int kMenuLanguageLegacyNative = 0;
+inline constexpr int kMenuLanguageLegacyEnglish = 1;
+
+// Legacy aliases kept for older call sites.
+inline constexpr int kMenuLanguageNative = kMenuLanguageSystemDefault;
+inline constexpr int kMenuLanguageEnglish = kMenuLanguageLegacyEnglish;
+inline constexpr int kMenuLanguageJapanese = kMenuLanguageLegacyNative;
+
+[[nodiscard]] int NormalizeMenuLanguageConfig(int storedValue);
+[[nodiscard]] bool IsEnglishMenuLanguage(MenuLangId lang);
 
 MenuLangId DetectSystemMenuLanguage();
 bool IsMenuTranslationActive();
@@ -38,30 +76,28 @@ inline bool IsJapaneseLocale()
 {
     return IsMenuTranslationActive() && ActiveMenuLanguage() == MenuLangId::Japanese;
 }
-inline bool CanChooseMenuLanguage()
-{
-    return DetectSystemMenuLanguage() != MenuLangId::English;
-}
 
+[[nodiscard]] int MenuLanguageSelection();
+void SetMenuLanguageSelection(int configValue);
+
+// Legacy wrappers (0/1 config); prefer SetMenuLanguageSelection / MenuLanguageSelection.
 inline int& MenuLanguageModeStorage()
 {
-    static int mode = kMenuLanguageNative;
+    static int mode = kMenuLanguageSystemDefault;
     return mode;
 }
-
 inline void SetMenuLanguageMode(int mode)
 {
-    MenuLanguageModeStorage() =
-        (mode == kMenuLanguageEnglish) ? kMenuLanguageEnglish : kMenuLanguageNative;
+    SetMenuLanguageSelection(mode);
 }
-
 inline int MenuLanguageMode()
 {
-    return MenuLanguageModeStorage();
+    return MenuLanguageSelection();
 }
 
-QString MenuLanguageDisplayName(MenuLangId lang);
-QString MenuLanguageNativeLabel();
+[[nodiscard]] QString MenuLanguageDisplayName(MenuLangId lang);
+[[nodiscard]] QString MenuLanguageNativeLabel();
+[[nodiscard]] QList<MenuLangId> AllSelectableMenuLanguages();
 
 QString TranslateExact(const QString& text);
 QString TranslateByObjectName(const QWidget* widget, const QString& text);
@@ -119,7 +155,7 @@ void ApplyNoRomSplashLocalization(char line0[256], char line1[256]);
 // Bitmap OSD font is ASCII-only; render localized splash lines with a UI font when needed.
 bool TryRenderNoRomSplashOsdItem(unsigned int id, const char* text, unsigned int color,
     int rainbowstart, int& rainbowend, int maxWidth, QImage* outBitmap);
-// CJK splash lines or proportional Latin fonts that may need vertical stacking.
+// CJK/RTL splash lines or proportional fonts that may need vertical stacking.
 bool UsesLocalizedSplashLayout();
 
 } // namespace MelonPrime::UiText

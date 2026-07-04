@@ -1,0 +1,4977 @@
+[
+  {
+    "en": "ON",
+    "ja": "ON",
+    "section": "core"
+  },
+  {
+    "en": "OFF",
+    "ja": "OFF",
+    "section": "core"
+  },
+  {
+    "en": "Off",
+    "ja": "ãªã",
+    "section": "core"
+  },
+  {
+    "en": "Save",
+    "ja": "ä¿å­",
+    "section": "core"
+  },
+  {
+    "en": "Cancel",
+    "ja": "ã­ã£ã³ã»ã«",
+    "section": "core"
+  },
+  {
+    "en": "Reset",
+    "ja": "ãªã»ãã",
+    "section": "core"
+  },
+  {
+    "en": "Generate",
+    "ja": "çæ",
+    "section": "core"
+  },
+  {
+    "en": "Copy Output",
+    "ja": "åºåãã³ãã¼",
+    "section": "core"
+  },
+  {
+    "en": "Copy Output to Input",
+    "ja": "åºåãå¥åã¸ã³ãã¼",
+    "section": "core"
+  },
+  {
+    "en": "Apply",
+    "ja": "é©ç¨",
+    "section": "core"
+  },
+  {
+    "en": "Browseâ¦",
+    "ja": "åç§â¦",
+    "section": "core"
+  },
+  {
+    "en": "Select HUD Font",
+    "ja": "HUDãã©ã³ããé¸æ",
+    "section": "core"
+  },
+  {
+    "en": "Select HUD Font File",
+    "ja": "HUDãã©ã³ããã¡ã¤ã«ãé¸æ",
+    "section": "core"
+  },
+  {
+    "en": "Pick Color",
+    "ja": "è²ãé¸æ",
+    "section": "core"
+  },
+  {
+    "en": "Pick a system fontâ¦",
+    "ja": "ã·ã¹ãã ãã©ã³ããé¸æâ¦",
+    "section": "core"
+  },
+  {
+    "en": "Crosshair Color",
+    "ja": "ç§æºã®è²",
+    "section": "core"
+  },
+  {
+    "en": "Edit",
+    "ja": "ç·¨é",
+    "section": "core"
+  },
+  {
+    "en": "Chng",
+    "ja": "å¤æ´",
+    "section": "core"
+  },
+  {
+    "en": "OVR",
+    "ja": "å¨ä½",
+    "section": "core"
+  },
+  {
+    "en": "Preview",
+    "ja": "ãã¬ãã¥ã¼",
+    "section": "core"
+  },
+  {
+    "en": "Preview ON",
+    "ja": "ãã¬ãã¥ã¼ON",
+    "section": "core"
+  },
+  {
+    "en": "preview",
+    "ja": "ãã¬ãã¥ã¼",
+    "section": "core"
+  },
+  {
+    "en": "Normal",
+    "ja": "éå¸¸",
+    "section": "core"
+  },
+  {
+    "en": "Zoomed (Scope)",
+    "ja": "ãºã¼ã æ (ã¹ã³ã¼ã)",
+    "section": "core"
+  },
+  {
+    "en": "Scope reticle off",
+    "ja": "ã¹ã³ã¼ãã¬ãã£ã¯ã«ç¡å¹",
+    "section": "core"
+  },
+  {
+    "en": "Text",
+    "ja": "æå­",
+    "section": "core"
+  },
+  {
+    "en": "Auto",
+    "ja": "èªå",
+    "section": "core"
+  },
+  {
+    "en": "Overall",
+    "ja": "å¨ä½",
+    "section": "core"
+  },
+  {
+    "en": "Custom",
+    "ja": "ã«ã¹ã¿ã ",
+    "section": "core"
+  },
+  {
+    "en": "Default (MPH)",
+    "ja": "æ¨æº (MPH)",
+    "section": "core"
+  },
+  {
+    "en": "System Font",
+    "ja": "ã·ã¹ãã ãã©ã³ã",
+    "section": "core"
+  },
+  {
+    "en": "Font File",
+    "ja": "ãã©ã³ããã¡ã¤ã«",
+    "section": "core"
+  },
+  {
+    "en": "Font files (*.ttf *.otf *.ttc);;All files (*)",
+    "ja": "ãã©ã³ããã¡ã¤ã« (*.ttf *.otf *.ttc);;ãã¹ã¦ã®ãã¡ã¤ã« (*)",
+    "section": "core"
+  },
+  {
+    "en": "Menu Language",
+    "ja": "ã¡ãã¥ã¼è¨èª",
+    "section": "core"
+  },
+  {
+    "en": "Japanese",
+    "ja": "æ¥æ¬èª",
+    "section": "core"
+  },
+  {
+    "en": "English",
+    "ja": "è±èª",
+    "section": "core"
+  },
+  {
+    "en": "File",
+    "ja": "ãã¡ã¤ã«",
+    "section": "core"
+  },
+  {
+    "en": "Open ROM...",
+    "ja": "ROMãéã...",
+    "section": "core"
+  },
+  {
+    "en": "File->Open ROM...",
+    "ja": "ãã¡ã¤ã« â ROMãéã...",
+    "section": "core"
+  },
+  {
+    "en": "to get started",
+    "ja": "ã§å§ããã",
+    "section": "core"
+  },
+  {
+    "en": "Open recent",
+    "ja": "æè¿ä½¿ã£ãROM",
+    "section": "core"
+  },
+  {
+    "en": "Boot firmware",
+    "ja": "ãã¡ã¼ã ã¦ã§ã¢ãèµ·å",
+    "section": "core"
+  },
+  {
+    "en": "DS slot",
+    "ja": "DSã¹ã­ãã",
+    "section": "core"
+  },
+  {
+    "en": "GBA slot",
+    "ja": "GBAã¹ã­ãã",
+    "section": "core"
+  },
+  {
+    "en": "Insert cart...",
+    "ja": "ã«ã¼ããªãã¸ãæ¿å¥...",
+    "section": "core"
+  },
+  {
+    "en": "Eject cart",
+    "ja": "ã«ã¼ããªãã¸ãåãåºã",
+    "section": "core"
+  },
+  {
+    "en": "Insert ROM cart...",
+    "ja": "ROMã«ã¼ããªãã¸ãæ¿å¥...",
+    "section": "core"
+  },
+  {
+    "en": "Insert add-on cart",
+    "ja": "ã¢ããªã³ã«ã¼ããªãã¸ãæ¿å¥",
+    "section": "core"
+  },
+  {
+    "en": "Import savefile",
+    "ja": "ã»ã¼ããã¡ã¤ã«ãã¤ã³ãã¼ã",
+    "section": "core"
+  },
+  {
+    "en": "Save state",
+    "ja": "ã¹ãã¼ããä¿å­",
+    "section": "core"
+  },
+  {
+    "en": "Load state",
+    "ja": "ã¹ãã¼ããèª­ã¿è¾¼ã¿",
+    "section": "core"
+  },
+  {
+    "en": "File...",
+    "ja": "ãã¡ã¤ã«...",
+    "section": "core"
+  },
+  {
+    "en": "Undo state load",
+    "ja": "ã¹ãã¼ãèª­ã¿è¾¼ã¿ãåãæ¶ã",
+    "section": "core"
+  },
+  {
+    "en": "Open melonDS directory",
+    "ja": "melonDSãã©ã«ããéã",
+    "section": "core"
+  },
+  {
+    "en": "Quit",
+    "ja": "çµäº",
+    "section": "core"
+  },
+  {
+    "en": "System",
+    "ja": "ã·ã¹ãã ",
+    "section": "core"
+  },
+  {
+    "en": "Pause",
+    "ja": "ä¸æåæ­¢",
+    "section": "core"
+  },
+  {
+    "en": "Stop",
+    "ja": "åæ­¢",
+    "section": "core"
+  },
+  {
+    "en": "Frame step",
+    "ja": "ãã¬ã¼ã éã",
+    "section": "core"
+  },
+  {
+    "en": "Power management",
+    "ja": "é»æºç®¡ç",
+    "section": "core"
+  },
+  {
+    "en": "Date and time",
+    "ja": "æ¥ä»ã¨æå»",
+    "section": "core"
+  },
+  {
+    "en": "Enable cheats",
+    "ja": "ãã¼ããæå¹å",
+    "section": "core"
+  },
+  {
+    "en": "Setup cheat codes",
+    "ja": "ãã¼ãã³ã¼ãè¨­å®",
+    "section": "core"
+  },
+  {
+    "en": "ROM info",
+    "ja": "ROMæå ±",
+    "section": "core"
+  },
+  {
+    "en": "RAM search",
+    "ja": "RAMæ¤ç´¢",
+    "section": "core"
+  },
+  {
+    "en": "Manage DSi titles",
+    "ja": "DSiã¿ã¤ãã«ç®¡ç",
+    "section": "core"
+  },
+  {
+    "en": "Multiplayer",
+    "ja": "ãã«ããã¬ã¤",
+    "section": "core"
+  },
+  {
+    "en": "Launch new instance",
+    "ja": "æ°ããã¤ã³ã¹ã¿ã³ã¹ãèµ·å",
+    "section": "core"
+  },
+  {
+    "en": "Host LAN game",
+    "ja": "LANã²ã¼ã ããã¹ã",
+    "section": "core"
+  },
+  {
+    "en": "Join LAN game",
+    "ja": "LANã²ã¼ã ã«åå ",
+    "section": "core"
+  },
+  {
+    "en": "View",
+    "ja": "è¡¨ç¤º",
+    "section": "core"
+  },
+  {
+    "en": "Screen size",
+    "ja": "ç»é¢ãµã¤ãº",
+    "section": "core"
+  },
+  {
+    "en": "Screen rotation",
+    "ja": "ç»é¢åè»¢",
+    "section": "core"
+  },
+  {
+    "en": "Screen gap",
+    "ja": "ç»é¢éé",
+    "section": "core"
+  },
+  {
+    "en": "Screen layout",
+    "ja": "ç»é¢ã¬ã¤ã¢ã¦ã",
+    "section": "core"
+  },
+  {
+    "en": "Natural",
+    "ja": "èªç¶",
+    "section": "core"
+  },
+  {
+    "en": "Vertical",
+    "ja": "ç¸¦",
+    "section": "core"
+  },
+  {
+    "en": "Horizontal",
+    "ja": "æ¨ª",
+    "section": "core"
+  },
+  {
+    "en": "Hybrid",
+    "ja": "ãã¤ããªãã",
+    "section": "core"
+  },
+  {
+    "en": "Swap screens",
+    "ja": "ä¸ä¸ç»é¢ãå¥ãæ¿ã",
+    "section": "core"
+  },
+  {
+    "en": "Screen sizing",
+    "ja": "ç»é¢ã®æ¡å¤§æ¹å¼",
+    "section": "core"
+  },
+  {
+    "en": "Even",
+    "ja": "åç­",
+    "section": "core"
+  },
+  {
+    "en": "Emphasize top",
+    "ja": "ä¸ç»é¢ãéè¦",
+    "section": "core"
+  },
+  {
+    "en": "Emphasize bottom",
+    "ja": "ä¸ç»é¢ãéè¦",
+    "section": "core"
+  },
+  {
+    "en": "Top only",
+    "ja": "ä¸ç»é¢ã®ã¿",
+    "section": "core"
+  },
+  {
+    "en": "Bottom only",
+    "ja": "ä¸ç»é¢ã®ã¿",
+    "section": "core"
+  },
+  {
+    "en": "Force integer scaling",
+    "ja": "æ´æ°ã¹ã±ã¼ãªã³ã°ãå¼·å¶",
+    "section": "core"
+  },
+  {
+    "en": "Aspect ratio",
+    "ja": "ã¢ã¹ãã¯ãæ¯",
+    "section": "core"
+  },
+  {
+    "en": "Open new window",
+    "ja": "æ°ããã¦ã£ã³ãã¦ãéã",
+    "section": "core"
+  },
+  {
+    "en": "Screen filtering",
+    "ja": "ç»é¢ãã£ã«ã¿ãªã³ã°",
+    "section": "core"
+  },
+  {
+    "en": "Show OSD",
+    "ja": "OSDãè¡¨ç¤º",
+    "section": "core"
+  },
+  {
+    "en": "Config",
+    "ja": "è¨­å®",
+    "section": "core"
+  },
+  {
+    "en": "Emu settings",
+    "ja": "ã¨ãã¥ã¬ã¼ã¿ã¼è¨­å®",
+    "section": "core"
+  },
+  {
+    "en": "Preferences...",
+    "ja": "ç°å¢è¨­å®...",
+    "section": "core"
+  },
+  {
+    "en": "Input and hotkeys",
+    "ja": "å¥åã¨ãããã­ã¼",
+    "section": "core"
+  },
+  {
+    "en": "Video settings",
+    "ja": "æ åè¨­å®",
+    "section": "core"
+  },
+  {
+    "en": "Camera settings",
+    "ja": "ã«ã¡ã©è¨­å®",
+    "section": "core"
+  },
+  {
+    "en": "Audio settings",
+    "ja": "é³å£°è¨­å®",
+    "section": "core"
+  },
+  {
+    "en": "Multiplayer settings",
+    "ja": "ãã«ããã¬ã¤è¨­å®",
+    "section": "core"
+  },
+  {
+    "en": "Wifi settings",
+    "ja": "Wi-Fiè¨­å®",
+    "section": "core"
+  },
+  {
+    "en": "Firmware settings",
+    "ja": "ãã¡ã¼ã ã¦ã§ã¢è¨­å®",
+    "section": "core"
+  },
+  {
+    "en": "Interface settings",
+    "ja": "ã¤ã³ã¿ã¼ãã§ã¼ã¹è¨­å®",
+    "section": "core"
+  },
+  {
+    "en": "Path settings",
+    "ja": "ãã¹è¨­å®",
+    "section": "core"
+  },
+  {
+    "en": "Limit framerate",
+    "ja": "ãã¬ã¼ã ã¬ã¼ãå¶é",
+    "section": "core"
+  },
+  {
+    "en": "Audio sync",
+    "ja": "é³å£°åæ",
+    "section": "core"
+  },
+  {
+    "en": "MelonPrime",
+    "ja": "MelonPrime",
+    "section": "core"
+  },
+  {
+    "en": "Input settings",
+    "ja": "æä½è¨­å®",
+    "section": "core"
+  },
+  {
+    "en": "Other settings",
+    "ja": "MelonPrimeè¨­å®",
+    "section": "core"
+  },
+  {
+    "en": "MelonPrime settings",
+    "ja": "MelonPrimeè¨­å®",
+    "section": "core"
+  },
+  {
+    "en": "Custom HUD settings",
+    "ja": "ã«ã¹ã¿ã HUDè¨­å®",
+    "section": "core"
+  },
+  {
+    "en": "Disable SF (Shadow Freeze)",
+    "ja": "SF (ã·ã£ãã¦ããªã¼ãº) ãç¡å¹å",
+    "section": "core"
+  },
+  {
+    "en": "In-Game Top Screen Only",
+    "ja": "ã²ã¼ã ä¸­ã¯ä¸ç»é¢ã®ã¿",
+    "section": "core"
+  },
+  {
+    "en": "Help",
+    "ja": "ãã«ã",
+    "section": "core"
+  },
+  {
+    "en": "About...",
+    "ja": "ãã®ã¢ããªã«ã¤ãã¦...",
+    "section": "core"
+  },
+  {
+    "en": "Clear",
+    "ja": "å±¥æ­´ãæ¶å»",
+    "section": "core"
+  },
+  {
+    "en": "MelonPrime Settings",
+    "ja": "MelonPrimeè¨­å®",
+    "section": "core"
+  },
+  {
+    "en": "Controls",
+    "ja": "æä½",
+    "section": "core"
+  },
+  {
+    "en": "Controls 2",
+    "ja": "æä½ 2",
+    "section": "core"
+  },
+  {
+    "en": "Custom HUD",
+    "ja": "ã«ã¹ã¿ã HUD",
+    "section": "core"
+  },
+  {
+    "en": "Custom HUD Input/Output",
+    "ja": "ã«ã¹ã¿ã HUD å¥åºå",
+    "section": "core"
+  },
+  {
+    "en": "Input",
+    "ja": "å¥å",
+    "section": "core"
+  },
+  {
+    "en": "Output",
+    "ja": "åºå",
+    "section": "core"
+  },
+  {
+    "en": "INPUT SETTINGS",
+    "ja": "å¥åè¨­å®",
+    "section": "core"
+  },
+  {
+    "en": "INPUT METHOD",
+    "ja": "å¥åæ¹å¼",
+    "section": "core"
+  },
+  {
+    "en": "SCREEN SYNC",
+    "ja": "ç»é¢åæ",
+    "section": "core"
+  },
+  {
+    "en": "CURSOR CLIP SETTINGS",
+    "ja": "ã«ã¼ã½ã«å¶é",
+    "section": "core"
+  },
+  {
+    "en": "IN-GAME APPLY",
+    "ja": "ã²ã¼ã ååæ ",
+    "section": "core"
+  },
+  {
+    "en": "IN-GAME ASPECT RATIO",
+    "ja": "ã²ã¼ã åã¢ã¹ãã¯ãæ¯",
+    "section": "core"
+  },
+  {
+    "en": "LOW HP WARNING",
+    "ja": "ä½HPè­¦å",
+    "section": "core"
+  },
+  {
+    "en": "SENSITIVITY",
+    "ja": "æåº¦",
+    "section": "core"
+  },
+  {
+    "en": "BUG FIXES",
+    "ja": "ä¸å·åä¿®æ­£",
+    "section": "core"
+  },
+  {
+    "en": "GAME FEATURE IMPROVEMENTS",
+    "ja": "ã²ã¼ã æ©è½æ¹å",
+    "section": "core"
+  },
+  {
+    "en": "DISABLE FEATURES",
+    "ja": "æ©è½ç¡å¹å",
+    "section": "core"
+  },
+  {
+    "en": "Power-Up Pickup Effects",
+    "ja": "ãã¯ã¼ã¢ããåå¾å¹æ",
+    "section": "core"
+  },
+  {
+    "en": "GAMEPLAY TOGGLES",
+    "ja": "ã²ã¼ã ãã¬ã¤åæ¿",
+    "section": "core"
+  },
+  {
+    "en": "VIDEO QUALITY",
+    "ja": "æ ååè³ª",
+    "section": "core"
+  },
+  {
+    "en": "VOLUME",
+    "ja": "é³é",
+    "section": "core"
+  },
+  {
+    "en": "LICENSE APPLY",
+    "ja": "ã©ã¤ã»ã³ã¹åæ ",
+    "section": "core"
+  },
+  {
+    "en": "DEVELOPER ONLY",
+    "ja": "éçºèåã",
+    "section": "core"
+  },
+  {
+    "en": "DISABLE DEFAULT HUD",
+    "ja": "æ¨æºHUDãéè¡¨ç¤º",
+    "section": "core"
+  },
+  {
+    "en": "OUTLINE OVERRIDE",
+    "ja": "ã¢ã¦ãã©ã¤ã³ä¸æ¬è¨­å®",
+    "section": "core"
+  },
+  {
+    "en": "HUD SCALE",
+    "ja": "HUDã¹ã±ã¼ã«",
+    "section": "core"
+  },
+  {
+    "en": "HUD FONT",
+    "ja": "HUDãã©ã³ã",
+    "section": "core"
+  },
+  {
+    "en": "CROSSHAIR",
+    "ja": "ç§æº",
+    "section": "core"
+  },
+  {
+    "en": "HP / AMMO",
+    "ja": "HP / å¼¾è¬",
+    "section": "core"
+  },
+  {
+    "en": "MATCH STATUS HUD",
+    "ja": "è©¦åæå ±HUD",
+    "section": "core"
+  },
+  {
+    "en": "HUD RADAR",
+    "ja": "HUDã¬ã¼ãã¼",
+    "section": "core"
+  },
+  {
+    "en": "IN-GAME OSD COLOR",
+    "ja": "ã²ã¼ã åOSDè²",
+    "section": "core"
+  },
+  {
+    "en": "Keyboard mappings",
+    "ja": "ã­ã¼ãã¼ãå²ãå½ã¦",
+    "section": "core"
+  },
+  {
+    "en": "Keyboard && mouse mappings",
+    "ja": "ã­ã¼ãã¼ãã»ãã¦ã¹å²ãå½ã¦",
+    "section": "core"
+  },
+  {
+    "en": "Joystick mappings",
+    "ja": "ã¸ã§ã¤ã¹ãã£ãã¯å²ãå½ã¦",
+    "section": "core"
+  },
+  {
+    "en": "[Metroid] (W) Move Forward",
+    "ja": "[Metroid] (W) åé²",
+    "section": "core"
+  },
+  {
+    "en": "[Metroid] (S) Move Back",
+    "ja": "[Metroid] (S) å¾é",
+    "section": "core"
+  },
+  {
+    "en": "[Metroid] (A) Move Left",
+    "ja": "[Metroid] (A) å·¦ç§»å",
+    "section": "core"
+  },
+  {
+    "en": "[Metroid] (D) Move Right",
+    "ja": "[Metroid] (D) å³ç§»å",
+    "section": "core"
+  },
+  {
+    "en": "[Metroid] (Mouse Left) Shoot/Scan",
+    "ja": "[Metroid] (ãã¦ã¹å·¦) å°æ/ã¹ã­ã£ã³",
+    "section": "core"
+  },
+  {
+    "en": "[Metroid] (V) Scan/Shoot, Map Zoom In",
+    "ja": "[Metroid] (V) ã¹ã­ã£ã³/å°æããããæ¡å¤§",
+    "section": "core"
+  },
+  {
+    "en": "[Metroid] (Mouse Right) Imperialist Zoom, Map Zoom Out, Morph Ball Boost",
+    "ja": "[Metroid] (ãã¦ã¹å³) ã¤ã³ããªã¢ãªã¹ããºã¼ã ããããç¸®å°ãã¢ã¼ããã¼ã«ãã¼ã¹ã",
+    "section": "core"
+  },
+  {
+    "en": "[Metroid] (Space) Jump",
+    "ja": "[Metroid] (Space) ã¸ã£ã³ã",
+    "section": "core"
+  },
+  {
+    "en": "[Metroid] (L. Ctrl) Transform",
+    "ja": "[Metroid] (å·¦Ctrl) å¤å½¢",
+    "section": "core"
+  },
+  {
+    "en": "[Metroid] (Shift) Hold to Fast Morph Ball Boost",
+    "ja": "[Metroid] (Shift) é·æ¼ãã§é«éã¢ã¼ããã¼ã«ãã¼ã¹ã",
+    "section": "core"
+  },
+  {
+    "en": "[Metroid] (Mouse 5, Side Top) Weapon Beam",
+    "ja": "[Metroid] (Mouse 5/ãµã¤ãä¸) ãã¼ã æ­¦å¨",
+    "section": "core"
+  },
+  {
+    "en": "[Metroid] (Mouse 4, Side Bottom) Weapon Missile",
+    "ja": "[Metroid] (Mouse 4/ãµã¤ãä¸) ããµã¤ã«",
+    "section": "core"
+  },
+  {
+    "en": "[Metroid] (1) Weapon 1. ShockCoil",
+    "ja": "[Metroid] (1) æ­¦å¨1: ã·ã§ãã¯ã³ã¤ã«",
+    "section": "core"
+  },
+  {
+    "en": "[Metroid] (2) Weapon 2. Magmaul",
+    "ja": "[Metroid] (2) æ­¦å¨2: ãã°ã¢ã¼ã«",
+    "section": "core"
+  },
+  {
+    "en": "[Metroid] (3) Weapon 3. Judicator",
+    "ja": "[Metroid] (3) æ­¦å¨3: ã¸ã¥ãã£ã±ã¤ã¿ã¼",
+    "section": "core"
+  },
+  {
+    "en": "[Metroid] (4) Weapon 4. Imperialist",
+    "ja": "[Metroid] (4) æ­¦å¨4: ã¤ã³ããªã¢ãªã¹ã",
+    "section": "core"
+  },
+  {
+    "en": "[Metroid] (5) Weapon 5. Battlehammer",
+    "ja": "[Metroid] (5) æ­¦å¨5: ããã«ãã³ãã¼",
+    "section": "core"
+  },
+  {
+    "en": "[Metroid] (6) Weapon 6. VoltDriver",
+    "ja": "[Metroid] (6) æ­¦å¨6: ãã«ããã©ã¤ãã¼",
+    "section": "core"
+  },
+  {
+    "en": "[Metroid] (R) Affinity Weapon (Last used Weapon/Omega cannon)",
+    "ja": "[Metroid] (R) å¾ææ­¦å¨ (æå¾ã®æ­¦å¨/ãªã¡ã¬ã­ã£ãã³)",
+    "section": "core"
+  },
+  {
+    "en": "[Metroid] (Tab) Menu/Map",
+    "ja": "[Metroid] (Tab) ã¡ãã¥ã¼/ããã",
+    "section": "core"
+  },
+  {
+    "en": "[Metroid] (PgUp) AimSensitivity Up",
+    "ja": "[Metroid] (PgUp) ã¨ã¤ã æåº¦ãä¸ãã",
+    "section": "core"
+  },
+  {
+    "en": "[Metroid] (PgDown) AimSensitivity Down",
+    "ja": "[Metroid] (PgDown) ã¨ã¤ã æåº¦ãä¸ãã",
+    "section": "core"
+  },
+  {
+    "en": "[Metroid] (J) Next Weapon in the sorted order",
+    "ja": "[Metroid] (J) æ¬¡ã®æ­¦å¨",
+    "section": "core"
+  },
+  {
+    "en": "[Metroid] (K) Previous Weapon in the sorted order",
+    "ja": "[Metroid] (K) åã®æ­¦å¨",
+    "section": "core"
+  },
+  {
+    "en": "[Metroid] (C) Scan Visor",
+    "ja": "[Metroid] (C) ã¹ã­ã£ã³ãã¤ã¶ã¼",
+    "section": "core"
+  },
+  {
+    "en": "[Metroid] (Z) UI Left (Adventure Left Arrow / Hunter License L)",
+    "ja": "[Metroid] (Z) UIå·¦ (ã¢ããã³ãã£ã¼å·¦/ã©ã¤ã»ã³ã¹L)",
+    "section": "core"
+  },
+  {
+    "en": "[Metroid] (X) UI Right (Adventure Right Arrow / Hunter License R)",
+    "ja": "[Metroid] (X) UIå³ (ã¢ããã³ãã£ã¼å³/ã©ã¤ã»ã³ã¹R)",
+    "section": "core"
+  },
+  {
+    "en": "[Metroid] (F) UI Ok",
+    "ja": "[Metroid] (F) UIæ±ºå®",
+    "section": "core"
+  },
+  {
+    "en": "[Metroid] (G) UI Yes (Enter Starship)",
+    "ja": "[Metroid] (G) UIã¯ã (ã¹ã¿ã¼ã·ããã«å¥ã)",
+    "section": "core"
+  },
+  {
+    "en": "[Metroid] (H) UI No (Enter Starship)",
+    "ja": "[Metroid] (H) UIããã (ã¹ã¿ã¼ã·ããã«å¥ã)",
+    "section": "core"
+  },
+  {
+    "en": "[Metroid] (Y) Weapon Check",
+    "ja": "[Metroid] (Y) æ­¦å¨ç¢ºèª",
+    "section": "core"
+  },
+  {
+    "en": "MPH Sensitivity (default: -3)",
+    "ja": "MPHæåº¦ (æ¢å®: -3)",
+    "section": "core"
+  },
+  {
+    "en": "Aim sensitivity (default: 63)",
+    "ja": "ã¨ã¤ã æåº¦ (æ¢å®: 63)",
+    "section": "core"
+  },
+  {
+    "en": "Aim Y-Axis Scale (default: 1.5147)",
+    "ja": "ã¨ã¤ã Yè»¸ã¹ã±ã¼ã« (æ¢å®: 1.5147)",
+    "section": "core"
+  },
+  {
+    "en": "Mode",
+    "ja": "ã¢ã¼ã",
+    "section": "core"
+  },
+  {
+    "en": "Low-Latency Aim Mode",
+    "ja": "ä½éå»¶ã¨ã¤ã æ¹å¼",
+    "section": "core"
+  },
+  {
+    "en": "Instant Aim Follow",
+    "ja": "å³æã¨ã¤ã è¿½å¾",
+    "section": "core"
+  },
+  {
+    "en": "Instant Aim Follow (Developer Only)",
+    "ja": "å³æã¨ã¤ã è¿½å¾ï¼éçºèå°ç¨ï¼",
+    "section": "core"
+  },
+  {
+    "en": "Immediate Sync",
+    "ja": "å³æåæ",
+    "section": "core"
+  },
+  {
+    "en": "MoonLike Aim",
+    "ja": "MoonLikeã¨ã¤ã ",
+    "section": "core"
+  },
+  {
+    "en": "Enable SnapTap (Faster directional switching for smooth strafing â may slightly increase input delay)",
+    "ja": "SnapTapãæå¹å (ã¹ãã¬ã¤ãã®æ¹ååæ¿ãé«éåãå¥åéå»¶ãå°ãå¢ããå ´åãã)",
+    "section": "core"
+  },
+  {
+    "en": "Unlock All Hunters/Maps/SoundTest/Gallery (Change a setting in MPH and save to update the save data. Uncheck this option after saving)",
+    "ja": "å¨ãã³ã¿ã¼/ããã/ãµã¦ã³ããã¹ã/ã®ã£ã©ãªã¼ãè§£æ¾ (MPHå´ã§è¨­å®ãå¤æ´ãã¦ä¿å­ããã¨ã»ã¼ãã«åæ ãä¿å­å¾ã¯ãªãæ¨å¥¨)",
+    "section": "core"
+  },
+  {
+    "en": "Set MPH audio settings to headphones.(recommended) (Change a setting in MPH and save to update the save data. Uncheck this option after saving)",
+    "ja": "MPHã®é³å£°è¨­å®ãããããã³ã«ãã (æ¨å¥¨ãMPHå´ã§è¨­å®ãå¤æ´ãã¦ä¿å­ããã¨ã»ã¼ãã«åæ ãä¿å­å¾ã¯ãªãæ¨å¥¨)",
+    "section": "core"
+  },
+  {
+    "en": "Use DS Name (Resets in-game name and HL color):You can change the DS name from [File -> Boot firmware] or [Config -> Firmware Settings].",
+    "ja": "DSæ¬ä½åãä½¿ã (ã²ã¼ã ååã¨HLè²ããªã»ãã): DSåã¯ [File -> Boot firmware] ã¾ãã¯ [Config -> Firmware Settings] ã§å¤æ´ã§ãã¾ãã",
+    "section": "core"
+  },
+  {
+    "en": "Enable Joy2KeySupport (enable this if keys sometimes get stuck; slightly increases input delay)",
+    "ja": "Joy2Keyãµãã¼ããæå¹å (ã­ã¼ãæ¼ãã£ã±ãªãã«ãªãå ´åã«ä½¿ç¨ãå¥åéå»¶ãå°ãå¢ãã¾ã)",
+    "section": "core"
+  },
+  {
+    "en": "Enable Stylus Mode (Leave this unchecked unless you want to play with the stylus)",
+    "ja": "ã¹ã¿ã¤ã©ã¹ã¢ã¼ããæå¹å (ã¹ã¿ã¤ã©ã¹æä½ã§éã¶å ´åä»¥å¤ã¯ãªãæ¨å¥¨)",
+    "section": "core"
+  },
+  {
+    "en": "Disable MPH Aim Smoothing (Disables the in-game aim smoothing. Note: Sensitivity will be reduced to 25% in Stylus Mode)",
+    "ja": "MPHã®ã¨ã¤ã è£éãç¡å¹å (ã²ã¼ã åã®ã¨ã¤ã è£éãç¡å¹åãã¹ã¿ã¤ã©ã¹ã¢ã¼ãã§ã¯æåº¦ã25%ã«ãªãã¾ã)",
+    "section": "core"
+  },
+  {
+    "en": "Enable Aim Sub-pixel Accumulator (Carry fractional mouse movement across frames. Enable for smoother low-sensitivity aiming)",
+    "ja": "ã¨ã¤ã ã®ãµããã¯ã»ã«èç©ãæå¹å (å°æ°ã®ãã¦ã¹ç§»åãæ¬¡ãã¬ã¼ã ã¸æã¡è¶ããä½æåº¦ã¨ã¤ã ãæ»ããã«ãªãã¾ã)",
+    "section": "core"
+  },
+  {
+    "en": "Scale aim sensitivity while zoomed",
+    "ja": "ãºã¼ã ä¸­ã®ã¨ã¤ã æåº¦ãåçå¤æ´",
+    "section": "core"
+  },
+  {
+    "en": "Zoom Aim Scale %",
+    "ja": "ãºã¼ã æã¨ã¤ã åç %",
+    "section": "core"
+  },
+  {
+    "en": "Enable Direct Alt-Form Transform",
+    "ja": "ç´æ¥ãã©ã³ã¹ãã©ã¼ã å¤å½¢ãæå¹å",
+    "section": "core"
+  },
+  {
+    "en": "Enable Immediate Input Edge Overlay",
+    "ja": "å³æå¥åã¨ãã¸åæãæå¹å",
+    "section": "core"
+  },
+  {
+    "en": "Enable Native Aim Delta Hook (PostFold Write)",
+    "ja": "ãã¤ãã£ãã¨ã¤ã ãã«ã¿Hookãæå¹å (PostFoldæ¸ãè¾¼ã¿)",
+    "section": "core"
+  },
+  {
+    "en": "Enable Native Aim Register Injection",
+    "ja": "ãã¤ãã£ãã¨ã¤ã ã®ã¬ã¸ã¹ã¿æ³¨å¥ãæå¹å",
+    "section": "core"
+  },
+  {
+    "en": "Apply Input to Custom HUD",
+    "ja": "å¥åãã«ã¹ã¿ã HUDã«åæ ",
+    "section": "core"
+  },
+  {
+    "en": "Screen Sync Mode â Default: Off",
+    "ja": "ç»é¢åææ¹å¼ - æ¢å®: ãªã",
+    "section": "core"
+  },
+  {
+    "en": "Screen Sync Mode",
+    "ja": "ç»é¢åææ¹å¼",
+    "section": "core"
+  },
+  {
+    "en": "Screen Sync Mode: Off = no sync call, glFinish = wait for GL commands to complete",
+    "ja": "ç»é¢åææ¹å¼: ãªã = åæå¼ã³åºããªããglFinish = GLã³ãã³ãå®äºã¾ã§å¾æ©",
+    "section": "core"
+  },
+  {
+    "en": "When not in-game and the bottom screen is visible, confine the mouse cursor to the bottom screen area. Press ESC to release the cursor.",
+    "ja": "ã²ã¼ã å¤ã§ä¸ç»é¢ãè¡¨ç¤ºããã¦ããã¨ãããã¦ã¹ã«ã¼ã½ã«ãä¸ç»é¢åã«å¶éãã¾ããESCã§è§£é¤ãã¾ãã",
+    "section": "core"
+  },
+  {
+    "en": "In-game only, temporarily force Screen Sizing to Top Only and Screen Layout to Natural. Outside of gameplay, restore the normal window settings.",
+    "ja": "ã²ã¼ã ä¸­ã ãä¸æçã« Screen Sizing ã Top OnlyãScreen Layout ã Natural ã«å¼·å¶ãã¾ããã²ã¼ã å¤ã§ã¯éå¸¸ã®ã¦ã£ã³ãã¦è¨­å®ã«æ»ãã¾ãã",
+    "section": "core"
+  },
+  {
+    "en": "Enable In-Game Aspect Ratio",
+    "ja": "ã²ã¼ã åã¢ã¹ãã¯ãæ¯ãæå¹å",
+    "section": "core"
+  },
+  {
+    "en": "Aspect Ratio Mode",
+    "ja": "ã¢ã¹ãã¯ãæ¯ã¢ã¼ã",
+    "section": "core"
+  },
+  {
+    "en": "Auto (match Aspect Ratio)",
+    "ja": "èªå (ç»é¢æ¯çã«åããã)",
+    "section": "core"
+  },
+  {
+    "en": "5:3 (3DS)",
+    "ja": "5:3 (3DS)",
+    "section": "core"
+  },
+  {
+    "en": "16:10 (3DS)",
+    "ja": "16:10 (3DS)",
+    "section": "core"
+  },
+  {
+    "en": "16:9",
+    "ja": "16:9",
+    "section": "core"
+  },
+  {
+    "en": "21:9",
+    "ja": "21:9",
+    "section": "core"
+  },
+  {
+    "en": "Use DS Firmware Language (EU-style Auto Patch)",
+    "ja": "DSãã¡ã¼ã ã¦ã§ã¢è¨èªãä½¿ã (EUçé¢¨ã®èªåããã)",
+    "section": "core"
+  },
+  {
+    "en": "Show Headshot Notification Online",
+    "ja": "ãªã³ã©ã¤ã³ã§ãããã·ã§ããéç¥ãè¡¨ç¤º",
+    "section": "core"
+  },
+  {
+    "en": "Show Enemy HP Meter Online",
+    "ja": "ãªã³ã©ã¤ã³ã§æµHPã¡ã¼ã¿ã¼ãè¡¨ç¤º",
+    "section": "core"
+  },
+  {
+    "en": "Fix Noxus Blade Persistence on Death",
+    "ja": "ãã¯ãµã¹ã®ãã¬ã¼ãæ®çãä¿®æ­£",
+    "section": "core"
+  },
+  {
+    "en": "Friend/Rival Wi-Fi Active Bitset Fix (v2)",
+    "ja": "ãã¬ã³ã/ã©ã¤ãã«Wi-Fiæå¹ãããä¿®æ­£ (v2)",
+    "section": "core"
+  },
+  {
+    "en": "Shadow Freeze Fix (Ice Wave full 3D angle check)",
+    "ja": "ã·ã£ãã¦ããªã¼ãºä¿®æ­£ (ã¢ã¤ã¹ã¦ã§ã¼ãã®3Dè§åº¦å¤å®)",
+    "section": "core"
+  },
+  {
+    "en": "Expand Stage Selection (Unlock Extra Stages)",
+    "ja": "ã¹ãã¼ã¸é¸æãæ¡å¼µ (è¿½å ã¹ãã¼ã¸è§£æ¾)",
+    "section": "core"
+  },
+  {
+    "en": "Also unlock additional stages",
+    "ja": "è¿½å ã¹ãã¼ã¸ãè§£æ¾",
+    "section": "core"
+  },
+  {
+    "en": "Disable Double Damage Multiplier",
+    "ja": "ããã«ãã¡ã¼ã¸åçãç¡å¹å",
+    "section": "core"
+  },
+  {
+    "en": "Damage Notify Purple",
+    "ja": "ãã¡ã¼ã¸éç¥ãç´«ã«ãã",
+    "section": "core"
+  },
+  {
+    "en": "Power-Ups: Pick Up With No Effect",
+    "ja": "ãã¯ã¼ã¢ãã: åå¾ãã¦ãå¹æãªã",
+    "section": "core"
+  },
+  {
+    "en": "Double Damage",
+    "ja": "ããã«ãã¡ã¼ã¸",
+    "section": "core"
+  },
+  {
+    "en": "Cloak",
+    "ja": "ã¯ã­ã¼ã¯",
+    "section": "core"
+  },
+  {
+    "en": "DEATH ALT",
+    "ja": "ãã¹ãªã«ã",
+    "section": "core"
+  },
+  {
+    "en": "Reset sensitivity values",
+    "ja": "æåº¦ãæ¢å®å¤ã«æ»ã",
+    "section": "core"
+  },
+  {
+    "en": "Video quality: Low (High Performance)",
+    "ja": "æ ååè³ª: ä½ (é«ããã©ã¼ãã³ã¹)",
+    "section": "core"
+  },
+  {
+    "en": "Video quality: High (Lower Performance)",
+    "ja": "æ ååè³ª: é« (ä½ããã©ã¼ãã³ã¹)",
+    "section": "core"
+  },
+  {
+    "en": "Video quality: High2 (Recommended. Best Performance)",
+    "ja": "æ ååè³ª: é«2 (æ¨å¥¨ãæé«ããã©ã¼ãã³ã¹)",
+    "section": "core"
+  },
+  {
+    "en": "Apply SFX volume",
+    "ja": "å¹æé³é³éãåæ ",
+    "section": "core"
+  },
+  {
+    "en": "Apply music volume",
+    "ja": "BGMé³éãåæ ",
+    "section": "core"
+  },
+  {
+    "en": "Apply the selected hunter to your license. (Renaming will update the save data)",
+    "ja": "é¸æãããã³ã¿ã¼ãã©ã¤ã»ã³ã¹ã«åæ  (ååå¤æ´ã§ã»ã¼ããã¼ã¿æ´æ°)",
+    "section": "core"
+  },
+  {
+    "en": "Apply the selected color to your license. (Renaming will update the save data)",
+    "ja": "é¸æããè²ãã©ã¤ã»ã³ã¹ã«åæ  (ååå¤æ´ã§ã»ã¼ããã¼ã¿æ´æ°)",
+    "section": "core"
+  },
+  {
+    "en": "Select the hunter to apply.",
+    "ja": "åæ ãããã³ã¿ã¼ãé¸æãã¾ãã",
+    "section": "core"
+  },
+  {
+    "en": "Select the color to apply.",
+    "ja": "åæ ããè²ãé¸æãã¾ãã",
+    "section": "core"
+  },
+  {
+    "en": "Red(JP,KR)",
+    "ja": "èµ¤ (JP,KR)",
+    "section": "core"
+  },
+  {
+    "en": "Blue(US)",
+    "ja": "é (US)",
+    "section": "core"
+  },
+  {
+    "en": "Green(EU)",
+    "ja": "ç· (EU)",
+    "section": "core"
+  },
+  {
+    "en": "Auto Scale â Base",
+    "ja": "èªåã¹ã±ã¼ã« - åºæº",
+    "section": "core"
+  },
+  {
+    "en": "Auto Scale (by Damage)",
+    "ja": "èªåã¹ã±ã¼ã« (ãã¡ã¼ã¸å¥)",
+    "section": "core"
+  },
+  {
+    "en": "Disabled (vanilla 25)",
+    "ja": "ç¡å¹ (ããã©25)",
+    "section": "core"
+  },
+  {
+    "en": "Fixed",
+    "ja": "åºå®",
+    "section": "core"
+  },
+  {
+    "en": "Fixed Threshold",
+    "ja": "åºå®ãããå¤",
+    "section": "core"
+  },
+  {
+    "en": "Per Damage (Low / Medium / High)",
+    "ja": "ãã¡ã¼ã¸å¥ (ä½/ä¸­/é«)",
+    "section": "core"
+  },
+  {
+    "en": "Per Damage â Low",
+    "ja": "ãã¡ã¼ã¸å¥ - ä½",
+    "section": "core"
+  },
+  {
+    "en": "Per Damage â Medium",
+    "ja": "ãã¡ã¼ã¸å¥ - ä¸­",
+    "section": "core"
+  },
+  {
+    "en": "Per Damage â High",
+    "ja": "ãã¡ã¼ã¸å¥ - é«",
+    "section": "core"
+  },
+  {
+    "en": "Developer-only option. Currently disabled.",
+    "ja": "éçºèåããªãã·ã§ã³ã§ããç¾å¨ã¯ç¡å¹ã§ãã",
+    "section": "core"
+  },
+  {
+    "en": "Developer-only option enabled in this build.",
+    "ja": "ãã®ãã«ãã§ã¯éçºèåããªãã·ã§ã³ãæå¹ã§ãã",
+    "section": "core"
+  },
+  {
+    "en": "Developer-only option. Build with MELONPRIME_ENABLE_DEVELOPER_FEATURES to enable it.",
+    "ja": "éçºèåããªãã·ã§ã³ã§ããæå¹ã«ããã«ã¯ MELONPRIME_ENABLE_DEVELOPER_FEATURES ä»ãã§ãã«ããã¦ãã ããã",
+    "section": "core"
+  },
+  {
+    "en": "Features in this section are still in development and are not ready for public release. They may or may not be released.",
+    "ja": "ãã®ã»ã¯ã·ã§ã³ã®æ©è½ã¯éçºä¸­ã§ãå¬éãªãªã¼ã¹ã®æºåã¯ã¾ã ã§ãã¦ãã¾ãããä»å¾å¬éãããã¨ã¯éãã¾ããã",
+    "section": "core"
+  },
+  {
+    "en": "Controls how the game's current aim direction follows the target aim direction.",
+    "ja": "ã²ã¼ã åã®ç¾å¨ã®ç§æºæ¹åããç®æ¨ã®ç§æºæ¹åã¸ã©ãè¿½å¾ãããããè¨­å®ãã¾ãã",
+    "section": "core"
+  },
+  {
+    "en": "Checked: use the native ARM9 game function hook. Unchecked: use the older touch/menu simulation path.",
+    "ja": "ãªã³: ã²ã¼ã æ¬æ¥ã®ARM9é¢æ°ãããã¯ãã¦ä½¿ãã¾ãããªã: å¾æ¥ã®ã¿ãã/ã¡ãã¥ã¼æ¨¡æ¬å¦çãä½¿ãã¾ãã",
+    "section": "core"
+  },
+  {
+    "en": "Checked: inject a native fire edge inside the game's Biped fire update. Unchecked: use the older fixed input/overlay path.",
+    "ja": "ãªã³: ã²ã¼ã æ¬æ¥ã®äºè¶³å°ææ´æ°åã¸å°æå¥åã¨ãã¸ãæ³¨å¥ãã¾ãããªã: å¾æ¥ã®åºå®å¥å/ãªã¼ãã¼ã¬ã¤çµè·¯ãä½¿ãã¾ãã",
+    "section": "core"
+  },
+  {
+    "en": "Checked: use the native ARM9 TransformRequest hook. Unchecked: use the older touch/menu simulation path.",
+    "ja": "ãªã³: ã²ã¼ã æ¬æ¥ã®ARM9å¤å½¢è¦æ±ããã¯ãä½¿ãã¾ãããªã: å¾æ¥ã®ã¿ãã/ã¡ãã¥ã¼æ¨¡æ¬å¦çãä½¿ãã¾ãã",
+    "section": "core"
+  },
+  {
+    "en": "Checked: use the current in-game zoom binding from the player's control preset. Unchecked: use the older fixed R-button path.",
+    "ja": "ãªã³: ç¾å¨ã®æä½ããªã»ããã«ããã²ã¼ã åãºã¼ã å²ãå½ã¦ãä½¿ãã¾ãããªã: å¾æ¥ã®åºå®Rãã¿ã³çµè·¯ãä½¿ãã¾ãã",
+    "section": "core"
+  },
+  {
+    "en": "Checked: toggle native weapon zoom by calling the game's SetPlayerScopeZoom setter. Unchecked with New Method also off: use Legacy fixed R-button input.",
+    "ja": "ãªã³: ã²ã¼ã æ¬æ¥ã®ãºã¼ã åæ¿å¦çãå¼ãã§æ­¦å¨ãºã¼ã ãåãæ¿ãã¾ããæ°æ¹å¼ããªãã®å ´åã¯ãæ§æ¹å¼ã®åºå®Rãã¿ã³å¥åãä½¿ãã¾ãã",
+    "section": "core"
+  },
+  {
+    "en": "Setting Key: Metroid.Apply.SfxVolume (check to apply)",
+    "ja": "è¨­å®ã­ã¼: Metroid.Apply.SfxVolume (ãªã³ã§åæ )",
+    "section": "core"
+  },
+  {
+    "en": "Setting Key: Metroid.Volume.SFX (0â9)",
+    "ja": "è¨­å®ã­ã¼: Metroid.Volume.SFX (0-9)",
+    "section": "core"
+  },
+  {
+    "en": "Setting Key: Metroid.Apply.MusicVolume (check to apply)",
+    "ja": "è¨­å®ã­ã¼: Metroid.Apply.MusicVolume (ãªã³ã§åæ )",
+    "section": "core"
+  },
+  {
+    "en": "Setting Key: Metroid.Volume.Music (0â9)",
+    "ja": "è¨­å®ã­ã¼: Metroid.Volume.Music (0-9)",
+    "section": "core"
+  },
+  {
+    "en": "Enables applying the selected hunter to the license.",
+    "ja": "é¸æãããã³ã¿ã¼ãã©ã¤ã»ã³ã¹ã«åæ ã§ããããã«ãã¾ãã",
+    "section": "core"
+  },
+  {
+    "en": "Enables applying the selected color to the license.",
+    "ja": "é¸æããè²ãã©ã¤ã»ã³ã¹ã«åæ ã§ããããã«ãã¾ãã",
+    "section": "core"
+  },
+  {
+    "en": "Screen Sync Mode: Off = no sync call, glFinish = wait for GL commands to complete, DwmFlush = wait for DWM compositor (Windows only)",
+    "ja": "ç»é¢åææ¹å¼: ãªã = åæå¼ã³åºããªããglFinish = GLã³ãã³ãå®äºã¾ã§å¾æ©ãDwmFlush = DWMã³ã³ãã¸ã¿ã¼å¾æ© (Windowsã®ã¿)",
+    "section": "core"
+  },
+  {
+    "en": "Off: No sync (lowest latency, but the display may look choppy). glFinish: Smoother display by waiting for rendering to fully complete each frame. Automatically disabled during FastForward/SlowMo.",
+    "ja": "ãªã: åæãªã (æå°éå»¶ã§ãããè¡¨ç¤ºãã«ã¯ã¤ããã¨ãããã¾ã)ãglFinish: åãã¬ã¼ã ã®æç»å®äºãå¾ã¤ãã¨ã§è¡¨ç¤ºãæ»ããã«ãã¾ããæ©éã/ã¹ã­ã¼ã¢ã¼ã·ã§ã³ä¸­ã¯èªåçã«ç¡å¹ã«ãªãã¾ãã",
+    "section": "core"
+  },
+  {
+    "en": "Windows only. Applies only while the bottom screen is actually being drawn. Press ESC to release the cursor.",
+    "ja": "Windowsã®ã¿ãä¸ç»é¢ãå®éã«æç»ããã¦ããéã ãé©ç¨ããã¾ããESCã§ã«ã¼ã½ã«å¶éãè§£é¤ãã¾ãã",
+    "section": "core"
+  },
+  {
+    "en": "Does not overwrite your saved window layout settings. The override is applied only while Metroid Prime Hunters is in-game.",
+    "ja": "ä¿å­æ¸ã¿ã®ã¦ã£ã³ãã¦ã¬ã¤ã¢ã¦ãè¨­å®ã¯ä¸æ¸ããã¾ãããMetroid Prime Huntersã®ã²ã¼ã ä¸­ã ãä¸æçã«é©ç¨ããã¾ãã",
+    "section": "core"
+  },
+  {
+    "en": "When playing with an Aspect Ratio other than 4:3 (Native), apply this to change the in-game 3D aspect ratio to match. Changes are applied at the start of each match.",
+    "ja": "4:3 (ãã¤ãã£ã) ä»¥å¤ã®ç»é¢æ¯çã§éã¶ã¨ããã²ã¼ã å3Dã®ã¢ã¹ãã¯ãæ¯ãä¸è´ããããã«å¤æ´ãã¾ããå¤æ´ã¯åè©¦åã®éå§æã«é©ç¨ããã¾ãã",
+    "section": "core"
+  },
+  {
+    "en": "Changes the HP value at which the low-HP warning sound and warning HUD state trigger (vanilla: 25). Applied at the start of each match based on the current Damage setting.",
+    "ja": "ä½HPè­¦åé³ã¨è­¦åHUDç¶æãçºçããHPå¤ãå¤æ´ãã¾ã (ããã©: 25)ãç¾å¨ã®ãã¡ã¼ã¸è¨­å®ã«å¿ãã¦ãåè©¦åã®éå§æã«é©ç¨ããã¾ãã",
+    "section": "core"
+  },
+  {
+    "en": "Edit HUD Layout",
+    "ja": "HUDéç½®ãç·¨é",
+    "section": "core"
+  },
+  {
+    "en": "Hide this dialog and enter the interactive HUD position editor",
+    "ja": "ãã®ãã¤ã¢ã­ã°ãé ãã¦ãå¯¾è©±å¼HUDéç½®ã¨ãã£ã¿ã¼ã«å¥ãã¾ã",
+    "section": "core"
+  },
+  {
+    "en": "Enable Custom HUD (Replaces the in-game HUD with a custom overlay showing HP, ammo, weapon icons and crosshair)",
+    "ja": "ã«ã¹ã¿ã HUDãæå¹å (ã²ã¼ã åHUDããHP/å¼¾è¬/æ­¦å¨ã¢ã¤ã³ã³/ç§æºã®ã«ã¹ã¿ã è¡¨ç¤ºã«ç½®ãæãã¾ã)",
+    "section": "core"
+  },
+  {
+    "en": "Share your Custom HUD setup as TOML text, or paste TOML into the input area to apply it to the current dialog.",
+    "ja": "ã«ã¹ã¿ã HUDè¨­å®ãTOMLãã­ã¹ãã¨ãã¦å±æãã¾ãã¯å¥åæ¬ã«è²¼ãä»ãã¦ç¾å¨ã®ãã¤ã¢ã­ã°ã¸é©ç¨ãã¾ãã",
+    "section": "core"
+  },
+  {
+    "en": "Press Generate to build sharable Custom HUD TOML.",
+    "ja": "çæãæ¼ãã¨å±æç¨ã®ã«ã¹ã¿ã HUD TOMLãä½æãã¾ãã",
+    "section": "core"
+  },
+  {
+    "en": "Paste Custom HUD TOML here, then press Apply Input.",
+    "ja": "ããã«ã«ã¹ã¿ã HUD TOMLãè²¼ãä»ãã¦ãããå¥åãé©ç¨ãã¦ãã ããã",
+    "section": "core"
+  },
+  {
+    "en": "â Common HUD â",
+    "ja": "- å±éHUD -",
+    "section": "core"
+  },
+  {
+    "en": "â Score Row (per mode) â",
+    "ja": "- ã¹ã³ã¢è¡ (ã¢ã¼ãå¥) -",
+    "section": "core"
+  },
+  {
+    "en": "Hide Helmet (Visor Mask)",
+    "ja": "ãã«ã¡ãã (ãã¤ã¶ã¼ãã¹ã¯) ãéè¡¨ç¤º",
+    "section": "core"
+  },
+  {
+    "en": "Hide Ammo",
+    "ja": "å¼¾è¬ãéè¡¨ç¤º",
+    "section": "core"
+  },
+  {
+    "en": "Hide Weapon Icon",
+    "ja": "æ­¦å¨ã¢ã¤ã³ã³ãéè¡¨ç¤º",
+    "section": "core"
+  },
+  {
+    "en": "Hide HP",
+    "ja": "HPãéè¡¨ç¤º",
+    "section": "core"
+  },
+  {
+    "en": "Hide Crosshair",
+    "ja": "ç§æºãéè¡¨ç¤º",
+    "section": "core"
+  },
+  {
+    "en": "Hide Bomb (Boost Ball kept)",
+    "ja": "ãã ãéè¡¨ç¤º (ãã¼ã¹ããã¼ã«ã¯ç¶­æ)",
+    "section": "core"
+  },
+  {
+    "en": "Hide Score: Battle",
+    "ja": "ã¹ã³ã¢éè¡¨ç¤º: ããã«",
+    "section": "core"
+  },
+  {
+    "en": "Hide Score: Survival",
+    "ja": "ã¹ã³ã¢éè¡¨ç¤º: ãµãã¤ãã«",
+    "section": "core"
+  },
+  {
+    "en": "Hide Score: Prime Hunter",
+    "ja": "ã¹ã³ã¢éè¡¨ç¤º: ãã©ã¤ã ãã³ã¿ã¼",
+    "section": "core"
+  },
+  {
+    "en": "Hide Score: Bounty",
+    "ja": "ã¹ã³ã¢éè¡¨ç¤º: ãã¦ã³ãã£",
+    "section": "core"
+  },
+  {
+    "en": "Hide Score: Capture",
+    "ja": "ã¹ã³ã¢éè¡¨ç¤º: ã­ã£ããã£ã¼",
+    "section": "core"
+  },
+  {
+    "en": "Hide Score: Defender",
+    "ja": "ã¹ã³ã¢éè¡¨ç¤º: ãã£ãã§ã³ãã¼",
+    "section": "core"
+  },
+  {
+    "en": "Hide Score: Node",
+    "ja": "ã¹ã³ã¢éè¡¨ç¤º: ãã¼ã",
+    "section": "core"
+  },
+  {
+    "en": "Text Scale (Base %)",
+    "ja": "æå­ã¹ã±ã¼ã« (åºæº %)",
+    "section": "core"
+  },
+  {
+    "en": "Auto Scale Enable",
+    "ja": "èªåã¹ã±ã¼ã«ãæå¹å",
+    "section": "core"
+  },
+  {
+    "en": "Auto Scale Global Cap %",
+    "ja": "èªåã¹ã±ã¼ã«å¨ä½ä¸é %",
+    "section": "core"
+  },
+  {
+    "en": "Auto Scale Text Cap %",
+    "ja": "èªåã¹ã±ã¼ã«æå­ä¸é %",
+    "section": "core"
+  },
+  {
+    "en": "Auto Scale Icon Cap %",
+    "ja": "èªåã¹ã±ã¼ã«ã¢ã¤ã³ã³ä¸é %",
+    "section": "core"
+  },
+  {
+    "en": "Auto Scale Gauge Cap %",
+    "ja": "èªåã¹ã±ã¼ã«ã²ã¼ã¸ä¸é %",
+    "section": "core"
+  },
+  {
+    "en": "Auto Scale Crosshair Cap %",
+    "ja": "èªåã¹ã±ã¼ã«ç§æºä¸é %",
+    "section": "core"
+  },
+  {
+    "en": "Font Source",
+    "ja": "ãã©ã³ãã½ã¼ã¹",
+    "section": "core"
+  },
+  {
+    "en": "Font Size (px)",
+    "ja": "ãã©ã³ããµã¤ãº (px)",
+    "section": "core"
+  },
+  {
+    "en": "Font Weight",
+    "ja": "ãã©ã³ãã¦ã§ã¤ã",
+    "section": "core"
+  },
+  {
+    "en": "Italic",
+    "ja": "ã¤ã¿ãªãã¯",
+    "section": "core"
+  },
+  {
+    "en": "Underline",
+    "ja": "ä¸ç·",
+    "section": "core"
+  },
+  {
+    "en": "Strikethrough",
+    "ja": "åãæ¶ãç·",
+    "section": "core"
+  },
+  {
+    "en": "Color",
+    "ja": "è²",
+    "section": "core"
+  },
+  {
+    "en": "Scale %",
+    "ja": "ã¹ã±ã¼ã« %",
+    "section": "core"
+  },
+  {
+    "en": "Zoom Stage",
+    "ja": "ãºã¼ã æ®µé",
+    "section": "core"
+  },
+  {
+    "en": "Zoom Base Scale %",
+    "ja": "ãºã¼ã æåç§æºã¹ã±ã¼ã« %",
+    "section": "core"
+  },
+  {
+    "en": "Zoom Base Opacity %",
+    "ja": "ãºã¼ã æåç§æºä¸éæåº¦ %",
+    "section": "core"
+  },
+  {
+    "en": "Zoom Opacity %",
+    "ja": "ãºã¼ã æä¸éæåº¦ %",
+    "section": "core"
+  },
+  {
+    "en": "Zoom Scope Reticle",
+    "ja": "ãºã¼ã ã¹ã³ã¼ãç§æº",
+    "section": "core"
+  },
+  {
+    "en": "Zoom Scope",
+    "ja": "ãºã¼ã ã¹ã³ã¼ã",
+    "section": "core"
+  },
+  {
+    "en": "Scope Radius",
+    "ja": "ã¹ã³ã¼ãåå¾",
+    "section": "core"
+  },
+  {
+    "en": "Scope Gap",
+    "ja": "ã¹ã³ã¼ãéé",
+    "section": "core"
+  },
+  {
+    "en": "Scope Thickness",
+    "ja": "ã¹ã³ã¼ãå¤ªã",
+    "section": "core"
+  },
+  {
+    "en": "Scope Thick.",
+    "ja": "ã¹ã³ã¼ãå¤ªã",
+    "section": "core"
+  },
+  {
+    "en": "Scope Center Dot",
+    "ja": "ã¹ã³ã¼ãä¸­å¤®ããã",
+    "section": "core"
+  },
+  {
+    "en": "Scope Dot Size",
+    "ja": "ã¹ã³ã¼ãããããµã¤ãº",
+    "section": "core"
+  },
+  {
+    "en": "Scope Dot Opacity %",
+    "ja": "ã¹ã³ã¼ããããä¸éæåº¦ %",
+    "section": "core"
+  },
+  {
+    "en": "Scope Opacity %",
+    "ja": "ã¹ã³ã¼ãä¸éæåº¦ %",
+    "section": "core"
+  },
+  {
+    "en": "Zoom Transition",
+    "ja": "ãºã¼ã ãã©ã³ã¸ã·ã§ã³",
+    "section": "core"
+  },
+  {
+    "en": "Zoom Transition Speed %",
+    "ja": "ãºã¼ã é·ç§»éåº¦ %",
+    "section": "core"
+  },
+  {
+    "en": "Transition Speed %",
+    "ja": "é·ç§»éåº¦ %",
+    "section": "core"
+  },
+  {
+    "en": "Zoom Pulse Ring",
+    "ja": "ãºã¼ã ãã«ã¹ãªã³ã°",
+    "section": "core"
+  },
+  {
+    "en": "Pulse Ring",
+    "ja": "ãã«ã¹ãªã³ã°",
+    "section": "core"
+  },
+  {
+    "en": "Zoom Pulse Strength %",
+    "ja": "ãºã¼ã ãã«ã¹å¼·åº¦ %",
+    "section": "core"
+  },
+  {
+    "en": "Pulse Strength %",
+    "ja": "ãã«ã¹å¼·åº¦ %",
+    "section": "core"
+  },
+  {
+    "en": "Zoom Crosshair",
+    "ja": "ãºã¼ã ç§æº",
+    "section": "core"
+  },
+  {
+    "en": "Transition Style",
+    "ja": "ãã©ã³ã¸ã·ã§ã³ã¹ã¿ã¤ã«",
+    "section": "core"
+  },
+  {
+    "en": "Custom Scope Dot Color",
+    "ja": "ã¹ã³ã¼ããããè²ãåå¥æå®",
+    "section": "core"
+  },
+  {
+    "en": "Scope Dot Color",
+    "ja": "ã¹ã³ã¼ããããè²",
+    "section": "core"
+  },
+  {
+    "en": "Staged",
+    "ja": "æ®µé",
+    "section": "core"
+  },
+  {
+    "en": "Fade",
+    "ja": "ãã§ã¼ã",
+    "section": "core"
+  },
+  {
+    "en": "Glitch",
+    "ja": "ã°ãªãã",
+    "section": "core"
+  },
+  {
+    "en": "Glitch2",
+    "ja": "ã°ãªãã2",
+    "section": "core"
+  },
+  {
+    "en": "Snap",
+    "ja": "ã¹ããã",
+    "section": "core"
+  },
+  {
+    "en": "Digital",
+    "ja": "ãã¸ã¿ã«",
+    "section": "core"
+  },
+  {
+    "en": "Pulse Wave",
+    "ja": "ãã«ã¹æ³¢",
+    "section": "core"
+  },
+  {
+    "en": "Magic Circle",
+    "ja": "é­æ³é£",
+    "section": "core"
+  },
+  {
+    "en": "SF Movie",
+    "ja": "SFæ ç»",
+    "section": "core"
+  },
+  {
+    "en": "Tactical Lock",
+    "ja": "æ¦è¡ã­ãã¯",
+    "section": "core"
+  },
+  {
+    "en": "Sniper Optics",
+    "ja": "ã¹ãã¤ãã¼åå­¦",
+    "section": "core"
+  },
+  {
+    "en": "Drone LIDAR",
+    "ja": "ãã­ã¼ã³LIDAR",
+    "section": "core"
+  },
+  {
+    "en": "Beam Charge",
+    "ja": "ãã¼ã ãã£ã¼ã¸",
+    "section": "core"
+  },
+  {
+    "en": "Zoom",
+    "ja": "ãºã¼ã ",
+    "section": "core"
+  },
+  {
+    "en": "Outline",
+    "ja": "ã¢ã¦ãã©ã¤ã³",
+    "section": "core"
+  },
+  {
+    "en": "Outline Color",
+    "ja": "ã¢ã¦ãã©ã¤ã³è²",
+    "section": "core"
+  },
+  {
+    "en": "Outline Opacity",
+    "ja": "ã¢ã¦ãã©ã¤ã³ä¸éæåº¦",
+    "section": "core"
+  },
+  {
+    "en": "Outline Thickness",
+    "ja": "ã¢ã¦ãã©ã¤ã³å¤ªã",
+    "section": "core"
+  },
+  {
+    "en": "Outline Thick.",
+    "ja": "ã¢ã¦ãã©ã¤ã³å¤ªã",
+    "section": "core"
+  },
+  {
+    "en": "Center Dot",
+    "ja": "ä¸­å¤®ããã",
+    "section": "core"
+  },
+  {
+    "en": "Custom Dot Color",
+    "ja": "ãããè²ãåå¥æå®",
+    "section": "core"
+  },
+  {
+    "en": "Dot Color",
+    "ja": "ãããè²",
+    "section": "core"
+  },
+  {
+    "en": "Dot Shape",
+    "ja": "ãããå½¢ç¶",
+    "section": "core"
+  },
+  {
+    "en": "Scope Dot Shape",
+    "ja": "ã¹ã³ã¼ããããå½¢ç¶",
+    "section": "core"
+  },
+  {
+    "en": "Square",
+    "ja": "åè§",
+    "section": "core"
+  },
+  {
+    "en": "Circle",
+    "ja": "ä¸¸",
+    "section": "core"
+  },
+  {
+    "en": "Dot Opacity",
+    "ja": "ãããä¸éæåº¦",
+    "section": "core"
+  },
+  {
+    "en": "Dot Thickness",
+    "ja": "ãããå¤ªã",
+    "section": "core"
+  },
+  {
+    "en": "Dot Thick.",
+    "ja": "ãããå¤ªã",
+    "section": "core"
+  },
+  {
+    "en": "T-Style",
+    "ja": "Tã¹ã¿ã¤ã«",
+    "section": "core"
+  },
+  {
+    "en": "Inner",
+    "ja": "åå´",
+    "section": "core"
+  },
+  {
+    "en": "Outer",
+    "ja": "å¤å´",
+    "section": "core"
+  },
+  {
+    "en": "Inner Lines",
+    "ja": "åå´ã©ã¤ã³",
+    "section": "core"
+  },
+  {
+    "en": "Outer Lines",
+    "ja": "å¤å´ã©ã¤ã³",
+    "section": "core"
+  },
+  {
+    "en": "Show",
+    "ja": "è¡¨ç¤º",
+    "section": "core"
+  },
+  {
+    "en": "Show Text",
+    "ja": "æå­ãè¡¨ç¤º",
+    "section": "core"
+  },
+  {
+    "en": "Show Number",
+    "ja": "æ°å¤ãè¡¨ç¤º",
+    "section": "core"
+  },
+  {
+    "en": "Enable",
+    "ja": "æå¹å",
+    "section": "core"
+  },
+  {
+    "en": "Enable (Override All)",
+    "ja": "æå¹å (å¨ä½ä¸æ¸ã)",
+    "section": "core"
+  },
+  {
+    "en": "Opacity",
+    "ja": "ä¸éæåº¦",
+    "section": "core"
+  },
+  {
+    "en": "Length",
+    "ja": "é·ã",
+    "section": "core"
+  },
+  {
+    "en": "Length X",
+    "ja": "é·ã X",
+    "section": "core"
+  },
+  {
+    "en": "Length Y",
+    "ja": "é·ã Y",
+    "section": "core"
+  },
+  {
+    "en": "Link XY",
+    "ja": "XYãé£å",
+    "section": "core"
+  },
+  {
+    "en": "Thickness",
+    "ja": "å¤ªã",
+    "section": "core"
+  },
+  {
+    "en": "Offset",
+    "ja": "ãªãã»ãã",
+    "section": "core"
+  },
+  {
+    "en": "Offset X",
+    "ja": "ãªãã»ãã X",
+    "section": "core"
+  },
+  {
+    "en": "Offset Y",
+    "ja": "ãªãã»ãã Y",
+    "section": "core"
+  },
+  {
+    "en": "Anchor",
+    "ja": "åºæºä½ç½®",
+    "section": "core"
+  },
+  {
+    "en": "Top Left",
+    "ja": "å·¦ä¸",
+    "section": "core"
+  },
+  {
+    "en": "Top Center",
+    "ja": "ä¸ä¸­å¤®",
+    "section": "core"
+  },
+  {
+    "en": "Top Right",
+    "ja": "å³ä¸",
+    "section": "core"
+  },
+  {
+    "en": "Middle Left",
+    "ja": "å·¦ä¸­å¤®",
+    "section": "core"
+  },
+  {
+    "en": "Middle Center",
+    "ja": "ä¸­å¤®",
+    "section": "core"
+  },
+  {
+    "en": "Middle Right",
+    "ja": "å³ä¸­å¤®",
+    "section": "core"
+  },
+  {
+    "en": "Bottom Left",
+    "ja": "å·¦ä¸",
+    "section": "core"
+  },
+  {
+    "en": "Bottom Center",
+    "ja": "ä¸ä¸­å¤®",
+    "section": "core"
+  },
+  {
+    "en": "Bottom Right",
+    "ja": "å³ä¸",
+    "section": "core"
+  },
+  {
+    "en": "Mid Left",
+    "ja": "å·¦ä¸­å¤®",
+    "section": "core"
+  },
+  {
+    "en": "Mid Center",
+    "ja": "ä¸­å¤®",
+    "section": "core"
+  },
+  {
+    "en": "Mid Right",
+    "ja": "å³ä¸­å¤®",
+    "section": "core"
+  },
+  {
+    "en": "Bot Left",
+    "ja": "å·¦ä¸",
+    "section": "core"
+  },
+  {
+    "en": "Bot Center",
+    "ja": "ä¸ä¸­å¤®",
+    "section": "core"
+  },
+  {
+    "en": "Bot Right",
+    "ja": "å³ä¸",
+    "section": "core"
+  },
+  {
+    "en": "Left",
+    "ja": "å·¦",
+    "section": "core"
+  },
+  {
+    "en": "Center",
+    "ja": "ä¸­å¤®",
+    "section": "core"
+  },
+  {
+    "en": "Right",
+    "ja": "å³",
+    "section": "core"
+  },
+  {
+    "en": "Top",
+    "ja": "ä¸",
+    "section": "core"
+  },
+  {
+    "en": "Bottom",
+    "ja": "ä¸",
+    "section": "core"
+  },
+  {
+    "en": "Above",
+    "ja": "ä¸",
+    "section": "core"
+  },
+  {
+    "en": "Below",
+    "ja": "ä¸",
+    "section": "core"
+  },
+  {
+    "en": "Start",
+    "ja": "éå§",
+    "section": "core"
+  },
+  {
+    "en": "End",
+    "ja": "çµç«¯",
+    "section": "core"
+  },
+  {
+    "en": "Horizontal",
+    "ja": "æ¨ª",
+    "section": "core"
+  },
+  {
+    "en": "Vertical",
+    "ja": "ç¸¦",
+    "section": "core"
+  },
+  {
+    "en": "Horiz",
+    "ja": "æ¨ª",
+    "section": "core"
+  },
+  {
+    "en": "Vert",
+    "ja": "ç¸¦",
+    "section": "core"
+  },
+  {
+    "en": "Relative",
+    "ja": "ç¸å¯¾",
+    "section": "core"
+  },
+  {
+    "en": "Relative to Text",
+    "ja": "ãã­ã¹ãåºæº",
+    "section": "core"
+  },
+  {
+    "en": "Independent",
+    "ja": "ç¬ç«",
+    "section": "core"
+  },
+  {
+    "en": "GaugeâText",
+    "ja": "ã²ã¼ã¸âæå­",
+    "section": "core"
+  },
+  {
+    "en": "TextâGauge",
+    "ja": "æå­âã²ã¼ã¸",
+    "section": "core"
+  },
+  {
+    "en": "Gauge â Text",
+    "ja": "ã²ã¼ã¸âæå­",
+    "section": "core"
+  },
+  {
+    "en": "Text â Gauge",
+    "ja": "æå­âã²ã¼ã¸",
+    "section": "core"
+  },
+  {
+    "en": "Position Mode",
+    "ja": "ä½ç½®ã¢ã¼ã",
+    "section": "core"
+  },
+  {
+    "en": "Pos Mode",
+    "ja": "ä½ç½®ã¢ã¼ã",
+    "section": "core"
+  },
+  {
+    "en": "Gauge Side",
+    "ja": "ã²ã¼ã¸å´",
+    "section": "core"
+  },
+  {
+    "en": "Text Side",
+    "ja": "æå­å´",
+    "section": "core"
+  },
+  {
+    "en": "Gauge Anchor",
+    "ja": "ã²ã¼ã¸åºæº",
+    "section": "core"
+  },
+  {
+    "en": "Gauge X",
+    "ja": "ã²ã¼ã¸ X",
+    "section": "core"
+  },
+  {
+    "en": "Gauge Y",
+    "ja": "ã²ã¼ã¸ Y",
+    "section": "core"
+  },
+  {
+    "en": "Text Offset X",
+    "ja": "æå­ãªãã»ãã X",
+    "section": "core"
+  },
+  {
+    "en": "Text Offset Y",
+    "ja": "æå­ãªãã»ãã Y",
+    "section": "core"
+  },
+  {
+    "en": "Text Ofs X",
+    "ja": "æå­Ofs X",
+    "section": "core"
+  },
+  {
+    "en": "Text Ofs Y",
+    "ja": "æå­Ofs Y",
+    "section": "core"
+  },
+  {
+    "en": "Prefix",
+    "ja": "æ¥é ­è¾",
+    "section": "core"
+  },
+  {
+    "en": "Suffix",
+    "ja": "æ¥å°¾è¾",
+    "section": "core"
+  },
+  {
+    "en": "Align",
+    "ja": "æ´å",
+    "section": "core"
+  },
+  {
+    "en": "Align X",
+    "ja": "æ´å X",
+    "section": "core"
+  },
+  {
+    "en": "Align Y",
+    "ja": "æ´å Y",
+    "section": "core"
+  },
+  {
+    "en": "Orientation",
+    "ja": "åã",
+    "section": "core"
+  },
+  {
+    "en": "Orient",
+    "ja": "åã",
+    "section": "core"
+  },
+  {
+    "en": "Width",
+    "ja": "å¹",
+    "section": "core"
+  },
+  {
+    "en": "Height",
+    "ja": "é«ã",
+    "section": "core"
+  },
+  {
+    "en": "Icon Height",
+    "ja": "ã¢ã¤ã³ã³é«ã",
+    "section": "core"
+  },
+  {
+    "en": "Icon Position",
+    "ja": "ã¢ã¤ã³ã³ä½ç½®",
+    "section": "core"
+  },
+  {
+    "en": "Pos Anchor",
+    "ja": "ä½ç½®åºæº",
+    "section": "core"
+  },
+  {
+    "en": "Pos X",
+    "ja": "ä½ç½® X",
+    "section": "core"
+  },
+  {
+    "en": "Pos Y",
+    "ja": "ä½ç½® Y",
+    "section": "core"
+  },
+  {
+    "en": "Mode",
+    "ja": "ã¢ã¼ã",
+    "section": "core"
+  },
+  {
+    "en": "Layout",
+    "ja": "ã¬ã¤ã¢ã¦ã",
+    "section": "core"
+  },
+  {
+    "en": "Weapon Layout",
+    "ja": "æ­¦å¨ã¬ã¤ã¢ã¦ã",
+    "section": "core"
+  },
+  {
+    "en": "Standard",
+    "ja": "æ¨æº",
+    "section": "core"
+  },
+  {
+    "en": "Alternative",
+    "ja": "ä»£æ¿",
+    "section": "core"
+  },
+  {
+    "en": "Label Position",
+    "ja": "ã©ãã«ä½ç½®",
+    "section": "core"
+  },
+  {
+    "en": "Label Pos",
+    "ja": "ã©ãã«ä½ç½®",
+    "section": "core"
+  },
+  {
+    "en": "Label Offset X",
+    "ja": "ã©ãã«ãªãã»ãã X",
+    "section": "core"
+  },
+  {
+    "en": "Label Offset Y",
+    "ja": "ã©ãã«ãªãã»ãã Y",
+    "section": "core"
+  },
+  {
+    "en": "Label Ofs X",
+    "ja": "ã©ãã«Ofs X",
+    "section": "core"
+  },
+  {
+    "en": "Label Ofs Y",
+    "ja": "ã©ãã«Ofs Y",
+    "section": "core"
+  },
+  {
+    "en": "Label: Points",
+    "ja": "ã©ãã«: ãã¤ã³ã",
+    "section": "core"
+  },
+  {
+    "en": "Label: Octoliths",
+    "ja": "ã©ãã«: ãªã¯ããªã¹",
+    "section": "core"
+  },
+  {
+    "en": "Label: Lives",
+    "ja": "ã©ãã«: ã©ã¤ã",
+    "section": "core"
+  },
+  {
+    "en": "Label: Ring Time",
+    "ja": "ã©ãã«: ãªã³ã°æé",
+    "section": "core"
+  },
+  {
+    "en": "Label: Prime Time",
+    "ja": "ã©ãã«: ãã©ã¤ã æé",
+    "section": "core"
+  },
+  {
+    "en": "Battle",
+    "ja": "ããã«",
+    "section": "core"
+  },
+  {
+    "en": "Bounty",
+    "ja": "ãã¦ã³ãã£",
+    "section": "core"
+  },
+  {
+    "en": "Survival",
+    "ja": "ãµãã¤ãã«",
+    "section": "core"
+  },
+  {
+    "en": "Defender",
+    "ja": "ãã£ãã§ã³ãã¼",
+    "section": "core"
+  },
+  {
+    "en": "Prime",
+    "ja": "ãã©ã¤ã ",
+    "section": "core"
+  },
+  {
+    "en": "Label",
+    "ja": "ã©ãã«",
+    "section": "core"
+  },
+  {
+    "en": "Value",
+    "ja": "å¤",
+    "section": "core"
+  },
+  {
+    "en": "Separator",
+    "ja": "åºåã",
+    "section": "core"
+  },
+  {
+    "en": "Slash",
+    "ja": "ã¹ã©ãã·ã¥",
+    "section": "core"
+  },
+  {
+    "en": "Goal",
+    "ja": "ç®æ¨",
+    "section": "core"
+  },
+  {
+    "en": "Label Color",
+    "ja": "ã©ãã«è²",
+    "section": "core"
+  },
+  {
+    "en": "Label Color: Overall",
+    "ja": "ã©ãã«è²: å¨ä½",
+    "section": "core"
+  },
+  {
+    "en": "Value Color",
+    "ja": "å¤ã®è²",
+    "section": "core"
+  },
+  {
+    "en": "Value Color: Overall",
+    "ja": "å¤ã®è²: å¨ä½",
+    "section": "core"
+  },
+  {
+    "en": "Sep Color",
+    "ja": "åºåãè²",
+    "section": "core"
+  },
+  {
+    "en": "Sep Color: Overall",
+    "ja": "åºåãè²: å¨ä½",
+    "section": "core"
+  },
+  {
+    "en": "Goal Color",
+    "ja": "ç®æ¨è²",
+    "section": "core"
+  },
+  {
+    "en": "Goal Color: Overall",
+    "ja": "ç®æ¨è²: å¨ä½",
+    "section": "core"
+  },
+  {
+    "en": "Ordinal",
+    "ja": "åºæ°",
+    "section": "core"
+  },
+  {
+    "en": "Text",
+    "ja": "æå­",
+    "section": "core"
+  },
+  {
+    "en": "Color Overlay",
+    "ja": "è²ãªã¼ãã¼ã¬ã¤",
+    "section": "core"
+  },
+  {
+    "en": "Use Hunter Color",
+    "ja": "ãã³ã¿ã¼è²ãä½¿ç¨",
+    "section": "core"
+  },
+  {
+    "en": "Radar Color",
+    "ja": "ã¬ã¼ãã¼è²",
+    "section": "core"
+  },
+  {
+    "en": "Display Size",
+    "ja": "è¡¨ç¤ºãµã¤ãº",
+    "section": "core"
+  },
+  {
+    "en": "Dst Size",
+    "ja": "è¡¨ç¤ºãµã¤ãº",
+    "section": "core"
+  },
+  {
+    "en": "Dst X",
+    "ja": "è¡¨ç¤º X",
+    "section": "core"
+  },
+  {
+    "en": "Dst Y",
+    "ja": "è¡¨ç¤º Y",
+    "section": "core"
+  },
+  {
+    "en": "Source Radius",
+    "ja": "ã½ã¼ã¹åå¾",
+    "section": "core"
+  },
+  {
+    "en": "Src Radius",
+    "ja": "ã½ã¼ã¹åå¾",
+    "section": "core"
+  },
+  {
+    "en": "Corner Radius",
+    "ja": "è§ä¸¸åå¾",
+    "section": "core"
+  },
+  {
+    "en": "Padding",
+    "ja": "ä½ç½",
+    "section": "core"
+  },
+  {
+    "en": "Spacing",
+    "ja": "éé",
+    "section": "core"
+  },
+  {
+    "en": "Not Owned Opacity",
+    "ja": "æªææã®ä¸éæåº¦",
+    "section": "core"
+  },
+  {
+    "en": "Highlight",
+    "ja": "ãã¤ã©ã¤ã",
+    "section": "core"
+  },
+  {
+    "en": "Highlight Current Weapon",
+    "ja": "ç¾å¨ã®æ­¦å¨ããã¤ã©ã¤ã",
+    "section": "core"
+  },
+  {
+    "en": "Highlight Color",
+    "ja": "ãã¤ã©ã¤ãè²",
+    "section": "core"
+  },
+  {
+    "en": "Highlight Opacity",
+    "ja": "ãã¤ã©ã¤ãä¸éæåº¦",
+    "section": "core"
+  },
+  {
+    "en": "Highlight Thickness",
+    "ja": "ãã¤ã©ã¤ãå¤ªã",
+    "section": "core"
+  },
+  {
+    "en": "Highlight Padding",
+    "ja": "ãã¤ã©ã¤ãä½ç½",
+    "section": "core"
+  },
+  {
+    "en": "Highlight Corner Radius",
+    "ja": "ãã¤ã©ã¤ãè§ä¸¸",
+    "section": "core"
+  },
+  {
+    "en": "Highlight Offset Left",
+    "ja": "ãã¤ã©ã¤ãå·¦ãªãã»ãã",
+    "section": "core"
+  },
+  {
+    "en": "Highlight Offset Right",
+    "ja": "ãã¤ã©ã¤ãå³ãªãã»ãã",
+    "section": "core"
+  },
+  {
+    "en": "Highlight Offset Top",
+    "ja": "ãã¤ã©ã¤ãä¸ãªãã»ãã",
+    "section": "core"
+  },
+  {
+    "en": "Highlight Offset Bottom",
+    "ja": "ãã¤ã©ã¤ãä¸ãªãã»ãã",
+    "section": "core"
+  },
+  {
+    "en": "Size Offset Left",
+    "ja": "ãµã¤ãºå·¦ãªãã»ãã",
+    "section": "core"
+  },
+  {
+    "en": "Size Offset Right",
+    "ja": "ãµã¤ãºå³ãªãã»ãã",
+    "section": "core"
+  },
+  {
+    "en": "Size Offset Top",
+    "ja": "ãµã¤ãºä¸ãªãã»ãã",
+    "section": "core"
+  },
+  {
+    "en": "Size Offset Bottom",
+    "ja": "ãµã¤ãºä¸ãªãã»ãã",
+    "section": "core"
+  },
+  {
+    "en": "Hl Opacity",
+    "ja": "HLä¸éæåº¦",
+    "section": "core"
+  },
+  {
+    "en": "Hl Thickness",
+    "ja": "HLå¤ªã",
+    "section": "core"
+  },
+  {
+    "en": "Hl Padding",
+    "ja": "HLä½ç½",
+    "section": "core"
+  },
+  {
+    "en": "Hl Corner Radius",
+    "ja": "HLè§ä¸¸",
+    "section": "core"
+  },
+  {
+    "en": "Hl Ofs Left",
+    "ja": "HLå·¦Ofs",
+    "section": "core"
+  },
+  {
+    "en": "Hl Ofs Right",
+    "ja": "HLå³Ofs",
+    "section": "core"
+  },
+  {
+    "en": "Hl Ofs Top",
+    "ja": "HLä¸Ofs",
+    "section": "core"
+  },
+  {
+    "en": "Hl Ofs Bottom",
+    "ja": "HLä¸Ofs",
+    "section": "core"
+  },
+  {
+    "en": "HP",
+    "ja": "HP",
+    "section": "core"
+  },
+  {
+    "en": "HP Number Position",
+    "ja": "HPæ°å¤ä½ç½®",
+    "section": "core"
+  },
+  {
+    "en": "HP Label Color By Value",
+    "ja": "HPã©ãã«ã®è² (å¤é£å)",
+    "section": "core"
+  },
+  {
+    "en": "HP Outline",
+    "ja": "HPã®ã¢ã¦ãã©ã¤ã³",
+    "section": "core"
+  },
+  {
+    "en": "HP Gauge",
+    "ja": "HPã²ã¼ã¸",
+    "section": "core"
+  },
+  {
+    "en": "HP Gauge Color By Value",
+    "ja": "HPã²ã¼ã¸ã®è² (å¤é£å)",
+    "section": "core"
+  },
+  {
+    "en": "HP Gauge Outline",
+    "ja": "HPã²ã¼ã¸ã®ã¢ã¦ãã©ã¤ã³",
+    "section": "core"
+  },
+  {
+    "en": "Ammo",
+    "ja": "å¼¾è¬",
+    "section": "core"
+  },
+  {
+    "en": "Ammo Number Position",
+    "ja": "å¼¾è¬æ°å¤ä½ç½®",
+    "section": "core"
+  },
+  {
+    "en": "Ammo Label Color By Value",
+    "ja": "å¼¾è¬ã©ãã«ã®è² (å¤é£å)",
+    "section": "core"
+  },
+  {
+    "en": "Ammo Outline",
+    "ja": "å¼¾è¬ã®ã¢ã¦ãã©ã¤ã³",
+    "section": "core"
+  },
+  {
+    "en": "Ammo Gauge",
+    "ja": "å¼¾è¬ã²ã¼ã¸",
+    "section": "core"
+  },
+  {
+    "en": "Ammo Gauge Color By Value",
+    "ja": "å¼¾è¬ã²ã¼ã¸ã®è² (å¤é£å)",
+    "section": "core"
+  },
+  {
+    "en": "Ammo Gauge Outline",
+    "ja": "å¼¾è¬ã²ã¼ã¸ã®ã¢ã¦ãã©ã¤ã³",
+    "section": "core"
+  },
+  {
+    "en": "Weapon/Ammo",
+    "ja": "æ­¦å¨/å¼¾è¬",
+    "section": "core"
+  },
+  {
+    "en": "Weapon Icon",
+    "ja": "æ­¦å¨ã¢ã¤ã³ã³",
+    "section": "core"
+  },
+  {
+    "en": "Weapon Icon Outline",
+    "ja": "æ­¦å¨ã¢ã¤ã³ã³ã®ã¢ã¦ãã©ã¤ã³",
+    "section": "core"
+  },
+  {
+    "en": "Weapon Icon Color Overlay",
+    "ja": "æ­¦å¨ã¢ã¤ã³ã³ã®è²ãªã¼ãã¼ã¬ã¤",
+    "section": "core"
+  },
+  {
+    "en": "Weapon Inventory",
+    "ja": "æ­¦å¨ã¤ã³ãã³ããª",
+    "section": "core"
+  },
+  {
+    "en": "Weapon Inventory Highlight",
+    "ja": "æ­¦å¨ã¤ã³ãã³ããªã®ãã¤ã©ã¤ã",
+    "section": "core"
+  },
+  {
+    "en": "Weapon Inventory Outline",
+    "ja": "æ­¦å¨ã¤ã³ãã³ããªã®ã¢ã¦ãã©ã¤ã³",
+    "section": "core"
+  },
+  {
+    "en": "Weapon Inventory Icon Outline",
+    "ja": "æ­¦å¨ã¤ã³ãã³ããªã®ã¢ã¤ã³ã³ã®ã¢ã¦ãã©ã¤ã³",
+    "section": "core"
+  },
+  {
+    "en": "Match Status",
+    "ja": "è©¦åæå ±",
+    "section": "core"
+  },
+  {
+    "en": "Score",
+    "ja": "ã¹ã³ã¢",
+    "section": "core"
+  },
+  {
+    "en": "Score Labels",
+    "ja": "ã¹ã³ã¢ã©ãã«",
+    "section": "core"
+  },
+  {
+    "en": "Score Colors",
+    "ja": "ã¹ã³ã¢ã®è²",
+    "section": "core"
+  },
+  {
+    "en": "Score Outline",
+    "ja": "ã¹ã³ã¢ã®ã¢ã¦ãã©ã¤ã³",
+    "section": "core"
+  },
+  {
+    "en": "Rank / Time",
+    "ja": "é ä½ / æé",
+    "section": "core"
+  },
+  {
+    "en": "Rank",
+    "ja": "é ä½",
+    "section": "core"
+  },
+  {
+    "en": "Rank Outline",
+    "ja": "é ä½ã®ã¢ã¦ãã©ã¤ã³",
+    "section": "core"
+  },
+  {
+    "en": "Time Left",
+    "ja": "æ®ãæé",
+    "section": "core"
+  },
+  {
+    "en": "Time Left Outline",
+    "ja": "æ®ãæéã®ã¢ã¦ãã©ã¤ã³",
+    "section": "core"
+  },
+  {
+    "en": "Time Limit",
+    "ja": "å¶éæé",
+    "section": "core"
+  },
+  {
+    "en": "Time Limit Outline",
+    "ja": "å¶éæéã®ã¢ã¦ãã©ã¤ã³",
+    "section": "core"
+  },
+  {
+    "en": "Bomb",
+    "ja": "ãã ",
+    "section": "core"
+  },
+  {
+    "en": "Bomb Left",
+    "ja": "æ®ããã ",
+    "section": "core"
+  },
+  {
+    "en": "Bomb Left Outline",
+    "ja": "æ®ããã ã®ã¢ã¦ãã©ã¤ã³",
+    "section": "core"
+  },
+  {
+    "en": "Bomb Icon",
+    "ja": "ãã ã¢ã¤ã³ã³",
+    "section": "core"
+  },
+  {
+    "en": "Bomb Icon Outline",
+    "ja": "ãã ã¢ã¤ã³ã³ã®ã¢ã¦ãã©ã¤ã³",
+    "section": "core"
+  },
+  {
+    "en": "Radar",
+    "ja": "ã¬ã¼ãã¼",
+    "section": "core"
+  },
+  {
+    "en": "Radar Settings",
+    "ja": "ã¬ã¼ãã¼è¨­å®",
+    "section": "core"
+  },
+  {
+    "en": "Radar Outline",
+    "ja": "ã¬ã¼ãã¼ã®ã¢ã¦ãã©ã¤ã³",
+    "section": "core"
+  },
+  {
+    "en": "Frame Outline",
+    "ja": "ãã¬ã¼ã ã®ã¢ã¦ãã©ã¤ã³",
+    "section": "core"
+  },
+  {
+    "en": "Crosshair",
+    "ja": "ç§æº",
+    "section": "core"
+  },
+  {
+    "en": "Wpn\nIcon",
+    "ja": "æ­¦å¨\nã¢ã¤ã³ã³",
+    "section": "core"
+  },
+  {
+    "en": "Bmb\nIcon",
+    "ja": "ãã \nã¢ã¤ã³ã³",
+    "section": "core"
+  },
+  {
+    "en": "Wpn\nInventory",
+    "ja": "æ­¦å¨\nä¸è¦§",
+    "section": "core"
+  },
+  {
+    "en": "WPN",
+    "ja": "æ­¦å¨",
+    "section": "core"
+  },
+  {
+    "en": "BMB",
+    "ja": "ãã ",
+    "section": "core"
+  },
+  {
+    "en": "points",
+    "ja": "å¾ç¹",
+    "section": "core"
+  },
+  {
+    "en": "Bombs",
+    "ja": "ãã ",
+    "section": "core"
+  },
+  {
+    "en": "Enable OSD Color Patch",
+    "ja": "OSDè²ããããæå¹å",
+    "section": "core"
+  },
+  {
+    "en": "Global Color",
+    "ja": "å¨ä½è²",
+    "section": "core"
+  },
+  {
+    "en": "Use Global Color for All",
+    "ja": "ãã¹ã¦ã«å¨ä½è²ãä½¿ç¨",
+    "section": "core"
+  },
+  {
+    "en": "Enable Separate Color",
+    "ja": "åå¥è²ãæå¹å",
+    "section": "core"
+  },
+  {
+    "en": "Color (Default: Red)",
+    "ja": "è² (æ¢å®: èµ¤)",
+    "section": "core"
+  },
+  {
+    "en": "Node Stolen (H211)",
+    "ja": "ãã¼ãå¥ªå (H211)",
+    "section": "core"
+  },
+  {
+    "en": "Lost Lives",
+    "ja": "ã©ã¤ãåªå¤±",
+    "section": "core"
+  },
+  {
+    "en": "Kill / Death",
+    "ja": "ã­ã« / ãã¹",
+    "section": "core"
+  },
+  {
+    "en": "Return to Base",
+    "ja": "åºå°ã¸æ»ã",
+    "section": "core"
+  },
+  {
+    "en": "No Ammo",
+    "ja": "å¼¾è¬ãªã",
+    "section": "core"
+  },
+  {
+    "en": "Coward Detect",
+    "ja": "èçèæ¤åº",
+    "section": "core"
+  },
+  {
+    "en": "Acquiring Node",
+    "ja": "ãã¼ãåå¾ä¸­",
+    "section": "core"
+  },
+  {
+    "en": "Turret",
+    "ja": "ã¿ã¬ãã",
+    "section": "core"
+  },
+  {
+    "en": "Octo Reset",
+    "ja": "ãªã¯ããªã¹ãªã»ãã",
+    "section": "core"
+  },
+  {
+    "en": "Octo Drop",
+    "ja": "ãªã¯ããªã¹ãã­ãã",
+    "section": "core"
+  },
+  {
+    "en": "Octo Condition",
+    "ja": "ãªã¯ããªã¹æ¡ä»¶",
+    "section": "core"
+  },
+  {
+    "en": "Octo Missing",
+    "ja": "ãªã¯ããªã¹æªææ",
+    "section": "core"
+  },
+  {
+    "en": "Slot: Kill / Death  [flags=0x02]",
+    "ja": "ã¹ã­ãã: ã­ã« / ãã¹ [flags=0x02]",
+    "section": "core"
+  },
+  {
+    "en": "Slot: Node Capture  [flags=0x11]",
+    "ja": "ã¹ã­ãã: ãã¼ãåå¾ [flags=0x11]",
+    "section": "core"
+  },
+  {
+    "en": "Slot: Objective     [flags=0x01]",
+    "ja": "ã¹ã­ãã: ç®æ¨ [flags=0x01]",
+    "section": "core"
+  },
+  {
+    "en": "Slot: System / Misc [flags=0x00]",
+    "ja": "ã¹ã­ãã: ã·ã¹ãã /ãã®ä» [flags=0x00]",
+    "section": "core"
+  },
+  {
+    "en": "Applied once on settings close to currently displayed messages (flags=0x02).\nNew messages use the 'Kill / Death' literal color above.",
+    "ja": "è¨­å®ãéããã¨ããç¾å¨è¡¨ç¤ºä¸­ã®ã¡ãã»ã¼ã¸ã¸ä¸åº¦ã ãé©ç¨ããã¾ã (flags=0x02)ã\næ°ããã¡ãã»ã¼ã¸ã¯ä¸ã®ãã­ã« / ãã¹ãåå¥è²ãä½¿ç¨ãã¾ãã",
+    "section": "core"
+  },
+  {
+    "en": "Applied once on settings close to currently displayed messages (flags=0x11).\nNew messages use 'Acquiring Node' or 'Node Stolen' literal colors above.",
+    "ja": "è¨­å®ãéããã¨ããç¾å¨è¡¨ç¤ºä¸­ã®ã¡ãã»ã¼ã¸ã¸ä¸åº¦ã ãé©ç¨ããã¾ã (flags=0x11)ã\næ°ããã¡ãã»ã¼ã¸ã¯ä¸ã®ããã¼ãåå¾ä¸­ãã¾ãã¯ããã¼ãå¥ªåãã®åå¥è²ãä½¿ç¨ãã¾ãã",
+    "section": "core"
+  },
+  {
+    "en": "Applied once on settings close to currently displayed messages (flags=0x01).\nNew messages use their individual literal colors above (No Ammo / Return to Base / Octo ...).",
+    "ja": "è¨­å®ãéããã¨ããç¾å¨è¡¨ç¤ºä¸­ã®ã¡ãã»ã¼ã¸ã¸ä¸åº¦ã ãé©ç¨ããã¾ã (flags=0x01)ã\næ°ããã¡ãã»ã¼ã¸ã¯ããããã®åå¥è²ãä½¿ç¨ãã¾ã (å¼¾è¬ãªã / åºå°ã¸æ»ã / ãªã¯ãç³» ...)ã",
+    "section": "core"
+  },
+  {
+    "en": "Applied once on settings close to currently displayed messages (flags=0x00).\nNew messages use their individual literal colors above (Lost Lives / Coward Detect / Turret ...).\nNote: HEADSHOT! (H228) is flags=0x00, not 0x02.",
+    "ja": "è¨­å®ãéããã¨ããç¾å¨è¡¨ç¤ºä¸­ã®ã¡ãã»ã¼ã¸ã¸ä¸åº¦ã ãé©ç¨ããã¾ã (flags=0x00)ã\næ°ããã¡ãã»ã¼ã¸ã¯ããããã®åå¥è²ãä½¿ç¨ãã¾ã (ã©ã¤ãåªå¤± / èçèæ¤åº / ã¿ã¬ãã ...)ã\næ³¨: HEADSHOT! (H228) ã¯ flags=0x00 ã§ã0x02 ã§ã¯ããã¾ããã",
+    "section": "core"
+  },
+  {
+    "en": "Color  (YOU KILLED / KILLED YOU / 5-kill / prime hunter / teammate)",
+    "ja": "è²  (YOU KILLED / KILLED YOU / 5ã­ã« / ãã©ã¤ã ãã³ã¿ã¼ / å³æ¹)",
+    "section": "core"
+  },
+  {
+    "en": "Color  (acquiring node / node stolen H211)",
+    "ja": "è²  (ãã¼ãåå¾ä¸­ / ãã¼ãå¥ªå H211)",
+    "section": "core"
+  },
+  {
+    "en": "Color  (AMMO DEPLETED / return to base / bounty / octolith events)",
+    "ja": "è²  (AMMO DEPLETED / åºå°ã¸æ»ã / ãã¦ã³ãã£ / ãªã¯ããªã¹ã¤ãã³ã)",
+    "section": "core"
+  },
+  {
+    "en": "Color  (HEADSHOT! / FACE OFF! / RETURN TO BATTLE! / COWARD DETECTED / turret)",
+    "ja": "è²  (HEADSHOT! / FACE OFF! / RETURN TO BATTLE! / COWARD DETECTED / ã¿ã¬ãã)",
+    "section": "core"
+  },
+  {
+    "en": "White",
+    "ja": "ç½",
+    "section": "core"
+  },
+  {
+    "en": "Green",
+    "ja": "ç·",
+    "section": "core"
+  },
+  {
+    "en": "Yellow Green",
+    "ja": "é»ç·",
+    "section": "core"
+  },
+  {
+    "en": "Green Yellow",
+    "ja": "ç·é»",
+    "section": "core"
+  },
+  {
+    "en": "Yellow",
+    "ja": "é»",
+    "section": "core"
+  },
+  {
+    "en": "Pure Cyan",
+    "ja": "ç´ã·ã¢ã³",
+    "section": "core"
+  },
+  {
+    "en": "Hud Cyan",
+    "ja": "HUDã·ã¢ã³",
+    "section": "core"
+  },
+  {
+    "en": "Pink",
+    "ja": "ãã³ã¯",
+    "section": "core"
+  },
+  {
+    "en": "Red",
+    "ja": "èµ¤",
+    "section": "core"
+  },
+  {
+    "en": "Orange",
+    "ja": "ãªã¬ã³ã¸",
+    "section": "core"
+  },
+  {
+    "en": "Samus Hud",
+    "ja": "ãµã ã¹HUD",
+    "section": "core"
+  },
+  {
+    "en": "Samus Hud Outline",
+    "ja": "ãµã ã¹HUDã®ã¢ã¦ãã©ã¤ã³",
+    "section": "core"
+  },
+  {
+    "en": "Kanden Hud",
+    "ja": "ã«ã³ãã³HUD",
+    "section": "core"
+  },
+  {
+    "en": "Spire Hud",
+    "ja": "ã¹ãã¤ã¢HUD",
+    "section": "core"
+  },
+  {
+    "en": "Spire Hud Outline",
+    "ja": "ã¹ãã¤ã¢HUDã®ã¢ã¦ãã©ã¤ã³",
+    "section": "core"
+  },
+  {
+    "en": "Trace Hud",
+    "ja": "ãã¬ã¼ã¹HUD",
+    "section": "core"
+  },
+  {
+    "en": "Noxus Hud",
+    "ja": "ãã¯ãµã¹HUD",
+    "section": "core"
+  },
+  {
+    "en": "Noxus Hud Outline",
+    "ja": "ãã¯ãµã¹HUDã®ã¢ã¦ãã©ã¤ã³",
+    "section": "core"
+  },
+  {
+    "en": "Sylux Hud",
+    "ja": "ãµã¤ã©ãã¯ã¹HUD",
+    "section": "core"
+  },
+  {
+    "en": "Sylux Crosshair",
+    "ja": "ãµã¤ã©ãã¯ã¹ç§æº",
+    "section": "core"
+  },
+  {
+    "en": "Weavel Hud",
+    "ja": "ã¦ã£ã¼ã´ã§ã«HUD",
+    "section": "core"
+  },
+  {
+    "en": "Weavel Hud Outline",
+    "ja": "ã¦ã£ã¼ã´ã§ã«HUDã®ã¢ã¦ãã©ã¤ã³",
+    "section": "core"
+  },
+  {
+    "en": "Avium Purple",
+    "ja": "ã¢ã´ã£ã¦ã ç´«",
+    "section": "core"
+  },
+  {
+    "en": "OSD Bright Green",
+    "ja": "OSDæããç·",
+    "section": "core"
+  },
+  {
+    "en": "OSD No-Ammo Red",
+    "ja": "OSDå¼¾è¬ãªãèµ¤",
+    "section": "core"
+  },
+  {
+    "en": "Power Beam",
+    "ja": "ãã¯ã¼ãã¼ã ",
+    "section": "core"
+  },
+  {
+    "en": "Volt Driver",
+    "ja": "ãã«ããã©ã¤ãã¼",
+    "section": "core"
+  },
+  {
+    "en": "VoltDriver",
+    "ja": "ãã«ããã©ã¤ãã¼",
+    "section": "core"
+  },
+  {
+    "en": "Missile",
+    "ja": "ããµã¤ã«",
+    "section": "core"
+  },
+  {
+    "en": "Battle Hammer",
+    "ja": "ããã«ãã³ãã¼",
+    "section": "core"
+  },
+  {
+    "en": "Battlehammer",
+    "ja": "ããã«ãã³ãã¼",
+    "section": "core"
+  },
+  {
+    "en": "Imperialist",
+    "ja": "ã¤ã³ããªã¢ãªã¹ã",
+    "section": "core"
+  },
+  {
+    "en": "Judicator",
+    "ja": "ã¸ã¥ãã£ã±ã¤ã¿ã¼",
+    "section": "core"
+  },
+  {
+    "en": "Magmaul",
+    "ja": "ãã°ã¢ã¼ã«",
+    "section": "core"
+  },
+  {
+    "en": "Shock Coil",
+    "ja": "ã·ã§ãã¯ã³ã¤ã«",
+    "section": "core"
+  },
+  {
+    "en": "ShockCoil",
+    "ja": "ã·ã§ãã¯ã³ã¤ã«",
+    "section": "core"
+  },
+  {
+    "en": "Omega Cannon",
+    "ja": "ãªã¡ã¬ã­ã£ãã³",
+    "section": "core"
+  },
+  {
+    "en": "PB Color",
+    "ja": "PBè²",
+    "section": "core"
+  },
+  {
+    "en": "VD Color",
+    "ja": "VDè²",
+    "section": "core"
+  },
+  {
+    "en": "MSL Color",
+    "ja": "MSLè²",
+    "section": "core"
+  },
+  {
+    "en": "BH Color",
+    "ja": "BHè²",
+    "section": "core"
+  },
+  {
+    "en": "IMP Color",
+    "ja": "IMPè²",
+    "section": "core"
+  },
+  {
+    "en": "JUD Color",
+    "ja": "JUDè²",
+    "section": "core"
+  },
+  {
+    "en": "MAG Color",
+    "ja": "MAGè²",
+    "section": "core"
+  },
+  {
+    "en": "SCL Color",
+    "ja": "SCLè²",
+    "section": "core"
+  },
+  {
+    "en": "OC Color",
+    "ja": "OCè²",
+    "section": "core"
+  },
+  {
+    "en": "Thin",
+    "ja": "æ¥µç´°",
+    "section": "core"
+  },
+  {
+    "en": "Extra Light",
+    "ja": "ç¹ç´°",
+    "section": "core"
+  },
+  {
+    "en": "Light",
+    "ja": "ç´°å­",
+    "section": "core"
+  },
+  {
+    "en": "Normal",
+    "ja": "æ¨æº",
+    "section": "core"
+  },
+  {
+    "en": "Medium",
+    "ja": "ä¸­å¤ª",
+    "section": "core"
+  },
+  {
+    "en": "Semi Bold",
+    "ja": "ããå¤ªå­",
+    "section": "core"
+  },
+  {
+    "en": "Bold",
+    "ja": "å¤ªå­",
+    "section": "core"
+  },
+  {
+    "en": "Extra Bold",
+    "ja": "æ¥µå¤ª",
+    "section": "core"
+  },
+  {
+    "en": "Black",
+    "ja": "é»å¤ª",
+    "section": "core"
+  },
+  {
+    "en": "Number of Colors",
+    "ja": "è²æ°",
+    "section": "core"
+  },
+  {
+    "en": "Threshold 1 (%)",
+    "ja": "ãããå¤ 1 (%)",
+    "section": "core"
+  },
+  {
+    "en": "Threshold 2 (%)",
+    "ja": "ãããå¤ 2 (%)",
+    "section": "core"
+  },
+  {
+    "en": "Threshold 3 (%)",
+    "ja": "ãããå¤ 3 (%)",
+    "section": "core"
+  },
+  {
+    "en": "Threshold 4 (%)",
+    "ja": "ãããå¤ 4 (%)",
+    "section": "core"
+  },
+  {
+    "en": "Threshold 5 (%)",
+    "ja": "ãããå¤ 5 (%)",
+    "section": "core"
+  },
+  {
+    "en": "Threshold 6 (%)",
+    "ja": "ãããå¤ 6 (%)",
+    "section": "core"
+  },
+  {
+    "en": "Color 1",
+    "ja": "è² 1",
+    "section": "core"
+  },
+  {
+    "en": "Color 2",
+    "ja": "è² 2",
+    "section": "core"
+  },
+  {
+    "en": "Color 3",
+    "ja": "è² 3",
+    "section": "core"
+  },
+  {
+    "en": "Color 4",
+    "ja": "è² 4",
+    "section": "core"
+  },
+  {
+    "en": "Color 5",
+    "ja": "è² 5",
+    "section": "core"
+  },
+  {
+    "en": "Color 6",
+    "ja": "è² 6",
+    "section": "core"
+  },
+  {
+    "en": "Generate sharable TOML for the current Custom HUD settings, or paste TOML below to apply it.",
+    "ja": "ç¾å¨ã®ã«ã¹ã¿ã HUDè¨­å®ããå±æç¨TOMLãçæããããä¸ã«TOMLãè²¼ãä»ãã¦é©ç¨ãã¾ãã",
+    "section": "core"
+  },
+  {
+    "en": "Output refreshed from the current Custom HUD settings.",
+    "ja": "ç¾å¨ã®ã«ã¹ã¿ã HUDè¨­å®ããåºåãæ´æ°ãã¾ããã",
+    "section": "core"
+  },
+  {
+    "en": "Custom HUD code copied to the clipboard.",
+    "ja": "ã«ã¹ã¿ã HUDã³ã¼ããã¯ãªãããã¼ãã«ã³ãã¼ãã¾ããã",
+    "section": "core"
+  },
+  {
+    "en": "Output copied into the input box.",
+    "ja": "åºåãå¥åæ¬ã¸ã³ãã¼ãã¾ããã",
+    "section": "core"
+  },
+  {
+    "en": "Custom HUD code applied to the dialog.",
+    "ja": "ã«ã¹ã¿ã HUDã³ã¼ãããã¤ã¢ã­ã°ã¸é©ç¨ãã¾ããã",
+    "section": "core"
+  },
+  {
+    "en": "Paste Custom HUD TOML into the input box first.",
+    "ja": "åã«ã«ã¹ã¿ã HUD TOMLãå¥åæ¬ã¸è²¼ãä»ãã¦ãã ããã",
+    "section": "core"
+  },
+  {
+    "en": "The pasted Custom HUD code is not a TOML table.",
+    "ja": "è²¼ãä»ããããã«ã¹ã¿ã HUDã³ã¼ãã¯TOMLãã¼ãã«ã§ã¯ããã¾ããã",
+    "section": "core"
+  },
+  {
+    "en": "Failed to load Custom HUD code: %1",
+    "ja": "ã«ã¹ã¿ã HUDã³ã¼ãã®èª­ã¿è¾¼ã¿ã«å¤±æãã¾ãã: %1",
+    "section": "core"
+  },
+  {
+    "en": "Use New Method for Weapon Change",
+    "ja": "æ­¦å¨å¤æ´ã«æ°æ¹å¼ãä½¿ã",
+    "section": "core"
+  },
+  {
+    "en": "Use New Method for Biped Fire",
+    "ja": "äºè¶³æã®å°æã«æ°æ¹å¼ãä½¿ã",
+    "section": "core"
+  },
+  {
+    "en": "Use New Method for Alt-Form Transform",
+    "ja": "ãã©ã³ã¹ãã©ã¼ã å¤å½¢ã«æ°æ¹å¼ãä½¿ã",
+    "section": "core"
+  },
+  {
+    "en": "Use New Method for Zoom",
+    "ja": "ãºã¼ã ã«æ°æ¹å¼ãä½¿ã",
+    "section": "core"
+  },
+  {
+    "en": "Use New Method 2 for Zoom",
+    "ja": "ãºã¼ã ã«æ°æ¹å¼2ãä½¿ã",
+    "section": "core"
+  },
+  {
+    "en": "Emu settings - melonDS",
+    "ja": "ã¨ãã¥ã¬ã¼ã¿ã¼è¨­å® - melonDS",
+    "section": "melonds"
+  },
+  {
+    "en": "Video settings - melonDS",
+    "ja": "æ åè¨­å® - melonDS",
+    "section": "melonds"
+  },
+  {
+    "en": "Camera settings - melonDS",
+    "ja": "ã«ã¡ã©è¨­å® - melonDS",
+    "section": "melonds"
+  },
+  {
+    "en": "Audio settings - melonDS",
+    "ja": "é³å£°è¨­å® - melonDS",
+    "section": "melonds"
+  },
+  {
+    "en": "Input and hotkeys - melonDS",
+    "ja": "å¥åã¨ãããã­ã¼ - melonDS",
+    "section": "melonds"
+  },
+  {
+    "en": "General hotkeys",
+    "ja": "ä¸è¬ãããã­ã¼",
+    "section": "melonds"
+  },
+  {
+    "en": "General",
+    "ja": "ä¸è¬",
+    "section": "melonds"
+  },
+  {
+    "en": "DS-mode",
+    "ja": "DSã¢ã¼ã",
+    "section": "melonds"
+  },
+  {
+    "en": "DSi-mode",
+    "ja": "DSiã¢ã¼ã",
+    "section": "melonds"
+  },
+  {
+    "en": "CPU emulation",
+    "ja": "CPUã¨ãã¥ã¬ã¼ã·ã§ã³",
+    "section": "melonds"
+  },
+  {
+    "en": "Devtools",
+    "ja": "éçºãã¼ã«",
+    "section": "melonds"
+  },
+  {
+    "en": "DLDI",
+    "ja": "DLDI",
+    "section": "melonds"
+  },
+  {
+    "en": "Console type:",
+    "ja": "æ¬ä½ã¿ã¤ã:",
+    "section": "melonds"
+  },
+  {
+    "en": "Boot game directly",
+    "ja": "ã²ã¼ã ãç´æ¥èµ·å",
+    "section": "melonds"
+  },
+  {
+    "en": "Browse...",
+    "ja": "åç§...",
+    "section": "melonds"
+  },
+  {
+    "en": "Use external BIOS/firmware files",
+    "ja": "å¤é¨BIOS/ãã¡ã¼ã ã¦ã§ã¢ãã¡ã¤ã«ãä½¿ç¨",
+    "section": "melonds"
+  },
+  {
+    "en": "DS ARM9 BIOS:",
+    "ja": "DS ARM9 BIOS:",
+    "section": "melonds"
+  },
+  {
+    "en": "DS ARM7 BIOS:",
+    "ja": "DS ARM7 BIOS:",
+    "section": "melonds"
+  },
+  {
+    "en": "DS firmware:",
+    "ja": "DSãã¡ã¼ã ã¦ã§ã¢:",
+    "section": "melonds"
+  },
+  {
+    "en": "DSi ARM9 BIOS:",
+    "ja": "DSi ARM9 BIOS:",
+    "section": "melonds"
+  },
+  {
+    "en": "DSi ARM7 BIOS:",
+    "ja": "DSi ARM7 BIOS:",
+    "section": "melonds"
+  },
+  {
+    "en": "DSi firmware:",
+    "ja": "DSiãã¡ã¼ã ã¦ã§ã¢:",
+    "section": "melonds"
+  },
+  {
+    "en": "DSi NAND:",
+    "ja": "DSi NAND:",
+    "section": "melonds"
+  },
+  {
+    "en": "Enable DSi SD card",
+    "ja": "DSi SDã«ã¼ããæå¹å",
+    "section": "melonds"
+  },
+  {
+    "en": "Sync SD to folder:",
+    "ja": "SDããã©ã«ãã¨åæ:",
+    "section": "melonds"
+  },
+  {
+    "en": "Read-only SD",
+    "ja": "SDãèª­ã¿åãå°ç¨",
+    "section": "melonds"
+  },
+  {
+    "en": "Image size:",
+    "ja": "ã¤ã¡ã¼ã¸ãµã¤ãº:",
+    "section": "melonds"
+  },
+  {
+    "en": "SD card image:",
+    "ja": "SDã«ã¼ãã¤ã¡ã¼ã¸:",
+    "section": "melonds"
+  },
+  {
+    "en": "DSP HLE",
+    "ja": "DSP HLE",
+    "section": "melonds"
+  },
+  {
+    "en": "Enable JIT recompiler",
+    "ja": "JITãªã³ã³ãã¤ã©ãæå¹å",
+    "section": "melonds"
+  },
+  {
+    "en": "Maximum JIT block size:",
+    "ja": "JITæå¤§ãã­ãã¯ãµã¤ãº:",
+    "section": "melonds"
+  },
+  {
+    "en": "Branch optimisations",
+    "ja": "åå²æé©å",
+    "section": "melonds"
+  },
+  {
+    "en": "Literal optimisations",
+    "ja": "ãªãã©ã«æé©å",
+    "section": "melonds"
+  },
+  {
+    "en": "Fast memory",
+    "ja": "é«éã¡ã¢ãª",
+    "section": "melonds"
+  },
+  {
+    "en": "Enable DLDI (for homebrew)",
+    "ja": "DLDIãæå¹å (homebrewç¨)",
+    "section": "melonds"
+  },
+  {
+    "en": "Enable GDB stub",
+    "ja": "GDBã¹ã¿ããæå¹å",
+    "section": "melonds"
+  },
+  {
+    "en": "ARM9 port",
+    "ja": "ARM9ãã¼ã",
+    "section": "melonds"
+  },
+  {
+    "en": "ARM7 port",
+    "ja": "ARM7ãã¼ã",
+    "section": "melonds"
+  },
+  {
+    "en": "Break on startup",
+    "ja": "èµ·åæã«ãã¬ã¼ã¯",
+    "section": "melonds"
+  },
+  {
+    "en": "Note: melonDS must be restarted in order for these changes to have effect",
+    "ja": "æ³¨: ãããã®å¤æ´ãåæ ããã«ã¯melonDSã®åèµ·åãå¿è¦ã§ã",
+    "section": "melonds"
+  },
+  {
+    "en": "Note: GDB stub cannot be used together with the JIT recompiler",
+    "ja": "æ³¨: GDBã¹ã¿ãã¯JITãªã³ã³ãã¤ã©ã¨åæã«ã¯ä½¿ç¨ã§ãã¾ãã",
+    "section": "melonds"
+  },
+  {
+    "en": "DS",
+    "ja": "DS",
+    "section": "melonds"
+  },
+  {
+    "en": "DSi (experimental)",
+    "ja": "DSi (å®é¨ç)",
+    "section": "melonds"
+  },
+  {
+    "en": "Auto",
+    "ja": "èªå",
+    "section": "melonds"
+  },
+  {
+    "en": "Display settings",
+    "ja": "è¡¨ç¤ºè¨­å®",
+    "section": "melonds"
+  },
+  {
+    "en": "OpenGL renderer",
+    "ja": "OpenGLã¬ã³ãã©ã¼",
+    "section": "melonds"
+  },
+  {
+    "en": "Software renderer",
+    "ja": "ã½ããã¦ã§ã¢ã¬ã³ãã©ã¼",
+    "section": "melonds"
+  },
+  {
+    "en": "Renderer:",
+    "ja": "ã¬ã³ãã©ã¼:",
+    "section": "melonds"
+  },
+  {
+    "en": "Software",
+    "ja": "ã½ããã¦ã§ã¢",
+    "section": "melonds"
+  },
+  {
+    "en": "OpenGL (Classic)",
+    "ja": "OpenGL (Classic)",
+    "section": "melonds"
+  },
+  {
+    "en": "OpenGL (Compute shader)",
+    "ja": "OpenGL (Compute shader)",
+    "section": "melonds"
+  },
+  {
+    "en": "OpenGL display",
+    "ja": "OpenGLè¡¨ç¤º",
+    "section": "melonds"
+  },
+  {
+    "en": "VSync",
+    "ja": "VSync",
+    "section": "melonds"
+  },
+  {
+    "en": "VSync interval:",
+    "ja": "VSyncéé:",
+    "section": "melonds"
+  },
+  {
+    "en": "Internal resolution:",
+    "ja": "åé¨è§£ååº¦:",
+    "section": "melonds"
+  },
+  {
+    "en": "Improved polygon splitting",
+    "ja": "ããªã´ã³åå²ã®æ¹å",
+    "section": "melonds"
+  },
+  {
+    "en": "Use high resolution coordinates",
+    "ja": "é«è§£ååº¦åº§æ¨ãä½¿ç¨",
+    "section": "melonds"
+  },
+  {
+    "en": "Use separate thread",
+    "ja": "å¥ã¹ã¬ãããä½¿ç¨",
+    "section": "melonds"
+  },
+  {
+    "en": "Configure emulated camera:",
+    "ja": "ã¨ãã¥ã¬ã¼ãã«ã¡ã©ãè¨­å®:",
+    "section": "melonds"
+  },
+  {
+    "en": "Picture source",
+    "ja": "ç»åã½ã¼ã¹",
+    "section": "melonds"
+  },
+  {
+    "en": "Picture settings",
+    "ja": "ç»åè¨­å®",
+    "section": "melonds"
+  },
+  {
+    "en": "Preview",
+    "ja": "ãã¬ãã¥ã¼",
+    "section": "melonds"
+  },
+  {
+    "en": "None (blank)",
+    "ja": "ãªã (ç©ºç½)",
+    "section": "melonds"
+  },
+  {
+    "en": "Image file:",
+    "ja": "ç»åãã¡ã¤ã«:",
+    "section": "melonds"
+  },
+  {
+    "en": "Physical camera:",
+    "ja": "ç©çã«ã¡ã©:",
+    "section": "melonds"
+  },
+  {
+    "en": "Flip horizontally",
+    "ja": "å·¦å³åè»¢",
+    "section": "melonds"
+  },
+  {
+    "en": "DSi outer camera",
+    "ja": "DSiå¤å´ã«ã¡ã©",
+    "section": "melonds"
+  },
+  {
+    "en": "DSi inner camera",
+    "ja": "DSiåå´ã«ã¡ã©",
+    "section": "melonds"
+  },
+  {
+    "en": "Audio output",
+    "ja": "é³å£°åºå",
+    "section": "melonds"
+  },
+  {
+    "en": "Microphone input",
+    "ja": "ãã¤ã¯å¥å",
+    "section": "melonds"
+  },
+  {
+    "en": "Interpolation:",
+    "ja": "è£é:",
+    "section": "melonds"
+  },
+  {
+    "en": "Bit depth:",
+    "ja": "ãããæ·±åº¦:",
+    "section": "melonds"
+  },
+  {
+    "en": "Volume:",
+    "ja": "é³é:",
+    "section": "melonds"
+  },
+  {
+    "en": "Sync with DSi volume",
+    "ja": "DSié³éã¨åæ",
+    "section": "melonds"
+  },
+  {
+    "en": "None",
+    "ja": "ãªã",
+    "section": "melonds"
+  },
+  {
+    "en": "Linear",
+    "ja": "ç·å½¢",
+    "section": "melonds"
+  },
+  {
+    "en": "Cosine",
+    "ja": "ã³ãµã¤ã³",
+    "section": "melonds"
+  },
+  {
+    "en": "Cubic",
+    "ja": "ä¸æ¬¡",
+    "section": "melonds"
+  },
+  {
+    "en": "Gaussian (SNES)",
+    "ja": "ã¬ã¦ã¹ (SNES)",
+    "section": "melonds"
+  },
+  {
+    "en": "Automatic",
+    "ja": "èªå",
+    "section": "melonds"
+  },
+  {
+    "en": "10-bit",
+    "ja": "10-bit",
+    "section": "melonds"
+  },
+  {
+    "en": "16-bit",
+    "ja": "16-bit",
+    "section": "melonds"
+  },
+  {
+    "en": "External microphone",
+    "ja": "å¤é¨ãã¤ã¯",
+    "section": "melonds"
+  },
+  {
+    "en": "Blow noise",
+    "ja": "å¹ãè¾¼ã¿ãã¤ãº",
+    "section": "melonds"
+  },
+  {
+    "en": "WAV file:",
+    "ja": "WAVãã¡ã¤ã«:",
+    "section": "melonds"
+  },
+  {
+    "en": "Joystick:",
+    "ja": "ã¸ã§ã¤ã¹ãã£ãã¯:",
+    "section": "melonds"
+  },
+  {
+    "en": "(no joysticks available)",
+    "ja": "(å©ç¨å¯è½ãªã¸ã§ã¤ã¹ãã£ãã¯ãããã¾ãã)",
+    "section": "melonds"
+  },
+  {
+    "en": "Pause/resume",
+    "ja": "ä¸æåæ­¢/åé",
+    "section": "melonds"
+  },
+  {
+    "en": "Reset",
+    "ja": "ãªã»ãã",
+    "section": "melonds"
+  },
+  {
+    "en": "Frame step",
+    "ja": "ãã¬ã¼ã éã",
+    "section": "melonds"
+  },
+  {
+    "en": "Fast forward",
+    "ja": "æ©éã",
+    "section": "melonds"
+  },
+  {
+    "en": "Toggle fast forward",
+    "ja": "æ©éãåæ¿",
+    "section": "melonds"
+  },
+  {
+    "en": "Slow mo",
+    "ja": "ã¹ã­ã¼ã¢ã¼ã·ã§ã³",
+    "section": "melonds"
+  },
+  {
+    "en": "Toggle slow mo",
+    "ja": "ã¹ã­ã¼ã¢ã¼ã·ã§ã³åæ¿",
+    "section": "melonds"
+  },
+  {
+    "en": "Toggle FPS limit",
+    "ja": "FPSå¶éåæ¿",
+    "section": "melonds"
+  },
+  {
+    "en": "Toggle fullscreen",
+    "ja": "å¨ç»é¢åæ¿",
+    "section": "melonds"
+  },
+  {
+    "en": "Close/open lid",
+    "ja": "èãéãã/éã",
+    "section": "melonds"
+  },
+  {
+    "en": "Microphone",
+    "ja": "ãã¤ã¯",
+    "section": "melonds"
+  },
+  {
+    "en": "Swap screens",
+    "ja": "ä¸ä¸ç»é¢å¥æ¿",
+    "section": "melonds"
+  },
+  {
+    "en": "Swap screen emphasis",
+    "ja": "ç»é¢å¼·èª¿å¥æ¿",
+    "section": "melonds"
+  },
+  {
+    "en": "DSi Power button",
+    "ja": "DSié»æºãã¿ã³",
+    "section": "melonds"
+  },
+  {
+    "en": "DSi Volume up",
+    "ja": "DSié³éã¢ãã",
+    "section": "melonds"
+  },
+  {
+    "en": "DSi Volume down",
+    "ja": "DSié³éãã¦ã³",
+    "section": "melonds"
+  },
+  {
+    "en": "Toggle audio mute",
+    "ja": "é³å£°ãã¥ã¼ãåæ¿",
+    "section": "melonds"
+  },
+  {
+    "en": "Multiplayer settings - melonDS",
+    "ja": "ãã«ããã¬ã¤è¨­å® - melonDS",
+    "section": "melonds"
+  },
+  {
+    "en": "Network",
+    "ja": "ãããã¯ã¼ã¯",
+    "section": "melonds"
+  },
+  {
+    "en": "Instance 1 only",
+    "ja": "ã¤ã³ã¹ã¿ã³ã¹1ã®ã¿",
+    "section": "melonds"
+  },
+  {
+    "en": "All instances",
+    "ja": "ãã¹ã¦ã®ã¤ã³ã¹ã¿ã³ã¹",
+    "section": "melonds"
+  },
+  {
+    "en": "Active instance only",
+    "ja": "ã¢ã¯ãã£ããªã¤ã³ã¹ã¿ã³ã¹ã®ã¿",
+    "section": "melonds"
+  },
+  {
+    "en": "Data reception timeout: ",
+    "ja": "ãã¼ã¿åä¿¡ã¿ã¤ã ã¢ã¦ã: ",
+    "section": "melonds"
+  },
+  {
+    "en": "milliseconds",
+    "ja": "ããªç§",
+    "section": "melonds"
+  },
+  {
+    "en": "Wifi settings - melonDS",
+    "ja": "Wi-Fiè¨­å® - melonDS",
+    "section": "melonds"
+  },
+  {
+    "en": "Network mode",
+    "ja": "ãããã¯ã¼ã¯ã¢ã¼ã",
+    "section": "melonds"
+  },
+  {
+    "en": "Indirect mode (uses libslirp, recommended)",
+    "ja": "éæ¥ã¢ã¼ã (libslirpä½¿ç¨ãæ¨å¥¨)",
+    "section": "melonds"
+  },
+  {
+    "en": "Direct mode [TEXT PLACEHOLDER]",
+    "ja": "ãã¤ã¬ã¯ãã¢ã¼ã [TEXT PLACEHOLDER]",
+    "section": "melonds"
+  },
+  {
+    "en": "Direct mode settings",
+    "ja": "ãã¤ã¬ã¯ãã¢ã¼ãè¨­å®",
+    "section": "melonds"
+  },
+  {
+    "en": "MAC address:",
+    "ja": "MACã¢ãã¬ã¹:",
+    "section": "melonds"
+  },
+  {
+    "en": "Network adapter:",
+    "ja": "ãããã¯ã¼ã¯ã¢ããã¿ã¼:",
+    "section": "melonds"
+  },
+  {
+    "en": "IP address:",
+    "ja": "IPã¢ãã¬ã¹:",
+    "section": "melonds"
+  },
+  {
+    "en": "(none)",
+    "ja": "(ãªã)",
+    "section": "melonds"
+  },
+  {
+    "en": "Firmware settings - melonDS",
+    "ja": "ãã¡ã¼ã ã¦ã§ã¢è¨­å® - melonDS",
+    "section": "melonds"
+  },
+  {
+    "en": "Override settings from external firmware",
+    "ja": "å¤é¨ãã¡ã¼ã ã¦ã§ã¢ã®è¨­å®ãä¸æ¸ã",
+    "section": "melonds"
+  },
+  {
+    "en": "User settings",
+    "ja": "ã¦ã¼ã¶ã¼è¨­å®",
+    "section": "melonds"
+  },
+  {
+    "en": "Username:",
+    "ja": "ã¦ã¼ã¶ã¼å:",
+    "section": "melonds"
+  },
+  {
+    "en": "Message:",
+    "ja": "ã¡ãã»ã¼ã¸:",
+    "section": "melonds"
+  },
+  {
+    "en": "Color:",
+    "ja": "è²:",
+    "section": "melonds"
+  },
+  {
+    "en": "Language:",
+    "ja": "è¨èª:",
+    "section": "melonds"
+  },
+  {
+    "en": "Birthday:",
+    "ja": "èªçæ¥:",
+    "section": "melonds"
+  },
+  {
+    "en": "Network settings",
+    "ja": "ãããã¯ã¼ã¯è¨­å®",
+    "section": "melonds"
+  },
+  {
+    "en": "(leave empty to use default MAC)",
+    "ja": "(ç©ºæ¬ã§æ¢å®MACãä½¿ç¨)",
+    "section": "melonds"
+  },
+  {
+    "en": "Interface settings - melonDS",
+    "ja": "ã¤ã³ã¿ã¼ãã§ã¼ã¹è¨­å® - melonDS",
+    "section": "melonds"
+  },
+  {
+    "en": "User interface",
+    "ja": "ã¦ã¼ã¶ã¼ã¤ã³ã¿ã¼ãã§ã¼ã¹",
+    "section": "melonds"
+  },
+  {
+    "en": "Theme",
+    "ja": "ãã¼ã",
+    "section": "melonds"
+  },
+  {
+    "en": "System default",
+    "ja": "ã·ã¹ãã æ¨æº",
+    "section": "melonds"
+  },
+  {
+    "en": "Hide mouse after inactivity",
+    "ja": "éæä½æã«ãã¦ã¹ãé ã",
+    "section": "melonds"
+  },
+  {
+    "en": "After",
+    "ja": "å¾æ©",
+    "section": "melonds"
+  },
+  {
+    "en": "seconds",
+    "ja": "ç§",
+    "section": "melonds"
+  },
+  {
+    "en": "Pause emulation when window is not in focus",
+    "ja": "ã¦ã£ã³ãã¦éãã©ã¼ã«ã¹æã«ã¨ãã¥ã¬ã¼ã·ã§ã³ãä¸æåæ­¢",
+    "section": "melonds"
+  },
+  {
+    "en": "Mute audio while fast forwarding",
+    "ja": "æ©éãä¸­ã¯é³å£°ããã¥ã¼ã",
+    "section": "melonds"
+  },
+  {
+    "en": "Framerate ",
+    "ja": "ãã¬ã¼ã ã¬ã¼ã ",
+    "section": "melonds"
+  },
+  {
+    "en": "Target FPS",
+    "ja": "ç®æ¨FPS",
+    "section": "melonds"
+  },
+  {
+    "en": "Fast-Forward",
+    "ja": "æ©éã",
+    "section": "melonds"
+  },
+  {
+    "en": " FPS",
+    "ja": " FPS",
+    "section": "melonds"
+  },
+  {
+    "en": "Slow-Mo",
+    "ja": "ã¹ã­ã¼ã¢ã¼ã·ã§ã³",
+    "section": "melonds"
+  },
+  {
+    "en": "Accurate",
+    "ja": "æ­£ç¢º",
+    "section": "melonds"
+  },
+  {
+    "en": "Clean",
+    "ja": "ã¯ãªã¼ã³",
+    "section": "melonds"
+  },
+  {
+    "en": "1/4",
+    "ja": "1/4",
+    "section": "melonds"
+  },
+  {
+    "en": "1/2",
+    "ja": "1/2",
+    "section": "melonds"
+  },
+  {
+    "en": "2x",
+    "ja": "2x",
+    "section": "melonds"
+  },
+  {
+    "en": "3x",
+    "ja": "3x",
+    "section": "melonds"
+  },
+  {
+    "en": "MAX",
+    "ja": "MAX",
+    "section": "melonds"
+  },
+  {
+    "en": "Path settings - melonDS",
+    "ja": "ãã¹è¨­å® - melonDS",
+    "section": "melonds"
+  },
+  {
+    "en": "Cheat files path:",
+    "ja": "ãã¼ããã¡ã¤ã«ã®ãã¹:",
+    "section": "melonds"
+  },
+  {
+    "en": "Savestates path:",
+    "ja": "ã¹ãã¼ãã»ã¼ãã®ãã¹:",
+    "section": "melonds"
+  },
+  {
+    "en": "Save files path:",
+    "ja": "ã»ã¼ããã¡ã¤ã«ã®ãã¹:",
+    "section": "melonds"
+  },
+  {
+    "en": "Leave a path blank to use the current ROM's path.",
+    "ja": "ç©ºæ¬ã®å ´åã¯ç¾å¨ã®ROMã¨åããã¹ãä½¿ç¨ãã¾ãã",
+    "section": "melonds"
+  },
+  {
+    "en": "Cheat code editor - melonDS",
+    "ja": "ãã¼ãã³ã¼ãç·¨é - melonDS",
+    "section": "melonds"
+  },
+  {
+    "en": "New category",
+    "ja": "æ°ããã«ãã´ãª",
+    "section": "melonds"
+  },
+  {
+    "en": "New AR code",
+    "ja": "æ°ããARã³ã¼ã",
+    "section": "melonds"
+  },
+  {
+    "en": "Import...",
+    "ja": "ã¤ã³ãã¼ã...",
+    "section": "melonds"
+  },
+  {
+    "en": "Edit",
+    "ja": "ç·¨é",
+    "section": "melonds"
+  },
+  {
+    "en": "Cancel edit",
+    "ja": "ç·¨éãã­ã£ã³ã»ã«",
+    "section": "melonds"
+  },
+  {
+    "en": "Delete",
+    "ja": "åé¤",
+    "section": "melonds"
+  },
+  {
+    "en": "Name:",
+    "ja": "åå:",
+    "section": "melonds"
+  },
+  {
+    "en": "Description:",
+    "ja": "èª¬æ:",
+    "section": "melonds"
+  },
+  {
+    "en": "Code:",
+    "ja": "ã³ã¼ã:",
+    "section": "melonds"
+  },
+  {
+    "en": "Enabled",
+    "ja": "æå¹",
+    "section": "melonds"
+  },
+  {
+    "en": "Only allow one code enabled",
+    "ja": "æå¹ã«ã§ããã³ã¼ãã¯1ã¤ã®ã¿",
+    "section": "melonds"
+  },
+  {
+    "en": "Power management - melonDS",
+    "ja": "é»æºç®¡ç - melonDS",
+    "section": "melonds"
+  },
+  {
+    "en": "DSi Battery",
+    "ja": "DSiããããªã¼",
+    "section": "melonds"
+  },
+  {
+    "en": "DS Battery",
+    "ja": "DSããããªã¼",
+    "section": "melonds"
+  },
+  {
+    "en": "Almost Empty",
+    "ja": "ã»ã¼ç©º",
+    "section": "melonds"
+  },
+  {
+    "en": "Charging",
+    "ja": "åé»ä¸­",
+    "section": "melonds"
+  },
+  {
+    "en": "Full",
+    "ja": "æºåé»",
+    "section": "melonds"
+  },
+  {
+    "en": "Battery Level",
+    "ja": "ããããªã¼æ®é",
+    "section": "melonds"
+  },
+  {
+    "en": "Low",
+    "ja": "ä½",
+    "section": "melonds"
+  },
+  {
+    "en": "Okay",
+    "ja": "è¯å¥½",
+    "section": "melonds"
+  },
+  {
+    "en": "Date and time - melonDS",
+    "ja": "æ¥ä»ã¨æå» - melonDS",
+    "section": "melonds"
+  },
+  {
+    "en": "Date and time",
+    "ja": "æ¥ä»ã¨æå»",
+    "section": "melonds"
+  },
+  {
+    "en": "Reset to system date and time",
+    "ja": "ã·ã¹ãã æ¥æã«ãªã»ãã",
+    "section": "melonds"
+  },
+  {
+    "en": "Current value:",
+    "ja": "ç¾å¨ã®å¤:",
+    "section": "melonds"
+  },
+  {
+    "en": "Change to:",
+    "ja": "å¤æ´å:",
+    "section": "melonds"
+  },
+  {
+    "en": "Synchronize to system date and time",
+    "ja": "ã·ã¹ãã æ¥æã¨åæ",
+    "section": "melonds"
+  },
+  {
+    "en": "ROM info - melonDS",
+    "ja": "ROMæå ± - melonDS",
+    "section": "melonds"
+  },
+  {
+    "en": "Titles",
+    "ja": "ã¿ã¤ãã«",
+    "section": "melonds"
+  },
+  {
+    "en": "Japanese title:",
+    "ja": "æ¥æ¬èªã¿ã¤ãã«:",
+    "section": "melonds"
+  },
+  {
+    "en": "English title:",
+    "ja": "è±èªã¿ã¤ãã«:",
+    "section": "melonds"
+  },
+  {
+    "en": "French title:",
+    "ja": "ãã©ã³ã¹èªã¿ã¤ãã«:",
+    "section": "melonds"
+  },
+  {
+    "en": "German title:",
+    "ja": "ãã¤ãèªã¿ã¤ãã«:",
+    "section": "melonds"
+  },
+  {
+    "en": "Italian title:",
+    "ja": "ã¤ã¿ãªã¢èªã¿ã¤ãã«:",
+    "section": "melonds"
+  },
+  {
+    "en": "Spanish title:",
+    "ja": "ã¹ãã¤ã³èªã¿ã¤ãã«:",
+    "section": "melonds"
+  },
+  {
+    "en": "Chinese title:",
+    "ja": "ä¸­å½èªã¿ã¤ãã«:",
+    "section": "melonds"
+  },
+  {
+    "en": "Korean title:",
+    "ja": "éå½èªã¿ã¤ãã«:",
+    "section": "melonds"
+  },
+  {
+    "en": "ARM7 and ARM9 binaries",
+    "ja": "ARM7/ARM9ãã¤ããª",
+    "section": "melonds"
+  },
+  {
+    "en": "ARM9 ROM offset: ",
+    "ja": "ARM9 ROMãªãã»ãã: ",
+    "section": "melonds"
+  },
+  {
+    "en": "ARM9 entry address:",
+    "ja": "ARM9ã¨ã³ããªã¢ãã¬ã¹:",
+    "section": "melonds"
+  },
+  {
+    "en": "ARM9 RAM address:",
+    "ja": "ARM9 RAMã¢ãã¬ã¹:",
+    "section": "melonds"
+  },
+  {
+    "en": "ARM9 size:",
+    "ja": "ARM9ãµã¤ãº:",
+    "section": "melonds"
+  },
+  {
+    "en": "ARM7 ROM offset: ",
+    "ja": "ARM7 ROMãªãã»ãã: ",
+    "section": "melonds"
+  },
+  {
+    "en": "ARM7 entry address:",
+    "ja": "ARM7ã¨ã³ããªã¢ãã¬ã¹:",
+    "section": "melonds"
+  },
+  {
+    "en": "ARM7 RAM address:",
+    "ja": "ARM7 RAMã¢ãã¬ã¹:",
+    "section": "melonds"
+  },
+  {
+    "en": "ARM7 size:",
+    "ja": "ARM7ãµã¤ãº:",
+    "section": "melonds"
+  },
+  {
+    "en": "Filesystem",
+    "ja": "ãã¡ã¤ã«ã·ã¹ãã ",
+    "section": "melonds"
+  },
+  {
+    "en": "FNT offset:",
+    "ja": "FNTãªãã»ãã:",
+    "section": "melonds"
+  },
+  {
+    "en": "FNT size:",
+    "ja": "FNTãµã¤ãº:",
+    "section": "melonds"
+  },
+  {
+    "en": "FAT offset:",
+    "ja": "FATãªãã»ãã:",
+    "section": "melonds"
+  },
+  {
+    "en": "FAT size:",
+    "ja": "FATãµã¤ãº:",
+    "section": "melonds"
+  },
+  {
+    "en": "General info",
+    "ja": "ä¸è¬æå ±",
+    "section": "melonds"
+  },
+  {
+    "en": "Game title:",
+    "ja": "ã²ã¼ã ã¿ã¤ãã«:",
+    "section": "melonds"
+  },
+  {
+    "en": "Game code:",
+    "ja": "ã²ã¼ã ã³ã¼ã:",
+    "section": "melonds"
+  },
+  {
+    "en": "Maker code:",
+    "ja": "ã¡ã¼ã«ã¼ã³ã¼ã:",
+    "section": "melonds"
+  },
+  {
+    "en": "Card size:",
+    "ja": "ã«ã¼ããµã¤ãº:",
+    "section": "melonds"
+  },
+  {
+    "en": "Save icon",
+    "ja": "ã»ã¼ãã¢ã¤ã³ã³",
+    "section": "melonds"
+  },
+  {
+    "en": "Save animated icon",
+    "ja": "ã»ã¼ãã¢ãã¡ã¼ã·ã§ã³ã¢ã¤ã³ã³",
+    "section": "melonds"
+  },
+  {
+    "en": "RAM info - melonDS",
+    "ja": "RAMæ¤ç´¢ - melonDS",
+    "section": "melonds"
+  },
+  {
+    "en": "Search",
+    "ja": "æ¤ç´¢",
+    "section": "melonds"
+  },
+  {
+    "en": "Value:",
+    "ja": "å¤:",
+    "section": "melonds"
+  },
+  {
+    "en": "1byte",
+    "ja": "1ãã¤ã",
+    "section": "melonds"
+  },
+  {
+    "en": "2bytes",
+    "ja": "2ãã¤ã",
+    "section": "melonds"
+  },
+  {
+    "en": "4bytes",
+    "ja": "4ãã¤ã",
+    "section": "melonds"
+  },
+  {
+    "en": "Address",
+    "ja": "ã¢ãã¬ã¹",
+    "section": "melonds"
+  },
+  {
+    "en": "Value",
+    "ja": "å¤",
+    "section": "melonds"
+  },
+  {
+    "en": "Previous",
+    "ja": "ååã®å¤",
+    "section": "melonds"
+  },
+  {
+    "en": "Found:",
+    "ja": "æ¤åº:",
+    "section": "melonds"
+  },
+  {
+    "en": "Host LAN game - melonDS",
+    "ja": "LANã²ã¼ã ããã¹ã - melonDS",
+    "section": "melonds"
+  },
+  {
+    "en": "Join LAN game - melonDS",
+    "ja": "LANã²ã¼ã ã«åå  - melonDS",
+    "section": "melonds"
+  },
+  {
+    "en": "Player name:",
+    "ja": "ãã¬ã¤ã¤ã¼å:",
+    "section": "melonds"
+  },
+  {
+    "en": "Number of players:",
+    "ja": "ãã¬ã¤ã¤ã¼æ°:",
+    "section": "melonds"
+  },
+  {
+    "en": "Connect",
+    "ja": "æ¥ç¶",
+    "section": "melonds"
+  },
+  {
+    "en": "Direct connect...",
+    "ja": "ç´æ¥æ¥ç¶...",
+    "section": "melonds"
+  },
+  {
+    "en": "Direct connect",
+    "ja": "ç´æ¥æ¥ç¶",
+    "section": "melonds"
+  },
+  {
+    "en": "Host address:",
+    "ja": "ãã¹ãã¢ãã¬ã¹:",
+    "section": "melonds"
+  },
+  {
+    "en": "Name",
+    "ja": "åå",
+    "section": "melonds"
+  },
+  {
+    "en": "Players",
+    "ja": "ãã¬ã¤ã¤ã¼",
+    "section": "melonds"
+  },
+  {
+    "en": "Status",
+    "ja": "ç¶æ",
+    "section": "melonds"
+  },
+  {
+    "en": "Host IP",
+    "ja": "ãã¹ã IP",
+    "section": "melonds"
+  },
+  {
+    "en": "Idle",
+    "ja": "å¾æ©ä¸­",
+    "section": "melonds"
+  },
+  {
+    "en": "Playing",
+    "ja": "ãã¬ã¤ä¸­",
+    "section": "melonds"
+  },
+  {
+    "en": "Please enter a player name.",
+    "ja": "ãã¬ã¤ã¤ã¼åãå¥åãã¦ãã ããã",
+    "section": "melonds"
+  },
+  {
+    "en": "Failed to start LAN game.",
+    "ja": "LANã²ã¼ã ã®éå§ã«å¤±æãã¾ããã",
+    "section": "melonds"
+  },
+  {
+    "en": "Please enter a player name before connecting.",
+    "ja": "æ¥ç¶ããåã«ãã¬ã¤ã¤ã¼åãå¥åãã¦ãã ããã",
+    "section": "melonds"
+  },
+  {
+    "en": "Failed to connect to the host %0.",
+    "ja": "ãã¹ã %0 ã¸ã®æ¥ç¶ã«å¤±æãã¾ããã",
+    "section": "melonds"
+  },
+  {
+    "en": "About melonDS",
+    "ja": "melonDSã«ã¤ãã¦",
+    "section": "melonds"
+  },
+  {
+    "en": "Visit the &website",
+    "ja": "ã¦ã§ããµã¤ã(&W)",
+    "section": "melonds"
+  },
+  {
+    "en": "View on &GitHub",
+    "ja": "GitHub(&G)",
+    "section": "melonds"
+  },
+  {
+    "en": "&Close",
+    "ja": "éãã(&C)",
+    "section": "melonds"
+  },
+  {
+    "en": "Close",
+    "ja": "éãã",
+    "section": "melonds"
+  },
+  {
+    "en": "Greyish blue",
+    "ja": "ç°ã¿ã®é",
+    "section": "melonds"
+  },
+  {
+    "en": "Brown",
+    "ja": "è¶è²",
+    "section": "melonds"
+  },
+  {
+    "en": "Red",
+    "ja": "èµ¤",
+    "section": "melonds"
+  },
+  {
+    "en": "Light pink",
+    "ja": "èããã³ã¯",
+    "section": "melonds"
+  },
+  {
+    "en": "Orange",
+    "ja": "ãªã¬ã³ã¸",
+    "section": "melonds"
+  },
+  {
+    "en": "Yellow",
+    "ja": "é»è²",
+    "section": "melonds"
+  },
+  {
+    "en": "Lime",
+    "ja": "ã©ã¤ã ",
+    "section": "melonds"
+  },
+  {
+    "en": "Light green",
+    "ja": "èãç·",
+    "section": "melonds"
+  },
+  {
+    "en": "Dark green",
+    "ja": "æ¿ãç·",
+    "section": "melonds"
+  },
+  {
+    "en": "Turquoise",
+    "ja": "ã¿ã¼ã³ã¤ãº",
+    "section": "melonds"
+  },
+  {
+    "en": "Light blue",
+    "ja": "èãé",
+    "section": "melonds"
+  },
+  {
+    "en": "Blue",
+    "ja": "é",
+    "section": "melonds"
+  },
+  {
+    "en": "Dark blue",
+    "ja": "æ¿ãé",
+    "section": "melonds"
+  },
+  {
+    "en": "Dark purple",
+    "ja": "æ¿ãç´«",
+    "section": "melonds"
+  },
+  {
+    "en": "Light purple",
+    "ja": "èãç´«",
+    "section": "melonds"
+  },
+  {
+    "en": "Dark pink",
+    "ja": "æ¿ããã³ã¯",
+    "section": "melonds"
+  },
+  {
+    "en": "French",
+    "ja": "ãã©ã³ã¹èª",
+    "section": "melonds"
+  },
+  {
+    "en": "German",
+    "ja": "ãã¤ãèª",
+    "section": "melonds"
+  },
+  {
+    "en": "Italian",
+    "ja": "ã¤ã¿ãªã¢èª",
+    "section": "melonds"
+  },
+  {
+    "en": "Spanish",
+    "ja": "ã¹ãã¤ã³èª",
+    "section": "melonds"
+  },
+  {
+    "en": "Chinese",
+    "ja": "ä¸­å½èª",
+    "section": "melonds"
+  },
+  {
+    "en": "January",
+    "ja": "1æ",
+    "section": "melonds"
+  },
+  {
+    "en": "February",
+    "ja": "2æ",
+    "section": "melonds"
+  },
+  {
+    "en": "March",
+    "ja": "3æ",
+    "section": "melonds"
+  },
+  {
+    "en": "April",
+    "ja": "4æ",
+    "section": "melonds"
+  },
+  {
+    "en": "May",
+    "ja": "5æ",
+    "section": "melonds"
+  },
+  {
+    "en": "June",
+    "ja": "6æ",
+    "section": "melonds"
+  },
+  {
+    "en": "July",
+    "ja": "7æ",
+    "section": "melonds"
+  },
+  {
+    "en": "August",
+    "ja": "8æ",
+    "section": "melonds"
+  },
+  {
+    "en": "September",
+    "ja": "9æ",
+    "section": "melonds"
+  },
+  {
+    "en": "October",
+    "ja": "10æ",
+    "section": "melonds"
+  },
+  {
+    "en": "November",
+    "ja": "11æ",
+    "section": "melonds"
+  },
+  {
+    "en": "December",
+    "ja": "12æ",
+    "section": "melonds"
+  },
+  {
+    "en": null,
+    "ja": "(ç²¾å¯ãªã¨ã¤ã ã®ãããå¯è½ãªã1ä»¥ä¸ã«ãã¦ãã ãããæ¨å¥¨ç¯å²ã¯ -3ã0 ã§ãããã ãä½ãããã¨ã¨ã¤ã æã®HUDæºããå¤§ãããªãã¾ãããã®å¤ã¯ã²ã¼ã åæåº¦ã«å¯¾ããç¸å¯¾å¤ãªã®ã§ã0ã¯æåº¦ã¼ã­ã§ã¯ãªãã1ããä½ãã ãã§ãããã®è¨­å®ã¯MPHã®ã²ã¼ã åæåº¦ãä¸æ¸ããããããã²ã¼ã åã§æåº¦ãå¤æ´ãã¦ãå¹æã¯ããã¾ããã)",
+    "objectName": "metroidMphSensitvityLabel2",
+    "section": "object"
+  },
+  {
+    "en": null,
+    "ja": "(1.5147 = MPHæ¨æºã1.9429 = X/Yè§éåº¦ä¸è´ [ãªãã·ã§ã³])",
+    "objectName": "metroidAimYAxisScaleLabel2",
+    "section": "object"
+  },
+  {
+    "en": null,
+    "ja": "<html><head/><body><p><b>入力しきい値 (デッドゾーン + スナップ)</b> (推奨: 0.01 [既定] または 0.5): |x|&lt;a → 0, a ≤ |x|&lt;1 → ±1, |x|≥1 → そのまま (a=0: オフ = 1未満をすべて無視、スナップなし)<br/>エイムが思った通りに動かない場合は、この値を下げてみてください。</p></body></html>",
+    "objectName": "metroidAimAdjustLabel",
+    "section": "object"
+  },
+  {
+    "en": null,
+    "ja": "å³æåæã¯ä½éå»¶ARM9ããã¯ã§ç¾å¨ã®ç§æºãç®æ¨ã®ç§æºã¸åæããç§æºåºæºãåæ§ç¯ãã¾ããMoonLikeã¨ã¤ã ã¯å°ããªã¨ã¤ã ç§»åãå³æåæ ããå¤§ããªã¸ã£ã³ãã ãæå¤§ã¹ãããä»ãã§è¿½å¾ãã¾ããMPHã®ã¨ã¤ã è£éç¡å¹åãå¿è¦ã§ãã",
+    "objectName": "lblMetroidLowLatencyAimDesc",
+    "section": "object"
+  },
+  {
+    "en": null,
+    "ja": "ã²ã¼ã æ¬æ¥ã®ãºã¼ã ç¶æãæå¹ãªéã ãé©ç¨ãã¾ãã100%ã§éå¸¸ã®ãã¦ã¹æåº¦ã100%æªæºã§ãºã¼ã ä¸­ã®ã¨ã¤ã ãéããªãã100%è¶ã§éããªãã¾ãã",
+    "objectName": "lblMetroidZoomAimScaleDesc",
+    "section": "object"
+  },
+  {
+    "en": null,
+    "ja": "PostFoldæ¸ãè¾¼ã¿ã¯ã¿ããå¥åå¦çã®å¾ã§ããã¯ããspec108=0 (ãµã ã¹/ã«ã³ãã³/ãã¯ãµã¹/ã¹ãã¤ã¢) ãå«ããã¹ã¦ã®ãã©ã³ã¹ãã©ã¼ã ãã«ãã¼ãã¾ããéçºèãã«ãå°ç¨ã§ãã",
+    "objectName": "lblMetroidNativeAimHookModeDesc",
+    "section": "object"
+  },
+  {
+    "en": null,
+    "ja": "æ°æ¹å¼ã¯ç­ããã¤ãã£ãå¥åã²ã¼ããã²ã¼ã æ¬æ¥ã®å¤å½¢è¦æ±å¦çã¸ãªãã¤ã¬ã¯ããã¾ããæ§æ¹å¼ã¯å¾æ¥ã®ã¿ãã/ã¡ãã¥ã¼æ¨¡æ¬ã«ããå¤å½¢å¦çãä½¿ãã¾ãã",
+    "objectName": "lblMetroidDirectAltFormTransformDesc",
+    "section": "object"
+  },
+  {
+    "en": null,
+    "ja": "ãã¬ã³ã/ã©ã¤ãã«ã®æå¹ã¹ã­ãããè¿½è·¡ããçä¼¼64bitãããã»ããã®ä¸å·åãä¿®æ­£ãã¾ãã\nJP1.0 / US1.0 / EU1.0ã§ã¯ã¹ã­ãã32ã59ãæ­£ããæ±ããããä¸é¨ã®ãã¬ã³ã/ã©ã¤ãã«ããªã³ã©ã¤ã³ã§è¦ããªããªããã¨ãããã¾ãã\nJP1.1 / US1.1 / EU1.1 / KR1.0ã¨åãããã¤ãåä½ã®ãããã»ããå¦çã«ç½®ãæãã¾ãã\n(JP1.0 / US1.0 / EU1.0ã®ã¿ãä»ã®ROMãã¼ã¸ã§ã³ã«ã¯å½±é¿ãã¾ãã)",
+    "objectName": "lblMetroidFixWifiBitsetDesc",
+    "section": "object"
+  },
+  {
+    "en": null,
+    "ja": "ã¢ã¤ã¹ã¦ã§ã¼ãã®æå¾ã®å½ä¸­/ãã¹è§åº¦å¤å®ããåã®æ¨ªæ¹åç¯å²ãã§ãã¯ã¯ä¿ã£ãã¾ã¾å®å¨ãª3Då¤å®ã¸ç½®ãæãã¦ãã·ã£ãã¦ããªã¼ãºåé¡ãä¿®æ­£ãã¾ãã",
+    "objectName": "lblMetroidFixShadowFreezeDesc",
+    "section": "object"
+  },
+  {
+    "en": null,
+    "ja": "ãã¯ãµã¹ã®ã´ã©ã¼ãµã¤ãº/ãã¬ã¼ãæ»æãæ­»äº¡ã¨ãªã¹ãã¼ã³å¾ããã¡ã¼ã¸ãä¸ãç¶ããä¸å·åãä¿®æ­£ãã¾ãããã¬ã¼ãæ»æä¸­ã«ãã¯ãµã¹ãæ­»äº¡ããã¨Altæ»æã¿ã¤ãã¼ãã¯ãªã¢ããããå¾©æ´»å¾ããã¬ã¼ãã®å½ããå¤å®ãæ®ãã¾ãããã®ä¿®æ­£ã§ã¯æ­»äº¡ããç¬éã«ã¿ã¤ãã¼ãã¯ãªã¢ãã¾ãã",
+    "objectName": "lblMetroidFixNoxusBladePersistenceDesc",
+    "section": "object"
+  },
+  {
+    "en": null,
+    "ja": "ãã®ä¿®æ­£ã¯ã¾ã ä¸å®å®ã§ããç¹ã«éå½çã§ã¯ãå ´åã«ãã£ã¦ãã¬ã¼ããæ®ãç¶ãããã¨ãããã¾ãã",
+    "objectName": "lblMetroidFixNoxusBladePersistenceWarning",
+    "section": "object"
+  },
+  {
+    "en": null,
+    "ja": "<html><body>\nDSファームウェアの言語設定を読み取り、その言語で表示するようゲームにパッチします。<br>\nEU ROMには隠し日本語オプションがあり、DSファームウェアを日本語にすると有効になります。<br><br>\n<b>EU / US ROM:</b> すべてのモードで動作します (マルチプレイとアドベンチャー)。<br>\n<b>JP ROM:</b> マルチプレイのみ動作します。<font color=\"red\"><b>有効にするとアドベンチャーモードはプレイできません。</b></font><br>\n<b>KR ROM:</b> まだ未対応です。\n</body></html>",
+    "objectName": "lblMetroidUseFirmwareLanguageDesc",
+    "section": "object"
+  },
+  {
+    "en": null,
+    "ja": "Wi-Fi/ãªã³ã©ã¤ã³å¯¾æ¦ä¸­ã§ããåç¬ã®ãããã·ã§ããéç¥ãå¼·å¶çã«è¡¨ç¤ºãã¾ãã",
+    "objectName": "lblMetroidShowHeadshotOnlineDesc",
+    "section": "object"
+  },
+  {
+    "en": null,
+    "ja": "HPæå ±ã¯åºæ¬çã«æ´æ°ãããªãããä¿¡é ¼æ§ã¯é«ãããã¾ãããèª°ã«å½ã¦ãããè¦ãå¤§ã¾ããªç®å®ã¨ãã¦ä½¿ãã¾ãã",
+    "objectName": "lblMetroidShowEnemyHpMeterOnlineDesc",
+    "section": "object"
+  },
+  {
+    "en": null,
+    "ja": "<html><body>\n安定確認済みのステージ/モード組み合わせを5個解放します。ステージ選択メニューが開いている間、自動で適用されます。<br><br>\n<b>バウンティ</b><br>\n&nbsp;&nbsp;Fuel Stack — オクトリスあり、アイテムあり<br>\n&nbsp;&nbsp;Alinos Gateway — オクトリスあり、坂の下に得意武器が出現<br><br>\n<b>キャプチャー</b><br>\n&nbsp;&nbsp;Celestial Gateway — オクトリスあり、ジャンパーとアイテムあり<br><br>\n<b>ディフェンダー</b><br>\n&nbsp;&nbsp;High Ground — アイテムあり、マグモールエリア左下にディフェンダーゾーンリング<br>\n&nbsp;&nbsp;Elder Passage — アイテムあり、マグモールエリア左下にディフェンダーゾーンリング\n</body></html>",
+    "objectName": "lblMetroidExpandStageMatrixDesc",
+    "section": "object"
+  },
+  {
+    "en": null,
+    "ja": "<html><body>\n基本選択に加えて、さらに9個の組み合わせを解放します。<br><br>\n<b>バトル / ノード / プライムハンター / サバイバル</b><br>\n&nbsp;&nbsp;Transfer Lock Wide — 通常重力<br><br>\n<b>ディフェンダー</b><br>\n&nbsp;&nbsp;Transfer Lock — ディフェンダーリングなし、ボルトドライバー + バトルハンマーのみ<br>\n&nbsp;&nbsp;Compressor Room — ディフェンダーリングなし、ジャンパーなし、アイテムなし<br>\n&nbsp;&nbsp;Incubator — ディフェンダーリングなし、アイテムとジャンパーあり<br>\n&nbsp;&nbsp;Fuel Stack — ディフェンダーリングなし、浮遊なし、インペリアリストのみ<br>\n&nbsp;&nbsp;Head Shot — ディフェンダーリングなし、通常重力、ジャンパー2個、トランスフォーム通路は射出なし\n</body></html>",
+    "objectName": "lblMetroidExpandStageMatrixExtraDesc",
+    "section": "object"
+  },
+  {
+    "en": null,
+    "ja": "<html><body>\nダブルダメージの取得、タイマー、HUD、サウンド、視覚効果はそのままに、ダメージ倍率だけを2倍から1倍へ変更します。<br><br>\n<font color=\"red\"><b>重要:</b> 2倍 → 1倍の変更は<b>自分側</b>にだけ適用されます。相手側もダメージ1倍を有効にしていない場合、ダブルダメージ中の自分の弾は相手には2倍ダメージとして扱われます。</font><br><br>\n参加者全員の同意がある場合にだけ使用してください。\n</body></html>",
+    "objectName": "lblMetroidDisableDoubleDamageMultiplierDesc",
+    "section": "object"
+  },
+  {
+    "en": null,
+    "ja": "<html><body>\nダメージを受けたときに短時間だけダブルダメージの紫状態で点滅させ、相手から被弾が見えるようにします。<br><br>\n<font color=\"red\"><b>重要:</b> これは実際のダブルダメージタイマーを書き込むため、短い間だけ本当に<b>ダブルダメージ状態に入ります</b>。その間、自分の弾は相手にも2倍ダメージを与えます。これを避けるには相手側もダメージ1倍を有効にする必要があります。</font><br><br>\n<b>対戦で使う前に、必ず参加者全員の同意を取ってください。</b> 自分のダメージを1倍に保つには、上の「ダブルダメージ倍率を無効化」と組み合わせてください。\n</body></html>",
+    "objectName": "lblMetroidDamageNotifyPurpleDesc",
+    "section": "object"
+  },
+  {
+    "en": null,
+    "ja": "æå¹ã«ããã¨ãé¸æãããã¯ã¼ã¢ããã¯åå¾ããã¦æ¶ãã¾ããããã¬ã¤ã¤ã¼å´ã®å¹æã¯ã¹ã­ããããã¾ããããã«ãã¡ã¼ã¸ãã¯ã­ã¼ã¯ããã¹ãªã«ãã®ã¿ã¤ãã¼ããã©ã°ãHUDããµã¦ã³ããè¦è¦å¹æã¯é©ç¨ããã¾ããããã®è¨­å®ãå½±é¿ããã®ã¯èªåã¨ãããã ãã§ããªã³ã©ã¤ã³ã®ç¸æã¯å¤æ´ããã¾ããã",
+    "objectName": "lblMetroidDisablePickingUpSpecificItemsDesc",
+    "section": "object"
+  },
+  {
+    "en": null,
+    "ja": "JoyToKeyãSteam InputãreWASDãªã©ãå¤é¨ã®ã³ã³ãã­ã¼ã©ã¼âã­ã¼ãã¼ã/ãã¦ã¹å¤æãã¼ã«åãã®äºæã¢ã¼ãã§ããå²ãå½ã¦ãã­ã¼ãé¢ããå¾ãæ¼ããã£ã±ãªãã«ãªãå ´åã«å½¹ç«ã¡ã¾ããéå¸¸ã®ã­ã¼ãã¼ãã¨ãã¦ã¹ãç´æ¥ä½¿ãå ´åã¯ãç¡å¹ã«ããã¨å¥åéå»¶ãå°ãæ¸ããã¨ãããã¾ãã",
+    "objectName": "lblMetroidJoy2KeySupportDesc",
+    "section": "object"
+  },
+  {
+    "en": null,
+    "ja": "ãªã: åæãªã (æå°éå»¶ã§ãããè¡¨ç¤ºãã«ã¯ã¤ããã¨ãããã¾ã)ãglFinish: åãã¬ã¼ã ã®æç»å®äºãå¾ã¤ãã¨ã§è¡¨ç¤ºãæ»ããã«ãã¾ããDwmFlush: Windowsã³ã³ãã¸ã¿ã¼ã¨åæãã¦è¡¨ç¤ºãæ»ããã«ãã¾ã (Windowsã®ã¿)ãç»é¢ãã«ã¯ã¤ãããã¡ãã¤ãããããå ´åã¯ãglFinishã¾ãã¯DwmFlushãè©¦ãã¦ãã ãããæ©éã/ã¹ã­ã¼ã¢ã¼ã·ã§ã³ä¸­ã¯èªåçã«ç¡å¹ã«ãªãã¾ãã",
+    "objectName": "labelMetroidScreenSyncDesc",
+    "section": "object"
+  },
+  {
+    "en": null,
+    "ja": "èªå: ç¾å¨ã®ã¢ã¹ãã¯ãæ¯è¨­å®ã«åããã¦ã¢ã¹ãã¯ãæ¯ããããèªåé©ç¨ãã¾ã (4:3 = ãªãã5:3/16:9/21:9 = èªåé©ç¨ãã¦ã£ã³ãã¦ = ãªã)ã",
+    "objectName": "labelInGameAspectRatioAutoDesc",
+    "section": "object"
+  },
+  {
+    "en": null,
+    "ja": "èªåã¹ã±ã¼ã«: Low = åºæº Ã0.75ãMedium = åºæºãHigh = åºæº Ã1.25 (ä¸¸ã)ã0ã«ããã¨å®è³ªçã«è­¦åãç¡å¹åãã¾ããç¯å²ã¯0-255ã§ãã",
+    "objectName": "lblMetroidLowHpWarningDesc",
+    "section": "object"
+  },
+  {
+    "en": null,
+    "ja": "æå°éå»¶ã®ãããã¨ã¤ã å¼ã³åºãå°ç¹ã§ããã¯ãã¾ããäºè¶³ç¶æã¨ spec108=1 ã®ãã©ã³ã¹ãã©ã¼ã  (ãã¬ã¼ã¹/ãµã¤ã©ãã¯ã¹/ã¦ã£ã¼ã´ã§ã«) ãã«ãã¼ãã¾ããæå¹ã«ããã¨ãä¸ã®ãã¤ãã£ãã¨ã¤ã ãã«ã¿Hook (PostFoldæ¸ãè¾¼ã¿) ããåªåããã¾ãã",
+    "objectName": "lblMetroidNativeAimRegisterInjectionDesc",
+    "section": "object"
+  },
+  {
+    "en": null,
+    "ja": "æ¼ä¸/é¢ä¸ã¨ãã¸ãã¨ãã¥ã¬ã¼ã¿ã¼å´ã§çæãããã¬ã¤ã¤ã¼ã¢ã¯ã·ã§ã³å¦çåã«MPHåé¨å¥åç¶æã¸éã­ã¾ããå°æãã¸ã£ã³ãããºã¼ã ãç§»åãã«ãã¼ãã¾ãããã¿ã³ãã¹ã¯ã¯ãã¬ã¤ã¤ã¼ã®ç¾å¨ã®æä½ããªã»ããå²ãå½ã¦è¡¨ããèª­ãããããã¹ã¦ã®ããªã»ãã (Touch R/LãDual R/L) ã«èªåå¯¾å¿ãã¾ãã",
+    "objectName": "lblMetroidImmediateInputEdgeOverlayDesc",
+    "section": "object"
+  },
+  {
+    "en": null,
+    "ja": "ãªã³ã«ããã¨ãARM9ããã¯çµç±ã§ã²ã¼ã æ¬æ¥ã®æ­¦å¨è£åå¦çãä½¿ãã¾ãããªãã§ã¯äºææ§ãã¹ãç¨ã«ãå¾æ¥ã®ã¿ãã/ã¡ãã¥ã¼æ¨¡æ¬ã«ããæ­¦å¨åæ¿ãä½¿ãã¾ãã",
+    "objectName": "lblMetroidWeaponSwitchMethodDesc",
+    "section": "object"
+  },
+  {
+    "en": null,
+    "ja": "ãªã³ã«ããã¨ãã²ã¼ã æ¬æ¥ã®äºè¶³å°æã¨ãã¸ããã¯ã§å°æå¥åãã«ãã¼ã®çµæãtrueã«ããåã®ã¯ã¼ã«ãã¦ã³ãå¼¾è¬ãå¼¾çæãHUDãSFXçµè·¯ãèªç¶ã«åããã¾ããæ§æ¹å¼ã§ã¯å¾æ¥ã®DSå¥å/å³æå¥åã¨ãã¸åæã«ããå°æçµè·¯ãä½¿ãã¾ãã",
+    "objectName": "lblMetroidBipedFireMethodDesc",
+    "section": "object"
+  },
+  {
+    "en": null,
+    "ja": "æ°æ¹å¼ã¯ã²ã¼ã åã®ãºã¼ã å²ãå½ã¦è¡¨ãèª­ããããTouch/Dualããªã»ãããã¨ã«ç°ãªãDSãã¿ã³ã¸ãºã¼ã ãå²ãå½ã¦ããã¾ããæ§æ¹å¼ããå°ãä½éå»¶ã§ããä¸¡æ¹ã®ãã§ãã¯ãå¤ãã¨ãå¾æ¥ã®å¥åçµè·¯ã¨åããåºå®Rãã¿ã³ãä½¿ãæ§æ¹å¼ã«ãªãã¾ãã",
+    "objectName": "lblMetroidZoomMethodDesc",
+    "section": "object"
+  },
+  {
+    "en": null,
+    "ja": "æ°æ¹å¼2ã¯ãæ¼ããã³ã«ã²ã¼ã æ¬æ¥ã®ãºã¼ã ç¶æãåãæ¿ãã¾ããããºã¼ã ã«æ°æ¹å¼ãä½¿ããã¨ã¯åæã«ä½¿ãã¾ããã",
+    "objectName": "lblMetroidZoomMethod2Desc",
+    "section": "object"
+  },
+  {
+    "en": null,
+    "ja": "ã¯ãªã¢",
+    "objectName": "btnClear",
+    "section": "object"
+  }
+]
