@@ -8,8 +8,11 @@
 #include <QLabel>
 #include <QLineEdit>
 #include <QPlainTextEdit>
+#include <QPushButton>
 #include <QItemSelectionModel>
+#include <QDialogButtonBox>
 #include <QEvent>
+#include <QStandardItemModel>
 #include <QTabWidget>
 #include <QTreeView>
 #include <QVariant>
@@ -228,9 +231,11 @@ constexpr Translation kTranslations[] = {
     {"Path settings", "パス設定"},
     {"Limit framerate", "フレームレート制限"},
     {"Audio sync", "音声同期"},
-    {"Metroid", "メトロイド"},
-    {"Input settings", "入力設定"},
-    {"Other settings", "その他の設定"},
+    {"MelonPrime", "MelonPrime"},
+    {"Input settings", "操作設定"},
+    {"Other settings", "MelonPrime設定"},
+    {"MelonPrime settings", "MelonPrime設定"},
+    {"Custom HUD settings", "カスタムHUD設定"},
     {"Disable SF (Shadow Freeze)", "SF (シャドウフリーズ) を無効化"},
     {"In-Game Top Screen Only", "ゲーム中は上画面のみ"},
     {"Help", "ヘルプ"},
@@ -239,7 +244,6 @@ constexpr Translation kTranslations[] = {
 
     // Tabs and major sections
     {"MelonPrime Settings", "MelonPrime設定"},
-    {"Metroid Settings", "Metroid設定"},
     {"Controls", "操作"},
     {"Controls 2", "操作 2"},
     {"Custom HUD", "カスタムHUD"},
@@ -1431,6 +1435,79 @@ void wireMelonDsDialogDynamicLabels(QWidget* dialog)
     relocalizeOption();
 }
 
+void wireMelonDsLANDialogLabels(QWidget* dialog)
+{
+    if (!dialog || !IsJapaneseLocale())
+        return;
+
+    const QString dialogName = dialog->objectName();
+
+    auto localizeLanWarning = [](QLabel* label)
+    {
+        if (!label)
+            return;
+        label->setText(QStringLiteral(
+            "<html><head/><body>"
+            "<p>警告: LANは低レイテンシのネットワーク接続が必要です。</p>"
+            "<p>VPNやトンネル経由では動作しない可能性があります。</p>"
+            "</body></html>"));
+    };
+
+    if (dialogName == QStringLiteral("LANStartHostDialog"))
+    {
+        localizeLanWarning(dialog->findChild<QLabel*>(QStringLiteral("label_3")));
+        return;
+    }
+
+    if (dialogName != QStringLiteral("LANStartClientDialog"))
+        return;
+
+    localizeLanWarning(dialog->findChild<QLabel*>(QStringLiteral("label_2")));
+
+    if (auto* box = dialog->findChild<QDialogButtonBox*>(QStringLiteral("buttonBox")))
+    {
+        if (auto* ok = box->button(QDialogButtonBox::Ok))
+        {
+            const QString source = SourceObjectPropertyText(
+                ok,
+                "_melonprime_src_text",
+                QStringLiteral("Connect"));
+            ok->setText(Tr(source));
+        }
+
+        for (QAbstractButton* btn : box->buttons())
+        {
+            const QString source = SourceObjectPropertyText(
+                btn,
+                "_melonprime_src_text",
+                btn->text());
+            if (source == QStringLiteral("Direct connect..."))
+                btn->setText(Tr(source));
+        }
+    }
+
+    if (auto* tree = dialog->findChild<QTreeView*>(QStringLiteral("tvAvailableGames")))
+    {
+        if (auto* model = qobject_cast<QStandardItemModel*>(tree->model()))
+        {
+            const QStringList sourceHeaders = SourcePropertyTextList(
+                tree,
+                "_melonprime_lan_client_headers",
+                {
+                    QStringLiteral("Name"),
+                    QStringLiteral("Players"),
+                    QStringLiteral("Status"),
+                    QStringLiteral("Host IP"),
+                });
+            QStringList translated;
+            translated.reserve(sourceHeaders.size());
+            for (const QString& header : sourceHeaders)
+                translated.append(Tr(header));
+            model->setHorizontalHeaderLabels(translated);
+        }
+    }
+}
+
 class MelonDsDialogShowLocalizer final : public QObject
 {
 public:
@@ -1474,6 +1551,7 @@ void LocalizeMelonDsDialog(QWidget* dialog)
     if (!IsJapaneseLocale() || !dialog)
         return;
     LocalizeWidgetTree(dialog);
+    wireMelonDsLANDialogLabels(dialog);
     wireMelonDsDialogDynamicLabels(dialog);
 }
 

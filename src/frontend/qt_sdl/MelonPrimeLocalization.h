@@ -76,6 +76,16 @@ DialogT* OpenLocalizedMelonDsDialog(QWidget* parent)
     DialogT::currentDlg->show();
     return DialogT::currentDlg;
 }
+
+// One-shot dialogs without a static currentDlg (e.g. LAN host/join).
+template<typename DialogT>
+DialogT* OpenLocalizedMelonDsDialogOnce(QWidget* parent)
+{
+    DialogT* dlg = new DialogT(parent);
+    InstallMelonDsDialogShowLocalizer(dlg);
+    dlg->open();
+    return dlg;
+}
 #endif
 
 void LocalizeActionTextProperties(QAction* action);

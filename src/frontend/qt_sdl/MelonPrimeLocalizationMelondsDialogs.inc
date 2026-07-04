@@ -232,6 +232,26 @@
     {"Previous", "前回の値"},
     {"Found:", "検出:"},
 
+    // LAN host / join
+    {"Host LAN game - melonDS", "LANゲームをホスト - melonDS"},
+    {"Join LAN game - melonDS", "LANゲームに参加 - melonDS"},
+    {"Player name:", "プレイヤー名:"},
+    {"Number of players:", "プレイヤー数:"},
+    {"Connect", "接続"},
+    {"Direct connect...", "直接接続..."},
+    {"Direct connect", "直接接続"},
+    {"Host address:", "ホストアドレス:"},
+    {"Name", "名前"},
+    {"Players", "プレイヤー"},
+    {"Status", "状態"},
+    {"Host IP", "ホスト IP"},
+    {"Idle", "待機中"},
+    {"Playing", "プレイ中"},
+    {"Please enter a player name.", "プレイヤー名を入力してください。"},
+    {"Failed to start LAN game.", "LANゲームの開始に失敗しました。"},
+    {"Please enter a player name before connecting.", "接続する前にプレイヤー名を入力してください。"},
+    {"Failed to connect to the host %0.", "ホスト %0 への接続に失敗しました。"},
+
     // About / Help
     {"About melonDS", "melonDSについて"},
     {"Visit the &website", "ウェブサイト(&W)"},
