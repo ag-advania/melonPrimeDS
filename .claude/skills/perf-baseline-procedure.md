@@ -21,6 +21,11 @@ not commit ROMs, saves, screenshots, or raw perf logs.
 Use the same ROM, settings, resolution, renderer, HUD settings, and gameplay
 state for every platform.
 
+**Record OSD on/off** in the log filename or summary notes. macOS / Linux VM
+initial baselines may have been taken with **OSD disabled**; keep Windows on the
+same setting for cross-platform comparison. Use a separate soak label (e.g.
+`--label macos-osd-on`) if you need an OSD-on baseline for `OsdColor` work.
+
 1. Start a developer build with `MELONPRIME_PERF=1`.
 2. Enter an in-game battle or bot match and wait for normal 60 fps gameplay.
 3. Play or leave the same controlled scene running for 10 minutes.
