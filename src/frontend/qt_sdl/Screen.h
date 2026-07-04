@@ -121,6 +121,7 @@ public:
     }
 
     void reloadNoRomSplashLocalization();
+    void containAimCursorIfNeeded();
 
 public slots:
     void clipCursorCenter1px();
@@ -279,6 +280,7 @@ private:
     std::optional<QRect> getScreenWidgetRect(int wantedScreenKind) const;
     std::optional<QRect> getBottomScreenWidgetRect() const;
     void clipCursorToBottomScreen();
+    QRect aimContainmentLocalRect() const;
     void setClipWanted(bool value);
     bool getClipWanted() const;
     bool m_lastInGameTopScreenOnlyOverride = false;

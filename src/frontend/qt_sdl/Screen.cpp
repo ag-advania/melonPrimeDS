@@ -203,7 +203,7 @@ void ScreenPanel::refreshClipForGameStateChange()
     if (!topScreenOnlyStateUnchanged)
         setupScreenLayout();
 
-#if defined(_WIN32)
+#if defined(_WIN32) || defined(__APPLE__)
     if (!clipStateUnchanged)
         updateClipIfNeeded();
 #endif
@@ -280,6 +280,45 @@ std::optional<QRect> ScreenPanel::getTopScreenWidgetRect() const
 }
 #endif
 
+QRect ScreenPanel::aimContainmentLocalRect() const
+{
+    QRect unionRect;
+    bool found = false;
+    const QRectF screenRect(0.0, 0.0, 256.0, 192.0);
+
+    for (int i = 0; i < numScreens; ++i) {
+        const float* mtx = screenMatrix[i];
+        QTransform transform(mtx[0], mtx[1], 0.0,
+                             mtx[2], mtx[3], 0.0,
+                             mtx[4], mtx[5], 1.0);
+        const QRect r = transform.mapRect(screenRect).toAlignedRect().intersected(rect());
+        if (r.isEmpty())
+            continue;
+        unionRect = found ? unionRect.united(r) : r;
+        found = true;
+    }
+
+    return found ? unionRect : rect();
+}
+
+void ScreenPanel::containAimCursorIfNeeded()
+{
+    if (!getClipWanted())
+        return;
+    if (!isVisible() || !window() || !window()->isActiveWindow())
+        return;
+
+    const QRect local = aimContainmentLocalRect();
+    const QPoint globalTopLeft = mapToGlobal(local.topLeft());
+    const QRect globalRect(globalTopLeft, local.size());
+    const QPoint global = QCursor::pos();
+    if (globalRect.contains(global))
+        return;
+
+    const QPoint center = mapToGlobal(local.center());
+    MelonPrime::PlatformInput_WarpCursor(center.x(), center.y());
+}
+
 void ScreenPanel::clipCursorToBottomScreen() {
     setCursor(Qt::ArrowCursor);
 #ifdef _WIN32
@@ -348,6 +387,9 @@ void ScreenPanel::updateClipIfNeeded() {
 
     if (getClipWanted()) {
         clipCursorCenter1px();
+#if defined(__APPLE__)
+        containAimCursorIfNeeded();
+#endif
         return;
     }
 
@@ -520,7 +562,7 @@ void ScreenPanel::setupScreenLayout()
             core->NotifyLayoutChange();
         }
     }
-#if defined(_WIN32)
+#if defined(_WIN32) || defined(__APPLE__)
     updateClipIfNeeded();
 #endif
 #endif
@@ -733,6 +775,11 @@ void ScreenPanel::mouseMoveEvent(QMouseEvent* event)
         && !core->isCursorMode
         && core->IsInGame())
     {
+#if defined(__APPLE__)
+        if (getClipWanted())
+            containAimCursorIfNeeded();
+        return;
+#elif defined(__linux__)
         const QPoint center = mapToGlobal(rect().center());
 #if QT_VERSION_MAJOR == 6
         const QPoint global = event->globalPosition().toPoint();
@@ -745,15 +792,12 @@ void ScreenPanel::mouseMoveEvent(QMouseEvent* event)
 
         if (core->IsPlatformRawAimActive()) {
             // Platform raw owns aim deltas (warp-immune). Threshold containment only.
-#if defined(__linux__)
             aimLastGlobalValid.store(false, std::memory_order_release);
-#endif
             if (strayed)
                 MelonPrime::PlatformInput_WarpCursor(center.x(), center.y());
             return;
         }
 
-#if defined(__linux__)
         // Qt fallback (XWayland / sessions where raw motion never arrives):
         const auto warpToCenter = [&]() {
             aimLastGlobalValid.store(false, std::memory_order_release);
@@ -775,10 +819,6 @@ void ScreenPanel::mouseMoveEvent(QMouseEvent* event)
         aimLastGlobalValid.store(true, std::memory_order_release);
         if (strayed)
             warpToCenter();
-        return;
-#elif defined(__APPLE__)
-        // QCursor fallback: delta from QCursor::pos() in GameInput; per-frame
-        // recenter stays in ProcessAimInputMouse when raw is unavailable.
         return;
 #endif
     }
@@ -1983,7 +2023,7 @@ void ScreenPanel::unfocus()
 
 void ScreenPanel::focusInEvent(QFocusEvent * event)
 {
-#if defined(_WIN32)
+#if defined(_WIN32) || defined(__APPLE__)
     updateClipIfNeeded();
 #endif
     QWidget::focusInEvent(event);
@@ -2003,14 +2043,14 @@ void ScreenPanel::focusOutEvent(QFocusEvent * event)
 
 void ScreenPanel::enterEvent(QEnterEvent * event)
 {
-#if defined(_WIN32)
+#if defined(_WIN32) || defined(__APPLE__)
     updateClipIfNeeded();
 #endif
     QWidget::enterEvent(event);
 }
 
 void ScreenPanel::moveEvent(QMoveEvent * e) {
-#if defined(_WIN32)
+#if defined(_WIN32) || defined(__APPLE__)
     updateClipIfNeeded();
 #endif
 #include "MelonPrimeHudScreenCppEditPanelMove.inc"

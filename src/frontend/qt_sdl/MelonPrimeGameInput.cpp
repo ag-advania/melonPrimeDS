@@ -521,6 +521,10 @@ namespace MelonPrime {
         }
 
         if (LIKELY(m_flags.test(StateFlags::BIT_LAST_FOCUSED))) {
+#if defined(__APPLE__)
+            if (isClipWanted && m_cachedPanel)
+                m_cachedPanel->containAimCursorIfNeeded();
+#endif
             const int32_t deltaX = m_input.mouseX;
             const int32_t deltaY = m_input.mouseY;
             const bool hasDelta = (deltaX | deltaY) != 0;
