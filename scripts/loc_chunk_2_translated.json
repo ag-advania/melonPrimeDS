@@ -1,7 +1,7 @@
 [
   {
     "en": "Off",
-    "ja": "ãªã",
+    "ja": "オフ",
     "section": "core",
     "de": "Aus",
     "es": "Off",
@@ -9,7 +9,7 @@
   },
   {
     "en": "Copy Output",
-    "ja": "åºåãã³ãã¼",
+    "ja": "出力をコピー",
     "section": "core",
     "de": "Ausgabe kopieren",
     "es": "Copiar salida",
@@ -17,7 +17,7 @@
   },
   {
     "en": "Select HUD Font File",
-    "ja": "HUDãã©ã³ããã¡ã¤ã«ãé¸æ",
+    "ja": "HUDフォントファイルを選択",
     "section": "core",
     "de": "HUD-Schriftdatei auswählen",
     "es": "Seleccionar archivo de fuente HUD",
@@ -25,7 +25,7 @@
   },
   {
     "en": "Chng",
-    "ja": "å¤æ´",
+    "ja": "変更",
     "section": "core",
     "de": "Änd.",
     "es": "Camb.",
@@ -33,7 +33,7 @@
   },
   {
     "en": "Normal",
-    "ja": "éå¸¸",
+    "ja": "通常",
     "section": "core",
     "de": "Normal",
     "es": "Normal",
@@ -41,7 +41,7 @@
   },
   {
     "en": "Overall",
-    "ja": "å¨ä½",
+    "ja": "全体",
     "section": "core",
     "de": "Gesamt",
     "es": "General",
@@ -49,7 +49,7 @@
   },
   {
     "en": "Font files (*.ttf *.otf *.ttc);;All files (*)",
-    "ja": "ãã©ã³ããã¡ã¤ã« (*.ttf *.otf *.ttc);;ãã¹ã¦ã®ãã¡ã¤ã« (*)",
+    "ja": "フォントファイル (*.ttf *.otf *.ttc);;すべてのファイル (*)",
     "section": "core",
     "de": "Schriftdateien (*.ttf *.otf *.ttc);;Alle Dateien (*)",
     "es": "Archivos de fuente (*.ttf *.otf *.ttc);;Todos los archivos (*)",
@@ -57,7 +57,7 @@
   },
   {
     "en": "Open ROM...",
-    "ja": "ROMãéã...",
+    "ja": "ROMを開く...",
     "section": "core",
     "de": "ROM öffnen...",
     "es": "Abrir ROM...",
@@ -65,7 +65,7 @@
   },
   {
     "en": "DS slot",
-    "ja": "DSã¹ã­ãã",
+    "ja": "DSスロット",
     "section": "core",
     "de": "DS-Steckplatz",
     "es": "Ranura DS",
@@ -73,7 +73,7 @@
   },
   {
     "en": "Insert add-on cart",
-    "ja": "ã¢ããªã³ã«ã¼ããªãã¸ãæ¿å¥",
+    "ja": "アドオンカートリッジを挿入",
     "section": "core",
     "de": "Add-on-Karte einlegen",
     "es": "Insertar cartucho add-on",
@@ -81,7 +81,7 @@
   },
   {
     "en": "Undo state load",
-    "ja": "ã¹ãã¼ãèª­ã¿è¾¼ã¿ãåãæ¶ã",
+    "ja": "ステート読み込みを取り消す",
     "section": "core",
     "de": "Zustandsladen rückgängig",
     "es": "Deshacer carga de estado",
@@ -89,7 +89,7 @@
   },
   {
     "en": "Stop",
-    "ja": "åæ­¢",
+    "ja": "停止",
     "section": "core",
     "de": "Stopp",
     "es": "Detener",
@@ -97,7 +97,7 @@
   },
   {
     "en": "Setup cheat codes",
-    "ja": "ãã¼ãã³ã¼ãè¨­å®",
+    "ja": "チートコード設定",
     "section": "core",
     "de": "Cheat-Codes einrichten",
     "es": "Configurar códigos de trucos",
@@ -105,7 +105,7 @@
   },
   {
     "en": "Launch new instance",
-    "ja": "æ°ããã¤ã³ã¹ã¿ã³ã¹ãèµ·å",
+    "ja": "新しいインスタンスを起動",
     "section": "core",
     "de": "Neue Instanz starten",
     "es": "Iniciar nueva instancia",
@@ -113,7 +113,7 @@
   },
   {
     "en": "Screen rotation",
-    "ja": "ç»é¢åè»¢",
+    "ja": "画面回転",
     "section": "core",
     "de": "Bildschirmdrehung",
     "es": "Rotación de pantalla",
@@ -121,7 +121,7 @@
   },
   {
     "en": "Horizontal",
-    "ja": "æ¨ª",
+    "ja": "横",
     "section": "core",
     "de": "Horizontal",
     "es": "Horizontal",
@@ -129,7 +129,7 @@
   },
   {
     "en": "Emphasize top",
-    "ja": "ä¸ç»é¢ãéè¦",
+    "ja": "上画面を重視",
     "section": "core",
     "de": "Oberen Bildschirm betonen",
     "es": "Enfatizar pantalla superior",
@@ -137,7 +137,7 @@
   },
   {
     "en": "Aspect ratio",
-    "ja": "ã¢ã¹ãã¯ãæ¯",
+    "ja": "アスペクト比",
     "section": "core",
     "de": "Seitenverhältnis",
     "es": "Relación de aspecto",
@@ -145,7 +145,7 @@
   },
   {
     "en": "Emu settings",
-    "ja": "ã¨ãã¥ã¬ã¼ã¿ã¼è¨­å®",
+    "ja": "エミュレーター設定",
     "section": "core",
     "de": "Emulator-Einstellungen",
     "es": "Ajustes del emulador",
@@ -153,7 +153,7 @@
   },
   {
     "en": "Audio settings",
-    "ja": "é³å£°è¨­å®",
+    "ja": "音声設定",
     "section": "core",
     "de": "Audio-Einstellungen",
     "es": "Ajustes de audio",
@@ -161,7 +161,7 @@
   },
   {
     "en": "Path settings",
-    "ja": "ãã¹è¨­å®",
+    "ja": "パス設定",
     "section": "core",
     "de": "Pfad-Einstellungen",
     "es": "Ajustes de rutas",
@@ -169,7 +169,7 @@
   },
   {
     "en": "Other settings",
-    "ja": "MelonPrimeè¨­å®",
+    "ja": "MelonPrime設定",
     "section": "core",
     "de": "MelonPrime-Einstellungen",
     "es": "Ajustes de MelonPrime",
@@ -177,7 +177,7 @@
   },
   {
     "en": "Help",
-    "ja": "ãã«ã",
+    "ja": "ヘルプ",
     "section": "core",
     "de": "Hilfe",
     "es": "Ayuda",
@@ -185,7 +185,7 @@
   },
   {
     "en": "Controls 2",
-    "ja": "æä½ 2",
+    "ja": "操作 2",
     "section": "core",
     "de": "Steuerung 2",
     "es": "Controles 2",
@@ -193,7 +193,7 @@
   },
   {
     "en": "INPUT SETTINGS",
-    "ja": "å¥åè¨­å®",
+    "ja": "入力設定",
     "section": "core",
     "de": "EINGABE-EINSTELLUNGEN",
     "es": "AJUSTES DE ENTRADA",
@@ -201,7 +201,7 @@
   },
   {
     "en": "IN-GAME ASPECT RATIO",
-    "ja": "ã²ã¼ã åã¢ã¹ãã¯ãæ¯",
+    "ja": "ゲーム内アスペクト比",
     "section": "core",
     "de": "SEITENVERHÄLTNIS IM SPIEL",
     "es": "RELACIÓN DE ASPECTO EN EL JUEGO",
@@ -209,7 +209,7 @@
   },
   {
     "en": "DISABLE FEATURES",
-    "ja": "æ©è½ç¡å¹å",
+    "ja": "機能無効化",
     "section": "core",
     "de": "FUNKTIONEN DEAKTIVIEREN",
     "es": "DESACTIVAR FUNCIONES",
@@ -217,7 +217,7 @@
   },
   {
     "en": "LICENSE APPLY",
-    "ja": "ã©ã¤ã»ã³ã¹åæ ",
+    "ja": "ライセンス反映",
     "section": "core",
     "de": "LIZENZ ANWENDEN",
     "es": "APLICAR LICENCIA",
@@ -225,7 +225,7 @@
   },
   {
     "en": "HUD FONT",
-    "ja": "HUDãã©ã³ã",
+    "ja": "HUDフォント",
     "section": "core",
     "de": "HUD-SCHRIFT",
     "es": "FUENTE HUD",
@@ -233,7 +233,7 @@
   },
   {
     "en": "IN-GAME OSD COLOR",
-    "ja": "ã²ã¼ã åOSDè²",
+    "ja": "ゲーム内OSD色",
     "section": "core",
     "de": "OSD-FARBE IM SPIEL",
     "es": "COLOR OSD EN EL JUEGO",
@@ -241,7 +241,7 @@
   },
   {
     "en": "[Metroid] (S) Move Back",
-    "ja": "[Metroid] (S) å¾é",
+    "ja": "[Metroid] (S) 後退",
     "section": "core",
     "de": "[Metroid] (S) Zurück",
     "es": "[Metroid] (S) Retroceder",
@@ -249,7 +249,7 @@
   },
   {
     "en": "[Metroid] (Mouse Right) Imperialist Zoom, Map Zoom Out, Morph Ball Boost",
-    "ja": "[Metroid] (ãã¦ã¹å³) ã¤ã³ããªã¢ãªã¹ããºã¼ã ããããç¸®å°ãã¢ã¼ããã¼ã«ãã¼ã¹ã",
+    "ja": "[Metroid] (マウス右) インペリアリストズーム、マップ縮小、モーフボールブースト",
     "section": "core",
     "de": "[Metroid] (Rechte Maustaste) Imperialist-Zoom, Karte verkleinern, Morph Ball Boost",
     "es": "[Metroid] (Clic derecho) Zoom Imperialist, alejar mapa, impulso Morph Ball",
@@ -257,7 +257,7 @@
   },
   {
     "en": "[Metroid] (Mouse 4, Side Bottom) Weapon Missile",
-    "ja": "[Metroid] (Mouse 4/ãµã¤ãä¸) ããµã¤ã«",
+    "ja": "[Metroid] (Mouse 4/サイド下) ミサイル",
     "section": "core",
     "de": "[Metroid] (Maustaste 4, Seitentaste unten) Waffe Rakete",
     "es": "[Metroid] (Ratón 4, lateral inferior) Arma misil",
@@ -265,7 +265,7 @@
   },
   {
     "en": "[Metroid] (5) Weapon 5. Battlehammer",
-    "ja": "[Metroid] (5) æ­¦å¨5: ããã«ãã³ãã¼",
+    "ja": "[Metroid] (5) 武器5: バトルハンマー",
     "section": "core",
     "de": "[Metroid] (5) Waffe 5: Battlehammer",
     "es": "[Metroid] (5) Arma 5: Battlehammer",
@@ -273,7 +273,7 @@
   },
   {
     "en": "[Metroid] (PgDown) AimSensitivity Down",
-    "ja": "[Metroid] (PgDown) ã¨ã¤ã æåº¦ãä¸ãã",
+    "ja": "[Metroid] (PgDown) エイム感度を下げる",
     "section": "core",
     "de": "[Metroid] (PgDown) Ziel-Empfindlichkeit verringern",
     "es": "[Metroid] (RePág) Reducir sensibilidad de puntería",
@@ -281,7 +281,7 @@
   },
   {
     "en": "[Metroid] (X) UI Right (Adventure Right Arrow / Hunter License R)",
-    "ja": "[Metroid] (X) UIå³ (ã¢ããã³ãã£ã¼å³/ã©ã¤ã»ã³ã¹R)",
+    "ja": "[Metroid] (X) UI右 (アドベンチャー右/ライセンスR)",
     "section": "core",
     "de": "[Metroid] (X) UI rechts (Abenteuer-Pfeil rechts / Hunter-Lizenz R)",
     "es": "[Metroid] (X) UI derecha (Flecha derecha aventura / Licencia Hunter R)",
@@ -289,7 +289,7 @@
   },
   {
     "en": "MPH Sensitivity (default: -3)",
-    "ja": "MPHæåº¦ (æ¢å®: -3)",
+    "ja": "MPH感度 (既定: -3)",
     "section": "core",
     "de": "MPH-Empfindlichkeit (Standard: -3)",
     "es": "Sensibilidad MPH (predeterminado: -3)",
@@ -297,7 +297,7 @@
   },
   {
     "en": "Instant Aim Follow",
-    "ja": "å³æã¨ã¤ã è¿½å¾",
+    "ja": "即時エイム追従",
     "section": "core",
     "de": "Sofortige Zielverfolgung",
     "es": "Seguimiento de puntería instantáneo",
@@ -305,7 +305,7 @@
   },
   {
     "en": "Unlock All Hunters/Maps/SoundTest/Gallery (Change a setting in MPH and save to update the save data. Uncheck this option after saving)",
-    "ja": "å¨ãã³ã¿ã¼/ããã/ãµã¦ã³ããã¹ã/ã®ã£ã©ãªã¼ãè§£æ¾ (MPHå´ã§è¨­å®ãå¤æ´ãã¦ä¿å­ããã¨ã»ã¼ãã«åæ ãä¿å­å¾ã¯ãªãæ¨å¥¨)",
+    "ja": "全ハンター/マップ/サウンドテスト/ギャラリーを解放 (MPH側で設定を変更して保存するとセーブに反映。保存後はオフ推奨)",
     "section": "core",
     "de": "Alle Hunter/Karten/Soundtest/Galerie freischalten (Einstellung in MPH ändern und speichern, um Speicherdaten zu aktualisieren. Option nach dem Speichern deaktivieren)",
     "es": "Desbloquear todos los cazadores/mapas/prueba de sonido/galería (Cambia un ajuste en MPH y guarda para actualizar los datos. Desmarca esta opción tras guardar)",
@@ -313,7 +313,7 @@
   },
   {
     "en": "Disable MPH Aim Smoothing (Disables the in-game aim smoothing. Note: Sensitivity will be reduced to 25% in Stylus Mode)",
-    "ja": "MPHã®ã¨ã¤ã è£éãç¡å¹å (ã²ã¼ã åã®ã¨ã¤ã è£éãç¡å¹åãã¹ã¿ã¤ã©ã¹ã¢ã¼ãã§ã¯æåº¦ã25%ã«ãªãã¾ã)",
+    "ja": "MPHのエイム補間を無効化 (ゲーム内のエイム補間を無効化。スタイラスモードでは感度が25%になります)",
     "section": "core",
     "de": "MPH-Zielglättung deaktivieren (Deaktiviert die Zielglättung im Spiel. Hinweis: Empfindlichkeit wird im Stylus-Modus auf 25 % reduziert)",
     "es": "Desactivar suavizado de puntería MPH (Desactiva el suavizado de puntería en el juego. Nota: la sensibilidad se reduce al 25 % en modo stylus)",
@@ -321,7 +321,7 @@
   },
   {
     "en": "Enable Immediate Input Edge Overlay",
-    "ja": "å³æå¥åã¨ãã¸åæãæå¹å",
+    "ja": "即時入力エッジ合成を有効化",
     "section": "core",
     "de": "Sofortige Eingabe-Kantenüberlagerung aktivieren",
     "es": "Activar superposición de bordes de entrada inmediata",
@@ -329,7 +329,7 @@
   },
   {
     "en": "Screen Sync Mode",
-    "ja": "ç»é¢åææ¹å¼",
+    "ja": "画面同期方式",
     "section": "core",
     "de": "Bildschirm-Synchronisationsmodus",
     "es": "Modo de sincronización de pantalla",
@@ -337,7 +337,7 @@
   },
   {
     "en": "Aspect Ratio Mode",
-    "ja": "ã¢ã¹ãã¯ãæ¯ã¢ã¼ã",
+    "ja": "アスペクト比モード",
     "section": "core",
     "de": "Seitenverhältnis-Modus",
     "es": "Modo de relación de aspecto",
@@ -353,7 +353,7 @@
   },
   {
     "en": "Friend/Rival Wi-Fi Active Bitset Fix (v2)",
-    "ja": "ãã¬ã³ã/ã©ã¤ãã«Wi-Fiæå¹ãããä¿®æ­£ (v2)",
+    "ja": "フレンド/ライバルWi-Fi有効ビット修正 (v2)",
     "section": "core",
     "de": "Freund/Rivale Wi-Fi-Aktiv-Bitset-Fix (v2)",
     "es": "Corrección de bitset activo Wi-Fi amigo/rival (v2)",
@@ -361,7 +361,7 @@
   },
   {
     "en": "Damage Notify Purple",
-    "ja": "ãã¡ã¼ã¸éç¥ãç´«ã«ãã",
+    "ja": "ダメージ通知を紫にする",
     "section": "core",
     "de": "Schadensmeldung violett",
     "es": "Notificación de daño en púrpura",
@@ -369,7 +369,7 @@
   },
   {
     "en": "Reset sensitivity values",
-    "ja": "æåº¦ãæ¢å®å¤ã«æ»ã",
+    "ja": "感度を既定値に戻す",
     "section": "core",
     "de": "Empfindlichkeitswerte zurücksetzen",
     "es": "Restablecer valores de sensibilidad",
@@ -377,7 +377,7 @@
   },
   {
     "en": "Apply music volume",
-    "ja": "BGMé³éãåæ ",
+    "ja": "BGM音量を反映",
     "section": "core",
     "de": "Musiklautstärke anwenden",
     "es": "Aplicar volumen de música",
@@ -385,7 +385,7 @@
   },
   {
     "en": "Red(JP,KR)",
-    "ja": "èµ¤ (JP,KR)",
+    "ja": "赤 (JP,KR)",
     "section": "core",
     "de": "Rot (JP,KR)",
     "es": "Rojo (JP,KR)",
@@ -393,15 +393,15 @@
   },
   {
     "en": "Disabled (vanilla 25)",
-    "ja": "ç¡å¹ (ããã©25)",
+    "ja": "無効 (バニラ25)",
     "section": "core",
     "de": "Deaktiviert (Vanilla 25)",
     "es": "Desactivado (vanilla 25)",
     "fr": "Désactivé (vanilla 25)"
   },
   {
-    "en": "Per Damage â Medium",
-    "ja": "ãã¡ã¼ã¸å¥ - ä¸­",
+    "en": "Per Damage — Medium",
+    "ja": "ダメージ別 - 中",
     "section": "core",
     "de": "Pro Schaden — Mittel",
     "es": "Por daño — Medio",
@@ -409,7 +409,7 @@
   },
   {
     "en": "Features in this section are still in development and are not ready for public release. They may or may not be released.",
-    "ja": "ãã®ã»ã¯ã·ã§ã³ã®æ©è½ã¯éçºä¸­ã§ãå¬éãªãªã¼ã¹ã®æºåã¯ã¾ã ã§ãã¦ãã¾ãããä»å¾å¬éãããã¨ã¯éãã¾ããã",
+    "ja": "このセクションの機能は開発中で、公開リリースの準備はまだできていません。今後公開されるとは限りません。",
     "section": "core",
     "de": "Funktionen in diesem Abschnitt befinden sich noch in der Entwicklung und sind nicht für die Veröffentlichung bereit. Eine Veröffentlichung ist nicht garantiert.",
     "es": "Las funciones de esta sección aún están en desarrollo y no están listas para su lanzamiento público. Puede que se publiquen o no.",
@@ -417,15 +417,15 @@
   },
   {
     "en": "Checked: use the current in-game zoom binding from the player's control preset. Unchecked: use the older fixed R-button path.",
-    "ja": "ãªã³: ç¾å¨ã®æä½ããªã»ããã«ããã²ã¼ã åãºã¼ã å²ãå½ã¦ãä½¿ãã¾ãããªã: å¾æ¥ã®åºå®Rãã¿ã³çµè·¯ãä½¿ãã¾ãã",
+    "ja": "オン: 現在の操作プリセットにあるゲーム内ズーム割り当てを使います。オフ: 従来の固定Rボタン経路を使います。",
     "section": "core",
     "de": "Aktiviert: aktuelle Zoom-Belegung aus dem Steuerungs-Preset verwenden. Deaktiviert: älteren festen R-Tasten-Pfad verwenden.",
     "es": "Marcado: usa la asignación de zoom en el juego del preset de controles del jugador. Desmarcado: usa la ruta fija antigua del botón R.",
     "fr": "Coché : utilise la touche de zoom en jeu du preset de contrôles du joueur. Décoché : utilise l'ancien chemin fixe du bouton R."
   },
   {
-    "en": "Setting Key: Metroid.Volume.Music (0â9)",
-    "ja": "è¨­å®ã­ã¼: Metroid.Volume.Music (0-9)",
+    "en": "Setting Key: Metroid.Volume.Music (0–9)",
+    "ja": "設定キー: Metroid.Volume.Music (0-9)",
     "section": "core",
     "de": "Einstellungsschlüssel: Metroid.Volume.Music (0–9)",
     "es": "Clave de ajuste: Metroid.Volume.Music (0–9)",
@@ -433,7 +433,7 @@
   },
   {
     "en": "Windows only. Applies only while the bottom screen is actually being drawn. Press ESC to release the cursor.",
-    "ja": "Windowsã®ã¿ãä¸ç»é¢ãå®éã«æç»ããã¦ããéã ãé©ç¨ããã¾ããESCã§ã«ã¼ã½ã«å¶éãè§£é¤ãã¾ãã",
+    "ja": "Windowsのみ。下画面が実際に描画されている間だけ適用されます。ESCでカーソル制限を解除します。",
     "section": "core",
     "de": "Nur Windows. Gilt nur, solange der untere Bildschirm tatsächlich gezeichnet wird. ESC drücken, um den Cursor freizugeben.",
     "es": "Solo Windows. Se aplica solo mientras se dibuja la pantalla inferior. Pulsa ESC para liberar el cursor.",
@@ -441,15 +441,15 @@
   },
   {
     "en": "Hide this dialog and enter the interactive HUD position editor",
-    "ja": "ãã®ãã¤ã¢ã­ã°ãé ãã¦ãå¯¾è©±å¼HUDéç½®ã¨ãã£ã¿ã¼ã«å¥ãã¾ã",
+    "ja": "このダイアログを隠して、対話式HUD配置エディターに入ります",
     "section": "core",
     "de": "Diesen Dialog ausblenden und interaktiven HUD-Positionseditor öffnen",
     "es": "Ocultar este diálogo y entrar en el editor interactivo de posición HUD",
     "fr": "Masquer cette boîte de dialogue et ouvrir l'éditeur interactif de position HUD"
   },
   {
-    "en": "â Common HUD â",
-    "ja": "- å±éHUD -",
+    "en": "— Common HUD —",
+    "ja": "- 共通HUD -",
     "section": "core",
     "de": "— Gemeinsames HUD —",
     "es": "— HUD común —",
@@ -457,7 +457,7 @@
   },
   {
     "en": "Hide HP",
-    "ja": "HPãéè¡¨ç¤º",
+    "ja": "HPを非表示",
     "section": "core",
     "de": "HP ausblenden",
     "es": "Ocultar HP",
@@ -465,7 +465,7 @@
   },
   {
     "en": "Hide Score: Prime Hunter",
-    "ja": "ã¹ã³ã¢éè¡¨ç¤º: ãã©ã¤ã ãã³ã¿ã¼",
+    "ja": "スコア非表示: プライムハンター",
     "section": "core",
     "de": "Punkte ausblenden: Prime Hunter",
     "es": "Ocultar puntuación: Prime Hunter",
@@ -473,7 +473,7 @@
   },
   {
     "en": "Text Scale (Base %)",
-    "ja": "æå­ã¹ã±ã¼ã« (åºæº %)",
+    "ja": "文字スケール (基準 %)",
     "section": "core",
     "de": "Textskalierung (Basis %)",
     "es": "Escala de texto (base %)",
@@ -481,7 +481,7 @@
   },
   {
     "en": "Auto Scale Gauge Cap %",
-    "ja": "èªåã¹ã±ã¼ã«ã²ã¼ã¸ä¸é %",
+    "ja": "自動スケールゲージ上限 %",
     "section": "core",
     "de": "Auto-Skalierung Anzeige-Obergrenze %",
     "es": "Tope de escala automática del indicador %",
@@ -489,7 +489,7 @@
   },
   {
     "en": "Italic",
-    "ja": "ã¤ã¿ãªãã¯",
+    "ja": "イタリック",
     "section": "core",
     "de": "Kursiv",
     "es": "Cursiva",
@@ -497,7 +497,7 @@
   },
   {
     "en": "Zoom Stage",
-    "ja": "ãºã¼ã æ®µé",
+    "ja": "ズーム段階",
     "section": "core",
     "de": "Zoom-Stufe",
     "es": "Etapa de zoom",
@@ -505,7 +505,7 @@
   },
   {
     "en": "Zoom Scope",
-    "ja": "ãºã¼ã ã¹ã³ã¼ã",
+    "ja": "ズームスコープ",
     "section": "core",
     "de": "Zoom-Visier",
     "es": "Visor de zoom",
@@ -513,7 +513,7 @@
   },
   {
     "en": "Scope Center Dot",
-    "ja": "ã¹ã³ã¼ãä¸­å¤®ããã",
+    "ja": "スコープ中央ドット",
     "section": "core",
     "de": "Visier-Mittelpunkt",
     "es": "Punto central del visor",
@@ -521,7 +521,7 @@
   },
   {
     "en": "Zoom Transition Speed %",
-    "ja": "ãºã¼ã é·ç§»éåº¦ %",
+    "ja": "ズーム遷移速度 %",
     "section": "core",
     "de": "Zoom-Übergangsgeschwindigkeit %",
     "es": "Velocidad de transición de zoom %",
@@ -529,7 +529,7 @@
   },
   {
     "en": "Pulse Strength %",
-    "ja": "ãã«ã¹å¼·åº¦ %",
+    "ja": "パルス強度 %",
     "section": "core",
     "de": "Pulsstärke %",
     "es": "Intensidad del pulso %",
@@ -537,7 +537,7 @@
   },
   {
     "en": "Staged",
-    "ja": "æ®µé",
+    "ja": "段階",
     "section": "core",
     "de": "Gestuft",
     "es": "Por etapas",
@@ -545,7 +545,7 @@
   },
   {
     "en": "Digital",
-    "ja": "ãã¸ã¿ã«",
+    "ja": "デジタル",
     "section": "core",
     "de": "Digital",
     "es": "Digital",
@@ -553,7 +553,7 @@
   },
   {
     "en": "Sniper Optics",
-    "ja": "ã¹ãã¤ãã¼åå­¦",
+    "ja": "スナイパー光学",
     "section": "core",
     "de": "Scharfschützenoptik",
     "es": "Óptica de francotirador",
@@ -561,7 +561,7 @@
   },
   {
     "en": "Outline Color",
-    "ja": "ã¢ã¦ãã©ã¤ã³è²",
+    "ja": "アウトライン色",
     "section": "core",
     "de": "Umrissfarbe",
     "es": "Color del contorno",
@@ -569,7 +569,7 @@
   },
   {
     "en": "Custom Dot Color",
-    "ja": "ãããè²ãåå¥æå®",
+    "ja": "ドット色を個別指定",
     "section": "core",
     "de": "Eigene Punktfarbe",
     "es": "Color de punto personalizado",
@@ -585,7 +585,7 @@
   },
   {
     "en": "Inner",
-    "ja": "åå´",
+    "ja": "内側",
     "section": "core",
     "de": "Innen",
     "es": "Interior",
@@ -593,7 +593,7 @@
   },
   {
     "en": "Show Text",
-    "ja": "æå­ãè¡¨ç¤º",
+    "ja": "文字を表示",
     "section": "core",
     "de": "Text anzeigen",
     "es": "Mostrar texto",
@@ -601,7 +601,7 @@
   },
   {
     "en": "Length",
-    "ja": "é·ã",
+    "ja": "長さ",
     "section": "core",
     "de": "Länge",
     "es": "Longitud",
@@ -609,7 +609,7 @@
   },
   {
     "en": "Offset",
-    "ja": "ãªãã»ãã",
+    "ja": "オフセット",
     "section": "core",
     "de": "Versatz",
     "es": "Desplazamiento",
@@ -617,7 +617,7 @@
   },
   {
     "en": "Top Center",
-    "ja": "ä¸ä¸­å¤®",
+    "ja": "上中央",
     "section": "core",
     "de": "Oben Mitte",
     "es": "Arriba centro",
@@ -625,7 +625,7 @@
   },
   {
     "en": "Bottom Left",
-    "ja": "å·¦ä¸",
+    "ja": "左下",
     "section": "core",
     "de": "Unten links",
     "es": "Abajo izquierda",
@@ -633,7 +633,7 @@
   },
   {
     "en": "Mid Right",
-    "ja": "å³ä¸­å¤®",
+    "ja": "右中央",
     "section": "core",
     "de": "Mitte rechts",
     "es": "Centro derecha",
@@ -641,7 +641,7 @@
   },
   {
     "en": "Center",
-    "ja": "ä¸­å¤®",
+    "ja": "中央",
     "section": "core",
     "de": "Mitte",
     "es": "Centro",
@@ -657,15 +657,15 @@
   },
   {
     "en": "Horiz",
-    "ja": "æ¨ª",
+    "ja": "横",
     "section": "core",
     "de": "Horiz.",
     "es": "Horiz.",
     "fr": "Horiz."
   },
   {
-    "en": "GaugeâText",
-    "ja": "ã²ã¼ã¸âæå­",
+    "en": "Gauge→Text",
+    "ja": "ゲージ→文字",
     "section": "core",
     "de": "Anzeige→Text",
     "es": "Indicador→Texto",
@@ -673,7 +673,7 @@
   },
   {
     "en": "Pos Mode",
-    "ja": "ä½ç½®ã¢ã¼ã",
+    "ja": "位置モード",
     "section": "core",
     "de": "Positionsmodus",
     "es": "Modo de posición",
@@ -681,7 +681,7 @@
   },
   {
     "en": "Gauge Y",
-    "ja": "ã²ã¼ã¸ Y",
+    "ja": "ゲージ Y",
     "section": "core",
     "de": "Anzeige Y",
     "es": "Indicador Y",
@@ -689,7 +689,7 @@
   },
   {
     "en": "Prefix",
-    "ja": "æ¥é ­è¾",
+    "ja": "接頭辞",
     "section": "core",
     "de": "Präfix",
     "es": "Prefijo",
@@ -697,7 +697,7 @@
   },
   {
     "en": "Orientation",
-    "ja": "åã",
+    "ja": "向き",
     "section": "core",
     "de": "Ausrichtung",
     "es": "Orientación",
@@ -705,7 +705,7 @@
   },
   {
     "en": "Icon Position",
-    "ja": "ã¢ã¤ã³ã³ä½ç½®",
+    "ja": "アイコン位置",
     "section": "core",
     "de": "Symbolposition",
     "es": "Posición del icono",
@@ -713,7 +713,7 @@
   },
   {
     "en": "Layout",
-    "ja": "ã¬ã¤ã¢ã¦ã",
+    "ja": "レイアウト",
     "section": "core",
     "de": "Layout",
     "es": "Diseño",
@@ -721,7 +721,7 @@
   },
   {
     "en": "Label Pos",
-    "ja": "ã©ãã«ä½ç½®",
+    "ja": "ラベル位置",
     "section": "core",
     "de": "Label-Position",
     "es": "Posición de etiqueta",
@@ -729,7 +729,7 @@
   },
   {
     "en": "Label: Points",
-    "ja": "ã©ãã«: ãã¤ã³ã",
+    "ja": "ラベル: ポイント",
     "section": "core",
     "de": "Label: Punkte",
     "es": "Etiqueta: Puntos",
@@ -737,7 +737,7 @@
   },
   {
     "en": "Battle",
-    "ja": "ããã«",
+    "ja": "バトル",
     "section": "core",
     "de": "Kampf",
     "es": "Batalla",
@@ -745,7 +745,7 @@
   },
   {
     "en": "Label",
-    "ja": "ã©ãã«",
+    "ja": "ラベル",
     "section": "core",
     "de": "Label",
     "es": "Etiqueta",
@@ -753,7 +753,7 @@
   },
   {
     "en": "Label Color",
-    "ja": "ã©ãã«è²",
+    "ja": "ラベル色",
     "section": "core",
     "de": "Labelfarbe",
     "es": "Color de etiqueta",
@@ -761,7 +761,7 @@
   },
   {
     "en": "Sep Color: Overall",
-    "ja": "åºåãè²: å¨ä½",
+    "ja": "区切り色: 全体",
     "section": "core",
     "de": "Trennfarbe: Gesamt",
     "es": "Color de separación: General",
@@ -769,7 +769,7 @@
   },
   {
     "en": "Color Overlay",
-    "ja": "è²ãªã¼ãã¼ã¬ã¤",
+    "ja": "色オーバーレイ",
     "section": "core",
     "de": "Farbüberlagerung",
     "es": "Superposición de color",
@@ -777,7 +777,7 @@
   },
   {
     "en": "Dst X",
-    "ja": "è¡¨ç¤º X",
+    "ja": "表示 X",
     "section": "core",
     "de": "Ziel X",
     "es": "Dest. X",
@@ -785,7 +785,7 @@
   },
   {
     "en": "Padding",
-    "ja": "ä½ç½",
+    "ja": "余白",
     "section": "core",
     "de": "Abstand",
     "es": "Relleno",
@@ -793,7 +793,7 @@
   },
   {
     "en": "Highlight Color",
-    "ja": "ãã¤ã©ã¤ãè²",
+    "ja": "ハイライト色",
     "section": "core",
     "de": "Hervorhebungsfarbe",
     "es": "Color de resaltado",
@@ -801,7 +801,7 @@
   },
   {
     "en": "Highlight Offset Left",
-    "ja": "ãã¤ã©ã¤ãå·¦ãªãã»ãã",
+    "ja": "ハイライト左オフセット",
     "section": "core",
     "de": "Hervorhebung Versatz links",
     "es": "Desplazamiento izquierdo de resaltado",
@@ -809,7 +809,7 @@
   },
   {
     "en": "Size Offset Right",
-    "ja": "ãµã¤ãºå³ãªãã»ãã",
+    "ja": "サイズ右オフセット",
     "section": "core",
     "de": "Größenversatz rechts",
     "es": "Desplazamiento derecho de tamaño",
@@ -817,7 +817,7 @@
   },
   {
     "en": "Hl Padding",
-    "ja": "HLä½ç½",
+    "ja": "HL余白",
     "section": "core",
     "de": "HL-Abstand",
     "es": "Relleno HL",
@@ -833,7 +833,7 @@
   },
   {
     "en": "HP Gauge",
-    "ja": "HPã²ã¼ã¸",
+    "ja": "HPゲージ",
     "section": "core",
     "de": "HP-Anzeige",
     "es": "Indicador de HP",
@@ -841,7 +841,7 @@
   },
   {
     "en": "Ammo Label Color By Value",
-    "ja": "å¼¾è¬ã©ãã«ã®è² (å¤é£å)",
+    "ja": "弾薬ラベルの色 (値連動)",
     "section": "core",
     "de": "Munitionslabel-Farbe nach Wert",
     "es": "Color de etiqueta de munición según valor",
@@ -849,7 +849,7 @@
   },
   {
     "en": "Weapon/Ammo",
-    "ja": "æ­¦å¨/å¼¾è¬",
+    "ja": "武器/弾薬",
     "section": "core",
     "de": "Waffe/Munition",
     "es": "Arma/Munición",
@@ -857,7 +857,7 @@
   },
   {
     "en": "Weapon Inventory Highlight",
-    "ja": "æ­¦å¨ã¤ã³ãã³ããªã®ãã¤ã©ã¤ã",
+    "ja": "武器インベントリのハイライト",
     "section": "core",
     "de": "Waffen-Inventar-Hervorhebung",
     "es": "Resaltado del inventario de armas",
@@ -865,7 +865,7 @@
   },
   {
     "en": "Score Labels",
-    "ja": "ã¹ã³ã¢ã©ãã«",
+    "ja": "スコアラベル",
     "section": "core",
     "de": "Punkte-Labels",
     "es": "Etiquetas de puntuación",
@@ -873,7 +873,7 @@
   },
   {
     "en": "Rank Outline",
-    "ja": "é ä½ã®ã¢ã¦ãã©ã¤ã³",
+    "ja": "順位のアウトライン",
     "section": "core",
     "de": "Rang-Umriss",
     "es": "Contorno de rango",
@@ -881,7 +881,7 @@
   },
   {
     "en": "Bomb",
-    "ja": "ãã ",
+    "ja": "ボム",
     "section": "core",
     "de": "Bombe",
     "es": "Bomba",
@@ -889,7 +889,7 @@
   },
   {
     "en": "Radar",
-    "ja": "ã¬ã¼ãã¼",
+    "ja": "レーダー",
     "section": "core",
     "de": "Radar",
     "es": "Radar",
@@ -897,7 +897,7 @@
   },
   {
     "en": "Wpn\nIcon",
-    "ja": "æ­¦å¨\nã¢ã¤ã³ã³",
+    "ja": "武器\nアイコン",
     "section": "core",
     "de": "Wpn\nSymbol",
     "es": "Arma\nIcono",
@@ -905,7 +905,7 @@
   },
   {
     "en": "points",
-    "ja": "å¾ç¹",
+    "ja": "得点",
     "section": "core",
     "de": "Punkte",
     "es": "puntos",
@@ -913,7 +913,7 @@
   },
   {
     "en": "Enable Separate Color",
-    "ja": "åå¥è²ãæå¹å",
+    "ja": "個別色を有効化",
     "section": "core",
     "de": "Separate Farbe aktivieren",
     "es": "Activar color separado",
@@ -921,7 +921,7 @@
   },
   {
     "en": "Return to Base",
-    "ja": "åºå°ã¸æ»ã",
+    "ja": "基地へ戻れ",
     "section": "core",
     "de": "Zur Basis zurück",
     "es": "Volver a la base",
@@ -929,7 +929,7 @@
   },
   {
     "en": "Octo Reset",
-    "ja": "ãªã¯ããªã¹ãªã»ãã",
+    "ja": "オクトリスリセット",
     "section": "core",
     "de": "Octo-Reset",
     "es": "Reinicio Octo",
@@ -937,7 +937,7 @@
   },
   {
     "en": "Slot: Node Capture  [flags=0x11]",
-    "ja": "ã¹ã­ãã: ãã¼ãåå¾ [flags=0x11]",
+    "ja": "スロット: ノード取得 [flags=0x11]",
     "section": "core",
     "de": "Slot: Knotenerfassung  [flags=0x11]",
     "es": "Ranura: Captura de nodo  [flags=0x11]",
@@ -945,7 +945,7 @@
   },
   {
     "en": "Applied once on settings close to currently displayed messages (flags=0x01).\nNew messages use their individual literal colors above (No Ammo / Return to Base / Octo ...).",
-    "ja": "è¨­å®ãéããã¨ããç¾å¨è¡¨ç¤ºä¸­ã®ã¡ãã»ã¼ã¸ã¸ä¸åº¦ã ãé©ç¨ããã¾ã (flags=0x01)ã\næ°ããã¡ãã»ã¼ã¸ã¯ããããã®åå¥è²ãä½¿ç¨ãã¾ã (å¼¾è¬ãªã / åºå°ã¸æ»ã / ãªã¯ãç³» ...)ã",
+    "ja": "設定を閉じたとき、現在表示中のメッセージへ一度だけ適用されます (flags=0x01)。\n新しいメッセージはそれぞれの個別色を使用します (弾薬なし / 基地へ戻れ / オクト系 ...)。",
     "section": "core",
     "de": "Einmal beim Schließen der Einstellungen auf aktuell angezeigte Meldungen angewendet (flags=0x01).\nNeue Meldungen verwenden ihre individuellen Farben oben (Keine Munition / Zur Basis zurück / Octo ...).",
     "es": "Se aplica una vez al cerrar los ajustes a los mensajes mostrados (flags=0x01).\nLos mensajes nuevos usan sus colores individuales arriba (Sin munición / Volver a la base / Octo ...).",
@@ -953,7 +953,7 @@
   },
   {
     "en": "Color  (HEADSHOT! / FACE OFF! / RETURN TO BATTLE! / COWARD DETECTED / turret)",
-    "ja": "è²  (HEADSHOT! / FACE OFF! / RETURN TO BATTLE! / COWARD DETECTED / ã¿ã¬ãã)",
+    "ja": "色  (HEADSHOT! / FACE OFF! / RETURN TO BATTLE! / COWARD DETECTED / タレット)",
     "section": "core",
     "de": "Farbe  (HEADSHOT! / FACE OFF! / RETURN TO BATTLE! / COWARD DETECTED / Turm)",
     "es": "Color  (HEADSHOT! / FACE OFF! / RETURN TO BATTLE! / COWARD DETECTED / torreta)",
@@ -961,7 +961,7 @@
   },
   {
     "en": "Yellow",
-    "ja": "é»",
+    "ja": "黄",
     "section": "core",
     "de": "Gelb",
     "es": "Amarillo",
@@ -969,7 +969,7 @@
   },
   {
     "en": "Orange",
-    "ja": "ãªã¬ã³ã¸",
+    "ja": "オレンジ",
     "section": "core",
     "de": "Orange",
     "es": "Naranja",
@@ -977,7 +977,7 @@
   },
   {
     "en": "Spire Hud Outline",
-    "ja": "ã¹ãã¤ã¢HUDã®ã¢ã¦ãã©ã¤ã³",
+    "ja": "スパイアHUDのアウトライン",
     "section": "core",
     "de": "Spire-HUD-Umriss",
     "es": "Contorno HUD Spire",
@@ -985,7 +985,7 @@
   },
   {
     "en": "Sylux Crosshair",
-    "ja": "ãµã¤ã©ãã¯ã¹ç§æº",
+    "ja": "サイラックス照準",
     "section": "core",
     "de": "Sylux-Fadenkreuz",
     "es": "Retícula Sylux",
@@ -993,7 +993,7 @@
   },
   {
     "en": "OSD No-Ammo Red",
-    "ja": "OSDå¼¾è¬ãªãèµ¤",
+    "ja": "OSD弾薬なし赤",
     "section": "core",
     "de": "OSD Keine-Munition Rot",
     "es": "OSD sin munición rojo",
@@ -1001,7 +1001,7 @@
   },
   {
     "en": "Battle Hammer",
-    "ja": "ããã«ãã³ãã¼",
+    "ja": "バトルハンマー",
     "section": "core",
     "de": "Battlehammer",
     "es": "Battlehammer",
@@ -1009,7 +1009,7 @@
   },
   {
     "en": "Shock Coil",
-    "ja": "ã·ã§ãã¯ã³ã¤ã«",
+    "ja": "ショックコイル",
     "section": "core",
     "de": "Shock Coil",
     "es": "Shock Coil",
@@ -1017,7 +1017,7 @@
   },
   {
     "en": "MSL Color",
-    "ja": "MSLè²",
+    "ja": "MSL色",
     "section": "core",
     "de": "MSL-Farbe",
     "es": "Color MSL",
@@ -1025,7 +1025,7 @@
   },
   {
     "en": "SCL Color",
-    "ja": "SCLè²",
+    "ja": "SCL色",
     "section": "core",
     "de": "SCL-Farbe",
     "es": "Color SCL",
@@ -1033,7 +1033,7 @@
   },
   {
     "en": "Normal",
-    "ja": "æ¨æº",
+    "ja": "標準",
     "section": "core",
     "de": "Standard",
     "es": "Estándar",
@@ -1041,7 +1041,7 @@
   },
   {
     "en": "Black",
-    "ja": "é»å¤ª",
+    "ja": "黒太",
     "section": "core",
     "de": "Schwarz",
     "es": "Negro",
@@ -1049,7 +1049,7 @@
   },
   {
     "en": "Threshold 4 (%)",
-    "ja": "ãããå¤ 4 (%)",
+    "ja": "しきい値 4 (%)",
     "section": "core",
     "de": "Schwellenwert 4 (%)",
     "es": "Umbral 4 (%)",
@@ -1057,7 +1057,7 @@
   },
   {
     "en": "Color 3",
-    "ja": "è² 3",
+    "ja": "色 3",
     "section": "core",
     "de": "Farbe 3",
     "es": "Color 3",
@@ -1065,7 +1065,7 @@
   },
   {
     "en": "Output refreshed from the current Custom HUD settings.",
-    "ja": "ç¾å¨ã®ã«ã¹ã¿ã HUDè¨­å®ããåºåãæ´æ°ãã¾ããã",
+    "ja": "現在のカスタムHUD設定から出力を更新しました。",
     "section": "core",
     "de": "Ausgabe aus den aktuellen Custom-HUD-Einstellungen aktualisiert.",
     "es": "Salida actualizada desde los ajustes actuales del HUD personalizado.",
@@ -1073,7 +1073,7 @@
   },
   {
     "en": "The pasted Custom HUD code is not a TOML table.",
-    "ja": "è²¼ãä»ããããã«ã¹ã¿ã HUDã³ã¼ãã¯TOMLãã¼ãã«ã§ã¯ããã¾ããã",
+    "ja": "貼り付けられたカスタムHUDコードはTOMLテーブルではありません。",
     "section": "core",
     "de": "Der eingefügte Custom-HUD-Code ist keine TOML-Tabelle.",
     "es": "El código HUD personalizado pegado no es una tabla TOML.",
@@ -1081,7 +1081,7 @@
   },
   {
     "en": "Use New Method for Zoom",
-    "ja": "ãºã¼ã ã«æ°æ¹å¼ãä½¿ã",
+    "ja": "ズームに新方式を使う",
     "section": "core",
     "de": "Neue Zoom-Methode verwenden",
     "es": "Usar nuevo método de zoom",
@@ -1089,7 +1089,7 @@
   },
   {
     "en": "Audio settings - melonDS",
-    "ja": "é³å£°è¨­å® - melonDS",
+    "ja": "音声設定 - melonDS",
     "section": "melonds",
     "de": "Audio-Einstellungen - melonDS",
     "es": "Ajustes de audio - melonDS",
@@ -1097,7 +1097,7 @@
   },
   {
     "en": "DSi-mode",
-    "ja": "DSiã¢ã¼ã",
+    "ja": "DSiモード",
     "section": "melonds",
     "de": "DSi-Modus",
     "es": "Modo DSi",
@@ -1105,7 +1105,7 @@
   },
   {
     "en": "Boot game directly",
-    "ja": "ã²ã¼ã ãç´æ¥èµ·å",
+    "ja": "ゲームを直接起動",
     "section": "melonds",
     "de": "Spiel direkt starten",
     "es": "Iniciar juego directamente",
@@ -1113,7 +1113,7 @@
   },
   {
     "en": "DS firmware:",
-    "ja": "DSãã¡ã¼ã ã¦ã§ã¢:",
+    "ja": "DSファームウェア:",
     "section": "melonds",
     "de": "DS-Firmware:",
     "es": "Firmware DS:",
@@ -1121,7 +1121,7 @@
   },
   {
     "en": "Enable DSi SD card",
-    "ja": "DSi SDã«ã¼ããæå¹å",
+    "ja": "DSi SDカードを有効化",
     "section": "melonds",
     "de": "DSi-SD-Karte aktivieren",
     "es": "Activar tarjeta SD DSi",
@@ -1137,7 +1137,7 @@
   },
   {
     "en": "Fast memory",
-    "ja": "é«éã¡ã¢ãª",
+    "ja": "高速メモリ",
     "section": "melonds",
     "de": "Schneller Speicher",
     "es": "Memoria rápida",
@@ -1145,7 +1145,7 @@
   },
   {
     "en": "Break on startup",
-    "ja": "èµ·åæã«ãã¬ã¼ã¯",
+    "ja": "起動時にブレーク",
     "section": "melonds",
     "de": "Beim Start anhalten",
     "es": "Pausar al iniciar",
@@ -1153,7 +1153,7 @@
   },
   {
     "en": "Auto",
-    "ja": "èªå",
+    "ja": "自動",
     "section": "melonds",
     "de": "Automatisch",
     "es": "Automático",
@@ -1161,7 +1161,7 @@
   },
   {
     "en": "Software",
-    "ja": "ã½ããã¦ã§ã¢",
+    "ja": "ソフトウェア",
     "section": "melonds",
     "de": "Software",
     "es": "Software",
@@ -1169,7 +1169,7 @@
   },
   {
     "en": "VSync interval:",
-    "ja": "VSyncéé:",
+    "ja": "VSync間隔:",
     "section": "melonds",
     "de": "VSync-Intervall:",
     "es": "Intervalo VSync:",
@@ -1177,7 +1177,7 @@
   },
   {
     "en": "Configure emulated camera:",
-    "ja": "ã¨ãã¥ã¬ã¼ãã«ã¡ã©ãè¨­å®:",
+    "ja": "エミュレートカメラを設定:",
     "section": "melonds",
     "de": "Emulierte Kamera konfigurieren:",
     "es": "Configurar cámara emulada:",
@@ -1185,7 +1185,7 @@
   },
   {
     "en": "Image file:",
-    "ja": "ç»åãã¡ã¤ã«:",
+    "ja": "画像ファイル:",
     "section": "melonds",
     "de": "Bilddatei:",
     "es": "Archivo de imagen:",
@@ -1193,7 +1193,7 @@
   },
   {
     "en": "Audio output",
-    "ja": "é³å£°åºå",
+    "ja": "音声出力",
     "section": "melonds",
     "de": "Audioausgabe",
     "es": "Salida de audio",
@@ -1201,7 +1201,7 @@
   },
   {
     "en": "Sync with DSi volume",
-    "ja": "DSié³éã¨åæ",
+    "ja": "DSi音量と同期",
     "section": "melonds",
     "de": "Mit DSi-Lautstärke synchronisieren",
     "es": "Sincronizar con volumen DSi",
@@ -1209,7 +1209,7 @@
   },
   {
     "en": "Gaussian (SNES)",
-    "ja": "ã¬ã¦ã¹ (SNES)",
+    "ja": "ガウス (SNES)",
     "section": "melonds",
     "de": "Gauß (SNES)",
     "es": "Gaussiano (SNES)",
@@ -1217,7 +1217,7 @@
   },
   {
     "en": "Blow noise",
-    "ja": "å¹ãè¾¼ã¿ãã¤ãº",
+    "ja": "吹き込みノイズ",
     "section": "melonds",
     "de": "Blasgeräusch",
     "es": "Ruido de soplido",
@@ -1225,7 +1225,7 @@
   },
   {
     "en": "Reset",
-    "ja": "ãªã»ãã",
+    "ja": "リセット",
     "section": "melonds",
     "de": "Zurücksetzen",
     "es": "Restablecer",
@@ -1233,7 +1233,7 @@
   },
   {
     "en": "Toggle slow mo",
-    "ja": "ã¹ã­ã¼ã¢ã¼ã·ã§ã³åæ¿",
+    "ja": "スローモーション切替",
     "section": "melonds",
     "de": "Zeitlupe umschalten",
     "es": "Alternar cámara lenta",
@@ -1241,7 +1241,7 @@
   },
   {
     "en": "Swap screens",
-    "ja": "ä¸ä¸ç»é¢å¥æ¿",
+    "ja": "上下画面入替",
     "section": "melonds",
     "de": "Bildschirme tauschen",
     "es": "Intercambiar pantallas",
@@ -1249,7 +1249,7 @@
   },
   {
     "en": "Toggle audio mute",
-    "ja": "é³å£°ãã¥ã¼ãåæ¿",
+    "ja": "音声ミュート切替",
     "section": "melonds",
     "de": "Stummschaltung umschalten",
     "es": "Alternar silencio de audio",
@@ -1257,7 +1257,7 @@
   },
   {
     "en": "Active instance only",
-    "ja": "ã¢ã¯ãã£ããªã¤ã³ã¹ã¿ã³ã¹ã®ã¿",
+    "ja": "アクティブなインスタンスのみ",
     "section": "melonds",
     "de": "Nur aktive Instanz",
     "es": "Solo instancia activa",
@@ -1265,7 +1265,7 @@
   },
   {
     "en": "Indirect mode (uses libslirp, recommended)",
-    "ja": "éæ¥ã¢ã¼ã (libslirpä½¿ç¨ãæ¨å¥¨)",
+    "ja": "間接モード (libslirp使用、推奨)",
     "section": "melonds",
     "de": "Indirekter Modus (verwendet libslirp, empfohlen)",
     "es": "Modo indirecto (usa libslirp, recomendado)",
@@ -1273,7 +1273,7 @@
   },
   {
     "en": "IP address:",
-    "ja": "IPã¢ãã¬ã¹:",
+    "ja": "IPアドレス:",
     "section": "melonds",
     "de": "IP-Adresse:",
     "es": "Dirección IP:",
@@ -1281,7 +1281,7 @@
   },
   {
     "en": "Username:",
-    "ja": "ã¦ã¼ã¶ã¼å:",
+    "ja": "ユーザー名:",
     "section": "melonds",
     "de": "Benutzername:",
     "es": "Nombre de usuario:",
@@ -1289,7 +1289,7 @@
   },
   {
     "en": "Network settings",
-    "ja": "ãããã¯ã¼ã¯è¨­å®",
+    "ja": "ネットワーク設定",
     "section": "melonds",
     "de": "Netzwerk-Einstellungen",
     "es": "Ajustes de red",
@@ -1297,7 +1297,7 @@
   },
   {
     "en": "System default",
-    "ja": "ã·ã¹ãã æ¨æº",
+    "ja": "システム標準",
     "section": "melonds",
     "de": "Systemstandard",
     "es": "Predeterminado del sistema",
@@ -1305,7 +1305,7 @@
   },
   {
     "en": "Mute audio while fast forwarding",
-    "ja": "æ©éãä¸­ã¯é³å£°ããã¥ã¼ã",
+    "ja": "早送り中は音声をミュート",
     "section": "melonds",
     "de": "Audio beim Vorspulen stummschalten",
     "es": "Silenciar audio al avanzar rápido",
@@ -1313,7 +1313,7 @@
   },
   {
     "en": "Slow-Mo",
-    "ja": "ã¹ã­ã¼ã¢ã¼ã·ã§ã³",
+    "ja": "スローモーション",
     "section": "melonds",
     "de": "Zeitlupe",
     "es": "Cámara lenta",
@@ -1329,7 +1329,7 @@
   },
   {
     "en": "Savestates path:",
-    "ja": "ã¹ãã¼ãã»ã¼ãã®ãã¹:",
+    "ja": "ステートセーブのパス:",
     "section": "melonds",
     "de": "Pfad für Zustände:",
     "es": "Ruta de estados guardados:",
@@ -1337,7 +1337,7 @@
   },
   {
     "en": "New AR code",
-    "ja": "æ°ããARã³ã¼ã",
+    "ja": "新しいARコード",
     "section": "melonds",
     "de": "Neuer AR-Code",
     "es": "Nuevo código AR",
@@ -1345,7 +1345,7 @@
   },
   {
     "en": "Name:",
-    "ja": "åå:",
+    "ja": "名前:",
     "section": "melonds",
     "de": "Name:",
     "es": "Nombre:",
@@ -1353,7 +1353,7 @@
   },
   {
     "en": "Power management - melonDS",
-    "ja": "é»æºç®¡ç - melonDS",
+    "ja": "電源管理 - melonDS",
     "section": "melonds",
     "de": "Energieverwaltung - melonDS",
     "es": "Gestión de energía - melonDS",
@@ -1361,7 +1361,7 @@
   },
   {
     "en": "Full",
-    "ja": "æºåé»",
+    "ja": "満充電",
     "section": "melonds",
     "de": "Voll",
     "es": "Completa",
@@ -1369,7 +1369,7 @@
   },
   {
     "en": "Date and time",
-    "ja": "æ¥ä»ã¨æå»",
+    "ja": "日付と時刻",
     "section": "melonds",
     "de": "Datum und Uhrzeit",
     "es": "Fecha y hora",
@@ -1377,7 +1377,7 @@
   },
   {
     "en": "ROM info - melonDS",
-    "ja": "ROMæå ± - melonDS",
+    "ja": "ROM情報 - melonDS",
     "section": "melonds",
     "de": "ROM-Info - melonDS",
     "es": "Info de ROM - melonDS",
@@ -1385,7 +1385,7 @@
   },
   {
     "en": "German title:",
-    "ja": "ãã¤ãèªã¿ã¤ãã«:",
+    "ja": "ドイツ語タイトル:",
     "section": "melonds",
     "de": "Deutscher Titel:",
     "es": "Título en alemán:",
@@ -1393,7 +1393,7 @@
   },
   {
     "en": "ARM7 and ARM9 binaries",
-    "ja": "ARM7/ARM9ãã¤ããª",
+    "ja": "ARM7/ARM9バイナリ",
     "section": "melonds",
     "de": "ARM7- und ARM9-Binärdateien",
     "es": "Binarios ARM7 y ARM9",
@@ -1401,7 +1401,7 @@
   },
   {
     "en": "ARM7 ROM offset: ",
-    "ja": "ARM7 ROMãªãã»ãã: ",
+    "ja": "ARM7 ROMオフセット: ",
     "section": "melonds",
     "de": "ARM7-ROM-Offset: ",
     "es": "Desplazamiento ROM ARM7: ",
@@ -1409,7 +1409,7 @@
   },
   {
     "en": "FNT offset:",
-    "ja": "FNTãªãã»ãã:",
+    "ja": "FNTオフセット:",
     "section": "melonds",
     "de": "FNT-Offset:",
     "es": "Desplazamiento FNT:",
@@ -1417,7 +1417,7 @@
   },
   {
     "en": "Game title:",
-    "ja": "ã²ã¼ã ã¿ã¤ãã«:",
+    "ja": "ゲームタイトル:",
     "section": "melonds",
     "de": "Spieltitel:",
     "es": "Título del juego:",
@@ -1425,7 +1425,7 @@
   },
   {
     "en": "Save animated icon",
-    "ja": "ã»ã¼ãã¢ãã¡ã¼ã·ã§ã³ã¢ã¤ã³ã³",
+    "ja": "セーブアニメーションアイコン",
     "section": "melonds",
     "de": "Animiertes Symbol speichern",
     "es": "Guardar icono animado",
@@ -1433,7 +1433,7 @@
   },
   {
     "en": "2bytes",
-    "ja": "2ãã¤ã",
+    "ja": "2バイト",
     "section": "melonds",
     "de": "2 Bytes",
     "es": "2 bytes",
@@ -1441,7 +1441,7 @@
   },
   {
     "en": "Found:",
-    "ja": "æ¤åº:",
+    "ja": "検出:",
     "section": "melonds",
     "de": "Gefunden:",
     "es": "Encontrado:",
@@ -1449,7 +1449,7 @@
   },
   {
     "en": "Connect",
-    "ja": "æ¥ç¶",
+    "ja": "接続",
     "section": "melonds",
     "de": "Verbinden",
     "es": "Conectar",
@@ -1457,7 +1457,7 @@
   },
   {
     "en": "Players",
-    "ja": "ãã¬ã¤ã¤ã¼",
+    "ja": "プレイヤー",
     "section": "melonds",
     "de": "Spieler",
     "es": "Jugadores",
@@ -1465,7 +1465,7 @@
   },
   {
     "en": "Please enter a player name.",
-    "ja": "ãã¬ã¤ã¤ã¼åãå¥åãã¦ãã ããã",
+    "ja": "プレイヤー名を入力してください。",
     "section": "melonds",
     "de": "Bitte einen Spielernamen eingeben.",
     "es": "Introduce un nombre de jugador.",
@@ -1473,7 +1473,7 @@
   },
   {
     "en": "Visit the &website",
-    "ja": "ã¦ã§ããµã¤ã(&W)",
+    "ja": "ウェブサイト(&W)",
     "section": "melonds",
     "de": "&Website besuchen",
     "es": "Visitar el &sitio web",
@@ -1481,7 +1481,7 @@
   },
   {
     "en": "Brown",
-    "ja": "è¶è²",
+    "ja": "茶色",
     "section": "melonds",
     "de": "Braun",
     "es": "Marrón",
@@ -1489,7 +1489,7 @@
   },
   {
     "en": "Lime",
-    "ja": "ã©ã¤ã ",
+    "ja": "ライム",
     "section": "melonds",
     "de": "Limette",
     "es": "Lima",
@@ -1497,7 +1497,7 @@
   },
   {
     "en": "Blue",
-    "ja": "é",
+    "ja": "青",
     "section": "melonds",
     "de": "Blau",
     "es": "Azul",
@@ -1505,7 +1505,7 @@
   },
   {
     "en": "French",
-    "ja": "ãã©ã³ã¹èª",
+    "ja": "フランス語",
     "section": "melonds",
     "de": "Französisch",
     "es": "Francés",
@@ -1513,7 +1513,7 @@
   },
   {
     "en": "January",
-    "ja": "1æ",
+    "ja": "1月",
     "section": "melonds",
     "de": "Januar",
     "es": "Enero",
@@ -1521,7 +1521,7 @@
   },
   {
     "en": "June",
-    "ja": "6æ",
+    "ja": "6月",
     "section": "melonds",
     "de": "Juni",
     "es": "Junio",
@@ -1529,7 +1529,7 @@
   },
   {
     "en": "November",
-    "ja": "11æ",
+    "ja": "11月",
     "section": "melonds",
     "de": "November",
     "es": "Noviembre",

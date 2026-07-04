@@ -24,10 +24,12 @@
     "fi": "Valikon kieli",
     "vi": "Ngôn ngữ menu",
     "pl": "Język menu",
-    "ro": "Limba meniului"
+    "ro": "Limba meniului",
+    "ja": "メニュー言語"
   },
   {
     "en": "Language",
+    "ja": "言語",
     "de": "Sprache",
     "es": "Idioma",
     "fr": "Langue",
@@ -55,6 +57,7 @@
   },
   {
     "en": "System default (%1)",
+    "ja": "システム既定 (%1)",
     "de": "Systemstandard (%1)",
     "es": "Predeterminado del sistema (%1)",
     "fr": "Par défaut du système (%1)",
@@ -105,7 +108,8 @@
     "fi": "Italia",
     "vi": "Tiếng Ý",
     "pl": "Włoski",
-    "ro": "Italiană"
+    "ro": "Italiană",
+    "ja": "イタリア語"
   },
   {
     "en": "Dutch",
@@ -216,7 +220,8 @@
     "fi": "Kiina",
     "vi": "Tiếng Trung",
     "pl": "Chiński",
-    "ro": "Chineză"
+    "ro": "Chineză",
+    "ja": "中国語"
   },
   {
     "en": "Korean",
@@ -271,7 +276,8 @@
     "fi": "SnapTap aktivieren (schnellerer Richtungswechsel beim Strafen — kann die Eingabeverzögerung leicht erhöhen)",
     "vi": "SnapTap aktivieren (schnellerer Richtungswechsel beim Strafen — kann die Eingabeverzögerung leicht erhöhen)",
     "pl": "SnapTap aktivieren (schnellerer Richtungswechsel beim Strafen — kann die Eingabeverzögerung leicht erhöhen)",
-    "ro": "SnapTap aktivieren (schnellerer Richtungswechsel beim Strafen — kann die Eingabeverzögerung leicht erhöhen)"
+    "ro": "SnapTap aktivieren (schnellerer Richtungswechsel beim Strafen — kann die Eingabeverzögerung leicht erhöhen)",
+    "ja": "SnapTapを有効化 (ストレイフの方向切替を高速化。入力遅延が少し増える場合あり)"
   },
   {
     "en": "Screen Sync Mode — Default: Off",
@@ -326,7 +332,8 @@
     "fi": "Käytä DS-firmwaren kieltä (EU-tyylinen auto patch)",
     "vi": "Dùng ngôn ngữ firmware DS (Auto Patch kiểu EU)",
     "pl": "Użyj języka firmware DS (auto patch w stylu EU)",
-    "ro": "Folosește limba firmware DS (auto patch stil EU)"
+    "ro": "Folosește limba firmware DS (auto patch stil EU)",
+    "ja": "DSファームウェア言語を使う (EU版風の自動パッチ)"
   },
   {
     "en": "Auto Scale — Base",
@@ -353,7 +360,8 @@
     "fi": "Automatische Skalierung — Basis",
     "vi": "Automatische Skalierung — Basis",
     "pl": "Automatische Skalierung — Basis",
-    "ro": "Automatische Skalierung — Basis"
+    "ro": "Automatische Skalierung — Basis",
+    "ja": "自動スケール - 基準"
   },
   {
     "en": "Per Damage — Low",
@@ -380,7 +388,8 @@
     "fi": "Pro Schaden — Niedrig",
     "vi": "Pro Schaden — Niedrig",
     "pl": "Pro Schaden — Niedrig",
-    "ro": "Pro Schaden — Niedrig"
+    "ro": "Pro Schaden — Niedrig",
+    "ja": "ダメージ別 - 低"
   },
   {
     "en": "Per Damage — Medium",
@@ -407,7 +416,8 @@
     "fi": "Pro Schaden — Mittel",
     "vi": "Pro Schaden — Mittel",
     "pl": "Pro Schaden — Mittel",
-    "ro": "Pro Schaden — Mittel"
+    "ro": "Pro Schaden — Mittel",
+    "ja": "ダメージ別 - 中"
   },
   {
     "en": "Per Damage — High",
@@ -434,7 +444,8 @@
     "fi": "Pro Schaden — Hoch",
     "vi": "Pro Schaden — Hoch",
     "pl": "Pro Schaden — Hoch",
-    "ro": "Pro Schaden — Hoch"
+    "ro": "Pro Schaden — Hoch",
+    "ja": "ダメージ別 - 高"
   },
   {
     "en": "Setting Key: Metroid.Volume.SFX (0–9)",
@@ -461,7 +472,8 @@
     "fi": "Einstellungsschlüssel: Metroid.Volume.SFX (0–9)",
     "vi": "Einstellungsschlüssel: Metroid.Volume.SFX (0–9)",
     "pl": "Einstellungsschlüssel: Metroid.Volume.SFX (0–9)",
-    "ro": "Einstellungsschlüssel: Metroid.Volume.SFX (0–9)"
+    "ro": "Einstellungsschlüssel: Metroid.Volume.SFX (0–9)",
+    "ja": "設定キー: Metroid.Volume.SFX (0-9)"
   },
   {
     "en": "Setting Key: Metroid.Volume.Music (0–9)",
@@ -488,7 +500,8 @@
     "fi": "Einstellungsschlüssel: Metroid.Volume.Music (0–9)",
     "vi": "Einstellungsschlüssel: Metroid.Volume.Music (0–9)",
     "pl": "Einstellungsschlüssel: Metroid.Volume.Music (0–9)",
-    "ro": "Einstellungsschlüssel: Metroid.Volume.Music (0–9)"
+    "ro": "Einstellungsschlüssel: Metroid.Volume.Music (0–9)",
+    "ja": "設定キー: Metroid.Volume.Music (0-9)"
   },
   {
     "en": "— Common HUD —",
@@ -515,7 +528,8 @@
     "fi": "— Gemeinsames HUD —",
     "vi": "— Gemeinsames HUD —",
     "pl": "— Gemeinsames HUD —",
-    "ro": "— Gemeinsames HUD —"
+    "ro": "— Gemeinsames HUD —",
+    "ja": "- 共通HUD -"
   },
   {
     "en": "— Score Row (per mode) —",
@@ -542,7 +556,8 @@
     "fi": "— Punktezeile (pro Modus) —",
     "vi": "— Punktezeile (pro Modus) —",
     "pl": "— Punktezeile (pro Modus) —",
-    "ro": "— Punktezeile (pro Modus) —"
+    "ro": "— Punktezeile (pro Modus) —",
+    "ja": "- スコア行 (モード別) -"
   },
   {
     "en": "Text→Gauge",
@@ -569,7 +584,8 @@
     "fi": "Text→Anzeige",
     "vi": "Text→Anzeige",
     "pl": "Text→Anzeige",
-    "ro": "Text→Anzeige"
+    "ro": "Text→Anzeige",
+    "ja": "文字→ゲージ"
   },
   {
     "en": "Text → Gauge",
@@ -596,7 +612,8 @@
     "fi": "Text → Anzeige",
     "vi": "Text → Anzeige",
     "pl": "Text → Anzeige",
-    "ro": "Text → Anzeige"
+    "ro": "Text → Anzeige",
+    "ja": "文字→ゲージ"
   },
   {
     "en": "Screen Sync Mode",
@@ -623,7 +640,8 @@
     "fi": "Näytön synkronointitila",
     "vi": "Chế độ đồng bộ màn hình",
     "pl": "Tryb synchronizacji ekranu",
-    "ro": "Mod sincronizare ecran"
+    "ro": "Mod sincronizare ecran",
+    "ja": "画面同期方式"
   },
   {
     "en": "Screen Sync Mode: Off = no sync call, glFinish = wait for GL commands to complete",
@@ -650,7 +668,8 @@
     "fi": "Näytön synkronointitila: Off = ei sync-kutsua, glFinish = odota GL-komentojen valmistumista",
     "vi": "Chế độ đồng bộ màn hình: Off = không gọi sync, glFinish = chờ lệnh GL hoàn tất",
     "pl": "Tryb synchronizacji ekranu: Off = brak wywołania sync, glFinish = oczekiwanie na zakończenie poleceń GL",
-    "ro": "Mod sincronizare ecran: Off = fără apel sync, glFinish = așteaptă finalizarea comenzilor GL"
+    "ro": "Mod sincronizare ecran: Off = fără apel sync, glFinish = așteaptă finalizarea comenzilor GL",
+    "ja": "画面同期方式: オフ = 同期呼び出しなし、glFinish = GLコマンド完了まで待機"
   },
   {
     "en": "Auto Scale (by Damage)",
@@ -677,7 +696,8 @@
     "fi": "Automaattinen skaalaus (vaurion mukaan)",
     "vi": "Tỷ lệ tự động (theo sát thương)",
     "pl": "Skala automatyczna (wg obrażeń)",
-    "ro": "Scalare automată (după daune)"
+    "ro": "Scalare automată (după daune)",
+    "ja": "自動スケール (ダメージ別)"
   },
   {
     "en": "Per Damage (Low / Medium / High)",
@@ -704,7 +724,8 @@
     "fi": "Vaurion mukaan (Matala / Keskitaso / Korkea)",
     "vi": "Theo sát thương (Thấp / Trung bình / Cao)",
     "pl": "Według obrażeń (Niskie / Średnie / Wysokie)",
-    "ro": "Per daune (Scăzut / Mediu / Ridicat)"
+    "ro": "Per daune (Scăzut / Mediu / Ridicat)",
+    "ja": "ダメージ別 (低/中/高)"
   },
   {
     "en": "Screen Sync Mode: Off = no sync call, glFinish = wait for GL commands to complete, DwmFlush = wait for DWM compositor (Windows only)",
@@ -731,7 +752,8 @@
     "fi": "Näytön synkronointitila: Pois = ei sync-kutsua, glFinish = odota GL-komentojen valmistumista, DwmFlush = odota DWM-compositoria (vain Windows)",
     "vi": "Chế độ đồng bộ màn hình: Tắt = không gọi sync, glFinish = chờ lệnh GL hoàn tất, DwmFlush = chờ DWM compositor (chỉ Windows)",
     "pl": "Tryb synchronizacji ekranu: Wył. = brak wywołania sync, glFinish = czekaj na zakończenie poleceń GL, DwmFlush = czekaj na kompozytor DWM (tylko Windows)",
-    "ro": "Mod sincronizare ecran: Off = fără apel sync, glFinish = așteaptă finalizarea comenzilor GL, DwmFlush = așteaptă compozitorul DWM (doar Windows)"
+    "ro": "Mod sincronizare ecran: Off = fără apel sync, glFinish = așteaptă finalizarea comenzilor GL, DwmFlush = așteaptă compozitorul DWM (doar Windows)",
+    "ja": "画面同期方式: オフ = 同期呼び出しなし、glFinish = GLコマンド完了まで待機、DwmFlush = DWMコンポジター待機 (Windowsのみ)"
   },
   {
     "en": "Auto Scale Enable",
@@ -758,7 +780,8 @@
     "fi": "Ota automaattinen skaalaus käyttöön",
     "vi": "Bật tỷ lệ tự động",
     "pl": "Włącz skalowanie automatyczne",
-    "ro": "Activează scalare automată"
+    "ro": "Activează scalare automată",
+    "ja": "自動スケールを有効化"
   },
   {
     "en": "Auto Scale Global Cap %",
@@ -785,7 +808,8 @@
     "fi": "Automaattisen skaalauksen yleisraja %",
     "vi": "Giới hạn toàn cục tỷ lệ tự động %",
     "pl": "Globalny limit autoskalowania %",
-    "ro": "Limită globală auto scală %"
+    "ro": "Limită globală auto scală %",
+    "ja": "自動スケール全体上限 %"
   },
   {
     "en": "Auto Scale Text Cap %",
@@ -812,7 +836,8 @@
     "fi": "Automaattisen skaalauksen tekstiraja %",
     "vi": "Giới hạn văn bản tỷ lệ tự động %",
     "pl": "Limit tekstu skali automatycznej %",
-    "ro": "Limită text scară automată %"
+    "ro": "Limită text scară automată %",
+    "ja": "自動スケール文字上限 %"
   },
   {
     "en": "Auto Scale Icon Cap %",
@@ -839,7 +864,8 @@
     "fi": "Automaattisen skaalauksen ikonikatto %",
     "vi": "Giới hạn biểu tượng tỷ lệ tự động %",
     "pl": "Limit ikony skali automatycznej %",
-    "ro": "Plafon pictogramă scalare automată %"
+    "ro": "Plafon pictogramă scalare automată %",
+    "ja": "自動スケールアイコン上限 %"
   },
   {
     "en": "Auto Scale Gauge Cap %",
@@ -866,7 +892,8 @@
     "fi": "Automaattisen skaalauksen mittarin yläraja %",
     "vi": "Giới hạn tự động thang đo %",
     "pl": "Limit automatycznego skalowania wskaźnika %",
-    "ro": "Limită auto-scalare indicator %"
+    "ro": "Limită auto-scalare indicator %",
+    "ja": "自動スケールゲージ上限 %"
   },
   {
     "en": "Auto Scale Crosshair Cap %",
@@ -893,7 +920,8 @@
     "fi": "Automaattisen skaalauksen tähtäimen yläraja %",
     "vi": "Giới hạn tâm ngắm tỷ lệ tự động %",
     "pl": "Limit celownika auto skali %",
-    "ro": "Plafon țintă scalare automată %"
+    "ro": "Plafon țintă scalare automată %",
+    "ja": "自動スケール照準上限 %"
   },
   {
     "en": "Wpn\\\\\\\\nIcon",
