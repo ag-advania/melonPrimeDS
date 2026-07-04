@@ -237,6 +237,7 @@
     {"Visit the &website", "ウェブサイト(&W)"},
     {"View on &GitHub", "GitHub(&G)"},
     {"&Close", "閉じる(&C)"},
+    {"Close", "閉じる"},
 
     // Firmware language / color / birthday (combo items)
     {"Greyish blue", "灰みの青"},

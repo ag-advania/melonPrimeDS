@@ -9,6 +9,7 @@
 #include <QLineEdit>
 #include <QPlainTextEdit>
 #include <QItemSelectionModel>
+#include <QEvent>
 #include <QTabWidget>
 #include <QTreeView>
 #include <QVariant>
@@ -1430,7 +1431,43 @@ void wireMelonDsDialogDynamicLabels(QWidget* dialog)
     relocalizeOption();
 }
 
+class MelonDsDialogShowLocalizer final : public QObject
+{
+public:
+    explicit MelonDsDialogShowLocalizer(QWidget* dialog)
+        : QObject(dialog)
+        , m_dialog(dialog)
+    {
+        m_dialog->installEventFilter(this);
+    }
+
+protected:
+    bool eventFilter(QObject* watched, QEvent* event) override
+    {
+        if (watched != m_dialog || m_done)
+            return QObject::eventFilter(watched, event);
+
+        if (event->type() == QEvent::Show)
+        {
+            m_done = true;
+            LocalizeMelonDsDialog(m_dialog);
+        }
+        return QObject::eventFilter(watched, event);
+    }
+
+private:
+    QWidget* m_dialog;
+    bool m_done = false;
+};
+
 } // namespace
+
+void InstallMelonDsDialogShowLocalizer(QWidget* dialog)
+{
+    if (!dialog || !IsJapaneseLocale())
+        return;
+    new MelonDsDialogShowLocalizer(dialog);
+}
 
 void LocalizeMelonDsDialog(QWidget* dialog)
 {

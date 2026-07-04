@@ -56,6 +56,28 @@ void LocalizeWidgetTextProperties(QWidget* widget);
 void LocalizeWidgetTree(QWidget* root);
 // Localize a melonDS-owned settings dialog when Menu Language is Japanese.
 void LocalizeMelonDsDialog(QWidget* dialog);
+
+#ifdef MELONPRIME_DS
+// Localize on first Show (before paint) so widgets are fully built without a flash of English.
+void InstallMelonDsDialogShowLocalizer(QWidget* dialog);
+
+// Construct dialog, install show-time localizer, then show.
+template<typename DialogT>
+DialogT* OpenLocalizedMelonDsDialog(QWidget* parent)
+{
+    if (DialogT::currentDlg)
+    {
+        DialogT::currentDlg->activateWindow();
+        return DialogT::currentDlg;
+    }
+
+    DialogT::currentDlg = new DialogT(parent);
+    InstallMelonDsDialogShowLocalizer(DialogT::currentDlg);
+    DialogT::currentDlg->show();
+    return DialogT::currentDlg;
+}
+#endif
+
 void LocalizeActionTextProperties(QAction* action);
 void SetLocalizedActionText(QAction* action, const QString& sourceText);
 void LocalizeAction(QAction* action);

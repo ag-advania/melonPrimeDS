@@ -35,10 +35,6 @@
 #include "MelonPrimeInputConfig.h"
 #endif
 
-#ifdef MELONPRIME_DS
-#include "MelonPrimeLocalization.h"
-#endif
-
 using namespace melonDS;
 InputConfigDialog* InputConfigDialog::currentDlg = nullptr;
 
@@ -149,10 +145,6 @@ InputConfigDialog::InputConfigDialog(QWidget* parent) : QDialog(parent), ui(new 
         ui->lblInstanceNum->setText(QString("Configuring mappings for instance %1").arg(inst + 1));
     else
         ui->lblInstanceNum->hide();
-
-#ifdef MELONPRIME_DS
-    MelonPrime::UiText::LocalizeMelonDsDialog(this);
-#endif
 }
 
 InputConfigDialog::~InputConfigDialog()
