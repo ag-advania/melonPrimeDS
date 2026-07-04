@@ -567,7 +567,7 @@ MelonPrimeLocalization/MelonPrimeObjectTranslations.inc
 | Phase 4 | 完了 | 2026-07-04 | `python3 .claude/skills/audit-melonprime-localization.py`; `cmake --build build-mac --parallel 4`; no-ROM起動→quit | 翻訳catalogを初回構築時に`QHash`索引化し、重複/空keyをwarning/assertで検出。 |
 | Phase 5 | 完了 | 2026-07-04 | `python3 .claude/skills/audit-melonprime-localization.py`; `cmake --build build-mac --parallel 4`; no-ROM起動→quit | exact/object/dialog翻訳データを`MenuLangId`付きkey/value形式へ移行し、列順依存を排除。include展開込みの重複監査へ更新。 |
 | Phase 6 | 完了 | 2026-07-04 | `python3 .claude/skills/audit-melonprime-localization.py`; `cmake --build build-mac --parallel 4`; no-ROM起動→quit | 監査スクリプトにexact/object coverage、fallback一覧、dynamic text coverage reportを追加。 |
-| Phase 7 | 未着手 | — | — | external translation file evaluation |
+| Phase 7 | 完了 | 2026-07-04 | `python3 .claude/skills/audit-melonprime-localization.py`; `cmake --build build-mac --parallel 4`; no-ROM起動→quit | 外部翻訳ファイル化を評価。現時点はC++ inc維持、次候補はbuild時生成方式と判断。 |
 
 ## Phase 0: 監査テスト/スクリプト追加
 
@@ -866,6 +866,43 @@ C. 現行C++ inc維持
 - objectNameベース翻訳がある
 - 動的生成widgetが多い
 - 既存のTr() hook方式を維持したい
+```
+
+### Phase 7評価結果（2026-07-04）
+
+結論:
+
+```txt
+現時点では C++ inc 維持。
+次に外部化する場合は A: JSON/TOML/YAML -> C++ inc 生成を第一候補にする。
+ランタイムで外部翻訳ファイルを読む方式は採用しない。
+```
+
+評価:
+
+```txt
+A. JSON/TOML/YAMLをビルド時にC++ inc生成
+  - 最有力。
+  - Phase 5でMenuLangId付きkey/value形式になったため、生成元データへ移しやすい。
+  - 生成後のC++ incを現行audit/buildへそのまま通せる。
+  - runtime parser依存を増やさず、配布物の構成も変えない。
+
+B. Qt Linguist .ts/.qm
+  - 現時点では不採用。
+  - upstream UIを直接QObject::tr()へ寄せておらず、objectName翻訳と動的Tr() hookが多い。
+  - 既存設計へ合わせるには呼び出し側の変更量が大きい。
+
+C. 現行C++ inc維持
+  - 当面採用。
+  - Phase 4/5/6により重複検出、列順非依存、coverage確認が入ったため、短期の運用リスクは許容範囲。
+```
+
+外部化へ進む条件:
+
+```txt
+- 翻訳編集頻度が上がり、C++ diff reviewが重くなる
+- 翻訳者向けにC++を触らない編集導線が必要になる
+- 生成scriptで deterministic output と audit integration を保証できる
 ```
 
 ---
