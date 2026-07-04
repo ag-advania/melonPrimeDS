@@ -80,12 +80,16 @@ macOS platform notes:
   double-count. Backend selection is logged to stderr as `[MelonPrime] mac input: ...`.
 - Mouse buttons / keyboard hotkeys use the Qt event path (`EmuInstance::onMousePress` etc.) —
   intentionally not HID-driven, to avoid double press edges (see MelonPrimeRawInputMacFilter.h).
-- Cursor clipping (`ClipCursor`) is Windows-only; on macOS the in-game path relies on the
-  per-frame cursor recenter instead. **The recenter must use
-  `MelonPrime::MacWarpCursorGlobal` (CGWarpMouseCursorPosition), never `QCursor::setPos`**:
-  Qt implements `setPos` with `CGEventPost`, which is silently dropped without the
-  Accessibility permission — a failed recenter re-applies the cursor-minus-center delta
-  every frame and spins the aim to the pitch limits (bug found 2026-07-03).
+- Cursor clipping (`ClipCursor`) is Windows-only. On macOS the in-game aim path uses
+  `aimContainmentLocalRect()` union warps via `MacWarpCursorGlobal` (never `QCursor::setPos` —
+  Qt uses `CGEventPost`, which needs Accessibility and a failed recenter spins aim). While
+  clipped:
+  - **GCMouse (external mouse)**: `MacSetAimCursorCaptured(true)` disassociates and hides the OS
+    cursor; containment warps are skipped (avoids cursor flash on the DS screens).
+  - **IOHID (built-in trackpad)**: raw aim deltas but **no** cursor disassociation — applying
+    `MacSetAimCursorCaptured` on trackpad drops Qt release events and sticks fire/zoom. Use
+    containment warps only. `syncMouseHotkeysFromQtButtons()` recovers lost releases.
+  See [melonprime-aim-input.md](melonprime-aim-input.md) §10.
 - Frame pacing uses the same portable SDL hybrid sleep+spin limiter; the spin loop issues
   `pause`/`yield` on x86/ARM (P-11 timer-resolution setup is Windows-only and not needed on macOS).
 

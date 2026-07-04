@@ -9,6 +9,7 @@
 #define MELONPRIMEINPUTCONFIG_H
 
 #include <QWidget>
+#include <QPointer>
 #include <QList>
 #include <QTabWidget>
 #include <QPushButton>
@@ -43,7 +44,7 @@ static constexpr HotkeyEntry kMetroidHotkeys[] =
     {HK_MetroidMoveBack,            "[Metroid] (S) Move Back"},
     {HK_MetroidMoveLeft,            "[Metroid] (A) Move Left"},
     {HK_MetroidMoveRight,           "[Metroid] (D) Move Right"},
-    {HK_MetroidShootScan,           "[Metroid] (Mouse Left) Shoot/Scan, Map Zoom In"},
+    {HK_MetroidShootScan,           "[Metroid] (Mouse Left) Shoot/Scan"},
     {HK_MetroidScanShoot,           "[Metroid] (V) Scan/Shoot, Map Zoom In"},
     {HK_MetroidZoom,                "[Metroid] (Mouse Right) Imperialist Zoom, Map Zoom Out, Morph Ball Boost"},
     {HK_MetroidJump,                "[Metroid] (Space) Jump"},
@@ -166,6 +167,10 @@ private:
     void refreshCustomHudCodeOutput();
     void setCustomHudCodeStatus(const QString& text, bool isError);
     void invalidateHudAndRefreshPreviews();
+    // True when anchor UI widgets from snapshotVisualConfig() are still alive
+    // (tab pages may be reparented into InputConfigDialog; reject/destroy can
+    // invalidate raw ui-> pointers without clearing m_visualSnapshot).
+    bool visualSnapshotTargetsAlive() const;
 
     QVariantMap m_visualSnapshot;
     bool m_applyPreviewEnabled = false;
@@ -184,12 +189,12 @@ private:
     QLabel* m_lblMetroidZoomAimScalePct = nullptr;
     QSpinBox* m_spinMetroidZoomAimScalePct = nullptr;
     QLabel* m_lblMetroidZoomAimScaleDesc = nullptr;
-    QWidget* m_menuLanguageWidget = nullptr;
+    QWidget* m_menuLanguageGroup = nullptr;
     QLabel* m_lblMenuLanguage = nullptr;
     QComboBox* m_comboMenuLanguage = nullptr;
 
-    // Programmatic HUD settings widgets (config key → widget)
-    std::unordered_map<std::string, QWidget*> m_hudWidgets;
+    // Programmatic HUD settings widgets (config key → widget; QPointer for cancel/destroy safety)
+    std::unordered_map<std::string, QPointer<QWidget>> m_hudWidgets;
     // Section toggle buttons (button, config key for collapse state)
     std::vector<std::pair<QPushButton*, std::string>> m_hudToggles;
     // Preview widgets that need refresh on config change

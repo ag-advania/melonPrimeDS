@@ -1,0 +1,962 @@
+[
+  {
+    "en": "Save",
+    "ja": "保存",
+    "section": "core"
+  },
+  {
+    "en": "Copy Output to Input",
+    "ja": "出力を入力へコピー",
+    "section": "core"
+  },
+  {
+    "en": "Pick Color",
+    "ja": "色を選択",
+    "section": "core"
+  },
+  {
+    "en": "OVR",
+    "ja": "全体",
+    "section": "core"
+  },
+  {
+    "en": "Zoomed (Scope)",
+    "ja": "ズーム時 (スコープ)",
+    "section": "core"
+  },
+  {
+    "en": "Custom",
+    "ja": "カスタム",
+    "section": "core"
+  },
+  {
+    "en": "Menu Language",
+    "ja": "メニュー言語",
+    "section": "core"
+  },
+  {
+    "en": "File->Open ROM...",
+    "ja": "ファイル → ROMを開く...",
+    "section": "core"
+  },
+  {
+    "en": "GBA slot",
+    "ja": "GBAスロット",
+    "section": "core"
+  },
+  {
+    "en": "Import savefile",
+    "ja": "セーブファイルをインポート",
+    "section": "core"
+  },
+  {
+    "en": "Open melonDS directory",
+    "ja": "melonDSフォルダを開く",
+    "section": "core"
+  },
+  {
+    "en": "Frame step",
+    "ja": "フレーム送り",
+    "section": "core"
+  },
+  {
+    "en": "ROM info",
+    "ja": "ROM情報",
+    "section": "core"
+  },
+  {
+    "en": "Host LAN game",
+    "ja": "LANゲームをホスト",
+    "section": "core"
+  },
+  {
+    "en": "Screen gap",
+    "ja": "画面間隔",
+    "section": "core"
+  },
+  {
+    "en": "Hybrid",
+    "ja": "ハイブリッド",
+    "section": "core"
+  },
+  {
+    "en": "Emphasize bottom",
+    "ja": "下画面を重視",
+    "section": "core"
+  },
+  {
+    "en": "Open new window",
+    "ja": "新しいウィンドウを開く",
+    "section": "core"
+  },
+  {
+    "en": "Preferences...",
+    "ja": "環境設定...",
+    "section": "core"
+  },
+  {
+    "en": "Multiplayer settings",
+    "ja": "マルチプレイ設定",
+    "section": "core"
+  },
+  {
+    "en": "Limit framerate",
+    "ja": "フレームレート制限",
+    "section": "core"
+  },
+  {
+    "en": "MelonPrime settings",
+    "ja": "MelonPrime設定",
+    "section": "core"
+  },
+  {
+    "en": "About...",
+    "ja": "このアプリについて...",
+    "section": "core"
+  },
+  {
+    "en": "Custom HUD",
+    "ja": "カスタムHUD",
+    "section": "core"
+  },
+  {
+    "en": "INPUT METHOD",
+    "ja": "入力方式",
+    "section": "core"
+  },
+  {
+    "en": "LOW HP WARNING",
+    "ja": "低HP警告",
+    "section": "core"
+  },
+  {
+    "en": "Power-Up Pickup Effects",
+    "ja": "パワーアップ取得効果",
+    "section": "core"
+  },
+  {
+    "en": "DEVELOPER ONLY",
+    "ja": "開発者向け",
+    "section": "core"
+  },
+  {
+    "en": "CROSSHAIR",
+    "ja": "照準",
+    "section": "core"
+  },
+  {
+    "en": "Keyboard mappings",
+    "ja": "キーボード割り当て",
+    "section": "core"
+  },
+  {
+    "en": "[Metroid] (A) Move Left",
+    "ja": "[Metroid] (A) 左移動",
+    "section": "core"
+  },
+  {
+    "en": "[Metroid] (Space) Jump",
+    "ja": "[Metroid] (Space) ジャンプ",
+    "section": "core"
+  },
+  {
+    "en": "[Metroid] (1) Weapon 1. ShockCoil",
+    "ja": "[Metroid] (1) 武器1: ショックコイル",
+    "section": "core"
+  },
+  {
+    "en": "[Metroid] (6) Weapon 6. VoltDriver",
+    "ja": "[Metroid] (6) 武器6: ボルトドライバー",
+    "section": "core"
+  },
+  {
+    "en": "[Metroid] (J) Next Weapon in the sorted order",
+    "ja": "[Metroid] (J) 次の武器",
+    "section": "core"
+  },
+  {
+    "en": "[Metroid] (F) UI Ok",
+    "ja": "[Metroid] (F) UI決定",
+    "section": "core"
+  },
+  {
+    "en": "Aim sensitivity (default: 63)",
+    "ja": "エイム感度 (既定: 63)",
+    "section": "core"
+  },
+  {
+    "en": "Instant Aim Follow (Developer Only)",
+    "ja": "即時エイム追従（開発者専用）",
+    "section": "core"
+  },
+  {
+    "en": "Set MPH audio settings to headphones.(recommended) (Change a setting in MPH and save to update the save data. Uncheck this option after saving)",
+    "ja": "MPHの音声設定をヘッドホンにする (推奨。MPH側で設定を変更して保存するとセーブに反映。保存後はオフ推奨)",
+    "section": "core"
+  },
+  {
+    "en": "Enable Aim Sub-pixel Accumulator (Carry fractional mouse movement across frames. Enable for smoother low-sensitivity aiming)",
+    "ja": "エイムのサブピクセル蓄積を有効化 (小数のマウス移動を次フレームへ持ち越し。低感度エイムが滑らかになります)",
+    "section": "core"
+  },
+  {
+    "en": "Enable Native Aim Delta Hook (PostFold Write)",
+    "ja": "ネイティブエイムデルタHookを有効化 (PostFold書き込み)",
+    "section": "core"
+  },
+  {
+    "en": "Screen Sync Mode: Off = no sync call, glFinish = wait for GL commands to complete",
+    "ja": "画面同期方式: オフ = 同期呼び出しなし、glFinish = GLコマンド完了まで待機",
+    "section": "core"
+  },
+  {
+    "en": "Auto (match Aspect Ratio)",
+    "ja": "自動 (画面比率に合わせる)",
+    "section": "core"
+  },
+  {
+    "en": "Use DS Firmware Language (EU-style Auto Patch)",
+    "ja": "DSファームウェア言語を使う (EU版風の自動パッチ)",
+    "section": "core"
+  },
+  {
+    "en": "Shadow Freeze Fix (Ice Wave full 3D angle check)",
+    "ja": "シャドウフリーズ修正 (アイスウェーブの3D角度判定)",
+    "section": "core"
+  },
+  {
+    "en": "Power-Ups: Pick Up With No Effect",
+    "ja": "パワーアップ: 取得しても効果なし",
+    "section": "core"
+  },
+  {
+    "en": "Video quality: Low (High Performance)",
+    "ja": "映像品質: 低 (高パフォーマンス)",
+    "section": "core"
+  },
+  {
+    "en": "Apply the selected hunter to your license. (Renaming will update the save data)",
+    "ja": "選択したハンターをライセンスに反映 (名前変更でセーブデータ更新)",
+    "section": "core"
+  },
+  {
+    "en": "Blue(US)",
+    "ja": "青 (US)",
+    "section": "core"
+  },
+  {
+    "en": "Fixed",
+    "ja": "固定",
+    "section": "core"
+  },
+  {
+    "en": "Per Damage — High",
+    "ja": "ダメージ別 - 高",
+    "section": "core"
+  },
+  {
+    "en": "Controls how the game's current aim direction follows the target aim direction.",
+    "ja": "ゲーム内の現在の照準方向を、目標の照準方向へどう追従させるかを設定します。",
+    "section": "core"
+  },
+  {
+    "en": "Checked: toggle native weapon zoom by calling the game's SetPlayerScopeZoom setter. Unchecked with New Method also off: use Legacy fixed R-button input.",
+    "ja": "オン: ゲーム本来のズーム切替処理を呼んで武器ズームを切り替えます。新方式もオフの場合は、旧方式の固定Rボタン入力を使います。",
+    "section": "core"
+  },
+  {
+    "en": "Enables applying the selected hunter to the license.",
+    "ja": "選択したハンターをライセンスに反映できるようにします。",
+    "section": "core"
+  },
+  {
+    "en": "Does not overwrite your saved window layout settings. The override is applied only while Metroid Prime Hunters is in-game.",
+    "ja": "保存済みのウィンドウレイアウト設定は上書きしません。Metroid Prime Huntersのゲーム中だけ一時的に適用されます。",
+    "section": "core"
+  },
+  {
+    "en": "Enable Custom HUD (Replaces the in-game HUD with a custom overlay showing HP, ammo, weapon icons and crosshair)",
+    "ja": "カスタムHUDを有効化 (ゲーム内HUDを、HP/弾薬/武器アイコン/照準のカスタム表示に置き換えます)",
+    "section": "core"
+  },
+  {
+    "en": "— Score Row (per mode) —",
+    "ja": "- スコア行 (モード別) -",
+    "section": "core"
+  },
+  {
+    "en": "Hide Crosshair",
+    "ja": "照準を非表示",
+    "section": "core"
+  },
+  {
+    "en": "Hide Score: Bounty",
+    "ja": "スコア非表示: バウンティ",
+    "section": "core"
+  },
+  {
+    "en": "Auto Scale Enable",
+    "ja": "自動スケールを有効化",
+    "section": "core"
+  },
+  {
+    "en": "Auto Scale Crosshair Cap %",
+    "ja": "自動スケール照準上限 %",
+    "section": "core"
+  },
+  {
+    "en": "Underline",
+    "ja": "下線",
+    "section": "core"
+  },
+  {
+    "en": "Zoom Base Scale %",
+    "ja": "ズーム時元照準スケール %",
+    "section": "core"
+  },
+  {
+    "en": "Scope Radius",
+    "ja": "スコープ半径",
+    "section": "core"
+  },
+  {
+    "en": "Scope Dot Size",
+    "ja": "スコープドットサイズ",
+    "section": "core"
+  },
+  {
+    "en": "Transition Speed %",
+    "ja": "遷移速度 %",
+    "section": "core"
+  },
+  {
+    "en": "Zoom Crosshair",
+    "ja": "ズーム照準",
+    "section": "core"
+  },
+  {
+    "en": "Fade",
+    "ja": "フェード",
+    "section": "core"
+  },
+  {
+    "en": "Pulse Wave",
+    "ja": "パルス波",
+    "section": "core"
+  },
+  {
+    "en": "Drone LIDAR",
+    "ja": "ドローンLIDAR",
+    "section": "core"
+  },
+  {
+    "en": "Outline Opacity",
+    "ja": "アウトライン不透明度",
+    "section": "core"
+  },
+  {
+    "en": "Dot Color",
+    "ja": "ドット色",
+    "section": "core"
+  },
+  {
+    "en": "Dot Opacity",
+    "ja": "ドット不透明度",
+    "section": "core"
+  },
+  {
+    "en": "Outer",
+    "ja": "外側",
+    "section": "core"
+  },
+  {
+    "en": "Show Number",
+    "ja": "数値を表示",
+    "section": "core"
+  },
+  {
+    "en": "Length X",
+    "ja": "長さ X",
+    "section": "core"
+  },
+  {
+    "en": "Offset X",
+    "ja": "オフセット X",
+    "section": "core"
+  },
+  {
+    "en": "Top Right",
+    "ja": "右上",
+    "section": "core"
+  },
+  {
+    "en": "Bottom Center",
+    "ja": "下中央",
+    "section": "core"
+  },
+  {
+    "en": "Bot Left",
+    "ja": "左下",
+    "section": "core"
+  },
+  {
+    "en": "Right",
+    "ja": "右",
+    "section": "core"
+  },
+  {
+    "en": "Start",
+    "ja": "開始",
+    "section": "core"
+  },
+  {
+    "en": "Vert",
+    "ja": "縦",
+    "section": "core"
+  },
+  {
+    "en": "Text→Gauge",
+    "ja": "文字→ゲージ",
+    "section": "core"
+  },
+  {
+    "en": "Gauge Side",
+    "ja": "ゲージ側",
+    "section": "core"
+  },
+  {
+    "en": "Text Offset X",
+    "ja": "文字オフセット X",
+    "section": "core"
+  },
+  {
+    "en": "Suffix",
+    "ja": "接尾辞",
+    "section": "core"
+  },
+  {
+    "en": "Orient",
+    "ja": "向き",
+    "section": "core"
+  },
+  {
+    "en": "Pos Anchor",
+    "ja": "位置基準",
+    "section": "core"
+  },
+  {
+    "en": "Weapon Layout",
+    "ja": "武器レイアウト",
+    "section": "core"
+  },
+  {
+    "en": "Label Offset X",
+    "ja": "ラベルオフセット X",
+    "section": "core"
+  },
+  {
+    "en": "Label: Octoliths",
+    "ja": "ラベル: オクトリス",
+    "section": "core"
+  },
+  {
+    "en": "Bounty",
+    "ja": "バウンティ",
+    "section": "core"
+  },
+  {
+    "en": "Value",
+    "ja": "値",
+    "section": "core"
+  },
+  {
+    "en": "Label Color: Overall",
+    "ja": "ラベル色: 全体",
+    "section": "core"
+  },
+  {
+    "en": "Goal Color",
+    "ja": "目標色",
+    "section": "core"
+  },
+  {
+    "en": "Use Hunter Color",
+    "ja": "ハンター色を使用",
+    "section": "core"
+  },
+  {
+    "en": "Dst Y",
+    "ja": "表示 Y",
+    "section": "core"
+  },
+  {
+    "en": "Spacing",
+    "ja": "間隔",
+    "section": "core"
+  },
+  {
+    "en": "Highlight Opacity",
+    "ja": "ハイライト不透明度",
+    "section": "core"
+  },
+  {
+    "en": "Highlight Offset Right",
+    "ja": "ハイライト右オフセット",
+    "section": "core"
+  },
+  {
+    "en": "Size Offset Top",
+    "ja": "サイズ上オフセット",
+    "section": "core"
+  },
+  {
+    "en": "Hl Corner Radius",
+    "ja": "HL角丸",
+    "section": "core"
+  },
+  {
+    "en": "HP",
+    "ja": "HP",
+    "section": "core"
+  },
+  {
+    "en": "HP Gauge Color By Value",
+    "ja": "HPゲージの色 (値連動)",
+    "section": "core"
+  },
+  {
+    "en": "Ammo Outline",
+    "ja": "弾薬のアウトライン",
+    "section": "core"
+  },
+  {
+    "en": "Weapon Icon",
+    "ja": "武器アイコン",
+    "section": "core"
+  },
+  {
+    "en": "Weapon Inventory Outline",
+    "ja": "武器インベントリのアウトライン",
+    "section": "core"
+  },
+  {
+    "en": "Score Colors",
+    "ja": "スコアの色",
+    "section": "core"
+  },
+  {
+    "en": "Time Left",
+    "ja": "残り時間",
+    "section": "core"
+  },
+  {
+    "en": "Bomb Left",
+    "ja": "残りボム",
+    "section": "core"
+  },
+  {
+    "en": "Radar Settings",
+    "ja": "レーダー設定",
+    "section": "core"
+  },
+  {
+    "en": "Bmb\nIcon",
+    "ja": "ボム\nアイコン",
+    "section": "core"
+  },
+  {
+    "en": "Bombs",
+    "ja": "ボム",
+    "section": "core"
+  },
+  {
+    "en": "Color (Default: Red)",
+    "ja": "色 (既定: 赤)",
+    "section": "core"
+  },
+  {
+    "en": "No Ammo",
+    "ja": "弾薬なし",
+    "section": "core"
+  },
+  {
+    "en": "Octo Drop",
+    "ja": "オクトリスドロップ",
+    "section": "core"
+  },
+  {
+    "en": "Slot: Objective     [flags=0x01]",
+    "ja": "スロット: 目標 [flags=0x01]",
+    "section": "core"
+  },
+  {
+    "en": "Applied once on settings close to currently displayed messages (flags=0x00).\nNew messages use their individual literal colors above (Lost Lives / Coward Detect / Turret ...).\nNote: HEADSHOT! (H228) is flags=0x00, not 0x02.",
+    "ja": "設定を閉じたとき、現在表示中のメッセージへ一度だけ適用されます (flags=0x00)。\n新しいメッセージはそれぞれの個別色を使用します (ライフ喪失 / 臆病者検出 / タレット ...)。\n注: HEADSHOT! (H228) は flags=0x00 で、0x02 ではありません。",
+    "section": "core"
+  },
+  {
+    "en": "White",
+    "ja": "白",
+    "section": "core"
+  },
+  {
+    "en": "Pure Cyan",
+    "ja": "純シアン",
+    "section": "core"
+  },
+  {
+    "en": "Samus Hud",
+    "ja": "サムスHUD",
+    "section": "core"
+  },
+  {
+    "en": "Trace Hud",
+    "ja": "トレースHUD",
+    "section": "core"
+  },
+  {
+    "en": "Weavel Hud",
+    "ja": "ウィーヴェルHUD",
+    "section": "core"
+  },
+  {
+    "en": "Power Beam",
+    "ja": "パワービーム",
+    "section": "core"
+  },
+  {
+    "en": "Battlehammer",
+    "ja": "バトルハンマー",
+    "section": "core"
+  },
+  {
+    "en": "ShockCoil",
+    "ja": "ショックコイル",
+    "section": "core"
+  },
+  {
+    "en": "BH Color",
+    "ja": "BH色",
+    "section": "core"
+  },
+  {
+    "en": "OC Color",
+    "ja": "OC色",
+    "section": "core"
+  },
+  {
+    "en": "Medium",
+    "ja": "中太",
+    "section": "core"
+  },
+  {
+    "en": "Number of Colors",
+    "ja": "色数",
+    "section": "core"
+  },
+  {
+    "en": "Threshold 5 (%)",
+    "ja": "しきい値 5 (%)",
+    "section": "core"
+  },
+  {
+    "en": "Color 4",
+    "ja": "色 4",
+    "section": "core"
+  },
+  {
+    "en": "Custom HUD code copied to the clipboard.",
+    "ja": "カスタムHUDコードをクリップボードにコピーしました。",
+    "section": "core"
+  },
+  {
+    "en": "Failed to load Custom HUD code: %1",
+    "ja": "カスタムHUDコードの読み込みに失敗しました: %1",
+    "section": "core"
+  },
+  {
+    "en": "Use New Method 2 for Zoom",
+    "ja": "ズームに新方式2を使う",
+    "section": "core"
+  },
+  {
+    "en": "Input and hotkeys - melonDS",
+    "ja": "入力とホットキー - melonDS",
+    "section": "melonds"
+  },
+  {
+    "en": "CPU emulation",
+    "ja": "CPUエミュレーション",
+    "section": "melonds"
+  },
+  {
+    "en": "Browse...",
+    "ja": "参照...",
+    "section": "melonds"
+  },
+  {
+    "en": "DSi ARM9 BIOS:",
+    "ja": "DSi ARM9 BIOS:",
+    "section": "melonds"
+  },
+  {
+    "en": "Sync SD to folder:",
+    "ja": "SDをフォルダと同期:",
+    "section": "melonds"
+  },
+  {
+    "en": "Enable JIT recompiler",
+    "ja": "JITリコンパイラを有効化",
+    "section": "melonds"
+  },
+  {
+    "en": "Enable DLDI (for homebrew)",
+    "ja": "DLDIを有効化 (homebrew用)",
+    "section": "melonds"
+  },
+  {
+    "en": "Note: melonDS must be restarted in order for these changes to have effect",
+    "ja": "注: これらの変更を反映するにはmelonDSの再起動が必要です",
+    "section": "melonds"
+  },
+  {
+    "en": "Display settings",
+    "ja": "表示設定",
+    "section": "melonds"
+  },
+  {
+    "en": "OpenGL (Classic)",
+    "ja": "OpenGL (Classic)",
+    "section": "melonds"
+  },
+  {
+    "en": "Internal resolution:",
+    "ja": "内部解像度:",
+    "section": "melonds"
+  },
+  {
+    "en": "Picture source",
+    "ja": "画像ソース",
+    "section": "melonds"
+  },
+  {
+    "en": "Physical camera:",
+    "ja": "物理カメラ:",
+    "section": "melonds"
+  },
+  {
+    "en": "Microphone input",
+    "ja": "マイク入力",
+    "section": "melonds"
+  },
+  {
+    "en": "None",
+    "ja": "なし",
+    "section": "melonds"
+  },
+  {
+    "en": "Automatic",
+    "ja": "自動",
+    "section": "melonds"
+  },
+  {
+    "en": "WAV file:",
+    "ja": "WAVファイル:",
+    "section": "melonds"
+  },
+  {
+    "en": "Frame step",
+    "ja": "フレーム送り",
+    "section": "melonds"
+  },
+  {
+    "en": "Toggle FPS limit",
+    "ja": "FPS制限切替",
+    "section": "melonds"
+  },
+  {
+    "en": "Swap screen emphasis",
+    "ja": "画面強調入替",
+    "section": "melonds"
+  },
+  {
+    "en": "Multiplayer settings - melonDS",
+    "ja": "マルチプレイ設定 - melonDS",
+    "section": "melonds"
+  },
+  {
+    "en": "Data reception timeout: ",
+    "ja": "データ受信タイムアウト: ",
+    "section": "melonds"
+  },
+  {
+    "en": "Direct mode [TEXT PLACEHOLDER]",
+    "ja": "ダイレクトモード [TEXT PLACEHOLDER]",
+    "section": "melonds"
+  },
+  {
+    "en": "(none)",
+    "ja": "(なし)",
+    "section": "melonds"
+  },
+  {
+    "en": "Message:",
+    "ja": "メッセージ:",
+    "section": "melonds"
+  },
+  {
+    "en": "(leave empty to use default MAC)",
+    "ja": "(空欄で既定MACを使用)",
+    "section": "melonds"
+  },
+  {
+    "en": "Hide mouse after inactivity",
+    "ja": "非操作時にマウスを隠す",
+    "section": "melonds"
+  },
+  {
+    "en": "Framerate ",
+    "ja": "フレームレート ",
+    "section": "melonds"
+  },
+  {
+    "en": "Accurate",
+    "ja": "正確",
+    "section": "melonds"
+  },
+  {
+    "en": "3x",
+    "ja": "3x",
+    "section": "melonds"
+  },
+  {
+    "en": "Save files path:",
+    "ja": "セーブファイルのパス:",
+    "section": "melonds"
+  },
+  {
+    "en": "Import...",
+    "ja": "インポート...",
+    "section": "melonds"
+  },
+  {
+    "en": "Description:",
+    "ja": "説明:",
+    "section": "melonds"
+  },
+  {
+    "en": "DSi Battery",
+    "ja": "DSiバッテリー",
+    "section": "melonds"
+  },
+  {
+    "en": "Battery Level",
+    "ja": "バッテリー残量",
+    "section": "melonds"
+  },
+  {
+    "en": "Reset to system date and time",
+    "ja": "システム日時にリセット",
+    "section": "melonds"
+  },
+  {
+    "en": "Titles",
+    "ja": "タイトル",
+    "section": "melonds"
+  },
+  {
+    "en": "Italian title:",
+    "ja": "イタリア語タイトル:",
+    "section": "melonds"
+  },
+  {
+    "en": "ARM9 ROM offset: ",
+    "ja": "ARM9 ROMオフセット: ",
+    "section": "melonds"
+  },
+  {
+    "en": "ARM7 entry address:",
+    "ja": "ARM7エントリアドレス:",
+    "section": "melonds"
+  },
+  {
+    "en": "FNT size:",
+    "ja": "FNTサイズ:",
+    "section": "melonds"
+  },
+  {
+    "en": "Game code:",
+    "ja": "ゲームコード:",
+    "section": "melonds"
+  },
+  {
+    "en": "RAM info - melonDS",
+    "ja": "RAM検索 - melonDS",
+    "section": "melonds"
+  },
+  {
+    "en": "4bytes",
+    "ja": "4バイト",
+    "section": "melonds"
+  },
+  {
+    "en": "Host LAN game - melonDS",
+    "ja": "LANゲームをホスト - melonDS",
+    "section": "melonds"
+  },
+  {
+    "en": "Direct connect...",
+    "ja": "直接接続...",
+    "section": "melonds"
+  },
+  {
+    "en": "Status",
+    "ja": "状態",
+    "section": "melonds"
+  },
+  {
+    "en": "Failed to start LAN game.",
+    "ja": "LANゲームの開始に失敗しました。",
+    "section": "melonds"
+  },
+  {
+    "en": "View on &GitHub",
+    "ja": "GitHub(&G)",
+    "section": "melonds"
+  },
+  {
+    "en": "Red",
+    "ja": "赤",
+    "section": "melonds"
+  },
+  {
+    "en": "Light green",
+    "ja": "薄い緑",
+    "section": "melonds"
+  },
+  {
+    "en": "Dark blue",
+    "ja": "濃い青",
+    "section": "melonds"
+  },
+  {
+    "en": "German",
+    "ja": "ドイツ語",
+    "section": "melonds"
+  },
+  {
+    "en": "February",
+    "ja": "2月",
+    "section": "melonds"
+  },
+  {
+    "en": "July",
+    "ja": "7月",
+    "section": "melonds"
+  },
+  {
+    "en": "December",
+    "ja": "12月",
+    "section": "melonds"
+  }
+]

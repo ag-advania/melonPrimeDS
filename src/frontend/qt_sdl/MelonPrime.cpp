@@ -61,6 +61,13 @@ namespace MelonPrime {
     }
 #endif
 
+#if defined(__APPLE__)
+    bool MelonPrimeCore::IsGcMouseAimActive() const
+    {
+        return PlatformInput_IsGcMouseAimActive(m_platformRawFilter);
+    }
+#endif
+
     // =========================================================================
     // Runtime config and platform input setup
     // =========================================================================

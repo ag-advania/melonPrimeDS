@@ -96,7 +96,7 @@ namespace Config
         {"Instance*.Metroid.Volume.SFX", 9},
         {"Instance*.Metroid.Volume.Music", 9},
         {"Instance*.Metroid.Screen.SyncMode", 0},
-        {"Instance*.Metroid.UI.MenuLanguage", 0}, // 0=Japanese, 1=English; ignored outside Japanese OS
+        {"Instance*.Metroid.UI.MenuLanguage", -1}, // -1=OS default, otherwise MenuLangId
         {"Instance*.Metroid.Aim.NativeHookMode", 0},
         {"Instance*.Metroid.Aim.LowLatencyMode", 0},
         {"Instance*.Metroid.Aim.MoonLikeAimNormalStepQ12", 0x0165},

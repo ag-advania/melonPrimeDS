@@ -1,0 +1,182 @@
+[
+  {
+    "en": null,
+    "ja": "(精密なエイムのため、可能なら1以下にしてください。推奨範囲は -3〜0 です。ただし低すぎるとエイム時のHUD揺れが大きくなります。この値はゲーム内感度に対する相対値なので、0は感度ゼロではなく、1より低いだけです。この設定はMPHのゲーム内感度を上書きするため、ゲーム内で感度を変更しても効果はありません。)",
+    "objectName": "metroidMphSensitvityLabel2",
+    "section": "object"
+  },
+  {
+    "en": null,
+    "ja": "(1.5147 = MPH標準、1.9429 = X/Y角速度一致 [オプション])",
+    "objectName": "metroidAimYAxisScaleLabel2",
+    "section": "object"
+  },
+  {
+    "en": null,
+    "ja": "<html><head/><body><p><b>入力しきい値 (デッドゾーン + スナップ)</b> (推奨: 0.01 [既定] または 0.5): |x|&lt;a → 0, a ≤ |x|&lt;1 → ±1, |x|≥1 → そのまま (a=0: オフ = 1未満をすべて無視、スナップなし)<br/>エイムが思った通りに動かない場合は、この値を下げてみてください。</p></body></html>",
+    "objectName": "metroidAimAdjustLabel",
+    "section": "object"
+  },
+  {
+    "en": null,
+    "ja": "即時同期は低遅延ARM9フックで現在の照準を目標の照準へ同期し、照準基準を再構築します。MoonLikeエイムは小さなエイム移動を即時反映し、大きなジャンプだけ最大ステップ付きで追従します。MPHのエイム補間無効化が必要です。",
+    "objectName": "lblMetroidLowLatencyAimDesc",
+    "section": "object"
+  },
+  {
+    "en": null,
+    "ja": "ゲーム本来のズーム状態が有効な間だけ適用します。100%で通常のマウス感度、100%未満でズーム中のエイムが遅くなり、100%超で速くなります。",
+    "objectName": "lblMetroidZoomAimScaleDesc",
+    "section": "object"
+  },
+  {
+    "en": null,
+    "ja": "PostFold書き込みはタッチ入力処理の後でフックし、spec108=0 (サムス/カンデン/ノクサス/スパイア) を含むすべてのトランスフォームをカバーします。開発者ビルド専用です。",
+    "objectName": "lblMetroidNativeAimHookModeDesc",
+    "section": "object"
+  },
+  {
+    "en": null,
+    "ja": "新方式は短いネイティブ入力ゲートをゲーム本来の変形要求処理へリダイレクトします。旧方式は従来のタッチ/メニュー模擬による変形処理を使います。",
+    "objectName": "lblMetroidDirectAltFormTransformDesc",
+    "section": "object"
+  },
+  {
+    "en": null,
+    "ja": "フレンド/ライバルの有効スロットを追跡する疑似64bitビットセットの不具合を修正します。\nJP1.0 / US1.0 / EU1.0ではスロット32〜59が正しく扱われず、一部のフレンド/ライバルがオンラインで見えなくなることがあります。\nJP1.1 / US1.1 / EU1.1 / KR1.0と同じ、バイト単位のビットセット処理に置き換えます。\n(JP1.0 / US1.0 / EU1.0のみ。他のROMバージョンには影響しません)",
+    "objectName": "lblMetroidFixWifiBitsetDesc",
+    "section": "object"
+  },
+  {
+    "en": null,
+    "ja": "アイスウェーブの最後の命中/ミス角度判定を、元の横方向範囲チェックは保ったまま完全な3D判定へ置き換えて、シャドウフリーズ問題を修正します。",
+    "objectName": "lblMetroidFixShadowFreezeDesc",
+    "section": "object"
+  },
+  {
+    "en": null,
+    "ja": "ノクサスのヴォーサイズ/ブレード攻撃が死亡とリスポーン後もダメージを与え続ける不具合を修正します。ブレード攻撃中にノクサスが死亡するとAlt攻撃タイマーがクリアされず、復活後もブレードの当たり判定が残ります。この修正では死亡した瞬間にタイマーをクリアします。",
+    "objectName": "lblMetroidFixNoxusBladePersistenceDesc",
+    "section": "object"
+  },
+  {
+    "en": null,
+    "ja": "この修正はまだ不安定です。特に韓国版では、場合によってブレードが残り続けることがあります。",
+    "objectName": "lblMetroidFixNoxusBladePersistenceWarning",
+    "section": "object"
+  },
+  {
+    "en": null,
+    "ja": "<html><body>\nDSファームウェアの言語設定を読み取り、その言語で表示するようゲームにパッチします。<br>\nEU ROMには隠し日本語オプションがあり、DSファームウェアを日本語にすると有効になります。<br><br>\n<b>EU / US ROM:</b> すべてのモードで動作します (マルチプレイとアドベンチャー)。<br>\n<b>JP ROM:</b> マルチプレイのみ動作します。<font color=\"red\"><b>有効にするとアドベンチャーモードはプレイできません。</b></font><br>\n<b>KR ROM:</b> まだ未対応です。\n</body></html>",
+    "objectName": "lblMetroidUseFirmwareLanguageDesc",
+    "section": "object"
+  },
+  {
+    "en": null,
+    "ja": "Wi-Fi/オンライン対戦中でも、単独のヘッドショット通知を強制的に表示します。",
+    "objectName": "lblMetroidShowHeadshotOnlineDesc",
+    "section": "object"
+  },
+  {
+    "en": null,
+    "ja": "HP情報は基本的に更新されないため信頼性は高くありません。誰に当てたかを見る大まかな目安として使えます。",
+    "objectName": "lblMetroidShowEnemyHpMeterOnlineDesc",
+    "section": "object"
+  },
+  {
+    "en": null,
+    "ja": "<html><body>\n安定確認済みのステージ/モード組み合わせを5個解放します。ステージ選択メニューが開いている間、自動で適用されます。<br><br>\n<b>バウンティ</b><br>\n&nbsp;&nbsp;Fuel Stack — オクトリスあり、アイテムあり<br>\n&nbsp;&nbsp;Alinos Gateway — オクトリスあり、坂の下に得意武器が出現<br><br>\n<b>キャプチャー</b><br>\n&nbsp;&nbsp;Celestial Gateway — オクトリスあり、ジャンパーとアイテムあり<br><br>\n<b>ディフェンダー</b><br>\n&nbsp;&nbsp;High Ground — アイテムあり、マグモールエリア左下にディフェンダーゾーンリング<br>\n&nbsp;&nbsp;Elder Passage — アイテムあり、マグモールエリア左下にディフェンダーゾーンリング\n</body></html>",
+    "objectName": "lblMetroidExpandStageMatrixDesc",
+    "section": "object"
+  },
+  {
+    "en": null,
+    "ja": "<html><body>\n基本選択に加えて、さらに9個の組み合わせを解放します。<br><br>\n<b>バトル / ノード / プライムハンター / サバイバル</b><br>\n&nbsp;&nbsp;Transfer Lock Wide — 通常重力<br><br>\n<b>ディフェンダー</b><br>\n&nbsp;&nbsp;Transfer Lock — ディフェンダーリングなし、ボルトドライバー + バトルハンマーのみ<br>\n&nbsp;&nbsp;Compressor Room — ディフェンダーリングなし、ジャンパーなし、アイテムなし<br>\n&nbsp;&nbsp;Incubator — ディフェンダーリングなし、アイテムとジャンパーあり<br>\n&nbsp;&nbsp;Fuel Stack — ディフェンダーリングなし、浮遊なし、インペリアリストのみ<br>\n&nbsp;&nbsp;Head Shot — ディフェンダーリングなし、通常重力、ジャンパー2個、トランスフォーム通路は射出なし\n</body></html>",
+    "objectName": "lblMetroidExpandStageMatrixExtraDesc",
+    "section": "object"
+  },
+  {
+    "en": null,
+    "ja": "<html><body>\nダブルダメージの取得、タイマー、HUD、サウンド、視覚効果はそのままに、ダメージ倍率だけを2倍から1倍へ変更します。<br><br>\n<font color=\"red\"><b>重要:</b> 2倍 → 1倍の変更は<b>自分側</b>にだけ適用されます。相手側もダメージ1倍を有効にしていない場合、ダブルダメージ中の自分の弾は相手には2倍ダメージとして扱われます。</font><br><br>\n参加者全員の同意がある場合にだけ使用してください。\n</body></html>",
+    "objectName": "lblMetroidDisableDoubleDamageMultiplierDesc",
+    "section": "object"
+  },
+  {
+    "en": null,
+    "ja": "<html><body>\nダメージを受けたときに短時間だけダブルダメージの紫状態で点滅させ、相手から被弾が見えるようにします。<br><br>\n<font color=\"red\"><b>重要:</b> これは実際のダブルダメージタイマーを書き込むため、短い間だけ本当に<b>ダブルダメージ状態に入ります</b>。その間、自分の弾は相手にも2倍ダメージを与えます。これを避けるには相手側もダメージ1倍を有効にする必要があります。</font><br><br>\n<b>対戦で使う前に、必ず参加者全員の同意を取ってください。</b> 自分のダメージを1倍に保つには、上の「ダブルダメージ倍率を無効化」と組み合わせてください。\n</body></html>",
+    "objectName": "lblMetroidDamageNotifyPurpleDesc",
+    "section": "object"
+  },
+  {
+    "en": null,
+    "ja": "有効にすると、選択したパワーアップは取得されて消えますが、プレイヤー側の効果はスキップされます。ダブルダメージ、クローク、デスオルトのタイマー、フラグ、HUD、サウンド、視覚効果は適用されません。この設定が影響するのは自分とボットだけで、オンラインの相手は変更されません。",
+    "objectName": "lblMetroidDisablePickingUpSpecificItemsDesc",
+    "section": "object"
+  },
+  {
+    "en": null,
+    "ja": "JoyToKey、Steam Input、reWASDなど、外部のコントローラー→キーボード/マウス変換ツール向けの互換モードです。割り当てたキーが離した後も押されっぱなしになる場合に役立ちます。通常のキーボードとマウスを直接使う場合は、無効にすると入力遅延が少し減ることがあります。",
+    "objectName": "lblMetroidJoy2KeySupportDesc",
+    "section": "object"
+  },
+  {
+    "en": null,
+    "ja": "オフ: 同期なし (最小遅延ですが、表示がカクつくことがあります)。glFinish: 各フレームの描画完了を待つことで表示を滑らかにします。DwmFlush: Windowsコンポジターと同期して表示を滑らかにします (Windowsのみ)。画面がカクついたりちらついたりする場合は、glFinishまたはDwmFlushを試してください。早送り/スローモーション中は自動的に無効になります。",
+    "objectName": "labelMetroidScreenSyncDesc",
+    "section": "object"
+  },
+  {
+    "en": null,
+    "ja": "自動: 現在のアスペクト比設定に合わせてアスペクト比パッチを自動適用します (4:3 = オフ、5:3/16:9/21:9 = 自動適用、ウィンドウ = オフ)。",
+    "objectName": "labelInGameAspectRatioAutoDesc",
+    "section": "object"
+  },
+  {
+    "en": null,
+    "ja": "自動スケール: Low = 基準 ×0.75、Medium = 基準、High = 基準 ×1.25 (丸め)。0にすると実質的に警告を無効化します。範囲は0-255です。",
+    "objectName": "lblMetroidLowHpWarningDesc",
+    "section": "object"
+  },
+  {
+    "en": null,
+    "ja": "最小遅延のため、エイム呼び出し地点でフックします。二足状態と spec108=1 のトランスフォーム (トレース/サイラックス/ウィーヴェル) をカバーします。有効にすると、上のネイティブエイムデルタHook (PostFold書き込み) より優先されます。",
+    "objectName": "lblMetroidNativeAimRegisterInjectionDesc",
+    "section": "object"
+  },
+  {
+    "en": null,
+    "ja": "押下/離上エッジをエミュレーター側で生成し、プレイヤーアクション処理前にMPH内部入力状態へ重ねます。射撃、ジャンプ、ズーム、移動をカバーします。ボタンマスクはプレイヤーの現在の操作プリセット割り当て表から読むため、すべてのプリセット (Touch R/L、Dual R/L) に自動対応します。",
+    "objectName": "lblMetroidImmediateInputEdgeOverlayDesc",
+    "section": "object"
+  },
+  {
+    "en": null,
+    "ja": "オンにすると、ARM9フック経由でゲーム本来の武器装備処理を使います。オフでは互換性テスト用に、従来のタッチ/メニュー模擬による武器切替を使います。",
+    "objectName": "lblMetroidWeaponSwitchMethodDesc",
+    "section": "object"
+  },
+  {
+    "en": null,
+    "ja": "オンにすると、ゲーム本来の二足射撃エッジフックで射撃入力ヘルパーの結果をtrueにし、元のクールダウン、弾薬、弾生成、HUD、SFX経路を自然に動かします。旧方式では従来のDS入力/即時入力エッジ合成による射撃経路を使います。",
+    "objectName": "lblMetroidBipedFireMethodDesc",
+    "section": "object"
+  },
+  {
+    "en": null,
+    "ja": "新方式はゲーム内のズーム割り当て表を読むため、Touch/Dualプリセットごとに異なるDSボタンへズームを割り当てられます。旧方式より少し低遅延です。両方のチェックを外すと、従来の入力経路と同じく固定Rボタンを使う旧方式になります。",
+    "objectName": "lblMetroidZoomMethodDesc",
+    "section": "object"
+  },
+  {
+    "en": null,
+    "ja": "新方式2は、押すたびにゲーム本来のズーム状態を切り替えます。「ズームに新方式を使う」とは同時に使えません。",
+    "objectName": "lblMetroidZoomMethod2Desc",
+    "section": "object"
+  },
+  {
+    "en": null,
+    "ja": "クリア",
+    "objectName": "btnClear",
+    "section": "object"
+  }
+]

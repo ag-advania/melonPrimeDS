@@ -1,0 +1,962 @@
+[
+  {
+    "en": "OFF",
+    "ja": "OFF",
+    "section": "core"
+  },
+  {
+    "en": "Generate",
+    "ja": "生成",
+    "section": "core"
+  },
+  {
+    "en": "Select HUD Font",
+    "ja": "HUDフォントを選択",
+    "section": "core"
+  },
+  {
+    "en": "Edit",
+    "ja": "編集",
+    "section": "core"
+  },
+  {
+    "en": "preview",
+    "ja": "プレビュー",
+    "section": "core"
+  },
+  {
+    "en": "Auto",
+    "ja": "自動",
+    "section": "core"
+  },
+  {
+    "en": "Font File",
+    "ja": "フォントファイル",
+    "section": "core"
+  },
+  {
+    "en": "File",
+    "ja": "ファイル",
+    "section": "core"
+  },
+  {
+    "en": "Boot firmware",
+    "ja": "ファームウェアを起動",
+    "section": "core"
+  },
+  {
+    "en": "Insert ROM cart...",
+    "ja": "ROMカートリッジを挿入...",
+    "section": "core"
+  },
+  {
+    "en": "File...",
+    "ja": "ファイル...",
+    "section": "core"
+  },
+  {
+    "en": "Pause",
+    "ja": "一時停止",
+    "section": "core"
+  },
+  {
+    "en": "Enable cheats",
+    "ja": "チートを有効化",
+    "section": "core"
+  },
+  {
+    "en": "Multiplayer",
+    "ja": "マルチプレイ",
+    "section": "core"
+  },
+  {
+    "en": "Screen size",
+    "ja": "画面サイズ",
+    "section": "core"
+  },
+  {
+    "en": "Vertical",
+    "ja": "縦",
+    "section": "core"
+  },
+  {
+    "en": "Even",
+    "ja": "均等",
+    "section": "core"
+  },
+  {
+    "en": "Force integer scaling",
+    "ja": "整数スケーリングを強制",
+    "section": "core"
+  },
+  {
+    "en": "Config",
+    "ja": "設定",
+    "section": "core"
+  },
+  {
+    "en": "Camera settings",
+    "ja": "カメラ設定",
+    "section": "core"
+  },
+  {
+    "en": "Interface settings",
+    "ja": "インターフェース設定",
+    "section": "core"
+  },
+  {
+    "en": "Input settings",
+    "ja": "操作設定",
+    "section": "core"
+  },
+  {
+    "en": "In-Game Top Screen Only",
+    "ja": "ゲーム中は上画面のみ",
+    "section": "core"
+  },
+  {
+    "en": "Controls",
+    "ja": "操作",
+    "section": "core"
+  },
+  {
+    "en": "Output",
+    "ja": "出力",
+    "section": "core"
+  },
+  {
+    "en": "IN-GAME APPLY",
+    "ja": "ゲーム内反映",
+    "section": "core"
+  },
+  {
+    "en": "GAME FEATURE IMPROVEMENTS",
+    "ja": "ゲーム機能改善",
+    "section": "core"
+  },
+  {
+    "en": "VOLUME",
+    "ja": "音量",
+    "section": "core"
+  },
+  {
+    "en": "HUD SCALE",
+    "ja": "HUDスケール",
+    "section": "core"
+  },
+  {
+    "en": "HUD RADAR",
+    "ja": "HUDレーダー",
+    "section": "core"
+  },
+  {
+    "en": "[Metroid] (W) Move Forward",
+    "ja": "[Metroid] (W) 前進",
+    "section": "core"
+  },
+  {
+    "en": "[Metroid] (V) Scan/Shoot, Map Zoom In",
+    "ja": "[Metroid] (V) スキャン/射撃、マップ拡大",
+    "section": "core"
+  },
+  {
+    "en": "[Metroid] (Mouse 5, Side Top) Weapon Beam",
+    "ja": "[Metroid] (Mouse 5/サイド上) ビーム武器",
+    "section": "core"
+  },
+  {
+    "en": "[Metroid] (4) Weapon 4. Imperialist",
+    "ja": "[Metroid] (4) 武器4: インペリアリスト",
+    "section": "core"
+  },
+  {
+    "en": "[Metroid] (PgUp) AimSensitivity Up",
+    "ja": "[Metroid] (PgUp) エイム感度を上げる",
+    "section": "core"
+  },
+  {
+    "en": "[Metroid] (Z) UI Left (Adventure Left Arrow / Hunter License L)",
+    "ja": "[Metroid] (Z) UI左 (アドベンチャー左/ライセンスL)",
+    "section": "core"
+  },
+  {
+    "en": "[Metroid] (Y) Weapon Check",
+    "ja": "[Metroid] (Y) 武器確認",
+    "section": "core"
+  },
+  {
+    "en": "Low-Latency Aim Mode",
+    "ja": "低遅延エイム方式",
+    "section": "core"
+  },
+  {
+    "en": "Enable SnapTap (Faster directional switching for smooth strafing — may slightly increase input delay)",
+    "ja": "SnapTapを有効化 (ストレイフの方向切替を高速化。入力遅延が少し増える場合あり)",
+    "section": "core"
+  },
+  {
+    "en": "Enable Stylus Mode (Leave this unchecked unless you want to play with the stylus)",
+    "ja": "スタイラスモードを有効化 (スタイラス操作で遊ぶ場合以外はオフ推奨)",
+    "section": "core"
+  },
+  {
+    "en": "Enable Direct Alt-Form Transform",
+    "ja": "直接トランスフォーム変形を有効化",
+    "section": "core"
+  },
+  {
+    "en": "Screen Sync Mode — Default: Off",
+    "ja": "画面同期方式 - 既定: オフ",
+    "section": "core"
+  },
+  {
+    "en": "Enable In-Game Aspect Ratio",
+    "ja": "ゲーム内アスペクト比を有効化",
+    "section": "core"
+  },
+  {
+    "en": "16:9",
+    "ja": "16:9",
+    "section": "core"
+  },
+  {
+    "en": "Fix Noxus Blade Persistence on Death",
+    "ja": "ノクサスのブレード残留を修正",
+    "section": "core"
+  },
+  {
+    "en": "Disable Double Damage Multiplier",
+    "ja": "ダブルダメージ倍率を無効化",
+    "section": "core"
+  },
+  {
+    "en": "DEATH ALT",
+    "ja": "デスオルト",
+    "section": "core"
+  },
+  {
+    "en": "Apply SFX volume",
+    "ja": "効果音音量を反映",
+    "section": "core"
+  },
+  {
+    "en": "Select the color to apply.",
+    "ja": "反映する色を選択します。",
+    "section": "core"
+  },
+  {
+    "en": "Auto Scale (by Damage)",
+    "ja": "自動スケール (ダメージ別)",
+    "section": "core"
+  },
+  {
+    "en": "Per Damage — Low",
+    "ja": "ダメージ別 - 低",
+    "section": "core"
+  },
+  {
+    "en": "Developer-only option. Build with MELONPRIME_ENABLE_DEVELOPER_FEATURES to enable it.",
+    "ja": "開発者向けオプションです。有効にするには MELONPRIME_ENABLE_DEVELOPER_FEATURES 付きでビルドしてください。",
+    "section": "core"
+  },
+  {
+    "en": "Checked: use the native ARM9 TransformRequest hook. Unchecked: use the older touch/menu simulation path.",
+    "ja": "オン: ゲーム本来のARM9変形要求フックを使います。オフ: 従来のタッチ/メニュー模擬処理を使います。",
+    "section": "core"
+  },
+  {
+    "en": "Setting Key: Metroid.Apply.MusicVolume (check to apply)",
+    "ja": "設定キー: Metroid.Apply.MusicVolume (オンで反映)",
+    "section": "core"
+  },
+  {
+    "en": "Off: No sync (lowest latency, but the display may look choppy). glFinish: Smoother display by waiting for rendering to fully complete each frame. Automatically disabled during FastForward/SlowMo.",
+    "ja": "オフ: 同期なし (最小遅延ですが、表示がカクつくことがあります)。glFinish: 各フレームの描画完了を待つことで表示を滑らかにします。早送り/スローモーション中は自動的に無効になります。",
+    "section": "core"
+  },
+  {
+    "en": "Edit HUD Layout",
+    "ja": "HUD配置を編集",
+    "section": "core"
+  },
+  {
+    "en": "Paste Custom HUD TOML here, then press Apply Input.",
+    "ja": "ここにカスタムHUD TOMLを貼り付けてから、入力を適用してください。",
+    "section": "core"
+  },
+  {
+    "en": "Hide Weapon Icon",
+    "ja": "武器アイコンを非表示",
+    "section": "core"
+  },
+  {
+    "en": "Hide Score: Survival",
+    "ja": "スコア非表示: サバイバル",
+    "section": "core"
+  },
+  {
+    "en": "Hide Score: Node",
+    "ja": "スコア非表示: ノード",
+    "section": "core"
+  },
+  {
+    "en": "Auto Scale Icon Cap %",
+    "ja": "自動スケールアイコン上限 %",
+    "section": "core"
+  },
+  {
+    "en": "Font Weight",
+    "ja": "フォントウェイト",
+    "section": "core"
+  },
+  {
+    "en": "Scale %",
+    "ja": "スケール %",
+    "section": "core"
+  },
+  {
+    "en": "Zoom Scope Reticle",
+    "ja": "ズームスコープ照準",
+    "section": "core"
+  },
+  {
+    "en": "Scope Thick.",
+    "ja": "スコープ太さ",
+    "section": "core"
+  },
+  {
+    "en": "Zoom Transition",
+    "ja": "ズームトランジション",
+    "section": "core"
+  },
+  {
+    "en": "Zoom Pulse Strength %",
+    "ja": "ズームパルス強度 %",
+    "section": "core"
+  },
+  {
+    "en": "Scope Dot Color",
+    "ja": "スコープドット色",
+    "section": "core"
+  },
+  {
+    "en": "Snap",
+    "ja": "スナップ",
+    "section": "core"
+  },
+  {
+    "en": "Tactical Lock",
+    "ja": "戦術ロック",
+    "section": "core"
+  },
+  {
+    "en": "Outline",
+    "ja": "アウトライン",
+    "section": "core"
+  },
+  {
+    "en": "Center Dot",
+    "ja": "中央ドット",
+    "section": "core"
+  },
+  {
+    "en": "Square",
+    "ja": "四角",
+    "section": "core"
+  },
+  {
+    "en": "T-Style",
+    "ja": "Tスタイル",
+    "section": "core"
+  },
+  {
+    "en": "Show",
+    "ja": "表示",
+    "section": "core"
+  },
+  {
+    "en": "Opacity",
+    "ja": "不透明度",
+    "section": "core"
+  },
+  {
+    "en": "Thickness",
+    "ja": "太さ",
+    "section": "core"
+  },
+  {
+    "en": "Top Left",
+    "ja": "左上",
+    "section": "core"
+  },
+  {
+    "en": "Middle Right",
+    "ja": "右中央",
+    "section": "core"
+  },
+  {
+    "en": "Mid Center",
+    "ja": "中央",
+    "section": "core"
+  },
+  {
+    "en": "Left",
+    "ja": "左",
+    "section": "core"
+  },
+  {
+    "en": "Above",
+    "ja": "ä¸",
+    "section": "core"
+  },
+  {
+    "en": "Vertical",
+    "ja": "縦",
+    "section": "core"
+  },
+  {
+    "en": "Independent",
+    "ja": "独立",
+    "section": "core"
+  },
+  {
+    "en": "Position Mode",
+    "ja": "位置モード",
+    "section": "core"
+  },
+  {
+    "en": "Gauge X",
+    "ja": "ゲージ X",
+    "section": "core"
+  },
+  {
+    "en": "Text Ofs Y",
+    "ja": "文字Ofs Y",
+    "section": "core"
+  },
+  {
+    "en": "Align Y",
+    "ja": "整列 Y",
+    "section": "core"
+  },
+  {
+    "en": "Icon Height",
+    "ja": "アイコン高さ",
+    "section": "core"
+  },
+  {
+    "en": "Mode",
+    "ja": "モード",
+    "section": "core"
+  },
+  {
+    "en": "Label Position",
+    "ja": "ラベル位置",
+    "section": "core"
+  },
+  {
+    "en": "Label Ofs Y",
+    "ja": "ラベルOfs Y",
+    "section": "core"
+  },
+  {
+    "en": "Label: Prime Time",
+    "ja": "ラベル: プライム時間",
+    "section": "core"
+  },
+  {
+    "en": "Prime",
+    "ja": "プライム",
+    "section": "core"
+  },
+  {
+    "en": "Goal",
+    "ja": "目標",
+    "section": "core"
+  },
+  {
+    "en": "Sep Color",
+    "ja": "区切り色",
+    "section": "core"
+  },
+  {
+    "en": "Text",
+    "ja": "文字",
+    "section": "core"
+  },
+  {
+    "en": "Dst Size",
+    "ja": "表示サイズ",
+    "section": "core"
+  },
+  {
+    "en": "Corner Radius",
+    "ja": "角丸半径",
+    "section": "core"
+  },
+  {
+    "en": "Highlight Current Weapon",
+    "ja": "現在の武器をハイライト",
+    "section": "core"
+  },
+  {
+    "en": "Highlight Corner Radius",
+    "ja": "ハイライト角丸",
+    "section": "core"
+  },
+  {
+    "en": "Size Offset Left",
+    "ja": "サイズ左オフセット",
+    "section": "core"
+  },
+  {
+    "en": "Hl Thickness",
+    "ja": "HL太さ",
+    "section": "core"
+  },
+  {
+    "en": "Hl Ofs Top",
+    "ja": "HLä¸Ofs",
+    "section": "core"
+  },
+  {
+    "en": "HP Outline",
+    "ja": "HPのアウトライン",
+    "section": "core"
+  },
+  {
+    "en": "Ammo Number Position",
+    "ja": "弾薬数値位置",
+    "section": "core"
+  },
+  {
+    "en": "Ammo Gauge Outline",
+    "ja": "弾薬ゲージのアウトライン",
+    "section": "core"
+  },
+  {
+    "en": "Weapon Inventory",
+    "ja": "武器インベントリ",
+    "section": "core"
+  },
+  {
+    "en": "Score",
+    "ja": "スコア",
+    "section": "core"
+  },
+  {
+    "en": "Rank",
+    "ja": "順位",
+    "section": "core"
+  },
+  {
+    "en": "Time Limit Outline",
+    "ja": "制限時間のアウトライン",
+    "section": "core"
+  },
+  {
+    "en": "Bomb Icon Outline",
+    "ja": "ボムアイコンのアウトライン",
+    "section": "core"
+  },
+  {
+    "en": "Crosshair",
+    "ja": "照準",
+    "section": "core"
+  },
+  {
+    "en": "BMB",
+    "ja": "ボム",
+    "section": "core"
+  },
+  {
+    "en": "Use Global Color for All",
+    "ja": "すべてに全体色を使用",
+    "section": "core"
+  },
+  {
+    "en": "Kill / Death",
+    "ja": "キル / デス",
+    "section": "core"
+  },
+  {
+    "en": "Turret",
+    "ja": "タレット",
+    "section": "core"
+  },
+  {
+    "en": "Slot: Kill / Death  [flags=0x02]",
+    "ja": "スロット: キル / デス [flags=0x02]",
+    "section": "core"
+  },
+  {
+    "en": "Applied once on settings close to currently displayed messages (flags=0x11).\nNew messages use 'Acquiring Node' or 'Node Stolen' literal colors above.",
+    "ja": "設定を閉じたとき、現在表示中のメッセージへ一度だけ適用されます (flags=0x11)。\n新しいメッセージは上の「ノード取得中」または「ノード奪取」の個別色を使用します。",
+    "section": "core"
+  },
+  {
+    "en": "Color  (AMMO DEPLETED / return to base / bounty / octolith events)",
+    "ja": "色  (AMMO DEPLETED / 基地へ戻れ / バウンティ / オクトリスイベント)",
+    "section": "core"
+  },
+  {
+    "en": "Green Yellow",
+    "ja": "緑黄",
+    "section": "core"
+  },
+  {
+    "en": "Red",
+    "ja": "赤",
+    "section": "core"
+  },
+  {
+    "en": "Spire Hud",
+    "ja": "スパイアHUD",
+    "section": "core"
+  },
+  {
+    "en": "Sylux Hud",
+    "ja": "サイラックスHUD",
+    "section": "core"
+  },
+  {
+    "en": "OSD Bright Green",
+    "ja": "OSD明るい緑",
+    "section": "core"
+  },
+  {
+    "en": "Missile",
+    "ja": "ミサイル",
+    "section": "core"
+  },
+  {
+    "en": "Magmaul",
+    "ja": "マグモール",
+    "section": "core"
+  },
+  {
+    "en": "VD Color",
+    "ja": "VD色",
+    "section": "core"
+  },
+  {
+    "en": "MAG Color",
+    "ja": "MAG色",
+    "section": "core"
+  },
+  {
+    "en": "Light",
+    "ja": "細字",
+    "section": "core"
+  },
+  {
+    "en": "Extra Bold",
+    "ja": "極太",
+    "section": "core"
+  },
+  {
+    "en": "Threshold 3 (%)",
+    "ja": "しきい値 3 (%)",
+    "section": "core"
+  },
+  {
+    "en": "Color 2",
+    "ja": "色 2",
+    "section": "core"
+  },
+  {
+    "en": "Generate sharable TOML for the current Custom HUD settings, or paste TOML below to apply it.",
+    "ja": "現在のカスタムHUD設定から共有用TOMLを生成するか、下にTOMLを貼り付けて適用します。",
+    "section": "core"
+  },
+  {
+    "en": "Paste Custom HUD TOML into the input box first.",
+    "ja": "先にカスタムHUD TOMLを入力欄へ貼り付けてください。",
+    "section": "core"
+  },
+  {
+    "en": "Use New Method for Alt-Form Transform",
+    "ja": "トランスフォーム変形に新方式を使う",
+    "section": "core"
+  },
+  {
+    "en": "Camera settings - melonDS",
+    "ja": "カメラ設定 - melonDS",
+    "section": "melonds"
+  },
+  {
+    "en": "DS-mode",
+    "ja": "DSモード",
+    "section": "melonds"
+  },
+  {
+    "en": "Console type:",
+    "ja": "本体タイプ:",
+    "section": "melonds"
+  },
+  {
+    "en": "DS ARM7 BIOS:",
+    "ja": "DS ARM7 BIOS:",
+    "section": "melonds"
+  },
+  {
+    "en": "DSi NAND:",
+    "ja": "DSi NAND:",
+    "section": "melonds"
+  },
+  {
+    "en": "SD card image:",
+    "ja": "SDカードイメージ:",
+    "section": "melonds"
+  },
+  {
+    "en": "Literal optimisations",
+    "ja": "リテラル最適化",
+    "section": "melonds"
+  },
+  {
+    "en": "ARM7 port",
+    "ja": "ARM7ポート",
+    "section": "melonds"
+  },
+  {
+    "en": "DSi (experimental)",
+    "ja": "DSi (実験的)",
+    "section": "melonds"
+  },
+  {
+    "en": "Renderer:",
+    "ja": "レンダラー:",
+    "section": "melonds"
+  },
+  {
+    "en": "VSync",
+    "ja": "VSync",
+    "section": "melonds"
+  },
+  {
+    "en": "Use separate thread",
+    "ja": "別スレッドを使用",
+    "section": "melonds"
+  },
+  {
+    "en": "None (blank)",
+    "ja": "なし (空白)",
+    "section": "melonds"
+  },
+  {
+    "en": "DSi inner camera",
+    "ja": "DSi内側カメラ",
+    "section": "melonds"
+  },
+  {
+    "en": "Volume:",
+    "ja": "音量:",
+    "section": "melonds"
+  },
+  {
+    "en": "Cubic",
+    "ja": "三次",
+    "section": "melonds"
+  },
+  {
+    "en": "External microphone",
+    "ja": "外部マイク",
+    "section": "melonds"
+  },
+  {
+    "en": "Pause/resume",
+    "ja": "一時停止/再開",
+    "section": "melonds"
+  },
+  {
+    "en": "Slow mo",
+    "ja": "スローモーション",
+    "section": "melonds"
+  },
+  {
+    "en": "Microphone",
+    "ja": "マイク",
+    "section": "melonds"
+  },
+  {
+    "en": "DSi Volume down",
+    "ja": "DSi音量ダウン",
+    "section": "melonds"
+  },
+  {
+    "en": "All instances",
+    "ja": "すべてのインスタンス",
+    "section": "melonds"
+  },
+  {
+    "en": "Network mode",
+    "ja": "ネットワークモード",
+    "section": "melonds"
+  },
+  {
+    "en": "Network adapter:",
+    "ja": "ネットワークアダプター:",
+    "section": "melonds"
+  },
+  {
+    "en": "User settings",
+    "ja": "ユーザー設定",
+    "section": "melonds"
+  },
+  {
+    "en": "Birthday:",
+    "ja": "誕生日:",
+    "section": "melonds"
+  },
+  {
+    "en": "Theme",
+    "ja": "テーマ",
+    "section": "melonds"
+  },
+  {
+    "en": "Pause emulation when window is not in focus",
+    "ja": "ウィンドウ非フォーカス時にエミュレーションを一時停止",
+    "section": "melonds"
+  },
+  {
+    "en": " FPS",
+    "ja": " FPS",
+    "section": "melonds"
+  },
+  {
+    "en": "1/2",
+    "ja": "1/2",
+    "section": "melonds"
+  },
+  {
+    "en": "Cheat files path:",
+    "ja": "チートファイルのパス:",
+    "section": "melonds"
+  },
+  {
+    "en": "New category",
+    "ja": "新しいカテゴリ",
+    "section": "melonds"
+  },
+  {
+    "en": "Delete",
+    "ja": "削除",
+    "section": "melonds"
+  },
+  {
+    "en": "Only allow one code enabled",
+    "ja": "有効にできるコードは1つのみ",
+    "section": "melonds"
+  },
+  {
+    "en": "Charging",
+    "ja": "充電中",
+    "section": "melonds"
+  },
+  {
+    "en": "Date and time - melonDS",
+    "ja": "日付と時刻 - melonDS",
+    "section": "melonds"
+  },
+  {
+    "en": "Synchronize to system date and time",
+    "ja": "システム日時と同期",
+    "section": "melonds"
+  },
+  {
+    "en": "French title:",
+    "ja": "フランス語タイトル:",
+    "section": "melonds"
+  },
+  {
+    "en": "Korean title:",
+    "ja": "韓国語タイトル:",
+    "section": "melonds"
+  },
+  {
+    "en": "ARM9 size:",
+    "ja": "ARM9サイズ:",
+    "section": "melonds"
+  },
+  {
+    "en": "Filesystem",
+    "ja": "ファイルシステム",
+    "section": "melonds"
+  },
+  {
+    "en": "General info",
+    "ja": "一般情報",
+    "section": "melonds"
+  },
+  {
+    "en": "Save icon",
+    "ja": "セーブアイコン",
+    "section": "melonds"
+  },
+  {
+    "en": "1byte",
+    "ja": "1バイト",
+    "section": "melonds"
+  },
+  {
+    "en": "Previous",
+    "ja": "前回の値",
+    "section": "melonds"
+  },
+  {
+    "en": "Number of players:",
+    "ja": "プレイヤー数:",
+    "section": "melonds"
+  },
+  {
+    "en": "Name",
+    "ja": "名前",
+    "section": "melonds"
+  },
+  {
+    "en": "Playing",
+    "ja": "プレイ中",
+    "section": "melonds"
+  },
+  {
+    "en": "About melonDS",
+    "ja": "melonDSについて",
+    "section": "melonds"
+  },
+  {
+    "en": "Greyish blue",
+    "ja": "灰みの青",
+    "section": "melonds"
+  },
+  {
+    "en": "Yellow",
+    "ja": "黄色",
+    "section": "melonds"
+  },
+  {
+    "en": "Light blue",
+    "ja": "薄い青",
+    "section": "melonds"
+  },
+  {
+    "en": "Dark pink",
+    "ja": "濃いピンク",
+    "section": "melonds"
+  },
+  {
+    "en": "Chinese",
+    "ja": "中国語",
+    "section": "melonds"
+  },
+  {
+    "en": "May",
+    "ja": "5月",
+    "section": "melonds"
+  },
+  {
+    "en": "October",
+    "ja": "10月",
+    "section": "melonds"
+  }
+]

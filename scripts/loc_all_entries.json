@@ -1,0 +1,6659 @@
+[
+  {
+    "en": "ON",
+    "ja": "ON",
+    "de": "ON",
+    "es": "ON",
+    "fr": "ON"
+  },
+  {
+    "en": "OFF",
+    "ja": "OFF",
+    "de": "OFF",
+    "es": "APAGADO",
+    "fr": "ARRÊT"
+  },
+  {
+    "en": "Off",
+    "ja": "オフ",
+    "de": "Aus",
+    "es": "Off",
+    "fr": "Off"
+  },
+  {
+    "en": "Save",
+    "ja": "保存",
+    "de": "Speichern",
+    "es": "Guardar",
+    "fr": "Enregistrer"
+  },
+  {
+    "en": "Cancel",
+    "ja": "キャンセル",
+    "de": "Abbrechen",
+    "es": "Cancelar",
+    "fr": "Annuler"
+  },
+  {
+    "en": "Reset",
+    "ja": "リセット",
+    "de": "Zurücksetzen",
+    "es": "Reiniciar",
+    "fr": "Réinitialiser"
+  },
+  {
+    "en": "Generate",
+    "ja": "生成",
+    "de": "Generieren",
+    "es": "Generar",
+    "fr": "Générer"
+  },
+  {
+    "en": "Copy Output",
+    "ja": "出力をコピー",
+    "de": "Ausgabe kopieren",
+    "es": "Copiar salida",
+    "fr": "Copier la sortie"
+  },
+  {
+    "en": "Copy Output to Input",
+    "ja": "出力を入力へコピー",
+    "de": "Ausgabe in Eingabe kopieren",
+    "es": "Copiar salida a entrada",
+    "fr": "Copier la sortie vers l'entrée"
+  },
+  {
+    "en": "Apply",
+    "ja": "適用",
+    "de": "Anwenden",
+    "es": "Aplicar",
+    "fr": "Appliquer"
+  },
+  {
+    "en": "Browse…",
+    "ja": "参照…",
+    "de": "Durchsuchen...",
+    "es": "Examinar...",
+    "fr": "Parcourir..."
+  },
+  {
+    "en": "Select HUD Font",
+    "ja": "HUDフォントを選択",
+    "de": "HUD-Schriftart auswählen",
+    "es": "Seleccionar fuente HUD",
+    "fr": "Sélectionner la police HUD"
+  },
+  {
+    "en": "Select HUD Font File",
+    "ja": "HUDフォントファイルを選択",
+    "de": "HUD-Schriftdatei auswählen",
+    "es": "Seleccionar archivo de fuente HUD",
+    "fr": "Sélectionner le fichier de police HUD"
+  },
+  {
+    "en": "Pick Color",
+    "ja": "色を選択",
+    "de": "Farbe wählen",
+    "es": "Elegir color",
+    "fr": "Choisir une couleur"
+  },
+  {
+    "en": "Pick a system font…",
+    "ja": "システムフォントを選択…",
+    "de": "Systemschriftart wählen…",
+    "es": "Elegir una fuente del sistema…",
+    "fr": "Choisir une police système…"
+  },
+  {
+    "en": "Crosshair Color",
+    "ja": "照準の色",
+    "de": "Fadenkreuzfarbe",
+    "es": "Color del punto de mira",
+    "fr": "Couleur du réticule"
+  },
+  {
+    "en": "Edit",
+    "ja": "編集",
+    "de": "Bearbeiten",
+    "es": "Editar",
+    "fr": "Modifier"
+  },
+  {
+    "en": "Chng",
+    "ja": "変更",
+    "de": "Änd.",
+    "es": "Camb.",
+    "fr": "Mod."
+  },
+  {
+    "en": "OVR",
+    "ja": "全体",
+    "de": "Ges.",
+    "es": "Gral.",
+    "fr": "Gén."
+  },
+  {
+    "en": "Preview",
+    "ja": "プレビュー",
+    "de": "Vorschau",
+    "es": "Avance",
+    "fr": "Aperçu"
+  },
+  {
+    "en": "Preview ON",
+    "ja": "プレビューON",
+    "de": "Vorschau ON",
+    "es": "Vista previa ON",
+    "fr": "Aperçu ON"
+  },
+  {
+    "en": "preview",
+    "ja": "プレビュー",
+    "de": "Vorschau",
+    "es": "vista previa",
+    "fr": "aperçu"
+  },
+  {
+    "en": "Normal",
+    "ja": "標準",
+    "de": "Standard",
+    "es": "Estándar",
+    "fr": "Standard"
+  },
+  {
+    "en": "Zoomed (Scope)",
+    "ja": "ズーム時 (スコープ)",
+    "de": "Gezoomt (Visier)",
+    "es": "Con zoom (mira)",
+    "fr": "Zoom (viseur)"
+  },
+  {
+    "en": "Scope reticle off",
+    "ja": "スコープレティクル無効",
+    "de": "Visierpunkt deaktiviert",
+    "es": "Retícula del visor desactivada",
+    "fr": "Réticule du viseur désactivé"
+  },
+  {
+    "en": "Text",
+    "ja": "文字",
+    "de": "Text",
+    "es": "Texto",
+    "fr": "Texte"
+  },
+  {
+    "en": "Auto",
+    "ja": "自動",
+    "de": "Auto",
+    "es": "Auto",
+    "fr": "Auto"
+  },
+  {
+    "en": "Overall",
+    "ja": "全体",
+    "de": "Gesamt",
+    "es": "General",
+    "fr": "Global"
+  },
+  {
+    "en": "Custom",
+    "ja": "カスタム",
+    "de": "Benutzerdefiniert",
+    "es": "Personalizado",
+    "fr": "Personnalisé"
+  },
+  {
+    "en": "Default (MPH)",
+    "ja": "標準 (MPH)",
+    "de": "Standard (MPH)",
+    "es": "Predeterminado (MPH)",
+    "fr": "Par défaut (MPH)"
+  },
+  {
+    "en": "System Font",
+    "ja": "システムフォント",
+    "de": "Systemschriftart",
+    "es": "Fuente del sistema",
+    "fr": "Police système"
+  },
+  {
+    "en": "Font File",
+    "ja": "フォントファイル",
+    "de": "Schriftdatei",
+    "es": "Archivo de fuente",
+    "fr": "Fichier de police"
+  },
+  {
+    "en": "Font files (*.ttf *.otf *.ttc);;All files (*)",
+    "ja": "フォントファイル (*.ttf *.otf *.ttc);;すべてのファイル (*)",
+    "de": "Schriftdateien (*.ttf *.otf *.ttc);;Alle Dateien (*)",
+    "es": "Archivos de fuente (*.ttf *.otf *.ttc);;Todos los archivos (*)",
+    "fr": "Fichiers de polices (*.ttf *.otf *.ttc);;Tous les fichiers (*)"
+  },
+  {
+    "en": "Menu Language",
+    "ja": "メニュー言語",
+    "de": "Menüsprache",
+    "es": "Idioma del menú",
+    "fr": "Langue du menu"
+  },
+  {
+    "en": "Japanese",
+    "ja": "日本語",
+    "de": "Japanisch",
+    "es": "Japonés",
+    "fr": "Japonais"
+  },
+  {
+    "en": "English",
+    "ja": "英語",
+    "de": "Englisch",
+    "es": "Inglés",
+    "fr": "Anglais"
+  },
+  {
+    "en": "German",
+    "ja": "ドイツ語",
+    "de": "Deutsch",
+    "es": "Alemán",
+    "fr": "Allemand"
+  },
+  {
+    "en": "Spanish",
+    "ja": "スペイン語",
+    "de": "Spanisch",
+    "es": "Español",
+    "fr": "Espagnol"
+  },
+  {
+    "en": "French",
+    "ja": "フランス語",
+    "de": "Französisch",
+    "es": "Francés",
+    "fr": "Français"
+  },
+  {
+    "en": "File",
+    "ja": "ファイル",
+    "de": "Datei",
+    "es": "Archivo",
+    "fr": "Fichier"
+  },
+  {
+    "en": "Open ROM...",
+    "ja": "ROMを開く...",
+    "de": "ROM öffnen...",
+    "es": "Abrir ROM...",
+    "fr": "Ouvrir une ROM..."
+  },
+  {
+    "en": "File->Open ROM...",
+    "ja": "ファイル → ROMを開く...",
+    "de": "Datei → ROM öffnen...",
+    "es": "Archivo → Abrir ROM...",
+    "fr": "Fichier → Ouvrir une ROM..."
+  },
+  {
+    "en": "to get started",
+    "ja": "で始めよう",
+    "de": "um loszulegen",
+    "es": "para empezar",
+    "fr": "pour commencer"
+  },
+  {
+    "en": "Open recent",
+    "ja": "最近使ったROM",
+    "de": "Zuletzt geöffnet",
+    "es": "Abrir reciente",
+    "fr": "Ouvrir récent"
+  },
+  {
+    "en": "Boot firmware",
+    "ja": "ファームウェアを起動",
+    "de": "Firmware starten",
+    "es": "Iniciar firmware",
+    "fr": "Démarrer le firmware"
+  },
+  {
+    "en": "DS slot",
+    "ja": "DSスロット",
+    "de": "DS-Steckplatz",
+    "es": "Ranura DS",
+    "fr": "Emplacement DS"
+  },
+  {
+    "en": "GBA slot",
+    "ja": "GBAスロット",
+    "de": "GBA-Steckplatz",
+    "es": "Ranura GBA",
+    "fr": "Emplacement GBA"
+  },
+  {
+    "en": "Insert cart...",
+    "ja": "カートリッジを挿入...",
+    "de": "Modul einlegen...",
+    "es": "Insertar cartucho...",
+    "fr": "Insérer une cartouche..."
+  },
+  {
+    "en": "Eject cart",
+    "ja": "カートリッジを取り出す",
+    "de": "Modul auswerfen",
+    "es": "Expulsar cartucho",
+    "fr": "Éjecter la cartouche"
+  },
+  {
+    "en": "Insert ROM cart...",
+    "ja": "ROMカートリッジを挿入...",
+    "de": "ROM-Karte einlegen…",
+    "es": "Insertar cartucho ROM…",
+    "fr": "Insérer cartouche ROM…"
+  },
+  {
+    "en": "Insert add-on cart",
+    "ja": "アドオンカートリッジを挿入",
+    "de": "Add-on-Karte einlegen",
+    "es": "Insertar cartucho add-on",
+    "fr": "Insérer la cartouche add-on"
+  },
+  {
+    "en": "Import savefile",
+    "ja": "セーブファイルをインポート",
+    "de": "Speicherdatei importieren",
+    "es": "Importar partida guardada",
+    "fr": "Importer la sauvegarde"
+  },
+  {
+    "en": "Save state",
+    "ja": "ステートを保存",
+    "de": "Zustand speichern",
+    "es": "Guardar estado",
+    "fr": "Sauvegarder l'état"
+  },
+  {
+    "en": "Load state",
+    "ja": "ステートを読み込み",
+    "de": "Stand laden",
+    "es": "Cargar estado",
+    "fr": "Charger l'état"
+  },
+  {
+    "en": "File...",
+    "ja": "ファイル...",
+    "de": "Datei…",
+    "es": "Archivo…",
+    "fr": "Fichier…"
+  },
+  {
+    "en": "Undo state load",
+    "ja": "ステート読み込みを取り消す",
+    "de": "Zustandsladen rückgängig",
+    "es": "Deshacer carga de estado",
+    "fr": "Annuler le chargement d'état"
+  },
+  {
+    "en": "Open melonDS directory",
+    "ja": "melonDSフォルダを開く",
+    "de": "melonDS-Ordner öffnen",
+    "es": "Abrir carpeta de melonDS",
+    "fr": "Ouvrir le dossier melonDS"
+  },
+  {
+    "en": "Quit",
+    "ja": "終了",
+    "de": "Beenden",
+    "es": "Salir",
+    "fr": "Quitter"
+  },
+  {
+    "en": "System",
+    "ja": "システム",
+    "de": "System",
+    "es": "Sistema",
+    "fr": "Système"
+  },
+  {
+    "en": "Pause",
+    "ja": "一時停止",
+    "de": "Pause",
+    "es": "Pausa",
+    "fr": "Pause"
+  },
+  {
+    "en": "Stop",
+    "ja": "停止",
+    "de": "Stopp",
+    "es": "Detener",
+    "fr": "Arrêter"
+  },
+  {
+    "en": "Frame step",
+    "ja": "フレーム送り",
+    "de": "Rahmenstufe",
+    "es": "Paso de marco",
+    "fr": "Étape du cadre"
+  },
+  {
+    "en": "Power management",
+    "ja": "電源管理",
+    "de": "Energieverwaltung",
+    "es": "Gestión de energía",
+    "fr": "Gestion de l'alimentation"
+  },
+  {
+    "en": "Date and time",
+    "ja": "日付と時刻",
+    "de": "Datum und Uhrzeit",
+    "es": "Fecha y hora",
+    "fr": "Date et heure"
+  },
+  {
+    "en": "Enable cheats",
+    "ja": "チートを有効化",
+    "de": "Cheats aktivieren",
+    "es": "Activar trucos",
+    "fr": "Activer les triches"
+  },
+  {
+    "en": "Setup cheat codes",
+    "ja": "チートコード設定",
+    "de": "Cheat-Codes einrichten",
+    "es": "Configurar códigos de trucos",
+    "fr": "Configurer les codes triche"
+  },
+  {
+    "en": "ROM info",
+    "ja": "ROM情報",
+    "de": "ROM-Info",
+    "es": "Info de ROM",
+    "fr": "Infos ROM"
+  },
+  {
+    "en": "RAM search",
+    "ja": "RAM検索",
+    "de": "RAM-Suche",
+    "es": "Búsqueda RAM",
+    "fr": "Recherche RAM"
+  },
+  {
+    "en": "Manage DSi titles",
+    "ja": "DSiタイトル管理",
+    "de": "DSi-Titel verwalten",
+    "es": "Administrar títulos DSi",
+    "fr": "Gérer les titres DSi"
+  },
+  {
+    "en": "Multiplayer",
+    "ja": "マルチプレイ",
+    "de": "Mehrspieler",
+    "es": "Multijugador",
+    "fr": "Multijoueur"
+  },
+  {
+    "en": "Launch new instance",
+    "ja": "新しいインスタンスを起動",
+    "de": "Neue Instanz starten",
+    "es": "Iniciar nueva instancia",
+    "fr": "Lancer une nouvelle instance"
+  },
+  {
+    "en": "Host LAN game",
+    "ja": "LANゲームをホスト",
+    "de": "LAN-Spiel hosten",
+    "es": "Alojar partida LAN",
+    "fr": "Héberger une partie LAN"
+  },
+  {
+    "en": "Join LAN game",
+    "ja": "LANゲームに参加",
+    "de": "LAN-Spiel beitreten",
+    "es": "Unirse a partida LAN",
+    "fr": "Rejoindre une partie LAN"
+  },
+  {
+    "en": "View",
+    "ja": "表示",
+    "de": "Ansicht",
+    "es": "Ver",
+    "fr": "Affichage"
+  },
+  {
+    "en": "Screen size",
+    "ja": "画面サイズ",
+    "de": "Bildschirmgröße",
+    "es": "Tamaño de pantalla",
+    "fr": "Taille de l'écran"
+  },
+  {
+    "en": "Screen rotation",
+    "ja": "画面回転",
+    "de": "Bildschirmdrehung",
+    "es": "Rotación de pantalla",
+    "fr": "Rotation de l'écran"
+  },
+  {
+    "en": "Screen gap",
+    "ja": "画面間隔",
+    "de": "Bildschirmabstand",
+    "es": "Separación de pantallas",
+    "fr": "Espacement des écrans"
+  },
+  {
+    "en": "Screen layout",
+    "ja": "画面レイアウト",
+    "de": "Bildschirmlayout",
+    "es": "Diseño de pantalla",
+    "fr": "Disposition de l'écran"
+  },
+  {
+    "en": "Natural",
+    "ja": "自然",
+    "de": "Natürlich",
+    "es": "Natural",
+    "fr": "Naturel"
+  },
+  {
+    "en": "Vertical",
+    "ja": "縦",
+    "de": "Vertikal",
+    "es": "Vertical",
+    "fr": "Vertical"
+  },
+  {
+    "en": "Horizontal",
+    "ja": "横",
+    "de": "Horizontal",
+    "es": "Horizontal",
+    "fr": "Horizontal"
+  },
+  {
+    "en": "Hybrid",
+    "ja": "ハイブリッド",
+    "de": "Hybrid",
+    "es": "Híbrido",
+    "fr": "Hybride"
+  },
+  {
+    "en": "Swap screens",
+    "ja": "上下画面入替",
+    "de": "Bildschirme austauschen",
+    "es": "Cambiar pantallas",
+    "fr": "Échanger les écrans"
+  },
+  {
+    "en": "Screen sizing",
+    "ja": "画面の拡大方式",
+    "de": "Bildschirmgröße",
+    "es": "Tamaño de pantalla",
+    "fr": "Dimensionnement d'écran"
+  },
+  {
+    "en": "Even",
+    "ja": "均等",
+    "de": "Gleichmäßig",
+    "es": "Uniforme",
+    "fr": "Uniforme"
+  },
+  {
+    "en": "Emphasize top",
+    "ja": "上画面を重視",
+    "de": "Oberen Bildschirm betonen",
+    "es": "Enfatizar pantalla superior",
+    "fr": "Mettre en avant l'écran du haut"
+  },
+  {
+    "en": "Emphasize bottom",
+    "ja": "下画面を重視",
+    "de": "Unteren Bildschirm betonen",
+    "es": "Enfatizar pantalla inferior",
+    "fr": "Mettre en avant l'écran du bas"
+  },
+  {
+    "en": "Top only",
+    "ja": "上画面のみ",
+    "de": "Nur oberer Bildschirm",
+    "es": "Solo pantalla superior",
+    "fr": "Écran supérieur uniquement"
+  },
+  {
+    "en": "Bottom only",
+    "ja": "下画面のみ",
+    "de": "Nur unten",
+    "es": "Solo inferior",
+    "fr": "Bas seulement"
+  },
+  {
+    "en": "Force integer scaling",
+    "ja": "整数スケーリングを強制",
+    "de": "Ganzzahl-Skalierung erzwingen",
+    "es": "Forzar escala entera",
+    "fr": "Forcer mise à l'échelle entière"
+  },
+  {
+    "en": "Aspect ratio",
+    "ja": "アスペクト比",
+    "de": "Seitenverhältnis",
+    "es": "Relación de aspecto",
+    "fr": "Format d'image"
+  },
+  {
+    "en": "Open new window",
+    "ja": "新しいウィンドウを開く",
+    "de": "Neues Fenster öffnen",
+    "es": "Abrir ventana nueva",
+    "fr": "Ouvrir une nouvelle fenêtre"
+  },
+  {
+    "en": "Screen filtering",
+    "ja": "画面フィルタリング",
+    "de": "Bildschirmfilterung",
+    "es": "Filtrado de pantalla",
+    "fr": "Filtrage de l'écran"
+  },
+  {
+    "en": "Show OSD",
+    "ja": "OSDを表示",
+    "de": "OSD anzeigen",
+    "es": "Mostrar OSD",
+    "fr": "Afficher l'OSD"
+  },
+  {
+    "en": "Config",
+    "ja": "設定",
+    "de": "Konfiguration",
+    "es": "Configuración",
+    "fr": "Configuration"
+  },
+  {
+    "en": "Emu settings",
+    "ja": "エミュレーター設定",
+    "de": "Emulator-Einstellungen",
+    "es": "Ajustes del emulador",
+    "fr": "Paramètres de l'émulateur"
+  },
+  {
+    "en": "Preferences...",
+    "ja": "環境設定...",
+    "de": "Einstellungen...",
+    "es": "Preferencias...",
+    "fr": "Préférences..."
+  },
+  {
+    "en": "Input and hotkeys",
+    "ja": "入力とホットキー",
+    "de": "Eingabe und Hotkeys",
+    "es": "Entrada y atajos",
+    "fr": "Entrées et raccourcis"
+  },
+  {
+    "en": "Video settings",
+    "ja": "映像設定",
+    "de": "Videoeinstellungen",
+    "es": "Ajustes de vídeo",
+    "fr": "Paramètres vidéo"
+  },
+  {
+    "en": "Camera settings",
+    "ja": "カメラ設定",
+    "de": "Kameraeinstellungen",
+    "es": "Ajustes de cámara",
+    "fr": "Paramètres caméra"
+  },
+  {
+    "en": "Audio settings",
+    "ja": "音声設定",
+    "de": "Audio-Einstellungen",
+    "es": "Ajustes de audio",
+    "fr": "Paramètres audio"
+  },
+  {
+    "en": "Multiplayer settings",
+    "ja": "マルチプレイ設定",
+    "de": "Mehrspieler-Einstellungen",
+    "es": "Ajustes multijugador",
+    "fr": "Paramètres multijoueur"
+  },
+  {
+    "en": "Wifi settings",
+    "ja": "Wi-Fi設定",
+    "de": "WLAN-Einstellungen",
+    "es": "Ajustes Wi-Fi",
+    "fr": "Paramètres Wi-Fi"
+  },
+  {
+    "en": "Firmware settings",
+    "ja": "ファームウェア設定",
+    "de": "Firmware-Einstellungen",
+    "es": "Ajustes de firmware",
+    "fr": "Paramètres firmware"
+  },
+  {
+    "en": "Interface settings",
+    "ja": "インターフェース設定",
+    "de": "Oberflächeneinstellungen",
+    "es": "Ajustes de interfaz",
+    "fr": "Paramètres interface"
+  },
+  {
+    "en": "Path settings",
+    "ja": "パス設定",
+    "de": "Pfad-Einstellungen",
+    "es": "Ajustes de rutas",
+    "fr": "Paramètres des chemins"
+  },
+  {
+    "en": "Limit framerate",
+    "ja": "フレームレート制限",
+    "de": "Bildrate begrenzen",
+    "es": "Limitar FPS",
+    "fr": "Limiter le taux d'images"
+  },
+  {
+    "en": "Audio sync",
+    "ja": "音声同期",
+    "de": "Audiosynchronisation",
+    "es": "Sincronización de audio",
+    "fr": "Synchronisation audio"
+  },
+  {
+    "en": "MelonPrime",
+    "ja": "MelonPrime",
+    "de": "MelonPrime",
+    "es": "MelonPrime",
+    "fr": "MelonPrime"
+  },
+  {
+    "en": "Input settings",
+    "ja": "操作設定",
+    "de": "Eingabeeinstellungen",
+    "es": "Ajustes de entrada",
+    "fr": "Paramètres entrée"
+  },
+  {
+    "en": "Other settings",
+    "ja": "MelonPrime設定",
+    "de": "MelonPrime-Einstellungen",
+    "es": "Ajustes de MelonPrime",
+    "fr": "Paramètres MelonPrime"
+  },
+  {
+    "en": "MelonPrime settings",
+    "ja": "MelonPrime設定",
+    "de": "MelonPrime-Einstellungen",
+    "es": "Ajustes de MelonPrime",
+    "fr": "Paramètres MelonPrime"
+  },
+  {
+    "en": "Custom HUD settings",
+    "ja": "カスタムHUD設定",
+    "de": "Benutzerdefinierte HUD-Einstellungen",
+    "es": "Ajustes del HUD personalizado",
+    "fr": "Paramètres HUD personnalisés"
+  },
+  {
+    "en": "Disable SF (Shadow Freeze)",
+    "ja": "SF (シャドウフリーズ) を無効化",
+    "de": "SF (Shadow Freeze) deaktivieren",
+    "es": "Desactivar SF (Shadow Freeze)",
+    "fr": "Désactiver SF (Shadow Freeze)"
+  },
+  {
+    "en": "In-Game Top Screen Only",
+    "ja": "ゲーム中は上画面のみ",
+    "de": "Nur oberer Bildschirm im Spiel",
+    "es": "Solo pantalla superior en juego",
+    "fr": "Écran supérieur uniquement en jeu"
+  },
+  {
+    "en": "Help",
+    "ja": "ヘルプ",
+    "de": "Hilfe",
+    "es": "Ayuda",
+    "fr": "Aide"
+  },
+  {
+    "en": "About...",
+    "ja": "このアプリについて...",
+    "de": "Über...",
+    "es": "Acerca de...",
+    "fr": "À propos..."
+  },
+  {
+    "en": "Clear",
+    "ja": "履歴を消去",
+    "de": "Verlauf löschen",
+    "es": "Borrar historial",
+    "fr": "Effacer l'historique"
+  },
+  {
+    "en": "MelonPrime Settings",
+    "ja": "MelonPrime設定",
+    "de": "MelonPrime-Einstellungen",
+    "es": "Ajustes de MelonPrime",
+    "fr": "Paramètres MelonPrime"
+  },
+  {
+    "en": "Controls",
+    "ja": "操作",
+    "de": "Steuerung",
+    "es": "Controles",
+    "fr": "Commandes"
+  },
+  {
+    "en": "Controls 2",
+    "ja": "操作 2",
+    "de": "Steuerung 2",
+    "es": "Controles 2",
+    "fr": "Commandes 2"
+  },
+  {
+    "en": "Custom HUD",
+    "ja": "カスタムHUD",
+    "de": "Benutzerdefiniertes HUD",
+    "es": "HUD personalizado",
+    "fr": "HUD personnalisé"
+  },
+  {
+    "en": "Custom HUD Input/Output",
+    "ja": "カスタムHUD 入出力",
+    "de": "Benutzerdefiniertes HUD Ein-/Ausgabe",
+    "es": "HUD personalizado Entrada/Salida",
+    "fr": "HUD personnalisé Entrée/Sortie"
+  },
+  {
+    "en": "Input",
+    "ja": "入力",
+    "de": "Eingabe",
+    "es": "Entrada",
+    "fr": "Entrées"
+  },
+  {
+    "en": "Output",
+    "ja": "出力",
+    "de": "Ausgabe",
+    "es": "Salida",
+    "fr": "Sortie"
+  },
+  {
+    "en": "INPUT SETTINGS",
+    "ja": "入力設定",
+    "de": "EINGABE-EINSTELLUNGEN",
+    "es": "AJUSTES DE ENTRADA",
+    "fr": "PARAMÈTRES D'ENTRÉE"
+  },
+  {
+    "en": "INPUT METHOD",
+    "ja": "入力方式",
+    "de": "EINGABEMETHODE",
+    "es": "MÉTODO DE ENTRADA",
+    "fr": "MÉTHODE DE SAISIE"
+  },
+  {
+    "en": "SCREEN SYNC",
+    "ja": "画面同期",
+    "de": "BILDSYNCHRONISATION",
+    "es": "SINCRONIZACIÓN DE PANTALLA",
+    "fr": "SYNCHRONISATION ÉCRAN"
+  },
+  {
+    "en": "CURSOR CLIP SETTINGS",
+    "ja": "カーソル制限",
+    "de": "CURSOREINGRENZUNG",
+    "es": "LÍMITES DEL CURSOR",
+    "fr": "LIMITES DU CURSEUR"
+  },
+  {
+    "en": "IN-GAME APPLY",
+    "ja": "ゲーム内反映",
+    "de": "IM SPIEL ANWENDEN",
+    "es": "APLICAR EN JUEGO",
+    "fr": "APPLIQUER EN JEU"
+  },
+  {
+    "en": "IN-GAME ASPECT RATIO",
+    "ja": "ゲーム内アスペクト比",
+    "de": "SEITENVERHÄLTNIS IM SPIEL",
+    "es": "RELACIÓN DE ASPECTO EN EL JUEGO",
+    "fr": "FORMAT D'IMAGE EN JEU"
+  },
+  {
+    "en": "LOW HP WARNING",
+    "ja": "低HP警告",
+    "de": "NIEDRIG-HP-WARNUNG",
+    "es": "AVISO DE HP BAJO",
+    "fr": "ALERTE HP FAIBLE"
+  },
+  {
+    "en": "SENSITIVITY",
+    "ja": "感度",
+    "de": "EMPFINDLICHKEIT",
+    "es": "SENSIBILIDAD",
+    "fr": "SENSIBILITÉ"
+  },
+  {
+    "en": "BUG FIXES",
+    "ja": "不具合修正",
+    "de": "FEHLERBEHEBUNGEN",
+    "es": "CORRECCIONES DE ERRORES",
+    "fr": "CORRECTIONS DE BUGS"
+  },
+  {
+    "en": "GAME FEATURE IMPROVEMENTS",
+    "ja": "ゲーム機能改善",
+    "de": "SPIELFUNKTIONS-VERBESSERUNGEN",
+    "es": "MEJORAS DE FUNCIONES DEL JUEGO",
+    "fr": "AMÉLIORATIONS DES FONCTIONS DE JEU"
+  },
+  {
+    "en": "DISABLE FEATURES",
+    "ja": "機能無効化",
+    "de": "FUNKTIONEN DEAKTIVIEREN",
+    "es": "DESACTIVAR FUNCIONES",
+    "fr": "DÉSACTIVER DES FONCTIONS"
+  },
+  {
+    "en": "Power-Up Pickup Effects",
+    "ja": "パワーアップ取得効果",
+    "de": "Effekte beim Aufsammeln von Power-Ups",
+    "es": "Efectos al recoger potenciadores",
+    "fr": "Effets de ramassage des bonus"
+  },
+  {
+    "en": "GAMEPLAY TOGGLES",
+    "ja": "ゲームプレイ切替",
+    "de": "GAMEPLAY-OPTIONEN",
+    "es": "OPCIONES DE JUEGO",
+    "fr": "OPTIONS DE GAMEPLAY"
+  },
+  {
+    "en": "VIDEO QUALITY",
+    "ja": "映像品質",
+    "de": "VIDEOQUALITÄT",
+    "es": "CALIDAD DE VÍDEO",
+    "fr": "QUALITÉ VIDÉO"
+  },
+  {
+    "en": "VOLUME",
+    "ja": "音量",
+    "de": "LAUTSTÄRKE",
+    "es": "VOLUMEN",
+    "fr": "VOLUME"
+  },
+  {
+    "en": "LICENSE APPLY",
+    "ja": "ライセンス反映",
+    "de": "LIZENZ ANWENDEN",
+    "es": "APLICAR LICENCIA",
+    "fr": "APPLIQUER LA LICENCE"
+  },
+  {
+    "en": "DEVELOPER ONLY",
+    "ja": "開発者向け",
+    "de": "NUR FÜR ENTWICKLER",
+    "es": "SOLO DESARROLLADORES",
+    "fr": "RÉSERVÉ AUX DÉVELOPPEURS"
+  },
+  {
+    "en": "DISABLE DEFAULT HUD",
+    "ja": "標準HUDを非表示",
+    "de": "STANDARD-HUD DEAKTIVIEREN",
+    "es": "DESACTIVAR HUD PREDETERMINADO",
+    "fr": "DÉSACTIVER LE HUD PAR DÉFAUT"
+  },
+  {
+    "en": "OUTLINE OVERRIDE",
+    "ja": "アウトライン一括設定",
+    "de": "KONTUR-ÜBERSCHREIBUNG",
+    "es": "ANULACIÓN DE CONTORNO",
+    "fr": "REMPLACEMENT DE CONTOUR"
+  },
+  {
+    "en": "HUD SCALE",
+    "ja": "HUDスケール",
+    "de": "HUD-SKALIERUNG",
+    "es": "ESCALA HUD",
+    "fr": "ÉCHELLE HUD"
+  },
+  {
+    "en": "HUD FONT",
+    "ja": "HUDフォント",
+    "de": "HUD-SCHRIFT",
+    "es": "FUENTE HUD",
+    "fr": "POLICE HUD"
+  },
+  {
+    "en": "CROSSHAIR",
+    "ja": "照準",
+    "de": "VISIER",
+    "es": "PUNTO DE MIRA",
+    "fr": "RÉTICULE"
+  },
+  {
+    "en": "HP / AMMO",
+    "ja": "HP / 弾薬",
+    "de": "HP / MUNITION",
+    "es": "HP / MUNICIÓN",
+    "fr": "PV / MUNITIONS"
+  },
+  {
+    "en": "MATCH STATUS HUD",
+    "ja": "試合情報HUD",
+    "de": "SPIELSTAND-HUD",
+    "es": "HUD DE ESTADO DE PARTIDA",
+    "fr": "HUD D'ÉTAT DE MATCH"
+  },
+  {
+    "en": "HUD RADAR",
+    "ja": "HUDレーダー",
+    "de": "HUD-RADAR",
+    "es": "RADAR HUD",
+    "fr": "RADAR HUD"
+  },
+  {
+    "en": "IN-GAME OSD COLOR",
+    "ja": "ゲーム内OSD色",
+    "de": "OSD-FARBE IM SPIEL",
+    "es": "COLOR OSD EN EL JUEGO",
+    "fr": "COULEUR OSD EN JEU"
+  },
+  {
+    "en": "Keyboard mappings",
+    "ja": "キーボード割り当て",
+    "de": "Tastaturbelegung",
+    "es": "Asignación de teclado",
+    "fr": "Assignation clavier"
+  },
+  {
+    "en": "Keyboard && mouse mappings",
+    "ja": "キーボード・マウス割り当て",
+    "de": "Tastatur- und Mausbelegung",
+    "es": "Asignación de teclado y ratón",
+    "fr": "Mappage clavier et souris"
+  },
+  {
+    "en": "Joystick mappings",
+    "ja": "ジョイスティック割り当て",
+    "de": "Joystick-Zuweisungen",
+    "es": "Asignaciones de joystick",
+    "fr": "Assignations manette"
+  },
+  {
+    "en": "[Metroid] (W) Move Forward",
+    "ja": "[Metroid] (W) 前進",
+    "de": "[Metroid] (W) Vorwärts",
+    "es": "[Metroid] (W) Avanzar",
+    "fr": "[Metroid] (W) Avancer"
+  },
+  {
+    "en": "[Metroid] (S) Move Back",
+    "ja": "[Metroid] (S) 後退",
+    "de": "[Metroid] (S) Zurück",
+    "es": "[Metroid] (S) Retroceder",
+    "fr": "[Metroid] (S) Reculer"
+  },
+  {
+    "en": "[Metroid] (A) Move Left",
+    "ja": "[Metroid] (A) 左移動",
+    "de": "[Metroid] (A) Nach links",
+    "es": "[Metroid] (A) Mover a la izquierda",
+    "fr": "[Metroid] (A) Aller à gauche"
+  },
+  {
+    "en": "[Metroid] (D) Move Right",
+    "ja": "[Metroid] (D) 右移動",
+    "de": "[Metroid] (D) Nach rechts",
+    "es": "[Metroid] (D) Mover a la derecha",
+    "fr": "[Metroid] (D) Déplacer à droite"
+  },
+  {
+    "en": "[Metroid] (Mouse Left) Shoot/Scan",
+    "ja": "[Metroid] (マウス左) 射撃/スキャン",
+    "de": "[Metroid] (Linke Maustaste) Schießen/Scannen",
+    "es": "[Metroid] (Clic izquierdo) Disparar/Escanear",
+    "fr": "[Metroid] (Clic gauche) Tirer/Scanner"
+  },
+  {
+    "en": "[Metroid] (V) Scan/Shoot, Map Zoom In",
+    "ja": "[Metroid] (V) スキャン/射撃、マップ拡大",
+    "de": "[Metroid] (V) Scannen/Schießen, Karte vergrößern",
+    "es": "[Metroid] (V) Escanear/Disparar, zoom del mapa",
+    "fr": "[Metroid] (V) Scanner/Tirer, zoom carte"
+  },
+  {
+    "en": "[Metroid] (Mouse Right) Imperialist Zoom, Map Zoom Out, Morph Ball Boost",
+    "ja": "[Metroid] (マウス右) インペリアリストズーム、マップ縮小、モーフボールブースト",
+    "de": "[Metroid] (Rechte Maustaste) Imperialist-Zoom, Karte verkleinern, Morph Ball Boost",
+    "es": "[Metroid] (Clic derecho) Zoom Imperialist, alejar mapa, impulso Morph Ball",
+    "fr": "[Metroid] (Clic droit) Zoom Imperialist, dézoom carte, boost Morph Ball"
+  },
+  {
+    "en": "[Metroid] (Space) Jump",
+    "ja": "[Metroid] (Space) ジャンプ",
+    "de": "[Metroid] (Leertaste) Springen",
+    "es": "[Metroid] (Espacio) Saltar",
+    "fr": "[Metroid] (Espace) Sauter"
+  },
+  {
+    "en": "[Metroid] (L. Ctrl) Transform",
+    "ja": "[Metroid] (左Ctrl) 変形",
+    "de": "[Metroid] (L. Strg) Transformation",
+    "es": "[Metroid] (Ctrl izq.) Transformarse",
+    "fr": "[Metroid] (Ctrl G) Transformer"
+  },
+  {
+    "en": "[Metroid] (Shift) Hold to Fast Morph Ball Boost",
+    "ja": "[Metroid] (Shift) 長押しで高速モーフボールブースト",
+    "de": "[Metroid] (Shift) Gedrückt halten für schnellen Morph Ball Boost",
+    "es": "[Metroid] (Mayús) Mantener para impulso Morph Ball rápido",
+    "fr": "[Metroid] (Maj) Maintenir pour boost Morph Ball rapide"
+  },
+  {
+    "en": "[Metroid] (Mouse 5, Side Top) Weapon Beam",
+    "ja": "[Metroid] (Mouse 5/サイド上) ビーム武器",
+    "de": "[Metroid] (Maus 5, Seitentaste oben) Strahlenwaffe",
+    "es": "[Metroid] (Ratón 5, lateral superior) Rayo",
+    "fr": "[Metroid] (Souris 5, côté haut) Rayon"
+  },
+  {
+    "en": "[Metroid] (Mouse 4, Side Bottom) Weapon Missile",
+    "ja": "[Metroid] (Mouse 4/サイド下) ミサイル",
+    "de": "[Metroid] (Maustaste 4, Seitentaste unten) Waffe Rakete",
+    "es": "[Metroid] (Ratón 4, lateral inferior) Arma misil",
+    "fr": "[Metroid] (Souris 4, latéral bas) Arme missile"
+  },
+  {
+    "en": "[Metroid] (1) Weapon 1. ShockCoil",
+    "ja": "[Metroid] (1) 武器1: ショックコイル",
+    "de": "[Metroid] (1) Waffe 1: ShockCoil",
+    "es": "[Metroid] (1) Arma 1: ShockCoil",
+    "fr": "[Metroid] (1) Arme 1 : ShockCoil"
+  },
+  {
+    "en": "[Metroid] (2) Weapon 2. Magmaul",
+    "ja": "[Metroid] (2) 武器2: マグモール",
+    "de": "[Metroid] (2) Waffe 2: Magmaul",
+    "es": "[Metroid] (2) Arma 2: Magmaul",
+    "fr": "[Metroid] (2) Arme 2: Magmaul"
+  },
+  {
+    "en": "[Metroid] (3) Weapon 3. Judicator",
+    "ja": "[Metroid] (3) 武器3: ジュディケイター",
+    "de": "[Metroid] (3) Waffe 3: Judicator",
+    "es": "[Metroid] (3) Arma 3: Judicator",
+    "fr": "[Metroid] (3) Arme 3 : Judicator"
+  },
+  {
+    "en": "[Metroid] (4) Weapon 4. Imperialist",
+    "ja": "[Metroid] (4) 武器4: インペリアリスト",
+    "de": "[Metroid] (4) Waffe 4: Imperialist",
+    "es": "[Metroid] (4) Arma 4: Imperialist",
+    "fr": "[Metroid] (4) Arme 4 : Imperialist"
+  },
+  {
+    "en": "[Metroid] (5) Weapon 5. Battlehammer",
+    "ja": "[Metroid] (5) 武器5: バトルハンマー",
+    "de": "[Metroid] (5) Waffe 5: Battlehammer",
+    "es": "[Metroid] (5) Arma 5: Battlehammer",
+    "fr": "[Metroid] (5) Arme 5 : Battlehammer"
+  },
+  {
+    "en": "[Metroid] (6) Weapon 6. VoltDriver",
+    "ja": "[Metroid] (6) 武器6: ボルトドライバー",
+    "de": "[Metroid] (6) Waffe 6: VoltDriver",
+    "es": "[Metroid] (6) Arma 6: VoltDriver",
+    "fr": "[Metroid] (6) Arme 6 : VoltDriver"
+  },
+  {
+    "en": "[Metroid] (R) Affinity Weapon (Last used Weapon/Omega cannon)",
+    "ja": "[Metroid] (R) 得意武器 (最後の武器/オメガキャノン)",
+    "de": "[Metroid] (R) Lieblingswaffe (Letzte Waffe/Omega-Kanone)",
+    "es": "[Metroid] (R) Arma preferida (Última arma/Cañón Omega)",
+    "fr": "[Metroid] (R) Arme favorite (Dernière arme/Canon Omega)"
+  },
+  {
+    "en": "[Metroid] (Tab) Menu/Map",
+    "ja": "[Metroid] (Tab) メニュー/マップ",
+    "de": "[Metroid] (Tab) Menü/Karte",
+    "es": "[Metroid] (Tab) Menú/Mapa",
+    "fr": "[Metroid] (Tab) Menu/Carte"
+  },
+  {
+    "en": "[Metroid] (PgUp) AimSensitivity Up",
+    "ja": "[Metroid] (PgUp) エイム感度を上げる",
+    "de": "[Metroid] (Bild auf) Ziel-Empfindlichkeit erhöhen",
+    "es": "[Metroid] (RePág) Subir sensibilidad de puntería",
+    "fr": "[Metroid] (PgPréc) Augmenter sensibilité visée"
+  },
+  {
+    "en": "[Metroid] (PgDown) AimSensitivity Down",
+    "ja": "[Metroid] (PgDown) エイム感度を下げる",
+    "de": "[Metroid] (PgDown) Ziel-Empfindlichkeit verringern",
+    "es": "[Metroid] (RePág) Reducir sensibilidad de puntería",
+    "fr": "[Metroid] (PgBas) Diminuer la sensibilité de visée"
+  },
+  {
+    "en": "[Metroid] (J) Next Weapon in the sorted order",
+    "ja": "[Metroid] (J) 次の武器",
+    "de": "[Metroid] (J) Nächste Waffe",
+    "es": "[Metroid] (J) Siguiente arma",
+    "fr": "[Metroid] (J) Arme suivante"
+  },
+  {
+    "en": "[Metroid] (K) Previous Weapon in the sorted order",
+    "ja": "[Metroid] (K) 前の武器",
+    "de": "[Metroid] (K) Vorherige Waffe (Sortierreihenfolge)",
+    "es": "[Metroid] (K) Arma anterior (orden)",
+    "fr": "[Metroid] (K) Arme précédente (ordre trié)"
+  },
+  {
+    "en": "[Metroid] (C) Scan Visor",
+    "ja": "[Metroid] (C) スキャンバイザー",
+    "de": "[Metroid] (C) Scan-Visor",
+    "es": "[Metroid] (C) Visor de escaneo",
+    "fr": "[Metroid] (C) Visor de scan"
+  },
+  {
+    "en": "[Metroid] (Z) UI Left (Adventure Left Arrow / Hunter License L)",
+    "ja": "[Metroid] (Z) UI左 (アドベンチャー左/ライセンスL)",
+    "de": "[Metroid] (Z) UI links (Abenteuer-Pfeil links / Hunter-Lizenz L)",
+    "es": "[Metroid] (Z) UI izquierda (flecha izquierda Aventura / Licencia Cazador L)",
+    "fr": "[Metroid] (Z) UI gauche (flèche gauche Aventure / Licence Chasseur L)"
+  },
+  {
+    "en": "[Metroid] (X) UI Right (Adventure Right Arrow / Hunter License R)",
+    "ja": "[Metroid] (X) UI右 (アドベンチャー右/ライセンスR)",
+    "de": "[Metroid] (X) UI rechts (Abenteuer-Pfeil rechts / Hunter-Lizenz R)",
+    "es": "[Metroid] (X) UI derecha (Flecha derecha aventura / Licencia Hunter R)",
+    "fr": "[Metroid] (X) UI droite (Flèche droite aventure / Licence Hunter R)"
+  },
+  {
+    "en": "[Metroid] (F) UI Ok",
+    "ja": "[Metroid] (F) UI決定",
+    "de": "[Metroid] (F) UI Bestätigen",
+    "es": "[Metroid] (F) Confirmar UI",
+    "fr": "[Metroid] (F) Valider UI"
+  },
+  {
+    "en": "[Metroid] (G) UI Yes (Enter Starship)",
+    "ja": "[Metroid] (G) UIはい (スターシップに入る)",
+    "de": "[Metroid] (G) UI Ja (Raumschiff betreten)",
+    "es": "[Metroid] (G) UI Sí (Entrar en nave)",
+    "fr": "[Metroid] (G) UI Oui (Entrer dans le vaisseau)"
+  },
+  {
+    "en": "[Metroid] (H) UI No (Enter Starship)",
+    "ja": "[Metroid] (H) UIいいえ (スターシップに入る)",
+    "de": "[Metroid] (H) UI Nein (Raumschiff betreten)",
+    "es": "[Metroid] (H) UI No (Entrar a la nave)",
+    "fr": "[Metroid] (H) UI Non (Entrer dans le vaisseau)"
+  },
+  {
+    "en": "[Metroid] (Y) Weapon Check",
+    "ja": "[Metroid] (Y) 武器確認",
+    "de": "[Metroid] (Y) Waffe prüfen",
+    "es": "[Metroid] (Y) Verificar arma",
+    "fr": "[Metroid] (Y) Vérifier arme"
+  },
+  {
+    "en": "MPH Sensitivity (default: -3)",
+    "ja": "MPH感度 (既定: -3)",
+    "de": "MPH-Empfindlichkeit (Standard: -3)",
+    "es": "Sensibilidad MPH (predeterminado: -3)",
+    "fr": "Sensibilité MPH (par défaut : -3)"
+  },
+  {
+    "en": "Aim sensitivity (default: 63)",
+    "ja": "エイム感度 (既定: 63)",
+    "de": "Ziel-Empfindlichkeit (Standard: 63)",
+    "es": "Sensibilidad de puntería (predeterminado: 63)",
+    "fr": "Sensibilité de visée (par défaut : 63)"
+  },
+  {
+    "en": "Aim Y-Axis Scale (default: 1.5147)",
+    "ja": "エイムY軸スケール (既定: 1.5147)",
+    "de": "Ziel-Y-Achsen-Skalierung (Standard: 1.5147)",
+    "es": "Escala del eje Y de puntería (predeterminado: 1.5147)",
+    "fr": "Échelle de l'axe Y de visée (par défaut : 1.5147)"
+  },
+  {
+    "en": "Mode",
+    "ja": "モード",
+    "de": "Modus",
+    "es": "Modo",
+    "fr": "Mode"
+  },
+  {
+    "en": "Low-Latency Aim Mode",
+    "ja": "低遅延エイム方式",
+    "de": "Zielmodus mit niedriger Latenz",
+    "es": "Modo de puntería de baja latencia",
+    "fr": "Mode visée faible latence"
+  },
+  {
+    "en": "Instant Aim Follow",
+    "ja": "即時エイム追従",
+    "de": "Sofortige Zielverfolgung",
+    "es": "Seguimiento de puntería instantáneo",
+    "fr": "Suivi de visée instantané"
+  },
+  {
+    "en": "Instant Aim Follow (Developer Only)",
+    "ja": "即時エイム追従（開発者専用）",
+    "de": "Sofortige Zielverfolgung (nur Entwickler)",
+    "es": "Seguimiento de puntería instantáneo (solo desarrolladores)",
+    "fr": "Suivi de visée instantané (développeurs uniquement)"
+  },
+  {
+    "en": "Immediate Sync",
+    "ja": "即時同期",
+    "de": "Sofortige Synchronisation",
+    "es": "Sincronización inmediata",
+    "fr": "Synchronisation immédiate"
+  },
+  {
+    "en": "MoonLike Aim",
+    "ja": "MoonLikeエイム",
+    "de": "MoonLike-Ziel",
+    "es": "Puntería MoonLike",
+    "fr": "Visée MoonLike"
+  },
+  {
+    "en": "Enable SnapTap (Faster directional switching for smooth strafing — may slightly increase input delay)",
+    "ja": "SnapTapを有効化 (ストレイフの方向切替を高速化。入力遅延が少し増える場合あり)",
+    "de": "SnapTap aktivieren (schnellerer Richtungswechsel beim Strafen — kann die Eingabeverzögerung leicht erhöhen)",
+    "es": "Activar SnapTap (cambio de dirección más rápido al strafe — puede aumentar ligeramente el retardo de entrada)",
+    "fr": "Activer SnapTap (changement de direction plus rapide en strafe — peut légèrement augmenter le délai d'entrée)"
+  },
+  {
+    "en": "Unlock All Hunters/Maps/SoundTest/Gallery (Change a setting in MPH and save to update the save data. Uncheck this option after saving)",
+    "ja": "全ハンター/マップ/サウンドテスト/ギャラリーを解放 (MPH側で設定を変更して保存するとセーブに反映。保存後はオフ推奨)",
+    "de": "Alle Hunter/Karten/Soundtest/Galerie freischalten (Einstellung in MPH ändern und speichern, um Speicherdaten zu aktualisieren. Option nach dem Speichern deaktivieren)",
+    "es": "Desbloquear todos los cazadores/mapas/prueba de sonido/galería (Cambia un ajuste en MPH y guarda para actualizar los datos. Desmarca esta opción tras guardar)",
+    "fr": "Débloquer tous les chasseurs/cartes/test audio/galerie (Modifiez un paramètre dans MPH et sauvegardez pour mettre à jour les données. Décochez cette option après la sauvegarde)"
+  },
+  {
+    "en": "Set MPH audio settings to headphones.(recommended) (Change a setting in MPH and save to update the save data. Uncheck this option after saving)",
+    "ja": "MPHの音声設定をヘッドホンにする (推奨。MPH側で設定を変更して保存するとセーブに反映。保存後はオフ推奨)",
+    "de": "MPH-Audioeinstellung auf Kopfhörer setzen (empfohlen). (Einstellung in MPH ändern und speichern, um die Speicherdaten zu aktualisieren. Nach dem Speichern deaktivieren)",
+    "es": "Configurar el audio de MPH en auriculares (recomendado). (Cambia un ajuste en MPH y guarda para actualizar la partida. Desmarca esta opción después de guardar)",
+    "fr": "Régler l'audio MPH sur casque (recommandé). (Modifiez un réglage dans MPH et sauvegardez pour mettre à jour la sauvegarde. Décochez cette option après la sauvegarde)"
+  },
+  {
+    "en": "Use DS Name (Resets in-game name and HL color):You can change the DS name from [File -> Boot firmware] or [Config -> Firmware Settings].",
+    "ja": "DS本体名を使う (ゲーム内名とHL色をリセット): DS名は [File -> Boot firmware] または [Config -> Firmware Settings] で変更できます。",
+    "de": "DS-Namen verwenden (setzt Spielname und HL-Farbe zurück): Den DS-Namen kannst du unter [Datei -> Firmware starten] oder [Konfiguration -> Firmware-Einstellungen] ändern.",
+    "es": "Usar nombre del DS (restablece el nombre en el juego y el color HL): Puedes cambiar el nombre del DS en [Archivo -> Iniciar firmware] o [Configuración -> Ajustes de firmware].",
+    "fr": "Utiliser le nom du DS (réinitialise le nom en jeu et la couleur HL) : vous pouvez modifier le nom du DS via [Fichier -> Démarrer le firmware] ou [Config -> Paramètres firmware]."
+  },
+  {
+    "en": "Enable Joy2KeySupport (enable this if keys sometimes get stuck; slightly increases input delay)",
+    "ja": "Joy2Keyサポートを有効化 (キーが押しっぱなしになる場合に使用。入力遅延が少し増えます)",
+    "de": "Joy2KeySupport aktivieren (aktivieren, wenn Tasten manchmal hängen bleiben; leicht erhöhte Eingabeverzögerung)",
+    "es": "Activar Joy2KeySupport (actívalo si las teclas a veces se quedan pulsadas; aumenta ligeramente el retardo de entrada)",
+    "fr": "Activer Joy2KeySupport (à activer si les touches restent parfois bloquées ; augmente légèrement le délai d'entrée)"
+  },
+  {
+    "en": "Enable Stylus Mode (Leave this unchecked unless you want to play with the stylus)",
+    "ja": "スタイラスモードを有効化 (スタイラス操作で遊ぶ場合以外はオフ推奨)",
+    "de": "Stylus-Modus aktivieren (Nur aktivieren, wenn du mit dem Stylus spielen möchtest)",
+    "es": "Activar modo Stylus (Déjalo desmarcado salvo que quieras jugar con el stylus)",
+    "fr": "Activer le mode Stylet (Laissez décoché sauf si vous voulez jouer au stylet)"
+  },
+  {
+    "en": "Disable MPH Aim Smoothing (Disables the in-game aim smoothing. Note: Sensitivity will be reduced to 25% in Stylus Mode)",
+    "ja": "MPHのエイム補間を無効化 (ゲーム内のエイム補間を無効化。スタイラスモードでは感度が25%になります)",
+    "de": "MPH-Zielglättung deaktivieren (Deaktiviert die Zielglättung im Spiel. Hinweis: Empfindlichkeit wird im Stylus-Modus auf 25 % reduziert)",
+    "es": "Desactivar suavizado de puntería MPH (Desactiva el suavizado de puntería en el juego. Nota: la sensibilidad se reduce al 25 % en modo stylus)",
+    "fr": "Désactiver le lissage de visée MPH (Désactive le lissage de visée en jeu. Remarque : la sensibilité passe à 25 % en mode stylet)"
+  },
+  {
+    "en": "Enable Aim Sub-pixel Accumulator (Carry fractional mouse movement across frames. Enable for smoother low-sensitivity aiming)",
+    "ja": "エイムのサブピクセル蓄積を有効化 (小数のマウス移動を次フレームへ持ち越し。低感度エイムが滑らかになります)",
+    "de": "Subpixel-Zielakkumulator aktivieren (Überträgt Bruchteile der Mausbewegung auf den nächsten Frame. Für flüssigeres Zielen bei niedriger Empfindlichkeit)",
+    "es": "Activar acumulador subpíxel de puntería (Conserva el movimiento fraccional del ratón entre fotogramas. Actívalo para una puntería más suave con baja sensibilidad)",
+    "fr": "Activer l'accumulateur sub-pixel de visée (Reporte les mouvements fractionnels de la souris d'une image à l'autre. Pour une visée plus fluide à faible sensibilité)"
+  },
+  {
+    "en": "Scale aim sensitivity while zoomed",
+    "ja": "ズーム中のエイム感度を倍率変更",
+    "de": "Zielempfindlichkeit beim Zoomen skalieren",
+    "es": "Escalar sensibilidad de puntería al hacer zoom",
+    "fr": "Mettre à l'échelle la sensibilité de visée en zoom"
+  },
+  {
+    "en": "Zoom Aim Scale %",
+    "ja": "ズーム時エイム倍率 %",
+    "de": "Zoom-Ziel-Skalierung %",
+    "es": "Escala de puntería con zoom %",
+    "fr": "Échelle de visée au zoom %"
+  },
+  {
+    "en": "Enable Direct Alt-Form Transform",
+    "ja": "直接トランスフォーム変形を有効化",
+    "de": "Direkte Alt-Form-Transformation aktivieren",
+    "es": "Activar transformación Alt-Form directa",
+    "fr": "Activer transformation Alt-Form directe"
+  },
+  {
+    "en": "Enable Immediate Input Edge Overlay",
+    "ja": "即時入力エッジ合成を有効化",
+    "de": "Sofortige Eingabe-Kantenüberlagerung aktivieren",
+    "es": "Activar superposición de bordes de entrada inmediata",
+    "fr": "Activer la superposition immédiate des bords d'entrée"
+  },
+  {
+    "en": "Enable Native Aim Delta Hook (PostFold Write)",
+    "ja": "ネイティブエイムデルタHookを有効化 (PostFold書き込み)",
+    "de": "Nativen Aim-Delta-Hook aktivieren (PostFold-Schreibzugriff)",
+    "es": "Activar hook nativo de delta de puntería (escritura PostFold)",
+    "fr": "Activer le hook natif de delta de visée (écriture PostFold)"
+  },
+  {
+    "en": "Enable Native Aim Register Injection",
+    "ja": "ネイティブエイムのレジスタ注入を有効化",
+    "de": "Native Zielregister-Injektion aktivieren",
+    "es": "Activar inyección nativa de registro de puntería",
+    "fr": "Activer l'injection native du registre de visée"
+  },
+  {
+    "en": "Apply Input to Custom HUD",
+    "ja": "入力をカスタムHUDに反映",
+    "de": "Eingabe auf Custom HUD anwenden",
+    "es": "Aplicar entrada al HUD personalizado",
+    "fr": "Appliquer les entrées au HUD personnalisé"
+  },
+  {
+    "en": "Screen Sync Mode — Default: Off",
+    "ja": "画面同期方式 - 既定: オフ",
+    "de": "Bildschirm-Sync-Modus — Standard: Aus",
+    "es": "Modo de sincronización de pantalla — Predeterminado: Desactivado",
+    "fr": "Mode de synchronisation d'écran — Par défaut : Désactivé"
+  },
+  {
+    "en": "Screen Sync Mode",
+    "ja": "画面同期方式",
+    "de": "Bildschirm-Synchronisationsmodus",
+    "es": "Modo de sincronización de pantalla",
+    "fr": "Mode de synchronisation d'écran"
+  },
+  {
+    "en": "Screen Sync Mode: Off = no sync call, glFinish = wait for GL commands to complete",
+    "ja": "画面同期方式: オフ = 同期呼び出しなし、glFinish = GLコマンド完了まで待機",
+    "de": "Bildschirm-Sync-Modus: Aus = kein Sync-Aufruf, glFinish = warten bis GL-Befehle abgeschlossen sind",
+    "es": "Modo de sincronización de pantalla: Desactivado = sin llamada de sync, glFinish = esperar a que terminen los comandos GL",
+    "fr": "Mode de synchronisation d'écran : Désactivé = pas d'appel sync, glFinish = attendre la fin des commandes GL"
+  },
+  {
+    "en": "When not in-game and the bottom screen is visible, confine the mouse cursor to the bottom screen area. Press ESC to release the cursor.",
+    "ja": "ゲーム外で下画面が表示されているとき、マウスカーソルを下画面内に制限します。ESCで解除します。",
+    "de": "Außerhalb des Spiels, wenn der untere Bildschirm sichtbar ist, Mauszeiger auf den unteren Bildschirmbereich beschränken. ESC drücken, um den Zeiger freizugeben.",
+    "es": "Fuera del juego, con la pantalla inferior visible, confina el cursor al área inferior. Pulsa ESC para liberarlo.",
+    "fr": "Hors jeu, lorsque l'écran inférieur est visible, confiner le curseur à cette zone. Appuyez sur Échap pour le libérer."
+  },
+  {
+    "en": "In-game only, temporarily force Screen Sizing to Top Only and Screen Layout to Natural. Outside of gameplay, restore the normal window settings.",
+    "ja": "ゲーム中だけ一時的に Screen Sizing を Top Only、Screen Layout を Natural に強制します。ゲーム外では通常のウィンドウ設定に戻します。",
+    "de": "Nur im Spiel vorübergehend Screen Sizing auf Top Only und Screen Layout auf Natural erzwingen. Außerhalb des Spiels werden die normalen Fenstereinstellungen wiederhergestellt.",
+    "es": "Solo en partida, fuerza temporalmente Screen Sizing a Top Only y Screen Layout a Natural. Fuera del juego, restaura los ajustes normales de ventana.",
+    "fr": "En jeu uniquement, force temporairement Screen Sizing sur Top Only et Screen Layout sur Natural. Hors jeu, restaure les paramètres de fenêtre normaux."
+  },
+  {
+    "en": "Enable In-Game Aspect Ratio",
+    "ja": "ゲーム内アスペクト比を有効化",
+    "de": "Seitenverhältnis im Spiel aktivieren",
+    "es": "Activar relación de aspecto en juego",
+    "fr": "Activer le ratio d'aspect en jeu"
+  },
+  {
+    "en": "Aspect Ratio Mode",
+    "ja": "アスペクト比モード",
+    "de": "Seitenverhältnis-Modus",
+    "es": "Modo de relación de aspecto",
+    "fr": "Mode de format d'image"
+  },
+  {
+    "en": "Auto (match Aspect Ratio)",
+    "ja": "自動 (画面比率に合わせる)",
+    "de": "Automatisch (Seitenverhältnis anpassen)",
+    "es": "Automático (ajustar relación de aspecto)",
+    "fr": "Auto (adapter au ratio d'aspect)"
+  },
+  {
+    "en": "5:3 (3DS)",
+    "ja": "5:3 (3DS)",
+    "de": "5:3 (3DS)",
+    "es": "5:3 (3DS)",
+    "fr": "5:3 (3DS)"
+  },
+  {
+    "en": "16:10 (3DS)",
+    "ja": "16:10 (3DS)",
+    "de": "16:10 (3DS)",
+    "es": "16:10 (3DS)",
+    "fr": "16:10 (3DS)"
+  },
+  {
+    "en": "16:9",
+    "ja": "16:9",
+    "de": "16:9",
+    "es": "16:9",
+    "fr": "16:9"
+  },
+  {
+    "en": "21:9",
+    "ja": "21:9",
+    "de": "21:9",
+    "es": "21:9",
+    "fr": "21:9"
+  },
+  {
+    "en": "Use DS Firmware Language (EU-style Auto Patch)",
+    "ja": "DSファームウェア言語を使う (EU版風の自動パッチ)",
+    "de": "DS-Firmware-Sprache verwenden (EU-Auto-Patch)",
+    "es": "Usar idioma del firmware DS (parche automático estilo UE)",
+    "fr": "Utiliser la langue du firmware DS (patch auto style UE)"
+  },
+  {
+    "en": "Show Headshot Notification Online",
+    "ja": "オンラインでヘッドショット通知を表示",
+    "de": "Kopfschuss-Benachrichtigung online anzeigen",
+    "es": "Mostrar notificación de headshot en línea",
+    "fr": "Afficher la notification de headshot en ligne"
+  },
+  {
+    "en": "Show Enemy HP Meter Online",
+    "ja": "オンラインで敵HPメーターを表示",
+    "de": "Feind-HP-Anzeige online anzeigen",
+    "es": "Mostrar medidor de PV del enemigo en línea",
+    "fr": "Afficher la jauge PV ennemi en ligne"
+  },
+  {
+    "en": "Fix Noxus Blade Persistence on Death",
+    "ja": "ノクサスのブレード残留を修正",
+    "de": "Noxus-Klinge bei Tod beibehalten beheben",
+    "es": "Corregir persistencia de espada Noxus al morir",
+    "fr": "Corriger la persistance de la lame Noxus à la mort"
+  },
+  {
+    "en": "Friend/Rival Wi-Fi Active Bitset Fix (v2)",
+    "ja": "フレンド/ライバルWi-Fi有効ビット修正 (v2)",
+    "de": "Freund/Rivale Wi-Fi-Aktiv-Bitset-Fix (v2)",
+    "es": "Corrección de bitset activo Wi-Fi amigo/rival (v2)",
+    "fr": "Correctif bitset actif Wi-Fi ami/rival (v2)"
+  },
+  {
+    "en": "Shadow Freeze Fix (Ice Wave full 3D angle check)",
+    "ja": "シャドウフリーズ修正 (アイスウェーブの3D角度判定)",
+    "de": "Shadow-Freeze-Fix (Ice Wave: vollständige 3D-Winkelprüfung)",
+    "es": "Corrección de congelación de sombras (Ice Wave: comprobación 3D completa de ángulos)",
+    "fr": "Correctif gel d'ombre (Ice Wave : vérification d'angle 3D complète)"
+  },
+  {
+    "en": "Expand Stage Selection (Unlock Extra Stages)",
+    "ja": "ステージ選択を拡張 (追加ステージ解放)",
+    "de": "Stagewahl erweitern (Zusatzstages freischalten)",
+    "es": "Ampliar selección de escenarios (desbloquear extras)",
+    "fr": "Étendre la sélection de stages (débloquer des stages supplémentaires)"
+  },
+  {
+    "en": "Also unlock additional stages",
+    "ja": "追加ステージも解放",
+    "de": "Zusätzliche Stufen freischalten",
+    "es": "También desbloquear etapas adicionales",
+    "fr": "Débloquer aussi des stages supplémentaires"
+  },
+  {
+    "en": "Disable Double Damage Multiplier",
+    "ja": "ダブルダメージ倍率を無効化",
+    "de": "Doppelten Schadensmultiplikator deaktivieren",
+    "es": "Desactivar multiplicador de daño doble",
+    "fr": "Désactiver le multiplicateur de dégâts double"
+  },
+  {
+    "en": "Damage Notify Purple",
+    "ja": "ダメージ通知を紫にする",
+    "de": "Schadensmeldung violett",
+    "es": "Notificación de daño en púrpura",
+    "fr": "Notification de dégâts en violet"
+  },
+  {
+    "en": "Power-Ups: Pick Up With No Effect",
+    "ja": "パワーアップ: 取得しても効果なし",
+    "de": "Power-Ups: Aufsammeln ohne Effekt",
+    "es": "Potenciadores: recoger sin efecto",
+    "fr": "Bonus : ramassage sans effet"
+  },
+  {
+    "en": "Double Damage",
+    "ja": "ダブルダメージ",
+    "de": "Doppelter Schaden",
+    "es": "Doble daño",
+    "fr": "Dégâts doubles"
+  },
+  {
+    "en": "Cloak",
+    "ja": "クローク",
+    "de": "Tarnung",
+    "es": "Capa",
+    "fr": "Camouflage"
+  },
+  {
+    "en": "DEATH ALT",
+    "ja": "デスオルト",
+    "de": "TOD-ALT",
+    "es": "ALT MUERTE",
+    "fr": "ALT MORT"
+  },
+  {
+    "en": "Reset sensitivity values",
+    "ja": "感度を既定値に戻す",
+    "de": "Empfindlichkeitswerte zurücksetzen",
+    "es": "Restablecer valores de sensibilidad",
+    "fr": "Réinitialiser les valeurs de sensibilité"
+  },
+  {
+    "en": "Video quality: Low (High Performance)",
+    "ja": "映像品質: 低 (高パフォーマンス)",
+    "de": "Videoqualität: Niedrig (Hohe Leistung)",
+    "es": "Calidad de vídeo: Baja (alto rendimiento)",
+    "fr": "Qualité vidéo : Basse (hautes performances)"
+  },
+  {
+    "en": "Video quality: High (Lower Performance)",
+    "ja": "映像品質: 高 (低パフォーマンス)",
+    "de": "Grafikqualität: Hoch (geringere Leistung)",
+    "es": "Calidad de vídeo: Alta (menor rendimiento)",
+    "fr": "Qualité vidéo : Élevée (performances réduites)"
+  },
+  {
+    "en": "Video quality: High2 (Recommended. Best Performance)",
+    "ja": "映像品質: 高2 (推奨。最高パフォーマンス)",
+    "de": "Videoqualität: Hoch2 (Empfohlen. Beste Leistung)",
+    "es": "Calidad de vídeo: Alta2 (Recomendada. Mejor rendimiento)",
+    "fr": "Qualité vidéo : Élevée2 (Recommandée. Meilleures performances)"
+  },
+  {
+    "en": "Apply SFX volume",
+    "ja": "効果音音量を反映",
+    "de": "SFX-Lautstärke anwenden",
+    "es": "Aplicar volumen de efectos",
+    "fr": "Appliquer le volume des effets"
+  },
+  {
+    "en": "Apply music volume",
+    "ja": "BGM音量を反映",
+    "de": "Musiklautstärke anwenden",
+    "es": "Aplicar volumen de música",
+    "fr": "Appliquer le volume de la musique"
+  },
+  {
+    "en": "Apply the selected hunter to your license. (Renaming will update the save data)",
+    "ja": "選択したハンターをライセンスに反映 (名前変更でセーブデータ更新)",
+    "de": "Ausgewählten Hunter auf die Lizenz anwenden. (Umbenennen aktualisiert die Speicherdaten)",
+    "es": "Aplicar el cazador seleccionado a tu licencia. (Cambiar el nombre actualizará la partida guardada)",
+    "fr": "Appliquer le chasseur sélectionné à votre licence. (Renommer mettra à jour la sauvegarde)"
+  },
+  {
+    "en": "Apply the selected color to your license. (Renaming will update the save data)",
+    "ja": "選択した色をライセンスに反映 (名前変更でセーブデータ更新)",
+    "de": "Ausgewählte Farbe auf die Lizenz anwenden. (Umbenennen aktualisiert die Speicherdaten)",
+    "es": "Aplicar el color seleccionado a tu licencia. (Renombrar actualizará los datos de guardado)",
+    "fr": "Appliquer la couleur sélectionnée à votre licence. (Renommer mettra à jour les données de sauvegarde)"
+  },
+  {
+    "en": "Select the hunter to apply.",
+    "ja": "反映するハンターを選択します。",
+    "de": "Jäger zum Anwenden auswählen.",
+    "es": "Selecciona el cazador a aplicar.",
+    "fr": "Sélectionnez le chasseur à appliquer."
+  },
+  {
+    "en": "Select the color to apply.",
+    "ja": "反映する色を選択します。",
+    "de": "Wähle die anzuwendende Farbe.",
+    "es": "Selecciona el color a aplicar.",
+    "fr": "Sélectionnez la couleur à appliquer."
+  },
+  {
+    "en": "Red(JP,KR)",
+    "ja": "赤 (JP,KR)",
+    "de": "Rot (JP,KR)",
+    "es": "Rojo (JP,KR)",
+    "fr": "Rouge (JP,KR)"
+  },
+  {
+    "en": "Blue(US)",
+    "ja": "青 (US)",
+    "de": "Blau (US)",
+    "es": "Azul (US)",
+    "fr": "Bleu (US)"
+  },
+  {
+    "en": "Green(EU)",
+    "ja": "緑 (EU)",
+    "de": "Grün (EU)",
+    "es": "Verde (EU)",
+    "fr": "Vert (EU)"
+  },
+  {
+    "en": "Auto Scale — Base",
+    "ja": "自動スケール - 基準",
+    "de": "Automatische Skalierung — Basis",
+    "es": "Escala automática — Base",
+    "fr": "Échelle automatique — Base"
+  },
+  {
+    "en": "Auto Scale (by Damage)",
+    "ja": "自動スケール (ダメージ別)",
+    "de": "Auto-Skalierung (nach Schaden)",
+    "es": "Escala automática (por daño)",
+    "fr": "Échelle auto (selon dégâts)"
+  },
+  {
+    "en": "Disabled (vanilla 25)",
+    "ja": "無効 (バニラ25)",
+    "de": "Deaktiviert (Vanilla 25)",
+    "es": "Desactivado (vanilla 25)",
+    "fr": "Désactivé (vanilla 25)"
+  },
+  {
+    "en": "Fixed",
+    "ja": "固定",
+    "de": "Fest",
+    "es": "Fijo",
+    "fr": "Fixe"
+  },
+  {
+    "en": "Fixed Threshold",
+    "ja": "固定しきい値",
+    "de": "Fester Schwellenwert",
+    "es": "Umbral fijo",
+    "fr": "Seuil fixe"
+  },
+  {
+    "en": "Per Damage (Low / Medium / High)",
+    "ja": "ダメージ別 (低/中/高)",
+    "de": "Pro Schaden (Niedrig / Mittel / Hoch)",
+    "es": "Por daño (Bajo / Medio / Alto)",
+    "fr": "Par dégâts (Faible / Moyen / Élevé)"
+  },
+  {
+    "en": "Per Damage — Low",
+    "ja": "ダメージ別 - 低",
+    "de": "Pro Schaden — Niedrig",
+    "es": "Por daño — Bajo",
+    "fr": "Par dégâts — Faible"
+  },
+  {
+    "en": "Per Damage — Medium",
+    "ja": "ダメージ別 - 中",
+    "de": "Pro Schaden — Mittel",
+    "es": "Por daño — Medio",
+    "fr": "Par dégâts — Moyen"
+  },
+  {
+    "en": "Per Damage — High",
+    "ja": "ダメージ別 - 高",
+    "de": "Pro Schaden — Hoch",
+    "es": "Por daño — Alto",
+    "fr": "Par dégâts — Élevé"
+  },
+  {
+    "en": "Developer-only option. Currently disabled.",
+    "ja": "開発者向けオプションです。現在は無効です。",
+    "de": "Nur für Entwickler. Derzeit deaktiviert.",
+    "es": "Opción solo para desarrolladores. Actualmente desactivada.",
+    "fr": "Option réservée aux développeurs. Actuellement désactivée."
+  },
+  {
+    "en": "Developer-only option enabled in this build.",
+    "ja": "このビルドでは開発者向けオプションが有効です。",
+    "de": "Entwickleroption in diesem Build aktiviert.",
+    "es": "Opción solo para desarrolladores activada en esta compilación.",
+    "fr": "Option réservée aux développeurs activée dans cette version."
+  },
+  {
+    "en": "Developer-only option. Build with MELONPRIME_ENABLE_DEVELOPER_FEATURES to enable it.",
+    "ja": "開発者向けオプションです。有効にするには MELONPRIME_ENABLE_DEVELOPER_FEATURES 付きでビルドしてください。",
+    "de": "Nur für Entwickler. Mit MELONPRIME_ENABLE_DEVELOPER_FEATURES kompilieren, um es zu aktivieren.",
+    "es": "Opción solo para desarrolladores. Compila con MELONPRIME_ENABLE_DEVELOPER_FEATURES para activarla.",
+    "fr": "Option réservée aux développeurs. Compilez avec MELONPRIME_ENABLE_DEVELOPER_FEATURES pour l'activer."
+  },
+  {
+    "en": "Features in this section are still in development and are not ready for public release. They may or may not be released.",
+    "ja": "このセクションの機能は開発中で、公開リリースの準備はまだできていません。今後公開されるとは限りません。",
+    "de": "Funktionen in diesem Abschnitt befinden sich noch in der Entwicklung und sind nicht für die Veröffentlichung bereit. Eine Veröffentlichung ist nicht garantiert.",
+    "es": "Las funciones de esta sección aún están en desarrollo y no están listas para su lanzamiento público. Puede que se publiquen o no.",
+    "fr": "Les fonctionnalités de cette section sont encore en développement et ne sont pas prêtes pour une diffusion publique. Elles pourront être publiées ou non."
+  },
+  {
+    "en": "Controls how the game's current aim direction follows the target aim direction.",
+    "ja": "ゲーム内の現在の照準方向を、目標の照準方向へどう追従させるかを設定します。",
+    "de": "Steuert, wie die aktuelle Zielrichtung im Spiel der Zielrichtung folgt.",
+    "es": "Controla cómo la dirección de puntería actual del juego sigue la dirección objetivo.",
+    "fr": "Contrôle la façon dont la direction de visée actuelle du jeu suit la direction cible."
+  },
+  {
+    "en": "Checked: use the native ARM9 game function hook. Unchecked: use the older touch/menu simulation path.",
+    "ja": "オン: ゲーム本来のARM9関数をフックして使います。オフ: 従来のタッチ/メニュー模擬処理を使います。",
+    "de": "Aktiviert: nativen ARM9-Spielfunktions-Hook verwenden. Deaktiviert: älteren Touch-/Menü-Simulationspfad verwenden.",
+    "es": "Marcado: usar el hook nativo de función ARM9 del juego. Desmarcado: usar la ruta antigua de simulación táctil/menú.",
+    "fr": "Coché : utiliser le hook natif de fonction ARM9 du jeu. Décoché : utiliser l'ancien chemin de simulation tactile/menu."
+  },
+  {
+    "en": "Checked: inject a native fire edge inside the game's Biped fire update. Unchecked: use the older fixed input/overlay path.",
+    "ja": "オン: ゲーム本来の二足射撃更新内へ射撃入力エッジを注入します。オフ: 従来の固定入力/オーバーレイ経路を使います。",
+    "de": "Aktiviert: Feuer-Edge nativ in das Biped-Feuer-Update des Spiels einschleusen. Deaktiviert: älteren festen Eingabe-/Overlay-Pfad verwenden.",
+    "es": "Activado: inyecta un borde de disparo nativo en la actualización de fuego Biped del juego. Desactivado: usa la ruta antigua de entrada/superposición fija.",
+    "fr": "Coché : injecte un signal de tir natif dans la mise à jour de tir Biped du jeu. Décoché : utilise l'ancien chemin d'entrée/superposition fixe."
+  },
+  {
+    "en": "Checked: use the native ARM9 TransformRequest hook. Unchecked: use the older touch/menu simulation path.",
+    "ja": "オン: ゲーム本来のARM9変形要求フックを使います。オフ: 従来のタッチ/メニュー模擬処理を使います。",
+    "de": "Aktiviert: nativen ARM9-TransformRequest-Hook verwenden. Deaktiviert: älteren Touch-/Menü-Simulationspfad verwenden.",
+    "es": "Marcado: usar el hook nativo ARM9 TransformRequest. Desmarcado: usar la ruta antigua de simulación táctil/menú.",
+    "fr": "Coché : utiliser le hook natif ARM9 TransformRequest. Décoché : utiliser l'ancien chemin de simulation tactile/menu."
+  },
+  {
+    "en": "Checked: use the current in-game zoom binding from the player's control preset. Unchecked: use the older fixed R-button path.",
+    "ja": "オン: 現在の操作プリセットにあるゲーム内ズーム割り当てを使います。オフ: 従来の固定Rボタン経路を使います。",
+    "de": "Aktiviert: aktuelle Zoom-Belegung aus dem Steuerungs-Preset verwenden. Deaktiviert: älteren festen R-Tasten-Pfad verwenden.",
+    "es": "Marcado: usa la asignación de zoom en el juego del preset de controles del jugador. Desmarcado: usa la ruta fija antigua del botón R.",
+    "fr": "Coché : utilise la touche de zoom en jeu du preset de contrôles du joueur. Décoché : utilise l'ancien chemin fixe du bouton R."
+  },
+  {
+    "en": "Checked: toggle native weapon zoom by calling the game's SetPlayerScopeZoom setter. Unchecked with New Method also off: use Legacy fixed R-button input.",
+    "ja": "オン: ゲーム本来のズーム切替処理を呼んで武器ズームを切り替えます。新方式もオフの場合は、旧方式の固定Rボタン入力を使います。",
+    "de": "Aktiviert: Waffen-Zoom per SetPlayerScopeZoom des Spiels umschalten. Deaktiviert und Neue Methode aus: Legacy-Eingabe mit fester R-Taste.",
+    "es": "Marcado: alternar el zoom nativo del arma llamando a SetPlayerScopeZoom del juego. Desmarcado y Método nuevo también desactivado: usar entrada fija del botón R heredada.",
+    "fr": "Coché : basculer le zoom d'arme natif via SetPlayerScopeZoom du jeu. Décoché et Nouvelle méthode aussi désactivée : utiliser l'entrée héritée du bouton R fixe."
+  },
+  {
+    "en": "Setting Key: Metroid.Apply.SfxVolume (check to apply)",
+    "ja": "設定キー: Metroid.Apply.SfxVolume (オンで反映)",
+    "de": "Einstellungsschlüssel: Metroid.Apply.SfxVolume (zum Anwenden aktivieren)",
+    "es": "Clave de ajuste: Metroid.Apply.SfxVolume (marcar para aplicar)",
+    "fr": "Clé de réglage : Metroid.Apply.SfxVolume (cocher pour appliquer)"
+  },
+  {
+    "en": "Setting Key: Metroid.Volume.SFX (0–9)",
+    "ja": "設定キー: Metroid.Volume.SFX (0-9)",
+    "de": "Einstellungsschlüssel: Metroid.Volume.SFX (0–9)",
+    "es": "Clave de ajuste: Metroid.Volume.SFX (0–9)",
+    "fr": "Clé de réglage : Metroid.Volume.SFX (0–9)"
+  },
+  {
+    "en": "Setting Key: Metroid.Apply.MusicVolume (check to apply)",
+    "ja": "設定キー: Metroid.Apply.MusicVolume (オンで反映)",
+    "de": "Einstellungsschlüssel: Metroid.Apply.MusicVolume (zum Anwenden aktivieren)",
+    "es": "Clave de ajuste: Metroid.Apply.MusicVolume (marcar para aplicar)",
+    "fr": "Clé de réglage : Metroid.Apply.MusicVolume (cocher pour appliquer)"
+  },
+  {
+    "en": "Setting Key: Metroid.Volume.Music (0–9)",
+    "ja": "設定キー: Metroid.Volume.Music (0-9)",
+    "de": "Einstellungsschlüssel: Metroid.Volume.Music (0–9)",
+    "es": "Clave de ajuste: Metroid.Volume.Music (0–9)",
+    "fr": "Clé de réglage : Metroid.Volume.Music (0–9)"
+  },
+  {
+    "en": "Enables applying the selected hunter to the license.",
+    "ja": "選択したハンターをライセンスに反映できるようにします。",
+    "de": "Ermöglicht, den ausgewählten Hunter auf die Lizenz anzuwenden.",
+    "es": "Permite aplicar el cazador seleccionado a la licencia.",
+    "fr": "Permet d'appliquer le chasseur sélectionné à la licence."
+  },
+  {
+    "en": "Enables applying the selected color to the license.",
+    "ja": "選択した色をライセンスに反映できるようにします。",
+    "de": "Ermöglicht das Anwenden der ausgewählten Farbe auf die Lizenz.",
+    "es": "Permite aplicar el color seleccionado a la licencia.",
+    "fr": "Permet d'appliquer la couleur sélectionnée à la licence."
+  },
+  {
+    "en": "Screen Sync Mode: Off = no sync call, glFinish = wait for GL commands to complete, DwmFlush = wait for DWM compositor (Windows only)",
+    "ja": "画面同期方式: オフ = 同期呼び出しなし、glFinish = GLコマンド完了まで待機、DwmFlush = DWMコンポジター待機 (Windowsのみ)",
+    "de": "Bildschirm-Sync-Modus: OFF = kein Sync-Aufruf, glFinish = auf GL-Befehle warten, DwmFlush = auf DWM-Compositor warten (nur Windows)",
+    "es": "Modo de sincronización de pantalla: Desactivado = sin llamada de sync, glFinish = esperar a que terminen los comandos GL, DwmFlush = esperar al compositor DWM (solo Windows)",
+    "fr": "Mode de sync écran : Désactivé = pas d'appel de sync, glFinish = attendre la fin des commandes GL, DwmFlush = attendre le compositeur DWM (Windows uniquement)"
+  },
+  {
+    "en": "Off: No sync (lowest latency, but the display may look choppy). glFinish: Smoother display by waiting for rendering to fully complete each frame. Automatically disabled during FastForward/SlowMo.",
+    "ja": "オフ: 同期なし (最小遅延ですが、表示がカクつくことがあります)。glFinish: 各フレームの描画完了を待つことで表示を滑らかにします。早送り/スローモーション中は自動的に無効になります。",
+    "de": "Aus: Keine Synchronisation (niedrigste Latenz, Anzeige kann ruckeln). glFinish: Glattere Anzeige durch Warten auf vollständiges Rendering pro Frame. Wird bei Schnellvorlauf/SlowMo automatisch deaktiviert.",
+    "es": "Desactivado: Sin sincronización (menor latencia, pero la pantalla puede verse entrecortada). glFinish: Pantalla más fluida esperando a que el renderizado termine cada fotograma. Se desactiva automáticamente durante avance rápido/cámara lenta.",
+    "fr": "Désactivé : Pas de synchro (latence minimale, mais l'affichage peut saccader). glFinish : Affichage plus fluide en attendant la fin du rendu de chaque image. Désactivé automatiquement pendant avance rapide/ralenti."
+  },
+  {
+    "en": "Windows only. Applies only while the bottom screen is actually being drawn. Press ESC to release the cursor.",
+    "ja": "Windowsのみ。下画面が実際に描画されている間だけ適用されます。ESCでカーソル制限を解除します。",
+    "de": "Nur Windows. Gilt nur, solange der untere Bildschirm tatsächlich gezeichnet wird. ESC drücken, um den Cursor freizugeben.",
+    "es": "Solo Windows. Se aplica solo mientras se dibuja la pantalla inferior. Pulsa ESC para liberar el cursor.",
+    "fr": "Windows uniquement. S'applique uniquement tant que l'écran du bas est réellement affiché. Appuyez sur Échap pour libérer le curseur."
+  },
+  {
+    "en": "Does not overwrite your saved window layout settings. The override is applied only while Metroid Prime Hunters is in-game.",
+    "ja": "保存済みのウィンドウレイアウト設定は上書きしません。Metroid Prime Huntersのゲーム中だけ一時的に適用されます。",
+    "de": "Überschreibt nicht die gespeicherten Fensterlayout-Einstellungen. Die Überschreibung gilt nur während Metroid Prime Hunters im Spiel läuft.",
+    "es": "No sobrescribe los ajustes guardados del diseño de ventana. La anulación solo se aplica mientras Metroid Prime Hunters está en juego.",
+    "fr": "N'écrase pas vos réglages de disposition de fenêtre enregistrés. La surcharge s'applique uniquement pendant Metroid Prime Hunters en jeu."
+  },
+  {
+    "en": "When playing with an Aspect Ratio other than 4:3 (Native), apply this to change the in-game 3D aspect ratio to match. Changes are applied at the start of each match.",
+    "ja": "4:3 (ネイティブ) 以外の画面比率で遊ぶとき、ゲーム内3Dのアスペクト比も一致するように変更します。変更は各試合の開始時に適用されます。",
+    "de": "Bei einem Seitenverhältnis außer 4:3 (Nativ) das ingame 3D-Seitenverhältnis entsprechend anpassen. Änderungen gelten zu Beginn jedes Matches.",
+    "es": "Al jugar con una relación de aspecto distinta de 4:3 (nativa), ajusta la relación 3D en el juego para que coincida. Los cambios se aplican al inicio de cada partida.",
+    "fr": "Lors d'un ratio d'aspect autre que 4:3 (natif), adapte le ratio 3D en jeu en conséquence. Les changements s'appliquent au début de chaque match."
+  },
+  {
+    "en": "Changes the HP value at which the low-HP warning sound and warning HUD state trigger (vanilla: 25). Applied at the start of each match based on the current Damage setting.",
+    "ja": "低HP警告音と警告HUD状態が発生するHP値を変更します (バニラ: 25)。現在のダメージ設定に応じて、各試合の開始時に適用されます。",
+    "de": "Ändert den HP-Wert, bei dem Warnsound und Warn-HUD ausgelöst werden (Vanilla: 25). Wird zu Beginn jedes Matches basierend auf der aktuellen Schaden-Einstellung angewendet.",
+    "es": "Cambia el valor de PV en el que se activan el sonido de aviso de PV bajos y el estado de aviso del HUD (vanilla: 25). Se aplica al inicio de cada partida según el ajuste de daño actual.",
+    "fr": "Modifie la valeur de PV déclenchant le son d'avertissement et l'état HUD d'alerte (vanilla : 25). Appliqué au début de chaque match selon le réglage de dégâts actuel."
+  },
+  {
+    "en": "Edit HUD Layout",
+    "ja": "HUD配置を編集",
+    "de": "HUD-Layout bearbeiten",
+    "es": "Editar diseño HUD",
+    "fr": "Modifier la disposition HUD"
+  },
+  {
+    "en": "Hide this dialog and enter the interactive HUD position editor",
+    "ja": "このダイアログを隠して、対話式HUD配置エディターに入ります",
+    "de": "Diesen Dialog ausblenden und interaktiven HUD-Positionseditor öffnen",
+    "es": "Ocultar este diálogo y entrar en el editor interactivo de posición HUD",
+    "fr": "Masquer cette boîte de dialogue et ouvrir l'éditeur interactif de position HUD"
+  },
+  {
+    "en": "Enable Custom HUD (Replaces the in-game HUD with a custom overlay showing HP, ammo, weapon icons and crosshair)",
+    "ja": "カスタムHUDを有効化 (ゲーム内HUDを、HP/弾薬/武器アイコン/照準のカスタム表示に置き換えます)",
+    "de": "Benutzerdefiniertes HUD aktivieren (Ersetzt das Ingame-HUD durch ein Overlay mit HP, Munition, Waffensymbolen und Visier)",
+    "es": "Activar HUD personalizado (Reemplaza el HUD del juego por una superposición con HP, munición, iconos de armas y punto de mira)",
+    "fr": "Activer le HUD personnalisé (Remplace le HUD en jeu par une superposition affichant HP, munitions, icônes d'armes et réticule)"
+  },
+  {
+    "en": "Share your Custom HUD setup as TOML text, or paste TOML into the input area to apply it to the current dialog.",
+    "ja": "カスタムHUD設定をTOMLテキストとして共有、または入力欄に貼り付けて現在のダイアログへ適用します。",
+    "de": "Teile dein benutzerdefiniertes HUD-Setup als TOML-Text oder füge TOML in das Eingabefeld ein, um es auf den aktuellen Dialog anzuwenden.",
+    "es": "Comparte tu configuración de HUD personalizado como texto TOML, o pega TOML en el área de entrada para aplicarlo al diálogo actual.",
+    "fr": "Partagez votre configuration HUD personnalisée en texte TOML, ou collez du TOML dans la zone de saisie pour l'appliquer à la boîte de dialogue actuelle."
+  },
+  {
+    "en": "Press Generate to build sharable Custom HUD TOML.",
+    "ja": "生成を押すと共有用のカスタムHUD TOMLを作成します。",
+    "de": "Auf Generieren klicken, um teilbares Custom HUD TOML zu erstellen.",
+    "es": "Pulsa Generar para crear un TOML de HUD personalizado compartible.",
+    "fr": "Appuyez sur Générer pour créer un TOML de HUD personnalisé partageable."
+  },
+  {
+    "en": "Paste Custom HUD TOML here, then press Apply Input.",
+    "ja": "ここにカスタムHUD TOMLを貼り付けてから、入力を適用してください。",
+    "de": "Benutzerdefiniertes HUD-TOML hier einfügen, dann Eingabe anwenden drücken.",
+    "es": "Pega aquí el TOML HUD personalizado y pulsa Aplicar entrada.",
+    "fr": "Collez le TOML HUD personnalisé ici, puis appuyez sur Appliquer l'entrée."
+  },
+  {
+    "en": "— Common HUD —",
+    "ja": "- 共通HUD -",
+    "de": "— Gemeinsames HUD —",
+    "es": "— HUD común —",
+    "fr": "— HUD commun —"
+  },
+  {
+    "en": "— Score Row (per mode) —",
+    "ja": "- スコア行 (モード別) -",
+    "de": "— Punktezeile (pro Modus) —",
+    "es": "— Fila de puntuación (por modo) —",
+    "fr": "— Ligne de score (par mode) —"
+  },
+  {
+    "en": "Hide Helmet (Visor Mask)",
+    "ja": "ヘルメット (バイザーマスク) を非表示",
+    "de": "Helm ausblenden (Visiermaske)",
+    "es": "Ocultar casco (máscara del visor)",
+    "fr": "Masquer le casque (masque du viseur)"
+  },
+  {
+    "en": "Hide Ammo",
+    "ja": "弾薬を非表示",
+    "de": "Munition ausblenden",
+    "es": "Ocultar munición",
+    "fr": "Masquer les munitions"
+  },
+  {
+    "en": "Hide Weapon Icon",
+    "ja": "武器アイコンを非表示",
+    "de": "Waffensymbol ausblenden",
+    "es": "Ocultar icono de arma",
+    "fr": "Masquer l'icône d'arme"
+  },
+  {
+    "en": "Hide HP",
+    "ja": "HPを非表示",
+    "de": "HP ausblenden",
+    "es": "Ocultar HP",
+    "fr": "Masquer les PV"
+  },
+  {
+    "en": "Hide Crosshair",
+    "ja": "照準を非表示",
+    "de": "Visier ausblenden",
+    "es": "Ocultar punto de mira",
+    "fr": "Masquer le réticule"
+  },
+  {
+    "en": "Hide Bomb (Boost Ball kept)",
+    "ja": "ボムを非表示 (ブーストボールは維持)",
+    "de": "Bombe ausblenden (Boost Ball bleibt)",
+    "es": "Ocultar bomba (Boost Ball conservado)",
+    "fr": "Masquer la bombe (Boost Ball conservé)"
+  },
+  {
+    "en": "Hide Score: Battle",
+    "ja": "スコア非表示: バトル",
+    "de": "Punkte ausblenden: Kampf",
+    "es": "Ocultar puntuación: Batalla",
+    "fr": "Masquer le score : Bataille"
+  },
+  {
+    "en": "Hide Score: Survival",
+    "ja": "スコア非表示: サバイバル",
+    "de": "Punktestand ausblenden: Überleben",
+    "es": "Ocultar puntuación: Supervivencia",
+    "fr": "Masquer score : Survie"
+  },
+  {
+    "en": "Hide Score: Prime Hunter",
+    "ja": "スコア非表示: プライムハンター",
+    "de": "Punkte ausblenden: Prime Hunter",
+    "es": "Ocultar puntuación: Prime Hunter",
+    "fr": "Masquer le score : Prime Hunter"
+  },
+  {
+    "en": "Hide Score: Bounty",
+    "ja": "スコア非表示: バウンティ",
+    "de": "Punkte ausblenden: Kopfgeld",
+    "es": "Ocultar puntuación: Recompensa",
+    "fr": "Masquer le score : Prime"
+  },
+  {
+    "en": "Hide Score: Capture",
+    "ja": "スコア非表示: キャプチャー",
+    "de": "Punkte ausblenden: Capture",
+    "es": "Ocultar puntuación: Capture",
+    "fr": "Masquer le score : Capture"
+  },
+  {
+    "en": "Hide Score: Defender",
+    "ja": "スコア非表示: ディフェンダー",
+    "de": "Punkte ausblenden: Verteidiger",
+    "es": "Ocultar puntuación: Defensor",
+    "fr": "Masquer le score : Défenseur"
+  },
+  {
+    "en": "Hide Score: Node",
+    "ja": "スコア非表示: ノード",
+    "de": "Punktestand ausblenden: Knoten",
+    "es": "Ocultar puntuación: Nodo",
+    "fr": "Masquer score : Nœud"
+  },
+  {
+    "en": "Text Scale (Base %)",
+    "ja": "文字スケール (基準 %)",
+    "de": "Textskalierung (Basis %)",
+    "es": "Escala de texto (base %)",
+    "fr": "Échelle du texte (base %)"
+  },
+  {
+    "en": "Auto Scale Enable",
+    "ja": "自動スケールを有効化",
+    "de": "Automatische Skalierung aktivieren",
+    "es": "Activar escala automática",
+    "fr": "Activer l'échelle auto"
+  },
+  {
+    "en": "Auto Scale Global Cap %",
+    "ja": "自動スケール全体上限 %",
+    "de": "Autom. Skalierung globales Limit %",
+    "es": "Límite global de escala automática %",
+    "fr": "Plafond global d'échelle auto %"
+  },
+  {
+    "en": "Auto Scale Text Cap %",
+    "ja": "自動スケール文字上限 %",
+    "de": "Autom. Skalierung Text-Obergrenze %",
+    "es": "Tope de texto de escala automática %",
+    "fr": "Plafond de texte échelle auto %"
+  },
+  {
+    "en": "Auto Scale Icon Cap %",
+    "ja": "自動スケールアイコン上限 %",
+    "de": "Auto-Skalierung Symbol-Obergrenze %",
+    "es": "Límite de icono de escala auto %",
+    "fr": "Plafond icône échelle auto %"
+  },
+  {
+    "en": "Auto Scale Gauge Cap %",
+    "ja": "自動スケールゲージ上限 %",
+    "de": "Auto-Skalierung Anzeige-Obergrenze %",
+    "es": "Tope de escala automática del indicador %",
+    "fr": "Plafond d'échelle auto de la jauge %"
+  },
+  {
+    "en": "Auto Scale Crosshair Cap %",
+    "ja": "自動スケール照準上限 %",
+    "de": "Obergrenze Visier bei Auto-Skalierung %",
+    "es": "Límite de mira con escala automática %",
+    "fr": "Plafond réticule échelle auto %"
+  },
+  {
+    "en": "Font Source",
+    "ja": "フォントソース",
+    "de": "Schriftquelle",
+    "es": "Fuente de tipografía",
+    "fr": "Source de police"
+  },
+  {
+    "en": "Font Size (px)",
+    "ja": "フォントサイズ (px)",
+    "de": "Schriftgröße (px)",
+    "es": "Tamaño de fuente (px)",
+    "fr": "Taille de police (px)"
+  },
+  {
+    "en": "Font Weight",
+    "ja": "フォントウェイト",
+    "de": "Schriftstärke",
+    "es": "Grosor de fuente",
+    "fr": "Épaisseur de police"
+  },
+  {
+    "en": "Italic",
+    "ja": "イタリック",
+    "de": "Kursiv",
+    "es": "Cursiva",
+    "fr": "Italique"
+  },
+  {
+    "en": "Underline",
+    "ja": "下線",
+    "de": "Unterstreichen",
+    "es": "Subrayado",
+    "fr": "Souligné"
+  },
+  {
+    "en": "Strikethrough",
+    "ja": "取り消し線",
+    "de": "Durchgestrichen",
+    "es": "Tachado",
+    "fr": "Barré"
+  },
+  {
+    "en": "Color",
+    "ja": "色",
+    "de": "Farbe",
+    "es": "Color",
+    "fr": "Couleur"
+  },
+  {
+    "en": "Scale %",
+    "ja": "スケール %",
+    "de": "Skalierung %",
+    "es": "Escala %",
+    "fr": "Échelle %"
+  },
+  {
+    "en": "Zoom Stage",
+    "ja": "ズーム段階",
+    "de": "Zoom-Stufe",
+    "es": "Etapa de zoom",
+    "fr": "Niveau de zoom"
+  },
+  {
+    "en": "Zoom Base Scale %",
+    "ja": "ズーム時元照準スケール %",
+    "de": "Basis-Visiergröße beim Zoom %",
+    "es": "Escala base de mira con zoom %",
+    "fr": "Échelle de base du réticule au zoom %"
+  },
+  {
+    "en": "Zoom Base Opacity %",
+    "ja": "ズーム時元照準不透明度 %",
+    "de": "Zoom-Basis-Deckkraft %",
+    "es": "Opacidad base del zoom %",
+    "fr": "Opacité de base du zoom %"
+  },
+  {
+    "en": "Zoom Opacity %",
+    "ja": "ズーム時不透明度 %",
+    "de": "Zoom-Deckkraft %",
+    "es": "Opacidad del zoom %",
+    "fr": "Opacité du zoom %"
+  },
+  {
+    "en": "Zoom Scope Reticle",
+    "ja": "ズームスコープ照準",
+    "de": "Zoom-Fadenkreuz",
+    "es": "Retícula de zoom",
+    "fr": "Réticule de zoom"
+  },
+  {
+    "en": "Zoom Scope",
+    "ja": "ズームスコープ",
+    "de": "Zoom-Visier",
+    "es": "Visor de zoom",
+    "fr": "Lunette de zoom"
+  },
+  {
+    "en": "Scope Radius",
+    "ja": "スコープ半径",
+    "de": "Visierradius",
+    "es": "Radio de mira",
+    "fr": "Rayon du viseur"
+  },
+  {
+    "en": "Scope Gap",
+    "ja": "スコープ隙間",
+    "de": "Visierabstand",
+    "es": "Separación del visor",
+    "fr": "Écart du viseur"
+  },
+  {
+    "en": "Scope Thickness",
+    "ja": "スコープ太さ",
+    "de": "Visierstärke",
+    "es": "Grosor del visor",
+    "fr": "Épaisseur du viseur"
+  },
+  {
+    "en": "Scope Thick.",
+    "ja": "スコープ太さ",
+    "de": "Fadenkreuz-Dicke",
+    "es": "Grosor de retícula",
+    "fr": "Épaisseur réticule"
+  },
+  {
+    "en": "Scope Center Dot",
+    "ja": "スコープ中央ドット",
+    "de": "Visier-Mittelpunkt",
+    "es": "Punto central del visor",
+    "fr": "Point central du viseur"
+  },
+  {
+    "en": "Scope Dot Size",
+    "ja": "スコープドットサイズ",
+    "de": "Visierpunktgröße",
+    "es": "Tamaño del punto de mira",
+    "fr": "Taille du point du viseur"
+  },
+  {
+    "en": "Scope Dot Opacity %",
+    "ja": "スコープドット不透明度 %",
+    "de": "Visierpunkt-Deckkraft %",
+    "es": "Opacidad del punto del visor %",
+    "fr": "Opacité du point du viseur %"
+  },
+  {
+    "en": "Scope Opacity %",
+    "ja": "スコープ不透明度 %",
+    "de": "Visier-Deckkraft %",
+    "es": "Opacidad del visor %",
+    "fr": "Opacité du viseur %"
+  },
+  {
+    "en": "Zoom Transition",
+    "ja": "ズームトランジション",
+    "de": "Zoom-Übergang",
+    "es": "Transición de zoom",
+    "fr": "Transition de zoom"
+  },
+  {
+    "en": "Zoom Transition Speed %",
+    "ja": "ズーム遷移速度 %",
+    "de": "Zoom-Übergangsgeschwindigkeit %",
+    "es": "Velocidad de transición de zoom %",
+    "fr": "Vitesse de transition du zoom %"
+  },
+  {
+    "en": "Transition Speed %",
+    "ja": "遷移速度 %",
+    "de": "Übergangsgeschwindigkeit %",
+    "es": "Velocidad de transición %",
+    "fr": "Vitesse de transition %"
+  },
+  {
+    "en": "Zoom Pulse Ring",
+    "ja": "ズームパルスリング",
+    "de": "Zoom-Pulsring",
+    "es": "Anillo de pulso del zoom",
+    "fr": "Anneau pulsé du zoom"
+  },
+  {
+    "en": "Pulse Ring",
+    "ja": "パルスリング",
+    "de": "Pulsring",
+    "es": "Anillo pulsante",
+    "fr": "Anneau pulsant"
+  },
+  {
+    "en": "Zoom Pulse Strength %",
+    "ja": "ズームパルス強度 %",
+    "de": "Zoom-Puls-Stärke %",
+    "es": "Intensidad de pulso de zoom %",
+    "fr": "Intensité impulsion zoom %"
+  },
+  {
+    "en": "Pulse Strength %",
+    "ja": "パルス強度 %",
+    "de": "Pulsstärke %",
+    "es": "Intensidad del pulso %",
+    "fr": "Intensité de pulsation %"
+  },
+  {
+    "en": "Zoom Crosshair",
+    "ja": "ズーム照準",
+    "de": "Zoom-Visier",
+    "es": "Punto de mira con zoom",
+    "fr": "Réticule au zoom"
+  },
+  {
+    "en": "Transition Style",
+    "ja": "トランジションスタイル",
+    "de": "Übergangsstil",
+    "es": "Estilo de transición",
+    "fr": "Style de transition"
+  },
+  {
+    "en": "Custom Scope Dot Color",
+    "ja": "スコープドット色を個別指定",
+    "de": "Eigene Visierpunkt-Farbe",
+    "es": "Color personalizado del punto del visor",
+    "fr": "Couleur personnalisée du point de visée"
+  },
+  {
+    "en": "Scope Dot Color",
+    "ja": "スコープドット色",
+    "de": "Fadenkreuz-Punktfarbe",
+    "es": "Color del punto de retícula",
+    "fr": "Couleur point réticule"
+  },
+  {
+    "en": "Staged",
+    "ja": "段階",
+    "de": "Gestuft",
+    "es": "Por etapas",
+    "fr": "Par étapes"
+  },
+  {
+    "en": "Fade",
+    "ja": "フェード",
+    "de": "Einblenden",
+    "es": "Fundido",
+    "fr": "Fondu"
+  },
+  {
+    "en": "Glitch",
+    "ja": "グリッチ",
+    "de": "Glitch",
+    "es": "Glitch",
+    "fr": "Glitch"
+  },
+  {
+    "en": "Glitch2",
+    "ja": "グリッチ2",
+    "de": "Glitch2",
+    "es": "Glitch2",
+    "fr": "Glitch2"
+  },
+  {
+    "en": "Snap",
+    "ja": "スナップ",
+    "de": "Einrasten",
+    "es": "Ajuste",
+    "fr": "Accrochage"
+  },
+  {
+    "en": "Digital",
+    "ja": "デジタル",
+    "de": "Digital",
+    "es": "Digital",
+    "fr": "Numérique"
+  },
+  {
+    "en": "Pulse Wave",
+    "ja": "パルス波",
+    "de": "Pulswelle",
+    "es": "Onda pulsante",
+    "fr": "Onde pulsée"
+  },
+  {
+    "en": "Magic Circle",
+    "ja": "魔法陣",
+    "de": "Magischer Kreis",
+    "es": "Círculo mágico",
+    "fr": "Cercle magique"
+  },
+  {
+    "en": "SF Movie",
+    "ja": "SF映画",
+    "de": "SF-Film",
+    "es": "Película SF",
+    "fr": "Film SF"
+  },
+  {
+    "en": "Tactical Lock",
+    "ja": "戦術ロック",
+    "de": "Taktische Sperre",
+    "es": "Bloqueo táctico",
+    "fr": "Verrouillage tactique"
+  },
+  {
+    "en": "Sniper Optics",
+    "ja": "スナイパー光学",
+    "de": "Scharfschützenoptik",
+    "es": "Óptica de francotirador",
+    "fr": "Optique de sniper"
+  },
+  {
+    "en": "Drone LIDAR",
+    "ja": "ドローンLIDAR",
+    "de": "Drohnen-LIDAR",
+    "es": "LIDAR del dron",
+    "fr": "LIDAR du drone"
+  },
+  {
+    "en": "Beam Charge",
+    "ja": "ビームチャージ",
+    "de": "Strahlaufladung",
+    "es": "Carga del rayo",
+    "fr": "Charge du rayon"
+  },
+  {
+    "en": "Zoom",
+    "ja": "ズーム",
+    "de": "Zoom",
+    "es": "Zoom",
+    "fr": "Zoom"
+  },
+  {
+    "en": "Outline",
+    "ja": "アウトライン",
+    "de": "Umriss",
+    "es": "Contorno",
+    "fr": "Contour"
+  },
+  {
+    "en": "Outline Color",
+    "ja": "アウトライン色",
+    "de": "Umrissfarbe",
+    "es": "Color del contorno",
+    "fr": "Couleur du contour"
+  },
+  {
+    "en": "Outline Opacity",
+    "ja": "アウトライン不透明度",
+    "de": "Konturdeckkraft",
+    "es": "Opacidad del contorno",
+    "fr": "Opacité du contour"
+  },
+  {
+    "en": "Outline Thickness",
+    "ja": "アウトライン太さ",
+    "de": "Konturstärke",
+    "es": "Grosor del contorno",
+    "fr": "Épaisseur du contour"
+  },
+  {
+    "en": "Outline Thick.",
+    "ja": "アウトライン太さ",
+    "de": "Konturstärke",
+    "es": "Grosor del contorno",
+    "fr": "Épaiss. contour"
+  },
+  {
+    "en": "Center Dot",
+    "ja": "中央ドット",
+    "de": "Mittelpunkt",
+    "es": "Punto central",
+    "fr": "Point central"
+  },
+  {
+    "en": "Custom Dot Color",
+    "ja": "ドット色を個別指定",
+    "de": "Eigene Punktfarbe",
+    "es": "Color de punto personalizado",
+    "fr": "Couleur de point personnalisée"
+  },
+  {
+    "en": "Dot Color",
+    "ja": "ドット色",
+    "de": "Punktfarbe",
+    "es": "Color del punto",
+    "fr": "Couleur du point"
+  },
+  {
+    "en": "Dot Shape",
+    "ja": "ドット形状",
+    "de": "Punktform",
+    "es": "Forma del punto",
+    "fr": "Forme du point"
+  },
+  {
+    "en": "Scope Dot Shape",
+    "ja": "スコープドット形状",
+    "de": "Visierpunkt-Form",
+    "es": "Forma del punto del visor",
+    "fr": "Forme du point de visée"
+  },
+  {
+    "en": "Square",
+    "ja": "四角",
+    "de": "Quadrat",
+    "es": "Cuadrado",
+    "fr": "Carré"
+  },
+  {
+    "en": "Circle",
+    "ja": "丸",
+    "de": "Kreis",
+    "es": "Círculo",
+    "fr": "Cercle"
+  },
+  {
+    "en": "Dot Opacity",
+    "ja": "ドット不透明度",
+    "de": "Punktdeckkraft",
+    "es": "Opacidad del punto",
+    "fr": "Opacité du point"
+  },
+  {
+    "en": "Dot Thickness",
+    "ja": "ドット太さ",
+    "de": "Punktdicke",
+    "es": "Grosor del punto",
+    "fr": "Épaisseur du point"
+  },
+  {
+    "en": "Dot Thick.",
+    "ja": "ドット太さ",
+    "de": "Punktstärke",
+    "es": "Grosor del punto",
+    "fr": "Épaiss. point"
+  },
+  {
+    "en": "T-Style",
+    "ja": "Tスタイル",
+    "de": "T-Stil",
+    "es": "Estilo T",
+    "fr": "Style T"
+  },
+  {
+    "en": "Inner",
+    "ja": "内側",
+    "de": "Innen",
+    "es": "Interior",
+    "fr": "Intérieur"
+  },
+  {
+    "en": "Outer",
+    "ja": "外側",
+    "de": "Außen",
+    "es": "Exterior",
+    "fr": "Extérieur"
+  },
+  {
+    "en": "Inner Lines",
+    "ja": "内側ライン",
+    "de": "Innere Linien",
+    "es": "Líneas interiores",
+    "fr": "Lignes intérieures"
+  },
+  {
+    "en": "Outer Lines",
+    "ja": "外側ライン",
+    "de": "Außenlinien",
+    "es": "Líneas exteriores",
+    "fr": "Lignes extérieures"
+  },
+  {
+    "en": "Show",
+    "ja": "表示",
+    "de": "Anzeigen",
+    "es": "Mostrar",
+    "fr": "Afficher"
+  },
+  {
+    "en": "Show Text",
+    "ja": "文字を表示",
+    "de": "Text anzeigen",
+    "es": "Mostrar texto",
+    "fr": "Afficher le texte"
+  },
+  {
+    "en": "Show Number",
+    "ja": "数値を表示",
+    "de": "Zahl anzeigen",
+    "es": "Mostrar número",
+    "fr": "Afficher le nombre"
+  },
+  {
+    "en": "Enable",
+    "ja": "有効化",
+    "de": "Aktivieren",
+    "es": "Activar",
+    "fr": "Activer"
+  },
+  {
+    "en": "Enable (Override All)",
+    "ja": "有効化 (全体上書き)",
+    "de": "Aktivieren (Alles überschreiben)",
+    "es": "Activar (Anular todo)",
+    "fr": "Activer (Remplacer tout)"
+  },
+  {
+    "en": "Opacity",
+    "ja": "不透明度",
+    "de": "Deckkraft",
+    "es": "Opacidad",
+    "fr": "Opacité"
+  },
+  {
+    "en": "Length",
+    "ja": "長さ",
+    "de": "Länge",
+    "es": "Longitud",
+    "fr": "Longueur"
+  },
+  {
+    "en": "Length X",
+    "ja": "長さ X",
+    "de": "Länge X",
+    "es": "Longitud X",
+    "fr": "Longueur X"
+  },
+  {
+    "en": "Length Y",
+    "ja": "長さ Y",
+    "de": "Länge Y",
+    "es": "Longitud Y",
+    "fr": "Longueur Y"
+  },
+  {
+    "en": "Link XY",
+    "ja": "XYを連動",
+    "de": "XY verknüpfen",
+    "es": "Vincular XY",
+    "fr": "Lier XY"
+  },
+  {
+    "en": "Thickness",
+    "ja": "太さ",
+    "de": "Dicke",
+    "es": "Grosor",
+    "fr": "Épaisseur"
+  },
+  {
+    "en": "Offset",
+    "ja": "オフセット",
+    "de": "Versatz",
+    "es": "Desplazamiento",
+    "fr": "Décalage"
+  },
+  {
+    "en": "Offset X",
+    "ja": "オフセット X",
+    "de": "Versatz X",
+    "es": "Desplazamiento X",
+    "fr": "Décalage X"
+  },
+  {
+    "en": "Offset Y",
+    "ja": "オフセット Y",
+    "de": "Versatz Y",
+    "es": "Desplazamiento Y",
+    "fr": "Décalage Y"
+  },
+  {
+    "en": "Anchor",
+    "ja": "基準位置",
+    "de": "Anker",
+    "es": "Ancla",
+    "fr": "Ancrage"
+  },
+  {
+    "en": "Top Left",
+    "ja": "左上",
+    "de": "Oben links",
+    "es": "Arriba a la izquierda",
+    "fr": "En haut à gauche"
+  },
+  {
+    "en": "Top Center",
+    "ja": "上中央",
+    "de": "Oben Mitte",
+    "es": "Arriba centro",
+    "fr": "Haut centre"
+  },
+  {
+    "en": "Top Right",
+    "ja": "右上",
+    "de": "Oben rechts",
+    "es": "Arriba a la derecha",
+    "fr": "En haut à droite"
+  },
+  {
+    "en": "Middle Left",
+    "ja": "左中央",
+    "de": "Mitte links",
+    "es": "Centro izquierda",
+    "fr": "Milieu gauche"
+  },
+  {
+    "en": "Middle Center",
+    "ja": "中央",
+    "de": "Mitte Mitte",
+    "es": "Centro central",
+    "fr": "Centre central"
+  },
+  {
+    "en": "Middle Right",
+    "ja": "右中央",
+    "de": "Mitte rechts",
+    "es": "Centro derecha",
+    "fr": "Milieu droite"
+  },
+  {
+    "en": "Bottom Left",
+    "ja": "左下",
+    "de": "Unten links",
+    "es": "Abajo izquierda",
+    "fr": "Bas gauche"
+  },
+  {
+    "en": "Bottom Center",
+    "ja": "下中央",
+    "de": "Unten Mitte",
+    "es": "Abajo al centro",
+    "fr": "En bas au centre"
+  },
+  {
+    "en": "Bottom Right",
+    "ja": "右下",
+    "de": "Unten rechts",
+    "es": "Abajo a la derecha",
+    "fr": "Bas droite"
+  },
+  {
+    "en": "Mid Left",
+    "ja": "左中央",
+    "de": "Mitte links",
+    "es": "Centro izquierda",
+    "fr": "Centre gauche"
+  },
+  {
+    "en": "Mid Center",
+    "ja": "中央",
+    "de": "Mitte zentriert",
+    "es": "Centro",
+    "fr": "Centre"
+  },
+  {
+    "en": "Mid Right",
+    "ja": "右中央",
+    "de": "Mitte rechts",
+    "es": "Centro derecha",
+    "fr": "Milieu droite"
+  },
+  {
+    "en": "Bot Left",
+    "ja": "左下",
+    "de": "Unten links",
+    "es": "Abajo a la izquierda",
+    "fr": "En bas à gauche"
+  },
+  {
+    "en": "Bot Center",
+    "ja": "下中央",
+    "de": "Unten Mitte",
+    "es": "Abajo centro",
+    "fr": "Bas centre"
+  },
+  {
+    "en": "Bot Right",
+    "ja": "右下",
+    "de": "Unten rechts",
+    "es": "Abajo derecha",
+    "fr": "Bas droite"
+  },
+  {
+    "en": "Left",
+    "ja": "左",
+    "de": "Links",
+    "es": "Izquierda",
+    "fr": "Gauche"
+  },
+  {
+    "en": "Center",
+    "ja": "中央",
+    "de": "Mitte",
+    "es": "Centro",
+    "fr": "Centre"
+  },
+  {
+    "en": "Right",
+    "ja": "右",
+    "de": "Rechts",
+    "es": "Derecha",
+    "fr": "Droite"
+  },
+  {
+    "en": "Top",
+    "ja": "上",
+    "de": "Oben",
+    "es": "Arriba",
+    "fr": "Haut"
+  },
+  {
+    "en": "Bottom",
+    "ja": "下",
+    "de": "Unten",
+    "es": "Abajo",
+    "fr": "Bas"
+  },
+  {
+    "en": "Above",
+    "ja": "上",
+    "de": "Oben",
+    "es": "Arriba",
+    "fr": "Au-dessus"
+  },
+  {
+    "en": "Below",
+    "ja": "下",
+    "de": "Darunter",
+    "es": "Debajo",
+    "fr": "En dessous"
+  },
+  {
+    "en": "Start",
+    "ja": "開始",
+    "de": "Start",
+    "es": "Inicio",
+    "fr": "Début"
+  },
+  {
+    "en": "End",
+    "ja": "終端",
+    "de": "Ende",
+    "es": "Final",
+    "fr": "Fin"
+  },
+  {
+    "en": "Horiz",
+    "ja": "横",
+    "de": "Horiz.",
+    "es": "Horiz.",
+    "fr": "Horiz."
+  },
+  {
+    "en": "Vert",
+    "ja": "縦",
+    "de": "Vert.",
+    "es": "Vert.",
+    "fr": "Vert."
+  },
+  {
+    "en": "Relative",
+    "ja": "相対",
+    "de": "Relativ",
+    "es": "Relativo",
+    "fr": "Relatif"
+  },
+  {
+    "en": "Relative to Text",
+    "ja": "テキスト基準",
+    "de": "Relativ zum Text",
+    "es": "Relativo al texto",
+    "fr": "Relatif au texte"
+  },
+  {
+    "en": "Independent",
+    "ja": "独立",
+    "de": "Unabhängig",
+    "es": "Independiente",
+    "fr": "Indépendant"
+  },
+  {
+    "en": "Gauge→Text",
+    "ja": "ゲージ→文字",
+    "de": "Anzeige → Text",
+    "es": "Medidor → Texto",
+    "fr": "Jauge → Texte"
+  },
+  {
+    "en": "Text→Gauge",
+    "ja": "文字→ゲージ",
+    "de": "Text → Anzeige",
+    "es": "Texto → Medidor",
+    "fr": "Texte → Jauge"
+  },
+  {
+    "en": "Gauge → Text",
+    "ja": "ゲージ→文字",
+    "de": "Anzeige → Text",
+    "es": "Medidor → Texto",
+    "fr": "Jauge → Texte"
+  },
+  {
+    "en": "Text → Gauge",
+    "ja": "文字→ゲージ",
+    "de": "Text → Anzeige",
+    "es": "Texto → Medidor",
+    "fr": "Texte → Jauge"
+  },
+  {
+    "en": "Position Mode",
+    "ja": "位置モード",
+    "de": "Positionsmodus",
+    "es": "Modo de posición",
+    "fr": "Mode de position"
+  },
+  {
+    "en": "Pos Mode",
+    "ja": "位置モード",
+    "de": "Positionsmodus",
+    "es": "Modo de posición",
+    "fr": "Mode de position"
+  },
+  {
+    "en": "Gauge Side",
+    "ja": "ゲージ側",
+    "de": "Anzeigeseite",
+    "es": "Lado del medidor",
+    "fr": "Côté de la jauge"
+  },
+  {
+    "en": "Text Side",
+    "ja": "文字側",
+    "de": "Textseite",
+    "es": "Lado del texto",
+    "fr": "Côté texte"
+  },
+  {
+    "en": "Gauge Anchor",
+    "ja": "ゲージ基準",
+    "de": "Anzeigen-Anker",
+    "es": "Ancla del medidor",
+    "fr": "Ancrage jauge"
+  },
+  {
+    "en": "Gauge X",
+    "ja": "ゲージ X",
+    "de": "Anzeige X",
+    "es": "Medidor X",
+    "fr": "Jauge X"
+  },
+  {
+    "en": "Gauge Y",
+    "ja": "ゲージ Y",
+    "de": "Anzeige Y",
+    "es": "Indicador Y",
+    "fr": "Jauge Y"
+  },
+  {
+    "en": "Text Offset X",
+    "ja": "文字オフセット X",
+    "de": "Textversatz X",
+    "es": "Desplazamiento del texto X",
+    "fr": "Décalage texte X"
+  },
+  {
+    "en": "Text Offset Y",
+    "ja": "文字オフセット Y",
+    "de": "Textversatz Y",
+    "es": "Desplazamiento Y del texto",
+    "fr": "Décalage Y du texte"
+  },
+  {
+    "en": "Text Ofs X",
+    "ja": "文字Ofs X",
+    "de": "Text-Ofs X",
+    "es": "Despl. texto X",
+    "fr": "Décal. texte X"
+  },
+  {
+    "en": "Text Ofs Y",
+    "ja": "文字Ofs Y",
+    "de": "Text-Ofs Y",
+    "es": "Ofs texto Y",
+    "fr": "Ofs texte Y"
+  },
+  {
+    "en": "Prefix",
+    "ja": "接頭辞",
+    "de": "Präfix",
+    "es": "Prefijo",
+    "fr": "Préfixe"
+  },
+  {
+    "en": "Suffix",
+    "ja": "接尾辞",
+    "de": "Suffix",
+    "es": "Sufijo",
+    "fr": "Suffixe"
+  },
+  {
+    "en": "Align",
+    "ja": "整列",
+    "de": "Ausrichtung",
+    "es": "Alineación",
+    "fr": "Alignement"
+  },
+  {
+    "en": "Align X",
+    "ja": "整列 X",
+    "de": "Ausrichtung X",
+    "es": "Alineación X",
+    "fr": "Alignement X"
+  },
+  {
+    "en": "Align Y",
+    "ja": "整列 Y",
+    "de": "Ausrichtung Y",
+    "es": "Alineación Y",
+    "fr": "Alignement Y"
+  },
+  {
+    "en": "Orientation",
+    "ja": "向き",
+    "de": "Ausrichtung",
+    "es": "Orientación",
+    "fr": "Orientation"
+  },
+  {
+    "en": "Orient",
+    "ja": "向き",
+    "de": "Ausrichtung",
+    "es": "Orientación",
+    "fr": "Orientation"
+  },
+  {
+    "en": "Width",
+    "ja": "幅",
+    "de": "Breite",
+    "es": "Ancho",
+    "fr": "Largeur"
+  },
+  {
+    "en": "Height",
+    "ja": "高さ",
+    "de": "Höhe",
+    "es": "Altura",
+    "fr": "Hauteur"
+  },
+  {
+    "en": "Icon Height",
+    "ja": "アイコン高さ",
+    "de": "Symbolhöhe",
+    "es": "Altura de icono",
+    "fr": "Hauteur icône"
+  },
+  {
+    "en": "Icon Position",
+    "ja": "アイコン位置",
+    "de": "Symbolposition",
+    "es": "Posición del icono",
+    "fr": "Position de l'icône"
+  },
+  {
+    "en": "Pos Anchor",
+    "ja": "位置基準",
+    "de": "Positionsanker",
+    "es": "Ancla de posición",
+    "fr": "Ancre de position"
+  },
+  {
+    "en": "Pos X",
+    "ja": "位置 X",
+    "de": "Pos X",
+    "es": "Pos X",
+    "fr": "Pos X"
+  },
+  {
+    "en": "Pos Y",
+    "ja": "位置 Y",
+    "de": "Pos Y",
+    "es": "Pos Y",
+    "fr": "Pos Y"
+  },
+  {
+    "en": "Layout",
+    "ja": "レイアウト",
+    "de": "Layout",
+    "es": "Diseño",
+    "fr": "Disposition"
+  },
+  {
+    "en": "Weapon Layout",
+    "ja": "武器レイアウト",
+    "de": "Waffenlayout",
+    "es": "Diseño de armas",
+    "fr": "Disposition des armes"
+  },
+  {
+    "en": "Standard",
+    "ja": "標準",
+    "de": "Standard",
+    "es": "Estándar",
+    "fr": "Standard"
+  },
+  {
+    "en": "Alternative",
+    "ja": "代替",
+    "de": "Alternative",
+    "es": "Alternativa",
+    "fr": "Alternative"
+  },
+  {
+    "en": "Label Position",
+    "ja": "ラベル位置",
+    "de": "Beschriftungsposition",
+    "es": "Posición de etiqueta",
+    "fr": "Position étiquette"
+  },
+  {
+    "en": "Label Pos",
+    "ja": "ラベル位置",
+    "de": "Label-Position",
+    "es": "Posición de etiqueta",
+    "fr": "Position de l'étiquette"
+  },
+  {
+    "en": "Label Offset X",
+    "ja": "ラベルオフセット X",
+    "de": "Label-Versatz X",
+    "es": "Desplazamiento de etiqueta X",
+    "fr": "Décalage étiquette X"
+  },
+  {
+    "en": "Label Offset Y",
+    "ja": "ラベルオフセット Y",
+    "de": "Label-Versatz Y",
+    "es": "Desplazamiento Y de etiqueta",
+    "fr": "Décalage Y de l'étiquette"
+  },
+  {
+    "en": "Label Ofs X",
+    "ja": "ラベルOfs X",
+    "de": "Label-Ofs X",
+    "es": "Despl. etiqueta X",
+    "fr": "Décal. libellé X"
+  },
+  {
+    "en": "Label Ofs Y",
+    "ja": "ラベルOfs Y",
+    "de": "Beschriftungs-Ofs Y",
+    "es": "Ofs etiqueta Y",
+    "fr": "Ofs étiquette Y"
+  },
+  {
+    "en": "Label: Points",
+    "ja": "ラベル: ポイント",
+    "de": "Label: Punkte",
+    "es": "Etiqueta: Puntos",
+    "fr": "Étiquette : Points"
+  },
+  {
+    "en": "Label: Octoliths",
+    "ja": "ラベル: オクトリス",
+    "de": "Label: Oktolithe",
+    "es": "Etiqueta: Octolitos",
+    "fr": "Libellé : Octolites"
+  },
+  {
+    "en": "Label: Lives",
+    "ja": "ラベル: ライフ",
+    "de": "Label: Leben",
+    "es": "Etiqueta: Vidas",
+    "fr": "Libellé : Vies"
+  },
+  {
+    "en": "Label: Ring Time",
+    "ja": "ラベル: リング時間",
+    "de": "Label: Ringzeit",
+    "es": "Etiqueta: Tiempo de anillo",
+    "fr": "Libellé : Temps d'anneau"
+  },
+  {
+    "en": "Label: Prime Time",
+    "ja": "ラベル: プライム時間",
+    "de": "Beschriftung: Prime Time",
+    "es": "Etiqueta: Prime Time",
+    "fr": "Étiquette : Prime Time"
+  },
+  {
+    "en": "Battle",
+    "ja": "バトル",
+    "de": "Kampf",
+    "es": "Batalla",
+    "fr": "Combat"
+  },
+  {
+    "en": "Bounty",
+    "ja": "バウンティ",
+    "de": "Kopfgeld",
+    "es": "Recompensa",
+    "fr": "Prime"
+  },
+  {
+    "en": "Survival",
+    "ja": "サバイバル",
+    "de": "Survival",
+    "es": "Supervivencia",
+    "fr": "Survie"
+  },
+  {
+    "en": "Defender",
+    "ja": "ディフェンダー",
+    "de": "Verteidiger",
+    "es": "Defensor",
+    "fr": "Défenseur"
+  },
+  {
+    "en": "Prime",
+    "ja": "プライム",
+    "de": "Prime",
+    "es": "Prime",
+    "fr": "Prime"
+  },
+  {
+    "en": "Label",
+    "ja": "ラベル",
+    "de": "Label",
+    "es": "Etiqueta",
+    "fr": "Étiquette"
+  },
+  {
+    "en": "Value",
+    "ja": "値",
+    "de": "Wert",
+    "es": "Valor",
+    "fr": "Valeur"
+  },
+  {
+    "en": "Separator",
+    "ja": "区切り",
+    "de": "Trennzeichen",
+    "es": "Separador",
+    "fr": "Séparateur"
+  },
+  {
+    "en": "Slash",
+    "ja": "スラッシュ",
+    "de": "Schlag",
+    "es": "Corte",
+    "fr": "Entaille"
+  },
+  {
+    "en": "Goal",
+    "ja": "目標",
+    "de": "Ziel",
+    "es": "Objetivo",
+    "fr": "Objectif"
+  },
+  {
+    "en": "Label Color",
+    "ja": "ラベル色",
+    "de": "Labelfarbe",
+    "es": "Color de etiqueta",
+    "fr": "Couleur de l'étiquette"
+  },
+  {
+    "en": "Label Color: Overall",
+    "ja": "ラベル色: 全体",
+    "de": "Labelfarbe: Gesamt",
+    "es": "Color de etiqueta: General",
+    "fr": "Couleur étiquette : Global"
+  },
+  {
+    "en": "Value Color",
+    "ja": "値の色",
+    "de": "Wertfarbe",
+    "es": "Color del valor",
+    "fr": "Couleur de la valeur"
+  },
+  {
+    "en": "Value Color: Overall",
+    "ja": "値の色: 全体",
+    "de": "Wertfarbe: Gesamt",
+    "es": "Color del valor: General",
+    "fr": "Couleur valeur : Global"
+  },
+  {
+    "en": "Sep Color",
+    "ja": "区切り色",
+    "de": "Trennfarbe",
+    "es": "Color separador",
+    "fr": "Couleur séparateur"
+  },
+  {
+    "en": "Sep Color: Overall",
+    "ja": "区切り色: 全体",
+    "de": "Trennfarbe: Gesamt",
+    "es": "Color de separación: General",
+    "fr": "Couleur de séparation : Global"
+  },
+  {
+    "en": "Goal Color",
+    "ja": "目標色",
+    "de": "Zielfarbe",
+    "es": "Color de objetivo",
+    "fr": "Couleur objectif"
+  },
+  {
+    "en": "Goal Color: Overall",
+    "ja": "目標色: 全体",
+    "de": "Zielfarbe: Gesamt",
+    "es": "Color de objetivo: General",
+    "fr": "Couleur d'objectif : Global"
+  },
+  {
+    "en": "Ordinal",
+    "ja": "序数",
+    "de": "Ordinal",
+    "es": "Ordinal",
+    "fr": "Ordinal"
+  },
+  {
+    "en": "Color Overlay",
+    "ja": "色オーバーレイ",
+    "de": "Farbüberlagerung",
+    "es": "Superposición de color",
+    "fr": "Superposition de couleur"
+  },
+  {
+    "en": "Use Hunter Color",
+    "ja": "ハンター色を使用",
+    "de": "Hunter-Farbe verwenden",
+    "es": "Usar color del cazador",
+    "fr": "Utiliser la couleur du chasseur"
+  },
+  {
+    "en": "Radar Color",
+    "ja": "レーダー色",
+    "de": "Radarfarbe",
+    "es": "Color del radar",
+    "fr": "Couleur du radar"
+  },
+  {
+    "en": "Display Size",
+    "ja": "表示サイズ",
+    "de": "Anzeigegröße",
+    "es": "Tamaño de visualización",
+    "fr": "Taille d'affichage"
+  },
+  {
+    "en": "Dst Size",
+    "ja": "表示サイズ",
+    "de": "Zielgröße",
+    "es": "Tamaño destino",
+    "fr": "Taille cible"
+  },
+  {
+    "en": "Dst X",
+    "ja": "表示 X",
+    "de": "Ziel X",
+    "es": "Dest. X",
+    "fr": "Dest. X"
+  },
+  {
+    "en": "Dst Y",
+    "ja": "表示 Y",
+    "de": "Ziel Y",
+    "es": "Dest. Y",
+    "fr": "Dest. Y"
+  },
+  {
+    "en": "Source Radius",
+    "ja": "ソース半径",
+    "de": "Quellradius",
+    "es": "Radio de origen",
+    "fr": "Rayon source"
+  },
+  {
+    "en": "Src Radius",
+    "ja": "ソース半径",
+    "de": "Quell-Radius",
+    "es": "Radio origen",
+    "fr": "Rayon source"
+  },
+  {
+    "en": "Corner Radius",
+    "ja": "角丸半径",
+    "de": "Eckenradius",
+    "es": "Radio de esquina",
+    "fr": "Rayon d'angle"
+  },
+  {
+    "en": "Padding",
+    "ja": "余白",
+    "de": "Abstand",
+    "es": "Relleno",
+    "fr": "Marge"
+  },
+  {
+    "en": "Spacing",
+    "ja": "間隔",
+    "de": "Abstand",
+    "es": "Espaciado",
+    "fr": "Espacement"
+  },
+  {
+    "en": "Not Owned Opacity",
+    "ja": "未所持の不透明度",
+    "de": "Deckkraft (nicht im Besitz)",
+    "es": "Opacidad (no obtenido)",
+    "fr": "Opacité (non possédé)"
+  },
+  {
+    "en": "Highlight",
+    "ja": "ハイライト",
+    "de": "Hervorhebung",
+    "es": "Resaltado",
+    "fr": "Surbrillance"
+  },
+  {
+    "en": "Highlight Current Weapon",
+    "ja": "現在の武器をハイライト",
+    "de": "Aktuelle Waffe hervorheben",
+    "es": "Resaltar arma actual",
+    "fr": "Mettre en évidence l'arme actuelle"
+  },
+  {
+    "en": "Highlight Color",
+    "ja": "ハイライト色",
+    "de": "Hervorhebungsfarbe",
+    "es": "Color de resaltado",
+    "fr": "Couleur de surbrillance"
+  },
+  {
+    "en": "Highlight Opacity",
+    "ja": "ハイライト不透明度",
+    "de": "Hervorhebungsdeckkraft",
+    "es": "Opacidad del resaltado",
+    "fr": "Opacité de surbrillance"
+  },
+  {
+    "en": "Highlight Thickness",
+    "ja": "ハイライト太さ",
+    "de": "Hervorhebungsstärke",
+    "es": "Grosor del resaltado",
+    "fr": "Épaisseur de surbrillance"
+  },
+  {
+    "en": "Highlight Padding",
+    "ja": "ハイライト余白",
+    "de": "Hervorhebungs-Abstand",
+    "es": "Relleno del resaltado",
+    "fr": "Marge surbrillance"
+  },
+  {
+    "en": "Highlight Corner Radius",
+    "ja": "ハイライト角丸",
+    "de": "Hervorhebungs-Eckenradius",
+    "es": "Radio de esquina de resaltado",
+    "fr": "Rayon d'angle surbrillance"
+  },
+  {
+    "en": "Highlight Offset Left",
+    "ja": "ハイライト左オフセット",
+    "de": "Hervorhebung Versatz links",
+    "es": "Desplazamiento izquierdo de resaltado",
+    "fr": "Décalage gauche de surbrillance"
+  },
+  {
+    "en": "Highlight Offset Right",
+    "ja": "ハイライト右オフセット",
+    "de": "Hervorhebungsversatz rechts",
+    "es": "Desplazamiento del resaltado a la derecha",
+    "fr": "Décalage surbrillance à droite"
+  },
+  {
+    "en": "Highlight Offset Top",
+    "ja": "ハイライト上オフセット",
+    "de": "Hervorhebungsversatz oben",
+    "es": "Desplazamiento superior del resaltado",
+    "fr": "Décalage haut de surbrillance"
+  },
+  {
+    "en": "Highlight Offset Bottom",
+    "ja": "ハイライト下オフセット",
+    "de": "Hervorhebungs-Offset unten",
+    "es": "Desplazamiento inferior del resaltado",
+    "fr": "Décalage bas surbrillance"
+  },
+  {
+    "en": "Size Offset Left",
+    "ja": "サイズ左オフセット",
+    "de": "Größenversatz links",
+    "es": "Desplazamiento de tamaño izquierdo",
+    "fr": "Décalage taille gauche"
+  },
+  {
+    "en": "Size Offset Right",
+    "ja": "サイズ右オフセット",
+    "de": "Größenversatz rechts",
+    "es": "Desplazamiento derecho de tamaño",
+    "fr": "Décalage droit de taille"
+  },
+  {
+    "en": "Size Offset Top",
+    "ja": "サイズ上オフセット",
+    "de": "Größenversatz oben",
+    "es": "Desplazamiento de tamaño arriba",
+    "fr": "Décalage taille en haut"
+  },
+  {
+    "en": "Size Offset Bottom",
+    "ja": "サイズ下オフセット",
+    "de": "Größenversatz unten",
+    "es": "Desplazamiento inferior de tamaño",
+    "fr": "Décalage bas de taille"
+  },
+  {
+    "en": "Hl Opacity",
+    "ja": "HL不透明度",
+    "de": "HL-Deckkraft",
+    "es": "Opacidad HL",
+    "fr": "Opacité HL"
+  },
+  {
+    "en": "Hl Thickness",
+    "ja": "HL太さ",
+    "de": "HL-Dicke",
+    "es": "Grosor HL",
+    "fr": "Épaisseur HL"
+  },
+  {
+    "en": "Hl Padding",
+    "ja": "HL余白",
+    "de": "HL-Abstand",
+    "es": "Relleno HL",
+    "fr": "Marge HL"
+  },
+  {
+    "en": "Hl Corner Radius",
+    "ja": "HL角丸",
+    "de": "HL-Eckenradius",
+    "es": "Radio de esquina HL",
+    "fr": "Rayon coin HL"
+  },
+  {
+    "en": "Hl Ofs Left",
+    "ja": "HL左Ofs",
+    "de": "HL-Versatz links",
+    "es": "Despl. HL izquierda",
+    "fr": "Décalage HL gauche"
+  },
+  {
+    "en": "Hl Ofs Right",
+    "ja": "HL右Ofs",
+    "de": "HL-Ofs rechts",
+    "es": "Despl. HL derecha",
+    "fr": "Décal. HL droite"
+  },
+  {
+    "en": "Hl Ofs Top",
+    "ja": "HL上Ofs",
+    "de": "HL-Ofs oben",
+    "es": "Ofs HL superior",
+    "fr": "Ofs HL haut"
+  },
+  {
+    "en": "Hl Ofs Bottom",
+    "ja": "HL下Ofs",
+    "de": "HL-Versatz unten",
+    "es": "Despl. inf. HL",
+    "fr": "Décal. bas HL"
+  },
+  {
+    "en": "HP",
+    "ja": "HP",
+    "de": "HP",
+    "es": "HP",
+    "fr": "HP"
+  },
+  {
+    "en": "HP Number Position",
+    "ja": "HP数値位置",
+    "de": "HP-Zahlenposition",
+    "es": "Posición del número de HP",
+    "fr": "Position du nombre de PV"
+  },
+  {
+    "en": "HP Label Color By Value",
+    "ja": "HPラベルの色 (値連動)",
+    "de": "HP-Label-Farbe nach Wert",
+    "es": "Color de etiqueta HP según valor",
+    "fr": "Couleur libellé HP selon valeur"
+  },
+  {
+    "en": "HP Outline",
+    "ja": "HPのアウトライン",
+    "de": "HP-Umriss",
+    "es": "Contorno HP",
+    "fr": "Contour HP"
+  },
+  {
+    "en": "HP Gauge",
+    "ja": "HPゲージ",
+    "de": "HP-Anzeige",
+    "es": "Indicador de HP",
+    "fr": "Jauge de PV"
+  },
+  {
+    "en": "HP Gauge Color By Value",
+    "ja": "HPゲージの色 (値連動)",
+    "de": "HP-Anzeigefarbe nach Wert",
+    "es": "Color del medidor de HP según valor",
+    "fr": "Couleur jauge HP selon la valeur"
+  },
+  {
+    "en": "HP Gauge Outline",
+    "ja": "HPゲージのアウトライン",
+    "de": "HP-Anzeigen-Kontur",
+    "es": "Contorno del medidor de HP",
+    "fr": "Contour de la jauge de PV"
+  },
+  {
+    "en": "Ammo",
+    "ja": "弾薬",
+    "de": "Munition",
+    "es": "Munición",
+    "fr": "Munitions"
+  },
+  {
+    "en": "Ammo Number Position",
+    "ja": "弾薬数値位置",
+    "de": "Munitionszahl-Position",
+    "es": "Posición del número de munición",
+    "fr": "Position nombre munitions"
+  },
+  {
+    "en": "Ammo Label Color By Value",
+    "ja": "弾薬ラベルの色 (値連動)",
+    "de": "Munitionslabel-Farbe nach Wert",
+    "es": "Color de etiqueta de munición según valor",
+    "fr": "Couleur d'étiquette munitions selon la valeur"
+  },
+  {
+    "en": "Ammo Outline",
+    "ja": "弾薬のアウトライン",
+    "de": "Munitionskontur",
+    "es": "Contorno de munición",
+    "fr": "Contour des munitions"
+  },
+  {
+    "en": "Ammo Gauge",
+    "ja": "弾薬ゲージ",
+    "de": "Munitionsanzeige",
+    "es": "Medidor de munición",
+    "fr": "Jauge de munitions"
+  },
+  {
+    "en": "Ammo Gauge Color By Value",
+    "ja": "弾薬ゲージの色 (値連動)",
+    "de": "Munitionsanzeige-Farbe nach Wert",
+    "es": "Color del medidor de munición según valor",
+    "fr": "Couleur jauge munitions selon valeur"
+  },
+  {
+    "en": "Ammo Gauge Outline",
+    "ja": "弾薬ゲージのアウトライン",
+    "de": "Munitionsanzeige-Umriss",
+    "es": "Contorno del medidor de munición",
+    "fr": "Contour jauge munitions"
+  },
+  {
+    "en": "Weapon/Ammo",
+    "ja": "武器/弾薬",
+    "de": "Waffe/Munition",
+    "es": "Arma/Munición",
+    "fr": "Arme/Munitions"
+  },
+  {
+    "en": "Weapon Icon",
+    "ja": "武器アイコン",
+    "de": "Waffensymbol",
+    "es": "Icono de arma",
+    "fr": "Icône d'arme"
+  },
+  {
+    "en": "Weapon Icon Outline",
+    "ja": "武器アイコンのアウトライン",
+    "de": "Waffensymbol-Kontur",
+    "es": "Contorno del icono de arma",
+    "fr": "Contour de l'icône d'arme"
+  },
+  {
+    "en": "Weapon Icon Color Overlay",
+    "ja": "武器アイコンの色オーバーレイ",
+    "de": "Waffensymbol-Farboverlay",
+    "es": "Superposición de color del icono de arma",
+    "fr": "Superposition couleur icône d'arme"
+  },
+  {
+    "en": "Weapon Inventory",
+    "ja": "武器インベントリ",
+    "de": "Waffeninventar",
+    "es": "Inventario de armas",
+    "fr": "Inventaire d'armes"
+  },
+  {
+    "en": "Weapon Inventory Highlight",
+    "ja": "武器インベントリのハイライト",
+    "de": "Waffen-Inventar-Hervorhebung",
+    "es": "Resaltado del inventario de armas",
+    "fr": "Surbrillance de l'inventaire d'armes"
+  },
+  {
+    "en": "Weapon Inventory Outline",
+    "ja": "武器インベントリのアウトライン",
+    "de": "Kontur Waffeninventar",
+    "es": "Contorno del inventario de armas",
+    "fr": "Contour de l'inventaire d'armes"
+  },
+  {
+    "en": "Weapon Inventory Icon Outline",
+    "ja": "武器インベントリのアイコンのアウトライン",
+    "de": "Waffeninventar-Symbol-Kontur",
+    "es": "Contorno del icono del inventario de armas",
+    "fr": "Contour de l'icône d'inventaire d'armes"
+  },
+  {
+    "en": "Match Status",
+    "ja": "試合情報",
+    "de": "Spielstand",
+    "es": "Estado de partida",
+    "fr": "État du match"
+  },
+  {
+    "en": "Score",
+    "ja": "スコア",
+    "de": "Punktestand",
+    "es": "Puntuación",
+    "fr": "Score"
+  },
+  {
+    "en": "Score Labels",
+    "ja": "スコアラベル",
+    "de": "Punkte-Labels",
+    "es": "Etiquetas de puntuación",
+    "fr": "Étiquettes de score"
+  },
+  {
+    "en": "Score Colors",
+    "ja": "スコアの色",
+    "de": "Punktefarben",
+    "es": "Colores de puntuación",
+    "fr": "Couleurs de score"
+  },
+  {
+    "en": "Score Outline",
+    "ja": "スコアのアウトライン",
+    "de": "Punkte-Kontur",
+    "es": "Contorno de puntuación",
+    "fr": "Contour du score"
+  },
+  {
+    "en": "Rank / Time",
+    "ja": "順位 / 時間",
+    "de": "Rang / Zeit",
+    "es": "Rango / Tiempo",
+    "fr": "Rang / Temps"
+  },
+  {
+    "en": "Rank",
+    "ja": "順位",
+    "de": "Rang",
+    "es": "Rango",
+    "fr": "Rang"
+  },
+  {
+    "en": "Rank Outline",
+    "ja": "順位のアウトライン",
+    "de": "Rang-Umriss",
+    "es": "Contorno de rango",
+    "fr": "Contour du rang"
+  },
+  {
+    "en": "Time Left",
+    "ja": "残り時間",
+    "de": "Verbleibende Zeit",
+    "es": "Tiempo restante",
+    "fr": "Temps restant"
+  },
+  {
+    "en": "Time Left Outline",
+    "ja": "残り時間のアウトライン",
+    "de": "Restzeit-Kontur",
+    "es": "Contorno de tiempo restante",
+    "fr": "Contour du temps restant"
+  },
+  {
+    "en": "Time Limit",
+    "ja": "制限時間",
+    "de": "Zeitlimit",
+    "es": "Límite de tiempo",
+    "fr": "Limite de temps"
+  },
+  {
+    "en": "Time Limit Outline",
+    "ja": "制限時間のアウトライン",
+    "de": "Zeitlimit-Umriss",
+    "es": "Contorno de límite de tiempo",
+    "fr": "Contour limite de temps"
+  },
+  {
+    "en": "Bomb",
+    "ja": "ボム",
+    "de": "Bombe",
+    "es": "Bomba",
+    "fr": "Bombe"
+  },
+  {
+    "en": "Bomb Left",
+    "ja": "残りボム",
+    "de": "Bomben übrig",
+    "es": "Bombas restantes",
+    "fr": "Bombes restantes"
+  },
+  {
+    "en": "Bomb Left Outline",
+    "ja": "残りボムのアウトライン",
+    "de": "Restbomben-Kontur",
+    "es": "Contorno de bombas restantes",
+    "fr": "Contour des bombes restantes"
+  },
+  {
+    "en": "Bomb Icon",
+    "ja": "ボムアイコン",
+    "de": "Bomben-Symbol",
+    "es": "Icono de bomba",
+    "fr": "Icône bombe"
+  },
+  {
+    "en": "Bomb Icon Outline",
+    "ja": "ボムアイコンのアウトライン",
+    "de": "Bomben-Symbol-Umriss",
+    "es": "Contorno del icono de bomba",
+    "fr": "Contour icône bombe"
+  },
+  {
+    "en": "Radar",
+    "ja": "レーダー",
+    "de": "Radar",
+    "es": "Radar",
+    "fr": "Radar"
+  },
+  {
+    "en": "Radar Settings",
+    "ja": "レーダー設定",
+    "de": "Radar-Einstellungen",
+    "es": "Ajustes del radar",
+    "fr": "Paramètres du radar"
+  },
+  {
+    "en": "Radar Outline",
+    "ja": "レーダーのアウトライン",
+    "de": "Radar-Kontur",
+    "es": "Contorno del radar",
+    "fr": "Contour du radar"
+  },
+  {
+    "en": "Frame Outline",
+    "ja": "フレームのアウトライン",
+    "de": "Rahmenkontur",
+    "es": "Contorno del marco",
+    "fr": "Contour du cadre"
+  },
+  {
+    "en": "Crosshair",
+    "ja": "照準",
+    "de": "Fadenkreuz",
+    "es": "Retícula",
+    "fr": "Réticule"
+  },
+  {
+    "en": "Wpn\\\nIcon",
+    "ja": "武器\\\nアイコン",
+    "de": "Wpn\nSymbol",
+    "es": "Arma\nIcono",
+    "fr": "Arme\nIcône"
+  },
+  {
+    "en": "Bmb\\\nIcon",
+    "ja": "ボム\\\nアイコン",
+    "de": "Bomben-\nSymbol",
+    "es": "Icono\nde bomba",
+    "fr": "Icône\nbombe"
+  },
+  {
+    "en": "Wpn\\\nInventory",
+    "ja": "武器\\\n一覧",
+    "de": "Wpn\\\nInventar",
+    "es": "Wpn\\\nInventario",
+    "fr": "Wpn\\\nInventaire"
+  },
+  {
+    "en": "WPN",
+    "ja": "武器",
+    "de": "WPN",
+    "es": "ARM",
+    "fr": "ARM"
+  },
+  {
+    "en": "BMB",
+    "ja": "ボム",
+    "de": "BMB",
+    "es": "BMB",
+    "fr": "BMB"
+  },
+  {
+    "en": "points",
+    "ja": "得点",
+    "de": "Punkte",
+    "es": "puntos",
+    "fr": "points"
+  },
+  {
+    "en": "Bombs",
+    "ja": "ボム",
+    "de": "Bomben",
+    "es": "Bombas",
+    "fr": "Bombes"
+  },
+  {
+    "en": "Enable OSD Color Patch",
+    "ja": "OSD色パッチを有効化",
+    "de": "OSD-Farbpatch aktivieren",
+    "es": "Activar parche de color OSD",
+    "fr": "Activer le patch de couleur OSD"
+  },
+  {
+    "en": "Global Color",
+    "ja": "全体色",
+    "de": "Globale Farbe",
+    "es": "Color global",
+    "fr": "Couleur globale"
+  },
+  {
+    "en": "Use Global Color for All",
+    "ja": "すべてに全体色を使用",
+    "de": "Globale Farbe für alle verwenden",
+    "es": "Usar color global para todo",
+    "fr": "Utiliser la couleur globale pour tout"
+  },
+  {
+    "en": "Enable Separate Color",
+    "ja": "個別色を有効化",
+    "de": "Separate Farbe aktivieren",
+    "es": "Activar color separado",
+    "fr": "Activer une couleur séparée"
+  },
+  {
+    "en": "Color (Default: Red)",
+    "ja": "色 (既定: 赤)",
+    "de": "Farbe (Standard: Rot)",
+    "es": "Color (predeterminado: rojo)",
+    "fr": "Couleur (par défaut : rouge)"
+  },
+  {
+    "en": "Node Stolen (H211)",
+    "ja": "ノード奪取 (H211)",
+    "de": "Knoten gestohlen (H211)",
+    "es": "Nodo robado (H211)",
+    "fr": "Nœud volé (H211)"
+  },
+  {
+    "en": "Lost Lives",
+    "ja": "ライフ喪失",
+    "de": "Verlorene Leben",
+    "es": "Vidas perdidas",
+    "fr": "Vies perdues"
+  },
+  {
+    "en": "Kill / Death",
+    "ja": "キル / デス",
+    "de": "Kill / Death",
+    "es": "Kill / Death",
+    "fr": "Kill / Death"
+  },
+  {
+    "en": "Return to Base",
+    "ja": "基地へ戻れ",
+    "de": "Zur Basis zurück",
+    "es": "Volver a la base",
+    "fr": "Retour à la base"
+  },
+  {
+    "en": "No Ammo",
+    "ja": "弾薬なし",
+    "de": "Keine Munition",
+    "es": "Sin munición",
+    "fr": "Plus de munitions"
+  },
+  {
+    "en": "Coward Detect",
+    "ja": "臆病者検出",
+    "de": "Feigheitserkennung",
+    "es": "Detección de cobardía",
+    "fr": "Détection de lâcheté"
+  },
+  {
+    "en": "Acquiring Node",
+    "ja": "ノード取得中",
+    "de": "Knoten wird erobert",
+    "es": "Capturando nodo",
+    "fr": "Acquisition de nœud"
+  },
+  {
+    "en": "Turret",
+    "ja": "タレット",
+    "de": "Geschütz",
+    "es": "Torreta",
+    "fr": "Tourelle"
+  },
+  {
+    "en": "Octo Reset",
+    "ja": "オクトリスリセット",
+    "de": "Octo-Reset",
+    "es": "Reinicio Octo",
+    "fr": "Réinitialisation Octo"
+  },
+  {
+    "en": "Octo Drop",
+    "ja": "オクトリスドロップ",
+    "de": "Oktolith-Drop",
+    "es": "Caída de octolito",
+    "fr": "Chute d'octolithe"
+  },
+  {
+    "en": "Octo Condition",
+    "ja": "オクトリス条件",
+    "de": "Octo-Bedingung",
+    "es": "Condición Octo",
+    "fr": "Condition Octo"
+  },
+  {
+    "en": "Octo Missing",
+    "ja": "オクトリス未所持",
+    "de": "Oktolith fehlt",
+    "es": "Octólito ausente",
+    "fr": "Octolithe manquant"
+  },
+  {
+    "en": "Slot: Kill / Death  [flags=0x02]",
+    "ja": "スロット: キル / デス [flags=0x02]",
+    "de": "Slot: Kill / Death  [flags=0x02]",
+    "es": "Slot: Kill / Death  [flags=0x02]",
+    "fr": "Slot : Kill / Death  [flags=0x02]"
+  },
+  {
+    "en": "Slot: Node Capture  [flags=0x11]",
+    "ja": "スロット: ノード取得 [flags=0x11]",
+    "de": "Slot: Knotenerfassung  [flags=0x11]",
+    "es": "Ranura: Captura de nodo  [flags=0x11]",
+    "fr": "Emplacement : Capture de nœud  [flags=0x11]"
+  },
+  {
+    "en": "Slot: Objective     [flags=0x01]",
+    "ja": "スロット: 目標 [flags=0x01]",
+    "de": "Slot: Ziel     [flags=0x01]",
+    "es": "Ranura: Objetivo     [flags=0x01]",
+    "fr": "Emplacement : Objectif     [flags=0x01]"
+  },
+  {
+    "en": "Slot: System / Misc [flags=0x00]",
+    "ja": "スロット: システム/その他 [flags=0x00]",
+    "de": "Slot: System / Sonstiges [flags=0x00]",
+    "es": "Ranura: Sistema / Varios [flags=0x00]",
+    "fr": "Emplacement : Système / Divers [flags=0x00]"
+  },
+  {
+    "en": "Applied once on settings close to currently displayed messages (flags=0x02).\\\nNew messages use the 'Kill / Death' literal color above.",
+    "ja": "設定を閉じたとき、現在表示中のメッセージへ一度だけ適用されます (flags=0x02)。\\\n新しいメッセージは上の「キル / デス」個別色を使用します。",
+    "de": "Einmal beim Schließen der Einstellungen auf aktuell angezeigte Nachrichten angewendet (flags=0x02).\nNeue Nachrichten verwenden die obige Farbe für „Kill / Death“.",
+    "es": "Se aplica una vez al cerrar los ajustes a los mensajes mostrados (flags=0x02).\nLos mensajes nuevos usan el color literal «Kill / Death» de arriba.",
+    "fr": "Appliqué une fois à la fermeture des paramètres aux messages affichés (flags=0x02).\nLes nouveaux messages utilisent la couleur littérale « Kill / Death » ci-dessus."
+  },
+  {
+    "en": "Applied once on settings close to currently displayed messages (flags=0x11).\\\nNew messages use 'Acquiring Node' or 'Node Stolen' literal colors above.",
+    "ja": "設定を閉じたとき、現在表示中のメッセージへ一度だけ適用されます (flags=0x11)。\\\n新しいメッセージは上の「ノード取得中」または「ノード奪取」の個別色を使用します。",
+    "de": "Einmalig beim Schließen der Einstellungen auf aktuell angezeigte Nachrichten angewendet (flags=0x11).\\\nNeue Nachrichten verwenden die obigen Farben für „Acquiring Node“ oder „Node Stolen“.",
+    "es": "Se aplica una vez al cerrar los ajustes a los mensajes mostrados (flags=0x11).\\\nLos mensajes nuevos usan los colores literales «Acquiring Node» o «Node Stolen» de arriba.",
+    "fr": "Appliqué une fois à la fermeture des réglages aux messages affichés (flags=0x11).\\\nLes nouveaux messages utilisent les couleurs littérales « Acquiring Node » ou « Node Stolen » ci-dessus."
+  },
+  {
+    "en": "Applied once on settings close to currently displayed messages (flags=0x01).\\\nNew messages use their individual literal colors above (No Ammo / Return to Base / Octo ...).",
+    "ja": "設定を閉じたとき、現在表示中のメッセージへ一度だけ適用されます (flags=0x01)。\\\n新しいメッセージはそれぞれの個別色を使用します (弾薬なし / 基地へ戻れ / オクト系 ...)。",
+    "de": "Einmalig beim Schließen der Einstellungen auf aktuell angezeigte Nachrichten angewendet (flags=0x01).\\\nNeue Nachrichten verwenden ihre jeweiligen Farben oben (No Ammo / Return to Base / Octo ...).",
+    "es": "Se aplica una vez al cerrar los ajustes a los mensajes mostrados (flags=0x01).\\\nLos mensajes nuevos usan sus colores literales individuales de arriba (No Ammo / Return to Base / Octo ...).",
+    "fr": "Appliqué une fois à la fermeture des réglages aux messages affichés (flags=0x01).\\\nLes nouveaux messages utilisent leurs couleurs littérales individuelles ci-dessus (No Ammo / Return to Base / Octo ...)."
+  },
+  {
+    "en": "Applied once on settings close to currently displayed messages (flags=0x00).\\\nNew messages use their individual literal colors above (Lost Lives / Coward Detect / Turret ...).\\\nNote: HEADSHOT! (H228) is flags=0x00, not 0x02.",
+    "ja": "設定を閉じたとき、現在表示中のメッセージへ一度だけ適用されます (flags=0x00)。\\\n新しいメッセージはそれぞれの個別色を使用します (ライフ喪失 / 臆病者検出 / タレット ...)。\\\n注: HEADSHOT! (H228) は flags=0x00 で、0x02 ではありません。",
+    "de": "Wird einmal beim Schließen der Einstellungen auf aktuell angezeigte Nachrichten angewendet (flags=0x00).\nNeue Nachrichten verwenden ihre individuellen Farben oben (Verlorene Leben / Feigling erkannt / Turm ...).\nHinweis: HEADSHOT! (H228) ist flags=0x00, nicht 0x02.",
+    "es": "Se aplica una vez al cerrar los ajustes a los mensajes mostrados actualmente (flags=0x00).\nLos mensajes nuevos usan sus colores literales individuales arriba (Vidas perdidas / Cobarde detectado / Torreta ...).\nNota: HEADSHOT! (H228) es flags=0x00, no 0x02.",
+    "fr": "Appliqué une fois à la fermeture des paramètres aux messages actuellement affichés (flags=0x00).\nLes nouveaux messages utilisent leurs couleurs littérales individuelles ci-dessus (Vies perdues / Lâche détecté / Tourelle ...).\nNote : HEADSHOT! (H228) est flags=0x00, pas 0x02."
+  },
+  {
+    "en": "Color  (YOU KILLED / KILLED YOU / 5-kill / prime hunter / teammate)",
+    "ja": "色  (YOU KILLED / KILLED YOU / 5キル / プライムハンター / 味方)",
+    "de": "Farbe  (DU HAST GETÖTET / HAT DICH GETÖTET / 5-Kill / Prime Hunter / Teamkamerad)",
+    "es": "Color  (TÚ MATASTE / TE MATÓ / 5 bajas / prime hunter / compañero)",
+    "fr": "Couleur  (VOUS AVEZ TUÉ / VOUS A TUÉ / 5 kills / prime hunter / coéquipier)"
+  },
+  {
+    "en": "Color  (acquiring node / node stolen H211)",
+    "ja": "色  (ノード取得中 / ノード奪取 H211)",
+    "de": "Farbe  (Knoten wird erobert / Knoten gestohlen H211)",
+    "es": "Color  (capturando nodo / nodo robado H211)",
+    "fr": "Couleur  (acquisition de nœud / nœud volé H211)"
+  },
+  {
+    "en": "Color  (AMMO DEPLETED / return to base / bounty / octolith events)",
+    "ja": "色  (AMMO DEPLETED / 基地へ戻れ / バウンティ / オクトリスイベント)",
+    "de": "Farbe  (AMMO DEPLETED / Rückkehr zur Basis / Kopfgeld / Oktolith-Ereignisse)",
+    "es": "Color  (AMMO DEPLETED / volver a base / recompensa / eventos de octolito)",
+    "fr": "Couleur  (AMMO DEPLETED / retour à la base / prime / événements octolithe)"
+  },
+  {
+    "en": "Color  (HEADSHOT! / FACE OFF! / RETURN TO BATTLE! / COWARD DETECTED / turret)",
+    "ja": "色  (HEADSHOT! / FACE OFF! / RETURN TO BATTLE! / COWARD DETECTED / タレット)",
+    "de": "Farbe  (HEADSHOT! / FACE OFF! / RETURN TO BATTLE! / COWARD DETECTED / Turm)",
+    "es": "Color  (HEADSHOT! / FACE OFF! / RETURN TO BATTLE! / COWARD DETECTED / torreta)",
+    "fr": "Couleur  (HEADSHOT! / FACE OFF! / RETURN TO BATTLE! / COWARD DETECTED / tourelle)"
+  },
+  {
+    "en": "White",
+    "ja": "白",
+    "de": "Weiß",
+    "es": "Blanco",
+    "fr": "Blanc"
+  },
+  {
+    "en": "Green",
+    "ja": "緑",
+    "de": "Grün",
+    "es": "Verde",
+    "fr": "Vert"
+  },
+  {
+    "en": "Yellow Green",
+    "ja": "黄緑",
+    "de": "Gelbgrün",
+    "es": "Verde amarillento",
+    "fr": "Vert jaune"
+  },
+  {
+    "en": "Green Yellow",
+    "ja": "緑黄",
+    "de": "Grüngelb",
+    "es": "Verde amarillo",
+    "fr": "Jaune vert"
+  },
+  {
+    "en": "Yellow",
+    "ja": "黄色",
+    "de": "Gelb",
+    "es": "Amarillo",
+    "fr": "Jaune"
+  },
+  {
+    "en": "Pure Cyan",
+    "ja": "純シアン",
+    "de": "Reines Cyan",
+    "es": "Cian puro",
+    "fr": "Cyan pur"
+  },
+  {
+    "en": "Hud Cyan",
+    "ja": "HUDシアン",
+    "de": "HUD-Cyan",
+    "es": "HUD cian",
+    "fr": "HUD cyan"
+  },
+  {
+    "en": "Pink",
+    "ja": "ピンク",
+    "de": "Rosa",
+    "es": "Rosa",
+    "fr": "Rose"
+  },
+  {
+    "en": "Red",
+    "ja": "赤",
+    "de": "Rot",
+    "es": "Rojo",
+    "fr": "Rouge"
+  },
+  {
+    "en": "Orange",
+    "ja": "オレンジ",
+    "de": "Orange",
+    "es": "Naranja",
+    "fr": "Orange"
+  },
+  {
+    "en": "Samus Hud",
+    "ja": "サムスHUD",
+    "de": "Samus-HUD",
+    "es": "HUD de Samus",
+    "fr": "HUD Samus"
+  },
+  {
+    "en": "Samus Hud Outline",
+    "ja": "サムスHUDのアウトライン",
+    "de": "Samus-HUD-Kontur",
+    "es": "Contorno del HUD de Samus",
+    "fr": "Contour du HUD de Samus"
+  },
+  {
+    "en": "Kanden Hud",
+    "ja": "カンデンHUD",
+    "de": "Kanden-HUD",
+    "es": "HUD de Kanden",
+    "fr": "HUD Kanden"
+  },
+  {
+    "en": "Spire Hud",
+    "ja": "スパイアHUD",
+    "de": "Spire-HUD",
+    "es": "HUD Spire",
+    "fr": "HUD Spire"
+  },
+  {
+    "en": "Spire Hud Outline",
+    "ja": "スパイアHUDのアウトライン",
+    "de": "Spire-HUD-Umriss",
+    "es": "Contorno HUD Spire",
+    "fr": "Contour HUD Spire"
+  },
+  {
+    "en": "Trace Hud",
+    "ja": "トレースHUD",
+    "de": "Trace-HUD",
+    "es": "HUD de Trace",
+    "fr": "HUD Trace"
+  },
+  {
+    "en": "Noxus Hud",
+    "ja": "ノクサスHUD",
+    "de": "Noxus-HUD",
+    "es": "HUD de Noxus",
+    "fr": "HUD de Noxus"
+  },
+  {
+    "en": "Noxus Hud Outline",
+    "ja": "ノクサスHUDのアウトライン",
+    "de": "Noxus-HUD-Kontur",
+    "es": "Contorno del HUD de Noxus",
+    "fr": "Contour HUD Noxus"
+  },
+  {
+    "en": "Sylux Hud",
+    "ja": "サイラックスHUD",
+    "de": "Sylux-HUD",
+    "es": "HUD Sylux",
+    "fr": "HUD Sylux"
+  },
+  {
+    "en": "Sylux Crosshair",
+    "ja": "サイラックス照準",
+    "de": "Sylux-Fadenkreuz",
+    "es": "Retícula Sylux",
+    "fr": "Réticule Sylux"
+  },
+  {
+    "en": "Weavel Hud",
+    "ja": "ウィーヴェルHUD",
+    "de": "Weavel-HUD",
+    "es": "HUD de Weavel",
+    "fr": "HUD Weavel"
+  },
+  {
+    "en": "Weavel Hud Outline",
+    "ja": "ウィーヴェルHUDのアウトライン",
+    "de": "Weavel-HUD-Kontur",
+    "es": "Contorno del HUD de Weavel",
+    "fr": "Contour du HUD de Weavel"
+  },
+  {
+    "en": "Avium Purple",
+    "ja": "アヴィウム紫",
+    "de": "Avium-Lila",
+    "es": "Púrpura Avium",
+    "fr": "Violet Avium"
+  },
+  {
+    "en": "OSD Bright Green",
+    "ja": "OSD明るい緑",
+    "de": "OSD Hellgrün",
+    "es": "OSD verde brillante",
+    "fr": "OSD vert vif"
+  },
+  {
+    "en": "OSD No-Ammo Red",
+    "ja": "OSD弾薬なし赤",
+    "de": "OSD Keine-Munition Rot",
+    "es": "OSD sin munición rojo",
+    "fr": "OSD plus de munitions rouge"
+  },
+  {
+    "en": "Power Beam",
+    "ja": "パワービーム",
+    "de": "Power Beam",
+    "es": "Power Beam",
+    "fr": "Power Beam"
+  },
+  {
+    "en": "Volt Driver",
+    "ja": "ボルトドライバー",
+    "de": "Volt Driver",
+    "es": "Volt Driver",
+    "fr": "Volt Driver"
+  },
+  {
+    "en": "VoltDriver",
+    "ja": "ボルトドライバー",
+    "de": "VoltDriver",
+    "es": "VoltDriver",
+    "fr": "VoltDriver"
+  },
+  {
+    "en": "Missile",
+    "ja": "ミサイル",
+    "de": "Rakete",
+    "es": "Misil",
+    "fr": "Missile"
+  },
+  {
+    "en": "Battle Hammer",
+    "ja": "バトルハンマー",
+    "de": "Battlehammer",
+    "es": "Battlehammer",
+    "fr": "Battlehammer"
+  },
+  {
+    "en": "Battlehammer",
+    "ja": "バトルハンマー",
+    "de": "Battlehammer",
+    "es": "Battlehammer",
+    "fr": "Battlehammer"
+  },
+  {
+    "en": "Imperialist",
+    "ja": "インペリアリスト",
+    "de": "Imperialist",
+    "es": "Imperialist",
+    "fr": "Imperialist"
+  },
+  {
+    "en": "Judicator",
+    "ja": "ジュディケイター",
+    "de": "Judicator",
+    "es": "Judicator",
+    "fr": "Judicator"
+  },
+  {
+    "en": "Magmaul",
+    "ja": "マグモール",
+    "de": "Magmaul",
+    "es": "Magmaul",
+    "fr": "Magmaul"
+  },
+  {
+    "en": "Shock Coil",
+    "ja": "ショックコイル",
+    "de": "Shock Coil",
+    "es": "Shock Coil",
+    "fr": "Shock Coil"
+  },
+  {
+    "en": "ShockCoil",
+    "ja": "ショックコイル",
+    "de": "ShockCoil",
+    "es": "ShockCoil",
+    "fr": "ShockCoil"
+  },
+  {
+    "en": "Omega Cannon",
+    "ja": "オメガキャノン",
+    "de": "Omega-Kanone",
+    "es": "Cañón Omega",
+    "fr": "Canon Omega"
+  },
+  {
+    "en": "PB Color",
+    "ja": "PB色",
+    "de": "PB-Farbe",
+    "es": "Color PB",
+    "fr": "Couleur PB"
+  },
+  {
+    "en": "VD Color",
+    "ja": "VD色",
+    "de": "VD-Farbe",
+    "es": "Color VD",
+    "fr": "Couleur VD"
+  },
+  {
+    "en": "MSL Color",
+    "ja": "MSL色",
+    "de": "MSL-Farbe",
+    "es": "Color MSL",
+    "fr": "Couleur MSL"
+  },
+  {
+    "en": "BH Color",
+    "ja": "BH色",
+    "de": "BH-Farbe",
+    "es": "Color BH",
+    "fr": "Couleur BH"
+  },
+  {
+    "en": "IMP Color",
+    "ja": "IMP色",
+    "de": "IMP-Farbe",
+    "es": "Color IMP",
+    "fr": "Couleur IMP"
+  },
+  {
+    "en": "JUD Color",
+    "ja": "JUD色",
+    "de": "JUD-Farbe",
+    "es": "Color JUD",
+    "fr": "Couleur JUD"
+  },
+  {
+    "en": "MAG Color",
+    "ja": "MAG色",
+    "de": "MAG-Farbe",
+    "es": "Color MAG",
+    "fr": "Couleur MAG"
+  },
+  {
+    "en": "SCL Color",
+    "ja": "SCL色",
+    "de": "SCL-Farbe",
+    "es": "Color SCL",
+    "fr": "Couleur SCL"
+  },
+  {
+    "en": "OC Color",
+    "ja": "OC色",
+    "de": "OC-Farbe",
+    "es": "Color OC",
+    "fr": "Couleur OC"
+  },
+  {
+    "en": "Thin",
+    "ja": "極細",
+    "de": "Dünn",
+    "es": "Fino",
+    "fr": "Fin"
+  },
+  {
+    "en": "Extra Light",
+    "ja": "特細",
+    "de": "Extra Light",
+    "es": "Extra Light",
+    "fr": "Extra Light"
+  },
+  {
+    "en": "Light",
+    "ja": "細字",
+    "de": "Leicht",
+    "es": "Ligera",
+    "fr": "Léger"
+  },
+  {
+    "en": "Medium",
+    "ja": "中太",
+    "de": "Mittel",
+    "es": "Medio",
+    "fr": "Moyen"
+  },
+  {
+    "en": "Semi Bold",
+    "ja": "やや太字",
+    "de": "Halbfett",
+    "es": "Seminegrita",
+    "fr": "Demi-gras"
+  },
+  {
+    "en": "Bold",
+    "ja": "太字",
+    "de": "Fett",
+    "es": "Negrita",
+    "fr": "Gras"
+  },
+  {
+    "en": "Extra Bold",
+    "ja": "極太",
+    "de": "Extra fett",
+    "es": "Extra negrita",
+    "fr": "Extra gras"
+  },
+  {
+    "en": "Black",
+    "ja": "黒太",
+    "de": "Schwarz",
+    "es": "Negro",
+    "fr": "Noir"
+  },
+  {
+    "en": "Number of Colors",
+    "ja": "色数",
+    "de": "Anzahl der Farben",
+    "es": "Número de colores",
+    "fr": "Nombre de couleurs"
+  },
+  {
+    "en": "Threshold 1 (%)",
+    "ja": "しきい値 1 (%)",
+    "de": "Schwellenwert 1 (%)",
+    "es": "Umbral 1 (%)",
+    "fr": "Seuil 1 (%)"
+  },
+  {
+    "en": "Threshold 2 (%)",
+    "ja": "しきい値 2 (%)",
+    "de": "Schwellwert 2 (%)",
+    "es": "Umbral 2 (%)",
+    "fr": "Seuil 2 (%)"
+  },
+  {
+    "en": "Threshold 3 (%)",
+    "ja": "しきい値 3 (%)",
+    "de": "Schwellenwert 3 (%)",
+    "es": "Umbral 3 (%)",
+    "fr": "Seuil 3 (%)"
+  },
+  {
+    "en": "Threshold 4 (%)",
+    "ja": "しきい値 4 (%)",
+    "de": "Schwellenwert 4 (%)",
+    "es": "Umbral 4 (%)",
+    "fr": "Seuil 4 (%)"
+  },
+  {
+    "en": "Threshold 5 (%)",
+    "ja": "しきい値 5 (%)",
+    "de": "Schwellwert 5 (%)",
+    "es": "Umbral 5 (%)",
+    "fr": "Seuil 5 (%)"
+  },
+  {
+    "en": "Threshold 6 (%)",
+    "ja": "しきい値 6 (%)",
+    "de": "Schwellenwert 6 (%)",
+    "es": "Umbral 6 (%)",
+    "fr": "Seuil 6 (%)"
+  },
+  {
+    "en": "Color 1",
+    "ja": "色 1",
+    "de": "Farbe 1",
+    "es": "Color 1",
+    "fr": "Couleur 1"
+  },
+  {
+    "en": "Color 2",
+    "ja": "色 2",
+    "de": "Farbe 2",
+    "es": "Color 2",
+    "fr": "Couleur 2"
+  },
+  {
+    "en": "Color 3",
+    "ja": "色 3",
+    "de": "Farbe 3",
+    "es": "Color 3",
+    "fr": "Couleur 3"
+  },
+  {
+    "en": "Color 4",
+    "ja": "色 4",
+    "de": "Farbe 4",
+    "es": "Color 4",
+    "fr": "Couleur 4"
+  },
+  {
+    "en": "Color 5",
+    "ja": "色 5",
+    "de": "Farbe 5",
+    "es": "Color 5",
+    "fr": "Couleur 5"
+  },
+  {
+    "en": "Color 6",
+    "ja": "色 6",
+    "de": "Farbe 6",
+    "es": "Color 6",
+    "fr": "Couleur 6"
+  },
+  {
+    "en": "Generate sharable TOML for the current Custom HUD settings, or paste TOML below to apply it.",
+    "ja": "現在のカスタムHUD設定から共有用TOMLを生成するか、下にTOMLを貼り付けて適用します。",
+    "de": "Teilbares TOML für die aktuellen benutzerdefinierten HUD-Einstellungen generieren oder TOML unten einfügen, um es anzuwenden.",
+    "es": "Genera TOML compartible para los ajustes HUD personalizados actuales, o pega TOML abajo para aplicarlo.",
+    "fr": "Générez un TOML partageable pour les paramètres HUD personnalisés actuels, ou collez le TOML ci-dessous pour l'appliquer."
+  },
+  {
+    "en": "Output refreshed from the current Custom HUD settings.",
+    "ja": "現在のカスタムHUD設定から出力を更新しました。",
+    "de": "Ausgabe aus den aktuellen Custom-HUD-Einstellungen aktualisiert.",
+    "es": "Salida actualizada desde los ajustes actuales del HUD personalizado.",
+    "fr": "Sortie actualisée à partir des paramètres HUD personnalisés actuels."
+  },
+  {
+    "en": "Custom HUD code copied to the clipboard.",
+    "ja": "カスタムHUDコードをクリップボードにコピーしました。",
+    "de": "Benutzerdefinierter HUD-Code in die Zwischenablage kopiert.",
+    "es": "Código de HUD personalizado copiado al portapapeles.",
+    "fr": "Code HUD personnalisé copié dans le presse-papiers."
+  },
+  {
+    "en": "Output copied into the input box.",
+    "ja": "出力を入力欄へコピーしました。",
+    "de": "Ausgabe in das Eingabefeld kopiert.",
+    "es": "Salida copiada al cuadro de entrada.",
+    "fr": "Sortie copiée dans la zone de saisie."
+  },
+  {
+    "en": "Custom HUD code applied to the dialog.",
+    "ja": "カスタムHUDコードをダイアログへ適用しました。",
+    "de": "Custom HUD-Code auf den Dialog angewendet.",
+    "es": "Código de HUD personalizado aplicado al diálogo.",
+    "fr": "Code HUD personnalisé appliqué à la boîte de dialogue."
+  },
+  {
+    "en": "Paste Custom HUD TOML into the input box first.",
+    "ja": "先にカスタムHUD TOMLを入力欄へ貼り付けてください。",
+    "de": "Füge zuerst benutzerdefiniertes HUD-TOML in das Eingabefeld ein.",
+    "es": "Pega primero el TOML HUD personalizado en el cuadro de entrada.",
+    "fr": "Collez d'abord le TOML HUD personnalisé dans la zone de saisie."
+  },
+  {
+    "en": "The pasted Custom HUD code is not a TOML table.",
+    "ja": "貼り付けられたカスタムHUDコードはTOMLテーブルではありません。",
+    "de": "Der eingefügte Custom-HUD-Code ist keine TOML-Tabelle.",
+    "es": "El código HUD personalizado pegado no es una tabla TOML.",
+    "fr": "Le code HUD personnalisé collé n'est pas une table TOML."
+  },
+  {
+    "en": "Failed to load Custom HUD code: %1",
+    "ja": "カスタムHUDコードの読み込みに失敗しました: %1",
+    "de": "Benutzerdefinierter HUD-Code konnte nicht geladen werden: %1",
+    "es": "Error al cargar el código de HUD personalizado: %1",
+    "fr": "Échec du chargement du code HUD personnalisé : %1"
+  },
+  {
+    "en": "Use New Method for Weapon Change",
+    "ja": "武器変更に新方式を使う",
+    "de": "Neue Methode für Waffenwechsel verwenden",
+    "es": "Usar método nuevo para cambio de arma",
+    "fr": "Utiliser la nouvelle méthode pour le changement d'arme"
+  },
+  {
+    "en": "Use New Method for Biped Fire",
+    "ja": "二足時の射撃に新方式を使う",
+    "de": "Neue Methode für Biped-Feuer verwenden",
+    "es": "Usar nuevo método para disparo Biped",
+    "fr": "Utiliser la nouvelle méthode pour le tir Biped"
+  },
+  {
+    "en": "Use New Method for Alt-Form Transform",
+    "ja": "トランスフォーム変形に新方式を使う",
+    "de": "Neue Methode für Alt-Form-Transformation verwenden",
+    "es": "Usar nuevo método para transformación Alt-Form",
+    "fr": "Utiliser la nouvelle méthode pour transformation Alt-Form"
+  },
+  {
+    "en": "Use New Method for Zoom",
+    "ja": "ズームに新方式を使う",
+    "de": "Neue Zoom-Methode verwenden",
+    "es": "Usar nuevo método de zoom",
+    "fr": "Utiliser la nouvelle méthode de zoom"
+  },
+  {
+    "en": "Use New Method 2 for Zoom",
+    "ja": "ズームに新方式2を使う",
+    "de": "Neue Methode 2 für Zoom verwenden",
+    "es": "Usar método nuevo 2 para el zoom",
+    "fr": "Utiliser la nouvelle méthode 2 pour le zoom"
+  },
+  {
+    "en": "metroidAimYAxisScaleLabel2",
+    "ja": "(1.5147 = MPH標準、1.9429 = X/Y角速度一致 [オプション])",
+    "de": "(1.5147 = MPH-Standard, 1.9429 = X/Y-Winkelgeschwindigkeit gleich [Optional])",
+    "es": "(1.5147 = estándar MPH, 1.9429 = velocidad angular X/Y igual [opcional])",
+    "fr": "(1.5147 = standard MPH, 1.9429 = vitesse angulaire X/Y identique [option])"
+  },
+  {
+    "en": "lblMetroidFixNoxusBladePersistenceWarning",
+    "ja": "この修正はまだ不安定です。特に韓国版では、場合によってブレードが残り続けることがあります。",
+    "de": "Dieser Fix ist noch instabil. Besonders in der koreanischen Version kann die Klinge unter Umständen bestehen bleiben.",
+    "es": "Esta corrección aún es inestable. Especialmente en la versión coreana, la cuchilla puede persistir en algunos casos.",
+    "fr": "Ce correctif est encore instable. Surtout sur la version coréenne, la lame peut parfois persister."
+  },
+  {
+    "en": "lblMetroidShowHeadshotOnlineDesc",
+    "ja": "Wi-Fi/オンライン対戦中でも、単独のヘッドショット通知を強制的に表示します。",
+    "de": "Erzwingt die Anzeige separater Kopfschuss-Benachrichtigungen auch während Wi-Fi-/Online-Matches.",
+    "es": "Fuerza la visualización de notificaciones de headshot independientes también en partidas Wi-Fi/en línea.",
+    "fr": "Force l'affichage de notifications de headshot distinctes même en match Wi-Fi/en ligne."
+  },
+  {
+    "en": "btnClear",
+    "ja": "クリア",
+    "de": "Löschen",
+    "es": "Borrar",
+    "fr": "Effacer"
+  },
+  {
+    "en": "DS slot: ",
+    "ja": "DSスロット: ",
+    "de": "DS-Slot: ",
+    "es": "Ranura DS: ",
+    "fr": "Slot DS : "
+  },
+  {
+    "en": "GBA slot: ",
+    "ja": "GBAスロット: ",
+    "de": "GBA-Slot: ",
+    "es": "Ranura GBA: ",
+    "fr": "Slot GBA : "
+  },
+  {
+    "en": "Top ",
+    "ja": "上画面 ",
+    "de": "Oberer Bildschirm ",
+    "es": "Pantalla superior ",
+    "fr": "Écran du haut "
+  },
+  {
+    "en": "Bottom ",
+    "ja": "下画面 ",
+    "de": "Unterer Bildschirm ",
+    "es": "Pantalla inferior ",
+    "fr": "Écran du bas "
+  },
+  {
+    "en": "Emu settings - melonDS",
+    "ja": "エミュレーター設定 - melonDS",
+    "de": "Emu-Einstellungen – melonDS",
+    "es": "Configuración de la UEM - melonDS",
+    "fr": "Paramètres Emu - melonDS"
+  },
+  {
+    "en": "Video settings - melonDS",
+    "ja": "映像設定 - melonDS",
+    "de": "Videoeinstellungen – melonDS",
+    "es": "Configuración de vídeo - melonDS",
+    "fr": "Paramètres vidéo - melonDS"
+  },
+  {
+    "en": "Camera settings - melonDS",
+    "ja": "カメラ設定 - melonDS",
+    "de": "Kameraeinstellungen – melonDS",
+    "es": "Configuración de la cámara - melonDS",
+    "fr": "Paramètres de l'appareil photo - melonDS"
+  },
+  {
+    "en": "Audio settings - melonDS",
+    "ja": "音声設定 - melonDS",
+    "de": "Audioeinstellungen – melonDS",
+    "es": "Configuración de audio - melonDS",
+    "fr": "Paramètres audio - melonDS"
+  },
+  {
+    "en": "Input and hotkeys - melonDS",
+    "ja": "入力とホットキー - melonDS",
+    "de": "Eingabe und Hotkeys – melonDS",
+    "es": "Entrada y teclas de acceso rápido - melonDS",
+    "fr": "Saisie et raccourcis clavier - melonDS"
+  },
+  {
+    "en": "General hotkeys",
+    "ja": "一般ホットキー",
+    "de": "Allgemeine Hotkeys",
+    "es": "Teclas de acceso rápido generales",
+    "fr": "Raccourcis généraux"
+  },
+  {
+    "en": "General",
+    "ja": "一般",
+    "de": "Allgemein",
+    "es": "General",
+    "fr": "Général"
+  },
+  {
+    "en": "DS-mode",
+    "ja": "DSモード",
+    "de": "DS-Modus",
+    "es": "modo DS",
+    "fr": "Mode DS"
+  },
+  {
+    "en": "DSi-mode",
+    "ja": "DSiモード",
+    "de": "DSi-Modus",
+    "es": "modo DSi",
+    "fr": "Mode DSi"
+  },
+  {
+    "en": "CPU emulation",
+    "ja": "CPUエミュレーション",
+    "de": "CPU-Emulation",
+    "es": "emulación de CPU",
+    "fr": "Émulation du processeur"
+  },
+  {
+    "en": "Devtools",
+    "ja": "開発ツール",
+    "de": "Devtools",
+    "es": "Herramientas de desarrollo",
+    "fr": "Outils de développement"
+  },
+  {
+    "en": "DLDI",
+    "ja": "DLDI",
+    "de": "DLDI",
+    "es": "DLDI",
+    "fr": "DLDI"
+  },
+  {
+    "en": "Console type:",
+    "ja": "本体タイプ:",
+    "de": "Konsolentyp:",
+    "es": "Tipo de consola:",
+    "fr": "Type de console :"
+  },
+  {
+    "en": "Boot game directly",
+    "ja": "ゲームを直接起動",
+    "de": "Spiel direkt starten",
+    "es": "Arrancar el juego directamente",
+    "fr": "Démarrer le jeu directement"
+  },
+  {
+    "en": "Browse...",
+    "ja": "参照...",
+    "de": "Durchsuchen...",
+    "es": "Navegar...",
+    "fr": "Parcourir..."
+  },
+  {
+    "en": "Use external BIOS/firmware files",
+    "ja": "外部BIOS/ファームウェアファイルを使用",
+    "de": "Verwenden Sie externe BIOS-/Firmwaredateien",
+    "es": "Utilice archivos de BIOS/firmware externos",
+    "fr": "Utiliser des fichiers BIOS/firmware externes"
+  },
+  {
+    "en": "DS ARM9 BIOS:",
+    "ja": "DS ARM9 BIOS:",
+    "de": "DS ARM9 BIOS:",
+    "es": "BIOS ARM9:",
+    "fr": "BIOS DS-ARM9 :"
+  },
+  {
+    "en": "DS ARM7 BIOS:",
+    "ja": "DS ARM7 BIOS:",
+    "de": "DS ARM7 BIOS:",
+    "es": "BIOS ARM7:",
+    "fr": "BIOS DSARM7 :"
+  },
+  {
+    "en": "DS firmware:",
+    "ja": "DSファームウェア:",
+    "de": "DS-Firmware:",
+    "es": "Firmware DS:",
+    "fr": "Micrologiciel DS :"
+  },
+  {
+    "en": "DSi ARM9 BIOS:",
+    "ja": "DSi ARM9 BIOS:",
+    "de": "DSi ARM9 BIOS:",
+    "es": "BIOS DSi ARM9:",
+    "fr": "BIOS DSiARM9 :"
+  },
+  {
+    "en": "DSi ARM7 BIOS:",
+    "ja": "DSi ARM7 BIOS:",
+    "de": "DSi ARM7 BIOS:",
+    "es": "BIOS DSi ARM7:",
+    "fr": "BIOS DSiARM7 :"
+  },
+  {
+    "en": "DSi firmware:",
+    "ja": "DSiファームウェア:",
+    "de": "DSi-Firmware:",
+    "es": "Firmware DSi:",
+    "fr": "Micrologiciel DSi :"
+  },
+  {
+    "en": "DSi NAND:",
+    "ja": "DSi NAND:",
+    "de": "DSi-NAND:",
+    "es": "DSi NAND:",
+    "fr": "NAND DSi :"
+  },
+  {
+    "en": "Enable DSi SD card",
+    "ja": "DSi SDカードを有効化",
+    "de": "Aktivieren Sie die DSi-SD-Karte",
+    "es": "Habilitar tarjeta SD DSi",
+    "fr": "Activer la carte SD DSi"
+  },
+  {
+    "en": "Sync SD to folder:",
+    "ja": "SDをフォルダと同期:",
+    "de": "SD mit Ordner synchronisieren:",
+    "es": "Sincronizar SD con la carpeta:",
+    "fr": "Synchroniser la SD avec le dossier :"
+  },
+  {
+    "en": "Read-only SD",
+    "ja": "SDを読み取り専用",
+    "de": "Read-only SD",
+    "es": "SD de solo lectura",
+    "fr": "SD en lecture seule"
+  },
+  {
+    "en": "Image size:",
+    "ja": "イメージサイズ:",
+    "de": "Bildgröße:",
+    "es": "Tamaño de imagen:",
+    "fr": "Taille de l'image :"
+  },
+  {
+    "en": "SD card image:",
+    "ja": "SDカードイメージ:",
+    "de": "SD card image:",
+    "es": "Imagen de la tarjeta SD:",
+    "fr": "SD card image:"
+  },
+  {
+    "en": "DSP HLE",
+    "ja": "DSP HLE",
+    "de": "DSP HLE",
+    "es": "DSP HLE",
+    "fr": "DSP HLE"
+  },
+  {
+    "en": "Enable JIT recompiler",
+    "ja": "JITリコンパイラを有効化",
+    "de": "Aktivieren Sie den JIT-Recompiler",
+    "es": "Habilitar el recompilador JIT",
+    "fr": "Activer le recompilateur JIT"
+  },
+  {
+    "en": "Maximum JIT block size:",
+    "ja": "JIT最大ブロックサイズ:",
+    "de": "Maximale JIT-Blockgröße:",
+    "es": "Tamaño máximo de bloque JIT:",
+    "fr": "Taille maximale du bloc JIT :"
+  },
+  {
+    "en": "Branch optimisations",
+    "ja": "分岐最適化",
+    "de": "Filialoptimierungen",
+    "es": "Optimizaciones de sucursales",
+    "fr": "Optimisations des succursales"
+  },
+  {
+    "en": "Literal optimisations",
+    "ja": "リテラル最適化",
+    "de": "Wörtliche Optimierungen",
+    "es": "Optimizaciones literales",
+    "fr": "Optimisations littérales"
+  },
+  {
+    "en": "Fast memory",
+    "ja": "高速メモリ",
+    "de": "Schneller Speicher",
+    "es": "memoria rapida",
+    "fr": "Mémoire rapide"
+  },
+  {
+    "en": "Enable DLDI (for homebrew)",
+    "ja": "DLDIを有効化 (homebrew用)",
+    "de": "DLDI aktivieren (für Homebrew)",
+    "es": "Habilitar DLDI (para cerveza casera)",
+    "fr": "Activer DLDI (pour homebrew)"
+  },
+  {
+    "en": "Enable GDB stub",
+    "ja": "GDBスタブを有効化",
+    "de": "GDB-Stub aktivieren",
+    "es": "Habilitar código auxiliar de GDB",
+    "fr": "Activer le stub GDB"
+  },
+  {
+    "en": "ARM9 port",
+    "ja": "ARM9ポート",
+    "de": "ARM9-Port",
+    "es": "Puerto ARM9",
+    "fr": "Port ARM9"
+  },
+  {
+    "en": "ARM7 port",
+    "ja": "ARM7ポート",
+    "de": "ARM7-Port",
+    "es": "Puerto ARM7",
+    "fr": "Port ARM7"
+  },
+  {
+    "en": "Break on startup",
+    "ja": "起動時にブレーク",
+    "de": "Pause beim Start",
+    "es": "Romper al iniciar",
+    "fr": "Pause au démarrage"
+  },
+  {
+    "en": "Note: melonDS must be restarted in order for these changes to have effect",
+    "ja": "注: これらの変更を反映するにはmelonDSの再起動が必要です",
+    "de": "Hinweis: melonDS muss neu gestartet werden, damit diese Änderungen wirksam werden",
+    "es": "Nota: melonDS debe reiniciarse para que estos cambios surtan efecto",
+    "fr": "Remarque : melonDS doit être redémarré pour que ces modifications prennent effet."
+  },
+  {
+    "en": "Note: GDB stub cannot be used together with the JIT recompiler",
+    "ja": "注: GDBスタブはJITリコンパイラと同時には使用できません",
+    "de": "Hinweis: GDB-Stub kann nicht zusammen mit dem JIT-Recompiler verwendet werden",
+    "es": "Nota: El código auxiliar de GDB no se puede utilizar junto con el recompilador JIT.",
+    "fr": "Remarque : le stub GDB ne peut pas être utilisé avec le recompilateur JIT."
+  },
+  {
+    "en": "DS",
+    "ja": "DS",
+    "de": "DS",
+    "es": "DS",
+    "fr": "DS"
+  },
+  {
+    "en": "DSi (experimental)",
+    "ja": "DSi (実験的)",
+    "de": "DSi (experimentell)",
+    "es": "DSi (experimental)",
+    "fr": "DSi (expérimental)"
+  },
+  {
+    "en": "Display settings",
+    "ja": "表示設定",
+    "de": "Anzeigeeinstellungen",
+    "es": "Configuración de pantalla",
+    "fr": "Paramètres d'affichage"
+  },
+  {
+    "en": "OpenGL renderer",
+    "ja": "OpenGLレンダラー",
+    "de": "OpenGL-Renderer",
+    "es": "Representador OpenGL",
+    "fr": "Moteur de rendu OpenGL"
+  },
+  {
+    "en": "Software renderer",
+    "ja": "ソフトウェアレンダラー",
+    "de": "Software-Renderer",
+    "es": "renderizador de software",
+    "fr": "Logiciel de rendu"
+  },
+  {
+    "en": "Renderer:",
+    "ja": "レンダラー:",
+    "de": "Renderer:",
+    "es": "Renderizador:",
+    "fr": "Moteur de rendu :"
+  },
+  {
+    "en": "Software",
+    "ja": "ソフトウェア",
+    "de": "Software",
+    "es": "Software",
+    "fr": "Logiciel"
+  },
+  {
+    "en": "OpenGL (Classic)",
+    "ja": "OpenGL (Classic)",
+    "de": "OpenGL (klassisch)",
+    "es": "OpenGL (clásico)",
+    "fr": "OpenGL (classique)"
+  },
+  {
+    "en": "OpenGL (Compute shader)",
+    "ja": "OpenGL (Compute shader)",
+    "de": "OpenGL (Compute-Shader)",
+    "es": "OpenGL (sombreador informático)",
+    "fr": "OpenGL (shader de calcul)"
+  },
+  {
+    "en": "OpenGL display",
+    "ja": "OpenGL表示",
+    "de": "OpenGL-Anzeige",
+    "es": "Pantalla OpenGL",
+    "fr": "Affichage OpenGL"
+  },
+  {
+    "en": "VSync",
+    "ja": "VSync",
+    "de": "VSync",
+    "es": "sincronización virtual",
+    "fr": "Synchronisation virtuelle"
+  },
+  {
+    "en": "VSync interval:",
+    "ja": "VSync間隔:",
+    "de": "VSync-Intervall:",
+    "es": "Intervalo VSync:",
+    "fr": "Intervalle de synchronisation V :"
+  },
+  {
+    "en": "Internal resolution:",
+    "ja": "内部解像度:",
+    "de": "Interne Auflösung:",
+    "es": "Resolución interna:",
+    "fr": "Résolution interne :"
+  },
+  {
+    "en": "Improved polygon splitting",
+    "ja": "ポリゴン分割の改善",
+    "de": "Verbesserte Polygonaufteilung",
+    "es": "División de polígonos mejorada",
+    "fr": "Division améliorée des polygones"
+  },
+  {
+    "en": "Use high resolution coordinates",
+    "ja": "高解像度座標を使用",
+    "de": "Verwenden Sie hochauflösende Koordinaten",
+    "es": "Utilice coordenadas de alta resolución.",
+    "fr": "Utiliser des coordonnées haute résolution"
+  },
+  {
+    "en": "Use separate thread",
+    "ja": "別スレッドを使用",
+    "de": "Separaten Thread verwenden",
+    "es": "Usar hilo separado",
+    "fr": "Utiliser un fil de discussion séparé"
+  },
+  {
+    "en": "Configure emulated camera:",
+    "ja": "エミュレートカメラを設定:",
+    "de": "Emulierte Kamera konfigurieren:",
+    "es": "Configurar cámara emulada:",
+    "fr": "Configurer la caméra émulée :"
+  },
+  {
+    "en": "Picture source",
+    "ja": "画像ソース",
+    "de": "Bildquelle",
+    "es": "fuente de la imagen",
+    "fr": "Source de l'image"
+  },
+  {
+    "en": "Picture settings",
+    "ja": "画像設定",
+    "de": "Bildeinstellungen",
+    "es": "Configuración de imagen",
+    "fr": "Paramètres d'image"
+  },
+  {
+    "en": "None (blank)",
+    "ja": "なし (空白)",
+    "de": "Keine (leer)",
+    "es": "Ninguno (en blanco)",
+    "fr": "Aucun (vide)"
+  },
+  {
+    "en": "Image file:",
+    "ja": "画像ファイル:",
+    "de": "Bilddatei:",
+    "es": "Archivo de imagen:",
+    "fr": "Fichier image :"
+  },
+  {
+    "en": "Physical camera:",
+    "ja": "物理カメラ:",
+    "de": "Physische Kamera:",
+    "es": "Cámara física:",
+    "fr": "Caméra physique :"
+  },
+  {
+    "en": "Flip horizontally",
+    "ja": "左右反転",
+    "de": "Horizontal spiegeln",
+    "es": "Voltear horizontalmente",
+    "fr": "Retourner horizontalement"
+  },
+  {
+    "en": "DSi outer camera",
+    "ja": "DSi外側カメラ",
+    "de": "DSi-Außenkamera",
+    "es": "cámara exterior dsi",
+    "fr": "Caméra extérieure DSi"
+  },
+  {
+    "en": "DSi inner camera",
+    "ja": "DSi内側カメラ",
+    "de": "DSi-Innenkamera",
+    "es": "Cámara interior DSi",
+    "fr": "Caméra intérieure DSi"
+  },
+  {
+    "en": "Audio output",
+    "ja": "音声出力",
+    "de": "Audioausgabe",
+    "es": "Salida de audio",
+    "fr": "Sortie audio"
+  },
+  {
+    "en": "Microphone input",
+    "ja": "マイク入力",
+    "de": "Mikrofoneingang",
+    "es": "Entrada de micrófono",
+    "fr": "Entrée micro"
+  },
+  {
+    "en": "Interpolation:",
+    "ja": "補間:",
+    "de": "Interpolation:",
+    "es": "Interpolación:",
+    "fr": "Interpolation:"
+  },
+  {
+    "en": "Bit depth:",
+    "ja": "ビット深度:",
+    "de": "Bittiefe:",
+    "es": "Profundidad de bits:",
+    "fr": "Profondeur de bits :"
+  },
+  {
+    "en": "Volume:",
+    "ja": "音量:",
+    "de": "Volumen:",
+    "es": "Volumen:",
+    "fr": "Volume:"
+  },
+  {
+    "en": "Sync with DSi volume",
+    "ja": "DSi音量と同期",
+    "de": "Mit DSi-Volume synchronisieren",
+    "es": "Sincronizar con el volumen DSi",
+    "fr": "Synchroniser avec le volume DSi"
+  },
+  {
+    "en": "None",
+    "ja": "なし",
+    "de": "Keiner",
+    "es": "Ninguno",
+    "fr": "Aucun"
+  },
+  {
+    "en": "Linear",
+    "ja": "線形",
+    "de": "Linear",
+    "es": "Lineal",
+    "fr": "Linéaire"
+  },
+  {
+    "en": "Cosine",
+    "ja": "コサイン",
+    "de": "Kosinus",
+    "es": "Coseno",
+    "fr": "Cosinus"
+  },
+  {
+    "en": "Cubic",
+    "ja": "三次",
+    "de": "Kubisch",
+    "es": "Cúbico",
+    "fr": "Cubique"
+  },
+  {
+    "en": "Gaussian (SNES)",
+    "ja": "ガウス (SNES)",
+    "de": "Gauß (SNES)",
+    "es": "Gaussiano (SNES)",
+    "fr": "Gaussienne (SNES)"
+  },
+  {
+    "en": "Automatic",
+    "ja": "自動",
+    "de": "Automatisch",
+    "es": "Automático",
+    "fr": "Automatique"
+  },
+  {
+    "en": "10-bit",
+    "ja": "10-bit",
+    "de": "10-Bit",
+    "es": "10 bits",
+    "fr": "10 bits"
+  },
+  {
+    "en": "16-bit",
+    "ja": "16-bit",
+    "de": "16-Bit",
+    "es": "16 bits",
+    "fr": "16 bits"
+  },
+  {
+    "en": "External microphone",
+    "ja": "外部マイク",
+    "de": "Externes Mikrofon",
+    "es": "micrófono externo",
+    "fr": "Microphone externe"
+  },
+  {
+    "en": "Blow noise",
+    "ja": "吹き込みノイズ",
+    "de": "Blasgeräusch",
+    "es": "Ruido de golpe",
+    "fr": "Bruit de coup"
+  },
+  {
+    "en": "WAV file:",
+    "ja": "WAVファイル:",
+    "de": "WAV-Datei:",
+    "es": "Archivo WAV:",
+    "fr": "Fichier WAV :"
+  },
+  {
+    "en": "Joystick:",
+    "ja": "ジョイスティック:",
+    "de": "Joystick:",
+    "es": "Palanca de mando:",
+    "fr": "Manette :"
+  },
+  {
+    "en": "(no joysticks available)",
+    "ja": "(利用可能なジョイスティックがありません)",
+    "de": "(keine Joysticks verfügbar)",
+    "es": "(no hay joysticks disponibles)",
+    "fr": "(pas de joysticks disponibles)"
+  },
+  {
+    "en": "Pause/resume",
+    "ja": "一時停止/再開",
+    "de": "Anhalten/fortsetzen",
+    "es": "Pausar/reanudar",
+    "fr": "Pause/reprise"
+  },
+  {
+    "en": "Fast forward",
+    "ja": "早送り",
+    "de": "Schneller Vorlauf",
+    "es": "Avance rápido",
+    "fr": "Avance rapide"
+  },
+  {
+    "en": "Toggle fast forward",
+    "ja": "早送り切替",
+    "de": "Schnellvorlauf umschalten",
+    "es": "Alternar avance rápido",
+    "fr": "Activer l'avance rapide"
+  },
+  {
+    "en": "Slow mo",
+    "ja": "スローモーション",
+    "de": "Langsam",
+    "es": "cámara lenta",
+    "fr": "Mouvement lent"
+  },
+  {
+    "en": "Toggle slow mo",
+    "ja": "スローモーション切替",
+    "de": "Zeitlupe umschalten",
+    "es": "Alternar cámara lenta",
+    "fr": "Basculer au ralenti"
+  },
+  {
+    "en": "Toggle FPS limit",
+    "ja": "FPS制限切替",
+    "de": "FPS-Limit umschalten",
+    "es": "Alternar límite de FPS",
+    "fr": "Basculer la limite FPS"
+  },
+  {
+    "en": "Toggle fullscreen",
+    "ja": "全画面切替",
+    "de": "Vollbild umschalten",
+    "es": "Alternar pantalla completa",
+    "fr": "Basculer en plein écran"
+  },
+  {
+    "en": "Close/open lid",
+    "ja": "蓋を閉じる/開く",
+    "de": "Deckel schließen/öffnen",
+    "es": "Cerrar/abrir tapa",
+    "fr": "Fermer/ouvrir le couvercle"
+  },
+  {
+    "en": "Microphone",
+    "ja": "マイク",
+    "de": "Mikrofon",
+    "es": "Micrófono",
+    "fr": "Microphone"
+  },
+  {
+    "en": "Swap screen emphasis",
+    "ja": "画面強調入替",
+    "de": "Bildschirmbetonung vertauschen",
+    "es": "Cambiar énfasis de pantalla",
+    "fr": "Changer l'accentuation de l'écran"
+  },
+  {
+    "en": "DSi Power button",
+    "ja": "DSi電源ボタン",
+    "de": "DSi-Power-Taste",
+    "es": "Botón de encendido DSi",
+    "fr": "Bouton d'alimentation DSi"
+  },
+  {
+    "en": "DSi Volume up",
+    "ja": "DSi音量アップ",
+    "de": "DSi-Lautstärke erhöhen",
+    "es": "Subir volumen DSi",
+    "fr": "DSi Augmenter le volume"
+  },
+  {
+    "en": "DSi Volume down",
+    "ja": "DSi音量ダウン",
+    "de": "DSi-Lautstärke verringern",
+    "es": "Bajar volumen DSi",
+    "fr": "DSi Baisser le volume"
+  },
+  {
+    "en": "Toggle audio mute",
+    "ja": "音声ミュート切替",
+    "de": "Schalten Sie die Audio-Stummschaltung um",
+    "es": "Alternar silencio de audio",
+    "fr": "Activer la sourdine audio"
+  },
+  {
+    "en": "Multiplayer settings - melonDS",
+    "ja": "マルチプレイ設定 - melonDS",
+    "de": "Multiplayer-Einstellungen – melonDS",
+    "es": "Configuración multijugador - melonDS",
+    "fr": "Paramètres multijoueurs - melonDS"
+  },
+  {
+    "en": "Network",
+    "ja": "ネットワーク",
+    "de": "Netzwerk",
+    "es": "Red",
+    "fr": "Réseau"
+  },
+  {
+    "en": "Instance 1 only",
+    "ja": "インスタンス1のみ",
+    "de": "Nur Instanz 1",
+    "es": "Solo instancia 1",
+    "fr": "Instance 1 uniquement"
+  },
+  {
+    "en": "All instances",
+    "ja": "すべてのインスタンス",
+    "de": "Alle Instanzen",
+    "es": "Todas las instancias",
+    "fr": "Toutes les instances"
+  },
+  {
+    "en": "Active instance only",
+    "ja": "アクティブなインスタンスのみ",
+    "de": "Nur aktive Instanz",
+    "es": "Solo instancia activa",
+    "fr": "Instance active uniquement"
+  },
+  {
+    "en": "Data reception timeout: ",
+    "ja": "データ受信タイムアウト: ",
+    "de": "Zeitüberschreitung beim Datenempfang:",
+    "es": "Tiempo de espera de recepción de datos:",
+    "fr": "Délai d'expiration de la réception des données :"
+  },
+  {
+    "en": "milliseconds",
+    "ja": "ミリ秒",
+    "de": "Millisekunden",
+    "es": "milisegundos",
+    "fr": "millisecondes"
+  },
+  {
+    "en": "Wifi settings - melonDS",
+    "ja": "Wi-Fi設定 - melonDS",
+    "de": "WLAN-Einstellungen – melonDS",
+    "es": "Configuración wifi - melonDS",
+    "fr": "Paramètres Wifi - melonDS"
+  },
+  {
+    "en": "Network mode",
+    "ja": "ネットワークモード",
+    "de": "Netzwerkmodus",
+    "es": "Modo de red",
+    "fr": "Mode réseau"
+  },
+  {
+    "en": "Indirect mode (uses libslirp, recommended)",
+    "ja": "間接モード (libslirp使用、推奨)",
+    "de": "Indirekter Modus (verwendet libslirp, empfohlen)",
+    "es": "Modo indirecto (usa libslirp, recomendado)",
+    "fr": "Mode indirect (utilise libslirp, recommandé)"
+  },
+  {
+    "en": "Direct mode [TEXT PLACEHOLDER]",
+    "ja": "ダイレクトモード [TEXT PLACEHOLDER]",
+    "de": "Direktmodus [TEXT PLATZHALTER]",
+    "es": "Modo directo [MARCADOR DE TEXTO]",
+    "fr": "Mode direct [TEXT PLACEHOLDER]"
+  },
+  {
+    "en": "Direct mode settings",
+    "ja": "ダイレクトモード設定",
+    "de": "Direktmodus-Einstellungen",
+    "es": "Configuración del modo directo",
+    "fr": "Paramètres du mode direct"
+  },
+  {
+    "en": "MAC address:",
+    "ja": "MACアドレス:",
+    "de": "MAC-Adresse:",
+    "es": "Dirección MAC:",
+    "fr": "Adresse MAC :"
+  },
+  {
+    "en": "Network adapter:",
+    "ja": "ネットワークアダプター:",
+    "de": "Netzwerkadapter:",
+    "es": "Adaptador de red:",
+    "fr": "Adaptateur réseau :"
+  },
+  {
+    "en": "IP address:",
+    "ja": "IPアドレス:",
+    "de": "IP-Adresse:",
+    "es": "dirección IP:",
+    "fr": "Adresse IP :"
+  },
+  {
+    "en": "(none)",
+    "ja": "(なし)",
+    "de": "(keiner)",
+    "es": "(ninguno)",
+    "fr": "(aucun)"
+  },
+  {
+    "en": "Firmware settings - melonDS",
+    "ja": "ファームウェア設定 - melonDS",
+    "de": "Firmware-Einstellungen – melonDS",
+    "es": "Configuración del firmware - melonDS",
+    "fr": "Paramètres du micrologiciel - melonDS"
+  },
+  {
+    "en": "Override settings from external firmware",
+    "ja": "外部ファームウェアの設定を上書き",
+    "de": "Überschreiben Sie die Einstellungen der externen Firmware",
+    "es": "Anular la configuración del firmware externo",
+    "fr": "Remplacer les paramètres du micrologiciel externe"
+  },
+  {
+    "en": "User settings",
+    "ja": "ユーザー設定",
+    "de": "Benutzereinstellungen",
+    "es": "Configuraciones de usuario",
+    "fr": "Paramètres utilisateur"
+  },
+  {
+    "en": "Username:",
+    "ja": "ユーザー名:",
+    "de": "Benutzername:",
+    "es": "Nombre de usuario:",
+    "fr": "Nom d'utilisateur:"
+  },
+  {
+    "en": "Message:",
+    "ja": "メッセージ:",
+    "de": "Nachricht:",
+    "es": "Mensaje:",
+    "fr": "Message:"
+  },
+  {
+    "en": "Color:",
+    "ja": "色:",
+    "de": "Farbe:",
+    "es": "Color:",
+    "fr": "Couleur:"
+  },
+  {
+    "en": "Language:",
+    "ja": "言語:",
+    "de": "Sprache:",
+    "es": "Idioma:",
+    "fr": "Langue:"
+  },
+  {
+    "en": "Birthday:",
+    "ja": "誕生日:",
+    "de": "Geburtstag:",
+    "es": "Cumpleaños:",
+    "fr": "Anniversaire:"
+  },
+  {
+    "en": "Network settings",
+    "ja": "ネットワーク設定",
+    "de": "Netzwerkeinstellungen",
+    "es": "Configuración de red",
+    "fr": "Paramètres réseau"
+  },
+  {
+    "en": "(leave empty to use default MAC)",
+    "ja": "(空欄で既定MACを使用)",
+    "de": "(Leer lassen, um Standard-MAC zu verwenden)",
+    "es": "(déjelo vacío para usar la MAC predeterminada)",
+    "fr": "(laissez vide pour utiliser le MAC par défaut)"
+  },
+  {
+    "en": "Interface settings - melonDS",
+    "ja": "インターフェース設定 - melonDS",
+    "de": "Schnittstelleneinstellungen – melonDS",
+    "es": "Configuración de la interfaz - melonDS",
+    "fr": "Paramètres de l'interface - melonDS"
+  },
+  {
+    "en": "User interface",
+    "ja": "ユーザーインターフェース",
+    "de": "Benutzeroberfläche",
+    "es": "Interfaz de usuario",
+    "fr": "Interface utilisateur"
+  },
+  {
+    "en": "Theme",
+    "ja": "テーマ",
+    "de": "Thema",
+    "es": "Tema",
+    "fr": "Thème"
+  },
+  {
+    "en": "System default",
+    "ja": "システム標準",
+    "de": "Systemstandard",
+    "es": "Valor predeterminado del sistema",
+    "fr": "Valeur par défaut du système"
+  },
+  {
+    "en": "Hide mouse after inactivity",
+    "ja": "非操作時にマウスを隠す",
+    "de": "Maus nach Inaktivität ausblenden",
+    "es": "Ocultar el mouse después de la inactividad",
+    "fr": "Masquer la souris après inactivité"
+  },
+  {
+    "en": "After",
+    "ja": "待機",
+    "de": "Nach",
+    "es": "Después",
+    "fr": "Après"
+  },
+  {
+    "en": "seconds",
+    "ja": "秒",
+    "de": "Sekunden",
+    "es": "artículos de segunda clase",
+    "fr": "secondes"
+  },
+  {
+    "en": "Pause emulation when window is not in focus",
+    "ja": "ウィンドウ非フォーカス時にエミュレーションを一時停止",
+    "de": "Unterbrechen Sie die Emulation, wenn das Fenster nicht im Fokus ist",
+    "es": "Pausar la emulación cuando la ventana no está enfocada",
+    "fr": "Suspendre l'émulation lorsque la fenêtre n'est pas mise au point"
+  },
+  {
+    "en": "Mute audio while fast forwarding",
+    "ja": "早送り中は音声をミュート",
+    "de": "Schalten Sie den Ton beim schnellen Vorlauf stumm",
+    "es": "Silenciar el audio durante el avance rápido",
+    "fr": "Couper le son pendant l'avance rapide"
+  },
+  {
+    "en": "Framerate ",
+    "ja": "フレームレート ",
+    "de": "Framerate",
+    "es": "Velocidad de fotogramas",
+    "fr": "Fréquence d'images"
+  },
+  {
+    "en": "Target FPS",
+    "ja": "目標FPS",
+    "de": "Ziel-FPS",
+    "es": "FPS objetivo",
+    "fr": "Cibler les FPS"
+  },
+  {
+    "en": "Fast-Forward",
+    "ja": "早送り",
+    "de": "Schneller Vorlauf",
+    "es": "Avance rápido",
+    "fr": "Avance rapide"
+  },
+  {
+    "en": " FPS",
+    "ja": " FPS",
+    "de": "FPS",
+    "es": "FPS",
+    "fr": "FPS"
+  },
+  {
+    "en": "Slow-Mo",
+    "ja": "スローモーション",
+    "de": "Zeitlupe",
+    "es": "cámara lenta",
+    "fr": "Ralenti"
+  },
+  {
+    "en": "Accurate",
+    "ja": "正確",
+    "de": "Genau",
+    "es": "Preciso",
+    "fr": "Précis"
+  },
+  {
+    "en": "Clean",
+    "ja": "クリーン",
+    "de": "Sauber",
+    "es": "Limpio",
+    "fr": "Faire le ménage"
+  },
+  {
+    "en": "1/4",
+    "ja": "1/4",
+    "de": "1/4",
+    "es": "1/4",
+    "fr": "1/4"
+  },
+  {
+    "en": "1/2",
+    "ja": "1/2",
+    "de": "1/2",
+    "es": "1/2",
+    "fr": "1/2"
+  },
+  {
+    "en": "2x",
+    "ja": "2x",
+    "de": "2x",
+    "es": "2x",
+    "fr": "2x"
+  },
+  {
+    "en": "3x",
+    "ja": "3x",
+    "de": "3x",
+    "es": "3x",
+    "fr": "3x"
+  },
+  {
+    "en": "MAX",
+    "ja": "MAX",
+    "de": "MAX",
+    "es": "MÁXIMO",
+    "fr": "MAXIMUM"
+  },
+  {
+    "en": "Path settings - melonDS",
+    "ja": "パス設定 - melonDS",
+    "de": "Pfadeinstellungen – melonDS",
+    "es": "Configuración de ruta - melonDS",
+    "fr": "Paramètres du chemin - melonDS"
+  },
+  {
+    "en": "Cheat files path:",
+    "ja": "チートファイルのパス:",
+    "de": "Pfad der Cheat-Dateien:",
+    "es": "Ruta de los archivos de trucos:",
+    "fr": "Chemin des fichiers de triche :"
+  },
+  {
+    "en": "Savestates path:",
+    "ja": "ステートセーブのパス:",
+    "de": "Savestates path:",
+    "es": "Ruta de estados guardados:",
+    "fr": "Chemin des états de sauvegarde :"
+  },
+  {
+    "en": "Save files path:",
+    "ja": "セーブファイルのパス:",
+    "de": "Dateipfad speichern:",
+    "es": "Ruta para guardar archivos:",
+    "fr": "Chemin d'enregistrement des fichiers :"
+  },
+  {
+    "en": "Leave a path blank to use the current ROM's path.",
+    "ja": "空欄の場合は現在のROMと同じパスを使用します。",
+    "de": "Lassen Sie einen Pfad leer, um den Pfad des aktuellen ROM zu verwenden.",
+    "es": "Deje una ruta en blanco para usar la ruta de la ROM actual.",
+    "fr": "Laissez un chemin vide pour utiliser le chemin de la ROM actuelle."
+  },
+  {
+    "en": "Cheat code editor - melonDS",
+    "ja": "チートコード編集 - melonDS",
+    "de": "Cheat-Code-Editor – melonDS",
+    "es": "Editor de códigos de trucos - melonDS",
+    "fr": "Éditeur de code de triche - melonDS"
+  },
+  {
+    "en": "New category",
+    "ja": "新しいカテゴリ",
+    "de": "Neue Kategorie",
+    "es": "Nueva categoría",
+    "fr": "Nouvelle catégorie"
+  },
+  {
+    "en": "New AR code",
+    "ja": "新しいARコード",
+    "de": "Neuer AR-Code",
+    "es": "Nuevo código AR",
+    "fr": "Nouveau code AR"
+  },
+  {
+    "en": "Import...",
+    "ja": "インポート...",
+    "de": "Import...",
+    "es": "Importar...",
+    "fr": "Importer..."
+  },
+  {
+    "en": "Cancel edit",
+    "ja": "編集をキャンセル",
+    "de": "Bearbeitung abbrechen",
+    "es": "Cancelar edición",
+    "fr": "Annuler la modification"
+  },
+  {
+    "en": "Delete",
+    "ja": "削除",
+    "de": "Löschen",
+    "es": "Borrar",
+    "fr": "Supprimer"
+  },
+  {
+    "en": "Name:",
+    "ja": "名前:",
+    "de": "Name:",
+    "es": "Nombre:",
+    "fr": "Nom:"
+  },
+  {
+    "en": "Description:",
+    "ja": "説明:",
+    "de": "Beschreibung:",
+    "es": "Descripción:",
+    "fr": "Description:"
+  },
+  {
+    "en": "Code:",
+    "ja": "コード:",
+    "de": "Code:",
+    "es": "Código:",
+    "fr": "Code:"
+  },
+  {
+    "en": "Enabled",
+    "ja": "有効",
+    "de": "Ermöglicht",
+    "es": "Activado",
+    "fr": "Activé"
+  },
+  {
+    "en": "Only allow one code enabled",
+    "ja": "有効にできるコードは1つのみ",
+    "de": "Nur einen aktivierten Code zulassen",
+    "es": "Solo permitir un código habilitado",
+    "fr": "Autoriser un seul code activé"
+  },
+  {
+    "en": "Power management - melonDS",
+    "ja": "電源管理 - melonDS",
+    "de": "Energieverwaltung – melonDS",
+    "es": "Gestión de energía - melonDS",
+    "fr": "Gestion de l'alimentation - melonDS"
+  },
+  {
+    "en": "DSi Battery",
+    "ja": "DSiバッテリー",
+    "de": "DSi-Akku",
+    "es": "Batería DSi",
+    "fr": "Batterie DSi"
+  },
+  {
+    "en": "DS Battery",
+    "ja": "DSバッテリー",
+    "de": "DS-Batterie",
+    "es": "Batería DS",
+    "fr": "Batterie DS"
+  },
+  {
+    "en": "Almost Empty",
+    "ja": "ほぼ空",
+    "de": "Fast leer",
+    "es": "Casi vacío",
+    "fr": "Presque vide"
+  },
+  {
+    "en": "Charging",
+    "ja": "充電中",
+    "de": "Aufladen",
+    "es": "Cargando",
+    "fr": "Chargement"
+  },
+  {
+    "en": "Full",
+    "ja": "満充電",
+    "de": "Voll",
+    "es": "Lleno",
+    "fr": "Complet"
+  },
+  {
+    "en": "Battery Level",
+    "ja": "バッテリー残量",
+    "de": "Batteriestand",
+    "es": "Nivel de batería",
+    "fr": "Niveau de batterie"
+  },
+  {
+    "en": "Low",
+    "ja": "ä½",
+    "de": "Niedrig",
+    "es": "Bajo",
+    "fr": "Faible"
+  },
+  {
+    "en": "Okay",
+    "ja": "良好",
+    "de": "Okay",
+    "es": "Bueno",
+    "fr": "D'accord"
+  },
+  {
+    "en": "Date and time - melonDS",
+    "ja": "日付と時刻 - melonDS",
+    "de": "Datum und Uhrzeit – melonDS",
+    "es": "Fecha y hora - melónDS",
+    "fr": "Date et heure - melonDS"
+  },
+  {
+    "en": "Reset to system date and time",
+    "ja": "システム日時にリセット",
+    "de": "Zurücksetzen auf Systemdatum und -uhrzeit",
+    "es": "Restablecer la fecha y hora del sistema",
+    "fr": "Réinitialiser la date et l'heure du système"
+  },
+  {
+    "en": "Current value:",
+    "ja": "現在の値:",
+    "de": "Aktueller Wert:",
+    "es": "Valor actual:",
+    "fr": "Valeur actuelle :"
+  },
+  {
+    "en": "Change to:",
+    "ja": "変更先:",
+    "de": "Ändern zu:",
+    "es": "Cambiar a:",
+    "fr": "Remplacer par :"
+  },
+  {
+    "en": "Synchronize to system date and time",
+    "ja": "システム日時と同期",
+    "de": "Synchronisieren Sie Datum und Uhrzeit mit dem System",
+    "es": "Sincronizar con la fecha y hora del sistema",
+    "fr": "Synchroniser avec la date et l'heure du système"
+  },
+  {
+    "en": "ROM info - melonDS",
+    "ja": "ROM情報 - melonDS",
+    "de": "ROM info - melonDS",
+    "es": "Información ROM - melónDS",
+    "fr": "Informations ROM - melonDS"
+  },
+  {
+    "en": "Titles",
+    "ja": "タイトル",
+    "de": "Titel",
+    "es": "Títulos",
+    "fr": "Titres"
+  },
+  {
+    "en": "Japanese title:",
+    "ja": "日本語タイトル:",
+    "de": "Japanischer Titel:",
+    "es": "Título japonés:",
+    "fr": "Titre japonais :"
+  },
+  {
+    "en": "English title:",
+    "ja": "英語タイトル:",
+    "de": "Englischer Titel:",
+    "es": "Título en inglés:",
+    "fr": "Titre anglais :"
+  },
+  {
+    "en": "French title:",
+    "ja": "フランス語タイトル:",
+    "de": "Französischer Titel:",
+    "es": "Título francés:",
+    "fr": "Titre français :"
+  },
+  {
+    "en": "German title:",
+    "ja": "ドイツ語タイトル:",
+    "de": "Deutscher Titel:",
+    "es": "Título alemán:",
+    "fr": "Titre allemand :"
+  },
+  {
+    "en": "Italian title:",
+    "ja": "イタリア語タイトル:",
+    "de": "Italienischer Titel:",
+    "es": "Título italiano:",
+    "fr": "Titre italien :"
+  },
+  {
+    "en": "Spanish title:",
+    "ja": "スペイン語タイトル:",
+    "de": "Spanischer Titel:",
+    "es": "Título en español:",
+    "fr": "Titre espagnol :"
+  },
+  {
+    "en": "Chinese title:",
+    "ja": "中国語タイトル:",
+    "de": "Chinesischer Titel:",
+    "es": "Título chino:",
+    "fr": "Titre chinois :"
+  },
+  {
+    "en": "Korean title:",
+    "ja": "韓国語タイトル:",
+    "de": "Koreanischer Titel:",
+    "es": "Título coreano:",
+    "fr": "Titre coréen :"
+  },
+  {
+    "en": "ARM7 and ARM9 binaries",
+    "ja": "ARM7/ARM9バイナリ",
+    "de": "ARM7- und ARM9-Binärdateien",
+    "es": "Binarios ARM7 y ARM9",
+    "fr": "Binaires ARM7 et ARM9"
+  },
+  {
+    "en": "ARM9 ROM offset: ",
+    "ja": "ARM9 ROMオフセット: ",
+    "de": "ARM9 ROM-Offset:",
+    "es": "Desplazamiento de ROM ARM9:",
+    "fr": "Décalage de la ROM ARM9 :"
+  },
+  {
+    "en": "ARM9 entry address:",
+    "ja": "ARM9エントリアドレス:",
+    "de": "ARM9-Eintragsadresse:",
+    "es": "Dirección de entrada ARM9:",
+    "fr": "Adresse d'entrée ARM9 :"
+  },
+  {
+    "en": "ARM9 RAM address:",
+    "ja": "ARM9 RAMアドレス:",
+    "de": "ARM9-RAM-Adresse:",
+    "es": "Dirección RAM ARM9:",
+    "fr": "Adresse RAM ARM9 :"
+  },
+  {
+    "en": "ARM9 size:",
+    "ja": "ARM9サイズ:",
+    "de": "ARM9-Größe:",
+    "es": "Tamaño ARM9:",
+    "fr": "Taille ARM9 :"
+  },
+  {
+    "en": "ARM7 ROM offset: ",
+    "ja": "ARM7 ROMオフセット: ",
+    "de": "ARM7 ROM-Offset:",
+    "es": "Desplazamiento de ROM ARM7:",
+    "fr": "Décalage de la ROM ARM7 :"
+  },
+  {
+    "en": "ARM7 entry address:",
+    "ja": "ARM7エントリアドレス:",
+    "de": "ARM7-Eintragsadresse:",
+    "es": "Dirección de entrada ARM7:",
+    "fr": "Adresse d'entrée ARM7 :"
+  },
+  {
+    "en": "ARM7 RAM address:",
+    "ja": "ARM7 RAMアドレス:",
+    "de": "ARM7-RAM-Adresse:",
+    "es": "Dirección RAM ARM7:",
+    "fr": "Adresse RAM ARM7 :"
+  },
+  {
+    "en": "ARM7 size:",
+    "ja": "ARM7サイズ:",
+    "de": "ARM7-Größe:",
+    "es": "Tamaño ARM7:",
+    "fr": "Taille ARM7 :"
+  },
+  {
+    "en": "Filesystem",
+    "ja": "ファイルシステム",
+    "de": "Dateisystem",
+    "es": "Sistema de archivos",
+    "fr": "Système de fichiers"
+  },
+  {
+    "en": "FNT offset:",
+    "ja": "FNTオフセット:",
+    "de": "FNT-Offset:",
+    "es": "Compensación FNT:",
+    "fr": "Décalage FNT :"
+  },
+  {
+    "en": "FNT size:",
+    "ja": "FNTサイズ:",
+    "de": "FNT-Größe:",
+    "es": "Tamaño FNT:",
+    "fr": "Taille FNT :"
+  },
+  {
+    "en": "FAT offset:",
+    "ja": "FATオフセット:",
+    "de": "FAT-Offset:",
+    "es": "Compensación de grasa:",
+    "fr": "Compensation FAT :"
+  },
+  {
+    "en": "FAT size:",
+    "ja": "FATサイズ:",
+    "de": "FAT-Größe:",
+    "es": "Tamaño GRASA:",
+    "fr": "Taille de graisse :"
+  },
+  {
+    "en": "General info",
+    "ja": "一般情報",
+    "de": "Allgemeine Informationen",
+    "es": "Información general",
+    "fr": "Informations générales"
+  },
+  {
+    "en": "Game title:",
+    "ja": "ゲームタイトル:",
+    "de": "Spieltitel:",
+    "es": "Título del juego:",
+    "fr": "Titre du jeu :"
+  },
+  {
+    "en": "Game code:",
+    "ja": "ゲームコード:",
+    "de": "Spielcode:",
+    "es": "Código del juego:",
+    "fr": "Code du jeu :"
+  },
+  {
+    "en": "Maker code:",
+    "ja": "メーカーコード:",
+    "de": "Herstellercode:",
+    "es": "Código del fabricante:",
+    "fr": "Code du fabricant :"
+  },
+  {
+    "en": "Card size:",
+    "ja": "カードサイズ:",
+    "de": "Kartengröße:",
+    "es": "Tamaño de tarjeta:",
+    "fr": "Taille de la carte :"
+  },
+  {
+    "en": "Save icon",
+    "ja": "セーブアイコン",
+    "de": "Save icon",
+    "es": "Guardar icono",
+    "fr": "Icône Enregistrer"
+  },
+  {
+    "en": "Save animated icon",
+    "ja": "セーブアニメーションアイコン",
+    "de": "Animiertes Symbol speichern",
+    "es": "Guardar icono animado",
+    "fr": "Enregistrer l'icône animée"
+  },
+  {
+    "en": "RAM info - melonDS",
+    "ja": "RAM検索 - melonDS",
+    "de": "RAM-Info – melonDS",
+    "es": "Información de RAM - melónDS",
+    "fr": "Informations sur la RAM - melonDS"
+  },
+  {
+    "en": "Search",
+    "ja": "検索",
+    "de": "Suchen",
+    "es": "Buscar",
+    "fr": "Recherche"
+  },
+  {
+    "en": "Value:",
+    "ja": "値:",
+    "de": "Wert:",
+    "es": "Valor:",
+    "fr": "Valeur:"
+  },
+  {
+    "en": "1byte",
+    "ja": "1バイト",
+    "de": "1 Byte",
+    "es": "1 byte",
+    "fr": "1 octet"
+  },
+  {
+    "en": "2bytes",
+    "ja": "2バイト",
+    "de": "2 Byte",
+    "es": "2 bytes",
+    "fr": "2 octets"
+  },
+  {
+    "en": "4bytes",
+    "ja": "4バイト",
+    "de": "4 Byte",
+    "es": "4 bytes",
+    "fr": "4 octets"
+  },
+  {
+    "en": "Address",
+    "ja": "アドレス",
+    "de": "Adresse",
+    "es": "DIRECCIÓN",
+    "fr": "Adresse"
+  },
+  {
+    "en": "Previous",
+    "ja": "前回の値",
+    "de": "Vorherige",
+    "es": "Anterior",
+    "fr": "Précédent"
+  },
+  {
+    "en": "Found:",
+    "ja": "検出:",
+    "de": "Gefunden:",
+    "es": "Encontró:",
+    "fr": "Trouvé:"
+  },
+  {
+    "en": "Host LAN game - melonDS",
+    "ja": "LANゲームをホスト - melonDS",
+    "de": "Host-LAN-Spiel – melonDS",
+    "es": "Anfitrión del juego LAN - melonDS",
+    "fr": "Jeu LAN hôte - melonDS"
+  },
+  {
+    "en": "Join LAN game - melonDS",
+    "ja": "LANゲームに参加 - melonDS",
+    "de": "Nehmen Sie am LAN-Spiel teil – melonDS",
+    "es": "Unirse al juego LAN - melonDS",
+    "fr": "Rejoignez le jeu LAN - melonDS"
+  },
+  {
+    "en": "Player name:",
+    "ja": "プレイヤー名:",
+    "de": "Spielername:",
+    "es": "Nombre del jugador:",
+    "fr": "Nom du joueur :"
+  },
+  {
+    "en": "Number of players:",
+    "ja": "プレイヤー数:",
+    "de": "Anzahl Spieler:",
+    "es": "Número de jugadores:",
+    "fr": "Nombre de joueurs :"
+  },
+  {
+    "en": "Connect",
+    "ja": "接続",
+    "de": "Verbinden",
+    "es": "Conectar",
+    "fr": "Connecter"
+  },
+  {
+    "en": "Direct connect...",
+    "ja": "直接接続...",
+    "de": "Direktverbindung...",
+    "es": "Conexión directa...",
+    "fr": "Connexion directe..."
+  },
+  {
+    "en": "Direct connect",
+    "ja": "直接接続",
+    "de": "Direkte Verbindung",
+    "es": "Conexión directa",
+    "fr": "Connexion directe"
+  },
+  {
+    "en": "Host address:",
+    "ja": "ホストアドレス:",
+    "de": "Host-Adresse:",
+    "es": "Dirección del anfitrión:",
+    "fr": "Adresse de l'hôte :"
+  },
+  {
+    "en": "Name",
+    "ja": "名前",
+    "de": "Name",
+    "es": "Nombre",
+    "fr": "Nom"
+  },
+  {
+    "en": "Players",
+    "ja": "プレイヤー",
+    "de": "Spieler",
+    "es": "Jugadores",
+    "fr": "Joueurs"
+  },
+  {
+    "en": "Status",
+    "ja": "状態",
+    "de": "Status",
+    "es": "Estado",
+    "fr": "Statut"
+  },
+  {
+    "en": "Host IP",
+    "ja": "ホスト IP",
+    "de": "Host-IP",
+    "es": "IP del host",
+    "fr": "IP de l'hôte"
+  },
+  {
+    "en": "Idle",
+    "ja": "待機中",
+    "de": "Leerlauf",
+    "es": "Inactivo",
+    "fr": "Inactif"
+  },
+  {
+    "en": "Playing",
+    "ja": "プレイ中",
+    "de": "Spielen",
+    "es": "Jugando",
+    "fr": "Jouant"
+  },
+  {
+    "en": "Please enter a player name.",
+    "ja": "プレイヤー名を入力してください。",
+    "de": "Bitte geben Sie einen Spielernamen ein.",
+    "es": "Por favor ingresa un nombre de jugador.",
+    "fr": "Veuillez entrer un nom de joueur."
+  },
+  {
+    "en": "Failed to start LAN game.",
+    "ja": "LANゲームの開始に失敗しました。",
+    "de": "Failed to start LAN game.",
+    "es": "No se pudo iniciar el juego LAN.",
+    "fr": "Échec du démarrage du jeu LAN."
+  },
+  {
+    "en": "Please enter a player name before connecting.",
+    "ja": "接続する前にプレイヤー名を入力してください。",
+    "de": "Bitte geben Sie einen Spielernamen ein, bevor Sie eine Verbindung herstellen.",
+    "es": "Ingrese el nombre de un jugador antes de conectarse.",
+    "fr": "Veuillez entrer un nom de joueur avant de vous connecter."
+  },
+  {
+    "en": "Failed to connect to the host %0.",
+    "ja": "ホスト %0 への接続に失敗しました。",
+    "de": "Es konnte keine Verbindung zum Host %0 hergestellt werden.",
+    "es": "No se pudo conectar con el host %0.",
+    "fr": "Échec de la connexion à l'hôte %0."
+  },
+  {
+    "en": "About melonDS",
+    "ja": "melonDSについて",
+    "de": "Über melonDS",
+    "es": "Acerca de melonDS",
+    "fr": "À propos de melonDS"
+  },
+  {
+    "en": "Visit the &website",
+    "ja": "ウェブサイト(&W)",
+    "de": "Besuchen Sie die &Website",
+    "es": "Visita el sitio web",
+    "fr": "Visitez le &site Web"
+  },
+  {
+    "en": "View on &GitHub",
+    "ja": "GitHub(&G)",
+    "de": "Auf &GitHub ansehen",
+    "es": "Ver en &GitHub",
+    "fr": "Afficher sur &GitHub"
+  },
+  {
+    "en": "&Close",
+    "ja": "閉じる(&C)",
+    "de": "&Schließen",
+    "es": "&Cerca",
+    "fr": "&Fermer"
+  },
+  {
+    "en": "Close",
+    "ja": "閉じる",
+    "de": "Schließen",
+    "es": "Cerca",
+    "fr": "Fermer"
+  },
+  {
+    "en": "Greyish blue",
+    "ja": "灰みの青",
+    "de": "Graublau",
+    "es": "Azul grisáceo",
+    "fr": "Bleu grisâtre"
+  },
+  {
+    "en": "Brown",
+    "ja": "茶色",
+    "de": "Braun",
+    "es": "Marrón",
+    "fr": "Brun"
+  },
+  {
+    "en": "Light pink",
+    "ja": "薄いピンク",
+    "de": "Hellrosa",
+    "es": "rosa claro",
+    "fr": "Rose clair"
+  },
+  {
+    "en": "Lime",
+    "ja": "ライム",
+    "de": "Kalk",
+    "es": "Cal",
+    "fr": "Citron vert"
+  },
+  {
+    "en": "Light green",
+    "ja": "薄い緑",
+    "de": "Hellgrün",
+    "es": "Verde claro",
+    "fr": "Vert clair"
+  },
+  {
+    "en": "Dark green",
+    "ja": "濃い緑",
+    "de": "Dunkelgrün",
+    "es": "verde oscuro",
+    "fr": "Vert foncé"
+  },
+  {
+    "en": "Turquoise",
+    "ja": "ターコイズ",
+    "de": "Türkis",
+    "es": "Turquesa",
+    "fr": "Turquoise"
+  },
+  {
+    "en": "Light blue",
+    "ja": "薄い青",
+    "de": "Hellblau",
+    "es": "azul claro",
+    "fr": "Bleu clair"
+  },
+  {
+    "en": "Blue",
+    "ja": "青",
+    "de": "Blau",
+    "es": "Azul",
+    "fr": "Bleu"
+  },
+  {
+    "en": "Dark blue",
+    "ja": "濃い青",
+    "de": "Dunkelblau",
+    "es": "azul oscuro",
+    "fr": "Bleu foncé"
+  },
+  {
+    "en": "Dark purple",
+    "ja": "濃い紫",
+    "de": "Dunkelviolett",
+    "es": "morado oscuro",
+    "fr": "Violet foncé"
+  },
+  {
+    "en": "Light purple",
+    "ja": "薄い紫",
+    "de": "Hellviolett",
+    "es": "violeta claro",
+    "fr": "Violet clair"
+  },
+  {
+    "en": "Dark pink",
+    "ja": "濃いピンク",
+    "de": "Dunkelrosa",
+    "es": "rosa oscuro",
+    "fr": "Rose foncé"
+  },
+  {
+    "en": "Italian",
+    "ja": "イタリア語",
+    "de": "Italienisch",
+    "es": "italiano",
+    "fr": "italien"
+  },
+  {
+    "en": "Chinese",
+    "ja": "中国語",
+    "de": "chinesisch",
+    "es": "Chino",
+    "fr": "Chinois"
+  },
+  {
+    "en": "January",
+    "ja": "1月",
+    "de": "Januar",
+    "es": "Enero",
+    "fr": "Janvier"
+  },
+  {
+    "en": "February",
+    "ja": "2月",
+    "de": "Februar",
+    "es": "Febrero",
+    "fr": "Février"
+  },
+  {
+    "en": "March",
+    "ja": "3月",
+    "de": "Marsch",
+    "es": "Marzo",
+    "fr": "Mars"
+  },
+  {
+    "en": "April",
+    "ja": "4月",
+    "de": "April",
+    "es": "Abril",
+    "fr": "Avril"
+  },
+  {
+    "en": "May",
+    "ja": "5月",
+    "de": "Mai",
+    "es": "Puede",
+    "fr": "Peut"
+  },
+  {
+    "en": "June",
+    "ja": "6月",
+    "de": "Juni",
+    "es": "Junio",
+    "fr": "Juin"
+  },
+  {
+    "en": "July",
+    "ja": "7月",
+    "de": "Juli",
+    "es": "Julio",
+    "fr": "Juillet"
+  },
+  {
+    "en": "August",
+    "ja": "8月",
+    "de": "August",
+    "es": "Agosto",
+    "fr": "Août"
+  },
+  {
+    "en": "September",
+    "ja": "9月",
+    "de": "September",
+    "es": "Septiembre",
+    "fr": "Septembre"
+  },
+  {
+    "en": "October",
+    "ja": "10月",
+    "de": "Oktober",
+    "es": "Octubre",
+    "fr": "Octobre"
+  },
+  {
+    "en": "November",
+    "ja": "11月",
+    "de": "November",
+    "es": "Noviembre",
+    "fr": "Novembre"
+  },
+  {
+    "en": "December",
+    "ja": "12月",
+    "de": "Dezember",
+    "es": "Diciembre",
+    "fr": "Décembre"
+  }
+]

@@ -5,7 +5,9 @@ MelonPrimeDS is a fork of melonDS tailored for Metroid Prime Hunters DS with mou
 
 Primary target: Windows, with native macOS and Linux support now maintained for
 testing and distribution. Windows remains the main gameplay tuning target and
-uses the MinGW/MSYS2 workflow; macOS uses the GCMouse/IOHID/QCursor input stack,
+uses the MinGW/MSYS2 workflow; macOS uses the GCMouse/IOHID/QCursor input stack (GCMouse-only
+cursor capture for in-game aim; built-in trackpads stay on IOHID + Qt button recovery — see
+melonprime-aim-input.md §10),
 Linux uses XInput2 on X11 with a Qt fallback, and BSD is kept as a build-only CI
 target. Release artifacts are expected for Windows, macOS, and Linux.
 
@@ -54,7 +56,7 @@ Implementation details worth knowing:
 - `MelonPrimeHudRender.cpp` caches HUD config and several rendered assets to avoid repeated per-frame work.
 - Weapon icons and bomb icons are cached and optionally tint-overlaid.
 - The custom HUD also applies a No HUD patch to suppress parts of the game's native HUD while custom elements are active.
-- MelonPrime UI labels use `MelonPrimeLocalization.h/.cpp` for English/Japanese display text selected by OS locale (`QLocale::system()`); this is display-only and does not translate config/TOML keys.
+- MelonPrime UI labels use `MelonPrimeLocalization.h/.cpp` for English/Japanese display text selected by OS locale (`QLocale::system()`); this is display-only and does not translate config/TOML keys. melonDS-owned dialogs are localized via `LocalizeMelonDsDialog()` from `Window.cpp` — see [non-melonprime-upstream-diff.md](non-melonprime-upstream-diff.md) (do not patch upstream `.cpp` for UI text).
 
 ### 3. In-game Aspect Ratio Patch
 `MelonPrimePatchAspectRatio.cpp` patches the game's projection/scaling setup so gameplay FOV better matches the emulator aspect ratio. It is applied through `MelonPrimePatchRegistry` at the game-join site.

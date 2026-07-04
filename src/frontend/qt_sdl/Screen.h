@@ -92,7 +92,7 @@ public:
 
 #ifdef MELONPRIME_DS
     void unfocus();
-    void beginClose() { closing = true; }
+    void beginClose();
 
 #ifdef MELONPRIME_CUSTOM_HUD
     std::optional<QRect> getTopScreenWidgetRect() const;
@@ -119,6 +119,9 @@ public:
         aimLastGlobalValid.store(false, std::memory_order_release);
 #endif
     }
+
+    void reloadNoRomSplashLocalization();
+    void containAimCursorIfNeeded();
 
 public slots:
     void clipCursorCenter1px();
@@ -277,6 +280,8 @@ private:
     std::optional<QRect> getScreenWidgetRect(int wantedScreenKind) const;
     std::optional<QRect> getBottomScreenWidgetRect() const;
     void clipCursorToBottomScreen();
+    void releaseCursorStateForClose();
+    QRect aimContainmentLocalRect() const;
     void setClipWanted(bool value);
     bool getClipWanted() const;
     bool m_lastInGameTopScreenOnlyOverride = false;

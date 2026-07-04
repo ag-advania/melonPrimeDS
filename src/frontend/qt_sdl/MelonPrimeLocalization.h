@@ -2,45 +2,104 @@
 
 #include <QAction>
 #include <QLocale>
+#include <QList>
 #include <QMenu>
 #include <QMenuBar>
 #include <QStringList>
 #include <QWidget>
 
+class QImage;
+
 namespace MelonPrime::UiText
 {
 
-inline constexpr int kMenuLanguageJapanese = 0;
-inline constexpr int kMenuLanguageEnglish = 1;
+enum class MenuLangId : int
+{
+    First = 100,
+    Arabic = First,
+    Italian,
+    Indonesian,
+    Ukrainian,
+    English,
+    EnglishGB,
+    EnglishUS,
+    Dutch,
+    Greek,
+    Korean,
+    Swedish,
+    Spanish,
+    SpanishLatAm,
+    Thai,
+    Czech,
+    ChineseSimplified,
+    ChineseTraditional,
+    Danish,
+    German,
+    Turkish,
+    Japanese,
+    Norwegian,
+    Hungarian,
+    Finnish,
+    French,
+    FrenchCanada,
+    Vietnamese,
+    Polish,
+    Portuguese,
+    PortugueseBrazil,
+    Romanian,
+    Russian,
 
+    Count
+};
+
+// Config: -1 = follow OS locale, otherwise an explicit MenuLangId value.
+inline constexpr int kMenuLanguageSystemDefault = -1;
+
+// Legacy config values (Metroid.UI.MenuLanguage migration).
+inline constexpr int kMenuLanguageLegacyNative = 0;
+inline constexpr int kMenuLanguageLegacyEnglish = 1;
+
+// Legacy aliases kept for older call sites. New persisted enum values start at
+// MenuLangId::First so these never collide with explicit language selections.
+inline constexpr int kMenuLanguageNative = kMenuLanguageSystemDefault;
+inline constexpr int kMenuLanguageEnglish = static_cast<int>(MenuLangId::English);
+inline constexpr int kMenuLanguageJapanese = static_cast<int>(MenuLangId::Japanese);
+
+[[nodiscard]] int NormalizeMenuLanguageConfig(int storedValue);
+[[nodiscard]] bool IsEnglishMenuLanguage(MenuLangId lang);
+
+MenuLangId DetectSystemMenuLanguage();
+bool IsMenuTranslationActive();
+MenuLangId ActiveMenuLanguage();
+
+// Legacy helpers kept for call sites that still name Japanese explicitly.
 bool IsJapaneseSystemLocale();
-
-inline int& MenuLanguageModeStorage()
-{
-    static int mode = kMenuLanguageJapanese;
-    return mode;
-}
-
-inline void SetMenuLanguageMode(int mode)
-{
-    MenuLanguageModeStorage() =
-        (mode == kMenuLanguageEnglish) ? kMenuLanguageEnglish : kMenuLanguageJapanese;
-}
-
-inline int MenuLanguageMode()
-{
-    return MenuLanguageModeStorage();
-}
-
-inline bool CanChooseMenuLanguage()
-{
-    return IsJapaneseSystemLocale();
-}
-
 inline bool IsJapaneseLocale()
 {
-    return IsJapaneseSystemLocale() && MenuLanguageMode() == kMenuLanguageJapanese;
+    return IsMenuTranslationActive() && ActiveMenuLanguage() == MenuLangId::Japanese;
 }
+
+[[nodiscard]] int MenuLanguageSelection();
+void SetMenuLanguageSelection(int configValue);
+
+// Legacy wrappers (0/1 config); prefer SetMenuLanguageSelection / MenuLanguageSelection.
+inline int& MenuLanguageModeStorage()
+{
+    static int mode = kMenuLanguageSystemDefault;
+    return mode;
+}
+inline void SetMenuLanguageMode(int mode)
+{
+    SetMenuLanguageSelection(mode);
+}
+inline int MenuLanguageMode()
+{
+    return MenuLanguageSelection();
+}
+
+[[nodiscard]] QString MenuLanguageDisplayName(MenuLangId lang);
+[[nodiscard]] QString MenuLanguageNativeLabel();
+[[nodiscard]] QList<MenuLangId> AllSelectableMenuLanguages();
 
 QString TranslateExact(const QString& text);
 QString TranslateByObjectName(const QWidget* widget, const QString& text);
@@ -54,10 +113,51 @@ QString Tr(const char* text, int size);
 QStringList TrList(const QStringList& items);
 void LocalizeWidgetTextProperties(QWidget* widget);
 void LocalizeWidgetTree(QWidget* root);
+// Localize a melonDS-owned settings dialog when a non-English menu language is active.
+void LocalizeMelonDsDialog(QWidget* dialog);
+
+#ifdef MELONPRIME_DS
+// Localize on first Show (before paint) so widgets are fully built without a flash of English.
+void InstallMelonDsDialogShowLocalizer(QWidget* dialog);
+
+// Construct dialog, install show-time localizer, then show.
+template<typename DialogT>
+DialogT* OpenLocalizedMelonDsDialog(QWidget* parent)
+{
+    if (DialogT::currentDlg)
+    {
+        DialogT::currentDlg->activateWindow();
+        return DialogT::currentDlg;
+    }
+
+    DialogT::currentDlg = new DialogT(parent);
+    InstallMelonDsDialogShowLocalizer(DialogT::currentDlg);
+    DialogT::currentDlg->show();
+    return DialogT::currentDlg;
+}
+
+// One-shot dialogs without a static currentDlg (e.g. LAN host/join).
+template<typename DialogT>
+DialogT* OpenLocalizedMelonDsDialogOnce(QWidget* parent)
+{
+    DialogT* dlg = new DialogT(parent);
+    InstallMelonDsDialogShowLocalizer(dlg);
+    dlg->open();
+    return dlg;
+}
+#endif
+
 void LocalizeActionTextProperties(QAction* action);
 void SetLocalizedActionText(QAction* action, const QString& sourceText);
 void LocalizeAction(QAction* action);
 void LocalizeMenu(QMenu* menu);
 void LocalizeMenuBar(QMenuBar* menuBar);
+// No-ROM splash lines (ScreenPanel::splashText[0/1]); English source keys stay upstream-owned.
+void ApplyNoRomSplashLocalization(char line0[256], char line1[256]);
+// Bitmap OSD font is ASCII-only; render localized splash lines with a UI font when needed.
+bool TryRenderNoRomSplashOsdItem(unsigned int id, const char* text, unsigned int color,
+    int rainbowstart, int& rainbowend, int maxWidth, QImage* outBitmap);
+// CJK/RTL splash lines or proportional fonts that may need vertical stacking.
+bool UsesLocalizedSplashLayout();
 
 } // namespace MelonPrime::UiText

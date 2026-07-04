@@ -161,17 +161,19 @@ void MelonPrimeInputConfig::saveConfig()
 
     // Save all programmatic HUD widgets
     for (auto& [key, widget] : m_hudWidgets) {
-        if (auto* cb = qobject_cast<QCheckBox*>(widget))
+        if (!widget)
+            continue;
+        if (auto* cb = qobject_cast<QCheckBox*>(widget.data()))
             instcfg.SetBool(key, cb->isChecked());
-        else if (auto* sb = qobject_cast<QSpinBox*>(widget))
+        else if (auto* sb = qobject_cast<QSpinBox*>(widget.data()))
             instcfg.SetInt(key, sb->value());
-        else if (auto* dsb = qobject_cast<QDoubleSpinBox*>(widget))
+        else if (auto* dsb = qobject_cast<QDoubleSpinBox*>(widget.data()))
             instcfg.SetDouble(key, dsb->value());
-        else if (auto* le = qobject_cast<QLineEdit*>(widget))
+        else if (auto* le = qobject_cast<QLineEdit*>(widget.data()))
             instcfg.SetString(key, le->text().toStdString());
-        else if (auto* fc = qobject_cast<QFontComboBox*>(widget))   // before QComboBox: stores family string
+        else if (auto* fc = qobject_cast<QFontComboBox*>(widget.data()))   // before QComboBox: stores family string
             instcfg.SetString(key, fc->currentFont().family().toStdString());
-        else if (auto* combo = qobject_cast<QComboBox*>(widget))
+        else if (auto* combo = qobject_cast<QComboBox*>(widget.data()))
             instcfg.SetInt(key, combo->currentIndex());
     }
 

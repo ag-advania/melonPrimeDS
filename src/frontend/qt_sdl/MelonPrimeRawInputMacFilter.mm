@@ -37,6 +37,21 @@ void MacWarpCursorGlobal(int x, int y)
                                           static_cast<CGFloat>(y)));
 }
 
+void MacSetAimCursorCaptured(bool captured)
+{
+    static bool sCaptured = false;
+    if (captured == sCaptured)
+        return;
+    sCaptured = captured;
+    if (captured) {
+        CGAssociateMouseAndMouseCursorPosition(false);
+        CGDisplayHideCursor(kCGDirectMainDisplay);
+    } else {
+        CGDisplayShowCursor(kCGDirectMainDisplay);
+        CGAssociateMouseAndMouseCursorPosition(true);
+    }
+}
+
 struct MacRawInputFilter::Impl
 {
     // Writers: GC handler queue or HID runloop thread (one backend active at
@@ -315,6 +330,11 @@ void MacRawInputFilter::fetchMouseDelta(int32_t& outDx, int32_t& outDy)
     outDy = curY - m->lastReadY;
     m->lastReadX = curX;
     m->lastReadY = curY;
+}
+
+bool MacRawInputFilter::isGcMouseActive() const
+{
+    return m->gcActive.load(std::memory_order_acquire);
 }
 
 void MacRawInputFilter::resetAll()

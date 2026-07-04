@@ -2,7 +2,7 @@
 
 **作成日:** 2026-07-04
 **対象ブランチ:** `highres_fonts_v3`（HEAD `efbe6b82` 時点で実測）
-**ステータス:** Phase 0 手順整備完了 / 実機ソーク待ち（2026-07-04）
+**ステータス:** Phase 0 macOS・Linux VM 基準値取得済み / Windows ソーク待ち（2026-07-04）
 **前提:** [V1](completed/melonprime-full-refactor-plan.md) /
 [V2](completed/melonprime-full-refactor-plan-v2.md) /
 [V3](completed/melonprime-full-refactor-plan-v3.md) /
@@ -22,7 +22,8 @@ V1–V4 で構造負債は解消され、ラチェット（リテラル予算 1 
 
 しかし V5 は **「実装済み・検証 pending」のまま completed/ へ移動**されており、次が宙吊りである:
 
-1. **3 プラットフォームのフレームタイム基準値が一度も取られていない**（V5 Phase 0 表が全行「未取得」）
+1. **3 プラットフォームのフレームタイム基準値** — macOS / Linux VM は 2026-07-04 ソーク取得済み（§8）。
+   Windows は未取得
 2. V5 Phase 3 のペーシング変更（非 Win coarse margin 1.0→0.5ms）が **ROM 実測なしで本番コードに入っている**
 3. V5 Phase 4b（HUD element cache）と Phase 6 ストレッチ全候補が「計測待ち」で凍結
 4. S18/S19/S20（mac/Linux エイム実機）、S21（フレームタイム比較）、S22 の Windows/Ubuntu 再確認が未実施
@@ -45,14 +46,18 @@ HUD CPU 再描画削減（V5 W8 の実装）とコアの責務分離である。
 | `.inc` 所有検査 | green | **PASS（51 ファイル）** | ✅ |
 | プラットフォーム散乱 | 30/30 | **24/30** | ✅ 予算に 6 の余剰 → ラチェット強化余地 |
 | TODO/FIXME/HACK コメント | — | **0 件** | ✅ |
-| `MELONPRIME_PERF` 基準値 | 未取得 | **未取得のまま** | ❌ V6-W1 |
+| `MELONPRIME_PERF` 基準値 | 未取得 | **macOS・Linux VM 取得済み** / Win 未取得 | ⚠️ V6-W1（Win pending） |
 
 ### V6-W1. 検証負債（最大の負債・§0 のとおり）
 
 - `MELONPRIME_PERF` の消費箇所は `MelonPrimePerfProbe.h` + `EmuThread.cpp` の区間プローブ
   （FrameBegin / LimiterSleep / LimiterSpin / Input / RunFrame — 配線済みを実測確認）。
-  **基盤は完成、データがゼロ**。
-- V5 進捗表の pending 6 項目（Phase 0/3/4/6/7 + S21/S22）が次の全作業のゲートを塞いでいる。
+  **基盤は完成**。macOS / Linux VM で初回 ROM 10 分ソークを取得
+  （`artifacts/perf-baseline/macos-perf-20260704-082454.log`、
+  `linux-vm-perf-20260704-085743.log` — 後者は VM 共有フォルダ権限で tee 失敗、
+  端末出力から復元）。
+  Windows は未計測。
+- V5 進捗表: **mac / Linux VM 基準値は V5 completed Phase 0 表へ書き戻し済み**。Win・S21/S22・S24・V5 最終確定は pending。
 
 ### V6-W2. HUD CPU 再描画（V5 W8 の継続・計測ゲート）
 
@@ -318,18 +323,61 @@ Rejected として §6 に記録（実装しない）。
 
 | Phase | 内容 | 状態 | 完了日 | 結果メモ |
 |---|---|---|---|---|
-| 0 | V5 検証負債の完済（基準値・S21/S22・V5 確定） | 一部完了 / 実機ソーク待ち | 2026-07-04 | 0-1 完了: `.claude/skills/perf-baseline-procedure.md` 追加、集計スクリプトを sections/counters と V6/V5 markdown 行出力に対応、`collect-perf-baseline.{sh,ps1}` でログ保存+集計を自動化、`apply-perf-baseline.py` で表更新を機械化、`compare-perf-repro.py` で S24 比較を機械化、`artifacts/` を ignore。0-2 以降は ROM 10分ソークログ待ち |
+| 0 | V5 検証負債の完済（基準値・S21/S22・V5 確定） | 一部完了 / Windows・S24 待ち | 2026-07-04 | 0-1 完了。**0-2 macOS/Linux VM 完了**（ログ名・p50・draw・入力 backend 記録済み）。**0-5 部分完了**: mac/Linux を V5 completed Phase 0 表へ書き戻し。**S24 未確認**（mac 1 本のみ — 同条件 2 回目 pending）。**OSD 設定 OFF の可能性** — `OsdColor` 実 write は Phase 5 参考値。Windows baseline / 0-3/0-4 / V5 確定は pending |
 | 1 | 監査・ドキュメント衛生（CrosshairFx 表記・scatter 24 ラチェット） | 完了 | 2026-07-04 | CrosshairFx 所有表/ネスト `.inc` 規約追記、scatter 24/24 に固定、Windows/Ubuntu CI 更新、upstream marker snapshot と kTranslations 707行/重複5件を記録 |
 | 2 | HUD ゴールデン描画ハーネス（本丸 A 土台） | 完了 | 2026-07-04 | Developer-only `--melonprime-hud-golden` 追加、macOS dev build で golden一致、release CI に harness痕跡ゼロ検査を追加 |
-| 3 | HUD element cache / layer 分離（本丸 A・二重ゲート） | 未着手 | — | |
-| 4 | コールドライフサイクル TU 分離（本丸 B） | 実装完了 / 実機スモーク待ち | 2026-07-04 | `MelonPrimeLifecycle.cpp` 追加。`OnEmuStart` / stop / pause / unpause / boot reset / config reload / config flags / initialize / destructor を純移動し、`HandleGameJoinInit` / `HandleBattleRuntimeEnter` / `RunFrameHook` は `MelonPrime.cpp` に保持。`MelonPrime.cpp` 976→683行。macOS dev/release build、scatter 22/22、inc ownership、literal budget、diff check、nm 所在確認は通過。S2/S6/S7/S8 は ROM 実機操作待ち |
-| 5 | per-frame 再評価の縮減（計測ゲート） | 未着手 | — | |
+| 3 | HUD element cache / layer 分離（本丸 A・二重ゲート） | 未着手 / **Rejected 候補** | — | mac: draw p50=0.732ms / `CustomHud_Render` p50=219.6µs → run 非支配、**不採用方向**。Linux VM draw は llvmpipe 参考のみ（ゲート非使用）。**Windows baseline 取得後に §6 Rejected へ移動して確定** — 取得前に Rejected 確定しない |
+| 4 | コールドライフサイクル TU 分離（本丸 B） | 実装完了 / 実機スモーク待ち | 2026-07-04 | `MelonPrimeLifecycle.cpp` 追加。`OnEmuStart` / stop / pause / unpause / boot reset / config reload / config flags / initialize / destructor を純移動し、`HandleGameJoinInit` / `HandleBattleRuntimeEnter` / `RunFrameHook` は `MelonPrime.cpp` に保持。`MelonPrime.cpp` 976→683行。macOS dev/release build、scatter 22/22、inc ownership、literal budget、diff check、nm 所在確認は通過。S2/S6/S7/S8 は ROM 実機操作待ち。**スモークブロッカー（2026-07-04）:** macOS InputConfigDialog Cancel で `restoreVisualSnapshot()` が stale `ui->cbMetroidEnableCustomHud` 等を触り `EXC_BAD_ACCESS (SIGBUS)` — `m_hudWidgets` を `QPointer` 化、`visualSnapshotTargetsAlive()` で破棄済み no-op。**修正済み・Cancel 再スモーク待ち**（設定保存仕様は不変） |
+| 5 | per-frame 再評価の縮減（計測ゲート） | 未着手 | — | mac カウンタで候補選別可能だが **Windows baseline 待ちが安全**。`OsdColor_ApplyOnce` 実 write（mac 0.1/分）は **OSD OFF ソークの可能性** — edge 化判断には OSD ON 追加ソークが必要 |
 | 6 | 小粒 declutter（任意） | 完了 | 2026-07-04 | `MelonPrime.cpp` の未使用 `Platform.h` include を機械的に除去。macOS dev build、scatter 22/22、inc ownership、literal budget、diff check 通過 |
-| 7 | ドキュメント + ラチェット固定 | 固定可能分完了 / 実測待ち | 2026-07-04 | scatter 22/22 にラチェット、Windows/Ubuntu CI 更新、HUD golden 運用ルールを build.md に追記、performance/refactoring/repo docs に V6 現況と未完了ゲートを記録。Phase 0/3/5 の実測表・completed移動は ROM ソーク後 |
+| 7 | ドキュメント + ラチェット固定 | 固定可能分完了 / 実測待ち | 2026-07-04 | scatter 22/22 にラチェット、Windows/Ubuntu CI 更新、HUD golden 運用ルールを build.md に追記、performance/refactoring/repo docs に V6 現況と未完了ゲートを記録。mac / Linux VM 基準値 §8 反映済み。**V5 completed Phase 0 表へ mac/Linux 書き戻し済み**。Windows 表・S24・Phase 0/S21/V5 最終確定は Windows baseline 後 |
+
+### macOS Phase 0 ソーク（2026-07-04 08:24 JST）
+
+| 項目 | 値 |
+|---|---|
+| ログ | `artifacts/perf-baseline/macos-perf-20260704-082454.log` |
+| 集計 | `artifacts/perf-baseline/macos-perf-20260704-082454.summary.txt` |
+| 入力 | GCMouse（`[MelonPrime] mac input: GCMouse backend`） |
+| OSD 設定 | **OFF の可能性あり** — 下記 `OsdColor` 実 write は Phase 5 edge 化判断に使わない |
+| フレーム数 | shutdown histogram **8192** frames（1 Hz window ×640） |
+| 区間 p50 (ms) | sleep=5.785 / spin=0.366 / input=0.005 / **run=9.809** / **draw=0.732** |
+| Phase 3 所見 | draw + CustomHud（~0.22ms）≪ run — element cache は **効果なし前提で Rejected 候補**（Win でも確認後確定） |
+
+### Linux VM Phase 0 ソーク（2026-07-04 08:57 JST）
+
+| 項目 | 値 |
+|---|---|
+| ログ | `artifacts/perf-baseline/linux-vm-perf-20260704-085743.log`（端末出力から復元 — 共有フォルダ `artifacts/` への tee が Permission denied） |
+| 集計 | `artifacts/perf-baseline/linux-vm-perf-20260704-085743.summary.txt` |
+| 入力 | XInput2 RawMotion（`[MelonPrime] linux input: XInput2 RawMotion active`） |
+| OSD 設定 | **OFF の可能性あり**（mac と同条件想定） — `OsdColor` 実 write は参考値のみ |
+| GL | Mesa **llvmpipe**（ソフトウェアレンダラ — VM 固有、ネイティブ Linux GPU とは不可比） |
+| FPS 目安 | **かなり低い** — p50=49.2ms ≒ **~20 fps 相当**（mac p50=16.7ms ≒ ~60 fps と比較）。VirtualBox ゲスト + CPU ソフト GL のため **VM 上実行の影響が支配的**。ネイティブ Linux 実機の性能指標ではない |
+| フレーム数 | shutdown histogram **6497** frames（1 Hz window ×317） |
+| 区間 p50 (ms) | sleep=0.000 / spin=0.000 / input=0.010 / **run=34.024** / **draw=16.929** |
+| Phase 3 所見 | draw が mac の ~23 倍 — **llvmpipe 起因の VM アーティファクト**。element cache 判断は mac 基準値を正とし、Linux VM は参考値のみ |
+| スクリプト修正 | `collect-perf-baseline.sh`: `artifacts/` 非書き込み時は `~/.local/share/melonprime-perf-baseline` → `/tmp/...` へ fallback |
+
+### Phase 0 残タスク（2026-07-04 時点）
+
+| 項目 | 状態 |
+|---|---|
+| macOS baseline | ✅ 取得済み（1 本目） |
+| Linux VM baseline | ✅ 取得済み（llvmpipe VM 参考値。Phase 3/5 性能ゲート非使用） |
+| Windows baseline | ❌ 未取得 — **Phase 0 閉鎖・S21・V5 最終確定の前提** |
+| S24 再現性 | ❌ 未確認 — mac 同条件 **2 回目** が必要（`compare-perf-repro.py` で p50/p99 ±10%） |
+| OSD 条件 | ⚠️ mac/Linux ソークは **OSD OFF の可能性**。frame time / draw / CustomHud / input は有効。`OsdColor` edge 化判断には **OSD ON 追加ソーク**（または Windows と同 OSD 設定で比較）が必要 |
+| V5 completed 書き戻し | ✅ mac/Linux を Phase 0 表へ反映。Windows は pending のまま |
+| Phase 3 Rejected 確定 | ⏳ Windows baseline 後（現状は Rejected **候補**のみ） |
 
 ### 計測により不採用（Rejected — Phase 3/5 で数値が効果なしを示した場合にここへ記録）
 
-（未記入）
+**Phase 3 HUD element cache — Rejected 候補（Windows baseline 取得後に確定）**
+
+- macOS: draw p50=0.732ms、`CustomHud_Render` p50=219.6µs ≪ run p50=9.809ms → HUD CPU cache は **効果なし前提**
+- Linux VM: draw 高値は llvmpipe VM アーティファクト — **判断材料にしない**
+- Windows: 未取得 — mac だけでは最終 Rejected に移さない（Windows で draw/CustomHud が支配的なら再検討余地あり）
 
 ---
 
@@ -350,28 +398,34 @@ Rejected として §6 に記録（実装しない）。
 
 ---
 
-## 8. Phase 0 基準値（取得後に記入）
+## 8. Phase 0 基準値
 
 developer ビルドで `MELONPRIME_PERF=1` を付けて起動し、in-game 10 分ソーク後に
 `python3 .claude/skills/summarize-melonprime-perf.py perf.log` で集計する。詳細手順は
 [perf-baseline-procedure.md](../skills/perf-baseline-procedure.md) に固定。
 
+**計測条件:** macOS / Linux VM の初回ソークは **OSD 設定 OFF の可能性**あり。
+3 プラットフォーム横比較（S21）は **同一 OSD 設定**で取得すること。
+OSD ON 時の `OsdColor` 負荷を見る場合は **別 baseline** として明記する。
+**クラッシュ終了したソークログは正式 baseline に使わない**（histogram が途中打切り・終了処理未完了のため）。
+正常終了（Quit / ダイアログ OK で閉じた計測）のみ §8 表へ反映する。
+
 | プラットフォーム | p50 | p95 | p99 | max | draw 区間 p50 | 備考 |
 |---|---:|---:|---:|---:|---:|---|
-| macOS | 未取得 | 未取得 | 未取得 | 未取得 | 未取得 | |
-| Windows | 未取得 | 未取得 | 未取得 | 未取得 | 未取得 | |
-| Linux VM | 未取得 | 未取得 | 未取得 | 未取得 | 未取得 | マウス統合オフ |
+| macOS | 16.689 | 22.829 | 24.929 | 173.172 | 0.732 | 2026-07-04 soak、GCMouse、8192 frames。**OSD OFF の可能性** — frame/draw/CustomHud/input は有効。区間 p50 (ms): run 9.809 / sleep 5.785 |
+| Windows | 未取得 | 未取得 | 未取得 | 未取得 | 未取得 | mac/Linux と比較するなら **同一 OSD 設定**で取得 |
+| Linux VM | 49.216 | 103.792 | 141.452 | 290.728 | 16.929 | **VM 低 FPS 参考値**（p50 ≒ 20 fps、llvmpipe）。Phase 3/5 性能ゲート非使用。OSD OFF の可能性。入力 path（XInput2 RawMotion）確認としては有効 |
 
 カウンタ基準値（同ソークから）:
 
-| カウンタ | macOS | Windows | Linux | 備考 |
+| カウンタ | macOS | Windows | Linux VM | 備考 |
 |---|---:|---:|---:|---|
-| `Patches_Apply(OutOfGameFrame)` / 分 | — | — | — | メニュー滞在時 |
-| `OsdColor_ApplyOnce` 実 write / 分 | — | — | — | battle 中 |
-| HUD dirty 面積 平均 px | — | — | — | |
-| GL upload バイト / frame | — | — | — | |
-| DR3 hash skip 率 | — | — | — | |
-| `CustomHud_Render` 所要 p50/p99 | — | — | — | Phase 3 ゲート値 |
+| `Patches_Apply(OutOfGameFrame)` / 分 | 166.9 | — | 137.6 | Linux VM 列は **VM 低 FPS 環境の参考値**（Phase 3/5 ゲート判定には使わない） |
+| `OsdColor_ApplyOnce` 実 write / 分 | 0.1 | — | 0.4 | **OSD OFF ソークの可能性 — Phase 5 edge 化判断に使わない**（参考値のみ。apply: mac 3398.3/分、Linux VM 1026.6/分）。OSD ON 追加ソークが必要 |
+| HUD dirty 面積 平均 px/frame | 80580.9 | — | 75831.6 | |
+| GL upload バイト / frame | 161184.4 | — | 151663.1 | Linux VM: llvmpipe + VM 低 FPS — 参考値のみ |
+| DR3 hash skip / frame | 0.0 | — | 0.0 | |
+| `CustomHud_Render` p50/p99 µs | 219.6 / 381.2 | — | 338.6 / 3064.5 | mac: draw 非支配。Linux VM: VM 低 FPS で p99 スパイク大 |
 
 ### Phase 0 スナップショット（計画作成時 2026-07-04・HEAD `efbe6b82`）
 

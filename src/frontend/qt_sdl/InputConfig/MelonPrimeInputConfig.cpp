@@ -4,6 +4,7 @@
 */
 
 #include <QGroupBox>
+#include <QGroupBox>
 #include <QLabel>
 #include <QGridLayout>
 #include <QTabWidget>
@@ -60,6 +61,7 @@
 #include "InputConfigDialog.h" 
 
 #include "MapButton.h"
+#include "../Window.h"
 #include "Platform.h"
 #include "VideoSettingsDialog.h"
 #ifdef MELONPRIME_CUSTOM_HUD
@@ -129,7 +131,9 @@ MelonPrimeInputConfig::MelonPrimeInputConfig(EmuInstance* emu, QWidget* parent) 
     Config::Table keycfg = instcfg.GetTable("Keyboard");
     Config::Table joycfg = instcfg.GetTable("Joystick");
 
-    MelonPrime::UiText::SetMenuLanguageMode(instcfg.GetInt(MelonPrime::CfgKey::MenuLanguage));
+    MelonPrime::UiText::SetMenuLanguageSelection(
+        MelonPrime::UiText::NormalizeMenuLanguageConfig(
+            instcfg.GetInt(MelonPrime::CfgKey::MenuLanguage)));
     setupMenuLanguageControl(instcfg);
     setupKeyBindings(instcfg, keycfg, joycfg);
     setupSensitivityAndToggles(instcfg);
@@ -224,38 +228,59 @@ void MelonPrimeInputConfig::setupKeyBindings(Config::Table& instcfg, Config::Tab
 
 void MelonPrimeInputConfig::setupMenuLanguageControl(Config::Table& instcfg)
 {
-    if (!MelonPrime::UiText::CanChooseMenuLanguage() || m_menuLanguageWidget)
+    if (m_menuLanguageGroup)
         return;
 
-    m_menuLanguageWidget = new QWidget(ui->scrollSettingsContents);
-    m_menuLanguageWidget->setObjectName(QStringLiteral("widgetMetroidMenuLanguage"));
-    auto* layout = new QHBoxLayout(m_menuLanguageWidget);
-    layout->setContentsMargins(8, 4, 0, 4);
-    layout->setSpacing(8);
+    m_menuLanguageGroup = new QGroupBox(QStringLiteral("Language"), ui->scrollSettingsContents);
+    m_menuLanguageGroup->setObjectName(QStringLiteral("groupMetroidMenuLanguage"));
+    auto* layout = new QVBoxLayout(m_menuLanguageGroup);
+    layout->setContentsMargins(8, 8, 8, 8);
+    layout->setSpacing(6);
 
-    m_lblMenuLanguage = new QLabel(QStringLiteral("Menu Language"), m_menuLanguageWidget);
-    m_comboMenuLanguage = new QComboBox(m_menuLanguageWidget);
-    m_comboMenuLanguage->addItem(QStringLiteral("Japanese"), MelonPrime::UiText::kMenuLanguageJapanese);
-    m_comboMenuLanguage->addItem(QStringLiteral("English"), MelonPrime::UiText::kMenuLanguageEnglish);
-    SetComboCurrentData(m_comboMenuLanguage, instcfg.GetInt(MelonPrime::CfgKey::MenuLanguage));
+    m_lblMenuLanguage = new QLabel(QStringLiteral("Menu Language"), m_menuLanguageGroup);
+    m_comboMenuLanguage = new QComboBox(m_menuLanguageGroup);
+    m_comboMenuLanguage->setObjectName(QStringLiteral("comboMetroidMenuLanguage"));
+
+    const MelonPrime::UiText::MenuLangId systemLang = MelonPrime::UiText::DetectSystemMenuLanguage();
+    const QString systemLabel = MelonPrime::UiText::MenuLanguageDisplayName(systemLang);
+    m_comboMenuLanguage->addItem(
+        QStringLiteral("System default (%1)").arg(systemLabel),
+        MelonPrime::UiText::kMenuLanguageSystemDefault);
+    m_comboMenuLanguage->insertSeparator(1);
+
+    for (MelonPrime::UiText::MenuLangId lang : MelonPrime::UiText::AllSelectableMenuLanguages())
+    {
+        m_comboMenuLanguage->addItem(
+            MelonPrime::UiText::MenuLanguageDisplayName(lang),
+            static_cast<int>(lang));
+    }
+
+    SetComboCurrentData(
+        m_comboMenuLanguage,
+        MelonPrime::UiText::NormalizeMenuLanguageConfig(
+            instcfg.GetInt(MelonPrime::CfgKey::MenuLanguage)));
 
     layout->addWidget(m_lblMenuLanguage);
     layout->addWidget(m_comboMenuLanguage);
-    layout->addStretch(1);
 
-    ui->metroidVLayout->insertWidget(0, m_menuLanguageWidget);
+    ui->metroidVLayout->insertWidget(0, m_menuLanguageGroup);
 
     connect(
         m_comboMenuLanguage,
         QOverload<int>::of(&QComboBox::currentIndexChanged),
         this,
         [this](int) {
-            MelonPrime::UiText::SetMenuLanguageMode(m_comboMenuLanguage->currentData().toInt());
+            MelonPrime::UiText::SetMenuLanguageSelection(
+                m_comboMenuLanguage->currentData().toInt());
             MelonPrime::UiText::LocalizeWidgetTree(this);
+            if (InputConfigDialog::currentDlg)
+                MelonPrime::UiText::LocalizeMelonDsDialog(InputConfigDialog::currentDlg);
+            if (auto* mw = qobject_cast<MainWindow*>(window()); mw && mw->panel)
+                mw->panel->reloadNoRomSplashLocalization();
         });
 }
 
-// ── Non-HUD settings binding table (Phase 5b) ───────────────────────────────
+// Non-HUD settings binding table (Phase 5b)
 // Single source of truth for symmetric simple settings: load and save both
 // iterate the same rows so the two sides can never drift. Only plain mirrors
 // live here (setChecked<->SetBool(checkState==Checked), setCurrentIndex<->
@@ -546,10 +571,10 @@ void MelonPrimeInputConfig::setupSensitivityAndToggles(Config::Table& instcfg)
 
     // Parent-child: Damage Notify Purple requires Disable Double Damage Multiplier
     // so the purple flash never becomes a real 2x boost.
-    //   parent ON  → child enabled, user picks freely
-    //   parent OFF → child disabled and forced OFF
-    //   child  ON  → parent auto-enabled (user wants them basically together)
-    //   child  OFF → parent untouched (user might want 1x without the flash)
+    //   parent ON  -> child enabled, user picks freely
+    //   parent OFF -> child disabled and forced OFF
+    //   child  ON  -> parent auto-enabled (user wants them basically together)
+    //   child  OFF -> parent untouched (user might want 1x without the flash)
     auto syncDamageNotifyPurpleEnableState = [this](bool ddMultiplierOff) {
         const bool parentOn = !ddMultiplierOff;
         if (!parentOn)
@@ -818,6 +843,7 @@ void MelonPrimeInputConfig::updateAimControlsForStylusMode(bool stylusEnabled)
     ui->metroidAimSensitvityLabel->setEnabled(enableAimControls);
     ui->metroidAimYAxisScaleSpinBox->setEnabled(enableAimControls);
     ui->metroidAimYAxisScaleLabel->setEnabled(enableAimControls);
+    ui->metroidAimYAxisScaleLabel2->setEnabled(enableAimControls);
     ui->metroidAimAdjustSpinBox->setEnabled(enableAimControls);
     ui->metroidAimAdjustLabel->setEnabled(enableAimControls);
     ui->cbMetroidEnableAimAccumulator->setEnabled(enableAimControls);
@@ -928,8 +954,9 @@ void MelonPrimeInputConfig::setupPreviewConnections()
 MelonPrimeInputConfig::~MelonPrimeInputConfig()
 {
     if (emuInstance)
-        MelonPrime::UiText::SetMenuLanguageMode(
-            emuInstance->getLocalConfig().GetInt(MelonPrime::CfgKey::MenuLanguage));
+        MelonPrime::UiText::SetMenuLanguageSelection(
+            MelonPrime::UiText::NormalizeMenuLanguageConfig(
+                emuInstance->getLocalConfig().GetInt(MelonPrime::CfgKey::MenuLanguage)));
     delete ui;
 }
 
@@ -947,7 +974,7 @@ void MelonPrimeInputConfig::populatePage(QWidget* page, const HotkeyEntry* entri
     QGroupBox* group;
     QGridLayout* group_layout;
 
-    group = new QGroupBox("Keyboard mappings:");
+    group = new QGroupBox("Keyboard && mouse mappings:");
     main_layout->addWidget(group);
     group_layout = new QGridLayout();
     group_layout->setSpacing(1);
@@ -1106,7 +1133,7 @@ void MelonPrimeInputConfig::on_btnEditHudLayout_clicked()
 }
 
 
-// ── HUD Widget Descriptors ──────────────────────────────────────────────────
+// HUD widget descriptors
 
 namespace {
 
@@ -1137,21 +1164,26 @@ void MelonPrimeInputConfig::refreshAfterHudEditSave()
 {
     // Edit HUD Layout wrote directly to config. Reload all widget values so
     // that clicking OK in the settings dialog doesn't overwrite the new positions.
+    if (!visualSnapshotTargetsAlive())
+        return;
+
     auto& cfg = emuInstance->getLocalConfig();
     m_applyPreviewEnabled = false;
     for (auto& [key, widget] : m_hudWidgets) {
+        if (!widget)
+            continue;
         widget->blockSignals(true);
-        if (auto* cb = qobject_cast<QCheckBox*>(widget))
+        if (auto* cb = qobject_cast<QCheckBox*>(widget.data()))
             cb->setChecked(cfg.GetBool(key));
-        else if (auto* sb = qobject_cast<QSpinBox*>(widget))
+        else if (auto* sb = qobject_cast<QSpinBox*>(widget.data()))
             sb->setValue(cfg.GetInt(key));
-        else if (auto* dsb = qobject_cast<QDoubleSpinBox*>(widget))
+        else if (auto* dsb = qobject_cast<QDoubleSpinBox*>(widget.data()))
             dsb->setValue(cfg.GetDouble(key));
-        else if (auto* le = qobject_cast<QLineEdit*>(widget))
+        else if (auto* le = qobject_cast<QLineEdit*>(widget.data()))
             le->setText(QString::fromStdString(cfg.GetString(key)));
-        else if (auto* fc = qobject_cast<QFontComboBox*>(widget))   // before QComboBox: stores family string
+        else if (auto* fc = qobject_cast<QFontComboBox*>(widget.data()))   // before QComboBox: stores family string
             fc->setCurrentFont(QFont(QString::fromStdString(cfg.GetString(key))));
-        else if (auto* combo = qobject_cast<QComboBox*>(widget))
+        else if (auto* combo = qobject_cast<QComboBox*>(widget.data()))
             combo->setCurrentIndex(cfg.GetInt(key));
         widget->blockSignals(false);
     }

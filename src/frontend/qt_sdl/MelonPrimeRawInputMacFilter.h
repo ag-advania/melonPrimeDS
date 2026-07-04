@@ -40,6 +40,10 @@ namespace MelonPrime {
 // and CG global coordinates share the same top-left-origin point space.
 void MacWarpCursorGlobal(int x, int y);
 
+// Park the OS cursor for raw aim: disassociate hardware motion from cursor
+// position and hide the cursor until capture is released (unclip / focus loss).
+void MacSetAimCursorCaptured(bool captured);
+
 class MacRawInputFilter
 {
 public:
@@ -55,6 +59,10 @@ public:
     // Fetch-and-clear the accumulated relative mouse delta.
     // Emu-thread only (frame-start snapshot semantics).
     void fetchMouseDelta(int32_t& outDx, int32_t& outDy);
+
+    // True while a GCMouse device is connected (external mouse). Internal
+    // trackpads use the IOHID fallback and must not use cursor disassociation.
+    bool isGcMouseActive() const;
 
     // Drop any accumulated delta (focus loss / emu start / layout change).
     void resetAll();

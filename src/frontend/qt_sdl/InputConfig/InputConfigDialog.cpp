@@ -193,7 +193,11 @@ void InputConfigDialog::populatePage(QWidget* page,
     QGroupBox* group;
     QGridLayout* group_layout;
 
+#ifdef MELONPRIME_DS
+    group = new QGroupBox("Keyboard && mouse mappings:");
+#else
     group = new QGroupBox("Keyboard mappings:");
+#endif
     main_layout->addWidget(group);
     group_layout = new QGridLayout();
     group_layout->setSpacing(1);
@@ -287,7 +291,8 @@ void InputConfigDialog::on_InputConfigDialog_rejected()
     emuInstance->setJoystick(instcfg.GetInt("JoystickID"));
 
 #ifdef MELONPRIME_DS
-    if (melonPrimeInputConfig)
+    // Cancel must not touch stale widgets if tab pages were already torn down.
+    if (melonPrimeInputConfig && ui)
         melonPrimeInputConfig->restoreVisualSnapshot();
 #endif
 
@@ -339,6 +344,11 @@ void InputConfigDialog::switchTabToMetroid() {
 
 void InputConfigDialog::switchTabToMetroid2() {
     QWidget* tab = ui->tabWidget->findChild<QWidget*>("tabMetroid2");
+    if (tab) ui->tabWidget->setCurrentWidget(tab);
+}
+
+void InputConfigDialog::switchTabToCustomHud() {
+    QWidget* tab = ui->tabWidget->findChild<QWidget*>("tabCrosshair");
     if (tab) ui->tabWidget->setCurrentWidget(tab);
 }
 
