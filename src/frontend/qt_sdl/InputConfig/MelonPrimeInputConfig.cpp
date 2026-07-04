@@ -280,7 +280,7 @@ void MelonPrimeInputConfig::setupMenuLanguageControl(Config::Table& instcfg)
         });
 }
 
-// ── Non-HUD settings binding table (Phase 5b) ───────────────────────────────
+// Non-HUD settings binding table (Phase 5b)
 // Single source of truth for symmetric simple settings: load and save both
 // iterate the same rows so the two sides can never drift. Only plain mirrors
 // live here (setChecked<->SetBool(checkState==Checked), setCurrentIndex<->
@@ -571,10 +571,10 @@ void MelonPrimeInputConfig::setupSensitivityAndToggles(Config::Table& instcfg)
 
     // Parent-child: Damage Notify Purple requires Disable Double Damage Multiplier
     // so the purple flash never becomes a real 2x boost.
-    //   parent ON  → child enabled, user picks freely
-    //   parent OFF → child disabled and forced OFF
-    //   child  ON  → parent auto-enabled (user wants them basically together)
-    //   child  OFF → parent untouched (user might want 1x without the flash)
+    //   parent ON  -> child enabled, user picks freely
+    //   parent OFF -> child disabled and forced OFF
+    //   child  ON  -> parent auto-enabled (user wants them basically together)
+    //   child  OFF -> parent untouched (user might want 1x without the flash)
     auto syncDamageNotifyPurpleEnableState = [this](bool ddMultiplierOff) {
         const bool parentOn = !ddMultiplierOff;
         if (!parentOn)
@@ -1133,7 +1133,7 @@ void MelonPrimeInputConfig::on_btnEditHudLayout_clicked()
 }
 
 
-// ── HUD Widget Descriptors ──────────────────────────────────────────────────
+// HUD widget descriptors
 
 namespace {
 
