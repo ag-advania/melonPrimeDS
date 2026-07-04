@@ -49,29 +49,57 @@ private:
 
 const char* TranslationFieldForLang(const Translation& entry, MenuLangId lang)
 {
-    const MenuLangId baseLang = ResolveTranslationLanguage(lang);
-    if (baseLang == MenuLangId::English)
+    auto findValue = [&](MenuLangId wanted) -> const char*
+    {
+        for (const TranslationValue& value : entry.values)
+        {
+            if (value.lang == wanted)
+                return value.text;
+        }
+        return nullptr;
+    };
+
+    if (lang == MenuLangId::English)
         return entry.en;
 
-    for (const TranslationValue& value : entry.values)
+    if (const char* exact = findValue(lang))
+        return exact;
+
+    const MenuLangId baseLang = ResolveTranslationLanguage(lang);
+    if (baseLang != lang && baseLang != MenuLangId::English)
     {
-        if (value.lang == baseLang)
-            return value.text;
+        if (const char* base = findValue(baseLang))
+            return base;
     }
+
     return entry.en;
 }
 
 const char* ObjectTranslationFieldForLang(const ObjectTextTranslation& entry, MenuLangId lang)
 {
-    const MenuLangId baseLang = ResolveTranslationLanguage(lang);
-    if (baseLang == MenuLangId::English)
+    auto findValue = [&](MenuLangId wanted) -> const char*
+    {
+        for (const TranslationValue& value : entry.values)
+        {
+            if (value.lang == wanted)
+                return value.text;
+        }
+        return nullptr;
+    };
+
+    if (lang == MenuLangId::English)
         return nullptr;
 
-    for (const TranslationValue& value : entry.values)
+    if (const char* exact = findValue(lang))
+        return exact;
+
+    const MenuLangId baseLang = ResolveTranslationLanguage(lang);
+    if (baseLang != lang && baseLang != MenuLangId::English)
     {
-        if (value.lang == baseLang)
-            return value.text;
+        if (const char* base = findValue(baseLang))
+            return base;
     }
+
     return nullptr;
 }
 

@@ -30,8 +30,6 @@ REPRESENTATIVE_KEYS = [
     "to get started",
 ]
 
-EXPECTED_TRANSLATION_FIELDS = 26
-EXPECTED_OBJECT_FIELDS = 26
 RAW_STRING_RE = re.compile(r'R"(?P<delim>[A-Za-z0-9_]*)\(')
 LANGUAGE_COLUMNS = [
     ("Japanese", "ja"),
@@ -59,6 +57,7 @@ LANGUAGE_COLUMNS = [
     ("Vietnamese", "vi"),
     ("Polish", "pl"),
     ("Romanian", "ro"),
+    ("ChineseTraditional", "zh-Hant"),
 ]
 
 
@@ -293,14 +292,27 @@ def parse_cpp_strings(entry: str) -> list[str]:
     return values
 
 
-def parse_rows(array_name: str, expected_fields: int) -> list[list[str]]:
+def parse_translation_rows(array_name: str) -> list[dict[str, object]]:
     text = all_source_text()
     body = find_array_body(text, array_name)
-    rows = [parse_cpp_strings(entry) for entry in split_top_level_entries(body)]
-    bad = [(idx + 1, len(row)) for idx, row in enumerate(rows) if len(row) != expected_fields]
-    if bad:
-        details = ", ".join(f"row {idx}: {count}" for idx, count in bad[:10])
-        raise RuntimeError(f"{array_name} field count mismatch: {details}")
+    rows: list[dict[str, object]] = []
+    for idx, entry in enumerate(split_top_level_entries(body), start=1):
+        strings = parse_cpp_strings(entry)
+        if not strings:
+            raise RuntimeError(f"{array_name} row {idx} has no source key")
+        lang_names = re.findall(r"\bMenuLangId::([A-Za-z0-9_]+)\b", entry)
+        if len(strings) - 1 != len(lang_names):
+            raise RuntimeError(
+                f"{array_name} row {idx} value mismatch: "
+                f"{len(strings) - 1} strings for {len(lang_names)} MenuLangId entries"
+            )
+
+        values: dict[str, str] = {}
+        for lang_name, localized in zip(lang_names, strings[1:]):
+            if lang_name in values:
+                raise RuntimeError(f"{array_name} row {idx} duplicates MenuLangId::{lang_name}")
+            values[lang_name] = localized
+        rows.append({"key": strings[0], "values": values})
     return rows
 
 
@@ -340,25 +352,44 @@ def function_body(source: str, signature: str) -> str:
     raise RuntimeError(f"Function body not closed: {signature}")
 
 
-def covered_count(rows: list[list[str]], column_index: int) -> int:
-    return sum(1 for row in rows if len(row) > column_index and bool(row[column_index]))
+def direct_covered_count(rows: list[dict[str, object]], lang_name: str) -> int:
+    return sum(1 for row in rows if bool(row["values"].get(lang_name)))  # type: ignore[index, union-attr]
 
 
-def print_coverage_report(exact_rows: list[list[str]], object_rows: list[list[str]]) -> None:
+def fallback_covered_count(rows: list[dict[str, object]], lang_name: str, fallback_name: str) -> int:
+    return sum(
+        1
+        for row in rows
+        if not row["values"].get(lang_name) and bool(row["values"].get(fallback_name))  # type: ignore[index, union-attr]
+    )
+
+
+def print_coverage_report(exact_rows: list[dict[str, object]], object_rows: list[dict[str, object]]) -> None:
     exact_total = len(exact_rows)
     object_total = len(object_rows)
     print("[INFO] Coverage:")
-    for idx, (_name, code) in enumerate(LANGUAGE_COLUMNS, start=1):
-        print(
-            f"[INFO]   {code}: "
-            f"exact {covered_count(exact_rows, idx)}/{exact_total}, "
-            f"object {covered_count(object_rows, idx)}/{object_total}"
-        )
+    for name, code in LANGUAGE_COLUMNS:
+        exact_direct = direct_covered_count(exact_rows, name)
+        object_direct = direct_covered_count(object_rows, name)
+        if name == "ChineseTraditional":
+            exact_fallback = fallback_covered_count(exact_rows, name, "ChineseSimplified")
+            object_fallback = fallback_covered_count(object_rows, name, "ChineseSimplified")
+            print(
+                f"[INFO]   {code}: "
+                f"exact direct {exact_direct}/{exact_total}, zh-Hans fallback {exact_fallback}; "
+                f"object direct {object_direct}/{object_total}, zh-Hans fallback {object_fallback}"
+            )
+        else:
+            print(
+                f"[INFO]   {code}: "
+                f"exact {exact_direct}/{exact_total}, "
+                f"object {object_direct}/{object_total}"
+            )
 
     print("[INFO] Fallbacks:")
     print("[INFO]   en-GB -> en, en-US -> en")
     print("[INFO]   es-419 -> es, fr-CA -> fr, pt-BR -> pt")
-    print("[INFO]   zh-Hant -> zh-Hans (ChineseTraditional not selectable)")
+    print("[INFO]   zh-Hant -> zh-Hans for untranslated keys")
 
     legacy_dynamic = "ja/de/es/fr/it/nl/pt/ru/zh-Hans/ko"
     print("[INFO] Dynamic text coverage:")
@@ -371,11 +402,9 @@ def print_coverage_report(exact_rows: list[list[str]], object_rows: list[list[st
 def main() -> int:
     enum_values = parse_menu_lang_values()
     source = all_source_text()
-    chinese_traditional_unselectable = (
-        "lang == MenuLangId::ChineseTraditional" in source
-        and re.search(r"if\s*\(\s*lang\s*==\s*MenuLangId::ChineseTraditional\s*\)\s*continue\s*;", source)
-    ) or re.search(
-        r"\{\s*MenuLangId::ChineseTraditional\b[^{};]*MenuLangId::ChineseSimplified\s*,\s*false\s*,",
+    known_menu_langs = set(enum_values)
+    chinese_traditional_selectable = re.search(
+        r"\{\s*MenuLangId::ChineseTraditional\b[^{};]*MenuLangId::ChineseSimplified\s*,\s*true\s*,",
         source,
         re.S,
     )
@@ -394,7 +423,15 @@ def main() -> int:
         and "kMenuLanguageLegacyEnglish" in source,
         "Legacy 0/1 migration constants are present",
     )
-    require(chinese_traditional_unselectable, "ChineseTraditional is not selectable")
+    require(chinese_traditional_selectable is not None, "ChineseTraditional is selectable")
+    require('"zh-Hant", "中文（繁體）"' in source, "ChineseTraditional display name is formal")
+    require(
+        "replace(QLatin1Char('-'), QLatin1Char('_'))" in source
+        and 'regionIs("tw")' in source
+        and 'regionIs("hk")' in source
+        and 'regionIs("hant")' in source,
+        "zh-Hant/zh-TW/zh-HK locale tags map to ChineseTraditional",
+    )
     require(
         "QHash<QString, const Translation*>" in source
         and "QHash<QString, const ObjectTextTranslation*>" in source
@@ -416,45 +453,73 @@ def main() -> int:
         ),
         "Public translate functions do not scan source arrays",
     )
+    require(
+        "ResolveTranslationLanguage(lang)" in source
+        and "findValue(lang)" in source,
+        "Translation lookup checks actual language before fallback",
+    )
 
-    exact_rows = parse_rows("kTranslations", EXPECTED_TRANSLATION_FIELDS)
-    object_rows = parse_rows("kObjectTextTranslations", EXPECTED_OBJECT_FIELDS)
+    exact_rows = parse_translation_rows("kTranslations")
+    object_rows = parse_translation_rows("kObjectTextTranslations")
 
-    exact_keys = [row[0] for row in exact_rows]
-    object_keys = [row[0] for row in object_rows]
+    unknown_exact = sorted(
+        {
+            lang
+            for row in exact_rows
+            for lang in row["values"]  # type: ignore[union-attr]
+            if lang not in known_menu_langs
+        }
+    )
+    unknown_object = sorted(
+        {
+            lang
+            for row in object_rows
+            for lang in row["values"]  # type: ignore[union-attr]
+            if lang not in known_menu_langs
+        }
+    )
+    require(not unknown_exact and not unknown_object, "Translation values use known MenuLangId entries")
+
+    exact_keys = [str(row["key"]) for row in exact_rows]
+    object_keys = [str(row["key"]) for row in object_rows]
     duplicate_exact = sorted(key for key, count in Counter(exact_keys).items() if count > 1)
     duplicate_object = sorted(key for key, count in Counter(object_keys).items() if count > 1)
     require(not duplicate_exact, f"Exact translation keys are unique ({len(exact_keys)} keys)")
     require(not duplicate_object, f"Object translation keys are unique ({len(object_keys)} keys)")
 
     empty_exact = [
-        (row[0], idx)
+        (row["key"], lang)
         for row in exact_rows
-        for idx, value in enumerate(row)
+        for lang, value in row["values"].items()  # type: ignore[union-attr]
         if value == ""
     ]
     empty_object = [
-        (row[0], idx)
+        (row["key"], lang)
         for row in object_rows
-        for idx, value in enumerate(row)
+        for lang, value in row["values"].items()  # type: ignore[union-attr]
         if value == ""
     ]
     require(not empty_exact, "Exact translations have no empty string fields")
     require(not empty_object, "Object translations have no empty string fields")
 
-    exact_by_key = {row[0]: row for row in exact_rows}
+    exact_by_key = {str(row["key"]): row for row in exact_rows}
     missing_representatives = [key for key in REPRESENTATIVE_KEYS if key not in exact_by_key]
     require(not missing_representatives, "Representative exact keys are present")
 
     selectable = [
         name
         for name, value in enum_values.items()
-        if value >= enum_values["First"] and name not in {"Count", "First", "ChineseTraditional"}
+        if value >= enum_values["First"] and name not in {"Count", "First"}
     ]
     for key in REPRESENTATIVE_KEYS:
         row = exact_by_key[key]
-        require(all(value for value in row), f"Representative key '{key}' is non-empty for all translation columns")
+        values = row["values"]  # type: ignore[assignment]
+        require(
+            all(values.get(name) for name, _code in LANGUAGE_COLUMNS),  # type: ignore[union-attr]
+            f"Representative key '{key}' is non-empty for audited language values",
+        )
     require("Arabic" in selectable and "Italian" in selectable, "Arabic and Italian are selectable languages")
+    require("ChineseTraditional" in selectable, "ChineseTraditional is included in selectable language audit")
 
     print(f"[INFO] Selectable languages audited: {len(selectable)}")
     print(f"[INFO] Exact translation keys: {len(exact_rows)}")
