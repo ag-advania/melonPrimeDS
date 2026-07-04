@@ -23,9 +23,6 @@ _STRING = r'"((?:\\.|[^"\\])*)"'
 TWENTY_FIVE_FIELD_RE = re.compile(
     r"\{\s*" + _STRING + r"(?:\s*,\s*" + _STRING + r"){25}\s*\}"
 )
-OBJECT_ELEVEN_RE = re.compile(
-    r'\{\s*"([^"]+)"\s*,\s*(R"\((?:.|\n)*?\)"|"[^"]*")\s*,\s*(R"\((?:.|\n)*?\)"|"[^"]*")\s*,\s*(R"\((?:.|\n)*?\)"|"[^"]*")\s*,\s*(R"\((?:.|\n)*?\)"|"[^"]*")\s*,\s*(R"\((?:.|\n)*?\)"|"[^"]*")\s*,\s*(R"\((?:.|\n)*?\)"|"[^"]*")\s*,\s*(R"\((?:.|\n)*?\)"|"[^"]*")\s*,\s*(R"\((?:.|\n)*?\)"|"[^"]*")\s*,\s*(R"\((?:.|\n)*?\)"|"[^"]*")\s*,\s*(R"\((?:.|\n)*?\)"|"[^"]*")\s*,\s*(R"\((?:.|\n)*?\)"|"[^"]*")\s*\}'
-)
 
 
 def escape_cpp(s: str) -> str:
@@ -56,19 +53,37 @@ def format_entry(en: str, ja: str, row: dict) -> str:
     return "{" + ", ".join(parts) + "}"
 
 
+def normalize_key(key: str) -> str:
+    normalized = re.sub(r"\\+n", "\n", key)
+    return normalized
+
+
+def find_applied_once_row(lookup: dict[str, dict], en: str) -> dict | None:
+    flags_match = re.search(r"flags=(0x[0-9a-f]+)", en)
+    if not flags_match:
+        return None
+    flags = flags_match.group(1)
+    for row in lookup.values():
+        row_en = row.get("en", "")
+        if row_en.startswith("Applied once on settings close") and f"flags={flags})." in row_en:
+            return row
+    return None
+
+
 def key_variants(key: str) -> list[str]:
-    variants = {key}
-    variants.add(key.replace("…", "..."))
-    variants.add(key.replace("...", "…"))
-    variants.add(key.replace("—", "-"))
-    variants.add(key.replace("-", "—"))
-    variants.add(key.replace("–", "-"))
-    variants.add(key.replace("→", "->"))
-    variants.add(key.replace("->", "→"))
-    variants.add(key.replace(" → ", "→"))
-    variants.add(key.replace("→", " → "))
-    variants.add(key.replace("\\n", "\n"))
-    variants.add(key.replace("\n", "\\n"))
+    variants = {key, normalize_key(key)}
+    for base in list(variants):
+        variants.add(base.replace("…", "..."))
+        variants.add(base.replace("...", "…"))
+        variants.add(base.replace("—", "-"))
+        variants.add(base.replace("-", "—"))
+        variants.add(base.replace("–", "-"))
+        variants.add(base.replace("→", "->"))
+        variants.add(base.replace("->", "→"))
+        variants.add(base.replace(" → ", "→"))
+        variants.add(base.replace("→", " → "))
+        variants.add(base.replace("\\n", "\n"))
+        variants.add(base.replace("\n", "\\n"))
     return list(variants)
 
 
@@ -96,11 +111,33 @@ def load_lookup() -> dict[str, dict]:
     return lookup
 
 
-def load_objects() -> dict[str, dict]:
+def load_objects() -> list[dict]:
     path = SCRIPTS / "loc_chunk_objects_full.json"
     if not path.exists():
         raise FileNotFoundError(path)
-    return {row["objectName"]: row for row in json.loads(path.read_text(encoding="utf-8"))}
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def object_field(s: str) -> str:
+    if "\n" in s or len(s) > 120:
+        return f'R"({s})"'
+    return escape_cpp(s)
+
+
+def format_object_entry(row: dict) -> str:
+    name = row["objectName"]
+    lines = [f"    {{\n        \"{name}\",\n        {object_field(row['ja'])},"]
+    for key in ("de", "es", "fr", "it", "nl", "pt", "ru", "zh", "ko",
+                "ar", "id", "uk", "el", "sv", "th", "cs", "da", "tr", "nb", "hu", "fi", "vi", "pl", "ro"):
+        lines.append(f"        {object_field(row[key])},")
+    lines[-1] = lines[-1].rstrip(",")
+    lines.append("    }")
+    return "\n".join(lines)
+
+
+def generate_objects_block(rows: list[dict]) -> str:
+    body = ",\n".join(format_object_entry(row) for row in rows)
+    return f"constexpr ObjectTextTranslation kObjectTextTranslations[] = {{\n{body}\n}};\n\n"
 
 
 def find_row(lookup: dict[str, dict], en: str) -> dict | None:
@@ -108,6 +145,8 @@ def find_row(lookup: dict[str, dict], en: str) -> dict | None:
         row = lookup.get(variant)
         if row:
             return row
+    if en.startswith("Applied once on settings close"):
+        return find_applied_once_row(lookup, en)
     return None
 
 
@@ -150,40 +189,22 @@ def sync_full_pairs(text: str, lookup: dict[str, dict]) -> tuple[str, int]:
     return TWENTY_FIVE_FIELD_RE.sub(repl, text), updated
 
 
-def decode_field(raw: str) -> str:
-    if raw.startswith('R"('):
-        return raw[3:-2]
-    return raw.strip('"')
-
-
-def replace_objects(text: str, objects: dict[str, dict]) -> str:
-    missing: list[str] = []
-
-    def field(s: str) -> str:
-        if "\n" in s or len(s) > 120:
-            return f'R"({s})"'
-        return escape_cpp(s)
+def repair_applied_once_rows(text: str, lookup: dict[str, dict]) -> tuple[str, int]:
+    """Rewrite OSD slot description rows whose en keys were over-escaped."""
+    repaired = 0
 
     def repl(m: re.Match[str]) -> str:
-        name = m.group(1)
-        if name not in objects:
-            missing.append(name)
+        nonlocal repaired
+        en = m.group(1)
+        if not en.startswith("Applied once on settings close"):
             return m.group(0)
-        row = objects[name]
-        ja = decode_field(m.group(2))
-        lines = [f'{{\n        "{name}",\n        {field(ja)},']
-        for key in ("de", "es", "fr", "it", "nl", "pt", "ru", "zh", "ko",
-                    "ar", "id", "uk", "el", "sv", "th", "cs", "da", "tr", "nb", "hu", "fi", "vi", "pl", "ro"):
-            lines.append(f"        {field(row[key])},")
-        lines[-1] = lines[-1].rstrip(",")
-        lines.append("    }")
-        return "\n".join(lines)
+        row = find_applied_once_row(lookup, en)
+        if not row:
+            return m.group(0)
+        repaired += 1
+        return format_row(row)
 
-    out = OBJECT_ELEVEN_RE.sub(repl, text)
-    if missing:
-        print("missing objects:", missing, file=sys.stderr)
-        raise SystemExit(1)
-    return out
+    return TWENTY_FIVE_FIELD_RE.sub(repl, text), repaired
 
 
 def main() -> int:
@@ -202,9 +223,13 @@ def main() -> int:
 
     before_objects, main_updated = sync_full_pairs(
         replace_pairs(cpp[:obj_start], lookup), lookup)
-    obj_block = replace_objects(cpp[obj_start:obj_end], objects)
+    before_objects, repair_updated = repair_applied_once_rows(before_objects, lookup)
+    obj_block = generate_objects_block(objects)
     cpp_path.write_text(before_objects + obj_block + cpp[obj_end:], encoding="utf-8")
-    print(f"synced localization tables ({main_updated + melonds_updated} rows updated from JSON)")
+    print(
+        f"synced localization tables ({main_updated + melonds_updated + repair_updated} rows, "
+        f"{len(objects)} object descriptions)"
+    )
     return 0
 
 
