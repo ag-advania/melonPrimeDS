@@ -32,10 +32,28 @@ REPRESENTATIVE_KEYS = [
 
 EXPECTED_TRANSLATION_FIELDS = 26
 EXPECTED_OBJECT_FIELDS = 26
+RAW_STRING_RE = re.compile(r'R"(?P<delim>[A-Za-z0-9_]*)\(')
 
 
-def read_text(path: Path) -> str:
-    return path.read_text(encoding="utf-8")
+def read_text(path: Path, seen: set[Path] | None = None) -> str:
+    if seen is None:
+        seen = set()
+    path = path.resolve()
+    if path in seen:
+        return ""
+    seen.add(path)
+
+    text = path.read_text(encoding="utf-8")
+
+    def expand_inc(match: re.Match[str]) -> str:
+        include_name = match.group("path")
+        candidates = [path.parent / include_name, QT_SDL / include_name]
+        for candidate in candidates:
+            if candidate.exists():
+                return read_text(candidate, seen)
+        return match.group(0)
+
+    return re.sub(r'#include\s+"(?P<path>[^"]+\.inc)"', expand_inc, text)
 
 
 def source_files() -> list[Path]:
@@ -114,10 +132,10 @@ def find_array_body(text: str, name: str) -> str:
             i += 1
             continue
 
-        raw = re.match(r'R"(?P<delim>[A-Za-z0-9_]*)\(', text[i:])
+        raw = RAW_STRING_RE.match(text, i)
         if raw:
             raw_end = ")" + raw.group("delim") + '"'
-            i += raw.end()
+            i = raw.end()
             in_raw = True
             continue
         if text[i] == '"':
@@ -159,10 +177,10 @@ def split_top_level_entries(body: str) -> list[str]:
             i += 1
             continue
 
-        raw = re.match(r'R"(?P<delim>[A-Za-z0-9_]*)\(', body[i:])
+        raw = RAW_STRING_RE.match(body, i)
         if raw:
             raw_end = ")" + raw.group("delim") + '"'
-            i += raw.end()
+            i = raw.end()
             in_raw = True
             continue
         ch = body[i]
@@ -189,10 +207,10 @@ def parse_cpp_strings(entry: str) -> list[str]:
     values: list[str] = []
     i = 0
     while i < len(entry):
-        raw = re.match(r'R"(?P<delim>[A-Za-z0-9_]*)\(', entry[i:])
+        raw = RAW_STRING_RE.match(entry, i)
         if raw:
             raw_end = ")" + raw.group("delim") + '"'
-            content_start = i + raw.end()
+            content_start = raw.end()
             content_end = entry.find(raw_end, content_start)
             if content_end < 0:
                 raise RuntimeError("Unterminated raw string literal")
@@ -302,6 +320,13 @@ def main() -> int:
         and "QHash<QString, const ObjectTextTranslation*>" in source
         and "class TranslationCatalog" in source,
         "Translation catalog is indexed by QHash",
+    )
+    require(
+        "struct TranslationValue" in source
+        and "std::initializer_list<TranslationValue> values" in source
+        and "{MenuLangId::Japanese," in source
+        and "const char* ja;" not in source,
+        "Translation data uses language-tagged key/value rows",
     )
     require(
         "kTranslations" not in function_body(source, "QString TranslateExact(const QString& text)")
