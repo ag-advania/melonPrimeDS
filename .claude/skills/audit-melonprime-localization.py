@@ -249,6 +249,27 @@ def require(condition: bool, message: str) -> None:
     pass_line(message)
 
 
+def function_body(source: str, signature: str) -> str:
+    marker = source.find(signature)
+    if marker < 0:
+        raise RuntimeError(f"Function not found: {signature}")
+
+    start = source.find("{", marker)
+    if start < 0:
+        raise RuntimeError(f"Function body not found: {signature}")
+
+    depth = 0
+    for i in range(start, len(source)):
+        char = source[i]
+        if char == "{":
+            depth += 1
+        elif char == "}":
+            depth -= 1
+            if depth == 0:
+                return source[start + 1 : i]
+    raise RuntimeError(f"Function body not closed: {signature}")
+
+
 def main() -> int:
     enum_values = parse_menu_lang_values()
     source = all_source_text()
@@ -276,6 +297,20 @@ def main() -> int:
         "Legacy 0/1 migration constants are present",
     )
     require(chinese_traditional_unselectable, "ChineseTraditional is not selectable")
+    require(
+        "QHash<QString, const Translation*>" in source
+        and "QHash<QString, const ObjectTextTranslation*>" in source
+        and "class TranslationCatalog" in source,
+        "Translation catalog is indexed by QHash",
+    )
+    require(
+        "kTranslations" not in function_body(source, "QString TranslateExact(const QString& text)")
+        and "kObjectTextTranslations" not in function_body(
+            source,
+            "QString TranslateByObjectName(const QWidget* widget, const QString& text)",
+        ),
+        "Public translate functions do not scan source arrays",
+    )
 
     exact_rows = parse_rows("kTranslations", EXPECTED_TRANSLATION_FIELDS)
     object_rows = parse_rows("kObjectTextTranslations", EXPECTED_OBJECT_FIELDS)

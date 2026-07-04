@@ -564,7 +564,7 @@ MelonPrimeLocalization/MelonPrimeObjectTranslations.inc
 | Phase 1 | 完了 | 2026-07-04 | `python3 .claude/skills/audit-melonprime-localization.py`; `cmake --build build-mac --parallel 4`; no-ROM起動→quit | `MelonPrimeLocalization/` へ LanguageRegistry / TranslationCatalog / Dynamic / WidgetLocalizer / Splash を物理分割。外部APIと翻訳データ形式は維持。 |
 | Phase 2 | 完了 | 2026-07-04 | `python3 .claude/skills/audit-melonprime-localization.py`; `cmake --build build-mac --parallel 4`; no-ROM起動→quit | `LanguageInfo` metadataを導入し、表示名/selectable/翻訳fallback/RTL/splash shaping/font groupを一元化。 |
 | Phase 3 | 完了 | 2026-07-04 | `python3 .claude/skills/audit-melonprime-localization.py`; `cmake --build build-mac --parallel 4`; no-ROM起動→quit | `Tr()`をdispatcher化し、exact/decorated/dynamic/objectName経路を専用helperへ分離。 |
-| Phase 4 | 未着手 | — | — | catalog Map化 |
+| Phase 4 | 完了 | 2026-07-04 | `python3 .claude/skills/audit-melonprime-localization.py`; `cmake --build build-mac --parallel 4`; no-ROM起動→quit | 翻訳catalogを初回構築時に`QHash`索引化し、重複/空keyをwarning/assertで検出。 |
 | Phase 5 | 未着手 | — | — | key/value翻訳形式 |
 | Phase 6 | 未着手 | — | — | coverage report |
 | Phase 7 | 未着手 | — | — | external translation file evaluation |
