@@ -54,6 +54,8 @@ QString Tr(const char* text, int size);
 QStringList TrList(const QStringList& items);
 void LocalizeWidgetTextProperties(QWidget* widget);
 void LocalizeWidgetTree(QWidget* root);
+// Localize a melonDS-owned settings dialog when Menu Language is Japanese.
+void LocalizeMelonDsDialog(QWidget* dialog);
 void LocalizeActionTextProperties(QAction* action);
 void SetLocalizedActionText(QAction* action, const QString& sourceText);
 void LocalizeAction(QAction* action);
