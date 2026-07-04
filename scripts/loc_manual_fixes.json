@@ -1,0 +1,116 @@
+[
+  {
+    "en": "Enable SnapTap (Faster directional switching for smooth strafing — may slightly increase input delay)",
+    "de": "SnapTap aktivieren (schnellerer Richtungswechsel beim Strafen — kann die Eingabeverzögerung leicht erhöhen)",
+    "es": "Activar SnapTap (cambio de dirección más rápido al strafe — puede aumentar ligeramente el retardo de entrada)",
+    "fr": "Activer SnapTap (changement de direction plus rapide en strafe — peut légèrement augmenter le délai d'entrée)"
+  },
+  {
+    "en": "Screen Sync Mode — Default: Off",
+    "de": "Bildschirm-Sync-Modus — Standard: Aus",
+    "es": "Modo de sincronización de pantalla — Predeterminado: Desactivado",
+    "fr": "Mode de synchronisation d'écran — Par défaut : Désactivé"
+  },
+  {
+    "en": "Auto Scale — Base",
+    "de": "Automatische Skalierung — Basis",
+    "es": "Escala automática — Base",
+    "fr": "Échelle automatique — Base"
+  },
+  {
+    "en": "Per Damage — Low",
+    "de": "Pro Schaden — Niedrig",
+    "es": "Por daño — Bajo",
+    "fr": "Par dégâts — Faible"
+  },
+  {
+    "en": "Per Damage — Medium",
+    "de": "Pro Schaden — Mittel",
+    "es": "Por daño — Medio",
+    "fr": "Par dégâts — Moyen"
+  },
+  {
+    "en": "Per Damage — High",
+    "de": "Pro Schaden — Hoch",
+    "es": "Por daño — Alto",
+    "fr": "Par dégâts — Élevé"
+  },
+  {
+    "en": "Setting Key: Metroid.Volume.SFX (0–9)",
+    "de": "Einstellungsschlüssel: Metroid.Volume.SFX (0–9)",
+    "es": "Clave de ajuste: Metroid.Volume.SFX (0–9)",
+    "fr": "Clé de réglage : Metroid.Volume.SFX (0–9)"
+  },
+  {
+    "en": "Setting Key: Metroid.Volume.Music (0–9)",
+    "de": "Einstellungsschlüssel: Metroid.Volume.Music (0–9)",
+    "es": "Clave de ajuste: Metroid.Volume.Music (0–9)",
+    "fr": "Clé de réglage : Metroid.Volume.Music (0–9)"
+  },
+  {
+    "en": "— Common HUD —",
+    "de": "— Gemeinsames HUD —",
+    "es": "— HUD común —",
+    "fr": "— HUD commun —"
+  },
+  {
+    "en": "— Score Row (per mode) —",
+    "de": "— Punktezeile (pro Modus) —",
+    "es": "— Fila de puntuación (por modo) —",
+    "fr": "— Ligne de score (par mode) —"
+  },
+  {
+    "en": "Text→Gauge",
+    "de": "Text→Anzeige",
+    "es": "Texto→Medidor",
+    "fr": "Texte→Jauge"
+  },
+  {
+    "en": "Text → Gauge",
+    "de": "Text → Anzeige",
+    "es": "Texto → Medidor",
+    "fr": "Texte → Jauge"
+  },
+  {
+    "en": "Wpn\\nIcon",
+    "de": "Wpn\\nSymbol",
+    "es": "Wpn\\nIcono",
+    "fr": "Wpn\\nIcône"
+  },
+  {
+    "en": "Bmb\\nIcon",
+    "de": "Bmb\\nSymbol",
+    "es": "Bmb\\nIcono",
+    "fr": "Bmb\\nIcône"
+  },
+  {
+    "en": "Wpn\\nInventory",
+    "de": "Wpn\\nInventar",
+    "es": "Wpn\\nInventario",
+    "fr": "Wpn\\nInventaire"
+  },
+  {
+    "en": "Applied once on settings close to currently displayed messages (flags=0x02).\\nNew messages use the 'Kill / Death' literal color above.",
+    "de": "Einmalig beim Schließen der Einstellungen auf aktuell angezeigte Nachrichten angewendet (flags=0x02).\\nNeue Nachrichten verwenden die obige „Kill / Death“-Farbe.",
+    "es": "Se aplica una vez al cerrar los ajustes a los mensajes mostrados (flags=0x02).\\nLos mensajes nuevos usan el color literal «Kill / Death» de arriba.",
+    "fr": "Appliqué une fois à la fermeture des réglages aux messages affichés (flags=0x02).\\nLes nouveaux messages utilisent la couleur littérale « Kill / Death » ci-dessus."
+  },
+  {
+    "en": "Applied once on settings close to currently displayed messages (flags=0x11).\\nNew messages use 'Acquiring Node' or 'Node Stolen' literal colors above.",
+    "de": "Einmalig beim Schließen der Einstellungen auf aktuell angezeigte Nachrichten angewendet (flags=0x11).\\nNeue Nachrichten verwenden die obigen Farben für „Acquiring Node“ oder „Node Stolen“.",
+    "es": "Se aplica una vez al cerrar los ajustes a los mensajes mostrados (flags=0x11).\\nLos mensajes nuevos usan los colores literales «Acquiring Node» o «Node Stolen» de arriba.",
+    "fr": "Appliqué une fois à la fermeture des réglages aux messages affichés (flags=0x11).\\nLes nouveaux messages utilisent les couleurs littérales « Acquiring Node » ou « Node Stolen » ci-dessus."
+  },
+  {
+    "en": "Applied once on settings close to currently displayed messages (flags=0x01).\\nNew messages use their individual literal colors above (No Ammo / Return to Base / Octo ...).",
+    "de": "Einmalig beim Schließen der Einstellungen auf aktuell angezeigte Nachrichten angewendet (flags=0x01).\\nNeue Nachrichten verwenden ihre jeweiligen Farben oben (No Ammo / Return to Base / Octo ...).",
+    "es": "Se aplica una vez al cerrar los ajustes a los mensajes mostrados (flags=0x01).\\nLos mensajes nuevos usan sus colores literales individuales de arriba (No Ammo / Return to Base / Octo ...).",
+    "fr": "Appliqué une fois à la fermeture des réglages aux messages affichés (flags=0x01).\\nLes nouveaux messages utilisent leurs couleurs littérales individuelles ci-dessus (No Ammo / Return to Base / Octo ...)."
+  },
+  {
+    "en": "Applied once on settings close to currently displayed messages (flags=0x00).\\nNew messages use their individual literal colors above (Lost Lives / Coward Detect / Turret ...).\\nNote: HEADSHOT! (H228) is flags=0x00, not 0x02.",
+    "de": "Einmalig beim Schließen der Einstellungen auf aktuell angezeigte Nachrichten angewendet (flags=0x00).\\nNeue Nachrichten verwenden ihre jeweiligen Farben oben (Lost Lives / Coward Detect / Turret ...).\\nHinweis: HEADSHOT! (H228) ist flags=0x00, nicht 0x02.",
+    "es": "Se aplica una vez al cerrar los ajustes a los mensajes mostrados (flags=0x00).\\nLos mensajes nuevos usan sus colores literales individuales de arriba (Lost Lives / Coward Detect / Turret ...).\\nNota: HEADSHOT! (H228) es flags=0x00, no 0x02.",
+    "fr": "Appliqué une fois à la fermeture des réglages aux messages affichés (flags=0x00).\\nLes nouveaux messages utilisent leurs couleurs littérales individuelles ci-dessus (Lost Lives / Coward Detect / Turret ...).\\nNote : HEADSHOT! (H228) est flags=0x00, pas 0x02."
+  }
+]

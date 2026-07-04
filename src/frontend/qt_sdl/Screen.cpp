@@ -1283,7 +1283,7 @@ void ScreenPanel::calcSplashLayout()
     // Localized splash uses a proportional CJK font that can fit on one row even
     // when the upstream bitmap-font English pair stacks; keep line 1 / line 2 layout.
     const bool splashStackVertically =
-        (totalwidth >= w) || MelonPrime::UiText::IsJapaneseLocale();
+        (totalwidth >= w) || MelonPrime::UiText::UsesLocalizedSplashLayout();
 #else
     const bool splashStackVertically = (totalwidth >= w);
 #endif

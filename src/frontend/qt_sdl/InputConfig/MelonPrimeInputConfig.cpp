@@ -236,7 +236,9 @@ void MelonPrimeInputConfig::setupMenuLanguageControl(Config::Table& instcfg)
 
     m_lblMenuLanguage = new QLabel(QStringLiteral("Menu Language"), m_menuLanguageWidget);
     m_comboMenuLanguage = new QComboBox(m_menuLanguageWidget);
-    m_comboMenuLanguage->addItem(QStringLiteral("Japanese"), MelonPrime::UiText::kMenuLanguageJapanese);
+    m_comboMenuLanguage->addItem(
+        MelonPrime::UiText::MenuLanguageNativeLabel(),
+        MelonPrime::UiText::kMenuLanguageNative);
     m_comboMenuLanguage->addItem(QStringLiteral("English"), MelonPrime::UiText::kMenuLanguageEnglish);
     SetComboCurrentData(m_comboMenuLanguage, instcfg.GetInt(MelonPrime::CfgKey::MenuLanguage));
 
