@@ -13,6 +13,10 @@ Windows, and Linux VM without committing ROMs, screenshots, or raw logs.
 | Run the 10 minute soak and quit cleanly | No | Yes |
 | Parse logs and update V5/V6 tables | Yes | Provide logs if AI cannot access the machine |
 
+**Do not use perf logs from crash exits as formal baselines.** A SIGBUS/SIGSEGV
+or forced kill yields truncated histograms and incomplete shutdown counters.
+Only logs from a normal quit count toward Phase 0 §8 / S21 / S24.
+
 Keep logs under `artifacts/perf-baseline/` or another untracked directory. Do
 not commit ROMs, saves, screenshots, or raw perf logs.
 

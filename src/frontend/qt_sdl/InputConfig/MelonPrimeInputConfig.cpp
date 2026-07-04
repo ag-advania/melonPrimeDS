@@ -948,7 +948,7 @@ void MelonPrimeInputConfig::populatePage(QWidget* page, const HotkeyEntry* entri
     QGroupBox* group;
     QGridLayout* group_layout;
 
-    group = new QGroupBox("Keyboard & mouse mappings:");
+    group = new QGroupBox("Keyboard && mouse mappings:");
     main_layout->addWidget(group);
     group_layout = new QGridLayout();
     group_layout->setSpacing(1);
@@ -1138,21 +1138,26 @@ void MelonPrimeInputConfig::refreshAfterHudEditSave()
 {
     // Edit HUD Layout wrote directly to config. Reload all widget values so
     // that clicking OK in the settings dialog doesn't overwrite the new positions.
+    if (!visualSnapshotTargetsAlive())
+        return;
+
     auto& cfg = emuInstance->getLocalConfig();
     m_applyPreviewEnabled = false;
     for (auto& [key, widget] : m_hudWidgets) {
+        if (!widget)
+            continue;
         widget->blockSignals(true);
-        if (auto* cb = qobject_cast<QCheckBox*>(widget))
+        if (auto* cb = qobject_cast<QCheckBox*>(widget.data()))
             cb->setChecked(cfg.GetBool(key));
-        else if (auto* sb = qobject_cast<QSpinBox*>(widget))
+        else if (auto* sb = qobject_cast<QSpinBox*>(widget.data()))
             sb->setValue(cfg.GetInt(key));
-        else if (auto* dsb = qobject_cast<QDoubleSpinBox*>(widget))
+        else if (auto* dsb = qobject_cast<QDoubleSpinBox*>(widget.data()))
             dsb->setValue(cfg.GetDouble(key));
-        else if (auto* le = qobject_cast<QLineEdit*>(widget))
+        else if (auto* le = qobject_cast<QLineEdit*>(widget.data()))
             le->setText(QString::fromStdString(cfg.GetString(key)));
-        else if (auto* fc = qobject_cast<QFontComboBox*>(widget))   // before QComboBox: stores family string
+        else if (auto* fc = qobject_cast<QFontComboBox*>(widget.data()))   // before QComboBox: stores family string
             fc->setCurrentFont(QFont(QString::fromStdString(cfg.GetString(key))));
-        else if (auto* combo = qobject_cast<QComboBox*>(widget))
+        else if (auto* combo = qobject_cast<QComboBox*>(widget.data()))
             combo->setCurrentIndex(cfg.GetInt(key));
         widget->blockSignals(false);
     }

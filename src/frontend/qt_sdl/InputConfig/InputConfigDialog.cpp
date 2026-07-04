@@ -287,7 +287,8 @@ void InputConfigDialog::on_InputConfigDialog_rejected()
     emuInstance->setJoystick(instcfg.GetInt("JoystickID"));
 
 #ifdef MELONPRIME_DS
-    if (melonPrimeInputConfig)
+    // Cancel must not touch stale widgets if tab pages were already torn down.
+    if (melonPrimeInputConfig && ui)
         melonPrimeInputConfig->restoreVisualSnapshot();
 #endif
 
