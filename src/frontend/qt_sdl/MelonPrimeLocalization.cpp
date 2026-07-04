@@ -271,6 +271,7 @@ constexpr Translation kTranslations[] = {
 
     // Hotkey page
     {"Keyboard mappings", "キーボード割り当て"},
+    {"Keyboard & mouse mappings", "キーボード・マウス割り当て"},
     {"Joystick mappings", "ジョイスティック割り当て"},
     {"[Metroid] (W) Move Forward", "[Metroid] (W) 前進"},
     {"[Metroid] (S) Move Back", "[Metroid] (S) 後退"},
@@ -307,7 +308,7 @@ constexpr Translation kTranslations[] = {
     // General Metroid settings
     {"MPH Sensitivity (default: -3)", "MPH感度 (既定: -3)"},
     {"Aim sensitivity (default: 63)", "エイム感度 (既定: 63)"},
-    {"Aim Y-Axis Scale (default: 1.5147 = MPH native; option: 1.9429 = perfectly matches X/Y angular velocity)", "エイムY軸スケール (既定: 1.5147 = MPH標準、1.9429 = X/Y角速度一致)"},
+    {"Aim Y-Axis Scale (default: 1.5147)", "エイムY軸スケール (既定: 1.5147)"},
     {"Mode", "モード"},
     {"Low-Latency Aim Mode", "低遅延エイム方式"},
     {"Instant Aim Follow", "即時エイム追従"},
@@ -834,6 +835,10 @@ constexpr ObjectTextTranslation kObjectTextTranslations[] = {
     {
         "metroidMphSensitvityLabel2",
         "(精密なエイムのため、可能なら1以下にしてください。推奨範囲は -3〜0 です。ただし低すぎるとエイム時のHUD揺れが大きくなります。この値はゲーム内感度に対する相対値なので、0は感度ゼロではなく、1より低いだけです。この設定はMPHのゲーム内感度を上書きするため、ゲーム内で感度を変更しても効果はありません。)"
+    },
+    {
+        "metroidAimYAxisScaleLabel2",
+        "(1.5147 = MPH標準、1.9429 = X/Y角速度一致 [オプション])"
     },
     {
         "metroidAimAdjustLabel",
