@@ -818,6 +818,7 @@ void MelonPrimeInputConfig::updateAimControlsForStylusMode(bool stylusEnabled)
     ui->metroidAimSensitvityLabel->setEnabled(enableAimControls);
     ui->metroidAimYAxisScaleSpinBox->setEnabled(enableAimControls);
     ui->metroidAimYAxisScaleLabel->setEnabled(enableAimControls);
+    ui->metroidAimYAxisScaleLabel2->setEnabled(enableAimControls);
     ui->metroidAimAdjustSpinBox->setEnabled(enableAimControls);
     ui->metroidAimAdjustLabel->setEnabled(enableAimControls);
     ui->cbMetroidEnableAimAccumulator->setEnabled(enableAimControls);
@@ -947,7 +948,7 @@ void MelonPrimeInputConfig::populatePage(QWidget* page, const HotkeyEntry* entri
     QGroupBox* group;
     QGridLayout* group_layout;
 
-    group = new QGroupBox("Keyboard mappings:");
+    group = new QGroupBox("Keyboard & mouse mappings:");
     main_layout->addWidget(group);
     group_layout = new QGridLayout();
     group_layout->setSpacing(1);
