@@ -60,6 +60,12 @@ QString TrInstanceDialogText(const QString& text)
     if (text.startsWith(QStringLiteral("Configuring settings for instance ")))
     {
         const QString arg = text.mid(35);
+        // Dedicated Chinese Traditional wording, checked ahead of the
+        // resolved-language switch below (which would otherwise always
+        // resolve ChineseTraditional to the ChineseSimplified case).
+        if (ActiveMenuLanguage() == MenuLangId::ChineseTraditional)
+            return QStringLiteral("實例 %1 的設定").arg(arg);
+
         switch (ResolveTranslationLanguage(ActiveMenuLanguage())) {
         case MenuLangId::German:
             return QStringLiteral("Einstellungen für Instanz %1").arg(arg);
@@ -89,6 +95,9 @@ QString TrInstanceDialogText(const QString& text)
     if (text.startsWith(QStringLiteral("Configuring mappings for instance ")))
     {
         const QString arg = text.mid(35);
+        if (ActiveMenuLanguage() == MenuLangId::ChineseTraditional)
+            return QStringLiteral("實例 %1 的映射").arg(arg);
+
         switch (ResolveTranslationLanguage(ActiveMenuLanguage())) {
         case MenuLangId::German:
             return QStringLiteral("Belegungen für Instanz %1").arg(arg);
@@ -118,6 +127,9 @@ QString TrInstanceDialogText(const QString& text)
     if (text.startsWith(QStringLiteral("Configuring paths for instance ")))
     {
         const QString arg = text.mid(32);
+        if (ActiveMenuLanguage() == MenuLangId::ChineseTraditional)
+            return QStringLiteral("實例 %1 的路徑").arg(arg);
+
         switch (ResolveTranslationLanguage(ActiveMenuLanguage())) {
         case MenuLangId::German:
             return QStringLiteral("Pfade für Instanz %1").arg(arg);
@@ -147,6 +159,9 @@ QString TrInstanceDialogText(const QString& text)
     if (text.startsWith(QStringLiteral("Setting battery levels for instance ")))
     {
         const QString arg = text.mid(36);
+        if (ActiveMenuLanguage() == MenuLangId::ChineseTraditional)
+            return QStringLiteral("實例 %1 的電池電量").arg(arg);
+
         switch (ResolveTranslationLanguage(ActiveMenuLanguage())) {
         case MenuLangId::German:
             return QStringLiteral("Akkustand für Instanz %1").arg(arg);
@@ -206,6 +221,9 @@ QString TrSpecialDynamicText(const QString& text)
         && text.endsWith(QStringLiteral(" and ethernet connection)")))
     {
         const QString middle = text.mid(22, text.size() - 22 - 25);
+        if (ActiveMenuLanguage() == MenuLangId::ChineseTraditional)
+            return QStringLiteral("直連模式（需要 %1 與乙太網路連線）").arg(middle);
+
         switch (ResolveTranslationLanguage(ActiveMenuLanguage())) {
         case MenuLangId::German:
             return QStringLiteral("Direktmodus (erfordert %1 und Ethernet-Verbindung)").arg(middle);
@@ -235,6 +253,10 @@ QString TrSpecialDynamicText(const QString& text)
     const int nativeIdx = text.indexOf(QStringLiteral(" native ("));
     if (nativeIdx > 0)
     {
+        // "原生" (native) reads the same in Simplified and Traditional, so no
+        // dedicated ChineseTraditional wording is needed here; it still
+        // resolves through ChineseSimplified below rather than reaching
+        // "default" and falling back to the untranslated English text.
         switch (ResolveTranslationLanguage(ActiveMenuLanguage())) {
         case MenuLangId::German:
             return text.left(nativeIdx) + QStringLiteral(" nativ (") + text.mid(nativeIdx + 9);
@@ -263,6 +285,16 @@ QString TrSpecialDynamicText(const QString& text)
 
     {
         QString cameraText = text;
+        if (ActiveMenuLanguage() == MenuLangId::ChineseTraditional)
+        {
+            if (cameraText.contains(QStringLiteral(" (inner camera)")))
+                cameraText.replace(QStringLiteral(" (inner camera)"), QStringLiteral(" (內側相機)"));
+            if (cameraText.contains(QStringLiteral(" (outer camera)")))
+                cameraText.replace(QStringLiteral(" (outer camera)"), QStringLiteral(" (外側相機)"));
+            if (cameraText != text)
+                return cameraText;
+        }
+
         switch (ResolveTranslationLanguage(ActiveMenuLanguage())) {
         case MenuLangId::German:
             if (cameraText.contains(QStringLiteral(" (inner camera)")))

@@ -421,16 +421,17 @@ def print_coverage_report(exact_rows: list[dict[str, object]], object_rows: list
     print("[INFO]   es-419 -> es, fr-CA -> fr, pt-BR -> pt")
     print("[INFO]   zh-Hant -> zh-Hans for untranslated keys")
 
-    legacy_dynamic = "ja/de/es/fr/it/nl/pt/ru/zh-Hans/ko"
+    legacy_dynamic = "ja/de/es/fr/it/nl/pt/ru/zh-Hans/zh-Hant/ko"
     print("[INFO] Dynamic text coverage:")
     print(
         f"[INFO]   instance dialog labels: {legacy_dynamic} directly cased; "
-        "region/script variants (zh-Hant, es-419, fr-CA, pt-BR, en-GB, en-US) "
+        "other region/script variants (es-419, fr-CA, pt-BR, en-GB, en-US) "
         "resolve through their base language; other languages fallback to English"
     )
     print(
-        f"[INFO]   special dynamic labels ((none), Direct mode, native/camera): {legacy_dynamic} directly cased; "
-        "region/script variants resolve through their base language; other languages fallback to English"
+        f"[INFO]   special dynamic labels ((none), Direct mode, native/camera): {legacy_dynamic} directly cased "
+        "(zh-Hant shares zh-Hans wording for the \"native\" suffix, which is script-invariant); "
+        "other region/script variants resolve through their base language; other languages fallback to English"
     )
     print("[INFO]   slot/screen prefixes: catalog-backed for all audited base languages")
     print("[INFO]   LAN warnings: catalog-backed for all audited base languages")
@@ -518,6 +519,14 @@ def main() -> int:
     require(
         not bare_active_language_switches,
         "Dynamic text switches resolve through the base language before defaulting to English",
+    )
+    dynamic_zh_hant_dedicated_count = len(
+        re.findall(r"ActiveMenuLanguage\(\)\s*==\s*MenuLangId::ChineseTraditional", source)
+    )
+    require(
+        dynamic_zh_hant_dedicated_count >= 6,
+        "Dynamic instance/direct-mode/camera text has dedicated ChineseTraditional wording "
+        f"({dynamic_zh_hant_dedicated_count} found, expected >= 6)",
     )
 
     exact_rows = parse_translation_rows("kTranslations")
