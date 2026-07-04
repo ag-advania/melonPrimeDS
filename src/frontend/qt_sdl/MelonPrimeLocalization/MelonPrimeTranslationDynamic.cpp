@@ -60,7 +60,7 @@ QString TrInstanceDialogText(const QString& text)
     if (text.startsWith(QStringLiteral("Configuring settings for instance ")))
     {
         const QString arg = text.mid(35);
-        switch (ActiveMenuLanguage()) {
+        switch (ResolveTranslationLanguage(ActiveMenuLanguage())) {
         case MenuLangId::German:
             return QStringLiteral("Einstellungen für Instanz %1").arg(arg);
         case MenuLangId::Spanish:
@@ -89,7 +89,7 @@ QString TrInstanceDialogText(const QString& text)
     if (text.startsWith(QStringLiteral("Configuring mappings for instance ")))
     {
         const QString arg = text.mid(35);
-        switch (ActiveMenuLanguage()) {
+        switch (ResolveTranslationLanguage(ActiveMenuLanguage())) {
         case MenuLangId::German:
             return QStringLiteral("Belegungen für Instanz %1").arg(arg);
         case MenuLangId::Spanish:
@@ -118,7 +118,7 @@ QString TrInstanceDialogText(const QString& text)
     if (text.startsWith(QStringLiteral("Configuring paths for instance ")))
     {
         const QString arg = text.mid(32);
-        switch (ActiveMenuLanguage()) {
+        switch (ResolveTranslationLanguage(ActiveMenuLanguage())) {
         case MenuLangId::German:
             return QStringLiteral("Pfade für Instanz %1").arg(arg);
         case MenuLangId::Spanish:
@@ -147,7 +147,7 @@ QString TrInstanceDialogText(const QString& text)
     if (text.startsWith(QStringLiteral("Setting battery levels for instance ")))
     {
         const QString arg = text.mid(36);
-        switch (ActiveMenuLanguage()) {
+        switch (ResolveTranslationLanguage(ActiveMenuLanguage())) {
         case MenuLangId::German:
             return QStringLiteral("Akkustand für Instanz %1").arg(arg);
         case MenuLangId::Spanish:
@@ -180,7 +180,14 @@ QString TrSpecialDynamicText(const QString& text)
 {
     if (text == QStringLiteral("(none)"))
     {
-        switch (ActiveMenuLanguage()) {
+        // Chinese Traditional has its own wording; every other language,
+        // including region variants without a dedicated case below (es-419,
+        // fr-CA, pt-BR, en-GB, en-US), resolves through its fallback/base
+        // language before defaulting to the English source text.
+        if (ActiveMenuLanguage() == MenuLangId::ChineseTraditional)
+            return QStringLiteral("（無）");
+
+        switch (ResolveTranslationLanguage(ActiveMenuLanguage())) {
         case MenuLangId::German: return QStringLiteral("(keine)");
         case MenuLangId::Spanish: return QStringLiteral("(ninguno)");
         case MenuLangId::French: return QStringLiteral("(aucun)");
@@ -189,7 +196,6 @@ QString TrSpecialDynamicText(const QString& text)
         case MenuLangId::Portuguese: return QStringLiteral("(nenhum)");
         case MenuLangId::Russian: return QStringLiteral("(нет)");
         case MenuLangId::ChineseSimplified: return QStringLiteral("（无）");
-        case MenuLangId::ChineseTraditional: return QStringLiteral("（無）");
         case MenuLangId::Korean: return QStringLiteral("(없음)");
         case MenuLangId::Japanese: return QStringLiteral("(なし)");
         default: return text;
@@ -200,7 +206,7 @@ QString TrSpecialDynamicText(const QString& text)
         && text.endsWith(QStringLiteral(" and ethernet connection)")))
     {
         const QString middle = text.mid(22, text.size() - 22 - 25);
-        switch (ActiveMenuLanguage()) {
+        switch (ResolveTranslationLanguage(ActiveMenuLanguage())) {
         case MenuLangId::German:
             return QStringLiteral("Direktmodus (erfordert %1 und Ethernet-Verbindung)").arg(middle);
         case MenuLangId::Spanish:
@@ -229,7 +235,7 @@ QString TrSpecialDynamicText(const QString& text)
     const int nativeIdx = text.indexOf(QStringLiteral(" native ("));
     if (nativeIdx > 0)
     {
-        switch (ActiveMenuLanguage()) {
+        switch (ResolveTranslationLanguage(ActiveMenuLanguage())) {
         case MenuLangId::German:
             return text.left(nativeIdx) + QStringLiteral(" nativ (") + text.mid(nativeIdx + 9);
         case MenuLangId::Spanish:
@@ -257,7 +263,7 @@ QString TrSpecialDynamicText(const QString& text)
 
     {
         QString cameraText = text;
-        switch (ActiveMenuLanguage()) {
+        switch (ResolveTranslationLanguage(ActiveMenuLanguage())) {
         case MenuLangId::German:
             if (cameraText.contains(QStringLiteral(" (inner camera)")))
                 cameraText.replace(QStringLiteral(" (inner camera)"), QStringLiteral(" (Innenkamera)"));
