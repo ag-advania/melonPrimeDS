@@ -60,6 +60,30 @@ LANGUAGE_COLUMNS = [
     ("ChineseTraditional", "zh-Hant"),
 ]
 
+# Mainland-only / simplified-leaning vocabulary that should not appear in
+# ChineseTraditional (zh-Hant) values, even though the individual characters
+# may be valid Traditional forms (e.g. "設置" is written with Traditional
+# characters but is mainland UI vocabulary; Taiwan UI uses "設定"). This is a
+# quality lint (WARN), not a correctness gate, since a term appearing here does
+# not make the string wrong to read -- just non-idiomatic for a Taiwan-facing
+# UI. Keep in sync with ZH_HANT_TERMINOLOGY_FIXES in
+# tools/complete_zh_hant_from_zh_hans.py.
+ZH_HANT_TERMINOLOGY_HINTS: dict[str, str] = {
+    "爲": "為",
+    "設置": "設定",
+    "默認": "預設",
+    "文件": "檔案",
+    "加載": "載入",
+    "連接": "連線",
+    "網絡": "網路",
+    "鼠標": "滑鼠",
+    "屏幕": "螢幕",
+    "圖標": "圖示",
+    "攝像頭": "相機",
+    "以太網": "乙太網路",
+    "布局": "佈局",
+}
+
 
 def read_text(path: Path, seen: set[Path] | None = None) -> str:
     if seen is None:
@@ -399,10 +423,36 @@ def print_coverage_report(exact_rows: list[dict[str, object]], object_rows: list
 
     legacy_dynamic = "ja/de/es/fr/it/nl/pt/ru/zh-Hans/ko"
     print("[INFO] Dynamic text coverage:")
-    print(f"[INFO]   instance dialog labels: {legacy_dynamic}; other languages fallback to English")
-    print(f"[INFO]   special dynamic labels ((none), Direct mode, native/camera): {legacy_dynamic}; other languages fallback to English")
+    print(
+        f"[INFO]   instance dialog labels: {legacy_dynamic} directly cased; "
+        "region/script variants (zh-Hant, es-419, fr-CA, pt-BR, en-GB, en-US) "
+        "resolve through their base language; other languages fallback to English"
+    )
+    print(
+        f"[INFO]   special dynamic labels ((none), Direct mode, native/camera): {legacy_dynamic} directly cased; "
+        "region/script variants resolve through their base language; other languages fallback to English"
+    )
     print("[INFO]   slot/screen prefixes: catalog-backed for all audited base languages")
     print("[INFO]   LAN warnings: catalog-backed for all audited base languages")
+
+
+def lint_zh_hant_terminology(
+    exact_rows: list[dict[str, object]], object_rows: list[dict[str, object]]
+) -> list[tuple[str, str, str, str]]:
+    """Return (source_key, surface, suspicious_term, suggestion) for every
+    ChineseTraditional value that still contains mainland-leaning vocabulary.
+    This is a quality lint, not a correctness gate: callers should print these
+    as [WARN], not fail the audit."""
+    hits: list[tuple[str, str, str, str]] = []
+    for surface, rows in (("exact", exact_rows), ("object", object_rows)):
+        for row in rows:
+            value = row["values"].get("ChineseTraditional")  # type: ignore[union-attr]
+            if not value:
+                continue
+            for term, suggestion in ZH_HANT_TERMINOLOGY_HINTS.items():
+                if term in value:
+                    hits.append((str(row["key"]), surface, term, suggestion))
+    return hits
 
 
 def main() -> int:
@@ -463,6 +513,11 @@ def main() -> int:
         "ResolveTranslationLanguage(lang)" in source
         and "findValue(lang)" in source,
         "Translation lookup checks actual language before fallback",
+    )
+    bare_active_language_switches = re.findall(r"switch\s*\(\s*ActiveMenuLanguage\(\)\s*\)", source)
+    require(
+        not bare_active_language_switches,
+        "Dynamic text switches resolve through the base language before defaulting to English",
     )
 
     exact_rows = parse_translation_rows("kTranslations")
@@ -531,6 +586,18 @@ def main() -> int:
     print(f"[INFO] Exact translation keys: {len(exact_rows)}")
     print(f"[INFO] Object translation keys: {len(object_rows)}")
     print_coverage_report(exact_rows, object_rows)
+
+    zh_hant_hints = lint_zh_hant_terminology(exact_rows, object_rows)
+    if zh_hant_hints:
+        print(f"[WARN] ChineseTraditional terminology quality: {len(zh_hant_hints)} suspicious term(s) found")
+        shown = zh_hant_hints[:20]
+        for key, surface, term, suggestion in shown:
+            print(f"[WARN]   {surface} '{key}': '{term}' -> consider '{suggestion}'")
+        if len(zh_hant_hints) > len(shown):
+            print(f"[WARN]   ... and {len(zh_hant_hints) - len(shown)} more")
+    else:
+        pass_line("ChineseTraditional values contain no known mainland-only terminology")
+
     return 0
 
 
