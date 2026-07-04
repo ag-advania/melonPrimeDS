@@ -71,6 +71,12 @@ If the binary path differs, use the path printed by the build wrapper.
 Use the VM flow in `.claude/rules/linux-vm-build.md`. For FPS aim testing,
 choose an Xorg session and turn VirtualBox mouse integration off.
 
+**Performance caveat:** baseline numbers from the Linux VM are expected to show
+**much worse FPS** than macOS or native Linux on real hardware (typical soak:
+p50 ~50 ms ≒ ~20 fps) because the guest runs Mesa **llvmpipe** software GL
+inside VirtualBox. Treat Linux VM perf as CI/build validation and input-path
+evidence only — not as a Phase 3/5 optimization gate.
+
 Build in the guest:
 
 ```bash
@@ -84,6 +90,12 @@ cd /mnt/mp
 .claude/skills/collect-perf-baseline.sh --label linux-vm -- \
   build-linux/melonPrimeDS
 ```
+
+If `artifacts/perf-baseline/` on the shared folder is not writable by the guest
+user (common when the host owns the directory), the script automatically writes
+to `~/.local/share/melonprime-perf-baseline/` instead. Copy the log and summary
+back to the repo host when done, or set `--out-dir` / `MELONPRIME_PERF_OUT_DIR`
+to a guest-writable path under `/home/melon/`.
 
 ## Summarize
 
