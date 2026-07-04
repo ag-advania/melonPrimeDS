@@ -271,13 +271,13 @@ constexpr Translation kTranslations[] = {
 
     // Hotkey page
     {"Keyboard mappings", "キーボード割り当て"},
-    {"Keyboard & mouse mappings", "キーボード・マウス割り当て"},
+    {"Keyboard && mouse mappings", "キーボード・マウス割り当て"},
     {"Joystick mappings", "ジョイスティック割り当て"},
     {"[Metroid] (W) Move Forward", "[Metroid] (W) 前進"},
     {"[Metroid] (S) Move Back", "[Metroid] (S) 後退"},
     {"[Metroid] (A) Move Left", "[Metroid] (A) 左移動"},
     {"[Metroid] (D) Move Right", "[Metroid] (D) 右移動"},
-    {"[Metroid] (Mouse Left) Shoot/Scan, Map Zoom In", "[Metroid] (マウス左) 射撃/スキャン、マップ拡大"},
+    {"[Metroid] (Mouse Left) Shoot/Scan", "[Metroid] (マウス左) 射撃/スキャン"},
     {"[Metroid] (V) Scan/Shoot, Map Zoom In", "[Metroid] (V) スキャン/射撃、マップ拡大"},
     {"[Metroid] (Mouse Right) Imperialist Zoom, Map Zoom Out, Morph Ball Boost", "[Metroid] (マウス右) インペリアリストズーム、マップ縮小、モーフボールブースト"},
     {"[Metroid] (Space) Jump", "[Metroid] (Space) ジャンプ"},
