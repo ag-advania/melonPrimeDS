@@ -359,7 +359,7 @@ constexpr Translation kTranslations[] = {
     {"Reset sensitivity values", "感度を既定値に戻す"},
     {"Video quality: Low (High Performance)", "映像品質: 低 (高パフォーマンス)"},
     {"Video quality: High (Lower Performance)", "映像品質: 高 (低パフォーマンス)"},
-    {"Video quality: High2 (Recommended. Best Performance, Minor Visual Glitches)", "映像品質: 高2 (推奨。最高パフォーマンス、軽微な表示乱れあり)"},
+    {"Video quality: High2 (Recommended. Best Performance)", "映像品質: 高2 (推奨。最高パフォーマンス)"},
     {"Apply SFX volume", "効果音音量を反映"},
     {"Apply music volume", "BGM音量を反映"},
     {"Apply the selected hunter to your license. (Renaming will update the save data)", "選択したハンターをライセンスに反映 (名前変更でセーブデータ更新)"},

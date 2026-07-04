@@ -677,7 +677,7 @@ Briefly flashes you in the Double Damage purple state when you take damage, so o
 										<item>
 											<widget class="QPushButton" name="metroidSetVideoQualityToHigh2">
 												<property name="text">
-													<string>Video quality: High2 (Recommended. Best Performance, Minor Visual Glitches)</string>
+													<string>Video quality: High2 (Recommended. Best Performance)</string>
 												</property>
 											</widget>
 										</item>
