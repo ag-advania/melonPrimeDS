@@ -28,6 +28,7 @@
 #include <QFontMetrics>
 #include <QImage>
 #include <QPainter>
+#include <QTextOption>
 
 #include <utility>
 
@@ -47,7 +48,8 @@ bool LanguageTagMatches(const QString& tag, const char* prefix)
 {
     if (tag.isEmpty())
         return false;
-    return tag.toLower().startsWith(QString::fromLatin1(prefix));
+    return QString(tag).toLower().replace(QLatin1Char('-'), QLatin1Char('_'))
+        .startsWith(QString::fromLatin1(prefix));
 }
 
 #ifdef __APPLE__
@@ -89,7 +91,7 @@ bool ApplePreferredLanguagesContain(const char* prefix)
 
 MenuLangId LanguageTagToMenuLang(const QString& tag)
 {
-    const QString lower = tag.toLower();
+    const QString lower = QString(tag).toLower().replace(QLatin1Char('-'), QLatin1Char('_'));
 
     auto regionIs = [&](const char* region) -> bool
     {
@@ -427,6 +429,11 @@ int NormalizeMenuLanguageConfig(int storedValue)
         return kMenuLanguageSystemDefault;
     if (storedValue == kMenuLanguageLegacyEnglish)
         return static_cast<int>(MenuLangId::English);
+    if (storedValue >= static_cast<int>(MenuLangId::First)
+        && storedValue < static_cast<int>(MenuLangId::Count))
+        return storedValue;
+    if (storedValue == kMenuLanguageSystemDefault)
+        return storedValue;
     return storedValue;
 }
 
@@ -473,7 +480,8 @@ MenuLangId ActiveMenuLanguage()
     const int selection = MenuLanguageSelection();
     if (selection == kMenuLanguageSystemDefault)
         return DetectSystemMenuLanguage();
-    if (selection >= 0 && selection < static_cast<int>(MenuLangId::Count))
+    if (selection >= static_cast<int>(MenuLangId::First)
+        && selection < static_cast<int>(MenuLangId::Count))
         return static_cast<MenuLangId>(selection);
     return MenuLangId::English;
 }
@@ -497,7 +505,7 @@ QString MenuLanguageDisplayName(MenuLangId lang)
     case MenuLangId::Thai: return QStringLiteral("ไทย");
     case MenuLangId::Czech: return QStringLiteral("Čeština");
     case MenuLangId::ChineseSimplified: return QStringLiteral("中文（简体）");
-    case MenuLangId::ChineseTraditional: return QStringLiteral("中文（繁體）");
+    case MenuLangId::ChineseTraditional: return QStringLiteral("中文（繁體，简体fallback）");
     case MenuLangId::Danish: return QStringLiteral("Dansk");
     case MenuLangId::German: return QStringLiteral("Deutsch");
     case MenuLangId::Turkish: return QStringLiteral("Türkçe");
@@ -525,9 +533,16 @@ QString MenuLanguageNativeLabel()
 QList<MenuLangId> AllSelectableMenuLanguages()
 {
     QList<MenuLangId> langs;
-    langs.reserve(static_cast<int>(MenuLangId::Count));
-    for (int i = 0; i < static_cast<int>(MenuLangId::Count); ++i)
-        langs.append(static_cast<MenuLangId>(i));
+    langs.reserve(static_cast<int>(MenuLangId::Count) - static_cast<int>(MenuLangId::First));
+    for (int i = static_cast<int>(MenuLangId::First);
+        i < static_cast<int>(MenuLangId::Count);
+        ++i)
+    {
+        const MenuLangId lang = static_cast<MenuLangId>(i);
+        if (lang == MenuLangId::ChineseTraditional)
+            continue;
+        langs.append(lang);
+    }
     return langs;
 }
 
@@ -631,6 +646,8 @@ constexpr Translation kTranslations[] = {
     {"Launch new instance", "新しいインスタンスを起動", "Neue Instanz starten", "Iniciar nueva instancia", "Lancer une nouvelle instance", "Avvia nuova istanza", "Nieuwe instantie starten", "Iniciar nova instância", "Запустить новый экземпляр", "启动新实例", "새 인스턴스 실행", "تشغيل نسخة جديدة", "Luncurkan instance baru", "Запустити новий екземпляр", "Εκκίνηση νέας εμφάνισης", "Starta ny instans", "เปิดอินสแตนซ์ใหม่", "Spustit novou instanci", "Start ny instans", "Yeni örnek başlat", "Start ny instans", "Új példány indítása", "Käynnistä uusi instanssi", "Khởi chạy phiên bản mới", "Uruchom nową instancję", "Lansează instanță nouă"},
     {"Host LAN game", "LANゲームをホスト", "LAN-Spiel hosten", "Alojar partida LAN", "Héberger une partie LAN", "Ospita partita LAN", "LAN-spel hosten", "Hospedar jogo LAN", "Создать LAN-игру", "托管 LAN 游戏", "LAN 게임 호스트", "استضافة لعبة LAN", "Host game LAN", "Хостити LAN-гру", "Φιλοξενία παιχνιδιού LAN", "Värd LAN-spel", "โฮสต์เกม LAN", "Hostovat LAN hru", "Vært LAN-spil", "LAN oyunu barındır", "Vert LAN-spill", "LAN játék hosztolása", "Isännöi LAN-peliä", "Chủ trì game LAN", "Hostuj grę LAN", "Găzduiește joc LAN"},
     {"Join LAN game", "LANゲームに参加", "LAN-Spiel beitreten", "Unirse a partida LAN", "Rejoindre une partie LAN", "Unisciti a partita LAN", "Deelnemen aan LAN-spel", "Entrar em jogo LAN", "Присоединиться к LAN-игре", "加入 LAN 游戏", "LAN 게임 참가", "الانضمام إلى لعبة LAN", "Gabung permainan LAN", "Приєднатися до LAN-гри", "Συμμετοχή σε παιχνίδι LAN", "Gå med i LAN-spel", "เข้าร่วมเกม LAN", "Připojit se k LAN hře", "Deltag i LAN-spil", "LAN oyununa katıl", "Bli med i LAN-spill", "Csatlakozás LAN-játékhoz", "Liity LAN-peliin", "Tham gia game LAN", "Dołącz do gry LAN", "Alătură-te jocului LAN"},
+    {"Warning: LAN requires low network latency to work.", "警告: LANは低レイテンシのネットワーク接続が必要です。", "Warnung: LAN erfordert eine latenzarme Netzwerkverbindung.", "Advertencia: LAN requiere una conexión de red de baja latencia.", "Avertissement : le LAN nécessite une connexion réseau à faible latence.", "Avviso: LAN richiede una connessione di rete a bassa latenza.", "Waarschuwing: LAN vereist een netwerkverbinding met lage latentie.", "Aviso: LAN requer uma ligação de rede de baixa latência.", "Предупреждение: для LAN требуется сеть с низкой задержкой.", "警告：LAN 需要低延迟网络连接。", "경고: LAN은 낮은 지연 시간의 네트워크 연결이 필요합니다.", "تحذير: يتطلب LAN اتصال شبكة بزمن انتقال منخفض.", "Peringatan: LAN memerlukan koneksi jaringan latensi rendah.", "Попередження: для LAN потрібне мережеве з'єднання з малою затримкою.", "Προειδοποίηση: το LAN απαιτεί σύνδεση δικτύου χαμηλής καθυστέρησης.", "Varning: LAN kräver en nätverksanslutning med låg latens.", "คำเตือน: LAN ต้องใช้การเชื่อมต่อเครือข่ายที่มีความหน่วงต่ำ", "Varování: LAN vyžaduje síťové připojení s nízkou latencí.", "Advarsel: LAN kræver en netværksforbindelse med lav latency.", "Uyarı: LAN düşük gecikmeli bir ağ bağlantısı gerektirir.", "Advarsel: LAN krever en nettverkstilkobling med lav latency.", "Figyelmeztetés: a LAN alacsony késleltetésű hálózati kapcsolatot igényel.", "Varoitus: LAN vaatii matalan viiveen verkkoyhteyden.", "Cảnh báo: LAN cần kết nối mạng có độ trễ thấp.", "Ostrzeżenie: LAN wymaga połączenia sieciowego o niskim opóźnieniu.", "Avertisment: LAN necesită o conexiune de rețea cu latență redusă."},
+    {"Do not expect it to work through a VPN or any sort of tunnel.", "VPNやトンネル経由では動作しない可能性があります。", "Über VPN oder Tunnel funktioniert es möglicherweise nicht.", "Puede no funcionar a través de VPN o túneles.", "Peut ne pas fonctionner via VPN ou tunnel.", "Potrebbe non funzionare tramite VPN o tunnel.", "Werkt mogelijk niet via VPN of tunnels.", "Pode não funcionar através de VPN ou túneis.", "Может не работать через VPN или туннели.", "通过 VPN 或隧道可能无法正常工作。", "VPN 또는 터널을 통해서는 작동하지 않을 수 있습니다.", "لا تتوقع أن يعمل عبر VPN أو أي نوع من الأنفاق.", "Jangan harapkan ini berfungsi melalui VPN atau tunnel apa pun.", "Не очікуйте роботи через VPN або будь-який тунель.", "Μην περιμένετε να λειτουργήσει μέσω VPN ή οποιουδήποτε tunnel.", "Räkna inte med att det fungerar via VPN eller någon tunnel.", "อย่าคาดหวังว่าจะทำงานผ่าน VPN หรือ tunnel ใด ๆ", "Neočekávejte, že bude fungovat přes VPN nebo jakýkoli tunel.", "Forvent ikke, at det virker via VPN eller nogen tunnel.", "VPN veya herhangi bir tünel üzerinden çalışmasını beklemeyin.", "Ikke forvent at det fungerer via VPN eller noen tunnel.", "Ne számítson rá, hogy VPN-en vagy bármilyen alagúton keresztül működik.", "Älä odota sen toimivan VPN:n tai minkään tunnelin kautta.", "Đừng kỳ vọng nó hoạt động qua VPN hoặc bất kỳ đường hầm nào.", "Nie oczekuj działania przez VPN ani żaden tunel.", "Nu vă așteptați să funcționeze prin VPN sau orice fel de tunel."},
     {"View", "表示", "Ansicht", "Ver", "Affichage", "Visualizza", "Beeld", "Exibir", "Вид", "视图", "보기", "عرض", "Tampilan", "Вигляд", "Προβολή", "Visa", "มุมมอง", "Zobrazení", "Visning", "Görünüm", "Visning", "Nézet", "Näkymä", "Xem", "Widok", "Afișare"},
     {"Screen size", "画面サイズ", "Bildschirmgröße", "Tamaño de pantalla", "Taille de l'écran", "Dimensione schermo", "Schermgrootte", "Tamanho da tela", "Размер экрана", "画面大小", "화면 크기", "حجم الشاشة", "Ukuran layar", "Розмір екрана", "Μέγεθος οθόνης", "Skärmstorlek", "ขนาดหน้าจอ", "Velikost obrazovky", "Skærmstørrelse", "Ekran boyutu", "Skjermstørrelse", "Képernyőméret", "Näytön koko", "Kích thước màn hình", "Rozmiar ekranu", "Dimensiune ecran"},
     {"Screen rotation", "画面回転", "Bildschirmdrehung", "Rotación de pantalla", "Rotation de l'écran", "Rotazione schermo", "Schermrotatie", "Rotação de tela", "Поворот экрана", "屏幕旋转", "화면 회전", "دوران الشاشة", "Rotasi layar", "Обертання екрана", "Περιστροφή οθόνης", "Skärmrotation", "หมุนหน้าจอ", "Otočení obrazovky", "Skærmrotation", "Ekran döndürme", "Skjermrotasjon", "Képernyő forgatás", "Näytön kierto", "Xoay màn hình", "Obrót ekranu", "Rotație ecran"},
@@ -3624,49 +3641,43 @@ QString Tr(const QString& text)
             return cameraText;
     }
 
-    struct PrefixPair {
-        const char* en;
-        const char* ja;
-        const char* de;
-        const char* es;
-        const char* fr;
-        const char* it;
-        const char* nl;
-        const char* pt;
-        const char* ru;
-        const char* zh;
-        const char* ko;
+    struct DynamicPrefix {
+        const char* enPrefix;
+        const char* sourceKey;
+        bool colon;
     };
-    const PrefixPair dynamicPrefixes[] = {
-        {"DS slot: ", "DSスロット: ", "DS-Slot: ", "Ranura DS: ", "Slot DS : ",
-            "Slot DS: ", "DS-sleuf: ", "Slot DS: ", "Слот DS: ", "DS 卡槽：", "DS 슬롯: "},
-        {"GBA slot: ", "GBAスロット: ", "GBA-Slot: ", "Ranura GBA: ", "Slot GBA : ",
-            "Slot GBA: ", "GBA-sleuf: ", "Slot GBA: ", "Слот GBA: ", "GBA 卡槽：", "GBA 슬롯: "},
-        {"Top ", "上画面 ", "Oberer Bildschirm ", "Pantalla superior ", "Écran du haut ",
-            "Schermo superiore ", "Bovenste scherm ", "Ecrã superior ", "Верхний экран ", "上屏 ", "상단 화면 "},
-        {"Bottom ", "下画面 ", "Unterer Bildschirm ", "Pantalla inferior ", "Écran du bas ",
-            "Schermo inferiore ", "Onderste scherm ", "Ecrã inferior ", "Нижний экран ", "下屏 ", "하단 화면 "},
+    const DynamicPrefix dynamicPrefixes[] = {
+        {"DS slot: ", "DS slot", true},
+        {"GBA slot: ", "GBA slot", true},
+        {"Top ", "Top", false},
+        {"Bottom ", "Bottom", false},
     };
-    for (const PrefixPair& prefix : dynamicPrefixes)
+    for (const DynamicPrefix& prefix : dynamicPrefixes)
     {
-        const QString enPrefix = QString::fromUtf8(prefix.en);
+        const QString enPrefix = QString::fromUtf8(prefix.enPrefix);
         if (!text.startsWith(enPrefix))
             continue;
-        const char* localizedPrefix = prefix.en;
-        switch (ResolveTranslationLanguage(ActiveMenuLanguage())) {
-        case MenuLangId::German: localizedPrefix = prefix.de; break;
-        case MenuLangId::Spanish: localizedPrefix = prefix.es; break;
-        case MenuLangId::French: localizedPrefix = prefix.fr; break;
-        case MenuLangId::Italian: localizedPrefix = prefix.it; break;
-        case MenuLangId::Dutch: localizedPrefix = prefix.nl; break;
-        case MenuLangId::Portuguese: localizedPrefix = prefix.pt; break;
-        case MenuLangId::Russian: localizedPrefix = prefix.ru; break;
-        case MenuLangId::ChineseSimplified: localizedPrefix = prefix.zh; break;
-        case MenuLangId::Korean: localizedPrefix = prefix.ko; break;
-        case MenuLangId::Japanese: localizedPrefix = prefix.ja; break;
-        default: break;
+
+        const QString localizedKey = Tr(QString::fromUtf8(prefix.sourceKey));
+        QString localizedPrefix;
+        if (prefix.colon)
+        {
+            switch (ResolveTranslationLanguage(ActiveMenuLanguage())) {
+            case MenuLangId::Japanese:
+            case MenuLangId::ChineseSimplified:
+            case MenuLangId::ChineseTraditional:
+                localizedPrefix = localizedKey + QStringLiteral("：");
+                break;
+            default:
+                localizedPrefix = localizedKey + QStringLiteral(": ");
+                break;
+            }
         }
-        return QString::fromUtf8(localizedPrefix) + Tr(text.mid(enPrefix.size()));
+        else
+        {
+            localizedPrefix = localizedKey + QLatin1Char(' ');
+        }
+        return localizedPrefix + Tr(text.mid(enPrefix.size()));
     }
 
     return text;
@@ -4096,80 +4107,9 @@ void wireMelonDsLANDialogLabels(QWidget* dialog)
     {
         if (!label)
             return;
-        switch (ActiveMenuLanguage()) {
-        case MenuLangId::German:
-            label->setText(QStringLiteral(
-                "<html><head/><body>"
-                "<p>Warnung: LAN erfordert eine latenzarme Netzwerkverbindung.</p>"
-                "<p>Über VPN oder Tunnel funktioniert es möglicherweise nicht.</p>"
-                "</body></html>"));
-            break;
-        case MenuLangId::Spanish:
-            label->setText(QStringLiteral(
-                "<html><head/><body>"
-                "<p>Advertencia: LAN requiere una conexión de red de baja latencia.</p>"
-                "<p>Puede no funcionar a través de VPN o túneles.</p>"
-                "</body></html>"));
-            break;
-        case MenuLangId::French:
-            label->setText(QStringLiteral(
-                "<html><head/><body>"
-                "<p>Avertissement : le LAN nécessite une connexion réseau à faible latence.</p>"
-                "<p>Peut ne pas fonctionner via VPN ou tunnel.</p>"
-                "</body></html>"));
-            break;
-        case MenuLangId::Italian:
-            label->setText(QStringLiteral(
-                "<html><head/><body>"
-                "<p>Avviso: LAN richiede una connessione di rete a bassa latenza.</p>"
-                "<p>Potrebbe non funzionare tramite VPN o tunnel.</p>"
-                "</body></html>"));
-            break;
-        case MenuLangId::Dutch:
-            label->setText(QStringLiteral(
-                "<html><head/><body>"
-                "<p>Waarschuwing: LAN vereist een netwerkverbinding met lage latentie.</p>"
-                "<p>Werkt mogelijk niet via VPN of tunnels.</p>"
-                "</body></html>"));
-            break;
-        case MenuLangId::Portuguese:
-            label->setText(QStringLiteral(
-                "<html><head/><body>"
-                "<p>Aviso: LAN requer uma ligação de rede de baixa latência.</p>"
-                "<p>Pode não funcionar através de VPN ou túneis.</p>"
-                "</body></html>"));
-            break;
-        case MenuLangId::Russian:
-            label->setText(QStringLiteral(
-                "<html><head/><body>"
-                "<p>Предупреждение: для LAN требуется сеть с низкой задержкой.</p>"
-                "<p>Может не работать через VPN или туннели.</p>"
-                "</body></html>"));
-            break;
-        case MenuLangId::ChineseSimplified:
-            label->setText(QStringLiteral(
-                "<html><head/><body>"
-                "<p>警告：LAN 需要低延迟网络连接。</p>"
-                "<p>通过 VPN 或隧道可能无法正常工作。</p>"
-                "</body></html>"));
-            break;
-        case MenuLangId::Korean:
-            label->setText(QStringLiteral(
-                "<html><head/><body>"
-                "<p>경고: LAN은 낮은 지연 시간의 네트워크 연결이 필요합니다.</p>"
-                "<p>VPN 또는 터널을 통해서는 작동하지 않을 수 있습니다.</p>"
-                "</body></html>"));
-            break;
-        case MenuLangId::Japanese:
-            label->setText(QStringLiteral(
-                "<html><head/><body>"
-                "<p>警告: LANは低レイテンシのネットワーク接続が必要です。</p>"
-                "<p>VPNやトンネル経由では動作しない可能性があります。</p>"
-                "</body></html>"));
-            break;
-        default:
-            break;
-        }
+        label->setText(QStringLiteral("<html><head/><body><p>%1</p><p>%2</p></body></html>")
+            .arg(Tr(QStringLiteral("Warning: LAN requires low network latency to work.")))
+            .arg(Tr(QStringLiteral("Do not expect it to work through a VPN or any sort of tunnel."))));
     };
 
     if (dialogName == QStringLiteral("LANStartHostDialog"))
@@ -4286,12 +4226,23 @@ void ApplyNoRomSplashLocalization(char line0[256], char line1[256])
     const QString q0 = IsMenuTranslationActive() ? Tr(kLine0En) : QString::fromUtf8(kLine0En);
     const QString q1 = IsMenuTranslationActive() ? Tr(kLine1En) : QString::fromUtf8(kLine1En);
 
-    const QByteArray b0 = q0.toUtf8();
-    const QByteArray b1 = q1.toUtf8();
-    std::strncpy(line0, b0.constData(), 255);
-    line0[255] = '\0';
-    std::strncpy(line1, b1.constData(), 255);
-    line1[255] = '\0';
+    auto copyUtf8Bounded = [](char out[256], const QString& text)
+    {
+        QString truncated = text;
+        QByteArray bytes = truncated.toUtf8();
+        while (bytes.size() > 255 && !truncated.isEmpty())
+        {
+            truncated.chop(1);
+            bytes = truncated.toUtf8();
+        }
+
+        const int n = static_cast<int>(std::min<qsizetype>(bytes.size(), 255));
+        std::memcpy(out, bytes.constData(), static_cast<size_t>(n));
+        out[n] = '\0';
+    };
+
+    copyUtf8Bounded(line0, q0);
+    copyUtf8Bounded(line1, q1);
 }
 
 namespace {
@@ -4429,13 +4380,52 @@ bool TryRenderNoRomSplashOsdItem(unsigned int id, const char* text, unsigned int
     painter.setRenderHint(QPainter::TextAntialiasing, true);
 
     const int baseline = fm.ascent();
+    const QColor shadowColor(0, 0, 0, 224);
+    const bool needsShapedText = ActiveMenuLanguage() == MenuLangId::Arabic
+        || ActiveMenuLanguage() == MenuLangId::Thai;
+
+    if (needsShapedText)
+    {
+        const unsigned int rgba = rainbow ? SplashOsdRainbowColor(static_cast<int>(rainbowinc))
+                                        : (color | 0xFF000000u);
+        QTextOption option;
+        option.setWrapMode(QTextOption::NoWrap);
+        if (ActiveMenuLanguage() == MenuLangId::Arabic)
+        {
+            option.setTextDirection(Qt::RightToLeft);
+            option.setAlignment(Qt::AlignRight | Qt::AlignTop);
+        }
+        else
+        {
+            option.setAlignment(Qt::AlignLeft | Qt::AlignTop);
+        }
+
+        const QRect textRect(0, 0, w, h);
+        painter.setPen(shadowColor);
+        painter.drawText(textRect.translated(shadowPad, shadowPad), qtext, option);
+        painter.setPen(QColor(static_cast<QRgb>(rgba)));
+        painter.drawText(textRect, qtext, option);
+
+        if (rainbow)
+        {
+            for (const QChar ch : qtext)
+            {
+                if (ch != QLatin1Char(' '))
+                    rainbowinc = (rainbowinc + 30u) % 600u;
+            }
+        }
+
+        rainbowend = static_cast<int>(rainbowinc);
+        *outBitmap = std::move(bitmap);
+        return true;
+    }
+
     int x = 0;
     for (const QChar ch : qtext)
     {
         const unsigned int rgba = rainbow ? SplashOsdRainbowColor(static_cast<int>(rainbowinc))
                                         : (color | 0xFF000000u);
         const QColor mainColor(static_cast<QRgb>(rgba));
-        const QColor shadowColor(0, 0, 0, 224);
 
         const QString glyph(ch);
         painter.setPen(shadowColor);

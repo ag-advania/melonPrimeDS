@@ -15,7 +15,8 @@ namespace MelonPrime::UiText
 
 enum class MenuLangId : int
 {
-    Arabic = 0,
+    First = 100,
+    Arabic = First,
     Italian,
     Indonesian,
     Ukrainian,
@@ -58,10 +59,11 @@ inline constexpr int kMenuLanguageSystemDefault = -1;
 inline constexpr int kMenuLanguageLegacyNative = 0;
 inline constexpr int kMenuLanguageLegacyEnglish = 1;
 
-// Legacy aliases kept for older call sites.
+// Legacy aliases kept for older call sites. New persisted enum values start at
+// MenuLangId::First so these never collide with explicit language selections.
 inline constexpr int kMenuLanguageNative = kMenuLanguageSystemDefault;
-inline constexpr int kMenuLanguageEnglish = kMenuLanguageLegacyEnglish;
-inline constexpr int kMenuLanguageJapanese = kMenuLanguageLegacyNative;
+inline constexpr int kMenuLanguageEnglish = static_cast<int>(MenuLangId::English);
+inline constexpr int kMenuLanguageJapanese = static_cast<int>(MenuLangId::Japanese);
 
 [[nodiscard]] int NormalizeMenuLanguageConfig(int storedValue);
 [[nodiscard]] bool IsEnglishMenuLanguage(MenuLangId lang);
