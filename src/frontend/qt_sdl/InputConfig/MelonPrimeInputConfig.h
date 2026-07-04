@@ -189,7 +189,7 @@ private:
     QLabel* m_lblMetroidZoomAimScalePct = nullptr;
     QSpinBox* m_spinMetroidZoomAimScalePct = nullptr;
     QLabel* m_lblMetroidZoomAimScaleDesc = nullptr;
-    QWidget* m_menuLanguageWidget = nullptr;
+    QWidget* m_menuLanguageGroup = nullptr;
     QLabel* m_lblMenuLanguage = nullptr;
     QComboBox* m_comboMenuLanguage = nullptr;
 

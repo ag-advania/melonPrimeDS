@@ -1,0 +1,272 @@
+[
+  {
+    "en": null,
+    "ja": "(精密なエイムのため、可能なら1以下にしてください。推奨範囲は -3〜0 です。ただし低すぎるとエイム時のHUD揺れが大きくなります。この値はゲーム内感度に対する相対値なので、0は感度ゼロではなく、1より低いだけです。この設定はMPHのゲーム内感度を上書きするため、ゲーム内で感度を変更しても効果はありません。)",
+    "de": "(Für präzises Zielen nach Möglichkeit auf 1 oder darunter setzen. Empfohlener Bereich: -3 bis 0. Zu niedrige Werte vergrößern das HUD-Wackeln beim Zielen. Dieser Wert ist relativ zur ingame-Empfindlichkeit; 0 bedeutet nicht null Empfindlichkeit, sondern nur niedriger als 1. Diese Einstellung überschreibt die MPH-Empfindlichkeit im Spiel; Änderungen ingame haben keine Wirkung.)",
+    "es": "(Para puntería precisa, usa 1 o menos si es posible. Rango recomendado: -3 a 0. Valores muy bajos aumentan el temblor del HUD al apuntar. Este valor es relativo a la sensibilidad en el juego; 0 no es sensibilidad cero, solo menor que 1. Este ajuste sobrescribe la sensibilidad de MPH en el juego; cambiarla en el juego no surte efecto.)",
+    "fr": "(Pour une visée précise, utilisez 1 ou moins si possible. Plage recommandée : -3 à 0. Une valeur trop basse accentue le tremblement du HUD en visée. Cette valeur est relative à la sensibilité en jeu ; 0 n'est pas une sensibilité nulle, juste inférieure à 1. Ce réglage remplace la sensibilité MPH en jeu ; la modifier en jeu n'a aucun effet.)",
+    "objectName": "metroidMphSensitvityLabel2",
+    "section": "object"
+  },
+  {
+    "en": null,
+    "ja": "(1.5147 = MPH標準、1.9429 = X/Y角速度一致 [オプション])",
+    "de": "(1.5147 = MPH-Standard, 1.9429 = X/Y-Winkelgeschwindigkeit gleich [Optional])",
+    "es": "(1.5147 = estándar MPH, 1.9429 = velocidad angular X/Y igual [opcional])",
+    "fr": "(1.5147 = standard MPH, 1.9429 = vitesse angulaire X/Y identique [option])",
+    "objectName": "metroidAimYAxisScaleLabel2",
+    "section": "object"
+  },
+  {
+    "en": null,
+    "ja": "<html><head/><body><p><b>入力しきい値 (デッドゾーン + スナップ)</b> (推奨: 0.01 [既定] または 0.5): |x|&lt;a → 0, a ≤ |x|&lt;1 → ±1, |x|≥1 → そのまま (a=0: オフ = 1未満をすべて無視、スナップなし)<br/>エイムが思った通りに動かない場合は、この値を下げてみてください。</p></body></html>",
+    "de": "<html><head/><body><p><b>Eingabeschwellenwert (Totzone + Snap)</b> (empfohlen: 0.01 [Standard] oder 0.5): |x|&lt;a → 0, a ≤ |x|&lt;1 → ±1, |x|≥1 → unverändert (a=0: Aus = alles unter 1 ignorieren, kein Snap)<br/>Wenn sich die Zielbewegung nicht wie erwartet anfühlt, versuche diesen Wert zu senken.</p></body></html>",
+    "es": "<html><head/><body><p><b>Umbral de entrada (zona muerta + snap)</b> (recomendado: 0.01 [predeterminado] o 0.5): |x|&lt;a → 0, a ≤ |x|&lt;1 → ±1, |x|≥1 → sin cambios (a=0: desactivado = ignorar todo bajo 1, sin snap)<br/>Si la puntería no se comporta como esperas, prueba a bajar este valor.</p></body></html>",
+    "fr": "<html><head/><body><p><b>Seuil d'entrée (zone morte + snap)</b> (recommandé : 0.01 [par défaut] ou 0.5) : |x|&lt;a → 0, a ≤ |x|&lt;1 → ±1, |x|≥1 → inchangé (a=0 : désactivé = ignorer tout en dessous de 1, pas de snap)<br/>Si la visée ne réagit pas comme prévu, essayez de baisser cette valeur.</p></body></html>",
+    "objectName": "metroidAimAdjustLabel",
+    "section": "object"
+  },
+  {
+    "en": null,
+    "ja": "即時同期は低遅延ARM9フックで現在の照準を目標の照準へ同期し、照準基準を再構築します。MoonLikeエイムは小さなエイム移動を即時反映し、大きなジャンプだけ最大ステップ付きで追従します。MPHのエイム補間無効化が必要です。",
+    "de": "Sofortige Synchronisation synchronisiert die aktuelle Visierung über einen latenzarmen ARM9-Hook mit dem Ziel und baut die Visierungsbasis neu auf. MoonLike-Ziel spiegelt kleine Bewegungen sofort wider und folgt großen Sprüngen nur mit maximaler Schrittweite. Deaktivierung der MPH-Zielglättung erforderlich.",
+    "es": "La sincronización inmediata sincroniza la mira actual con la objetivo mediante un hook ARM9 de baja latencia y reconstruye la base de puntería. MoonLike Aim refleja al instante movimientos pequeños y sigue saltos grandes solo con paso máximo. Requiere desactivar el suavizado de puntería de MPH.",
+    "fr": "La synchronisation immédiate aligne la visée actuelle sur la cible via un hook ARM9 à faible latence et reconstruit la base de visée. MoonLike Aim reflète immédiatement les petits mouvements et ne suit les grands sauts qu'avec un pas maximal. Nécessite de désactiver le lissage de visée MPH.",
+    "objectName": "lblMetroidLowLatencyAimDesc",
+    "section": "object"
+  },
+  {
+    "en": null,
+    "ja": "ゲーム本来のズーム状態が有効な間だけ適用します。100%で通常のマウス感度、100%未満でズーム中のエイムが遅くなり、100%超で速くなります。",
+    "de": "Gilt nur, solange der native Zoom-Zustand des Spiels aktiv ist. 100 % = normale Mausempfindlichkeit, unter 100 % wird das Zielen beim Zoomen langsamer, über 100 % schneller.",
+    "es": "Solo se aplica mientras el zoom nativo del juego está activo. 100 % = sensibilidad normal del ratón; por debajo de 100 % la puntería al hacer zoom es más lenta; por encima, más rápida.",
+    "fr": "S'applique uniquement tant que le zoom natif du jeu est actif. 100 % = sensibilité souris normale ; en dessous de 100 %, la visée au zoom est plus lente ; au-dessus, plus rapide.",
+    "objectName": "lblMetroidZoomAimScaleDesc",
+    "section": "object"
+  },
+  {
+    "en": null,
+    "ja": "PostFold書き込みはタッチ入力処理の後でフックし、spec108=0 (サムス/カンデン/ノクサス/スパイア) を含むすべてのトランスフォームをカバーします。開発者ビルド専用です。",
+    "de": "PostFold-Schreibzugriff hookt nach der Touch-Eingabeverarbeitung und deckt alle Transformationen ab, einschließlich spec108=0 (Samus/Kanden/Noxus/Spire). Nur für Entwickler-Builds.",
+    "es": "La escritura PostFold engancha tras el procesamiento táctil y cubre todas las transformaciones, incluido spec108=0 (Samus/Kanden/Noxus/Spire). Solo en compilaciones de desarrollador.",
+    "fr": "L'écriture PostFold s'accroche après le traitement tactile et couvre toutes les transformations, y compris spec108=0 (Samus/Kanden/Noxus/Spire). Réservé aux builds développeur.",
+    "objectName": "lblMetroidNativeAimHookModeDesc",
+    "section": "object"
+  },
+  {
+    "en": null,
+    "ja": "新方式は短いネイティブ入力ゲートをゲーム本来の変形要求処理へリダイレクトします。旧方式は従来のタッチ/メニュー模擬による変形処理を使います。",
+    "de": "Die neue Methode leitet ein kurzes natives Eingabe-Gate zur ingame-Transformationsanforderung um. Die alte Methode nutzt die bisherige Touch-/Menü-Simulation.",
+    "es": "El método nuevo redirige una breve compuerta de entrada nativa al procesamiento de transformación del juego. El método antiguo usa la simulación táctil/menú tradicional.",
+    "fr": "La nouvelle méthode redirige une courte porte d'entrée native vers le traitement de transformation du jeu. L'ancienne méthode utilise la simulation tactile/menu traditionnelle.",
+    "objectName": "lblMetroidDirectAltFormTransformDesc",
+    "section": "object"
+  },
+  {
+    "en": null,
+    "ja": "フレンド/ライバルの有効スロットを追跡する疑似64bitビットセットの不具合を修正します。\nJP1.0 / US1.0 / EU1.0ではスロット32〜59が正しく扱われず、一部のフレンド/ライバルがオンラインで見えなくなることがあります。\nJP1.1 / US1.1 / EU1.1 / KR1.0と同じ、バイト単位のビットセット処理に置き換えます。\n(JP1.0 / US1.0 / EU1.0のみ。他のROMバージョンには影響しません)",
+    "de": "Behebt einen Fehler im pseudo-64-Bit-Bitset, das aktive Freund-/Rivalen-Slots verfolgt.\nBei JP1.0 / US1.0 / EU1.0 werden Slots 32–59 nicht korrekt behandelt; einige Freunde/Rivalen erscheinen online nicht.\nErsetzt die Verarbeitung durch die byteweise Bitset-Logik wie bei JP1.1 / US1.1 / EU1.1 / KR1.0.\n(Nur JP1.0 / US1.0 / EU1.0. Andere ROM-Versionen sind nicht betroffen.)",
+    "es": "Corrige un fallo en el pseudo bitset de 64 bits que rastrea las ranuras activas de amigos/rivales.\nEn JP1.0 / US1.0 / EU1.0, las ranuras 32–59 no se gestionan bien y algunos amigos/rivales no aparecen en línea.\nSustituye el procesamiento por la lógica de bitset por bytes como en JP1.1 / US1.1 / EU1.1 / KR1.0.\n(Solo JP1.0 / US1.0 / EU1.0. No afecta a otras versiones de ROM.)",
+    "fr": "Corrige un défaut du pseudo bitset 64 bits qui suit les emplacements actifs d'amis/rivaux.\nSur JP1.0 / US1.0 / EU1.0, les emplacements 32–59 ne sont pas gérés correctement ; certains amis/rivaux n'apparaissent pas en ligne.\nRemplace le traitement par la logique bitset octet par octet comme JP1.1 / US1.1 / EU1.1 / KR1.0.\n(JP1.0 / US1.0 / EU1.0 uniquement. N'affecte pas les autres versions de ROM.)",
+    "objectName": "lblMetroidFixWifiBitsetDesc",
+    "section": "object"
+  },
+  {
+    "en": null,
+    "ja": "アイスウェーブの最後の命中/ミス角度判定を、元の横方向範囲チェックは保ったまま完全な3D判定へ置き換えて、シャドウフリーズ問題を修正します。",
+    "de": "Ersetzt die letzte Treffer-/Fehlwinkelprüfung von Ice Wave durch eine vollständige 3D-Prüfung bei beibehaltener horizontaler Reichweitenkontrolle und behebt das Shadow-Freeze-Problem.",
+    "es": "Sustituye la comprobación final de ángulo de acierto/fallo de Ice Wave por una evaluación 3D completa, manteniendo el control horizontal original, y corrige el problema de shadow freeze.",
+    "fr": "Remplace la dernière vérification d'angle touché/raté d'Ice Wave par une évaluation 3D complète tout en conservant le contrôle horizontal d'origine, corrigeant le problème de shadow freeze.",
+    "objectName": "lblMetroidFixShadowFreezeDesc",
+    "section": "object"
+  },
+  {
+    "en": null,
+    "ja": "ノクサスのヴォーサイズ/ブレード攻撃が死亡とリスポーン後もダメージを与え続ける不具合を修正します。ブレード攻撃中にノクサスが死亡するとAlt攻撃タイマーがクリアされず、復活後もブレードの当たり判定が残ります。この修正では死亡した瞬間にタイマーをクリアします。",
+    "de": "Behebt einen Fehler, bei dem Noxus' Vorsaize-/Klingenangriff nach Tod und Respawn weiter Schaden verursacht. Stirbt Noxus während eines Klingenangriffs, wird der Alt-Angriffs-Timer nicht gelöscht und die Trefferzone bleibt nach der Wiederbelebung. Dieser Fix löscht den Timer im Moment des Todes.",
+    "es": "Corrige un fallo en el que el ataque de cuchilla/Vorsaize de Noxus sigue dañando tras morir y reaparecer. Si Noxus muere durante el ataque de cuchilla, el temporizador de ataque Alt no se borra y la hitbox persiste tras revivir. Este arreglo borra el temporizador en el instante de la muerte.",
+    "fr": "Corrige un défaut où l'attaque lame/Vorsaize de Noxus continue d'infliger des dégâts après la mort et le respawn. Si Noxus meurt pendant l'attaque lame, le minuteur d'attaque Alt n'est pas effacé et la hitbox persiste après la résurrection. Ce correctif efface le minuteur au moment de la mort.",
+    "objectName": "lblMetroidFixNoxusBladePersistenceDesc",
+    "section": "object"
+  },
+  {
+    "en": null,
+    "ja": "この修正はまだ不安定です。特に韓国版では、場合によってブレードが残り続けることがあります。",
+    "de": "Dieser Fix ist noch instabil. Besonders in der koreanischen Version kann die Klinge unter Umständen bestehen bleiben.",
+    "es": "Esta corrección aún es inestable. Especialmente en la versión coreana, la cuchilla puede persistir en algunos casos.",
+    "fr": "Ce correctif est encore instable. Surtout sur la version coréenne, la lame peut parfois persister.",
+    "objectName": "lblMetroidFixNoxusBladePersistenceWarning",
+    "section": "object"
+  },
+  {
+    "en": null,
+    "ja": "<html><body>\nDSファームウェアの言語設定を読み取り、その言語で表示するようゲームにパッチします。<br>\nEU ROMには隠し日本語オプションがあり、DSファームウェアを日本語にすると有効になります。<br><br>\n<b>EU / US ROM:</b> すべてのモードで動作します (マルチプレイとアドベンチャー)。<br>\n<b>JP ROM:</b> マルチプレイのみ動作します。<font color=\"red\"><b>有効にするとアドベンチャーモードはプレイできません。</b></font><br>\n<b>KR ROM:</b> まだ未対応です。\n</body></html>",
+    "de": "<html><body>\nLiest die Spracheinstellung der DS-Firmware aus und patcht das Spiel entsprechend.\n<br>\nEU-ROMs haben eine versteckte Japanisch-Option, die aktiv wird, wenn die DS-Firmware auf Japanisch steht.\n<br><br>\n<b>EU / US ROM:</b> Funktioniert in allen Modi (Multiplayer und Abenteuer).\n<br>\n<b>JP ROM:</b> Nur im Multiplayer. <font color=\"red\"><b>Wenn aktiviert, ist der Abenteuermodus nicht spielbar.</b></font>\n<br>\n<b>KR ROM:</b> Noch nicht unterstützt.\n</body></html>",
+    "es": "<html><body>\nLee el idioma de la firmware del DS y parchea el juego para mostrarlo en ese idioma.\n<br>\nLas ROM EU tienen una opción oculta de japonés que se activa con firmware DS en japonés.\n<br><br>\n<b>ROM EU / US:</b> Funciona en todos los modos (multijugador y aventura).\n<br>\n<b>ROM JP:</b> Solo multijugador. <font color=\"red\"><b>Al activarlo, el modo aventura no es jugable.</b></font>\n<br>\n<b>ROM KR:</b> Aún no compatible.\n</body></html>",
+    "fr": "<html><body>\nLit la langue de la firmware DS et patch le jeu pour l'afficher dans cette langue.\n<br>\nLes ROM EU ont une option japonaise cachée, active si la firmware DS est en japonais.\n<br><br>\n<b>ROM EU / US :</b> Fonctionne dans tous les modes (multijoueur et aventure).\n<br>\n<b>ROM JP :</b> Multijoueur uniquement. <font color=\"red\"><b>Si activé, le mode aventure n'est pas jouable.</b></font>\n<br>\n<b>ROM KR :</b> Pas encore pris en charge.\n</body></html>",
+    "objectName": "lblMetroidUseFirmwareLanguageDesc",
+    "section": "object"
+  },
+  {
+    "en": null,
+    "ja": "Wi-Fi/オンライン対戦中でも、単独のヘッドショット通知を強制的に表示します。",
+    "de": "Erzwingt die Anzeige separater Kopfschuss-Benachrichtigungen auch während Wi-Fi-/Online-Matches.",
+    "es": "Fuerza la visualización de notificaciones de headshot independientes también en partidas Wi-Fi/en línea.",
+    "fr": "Force l'affichage de notifications de headshot distinctes même en match Wi-Fi/en ligne.",
+    "objectName": "lblMetroidShowHeadshotOnlineDesc",
+    "section": "object"
+  },
+  {
+    "en": null,
+    "ja": "HP情報は基本的に更新されないため信頼性は高くありません。誰に当てたかを見る大まかな目安として使えます。",
+    "de": "HP-Infos werden grundsätzlich selten aktualisiert, daher ist die Zuverlässigkeit begrenzt. Als grobe Orientierung, wer getroffen wurde.",
+    "es": "La información de HP rara vez se actualiza, así que no es muy fiable. Sirve como referencia aproximada de a quién has impactado.",
+    "fr": "Les infos de PV sont rarement mises à jour, donc peu fiables. Utile comme indication grossière de qui a été touché.",
+    "objectName": "lblMetroidShowEnemyHpMeterOnlineDesc",
+    "section": "object"
+  },
+  {
+    "en": null,
+    "ja": "<html><body>\n安定確認済みのステージ/モード組み合わせを5個解放します。ステージ選択メニューが開いている間、自動で適用されます。<br><br>\n<b>バウンティ</b><br>\n&nbsp;&nbsp;Fuel Stack — オクトリスあり、アイテムあり<br>\n&nbsp;&nbsp;Alinos Gateway — オクトリスあり、坂の下に得意武器が出現<br><br>\n<b>キャプチャー</b><br>\n&nbsp;&nbsp;Celestial Gateway — オクトリスあり、ジャンパーとアイテムあり<br><br>\n<b>ディフェンダー</b><br>\n&nbsp;&nbsp;High Ground — アイテムあり、マグモールエリア左下にディフェンダーゾーンリング<br>\n&nbsp;&nbsp;Elder Passage — アイテムあり、マグモールエリア左下にディフェンダーゾーンリング\n</body></html>",
+    "de": "<html><body>\nSchaltet 5 stabile Stage-/Modus-Kombinationen frei. Wird automatisch angewendet, solange das Stage-Auswahlmenü offen ist.\n<br><br>\n<b>Bounty</b><br>\n&nbsp;&nbsp;Fuel Stack — mit Octo, mit Items<br>\n&nbsp;&nbsp;Alinos Gateway — mit Octo, Lieblingswaffe unten am Hang<br><br>\n<b>Capture</b><br>\n&nbsp;&nbsp;Celestial Gateway — mit Octo, Jumper und Items<br><br>\n<b>Defender</b><br>\n&nbsp;&nbsp;High Ground — Items, Defender-Zonenring unten links im Magmaul-Bereich<br>\n&nbsp;&nbsp;Elder Passage — Items, Defender-Zonenring unten links im Magmaul-Bereich\n</body></html>",
+    "es": "<html><body>\nDesbloquea 5 combinaciones de escenario/modo verificadas como estables. Se aplica automáticamente mientras el menú de selección de escenarios esté abierto.\n<br><br>\n<b>Bounty</b><br>\n&nbsp;&nbsp;Fuel Stack — con Octo, con objetos<br>\n&nbsp;&nbsp;Alinos Gateway — con Octo, arma preferida al pie de la cuesta<br><br>\n<b>Capture</b><br>\n&nbsp;&nbsp;Celestial Gateway — con Octo, jumper y objetos<br><br>\n<b>Defender</b><br>\n&nbsp;&nbsp;High Ground — objetos, anillo de zona Defender abajo a la izquierda en área Magmaul<br>\n&nbsp;&nbsp;Elder Passage — objetos, anillo de zona Defender abajo a la izquierda en área Magmaul\n</body></html>",
+    "fr": "<html><body>\nDébloque 5 combinaisons stage/mode vérifiées stables. Appliqué automatiquement tant que le menu de sélection de stage est ouvert.\n<br><br>\n<b>Bounty</b><br>\n&nbsp;&nbsp;Fuel Stack — avec Octo, avec objets<br>\n&nbsp;&nbsp;Alinos Gateway — avec Octo, arme favorite en bas de la pente<br><br>\n<b>Capture</b><br>\n&nbsp;&nbsp;Celestial Gateway — avec Octo, jumper et objets<br><br>\n<b>Defender</b><br>\n&nbsp;&nbsp;High Ground — objets, anneau de zone Defender en bas à gauche zone Magmaul<br>\n&nbsp;&nbsp;Elder Passage — objets, anneau de zone Defender en bas à gauche zone Magmaul\n</body></html>",
+    "objectName": "lblMetroidExpandStageMatrixDesc",
+    "section": "object"
+  },
+  {
+    "en": null,
+    "ja": "<html><body>\n基本選択に加えて、さらに9個の組み合わせを解放します。<br><br>\n<b>バトル / ノード / プライムハンター / サバイバル</b><br>\n&nbsp;&nbsp;Transfer Lock Wide — 通常重力<br><br>\n<b>ディフェンダー</b><br>\n&nbsp;&nbsp;Transfer Lock — ディフェンダーリングなし、ボルトドライバー + バトルハンマーのみ<br>\n&nbsp;&nbsp;Compressor Room — ディフェンダーリングなし、ジャンパーなし、アイテムなし<br>\n&nbsp;&nbsp;Incubator — ディフェンダーリングなし、アイテムとジャンパーあり<br>\n&nbsp;&nbsp;Fuel Stack — ディフェンダーリングなし、浮遊なし、インペリアリストのみ<br>\n&nbsp;&nbsp;Head Shot — ディフェンダーリングなし、通常重力、ジャンパー2個、トランスフォーム通路は射出なし\n</body></html>",
+    "de": "<html><body>\nSchaltet zusätzlich zu den Basiseinträgen 9 weitere Kombinationen frei.\n<br><br>\n<b>Battle / Node / Prime Hunter / Survival</b><br>\n&nbsp;&nbsp;Transfer Lock Wide — normale Schwerkraft<br><br>\n<b>Defender</b><br>\n&nbsp;&nbsp;Transfer Lock — ohne Defender-Ring, nur Volt Driver + Battlehammer<br>\n&nbsp;&nbsp;Compressor Room — ohne Defender-Ring, ohne Jumper, ohne Items<br>\n&nbsp;&nbsp;Incubator — ohne Defender-Ring, mit Items und Jumper<br>\n&nbsp;&nbsp;Fuel Stack — ohne Defender-Ring, ohne Schweben, nur Imperialist<br>\n&nbsp;&nbsp;Head Shot — ohne Defender-Ring, normale Schwerkraft, 2 Jumper, Transform-Pfad ohne Abschuss\n</body></html>",
+    "es": "<html><body>\nDesbloquea 9 combinaciones adicionales además de la selección básica.\n<br><br>\n<b>Battle / Node / Prime Hunter / Survival</b><br>\n&nbsp;&nbsp;Transfer Lock Wide — gravedad normal<br><br>\n<b>Defender</b><br>\n&nbsp;&nbsp;Transfer Lock — sin anillo Defender, solo Volt Driver + Battlehammer<br>\n&nbsp;&nbsp;Compressor Room — sin anillo Defender, sin jumper, sin objetos<br>\n&nbsp;&nbsp;Incubator — sin anillo Defender, con objetos y jumper<br>\n&nbsp;&nbsp;Fuel Stack — sin anillo Defender, sin flotación, solo Imperialist<br>\n&nbsp;&nbsp;Head Shot — sin anillo Defender, gravedad normal, 2 jumpers, pasillo transform sin expulsión\n</body></html>",
+    "fr": "<html><body>\nDébloque 9 combinaisons supplémentaires en plus de la sélection de base.\n<br><br>\n<b>Battle / Node / Prime Hunter / Survival</b><br>\n&nbsp;&nbsp;Transfer Lock Wide — gravité normale<br><br>\n<b>Defender</b><br>\n&nbsp;&nbsp;Transfer Lock — sans anneau Defender, Volt Driver + Battlehammer uniquement<br>\n&nbsp;&nbsp;Compressor Room — sans anneau Defender, sans jumper, sans objets<br>\n&nbsp;&nbsp;Incubator — sans anneau Defender, avec objets et jumper<br>\n&nbsp;&nbsp;Fuel Stack — sans anneau Defender, sans flottation, Imperialist uniquement<br>\n&nbsp;&nbsp;Head Shot — sans anneau Defender, gravité normale, 2 jumpers, passage transform sans éjection\n</body></html>",
+    "objectName": "lblMetroidExpandStageMatrixExtraDesc",
+    "section": "object"
+  },
+  {
+    "en": null,
+    "ja": "<html><body>\nダブルダメージの取得、タイマー、HUD、サウンド、視覚効果はそのままに、ダメージ倍率だけを2倍から1倍へ変更します。<br><br>\n<font color=\"red\"><b>重要:</b> 2倍 → 1倍の変更は<b>自分側</b>にだけ適用されます。相手側もダメージ1倍を有効にしていない場合、ダブルダメージ中の自分の弾は相手には2倍ダメージとして扱われます。</font><br><br>\n参加者全員の同意がある場合にだけ使用してください。\n</body></html>",
+    "de": "<html><body>\nBehält Erhalt, Timer, HUD, Sound und visuelle Effekte von Doppelschaden bei, ändert aber nur den Schadensmultiplikator von 2× auf 1×.\n<br><br>\n<font color=\"red\"><b>Wichtig:</b> Die Änderung 2× → 1× gilt nur <b>auf deiner Seite</b>. Wenn der Gegner Doppelschaden 1× nicht aktiviert hat, zählen deine Kugeln während Doppelschaden für ihn weiter als 2×.</font>\n<br><br>\nNur mit Zustimmung aller Teilnehmer verwenden.\n</body></html>",
+    "es": "<html><body>\nMantiene la obtención, temporizador, HUD, sonido y efectos visuales del doble daño, pero cambia solo el multiplicador de 2× a 1×.\n<br><br>\n<font color=\"red\"><b>Importante:</b> el cambio 2× → 1× solo se aplica <b>en tu lado</b>. Si el rival no tiene daño 1× activado, tus balas durante doble daño seguirán contando como 2× para él.</font>\n<br><br>\nÚsalo solo con el consentimiento de todos los participantes.\n</body></html>",
+    "fr": "<html><body>\nConserve l'obtention, le minuteur, le HUD, le son et les effets visuels des dégâts doubles, mais ne change que le multiplicateur de 2× à 1×.\n<br><br>\n<font color=\"red\"><b>Important :</b> le passage 2× → 1× ne s'applique qu'<b>à votre côté</b>. Si l'adversaire n'a pas activé dégâts 1×, vos balles en double dégâts compteront toujours 2× pour lui.</font>\n<br><br>\nÀ n'utiliser qu'avec l'accord de tous les participants.\n</body></html>",
+    "objectName": "lblMetroidDisableDoubleDamageMultiplierDesc",
+    "section": "object"
+  },
+  {
+    "en": null,
+    "ja": "<html><body>\nダメージを受けたときに短時間だけダブルダメージの紫状態で点滅させ、相手から被弾が見えるようにします。<br><br>\n<font color=\"red\"><b>重要:</b> これは実際のダブルダメージタイマーを書き込むため、短い間だけ本当に<b>ダブルダメージ状態に入ります</b>。その間、自分の弾は相手にも2倍ダメージを与えます。これを避けるには相手側もダメージ1倍を有効にする必要があります。</font><br><br>\n<b>対戦で使う前に、必ず参加者全員の同意を取ってください。</b> 自分のダメージを1倍に保つには、上の「ダブルダメージ倍率を無効化」と組み合わせてください。\n</body></html>",
+    "de": "<html><body>\nLässt dich kurz im lila Doppelschaden-Zustand blinken, wenn du Schaden nimmst, damit Gegner Treffer sehen.\n<br><br>\n<font color=\"red\"><b>Wichtig:</b> Dies schreibt den echten Doppelschaden-Timer und setzt dich kurz wirklich in den <b>Doppelschaden-Zustand</b>. In dieser Zeit verursachen deine Kugeln beim Gegner 2× Schaden. Um das zu vermeiden, muss der Gegner ebenfalls Doppelschaden 1× aktivieren.</font>\n<br><br>\n<b>Hole vor dem Online-Einsatz die Zustimmung aller Teilnehmer ein.</b> Kombiniere mit „Doppelschaden-Multiplikator deaktivieren“ oben, um deinen Schaden bei 1× zu halten.\n</body></html>",
+    "es": "<html><body>\nTe hace parpadear brevemente en estado púrpura de doble daño al recibir daño, para que el rival vea el impacto.\n<br><br>\n<font color=\"red\"><b>Importante:</b> esto escribe el temporizador real de doble daño y te pone brevemente en <b>estado de doble daño</b>. Durante ese tiempo, tus balas infligen 2× daño al rival. Para evitarlo, el rival también debe activar daño 1×.</font>\n<br><br>\n<b>Antes de usarlo en línea, obtén el consentimiento de todos.</b> Combínalo con «Desactivar multiplicador de doble daño» arriba para mantener tu daño en 1×.\n</body></html>",
+    "fr": "<html><body>\nVous fait clignoter brièvement en état violet de double dégâts quand vous subissez des dégâts, pour que l'adversaire voie l'impact.\n<br><br>\n<font color=\"red\"><b>Important :</b> cela écrit le vrai minuteur de double dégâts et vous met brièvement en <b>état double dégâts</b>. Pendant ce temps, vos balles infligent 2× dégâts à l'adversaire. Pour l'éviter, l'adversaire doit aussi activer dégâts 1×.</font>\n<br><br>\n<b>Avant de l'utiliser en ligne, obtenez l'accord de tous.</b> Combinez avec « Désactiver le multiplicateur de double dégâts » ci-dessus pour garder vos dégâts à 1×.\n</body></html>",
+    "objectName": "lblMetroidDamageNotifyPurpleDesc",
+    "section": "object"
+  },
+  {
+    "en": null,
+    "ja": "有効にすると、選択したパワーアップは取得されて消えますが、プレイヤー側の効果はスキップされます。ダブルダメージ、クローク、デスオルトのタイマー、フラグ、HUD、サウンド、視覚効果は適用されません。この設定が影響するのは自分とボットだけで、オンラインの相手は変更されません。",
+    "de": "Wenn aktiviert, werden ausgewählte Power-Ups aufgesammelt und verschwinden, aber die Spielereffekte werden übersprungen. Doppelschaden, Cloak, Death Alt-Timer, Flags, HUD, Sound und visuelle Effekte werden nicht angewendet. Betrifft nur dich und Bots, nicht Online-Gegner.",
+    "es": "Al activarlo, los power-ups seleccionados se recogen y desaparecen, pero se omiten los efectos en el jugador. No se aplican doble daño, cloak, temporizador Death Alt, flags, HUD, sonido ni efectos visuales. Solo afecta a ti y a bots, no a rivales en línea.",
+    "fr": "Si activé, les power-ups sélectionnés sont ramassés et disparaissent, mais leurs effets sur le joueur sont ignorés. Double dégâts, cloak, minuteur Death Alt, flags, HUD, son et effets visuels ne s'appliquent pas. N'affecte que vous et les bots, pas les adversaires en ligne.",
+    "objectName": "lblMetroidDisablePickingUpSpecificItemsDesc",
+    "section": "object"
+  },
+  {
+    "en": null,
+    "ja": "JoyToKey、Steam Input、reWASDなど、外部のコントローラー→キーボード/マウス変換ツール向けの互換モードです。割り当てたキーが離した後も押されっぱなしになる場合に役立ちます。通常のキーボードとマウスを直接使う場合は、無効にすると入力遅延が少し減ることがあります。",
+    "de": "Kompatibilitätsmodus für externe Controller-zu-Tastatur/Maus-Tools wie JoyToKey, Steam Input oder reWASD. Hilft, wenn zugewiesene Tasten nach Loslassen hängen bleiben. Bei direkter Tastatur-/Maunutzung kann Deaktivierung die Eingabeverzögerung leicht reduzieren.",
+    "es": "Modo de compatibilidad para herramientas externas controlador→teclado/ratón como JoyToKey, Steam Input o reWASD. Útil si las teclas asignadas quedan pulsadas tras soltarlas. Con teclado y ratón directos, desactivarlo puede reducir ligeramente la latencia de entrada.",
+    "fr": "Mode de compatibilité pour les outils externes manette→clavier/souris comme JoyToKey, Steam Input ou reWASD. Utile si les touches assignées restent enfoncées après relâchement. Avec clavier/souris directs, le désactiver peut légèrement réduire la latence d'entrée.",
+    "objectName": "lblMetroidJoy2KeySupportDesc",
+    "section": "object"
+  },
+  {
+    "en": null,
+    "ja": "オフ: 同期なし (最小遅延ですが、表示がカクつくことがあります)。glFinish: 各フレームの描画完了を待つことで表示を滑らかにします。DwmFlush: Windowsコンポジターと同期して表示を滑らかにします (Windowsのみ)。画面がカクついたりちらついたりする場合は、glFinishまたはDwmFlushを試してください。早送り/スローモーション中は自動的に無効になります。",
+    "de": "Aus: Keine Synchronisation (geringste Latenz, Anzeige kann ruckeln). glFinish: Glattere Anzeige durch Warten auf den Abschluss jedes Frames. DwmFlush: Synchronisation mit dem Windows-Compositor (nur Windows). Bei Ruckeln oder Flackern glFinish oder DwmFlush testen. Wird bei Vorspulen/Zeitlupe automatisch deaktiviert.",
+    "es": "Desactivado: sin sincronización (mínima latencia, pero la imagen puede entrecortarse). glFinish: imagen más fluida esperando a que termine cada fotograma. DwmFlush: sincroniza con el compositor de Windows (solo Windows). Si hay tirones o parpadeos, prueba glFinish o DwmFlush. Se desactiva automáticamente en avance rápido/cámara lenta.",
+    "fr": "Désactivé : pas de synchronisation (latence minimale, affichage parfois saccadé). glFinish : affichage plus fluide en attendant la fin de chaque image. DwmFlush : synchronise avec le compositeur Windows (Windows uniquement). En cas de saccades ou scintillement, essayez glFinish ou DwmFlush. Désactivé automatiquement en avance rapide/ralenti.",
+    "objectName": "labelMetroidScreenSyncDesc",
+    "section": "object"
+  },
+  {
+    "en": null,
+    "ja": "自動: 現在のアスペクト比設定に合わせてアスペクト比パッチを自動適用します (4:3 = オフ、5:3/16:9/21:9 = 自動適用、ウィンドウ = オフ)。",
+    "de": "Auto: Wendet automatisch einen Seitenverhältnis-Patch passend zur aktuellen Einstellung an (4:3 = Aus, 5:3/16:9/21:9 = Auto, Fenster = Aus).",
+    "es": "Auto: aplica automáticamente un parche de relación de aspecto según el ajuste actual (4:3 = desactivado, 5:3/16:9/21:9 = auto, ventana = desactivado).",
+    "fr": "Auto : applique automatiquement un patch de ratio d'aspect selon le réglage actuel (4:3 = désactivé, 5:3/16:9/21:9 = auto, fenêtre = désactivé).",
+    "objectName": "labelInGameAspectRatioAutoDesc",
+    "section": "object"
+  },
+  {
+    "en": null,
+    "ja": "自動スケール: Low = 基準 ×0.75、Medium = 基準、High = 基準 ×1.25 (丸め)。0にすると実質的に警告を無効化します。範囲は0-255です。",
+    "de": "Auto-Skalierung: Low = Basis ×0,75, Medium = Basis, High = Basis ×1,25 (gerundet). 0 deaktiviert die Warnung praktisch. Bereich: 0–255.",
+    "es": "Escala automática: Low = base ×0,75, Medium = base, High = base ×1,25 (redondeado). 0 desactiva la advertencia en la práctica. Rango: 0–255.",
+    "fr": "Échelle auto : Low = base ×0,75, Medium = base, High = base ×1,25 (arrondi). 0 désactive pratiquement l'avertissement. Plage : 0–255.",
+    "objectName": "lblMetroidLowHpWarningDesc",
+    "section": "object"
+  },
+  {
+    "en": null,
+    "ja": "最小遅延のため、エイム呼び出し地点でフックします。二足状態と spec108=1 のトランスフォーム (トレース/サイラックス/ウィーヴェル) をカバーします。有効にすると、上のネイティブエイムデルタHook (PostFold書き込み) より優先されます。",
+    "de": "Hookt am Zielaufruf-Punkt für minimale Latenz. Deckt Zweibeiner-Zustand und spec108=1-Transformationen (Trace/Sylux/Weavel) ab. Wenn aktiviert, hat Vorrang vor Native Aim Delta Hook (PostFold-Schreibzugriff) oben.",
+    "es": "Engancha en el punto de llamada de puntería para mínima latencia. Cubre estado bípedo y transformaciones spec108=1 (Trace/Sylux/Weavel). Si está activo, tiene prioridad sobre Native Aim Delta Hook (escritura PostFold) de arriba.",
+    "fr": "S'accroche au point d'appel de visée pour une latence minimale. Couvre l'état bipède et les transformations spec108=1 (Trace/Sylux/Weavel). Si activé, prioritaire sur Native Aim Delta Hook (écriture PostFold) ci-dessus.",
+    "objectName": "lblMetroidNativeAimRegisterInjectionDesc",
+    "section": "object"
+  },
+  {
+    "en": null,
+    "ja": "押下/離上エッジをエミュレーター側で生成し、プレイヤーアクション処理前にMPH内部入力状態へ重ねます。射撃、ジャンプ、ズーム、移動をカバーします。ボタンマスクはプレイヤーの現在の操作プリセット割り当て表から読むため、すべてのプリセット (Touch R/L、Dual R/L) に自動対応します。",
+    "de": "Erzeugt Drück-/Loslass-Kanten im Emulator und legt sie vor der Spieleraktionsverarbeitung über den MPH-internen Eingabestatus. Deckt Schießen, Springen, Zoomen und Bewegung ab. Button-Masken werden aus der aktuellen Steuerungs-Preset-Zuordnung gelesen; unterstützt alle Presets (Touch R/L, Dual R/L) automatisch.",
+    "es": "Genera bordes de pulsación/suelta en el emulador y los superpone al estado de entrada interno de MPH antes del procesamiento de acciones del jugador. Cubre disparo, salto, zoom y movimiento. Lee las máscaras de botón de la asignación del preset actual; compatible con todos los presets (Touch R/L, Dual R/L) automáticamente.",
+    "fr": "Génère les fronts appui/relâchement côté émulateur et les superpose à l'état d'entrée interne MPH avant le traitement des actions joueur. Couvre tir, saut, zoom et déplacement. Lit les masques de boutons depuis le preset actuel ; compatible automatiquement avec tous les presets (Touch R/L, Dual R/L).",
+    "objectName": "lblMetroidImmediateInputEdgeOverlayDesc",
+    "section": "object"
+  },
+  {
+    "en": null,
+    "ja": "オンにすると、ARM9フック経由でゲーム本来の武器装備処理を使います。オフでは互換性テスト用に、従来のタッチ/メニュー模擬による武器切替を使います。",
+    "de": "Wenn aktiviert, nutzt der ARM9-Hook die native Waffenausrüstungslogik des Spiels. Wenn deaktiviert, wird für Kompatibilitätstests die bisherige Touch-/Menü-Simulation verwendet.",
+    "es": "Activado: usa el hook ARM9 con el equipamiento de armas nativo del juego. Desactivado: usa la simulación táctil/menú tradicional para pruebas de compatibilidad.",
+    "fr": "Activé : le hook ARM9 utilise l'équipement d'armes natif du jeu. Désactivé : utilise la simulation tactile/menu traditionnelle pour les tests de compatibilité.",
+    "objectName": "lblMetroidWeaponSwitchMethodDesc",
+    "section": "object"
+  },
+  {
+    "en": null,
+    "ja": "オンにすると、ゲーム本来の二足射撃エッジフックで射撃入力ヘルパーの結果をtrueにし、元のクールダウン、弾薬、弾生成、HUD、SFX経路を自然に動かします。旧方式では従来のDS入力/即時入力エッジ合成による射撃経路を使います。",
+    "de": "Wenn aktiviert, setzt der native Zweibeiner-Schuss-Edge-Hook das Schuss-Eingabe-Hilfsresultat auf true und nutzt natürlich Cooldown, Munition, Projektilerzeugung, HUD und SFX-Pfade. Die alte Methode nutzt die bisherige DS-Eingabe-/Sofort-Edge-Synthese.",
+    "es": "Activado: el hook de borde de disparo bípedo nativo pone el resultado del helper de disparo en true y activa naturalmente cooldown, munición, generación de proyectiles, HUD y SFX. El método antiguo usa la síntesis DS/entrada inmediata tradicional.",
+    "fr": "Activé : le hook de front de tir bipède natif met le résultat du helper de tir à true et active naturellement cooldown, munitions, génération de projectiles, HUD et SFX. L'ancienne méthode utilise la synthèse DS/entrée immédiate traditionnelle.",
+    "objectName": "lblMetroidBipedFireMethodDesc",
+    "section": "object"
+  },
+  {
+    "en": null,
+    "ja": "新方式はゲーム内のズーム割り当て表を読むため、Touch/Dualプリセットごとに異なるDSボタンへズームを割り当てられます。旧方式より少し低遅延です。両方のチェックを外すと、従来の入力経路と同じく固定Rボタンを使う旧方式になります。",
+    "de": "Die neue Methode liest die ingame-Zoom-Zuordnungstabelle, sodass Zoom je nach Touch/Dual-Preset unterschiedlichen DS-Tasten zugewiesen wird. Etwas geringere Latenz als die alte Methode. Wenn beide deaktiviert sind, wird wie bisher der feste R-Knopf genutzt.",
+    "es": "El método nuevo lee la tabla de asignación de zoom del juego, así el zoom se asigna a botones DS distintos según el preset Touch/Dual. Algo menos de latencia que el método antiguo. Con ambos desactivados, usa el botón R fijo como antes.",
+    "fr": "La nouvelle méthode lit la table d'affectation zoom en jeu, donc le zoom est assigné à des boutons DS différents selon le preset Touch/Dual. Légèrement moins de latence que l'ancienne méthode. Si les deux sont désactivés, utilise le bouton R fixe comme avant.",
+    "objectName": "lblMetroidZoomMethodDesc",
+    "section": "object"
+  },
+  {
+    "en": null,
+    "ja": "新方式2は、押すたびにゲーム本来のズーム状態を切り替えます。「ズームに新方式を使う」とは同時に使えません。",
+    "de": "Neue Methode 2 schaltet bei jedem Drücken den nativen Zoom-Zustand des Spiels um. Kann nicht gleichzeitig mit „Neue Methode für Zoom verwenden“ genutzt werden.",
+    "es": "El método nuevo 2 alterna el estado de zoom nativo del juego en cada pulsación. No se puede usar junto con «Usar método nuevo para zoom».",
+    "fr": "La nouvelle méthode 2 bascule l'état de zoom natif du jeu à chaque appui. Ne peut pas être utilisée en même temps que « Utiliser la nouvelle méthode pour le zoom ».",
+    "objectName": "lblMetroidZoomMethod2Desc",
+    "section": "object"
+  },
+  {
+    "en": null,
+    "ja": "クリア",
+    "de": "Löschen",
+    "es": "Borrar",
+    "fr": "Effacer",
+    "objectName": "btnClear",
+    "section": "object"
+  }
+]
