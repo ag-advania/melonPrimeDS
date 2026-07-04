@@ -308,6 +308,12 @@ void ScreenPanel::containAimCursorIfNeeded()
     if (!isVisible() || !window() || !window()->isActiveWindow())
         return;
 
+#if defined(__APPLE__)
+    const auto* core = melonPrimeCore();
+    if (core && core->IsPlatformRawAimActive())
+        return;
+#endif
+
     const QRect local = aimContainmentLocalRect();
     const QPoint globalTopLeft = mapToGlobal(local.topLeft());
     const QRect globalRect(globalTopLeft, local.size());
@@ -339,13 +345,22 @@ void ScreenPanel::clipCursorCenter1px() {
     resetAimMouseDelta();
 #endif
 
-#if !defined(_WIN32)
+#if defined(__APPLE__)
     if (isVisible() && window() && window()->isActiveWindow()) {
-#if defined(__APPLE__) || defined(__linux__)
         const auto* core = melonPrimeCore();
-        if (!core || !core->IsPlatformRawAimActive())
-#endif
-        {
+        const QPoint c = mapToGlobal(aimContainmentLocalRect().center());
+        if (core && core->IsPlatformRawAimActive()) {
+            MelonPrime::PlatformInput_WarpCursor(c.x(), c.y());
+            MelonPrime::MacSetAimCursorCaptured(true);
+        } else {
+            MelonPrime::MacSetAimCursorCaptured(false);
+            MelonPrime::PlatformInput_WarpCursor(c.x(), c.y());
+        }
+    }
+#elif !defined(_WIN32)
+    if (isVisible() && window() && window()->isActiveWindow()) {
+        const auto* core = melonPrimeCore();
+        if (!core || !core->IsPlatformRawAimActive()) {
             const QPoint c = mapToGlobal(rect().center());
             MelonPrime::PlatformInput_WarpCursor(c.x(), c.y());
         }
@@ -363,6 +378,9 @@ void ScreenPanel::clipCursorCenter1px() {
 
 void ScreenPanel::unclip() {
     setClipWanted(false);
+#if defined(__APPLE__)
+    MelonPrime::MacSetAimCursorCaptured(false);
+#endif
 #if defined(__linux__)
     resetAimMouseDelta();
 #endif
@@ -463,7 +481,7 @@ ScreenPanel::~ScreenPanel()
 {
 #ifdef MELONPRIME_DS
     closing = true;
-#if defined(_WIN32)
+#if defined(_WIN32) || defined(__APPLE__)
     unclip();
 #elif defined(__linux__)
     resetAimMouseDelta();
