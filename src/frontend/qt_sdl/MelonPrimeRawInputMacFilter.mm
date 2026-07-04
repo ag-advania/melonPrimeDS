@@ -37,6 +37,21 @@ void MacWarpCursorGlobal(int x, int y)
                                           static_cast<CGFloat>(y)));
 }
 
+void MacSetAimCursorCaptured(bool captured)
+{
+    static bool sCaptured = false;
+    if (captured == sCaptured)
+        return;
+    sCaptured = captured;
+    if (captured) {
+        CGAssociateMouseAndMouseCursorPosition(false);
+        CGDisplayHideCursor(kCGDirectMainDisplay);
+    } else {
+        CGDisplayShowCursor(kCGDirectMainDisplay);
+        CGAssociateMouseAndMouseCursorPosition(true);
+    }
+}
+
 struct MacRawInputFilter::Impl
 {
     // Writers: GC handler queue or HID runloop thread (one backend active at

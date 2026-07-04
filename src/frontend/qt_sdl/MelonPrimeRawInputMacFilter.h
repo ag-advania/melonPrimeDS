@@ -40,6 +40,10 @@ namespace MelonPrime {
 // and CG global coordinates share the same top-left-origin point space.
 void MacWarpCursorGlobal(int x, int y);
 
+// Park the OS cursor for raw aim: disassociate hardware motion from cursor
+// position and hide the cursor until capture is released (unclip / focus loss).
+void MacSetAimCursorCaptured(bool captured);
+
 class MacRawInputFilter
 {
 public:
