@@ -10,6 +10,7 @@
 - [Custom HUD Runtime](custom-hud-runtime.md) — reference for runtime HUD rendering, caches, fonts, no-HUD patch, radar overlay
 - [Settings UI and Edit Mode](settings-ui-and-edit-mode.md) — settings dialog and in-game HUD edit mode; how to add a HUD setting surface
 - [Qt Menu Actions](qt-menu-actions.md) — add a menu item / checkable MelonPrime toggle to the Qt menubar
+- [Add a Menu Language](add-menu-language.md) — add a new `MenuLangId` / locale detection / translation content, and how to verify a translation pack before applying it
 - [Merge Latest Commits from melonDS Upstream](merge-upstream-melonds.md) — pull `melonDS-emu/melonDS:master` into this fork
 - [Release Notes Generation](release-notes.md) — generate GitHub release notes from a commit range
 

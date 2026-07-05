@@ -15,6 +15,8 @@
 - [MelonPrime Click Handling — Investigation & Fix Log](melonprime-click-handling.md)
 - [MelonPrime Patch System](melonprime-patch-system.md)
 - [MelonPrime Developer Only Section](melonprime-developer-only-section.md)
+- [MelonPrime Localization Refactor Plan](melonprime-localization-refactor-plan.md)
+- [MelonPrime Localization Refactor Audit](melonprime-localization-refactor-audit.md)
 - [Compute Renderer Mosaic Bug — Investigation Log](compute-renderer-mosaic-bug.md)
 - [macOS Window Rounded Corners — Investigation Log](macos-window-rounded-corners.md)
 - [MphCodex Reference Workflow](mphcodex-reference.md)
