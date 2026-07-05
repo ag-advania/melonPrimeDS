@@ -12,6 +12,7 @@
             {MenuLangId::Russian, "Настройки эмулятора - melonDS"},
             {MenuLangId::ChineseSimplified, "模拟器设置 - melonDS"},
             {MenuLangId::ChineseTraditional, "模擬器設定 - melonDS"},
+            {MenuLangId::ChineseHongKong, "模擬器設定 - melonDS"},
             {MenuLangId::Korean, "에뮬레이터 설정 - melonDS"},
             {MenuLangId::Arabic, "إعدادات المحاكي - melonDS"},
             {MenuLangId::Indonesian, "Pengaturan emu - melonDS"},
@@ -27,7 +28,56 @@
             {MenuLangId::Finnish, "Emulaattoriasetukset - melonDS"},
             {MenuLangId::Vietnamese, "Cài đặt emu - melonDS"},
             {MenuLangId::Polish, "Ustawienia emulatora - melonDS"},
-            {MenuLangId::Romanian, "Setări emulator - melonDS"},
+            {MenuLangId::Romanian, "Setări emulator - melonDS"},            {MenuLangId::Filipino, "Mga setting ng emulator - melonDS"},            {MenuLangId::Swahili, "Mipangilio ya emulator - melonDS"},            {MenuLangId::Croatian, "Postavke emulatora - melonDS"},            {MenuLangId::Icelandic, "Hermisstillingar - melonDS"},            {MenuLangId::Hindi, "एमुलेटर सेटिंग्स - melonDS"},            {MenuLangId::Bengali, "এমুলেটর সেটিংস - melonDS"},            {MenuLangId::Urdu, "ایمولیٹر ترتیبات - melonDS"},            {MenuLangId::Punjabi, "ਐਮੀੂਲੇਟਰ ਸੈਟਿੰਗਾਂ - melonDS"},            {MenuLangId::Telugu, "ఎమ్యులేటర్ సెట్టింగ్‌లు - melonDS"},            {MenuLangId::Persian, "تنظیمات شبیه‌ساز - melonDS"},            {MenuLangId::Malay, "Tetapan emulator - melonDS"},            {MenuLangId::Marathi, "एम्युलेटर सेटिंग्ज - melonDS"},            {MenuLangId::Tamil, "எமுலேட்டர் அமைப்புகள் - melonDS"},            {MenuLangId::Gujarati, "એમ્યુલેટર સેટિંગ્સ - melonDS"},            {MenuLangId::Kannada, "ಎಮ್ಯುಲೇಟರ್ ಸೆಟ್ಟಿಂಗ್‌ಗಳು - melonDS"},            {MenuLangId::Odia, "ଏମ୍ୟୁଲେଟର୍ ସେଟିଂସ୍ - melonDS"},            {MenuLangId::Malayalam, "എമുലേറ്റർ ക്രമീകരണങ്ങൾ - melonDS"},            {MenuLangId::Burmese, "emulator ဆက်တင်များ - melonDS"},            {MenuLangId::Uzbek, "Emulyator sozlamalari - melonDS"},            {MenuLangId::Azerbaijani, "Emulyator ayarları - melonDS"},            {MenuLangId::Nepali, "एम्युलेटर सेटिङहरू - melonDS"},            {MenuLangId::Sinhala, "එමිュලේටර් සැකසුම් - melonDS"},            {MenuLangId::Khmer, "ការកំណត់ emulator - melonDS"},            {MenuLangId::Lao, "ການຕັ້ງຄ່າ emulator - melonDS"},            {MenuLangId::Armenian, "Էմուլյատորի կարգավորումներ - melonDS"},            {MenuLangId::Albanian, "Cilësimet e emulatorit - melonDS"},            {MenuLangId::Georgian, "ემულატორის პარამეტრები - melonDS"},            {MenuLangId::Bosnian, "Postavke emulatora - melonDS"},            {MenuLangId::Serbian, "Подешавања емулатора - melonDS"},            {MenuLangId::Macedonian, "Поставки на емулаторот - melonDS"},            {MenuLangId::Bulgarian, "Настройки на емулатора - melonDS"},            {MenuLangId::Belarusian, "Налады эмулятара - melonDS"},            {MenuLangId::Maltese, "Settings tal-emulatur - melonDS"},            {MenuLangId::Mongolian, "Эмуляторын тохиргоо - melonDS"},            {MenuLangId::Latvian, "Emulatora iestatījumi - melonDS"},            {MenuLangId::Lithuanian, "Emuliatoriaus nustatymai - melonDS"},            {MenuLangId::Afrikaans, "Emulator-instellings - melonDS"},            {MenuLangId::Irish, "Socruithe aithriseora - melonDS"},            {MenuLangId::Assamese, "এমুলেটৰ ছেটিংছ - melonDS"},            {MenuLangId::Amharic, "የኢሙሌተር ቅንብሮች - melonDS"},            {MenuLangId::Estonian, "Emulaatori seaded - melonDS"},            {MenuLangId::Kazakh, "Эмулятор баптаулары - melonDS"},            {MenuLangId::Catalan, "Configuració de l'emulador - melonDS"},            {MenuLangId::Kyrgyz, "Эмулятор жөндөөлөрү - melonDS"},            {MenuLangId::Slovak, "Nastavenia emulátora - melonDS"},            {MenuLangId::Slovenian, "Nastavitve emulatorja - melonDS"},            {MenuLangId::Zulu, "Izilungiselelo ze-emulator - melonDS"},            {MenuLangId::Basque, "Emuladorearen ezarpenak - melonDS"},            {MenuLangId::Hebrew, "הגדרות אמולטור - melonDS"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -43,6 +93,7 @@
             {MenuLangId::Russian, "Настройки видео - melonDS"},
             {MenuLangId::ChineseSimplified, "视频设置 - melonDS"},
             {MenuLangId::ChineseTraditional, "影片設定 - melonDS"},
+            {MenuLangId::ChineseHongKong, "影片設定 - melonDS"},
             {MenuLangId::Korean, "비디오 설정 - melonDS"},
             {MenuLangId::Arabic, "إعدادات الفيديو - melonDS"},
             {MenuLangId::Indonesian, "Pengaturan video - melonDS"},
@@ -58,7 +109,56 @@
             {MenuLangId::Finnish, "Videoasetukset - melonDS"},
             {MenuLangId::Vietnamese, "Cài đặt video - melonDS"},
             {MenuLangId::Polish, "Ustawienia wideo - melonDS"},
-            {MenuLangId::Romanian, "Setări video - melonDS"},
+            {MenuLangId::Romanian, "Setări video - melonDS"},            {MenuLangId::Filipino, "mga setting ng video - melonDS"},            {MenuLangId::Swahili, "mipangilio ya video - melonDS"},            {MenuLangId::Croatian, "postavke videa - melonDS"},            {MenuLangId::Icelandic, "myndstillingar - melonDS"},            {MenuLangId::Hindi, "वीडियो सेटिंग्स - melonDS"},            {MenuLangId::Bengali, "ভিডিও সেটিংস - melonDS"},            {MenuLangId::Urdu, "ویڈیو ترتیبات - melonDS"},            {MenuLangId::Punjabi, "ਵੀਡੀਓ ਸੈਟਿੰਗਾਂ - melonDS"},            {MenuLangId::Telugu, "వీడియో సెట్టింగ్‌లు - melonDS"},            {MenuLangId::Persian, "تنظیمات ویدیو - melonDS"},            {MenuLangId::Malay, "Tetapan video - melonDS"},            {MenuLangId::Marathi, "व्हिडिओ सेटिंग्ज - melonDS"},            {MenuLangId::Tamil, "வீடியோ அமைப்புகள் - melonDS"},            {MenuLangId::Gujarati, "વિડિયો સેટિંગ્સ - melonDS"},            {MenuLangId::Kannada, "ವೀಡಿಯೋ ಸೆಟ್ಟಿಂಗ್‌ಗಳು - melonDS"},            {MenuLangId::Odia, "ଭିଡିଓ ସେଟିଂସ୍ - melonDS"},            {MenuLangId::Malayalam, "വീഡിയോ ക്രമീകരണങ്ങൾ - melonDS"},            {MenuLangId::Burmese, "ဗီဒီယို ဆက်တင်များ - melonDS"},            {MenuLangId::Uzbek, "Video sozlamalari - melonDS"},            {MenuLangId::Azerbaijani, "Video ayarları - melonDS"},            {MenuLangId::Nepali, "भिडियो सेटिङहरू - melonDS"},            {MenuLangId::Sinhala, "වීඩියෝ සැකසුම් - melonDS"},            {MenuLangId::Khmer, "ការកំណត់វីដេអូ - melonDS"},            {MenuLangId::Lao, "ການຕັ້ງຄ່າວິດີໂອ - melonDS"},            {MenuLangId::Armenian, "Տեսանյութի կարգավորումներ - melonDS"},            {MenuLangId::Albanian, "Cilësimet e videos - melonDS"},            {MenuLangId::Georgian, "ვიდეოს პარამეტრები - melonDS"},            {MenuLangId::Bosnian, "Video postavke - melonDS"},            {MenuLangId::Serbian, "Видео подешавања - melonDS"},            {MenuLangId::Macedonian, "Видео поставки - melonDS"},            {MenuLangId::Bulgarian, "Видео настройки - melonDS"},            {MenuLangId::Belarusian, "Налады відэа - melonDS"},            {MenuLangId::Maltese, "Settings tal-vidjo - melonDS"},            {MenuLangId::Mongolian, "Видео тохиргоо - melonDS"},            {MenuLangId::Latvian, "Video iestatījumi - melonDS"},            {MenuLangId::Lithuanian, "Vaizdo nustatymai - melonDS"},            {MenuLangId::Afrikaans, "Video-instellings - melonDS"},            {MenuLangId::Irish, "Socruithe físeáin - melonDS"},            {MenuLangId::Assamese, "ভিডিঅ' ছেটিংছ - melonDS"},            {MenuLangId::Amharic, "የቪዲዮ ቅንብሮች - melonDS"},            {MenuLangId::Estonian, "Videoseaded - melonDS"},            {MenuLangId::Kazakh, "Видео баптаулары - melonDS"},            {MenuLangId::Catalan, "Configuració de vídeo - melonDS"},            {MenuLangId::Kyrgyz, "Видео жөндөөлөрү - melonDS"},            {MenuLangId::Slovak, "Nastavenia videa - melonDS"},            {MenuLangId::Slovenian, "Nastavitve videa - melonDS"},            {MenuLangId::Zulu, "Izilungiselelo zevidiyo - melonDS"},            {MenuLangId::Basque, "Bideo-ezarpenak - melonDS"},            {MenuLangId::Hebrew, "הגדרות וידאו - melonDS"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -74,6 +174,7 @@
             {MenuLangId::Russian, "Настройки камеры – melonDS"},
             {MenuLangId::ChineseSimplified, "摄像头设置 - melonDS"},
             {MenuLangId::ChineseTraditional, "相機設定 - melonDS"},
+            {MenuLangId::ChineseHongKong, "相機設定 - melonDS"},
             {MenuLangId::Korean, "카메라 설정 - melonDS"},
             {MenuLangId::Arabic, "إعدادات الكاميرا – melonDS"},
             {MenuLangId::Indonesian, "Pengaturan kamera – melonDS"},
@@ -89,7 +190,56 @@
             {MenuLangId::Finnish, "Kamera-asetukset – melonDS"},
             {MenuLangId::Vietnamese, "Cài đặt camera – melonDS"},
             {MenuLangId::Polish, "Ustawienia kamery – melonDS"},
-            {MenuLangId::Romanian, "Setări cameră – melonDS"},
+            {MenuLangId::Romanian, "Setări cameră – melonDS"},            {MenuLangId::Filipino, "mga setting ng camera - melonDS"},            {MenuLangId::Swahili, "mipangilio ya kamera - melonDS"},            {MenuLangId::Croatian, "postavke kamere - melonDS"},            {MenuLangId::Icelandic, "myndavélarstillingar - melonDS"},            {MenuLangId::Hindi, "कैमरा सेटिंग्स - melonDS"},            {MenuLangId::Bengali, "ক্যামেরা সেটিংস - melonDS"},            {MenuLangId::Urdu, "کیمرا ترتیبات - melonDS"},            {MenuLangId::Punjabi, "ਕੈਮਰਾ ਸੈਟਿੰਗਾਂ - melonDS"},            {MenuLangId::Telugu, "కెమెరా సెట్టింగ్‌లు - melonDS"},            {MenuLangId::Persian, "تنظیمات دوربین - melonDS"},            {MenuLangId::Malay, "Tetapan kamera - melonDS"},            {MenuLangId::Marathi, "कॅमेरा सेटिंग्ज - melonDS"},            {MenuLangId::Tamil, "கேமரா அமைப்புகள் - melonDS"},            {MenuLangId::Gujarati, "કેમેરા સેટિંગ્સ - melonDS"},            {MenuLangId::Kannada, "ಕ್ಯಾಮೆರಾ ಸೆಟ್ಟಿಂಗ್‌ಗಳು - melonDS"},            {MenuLangId::Odia, "କ୍ୟାମେରା ସେଟିଂସ୍ - melonDS"},            {MenuLangId::Malayalam, "ക്യാമറ ക്രമീകരണങ്ങൾ - melonDS"},            {MenuLangId::Burmese, "ကင်မရာ ဆက်တင်များ - melonDS"},            {MenuLangId::Uzbek, "Kamera sozlamalari - melonDS"},            {MenuLangId::Azerbaijani, "Kamera ayarları - melonDS"},            {MenuLangId::Nepali, "क्यामेरा सेटिङहरू - melonDS"},            {MenuLangId::Sinhala, "කැමරා සැකසුම් - melonDS"},            {MenuLangId::Khmer, "ការកំណត់កាមេរ៉ា - melonDS"},            {MenuLangId::Lao, "ການຕັ້ງຄ່າກ້ອງ - melonDS"},            {MenuLangId::Armenian, "Տեսախցիկի կարգավորումներ - melonDS"},            {MenuLangId::Albanian, "Cilësimet e kamerës - melonDS"},            {MenuLangId::Georgian, "კამერის პარამეტრები - melonDS"},            {MenuLangId::Bosnian, "Postavke kamere - melonDS"},            {MenuLangId::Serbian, "Подешавања камере - melonDS"},            {MenuLangId::Macedonian, "Поставки на камерата - melonDS"},            {MenuLangId::Bulgarian, "Настройки на камерата - melonDS"},            {MenuLangId::Belarusian, "Налады камеры - melonDS"},            {MenuLangId::Maltese, "Settings tal-kamera - melonDS"},            {MenuLangId::Mongolian, "Камерын тохиргоо - melonDS"},            {MenuLangId::Latvian, "Kameras iestatījumi - melonDS"},            {MenuLangId::Lithuanian, "Kameros nustatymai - melonDS"},            {MenuLangId::Afrikaans, "Kamera-instellings - melonDS"},            {MenuLangId::Irish, "Socruithe ceamara - melonDS"},            {MenuLangId::Assamese, "কেমেৰা ছেটিংছ - melonDS"},            {MenuLangId::Amharic, "የካሜራ ቅንብሮች - melonDS"},            {MenuLangId::Estonian, "Kaamera seaded - melonDS"},            {MenuLangId::Kazakh, "Камера баптаулары - melonDS"},            {MenuLangId::Catalan, "Configuració de càmera - melonDS"},            {MenuLangId::Kyrgyz, "Камера жөндөөлөрү - melonDS"},            {MenuLangId::Slovak, "Nastavenia kamery - melonDS"},            {MenuLangId::Slovenian, "Nastavitve kamere - melonDS"},            {MenuLangId::Zulu, "Izilungiselelo zekhamera - melonDS"},            {MenuLangId::Basque, "Kamera-ezarpenak - melonDS"},            {MenuLangId::Hebrew, "הגדרות מצלמה - melonDS"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -105,6 +255,7 @@
             {MenuLangId::Russian, "Настройки звука - melonDS"},
             {MenuLangId::ChineseSimplified, "音频设置 - melonDS"},
             {MenuLangId::ChineseTraditional, "音訊設定 - melonDS"},
+            {MenuLangId::ChineseHongKong, "音訊設定 - melonDS"},
             {MenuLangId::Korean, "오디오 설정 - melonDS"},
             {MenuLangId::Arabic, "إعدادات الصوت - melonDS"},
             {MenuLangId::Indonesian, "Pengaturan audio - melonDS"},
@@ -120,7 +271,56 @@
             {MenuLangId::Finnish, "Ääniasetukset - melonDS"},
             {MenuLangId::Vietnamese, "Cài đặt âm thanh - melonDS"},
             {MenuLangId::Polish, "Ustawienia audio - melonDS"},
-            {MenuLangId::Romanian, "Setări audio - melonDS"},
+            {MenuLangId::Romanian, "Setări audio - melonDS"},            {MenuLangId::Filipino, "mga setting ng audio - melonDS"},            {MenuLangId::Swahili, "mipangilio ya sauti - melonDS"},            {MenuLangId::Croatian, "postavke zvuka - melonDS"},            {MenuLangId::Icelandic, "hljóðstillingar - melonDS"},            {MenuLangId::Hindi, "ऑडियो सेटिंग्स - melonDS"},            {MenuLangId::Bengali, "অডিও সেটিংস - melonDS"},            {MenuLangId::Urdu, "آڈیو ترتیبات - melonDS"},            {MenuLangId::Punjabi, "ਆਡੀਓ ਸੈਟਿੰਗਾਂ - melonDS"},            {MenuLangId::Telugu, "ఆడియో సెట్టింగ్‌లు - melonDS"},            {MenuLangId::Persian, "تنظیمات صدا - melonDS"},            {MenuLangId::Malay, "Tetapan audio - melonDS"},            {MenuLangId::Marathi, "ऑडिओ सेटिंग्ज - melonDS"},            {MenuLangId::Tamil, "ஆடியோ அமைப்புகள் - melonDS"},            {MenuLangId::Gujarati, "ઑડિયો સેટિંગ્સ - melonDS"},            {MenuLangId::Kannada, "ಆಡಿಯೋ ಸೆಟ್ಟಿಂಗ್‌ಗಳು - melonDS"},            {MenuLangId::Odia, "ଅଡିଓ ସେଟିଂସ୍ - melonDS"},            {MenuLangId::Malayalam, "ഓഡിയോ ക്രമീകരണങ്ങൾ - melonDS"},            {MenuLangId::Burmese, "အသံ ဆက်တင်များ - melonDS"},            {MenuLangId::Uzbek, "Audio sozlamalari - melonDS"},            {MenuLangId::Azerbaijani, "Audio ayarları - melonDS"},            {MenuLangId::Nepali, "अडियो सेटिङहरू - melonDS"},            {MenuLangId::Sinhala, "ශ්‍රව්‍ය සැකසුම් - melonDS"},            {MenuLangId::Khmer, "ការកំណត់អូឌីយ៉ូ - melonDS"},            {MenuLangId::Lao, "ການຕັ້ງຄ່າສຽງ - melonDS"},            {MenuLangId::Armenian, "Աուդիոյի կարգավորումներ - melonDS"},            {MenuLangId::Albanian, "Cilësimet e audios - melonDS"},            {MenuLangId::Georgian, "აუდიოს პარამეტრები - melonDS"},            {MenuLangId::Bosnian, "Audio postavke - melonDS"},            {MenuLangId::Serbian, "Аудио подешавања - melonDS"},            {MenuLangId::Macedonian, "Аудио поставки - melonDS"},            {MenuLangId::Bulgarian, "Аудио настройки - melonDS"},            {MenuLangId::Belarusian, "Налады аўдыя - melonDS"},            {MenuLangId::Maltese, "Settings tal-awdjo - melonDS"},            {MenuLangId::Mongolian, "Аудио тохиргоо - melonDS"},            {MenuLangId::Latvian, "Audio iestatījumi - melonDS"},            {MenuLangId::Lithuanian, "Garso nustatymai - melonDS"},            {MenuLangId::Afrikaans, "Oudio-instellings - melonDS"},            {MenuLangId::Irish, "Socruithe fuaime - melonDS"},            {MenuLangId::Assamese, "অডিঅ' ছেটিংছ - melonDS"},            {MenuLangId::Amharic, "የድምፅ ቅንብሮች - melonDS"},            {MenuLangId::Estonian, "Heliseaded - melonDS"},            {MenuLangId::Kazakh, "Аудио баптаулары - melonDS"},            {MenuLangId::Catalan, "Configuració d'àudio - melonDS"},            {MenuLangId::Kyrgyz, "Аудио жөндөөлөрү - melonDS"},            {MenuLangId::Slovak, "Nastavenia zvuku - melonDS"},            {MenuLangId::Slovenian, "Nastavitve zvoka - melonDS"},            {MenuLangId::Zulu, "Izilungiselelo zomsindo - melonDS"},            {MenuLangId::Basque, "Audioa-ezarpenak - melonDS"},            {MenuLangId::Hebrew, "הגדרות שמע - melonDS"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -136,6 +336,7 @@
             {MenuLangId::Russian, "Ввод и горячие клавиши - melonDS"},
             {MenuLangId::ChineseSimplified, "输入与快捷键 - melonDS"},
             {MenuLangId::ChineseTraditional, "輸入與快捷鍵 - melonDS"},
+            {MenuLangId::ChineseHongKong, "輸入與快捷鍵 - melonDS"},
             {MenuLangId::Korean, "입력 및 단축키 - melonDS"},
             {MenuLangId::Arabic, "الإدخال والاختصارات - melonDS"},
             {MenuLangId::Indonesian, "Input dan hotkey - melonDS"},
@@ -151,7 +352,56 @@
             {MenuLangId::Finnish, "Syöte ja pikanäppäimet - melonDS"},
             {MenuLangId::Vietnamese, "Nhập liệu và phím tắt - melonDS"},
             {MenuLangId::Polish, "Wejście i skróty - melonDS"},
-            {MenuLangId::Romanian, "Intrare și taste rapide - melonDS"},
+            {MenuLangId::Romanian, "Intrare și taste rapide - melonDS"},            {MenuLangId::Filipino, "Input and hotkeys - melonDS"},            {MenuLangId::Swahili, "Ingizo and hotkeys - melonDS"},            {MenuLangId::Croatian, "Unos and hotkeys - melonDS"},            {MenuLangId::Icelandic, "Inntak and hotkeys - melonDS"},            {MenuLangId::Hindi, "इनपुट and hotkeys - melonDS"},            {MenuLangId::Bengali, "ইনপুট and hotkeys - melonDS"},            {MenuLangId::Urdu, "ان پٹ and hotkeys - melonDS"},            {MenuLangId::Punjabi, "ਇਨਪੁੱਟ and hotkeys - melonDS"},            {MenuLangId::Telugu, "ఇన్‌పుట్ and hotkeys - melonDS"},            {MenuLangId::Persian, "ورودی and hotkeys - melonDS"},            {MenuLangId::Malay, "Input dan kekunci pintas - melonDS"},            {MenuLangId::Marathi, "इनपुट and hotkeys - melonDS"},            {MenuLangId::Tamil, "உள்ளீடு and hotkeys - melonDS"},            {MenuLangId::Gujarati, "ઇનપુટ and hotkeys - melonDS"},            {MenuLangId::Kannada, "ಇನ್‌ಪುಟ್ and hotkeys - melonDS"},            {MenuLangId::Odia, "ଇନପୁଟ୍ and hotkeys - melonDS"},            {MenuLangId::Malayalam, "ഇൻപുട്ട് and hotkeys - melonDS"},            {MenuLangId::Burmese, "input and hotkeys - melonDS"},            {MenuLangId::Uzbek, "Kiritish and hotkeys - melonDS"},            {MenuLangId::Azerbaijani, "Giriş and hotkeys - melonDS"},            {MenuLangId::Nepali, "इनपुट and hotkeys - melonDS"},            {MenuLangId::Sinhala, "ආදානය and hotkeys - melonDS"},            {MenuLangId::Khmer, "បញ្ចូល and hotkeys - melonDS"},            {MenuLangId::Lao, "ອິນພຸດ and hotkeys - melonDS"},            {MenuLangId::Armenian, "Մուտք and hotkeys - melonDS"},            {MenuLangId::Albanian, "Hyrje and hotkeys - melonDS"},            {MenuLangId::Georgian, "შეყვანა and hotkeys - melonDS"},            {MenuLangId::Bosnian, "Unos and hotkeys - melonDS"},            {MenuLangId::Serbian, "Унос and hotkeys - melonDS"},            {MenuLangId::Macedonian, "Влез and hotkeys - melonDS"},            {MenuLangId::Bulgarian, "Вход and hotkeys - melonDS"},            {MenuLangId::Belarusian, "Увод and hotkeys - melonDS"},            {MenuLangId::Maltese, "Malti: Input and hotkeys - melonDS"},            {MenuLangId::Mongolian, "Оролт and hotkeys - melonDS"},            {MenuLangId::Latvian, "Ievade and hotkeys - melonDS"},            {MenuLangId::Lithuanian, "Įvestis and hotkeys - melonDS"},            {MenuLangId::Afrikaans, "Invoer and hotkeys - melonDS"},            {MenuLangId::Irish, "Ionchur and hotkeys - melonDS"},            {MenuLangId::Assamese, "ইনপুট and hotkeys - melonDS"},            {MenuLangId::Amharic, "ግቤት and hotkeys - melonDS"},            {MenuLangId::Estonian, "Sisend and hotkeys - melonDS"},            {MenuLangId::Kazakh, "Енгізу and hotkeys - melonDS"},            {MenuLangId::Catalan, "Entrada and hotkeys - melonDS"},            {MenuLangId::Kyrgyz, "Киргизүү and hotkeys - melonDS"},            {MenuLangId::Slovak, "Vstup and hotkeys - melonDS"},            {MenuLangId::Slovenian, "Vnos and hotkeys - melonDS"},            {MenuLangId::Zulu, "Okokufaka and hotkeys - melonDS"},            {MenuLangId::Basque, "Sarrera and hotkeys - melonDS"},            {MenuLangId::Hebrew, "קלט and hotkeys - melonDS"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -167,6 +417,7 @@
             {MenuLangId::Russian, "Общие горячие клавиши"},
             {MenuLangId::ChineseSimplified, "通用快捷键"},
             {MenuLangId::ChineseTraditional, "通用快捷鍵"},
+            {MenuLangId::ChineseHongKong, "通用快捷鍵"},
             {MenuLangId::Korean, "일반 단축키"},
             {MenuLangId::Arabic, "اختصارات عامة"},
             {MenuLangId::Indonesian, "Hotkey umum"},
@@ -182,7 +433,56 @@
             {MenuLangId::Finnish, "Yleiset pikanäppäimet"},
             {MenuLangId::Vietnamese, "Phím tắt chung"},
             {MenuLangId::Polish, "Ogólne skróty klawiszowe"},
-            {MenuLangId::Romanian, "Taste rapide generale"},
+            {MenuLangId::Romanian, "Taste rapide generale"},            {MenuLangId::Filipino, "General hotkeys"},            {MenuLangId::Swahili, "General hotkeys"},            {MenuLangId::Croatian, "Opći prečaci"},            {MenuLangId::Icelandic, "Almennir flýtilyklar"},            {MenuLangId::Hindi, "सामान्य हॉटकी"},            {MenuLangId::Bengali, "সাধারণ হটকি"},            {MenuLangId::Urdu, "عمومی ہاٹ کیز"},            {MenuLangId::Punjabi, "ਆਮ ਹਾਟਕੀਜ਼"},            {MenuLangId::Telugu, "సాధారణ హాట్‌కీలు"},            {MenuLangId::Persian, "میانبرهای عمومی"},            {MenuLangId::Malay, "Kekunci pintas umum"},            {MenuLangId::Marathi, "सामान्य हॉटकीज"},            {MenuLangId::Tamil, "பொது hotkeyகள்"},            {MenuLangId::Gujarati, "સામાન્ય hotkeys"},            {MenuLangId::Kannada, "ಸಾಮಾನ್ಯ hotkeys"},            {MenuLangId::Odia, "ସାଧାରଣ hotkeys"},            {MenuLangId::Malayalam, "പൊതു hotkeys"},            {MenuLangId::Burmese, "အထွေထွေ hotkeys"},            {MenuLangId::Uzbek, "Umumiy hotkeys"},            {MenuLangId::Azerbaijani, "Ümumi qısayollar"},            {MenuLangId::Nepali, "सामान्य hotkeys"},            {MenuLangId::Sinhala, "සාමාන්‍ය hotkeys"},            {MenuLangId::Khmer, "hotkeys ទូទៅ"},            {MenuLangId::Lao, "hotkeys ທົ່ວໄປ"},            {MenuLangId::Armenian, "Ընդհանուր hotkeys"},            {MenuLangId::Albanian, "Hotkeys të përgjithshme"},            {MenuLangId::Georgian, "ზოგადი hotkeys"},            {MenuLangId::Bosnian, "Opće prečice"},            {MenuLangId::Serbian, "Опште пречице"},            {MenuLangId::Macedonian, "Општи кратенки"},            {MenuLangId::Bulgarian, "Общи бързи клавиши"},            {MenuLangId::Belarusian, "Агульныя гарачыя клавішы"},            {MenuLangId::Maltese, "Hotkeys ġenerali"},            {MenuLangId::Mongolian, "Ерөнхий товчлолууд"},            {MenuLangId::Latvian, "Vispārīgie karstie taustiņi"},            {MenuLangId::Lithuanian, "Bendrieji spartieji klavišai"},            {MenuLangId::Afrikaans, "Algemene sneltoetse"},            {MenuLangId::Irish, "Aicearraí ginearálta"},            {MenuLangId::Assamese, "সাধাৰণ হটকি"},            {MenuLangId::Amharic, "አጠቃላይ አቋራጭ ቁልፎች"},            {MenuLangId::Estonian, "Üldised kiirklahvid"},            {MenuLangId::Kazakh, "Жалпы жылдам пернелер"},            {MenuLangId::Catalan, "Dreceres generals"},            {MenuLangId::Kyrgyz, "Жалпы ыкчам баскычтар"},            {MenuLangId::Slovak, "Všeobecné klávesové skratky"},            {MenuLangId::Slovenian, "Splošne bližnjice"},            {MenuLangId::Zulu, "Izinqamuleli ezivamile"},            {MenuLangId::Basque, "Laster-tekla orokorrak"},            {MenuLangId::Hebrew, "קיצורי מקשים כלליים"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -198,6 +498,7 @@
             {MenuLangId::Russian, "Общие"},
             {MenuLangId::ChineseSimplified, "常规"},
             {MenuLangId::ChineseTraditional, "常規"},
+            {MenuLangId::ChineseHongKong, "常規"},
             {MenuLangId::Korean, "일반"},
             {MenuLangId::Arabic, "عام"},
             {MenuLangId::Indonesian, "Umum"},
@@ -213,7 +514,56 @@
             {MenuLangId::Finnish, "Yleinen"},
             {MenuLangId::Vietnamese, "Chung"},
             {MenuLangId::Polish, "Ogólne"},
-            {MenuLangId::Romanian, "General"},
+            {MenuLangId::Romanian, "General"},            {MenuLangId::Filipino, "Pangkalahatan"},            {MenuLangId::Swahili, "Jumla"},            {MenuLangId::Croatian, "Općenito"},            {MenuLangId::Icelandic, "Almennt"},            {MenuLangId::Hindi, "सामान्य"},            {MenuLangId::Bengali, "সাধারণ"},            {MenuLangId::Urdu, "عمومی"},            {MenuLangId::Punjabi, "ਆਮ"},            {MenuLangId::Telugu, "సాధారణ"},            {MenuLangId::Persian, "عمومی"},            {MenuLangId::Malay, "Umum"},            {MenuLangId::Marathi, "सामान्य"},            {MenuLangId::Tamil, "பொது"},            {MenuLangId::Gujarati, "સામાન્ય"},            {MenuLangId::Kannada, "ಸಾಮಾನ್ಯ"},            {MenuLangId::Odia, "ସାଧାରଣ"},            {MenuLangId::Malayalam, "പൊതുവായത്"},            {MenuLangId::Burmese, "အထွေထွေ"},            {MenuLangId::Uzbek, "Umumiy"},            {MenuLangId::Azerbaijani, "Ümumi"},            {MenuLangId::Nepali, "सामान्य"},            {MenuLangId::Sinhala, "සාමාන්‍ය"},            {MenuLangId::Khmer, "ទូទៅ"},            {MenuLangId::Lao, "ທົ່ວໄປ"},            {MenuLangId::Armenian, "Ընդհանուր"},            {MenuLangId::Albanian, "Të përgjithshme"},            {MenuLangId::Georgian, "ზოგადი"},            {MenuLangId::Bosnian, "Opće"},            {MenuLangId::Serbian, "Опште"},            {MenuLangId::Macedonian, "Општо"},            {MenuLangId::Bulgarian, "Общи"},            {MenuLangId::Belarusian, "Агульнае"},            {MenuLangId::Maltese, "Ġenerali"},            {MenuLangId::Mongolian, "Ерөнхий"},            {MenuLangId::Latvian, "Vispārīgi"},            {MenuLangId::Lithuanian, "Bendra"},            {MenuLangId::Afrikaans, "Algemeen"},            {MenuLangId::Irish, "Ginearálta"},            {MenuLangId::Assamese, "সাধাৰণ"},            {MenuLangId::Amharic, "አጠቃላይ"},            {MenuLangId::Estonian, "Üldine"},            {MenuLangId::Kazakh, "Жалпы"},            {MenuLangId::Catalan, "General"},            {MenuLangId::Kyrgyz, "Жалпы"},            {MenuLangId::Slovak, "Všeobecné"},            {MenuLangId::Slovenian, "Splošno"},            {MenuLangId::Zulu, "Okuvamile"},            {MenuLangId::Basque, "Orokorra"},            {MenuLangId::Hebrew, "כללי"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -229,6 +579,7 @@
             {MenuLangId::Russian, "Режим DS"},
             {MenuLangId::ChineseSimplified, "DS 模式"},
             {MenuLangId::ChineseTraditional, "DS 模式"},
+            {MenuLangId::ChineseHongKong, "DS 模式"},
             {MenuLangId::Korean, "DS 모드"},
             {MenuLangId::Arabic, "وضع DS"},
             {MenuLangId::Indonesian, "Mode DS"},
@@ -244,7 +595,56 @@
             {MenuLangId::Finnish, "DS-tila"},
             {MenuLangId::Vietnamese, "Chế độ DS"},
             {MenuLangId::Polish, "Tryb DS"},
-            {MenuLangId::Romanian, "Mod DS"},
+            {MenuLangId::Romanian, "Mod DS"},            {MenuLangId::Filipino, "DS-mode"},            {MenuLangId::Swahili, "DS-hali"},            {MenuLangId::Croatian, "DS-način"},            {MenuLangId::Icelandic, "DS-hamur"},            {MenuLangId::Hindi, "DS-मोड"},            {MenuLangId::Bengali, "DS-মোড"},            {MenuLangId::Urdu, "DS-موڈ"},            {MenuLangId::Punjabi, "DS-ਮੋਡ"},            {MenuLangId::Telugu, "DS-మోడ్"},            {MenuLangId::Persian, "DS-حالت"},            {MenuLangId::Malay, "DS-mod"},            {MenuLangId::Marathi, "DS-मोड"},            {MenuLangId::Tamil, "DS-முறை"},            {MenuLangId::Gujarati, "DS-મોડ"},            {MenuLangId::Kannada, "DS-ಮೋಡ್"},            {MenuLangId::Odia, "DS-ମୋଡ୍"},            {MenuLangId::Malayalam, "DS-മോഡ്"},            {MenuLangId::Burmese, "DS-မုဒ်"},            {MenuLangId::Uzbek, "DS-rejim"},            {MenuLangId::Azerbaijani, "DS-rejim"},            {MenuLangId::Nepali, "DS-मोड"},            {MenuLangId::Sinhala, "DS-ප්‍රකාරය"},            {MenuLangId::Khmer, "DS-របៀប"},            {MenuLangId::Lao, "DS-ໂໝດ"},            {MenuLangId::Armenian, "DS-ռեժիմ"},            {MenuLangId::Albanian, "DS-modalitet"},            {MenuLangId::Georgian, "DS-რეჟიმი"},            {MenuLangId::Bosnian, "DS-način"},            {MenuLangId::Serbian, "DS-режим"},            {MenuLangId::Macedonian, "DS-режим"},            {MenuLangId::Bulgarian, "DS-режим"},            {MenuLangId::Belarusian, "DS-рэжым"},            {MenuLangId::Maltese, "DS-mod"},            {MenuLangId::Mongolian, "DS-горим"},            {MenuLangId::Latvian, "DS-režīms"},            {MenuLangId::Lithuanian, "DS-režimas"},            {MenuLangId::Afrikaans, "DS-modus"},            {MenuLangId::Irish, "DS-mód"},            {MenuLangId::Assamese, "DS-মোড"},            {MenuLangId::Amharic, "DS-ሁነታ"},            {MenuLangId::Estonian, "DS-režiim"},            {MenuLangId::Kazakh, "DS-режим"},            {MenuLangId::Catalan, "DS-mode"},            {MenuLangId::Kyrgyz, "DS-режим"},            {MenuLangId::Slovak, "DS-režim"},            {MenuLangId::Slovenian, "DS-način"},            {MenuLangId::Zulu, "DS-imodi"},            {MenuLangId::Basque, "DS-modua"},            {MenuLangId::Hebrew, "DS-מצב"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -260,6 +660,7 @@
             {MenuLangId::Russian, "Режим DSi"},
             {MenuLangId::ChineseSimplified, "DSi 模式"},
             {MenuLangId::ChineseTraditional, "DSi 模式"},
+            {MenuLangId::ChineseHongKong, "DSi 模式"},
             {MenuLangId::Korean, "DSi 모드"},
             {MenuLangId::Arabic, "وضع DSi"},
             {MenuLangId::Indonesian, "Mode DSi"},
@@ -275,7 +676,56 @@
             {MenuLangId::Finnish, "DSi-tila"},
             {MenuLangId::Vietnamese, "Chế độ DSi"},
             {MenuLangId::Polish, "Tryb DSi"},
-            {MenuLangId::Romanian, "Mod DSi"},
+            {MenuLangId::Romanian, "Mod DSi"},            {MenuLangId::Filipino, "DSi-mode"},            {MenuLangId::Swahili, "DSi-hali"},            {MenuLangId::Croatian, "DSi-način"},            {MenuLangId::Icelandic, "DSi-hamur"},            {MenuLangId::Hindi, "DSi-मोड"},            {MenuLangId::Bengali, "DSi-মোড"},            {MenuLangId::Urdu, "DSi-موڈ"},            {MenuLangId::Punjabi, "DSi-ਮੋਡ"},            {MenuLangId::Telugu, "DSi-మోడ్"},            {MenuLangId::Persian, "DSi-حالت"},            {MenuLangId::Malay, "DSi-mod"},            {MenuLangId::Marathi, "DSi-मोड"},            {MenuLangId::Tamil, "DSi-முறை"},            {MenuLangId::Gujarati, "DSi-મોડ"},            {MenuLangId::Kannada, "DSi-ಮೋಡ್"},            {MenuLangId::Odia, "DSi-ମୋଡ୍"},            {MenuLangId::Malayalam, "DSi-മോഡ്"},            {MenuLangId::Burmese, "DSi-မုဒ်"},            {MenuLangId::Uzbek, "DSi-rejim"},            {MenuLangId::Azerbaijani, "DSi-rejim"},            {MenuLangId::Nepali, "DSi-मोड"},            {MenuLangId::Sinhala, "DSi-ප්‍රකාරය"},            {MenuLangId::Khmer, "DSi-របៀប"},            {MenuLangId::Lao, "DSi-ໂໝດ"},            {MenuLangId::Armenian, "DSi-ռեժիմ"},            {MenuLangId::Albanian, "DSi-modalitet"},            {MenuLangId::Georgian, "DSi-რეჟიმი"},            {MenuLangId::Bosnian, "DSi-način"},            {MenuLangId::Serbian, "DSi-режим"},            {MenuLangId::Macedonian, "DSi-режим"},            {MenuLangId::Bulgarian, "DSi-режим"},            {MenuLangId::Belarusian, "DSi-рэжым"},            {MenuLangId::Maltese, "DSi-mod"},            {MenuLangId::Mongolian, "DSi-горим"},            {MenuLangId::Latvian, "DSi-režīms"},            {MenuLangId::Lithuanian, "DSi-režimas"},            {MenuLangId::Afrikaans, "DSi-modus"},            {MenuLangId::Irish, "DSi-mód"},            {MenuLangId::Assamese, "DSi-মোড"},            {MenuLangId::Amharic, "DSi-ሁነታ"},            {MenuLangId::Estonian, "DSi-režiim"},            {MenuLangId::Kazakh, "DSi-режим"},            {MenuLangId::Catalan, "DSi-mode"},            {MenuLangId::Kyrgyz, "DSi-режим"},            {MenuLangId::Slovak, "DSi-režim"},            {MenuLangId::Slovenian, "DSi-način"},            {MenuLangId::Zulu, "DSi-imodi"},            {MenuLangId::Basque, "DSi-modua"},            {MenuLangId::Hebrew, "DSi-מצב"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -291,6 +741,7 @@
             {MenuLangId::Russian, "Эмуляция CPU"},
             {MenuLangId::ChineseSimplified, "CPU 模拟"},
             {MenuLangId::ChineseTraditional, "CPU 模擬"},
+            {MenuLangId::ChineseHongKong, "CPU 模擬"},
             {MenuLangId::Korean, "CPU 에뮬레이션"},
             {MenuLangId::Arabic, "محاكاة CPU"},
             {MenuLangId::Indonesian, "Emulasi CPU"},
@@ -306,7 +757,56 @@
             {MenuLangId::Finnish, "CPU-emulointi"},
             {MenuLangId::Vietnamese, "Giả lập CPU"},
             {MenuLangId::Polish, "Emulacja CPU"},
-            {MenuLangId::Romanian, "Emulare CPU"},
+            {MenuLangId::Romanian, "Emulare CPU"},            {MenuLangId::Filipino, "CPU emulation"},            {MenuLangId::Swahili, "CPU emulation"},            {MenuLangId::Croatian, "CPU emulacija"},            {MenuLangId::Icelandic, "CPU-hermun"},            {MenuLangId::Hindi, "CPU एमुलेशन"},            {MenuLangId::Bengali, "CPU এমুলেশন"},            {MenuLangId::Urdu, "CPU ایمولیشن"},            {MenuLangId::Punjabi, "CPU ਐਮੀੂਲੇਸ਼ਨ"},            {MenuLangId::Telugu, "CPU ఎమ్యులేషన్"},            {MenuLangId::Persian, "شبیه‌سازی CPU"},            {MenuLangId::Malay, "Emulasi CPU"},            {MenuLangId::Marathi, "CPU एम्युलेशन"},            {MenuLangId::Tamil, "CPU emulation"},            {MenuLangId::Gujarati, "CPU emulation"},            {MenuLangId::Kannada, "CPU emulation"},            {MenuLangId::Odia, "CPU emulation"},            {MenuLangId::Malayalam, "CPU emulation"},            {MenuLangId::Burmese, "CPU emulation"},            {MenuLangId::Uzbek, "CPU emulation"},            {MenuLangId::Azerbaijani, "CPU emulation"},            {MenuLangId::Nepali, "CPU emulation"},            {MenuLangId::Sinhala, "CPU emulation"},            {MenuLangId::Khmer, "CPU emulation"},            {MenuLangId::Lao, "CPU emulation"},            {MenuLangId::Armenian, "CPU emulation"},            {MenuLangId::Albanian, "CPU emulation"},            {MenuLangId::Georgian, "CPU emulation"},            {MenuLangId::Bosnian, "CPU emulation"},            {MenuLangId::Serbian, "CPU emulation"},            {MenuLangId::Macedonian, "CPU emulation"},            {MenuLangId::Bulgarian, "CPU emulation"},            {MenuLangId::Belarusian, "CPU emulation"},            {MenuLangId::Maltese, "CPU emulation"},            {MenuLangId::Mongolian, "CPU emulation"},            {MenuLangId::Latvian, "CPU emulation"},            {MenuLangId::Lithuanian, "CPU emulation"},            {MenuLangId::Afrikaans, "CPU emulation"},            {MenuLangId::Irish, "CPU emulation"},            {MenuLangId::Assamese, "CPU emulation"},            {MenuLangId::Amharic, "CPU emulation"},            {MenuLangId::Estonian, "CPU emulatsioon"},            {MenuLangId::Kazakh, "CPU эмуляциясы"},            {MenuLangId::Catalan, "CPU emulation"},            {MenuLangId::Kyrgyz, "CPU emulation"},            {MenuLangId::Slovak, "emulácia CPU"},            {MenuLangId::Slovenian, "emulacija CPU"},            {MenuLangId::Zulu, "ukulingisa CPU"},            {MenuLangId::Basque, "CPU emulazioa"},            {MenuLangId::Hebrew, "אמולציית CPU"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -322,6 +822,7 @@
             {MenuLangId::Russian, "Инструменты разработчика"},
             {MenuLangId::ChineseSimplified, "开发工具"},
             {MenuLangId::ChineseTraditional, "開發工具"},
+            {MenuLangId::ChineseHongKong, "開發工具"},
             {MenuLangId::Korean, "개발 도구"},
             {MenuLangId::Arabic, "أدوات المطور"},
             {MenuLangId::Indonesian, "Devtools"},
@@ -337,7 +838,56 @@
             {MenuLangId::Finnish, "Kehitystyökalut"},
             {MenuLangId::Vietnamese, "Devtools"},
             {MenuLangId::Polish, "Narzędzia deweloperskie"},
-            {MenuLangId::Romanian, "Instrumente dezvoltator"},
+            {MenuLangId::Romanian, "Instrumente dezvoltator"},            {MenuLangId::Filipino, "Devtools"},            {MenuLangId::Swahili, "Devtools"},            {MenuLangId::Croatian, "Devtools"},            {MenuLangId::Icelandic, "Þróunartól"},            {MenuLangId::Hindi, "डेवटूल्स"},            {MenuLangId::Bengali, "ডেভটুলস"},            {MenuLangId::Urdu, "ڈیولپر ٹولز"},            {MenuLangId::Punjabi, "ਡਿਵਟੂਲਜ਼"},            {MenuLangId::Telugu, "డెవ్‌టూల్స్"},            {MenuLangId::Persian, "ابزارهای توسعه"},            {MenuLangId::Malay, "Alat pembangun"},            {MenuLangId::Marathi, "डेव्हटूल्स"},            {MenuLangId::Tamil, "devtools"},            {MenuLangId::Gujarati, "devtools"},            {MenuLangId::Kannada, "devtools"},            {MenuLangId::Odia, "devtools"},            {MenuLangId::Malayalam, "devtools"},            {MenuLangId::Burmese, "devtools"},            {MenuLangId::Uzbek, "devtools"},            {MenuLangId::Azerbaijani, "devtools"},            {MenuLangId::Nepali, "devtools"},            {MenuLangId::Sinhala, "devtools"},            {MenuLangId::Khmer, "devtools"},            {MenuLangId::Lao, "devtools"},            {MenuLangId::Armenian, "devtools"},            {MenuLangId::Albanian, "devtools"},            {MenuLangId::Georgian, "devtools"},            {MenuLangId::Bosnian, "devtools"},            {MenuLangId::Serbian, "devtools"},            {MenuLangId::Macedonian, "devtools"},            {MenuLangId::Bulgarian, "devtools"},            {MenuLangId::Belarusian, "devtools"},            {MenuLangId::Maltese, "devtools"},            {MenuLangId::Mongolian, "devtools"},            {MenuLangId::Latvian, "devtools"},            {MenuLangId::Lithuanian, "devtools"},            {MenuLangId::Afrikaans, "devtools"},            {MenuLangId::Irish, "devtools"},            {MenuLangId::Assamese, "devtools"},            {MenuLangId::Amharic, "Devtools"},            {MenuLangId::Estonian, "devtools"},            {MenuLangId::Kazakh, "devtools"},            {MenuLangId::Catalan, "Devtools"},            {MenuLangId::Kyrgyz, "Devtools"},            {MenuLangId::Slovak, "devtools"},            {MenuLangId::Slovenian, "devtools"},            {MenuLangId::Zulu, "devtools"},            {MenuLangId::Basque, "devtools"},            {MenuLangId::Hebrew, "devtools"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -353,6 +903,7 @@
             {MenuLangId::Russian, "DLDI"},
             {MenuLangId::ChineseSimplified, "DLDI"},
             {MenuLangId::ChineseTraditional, "DLDI"},
+            {MenuLangId::ChineseHongKong, "DLDI"},
             {MenuLangId::Korean, "DLDI"},
             {MenuLangId::Arabic, "DLDI"},
             {MenuLangId::Indonesian, "DLDI"},
@@ -368,7 +919,56 @@
             {MenuLangId::Finnish, "DLDI"},
             {MenuLangId::Vietnamese, "DLDI"},
             {MenuLangId::Polish, "DLDI"},
-            {MenuLangId::Romanian, "DLDI"},
+            {MenuLangId::Romanian, "DLDI"},            {MenuLangId::Filipino, "DLDI"},            {MenuLangId::Swahili, "DLDI"},            {MenuLangId::Croatian, "DLDI"},            {MenuLangId::Icelandic, "DLDI"},            {MenuLangId::Hindi, "DLDI"},            {MenuLangId::Bengali, "DLDI"},            {MenuLangId::Urdu, "DLDI"},            {MenuLangId::Punjabi, "DLDI"},            {MenuLangId::Telugu, "DLDI"},            {MenuLangId::Persian, "DLDI"},            {MenuLangId::Malay, "DLDI"},            {MenuLangId::Marathi, "DLDI"},            {MenuLangId::Tamil, "DLDI"},            {MenuLangId::Gujarati, "DLDI"},            {MenuLangId::Kannada, "DLDI"},            {MenuLangId::Odia, "DLDI"},            {MenuLangId::Malayalam, "DLDI"},            {MenuLangId::Burmese, "DLDI"},            {MenuLangId::Uzbek, "DLDI"},            {MenuLangId::Azerbaijani, "DLDI"},            {MenuLangId::Nepali, "DLDI"},            {MenuLangId::Sinhala, "DLDI"},            {MenuLangId::Khmer, "DLDI"},            {MenuLangId::Lao, "DLDI"},            {MenuLangId::Armenian, "DLDI"},            {MenuLangId::Albanian, "DLDI"},            {MenuLangId::Georgian, "DLDI"},            {MenuLangId::Bosnian, "DLDI"},            {MenuLangId::Serbian, "DLDI"},            {MenuLangId::Macedonian, "DLDI"},            {MenuLangId::Bulgarian, "DLDI"},            {MenuLangId::Belarusian, "DLDI"},            {MenuLangId::Maltese, "DLDI"},            {MenuLangId::Mongolian, "DLDI"},            {MenuLangId::Latvian, "DLDI"},            {MenuLangId::Lithuanian, "DLDI"},            {MenuLangId::Afrikaans, "DLDI"},            {MenuLangId::Irish, "DLDI"},            {MenuLangId::Assamese, "DLDI"},            {MenuLangId::Amharic, "DLDI"},            {MenuLangId::Estonian, "DLDI"},            {MenuLangId::Kazakh, "DLDI"},            {MenuLangId::Catalan, "DLDI"},            {MenuLangId::Kyrgyz, "DLDI"},            {MenuLangId::Slovak, "DLDI"},            {MenuLangId::Slovenian, "DLDI"},            {MenuLangId::Zulu, "DLDI"},            {MenuLangId::Basque, "DLDI"},            {MenuLangId::Hebrew, "DLDI"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -384,6 +984,7 @@
             {MenuLangId::Russian, "Тип консоли:"},
             {MenuLangId::ChineseSimplified, "本体类型:"},
             {MenuLangId::ChineseTraditional, "本體型別:"},
+            {MenuLangId::ChineseHongKong, "本體型別:"},
             {MenuLangId::Korean, "본체 유형:"},
             {MenuLangId::Arabic, "نوع الجهاز:"},
             {MenuLangId::Indonesian, "Tipe konsol:"},
@@ -399,7 +1000,56 @@
             {MenuLangId::Finnish, "Konsolityyppi:"},
             {MenuLangId::Vietnamese, "Loại console:"},
             {MenuLangId::Polish, "Typ konsoli:"},
-            {MenuLangId::Romanian, "Tip consolă:"},
+            {MenuLangId::Romanian, "Tip consolă:"},            {MenuLangId::Filipino, "Console type:"},            {MenuLangId::Swahili, "Console type:"},            {MenuLangId::Croatian, "Vrsta konzole:"},            {MenuLangId::Icelandic, "Gerð leikjatölvu:"},            {MenuLangId::Hindi, "कंसोल प्रकार:"},            {MenuLangId::Bengali, "কনসোলের ধরন:"},            {MenuLangId::Urdu, "کنسول کی قسم:"},            {MenuLangId::Punjabi, "ਕਨਸੋਲ ਕਿਸਮ:"},            {MenuLangId::Telugu, "కన్సోల్ రకం:"},            {MenuLangId::Persian, "نوع کنسول:"},            {MenuLangId::Malay, "Jenis konsol:"},            {MenuLangId::Marathi, "कन्सोल प्रकार:"},            {MenuLangId::Tamil, "கன்சோல் வகை:"},            {MenuLangId::Gujarati, "કન્સોલ પ્રકાર:"},            {MenuLangId::Kannada, "ಕನ್ಸೋಲ್ ಪ್ರಕಾರ:"},            {MenuLangId::Odia, "ଓଡ଼ିଆ: Console type:"},            {MenuLangId::Malayalam, "കൺസോൾ തരം:"},            {MenuLangId::Burmese, "console အမျိုးအစား:"},            {MenuLangId::Uzbek, "Konsol turi:"},            {MenuLangId::Azerbaijani, "Konsol növü:"},            {MenuLangId::Nepali, "कन्सोल प्रकार:"},            {MenuLangId::Sinhala, "console වර්ගය:"},            {MenuLangId::Khmer, "ប្រភេទ console:"},            {MenuLangId::Lao, "ປະເພດ console:"},            {MenuLangId::Armenian, "console-ի տեսակ:"},            {MenuLangId::Albanian, "Lloji i console:"},            {MenuLangId::Georgian, "console-ის ტიპი:"},            {MenuLangId::Bosnian, "Tip console:"},            {MenuLangId::Serbian, "Тип console:"},            {MenuLangId::Macedonian, "Тип на console:"},            {MenuLangId::Bulgarian, "Тип console:"},            {MenuLangId::Belarusian, "Тып console:"},            {MenuLangId::Maltese, "Tip ta' console:"},            {MenuLangId::Mongolian, "Console төрөл:"},            {MenuLangId::Latvian, "Console tips:"},            {MenuLangId::Lithuanian, "Console tipas:"},            {MenuLangId::Afrikaans, "Console-tipe:"},            {MenuLangId::Irish, "Gaeilge: Console type:"},            {MenuLangId::Assamese, "Console ধৰণ:"},            {MenuLangId::Amharic, "አማርኛ: Console type:"},            {MenuLangId::Estonian, "Console tüüp:"},            {MenuLangId::Kazakh, "Console түрі:"},            {MenuLangId::Catalan, "Català: Console type:"},            {MenuLangId::Kyrgyz, "Кыргызча: Console type:"},            {MenuLangId::Slovak, "Slovenčina: Console type:"},            {MenuLangId::Slovenian, "Slovenščina: Console type:"},            {MenuLangId::Zulu, "isiZulu: Console type:"},            {MenuLangId::Basque, "Euskara: Console type:"},            {MenuLangId::Hebrew, "עברית: Console type:"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -415,6 +1065,7 @@
             {MenuLangId::Russian, "Запустить игру напрямую"},
             {MenuLangId::ChineseSimplified, "直接启动游戏"},
             {MenuLangId::ChineseTraditional, "直接啟動遊戲"},
+            {MenuLangId::ChineseHongKong, "直接啟動遊戲"},
             {MenuLangId::Korean, "게임 직접 실행"},
             {MenuLangId::Arabic, "تشغيل اللعبة مباشرة"},
             {MenuLangId::Indonesian, "Boot game langsung"},
@@ -430,7 +1081,56 @@
             {MenuLangId::Finnish, "Käynnistä peli suoraan"},
             {MenuLangId::Vietnamese, "Khởi động game trực tiếp"},
             {MenuLangId::Polish, "Uruchom grę bezpośrednio"},
-            {MenuLangId::Romanian, "Pornește jocul direct"},
+            {MenuLangId::Romanian, "Pornește jocul direct"},            {MenuLangId::Filipino, "Direktang i-boot ang laro"},            {MenuLangId::Swahili, "Washa mchezo moja kwa moja"},            {MenuLangId::Croatian, "Izravno pokreni igru"},            {MenuLangId::Icelandic, "Ræsa leik beint"},            {MenuLangId::Hindi, "गेम सीधे बूट करें"},            {MenuLangId::Bengali, "গেম সরাসরি বুট করুন"},            {MenuLangId::Urdu, "گیم براہِ راست بوٹ کریں"},            {MenuLangId::Punjabi, "ਗੇਮ ਸਿੱਧੀ ਬੂਟ ਕਰੋ"},            {MenuLangId::Telugu, "గేమ్‌ను నేరుగా బూట్ చేయి"},            {MenuLangId::Persian, "بازی را مستقیم بوت کن"},            {MenuLangId::Malay, "Boot permainan terus"},            {MenuLangId::Marathi, "गेम थेट बूट करा"},            {MenuLangId::Tamil, "விளையாட்டை நேரடியாக boot செய்"},            {MenuLangId::Gujarati, "ગેમ સીધી boot કરો"},            {MenuLangId::Kannada, "ಗೇಮ್ ಅನ್ನು ನೇರವಾಗಿ boot ಮಾಡಿ"},            {MenuLangId::Odia, "Boot ଗେମ୍ directly"},            {MenuLangId::Malayalam, "ഗെയിം നേരിട്ട് boot ചെയ്യുക"},            {MenuLangId::Burmese, "ဂိမ်းကို တိုက်ရိုက် boot ပါ"},            {MenuLangId::Uzbek, "Oʻyinni bevosita boot qilish"},            {MenuLangId::Azerbaijani, "Oyunu birbaşa boot et"},            {MenuLangId::Nepali, "खेललाई प्रत्यक्ष boot गर्नुहोस्"},            {MenuLangId::Sinhala, "ක්‍රීඩාව සෘජුව boot කරන්න"},            {MenuLangId::Khmer, "boot ហ្គេមដោយផ្ទាល់"},            {MenuLangId::Lao, "boot ເກມໂດຍກົງ"},            {MenuLangId::Armenian, "Խաղը boot անել ուղղակի"},            {MenuLangId::Albanian, "Boot lojën direkt"},            {MenuLangId::Georgian, "თამაშის პირდაპირ boot"},            {MenuLangId::Bosnian, "Direktno bootaj igru"},            {MenuLangId::Serbian, "Директно boot-уј игру"},            {MenuLangId::Macedonian, "Директно boot-увај ја играта"},            {MenuLangId::Bulgarian, "Директно boot на играта"},            {MenuLangId::Belarusian, "Boot гульні наўпрост"},            {MenuLangId::Maltese, "Boot il-logħba direttament"},            {MenuLangId::Mongolian, "Тоглоомыг шууд boot хийх"},            {MenuLangId::Latvian, "Boot spēli tieši"},            {MenuLangId::Lithuanian, "Boot žaidimą tiesiogiai"},            {MenuLangId::Afrikaans, "Boot speletjie direk"},            {MenuLangId::Irish, "Boot an cluiche go díreach"},            {MenuLangId::Assamese, "গেমটো প্ৰত্যক্ষভাৱে boot কৰক"},            {MenuLangId::Amharic, "ጨዋታውን በቀጥታ boot አድርግ"},            {MenuLangId::Estonian, "Boot mäng otse"},            {MenuLangId::Kazakh, "Ойынды тікелей boot ету"},            {MenuLangId::Catalan, "Arrenca el joc directament"},            {MenuLangId::Kyrgyz, "Оюнду түз boot кылуу"},            {MenuLangId::Slovak, "Bootovať hru priamo"},            {MenuLangId::Slovenian, "Neposredno boot igre"},            {MenuLangId::Zulu, "Boot umdlalo ngqo"},            {MenuLangId::Basque, "Jokoa zuzenean boot egin"},            {MenuLangId::Hebrew, "בצע boot למשחק ישירות"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -446,6 +1146,7 @@
             {MenuLangId::Russian, "Использовать внешние файлы BIOS/прошивки"},
             {MenuLangId::ChineseSimplified, "使用外部 BIOS/固件文件"},
             {MenuLangId::ChineseTraditional, "使用外部 BIOS/韌體檔案"},
+            {MenuLangId::ChineseHongKong, "使用外部 BIOS/韌體檔案"},
             {MenuLangId::Korean, "외부 BIOS/펌웨어 파일 사용"},
             {MenuLangId::Arabic, "استخدام ملفات BIOS/firmware خارجية"},
             {MenuLangId::Indonesian, "Gunakan file BIOS/firmware eksternal"},
@@ -461,7 +1162,56 @@
             {MenuLangId::Finnish, "Käytä ulkoisia BIOS/firmware-tiedostoja"},
             {MenuLangId::Vietnamese, "Dùng file BIOS/firmware bên ngoài"},
             {MenuLangId::Polish, "Użyj zewnętrznych plików BIOS/firmware"},
-            {MenuLangId::Romanian, "Folosește fișiere BIOS/firmware externe"},
+            {MenuLangId::Romanian, "Folosește fișiere BIOS/firmware externe"},            {MenuLangId::Filipino, "Gamitin ang external BIOS/firmware mga talaksan"},            {MenuLangId::Swahili, "Tumia external BIOS/firmware faili"},            {MenuLangId::Croatian, "Koristi external BIOS/firmware datoteke"},            {MenuLangId::Icelandic, "Nota external BIOS/firmware skrár"},            {MenuLangId::Hindi, "उपयोग करें external BIOS/firmware फ़ाइलें"},            {MenuLangId::Bengali, "ব্যবহার করুন external BIOS/firmware ফাইলসমূহ"},            {MenuLangId::Urdu, "استعمال کریں external BIOS/firmware فائلیں"},            {MenuLangId::Punjabi, "ਵਰਤੋ external BIOS/firmware ਫਾਇਲਾਂ"},            {MenuLangId::Telugu, "వాడు external BIOS/firmware ఫైళ్లు"},            {MenuLangId::Persian, "استفاده از external BIOS/firmware فایل‌ها"},            {MenuLangId::Malay, "Gunakan external BIOS/firmware fail"},            {MenuLangId::Marathi, "वापरा external BIOS/firmware फाइल्स"},            {MenuLangId::Tamil, "பயன்படுத்து external BIOS/firmware கோப்புகள்"},            {MenuLangId::Gujarati, "વાપરો external BIOS/firmware ફાઇલો"},            {MenuLangId::Kannada, "ಬಳಸಿ external BIOS/firmware ಫೈಲ್‌ಗಳು"},            {MenuLangId::Odia, "ବ୍ୟବହାର କରନ୍ତୁ external BIOS/firmware ଫାଇଲ୍‌ଗୁଡ଼ିକ"},            {MenuLangId::Malayalam, "ഉപയോഗിക്കുക external BIOS/firmware ഫയലുകൾ"},            {MenuLangId::Burmese, "အသုံးပြုပါ external BIOS/firmware ဖိုင်များ"},            {MenuLangId::Uzbek, "Ishlatish external BIOS/firmware fayllar"},            {MenuLangId::Azerbaijani, "İstifadə et external BIOS/firmware fayllar"},            {MenuLangId::Nepali, "प्रयोग गर्नुहोस् external BIOS/firmware फाइलहरू"},            {MenuLangId::Sinhala, "භාවිතා කරන්න external BIOS/firmware ගොනු"},            {MenuLangId::Khmer, "ប្រើ external BIOS/firmware ឯកសារ"},            {MenuLangId::Lao, "ໃຊ້ external BIOS/firmware ໄຟລ໌"},            {MenuLangId::Armenian, "Օգտագործել external BIOS/firmware ֆայլեր"},            {MenuLangId::Albanian, "Përdor external BIOS/firmware skedarët"},            {MenuLangId::Georgian, "გამოყენება external BIOS/firmware ფაილები"},            {MenuLangId::Bosnian, "Koristi external BIOS/firmware datoteke"},            {MenuLangId::Serbian, "Користи external BIOS/firmware датотеке"},            {MenuLangId::Macedonian, "Користи external BIOS/firmware датотеки"},            {MenuLangId::Bulgarian, "Използвай external BIOS/firmware файлове"},            {MenuLangId::Belarusian, "Выкарыстоўваць external BIOS/firmware файлы"},            {MenuLangId::Maltese, "Uża external BIOS/firmware fajls"},            {MenuLangId::Mongolian, "Ашиглах external BIOS/firmware файлууд"},            {MenuLangId::Latvian, "Izmantot external BIOS/firmware faili"},            {MenuLangId::Lithuanian, "Naudoti external BIOS/firmware failai"},            {MenuLangId::Afrikaans, "Gebruik external BIOS/firmware lêers"},            {MenuLangId::Irish, "Úsáid external BIOS/firmware comhaid"},            {MenuLangId::Assamese, "ব্যৱহাৰ কৰক external BIOS/firmware ফাইলসমূহ"},            {MenuLangId::Amharic, "ተጠቀም external BIOS/firmware ፋይሎች"},            {MenuLangId::Estonian, "Kasuta external BIOS/firmware failid"},            {MenuLangId::Kazakh, "Пайдалану external BIOS/firmware файлдар"},            {MenuLangId::Catalan, "Utilitza external BIOS/firmware fitxers"},            {MenuLangId::Kyrgyz, "Колдонуу external BIOS/firmware файлдар"},            {MenuLangId::Slovak, "Použiť external BIOS/firmware súbory"},            {MenuLangId::Slovenian, "Uporabi external BIOS/firmware datoteke"},            {MenuLangId::Zulu, "Sebenzisa external BIOS/firmware amafayela"},            {MenuLangId::Basque, "Erabili external BIOS/firmware fitxategiak"},            {MenuLangId::Hebrew, "השתמש external BIOS/firmware קבצים"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -477,6 +1227,7 @@
             {MenuLangId::Russian, "BIOS ARM9 DS:"},
             {MenuLangId::ChineseSimplified, "DS ARM9 BIOS："},
             {MenuLangId::ChineseTraditional, "DS ARM9 BIOS："},
+            {MenuLangId::ChineseHongKong, "DS ARM9 BIOS："},
             {MenuLangId::Korean, "DS ARM9 BIOS:"},
             {MenuLangId::Arabic, "BIOS ARM9 DS:"},
             {MenuLangId::Indonesian, "BIOS ARM9 DS:"},
@@ -492,7 +1243,56 @@
             {MenuLangId::Finnish, "DS ARM9 BIOS:"},
             {MenuLangId::Vietnamese, "BIOS ARM9 DS:"},
             {MenuLangId::Polish, "BIOS ARM9 DS:"},
-            {MenuLangId::Romanian, "BIOS ARM9 DS:"},
+            {MenuLangId::Romanian, "BIOS ARM9 DS:"},            {MenuLangId::Filipino, "DS ARM9 BIOS:"},            {MenuLangId::Swahili, "DS ARM9 BIOS:"},            {MenuLangId::Croatian, "DS ARM9 BIOS:"},            {MenuLangId::Icelandic, "DS ARM9 BIOS:"},            {MenuLangId::Hindi, "DS ARM9 BIOS:"},            {MenuLangId::Bengali, "DS ARM9 BIOS:"},            {MenuLangId::Urdu, "DS ARM9 BIOS:"},            {MenuLangId::Punjabi, "DS ARM9 BIOS:"},            {MenuLangId::Telugu, "DS ARM9 BIOS:"},            {MenuLangId::Persian, "DS ARM9 BIOS:"},            {MenuLangId::Malay, "DS ARM9 BIOS:"},            {MenuLangId::Marathi, "DS ARM9 BIOS:"},            {MenuLangId::Tamil, "DS ARM9 BIOS:"},            {MenuLangId::Gujarati, "DS ARM9 BIOS:"},            {MenuLangId::Kannada, "DS ARM9 BIOS:"},            {MenuLangId::Odia, "ଓଡ଼ିଆ: DS ARM9 BIOS:"},            {MenuLangId::Malayalam, "DS ARM9 BIOS:"},            {MenuLangId::Burmese, "DS ARM9 BIOS:"},            {MenuLangId::Uzbek, "DS ARM9 BIOS:"},            {MenuLangId::Azerbaijani, "DS ARM9 BIOS:"},            {MenuLangId::Nepali, "DS ARM9 BIOS:"},            {MenuLangId::Sinhala, "DS ARM9 BIOS:"},            {MenuLangId::Khmer, "DS ARM9 BIOS:"},            {MenuLangId::Lao, "DS ARM9 BIOS:"},            {MenuLangId::Armenian, "DS ARM9 BIOS:"},            {MenuLangId::Albanian, "DS ARM9 BIOS:"},            {MenuLangId::Georgian, "DS ARM9 BIOS:"},            {MenuLangId::Bosnian, "DS ARM9 BIOS:"},            {MenuLangId::Serbian, "DS ARM9 BIOS:"},            {MenuLangId::Macedonian, "DS ARM9 BIOS:"},            {MenuLangId::Bulgarian, "DS ARM9 BIOS:"},            {MenuLangId::Belarusian, "DS ARM9 BIOS:"},            {MenuLangId::Maltese, "DS ARM9 BIOS:"},            {MenuLangId::Mongolian, "DS ARM9 BIOS:"},            {MenuLangId::Latvian, "DS ARM9 BIOS:"},            {MenuLangId::Lithuanian, "DS ARM9 BIOS:"},            {MenuLangId::Afrikaans, "DS ARM9 BIOS:"},            {MenuLangId::Irish, "Gaeilge: DS ARM9 BIOS:"},            {MenuLangId::Assamese, "DS ARM9 BIOS:"},            {MenuLangId::Amharic, "አማርኛ: DS ARM9 BIOS:"},            {MenuLangId::Estonian, "DS ARM9 BIOS:"},            {MenuLangId::Kazakh, "Қазақша: DS ARM9 BIOS:"},            {MenuLangId::Catalan, "Català: DS ARM9 BIOS:"},            {MenuLangId::Kyrgyz, "Кыргызча: DS ARM9 BIOS:"},            {MenuLangId::Slovak, "Slovenčina: DS ARM9 BIOS:"},            {MenuLangId::Slovenian, "Slovenščina: DS ARM9 BIOS:"},            {MenuLangId::Zulu, "isiZulu: DS ARM9 BIOS:"},            {MenuLangId::Basque, "Euskara: DS ARM9 BIOS:"},            {MenuLangId::Hebrew, "עברית: DS ARM9 BIOS:"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -508,6 +1308,7 @@
             {MenuLangId::Russian, "DS ARM7 BIOS:"},
             {MenuLangId::ChineseSimplified, "DS ARM7 BIOS:"},
             {MenuLangId::ChineseTraditional, "DS ARM7 BIOS:"},
+            {MenuLangId::ChineseHongKong, "DS ARM7 BIOS:"},
             {MenuLangId::Korean, "DS ARM7 BIOS:"},
             {MenuLangId::Arabic, "DS ARM7 BIOS:"},
             {MenuLangId::Indonesian, "DS ARM7 BIOS:"},
@@ -523,7 +1324,56 @@
             {MenuLangId::Finnish, "DS ARM7 BIOS:"},
             {MenuLangId::Vietnamese, "DS ARM7 BIOS:"},
             {MenuLangId::Polish, "DS ARM7 BIOS:"},
-            {MenuLangId::Romanian, "DS ARM7 BIOS:"},
+            {MenuLangId::Romanian, "DS ARM7 BIOS:"},            {MenuLangId::Filipino, "DS ARM7 BIOS:"},            {MenuLangId::Swahili, "DS ARM7 BIOS:"},            {MenuLangId::Croatian, "DS ARM7 BIOS:"},            {MenuLangId::Icelandic, "DS ARM7 BIOS:"},            {MenuLangId::Hindi, "DS ARM7 BIOS:"},            {MenuLangId::Bengali, "DS ARM7 BIOS:"},            {MenuLangId::Urdu, "DS ARM7 BIOS:"},            {MenuLangId::Punjabi, "DS ARM7 BIOS:"},            {MenuLangId::Telugu, "DS ARM7 BIOS:"},            {MenuLangId::Persian, "DS ARM7 BIOS:"},            {MenuLangId::Malay, "DS ARM7 BIOS:"},            {MenuLangId::Marathi, "DS ARM7 BIOS:"},            {MenuLangId::Tamil, "DS ARM7 BIOS:"},            {MenuLangId::Gujarati, "DS ARM7 BIOS:"},            {MenuLangId::Kannada, "DS ARM7 BIOS:"},            {MenuLangId::Odia, "ଓଡ଼ିଆ: DS ARM7 BIOS:"},            {MenuLangId::Malayalam, "DS ARM7 BIOS:"},            {MenuLangId::Burmese, "DS ARM7 BIOS:"},            {MenuLangId::Uzbek, "DS ARM7 BIOS:"},            {MenuLangId::Azerbaijani, "DS ARM7 BIOS:"},            {MenuLangId::Nepali, "DS ARM7 BIOS:"},            {MenuLangId::Sinhala, "DS ARM7 BIOS:"},            {MenuLangId::Khmer, "DS ARM7 BIOS:"},            {MenuLangId::Lao, "DS ARM7 BIOS:"},            {MenuLangId::Armenian, "DS ARM7 BIOS:"},            {MenuLangId::Albanian, "DS ARM7 BIOS:"},            {MenuLangId::Georgian, "DS ARM7 BIOS:"},            {MenuLangId::Bosnian, "DS ARM7 BIOS:"},            {MenuLangId::Serbian, "DS ARM7 BIOS:"},            {MenuLangId::Macedonian, "DS ARM7 BIOS:"},            {MenuLangId::Bulgarian, "DS ARM7 BIOS:"},            {MenuLangId::Belarusian, "DS ARM7 BIOS:"},            {MenuLangId::Maltese, "DS ARM7 BIOS:"},            {MenuLangId::Mongolian, "DS ARM7 BIOS:"},            {MenuLangId::Latvian, "DS ARM7 BIOS:"},            {MenuLangId::Lithuanian, "DS ARM7 BIOS:"},            {MenuLangId::Afrikaans, "DS ARM7 BIOS:"},            {MenuLangId::Irish, "Gaeilge: DS ARM7 BIOS:"},            {MenuLangId::Assamese, "DS ARM7 BIOS:"},            {MenuLangId::Amharic, "አማርኛ: DS ARM7 BIOS:"},            {MenuLangId::Estonian, "DS ARM7 BIOS:"},            {MenuLangId::Kazakh, "Қазақша: DS ARM7 BIOS:"},            {MenuLangId::Catalan, "Català: DS ARM7 BIOS:"},            {MenuLangId::Kyrgyz, "Кыргызча: DS ARM7 BIOS:"},            {MenuLangId::Slovak, "Slovenčina: DS ARM7 BIOS:"},            {MenuLangId::Slovenian, "Slovenščina: DS ARM7 BIOS:"},            {MenuLangId::Zulu, "isiZulu: DS ARM7 BIOS:"},            {MenuLangId::Basque, "Euskara: DS ARM7 BIOS:"},            {MenuLangId::Hebrew, "עברית: DS ARM7 BIOS:"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -539,6 +1389,7 @@
             {MenuLangId::Russian, "Прошивка DS:"},
             {MenuLangId::ChineseSimplified, "DS 固件:"},
             {MenuLangId::ChineseTraditional, "DS 韌體:"},
+            {MenuLangId::ChineseHongKong, "DS 韌體:"},
             {MenuLangId::Korean, "DS 펌웨어:"},
             {MenuLangId::Arabic, "DS firmware:"},
             {MenuLangId::Indonesian, "DS firmware:"},
@@ -554,7 +1405,56 @@
             {MenuLangId::Finnish, "DS firmware:"},
             {MenuLangId::Vietnamese, "DS firmware:"},
             {MenuLangId::Polish, "DS firmware:"},
-            {MenuLangId::Romanian, "DS firmware:"},
+            {MenuLangId::Romanian, "DS firmware:"},            {MenuLangId::Filipino, "DS firmware:"},            {MenuLangId::Swahili, "DS firmware:"},            {MenuLangId::Croatian, "DS firmware:"},            {MenuLangId::Icelandic, "DS firmware:"},            {MenuLangId::Hindi, "DS फ़र्मवेयर:"},            {MenuLangId::Bengali, "DS ফার্মওয়্যার:"},            {MenuLangId::Urdu, "DS فرم ویئر:"},            {MenuLangId::Punjabi, "DS ਫਰਮਵੇਅਰ:"},            {MenuLangId::Telugu, "DS ఫర్మ్‌వేర్:"},            {MenuLangId::Persian, "firmware DS:"},            {MenuLangId::Malay, "Perisian tegar DS:"},            {MenuLangId::Marathi, "DS फर्मवेअर:"},            {MenuLangId::Tamil, "DS firmware:"},            {MenuLangId::Gujarati, "DS firmware:"},            {MenuLangId::Kannada, "DS firmware:"},            {MenuLangId::Odia, "ଓଡ଼ିଆ: DS firmware:"},            {MenuLangId::Malayalam, "DS firmware:"},            {MenuLangId::Burmese, "DS firmware:"},            {MenuLangId::Uzbek, "DS firmware:"},            {MenuLangId::Azerbaijani, "DS firmware:"},            {MenuLangId::Nepali, "DS firmware:"},            {MenuLangId::Sinhala, "DS firmware:"},            {MenuLangId::Khmer, "DS firmware:"},            {MenuLangId::Lao, "DS firmware:"},            {MenuLangId::Armenian, "DS firmware:"},            {MenuLangId::Albanian, "DS firmware:"},            {MenuLangId::Georgian, "DS firmware:"},            {MenuLangId::Bosnian, "DS firmware:"},            {MenuLangId::Serbian, "DS firmware:"},            {MenuLangId::Macedonian, "DS firmware:"},            {MenuLangId::Bulgarian, "DS firmware:"},            {MenuLangId::Belarusian, "DS firmware:"},            {MenuLangId::Maltese, "DS firmware:"},            {MenuLangId::Mongolian, "DS firmware:"},            {MenuLangId::Latvian, "DS firmware:"},            {MenuLangId::Lithuanian, "DS firmware:"},            {MenuLangId::Afrikaans, "DS firmware:"},            {MenuLangId::Irish, "Gaeilge: DS firmware:"},            {MenuLangId::Assamese, "DS firmware:"},            {MenuLangId::Amharic, "አማርኛ: DS firmware:"},            {MenuLangId::Estonian, "DS firmware:"},            {MenuLangId::Kazakh, "Қазақша: DS firmware:"},            {MenuLangId::Catalan, "Català: DS firmware:"},            {MenuLangId::Kyrgyz, "Кыргызча: DS firmware:"},            {MenuLangId::Slovak, "Slovenčina: DS firmware:"},            {MenuLangId::Slovenian, "Slovenščina: DS firmware:"},            {MenuLangId::Zulu, "isiZulu: DS firmware:"},            {MenuLangId::Basque, "Euskara: DS firmware:"},            {MenuLangId::Hebrew, "עברית: DS firmware:"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -570,6 +1470,7 @@
             {MenuLangId::Russian, "BIOS ARM9 DSi:"},
             {MenuLangId::ChineseSimplified, "DSi ARM9 BIOS："},
             {MenuLangId::ChineseTraditional, "DSi ARM9 BIOS："},
+            {MenuLangId::ChineseHongKong, "DSi ARM9 BIOS："},
             {MenuLangId::Korean, "DSi ARM9 BIOS:"},
             {MenuLangId::Arabic, "DSi ARM9 BIOS:"},
             {MenuLangId::Indonesian, "DSi ARM9 BIOS:"},
@@ -585,7 +1486,56 @@
             {MenuLangId::Finnish, "DSi ARM9 BIOS:"},
             {MenuLangId::Vietnamese, "DSi ARM9 BIOS:"},
             {MenuLangId::Polish, "DSi ARM9 BIOS:"},
-            {MenuLangId::Romanian, "DSi ARM9 BIOS:"},
+            {MenuLangId::Romanian, "DSi ARM9 BIOS:"},            {MenuLangId::Filipino, "DSi ARM9 BIOS:"},            {MenuLangId::Swahili, "DSi ARM9 BIOS:"},            {MenuLangId::Croatian, "DSi ARM9 BIOS:"},            {MenuLangId::Icelandic, "DSi ARM9 BIOS:"},            {MenuLangId::Hindi, "DSi ARM9 BIOS:"},            {MenuLangId::Bengali, "DSi ARM9 BIOS:"},            {MenuLangId::Urdu, "DSi ARM9 BIOS:"},            {MenuLangId::Punjabi, "DSi ARM9 BIOS:"},            {MenuLangId::Telugu, "DSi ARM9 BIOS:"},            {MenuLangId::Persian, "DSi ARM9 BIOS:"},            {MenuLangId::Malay, "DSi ARM9 BIOS:"},            {MenuLangId::Marathi, "DSi ARM9 BIOS:"},            {MenuLangId::Tamil, "DSi ARM9 BIOS:"},            {MenuLangId::Gujarati, "DSi ARM9 BIOS:"},            {MenuLangId::Kannada, "DSi ARM9 BIOS:"},            {MenuLangId::Odia, "ଓଡ଼ିଆ: DSi ARM9 BIOS:"},            {MenuLangId::Malayalam, "DSi ARM9 BIOS:"},            {MenuLangId::Burmese, "DSi ARM9 BIOS:"},            {MenuLangId::Uzbek, "DSi ARM9 BIOS:"},            {MenuLangId::Azerbaijani, "DSi ARM9 BIOS:"},            {MenuLangId::Nepali, "DSi ARM9 BIOS:"},            {MenuLangId::Sinhala, "DSi ARM9 BIOS:"},            {MenuLangId::Khmer, "DSi ARM9 BIOS:"},            {MenuLangId::Lao, "DSi ARM9 BIOS:"},            {MenuLangId::Armenian, "DSi ARM9 BIOS:"},            {MenuLangId::Albanian, "DSi ARM9 BIOS:"},            {MenuLangId::Georgian, "DSi ARM9 BIOS:"},            {MenuLangId::Bosnian, "DSi ARM9 BIOS:"},            {MenuLangId::Serbian, "DSi ARM9 BIOS:"},            {MenuLangId::Macedonian, "DSi ARM9 BIOS:"},            {MenuLangId::Bulgarian, "DSi ARM9 BIOS:"},            {MenuLangId::Belarusian, "DSi ARM9 BIOS:"},            {MenuLangId::Maltese, "DSi ARM9 BIOS:"},            {MenuLangId::Mongolian, "DSi ARM9 BIOS:"},            {MenuLangId::Latvian, "DSi ARM9 BIOS:"},            {MenuLangId::Lithuanian, "DSi ARM9 BIOS:"},            {MenuLangId::Afrikaans, "DSi ARM9 BIOS:"},            {MenuLangId::Irish, "Gaeilge: DSi ARM9 BIOS:"},            {MenuLangId::Assamese, "DSi ARM9 BIOS:"},            {MenuLangId::Amharic, "አማርኛ: DSi ARM9 BIOS:"},            {MenuLangId::Estonian, "DSi ARM9 BIOS:"},            {MenuLangId::Kazakh, "Қазақша: DSi ARM9 BIOS:"},            {MenuLangId::Catalan, "Català: DSi ARM9 BIOS:"},            {MenuLangId::Kyrgyz, "Кыргызча: DSi ARM9 BIOS:"},            {MenuLangId::Slovak, "Slovenčina: DSi ARM9 BIOS:"},            {MenuLangId::Slovenian, "Slovenščina: DSi ARM9 BIOS:"},            {MenuLangId::Zulu, "isiZulu: DSi ARM9 BIOS:"},            {MenuLangId::Basque, "Euskara: DSi ARM9 BIOS:"},            {MenuLangId::Hebrew, "עברית: DSi ARM9 BIOS:"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -601,6 +1551,7 @@
             {MenuLangId::Russian, "DSi ARM7 BIOS:"},
             {MenuLangId::ChineseSimplified, "DSi ARM7 BIOS:"},
             {MenuLangId::ChineseTraditional, "DSi ARM7 BIOS:"},
+            {MenuLangId::ChineseHongKong, "DSi ARM7 BIOS:"},
             {MenuLangId::Korean, "DSi ARM7 BIOS:"},
             {MenuLangId::Arabic, "DSi ARM7 BIOS:"},
             {MenuLangId::Indonesian, "DSi ARM7 BIOS:"},
@@ -616,7 +1567,56 @@
             {MenuLangId::Finnish, "DSi ARM7 BIOS:"},
             {MenuLangId::Vietnamese, "DSi ARM7 BIOS:"},
             {MenuLangId::Polish, "DSi ARM7 BIOS:"},
-            {MenuLangId::Romanian, "DSi ARM7 BIOS:"},
+            {MenuLangId::Romanian, "DSi ARM7 BIOS:"},            {MenuLangId::Filipino, "DSi ARM7 BIOS:"},            {MenuLangId::Swahili, "DSi ARM7 BIOS:"},            {MenuLangId::Croatian, "DSi ARM7 BIOS:"},            {MenuLangId::Icelandic, "DSi ARM7 BIOS:"},            {MenuLangId::Hindi, "DSi ARM7 BIOS:"},            {MenuLangId::Bengali, "DSi ARM7 BIOS:"},            {MenuLangId::Urdu, "DSi ARM7 BIOS:"},            {MenuLangId::Punjabi, "DSi ARM7 BIOS:"},            {MenuLangId::Telugu, "DSi ARM7 BIOS:"},            {MenuLangId::Persian, "DSi ARM7 BIOS:"},            {MenuLangId::Malay, "DSi ARM7 BIOS:"},            {MenuLangId::Marathi, "DSi ARM7 BIOS:"},            {MenuLangId::Tamil, "DSi ARM7 BIOS:"},            {MenuLangId::Gujarati, "DSi ARM7 BIOS:"},            {MenuLangId::Kannada, "DSi ARM7 BIOS:"},            {MenuLangId::Odia, "ଓଡ଼ିଆ: DSi ARM7 BIOS:"},            {MenuLangId::Malayalam, "DSi ARM7 BIOS:"},            {MenuLangId::Burmese, "DSi ARM7 BIOS:"},            {MenuLangId::Uzbek, "DSi ARM7 BIOS:"},            {MenuLangId::Azerbaijani, "DSi ARM7 BIOS:"},            {MenuLangId::Nepali, "DSi ARM7 BIOS:"},            {MenuLangId::Sinhala, "DSi ARM7 BIOS:"},            {MenuLangId::Khmer, "DSi ARM7 BIOS:"},            {MenuLangId::Lao, "DSi ARM7 BIOS:"},            {MenuLangId::Armenian, "DSi ARM7 BIOS:"},            {MenuLangId::Albanian, "DSi ARM7 BIOS:"},            {MenuLangId::Georgian, "DSi ARM7 BIOS:"},            {MenuLangId::Bosnian, "DSi ARM7 BIOS:"},            {MenuLangId::Serbian, "DSi ARM7 BIOS:"},            {MenuLangId::Macedonian, "DSi ARM7 BIOS:"},            {MenuLangId::Bulgarian, "DSi ARM7 BIOS:"},            {MenuLangId::Belarusian, "DSi ARM7 BIOS:"},            {MenuLangId::Maltese, "DSi ARM7 BIOS:"},            {MenuLangId::Mongolian, "DSi ARM7 BIOS:"},            {MenuLangId::Latvian, "DSi ARM7 BIOS:"},            {MenuLangId::Lithuanian, "DSi ARM7 BIOS:"},            {MenuLangId::Afrikaans, "DSi ARM7 BIOS:"},            {MenuLangId::Irish, "Gaeilge: DSi ARM7 BIOS:"},            {MenuLangId::Assamese, "DSi ARM7 BIOS:"},            {MenuLangId::Amharic, "አማርኛ: DSi ARM7 BIOS:"},            {MenuLangId::Estonian, "DSi ARM7 BIOS:"},            {MenuLangId::Kazakh, "Қазақша: DSi ARM7 BIOS:"},            {MenuLangId::Catalan, "Català: DSi ARM7 BIOS:"},            {MenuLangId::Kyrgyz, "Кыргызча: DSi ARM7 BIOS:"},            {MenuLangId::Slovak, "Slovenčina: DSi ARM7 BIOS:"},            {MenuLangId::Slovenian, "Slovenščina: DSi ARM7 BIOS:"},            {MenuLangId::Zulu, "isiZulu: DSi ARM7 BIOS:"},            {MenuLangId::Basque, "Euskara: DSi ARM7 BIOS:"},            {MenuLangId::Hebrew, "עברית: DSi ARM7 BIOS:"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -632,6 +1632,7 @@
             {MenuLangId::Russian, "Прошивка DSi:"},
             {MenuLangId::ChineseSimplified, "DSi 固件："},
             {MenuLangId::ChineseTraditional, "DSi 韌體："},
+            {MenuLangId::ChineseHongKong, "DSi 韌體："},
             {MenuLangId::Korean, "DSi 펌웨어:"},
             {MenuLangId::Arabic, "برنامج DSi الثابت:"},
             {MenuLangId::Indonesian, "Firmware DSi:"},
@@ -647,7 +1648,56 @@
             {MenuLangId::Finnish, "DSi-laiteohjelma:"},
             {MenuLangId::Vietnamese, "Firmware DSi:"},
             {MenuLangId::Polish, "Firmware DSi:"},
-            {MenuLangId::Romanian, "Firmware DSi:"},
+            {MenuLangId::Romanian, "Firmware DSi:"},            {MenuLangId::Filipino, "DSi firmware:"},            {MenuLangId::Swahili, "DSi firmware:"},            {MenuLangId::Croatian, "DSi firmware:"},            {MenuLangId::Icelandic, "DSi firmware:"},            {MenuLangId::Hindi, "DSi फ़र्मवेयर:"},            {MenuLangId::Bengali, "DSi ফার্মওয়্যার:"},            {MenuLangId::Urdu, "DSi فرم ویئر:"},            {MenuLangId::Punjabi, "DSi ਫਰਮਵੇਅਰ:"},            {MenuLangId::Telugu, "DSi ఫర్మ్‌వేర్:"},            {MenuLangId::Persian, "firmware DSi:"},            {MenuLangId::Malay, "Perisian tegar DSi:"},            {MenuLangId::Marathi, "DSi फर्मवेअर:"},            {MenuLangId::Tamil, "DSi firmware:"},            {MenuLangId::Gujarati, "DSi firmware:"},            {MenuLangId::Kannada, "DSi firmware:"},            {MenuLangId::Odia, "ଓଡ଼ିଆ: DSi firmware:"},            {MenuLangId::Malayalam, "DSi firmware:"},            {MenuLangId::Burmese, "DSi firmware:"},            {MenuLangId::Uzbek, "DSi firmware:"},            {MenuLangId::Azerbaijani, "DSi firmware:"},            {MenuLangId::Nepali, "DSi firmware:"},            {MenuLangId::Sinhala, "DSi firmware:"},            {MenuLangId::Khmer, "DSi firmware:"},            {MenuLangId::Lao, "DSi firmware:"},            {MenuLangId::Armenian, "DSi firmware:"},            {MenuLangId::Albanian, "DSi firmware:"},            {MenuLangId::Georgian, "DSi firmware:"},            {MenuLangId::Bosnian, "DSi firmware:"},            {MenuLangId::Serbian, "DSi firmware:"},            {MenuLangId::Macedonian, "DSi firmware:"},            {MenuLangId::Bulgarian, "DSi firmware:"},            {MenuLangId::Belarusian, "DSi firmware:"},            {MenuLangId::Maltese, "DSi firmware:"},            {MenuLangId::Mongolian, "DSi firmware:"},            {MenuLangId::Latvian, "DSi firmware:"},            {MenuLangId::Lithuanian, "DSi firmware:"},            {MenuLangId::Afrikaans, "DSi firmware:"},            {MenuLangId::Irish, "Gaeilge: DSi firmware:"},            {MenuLangId::Assamese, "DSi firmware:"},            {MenuLangId::Amharic, "አማርኛ: DSi firmware:"},            {MenuLangId::Estonian, "DSi firmware:"},            {MenuLangId::Kazakh, "Қазақша: DSi firmware:"},            {MenuLangId::Catalan, "Català: DSi firmware:"},            {MenuLangId::Kyrgyz, "Кыргызча: DSi firmware:"},            {MenuLangId::Slovak, "Slovenčina: DSi firmware:"},            {MenuLangId::Slovenian, "Slovenščina: DSi firmware:"},            {MenuLangId::Zulu, "isiZulu: DSi firmware:"},            {MenuLangId::Basque, "Euskara: DSi firmware:"},            {MenuLangId::Hebrew, "עברית: DSi firmware:"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -663,6 +1713,7 @@
             {MenuLangId::Russian, "DSi NAND:"},
             {MenuLangId::ChineseSimplified, "DSi NAND:"},
             {MenuLangId::ChineseTraditional, "DSi NAND:"},
+            {MenuLangId::ChineseHongKong, "DSi NAND:"},
             {MenuLangId::Korean, "DSi NAND:"},
             {MenuLangId::Arabic, "DSi NAND:"},
             {MenuLangId::Indonesian, "DSi NAND:"},
@@ -678,7 +1729,56 @@
             {MenuLangId::Finnish, "DSi NAND:"},
             {MenuLangId::Vietnamese, "DSi NAND:"},
             {MenuLangId::Polish, "DSi NAND:"},
-            {MenuLangId::Romanian, "DSi NAND:"},
+            {MenuLangId::Romanian, "DSi NAND:"},            {MenuLangId::Filipino, "DSi NAND:"},            {MenuLangId::Swahili, "DSi NAND:"},            {MenuLangId::Croatian, "DSi NAND:"},            {MenuLangId::Icelandic, "DSi NAND:"},            {MenuLangId::Hindi, "DSi NAND:"},            {MenuLangId::Bengali, "DSi NAND:"},            {MenuLangId::Urdu, "DSi NAND:"},            {MenuLangId::Punjabi, "DSi NAND:"},            {MenuLangId::Telugu, "DSi NAND:"},            {MenuLangId::Persian, "DSi NAND:"},            {MenuLangId::Malay, "DSi NAND:"},            {MenuLangId::Marathi, "DSi NAND:"},            {MenuLangId::Tamil, "DSi NAND:"},            {MenuLangId::Gujarati, "DSi NAND:"},            {MenuLangId::Kannada, "DSi NAND:"},            {MenuLangId::Odia, "ଓଡ଼ିଆ: DSi NAND:"},            {MenuLangId::Malayalam, "DSi NAND:"},            {MenuLangId::Burmese, "DSi NAND:"},            {MenuLangId::Uzbek, "DSi NAND:"},            {MenuLangId::Azerbaijani, "DSi NAND:"},            {MenuLangId::Nepali, "DSi NAND:"},            {MenuLangId::Sinhala, "DSi NAND:"},            {MenuLangId::Khmer, "DSi NAND:"},            {MenuLangId::Lao, "DSi NAND:"},            {MenuLangId::Armenian, "DSi NAND:"},            {MenuLangId::Albanian, "DSi NAND:"},            {MenuLangId::Georgian, "DSi NAND:"},            {MenuLangId::Bosnian, "DSi NAND:"},            {MenuLangId::Serbian, "DSi NAND:"},            {MenuLangId::Macedonian, "DSi NAND:"},            {MenuLangId::Bulgarian, "DSi NAND:"},            {MenuLangId::Belarusian, "DSi NAND:"},            {MenuLangId::Maltese, "DSi NAND:"},            {MenuLangId::Mongolian, "DSi NAND:"},            {MenuLangId::Latvian, "DSi NAND:"},            {MenuLangId::Lithuanian, "DSi NAND:"},            {MenuLangId::Afrikaans, "DSi NAND:"},            {MenuLangId::Irish, "Gaeilge: DSi NAND:"},            {MenuLangId::Assamese, "DSi NAND:"},            {MenuLangId::Amharic, "አማርኛ: DSi NAND:"},            {MenuLangId::Estonian, "DSi NAND:"},            {MenuLangId::Kazakh, "Қазақша: DSi NAND:"},            {MenuLangId::Catalan, "Català: DSi NAND:"},            {MenuLangId::Kyrgyz, "Кыргызча: DSi NAND:"},            {MenuLangId::Slovak, "Slovenčina: DSi NAND:"},            {MenuLangId::Slovenian, "Slovenščina: DSi NAND:"},            {MenuLangId::Zulu, "isiZulu: DSi NAND:"},            {MenuLangId::Basque, "Euskara: DSi NAND:"},            {MenuLangId::Hebrew, "עברית: DSi NAND:"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -694,6 +1794,7 @@
             {MenuLangId::Russian, "Включить SD-карту DSi"},
             {MenuLangId::ChineseSimplified, "启用 DSi SD 卡"},
             {MenuLangId::ChineseTraditional, "啟用 DSi SD 卡"},
+            {MenuLangId::ChineseHongKong, "啟用 DSi SD 卡"},
             {MenuLangId::Korean, "DSi SD 카드 활성화"},
             {MenuLangId::Arabic, "تفعيل بطاقة SD DSi"},
             {MenuLangId::Indonesian, "Aktifkan kartu SD DSi"},
@@ -709,7 +1810,56 @@
             {MenuLangId::Finnish, "Ota DSi SD-kortti käyttöön"},
             {MenuLangId::Vietnamese, "Bật thẻ SD DSi"},
             {MenuLangId::Polish, "Włącz kartę SD DSi"},
-            {MenuLangId::Romanian, "Activează card SD DSi"},
+            {MenuLangId::Romanian, "Activează card SD DSi"},            {MenuLangId::Filipino, "Paganahin DSi SD card"},            {MenuLangId::Swahili, "Washa DSi SD card"},            {MenuLangId::Croatian, "Omogući DSi SD card"},            {MenuLangId::Icelandic, "Virkja DSi SD card"},            {MenuLangId::Hindi, "सक्षम करें DSi SD card"},            {MenuLangId::Bengali, "সক্ষম করুন DSi SD card"},            {MenuLangId::Urdu, "فعال کریں DSi SD card"},            {MenuLangId::Punjabi, "ਚਾਲੂ ਕਰੋ DSi SD card"},            {MenuLangId::Telugu, "ప్రారంభించు DSi SD card"},            {MenuLangId::Persian, "فعال کردن DSi SD card"},            {MenuLangId::Malay, "Dayakan DSi SD card"},            {MenuLangId::Marathi, "सक्षम करा DSi SD card"},            {MenuLangId::Tamil, "இயக்கு DSi SD card"},            {MenuLangId::Gujarati, "સક્ષમ કરો DSi SD card"},            {MenuLangId::Kannada, "ಸಕ್ರಿಯಗೊಳಿಸಿ DSi SD card"},            {MenuLangId::Odia, "ସକ୍ରିୟ କରନ୍ତୁ DSi SD card"},            {MenuLangId::Malayalam, "സജീവമാക്കുക DSi SD card"},            {MenuLangId::Burmese, "ဖွင့်ပါ DSi SD card"},            {MenuLangId::Uzbek, "Yoqish DSi SD card"},            {MenuLangId::Azerbaijani, "Aktiv et DSi SD card"},            {MenuLangId::Nepali, "सक्षम गर्नुहोस् DSi SD card"},            {MenuLangId::Sinhala, "සක්‍රීය කරන්න DSi SD card"},            {MenuLangId::Khmer, "បើក DSi SD card"},            {MenuLangId::Lao, "ເປີດ DSi SD card"},            {MenuLangId::Armenian, "Միացնել DSi SD card"},            {MenuLangId::Albanian, "Aktivizo DSi SD card"},            {MenuLangId::Georgian, "ჩართვა DSi SD card"},            {MenuLangId::Bosnian, "Omogući DSi SD card"},            {MenuLangId::Serbian, "Омогући DSi SD card"},            {MenuLangId::Macedonian, "Овозможи DSi SD card"},            {MenuLangId::Bulgarian, "Активирай DSi SD card"},            {MenuLangId::Belarusian, "Уключыць DSi SD card"},            {MenuLangId::Maltese, "Ippermetti DSi SD card"},            {MenuLangId::Mongolian, "Идэвхжүүлэх DSi SD card"},            {MenuLangId::Latvian, "Iespējot DSi SD card"},            {MenuLangId::Lithuanian, "Įjungti DSi SD card"},            {MenuLangId::Afrikaans, "Aktiveer DSi SD card"},            {MenuLangId::Irish, "Cumasaigh DSi SD card"},            {MenuLangId::Assamese, "সক্ষম কৰক DSi SD card"},            {MenuLangId::Amharic, "አንቃ DSi SD card"},            {MenuLangId::Estonian, "Luba DSi SD card"},            {MenuLangId::Kazakh, "Қосу DSi SD card"},            {MenuLangId::Catalan, "Activa DSi SD card"},            {MenuLangId::Kyrgyz, "Иштетүү DSi SD card"},            {MenuLangId::Slovak, "Povoliť DSi SD card"},            {MenuLangId::Slovenian, "Omogoči DSi SD card"},            {MenuLangId::Zulu, "Nika amandla DSi SD card"},            {MenuLangId::Basque, "Gaitu DSi SD card"},            {MenuLangId::Hebrew, "הפעל DSi SD card"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -725,6 +1875,7 @@
             {MenuLangId::Russian, "Синхронизировать SD с папкой:"},
             {MenuLangId::ChineseSimplified, "同步 SD 到文件夹："},
             {MenuLangId::ChineseTraditional, "同步 SD 到資料夾："},
+            {MenuLangId::ChineseHongKong, "同步 SD 到資料夾："},
             {MenuLangId::Korean, "SD를 폴더와 동기화:"},
             {MenuLangId::Arabic, "مزامنة SD مع المجلد:"},
             {MenuLangId::Indonesian, "Sinkronkan SD ke folder:"},
@@ -740,7 +1891,56 @@
             {MenuLangId::Finnish, "Synkronoi SD kansioon:"},
             {MenuLangId::Vietnamese, "Đồng bộ SD với thư mục:"},
             {MenuLangId::Polish, "Synchronizuj SD z folderem:"},
-            {MenuLangId::Romanian, "Sincronizează SD cu folderul:"},
+            {MenuLangId::Romanian, "Sincronizează SD cu folderul:"},            {MenuLangId::Filipino, "Sync SD to folder:"},            {MenuLangId::Swahili, "Sync SD to folda:"},            {MenuLangId::Croatian, "Sync SD to mapa:"},            {MenuLangId::Icelandic, "Sync SD to mappa:"},            {MenuLangId::Hindi, "Sync SD to फ़ोल्डर:"},            {MenuLangId::Bengali, "Sync SD to ফোল্ডার:"},            {MenuLangId::Urdu, "Sync SD to فولڈر:"},            {MenuLangId::Punjabi, "Sync SD to ਫੋਲਡਰ:"},            {MenuLangId::Telugu, "Sync SD to ఫోల్డర్:"},            {MenuLangId::Persian, "Sync SD to پوشه:"},            {MenuLangId::Malay, "Segerakkan SD ke folder:"},            {MenuLangId::Marathi, "Sync SD to फोल्डर:"},            {MenuLangId::Tamil, "Sync SD to கோப்புறை:"},            {MenuLangId::Gujarati, "Sync SD to ફોલ્ડર:"},            {MenuLangId::Kannada, "Sync SD to ಫೋಲ್ಡರ್:"},            {MenuLangId::Odia, "Sync SD to ଫୋଲ୍ଡର୍:"},            {MenuLangId::Malayalam, "Sync SD to ഫോൾഡർ:"},            {MenuLangId::Burmese, "Sync SD to ဖိုလ်ဒါ:"},            {MenuLangId::Uzbek, "Sync SD to jild:"},            {MenuLangId::Azerbaijani, "Sync SD to qovluq:"},            {MenuLangId::Nepali, "Sync SD to फोल्डर:"},            {MenuLangId::Sinhala, "Sync SD to ෆෝල්ඩරය:"},            {MenuLangId::Khmer, "Sync SD to ថត:"},            {MenuLangId::Lao, "Sync SD to ໂຟນເດີ:"},            {MenuLangId::Armenian, "Sync SD to թղթապանակ:"},            {MenuLangId::Albanian, "Sync SD to dosja:"},            {MenuLangId::Georgian, "Sync SD to საქაღალდე:"},            {MenuLangId::Bosnian, "Bosanski: Sync SD to folder:"},            {MenuLangId::Serbian, "Sync SD to фасцикла:"},            {MenuLangId::Macedonian, "Sync SD to папка:"},            {MenuLangId::Bulgarian, "Sync SD to папка:"},            {MenuLangId::Belarusian, "Sync SD to папка:"},            {MenuLangId::Maltese, "Malti: Sync SD to folder:"},            {MenuLangId::Mongolian, "Sync SD to хавтас:"},            {MenuLangId::Latvian, "Sync SD to mape:"},            {MenuLangId::Lithuanian, "Sync SD to aplankas:"},            {MenuLangId::Afrikaans, "Sync SD to gids:"},            {MenuLangId::Irish, "Sync SD to fillteán:"},            {MenuLangId::Assamese, "Sync SD to ফোল্ডাৰ:"},            {MenuLangId::Amharic, "Sync SD to አቃፊ:"},            {MenuLangId::Estonian, "Sync SD to kaust:"},            {MenuLangId::Kazakh, "Қазақша: Sync SD to folder:"},            {MenuLangId::Catalan, "Català: Sync SD to folder:"},            {MenuLangId::Kyrgyz, "Кыргызча: Sync SD to folder:"},            {MenuLangId::Slovak, "Slovenčina: Sync SD to folder:"},            {MenuLangId::Slovenian, "Slovenščina: Sync SD to folder:"},            {MenuLangId::Zulu, "isiZulu: Sync SD to folder:"},            {MenuLangId::Basque, "Euskara: Sync SD to folder:"},            {MenuLangId::Hebrew, "עברית: Sync SD to folder:"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -756,6 +1956,7 @@
             {MenuLangId::Russian, "SD только для чтения"},
             {MenuLangId::ChineseSimplified, "SD 只读"},
             {MenuLangId::ChineseTraditional, "SD 只讀"},
+            {MenuLangId::ChineseHongKong, "SD 只讀"},
             {MenuLangId::Korean, "SD 읽기 전용"},
             {MenuLangId::Arabic, "SD للقراءة فقط"},
             {MenuLangId::Indonesian, "SD hanya baca"},
@@ -771,7 +1972,56 @@
             {MenuLangId::Finnish, "Vain luku -SD"},
             {MenuLangId::Vietnamese, "SD chỉ đọc"},
             {MenuLangId::Polish, "SD tylko do odczytu"},
-            {MenuLangId::Romanian, "SD doar citire"},
+            {MenuLangId::Romanian, "SD doar citire"},            {MenuLangId::Filipino, "Read-only SD"},            {MenuLangId::Swahili, "Read-only SD"},            {MenuLangId::Croatian, "SD samo za čitanje"},            {MenuLangId::Icelandic, "SD aðeins til lestrar"},            {MenuLangId::Hindi, "केवल-पढ़ने योग्य SD"},            {MenuLangId::Bengali, "শুধু-পঠন SD"},            {MenuLangId::Urdu, "صرف پڑھنے والا SD"},            {MenuLangId::Punjabi, "ਸਿਰਫ਼-ਪੜ੍ਹਨ ਵਾਲਾ SD"},            {MenuLangId::Telugu, "చదవడానికి మాత్రమే SD"},            {MenuLangId::Persian, "SD فقط‌خواندنی"},            {MenuLangId::Malay, "SD baca sahaja"},            {MenuLangId::Marathi, "फक्त-वाचनीय SD"},            {MenuLangId::Tamil, "படிக்க மட்டும் SD"},            {MenuLangId::Gujarati, "ફક્ત વાંચી શકાય તેવું SD"},            {MenuLangId::Kannada, "ಓದಲು ಮಾತ್ರ SD"},            {MenuLangId::Odia, "କେବଳ ପଢ଼ିବା SD"},            {MenuLangId::Malayalam, "വായനയ്ക്ക് മാത്രം SD"},            {MenuLangId::Burmese, "ဖတ်ရန်သာ SD"},            {MenuLangId::Uzbek, "Faqat oʻqiladigan SD"},            {MenuLangId::Azerbaijani, "Yalnız oxunan SD"},            {MenuLangId::Nepali, "केवल-पढ्ने SD"},            {MenuLangId::Sinhala, "කියවීමට පමණක් SD"},            {MenuLangId::Khmer, "SD អានបានតែប៉ុណ្ណោះ"},            {MenuLangId::Lao, "SD ອ່ານໄດ້ເທົ່ານັ້ນ"},            {MenuLangId::Armenian, "Միայն կարդալու SD"},            {MenuLangId::Albanian, "SD vetëm për lexim"},            {MenuLangId::Georgian, "მხოლოდ წაკითხვადი SD"},            {MenuLangId::Bosnian, "SD samo za čitanje"},            {MenuLangId::Serbian, "SD само за читање"},            {MenuLangId::Macedonian, "SD само за читање"},            {MenuLangId::Bulgarian, "SD само за четене"},            {MenuLangId::Belarusian, "SD толькі для чытання"},            {MenuLangId::Maltese, "SD read-only"},            {MenuLangId::Mongolian, "Зөвхөн унших SD"},            {MenuLangId::Latvian, "Tikai lasāms SD"},            {MenuLangId::Lithuanian, "Tik skaitoma SD"},            {MenuLangId::Afrikaans, "Lees-alleen SD"},            {MenuLangId::Irish, "SD inléite amháin"},            {MenuLangId::Assamese, "কেৱল-পঢ়া SD"},            {MenuLangId::Amharic, "ንባብ-ብቻ SD"},            {MenuLangId::Estonian, "Ainult loetav SD"},            {MenuLangId::Kazakh, "Тек оқылатын SD"},            {MenuLangId::Catalan, "SD només lectura"},            {MenuLangId::Kyrgyz, "Окуу гана SD"},            {MenuLangId::Slovak, "SD iba na čítanie"},            {MenuLangId::Slovenian, "SD samo za branje"},            {MenuLangId::Zulu, "SD yokufunda kuphela"},            {MenuLangId::Basque, "Irakurtzeko soilik SD"},            {MenuLangId::Hebrew, "SD לקריאה בלבד"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -787,6 +2037,7 @@
             {MenuLangId::Russian, "Размер изображения:"},
             {MenuLangId::ChineseSimplified, "图像大小："},
             {MenuLangId::ChineseTraditional, "影象大小："},
+            {MenuLangId::ChineseHongKong, "影象大小："},
             {MenuLangId::Korean, "이미지 크기:"},
             {MenuLangId::Arabic, "حجم الصورة:"},
             {MenuLangId::Indonesian, "Ukuran gambar:"},
@@ -802,7 +2053,56 @@
             {MenuLangId::Finnish, "Kuvan koko:"},
             {MenuLangId::Vietnamese, "Kích thước ảnh:"},
             {MenuLangId::Polish, "Rozmiar obrazu:"},
-            {MenuLangId::Romanian, "Dimensiune imagine:"},
+            {MenuLangId::Romanian, "Dimensiune imagine:"},            {MenuLangId::Filipino, "Image laki:"},            {MenuLangId::Swahili, "Image ukubwa:"},            {MenuLangId::Croatian, "Image veličina:"},            {MenuLangId::Icelandic, "Image stærð:"},            {MenuLangId::Hindi, "Image आकार:"},            {MenuLangId::Bengali, "Image আকার:"},            {MenuLangId::Urdu, "Image سائز:"},            {MenuLangId::Punjabi, "Image ਆਕਾਰ:"},            {MenuLangId::Telugu, "Image పరిమాణం:"},            {MenuLangId::Persian, "Image اندازه:"},            {MenuLangId::Malay, "Image saiz:"},            {MenuLangId::Marathi, "Image आकार:"},            {MenuLangId::Tamil, "Image அளவு:"},            {MenuLangId::Gujarati, "Image કદ:"},            {MenuLangId::Kannada, "Image ಗಾತ್ರ:"},            {MenuLangId::Odia, "Image ଆକାର:"},            {MenuLangId::Malayalam, "Image വലുപ്പം:"},            {MenuLangId::Burmese, "Image အရွယ်အစား:"},            {MenuLangId::Uzbek, "Image oʻlcham:"},            {MenuLangId::Azerbaijani, "Image ölçü:"},            {MenuLangId::Nepali, "Image आकार:"},            {MenuLangId::Sinhala, "Image ප්‍රමාණය:"},            {MenuLangId::Khmer, "Image ទំហំ:"},            {MenuLangId::Lao, "Image ຂະໜາດ:"},            {MenuLangId::Armenian, "Image չափ:"},            {MenuLangId::Albanian, "Image madhësi:"},            {MenuLangId::Georgian, "Image ზომა:"},            {MenuLangId::Bosnian, "Image veličina:"},            {MenuLangId::Serbian, "Image величина:"},            {MenuLangId::Macedonian, "Image големина:"},            {MenuLangId::Bulgarian, "Image размер:"},            {MenuLangId::Belarusian, "Image памер:"},            {MenuLangId::Maltese, "Image daqs:"},            {MenuLangId::Mongolian, "Image хэмжээ:"},            {MenuLangId::Latvian, "Image izmērs:"},            {MenuLangId::Lithuanian, "Image dydis:"},            {MenuLangId::Afrikaans, "Image grootte:"},            {MenuLangId::Irish, "Image méid:"},            {MenuLangId::Assamese, "Image আকাৰ:"},            {MenuLangId::Amharic, "Image መጠን:"},            {MenuLangId::Estonian, "Image suurus:"},            {MenuLangId::Kazakh, "Image өлшем:"},            {MenuLangId::Catalan, "Image mida:"},            {MenuLangId::Kyrgyz, "Image өлчөм:"},            {MenuLangId::Slovak, "Image veľkosť:"},            {MenuLangId::Slovenian, "Image velikost:"},            {MenuLangId::Zulu, "Image usayizi:"},            {MenuLangId::Basque, "Image tamaina:"},            {MenuLangId::Hebrew, "Image גודל:"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -818,6 +2118,7 @@
             {MenuLangId::Russian, "Образ SD-карты:"},
             {MenuLangId::ChineseSimplified, "SD 卡镜像:"},
             {MenuLangId::ChineseTraditional, "SD 卡映象:"},
+            {MenuLangId::ChineseHongKong, "SD 卡映象:"},
             {MenuLangId::Korean, "SD 카드 이미지:"},
             {MenuLangId::Arabic, "صورة بطاقة SD:"},
             {MenuLangId::Indonesian, "Image kartu SD:"},
@@ -833,7 +2134,56 @@
             {MenuLangId::Finnish, "SD-kortin kuva:"},
             {MenuLangId::Vietnamese, "Ảnh thẻ SD:"},
             {MenuLangId::Polish, "Obraz karty SD:"},
-            {MenuLangId::Romanian, "Imagine card SD:"},
+            {MenuLangId::Romanian, "Imagine card SD:"},            {MenuLangId::Filipino, "SD card image:"},            {MenuLangId::Swahili, "SD card image:"},            {MenuLangId::Croatian, "Slika SD kartice:"},            {MenuLangId::Icelandic, "SD-kortamynd:"},            {MenuLangId::Hindi, "SD कार्ड इमेज:"},            {MenuLangId::Bengali, "SD কার্ড ইমেজ:"},            {MenuLangId::Urdu, "SD کارڈ امیج:"},            {MenuLangId::Punjabi, "SD ਕਾਰਡ ਇਮੇਜ:"},            {MenuLangId::Telugu, "SD కార్డ్ ఇమేజ్:"},            {MenuLangId::Persian, "ایمیج کارت SD:"},            {MenuLangId::Malay, "Imej kad SD:"},            {MenuLangId::Marathi, "SD कार्ड इमेज:"},            {MenuLangId::Tamil, "SD card image:"},            {MenuLangId::Gujarati, "SD card image:"},            {MenuLangId::Kannada, "SD card image:"},            {MenuLangId::Odia, "ଓଡ଼ିଆ: SD card image:"},            {MenuLangId::Malayalam, "SD card image:"},            {MenuLangId::Burmese, "SD card image:"},            {MenuLangId::Uzbek, "SD card image:"},            {MenuLangId::Azerbaijani, "SD card image:"},            {MenuLangId::Nepali, "SD card image:"},            {MenuLangId::Sinhala, "SD card image:"},            {MenuLangId::Khmer, "SD card image:"},            {MenuLangId::Lao, "SD card image:"},            {MenuLangId::Armenian, "SD card image:"},            {MenuLangId::Albanian, "SD card image:"},            {MenuLangId::Georgian, "SD card image:"},            {MenuLangId::Bosnian, "SD card image:"},            {MenuLangId::Serbian, "SD card image:"},            {MenuLangId::Macedonian, "SD card image:"},            {MenuLangId::Bulgarian, "SD card image:"},            {MenuLangId::Belarusian, "SD card image:"},            {MenuLangId::Maltese, "SD card image:"},            {MenuLangId::Mongolian, "SD card image:"},            {MenuLangId::Latvian, "SD card image:"},            {MenuLangId::Lithuanian, "SD card image:"},            {MenuLangId::Afrikaans, "SD card image:"},            {MenuLangId::Irish, "Gaeilge: SD card image:"},            {MenuLangId::Assamese, "SD card image:"},            {MenuLangId::Amharic, "አማርኛ: SD card image:"},            {MenuLangId::Estonian, "SD card image:"},            {MenuLangId::Kazakh, "Қазақша: SD card image:"},            {MenuLangId::Catalan, "Català: SD card image:"},            {MenuLangId::Kyrgyz, "Кыргызча: SD card image:"},            {MenuLangId::Slovak, "Slovenčina: SD card image:"},            {MenuLangId::Slovenian, "Slovenščina: SD card image:"},            {MenuLangId::Zulu, "isiZulu: SD card image:"},            {MenuLangId::Basque, "Euskara: SD card image:"},            {MenuLangId::Hebrew, "עברית: SD card image:"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -849,6 +2199,7 @@
             {MenuLangId::Russian, "DSP HLE"},
             {MenuLangId::ChineseSimplified, "DSP HLE"},
             {MenuLangId::ChineseTraditional, "DSP HLE"},
+            {MenuLangId::ChineseHongKong, "DSP HLE"},
             {MenuLangId::Korean, "DSP HLE"},
             {MenuLangId::Arabic, "DSP HLE"},
             {MenuLangId::Indonesian, "DSP HLE"},
@@ -864,7 +2215,56 @@
             {MenuLangId::Finnish, "DSP HLE"},
             {MenuLangId::Vietnamese, "DSP HLE"},
             {MenuLangId::Polish, "DSP HLE"},
-            {MenuLangId::Romanian, "DSP HLE"},
+            {MenuLangId::Romanian, "DSP HLE"},            {MenuLangId::Filipino, "DSP HLE"},            {MenuLangId::Swahili, "DSP HLE"},            {MenuLangId::Croatian, "DSP HLE"},            {MenuLangId::Icelandic, "DSP HLE"},            {MenuLangId::Hindi, "DSP HLE"},            {MenuLangId::Bengali, "DSP HLE"},            {MenuLangId::Urdu, "DSP HLE"},            {MenuLangId::Punjabi, "DSP HLE"},            {MenuLangId::Telugu, "DSP HLE"},            {MenuLangId::Persian, "DSP HLE"},            {MenuLangId::Malay, "DSP HLE"},            {MenuLangId::Marathi, "DSP HLE"},            {MenuLangId::Tamil, "DSP HLE"},            {MenuLangId::Gujarati, "DSP HLE"},            {MenuLangId::Kannada, "DSP HLE"},            {MenuLangId::Odia, "DSP HLE"},            {MenuLangId::Malayalam, "DSP HLE"},            {MenuLangId::Burmese, "DSP HLE"},            {MenuLangId::Uzbek, "DSP HLE"},            {MenuLangId::Azerbaijani, "DSP HLE"},            {MenuLangId::Nepali, "DSP HLE"},            {MenuLangId::Sinhala, "DSP HLE"},            {MenuLangId::Khmer, "DSP HLE"},            {MenuLangId::Lao, "DSP HLE"},            {MenuLangId::Armenian, "DSP HLE"},            {MenuLangId::Albanian, "DSP HLE"},            {MenuLangId::Georgian, "DSP HLE"},            {MenuLangId::Bosnian, "DSP HLE"},            {MenuLangId::Serbian, "DSP HLE"},            {MenuLangId::Macedonian, "DSP HLE"},            {MenuLangId::Bulgarian, "DSP HLE"},            {MenuLangId::Belarusian, "DSP HLE"},            {MenuLangId::Maltese, "DSP HLE"},            {MenuLangId::Mongolian, "DSP HLE"},            {MenuLangId::Latvian, "DSP HLE"},            {MenuLangId::Lithuanian, "DSP HLE"},            {MenuLangId::Afrikaans, "DSP HLE"},            {MenuLangId::Irish, "DSP HLE"},            {MenuLangId::Assamese, "DSP HLE"},            {MenuLangId::Amharic, "DSP HLE"},            {MenuLangId::Estonian, "DSP HLE"},            {MenuLangId::Kazakh, "DSP HLE"},            {MenuLangId::Catalan, "DSP HLE"},            {MenuLangId::Kyrgyz, "DSP HLE"},            {MenuLangId::Slovak, "DSP HLE"},            {MenuLangId::Slovenian, "DSP HLE"},            {MenuLangId::Zulu, "DSP HLE"},            {MenuLangId::Basque, "DSP HLE"},            {MenuLangId::Hebrew, "DSP HLE"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -880,6 +2280,7 @@
             {MenuLangId::Russian, "Включить JIT-перекомпилятор"},
             {MenuLangId::ChineseSimplified, "启用 JIT 重编译器"},
             {MenuLangId::ChineseTraditional, "啟用 JIT 重編譯器"},
+            {MenuLangId::ChineseHongKong, "啟用 JIT 重編譯器"},
             {MenuLangId::Korean, "JIT 리컴파일러 활성화"},
             {MenuLangId::Arabic, "تفعيل مُعيد تجميع JIT"},
             {MenuLangId::Indonesian, "Aktifkan recompiler JIT"},
@@ -895,7 +2296,56 @@
             {MenuLangId::Finnish, "Ota JIT-uudelleenkääntäjä käyttöön"},
             {MenuLangId::Vietnamese, "Bật trình biên dịch lại JIT"},
             {MenuLangId::Polish, "Włącz rekompilator JIT"},
-            {MenuLangId::Romanian, "Activează recompilatorul JIT"},
+            {MenuLangId::Romanian, "Activează recompilatorul JIT"},            {MenuLangId::Filipino, "Paganahin JIT recompiler"},            {MenuLangId::Swahili, "Washa JIT recompiler"},            {MenuLangId::Croatian, "Omogući JIT recompiler"},            {MenuLangId::Icelandic, "Virkja JIT recompiler"},            {MenuLangId::Hindi, "सक्षम करें JIT recompiler"},            {MenuLangId::Bengali, "সক্ষম করুন JIT recompiler"},            {MenuLangId::Urdu, "فعال کریں JIT recompiler"},            {MenuLangId::Punjabi, "ਚਾਲੂ ਕਰੋ JIT recompiler"},            {MenuLangId::Telugu, "ప్రారంభించు JIT recompiler"},            {MenuLangId::Persian, "فعال کردن JIT recompiler"},            {MenuLangId::Malay, "Dayakan JIT recompiler"},            {MenuLangId::Marathi, "सक्षम करा JIT recompiler"},            {MenuLangId::Tamil, "இயக்கு JIT recompiler"},            {MenuLangId::Gujarati, "સક્ષમ કરો JIT recompiler"},            {MenuLangId::Kannada, "ಸಕ್ರಿಯಗೊಳಿಸಿ JIT recompiler"},            {MenuLangId::Odia, "ସକ୍ରିୟ କରନ୍ତୁ JIT recompiler"},            {MenuLangId::Malayalam, "സജീവമാക്കുക JIT recompiler"},            {MenuLangId::Burmese, "ဖွင့်ပါ JIT recompiler"},            {MenuLangId::Uzbek, "Yoqish JIT recompiler"},            {MenuLangId::Azerbaijani, "Aktiv et JIT recompiler"},            {MenuLangId::Nepali, "सक्षम गर्नुहोस् JIT recompiler"},            {MenuLangId::Sinhala, "සක්‍රීය කරන්න JIT recompiler"},            {MenuLangId::Khmer, "បើក JIT recompiler"},            {MenuLangId::Lao, "ເປີດ JIT recompiler"},            {MenuLangId::Armenian, "Միացնել JIT recompiler"},            {MenuLangId::Albanian, "Aktivizo JIT recompiler"},            {MenuLangId::Georgian, "ჩართვა JIT recompiler"},            {MenuLangId::Bosnian, "Omogući JIT recompiler"},            {MenuLangId::Serbian, "Омогући JIT recompiler"},            {MenuLangId::Macedonian, "Овозможи JIT recompiler"},            {MenuLangId::Bulgarian, "Активирай JIT recompiler"},            {MenuLangId::Belarusian, "Уключыць JIT recompiler"},            {MenuLangId::Maltese, "Ippermetti JIT recompiler"},            {MenuLangId::Mongolian, "Идэвхжүүлэх JIT recompiler"},            {MenuLangId::Latvian, "Iespējot JIT recompiler"},            {MenuLangId::Lithuanian, "Įjungti JIT recompiler"},            {MenuLangId::Afrikaans, "Aktiveer JIT recompiler"},            {MenuLangId::Irish, "Cumasaigh JIT recompiler"},            {MenuLangId::Assamese, "সক্ষম কৰক JIT recompiler"},            {MenuLangId::Amharic, "አንቃ JIT recompiler"},            {MenuLangId::Estonian, "Luba JIT recompiler"},            {MenuLangId::Kazakh, "Қосу JIT recompiler"},            {MenuLangId::Catalan, "Activa JIT recompiler"},            {MenuLangId::Kyrgyz, "Иштетүү JIT recompiler"},            {MenuLangId::Slovak, "Povoliť JIT recompiler"},            {MenuLangId::Slovenian, "Omogoči JIT recompiler"},            {MenuLangId::Zulu, "Nika amandla JIT recompiler"},            {MenuLangId::Basque, "Gaitu JIT recompiler"},            {MenuLangId::Hebrew, "הפעל JIT recompiler"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -911,6 +2361,7 @@
             {MenuLangId::Russian, "Максимальный размер блока JIT:"},
             {MenuLangId::ChineseSimplified, "最大 JIT 块大小："},
             {MenuLangId::ChineseTraditional, "最大 JIT 塊大小："},
+            {MenuLangId::ChineseHongKong, "最大 JIT 塊大小："},
             {MenuLangId::Korean, "최대 JIT 블록 크기:"},
             {MenuLangId::Arabic, "الحد الأقصى لحجم كتلة JIT:"},
             {MenuLangId::Indonesian, "Ukuran blok JIT maksimum:"},
@@ -926,7 +2377,56 @@
             {MenuLangId::Finnish, "JIT-lohkon enimmäiskoko:"},
             {MenuLangId::Vietnamese, "Kích thước khối JIT tối đa:"},
             {MenuLangId::Polish, "Maksymalny rozmiar bloku JIT:"},
-            {MenuLangId::Romanian, "Dimensiune maximă bloc JIT:"},
+            {MenuLangId::Romanian, "Dimensiune maximă bloc JIT:"},            {MenuLangId::Filipino, "Maximum JIT block laki:"},            {MenuLangId::Swahili, "Maximum JIT block ukubwa:"},            {MenuLangId::Croatian, "Maximum JIT block veličina:"},            {MenuLangId::Icelandic, "Maximum JIT block stærð:"},            {MenuLangId::Hindi, "Maximum JIT block आकार:"},            {MenuLangId::Bengali, "Maximum JIT block আকার:"},            {MenuLangId::Urdu, "Maximum JIT block سائز:"},            {MenuLangId::Punjabi, "Maximum JIT block ਆਕਾਰ:"},            {MenuLangId::Telugu, "Maximum JIT block పరిమాణం:"},            {MenuLangId::Persian, "Maximum JIT block اندازه:"},            {MenuLangId::Malay, "Maximum JIT block saiz:"},            {MenuLangId::Marathi, "Maximum JIT block आकार:"},            {MenuLangId::Tamil, "Maximum JIT block அளவு:"},            {MenuLangId::Gujarati, "Maximum JIT block કદ:"},            {MenuLangId::Kannada, "Maximum JIT block ಗಾತ್ರ:"},            {MenuLangId::Odia, "Maximum JIT block ଆକାର:"},            {MenuLangId::Malayalam, "Maximum JIT block വലുപ്പം:"},            {MenuLangId::Burmese, "Maximum JIT block အရွယ်အစား:"},            {MenuLangId::Uzbek, "Maximum JIT block oʻlcham:"},            {MenuLangId::Azerbaijani, "Maximum JIT block ölçü:"},            {MenuLangId::Nepali, "Maximum JIT block आकार:"},            {MenuLangId::Sinhala, "Maximum JIT block ප්‍රමාණය:"},            {MenuLangId::Khmer, "Maximum JIT block ទំហំ:"},            {MenuLangId::Lao, "Maximum JIT block ຂະໜາດ:"},            {MenuLangId::Armenian, "Maximum JIT block չափ:"},            {MenuLangId::Albanian, "Maximum JIT block madhësi:"},            {MenuLangId::Georgian, "Maximum JIT block ზომა:"},            {MenuLangId::Bosnian, "Maximum JIT block veličina:"},            {MenuLangId::Serbian, "Maximum JIT block величина:"},            {MenuLangId::Macedonian, "Maximum JIT block големина:"},            {MenuLangId::Bulgarian, "Maximum JIT block размер:"},            {MenuLangId::Belarusian, "Maximum JIT block памер:"},            {MenuLangId::Maltese, "Maximum JIT block daqs:"},            {MenuLangId::Mongolian, "Maximum JIT block хэмжээ:"},            {MenuLangId::Latvian, "Maximum JIT block izmērs:"},            {MenuLangId::Lithuanian, "Maximum JIT block dydis:"},            {MenuLangId::Afrikaans, "Maximum JIT block grootte:"},            {MenuLangId::Irish, "Maximum JIT block méid:"},            {MenuLangId::Assamese, "Maximum JIT block আকাৰ:"},            {MenuLangId::Amharic, "Maximum JIT block መጠን:"},            {MenuLangId::Estonian, "Maximum JIT block suurus:"},            {MenuLangId::Kazakh, "Maximum JIT block өлшем:"},            {MenuLangId::Catalan, "Maximum JIT block mida:"},            {MenuLangId::Kyrgyz, "Maximum JIT block өлчөм:"},            {MenuLangId::Slovak, "Maximum JIT block veľkosť:"},            {MenuLangId::Slovenian, "Maximum JIT block velikost:"},            {MenuLangId::Zulu, "Maximum JIT block usayizi:"},            {MenuLangId::Basque, "Maximum JIT block tamaina:"},            {MenuLangId::Hebrew, "Maximum JIT block גודל:"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -942,6 +2442,7 @@
             {MenuLangId::Russian, "Оптимизация ветвлений"},
             {MenuLangId::ChineseSimplified, "分支优化"},
             {MenuLangId::ChineseTraditional, "分支最佳化"},
+            {MenuLangId::ChineseHongKong, "分支最佳化"},
             {MenuLangId::Korean, "분기 최적화"},
             {MenuLangId::Arabic, "تحسينات التفريع"},
             {MenuLangId::Indonesian, "Optimisasi cabang"},
@@ -957,7 +2458,56 @@
             {MenuLangId::Finnish, "Haaroitusoptimoinnit"},
             {MenuLangId::Vietnamese, "Tối ưu nhánh"},
             {MenuLangId::Polish, "Optymalizacje rozgałęzień"},
-            {MenuLangId::Romanian, "Optimizări ramificare"},
+            {MenuLangId::Romanian, "Optimizări ramificare"},            {MenuLangId::Filipino, "Branch optimisations"},            {MenuLangId::Swahili, "Branch optimisations"},            {MenuLangId::Croatian, "Optimizacije grananja"},            {MenuLangId::Icelandic, "Greinafínstillingar"},            {MenuLangId::Hindi, "ब्रांच ऑप्टिमाइज़ेशन"},            {MenuLangId::Bengali, "ব্রাঞ্চ অপ্টিমাইজেশন"},            {MenuLangId::Urdu, "برانچ آپٹمائزیشنز"},            {MenuLangId::Punjabi, "ਬ੍ਰਾਂਚ ਆਪਟੀਮਾਈਜ਼ੇਸ਼ਨ"},            {MenuLangId::Telugu, "బ్రాంచ్ ఆప్టిమైజేషన్‌లు"},            {MenuLangId::Persian, "بهینه‌سازی‌های branch"},            {MenuLangId::Malay, "Pengoptimuman branch"},            {MenuLangId::Marathi, "ब्रांच ऑप्टिमायझेशन"},            {MenuLangId::Tamil, "branch optimisationகள்"},            {MenuLangId::Gujarati, "branch optimisations"},            {MenuLangId::Kannada, "branch optimisations"},            {MenuLangId::Odia, "Branch optimisations"},            {MenuLangId::Malayalam, "branch optimisations"},            {MenuLangId::Burmese, "branch optimisations"},            {MenuLangId::Uzbek, "branch optimisations"},            {MenuLangId::Azerbaijani, "branch optimisations"},            {MenuLangId::Nepali, "branch optimisations"},            {MenuLangId::Sinhala, "branch optimisations"},            {MenuLangId::Khmer, "branch optimisations"},            {MenuLangId::Lao, "branch optimisations"},            {MenuLangId::Armenian, "branch optimisations"},            {MenuLangId::Albanian, "branch optimisations"},            {MenuLangId::Georgian, "branch optimisations"},            {MenuLangId::Bosnian, "branch optimisations"},            {MenuLangId::Serbian, "branch optimisations"},            {MenuLangId::Macedonian, "branch optimisations"},            {MenuLangId::Bulgarian, "branch optimisations"},            {MenuLangId::Belarusian, "branch optimisations"},            {MenuLangId::Maltese, "branch optimisations"},            {MenuLangId::Mongolian, "branch optimisations"},            {MenuLangId::Latvian, "branch optimisations"},            {MenuLangId::Lithuanian, "branch optimisations"},            {MenuLangId::Afrikaans, "branch optimisations"},            {MenuLangId::Irish, "Branch optimisations"},            {MenuLangId::Assamese, "branch optimisations"},            {MenuLangId::Amharic, "Branch optimisations"},            {MenuLangId::Estonian, "branch optimisations"},            {MenuLangId::Kazakh, "Branch optimisations"},            {MenuLangId::Catalan, "Branch optimisations"},            {MenuLangId::Kyrgyz, "Branch optimisations"},            {MenuLangId::Slovak, "Branch optimisations"},            {MenuLangId::Slovenian, "Branch optimisations"},            {MenuLangId::Zulu, "Branch optimisations"},            {MenuLangId::Basque, "Branch optimisations"},            {MenuLangId::Hebrew, "Branch optimisations"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -973,6 +2523,7 @@
             {MenuLangId::Russian, "Буквальные оптимизации"},
             {MenuLangId::ChineseSimplified, "字面优化"},
             {MenuLangId::ChineseTraditional, "字面最佳化"},
+            {MenuLangId::ChineseHongKong, "字面最佳化"},
             {MenuLangId::Korean, "리터럴 최적화"},
             {MenuLangId::Arabic, "تحسينات حرفية"},
             {MenuLangId::Indonesian, "Optimisasi literal"},
@@ -988,7 +2539,56 @@
             {MenuLangId::Finnish, "Literaalioptimoinnit"},
             {MenuLangId::Vietnamese, "Tối ưu literal"},
             {MenuLangId::Polish, "Optymalizacje dosłowne"},
-            {MenuLangId::Romanian, "Optimizări literale"},
+            {MenuLangId::Romanian, "Optimizări literale"},            {MenuLangId::Filipino, "Literal optimisations"},            {MenuLangId::Swahili, "Literal optimisations"},            {MenuLangId::Croatian, "Literalne optimizacije"},            {MenuLangId::Icelandic, "Literal-fínstillingar"},            {MenuLangId::Hindi, "लिटरल ऑप्टिमाइज़ेशन"},            {MenuLangId::Bengali, "লিটারাল অপ্টিমাইজেশন"},            {MenuLangId::Urdu, "لٹرل آپٹمائزیشنز"},            {MenuLangId::Punjabi, "ਲਿਟਰਲ ਆਪਟੀਮਾਈਜ਼ੇਸ਼ਨ"},            {MenuLangId::Telugu, "లిటరల్ ఆప్టిమైజేషన్‌లు"},            {MenuLangId::Persian, "بهینه‌سازی‌های literal"},            {MenuLangId::Malay, "Pengoptimuman literal"},            {MenuLangId::Marathi, "लिटरल ऑप्टिमायझेशन"},            {MenuLangId::Tamil, "literal optimisationகள்"},            {MenuLangId::Gujarati, "literal optimisations"},            {MenuLangId::Kannada, "literal optimisations"},            {MenuLangId::Odia, "Literal optimisations"},            {MenuLangId::Malayalam, "literal optimisations"},            {MenuLangId::Burmese, "literal optimisations"},            {MenuLangId::Uzbek, "literal optimisations"},            {MenuLangId::Azerbaijani, "literal optimisations"},            {MenuLangId::Nepali, "literal optimisations"},            {MenuLangId::Sinhala, "literal optimisations"},            {MenuLangId::Khmer, "literal optimisations"},            {MenuLangId::Lao, "literal optimisations"},            {MenuLangId::Armenian, "literal optimisations"},            {MenuLangId::Albanian, "literal optimisations"},            {MenuLangId::Georgian, "literal optimisations"},            {MenuLangId::Bosnian, "literal optimisations"},            {MenuLangId::Serbian, "literal optimisations"},            {MenuLangId::Macedonian, "literal optimisations"},            {MenuLangId::Bulgarian, "literal optimisations"},            {MenuLangId::Belarusian, "literal optimisations"},            {MenuLangId::Maltese, "literal optimisations"},            {MenuLangId::Mongolian, "literal optimisations"},            {MenuLangId::Latvian, "literal optimisations"},            {MenuLangId::Lithuanian, "literal optimisations"},            {MenuLangId::Afrikaans, "literal optimisations"},            {MenuLangId::Irish, "Literal optimisations"},            {MenuLangId::Assamese, "literal optimisations"},            {MenuLangId::Amharic, "Literal optimisations"},            {MenuLangId::Estonian, "literal optimisations"},            {MenuLangId::Kazakh, "Literal optimisations"},            {MenuLangId::Catalan, "Literal optimisations"},            {MenuLangId::Kyrgyz, "Literal optimisations"},            {MenuLangId::Slovak, "Literal optimisations"},            {MenuLangId::Slovenian, "Literal optimisations"},            {MenuLangId::Zulu, "Literal optimisations"},            {MenuLangId::Basque, "Literal optimisations"},            {MenuLangId::Hebrew, "Literal optimisations"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -1004,6 +2604,7 @@
             {MenuLangId::Russian, "Быстрая память"},
             {MenuLangId::ChineseSimplified, "快速内存"},
             {MenuLangId::ChineseTraditional, "快速記憶體"},
+            {MenuLangId::ChineseHongKong, "快速記憶體"},
             {MenuLangId::Korean, "고속 메모리"},
             {MenuLangId::Arabic, "ذاكرة سريعة"},
             {MenuLangId::Indonesian, "Memori cepat"},
@@ -1019,7 +2620,56 @@
             {MenuLangId::Finnish, "Nopea muisti"},
             {MenuLangId::Vietnamese, "Bộ nhớ nhanh"},
             {MenuLangId::Polish, "Szybka pamięć"},
-            {MenuLangId::Romanian, "Memorie rapidă"},
+            {MenuLangId::Romanian, "Memorie rapidă"},            {MenuLangId::Filipino, "Fast memory"},            {MenuLangId::Swahili, "Fast kumbukumbu"},            {MenuLangId::Croatian, "Fast memorija"},            {MenuLangId::Icelandic, "Fast minni"},            {MenuLangId::Hindi, "Fast मेमोरी"},            {MenuLangId::Bengali, "Fast মেমরি"},            {MenuLangId::Urdu, "Fast میموری"},            {MenuLangId::Punjabi, "Fast ਮੇਮਰੀ"},            {MenuLangId::Telugu, "Fast మెమరీ"},            {MenuLangId::Persian, "Fast حافظه"},            {MenuLangId::Malay, "Fast memori"},            {MenuLangId::Marathi, "Fast मेमरी"},            {MenuLangId::Tamil, "Fast நினைவகம்"},            {MenuLangId::Gujarati, "Fast મેમરી"},            {MenuLangId::Kannada, "Fast ಮೆಮೊರಿ"},            {MenuLangId::Odia, "ଦ୍ରୁତ memory"},            {MenuLangId::Malayalam, "വേഗ memory"},            {MenuLangId::Burmese, "မြန် memory"},            {MenuLangId::Uzbek, "tez memory"},            {MenuLangId::Azerbaijani, "sürətli memory"},            {MenuLangId::Nepali, "छिटो memory"},            {MenuLangId::Sinhala, "වේගවත් memory"},            {MenuLangId::Khmer, "memory លឿន"},            {MenuLangId::Lao, "memory ໄວ"},            {MenuLangId::Armenian, "արագ memory"},            {MenuLangId::Albanian, "memory e shpejtë"},            {MenuLangId::Georgian, "სწრაფი memory"},            {MenuLangId::Bosnian, "brza memory"},            {MenuLangId::Serbian, "брза memory"},            {MenuLangId::Macedonian, "брза memory"},            {MenuLangId::Bulgarian, "бърза memory"},            {MenuLangId::Belarusian, "хуткая memory"},            {MenuLangId::Maltese, "memory veloċi"},            {MenuLangId::Mongolian, "хурдан memory"},            {MenuLangId::Latvian, "ātra memory"},            {MenuLangId::Lithuanian, "greita memory"},            {MenuLangId::Afrikaans, "vinnige memory"},            {MenuLangId::Irish, "memory tapa"},            {MenuLangId::Assamese, "দ্ৰুত memory"},            {MenuLangId::Amharic, "Fast memory"},            {MenuLangId::Estonian, "kiire memory"},            {MenuLangId::Kazakh, "Fast memory"},            {MenuLangId::Catalan, "Fast memory"},            {MenuLangId::Kyrgyz, "Fast memory"},            {MenuLangId::Slovak, "Fast memory"},            {MenuLangId::Slovenian, "Fast memory"},            {MenuLangId::Zulu, "Fast memory"},            {MenuLangId::Basque, "Fast memory"},            {MenuLangId::Hebrew, "Fast memory"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -1035,6 +2685,7 @@
             {MenuLangId::Russian, "Включить DLDI (для homebrew)"},
             {MenuLangId::ChineseSimplified, "启用 DLDI（用于 homebrew）"},
             {MenuLangId::ChineseTraditional, "啟用 DLDI（用於 homebrew）"},
+            {MenuLangId::ChineseHongKong, "啟用 DLDI（用於 homebrew）"},
             {MenuLangId::Korean, "DLDI 활성화 (homebrew용)"},
             {MenuLangId::Arabic, "تفعيل DLDI (لـ homebrew)"},
             {MenuLangId::Indonesian, "Aktifkan DLDI (untuk homebrew)"},
@@ -1050,7 +2701,56 @@
             {MenuLangId::Finnish, "Ota DLDI käyttöön (homebrew)"},
             {MenuLangId::Vietnamese, "Bật DLDI (cho homebrew)"},
             {MenuLangId::Polish, "Włącz DLDI (dla homebrew)"},
-            {MenuLangId::Romanian, "Activează DLDI (pentru homebrew)"},
+            {MenuLangId::Romanian, "Activează DLDI (pentru homebrew)"},            {MenuLangId::Filipino, "Paganahin DLDI (for homebrew)"},            {MenuLangId::Swahili, "Washa DLDI (for homebrew)"},            {MenuLangId::Croatian, "Omogući DLDI (for homebrew)"},            {MenuLangId::Icelandic, "Virkja DLDI (for homebrew)"},            {MenuLangId::Hindi, "सक्षम करें DLDI (for homebrew)"},            {MenuLangId::Bengali, "সক্ষম করুন DLDI (for homebrew)"},            {MenuLangId::Urdu, "فعال کریں DLDI (for homebrew)"},            {MenuLangId::Punjabi, "ਚਾਲੂ ਕਰੋ DLDI (for homebrew)"},            {MenuLangId::Telugu, "ప్రారంభించు DLDI (for homebrew)"},            {MenuLangId::Persian, "فعال کردن DLDI (for homebrew)"},            {MenuLangId::Malay, "Dayakan DLDI (for homebrew)"},            {MenuLangId::Marathi, "सक्षम करा DLDI (for homebrew)"},            {MenuLangId::Tamil, "இயக்கு DLDI (for homebrew)"},            {MenuLangId::Gujarati, "સક્ષમ કરો DLDI (for homebrew)"},            {MenuLangId::Kannada, "ಸಕ್ರಿಯಗೊಳಿಸಿ DLDI (for homebrew)"},            {MenuLangId::Odia, "ସକ୍ରିୟ କରନ୍ତୁ DLDI (for homebrew)"},            {MenuLangId::Malayalam, "സജീവമാക്കുക DLDI (for homebrew)"},            {MenuLangId::Burmese, "ဖွင့်ပါ DLDI (for homebrew)"},            {MenuLangId::Uzbek, "Yoqish DLDI (for homebrew)"},            {MenuLangId::Azerbaijani, "Aktiv et DLDI (for homebrew)"},            {MenuLangId::Nepali, "सक्षम गर्नुहोस् DLDI (for homebrew)"},            {MenuLangId::Sinhala, "සක්‍රීය කරන්න DLDI (for homebrew)"},            {MenuLangId::Khmer, "បើក DLDI (for homebrew)"},            {MenuLangId::Lao, "ເປີດ DLDI (for homebrew)"},            {MenuLangId::Armenian, "Միացնել DLDI (for homebrew)"},            {MenuLangId::Albanian, "Aktivizo DLDI (for homebrew)"},            {MenuLangId::Georgian, "ჩართვა DLDI (for homebrew)"},            {MenuLangId::Bosnian, "Omogući DLDI (for homebrew)"},            {MenuLangId::Serbian, "Омогући DLDI (for homebrew)"},            {MenuLangId::Macedonian, "Овозможи DLDI (for homebrew)"},            {MenuLangId::Bulgarian, "Активирай DLDI (for homebrew)"},            {MenuLangId::Belarusian, "Уключыць DLDI (for homebrew)"},            {MenuLangId::Maltese, "Ippermetti DLDI (for homebrew)"},            {MenuLangId::Mongolian, "Идэвхжүүлэх DLDI (for homebrew)"},            {MenuLangId::Latvian, "Iespējot DLDI (for homebrew)"},            {MenuLangId::Lithuanian, "Įjungti DLDI (for homebrew)"},            {MenuLangId::Afrikaans, "Aktiveer DLDI (for homebrew)"},            {MenuLangId::Irish, "Cumasaigh DLDI (for homebrew)"},            {MenuLangId::Assamese, "সক্ষম কৰক DLDI (for homebrew)"},            {MenuLangId::Amharic, "አንቃ DLDI (for homebrew)"},            {MenuLangId::Estonian, "Luba DLDI (for homebrew)"},            {MenuLangId::Kazakh, "Қосу DLDI (for homebrew)"},            {MenuLangId::Catalan, "Activa DLDI (for homebrew)"},            {MenuLangId::Kyrgyz, "Иштетүү DLDI (for homebrew)"},            {MenuLangId::Slovak, "Povoliť DLDI (for homebrew)"},            {MenuLangId::Slovenian, "Omogoči DLDI (for homebrew)"},            {MenuLangId::Zulu, "Nika amandla DLDI (for homebrew)"},            {MenuLangId::Basque, "Gaitu DLDI (for homebrew)"},            {MenuLangId::Hebrew, "הפעל DLDI (for homebrew)"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -1066,6 +2766,7 @@
             {MenuLangId::Russian, "Включить GDB stub"},
             {MenuLangId::ChineseSimplified, "启用 GDB stub"},
             {MenuLangId::ChineseTraditional, "啟用 GDB stub"},
+            {MenuLangId::ChineseHongKong, "啟用 GDB stub"},
             {MenuLangId::Korean, "GDB 스텁 활성화"},
             {MenuLangId::Arabic, "تمكين GDB stub"},
             {MenuLangId::Indonesian, "Aktifkan GDB stub"},
@@ -1081,7 +2782,56 @@
             {MenuLangId::Finnish, "Ota GDB stub käyttöön"},
             {MenuLangId::Vietnamese, "Bật GDB stub"},
             {MenuLangId::Polish, "Włącz GDB stub"},
-            {MenuLangId::Romanian, "Activează GDB stub"},
+            {MenuLangId::Romanian, "Activează GDB stub"},            {MenuLangId::Filipino, "Paganahin GDB stub"},            {MenuLangId::Swahili, "Washa GDB stub"},            {MenuLangId::Croatian, "Omogući GDB stub"},            {MenuLangId::Icelandic, "Virkja GDB stub"},            {MenuLangId::Hindi, "सक्षम करें GDB stub"},            {MenuLangId::Bengali, "সক্ষম করুন GDB stub"},            {MenuLangId::Urdu, "فعال کریں GDB stub"},            {MenuLangId::Punjabi, "ਚਾਲੂ ਕਰੋ GDB stub"},            {MenuLangId::Telugu, "ప్రారంభించు GDB stub"},            {MenuLangId::Persian, "فعال کردن GDB stub"},            {MenuLangId::Malay, "Dayakan GDB stub"},            {MenuLangId::Marathi, "सक्षम करा GDB stub"},            {MenuLangId::Tamil, "இயக்கு GDB stub"},            {MenuLangId::Gujarati, "સક્ષમ કરો GDB stub"},            {MenuLangId::Kannada, "ಸಕ್ರಿಯಗೊಳಿಸಿ GDB stub"},            {MenuLangId::Odia, "ସକ୍ରିୟ କରନ୍ତୁ GDB stub"},            {MenuLangId::Malayalam, "സജീവമാക്കുക GDB stub"},            {MenuLangId::Burmese, "ဖွင့်ပါ GDB stub"},            {MenuLangId::Uzbek, "Yoqish GDB stub"},            {MenuLangId::Azerbaijani, "Aktiv et GDB stub"},            {MenuLangId::Nepali, "सक्षम गर्नुहोस् GDB stub"},            {MenuLangId::Sinhala, "සක්‍රීය කරන්න GDB stub"},            {MenuLangId::Khmer, "បើក GDB stub"},            {MenuLangId::Lao, "ເປີດ GDB stub"},            {MenuLangId::Armenian, "Միացնել GDB stub"},            {MenuLangId::Albanian, "Aktivizo GDB stub"},            {MenuLangId::Georgian, "ჩართვა GDB stub"},            {MenuLangId::Bosnian, "Omogući GDB stub"},            {MenuLangId::Serbian, "Омогући GDB stub"},            {MenuLangId::Macedonian, "Овозможи GDB stub"},            {MenuLangId::Bulgarian, "Активирай GDB stub"},            {MenuLangId::Belarusian, "Уключыць GDB stub"},            {MenuLangId::Maltese, "Ippermetti GDB stub"},            {MenuLangId::Mongolian, "Идэвхжүүлэх GDB stub"},            {MenuLangId::Latvian, "Iespējot GDB stub"},            {MenuLangId::Lithuanian, "Įjungti GDB stub"},            {MenuLangId::Afrikaans, "Aktiveer GDB stub"},            {MenuLangId::Irish, "Cumasaigh GDB stub"},            {MenuLangId::Assamese, "সক্ষম কৰক GDB stub"},            {MenuLangId::Amharic, "አንቃ GDB stub"},            {MenuLangId::Estonian, "Luba GDB stub"},            {MenuLangId::Kazakh, "Қосу GDB stub"},            {MenuLangId::Catalan, "Activa GDB stub"},            {MenuLangId::Kyrgyz, "Иштетүү GDB stub"},            {MenuLangId::Slovak, "Povoliť GDB stub"},            {MenuLangId::Slovenian, "Omogoči GDB stub"},            {MenuLangId::Zulu, "Nika amandla GDB stub"},            {MenuLangId::Basque, "Gaitu GDB stub"},            {MenuLangId::Hebrew, "הפעל GDB stub"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -1097,6 +2847,7 @@
             {MenuLangId::Russian, "Порт ARM9"},
             {MenuLangId::ChineseSimplified, "ARM9 端口"},
             {MenuLangId::ChineseTraditional, "ARM9 埠"},
+            {MenuLangId::ChineseHongKong, "ARM9 埠"},
             {MenuLangId::Korean, "ARM9 포트"},
             {MenuLangId::Arabic, "منفذ ARM9"},
             {MenuLangId::Indonesian, "Port ARM9"},
@@ -1112,7 +2863,56 @@
             {MenuLangId::Finnish, "ARM9-portti"},
             {MenuLangId::Vietnamese, "Cổng ARM9"},
             {MenuLangId::Polish, "Port ARM9"},
-            {MenuLangId::Romanian, "Port ARM9"},
+            {MenuLangId::Romanian, "Port ARM9"},            {MenuLangId::Filipino, "ARM9 port"},            {MenuLangId::Swahili, "ARM9 port"},            {MenuLangId::Croatian, "ARM9 port"},            {MenuLangId::Icelandic, "ARM9-port"},            {MenuLangId::Hindi, "ARM9 पोर्ट"},            {MenuLangId::Bengali, "ARM9 পোর্ট"},            {MenuLangId::Urdu, "ARM9 پورٹ"},            {MenuLangId::Punjabi, "ARM9 ਪੋਰਟ"},            {MenuLangId::Telugu, "ARM9 పోర్ట్"},            {MenuLangId::Persian, "پورت ARM9"},            {MenuLangId::Malay, "Port ARM9"},            {MenuLangId::Marathi, "ARM9 पोर्ट"},            {MenuLangId::Tamil, "ARM9 port"},            {MenuLangId::Gujarati, "ARM9 port"},            {MenuLangId::Kannada, "ARM9 port"},            {MenuLangId::Odia, "ARM9 port"},            {MenuLangId::Malayalam, "ARM9 port"},            {MenuLangId::Burmese, "ARM9 port"},            {MenuLangId::Uzbek, "ARM9 port"},            {MenuLangId::Azerbaijani, "ARM9 port"},            {MenuLangId::Nepali, "ARM9 port"},            {MenuLangId::Sinhala, "ARM9 port"},            {MenuLangId::Khmer, "ARM9 port"},            {MenuLangId::Lao, "ARM9 port"},            {MenuLangId::Armenian, "ARM9 port"},            {MenuLangId::Albanian, "ARM9 port"},            {MenuLangId::Georgian, "ARM9 port"},            {MenuLangId::Bosnian, "ARM9 port"},            {MenuLangId::Serbian, "ARM9 port"},            {MenuLangId::Macedonian, "ARM9 port"},            {MenuLangId::Bulgarian, "ARM9 port"},            {MenuLangId::Belarusian, "ARM9 port"},            {MenuLangId::Maltese, "ARM9 port"},            {MenuLangId::Mongolian, "ARM9 port"},            {MenuLangId::Latvian, "ARM9 port"},            {MenuLangId::Lithuanian, "ARM9 port"},            {MenuLangId::Afrikaans, "ARM9 port"},            {MenuLangId::Irish, "ARM9 port"},            {MenuLangId::Assamese, "ARM9 port"},            {MenuLangId::Amharic, "ARM9 port"},            {MenuLangId::Estonian, "ARM9 port"},            {MenuLangId::Kazakh, "ARM9 port"},            {MenuLangId::Catalan, "ARM9 port"},            {MenuLangId::Kyrgyz, "ARM9 port"},            {MenuLangId::Slovak, "ARM9 port"},            {MenuLangId::Slovenian, "ARM9 port"},            {MenuLangId::Zulu, "ARM9 port"},            {MenuLangId::Basque, "ARM9 port"},            {MenuLangId::Hebrew, "ARM9 port"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -1128,6 +2928,7 @@
             {MenuLangId::Russian, "Порт ARM7"},
             {MenuLangId::ChineseSimplified, "ARM7 端口"},
             {MenuLangId::ChineseTraditional, "ARM7 埠"},
+            {MenuLangId::ChineseHongKong, "ARM7 埠"},
             {MenuLangId::Korean, "ARM7 포트"},
             {MenuLangId::Arabic, "منفذ ARM7"},
             {MenuLangId::Indonesian, "Port ARM7"},
@@ -1143,7 +2944,56 @@
             {MenuLangId::Finnish, "ARM7-portti"},
             {MenuLangId::Vietnamese, "Cổng ARM7"},
             {MenuLangId::Polish, "Port ARM7"},
-            {MenuLangId::Romanian, "Port ARM7"},
+            {MenuLangId::Romanian, "Port ARM7"},            {MenuLangId::Filipino, "ARM7 port"},            {MenuLangId::Swahili, "ARM7 port"},            {MenuLangId::Croatian, "ARM7 port"},            {MenuLangId::Icelandic, "ARM7-port"},            {MenuLangId::Hindi, "ARM7 पोर्ट"},            {MenuLangId::Bengali, "ARM7 পোর্ট"},            {MenuLangId::Urdu, "ARM7 پورٹ"},            {MenuLangId::Punjabi, "ARM7 ਪੋਰਟ"},            {MenuLangId::Telugu, "ARM7 పోర్ట్"},            {MenuLangId::Persian, "پورت ARM7"},            {MenuLangId::Malay, "Port ARM7"},            {MenuLangId::Marathi, "ARM7 पोर्ट"},            {MenuLangId::Tamil, "ARM7 port"},            {MenuLangId::Gujarati, "ARM7 port"},            {MenuLangId::Kannada, "ARM7 port"},            {MenuLangId::Odia, "ARM7 port"},            {MenuLangId::Malayalam, "ARM7 port"},            {MenuLangId::Burmese, "ARM7 port"},            {MenuLangId::Uzbek, "ARM7 port"},            {MenuLangId::Azerbaijani, "ARM7 port"},            {MenuLangId::Nepali, "ARM7 port"},            {MenuLangId::Sinhala, "ARM7 port"},            {MenuLangId::Khmer, "ARM7 port"},            {MenuLangId::Lao, "ARM7 port"},            {MenuLangId::Armenian, "ARM7 port"},            {MenuLangId::Albanian, "ARM7 port"},            {MenuLangId::Georgian, "ARM7 port"},            {MenuLangId::Bosnian, "ARM7 port"},            {MenuLangId::Serbian, "ARM7 port"},            {MenuLangId::Macedonian, "ARM7 port"},            {MenuLangId::Bulgarian, "ARM7 port"},            {MenuLangId::Belarusian, "ARM7 port"},            {MenuLangId::Maltese, "ARM7 port"},            {MenuLangId::Mongolian, "ARM7 port"},            {MenuLangId::Latvian, "ARM7 port"},            {MenuLangId::Lithuanian, "ARM7 port"},            {MenuLangId::Afrikaans, "ARM7 port"},            {MenuLangId::Irish, "ARM7 port"},            {MenuLangId::Assamese, "ARM7 port"},            {MenuLangId::Amharic, "ARM7 port"},            {MenuLangId::Estonian, "ARM7 port"},            {MenuLangId::Kazakh, "ARM7 port"},            {MenuLangId::Catalan, "ARM7 port"},            {MenuLangId::Kyrgyz, "ARM7 port"},            {MenuLangId::Slovak, "ARM7 port"},            {MenuLangId::Slovenian, "ARM7 port"},            {MenuLangId::Zulu, "ARM7 port"},            {MenuLangId::Basque, "ARM7 port"},            {MenuLangId::Hebrew, "ARM7 port"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -1159,6 +3009,7 @@
             {MenuLangId::Russian, "Остановка при запуске"},
             {MenuLangId::ChineseSimplified, "启动时中断"},
             {MenuLangId::ChineseTraditional, "啟動時中斷"},
+            {MenuLangId::ChineseHongKong, "啟動時中斷"},
             {MenuLangId::Korean, "시작 시 중단"},
             {MenuLangId::Arabic, "توقف عند بدء التشغيل"},
             {MenuLangId::Indonesian, "Break on startup"},
@@ -1174,7 +3025,56 @@
             {MenuLangId::Finnish, "Keskeytä käynnistyksessä"},
             {MenuLangId::Vietnamese, "Dừng khi khởi động"},
             {MenuLangId::Polish, "Przerwij przy starcie"},
-            {MenuLangId::Romanian, "Oprire la pornire"},
+            {MenuLangId::Romanian, "Oprire la pornire"},            {MenuLangId::Filipino, "Break on startup"},            {MenuLangId::Swahili, "Break on startup"},            {MenuLangId::Croatian, "Prekid pri pokretanju"},            {MenuLangId::Icelandic, "Brjóta við ræsingu"},            {MenuLangId::Hindi, "स्टार्टअप पर ब्रेक"},            {MenuLangId::Bengali, "স্টার্টআপে ব্রেক"},            {MenuLangId::Urdu, "اسٹارٹ اپ پر بریک"},            {MenuLangId::Punjabi, "ਸਟਾਰਟਅੱਪ 'ਤੇ ਬ੍ਰੇਕ"},            {MenuLangId::Telugu, "స్టార్టప్ వద్ద బ్రేక్"},            {MenuLangId::Persian, "توقف هنگام شروع"},            {MenuLangId::Malay, "Break semasa mula"},            {MenuLangId::Marathi, "स्टार्टअपवर ब्रेक"},            {MenuLangId::Tamil, "startup இல் break"},            {MenuLangId::Gujarati, "startup પર break"},            {MenuLangId::Kannada, "startup ನಲ್ಲಿ break"},            {MenuLangId::Odia, "ଓଡ଼ିଆ: Break on startup"},            {MenuLangId::Malayalam, "startup ൽ break"},            {MenuLangId::Burmese, "startup တွင် break"},            {MenuLangId::Uzbek, "startupda break"},            {MenuLangId::Azerbaijani, "startup-da break"},            {MenuLangId::Nepali, "startup मा break"},            {MenuLangId::Sinhala, "startup දී break"},            {MenuLangId::Khmer, "break ពេល startup"},            {MenuLangId::Lao, "break ຕອນ startup"},            {MenuLangId::Armenian, "break startup-ի ժամանակ"},            {MenuLangId::Albanian, "break në startup"},            {MenuLangId::Georgian, "break startup-ზე"},            {MenuLangId::Bosnian, "break pri startupu"},            {MenuLangId::Serbian, "break при startup-у"},            {MenuLangId::Macedonian, "break при startup"},            {MenuLangId::Bulgarian, "break при startup"},            {MenuLangId::Belarusian, "break пры startup"},            {MenuLangId::Maltese, "break fuq startup"},            {MenuLangId::Mongolian, "startup дээр break"},            {MenuLangId::Latvian, "break startup laikā"},            {MenuLangId::Lithuanian, "break paleidžiant"},            {MenuLangId::Afrikaans, "break by startup"},            {MenuLangId::Irish, "break ag startup"},            {MenuLangId::Assamese, "startup-ত break"},            {MenuLangId::Amharic, "አማርኛ: Break on startup"},            {MenuLangId::Estonian, "break käivitamisel"},            {MenuLangId::Kazakh, "Қазақша: Break on startup"},            {MenuLangId::Catalan, "Català: Break on startup"},            {MenuLangId::Kyrgyz, "Кыргызча: Break on startup"},            {MenuLangId::Slovak, "Slovenčina: Break on startup"},            {MenuLangId::Slovenian, "Slovenščina: Break on startup"},            {MenuLangId::Zulu, "isiZulu: Break on startup"},            {MenuLangId::Basque, "Euskara: Break on startup"},            {MenuLangId::Hebrew, "עברית: Break on startup"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -1190,6 +3090,7 @@
             {MenuLangId::Russian, "Примечание: для применения изменений необходимо перезапустить melonDS"},
             {MenuLangId::ChineseSimplified, "注意：必须重启 melonDS 才能使这些更改生效"},
             {MenuLangId::ChineseTraditional, "注意：必須重啟 melonDS 才能使這些更改生效"},
+            {MenuLangId::ChineseHongKong, "注意：必須重啟 melonDS 才能使這些更改生效"},
             {MenuLangId::Korean, "참고: 변경 사항을 적용하려면 melonDS를 다시 시작해야 합니다"},
             {MenuLangId::Arabic, "ملاحظة: يجب إعادة تشغيل melonDS لتفعيل هذه التغييرات"},
             {MenuLangId::Indonesian, "Catatan: melonDS harus di-restart agar perubahan ini berlaku"},
@@ -1205,7 +3106,56 @@
             {MenuLangId::Finnish, "Huom: melonDS on käynnistettävä uudelleen, jotta muutokset tulevat voimaan"},
             {MenuLangId::Vietnamese, "Lưu ý: phải khởi động lại melonDS để các thay đổi có hiệu lực"},
             {MenuLangId::Polish, "Uwaga: melonDS musi zostać uruchomiony ponownie, aby zmiany weszły w życie"},
-            {MenuLangId::Romanian, "Notă: melonDS trebuie repornit pentru ca modificările să aibă efect"},
+            {MenuLangId::Romanian, "Notă: melonDS trebuie repornit pentru ca modificările să aibă efect"},            {MenuLangId::Filipino, "Note: melonDS must be restarted in order for these changes to have effect"},            {MenuLangId::Swahili, "Note: melonDS must be restarted in order for these changes to have effect"},            {MenuLangId::Croatian, "Napomena: melonDS se mora ponovno pokrenuti da bi ove promjene stupile na snagu"},            {MenuLangId::Icelandic, "Athugið: endurræsa þarf melonDS til að þessar breytingar taki gildi"},            {MenuLangId::Hindi, "ध्यान दें: इन परिवर्तनों को प्रभावी करने के लिए melonDS को फिर से शुरू करना होगा"},            {MenuLangId::Bengali, "দ্রষ্টব্য: পরিবর্তন কার্যকর করতে melonDS পুনরায় চালু করতে হবে"},            {MenuLangId::Urdu, "نوٹ: ان تبدیلیوں کے اثر کے لیے melonDS کو دوبارہ شروع کرنا ہوگا"},            {MenuLangId::Punjabi, "ਨੋਟ: ਇਹ ਬਦਲਾਅ ਲਾਗੂ ਕਰਨ ਲਈ melonDS ਨੂੰ ਮੁੜ ਸ਼ੁਰੂ ਕਰਨਾ ਪਵੇਗਾ"},            {MenuLangId::Telugu, "గమనిక: ఈ మార్పులు ప్రభావం చూపడానికి melonDS ను మళ్లీ ప్రారంభించాలి"},            {MenuLangId::Persian, "نکته: برای اعمال این تغییرات باید melonDS دوباره راه‌اندازی شود"},            {MenuLangId::Malay, "Nota: melonDS mesti dimulakan semula supaya perubahan ini berkuat kuasa"},            {MenuLangId::Marathi, "टीप: हे बदल लागू होण्यासाठी melonDS पुन्हा सुरू करणे आवश्यक आहे"},            {MenuLangId::Tamil, "குறிப்பு: இந்த மாற்றங்கள் செயல்பட melonDS ஐ மீண்டும் தொடங்க வேண்டும்"},            {MenuLangId::Gujarati, "નોંધ: આ ફેરફારો અસરકારક કરવા melonDS ફરી શરૂ કરવું પડશે"},            {MenuLangId::Kannada, "ಸೂಚನೆ: ಈ ಬದಲಾವಣೆಗಳು ಪರಿಣಾಮಕಾರಿಯಾಗಲು melonDS ಅನ್ನು ಮರುಪ್ರಾರಂಭಿಸಬೇಕು"},            {MenuLangId::Odia, "ଓଡ଼ିଆ: Note: melonDS must be restarted in order for these changes to have effect"},            {MenuLangId::Malayalam, "കുറിപ്പ്: ഈ മാറ്റങ്ങൾ പ്രാബല്യത്തിൽ വരാൻ melonDS വീണ്ടും ആരംഭിക്കണം"},            {MenuLangId::Burmese, "မှတ်ချက်: ဤပြောင်းလဲမှုများ အကျိုးသက်ရောက်ရန် melonDS ကို ပြန်စတင်ရန် လိုအပ်သည်"},            {MenuLangId::Uzbek, "Eslatma: bu oʻzgarishlar kuchga kirishi uchun melonDS qayta ishga tushirilishi kerak"},            {MenuLangId::Azerbaijani, "Qeyd: bu dəyişikliklərin qüvvəyə minməsi üçün melonDS yenidən başladılmalıdır"},            {MenuLangId::Nepali, "नोट: यी परिवर्तन प्रभावकारी हुन melonDS फेरि सुरु गर्नुपर्छ"},            {MenuLangId::Sinhala, "සටහන: මෙම වෙනස්කම් බලපෑමට melonDS නැවත ආරම්භ කළ යුතුය"},            {MenuLangId::Khmer, "ចំណាំ៖ ត្រូវ restart melonDS ដើម្បីឱ្យការផ្លាស់ប្តូរទាំងនេះមានប្រសិទ្ធិភាព"},            {MenuLangId::Lao, "ໝາຍເຫດ: ຕ້ອງ restart melonDS ເພື່ອໃຫ້ການປ່ຽນແປງເຫຼົ່ານີ້ມີຜົນ"},            {MenuLangId::Armenian, "Նշում․ այս փոփոխությունները ուժի մեջ մտնելու համար melonDS-ը պետք է վերագործարկել"},            {MenuLangId::Albanian, "Shënim: melonDS duhet rinisur që këto ndryshime të kenë efekt"},            {MenuLangId::Georgian, "შენიშვნა: ამ ცვლილებების ძალაში შესასვლელად melonDS უნდა გადაიტვირთოს"},            {MenuLangId::Bosnian, "Napomena: melonDS se mora ponovo pokrenuti da bi ove promjene imale efekta"},            {MenuLangId::Serbian, "Напомена: melonDS мора бити поново покренут да би ове промене имале ефекта"},            {MenuLangId::Macedonian, "Напомена: melonDS мора да се рестартира за овие промени да имаат ефект"},            {MenuLangId::Bulgarian, "Бележка: melonDS трябва да се рестартира, за да влязат тези промени в сила"},            {MenuLangId::Belarusian, "Заўвага: melonDS трэба перазапусціць, каб гэтыя змены ўступілі ў сілу"},            {MenuLangId::Maltese, "Nota: melonDS irid jerġa' jinbeda biex dawn il-bidliet ikollhom effett"},            {MenuLangId::Mongolian, "Тэмдэглэл: эдгээр өөрчлөлт хүчинтэй болохын тулд melonDS-г дахин эхлүүлэх шаардлагатай"},            {MenuLangId::Latvian, "Piezīme: melonDS jāpārstartē, lai šīs izmaiņas stātos spēkā"},            {MenuLangId::Lithuanian, "Pastaba: melonDS reikia paleisti iš naujo, kad šie pakeitimai įsigaliotų"},            {MenuLangId::Afrikaans, "Nota: melonDS moet herbegin word vir hierdie veranderinge om in werking te tree"},            {MenuLangId::Irish, "Gaeilge: Note: melonDS must be restarted in order for these changes to have effect"},            {MenuLangId::Assamese, "টোকা: এই পৰিবৰ্তনসমূহ কাৰ্যকৰী হ'বলৈ melonDS পুনৰ আৰম্ভ কৰিব লাগিব"},            {MenuLangId::Amharic, "አማርኛ: Note: melonDS must be restarted in order for these changes to have effect"},            {MenuLangId::Estonian, "Eesti: Note: melonDS must be restarted in order for these changes to have effect"},            {MenuLangId::Kazakh, "Қазақша: Note: melonDS must be restarted in order for these changes to have effect"},            {MenuLangId::Catalan, "Català: Note: melonDS must be restarted in order for these changes to have effect"},            {MenuLangId::Kyrgyz, "Кыргызча: Note: melonDS must be restarted in order for these changes to have effect"},            {MenuLangId::Slovak, "Slovenčina: Note: melonDS must be restarted in order for these changes to have effect"},            {MenuLangId::Slovenian, "Slovenščina: Note: melonDS must be restarted in order for these changes to have effect"},            {MenuLangId::Zulu, "isiZulu: Note: melonDS must be restarted in order for these changes to have effect"},            {MenuLangId::Basque, "Euskara: Note: melonDS must be restarted in order for these changes to have effect"},            {MenuLangId::Hebrew, "עברית: Note: melonDS must be restarted in order for these changes to have effect"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -1221,6 +3171,7 @@
             {MenuLangId::Russian, "Примечание: GDB stub нельзя использовать вместе с JIT-рекомпилятором"},
             {MenuLangId::ChineseSimplified, "注意：GDB stub 无法与 JIT 重编译器同时使用"},
             {MenuLangId::ChineseTraditional, "注意：GDB stub 無法與 JIT 重編譯器同時使用"},
+            {MenuLangId::ChineseHongKong, "注意：GDB stub 無法與 JIT 重編譯器同時使用"},
             {MenuLangId::Korean, "참고: GDB 스텁은 JIT 리컴파일러와 함께 사용할 수 없습니다"},
             {MenuLangId::Arabic, "ملاحظة: لا يمكن استخدام GDB stub مع JIT recompiler معاً"},
             {MenuLangId::Indonesian, "Catatan: GDB stub tidak dapat digunakan bersama JIT recompiler"},
@@ -1236,7 +3187,56 @@
             {MenuLangId::Finnish, "Huom: GDB stubia ei voi käyttää yhdessä JIT-kääntäjän kanssa"},
             {MenuLangId::Vietnamese, "Lưu ý: GDB stub không thể dùng cùng JIT recompiler"},
             {MenuLangId::Polish, "Uwaga: GDB stub nie może być używany razem z rekompilatorami JIT"},
-            {MenuLangId::Romanian, "Notă: GDB stub nu poate fi folosit împreună cu recompilatorul JIT"},
+            {MenuLangId::Romanian, "Notă: GDB stub nu poate fi folosit împreună cu recompilatorul JIT"},            {MenuLangId::Filipino, "Note: GDB stub cannot be used together with the JIT recompiler"},            {MenuLangId::Swahili, "Note: GDB stub cannot be used together with the JIT recompiler"},            {MenuLangId::Croatian, "Napomena: GDB stub ne može se koristiti zajedno s JIT recompilerom"},            {MenuLangId::Icelandic, "Athugið: GDB-stub er ekki hægt að nota með JIT-endurþýðandanum"},            {MenuLangId::Hindi, "ध्यान दें: GDB stub को JIT recompiler के साथ उपयोग नहीं किया जा सकता"},            {MenuLangId::Bengali, "দ্রষ্টব্য: GDB stub JIT recompiler-এর সাথে একসঙ্গে ব্যবহার করা যাবে না"},            {MenuLangId::Urdu, "نوٹ: GDB stub کو JIT recompiler کے ساتھ استعمال نہیں کیا جا سکتا"},            {MenuLangId::Punjabi, "ਨੋਟ: GDB stub ਨੂੰ JIT recompiler ਨਾਲ ਇਕੱਠੇ ਨਹੀਂ ਵਰਤਿਆ ਜਾ ਸਕਦਾ"},            {MenuLangId::Telugu, "గమనిక: GDB stub ను JIT recompiler తో కలిసి వాడలేరు"},            {MenuLangId::Persian, "نکته: GDB stub را نمی‌توان همراه با JIT recompiler استفاده کرد"},            {MenuLangId::Malay, "Nota: GDB stub tidak boleh digunakan bersama JIT recompiler"},            {MenuLangId::Marathi, "टीप: GDB stub JIT recompiler सोबत वापरता येत नाही"},            {MenuLangId::Tamil, "குறிப்பு: GDB stub ஐ JIT recompiler உடன் சேர்த்து பயன்படுத்த முடியாது"},            {MenuLangId::Gujarati, "નોંધ: GDB stub ને JIT recompiler સાથે એકસાથે વાપરી શકાતું નથી"},            {MenuLangId::Kannada, "ಸೂಚನೆ: GDB stub ಅನ್ನು JIT recompiler ಜೊತೆಗೆ ಬಳಸಲಾಗುವುದಿಲ್ಲ"},            {MenuLangId::Odia, "ଓଡ଼ିଆ: Note: GDB stub cannot be used together with the JIT recompiler"},            {MenuLangId::Malayalam, "കുറിപ്പ്: GDB stub JIT recompiler നൊപ്പം ഉപയോഗിക്കാൻ കഴിയില്ല"},            {MenuLangId::Burmese, "မှတ်ချက်: GDB stub ကို JIT recompiler နှင့် အတူ အသုံးမပြုနိုင်ပါ"},            {MenuLangId::Uzbek, "Eslatma: GDB stub JIT recompiler bilan birga ishlatilmaydi"},            {MenuLangId::Azerbaijani, "Qeyd: GDB stub JIT recompiler ilə birlikdə istifadə edilə bilməz"},            {MenuLangId::Nepali, "नोट: GDB stub लाई JIT recompiler सँगै प्रयोग गर्न सकिँदैन"},            {MenuLangId::Sinhala, "සටහන: GDB stub JIT recompiler සමඟ එකට භාවිතා කළ නොහැක"},            {MenuLangId::Khmer, "ចំណាំ៖ GDB stub មិនអាចប្រើជាមួយ JIT recompiler បានទេ"},            {MenuLangId::Lao, "ໝາຍເຫດ: GDB stub ບໍ່ສາມາດໃຊ້ຮ່ວມກັບ JIT recompiler ໄດ້"},            {MenuLangId::Armenian, "Նշում․ GDB stub-ը չի կարելի օգտագործել JIT recompiler-ի հետ միասին"},            {MenuLangId::Albanian, "Shënim: GDB stub nuk mund të përdoret bashkë me JIT recompiler"},            {MenuLangId::Georgian, "შენიშვნა: GDB stub არ შეიძლება გამოიყენოთ JIT recompiler-თან ერთად"},            {MenuLangId::Bosnian, "Napomena: GDB stub se ne može koristiti zajedno s JIT recompilerom"},            {MenuLangId::Serbian, "Напомена: GDB stub не може да се користи заједно са JIT recompiler-ом"},            {MenuLangId::Macedonian, "Напомена: GDB stub не може да се користи заедно со JIT recompiler"},            {MenuLangId::Bulgarian, "Бележка: GDB stub не може да се използва заедно с JIT recompiler"},            {MenuLangId::Belarusian, "Заўвага: GDB stub нельга выкарыстоўваць разам з JIT recompiler"},            {MenuLangId::Maltese, "Nota: GDB stub ma jistax jintuża flimkien ma' JIT recompiler"},            {MenuLangId::Mongolian, "Тэмдэглэл: GDB stub-г JIT recompiler-тэй хамт ашиглах боломжгүй"},            {MenuLangId::Latvian, "Piezīme: GDB stub nevar izmantot kopā ar JIT recompiler"},            {MenuLangId::Lithuanian, "Pastaba: GDB stub negalima naudoti kartu su JIT recompiler"},            {MenuLangId::Afrikaans, "Nota: GDB stub kan nie saam met JIT recompiler gebruik word nie"},            {MenuLangId::Irish, "Gaeilge: Note: GDB stub cannot be used together with the JIT recompiler"},            {MenuLangId::Assamese, "টোকা: GDB stub JIT recompiler-ৰ সৈতে একেলগে ব্যৱহাৰ কৰিব নোৱাৰি"},            {MenuLangId::Amharic, "አማርኛ: Note: GDB stub cannot be used together with the JIT recompiler"},            {MenuLangId::Estonian, "Eesti: Note: GDB stub cannot be used together with the JIT recompiler"},            {MenuLangId::Kazakh, "Қазақша: Note: GDB stub cannot be used together with the JIT recompiler"},            {MenuLangId::Catalan, "Català: Note: GDB stub cannot be used together with the JIT recompiler"},            {MenuLangId::Kyrgyz, "Кыргызча: Note: GDB stub cannot be used together with the JIT recompiler"},            {MenuLangId::Slovak, "Slovenčina: Note: GDB stub cannot be used together with the JIT recompiler"},            {MenuLangId::Slovenian, "Slovenščina: Note: GDB stub cannot be used together with the JIT recompiler"},            {MenuLangId::Zulu, "isiZulu: Note: GDB stub cannot be used together with the JIT recompiler"},            {MenuLangId::Basque, "Euskara: Note: GDB stub cannot be used together with the JIT recompiler"},            {MenuLangId::Hebrew, "עברית: Note: GDB stub cannot be used together with the JIT recompiler"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -1252,6 +3252,7 @@
             {MenuLangId::Russian, "DS"},
             {MenuLangId::ChineseSimplified, "DS"},
             {MenuLangId::ChineseTraditional, "DS"},
+            {MenuLangId::ChineseHongKong, "DS"},
             {MenuLangId::Korean, "DS"},
             {MenuLangId::Arabic, "DS"},
             {MenuLangId::Indonesian, "DS"},
@@ -1267,7 +3268,56 @@
             {MenuLangId::Finnish, "DS"},
             {MenuLangId::Vietnamese, "DS"},
             {MenuLangId::Polish, "DS"},
-            {MenuLangId::Romanian, "DS"},
+            {MenuLangId::Romanian, "DS"},            {MenuLangId::Filipino, "DS"},            {MenuLangId::Swahili, "DS"},            {MenuLangId::Croatian, "DS"},            {MenuLangId::Icelandic, "DS"},            {MenuLangId::Hindi, "DS"},            {MenuLangId::Bengali, "DS"},            {MenuLangId::Urdu, "DS"},            {MenuLangId::Punjabi, "DS"},            {MenuLangId::Telugu, "DS"},            {MenuLangId::Persian, "DS"},            {MenuLangId::Malay, "DS"},            {MenuLangId::Marathi, "DS"},            {MenuLangId::Tamil, "DS"},            {MenuLangId::Gujarati, "DS"},            {MenuLangId::Kannada, "DS"},            {MenuLangId::Odia, "DS"},            {MenuLangId::Malayalam, "DS"},            {MenuLangId::Burmese, "DS"},            {MenuLangId::Uzbek, "DS"},            {MenuLangId::Azerbaijani, "DS"},            {MenuLangId::Nepali, "DS"},            {MenuLangId::Sinhala, "DS"},            {MenuLangId::Khmer, "DS"},            {MenuLangId::Lao, "DS"},            {MenuLangId::Armenian, "DS"},            {MenuLangId::Albanian, "DS"},            {MenuLangId::Georgian, "DS"},            {MenuLangId::Bosnian, "DS"},            {MenuLangId::Serbian, "DS"},            {MenuLangId::Macedonian, "DS"},            {MenuLangId::Bulgarian, "DS"},            {MenuLangId::Belarusian, "DS"},            {MenuLangId::Maltese, "DS"},            {MenuLangId::Mongolian, "DS"},            {MenuLangId::Latvian, "DS"},            {MenuLangId::Lithuanian, "DS"},            {MenuLangId::Afrikaans, "DS"},            {MenuLangId::Irish, "DS"},            {MenuLangId::Assamese, "DS"},            {MenuLangId::Amharic, "DS"},            {MenuLangId::Estonian, "DS"},            {MenuLangId::Kazakh, "DS"},            {MenuLangId::Catalan, "DS"},            {MenuLangId::Kyrgyz, "DS"},            {MenuLangId::Slovak, "DS"},            {MenuLangId::Slovenian, "DS"},            {MenuLangId::Zulu, "DS"},            {MenuLangId::Basque, "DS"},            {MenuLangId::Hebrew, "DS"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -1283,6 +3333,7 @@
             {MenuLangId::Russian, "DSi (экспериментально)"},
             {MenuLangId::ChineseSimplified, "DSi（实验性）"},
             {MenuLangId::ChineseTraditional, "DSi（實驗性）"},
+            {MenuLangId::ChineseHongKong, "DSi（實驗性）"},
             {MenuLangId::Korean, "DSi (실험적)"},
             {MenuLangId::Arabic, "DSi (تجريبي)"},
             {MenuLangId::Indonesian, "DSi (eksperimental)"},
@@ -1298,7 +3349,56 @@
             {MenuLangId::Finnish, "DSi (kokeellinen)"},
             {MenuLangId::Vietnamese, "DSi (thử nghiệm)"},
             {MenuLangId::Polish, "DSi (eksperymentalny)"},
-            {MenuLangId::Romanian, "DSi (experimental)"},
+            {MenuLangId::Romanian, "DSi (experimental)"},            {MenuLangId::Filipino, "DSi (experimental)"},            {MenuLangId::Swahili, "DSi (experimental)"},            {MenuLangId::Croatian, "DSi (eksperimentalno)"},            {MenuLangId::Icelandic, "DSi (tilrauna)"},            {MenuLangId::Hindi, "DSi (प्रायोगिक)"},            {MenuLangId::Bengali, "DSi (পরীক্ষামূলক)"},            {MenuLangId::Urdu, "DSi (تجرباتی)"},            {MenuLangId::Punjabi, "DSi (ਪ੍ਰਯੋਗਾਤਮਕ)"},            {MenuLangId::Telugu, "DSi (ప్రయోగాత్మక)"},            {MenuLangId::Persian, "DSi (آزمایشی)"},            {MenuLangId::Malay, "DSi (eksperimen)"},            {MenuLangId::Marathi, "DSi (प्रायोगिक)"},            {MenuLangId::Tamil, "DSi (சோதனை)"},            {MenuLangId::Gujarati, "DSi (પ્રયોગાત્મક)"},            {MenuLangId::Kannada, "DSi (ಪ್ರಾಯೋಗಿಕ)"},            {MenuLangId::Odia, "ଓଡ଼ିଆ: DSi (experimental)"},            {MenuLangId::Malayalam, "DSi (പരീക്ഷണാത്മകം)"},            {MenuLangId::Burmese, "DSi (စမ်းသပ်)"},            {MenuLangId::Uzbek, "DSi (tajribaviy)"},            {MenuLangId::Azerbaijani, "DSi (eksperimental)"},            {MenuLangId::Nepali, "DSi (प्रयोगात्मक)"},            {MenuLangId::Sinhala, "DSi (අත්හදාබැලීම්)"},            {MenuLangId::Khmer, "DSi (សាកល្បង)"},            {MenuLangId::Lao, "DSi (ທົດລອງ)"},            {MenuLangId::Armenian, "DSi (փորձնական)"},            {MenuLangId::Albanian, "DSi (eksperimental)"},            {MenuLangId::Georgian, "DSi (ექსპერიმენტული)"},            {MenuLangId::Bosnian, "DSi (eksperimentalno)"},            {MenuLangId::Serbian, "DSi (експериментално)"},            {MenuLangId::Macedonian, "DSi (експериментално)"},            {MenuLangId::Bulgarian, "DSi (експериментално)"},            {MenuLangId::Belarusian, "DSi (эксперыментальна)"},            {MenuLangId::Maltese, "DSi (esperimentali)"},            {MenuLangId::Mongolian, "DSi (туршилтын)"},            {MenuLangId::Latvian, "DSi (eksperimentāls)"},            {MenuLangId::Lithuanian, "DSi (eksperimentinis)"},            {MenuLangId::Afrikaans, "DSi (eksperimenteel)"},            {MenuLangId::Irish, "Gaeilge: DSi (experimental)"},            {MenuLangId::Assamese, "DSi (পৰীক্ষামূলক)"},            {MenuLangId::Amharic, "አማርኛ: DSi (experimental)"},            {MenuLangId::Estonian, "Eesti: DSi (experimental)"},            {MenuLangId::Kazakh, "Қазақша: DSi (experimental)"},            {MenuLangId::Catalan, "Català: DSi (experimental)"},            {MenuLangId::Kyrgyz, "Кыргызча: DSi (experimental)"},            {MenuLangId::Slovak, "Slovenčina: DSi (experimental)"},            {MenuLangId::Slovenian, "Slovenščina: DSi (experimental)"},            {MenuLangId::Zulu, "isiZulu: DSi (experimental)"},            {MenuLangId::Basque, "Euskara: DSi (experimental)"},            {MenuLangId::Hebrew, "עברית: DSi (experimental)"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -1314,6 +3414,7 @@
             {MenuLangId::Russian, "Настройки отображения"},
             {MenuLangId::ChineseSimplified, "显示设置"},
             {MenuLangId::ChineseTraditional, "顯示設定"},
+            {MenuLangId::ChineseHongKong, "顯示設定"},
             {MenuLangId::Korean, "디스플레이 설정"},
             {MenuLangId::Arabic, "إعدادات العرض"},
             {MenuLangId::Indonesian, "Pengaturan tampilan"},
@@ -1329,7 +3430,56 @@
             {MenuLangId::Finnish, "Näyttöasetukset"},
             {MenuLangId::Vietnamese, "Cài đặt hiển thị"},
             {MenuLangId::Polish, "Ustawienia wyświetlania"},
-            {MenuLangId::Romanian, "Setări afișare"},
+            {MenuLangId::Romanian, "Setări afișare"},            {MenuLangId::Filipino, "Display mga setting"},            {MenuLangId::Swahili, "Onyesho mipangilio"},            {MenuLangId::Croatian, "Prikaz postavke"},            {MenuLangId::Icelandic, "Skjár stillingar"},            {MenuLangId::Hindi, "डिस्प्ले सेटिंग्स"},            {MenuLangId::Bengali, "ডিসপ্লে সেটিংস"},            {MenuLangId::Urdu, "ڈسپلے ترتیبات"},            {MenuLangId::Punjabi, "ਡਿਸਪਲੇ ਸੈਟਿੰਗਾਂ"},            {MenuLangId::Telugu, "డిస్ప్లే సెట్టింగ్‌లు"},            {MenuLangId::Persian, "نمایشگر تنظیمات"},            {MenuLangId::Malay, "Paparan tetapan"},            {MenuLangId::Marathi, "डिस्प्ले सेटिंग्ज"},            {MenuLangId::Tamil, "காட்சி அமைப்புகள்"},            {MenuLangId::Gujarati, "ડિસ્પ્લે સેટિંગ્સ"},            {MenuLangId::Kannada, "ಡಿಸ್ಪ್ಲೇ ಸೆಟ್ಟಿಂಗ್‌ಗಳು"},            {MenuLangId::Odia, "Display ସେଟିଂସ୍"},            {MenuLangId::Malayalam, "Display ക്രമീകരണങ്ങൾ"},            {MenuLangId::Burmese, "Display ဆက်တင်များ"},            {MenuLangId::Uzbek, "Display sozlamalar"},            {MenuLangId::Azerbaijani, "Display ayarlar"},            {MenuLangId::Nepali, "Display सेटिङहरू"},            {MenuLangId::Sinhala, "Display සැකසුම්"},            {MenuLangId::Khmer, "Display ការកំណត់"},            {MenuLangId::Lao, "Display ການຕັ້ງຄ່າ"},            {MenuLangId::Armenian, "Display կարգավորումներ"},            {MenuLangId::Albanian, "Display cilësimet"},            {MenuLangId::Georgian, "Display პარამეტრები"},            {MenuLangId::Bosnian, "Display postavke"},            {MenuLangId::Serbian, "Display подешавања"},            {MenuLangId::Macedonian, "Display поставки"},            {MenuLangId::Bulgarian, "Display настройки"},            {MenuLangId::Belarusian, "Display налады"},            {MenuLangId::Maltese, "Settings tad-display"},            {MenuLangId::Mongolian, "Display тохиргоо"},            {MenuLangId::Latvian, "Display iestatījumi"},            {MenuLangId::Lithuanian, "Display nustatymai"},            {MenuLangId::Afrikaans, "Display instellings"},            {MenuLangId::Irish, "Display socruithe"},            {MenuLangId::Assamese, "Display ছেটিংছ"},            {MenuLangId::Amharic, "Display ቅንብሮች"},            {MenuLangId::Estonian, "Display seaded"},            {MenuLangId::Kazakh, "Display баптаулар"},            {MenuLangId::Catalan, "Display configuració"},            {MenuLangId::Kyrgyz, "Display жөндөөлөр"},            {MenuLangId::Slovak, "Display nastavenia"},            {MenuLangId::Slovenian, "Display nastavitve"},            {MenuLangId::Zulu, "Display izilungiselelo"},            {MenuLangId::Basque, "Display ezarpenak"},            {MenuLangId::Hebrew, "Display הגדרות"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -1345,6 +3495,7 @@
             {MenuLangId::Russian, "Рендерер OpenGL"},
             {MenuLangId::ChineseSimplified, "OpenGL 渲染器"},
             {MenuLangId::ChineseTraditional, "OpenGL 渲染器"},
+            {MenuLangId::ChineseHongKong, "OpenGL 渲染器"},
             {MenuLangId::Korean, "OpenGL 렌더러"},
             {MenuLangId::Arabic, "عارض OpenGL"},
             {MenuLangId::Indonesian, "Renderer OpenGL"},
@@ -1360,7 +3511,56 @@
             {MenuLangId::Finnish, "OpenGL-renderöijä"},
             {MenuLangId::Vietnamese, "Trình kết xuất OpenGL"},
             {MenuLangId::Polish, "Renderer OpenGL"},
-            {MenuLangId::Romanian, "Renderer OpenGL"},
+            {MenuLangId::Romanian, "Renderer OpenGL"},            {MenuLangId::Filipino, "OpenGL renderer"},            {MenuLangId::Swahili, "OpenGL renderer"},            {MenuLangId::Croatian, "OpenGL renderer"},            {MenuLangId::Icelandic, "OpenGL-teiknari"},            {MenuLangId::Hindi, "OpenGL renderer"},            {MenuLangId::Bengali, "OpenGL renderer"},            {MenuLangId::Urdu, "OpenGL renderer"},            {MenuLangId::Punjabi, "OpenGL renderer"},            {MenuLangId::Telugu, "OpenGL renderer"},            {MenuLangId::Persian, "OpenGL renderer"},            {MenuLangId::Malay, "OpenGL renderer"},            {MenuLangId::Marathi, "OpenGL renderer"},            {MenuLangId::Tamil, "OpenGL renderer"},            {MenuLangId::Gujarati, "OpenGL renderer"},            {MenuLangId::Kannada, "OpenGL renderer"},            {MenuLangId::Odia, "OpenGL renderer"},            {MenuLangId::Malayalam, "OpenGL renderer"},            {MenuLangId::Burmese, "OpenGL renderer"},            {MenuLangId::Uzbek, "OpenGL renderer"},            {MenuLangId::Azerbaijani, "OpenGL renderer"},            {MenuLangId::Nepali, "OpenGL renderer"},            {MenuLangId::Sinhala, "OpenGL renderer"},            {MenuLangId::Khmer, "OpenGL renderer"},            {MenuLangId::Lao, "OpenGL renderer"},            {MenuLangId::Armenian, "OpenGL renderer"},            {MenuLangId::Albanian, "OpenGL renderer"},            {MenuLangId::Georgian, "OpenGL renderer"},            {MenuLangId::Bosnian, "OpenGL renderer"},            {MenuLangId::Serbian, "OpenGL renderer"},            {MenuLangId::Macedonian, "OpenGL renderer"},            {MenuLangId::Bulgarian, "OpenGL renderer"},            {MenuLangId::Belarusian, "OpenGL renderer"},            {MenuLangId::Maltese, "OpenGL renderer"},            {MenuLangId::Mongolian, "OpenGL renderer"},            {MenuLangId::Latvian, "OpenGL renderer"},            {MenuLangId::Lithuanian, "OpenGL renderer"},            {MenuLangId::Afrikaans, "OpenGL renderer"},            {MenuLangId::Irish, "OpenGL renderer"},            {MenuLangId::Assamese, "OpenGL renderer"},            {MenuLangId::Amharic, "OpenGL renderer"},            {MenuLangId::Estonian, "OpenGL renderer"},            {MenuLangId::Kazakh, "OpenGL renderer"},            {MenuLangId::Catalan, "OpenGL renderer"},            {MenuLangId::Kyrgyz, "OpenGL renderer"},            {MenuLangId::Slovak, "OpenGL renderer"},            {MenuLangId::Slovenian, "OpenGL renderer"},            {MenuLangId::Zulu, "OpenGL renderer"},            {MenuLangId::Basque, "OpenGL renderer"},            {MenuLangId::Hebrew, "OpenGL renderer"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -1376,6 +3576,7 @@
             {MenuLangId::Russian, "Программный рендерер"},
             {MenuLangId::ChineseSimplified, "软件渲染器"},
             {MenuLangId::ChineseTraditional, "軟體渲染器"},
+            {MenuLangId::ChineseHongKong, "軟體渲染器"},
             {MenuLangId::Korean, "소프트웨어 렌더러"},
             {MenuLangId::Arabic, "عارض برمجي"},
             {MenuLangId::Indonesian, "Renderer perangkat lunak"},
@@ -1391,7 +3592,56 @@
             {MenuLangId::Finnish, "Ohjelmistorenderöijä"},
             {MenuLangId::Vietnamese, "Trình kết xuất phần mềm"},
             {MenuLangId::Polish, "Renderer programowy"},
-            {MenuLangId::Romanian, "Renderer software"},
+            {MenuLangId::Romanian, "Renderer software"},            {MenuLangId::Filipino, "Software renderer"},            {MenuLangId::Swahili, "Software renderer"},            {MenuLangId::Croatian, "Softverski renderer"},            {MenuLangId::Icelandic, "Hugbúnaðarteiknari"},            {MenuLangId::Hindi, "Software renderer"},            {MenuLangId::Bengali, "Software renderer"},            {MenuLangId::Urdu, "Software renderer"},            {MenuLangId::Punjabi, "Software renderer"},            {MenuLangId::Telugu, "Software renderer"},            {MenuLangId::Persian, "Software renderer"},            {MenuLangId::Malay, "Software renderer"},            {MenuLangId::Marathi, "Software renderer"},            {MenuLangId::Tamil, "Software renderer"},            {MenuLangId::Gujarati, "Software renderer"},            {MenuLangId::Kannada, "Software renderer"},            {MenuLangId::Odia, "Software renderer"},            {MenuLangId::Malayalam, "Software renderer"},            {MenuLangId::Burmese, "Software renderer"},            {MenuLangId::Uzbek, "Software renderer"},            {MenuLangId::Azerbaijani, "Software renderer"},            {MenuLangId::Nepali, "Software renderer"},            {MenuLangId::Sinhala, "Software renderer"},            {MenuLangId::Khmer, "Software renderer"},            {MenuLangId::Lao, "Software renderer"},            {MenuLangId::Armenian, "Software renderer"},            {MenuLangId::Albanian, "Software renderer"},            {MenuLangId::Georgian, "Software renderer"},            {MenuLangId::Bosnian, "Software renderer"},            {MenuLangId::Serbian, "Software renderer"},            {MenuLangId::Macedonian, "Software renderer"},            {MenuLangId::Bulgarian, "Software renderer"},            {MenuLangId::Belarusian, "Software renderer"},            {MenuLangId::Maltese, "Software renderer"},            {MenuLangId::Mongolian, "Software renderer"},            {MenuLangId::Latvian, "Software renderer"},            {MenuLangId::Lithuanian, "Software renderer"},            {MenuLangId::Afrikaans, "Software renderer"},            {MenuLangId::Irish, "Software renderer"},            {MenuLangId::Assamese, "Software renderer"},            {MenuLangId::Amharic, "Software renderer"},            {MenuLangId::Estonian, "Software renderer"},            {MenuLangId::Kazakh, "Software renderer"},            {MenuLangId::Catalan, "Software renderer"},            {MenuLangId::Kyrgyz, "Software renderer"},            {MenuLangId::Slovak, "Software renderer"},            {MenuLangId::Slovenian, "Software renderer"},            {MenuLangId::Zulu, "Software renderer"},            {MenuLangId::Basque, "Software renderer"},            {MenuLangId::Hebrew, "Software renderer"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -1407,6 +3657,7 @@
             {MenuLangId::Russian, "Рендерер:"},
             {MenuLangId::ChineseSimplified, "渲染器:"},
             {MenuLangId::ChineseTraditional, "渲染器:"},
+            {MenuLangId::ChineseHongKong, "渲染器:"},
             {MenuLangId::Korean, "렌더러:"},
             {MenuLangId::Arabic, "المُصيِّر:"},
             {MenuLangId::Indonesian, "Renderer:"},
@@ -1422,7 +3673,56 @@
             {MenuLangId::Finnish, "Renderöijä:"},
             {MenuLangId::Vietnamese, "Renderer:"},
             {MenuLangId::Polish, "Renderer:"},
-            {MenuLangId::Romanian, "Renderer:"},
+            {MenuLangId::Romanian, "Renderer:"},            {MenuLangId::Filipino, "Renderer:"},            {MenuLangId::Swahili, "Renderer:"},            {MenuLangId::Croatian, "Renderer:"},            {MenuLangId::Icelandic, "Teiknari:"},            {MenuLangId::Hindi, "Renderer:"},            {MenuLangId::Bengali, "Renderer:"},            {MenuLangId::Urdu, "Renderer:"},            {MenuLangId::Punjabi, "Renderer:"},            {MenuLangId::Telugu, "Renderer:"},            {MenuLangId::Persian, "Renderer:"},            {MenuLangId::Malay, "Renderer:"},            {MenuLangId::Marathi, "Renderer:"},            {MenuLangId::Tamil, "Renderer:"},            {MenuLangId::Gujarati, "Renderer:"},            {MenuLangId::Kannada, "Renderer:"},            {MenuLangId::Odia, "ଓଡ଼ିଆ: Renderer:"},            {MenuLangId::Malayalam, "Renderer:"},            {MenuLangId::Burmese, "Renderer:"},            {MenuLangId::Uzbek, "Renderer:"},            {MenuLangId::Azerbaijani, "Renderer:"},            {MenuLangId::Nepali, "Renderer:"},            {MenuLangId::Sinhala, "Renderer:"},            {MenuLangId::Khmer, "Renderer:"},            {MenuLangId::Lao, "Renderer:"},            {MenuLangId::Armenian, "Renderer:"},            {MenuLangId::Albanian, "Renderer:"},            {MenuLangId::Georgian, "Renderer:"},            {MenuLangId::Bosnian, "Renderer:"},            {MenuLangId::Serbian, "Renderer:"},            {MenuLangId::Macedonian, "Renderer:"},            {MenuLangId::Bulgarian, "Renderer:"},            {MenuLangId::Belarusian, "Renderer:"},            {MenuLangId::Maltese, "Renderer:"},            {MenuLangId::Mongolian, "Renderer:"},            {MenuLangId::Latvian, "Renderer:"},            {MenuLangId::Lithuanian, "Renderer:"},            {MenuLangId::Afrikaans, "Renderer:"},            {MenuLangId::Irish, "Gaeilge: Renderer:"},            {MenuLangId::Assamese, "Renderer:"},            {MenuLangId::Amharic, "አማርኛ: Renderer:"},            {MenuLangId::Estonian, "Eesti: Renderer:"},            {MenuLangId::Kazakh, "Қазақша: Renderer:"},            {MenuLangId::Catalan, "Català: Renderer:"},            {MenuLangId::Kyrgyz, "Кыргызча: Renderer:"},            {MenuLangId::Slovak, "Slovenčina: Renderer:"},            {MenuLangId::Slovenian, "Slovenščina: Renderer:"},            {MenuLangId::Zulu, "isiZulu: Renderer:"},            {MenuLangId::Basque, "Euskara: Renderer:"},            {MenuLangId::Hebrew, "עברית: Renderer:"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -1438,6 +3738,7 @@
             {MenuLangId::Russian, "Программный"},
             {MenuLangId::ChineseSimplified, "软件"},
             {MenuLangId::ChineseTraditional, "軟體"},
+            {MenuLangId::ChineseHongKong, "軟體"},
             {MenuLangId::Korean, "소프트웨어"},
             {MenuLangId::Arabic, "Software"},
             {MenuLangId::Indonesian, "Software"},
@@ -1453,7 +3754,56 @@
             {MenuLangId::Finnish, "Software"},
             {MenuLangId::Vietnamese, "Software"},
             {MenuLangId::Polish, "Software"},
-            {MenuLangId::Romanian, "Software"},
+            {MenuLangId::Romanian, "Software"},            {MenuLangId::Filipino, "Software"},            {MenuLangId::Swahili, "Software"},            {MenuLangId::Croatian, "Softver"},            {MenuLangId::Icelandic, "Hugbúnaður"},            {MenuLangId::Hindi, "सॉफ़्टवेयर"},            {MenuLangId::Bengali, "সফটওয়্যার"},            {MenuLangId::Urdu, "سافٹ ویئر"},            {MenuLangId::Punjabi, "ਸਾਫਟਵੇਅਰ"},            {MenuLangId::Telugu, "సాఫ్ట్‌వేర్"},            {MenuLangId::Persian, "نرم‌افزار"},            {MenuLangId::Malay, "Perisian"},            {MenuLangId::Marathi, "सॉफ्टवेअर"},            {MenuLangId::Tamil, "மென்பொருள்"},            {MenuLangId::Gujarati, "સોફ્ટવેર"},            {MenuLangId::Kannada, "ಸಾಫ್ಟ್‌ವೇರ್"},            {MenuLangId::Odia, "ସଫ୍ଟୱେର୍"},            {MenuLangId::Malayalam, "സോഫ്റ്റ്‌വെയർ"},            {MenuLangId::Burmese, "software"},            {MenuLangId::Uzbek, "Dasturiy"},            {MenuLangId::Azerbaijani, "Proqram təminatı"},            {MenuLangId::Nepali, "सफ्टवेयर"},            {MenuLangId::Sinhala, "මෘදුකාංග"},            {MenuLangId::Khmer, "សូហ្វវែរ"},            {MenuLangId::Lao, "ຊອບແວ"},            {MenuLangId::Armenian, "Ծրագրային"},            {MenuLangId::Albanian, "Software"},            {MenuLangId::Georgian, "პროგრამული"},            {MenuLangId::Bosnian, "Softver"},            {MenuLangId::Serbian, "Софтвер"},            {MenuLangId::Macedonian, "Софтвер"},            {MenuLangId::Bulgarian, "Софтуер"},            {MenuLangId::Belarusian, "Праграмны"},            {MenuLangId::Maltese, "Softwer"},            {MenuLangId::Mongolian, "Програм"},            {MenuLangId::Latvian, "Programmatūra"},            {MenuLangId::Lithuanian, "Programinė įranga"},            {MenuLangId::Afrikaans, "Sagteware"},            {MenuLangId::Irish, "Bogearraí"},            {MenuLangId::Assamese, "চফ্টৱেৰ"},            {MenuLangId::Amharic, "ሶፍትዌር"},            {MenuLangId::Estonian, "Tarkvara"},            {MenuLangId::Kazakh, "Бағдарламалық құрал"},            {MenuLangId::Catalan, "Programari"},            {MenuLangId::Kyrgyz, "Программа"},            {MenuLangId::Slovak, "Softvér"},            {MenuLangId::Slovenian, "Programska oprema"},            {MenuLangId::Zulu, "Isoftware"},            {MenuLangId::Basque, "Softwarea"},            {MenuLangId::Hebrew, "תוכנה"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -1469,6 +3819,7 @@
             {MenuLangId::Russian, "OpenGL (Classic)"},
             {MenuLangId::ChineseSimplified, "OpenGL (Classic)"},
             {MenuLangId::ChineseTraditional, "OpenGL (Classic)"},
+            {MenuLangId::ChineseHongKong, "OpenGL (Classic)"},
             {MenuLangId::Korean, "OpenGL (Classic)"},
             {MenuLangId::Arabic, "OpenGL (Classic)"},
             {MenuLangId::Indonesian, "OpenGL (Classic)"},
@@ -1484,7 +3835,56 @@
             {MenuLangId::Finnish, "OpenGL (Classic)"},
             {MenuLangId::Vietnamese, "OpenGL (Classic)"},
             {MenuLangId::Polish, "OpenGL (Classic)"},
-            {MenuLangId::Romanian, "OpenGL (Classic)"},
+            {MenuLangId::Romanian, "OpenGL (Classic)"},            {MenuLangId::Filipino, "OpenGL (Classic)"},            {MenuLangId::Swahili, "OpenGL (Classic)"},            {MenuLangId::Croatian, "OpenGL (klasični)"},            {MenuLangId::Icelandic, "OpenGL (klassískt)"},            {MenuLangId::Hindi, "OpenGL (क्लासिक)"},            {MenuLangId::Bengali, "OpenGL (ক্লাসিক)"},            {MenuLangId::Urdu, "OpenGL (Classic)"},            {MenuLangId::Punjabi, "OpenGL (Classic)"},            {MenuLangId::Telugu, "OpenGL (Classic)"},            {MenuLangId::Persian, "OpenGL (Classic)"},            {MenuLangId::Malay, "OpenGL (Classic)"},            {MenuLangId::Marathi, "OpenGL (Classic)"},            {MenuLangId::Tamil, "OpenGL (Classic)"},            {MenuLangId::Gujarati, "OpenGL (Classic)"},            {MenuLangId::Kannada, "OpenGL (Classic)"},            {MenuLangId::Odia, "ଓଡ଼ିଆ: OpenGL (Classic)"},            {MenuLangId::Malayalam, "OpenGL (Classic)"},            {MenuLangId::Burmese, "OpenGL (Classic)"},            {MenuLangId::Uzbek, "OpenGL (Classic)"},            {MenuLangId::Azerbaijani, "OpenGL (Classic)"},            {MenuLangId::Nepali, "OpenGL (Classic)"},            {MenuLangId::Sinhala, "OpenGL (Classic)"},            {MenuLangId::Khmer, "OpenGL (Classic)"},            {MenuLangId::Lao, "OpenGL (Classic)"},            {MenuLangId::Armenian, "OpenGL (Classic)"},            {MenuLangId::Albanian, "OpenGL (Classic)"},            {MenuLangId::Georgian, "OpenGL (Classic)"},            {MenuLangId::Bosnian, "OpenGL (Classic)"},            {MenuLangId::Serbian, "OpenGL (Classic)"},            {MenuLangId::Macedonian, "OpenGL (Classic)"},            {MenuLangId::Bulgarian, "OpenGL (Classic)"},            {MenuLangId::Belarusian, "OpenGL (Classic)"},            {MenuLangId::Maltese, "OpenGL (Classic)"},            {MenuLangId::Mongolian, "OpenGL (Classic)"},            {MenuLangId::Latvian, "OpenGL (Classic)"},            {MenuLangId::Lithuanian, "OpenGL (Classic)"},            {MenuLangId::Afrikaans, "OpenGL (Classic)"},            {MenuLangId::Irish, "Gaeilge: OpenGL (Classic)"},            {MenuLangId::Assamese, "OpenGL (Classic)"},            {MenuLangId::Amharic, "አማርኛ: OpenGL (Classic)"},            {MenuLangId::Estonian, "Eesti: OpenGL (Classic)"},            {MenuLangId::Kazakh, "Қазақша: OpenGL (Classic)"},            {MenuLangId::Catalan, "Català: OpenGL (Classic)"},            {MenuLangId::Kyrgyz, "Кыргызча: OpenGL (Classic)"},            {MenuLangId::Slovak, "Slovenčina: OpenGL (Classic)"},            {MenuLangId::Slovenian, "Slovenščina: OpenGL (Classic)"},            {MenuLangId::Zulu, "isiZulu: OpenGL (Classic)"},            {MenuLangId::Basque, "Euskara: OpenGL (Classic)"},            {MenuLangId::Hebrew, "עברית: OpenGL (Classic)"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -1500,6 +3900,7 @@
             {MenuLangId::Russian, "OpenGL (Compute shader)"},
             {MenuLangId::ChineseSimplified, "OpenGL (Compute shader)"},
             {MenuLangId::ChineseTraditional, "OpenGL (Compute shader)"},
+            {MenuLangId::ChineseHongKong, "OpenGL (Compute shader)"},
             {MenuLangId::Korean, "OpenGL (Compute shader)"},
             {MenuLangId::Arabic, "OpenGL (Compute shader)"},
             {MenuLangId::Indonesian, "OpenGL (Compute shader)"},
@@ -1515,7 +3916,56 @@
             {MenuLangId::Finnish, "OpenGL (Compute shader)"},
             {MenuLangId::Vietnamese, "OpenGL (Compute shader)"},
             {MenuLangId::Polish, "OpenGL (Compute shader)"},
-            {MenuLangId::Romanian, "OpenGL (Compute shader)"},
+            {MenuLangId::Romanian, "OpenGL (Compute shader)"},            {MenuLangId::Filipino, "OpenGL (Compute shader)"},            {MenuLangId::Swahili, "OpenGL (Compute shader)"},            {MenuLangId::Croatian, "OpenGL (compute shader)"},            {MenuLangId::Icelandic, "OpenGL (compute shader)"},            {MenuLangId::Hindi, "OpenGL (Compute shader)"},            {MenuLangId::Bengali, "OpenGL (Compute shader)"},            {MenuLangId::Urdu, "OpenGL (Compute shader)"},            {MenuLangId::Punjabi, "OpenGL (Compute shader)"},            {MenuLangId::Telugu, "OpenGL (Compute shader)"},            {MenuLangId::Persian, "OpenGL (Compute shader)"},            {MenuLangId::Malay, "OpenGL (Compute shader)"},            {MenuLangId::Marathi, "OpenGL (Compute shader)"},            {MenuLangId::Tamil, "OpenGL (Compute shader)"},            {MenuLangId::Gujarati, "OpenGL (Compute shader)"},            {MenuLangId::Kannada, "OpenGL (Compute shader)"},            {MenuLangId::Odia, "ଓଡ଼ିଆ: OpenGL (Compute shader)"},            {MenuLangId::Malayalam, "OpenGL (Compute shader)"},            {MenuLangId::Burmese, "OpenGL (Compute shader)"},            {MenuLangId::Uzbek, "OpenGL (Compute shader)"},            {MenuLangId::Azerbaijani, "OpenGL (Compute shader)"},            {MenuLangId::Nepali, "OpenGL (Compute shader)"},            {MenuLangId::Sinhala, "OpenGL (Compute shader)"},            {MenuLangId::Khmer, "OpenGL (Compute shader)"},            {MenuLangId::Lao, "OpenGL (Compute shader)"},            {MenuLangId::Armenian, "OpenGL (Compute shader)"},            {MenuLangId::Albanian, "OpenGL (Compute shader)"},            {MenuLangId::Georgian, "OpenGL (Compute shader)"},            {MenuLangId::Bosnian, "OpenGL (Compute shader)"},            {MenuLangId::Serbian, "OpenGL (Compute shader)"},            {MenuLangId::Macedonian, "OpenGL (Compute shader)"},            {MenuLangId::Bulgarian, "OpenGL (Compute shader)"},            {MenuLangId::Belarusian, "OpenGL (Compute shader)"},            {MenuLangId::Maltese, "OpenGL (Compute shader)"},            {MenuLangId::Mongolian, "OpenGL (Compute shader)"},            {MenuLangId::Latvian, "OpenGL (Compute shader)"},            {MenuLangId::Lithuanian, "OpenGL (Compute shader)"},            {MenuLangId::Afrikaans, "OpenGL (Compute shader)"},            {MenuLangId::Irish, "Gaeilge: OpenGL (Compute shader)"},            {MenuLangId::Assamese, "OpenGL (Compute shader)"},            {MenuLangId::Amharic, "አማርኛ: OpenGL (Compute shader)"},            {MenuLangId::Estonian, "Eesti: OpenGL (Compute shader)"},            {MenuLangId::Kazakh, "Қазақша: OpenGL (Compute shader)"},            {MenuLangId::Catalan, "Català: OpenGL (Compute shader)"},            {MenuLangId::Kyrgyz, "Кыргызча: OpenGL (Compute shader)"},            {MenuLangId::Slovak, "Slovenčina: OpenGL (Compute shader)"},            {MenuLangId::Slovenian, "Slovenščina: OpenGL (Compute shader)"},            {MenuLangId::Zulu, "isiZulu: OpenGL (Compute shader)"},            {MenuLangId::Basque, "Euskara: OpenGL (Compute shader)"},            {MenuLangId::Hebrew, "עברית: OpenGL (Compute shader)"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -1531,6 +3981,7 @@
             {MenuLangId::Russian, "Отображение OpenGL"},
             {MenuLangId::ChineseSimplified, "OpenGL 显示"},
             {MenuLangId::ChineseTraditional, "OpenGL 顯示"},
+            {MenuLangId::ChineseHongKong, "OpenGL 顯示"},
             {MenuLangId::Korean, "OpenGL 표시"},
             {MenuLangId::Arabic, "عرض OpenGL"},
             {MenuLangId::Indonesian, "Tampilan OpenGL"},
@@ -1546,7 +3997,56 @@
             {MenuLangId::Finnish, "OpenGL-näyttö"},
             {MenuLangId::Vietnamese, "Hiển thị OpenGL"},
             {MenuLangId::Polish, "Wyświetlanie OpenGL"},
-            {MenuLangId::Romanian, "Afișare OpenGL"},
+            {MenuLangId::Romanian, "Afișare OpenGL"},            {MenuLangId::Filipino, "OpenGL display"},            {MenuLangId::Swahili, "OpenGL onyesho"},            {MenuLangId::Croatian, "OpenGL prikaz"},            {MenuLangId::Icelandic, "OpenGL skjár"},            {MenuLangId::Hindi, "OpenGL डिस्प्ले"},            {MenuLangId::Bengali, "OpenGL ডিসপ্লে"},            {MenuLangId::Urdu, "OpenGL ڈسپلے"},            {MenuLangId::Punjabi, "OpenGL ਡਿਸਪਲੇ"},            {MenuLangId::Telugu, "OpenGL డిస్ప్లే"},            {MenuLangId::Persian, "OpenGL نمایشگر"},            {MenuLangId::Malay, "OpenGL paparan"},            {MenuLangId::Marathi, "OpenGL डिस्प्ले"},            {MenuLangId::Tamil, "OpenGL காட்சி"},            {MenuLangId::Gujarati, "OpenGL ડિસ્પ્લે"},            {MenuLangId::Kannada, "OpenGL ಡಿಸ್ಪ್ಲೇ"},            {MenuLangId::Odia, "OpenGL display"},            {MenuLangId::Malayalam, "OpenGL display"},            {MenuLangId::Burmese, "OpenGL display"},            {MenuLangId::Uzbek, "OpenGL display"},            {MenuLangId::Azerbaijani, "OpenGL display"},            {MenuLangId::Nepali, "OpenGL display"},            {MenuLangId::Sinhala, "OpenGL display"},            {MenuLangId::Khmer, "OpenGL display"},            {MenuLangId::Lao, "OpenGL display"},            {MenuLangId::Armenian, "OpenGL display"},            {MenuLangId::Albanian, "OpenGL display"},            {MenuLangId::Georgian, "OpenGL display"},            {MenuLangId::Bosnian, "OpenGL display"},            {MenuLangId::Serbian, "OpenGL display"},            {MenuLangId::Macedonian, "OpenGL display"},            {MenuLangId::Bulgarian, "OpenGL display"},            {MenuLangId::Belarusian, "OpenGL display"},            {MenuLangId::Maltese, "OpenGL display"},            {MenuLangId::Mongolian, "OpenGL display"},            {MenuLangId::Latvian, "OpenGL display"},            {MenuLangId::Lithuanian, "OpenGL display"},            {MenuLangId::Afrikaans, "OpenGL display"},            {MenuLangId::Irish, "OpenGL display"},            {MenuLangId::Assamese, "OpenGL display"},            {MenuLangId::Amharic, "OpenGL display"},            {MenuLangId::Estonian, "OpenGL display"},            {MenuLangId::Kazakh, "OpenGL display"},            {MenuLangId::Catalan, "OpenGL display"},            {MenuLangId::Kyrgyz, "OpenGL display"},            {MenuLangId::Slovak, "OpenGL display"},            {MenuLangId::Slovenian, "OpenGL display"},            {MenuLangId::Zulu, "OpenGL display"},            {MenuLangId::Basque, "OpenGL display"},            {MenuLangId::Hebrew, "OpenGL display"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -1562,6 +4062,7 @@
             {MenuLangId::Russian, "VSync"},
             {MenuLangId::ChineseSimplified, "VSync"},
             {MenuLangId::ChineseTraditional, "VSync"},
+            {MenuLangId::ChineseHongKong, "VSync"},
             {MenuLangId::Korean, "VSync"},
             {MenuLangId::Arabic, "VSync"},
             {MenuLangId::Indonesian, "VSync"},
@@ -1577,7 +4078,56 @@
             {MenuLangId::Finnish, "VSync"},
             {MenuLangId::Vietnamese, "VSync"},
             {MenuLangId::Polish, "VSync"},
-            {MenuLangId::Romanian, "VSync"},
+            {MenuLangId::Romanian, "VSync"},            {MenuLangId::Filipino, "VSync"},            {MenuLangId::Swahili, "VSync"},            {MenuLangId::Croatian, "VSync"},            {MenuLangId::Icelandic, "VSync"},            {MenuLangId::Hindi, "VSync"},            {MenuLangId::Bengali, "VSync"},            {MenuLangId::Urdu, "VSync"},            {MenuLangId::Punjabi, "VSync"},            {MenuLangId::Telugu, "VSync"},            {MenuLangId::Persian, "VSync"},            {MenuLangId::Malay, "VSync"},            {MenuLangId::Marathi, "VSync"},            {MenuLangId::Tamil, "VSync"},            {MenuLangId::Gujarati, "VSync"},            {MenuLangId::Kannada, "VSync"},            {MenuLangId::Odia, "VSync"},            {MenuLangId::Malayalam, "VSync"},            {MenuLangId::Burmese, "VSync"},            {MenuLangId::Uzbek, "VSync"},            {MenuLangId::Azerbaijani, "VSync"},            {MenuLangId::Nepali, "VSync"},            {MenuLangId::Sinhala, "VSync"},            {MenuLangId::Khmer, "VSync"},            {MenuLangId::Lao, "VSync"},            {MenuLangId::Armenian, "VSync"},            {MenuLangId::Albanian, "VSync"},            {MenuLangId::Georgian, "VSync"},            {MenuLangId::Bosnian, "VSync"},            {MenuLangId::Serbian, "VSync"},            {MenuLangId::Macedonian, "VSync"},            {MenuLangId::Bulgarian, "VSync"},            {MenuLangId::Belarusian, "VSync"},            {MenuLangId::Maltese, "VSync"},            {MenuLangId::Mongolian, "VSync"},            {MenuLangId::Latvian, "VSync"},            {MenuLangId::Lithuanian, "VSync"},            {MenuLangId::Afrikaans, "VSync"},            {MenuLangId::Irish, "VSync"},            {MenuLangId::Assamese, "VSync"},            {MenuLangId::Amharic, "VSync"},            {MenuLangId::Estonian, "VSync"},            {MenuLangId::Kazakh, "VSync"},            {MenuLangId::Catalan, "VSync"},            {MenuLangId::Kyrgyz, "VSync"},            {MenuLangId::Slovak, "VSync"},            {MenuLangId::Slovenian, "VSync"},            {MenuLangId::Zulu, "VSync"},            {MenuLangId::Basque, "VSync"},            {MenuLangId::Hebrew, "VSync"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -1593,6 +4143,7 @@
             {MenuLangId::Russian, "Интервал VSync:"},
             {MenuLangId::ChineseSimplified, "VSync 间隔:"},
             {MenuLangId::ChineseTraditional, "VSync 間隔:"},
+            {MenuLangId::ChineseHongKong, "VSync 間隔:"},
             {MenuLangId::Korean, "VSync 간격:"},
             {MenuLangId::Arabic, "VSync interval:"},
             {MenuLangId::Indonesian, "VSync interval:"},
@@ -1608,7 +4159,56 @@
             {MenuLangId::Finnish, "VSync interval:"},
             {MenuLangId::Vietnamese, "VSync interval:"},
             {MenuLangId::Polish, "VSync interval:"},
-            {MenuLangId::Romanian, "VSync interval:"},
+            {MenuLangId::Romanian, "VSync interval:"},            {MenuLangId::Filipino, "VSync interval:"},            {MenuLangId::Swahili, "VSync interval:"},            {MenuLangId::Croatian, "VSync interval:"},            {MenuLangId::Icelandic, "VSync-bil:"},            {MenuLangId::Hindi, "VSync अंतराल:"},            {MenuLangId::Bengali, "VSync বিরতি:"},            {MenuLangId::Urdu, "VSync وقفہ:"},            {MenuLangId::Punjabi, "VSync ਅੰਤਰਾਲ:"},            {MenuLangId::Telugu, "VSync విరామం:"},            {MenuLangId::Persian, "فاصله VSync:"},            {MenuLangId::Malay, "Selang VSync:"},            {MenuLangId::Marathi, "VSync अंतर:"},            {MenuLangId::Tamil, "VSync இடைவெளி:"},            {MenuLangId::Gujarati, "VSync અંતર:"},            {MenuLangId::Kannada, "VSync ಅಂತರ:"},            {MenuLangId::Odia, "ଓଡ଼ିଆ: VSync interval:"},            {MenuLangId::Malayalam, "VSync ഇടവേള:"},            {MenuLangId::Burmese, "VSync interval:"},            {MenuLangId::Uzbek, "VSync intervali:"},            {MenuLangId::Azerbaijani, "VSync intervalı:"},            {MenuLangId::Nepali, "VSync interval:"},            {MenuLangId::Sinhala, "VSync interval:"},            {MenuLangId::Khmer, "VSync interval:"},            {MenuLangId::Lao, "VSync interval:"},            {MenuLangId::Armenian, "VSync interval:"},            {MenuLangId::Albanian, "Intervali VSync:"},            {MenuLangId::Georgian, "VSync interval:"},            {MenuLangId::Bosnian, "VSync interval:"},            {MenuLangId::Serbian, "VSync interval:"},            {MenuLangId::Macedonian, "VSync interval:"},            {MenuLangId::Bulgarian, "VSync interval:"},            {MenuLangId::Belarusian, "VSync interval:"},            {MenuLangId::Maltese, "VSync interval:"},            {MenuLangId::Mongolian, "VSync interval:"},            {MenuLangId::Latvian, "VSync interval:"},            {MenuLangId::Lithuanian, "VSync interval:"},            {MenuLangId::Afrikaans, "VSync interval:"},            {MenuLangId::Irish, "Gaeilge: VSync interval:"},            {MenuLangId::Assamese, "VSync interval:"},            {MenuLangId::Amharic, "አማርኛ: VSync interval:"},            {MenuLangId::Estonian, "VSync intervall:"},            {MenuLangId::Kazakh, "Қазақша: VSync interval:"},            {MenuLangId::Catalan, "Català: VSync interval:"},            {MenuLangId::Kyrgyz, "Кыргызча: VSync interval:"},            {MenuLangId::Slovak, "Slovenčina: VSync interval:"},            {MenuLangId::Slovenian, "Slovenščina: VSync interval:"},            {MenuLangId::Zulu, "isiZulu: VSync interval:"},            {MenuLangId::Basque, "Euskara: VSync interval:"},            {MenuLangId::Hebrew, "עברית: VSync interval:"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -1624,6 +4224,7 @@
             {MenuLangId::Russian, "Внутреннее разрешение:"},
             {MenuLangId::ChineseSimplified, "内部分辨率："},
             {MenuLangId::ChineseTraditional, "內部解析度："},
+            {MenuLangId::ChineseHongKong, "內部解析度："},
             {MenuLangId::Korean, "내부 해상도:"},
             {MenuLangId::Arabic, "الدقة الداخلية:"},
             {MenuLangId::Indonesian, "Resolusi internal:"},
@@ -1639,7 +4240,56 @@
             {MenuLangId::Finnish, "Sisäinen resoluutio:"},
             {MenuLangId::Vietnamese, "Độ phân giải nội bộ:"},
             {MenuLangId::Polish, "Rozdzielczość wewnętrzna:"},
-            {MenuLangId::Romanian, "Rezoluție internă:"},
+            {MenuLangId::Romanian, "Rezoluție internă:"},            {MenuLangId::Filipino, "Internal resolution:"},            {MenuLangId::Swahili, "Internal resolution:"},            {MenuLangId::Croatian, "Interna rezolucija:"},            {MenuLangId::Icelandic, "Innri upplausn:"},            {MenuLangId::Hindi, "आंतरिक रिज़ॉल्यूशन:"},            {MenuLangId::Bengali, "অভ্যন্তরীণ রেজোলিউশন:"},            {MenuLangId::Urdu, "اندرونی ریزولوشن:"},            {MenuLangId::Punjabi, "ਅੰਦਰੂਨੀ ਰੈਜ਼ੋਲੂਸ਼ਨ:"},            {MenuLangId::Telugu, "అంతర్గత రిజల్యూషన్:"},            {MenuLangId::Persian, "وضوح داخلی:"},            {MenuLangId::Malay, "Resolusi dalaman:"},            {MenuLangId::Marathi, "अंतर्गत रिझोल्यूशन:"},            {MenuLangId::Tamil, "உள் resolution:"},            {MenuLangId::Gujarati, "આંતરિક resolution:"},            {MenuLangId::Kannada, "ಆಂತರಿಕ resolution:"},            {MenuLangId::Odia, "ଓଡ଼ିଆ: Internal resolution:"},            {MenuLangId::Malayalam, "ആന്തരിക resolution:"},            {MenuLangId::Burmese, "အတွင်း resolution:"},            {MenuLangId::Uzbek, "Ichki resolution:"},            {MenuLangId::Azerbaijani, "Daxili resolution:"},            {MenuLangId::Nepali, "आन्तरिक resolution:"},            {MenuLangId::Sinhala, "අභ්‍යන්තර resolution:"},            {MenuLangId::Khmer, "resolution ខាងក្នុង:"},            {MenuLangId::Lao, "resolution ພາຍໃນ:"},            {MenuLangId::Armenian, "Ներքին resolution:"},            {MenuLangId::Albanian, "Rezolucioni i brendshëm:"},            {MenuLangId::Georgian, "შიდა resolution:"},            {MenuLangId::Bosnian, "Interna rezolucija:"},            {MenuLangId::Serbian, "Интерна резолуција:"},            {MenuLangId::Macedonian, "Внатрешна резолуција:"},            {MenuLangId::Bulgarian, "Вътрешна резолюция:"},            {MenuLangId::Belarusian, "Унутраная раздзяляльнасць:"},            {MenuLangId::Maltese, "Riżoluzzjoni interna:"},            {MenuLangId::Mongolian, "Дотоод нягтаршил:"},            {MenuLangId::Latvian, "Iekšējā izšķirtspēja:"},            {MenuLangId::Lithuanian, "Vidinė raiška:"},            {MenuLangId::Afrikaans, "Interne resolusie:"},            {MenuLangId::Irish, "Taifeach inmheánach:"},            {MenuLangId::Assamese, "অভ্যন্তৰীণ resolution:"},            {MenuLangId::Amharic, "ውስጣዊ ሪዞሉሽን:"},            {MenuLangId::Estonian, "Sisemine eraldusvõime:"},            {MenuLangId::Kazakh, "Ішкі ажыратымдылық:"},            {MenuLangId::Catalan, "Resolució interna:"},            {MenuLangId::Kyrgyz, "Ички чечим:"},            {MenuLangId::Slovak, "Interné rozlíšenie:"},            {MenuLangId::Slovenian, "Notranja ločljivost:"},            {MenuLangId::Zulu, "Ukulungiswa kwangaphakathi:"},            {MenuLangId::Basque, "Barne-bereizmena:"},            {MenuLangId::Hebrew, "רזולוציה פנימית:"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -1655,6 +4305,7 @@
             {MenuLangId::Russian, "Улучшенное разбиение полигонов"},
             {MenuLangId::ChineseSimplified, "改进的多边形分割"},
             {MenuLangId::ChineseTraditional, "改進的多邊形分割"},
+            {MenuLangId::ChineseHongKong, "改進的多邊形分割"},
             {MenuLangId::Korean, "개선된 폴리곤 분할"},
             {MenuLangId::Arabic, "تقسيم المضلعات المحسّن"},
             {MenuLangId::Indonesian, "Pemisahan poligon yang ditingkatkan"},
@@ -1670,7 +4321,56 @@
             {MenuLangId::Finnish, "Parannettu monikulmioiden jakaminen"},
             {MenuLangId::Vietnamese, "Chia đa giác cải tiến"},
             {MenuLangId::Polish, "Ulepszone dzielenie wielokątów"},
-            {MenuLangId::Romanian, "Împărțire poligoane îmbunătățită"},
+            {MenuLangId::Romanian, "Împărțire poligoane îmbunătățită"},            {MenuLangId::Filipino, "Improved polygon splitting"},            {MenuLangId::Swahili, "Improved polygon splitting"},            {MenuLangId::Croatian, "Poboljšano dijeljenje poligona"},            {MenuLangId::Icelandic, "Bætt marghyrningaskipting"},            {MenuLangId::Hindi, "बेहतर polygon splitting"},            {MenuLangId::Bengali, "উন্নত polygon splitting"},            {MenuLangId::Urdu, "بہتر polygon splitting"},            {MenuLangId::Punjabi, "ਸੁਧਰੀ polygon splitting"},            {MenuLangId::Telugu, "మెరుగైన polygon splitting"},            {MenuLangId::Persian, "تقسیم چندضلعی بهبودیافته"},            {MenuLangId::Malay, "Pembahagian polygon dipertingkat"},            {MenuLangId::Marathi, "सुधारित polygon splitting"},            {MenuLangId::Tamil, "மேம்படுத்திய polygon splitting"},            {MenuLangId::Gujarati, "સુધારેલ polygon splitting"},            {MenuLangId::Kannada, "ಸುಧಾರಿತ polygon splitting"},            {MenuLangId::Odia, "ଓଡ଼ିଆ: Improved polygon splitting"},            {MenuLangId::Malayalam, "മെച്ചപ്പെടുത്തിയ polygon splitting"},            {MenuLangId::Burmese, "polygon splitting ကို မြှင့်တင်ထားသည်"},            {MenuLangId::Uzbek, "Yaxshilangan polygon splitting"},            {MenuLangId::Azerbaijani, "Təkmilləşdirilmiş polygon splitting"},            {MenuLangId::Nepali, "सुधारिएको polygon splitting"},            {MenuLangId::Sinhala, "වැඩිදියුණු කළ polygon splitting"},            {MenuLangId::Khmer, "polygon splitting ដែលបានកែលម្អ"},            {MenuLangId::Lao, "polygon splitting ທີ່ປັບປຸງ"},            {MenuLangId::Armenian, "Բարելավված polygon splitting"},            {MenuLangId::Albanian, "polygon splitting i përmirësuar"},            {MenuLangId::Georgian, "გაუმჯობესებული polygon splitting"},            {MenuLangId::Bosnian, "poboljšani polygon splitting"},            {MenuLangId::Serbian, "побољшани polygon splitting"},            {MenuLangId::Macedonian, "подобрен polygon splitting"},            {MenuLangId::Bulgarian, "подобрено polygon splitting"},            {MenuLangId::Belarusian, "палепшаны polygon splitting"},            {MenuLangId::Maltese, "polygon splitting imtejjeb"},            {MenuLangId::Mongolian, "сайжруулсан polygon splitting"},            {MenuLangId::Latvian, "uzlabota polygon splitting"},            {MenuLangId::Lithuanian, "patobulintas polygon splitting"},            {MenuLangId::Afrikaans, "verbeterde polygon splitting"},            {MenuLangId::Irish, "polygon splitting feabhsaithe"},            {MenuLangId::Assamese, "উন্নত polygon splitting"},            {MenuLangId::Amharic, "አማርኛ: Improved polygon splitting"},            {MenuLangId::Estonian, "Eesti: Improved polygon splitting"},            {MenuLangId::Kazakh, "Қазақша: Improved polygon splitting"},            {MenuLangId::Catalan, "Català: Improved polygon splitting"},            {MenuLangId::Kyrgyz, "Кыргызча: Improved polygon splitting"},            {MenuLangId::Slovak, "Slovenčina: Improved polygon splitting"},            {MenuLangId::Slovenian, "Slovenščina: Improved polygon splitting"},            {MenuLangId::Zulu, "isiZulu: Improved polygon splitting"},            {MenuLangId::Basque, "Euskara: Improved polygon splitting"},            {MenuLangId::Hebrew, "עברית: Improved polygon splitting"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -1686,6 +4386,7 @@
             {MenuLangId::Russian, "Использовать координаты высокого разрешения"},
             {MenuLangId::ChineseSimplified, "使用高分辨率坐标"},
             {MenuLangId::ChineseTraditional, "使用高解析度座標"},
+            {MenuLangId::ChineseHongKong, "使用高解析度座標"},
             {MenuLangId::Korean, "고해상도 좌표 사용"},
             {MenuLangId::Arabic, "استخدام إحداثيات عالية الدقة"},
             {MenuLangId::Indonesian, "Gunakan koordinat resolusi tinggi"},
@@ -1701,7 +4402,56 @@
             {MenuLangId::Finnish, "Käytä korkearesoluutioisia koordinaatteja"},
             {MenuLangId::Vietnamese, "Dùng tọa độ độ phân giải cao"},
             {MenuLangId::Polish, "Użyj współrzędnych wysokiej rozdzielczości"},
-            {MenuLangId::Romanian, "Folosește coordonate de înaltă rezoluție"},
+            {MenuLangId::Romanian, "Folosește coordonate de înaltă rezoluție"},            {MenuLangId::Filipino, "Gamitin ang high resolution coordinates"},            {MenuLangId::Swahili, "Tumia high resolution coordinates"},            {MenuLangId::Croatian, "Koristi high resolution coordinates"},            {MenuLangId::Icelandic, "Nota high resolution coordinates"},            {MenuLangId::Hindi, "उपयोग करें high resolution coordinates"},            {MenuLangId::Bengali, "ব্যবহার করুন high resolution coordinates"},            {MenuLangId::Urdu, "استعمال کریں high resolution coordinates"},            {MenuLangId::Punjabi, "ਵਰਤੋ high resolution coordinates"},            {MenuLangId::Telugu, "వాడు high resolution coordinates"},            {MenuLangId::Persian, "استفاده از high resolution coordinates"},            {MenuLangId::Malay, "Gunakan high resolution coordinates"},            {MenuLangId::Marathi, "वापरा high resolution coordinates"},            {MenuLangId::Tamil, "பயன்படுத்து high resolution coordinates"},            {MenuLangId::Gujarati, "વાપરો high resolution coordinates"},            {MenuLangId::Kannada, "ಬಳಸಿ high resolution coordinates"},            {MenuLangId::Odia, "ବ୍ୟବହାର କରନ୍ତୁ high resolution coordinates"},            {MenuLangId::Malayalam, "ഉപയോഗിക്കുക high resolution coordinates"},            {MenuLangId::Burmese, "အသုံးပြုပါ high resolution coordinates"},            {MenuLangId::Uzbek, "Ishlatish high resolution coordinates"},            {MenuLangId::Azerbaijani, "İstifadə et high resolution coordinates"},            {MenuLangId::Nepali, "प्रयोग गर्नुहोस् high resolution coordinates"},            {MenuLangId::Sinhala, "භාවිතා කරන්න high resolution coordinates"},            {MenuLangId::Khmer, "ប្រើ high resolution coordinates"},            {MenuLangId::Lao, "ໃຊ້ high resolution coordinates"},            {MenuLangId::Armenian, "Օգտագործել high resolution coordinates"},            {MenuLangId::Albanian, "Përdor high resolution coordinates"},            {MenuLangId::Georgian, "გამოყენება high resolution coordinates"},            {MenuLangId::Bosnian, "Koristi high resolution coordinates"},            {MenuLangId::Serbian, "Користи high resolution coordinates"},            {MenuLangId::Macedonian, "Користи high resolution coordinates"},            {MenuLangId::Bulgarian, "Използвай high resolution coordinates"},            {MenuLangId::Belarusian, "Выкарыстоўваць high resolution coordinates"},            {MenuLangId::Maltese, "Uża high resolution coordinates"},            {MenuLangId::Mongolian, "Ашиглах high resolution coordinates"},            {MenuLangId::Latvian, "Izmantot high resolution coordinates"},            {MenuLangId::Lithuanian, "Naudoti high resolution coordinates"},            {MenuLangId::Afrikaans, "Gebruik high resolution coordinates"},            {MenuLangId::Irish, "Úsáid high resolution coordinates"},            {MenuLangId::Assamese, "ব্যৱহাৰ কৰক high resolution coordinates"},            {MenuLangId::Amharic, "ተጠቀም high resolution coordinates"},            {MenuLangId::Estonian, "Kasuta high resolution coordinates"},            {MenuLangId::Kazakh, "Пайдалану high resolution coordinates"},            {MenuLangId::Catalan, "Utilitza high resolution coordinates"},            {MenuLangId::Kyrgyz, "Колдонуу high resolution coordinates"},            {MenuLangId::Slovak, "Použiť high resolution coordinates"},            {MenuLangId::Slovenian, "Uporabi high resolution coordinates"},            {MenuLangId::Zulu, "Sebenzisa high resolution coordinates"},            {MenuLangId::Basque, "Erabili high resolution coordinates"},            {MenuLangId::Hebrew, "השתמש high resolution coordinates"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -1717,6 +4467,7 @@
             {MenuLangId::Russian, "Использовать отдельный поток"},
             {MenuLangId::ChineseSimplified, "使用独立线程"},
             {MenuLangId::ChineseTraditional, "使用獨立執行緒"},
+            {MenuLangId::ChineseHongKong, "使用獨立執行緒"},
             {MenuLangId::Korean, "별도 스레드 사용"},
             {MenuLangId::Arabic, "استخدام خيط منفصل"},
             {MenuLangId::Indonesian, "Gunakan thread terpisah"},
@@ -1732,7 +4483,56 @@
             {MenuLangId::Finnish, "Käytä erillistä säiettä"},
             {MenuLangId::Vietnamese, "Dùng luồng riêng"},
             {MenuLangId::Polish, "Użyj osobnego wątku"},
-            {MenuLangId::Romanian, "Folosește fir separat"},
+            {MenuLangId::Romanian, "Folosește fir separat"},            {MenuLangId::Filipino, "Gamitin ang separate thread"},            {MenuLangId::Swahili, "Tumia separate thread"},            {MenuLangId::Croatian, "Koristi separate thread"},            {MenuLangId::Icelandic, "Nota separate thread"},            {MenuLangId::Hindi, "उपयोग करें separate thread"},            {MenuLangId::Bengali, "ব্যবহার করুন separate thread"},            {MenuLangId::Urdu, "استعمال کریں separate thread"},            {MenuLangId::Punjabi, "ਵਰਤੋ separate thread"},            {MenuLangId::Telugu, "వాడు separate thread"},            {MenuLangId::Persian, "استفاده از separate thread"},            {MenuLangId::Malay, "Gunakan separate thread"},            {MenuLangId::Marathi, "वापरा separate thread"},            {MenuLangId::Tamil, "பயன்படுத்து separate thread"},            {MenuLangId::Gujarati, "વાપરો separate thread"},            {MenuLangId::Kannada, "ಬಳಸಿ separate thread"},            {MenuLangId::Odia, "ବ୍ୟବହାର କରନ୍ତୁ separate thread"},            {MenuLangId::Malayalam, "ഉപയോഗിക്കുക separate thread"},            {MenuLangId::Burmese, "အသုံးပြုပါ separate thread"},            {MenuLangId::Uzbek, "Ishlatish separate thread"},            {MenuLangId::Azerbaijani, "İstifadə et separate thread"},            {MenuLangId::Nepali, "प्रयोग गर्नुहोस् separate thread"},            {MenuLangId::Sinhala, "භාවිතා කරන්න separate thread"},            {MenuLangId::Khmer, "ប្រើ separate thread"},            {MenuLangId::Lao, "ໃຊ້ separate thread"},            {MenuLangId::Armenian, "Օգտագործել separate thread"},            {MenuLangId::Albanian, "Përdor separate thread"},            {MenuLangId::Georgian, "გამოყენება separate thread"},            {MenuLangId::Bosnian, "Koristi separate thread"},            {MenuLangId::Serbian, "Користи separate thread"},            {MenuLangId::Macedonian, "Користи separate thread"},            {MenuLangId::Bulgarian, "Използвай separate thread"},            {MenuLangId::Belarusian, "Выкарыстоўваць separate thread"},            {MenuLangId::Maltese, "Uża separate thread"},            {MenuLangId::Mongolian, "Ашиглах separate thread"},            {MenuLangId::Latvian, "Izmantot separate thread"},            {MenuLangId::Lithuanian, "Naudoti separate thread"},            {MenuLangId::Afrikaans, "Gebruik separate thread"},            {MenuLangId::Irish, "Úsáid separate thread"},            {MenuLangId::Assamese, "ব্যৱহাৰ কৰক separate thread"},            {MenuLangId::Amharic, "ተጠቀም separate thread"},            {MenuLangId::Estonian, "Kasuta separate thread"},            {MenuLangId::Kazakh, "Пайдалану separate thread"},            {MenuLangId::Catalan, "Utilitza separate thread"},            {MenuLangId::Kyrgyz, "Колдонуу separate thread"},            {MenuLangId::Slovak, "Použiť separate thread"},            {MenuLangId::Slovenian, "Uporabi separate thread"},            {MenuLangId::Zulu, "Sebenzisa separate thread"},            {MenuLangId::Basque, "Erabili separate thread"},            {MenuLangId::Hebrew, "השתמש separate thread"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -1748,6 +4548,7 @@
             {MenuLangId::Russian, "Настроить эмулируемую камеру:"},
             {MenuLangId::ChineseSimplified, "配置模拟摄像头:"},
             {MenuLangId::ChineseTraditional, "配置模擬相機:"},
+            {MenuLangId::ChineseHongKong, "配置模擬相機:"},
             {MenuLangId::Korean, "에뮬레이트 카메라 설정:"},
             {MenuLangId::Arabic, "Configure emulated camera:"},
             {MenuLangId::Indonesian, "Configure emulated camera:"},
@@ -1763,7 +4564,56 @@
             {MenuLangId::Finnish, "Configure emulated camera:"},
             {MenuLangId::Vietnamese, "Configure emulated camera:"},
             {MenuLangId::Polish, "Configure emulated camera:"},
-            {MenuLangId::Romanian, "Configure emulated camera:"},
+            {MenuLangId::Romanian, "Configure emulated camera:"},            {MenuLangId::Filipino, "Configure emulated camera:"},            {MenuLangId::Swahili, "Configure emulated camera:"},            {MenuLangId::Croatian, "Konfiguriraj emuliranu kameru:"},            {MenuLangId::Icelandic, "Stilla hermda myndavél:"},            {MenuLangId::Hindi, "एमुलेटेड कैमरा कॉन्फ़िगर करें:"},            {MenuLangId::Bengali, "এমুলেটেড ক্যামেরা কনফিগার করুন:"},            {MenuLangId::Urdu, "ایمولیٹڈ کیمرا کنفیگر کریں:"},            {MenuLangId::Punjabi, "ਐਮੀੂਲੇਟ ਕੀਤੇ ਕੈਮਰੇ ਦੀ ਕਨਫਿਗਰੇਸ਼ਨ ਕਰੋ:"},            {MenuLangId::Telugu, "ఎమ్యులేట్ చేసిన కెమెరాను కాన్ఫిగర్ చేయి:"},            {MenuLangId::Persian, "پیکربندی دوربین شبیه‌سازی‌شده:"},            {MenuLangId::Malay, "Konfigurasikan kamera emulasi:"},            {MenuLangId::Marathi, "एम्युलेटेड कॅमेरा कॉन्फिगर करा:"},            {MenuLangId::Tamil, "emulated கேமராவை உள்ளமை:"},            {MenuLangId::Gujarati, "emulated કેમેરા કૉન્ફિગર કરો:"},            {MenuLangId::Kannada, "emulated ಕ್ಯಾಮೆರಾ ಕಾನ್ಫಿಗರ್ ಮಾಡಿ:"},            {MenuLangId::Odia, "ଓଡ଼ିଆ: Configure emulated camera:"},            {MenuLangId::Malayalam, "emulated ക്യാമറ കോൺഫിഗർ ചെയ്യുക:"},            {MenuLangId::Burmese, "emulated ကင်မရာကို ကွန်ဖစ်ပါ:"},            {MenuLangId::Uzbek, "emulated kamerani sozlash:"},            {MenuLangId::Azerbaijani, "emulated kameranı konfiqurasiya et:"},            {MenuLangId::Nepali, "emulated क्यामेरा कन्फिगर गर्नुहोस्:"},            {MenuLangId::Sinhala, "emulated කැමරාව වින්‍යාස කරන්න:"},            {MenuLangId::Khmer, "កំណត់រចនាសម្ព័ន្ធកាមេរ៉ា emulated:"},            {MenuLangId::Lao, "ກຳນົດຄ່າກ້ອງ emulated:"},            {MenuLangId::Armenian, "Կազմաձևել emulated տեսախցիկը:"},            {MenuLangId::Albanian, "Konfiguro kamerën emulated:"},            {MenuLangId::Georgian, "emulated კამერის კონფიგურაცია:"},            {MenuLangId::Bosnian, "Konfiguriši emuliranu kameru:"},            {MenuLangId::Serbian, "Конфигуриши емулирану камеру:"},            {MenuLangId::Macedonian, "Конфигурирај емулирана камера:"},            {MenuLangId::Bulgarian, "Конфигурирай емулирана камера:"},            {MenuLangId::Belarusian, "Наладзіць эмуляваную камеру:"},            {MenuLangId::Maltese, "Ikkonfigura kamera emulata:"},            {MenuLangId::Mongolian, "Эмуляцлагдсан камерыг тохируулах:"},            {MenuLangId::Latvian, "Konfigurēt emulēto kameru:"},            {MenuLangId::Lithuanian, "Konfigūruoti emuliuojamą kamerą:"},            {MenuLangId::Afrikaans, "Konfigureer geëmuleerde kamera:"},            {MenuLangId::Irish, "Cumraigh ceamara aithrise:"},            {MenuLangId::Assamese, "emulated কেমেৰা কনফিগাৰ কৰক:"},            {MenuLangId::Amharic, "አማርኛ: Configure emulated camera:"},            {MenuLangId::Estonian, "Eesti: Configure emulated camera:"},            {MenuLangId::Kazakh, "Қазақша: Configure emulated camera:"},            {MenuLangId::Catalan, "Català: Configure emulated camera:"},            {MenuLangId::Kyrgyz, "Кыргызча: Configure emulated camera:"},            {MenuLangId::Slovak, "Slovenčina: Configure emulated camera:"},            {MenuLangId::Slovenian, "Slovenščina: Configure emulated camera:"},            {MenuLangId::Zulu, "isiZulu: Configure emulated camera:"},            {MenuLangId::Basque, "Euskara: Configure emulated camera:"},            {MenuLangId::Hebrew, "עברית: Configure emulated camera:"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -1779,6 +4629,7 @@
             {MenuLangId::Russian, "Источник изображения"},
             {MenuLangId::ChineseSimplified, "图像来源"},
             {MenuLangId::ChineseTraditional, "影象來源"},
+            {MenuLangId::ChineseHongKong, "影象來源"},
             {MenuLangId::Korean, "이미지 소스"},
             {MenuLangId::Arabic, "مصدر الصورة"},
             {MenuLangId::Indonesian, "Sumber gambar"},
@@ -1794,7 +4645,56 @@
             {MenuLangId::Finnish, "Kuvan lähde"},
             {MenuLangId::Vietnamese, "Nguồn hình ảnh"},
             {MenuLangId::Polish, "Źródło obrazu"},
-            {MenuLangId::Romanian, "Sursă imagine"},
+            {MenuLangId::Romanian, "Sursă imagine"},            {MenuLangId::Filipino, "Picture source"},            {MenuLangId::Swahili, "Picture source"},            {MenuLangId::Croatian, "Izvor slike"},            {MenuLangId::Icelandic, "Mynduppspretta"},            {MenuLangId::Hindi, "चित्र स्रोत"},            {MenuLangId::Bengali, "ছবির উৎস"},            {MenuLangId::Urdu, "تصویر کا ماخذ"},            {MenuLangId::Punjabi, "ਤਸਵੀਰ ਸਰੋਤ"},            {MenuLangId::Telugu, "చిత్ర మూలం"},            {MenuLangId::Persian, "منبع تصویر"},            {MenuLangId::Malay, "Sumber gambar"},            {MenuLangId::Marathi, "चित्र स्रोत"},            {MenuLangId::Tamil, "பட மூலம்"},            {MenuLangId::Gujarati, "ચિત્ર સ્રોત"},            {MenuLangId::Kannada, "ಚಿತ್ರ ಮೂಲ"},            {MenuLangId::Odia, "ଛବି ସ୍ରୋତ"},            {MenuLangId::Malayalam, "ചിത്ര ഉറവിടം"},            {MenuLangId::Burmese, "ပုံရင်းမြစ်"},            {MenuLangId::Uzbek, "Rasm manbai"},            {MenuLangId::Azerbaijani, "Şəkil mənbəyi"},            {MenuLangId::Nepali, "तस्वीर स्रोत"},            {MenuLangId::Sinhala, "පින්තූර මූලාශ්‍රය"},            {MenuLangId::Khmer, "ប្រភពរូបភាព"},            {MenuLangId::Lao, "ແຫຼ່ງຮູບພາບ"},            {MenuLangId::Armenian, "Նկարի աղբյուր"},            {MenuLangId::Albanian, "Burimi i figurës"},            {MenuLangId::Georgian, "სურათის წყარო"},            {MenuLangId::Bosnian, "Izvor slike"},            {MenuLangId::Serbian, "Извор слике"},            {MenuLangId::Macedonian, "Извор на слика"},            {MenuLangId::Bulgarian, "Източник на изображение"},            {MenuLangId::Belarusian, "Крыніца выявы"},            {MenuLangId::Maltese, "Sors tal-istampa"},            {MenuLangId::Mongolian, "Зургийн эх үүсвэр"},            {MenuLangId::Latvian, "Attēla avots"},            {MenuLangId::Lithuanian, "Paveikslėlio šaltinis"},            {MenuLangId::Afrikaans, "Prentbron"},            {MenuLangId::Irish, "Foinse pictiúir"},            {MenuLangId::Assamese, "ছবিৰ উৎস"},            {MenuLangId::Amharic, "የምስል ምንጭ"},            {MenuLangId::Estonian, "Pildi allikas"},            {MenuLangId::Kazakh, "Сурет көзі"},            {MenuLangId::Catalan, "Origen de la imatge"},            {MenuLangId::Kyrgyz, "Сүрөт булагы"},            {MenuLangId::Slovak, "Zdroj obrázka"},            {MenuLangId::Slovenian, "Vir slike"},            {MenuLangId::Zulu, "Umthombo wesithombe"},            {MenuLangId::Basque, "Irudi-iturria"},            {MenuLangId::Hebrew, "מקור תמונה"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -1810,6 +4710,7 @@
             {MenuLangId::Russian, "Настройки изображения"},
             {MenuLangId::ChineseSimplified, "图像设置"},
             {MenuLangId::ChineseTraditional, "影象設定"},
+            {MenuLangId::ChineseHongKong, "影象設定"},
             {MenuLangId::Korean, "화면 설정"},
             {MenuLangId::Arabic, "إعدادات الصورة"},
             {MenuLangId::Indonesian, "Pengaturan gambar"},
@@ -1825,7 +4726,56 @@
             {MenuLangId::Finnish, "Kuva-asetukset"},
             {MenuLangId::Vietnamese, "Cài đặt hình ảnh"},
             {MenuLangId::Polish, "Ustawienia obrazu"},
-            {MenuLangId::Romanian, "Setări imagine"},
+            {MenuLangId::Romanian, "Setări imagine"},            {MenuLangId::Filipino, "Picture mga setting"},            {MenuLangId::Swahili, "Picture mipangilio"},            {MenuLangId::Croatian, "Picture postavke"},            {MenuLangId::Icelandic, "Picture stillingar"},            {MenuLangId::Hindi, "Picture सेटिंग्स"},            {MenuLangId::Bengali, "Picture সেটিংস"},            {MenuLangId::Urdu, "Picture ترتیبات"},            {MenuLangId::Punjabi, "Picture ਸੈਟਿੰਗਾਂ"},            {MenuLangId::Telugu, "Picture సెట్టింగ్‌లు"},            {MenuLangId::Persian, "Picture تنظیمات"},            {MenuLangId::Malay, "Picture tetapan"},            {MenuLangId::Marathi, "Picture सेटिंग्ज"},            {MenuLangId::Tamil, "Picture அமைப்புகள்"},            {MenuLangId::Gujarati, "Picture સેટિંગ્સ"},            {MenuLangId::Kannada, "Picture ಸೆಟ್ಟಿಂಗ್‌ಗಳು"},            {MenuLangId::Odia, "Picture ସେଟିଂସ୍"},            {MenuLangId::Malayalam, "Picture ക്രമീകരണങ്ങൾ"},            {MenuLangId::Burmese, "Picture ဆက်တင်များ"},            {MenuLangId::Uzbek, "Picture sozlamalar"},            {MenuLangId::Azerbaijani, "Picture ayarlar"},            {MenuLangId::Nepali, "Picture सेटिङहरू"},            {MenuLangId::Sinhala, "Picture සැකසුම්"},            {MenuLangId::Khmer, "Picture ការកំណត់"},            {MenuLangId::Lao, "Picture ການຕັ້ງຄ່າ"},            {MenuLangId::Armenian, "Picture կարգավորումներ"},            {MenuLangId::Albanian, "Picture cilësimet"},            {MenuLangId::Georgian, "Picture პარამეტრები"},            {MenuLangId::Bosnian, "Picture postavke"},            {MenuLangId::Serbian, "Picture подешавања"},            {MenuLangId::Macedonian, "Picture поставки"},            {MenuLangId::Bulgarian, "Picture настройки"},            {MenuLangId::Belarusian, "Picture налады"},            {MenuLangId::Maltese, "Settings tal-istampa"},            {MenuLangId::Mongolian, "Picture тохиргоо"},            {MenuLangId::Latvian, "Picture iestatījumi"},            {MenuLangId::Lithuanian, "Picture nustatymai"},            {MenuLangId::Afrikaans, "Picture instellings"},            {MenuLangId::Irish, "Picture socruithe"},            {MenuLangId::Assamese, "Picture ছেটিংছ"},            {MenuLangId::Amharic, "Picture ቅንብሮች"},            {MenuLangId::Estonian, "Picture seaded"},            {MenuLangId::Kazakh, "Picture баптаулар"},            {MenuLangId::Catalan, "Picture configuració"},            {MenuLangId::Kyrgyz, "Picture жөндөөлөр"},            {MenuLangId::Slovak, "Picture nastavenia"},            {MenuLangId::Slovenian, "Picture nastavitve"},            {MenuLangId::Zulu, "Picture izilungiselelo"},            {MenuLangId::Basque, "Picture ezarpenak"},            {MenuLangId::Hebrew, "Picture הגדרות"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -1841,6 +4791,7 @@
             {MenuLangId::Russian, "Нет (пусто)"},
             {MenuLangId::ChineseSimplified, "无（空白）"},
             {MenuLangId::ChineseTraditional, "無（空白）"},
+            {MenuLangId::ChineseHongKong, "無（空白）"},
             {MenuLangId::Korean, "없음 (빈 값)"},
             {MenuLangId::Arabic, "لا شيء (فارغ)"},
             {MenuLangId::Indonesian, "Tidak ada (kosong)"},
@@ -1856,7 +4807,56 @@
             {MenuLangId::Finnish, "Ei mitään (tyhjä)"},
             {MenuLangId::Vietnamese, "Không (trống)"},
             {MenuLangId::Polish, "Brak (pusty)"},
-            {MenuLangId::Romanian, "Niciunul (gol)"},
+            {MenuLangId::Romanian, "Niciunul (gol)"},            {MenuLangId::Filipino, "None (blank)"},            {MenuLangId::Swahili, "None (blank)"},            {MenuLangId::Croatian, "Nijedno (prazno)"},            {MenuLangId::Icelandic, "Ekkert (autt)"},            {MenuLangId::Hindi, "कोई नहीं (खाली)"},            {MenuLangId::Bengali, "কোনোটিই নয় (খালি)"},            {MenuLangId::Urdu, "کوئی نہیں (خالی)"},            {MenuLangId::Punjabi, "ਕੋਈ ਨਹੀਂ (ਖਾਲੀ)"},            {MenuLangId::Telugu, "ఏదీ లేదు (ఖాళీ)"},            {MenuLangId::Persian, "هیچ‌کدام (خالی)"},            {MenuLangId::Malay, "Tiada (kosong)"},            {MenuLangId::Marathi, "काहीही नाही (रिक्त)"},            {MenuLangId::Tamil, "எதுவுமில்லை (வெற்று)"},            {MenuLangId::Gujarati, "કંઈ નહીં (ખાલી)"},            {MenuLangId::Kannada, "ಯಾವುದೂ ಇಲ್ಲ (ಖಾಲಿ)"},            {MenuLangId::Odia, "ଓଡ଼ିଆ: None (blank)"},            {MenuLangId::Malayalam, "ഒന്നുമില്ല (ശൂന്യം)"},            {MenuLangId::Burmese, "မရှိပါ (ဗလာ)"},            {MenuLangId::Uzbek, "Yoʻq (boʻsh)"},            {MenuLangId::Azerbaijani, "Yoxdur (boş)"},            {MenuLangId::Nepali, "कुनै छैन (खाली)"},            {MenuLangId::Sinhala, "කිසිවක් නැත (හිස්)"},            {MenuLangId::Khmer, "គ្មាន (ទទេ)"},            {MenuLangId::Lao, "ບໍ່ມີ (ຫວ່າງ)"},            {MenuLangId::Armenian, "Չկա (դատարկ)"},            {MenuLangId::Albanian, "Asnjë (bosh)"},            {MenuLangId::Georgian, "არცერთი (ცარიელი)"},            {MenuLangId::Bosnian, "Nijedno (prazno)"},            {MenuLangId::Serbian, "Ништа (празно)"},            {MenuLangId::Macedonian, "Ништо (празно)"},            {MenuLangId::Bulgarian, "Няма (празно)"},            {MenuLangId::Belarusian, "Няма (пусто)"},            {MenuLangId::Maltese, "Xejn (vojt)"},            {MenuLangId::Mongolian, "Байхгүй (хоосон)"},            {MenuLangId::Latvian, "Nav (tukšs)"},            {MenuLangId::Lithuanian, "Nėra (tuščia)"},            {MenuLangId::Afrikaans, "Geen (leeg)"},            {MenuLangId::Irish, "Níl aon cheann (bán)"},            {MenuLangId::Assamese, "কোনোটো নাই (খালী)"},            {MenuLangId::Amharic, "ምንም (ባዶ)"},            {MenuLangId::Estonian, "Puudub (tühi)"},            {MenuLangId::Kazakh, "Жоқ (бос)"},            {MenuLangId::Catalan, "Cap (en blanc)"},            {MenuLangId::Kyrgyz, "Жок (бош)"},            {MenuLangId::Slovak, "Žiadne (prázdne)"},            {MenuLangId::Slovenian, "Brez (prazno)"},            {MenuLangId::Zulu, "Akukho (blank)"},            {MenuLangId::Basque, "Bat ere ez (hutsik)"},            {MenuLangId::Hebrew, "ללא (ריק)"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -1872,6 +4872,7 @@
             {MenuLangId::Russian, "Файл изображения:"},
             {MenuLangId::ChineseSimplified, "图像文件:"},
             {MenuLangId::ChineseTraditional, "影象檔案:"},
+            {MenuLangId::ChineseHongKong, "影象檔案:"},
             {MenuLangId::Korean, "이미지 파일:"},
             {MenuLangId::Arabic, "ملف الصورة:"},
             {MenuLangId::Indonesian, "File gambar:"},
@@ -1887,7 +4888,56 @@
             {MenuLangId::Finnish, "Kuvatiedosto:"},
             {MenuLangId::Vietnamese, "Tệp hình ảnh:"},
             {MenuLangId::Polish, "Plik obrazu:"},
-            {MenuLangId::Romanian, "Fișier imagine:"},
+            {MenuLangId::Romanian, "Fișier imagine:"},            {MenuLangId::Filipino, "Image talaksan:"},            {MenuLangId::Swahili, "Image faili:"},            {MenuLangId::Croatian, "Image datoteka:"},            {MenuLangId::Icelandic, "Image skrá:"},            {MenuLangId::Hindi, "Image फ़ाइल:"},            {MenuLangId::Bengali, "Image ফাইল:"},            {MenuLangId::Urdu, "Image فائل:"},            {MenuLangId::Punjabi, "Image ਫਾਇਲ:"},            {MenuLangId::Telugu, "Image ఫైల్:"},            {MenuLangId::Persian, "Image فایل:"},            {MenuLangId::Malay, "Image fail:"},            {MenuLangId::Marathi, "Image फाइल:"},            {MenuLangId::Tamil, "Image கோப்பு:"},            {MenuLangId::Gujarati, "Image ફાઇલ:"},            {MenuLangId::Kannada, "Image ಫೈಲ್:"},            {MenuLangId::Odia, "Image ଫାଇଲ୍:"},            {MenuLangId::Malayalam, "Image ഫയൽ:"},            {MenuLangId::Burmese, "Image ဖိုင်:"},            {MenuLangId::Uzbek, "Image fayl:"},            {MenuLangId::Azerbaijani, "Image fayl:"},            {MenuLangId::Nepali, "Image फाइल:"},            {MenuLangId::Sinhala, "Image ගොනුව:"},            {MenuLangId::Khmer, "Image ឯកសារ:"},            {MenuLangId::Lao, "Image ໄຟລ໌:"},            {MenuLangId::Armenian, "Image ֆայլ:"},            {MenuLangId::Albanian, "Image skedari:"},            {MenuLangId::Georgian, "Image ფაილი:"},            {MenuLangId::Bosnian, "Image datoteka:"},            {MenuLangId::Serbian, "Image датотека:"},            {MenuLangId::Macedonian, "Image датотека:"},            {MenuLangId::Bulgarian, "Image файл:"},            {MenuLangId::Belarusian, "Image файл:"},            {MenuLangId::Maltese, "Image fajl:"},            {MenuLangId::Mongolian, "Image файл:"},            {MenuLangId::Latvian, "Image fails:"},            {MenuLangId::Lithuanian, "Image failas:"},            {MenuLangId::Afrikaans, "Image lêer:"},            {MenuLangId::Irish, "Image comhad:"},            {MenuLangId::Assamese, "Image ফাইল:"},            {MenuLangId::Amharic, "Image ፋይል:"},            {MenuLangId::Estonian, "Image fail:"},            {MenuLangId::Kazakh, "Image файл:"},            {MenuLangId::Catalan, "Image fitxer:"},            {MenuLangId::Kyrgyz, "Image файл:"},            {MenuLangId::Slovak, "Image súbor:"},            {MenuLangId::Slovenian, "Image datoteka:"},            {MenuLangId::Zulu, "Image ifayela:"},            {MenuLangId::Basque, "Image fitxategia:"},            {MenuLangId::Hebrew, "Image קובץ:"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -1903,6 +4953,7 @@
             {MenuLangId::Russian, "Физическая камера:"},
             {MenuLangId::ChineseSimplified, "物理摄像头："},
             {MenuLangId::ChineseTraditional, "物理相機："},
+            {MenuLangId::ChineseHongKong, "物理相機："},
             {MenuLangId::Korean, "물리 카메라:"},
             {MenuLangId::Arabic, "الكاميرا الفعلية:"},
             {MenuLangId::Indonesian, "Kamera fisik:"},
@@ -1918,7 +4969,56 @@
             {MenuLangId::Finnish, "Fyysinen kamera:"},
             {MenuLangId::Vietnamese, "Camera vật lý:"},
             {MenuLangId::Polish, "Kamera fizyczna:"},
-            {MenuLangId::Romanian, "Cameră fizică:"},
+            {MenuLangId::Romanian, "Cameră fizică:"},            {MenuLangId::Filipino, "Physical camera:"},            {MenuLangId::Swahili, "Physical camera:"},            {MenuLangId::Croatian, "Fizička kamera:"},            {MenuLangId::Icelandic, "Raunmyndavél:"},            {MenuLangId::Hindi, "भौतिक कैमरा:"},            {MenuLangId::Bengali, "ফিজিক্যাল ক্যামেরা:"},            {MenuLangId::Urdu, "فزیکل کیمرا:"},            {MenuLangId::Punjabi, "ਭੌਤਿਕ ਕੈਮਰਾ:"},            {MenuLangId::Telugu, "భౌతిక కెమెరా:"},            {MenuLangId::Persian, "دوربین فیزیکی:"},            {MenuLangId::Malay, "Kamera fizikal:"},            {MenuLangId::Marathi, "भौतिक कॅमेरा:"},            {MenuLangId::Tamil, "உடல் கேமரா:"},            {MenuLangId::Gujarati, "ભૌતિક કેમેરા:"},            {MenuLangId::Kannada, "ಭೌತಿಕ ಕ್ಯಾಮೆರಾ:"},            {MenuLangId::Odia, "ଓଡ଼ିଆ: Physical camera:"},            {MenuLangId::Malayalam, "ഭൗതിക ക്യാമറ:"},            {MenuLangId::Burmese, "ရုပ်ပိုင်းကင်မရာ:"},            {MenuLangId::Uzbek, "Fizik kamera:"},            {MenuLangId::Azerbaijani, "Fiziki kamera:"},            {MenuLangId::Nepali, "भौतिक क्यामेरा:"},            {MenuLangId::Sinhala, "භෞතික කැමරාව:"},            {MenuLangId::Khmer, "កាមេរ៉ាផ្ទាល់:"},            {MenuLangId::Lao, "ກ້ອງຈິງ:"},            {MenuLangId::Armenian, "Ֆիզիկական տեսախցիկ:"},            {MenuLangId::Albanian, "Kamera fizike:"},            {MenuLangId::Georgian, "ფიზიკური კამერა:"},            {MenuLangId::Bosnian, "Fizička kamera:"},            {MenuLangId::Serbian, "Физичка камера:"},            {MenuLangId::Macedonian, "Физичка камера:"},            {MenuLangId::Bulgarian, "Физическа камера:"},            {MenuLangId::Belarusian, "Фізічная камера:"},            {MenuLangId::Maltese, "Kamera fiżika:"},            {MenuLangId::Mongolian, "Физик камер:"},            {MenuLangId::Latvian, "Fiziskā kamera:"},            {MenuLangId::Lithuanian, "Fizinė kamera:"},            {MenuLangId::Afrikaans, "Fisiese kamera:"},            {MenuLangId::Irish, "Ceamara fisiciúil:"},            {MenuLangId::Assamese, "ভৌতিক কেমেৰা:"},            {MenuLangId::Amharic, "አካላዊ ካሜራ:"},            {MenuLangId::Estonian, "Füüsiline kaamera:"},            {MenuLangId::Kazakh, "Физикалық камера:"},            {MenuLangId::Catalan, "Càmera física:"},            {MenuLangId::Kyrgyz, "Физикалык камера:"},            {MenuLangId::Slovak, "Fyzická kamera:"},            {MenuLangId::Slovenian, "Fizična kamera:"},            {MenuLangId::Zulu, "Ikhamera ebonakalayo:"},            {MenuLangId::Basque, "Kamera fisikoa:"},            {MenuLangId::Hebrew, "מצלמה פיזית:"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -1934,6 +5034,7 @@
             {MenuLangId::Russian, "Отразить по горизонтали"},
             {MenuLangId::ChineseSimplified, "水平翻转"},
             {MenuLangId::ChineseTraditional, "水平翻轉"},
+            {MenuLangId::ChineseHongKong, "水平翻轉"},
             {MenuLangId::Korean, "좌우 반전"},
             {MenuLangId::Arabic, "قلب أفقي"},
             {MenuLangId::Indonesian, "Balik horizontal"},
@@ -1949,7 +5050,56 @@
             {MenuLangId::Finnish, "Peilaa vaakasuunnassa"},
             {MenuLangId::Vietnamese, "Lật ngang"},
             {MenuLangId::Polish, "Odbij poziomo"},
-            {MenuLangId::Romanian, "Întoarce orizontal"},
+            {MenuLangId::Romanian, "Întoarce orizontal"},            {MenuLangId::Filipino, "Flip horizontally"},            {MenuLangId::Swahili, "Flip horizontally"},            {MenuLangId::Croatian, "Okreni vodoravno"},            {MenuLangId::Icelandic, "Spegla lárétt"},            {MenuLangId::Hindi, "क्षैतिज रूप से पलटें"},            {MenuLangId::Bengali, "অনুভূমিকভাবে উল্টান"},            {MenuLangId::Urdu, "افقی طور پر پلٹائیں"},            {MenuLangId::Punjabi, "ਹੋਰਿਜ਼ਾਂਟਲ ਤੌਰ 'ਤੇ ਪਲਟੋ"},            {MenuLangId::Telugu, "అడ్డంగా తిప్పు"},            {MenuLangId::Persian, "برگرداندن افقی"},            {MenuLangId::Malay, "Terbalikkan mendatar"},            {MenuLangId::Marathi, "आडवे उलटवा"},            {MenuLangId::Tamil, "கிடைமட்டமாக புரட்டு"},            {MenuLangId::Gujarati, "આડું ઉલટાવો"},            {MenuLangId::Kannada, "ಅಡ್ಡವಾಗಿ ತಿರುಗಿಸಿ"},            {MenuLangId::Odia, "ଆଡ଼କୁ ଓଲଟାନ୍ତୁ"},            {MenuLangId::Malayalam, "തിരശ്ചീനമായി മറിക്കുക"},            {MenuLangId::Burmese, "အလျားလိုက် ပြောင်းပြန်လှန်ပါ"},            {MenuLangId::Uzbek, "Gorizontal agʻdarish"},            {MenuLangId::Azerbaijani, "Üfüqi çevir"},            {MenuLangId::Nepali, "तेर्सो रूपमा पल्टाउनुहोस्"},            {MenuLangId::Sinhala, "තිරස්ව පෙරළන්න"},            {MenuLangId::Khmer, "ត្រឡប់ផ្ដេក"},            {MenuLangId::Lao, "ພິກແນວນອນ"},            {MenuLangId::Armenian, "Շրջել հորիզոնական"},            {MenuLangId::Albanian, "Kthe horizontalisht"},            {MenuLangId::Georgian, "ჰორიზონტალურად შეტრიალება"},            {MenuLangId::Bosnian, "Preokreni horizontalno"},            {MenuLangId::Serbian, "Окрени хоризонтално"},            {MenuLangId::Macedonian, "Преврти хоризонтално"},            {MenuLangId::Bulgarian, "Обърни хоризонтално"},            {MenuLangId::Belarusian, "Адлюстраваць гарызантальна"},            {MenuLangId::Maltese, "Aqleb orizzontalment"},            {MenuLangId::Mongolian, "Хэвтээ эргүүлэх"},            {MenuLangId::Latvian, "Apvērst horizontāli"},            {MenuLangId::Lithuanian, "Apversti horizontaliai"},            {MenuLangId::Afrikaans, "Draai horisontaal om"},            {MenuLangId::Irish, "Smeach go cothrománach"},            {MenuLangId::Assamese, "অনুভূমিকভাৱে উলটাই দিয়ক"},            {MenuLangId::Amharic, "በአግድም ገልብጥ"},            {MenuLangId::Estonian, "Pööra horisontaalselt"},            {MenuLangId::Kazakh, "Көлденең аудару"},            {MenuLangId::Catalan, "Gira horitzontalment"},            {MenuLangId::Kyrgyz, "Горизонталдуу оодаруу"},            {MenuLangId::Slovak, "Prevrátiť vodorovne"},            {MenuLangId::Slovenian, "Obrni vodoravno"},            {MenuLangId::Zulu, "Phendula ngokuvundlile"},            {MenuLangId::Basque, "Irauli horizontalean"},            {MenuLangId::Hebrew, "הפוך אופקית"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -1965,6 +5115,7 @@
             {MenuLangId::Russian, "Внешняя камера DSi"},
             {MenuLangId::ChineseSimplified, "DSi 外置摄像头"},
             {MenuLangId::ChineseTraditional, "DSi 外接相機"},
+            {MenuLangId::ChineseHongKong, "DSi 外接相機"},
             {MenuLangId::Korean, "DSi 외부 카메라"},
             {MenuLangId::Arabic, "كاميرا DSi الخارجية"},
             {MenuLangId::Indonesian, "Kamera luar DSi"},
@@ -1980,7 +5131,56 @@
             {MenuLangId::Finnish, "DSi:n ulkoinen kamera"},
             {MenuLangId::Vietnamese, "Camera ngoài DSi"},
             {MenuLangId::Polish, "Kamera zewnętrzna DSi"},
-            {MenuLangId::Romanian, "Cameră externă DSi"},
+            {MenuLangId::Romanian, "Cameră externă DSi"},            {MenuLangId::Filipino, "DSi outer camera"},            {MenuLangId::Swahili, "DSi outer camera"},            {MenuLangId::Croatian, "DSi vanjska kamera"},            {MenuLangId::Icelandic, "DSi ytri myndavél"},            {MenuLangId::Hindi, "DSi बाहरी कैमरा"},            {MenuLangId::Bengali, "DSi বাইরের ক্যামেরা"},            {MenuLangId::Urdu, "DSi بیرونی کیمرا"},            {MenuLangId::Punjabi, "DSi ਬਾਹਰੀ ਕੈਮਰਾ"},            {MenuLangId::Telugu, "DSi బయటి కెమెరా"},            {MenuLangId::Persian, "دوربین بیرونی DSi"},            {MenuLangId::Malay, "Kamera luar DSi"},            {MenuLangId::Marathi, "DSi बाह्य कॅमेरा"},            {MenuLangId::Tamil, "DSi வெளி கேமரா"},            {MenuLangId::Gujarati, "DSi બાહ્ય કેમેરા"},            {MenuLangId::Kannada, "DSi ಬಾಹ್ಯ ಕ್ಯಾಮೆರಾ"},            {MenuLangId::Odia, "ଓଡ଼ିଆ: DSi outer camera"},            {MenuLangId::Malayalam, "DSi പുറം ക്യാമറ"},            {MenuLangId::Burmese, "DSi အပြင်ကင်မရာ"},            {MenuLangId::Uzbek, "DSi tashqi kamera"},            {MenuLangId::Azerbaijani, "DSi xarici kamera"},            {MenuLangId::Nepali, "DSi बाहिरी क्यामेरा"},            {MenuLangId::Sinhala, "DSi පිටත කැමරාව"},            {MenuLangId::Khmer, "កាមេរ៉ាខាងក្រៅ DSi"},            {MenuLangId::Lao, "ກ້ອງນອກ DSi"},            {MenuLangId::Armenian, "DSi արտաքին տեսախցիկ"},            {MenuLangId::Albanian, "Kamera e jashtme DSi"},            {MenuLangId::Georgian, "DSi გარე კამერა"},            {MenuLangId::Bosnian, "DSi vanjska kamera"},            {MenuLangId::Serbian, "DSi спољна камера"},            {MenuLangId::Macedonian, "DSi надворешна камера"},            {MenuLangId::Bulgarian, "DSi външна камера"},            {MenuLangId::Belarusian, "DSi знешняя камера"},            {MenuLangId::Maltese, "kamera esterna DSi"},            {MenuLangId::Mongolian, "DSi гадна камер"},            {MenuLangId::Latvian, "DSi ārējā kamera"},            {MenuLangId::Lithuanian, "DSi išorinė kamera"},            {MenuLangId::Afrikaans, "DSi buitekamera"},            {MenuLangId::Irish, "ceamara seachtrach DSi"},            {MenuLangId::Assamese, "DSi বাহিৰৰ কেমেৰা"},            {MenuLangId::Amharic, "አማርኛ: DSi outer camera"},            {MenuLangId::Estonian, "Eesti: DSi outer camera"},            {MenuLangId::Kazakh, "Қазақша: DSi outer camera"},            {MenuLangId::Catalan, "Català: DSi outer camera"},            {MenuLangId::Kyrgyz, "Кыргызча: DSi outer camera"},            {MenuLangId::Slovak, "Slovenčina: DSi outer camera"},            {MenuLangId::Slovenian, "Slovenščina: DSi outer camera"},            {MenuLangId::Zulu, "isiZulu: DSi outer camera"},            {MenuLangId::Basque, "Euskara: DSi outer camera"},            {MenuLangId::Hebrew, "עברית: DSi outer camera"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -1996,6 +5196,7 @@
             {MenuLangId::Russian, "Внутренняя камера DSi"},
             {MenuLangId::ChineseSimplified, "DSi 内侧摄像头"},
             {MenuLangId::ChineseTraditional, "DSi 內側相機"},
+            {MenuLangId::ChineseHongKong, "DSi 內側相機"},
             {MenuLangId::Korean, "DSi 내장 카메라"},
             {MenuLangId::Arabic, "كاميرا DSi الداخلية"},
             {MenuLangId::Indonesian, "Kamera dalam DSi"},
@@ -2011,7 +5212,56 @@
             {MenuLangId::Finnish, "DSi:n sisäkamera"},
             {MenuLangId::Vietnamese, "Camera trong DSi"},
             {MenuLangId::Polish, "Wewnętrzna kamera DSi"},
-            {MenuLangId::Romanian, "Cameră interioară DSi"},
+            {MenuLangId::Romanian, "Cameră interioară DSi"},            {MenuLangId::Filipino, "DSi inner camera"},            {MenuLangId::Swahili, "DSi inner camera"},            {MenuLangId::Croatian, "DSi unutarnja kamera"},            {MenuLangId::Icelandic, "DSi innri myndavél"},            {MenuLangId::Hindi, "DSi आंतरिक कैमरा"},            {MenuLangId::Bengali, "DSi ভেতরের ক্যামেরা"},            {MenuLangId::Urdu, "DSi اندرونی کیمرا"},            {MenuLangId::Punjabi, "DSi ਅੰਦਰੂਨੀ ਕੈਮਰਾ"},            {MenuLangId::Telugu, "DSi లోపలి కెమెరా"},            {MenuLangId::Persian, "دوربین داخلی DSi"},            {MenuLangId::Malay, "Kamera dalam DSi"},            {MenuLangId::Marathi, "DSi अंतर्गत कॅमेरा"},            {MenuLangId::Tamil, "DSi உள் கேமரா"},            {MenuLangId::Gujarati, "DSi આંતરિક કેમેરા"},            {MenuLangId::Kannada, "DSi ಆಂತರಿಕ ಕ್ಯಾಮೆರಾ"},            {MenuLangId::Odia, "ଓଡ଼ିଆ: DSi inner camera"},            {MenuLangId::Malayalam, "DSi അകത്തെ ക്യാമറ"},            {MenuLangId::Burmese, "DSi အတွင်းကင်မရာ"},            {MenuLangId::Uzbek, "DSi ichki kamera"},            {MenuLangId::Azerbaijani, "DSi daxili kamera"},            {MenuLangId::Nepali, "DSi भित्री क्यामेरा"},            {MenuLangId::Sinhala, "DSi ඇතුළත කැමරාව"},            {MenuLangId::Khmer, "កាមេរ៉ាខាងក្នុង DSi"},            {MenuLangId::Lao, "ກ້ອງໃນ DSi"},            {MenuLangId::Armenian, "DSi ներքին տեսախցիկ"},            {MenuLangId::Albanian, "Kamera e brendshme DSi"},            {MenuLangId::Georgian, "DSi შიდა კამერა"},            {MenuLangId::Bosnian, "DSi unutrašnja kamera"},            {MenuLangId::Serbian, "DSi унутрашња камера"},            {MenuLangId::Macedonian, "DSi внатрешна камера"},            {MenuLangId::Bulgarian, "DSi вътрешна камера"},            {MenuLangId::Belarusian, "DSi ўнутраная камера"},            {MenuLangId::Maltese, "kamera interna DSi"},            {MenuLangId::Mongolian, "DSi дотор камер"},            {MenuLangId::Latvian, "DSi iekšējā kamera"},            {MenuLangId::Lithuanian, "DSi vidinė kamera"},            {MenuLangId::Afrikaans, "DSi binnekamera"},            {MenuLangId::Irish, "ceamara inmheánach DSi"},            {MenuLangId::Assamese, "DSi ভিতৰৰ কেমেৰা"},            {MenuLangId::Amharic, "አማርኛ: DSi inner camera"},            {MenuLangId::Estonian, "Eesti: DSi inner camera"},            {MenuLangId::Kazakh, "Қазақша: DSi inner camera"},            {MenuLangId::Catalan, "Català: DSi inner camera"},            {MenuLangId::Kyrgyz, "Кыргызча: DSi inner camera"},            {MenuLangId::Slovak, "Slovenčina: DSi inner camera"},            {MenuLangId::Slovenian, "Slovenščina: DSi inner camera"},            {MenuLangId::Zulu, "isiZulu: DSi inner camera"},            {MenuLangId::Basque, "Euskara: DSi inner camera"},            {MenuLangId::Hebrew, "עברית: DSi inner camera"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -2027,6 +5277,7 @@
             {MenuLangId::Russian, "Вывод звука"},
             {MenuLangId::ChineseSimplified, "音频输出"},
             {MenuLangId::ChineseTraditional, "音訊輸出"},
+            {MenuLangId::ChineseHongKong, "音訊輸出"},
             {MenuLangId::Korean, "오디오 출력"},
             {MenuLangId::Arabic, "مخرج الصوت"},
             {MenuLangId::Indonesian, "Output audio"},
@@ -2042,7 +5293,56 @@
             {MenuLangId::Finnish, "Äänilähtö"},
             {MenuLangId::Vietnamese, "Đầu ra âm thanh"},
             {MenuLangId::Polish, "Wyjście audio"},
-            {MenuLangId::Romanian, "Ieșire audio"},
+            {MenuLangId::Romanian, "Ieșire audio"},            {MenuLangId::Filipino, "Audio output"},            {MenuLangId::Swahili, "Sauti tokeo"},            {MenuLangId::Croatian, "Zvuk izlaz"},            {MenuLangId::Icelandic, "Hljóð úttak"},            {MenuLangId::Hindi, "ऑडियो आउटपुट"},            {MenuLangId::Bengali, "অডিও আউটপুট"},            {MenuLangId::Urdu, "آڈیو آؤٹ پٹ"},            {MenuLangId::Punjabi, "ਆਡੀਓ ਆਉਟਪੁੱਟ"},            {MenuLangId::Telugu, "ఆడియో అవుట్‌పుట్"},            {MenuLangId::Persian, "صدا خروجی"},            {MenuLangId::Malay, "Output audio"},            {MenuLangId::Marathi, "ऑडिओ आउटपुट"},            {MenuLangId::Tamil, "ஆடியோ வெளியீடு"},            {MenuLangId::Gujarati, "ઑડિયો આઉટપુટ"},            {MenuLangId::Kannada, "ಆಡಿಯೋ ಔಟ್‌ಪುಟ್"},            {MenuLangId::Odia, "ଅଡିଓ ଆଉଟପୁଟ୍"},            {MenuLangId::Malayalam, "ഓഡിയോ ഔട്ട്പുട്ട്"},            {MenuLangId::Burmese, "အသံ output"},            {MenuLangId::Uzbek, "Audio chiqish"},            {MenuLangId::Azerbaijani, "Audio çıxış"},            {MenuLangId::Nepali, "अडियो आउटपुट"},            {MenuLangId::Sinhala, "ශ්‍රව්‍ය ප්‍රතිදානය"},            {MenuLangId::Khmer, "អូឌីយ៉ូ លទ្ធផល"},            {MenuLangId::Lao, "ສຽງ ເອົາຕ໌ພຸດ"},            {MenuLangId::Armenian, "Աուդիո ելք"},            {MenuLangId::Albanian, "Audio dalje"},            {MenuLangId::Georgian, "აუდიო გამოტანა"},            {MenuLangId::Bosnian, "Audio izlaz"},            {MenuLangId::Serbian, "Аудио излаз"},            {MenuLangId::Macedonian, "Аудио излез"},            {MenuLangId::Bulgarian, "Аудио изход"},            {MenuLangId::Belarusian, "Аўдыя вывад"},            {MenuLangId::Maltese, "Awdjo output"},            {MenuLangId::Mongolian, "Аудио гаралт"},            {MenuLangId::Latvian, "Audio izvade"},            {MenuLangId::Lithuanian, "Garsas išvestis"},            {MenuLangId::Afrikaans, "Oudio uitvoer"},            {MenuLangId::Irish, "Fuaim aschur"},            {MenuLangId::Assamese, "অডিঅ' আউটপুট"},            {MenuLangId::Amharic, "ድምፅ ውፅዓት"},            {MenuLangId::Estonian, "Heli väljund"},            {MenuLangId::Kazakh, "Аудио шығару"},            {MenuLangId::Catalan, "Àudio sortida"},            {MenuLangId::Kyrgyz, "Аудио чыгаруу"},            {MenuLangId::Slovak, "Zvuk výstup"},            {MenuLangId::Slovenian, "Zvok izhod"},            {MenuLangId::Zulu, "Umsindo okokukhipha"},            {MenuLangId::Basque, "Audioa irteera"},            {MenuLangId::Hebrew, "שמע פלט"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -2058,6 +5358,7 @@
             {MenuLangId::Russian, "Вход микрофона"},
             {MenuLangId::ChineseSimplified, "麦克风输入"},
             {MenuLangId::ChineseTraditional, "麥克風輸入"},
+            {MenuLangId::ChineseHongKong, "麥克風輸入"},
             {MenuLangId::Korean, "마이크 입력"},
             {MenuLangId::Arabic, "إدخال الميكروفون"},
             {MenuLangId::Indonesian, "Input mikrofon"},
@@ -2073,7 +5374,56 @@
             {MenuLangId::Finnish, "Mikrofonitulo"},
             {MenuLangId::Vietnamese, "Đầu vào micro"},
             {MenuLangId::Polish, "Wejście mikrofonu"},
-            {MenuLangId::Romanian, "Intrare microfon"},
+            {MenuLangId::Romanian, "Intrare microfon"},            {MenuLangId::Filipino, "Microphone input"},            {MenuLangId::Swahili, "Microphone ingizo"},            {MenuLangId::Croatian, "Microphone unos"},            {MenuLangId::Icelandic, "Microphone inntak"},            {MenuLangId::Hindi, "Microphone इनपुट"},            {MenuLangId::Bengali, "Microphone ইনপুট"},            {MenuLangId::Urdu, "Microphone ان پٹ"},            {MenuLangId::Punjabi, "Microphone ਇਨਪੁੱਟ"},            {MenuLangId::Telugu, "Microphone ఇన్‌పుట్"},            {MenuLangId::Persian, "Microphone ورودی"},            {MenuLangId::Malay, "Input mikrofon"},            {MenuLangId::Marathi, "Microphone इनपुट"},            {MenuLangId::Tamil, "Microphone உள்ளீடு"},            {MenuLangId::Gujarati, "Microphone ઇનપુટ"},            {MenuLangId::Kannada, "Microphone ಇನ್‌ಪುಟ್"},            {MenuLangId::Odia, "Microphone ଇନପୁଟ୍"},            {MenuLangId::Malayalam, "Microphone ഇൻപുട്ട്"},            {MenuLangId::Burmese, "microphone input"},            {MenuLangId::Uzbek, "Microphone kiritish"},            {MenuLangId::Azerbaijani, "Microphone giriş"},            {MenuLangId::Nepali, "Microphone इनपुट"},            {MenuLangId::Sinhala, "Microphone ආදානය"},            {MenuLangId::Khmer, "Microphone បញ្ចូល"},            {MenuLangId::Lao, "Microphone ອິນພຸດ"},            {MenuLangId::Armenian, "Microphone մուտք"},            {MenuLangId::Albanian, "Microphone hyrje"},            {MenuLangId::Georgian, "Microphone შეყვანა"},            {MenuLangId::Bosnian, "Microphone unos"},            {MenuLangId::Serbian, "Microphone унос"},            {MenuLangId::Macedonian, "Microphone влез"},            {MenuLangId::Bulgarian, "Microphone вход"},            {MenuLangId::Belarusian, "Microphone увод"},            {MenuLangId::Maltese, "input tal-mikrofonu"},            {MenuLangId::Mongolian, "Microphone оролт"},            {MenuLangId::Latvian, "Microphone ievade"},            {MenuLangId::Lithuanian, "Microphone įvestis"},            {MenuLangId::Afrikaans, "Microphone invoer"},            {MenuLangId::Irish, "Microphone ionchur"},            {MenuLangId::Assamese, "Microphone ইনপুট"},            {MenuLangId::Amharic, "Microphone ግቤት"},            {MenuLangId::Estonian, "Microphone sisend"},            {MenuLangId::Kazakh, "Microphone енгізу"},            {MenuLangId::Catalan, "Microphone entrada"},            {MenuLangId::Kyrgyz, "Microphone киргизүү"},            {MenuLangId::Slovak, "Microphone vstup"},            {MenuLangId::Slovenian, "Microphone vnos"},            {MenuLangId::Zulu, "Microphone okokufaka"},            {MenuLangId::Basque, "Microphone sarrera"},            {MenuLangId::Hebrew, "Microphone קלט"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -2089,6 +5439,7 @@
             {MenuLangId::Russian, "Интерполяция:"},
             {MenuLangId::ChineseSimplified, "插值："},
             {MenuLangId::ChineseTraditional, "插值："},
+            {MenuLangId::ChineseHongKong, "插值："},
             {MenuLangId::Korean, "보간:"},
             {MenuLangId::Arabic, "الاستيفاء:"},
             {MenuLangId::Indonesian, "Interpolasi:"},
@@ -2104,7 +5455,56 @@
             {MenuLangId::Finnish, "Interpolointi:"},
             {MenuLangId::Vietnamese, "Nội suy:"},
             {MenuLangId::Polish, "Interpolacja:"},
-            {MenuLangId::Romanian, "Interpolare:"},
+            {MenuLangId::Romanian, "Interpolare:"},            {MenuLangId::Filipino, "Interpolation:"},            {MenuLangId::Swahili, "Interpolation:"},            {MenuLangId::Croatian, "Interpolacija:"},            {MenuLangId::Icelandic, "Brúun:"},            {MenuLangId::Hindi, "इंटरपोलेशन:"},            {MenuLangId::Bengali, "ইন্টারপোলেশন:"},            {MenuLangId::Urdu, "انٹرپولیشن:"},            {MenuLangId::Punjabi, "ਇੰਟਰਪੋਲੇਸ਼ਨ:"},            {MenuLangId::Telugu, "ఇంటర్‌పోలేషన్:"},            {MenuLangId::Persian, "درون‌یابی:"},            {MenuLangId::Malay, "Interpolasi:"},            {MenuLangId::Marathi, "इंटरपोलेशन:"},            {MenuLangId::Tamil, "interpolation:"},            {MenuLangId::Gujarati, "interpolation:"},            {MenuLangId::Kannada, "interpolation:"},            {MenuLangId::Odia, "ଓଡ଼ିଆ: Interpolation:"},            {MenuLangId::Malayalam, "interpolation:"},            {MenuLangId::Burmese, "interpolation:"},            {MenuLangId::Uzbek, "interpolation:"},            {MenuLangId::Azerbaijani, "interpolation:"},            {MenuLangId::Nepali, "interpolation:"},            {MenuLangId::Sinhala, "interpolation:"},            {MenuLangId::Khmer, "interpolation:"},            {MenuLangId::Lao, "interpolation:"},            {MenuLangId::Armenian, "interpolation:"},            {MenuLangId::Albanian, "interpolation:"},            {MenuLangId::Georgian, "interpolation:"},            {MenuLangId::Bosnian, "interpolation:"},            {MenuLangId::Serbian, "interpolation:"},            {MenuLangId::Macedonian, "interpolation:"},            {MenuLangId::Bulgarian, "interpolation:"},            {MenuLangId::Belarusian, "interpolation:"},            {MenuLangId::Maltese, "interpolation:"},            {MenuLangId::Mongolian, "interpolation:"},            {MenuLangId::Latvian, "interpolation:"},            {MenuLangId::Lithuanian, "interpolation:"},            {MenuLangId::Afrikaans, "interpolation:"},            {MenuLangId::Irish, "Gaeilge: Interpolation:"},            {MenuLangId::Assamese, "interpolation:"},            {MenuLangId::Amharic, "አማርኛ: Interpolation:"},            {MenuLangId::Estonian, "Eesti: Interpolation:"},            {MenuLangId::Kazakh, "Қазақша: Interpolation:"},            {MenuLangId::Catalan, "Català: Interpolation:"},            {MenuLangId::Kyrgyz, "Кыргызча: Interpolation:"},            {MenuLangId::Slovak, "Slovenčina: Interpolation:"},            {MenuLangId::Slovenian, "Slovenščina: Interpolation:"},            {MenuLangId::Zulu, "isiZulu: Interpolation:"},            {MenuLangId::Basque, "Euskara: Interpolation:"},            {MenuLangId::Hebrew, "עברית: Interpolation:"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -2120,6 +5520,7 @@
             {MenuLangId::Russian, "Разрядность:"},
             {MenuLangId::ChineseSimplified, "位深度："},
             {MenuLangId::ChineseTraditional, "位深度："},
+            {MenuLangId::ChineseHongKong, "位深度："},
             {MenuLangId::Korean, "비트 깊이:"},
             {MenuLangId::Arabic, "عمق البت:"},
             {MenuLangId::Indonesian, "Kedalaman bit:"},
@@ -2135,7 +5536,56 @@
             {MenuLangId::Finnish, "Bittisyvyys:"},
             {MenuLangId::Vietnamese, "Độ sâu bit:"},
             {MenuLangId::Polish, "Głębia bitowa:"},
-            {MenuLangId::Romanian, "Adâncime bit:"},
+            {MenuLangId::Romanian, "Adâncime bit:"},            {MenuLangId::Filipino, "Bit depth:"},            {MenuLangId::Swahili, "Bit depth:"},            {MenuLangId::Croatian, "Dubina bita:"},            {MenuLangId::Icelandic, "Bitadýpt:"},            {MenuLangId::Hindi, "बिट गहराई:"},            {MenuLangId::Bengali, "বিট গভীরতা:"},            {MenuLangId::Urdu, "بٹ گہرائی:"},            {MenuLangId::Punjabi, "ਬਿਟ ਡੈਪਥ:"},            {MenuLangId::Telugu, "బిట్ డెప్త్:"},            {MenuLangId::Persian, "عمق بیت:"},            {MenuLangId::Malay, "Kedalaman bit:"},            {MenuLangId::Marathi, "बिट डेप्थ:"},            {MenuLangId::Tamil, "bit depth:"},            {MenuLangId::Gujarati, "bit depth:"},            {MenuLangId::Kannada, "bit depth:"},            {MenuLangId::Odia, "ଓଡ଼ିଆ: Bit depth:"},            {MenuLangId::Malayalam, "bit depth:"},            {MenuLangId::Burmese, "bit depth:"},            {MenuLangId::Uzbek, "bit depth:"},            {MenuLangId::Azerbaijani, "bit depth:"},            {MenuLangId::Nepali, "bit depth:"},            {MenuLangId::Sinhala, "bit depth:"},            {MenuLangId::Khmer, "bit depth:"},            {MenuLangId::Lao, "bit depth:"},            {MenuLangId::Armenian, "bit depth:"},            {MenuLangId::Albanian, "bit depth:"},            {MenuLangId::Georgian, "bit depth:"},            {MenuLangId::Bosnian, "bit depth:"},            {MenuLangId::Serbian, "bit depth:"},            {MenuLangId::Macedonian, "bit depth:"},            {MenuLangId::Bulgarian, "bit depth:"},            {MenuLangId::Belarusian, "bit depth:"},            {MenuLangId::Maltese, "bit depth:"},            {MenuLangId::Mongolian, "bit depth:"},            {MenuLangId::Latvian, "bit depth:"},            {MenuLangId::Lithuanian, "bit depth:"},            {MenuLangId::Afrikaans, "bit depth:"},            {MenuLangId::Irish, "Gaeilge: Bit depth:"},            {MenuLangId::Assamese, "bit depth:"},            {MenuLangId::Amharic, "አማርኛ: Bit depth:"},            {MenuLangId::Estonian, "Eesti: Bit depth:"},            {MenuLangId::Kazakh, "Қазақша: Bit depth:"},            {MenuLangId::Catalan, "Català: Bit depth:"},            {MenuLangId::Kyrgyz, "Кыргызча: Bit depth:"},            {MenuLangId::Slovak, "Slovenčina: Bit depth:"},            {MenuLangId::Slovenian, "Slovenščina: Bit depth:"},            {MenuLangId::Zulu, "isiZulu: Bit depth:"},            {MenuLangId::Basque, "Euskara: Bit depth:"},            {MenuLangId::Hebrew, "עברית: Bit depth:"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -2151,6 +5601,7 @@
             {MenuLangId::Russian, "Громкость:"},
             {MenuLangId::ChineseSimplified, "音量:"},
             {MenuLangId::ChineseTraditional, "音量:"},
+            {MenuLangId::ChineseHongKong, "音量:"},
             {MenuLangId::Korean, "볼륨:"},
             {MenuLangId::Arabic, "مستوى الصوت:"},
             {MenuLangId::Indonesian, "Volume:"},
@@ -2166,7 +5617,56 @@
             {MenuLangId::Finnish, "Äänenvoimakkuus:"},
             {MenuLangId::Vietnamese, "Âm lượng:"},
             {MenuLangId::Polish, "Głośność:"},
-            {MenuLangId::Romanian, "Volum:"},
+            {MenuLangId::Romanian, "Volum:"},            {MenuLangId::Filipino, "Volume:"},            {MenuLangId::Swahili, "Volume:"},            {MenuLangId::Croatian, "Glasnoća:"},            {MenuLangId::Icelandic, "Hljóðstyrkur:"},            {MenuLangId::Hindi, "वॉल्यूम:"},            {MenuLangId::Bengali, "ভলিউম:"},            {MenuLangId::Urdu, "والیوم:"},            {MenuLangId::Punjabi, "ਵਾਲਿਊਮ:"},            {MenuLangId::Telugu, "వాల్యూమ్:"},            {MenuLangId::Persian, "صدا:"},            {MenuLangId::Malay, "Volum:"},            {MenuLangId::Marathi, "व्हॉल्यूम:"},            {MenuLangId::Tamil, "ஒலி அளவு:"},            {MenuLangId::Gujarati, "વૉલ્યુમ:"},            {MenuLangId::Kannada, "ವಾಲ್ಯೂಮ್:"},            {MenuLangId::Odia, "ଓଡ଼ିଆ: Volume:"},            {MenuLangId::Malayalam, "വോള്യം:"},            {MenuLangId::Burmese, "အသံအတိုးအကျယ်:"},            {MenuLangId::Uzbek, "Ovoz balandligi:"},            {MenuLangId::Azerbaijani, "Səs həcmi:"},            {MenuLangId::Nepali, "भोल्युम:"},            {MenuLangId::Sinhala, "ශබ්ද මට්ටම:"},            {MenuLangId::Khmer, "កម្រិតសំឡេង:"},            {MenuLangId::Lao, "ລະດັບສຽງ:"},            {MenuLangId::Armenian, "Ձայնի մակարդակ:"},            {MenuLangId::Albanian, "Volumi:"},            {MenuLangId::Georgian, "ხმის დონე:"},            {MenuLangId::Bosnian, "Jačina zvuka:"},            {MenuLangId::Serbian, "Јачина звука:"},            {MenuLangId::Macedonian, "Јачина на звук:"},            {MenuLangId::Bulgarian, "Сила на звука:"},            {MenuLangId::Belarusian, "Гучнасць:"},            {MenuLangId::Maltese, "Volum:"},            {MenuLangId::Mongolian, "Дууны хэмжээ:"},            {MenuLangId::Latvian, "Skaļums:"},            {MenuLangId::Lithuanian, "Garsumas:"},            {MenuLangId::Afrikaans, "Volume:"},            {MenuLangId::Irish, "Gaeilge: Volume:"},            {MenuLangId::Assamese, "ভলিউম:"},            {MenuLangId::Amharic, "አማርኛ: Volume:"},            {MenuLangId::Estonian, "Eesti: Volume:"},            {MenuLangId::Kazakh, "Қазақша: Volume:"},            {MenuLangId::Catalan, "Català: Volume:"},            {MenuLangId::Kyrgyz, "Кыргызча: Volume:"},            {MenuLangId::Slovak, "Slovenčina: Volume:"},            {MenuLangId::Slovenian, "Slovenščina: Volume:"},            {MenuLangId::Zulu, "isiZulu: Volume:"},            {MenuLangId::Basque, "Euskara: Volume:"},            {MenuLangId::Hebrew, "עברית: Volume:"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -2182,6 +5682,7 @@
             {MenuLangId::Russian, "Синхронизировать с громкостью DSi"},
             {MenuLangId::ChineseSimplified, "与 DSi 音量同步"},
             {MenuLangId::ChineseTraditional, "與 DSi 音量同步"},
+            {MenuLangId::ChineseHongKong, "與 DSi 音量同步"},
             {MenuLangId::Korean, "DSi 볼륨과 동기화"},
             {MenuLangId::Arabic, "مزامنة مع مستوى صوت DSi"},
             {MenuLangId::Indonesian, "Sinkronkan dengan volume DSi"},
@@ -2197,7 +5698,56 @@
             {MenuLangId::Finnish, "Synkronoi DSi-äänenvoimakkuuden kanssa"},
             {MenuLangId::Vietnamese, "Đồng bộ với âm lượng DSi"},
             {MenuLangId::Polish, "Synchronizuj z głośnością DSi"},
-            {MenuLangId::Romanian, "Sincronizează cu volumul DSi"},
+            {MenuLangId::Romanian, "Sincronizează cu volumul DSi"},            {MenuLangId::Filipino, "Sync with DSi volume"},            {MenuLangId::Swahili, "Sync with DSi volume"},            {MenuLangId::Croatian, "Sinkroniziraj s DSi glasnoćom"},            {MenuLangId::Icelandic, "Samstilla við DSi-hljóðstyrk"},            {MenuLangId::Hindi, "DSi वॉल्यूम से सिंक करें"},            {MenuLangId::Bengali, "DSi ভলিউমের সাথে সিঙ্ক করুন"},            {MenuLangId::Urdu, "DSi والیوم کے ساتھ سنک کریں"},            {MenuLangId::Punjabi, "DSi ਵਾਲਿਊਮ ਨਾਲ ਸਿੰਕ ਕਰੋ"},            {MenuLangId::Telugu, "DSi వాల్యూమ్‌తో సింక్ చేయి"},            {MenuLangId::Persian, "همگام با صدای DSi"},            {MenuLangId::Malay, "Segerak dengan volum DSi"},            {MenuLangId::Marathi, "DSi व्हॉल्यूमशी सिंक करा"},            {MenuLangId::Tamil, "DSi ஒலி அளவுடன் sync செய்"},            {MenuLangId::Gujarati, "DSi વૉલ્યુમ સાથે sync કરો"},            {MenuLangId::Kannada, "DSi ವಾಲ್ಯೂಮ್ ಜೊತೆ sync ಮಾಡಿ"},            {MenuLangId::Odia, "ଓଡ଼ିଆ: Sync with DSi volume"},            {MenuLangId::Malayalam, "DSi വോള്യവുമായി sync ചെയ്യുക"},            {MenuLangId::Burmese, "DSi volume နှင့် sync ပါ"},            {MenuLangId::Uzbek, "DSi volume bilan sync"},            {MenuLangId::Azerbaijani, "DSi volume ilə sync et"},            {MenuLangId::Nepali, "DSi volume सँग sync गर्नुहोस्"},            {MenuLangId::Sinhala, "DSi volume සමඟ sync කරන්න"},            {MenuLangId::Khmer, "sync ជាមួយ DSi volume"},            {MenuLangId::Lao, "sync ກັບ DSi volume"},            {MenuLangId::Armenian, "sync անել DSi volume-ի հետ"},            {MenuLangId::Albanian, "sync me DSi volume"},            {MenuLangId::Georgian, "DSi volume-თან sync"},            {MenuLangId::Bosnian, "sync s DSi volume"},            {MenuLangId::Serbian, "sync са DSi volume"},            {MenuLangId::Macedonian, "sync со DSi volume"},            {MenuLangId::Bulgarian, "sync с DSi volume"},            {MenuLangId::Belarusian, "sync з DSi volume"},            {MenuLangId::Maltese, "sync ma' DSi volume"},            {MenuLangId::Mongolian, "DSi volume-тэй sync хийх"},            {MenuLangId::Latvian, "sync ar DSi volume"},            {MenuLangId::Lithuanian, "sync su DSi volume"},            {MenuLangId::Afrikaans, "sync met DSi volume"},            {MenuLangId::Irish, "Gaeilge: Sync with DSi volume"},            {MenuLangId::Assamese, "DSi volume-ৰ সৈতে sync কৰক"},            {MenuLangId::Amharic, "አማርኛ: Sync with DSi volume"},            {MenuLangId::Estonian, "Eesti: Sync with DSi volume"},            {MenuLangId::Kazakh, "Қазақша: Sync with DSi volume"},            {MenuLangId::Catalan, "Català: Sync with DSi volume"},            {MenuLangId::Kyrgyz, "Кыргызча: Sync with DSi volume"},            {MenuLangId::Slovak, "Slovenčina: Sync with DSi volume"},            {MenuLangId::Slovenian, "Slovenščina: Sync with DSi volume"},            {MenuLangId::Zulu, "isiZulu: Sync with DSi volume"},            {MenuLangId::Basque, "Euskara: Sync with DSi volume"},            {MenuLangId::Hebrew, "עברית: Sync with DSi volume"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -2213,6 +5763,7 @@
             {MenuLangId::Russian, "Нет"},
             {MenuLangId::ChineseSimplified, "无"},
             {MenuLangId::ChineseTraditional, "無"},
+            {MenuLangId::ChineseHongKong, "無"},
             {MenuLangId::Korean, "없음"},
             {MenuLangId::Arabic, "لا شيء"},
             {MenuLangId::Indonesian, "Tidak ada"},
@@ -2228,7 +5779,56 @@
             {MenuLangId::Finnish, "Ei mitään"},
             {MenuLangId::Vietnamese, "Không"},
             {MenuLangId::Polish, "Brak"},
-            {MenuLangId::Romanian, "Niciunul"},
+            {MenuLangId::Romanian, "Niciunul"},            {MenuLangId::Filipino, "Wala"},            {MenuLangId::Swahili, "Hakuna"},            {MenuLangId::Croatian, "Nijedno"},            {MenuLangId::Icelandic, "Ekkert"},            {MenuLangId::Hindi, "कोई नहीं"},            {MenuLangId::Bengali, "কোনোটিই নয়"},            {MenuLangId::Urdu, "کوئی نہیں"},            {MenuLangId::Punjabi, "ਕੋਈ ਨਹੀਂ"},            {MenuLangId::Telugu, "ఏదీ లేదు"},            {MenuLangId::Persian, "هیچ‌کدام"},            {MenuLangId::Malay, "Tiada"},            {MenuLangId::Marathi, "काहीही नाही"},            {MenuLangId::Tamil, "எதுவுமில்லை"},            {MenuLangId::Gujarati, "કંઈ નહીં"},            {MenuLangId::Kannada, "ಯಾವುದೂ ಇಲ್ಲ"},            {MenuLangId::Odia, "କିଛି ନାହିଁ"},            {MenuLangId::Malayalam, "ഒന്നുമില്ല"},            {MenuLangId::Burmese, "မရှိပါ"},            {MenuLangId::Uzbek, "Yoʻq"},            {MenuLangId::Azerbaijani, "Yoxdur"},            {MenuLangId::Nepali, "कुनै छैन"},            {MenuLangId::Sinhala, "කිසිවක් නැත"},            {MenuLangId::Khmer, "គ្មាន"},            {MenuLangId::Lao, "ບໍ່ມີ"},            {MenuLangId::Armenian, "Չկա"},            {MenuLangId::Albanian, "Asnjë"},            {MenuLangId::Georgian, "არცერთი"},            {MenuLangId::Bosnian, "Nijedno"},            {MenuLangId::Serbian, "Ништа"},            {MenuLangId::Macedonian, "Ништо"},            {MenuLangId::Bulgarian, "Няма"},            {MenuLangId::Belarusian, "Няма"},            {MenuLangId::Maltese, "Xejn"},            {MenuLangId::Mongolian, "Байхгүй"},            {MenuLangId::Latvian, "Nav"},            {MenuLangId::Lithuanian, "Nėra"},            {MenuLangId::Afrikaans, "Geen"},            {MenuLangId::Irish, "Níl aon cheann"},            {MenuLangId::Assamese, "কোনো নাই"},            {MenuLangId::Amharic, "ምንም"},            {MenuLangId::Estonian, "Puudub"},            {MenuLangId::Kazakh, "Жоқ"},            {MenuLangId::Catalan, "Cap"},            {MenuLangId::Kyrgyz, "Жок"},            {MenuLangId::Slovak, "Žiadne"},            {MenuLangId::Slovenian, "Brez"},            {MenuLangId::Zulu, "Akukho"},            {MenuLangId::Basque, "Bat ere ez"},            {MenuLangId::Hebrew, "ללא"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -2244,6 +5844,7 @@
             {MenuLangId::Russian, "Линейная"},
             {MenuLangId::ChineseSimplified, "线性"},
             {MenuLangId::ChineseTraditional, "線性"},
+            {MenuLangId::ChineseHongKong, "線性"},
             {MenuLangId::Korean, "선형"},
             {MenuLangId::Arabic, "خطي"},
             {MenuLangId::Indonesian, "Linear"},
@@ -2259,7 +5860,56 @@
             {MenuLangId::Finnish, "Lineaarinen"},
             {MenuLangId::Vietnamese, "Tuyến tính"},
             {MenuLangId::Polish, "Liniowa"},
-            {MenuLangId::Romanian, "Liniar"},
+            {MenuLangId::Romanian, "Liniar"},            {MenuLangId::Filipino, "Linear"},            {MenuLangId::Swahili, "Linear"},            {MenuLangId::Croatian, "Linearno"},            {MenuLangId::Icelandic, "Línulegt"},            {MenuLangId::Hindi, "लीनियर"},            {MenuLangId::Bengali, "লিনিয়ার"},            {MenuLangId::Urdu, "لکیری"},            {MenuLangId::Punjabi, "ਲੀਨੀਅਰ"},            {MenuLangId::Telugu, "లీనియర్"},            {MenuLangId::Persian, "خطی"},            {MenuLangId::Malay, "Linear"},            {MenuLangId::Marathi, "लिनिअर"},            {MenuLangId::Tamil, "Linear"},            {MenuLangId::Gujarati, "Linear"},            {MenuLangId::Kannada, "Linear"},            {MenuLangId::Odia, "Linear"},            {MenuLangId::Malayalam, "Linear"},            {MenuLangId::Burmese, "Linear"},            {MenuLangId::Uzbek, "Linear"},            {MenuLangId::Azerbaijani, "Linear"},            {MenuLangId::Nepali, "Linear"},            {MenuLangId::Sinhala, "Linear"},            {MenuLangId::Khmer, "Linear"},            {MenuLangId::Lao, "Linear"},            {MenuLangId::Armenian, "Linear"},            {MenuLangId::Albanian, "Linear"},            {MenuLangId::Georgian, "Linear"},            {MenuLangId::Bosnian, "Linear"},            {MenuLangId::Serbian, "Linear"},            {MenuLangId::Macedonian, "Linear"},            {MenuLangId::Bulgarian, "Linear"},            {MenuLangId::Belarusian, "Linear"},            {MenuLangId::Maltese, "Linear"},            {MenuLangId::Mongolian, "Linear"},            {MenuLangId::Latvian, "Linear"},            {MenuLangId::Lithuanian, "Linear"},            {MenuLangId::Afrikaans, "Linear"},            {MenuLangId::Irish, "Linear"},            {MenuLangId::Assamese, "Linear"},            {MenuLangId::Amharic, "Linear"},            {MenuLangId::Estonian, "Linear"},            {MenuLangId::Kazakh, "Linear"},            {MenuLangId::Catalan, "Linear"},            {MenuLangId::Kyrgyz, "Linear"},            {MenuLangId::Slovak, "Linear"},            {MenuLangId::Slovenian, "Linear"},            {MenuLangId::Zulu, "Linear"},            {MenuLangId::Basque, "Linear"},            {MenuLangId::Hebrew, "Linear"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -2275,6 +5925,7 @@
             {MenuLangId::Russian, "Косинус"},
             {MenuLangId::ChineseSimplified, "余弦"},
             {MenuLangId::ChineseTraditional, "餘弦"},
+            {MenuLangId::ChineseHongKong, "餘弦"},
             {MenuLangId::Korean, "코사인"},
             {MenuLangId::Arabic, "جيب التمام"},
             {MenuLangId::Indonesian, "Kosinus"},
@@ -2290,7 +5941,56 @@
             {MenuLangId::Finnish, "Kosini"},
             {MenuLangId::Vietnamese, "Cosin"},
             {MenuLangId::Polish, "Cosinus"},
-            {MenuLangId::Romanian, "Cosinus"},
+            {MenuLangId::Romanian, "Cosinus"},            {MenuLangId::Filipino, "Cosine"},            {MenuLangId::Swahili, "Cosine"},            {MenuLangId::Croatian, "Kosinus"},            {MenuLangId::Icelandic, "Kósínus"},            {MenuLangId::Hindi, "कोसाइन"},            {MenuLangId::Bengali, "কোসাইন"},            {MenuLangId::Urdu, "کوسائن"},            {MenuLangId::Punjabi, "ਕੋਸਾਈਨ"},            {MenuLangId::Telugu, "కోసైన్"},            {MenuLangId::Persian, "کسینوسی"},            {MenuLangId::Malay, "Kosinus"},            {MenuLangId::Marathi, "कोसाइन"},            {MenuLangId::Tamil, "Cosine"},            {MenuLangId::Gujarati, "Cosine"},            {MenuLangId::Kannada, "Cosine"},            {MenuLangId::Odia, "Cosine"},            {MenuLangId::Malayalam, "Cosine"},            {MenuLangId::Burmese, "Cosine"},            {MenuLangId::Uzbek, "Cosine"},            {MenuLangId::Azerbaijani, "Cosine"},            {MenuLangId::Nepali, "Cosine"},            {MenuLangId::Sinhala, "Cosine"},            {MenuLangId::Khmer, "Cosine"},            {MenuLangId::Lao, "Cosine"},            {MenuLangId::Armenian, "Cosine"},            {MenuLangId::Albanian, "Cosine"},            {MenuLangId::Georgian, "Cosine"},            {MenuLangId::Bosnian, "Cosine"},            {MenuLangId::Serbian, "Cosine"},            {MenuLangId::Macedonian, "Cosine"},            {MenuLangId::Bulgarian, "Cosine"},            {MenuLangId::Belarusian, "Cosine"},            {MenuLangId::Maltese, "Cosine"},            {MenuLangId::Mongolian, "Cosine"},            {MenuLangId::Latvian, "Cosine"},            {MenuLangId::Lithuanian, "Cosine"},            {MenuLangId::Afrikaans, "Cosine"},            {MenuLangId::Irish, "Cosine"},            {MenuLangId::Assamese, "Cosine"},            {MenuLangId::Amharic, "Cosine"},            {MenuLangId::Estonian, "Cosine"},            {MenuLangId::Kazakh, "Cosine"},            {MenuLangId::Catalan, "Cosine"},            {MenuLangId::Kyrgyz, "Cosine"},            {MenuLangId::Slovak, "Cosine"},            {MenuLangId::Slovenian, "Cosine"},            {MenuLangId::Zulu, "Cosine"},            {MenuLangId::Basque, "Cosine"},            {MenuLangId::Hebrew, "Cosine"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -2306,6 +6006,7 @@
             {MenuLangId::Russian, "Кубический"},
             {MenuLangId::ChineseSimplified, "三次"},
             {MenuLangId::ChineseTraditional, "三次"},
+            {MenuLangId::ChineseHongKong, "三次"},
             {MenuLangId::Korean, "3차"},
             {MenuLangId::Arabic, "مكعب"},
             {MenuLangId::Indonesian, "Kubik"},
@@ -2321,7 +6022,56 @@
             {MenuLangId::Finnish, "Kuutiollinen"},
             {MenuLangId::Vietnamese, "Khối"},
             {MenuLangId::Polish, "Sześcienny"},
-            {MenuLangId::Romanian, "Cubic"},
+            {MenuLangId::Romanian, "Cubic"},            {MenuLangId::Filipino, "Cubic"},            {MenuLangId::Swahili, "Cubic"},            {MenuLangId::Croatian, "Kubično"},            {MenuLangId::Icelandic, "Kúbískt"},            {MenuLangId::Hindi, "क्यूबिक"},            {MenuLangId::Bengali, "কিউবিক"},            {MenuLangId::Urdu, "کیوبک"},            {MenuLangId::Punjabi, "ਕਿਊਬਿਕ"},            {MenuLangId::Telugu, "క్యూబిక్"},            {MenuLangId::Persian, "مکعبی"},            {MenuLangId::Malay, "Kubik"},            {MenuLangId::Marathi, "क्यूबिक"},            {MenuLangId::Tamil, "Cubic"},            {MenuLangId::Gujarati, "Cubic"},            {MenuLangId::Kannada, "Cubic"},            {MenuLangId::Odia, "Cubic"},            {MenuLangId::Malayalam, "Cubic"},            {MenuLangId::Burmese, "Cubic"},            {MenuLangId::Uzbek, "Cubic"},            {MenuLangId::Azerbaijani, "Cubic"},            {MenuLangId::Nepali, "Cubic"},            {MenuLangId::Sinhala, "Cubic"},            {MenuLangId::Khmer, "Cubic"},            {MenuLangId::Lao, "Cubic"},            {MenuLangId::Armenian, "Cubic"},            {MenuLangId::Albanian, "Cubic"},            {MenuLangId::Georgian, "Cubic"},            {MenuLangId::Bosnian, "Cubic"},            {MenuLangId::Serbian, "Cubic"},            {MenuLangId::Macedonian, "Cubic"},            {MenuLangId::Bulgarian, "Cubic"},            {MenuLangId::Belarusian, "Cubic"},            {MenuLangId::Maltese, "Cubic"},            {MenuLangId::Mongolian, "Cubic"},            {MenuLangId::Latvian, "Cubic"},            {MenuLangId::Lithuanian, "Cubic"},            {MenuLangId::Afrikaans, "Cubic"},            {MenuLangId::Irish, "Cubic"},            {MenuLangId::Assamese, "Cubic"},            {MenuLangId::Amharic, "Cubic"},            {MenuLangId::Estonian, "Cubic"},            {MenuLangId::Kazakh, "Cubic"},            {MenuLangId::Catalan, "Cubic"},            {MenuLangId::Kyrgyz, "Cubic"},            {MenuLangId::Slovak, "Cubic"},            {MenuLangId::Slovenian, "Cubic"},            {MenuLangId::Zulu, "Cubic"},            {MenuLangId::Basque, "Cubic"},            {MenuLangId::Hebrew, "Cubic"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -2337,6 +6087,7 @@
             {MenuLangId::Russian, "Гауссов (SNES)"},
             {MenuLangId::ChineseSimplified, "高斯 (SNES)"},
             {MenuLangId::ChineseTraditional, "高斯 (SNES)"},
+            {MenuLangId::ChineseHongKong, "高斯 (SNES)"},
             {MenuLangId::Korean, "가우시안 (SNES)"},
             {MenuLangId::Arabic, "Gaussian (SNES)"},
             {MenuLangId::Indonesian, "Gaussian (SNES)"},
@@ -2352,7 +6103,56 @@
             {MenuLangId::Finnish, "Gaussian (SNES)"},
             {MenuLangId::Vietnamese, "Gaussian (SNES)"},
             {MenuLangId::Polish, "Gaussian (SNES)"},
-            {MenuLangId::Romanian, "Gaussian (SNES)"},
+            {MenuLangId::Romanian, "Gaussian (SNES)"},            {MenuLangId::Filipino, "Gaussian (SNES)"},            {MenuLangId::Swahili, "Gaussian (SNES)"},            {MenuLangId::Croatian, "Gaussovo (SNES)"},            {MenuLangId::Icelandic, "Gaussískt (SNES)"},            {MenuLangId::Hindi, "गॉसियन (SNES)"},            {MenuLangId::Bengali, "গাউসিয়ান (SNES)"},            {MenuLangId::Urdu, "گاؤسیئن (SNES)"},            {MenuLangId::Punjabi, "ਗੌਸੀਅਨ (SNES)"},            {MenuLangId::Telugu, "గాసియన్ (SNES)"},            {MenuLangId::Persian, "گاوسی (SNES)"},            {MenuLangId::Malay, "Gaussian (SNES)"},            {MenuLangId::Marathi, "गॉशियन (SNES)"},            {MenuLangId::Tamil, "Gaussian (SNES)"},            {MenuLangId::Gujarati, "Gaussian (SNES)"},            {MenuLangId::Kannada, "Gaussian (SNES)"},            {MenuLangId::Odia, "ଓଡ଼ିଆ: Gaussian (SNES)"},            {MenuLangId::Malayalam, "Gaussian (SNES)"},            {MenuLangId::Burmese, "Gaussian (SNES)"},            {MenuLangId::Uzbek, "Gaussian (SNES)"},            {MenuLangId::Azerbaijani, "Gaussian (SNES)"},            {MenuLangId::Nepali, "Gaussian (SNES)"},            {MenuLangId::Sinhala, "Gaussian (SNES)"},            {MenuLangId::Khmer, "Gaussian (SNES)"},            {MenuLangId::Lao, "Gaussian (SNES)"},            {MenuLangId::Armenian, "Gaussian (SNES)"},            {MenuLangId::Albanian, "Gaussian (SNES)"},            {MenuLangId::Georgian, "Gaussian (SNES)"},            {MenuLangId::Bosnian, "Gaussian (SNES)"},            {MenuLangId::Serbian, "Gaussian (SNES)"},            {MenuLangId::Macedonian, "Gaussian (SNES)"},            {MenuLangId::Bulgarian, "Gaussian (SNES)"},            {MenuLangId::Belarusian, "Gaussian (SNES)"},            {MenuLangId::Maltese, "Gaussian (SNES)"},            {MenuLangId::Mongolian, "Gaussian (SNES)"},            {MenuLangId::Latvian, "Gaussian (SNES)"},            {MenuLangId::Lithuanian, "Gaussian (SNES)"},            {MenuLangId::Afrikaans, "Gaussian (SNES)"},            {MenuLangId::Irish, "Gaeilge: Gaussian (SNES)"},            {MenuLangId::Assamese, "Gaussian (SNES)"},            {MenuLangId::Amharic, "አማርኛ: Gaussian (SNES)"},            {MenuLangId::Estonian, "Gaussian (SNES)"},            {MenuLangId::Kazakh, "Қазақша: Gaussian (SNES)"},            {MenuLangId::Catalan, "Català: Gaussian (SNES)"},            {MenuLangId::Kyrgyz, "Кыргызча: Gaussian (SNES)"},            {MenuLangId::Slovak, "Slovenčina: Gaussian (SNES)"},            {MenuLangId::Slovenian, "Slovenščina: Gaussian (SNES)"},            {MenuLangId::Zulu, "isiZulu: Gaussian (SNES)"},            {MenuLangId::Basque, "Euskara: Gaussian (SNES)"},            {MenuLangId::Hebrew, "עברית: Gaussian (SNES)"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -2368,6 +6168,7 @@
             {MenuLangId::Russian, "Автоматически"},
             {MenuLangId::ChineseSimplified, "自动"},
             {MenuLangId::ChineseTraditional, "自動"},
+            {MenuLangId::ChineseHongKong, "自動"},
             {MenuLangId::Korean, "자동"},
             {MenuLangId::Arabic, "تلقائي"},
             {MenuLangId::Indonesian, "Otomatis"},
@@ -2383,7 +6184,56 @@
             {MenuLangId::Finnish, "Automaattinen"},
             {MenuLangId::Vietnamese, "Tự động"},
             {MenuLangId::Polish, "Automatycznie"},
-            {MenuLangId::Romanian, "Automat"},
+            {MenuLangId::Romanian, "Automat"},            {MenuLangId::Filipino, "Awtomatiko"},            {MenuLangId::Swahili, "Otomatiki"},            {MenuLangId::Croatian, "Automatski"},            {MenuLangId::Icelandic, "Sjálfvirkt"},            {MenuLangId::Hindi, "स्वचालित"},            {MenuLangId::Bengali, "স্বয়ংক্রিয়"},            {MenuLangId::Urdu, "خودکار"},            {MenuLangId::Punjabi, "ਆਟੋਮੈਟਿਕ"},            {MenuLangId::Telugu, "స్వయంచాలక"},            {MenuLangId::Persian, "خودکار"},            {MenuLangId::Malay, "Automatik"},            {MenuLangId::Marathi, "स्वयंचलित"},            {MenuLangId::Tamil, "தானியங்கி"},            {MenuLangId::Gujarati, "સ્વચાલિત"},            {MenuLangId::Kannada, "ಸ್ವಯಂಚಾಲಿತ"},            {MenuLangId::Odia, "ସ୍ୱୟଂଚାଳିତ"},            {MenuLangId::Malayalam, "സ്വയമേവ"},            {MenuLangId::Burmese, "အလိုအလျောက်"},            {MenuLangId::Uzbek, "Avtomatik"},            {MenuLangId::Azerbaijani, "Avtomatik"},            {MenuLangId::Nepali, "स्वचालित"},            {MenuLangId::Sinhala, "ස්වයංක්‍රීය"},            {MenuLangId::Khmer, "ស្វ័យប្រវត្តិ"},            {MenuLangId::Lao, "ອັດຕະໂນມັດ"},            {MenuLangId::Armenian, "Ավտոմատ"},            {MenuLangId::Albanian, "Automatik"},            {MenuLangId::Georgian, "ავტომატური"},            {MenuLangId::Bosnian, "Automatski"},            {MenuLangId::Serbian, "Аутоматски"},            {MenuLangId::Macedonian, "Автоматски"},            {MenuLangId::Bulgarian, "Автоматично"},            {MenuLangId::Belarusian, "Аўтаматычна"},            {MenuLangId::Maltese, "Awtomatiku"},            {MenuLangId::Mongolian, "Автомат"},            {MenuLangId::Latvian, "Automātiski"},            {MenuLangId::Lithuanian, "Automatiškai"},            {MenuLangId::Afrikaans, "Outomaties"},            {MenuLangId::Irish, "Uathoibríoch"},            {MenuLangId::Assamese, "স্বয়ংক্ৰিয়"},            {MenuLangId::Amharic, "ራስ-ሰር"},            {MenuLangId::Estonian, "Automaatne"},            {MenuLangId::Kazakh, "Автоматты"},            {MenuLangId::Catalan, "Automàtic"},            {MenuLangId::Kyrgyz, "Автоматтык"},            {MenuLangId::Slovak, "Automaticky"},            {MenuLangId::Slovenian, "Samodejno"},            {MenuLangId::Zulu, "Okuzenzakalelayo"},            {MenuLangId::Basque, "Automatikoa"},            {MenuLangId::Hebrew, "אוטומטי"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -2399,6 +6249,7 @@
             {MenuLangId::Russian, "10-bit"},
             {MenuLangId::ChineseSimplified, "10-bit"},
             {MenuLangId::ChineseTraditional, "10-bit"},
+            {MenuLangId::ChineseHongKong, "10-bit"},
             {MenuLangId::Korean, "10-bit"},
             {MenuLangId::Arabic, "10-bit"},
             {MenuLangId::Indonesian, "10-bit"},
@@ -2414,7 +6265,56 @@
             {MenuLangId::Finnish, "10-bit"},
             {MenuLangId::Vietnamese, "10-bit"},
             {MenuLangId::Polish, "10-bit"},
-            {MenuLangId::Romanian, "10-bit"},
+            {MenuLangId::Romanian, "10-bit"},            {MenuLangId::Filipino, "10-bit"},            {MenuLangId::Swahili, "10-bit"},            {MenuLangId::Croatian, "10-bitno"},            {MenuLangId::Icelandic, "10-bita"},            {MenuLangId::Hindi, "10-बिट"},            {MenuLangId::Bengali, "১০-বিট"},            {MenuLangId::Urdu, "10-بٹ"},            {MenuLangId::Punjabi, "10-ਬਿਟ"},            {MenuLangId::Telugu, "10-బిట్"},            {MenuLangId::Persian, "۱۰-بیتی"},            {MenuLangId::Malay, "10-bit"},            {MenuLangId::Marathi, "10-बिट"},            {MenuLangId::Tamil, "10-bit"},            {MenuLangId::Gujarati, "10-bit"},            {MenuLangId::Kannada, "10-bit"},            {MenuLangId::Odia, "10-bit"},            {MenuLangId::Malayalam, "10-bit"},            {MenuLangId::Burmese, "10-bit"},            {MenuLangId::Uzbek, "10-bit"},            {MenuLangId::Azerbaijani, "10-bit"},            {MenuLangId::Nepali, "10-bit"},            {MenuLangId::Sinhala, "10-bit"},            {MenuLangId::Khmer, "10-bit"},            {MenuLangId::Lao, "10-bit"},            {MenuLangId::Armenian, "10-bit"},            {MenuLangId::Albanian, "10-bit"},            {MenuLangId::Georgian, "10-bit"},            {MenuLangId::Bosnian, "10-bit"},            {MenuLangId::Serbian, "10-bit"},            {MenuLangId::Macedonian, "10-bit"},            {MenuLangId::Bulgarian, "10-bit"},            {MenuLangId::Belarusian, "10-bit"},            {MenuLangId::Maltese, "10-bit"},            {MenuLangId::Mongolian, "10-bit"},            {MenuLangId::Latvian, "10-bit"},            {MenuLangId::Lithuanian, "10-bit"},            {MenuLangId::Afrikaans, "10-bit"},            {MenuLangId::Irish, "10-bit"},            {MenuLangId::Assamese, "10-bit"},            {MenuLangId::Amharic, "10-bit"},            {MenuLangId::Estonian, "10-bit"},            {MenuLangId::Kazakh, "10-bit"},            {MenuLangId::Catalan, "10-bit"},            {MenuLangId::Kyrgyz, "10-bit"},            {MenuLangId::Slovak, "10-bit"},            {MenuLangId::Slovenian, "10-bit"},            {MenuLangId::Zulu, "10-bit"},            {MenuLangId::Basque, "10-bit"},            {MenuLangId::Hebrew, "10-bit"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -2430,6 +6330,7 @@
             {MenuLangId::Russian, "16-bit"},
             {MenuLangId::ChineseSimplified, "16-bit"},
             {MenuLangId::ChineseTraditional, "16-bit"},
+            {MenuLangId::ChineseHongKong, "16-bit"},
             {MenuLangId::Korean, "16-bit"},
             {MenuLangId::Arabic, "16-bit"},
             {MenuLangId::Indonesian, "16-bit"},
@@ -2445,7 +6346,56 @@
             {MenuLangId::Finnish, "16-bit"},
             {MenuLangId::Vietnamese, "16-bit"},
             {MenuLangId::Polish, "16-bit"},
-            {MenuLangId::Romanian, "16-bit"},
+            {MenuLangId::Romanian, "16-bit"},            {MenuLangId::Filipino, "16-bit"},            {MenuLangId::Swahili, "16-bit"},            {MenuLangId::Croatian, "16-bitno"},            {MenuLangId::Icelandic, "16-bita"},            {MenuLangId::Hindi, "16-बिट"},            {MenuLangId::Bengali, "১৬-বিট"},            {MenuLangId::Urdu, "16-بٹ"},            {MenuLangId::Punjabi, "16-ਬਿਟ"},            {MenuLangId::Telugu, "16-బిట్"},            {MenuLangId::Persian, "۱۶-بیتی"},            {MenuLangId::Malay, "16-bit"},            {MenuLangId::Marathi, "16-बिट"},            {MenuLangId::Tamil, "16-bit"},            {MenuLangId::Gujarati, "16-bit"},            {MenuLangId::Kannada, "16-bit"},            {MenuLangId::Odia, "16-bit"},            {MenuLangId::Malayalam, "16-bit"},            {MenuLangId::Burmese, "16-bit"},            {MenuLangId::Uzbek, "16-bit"},            {MenuLangId::Azerbaijani, "16-bit"},            {MenuLangId::Nepali, "16-bit"},            {MenuLangId::Sinhala, "16-bit"},            {MenuLangId::Khmer, "16-bit"},            {MenuLangId::Lao, "16-bit"},            {MenuLangId::Armenian, "16-bit"},            {MenuLangId::Albanian, "16-bit"},            {MenuLangId::Georgian, "16-bit"},            {MenuLangId::Bosnian, "16-bit"},            {MenuLangId::Serbian, "16-bit"},            {MenuLangId::Macedonian, "16-bit"},            {MenuLangId::Bulgarian, "16-bit"},            {MenuLangId::Belarusian, "16-bit"},            {MenuLangId::Maltese, "16-bit"},            {MenuLangId::Mongolian, "16-bit"},            {MenuLangId::Latvian, "16-bit"},            {MenuLangId::Lithuanian, "16-bit"},            {MenuLangId::Afrikaans, "16-bit"},            {MenuLangId::Irish, "16-bit"},            {MenuLangId::Assamese, "16-bit"},            {MenuLangId::Amharic, "16-bit"},            {MenuLangId::Estonian, "16-bit"},            {MenuLangId::Kazakh, "16-bit"},            {MenuLangId::Catalan, "16-bit"},            {MenuLangId::Kyrgyz, "16-bit"},            {MenuLangId::Slovak, "16-bit"},            {MenuLangId::Slovenian, "16-bit"},            {MenuLangId::Zulu, "16-bit"},            {MenuLangId::Basque, "16-bit"},            {MenuLangId::Hebrew, "16-bit"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -2461,6 +6411,7 @@
             {MenuLangId::Russian, "Внешний микрофон"},
             {MenuLangId::ChineseSimplified, "外部麦克风"},
             {MenuLangId::ChineseTraditional, "外部麥克風"},
+            {MenuLangId::ChineseHongKong, "外部麥克風"},
             {MenuLangId::Korean, "외부 마이크"},
             {MenuLangId::Arabic, "ميكروفون خارجي"},
             {MenuLangId::Indonesian, "Mikrofon eksternal"},
@@ -2476,7 +6427,56 @@
             {MenuLangId::Finnish, "Ulkoinen mikrofoni"},
             {MenuLangId::Vietnamese, "Micrô ngoài"},
             {MenuLangId::Polish, "Mikrofon zewnętrzny"},
-            {MenuLangId::Romanian, "Microfon extern"},
+            {MenuLangId::Romanian, "Microfon extern"},            {MenuLangId::Filipino, "External microphone"},            {MenuLangId::Swahili, "External microphone"},            {MenuLangId::Croatian, "Vanjski mikrofon"},            {MenuLangId::Icelandic, "Ytri hljóðnemi"},            {MenuLangId::Hindi, "बाहरी माइक्रोफ़ोन"},            {MenuLangId::Bengali, "বাহ্যিক মাইক্রোফোন"},            {MenuLangId::Urdu, "بیرونی مائیکروفون"},            {MenuLangId::Punjabi, "ਬਾਹਰੀ ਮਾਈਕ੍ਰੋਫੋਨ"},            {MenuLangId::Telugu, "బాహ్య మైక్రోఫోన్"},            {MenuLangId::Persian, "میکروفون خارجی"},            {MenuLangId::Malay, "Mikrofon luaran"},            {MenuLangId::Marathi, "बाह्य मायक्रोफोन"},            {MenuLangId::Tamil, "வெளி மைக்ரோஃபோன்"},            {MenuLangId::Gujarati, "બાહ્ય માઇક્રોફોન"},            {MenuLangId::Kannada, "ಬಾಹ್ಯ ಮೈಕ್ರೋಫೋನ್"},            {MenuLangId::Odia, "ବାହ୍ୟ microphone"},            {MenuLangId::Malayalam, "ബാഹ്യ microphone"},            {MenuLangId::Burmese, "ပြင်ပ microphone"},            {MenuLangId::Uzbek, "Tashqi microphone"},            {MenuLangId::Azerbaijani, "Xarici microphone"},            {MenuLangId::Nepali, "बाह्य microphone"},            {MenuLangId::Sinhala, "බාහිර microphone"},            {MenuLangId::Khmer, "microphone ខាងក្រៅ"},            {MenuLangId::Lao, "microphone ພາຍນອກ"},            {MenuLangId::Armenian, "Արտաքին microphone"},            {MenuLangId::Albanian, "Mikrofon i jashtëm"},            {MenuLangId::Georgian, "გარე microphone"},            {MenuLangId::Bosnian, "Vanjski mikrofon"},            {MenuLangId::Serbian, "Спољни микрофон"},            {MenuLangId::Macedonian, "Надворешен микрофон"},            {MenuLangId::Bulgarian, "Външен микрофон"},            {MenuLangId::Belarusian, "Знешні мікрафон"},            {MenuLangId::Maltese, "Mikrofonu estern"},            {MenuLangId::Mongolian, "Гадаад микрофон"},            {MenuLangId::Latvian, "Ārējais mikrofons"},            {MenuLangId::Lithuanian, "Išorinis mikrofonas"},            {MenuLangId::Afrikaans, "Eksterne mikrofoon"},            {MenuLangId::Irish, "Micreafón seachtrach"},            {MenuLangId::Assamese, "বাহ্যিক মাইক্ৰ'ফোন"},            {MenuLangId::Amharic, "ውጫዊ ማይክሮፎን"},            {MenuLangId::Estonian, "Väline mikrofon"},            {MenuLangId::Kazakh, "Сыртқы микрофон"},            {MenuLangId::Catalan, "Micròfon extern"},            {MenuLangId::Kyrgyz, "Сырткы микрофон"},            {MenuLangId::Slovak, "Externý mikrofón"},            {MenuLangId::Slovenian, "Zunanji mikrofon"},            {MenuLangId::Zulu, "Imakrofoni yangaphandle"},            {MenuLangId::Basque, "Kanpoko mikrofonoa"},            {MenuLangId::Hebrew, "מיקרופון חיצוני"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -2492,6 +6492,7 @@
             {MenuLangId::Russian, "Шум дуновения"},
             {MenuLangId::ChineseSimplified, "吹气噪声"},
             {MenuLangId::ChineseTraditional, "吹氣噪聲"},
+            {MenuLangId::ChineseHongKong, "吹氣噪聲"},
             {MenuLangId::Korean, "불기 노이즈"},
             {MenuLangId::Arabic, "ضجيج النفخ"},
             {MenuLangId::Indonesian, "Noise tiup"},
@@ -2507,7 +6508,56 @@
             {MenuLangId::Finnish, "Puhallusmelu"},
             {MenuLangId::Vietnamese, "Tiếng ồn thổi"},
             {MenuLangId::Polish, "Szum dmuchania"},
-            {MenuLangId::Romanian, "Zgomot de suflare"},
+            {MenuLangId::Romanian, "Zgomot de suflare"},            {MenuLangId::Filipino, "Blow noise"},            {MenuLangId::Swahili, "Blow noise"},            {MenuLangId::Croatian, "Šum puhanja"},            {MenuLangId::Icelandic, "Blásturshljóð"},            {MenuLangId::Hindi, "फूँक शोर"},            {MenuLangId::Bengali, "ফুঁ দেওয়ার শব্দ"},            {MenuLangId::Urdu, "پھونک کی آواز"},            {MenuLangId::Punjabi, "ਫੂਕ ਦੀ ਆਵਾਜ਼"},            {MenuLangId::Telugu, "ఊదిన శబ్దం"},            {MenuLangId::Persian, "صدای فوت"},            {MenuLangId::Malay, "Bunyi tiupan"},            {MenuLangId::Marathi, "फुंकर आवाज"},            {MenuLangId::Tamil, "ஊதும் சத்தம்"},            {MenuLangId::Gujarati, "ફૂંકવાનો અવાજ"},            {MenuLangId::Kannada, "ಊದುವ ಶಬ್ದ"},            {MenuLangId::Odia, "ଫୁଙ୍କା ଶବ୍ଦ"},            {MenuLangId::Malayalam, "ഊതുന്ന ശബ്‌ദം"},            {MenuLangId::Burmese, "မှုတ်သံ"},            {MenuLangId::Uzbek, "puflash shovqini"},            {MenuLangId::Azerbaijani, "üfürmə səsi"},            {MenuLangId::Nepali, "फुक्ने आवाज"},            {MenuLangId::Sinhala, "පුම්බන ශබ්දය"},            {MenuLangId::Khmer, "សំឡេងផ្លុំ"},            {MenuLangId::Lao, "ສຽງເປົ່າ"},            {MenuLangId::Armenian, "փչելու ձայն"},            {MenuLangId::Albanian, "zhurmë fryrjeje"},            {MenuLangId::Georgian, "ჩაბერვის ხმა"},            {MenuLangId::Bosnian, "zvuk puhanja"},            {MenuLangId::Serbian, "звук дувања"},            {MenuLangId::Macedonian, "звук на дување"},            {MenuLangId::Bulgarian, "звук от духане"},            {MenuLangId::Belarusian, "гук дзьмухання"},            {MenuLangId::Maltese, "ħoss ta' nfiħ"},            {MenuLangId::Mongolian, "үлээх дуу"},            {MenuLangId::Latvian, "pūšanas troksnis"},            {MenuLangId::Lithuanian, "pūtimo triukšmas"},            {MenuLangId::Afrikaans, "blaasgeluid"},            {MenuLangId::Irish, "torann séidte"},            {MenuLangId::Assamese, "ফুঁ দিয়া শব্দ"},            {MenuLangId::Amharic, "የመንፋት ድምፅ"},            {MenuLangId::Estonian, "puhumismüra"},            {MenuLangId::Kazakh, "үрлеу дыбысы"},            {MenuLangId::Catalan, "soroll de buf"},            {MenuLangId::Kyrgyz, "үйлөө үнү"},            {MenuLangId::Slovak, "hluk fúkania"},            {MenuLangId::Slovenian, "šum pihanja"},            {MenuLangId::Zulu, "umsindo wokuphefumula"},            {MenuLangId::Basque, "putz-hotsa"},            {MenuLangId::Hebrew, "רעש נשיפה"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -2523,6 +6573,7 @@
             {MenuLangId::Russian, "Файл WAV:"},
             {MenuLangId::ChineseSimplified, "WAV 文件："},
             {MenuLangId::ChineseTraditional, "WAV 檔案："},
+            {MenuLangId::ChineseHongKong, "WAV 檔案："},
             {MenuLangId::Korean, "WAV 파일:"},
             {MenuLangId::Arabic, "ملف WAV:"},
             {MenuLangId::Indonesian, "File WAV:"},
@@ -2538,7 +6589,56 @@
             {MenuLangId::Finnish, "WAV-tiedosto:"},
             {MenuLangId::Vietnamese, "Tệp WAV:"},
             {MenuLangId::Polish, "Plik WAV:"},
-            {MenuLangId::Romanian, "Fișier WAV:"},
+            {MenuLangId::Romanian, "Fișier WAV:"},            {MenuLangId::Filipino, "WAV talaksan:"},            {MenuLangId::Swahili, "WAV faili:"},            {MenuLangId::Croatian, "WAV datoteka:"},            {MenuLangId::Icelandic, "WAV skrá:"},            {MenuLangId::Hindi, "WAV फ़ाइल:"},            {MenuLangId::Bengali, "WAV ফাইল:"},            {MenuLangId::Urdu, "WAV فائل:"},            {MenuLangId::Punjabi, "WAV ਫਾਇਲ:"},            {MenuLangId::Telugu, "WAV ఫైల్:"},            {MenuLangId::Persian, "WAV فایل:"},            {MenuLangId::Malay, "WAV fail:"},            {MenuLangId::Marathi, "WAV फाइल:"},            {MenuLangId::Tamil, "WAV கோப்பு:"},            {MenuLangId::Gujarati, "WAV ફાઇલ:"},            {MenuLangId::Kannada, "WAV ಫೈಲ್:"},            {MenuLangId::Odia, "WAV ଫାଇଲ୍:"},            {MenuLangId::Malayalam, "WAV ഫയൽ:"},            {MenuLangId::Burmese, "WAV ဖိုင်:"},            {MenuLangId::Uzbek, "WAV fayl:"},            {MenuLangId::Azerbaijani, "WAV fayl:"},            {MenuLangId::Nepali, "WAV फाइल:"},            {MenuLangId::Sinhala, "WAV ගොනුව:"},            {MenuLangId::Khmer, "WAV ឯកសារ:"},            {MenuLangId::Lao, "WAV ໄຟລ໌:"},            {MenuLangId::Armenian, "WAV ֆայլ:"},            {MenuLangId::Albanian, "WAV skedari:"},            {MenuLangId::Georgian, "WAV ფაილი:"},            {MenuLangId::Bosnian, "WAV datoteka:"},            {MenuLangId::Serbian, "WAV датотека:"},            {MenuLangId::Macedonian, "WAV датотека:"},            {MenuLangId::Bulgarian, "WAV файл:"},            {MenuLangId::Belarusian, "WAV файл:"},            {MenuLangId::Maltese, "WAV fajl:"},            {MenuLangId::Mongolian, "WAV файл:"},            {MenuLangId::Latvian, "WAV fails:"},            {MenuLangId::Lithuanian, "WAV failas:"},            {MenuLangId::Afrikaans, "WAV lêer:"},            {MenuLangId::Irish, "WAV comhad:"},            {MenuLangId::Assamese, "WAV ফাইল:"},            {MenuLangId::Amharic, "WAV ፋይል:"},            {MenuLangId::Estonian, "WAV fail:"},            {MenuLangId::Kazakh, "WAV файл:"},            {MenuLangId::Catalan, "WAV fitxer:"},            {MenuLangId::Kyrgyz, "WAV файл:"},            {MenuLangId::Slovak, "WAV súbor:"},            {MenuLangId::Slovenian, "WAV datoteka:"},            {MenuLangId::Zulu, "WAV ifayela:"},            {MenuLangId::Basque, "WAV fitxategia:"},            {MenuLangId::Hebrew, "WAV קובץ:"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -2554,6 +6654,7 @@
             {MenuLangId::Russian, "Джойстик:"},
             {MenuLangId::ChineseSimplified, "摇杆："},
             {MenuLangId::ChineseTraditional, "搖桿："},
+            {MenuLangId::ChineseHongKong, "搖桿："},
             {MenuLangId::Korean, "조이스틱:"},
             {MenuLangId::Arabic, "Joystick:"},
             {MenuLangId::Indonesian, "Joystick:"},
@@ -2569,7 +6670,56 @@
             {MenuLangId::Finnish, "Joystick:"},
             {MenuLangId::Vietnamese, "Joystick:"},
             {MenuLangId::Polish, "Joystick:"},
-            {MenuLangId::Romanian, "Joystick:"},
+            {MenuLangId::Romanian, "Joystick:"},            {MenuLangId::Filipino, "Joystick:"},            {MenuLangId::Swahili, "Joystick:"},            {MenuLangId::Croatian, "Joystick:"},            {MenuLangId::Icelandic, "Stýripinni:"},            {MenuLangId::Hindi, "जॉयस्टिक:"},            {MenuLangId::Bengali, "জয়স্টিক:"},            {MenuLangId::Urdu, "جوائے اسٹک:"},            {MenuLangId::Punjabi, "ਜੋਇਸਟਿਕ:"},            {MenuLangId::Telugu, "జాయ్‌స్టిక్:"},            {MenuLangId::Persian, "جوی‌استیک:"},            {MenuLangId::Malay, "Joystick:"},            {MenuLangId::Marathi, "जॉयस्टिक:"},            {MenuLangId::Tamil, "Joystick:"},            {MenuLangId::Gujarati, "Joystick:"},            {MenuLangId::Kannada, "Joystick:"},            {MenuLangId::Odia, "ଓଡ଼ିଆ: Joystick:"},            {MenuLangId::Malayalam, "Joystick:"},            {MenuLangId::Burmese, "Joystick:"},            {MenuLangId::Uzbek, "Joystick:"},            {MenuLangId::Azerbaijani, "Joystick:"},            {MenuLangId::Nepali, "Joystick:"},            {MenuLangId::Sinhala, "Joystick:"},            {MenuLangId::Khmer, "Joystick:"},            {MenuLangId::Lao, "Joystick:"},            {MenuLangId::Armenian, "Joystick:"},            {MenuLangId::Albanian, "Joystick:"},            {MenuLangId::Georgian, "Joystick:"},            {MenuLangId::Bosnian, "Joystick:"},            {MenuLangId::Serbian, "Joystick:"},            {MenuLangId::Macedonian, "Joystick:"},            {MenuLangId::Bulgarian, "Joystick:"},            {MenuLangId::Belarusian, "Joystick:"},            {MenuLangId::Maltese, "Joystick:"},            {MenuLangId::Mongolian, "Joystick:"},            {MenuLangId::Latvian, "Joystick:"},            {MenuLangId::Lithuanian, "Joystick:"},            {MenuLangId::Afrikaans, "Joystick:"},            {MenuLangId::Irish, "Gaeilge: Joystick:"},            {MenuLangId::Assamese, "Joystick:"},            {MenuLangId::Amharic, "አማርኛ: Joystick:"},            {MenuLangId::Estonian, "Eesti: Joystick:"},            {MenuLangId::Kazakh, "Қазақша: Joystick:"},            {MenuLangId::Catalan, "Català: Joystick:"},            {MenuLangId::Kyrgyz, "Кыргызча: Joystick:"},            {MenuLangId::Slovak, "Slovenčina: Joystick:"},            {MenuLangId::Slovenian, "Slovenščina: Joystick:"},            {MenuLangId::Zulu, "isiZulu: Joystick:"},            {MenuLangId::Basque, "Euskara: Joystick:"},            {MenuLangId::Hebrew, "עברית: Joystick:"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -2585,6 +6735,7 @@
             {MenuLangId::Russian, "(джойстики недоступны)"},
             {MenuLangId::ChineseSimplified, "（无可用摇杆）"},
             {MenuLangId::ChineseTraditional, "（無可用搖桿）"},
+            {MenuLangId::ChineseHongKong, "（無可用搖桿）"},
             {MenuLangId::Korean, "(사용 가능한 조이스틱 없음)"},
             {MenuLangId::Arabic, "(لا توجد عصا تحكم متاحة)"},
             {MenuLangId::Indonesian, "(tidak ada joystick tersedia)"},
@@ -2600,7 +6751,56 @@
             {MenuLangId::Finnish, "(ei saatavilla olevia ohjaussauvoja)"},
             {MenuLangId::Vietnamese, "(không có joystick)"},
             {MenuLangId::Polish, "(brak dostępnych joysticków)"},
-            {MenuLangId::Romanian, "(niciun joystick disponibil)"},
+            {MenuLangId::Romanian, "(niciun joystick disponibil)"},            {MenuLangId::Filipino, "(walang joysticks available)"},            {MenuLangId::Swahili, "(hakuna joysticks inapatikana)"},            {MenuLangId::Croatian, "(nema joysticks dostupno)"},            {MenuLangId::Icelandic, "(ekkert joysticks tiltækt)"},            {MenuLangId::Hindi, "(कोई joysticks उपलब्ध)"},            {MenuLangId::Bengali, "(কোনো joysticks উপলব্ধ)"},            {MenuLangId::Urdu, "(کوئی joysticks دستیاب)"},            {MenuLangId::Punjabi, "(ਕੋਈ joysticks ਉਪਲਬਧ)"},            {MenuLangId::Telugu, "(ఏ joysticks అందుబాటులో ఉంది)"},            {MenuLangId::Persian, "(بدون joysticks موجود)"},            {MenuLangId::Malay, "(tiada joysticks tersedia)"},            {MenuLangId::Marathi, "(कोणतेही joysticks उपलब्ध)"},            {MenuLangId::Tamil, "(எந்த joysticks கிடைக்கும்)"},            {MenuLangId::Gujarati, "(કોઈ joysticks ઉપલબ્ધ)"},            {MenuLangId::Kannada, "(ಯಾವ joysticks ಲಭ್ಯ)"},            {MenuLangId::Odia, "ଓଡ଼ିଆ: (no joysticks available)"},            {MenuLangId::Malayalam, "മലയാളം: (no joysticks available)"},            {MenuLangId::Burmese, "မြန်မာ: (no joysticks available)"},            {MenuLangId::Uzbek, "Oʻzbekcha: (no joysticks available)"},            {MenuLangId::Azerbaijani, "Azərbaycanca: (no joysticks available)"},            {MenuLangId::Nepali, "नेपाली: (no joysticks available)"},            {MenuLangId::Sinhala, "සිංහල: (no joysticks available)"},            {MenuLangId::Khmer, "ភាសាខ្មែរ: (no joysticks available)"},            {MenuLangId::Lao, "ລາວ: (no joysticks available)"},            {MenuLangId::Armenian, "Հայերեն: (no joysticks available)"},            {MenuLangId::Albanian, "Shqip: (no joysticks available)"},            {MenuLangId::Georgian, "ქართული: (no joysticks available)"},            {MenuLangId::Bosnian, "Bosanski: (no joysticks available)"},            {MenuLangId::Serbian, "Српски: (no joysticks available)"},            {MenuLangId::Macedonian, "Македонски: (no joysticks available)"},            {MenuLangId::Bulgarian, "Български: (no joysticks available)"},            {MenuLangId::Belarusian, "Беларуская: (no joysticks available)"},            {MenuLangId::Maltese, "Malti: (no joysticks available)"},            {MenuLangId::Mongolian, "Монгол: (no joysticks available)"},            {MenuLangId::Latvian, "Latviski: (no joysticks available)"},            {MenuLangId::Lithuanian, "Lietuvių: (no joysticks available)"},            {MenuLangId::Afrikaans, "Afrikaans: (no joysticks available)"},            {MenuLangId::Irish, "Gaeilge: (no joysticks available)"},            {MenuLangId::Assamese, "অসমীয়া: (no joysticks available)"},            {MenuLangId::Amharic, "አማርኛ: (no joysticks available)"},            {MenuLangId::Estonian, "Eesti: (no joysticks available)"},            {MenuLangId::Kazakh, "Қазақша: (no joysticks available)"},            {MenuLangId::Catalan, "Català: (no joysticks available)"},            {MenuLangId::Kyrgyz, "Кыргызча: (no joysticks available)"},            {MenuLangId::Slovak, "Slovenčina: (no joysticks available)"},            {MenuLangId::Slovenian, "Slovenščina: (no joysticks available)"},            {MenuLangId::Zulu, "isiZulu: (no joysticks available)"},            {MenuLangId::Basque, "Euskara: (no joysticks available)"},            {MenuLangId::Hebrew, "עברית: (no joysticks available)"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -2616,6 +6816,7 @@
             {MenuLangId::Russian, "Пауза/возобновление"},
             {MenuLangId::ChineseSimplified, "暂停/继续"},
             {MenuLangId::ChineseTraditional, "暫停/繼續"},
+            {MenuLangId::ChineseHongKong, "暫停/繼續"},
             {MenuLangId::Korean, "일시정지/재개"},
             {MenuLangId::Arabic, "إيقاف/استئناف"},
             {MenuLangId::Indonesian, "Jeda/lanjutkan"},
@@ -2631,7 +6832,56 @@
             {MenuLangId::Finnish, "Tauko/jatka"},
             {MenuLangId::Vietnamese, "Tạm dừng/tiếp tục"},
             {MenuLangId::Polish, "Pauza/wznów"},
-            {MenuLangId::Romanian, "Pauză/reluare"},
+            {MenuLangId::Romanian, "Pauză/reluare"},            {MenuLangId::Filipino, "Pause/resume"},            {MenuLangId::Swahili, "Pause/resume"},            {MenuLangId::Croatian, "Pauza/nastavi"},            {MenuLangId::Icelandic, "Hlé/halda áfram"},            {MenuLangId::Hindi, "रोकें/फिर शुरू करें"},            {MenuLangId::Bengali, "বিরতি/আবার শুরু"},            {MenuLangId::Urdu, "وقفہ/دوبارہ شروع"},            {MenuLangId::Punjabi, "ਵਿਰਾਮ/ਮੁੜ ਸ਼ੁਰੂ"},            {MenuLangId::Telugu, "విరామం/కొనసాగించు"},            {MenuLangId::Persian, "مکث/ادامه"},            {MenuLangId::Malay, "Jeda/sambung"},            {MenuLangId::Marathi, "विराम/पुन्हा सुरू"},            {MenuLangId::Tamil, "இடைநிறுத்து/தொடர்க"},            {MenuLangId::Gujarati, "થોભાવો/ચાલુ રાખો"},            {MenuLangId::Kannada, "ವಿರಾಮ/ಮುಂದುವರಿಸಿ"},            {MenuLangId::Odia, "ବିରତି/ପୁନଃଚାଲୁ"},            {MenuLangId::Malayalam, "വിരാമം/തുടരുക"},            {MenuLangId::Burmese, "ခေတ္တရပ်/ဆက်လုပ်"},            {MenuLangId::Uzbek, "pauza/davom ettirish"},            {MenuLangId::Azerbaijani, "fasilə/davam et"},            {MenuLangId::Nepali, "पज/फेरि सुरु"},            {MenuLangId::Sinhala, "විරාම/නැවත ආරම්භ"},            {MenuLangId::Khmer, "ផ្អាក/បន្ត"},            {MenuLangId::Lao, "ພັກ/ດຳເນີນຕໍ່"},            {MenuLangId::Armenian, "դադար/շարունակել"},            {MenuLangId::Albanian, "pauzë/vazhdo"},            {MenuLangId::Georgian, "პაუზა/გაგრძელება"},            {MenuLangId::Bosnian, "pauza/nastavi"},            {MenuLangId::Serbian, "пауза/настави"},            {MenuLangId::Macedonian, "пауза/продолжи"},            {MenuLangId::Bulgarian, "пауза/продължи"},            {MenuLangId::Belarusian, "паўза/працяг"},            {MenuLangId::Maltese, "pawża/kompli"},            {MenuLangId::Mongolian, "түр зогсоох/үргэлжлүүлэх"},            {MenuLangId::Latvian, "pauze/turpināt"},            {MenuLangId::Lithuanian, "pauzė/tęsti"},            {MenuLangId::Afrikaans, "pouse/hervat"},            {MenuLangId::Irish, "sos/lean ar aghaidh"},            {MenuLangId::Assamese, "বিৰতি/পুনৰ আৰম্ভ"},            {MenuLangId::Amharic, "ለአፍታ አቁም/ቀጥል"},            {MenuLangId::Estonian, "Paus/jätka"},            {MenuLangId::Kazakh, "Пауза/жалғастыру"},            {MenuLangId::Catalan, "Pausa/reprèn"},            {MenuLangId::Kyrgyz, "Тындыруу/улантуу"},            {MenuLangId::Slovak, "Pozastaviť/pokračovať"},            {MenuLangId::Slovenian, "Premor/nadaljuj"},            {MenuLangId::Zulu, "Misa isikhashana/qhubeka"},            {MenuLangId::Basque, "Pausatu/jarraitu"},            {MenuLangId::Hebrew, "השהה/המשך"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -2647,6 +6897,7 @@
             {MenuLangId::Russian, "Ускорение"},
             {MenuLangId::ChineseSimplified, "快进"},
             {MenuLangId::ChineseTraditional, "快進"},
+            {MenuLangId::ChineseHongKong, "快進"},
             {MenuLangId::Korean, "빨리 감기"},
             {MenuLangId::Arabic, "تقديم سريع"},
             {MenuLangId::Indonesian, "Maju cepat"},
@@ -2662,7 +6913,56 @@
             {MenuLangId::Finnish, "Kelaa eteenpäin"},
             {MenuLangId::Vietnamese, "Tua nhanh"},
             {MenuLangId::Polish, "Przewijanie do przodu"},
-            {MenuLangId::Romanian, "Derulare rapidă înainte"},
+            {MenuLangId::Romanian, "Derulare rapidă înainte"},            {MenuLangId::Filipino, "Fast forward"},            {MenuLangId::Swahili, "Fast forward"},            {MenuLangId::Croatian, "Ubrzaj"},            {MenuLangId::Icelandic, "Hröðun"},            {MenuLangId::Hindi, "फ़ास्ट फ़ॉरवर्ड"},            {MenuLangId::Bengali, "ফাস্ট ফরওয়ার্ড"},            {MenuLangId::Urdu, "فاسٹ فارورڈ"},            {MenuLangId::Punjabi, "ਫਾਸਟ ਫਾਰਵਰਡ"},            {MenuLangId::Telugu, "ఫాస్ట్ ఫార్వర్డ్"},            {MenuLangId::Persian, "جلو بردن سریع"},            {MenuLangId::Malay, "Maju pantas"},            {MenuLangId::Marathi, "फास्ट फॉरवर्ड"},            {MenuLangId::Tamil, "fast forward"},            {MenuLangId::Gujarati, "fast forward"},            {MenuLangId::Kannada, "fast forward"},            {MenuLangId::Odia, "fast forward"},            {MenuLangId::Malayalam, "fast forward"},            {MenuLangId::Burmese, "fast forward"},            {MenuLangId::Uzbek, "fast forward"},            {MenuLangId::Azerbaijani, "fast forward"},            {MenuLangId::Nepali, "fast forward"},            {MenuLangId::Sinhala, "fast forward"},            {MenuLangId::Khmer, "fast forward"},            {MenuLangId::Lao, "fast forward"},            {MenuLangId::Armenian, "fast forward"},            {MenuLangId::Albanian, "fast forward"},            {MenuLangId::Georgian, "fast forward"},            {MenuLangId::Bosnian, "fast forward"},            {MenuLangId::Serbian, "fast forward"},            {MenuLangId::Macedonian, "fast forward"},            {MenuLangId::Bulgarian, "fast forward"},            {MenuLangId::Belarusian, "fast forward"},            {MenuLangId::Maltese, "fast forward"},            {MenuLangId::Mongolian, "fast forward"},            {MenuLangId::Latvian, "fast forward"},            {MenuLangId::Lithuanian, "fast forward"},            {MenuLangId::Afrikaans, "fast forward"},            {MenuLangId::Irish, "fast forward"},            {MenuLangId::Assamese, "fast forward"},            {MenuLangId::Amharic, "Fast forward"},            {MenuLangId::Estonian, "fast forward"},            {MenuLangId::Kazakh, "Fast forward"},            {MenuLangId::Catalan, "Fast forward"},            {MenuLangId::Kyrgyz, "Fast forward"},            {MenuLangId::Slovak, "Fast forward"},            {MenuLangId::Slovenian, "Fast forward"},            {MenuLangId::Zulu, "Fast forward"},            {MenuLangId::Basque, "Fast forward"},            {MenuLangId::Hebrew, "Fast forward"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -2678,6 +6978,7 @@
             {MenuLangId::Russian, "Переключить ускорение"},
             {MenuLangId::ChineseSimplified, "切换快进"},
             {MenuLangId::ChineseTraditional, "切換快進"},
+            {MenuLangId::ChineseHongKong, "切換快進"},
             {MenuLangId::Korean, "빨리 감기 전환"},
             {MenuLangId::Arabic, "تبديل التقديم السريع"},
             {MenuLangId::Indonesian, "Alihkan percepat"},
@@ -2693,7 +6994,56 @@
             {MenuLangId::Finnish, "Vaihda pikakelauks"},
             {MenuLangId::Vietnamese, "Bật/tắt tua nhanh"},
             {MenuLangId::Polish, "Przełącz przyspieszenie"},
-            {MenuLangId::Romanian, "Comută derularea rapidă"},
+            {MenuLangId::Romanian, "Comută derularea rapidă"},            {MenuLangId::Filipino, "Toggle fast forward"},            {MenuLangId::Swahili, "Toggle fast forward"},            {MenuLangId::Croatian, "Prebaci ubrzanje"},            {MenuLangId::Icelandic, "Kveikja/slökkva á hröðun"},            {MenuLangId::Hindi, "फ़ास्ट फ़ॉरवर्ड टॉगल करें"},            {MenuLangId::Bengali, "ফাস্ট ফরওয়ার্ড টগল"},            {MenuLangId::Urdu, "فاسٹ فارورڈ ٹوگل"},            {MenuLangId::Punjabi, "ਫਾਸਟ ਫਾਰਵਰਡ ਟੌਗਲ"},            {MenuLangId::Telugu, "ఫాస్ట్ ఫార్వర్డ్ టాగుల్"},            {MenuLangId::Persian, "تغییر وضعیت جلو بردن سریع"},            {MenuLangId::Malay, "Toggle maju pantas"},            {MenuLangId::Marathi, "फास्ट फॉरवर्ड टॉगल"},            {MenuLangId::Tamil, "fast forward toggle"},            {MenuLangId::Gujarati, "fast forward toggle"},            {MenuLangId::Kannada, "fast forward toggle"},            {MenuLangId::Odia, "toggle କରନ୍ତୁ fast forward"},            {MenuLangId::Malayalam, "fast forward toggle"},            {MenuLangId::Burmese, "fast forward toggle"},            {MenuLangId::Uzbek, "fast forward toggle"},            {MenuLangId::Azerbaijani, "fast forward toggle"},            {MenuLangId::Nepali, "fast forward toggle"},            {MenuLangId::Sinhala, "fast forward toggle"},            {MenuLangId::Khmer, "toggle fast forward"},            {MenuLangId::Lao, "toggle fast forward"},            {MenuLangId::Armenian, "toggle fast forward"},            {MenuLangId::Albanian, "toggle fast forward"},            {MenuLangId::Georgian, "toggle fast forward"},            {MenuLangId::Bosnian, "toggle fast forward"},            {MenuLangId::Serbian, "toggle fast forward"},            {MenuLangId::Macedonian, "toggle fast forward"},            {MenuLangId::Bulgarian, "toggle fast forward"},            {MenuLangId::Belarusian, "toggle fast forward"},            {MenuLangId::Maltese, "toggle fast forward"},            {MenuLangId::Mongolian, "fast forward toggle"},            {MenuLangId::Latvian, "toggle fast forward"},            {MenuLangId::Lithuanian, "toggle fast forward"},            {MenuLangId::Afrikaans, "toggle fast forward"},            {MenuLangId::Irish, "toggle fast forward"},            {MenuLangId::Assamese, "fast forward toggle কৰক"},            {MenuLangId::Amharic, "አማርኛ: Toggle fast forward"},            {MenuLangId::Estonian, "toggle fast forward"},            {MenuLangId::Kazakh, "Қазақша: Toggle fast forward"},            {MenuLangId::Catalan, "Català: Toggle fast forward"},            {MenuLangId::Kyrgyz, "Кыргызча: Toggle fast forward"},            {MenuLangId::Slovak, "Slovenčina: Toggle fast forward"},            {MenuLangId::Slovenian, "Slovenščina: Toggle fast forward"},            {MenuLangId::Zulu, "isiZulu: Toggle fast forward"},            {MenuLangId::Basque, "Euskara: Toggle fast forward"},            {MenuLangId::Hebrew, "עברית: Toggle fast forward"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -2709,6 +7059,7 @@
             {MenuLangId::Russian, "Замедление"},
             {MenuLangId::ChineseSimplified, "慢动作"},
             {MenuLangId::ChineseTraditional, "慢動作"},
+            {MenuLangId::ChineseHongKong, "慢動作"},
             {MenuLangId::Korean, "슬로 모션"},
             {MenuLangId::Arabic, "حركة بطيئة"},
             {MenuLangId::Indonesian, "Gerak lambat"},
@@ -2724,7 +7075,56 @@
             {MenuLangId::Finnish, "Hidastus"},
             {MenuLangId::Vietnamese, "Chuyển động chậm"},
             {MenuLangId::Polish, "Zwolnione tempo"},
-            {MenuLangId::Romanian, "Încetinit"},
+            {MenuLangId::Romanian, "Încetinit"},            {MenuLangId::Filipino, "Slow mo"},            {MenuLangId::Swahili, "Slow mo"},            {MenuLangId::Croatian, "Usporeno"},            {MenuLangId::Icelandic, "Hægt spil"},            {MenuLangId::Hindi, "स्लो मो"},            {MenuLangId::Bengali, "স্লো মো"},            {MenuLangId::Urdu, "سلو مو"},            {MenuLangId::Punjabi, "ਸਲੋ ਮੋ"},            {MenuLangId::Telugu, "స్లో మో"},            {MenuLangId::Persian, "حرکت آهسته"},            {MenuLangId::Malay, "Gerak perlahan"},            {MenuLangId::Marathi, "स्लो मो"},            {MenuLangId::Tamil, "slow mo"},            {MenuLangId::Gujarati, "slow mo"},            {MenuLangId::Kannada, "slow mo"},            {MenuLangId::Odia, "slow mo"},            {MenuLangId::Malayalam, "slow mo"},            {MenuLangId::Burmese, "slow mo"},            {MenuLangId::Uzbek, "slow mo"},            {MenuLangId::Azerbaijani, "slow mo"},            {MenuLangId::Nepali, "slow mo"},            {MenuLangId::Sinhala, "slow mo"},            {MenuLangId::Khmer, "slow mo"},            {MenuLangId::Lao, "slow mo"},            {MenuLangId::Armenian, "slow mo"},            {MenuLangId::Albanian, "slow mo"},            {MenuLangId::Georgian, "slow mo"},            {MenuLangId::Bosnian, "slow mo"},            {MenuLangId::Serbian, "slow mo"},            {MenuLangId::Macedonian, "slow mo"},            {MenuLangId::Bulgarian, "slow mo"},            {MenuLangId::Belarusian, "slow mo"},            {MenuLangId::Maltese, "slow mo"},            {MenuLangId::Mongolian, "slow mo"},            {MenuLangId::Latvian, "slow mo"},            {MenuLangId::Lithuanian, "slow mo"},            {MenuLangId::Afrikaans, "slow mo"},            {MenuLangId::Irish, "slow mo"},            {MenuLangId::Assamese, "slow mo"},            {MenuLangId::Amharic, "Slow mo"},            {MenuLangId::Estonian, "slow mo"},            {MenuLangId::Kazakh, "Slow mo"},            {MenuLangId::Catalan, "Slow mo"},            {MenuLangId::Kyrgyz, "Slow mo"},            {MenuLangId::Slovak, "Slow mo"},            {MenuLangId::Slovenian, "Slow mo"},            {MenuLangId::Zulu, "Slow mo"},            {MenuLangId::Basque, "Slow mo"},            {MenuLangId::Hebrew, "Slow mo"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -2740,6 +7140,7 @@
             {MenuLangId::Russian, "Переключить замедление"},
             {MenuLangId::ChineseSimplified, "切换慢动作"},
             {MenuLangId::ChineseTraditional, "切換慢動作"},
+            {MenuLangId::ChineseHongKong, "切換慢動作"},
             {MenuLangId::Korean, "슬로 모션 전환"},
             {MenuLangId::Arabic, "تبديل slow mo"},
             {MenuLangId::Indonesian, "Alihkan slow mo"},
@@ -2755,7 +7156,56 @@
             {MenuLangId::Finnish, "Vaihda slow mo"},
             {MenuLangId::Vietnamese, "Bật/tắt slow mo"},
             {MenuLangId::Polish, "Przełącz slow mo"},
-            {MenuLangId::Romanian, "Comută slow mo"},
+            {MenuLangId::Romanian, "Comută slow mo"},            {MenuLangId::Filipino, "Toggle slow mo"},            {MenuLangId::Swahili, "Toggle slow mo"},            {MenuLangId::Croatian, "Prebaci usporenje"},            {MenuLangId::Icelandic, "Kveikja/slökkva á hægu spili"},            {MenuLangId::Hindi, "स्लो मो टॉगल करें"},            {MenuLangId::Bengali, "স্লো মো টগল"},            {MenuLangId::Urdu, "سلو مو ٹوگل"},            {MenuLangId::Punjabi, "ਸਲੋ ਮੋ ਟੌਗਲ"},            {MenuLangId::Telugu, "స్లో మో టాగుల్"},            {MenuLangId::Persian, "تغییر وضعیت حرکت آهسته"},            {MenuLangId::Malay, "Toggle gerak perlahan"},            {MenuLangId::Marathi, "स्लो मो टॉगल"},            {MenuLangId::Tamil, "slow mo toggle"},            {MenuLangId::Gujarati, "slow mo toggle"},            {MenuLangId::Kannada, "slow mo toggle"},            {MenuLangId::Odia, "toggle କରନ୍ତୁ slow mo"},            {MenuLangId::Malayalam, "slow mo toggle"},            {MenuLangId::Burmese, "slow mo toggle"},            {MenuLangId::Uzbek, "slow mo toggle"},            {MenuLangId::Azerbaijani, "slow mo toggle"},            {MenuLangId::Nepali, "slow mo toggle"},            {MenuLangId::Sinhala, "slow mo toggle"},            {MenuLangId::Khmer, "toggle slow mo"},            {MenuLangId::Lao, "toggle slow mo"},            {MenuLangId::Armenian, "toggle slow mo"},            {MenuLangId::Albanian, "toggle slow mo"},            {MenuLangId::Georgian, "toggle slow mo"},            {MenuLangId::Bosnian, "toggle slow mo"},            {MenuLangId::Serbian, "toggle slow mo"},            {MenuLangId::Macedonian, "toggle slow mo"},            {MenuLangId::Bulgarian, "toggle slow mo"},            {MenuLangId::Belarusian, "toggle slow mo"},            {MenuLangId::Maltese, "toggle slow mo"},            {MenuLangId::Mongolian, "slow mo toggle"},            {MenuLangId::Latvian, "toggle slow mo"},            {MenuLangId::Lithuanian, "toggle slow mo"},            {MenuLangId::Afrikaans, "toggle slow mo"},            {MenuLangId::Irish, "toggle slow mo"},            {MenuLangId::Assamese, "slow mo toggle কৰক"},            {MenuLangId::Amharic, "አማርኛ: Toggle slow mo"},            {MenuLangId::Estonian, "toggle slow mo"},            {MenuLangId::Kazakh, "Қазақша: Toggle slow mo"},            {MenuLangId::Catalan, "Català: Toggle slow mo"},            {MenuLangId::Kyrgyz, "Кыргызча: Toggle slow mo"},            {MenuLangId::Slovak, "Slovenčina: Toggle slow mo"},            {MenuLangId::Slovenian, "Slovenščina: Toggle slow mo"},            {MenuLangId::Zulu, "isiZulu: Toggle slow mo"},            {MenuLangId::Basque, "Euskara: Toggle slow mo"},            {MenuLangId::Hebrew, "עברית: Toggle slow mo"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -2771,6 +7221,7 @@
             {MenuLangId::Russian, "Переключить ограничение FPS"},
             {MenuLangId::ChineseSimplified, "切换 FPS 限制"},
             {MenuLangId::ChineseTraditional, "切換 FPS 限制"},
+            {MenuLangId::ChineseHongKong, "切換 FPS 限制"},
             {MenuLangId::Korean, "FPS 제한 전환"},
             {MenuLangId::Arabic, "تبديل حد FPS"},
             {MenuLangId::Indonesian, "Alihkan batas FPS"},
@@ -2786,7 +7237,56 @@
             {MenuLangId::Finnish, "Vaihda FPS-rajoitus"},
             {MenuLangId::Vietnamese, "Bật/tắt giới hạn FPS"},
             {MenuLangId::Polish, "Przełącz limit FPS"},
-            {MenuLangId::Romanian, "Comută limita FPS"},
+            {MenuLangId::Romanian, "Comută limita FPS"},            {MenuLangId::Filipino, "Toggle FPS limit"},            {MenuLangId::Swahili, "Toggle FPS limit"},            {MenuLangId::Croatian, "Prebaci FPS ograničenje"},            {MenuLangId::Icelandic, "Kveikja/slökkva á FPS-mörkum"},            {MenuLangId::Hindi, "FPS सीमा टॉगल करें"},            {MenuLangId::Bengali, "FPS সীমা টগল"},            {MenuLangId::Urdu, "FPS حد ٹوگل"},            {MenuLangId::Punjabi, "FPS ਸੀਮਾ ਟੌਗਲ"},            {MenuLangId::Telugu, "FPS పరిమితి టాగుల్"},            {MenuLangId::Persian, "تغییر محدودیت FPS"},            {MenuLangId::Malay, "Toggle had FPS"},            {MenuLangId::Marathi, "FPS मर्यादा टॉगल"},            {MenuLangId::Tamil, "FPS வரம்பை toggle செய்"},            {MenuLangId::Gujarati, "FPS મર્યાદા toggle"},            {MenuLangId::Kannada, "FPS ಮಿತಿ toggle"},            {MenuLangId::Odia, "toggle କରନ୍ତୁ FPS limit"},            {MenuLangId::Malayalam, "FPS പരിധി toggle"},            {MenuLangId::Burmese, "FPS ကန့်သတ်ချက် toggle"},            {MenuLangId::Uzbek, "FPS limit toggle"},            {MenuLangId::Azerbaijani, "FPS limiti toggle"},            {MenuLangId::Nepali, "FPS limit toggle"},            {MenuLangId::Sinhala, "FPS limit toggle"},            {MenuLangId::Khmer, "toggle ដែនកំណត់ FPS"},            {MenuLangId::Lao, "toggle ຂີດຈຳກັດ FPS"},            {MenuLangId::Armenian, "toggle FPS սահմանաչափ"},            {MenuLangId::Albanian, "toggle kufirin FPS"},            {MenuLangId::Georgian, "toggle FPS ლიმიტი"},            {MenuLangId::Bosnian, "toggle FPS limit"},            {MenuLangId::Serbian, "toggle FPS limit"},            {MenuLangId::Macedonian, "toggle FPS limit"},            {MenuLangId::Bulgarian, "toggle FPS limit"},            {MenuLangId::Belarusian, "toggle FPS limit"},            {MenuLangId::Maltese, "toggle FPS limit"},            {MenuLangId::Mongolian, "FPS limit toggle"},            {MenuLangId::Latvian, "toggle FPS limit"},            {MenuLangId::Lithuanian, "toggle FPS limit"},            {MenuLangId::Afrikaans, "toggle FPS limit"},            {MenuLangId::Irish, "toggle FPS limit"},            {MenuLangId::Assamese, "FPS limit toggle কৰক"},            {MenuLangId::Amharic, "አማርኛ: Toggle FPS limit"},            {MenuLangId::Estonian, "toggle FPS limit"},            {MenuLangId::Kazakh, "Қазақша: Toggle FPS limit"},            {MenuLangId::Catalan, "Català: Toggle FPS limit"},            {MenuLangId::Kyrgyz, "Кыргызча: Toggle FPS limit"},            {MenuLangId::Slovak, "Slovenčina: Toggle FPS limit"},            {MenuLangId::Slovenian, "Slovenščina: Toggle FPS limit"},            {MenuLangId::Zulu, "isiZulu: Toggle FPS limit"},            {MenuLangId::Basque, "Euskara: Toggle FPS limit"},            {MenuLangId::Hebrew, "עברית: Toggle FPS limit"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -2802,6 +7302,7 @@
             {MenuLangId::Russian, "Переключить полноэкранный режим"},
             {MenuLangId::ChineseSimplified, "切换全屏"},
             {MenuLangId::ChineseTraditional, "切換全屏"},
+            {MenuLangId::ChineseHongKong, "切換全屏"},
             {MenuLangId::Korean, "전체 화면 전환"},
             {MenuLangId::Arabic, "تبديل ملء الشاشة"},
             {MenuLangId::Indonesian, "Alihkan layar penuh"},
@@ -2817,7 +7318,56 @@
             {MenuLangId::Finnish, "Vaihda koko näyttö"},
             {MenuLangId::Vietnamese, "Bật/tắt toàn màn hình"},
             {MenuLangId::Polish, "Przełącz pełny ekran"},
-            {MenuLangId::Romanian, "Comută ecran complet"},
+            {MenuLangId::Romanian, "Comută ecran complet"},            {MenuLangId::Filipino, "Toggle fullscreen"},            {MenuLangId::Swahili, "Toggle fullscreen"},            {MenuLangId::Croatian, "Prebaci cijeli zaslon"},            {MenuLangId::Icelandic, "Kveikja/slökkva á fullskjá"},            {MenuLangId::Hindi, "पूर्ण स्क्रीन टॉगल करें"},            {MenuLangId::Bengali, "পূর্ণস্ক্রিন টগল"},            {MenuLangId::Urdu, "فل اسکرین ٹوگل"},            {MenuLangId::Punjabi, "ਪੂਰੀ ਸਕਰੀਨ ਟੌਗਲ"},            {MenuLangId::Telugu, "పూర్తి స్క్రీన్ టాగుల్"},            {MenuLangId::Persian, "تغییر تمام‌صفحه"},            {MenuLangId::Malay, "Toggle skrin penuh"},            {MenuLangId::Marathi, "पूर्ण स्क्रीन टॉगल"},            {MenuLangId::Tamil, "முழுத் திரை toggle"},            {MenuLangId::Gujarati, "પૂર્ણ સ્ક્રીન toggle"},            {MenuLangId::Kannada, "ಪೂರ್ಣ ಸ್ಕ್ರೀನ್ toggle"},            {MenuLangId::Odia, "toggle କରନ୍ତୁ fullscreen"},            {MenuLangId::Malayalam, "പൂർണ്ണ സ്ക്രീൻ toggle"},            {MenuLangId::Burmese, "မျက်နှာပြင်အပြည့် toggle"},            {MenuLangId::Uzbek, "fullscreen toggle"},            {MenuLangId::Azerbaijani, "fullscreen toggle"},            {MenuLangId::Nepali, "fullscreen toggle"},            {MenuLangId::Sinhala, "fullscreen toggle"},            {MenuLangId::Khmer, "toggle ពេញអេក្រង់"},            {MenuLangId::Lao, "toggle ເຕັມໜ້າຈໍ"},            {MenuLangId::Armenian, "toggle ամբողջ էկրան"},            {MenuLangId::Albanian, "toggle ekran të plotë"},            {MenuLangId::Georgian, "toggle სრული ეკრანი"},            {MenuLangId::Bosnian, "toggle cijeli ekran"},            {MenuLangId::Serbian, "toggle цео екран"},            {MenuLangId::Macedonian, "toggle цел екран"},            {MenuLangId::Bulgarian, "toggle цял екран"},            {MenuLangId::Belarusian, "toggle поўны экран"},            {MenuLangId::Maltese, "toggle skrin sħiħ"},            {MenuLangId::Mongolian, "бүтэн дэлгэц toggle"},            {MenuLangId::Latvian, "toggle pilnekrāns"},            {MenuLangId::Lithuanian, "toggle visas ekranas"},            {MenuLangId::Afrikaans, "toggle volskerm"},            {MenuLangId::Irish, "toggle lánscáileán"},            {MenuLangId::Assamese, "fullscreen toggle কৰক"},            {MenuLangId::Amharic, "ሙሉ ስክሪን toggle አድርግ"},            {MenuLangId::Estonian, "toggle täisekraan"},            {MenuLangId::Kazakh, "толық экранды toggle ету"},            {MenuLangId::Catalan, "commuta pantalla completa"},            {MenuLangId::Kyrgyz, "толук экранды toggle кылуу"},            {MenuLangId::Slovak, "prepnúť celú obrazovku"},            {MenuLangId::Slovenian, "preklopi celozaslonsko"},            {MenuLangId::Zulu, "shintsha isikrini esigcwele"},            {MenuLangId::Basque, "txandakatu pantaila osoa"},            {MenuLangId::Hebrew, "החלף מסך מלא"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -2833,6 +7383,7 @@
             {MenuLangId::Russian, "Закрыть/открыть крышку"},
             {MenuLangId::ChineseSimplified, "合上/打开盖子"},
             {MenuLangId::ChineseTraditional, "合上/開啟蓋子"},
+            {MenuLangId::ChineseHongKong, "合上/開啟蓋子"},
             {MenuLangId::Korean, "뚜껑 닫기/열기"},
             {MenuLangId::Arabic, "إغلاق/فتح الغطاء"},
             {MenuLangId::Indonesian, "Tutup/buka penutup"},
@@ -2848,7 +7399,56 @@
             {MenuLangId::Finnish, "Sulje/avaa kansi"},
             {MenuLangId::Vietnamese, "Đóng/mở nắp"},
             {MenuLangId::Polish, "Zamknij/otwórz pokrywę"},
-            {MenuLangId::Romanian, "Închide/deschide capacul"},
+            {MenuLangId::Romanian, "Închide/deschide capacul"},            {MenuLangId::Filipino, "Isara/buksan lid"},            {MenuLangId::Swahili, "Funga/fungua lid"},            {MenuLangId::Croatian, "Zatvori/otvori lid"},            {MenuLangId::Icelandic, "Loka/opna lid"},            {MenuLangId::Hindi, "बंद करें/खोलें lid"},            {MenuLangId::Bengali, "বন্ধ করুন/খুলুন lid"},            {MenuLangId::Urdu, "بند کریں/کھولیں lid"},            {MenuLangId::Punjabi, "ਬੰਦ ਕਰੋ/ਖੋਲ੍ਹੋ lid"},            {MenuLangId::Telugu, "మూసివేయి/తెరువు lid"},            {MenuLangId::Persian, "بستن/باز کردن lid"},            {MenuLangId::Malay, "Tutup/buka lid"},            {MenuLangId::Marathi, "बंद करा/उघडा lid"},            {MenuLangId::Tamil, "மூடு/திற lid"},            {MenuLangId::Gujarati, "બંધ કરો/ખોલો lid"},            {MenuLangId::Kannada, "ಮುಚ್ಚಿ/ತೆರೆಯಿರಿ lid"},            {MenuLangId::Odia, "ବନ୍ଦ କରନ୍ତୁ/ଖୋଲନ୍ତୁ lid"},            {MenuLangId::Malayalam, "അടയ്ക്കുക/തുറക്കുക lid"},            {MenuLangId::Burmese, "ပိတ်ပါ/ဖွင့်ပါ lid"},            {MenuLangId::Uzbek, "Yopish/ochish lid"},            {MenuLangId::Azerbaijani, "Bağla/aç lid"},            {MenuLangId::Nepali, "बन्द गर्नुहोस्/खोल्नुहोस् lid"},            {MenuLangId::Sinhala, "වසන්න/විවෘත කරන්න lid"},            {MenuLangId::Khmer, "បិទ/បើក lid"},            {MenuLangId::Lao, "ປິດ/ເປີດ lid"},            {MenuLangId::Armenian, "Փակել/բացել lid"},            {MenuLangId::Albanian, "Mbyll/hap lid"},            {MenuLangId::Georgian, "დახურვა/გახსნა lid"},            {MenuLangId::Bosnian, "Zatvori/otvori lid"},            {MenuLangId::Serbian, "Затвори/отвори lid"},            {MenuLangId::Macedonian, "Затвори/отвори lid"},            {MenuLangId::Bulgarian, "Затвори/отвори lid"},            {MenuLangId::Belarusian, "Закрыць/адкрыць lid"},            {MenuLangId::Maltese, "Agħlaq/iftaħ lid"},            {MenuLangId::Mongolian, "Хаах/нээх lid"},            {MenuLangId::Latvian, "Aizvērt/atvērt lid"},            {MenuLangId::Lithuanian, "Uždaryti/atidaryti lid"},            {MenuLangId::Afrikaans, "Maak toe/maak oop lid"},            {MenuLangId::Irish, "Dún/oscail lid"},            {MenuLangId::Assamese, "বন্ধ কৰক/খোলক lid"},            {MenuLangId::Amharic, "ዝጋ/ክፈት lid"},            {MenuLangId::Estonian, "Sulge/ava lid"},            {MenuLangId::Kazakh, "Жабу/ашу lid"},            {MenuLangId::Catalan, "Tanca/obre lid"},            {MenuLangId::Kyrgyz, "Жабуу/ачуу lid"},            {MenuLangId::Slovak, "Zavrieť/otvoriť lid"},            {MenuLangId::Slovenian, "Zapri/odpri lid"},            {MenuLangId::Zulu, "Vala/vula lid"},            {MenuLangId::Basque, "Itxi/ireki lid"},            {MenuLangId::Hebrew, "סגור/פתח lid"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -2864,6 +7464,7 @@
             {MenuLangId::Russian, "Микрофон"},
             {MenuLangId::ChineseSimplified, "麦克风"},
             {MenuLangId::ChineseTraditional, "麥克風"},
+            {MenuLangId::ChineseHongKong, "麥克風"},
             {MenuLangId::Korean, "마이크"},
             {MenuLangId::Arabic, "ميكروفون"},
             {MenuLangId::Indonesian, "Mikrofon"},
@@ -2879,7 +7480,56 @@
             {MenuLangId::Finnish, "Mikrofoni"},
             {MenuLangId::Vietnamese, "Micrô"},
             {MenuLangId::Polish, "Mikrofon"},
-            {MenuLangId::Romanian, "Microfon"},
+            {MenuLangId::Romanian, "Microfon"},            {MenuLangId::Filipino, "Microphone"},            {MenuLangId::Swahili, "Maikrofoni"},            {MenuLangId::Croatian, "Mikrofon"},            {MenuLangId::Icelandic, "Hljóðnemi"},            {MenuLangId::Hindi, "माइक्रोफ़ोन"},            {MenuLangId::Bengali, "মাইক্রোফোন"},            {MenuLangId::Urdu, "مائیکروفون"},            {MenuLangId::Punjabi, "ਮਾਈਕ੍ਰੋਫੋਨ"},            {MenuLangId::Telugu, "మైక్రోఫోన్"},            {MenuLangId::Persian, "میکروفون"},            {MenuLangId::Malay, "Mikrofon"},            {MenuLangId::Marathi, "मायक्रोफोन"},            {MenuLangId::Tamil, "மைக்ரோஃபோன்"},            {MenuLangId::Gujarati, "માઇક્રોફોન"},            {MenuLangId::Kannada, "ಮೈಕ್ರೋಫೋನ್"},            {MenuLangId::Odia, "ମାଇକ୍ରୋଫୋନ୍"},            {MenuLangId::Malayalam, "മൈക്രോഫോൺ"},            {MenuLangId::Burmese, "မိုက်ခရိုဖုန်း"},            {MenuLangId::Uzbek, "Mikrofon"},            {MenuLangId::Azerbaijani, "Mikrofon"},            {MenuLangId::Nepali, "माइक्रोफोन"},            {MenuLangId::Sinhala, "මයික්‍රෆෝනය"},            {MenuLangId::Khmer, "មីក្រូហ្វូន"},            {MenuLangId::Lao, "ໄມໂຄຣໂຟນ"},            {MenuLangId::Armenian, "Միկրոֆոն"},            {MenuLangId::Albanian, "Mikrofoni"},            {MenuLangId::Georgian, "მიკროფონი"},            {MenuLangId::Bosnian, "Mikrofon"},            {MenuLangId::Serbian, "Микрофон"},            {MenuLangId::Macedonian, "Микрофон"},            {MenuLangId::Bulgarian, "Микрофон"},            {MenuLangId::Belarusian, "Мікрафон"},            {MenuLangId::Maltese, "Mikrofonu"},            {MenuLangId::Mongolian, "Микрофон"},            {MenuLangId::Latvian, "Mikrofons"},            {MenuLangId::Lithuanian, "Mikrofonas"},            {MenuLangId::Afrikaans, "Mikrofoon"},            {MenuLangId::Irish, "Micreafón"},            {MenuLangId::Assamese, "মাইক্ৰ'ফোন"},            {MenuLangId::Amharic, "ማይክሮፎን"},            {MenuLangId::Estonian, "Mikrofon"},            {MenuLangId::Kazakh, "Микрофон"},            {MenuLangId::Catalan, "Micròfon"},            {MenuLangId::Kyrgyz, "Микрофон"},            {MenuLangId::Slovak, "Mikrofón"},            {MenuLangId::Slovenian, "Mikrofon"},            {MenuLangId::Zulu, "Imakrofoni"},            {MenuLangId::Basque, "Mikrofonoa"},            {MenuLangId::Hebrew, "מיקרופון"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -2895,6 +7545,7 @@
             {MenuLangId::Russian, "Переключить акцент экрана"},
             {MenuLangId::ChineseSimplified, "切换屏幕强调"},
             {MenuLangId::ChineseTraditional, "切換螢幕強調"},
+            {MenuLangId::ChineseHongKong, "切換螢幕強調"},
             {MenuLangId::Korean, "화면 강조 전환"},
             {MenuLangId::Arabic, "تبديل إبراز الشاشة"},
             {MenuLangId::Indonesian, "Tukar penekanan layar"},
@@ -2910,7 +7561,56 @@
             {MenuLangId::Finnish, "Vaihda näytön korostusta"},
             {MenuLangId::Vietnamese, "Đổi nhấn màn hình"},
             {MenuLangId::Polish, "Przełącz podkreślenie ekranu"},
-            {MenuLangId::Romanian, "Comută evidențierea ecranului"},
+            {MenuLangId::Romanian, "Comută evidențierea ecranului"},            {MenuLangId::Filipino, "Swap screen emphasis"},            {MenuLangId::Swahili, "Swap skrini emphasis"},            {MenuLangId::Croatian, "Swap zaslon emphasis"},            {MenuLangId::Icelandic, "Swap skjár emphasis"},            {MenuLangId::Hindi, "Swap स्क्रीन emphasis"},            {MenuLangId::Bengali, "Swap স্ক্রিন emphasis"},            {MenuLangId::Urdu, "Swap اسکرین emphasis"},            {MenuLangId::Punjabi, "Swap ਸਕਰੀਨ emphasis"},            {MenuLangId::Telugu, "Swap స్క్రీన్ emphasis"},            {MenuLangId::Persian, "Swap صفحه emphasis"},            {MenuLangId::Malay, "Swap skrin emphasis"},            {MenuLangId::Marathi, "Swap स्क्रीन emphasis"},            {MenuLangId::Tamil, "Swap திரை emphasis"},            {MenuLangId::Gujarati, "Swap સ્ક્રીન emphasis"},            {MenuLangId::Kannada, "Swap ಸ್ಕ್ರೀನ್ emphasis"},            {MenuLangId::Odia, "Swap ସ୍କ୍ରିନ୍ emphasis"},            {MenuLangId::Malayalam, "Swap സ്ക്രീൻ emphasis"},            {MenuLangId::Burmese, "Swap စကရင် emphasis"},            {MenuLangId::Uzbek, "Swap ekran emphasis"},            {MenuLangId::Azerbaijani, "Swap ekran emphasis"},            {MenuLangId::Nepali, "Swap स्क्रिन emphasis"},            {MenuLangId::Sinhala, "Swap තිරය emphasis"},            {MenuLangId::Khmer, "Swap អេក្រង់ emphasis"},            {MenuLangId::Lao, "Swap ໜ້າຈໍ emphasis"},            {MenuLangId::Armenian, "Swap էկրան emphasis"},            {MenuLangId::Albanian, "Swap ekran emphasis"},            {MenuLangId::Georgian, "Swap ეკრანი emphasis"},            {MenuLangId::Bosnian, "Swap ekran emphasis"},            {MenuLangId::Serbian, "Swap екран emphasis"},            {MenuLangId::Macedonian, "Swap екран emphasis"},            {MenuLangId::Bulgarian, "Swap екран emphasis"},            {MenuLangId::Belarusian, "Swap экран emphasis"},            {MenuLangId::Maltese, "Swap skrin emphasis"},            {MenuLangId::Mongolian, "Swap дэлгэц emphasis"},            {MenuLangId::Latvian, "Swap ekrāns emphasis"},            {MenuLangId::Lithuanian, "Swap ekranas emphasis"},            {MenuLangId::Afrikaans, "Swap skerm emphasis"},            {MenuLangId::Irish, "Swap scáileán emphasis"},            {MenuLangId::Assamese, "Swap স্ক্ৰীণ emphasis"},            {MenuLangId::Amharic, "Swap ስክሪን emphasis"},            {MenuLangId::Estonian, "Swap ekraan emphasis"},            {MenuLangId::Kazakh, "Swap экран emphasis"},            {MenuLangId::Catalan, "Swap pantalla emphasis"},            {MenuLangId::Kyrgyz, "Swap экран emphasis"},            {MenuLangId::Slovak, "Swap obrazovka emphasis"},            {MenuLangId::Slovenian, "Swap zaslon emphasis"},            {MenuLangId::Zulu, "Swap isikrini emphasis"},            {MenuLangId::Basque, "Swap pantaila emphasis"},            {MenuLangId::Hebrew, "Swap מסך emphasis"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -2926,6 +7626,7 @@
             {MenuLangId::Russian, "Кнопка питания DSi"},
             {MenuLangId::ChineseSimplified, "DSi 电源键"},
             {MenuLangId::ChineseTraditional, "DSi 電源鍵"},
+            {MenuLangId::ChineseHongKong, "DSi 電源鍵"},
             {MenuLangId::Korean, "DSi 전원 버튼"},
             {MenuLangId::Arabic, "زر طاقة DSi"},
             {MenuLangId::Indonesian, "Tombol daya DSi"},
@@ -2941,7 +7642,56 @@
             {MenuLangId::Finnish, "DSi virtapainike"},
             {MenuLangId::Vietnamese, "Nút nguồn DSi"},
             {MenuLangId::Polish, "Przycisk zasilania DSi"},
-            {MenuLangId::Romanian, "Buton pornire DSi"},
+            {MenuLangId::Romanian, "Buton pornire DSi"},            {MenuLangId::Filipino, "DSi Power button"},            {MenuLangId::Swahili, "DSi Nishati button"},            {MenuLangId::Croatian, "DSi Napajanje button"},            {MenuLangId::Icelandic, "DSi Afl button"},            {MenuLangId::Hindi, "DSi पावर button"},            {MenuLangId::Bengali, "DSi পাওয়ার button"},            {MenuLangId::Urdu, "DSi پاور button"},            {MenuLangId::Punjabi, "DSi ਪਾਵਰ button"},            {MenuLangId::Telugu, "DSi పవర్ button"},            {MenuLangId::Persian, "DSi توان button"},            {MenuLangId::Malay, "DSi Kuasa button"},            {MenuLangId::Marathi, "DSi पॉवर button"},            {MenuLangId::Tamil, "DSi பவர் button"},            {MenuLangId::Gujarati, "DSi પાવર button"},            {MenuLangId::Kannada, "DSi ಪವರ್ button"},            {MenuLangId::Odia, "ଓଡ଼ିଆ: DSi Power button"},            {MenuLangId::Malayalam, "മലയാളം: DSi Power button"},            {MenuLangId::Burmese, "မြန်မာ: DSi Power button"},            {MenuLangId::Uzbek, "Oʻzbekcha: DSi Power button"},            {MenuLangId::Azerbaijani, "Azərbaycanca: DSi Power button"},            {MenuLangId::Nepali, "नेपाली: DSi Power button"},            {MenuLangId::Sinhala, "සිංහල: DSi Power button"},            {MenuLangId::Khmer, "ភាសាខ្មែរ: DSi Power button"},            {MenuLangId::Lao, "ລາວ: DSi Power button"},            {MenuLangId::Armenian, "Հայերեն: DSi Power button"},            {MenuLangId::Albanian, "Shqip: DSi Power button"},            {MenuLangId::Georgian, "ქართული: DSi Power button"},            {MenuLangId::Bosnian, "Bosanski: DSi Power button"},            {MenuLangId::Serbian, "Српски: DSi Power button"},            {MenuLangId::Macedonian, "Македонски: DSi Power button"},            {MenuLangId::Bulgarian, "Български: DSi Power button"},            {MenuLangId::Belarusian, "Беларуская: DSi Power button"},            {MenuLangId::Maltese, "Malti: DSi Power button"},            {MenuLangId::Mongolian, "Монгол: DSi Power button"},            {MenuLangId::Latvian, "Latviski: DSi Power button"},            {MenuLangId::Lithuanian, "Lietuvių: DSi Power button"},            {MenuLangId::Afrikaans, "Afrikaans: DSi Power button"},            {MenuLangId::Irish, "Gaeilge: DSi Power button"},            {MenuLangId::Assamese, "অসমীয়া: DSi Power button"},            {MenuLangId::Amharic, "አማርኛ: DSi Power button"},            {MenuLangId::Estonian, "Eesti: DSi Power button"},            {MenuLangId::Kazakh, "Қазақша: DSi Power button"},            {MenuLangId::Catalan, "Català: DSi Power button"},            {MenuLangId::Kyrgyz, "Кыргызча: DSi Power button"},            {MenuLangId::Slovak, "Slovenčina: DSi Power button"},            {MenuLangId::Slovenian, "Slovenščina: DSi Power button"},            {MenuLangId::Zulu, "isiZulu: DSi Power button"},            {MenuLangId::Basque, "Euskara: DSi Power button"},            {MenuLangId::Hebrew, "עברית: DSi Power button"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -2957,6 +7707,7 @@
             {MenuLangId::Russian, "Громкость DSi +"},
             {MenuLangId::ChineseSimplified, "DSi 音量加"},
             {MenuLangId::ChineseTraditional, "DSi 音量加"},
+            {MenuLangId::ChineseHongKong, "DSi 音量加"},
             {MenuLangId::Korean, "DSi 볼륨 업"},
             {MenuLangId::Arabic, "رفع صوت DSi"},
             {MenuLangId::Indonesian, "Volume naik DSi"},
@@ -2972,7 +7723,56 @@
             {MenuLangId::Finnish, "DSi-äänenvoimakkuus +"},
             {MenuLangId::Vietnamese, "Tăng âm lượng DSi"},
             {MenuLangId::Polish, "Głośność DSi +"},
-            {MenuLangId::Romanian, "Volum DSi +"},
+            {MenuLangId::Romanian, "Volum DSi +"},            {MenuLangId::Filipino, "DSi Volume pataas"},            {MenuLangId::Swahili, "DSi Volume juu"},            {MenuLangId::Croatian, "DSi Volume gore"},            {MenuLangId::Icelandic, "DSi Volume upp"},            {MenuLangId::Hindi, "DSi Volume ऊपर"},            {MenuLangId::Bengali, "DSi Volume উপরে"},            {MenuLangId::Urdu, "DSi Volume اوپر"},            {MenuLangId::Punjabi, "DSi Volume ਉੱਪਰ"},            {MenuLangId::Telugu, "DSi Volume పైకి"},            {MenuLangId::Persian, "DSi Volume بالا"},            {MenuLangId::Malay, "DSi Volume atas"},            {MenuLangId::Marathi, "DSi Volume वर"},            {MenuLangId::Tamil, "DSi Volume மேல்"},            {MenuLangId::Gujarati, "DSi Volume ઉપર"},            {MenuLangId::Kannada, "DSi Volume ಮೇಲೆ"},            {MenuLangId::Odia, "DSi Volume ଉପର"},            {MenuLangId::Malayalam, "DSi Volume മുകളിൽ"},            {MenuLangId::Burmese, "DSi Volume အပေါ်"},            {MenuLangId::Uzbek, "DSi Volume yuqoriga"},            {MenuLangId::Azerbaijani, "DSi Volume yuxarı"},            {MenuLangId::Nepali, "DSi Volume माथि"},            {MenuLangId::Sinhala, "DSi Volume ඉහළ"},            {MenuLangId::Khmer, "DSi Volume ឡើង"},            {MenuLangId::Lao, "DSi Volume ຂຶ້ນ"},            {MenuLangId::Armenian, "DSi Volume վեր"},            {MenuLangId::Albanian, "DSi Volume lart"},            {MenuLangId::Georgian, "DSi Volume ზემოთ"},            {MenuLangId::Bosnian, "DSi Volume gore"},            {MenuLangId::Serbian, "DSi Volume горе"},            {MenuLangId::Macedonian, "DSi Volume горе"},            {MenuLangId::Bulgarian, "DSi Volume нагоре"},            {MenuLangId::Belarusian, "DSi Volume уверх"},            {MenuLangId::Maltese, "DSi Volume fuq"},            {MenuLangId::Mongolian, "DSi Volume дээш"},            {MenuLangId::Latvian, "DSi Volume uz augšu"},            {MenuLangId::Lithuanian, "DSi Volume aukštyn"},            {MenuLangId::Afrikaans, "DSi Volume op"},            {MenuLangId::Irish, "DSi Volume suas"},            {MenuLangId::Assamese, "DSi Volume ওপৰ"},            {MenuLangId::Amharic, "አማርኛ: DSi Volume up"},            {MenuLangId::Estonian, "Eesti: DSi Volume up"},            {MenuLangId::Kazakh, "Қазақша: DSi Volume up"},            {MenuLangId::Catalan, "Català: DSi Volume up"},            {MenuLangId::Kyrgyz, "Кыргызча: DSi Volume up"},            {MenuLangId::Slovak, "Slovenčina: DSi Volume up"},            {MenuLangId::Slovenian, "Slovenščina: DSi Volume up"},            {MenuLangId::Zulu, "isiZulu: DSi Volume up"},            {MenuLangId::Basque, "Euskara: DSi Volume up"},            {MenuLangId::Hebrew, "עברית: DSi Volume up"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -2988,6 +7788,7 @@
             {MenuLangId::Russian, "Уменьшить громкость DSi"},
             {MenuLangId::ChineseSimplified, "DSi 音量减"},
             {MenuLangId::ChineseTraditional, "DSi 音量減"},
+            {MenuLangId::ChineseHongKong, "DSi 音量減"},
             {MenuLangId::Korean, "DSi 볼륨 내리기"},
             {MenuLangId::Arabic, "خفض صوت DSi"},
             {MenuLangId::Indonesian, "Volume DSi turun"},
@@ -3003,7 +7804,56 @@
             {MenuLangId::Finnish, "DSi äänenvoimakkuus alas"},
             {MenuLangId::Vietnamese, "Giảm âm lượng DSi"},
             {MenuLangId::Polish, "DSi zmniejsz głośność"},
-            {MenuLangId::Romanian, "DSi volum jos"},
+            {MenuLangId::Romanian, "DSi volum jos"},            {MenuLangId::Filipino, "DSi Volume pababa"},            {MenuLangId::Swahili, "DSi Volume chini"},            {MenuLangId::Croatian, "DSi Volume dolje"},            {MenuLangId::Icelandic, "DSi Volume niður"},            {MenuLangId::Hindi, "DSi Volume नीचे"},            {MenuLangId::Bengali, "DSi Volume নিচে"},            {MenuLangId::Urdu, "DSi Volume نیچے"},            {MenuLangId::Punjabi, "DSi Volume ਹੇਠਾਂ"},            {MenuLangId::Telugu, "DSi Volume కిందికి"},            {MenuLangId::Persian, "DSi Volume پایین"},            {MenuLangId::Malay, "DSi Volume bawah"},            {MenuLangId::Marathi, "DSi Volume खाली"},            {MenuLangId::Tamil, "DSi Volume கீழ்"},            {MenuLangId::Gujarati, "DSi Volume નીચે"},            {MenuLangId::Kannada, "DSi Volume ಕೆಳಗೆ"},            {MenuLangId::Odia, "DSi Volume ତଳ"},            {MenuLangId::Malayalam, "DSi Volume താഴെ"},            {MenuLangId::Burmese, "DSi Volume အောက်"},            {MenuLangId::Uzbek, "DSi Volume pastga"},            {MenuLangId::Azerbaijani, "DSi Volume aşağı"},            {MenuLangId::Nepali, "DSi Volume तल"},            {MenuLangId::Sinhala, "DSi Volume පහළ"},            {MenuLangId::Khmer, "DSi Volume ចុះ"},            {MenuLangId::Lao, "DSi Volume ລົງ"},            {MenuLangId::Armenian, "DSi Volume վար"},            {MenuLangId::Albanian, "DSi Volume poshtë"},            {MenuLangId::Georgian, "DSi Volume ქვემოთ"},            {MenuLangId::Bosnian, "DSi Volume dolje"},            {MenuLangId::Serbian, "DSi Volume доле"},            {MenuLangId::Macedonian, "DSi Volume долу"},            {MenuLangId::Bulgarian, "DSi Volume надолу"},            {MenuLangId::Belarusian, "DSi Volume уніз"},            {MenuLangId::Maltese, "DSi Volume isfel"},            {MenuLangId::Mongolian, "DSi Volume доош"},            {MenuLangId::Latvian, "DSi Volume uz leju"},            {MenuLangId::Lithuanian, "DSi Volume žemyn"},            {MenuLangId::Afrikaans, "DSi Volume af"},            {MenuLangId::Irish, "DSi Volume síos"},            {MenuLangId::Assamese, "DSi Volume তল"},            {MenuLangId::Amharic, "አማርኛ: DSi Volume down"},            {MenuLangId::Estonian, "Eesti: DSi Volume down"},            {MenuLangId::Kazakh, "Қазақша: DSi Volume down"},            {MenuLangId::Catalan, "Català: DSi Volume down"},            {MenuLangId::Kyrgyz, "Кыргызча: DSi Volume down"},            {MenuLangId::Slovak, "Slovenčina: DSi Volume down"},            {MenuLangId::Slovenian, "Slovenščina: DSi Volume down"},            {MenuLangId::Zulu, "isiZulu: DSi Volume down"},            {MenuLangId::Basque, "Euskara: DSi Volume down"},            {MenuLangId::Hebrew, "עברית: DSi Volume down"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -3019,6 +7869,7 @@
             {MenuLangId::Russian, "Переключить отключение звука"},
             {MenuLangId::ChineseSimplified, "切换音频静音"},
             {MenuLangId::ChineseTraditional, "切換音訊靜音"},
+            {MenuLangId::ChineseHongKong, "切換音訊靜音"},
             {MenuLangId::Korean, "오디오 음소거 전환"},
             {MenuLangId::Arabic, "تبديل كتم الصوت"},
             {MenuLangId::Indonesian, "Alihkan bisu audio"},
@@ -3034,7 +7885,56 @@
             {MenuLangId::Finnish, "Vaihda äänen mykistys"},
             {MenuLangId::Vietnamese, "Bật/tắt tắt tiếng"},
             {MenuLangId::Polish, "Przełącz wyciszenie audio"},
-            {MenuLangId::Romanian, "Comută dezactivarea audio"},
+            {MenuLangId::Romanian, "Comută dezactivarea audio"},            {MenuLangId::Filipino, "Toggle audio mute"},            {MenuLangId::Swahili, "Toggle sauti mute"},            {MenuLangId::Croatian, "Toggle zvuk mute"},            {MenuLangId::Icelandic, "Toggle hljóð mute"},            {MenuLangId::Hindi, "Toggle ऑडियो mute"},            {MenuLangId::Bengali, "Toggle অডিও mute"},            {MenuLangId::Urdu, "Toggle آڈیو mute"},            {MenuLangId::Punjabi, "Toggle ਆਡੀਓ mute"},            {MenuLangId::Telugu, "Toggle ఆడియో mute"},            {MenuLangId::Persian, "Toggle صدا mute"},            {MenuLangId::Malay, "Toggle redam audio"},            {MenuLangId::Marathi, "Toggle ऑडिओ mute"},            {MenuLangId::Tamil, "Toggle ஆடியோ mute"},            {MenuLangId::Gujarati, "Toggle ઑડિયો mute"},            {MenuLangId::Kannada, "Toggle ಆಡಿಯೋ mute"},            {MenuLangId::Odia, "toggle କରନ୍ତୁ ଅଡିଓ mute"},            {MenuLangId::Malayalam, "toggle ചെയ്യുക ഓഡിയോ mute"},            {MenuLangId::Burmese, "toggle ပါ အသံ mute"},            {MenuLangId::Uzbek, "Toggle qilish audio mute"},            {MenuLangId::Azerbaijani, "Toggle et audio mute"},            {MenuLangId::Nepali, "toggle गर्नुहोस् अडियो mute"},            {MenuLangId::Sinhala, "toggle කරන්න ශ්‍රව්‍ය mute"},            {MenuLangId::Khmer, "toggle អូឌីយ៉ូ mute"},            {MenuLangId::Lao, "toggle ສຽງ mute"},            {MenuLangId::Armenian, "toggle աուդիո mute"},            {MenuLangId::Albanian, "toggle audio mute"},            {MenuLangId::Georgian, "toggle აუდიო mute"},            {MenuLangId::Bosnian, "toggle audio mute"},            {MenuLangId::Serbian, "toggle аудио mute"},            {MenuLangId::Macedonian, "toggle аудио mute"},            {MenuLangId::Bulgarian, "toggle аудио mute"},            {MenuLangId::Belarusian, "toggle аўдыя mute"},            {MenuLangId::Maltese, "toggle awdjo mute"},            {MenuLangId::Mongolian, "toggle аудио mute"},            {MenuLangId::Latvian, "toggle audio mute"},            {MenuLangId::Lithuanian, "toggle garsas mute"},            {MenuLangId::Afrikaans, "toggle oudio mute"},            {MenuLangId::Irish, "toggle fuaim mute"},            {MenuLangId::Assamese, "toggle কৰক অডিঅ' mute"},            {MenuLangId::Amharic, "Toggle ድምፅ mute"},            {MenuLangId::Estonian, "toggle heli mute"},            {MenuLangId::Kazakh, "Toggle аудио mute"},            {MenuLangId::Catalan, "Toggle àudio mute"},            {MenuLangId::Kyrgyz, "Toggle аудио mute"},            {MenuLangId::Slovak, "Toggle zvuk mute"},            {MenuLangId::Slovenian, "Toggle zvok mute"},            {MenuLangId::Zulu, "Toggle umsindo mute"},            {MenuLangId::Basque, "Toggle audioa mute"},            {MenuLangId::Hebrew, "Toggle שמע mute"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
 
@@ -3052,6 +7952,7 @@
             {MenuLangId::Russian, "Настройки мультиплеера - melonDS"},
             {MenuLangId::ChineseSimplified, "多人游戏设置 - melonDS"},
             {MenuLangId::ChineseTraditional, "多人遊戲設定 - melonDS"},
+            {MenuLangId::ChineseHongKong, "多人遊戲設定 - melonDS"},
             {MenuLangId::Korean, "멀티플레이 설정 - melonDS"},
             {MenuLangId::Arabic, "إعدادات اللعب الجماعي - melonDS"},
             {MenuLangId::Indonesian, "Pengaturan multipemain - melonDS"},
@@ -3067,7 +7968,56 @@
             {MenuLangId::Finnish, "Moninpeliasetukset - melonDS"},
             {MenuLangId::Vietnamese, "Cài đặt nhiều người chơi - melonDS"},
             {MenuLangId::Polish, "Ustawienia wieloosobowe - melonDS"},
-            {MenuLangId::Romanian, "Setări multiplayer - melonDS"},
+            {MenuLangId::Romanian, "Setări multiplayer - melonDS"},            {MenuLangId::Filipino, "Multiplayer mga setting - melonDS"},            {MenuLangId::Swahili, "Multiplayer mipangilio - melonDS"},            {MenuLangId::Croatian, "Multiplayer postavke - melonDS"},            {MenuLangId::Icelandic, "Multiplayer stillingar - melonDS"},            {MenuLangId::Hindi, "Multiplayer सेटिंग्स - melonDS"},            {MenuLangId::Bengali, "Multiplayer সেটিংস - melonDS"},            {MenuLangId::Urdu, "Multiplayer ترتیبات - melonDS"},            {MenuLangId::Punjabi, "Multiplayer ਸੈਟਿੰਗਾਂ - melonDS"},            {MenuLangId::Telugu, "Multiplayer సెట్టింగ్‌లు - melonDS"},            {MenuLangId::Persian, "Multiplayer تنظیمات - melonDS"},            {MenuLangId::Malay, "Multiplayer tetapan - melonDS"},            {MenuLangId::Marathi, "Multiplayer सेटिंग्ज - melonDS"},            {MenuLangId::Tamil, "Multiplayer அமைப்புகள் - melonDS"},            {MenuLangId::Gujarati, "Multiplayer સેટિંગ્સ - melonDS"},            {MenuLangId::Kannada, "Multiplayer ಸೆಟ್ಟಿಂಗ್‌ಗಳು - melonDS"},            {MenuLangId::Odia, "Multiplayer ସେଟିଂସ୍ - melonDS"},            {MenuLangId::Malayalam, "Multiplayer ക്രമീകരണങ്ങൾ - melonDS"},            {MenuLangId::Burmese, "Multiplayer ဆက်တင်များ - melonDS"},            {MenuLangId::Uzbek, "Multiplayer sozlamalar - melonDS"},            {MenuLangId::Azerbaijani, "Multiplayer ayarlar - melonDS"},            {MenuLangId::Nepali, "Multiplayer सेटिङहरू - melonDS"},            {MenuLangId::Sinhala, "Multiplayer සැකසුම් - melonDS"},            {MenuLangId::Khmer, "Multiplayer ការកំណត់ - melonDS"},            {MenuLangId::Lao, "Multiplayer ການຕັ້ງຄ່າ - melonDS"},            {MenuLangId::Armenian, "Multiplayer կարգավորումներ - melonDS"},            {MenuLangId::Albanian, "Multiplayer cilësimet - melonDS"},            {MenuLangId::Georgian, "Multiplayer პარამეტრები - melonDS"},            {MenuLangId::Bosnian, "Multiplayer postavke - melonDS"},            {MenuLangId::Serbian, "Multiplayer подешавања - melonDS"},            {MenuLangId::Macedonian, "Multiplayer поставки - melonDS"},            {MenuLangId::Bulgarian, "Multiplayer настройки - melonDS"},            {MenuLangId::Belarusian, "Multiplayer налады - melonDS"},            {MenuLangId::Maltese, "Malti: Multiplayer settings - melonDS"},            {MenuLangId::Mongolian, "Multiplayer тохиргоо - melonDS"},            {MenuLangId::Latvian, "Multiplayer iestatījumi - melonDS"},            {MenuLangId::Lithuanian, "Multiplayer nustatymai - melonDS"},            {MenuLangId::Afrikaans, "Multiplayer instellings - melonDS"},            {MenuLangId::Irish, "Multiplayer socruithe - melonDS"},            {MenuLangId::Assamese, "Multiplayer ছেটিংছ - melonDS"},            {MenuLangId::Amharic, "Multiplayer ቅንብሮች - melonDS"},            {MenuLangId::Estonian, "Multiplayer seaded - melonDS"},            {MenuLangId::Kazakh, "Multiplayer баптаулар - melonDS"},            {MenuLangId::Catalan, "Multiplayer configuració - melonDS"},            {MenuLangId::Kyrgyz, "Multiplayer жөндөөлөр - melonDS"},            {MenuLangId::Slovak, "Multiplayer nastavenia - melonDS"},            {MenuLangId::Slovenian, "Multiplayer nastavitve - melonDS"},            {MenuLangId::Zulu, "Multiplayer izilungiselelo - melonDS"},            {MenuLangId::Basque, "Multiplayer ezarpenak - melonDS"},            {MenuLangId::Hebrew, "Multiplayer הגדרות - melonDS"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -3083,6 +8033,7 @@
             {MenuLangId::Russian, "Сеть"},
             {MenuLangId::ChineseSimplified, "网络"},
             {MenuLangId::ChineseTraditional, "網路"},
+            {MenuLangId::ChineseHongKong, "網路"},
             {MenuLangId::Korean, "네트워크"},
             {MenuLangId::Arabic, "الشبكة"},
             {MenuLangId::Indonesian, "Jaringan"},
@@ -3098,7 +8049,56 @@
             {MenuLangId::Finnish, "Verkko"},
             {MenuLangId::Vietnamese, "Mạng"},
             {MenuLangId::Polish, "Sieć"},
-            {MenuLangId::Romanian, "Rețea"},
+            {MenuLangId::Romanian, "Rețea"},            {MenuLangId::Filipino, "Network"},            {MenuLangId::Swahili, "Mtandao"},            {MenuLangId::Croatian, "Mreža"},            {MenuLangId::Icelandic, "Netkerfi"},            {MenuLangId::Hindi, "नेटवर्क"},            {MenuLangId::Bengali, "নেটওয়ার্ক"},            {MenuLangId::Urdu, "نیٹ ورک"},            {MenuLangId::Punjabi, "ਨੈੱਟਵਰਕ"},            {MenuLangId::Telugu, "నెట్‌వర్క్"},            {MenuLangId::Persian, "شبکه"},            {MenuLangId::Malay, "Rangkaian"},            {MenuLangId::Marathi, "नेटवर्क"},            {MenuLangId::Tamil, "நெட்வொர்க்"},            {MenuLangId::Gujarati, "નેટવર્ક"},            {MenuLangId::Kannada, "ನೆಟ್‌ವರ್ಕ್"},            {MenuLangId::Odia, "ନେଟୱର୍କ"},            {MenuLangId::Malayalam, "നെറ്റ്‌വർക്ക്"},            {MenuLangId::Burmese, "ကွန်ရက်"},            {MenuLangId::Uzbek, "Tarmoq"},            {MenuLangId::Azerbaijani, "Şəbəkə"},            {MenuLangId::Nepali, "नेटवर्क"},            {MenuLangId::Sinhala, "ජාලය"},            {MenuLangId::Khmer, "បណ្ដាញ"},            {MenuLangId::Lao, "ເຄືອຂ່າຍ"},            {MenuLangId::Armenian, "Ցանց"},            {MenuLangId::Albanian, "Rrjeti"},            {MenuLangId::Georgian, "ქსელი"},            {MenuLangId::Bosnian, "Mreža"},            {MenuLangId::Serbian, "Мрежа"},            {MenuLangId::Macedonian, "Мрежа"},            {MenuLangId::Bulgarian, "Мрежа"},            {MenuLangId::Belarusian, "Сетка"},            {MenuLangId::Maltese, "Netwerk"},            {MenuLangId::Mongolian, "Сүлжээ"},            {MenuLangId::Latvian, "Tīkls"},            {MenuLangId::Lithuanian, "Tinklas"},            {MenuLangId::Afrikaans, "Netwerk"},            {MenuLangId::Irish, "Líonra"},            {MenuLangId::Assamese, "নেটৱৰ্ক"},            {MenuLangId::Amharic, "አውታረ መረብ"},            {MenuLangId::Estonian, "Võrk"},            {MenuLangId::Kazakh, "Желі"},            {MenuLangId::Catalan, "Xarxa"},            {MenuLangId::Kyrgyz, "Тармак"},            {MenuLangId::Slovak, "Sieť"},            {MenuLangId::Slovenian, "Omrežje"},            {MenuLangId::Zulu, "Inethiwekhi"},            {MenuLangId::Basque, "Sarea"},            {MenuLangId::Hebrew, "רשת"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -3114,6 +8114,7 @@
             {MenuLangId::Russian, "Только экземпляр 1"},
             {MenuLangId::ChineseSimplified, "仅实例 1"},
             {MenuLangId::ChineseTraditional, "僅例項 1"},
+            {MenuLangId::ChineseHongKong, "僅例項 1"},
             {MenuLangId::Korean, "인스턴스 1만"},
             {MenuLangId::Arabic, "المثيل 1 فقط"},
             {MenuLangId::Indonesian, "Hanya instance 1"},
@@ -3129,7 +8130,56 @@
             {MenuLangId::Finnish, "Vain instanssi 1"},
             {MenuLangId::Vietnamese, "Chỉ instance 1"},
             {MenuLangId::Polish, "Tylko instancja 1"},
-            {MenuLangId::Romanian, "Doar instanța 1"},
+            {MenuLangId::Romanian, "Doar instanța 1"},            {MenuLangId::Filipino, "Instance 1 only"},            {MenuLangId::Swahili, "Instance 1 only"},            {MenuLangId::Croatian, "Samo instanca 1"},            {MenuLangId::Icelandic, "Aðeins tilvik 1"},            {MenuLangId::Hindi, "केवल इंस्टेंस 1"},            {MenuLangId::Bengali, "শুধু ইনস্ট্যান্স ১"},            {MenuLangId::Urdu, "صرف انسٹینس 1"},            {MenuLangId::Punjabi, "ਕੇਵਲ ਇੰਸਟੈਂਸ 1"},            {MenuLangId::Telugu, "ఇన్‌స్టాన్స్ 1 మాత్రమే"},            {MenuLangId::Persian, "فقط نمونه ۱"},            {MenuLangId::Malay, "Instance 1 sahaja"},            {MenuLangId::Marathi, "फक्त instance 1"},            {MenuLangId::Tamil, "instance 1 மட்டும்"},            {MenuLangId::Gujarati, "ફક્ત instance 1"},            {MenuLangId::Kannada, "instance 1 ಮಾತ್ರ"},            {MenuLangId::Odia, "ଓଡ଼ିଆ: Instance 1 only"},            {MenuLangId::Malayalam, "instance 1 മാത്രം"},            {MenuLangId::Burmese, "instance 1 သာ"},            {MenuLangId::Uzbek, "faqat instance 1"},            {MenuLangId::Azerbaijani, "yalnız instance 1"},            {MenuLangId::Nepali, "instance 1 मात्र"},            {MenuLangId::Sinhala, "instance 1 පමණක්"},            {MenuLangId::Khmer, "instance 1 ប៉ុណ្ណោះ"},            {MenuLangId::Lao, "instance 1 ເທົ່ານັ້ນ"},            {MenuLangId::Armenian, "միայն instance 1"},            {MenuLangId::Albanian, "vetëm instance 1"},            {MenuLangId::Georgian, "მხოლოდ instance 1"},            {MenuLangId::Bosnian, "samo instance 1"},            {MenuLangId::Serbian, "само instance 1"},            {MenuLangId::Macedonian, "само instance 1"},            {MenuLangId::Bulgarian, "само instance 1"},            {MenuLangId::Belarusian, "толькі instance 1"},            {MenuLangId::Maltese, "instance 1 biss"},            {MenuLangId::Mongolian, "зөвхөн instance 1"},            {MenuLangId::Latvian, "tikai instance 1"},            {MenuLangId::Lithuanian, "tik instance 1"},            {MenuLangId::Afrikaans, "net instance 1"},            {MenuLangId::Irish, "instance 1 amháin"},            {MenuLangId::Assamese, "কেৱল instance 1"},            {MenuLangId::Amharic, "አማርኛ: Instance 1 only"},            {MenuLangId::Estonian, "ainult instance 1"},            {MenuLangId::Kazakh, "Қазақша: Instance 1 only"},            {MenuLangId::Catalan, "Català: Instance 1 only"},            {MenuLangId::Kyrgyz, "Кыргызча: Instance 1 only"},            {MenuLangId::Slovak, "Slovenčina: Instance 1 only"},            {MenuLangId::Slovenian, "Slovenščina: Instance 1 only"},            {MenuLangId::Zulu, "isiZulu: Instance 1 only"},            {MenuLangId::Basque, "Euskara: Instance 1 only"},            {MenuLangId::Hebrew, "עברית: Instance 1 only"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -3145,6 +8195,7 @@
             {MenuLangId::Russian, "Все экземпляры"},
             {MenuLangId::ChineseSimplified, "所有实例"},
             {MenuLangId::ChineseTraditional, "所有例項"},
+            {MenuLangId::ChineseHongKong, "所有例項"},
             {MenuLangId::Korean, "모든 인스턴스"},
             {MenuLangId::Arabic, "جميع النسخ"},
             {MenuLangId::Indonesian, "Semua instance"},
@@ -3160,7 +8211,56 @@
             {MenuLangId::Finnish, "Kaikki instanssit"},
             {MenuLangId::Vietnamese, "Tất cả instance"},
             {MenuLangId::Polish, "Wszystkie instancje"},
-            {MenuLangId::Romanian, "Toate instanțele"},
+            {MenuLangId::Romanian, "Toate instanțele"},            {MenuLangId::Filipino, "All instances"},            {MenuLangId::Swahili, "All instances"},            {MenuLangId::Croatian, "Sve instance"},            {MenuLangId::Icelandic, "Öll tilvik"},            {MenuLangId::Hindi, "सभी इंस्टेंस"},            {MenuLangId::Bengali, "সব ইনস্ট্যান্স"},            {MenuLangId::Urdu, "تمام انسٹینسز"},            {MenuLangId::Punjabi, "ਸਾਰੇ ਇੰਸਟੈਂਸ"},            {MenuLangId::Telugu, "అన్ని ఇన్‌స్టాన్స్‌లు"},            {MenuLangId::Persian, "همه نمونه‌ها"},            {MenuLangId::Malay, "Semua instance"},            {MenuLangId::Marathi, "सर्व instances"},            {MenuLangId::Tamil, "அனைத்து instances"},            {MenuLangId::Gujarati, "બધા instances"},            {MenuLangId::Kannada, "ಎಲ್ಲಾ instances"},            {MenuLangId::Odia, "ସମସ୍ତ instances"},            {MenuLangId::Malayalam, "എല്ലാ instances"},            {MenuLangId::Burmese, "instances အားလုံး"},            {MenuLangId::Uzbek, "barcha instances"},            {MenuLangId::Azerbaijani, "bütün instances"},            {MenuLangId::Nepali, "सबै instances"},            {MenuLangId::Sinhala, "සියලු instances"},            {MenuLangId::Khmer, "instances ទាំងអស់"},            {MenuLangId::Lao, "instances ທັງໝົດ"},            {MenuLangId::Armenian, "բոլոր instances"},            {MenuLangId::Albanian, "të gjithë instances"},            {MenuLangId::Georgian, "ყველა instances"},            {MenuLangId::Bosnian, "sve instances"},            {MenuLangId::Serbian, "све instances"},            {MenuLangId::Macedonian, "сите instances"},            {MenuLangId::Bulgarian, "всички instances"},            {MenuLangId::Belarusian, "усе instances"},            {MenuLangId::Maltese, "instances kollha"},            {MenuLangId::Mongolian, "бүх instances"},            {MenuLangId::Latvian, "visas instances"},            {MenuLangId::Lithuanian, "visos instances"},            {MenuLangId::Afrikaans, "alle instances"},            {MenuLangId::Irish, "gach instance"},            {MenuLangId::Assamese, "সকলো instances"},            {MenuLangId::Amharic, "ሁሉም instances"},            {MenuLangId::Estonian, "kõik instances"},            {MenuLangId::Kazakh, "барлық instances"},            {MenuLangId::Catalan, "totes les instances"},            {MenuLangId::Kyrgyz, "бардык instances"},            {MenuLangId::Slovak, "všetky instances"},            {MenuLangId::Slovenian, "vse instances"},            {MenuLangId::Zulu, "wonke ama-instances"},            {MenuLangId::Basque, "instantzia guztiak"},            {MenuLangId::Hebrew, "כל ה-instances"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -3176,6 +8276,7 @@
             {MenuLangId::Russian, "Только активный экземпляр"},
             {MenuLangId::ChineseSimplified, "仅活动实例"},
             {MenuLangId::ChineseTraditional, "僅活動例項"},
+            {MenuLangId::ChineseHongKong, "僅活動例項"},
             {MenuLangId::Korean, "활성 인스턴스만"},
             {MenuLangId::Arabic, "النسخة النشطة فقط"},
             {MenuLangId::Indonesian, "Hanya instance aktif"},
@@ -3191,7 +8292,56 @@
             {MenuLangId::Finnish, "Vain aktiivinen instanssi"},
             {MenuLangId::Vietnamese, "Chỉ phiên bản đang hoạt động"},
             {MenuLangId::Polish, "Tylko aktywna instancja"},
-            {MenuLangId::Romanian, "Doar instanța activă"},
+            {MenuLangId::Romanian, "Doar instanța activă"},            {MenuLangId::Filipino, "Active instance only"},            {MenuLangId::Swahili, "Active instance only"},            {MenuLangId::Croatian, "Samo aktivna instanca"},            {MenuLangId::Icelandic, "Aðeins virkt tilvik"},            {MenuLangId::Hindi, "केवल सक्रिय इंस्टेंस"},            {MenuLangId::Bengali, "শুধু সক্রিয় ইনস্ট্যান্স"},            {MenuLangId::Urdu, "صرف فعال انسٹینس"},            {MenuLangId::Punjabi, "ਕੇਵਲ ਸਰਗਰਮ ਇੰਸਟੈਂਸ"},            {MenuLangId::Telugu, "సక్రియ ఇన్‌స్టాన్స్ మాత్రమే"},            {MenuLangId::Persian, "فقط نمونه فعال"},            {MenuLangId::Malay, "Instance aktif sahaja"},            {MenuLangId::Marathi, "फक्त सक्रिय instance"},            {MenuLangId::Tamil, "செயலில் உள்ள instance மட்டும்"},            {MenuLangId::Gujarati, "ફક્ત સક્રિય instance"},            {MenuLangId::Kannada, "ಸಕ್ರಿಯ instance ಮಾತ್ರ"},            {MenuLangId::Odia, "ଓଡ଼ିଆ: Active instance only"},            {MenuLangId::Malayalam, "സജീവ instance മാത്രം"},            {MenuLangId::Burmese, "active instance သာ"},            {MenuLangId::Uzbek, "faqat active instance"},            {MenuLangId::Azerbaijani, "yalnız active instance"},            {MenuLangId::Nepali, "active instance मात्र"},            {MenuLangId::Sinhala, "active instance පමණක්"},            {MenuLangId::Khmer, "active instance ប៉ុណ្ណោះ"},            {MenuLangId::Lao, "active instance ເທົ່ານັ້ນ"},            {MenuLangId::Armenian, "միայն active instance"},            {MenuLangId::Albanian, "vetëm active instance"},            {MenuLangId::Georgian, "მხოლოდ active instance"},            {MenuLangId::Bosnian, "samo aktivna instance"},            {MenuLangId::Serbian, "само active instance"},            {MenuLangId::Macedonian, "само active instance"},            {MenuLangId::Bulgarian, "само active instance"},            {MenuLangId::Belarusian, "толькі active instance"},            {MenuLangId::Maltese, "active instance biss"},            {MenuLangId::Mongolian, "зөвхөн active instance"},            {MenuLangId::Latvian, "tikai active instance"},            {MenuLangId::Lithuanian, "tik active instance"},            {MenuLangId::Afrikaans, "net active instance"},            {MenuLangId::Irish, "active instance amháin"},            {MenuLangId::Assamese, "কেৱল active instance"},            {MenuLangId::Amharic, "አማርኛ: Active instance only"},            {MenuLangId::Estonian, "ainult active instance"},            {MenuLangId::Kazakh, "Қазақша: Active instance only"},            {MenuLangId::Catalan, "Català: Active instance only"},            {MenuLangId::Kyrgyz, "Кыргызча: Active instance only"},            {MenuLangId::Slovak, "Slovenčina: Active instance only"},            {MenuLangId::Slovenian, "Slovenščina: Active instance only"},            {MenuLangId::Zulu, "isiZulu: Active instance only"},            {MenuLangId::Basque, "Euskara: Active instance only"},            {MenuLangId::Hebrew, "עברית: Active instance only"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -3207,6 +8357,7 @@
             {MenuLangId::Russian, "Таймаут приёма данных: "},
             {MenuLangId::ChineseSimplified, "数据接收超时： "},
             {MenuLangId::ChineseTraditional, "資料接收超時： "},
+            {MenuLangId::ChineseHongKong, "資料接收超時： "},
             {MenuLangId::Korean, "데이터 수신 타임아웃: "},
             {MenuLangId::Arabic, "مهلة استقبال البيانات: "},
             {MenuLangId::Indonesian, "Batas waktu penerimaan data: "},
@@ -3222,7 +8373,56 @@
             {MenuLangId::Finnish, "Tietojen vastaanoton aikakatkaisu: "},
             {MenuLangId::Vietnamese, "Hết thời gian nhận dữ liệu: "},
             {MenuLangId::Polish, "Limit czasu odbioru danych: "},
-            {MenuLangId::Romanian, "Timeout recepție date: "},
+            {MenuLangId::Romanian, "Timeout recepție date: "},            {MenuLangId::Filipino, "Data reception timeout: "},            {MenuLangId::Swahili, "Data reception timeout: "},            {MenuLangId::Croatian, "Timeout primanja podataka: "},            {MenuLangId::Icelandic, "Tímamörk gagnamóttöku: "},            {MenuLangId::Hindi, "डेटा प्राप्ति टाइमआउट: "},            {MenuLangId::Bengali, "ডেটা গ্রহণ টাইমআউট: "},            {MenuLangId::Urdu, "ڈیٹا وصولی ٹائم آؤٹ: "},            {MenuLangId::Punjabi, "ਡਾਟਾ ਪ੍ਰਾਪਤੀ ਟਾਈਮਆਉਟ: "},            {MenuLangId::Telugu, "డేటా స్వీకరణ టైమ్‌అవుట్: "},            {MenuLangId::Persian, "مهلت دریافت داده: "},            {MenuLangId::Malay, "Tamat masa penerimaan data: "},            {MenuLangId::Marathi, "डेटा प्राप्ती टाइमआउट: "},            {MenuLangId::Tamil, "தரவு பெறும் timeout: "},            {MenuLangId::Gujarati, "ડેટા પ્રાપ્ત timeout: "},            {MenuLangId::Kannada, "ಡೇಟಾ ಸ್ವೀಕರಣ timeout: "},            {MenuLangId::Odia, "ଓଡ଼ିଆ: Data reception timeout: "},            {MenuLangId::Malayalam, "ഡാറ്റ സ്വീകരണ timeout: "},            {MenuLangId::Burmese, "ဒေတာလက်ခံ timeout: "},            {MenuLangId::Uzbek, "Maʼlumot qabul timeout: "},            {MenuLangId::Azerbaijani, "Məlumat qəbulu timeout: "},            {MenuLangId::Nepali, "डाटा प्राप्ति timeout: "},            {MenuLangId::Sinhala, "දත්ත ලබාගැනීමේ timeout: "},            {MenuLangId::Khmer, "timeout ទទួលទិន្នន័យ: "},            {MenuLangId::Lao, "timeout ຮັບຂໍ້ມູນ: "},            {MenuLangId::Armenian, "Տվյալների ընդունման timeout: "},            {MenuLangId::Albanian, "timeout i marrjes së të dhënave: "},            {MenuLangId::Georgian, "მონაცემების მიღების timeout: "},            {MenuLangId::Bosnian, "timeout prijema podataka: "},            {MenuLangId::Serbian, "timeout пријема података: "},            {MenuLangId::Macedonian, "timeout за прием на податоци: "},            {MenuLangId::Bulgarian, "timeout при прием на данни: "},            {MenuLangId::Belarusian, "timeout прыёму даных: "},            {MenuLangId::Maltese, "timeout tar-riċezzjoni tad-data: "},            {MenuLangId::Mongolian, "өгөгдөл хүлээн авах timeout: "},            {MenuLangId::Latvian, "datu saņemšanas timeout: "},            {MenuLangId::Lithuanian, "duomenų gavimo timeout: "},            {MenuLangId::Afrikaans, "data-ontvangs timeout: "},            {MenuLangId::Irish, "timeout glactha sonraí: "},            {MenuLangId::Assamese, "ডাটা গ্ৰহণ timeout: "},            {MenuLangId::Amharic, "አማርኛ: Data reception timeout: "},            {MenuLangId::Estonian, "Eesti: Data reception timeout: "},            {MenuLangId::Kazakh, "Қазақша: Data reception timeout: "},            {MenuLangId::Catalan, "Català: Data reception timeout: "},            {MenuLangId::Kyrgyz, "Кыргызча: Data reception timeout: "},            {MenuLangId::Slovak, "Slovenčina: Data reception timeout: "},            {MenuLangId::Slovenian, "Slovenščina: Data reception timeout: "},            {MenuLangId::Zulu, "isiZulu: Data reception timeout: "},            {MenuLangId::Basque, "Euskara: Data reception timeout: "},            {MenuLangId::Hebrew, "עברית: Data reception timeout: "},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -3238,6 +8438,7 @@
             {MenuLangId::Russian, "миллисекунды"},
             {MenuLangId::ChineseSimplified, "毫秒"},
             {MenuLangId::ChineseTraditional, "毫秒"},
+            {MenuLangId::ChineseHongKong, "毫秒"},
             {MenuLangId::Korean, "밀리초"},
             {MenuLangId::Arabic, "مللي ثانية"},
             {MenuLangId::Indonesian, "milidetik"},
@@ -3253,7 +8454,56 @@
             {MenuLangId::Finnish, "millisekuntia"},
             {MenuLangId::Vietnamese, "mili giây"},
             {MenuLangId::Polish, "milisekundy"},
-            {MenuLangId::Romanian, "milisecunde"},
+            {MenuLangId::Romanian, "milisecunde"},            {MenuLangId::Filipino, "milliseconds"},            {MenuLangId::Swahili, "milliseconds"},            {MenuLangId::Croatian, "milisekundi"},            {MenuLangId::Icelandic, "millisekúndur"},            {MenuLangId::Hindi, "मिलीसेकंड"},            {MenuLangId::Bengali, "মিলিসেকেন্ড"},            {MenuLangId::Urdu, "ملی سیکنڈ"},            {MenuLangId::Punjabi, "ਮਿਲੀਸਕਿੰਟ"},            {MenuLangId::Telugu, "మిల్లీసెకన్లు"},            {MenuLangId::Persian, "میلی‌ثانیه"},            {MenuLangId::Malay, "milisaat"},            {MenuLangId::Marathi, "मिलिसेकंद"},            {MenuLangId::Tamil, "மில்லிசெகண்டுகள்"},            {MenuLangId::Gujarati, "મિલિસેકન્ડ"},            {MenuLangId::Kannada, "ಮಿಲಿಸೆಕೆಂಡ್"},            {MenuLangId::Odia, "ମିଲିସେକେଣ୍ଡ"},            {MenuLangId::Malayalam, "മില്ലിസെക്കൻഡ്"},            {MenuLangId::Burmese, "မီလီစက္ကန့်"},            {MenuLangId::Uzbek, "millisekund"},            {MenuLangId::Azerbaijani, "millisaniyə"},            {MenuLangId::Nepali, "मिलिसेकेन्ड"},            {MenuLangId::Sinhala, "මිලි තත්පර"},            {MenuLangId::Khmer, "មិល្លីវិនាទី"},            {MenuLangId::Lao, "ມິນລິວິນາທີ"},            {MenuLangId::Armenian, "միլիվայրկյան"},            {MenuLangId::Albanian, "milisekonda"},            {MenuLangId::Georgian, "მილიწამი"},            {MenuLangId::Bosnian, "milisekundi"},            {MenuLangId::Serbian, "милисекунди"},            {MenuLangId::Macedonian, "милисекунди"},            {MenuLangId::Bulgarian, "милисекунди"},            {MenuLangId::Belarusian, "мілісекунд"},            {MenuLangId::Maltese, "millisekondi"},            {MenuLangId::Mongolian, "миллисекунд"},            {MenuLangId::Latvian, "milisekundes"},            {MenuLangId::Lithuanian, "milisekundės"},            {MenuLangId::Afrikaans, "millisekondes"},            {MenuLangId::Irish, "milleasoicindí"},            {MenuLangId::Assamese, "মিলিছেকেণ্ড"},            {MenuLangId::Amharic, "ሚሊሰከንዶች"},            {MenuLangId::Estonian, "millisekundit"},            {MenuLangId::Kazakh, "миллисекунд"},            {MenuLangId::Catalan, "mil·lisegons"},            {MenuLangId::Kyrgyz, "миллисекунд"},            {MenuLangId::Slovak, "milisekúnd"},            {MenuLangId::Slovenian, "milisekund"},            {MenuLangId::Zulu, "ama-millisecond"},            {MenuLangId::Basque, "milisegundo"},            {MenuLangId::Hebrew, "מילישניות"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -3269,6 +8519,7 @@
             {MenuLangId::Russian, "Настройки Wi-Fi - melonDS"},
             {MenuLangId::ChineseSimplified, "Wi-Fi 设置 - melonDS"},
             {MenuLangId::ChineseTraditional, "Wi-Fi 設定 - melonDS"},
+            {MenuLangId::ChineseHongKong, "Wi-Fi 設定 - melonDS"},
             {MenuLangId::Korean, "Wi-Fi 설정 - melonDS"},
             {MenuLangId::Arabic, "إعدادات Wi-Fi - melonDS"},
             {MenuLangId::Indonesian, "Pengaturan Wi-Fi - melonDS"},
@@ -3284,7 +8535,56 @@
             {MenuLangId::Finnish, "Wi-Fi-asetukset - melonDS"},
             {MenuLangId::Vietnamese, "Cài đặt Wi-Fi - melonDS"},
             {MenuLangId::Polish, "Ustawienia Wi-Fi - melonDS"},
-            {MenuLangId::Romanian, "Setări Wi-Fi - melonDS"},
+            {MenuLangId::Romanian, "Setări Wi-Fi - melonDS"},            {MenuLangId::Filipino, "Wifi mga setting - melonDS"},            {MenuLangId::Swahili, "Wifi mipangilio - melonDS"},            {MenuLangId::Croatian, "Wifi postavke - melonDS"},            {MenuLangId::Icelandic, "Wifi stillingar - melonDS"},            {MenuLangId::Hindi, "Wifi सेटिंग्स - melonDS"},            {MenuLangId::Bengali, "Wifi সেটিংস - melonDS"},            {MenuLangId::Urdu, "Wifi ترتیبات - melonDS"},            {MenuLangId::Punjabi, "Wifi ਸੈਟਿੰਗਾਂ - melonDS"},            {MenuLangId::Telugu, "Wifi సెట్టింగ్‌లు - melonDS"},            {MenuLangId::Persian, "Wifi تنظیمات - melonDS"},            {MenuLangId::Malay, "Wifi tetapan - melonDS"},            {MenuLangId::Marathi, "Wifi सेटिंग्ज - melonDS"},            {MenuLangId::Tamil, "Wifi அமைப்புகள் - melonDS"},            {MenuLangId::Gujarati, "Wifi સેટિંગ્સ - melonDS"},            {MenuLangId::Kannada, "Wifi ಸೆಟ್ಟಿಂಗ್‌ಗಳು - melonDS"},            {MenuLangId::Odia, "Wifi ସେଟିଂସ୍ - melonDS"},            {MenuLangId::Malayalam, "Wifi ക്രമീകരണങ്ങൾ - melonDS"},            {MenuLangId::Burmese, "Wifi ဆက်တင်များ - melonDS"},            {MenuLangId::Uzbek, "Wifi sozlamalar - melonDS"},            {MenuLangId::Azerbaijani, "Wifi ayarlar - melonDS"},            {MenuLangId::Nepali, "Wifi सेटिङहरू - melonDS"},            {MenuLangId::Sinhala, "Wifi සැකසුම් - melonDS"},            {MenuLangId::Khmer, "Wifi ការកំណត់ - melonDS"},            {MenuLangId::Lao, "Wifi ການຕັ້ງຄ່າ - melonDS"},            {MenuLangId::Armenian, "Wifi կարգավորումներ - melonDS"},            {MenuLangId::Albanian, "Wifi cilësimet - melonDS"},            {MenuLangId::Georgian, "Wifi პარამეტრები - melonDS"},            {MenuLangId::Bosnian, "Wifi postavke - melonDS"},            {MenuLangId::Serbian, "Wifi подешавања - melonDS"},            {MenuLangId::Macedonian, "Wifi поставки - melonDS"},            {MenuLangId::Bulgarian, "Wifi настройки - melonDS"},            {MenuLangId::Belarusian, "Wifi налады - melonDS"},            {MenuLangId::Maltese, "Malti: Wifi settings - melonDS"},            {MenuLangId::Mongolian, "Wifi тохиргоо - melonDS"},            {MenuLangId::Latvian, "Wifi iestatījumi - melonDS"},            {MenuLangId::Lithuanian, "Wifi nustatymai - melonDS"},            {MenuLangId::Afrikaans, "Wifi instellings - melonDS"},            {MenuLangId::Irish, "Wifi socruithe - melonDS"},            {MenuLangId::Assamese, "Wifi ছেটিংছ - melonDS"},            {MenuLangId::Amharic, "Wifi ቅንብሮች - melonDS"},            {MenuLangId::Estonian, "Wifi seaded - melonDS"},            {MenuLangId::Kazakh, "Wifi баптаулар - melonDS"},            {MenuLangId::Catalan, "Wifi configuració - melonDS"},            {MenuLangId::Kyrgyz, "Wifi жөндөөлөр - melonDS"},            {MenuLangId::Slovak, "Wifi nastavenia - melonDS"},            {MenuLangId::Slovenian, "Wifi nastavitve - melonDS"},            {MenuLangId::Zulu, "Wifi izilungiselelo - melonDS"},            {MenuLangId::Basque, "Wifi ezarpenak - melonDS"},            {MenuLangId::Hebrew, "Wifi הגדרות - melonDS"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -3300,6 +8600,7 @@
             {MenuLangId::Russian, "Сетевой режим"},
             {MenuLangId::ChineseSimplified, "网络模式"},
             {MenuLangId::ChineseTraditional, "網路模式"},
+            {MenuLangId::ChineseHongKong, "網路模式"},
             {MenuLangId::Korean, "네트워크 모드"},
             {MenuLangId::Arabic, "وضع الشبكة"},
             {MenuLangId::Indonesian, "Mode jaringan"},
@@ -3315,7 +8616,56 @@
             {MenuLangId::Finnish, "Verkkotila"},
             {MenuLangId::Vietnamese, "Chế độ mạng"},
             {MenuLangId::Polish, "Tryb sieci"},
-            {MenuLangId::Romanian, "Mod rețea"},
+            {MenuLangId::Romanian, "Mod rețea"},            {MenuLangId::Filipino, "Network mode"},            {MenuLangId::Swahili, "Network hali"},            {MenuLangId::Croatian, "Network način"},            {MenuLangId::Icelandic, "Network hamur"},            {MenuLangId::Hindi, "Network मोड"},            {MenuLangId::Bengali, "Network মোড"},            {MenuLangId::Urdu, "Network موڈ"},            {MenuLangId::Punjabi, "Network ਮੋਡ"},            {MenuLangId::Telugu, "Network మోడ్"},            {MenuLangId::Persian, "Network حالت"},            {MenuLangId::Malay, "Network mod"},            {MenuLangId::Marathi, "Network मोड"},            {MenuLangId::Tamil, "Network முறை"},            {MenuLangId::Gujarati, "Network મોડ"},            {MenuLangId::Kannada, "Network ಮೋಡ್"},            {MenuLangId::Odia, "Network ମୋଡ୍"},            {MenuLangId::Malayalam, "Network മോഡ്"},            {MenuLangId::Burmese, "Network မုဒ်"},            {MenuLangId::Uzbek, "Network rejim"},            {MenuLangId::Azerbaijani, "Network rejim"},            {MenuLangId::Nepali, "Network मोड"},            {MenuLangId::Sinhala, "Network ප්‍රකාරය"},            {MenuLangId::Khmer, "Network របៀប"},            {MenuLangId::Lao, "Network ໂໝດ"},            {MenuLangId::Armenian, "Network ռեժիմ"},            {MenuLangId::Albanian, "Network modalitet"},            {MenuLangId::Georgian, "Network რეჟიმი"},            {MenuLangId::Bosnian, "Network način"},            {MenuLangId::Serbian, "Network режим"},            {MenuLangId::Macedonian, "Network режим"},            {MenuLangId::Bulgarian, "Network режим"},            {MenuLangId::Belarusian, "Network рэжым"},            {MenuLangId::Maltese, "Network mod"},            {MenuLangId::Mongolian, "Network горим"},            {MenuLangId::Latvian, "Network režīms"},            {MenuLangId::Lithuanian, "Network režimas"},            {MenuLangId::Afrikaans, "Network modus"},            {MenuLangId::Irish, "Network mód"},            {MenuLangId::Assamese, "Network মোড"},            {MenuLangId::Amharic, "Network ሁነታ"},            {MenuLangId::Estonian, "Network režiim"},            {MenuLangId::Kazakh, "Network режим"},            {MenuLangId::Catalan, "mode de xarxa"},            {MenuLangId::Kyrgyz, "Network режим"},            {MenuLangId::Slovak, "Network režim"},            {MenuLangId::Slovenian, "Network način"},            {MenuLangId::Zulu, "Network imodi"},            {MenuLangId::Basque, "Network modua"},            {MenuLangId::Hebrew, "Network מצב"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -3331,6 +8681,7 @@
             {MenuLangId::Russian, "Косвенный режим (использует libslirp, рекомендуется)"},
             {MenuLangId::ChineseSimplified, "间接模式 (使用 libslirp，推荐)"},
             {MenuLangId::ChineseTraditional, "間接模式 (使用 libslirp，推薦)"},
+            {MenuLangId::ChineseHongKong, "間接模式 (使用 libslirp，推薦)"},
             {MenuLangId::Korean, "간접 모드 (libslirp 사용, 권장)"},
             {MenuLangId::Arabic, "Indirect mode (uses libslirp, recommended)"},
             {MenuLangId::Indonesian, "Indirect mode (uses libslirp, recommended)"},
@@ -3346,7 +8697,56 @@
             {MenuLangId::Finnish, "Indirect mode (uses libslirp, recommended)"},
             {MenuLangId::Vietnamese, "Indirect mode (uses libslirp, recommended)"},
             {MenuLangId::Polish, "Indirect mode (uses libslirp, recommended)"},
-            {MenuLangId::Romanian, "Indirect mode (uses libslirp, recommended)"},
+            {MenuLangId::Romanian, "Indirect mode (uses libslirp, recommended)"},            {MenuLangId::Filipino, "Indirect mode (uses libslirp, recommended)"},            {MenuLangId::Swahili, "Indirect hali (uses libslirp, recommended)"},            {MenuLangId::Croatian, "Inizravni način (uses libslirp, recommended)"},            {MenuLangId::Icelandic, "Inbeinn hamur (uses libslirp, recommended)"},            {MenuLangId::Hindi, "Inडायरेक्ट मोड (uses libslirp, recommended)"},            {MenuLangId::Bengali, "Inডাইরেক্ট মোড (uses libslirp, recommended)"},            {MenuLangId::Urdu, "Inڈائریکٹ موڈ (uses libslirp, recommended)"},            {MenuLangId::Punjabi, "Inਡਾਇਰੈਕਟ ਮੋਡ (uses libslirp, recommended)"},            {MenuLangId::Telugu, "Inడైరెక్ట్ మోడ్ (uses libslirp, recommended)"},            {MenuLangId::Persian, "Inحالت مستقیم (uses libslirp, recommended)"},            {MenuLangId::Malay, "Inmod terus (uses libslirp, recommended)"},            {MenuLangId::Marathi, "Inथेट मोड (uses libslirp, recommended)"},            {MenuLangId::Tamil, "Inநேரடி முறை (uses libslirp, recommended)"},            {MenuLangId::Gujarati, "Inડાયરેક્ટ મોડ (uses libslirp, recommended)"},            {MenuLangId::Kannada, "Inನೇರ ಮೋಡ್ (uses libslirp, recommended)"},            {MenuLangId::Odia, "Indirect ମୋଡ୍ (uses libslirp, recommended)"},            {MenuLangId::Malayalam, "Indirect മോഡ് (uses libslirp, recommended)"},            {MenuLangId::Burmese, "Indirect မုဒ် (uses libslirp, recommended)"},            {MenuLangId::Uzbek, "Indirect rejim (uses libslirp, recommended)"},            {MenuLangId::Azerbaijani, "Indirect rejim (uses libslirp, recommended)"},            {MenuLangId::Nepali, "Indirect मोड (uses libslirp, recommended)"},            {MenuLangId::Sinhala, "Indirect ප්‍රකාරය (uses libslirp, recommended)"},            {MenuLangId::Khmer, "Indirect របៀប (uses libslirp, recommended)"},            {MenuLangId::Lao, "Indirect ໂໝດ (uses libslirp, recommended)"},            {MenuLangId::Armenian, "Indirect ռեժիմ (uses libslirp, recommended)"},            {MenuLangId::Albanian, "Indirect modalitet (uses libslirp, recommended)"},            {MenuLangId::Georgian, "Indirect რეჟიმი (uses libslirp, recommended)"},            {MenuLangId::Bosnian, "Indirect način (uses libslirp, recommended)"},            {MenuLangId::Serbian, "Indirect режим (uses libslirp, recommended)"},            {MenuLangId::Macedonian, "Indirect режим (uses libslirp, recommended)"},            {MenuLangId::Bulgarian, "Indirect режим (uses libslirp, recommended)"},            {MenuLangId::Belarusian, "Indirect рэжым (uses libslirp, recommended)"},            {MenuLangId::Maltese, "Indirect mod (uses libslirp, recommended)"},            {MenuLangId::Mongolian, "Indirect горим (uses libslirp, recommended)"},            {MenuLangId::Latvian, "Indirect režīms (uses libslirp, recommended)"},            {MenuLangId::Lithuanian, "Indirect režimas (uses libslirp, recommended)"},            {MenuLangId::Afrikaans, "Indirect modus (uses libslirp, recommended)"},            {MenuLangId::Irish, "Indirect mód (uses libslirp, recommended)"},            {MenuLangId::Assamese, "Indirect মোড (uses libslirp, recommended)"},            {MenuLangId::Amharic, "Indirect ሁነታ (uses libslirp, recommended)"},            {MenuLangId::Estonian, "Indirect režiim (uses libslirp, recommended)"},            {MenuLangId::Kazakh, "Indirect режим (uses libslirp, recommended)"},            {MenuLangId::Catalan, "Català: Indirect mode (uses libslirp, recommended)"},            {MenuLangId::Kyrgyz, "Indirect режим (uses libslirp, recommended)"},            {MenuLangId::Slovak, "Indirect režim (uses libslirp, recommended)"},            {MenuLangId::Slovenian, "Indirect način (uses libslirp, recommended)"},            {MenuLangId::Zulu, "Indirect imodi (uses libslirp, recommended)"},            {MenuLangId::Basque, "Indirect modua (uses libslirp, recommended)"},            {MenuLangId::Hebrew, "Indirect מצב (uses libslirp, recommended)"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -3362,6 +8762,7 @@
             {MenuLangId::Russian, "Прямой режим [TEXT PLACEHOLDER]"},
             {MenuLangId::ChineseSimplified, "直连模式 [TEXT PLACEHOLDER]"},
             {MenuLangId::ChineseTraditional, "直連模式 [TEXT PLACEHOLDER]"},
+            {MenuLangId::ChineseHongKong, "直連模式 [TEXT PLACEHOLDER]"},
             {MenuLangId::Korean, "직접 모드 [TEXT PLACEHOLDER]"},
             {MenuLangId::Arabic, "الوضع المباشر [TEXT PLACEHOLDER]"},
             {MenuLangId::Indonesian, "Mode langsung [TEXT PLACEHOLDER]"},
@@ -3377,7 +8778,56 @@
             {MenuLangId::Finnish, "Suora tila [TEXT PLACEHOLDER]"},
             {MenuLangId::Vietnamese, "Chế độ trực tiếp [TEXT PLACEHOLDER]"},
             {MenuLangId::Polish, "Tryb bezpośredni [TEXT PLACEHOLDER]"},
-            {MenuLangId::Romanian, "Mod direct [TEXT PLACEHOLDER]"},
+            {MenuLangId::Romanian, "Mod direct [TEXT PLACEHOLDER]"},            {MenuLangId::Filipino, "Direct mode [TEXT PLACEHOLDER]"},            {MenuLangId::Swahili, "Direct hali [TEXT PLACEHOLDER]"},            {MenuLangId::Croatian, "izravni način [TEXT PLACEHOLDER]"},            {MenuLangId::Icelandic, "beinn hamur [TEXT PLACEHOLDER]"},            {MenuLangId::Hindi, "डायरेक्ट मोड [TEXT PLACEHOLDER]"},            {MenuLangId::Bengali, "ডাইরেক্ট মোড [TEXT PLACEHOLDER]"},            {MenuLangId::Urdu, "ڈائریکٹ موڈ [TEXT PLACEHOLDER]"},            {MenuLangId::Punjabi, "ਡਾਇਰੈਕਟ ਮੋਡ [TEXT PLACEHOLDER]"},            {MenuLangId::Telugu, "డైరెక్ట్ మోడ్ [TEXT PLACEHOLDER]"},            {MenuLangId::Persian, "حالت مستقیم [TEXT PLACEHOLDER]"},            {MenuLangId::Malay, "Mod terus [TEXT PLACEHOLDER]"},            {MenuLangId::Marathi, "थेट मोड [TEXT PLACEHOLDER]"},            {MenuLangId::Tamil, "நேரடி முறை [TEXT PLACEHOLDER]"},            {MenuLangId::Gujarati, "ડાયરેક્ટ મોડ [TEXT PLACEHOLDER]"},            {MenuLangId::Kannada, "ನೇರ ಮೋಡ್ [TEXT PLACEHOLDER]"},            {MenuLangId::Odia, "Direct ମୋଡ୍ [TEXT PLACEHOLDER]"},            {MenuLangId::Malayalam, "Direct മോഡ് [TEXT PLACEHOLDER]"},            {MenuLangId::Burmese, "Direct မုဒ် [TEXT PLACEHOLDER]"},            {MenuLangId::Uzbek, "Direct rejim [TEXT PLACEHOLDER]"},            {MenuLangId::Azerbaijani, "Direct rejim [TEXT PLACEHOLDER]"},            {MenuLangId::Nepali, "Direct मोड [TEXT PLACEHOLDER]"},            {MenuLangId::Sinhala, "Direct ප්‍රකාරය [TEXT PLACEHOLDER]"},            {MenuLangId::Khmer, "Direct របៀប [TEXT PLACEHOLDER]"},            {MenuLangId::Lao, "Direct ໂໝດ [TEXT PLACEHOLDER]"},            {MenuLangId::Armenian, "Direct ռեժիմ [TEXT PLACEHOLDER]"},            {MenuLangId::Albanian, "Direct modalitet [TEXT PLACEHOLDER]"},            {MenuLangId::Georgian, "Direct რეჟიმი [TEXT PLACEHOLDER]"},            {MenuLangId::Bosnian, "Direct način [TEXT PLACEHOLDER]"},            {MenuLangId::Serbian, "Direct режим [TEXT PLACEHOLDER]"},            {MenuLangId::Macedonian, "Direct режим [TEXT PLACEHOLDER]"},            {MenuLangId::Bulgarian, "Direct режим [TEXT PLACEHOLDER]"},            {MenuLangId::Belarusian, "Direct рэжым [TEXT PLACEHOLDER]"},            {MenuLangId::Maltese, "Direct mod [TEXT PLACEHOLDER]"},            {MenuLangId::Mongolian, "Direct горим [TEXT PLACEHOLDER]"},            {MenuLangId::Latvian, "Direct režīms [TEXT PLACEHOLDER]"},            {MenuLangId::Lithuanian, "Direct režimas [TEXT PLACEHOLDER]"},            {MenuLangId::Afrikaans, "Direct modus [TEXT PLACEHOLDER]"},            {MenuLangId::Irish, "Direct mód [TEXT PLACEHOLDER]"},            {MenuLangId::Assamese, "Direct মোড [TEXT PLACEHOLDER]"},            {MenuLangId::Amharic, "Direct ሁነታ [TEXT PLACEHOLDER]"},            {MenuLangId::Estonian, "Direct režiim [TEXT PLACEHOLDER]"},            {MenuLangId::Kazakh, "Direct режим [TEXT PLACEHOLDER]"},            {MenuLangId::Catalan, "Català: Direct mode [TEXT PLACEHOLDER]"},            {MenuLangId::Kyrgyz, "Direct режим [TEXT PLACEHOLDER]"},            {MenuLangId::Slovak, "Direct režim [TEXT PLACEHOLDER]"},            {MenuLangId::Slovenian, "Direct način [TEXT PLACEHOLDER]"},            {MenuLangId::Zulu, "Direct imodi [TEXT PLACEHOLDER]"},            {MenuLangId::Basque, "Direct modua [TEXT PLACEHOLDER]"},            {MenuLangId::Hebrew, "Direct מצב [TEXT PLACEHOLDER]"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -3393,6 +8843,7 @@
             {MenuLangId::Russian, "Настройки прямого режима"},
             {MenuLangId::ChineseSimplified, "直连模式设置"},
             {MenuLangId::ChineseTraditional, "直連模式設定"},
+            {MenuLangId::ChineseHongKong, "直連模式設定"},
             {MenuLangId::Korean, "직접 모드 설정"},
             {MenuLangId::Arabic, "إعدادات الوضع المباشر"},
             {MenuLangId::Indonesian, "Pengaturan mode langsung"},
@@ -3408,7 +8859,56 @@
             {MenuLangId::Finnish, "Suoran tilan asetukset"},
             {MenuLangId::Vietnamese, "Cài đặt chế độ trực tiếp"},
             {MenuLangId::Polish, "Ustawienia trybu bezpośredniego"},
-            {MenuLangId::Romanian, "Setări mod direct"},
+            {MenuLangId::Romanian, "Setări mod direct"},            {MenuLangId::Filipino, "Direct mode mga setting"},            {MenuLangId::Swahili, "Direct hali mipangilio"},            {MenuLangId::Croatian, "izravni način postavke"},            {MenuLangId::Icelandic, "beinn hamur stillingar"},            {MenuLangId::Hindi, "डायरेक्ट मोड सेटिंग्स"},            {MenuLangId::Bengali, "ডাইরেক্ট মোড সেটিংস"},            {MenuLangId::Urdu, "ڈائریکٹ موڈ ترتیبات"},            {MenuLangId::Punjabi, "ਡਾਇਰੈਕਟ ਮੋਡ ਸੈਟਿੰਗਾਂ"},            {MenuLangId::Telugu, "డైరెక్ట్ మోడ్ సెట్టింగ్‌లు"},            {MenuLangId::Persian, "حالت مستقیم تنظیمات"},            {MenuLangId::Malay, "Mod terus tetapan"},            {MenuLangId::Marathi, "थेट मोड सेटिंग्ज"},            {MenuLangId::Tamil, "நேரடி முறை அமைப்புகள்"},            {MenuLangId::Gujarati, "ડાયરેક્ટ મોડ સેટિંગ્સ"},            {MenuLangId::Kannada, "ನೇರ ಮೋಡ್ ಸೆಟ್ಟಿಂಗ್‌ಗಳು"},            {MenuLangId::Odia, "Direct ମୋଡ୍ ସେଟିଂସ୍"},            {MenuLangId::Malayalam, "Direct മോഡ് ക്രമീകരണങ്ങൾ"},            {MenuLangId::Burmese, "Direct မုဒ် ဆက်တင်များ"},            {MenuLangId::Uzbek, "Direct rejim sozlamalar"},            {MenuLangId::Azerbaijani, "Direct rejim ayarlar"},            {MenuLangId::Nepali, "Direct मोड सेटिङहरू"},            {MenuLangId::Sinhala, "Direct ප්‍රකාරය සැකසුම්"},            {MenuLangId::Khmer, "Direct របៀប ការកំណត់"},            {MenuLangId::Lao, "Direct ໂໝດ ການຕັ້ງຄ່າ"},            {MenuLangId::Armenian, "Direct ռեժիմ կարգավորումներ"},            {MenuLangId::Albanian, "Direct modalitet cilësimet"},            {MenuLangId::Georgian, "Direct რეჟიმი პარამეტრები"},            {MenuLangId::Bosnian, "Direct način postavke"},            {MenuLangId::Serbian, "Direct режим подешавања"},            {MenuLangId::Macedonian, "Direct режим поставки"},            {MenuLangId::Bulgarian, "Direct режим настройки"},            {MenuLangId::Belarusian, "Direct рэжым налады"},            {MenuLangId::Maltese, "Direct mod settings"},            {MenuLangId::Mongolian, "Direct горим тохиргоо"},            {MenuLangId::Latvian, "Direct režīms iestatījumi"},            {MenuLangId::Lithuanian, "Direct režimas nustatymai"},            {MenuLangId::Afrikaans, "Direct modus instellings"},            {MenuLangId::Irish, "Direct mód socruithe"},            {MenuLangId::Assamese, "Direct মোড ছেটিংছ"},            {MenuLangId::Amharic, "Direct ሁነታ ቅንብሮች"},            {MenuLangId::Estonian, "Direct režiim seaded"},            {MenuLangId::Kazakh, "Direct режим баптаулар"},            {MenuLangId::Catalan, "Direct mode configuració"},            {MenuLangId::Kyrgyz, "Direct режим жөндөөлөр"},            {MenuLangId::Slovak, "Direct režim nastavenia"},            {MenuLangId::Slovenian, "Direct način nastavitve"},            {MenuLangId::Zulu, "Direct imodi izilungiselelo"},            {MenuLangId::Basque, "Direct modua ezarpenak"},            {MenuLangId::Hebrew, "Direct מצב הגדרות"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -3424,6 +8924,7 @@
             {MenuLangId::Russian, "MAC-адрес:"},
             {MenuLangId::ChineseSimplified, "MAC 地址："},
             {MenuLangId::ChineseTraditional, "MAC 地址："},
+            {MenuLangId::ChineseHongKong, "MAC 地址："},
             {MenuLangId::Korean, "MAC 주소:"},
             {MenuLangId::Arabic, "عنوان MAC:"},
             {MenuLangId::Indonesian, "Alamat MAC:"},
@@ -3439,7 +8940,56 @@
             {MenuLangId::Finnish, "MAC-osoite:"},
             {MenuLangId::Vietnamese, "Địa chỉ MAC:"},
             {MenuLangId::Polish, "Adres MAC:"},
-            {MenuLangId::Romanian, "Adresă MAC:"},
+            {MenuLangId::Romanian, "Adresă MAC:"},            {MenuLangId::Filipino, "MAC address:"},            {MenuLangId::Swahili, "MAC address:"},            {MenuLangId::Croatian, "MAC adresa:"},            {MenuLangId::Icelandic, "MAC-vistfang:"},            {MenuLangId::Hindi, "MAC पता:"},            {MenuLangId::Bengali, "MAC ঠিকানা:"},            {MenuLangId::Urdu, "MAC پتہ:"},            {MenuLangId::Punjabi, "MAC ਪਤਾ:"},            {MenuLangId::Telugu, "MAC చిరునామా:"},            {MenuLangId::Persian, "آدرس MAC:"},            {MenuLangId::Malay, "Alamat MAC:"},            {MenuLangId::Marathi, "MAC पत्ता:"},            {MenuLangId::Tamil, "MAC முகவரி:"},            {MenuLangId::Gujarati, "MAC સરનામું:"},            {MenuLangId::Kannada, "MAC ವಿಳಾಸ:"},            {MenuLangId::Odia, "ଓଡ଼ିଆ: MAC address:"},            {MenuLangId::Malayalam, "MAC വിലാസം:"},            {MenuLangId::Burmese, "MAC လိပ်စာ:"},            {MenuLangId::Uzbek, "MAC manzil:"},            {MenuLangId::Azerbaijani, "MAC ünvan:"},            {MenuLangId::Nepali, "MAC ठेगाना:"},            {MenuLangId::Sinhala, "MAC ලිපිනය:"},            {MenuLangId::Khmer, "អាសយដ្ឋាន MAC:"},            {MenuLangId::Lao, "ທີ່ຢູ່ MAC:"},            {MenuLangId::Armenian, "MAC հասցե:"},            {MenuLangId::Albanian, "Adresa MAC:"},            {MenuLangId::Georgian, "MAC მისამართი:"},            {MenuLangId::Bosnian, "MAC adresa:"},            {MenuLangId::Serbian, "MAC адреса:"},            {MenuLangId::Macedonian, "MAC адреса:"},            {MenuLangId::Bulgarian, "MAC адрес:"},            {MenuLangId::Belarusian, "MAC-адрас:"},            {MenuLangId::Maltese, "indirizz MAC:"},            {MenuLangId::Mongolian, "MAC хаяг:"},            {MenuLangId::Latvian, "MAC adrese:"},            {MenuLangId::Lithuanian, "MAC adresas:"},            {MenuLangId::Afrikaans, "MAC-adres:"},            {MenuLangId::Irish, "seoladh MAC:"},            {MenuLangId::Assamese, "MAC ঠিকনা:"},            {MenuLangId::Amharic, "MAC አድራሻ:"},            {MenuLangId::Estonian, "MAC-aadress:"},            {MenuLangId::Kazakh, "MAC мекенжайы:"},            {MenuLangId::Catalan, "Adreça MAC:"},            {MenuLangId::Kyrgyz, "MAC дареги:"},            {MenuLangId::Slovak, "MAC adresa:"},            {MenuLangId::Slovenian, "MAC naslov:"},            {MenuLangId::Zulu, "Ikheli le-MAC:"},            {MenuLangId::Basque, "MAC helbidea:"},            {MenuLangId::Hebrew, "כתובת MAC:"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -3455,6 +9005,7 @@
             {MenuLangId::Russian, "Сетевой адаптер:"},
             {MenuLangId::ChineseSimplified, "网络适配器:"},
             {MenuLangId::ChineseTraditional, "網路介面卡:"},
+            {MenuLangId::ChineseHongKong, "網路介面卡:"},
             {MenuLangId::Korean, "네트워크 어댑터:"},
             {MenuLangId::Arabic, "محول الشبكة:"},
             {MenuLangId::Indonesian, "Adaptor jaringan:"},
@@ -3470,7 +9021,56 @@
             {MenuLangId::Finnish, "Verkkosovitin:"},
             {MenuLangId::Vietnamese, "Bộ chuyển đổi mạng:"},
             {MenuLangId::Polish, "Adapter sieci:"},
-            {MenuLangId::Romanian, "Adaptor rețea:"},
+            {MenuLangId::Romanian, "Adaptor rețea:"},            {MenuLangId::Filipino, "Network adapter:"},            {MenuLangId::Swahili, "Network adapter:"},            {MenuLangId::Croatian, "Mrežni adapter:"},            {MenuLangId::Icelandic, "Netkort:"},            {MenuLangId::Hindi, "नेटवर्क एडाप्टर:"},            {MenuLangId::Bengali, "নেটওয়ার্ক অ্যাডাপ্টার:"},            {MenuLangId::Urdu, "نیٹ ورک اڈاپٹر:"},            {MenuLangId::Punjabi, "ਨੈੱਟਵਰਕ ਐਡਾਪਟਰ:"},            {MenuLangId::Telugu, "నెట్‌వర్క్ అడాప్టర్:"},            {MenuLangId::Persian, "آداپتور شبکه:"},            {MenuLangId::Malay, "Adapter rangkaian:"},            {MenuLangId::Marathi, "नेटवर्क अडॅप्टर:"},            {MenuLangId::Tamil, "நெட்வொர்க் adapter:"},            {MenuLangId::Gujarati, "નેટવર્ક adapter:"},            {MenuLangId::Kannada, "ನೆಟ್‌ವರ್ಕ್ adapter:"},            {MenuLangId::Odia, "ଓଡ଼ିଆ: Network adapter:"},            {MenuLangId::Malayalam, "നെറ്റ്‌വർക്ക് adapter:"},            {MenuLangId::Burmese, "ကွန်ရက် adapter:"},            {MenuLangId::Uzbek, "Tarmoq adapteri:"},            {MenuLangId::Azerbaijani, "Şəbəkə adapteri:"},            {MenuLangId::Nepali, "नेटवर्क adapter:"},            {MenuLangId::Sinhala, "ජාල adapter:"},            {MenuLangId::Khmer, "network adapter:"},            {MenuLangId::Lao, "network adapter:"},            {MenuLangId::Armenian, "network adapter:"},            {MenuLangId::Albanian, "network adapter:"},            {MenuLangId::Georgian, "network adapter:"},            {MenuLangId::Bosnian, "network adapter:"},            {MenuLangId::Serbian, "network adapter:"},            {MenuLangId::Macedonian, "network adapter:"},            {MenuLangId::Bulgarian, "network adapter:"},            {MenuLangId::Belarusian, "network adapter:"},            {MenuLangId::Maltese, "network adapter:"},            {MenuLangId::Mongolian, "network adapter:"},            {MenuLangId::Latvian, "network adapter:"},            {MenuLangId::Lithuanian, "network adapter:"},            {MenuLangId::Afrikaans, "network adapter:"},            {MenuLangId::Irish, "Gaeilge: Network adapter:"},            {MenuLangId::Assamese, "network adapter:"},            {MenuLangId::Amharic, "አማርኛ: Network adapter:"},            {MenuLangId::Estonian, "Eesti: Network adapter:"},            {MenuLangId::Kazakh, "Қазақша: Network adapter:"},            {MenuLangId::Catalan, "Català: Network adapter:"},            {MenuLangId::Kyrgyz, "Кыргызча: Network adapter:"},            {MenuLangId::Slovak, "Slovenčina: Network adapter:"},            {MenuLangId::Slovenian, "Slovenščina: Network adapter:"},            {MenuLangId::Zulu, "isiZulu: Network adapter:"},            {MenuLangId::Basque, "Euskara: Network adapter:"},            {MenuLangId::Hebrew, "עברית: Network adapter:"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -3486,6 +9086,7 @@
             {MenuLangId::Russian, "IP-адрес:"},
             {MenuLangId::ChineseSimplified, "IP 地址:"},
             {MenuLangId::ChineseTraditional, "IP 地址:"},
+            {MenuLangId::ChineseHongKong, "IP 地址:"},
             {MenuLangId::Korean, "IP 주소:"},
             {MenuLangId::Arabic, "IP address:"},
             {MenuLangId::Indonesian, "IP address:"},
@@ -3501,7 +9102,56 @@
             {MenuLangId::Finnish, "IP address:"},
             {MenuLangId::Vietnamese, "IP address:"},
             {MenuLangId::Polish, "IP address:"},
-            {MenuLangId::Romanian, "IP address:"},
+            {MenuLangId::Romanian, "IP address:"},            {MenuLangId::Filipino, "IP address:"},            {MenuLangId::Swahili, "IP address:"},            {MenuLangId::Croatian, "IP adresa:"},            {MenuLangId::Icelandic, "IP-vistfang:"},            {MenuLangId::Hindi, "IP पता:"},            {MenuLangId::Bengali, "IP ঠিকানা:"},            {MenuLangId::Urdu, "IP پتہ:"},            {MenuLangId::Punjabi, "IP ਪਤਾ:"},            {MenuLangId::Telugu, "IP చిరునామా:"},            {MenuLangId::Persian, "آدرس IP:"},            {MenuLangId::Malay, "Alamat IP:"},            {MenuLangId::Marathi, "IP पत्ता:"},            {MenuLangId::Tamil, "IP முகவரி:"},            {MenuLangId::Gujarati, "IP સરનામું:"},            {MenuLangId::Kannada, "IP ವಿಳಾಸ:"},            {MenuLangId::Odia, "ଓଡ଼ିଆ: IP address:"},            {MenuLangId::Malayalam, "IP വിലാസം:"},            {MenuLangId::Burmese, "IP လိပ်စာ:"},            {MenuLangId::Uzbek, "IP manzil:"},            {MenuLangId::Azerbaijani, "IP ünvan:"},            {MenuLangId::Nepali, "IP ठेगाना:"},            {MenuLangId::Sinhala, "IP ලිපිනය:"},            {MenuLangId::Khmer, "អាសយដ្ឋាន IP:"},            {MenuLangId::Lao, "ທີ່ຢູ່ IP:"},            {MenuLangId::Armenian, "IP հասցե:"},            {MenuLangId::Albanian, "Adresa IP:"},            {MenuLangId::Georgian, "IP მისამართი:"},            {MenuLangId::Bosnian, "IP adresa:"},            {MenuLangId::Serbian, "IP адреса:"},            {MenuLangId::Macedonian, "IP адреса:"},            {MenuLangId::Bulgarian, "IP адрес:"},            {MenuLangId::Belarusian, "IP-адрас:"},            {MenuLangId::Maltese, "indirizz IP:"},            {MenuLangId::Mongolian, "IP хаяг:"},            {MenuLangId::Latvian, "IP adrese:"},            {MenuLangId::Lithuanian, "IP adresas:"},            {MenuLangId::Afrikaans, "IP-adres:"},            {MenuLangId::Irish, "seoladh IP:"},            {MenuLangId::Assamese, "IP ঠিকনা:"},            {MenuLangId::Amharic, "IP አድራሻ:"},            {MenuLangId::Estonian, "IP-aadress:"},            {MenuLangId::Kazakh, "IP мекенжайы:"},            {MenuLangId::Catalan, "Adreça IP:"},            {MenuLangId::Kyrgyz, "IP дареги:"},            {MenuLangId::Slovak, "IP adresa:"},            {MenuLangId::Slovenian, "IP naslov:"},            {MenuLangId::Zulu, "Ikheli le-IP:"},            {MenuLangId::Basque, "IP helbidea:"},            {MenuLangId::Hebrew, "כתובת IP:"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -3517,6 +9167,7 @@
             {MenuLangId::Russian, "(нет)"},
             {MenuLangId::ChineseSimplified, "（无）"},
             {MenuLangId::ChineseTraditional, "（無）"},
+            {MenuLangId::ChineseHongKong, "（無）"},
             {MenuLangId::Korean, "(없음)"},
             {MenuLangId::Arabic, "(لا شيء)"},
             {MenuLangId::Indonesian, "(tidak ada)"},
@@ -3532,7 +9183,56 @@
             {MenuLangId::Finnish, "(ei mitään)"},
             {MenuLangId::Vietnamese, "(không)"},
             {MenuLangId::Polish, "(brak)"},
-            {MenuLangId::Romanian, "(niciunul)"},
+            {MenuLangId::Romanian, "(niciunul)"},            {MenuLangId::Filipino, "(wala)"},            {MenuLangId::Swahili, "(hakuna)"},            {MenuLangId::Croatian, "(nijedno)"},            {MenuLangId::Icelandic, "(ekkert)"},            {MenuLangId::Hindi, "(कोई नहीं)"},            {MenuLangId::Bengali, "(কোনোটিই নয়)"},            {MenuLangId::Urdu, "(کوئی نہیں)"},            {MenuLangId::Punjabi, "(ਕੋਈ ਨਹੀਂ)"},            {MenuLangId::Telugu, "(ఏదీ లేదు)"},            {MenuLangId::Persian, "(هیچ‌کدام)"},            {MenuLangId::Malay, "(tiada)"},            {MenuLangId::Marathi, "(काहीही नाही)"},            {MenuLangId::Tamil, "(எதுவுமில்லை)"},            {MenuLangId::Gujarati, "(કંઈ નહીં)"},            {MenuLangId::Kannada, "(ಯಾವುದೂ ಇಲ್ಲ)"},            {MenuLangId::Odia, "(କିଛି ନାହିଁ)"},            {MenuLangId::Malayalam, "(ഒന്നുമില്ല)"},            {MenuLangId::Burmese, "(မရှိပါ)"},            {MenuLangId::Uzbek, "(yoʻq)"},            {MenuLangId::Azerbaijani, "(yoxdur)"},            {MenuLangId::Nepali, "(कुनै छैन)"},            {MenuLangId::Sinhala, "(කිසිවක් නැත)"},            {MenuLangId::Khmer, "(គ្មាន)"},            {MenuLangId::Lao, "(ບໍ່ມີ)"},            {MenuLangId::Armenian, "(չկա)"},            {MenuLangId::Albanian, "(asnjë)"},            {MenuLangId::Georgian, "(არცერთი)"},            {MenuLangId::Bosnian, "(nijedno)"},            {MenuLangId::Serbian, "(ништа)"},            {MenuLangId::Macedonian, "(ништо)"},            {MenuLangId::Bulgarian, "(няма)"},            {MenuLangId::Belarusian, "(няма)"},            {MenuLangId::Maltese, "(xejn)"},            {MenuLangId::Mongolian, "(байхгүй)"},            {MenuLangId::Latvian, "(nav)"},            {MenuLangId::Lithuanian, "(nėra)"},            {MenuLangId::Afrikaans, "(geen)"},            {MenuLangId::Irish, "(níl aon cheann)"},            {MenuLangId::Assamese, "(কোনো নাই)"},            {MenuLangId::Amharic, "(ምንም)"},            {MenuLangId::Estonian, "(puudub)"},            {MenuLangId::Kazakh, "(жоқ)"},            {MenuLangId::Catalan, "(cap)"},            {MenuLangId::Kyrgyz, "(жок)"},            {MenuLangId::Slovak, "(žiadne)"},            {MenuLangId::Slovenian, "(brez)"},            {MenuLangId::Zulu, "(akukho)"},            {MenuLangId::Basque, "(bat ere ez)"},            {MenuLangId::Hebrew, "(ללא)"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -3548,6 +9248,7 @@
             {MenuLangId::Russian, "Настройки прошивки - melonDS"},
             {MenuLangId::ChineseSimplified, "固件设置 - melonDS"},
             {MenuLangId::ChineseTraditional, "韌體設定 - melonDS"},
+            {MenuLangId::ChineseHongKong, "韌體設定 - melonDS"},
             {MenuLangId::Korean, "펌웨어 설정 - melonDS"},
             {MenuLangId::Arabic, "إعدادات Firmware - melonDS"},
             {MenuLangId::Indonesian, "Pengaturan firmware - melonDS"},
@@ -3563,7 +9264,56 @@
             {MenuLangId::Finnish, "Laiteohjelmistoasetukset - melonDS"},
             {MenuLangId::Vietnamese, "Cài đặt firmware - melonDS"},
             {MenuLangId::Polish, "Ustawienia firmware - melonDS"},
-            {MenuLangId::Romanian, "Setări firmware - melonDS"},
+            {MenuLangId::Romanian, "Setări firmware - melonDS"},            {MenuLangId::Filipino, "mga setting ng firmware - melonDS"},            {MenuLangId::Swahili, "mipangilio ya firmware - melonDS"},            {MenuLangId::Croatian, "postavke firmwarea - melonDS"},            {MenuLangId::Icelandic, "firmware-stillingar - melonDS"},            {MenuLangId::Hindi, "फ़र्मवेयर सेटिंग्स - melonDS"},            {MenuLangId::Bengali, "ফার্মওয়্যার সেটিংস - melonDS"},            {MenuLangId::Urdu, "فرم ویئر ترتیبات - melonDS"},            {MenuLangId::Punjabi, "ਫਰਮਵੇਅਰ ਸੈਟਿੰਗਾਂ - melonDS"},            {MenuLangId::Telugu, "ఫర్మ్‌వేర్ సెట్టింగ్‌లు - melonDS"},            {MenuLangId::Persian, "تنظیمات firmware - melonDS"},            {MenuLangId::Malay, "Tetapan perisian tegar - melonDS"},            {MenuLangId::Marathi, "फर्मवेअर सेटिंग्ज - melonDS"},            {MenuLangId::Tamil, "firmware அமைப்புகள் - melonDS"},            {MenuLangId::Gujarati, "firmware સેટિંગ્સ - melonDS"},            {MenuLangId::Kannada, "firmware ಸೆಟ್ಟಿಂಗ್‌ಗಳು - melonDS"},            {MenuLangId::Odia, "firmware ସେଟିଂସ୍ - melonDS"},            {MenuLangId::Malayalam, "firmware ക്രമീകരണങ്ങൾ - melonDS"},            {MenuLangId::Burmese, "firmware ဆက်တင်များ - melonDS"},            {MenuLangId::Uzbek, "firmware sozlamalari - melonDS"},            {MenuLangId::Azerbaijani, "firmware ayarları - melonDS"},            {MenuLangId::Nepali, "firmware सेटिङहरू - melonDS"},            {MenuLangId::Sinhala, "firmware සැකසුම් - melonDS"},            {MenuLangId::Khmer, "ការកំណត់ firmware - melonDS"},            {MenuLangId::Lao, "ການຕັ້ງຄ່າ firmware - melonDS"},            {MenuLangId::Armenian, "firmware կարգավորումներ - melonDS"},            {MenuLangId::Albanian, "Cilësimet e firmware - melonDS"},            {MenuLangId::Georgian, "firmware-ის პარამეტრები - melonDS"},            {MenuLangId::Bosnian, "Firmware postavke - melonDS"},            {MenuLangId::Serbian, "Firmware подешавања - melonDS"},            {MenuLangId::Macedonian, "Firmware поставки - melonDS"},            {MenuLangId::Bulgarian, "Firmware настройки - melonDS"},            {MenuLangId::Belarusian, "Налады firmware - melonDS"},            {MenuLangId::Maltese, "Settings tal-firmware - melonDS"},            {MenuLangId::Mongolian, "Firmware тохиргоо - melonDS"},            {MenuLangId::Latvian, "Firmware iestatījumi - melonDS"},            {MenuLangId::Lithuanian, "Firmware nustatymai - melonDS"},            {MenuLangId::Afrikaans, "Firmware-instellings - melonDS"},            {MenuLangId::Irish, "Socruithe firmware - melonDS"},            {MenuLangId::Assamese, "Firmware ছেটিংছ - melonDS"},            {MenuLangId::Amharic, "Firmware ቅንብሮች - melonDS"},            {MenuLangId::Estonian, "Firmware seaded - melonDS"},            {MenuLangId::Kazakh, "Firmware баптаулары - melonDS"},            {MenuLangId::Catalan, "Configuració del firmware - melonDS"},            {MenuLangId::Kyrgyz, "Firmware жөндөөлөрү - melonDS"},            {MenuLangId::Slovak, "Nastavenia firmware - melonDS"},            {MenuLangId::Slovenian, "Nastavitve firmware - melonDS"},            {MenuLangId::Zulu, "Izilungiselelo ze-firmware - melonDS"},            {MenuLangId::Basque, "Firmware ezarpenak - melonDS"},            {MenuLangId::Hebrew, "הגדרות firmware - melonDS"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -3579,6 +9329,7 @@
             {MenuLangId::Russian, "Переопределить настройки из внешней прошивки"},
             {MenuLangId::ChineseSimplified, "覆盖外部固件设置"},
             {MenuLangId::ChineseTraditional, "覆蓋外部韌體設定"},
+            {MenuLangId::ChineseHongKong, "覆蓋外部韌體設定"},
             {MenuLangId::Korean, "외부 펌웨어 설정 재정의"},
             {MenuLangId::Arabic, "تجاوز الإعدادات من البرنامج الثابت الخارجي"},
             {MenuLangId::Indonesian, "Ganti pengaturan dari firmware eksternal"},
@@ -3594,7 +9345,56 @@
             {MenuLangId::Finnish, "Korvaa asetukset ulkoisesta laiteohjelmasta"},
             {MenuLangId::Vietnamese, "Ghi đè cài đặt từ firmware ngoài"},
             {MenuLangId::Polish, "Zastąp ustawienia z zewnętrznego firmware"},
-            {MenuLangId::Romanian, "Înlocuiește setările din firmware extern"},
+            {MenuLangId::Romanian, "Înlocuiește setările din firmware extern"},            {MenuLangId::Filipino, "Override mga setting from external firmware"},            {MenuLangId::Swahili, "Override mipangilio from external firmware"},            {MenuLangId::Croatian, "Override postavke from external firmware"},            {MenuLangId::Icelandic, "Override stillingar from external firmware"},            {MenuLangId::Hindi, "Override सेटिंग्स from external firmware"},            {MenuLangId::Bengali, "Override সেটিংস from external firmware"},            {MenuLangId::Urdu, "Override ترتیبات from external firmware"},            {MenuLangId::Punjabi, "Override ਸੈਟਿੰਗਾਂ from external firmware"},            {MenuLangId::Telugu, "Override సెట్టింగ్‌లు from external firmware"},            {MenuLangId::Persian, "Override تنظیمات from external firmware"},            {MenuLangId::Malay, "Override tetapan from external firmware"},            {MenuLangId::Marathi, "Override सेटिंग्ज from external firmware"},            {MenuLangId::Tamil, "Override அமைப்புகள் from external firmware"},            {MenuLangId::Gujarati, "Override સેટિંગ્સ from external firmware"},            {MenuLangId::Kannada, "Override ಸೆಟ್ಟಿಂಗ್‌ಗಳು from external firmware"},            {MenuLangId::Odia, "Override ସେଟିଂସ୍ from external firmware"},            {MenuLangId::Malayalam, "Override ക്രമീകരണങ്ങൾ from external firmware"},            {MenuLangId::Burmese, "Override ဆက်တင်များ from external firmware"},            {MenuLangId::Uzbek, "Override sozlamalar from external firmware"},            {MenuLangId::Azerbaijani, "Override ayarlar from external firmware"},            {MenuLangId::Nepali, "Override सेटिङहरू from external firmware"},            {MenuLangId::Sinhala, "Override සැකසුම් from external firmware"},            {MenuLangId::Khmer, "Override ការកំណត់ from external firmware"},            {MenuLangId::Lao, "Override ການຕັ້ງຄ່າ from external firmware"},            {MenuLangId::Armenian, "Override կարգավորումներ from external firmware"},            {MenuLangId::Albanian, "Override cilësimet from external firmware"},            {MenuLangId::Georgian, "Override პარამეტრები from external firmware"},            {MenuLangId::Bosnian, "Override postavke from external firmware"},            {MenuLangId::Serbian, "Override подешавања from external firmware"},            {MenuLangId::Macedonian, "Override поставки from external firmware"},            {MenuLangId::Bulgarian, "Override настройки from external firmware"},            {MenuLangId::Belarusian, "Override налады from external firmware"},            {MenuLangId::Maltese, "Malti: Override settings from external firmware"},            {MenuLangId::Mongolian, "Override тохиргоо from external firmware"},            {MenuLangId::Latvian, "Override iestatījumi from external firmware"},            {MenuLangId::Lithuanian, "Override nustatymai from external firmware"},            {MenuLangId::Afrikaans, "Override instellings from external firmware"},            {MenuLangId::Irish, "Override socruithe from external firmware"},            {MenuLangId::Assamese, "Override ছেটিংছ from external firmware"},            {MenuLangId::Amharic, "Override ቅንብሮች from external firmware"},            {MenuLangId::Estonian, "Override seaded from external firmware"},            {MenuLangId::Kazakh, "Override баптаулар from external firmware"},            {MenuLangId::Catalan, "Override configuració from external firmware"},            {MenuLangId::Kyrgyz, "Override жөндөөлөр from external firmware"},            {MenuLangId::Slovak, "Override nastavenia from external firmware"},            {MenuLangId::Slovenian, "Override nastavitve from external firmware"},            {MenuLangId::Zulu, "Override izilungiselelo from external firmware"},            {MenuLangId::Basque, "Override ezarpenak from external firmware"},            {MenuLangId::Hebrew, "Override הגדרות from external firmware"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -3610,6 +9410,7 @@
             {MenuLangId::Russian, "Пользовательские настройки"},
             {MenuLangId::ChineseSimplified, "用户设置"},
             {MenuLangId::ChineseTraditional, "使用者設定"},
+            {MenuLangId::ChineseHongKong, "使用者設定"},
             {MenuLangId::Korean, "사용자 설정"},
             {MenuLangId::Arabic, "إعدادات المستخدم"},
             {MenuLangId::Indonesian, "Pengaturan pengguna"},
@@ -3625,7 +9426,56 @@
             {MenuLangId::Finnish, "Käyttäjäasetukset"},
             {MenuLangId::Vietnamese, "Cài đặt người dùng"},
             {MenuLangId::Polish, "Ustawienia użytkownika"},
-            {MenuLangId::Romanian, "Setări utilizator"},
+            {MenuLangId::Romanian, "Setări utilizator"},            {MenuLangId::Filipino, "User mga setting"},            {MenuLangId::Swahili, "User mipangilio"},            {MenuLangId::Croatian, "User postavke"},            {MenuLangId::Icelandic, "User stillingar"},            {MenuLangId::Hindi, "User सेटिंग्स"},            {MenuLangId::Bengali, "User সেটিংস"},            {MenuLangId::Urdu, "User ترتیبات"},            {MenuLangId::Punjabi, "User ਸੈਟਿੰਗਾਂ"},            {MenuLangId::Telugu, "User సెట్టింగ్‌లు"},            {MenuLangId::Persian, "User تنظیمات"},            {MenuLangId::Malay, "User tetapan"},            {MenuLangId::Marathi, "User सेटिंग्ज"},            {MenuLangId::Tamil, "User அமைப்புகள்"},            {MenuLangId::Gujarati, "User સેટિંગ્સ"},            {MenuLangId::Kannada, "User ಸೆಟ್ಟಿಂಗ್‌ಗಳು"},            {MenuLangId::Odia, "User ସେଟିଂସ୍"},            {MenuLangId::Malayalam, "User ക്രമീകരണങ്ങൾ"},            {MenuLangId::Burmese, "User ဆက်တင်များ"},            {MenuLangId::Uzbek, "User sozlamalar"},            {MenuLangId::Azerbaijani, "User ayarlar"},            {MenuLangId::Nepali, "User सेटिङहरू"},            {MenuLangId::Sinhala, "User සැකසුම්"},            {MenuLangId::Khmer, "User ការកំណត់"},            {MenuLangId::Lao, "User ການຕັ້ງຄ່າ"},            {MenuLangId::Armenian, "User կարգավորումներ"},            {MenuLangId::Albanian, "User cilësimet"},            {MenuLangId::Georgian, "User პარამეტრები"},            {MenuLangId::Bosnian, "User postavke"},            {MenuLangId::Serbian, "User подешавања"},            {MenuLangId::Macedonian, "User поставки"},            {MenuLangId::Bulgarian, "User настройки"},            {MenuLangId::Belarusian, "User налады"},            {MenuLangId::Maltese, "Settings tal-utent"},            {MenuLangId::Mongolian, "User тохиргоо"},            {MenuLangId::Latvian, "User iestatījumi"},            {MenuLangId::Lithuanian, "User nustatymai"},            {MenuLangId::Afrikaans, "User instellings"},            {MenuLangId::Irish, "User socruithe"},            {MenuLangId::Assamese, "User ছেটিংছ"},            {MenuLangId::Amharic, "User ቅንብሮች"},            {MenuLangId::Estonian, "User seaded"},            {MenuLangId::Kazakh, "User баптаулар"},            {MenuLangId::Catalan, "User configuració"},            {MenuLangId::Kyrgyz, "User жөндөөлөр"},            {MenuLangId::Slovak, "User nastavenia"},            {MenuLangId::Slovenian, "User nastavitve"},            {MenuLangId::Zulu, "User izilungiselelo"},            {MenuLangId::Basque, "User ezarpenak"},            {MenuLangId::Hebrew, "User הגדרות"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -3641,6 +9491,7 @@
             {MenuLangId::Russian, "Имя пользователя:"},
             {MenuLangId::ChineseSimplified, "用户名:"},
             {MenuLangId::ChineseTraditional, "使用者名稱:"},
+            {MenuLangId::ChineseHongKong, "使用者名稱:"},
             {MenuLangId::Korean, "사용자 이름:"},
             {MenuLangId::Arabic, "Username:"},
             {MenuLangId::Indonesian, "Username:"},
@@ -3656,7 +9507,56 @@
             {MenuLangId::Finnish, "Username:"},
             {MenuLangId::Vietnamese, "Username:"},
             {MenuLangId::Polish, "Username:"},
-            {MenuLangId::Romanian, "Username:"},
+            {MenuLangId::Romanian, "Username:"},            {MenuLangId::Filipino, "Username:"},            {MenuLangId::Swahili, "Username:"},            {MenuLangId::Croatian, "Korisničko ime:"},            {MenuLangId::Icelandic, "Notandanafn:"},            {MenuLangId::Hindi, "उपयोगकर्ता नाम:"},            {MenuLangId::Bengali, "ব্যবহারকারীর নাম:"},            {MenuLangId::Urdu, "صارف نام:"},            {MenuLangId::Punjabi, "ਯੂਜ਼ਰ ਨਾਂ:"},            {MenuLangId::Telugu, "వినియోగదారు పేరు:"},            {MenuLangId::Persian, "نام کاربری:"},            {MenuLangId::Malay, "Nama pengguna:"},            {MenuLangId::Marathi, "वापरकर्ता नाव:"},            {MenuLangId::Tamil, "பயனர் பெயர்:"},            {MenuLangId::Gujarati, "વપરાશકર્તા નામ:"},            {MenuLangId::Kannada, "ಬಳಕೆದಾರ ಹೆಸರು:"},            {MenuLangId::Odia, "ଓଡ଼ିଆ: Username:"},            {MenuLangId::Malayalam, "ഉപയോക്തൃനാമം:"},            {MenuLangId::Burmese, "အသုံးပြုသူအမည်:"},            {MenuLangId::Uzbek, "Foydalanuvchi nomi:"},            {MenuLangId::Azerbaijani, "İstifadəçi adı:"},            {MenuLangId::Nepali, "प्रयोगकर्ता नाम:"},            {MenuLangId::Sinhala, "පරිශීලක නාමය:"},            {MenuLangId::Khmer, "ឈ្មោះអ្នកប្រើ:"},            {MenuLangId::Lao, "ຊື່ຜູ້ໃຊ້:"},            {MenuLangId::Armenian, "Օգտանուն:"},            {MenuLangId::Albanian, "Emri i përdoruesit:"},            {MenuLangId::Georgian, "მომხმარებლის სახელი:"},            {MenuLangId::Bosnian, "Korisničko ime:"},            {MenuLangId::Serbian, "Корисничко име:"},            {MenuLangId::Macedonian, "Корисничко име:"},            {MenuLangId::Bulgarian, "Потребителско име:"},            {MenuLangId::Belarusian, "Імя карыстальніка:"},            {MenuLangId::Maltese, "Isem tal-utent:"},            {MenuLangId::Mongolian, "Хэрэглэгчийн нэр:"},            {MenuLangId::Latvian, "Lietotājvārds:"},            {MenuLangId::Lithuanian, "Naudotojo vardas:"},            {MenuLangId::Afrikaans, "Gebruikersnaam:"},            {MenuLangId::Irish, "Ainm úsáideora:"},            {MenuLangId::Assamese, "ব্যৱহাৰকাৰী নাম:"},            {MenuLangId::Amharic, "የተጠቃሚ ስም:"},            {MenuLangId::Estonian, "Kasutajanimi:"},            {MenuLangId::Kazakh, "Пайдаланушы аты:"},            {MenuLangId::Catalan, "Nom d'usuari:"},            {MenuLangId::Kyrgyz, "Колдонуучу аты:"},            {MenuLangId::Slovak, "Používateľské meno:"},            {MenuLangId::Slovenian, "Uporabniško ime:"},            {MenuLangId::Zulu, "Igama lomsebenzisi:"},            {MenuLangId::Basque, "Erabiltzaile-izena:"},            {MenuLangId::Hebrew, "שם משתמש:"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -3672,6 +9572,7 @@
             {MenuLangId::Russian, "Сообщение:"},
             {MenuLangId::ChineseSimplified, "消息："},
             {MenuLangId::ChineseTraditional, "訊息："},
+            {MenuLangId::ChineseHongKong, "訊息："},
             {MenuLangId::Korean, "메시지:"},
             {MenuLangId::Arabic, "الرسالة:"},
             {MenuLangId::Indonesian, "Pesan:"},
@@ -3687,7 +9588,56 @@
             {MenuLangId::Finnish, "Viesti:"},
             {MenuLangId::Vietnamese, "Tin nhắn:"},
             {MenuLangId::Polish, "Wiadomość:"},
-            {MenuLangId::Romanian, "Mesaj:"},
+            {MenuLangId::Romanian, "Mesaj:"},            {MenuLangId::Filipino, "Message:"},            {MenuLangId::Swahili, "Message:"},            {MenuLangId::Croatian, "Poruka:"},            {MenuLangId::Icelandic, "Skilaboð:"},            {MenuLangId::Hindi, "संदेश:"},            {MenuLangId::Bengali, "বার্তা:"},            {MenuLangId::Urdu, "پیغام:"},            {MenuLangId::Punjabi, "ਸੁਨੇਹਾ:"},            {MenuLangId::Telugu, "సందేశం:"},            {MenuLangId::Persian, "پیام:"},            {MenuLangId::Malay, "Mesej:"},            {MenuLangId::Marathi, "संदेश:"},            {MenuLangId::Tamil, "செய்தி:"},            {MenuLangId::Gujarati, "સંદેશ:"},            {MenuLangId::Kannada, "ಸಂದೇಶ:"},            {MenuLangId::Odia, "ଓଡ଼ିଆ: Message:"},            {MenuLangId::Malayalam, "സന്ദേശം:"},            {MenuLangId::Burmese, "စာ:"},            {MenuLangId::Uzbek, "Xabar:"},            {MenuLangId::Azerbaijani, "Mesaj:"},            {MenuLangId::Nepali, "सन्देश:"},            {MenuLangId::Sinhala, "පණිවිඩය:"},            {MenuLangId::Khmer, "សារ:"},            {MenuLangId::Lao, "ຂໍ້ຄວາມ:"},            {MenuLangId::Armenian, "Հաղորդագրություն:"},            {MenuLangId::Albanian, "Mesazhi:"},            {MenuLangId::Georgian, "შეტყობინება:"},            {MenuLangId::Bosnian, "Poruka:"},            {MenuLangId::Serbian, "Порука:"},            {MenuLangId::Macedonian, "Порака:"},            {MenuLangId::Bulgarian, "Съобщение:"},            {MenuLangId::Belarusian, "Паведамленне:"},            {MenuLangId::Maltese, "Messaġġ:"},            {MenuLangId::Mongolian, "Мессеж:"},            {MenuLangId::Latvian, "Ziņojums:"},            {MenuLangId::Lithuanian, "Žinutė:"},            {MenuLangId::Afrikaans, "Boodskap:"},            {MenuLangId::Irish, "Teachtaireacht:"},            {MenuLangId::Assamese, "বাৰ্তা:"},            {MenuLangId::Amharic, "መልዕክት:"},            {MenuLangId::Estonian, "Sõnum:"},            {MenuLangId::Kazakh, "Хабар:"},            {MenuLangId::Catalan, "Missatge:"},            {MenuLangId::Kyrgyz, "Билдирүү:"},            {MenuLangId::Slovak, "Správa:"},            {MenuLangId::Slovenian, "Sporočilo:"},            {MenuLangId::Zulu, "Umlayezo:"},            {MenuLangId::Basque, "Mezua:"},            {MenuLangId::Hebrew, "הודעה:"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -3703,6 +9653,7 @@
             {MenuLangId::Russian, "Цвет:"},
             {MenuLangId::ChineseSimplified, "颜色："},
             {MenuLangId::ChineseTraditional, "顏色："},
+            {MenuLangId::ChineseHongKong, "顏色："},
             {MenuLangId::Korean, "색상:"},
             {MenuLangId::Arabic, "اللون:"},
             {MenuLangId::Indonesian, "Warna:"},
@@ -3718,7 +9669,56 @@
             {MenuLangId::Finnish, "Väri:"},
             {MenuLangId::Vietnamese, "Màu:"},
             {MenuLangId::Polish, "Kolor:"},
-            {MenuLangId::Romanian, "Culoare:"},
+            {MenuLangId::Romanian, "Culoare:"},            {MenuLangId::Filipino, "Kulay:"},            {MenuLangId::Swahili, "Rangi:"},            {MenuLangId::Croatian, "Boja:"},            {MenuLangId::Icelandic, "Litur:"},            {MenuLangId::Hindi, "रंग:"},            {MenuLangId::Bengali, "রং:"},            {MenuLangId::Urdu, "رنگ:"},            {MenuLangId::Punjabi, "ਰੰਗ:"},            {MenuLangId::Telugu, "రంగు:"},            {MenuLangId::Persian, "رنگ:"},            {MenuLangId::Malay, "Warna:"},            {MenuLangId::Marathi, "रंग:"},            {MenuLangId::Tamil, "நிறம்:"},            {MenuLangId::Gujarati, "રંગ:"},            {MenuLangId::Kannada, "ಬಣ್ಣ:"},            {MenuLangId::Odia, "ରଙ୍ଗ:"},            {MenuLangId::Malayalam, "നിറം:"},            {MenuLangId::Burmese, "အရောင်:"},            {MenuLangId::Uzbek, "Rang:"},            {MenuLangId::Azerbaijani, "Rəng:"},            {MenuLangId::Nepali, "रङ:"},            {MenuLangId::Sinhala, "වර්ණය:"},            {MenuLangId::Khmer, "ពណ៌:"},            {MenuLangId::Lao, "ສີ:"},            {MenuLangId::Armenian, "Գույն:"},            {MenuLangId::Albanian, "Ngjyrë:"},            {MenuLangId::Georgian, "ფერი:"},            {MenuLangId::Bosnian, "Boja:"},            {MenuLangId::Serbian, "Боја:"},            {MenuLangId::Macedonian, "Боја:"},            {MenuLangId::Bulgarian, "Цвят:"},            {MenuLangId::Belarusian, "Колер:"},            {MenuLangId::Maltese, "Kulur:"},            {MenuLangId::Mongolian, "Өнгө:"},            {MenuLangId::Latvian, "Krāsa:"},            {MenuLangId::Lithuanian, "Spalva:"},            {MenuLangId::Afrikaans, "Kleur:"},            {MenuLangId::Irish, "Dath:"},            {MenuLangId::Assamese, "ৰং:"},            {MenuLangId::Amharic, "ቀለም:"},            {MenuLangId::Estonian, "Värv:"},            {MenuLangId::Kazakh, "Түс:"},            {MenuLangId::Catalan, "Català: Color:"},            {MenuLangId::Kyrgyz, "Түс:"},            {MenuLangId::Slovak, "Farba:"},            {MenuLangId::Slovenian, "Barva:"},            {MenuLangId::Zulu, "Umbala:"},            {MenuLangId::Basque, "Kolorea:"},            {MenuLangId::Hebrew, "צבע:"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -3734,6 +9734,7 @@
             {MenuLangId::Russian, "Язык:"},
             {MenuLangId::ChineseSimplified, "语言："},
             {MenuLangId::ChineseTraditional, "語言："},
+            {MenuLangId::ChineseHongKong, "語言："},
             {MenuLangId::Korean, "언어:"},
             {MenuLangId::Arabic, "اللغة:"},
             {MenuLangId::Indonesian, "Bahasa:"},
@@ -3749,7 +9750,56 @@
             {MenuLangId::Finnish, "Kieli:"},
             {MenuLangId::Vietnamese, "Ngôn ngữ:"},
             {MenuLangId::Polish, "Język:"},
-            {MenuLangId::Romanian, "Limbă:"},
+            {MenuLangId::Romanian, "Limbă:"},            {MenuLangId::Filipino, "Wika:"},            {MenuLangId::Swahili, "Lugha:"},            {MenuLangId::Croatian, "Jezik:"},            {MenuLangId::Icelandic, "Tungumál:"},            {MenuLangId::Hindi, "भाषा:"},            {MenuLangId::Bengali, "ভাষা:"},            {MenuLangId::Urdu, "زبان:"},            {MenuLangId::Punjabi, "ਭਾਸ਼ਾ:"},            {MenuLangId::Telugu, "భాష:"},            {MenuLangId::Persian, "زبان:"},            {MenuLangId::Malay, "Bahasa:"},            {MenuLangId::Marathi, "भाषा:"},            {MenuLangId::Tamil, "மொழி:"},            {MenuLangId::Gujarati, "ભાષા:"},            {MenuLangId::Kannada, "ಭಾಷೆ:"},            {MenuLangId::Odia, "ଭାଷା:"},            {MenuLangId::Malayalam, "ഭാഷ:"},            {MenuLangId::Burmese, "ဘာသာစကား:"},            {MenuLangId::Uzbek, "Til:"},            {MenuLangId::Azerbaijani, "Dil:"},            {MenuLangId::Nepali, "भाषा:"},            {MenuLangId::Sinhala, "භාෂාව:"},            {MenuLangId::Khmer, "ភាសា:"},            {MenuLangId::Lao, "ພາສາ:"},            {MenuLangId::Armenian, "Լեզու:"},            {MenuLangId::Albanian, "Gjuha:"},            {MenuLangId::Georgian, "ენა:"},            {MenuLangId::Bosnian, "Jezik:"},            {MenuLangId::Serbian, "Језик:"},            {MenuLangId::Macedonian, "Јазик:"},            {MenuLangId::Bulgarian, "Език:"},            {MenuLangId::Belarusian, "Мова:"},            {MenuLangId::Maltese, "Lingwa:"},            {MenuLangId::Mongolian, "Хэл:"},            {MenuLangId::Latvian, "Valoda:"},            {MenuLangId::Lithuanian, "Kalba:"},            {MenuLangId::Afrikaans, "Taal:"},            {MenuLangId::Irish, "Teanga:"},            {MenuLangId::Assamese, "ভাষা:"},            {MenuLangId::Amharic, "ቋንቋ:"},            {MenuLangId::Estonian, "Keel:"},            {MenuLangId::Kazakh, "Тіл:"},            {MenuLangId::Catalan, "Idioma:"},            {MenuLangId::Kyrgyz, "Тил:"},            {MenuLangId::Slovak, "Jazyk:"},            {MenuLangId::Slovenian, "Jezik:"},            {MenuLangId::Zulu, "Ulimi:"},            {MenuLangId::Basque, "Hizkuntza:"},            {MenuLangId::Hebrew, "שפה:"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -3765,6 +9815,7 @@
             {MenuLangId::Russian, "День рождения:"},
             {MenuLangId::ChineseSimplified, "生日:"},
             {MenuLangId::ChineseTraditional, "生日:"},
+            {MenuLangId::ChineseHongKong, "生日:"},
             {MenuLangId::Korean, "생일:"},
             {MenuLangId::Arabic, "تاريخ الميلاد:"},
             {MenuLangId::Indonesian, "Tanggal lahir:"},
@@ -3780,7 +9831,56 @@
             {MenuLangId::Finnish, "Syntymäpäivä:"},
             {MenuLangId::Vietnamese, "Sinh nhật:"},
             {MenuLangId::Polish, "Urodziny:"},
-            {MenuLangId::Romanian, "Zi de naștere:"},
+            {MenuLangId::Romanian, "Zi de naștere:"},            {MenuLangId::Filipino, "Birthday:"},            {MenuLangId::Swahili, "Birthday:"},            {MenuLangId::Croatian, "Rođendan:"},            {MenuLangId::Icelandic, "Afmæli:"},            {MenuLangId::Hindi, "जन्मदिन:"},            {MenuLangId::Bengali, "জন্মদিন:"},            {MenuLangId::Urdu, "سالگرہ:"},            {MenuLangId::Punjabi, "ਜਨਮਦਿਨ:"},            {MenuLangId::Telugu, "పుట్టినరోజు:"},            {MenuLangId::Persian, "تولد:"},            {MenuLangId::Malay, "Hari lahir:"},            {MenuLangId::Marathi, "वाढदिवस:"},            {MenuLangId::Tamil, "பிறந்தநாள்:"},            {MenuLangId::Gujarati, "જન્મદિવસ:"},            {MenuLangId::Kannada, "ಜನ್ಮದಿನ:"},            {MenuLangId::Odia, "ଓଡ଼ିଆ: Birthday:"},            {MenuLangId::Malayalam, "ജന്മദിനം:"},            {MenuLangId::Burmese, "မွေးနေ့:"},            {MenuLangId::Uzbek, "Tugʻilgan kun:"},            {MenuLangId::Azerbaijani, "Doğum günü:"},            {MenuLangId::Nepali, "जन्मदिन:"},            {MenuLangId::Sinhala, "උපන්දිනය:"},            {MenuLangId::Khmer, "ថ្ងៃកំណើត:"},            {MenuLangId::Lao, "ວັນເກີດ:"},            {MenuLangId::Armenian, "Ծննդյան օր:"},            {MenuLangId::Albanian, "Ditëlindja:"},            {MenuLangId::Georgian, "დაბადების დღე:"},            {MenuLangId::Bosnian, "Rođendan:"},            {MenuLangId::Serbian, "Рођендан:"},            {MenuLangId::Macedonian, "Роденден:"},            {MenuLangId::Bulgarian, "Рожден ден:"},            {MenuLangId::Belarusian, "Дзень нараджэння:"},            {MenuLangId::Maltese, "Għeluq snin:"},            {MenuLangId::Mongolian, "Төрсөн өдөр:"},            {MenuLangId::Latvian, "Dzimšanas diena:"},            {MenuLangId::Lithuanian, "Gimtadienis:"},            {MenuLangId::Afrikaans, "Verjaarsdag:"},            {MenuLangId::Irish, "Breithlá:"},            {MenuLangId::Assamese, "জন্মদিন:"},            {MenuLangId::Amharic, "የልደት ቀን:"},            {MenuLangId::Estonian, "Sünnipäev:"},            {MenuLangId::Kazakh, "Туған күн:"},            {MenuLangId::Catalan, "Aniversari:"},            {MenuLangId::Kyrgyz, "Туулган күн:"},            {MenuLangId::Slovak, "Narodeniny:"},            {MenuLangId::Slovenian, "Rojstni dan:"},            {MenuLangId::Zulu, "Usuku lokuzalwa:"},            {MenuLangId::Basque, "Urtebetetzea:"},            {MenuLangId::Hebrew, "יום הולדת:"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -3796,6 +9896,7 @@
             {MenuLangId::Russian, "Настройки сети"},
             {MenuLangId::ChineseSimplified, "网络设置"},
             {MenuLangId::ChineseTraditional, "網路設定"},
+            {MenuLangId::ChineseHongKong, "網路設定"},
             {MenuLangId::Korean, "네트워크 설정"},
             {MenuLangId::Arabic, "إعدادات الشبكة"},
             {MenuLangId::Indonesian, "Pengaturan jaringan"},
@@ -3811,7 +9912,56 @@
             {MenuLangId::Finnish, "Verkkoasetukset"},
             {MenuLangId::Vietnamese, "Cài đặt mạng"},
             {MenuLangId::Polish, "Ustawienia sieci"},
-            {MenuLangId::Romanian, "Setări rețea"},
+            {MenuLangId::Romanian, "Setări rețea"},            {MenuLangId::Filipino, "Network mga setting"},            {MenuLangId::Swahili, "Network mipangilio"},            {MenuLangId::Croatian, "Network postavke"},            {MenuLangId::Icelandic, "Network stillingar"},            {MenuLangId::Hindi, "Network सेटिंग्स"},            {MenuLangId::Bengali, "Network সেটিংস"},            {MenuLangId::Urdu, "Network ترتیبات"},            {MenuLangId::Punjabi, "Network ਸੈਟਿੰਗਾਂ"},            {MenuLangId::Telugu, "Network సెట్టింగ్‌లు"},            {MenuLangId::Persian, "Network تنظیمات"},            {MenuLangId::Malay, "Network tetapan"},            {MenuLangId::Marathi, "Network सेटिंग्ज"},            {MenuLangId::Tamil, "Network அமைப்புகள்"},            {MenuLangId::Gujarati, "Network સેટિંગ્સ"},            {MenuLangId::Kannada, "Network ಸೆಟ್ಟಿಂಗ್‌ಗಳು"},            {MenuLangId::Odia, "Network ସେଟିଂସ୍"},            {MenuLangId::Malayalam, "Network ക്രമീകരണങ്ങൾ"},            {MenuLangId::Burmese, "Network ဆက်တင်များ"},            {MenuLangId::Uzbek, "Network sozlamalar"},            {MenuLangId::Azerbaijani, "Network ayarlar"},            {MenuLangId::Nepali, "Network सेटिङहरू"},            {MenuLangId::Sinhala, "Network සැකසුම්"},            {MenuLangId::Khmer, "Network ការកំណត់"},            {MenuLangId::Lao, "Network ການຕັ້ງຄ່າ"},            {MenuLangId::Armenian, "Network կարգավորումներ"},            {MenuLangId::Albanian, "Network cilësimet"},            {MenuLangId::Georgian, "Network პარამეტრები"},            {MenuLangId::Bosnian, "Network postavke"},            {MenuLangId::Serbian, "Network подешавања"},            {MenuLangId::Macedonian, "Network поставки"},            {MenuLangId::Bulgarian, "Network настройки"},            {MenuLangId::Belarusian, "Network налады"},            {MenuLangId::Maltese, "Settings tan-netwerk"},            {MenuLangId::Mongolian, "Network тохиргоо"},            {MenuLangId::Latvian, "Network iestatījumi"},            {MenuLangId::Lithuanian, "Network nustatymai"},            {MenuLangId::Afrikaans, "Network instellings"},            {MenuLangId::Irish, "Network socruithe"},            {MenuLangId::Assamese, "Network ছেটিংছ"},            {MenuLangId::Amharic, "Network ቅንብሮች"},            {MenuLangId::Estonian, "Network seaded"},            {MenuLangId::Kazakh, "Network баптаулар"},            {MenuLangId::Catalan, "Network configuració"},            {MenuLangId::Kyrgyz, "Network жөндөөлөр"},            {MenuLangId::Slovak, "Network nastavenia"},            {MenuLangId::Slovenian, "Network nastavitve"},            {MenuLangId::Zulu, "Network izilungiselelo"},            {MenuLangId::Basque, "Network ezarpenak"},            {MenuLangId::Hebrew, "Network הגדרות"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -3827,6 +9977,7 @@
             {MenuLangId::Russian, "(оставьте пустым для MAC по умолчанию)"},
             {MenuLangId::ChineseSimplified, "（留空以使用默认 MAC）"},
             {MenuLangId::ChineseTraditional, "（留空以使用預設 MAC）"},
+            {MenuLangId::ChineseHongKong, "（留空以使用預設 MAC）"},
             {MenuLangId::Korean, "(비워 두면 기본 MAC 사용)"},
             {MenuLangId::Arabic, "(اتركه فارغًا لاستخدام MAC الافتراضي)"},
             {MenuLangId::Indonesian, "(kosongkan untuk menggunakan MAC default)"},
@@ -3842,7 +9993,56 @@
             {MenuLangId::Finnish, "(jätä tyhjäksi oletus-MAC:lle)"},
             {MenuLangId::Vietnamese, "(để trống để dùng MAC mặc định)"},
             {MenuLangId::Polish, "(zostaw puste, aby użyć domyślnego MAC)"},
-            {MenuLangId::Romanian, "(lasă gol pentru MAC implicit)"},
+            {MenuLangId::Romanian, "(lasă gol pentru MAC implicit)"},            {MenuLangId::Filipino, "(leave empty to gamitin ang default MAC)"},            {MenuLangId::Swahili, "(leave empty to tumia default MAC)"},            {MenuLangId::Croatian, "(leave empty to koristi default MAC)"},            {MenuLangId::Icelandic, "(leave empty to nota default MAC)"},            {MenuLangId::Hindi, "(leave empty to उपयोग करें default MAC)"},            {MenuLangId::Bengali, "(leave empty to ব্যবহার করুন default MAC)"},            {MenuLangId::Urdu, "(leave empty to استعمال کریں default MAC)"},            {MenuLangId::Punjabi, "(leave empty to ਵਰਤੋ default MAC)"},            {MenuLangId::Telugu, "(leave empty to వాడు default MAC)"},            {MenuLangId::Persian, "(leave empty to استفاده از default MAC)"},            {MenuLangId::Malay, "(leave empty to gunakan default MAC)"},            {MenuLangId::Marathi, "(leave empty to वापरा default MAC)"},            {MenuLangId::Tamil, "(leave empty to பயன்படுத்து default MAC)"},            {MenuLangId::Gujarati, "(leave empty to વાપરો default MAC)"},            {MenuLangId::Kannada, "(leave empty to ಬಳಸಿ default MAC)"},            {MenuLangId::Odia, "ଓଡ଼ିଆ: (leave empty to use default MAC)"},            {MenuLangId::Malayalam, "മലയാളം: (leave empty to use default MAC)"},            {MenuLangId::Burmese, "မြန်မာ: (leave empty to use default MAC)"},            {MenuLangId::Uzbek, "Oʻzbekcha: (leave empty to use default MAC)"},            {MenuLangId::Azerbaijani, "Azərbaycanca: (leave empty to use default MAC)"},            {MenuLangId::Nepali, "नेपाली: (leave empty to use default MAC)"},            {MenuLangId::Sinhala, "සිංහල: (leave empty to use default MAC)"},            {MenuLangId::Khmer, "ភាសាខ្មែរ: (leave empty to use default MAC)"},            {MenuLangId::Lao, "ລາວ: (leave empty to use default MAC)"},            {MenuLangId::Armenian, "Հայերեն: (leave empty to use default MAC)"},            {MenuLangId::Albanian, "Shqip: (leave empty to use default MAC)"},            {MenuLangId::Georgian, "ქართული: (leave empty to use default MAC)"},            {MenuLangId::Bosnian, "Bosanski: (leave empty to use default MAC)"},            {MenuLangId::Serbian, "Српски: (leave empty to use default MAC)"},            {MenuLangId::Macedonian, "Македонски: (leave empty to use default MAC)"},            {MenuLangId::Bulgarian, "Български: (leave empty to use default MAC)"},            {MenuLangId::Belarusian, "Беларуская: (leave empty to use default MAC)"},            {MenuLangId::Maltese, "Malti: (leave empty to use default MAC)"},            {MenuLangId::Mongolian, "Монгол: (leave empty to use default MAC)"},            {MenuLangId::Latvian, "Latviski: (leave empty to use default MAC)"},            {MenuLangId::Lithuanian, "Lietuvių: (leave empty to use default MAC)"},            {MenuLangId::Afrikaans, "Afrikaans: (leave empty to use default MAC)"},            {MenuLangId::Irish, "Gaeilge: (leave empty to use default MAC)"},            {MenuLangId::Assamese, "অসমীয়া: (leave empty to use default MAC)"},            {MenuLangId::Amharic, "አማርኛ: (leave empty to use default MAC)"},            {MenuLangId::Estonian, "Eesti: (leave empty to use default MAC)"},            {MenuLangId::Kazakh, "Қазақша: (leave empty to use default MAC)"},            {MenuLangId::Catalan, "Català: (leave empty to use default MAC)"},            {MenuLangId::Kyrgyz, "Кыргызча: (leave empty to use default MAC)"},            {MenuLangId::Slovak, "Slovenčina: (leave empty to use default MAC)"},            {MenuLangId::Slovenian, "Slovenščina: (leave empty to use default MAC)"},            {MenuLangId::Zulu, "isiZulu: (leave empty to use default MAC)"},            {MenuLangId::Basque, "Euskara: (leave empty to use default MAC)"},            {MenuLangId::Hebrew, "עברית: (leave empty to use default MAC)"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -3858,6 +10058,7 @@
             {MenuLangId::Russian, "Настройки интерфейса - melonDS"},
             {MenuLangId::ChineseSimplified, "界面设置 - melonDS"},
             {MenuLangId::ChineseTraditional, "介面設定 - melonDS"},
+            {MenuLangId::ChineseHongKong, "介面設定 - melonDS"},
             {MenuLangId::Korean, "인터페이스 설정 - melonDS"},
             {MenuLangId::Arabic, "إعدادات الواجهة - melonDS"},
             {MenuLangId::Indonesian, "Pengaturan antarmuka - melonDS"},
@@ -3873,7 +10074,56 @@
             {MenuLangId::Finnish, "Käyttöliittymäasetukset - melonDS"},
             {MenuLangId::Vietnamese, "Cài đặt giao diện - melonDS"},
             {MenuLangId::Polish, "Ustawienia interfejsu - melonDS"},
-            {MenuLangId::Romanian, "Setări interfață - melonDS"},
+            {MenuLangId::Romanian, "Setări interfață - melonDS"},            {MenuLangId::Filipino, "Interface mga setting - melonDS"},            {MenuLangId::Swahili, "Interface mipangilio - melonDS"},            {MenuLangId::Croatian, "Interface postavke - melonDS"},            {MenuLangId::Icelandic, "Interface stillingar - melonDS"},            {MenuLangId::Hindi, "Interface सेटिंग्स - melonDS"},            {MenuLangId::Bengali, "Interface সেটিংস - melonDS"},            {MenuLangId::Urdu, "Interface ترتیبات - melonDS"},            {MenuLangId::Punjabi, "Interface ਸੈਟਿੰਗਾਂ - melonDS"},            {MenuLangId::Telugu, "Interface సెట్టింగ్‌లు - melonDS"},            {MenuLangId::Persian, "Interface تنظیمات - melonDS"},            {MenuLangId::Malay, "Interface tetapan - melonDS"},            {MenuLangId::Marathi, "Interface सेटिंग्ज - melonDS"},            {MenuLangId::Tamil, "Interface அமைப்புகள் - melonDS"},            {MenuLangId::Gujarati, "Interface સેટિંગ્સ - melonDS"},            {MenuLangId::Kannada, "Interface ಸೆಟ್ಟಿಂಗ್‌ಗಳು - melonDS"},            {MenuLangId::Odia, "Interface ସେଟିଂସ୍ - melonDS"},            {MenuLangId::Malayalam, "Interface ക്രമീകരണങ്ങൾ - melonDS"},            {MenuLangId::Burmese, "Interface ဆက်တင်များ - melonDS"},            {MenuLangId::Uzbek, "Interface sozlamalar - melonDS"},            {MenuLangId::Azerbaijani, "Interface ayarlar - melonDS"},            {MenuLangId::Nepali, "Interface सेटिङहरू - melonDS"},            {MenuLangId::Sinhala, "Interface සැකසුම් - melonDS"},            {MenuLangId::Khmer, "Interface ការកំណត់ - melonDS"},            {MenuLangId::Lao, "Interface ການຕັ້ງຄ່າ - melonDS"},            {MenuLangId::Armenian, "Interface կարգավորումներ - melonDS"},            {MenuLangId::Albanian, "Interface cilësimet - melonDS"},            {MenuLangId::Georgian, "Interface პარამეტრები - melonDS"},            {MenuLangId::Bosnian, "Interface postavke - melonDS"},            {MenuLangId::Serbian, "Interface подешавања - melonDS"},            {MenuLangId::Macedonian, "Interface поставки - melonDS"},            {MenuLangId::Bulgarian, "Interface настройки - melonDS"},            {MenuLangId::Belarusian, "Interface налады - melonDS"},            {MenuLangId::Maltese, "Malti: Interface settings - melonDS"},            {MenuLangId::Mongolian, "Interface тохиргоо - melonDS"},            {MenuLangId::Latvian, "Interface iestatījumi - melonDS"},            {MenuLangId::Lithuanian, "Interface nustatymai - melonDS"},            {MenuLangId::Afrikaans, "Interface instellings - melonDS"},            {MenuLangId::Irish, "Interface socruithe - melonDS"},            {MenuLangId::Assamese, "Interface ছেটিংছ - melonDS"},            {MenuLangId::Amharic, "Interface ቅንብሮች - melonDS"},            {MenuLangId::Estonian, "Interface seaded - melonDS"},            {MenuLangId::Kazakh, "Interface баптаулар - melonDS"},            {MenuLangId::Catalan, "Interface configuració - melonDS"},            {MenuLangId::Kyrgyz, "Interface жөндөөлөр - melonDS"},            {MenuLangId::Slovak, "Interface nastavenia - melonDS"},            {MenuLangId::Slovenian, "Interface nastavitve - melonDS"},            {MenuLangId::Zulu, "Interface izilungiselelo - melonDS"},            {MenuLangId::Basque, "Interface ezarpenak - melonDS"},            {MenuLangId::Hebrew, "Interface הגדרות - melonDS"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -3889,6 +10139,7 @@
             {MenuLangId::Russian, "Пользовательский интерфейс"},
             {MenuLangId::ChineseSimplified, "用户界面"},
             {MenuLangId::ChineseTraditional, "使用者介面"},
+            {MenuLangId::ChineseHongKong, "使用者介面"},
             {MenuLangId::Korean, "사용자 인터페이스"},
             {MenuLangId::Arabic, "واجهة المستخدم"},
             {MenuLangId::Indonesian, "Antarmuka pengguna"},
@@ -3904,7 +10155,56 @@
             {MenuLangId::Finnish, "Käyttöliittymä"},
             {MenuLangId::Vietnamese, "Giao diện người dùng"},
             {MenuLangId::Polish, "Interfejs użytkownika"},
-            {MenuLangId::Romanian, "Interfață utilizator"},
+            {MenuLangId::Romanian, "Interfață utilizator"},            {MenuLangId::Filipino, "User interface"},            {MenuLangId::Swahili, "User interface"},            {MenuLangId::Croatian, "Korisničko sučelje"},            {MenuLangId::Icelandic, "Notendaviðmót"},            {MenuLangId::Hindi, "यूज़र इंटरफ़ेस"},            {MenuLangId::Bengali, "ইউজার ইন্টারফেস"},            {MenuLangId::Urdu, "یوزر انٹرفیس"},            {MenuLangId::Punjabi, "ਯੂਜ਼ਰ ਇੰਟਰਫੇਸ"},            {MenuLangId::Telugu, "యూజర్ ఇంటర్‌ఫేస్"},            {MenuLangId::Persian, "رابط کاربری"},            {MenuLangId::Malay, "Antara muka pengguna"},            {MenuLangId::Marathi, "वापरकर्ता इंटरफेस"},            {MenuLangId::Tamil, "பயனர் இடைமுகம்"},            {MenuLangId::Gujarati, "વપરાશકર્તા ઇન્ટરફેસ"},            {MenuLangId::Kannada, "ಬಳಕೆದಾರ ಇಂಟರ್ಫೇಸ್"},            {MenuLangId::Odia, "ବ୍ୟବହାରକାରୀ interface"},            {MenuLangId::Malayalam, "ഉപയോക്തൃ interface"},            {MenuLangId::Burmese, "အသုံးပြုသူ interface"},            {MenuLangId::Uzbek, "Foydalanuvchi interface"},            {MenuLangId::Azerbaijani, "İstifadəçi interface"},            {MenuLangId::Nepali, "प्रयोगकर्ता interface"},            {MenuLangId::Sinhala, "පරිශීලක interface"},            {MenuLangId::Khmer, "interface អ្នកប្រើ"},            {MenuLangId::Lao, "interface ຜູ້ໃຊ້"},            {MenuLangId::Armenian, "Օգտվողի interface"},            {MenuLangId::Albanian, "Interface i përdoruesit"},            {MenuLangId::Georgian, "მომხმარებლის interface"},            {MenuLangId::Bosnian, "Korisnički interface"},            {MenuLangId::Serbian, "Кориснички interface"},            {MenuLangId::Macedonian, "Кориснички interface"},            {MenuLangId::Bulgarian, "Потребителски interface"},            {MenuLangId::Belarusian, "Карыстальніцкі interface"},            {MenuLangId::Maltese, "Interface tal-utent"},            {MenuLangId::Mongolian, "Хэрэглэгчийн interface"},            {MenuLangId::Latvian, "Lietotāja interface"},            {MenuLangId::Lithuanian, "Naudotojo interface"},            {MenuLangId::Afrikaans, "Gebruikers-interface"},            {MenuLangId::Irish, "Comhéadan úsáideora"},            {MenuLangId::Assamese, "ব্যৱহাৰকাৰী interface"},            {MenuLangId::Amharic, "የተጠቃሚ interface"},            {MenuLangId::Estonian, "Kasutajaliides"},            {MenuLangId::Kazakh, "Пайдаланушы interface"},            {MenuLangId::Catalan, "Interfície d'usuari"},            {MenuLangId::Kyrgyz, "Колдонуучу interface"},            {MenuLangId::Slovak, "Používateľské rozhranie"},            {MenuLangId::Slovenian, "Uporabniški vmesnik"},            {MenuLangId::Zulu, "Isixhumi esibonakalayo somsebenzisi"},            {MenuLangId::Basque, "Erabiltzaile-interfazea"},            {MenuLangId::Hebrew, "ממשק משתמש"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -3920,6 +10220,7 @@
             {MenuLangId::Russian, "Тема"},
             {MenuLangId::ChineseSimplified, "主题"},
             {MenuLangId::ChineseTraditional, "主題"},
+            {MenuLangId::ChineseHongKong, "主題"},
             {MenuLangId::Korean, "테마"},
             {MenuLangId::Arabic, "السمة"},
             {MenuLangId::Indonesian, "Tema"},
@@ -3935,7 +10236,56 @@
             {MenuLangId::Finnish, "Teema"},
             {MenuLangId::Vietnamese, "Chủ đề"},
             {MenuLangId::Polish, "Motyw"},
-            {MenuLangId::Romanian, "Temă"},
+            {MenuLangId::Romanian, "Temă"},            {MenuLangId::Filipino, "Theme"},            {MenuLangId::Swahili, "Theme"},            {MenuLangId::Croatian, "Tema"},            {MenuLangId::Icelandic, "Þema"},            {MenuLangId::Hindi, "थीम"},            {MenuLangId::Bengali, "থিম"},            {MenuLangId::Urdu, "تھیم"},            {MenuLangId::Punjabi, "ਥੀਮ"},            {MenuLangId::Telugu, "థీమ్"},            {MenuLangId::Persian, "تم"},            {MenuLangId::Malay, "Tema"},            {MenuLangId::Marathi, "थीम"},            {MenuLangId::Tamil, "theme"},            {MenuLangId::Gujarati, "theme"},            {MenuLangId::Kannada, "theme"},            {MenuLangId::Odia, "theme"},            {MenuLangId::Malayalam, "theme"},            {MenuLangId::Burmese, "theme"},            {MenuLangId::Uzbek, "theme"},            {MenuLangId::Azerbaijani, "theme"},            {MenuLangId::Nepali, "theme"},            {MenuLangId::Sinhala, "theme"},            {MenuLangId::Khmer, "theme"},            {MenuLangId::Lao, "theme"},            {MenuLangId::Armenian, "theme"},            {MenuLangId::Albanian, "theme"},            {MenuLangId::Georgian, "theme"},            {MenuLangId::Bosnian, "theme"},            {MenuLangId::Serbian, "theme"},            {MenuLangId::Macedonian, "theme"},            {MenuLangId::Bulgarian, "theme"},            {MenuLangId::Belarusian, "theme"},            {MenuLangId::Maltese, "theme"},            {MenuLangId::Mongolian, "theme"},            {MenuLangId::Latvian, "theme"},            {MenuLangId::Lithuanian, "theme"},            {MenuLangId::Afrikaans, "theme"},            {MenuLangId::Irish, "téama"},            {MenuLangId::Assamese, "theme"},            {MenuLangId::Amharic, "ገጽታ"},            {MenuLangId::Estonian, "teema"},            {MenuLangId::Kazakh, "тақырып"},            {MenuLangId::Catalan, "tema"},            {MenuLangId::Kyrgyz, "тема"},            {MenuLangId::Slovak, "téma"},            {MenuLangId::Slovenian, "tema"},            {MenuLangId::Zulu, "itimu"},            {MenuLangId::Basque, "gaia"},            {MenuLangId::Hebrew, "ערכת נושא"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -3951,6 +10301,7 @@
             {MenuLangId::Russian, "Системный по умолчанию"},
             {MenuLangId::ChineseSimplified, "系统默认"},
             {MenuLangId::ChineseTraditional, "系統預設"},
+            {MenuLangId::ChineseHongKong, "系統預設"},
             {MenuLangId::Korean, "시스템 기본값"},
             {MenuLangId::Arabic, "افتراضي النظام"},
             {MenuLangId::Indonesian, "Default sistem"},
@@ -3966,7 +10317,56 @@
             {MenuLangId::Finnish, "Järjestelmän oletus"},
             {MenuLangId::Vietnamese, "Mặc định hệ thống"},
             {MenuLangId::Polish, "Domyślne systemowe"},
-            {MenuLangId::Romanian, "Implicit sistem"},
+            {MenuLangId::Romanian, "Implicit sistem"},            {MenuLangId::Filipino, "Default ng system"},            {MenuLangId::Swahili, "Chaguo-msingi la mfumo"},            {MenuLangId::Croatian, "Zadano sustava"},            {MenuLangId::Icelandic, "Sjálfgefið kerfis"},            {MenuLangId::Hindi, "सिस्टम डिफ़ॉल्ट"},            {MenuLangId::Bengali, "সিস্টেম ডিফল্ট"},            {MenuLangId::Urdu, "سسٹم ڈیفالٹ"},            {MenuLangId::Punjabi, "ਸਿਸਟਮ ਡਿਫਾਲਟ"},            {MenuLangId::Telugu, "సిస్టమ్ డిఫాల్ట్"},            {MenuLangId::Persian, "پیش‌فرض سیستم"},            {MenuLangId::Malay, "Lalai sistem"},            {MenuLangId::Marathi, "सिस्टम डीफॉल्ट"},            {MenuLangId::Tamil, "சிஸ்டம் இயல்புநிலை"},            {MenuLangId::Gujarati, "સિસ્ટમ ડિફૉલ્ટ"},            {MenuLangId::Kannada, "ಸಿಸ್ಟಮ್ ಡೀಫಾಲ್ಟ್"},            {MenuLangId::Odia, "ସିଷ୍ଟମ୍ ଡିଫଲ୍ଟ"},            {MenuLangId::Malayalam, "സിസ്റ്റം ഡിഫോൾട്ട്"},            {MenuLangId::Burmese, "စနစ် မူရင်း"},            {MenuLangId::Uzbek, "Tizim standarti"},            {MenuLangId::Azerbaijani, "Sistem standartı"},            {MenuLangId::Nepali, "प्रणाली पूर्वनिर्धारित"},            {MenuLangId::Sinhala, "පද්ධති පෙරනිමි"},            {MenuLangId::Khmer, "លំនាំដើមប្រព័ន្ធ"},            {MenuLangId::Lao, "ຄ່າເລີ່ມຕົ້ນລະບົບ"},            {MenuLangId::Armenian, "Համակարգի լռելյայն"},            {MenuLangId::Albanian, "Parazgjedhja e sistemit"},            {MenuLangId::Georgian, "სისტემის ნაგულისხმევი"},            {MenuLangId::Bosnian, "Sistemski zadano"},            {MenuLangId::Serbian, "Системски подразумевано"},            {MenuLangId::Macedonian, "Системски стандардно"},            {MenuLangId::Bulgarian, "Системно по подразбиране"},            {MenuLangId::Belarusian, "Сістэмна прадзначана"},            {MenuLangId::Maltese, "Default tas-sistema"},            {MenuLangId::Mongolian, "Системийн анхдагч"},            {MenuLangId::Latvian, "Sistēmas noklusējums"},            {MenuLangId::Lithuanian, "Sistemos numatyta"},            {MenuLangId::Afrikaans, "Stelselverstek"},            {MenuLangId::Irish, "Réamhshocrú an chórais"},            {MenuLangId::Assamese, "চিষ্টেম ডিফল্ট"},            {MenuLangId::Amharic, "የስርዓት ነባሪ"},            {MenuLangId::Estonian, "Süsteemi vaikimisi"},            {MenuLangId::Kazakh, "Жүйе әдепкісі"},            {MenuLangId::Catalan, "Per defecte del sistema"},            {MenuLangId::Kyrgyz, "Система демейкиси"},            {MenuLangId::Slovak, "Predvolené systémom"},            {MenuLangId::Slovenian, "Privzeto sistema"},            {MenuLangId::Zulu, "Okuzenzakalelayo kohlelo"},            {MenuLangId::Basque, "Sistemaren lehenetsia"},            {MenuLangId::Hebrew, "ברירת המחדל של המערכת"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -3982,6 +10382,7 @@
             {MenuLangId::Russian, "Скрывать мышь при бездействии"},
             {MenuLangId::ChineseSimplified, "无操作后隐藏鼠标"},
             {MenuLangId::ChineseTraditional, "無操作後隱藏滑鼠"},
+            {MenuLangId::ChineseHongKong, "無操作後隱藏滑鼠"},
             {MenuLangId::Korean, "비활성 시 마우스 숨기기"},
             {MenuLangId::Arabic, "إخفاء الماوس بعد عدم النشاط"},
             {MenuLangId::Indonesian, "Sembunyikan mouse setelah tidak aktif"},
@@ -3997,7 +10398,56 @@
             {MenuLangId::Finnish, "Piilota hiiri käyttämättömyyden jälkeen"},
             {MenuLangId::Vietnamese, "Ẩn chuột sau khi không hoạt động"},
             {MenuLangId::Polish, "Ukryj mysz po bezczynności"},
-            {MenuLangId::Romanian, "Ascunde mouse-ul după inactivitate"},
+            {MenuLangId::Romanian, "Ascunde mouse-ul după inactivitate"},            {MenuLangId::Filipino, "Hide mogamitin ang after inactivity"},            {MenuLangId::Swahili, "Hide motumia after inactivity"},            {MenuLangId::Croatian, "Hide mokoristi after inactivity"},            {MenuLangId::Icelandic, "Hide monota after inactivity"},            {MenuLangId::Hindi, "Hide moउपयोग करें after inactivity"},            {MenuLangId::Bengali, "Hide moব্যবহার করুন after inactivity"},            {MenuLangId::Urdu, "Hide moاستعمال کریں after inactivity"},            {MenuLangId::Punjabi, "Hide moਵਰਤੋ after inactivity"},            {MenuLangId::Telugu, "Hide moవాడు after inactivity"},            {MenuLangId::Persian, "Hide moاستفاده از after inactivity"},            {MenuLangId::Malay, "Hide mogunakan after inactivity"},            {MenuLangId::Marathi, "Hide moवापरा after inactivity"},            {MenuLangId::Tamil, "Hide moபயன்படுத்து after inactivity"},            {MenuLangId::Gujarati, "Hide moવાપરો after inactivity"},            {MenuLangId::Kannada, "Hide moಬಳಸಿ after inactivity"},            {MenuLangId::Odia, "ଲୁଚାନ୍ତୁ mouse after inactivity"},            {MenuLangId::Malayalam, "മറയ്ക്കുക mouse after inactivity"},            {MenuLangId::Burmese, "ဖျောက်ပါ mouse after inactivity"},            {MenuLangId::Uzbek, "Yashirish mouse after inactivity"},            {MenuLangId::Azerbaijani, "Gizlət mouse after inactivity"},            {MenuLangId::Nepali, "लुकाउनुहोस् mouse after inactivity"},            {MenuLangId::Sinhala, "සඟවන්න mouse after inactivity"},            {MenuLangId::Khmer, "លាក់ mouse after inactivity"},            {MenuLangId::Lao, "ເຊື່ອງ mouse after inactivity"},            {MenuLangId::Armenian, "Թաքցնել mouse after inactivity"},            {MenuLangId::Albanian, "Fshih mouse after inactivity"},            {MenuLangId::Georgian, "დამალვა mouse after inactivity"},            {MenuLangId::Bosnian, "Sakrij mouse after inactivity"},            {MenuLangId::Serbian, "Сакриј mouse after inactivity"},            {MenuLangId::Macedonian, "Сокриј mouse after inactivity"},            {MenuLangId::Bulgarian, "Скрий mouse after inactivity"},            {MenuLangId::Belarusian, "Схаваць mouse after inactivity"},            {MenuLangId::Maltese, "Aħbi mouse after inactivity"},            {MenuLangId::Mongolian, "Нуух mouse after inactivity"},            {MenuLangId::Latvian, "Paslēpt mouse after inactivity"},            {MenuLangId::Lithuanian, "Slėpti mouse after inactivity"},            {MenuLangId::Afrikaans, "Versteek mouse after inactivity"},            {MenuLangId::Irish, "Folaigh mouse after inactivity"},            {MenuLangId::Assamese, "লুকুৱাওক mouse after inactivity"},            {MenuLangId::Amharic, "ደብቅ mouse after inactivity"},            {MenuLangId::Estonian, "Peida mouse after inactivity"},            {MenuLangId::Kazakh, "Жасыру mouse after inactivity"},            {MenuLangId::Catalan, "Amaga mouse after inactivity"},            {MenuLangId::Kyrgyz, "Жашыруу mouse after inactivity"},            {MenuLangId::Slovak, "Skryť mouse after inactivity"},            {MenuLangId::Slovenian, "Skrij mouse after inactivity"},            {MenuLangId::Zulu, "Fihla mouse after inactivity"},            {MenuLangId::Basque, "Ezkutatu mouse after inactivity"},            {MenuLangId::Hebrew, "הסתר mouse after inactivity"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -4013,6 +10463,7 @@
             {MenuLangId::Russian, "После"},
             {MenuLangId::ChineseSimplified, "之后"},
             {MenuLangId::ChineseTraditional, "之後"},
+            {MenuLangId::ChineseHongKong, "之後"},
             {MenuLangId::Korean, "이후"},
             {MenuLangId::Arabic, "بعد"},
             {MenuLangId::Indonesian, "Setelah"},
@@ -4028,7 +10479,56 @@
             {MenuLangId::Finnish, "Jälkeen"},
             {MenuLangId::Vietnamese, "Sau"},
             {MenuLangId::Polish, "Po"},
-            {MenuLangId::Romanian, "După"},
+            {MenuLangId::Romanian, "După"},            {MenuLangId::Filipino, "After"},            {MenuLangId::Swahili, "After"},            {MenuLangId::Croatian, "Nakon"},            {MenuLangId::Icelandic, "Eftir"},            {MenuLangId::Hindi, "बाद में"},            {MenuLangId::Bengali, "পরে"},            {MenuLangId::Urdu, "بعد"},            {MenuLangId::Punjabi, "ਬਾਅਦ"},            {MenuLangId::Telugu, "తర్వాత"},            {MenuLangId::Persian, "بعد از"},            {MenuLangId::Malay, "Selepas"},            {MenuLangId::Marathi, "नंतर"},            {MenuLangId::Tamil, "பிறகு"},            {MenuLangId::Gujarati, "પછી"},            {MenuLangId::Kannada, "ನಂತರ"},            {MenuLangId::Odia, "ପରେ"},            {MenuLangId::Malayalam, "ശേഷം"},            {MenuLangId::Burmese, "ပြီးနောက်"},            {MenuLangId::Uzbek, "keyin"},            {MenuLangId::Azerbaijani, "sonra"},            {MenuLangId::Nepali, "पछि"},            {MenuLangId::Sinhala, "පසු"},            {MenuLangId::Khmer, "បន្ទាប់ពី"},            {MenuLangId::Lao, "ຫຼັງຈາກ"},            {MenuLangId::Armenian, "հետո"},            {MenuLangId::Albanian, "pas"},            {MenuLangId::Georgian, "შემდეგ"},            {MenuLangId::Bosnian, "nakon"},            {MenuLangId::Serbian, "након"},            {MenuLangId::Macedonian, "по"},            {MenuLangId::Bulgarian, "след"},            {MenuLangId::Belarusian, "пасля"},            {MenuLangId::Maltese, "wara"},            {MenuLangId::Mongolian, "дараа"},            {MenuLangId::Latvian, "pēc"},            {MenuLangId::Lithuanian, "po"},            {MenuLangId::Afrikaans, "ná"},            {MenuLangId::Irish, "tar éis"},            {MenuLangId::Assamese, "পিছত"},            {MenuLangId::Amharic, "በኋላ"},            {MenuLangId::Estonian, "pärast"},            {MenuLangId::Kazakh, "кейін"},            {MenuLangId::Catalan, "després de"},            {MenuLangId::Kyrgyz, "кийин"},            {MenuLangId::Slovak, "po"},            {MenuLangId::Slovenian, "po"},            {MenuLangId::Zulu, "ngemuva"},            {MenuLangId::Basque, "ondoren"},            {MenuLangId::Hebrew, "אחרי"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -4044,6 +10544,7 @@
             {MenuLangId::Russian, "секунды"},
             {MenuLangId::ChineseSimplified, "秒"},
             {MenuLangId::ChineseTraditional, "秒"},
+            {MenuLangId::ChineseHongKong, "秒"},
             {MenuLangId::Korean, "초"},
             {MenuLangId::Arabic, "ثوانٍ"},
             {MenuLangId::Indonesian, "detik"},
@@ -4059,7 +10560,56 @@
             {MenuLangId::Finnish, "sekuntia"},
             {MenuLangId::Vietnamese, "giây"},
             {MenuLangId::Polish, "sekundy"},
-            {MenuLangId::Romanian, "secunde"},
+            {MenuLangId::Romanian, "secunde"},            {MenuLangId::Filipino, "seconds"},            {MenuLangId::Swahili, "seconds"},            {MenuLangId::Croatian, "sekundi"},            {MenuLangId::Icelandic, "sekúndur"},            {MenuLangId::Hindi, "सेकंड"},            {MenuLangId::Bengali, "সেকেন্ড"},            {MenuLangId::Urdu, "سیکنڈ"},            {MenuLangId::Punjabi, "ਸਕਿੰਟ"},            {MenuLangId::Telugu, "సెకన్లు"},            {MenuLangId::Persian, "ثانیه"},            {MenuLangId::Malay, "saat"},            {MenuLangId::Marathi, "सेकंद"},            {MenuLangId::Tamil, "வினாடிகள்"},            {MenuLangId::Gujarati, "સેકન્ડ"},            {MenuLangId::Kannada, "ಸೆಕೆಂಡ್"},            {MenuLangId::Odia, "ସେକେଣ୍ଡ"},            {MenuLangId::Malayalam, "സെക്കൻഡ്"},            {MenuLangId::Burmese, "စက္ကန့်"},            {MenuLangId::Uzbek, "soniya"},            {MenuLangId::Azerbaijani, "saniyə"},            {MenuLangId::Nepali, "सेकेन्ड"},            {MenuLangId::Sinhala, "තත්පර"},            {MenuLangId::Khmer, "វិនាទី"},            {MenuLangId::Lao, "ວິນາທີ"},            {MenuLangId::Armenian, "վայրկյան"},            {MenuLangId::Albanian, "sekonda"},            {MenuLangId::Georgian, "წამი"},            {MenuLangId::Bosnian, "sekundi"},            {MenuLangId::Serbian, "секунди"},            {MenuLangId::Macedonian, "секунди"},            {MenuLangId::Bulgarian, "секунди"},            {MenuLangId::Belarusian, "секунд"},            {MenuLangId::Maltese, "sekondi"},            {MenuLangId::Mongolian, "секунд"},            {MenuLangId::Latvian, "sekundes"},            {MenuLangId::Lithuanian, "sekundės"},            {MenuLangId::Afrikaans, "sekondes"},            {MenuLangId::Irish, "soicindí"},            {MenuLangId::Assamese, "ছেকেণ্ড"},            {MenuLangId::Amharic, "ሰከንዶች"},            {MenuLangId::Estonian, "sekundit"},            {MenuLangId::Kazakh, "секунд"},            {MenuLangId::Catalan, "segons"},            {MenuLangId::Kyrgyz, "секунд"},            {MenuLangId::Slovak, "sekúnd"},            {MenuLangId::Slovenian, "sekund"},            {MenuLangId::Zulu, "imizuzwana"},            {MenuLangId::Basque, "segundo"},            {MenuLangId::Hebrew, "שניות"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -4075,6 +10625,7 @@
             {MenuLangId::Russian, "Приостанавливать эмуляцию, когда окно не в фокусе"},
             {MenuLangId::ChineseSimplified, "窗口失去焦点时暂停模拟"},
             {MenuLangId::ChineseTraditional, "視窗失去焦點時暫停模擬"},
+            {MenuLangId::ChineseHongKong, "視窗失去焦點時暫停模擬"},
             {MenuLangId::Korean, "창이 포커스되지 않을 때 에뮬레이션 일시정지"},
             {MenuLangId::Arabic, "إيقاف المحاكاة عندما لا تكون النافذة في التركيز"},
             {MenuLangId::Indonesian, "Jeda emulasi saat jendela tidak fokus"},
@@ -4090,7 +10641,56 @@
             {MenuLangId::Finnish, "Keskeytä emulointi, kun ikkuna ei ole aktiivinen"},
             {MenuLangId::Vietnamese, "Tạm dừng giả lập khi cửa sổ không được focus"},
             {MenuLangId::Polish, "Wstrzymaj emulację, gdy okno nie jest aktywne"},
-            {MenuLangId::Romanian, "Pune emularea în pauză când fereastra nu este activă"},
+            {MenuLangId::Romanian, "Pune emularea în pauză când fereastra nu este activă"},            {MenuLangId::Filipino, "Pagamitin ang emulation when window is not in focus"},            {MenuLangId::Swahili, "Patumia emulation when dirisha is not in focus"},            {MenuLangId::Croatian, "Pakoristi emulation when prozor is not in focus"},            {MenuLangId::Icelandic, "Panota emulation when gluggi is not in focus"},            {MenuLangId::Hindi, "Paउपयोग करें emulation when विंडो is not in focus"},            {MenuLangId::Bengali, "Paব্যবহার করুন emulation when উইন্ডো is not in focus"},            {MenuLangId::Urdu, "Paاستعمال کریں emulation when ونڈو is not in focus"},            {MenuLangId::Punjabi, "Paਵਰਤੋ emulation when ਵਿੰਡੋ is not in focus"},            {MenuLangId::Telugu, "Paవాడు emulation when విండో is not in focus"},            {MenuLangId::Persian, "Paاستفاده از emulation when پنجره is not in focus"},            {MenuLangId::Malay, "Pagunakan emulation when tetingkap is not in focus"},            {MenuLangId::Marathi, "Paवापरा emulation when विंडो is not in focus"},            {MenuLangId::Tamil, "Paபயன்படுத்து emulation when சாளரம் is not in focus"},            {MenuLangId::Gujarati, "Paવાપરો emulation when વિન્ડો is not in focus"},            {MenuLangId::Kannada, "Paಬಳಸಿ emulation when ವಿಂಡೋ is not in focus"},            {MenuLangId::Odia, "ଓଡ଼ିଆ: Pause emulation when window is not in focus"},            {MenuLangId::Malayalam, "മലയാളം: Pause emulation when window is not in focus"},            {MenuLangId::Burmese, "မြန်မာ: Pause emulation when window is not in focus"},            {MenuLangId::Uzbek, "Oʻzbekcha: Pause emulation when window is not in focus"},            {MenuLangId::Azerbaijani, "Azərbaycanca: Pause emulation when window is not in focus"},            {MenuLangId::Nepali, "नेपाली: Pause emulation when window is not in focus"},            {MenuLangId::Sinhala, "සිංහල: Pause emulation when window is not in focus"},            {MenuLangId::Khmer, "ភាសាខ្មែរ: Pause emulation when window is not in focus"},            {MenuLangId::Lao, "ລາວ: Pause emulation when window is not in focus"},            {MenuLangId::Armenian, "Հայերեն: Pause emulation when window is not in focus"},            {MenuLangId::Albanian, "Shqip: Pause emulation when window is not in focus"},            {MenuLangId::Georgian, "ქართული: Pause emulation when window is not in focus"},            {MenuLangId::Bosnian, "Bosanski: Pause emulation when window is not in focus"},            {MenuLangId::Serbian, "Српски: Pause emulation when window is not in focus"},            {MenuLangId::Macedonian, "Македонски: Pause emulation when window is not in focus"},            {MenuLangId::Bulgarian, "Български: Pause emulation when window is not in focus"},            {MenuLangId::Belarusian, "Беларуская: Pause emulation when window is not in focus"},            {MenuLangId::Maltese, "Malti: Pause emulation when window is not in focus"},            {MenuLangId::Mongolian, "Монгол: Pause emulation when window is not in focus"},            {MenuLangId::Latvian, "Latviski: Pause emulation when window is not in focus"},            {MenuLangId::Lithuanian, "Lietuvių: Pause emulation when window is not in focus"},            {MenuLangId::Afrikaans, "Afrikaans: Pause emulation when window is not in focus"},            {MenuLangId::Irish, "Gaeilge: Pause emulation when window is not in focus"},            {MenuLangId::Assamese, "অসমীয়া: Pause emulation when window is not in focus"},            {MenuLangId::Amharic, "አማርኛ: Pause emulation when window is not in focus"},            {MenuLangId::Estonian, "Eesti: Pause emulation when window is not in focus"},            {MenuLangId::Kazakh, "Қазақша: Pause emulation when window is not in focus"},            {MenuLangId::Catalan, "Català: Pause emulation when window is not in focus"},            {MenuLangId::Kyrgyz, "Кыргызча: Pause emulation when window is not in focus"},            {MenuLangId::Slovak, "Slovenčina: Pause emulation when window is not in focus"},            {MenuLangId::Slovenian, "Slovenščina: Pause emulation when window is not in focus"},            {MenuLangId::Zulu, "isiZulu: Pause emulation when window is not in focus"},            {MenuLangId::Basque, "Euskara: Pause emulation when window is not in focus"},            {MenuLangId::Hebrew, "עברית: Pause emulation when window is not in focus"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -4106,6 +10706,7 @@
             {MenuLangId::Russian, "Отключить звук при ускорении"},
             {MenuLangId::ChineseSimplified, "快进时静音"},
             {MenuLangId::ChineseTraditional, "快進時靜音"},
+            {MenuLangId::ChineseHongKong, "快進時靜音"},
             {MenuLangId::Korean, "빨리 감기 중 오디오 음소거"},
             {MenuLangId::Arabic, "كتم الصوت أثناء التقديم السريع"},
             {MenuLangId::Indonesian, "Bisukan audio saat fast forwarding"},
@@ -4121,7 +10722,56 @@
             {MenuLangId::Finnish, "Mykistä ääni kelattaessa eteenpäin"},
             {MenuLangId::Vietnamese, "Tắt tiếng khi tua nhanh"},
             {MenuLangId::Polish, "Wycisz audio podczas przewijania"},
-            {MenuLangId::Romanian, "Dezactivează audio la derulare rapidă"},
+            {MenuLangId::Romanian, "Dezactivează audio la derulare rapidă"},            {MenuLangId::Filipino, "Mute audio while fast forwarding"},            {MenuLangId::Swahili, "Mute sauti while fast forwarding"},            {MenuLangId::Croatian, "Mute zvuk while fast forwarding"},            {MenuLangId::Icelandic, "Mute hljóð while fast forwarding"},            {MenuLangId::Hindi, "Mute ऑडियो while fast forwarding"},            {MenuLangId::Bengali, "Mute অডিও while fast forwarding"},            {MenuLangId::Urdu, "Mute آڈیو while fast forwarding"},            {MenuLangId::Punjabi, "Mute ਆਡੀਓ while fast forwarding"},            {MenuLangId::Telugu, "Mute ఆడియో while fast forwarding"},            {MenuLangId::Persian, "Mute صدا while fast forwarding"},            {MenuLangId::Malay, "Redam audio semasa maju pantas"},            {MenuLangId::Marathi, "Mute ऑडिओ while fast forwarding"},            {MenuLangId::Tamil, "Mute ஆடியோ while fast forwarding"},            {MenuLangId::Gujarati, "Mute ઑડિયો while fast forwarding"},            {MenuLangId::Kannada, "Mute ಆಡಿಯೋ while fast forwarding"},            {MenuLangId::Odia, "Mute ଅଡିଓ while fast forwarding"},            {MenuLangId::Malayalam, "Mute ഓഡിയോ while fast forwarding"},            {MenuLangId::Burmese, "Mute အသံ while fast forwarding"},            {MenuLangId::Uzbek, "Oʻzbekcha: Mute audio while fast forwarding"},            {MenuLangId::Azerbaijani, "Azərbaycanca: Mute audio while fast forwarding"},            {MenuLangId::Nepali, "Mute अडियो while fast forwarding"},            {MenuLangId::Sinhala, "Mute ශ්‍රව්‍ය while fast forwarding"},            {MenuLangId::Khmer, "Mute អូឌីយ៉ូ while fast forwarding"},            {MenuLangId::Lao, "Mute ສຽງ while fast forwarding"},            {MenuLangId::Armenian, "Mute աուդիո while fast forwarding"},            {MenuLangId::Albanian, "Shqip: Mute audio while fast forwarding"},            {MenuLangId::Georgian, "Mute აუდიო while fast forwarding"},            {MenuLangId::Bosnian, "Bosanski: Mute audio while fast forwarding"},            {MenuLangId::Serbian, "Mute аудио while fast forwarding"},            {MenuLangId::Macedonian, "Mute аудио while fast forwarding"},            {MenuLangId::Bulgarian, "Mute аудио while fast forwarding"},            {MenuLangId::Belarusian, "Mute аўдыя while fast forwarding"},            {MenuLangId::Maltese, "Mute awdjo while fast forwarding"},            {MenuLangId::Mongolian, "Mute аудио while fast forwarding"},            {MenuLangId::Latvian, "Latviski: Mute audio while fast forwarding"},            {MenuLangId::Lithuanian, "Mute garsas while fast forwarding"},            {MenuLangId::Afrikaans, "Mute oudio while fast forwarding"},            {MenuLangId::Irish, "Mute fuaim while fast forwarding"},            {MenuLangId::Assamese, "Mute অডিঅ' while fast forwarding"},            {MenuLangId::Amharic, "Mute ድምፅ while fast forwarding"},            {MenuLangId::Estonian, "Mute heli while fast forwarding"},            {MenuLangId::Kazakh, "Mute аудио while fast forwarding"},            {MenuLangId::Catalan, "Mute àudio while fast forwarding"},            {MenuLangId::Kyrgyz, "Mute аудио while fast forwarding"},            {MenuLangId::Slovak, "Mute zvuk while fast forwarding"},            {MenuLangId::Slovenian, "Mute zvok while fast forwarding"},            {MenuLangId::Zulu, "Mute umsindo while fast forwarding"},            {MenuLangId::Basque, "Mute audioa while fast forwarding"},            {MenuLangId::Hebrew, "Mute שמע while fast forwarding"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -4137,6 +10787,7 @@
             {MenuLangId::Russian, "Частота кадров "},
             {MenuLangId::ChineseSimplified, "帧率 "},
             {MenuLangId::ChineseTraditional, "幀率 "},
+            {MenuLangId::ChineseHongKong, "幀率 "},
             {MenuLangId::Korean, "프레임레이트 "},
             {MenuLangId::Arabic, "معدل الإطارات "},
             {MenuLangId::Indonesian, "Framerate "},
@@ -4152,7 +10803,56 @@
             {MenuLangId::Finnish, "Ruudunpäivitysnopeus "},
             {MenuLangId::Vietnamese, "Tốc độ khung hình "},
             {MenuLangId::Polish, "Liczba klatek "},
-            {MenuLangId::Romanian, "Rată de cadre "},
+            {MenuLangId::Romanian, "Rată de cadre "},            {MenuLangId::Filipino, "Framerate "},            {MenuLangId::Swahili, "Framerate "},            {MenuLangId::Croatian, "Framerate "},            {MenuLangId::Icelandic, "Rammatíðni "},            {MenuLangId::Hindi, "फ़्रेमरेट "},            {MenuLangId::Bengali, "ফ্রেমরেট "},            {MenuLangId::Urdu, "فریم ریٹ "},            {MenuLangId::Punjabi, "ਫਰੇਮਰੇਟ "},            {MenuLangId::Telugu, "ఫ్రేమ్‌రేట్ "},            {MenuLangId::Persian, "نرخ فریم "},            {MenuLangId::Malay, "Kadar bingkai "},            {MenuLangId::Marathi, "फ्रेमरेट "},            {MenuLangId::Tamil, "framerate "},            {MenuLangId::Gujarati, "framerate "},            {MenuLangId::Kannada, "framerate "},            {MenuLangId::Odia, "framerate "},            {MenuLangId::Malayalam, "framerate "},            {MenuLangId::Burmese, "framerate "},            {MenuLangId::Uzbek, "framerate "},            {MenuLangId::Azerbaijani, "framerate "},            {MenuLangId::Nepali, "framerate "},            {MenuLangId::Sinhala, "framerate "},            {MenuLangId::Khmer, "framerate "},            {MenuLangId::Lao, "framerate "},            {MenuLangId::Armenian, "framerate "},            {MenuLangId::Albanian, "framerate "},            {MenuLangId::Georgian, "framerate "},            {MenuLangId::Bosnian, "framerate "},            {MenuLangId::Serbian, "framerate "},            {MenuLangId::Macedonian, "framerate "},            {MenuLangId::Bulgarian, "framerate "},            {MenuLangId::Belarusian, "framerate "},            {MenuLangId::Maltese, "framerate "},            {MenuLangId::Mongolian, "framerate "},            {MenuLangId::Latvian, "framerate "},            {MenuLangId::Lithuanian, "framerate "},            {MenuLangId::Afrikaans, "framerate "},            {MenuLangId::Irish, "framerate "},            {MenuLangId::Assamese, "framerate "},            {MenuLangId::Amharic, "framerate "},            {MenuLangId::Estonian, "framerate "},            {MenuLangId::Kazakh, "framerate "},            {MenuLangId::Catalan, "framerate "},            {MenuLangId::Kyrgyz, "framerate "},            {MenuLangId::Slovak, "framerate "},            {MenuLangId::Slovenian, "framerate "},            {MenuLangId::Zulu, "framerate "},            {MenuLangId::Basque, "framerate "},            {MenuLangId::Hebrew, "framerate "},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -4168,6 +10868,7 @@
             {MenuLangId::Russian, "Целевой FPS"},
             {MenuLangId::ChineseSimplified, "目标 FPS"},
             {MenuLangId::ChineseTraditional, "目標 FPS"},
+            {MenuLangId::ChineseHongKong, "目標 FPS"},
             {MenuLangId::Korean, "목표 FPS"},
             {MenuLangId::Arabic, "FPS المستهدف"},
             {MenuLangId::Indonesian, "FPS target"},
@@ -4183,7 +10884,56 @@
             {MenuLangId::Finnish, "Tavoite-FPS"},
             {MenuLangId::Vietnamese, "FPS mục tiêu"},
             {MenuLangId::Polish, "Docelowe FPS"},
-            {MenuLangId::Romanian, "FPS țintă"},
+            {MenuLangId::Romanian, "FPS țintă"},            {MenuLangId::Filipino, "Target FPS"},            {MenuLangId::Swahili, "Target FPS"},            {MenuLangId::Croatian, "Ciljni FPS"},            {MenuLangId::Icelandic, "Mark-FPS"},            {MenuLangId::Hindi, "लक्ष्य FPS"},            {MenuLangId::Bengali, "লক্ষ্য FPS"},            {MenuLangId::Urdu, "ہدف FPS"},            {MenuLangId::Punjabi, "ਲਕਸ਼ FPS"},            {MenuLangId::Telugu, "లక్ష్య FPS"},            {MenuLangId::Persian, "FPS هدف"},            {MenuLangId::Malay, "FPS sasaran"},            {MenuLangId::Marathi, "लक्ष्य FPS"},            {MenuLangId::Tamil, "இலக்கு FPS"},            {MenuLangId::Gujarati, "લક્ષ્ય FPS"},            {MenuLangId::Kannada, "ಲಕ್ಷ್ಯ FPS"},            {MenuLangId::Odia, "ଲକ୍ଷ୍ୟ FPS"},            {MenuLangId::Malayalam, "ലക്ഷ്യ FPS"},            {MenuLangId::Burmese, "ရည်မှန်း FPS"},            {MenuLangId::Uzbek, "Maqsad FPS"},            {MenuLangId::Azerbaijani, "Hədəf FPS"},            {MenuLangId::Nepali, "लक्ष्य FPS"},            {MenuLangId::Sinhala, "ඉලක්ක FPS"},            {MenuLangId::Khmer, "FPS គោលដៅ"},            {MenuLangId::Lao, "FPS ເປົ້າໝາຍ"},            {MenuLangId::Armenian, "Նպատակային FPS"},            {MenuLangId::Albanian, "FPS i synuar"},            {MenuLangId::Georgian, "სამიზნე FPS"},            {MenuLangId::Bosnian, "Ciljani FPS"},            {MenuLangId::Serbian, "Циљни FPS"},            {MenuLangId::Macedonian, "Целен FPS"},            {MenuLangId::Bulgarian, "Целеви FPS"},            {MenuLangId::Belarusian, "Мэтавы FPS"},            {MenuLangId::Maltese, "FPS fil-mira"},            {MenuLangId::Mongolian, "Зорилтот FPS"},            {MenuLangId::Latvian, "Mērķa FPS"},            {MenuLangId::Lithuanian, "Tikslinis FPS"},            {MenuLangId::Afrikaans, "Teiken-FPS"},            {MenuLangId::Irish, "FPS sprice"},            {MenuLangId::Assamese, "লক্ষ্য FPS"},            {MenuLangId::Amharic, "የታለመ FPS"},            {MenuLangId::Estonian, "Siht-FPS"},            {MenuLangId::Kazakh, "Мақсат FPS"},            {MenuLangId::Catalan, "FPS objectiu"},            {MenuLangId::Kyrgyz, "Максат FPS"},            {MenuLangId::Slovak, "Cieľové FPS"},            {MenuLangId::Slovenian, "Ciljni FPS"},            {MenuLangId::Zulu, "I-FPS eqondiwe"},            {MenuLangId::Basque, "Helburuko FPS"},            {MenuLangId::Hebrew, "FPS יעד"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -4199,6 +10949,7 @@
             {MenuLangId::Russian, "Ускорение"},
             {MenuLangId::ChineseSimplified, "快进"},
             {MenuLangId::ChineseTraditional, "快進"},
+            {MenuLangId::ChineseHongKong, "快進"},
             {MenuLangId::Korean, "빨리 감기"},
             {MenuLangId::Arabic, "تقديم سريع"},
             {MenuLangId::Indonesian, "Percepat"},
@@ -4214,7 +10965,56 @@
             {MenuLangId::Finnish, "Pikakelau"},
             {MenuLangId::Vietnamese, "Tua nhanh"},
             {MenuLangId::Polish, "Przyspieszenie"},
-            {MenuLangId::Romanian, "Derulare rapidă"},
+            {MenuLangId::Romanian, "Derulare rapidă"},            {MenuLangId::Filipino, "Fast-Forward"},            {MenuLangId::Swahili, "Fast-Forward"},            {MenuLangId::Croatian, "Ubrzanje"},            {MenuLangId::Icelandic, "Hröðun"},            {MenuLangId::Hindi, "फ़ास्ट-फ़ॉरवर्ड"},            {MenuLangId::Bengali, "ফাস্ট-ফরওয়ার্ড"},            {MenuLangId::Urdu, "فاسٹ فارورڈ"},            {MenuLangId::Punjabi, "ਫਾਸਟ-ਫਾਰਵਰਡ"},            {MenuLangId::Telugu, "ఫాస్ట్-ఫార్వర్డ్"},            {MenuLangId::Persian, "جلو بردن سریع"},            {MenuLangId::Malay, "Maju pantas"},            {MenuLangId::Marathi, "फास्ट-फॉरवर्ड"},            {MenuLangId::Tamil, "Fast-Forward"},            {MenuLangId::Gujarati, "Fast-Forward"},            {MenuLangId::Kannada, "Fast-Forward"},            {MenuLangId::Odia, "Fast-Forward"},            {MenuLangId::Malayalam, "Fast-Forward"},            {MenuLangId::Burmese, "Fast-Forward"},            {MenuLangId::Uzbek, "Fast-Forward"},            {MenuLangId::Azerbaijani, "Fast-Forward"},            {MenuLangId::Nepali, "Fast-Forward"},            {MenuLangId::Sinhala, "Fast-Forward"},            {MenuLangId::Khmer, "Fast-Forward"},            {MenuLangId::Lao, "Fast-Forward"},            {MenuLangId::Armenian, "Fast-Forward"},            {MenuLangId::Albanian, "Fast-Forward"},            {MenuLangId::Georgian, "Fast-Forward"},            {MenuLangId::Bosnian, "Fast-Forward"},            {MenuLangId::Serbian, "Fast-Forward"},            {MenuLangId::Macedonian, "Fast-Forward"},            {MenuLangId::Bulgarian, "Fast-Forward"},            {MenuLangId::Belarusian, "Fast-Forward"},            {MenuLangId::Maltese, "Fast-Forward"},            {MenuLangId::Mongolian, "Fast-Forward"},            {MenuLangId::Latvian, "Fast-Forward"},            {MenuLangId::Lithuanian, "Fast-Forward"},            {MenuLangId::Afrikaans, "Fast-Forward"},            {MenuLangId::Irish, "Fast-Forward"},            {MenuLangId::Assamese, "Fast-Forward"},            {MenuLangId::Amharic, "Fast-Forward"},            {MenuLangId::Estonian, "Fast-Forward"},            {MenuLangId::Kazakh, "Fast-Forward"},            {MenuLangId::Catalan, "Fast-Forward"},            {MenuLangId::Kyrgyz, "Fast-Forward"},            {MenuLangId::Slovak, "Fast-Forward"},            {MenuLangId::Slovenian, "Fast-Forward"},            {MenuLangId::Zulu, "Fast-Forward"},            {MenuLangId::Basque, "Fast-Forward"},            {MenuLangId::Hebrew, "Fast-Forward"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -4230,6 +11030,7 @@
             {MenuLangId::Russian, " FPS"},
             {MenuLangId::ChineseSimplified, " FPS"},
             {MenuLangId::ChineseTraditional, " FPS"},
+            {MenuLangId::ChineseHongKong, " FPS"},
             {MenuLangId::Korean, " FPS"},
             {MenuLangId::Arabic, " FPS"},
             {MenuLangId::Indonesian, " FPS"},
@@ -4245,7 +11046,56 @@
             {MenuLangId::Finnish, " FPS"},
             {MenuLangId::Vietnamese, " FPS"},
             {MenuLangId::Polish, " FPS"},
-            {MenuLangId::Romanian, " FPS"},
+            {MenuLangId::Romanian, " FPS"},            {MenuLangId::Filipino, " FPS"},            {MenuLangId::Swahili, " FPS"},            {MenuLangId::Croatian, " FPS"},            {MenuLangId::Icelandic, " FPS"},            {MenuLangId::Hindi, " FPS"},            {MenuLangId::Bengali, " FPS"},            {MenuLangId::Urdu, " FPS"},            {MenuLangId::Punjabi, " FPS"},            {MenuLangId::Telugu, " FPS"},            {MenuLangId::Persian, " FPS"},            {MenuLangId::Malay, " FPS"},            {MenuLangId::Marathi, " FPS"},            {MenuLangId::Tamil, " FPS"},            {MenuLangId::Gujarati, " FPS"},            {MenuLangId::Kannada, " FPS"},            {MenuLangId::Odia, " FPS"},            {MenuLangId::Malayalam, " FPS"},            {MenuLangId::Burmese, " FPS"},            {MenuLangId::Uzbek, " FPS"},            {MenuLangId::Azerbaijani, " FPS"},            {MenuLangId::Nepali, " FPS"},            {MenuLangId::Sinhala, " FPS"},            {MenuLangId::Khmer, " FPS"},            {MenuLangId::Lao, " FPS"},            {MenuLangId::Armenian, " FPS"},            {MenuLangId::Albanian, " FPS"},            {MenuLangId::Georgian, " FPS"},            {MenuLangId::Bosnian, " FPS"},            {MenuLangId::Serbian, " FPS"},            {MenuLangId::Macedonian, " FPS"},            {MenuLangId::Bulgarian, " FPS"},            {MenuLangId::Belarusian, " FPS"},            {MenuLangId::Maltese, " FPS"},            {MenuLangId::Mongolian, " FPS"},            {MenuLangId::Latvian, " FPS"},            {MenuLangId::Lithuanian, " FPS"},            {MenuLangId::Afrikaans, " FPS"},            {MenuLangId::Irish, " FPS"},            {MenuLangId::Assamese, " FPS"},            {MenuLangId::Amharic, " FPS"},            {MenuLangId::Estonian, " FPS"},            {MenuLangId::Kazakh, " FPS"},            {MenuLangId::Catalan, " FPS"},            {MenuLangId::Kyrgyz, " FPS"},            {MenuLangId::Slovak, " FPS"},            {MenuLangId::Slovenian, " FPS"},            {MenuLangId::Zulu, " FPS"},            {MenuLangId::Basque, " FPS"},            {MenuLangId::Hebrew, " FPS"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -4261,6 +11111,7 @@
             {MenuLangId::Russian, "Замедление"},
             {MenuLangId::ChineseSimplified, "慢动作"},
             {MenuLangId::ChineseTraditional, "慢動作"},
+            {MenuLangId::ChineseHongKong, "慢動作"},
             {MenuLangId::Korean, "슬로 모션"},
             {MenuLangId::Arabic, "Slow-Mo"},
             {MenuLangId::Indonesian, "Slow-Mo"},
@@ -4276,7 +11127,56 @@
             {MenuLangId::Finnish, "Slow-Mo"},
             {MenuLangId::Vietnamese, "Slow-Mo"},
             {MenuLangId::Polish, "Slow-Mo"},
-            {MenuLangId::Romanian, "Slow-Mo"},
+            {MenuLangId::Romanian, "Slow-Mo"},            {MenuLangId::Filipino, "Slow-Mo"},            {MenuLangId::Swahili, "Slow-Mo"},            {MenuLangId::Croatian, "Usporeno"},            {MenuLangId::Icelandic, "Hægt spil"},            {MenuLangId::Hindi, "स्लो-मो"},            {MenuLangId::Bengali, "স্লো-মো"},            {MenuLangId::Urdu, "سلو مو"},            {MenuLangId::Punjabi, "ਸਲੋ-ਮੋ"},            {MenuLangId::Telugu, "స్లో-మో"},            {MenuLangId::Persian, "حرکت آهسته"},            {MenuLangId::Malay, "Gerak perlahan"},            {MenuLangId::Marathi, "स्लो-मो"},            {MenuLangId::Tamil, "Slow-Mo"},            {MenuLangId::Gujarati, "Slow-Mo"},            {MenuLangId::Kannada, "Slow-Mo"},            {MenuLangId::Odia, "Slow-Mo"},            {MenuLangId::Malayalam, "Slow-Mo"},            {MenuLangId::Burmese, "Slow-Mo"},            {MenuLangId::Uzbek, "Slow-Mo"},            {MenuLangId::Azerbaijani, "Slow-Mo"},            {MenuLangId::Nepali, "Slow-Mo"},            {MenuLangId::Sinhala, "Slow-Mo"},            {MenuLangId::Khmer, "Slow-Mo"},            {MenuLangId::Lao, "Slow-Mo"},            {MenuLangId::Armenian, "Slow-Mo"},            {MenuLangId::Albanian, "Slow-Mo"},            {MenuLangId::Georgian, "Slow-Mo"},            {MenuLangId::Bosnian, "Slow-Mo"},            {MenuLangId::Serbian, "Slow-Mo"},            {MenuLangId::Macedonian, "Slow-Mo"},            {MenuLangId::Bulgarian, "Slow-Mo"},            {MenuLangId::Belarusian, "Slow-Mo"},            {MenuLangId::Maltese, "Slow-Mo"},            {MenuLangId::Mongolian, "Slow-Mo"},            {MenuLangId::Latvian, "Slow-Mo"},            {MenuLangId::Lithuanian, "Slow-Mo"},            {MenuLangId::Afrikaans, "Slow-Mo"},            {MenuLangId::Irish, "Slow-Mo"},            {MenuLangId::Assamese, "Slow-Mo"},            {MenuLangId::Amharic, "Slow-Mo"},            {MenuLangId::Estonian, "Slow-Mo"},            {MenuLangId::Kazakh, "Slow-Mo"},            {MenuLangId::Catalan, "Slow-Mo"},            {MenuLangId::Kyrgyz, "Slow-Mo"},            {MenuLangId::Slovak, "Slow-Mo"},            {MenuLangId::Slovenian, "Slow-Mo"},            {MenuLangId::Zulu, "Slow-Mo"},            {MenuLangId::Basque, "Slow-Mo"},            {MenuLangId::Hebrew, "Slow-Mo"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -4292,6 +11192,7 @@
             {MenuLangId::Russian, "Точный"},
             {MenuLangId::ChineseSimplified, "精确"},
             {MenuLangId::ChineseTraditional, "精確"},
+            {MenuLangId::ChineseHongKong, "精確"},
             {MenuLangId::Korean, "정확"},
             {MenuLangId::Arabic, "دقيق"},
             {MenuLangId::Indonesian, "Akurat"},
@@ -4307,7 +11208,56 @@
             {MenuLangId::Finnish, "Tarkka"},
             {MenuLangId::Vietnamese, "Chính xác"},
             {MenuLangId::Polish, "Dokładny"},
-            {MenuLangId::Romanian, "Precis"},
+            {MenuLangId::Romanian, "Precis"},            {MenuLangId::Filipino, "Accurate"},            {MenuLangId::Swahili, "Accurate"},            {MenuLangId::Croatian, "Točno"},            {MenuLangId::Icelandic, "Nákvæmt"},            {MenuLangId::Hindi, "सटीक"},            {MenuLangId::Bengali, "নির্ভুল"},            {MenuLangId::Urdu, "درست"},            {MenuLangId::Punjabi, "ਸਹੀ"},            {MenuLangId::Telugu, "ఖచ్చితమైన"},            {MenuLangId::Persian, "دقیق"},            {MenuLangId::Malay, "Tepat"},            {MenuLangId::Marathi, "अचूक"},            {MenuLangId::Tamil, "துல்லியமான"},            {MenuLangId::Gujarati, "ચોક્કસ"},            {MenuLangId::Kannada, "ನಿಖರ"},            {MenuLangId::Odia, "ନିଖୁତ"},            {MenuLangId::Malayalam, "കൃത്യം"},            {MenuLangId::Burmese, "တိကျ"},            {MenuLangId::Uzbek, "Aniq"},            {MenuLangId::Azerbaijani, "Dəqiq"},            {MenuLangId::Nepali, "सटीक"},            {MenuLangId::Sinhala, "නිවැරදි"},            {MenuLangId::Khmer, "ត្រឹមត្រូវ"},            {MenuLangId::Lao, "ແມ່ນຍຳ"},            {MenuLangId::Armenian, "Ճշգրիտ"},            {MenuLangId::Albanian, "I saktë"},            {MenuLangId::Georgian, "ზუსტი"},            {MenuLangId::Bosnian, "Precizno"},            {MenuLangId::Serbian, "Прецизно"},            {MenuLangId::Macedonian, "Прецизно"},            {MenuLangId::Bulgarian, "Точно"},            {MenuLangId::Belarusian, "Дакладна"},            {MenuLangId::Maltese, "Preċiż"},            {MenuLangId::Mongolian, "Нарийвчлалтай"},            {MenuLangId::Latvian, "Precīzs"},            {MenuLangId::Lithuanian, "Tikslus"},            {MenuLangId::Afrikaans, "Akkuraat"},            {MenuLangId::Irish, "Cruinn"},            {MenuLangId::Assamese, "সঠিক"},            {MenuLangId::Amharic, "ትክክለኛ"},            {MenuLangId::Estonian, "Täpne"},            {MenuLangId::Kazakh, "Дәл"},            {MenuLangId::Catalan, "Precís"},            {MenuLangId::Kyrgyz, "Так"},            {MenuLangId::Slovak, "Presné"},            {MenuLangId::Slovenian, "Natančno"},            {MenuLangId::Zulu, "Kunembile"},            {MenuLangId::Basque, "Zehatza"},            {MenuLangId::Hebrew, "מדויק"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -4323,6 +11273,7 @@
             {MenuLangId::Russian, "Чистый"},
             {MenuLangId::ChineseSimplified, "简洁"},
             {MenuLangId::ChineseTraditional, "簡潔"},
+            {MenuLangId::ChineseHongKong, "簡潔"},
             {MenuLangId::Korean, "클린"},
             {MenuLangId::Arabic, "نظيف"},
             {MenuLangId::Indonesian, "Bersih"},
@@ -4338,7 +11289,56 @@
             {MenuLangId::Finnish, "Puhdas"},
             {MenuLangId::Vietnamese, "Sạch"},
             {MenuLangId::Polish, "Czysty"},
-            {MenuLangId::Romanian, "Curat"},
+            {MenuLangId::Romanian, "Curat"},            {MenuLangId::Filipino, "Clean"},            {MenuLangId::Swahili, "Clean"},            {MenuLangId::Croatian, "Čisto"},            {MenuLangId::Icelandic, "Hreint"},            {MenuLangId::Hindi, "साफ़"},            {MenuLangId::Bengali, "পরিষ্কার"},            {MenuLangId::Urdu, "صاف"},            {MenuLangId::Punjabi, "ਸਾਫ਼"},            {MenuLangId::Telugu, "శుభ్రం"},            {MenuLangId::Persian, "پاک"},            {MenuLangId::Malay, "Bersih"},            {MenuLangId::Marathi, "स्वच्छ"},            {MenuLangId::Tamil, "சுத்தமான"},            {MenuLangId::Gujarati, "સ્વચ્છ"},            {MenuLangId::Kannada, "ಸ್ವಚ್ಛ"},            {MenuLangId::Odia, "ସଫା"},            {MenuLangId::Malayalam, "വൃത്തിയുള്ള"},            {MenuLangId::Burmese, "သန့်ရှင်း"},            {MenuLangId::Uzbek, "Toza"},            {MenuLangId::Azerbaijani, "Təmiz"},            {MenuLangId::Nepali, "सफा"},            {MenuLangId::Sinhala, "පිරිසිදු"},            {MenuLangId::Khmer, "ស្អាត"},            {MenuLangId::Lao, "ສະອາດ"},            {MenuLangId::Armenian, "Մաքուր"},            {MenuLangId::Albanian, "I pastër"},            {MenuLangId::Georgian, "სუფთა"},            {MenuLangId::Bosnian, "Čisto"},            {MenuLangId::Serbian, "Чисто"},            {MenuLangId::Macedonian, "Чисто"},            {MenuLangId::Bulgarian, "Чисто"},            {MenuLangId::Belarusian, "Чыста"},            {MenuLangId::Maltese, "Nadif"},            {MenuLangId::Mongolian, "Цэвэр"},            {MenuLangId::Latvian, "Tīrs"},            {MenuLangId::Lithuanian, "Švarus"},            {MenuLangId::Afrikaans, "Skoon"},            {MenuLangId::Irish, "Glan"},            {MenuLangId::Assamese, "পৰিষ্কাৰ"},            {MenuLangId::Amharic, "ንፁህ"},            {MenuLangId::Estonian, "Puhas"},            {MenuLangId::Kazakh, "Таза"},            {MenuLangId::Catalan, "Net"},            {MenuLangId::Kyrgyz, "Таза"},            {MenuLangId::Slovak, "Čisté"},            {MenuLangId::Slovenian, "Čisto"},            {MenuLangId::Zulu, "Kuhlanzekile"},            {MenuLangId::Basque, "Garbia"},            {MenuLangId::Hebrew, "נקי"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -4354,6 +11354,7 @@
             {MenuLangId::Russian, "1/4"},
             {MenuLangId::ChineseSimplified, "1/4"},
             {MenuLangId::ChineseTraditional, "1/4"},
+            {MenuLangId::ChineseHongKong, "1/4"},
             {MenuLangId::Korean, "1/4"},
             {MenuLangId::Arabic, "1/4"},
             {MenuLangId::Indonesian, "1/4"},
@@ -4369,7 +11370,56 @@
             {MenuLangId::Finnish, "1/4"},
             {MenuLangId::Vietnamese, "1/4"},
             {MenuLangId::Polish, "1/4"},
-            {MenuLangId::Romanian, "1/4"},
+            {MenuLangId::Romanian, "1/4"},            {MenuLangId::Filipino, "1/4"},            {MenuLangId::Swahili, "1/4"},            {MenuLangId::Croatian, "1/4"},            {MenuLangId::Icelandic, "1/4"},            {MenuLangId::Hindi, "1/4"},            {MenuLangId::Bengali, "1/4"},            {MenuLangId::Urdu, "1/4"},            {MenuLangId::Punjabi, "1/4"},            {MenuLangId::Telugu, "1/4"},            {MenuLangId::Persian, "1/4"},            {MenuLangId::Malay, "1/4"},            {MenuLangId::Marathi, "1/4"},            {MenuLangId::Tamil, "1/4"},            {MenuLangId::Gujarati, "1/4"},            {MenuLangId::Kannada, "1/4"},            {MenuLangId::Odia, "1/4"},            {MenuLangId::Malayalam, "1/4"},            {MenuLangId::Burmese, "1/4"},            {MenuLangId::Uzbek, "1/4"},            {MenuLangId::Azerbaijani, "1/4"},            {MenuLangId::Nepali, "1/4"},            {MenuLangId::Sinhala, "1/4"},            {MenuLangId::Khmer, "1/4"},            {MenuLangId::Lao, "1/4"},            {MenuLangId::Armenian, "1/4"},            {MenuLangId::Albanian, "1/4"},            {MenuLangId::Georgian, "1/4"},            {MenuLangId::Bosnian, "1/4"},            {MenuLangId::Serbian, "1/4"},            {MenuLangId::Macedonian, "1/4"},            {MenuLangId::Bulgarian, "1/4"},            {MenuLangId::Belarusian, "1/4"},            {MenuLangId::Maltese, "1/4"},            {MenuLangId::Mongolian, "1/4"},            {MenuLangId::Latvian, "1/4"},            {MenuLangId::Lithuanian, "1/4"},            {MenuLangId::Afrikaans, "1/4"},            {MenuLangId::Irish, "1/4"},            {MenuLangId::Assamese, "1/4"},            {MenuLangId::Amharic, "1/4"},            {MenuLangId::Estonian, "1/4"},            {MenuLangId::Kazakh, "1/4"},            {MenuLangId::Catalan, "1/4"},            {MenuLangId::Kyrgyz, "1/4"},            {MenuLangId::Slovak, "1/4"},            {MenuLangId::Slovenian, "1/4"},            {MenuLangId::Zulu, "1/4"},            {MenuLangId::Basque, "1/4"},            {MenuLangId::Hebrew, "1/4"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -4385,6 +11435,7 @@
             {MenuLangId::Russian, "1/2"},
             {MenuLangId::ChineseSimplified, "1/2"},
             {MenuLangId::ChineseTraditional, "1/2"},
+            {MenuLangId::ChineseHongKong, "1/2"},
             {MenuLangId::Korean, "1/2"},
             {MenuLangId::Arabic, "1/2"},
             {MenuLangId::Indonesian, "1/2"},
@@ -4400,7 +11451,56 @@
             {MenuLangId::Finnish, "1/2"},
             {MenuLangId::Vietnamese, "1/2"},
             {MenuLangId::Polish, "1/2"},
-            {MenuLangId::Romanian, "1/2"},
+            {MenuLangId::Romanian, "1/2"},            {MenuLangId::Filipino, "1/2"},            {MenuLangId::Swahili, "1/2"},            {MenuLangId::Croatian, "1/2"},            {MenuLangId::Icelandic, "1/2"},            {MenuLangId::Hindi, "1/2"},            {MenuLangId::Bengali, "1/2"},            {MenuLangId::Urdu, "1/2"},            {MenuLangId::Punjabi, "1/2"},            {MenuLangId::Telugu, "1/2"},            {MenuLangId::Persian, "1/2"},            {MenuLangId::Malay, "1/2"},            {MenuLangId::Marathi, "1/2"},            {MenuLangId::Tamil, "1/2"},            {MenuLangId::Gujarati, "1/2"},            {MenuLangId::Kannada, "1/2"},            {MenuLangId::Odia, "1/2"},            {MenuLangId::Malayalam, "1/2"},            {MenuLangId::Burmese, "1/2"},            {MenuLangId::Uzbek, "1/2"},            {MenuLangId::Azerbaijani, "1/2"},            {MenuLangId::Nepali, "1/2"},            {MenuLangId::Sinhala, "1/2"},            {MenuLangId::Khmer, "1/2"},            {MenuLangId::Lao, "1/2"},            {MenuLangId::Armenian, "1/2"},            {MenuLangId::Albanian, "1/2"},            {MenuLangId::Georgian, "1/2"},            {MenuLangId::Bosnian, "1/2"},            {MenuLangId::Serbian, "1/2"},            {MenuLangId::Macedonian, "1/2"},            {MenuLangId::Bulgarian, "1/2"},            {MenuLangId::Belarusian, "1/2"},            {MenuLangId::Maltese, "1/2"},            {MenuLangId::Mongolian, "1/2"},            {MenuLangId::Latvian, "1/2"},            {MenuLangId::Lithuanian, "1/2"},            {MenuLangId::Afrikaans, "1/2"},            {MenuLangId::Irish, "1/2"},            {MenuLangId::Assamese, "1/2"},            {MenuLangId::Amharic, "1/2"},            {MenuLangId::Estonian, "1/2"},            {MenuLangId::Kazakh, "1/2"},            {MenuLangId::Catalan, "1/2"},            {MenuLangId::Kyrgyz, "1/2"},            {MenuLangId::Slovak, "1/2"},            {MenuLangId::Slovenian, "1/2"},            {MenuLangId::Zulu, "1/2"},            {MenuLangId::Basque, "1/2"},            {MenuLangId::Hebrew, "1/2"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -4416,6 +11516,7 @@
             {MenuLangId::Russian, "2x"},
             {MenuLangId::ChineseSimplified, "2x"},
             {MenuLangId::ChineseTraditional, "2x"},
+            {MenuLangId::ChineseHongKong, "2x"},
             {MenuLangId::Korean, "2x"},
             {MenuLangId::Arabic, "2x"},
             {MenuLangId::Indonesian, "2x"},
@@ -4431,7 +11532,56 @@
             {MenuLangId::Finnish, "2x"},
             {MenuLangId::Vietnamese, "2x"},
             {MenuLangId::Polish, "2x"},
-            {MenuLangId::Romanian, "2x"},
+            {MenuLangId::Romanian, "2x"},            {MenuLangId::Filipino, "2x"},            {MenuLangId::Swahili, "2x"},            {MenuLangId::Croatian, "2x"},            {MenuLangId::Icelandic, "2x"},            {MenuLangId::Hindi, "2x"},            {MenuLangId::Bengali, "2x"},            {MenuLangId::Urdu, "2x"},            {MenuLangId::Punjabi, "2x"},            {MenuLangId::Telugu, "2x"},            {MenuLangId::Persian, "2x"},            {MenuLangId::Malay, "2x"},            {MenuLangId::Marathi, "2x"},            {MenuLangId::Tamil, "2x"},            {MenuLangId::Gujarati, "2x"},            {MenuLangId::Kannada, "2x"},            {MenuLangId::Odia, "2x"},            {MenuLangId::Malayalam, "2x"},            {MenuLangId::Burmese, "2x"},            {MenuLangId::Uzbek, "2x"},            {MenuLangId::Azerbaijani, "2x"},            {MenuLangId::Nepali, "2x"},            {MenuLangId::Sinhala, "2x"},            {MenuLangId::Khmer, "2x"},            {MenuLangId::Lao, "2x"},            {MenuLangId::Armenian, "2x"},            {MenuLangId::Albanian, "2x"},            {MenuLangId::Georgian, "2x"},            {MenuLangId::Bosnian, "2x"},            {MenuLangId::Serbian, "2x"},            {MenuLangId::Macedonian, "2x"},            {MenuLangId::Bulgarian, "2x"},            {MenuLangId::Belarusian, "2x"},            {MenuLangId::Maltese, "2x"},            {MenuLangId::Mongolian, "2x"},            {MenuLangId::Latvian, "2x"},            {MenuLangId::Lithuanian, "2x"},            {MenuLangId::Afrikaans, "2x"},            {MenuLangId::Irish, "2x"},            {MenuLangId::Assamese, "2x"},            {MenuLangId::Amharic, "2x"},            {MenuLangId::Estonian, "2x"},            {MenuLangId::Kazakh, "2x"},            {MenuLangId::Catalan, "2x"},            {MenuLangId::Kyrgyz, "2x"},            {MenuLangId::Slovak, "2x"},            {MenuLangId::Slovenian, "2x"},            {MenuLangId::Zulu, "2x"},            {MenuLangId::Basque, "2x"},            {MenuLangId::Hebrew, "2x"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -4447,6 +11597,7 @@
             {MenuLangId::Russian, "3x"},
             {MenuLangId::ChineseSimplified, "3x"},
             {MenuLangId::ChineseTraditional, "3x"},
+            {MenuLangId::ChineseHongKong, "3x"},
             {MenuLangId::Korean, "3x"},
             {MenuLangId::Arabic, "3x"},
             {MenuLangId::Indonesian, "3x"},
@@ -4462,7 +11613,56 @@
             {MenuLangId::Finnish, "3x"},
             {MenuLangId::Vietnamese, "3x"},
             {MenuLangId::Polish, "3x"},
-            {MenuLangId::Romanian, "3x"},
+            {MenuLangId::Romanian, "3x"},            {MenuLangId::Filipino, "3x"},            {MenuLangId::Swahili, "3x"},            {MenuLangId::Croatian, "3x"},            {MenuLangId::Icelandic, "3x"},            {MenuLangId::Hindi, "3x"},            {MenuLangId::Bengali, "3x"},            {MenuLangId::Urdu, "3x"},            {MenuLangId::Punjabi, "3x"},            {MenuLangId::Telugu, "3x"},            {MenuLangId::Persian, "3x"},            {MenuLangId::Malay, "3x"},            {MenuLangId::Marathi, "3x"},            {MenuLangId::Tamil, "3x"},            {MenuLangId::Gujarati, "3x"},            {MenuLangId::Kannada, "3x"},            {MenuLangId::Odia, "3x"},            {MenuLangId::Malayalam, "3x"},            {MenuLangId::Burmese, "3x"},            {MenuLangId::Uzbek, "3x"},            {MenuLangId::Azerbaijani, "3x"},            {MenuLangId::Nepali, "3x"},            {MenuLangId::Sinhala, "3x"},            {MenuLangId::Khmer, "3x"},            {MenuLangId::Lao, "3x"},            {MenuLangId::Armenian, "3x"},            {MenuLangId::Albanian, "3x"},            {MenuLangId::Georgian, "3x"},            {MenuLangId::Bosnian, "3x"},            {MenuLangId::Serbian, "3x"},            {MenuLangId::Macedonian, "3x"},            {MenuLangId::Bulgarian, "3x"},            {MenuLangId::Belarusian, "3x"},            {MenuLangId::Maltese, "3x"},            {MenuLangId::Mongolian, "3x"},            {MenuLangId::Latvian, "3x"},            {MenuLangId::Lithuanian, "3x"},            {MenuLangId::Afrikaans, "3x"},            {MenuLangId::Irish, "3x"},            {MenuLangId::Assamese, "3x"},            {MenuLangId::Amharic, "3x"},            {MenuLangId::Estonian, "3x"},            {MenuLangId::Kazakh, "3x"},            {MenuLangId::Catalan, "3x"},            {MenuLangId::Kyrgyz, "3x"},            {MenuLangId::Slovak, "3x"},            {MenuLangId::Slovenian, "3x"},            {MenuLangId::Zulu, "3x"},            {MenuLangId::Basque, "3x"},            {MenuLangId::Hebrew, "3x"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -4478,6 +11678,7 @@
             {MenuLangId::Russian, "MAX"},
             {MenuLangId::ChineseSimplified, "MAX"},
             {MenuLangId::ChineseTraditional, "MAX"},
+            {MenuLangId::ChineseHongKong, "MAX"},
             {MenuLangId::Korean, "MAX"},
             {MenuLangId::Arabic, "MAX"},
             {MenuLangId::Indonesian, "MAX"},
@@ -4493,7 +11694,56 @@
             {MenuLangId::Finnish, "MAX"},
             {MenuLangId::Vietnamese, "MAX"},
             {MenuLangId::Polish, "MAX"},
-            {MenuLangId::Romanian, "MAX"},
+            {MenuLangId::Romanian, "MAX"},            {MenuLangId::Filipino, "MAX"},            {MenuLangId::Swahili, "MAX"},            {MenuLangId::Croatian, "MAX"},            {MenuLangId::Icelandic, "MAX"},            {MenuLangId::Hindi, "MAX"},            {MenuLangId::Bengali, "MAX"},            {MenuLangId::Urdu, "MAX"},            {MenuLangId::Punjabi, "MAX"},            {MenuLangId::Telugu, "MAX"},            {MenuLangId::Persian, "MAX"},            {MenuLangId::Malay, "MAX"},            {MenuLangId::Marathi, "MAX"},            {MenuLangId::Tamil, "MAX"},            {MenuLangId::Gujarati, "MAX"},            {MenuLangId::Kannada, "MAX"},            {MenuLangId::Odia, "MAX"},            {MenuLangId::Malayalam, "MAX"},            {MenuLangId::Burmese, "MAX"},            {MenuLangId::Uzbek, "MAX"},            {MenuLangId::Azerbaijani, "MAX"},            {MenuLangId::Nepali, "MAX"},            {MenuLangId::Sinhala, "MAX"},            {MenuLangId::Khmer, "MAX"},            {MenuLangId::Lao, "MAX"},            {MenuLangId::Armenian, "MAX"},            {MenuLangId::Albanian, "MAX"},            {MenuLangId::Georgian, "MAX"},            {MenuLangId::Bosnian, "MAX"},            {MenuLangId::Serbian, "MAX"},            {MenuLangId::Macedonian, "MAX"},            {MenuLangId::Bulgarian, "MAX"},            {MenuLangId::Belarusian, "MAX"},            {MenuLangId::Maltese, "MAX"},            {MenuLangId::Mongolian, "MAX"},            {MenuLangId::Latvian, "MAX"},            {MenuLangId::Lithuanian, "MAX"},            {MenuLangId::Afrikaans, "MAX"},            {MenuLangId::Irish, "MAX"},            {MenuLangId::Assamese, "MAX"},            {MenuLangId::Amharic, "MAX"},            {MenuLangId::Estonian, "MAX"},            {MenuLangId::Kazakh, "MAX"},            {MenuLangId::Catalan, "MAX"},            {MenuLangId::Kyrgyz, "MAX"},            {MenuLangId::Slovak, "MAX"},            {MenuLangId::Slovenian, "MAX"},            {MenuLangId::Zulu, "MAX"},            {MenuLangId::Basque, "MAX"},            {MenuLangId::Hebrew, "MAX"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -4509,6 +11759,7 @@
             {MenuLangId::Russian, "Настройки путей - melonDS"},
             {MenuLangId::ChineseSimplified, "路径设置 - melonDS"},
             {MenuLangId::ChineseTraditional, "路徑設定 - melonDS"},
+            {MenuLangId::ChineseHongKong, "路徑設定 - melonDS"},
             {MenuLangId::Korean, "경로 설정 - melonDS"},
             {MenuLangId::Arabic, "إعدادات المسارات - melonDS"},
             {MenuLangId::Indonesian, "Pengaturan jalur - melonDS"},
@@ -4524,7 +11775,56 @@
             {MenuLangId::Finnish, "Polkuasetukset - melonDS"},
             {MenuLangId::Vietnamese, "Cài đặt đường dẫn - melonDS"},
             {MenuLangId::Polish, "Ustawienia ścieżek - melonDS"},
-            {MenuLangId::Romanian, "Setări căi - melonDS"},
+            {MenuLangId::Romanian, "Setări căi - melonDS"},            {MenuLangId::Filipino, "mga setting ng path - melonDS"},            {MenuLangId::Swahili, "mipangilio ya njia - melonDS"},            {MenuLangId::Croatian, "postavke putanja - melonDS"},            {MenuLangId::Icelandic, "slóðastillingar - melonDS"},            {MenuLangId::Hindi, "पथ सेटिंग्स - melonDS"},            {MenuLangId::Bengali, "পথ সেটিংস - melonDS"},            {MenuLangId::Urdu, "راستہ ترتیبات - melonDS"},            {MenuLangId::Punjabi, "ਪਾਥ ਸੈਟਿੰਗਾਂ - melonDS"},            {MenuLangId::Telugu, "మార్గ సెట్టింగ్‌లు - melonDS"},            {MenuLangId::Persian, "تنظیمات مسیر - melonDS"},            {MenuLangId::Malay, "Tetapan laluan - melonDS"},            {MenuLangId::Marathi, "मार्ग सेटिंग्ज - melonDS"},            {MenuLangId::Tamil, "பாதை அமைப்புகள் - melonDS"},            {MenuLangId::Gujarati, "પાથ સેટિંગ્સ - melonDS"},            {MenuLangId::Kannada, "ಮಾರ್ಗ ಸೆಟ್ಟಿಂಗ್‌ಗಳು - melonDS"},            {MenuLangId::Odia, "ପଥ ସେଟିଂସ୍ - melonDS"},            {MenuLangId::Malayalam, "പാത ക്രമീകരണങ്ങൾ - melonDS"},            {MenuLangId::Burmese, "လမ်းကြောင်း ဆက်တင်များ - melonDS"},            {MenuLangId::Uzbek, "Yoʻl sozlamalari - melonDS"},            {MenuLangId::Azerbaijani, "Yol ayarları - melonDS"},            {MenuLangId::Nepali, "पथ सेटिङहरू - melonDS"},            {MenuLangId::Sinhala, "මාර්ග සැකසුම් - melonDS"},            {MenuLangId::Khmer, "ការកំណត់ផ្លូវ - melonDS"},            {MenuLangId::Lao, "ການຕັ້ງຄ່າເສັ້ນທາງ - melonDS"},            {MenuLangId::Armenian, "Ուղու կարգավորումներ - melonDS"},            {MenuLangId::Albanian, "Cilësimet e shtegut - melonDS"},            {MenuLangId::Georgian, "გზის პარამეტრები - melonDS"},            {MenuLangId::Bosnian, "Postavke putanja - melonDS"},            {MenuLangId::Serbian, "Подешавања путања - melonDS"},            {MenuLangId::Macedonian, "Поставки на патеки - melonDS"},            {MenuLangId::Bulgarian, "Настройки на пътищата - melonDS"},            {MenuLangId::Belarusian, "Налады шляхоў - melonDS"},            {MenuLangId::Maltese, "Settings tal-mogħdijiet - melonDS"},            {MenuLangId::Mongolian, "Замын тохиргоо - melonDS"},            {MenuLangId::Latvian, "Ceļu iestatījumi - melonDS"},            {MenuLangId::Lithuanian, "Kelių nustatymai - melonDS"},            {MenuLangId::Afrikaans, "Pad-instellings - melonDS"},            {MenuLangId::Irish, "Socruithe conairí - melonDS"},            {MenuLangId::Assamese, "পথ ছেটিংছ - melonDS"},            {MenuLangId::Amharic, "መንገድ ቅንብሮች - melonDS"},            {MenuLangId::Estonian, "Tee seaded - melonDS"},            {MenuLangId::Kazakh, "Жол баптаулар - melonDS"},            {MenuLangId::Catalan, "Camí configuració - melonDS"},            {MenuLangId::Kyrgyz, "Жол жөндөөлөр - melonDS"},            {MenuLangId::Slovak, "Cesta nastavenia - melonDS"},            {MenuLangId::Slovenian, "Pot nastavitve - melonDS"},            {MenuLangId::Zulu, "Indlela izilungiselelo - melonDS"},            {MenuLangId::Basque, "Bidea ezarpenak - melonDS"},            {MenuLangId::Hebrew, "נתיב הגדרות - melonDS"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -4540,6 +11840,7 @@
             {MenuLangId::Russian, "Путь к файлам читов:"},
             {MenuLangId::ChineseSimplified, "作弊码文件路径:"},
             {MenuLangId::ChineseTraditional, "作弊碼檔案路徑:"},
+            {MenuLangId::ChineseHongKong, "作弊碼檔案路徑:"},
             {MenuLangId::Korean, "치트 파일 경로:"},
             {MenuLangId::Arabic, "مسار ملفات الغش:"},
             {MenuLangId::Indonesian, "Path file cheat:"},
@@ -4555,7 +11856,56 @@
             {MenuLangId::Finnish, "Huijaustiedostojen polku:"},
             {MenuLangId::Vietnamese, "Đường dẫn tệp cheat:"},
             {MenuLangId::Polish, "Ścieżka plików kodów:"},
-            {MenuLangId::Romanian, "Cale fișiere cheat:"},
+            {MenuLangId::Romanian, "Cale fișiere cheat:"},            {MenuLangId::Filipino, "Cheat mga talaksan path:"},            {MenuLangId::Swahili, "Cheat faili njia:"},            {MenuLangId::Croatian, "Cheat datoteke putanja:"},            {MenuLangId::Icelandic, "Cheat skrár slóð:"},            {MenuLangId::Hindi, "Cheat फ़ाइलें पथ:"},            {MenuLangId::Bengali, "Cheat ফাইলসমূহ পথ:"},            {MenuLangId::Urdu, "Cheat فائلیں راستہ:"},            {MenuLangId::Punjabi, "Cheat ਫਾਇਲਾਂ ਪਾਥ:"},            {MenuLangId::Telugu, "Cheat ఫైళ్లు మార్గం:"},            {MenuLangId::Persian, "Cheat فایل‌ها مسیر:"},            {MenuLangId::Malay, "Cheat fail laluan:"},            {MenuLangId::Marathi, "Cheat फाइल्स मार्ग:"},            {MenuLangId::Tamil, "Cheat கோப்புகள் பாதை:"},            {MenuLangId::Gujarati, "Cheat ફાઇલો પાથ:"},            {MenuLangId::Kannada, "Cheat ಫೈಲ್‌ಗಳು ಮಾರ್ಗ:"},            {MenuLangId::Odia, "Cheat ଫାଇଲ୍‌ଗୁଡ଼ିକ ପଥ:"},            {MenuLangId::Malayalam, "Cheat ഫയലുകൾ പാത:"},            {MenuLangId::Burmese, "Cheat ဖိုင်များ လမ်းကြောင်း:"},            {MenuLangId::Uzbek, "Cheat fayllar yoʻl:"},            {MenuLangId::Azerbaijani, "Cheat fayllar yol:"},            {MenuLangId::Nepali, "Cheat फाइलहरू पथ:"},            {MenuLangId::Sinhala, "Cheat ගොනු මාර්ගය:"},            {MenuLangId::Khmer, "Cheat ឯកសារ ផ្លូវ:"},            {MenuLangId::Lao, "Cheat ໄຟລ໌ ເສັ້ນທາງ:"},            {MenuLangId::Armenian, "Cheat ֆայլեր ուղի:"},            {MenuLangId::Albanian, "Cheat skedarët shtegu:"},            {MenuLangId::Georgian, "Cheat ფაილები გზა:"},            {MenuLangId::Bosnian, "Cheat datoteke putanja:"},            {MenuLangId::Serbian, "Cheat датотеке путања:"},            {MenuLangId::Macedonian, "Cheat датотеки патека:"},            {MenuLangId::Bulgarian, "Cheat файлове път:"},            {MenuLangId::Belarusian, "Cheat файлы шлях:"},            {MenuLangId::Maltese, "Cheat fajls mogħdija:"},            {MenuLangId::Mongolian, "Cheat файлууд зам:"},            {MenuLangId::Latvian, "Cheat faili ceļš:"},            {MenuLangId::Lithuanian, "Cheat failai kelias:"},            {MenuLangId::Afrikaans, "Cheat lêers pad:"},            {MenuLangId::Irish, "Cheat comhaid conair:"},            {MenuLangId::Assamese, "Cheat ফাইলসমূহ পথ:"},            {MenuLangId::Amharic, "Cheat ፋይሎች መንገድ:"},            {MenuLangId::Estonian, "Cheat failid tee:"},            {MenuLangId::Kazakh, "Cheat файлдар жол:"},            {MenuLangId::Catalan, "Cheat fitxers camí:"},            {MenuLangId::Kyrgyz, "Cheat файлдар жол:"},            {MenuLangId::Slovak, "Cheat súbory cesta:"},            {MenuLangId::Slovenian, "Cheat datoteke pot:"},            {MenuLangId::Zulu, "Cheat amafayela indlela:"},            {MenuLangId::Basque, "Cheat fitxategiak bidea:"},            {MenuLangId::Hebrew, "Cheat קבצים נתיב:"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -4571,6 +11921,7 @@
             {MenuLangId::Russian, "Путь сохранений состояния:"},
             {MenuLangId::ChineseSimplified, "即时存档路径:"},
             {MenuLangId::ChineseTraditional, "即時存檔路徑:"},
+            {MenuLangId::ChineseHongKong, "即時存檔路徑:"},
             {MenuLangId::Korean, "상태 저장 경로:"},
             {MenuLangId::Arabic, "مسار Savestates:"},
             {MenuLangId::Indonesian, "Path savestates:"},
@@ -4586,7 +11937,56 @@
             {MenuLangId::Finnish, "Savestates-polku:"},
             {MenuLangId::Vietnamese, "Đường dẫn savestates:"},
             {MenuLangId::Polish, "Ścieżka savestates:"},
-            {MenuLangId::Romanian, "Cale savestates:"},
+            {MenuLangId::Romanian, "Cale savestates:"},            {MenuLangId::Filipino, "Savestates path:"},            {MenuLangId::Swahili, "Savestates njia:"},            {MenuLangId::Croatian, "Savestates putanja:"},            {MenuLangId::Icelandic, "Savestates slóð:"},            {MenuLangId::Hindi, "Savestates पथ:"},            {MenuLangId::Bengali, "Savestates পথ:"},            {MenuLangId::Urdu, "Savestates راستہ:"},            {MenuLangId::Punjabi, "Savestates ਪਾਥ:"},            {MenuLangId::Telugu, "Savestates మార్గం:"},            {MenuLangId::Persian, "Savestates مسیر:"},            {MenuLangId::Malay, "Savestates laluan:"},            {MenuLangId::Marathi, "Savestates मार्ग:"},            {MenuLangId::Tamil, "Savestates பாதை:"},            {MenuLangId::Gujarati, "Savestates પાથ:"},            {MenuLangId::Kannada, "Savestates ಮಾರ್ಗ:"},            {MenuLangId::Odia, "Savestates ପଥ:"},            {MenuLangId::Malayalam, "Savestates പാത:"},            {MenuLangId::Burmese, "Savestates လမ်းကြောင်း:"},            {MenuLangId::Uzbek, "Savestates yoʻl:"},            {MenuLangId::Azerbaijani, "Savestates yol:"},            {MenuLangId::Nepali, "Savestates पथ:"},            {MenuLangId::Sinhala, "Savestates මාර්ගය:"},            {MenuLangId::Khmer, "Savestates ផ្លូវ:"},            {MenuLangId::Lao, "Savestates ເສັ້ນທາງ:"},            {MenuLangId::Armenian, "Savestates ուղի:"},            {MenuLangId::Albanian, "Savestates shtegu:"},            {MenuLangId::Georgian, "Savestates გზა:"},            {MenuLangId::Bosnian, "Savestates putanja:"},            {MenuLangId::Serbian, "Savestates путања:"},            {MenuLangId::Macedonian, "Savestates патека:"},            {MenuLangId::Bulgarian, "Savestates път:"},            {MenuLangId::Belarusian, "Savestates шлях:"},            {MenuLangId::Maltese, "Savestates mogħdija:"},            {MenuLangId::Mongolian, "Savestates зам:"},            {MenuLangId::Latvian, "Savestates ceļš:"},            {MenuLangId::Lithuanian, "Savestates kelias:"},            {MenuLangId::Afrikaans, "Savestates pad:"},            {MenuLangId::Irish, "Savestates conair:"},            {MenuLangId::Assamese, "Savestates পথ:"},            {MenuLangId::Amharic, "Savestates መንገድ:"},            {MenuLangId::Estonian, "Savestates tee:"},            {MenuLangId::Kazakh, "Savestates жол:"},            {MenuLangId::Catalan, "Savestates camí:"},            {MenuLangId::Kyrgyz, "Savestates жол:"},            {MenuLangId::Slovak, "Savestates cesta:"},            {MenuLangId::Slovenian, "Savestates pot:"},            {MenuLangId::Zulu, "Savestates indlela:"},            {MenuLangId::Basque, "Savestates bidea:"},            {MenuLangId::Hebrew, "Savestates נתיב:"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -4602,6 +12002,7 @@
             {MenuLangId::Russian, "Путь к сохранениям:"},
             {MenuLangId::ChineseSimplified, "存档路径："},
             {MenuLangId::ChineseTraditional, "存檔路徑："},
+            {MenuLangId::ChineseHongKong, "存檔路徑："},
             {MenuLangId::Korean, "세이브 파일 경로:"},
             {MenuLangId::Arabic, "مسار ملفات الحفظ:"},
             {MenuLangId::Indonesian, "Path file save:"},
@@ -4617,7 +12018,56 @@
             {MenuLangId::Finnish, "Tallennustiedostojen polku:"},
             {MenuLangId::Vietnamese, "Đường dẫn file save:"},
             {MenuLangId::Polish, "Ścieżka zapisów:"},
-            {MenuLangId::Romanian, "Cale fișiere salvare:"},
+            {MenuLangId::Romanian, "Cale fișiere salvare:"},            {MenuLangId::Filipino, "I-i-save mga talaksan path:"},            {MenuLangId::Swahili, "Hifadhi faili njia:"},            {MenuLangId::Croatian, "Spremi datotekas putanja:"},            {MenuLangId::Icelandic, "Vista-skrás slóð:"},            {MenuLangId::Hindi, "सेव फ़ाइलs पथ:"},            {MenuLangId::Bengali, "সেভ ফাইলs পথ:"},            {MenuLangId::Urdu, "سیو فائلs راستہ:"},            {MenuLangId::Punjabi, "ਸੇਵ ਫਾਇਲs ਪਾਥ:"},            {MenuLangId::Telugu, "సేవ్ ఫైల్s మార్గం:"},            {MenuLangId::Persian, "فایل ذخیرهs مسیر:"},            {MenuLangId::Malay, "Fail simpanans laluan:"},            {MenuLangId::Marathi, "सेव्ह फाइलs मार्ग:"},            {MenuLangId::Tamil, "சேமி கோப்புs பாதை:"},            {MenuLangId::Gujarati, "સાચવો ફાઇલs પાથ:"},            {MenuLangId::Kannada, "ಉಳಿಸಿ ಫೈಲ್s ಮಾರ್ಗ:"},            {MenuLangId::Odia, "ସଞ୍ଚୟ କରନ୍ତୁ ଫାଇଲ୍s ପଥ:"},            {MenuLangId::Malayalam, "സേവ് ചെയ്യുക ഫയൽs പാത:"},            {MenuLangId::Burmese, "သိမ်းဆည်းပါ ဖိုင်s လမ်းကြောင်း:"},            {MenuLangId::Uzbek, "saqlash fayls yoʻl:"},            {MenuLangId::Azerbaijani, "yadda saxla faylıs yol:"},            {MenuLangId::Nepali, "सेभ गर्नुहोस् फाइलs पथ:"},            {MenuLangId::Sinhala, "සුරකින්න ගොනුවs මාර්ගය:"},            {MenuLangId::Khmer, "ឯកសារ saves ផ្លូវ:"},            {MenuLangId::Lao, "ໄຟລ໌ saves ເສັ້ນທາງ:"},            {MenuLangId::Armenian, "պահել ֆայլs ուղի:"},            {MenuLangId::Albanian, "Ruaj skedarët shtegu:"},            {MenuLangId::Georgian, "შენახვა ფაილიs გზა:"},            {MenuLangId::Bosnian, "Sačuvaj datotekas putanja:"},            {MenuLangId::Serbian, "Сачувај датотекаs путања:"},            {MenuLangId::Macedonian, "Зачувај датотекаs патека:"},            {MenuLangId::Bulgarian, "Запази файлs път:"},            {MenuLangId::Belarusian, "Захаваць файлs шлях:"},            {MenuLangId::Maltese, "Issejvja fajls mogħdija:"},            {MenuLangId::Mongolian, "Хадгалах файлs зам:"},            {MenuLangId::Latvian, "Saglabāt failss ceļš:"},            {MenuLangId::Lithuanian, "Išsaugoti failass kelias:"},            {MenuLangId::Afrikaans, "Stoor-lêers pad:"},            {MenuLangId::Irish, "Sábháil comhaid conair:"},            {MenuLangId::Assamese, "সংৰক্ষণ কৰক ফাইলসমূহ পথ:"},            {MenuLangId::Amharic, "አስቀምጥ ፋይሎች መንገድ:"},            {MenuLangId::Estonian, "Salvesta failid tee:"},            {MenuLangId::Kazakh, "Сақтау файлдар жол:"},            {MenuLangId::Catalan, "Desa fitxers camí:"},            {MenuLangId::Kyrgyz, "Сактоо файлдар жол:"},            {MenuLangId::Slovak, "Uložiť súbory cesta:"},            {MenuLangId::Slovenian, "Shrani datoteke pot:"},            {MenuLangId::Zulu, "Londoloza amafayela indlela:"},            {MenuLangId::Basque, "Gorde fitxategiak bidea:"},            {MenuLangId::Hebrew, "שמור קבצים נתיב:"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -4633,6 +12083,7 @@
             {MenuLangId::Russian, "Оставьте путь пустым, чтобы использовать путь текущей ROM."},
             {MenuLangId::ChineseSimplified, "留空路径以使用当前 ROM 的路径。"},
             {MenuLangId::ChineseTraditional, "留空路徑以使用當前 ROM 的路徑。"},
+            {MenuLangId::ChineseHongKong, "留空路徑以使用當前 ROM 的路徑。"},
             {MenuLangId::Korean, "경로를 비워 두면 현재 ROM의 경로를 사용합니다."},
             {MenuLangId::Arabic, "اترك المسار فارغاً لاستخدام مسار ROM الحالي."},
             {MenuLangId::Indonesian, "Biarkan path kosong untuk menggunakan path ROM saat ini."},
@@ -4648,7 +12099,56 @@
             {MenuLangId::Finnish, "Jätä polku tyhjäksi käyttääksesi nykyisen ROMin polkua."},
             {MenuLangId::Vietnamese, "Để trống đường dẫn để dùng đường dẫn ROM hiện tại."},
             {MenuLangId::Polish, "Pozostaw ścieżkę pustą, aby użyć ścieżki bieżącej ROM."},
-            {MenuLangId::Romanian, "Lasă calea goală pentru a folosi calea ROM-ului curent."},
+            {MenuLangId::Romanian, "Lasă calea goală pentru a folosi calea ROM-ului curent."},            {MenuLangId::Filipino, "Leave a path blank to gamitin ang the current ROM's path."},            {MenuLangId::Swahili, "Leave a njia blank to tumia the current ROM's njia."},            {MenuLangId::Croatian, "Leave a putanja blank to koristi the current ROM's putanja."},            {MenuLangId::Icelandic, "Leave a slóð blank to nota the current ROM's slóð."},            {MenuLangId::Hindi, "Leave a पथ blank to उपयोग करें the current ROM's पथ."},            {MenuLangId::Bengali, "Leave a পথ blank to ব্যবহার করুন the current ROM's পথ."},            {MenuLangId::Urdu, "Leave a راستہ blank to استعمال کریں the current ROM's راستہ."},            {MenuLangId::Punjabi, "Leave a ਪਾਥ blank to ਵਰਤੋ the current ROM's ਪਾਥ."},            {MenuLangId::Telugu, "Leave a మార్గం blank to వాడు the current ROM's మార్గం."},            {MenuLangId::Persian, "Leave a مسیر blank to استفاده از the current ROM's مسیر."},            {MenuLangId::Malay, "Leave a laluan blank to gunakan the current ROM's laluan."},            {MenuLangId::Marathi, "Leave a मार्ग blank to वापरा the current ROM's मार्ग."},            {MenuLangId::Tamil, "Leave a பாதை blank to பயன்படுத்து the current ROM's பாதை."},            {MenuLangId::Gujarati, "Leave a પાથ blank to વાપરો the current ROM's પાથ."},            {MenuLangId::Kannada, "Leave a ಮಾರ್ಗ blank to ಬಳಸಿ the current ROM's ಮಾರ್ಗ."},            {MenuLangId::Odia, "Leave a ପଥ blank to use the current ROM's ପଥ."},            {MenuLangId::Malayalam, "Leave a പാത blank to use the current ROM's പാത."},            {MenuLangId::Burmese, "Leave a လမ်းကြောင်း blank to use the current ROM's လမ်းကြောင်း."},            {MenuLangId::Uzbek, "Leave a yoʻl blank to use the current ROM's yoʻl."},            {MenuLangId::Azerbaijani, "Leave a yol blank to use the current ROM's yol."},            {MenuLangId::Nepali, "Leave a पथ blank to use the current ROM's पथ."},            {MenuLangId::Sinhala, "Leave a මාර්ගය blank to use the current ROM's මාර්ගය."},            {MenuLangId::Khmer, "Leave a ផ្លូវ blank to use the current ROM's ផ្លូវ."},            {MenuLangId::Lao, "Leave a ເສັ້ນທາງ blank to use the current ROM's ເສັ້ນທາງ."},            {MenuLangId::Armenian, "Leave a ուղի blank to use the current ROM's ուղի."},            {MenuLangId::Albanian, "Leave a shtegu blank to use the current ROM's shtegu."},            {MenuLangId::Georgian, "Leave a გზა blank to use the current ROM's გზა."},            {MenuLangId::Bosnian, "Leave a putanja blank to use the current ROM's putanja."},            {MenuLangId::Serbian, "Leave a путања blank to use the current ROM's путања."},            {MenuLangId::Macedonian, "Leave a патека blank to use the current ROM's патека."},            {MenuLangId::Bulgarian, "Leave a път blank to use the current ROM's път."},            {MenuLangId::Belarusian, "Leave a шлях blank to use the current ROM's шлях."},            {MenuLangId::Maltese, "Leave a mogħdija blank to use the current ROM's mogħdija."},            {MenuLangId::Mongolian, "Leave a зам blank to use the current ROM's зам."},            {MenuLangId::Latvian, "Leave a ceļš blank to use the current ROM's ceļš."},            {MenuLangId::Lithuanian, "Leave a kelias blank to use the current ROM's kelias."},            {MenuLangId::Afrikaans, "Leave a pad blank to use the current ROM's pad."},            {MenuLangId::Irish, "Leave a conair blank to use the current ROM's conair."},            {MenuLangId::Assamese, "Leave a পথ blank to use the current ROM's পথ."},            {MenuLangId::Amharic, "Leave a መንገድ blank to use the current ROM's መንገድ."},            {MenuLangId::Estonian, "Leave a tee blank to use the current ROM's tee."},            {MenuLangId::Kazakh, "Leave a жол blank to use the current ROM's жол."},            {MenuLangId::Catalan, "Leave a camí blank to use the current ROM's camí."},            {MenuLangId::Kyrgyz, "Leave a жол blank to use the current ROM's жол."},            {MenuLangId::Slovak, "Leave a cesta blank to use the current ROM's cesta."},            {MenuLangId::Slovenian, "Leave a pot blank to use the current ROM's pot."},            {MenuLangId::Zulu, "Leave a indlela blank to use the current ROM's indlela."},            {MenuLangId::Basque, "Leave a bidea blank to use the current ROM's bidea."},            {MenuLangId::Hebrew, "Leave a נתיב blank to use the current ROM's נתיב."},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
 
@@ -4666,6 +12166,7 @@
             {MenuLangId::Russian, "Редактор чит-кодов - melonDS"},
             {MenuLangId::ChineseSimplified, "金手指代码编辑器 - melonDS"},
             {MenuLangId::ChineseTraditional, "金手指程式碼編輯器 - melonDS"},
+            {MenuLangId::ChineseHongKong, "金手指程式碼編輯器 - melonDS"},
             {MenuLangId::Korean, "치트 코드 편집기 - melonDS"},
             {MenuLangId::Arabic, "محرر أكواد الغش - melonDS"},
             {MenuLangId::Indonesian, "Editor kode curang - melonDS"},
@@ -4681,7 +12182,56 @@
             {MenuLangId::Finnish, "Huijauskoodieditori - melonDS"},
             {MenuLangId::Vietnamese, "Trình sửa mã cheat - melonDS"},
             {MenuLangId::Polish, "Edytor kodów oszustw - melonDS"},
-            {MenuLangId::Romanian, "Editor coduri cheat - melonDS"},
+            {MenuLangId::Romanian, "Editor coduri cheat - melonDS"},            {MenuLangId::Filipino, "Cheat code editor - melonDS"},            {MenuLangId::Swahili, "Cheat code editor - melonDS"},            {MenuLangId::Croatian, "Editor cheat kodova - melonDS"},            {MenuLangId::Icelandic, "Cheat-kóðaritill - melonDS"},            {MenuLangId::Hindi, "चीट कोड संपादक - melonDS"},            {MenuLangId::Bengali, "চিট কোড সম্পাদক - melonDS"},            {MenuLangId::Urdu, "چیٹ کوڈ ایڈیٹر - melonDS"},            {MenuLangId::Punjabi, "ਚੀਟ ਕੋਡ ਐਡੀਟਰ - melonDS"},            {MenuLangId::Telugu, "చీట్ కోడ్ ఎడిటర్ - melonDS"},            {MenuLangId::Persian, "ویرایشگر کد cheat - melonDS"},            {MenuLangId::Malay, "Editor kod cheat - melonDS"},            {MenuLangId::Marathi, "चीट कोड संपादक - melonDS"},            {MenuLangId::Tamil, "cheat code editor - melonDS"},            {MenuLangId::Gujarati, "cheat code editor - melonDS"},            {MenuLangId::Kannada, "cheat code editor - melonDS"},            {MenuLangId::Odia, "ଓଡ଼ିଆ: Cheat code editor - melonDS"},            {MenuLangId::Malayalam, "cheat code editor - melonDS"},            {MenuLangId::Burmese, "cheat code editor - melonDS"},            {MenuLangId::Uzbek, "cheat code editor - melonDS"},            {MenuLangId::Azerbaijani, "cheat code editor - melonDS"},            {MenuLangId::Nepali, "cheat code editor - melonDS"},            {MenuLangId::Sinhala, "cheat code editor - melonDS"},            {MenuLangId::Khmer, "cheat code editor - melonDS"},            {MenuLangId::Lao, "cheat code editor - melonDS"},            {MenuLangId::Armenian, "cheat code editor - melonDS"},            {MenuLangId::Albanian, "cheat code editor - melonDS"},            {MenuLangId::Georgian, "cheat code editor - melonDS"},            {MenuLangId::Bosnian, "cheat code editor - melonDS"},            {MenuLangId::Serbian, "cheat code editor - melonDS"},            {MenuLangId::Macedonian, "cheat code editor - melonDS"},            {MenuLangId::Bulgarian, "cheat code editor - melonDS"},            {MenuLangId::Belarusian, "cheat code editor - melonDS"},            {MenuLangId::Maltese, "cheat code editor - melonDS"},            {MenuLangId::Mongolian, "cheat code editor - melonDS"},            {MenuLangId::Latvian, "cheat code editor - melonDS"},            {MenuLangId::Lithuanian, "cheat code editor - melonDS"},            {MenuLangId::Afrikaans, "cheat code editor - melonDS"},            {MenuLangId::Irish, "Gaeilge: Cheat code editor - melonDS"},            {MenuLangId::Assamese, "cheat code editor - melonDS"},            {MenuLangId::Amharic, "አማርኛ: Cheat code editor - melonDS"},            {MenuLangId::Estonian, "Eesti: Cheat code editor - melonDS"},            {MenuLangId::Kazakh, "Қазақша: Cheat code editor - melonDS"},            {MenuLangId::Catalan, "Català: Cheat code editor - melonDS"},            {MenuLangId::Kyrgyz, "Кыргызча: Cheat code editor - melonDS"},            {MenuLangId::Slovak, "Slovenčina: Cheat code editor - melonDS"},            {MenuLangId::Slovenian, "Slovenščina: Cheat code editor - melonDS"},            {MenuLangId::Zulu, "isiZulu: Cheat code editor - melonDS"},            {MenuLangId::Basque, "Euskara: Cheat code editor - melonDS"},            {MenuLangId::Hebrew, "עברית: Cheat code editor - melonDS"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -4697,6 +12247,7 @@
             {MenuLangId::Russian, "Новая категория"},
             {MenuLangId::ChineseSimplified, "新类别"},
             {MenuLangId::ChineseTraditional, "新類別"},
+            {MenuLangId::ChineseHongKong, "新類別"},
             {MenuLangId::Korean, "새 카테고리"},
             {MenuLangId::Arabic, "فئة جديدة"},
             {MenuLangId::Indonesian, "Kategori baru"},
@@ -4712,7 +12263,56 @@
             {MenuLangId::Finnish, "Uusi kategoria"},
             {MenuLangId::Vietnamese, "Danh mục mới"},
             {MenuLangId::Polish, "Nowa kategoria"},
-            {MenuLangId::Romanian, "Categorie nouă"},
+            {MenuLangId::Romanian, "Categorie nouă"},            {MenuLangId::Filipino, "New category"},            {MenuLangId::Swahili, "New category"},            {MenuLangId::Croatian, "Nova kategorija"},            {MenuLangId::Icelandic, "Nýr flokkur"},            {MenuLangId::Hindi, "नई श्रेणी"},            {MenuLangId::Bengali, "নতুন বিভাগ"},            {MenuLangId::Urdu, "نئی کیٹیگری"},            {MenuLangId::Punjabi, "ਨਵੀਂ ਸ਼੍ਰੇਣੀ"},            {MenuLangId::Telugu, "కొత్త వర్గం"},            {MenuLangId::Persian, "دسته جدید"},            {MenuLangId::Malay, "Kategori baharu"},            {MenuLangId::Marathi, "नवीन श्रेणी"},            {MenuLangId::Tamil, "புதிய வகை"},            {MenuLangId::Gujarati, "નવી કેટેગરી"},            {MenuLangId::Kannada, "ಹೊಸ ವರ್ಗ"},            {MenuLangId::Odia, "ନୂଆ ବର୍ଗ"},            {MenuLangId::Malayalam, "പുതിയ വിഭാഗം"},            {MenuLangId::Burmese, "category အသစ်"},            {MenuLangId::Uzbek, "Yangi kategoriya"},            {MenuLangId::Azerbaijani, "Yeni kateqoriya"},            {MenuLangId::Nepali, "नयाँ category"},            {MenuLangId::Sinhala, "නව category"},            {MenuLangId::Khmer, "category ថ្មី"},            {MenuLangId::Lao, "category ໃໝ່"},            {MenuLangId::Armenian, "Նոր category"},            {MenuLangId::Albanian, "Kategori e re"},            {MenuLangId::Georgian, "ახალი category"},            {MenuLangId::Bosnian, "Nova category"},            {MenuLangId::Serbian, "Нова category"},            {MenuLangId::Macedonian, "Нова category"},            {MenuLangId::Bulgarian, "Нова category"},            {MenuLangId::Belarusian, "Новая category"},            {MenuLangId::Maltese, "category ġdida"},            {MenuLangId::Mongolian, "Шинэ category"},            {MenuLangId::Latvian, "Jauna category"},            {MenuLangId::Lithuanian, "Nauja category"},            {MenuLangId::Afrikaans, "Nuwe category"},            {MenuLangId::Irish, "Catagóir nua"},            {MenuLangId::Assamese, "নতুন category"},            {MenuLangId::Amharic, "አዲስ ምድብ"},            {MenuLangId::Estonian, "uus kategooria"},            {MenuLangId::Kazakh, "жаңа санат"},            {MenuLangId::Catalan, "nova categoria"},            {MenuLangId::Kyrgyz, "жаңы категория"},            {MenuLangId::Slovak, "nová kategória"},            {MenuLangId::Slovenian, "nova kategorija"},            {MenuLangId::Zulu, "isigaba esisha"},            {MenuLangId::Basque, "kategoria berria"},            {MenuLangId::Hebrew, "קטגוריה חדשה"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -4728,6 +12328,7 @@
             {MenuLangId::Russian, "Новый AR-код"},
             {MenuLangId::ChineseSimplified, "新建 AR 代码"},
             {MenuLangId::ChineseTraditional, "新建 AR 程式碼"},
+            {MenuLangId::ChineseHongKong, "新建 AR 程式碼"},
             {MenuLangId::Korean, "새 AR 코드"},
             {MenuLangId::Arabic, "كود AR جديد"},
             {MenuLangId::Indonesian, "Kode AR baru"},
@@ -4743,7 +12344,56 @@
             {MenuLangId::Finnish, "Uusi AR-koodi"},
             {MenuLangId::Vietnamese, "Mã AR mới"},
             {MenuLangId::Polish, "Nowy kod AR"},
-            {MenuLangId::Romanian, "Cod AR nou"},
+            {MenuLangId::Romanian, "Cod AR nou"},            {MenuLangId::Filipino, "New AR code"},            {MenuLangId::Swahili, "New AR code"},            {MenuLangId::Croatian, "Novi AR kod"},            {MenuLangId::Icelandic, "Nýr AR-kóði"},            {MenuLangId::Hindi, "नया AR कोड"},            {MenuLangId::Bengali, "নতুন AR কোড"},            {MenuLangId::Urdu, "نیا AR کوڈ"},            {MenuLangId::Punjabi, "ਨਵਾਂ AR ਕੋਡ"},            {MenuLangId::Telugu, "కొత్త AR కోడ్"},            {MenuLangId::Persian, "کد AR جدید"},            {MenuLangId::Malay, "Kod AR baharu"},            {MenuLangId::Marathi, "नवीन AR कोड"},            {MenuLangId::Tamil, "புதிய AR code"},            {MenuLangId::Gujarati, "નવો AR code"},            {MenuLangId::Kannada, "ಹೊಸ AR code"},            {MenuLangId::Odia, "ଓଡ଼ିଆ: New AR code"},            {MenuLangId::Malayalam, "പുതിയ AR code"},            {MenuLangId::Burmese, "AR code အသစ်"},            {MenuLangId::Uzbek, "Yangi AR code"},            {MenuLangId::Azerbaijani, "Yeni AR code"},            {MenuLangId::Nepali, "नयाँ AR code"},            {MenuLangId::Sinhala, "නව AR code"},            {MenuLangId::Khmer, "AR code ថ្មី"},            {MenuLangId::Lao, "AR code ໃໝ່"},            {MenuLangId::Armenian, "Նոր AR code"},            {MenuLangId::Albanian, "AR code i ri"},            {MenuLangId::Georgian, "ახალი AR code"},            {MenuLangId::Bosnian, "Novi AR code"},            {MenuLangId::Serbian, "Нови AR code"},            {MenuLangId::Macedonian, "Нов AR code"},            {MenuLangId::Bulgarian, "Нов AR code"},            {MenuLangId::Belarusian, "Новы AR code"},            {MenuLangId::Maltese, "AR code ġdid"},            {MenuLangId::Mongolian, "Шинэ AR code"},            {MenuLangId::Latvian, "Jauns AR code"},            {MenuLangId::Lithuanian, "Naujas AR code"},            {MenuLangId::Afrikaans, "Nuwe AR code"},            {MenuLangId::Irish, "Gaeilge: New AR code"},            {MenuLangId::Assamese, "নতুন AR code"},            {MenuLangId::Amharic, "አማርኛ: New AR code"},            {MenuLangId::Estonian, "Eesti: New AR code"},            {MenuLangId::Kazakh, "Қазақша: New AR code"},            {MenuLangId::Catalan, "Català: New AR code"},            {MenuLangId::Kyrgyz, "Кыргызча: New AR code"},            {MenuLangId::Slovak, "Slovenčina: New AR code"},            {MenuLangId::Slovenian, "Slovenščina: New AR code"},            {MenuLangId::Zulu, "isiZulu: New AR code"},            {MenuLangId::Basque, "Euskara: New AR code"},            {MenuLangId::Hebrew, "עברית: New AR code"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -4759,6 +12409,7 @@
             {MenuLangId::Russian, "Импорт..."},
             {MenuLangId::ChineseSimplified, "导入..."},
             {MenuLangId::ChineseTraditional, "匯入..."},
+            {MenuLangId::ChineseHongKong, "匯入..."},
             {MenuLangId::Korean, "가져오기..."},
             {MenuLangId::Arabic, "استيراد..."},
             {MenuLangId::Indonesian, "Impor..."},
@@ -4774,7 +12425,56 @@
             {MenuLangId::Finnish, "Tuo..."},
             {MenuLangId::Vietnamese, "Nhập..."},
             {MenuLangId::Polish, "Importuj..."},
-            {MenuLangId::Romanian, "Importă..."},
+            {MenuLangId::Romanian, "Importă..."},            {MenuLangId::Filipino, "Import..."},            {MenuLangId::Swahili, "Import..."},            {MenuLangId::Croatian, "Uvezi..."},            {MenuLangId::Icelandic, "Flytja inn..."},            {MenuLangId::Hindi, "आयात करें..."},            {MenuLangId::Bengali, "আমদানি করুন..."},            {MenuLangId::Urdu, "درآمد کریں..."},            {MenuLangId::Punjabi, "ਆਯਾਤ ਕਰੋ..."},            {MenuLangId::Telugu, "దిగుమతి చేయి..."},            {MenuLangId::Persian, "وارد کردن..."},            {MenuLangId::Malay, "Import..."},            {MenuLangId::Marathi, "आयात करा..."},            {MenuLangId::Tamil, "இறக்குமதி..."},            {MenuLangId::Gujarati, "આયાત કરો..."},            {MenuLangId::Kannada, "ಆಮದು..."},            {MenuLangId::Odia, "ଓଡ଼ିଆ: Import..."},            {MenuLangId::Malayalam, "ഇറക്കുമതി..."},            {MenuLangId::Burmese, "တင်သွင်း..."},            {MenuLangId::Uzbek, "Import..."},            {MenuLangId::Azerbaijani, "Import..."},            {MenuLangId::Nepali, "आयात..."},            {MenuLangId::Sinhala, "ආයාත..."},            {MenuLangId::Khmer, "នាំចូល..."},            {MenuLangId::Lao, "ນຳເຂົ້າ..."},            {MenuLangId::Armenian, "Ներմուծել..."},            {MenuLangId::Albanian, "Importo..."},            {MenuLangId::Georgian, "იმპორტი..."},            {MenuLangId::Bosnian, "Uvezi..."},            {MenuLangId::Serbian, "Увези..."},            {MenuLangId::Macedonian, "Увези..."},            {MenuLangId::Bulgarian, "Импортирай..."},            {MenuLangId::Belarusian, "Імпартаваць..."},            {MenuLangId::Maltese, "Importa..."},            {MenuLangId::Mongolian, "Импортлох..."},            {MenuLangId::Latvian, "Importēt..."},            {MenuLangId::Lithuanian, "Importuoti..."},            {MenuLangId::Afrikaans, "Voer in..."},            {MenuLangId::Irish, "Gaeilge: Import..."},            {MenuLangId::Assamese, "আমদানি কৰক..."},            {MenuLangId::Amharic, "አማርኛ: Import..."},            {MenuLangId::Estonian, "Eesti: Import..."},            {MenuLangId::Kazakh, "Қазақша: Import..."},            {MenuLangId::Catalan, "Català: Import..."},            {MenuLangId::Kyrgyz, "Кыргызча: Import..."},            {MenuLangId::Slovak, "Slovenčina: Import..."},            {MenuLangId::Slovenian, "Slovenščina: Import..."},            {MenuLangId::Zulu, "isiZulu: Import..."},            {MenuLangId::Basque, "Euskara: Import..."},            {MenuLangId::Hebrew, "עברית: Import..."},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -4790,6 +12490,7 @@
             {MenuLangId::Russian, "Отменить редактирование"},
             {MenuLangId::ChineseSimplified, "取消编辑"},
             {MenuLangId::ChineseTraditional, "取消編輯"},
+            {MenuLangId::ChineseHongKong, "取消編輯"},
             {MenuLangId::Korean, "편집 취소"},
             {MenuLangId::Arabic, "إلغاء التحرير"},
             {MenuLangId::Indonesian, "Batalkan edit"},
@@ -4805,7 +12506,56 @@
             {MenuLangId::Finnish, "Peru muokkaus"},
             {MenuLangId::Vietnamese, "Hủy chỉnh sửa"},
             {MenuLangId::Polish, "Anuluj edycję"},
-            {MenuLangId::Romanian, "Anulează editarea"},
+            {MenuLangId::Romanian, "Anulează editarea"},            {MenuLangId::Filipino, "Kanselahin edit"},            {MenuLangId::Swahili, "Ghairi edit"},            {MenuLangId::Croatian, "Odustani edit"},            {MenuLangId::Icelandic, "Hætta við edit"},            {MenuLangId::Hindi, "रद्द करें edit"},            {MenuLangId::Bengali, "বাতিল করুন edit"},            {MenuLangId::Urdu, "منسوخ کریں edit"},            {MenuLangId::Punjabi, "ਰੱਦ ਕਰੋ edit"},            {MenuLangId::Telugu, "రద్దు చేయి edit"},            {MenuLangId::Persian, "لغو edit"},            {MenuLangId::Malay, "Batal edit"},            {MenuLangId::Marathi, "रद्द करा edit"},            {MenuLangId::Tamil, "ரத்து செய் edit"},            {MenuLangId::Gujarati, "રદ કરો edit"},            {MenuLangId::Kannada, "ರದ್ದುಮಾಡಿ edit"},            {MenuLangId::Odia, "ବାତିଲ କରନ୍ତୁ edit"},            {MenuLangId::Malayalam, "റദ്ദാക്കുക edit"},            {MenuLangId::Burmese, "ပယ်ဖျက်ပါ edit"},            {MenuLangId::Uzbek, "Bekor qilish edit"},            {MenuLangId::Azerbaijani, "Ləğv et edit"},            {MenuLangId::Nepali, "रद्द गर्नुहोस् edit"},            {MenuLangId::Sinhala, "අවලංගු කරන්න edit"},            {MenuLangId::Khmer, "បោះបង់ edit"},            {MenuLangId::Lao, "ຍົກເລີກ edit"},            {MenuLangId::Armenian, "Չեղարկել edit"},            {MenuLangId::Albanian, "Anulo edit"},            {MenuLangId::Georgian, "გაუქმება edit"},            {MenuLangId::Bosnian, "Otkaži edit"},            {MenuLangId::Serbian, "Откажи edit"},            {MenuLangId::Macedonian, "Откажи edit"},            {MenuLangId::Bulgarian, "Отказ edit"},            {MenuLangId::Belarusian, "Скасаваць edit"},            {MenuLangId::Maltese, "Ikkanċella edit"},            {MenuLangId::Mongolian, "Цуцлах edit"},            {MenuLangId::Latvian, "Atcelt edit"},            {MenuLangId::Lithuanian, "Atšaukti edit"},            {MenuLangId::Afrikaans, "Kanselleer edit"},            {MenuLangId::Irish, "Cealaigh edit"},            {MenuLangId::Assamese, "বাতিল কৰক edit"},            {MenuLangId::Amharic, "ሰርዝ edit"},            {MenuLangId::Estonian, "Tühista edit"},            {MenuLangId::Kazakh, "Болдырмау edit"},            {MenuLangId::Catalan, "Cancel·la edit"},            {MenuLangId::Kyrgyz, "Жокко чыгаруу edit"},            {MenuLangId::Slovak, "Zrušiť edit"},            {MenuLangId::Slovenian, "Prekliči edit"},            {MenuLangId::Zulu, "Khansela edit"},            {MenuLangId::Basque, "Utzi edit"},            {MenuLangId::Hebrew, "ביטול edit"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -4821,6 +12571,7 @@
             {MenuLangId::Russian, "Удалить"},
             {MenuLangId::ChineseSimplified, "删除"},
             {MenuLangId::ChineseTraditional, "刪除"},
+            {MenuLangId::ChineseHongKong, "刪除"},
             {MenuLangId::Korean, "삭제"},
             {MenuLangId::Arabic, "حذف"},
             {MenuLangId::Indonesian, "Hapus"},
@@ -4836,7 +12587,56 @@
             {MenuLangId::Finnish, "Poista"},
             {MenuLangId::Vietnamese, "Xóa"},
             {MenuLangId::Polish, "Usuń"},
-            {MenuLangId::Romanian, "Șterge"},
+            {MenuLangId::Romanian, "Șterge"},            {MenuLangId::Filipino, "Burahin"},            {MenuLangId::Swahili, "Futa"},            {MenuLangId::Croatian, "Izbriši"},            {MenuLangId::Icelandic, "Eyða"},            {MenuLangId::Hindi, "हटाएँ"},            {MenuLangId::Bengali, "মুছুন"},            {MenuLangId::Urdu, "حذف کریں"},            {MenuLangId::Punjabi, "ਮਿਟਾਓ"},            {MenuLangId::Telugu, "తొలగించు"},            {MenuLangId::Persian, "حذف"},            {MenuLangId::Malay, "Padam"},            {MenuLangId::Marathi, "हटवा"},            {MenuLangId::Tamil, "நீக்கு"},            {MenuLangId::Gujarati, "કાઢી નાખો"},            {MenuLangId::Kannada, "ಅಳಿಸಿ"},            {MenuLangId::Odia, "ମେଛନ୍ତୁ"},            {MenuLangId::Malayalam, "ഇല്ലാതാക്കുക"},            {MenuLangId::Burmese, "ဖျက်ပါ"},            {MenuLangId::Uzbek, "Oʻchirish"},            {MenuLangId::Azerbaijani, "Sil"},            {MenuLangId::Nepali, "मेटाउनुहोस्"},            {MenuLangId::Sinhala, "මකන්න"},            {MenuLangId::Khmer, "លុប"},            {MenuLangId::Lao, "ລຶບ"},            {MenuLangId::Armenian, "Ջնջել"},            {MenuLangId::Albanian, "Fshi"},            {MenuLangId::Georgian, "წაშლა"},            {MenuLangId::Bosnian, "Izbriši"},            {MenuLangId::Serbian, "Обриши"},            {MenuLangId::Macedonian, "Избриши"},            {MenuLangId::Bulgarian, "Изтрий"},            {MenuLangId::Belarusian, "Выдаліць"},            {MenuLangId::Maltese, "Ħassar"},            {MenuLangId::Mongolian, "Устгах"},            {MenuLangId::Latvian, "Dzēst"},            {MenuLangId::Lithuanian, "Ištrinti"},            {MenuLangId::Afrikaans, "Vee uit"},            {MenuLangId::Irish, "Scrios"},            {MenuLangId::Assamese, "মচি পেলাওক"},            {MenuLangId::Amharic, "ሰርዝ"},            {MenuLangId::Estonian, "Kustuta"},            {MenuLangId::Kazakh, "Жою"},            {MenuLangId::Catalan, "Suprimeix"},            {MenuLangId::Kyrgyz, "Жок кылуу"},            {MenuLangId::Slovak, "Odstrániť"},            {MenuLangId::Slovenian, "Izbriši"},            {MenuLangId::Zulu, "Susa"},            {MenuLangId::Basque, "Ezabatu"},            {MenuLangId::Hebrew, "מחק"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -4852,6 +12652,7 @@
             {MenuLangId::Russian, "Имя:"},
             {MenuLangId::ChineseSimplified, "名称:"},
             {MenuLangId::ChineseTraditional, "名稱:"},
+            {MenuLangId::ChineseHongKong, "名稱:"},
             {MenuLangId::Korean, "이름:"},
             {MenuLangId::Arabic, "الاسم:"},
             {MenuLangId::Indonesian, "Nama:"},
@@ -4867,7 +12668,56 @@
             {MenuLangId::Finnish, "Nimi:"},
             {MenuLangId::Vietnamese, "Tên:"},
             {MenuLangId::Polish, "Nazwa:"},
-            {MenuLangId::Romanian, "Nume:"},
+            {MenuLangId::Romanian, "Nume:"},            {MenuLangId::Filipino, "Pangalan:"},            {MenuLangId::Swahili, "Jina:"},            {MenuLangId::Croatian, "Naziv:"},            {MenuLangId::Icelandic, "Heiti:"},            {MenuLangId::Hindi, "नाम:"},            {MenuLangId::Bengali, "নাম:"},            {MenuLangId::Urdu, "نام:"},            {MenuLangId::Punjabi, "ਨਾਂ:"},            {MenuLangId::Telugu, "పేరు:"},            {MenuLangId::Persian, "نام:"},            {MenuLangId::Malay, "Nama:"},            {MenuLangId::Marathi, "नाव:"},            {MenuLangId::Tamil, "பெயர்:"},            {MenuLangId::Gujarati, "નામ:"},            {MenuLangId::Kannada, "ಹೆಸರು:"},            {MenuLangId::Odia, "ନାମ:"},            {MenuLangId::Malayalam, "പേര്:"},            {MenuLangId::Burmese, "အမည်:"},            {MenuLangId::Uzbek, "Nom:"},            {MenuLangId::Azerbaijani, "Ad:"},            {MenuLangId::Nepali, "नाम:"},            {MenuLangId::Sinhala, "නම:"},            {MenuLangId::Khmer, "ឈ្មោះ:"},            {MenuLangId::Lao, "ຊື່:"},            {MenuLangId::Armenian, "Անուն:"},            {MenuLangId::Albanian, "Emri:"},            {MenuLangId::Georgian, "სახელი:"},            {MenuLangId::Bosnian, "Naziv:"},            {MenuLangId::Serbian, "Назив:"},            {MenuLangId::Macedonian, "Име:"},            {MenuLangId::Bulgarian, "Име:"},            {MenuLangId::Belarusian, "Назва:"},            {MenuLangId::Maltese, "Isem:"},            {MenuLangId::Mongolian, "Нэр:"},            {MenuLangId::Latvian, "Nosaukums:"},            {MenuLangId::Lithuanian, "Pavadinimas:"},            {MenuLangId::Afrikaans, "Naam:"},            {MenuLangId::Irish, "Ainm:"},            {MenuLangId::Assamese, "নাম:"},            {MenuLangId::Amharic, "ስም:"},            {MenuLangId::Estonian, "Nimi:"},            {MenuLangId::Kazakh, "Атауы:"},            {MenuLangId::Catalan, "Nom:"},            {MenuLangId::Kyrgyz, "Аты:"},            {MenuLangId::Slovak, "Názov:"},            {MenuLangId::Slovenian, "Ime:"},            {MenuLangId::Zulu, "Igama:"},            {MenuLangId::Basque, "Izena:"},            {MenuLangId::Hebrew, "שם:"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -4883,6 +12733,7 @@
             {MenuLangId::Russian, "Описание:"},
             {MenuLangId::ChineseSimplified, "说明："},
             {MenuLangId::ChineseTraditional, "說明："},
+            {MenuLangId::ChineseHongKong, "說明："},
             {MenuLangId::Korean, "설명:"},
             {MenuLangId::Arabic, "الوصف:"},
             {MenuLangId::Indonesian, "Deskripsi:"},
@@ -4898,7 +12749,56 @@
             {MenuLangId::Finnish, "Kuvaus:"},
             {MenuLangId::Vietnamese, "Mô tả:"},
             {MenuLangId::Polish, "Opis:"},
-            {MenuLangId::Romanian, "Descriere:"},
+            {MenuLangId::Romanian, "Descriere:"},            {MenuLangId::Filipino, "Description:"},            {MenuLangId::Swahili, "Description:"},            {MenuLangId::Croatian, "Opis:"},            {MenuLangId::Icelandic, "Lýsing:"},            {MenuLangId::Hindi, "विवरण:"},            {MenuLangId::Bengali, "বর্ণনা:"},            {MenuLangId::Urdu, "تفصیل:"},            {MenuLangId::Punjabi, "ਵਰਣਨ:"},            {MenuLangId::Telugu, "వివరణ:"},            {MenuLangId::Persian, "توضیح:"},            {MenuLangId::Malay, "Perihalan:"},            {MenuLangId::Marathi, "वर्णन:"},            {MenuLangId::Tamil, "விளக்கம்:"},            {MenuLangId::Gujarati, "વર્ણન:"},            {MenuLangId::Kannada, "ವಿವರಣೆ:"},            {MenuLangId::Odia, "ଓଡ଼ିଆ: Description:"},            {MenuLangId::Malayalam, "വിവരണം:"},            {MenuLangId::Burmese, "ဖော်ပြချက်:"},            {MenuLangId::Uzbek, "Tavsif:"},            {MenuLangId::Azerbaijani, "Təsvir:"},            {MenuLangId::Nepali, "विवरण:"},            {MenuLangId::Sinhala, "විස්තරය:"},            {MenuLangId::Khmer, "ការពិពណ៌នា:"},            {MenuLangId::Lao, "ຄຳອະທິບາຍ:"},            {MenuLangId::Armenian, "Նկարագրություն:"},            {MenuLangId::Albanian, "Përshkrimi:"},            {MenuLangId::Georgian, "აღწერა:"},            {MenuLangId::Bosnian, "Opis:"},            {MenuLangId::Serbian, "Опис:"},            {MenuLangId::Macedonian, "Опис:"},            {MenuLangId::Bulgarian, "Описание:"},            {MenuLangId::Belarusian, "Апісанне:"},            {MenuLangId::Maltese, "Deskrizzjoni:"},            {MenuLangId::Mongolian, "Тайлбар:"},            {MenuLangId::Latvian, "Apraksts:"},            {MenuLangId::Lithuanian, "Aprašas:"},            {MenuLangId::Afrikaans, "Beskrywing:"},            {MenuLangId::Irish, "Cur síos:"},            {MenuLangId::Assamese, "বিৱৰণ:"},            {MenuLangId::Amharic, "መግለጫ:"},            {MenuLangId::Estonian, "Kirjeldus:"},            {MenuLangId::Kazakh, "Сипаттама:"},            {MenuLangId::Catalan, "Descripció:"},            {MenuLangId::Kyrgyz, "Сүрөттөмө:"},            {MenuLangId::Slovak, "Popis:"},            {MenuLangId::Slovenian, "Opis:"},            {MenuLangId::Zulu, "Incazelo:"},            {MenuLangId::Basque, "Deskribapena:"},            {MenuLangId::Hebrew, "תיאור:"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -4914,6 +12814,7 @@
             {MenuLangId::Russian, "Код:"},
             {MenuLangId::ChineseSimplified, "代码："},
             {MenuLangId::ChineseTraditional, "程式碼："},
+            {MenuLangId::ChineseHongKong, "程式碼："},
             {MenuLangId::Korean, "코드:"},
             {MenuLangId::Arabic, "الرمز:"},
             {MenuLangId::Indonesian, "Kode:"},
@@ -4929,7 +12830,56 @@
             {MenuLangId::Finnish, "Koodi:"},
             {MenuLangId::Vietnamese, "Mã:"},
             {MenuLangId::Polish, "Kod:"},
-            {MenuLangId::Romanian, "Cod:"},
+            {MenuLangId::Romanian, "Cod:"},            {MenuLangId::Filipino, "Code:"},            {MenuLangId::Swahili, "Code:"},            {MenuLangId::Croatian, "Kod:"},            {MenuLangId::Icelandic, "Kóði:"},            {MenuLangId::Hindi, "कोड:"},            {MenuLangId::Bengali, "কোড:"},            {MenuLangId::Urdu, "کوڈ:"},            {MenuLangId::Punjabi, "ਕੋਡ:"},            {MenuLangId::Telugu, "కోడ్:"},            {MenuLangId::Persian, "کد:"},            {MenuLangId::Malay, "Kod:"},            {MenuLangId::Marathi, "कोड:"},            {MenuLangId::Tamil, "code:"},            {MenuLangId::Gujarati, "code:"},            {MenuLangId::Kannada, "code:"},            {MenuLangId::Odia, "ଓଡ଼ିଆ: Code:"},            {MenuLangId::Malayalam, "code:"},            {MenuLangId::Burmese, "code:"},            {MenuLangId::Uzbek, "code:"},            {MenuLangId::Azerbaijani, "code:"},            {MenuLangId::Nepali, "code:"},            {MenuLangId::Sinhala, "code:"},            {MenuLangId::Khmer, "code:"},            {MenuLangId::Lao, "code:"},            {MenuLangId::Armenian, "code:"},            {MenuLangId::Albanian, "code:"},            {MenuLangId::Georgian, "code:"},            {MenuLangId::Bosnian, "code:"},            {MenuLangId::Serbian, "code:"},            {MenuLangId::Macedonian, "code:"},            {MenuLangId::Bulgarian, "code:"},            {MenuLangId::Belarusian, "code:"},            {MenuLangId::Maltese, "code:"},            {MenuLangId::Mongolian, "code:"},            {MenuLangId::Latvian, "code:"},            {MenuLangId::Lithuanian, "code:"},            {MenuLangId::Afrikaans, "code:"},            {MenuLangId::Irish, "Gaeilge: Code:"},            {MenuLangId::Assamese, "code:"},            {MenuLangId::Amharic, "አማርኛ: Code:"},            {MenuLangId::Estonian, "Eesti: Code:"},            {MenuLangId::Kazakh, "Қазақша: Code:"},            {MenuLangId::Catalan, "Català: Code:"},            {MenuLangId::Kyrgyz, "Кыргызча: Code:"},            {MenuLangId::Slovak, "Slovenčina: Code:"},            {MenuLangId::Slovenian, "Slovenščina: Code:"},            {MenuLangId::Zulu, "isiZulu: Code:"},            {MenuLangId::Basque, "Euskara: Code:"},            {MenuLangId::Hebrew, "עברית: Code:"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -4945,6 +12895,7 @@
             {MenuLangId::Russian, "Включено"},
             {MenuLangId::ChineseSimplified, "已启用"},
             {MenuLangId::ChineseTraditional, "已啟用"},
+            {MenuLangId::ChineseHongKong, "已啟用"},
             {MenuLangId::Korean, "활성화됨"},
             {MenuLangId::Arabic, "مفعّل"},
             {MenuLangId::Indonesian, "Diaktifkan"},
@@ -4960,7 +12911,56 @@
             {MenuLangId::Finnish, "Käytössä"},
             {MenuLangId::Vietnamese, "Đã bật"},
             {MenuLangId::Polish, "Włączone"},
-            {MenuLangId::Romanian, "Activat"},
+            {MenuLangId::Romanian, "Activat"},            {MenuLangId::Filipino, "Naka-enable"},            {MenuLangId::Swahili, "Imewashwa"},            {MenuLangId::Croatian, "Omogućeno"},            {MenuLangId::Icelandic, "Virkt"},            {MenuLangId::Hindi, "सक्षम"},            {MenuLangId::Bengali, "সক্ষম"},            {MenuLangId::Urdu, "فعال"},            {MenuLangId::Punjabi, "ਚਾਲੂ"},            {MenuLangId::Telugu, "ప్రారంభించబడింది"},            {MenuLangId::Persian, "فعال"},            {MenuLangId::Malay, "Didayakan"},            {MenuLangId::Marathi, "सक्षम"},            {MenuLangId::Tamil, "இயக்கப்பட்டது"},            {MenuLangId::Gujarati, "સક્ષમ"},            {MenuLangId::Kannada, "ಸಕ್ರಿಯ"},            {MenuLangId::Odia, "ସକ୍ରିୟ"},            {MenuLangId::Malayalam, "സജീവം"},            {MenuLangId::Burmese, "ဖွင့်ထားသည်"},            {MenuLangId::Uzbek, "Yoqilgan"},            {MenuLangId::Azerbaijani, "Aktivdir"},            {MenuLangId::Nepali, "सक्षम"},            {MenuLangId::Sinhala, "සක්‍රීය"},            {MenuLangId::Khmer, "បានបើក"},            {MenuLangId::Lao, "ເປີດໃຊ້ແລ້ວ"},            {MenuLangId::Armenian, "Միացված է"},            {MenuLangId::Albanian, "Aktivizuar"},            {MenuLangId::Georgian, "ჩართულია"},            {MenuLangId::Bosnian, "Omogućeno"},            {MenuLangId::Serbian, "Омогућено"},            {MenuLangId::Macedonian, "Овозможено"},            {MenuLangId::Bulgarian, "Активирано"},            {MenuLangId::Belarusian, "Уключана"},            {MenuLangId::Maltese, "Ippermettut"},            {MenuLangId::Mongolian, "Идэвхжсэн"},            {MenuLangId::Latvian, "Iespējots"},            {MenuLangId::Lithuanian, "Įjungta"},            {MenuLangId::Afrikaans, "Geaktiveer"},            {MenuLangId::Irish, "Cumasaithe"},            {MenuLangId::Assamese, "সক্ষম"},            {MenuLangId::Amharic, "ነቅቷል"},            {MenuLangId::Estonian, "Lubatud"},            {MenuLangId::Kazakh, "Қосулы"},            {MenuLangId::Catalan, "Activat"},            {MenuLangId::Kyrgyz, "Иштетилген"},            {MenuLangId::Slovak, "Povolené"},            {MenuLangId::Slovenian, "Omogočeno"},            {MenuLangId::Zulu, "Kuvuliwe"},            {MenuLangId::Basque, "Gaituta"},            {MenuLangId::Hebrew, "מופעל"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -4976,6 +12976,7 @@
             {MenuLangId::Russian, "Разрешить только один активный код"},
             {MenuLangId::ChineseSimplified, "仅允许启用一个代码"},
             {MenuLangId::ChineseTraditional, "僅允許啟用一個程式碼"},
+            {MenuLangId::ChineseHongKong, "僅允許啟用一個程式碼"},
             {MenuLangId::Korean, "활성화 가능한 코드는 하나만"},
             {MenuLangId::Arabic, "السماح بتفعيل رمز واحد فقط"},
             {MenuLangId::Indonesian, "Hanya izinkan satu kode aktif"},
@@ -4991,7 +12992,56 @@
             {MenuLangId::Finnish, "Salli vain yksi koodi käytössä"},
             {MenuLangId::Vietnamese, "Chỉ cho phép một mã được bật"},
             {MenuLangId::Polish, "Zezwól tylko na jeden aktywny kod"},
-            {MenuLangId::Romanian, "Permite doar un cod activ"},
+            {MenuLangId::Romanian, "Permite doar un cod activ"},            {MenuLangId::Filipino, "Only allow one code naka-paganahin"},            {MenuLangId::Swahili, "Only allow one code imewashwa"},            {MenuLangId::Croatian, "Only allow one code omogućeno"},            {MenuLangId::Icelandic, "Only allow one code virkt"},            {MenuLangId::Hindi, "Only allow one code सक्षम"},            {MenuLangId::Bengali, "Only allow one code সক্ষম"},            {MenuLangId::Urdu, "Only allow one code فعال"},            {MenuLangId::Punjabi, "Only allow one code ਚਾਲੂ"},            {MenuLangId::Telugu, "Only allow one code ప్రారంభించబడింది"},            {MenuLangId::Persian, "Only allow one code فعال"},            {MenuLangId::Malay, "Only allow one code didayakan"},            {MenuLangId::Marathi, "Only allow one code सक्षम"},            {MenuLangId::Tamil, "Only allow one code இயக்கப்பட்டது"},            {MenuLangId::Gujarati, "Only allow one code સક્ષમ"},            {MenuLangId::Kannada, "Only allow one code ಸಕ್ರಿಯ"},            {MenuLangId::Odia, "ଓଡ଼ିଆ: Only allow one code enabled"},            {MenuLangId::Malayalam, "മലയാളം: Only allow one code enabled"},            {MenuLangId::Burmese, "မြန်မာ: Only allow one code enabled"},            {MenuLangId::Uzbek, "Oʻzbekcha: Only allow one code enabled"},            {MenuLangId::Azerbaijani, "Azərbaycanca: Only allow one code enabled"},            {MenuLangId::Nepali, "नेपाली: Only allow one code enabled"},            {MenuLangId::Sinhala, "සිංහල: Only allow one code enabled"},            {MenuLangId::Khmer, "ភាសាខ្មែរ: Only allow one code enabled"},            {MenuLangId::Lao, "ລາວ: Only allow one code enabled"},            {MenuLangId::Armenian, "Հայերեն: Only allow one code enabled"},            {MenuLangId::Albanian, "Shqip: Only allow one code enabled"},            {MenuLangId::Georgian, "ქართული: Only allow one code enabled"},            {MenuLangId::Bosnian, "Bosanski: Only allow one code enabled"},            {MenuLangId::Serbian, "Српски: Only allow one code enabled"},            {MenuLangId::Macedonian, "Македонски: Only allow one code enabled"},            {MenuLangId::Bulgarian, "Български: Only allow one code enabled"},            {MenuLangId::Belarusian, "Беларуская: Only allow one code enabled"},            {MenuLangId::Maltese, "Malti: Only allow one code enabled"},            {MenuLangId::Mongolian, "Монгол: Only allow one code enabled"},            {MenuLangId::Latvian, "Latviski: Only allow one code enabled"},            {MenuLangId::Lithuanian, "Lietuvių: Only allow one code enabled"},            {MenuLangId::Afrikaans, "Afrikaans: Only allow one code enabled"},            {MenuLangId::Irish, "Gaeilge: Only allow one code enabled"},            {MenuLangId::Assamese, "অসমীয়া: Only allow one code enabled"},            {MenuLangId::Amharic, "አማርኛ: Only allow one code enabled"},            {MenuLangId::Estonian, "Eesti: Only allow one code enabled"},            {MenuLangId::Kazakh, "Қазақша: Only allow one code enabled"},            {MenuLangId::Catalan, "Català: Only allow one code enabled"},            {MenuLangId::Kyrgyz, "Кыргызча: Only allow one code enabled"},            {MenuLangId::Slovak, "Slovenčina: Only allow one code enabled"},            {MenuLangId::Slovenian, "Slovenščina: Only allow one code enabled"},            {MenuLangId::Zulu, "isiZulu: Only allow one code enabled"},            {MenuLangId::Basque, "Euskara: Only allow one code enabled"},            {MenuLangId::Hebrew, "עברית: Only allow one code enabled"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
 
@@ -5009,6 +13059,7 @@
             {MenuLangId::Russian, "Управление питанием - melonDS"},
             {MenuLangId::ChineseSimplified, "电源管理 - melonDS"},
             {MenuLangId::ChineseTraditional, "電源管理 - melonDS"},
+            {MenuLangId::ChineseHongKong, "電源管理 - melonDS"},
             {MenuLangId::Korean, "전원 관리 - melonDS"},
             {MenuLangId::Arabic, "إدارة الطاقة - melonDS"},
             {MenuLangId::Indonesian, "Manajemen daya - melonDS"},
@@ -5024,7 +13075,56 @@
             {MenuLangId::Finnish, "Virranhallinta - melonDS"},
             {MenuLangId::Vietnamese, "Quản lý nguồn - melonDS"},
             {MenuLangId::Polish, "Zarządzanie energią - melonDS"},
-            {MenuLangId::Romanian, "Gestionare energie - melonDS"},
+            {MenuLangId::Romanian, "Gestionare energie - melonDS"},            {MenuLangId::Filipino, "Power management - melonDS"},            {MenuLangId::Swahili, "Nishati management - melonDS"},            {MenuLangId::Croatian, "Napajanje management - melonDS"},            {MenuLangId::Icelandic, "Afl management - melonDS"},            {MenuLangId::Hindi, "पावर management - melonDS"},            {MenuLangId::Bengali, "পাওয়ার management - melonDS"},            {MenuLangId::Urdu, "پاور management - melonDS"},            {MenuLangId::Punjabi, "ਪਾਵਰ management - melonDS"},            {MenuLangId::Telugu, "పవర్ management - melonDS"},            {MenuLangId::Persian, "توان management - melonDS"},            {MenuLangId::Malay, "Kuasa management - melonDS"},            {MenuLangId::Marathi, "पॉवर management - melonDS"},            {MenuLangId::Tamil, "பவர் management - melonDS"},            {MenuLangId::Gujarati, "પાવર management - melonDS"},            {MenuLangId::Kannada, "ಪವರ್ management - melonDS"},            {MenuLangId::Odia, "ଓଡ଼ିଆ: Power management - melonDS"},            {MenuLangId::Malayalam, "മലയാളം: Power management - melonDS"},            {MenuLangId::Burmese, "မြန်မာ: Power management - melonDS"},            {MenuLangId::Uzbek, "Oʻzbekcha: Power management - melonDS"},            {MenuLangId::Azerbaijani, "Azərbaycanca: Power management - melonDS"},            {MenuLangId::Nepali, "नेपाली: Power management - melonDS"},            {MenuLangId::Sinhala, "සිංහල: Power management - melonDS"},            {MenuLangId::Khmer, "ភាសាខ្មែរ: Power management - melonDS"},            {MenuLangId::Lao, "ລາວ: Power management - melonDS"},            {MenuLangId::Armenian, "Հայերեն: Power management - melonDS"},            {MenuLangId::Albanian, "Shqip: Power management - melonDS"},            {MenuLangId::Georgian, "ქართული: Power management - melonDS"},            {MenuLangId::Bosnian, "Bosanski: Power management - melonDS"},            {MenuLangId::Serbian, "Српски: Power management - melonDS"},            {MenuLangId::Macedonian, "Македонски: Power management - melonDS"},            {MenuLangId::Bulgarian, "Български: Power management - melonDS"},            {MenuLangId::Belarusian, "Беларуская: Power management - melonDS"},            {MenuLangId::Maltese, "Malti: Power management - melonDS"},            {MenuLangId::Mongolian, "Монгол: Power management - melonDS"},            {MenuLangId::Latvian, "Latviski: Power management - melonDS"},            {MenuLangId::Lithuanian, "Lietuvių: Power management - melonDS"},            {MenuLangId::Afrikaans, "Afrikaans: Power management - melonDS"},            {MenuLangId::Irish, "Gaeilge: Power management - melonDS"},            {MenuLangId::Assamese, "অসমীয়া: Power management - melonDS"},            {MenuLangId::Amharic, "አማርኛ: Power management - melonDS"},            {MenuLangId::Estonian, "Eesti: Power management - melonDS"},            {MenuLangId::Kazakh, "Қазақша: Power management - melonDS"},            {MenuLangId::Catalan, "Català: Power management - melonDS"},            {MenuLangId::Kyrgyz, "Кыргызча: Power management - melonDS"},            {MenuLangId::Slovak, "Slovenčina: Power management - melonDS"},            {MenuLangId::Slovenian, "Slovenščina: Power management - melonDS"},            {MenuLangId::Zulu, "isiZulu: Power management - melonDS"},            {MenuLangId::Basque, "Euskara: Power management - melonDS"},            {MenuLangId::Hebrew, "עברית: Power management - melonDS"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -5040,6 +13140,7 @@
             {MenuLangId::Russian, "Батарея DSi"},
             {MenuLangId::ChineseSimplified, "DSi 电池"},
             {MenuLangId::ChineseTraditional, "DSi 電池"},
+            {MenuLangId::ChineseHongKong, "DSi 電池"},
             {MenuLangId::Korean, "DSi 배터리"},
             {MenuLangId::Arabic, "بطارية DSi"},
             {MenuLangId::Indonesian, "Baterai DSi"},
@@ -5055,7 +13156,56 @@
             {MenuLangId::Finnish, "DSi-akku"},
             {MenuLangId::Vietnamese, "Pin DSi"},
             {MenuLangId::Polish, "Bateria DSi"},
-            {MenuLangId::Romanian, "Baterie DSi"},
+            {MenuLangId::Romanian, "Baterie DSi"},            {MenuLangId::Filipino, "DSi Baterya"},            {MenuLangId::Swahili, "DSi Betri"},            {MenuLangId::Croatian, "DSi Baterija"},            {MenuLangId::Icelandic, "DSi Rafhlaða"},            {MenuLangId::Hindi, "DSi बैटरी"},            {MenuLangId::Bengali, "DSi ব্যাটারি"},            {MenuLangId::Urdu, "DSi بیٹری"},            {MenuLangId::Punjabi, "DSi ਬੈਟਰੀ"},            {MenuLangId::Telugu, "DSi బ్యాటరీ"},            {MenuLangId::Persian, "DSi باتری"},            {MenuLangId::Malay, "DSi Bateri"},            {MenuLangId::Marathi, "DSi बॅटरी"},            {MenuLangId::Tamil, "DSi பேட்டரி"},            {MenuLangId::Gujarati, "DSi બેટરી"},            {MenuLangId::Kannada, "DSi ಬ್ಯಾಟರಿ"},            {MenuLangId::Odia, "DSi ବ୍ୟାଟେରି"},            {MenuLangId::Malayalam, "DSi ബാറ്ററി"},            {MenuLangId::Burmese, "DSi ဘက်ထရီ"},            {MenuLangId::Uzbek, "DSi batareya"},            {MenuLangId::Azerbaijani, "DSi batareya"},            {MenuLangId::Nepali, "DSi ब्याट्री"},            {MenuLangId::Sinhala, "DSi බැටරිය"},            {MenuLangId::Khmer, "ថ្ម DSi"},            {MenuLangId::Lao, "ແບັດເຕີຣີ DSi"},            {MenuLangId::Armenian, "DSi մարտկոց"},            {MenuLangId::Albanian, "Bateria DSi"},            {MenuLangId::Georgian, "DSi ბატარეა"},            {MenuLangId::Bosnian, "DSi baterija"},            {MenuLangId::Serbian, "DSi батерија"},            {MenuLangId::Macedonian, "DSi батерија"},            {MenuLangId::Bulgarian, "DSi батерия"},            {MenuLangId::Belarusian, "DSi батарэя"},            {MenuLangId::Maltese, "Batterija DSi"},            {MenuLangId::Mongolian, "DSi батерей"},            {MenuLangId::Latvian, "DSi akumulators"},            {MenuLangId::Lithuanian, "DSi baterija"},            {MenuLangId::Afrikaans, "DSi-battery"},            {MenuLangId::Irish, "Ceallra DSi"},            {MenuLangId::Assamese, "DSi বেটাৰী"},            {MenuLangId::Amharic, "DSi ባትሪ"},            {MenuLangId::Estonian, "DSi aku"},            {MenuLangId::Kazakh, "DSi батареясы"},            {MenuLangId::Catalan, "bateria DSi"},            {MenuLangId::Kyrgyz, "DSi батареясы"},            {MenuLangId::Slovak, "DSi batéria"},            {MenuLangId::Slovenian, "DSi baterija"},            {MenuLangId::Zulu, "ibhethri le-DSi"},            {MenuLangId::Basque, "DSi bateria"},            {MenuLangId::Hebrew, "סוללת DSi"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -5071,6 +13221,7 @@
             {MenuLangId::Russian, "Батарея DS"},
             {MenuLangId::ChineseSimplified, "DS 电池"},
             {MenuLangId::ChineseTraditional, "DS 電池"},
+            {MenuLangId::ChineseHongKong, "DS 電池"},
             {MenuLangId::Korean, "DS 배터리"},
             {MenuLangId::Arabic, "بطارية DS"},
             {MenuLangId::Indonesian, "Baterai DS"},
@@ -5086,7 +13237,56 @@
             {MenuLangId::Finnish, "DS-akku"},
             {MenuLangId::Vietnamese, "Pin DS"},
             {MenuLangId::Polish, "Bateria DS"},
-            {MenuLangId::Romanian, "Baterie DS"},
+            {MenuLangId::Romanian, "Baterie DS"},            {MenuLangId::Filipino, "DS Baterya"},            {MenuLangId::Swahili, "DS Betri"},            {MenuLangId::Croatian, "DS Baterija"},            {MenuLangId::Icelandic, "DS Rafhlaða"},            {MenuLangId::Hindi, "DS बैटरी"},            {MenuLangId::Bengali, "DS ব্যাটারি"},            {MenuLangId::Urdu, "DS بیٹری"},            {MenuLangId::Punjabi, "DS ਬੈਟਰੀ"},            {MenuLangId::Telugu, "DS బ్యాటరీ"},            {MenuLangId::Persian, "DS باتری"},            {MenuLangId::Malay, "DS Bateri"},            {MenuLangId::Marathi, "DS बॅटरी"},            {MenuLangId::Tamil, "DS பேட்டரி"},            {MenuLangId::Gujarati, "DS બેટરી"},            {MenuLangId::Kannada, "DS ಬ್ಯಾಟರಿ"},            {MenuLangId::Odia, "DS ବ୍ୟାଟେରି"},            {MenuLangId::Malayalam, "DS ബാറ്ററി"},            {MenuLangId::Burmese, "DS ဘက်ထရီ"},            {MenuLangId::Uzbek, "DS batareya"},            {MenuLangId::Azerbaijani, "DS batareya"},            {MenuLangId::Nepali, "DS ब्याट्री"},            {MenuLangId::Sinhala, "DS බැටරිය"},            {MenuLangId::Khmer, "ថ្ម DS"},            {MenuLangId::Lao, "ແບັດເຕີຣີ DS"},            {MenuLangId::Armenian, "DS մարտկոց"},            {MenuLangId::Albanian, "Bateria DS"},            {MenuLangId::Georgian, "DS ბატარეა"},            {MenuLangId::Bosnian, "DS baterija"},            {MenuLangId::Serbian, "DS батерија"},            {MenuLangId::Macedonian, "DS батерија"},            {MenuLangId::Bulgarian, "DS батерия"},            {MenuLangId::Belarusian, "DS батарэя"},            {MenuLangId::Maltese, "Batterija DS"},            {MenuLangId::Mongolian, "DS батерей"},            {MenuLangId::Latvian, "DS akumulators"},            {MenuLangId::Lithuanian, "DS baterija"},            {MenuLangId::Afrikaans, "DS-battery"},            {MenuLangId::Irish, "Ceallra DS"},            {MenuLangId::Assamese, "DS বেটাৰী"},            {MenuLangId::Amharic, "DS ባትሪ"},            {MenuLangId::Estonian, "DS aku"},            {MenuLangId::Kazakh, "DS батареясы"},            {MenuLangId::Catalan, "bateria DS"},            {MenuLangId::Kyrgyz, "DS батареясы"},            {MenuLangId::Slovak, "DS batéria"},            {MenuLangId::Slovenian, "DS baterija"},            {MenuLangId::Zulu, "ibhethri le-DS"},            {MenuLangId::Basque, "DS bateria"},            {MenuLangId::Hebrew, "סוללת DS"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -5102,6 +13302,7 @@
             {MenuLangId::Russian, "Почти пусто"},
             {MenuLangId::ChineseSimplified, "几乎为空"},
             {MenuLangId::ChineseTraditional, "幾乎為空"},
+            {MenuLangId::ChineseHongKong, "幾乎為空"},
             {MenuLangId::Korean, "거의 비어 있음"},
             {MenuLangId::Arabic, "شبه فارغ"},
             {MenuLangId::Indonesian, "Hampir kosong"},
@@ -5117,7 +13318,56 @@
             {MenuLangId::Finnish, "Lähes tyhjä"},
             {MenuLangId::Vietnamese, "Gần trống"},
             {MenuLangId::Polish, "Prawie puste"},
-            {MenuLangId::Romanian, "Aproape gol"},
+            {MenuLangId::Romanian, "Aproape gol"},            {MenuLangId::Filipino, "Almost Empty"},            {MenuLangId::Swahili, "Almost Empty"},            {MenuLangId::Croatian, "Gotovo prazno"},            {MenuLangId::Icelandic, "Næstum tómt"},            {MenuLangId::Hindi, "लगभग खाली"},            {MenuLangId::Bengali, "প্রায় খালি"},            {MenuLangId::Urdu, "تقریباً خالی"},            {MenuLangId::Punjabi, "ਲਗਭਗ ਖਾਲੀ"},            {MenuLangId::Telugu, "దాదాపు ఖాళీ"},            {MenuLangId::Persian, "تقریباً خالی"},            {MenuLangId::Malay, "Hampir kosong"},            {MenuLangId::Marathi, "जवळजवळ रिक्त"},            {MenuLangId::Tamil, "கிட்டத்தட்ட காலி"},            {MenuLangId::Gujarati, "લગભગ ખાલી"},            {MenuLangId::Kannada, "ಬಹುತೇಕ ಖಾಲಿ"},            {MenuLangId::Odia, "ପ୍ରାୟ ଖାଲି"},            {MenuLangId::Malayalam, "ഏകദേശം ശൂന്യം"},            {MenuLangId::Burmese, "လုနီးပါးဗလာ"},            {MenuLangId::Uzbek, "Deyarli boʻsh"},            {MenuLangId::Azerbaijani, "Demək olar boş"},            {MenuLangId::Nepali, "लगभग खाली"},            {MenuLangId::Sinhala, "අඩකට ආසන්න හිස්"},            {MenuLangId::Khmer, "ជិតទទេ"},            {MenuLangId::Lao, "ເກືອບຫວ່າງ"},            {MenuLangId::Armenian, "Գրեթե դատարկ"},            {MenuLangId::Albanian, "Pothuajse bosh"},            {MenuLangId::Georgian, "თითქმის ცარიელი"},            {MenuLangId::Bosnian, "Skoro prazno"},            {MenuLangId::Serbian, "Скоро празно"},            {MenuLangId::Macedonian, "Речиси празно"},            {MenuLangId::Bulgarian, "Почти празно"},            {MenuLangId::Belarusian, "Амаль пусто"},            {MenuLangId::Maltese, "Kważi vojt"},            {MenuLangId::Mongolian, "Бараг хоосон"},            {MenuLangId::Latvian, "Gandrīz tukšs"},            {MenuLangId::Lithuanian, "Beveik tuščia"},            {MenuLangId::Afrikaans, "Byna leeg"},            {MenuLangId::Irish, "Beagnach folamh"},            {MenuLangId::Assamese, "প্ৰায় খালী"},            {MenuLangId::Amharic, "በቃ ባዶ"},            {MenuLangId::Estonian, "Peaaegu tühi"},            {MenuLangId::Kazakh, "Дерлік бос"},            {MenuLangId::Catalan, "Gairebé buit"},            {MenuLangId::Kyrgyz, "Дээрлик бош"},            {MenuLangId::Slovak, "Takmer prázdne"},            {MenuLangId::Slovenian, "Skoraj prazno"},            {MenuLangId::Zulu, "Cishe akunalutho"},            {MenuLangId::Basque, "Ia hutsik"},            {MenuLangId::Hebrew, "כמעט ריק"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -5133,6 +13383,7 @@
             {MenuLangId::Russian, "Зарядка"},
             {MenuLangId::ChineseSimplified, "充电中"},
             {MenuLangId::ChineseTraditional, "充電中"},
+            {MenuLangId::ChineseHongKong, "充電中"},
             {MenuLangId::Korean, "충전 중"},
             {MenuLangId::Arabic, "شحن"},
             {MenuLangId::Indonesian, "Mengisi daya"},
@@ -5148,7 +13399,56 @@
             {MenuLangId::Finnish, "Latautuu"},
             {MenuLangId::Vietnamese, "Đang sạc"},
             {MenuLangId::Polish, "Ładowanie"},
-            {MenuLangId::Romanian, "Se încarcă"},
+            {MenuLangId::Romanian, "Se încarcă"},            {MenuLangId::Filipino, "Charging"},            {MenuLangId::Swahili, "Charging"},            {MenuLangId::Croatian, "Punjenje"},            {MenuLangId::Icelandic, "Í hleðslu"},            {MenuLangId::Hindi, "चार्ज हो रहा है"},            {MenuLangId::Bengali, "চার্জ হচ্ছে"},            {MenuLangId::Urdu, "چارج ہو رہا ہے"},            {MenuLangId::Punjabi, "ਚਾਰਜ ਹੋ ਰਿਹਾ ਹੈ"},            {MenuLangId::Telugu, "చార్జ్ అవుతోంది"},            {MenuLangId::Persian, "در حال شارژ"},            {MenuLangId::Malay, "Mengecas"},            {MenuLangId::Marathi, "चार्ज होत आहे"},            {MenuLangId::Tamil, "charge ஆகிறது"},            {MenuLangId::Gujarati, "ચાર્જ થઈ રહ્યું છે"},            {MenuLangId::Kannada, "ಚಾರ್ಜ್ ಆಗುತ್ತಿದೆ"},            {MenuLangId::Odia, "ଚାର୍ଜ୍ ହେଉଛି"},            {MenuLangId::Malayalam, "ചാർജ് ചെയ്യുന്നു"},            {MenuLangId::Burmese, "အားသွင်းနေသည်"},            {MenuLangId::Uzbek, "Zaryadlanmoqda"},            {MenuLangId::Azerbaijani, "Şarj olunur"},            {MenuLangId::Nepali, "चार्ज हुँदै"},            {MenuLangId::Sinhala, "ආරෝපණය වෙමින්"},            {MenuLangId::Khmer, "កំពុងសាក"},            {MenuLangId::Lao, "ກຳລັງຊາດ"},            {MenuLangId::Armenian, "Լիցքավորվում է"},            {MenuLangId::Albanian, "Duke u karikuar"},            {MenuLangId::Georgian, "იტენება"},            {MenuLangId::Bosnian, "Puni se"},            {MenuLangId::Serbian, "Пуни се"},            {MenuLangId::Macedonian, "Се полни"},            {MenuLangId::Bulgarian, "Зарежда се"},            {MenuLangId::Belarusian, "Зараджаецца"},            {MenuLangId::Maltese, "Qed jiċċarġja"},            {MenuLangId::Mongolian, "Цэнэглэж байна"},            {MenuLangId::Latvian, "Uzlādējas"},            {MenuLangId::Lithuanian, "Kraunama"},            {MenuLangId::Afrikaans, "Laai"},            {MenuLangId::Irish, "Ag luchtú"},            {MenuLangId::Assamese, "চাৰ্জ হৈ আছে"},            {MenuLangId::Amharic, "በመሙላት ላይ"},            {MenuLangId::Estonian, "Laeb"},            {MenuLangId::Kazakh, "Зарядталуда"},            {MenuLangId::Catalan, "Carregant"},            {MenuLangId::Kyrgyz, "Заряддалып жатат"},            {MenuLangId::Slovak, "Nabíja sa"},            {MenuLangId::Slovenian, "Polnjenje"},            {MenuLangId::Zulu, "Iyashaja"},            {MenuLangId::Basque, "Kargatzen"},            {MenuLangId::Hebrew, "נטען"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -5164,6 +13464,7 @@
             {MenuLangId::Russian, "Полная"},
             {MenuLangId::ChineseSimplified, "满电"},
             {MenuLangId::ChineseTraditional, "滿電"},
+            {MenuLangId::ChineseHongKong, "滿電"},
             {MenuLangId::Korean, "가득"},
             {MenuLangId::Arabic, "Full"},
             {MenuLangId::Indonesian, "Penuh"},
@@ -5179,7 +13480,56 @@
             {MenuLangId::Finnish, "Täysi"},
             {MenuLangId::Vietnamese, "Đầy"},
             {MenuLangId::Polish, "Pełna"},
-            {MenuLangId::Romanian, "Plină"},
+            {MenuLangId::Romanian, "Plină"},            {MenuLangId::Filipino, "Full"},            {MenuLangId::Swahili, "Full"},            {MenuLangId::Croatian, "Puno"},            {MenuLangId::Icelandic, "Fullt"},            {MenuLangId::Hindi, "पूरा"},            {MenuLangId::Bengali, "পূর্ণ"},            {MenuLangId::Urdu, "مکمل"},            {MenuLangId::Punjabi, "ਪੂਰਾ"},            {MenuLangId::Telugu, "పూర్తి"},            {MenuLangId::Persian, "پر"},            {MenuLangId::Malay, "Penuh"},            {MenuLangId::Marathi, "पूर्ण"},            {MenuLangId::Tamil, "முழு"},            {MenuLangId::Gujarati, "પૂર્ણ"},            {MenuLangId::Kannada, "ಪೂರ್ಣ"},            {MenuLangId::Odia, "ପୂର୍ଣ୍ଣ"},            {MenuLangId::Malayalam, "പൂർണ്ണം"},            {MenuLangId::Burmese, "ပြည့်"},            {MenuLangId::Uzbek, "Toʻliq"},            {MenuLangId::Azerbaijani, "Tam"},            {MenuLangId::Nepali, "पूर्ण"},            {MenuLangId::Sinhala, "සම්පූර්ණ"},            {MenuLangId::Khmer, "ពេញ"},            {MenuLangId::Lao, "ເຕັມ"},            {MenuLangId::Armenian, "Լիքը"},            {MenuLangId::Albanian, "Plot"},            {MenuLangId::Georgian, "სრული"},            {MenuLangId::Bosnian, "Puno"},            {MenuLangId::Serbian, "Пуно"},            {MenuLangId::Macedonian, "Полно"},            {MenuLangId::Bulgarian, "Пълно"},            {MenuLangId::Belarusian, "Поўна"},            {MenuLangId::Maltese, "Mimli"},            {MenuLangId::Mongolian, "Дүүрэн"},            {MenuLangId::Latvian, "Pilns"},            {MenuLangId::Lithuanian, "Pilna"},            {MenuLangId::Afrikaans, "Vol"},            {MenuLangId::Irish, "Lán"},            {MenuLangId::Assamese, "সম্পূৰ্ণ"},            {MenuLangId::Amharic, "ሙሉ"},            {MenuLangId::Estonian, "Täis"},            {MenuLangId::Kazakh, "Толық"},            {MenuLangId::Catalan, "Ple"},            {MenuLangId::Kyrgyz, "Толук"},            {MenuLangId::Slovak, "Plné"},            {MenuLangId::Slovenian, "Polno"},            {MenuLangId::Zulu, "Kugcwele"},            {MenuLangId::Basque, "Beteta"},            {MenuLangId::Hebrew, "מלא"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -5195,6 +13545,7 @@
             {MenuLangId::Russian, "Уровень заряда"},
             {MenuLangId::ChineseSimplified, "电池电量"},
             {MenuLangId::ChineseTraditional, "電池電量"},
+            {MenuLangId::ChineseHongKong, "電池電量"},
             {MenuLangId::Korean, "배터리 잔량"},
             {MenuLangId::Arabic, "مستوى البطارية"},
             {MenuLangId::Indonesian, "Level baterai"},
@@ -5210,7 +13561,56 @@
             {MenuLangId::Finnish, "Akun taso"},
             {MenuLangId::Vietnamese, "Mức pin"},
             {MenuLangId::Polish, "Poziom baterii"},
-            {MenuLangId::Romanian, "Nivel baterie"},
+            {MenuLangId::Romanian, "Nivel baterie"},            {MenuLangId::Filipino, "Baterya Level"},            {MenuLangId::Swahili, "Betri Level"},            {MenuLangId::Croatian, "Baterija Level"},            {MenuLangId::Icelandic, "Rafhlaða Level"},            {MenuLangId::Hindi, "बैटरी Level"},            {MenuLangId::Bengali, "ব্যাটারি Level"},            {MenuLangId::Urdu, "بیٹری Level"},            {MenuLangId::Punjabi, "ਬੈਟਰੀ Level"},            {MenuLangId::Telugu, "బ్యాటరీ Level"},            {MenuLangId::Persian, "باتری Level"},            {MenuLangId::Malay, "Bateri Level"},            {MenuLangId::Marathi, "बॅटरी Level"},            {MenuLangId::Tamil, "பேட்டரி Level"},            {MenuLangId::Gujarati, "બેટરી Level"},            {MenuLangId::Kannada, "ಬ್ಯಾಟರಿ Level"},            {MenuLangId::Odia, "ବ୍ୟାଟେରି ସ୍ତର"},            {MenuLangId::Malayalam, "ബാറ്ററി നില"},            {MenuLangId::Burmese, "ဘက်ထရီအဆင့်"},            {MenuLangId::Uzbek, "Batareya darajasi"},            {MenuLangId::Azerbaijani, "Batareya səviyyəsi"},            {MenuLangId::Nepali, "ब्याट्री स्तर"},            {MenuLangId::Sinhala, "බැටරි මට්ටම"},            {MenuLangId::Khmer, "កម្រិតថ្ម"},            {MenuLangId::Lao, "ລະດັບແບັດເຕີຣີ"},            {MenuLangId::Armenian, "Մարտկոցի մակարդակ"},            {MenuLangId::Albanian, "Niveli i baterisë"},            {MenuLangId::Georgian, "ბატარეის დონე"},            {MenuLangId::Bosnian, "Nivo baterije"},            {MenuLangId::Serbian, "Ниво батерије"},            {MenuLangId::Macedonian, "Ниво на батерија"},            {MenuLangId::Bulgarian, "Ниво на батерията"},            {MenuLangId::Belarusian, "Узровень батарэі"},            {MenuLangId::Maltese, "Livell tal-batterija"},            {MenuLangId::Mongolian, "Батерейн түвшин"},            {MenuLangId::Latvian, "Akumulatora līmenis"},            {MenuLangId::Lithuanian, "Baterijos lygis"},            {MenuLangId::Afrikaans, "Batteryvlak"},            {MenuLangId::Irish, "Leibhéal ceallra"},            {MenuLangId::Assamese, "বেটাৰী স্তৰ"},            {MenuLangId::Amharic, "የባትሪ ደረጃ"},            {MenuLangId::Estonian, "Aku tase"},            {MenuLangId::Kazakh, "Батарея деңгейі"},            {MenuLangId::Catalan, "nivell de bateria"},            {MenuLangId::Kyrgyz, "Батарея деңгээли"},            {MenuLangId::Slovak, "Úroveň batérie"},            {MenuLangId::Slovenian, "Raven baterije"},            {MenuLangId::Zulu, "Izinga lebhethri"},            {MenuLangId::Basque, "Bateria maila"},            {MenuLangId::Hebrew, "רמת סוללה"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -5226,6 +13626,7 @@
             {MenuLangId::Russian, "Низкий"},
             {MenuLangId::ChineseSimplified, "低"},
             {MenuLangId::ChineseTraditional, "低"},
+            {MenuLangId::ChineseHongKong, "低"},
             {MenuLangId::Korean, "낮음"},
             {MenuLangId::Arabic, "منخفض"},
             {MenuLangId::Indonesian, "Rendah"},
@@ -5241,7 +13642,56 @@
             {MenuLangId::Finnish, "Matala"},
             {MenuLangId::Vietnamese, "Thấp"},
             {MenuLangId::Polish, "Niski"},
-            {MenuLangId::Romanian, "Scăzut"},
+            {MenuLangId::Romanian, "Scăzut"},            {MenuLangId::Filipino, "Mababa"},            {MenuLangId::Swahili, "Chini"},            {MenuLangId::Croatian, "Nisko"},            {MenuLangId::Icelandic, "Lágt"},            {MenuLangId::Hindi, "कम"},            {MenuLangId::Bengali, "নিম্ন"},            {MenuLangId::Urdu, "کم"},            {MenuLangId::Punjabi, "ਘੱਟ"},            {MenuLangId::Telugu, "తక్కువ"},            {MenuLangId::Persian, "کم"},            {MenuLangId::Malay, "Rendah"},            {MenuLangId::Marathi, "कमी"},            {MenuLangId::Tamil, "குறைவு"},            {MenuLangId::Gujarati, "નીચું"},            {MenuLangId::Kannada, "ಕಡಿಮೆ"},            {MenuLangId::Odia, "କମ୍"},            {MenuLangId::Malayalam, "കുറവ്"},            {MenuLangId::Burmese, "နိမ့်"},            {MenuLangId::Uzbek, "Past"},            {MenuLangId::Azerbaijani, "Aşağı"},            {MenuLangId::Nepali, "कम"},            {MenuLangId::Sinhala, "අඩු"},            {MenuLangId::Khmer, "ទាប"},            {MenuLangId::Lao, "ຕ່ຳ"},            {MenuLangId::Armenian, "Ցածր"},            {MenuLangId::Albanian, "I ulët"},            {MenuLangId::Georgian, "დაბალი"},            {MenuLangId::Bosnian, "Nisko"},            {MenuLangId::Serbian, "Ниско"},            {MenuLangId::Macedonian, "Ниско"},            {MenuLangId::Bulgarian, "Ниско"},            {MenuLangId::Belarusian, "Нізка"},            {MenuLangId::Maltese, "Baxx"},            {MenuLangId::Mongolian, "Бага"},            {MenuLangId::Latvian, "Zems"},            {MenuLangId::Lithuanian, "Žemas"},            {MenuLangId::Afrikaans, "Laag"},            {MenuLangId::Irish, "Íseal"},            {MenuLangId::Assamese, "নিম্ন"},            {MenuLangId::Amharic, "ዝቅተኛ"},            {MenuLangId::Estonian, "Madal"},            {MenuLangId::Kazakh, "Төмен"},            {MenuLangId::Catalan, "Baix"},            {MenuLangId::Kyrgyz, "Төмөн"},            {MenuLangId::Slovak, "Nízke"},            {MenuLangId::Slovenian, "Nizko"},            {MenuLangId::Zulu, "Phansi"},            {MenuLangId::Basque, "Baxua"},            {MenuLangId::Hebrew, "נמוך"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -5257,6 +13707,7 @@
             {MenuLangId::Russian, "Нормально"},
             {MenuLangId::ChineseSimplified, "良好"},
             {MenuLangId::ChineseTraditional, "良好"},
+            {MenuLangId::ChineseHongKong, "良好"},
             {MenuLangId::Korean, "양호"},
             {MenuLangId::Arabic, "مقبول"},
             {MenuLangId::Indonesian, "Baik"},
@@ -5272,7 +13723,56 @@
             {MenuLangId::Finnish, "Hyväksyttävä"},
             {MenuLangId::Vietnamese, "Ổn"},
             {MenuLangId::Polish, "W porządku"},
-            {MenuLangId::Romanian, "Acceptabil"},
+            {MenuLangId::Romanian, "Acceptabil"},            {MenuLangId::Filipino, "Okay"},            {MenuLangId::Swahili, "Okay"},            {MenuLangId::Croatian, "U redu"},            {MenuLangId::Icelandic, "Í lagi"},            {MenuLangId::Hindi, "ठीक है"},            {MenuLangId::Bengali, "ঠিক আছে"},            {MenuLangId::Urdu, "ٹھیک ہے"},            {MenuLangId::Punjabi, "ਠੀਕ ਹੈ"},            {MenuLangId::Telugu, "సరే"},            {MenuLangId::Persian, "تأیید"},            {MenuLangId::Malay, "OK"},            {MenuLangId::Marathi, "ठीक आहे"},            {MenuLangId::Tamil, "சரி"},            {MenuLangId::Gujarati, "બરાબર"},            {MenuLangId::Kannada, "ಸರಿ"},            {MenuLangId::Odia, "ଠିକ୍"},            {MenuLangId::Malayalam, "ശരി"},            {MenuLangId::Burmese, "အိုကေ"},            {MenuLangId::Uzbek, "OK"},            {MenuLangId::Azerbaijani, "OK"},            {MenuLangId::Nepali, "ठीक छ"},            {MenuLangId::Sinhala, "හරි"},            {MenuLangId::Khmer, "យល់ព្រម"},            {MenuLangId::Lao, "ຕົກລົງ"},            {MenuLangId::Armenian, "Լավ"},            {MenuLangId::Albanian, "OK"},            {MenuLangId::Georgian, "კარგი"},            {MenuLangId::Bosnian, "U redu"},            {MenuLangId::Serbian, "У реду"},            {MenuLangId::Macedonian, "Во ред"},            {MenuLangId::Bulgarian, "OK"},            {MenuLangId::Belarusian, "ОК"},            {MenuLangId::Maltese, "OK"},            {MenuLangId::Mongolian, "OK"},            {MenuLangId::Latvian, "OK"},            {MenuLangId::Lithuanian, "OK"},            {MenuLangId::Afrikaans, "OK"},            {MenuLangId::Irish, "OK"},            {MenuLangId::Assamese, "OK"},            {MenuLangId::Amharic, "OK"},            {MenuLangId::Estonian, "OK"},            {MenuLangId::Kazakh, "OK"},            {MenuLangId::Catalan, "OK"},            {MenuLangId::Kyrgyz, "OK"},            {MenuLangId::Slovak, "OK"},            {MenuLangId::Slovenian, "OK"},            {MenuLangId::Zulu, "OK"},            {MenuLangId::Basque, "OK"},            {MenuLangId::Hebrew, "OK"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -5288,6 +13788,7 @@
             {MenuLangId::Russian, "Дата и время – melonDS"},
             {MenuLangId::ChineseSimplified, "日期与时间 - melonDS"},
             {MenuLangId::ChineseTraditional, "日期與時間 - melonDS"},
+            {MenuLangId::ChineseHongKong, "日期與時間 - melonDS"},
             {MenuLangId::Korean, "날짜 및 시간 - melonDS"},
             {MenuLangId::Arabic, "التاريخ والوقت – melonDS"},
             {MenuLangId::Indonesian, "Tanggal dan waktu – melonDS"},
@@ -5303,7 +13804,56 @@
             {MenuLangId::Finnish, "Päivämäärä ja aika – melonDS"},
             {MenuLangId::Vietnamese, "Ngày và giờ – melonDS"},
             {MenuLangId::Polish, "Data i godzina – melonDS"},
-            {MenuLangId::Romanian, "Dată și oră – melonDS"},
+            {MenuLangId::Romanian, "Dată și oră – melonDS"},            {MenuLangId::Filipino, "Date and time - melonDS"},            {MenuLangId::Swahili, "Date and time - melonDS"},            {MenuLangId::Croatian, "Datum i vrijeme - melonDS"},            {MenuLangId::Icelandic, "Dagsetning og tími - melonDS"},            {MenuLangId::Hindi, "दिनांक और समय - melonDS"},            {MenuLangId::Bengali, "তারিখ ও সময় - melonDS"},            {MenuLangId::Urdu, "تاریخ اور وقت - melonDS"},            {MenuLangId::Punjabi, "ਤਾਰੀਖ ਅਤੇ ਸਮਾਂ - melonDS"},            {MenuLangId::Telugu, "తేదీ మరియు సమయం - melonDS"},            {MenuLangId::Persian, "تاریخ و زمان - melonDS"},            {MenuLangId::Malay, "Tarikh dan masa - melonDS"},            {MenuLangId::Marathi, "तारीख आणि वेळ - melonDS"},            {MenuLangId::Tamil, "தேதி மற்றும் நேரம் - melonDS"},            {MenuLangId::Gujarati, "તારીખ અને સમય - melonDS"},            {MenuLangId::Kannada, "ದಿನಾಂಕ ಮತ್ತು ಸಮಯ - melonDS"},            {MenuLangId::Odia, "ଓଡ଼ିଆ: Date and time - melonDS"},            {MenuLangId::Malayalam, "തീയതിയും സമയവും - melonDS"},            {MenuLangId::Burmese, "ရက်စွဲနှင့် အချိန် - melonDS"},            {MenuLangId::Uzbek, "Sana va vaqt - melonDS"},            {MenuLangId::Azerbaijani, "Tarix və vaxt - melonDS"},            {MenuLangId::Nepali, "मिति र समय - melonDS"},            {MenuLangId::Sinhala, "දිනය සහ වේලාව - melonDS"},            {MenuLangId::Khmer, "កាលបរិច្ឆេទ និងពេលវេលា - melonDS"},            {MenuLangId::Lao, "ວັນທີ ແລະ ເວລາ - melonDS"},            {MenuLangId::Armenian, "Ամսաթիվ և ժամ - melonDS"},            {MenuLangId::Albanian, "Data dhe ora - melonDS"},            {MenuLangId::Georgian, "თარიღი და დრო - melonDS"},            {MenuLangId::Bosnian, "Datum i vrijeme - melonDS"},            {MenuLangId::Serbian, "Датум и време - melonDS"},            {MenuLangId::Macedonian, "Датум и време - melonDS"},            {MenuLangId::Bulgarian, "Дата и час - melonDS"},            {MenuLangId::Belarusian, "Дата і час - melonDS"},            {MenuLangId::Maltese, "Data u ħin - melonDS"},            {MenuLangId::Mongolian, "Огноо ба цаг - melonDS"},            {MenuLangId::Latvian, "Datums un laiks - melonDS"},            {MenuLangId::Lithuanian, "Data ir laikas - melonDS"},            {MenuLangId::Afrikaans, "Datum en tyd - melonDS"},            {MenuLangId::Irish, "Gaeilge: Date and time - melonDS"},            {MenuLangId::Assamese, "তাৰিখ আৰু সময় - melonDS"},            {MenuLangId::Amharic, "አማርኛ: Date and time - melonDS"},            {MenuLangId::Estonian, "Eesti: Date and time - melonDS"},            {MenuLangId::Kazakh, "Қазақша: Date and time - melonDS"},            {MenuLangId::Catalan, "Català: Date and time - melonDS"},            {MenuLangId::Kyrgyz, "Кыргызча: Date and time - melonDS"},            {MenuLangId::Slovak, "Slovenčina: Date and time - melonDS"},            {MenuLangId::Slovenian, "Slovenščina: Date and time - melonDS"},            {MenuLangId::Zulu, "isiZulu: Date and time - melonDS"},            {MenuLangId::Basque, "Euskara: Date and time - melonDS"},            {MenuLangId::Hebrew, "עברית: Date and time - melonDS"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -5319,6 +13869,7 @@
             {MenuLangId::Russian, "Сбросить на системные дату и время"},
             {MenuLangId::ChineseSimplified, "重置为系统日期和时间"},
             {MenuLangId::ChineseTraditional, "重置為系統日期和時間"},
+            {MenuLangId::ChineseHongKong, "重置為系統日期和時間"},
             {MenuLangId::Korean, "시스템 날짜 및 시간으로 재설정"},
             {MenuLangId::Arabic, "إعادة ضبط إلى تاريخ ووقت النظام"},
             {MenuLangId::Indonesian, "Atur ulang ke tanggal dan waktu sistem"},
@@ -5334,7 +13885,56 @@
             {MenuLangId::Finnish, "Palauta järjestelmän päivämäärään ja aikaan"},
             {MenuLangId::Vietnamese, "Đặt lại theo ngày giờ hệ thống"},
             {MenuLangId::Polish, "Resetuj do daty i czasu systemu"},
-            {MenuLangId::Romanian, "Resetează la data și ora sistemului"},
+            {MenuLangId::Romanian, "Resetează la data și ora sistemului"},            {MenuLangId::Filipino, "I-i-reset to system date and time"},            {MenuLangId::Swahili, "Weka upya to system date and time"},            {MenuLangId::Croatian, "Resetiraj to system date and time"},            {MenuLangId::Icelandic, "Endurstilla to system date and time"},            {MenuLangId::Hindi, "रीसेट करें to system date and time"},            {MenuLangId::Bengali, "রিসেট করুন to system date and time"},            {MenuLangId::Urdu, "ری سیٹ کریں to system date and time"},            {MenuLangId::Punjabi, "ਰੀਸੈਟ ਕਰੋ to system date and time"},            {MenuLangId::Telugu, "రీసెట్ చేయి to system date and time"},            {MenuLangId::Persian, "بازنشانی to system date and time"},            {MenuLangId::Malay, "Tetapkan semula to system date and time"},            {MenuLangId::Marathi, "रीसेट करा to system date and time"},            {MenuLangId::Tamil, "மீட்டமை to system date and time"},            {MenuLangId::Gujarati, "રીસેટ કરો to system date and time"},            {MenuLangId::Kannada, "ಮರುಹೊಂದಿಸಿ to system date and time"},            {MenuLangId::Odia, "ରିସେଟ୍ କରନ୍ତୁ to system date and time"},            {MenuLangId::Malayalam, "റീസെറ്റ് ചെയ്യുക to system date and time"},            {MenuLangId::Burmese, "ပြန်လည်သတ်မှတ်ပါ to system date and time"},            {MenuLangId::Uzbek, "Qayta tiklash to system date and time"},            {MenuLangId::Azerbaijani, "Sıfırla to system date and time"},            {MenuLangId::Nepali, "रिसेट गर्नुहोस् to system date and time"},            {MenuLangId::Sinhala, "යළි සකසන්න to system date and time"},            {MenuLangId::Khmer, "កំណត់ឡើងវិញ to system date and time"},            {MenuLangId::Lao, "ຣີເຊັດ to system date and time"},            {MenuLangId::Armenian, "Վերակայել to system date and time"},            {MenuLangId::Albanian, "Rivendos to system date and time"},            {MenuLangId::Georgian, "გადატვირთვა to system date and time"},            {MenuLangId::Bosnian, "Resetuj to system date and time"},            {MenuLangId::Serbian, "Ресетуј to system date and time"},            {MenuLangId::Macedonian, "Ресетирај to system date and time"},            {MenuLangId::Bulgarian, "Нулирай to system date and time"},            {MenuLangId::Belarusian, "Скінуць to system date and time"},            {MenuLangId::Maltese, "Irrisettja to system date and time"},            {MenuLangId::Mongolian, "Дахин тохируулах to system date and time"},            {MenuLangId::Latvian, "Atiestatīt to system date and time"},            {MenuLangId::Lithuanian, "Atstatyti to system date and time"},            {MenuLangId::Afrikaans, "Herstel to system date and time"},            {MenuLangId::Irish, "Athshocraigh to system date and time"},            {MenuLangId::Assamese, "ৰিছেট কৰক to system date and time"},            {MenuLangId::Amharic, "ዳግም አስጀምር to system date and time"},            {MenuLangId::Estonian, "Lähtesta to system date and time"},            {MenuLangId::Kazakh, "Қазақша: Reset to system date and time"},            {MenuLangId::Catalan, "Català: Reset to system date and time"},            {MenuLangId::Kyrgyz, "Кыргызча: Reset to system date and time"},            {MenuLangId::Slovak, "Slovenčina: Reset to system date and time"},            {MenuLangId::Slovenian, "Slovenščina: Reset to system date and time"},            {MenuLangId::Zulu, "isiZulu: Reset to system date and time"},            {MenuLangId::Basque, "Euskara: Reset to system date and time"},            {MenuLangId::Hebrew, "עברית: Reset to system date and time"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -5350,6 +13950,7 @@
             {MenuLangId::Russian, "Текущее значение:"},
             {MenuLangId::ChineseSimplified, "当前值："},
             {MenuLangId::ChineseTraditional, "當前值："},
+            {MenuLangId::ChineseHongKong, "當前值："},
             {MenuLangId::Korean, "현재 값:"},
             {MenuLangId::Arabic, "القيمة الحالية:"},
             {MenuLangId::Indonesian, "Nilai saat ini:"},
@@ -5365,7 +13966,56 @@
             {MenuLangId::Finnish, "Nykyinen arvo:"},
             {MenuLangId::Vietnamese, "Giá trị hiện tại:"},
             {MenuLangId::Polish, "Bieżąca wartość:"},
-            {MenuLangId::Romanian, "Valoare curentă:"},
+            {MenuLangId::Romanian, "Valoare curentă:"},            {MenuLangId::Filipino, "Current value:"},            {MenuLangId::Swahili, "Current value:"},            {MenuLangId::Croatian, "Trenutačna vrijednost:"},            {MenuLangId::Icelandic, "Núverandi gildi:"},            {MenuLangId::Hindi, "वर्तमान मान:"},            {MenuLangId::Bengali, "বর্তমান মান:"},            {MenuLangId::Urdu, "موجودہ قدر:"},            {MenuLangId::Punjabi, "ਮੌਜੂਦਾ ਮੁੱਲ:"},            {MenuLangId::Telugu, "ప్రస్తుత విలువ:"},            {MenuLangId::Persian, "مقدار فعلی:"},            {MenuLangId::Malay, "Nilai semasa:"},            {MenuLangId::Marathi, "सध्याचे मूल्य:"},            {MenuLangId::Tamil, "தற்போதைய மதிப்பு:"},            {MenuLangId::Gujarati, "હાલનું મૂલ્ય:"},            {MenuLangId::Kannada, "ಪ್ರಸ್ತುತ ಮೌಲ್ಯ:"},            {MenuLangId::Odia, "ଓଡ଼ିଆ: Current value:"},            {MenuLangId::Malayalam, "നിലവിലെ മൂല്യം:"},            {MenuLangId::Burmese, "လက်ရှိ တန်ဖိုး:"},            {MenuLangId::Uzbek, "Joriy qiymat:"},            {MenuLangId::Azerbaijani, "Cari dəyər:"},            {MenuLangId::Nepali, "हालको मान:"},            {MenuLangId::Sinhala, "වත්මන් අගය:"},            {MenuLangId::Khmer, "តម្លៃបច្ចុប្បន្ន:"},            {MenuLangId::Lao, "ຄ່າປັດຈຸບັນ:"},            {MenuLangId::Armenian, "Ընթացիկ արժեք:"},            {MenuLangId::Albanian, "Vlera aktuale:"},            {MenuLangId::Georgian, "მიმდინარე მნიშვნელობა:"},            {MenuLangId::Bosnian, "Trenutna vrijednost:"},            {MenuLangId::Serbian, "Тренутна вредност:"},            {MenuLangId::Macedonian, "Тековна вредност:"},            {MenuLangId::Bulgarian, "Текуща стойност:"},            {MenuLangId::Belarusian, "Бягучае значэнне:"},            {MenuLangId::Maltese, "Valur kurrenti:"},            {MenuLangId::Mongolian, "Одоогийн утга:"},            {MenuLangId::Latvian, "Pašreizējā vērtība:"},            {MenuLangId::Lithuanian, "Dabartinė reikšmė:"},            {MenuLangId::Afrikaans, "Huidige waarde:"},            {MenuLangId::Irish, "Luach reatha:"},            {MenuLangId::Assamese, "বৰ্তমান মান:"},            {MenuLangId::Amharic, "የአሁኑ እሴት:"},            {MenuLangId::Estonian, "Praegune väärtus:"},            {MenuLangId::Kazakh, "Ағымдағы мән:"},            {MenuLangId::Catalan, "Valor actual:"},            {MenuLangId::Kyrgyz, "Учурдагы маани:"},            {MenuLangId::Slovak, "Aktuálna hodnota:"},            {MenuLangId::Slovenian, "Trenutna vrednost:"},            {MenuLangId::Zulu, "Inani lamanje:"},            {MenuLangId::Basque, "Uneko balioa:"},            {MenuLangId::Hebrew, "ערך נוכחי:"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -5381,6 +14031,7 @@
             {MenuLangId::Russian, "Изменить на:"},
             {MenuLangId::ChineseSimplified, "更改为："},
             {MenuLangId::ChineseTraditional, "更改為："},
+            {MenuLangId::ChineseHongKong, "更改為："},
             {MenuLangId::Korean, "변경:"},
             {MenuLangId::Arabic, "تغيير إلى:"},
             {MenuLangId::Indonesian, "Ubah ke:"},
@@ -5396,7 +14047,56 @@
             {MenuLangId::Finnish, "Vaihda:"},
             {MenuLangId::Vietnamese, "Đổi thành:"},
             {MenuLangId::Polish, "Zmień na:"},
-            {MenuLangId::Romanian, "Schimbă în:"},
+            {MenuLangId::Romanian, "Schimbă în:"},            {MenuLangId::Filipino, "Change to:"},            {MenuLangId::Swahili, "Change to:"},            {MenuLangId::Croatian, "Promijeni u:"},            {MenuLangId::Icelandic, "Breyta í:"},            {MenuLangId::Hindi, "इसमें बदलें:"},            {MenuLangId::Bengali, "এতে পরিবর্তন করুন:"},            {MenuLangId::Urdu, "اس میں بدلیں:"},            {MenuLangId::Punjabi, "ਇਸ ਵਿੱਚ ਬਦਲੋ:"},            {MenuLangId::Telugu, "ఇదిగా మార్చు:"},            {MenuLangId::Persian, "تغییر به:"},            {MenuLangId::Malay, "Tukar kepada:"},            {MenuLangId::Marathi, "यामध्ये बदला:"},            {MenuLangId::Tamil, "இதற்கு மாற்று:"},            {MenuLangId::Gujarati, "આમાં બદલો:"},            {MenuLangId::Kannada, "ಇದಕ್ಕೆ ಬದಲಿಸಿ:"},            {MenuLangId::Odia, "ଓଡ଼ିଆ: Change to:"},            {MenuLangId::Malayalam, "ഇതിലേക്ക് മാറ്റുക:"},            {MenuLangId::Burmese, "ဤသို့ ပြောင်း:"},            {MenuLangId::Uzbek, "Bunga oʻzgartirish:"},            {MenuLangId::Azerbaijani, "Buna dəyiş:"},            {MenuLangId::Nepali, "यसमा बदल्नुहोस्:"},            {MenuLangId::Sinhala, "මෙයට වෙනස් කරන්න:"},            {MenuLangId::Khmer, "ប្តូរទៅ:"},            {MenuLangId::Lao, "ປ່ຽນເປັນ:"},            {MenuLangId::Armenian, "Փոխել դեպի:"},            {MenuLangId::Albanian, "Ndrysho në:"},            {MenuLangId::Georgian, "შეცვლა:"},            {MenuLangId::Bosnian, "Promijeni u:"},            {MenuLangId::Serbian, "Промени у:"},            {MenuLangId::Macedonian, "Промени во:"},            {MenuLangId::Bulgarian, "Промени на:"},            {MenuLangId::Belarusian, "Змяніць на:"},            {MenuLangId::Maltese, "Ibdel għal:"},            {MenuLangId::Mongolian, "Дараах болгон өөрчлөх:"},            {MenuLangId::Latvian, "Mainīt uz:"},            {MenuLangId::Lithuanian, "Keisti į:"},            {MenuLangId::Afrikaans, "Verander na:"},            {MenuLangId::Irish, "Athraigh go:"},            {MenuLangId::Assamese, "লৈ সলনি কৰক:"},            {MenuLangId::Amharic, "ወደዚህ ቀይር:"},            {MenuLangId::Estonian, "Muuda väärtuseks:"},            {MenuLangId::Kazakh, "Мынаған өзгерту:"},            {MenuLangId::Catalan, "Canvia a:"},            {MenuLangId::Kyrgyz, "Мынага өзгөртүү:"},            {MenuLangId::Slovak, "Zmeniť na:"},            {MenuLangId::Slovenian, "Spremeni v:"},            {MenuLangId::Zulu, "Shintsha kube:"},            {MenuLangId::Basque, "Aldatu hona:"},            {MenuLangId::Hebrew, "שנה ל:"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -5412,6 +14112,7 @@
             {MenuLangId::Russian, "Синхронизировать с системной датой и временем"},
             {MenuLangId::ChineseSimplified, "与系统日期时间同步"},
             {MenuLangId::ChineseTraditional, "與系統日期時間同步"},
+            {MenuLangId::ChineseHongKong, "與系統日期時間同步"},
             {MenuLangId::Korean, "시스템 날짜 및 시간과 동기화"},
             {MenuLangId::Arabic, "مزامنة مع تاريخ ووقت النظام"},
             {MenuLangId::Indonesian, "Sinkronkan ke tanggal dan waktu sistem"},
@@ -5427,7 +14128,56 @@
             {MenuLangId::Finnish, "Synkronoi järjestelmän päivämäärään ja aikaan"},
             {MenuLangId::Vietnamese, "Đồng bộ với ngày giờ hệ thống"},
             {MenuLangId::Polish, "Synchronizuj z datą i godziną systemu"},
-            {MenuLangId::Romanian, "Sincronizează cu data și ora sistemului"},
+            {MenuLangId::Romanian, "Sincronizează cu data și ora sistemului"},            {MenuLangId::Filipino, "Synchronize to system date and time"},            {MenuLangId::Swahili, "Synchronize to system date and time"},            {MenuLangId::Croatian, "Sinkroniziraj sa sistemskim datumom i vremenom"},            {MenuLangId::Icelandic, "Samstilla við dagsetningu og tíma kerfis"},            {MenuLangId::Hindi, "सिस्टम दिनांक और समय से सिंक करें"},            {MenuLangId::Bengali, "সিস্টেম তারিখ ও সময়ের সাথে সিঙ্ক করুন"},            {MenuLangId::Urdu, "سسٹم تاریخ اور وقت کے ساتھ سنک کریں"},            {MenuLangId::Punjabi, "ਸਿਸਟਮ ਤਾਰੀਖ ਅਤੇ ਸਮੇਂ ਨਾਲ ਸਿੰਕ ਕਰੋ"},            {MenuLangId::Telugu, "సిస్టమ్ తేదీ మరియు సమయంతో సింక్ చేయి"},            {MenuLangId::Persian, "همگام‌سازی با تاریخ و زمان سیستم"},            {MenuLangId::Malay, "Segerakkan dengan tarikh dan masa sistem"},            {MenuLangId::Marathi, "सिस्टम तारीख आणि वेळेशी सिंक्रोनाइझ करा"},            {MenuLangId::Tamil, "சிஸ்டம் தேதி மற்றும் நேரத்துடன் sync செய்"},            {MenuLangId::Gujarati, "સિસ્ટમ તારીખ અને સમય સાથે sync કરો"},            {MenuLangId::Kannada, "ಸಿಸ್ಟಮ್ ದಿನಾಂಕ ಮತ್ತು ಸಮಯದೊಂದಿಗೆ sync ಮಾಡಿ"},            {MenuLangId::Odia, "ଓଡ଼ିଆ: Synchronize to system date and time"},            {MenuLangId::Malayalam, "സിസ്റ്റം തീയതിയും സമയവുമായി sync ചെയ്യുക"},            {MenuLangId::Burmese, "စနစ်ရက်စွဲနှင့် အချိန်နှင့် sync ပါ"},            {MenuLangId::Uzbek, "Tizim sanasi va vaqti bilan sync"},            {MenuLangId::Azerbaijani, "Sistem tarixi və vaxtı ilə sync et"},            {MenuLangId::Nepali, "प्रणाली मिति र समयसँग sync गर्नुहोस्"},            {MenuLangId::Sinhala, "පද්ධති දිනය හා වේලාව සමඟ sync කරන්න"},            {MenuLangId::Khmer, "sync ជាមួយកាលបរិច្ឆេទ និងពេលវេលាប្រព័ន្ធ"},            {MenuLangId::Lao, "sync ກັບວັນທີ ແລະ ເວລາລະບົບ"},            {MenuLangId::Armenian, "sync անել համակարգի ամսաթվի և ժամի հետ"},            {MenuLangId::Albanian, "sync me datën dhe orën e sistemit"},            {MenuLangId::Georgian, "სისტემის თარიღსა და დროსთან sync"},            {MenuLangId::Bosnian, "sync sa sistemskim datumom i vremenom"},            {MenuLangId::Serbian, "sync са системским датумом и временом"},            {MenuLangId::Macedonian, "sync со системски датум и време"},            {MenuLangId::Bulgarian, "sync със системната дата и час"},            {MenuLangId::Belarusian, "sync з сістэмнай датай і часам"},            {MenuLangId::Maltese, "sync mad-data u l-ħin tas-sistema"},            {MenuLangId::Mongolian, "системийн огноо ба цагтай sync хийх"},            {MenuLangId::Latvian, "sync ar sistēmas datumu un laiku"},            {MenuLangId::Lithuanian, "sync su sistemos data ir laiku"},            {MenuLangId::Afrikaans, "sync met stelsel-datum en -tyd"},            {MenuLangId::Irish, "sync le dáta agus am an chórais"},            {MenuLangId::Assamese, "চিস্টেম তাৰিখ আৰু সময়ৰ সৈতে sync কৰক"},            {MenuLangId::Amharic, "አማርኛ: Synchronize to system date and time"},            {MenuLangId::Estonian, "Eesti: Synchronize to system date and time"},            {MenuLangId::Kazakh, "Қазақша: Synchronize to system date and time"},            {MenuLangId::Catalan, "Català: Synchronize to system date and time"},            {MenuLangId::Kyrgyz, "Кыргызча: Synchronize to system date and time"},            {MenuLangId::Slovak, "Slovenčina: Synchronize to system date and time"},            {MenuLangId::Slovenian, "Slovenščina: Synchronize to system date and time"},            {MenuLangId::Zulu, "isiZulu: Synchronize to system date and time"},            {MenuLangId::Basque, "Euskara: Synchronize to system date and time"},            {MenuLangId::Hebrew, "עברית: Synchronize to system date and time"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
 
@@ -5445,6 +14195,7 @@
             {MenuLangId::Russian, "Информация о ROM - melonDS"},
             {MenuLangId::ChineseSimplified, "ROM 信息 - melonDS"},
             {MenuLangId::ChineseTraditional, "ROM 資訊 - melonDS"},
+            {MenuLangId::ChineseHongKong, "ROM 資訊 - melonDS"},
             {MenuLangId::Korean, "ROM 정보 - melonDS"},
             {MenuLangId::Arabic, "معلومات ROM - melonDS"},
             {MenuLangId::Indonesian, "Info ROM - melonDS"},
@@ -5460,7 +14211,56 @@
             {MenuLangId::Finnish, "ROM-tiedot - melonDS"},
             {MenuLangId::Vietnamese, "Thông tin ROM - melonDS"},
             {MenuLangId::Polish, "Informacje o ROM - melonDS"},
-            {MenuLangId::Romanian, "Info ROM - melonDS"},
+            {MenuLangId::Romanian, "Info ROM - melonDS"},            {MenuLangId::Filipino, "ROM info - melonDS"},            {MenuLangId::Swahili, "ROM info - melonDS"},            {MenuLangId::Croatian, "ROM informacije - melonDS"},            {MenuLangId::Icelandic, "ROM-upplýsingar - melonDS"},            {MenuLangId::Hindi, "ROM जानकारी - melonDS"},            {MenuLangId::Bengali, "ROM তথ্য - melonDS"},            {MenuLangId::Urdu, "ROM معلومات - melonDS"},            {MenuLangId::Punjabi, "ROM ਜਾਣਕਾਰੀ - melonDS"},            {MenuLangId::Telugu, "ROM సమాచారం - melonDS"},            {MenuLangId::Persian, "اطلاعات ROM - melonDS"},            {MenuLangId::Malay, "Maklumat ROM - melonDS"},            {MenuLangId::Marathi, "ROM माहिती - melonDS"},            {MenuLangId::Tamil, "ROM தகவல் - melonDS"},            {MenuLangId::Gujarati, "ROM માહિતી - melonDS"},            {MenuLangId::Kannada, "ROM ಮಾಹಿತಿ - melonDS"},            {MenuLangId::Odia, "ଓଡ଼ିଆ: ROM info - melonDS"},            {MenuLangId::Malayalam, "ROM വിവരം - melonDS"},            {MenuLangId::Burmese, "ROM အချက်အလက် - melonDS"},            {MenuLangId::Uzbek, "ROM maʼlumoti - melonDS"},            {MenuLangId::Azerbaijani, "ROM məlumatı - melonDS"},            {MenuLangId::Nepali, "ROM जानकारी - melonDS"},            {MenuLangId::Sinhala, "ROM තොරතුරු - melonDS"},            {MenuLangId::Khmer, "ព័ត៌មាន ROM - melonDS"},            {MenuLangId::Lao, "ຂໍ້ມູນ ROM - melonDS"},            {MenuLangId::Armenian, "ROM տեղեկություն - melonDS"},            {MenuLangId::Albanian, "Informacion ROM - melonDS"},            {MenuLangId::Georgian, "ROM ინფორმაცია - melonDS"},            {MenuLangId::Bosnian, "ROM informacije - melonDS"},            {MenuLangId::Serbian, "ROM информације - melonDS"},            {MenuLangId::Macedonian, "ROM информации - melonDS"},            {MenuLangId::Bulgarian, "ROM информация - melonDS"},            {MenuLangId::Belarusian, "ROM інфармацыя - melonDS"},            {MenuLangId::Maltese, "Informazzjoni ROM - melonDS"},            {MenuLangId::Mongolian, "ROM мэдээлэл - melonDS"},            {MenuLangId::Latvian, "ROM informācija - melonDS"},            {MenuLangId::Lithuanian, "ROM informacija - melonDS"},            {MenuLangId::Afrikaans, "ROM-inligting - melonDS"},            {MenuLangId::Irish, "Gaeilge: ROM info - melonDS"},            {MenuLangId::Assamese, "ROM তথ্য - melonDS"},            {MenuLangId::Amharic, "አማርኛ: ROM info - melonDS"},            {MenuLangId::Estonian, "Eesti: ROM info - melonDS"},            {MenuLangId::Kazakh, "Қазақша: ROM info - melonDS"},            {MenuLangId::Catalan, "Català: ROM info - melonDS"},            {MenuLangId::Kyrgyz, "Кыргызча: ROM info - melonDS"},            {MenuLangId::Slovak, "Slovenčina: ROM info - melonDS"},            {MenuLangId::Slovenian, "Slovenščina: ROM info - melonDS"},            {MenuLangId::Zulu, "isiZulu: ROM info - melonDS"},            {MenuLangId::Basque, "Euskara: ROM info - melonDS"},            {MenuLangId::Hebrew, "עברית: ROM info - melonDS"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -5476,6 +14276,7 @@
             {MenuLangId::Russian, "Названия"},
             {MenuLangId::ChineseSimplified, "标题"},
             {MenuLangId::ChineseTraditional, "標題"},
+            {MenuLangId::ChineseHongKong, "標題"},
             {MenuLangId::Korean, "제목"},
             {MenuLangId::Arabic, "العناوين"},
             {MenuLangId::Indonesian, "Judul"},
@@ -5491,7 +14292,56 @@
             {MenuLangId::Finnish, "Otsikot"},
             {MenuLangId::Vietnamese, "Tiêu đề"},
             {MenuLangId::Polish, "Tytuły"},
-            {MenuLangId::Romanian, "Titluri"},
+            {MenuLangId::Romanian, "Titluri"},            {MenuLangId::Filipino, "Titles"},            {MenuLangId::Swahili, "Titles"},            {MenuLangId::Croatian, "Naslovi"},            {MenuLangId::Icelandic, "Titlar"},            {MenuLangId::Hindi, "शीर्षक"},            {MenuLangId::Bengali, "শিরোনাম"},            {MenuLangId::Urdu, "عنوانات"},            {MenuLangId::Punjabi, "ਟਾਈਟਲ"},            {MenuLangId::Telugu, "టైటిళ్లు"},            {MenuLangId::Persian, "عنوان‌ها"},            {MenuLangId::Malay, "Tajuk"},            {MenuLangId::Marathi, "शीर्षके"},            {MenuLangId::Tamil, "தலைப்புகள்"},            {MenuLangId::Gujarati, "શીર્ષકો"},            {MenuLangId::Kannada, "ಶೀರ್ಷಿಕೆಗಳು"},            {MenuLangId::Odia, "ଶିରୋନାମ"},            {MenuLangId::Malayalam, "ശീർഷകങ്ങൾ"},            {MenuLangId::Burmese, "ခေါင်းစဉ်များ"},            {MenuLangId::Uzbek, "Sarlavhalar"},            {MenuLangId::Azerbaijani, "Başlıqlar"},            {MenuLangId::Nepali, "शीर्षकहरू"},            {MenuLangId::Sinhala, "මාතෘකා"},            {MenuLangId::Khmer, "ចំណងជើង"},            {MenuLangId::Lao, "ຫົວຂໍ້"},            {MenuLangId::Armenian, "Վերնագրեր"},            {MenuLangId::Albanian, "Titujt"},            {MenuLangId::Georgian, "სათაურები"},            {MenuLangId::Bosnian, "Naslovi"},            {MenuLangId::Serbian, "Наслови"},            {MenuLangId::Macedonian, "Наслови"},            {MenuLangId::Bulgarian, "Заглавия"},            {MenuLangId::Belarusian, "Назвы"},            {MenuLangId::Maltese, "Titli"},            {MenuLangId::Mongolian, "Гарчгууд"},            {MenuLangId::Latvian, "Nosaukumi"},            {MenuLangId::Lithuanian, "Pavadinimai"},            {MenuLangId::Afrikaans, "Titels"},            {MenuLangId::Irish, "Teidil"},            {MenuLangId::Assamese, "শিৰোনামসমূহ"},            {MenuLangId::Amharic, "ርዕሶች"},            {MenuLangId::Estonian, "Pealkirjad"},            {MenuLangId::Kazakh, "Атаулар"},            {MenuLangId::Catalan, "Títols"},            {MenuLangId::Kyrgyz, "Аталыштар"},            {MenuLangId::Slovak, "Tituly"},            {MenuLangId::Slovenian, "Naslovi"},            {MenuLangId::Zulu, "Izihloko"},            {MenuLangId::Basque, "Tituluak"},            {MenuLangId::Hebrew, "כותרות"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -5507,6 +14357,7 @@
             {MenuLangId::Russian, "Японское название:"},
             {MenuLangId::ChineseSimplified, "日语标题："},
             {MenuLangId::ChineseTraditional, "日語標題："},
+            {MenuLangId::ChineseHongKong, "日語標題："},
             {MenuLangId::Korean, "일본어 제목:"},
             {MenuLangId::Arabic, "العنوان الياباني:"},
             {MenuLangId::Indonesian, "Judul Jepang:"},
@@ -5522,7 +14373,56 @@
             {MenuLangId::Finnish, "Japaninkielinen otsikko:"},
             {MenuLangId::Vietnamese, "Tiêu đề tiếng Nhật:"},
             {MenuLangId::Polish, "Tytuł japoński:"},
-            {MenuLangId::Romanian, "Titlu japonez:"},
+            {MenuLangId::Romanian, "Titlu japonez:"},            {MenuLangId::Filipino, "Japanese title:"},            {MenuLangId::Swahili, "Japanese title:"},            {MenuLangId::Croatian, "Japanski naslov:"},            {MenuLangId::Icelandic, "Japanskur titill:"},            {MenuLangId::Hindi, "जापानी शीर्षक:"},            {MenuLangId::Bengali, "জাপানি শিরোনাম:"},            {MenuLangId::Urdu, "جاپانی عنوان:"},            {MenuLangId::Punjabi, "ਜਪਾਨੀ ਟਾਈਟਲ:"},            {MenuLangId::Telugu, "జపనీస్ టైటిల్:"},            {MenuLangId::Persian, "عنوان ژاپنی:"},            {MenuLangId::Malay, "Tajuk Jepun:"},            {MenuLangId::Marathi, "जपानी शीर्षक:"},            {MenuLangId::Tamil, "ஜப்பானிய தலைப்பு:"},            {MenuLangId::Gujarati, "જાપાનીઝ શીર્ષક:"},            {MenuLangId::Kannada, "ಜಪಾನೀಸ್ ಶೀರ್ಷಿಕೆ:"},            {MenuLangId::Odia, "ଓଡ଼ିଆ: Japanese title:"},            {MenuLangId::Malayalam, "ജാപ്പനീസ് ശീർഷകം:"},            {MenuLangId::Burmese, "ဂျပန် ခေါင်းစဉ်:"},            {MenuLangId::Uzbek, "Yaponcha sarlavha:"},            {MenuLangId::Azerbaijani, "Yaponca başlıq:"},            {MenuLangId::Nepali, "जापानी शीर्षक:"},            {MenuLangId::Sinhala, "ජපන් මාතෘකාව:"},            {MenuLangId::Khmer, "ចំណងជើងជប៉ុន:"},            {MenuLangId::Lao, "ຫົວຂໍ້ຍີ່ປຸ່ນ:"},            {MenuLangId::Armenian, "Ճապոներեն վերնագիր:"},            {MenuLangId::Albanian, "Titulli japonisht:"},            {MenuLangId::Georgian, "იაპონური სათაური:"},            {MenuLangId::Bosnian, "Japanski naslov:"},            {MenuLangId::Serbian, "Јапански наслов:"},            {MenuLangId::Macedonian, "Јапонски наслов:"},            {MenuLangId::Bulgarian, "Японско заглавие:"},            {MenuLangId::Belarusian, "Японская назва:"},            {MenuLangId::Maltese, "Titlu Ġappuniż:"},            {MenuLangId::Mongolian, "Япон гарчиг:"},            {MenuLangId::Latvian, "Japāņu nosaukums:"},            {MenuLangId::Lithuanian, "Japoniškas pavadinimas:"},            {MenuLangId::Afrikaans, "Japannese titel:"},            {MenuLangId::Irish, "Teideal Seapáinise:"},            {MenuLangId::Assamese, "জাপানী শিৰোনাম:"},            {MenuLangId::Amharic, "አማርኛ: Japanese title:"},            {MenuLangId::Estonian, "Eesti: Japanese title:"},            {MenuLangId::Kazakh, "Қазақша: Japanese title:"},            {MenuLangId::Catalan, "Català: Japanese title:"},            {MenuLangId::Kyrgyz, "Кыргызча: Japanese title:"},            {MenuLangId::Slovak, "Slovenčina: Japanese title:"},            {MenuLangId::Slovenian, "Slovenščina: Japanese title:"},            {MenuLangId::Zulu, "isiZulu: Japanese title:"},            {MenuLangId::Basque, "Euskara: Japanese title:"},            {MenuLangId::Hebrew, "עברית: Japanese title:"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -5538,6 +14438,7 @@
             {MenuLangId::Russian, "Английское название:"},
             {MenuLangId::ChineseSimplified, "英文标题："},
             {MenuLangId::ChineseTraditional, "英文標題："},
+            {MenuLangId::ChineseHongKong, "英文標題："},
             {MenuLangId::Korean, "영어 제목:"},
             {MenuLangId::Arabic, "العنوان بالإنجليزية:"},
             {MenuLangId::Indonesian, "Judul bahasa Inggris:"},
@@ -5553,7 +14454,56 @@
             {MenuLangId::Finnish, "Englanninkielinen otsikko:"},
             {MenuLangId::Vietnamese, "Tiêu đề tiếng Anh:"},
             {MenuLangId::Polish, "Tytuł angielski:"},
-            {MenuLangId::Romanian, "Titlu în engleză:"},
+            {MenuLangId::Romanian, "Titlu în engleză:"},            {MenuLangId::Filipino, "English title:"},            {MenuLangId::Swahili, "English title:"},            {MenuLangId::Croatian, "Engleski naslov:"},            {MenuLangId::Icelandic, "Enskur titill:"},            {MenuLangId::Hindi, "अंग्रेज़ी शीर्षक:"},            {MenuLangId::Bengali, "ইংরেজি শিরোনাম:"},            {MenuLangId::Urdu, "انگریزی عنوان:"},            {MenuLangId::Punjabi, "ਅੰਗਰੇਜ਼ੀ ਟਾਈਟਲ:"},            {MenuLangId::Telugu, "ఇంగ్లీష్ టైటిల్:"},            {MenuLangId::Persian, "عنوان انگلیسی:"},            {MenuLangId::Malay, "Tajuk Inggeris:"},            {MenuLangId::Marathi, "इंग्रजी शीर्षक:"},            {MenuLangId::Tamil, "ஆங்கில தலைப்பு:"},            {MenuLangId::Gujarati, "અંગ્રેજી શીર્ષક:"},            {MenuLangId::Kannada, "ಇಂಗ್ಲಿಷ್ ಶೀರ್ಷಿಕೆ:"},            {MenuLangId::Odia, "ଓଡ଼ିଆ: English title:"},            {MenuLangId::Malayalam, "ഇംഗ്ലീഷ് ശീർഷകം:"},            {MenuLangId::Burmese, "အင်္ဂလိပ် ခေါင်းစဉ်:"},            {MenuLangId::Uzbek, "Inglizcha sarlavha:"},            {MenuLangId::Azerbaijani, "İngiliscə başlıq:"},            {MenuLangId::Nepali, "अङ्ग्रेजी शीर्षक:"},            {MenuLangId::Sinhala, "ඉංග්‍රීසි මාතෘකාව:"},            {MenuLangId::Khmer, "ចំណងជើងអង់គ្លេស:"},            {MenuLangId::Lao, "ຫົວຂໍ້ອັງກິດ:"},            {MenuLangId::Armenian, "Անգլերեն վերնագիր:"},            {MenuLangId::Albanian, "Titulli anglisht:"},            {MenuLangId::Georgian, "ინგლისური სათაური:"},            {MenuLangId::Bosnian, "Engleski naslov:"},            {MenuLangId::Serbian, "Енглески наслов:"},            {MenuLangId::Macedonian, "Англиски наслов:"},            {MenuLangId::Bulgarian, "Английско заглавие:"},            {MenuLangId::Belarusian, "Англійская назва:"},            {MenuLangId::Maltese, "Titlu Ingliż:"},            {MenuLangId::Mongolian, "Англи гарчиг:"},            {MenuLangId::Latvian, "Angļu nosaukums:"},            {MenuLangId::Lithuanian, "Angliškas pavadinimas:"},            {MenuLangId::Afrikaans, "Engelse titel:"},            {MenuLangId::Irish, "Teideal Béarla:"},            {MenuLangId::Assamese, "ইংৰাজী শিৰোনাম:"},            {MenuLangId::Amharic, "አማርኛ: English title:"},            {MenuLangId::Estonian, "Eesti: English title:"},            {MenuLangId::Kazakh, "Қазақша: English title:"},            {MenuLangId::Catalan, "Català: English title:"},            {MenuLangId::Kyrgyz, "Кыргызча: English title:"},            {MenuLangId::Slovak, "Slovenčina: English title:"},            {MenuLangId::Slovenian, "Slovenščina: English title:"},            {MenuLangId::Zulu, "isiZulu: English title:"},            {MenuLangId::Basque, "Euskara: English title:"},            {MenuLangId::Hebrew, "עברית: English title:"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -5569,6 +14519,7 @@
             {MenuLangId::Russian, "Французское название:"},
             {MenuLangId::ChineseSimplified, "法语标题:"},
             {MenuLangId::ChineseTraditional, "法語標題:"},
+            {MenuLangId::ChineseHongKong, "法語標題:"},
             {MenuLangId::Korean, "프랑스어 제목:"},
             {MenuLangId::Arabic, "العنوان الفرنسي:"},
             {MenuLangId::Indonesian, "Judul Prancis:"},
@@ -5584,7 +14535,56 @@
             {MenuLangId::Finnish, "Ranskankielinen otsikko:"},
             {MenuLangId::Vietnamese, "Tiêu đề tiếng Pháp:"},
             {MenuLangId::Polish, "Tytuł francuski:"},
-            {MenuLangId::Romanian, "Titlu francez:"},
+            {MenuLangId::Romanian, "Titlu francez:"},            {MenuLangId::Filipino, "French title:"},            {MenuLangId::Swahili, "French title:"},            {MenuLangId::Croatian, "Francuski naslov:"},            {MenuLangId::Icelandic, "Franskur titill:"},            {MenuLangId::Hindi, "फ़्रेंच शीर्षक:"},            {MenuLangId::Bengali, "ফরাসি শিরোনাম:"},            {MenuLangId::Urdu, "فرانسیسی عنوان:"},            {MenuLangId::Punjabi, "ਫਰਾਂਸੀਸੀ ਟਾਈਟਲ:"},            {MenuLangId::Telugu, "ఫ్రెంచ్ టైటిల్:"},            {MenuLangId::Persian, "عنوان فرانسوی:"},            {MenuLangId::Malay, "Tajuk Perancis:"},            {MenuLangId::Marathi, "फ्रेंच शीर्षक:"},            {MenuLangId::Tamil, "பிரெஞ்சு தலைப்பு:"},            {MenuLangId::Gujarati, "ફ્રેન્ચ શીર્ષક:"},            {MenuLangId::Kannada, "ಫ್ರೆಂಚ್ ಶೀರ್ಷಿಕೆ:"},            {MenuLangId::Odia, "ଓଡ଼ିଆ: French title:"},            {MenuLangId::Malayalam, "ഫ്രഞ്ച് ശീർഷകം:"},            {MenuLangId::Burmese, "ပြင်သစ် ခေါင်းစဉ်:"},            {MenuLangId::Uzbek, "Fransuzcha sarlavha:"},            {MenuLangId::Azerbaijani, "Fransızca başlıq:"},            {MenuLangId::Nepali, "फ्रेन्च शीर्षक:"},            {MenuLangId::Sinhala, "ප්‍රංශ මාතෘකාව:"},            {MenuLangId::Khmer, "ចំណងជើងបារាំង:"},            {MenuLangId::Lao, "ຫົວຂໍ້ຝຣັ່ງ:"},            {MenuLangId::Armenian, "Ֆրանսերեն վերնագիր:"},            {MenuLangId::Albanian, "Titulli frëngjisht:"},            {MenuLangId::Georgian, "ფრანგული სათაური:"},            {MenuLangId::Bosnian, "Francuski naslov:"},            {MenuLangId::Serbian, "Француски наслов:"},            {MenuLangId::Macedonian, "Француски наслов:"},            {MenuLangId::Bulgarian, "Френско заглавие:"},            {MenuLangId::Belarusian, "Французская назва:"},            {MenuLangId::Maltese, "Titlu Franċiż:"},            {MenuLangId::Mongolian, "Франц гарчиг:"},            {MenuLangId::Latvian, "Franču nosaukums:"},            {MenuLangId::Lithuanian, "Prancūziškas pavadinimas:"},            {MenuLangId::Afrikaans, "Franse titel:"},            {MenuLangId::Irish, "Teideal Fraincise:"},            {MenuLangId::Assamese, "ফৰাচী শিৰোনাম:"},            {MenuLangId::Amharic, "አማርኛ: French title:"},            {MenuLangId::Estonian, "Eesti: French title:"},            {MenuLangId::Kazakh, "Қазақша: French title:"},            {MenuLangId::Catalan, "Català: French title:"},            {MenuLangId::Kyrgyz, "Кыргызча: French title:"},            {MenuLangId::Slovak, "Slovenčina: French title:"},            {MenuLangId::Slovenian, "Slovenščina: French title:"},            {MenuLangId::Zulu, "isiZulu: French title:"},            {MenuLangId::Basque, "Euskara: French title:"},            {MenuLangId::Hebrew, "עברית: French title:"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -5600,6 +14600,7 @@
             {MenuLangId::Russian, "Немецкое название:"},
             {MenuLangId::ChineseSimplified, "德语标题:"},
             {MenuLangId::ChineseTraditional, "德語標題:"},
+            {MenuLangId::ChineseHongKong, "德語標題:"},
             {MenuLangId::Korean, "독일어 제목:"},
             {MenuLangId::Arabic, "German title:"},
             {MenuLangId::Indonesian, "Judul Jerman:"},
@@ -5615,7 +14616,56 @@
             {MenuLangId::Finnish, "Saksankielinen otsikko:"},
             {MenuLangId::Vietnamese, "Tiêu đề tiếng Đức:"},
             {MenuLangId::Polish, "Tytuł niemiecki:"},
-            {MenuLangId::Romanian, "Titlu german:"},
+            {MenuLangId::Romanian, "Titlu german:"},            {MenuLangId::Filipino, "German title:"},            {MenuLangId::Swahili, "German title:"},            {MenuLangId::Croatian, "Njemački naslov:"},            {MenuLangId::Icelandic, "Þýskur titill:"},            {MenuLangId::Hindi, "जर्मन शीर्षक:"},            {MenuLangId::Bengali, "জার্মান শিরোনাম:"},            {MenuLangId::Urdu, "جرمن عنوان:"},            {MenuLangId::Punjabi, "ਜਰਮਨ ਟਾਈਟਲ:"},            {MenuLangId::Telugu, "జర్మన్ టైటిల్:"},            {MenuLangId::Persian, "عنوان آلمانی:"},            {MenuLangId::Malay, "Tajuk Jerman:"},            {MenuLangId::Marathi, "जर्मन शीर्षक:"},            {MenuLangId::Tamil, "ஜெர்மன் தலைப்பு:"},            {MenuLangId::Gujarati, "જર્મન શીર્ષક:"},            {MenuLangId::Kannada, "ಜರ್ಮನ್ ಶೀರ್ಷಿಕೆ:"},            {MenuLangId::Odia, "ଓଡ଼ିଆ: German title:"},            {MenuLangId::Malayalam, "ജർമൻ ശീർഷകം:"},            {MenuLangId::Burmese, "ဂျာမန် ခေါင်းစဉ်:"},            {MenuLangId::Uzbek, "Nemischa sarlavha:"},            {MenuLangId::Azerbaijani, "Almanca başlıq:"},            {MenuLangId::Nepali, "जर्मन शीर्षक:"},            {MenuLangId::Sinhala, "ජර්මානු මාතෘකාව:"},            {MenuLangId::Khmer, "ចំណងជើងអាល្លឺម៉ង់:"},            {MenuLangId::Lao, "ຫົວຂໍ້ເຢຍລະມັນ:"},            {MenuLangId::Armenian, "Գերմաներեն վերնագիր:"},            {MenuLangId::Albanian, "Titulli gjermanisht:"},            {MenuLangId::Georgian, "გერმანული სათაური:"},            {MenuLangId::Bosnian, "Njemački naslov:"},            {MenuLangId::Serbian, "Немачки наслов:"},            {MenuLangId::Macedonian, "Германски наслов:"},            {MenuLangId::Bulgarian, "Немско заглавие:"},            {MenuLangId::Belarusian, "Нямецкая назва:"},            {MenuLangId::Maltese, "Titlu Ġermaniż:"},            {MenuLangId::Mongolian, "Герман гарчиг:"},            {MenuLangId::Latvian, "Vācu nosaukums:"},            {MenuLangId::Lithuanian, "Vokiškas pavadinimas:"},            {MenuLangId::Afrikaans, "Duitse titel:"},            {MenuLangId::Irish, "Teideal Gearmáinise:"},            {MenuLangId::Assamese, "জাৰ্মান শিৰোনাম:"},            {MenuLangId::Amharic, "አማርኛ: German title:"},            {MenuLangId::Estonian, "Eesti: German title:"},            {MenuLangId::Kazakh, "Қазақша: German title:"},            {MenuLangId::Catalan, "Català: German title:"},            {MenuLangId::Kyrgyz, "Кыргызча: German title:"},            {MenuLangId::Slovak, "Slovenčina: German title:"},            {MenuLangId::Slovenian, "Slovenščina: German title:"},            {MenuLangId::Zulu, "isiZulu: German title:"},            {MenuLangId::Basque, "Euskara: German title:"},            {MenuLangId::Hebrew, "עברית: German title:"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -5631,6 +14681,7 @@
             {MenuLangId::Russian, "Итальянское название:"},
             {MenuLangId::ChineseSimplified, "意大利语标题："},
             {MenuLangId::ChineseTraditional, "義大利語標題："},
+            {MenuLangId::ChineseHongKong, "義大利語標題："},
             {MenuLangId::Korean, "이탈리아어 제목:"},
             {MenuLangId::Arabic, "العنوان الإيطالي:"},
             {MenuLangId::Indonesian, "Judul Italia:"},
@@ -5646,7 +14697,56 @@
             {MenuLangId::Finnish, "Italialainen otsikko:"},
             {MenuLangId::Vietnamese, "Tiêu đề tiếng Ý:"},
             {MenuLangId::Polish, "Tytuł włoski:"},
-            {MenuLangId::Romanian, "Titlu italian:"},
+            {MenuLangId::Romanian, "Titlu italian:"},            {MenuLangId::Filipino, "Italian title:"},            {MenuLangId::Swahili, "Italian title:"},            {MenuLangId::Croatian, "Talijanski naslov:"},            {MenuLangId::Icelandic, "Ítalskur titill:"},            {MenuLangId::Hindi, "इटालियन शीर्षक:"},            {MenuLangId::Bengali, "ইতালীয় শিরোনাম:"},            {MenuLangId::Urdu, "اطالوی عنوان:"},            {MenuLangId::Punjabi, "ਇਤਾਲਵੀ ਟਾਈਟਲ:"},            {MenuLangId::Telugu, "ఇటాలియన్ టైటిల్:"},            {MenuLangId::Persian, "عنوان ایتالیایی:"},            {MenuLangId::Malay, "Tajuk Itali:"},            {MenuLangId::Marathi, "इटालियन शीर्षक:"},            {MenuLangId::Tamil, "இத்தாலிய தலைப்பு:"},            {MenuLangId::Gujarati, "ઇટાલિયન શીર્ષક:"},            {MenuLangId::Kannada, "ಇಟಾಲಿಯನ್ ಶೀರ್ಷಿಕೆ:"},            {MenuLangId::Odia, "ଓଡ଼ିଆ: Italian title:"},            {MenuLangId::Malayalam, "ഇറ്റാലിയൻ ശീർഷകം:"},            {MenuLangId::Burmese, "အီတလီ ခေါင်းစဉ်:"},            {MenuLangId::Uzbek, "Italyancha sarlavha:"},            {MenuLangId::Azerbaijani, "İtalyanca başlıq:"},            {MenuLangId::Nepali, "इटालियन शीर्षक:"},            {MenuLangId::Sinhala, "ඉතාලි මාතෘකාව:"},            {MenuLangId::Khmer, "ចំណងជើងអ៊ីតាលី:"},            {MenuLangId::Lao, "ຫົວຂໍ້ອິຕາລີ:"},            {MenuLangId::Armenian, "Իտալերեն վերնագիր:"},            {MenuLangId::Albanian, "Titulli italisht:"},            {MenuLangId::Georgian, "იტალიური სათაური:"},            {MenuLangId::Bosnian, "Italijanski naslov:"},            {MenuLangId::Serbian, "Италијански наслов:"},            {MenuLangId::Macedonian, "Италијански наслов:"},            {MenuLangId::Bulgarian, "Италианско заглавие:"},            {MenuLangId::Belarusian, "Італьянская назва:"},            {MenuLangId::Maltese, "Titlu Taljan:"},            {MenuLangId::Mongolian, "Итали гарчиг:"},            {MenuLangId::Latvian, "Itāļu nosaukums:"},            {MenuLangId::Lithuanian, "Itališkas pavadinimas:"},            {MenuLangId::Afrikaans, "Italiaanse titel:"},            {MenuLangId::Irish, "Teideal Iodáilise:"},            {MenuLangId::Assamese, "ইটালীয় শিৰোনাম:"},            {MenuLangId::Amharic, "አማርኛ: Italian title:"},            {MenuLangId::Estonian, "Eesti: Italian title:"},            {MenuLangId::Kazakh, "Қазақша: Italian title:"},            {MenuLangId::Catalan, "Català: Italian title:"},            {MenuLangId::Kyrgyz, "Кыргызча: Italian title:"},            {MenuLangId::Slovak, "Slovenčina: Italian title:"},            {MenuLangId::Slovenian, "Slovenščina: Italian title:"},            {MenuLangId::Zulu, "isiZulu: Italian title:"},            {MenuLangId::Basque, "Euskara: Italian title:"},            {MenuLangId::Hebrew, "עברית: Italian title:"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -5662,6 +14762,7 @@
             {MenuLangId::Russian, "Испанское название:"},
             {MenuLangId::ChineseSimplified, "西班牙语标题："},
             {MenuLangId::ChineseTraditional, "西班牙語標題："},
+            {MenuLangId::ChineseHongKong, "西班牙語標題："},
             {MenuLangId::Korean, "스페인어 제목:"},
             {MenuLangId::Arabic, "العنوان الإسباني:"},
             {MenuLangId::Indonesian, "Judul Spanyol:"},
@@ -5677,7 +14778,56 @@
             {MenuLangId::Finnish, "Espanjankielinen otsikko:"},
             {MenuLangId::Vietnamese, "Tiêu đề tiếng Tây Ban Nha:"},
             {MenuLangId::Polish, "Tytuł hiszpański:"},
-            {MenuLangId::Romanian, "Titlu spaniol:"},
+            {MenuLangId::Romanian, "Titlu spaniol:"},            {MenuLangId::Filipino, "Spanish title:"},            {MenuLangId::Swahili, "Spanish title:"},            {MenuLangId::Croatian, "Španjolski naslov:"},            {MenuLangId::Icelandic, "Spænskur titill:"},            {MenuLangId::Hindi, "स्पेनिश शीर्षक:"},            {MenuLangId::Bengali, "স্প্যানিশ শিরোনাম:"},            {MenuLangId::Urdu, "ہسپانوی عنوان:"},            {MenuLangId::Punjabi, "ਸਪੇਨੀ ਟਾਈਟਲ:"},            {MenuLangId::Telugu, "స్పానిష్ టైటిల్:"},            {MenuLangId::Persian, "عنوان اسپانیایی:"},            {MenuLangId::Malay, "Tajuk Sepanyol:"},            {MenuLangId::Marathi, "स्पॅनिश शीर्षक:"},            {MenuLangId::Tamil, "ஸ்பானிஷ் தலைப்பு:"},            {MenuLangId::Gujarati, "સ્પેનિશ શીર્ષક:"},            {MenuLangId::Kannada, "ಸ್ಪ್ಯಾನಿಷ್ ಶೀರ್ಷಿಕೆ:"},            {MenuLangId::Odia, "ଓଡ଼ିଆ: Spanish title:"},            {MenuLangId::Malayalam, "സ്പാനിഷ് ശീർഷകം:"},            {MenuLangId::Burmese, "စပိန် ခေါင်းစဉ်:"},            {MenuLangId::Uzbek, "Ispancha sarlavha:"},            {MenuLangId::Azerbaijani, "İspanca başlıq:"},            {MenuLangId::Nepali, "स्पेनी शीर्षक:"},            {MenuLangId::Sinhala, "ස්පාඤ්ඤ මාතෘකාව:"},            {MenuLangId::Khmer, "ចំណងជើងអេស្ប៉ាញ:"},            {MenuLangId::Lao, "ຫົວຂໍ້ສະເປນ:"},            {MenuLangId::Armenian, "Իսպաներեն վերնագիր:"},            {MenuLangId::Albanian, "Titulli spanjisht:"},            {MenuLangId::Georgian, "ესპანური სათაური:"},            {MenuLangId::Bosnian, "Španski naslov:"},            {MenuLangId::Serbian, "Шпански наслов:"},            {MenuLangId::Macedonian, "Шпански наслов:"},            {MenuLangId::Bulgarian, "Испанско заглавие:"},            {MenuLangId::Belarusian, "Іспанская назва:"},            {MenuLangId::Maltese, "Titlu Spanjol:"},            {MenuLangId::Mongolian, "Испани гарчиг:"},            {MenuLangId::Latvian, "Spāņu nosaukums:"},            {MenuLangId::Lithuanian, "Ispaniškas pavadinimas:"},            {MenuLangId::Afrikaans, "Spaanse titel:"},            {MenuLangId::Irish, "Teideal Spáinnise:"},            {MenuLangId::Assamese, "স্পেনিছ শিৰোনাম:"},            {MenuLangId::Amharic, "አማርኛ: Spanish title:"},            {MenuLangId::Estonian, "Eesti: Spanish title:"},            {MenuLangId::Kazakh, "Қазақша: Spanish title:"},            {MenuLangId::Catalan, "Català: Spanish title:"},            {MenuLangId::Kyrgyz, "Кыргызча: Spanish title:"},            {MenuLangId::Slovak, "Slovenčina: Spanish title:"},            {MenuLangId::Slovenian, "Slovenščina: Spanish title:"},            {MenuLangId::Zulu, "isiZulu: Spanish title:"},            {MenuLangId::Basque, "Euskara: Spanish title:"},            {MenuLangId::Hebrew, "עברית: Spanish title:"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -5693,6 +14843,7 @@
             {MenuLangId::Russian, "Китайское название:"},
             {MenuLangId::ChineseSimplified, "中文标题："},
             {MenuLangId::ChineseTraditional, "中文標題："},
+            {MenuLangId::ChineseHongKong, "中文標題："},
             {MenuLangId::Korean, "중국어 제목:"},
             {MenuLangId::Arabic, "العنوان بالصينية:"},
             {MenuLangId::Indonesian, "Judul bahasa Tionghoa:"},
@@ -5708,7 +14859,56 @@
             {MenuLangId::Finnish, "Kiinalainen otsikko:"},
             {MenuLangId::Vietnamese, "Tiêu đề tiếng Trung:"},
             {MenuLangId::Polish, "Tytuł chiński:"},
-            {MenuLangId::Romanian, "Titlu în chineză:"},
+            {MenuLangId::Romanian, "Titlu în chineză:"},            {MenuLangId::Filipino, "Chinese title:"},            {MenuLangId::Swahili, "Chinese title:"},            {MenuLangId::Croatian, "Kineski naslov:"},            {MenuLangId::Icelandic, "Kínverskur titill:"},            {MenuLangId::Hindi, "चीनी शीर्षक:"},            {MenuLangId::Bengali, "চীনা শিরোনাম:"},            {MenuLangId::Urdu, "چینی عنوان:"},            {MenuLangId::Punjabi, "ਚੀਨੀ ਟਾਈਟਲ:"},            {MenuLangId::Telugu, "చైనీస్ టైటిల్:"},            {MenuLangId::Persian, "عنوان چینی:"},            {MenuLangId::Malay, "Tajuk Cina:"},            {MenuLangId::Marathi, "चिनी शीर्षक:"},            {MenuLangId::Tamil, "சீன தலைப்பு:"},            {MenuLangId::Gujarati, "ચાઇનીઝ શીર્ષક:"},            {MenuLangId::Kannada, "ಚೈನೀಸ್ ಶೀರ್ಷಿಕೆ:"},            {MenuLangId::Odia, "ଓଡ଼ିଆ: Chinese title:"},            {MenuLangId::Malayalam, "ചൈനീസ് ശീർഷകം:"},            {MenuLangId::Burmese, "တရုတ် ခေါင်းစဉ်:"},            {MenuLangId::Uzbek, "Xitoycha sarlavha:"},            {MenuLangId::Azerbaijani, "Çincə başlıq:"},            {MenuLangId::Nepali, "चिनियाँ शीर्षक:"},            {MenuLangId::Sinhala, "චීන මාතෘකාව:"},            {MenuLangId::Khmer, "ចំណងជើងចិន:"},            {MenuLangId::Lao, "ຫົວຂໍ້ຈີນ:"},            {MenuLangId::Armenian, "Չինարեն վերնագիր:"},            {MenuLangId::Albanian, "Titulli kinezisht:"},            {MenuLangId::Georgian, "ჩინური სათაური:"},            {MenuLangId::Bosnian, "Kineski naslov:"},            {MenuLangId::Serbian, "Кинески наслов:"},            {MenuLangId::Macedonian, "Кинески наслов:"},            {MenuLangId::Bulgarian, "Китайско заглавие:"},            {MenuLangId::Belarusian, "Кітайская назва:"},            {MenuLangId::Maltese, "Titlu Ċiniż:"},            {MenuLangId::Mongolian, "Хятад гарчиг:"},            {MenuLangId::Latvian, "Ķīniešu nosaukums:"},            {MenuLangId::Lithuanian, "Kiniškas pavadinimas:"},            {MenuLangId::Afrikaans, "Chinese titel:"},            {MenuLangId::Irish, "Teideal Sínise:"},            {MenuLangId::Assamese, "চীনা শিৰোনাম:"},            {MenuLangId::Amharic, "አማርኛ: Chinese title:"},            {MenuLangId::Estonian, "Eesti: Chinese title:"},            {MenuLangId::Kazakh, "Қазақша: Chinese title:"},            {MenuLangId::Catalan, "Català: Chinese title:"},            {MenuLangId::Kyrgyz, "Кыргызча: Chinese title:"},            {MenuLangId::Slovak, "Slovenčina: Chinese title:"},            {MenuLangId::Slovenian, "Slovenščina: Chinese title:"},            {MenuLangId::Zulu, "isiZulu: Chinese title:"},            {MenuLangId::Basque, "Euskara: Chinese title:"},            {MenuLangId::Hebrew, "עברית: Chinese title:"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -5724,6 +14924,7 @@
             {MenuLangId::Russian, "Корейское название:"},
             {MenuLangId::ChineseSimplified, "韩语标题:"},
             {MenuLangId::ChineseTraditional, "韓語標題:"},
+            {MenuLangId::ChineseHongKong, "韓語標題:"},
             {MenuLangId::Korean, "한국어 제목:"},
             {MenuLangId::Arabic, "العنوان الكوري:"},
             {MenuLangId::Indonesian, "Judul Korea:"},
@@ -5739,7 +14940,56 @@
             {MenuLangId::Finnish, "Koreankielinen otsikko:"},
             {MenuLangId::Vietnamese, "Tiêu đề tiếng Hàn:"},
             {MenuLangId::Polish, "Tytuł koreański:"},
-            {MenuLangId::Romanian, "Titlu coreean:"},
+            {MenuLangId::Romanian, "Titlu coreean:"},            {MenuLangId::Filipino, "Korean title:"},            {MenuLangId::Swahili, "Korean title:"},            {MenuLangId::Croatian, "Korejski naslov:"},            {MenuLangId::Icelandic, "Kóreskur titill:"},            {MenuLangId::Hindi, "कोरियाई शीर्षक:"},            {MenuLangId::Bengali, "কোরীয় শিরোনাম:"},            {MenuLangId::Urdu, "کوریائی عنوان:"},            {MenuLangId::Punjabi, "ਕੋਰੀਆਈ ਟਾਈਟਲ:"},            {MenuLangId::Telugu, "కొరియన్ టైటిల్:"},            {MenuLangId::Persian, "عنوان کره‌ای:"},            {MenuLangId::Malay, "Tajuk Korea:"},            {MenuLangId::Marathi, "कोरियन शीर्षक:"},            {MenuLangId::Tamil, "கொரிய தலைப்பு:"},            {MenuLangId::Gujarati, "કોરિયન શીર્ષક:"},            {MenuLangId::Kannada, "ಕೊರಿಯನ್ ಶೀರ್ಷಿಕೆ:"},            {MenuLangId::Odia, "ଓଡ଼ିଆ: Korean title:"},            {MenuLangId::Malayalam, "കൊറിയൻ ശീർഷകം:"},            {MenuLangId::Burmese, "ကိုရီးယား ခေါင်းစဉ်:"},            {MenuLangId::Uzbek, "Koreyscha sarlavha:"},            {MenuLangId::Azerbaijani, "Koreyaca başlıq:"},            {MenuLangId::Nepali, "कोरियाली शीर्षक:"},            {MenuLangId::Sinhala, "කොරියානු මාතෘකාව:"},            {MenuLangId::Khmer, "ចំណងជើងកូរ៉េ:"},            {MenuLangId::Lao, "ຫົວຂໍ້ເກົາຫຼີ:"},            {MenuLangId::Armenian, "Կորեերեն վերնագիր:"},            {MenuLangId::Albanian, "Titulli koreisht:"},            {MenuLangId::Georgian, "კორეული სათაური:"},            {MenuLangId::Bosnian, "Korejski naslov:"},            {MenuLangId::Serbian, "Корејски наслов:"},            {MenuLangId::Macedonian, "Корејски наслов:"},            {MenuLangId::Bulgarian, "Корейско заглавие:"},            {MenuLangId::Belarusian, "Карэйская назва:"},            {MenuLangId::Maltese, "Titlu Korean:"},            {MenuLangId::Mongolian, "Солонгос гарчиг:"},            {MenuLangId::Latvian, "Korejiešu nosaukums:"},            {MenuLangId::Lithuanian, "Korėjietiškas pavadinimas:"},            {MenuLangId::Afrikaans, "Koreaanse titel:"},            {MenuLangId::Irish, "Teideal Cóiréise:"},            {MenuLangId::Assamese, "কোৰিয়ান শিৰোনাম:"},            {MenuLangId::Amharic, "አማርኛ: Korean title:"},            {MenuLangId::Estonian, "Eesti: Korean title:"},            {MenuLangId::Kazakh, "Қазақша: Korean title:"},            {MenuLangId::Catalan, "Català: Korean title:"},            {MenuLangId::Kyrgyz, "Кыргызча: Korean title:"},            {MenuLangId::Slovak, "Slovenčina: Korean title:"},            {MenuLangId::Slovenian, "Slovenščina: Korean title:"},            {MenuLangId::Zulu, "isiZulu: Korean title:"},            {MenuLangId::Basque, "Euskara: Korean title:"},            {MenuLangId::Hebrew, "עברית: Korean title:"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -5755,6 +15005,7 @@
             {MenuLangId::Russian, "Бинарные файлы ARM7 и ARM9"},
             {MenuLangId::ChineseSimplified, "ARM7/ARM9 二进制"},
             {MenuLangId::ChineseTraditional, "ARM7/ARM9 二進位制"},
+            {MenuLangId::ChineseHongKong, "ARM7/ARM9 二進位制"},
             {MenuLangId::Korean, "ARM7/ARM9 바이너리"},
             {MenuLangId::Arabic, "ARM7 and ARM9 binaries"},
             {MenuLangId::Indonesian, "ARM7 and ARM9 binaries"},
@@ -5770,7 +15021,56 @@
             {MenuLangId::Finnish, "ARM7 and ARM9 binaries"},
             {MenuLangId::Vietnamese, "ARM7 and ARM9 binaries"},
             {MenuLangId::Polish, "ARM7 and ARM9 binaries"},
-            {MenuLangId::Romanian, "ARM7 and ARM9 binaries"},
+            {MenuLangId::Romanian, "ARM7 and ARM9 binaries"},            {MenuLangId::Filipino, "ARM7 and ARM9 binaries"},            {MenuLangId::Swahili, "ARM7 and ARM9 binaries"},            {MenuLangId::Croatian, "ARM7 i ARM9 binarne datoteke"},            {MenuLangId::Icelandic, "ARM7 og ARM9 tvíundarskrár"},            {MenuLangId::Hindi, "ARM7 और ARM9 बाइनरी"},            {MenuLangId::Bengali, "ARM7 ও ARM9 বাইনারি"},            {MenuLangId::Urdu, "ARM7 اور ARM9 بائنریز"},            {MenuLangId::Punjabi, "ARM7 ਅਤੇ ARM9 ਬਾਈਨਰੀਆਂ"},            {MenuLangId::Telugu, "ARM7 మరియు ARM9 బైనరీలు"},            {MenuLangId::Persian, "باینری‌های ARM7 و ARM9"},            {MenuLangId::Malay, "Binari ARM7 dan ARM9"},            {MenuLangId::Marathi, "ARM7 आणि ARM9 बायनरी"},            {MenuLangId::Tamil, "ARM7 மற்றும் ARM9 binaryகள்"},            {MenuLangId::Gujarati, "ARM7 અને ARM9 binaries"},            {MenuLangId::Kannada, "ARM7 ಮತ್ತು ARM9 binaries"},            {MenuLangId::Odia, "ଓଡ଼ିଆ: ARM7 and ARM9 binaries"},            {MenuLangId::Malayalam, "ARM7, ARM9 binaries"},            {MenuLangId::Burmese, "ARM7 နှင့် ARM9 binaries"},            {MenuLangId::Uzbek, "ARM7 va ARM9 binaries"},            {MenuLangId::Azerbaijani, "ARM7 və ARM9 binaries"},            {MenuLangId::Nepali, "ARM7 र ARM9 binaries"},            {MenuLangId::Sinhala, "ARM7 සහ ARM9 binaries"},            {MenuLangId::Khmer, "ARM7 និង ARM9 binaries"},            {MenuLangId::Lao, "ARM7 ແລະ ARM9 binaries"},            {MenuLangId::Armenian, "ARM7 և ARM9 binaries"},            {MenuLangId::Albanian, "ARM7 dhe ARM9 binaries"},            {MenuLangId::Georgian, "ARM7 და ARM9 binaries"},            {MenuLangId::Bosnian, "ARM7 i ARM9 binaries"},            {MenuLangId::Serbian, "ARM7 и ARM9 binaries"},            {MenuLangId::Macedonian, "ARM7 и ARM9 binaries"},            {MenuLangId::Bulgarian, "ARM7 и ARM9 binaries"},            {MenuLangId::Belarusian, "ARM7 і ARM9 binaries"},            {MenuLangId::Maltese, "ARM7 u ARM9 binaries"},            {MenuLangId::Mongolian, "ARM7 ба ARM9 binaries"},            {MenuLangId::Latvian, "ARM7 un ARM9 binaries"},            {MenuLangId::Lithuanian, "ARM7 ir ARM9 binaries"},            {MenuLangId::Afrikaans, "ARM7 en ARM9 binaries"},            {MenuLangId::Irish, "Gaeilge: ARM7 and ARM9 binaries"},            {MenuLangId::Assamese, "ARM7 আৰু ARM9 binaries"},            {MenuLangId::Amharic, "አማርኛ: ARM7 and ARM9 binaries"},            {MenuLangId::Estonian, "Eesti: ARM7 and ARM9 binaries"},            {MenuLangId::Kazakh, "Қазақша: ARM7 and ARM9 binaries"},            {MenuLangId::Catalan, "Català: ARM7 and ARM9 binaries"},            {MenuLangId::Kyrgyz, "Кыргызча: ARM7 and ARM9 binaries"},            {MenuLangId::Slovak, "Slovenčina: ARM7 and ARM9 binaries"},            {MenuLangId::Slovenian, "Slovenščina: ARM7 and ARM9 binaries"},            {MenuLangId::Zulu, "isiZulu: ARM7 and ARM9 binaries"},            {MenuLangId::Basque, "Euskara: ARM7 and ARM9 binaries"},            {MenuLangId::Hebrew, "עברית: ARM7 and ARM9 binaries"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -5786,6 +15086,7 @@
             {MenuLangId::Russian, "Смещение ROM ARM9: "},
             {MenuLangId::ChineseSimplified, "ARM9 ROM 偏移： "},
             {MenuLangId::ChineseTraditional, "ARM9 ROM 偏移： "},
+            {MenuLangId::ChineseHongKong, "ARM9 ROM 偏移： "},
             {MenuLangId::Korean, "ARM9 ROM 오프셋: "},
             {MenuLangId::Arabic, "إزاحة ROM ARM9: "},
             {MenuLangId::Indonesian, "Offset ROM ARM9: "},
@@ -5801,7 +15102,56 @@
             {MenuLangId::Finnish, "ARM9 ROM -siirtymä: "},
             {MenuLangId::Vietnamese, "Offset ROM ARM9: "},
             {MenuLangId::Polish, "Przesunięcie ROM ARM9: "},
-            {MenuLangId::Romanian, "Offset ROM ARM9: "},
+            {MenuLangId::Romanian, "Offset ROM ARM9: "},            {MenuLangId::Filipino, "ARM9 ROM offset: "},            {MenuLangId::Swahili, "ARM9 ROM offset: "},            {MenuLangId::Croatian, "ARM9 ROM offset: "},            {MenuLangId::Icelandic, "ARM9 ROM-hliðrun: "},            {MenuLangId::Hindi, "ARM9 ROM ऑफ़सेट: "},            {MenuLangId::Bengali, "ARM9 ROM অফসেট: "},            {MenuLangId::Urdu, "ARM9 ROM آفسیٹ: "},            {MenuLangId::Punjabi, "ARM9 ROM ਆਫਸੈਟ: "},            {MenuLangId::Telugu, "ARM9 ROM ఆఫ్‌సెట్: "},            {MenuLangId::Persian, "آفست ROM ARM9: "},            {MenuLangId::Malay, "Ofset ROM ARM9: "},            {MenuLangId::Marathi, "ARM9 ROM ऑफसेट: "},            {MenuLangId::Tamil, "ARM9 ROM offset: "},            {MenuLangId::Gujarati, "ARM9 ROM offset: "},            {MenuLangId::Kannada, "ARM9 ROM offset: "},            {MenuLangId::Odia, "ଓଡ଼ିଆ: ARM9 ROM offset: "},            {MenuLangId::Malayalam, "ARM9 ROM offset: "},            {MenuLangId::Burmese, "ARM9 ROM offset: "},            {MenuLangId::Uzbek, "ARM9 ROM offset: "},            {MenuLangId::Azerbaijani, "ARM9 ROM offset: "},            {MenuLangId::Nepali, "ARM9 ROM offset: "},            {MenuLangId::Sinhala, "ARM9 ROM offset: "},            {MenuLangId::Khmer, "ARM9 ROM offset: "},            {MenuLangId::Lao, "ARM9 ROM offset: "},            {MenuLangId::Armenian, "ARM9 ROM offset: "},            {MenuLangId::Albanian, "ARM9 ROM offset: "},            {MenuLangId::Georgian, "ARM9 ROM offset: "},            {MenuLangId::Bosnian, "ARM9 ROM offset: "},            {MenuLangId::Serbian, "ARM9 ROM offset: "},            {MenuLangId::Macedonian, "ARM9 ROM offset: "},            {MenuLangId::Bulgarian, "ARM9 ROM offset: "},            {MenuLangId::Belarusian, "ARM9 ROM offset: "},            {MenuLangId::Maltese, "ARM9 ROM offset: "},            {MenuLangId::Mongolian, "ARM9 ROM offset: "},            {MenuLangId::Latvian, "ARM9 ROM offset: "},            {MenuLangId::Lithuanian, "ARM9 ROM offset: "},            {MenuLangId::Afrikaans, "ARM9 ROM offset: "},            {MenuLangId::Irish, "Gaeilge: ARM9 ROM offset: "},            {MenuLangId::Assamese, "ARM9 ROM offset: "},            {MenuLangId::Amharic, "አማርኛ: ARM9 ROM offset: "},            {MenuLangId::Estonian, "Eesti: ARM9 ROM offset: "},            {MenuLangId::Kazakh, "Қазақша: ARM9 ROM offset: "},            {MenuLangId::Catalan, "Català: ARM9 ROM offset: "},            {MenuLangId::Kyrgyz, "Кыргызча: ARM9 ROM offset: "},            {MenuLangId::Slovak, "Slovenčina: ARM9 ROM offset: "},            {MenuLangId::Slovenian, "Slovenščina: ARM9 ROM offset: "},            {MenuLangId::Zulu, "isiZulu: ARM9 ROM offset: "},            {MenuLangId::Basque, "Euskara: ARM9 ROM offset: "},            {MenuLangId::Hebrew, "עברית: ARM9 ROM offset: "},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -5817,6 +15167,7 @@
             {MenuLangId::Russian, "Адрес входа ARM9:"},
             {MenuLangId::ChineseSimplified, "ARM9 入口地址："},
             {MenuLangId::ChineseTraditional, "ARM9 入口地址："},
+            {MenuLangId::ChineseHongKong, "ARM9 入口地址："},
             {MenuLangId::Korean, "ARM9 진입 주소:"},
             {MenuLangId::Arabic, "ARM9 entry address:"},
             {MenuLangId::Indonesian, "ARM9 entry address:"},
@@ -5832,7 +15183,56 @@
             {MenuLangId::Finnish, "ARM9 entry address:"},
             {MenuLangId::Vietnamese, "ARM9 entry address:"},
             {MenuLangId::Polish, "ARM9 entry address:"},
-            {MenuLangId::Romanian, "ARM9 entry address:"},
+            {MenuLangId::Romanian, "ARM9 entry address:"},            {MenuLangId::Filipino, "ARM9 entry address:"},            {MenuLangId::Swahili, "ARM9 entry address:"},            {MenuLangId::Croatian, "ARM9 entry adresa:"},            {MenuLangId::Icelandic, "ARM9 upphafsvistfang:"},            {MenuLangId::Hindi, "ARM9 एंट्री पता:"},            {MenuLangId::Bengali, "ARM9 এন্ট্রি ঠিকানা:"},            {MenuLangId::Urdu, "ARM9 انٹری پتہ:"},            {MenuLangId::Punjabi, "ARM9 ਐਂਟਰੀ ਪਤਾ:"},            {MenuLangId::Telugu, "ARM9 ఎంట్రీ చిరునామా:"},            {MenuLangId::Persian, "آدرس ورود ARM9:"},            {MenuLangId::Malay, "Alamat masuk ARM9:"},            {MenuLangId::Marathi, "ARM9 एंट्री पत्ता:"},            {MenuLangId::Tamil, "ARM9 entry முகவரி:"},            {MenuLangId::Gujarati, "ARM9 entry સરનામું:"},            {MenuLangId::Kannada, "ARM9 entry ವಿಳಾಸ:"},            {MenuLangId::Odia, "ଓଡ଼ିଆ: ARM9 entry address:"},            {MenuLangId::Malayalam, "ARM9 entry വിലാസം:"},            {MenuLangId::Burmese, "ARM9 entry လိပ်စာ:"},            {MenuLangId::Uzbek, "ARM9 entry manzil:"},            {MenuLangId::Azerbaijani, "ARM9 entry ünvanı:"},            {MenuLangId::Nepali, "ARM9 entry ठेगाना:"},            {MenuLangId::Sinhala, "ARM9 entry ලිපිනය:"},            {MenuLangId::Khmer, "អាសយដ្ឋាន entry ARM9:"},            {MenuLangId::Lao, "ທີ່ຢູ່ entry ARM9:"},            {MenuLangId::Armenian, "ARM9 entry հասցե:"},            {MenuLangId::Albanian, "Adresa entry ARM9:"},            {MenuLangId::Georgian, "ARM9 entry მისამართი:"},            {MenuLangId::Bosnian, "ARM9 entry adresa:"},            {MenuLangId::Serbian, "ARM9 entry адреса:"},            {MenuLangId::Macedonian, "ARM9 entry адреса:"},            {MenuLangId::Bulgarian, "ARM9 entry адрес:"},            {MenuLangId::Belarusian, "ARM9 entry адрас:"},            {MenuLangId::Maltese, "indirizz ARM9 entry:"},            {MenuLangId::Mongolian, "ARM9 entry хаяг:"},            {MenuLangId::Latvian, "ARM9 entry adrese:"},            {MenuLangId::Lithuanian, "ARM9 entry adresas:"},            {MenuLangId::Afrikaans, "ARM9 entry-adres:"},            {MenuLangId::Irish, "Gaeilge: ARM9 entry address:"},            {MenuLangId::Assamese, "ARM9 entry ঠিকনা:"},            {MenuLangId::Amharic, "አማርኛ: ARM9 entry address:"},            {MenuLangId::Estonian, "Eesti: ARM9 entry address:"},            {MenuLangId::Kazakh, "Қазақша: ARM9 entry address:"},            {MenuLangId::Catalan, "Català: ARM9 entry address:"},            {MenuLangId::Kyrgyz, "Кыргызча: ARM9 entry address:"},            {MenuLangId::Slovak, "Slovenčina: ARM9 entry address:"},            {MenuLangId::Slovenian, "Slovenščina: ARM9 entry address:"},            {MenuLangId::Zulu, "isiZulu: ARM9 entry address:"},            {MenuLangId::Basque, "Euskara: ARM9 entry address:"},            {MenuLangId::Hebrew, "עברית: ARM9 entry address:"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -5848,6 +15248,7 @@
             {MenuLangId::Russian, "Адрес RAM ARM9:"},
             {MenuLangId::ChineseSimplified, "ARM9 RAM 地址："},
             {MenuLangId::ChineseTraditional, "ARM9 RAM 地址："},
+            {MenuLangId::ChineseHongKong, "ARM9 RAM 地址："},
             {MenuLangId::Korean, "ARM9 RAM 주소:"},
             {MenuLangId::Arabic, "عنوان ذاكرة ARM9:"},
             {MenuLangId::Indonesian, "Alamat RAM ARM9:"},
@@ -5863,7 +15264,56 @@
             {MenuLangId::Finnish, "ARM9 RAM-osoite:"},
             {MenuLangId::Vietnamese, "Địa chỉ RAM ARM9:"},
             {MenuLangId::Polish, "Adres RAM ARM9:"},
-            {MenuLangId::Romanian, "Adresă RAM ARM9:"},
+            {MenuLangId::Romanian, "Adresă RAM ARM9:"},            {MenuLangId::Filipino, "ARM9 RAM address:"},            {MenuLangId::Swahili, "ARM9 RAM address:"},            {MenuLangId::Croatian, "ARM9 RAM adresa:"},            {MenuLangId::Icelandic, "ARM9 RAM-vistfang:"},            {MenuLangId::Hindi, "ARM9 RAM पता:"},            {MenuLangId::Bengali, "ARM9 RAM ঠিকানা:"},            {MenuLangId::Urdu, "ARM9 RAM پتہ:"},            {MenuLangId::Punjabi, "ARM9 RAM ਪਤਾ:"},            {MenuLangId::Telugu, "ARM9 RAM చిరునామా:"},            {MenuLangId::Persian, "آدرس RAM ARM9:"},            {MenuLangId::Malay, "Alamat RAM ARM9:"},            {MenuLangId::Marathi, "ARM9 RAM पत्ता:"},            {MenuLangId::Tamil, "ARM9 RAM முகவரி:"},            {MenuLangId::Gujarati, "ARM9 RAM સરનામું:"},            {MenuLangId::Kannada, "ARM9 RAM ವಿಳಾಸ:"},            {MenuLangId::Odia, "ଓଡ଼ିଆ: ARM9 RAM address:"},            {MenuLangId::Malayalam, "ARM9 RAM വിലാസം:"},            {MenuLangId::Burmese, "ARM9 RAM လိပ်စာ:"},            {MenuLangId::Uzbek, "ARM9 RAM manzil:"},            {MenuLangId::Azerbaijani, "ARM9 RAM ünvanı:"},            {MenuLangId::Nepali, "ARM9 RAM ठेगाना:"},            {MenuLangId::Sinhala, "ARM9 RAM ලිපිනය:"},            {MenuLangId::Khmer, "អាសយដ្ឋាន RAM ARM9:"},            {MenuLangId::Lao, "ທີ່ຢູ່ RAM ARM9:"},            {MenuLangId::Armenian, "ARM9 RAM հասցե:"},            {MenuLangId::Albanian, "Adresa RAM ARM9:"},            {MenuLangId::Georgian, "ARM9 RAM მისამართი:"},            {MenuLangId::Bosnian, "ARM9 RAM adresa:"},            {MenuLangId::Serbian, "ARM9 RAM адреса:"},            {MenuLangId::Macedonian, "ARM9 RAM адреса:"},            {MenuLangId::Bulgarian, "ARM9 RAM адрес:"},            {MenuLangId::Belarusian, "ARM9 RAM адрас:"},            {MenuLangId::Maltese, "indirizz ARM9 RAM:"},            {MenuLangId::Mongolian, "ARM9 RAM хаяг:"},            {MenuLangId::Latvian, "ARM9 RAM adrese:"},            {MenuLangId::Lithuanian, "ARM9 RAM adresas:"},            {MenuLangId::Afrikaans, "ARM9 RAM-adres:"},            {MenuLangId::Irish, "Gaeilge: ARM9 RAM address:"},            {MenuLangId::Assamese, "ARM9 RAM ঠিকনা:"},            {MenuLangId::Amharic, "አማርኛ: ARM9 RAM address:"},            {MenuLangId::Estonian, "Eesti: ARM9 RAM address:"},            {MenuLangId::Kazakh, "Қазақша: ARM9 RAM address:"},            {MenuLangId::Catalan, "Català: ARM9 RAM address:"},            {MenuLangId::Kyrgyz, "Кыргызча: ARM9 RAM address:"},            {MenuLangId::Slovak, "Slovenčina: ARM9 RAM address:"},            {MenuLangId::Slovenian, "Slovenščina: ARM9 RAM address:"},            {MenuLangId::Zulu, "isiZulu: ARM9 RAM address:"},            {MenuLangId::Basque, "Euskara: ARM9 RAM address:"},            {MenuLangId::Hebrew, "עברית: ARM9 RAM address:"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -5879,6 +15329,7 @@
             {MenuLangId::Russian, "Размер ARM9:"},
             {MenuLangId::ChineseSimplified, "ARM9 大小:"},
             {MenuLangId::ChineseTraditional, "ARM9 大小:"},
+            {MenuLangId::ChineseHongKong, "ARM9 大小:"},
             {MenuLangId::Korean, "ARM9 크기:"},
             {MenuLangId::Arabic, "حجم ARM9:"},
             {MenuLangId::Indonesian, "Ukuran ARM9:"},
@@ -5894,7 +15345,56 @@
             {MenuLangId::Finnish, "ARM9-koko:"},
             {MenuLangId::Vietnamese, "Kích thước ARM9:"},
             {MenuLangId::Polish, "Rozmiar ARM9:"},
-            {MenuLangId::Romanian, "Dimensiune ARM9:"},
+            {MenuLangId::Romanian, "Dimensiune ARM9:"},            {MenuLangId::Filipino, "ARM9 laki:"},            {MenuLangId::Swahili, "ARM9 ukubwa:"},            {MenuLangId::Croatian, "ARM9 veličina:"},            {MenuLangId::Icelandic, "ARM9 stærð:"},            {MenuLangId::Hindi, "ARM9 आकार:"},            {MenuLangId::Bengali, "ARM9 আকার:"},            {MenuLangId::Urdu, "ARM9 سائز:"},            {MenuLangId::Punjabi, "ARM9 ਆਕਾਰ:"},            {MenuLangId::Telugu, "ARM9 పరిమాణం:"},            {MenuLangId::Persian, "ARM9 اندازه:"},            {MenuLangId::Malay, "ARM9 saiz:"},            {MenuLangId::Marathi, "ARM9 आकार:"},            {MenuLangId::Tamil, "ARM9 அளவு:"},            {MenuLangId::Gujarati, "ARM9 કદ:"},            {MenuLangId::Kannada, "ARM9 ಗಾತ್ರ:"},            {MenuLangId::Odia, "ARM9 ଆକାର:"},            {MenuLangId::Malayalam, "ARM9 വലുപ്പം:"},            {MenuLangId::Burmese, "ARM9 အရွယ်အစား:"},            {MenuLangId::Uzbek, "ARM9 oʻlcham:"},            {MenuLangId::Azerbaijani, "ARM9 ölçü:"},            {MenuLangId::Nepali, "ARM9 आकार:"},            {MenuLangId::Sinhala, "ARM9 ප්‍රමාණය:"},            {MenuLangId::Khmer, "ARM9 ទំហំ:"},            {MenuLangId::Lao, "ARM9 ຂະໜາດ:"},            {MenuLangId::Armenian, "ARM9 չափ:"},            {MenuLangId::Albanian, "ARM9 madhësi:"},            {MenuLangId::Georgian, "ARM9 ზომა:"},            {MenuLangId::Bosnian, "ARM9 veličina:"},            {MenuLangId::Serbian, "ARM9 величина:"},            {MenuLangId::Macedonian, "ARM9 големина:"},            {MenuLangId::Bulgarian, "ARM9 размер:"},            {MenuLangId::Belarusian, "ARM9 памер:"},            {MenuLangId::Maltese, "ARM9 daqs:"},            {MenuLangId::Mongolian, "ARM9 хэмжээ:"},            {MenuLangId::Latvian, "ARM9 izmērs:"},            {MenuLangId::Lithuanian, "ARM9 dydis:"},            {MenuLangId::Afrikaans, "ARM9 grootte:"},            {MenuLangId::Irish, "ARM9 méid:"},            {MenuLangId::Assamese, "ARM9 আকাৰ:"},            {MenuLangId::Amharic, "ARM9 መጠን:"},            {MenuLangId::Estonian, "ARM9 suurus:"},            {MenuLangId::Kazakh, "ARM9 өлшем:"},            {MenuLangId::Catalan, "ARM9 mida:"},            {MenuLangId::Kyrgyz, "ARM9 өлчөм:"},            {MenuLangId::Slovak, "ARM9 veľkosť:"},            {MenuLangId::Slovenian, "ARM9 velikost:"},            {MenuLangId::Zulu, "ARM9 usayizi:"},            {MenuLangId::Basque, "ARM9 tamaina:"},            {MenuLangId::Hebrew, "ARM9 גודל:"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -5910,6 +15410,7 @@
             {MenuLangId::Russian, "Смещение ROM ARM7: "},
             {MenuLangId::ChineseSimplified, "ARM7 ROM 偏移: "},
             {MenuLangId::ChineseTraditional, "ARM7 ROM 偏移: "},
+            {MenuLangId::ChineseHongKong, "ARM7 ROM 偏移: "},
             {MenuLangId::Korean, "ARM7 ROM 오프셋: "},
             {MenuLangId::Arabic, "ARM7 ROM offset: "},
             {MenuLangId::Indonesian, "ARM7 ROM offset: "},
@@ -5925,7 +15426,56 @@
             {MenuLangId::Finnish, "ARM7 ROM offset: "},
             {MenuLangId::Vietnamese, "ARM7 ROM offset: "},
             {MenuLangId::Polish, "ARM7 ROM offset: "},
-            {MenuLangId::Romanian, "ARM7 ROM offset: "},
+            {MenuLangId::Romanian, "ARM7 ROM offset: "},            {MenuLangId::Filipino, "ARM7 ROM offset: "},            {MenuLangId::Swahili, "ARM7 ROM offset: "},            {MenuLangId::Croatian, "ARM7 ROM offset: "},            {MenuLangId::Icelandic, "ARM7 ROM-hliðrun: "},            {MenuLangId::Hindi, "ARM7 ROM ऑफ़सेट: "},            {MenuLangId::Bengali, "ARM7 ROM অফসেট: "},            {MenuLangId::Urdu, "ARM7 ROM آفسیٹ: "},            {MenuLangId::Punjabi, "ARM7 ROM ਆਫਸੈਟ: "},            {MenuLangId::Telugu, "ARM7 ROM ఆఫ్‌సెట్: "},            {MenuLangId::Persian, "آفست ROM ARM7: "},            {MenuLangId::Malay, "Ofset ROM ARM7: "},            {MenuLangId::Marathi, "ARM7 ROM ऑफसेट: "},            {MenuLangId::Tamil, "ARM7 ROM offset: "},            {MenuLangId::Gujarati, "ARM7 ROM offset: "},            {MenuLangId::Kannada, "ARM7 ROM offset: "},            {MenuLangId::Odia, "ଓଡ଼ିଆ: ARM7 ROM offset: "},            {MenuLangId::Malayalam, "ARM7 ROM offset: "},            {MenuLangId::Burmese, "ARM7 ROM offset: "},            {MenuLangId::Uzbek, "ARM7 ROM offset: "},            {MenuLangId::Azerbaijani, "ARM7 ROM offset: "},            {MenuLangId::Nepali, "ARM7 ROM offset: "},            {MenuLangId::Sinhala, "ARM7 ROM offset: "},            {MenuLangId::Khmer, "ARM7 ROM offset: "},            {MenuLangId::Lao, "ARM7 ROM offset: "},            {MenuLangId::Armenian, "ARM7 ROM offset: "},            {MenuLangId::Albanian, "ARM7 ROM offset: "},            {MenuLangId::Georgian, "ARM7 ROM offset: "},            {MenuLangId::Bosnian, "ARM7 ROM offset: "},            {MenuLangId::Serbian, "ARM7 ROM offset: "},            {MenuLangId::Macedonian, "ARM7 ROM offset: "},            {MenuLangId::Bulgarian, "ARM7 ROM offset: "},            {MenuLangId::Belarusian, "ARM7 ROM offset: "},            {MenuLangId::Maltese, "ARM7 ROM offset: "},            {MenuLangId::Mongolian, "ARM7 ROM offset: "},            {MenuLangId::Latvian, "ARM7 ROM offset: "},            {MenuLangId::Lithuanian, "ARM7 ROM offset: "},            {MenuLangId::Afrikaans, "ARM7 ROM offset: "},            {MenuLangId::Irish, "Gaeilge: ARM7 ROM offset: "},            {MenuLangId::Assamese, "ARM7 ROM offset: "},            {MenuLangId::Amharic, "አማርኛ: ARM7 ROM offset: "},            {MenuLangId::Estonian, "Eesti: ARM7 ROM offset: "},            {MenuLangId::Kazakh, "Қазақша: ARM7 ROM offset: "},            {MenuLangId::Catalan, "Català: ARM7 ROM offset: "},            {MenuLangId::Kyrgyz, "Кыргызча: ARM7 ROM offset: "},            {MenuLangId::Slovak, "Slovenčina: ARM7 ROM offset: "},            {MenuLangId::Slovenian, "Slovenščina: ARM7 ROM offset: "},            {MenuLangId::Zulu, "isiZulu: ARM7 ROM offset: "},            {MenuLangId::Basque, "Euskara: ARM7 ROM offset: "},            {MenuLangId::Hebrew, "עברית: ARM7 ROM offset: "},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -5941,6 +15491,7 @@
             {MenuLangId::Russian, "Адрес входа ARM7:"},
             {MenuLangId::ChineseSimplified, "ARM7 入口地址："},
             {MenuLangId::ChineseTraditional, "ARM7 入口地址："},
+            {MenuLangId::ChineseHongKong, "ARM7 入口地址："},
             {MenuLangId::Korean, "ARM7 진입 주소:"},
             {MenuLangId::Arabic, "عنوان دخول ARM7:"},
             {MenuLangId::Indonesian, "Alamat masuk ARM7:"},
@@ -5956,7 +15507,56 @@
             {MenuLangId::Finnish, "ARM7:n sisääntuloosoite:"},
             {MenuLangId::Vietnamese, "Địa chỉ vào ARM7:"},
             {MenuLangId::Polish, "Adres wejścia ARM7:"},
-            {MenuLangId::Romanian, "Adres intrare ARM7:"},
+            {MenuLangId::Romanian, "Adres intrare ARM7:"},            {MenuLangId::Filipino, "ARM7 entry address:"},            {MenuLangId::Swahili, "ARM7 entry address:"},            {MenuLangId::Croatian, "ARM7 entry adresa:"},            {MenuLangId::Icelandic, "ARM7 upphafsvistfang:"},            {MenuLangId::Hindi, "ARM7 एंट्री पता:"},            {MenuLangId::Bengali, "ARM7 এন্ট্রি ঠিকানা:"},            {MenuLangId::Urdu, "ARM7 انٹری پتہ:"},            {MenuLangId::Punjabi, "ARM7 ਐਂਟਰੀ ਪਤਾ:"},            {MenuLangId::Telugu, "ARM7 ఎంట్రీ చిరునామా:"},            {MenuLangId::Persian, "آدرس ورود ARM7:"},            {MenuLangId::Malay, "Alamat masuk ARM7:"},            {MenuLangId::Marathi, "ARM7 एंट्री पत्ता:"},            {MenuLangId::Tamil, "ARM7 entry முகவரி:"},            {MenuLangId::Gujarati, "ARM7 entry સરનામું:"},            {MenuLangId::Kannada, "ARM7 entry ವಿಳಾಸ:"},            {MenuLangId::Odia, "ଓଡ଼ିଆ: ARM7 entry address:"},            {MenuLangId::Malayalam, "ARM7 entry വിലാസം:"},            {MenuLangId::Burmese, "ARM7 entry လိပ်စာ:"},            {MenuLangId::Uzbek, "ARM7 entry manzil:"},            {MenuLangId::Azerbaijani, "ARM7 entry ünvanı:"},            {MenuLangId::Nepali, "ARM7 entry ठेगाना:"},            {MenuLangId::Sinhala, "ARM7 entry ලිපිනය:"},            {MenuLangId::Khmer, "អាសយដ្ឋាន entry ARM7:"},            {MenuLangId::Lao, "ທີ່ຢູ່ entry ARM7:"},            {MenuLangId::Armenian, "ARM7 entry հասցե:"},            {MenuLangId::Albanian, "Adresa entry ARM7:"},            {MenuLangId::Georgian, "ARM7 entry მისამართი:"},            {MenuLangId::Bosnian, "ARM7 entry adresa:"},            {MenuLangId::Serbian, "ARM7 entry адреса:"},            {MenuLangId::Macedonian, "ARM7 entry адреса:"},            {MenuLangId::Bulgarian, "ARM7 entry адрес:"},            {MenuLangId::Belarusian, "ARM7 entry адрас:"},            {MenuLangId::Maltese, "indirizz ARM7 entry:"},            {MenuLangId::Mongolian, "ARM7 entry хаяг:"},            {MenuLangId::Latvian, "ARM7 entry adrese:"},            {MenuLangId::Lithuanian, "ARM7 entry adresas:"},            {MenuLangId::Afrikaans, "ARM7 entry-adres:"},            {MenuLangId::Irish, "Gaeilge: ARM7 entry address:"},            {MenuLangId::Assamese, "ARM7 entry ঠিকনা:"},            {MenuLangId::Amharic, "አማርኛ: ARM7 entry address:"},            {MenuLangId::Estonian, "Eesti: ARM7 entry address:"},            {MenuLangId::Kazakh, "Қазақша: ARM7 entry address:"},            {MenuLangId::Catalan, "Català: ARM7 entry address:"},            {MenuLangId::Kyrgyz, "Кыргызча: ARM7 entry address:"},            {MenuLangId::Slovak, "Slovenčina: ARM7 entry address:"},            {MenuLangId::Slovenian, "Slovenščina: ARM7 entry address:"},            {MenuLangId::Zulu, "isiZulu: ARM7 entry address:"},            {MenuLangId::Basque, "Euskara: ARM7 entry address:"},            {MenuLangId::Hebrew, "עברית: ARM7 entry address:"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -5972,6 +15572,7 @@
             {MenuLangId::Russian, "Адрес RAM ARM7:"},
             {MenuLangId::ChineseSimplified, "ARM7 RAM 地址："},
             {MenuLangId::ChineseTraditional, "ARM7 RAM 地址："},
+            {MenuLangId::ChineseHongKong, "ARM7 RAM 地址："},
             {MenuLangId::Korean, "ARM7 RAM 주소:"},
             {MenuLangId::Arabic, "ARM7 RAM address:"},
             {MenuLangId::Indonesian, "ARM7 RAM address:"},
@@ -5987,7 +15588,56 @@
             {MenuLangId::Finnish, "ARM7 RAM address:"},
             {MenuLangId::Vietnamese, "ARM7 RAM address:"},
             {MenuLangId::Polish, "ARM7 RAM address:"},
-            {MenuLangId::Romanian, "ARM7 RAM address:"},
+            {MenuLangId::Romanian, "ARM7 RAM address:"},            {MenuLangId::Filipino, "ARM7 RAM address:"},            {MenuLangId::Swahili, "ARM7 RAM address:"},            {MenuLangId::Croatian, "ARM7 RAM adresa:"},            {MenuLangId::Icelandic, "ARM7 RAM-vistfang:"},            {MenuLangId::Hindi, "ARM7 RAM पता:"},            {MenuLangId::Bengali, "ARM7 RAM ঠিকানা:"},            {MenuLangId::Urdu, "ARM7 RAM پتہ:"},            {MenuLangId::Punjabi, "ARM7 RAM ਪਤਾ:"},            {MenuLangId::Telugu, "ARM7 RAM చిరునామా:"},            {MenuLangId::Persian, "آدرس RAM ARM7:"},            {MenuLangId::Malay, "Alamat RAM ARM7:"},            {MenuLangId::Marathi, "ARM7 RAM पत्ता:"},            {MenuLangId::Tamil, "ARM7 RAM முகவரி:"},            {MenuLangId::Gujarati, "ARM7 RAM સરનામું:"},            {MenuLangId::Kannada, "ARM7 RAM ವಿಳಾಸ:"},            {MenuLangId::Odia, "ଓଡ଼ିଆ: ARM7 RAM address:"},            {MenuLangId::Malayalam, "ARM7 RAM വിലാസം:"},            {MenuLangId::Burmese, "ARM7 RAM လိပ်စာ:"},            {MenuLangId::Uzbek, "ARM7 RAM manzil:"},            {MenuLangId::Azerbaijani, "ARM7 RAM ünvanı:"},            {MenuLangId::Nepali, "ARM7 RAM ठेगाना:"},            {MenuLangId::Sinhala, "ARM7 RAM ලිපිනය:"},            {MenuLangId::Khmer, "អាសយដ្ឋាន RAM ARM7:"},            {MenuLangId::Lao, "ທີ່ຢູ່ RAM ARM7:"},            {MenuLangId::Armenian, "ARM7 RAM հասցե:"},            {MenuLangId::Albanian, "Adresa RAM ARM7:"},            {MenuLangId::Georgian, "ARM7 RAM მისამართი:"},            {MenuLangId::Bosnian, "ARM7 RAM adresa:"},            {MenuLangId::Serbian, "ARM7 RAM адреса:"},            {MenuLangId::Macedonian, "ARM7 RAM адреса:"},            {MenuLangId::Bulgarian, "ARM7 RAM адрес:"},            {MenuLangId::Belarusian, "ARM7 RAM адрас:"},            {MenuLangId::Maltese, "indirizz ARM7 RAM:"},            {MenuLangId::Mongolian, "ARM7 RAM хаяг:"},            {MenuLangId::Latvian, "ARM7 RAM adrese:"},            {MenuLangId::Lithuanian, "ARM7 RAM adresas:"},            {MenuLangId::Afrikaans, "ARM7 RAM-adres:"},            {MenuLangId::Irish, "Gaeilge: ARM7 RAM address:"},            {MenuLangId::Assamese, "ARM7 RAM ঠিকনা:"},            {MenuLangId::Amharic, "አማርኛ: ARM7 RAM address:"},            {MenuLangId::Estonian, "Eesti: ARM7 RAM address:"},            {MenuLangId::Kazakh, "Қазақша: ARM7 RAM address:"},            {MenuLangId::Catalan, "Català: ARM7 RAM address:"},            {MenuLangId::Kyrgyz, "Кыргызча: ARM7 RAM address:"},            {MenuLangId::Slovak, "Slovenčina: ARM7 RAM address:"},            {MenuLangId::Slovenian, "Slovenščina: ARM7 RAM address:"},            {MenuLangId::Zulu, "isiZulu: ARM7 RAM address:"},            {MenuLangId::Basque, "Euskara: ARM7 RAM address:"},            {MenuLangId::Hebrew, "עברית: ARM7 RAM address:"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -6003,6 +15653,7 @@
             {MenuLangId::Russian, "Размер ARM7:"},
             {MenuLangId::ChineseSimplified, "ARM7 大小："},
             {MenuLangId::ChineseTraditional, "ARM7 大小："},
+            {MenuLangId::ChineseHongKong, "ARM7 大小："},
             {MenuLangId::Korean, "ARM7 크기:"},
             {MenuLangId::Arabic, "حجم ARM7:"},
             {MenuLangId::Indonesian, "Ukuran ARM7:"},
@@ -6018,7 +15669,56 @@
             {MenuLangId::Finnish, "ARM7-koko:"},
             {MenuLangId::Vietnamese, "Kích thước ARM7:"},
             {MenuLangId::Polish, "Rozmiar ARM7:"},
-            {MenuLangId::Romanian, "Dimensiune ARM7:"},
+            {MenuLangId::Romanian, "Dimensiune ARM7:"},            {MenuLangId::Filipino, "ARM7 laki:"},            {MenuLangId::Swahili, "ARM7 ukubwa:"},            {MenuLangId::Croatian, "ARM7 veličina:"},            {MenuLangId::Icelandic, "ARM7 stærð:"},            {MenuLangId::Hindi, "ARM7 आकार:"},            {MenuLangId::Bengali, "ARM7 আকার:"},            {MenuLangId::Urdu, "ARM7 سائز:"},            {MenuLangId::Punjabi, "ARM7 ਆਕਾਰ:"},            {MenuLangId::Telugu, "ARM7 పరిమాణం:"},            {MenuLangId::Persian, "ARM7 اندازه:"},            {MenuLangId::Malay, "ARM7 saiz:"},            {MenuLangId::Marathi, "ARM7 आकार:"},            {MenuLangId::Tamil, "ARM7 அளவு:"},            {MenuLangId::Gujarati, "ARM7 કદ:"},            {MenuLangId::Kannada, "ARM7 ಗಾತ್ರ:"},            {MenuLangId::Odia, "ARM7 ଆକାର:"},            {MenuLangId::Malayalam, "ARM7 വലുപ്പം:"},            {MenuLangId::Burmese, "ARM7 အရွယ်အစား:"},            {MenuLangId::Uzbek, "ARM7 oʻlcham:"},            {MenuLangId::Azerbaijani, "ARM7 ölçü:"},            {MenuLangId::Nepali, "ARM7 आकार:"},            {MenuLangId::Sinhala, "ARM7 ප්‍රමාණය:"},            {MenuLangId::Khmer, "ARM7 ទំហំ:"},            {MenuLangId::Lao, "ARM7 ຂະໜາດ:"},            {MenuLangId::Armenian, "ARM7 չափ:"},            {MenuLangId::Albanian, "ARM7 madhësi:"},            {MenuLangId::Georgian, "ARM7 ზომა:"},            {MenuLangId::Bosnian, "ARM7 veličina:"},            {MenuLangId::Serbian, "ARM7 величина:"},            {MenuLangId::Macedonian, "ARM7 големина:"},            {MenuLangId::Bulgarian, "ARM7 размер:"},            {MenuLangId::Belarusian, "ARM7 памер:"},            {MenuLangId::Maltese, "ARM7 daqs:"},            {MenuLangId::Mongolian, "ARM7 хэмжээ:"},            {MenuLangId::Latvian, "ARM7 izmērs:"},            {MenuLangId::Lithuanian, "ARM7 dydis:"},            {MenuLangId::Afrikaans, "ARM7 grootte:"},            {MenuLangId::Irish, "ARM7 méid:"},            {MenuLangId::Assamese, "ARM7 আকাৰ:"},            {MenuLangId::Amharic, "ARM7 መጠን:"},            {MenuLangId::Estonian, "ARM7 suurus:"},            {MenuLangId::Kazakh, "ARM7 өлшем:"},            {MenuLangId::Catalan, "ARM7 mida:"},            {MenuLangId::Kyrgyz, "ARM7 өлчөм:"},            {MenuLangId::Slovak, "ARM7 veľkosť:"},            {MenuLangId::Slovenian, "ARM7 velikost:"},            {MenuLangId::Zulu, "ARM7 usayizi:"},            {MenuLangId::Basque, "ARM7 tamaina:"},            {MenuLangId::Hebrew, "ARM7 גודל:"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -6034,6 +15734,7 @@
             {MenuLangId::Russian, "Файловая система"},
             {MenuLangId::ChineseSimplified, "文件系统"},
             {MenuLangId::ChineseTraditional, "檔案系統"},
+            {MenuLangId::ChineseHongKong, "檔案系統"},
             {MenuLangId::Korean, "파일 시스템"},
             {MenuLangId::Arabic, "نظام الملفات"},
             {MenuLangId::Indonesian, "Filesystem"},
@@ -6049,7 +15750,56 @@
             {MenuLangId::Finnish, "Tiedostojärjestelmä"},
             {MenuLangId::Vietnamese, "Hệ thống tệp"},
             {MenuLangId::Polish, "System plików"},
-            {MenuLangId::Romanian, "Sistem de fișiere"},
+            {MenuLangId::Romanian, "Sistem de fișiere"},            {MenuLangId::Filipino, "Filesystem"},            {MenuLangId::Swahili, "Filesystem"},            {MenuLangId::Croatian, "Datotečni sustav"},            {MenuLangId::Icelandic, "Skráakerfi"},            {MenuLangId::Hindi, "फ़ाइल सिस्टम"},            {MenuLangId::Bengali, "ফাইল সিস্টেম"},            {MenuLangId::Urdu, "فائل سسٹم"},            {MenuLangId::Punjabi, "ਫਾਇਲ ਸਿਸਟਮ"},            {MenuLangId::Telugu, "ఫైల్ సిస్టమ్"},            {MenuLangId::Persian, "فایل‌سیستم"},            {MenuLangId::Malay, "Sistem fail"},            {MenuLangId::Marathi, "फाइल सिस्टम"},            {MenuLangId::Tamil, "கோப்பு முறை"},            {MenuLangId::Gujarati, "ફાઇલસિસ્ટમ"},            {MenuLangId::Kannada, "ಫೈಲ್‌ಸಿಸ್ಟಮ್"},            {MenuLangId::Odia, "ଫାଇଲସିଷ୍ଟମ୍"},            {MenuLangId::Malayalam, "ഫയൽസിസ്റ്റം"},            {MenuLangId::Burmese, "ဖိုင်စနစ်"},            {MenuLangId::Uzbek, "Fayl tizimi"},            {MenuLangId::Azerbaijani, "Fayl sistemi"},            {MenuLangId::Nepali, "फाइल प्रणाली"},            {MenuLangId::Sinhala, "ගොනු පද්ධතිය"},            {MenuLangId::Khmer, "ប្រព័ន្ធឯកសារ"},            {MenuLangId::Lao, "ລະບົບໄຟລ໌"},            {MenuLangId::Armenian, "Ֆայլային համակարգ"},            {MenuLangId::Albanian, "Sistemi i skedarëve"},            {MenuLangId::Georgian, "ფაილური სისტემა"},            {MenuLangId::Bosnian, "Datotečni sistem"},            {MenuLangId::Serbian, "Фајл систем"},            {MenuLangId::Macedonian, "Фајл систем"},            {MenuLangId::Bulgarian, "Файлова система"},            {MenuLangId::Belarusian, "Файлавая сістэма"},            {MenuLangId::Maltese, "Sistema tal-fajls"},            {MenuLangId::Mongolian, "Файлын систем"},            {MenuLangId::Latvian, "Failu sistēma"},            {MenuLangId::Lithuanian, "Failų sistema"},            {MenuLangId::Afrikaans, "Lêerstelsel"},            {MenuLangId::Irish, "Córas comhad"},            {MenuLangId::Assamese, "ফাইল চিস্টেম"},            {MenuLangId::Amharic, "የፋይል ስርዓት"},            {MenuLangId::Estonian, "Failisüsteem"},            {MenuLangId::Kazakh, "Файл жүйесі"},            {MenuLangId::Catalan, "Sistema de fitxers"},            {MenuLangId::Kyrgyz, "Файл системасы"},            {MenuLangId::Slovak, "Súborový systém"},            {MenuLangId::Slovenian, "Datotečni sistem"},            {MenuLangId::Zulu, "Uhlelo lwamafayela"},            {MenuLangId::Basque, "Fitxategi-sistema"},            {MenuLangId::Hebrew, "מערכת קבצים"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -6065,6 +15815,7 @@
             {MenuLangId::Russian, "Смещение FNT:"},
             {MenuLangId::ChineseSimplified, "FNT 偏移:"},
             {MenuLangId::ChineseTraditional, "FNT 偏移:"},
+            {MenuLangId::ChineseHongKong, "FNT 偏移:"},
             {MenuLangId::Korean, "FNT 오프셋:"},
             {MenuLangId::Arabic, "FNT offset:"},
             {MenuLangId::Indonesian, "FNT offset:"},
@@ -6080,7 +15831,56 @@
             {MenuLangId::Finnish, "FNT offset:"},
             {MenuLangId::Vietnamese, "FNT offset:"},
             {MenuLangId::Polish, "FNT offset:"},
-            {MenuLangId::Romanian, "FNT offset:"},
+            {MenuLangId::Romanian, "FNT offset:"},            {MenuLangId::Filipino, "FNT offset:"},            {MenuLangId::Swahili, "FNT offset:"},            {MenuLangId::Croatian, "FNT offset:"},            {MenuLangId::Icelandic, "FNT-hliðrun:"},            {MenuLangId::Hindi, "FNT ऑफ़सेट:"},            {MenuLangId::Bengali, "FNT অফসেট:"},            {MenuLangId::Urdu, "FNT آفسیٹ:"},            {MenuLangId::Punjabi, "FNT ਆਫਸੈਟ:"},            {MenuLangId::Telugu, "FNT ఆఫ్‌సెట్:"},            {MenuLangId::Persian, "آفست FNT:"},            {MenuLangId::Malay, "Ofset FNT:"},            {MenuLangId::Marathi, "FNT ऑफसेट:"},            {MenuLangId::Tamil, "FNT offset:"},            {MenuLangId::Gujarati, "FNT offset:"},            {MenuLangId::Kannada, "FNT offset:"},            {MenuLangId::Odia, "ଓଡ଼ିଆ: FNT offset:"},            {MenuLangId::Malayalam, "FNT offset:"},            {MenuLangId::Burmese, "FNT offset:"},            {MenuLangId::Uzbek, "FNT offset:"},            {MenuLangId::Azerbaijani, "FNT offset:"},            {MenuLangId::Nepali, "FNT offset:"},            {MenuLangId::Sinhala, "FNT offset:"},            {MenuLangId::Khmer, "FNT offset:"},            {MenuLangId::Lao, "FNT offset:"},            {MenuLangId::Armenian, "FNT offset:"},            {MenuLangId::Albanian, "FNT offset:"},            {MenuLangId::Georgian, "FNT offset:"},            {MenuLangId::Bosnian, "FNT offset:"},            {MenuLangId::Serbian, "FNT offset:"},            {MenuLangId::Macedonian, "FNT offset:"},            {MenuLangId::Bulgarian, "FNT offset:"},            {MenuLangId::Belarusian, "FNT offset:"},            {MenuLangId::Maltese, "FNT offset:"},            {MenuLangId::Mongolian, "FNT offset:"},            {MenuLangId::Latvian, "FNT offset:"},            {MenuLangId::Lithuanian, "FNT offset:"},            {MenuLangId::Afrikaans, "FNT offset:"},            {MenuLangId::Irish, "Gaeilge: FNT offset:"},            {MenuLangId::Assamese, "FNT offset:"},            {MenuLangId::Amharic, "አማርኛ: FNT offset:"},            {MenuLangId::Estonian, "Eesti: FNT offset:"},            {MenuLangId::Kazakh, "Қазақша: FNT offset:"},            {MenuLangId::Catalan, "Català: FNT offset:"},            {MenuLangId::Kyrgyz, "Кыргызча: FNT offset:"},            {MenuLangId::Slovak, "Slovenčina: FNT offset:"},            {MenuLangId::Slovenian, "Slovenščina: FNT offset:"},            {MenuLangId::Zulu, "isiZulu: FNT offset:"},            {MenuLangId::Basque, "Euskara: FNT offset:"},            {MenuLangId::Hebrew, "עברית: FNT offset:"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -6096,6 +15896,7 @@
             {MenuLangId::Russian, "Размер FNT:"},
             {MenuLangId::ChineseSimplified, "FNT 大小："},
             {MenuLangId::ChineseTraditional, "FNT 大小："},
+            {MenuLangId::ChineseHongKong, "FNT 大小："},
             {MenuLangId::Korean, "FNT 크기:"},
             {MenuLangId::Arabic, "حجم FNT:"},
             {MenuLangId::Indonesian, "Ukuran FNT:"},
@@ -6111,7 +15912,56 @@
             {MenuLangId::Finnish, "FNT-koko:"},
             {MenuLangId::Vietnamese, "Kích thước FNT:"},
             {MenuLangId::Polish, "Rozmiar FNT:"},
-            {MenuLangId::Romanian, "Dimensiune FNT:"},
+            {MenuLangId::Romanian, "Dimensiune FNT:"},            {MenuLangId::Filipino, "FNT laki:"},            {MenuLangId::Swahili, "FNT ukubwa:"},            {MenuLangId::Croatian, "FNT veličina:"},            {MenuLangId::Icelandic, "FNT stærð:"},            {MenuLangId::Hindi, "FNT आकार:"},            {MenuLangId::Bengali, "FNT আকার:"},            {MenuLangId::Urdu, "FNT سائز:"},            {MenuLangId::Punjabi, "FNT ਆਕਾਰ:"},            {MenuLangId::Telugu, "FNT పరిమాణం:"},            {MenuLangId::Persian, "FNT اندازه:"},            {MenuLangId::Malay, "FNT saiz:"},            {MenuLangId::Marathi, "FNT आकार:"},            {MenuLangId::Tamil, "FNT அளவு:"},            {MenuLangId::Gujarati, "FNT કદ:"},            {MenuLangId::Kannada, "FNT ಗಾತ್ರ:"},            {MenuLangId::Odia, "FNT ଆକାର:"},            {MenuLangId::Malayalam, "FNT വലുപ്പം:"},            {MenuLangId::Burmese, "FNT အရွယ်အစား:"},            {MenuLangId::Uzbek, "FNT oʻlcham:"},            {MenuLangId::Azerbaijani, "FNT ölçü:"},            {MenuLangId::Nepali, "FNT आकार:"},            {MenuLangId::Sinhala, "FNT ප්‍රමාණය:"},            {MenuLangId::Khmer, "FNT ទំហំ:"},            {MenuLangId::Lao, "FNT ຂະໜາດ:"},            {MenuLangId::Armenian, "FNT չափ:"},            {MenuLangId::Albanian, "FNT madhësi:"},            {MenuLangId::Georgian, "FNT ზომა:"},            {MenuLangId::Bosnian, "FNT veličina:"},            {MenuLangId::Serbian, "FNT величина:"},            {MenuLangId::Macedonian, "FNT големина:"},            {MenuLangId::Bulgarian, "FNT размер:"},            {MenuLangId::Belarusian, "FNT памер:"},            {MenuLangId::Maltese, "FNT daqs:"},            {MenuLangId::Mongolian, "FNT хэмжээ:"},            {MenuLangId::Latvian, "FNT izmērs:"},            {MenuLangId::Lithuanian, "FNT dydis:"},            {MenuLangId::Afrikaans, "FNT grootte:"},            {MenuLangId::Irish, "FNT méid:"},            {MenuLangId::Assamese, "FNT আকাৰ:"},            {MenuLangId::Amharic, "FNT መጠን:"},            {MenuLangId::Estonian, "FNT suurus:"},            {MenuLangId::Kazakh, "FNT өлшем:"},            {MenuLangId::Catalan, "FNT mida:"},            {MenuLangId::Kyrgyz, "FNT өлчөм:"},            {MenuLangId::Slovak, "FNT veľkosť:"},            {MenuLangId::Slovenian, "FNT velikost:"},            {MenuLangId::Zulu, "FNT usayizi:"},            {MenuLangId::Basque, "FNT tamaina:"},            {MenuLangId::Hebrew, "FNT גודל:"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -6127,6 +15977,7 @@
             {MenuLangId::Russian, "Смещение FAT:"},
             {MenuLangId::ChineseSimplified, "FAT 偏移："},
             {MenuLangId::ChineseTraditional, "FAT 偏移："},
+            {MenuLangId::ChineseHongKong, "FAT 偏移："},
             {MenuLangId::Korean, "FAT 오프셋:"},
             {MenuLangId::Arabic, "FAT offset:"},
             {MenuLangId::Indonesian, "FAT offset:"},
@@ -6142,7 +15993,56 @@
             {MenuLangId::Finnish, "FAT offset:"},
             {MenuLangId::Vietnamese, "FAT offset:"},
             {MenuLangId::Polish, "FAT offset:"},
-            {MenuLangId::Romanian, "FAT offset:"},
+            {MenuLangId::Romanian, "FAT offset:"},            {MenuLangId::Filipino, "FAT offset:"},            {MenuLangId::Swahili, "FAT offset:"},            {MenuLangId::Croatian, "FAT offset:"},            {MenuLangId::Icelandic, "FAT-hliðrun:"},            {MenuLangId::Hindi, "FAT ऑफ़सेट:"},            {MenuLangId::Bengali, "FAT অফসেট:"},            {MenuLangId::Urdu, "FAT آفسیٹ:"},            {MenuLangId::Punjabi, "FAT ਆਫਸੈਟ:"},            {MenuLangId::Telugu, "FAT ఆఫ్‌సెట్:"},            {MenuLangId::Persian, "آفست FAT:"},            {MenuLangId::Malay, "Ofset FAT:"},            {MenuLangId::Marathi, "FAT ऑफसेट:"},            {MenuLangId::Tamil, "FAT offset:"},            {MenuLangId::Gujarati, "FAT offset:"},            {MenuLangId::Kannada, "FAT offset:"},            {MenuLangId::Odia, "ଓଡ଼ିଆ: FAT offset:"},            {MenuLangId::Malayalam, "FAT offset:"},            {MenuLangId::Burmese, "FAT offset:"},            {MenuLangId::Uzbek, "FAT offset:"},            {MenuLangId::Azerbaijani, "FAT offset:"},            {MenuLangId::Nepali, "FAT offset:"},            {MenuLangId::Sinhala, "FAT offset:"},            {MenuLangId::Khmer, "FAT offset:"},            {MenuLangId::Lao, "FAT offset:"},            {MenuLangId::Armenian, "FAT offset:"},            {MenuLangId::Albanian, "FAT offset:"},            {MenuLangId::Georgian, "FAT offset:"},            {MenuLangId::Bosnian, "FAT offset:"},            {MenuLangId::Serbian, "FAT offset:"},            {MenuLangId::Macedonian, "FAT offset:"},            {MenuLangId::Bulgarian, "FAT offset:"},            {MenuLangId::Belarusian, "FAT offset:"},            {MenuLangId::Maltese, "FAT offset:"},            {MenuLangId::Mongolian, "FAT offset:"},            {MenuLangId::Latvian, "FAT offset:"},            {MenuLangId::Lithuanian, "FAT offset:"},            {MenuLangId::Afrikaans, "FAT offset:"},            {MenuLangId::Irish, "Gaeilge: FAT offset:"},            {MenuLangId::Assamese, "FAT offset:"},            {MenuLangId::Amharic, "አማርኛ: FAT offset:"},            {MenuLangId::Estonian, "Eesti: FAT offset:"},            {MenuLangId::Kazakh, "Қазақша: FAT offset:"},            {MenuLangId::Catalan, "Català: FAT offset:"},            {MenuLangId::Kyrgyz, "Кыргызча: FAT offset:"},            {MenuLangId::Slovak, "Slovenčina: FAT offset:"},            {MenuLangId::Slovenian, "Slovenščina: FAT offset:"},            {MenuLangId::Zulu, "isiZulu: FAT offset:"},            {MenuLangId::Basque, "Euskara: FAT offset:"},            {MenuLangId::Hebrew, "עברית: FAT offset:"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -6158,6 +16058,7 @@
             {MenuLangId::Russian, "Размер FAT:"},
             {MenuLangId::ChineseSimplified, "FAT 大小："},
             {MenuLangId::ChineseTraditional, "FAT 大小："},
+            {MenuLangId::ChineseHongKong, "FAT 大小："},
             {MenuLangId::Korean, "FAT 크기:"},
             {MenuLangId::Arabic, "حجم FAT:"},
             {MenuLangId::Indonesian, "Ukuran FAT:"},
@@ -6173,7 +16074,56 @@
             {MenuLangId::Finnish, "FAT-koko:"},
             {MenuLangId::Vietnamese, "Kích thước FAT:"},
             {MenuLangId::Polish, "Rozmiar FAT:"},
-            {MenuLangId::Romanian, "Dimensiune FAT:"},
+            {MenuLangId::Romanian, "Dimensiune FAT:"},            {MenuLangId::Filipino, "FAT laki:"},            {MenuLangId::Swahili, "FAT ukubwa:"},            {MenuLangId::Croatian, "FAT veličina:"},            {MenuLangId::Icelandic, "FAT stærð:"},            {MenuLangId::Hindi, "FAT आकार:"},            {MenuLangId::Bengali, "FAT আকার:"},            {MenuLangId::Urdu, "FAT سائز:"},            {MenuLangId::Punjabi, "FAT ਆਕਾਰ:"},            {MenuLangId::Telugu, "FAT పరిమాణం:"},            {MenuLangId::Persian, "FAT اندازه:"},            {MenuLangId::Malay, "FAT saiz:"},            {MenuLangId::Marathi, "FAT आकार:"},            {MenuLangId::Tamil, "FAT அளவு:"},            {MenuLangId::Gujarati, "FAT કદ:"},            {MenuLangId::Kannada, "FAT ಗಾತ್ರ:"},            {MenuLangId::Odia, "FAT ଆକାର:"},            {MenuLangId::Malayalam, "FAT വലുപ്പം:"},            {MenuLangId::Burmese, "FAT အရွယ်အစား:"},            {MenuLangId::Uzbek, "FAT oʻlcham:"},            {MenuLangId::Azerbaijani, "FAT ölçü:"},            {MenuLangId::Nepali, "FAT आकार:"},            {MenuLangId::Sinhala, "FAT ප්‍රමාණය:"},            {MenuLangId::Khmer, "FAT ទំហំ:"},            {MenuLangId::Lao, "FAT ຂະໜາດ:"},            {MenuLangId::Armenian, "FAT չափ:"},            {MenuLangId::Albanian, "FAT madhësi:"},            {MenuLangId::Georgian, "FAT ზომა:"},            {MenuLangId::Bosnian, "FAT veličina:"},            {MenuLangId::Serbian, "FAT величина:"},            {MenuLangId::Macedonian, "FAT големина:"},            {MenuLangId::Bulgarian, "FAT размер:"},            {MenuLangId::Belarusian, "FAT памер:"},            {MenuLangId::Maltese, "FAT daqs:"},            {MenuLangId::Mongolian, "FAT хэмжээ:"},            {MenuLangId::Latvian, "FAT izmērs:"},            {MenuLangId::Lithuanian, "FAT dydis:"},            {MenuLangId::Afrikaans, "FAT grootte:"},            {MenuLangId::Irish, "FAT méid:"},            {MenuLangId::Assamese, "FAT আকাৰ:"},            {MenuLangId::Amharic, "FAT መጠን:"},            {MenuLangId::Estonian, "FAT suurus:"},            {MenuLangId::Kazakh, "FAT өлшем:"},            {MenuLangId::Catalan, "FAT mida:"},            {MenuLangId::Kyrgyz, "FAT өлчөм:"},            {MenuLangId::Slovak, "FAT veľkosť:"},            {MenuLangId::Slovenian, "FAT velikost:"},            {MenuLangId::Zulu, "FAT usayizi:"},            {MenuLangId::Basque, "FAT tamaina:"},            {MenuLangId::Hebrew, "FAT גודל:"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -6189,6 +16139,7 @@
             {MenuLangId::Russian, "Общая информация"},
             {MenuLangId::ChineseSimplified, "一般信息"},
             {MenuLangId::ChineseTraditional, "一般資訊"},
+            {MenuLangId::ChineseHongKong, "一般資訊"},
             {MenuLangId::Korean, "일반 정보"},
             {MenuLangId::Arabic, "معلومات عامة"},
             {MenuLangId::Indonesian, "Info umum"},
@@ -6204,7 +16155,56 @@
             {MenuLangId::Finnish, "Yleistiedot"},
             {MenuLangId::Vietnamese, "Thông tin chung"},
             {MenuLangId::Polish, "Informacje ogólne"},
-            {MenuLangId::Romanian, "Informații generale"},
+            {MenuLangId::Romanian, "Informații generale"},            {MenuLangId::Filipino, "General info"},            {MenuLangId::Swahili, "General info"},            {MenuLangId::Croatian, "Opće informacije"},            {MenuLangId::Icelandic, "Almennar upplýsingar"},            {MenuLangId::Hindi, "सामान्य जानकारी"},            {MenuLangId::Bengali, "সাধারণ তথ্য"},            {MenuLangId::Urdu, "عمومی معلومات"},            {MenuLangId::Punjabi, "ਆਮ ਜਾਣਕਾਰੀ"},            {MenuLangId::Telugu, "సాధారణ సమాచారం"},            {MenuLangId::Persian, "اطلاعات عمومی"},            {MenuLangId::Malay, "Maklumat umum"},            {MenuLangId::Marathi, "सामान्य माहिती"},            {MenuLangId::Tamil, "பொது தகவல்"},            {MenuLangId::Gujarati, "સામાન્ય માહિતી"},            {MenuLangId::Kannada, "ಸಾಮಾನ್ಯ ಮಾಹಿತಿ"},            {MenuLangId::Odia, "ସାଧାରଣ ସୂଚନା"},            {MenuLangId::Malayalam, "പൊതു വിവരം"},            {MenuLangId::Burmese, "အထွေထွေ အချက်အလက်"},            {MenuLangId::Uzbek, "Umumiy maʼlumot"},            {MenuLangId::Azerbaijani, "Ümumi məlumat"},            {MenuLangId::Nepali, "सामान्य जानकारी"},            {MenuLangId::Sinhala, "සාමාන්‍ය තොරතුරු"},            {MenuLangId::Khmer, "ព័ត៌មានទូទៅ"},            {MenuLangId::Lao, "ຂໍ້ມູນທົ່ວໄປ"},            {MenuLangId::Armenian, "Ընդհանուր տեղեկություն"},            {MenuLangId::Albanian, "Informacion i përgjithshëm"},            {MenuLangId::Georgian, "ზოგადი ინფორმაცია"},            {MenuLangId::Bosnian, "Opće informacije"},            {MenuLangId::Serbian, "Опште информације"},            {MenuLangId::Macedonian, "Општи информации"},            {MenuLangId::Bulgarian, "Обща информация"},            {MenuLangId::Belarusian, "Агульная інфармацыя"},            {MenuLangId::Maltese, "Informazzjoni ġenerali"},            {MenuLangId::Mongolian, "Ерөнхий мэдээлэл"},            {MenuLangId::Latvian, "Vispārīga informācija"},            {MenuLangId::Lithuanian, "Bendra informacija"},            {MenuLangId::Afrikaans, "Algemene inligting"},            {MenuLangId::Irish, "Eolas ginearálta"},            {MenuLangId::Assamese, "সাধাৰণ তথ্য"},            {MenuLangId::Amharic, "አጠቃላይ መረጃ"},            {MenuLangId::Estonian, "Üldinfo"},            {MenuLangId::Kazakh, "Жалпы ақпарат"},            {MenuLangId::Catalan, "Informació general"},            {MenuLangId::Kyrgyz, "Жалпы маалымат"},            {MenuLangId::Slovak, "Všeobecné informácie"},            {MenuLangId::Slovenian, "Splošne informacije"},            {MenuLangId::Zulu, "Ulwazi olujwayelekile"},            {MenuLangId::Basque, "Informazio orokorra"},            {MenuLangId::Hebrew, "מידע כללי"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -6220,6 +16220,7 @@
             {MenuLangId::Russian, "Название игры:"},
             {MenuLangId::ChineseSimplified, "游戏标题:"},
             {MenuLangId::ChineseTraditional, "遊戲標題:"},
+            {MenuLangId::ChineseHongKong, "遊戲標題:"},
             {MenuLangId::Korean, "게임 제목:"},
             {MenuLangId::Arabic, "Game title:"},
             {MenuLangId::Indonesian, "Judul game:"},
@@ -6235,7 +16236,56 @@
             {MenuLangId::Finnish, "Pelin otsikko:"},
             {MenuLangId::Vietnamese, "Tiêu đề game:"},
             {MenuLangId::Polish, "Tytuł gry:"},
-            {MenuLangId::Romanian, "Titlu joc:"},
+            {MenuLangId::Romanian, "Titlu joc:"},            {MenuLangId::Filipino, "Laro title:"},            {MenuLangId::Swahili, "Mchezo title:"},            {MenuLangId::Croatian, "Igra title:"},            {MenuLangId::Icelandic, "Leikur title:"},            {MenuLangId::Hindi, "गेम title:"},            {MenuLangId::Bengali, "গেম title:"},            {MenuLangId::Urdu, "گیم title:"},            {MenuLangId::Punjabi, "ਗੇਮ title:"},            {MenuLangId::Telugu, "గేమ్ title:"},            {MenuLangId::Persian, "بازی title:"},            {MenuLangId::Malay, "Permainan title:"},            {MenuLangId::Marathi, "गेम title:"},            {MenuLangId::Tamil, "விளையாட்டு title:"},            {MenuLangId::Gujarati, "ગેમ title:"},            {MenuLangId::Kannada, "ಗೇಮ್ title:"},            {MenuLangId::Odia, "ଗେମ୍ title:"},            {MenuLangId::Malayalam, "ഗെയിം title:"},            {MenuLangId::Burmese, "ဂိမ်း title:"},            {MenuLangId::Uzbek, "Oʻyin title:"},            {MenuLangId::Azerbaijani, "Oyun title:"},            {MenuLangId::Nepali, "खेल title:"},            {MenuLangId::Sinhala, "ක්‍රීඩාව title:"},            {MenuLangId::Khmer, "ហ្គេម title:"},            {MenuLangId::Lao, "ເກມ title:"},            {MenuLangId::Armenian, "Խաղ title:"},            {MenuLangId::Albanian, "Loja title:"},            {MenuLangId::Georgian, "თამაში title:"},            {MenuLangId::Bosnian, "Igra title:"},            {MenuLangId::Serbian, "Игра title:"},            {MenuLangId::Macedonian, "Игра title:"},            {MenuLangId::Bulgarian, "Игра title:"},            {MenuLangId::Belarusian, "Гульня title:"},            {MenuLangId::Maltese, "Logħba title:"},            {MenuLangId::Mongolian, "Тоглоом title:"},            {MenuLangId::Latvian, "Spēle title:"},            {MenuLangId::Lithuanian, "Žaidimas title:"},            {MenuLangId::Afrikaans, "Speletjie title:"},            {MenuLangId::Irish, "Cluiche title:"},            {MenuLangId::Assamese, "গেম title:"},            {MenuLangId::Amharic, "ጨዋታ title:"},            {MenuLangId::Estonian, "Mäng title:"},            {MenuLangId::Kazakh, "Ойын title:"},            {MenuLangId::Catalan, "Joc title:"},            {MenuLangId::Kyrgyz, "Оюн title:"},            {MenuLangId::Slovak, "Hra title:"},            {MenuLangId::Slovenian, "Igra title:"},            {MenuLangId::Zulu, "Umdlalo title:"},            {MenuLangId::Basque, "Jokoa title:"},            {MenuLangId::Hebrew, "משחק title:"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -6251,6 +16301,7 @@
             {MenuLangId::Russian, "Код игры:"},
             {MenuLangId::ChineseSimplified, "游戏代码："},
             {MenuLangId::ChineseTraditional, "遊戲程式碼："},
+            {MenuLangId::ChineseHongKong, "遊戲程式碼："},
             {MenuLangId::Korean, "게임 코드:"},
             {MenuLangId::Arabic, "رمز اللعبة:"},
             {MenuLangId::Indonesian, "Kode game:"},
@@ -6266,7 +16317,56 @@
             {MenuLangId::Finnish, "Pelikoodi:"},
             {MenuLangId::Vietnamese, "Mã game:"},
             {MenuLangId::Polish, "Kod gry:"},
-            {MenuLangId::Romanian, "Cod joc:"},
+            {MenuLangId::Romanian, "Cod joc:"},            {MenuLangId::Filipino, "Laro code:"},            {MenuLangId::Swahili, "Mchezo code:"},            {MenuLangId::Croatian, "Igra code:"},            {MenuLangId::Icelandic, "Leikur code:"},            {MenuLangId::Hindi, "गेम code:"},            {MenuLangId::Bengali, "গেম code:"},            {MenuLangId::Urdu, "گیم code:"},            {MenuLangId::Punjabi, "ਗੇਮ code:"},            {MenuLangId::Telugu, "గేమ్ code:"},            {MenuLangId::Persian, "بازی code:"},            {MenuLangId::Malay, "Permainan code:"},            {MenuLangId::Marathi, "गेम code:"},            {MenuLangId::Tamil, "விளையாட்டு code:"},            {MenuLangId::Gujarati, "ગેમ code:"},            {MenuLangId::Kannada, "ಗೇಮ್ code:"},            {MenuLangId::Odia, "ଗେମ୍ code:"},            {MenuLangId::Malayalam, "ഗെയിം code:"},            {MenuLangId::Burmese, "ဂိမ်း code:"},            {MenuLangId::Uzbek, "Oʻyin code:"},            {MenuLangId::Azerbaijani, "Oyun code:"},            {MenuLangId::Nepali, "खेल code:"},            {MenuLangId::Sinhala, "ක්‍රීඩාව code:"},            {MenuLangId::Khmer, "ហ្គេម code:"},            {MenuLangId::Lao, "ເກມ code:"},            {MenuLangId::Armenian, "Խաղ code:"},            {MenuLangId::Albanian, "Loja code:"},            {MenuLangId::Georgian, "თამაში code:"},            {MenuLangId::Bosnian, "Igra code:"},            {MenuLangId::Serbian, "Игра code:"},            {MenuLangId::Macedonian, "Игра code:"},            {MenuLangId::Bulgarian, "Игра code:"},            {MenuLangId::Belarusian, "Гульня code:"},            {MenuLangId::Maltese, "Logħba code:"},            {MenuLangId::Mongolian, "Тоглоом code:"},            {MenuLangId::Latvian, "Spēle code:"},            {MenuLangId::Lithuanian, "Žaidimas code:"},            {MenuLangId::Afrikaans, "Speletjie code:"},            {MenuLangId::Irish, "Cluiche code:"},            {MenuLangId::Assamese, "গেম code:"},            {MenuLangId::Amharic, "ጨዋታ code:"},            {MenuLangId::Estonian, "Mäng code:"},            {MenuLangId::Kazakh, "Ойын code:"},            {MenuLangId::Catalan, "Joc code:"},            {MenuLangId::Kyrgyz, "Оюн code:"},            {MenuLangId::Slovak, "Hra code:"},            {MenuLangId::Slovenian, "Igra code:"},            {MenuLangId::Zulu, "Umdlalo code:"},            {MenuLangId::Basque, "Jokoa code:"},            {MenuLangId::Hebrew, "משחק code:"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -6282,6 +16382,7 @@
             {MenuLangId::Russian, "Код производителя:"},
             {MenuLangId::ChineseSimplified, "厂商代码："},
             {MenuLangId::ChineseTraditional, "廠商程式碼："},
+            {MenuLangId::ChineseHongKong, "廠商程式碼："},
             {MenuLangId::Korean, "제조사 코드:"},
             {MenuLangId::Arabic, "Maker code:"},
             {MenuLangId::Indonesian, "Maker code:"},
@@ -6297,7 +16398,56 @@
             {MenuLangId::Finnish, "Maker code:"},
             {MenuLangId::Vietnamese, "Maker code:"},
             {MenuLangId::Polish, "Maker code:"},
-            {MenuLangId::Romanian, "Maker code:"},
+            {MenuLangId::Romanian, "Maker code:"},            {MenuLangId::Filipino, "Maker code:"},            {MenuLangId::Swahili, "Maker code:"},            {MenuLangId::Croatian, "Maker kod:"},            {MenuLangId::Icelandic, "Framleiðandakóði:"},            {MenuLangId::Hindi, "मेकर कोड:"},            {MenuLangId::Bengali, "মেকার কোড:"},            {MenuLangId::Urdu, "میکر کوڈ:"},            {MenuLangId::Punjabi, "ਮੇਕਰ ਕੋਡ:"},            {MenuLangId::Telugu, "మేకర్ కోడ్:"},            {MenuLangId::Persian, "کد سازنده:"},            {MenuLangId::Malay, "Kod pembuat:"},            {MenuLangId::Marathi, "मेकर कोड:"},            {MenuLangId::Tamil, "maker code:"},            {MenuLangId::Gujarati, "maker code:"},            {MenuLangId::Kannada, "maker code:"},            {MenuLangId::Odia, "ଓଡ଼ିଆ: Maker code:"},            {MenuLangId::Malayalam, "maker code:"},            {MenuLangId::Burmese, "maker code:"},            {MenuLangId::Uzbek, "maker code:"},            {MenuLangId::Azerbaijani, "maker code:"},            {MenuLangId::Nepali, "maker code:"},            {MenuLangId::Sinhala, "maker code:"},            {MenuLangId::Khmer, "maker code:"},            {MenuLangId::Lao, "maker code:"},            {MenuLangId::Armenian, "maker code:"},            {MenuLangId::Albanian, "maker code:"},            {MenuLangId::Georgian, "maker code:"},            {MenuLangId::Bosnian, "maker code:"},            {MenuLangId::Serbian, "maker code:"},            {MenuLangId::Macedonian, "maker code:"},            {MenuLangId::Bulgarian, "maker code:"},            {MenuLangId::Belarusian, "maker code:"},            {MenuLangId::Maltese, "maker code:"},            {MenuLangId::Mongolian, "maker code:"},            {MenuLangId::Latvian, "maker code:"},            {MenuLangId::Lithuanian, "maker code:"},            {MenuLangId::Afrikaans, "maker code:"},            {MenuLangId::Irish, "Gaeilge: Maker code:"},            {MenuLangId::Assamese, "maker code:"},            {MenuLangId::Amharic, "አማርኛ: Maker code:"},            {MenuLangId::Estonian, "Eesti: Maker code:"},            {MenuLangId::Kazakh, "Қазақша: Maker code:"},            {MenuLangId::Catalan, "Català: Maker code:"},            {MenuLangId::Kyrgyz, "Кыргызча: Maker code:"},            {MenuLangId::Slovak, "Slovenčina: Maker code:"},            {MenuLangId::Slovenian, "Slovenščina: Maker code:"},            {MenuLangId::Zulu, "isiZulu: Maker code:"},            {MenuLangId::Basque, "Euskara: Maker code:"},            {MenuLangId::Hebrew, "עברית: Maker code:"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -6313,6 +16463,7 @@
             {MenuLangId::Russian, "Размер карты:"},
             {MenuLangId::ChineseSimplified, "卡大小："},
             {MenuLangId::ChineseTraditional, "卡大小："},
+            {MenuLangId::ChineseHongKong, "卡大小："},
             {MenuLangId::Korean, "카드 크기:"},
             {MenuLangId::Arabic, "حجم البطاقة:"},
             {MenuLangId::Indonesian, "Ukuran kartu:"},
@@ -6328,7 +16479,56 @@
             {MenuLangId::Finnish, "Kortin koko:"},
             {MenuLangId::Vietnamese, "Kích thước thẻ:"},
             {MenuLangId::Polish, "Rozmiar karty:"},
-            {MenuLangId::Romanian, "Dimensiune card:"},
+            {MenuLangId::Romanian, "Dimensiune card:"},            {MenuLangId::Filipino, "Card laki:"},            {MenuLangId::Swahili, "Card ukubwa:"},            {MenuLangId::Croatian, "Card veličina:"},            {MenuLangId::Icelandic, "Card stærð:"},            {MenuLangId::Hindi, "Card आकार:"},            {MenuLangId::Bengali, "Card আকার:"},            {MenuLangId::Urdu, "Card سائز:"},            {MenuLangId::Punjabi, "Card ਆਕਾਰ:"},            {MenuLangId::Telugu, "Card పరిమాణం:"},            {MenuLangId::Persian, "Card اندازه:"},            {MenuLangId::Malay, "Card saiz:"},            {MenuLangId::Marathi, "Card आकार:"},            {MenuLangId::Tamil, "Card அளவு:"},            {MenuLangId::Gujarati, "Card કદ:"},            {MenuLangId::Kannada, "Card ಗಾತ್ರ:"},            {MenuLangId::Odia, "Card ଆକାର:"},            {MenuLangId::Malayalam, "Card വലുപ്പം:"},            {MenuLangId::Burmese, "Card အရွယ်အစား:"},            {MenuLangId::Uzbek, "Card oʻlcham:"},            {MenuLangId::Azerbaijani, "Card ölçü:"},            {MenuLangId::Nepali, "Card आकार:"},            {MenuLangId::Sinhala, "Card ප්‍රමාණය:"},            {MenuLangId::Khmer, "Card ទំហំ:"},            {MenuLangId::Lao, "Card ຂະໜາດ:"},            {MenuLangId::Armenian, "Card չափ:"},            {MenuLangId::Albanian, "Card madhësi:"},            {MenuLangId::Georgian, "Card ზომა:"},            {MenuLangId::Bosnian, "Card veličina:"},            {MenuLangId::Serbian, "Card величина:"},            {MenuLangId::Macedonian, "Card големина:"},            {MenuLangId::Bulgarian, "Card размер:"},            {MenuLangId::Belarusian, "Card памер:"},            {MenuLangId::Maltese, "Card daqs:"},            {MenuLangId::Mongolian, "Card хэмжээ:"},            {MenuLangId::Latvian, "Card izmērs:"},            {MenuLangId::Lithuanian, "Card dydis:"},            {MenuLangId::Afrikaans, "Card grootte:"},            {MenuLangId::Irish, "Card méid:"},            {MenuLangId::Assamese, "Card আকাৰ:"},            {MenuLangId::Amharic, "Card መጠን:"},            {MenuLangId::Estonian, "Card suurus:"},            {MenuLangId::Kazakh, "Card өлшем:"},            {MenuLangId::Catalan, "Card mida:"},            {MenuLangId::Kyrgyz, "Card өлчөм:"},            {MenuLangId::Slovak, "Card veľkosť:"},            {MenuLangId::Slovenian, "Card velikost:"},            {MenuLangId::Zulu, "Card usayizi:"},            {MenuLangId::Basque, "Card tamaina:"},            {MenuLangId::Hebrew, "Card גודל:"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -6344,6 +16544,7 @@
             {MenuLangId::Russian, "Значок сохранения"},
             {MenuLangId::ChineseSimplified, "存档图标"},
             {MenuLangId::ChineseTraditional, "存檔圖示"},
+            {MenuLangId::ChineseHongKong, "存檔圖示"},
             {MenuLangId::Korean, "저장 아이콘"},
             {MenuLangId::Arabic, "أيقونة الحفظ"},
             {MenuLangId::Indonesian, "Ikon simpan"},
@@ -6359,7 +16560,56 @@
             {MenuLangId::Finnish, "Tallennuskuvake"},
             {MenuLangId::Vietnamese, "Biểu tượng lưu"},
             {MenuLangId::Polish, "Ikona zapisu"},
-            {MenuLangId::Romanian, "Pictogramă salvare"},
+            {MenuLangId::Romanian, "Pictogramă salvare"},            {MenuLangId::Filipino, "I-i-save icon"},            {MenuLangId::Swahili, "Hifadhi icon"},            {MenuLangId::Croatian, "Spremi icon"},            {MenuLangId::Icelandic, "Vista icon"},            {MenuLangId::Hindi, "सहेजें icon"},            {MenuLangId::Bengali, "সংরক্ষণ করুন icon"},            {MenuLangId::Urdu, "محفوظ کریں icon"},            {MenuLangId::Punjabi, "ਸੇਵ ਕਰੋ icon"},            {MenuLangId::Telugu, "సేవ్ చేయి icon"},            {MenuLangId::Persian, "ذخیره icon"},            {MenuLangId::Malay, "Simpan icon"},            {MenuLangId::Marathi, "जतन करा icon"},            {MenuLangId::Tamil, "சேமி icon"},            {MenuLangId::Gujarati, "સાચવો icon"},            {MenuLangId::Kannada, "ಉಳಿಸಿ icon"},            {MenuLangId::Odia, "ସଞ୍ଚୟ କରନ୍ତୁ icon"},            {MenuLangId::Malayalam, "സേവ് ചെയ്യുക icon"},            {MenuLangId::Burmese, "သိမ်းဆည်းပါ icon"},            {MenuLangId::Uzbek, "Saqlash icon"},            {MenuLangId::Azerbaijani, "Yadda saxla icon"},            {MenuLangId::Nepali, "सेभ गर्नुहोस् icon"},            {MenuLangId::Sinhala, "සුරකින්න icon"},            {MenuLangId::Khmer, "រក្សាទុក icon"},            {MenuLangId::Lao, "ບັນທຶກ icon"},            {MenuLangId::Armenian, "Պահել icon"},            {MenuLangId::Albanian, "Ruaj icon"},            {MenuLangId::Georgian, "შენახვა icon"},            {MenuLangId::Bosnian, "Sačuvaj icon"},            {MenuLangId::Serbian, "Сачувај icon"},            {MenuLangId::Macedonian, "Зачувај icon"},            {MenuLangId::Bulgarian, "Запази icon"},            {MenuLangId::Belarusian, "Захаваць icon"},            {MenuLangId::Maltese, "Issejvja icon"},            {MenuLangId::Mongolian, "Хадгалах icon"},            {MenuLangId::Latvian, "Saglabāt icon"},            {MenuLangId::Lithuanian, "Išsaugoti icon"},            {MenuLangId::Afrikaans, "Stoor icon"},            {MenuLangId::Irish, "Sábháil icon"},            {MenuLangId::Assamese, "সংৰক্ষণ কৰক icon"},            {MenuLangId::Amharic, "አስቀምጥ icon"},            {MenuLangId::Estonian, "Salvesta icon"},            {MenuLangId::Kazakh, "Сақтау icon"},            {MenuLangId::Catalan, "Desa icon"},            {MenuLangId::Kyrgyz, "Сактоо icon"},            {MenuLangId::Slovak, "Uložiť icon"},            {MenuLangId::Slovenian, "Shrani icon"},            {MenuLangId::Zulu, "Londoloza icon"},            {MenuLangId::Basque, "Gorde icon"},            {MenuLangId::Hebrew, "שמור icon"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -6375,6 +16625,7 @@
             {MenuLangId::Russian, "Сохранить анимированный значок"},
             {MenuLangId::ChineseSimplified, "保存动画图标"},
             {MenuLangId::ChineseTraditional, "儲存動畫圖示"},
+            {MenuLangId::ChineseHongKong, "儲存動畫圖示"},
             {MenuLangId::Korean, "애니메이션 아이콘 저장"},
             {MenuLangId::Arabic, "Save animated icon"},
             {MenuLangId::Indonesian, "Simpan ikon animasi"},
@@ -6390,7 +16641,56 @@
             {MenuLangId::Finnish, "Tallenna animoitu kuvake"},
             {MenuLangId::Vietnamese, "Lưu biểu tượng động"},
             {MenuLangId::Polish, "Zapisz animowaną ikonę"},
-            {MenuLangId::Romanian, "Salvează pictogramă animată"},
+            {MenuLangId::Romanian, "Salvează pictogramă animată"},            {MenuLangId::Filipino, "I-i-save animated icon"},            {MenuLangId::Swahili, "Hifadhi animated icon"},            {MenuLangId::Croatian, "Spremi animated icon"},            {MenuLangId::Icelandic, "Vista animated icon"},            {MenuLangId::Hindi, "सहेजें animated icon"},            {MenuLangId::Bengali, "সংরক্ষণ করুন animated icon"},            {MenuLangId::Urdu, "محفوظ کریں animated icon"},            {MenuLangId::Punjabi, "ਸੇਵ ਕਰੋ animated icon"},            {MenuLangId::Telugu, "సేవ్ చేయి animated icon"},            {MenuLangId::Persian, "ذخیره animated icon"},            {MenuLangId::Malay, "Simpan animated icon"},            {MenuLangId::Marathi, "जतन करा animated icon"},            {MenuLangId::Tamil, "சேமி animated icon"},            {MenuLangId::Gujarati, "સાચવો animated icon"},            {MenuLangId::Kannada, "ಉಳಿಸಿ animated icon"},            {MenuLangId::Odia, "ସଞ୍ଚୟ କରନ୍ତୁ animated icon"},            {MenuLangId::Malayalam, "സേവ് ചെയ്യുക animated icon"},            {MenuLangId::Burmese, "သိမ်းဆည်းပါ animated icon"},            {MenuLangId::Uzbek, "Saqlash animated icon"},            {MenuLangId::Azerbaijani, "Yadda saxla animated icon"},            {MenuLangId::Nepali, "सेभ गर्नुहोस् animated icon"},            {MenuLangId::Sinhala, "සුරකින්න animated icon"},            {MenuLangId::Khmer, "រក្សាទុក animated icon"},            {MenuLangId::Lao, "ບັນທຶກ animated icon"},            {MenuLangId::Armenian, "Պահել animated icon"},            {MenuLangId::Albanian, "Ruaj animated icon"},            {MenuLangId::Georgian, "შენახვა animated icon"},            {MenuLangId::Bosnian, "Sačuvaj animated icon"},            {MenuLangId::Serbian, "Сачувај animated icon"},            {MenuLangId::Macedonian, "Зачувај animated icon"},            {MenuLangId::Bulgarian, "Запази animated icon"},            {MenuLangId::Belarusian, "Захаваць animated icon"},            {MenuLangId::Maltese, "Issejvja animated icon"},            {MenuLangId::Mongolian, "Хадгалах animated icon"},            {MenuLangId::Latvian, "Saglabāt animated icon"},            {MenuLangId::Lithuanian, "Išsaugoti animated icon"},            {MenuLangId::Afrikaans, "Stoor animated icon"},            {MenuLangId::Irish, "Sábháil animated icon"},            {MenuLangId::Assamese, "সংৰক্ষণ কৰক animated icon"},            {MenuLangId::Amharic, "አስቀምጥ animated icon"},            {MenuLangId::Estonian, "Salvesta animated icon"},            {MenuLangId::Kazakh, "Сақтау animated icon"},            {MenuLangId::Catalan, "Desa animated icon"},            {MenuLangId::Kyrgyz, "Сактоо animated icon"},            {MenuLangId::Slovak, "Uložiť animated icon"},            {MenuLangId::Slovenian, "Shrani animated icon"},            {MenuLangId::Zulu, "Londoloza animated icon"},            {MenuLangId::Basque, "Gorde animated icon"},            {MenuLangId::Hebrew, "שמור animated icon"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -6406,6 +16706,7 @@
             {MenuLangId::Russian, "Сведения о RAM - melonDS"},
             {MenuLangId::ChineseSimplified, "RAM 信息 - melonDS"},
             {MenuLangId::ChineseTraditional, "RAM 資訊 - melonDS"},
+            {MenuLangId::ChineseHongKong, "RAM 資訊 - melonDS"},
             {MenuLangId::Korean, "RAM 정보 - melonDS"},
             {MenuLangId::Arabic, "معلومات RAM - melonDS"},
             {MenuLangId::Indonesian, "Info RAM - melonDS"},
@@ -6421,7 +16722,56 @@
             {MenuLangId::Finnish, "RAM-tiedot - melonDS"},
             {MenuLangId::Vietnamese, "Thông tin RAM - melonDS"},
             {MenuLangId::Polish, "Info RAM - melonDS"},
-            {MenuLangId::Romanian, "Info RAM - melonDS"},
+            {MenuLangId::Romanian, "Info RAM - melonDS"},            {MenuLangId::Filipino, "RAM info - melonDS"},            {MenuLangId::Swahili, "RAM info - melonDS"},            {MenuLangId::Croatian, "RAM informacije - melonDS"},            {MenuLangId::Icelandic, "RAM-upplýsingar - melonDS"},            {MenuLangId::Hindi, "RAM जानकारी - melonDS"},            {MenuLangId::Bengali, "RAM তথ্য - melonDS"},            {MenuLangId::Urdu, "RAM معلومات - melonDS"},            {MenuLangId::Punjabi, "RAM ਜਾਣਕਾਰੀ - melonDS"},            {MenuLangId::Telugu, "RAM సమాచారం - melonDS"},            {MenuLangId::Persian, "اطلاعات RAM - melonDS"},            {MenuLangId::Malay, "Maklumat RAM - melonDS"},            {MenuLangId::Marathi, "RAM माहिती - melonDS"},            {MenuLangId::Tamil, "RAM தகவல் - melonDS"},            {MenuLangId::Gujarati, "RAM માહિતી - melonDS"},            {MenuLangId::Kannada, "RAM ಮಾಹಿತಿ - melonDS"},            {MenuLangId::Odia, "ଓଡ଼ିଆ: RAM info - melonDS"},            {MenuLangId::Malayalam, "RAM വിവരം - melonDS"},            {MenuLangId::Burmese, "RAM အချက်အလက် - melonDS"},            {MenuLangId::Uzbek, "RAM maʼlumoti - melonDS"},            {MenuLangId::Azerbaijani, "RAM məlumatı - melonDS"},            {MenuLangId::Nepali, "RAM जानकारी - melonDS"},            {MenuLangId::Sinhala, "RAM තොරතුරු - melonDS"},            {MenuLangId::Khmer, "ព័ត៌មាន RAM - melonDS"},            {MenuLangId::Lao, "ຂໍ້ມູນ RAM - melonDS"},            {MenuLangId::Armenian, "RAM տեղեկություն - melonDS"},            {MenuLangId::Albanian, "Informacion RAM - melonDS"},            {MenuLangId::Georgian, "RAM ინფორმაცია - melonDS"},            {MenuLangId::Bosnian, "RAM informacije - melonDS"},            {MenuLangId::Serbian, "RAM информације - melonDS"},            {MenuLangId::Macedonian, "RAM информации - melonDS"},            {MenuLangId::Bulgarian, "RAM информация - melonDS"},            {MenuLangId::Belarusian, "RAM інфармацыя - melonDS"},            {MenuLangId::Maltese, "Informazzjoni RAM - melonDS"},            {MenuLangId::Mongolian, "RAM мэдээлэл - melonDS"},            {MenuLangId::Latvian, "RAM informācija - melonDS"},            {MenuLangId::Lithuanian, "RAM informacija - melonDS"},            {MenuLangId::Afrikaans, "RAM-inligting - melonDS"},            {MenuLangId::Irish, "Gaeilge: RAM info - melonDS"},            {MenuLangId::Assamese, "RAM তথ্য - melonDS"},            {MenuLangId::Amharic, "አማርኛ: RAM info - melonDS"},            {MenuLangId::Estonian, "Eesti: RAM info - melonDS"},            {MenuLangId::Kazakh, "Қазақша: RAM info - melonDS"},            {MenuLangId::Catalan, "Català: RAM info - melonDS"},            {MenuLangId::Kyrgyz, "Кыргызча: RAM info - melonDS"},            {MenuLangId::Slovak, "Slovenčina: RAM info - melonDS"},            {MenuLangId::Slovenian, "Slovenščina: RAM info - melonDS"},            {MenuLangId::Zulu, "isiZulu: RAM info - melonDS"},            {MenuLangId::Basque, "Euskara: RAM info - melonDS"},            {MenuLangId::Hebrew, "עברית: RAM info - melonDS"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -6437,6 +16787,7 @@
             {MenuLangId::Russian, "Поиск"},
             {MenuLangId::ChineseSimplified, "搜索"},
             {MenuLangId::ChineseTraditional, "搜尋"},
+            {MenuLangId::ChineseHongKong, "搜尋"},
             {MenuLangId::Korean, "검색"},
             {MenuLangId::Arabic, "بحث"},
             {MenuLangId::Indonesian, "Cari"},
@@ -6452,7 +16803,56 @@
             {MenuLangId::Finnish, "Hae"},
             {MenuLangId::Vietnamese, "Tìm kiếm"},
             {MenuLangId::Polish, "Szukaj"},
-            {MenuLangId::Romanian, "Căutare"},
+            {MenuLangId::Romanian, "Căutare"},            {MenuLangId::Filipino, "Maghanap"},            {MenuLangId::Swahili, "Tafuta"},            {MenuLangId::Croatian, "Pretraži"},            {MenuLangId::Icelandic, "Leita"},            {MenuLangId::Hindi, "खोजें"},            {MenuLangId::Bengali, "অনুসন্ধান করুন"},            {MenuLangId::Urdu, "تلاش کریں"},            {MenuLangId::Punjabi, "ਖੋਜੋ"},            {MenuLangId::Telugu, "వెతుకు"},            {MenuLangId::Persian, "جستجو"},            {MenuLangId::Malay, "Cari"},            {MenuLangId::Marathi, "शोधा"},            {MenuLangId::Tamil, "தேடு"},            {MenuLangId::Gujarati, "શોધો"},            {MenuLangId::Kannada, "ಹುಡುಕಿ"},            {MenuLangId::Odia, "ସନ୍ଧାନ"},            {MenuLangId::Malayalam, "തിരയുക"},            {MenuLangId::Burmese, "ရှာဖွေပါ"},            {MenuLangId::Uzbek, "Qidirish"},            {MenuLangId::Azerbaijani, "Axtar"},            {MenuLangId::Nepali, "खोज्नुहोस्"},            {MenuLangId::Sinhala, "සොයන්න"},            {MenuLangId::Khmer, "ស្វែងរក"},            {MenuLangId::Lao, "ຄົ້ນຫາ"},            {MenuLangId::Armenian, "Որոնել"},            {MenuLangId::Albanian, "Kërko"},            {MenuLangId::Georgian, "ძებნა"},            {MenuLangId::Bosnian, "Pretraži"},            {MenuLangId::Serbian, "Претражи"},            {MenuLangId::Macedonian, "Пребарај"},            {MenuLangId::Bulgarian, "Търси"},            {MenuLangId::Belarusian, "Пошук"},            {MenuLangId::Maltese, "Fittex"},            {MenuLangId::Mongolian, "Хайх"},            {MenuLangId::Latvian, "Meklēt"},            {MenuLangId::Lithuanian, "Ieškoti"},            {MenuLangId::Afrikaans, "Soek"},            {MenuLangId::Irish, "Cuardaigh"},            {MenuLangId::Assamese, "সন্ধান কৰক"},            {MenuLangId::Amharic, "ፈልግ"},            {MenuLangId::Estonian, "Otsi"},            {MenuLangId::Kazakh, "Іздеу"},            {MenuLangId::Catalan, "Cerca"},            {MenuLangId::Kyrgyz, "Издөө"},            {MenuLangId::Slovak, "Hľadať"},            {MenuLangId::Slovenian, "Išči"},            {MenuLangId::Zulu, "Sesha"},            {MenuLangId::Basque, "Bilatu"},            {MenuLangId::Hebrew, "חפש"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -6468,6 +16868,7 @@
             {MenuLangId::Russian, "Значение:"},
             {MenuLangId::ChineseSimplified, "值："},
             {MenuLangId::ChineseTraditional, "值："},
+            {MenuLangId::ChineseHongKong, "值："},
             {MenuLangId::Korean, "값:"},
             {MenuLangId::Arabic, "القيمة:"},
             {MenuLangId::Indonesian, "Nilai:"},
@@ -6483,7 +16884,56 @@
             {MenuLangId::Finnish, "Arvo:"},
             {MenuLangId::Vietnamese, "Giá trị:"},
             {MenuLangId::Polish, "Wartość:"},
-            {MenuLangId::Romanian, "Valoare:"},
+            {MenuLangId::Romanian, "Valoare:"},            {MenuLangId::Filipino, "Value:"},            {MenuLangId::Swahili, "Value:"},            {MenuLangId::Croatian, "Vrijednost:"},            {MenuLangId::Icelandic, "Gildi:"},            {MenuLangId::Hindi, "मान:"},            {MenuLangId::Bengali, "মান:"},            {MenuLangId::Urdu, "قدر:"},            {MenuLangId::Punjabi, "ਮੁੱਲ:"},            {MenuLangId::Telugu, "విలువ:"},            {MenuLangId::Persian, "مقدار:"},            {MenuLangId::Malay, "Nilai:"},            {MenuLangId::Marathi, "मूल्य:"},            {MenuLangId::Tamil, "மதிப்பு:"},            {MenuLangId::Gujarati, "મૂલ્ય:"},            {MenuLangId::Kannada, "ಮೌಲ್ಯ:"},            {MenuLangId::Odia, "ଓଡ଼ିଆ: Value:"},            {MenuLangId::Malayalam, "മൂല്യം:"},            {MenuLangId::Burmese, "တန်ဖိုး:"},            {MenuLangId::Uzbek, "Qiymat:"},            {MenuLangId::Azerbaijani, "Dəyər:"},            {MenuLangId::Nepali, "मान:"},            {MenuLangId::Sinhala, "අගය:"},            {MenuLangId::Khmer, "តម្លៃ:"},            {MenuLangId::Lao, "ຄ່າ:"},            {MenuLangId::Armenian, "Արժեք:"},            {MenuLangId::Albanian, "Vlera:"},            {MenuLangId::Georgian, "მნიშვნელობა:"},            {MenuLangId::Bosnian, "Vrijednost:"},            {MenuLangId::Serbian, "Вредност:"},            {MenuLangId::Macedonian, "Вредност:"},            {MenuLangId::Bulgarian, "Стойност:"},            {MenuLangId::Belarusian, "Значэнне:"},            {MenuLangId::Maltese, "Valur:"},            {MenuLangId::Mongolian, "Утга:"},            {MenuLangId::Latvian, "Vērtība:"},            {MenuLangId::Lithuanian, "Reikšmė:"},            {MenuLangId::Afrikaans, "Waarde:"},            {MenuLangId::Irish, "Gaeilge: Value:"},            {MenuLangId::Assamese, "মান:"},            {MenuLangId::Amharic, "አማርኛ: Value:"},            {MenuLangId::Estonian, "Eesti: Value:"},            {MenuLangId::Kazakh, "Қазақша: Value:"},            {MenuLangId::Catalan, "Català: Value:"},            {MenuLangId::Kyrgyz, "Кыргызча: Value:"},            {MenuLangId::Slovak, "Slovenčina: Value:"},            {MenuLangId::Slovenian, "Slovenščina: Value:"},            {MenuLangId::Zulu, "isiZulu: Value:"},            {MenuLangId::Basque, "Euskara: Value:"},            {MenuLangId::Hebrew, "עברית: Value:"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -6499,6 +16949,7 @@
             {MenuLangId::Russian, "1 байт"},
             {MenuLangId::ChineseSimplified, "1 字节"},
             {MenuLangId::ChineseTraditional, "1 位元組"},
+            {MenuLangId::ChineseHongKong, "1 位元組"},
             {MenuLangId::Korean, "1바이트"},
             {MenuLangId::Arabic, "1 بايت"},
             {MenuLangId::Indonesian, "1 byte"},
@@ -6514,7 +16965,56 @@
             {MenuLangId::Finnish, "1 tavu"},
             {MenuLangId::Vietnamese, "1 byte"},
             {MenuLangId::Polish, "1 bajt"},
-            {MenuLangId::Romanian, "1 byte"},
+            {MenuLangId::Romanian, "1 byte"},            {MenuLangId::Filipino, "1byte"},            {MenuLangId::Swahili, "1byte"},            {MenuLangId::Croatian, "1 bajt"},            {MenuLangId::Icelandic, "1 bæti"},            {MenuLangId::Hindi, "1 बाइट"},            {MenuLangId::Bengali, "১ বাইট"},            {MenuLangId::Urdu, "1 بائٹ"},            {MenuLangId::Punjabi, "1 ਬਾਈਟ"},            {MenuLangId::Telugu, "1 బైట్"},            {MenuLangId::Persian, "۱ بایت"},            {MenuLangId::Malay, "1 bait"},            {MenuLangId::Marathi, "1 बाइट"},            {MenuLangId::Tamil, "1 byte"},            {MenuLangId::Gujarati, "1 byte"},            {MenuLangId::Kannada, "1 byte"},            {MenuLangId::Odia, "1byte"},            {MenuLangId::Malayalam, "1 byte"},            {MenuLangId::Burmese, "1 byte"},            {MenuLangId::Uzbek, "1 byte"},            {MenuLangId::Azerbaijani, "1 byte"},            {MenuLangId::Nepali, "1 byte"},            {MenuLangId::Sinhala, "1 byte"},            {MenuLangId::Khmer, "1 byte"},            {MenuLangId::Lao, "1 byte"},            {MenuLangId::Armenian, "1 byte"},            {MenuLangId::Albanian, "1 byte"},            {MenuLangId::Georgian, "1 byte"},            {MenuLangId::Bosnian, "1 byte"},            {MenuLangId::Serbian, "1 byte"},            {MenuLangId::Macedonian, "1 byte"},            {MenuLangId::Bulgarian, "1 byte"},            {MenuLangId::Belarusian, "1 byte"},            {MenuLangId::Maltese, "1 byte"},            {MenuLangId::Mongolian, "1 byte"},            {MenuLangId::Latvian, "1 byte"},            {MenuLangId::Lithuanian, "1 byte"},            {MenuLangId::Afrikaans, "1 byte"},            {MenuLangId::Irish, "1byte"},            {MenuLangId::Assamese, "1 byte"},            {MenuLangId::Amharic, "1byte"},            {MenuLangId::Estonian, "1byte"},            {MenuLangId::Kazakh, "1byte"},            {MenuLangId::Catalan, "1byte"},            {MenuLangId::Kyrgyz, "1byte"},            {MenuLangId::Slovak, "1byte"},            {MenuLangId::Slovenian, "1byte"},            {MenuLangId::Zulu, "1byte"},            {MenuLangId::Basque, "1byte"},            {MenuLangId::Hebrew, "1byte"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -6530,6 +17030,7 @@
             {MenuLangId::Russian, "2 байта"},
             {MenuLangId::ChineseSimplified, "2 字节"},
             {MenuLangId::ChineseTraditional, "2 位元組"},
+            {MenuLangId::ChineseHongKong, "2 位元組"},
             {MenuLangId::Korean, "2바이트"},
             {MenuLangId::Arabic, "2bytes"},
             {MenuLangId::Indonesian, "2byte"},
@@ -6545,7 +17046,56 @@
             {MenuLangId::Finnish, "2 tavua"},
             {MenuLangId::Vietnamese, "2 byte"},
             {MenuLangId::Polish, "2 bajty"},
-            {MenuLangId::Romanian, "2 octeți"},
+            {MenuLangId::Romanian, "2 octeți"},            {MenuLangId::Filipino, "2bytes"},            {MenuLangId::Swahili, "2bytes"},            {MenuLangId::Croatian, "2 bajta"},            {MenuLangId::Icelandic, "2 bæti"},            {MenuLangId::Hindi, "2 बाइट"},            {MenuLangId::Bengali, "২ বাইট"},            {MenuLangId::Urdu, "2 بائٹ"},            {MenuLangId::Punjabi, "2 ਬਾਈਟ"},            {MenuLangId::Telugu, "2 బైట్‌లు"},            {MenuLangId::Persian, "۲ بایت"},            {MenuLangId::Malay, "2 bait"},            {MenuLangId::Marathi, "2 बाइट"},            {MenuLangId::Tamil, "2 bytes"},            {MenuLangId::Gujarati, "2 bytes"},            {MenuLangId::Kannada, "2 bytes"},            {MenuLangId::Odia, "2bytes"},            {MenuLangId::Malayalam, "2 bytes"},            {MenuLangId::Burmese, "2 bytes"},            {MenuLangId::Uzbek, "2 bytes"},            {MenuLangId::Azerbaijani, "2 bytes"},            {MenuLangId::Nepali, "2 bytes"},            {MenuLangId::Sinhala, "2 bytes"},            {MenuLangId::Khmer, "2 bytes"},            {MenuLangId::Lao, "2 bytes"},            {MenuLangId::Armenian, "2 bytes"},            {MenuLangId::Albanian, "2 bytes"},            {MenuLangId::Georgian, "2 bytes"},            {MenuLangId::Bosnian, "2 bytes"},            {MenuLangId::Serbian, "2 bytes"},            {MenuLangId::Macedonian, "2 bytes"},            {MenuLangId::Bulgarian, "2 bytes"},            {MenuLangId::Belarusian, "2 bytes"},            {MenuLangId::Maltese, "2 bytes"},            {MenuLangId::Mongolian, "2 bytes"},            {MenuLangId::Latvian, "2 bytes"},            {MenuLangId::Lithuanian, "2 bytes"},            {MenuLangId::Afrikaans, "2 bytes"},            {MenuLangId::Irish, "2bytes"},            {MenuLangId::Assamese, "2 bytes"},            {MenuLangId::Amharic, "2bytes"},            {MenuLangId::Estonian, "2bytes"},            {MenuLangId::Kazakh, "2bytes"},            {MenuLangId::Catalan, "2bytes"},            {MenuLangId::Kyrgyz, "2bytes"},            {MenuLangId::Slovak, "2bytes"},            {MenuLangId::Slovenian, "2bytes"},            {MenuLangId::Zulu, "2bytes"},            {MenuLangId::Basque, "2bytes"},            {MenuLangId::Hebrew, "2bytes"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -6561,6 +17111,7 @@
             {MenuLangId::Russian, "4 байта"},
             {MenuLangId::ChineseSimplified, "4 字节"},
             {MenuLangId::ChineseTraditional, "4 位元組"},
+            {MenuLangId::ChineseHongKong, "4 位元組"},
             {MenuLangId::Korean, "4바이트"},
             {MenuLangId::Arabic, "4 بايت"},
             {MenuLangId::Indonesian, "4 byte"},
@@ -6576,7 +17127,56 @@
             {MenuLangId::Finnish, "4 tavua"},
             {MenuLangId::Vietnamese, "4 byte"},
             {MenuLangId::Polish, "4 bajty"},
-            {MenuLangId::Romanian, "4 octeți"},
+            {MenuLangId::Romanian, "4 octeți"},            {MenuLangId::Filipino, "4bytes"},            {MenuLangId::Swahili, "4bytes"},            {MenuLangId::Croatian, "4 bajta"},            {MenuLangId::Icelandic, "4 bæti"},            {MenuLangId::Hindi, "4 बाइट"},            {MenuLangId::Bengali, "৪ বাইট"},            {MenuLangId::Urdu, "4 بائٹ"},            {MenuLangId::Punjabi, "4 ਬਾਈਟ"},            {MenuLangId::Telugu, "4 బైట్‌లు"},            {MenuLangId::Persian, "۴ بایت"},            {MenuLangId::Malay, "4 bait"},            {MenuLangId::Marathi, "4 बाइट"},            {MenuLangId::Tamil, "4 bytes"},            {MenuLangId::Gujarati, "4 bytes"},            {MenuLangId::Kannada, "4 bytes"},            {MenuLangId::Odia, "4bytes"},            {MenuLangId::Malayalam, "4 bytes"},            {MenuLangId::Burmese, "4 bytes"},            {MenuLangId::Uzbek, "4 bytes"},            {MenuLangId::Azerbaijani, "4 bytes"},            {MenuLangId::Nepali, "4 bytes"},            {MenuLangId::Sinhala, "4 bytes"},            {MenuLangId::Khmer, "4 bytes"},            {MenuLangId::Lao, "4 bytes"},            {MenuLangId::Armenian, "4 bytes"},            {MenuLangId::Albanian, "4 bytes"},            {MenuLangId::Georgian, "4 bytes"},            {MenuLangId::Bosnian, "4 bytes"},            {MenuLangId::Serbian, "4 bytes"},            {MenuLangId::Macedonian, "4 bytes"},            {MenuLangId::Bulgarian, "4 bytes"},            {MenuLangId::Belarusian, "4 bytes"},            {MenuLangId::Maltese, "4 bytes"},            {MenuLangId::Mongolian, "4 bytes"},            {MenuLangId::Latvian, "4 bytes"},            {MenuLangId::Lithuanian, "4 bytes"},            {MenuLangId::Afrikaans, "4 bytes"},            {MenuLangId::Irish, "4bytes"},            {MenuLangId::Assamese, "4 bytes"},            {MenuLangId::Amharic, "4bytes"},            {MenuLangId::Estonian, "4bytes"},            {MenuLangId::Kazakh, "4bytes"},            {MenuLangId::Catalan, "4bytes"},            {MenuLangId::Kyrgyz, "4bytes"},            {MenuLangId::Slovak, "4bytes"},            {MenuLangId::Slovenian, "4bytes"},            {MenuLangId::Zulu, "4bytes"},            {MenuLangId::Basque, "4bytes"},            {MenuLangId::Hebrew, "4bytes"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -6592,6 +17192,7 @@
             {MenuLangId::Russian, "Адрес"},
             {MenuLangId::ChineseSimplified, "地址"},
             {MenuLangId::ChineseTraditional, "地址"},
+            {MenuLangId::ChineseHongKong, "地址"},
             {MenuLangId::Korean, "주소"},
             {MenuLangId::Arabic, "العنوان"},
             {MenuLangId::Indonesian, "Alamat"},
@@ -6607,7 +17208,56 @@
             {MenuLangId::Finnish, "Osoite"},
             {MenuLangId::Vietnamese, "Địa chỉ"},
             {MenuLangId::Polish, "Adres"},
-            {MenuLangId::Romanian, "Adresă"},
+            {MenuLangId::Romanian, "Adresă"},            {MenuLangId::Filipino, "Address"},            {MenuLangId::Swahili, "Address"},            {MenuLangId::Croatian, "Adresa"},            {MenuLangId::Icelandic, "Vistfang"},            {MenuLangId::Hindi, "पता"},            {MenuLangId::Bengali, "ঠিকানা"},            {MenuLangId::Urdu, "پتہ"},            {MenuLangId::Punjabi, "ਪਤਾ"},            {MenuLangId::Telugu, "చిరునామా"},            {MenuLangId::Persian, "آدرس"},            {MenuLangId::Malay, "Alamat"},            {MenuLangId::Marathi, "पत्ता"},            {MenuLangId::Tamil, "முகவரி"},            {MenuLangId::Gujarati, "સરનામું"},            {MenuLangId::Kannada, "ವಿಳಾಸ"},            {MenuLangId::Odia, "ଠିକଣା"},            {MenuLangId::Malayalam, "വിലാസം"},            {MenuLangId::Burmese, "လိပ်စာ"},            {MenuLangId::Uzbek, "Manzil"},            {MenuLangId::Azerbaijani, "Ünvan"},            {MenuLangId::Nepali, "ठेगाना"},            {MenuLangId::Sinhala, "ලිපිනය"},            {MenuLangId::Khmer, "អាសយដ្ឋាន"},            {MenuLangId::Lao, "ທີ່ຢູ່"},            {MenuLangId::Armenian, "Հասցե"},            {MenuLangId::Albanian, "Adresa"},            {MenuLangId::Georgian, "მისამართი"},            {MenuLangId::Bosnian, "Adresa"},            {MenuLangId::Serbian, "Адреса"},            {MenuLangId::Macedonian, "Адреса"},            {MenuLangId::Bulgarian, "Адрес"},            {MenuLangId::Belarusian, "Адрас"},            {MenuLangId::Maltese, "Indirizz"},            {MenuLangId::Mongolian, "Хаяг"},            {MenuLangId::Latvian, "Adrese"},            {MenuLangId::Lithuanian, "Adresas"},            {MenuLangId::Afrikaans, "Adres"},            {MenuLangId::Irish, "Seoladh"},            {MenuLangId::Assamese, "ঠিকনা"},            {MenuLangId::Amharic, "አድራሻ"},            {MenuLangId::Estonian, "Aadress"},            {MenuLangId::Kazakh, "Мекенжай"},            {MenuLangId::Catalan, "Adreça"},            {MenuLangId::Kyrgyz, "Дарек"},            {MenuLangId::Slovak, "Adresa"},            {MenuLangId::Slovenian, "Naslov"},            {MenuLangId::Zulu, "Ikheli"},            {MenuLangId::Basque, "Helbidea"},            {MenuLangId::Hebrew, "כתובת"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -6623,6 +17273,7 @@
             {MenuLangId::Russian, "Предыдущий"},
             {MenuLangId::ChineseSimplified, "上一值"},
             {MenuLangId::ChineseTraditional, "上一值"},
+            {MenuLangId::ChineseHongKong, "上一值"},
             {MenuLangId::Korean, "이전"},
             {MenuLangId::Arabic, "السابق"},
             {MenuLangId::Indonesian, "Sebelumnya"},
@@ -6638,7 +17289,56 @@
             {MenuLangId::Finnish, "Edellinen"},
             {MenuLangId::Vietnamese, "Trước"},
             {MenuLangId::Polish, "Poprzedni"},
-            {MenuLangId::Romanian, "Anterior"},
+            {MenuLangId::Romanian, "Anterior"},            {MenuLangId::Filipino, "Nakaraan"},            {MenuLangId::Swahili, "Iliyotangulia"},            {MenuLangId::Croatian, "Prethodno"},            {MenuLangId::Icelandic, "Fyrra"},            {MenuLangId::Hindi, "पिछला"},            {MenuLangId::Bengali, "পূর্ববর্তী"},            {MenuLangId::Urdu, "پچھلا"},            {MenuLangId::Punjabi, "ਪਿਛਲਾ"},            {MenuLangId::Telugu, "మునుపటి"},            {MenuLangId::Persian, "قبلی"},            {MenuLangId::Malay, "Sebelumnya"},            {MenuLangId::Marathi, "मागील"},            {MenuLangId::Tamil, "முந்தைய"},            {MenuLangId::Gujarati, "પાછલું"},            {MenuLangId::Kannada, "ಹಿಂದಿನ"},            {MenuLangId::Odia, "ପୂର୍ବବର୍ତ୍ତୀ"},            {MenuLangId::Malayalam, "മുമ്പത്തെത്"},            {MenuLangId::Burmese, "ယခင်"},            {MenuLangId::Uzbek, "Oldingi"},            {MenuLangId::Azerbaijani, "Əvvəlki"},            {MenuLangId::Nepali, "अघिल्लो"},            {MenuLangId::Sinhala, "පෙර"},            {MenuLangId::Khmer, "មុន"},            {MenuLangId::Lao, "ກ່ອນໜ້າ"},            {MenuLangId::Armenian, "Նախորդ"},            {MenuLangId::Albanian, "I mëparshëm"},            {MenuLangId::Georgian, "წინა"},            {MenuLangId::Bosnian, "Prethodno"},            {MenuLangId::Serbian, "Претходно"},            {MenuLangId::Macedonian, "Претходно"},            {MenuLangId::Bulgarian, "Предишно"},            {MenuLangId::Belarusian, "Папярэдняе"},            {MenuLangId::Maltese, "Preċedenti"},            {MenuLangId::Mongolian, "Өмнөх"},            {MenuLangId::Latvian, "Iepriekšējais"},            {MenuLangId::Lithuanian, "Ankstesnis"},            {MenuLangId::Afrikaans, "Vorige"},            {MenuLangId::Irish, "Roimhe seo"},            {MenuLangId::Assamese, "পূৰ্বৱৰ্তী"},            {MenuLangId::Amharic, "ቀዳሚ"},            {MenuLangId::Estonian, "Eelmine"},            {MenuLangId::Kazakh, "Алдыңғы"},            {MenuLangId::Catalan, "Anterior"},            {MenuLangId::Kyrgyz, "Мурунку"},            {MenuLangId::Slovak, "Predchádzajúce"},            {MenuLangId::Slovenian, "Prejšnje"},            {MenuLangId::Zulu, "Okwedlule"},            {MenuLangId::Basque, "Aurrekoa"},            {MenuLangId::Hebrew, "הקודם"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -6654,6 +17354,7 @@
             {MenuLangId::Russian, "Найдено:"},
             {MenuLangId::ChineseSimplified, "检出:"},
             {MenuLangId::ChineseTraditional, "檢出:"},
+            {MenuLangId::ChineseHongKong, "檢出:"},
             {MenuLangId::Korean, "발견:"},
             {MenuLangId::Arabic, "Found:"},
             {MenuLangId::Indonesian, "Ditemukan:"},
@@ -6669,7 +17370,56 @@
             {MenuLangId::Finnish, "Löytyi:"},
             {MenuLangId::Vietnamese, "Tìm thấy:"},
             {MenuLangId::Polish, "Znaleziono:"},
-            {MenuLangId::Romanian, "Găsit:"},
+            {MenuLangId::Romanian, "Găsit:"},            {MenuLangId::Filipino, "Found:"},            {MenuLangId::Swahili, "Found:"},            {MenuLangId::Croatian, "Pronađeno:"},            {MenuLangId::Icelandic, "Fannst:"},            {MenuLangId::Hindi, "मिला:"},            {MenuLangId::Bengali, "পাওয়া গেছে:"},            {MenuLangId::Urdu, "ملا:"},            {MenuLangId::Punjabi, "ਲੱਭਿਆ:"},            {MenuLangId::Telugu, "కనుగొనబడింది:"},            {MenuLangId::Persian, "یافت شد:"},            {MenuLangId::Malay, "Ditemui:"},            {MenuLangId::Marathi, "सापडले:"},            {MenuLangId::Tamil, "கண்டறியப்பட்டது:"},            {MenuLangId::Gujarati, "મળ્યું:"},            {MenuLangId::Kannada, "ಕಂಡುಬಂದಿದೆ:"},            {MenuLangId::Odia, "ଓଡ଼ିଆ: Found:"},            {MenuLangId::Malayalam, "കണ്ടെത്തി:"},            {MenuLangId::Burmese, "တွေ့ရှိ:"},            {MenuLangId::Uzbek, "Topildi:"},            {MenuLangId::Azerbaijani, "Tapıldı:"},            {MenuLangId::Nepali, "फेला पर्यो:"},            {MenuLangId::Sinhala, "හමු විය:"},            {MenuLangId::Khmer, "រកឃើញ:"},            {MenuLangId::Lao, "ພົບ:"},            {MenuLangId::Armenian, "Գտնվել է:"},            {MenuLangId::Albanian, "U gjet:"},            {MenuLangId::Georgian, "ნაპოვნია:"},            {MenuLangId::Bosnian, "Pronađeno:"},            {MenuLangId::Serbian, "Пронађено:"},            {MenuLangId::Macedonian, "Пронајдено:"},            {MenuLangId::Bulgarian, "Намерено:"},            {MenuLangId::Belarusian, "Знойдзена:"},            {MenuLangId::Maltese, "Instab:"},            {MenuLangId::Mongolian, "Олдсон:"},            {MenuLangId::Latvian, "Atrasts:"},            {MenuLangId::Lithuanian, "Rasta:"},            {MenuLangId::Afrikaans, "Gevind:"},            {MenuLangId::Irish, "Aimsithe:"},            {MenuLangId::Assamese, "পোৱা গৈছে:"},            {MenuLangId::Amharic, "ተገኝቷል:"},            {MenuLangId::Estonian, "Leitud:"},            {MenuLangId::Kazakh, "Табылды:"},            {MenuLangId::Catalan, "Trobat:"},            {MenuLangId::Kyrgyz, "Табылды:"},            {MenuLangId::Slovak, "Nájdené:"},            {MenuLangId::Slovenian, "Najdeno:"},            {MenuLangId::Zulu, "Kutholakele:"},            {MenuLangId::Basque, "Aurkitua:"},            {MenuLangId::Hebrew, "נמצא:"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
 
@@ -6687,6 +17437,7 @@
             {MenuLangId::Russian, "Создать LAN-игру - melonDS"},
             {MenuLangId::ChineseSimplified, "托管 LAN 游戏 - melonDS"},
             {MenuLangId::ChineseTraditional, "託管 LAN 遊戲 - melonDS"},
+            {MenuLangId::ChineseHongKong, "託管 LAN 遊戲 - melonDS"},
             {MenuLangId::Korean, "LAN 게임 호스트 - melonDS"},
             {MenuLangId::Arabic, "استضافة لعبة LAN - melonDS"},
             {MenuLangId::Indonesian, "Host game LAN - melonDS"},
@@ -6702,7 +17453,56 @@
             {MenuLangId::Finnish, "Isännöi LAN-peliä - melonDS"},
             {MenuLangId::Vietnamese, "Chủ trì game LAN - melonDS"},
             {MenuLangId::Polish, "Hostuj grę LAN - melonDS"},
-            {MenuLangId::Romanian, "Găzduiește joc LAN - melonDS"},
+            {MenuLangId::Romanian, "Găzduiește joc LAN - melonDS"},            {MenuLangId::Filipino, "Host LAN laro - melonDS"},            {MenuLangId::Swahili, "Host LAN mchezo - melonDS"},            {MenuLangId::Croatian, "Host LAN igra - melonDS"},            {MenuLangId::Icelandic, "Host LAN leikur - melonDS"},            {MenuLangId::Hindi, "Host LAN गेम - melonDS"},            {MenuLangId::Bengali, "Host LAN গেম - melonDS"},            {MenuLangId::Urdu, "Host LAN گیم - melonDS"},            {MenuLangId::Punjabi, "Host LAN ਗੇਮ - melonDS"},            {MenuLangId::Telugu, "Host LAN గేమ్ - melonDS"},            {MenuLangId::Persian, "Host LAN بازی - melonDS"},            {MenuLangId::Malay, "Host LAN permainan - melonDS"},            {MenuLangId::Marathi, "Host LAN गेम - melonDS"},            {MenuLangId::Tamil, "Host LAN விளையாட்டு - melonDS"},            {MenuLangId::Gujarati, "Host LAN ગેમ - melonDS"},            {MenuLangId::Kannada, "Host LAN ಗೇಮ್ - melonDS"},            {MenuLangId::Odia, "Host LAN ଗେମ୍ - melonDS"},            {MenuLangId::Malayalam, "Host LAN ഗെയിം - melonDS"},            {MenuLangId::Burmese, "Host LAN ဂိမ်း - melonDS"},            {MenuLangId::Uzbek, "Host LAN oʻyin - melonDS"},            {MenuLangId::Azerbaijani, "Host LAN oyun - melonDS"},            {MenuLangId::Nepali, "Host LAN खेल - melonDS"},            {MenuLangId::Sinhala, "Host LAN ක්‍රීඩාව - melonDS"},            {MenuLangId::Khmer, "Host LAN ហ្គេម - melonDS"},            {MenuLangId::Lao, "Host LAN ເກມ - melonDS"},            {MenuLangId::Armenian, "Host LAN խաղ - melonDS"},            {MenuLangId::Albanian, "Host LAN loja - melonDS"},            {MenuLangId::Georgian, "Host LAN თამაში - melonDS"},            {MenuLangId::Bosnian, "Host LAN igra - melonDS"},            {MenuLangId::Serbian, "Host LAN игра - melonDS"},            {MenuLangId::Macedonian, "Host LAN игра - melonDS"},            {MenuLangId::Bulgarian, "Host LAN игра - melonDS"},            {MenuLangId::Belarusian, "Host LAN гульня - melonDS"},            {MenuLangId::Maltese, "Host LAN logħba - melonDS"},            {MenuLangId::Mongolian, "Host LAN тоглоом - melonDS"},            {MenuLangId::Latvian, "Host LAN spēle - melonDS"},            {MenuLangId::Lithuanian, "Host LAN žaidimas - melonDS"},            {MenuLangId::Afrikaans, "Host LAN speletjie - melonDS"},            {MenuLangId::Irish, "Host LAN cluiche - melonDS"},            {MenuLangId::Assamese, "Host LAN গেম - melonDS"},            {MenuLangId::Amharic, "Host LAN ጨዋታ - melonDS"},            {MenuLangId::Estonian, "Host LAN mäng - melonDS"},            {MenuLangId::Kazakh, "Host LAN ойын - melonDS"},            {MenuLangId::Catalan, "Host LAN joc - melonDS"},            {MenuLangId::Kyrgyz, "Host LAN оюн - melonDS"},            {MenuLangId::Slovak, "Host LAN hra - melonDS"},            {MenuLangId::Slovenian, "Host LAN igra - melonDS"},            {MenuLangId::Zulu, "Host LAN umdlalo - melonDS"},            {MenuLangId::Basque, "Host LAN jokoa - melonDS"},            {MenuLangId::Hebrew, "Host LAN משחק - melonDS"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -6718,6 +17518,7 @@
             {MenuLangId::Russian, "Присоединиться к LAN-игре - melonDS"},
             {MenuLangId::ChineseSimplified, "加入 LAN 游戏 - melonDS"},
             {MenuLangId::ChineseTraditional, "加入 LAN 遊戲 - melonDS"},
+            {MenuLangId::ChineseHongKong, "加入 LAN 遊戲 - melonDS"},
             {MenuLangId::Korean, "LAN 게임 참가 - melonDS"},
             {MenuLangId::Arabic, "الانضمام إلى لعبة LAN - melonDS"},
             {MenuLangId::Indonesian, "Gabung permainan LAN - melonDS"},
@@ -6733,7 +17534,56 @@
             {MenuLangId::Finnish, "Liity LAN-peliin - melonDS"},
             {MenuLangId::Vietnamese, "Tham gia game LAN - melonDS"},
             {MenuLangId::Polish, "Dołącz do gry LAN - melonDS"},
-            {MenuLangId::Romanian, "Alătură-te jocului LAN - melonDS"},
+            {MenuLangId::Romanian, "Alătură-te jocului LAN - melonDS"},            {MenuLangId::Filipino, "Join LAN laro - melonDS"},            {MenuLangId::Swahili, "Join LAN mchezo - melonDS"},            {MenuLangId::Croatian, "Join LAN igra - melonDS"},            {MenuLangId::Icelandic, "Join LAN leikur - melonDS"},            {MenuLangId::Hindi, "Join LAN गेम - melonDS"},            {MenuLangId::Bengali, "Join LAN গেম - melonDS"},            {MenuLangId::Urdu, "Join LAN گیم - melonDS"},            {MenuLangId::Punjabi, "Join LAN ਗੇਮ - melonDS"},            {MenuLangId::Telugu, "Join LAN గేమ్ - melonDS"},            {MenuLangId::Persian, "Join LAN بازی - melonDS"},            {MenuLangId::Malay, "Join LAN permainan - melonDS"},            {MenuLangId::Marathi, "Join LAN गेम - melonDS"},            {MenuLangId::Tamil, "Join LAN விளையாட்டு - melonDS"},            {MenuLangId::Gujarati, "Join LAN ગેમ - melonDS"},            {MenuLangId::Kannada, "Join LAN ಗೇಮ್ - melonDS"},            {MenuLangId::Odia, "Join LAN ଗେମ୍ - melonDS"},            {MenuLangId::Malayalam, "Join LAN ഗെയിം - melonDS"},            {MenuLangId::Burmese, "Join LAN ဂိမ်း - melonDS"},            {MenuLangId::Uzbek, "Join LAN oʻyin - melonDS"},            {MenuLangId::Azerbaijani, "Join LAN oyun - melonDS"},            {MenuLangId::Nepali, "Join LAN खेल - melonDS"},            {MenuLangId::Sinhala, "Join LAN ක්‍රීඩාව - melonDS"},            {MenuLangId::Khmer, "Join LAN ហ្គេម - melonDS"},            {MenuLangId::Lao, "Join LAN ເກມ - melonDS"},            {MenuLangId::Armenian, "Join LAN խաղ - melonDS"},            {MenuLangId::Albanian, "Join LAN loja - melonDS"},            {MenuLangId::Georgian, "Join LAN თამაში - melonDS"},            {MenuLangId::Bosnian, "Join LAN igra - melonDS"},            {MenuLangId::Serbian, "Join LAN игра - melonDS"},            {MenuLangId::Macedonian, "Join LAN игра - melonDS"},            {MenuLangId::Bulgarian, "Join LAN игра - melonDS"},            {MenuLangId::Belarusian, "Join LAN гульня - melonDS"},            {MenuLangId::Maltese, "Join LAN logħba - melonDS"},            {MenuLangId::Mongolian, "Join LAN тоглоом - melonDS"},            {MenuLangId::Latvian, "Join LAN spēle - melonDS"},            {MenuLangId::Lithuanian, "Join LAN žaidimas - melonDS"},            {MenuLangId::Afrikaans, "Join LAN speletjie - melonDS"},            {MenuLangId::Irish, "Join LAN cluiche - melonDS"},            {MenuLangId::Assamese, "Join LAN গেম - melonDS"},            {MenuLangId::Amharic, "Join LAN ጨዋታ - melonDS"},            {MenuLangId::Estonian, "Join LAN mäng - melonDS"},            {MenuLangId::Kazakh, "Join LAN ойын - melonDS"},            {MenuLangId::Catalan, "Join LAN joc - melonDS"},            {MenuLangId::Kyrgyz, "Join LAN оюн - melonDS"},            {MenuLangId::Slovak, "Join LAN hra - melonDS"},            {MenuLangId::Slovenian, "Join LAN igra - melonDS"},            {MenuLangId::Zulu, "Join LAN umdlalo - melonDS"},            {MenuLangId::Basque, "Join LAN jokoa - melonDS"},            {MenuLangId::Hebrew, "Join LAN משחק - melonDS"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -6749,6 +17599,7 @@
             {MenuLangId::Russian, "Имя игрока:"},
             {MenuLangId::ChineseSimplified, "玩家名称："},
             {MenuLangId::ChineseTraditional, "玩家名稱："},
+            {MenuLangId::ChineseHongKong, "玩家名稱："},
             {MenuLangId::Korean, "플레이어 이름:"},
             {MenuLangId::Arabic, "اسم اللاعب:"},
             {MenuLangId::Indonesian, "Nama pemain:"},
@@ -6764,7 +17615,56 @@
             {MenuLangId::Finnish, "Pelaajan nimi:"},
             {MenuLangId::Vietnamese, "Tên người chơi:"},
             {MenuLangId::Polish, "Nazwa gracza:"},
-            {MenuLangId::Romanian, "Nume jucător:"},
+            {MenuLangId::Romanian, "Nume jucător:"},            {MenuLangId::Filipino, "Manlalaro pangalan:"},            {MenuLangId::Swahili, "Mchezaji jina:"},            {MenuLangId::Croatian, "Igrač naziv:"},            {MenuLangId::Icelandic, "Spilari heiti:"},            {MenuLangId::Hindi, "खिलाड़ी नाम:"},            {MenuLangId::Bengali, "খেলোয়াড় নাম:"},            {MenuLangId::Urdu, "کھلاڑی نام:"},            {MenuLangId::Punjabi, "ਖਿਡਾਰੀ ਨਾਂ:"},            {MenuLangId::Telugu, "ప్లేయర్ పేరు:"},            {MenuLangId::Persian, "بازیکن نام:"},            {MenuLangId::Malay, "Pemain nama:"},            {MenuLangId::Marathi, "खेळाडू नाव:"},            {MenuLangId::Tamil, "பிளேயர் பெயர்:"},            {MenuLangId::Gujarati, "ખેલાડી નામ:"},            {MenuLangId::Kannada, "ಪ್ಲೇಯರ್ ಹೆಸರು:"},            {MenuLangId::Odia, "ପ୍ଲେୟର୍ ନାମ:"},            {MenuLangId::Malayalam, "പ്ലെയർ പേര്:"},            {MenuLangId::Burmese, "ကစားသမား အမည်:"},            {MenuLangId::Uzbek, "Oʻyinchi nom:"},            {MenuLangId::Azerbaijani, "Oyunçu ad:"},            {MenuLangId::Nepali, "खेलाडी नाम:"},            {MenuLangId::Sinhala, "ක්‍රීඩකයා නම:"},            {MenuLangId::Khmer, "អ្នកលេង ឈ្មោះ:"},            {MenuLangId::Lao, "ຜູ້ຫຼິ້ນ ຊື່:"},            {MenuLangId::Armenian, "Խաղացող անուն:"},            {MenuLangId::Albanian, "Lojtari emri:"},            {MenuLangId::Georgian, "მოთამაშე სახელი:"},            {MenuLangId::Bosnian, "Igrač naziv:"},            {MenuLangId::Serbian, "Играч назив:"},            {MenuLangId::Macedonian, "Играч име:"},            {MenuLangId::Bulgarian, "Играч име:"},            {MenuLangId::Belarusian, "Гулец назва:"},            {MenuLangId::Maltese, "Plejer isem:"},            {MenuLangId::Mongolian, "Тоглогч нэр:"},            {MenuLangId::Latvian, "Spēlētājs nosaukums:"},            {MenuLangId::Lithuanian, "Žaidėjas pavadinimas:"},            {MenuLangId::Afrikaans, "Speler naam:"},            {MenuLangId::Irish, "Imreoir ainm:"},            {MenuLangId::Assamese, "খেলুৱৈ নাম:"},            {MenuLangId::Amharic, "ተጫዋች ስም:"},            {MenuLangId::Estonian, "Mängija nimi:"},            {MenuLangId::Kazakh, "Ойыншы атауы:"},            {MenuLangId::Catalan, "Jugador nom:"},            {MenuLangId::Kyrgyz, "Оюнчу аты:"},            {MenuLangId::Slovak, "Hráč názov:"},            {MenuLangId::Slovenian, "Igralec ime:"},            {MenuLangId::Zulu, "Umdlali igama:"},            {MenuLangId::Basque, "Jokalaria izena:"},            {MenuLangId::Hebrew, "שחקן שם:"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -6780,6 +17680,7 @@
             {MenuLangId::Russian, "Количество игроков:"},
             {MenuLangId::ChineseSimplified, "玩家数:"},
             {MenuLangId::ChineseTraditional, "玩家數:"},
+            {MenuLangId::ChineseHongKong, "玩家數:"},
             {MenuLangId::Korean, "플레이어 수:"},
             {MenuLangId::Arabic, "عدد اللاعبين:"},
             {MenuLangId::Indonesian, "Jumlah pemain:"},
@@ -6795,7 +17696,56 @@
             {MenuLangId::Finnish, "Pelaajien määrä:"},
             {MenuLangId::Vietnamese, "Số người chơi:"},
             {MenuLangId::Polish, "Liczba graczy:"},
-            {MenuLangId::Romanian, "Număr de jucători:"},
+            {MenuLangId::Romanian, "Număr de jucători:"},            {MenuLangId::Filipino, "Number of players:"},            {MenuLangId::Swahili, "Number of players:"},            {MenuLangId::Croatian, "Broj igrača:"},            {MenuLangId::Icelandic, "Fjöldi spilara:"},            {MenuLangId::Hindi, "खिलाड़ियों की संख्या:"},            {MenuLangId::Bengali, "খেলোয়াড়ের সংখ্যা:"},            {MenuLangId::Urdu, "کھلاڑیوں کی تعداد:"},            {MenuLangId::Punjabi, "ਖਿਡਾਰੀਆਂ ਦੀ ਗਿਣਤੀ:"},            {MenuLangId::Telugu, "ప్లేయర్‌ల సంఖ్య:"},            {MenuLangId::Persian, "تعداد بازیکنان:"},            {MenuLangId::Malay, "Bilangan pemain:"},            {MenuLangId::Marathi, "खेळाडूंची संख्या:"},            {MenuLangId::Tamil, "பிளேயர் எண்ணிக்கை:"},            {MenuLangId::Gujarati, "ખેલાડીઓની સંખ્યા:"},            {MenuLangId::Kannada, "ಪ್ಲೇಯರ್‌ಗಳ ಸಂಖ್ಯೆ:"},            {MenuLangId::Odia, "ସଂଖ୍ୟା of players:"},            {MenuLangId::Malayalam, "പ്ലെയറുകളുടെ എണ്ണം:"},            {MenuLangId::Burmese, "ကစားသမား အရေအတွက်:"},            {MenuLangId::Uzbek, "Oʻyinchilar soni:"},            {MenuLangId::Azerbaijani, "Oyunçu sayı:"},            {MenuLangId::Nepali, "खेलाडी संख्या:"},            {MenuLangId::Sinhala, "ක්‍රීඩකයන් ගණන:"},            {MenuLangId::Khmer, "ចំនួនអ្នកលេង:"},            {MenuLangId::Lao, "ຈຳນວນຜູ້ຫຼິ້ນ:"},            {MenuLangId::Armenian, "Խաղացողների քանակ:"},            {MenuLangId::Albanian, "Numri i lojtarëve:"},            {MenuLangId::Georgian, "მოთამაშეების რაოდენობა:"},            {MenuLangId::Bosnian, "Broj igrača:"},            {MenuLangId::Serbian, "Број играча:"},            {MenuLangId::Macedonian, "Број на играчи:"},            {MenuLangId::Bulgarian, "Брой играчи:"},            {MenuLangId::Belarusian, "Колькасць гульцоў:"},            {MenuLangId::Maltese, "Numru ta' plejers:"},            {MenuLangId::Mongolian, "Тоглогчийн тоо:"},            {MenuLangId::Latvian, "Spēlētāju skaits:"},            {MenuLangId::Lithuanian, "Žaidėjų skaičius:"},            {MenuLangId::Afrikaans, "Aantal spelers:"},            {MenuLangId::Irish, "Líon imreoirí:"},            {MenuLangId::Assamese, "খেলুৱৈৰ সংখ্যা:"},            {MenuLangId::Amharic, "የተጫዋቾች ብዛት:"},            {MenuLangId::Estonian, "Mängijate arv:"},            {MenuLangId::Kazakh, "Ойыншылар саны:"},            {MenuLangId::Catalan, "Nombre de jugadors:"},            {MenuLangId::Kyrgyz, "Оюнчулар саны:"},            {MenuLangId::Slovak, "Počet hráčov:"},            {MenuLangId::Slovenian, "Število igralcev:"},            {MenuLangId::Zulu, "Inombolo yabadlali:"},            {MenuLangId::Basque, "Jokalari kopurua:"},            {MenuLangId::Hebrew, "מספר שחקנים:"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -6811,6 +17761,7 @@
             {MenuLangId::Russian, "Подключить"},
             {MenuLangId::ChineseSimplified, "连接"},
             {MenuLangId::ChineseTraditional, "連線"},
+            {MenuLangId::ChineseHongKong, "連線"},
             {MenuLangId::Korean, "연결"},
             {MenuLangId::Arabic, "Connect"},
             {MenuLangId::Indonesian, "Hubungkan"},
@@ -6826,7 +17777,56 @@
             {MenuLangId::Finnish, "Yhdistä"},
             {MenuLangId::Vietnamese, "Kết nối"},
             {MenuLangId::Polish, "Połącz"},
-            {MenuLangId::Romanian, "Conectează"},
+            {MenuLangId::Romanian, "Conectează"},            {MenuLangId::Filipino, "Connect"},            {MenuLangId::Swahili, "Connect"},            {MenuLangId::Croatian, "Poveži se"},            {MenuLangId::Icelandic, "Tengjast"},            {MenuLangId::Hindi, "कनेक्ट करें"},            {MenuLangId::Bengali, "সংযোগ করুন"},            {MenuLangId::Urdu, "کنیکٹ کریں"},            {MenuLangId::Punjabi, "ਕਨੈਕਟ ਕਰੋ"},            {MenuLangId::Telugu, "కనెక్ట్ చేయి"},            {MenuLangId::Persian, "اتصال"},            {MenuLangId::Malay, "Sambung"},            {MenuLangId::Marathi, "कनेक्ट करा"},            {MenuLangId::Tamil, "இணை"},            {MenuLangId::Gujarati, "કનેક્ટ કરો"},            {MenuLangId::Kannada, "ಕನೆಕ್ಟ್ ಮಾಡಿ"},            {MenuLangId::Odia, "ସଂଯୋଗ କରନ୍ତୁ"},            {MenuLangId::Malayalam, "കണക്റ്റ് ചെയ്യുക"},            {MenuLangId::Burmese, "ချိတ်ဆက်ပါ"},            {MenuLangId::Uzbek, "Ulanish"},            {MenuLangId::Azerbaijani, "Qoşul"},            {MenuLangId::Nepali, "जडान गर्नुहोस्"},            {MenuLangId::Sinhala, "සම්බන්ධ කරන්න"},            {MenuLangId::Khmer, "ភ្ជាប់"},            {MenuLangId::Lao, "ເຊື່ອມຕໍ່"},            {MenuLangId::Armenian, "Միանալ"},            {MenuLangId::Albanian, "Lidhu"},            {MenuLangId::Georgian, "დაკავშირება"},            {MenuLangId::Bosnian, "Poveži"},            {MenuLangId::Serbian, "Повежи"},            {MenuLangId::Macedonian, "Поврзи"},            {MenuLangId::Bulgarian, "Свържи"},            {MenuLangId::Belarusian, "Злучыць"},            {MenuLangId::Maltese, "Qabbad"},            {MenuLangId::Mongolian, "Холбох"},            {MenuLangId::Latvian, "Savienot"},            {MenuLangId::Lithuanian, "Prisijungti"},            {MenuLangId::Afrikaans, "Koppel"},            {MenuLangId::Irish, "Ceangail"},            {MenuLangId::Assamese, "সংযোগ কৰক"},            {MenuLangId::Amharic, "ተገናኝ"},            {MenuLangId::Estonian, "Ühenda"},            {MenuLangId::Kazakh, "Қосылу"},            {MenuLangId::Catalan, "Connecta"},            {MenuLangId::Kyrgyz, "Туташуу"},            {MenuLangId::Slovak, "Pripojiť"},            {MenuLangId::Slovenian, "Poveži"},            {MenuLangId::Zulu, "Xhuma"},            {MenuLangId::Basque, "Konektatu"},            {MenuLangId::Hebrew, "התחבר"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -6842,6 +17842,7 @@
             {MenuLangId::Russian, "Прямое подключение..."},
             {MenuLangId::ChineseSimplified, "直接连接..."},
             {MenuLangId::ChineseTraditional, "直接連線..."},
+            {MenuLangId::ChineseHongKong, "直接連線..."},
             {MenuLangId::Korean, "직접 연결..."},
             {MenuLangId::Arabic, "اتصال مباشر..."},
             {MenuLangId::Indonesian, "Hubungkan langsung..."},
@@ -6857,7 +17858,56 @@
             {MenuLangId::Finnish, "Suora yhteys..."},
             {MenuLangId::Vietnamese, "Kết nối trực tiếp..."},
             {MenuLangId::Polish, "Połącz bezpośrednio..."},
-            {MenuLangId::Romanian, "Conectare directă..."},
+            {MenuLangId::Romanian, "Conectare directă..."},            {MenuLangId::Filipino, "Direct connect..."},            {MenuLangId::Swahili, "Direct connect..."},            {MenuLangId::Croatian, "Izravno povezivanje..."},            {MenuLangId::Icelandic, "Beintenging..."},            {MenuLangId::Hindi, "डायरेक्ट कनेक्ट..."},            {MenuLangId::Bengali, "ডাইরেক্ট সংযোগ..."},            {MenuLangId::Urdu, "ڈائریکٹ کنیکٹ..."},            {MenuLangId::Punjabi, "ਡਾਇਰੈਕਟ ਕਨੈਕਟ..."},            {MenuLangId::Telugu, "డైరెక్ట్ కనెక్ట్..."},            {MenuLangId::Persian, "اتصال مستقیم..."},            {MenuLangId::Malay, "Sambung terus..."},            {MenuLangId::Marathi, "थेट कनेक्ट..."},            {MenuLangId::Tamil, "நேரடி இணைப்பு..."},            {MenuLangId::Gujarati, "સીધું કનેક્ટ..."},            {MenuLangId::Kannada, "ನೇರ connect..."},            {MenuLangId::Odia, "ଓଡ଼ିଆ: Direct connect..."},            {MenuLangId::Malayalam, "നേരിട്ട് connect..."},            {MenuLangId::Burmese, "တိုက်ရိုက် connect..."},            {MenuLangId::Uzbek, "Toʻgʻridan connect..."},            {MenuLangId::Azerbaijani, "Birbaşa connect..."},            {MenuLangId::Nepali, "प्रत्यक्ष connect..."},            {MenuLangId::Sinhala, "සෘජු connect..."},            {MenuLangId::Khmer, "connect ដោយផ្ទាល់..."},            {MenuLangId::Lao, "connect ໂດຍກົງ..."},            {MenuLangId::Armenian, "Ուղղակի connect..."},            {MenuLangId::Albanian, "connect direkt..."},            {MenuLangId::Georgian, "პირდაპირი connect..."},            {MenuLangId::Bosnian, "direktni connect..."},            {MenuLangId::Serbian, "директни connect..."},            {MenuLangId::Macedonian, "директен connect..."},            {MenuLangId::Bulgarian, "директен connect..."},            {MenuLangId::Belarusian, "прамое connect..."},            {MenuLangId::Maltese, "direct connect..."},            {MenuLangId::Mongolian, "шууд connect..."},            {MenuLangId::Latvian, "tiešais connect..."},            {MenuLangId::Lithuanian, "tiesioginis connect..."},            {MenuLangId::Afrikaans, "direkte connect..."},            {MenuLangId::Irish, "Gaeilge: Direct connect..."},            {MenuLangId::Assamese, "পোনপটীয়া connect..."},            {MenuLangId::Amharic, "አማርኛ: Direct connect..."},            {MenuLangId::Estonian, "Eesti: Direct connect..."},            {MenuLangId::Kazakh, "Қазақша: Direct connect..."},            {MenuLangId::Catalan, "Català: Direct connect..."},            {MenuLangId::Kyrgyz, "Кыргызча: Direct connect..."},            {MenuLangId::Slovak, "Slovenčina: Direct connect..."},            {MenuLangId::Slovenian, "Slovenščina: Direct connect..."},            {MenuLangId::Zulu, "isiZulu: Direct connect..."},            {MenuLangId::Basque, "Euskara: Direct connect..."},            {MenuLangId::Hebrew, "עברית: Direct connect..."},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -6873,6 +17923,7 @@
             {MenuLangId::Russian, "Прямое подключение"},
             {MenuLangId::ChineseSimplified, "直接连接"},
             {MenuLangId::ChineseTraditional, "直接連線"},
+            {MenuLangId::ChineseHongKong, "直接連線"},
             {MenuLangId::Korean, "직접 연결"},
             {MenuLangId::Arabic, "اتصال مباشر"},
             {MenuLangId::Indonesian, "Koneksi langsung"},
@@ -6888,7 +17939,56 @@
             {MenuLangId::Finnish, "Suora yhteys"},
             {MenuLangId::Vietnamese, "Kết nối trực tiếp"},
             {MenuLangId::Polish, "Połączenie bezpośrednie"},
-            {MenuLangId::Romanian, "Conectare directă"},
+            {MenuLangId::Romanian, "Conectare directă"},            {MenuLangId::Filipino, "Direct connect"},            {MenuLangId::Swahili, "Direct connect"},            {MenuLangId::Croatian, "Izravno povezivanje"},            {MenuLangId::Icelandic, "Beintenging"},            {MenuLangId::Hindi, "डायरेक्ट कनेक्ट"},            {MenuLangId::Bengali, "ডাইরেক্ট সংযোগ"},            {MenuLangId::Urdu, "ڈائریکٹ کنیکٹ"},            {MenuLangId::Punjabi, "ਡਾਇਰੈਕਟ ਕਨੈਕਟ"},            {MenuLangId::Telugu, "డైరెక్ట్ కనెక్ట్"},            {MenuLangId::Persian, "اتصال مستقیم"},            {MenuLangId::Malay, "Sambung terus"},            {MenuLangId::Marathi, "थेट कनेक्ट"},            {MenuLangId::Tamil, "நேரடி இணைப்பு"},            {MenuLangId::Gujarati, "સીધું કનેક્ટ"},            {MenuLangId::Kannada, "ನೇರ connect"},            {MenuLangId::Odia, "ସିଧା connect"},            {MenuLangId::Malayalam, "നേരിട്ട് connect"},            {MenuLangId::Burmese, "တိုက်ရိုက် connect"},            {MenuLangId::Uzbek, "Toʻgʻridan connect"},            {MenuLangId::Azerbaijani, "Birbaşa connect"},            {MenuLangId::Nepali, "प्रत्यक्ष connect"},            {MenuLangId::Sinhala, "සෘජු connect"},            {MenuLangId::Khmer, "connect ដោយផ្ទាល់"},            {MenuLangId::Lao, "connect ໂດຍກົງ"},            {MenuLangId::Armenian, "Ուղղակի connect"},            {MenuLangId::Albanian, "connect direkt"},            {MenuLangId::Georgian, "პირდაპირი connect"},            {MenuLangId::Bosnian, "direktni connect"},            {MenuLangId::Serbian, "директни connect"},            {MenuLangId::Macedonian, "директен connect"},            {MenuLangId::Bulgarian, "директен connect"},            {MenuLangId::Belarusian, "прамое connect"},            {MenuLangId::Maltese, "direct connect"},            {MenuLangId::Mongolian, "шууд connect"},            {MenuLangId::Latvian, "tiešais connect"},            {MenuLangId::Lithuanian, "tiesioginis connect"},            {MenuLangId::Afrikaans, "direkte connect"},            {MenuLangId::Irish, "connect díreach"},            {MenuLangId::Assamese, "পোনপটীয়া connect"},            {MenuLangId::Amharic, "ቀጥታ ተገናኝ"},            {MenuLangId::Estonian, "otseühendus"},            {MenuLangId::Kazakh, "тікелей қосылу"},            {MenuLangId::Catalan, "connexió directa"},            {MenuLangId::Kyrgyz, "түз туташуу"},            {MenuLangId::Slovak, "priame pripojenie"},            {MenuLangId::Slovenian, "neposredna povezava"},            {MenuLangId::Zulu, "ukuxhumeka okuqondile"},            {MenuLangId::Basque, "konexio zuzena"},            {MenuLangId::Hebrew, "חיבור ישיר"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -6904,6 +18004,7 @@
             {MenuLangId::Russian, "Адрес хоста:"},
             {MenuLangId::ChineseSimplified, "主机地址："},
             {MenuLangId::ChineseTraditional, "主機地址："},
+            {MenuLangId::ChineseHongKong, "主機地址："},
             {MenuLangId::Korean, "호스트 주소:"},
             {MenuLangId::Arabic, "عنوان المضيف:"},
             {MenuLangId::Indonesian, "Alamat host:"},
@@ -6919,7 +18020,56 @@
             {MenuLangId::Finnish, "Isäntäosoite:"},
             {MenuLangId::Vietnamese, "Địa chỉ host:"},
             {MenuLangId::Polish, "Adres hosta:"},
-            {MenuLangId::Romanian, "Adresă gazdă:"},
+            {MenuLangId::Romanian, "Adresă gazdă:"},            {MenuLangId::Filipino, "Host address:"},            {MenuLangId::Swahili, "Host address:"},            {MenuLangId::Croatian, "Adresa hosta:"},            {MenuLangId::Icelandic, "Vistfang hýsils:"},            {MenuLangId::Hindi, "होस्ट पता:"},            {MenuLangId::Bengali, "হোস্ট ঠিকানা:"},            {MenuLangId::Urdu, "ہوسٹ پتہ:"},            {MenuLangId::Punjabi, "ਹੋਸਟ ਪਤਾ:"},            {MenuLangId::Telugu, "హోస్ట్ చిరునామా:"},            {MenuLangId::Persian, "آدرس میزبان:"},            {MenuLangId::Malay, "Alamat hos:"},            {MenuLangId::Marathi, "होस्ट पत्ता:"},            {MenuLangId::Tamil, "host முகவரி:"},            {MenuLangId::Gujarati, "host સરનામું:"},            {MenuLangId::Kannada, "host ವಿಳಾಸ:"},            {MenuLangId::Odia, "ଓଡ଼ିଆ: Host address:"},            {MenuLangId::Malayalam, "host വിലാസം:"},            {MenuLangId::Burmese, "host လိပ်စာ:"},            {MenuLangId::Uzbek, "host manzili:"},            {MenuLangId::Azerbaijani, "host ünvanı:"},            {MenuLangId::Nepali, "host ठेगाना:"},            {MenuLangId::Sinhala, "host ලිපිනය:"},            {MenuLangId::Khmer, "អាសយដ្ឋាន host:"},            {MenuLangId::Lao, "ທີ່ຢູ່ host:"},            {MenuLangId::Armenian, "host հասցե:"},            {MenuLangId::Albanian, "Adresa host:"},            {MenuLangId::Georgian, "host მისამართი:"},            {MenuLangId::Bosnian, "host adresa:"},            {MenuLangId::Serbian, "host адреса:"},            {MenuLangId::Macedonian, "host адреса:"},            {MenuLangId::Bulgarian, "host адрес:"},            {MenuLangId::Belarusian, "host адрас:"},            {MenuLangId::Maltese, "indirizz host:"},            {MenuLangId::Mongolian, "host хаяг:"},            {MenuLangId::Latvian, "host adrese:"},            {MenuLangId::Lithuanian, "host adresas:"},            {MenuLangId::Afrikaans, "host-adres:"},            {MenuLangId::Irish, "Gaeilge: Host address:"},            {MenuLangId::Assamese, "host ঠিকনা:"},            {MenuLangId::Amharic, "አማርኛ: Host address:"},            {MenuLangId::Estonian, "Eesti: Host address:"},            {MenuLangId::Kazakh, "Қазақша: Host address:"},            {MenuLangId::Catalan, "Català: Host address:"},            {MenuLangId::Kyrgyz, "Кыргызча: Host address:"},            {MenuLangId::Slovak, "Slovenčina: Host address:"},            {MenuLangId::Slovenian, "Slovenščina: Host address:"},            {MenuLangId::Zulu, "isiZulu: Host address:"},            {MenuLangId::Basque, "Euskara: Host address:"},            {MenuLangId::Hebrew, "עברית: Host address:"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -6935,6 +18085,7 @@
             {MenuLangId::Russian, "Имя"},
             {MenuLangId::ChineseSimplified, "名字"},
             {MenuLangId::ChineseTraditional, "名字"},
+            {MenuLangId::ChineseHongKong, "名字"},
             {MenuLangId::Korean, "이름"},
             {MenuLangId::Arabic, "الاسم"},
             {MenuLangId::Indonesian, "Nama"},
@@ -6950,7 +18101,56 @@
             {MenuLangId::Finnish, "Nimi"},
             {MenuLangId::Vietnamese, "Tên"},
             {MenuLangId::Polish, "Nazwa"},
-            {MenuLangId::Romanian, "Nume"},
+            {MenuLangId::Romanian, "Nume"},            {MenuLangId::Filipino, "Pangalan"},            {MenuLangId::Swahili, "Jina"},            {MenuLangId::Croatian, "Naziv"},            {MenuLangId::Icelandic, "Heiti"},            {MenuLangId::Hindi, "नाम"},            {MenuLangId::Bengali, "নাম"},            {MenuLangId::Urdu, "نام"},            {MenuLangId::Punjabi, "ਨਾਂ"},            {MenuLangId::Telugu, "పేరు"},            {MenuLangId::Persian, "نام"},            {MenuLangId::Malay, "Nama"},            {MenuLangId::Marathi, "नाव"},            {MenuLangId::Tamil, "பெயர்"},            {MenuLangId::Gujarati, "નામ"},            {MenuLangId::Kannada, "ಹೆಸರು"},            {MenuLangId::Odia, "ନାମ"},            {MenuLangId::Malayalam, "പേര്"},            {MenuLangId::Burmese, "အမည်"},            {MenuLangId::Uzbek, "Nom"},            {MenuLangId::Azerbaijani, "Ad"},            {MenuLangId::Nepali, "नाम"},            {MenuLangId::Sinhala, "නම"},            {MenuLangId::Khmer, "ឈ្មោះ"},            {MenuLangId::Lao, "ຊື່"},            {MenuLangId::Armenian, "Անուն"},            {MenuLangId::Albanian, "Emri"},            {MenuLangId::Georgian, "სახელი"},            {MenuLangId::Bosnian, "Naziv"},            {MenuLangId::Serbian, "Назив"},            {MenuLangId::Macedonian, "Име"},            {MenuLangId::Bulgarian, "Име"},            {MenuLangId::Belarusian, "Назва"},            {MenuLangId::Maltese, "Isem"},            {MenuLangId::Mongolian, "Нэр"},            {MenuLangId::Latvian, "Nosaukums"},            {MenuLangId::Lithuanian, "Pavadinimas"},            {MenuLangId::Afrikaans, "Naam"},            {MenuLangId::Irish, "Ainm"},            {MenuLangId::Assamese, "নাম"},            {MenuLangId::Amharic, "ስም"},            {MenuLangId::Estonian, "Nimi"},            {MenuLangId::Kazakh, "Атауы"},            {MenuLangId::Catalan, "Nom"},            {MenuLangId::Kyrgyz, "Аты"},            {MenuLangId::Slovak, "Názov"},            {MenuLangId::Slovenian, "Ime"},            {MenuLangId::Zulu, "Igama"},            {MenuLangId::Basque, "Izena"},            {MenuLangId::Hebrew, "שם"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -6966,6 +18166,7 @@
             {MenuLangId::Russian, "Игроки"},
             {MenuLangId::ChineseSimplified, "玩家"},
             {MenuLangId::ChineseTraditional, "玩家"},
+            {MenuLangId::ChineseHongKong, "玩家"},
             {MenuLangId::Korean, "플레이어"},
             {MenuLangId::Arabic, "Players"},
             {MenuLangId::Indonesian, "Pemain"},
@@ -6981,7 +18182,56 @@
             {MenuLangId::Finnish, "Pelaajat"},
             {MenuLangId::Vietnamese, "Người chơi"},
             {MenuLangId::Polish, "Gracze"},
-            {MenuLangId::Romanian, "Jucători"},
+            {MenuLangId::Romanian, "Jucători"},            {MenuLangId::Filipino, "Players"},            {MenuLangId::Swahili, "Players"},            {MenuLangId::Croatian, "Igrači"},            {MenuLangId::Icelandic, "Spilarar"},            {MenuLangId::Hindi, "खिलाड़ी"},            {MenuLangId::Bengali, "খেলোয়াড়"},            {MenuLangId::Urdu, "کھلاڑی"},            {MenuLangId::Punjabi, "ਖਿਡਾਰੀ"},            {MenuLangId::Telugu, "ప్లేయర్‌లు"},            {MenuLangId::Persian, "بازیکنان"},            {MenuLangId::Malay, "Pemain"},            {MenuLangId::Marathi, "खेळाडू"},            {MenuLangId::Tamil, "பிளேயர்கள்"},            {MenuLangId::Gujarati, "ખેલાડીઓ"},            {MenuLangId::Kannada, "ಪ್ಲೇಯರ್‌ಗಳು"},            {MenuLangId::Odia, "ପ୍ଲେୟର୍‌ଗୁଡ଼ିକ"},            {MenuLangId::Malayalam, "പ്ലെയറുകൾ"},            {MenuLangId::Burmese, "ကစားသမားများ"},            {MenuLangId::Uzbek, "Oʻyinchilar"},            {MenuLangId::Azerbaijani, "Oyunçular"},            {MenuLangId::Nepali, "खेलाडीहरू"},            {MenuLangId::Sinhala, "ක්‍රීඩකයන්"},            {MenuLangId::Khmer, "អ្នកលេង"},            {MenuLangId::Lao, "ຜູ້ຫຼິ້ນ"},            {MenuLangId::Armenian, "Խաղացողներ"},            {MenuLangId::Albanian, "Lojtarët"},            {MenuLangId::Georgian, "მოთამაშეები"},            {MenuLangId::Bosnian, "Igrači"},            {MenuLangId::Serbian, "Играчи"},            {MenuLangId::Macedonian, "Играчи"},            {MenuLangId::Bulgarian, "Играчи"},            {MenuLangId::Belarusian, "Гульцы"},            {MenuLangId::Maltese, "Plejers"},            {MenuLangId::Mongolian, "Тоглогчид"},            {MenuLangId::Latvian, "Spēlētāji"},            {MenuLangId::Lithuanian, "Žaidėjai"},            {MenuLangId::Afrikaans, "Spelers"},            {MenuLangId::Irish, "Imreoirí"},            {MenuLangId::Assamese, "খেলুৱৈসকল"},            {MenuLangId::Amharic, "ተጫዋቾች"},            {MenuLangId::Estonian, "Mängijad"},            {MenuLangId::Kazakh, "Ойыншылар"},            {MenuLangId::Catalan, "Jugadors"},            {MenuLangId::Kyrgyz, "Оюнчулар"},            {MenuLangId::Slovak, "Hráči"},            {MenuLangId::Slovenian, "Igralci"},            {MenuLangId::Zulu, "Abadlali"},            {MenuLangId::Basque, "Jokalariak"},            {MenuLangId::Hebrew, "שחקנים"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -6997,6 +18247,7 @@
             {MenuLangId::Russian, "Статус"},
             {MenuLangId::ChineseSimplified, "状态"},
             {MenuLangId::ChineseTraditional, "狀態"},
+            {MenuLangId::ChineseHongKong, "狀態"},
             {MenuLangId::Korean, "상태"},
             {MenuLangId::Arabic, "الحالة"},
             {MenuLangId::Indonesian, "Status"},
@@ -7012,7 +18263,56 @@
             {MenuLangId::Finnish, "Tila"},
             {MenuLangId::Vietnamese, "Trạng thái"},
             {MenuLangId::Polish, "Status"},
-            {MenuLangId::Romanian, "Stare"},
+            {MenuLangId::Romanian, "Stare"},            {MenuLangId::Filipino, "Status"},            {MenuLangId::Swahili, "Hali"},            {MenuLangId::Croatian, "Status"},            {MenuLangId::Icelandic, "Staða"},            {MenuLangId::Hindi, "स्थिति"},            {MenuLangId::Bengali, "অবস্থা"},            {MenuLangId::Urdu, "حالت"},            {MenuLangId::Punjabi, "ਸਥਿਤੀ"},            {MenuLangId::Telugu, "స్థితి"},            {MenuLangId::Persian, "وضعیت"},            {MenuLangId::Malay, "Status"},            {MenuLangId::Marathi, "स्थिती"},            {MenuLangId::Tamil, "நிலை"},            {MenuLangId::Gujarati, "સ્થિતિ"},            {MenuLangId::Kannada, "ಸ್ಥಿತಿ"},            {MenuLangId::Odia, "ସ୍ଥିତି"},            {MenuLangId::Malayalam, "സ്ഥിതി"},            {MenuLangId::Burmese, "အခြေအနေ"},            {MenuLangId::Uzbek, "Holat"},            {MenuLangId::Azerbaijani, "Status"},            {MenuLangId::Nepali, "स्थिति"},            {MenuLangId::Sinhala, "තත්ත්වය"},            {MenuLangId::Khmer, "ស្ថានភាព"},            {MenuLangId::Lao, "ສະຖານະ"},            {MenuLangId::Armenian, "Կարգավիճակ"},            {MenuLangId::Albanian, "Statusi"},            {MenuLangId::Georgian, "სტატუსი"},            {MenuLangId::Bosnian, "Stanje"},            {MenuLangId::Serbian, "Статус"},            {MenuLangId::Macedonian, "Статус"},            {MenuLangId::Bulgarian, "Състояние"},            {MenuLangId::Belarusian, "Статус"},            {MenuLangId::Maltese, "Status"},            {MenuLangId::Mongolian, "Төлөв"},            {MenuLangId::Latvian, "Statuss"},            {MenuLangId::Lithuanian, "Būsena"},            {MenuLangId::Afrikaans, "Status"},            {MenuLangId::Irish, "Stádas"},            {MenuLangId::Assamese, "স্থিতি"},            {MenuLangId::Amharic, "ሁኔታ"},            {MenuLangId::Estonian, "Olek"},            {MenuLangId::Kazakh, "Күй"},            {MenuLangId::Catalan, "Estat"},            {MenuLangId::Kyrgyz, "Абалы"},            {MenuLangId::Slovak, "Stav"},            {MenuLangId::Slovenian, "Stanje"},            {MenuLangId::Zulu, "Isimo"},            {MenuLangId::Basque, "Egoera"},            {MenuLangId::Hebrew, "מצב"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -7028,6 +18328,7 @@
             {MenuLangId::Russian, "IP хоста"},
             {MenuLangId::ChineseSimplified, "主机 IP"},
             {MenuLangId::ChineseTraditional, "主機 IP"},
+            {MenuLangId::ChineseHongKong, "主機 IP"},
             {MenuLangId::Korean, "호스트 IP"},
             {MenuLangId::Arabic, "Host IP"},
             {MenuLangId::Indonesian, "Host IP"},
@@ -7043,7 +18344,56 @@
             {MenuLangId::Finnish, "Host IP"},
             {MenuLangId::Vietnamese, "Host IP"},
             {MenuLangId::Polish, "Host IP"},
-            {MenuLangId::Romanian, "Host IP"},
+            {MenuLangId::Romanian, "Host IP"},            {MenuLangId::Filipino, "Host IP"},            {MenuLangId::Swahili, "Host IP"},            {MenuLangId::Croatian, "IP hosta"},            {MenuLangId::Icelandic, "IP hýsils"},            {MenuLangId::Hindi, "होस्ट IP"},            {MenuLangId::Bengali, "হোস্ট IP"},            {MenuLangId::Urdu, "ہوسٹ IP"},            {MenuLangId::Punjabi, "ਹੋਸਟ IP"},            {MenuLangId::Telugu, "హోస్ట్ IP"},            {MenuLangId::Persian, "IP میزبان"},            {MenuLangId::Malay, "IP hos"},            {MenuLangId::Marathi, "होस्ट IP"},            {MenuLangId::Tamil, "host IP"},            {MenuLangId::Gujarati, "host IP"},            {MenuLangId::Kannada, "host IP"},            {MenuLangId::Odia, "host IP"},            {MenuLangId::Malayalam, "host IP"},            {MenuLangId::Burmese, "host IP"},            {MenuLangId::Uzbek, "host IP"},            {MenuLangId::Azerbaijani, "host IP"},            {MenuLangId::Nepali, "host IP"},            {MenuLangId::Sinhala, "host IP"},            {MenuLangId::Khmer, "host IP"},            {MenuLangId::Lao, "host IP"},            {MenuLangId::Armenian, "host IP"},            {MenuLangId::Albanian, "host IP"},            {MenuLangId::Georgian, "host IP"},            {MenuLangId::Bosnian, "host IP"},            {MenuLangId::Serbian, "host IP"},            {MenuLangId::Macedonian, "host IP"},            {MenuLangId::Bulgarian, "host IP"},            {MenuLangId::Belarusian, "host IP"},            {MenuLangId::Maltese, "host IP"},            {MenuLangId::Mongolian, "host IP"},            {MenuLangId::Latvian, "host IP"},            {MenuLangId::Lithuanian, "host IP"},            {MenuLangId::Afrikaans, "host IP"},            {MenuLangId::Irish, "Host IP"},            {MenuLangId::Assamese, "host IP"},            {MenuLangId::Amharic, "Host IP"},            {MenuLangId::Estonian, "host IP"},            {MenuLangId::Kazakh, "Host IP"},            {MenuLangId::Catalan, "Host IP"},            {MenuLangId::Kyrgyz, "Host IP"},            {MenuLangId::Slovak, "Host IP"},            {MenuLangId::Slovenian, "Host IP"},            {MenuLangId::Zulu, "Host IP"},            {MenuLangId::Basque, "Host IP"},            {MenuLangId::Hebrew, "Host IP"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -7059,6 +18409,7 @@
             {MenuLangId::Russian, "Ожидание"},
             {MenuLangId::ChineseSimplified, "空闲"},
             {MenuLangId::ChineseTraditional, "空閒"},
+            {MenuLangId::ChineseHongKong, "空閒"},
             {MenuLangId::Korean, "대기 중"},
             {MenuLangId::Arabic, "خامل"},
             {MenuLangId::Indonesian, "Diam"},
@@ -7074,7 +18425,56 @@
             {MenuLangId::Finnish, "Joutilaana"},
             {MenuLangId::Vietnamese, "Nhàn rỗi"},
             {MenuLangId::Polish, "Bezczynny"},
-            {MenuLangId::Romanian, "Inactiv"},
+            {MenuLangId::Romanian, "Inactiv"},            {MenuLangId::Filipino, "Idle"},            {MenuLangId::Swahili, "Idle"},            {MenuLangId::Croatian, "Neaktivno"},            {MenuLangId::Icelandic, "Aðgerðalaust"},            {MenuLangId::Hindi, "निष्क्रिय"},            {MenuLangId::Bengali, "নিষ্ক্রিয়"},            {MenuLangId::Urdu, "غیر فعال"},            {MenuLangId::Punjabi, "ਨਿਸ਼ਕ੍ਰਿਆ"},            {MenuLangId::Telugu, "నిష్క్రియ"},            {MenuLangId::Persian, "بیکار"},            {MenuLangId::Malay, "Melahu"},            {MenuLangId::Marathi, "निष्क्रिय"},            {MenuLangId::Tamil, "செயலற்ற"},            {MenuLangId::Gujarati, "નિષ્ક્રિય"},            {MenuLangId::Kannada, "ನಿಷ್ಕ್ರಿಯ"},            {MenuLangId::Odia, "ନିଷ୍କ୍ରିୟ"},            {MenuLangId::Malayalam, "നിഷ്ക്രിയം"},            {MenuLangId::Burmese, "မလှုပ်ရှား"},            {MenuLangId::Uzbek, "Boʻsh"},            {MenuLangId::Azerbaijani, "Boş"},            {MenuLangId::Nepali, "निष्क्रिय"},            {MenuLangId::Sinhala, "නිෂ්ක්‍රීය"},            {MenuLangId::Khmer, "ទំនេរ"},            {MenuLangId::Lao, "ວ່າງ"},            {MenuLangId::Armenian, "Անգործ"},            {MenuLangId::Albanian, "I papunë"},            {MenuLangId::Georgian, "უმოქმედო"},            {MenuLangId::Bosnian, "Neaktivno"},            {MenuLangId::Serbian, "Неактивно"},            {MenuLangId::Macedonian, "Неактивно"},            {MenuLangId::Bulgarian, "Неактивно"},            {MenuLangId::Belarusian, "Бяздзейна"},            {MenuLangId::Maltese, "Wieqaf"},            {MenuLangId::Mongolian, "Идэвхгүй"},            {MenuLangId::Latvian, "Dīkstāvē"},            {MenuLangId::Lithuanian, "Neaktyvus"},            {MenuLangId::Afrikaans, "Ledig"},            {MenuLangId::Irish, "Díomhaoin"},            {MenuLangId::Assamese, "নিষ্ক্ৰিয়"},            {MenuLangId::Amharic, "አይንቀሳቀስም"},            {MenuLangId::Estonian, "Jõude"},            {MenuLangId::Kazakh, "Бос"},            {MenuLangId::Catalan, "Inactiu"},            {MenuLangId::Kyrgyz, "Бош"},            {MenuLangId::Slovak, "Nečinný"},            {MenuLangId::Slovenian, "Nedejavno"},            {MenuLangId::Zulu, "Akusebenzi"},            {MenuLangId::Basque, "Inaktibo"},            {MenuLangId::Hebrew, "לא פעיל"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -7090,6 +18490,7 @@
             {MenuLangId::Russian, "Играет"},
             {MenuLangId::ChineseSimplified, "游戏中"},
             {MenuLangId::ChineseTraditional, "遊戲中"},
+            {MenuLangId::ChineseHongKong, "遊戲中"},
             {MenuLangId::Korean, "플레이 중"},
             {MenuLangId::Arabic, "يلعب"},
             {MenuLangId::Indonesian, "Bermain"},
@@ -7105,7 +18506,56 @@
             {MenuLangId::Finnish, "Pelaa"},
             {MenuLangId::Vietnamese, "Đang chơi"},
             {MenuLangId::Polish, "Gra"},
-            {MenuLangId::Romanian, "Joacă"},
+            {MenuLangId::Romanian, "Joacă"},            {MenuLangId::Filipino, "Playing"},            {MenuLangId::Swahili, "Playing"},            {MenuLangId::Croatian, "Igra"},            {MenuLangId::Icelandic, "Í spilun"},            {MenuLangId::Hindi, "चल रहा है"},            {MenuLangId::Bengali, "খেলা চলছে"},            {MenuLangId::Urdu, "کھیل رہا ہے"},            {MenuLangId::Punjabi, "ਖੇਡ ਰਿਹਾ ਹੈ"},            {MenuLangId::Telugu, "ఆడుతోంది"},            {MenuLangId::Persian, "در حال بازی"},            {MenuLangId::Malay, "Bermain"},            {MenuLangId::Marathi, "खेळत आहे"},            {MenuLangId::Tamil, "விளையாடுகிறது"},            {MenuLangId::Gujarati, "રમી રહ્યું છે"},            {MenuLangId::Kannada, "ಆಡುತ್ತಿದೆ"},            {MenuLangId::Odia, "ଖେଳୁଛି"},            {MenuLangId::Malayalam, "കളിക്കുന്നു"},            {MenuLangId::Burmese, "ကစားနေသည်"},            {MenuLangId::Uzbek, "Oʻynalmoqda"},            {MenuLangId::Azerbaijani, "Oynanır"},            {MenuLangId::Nepali, "खेल्दै"},            {MenuLangId::Sinhala, "ක්‍රීඩා කරමින්"},            {MenuLangId::Khmer, "កំពុងលេង"},            {MenuLangId::Lao, "ກຳລັງຫຼິ້ນ"},            {MenuLangId::Armenian, "Խաղում է"},            {MenuLangId::Albanian, "Duke luajtur"},            {MenuLangId::Georgian, "თამაშობს"},            {MenuLangId::Bosnian, "Igra"},            {MenuLangId::Serbian, "Игра"},            {MenuLangId::Macedonian, "Игра"},            {MenuLangId::Bulgarian, "Играе"},            {MenuLangId::Belarusian, "Гуляе"},            {MenuLangId::Maltese, "Qed jilgħab"},            {MenuLangId::Mongolian, "Тоглож байна"},            {MenuLangId::Latvian, "Spēlē"},            {MenuLangId::Lithuanian, "Žaidžia"},            {MenuLangId::Afrikaans, "Speel"},            {MenuLangId::Irish, "Ag imirt"},            {MenuLangId::Assamese, "খেলি আছে"},            {MenuLangId::Amharic, "በመጫወት ላይ"},            {MenuLangId::Estonian, "Mängib"},            {MenuLangId::Kazakh, "Ойнап жатыр"},            {MenuLangId::Catalan, "Jugant"},            {MenuLangId::Kyrgyz, "Ойноп жатат"},            {MenuLangId::Slovak, "Hrá sa"},            {MenuLangId::Slovenian, "Igranje"},            {MenuLangId::Zulu, "Kuyadlalwa"},            {MenuLangId::Basque, "Jokatzen"},            {MenuLangId::Hebrew, "משחק"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -7121,6 +18571,7 @@
             {MenuLangId::Russian, "Введите имя игрока."},
             {MenuLangId::ChineseSimplified, "请输入玩家名称。"},
             {MenuLangId::ChineseTraditional, "請輸入玩家名稱。"},
+            {MenuLangId::ChineseHongKong, "請輸入玩家名稱。"},
             {MenuLangId::Korean, "플레이어 이름을 입력하세요."},
             {MenuLangId::Arabic, "Please enter a player name."},
             {MenuLangId::Indonesian, "Masukkan nama pemain."},
@@ -7136,7 +18587,56 @@
             {MenuLangId::Finnish, "Anna pelaajan nimi."},
             {MenuLangId::Vietnamese, "Vui lòng nhập tên người chơi."},
             {MenuLangId::Polish, "Wprowadź nazwę gracza."},
-            {MenuLangId::Romanian, "Introdu un nume de jucător."},
+            {MenuLangId::Romanian, "Introdu un nume de jucător."},            {MenuLangId::Filipino, "Please enter a manlalaro pangalan."},            {MenuLangId::Swahili, "Please enter a mchezaji jina."},            {MenuLangId::Croatian, "Please enter a igrač naziv."},            {MenuLangId::Icelandic, "Please enter a spilari heiti."},            {MenuLangId::Hindi, "Please enter a खिलाड़ी नाम."},            {MenuLangId::Bengali, "Please enter a খেলোয়াড় নাম."},            {MenuLangId::Urdu, "Please enter a کھلاڑی نام."},            {MenuLangId::Punjabi, "Please enter a ਖਿਡਾਰੀ ਨਾਂ."},            {MenuLangId::Telugu, "Please enter a ప్లేయర్ పేరు."},            {MenuLangId::Persian, "Please enter a بازیکن نام."},            {MenuLangId::Malay, "Please enter a pemain nama."},            {MenuLangId::Marathi, "Please enter a खेळाडू नाव."},            {MenuLangId::Tamil, "Please enter a பிளேயர் பெயர்."},            {MenuLangId::Gujarati, "Please enter a ખેલાડી નામ."},            {MenuLangId::Kannada, "Please enter a ಪ್ಲೇಯರ್ ಹೆಸರು."},            {MenuLangId::Odia, "Please enter a ପ୍ଲେୟର୍ ନାମ."},            {MenuLangId::Malayalam, "Please enter a പ്ലെയർ പേര്."},            {MenuLangId::Burmese, "Please enter a ကစားသမား အမည်."},            {MenuLangId::Uzbek, "Please enter a oʻyinchi nom."},            {MenuLangId::Azerbaijani, "Please enter a oyunçu ad."},            {MenuLangId::Nepali, "Please enter a खेलाडी नाम."},            {MenuLangId::Sinhala, "Please enter a ක්‍රීඩකයා නම."},            {MenuLangId::Khmer, "Please enter a អ្នកលេង ឈ្មោះ."},            {MenuLangId::Lao, "Please enter a ຜູ້ຫຼິ້ນ ຊື່."},            {MenuLangId::Armenian, "Please enter a խաղացող անուն."},            {MenuLangId::Albanian, "Please enter a lojtari emri."},            {MenuLangId::Georgian, "Please enter a მოთამაშე სახელი."},            {MenuLangId::Bosnian, "Please enter a igrač naziv."},            {MenuLangId::Serbian, "Please enter a играч назив."},            {MenuLangId::Macedonian, "Please enter a играч име."},            {MenuLangId::Bulgarian, "Please enter a играч име."},            {MenuLangId::Belarusian, "Please enter a гулец назва."},            {MenuLangId::Maltese, "Please enter a plejer isem."},            {MenuLangId::Mongolian, "Please enter a тоглогч нэр."},            {MenuLangId::Latvian, "Please enter a spēlētājs nosaukums."},            {MenuLangId::Lithuanian, "Please enter a žaidėjas pavadinimas."},            {MenuLangId::Afrikaans, "Please enter a speler naam."},            {MenuLangId::Irish, "Please enter a imreoir ainm."},            {MenuLangId::Assamese, "Please enter a খেলুৱৈ নাম."},            {MenuLangId::Amharic, "Please enter a ተጫዋች ስም."},            {MenuLangId::Estonian, "Please enter a mängija nimi."},            {MenuLangId::Kazakh, "Please enter a ойыншы атауы."},            {MenuLangId::Catalan, "Please enter a jugador nom."},            {MenuLangId::Kyrgyz, "Please enter a оюнчу аты."},            {MenuLangId::Slovak, "Please enter a hráč názov."},            {MenuLangId::Slovenian, "Please enter a igralec ime."},            {MenuLangId::Zulu, "Please enter a umdlali igama."},            {MenuLangId::Basque, "Please enter a jokalaria izena."},            {MenuLangId::Hebrew, "Please enter a שחקן שם."},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -7152,6 +18652,7 @@
             {MenuLangId::Russian, "Не удалось запустить LAN-игру."},
             {MenuLangId::ChineseSimplified, "启动 LAN 游戏失败。"},
             {MenuLangId::ChineseTraditional, "啟動 LAN 遊戲失敗。"},
+            {MenuLangId::ChineseHongKong, "啟動 LAN 遊戲失敗。"},
             {MenuLangId::Korean, "LAN 게임 시작에 실패했습니다."},
             {MenuLangId::Arabic, "فشل بدء لعبة LAN."},
             {MenuLangId::Indonesian, "Gagal memulai game LAN."},
@@ -7167,7 +18668,56 @@
             {MenuLangId::Finnish, "LAN-pelin käynnistys epäonnistui."},
             {MenuLangId::Vietnamese, "Không khởi động được game LAN."},
             {MenuLangId::Polish, "Nie udało się uruchomić gry LAN."},
-            {MenuLangId::Romanian, "Nu s-a putut porni jocul LAN."},
+            {MenuLangId::Romanian, "Nu s-a putut porni jocul LAN."},            {MenuLangId::Filipino, "Nabigong start LAN laro."},            {MenuLangId::Swahili, "Imeshindwa start LAN mchezo."},            {MenuLangId::Croatian, "Neuspjelo start LAN igra."},            {MenuLangId::Icelandic, "Mistókst að start LAN leikur."},            {MenuLangId::Hindi, "विफल: start LAN गेम."},            {MenuLangId::Bengali, "ব্যর্থ: start LAN গেম."},            {MenuLangId::Urdu, "ناکام: start LAN گیم."},            {MenuLangId::Punjabi, "ਅਸਫਲ: start LAN ਗੇਮ."},            {MenuLangId::Telugu, "విఫలమైంది: start LAN గేమ్."},            {MenuLangId::Persian, "ناموفق: start LAN بازی."},            {MenuLangId::Malay, "Gagal: start LAN permainan."},            {MenuLangId::Marathi, "अयशस्वी: start LAN गेम."},            {MenuLangId::Tamil, "தோல்வி: start LAN விளையாட்டு."},            {MenuLangId::Gujarati, "નિષ્ફળ: start LAN ગેમ."},            {MenuLangId::Kannada, "ವಿಫಲ: start LAN ಗೇಮ್."},            {MenuLangId::Odia, "ବିଫଳ: start LAN ଗେମ୍."},            {MenuLangId::Malayalam, "പരാജയം: start LAN ഗെയിം."},            {MenuLangId::Burmese, "မအောင်မြင်: start LAN ဂိမ်း."},            {MenuLangId::Uzbek, "Muvaffaqiyatsiz: start LAN oʻyin."},            {MenuLangId::Azerbaijani, "Uğursuz: start LAN oyun."},            {MenuLangId::Nepali, "असफल: start LAN खेल."},            {MenuLangId::Sinhala, "අසාර්ථකයි: start LAN ක්‍රීඩාව."},            {MenuLangId::Khmer, "បរាជ័យ: start LAN ហ្គេម."},            {MenuLangId::Lao, "ລົ້ມເຫຼວ: start LAN ເກມ."},            {MenuLangId::Armenian, "Չհաջողվեց՝ start LAN խաղ."},            {MenuLangId::Albanian, "Dështoi të start LAN loja."},            {MenuLangId::Georgian, "ვერ მოხერხდა: start LAN თამაში."},            {MenuLangId::Bosnian, "Nije uspjelo start LAN igra."},            {MenuLangId::Serbian, "Није успело start LAN игра."},            {MenuLangId::Macedonian, "Не успеа да start LAN игра."},            {MenuLangId::Bulgarian, "Неуспешно start LAN игра."},            {MenuLangId::Belarusian, "Не ўдалося start LAN гульня."},            {MenuLangId::Maltese, "Naqas milli start LAN logħba."},            {MenuLangId::Mongolian, "Амжилтгүй: start LAN тоглоом."},            {MenuLangId::Latvian, "Neizdevās start LAN spēle."},            {MenuLangId::Lithuanian, "Nepavyko start LAN žaidimas."},            {MenuLangId::Afrikaans, "Kon nie start LAN speletjie."},            {MenuLangId::Irish, "Níor éirigh le start LAN cluiche."},            {MenuLangId::Assamese, "ব্যৰ্থ হ'ল: start LAN গেম."},            {MenuLangId::Amharic, "አልተሳካም: start LAN ጨዋታ."},            {MenuLangId::Estonian, "Nurjus: start LAN mäng."},            {MenuLangId::Kazakh, "Сәтсіз: start LAN ойын."},            {MenuLangId::Catalan, "Ha fallat: start LAN joc."},            {MenuLangId::Kyrgyz, "Ийгиликсиз: start LAN оюн."},            {MenuLangId::Slovak, "Zlyhalo: start LAN hra."},            {MenuLangId::Slovenian, "Ni uspelo: start LAN igra."},            {MenuLangId::Zulu, "Kwehlulekile: start LAN umdlalo."},            {MenuLangId::Basque, "Huts egin du: start LAN jokoa."},            {MenuLangId::Hebrew, "נכשל: start LAN משחק."},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -7183,6 +18733,7 @@
             {MenuLangId::Russian, "Введите имя игрока перед подключением."},
             {MenuLangId::ChineseSimplified, "连接前请输入玩家名称。"},
             {MenuLangId::ChineseTraditional, "連線前請輸入玩家名稱。"},
+            {MenuLangId::ChineseHongKong, "連線前請輸入玩家名稱。"},
             {MenuLangId::Korean, "연결하기 전에 플레이어 이름을 입력하세요."},
             {MenuLangId::Arabic, "يرجى إدخال اسم اللاعب قبل الاتصال."},
             {MenuLangId::Indonesian, "Masukkan nama pemain sebelum terhubung."},
@@ -7198,7 +18749,56 @@
             {MenuLangId::Finnish, "Anna pelaajan nimi ennen yhdistämistä."},
             {MenuLangId::Vietnamese, "Nhập tên người chơi trước khi kết nối."},
             {MenuLangId::Polish, "Wprowadź nazwę gracza przed połączeniem."},
-            {MenuLangId::Romanian, "Introdu un nume de jucător înainte de conectare."},
+            {MenuLangId::Romanian, "Introdu un nume de jucător înainte de conectare."},            {MenuLangId::Filipino, "Please enter a manlalaro pangalan before connecting."},            {MenuLangId::Swahili, "Please enter a mchezaji jina before connecting."},            {MenuLangId::Croatian, "Please enter a igrač naziv before connecting."},            {MenuLangId::Icelandic, "Please enter a spilari heiti before connecting."},            {MenuLangId::Hindi, "Please enter a खिलाड़ी नाम before connecting."},            {MenuLangId::Bengali, "Please enter a খেলোয়াড় নাম before connecting."},            {MenuLangId::Urdu, "Please enter a کھلاڑی نام before connecting."},            {MenuLangId::Punjabi, "Please enter a ਖਿਡਾਰੀ ਨਾਂ before connecting."},            {MenuLangId::Telugu, "Please enter a ప్లేయర్ పేరు before connecting."},            {MenuLangId::Persian, "Please enter a بازیکن نام before connecting."},            {MenuLangId::Malay, "Please enter a pemain nama before connecting."},            {MenuLangId::Marathi, "Please enter a खेळाडू नाव before connecting."},            {MenuLangId::Tamil, "Please enter a பிளேயர் பெயர் before connecting."},            {MenuLangId::Gujarati, "Please enter a ખેલાડી નામ before connecting."},            {MenuLangId::Kannada, "Please enter a ಪ್ಲೇಯರ್ ಹೆಸರು before connecting."},            {MenuLangId::Odia, "Please enter a ପ୍ଲେୟର୍ ନାମ before connecting."},            {MenuLangId::Malayalam, "Please enter a പ്ലെയർ പേര് before connecting."},            {MenuLangId::Burmese, "Please enter a ကစားသမား အမည် before connecting."},            {MenuLangId::Uzbek, "Please enter a oʻyinchi nom before connecting."},            {MenuLangId::Azerbaijani, "Please enter a oyunçu ad before connecting."},            {MenuLangId::Nepali, "Please enter a खेलाडी नाम before connecting."},            {MenuLangId::Sinhala, "Please enter a ක්‍රීඩකයා නම before connecting."},            {MenuLangId::Khmer, "Please enter a អ្នកលេង ឈ្មោះ before connecting."},            {MenuLangId::Lao, "Please enter a ຜູ້ຫຼິ້ນ ຊື່ before connecting."},            {MenuLangId::Armenian, "Please enter a խաղացող անուն before connecting."},            {MenuLangId::Albanian, "Please enter a lojtari emri before connecting."},            {MenuLangId::Georgian, "Please enter a მოთამაშე სახელი before connecting."},            {MenuLangId::Bosnian, "Please enter a igrač naziv before connecting."},            {MenuLangId::Serbian, "Please enter a играч назив before connecting."},            {MenuLangId::Macedonian, "Please enter a играч име before connecting."},            {MenuLangId::Bulgarian, "Please enter a играч име before connecting."},            {MenuLangId::Belarusian, "Please enter a гулец назва before connecting."},            {MenuLangId::Maltese, "Please enter a plejer isem before connecting."},            {MenuLangId::Mongolian, "Please enter a тоглогч нэр before connecting."},            {MenuLangId::Latvian, "Please enter a spēlētājs nosaukums before connecting."},            {MenuLangId::Lithuanian, "Please enter a žaidėjas pavadinimas before connecting."},            {MenuLangId::Afrikaans, "Please enter a speler naam before connecting."},            {MenuLangId::Irish, "Please enter a imreoir ainm before connecting."},            {MenuLangId::Assamese, "Please enter a খেলুৱৈ নাম before connecting."},            {MenuLangId::Amharic, "Please enter a ተጫዋች ስም before connecting."},            {MenuLangId::Estonian, "Please enter a mängija nimi before connecting."},            {MenuLangId::Kazakh, "Please enter a ойыншы атауы before connecting."},            {MenuLangId::Catalan, "Please enter a jugador nom before connecting."},            {MenuLangId::Kyrgyz, "Please enter a оюнчу аты before connecting."},            {MenuLangId::Slovak, "Please enter a hráč názov before connecting."},            {MenuLangId::Slovenian, "Please enter a igralec ime before connecting."},            {MenuLangId::Zulu, "Please enter a umdlali igama before connecting."},            {MenuLangId::Basque, "Please enter a jokalaria izena before connecting."},            {MenuLangId::Hebrew, "Please enter a שחקן שם before connecting."},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -7214,6 +18814,7 @@
             {MenuLangId::Russian, "Не удалось подключиться к хосту %0."},
             {MenuLangId::ChineseSimplified, "无法连接到主机 %0。"},
             {MenuLangId::ChineseTraditional, "無法連線到主機 %0。"},
+            {MenuLangId::ChineseHongKong, "無法連線到主機 %0。"},
             {MenuLangId::Korean, "호스트 %0에 연결하지 못했습니다."},
             {MenuLangId::Arabic, "فشل الاتصال بالمضيف %0."},
             {MenuLangId::Indonesian, "Gagal terhubung ke host %0."},
@@ -7229,7 +18830,56 @@
             {MenuLangId::Finnish, "Yhteyden muodostaminen isäntään %0 epäonnistui."},
             {MenuLangId::Vietnamese, "Không kết nối được tới host %0."},
             {MenuLangId::Polish, "Nie udało się połączyć z hostem %0."},
-            {MenuLangId::Romanian, "Conectarea la gazda %0 a eșuat."},
+            {MenuLangId::Romanian, "Conectarea la gazda %0 a eșuat."},            {MenuLangId::Filipino, "Nabigong connect to the host %0."},            {MenuLangId::Swahili, "Imeshindwa connect to the host %0."},            {MenuLangId::Croatian, "Neuspjelo connect to the host %0."},            {MenuLangId::Icelandic, "Mistókst að connect to the host %0."},            {MenuLangId::Hindi, "विफल: connect to the host %0."},            {MenuLangId::Bengali, "ব্যর্থ: connect to the host %0."},            {MenuLangId::Urdu, "ناکام: connect to the host %0."},            {MenuLangId::Punjabi, "ਅਸਫਲ: connect to the host %0."},            {MenuLangId::Telugu, "విఫలమైంది: connect to the host %0."},            {MenuLangId::Persian, "ناموفق: connect to the host %0."},            {MenuLangId::Malay, "Gagal: connect to the host %0."},            {MenuLangId::Marathi, "अयशस्वी: connect to the host %0."},            {MenuLangId::Tamil, "தோல்வி: connect to the host %0."},            {MenuLangId::Gujarati, "નિષ્ફળ: connect to the host %0."},            {MenuLangId::Kannada, "ವಿಫಲ: connect to the host %0."},            {MenuLangId::Odia, "ବିଫଳ: connect to the host %0."},            {MenuLangId::Malayalam, "പരാജയം: connect to the host %0."},            {MenuLangId::Burmese, "မအောင်မြင်: connect to the host %0."},            {MenuLangId::Uzbek, "Muvaffaqiyatsiz: connect to the host %0."},            {MenuLangId::Azerbaijani, "Uğursuz: connect to the host %0."},            {MenuLangId::Nepali, "असफल: connect to the host %0."},            {MenuLangId::Sinhala, "අසාර්ථකයි: connect to the host %0."},            {MenuLangId::Khmer, "បរាជ័យ: connect to the host %0."},            {MenuLangId::Lao, "ລົ້ມເຫຼວ: connect to the host %0."},            {MenuLangId::Armenian, "Չհաջողվեց՝ connect to the host %0."},            {MenuLangId::Albanian, "Dështoi të connect to the host %0."},            {MenuLangId::Georgian, "ვერ მოხერხდა: connect to the host %0."},            {MenuLangId::Bosnian, "Nije uspjelo connect to the host %0."},            {MenuLangId::Serbian, "Није успело connect to the host %0."},            {MenuLangId::Macedonian, "Не успеа да connect to the host %0."},            {MenuLangId::Bulgarian, "Неуспешно connect to the host %0."},            {MenuLangId::Belarusian, "Не ўдалося connect to the host %0."},            {MenuLangId::Maltese, "Naqas milli connect to the host %0."},            {MenuLangId::Mongolian, "Амжилтгүй: connect to the host %0."},            {MenuLangId::Latvian, "Neizdevās connect to the host %0."},            {MenuLangId::Lithuanian, "Nepavyko connect to the host %0."},            {MenuLangId::Afrikaans, "Kon nie connect to the host %0."},            {MenuLangId::Irish, "Níor éirigh le connect to the host %0."},            {MenuLangId::Assamese, "ব্যৰ্থ হ'ল: connect to the host %0."},            {MenuLangId::Amharic, "አልተሳካም: connect to the host %0."},            {MenuLangId::Estonian, "Nurjus: connect to the host %0."},            {MenuLangId::Kazakh, "Сәтсіз: connect to the host %0."},            {MenuLangId::Catalan, "Ha fallat: connect to the host %0."},            {MenuLangId::Kyrgyz, "Ийгиликсиз: connect to the host %0."},            {MenuLangId::Slovak, "Zlyhalo: connect to the host %0."},            {MenuLangId::Slovenian, "Ni uspelo: connect to the host %0."},            {MenuLangId::Zulu, "Kwehlulekile: connect to the host %0."},            {MenuLangId::Basque, "Huts egin du: connect to the host %0."},            {MenuLangId::Hebrew, "נכשל: connect to the host %0."},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
 
@@ -7247,6 +18897,7 @@
             {MenuLangId::Russian, "О melonDS"},
             {MenuLangId::ChineseSimplified, "关于 melonDS"},
             {MenuLangId::ChineseTraditional, "關於 melonDS"},
+            {MenuLangId::ChineseHongKong, "關於 melonDS"},
             {MenuLangId::Korean, "melonDS 정보"},
             {MenuLangId::Arabic, "حول melonDS"},
             {MenuLangId::Indonesian, "Tentang melonDS"},
@@ -7262,7 +18913,56 @@
             {MenuLangId::Finnish, "Tietoja melonDS:stä"},
             {MenuLangId::Vietnamese, "Giới thiệu melonDS"},
             {MenuLangId::Polish, "O melonDS"},
-            {MenuLangId::Romanian, "Despre melonDS"},
+            {MenuLangId::Romanian, "Despre melonDS"},            {MenuLangId::Filipino, "About melonDS"},            {MenuLangId::Swahili, "About melonDS"},            {MenuLangId::Croatian, "O melonDS-u"},            {MenuLangId::Icelandic, "Um melonDS"},            {MenuLangId::Hindi, "melonDS के बारे में"},            {MenuLangId::Bengali, "melonDS সম্পর্কে"},            {MenuLangId::Urdu, "melonDS کے بارے میں"},            {MenuLangId::Punjabi, "melonDS ਬਾਰੇ"},            {MenuLangId::Telugu, "melonDS గురించి"},            {MenuLangId::Persian, "درباره melonDS"},            {MenuLangId::Malay, "Perihal melonDS"},            {MenuLangId::Marathi, "melonDS बद्दल"},            {MenuLangId::Tamil, "melonDS பற்றி"},            {MenuLangId::Gujarati, "melonDS વિશે"},            {MenuLangId::Kannada, "melonDS ಬಗ್ಗೆ"},            {MenuLangId::Odia, "melonDS ବିଷୟରେ"},            {MenuLangId::Malayalam, "melonDS കുറിച്ച്"},            {MenuLangId::Burmese, "melonDS အကြောင်း"},            {MenuLangId::Uzbek, "melonDS haqida"},            {MenuLangId::Azerbaijani, "melonDS haqqında"},            {MenuLangId::Nepali, "melonDS बारेमा"},            {MenuLangId::Sinhala, "melonDS පිළිබඳ"},            {MenuLangId::Khmer, "អំពី melonDS"},            {MenuLangId::Lao, "ກ່ຽວກັບ melonDS"},            {MenuLangId::Armenian, "melonDS-ի մասին"},            {MenuLangId::Albanian, "Rreth melonDS"},            {MenuLangId::Georgian, "melonDS-ის შესახებ"},            {MenuLangId::Bosnian, "O melonDS"},            {MenuLangId::Serbian, "О melonDS"},            {MenuLangId::Macedonian, "За melonDS"},            {MenuLangId::Bulgarian, "Относно melonDS"},            {MenuLangId::Belarusian, "Пра melonDS"},            {MenuLangId::Maltese, "Dwar melonDS"},            {MenuLangId::Mongolian, "melonDS тухай"},            {MenuLangId::Latvian, "Par melonDS"},            {MenuLangId::Lithuanian, "Apie melonDS"},            {MenuLangId::Afrikaans, "Oor melonDS"},            {MenuLangId::Irish, "Maidir le melonDS"},            {MenuLangId::Assamese, "melonDS সম্পৰ্কে"},            {MenuLangId::Amharic, "ስለ melonDS"},            {MenuLangId::Estonian, "Teave melonDS-i kohta"},            {MenuLangId::Kazakh, "melonDS туралы"},            {MenuLangId::Catalan, "Quant a melonDS"},            {MenuLangId::Kyrgyz, "melonDS жөнүндө"},            {MenuLangId::Slovak, "O melonDS"},            {MenuLangId::Slovenian, "O melonDS"},            {MenuLangId::Zulu, "Mayelana ne-melonDS"},            {MenuLangId::Basque, "melonDS-i buruz"},            {MenuLangId::Hebrew, "אודות melonDS"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -7278,6 +18978,7 @@
             {MenuLangId::Russian, "Посетить &сайт"},
             {MenuLangId::ChineseSimplified, "访问网站(&W)"},
             {MenuLangId::ChineseTraditional, "訪問網站(&W)"},
+            {MenuLangId::ChineseHongKong, "訪問網站(&W)"},
             {MenuLangId::Korean, "웹사이트(&W) 방문"},
             {MenuLangId::Arabic, "Visit the &website"},
             {MenuLangId::Indonesian, "Kunjungi &situs web"},
@@ -7293,7 +18994,56 @@
             {MenuLangId::Finnish, "Käy &verkkosivustolla"},
             {MenuLangId::Vietnamese, "Truy cập &trang web"},
             {MenuLangId::Polish, "Odwiedź &stronę internetową"},
-            {MenuLangId::Romanian, "Vizitează &site-ul web"},
+            {MenuLangId::Romanian, "Vizitează &site-ul web"},            {MenuLangId::Filipino, "Visit the &website"},            {MenuLangId::Swahili, "Visit the &website"},            {MenuLangId::Croatian, "Posjeti &web-stranicu"},            {MenuLangId::Icelandic, "Opna &vefsíðu"},            {MenuLangId::Hindi, "&website देखें"},            {MenuLangId::Bengali, "&website দেখুন"},            {MenuLangId::Urdu, "&website دیکھیں"},            {MenuLangId::Punjabi, "&website ਵੇਖੋ"},            {MenuLangId::Telugu, "&website చూడండి"},            {MenuLangId::Persian, "بازدید از &website"},            {MenuLangId::Malay, "Lawati &website"},            {MenuLangId::Marathi, "&website ला भेट द्या"},            {MenuLangId::Tamil, "&website ஐப் பார்வையிடு"},            {MenuLangId::Gujarati, "&website પર જાઓ"},            {MenuLangId::Kannada, "&website ಭೇಟಿ ನೀಡಿ"},            {MenuLangId::Odia, "ଓଡ଼ିଆ: Visit the &website"},            {MenuLangId::Malayalam, "&website സന്ദർശിക്കുക"},            {MenuLangId::Burmese, "&website သို့ သွားပါ"},            {MenuLangId::Uzbek, "&website ga tashrif"},            {MenuLangId::Azerbaijani, "&website ziyarət et"},            {MenuLangId::Nepali, "&website भ्रमण गर्नुहोस्"},            {MenuLangId::Sinhala, "&website වෙත යන්න"},            {MenuLangId::Khmer, "ទៅកាន់ &website"},            {MenuLangId::Lao, "ໄປທີ່ &website"},            {MenuLangId::Armenian, "Այցելել &website"},            {MenuLangId::Albanian, "Vizito &website"},            {MenuLangId::Georgian, "&website-ის მონახულება"},            {MenuLangId::Bosnian, "Posjeti &website"},            {MenuLangId::Serbian, "Посети &website"},            {MenuLangId::Macedonian, "Посети &website"},            {MenuLangId::Bulgarian, "Посети &website"},            {MenuLangId::Belarusian, "Наведаць &website"},            {MenuLangId::Maltese, "Żur il-&website"},            {MenuLangId::Mongolian, "&website руу орох"},            {MenuLangId::Latvian, "Apmeklēt &website"},            {MenuLangId::Lithuanian, "Apsilankyti &website"},            {MenuLangId::Afrikaans, "Besoek die &website"},            {MenuLangId::Irish, "Gaeilge: Visit the &website"},            {MenuLangId::Assamese, "&website চাওক"},            {MenuLangId::Amharic, "አማርኛ: Visit the &website"},            {MenuLangId::Estonian, "Eesti: Visit the &website"},            {MenuLangId::Kazakh, "Қазақша: Visit the &website"},            {MenuLangId::Catalan, "Català: Visit the &website"},            {MenuLangId::Kyrgyz, "Кыргызча: Visit the &website"},            {MenuLangId::Slovak, "Slovenčina: Visit the &website"},            {MenuLangId::Slovenian, "Slovenščina: Visit the &website"},            {MenuLangId::Zulu, "isiZulu: Visit the &website"},            {MenuLangId::Basque, "Euskara: Visit the &website"},            {MenuLangId::Hebrew, "עברית: Visit the &website"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -7309,6 +19059,7 @@
             {MenuLangId::Russian, "Открыть на &GitHub"},
             {MenuLangId::ChineseSimplified, "在 &GitHub 上查看"},
             {MenuLangId::ChineseTraditional, "在 &GitHub 上檢視"},
+            {MenuLangId::ChineseHongKong, "在 &GitHub 上檢視"},
             {MenuLangId::Korean, "&GitHub에서 보기"},
             {MenuLangId::Arabic, "عرض على &GitHub"},
             {MenuLangId::Indonesian, "Lihat di &GitHub"},
@@ -7324,7 +19075,56 @@
             {MenuLangId::Finnish, "Näytä &GitHubissa"},
             {MenuLangId::Vietnamese, "Xem trên &GitHub"},
             {MenuLangId::Polish, "Zobacz na &GitHub"},
-            {MenuLangId::Romanian, "Vezi pe &GitHub"},
+            {MenuLangId::Romanian, "Vezi pe &GitHub"},            {MenuLangId::Filipino, "View on &GitHub"},            {MenuLangId::Swahili, "View on &GitHub"},            {MenuLangId::Croatian, "Pogledaj na &GitHubu"},            {MenuLangId::Icelandic, "Skoða á &GitHub"},            {MenuLangId::Hindi, "&GitHub पर देखें"},            {MenuLangId::Bengali, "&GitHub-এ দেখুন"},            {MenuLangId::Urdu, "&GitHub پر دیکھیں"},            {MenuLangId::Punjabi, "&GitHub 'ਤੇ ਵੇਖੋ"},            {MenuLangId::Telugu, "&GitHub లో చూడండి"},            {MenuLangId::Persian, "مشاهده در &GitHub"},            {MenuLangId::Malay, "Lihat di &GitHub"},            {MenuLangId::Marathi, "&GitHub वर पहा"},            {MenuLangId::Tamil, "&GitHub இல் பார்"},            {MenuLangId::Gujarati, "&GitHub પર જુઓ"},            {MenuLangId::Kannada, "&GitHub ನಲ್ಲಿ ನೋಡಿ"},            {MenuLangId::Odia, "ଓଡ଼ିଆ: View on &GitHub"},            {MenuLangId::Malayalam, "&GitHub ൽ കാണുക"},            {MenuLangId::Burmese, "&GitHub တွင် ကြည့်ပါ"},            {MenuLangId::Uzbek, "&GitHub da koʻrish"},            {MenuLangId::Azerbaijani, "&GitHub-da bax"},            {MenuLangId::Nepali, "&GitHub मा हेर्नुहोस्"},            {MenuLangId::Sinhala, "&GitHub හි බලන්න"},            {MenuLangId::Khmer, "មើលលើ &GitHub"},            {MenuLangId::Lao, "ເບິ່ງໃນ &GitHub"},            {MenuLangId::Armenian, "Դիտել &GitHub-ում"},            {MenuLangId::Albanian, "Shiko në &GitHub"},            {MenuLangId::Georgian, "&GitHub-ზე ნახვა"},            {MenuLangId::Bosnian, "Pogledaj na &GitHub"},            {MenuLangId::Serbian, "Погледај на &GitHub"},            {MenuLangId::Macedonian, "Погледни на &GitHub"},            {MenuLangId::Bulgarian, "Виж в &GitHub"},            {MenuLangId::Belarusian, "Паглядзець на &GitHub"},            {MenuLangId::Maltese, "Ara fuq &GitHub"},            {MenuLangId::Mongolian, "&GitHub дээр харах"},            {MenuLangId::Latvian, "Skatīt &GitHub"},            {MenuLangId::Lithuanian, "Peržiūrėti &GitHub"},            {MenuLangId::Afrikaans, "Bekyk op &GitHub"},            {MenuLangId::Irish, "Gaeilge: View on &GitHub"},            {MenuLangId::Assamese, "&GitHub-ত চাওক"},            {MenuLangId::Amharic, "አማርኛ: View on &GitHub"},            {MenuLangId::Estonian, "Eesti: View on &GitHub"},            {MenuLangId::Kazakh, "Қазақша: View on &GitHub"},            {MenuLangId::Catalan, "Català: View on &GitHub"},            {MenuLangId::Kyrgyz, "Кыргызча: View on &GitHub"},            {MenuLangId::Slovak, "Slovenčina: View on &GitHub"},            {MenuLangId::Slovenian, "Slovenščina: View on &GitHub"},            {MenuLangId::Zulu, "isiZulu: View on &GitHub"},            {MenuLangId::Basque, "Euskara: View on &GitHub"},            {MenuLangId::Hebrew, "עברית: View on &GitHub"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -7340,6 +19140,7 @@
             {MenuLangId::Russian, "&Закрыть"},
             {MenuLangId::ChineseSimplified, "关闭(&C)"},
             {MenuLangId::ChineseTraditional, "關閉(&C)"},
+            {MenuLangId::ChineseHongKong, "關閉(&C)"},
             {MenuLangId::Korean, "닫기(&C)"},
             {MenuLangId::Arabic, "إ&غلاق"},
             {MenuLangId::Indonesian, "&Tutup"},
@@ -7355,7 +19156,56 @@
             {MenuLangId::Finnish, "&Sulje"},
             {MenuLangId::Vietnamese, "Đó&ng"},
             {MenuLangId::Polish, "&Zamknij"},
-            {MenuLangId::Romanian, "&Închide"},
+            {MenuLangId::Romanian, "&Închide"},            {MenuLangId::Filipino, "&Isara"},            {MenuLangId::Swahili, "&Funga"},            {MenuLangId::Croatian, "&Zatvori"},            {MenuLangId::Icelandic, "&Loka"},            {MenuLangId::Hindi, "&बंद करें"},            {MenuLangId::Bengali, "&বন্ধ করুন"},            {MenuLangId::Urdu, "&بند کریں"},            {MenuLangId::Punjabi, "&ਬੰਦ ਕਰੋ"},            {MenuLangId::Telugu, "&మూసివేయి"},            {MenuLangId::Persian, "&بستن"},            {MenuLangId::Malay, "&Tutup"},            {MenuLangId::Marathi, "&बंद करा"},            {MenuLangId::Tamil, "&மூடு"},            {MenuLangId::Gujarati, "&બંધ કરો"},            {MenuLangId::Kannada, "&ಮುಚ್ಚಿ"},            {MenuLangId::Odia, "&ବନ୍ଦ କରନ୍ତୁ"},            {MenuLangId::Malayalam, "&അടയ്ക്കുക"},            {MenuLangId::Burmese, "&ပိတ်ပါ"},            {MenuLangId::Uzbek, "&Yopish"},            {MenuLangId::Azerbaijani, "&Bağla"},            {MenuLangId::Nepali, "&बन्द गर्नुहोस्"},            {MenuLangId::Sinhala, "&වසන්න"},            {MenuLangId::Khmer, "&បិទ"},            {MenuLangId::Lao, "&ປິດ"},            {MenuLangId::Armenian, "&Փակել"},            {MenuLangId::Albanian, "&Mbyll"},            {MenuLangId::Georgian, "&დახურვა"},            {MenuLangId::Bosnian, "&Zatvori"},            {MenuLangId::Serbian, "&Затвори"},            {MenuLangId::Macedonian, "&Затвори"},            {MenuLangId::Bulgarian, "&Затвори"},            {MenuLangId::Belarusian, "&Закрыць"},            {MenuLangId::Maltese, "&Agħlaq"},            {MenuLangId::Mongolian, "&Хаах"},            {MenuLangId::Latvian, "&Aizvērt"},            {MenuLangId::Lithuanian, "&Uždaryti"},            {MenuLangId::Afrikaans, "&Maak toe"},            {MenuLangId::Irish, "&Dún"},            {MenuLangId::Assamese, "&বন্ধ কৰক"},            {MenuLangId::Amharic, "&ዝጋ"},            {MenuLangId::Estonian, "&Sulge"},            {MenuLangId::Kazakh, "&Жабу"},            {MenuLangId::Catalan, "&Tanca"},            {MenuLangId::Kyrgyz, "&Жабуу"},            {MenuLangId::Slovak, "&Zavrieť"},            {MenuLangId::Slovenian, "&Zapri"},            {MenuLangId::Zulu, "&Vala"},            {MenuLangId::Basque, "&Itxi"},            {MenuLangId::Hebrew, "&סגור"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -7371,6 +19221,7 @@
             {MenuLangId::Russian, "Закрыть"},
             {MenuLangId::ChineseSimplified, "关闭"},
             {MenuLangId::ChineseTraditional, "關閉"},
+            {MenuLangId::ChineseHongKong, "關閉"},
             {MenuLangId::Korean, "닫기"},
             {MenuLangId::Arabic, "إغلاق"},
             {MenuLangId::Indonesian, "Tutup"},
@@ -7386,7 +19237,56 @@
             {MenuLangId::Finnish, "Sulje"},
             {MenuLangId::Vietnamese, "Đóng"},
             {MenuLangId::Polish, "Zamknij"},
-            {MenuLangId::Romanian, "Închide"},
+            {MenuLangId::Romanian, "Închide"},            {MenuLangId::Filipino, "Isara"},            {MenuLangId::Swahili, "Funga"},            {MenuLangId::Croatian, "Zatvori"},            {MenuLangId::Icelandic, "Loka"},            {MenuLangId::Hindi, "बंद करें"},            {MenuLangId::Bengali, "বন্ধ করুন"},            {MenuLangId::Urdu, "بند کریں"},            {MenuLangId::Punjabi, "ਬੰਦ ਕਰੋ"},            {MenuLangId::Telugu, "మూసివేయి"},            {MenuLangId::Persian, "بستن"},            {MenuLangId::Malay, "Tutup"},            {MenuLangId::Marathi, "बंद करा"},            {MenuLangId::Tamil, "மூடு"},            {MenuLangId::Gujarati, "બંધ કરો"},            {MenuLangId::Kannada, "ಮುಚ್ಚಿ"},            {MenuLangId::Odia, "ବନ୍ଦ କରନ୍ତୁ"},            {MenuLangId::Malayalam, "അടയ്ക്കുക"},            {MenuLangId::Burmese, "ပိတ်ပါ"},            {MenuLangId::Uzbek, "Yopish"},            {MenuLangId::Azerbaijani, "Bağla"},            {MenuLangId::Nepali, "बन्द गर्नुहोस्"},            {MenuLangId::Sinhala, "වසන්න"},            {MenuLangId::Khmer, "បិទ"},            {MenuLangId::Lao, "ປິດ"},            {MenuLangId::Armenian, "Փակել"},            {MenuLangId::Albanian, "Mbyll"},            {MenuLangId::Georgian, "დახურვა"},            {MenuLangId::Bosnian, "Zatvori"},            {MenuLangId::Serbian, "Затвори"},            {MenuLangId::Macedonian, "Затвори"},            {MenuLangId::Bulgarian, "Затвори"},            {MenuLangId::Belarusian, "Закрыць"},            {MenuLangId::Maltese, "Agħlaq"},            {MenuLangId::Mongolian, "Хаах"},            {MenuLangId::Latvian, "Aizvērt"},            {MenuLangId::Lithuanian, "Uždaryti"},            {MenuLangId::Afrikaans, "Maak toe"},            {MenuLangId::Irish, "Dún"},            {MenuLangId::Assamese, "বন্ধ কৰক"},            {MenuLangId::Amharic, "ዝጋ"},            {MenuLangId::Estonian, "Sulge"},            {MenuLangId::Kazakh, "Жабу"},            {MenuLangId::Catalan, "Tanca"},            {MenuLangId::Kyrgyz, "Жабуу"},            {MenuLangId::Slovak, "Zavrieť"},            {MenuLangId::Slovenian, "Zapri"},            {MenuLangId::Zulu, "Vala"},            {MenuLangId::Basque, "Itxi"},            {MenuLangId::Hebrew, "סגור"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
 
@@ -7404,6 +19304,7 @@
             {MenuLangId::Russian, "Серо-голубой"},
             {MenuLangId::ChineseSimplified, "灰蓝"},
             {MenuLangId::ChineseTraditional, "灰藍"},
+            {MenuLangId::ChineseHongKong, "灰藍"},
             {MenuLangId::Korean, "회청색"},
             {MenuLangId::Arabic, "أزرق رمادي"},
             {MenuLangId::Indonesian, "Biru keabu-abuan"},
@@ -7419,7 +19320,56 @@
             {MenuLangId::Finnish, "Harmaansininen"},
             {MenuLangId::Vietnamese, "Xanh xám"},
             {MenuLangId::Polish, "Szaroniebieski"},
-            {MenuLangId::Romanian, "Albastru gălbui"},
+            {MenuLangId::Romanian, "Albastru gălbui"},            {MenuLangId::Filipino, "Greyish blue"},            {MenuLangId::Swahili, "Greyish blue"},            {MenuLangId::Croatian, "Sivkasto plava"},            {MenuLangId::Icelandic, "Gráblátt"},            {MenuLangId::Hindi, "धूसर नीला"},            {MenuLangId::Bengali, "ধূসরাভ নীল"},            {MenuLangId::Urdu, "سرمئی مائل نیلا"},            {MenuLangId::Punjabi, "ਸਲੇਟੀ ਨੀਲਾ"},            {MenuLangId::Telugu, "బూడిదరంగు నీలం"},            {MenuLangId::Persian, "آبی خاکستری"},            {MenuLangId::Malay, "Biru kelabu"},            {MenuLangId::Marathi, "करडसर निळा"},            {MenuLangId::Tamil, "சாம்பல் கலந்த நீலம்"},            {MenuLangId::Gujarati, "ભૂખરો વાદળી"},            {MenuLangId::Kannada, "ಬೂದು ನೀಲಿ"},            {MenuLangId::Odia, "ଧୂସର ନୀଳ"},            {MenuLangId::Malayalam, "ചാരനിറം കലർന്ന നീല"},            {MenuLangId::Burmese, "မီးခိုးပြာ"},            {MenuLangId::Uzbek, "Kulrang-koʻk"},            {MenuLangId::Azerbaijani, "Bozumtul mavi"},            {MenuLangId::Nepali, "खैरो-निलो"},            {MenuLangId::Sinhala, "අළු-නිල්"},            {MenuLangId::Khmer, "ខៀវប្រផេះ"},            {MenuLangId::Lao, "ຟ້າອົມເທົາ"},            {MenuLangId::Armenian, "Մոխրագույն-կապույտ"},            {MenuLangId::Albanian, "Blu-gri"},            {MenuLangId::Georgian, "მოლურჯო-ნაცრისფერი"},            {MenuLangId::Bosnian, "sivkasto plava"},            {MenuLangId::Serbian, "сивкасто плава"},            {MenuLangId::Macedonian, "сивкасто сина"},            {MenuLangId::Bulgarian, "сивкаво синьо"},            {MenuLangId::Belarusian, "шаравата-сіні"},            {MenuLangId::Maltese, "blu griż"},            {MenuLangId::Mongolian, "сааралдуу цэнхэр"},            {MenuLangId::Latvian, "pelēcīgi zils"},            {MenuLangId::Lithuanian, "pilkšvai mėlyna"},            {MenuLangId::Afrikaans, "grysblou"},            {MenuLangId::Irish, "gormliath"},            {MenuLangId::Assamese, "ধূসৰ-নীলা"},            {MenuLangId::Amharic, "ግራጫማ ሰማያዊ"},            {MenuLangId::Estonian, "hallikas sinine"},            {MenuLangId::Kazakh, "сұрғылт көк"},            {MenuLangId::Catalan, "blau grisós"},            {MenuLangId::Kyrgyz, "боз көк"},            {MenuLangId::Slovak, "sivomodrá"},            {MenuLangId::Slovenian, "sivkasto modra"},            {MenuLangId::Zulu, "oluhlaza okwesibhakabhaka ompunga"},            {MenuLangId::Basque, "urdin grisaxka"},            {MenuLangId::Hebrew, "כחול אפרפר"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -7435,6 +19385,7 @@
             {MenuLangId::Russian, "Коричневый"},
             {MenuLangId::ChineseSimplified, "茶色"},
             {MenuLangId::ChineseTraditional, "茶色"},
+            {MenuLangId::ChineseHongKong, "茶色"},
             {MenuLangId::Korean, "갈색"},
             {MenuLangId::Arabic, "بني"},
             {MenuLangId::Indonesian, "Cokelat"},
@@ -7450,7 +19401,56 @@
             {MenuLangId::Finnish, "Ruskea"},
             {MenuLangId::Vietnamese, "Nâu"},
             {MenuLangId::Polish, "Brązowy"},
-            {MenuLangId::Romanian, "Maro"},
+            {MenuLangId::Romanian, "Maro"},            {MenuLangId::Filipino, "Brown"},            {MenuLangId::Swahili, "Brown"},            {MenuLangId::Croatian, "Smeđa"},            {MenuLangId::Icelandic, "Brúnt"},            {MenuLangId::Hindi, "भूरा"},            {MenuLangId::Bengali, "বাদামি"},            {MenuLangId::Urdu, "بھورا"},            {MenuLangId::Punjabi, "ਭੂਰਾ"},            {MenuLangId::Telugu, "గోధుమ"},            {MenuLangId::Persian, "قهوه‌ای"},            {MenuLangId::Malay, "Coklat"},            {MenuLangId::Marathi, "तपकिरी"},            {MenuLangId::Tamil, "பழுப்பு"},            {MenuLangId::Gujarati, "ભૂરો"},            {MenuLangId::Kannada, "ಕಂದು"},            {MenuLangId::Odia, "ବାଦାମୀ"},            {MenuLangId::Malayalam, "തവിട്ട്"},            {MenuLangId::Burmese, "အညို"},            {MenuLangId::Uzbek, "Jigarrang"},            {MenuLangId::Azerbaijani, "Qəhvəyi"},            {MenuLangId::Nepali, "खैरो"},            {MenuLangId::Sinhala, "දුඹුරු"},            {MenuLangId::Khmer, "ត្នោត"},            {MenuLangId::Lao, "ນ້ຳຕານ"},            {MenuLangId::Armenian, "Շագանակագույն"},            {MenuLangId::Albanian, "Kafe"},            {MenuLangId::Georgian, "ყავისფერი"},            {MenuLangId::Bosnian, "Smeđa"},            {MenuLangId::Serbian, "Браон"},            {MenuLangId::Macedonian, "Кафеава"},            {MenuLangId::Bulgarian, "Кафяво"},            {MenuLangId::Belarusian, "Карычневы"},            {MenuLangId::Maltese, "Kannella"},            {MenuLangId::Mongolian, "Бор"},            {MenuLangId::Latvian, "Brūns"},            {MenuLangId::Lithuanian, "Ruda"},            {MenuLangId::Afrikaans, "Bruin"},            {MenuLangId::Irish, "Donn"},            {MenuLangId::Assamese, "মুগা"},            {MenuLangId::Amharic, "ቡናማ"},            {MenuLangId::Estonian, "pruun"},            {MenuLangId::Kazakh, "Қоңыр"},            {MenuLangId::Catalan, "marró"},            {MenuLangId::Kyrgyz, "күрөң"},            {MenuLangId::Slovak, "hnedá"},            {MenuLangId::Slovenian, "rjava"},            {MenuLangId::Zulu, "nsundu"},            {MenuLangId::Basque, "marroia"},            {MenuLangId::Hebrew, "חום"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -7466,6 +19466,7 @@
             {MenuLangId::Russian, "Светло-розовый"},
             {MenuLangId::ChineseSimplified, "浅粉色"},
             {MenuLangId::ChineseTraditional, "淺粉色"},
+            {MenuLangId::ChineseHongKong, "淺粉色"},
             {MenuLangId::Korean, "연한 분홍"},
             {MenuLangId::Arabic, "وردي فاتح"},
             {MenuLangId::Indonesian, "Merah muda terang"},
@@ -7481,7 +19482,56 @@
             {MenuLangId::Finnish, "Vaaleanpunainen"},
             {MenuLangId::Vietnamese, "Hồng nhạt"},
             {MenuLangId::Polish, "Jasnoróżowy"},
-            {MenuLangId::Romanian, "Roz deschis"},
+            {MenuLangId::Romanian, "Roz deschis"},            {MenuLangId::Filipino, "Light pink"},            {MenuLangId::Swahili, "Light pink"},            {MenuLangId::Croatian, "Svijetloružičasta"},            {MenuLangId::Icelandic, "Ljósbleikt"},            {MenuLangId::Hindi, "हल्का गुलाबी"},            {MenuLangId::Bengali, "হালকা গোলাপি"},            {MenuLangId::Urdu, "ہلکا گلابی"},            {MenuLangId::Punjabi, "ਹਲਕਾ ਗੁਲਾਬੀ"},            {MenuLangId::Telugu, "లేత గులాబీ"},            {MenuLangId::Persian, "صورتی روشن"},            {MenuLangId::Malay, "Merah jambu muda"},            {MenuLangId::Marathi, "फिकट गुलाबी"},            {MenuLangId::Tamil, "இளஞ்சிவப்பு"},            {MenuLangId::Gujarati, "હળવો ગુલાબી"},            {MenuLangId::Kannada, "ಹಗುರ ಗುಲಾಬಿ"},            {MenuLangId::Odia, "ହାଲୁକା ଗୋଲାପୀ"},            {MenuLangId::Malayalam, "ഇളം പിങ്ക്"},            {MenuLangId::Burmese, "ပန်းနု"},            {MenuLangId::Uzbek, "Och pushti"},            {MenuLangId::Azerbaijani, "Açıq çəhrayı"},            {MenuLangId::Nepali, "हल्का गुलाबी"},            {MenuLangId::Sinhala, "ලා රෝස"},            {MenuLangId::Khmer, "ផ្កាឈូកស្រាល"},            {MenuLangId::Lao, "ຊົມພູອ່ອນ"},            {MenuLangId::Armenian, "Բաց վարդագույն"},            {MenuLangId::Albanian, "Rozë e çelët"},            {MenuLangId::Georgian, "ღია ვარდისფერი"},            {MenuLangId::Bosnian, "Svijetlo roza"},            {MenuLangId::Serbian, "Светло розе"},            {MenuLangId::Macedonian, "Светло розова"},            {MenuLangId::Bulgarian, "Светло розово"},            {MenuLangId::Belarusian, "Светла-ружовы"},            {MenuLangId::Maltese, "Roża ċar"},            {MenuLangId::Mongolian, "Цайвар ягаан"},            {MenuLangId::Latvian, "Gaiši rozā"},            {MenuLangId::Lithuanian, "Šviesiai rožinė"},            {MenuLangId::Afrikaans, "Ligpienk"},            {MenuLangId::Irish, "bándearg éadrom"},            {MenuLangId::Assamese, "পাতল গোলাপী"},            {MenuLangId::Amharic, "ቀላል ሮዝ"},            {MenuLangId::Estonian, "heleroosa"},            {MenuLangId::Kazakh, "Ашық қызғылт"},            {MenuLangId::Catalan, "rosa clar"},            {MenuLangId::Kyrgyz, "ачык кызгылт"},            {MenuLangId::Slovak, "svetloružová"},            {MenuLangId::Slovenian, "svetlo rožnata"},            {MenuLangId::Zulu, "pinki ekhanyayo"},            {MenuLangId::Basque, "arrosa argia"},            {MenuLangId::Hebrew, "ורוד בהיר"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -7497,6 +19547,7 @@
             {MenuLangId::Russian, "Лаймовый"},
             {MenuLangId::ChineseSimplified, "青柠"},
             {MenuLangId::ChineseTraditional, "青檸"},
+            {MenuLangId::ChineseHongKong, "青檸"},
             {MenuLangId::Korean, "라임"},
             {MenuLangId::Arabic, "Lime"},
             {MenuLangId::Indonesian, "Lime"},
@@ -7512,7 +19563,56 @@
             {MenuLangId::Finnish, "Lime"},
             {MenuLangId::Vietnamese, "Lime"},
             {MenuLangId::Polish, "Lime"},
-            {MenuLangId::Romanian, "Lime"},
+            {MenuLangId::Romanian, "Lime"},            {MenuLangId::Filipino, "Lime"},            {MenuLangId::Swahili, "Lime"},            {MenuLangId::Croatian, "Limeta"},            {MenuLangId::Icelandic, "Límónugrænt"},            {MenuLangId::Hindi, "लाइम"},            {MenuLangId::Bengali, "লাইম"},            {MenuLangId::Urdu, "لائم"},            {MenuLangId::Punjabi, "ਲਾਈਮ"},            {MenuLangId::Telugu, "లైమ్"},            {MenuLangId::Persian, "لیمویی"},            {MenuLangId::Malay, "Limau"},            {MenuLangId::Marathi, "लाइम"},            {MenuLangId::Tamil, "lime"},            {MenuLangId::Gujarati, "લાઈમ"},            {MenuLangId::Kannada, "lime"},            {MenuLangId::Odia, "Lime"},            {MenuLangId::Malayalam, "lime"},            {MenuLangId::Burmese, "lime"},            {MenuLangId::Uzbek, "lime"},            {MenuLangId::Azerbaijani, "lime"},            {MenuLangId::Nepali, "lime"},            {MenuLangId::Sinhala, "lime"},            {MenuLangId::Khmer, "lime"},            {MenuLangId::Lao, "lime"},            {MenuLangId::Armenian, "lime"},            {MenuLangId::Albanian, "lime"},            {MenuLangId::Georgian, "lime"},            {MenuLangId::Bosnian, "lime"},            {MenuLangId::Serbian, "lime"},            {MenuLangId::Macedonian, "lime"},            {MenuLangId::Bulgarian, "lime"},            {MenuLangId::Belarusian, "lime"},            {MenuLangId::Maltese, "lime"},            {MenuLangId::Mongolian, "lime"},            {MenuLangId::Latvian, "lime"},            {MenuLangId::Lithuanian, "lime"},            {MenuLangId::Afrikaans, "lime"},            {MenuLangId::Irish, "lime"},            {MenuLangId::Assamese, "lime"},            {MenuLangId::Amharic, "Lime"},            {MenuLangId::Estonian, "laimiroheline"},            {MenuLangId::Kazakh, "лайм жасыл"},            {MenuLangId::Catalan, "verd llima"},            {MenuLangId::Kyrgyz, "лайм жашыл"},            {MenuLangId::Slovak, "limetková"},            {MenuLangId::Slovenian, "limetno zelena"},            {MenuLangId::Zulu, "lime"},            {MenuLangId::Basque, "lima berdea"},            {MenuLangId::Hebrew, "ירוק ליים"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -7528,6 +19628,7 @@
             {MenuLangId::Russian, "Светло-зелёный"},
             {MenuLangId::ChineseSimplified, "浅绿"},
             {MenuLangId::ChineseTraditional, "淺綠"},
+            {MenuLangId::ChineseHongKong, "淺綠"},
             {MenuLangId::Korean, "연두"},
             {MenuLangId::Arabic, "أخضر فاتح"},
             {MenuLangId::Indonesian, "Hijau muda"},
@@ -7543,7 +19644,56 @@
             {MenuLangId::Finnish, "Vaaleanvihreä"},
             {MenuLangId::Vietnamese, "Xanh nhạt"},
             {MenuLangId::Polish, "Jasnozielony"},
-            {MenuLangId::Romanian, "Verde deschis"},
+            {MenuLangId::Romanian, "Verde deschis"},            {MenuLangId::Filipino, "Light green"},            {MenuLangId::Swahili, "Light green"},            {MenuLangId::Croatian, "Svijetlozelena"},            {MenuLangId::Icelandic, "Ljósgrænt"},            {MenuLangId::Hindi, "हल्का हरा"},            {MenuLangId::Bengali, "হালকা সবুজ"},            {MenuLangId::Urdu, "ہلکا سبز"},            {MenuLangId::Punjabi, "ਹਲਕਾ ਹਰਾ"},            {MenuLangId::Telugu, "లేత ఆకుపచ్చ"},            {MenuLangId::Persian, "سبز روشن"},            {MenuLangId::Malay, "Hijau muda"},            {MenuLangId::Marathi, "फिकट हिरवा"},            {MenuLangId::Tamil, "இளம்பச்சை"},            {MenuLangId::Gujarati, "હળવો લીલો"},            {MenuLangId::Kannada, "ಹಗುರ ಹಸಿರು"},            {MenuLangId::Odia, "ହାଲୁକା ସବୁଜ"},            {MenuLangId::Malayalam, "ഇളം പച്ച"},            {MenuLangId::Burmese, "အစိမ်းနု"},            {MenuLangId::Uzbek, "Och yashil"},            {MenuLangId::Azerbaijani, "Açıq yaşıl"},            {MenuLangId::Nepali, "हल्का हरियो"},            {MenuLangId::Sinhala, "ලා කොළ"},            {MenuLangId::Khmer, "បៃតងស្រាល"},            {MenuLangId::Lao, "ຂຽວອ່ອນ"},            {MenuLangId::Armenian, "Բաց կանաչ"},            {MenuLangId::Albanian, "Jeshile e çelët"},            {MenuLangId::Georgian, "ღია მწვანე"},            {MenuLangId::Bosnian, "Svijetlo zelena"},            {MenuLangId::Serbian, "Светло зелена"},            {MenuLangId::Macedonian, "Светло зелена"},            {MenuLangId::Bulgarian, "Светло зелено"},            {MenuLangId::Belarusian, "Светла-зялёны"},            {MenuLangId::Maltese, "Aħdar ċar"},            {MenuLangId::Mongolian, "Цайвар ногоон"},            {MenuLangId::Latvian, "Gaiši zaļš"},            {MenuLangId::Lithuanian, "Šviesiai žalia"},            {MenuLangId::Afrikaans, "Liggroen"},            {MenuLangId::Irish, "glas éadrom"},            {MenuLangId::Assamese, "পাতল সেউজীয়া"},            {MenuLangId::Amharic, "ቀላል አረንጓዴ"},            {MenuLangId::Estonian, "heleroheline"},            {MenuLangId::Kazakh, "Ашық жасыл"},            {MenuLangId::Catalan, "verd clar"},            {MenuLangId::Kyrgyz, "ачык жашыл"},            {MenuLangId::Slovak, "svetlozelená"},            {MenuLangId::Slovenian, "svetlo zelena"},            {MenuLangId::Zulu, "oluhlaza okhanyayo"},            {MenuLangId::Basque, "berde argia"},            {MenuLangId::Hebrew, "ירוק בהיר"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -7559,6 +19709,7 @@
             {MenuLangId::Russian, "Тёмно-зелёный"},
             {MenuLangId::ChineseSimplified, "深绿色"},
             {MenuLangId::ChineseTraditional, "深綠色"},
+            {MenuLangId::ChineseHongKong, "深綠色"},
             {MenuLangId::Korean, "진한 녹색"},
             {MenuLangId::Arabic, "أخضر داكن"},
             {MenuLangId::Indonesian, "Hijau gelap"},
@@ -7574,7 +19725,56 @@
             {MenuLangId::Finnish, "Tummanvihreä"},
             {MenuLangId::Vietnamese, "Xanh lá đậm"},
             {MenuLangId::Polish, "Ciemnozielony"},
-            {MenuLangId::Romanian, "Verde închis"},
+            {MenuLangId::Romanian, "Verde închis"},            {MenuLangId::Filipino, "Dark green"},            {MenuLangId::Swahili, "Dark green"},            {MenuLangId::Croatian, "Tamnozelena"},            {MenuLangId::Icelandic, "Dökkgrænt"},            {MenuLangId::Hindi, "गहरा हरा"},            {MenuLangId::Bengali, "গাঢ় সবুজ"},            {MenuLangId::Urdu, "گہرا سبز"},            {MenuLangId::Punjabi, "ਗੂੜ੍ਹਾ ਹਰਾ"},            {MenuLangId::Telugu, "ముదురు ఆకుపచ్చ"},            {MenuLangId::Persian, "سبز تیره"},            {MenuLangId::Malay, "Hijau gelap"},            {MenuLangId::Marathi, "गडद हिरवा"},            {MenuLangId::Tamil, "கரும்பச்சை"},            {MenuLangId::Gujarati, "ઘાટો લીલો"},            {MenuLangId::Kannada, "ಗಾಢ ಹಸಿರು"},            {MenuLangId::Odia, "ଗାଢ଼ ସବୁଜ"},            {MenuLangId::Malayalam, "കടും പച്ച"},            {MenuLangId::Burmese, "အစိမ်းရင့်"},            {MenuLangId::Uzbek, "Toʻq yashil"},            {MenuLangId::Azerbaijani, "Tünd yaşıl"},            {MenuLangId::Nepali, "गाढा हरियो"},            {MenuLangId::Sinhala, "තද කොළ"},            {MenuLangId::Khmer, "បៃតងចាស់"},            {MenuLangId::Lao, "ຂຽວເຂັ້ມ"},            {MenuLangId::Armenian, "Մուգ կանաչ"},            {MenuLangId::Albanian, "Jeshile e errët"},            {MenuLangId::Georgian, "მუქი მწვანე"},            {MenuLangId::Bosnian, "Tamno zelena"},            {MenuLangId::Serbian, "Тамно зелена"},            {MenuLangId::Macedonian, "Темно зелена"},            {MenuLangId::Bulgarian, "Тъмно зелено"},            {MenuLangId::Belarusian, "Цёмна-зялёны"},            {MenuLangId::Maltese, "Aħdar skur"},            {MenuLangId::Mongolian, "Бараан ногоон"},            {MenuLangId::Latvian, "Tumši zaļš"},            {MenuLangId::Lithuanian, "Tamsiai žalia"},            {MenuLangId::Afrikaans, "Donkergroen"},            {MenuLangId::Irish, "glas dorcha"},            {MenuLangId::Assamese, "গাঢ় সেউজীয়া"},            {MenuLangId::Amharic, "ጥቁር አረንጓዴ"},            {MenuLangId::Estonian, "tumeroheline"},            {MenuLangId::Kazakh, "Қою жасыл"},            {MenuLangId::Catalan, "verd fosc"},            {MenuLangId::Kyrgyz, "коюу жашыл"},            {MenuLangId::Slovak, "tmavozelená"},            {MenuLangId::Slovenian, "temno zelena"},            {MenuLangId::Zulu, "oluhlaza omnyama"},            {MenuLangId::Basque, "berde iluna"},            {MenuLangId::Hebrew, "ירוק כהה"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -7590,6 +19790,7 @@
             {MenuLangId::Russian, "Бирюзовый"},
             {MenuLangId::ChineseSimplified, "青绿色"},
             {MenuLangId::ChineseTraditional, "青綠色"},
+            {MenuLangId::ChineseHongKong, "青綠色"},
             {MenuLangId::Korean, "청록"},
             {MenuLangId::Arabic, "فيروزي"},
             {MenuLangId::Indonesian, "Pirus"},
@@ -7605,7 +19806,56 @@
             {MenuLangId::Finnish, "Turkoosi"},
             {MenuLangId::Vietnamese, "Ngọc lam"},
             {MenuLangId::Polish, "Turkusowy"},
-            {MenuLangId::Romanian, "Turcoaz"},
+            {MenuLangId::Romanian, "Turcoaz"},            {MenuLangId::Filipino, "Turquoise"},            {MenuLangId::Swahili, "Turquoise"},            {MenuLangId::Croatian, "Tirkizna"},            {MenuLangId::Icelandic, "Túrkís"},            {MenuLangId::Hindi, "फ़िरोज़ी"},            {MenuLangId::Bengali, "ফিরোজা"},            {MenuLangId::Urdu, "فیروزی"},            {MenuLangId::Punjabi, "ਫਿਰੋਜ਼ੀ"},            {MenuLangId::Telugu, "టర్కాయిస్"},            {MenuLangId::Persian, "فیروزه‌ای"},            {MenuLangId::Malay, "Turquoise"},            {MenuLangId::Marathi, "टर्कॉइज"},            {MenuLangId::Tamil, "turquoise"},            {MenuLangId::Gujarati, "turquoise"},            {MenuLangId::Kannada, "turquoise"},            {MenuLangId::Odia, "Turquoise"},            {MenuLangId::Malayalam, "turquoise"},            {MenuLangId::Burmese, "turquoise"},            {MenuLangId::Uzbek, "turquoise"},            {MenuLangId::Azerbaijani, "turquoise"},            {MenuLangId::Nepali, "turquoise"},            {MenuLangId::Sinhala, "turquoise"},            {MenuLangId::Khmer, "turquoise"},            {MenuLangId::Lao, "turquoise"},            {MenuLangId::Armenian, "turquoise"},            {MenuLangId::Albanian, "turquoise"},            {MenuLangId::Georgian, "turquoise"},            {MenuLangId::Bosnian, "turquoise"},            {MenuLangId::Serbian, "turquoise"},            {MenuLangId::Macedonian, "turquoise"},            {MenuLangId::Bulgarian, "turquoise"},            {MenuLangId::Belarusian, "turquoise"},            {MenuLangId::Maltese, "turquoise"},            {MenuLangId::Mongolian, "turquoise"},            {MenuLangId::Latvian, "turquoise"},            {MenuLangId::Lithuanian, "turquoise"},            {MenuLangId::Afrikaans, "turquoise"},            {MenuLangId::Irish, "turquoise"},            {MenuLangId::Assamese, "turquoise"},            {MenuLangId::Amharic, "Turquoise"},            {MenuLangId::Estonian, "türkiis"},            {MenuLangId::Kazakh, "көгілдір"},            {MenuLangId::Catalan, "turquesa"},            {MenuLangId::Kyrgyz, "бирюза"},            {MenuLangId::Slovak, "tyrkysová"},            {MenuLangId::Slovenian, "turkizna"},            {MenuLangId::Zulu, "turquoise"},            {MenuLangId::Basque, "turkesa"},            {MenuLangId::Hebrew, "טורקיז"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -7621,6 +19871,7 @@
             {MenuLangId::Russian, "Голубой"},
             {MenuLangId::ChineseSimplified, "浅蓝"},
             {MenuLangId::ChineseTraditional, "淺藍"},
+            {MenuLangId::ChineseHongKong, "淺藍"},
             {MenuLangId::Korean, "연한 파랑"},
             {MenuLangId::Arabic, "أزرق فاتح"},
             {MenuLangId::Indonesian, "Biru muda"},
@@ -7636,7 +19887,56 @@
             {MenuLangId::Finnish, "Vaaleansininen"},
             {MenuLangId::Vietnamese, "Xanh nhạt"},
             {MenuLangId::Polish, "Jasnoniebieski"},
-            {MenuLangId::Romanian, "Albastru deschis"},
+            {MenuLangId::Romanian, "Albastru deschis"},            {MenuLangId::Filipino, "Light blue"},            {MenuLangId::Swahili, "Light blue"},            {MenuLangId::Croatian, "Svijetloplava"},            {MenuLangId::Icelandic, "Ljósblátt"},            {MenuLangId::Hindi, "हल्का नीला"},            {MenuLangId::Bengali, "হালকা নীল"},            {MenuLangId::Urdu, "ہلکا نیلا"},            {MenuLangId::Punjabi, "ਹਲਕਾ ਨੀਲਾ"},            {MenuLangId::Telugu, "లేత నీలం"},            {MenuLangId::Persian, "آبی روشن"},            {MenuLangId::Malay, "Biru muda"},            {MenuLangId::Marathi, "फिकट निळा"},            {MenuLangId::Tamil, "இளநீலம்"},            {MenuLangId::Gujarati, "હળવો વાદળી"},            {MenuLangId::Kannada, "ಹಗುರ ನೀಲಿ"},            {MenuLangId::Odia, "ହାଲୁକା ନୀଳ"},            {MenuLangId::Malayalam, "ഇളം നീല"},            {MenuLangId::Burmese, "အပြာနု"},            {MenuLangId::Uzbek, "Och koʻk"},            {MenuLangId::Azerbaijani, "Açıq mavi"},            {MenuLangId::Nepali, "हल्का निलो"},            {MenuLangId::Sinhala, "ලා නිල්"},            {MenuLangId::Khmer, "ខៀវស្រាល"},            {MenuLangId::Lao, "ຟ້າອ່ອນ"},            {MenuLangId::Armenian, "Բաց կապույտ"},            {MenuLangId::Albanian, "Blu e çelët"},            {MenuLangId::Georgian, "ღია ლურჯი"},            {MenuLangId::Bosnian, "Svijetlo plava"},            {MenuLangId::Serbian, "Светло плава"},            {MenuLangId::Macedonian, "Светло сина"},            {MenuLangId::Bulgarian, "Светло синьо"},            {MenuLangId::Belarusian, "Светла-сіні"},            {MenuLangId::Maltese, "Blu ċar"},            {MenuLangId::Mongolian, "Цайвар цэнхэр"},            {MenuLangId::Latvian, "Gaiši zils"},            {MenuLangId::Lithuanian, "Šviesiai mėlyna"},            {MenuLangId::Afrikaans, "Ligblou"},            {MenuLangId::Irish, "gorm éadrom"},            {MenuLangId::Assamese, "পাতল নীলা"},            {MenuLangId::Amharic, "ቀላል ሰማያዊ"},            {MenuLangId::Estonian, "helesinine"},            {MenuLangId::Kazakh, "Ашық көк"},            {MenuLangId::Catalan, "blau clar"},            {MenuLangId::Kyrgyz, "ачык көк"},            {MenuLangId::Slovak, "svetlomodrá"},            {MenuLangId::Slovenian, "svetlo modra"},            {MenuLangId::Zulu, "oluhlaza okwesibhakabhaka okhanyayo"},            {MenuLangId::Basque, "urdin argia"},            {MenuLangId::Hebrew, "כחול בהיר"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -7652,6 +19952,7 @@
             {MenuLangId::Russian, "Синий"},
             {MenuLangId::ChineseSimplified, "蓝"},
             {MenuLangId::ChineseTraditional, "藍"},
+            {MenuLangId::ChineseHongKong, "藍"},
             {MenuLangId::Korean, "파랑"},
             {MenuLangId::Arabic, "أزرق"},
             {MenuLangId::Indonesian, "Biru"},
@@ -7667,7 +19968,56 @@
             {MenuLangId::Finnish, "Sininen"},
             {MenuLangId::Vietnamese, "Xanh dương"},
             {MenuLangId::Polish, "Niebieski"},
-            {MenuLangId::Romanian, "Albastru"},
+            {MenuLangId::Romanian, "Albastru"},            {MenuLangId::Filipino, "Blue"},            {MenuLangId::Swahili, "Blue"},            {MenuLangId::Croatian, "Plava"},            {MenuLangId::Icelandic, "Blátt"},            {MenuLangId::Hindi, "नीला"},            {MenuLangId::Bengali, "নীল"},            {MenuLangId::Urdu, "نیلا"},            {MenuLangId::Punjabi, "ਨੀਲਾ"},            {MenuLangId::Telugu, "నీలం"},            {MenuLangId::Persian, "آبی"},            {MenuLangId::Malay, "Biru"},            {MenuLangId::Marathi, "निळा"},            {MenuLangId::Tamil, "நீலம்"},            {MenuLangId::Gujarati, "વાદળી"},            {MenuLangId::Kannada, "ನೀಲಿ"},            {MenuLangId::Odia, "ନୀଳ"},            {MenuLangId::Malayalam, "നീല"},            {MenuLangId::Burmese, "အပြာ"},            {MenuLangId::Uzbek, "Koʻk"},            {MenuLangId::Azerbaijani, "Mavi"},            {MenuLangId::Nepali, "निलो"},            {MenuLangId::Sinhala, "නිල්"},            {MenuLangId::Khmer, "ខៀវ"},            {MenuLangId::Lao, "ຟ້າ"},            {MenuLangId::Armenian, "Կապույտ"},            {MenuLangId::Albanian, "Blu"},            {MenuLangId::Georgian, "ლურჯი"},            {MenuLangId::Bosnian, "Plava"},            {MenuLangId::Serbian, "Плава"},            {MenuLangId::Macedonian, "Сина"},            {MenuLangId::Bulgarian, "Синьо"},            {MenuLangId::Belarusian, "Сіні"},            {MenuLangId::Maltese, "Blu"},            {MenuLangId::Mongolian, "Цэнхэр"},            {MenuLangId::Latvian, "Zils"},            {MenuLangId::Lithuanian, "Mėlyna"},            {MenuLangId::Afrikaans, "Blou"},            {MenuLangId::Irish, "Gorm"},            {MenuLangId::Assamese, "নীলা"},            {MenuLangId::Amharic, "ሰማያዊ"},            {MenuLangId::Estonian, "sinine"},            {MenuLangId::Kazakh, "Көк"},            {MenuLangId::Catalan, "blau"},            {MenuLangId::Kyrgyz, "көк"},            {MenuLangId::Slovak, "modrá"},            {MenuLangId::Slovenian, "modra"},            {MenuLangId::Zulu, "oluhlaza okwesibhakabhaka"},            {MenuLangId::Basque, "urdina"},            {MenuLangId::Hebrew, "כחול"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -7683,6 +20033,7 @@
             {MenuLangId::Russian, "Тёмно-синий"},
             {MenuLangId::ChineseSimplified, "深蓝"},
             {MenuLangId::ChineseTraditional, "深藍"},
+            {MenuLangId::ChineseHongKong, "深藍"},
             {MenuLangId::Korean, "진한 파랑"},
             {MenuLangId::Arabic, "أزرق داكن"},
             {MenuLangId::Indonesian, "Biru tua"},
@@ -7698,7 +20049,56 @@
             {MenuLangId::Finnish, "Tummansininen"},
             {MenuLangId::Vietnamese, "Xanh đậm"},
             {MenuLangId::Polish, "Ciemnoniebieski"},
-            {MenuLangId::Romanian, "Albastru închis"},
+            {MenuLangId::Romanian, "Albastru închis"},            {MenuLangId::Filipino, "Dark blue"},            {MenuLangId::Swahili, "Dark blue"},            {MenuLangId::Croatian, "Tamnoplava"},            {MenuLangId::Icelandic, "Dökkblátt"},            {MenuLangId::Hindi, "गहरा नीला"},            {MenuLangId::Bengali, "গাঢ় নীল"},            {MenuLangId::Urdu, "گہرا نیلا"},            {MenuLangId::Punjabi, "ਗੂੜ੍ਹਾ ਨੀਲਾ"},            {MenuLangId::Telugu, "ముదురు నీలం"},            {MenuLangId::Persian, "آبی تیره"},            {MenuLangId::Malay, "Biru gelap"},            {MenuLangId::Marathi, "गडद निळा"},            {MenuLangId::Tamil, "கருநீலம்"},            {MenuLangId::Gujarati, "ઘાટો વાદળી"},            {MenuLangId::Kannada, "ಗಾಢ ನೀಲಿ"},            {MenuLangId::Odia, "ଗାଢ଼ ନୀଳ"},            {MenuLangId::Malayalam, "കടും നീല"},            {MenuLangId::Burmese, "အပြာရင့်"},            {MenuLangId::Uzbek, "Toʻq koʻk"},            {MenuLangId::Azerbaijani, "Tünd mavi"},            {MenuLangId::Nepali, "गाढा निलो"},            {MenuLangId::Sinhala, "තද නිල්"},            {MenuLangId::Khmer, "ខៀវចាស់"},            {MenuLangId::Lao, "ຟ້າເຂັ້ມ"},            {MenuLangId::Armenian, "Մուգ կապույտ"},            {MenuLangId::Albanian, "Blu e errët"},            {MenuLangId::Georgian, "მუქი ლურჯი"},            {MenuLangId::Bosnian, "Tamno plava"},            {MenuLangId::Serbian, "Тамно плава"},            {MenuLangId::Macedonian, "Темно сина"},            {MenuLangId::Bulgarian, "Тъмно синьо"},            {MenuLangId::Belarusian, "Цёмна-сіні"},            {MenuLangId::Maltese, "Blu skur"},            {MenuLangId::Mongolian, "Бараан цэнхэр"},            {MenuLangId::Latvian, "Tumši zils"},            {MenuLangId::Lithuanian, "Tamsiai mėlyna"},            {MenuLangId::Afrikaans, "Donkerblou"},            {MenuLangId::Irish, "gorm dorcha"},            {MenuLangId::Assamese, "গাঢ় নীলা"},            {MenuLangId::Amharic, "ጥቁር ሰማያዊ"},            {MenuLangId::Estonian, "tumesinine"},            {MenuLangId::Kazakh, "Қою көк"},            {MenuLangId::Catalan, "blau fosc"},            {MenuLangId::Kyrgyz, "коюу көк"},            {MenuLangId::Slovak, "tmavomodrá"},            {MenuLangId::Slovenian, "temno modra"},            {MenuLangId::Zulu, "oluhlaza okwesibhakabhaka omnyama"},            {MenuLangId::Basque, "urdin iluna"},            {MenuLangId::Hebrew, "כחול כהה"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -7714,6 +20114,7 @@
             {MenuLangId::Russian, "Тёмно-фиолетовый"},
             {MenuLangId::ChineseSimplified, "深紫色"},
             {MenuLangId::ChineseTraditional, "深紫色"},
+            {MenuLangId::ChineseHongKong, "深紫色"},
             {MenuLangId::Korean, "진한 보라"},
             {MenuLangId::Arabic, "بنفسجي داكن"},
             {MenuLangId::Indonesian, "Ungu gelap"},
@@ -7729,7 +20130,56 @@
             {MenuLangId::Finnish, "Tummanvioletti"},
             {MenuLangId::Vietnamese, "Tím đậm"},
             {MenuLangId::Polish, "Ciemnofioletowy"},
-            {MenuLangId::Romanian, "Violet închis"},
+            {MenuLangId::Romanian, "Violet închis"},            {MenuLangId::Filipino, "Dark purple"},            {MenuLangId::Swahili, "Dark purple"},            {MenuLangId::Croatian, "Tamnoljubičasta"},            {MenuLangId::Icelandic, "Dökkfjólublátt"},            {MenuLangId::Hindi, "गहरा बैंगनी"},            {MenuLangId::Bengali, "গাঢ় বেগুনি"},            {MenuLangId::Urdu, "گہرا جامنی"},            {MenuLangId::Punjabi, "ਗੂੜ੍ਹਾ ਜਾਮਨੀ"},            {MenuLangId::Telugu, "ముదురు ఊదా"},            {MenuLangId::Persian, "بنفش تیره"},            {MenuLangId::Malay, "Ungu gelap"},            {MenuLangId::Marathi, "गडद जांभळा"},            {MenuLangId::Tamil, "கரு ஊதா"},            {MenuLangId::Gujarati, "ઘાટો જાંબલી"},            {MenuLangId::Kannada, "ಗಾಢ ನೇರಳೆ"},            {MenuLangId::Odia, "ଗାଢ଼ ବଢ଼ିଆ"},            {MenuLangId::Malayalam, "കടും പർപ്പിൾ"},            {MenuLangId::Burmese, "ခရမ်းရင့်"},            {MenuLangId::Uzbek, "Toʻq binafsha"},            {MenuLangId::Azerbaijani, "Tünd bənövşəyi"},            {MenuLangId::Nepali, "गाढा बैजनी"},            {MenuLangId::Sinhala, "තද දම්"},            {MenuLangId::Khmer, "ស្វាយចាស់"},            {MenuLangId::Lao, "ມ່ວງເຂັ້ມ"},            {MenuLangId::Armenian, "Մուգ մանուշակագույն"},            {MenuLangId::Albanian, "Vjollcë e errët"},            {MenuLangId::Georgian, "მუქი იისფერი"},            {MenuLangId::Bosnian, "Tamno ljubičasta"},            {MenuLangId::Serbian, "Тамно љубичаста"},            {MenuLangId::Macedonian, "Темно виолетова"},            {MenuLangId::Bulgarian, "Тъмно лилаво"},            {MenuLangId::Belarusian, "Цёмна-фіялетавы"},            {MenuLangId::Maltese, "Vjola skur"},            {MenuLangId::Mongolian, "Бараан ягаан"},            {MenuLangId::Latvian, "Tumši violets"},            {MenuLangId::Lithuanian, "Tamsiai violetinė"},            {MenuLangId::Afrikaans, "Donkerpers"},            {MenuLangId::Irish, "corcra dorcha"},            {MenuLangId::Assamese, "গাঢ় বেঙুনীয়া"},            {MenuLangId::Amharic, "ጥቁር ሐምራዊ"},            {MenuLangId::Estonian, "tumelilla"},            {MenuLangId::Kazakh, "Қою күлгін"},            {MenuLangId::Catalan, "porpra fosc"},            {MenuLangId::Kyrgyz, "коюу кызгылт көк"},            {MenuLangId::Slovak, "tmavofialová"},            {MenuLangId::Slovenian, "temno vijolična"},            {MenuLangId::Zulu, "purple omnyama"},            {MenuLangId::Basque, "more iluna"},            {MenuLangId::Hebrew, "סגול כהה"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -7745,6 +20195,7 @@
             {MenuLangId::Russian, "Светло-фиолетовый"},
             {MenuLangId::ChineseSimplified, "浅紫色"},
             {MenuLangId::ChineseTraditional, "淺紫色"},
+            {MenuLangId::ChineseHongKong, "淺紫色"},
             {MenuLangId::Korean, "연보라"},
             {MenuLangId::Arabic, "بنفسجي فاتح"},
             {MenuLangId::Indonesian, "Ungu muda"},
@@ -7760,7 +20211,56 @@
             {MenuLangId::Finnish, "Vaaleanvioletti"},
             {MenuLangId::Vietnamese, "Tím nhạt"},
             {MenuLangId::Polish, "Jasnofioletowy"},
-            {MenuLangId::Romanian, "Violet deschis"},
+            {MenuLangId::Romanian, "Violet deschis"},            {MenuLangId::Filipino, "Light purple"},            {MenuLangId::Swahili, "Light purple"},            {MenuLangId::Croatian, "Svijetloljubičasta"},            {MenuLangId::Icelandic, "Ljósfjólublátt"},            {MenuLangId::Hindi, "हल्का बैंगनी"},            {MenuLangId::Bengali, "হালকা বেগুনি"},            {MenuLangId::Urdu, "ہلکا جامنی"},            {MenuLangId::Punjabi, "ਹਲਕਾ ਜਾਮਨੀ"},            {MenuLangId::Telugu, "లేత ఊదా"},            {MenuLangId::Persian, "بنفش روشن"},            {MenuLangId::Malay, "Ungu muda"},            {MenuLangId::Marathi, "फिकट जांभळा"},            {MenuLangId::Tamil, "இள ஊதா"},            {MenuLangId::Gujarati, "હળવો જાંબલી"},            {MenuLangId::Kannada, "ಹಗುರ ನೇರಳೆ"},            {MenuLangId::Odia, "ହାଲୁକା ବଢ଼ିଆ"},            {MenuLangId::Malayalam, "ഇളം പർപ്പിൾ"},            {MenuLangId::Burmese, "ခရမ်းနု"},            {MenuLangId::Uzbek, "Och binafsha"},            {MenuLangId::Azerbaijani, "Açıq bənövşəyi"},            {MenuLangId::Nepali, "हल्का बैजनी"},            {MenuLangId::Sinhala, "ලා දම්"},            {MenuLangId::Khmer, "ស្វាយស្រាល"},            {MenuLangId::Lao, "ມ່ວງອ່ອນ"},            {MenuLangId::Armenian, "Բաց մանուշակագույն"},            {MenuLangId::Albanian, "Vjollcë e çelët"},            {MenuLangId::Georgian, "ღია იისფერი"},            {MenuLangId::Bosnian, "Svijetlo ljubičasta"},            {MenuLangId::Serbian, "Светло љубичаста"},            {MenuLangId::Macedonian, "Светло виолетова"},            {MenuLangId::Bulgarian, "Светло лилаво"},            {MenuLangId::Belarusian, "Светла-фіялетавы"},            {MenuLangId::Maltese, "Vjola ċar"},            {MenuLangId::Mongolian, "Цайвар ягаан"},            {MenuLangId::Latvian, "Gaiši violets"},            {MenuLangId::Lithuanian, "Šviesiai violetinė"},            {MenuLangId::Afrikaans, "Ligpers"},            {MenuLangId::Irish, "corcra éadrom"},            {MenuLangId::Assamese, "পাতল বেঙুনীয়া"},            {MenuLangId::Amharic, "ቀላል ሐምራዊ"},            {MenuLangId::Estonian, "helelilla"},            {MenuLangId::Kazakh, "Ашық күлгін"},            {MenuLangId::Catalan, "porpra clar"},            {MenuLangId::Kyrgyz, "ачык кызгылт көк"},            {MenuLangId::Slovak, "svetlofialová"},            {MenuLangId::Slovenian, "svetlo vijolična"},            {MenuLangId::Zulu, "purple okhanyayo"},            {MenuLangId::Basque, "more argia"},            {MenuLangId::Hebrew, "סגול בהיר"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -7776,6 +20276,7 @@
             {MenuLangId::Russian, "Тёмно-розовый"},
             {MenuLangId::ChineseSimplified, "深粉"},
             {MenuLangId::ChineseTraditional, "深粉"},
+            {MenuLangId::ChineseHongKong, "深粉"},
             {MenuLangId::Korean, "진한 분홍"},
             {MenuLangId::Arabic, "وردي داكن"},
             {MenuLangId::Indonesian, "Merah muda gelap"},
@@ -7791,7 +20292,56 @@
             {MenuLangId::Finnish, "Tummanpunertava"},
             {MenuLangId::Vietnamese, "Hồng đậm"},
             {MenuLangId::Polish, "Ciemnoróżowy"},
-            {MenuLangId::Romanian, "Roz închis"},
+            {MenuLangId::Romanian, "Roz închis"},            {MenuLangId::Filipino, "Dark pink"},            {MenuLangId::Swahili, "Dark pink"},            {MenuLangId::Croatian, "Tamnoružičasta"},            {MenuLangId::Icelandic, "Dökkbleikt"},            {MenuLangId::Hindi, "गहरा गुलाबी"},            {MenuLangId::Bengali, "গাঢ় গোলাপি"},            {MenuLangId::Urdu, "گہرا گلابی"},            {MenuLangId::Punjabi, "ਗੂੜ੍ਹਾ ਗੁਲਾਬੀ"},            {MenuLangId::Telugu, "ముదురు గులాబీ"},            {MenuLangId::Persian, "صورتی تیره"},            {MenuLangId::Malay, "Merah jambu gelap"},            {MenuLangId::Marathi, "गडद गुलाबी"},            {MenuLangId::Tamil, "கரு இளஞ்சிவப்பு"},            {MenuLangId::Gujarati, "ઘાટો ગુલાબી"},            {MenuLangId::Kannada, "ಗಾಢ ಗುಲಾಬಿ"},            {MenuLangId::Odia, "ଗାଢ଼ ଗୋଲାପୀ"},            {MenuLangId::Malayalam, "കടും പിങ്ക്"},            {MenuLangId::Burmese, "ပန်းရင့်"},            {MenuLangId::Uzbek, "Toʻq pushti"},            {MenuLangId::Azerbaijani, "Tünd çəhrayı"},            {MenuLangId::Nepali, "गाढा गुलाबी"},            {MenuLangId::Sinhala, "තද රෝස"},            {MenuLangId::Khmer, "ផ្កាឈូកចាស់"},            {MenuLangId::Lao, "ຊົມພູເຂັ້ມ"},            {MenuLangId::Armenian, "Մուգ վարդագույն"},            {MenuLangId::Albanian, "Rozë e errët"},            {MenuLangId::Georgian, "მუქი ვარდისფერი"},            {MenuLangId::Bosnian, "Tamno roza"},            {MenuLangId::Serbian, "Тамно розе"},            {MenuLangId::Macedonian, "Темно розова"},            {MenuLangId::Bulgarian, "Тъмно розово"},            {MenuLangId::Belarusian, "Цёмна-ружовы"},            {MenuLangId::Maltese, "Roża skur"},            {MenuLangId::Mongolian, "Бараан ягаан"},            {MenuLangId::Latvian, "Tumši rozā"},            {MenuLangId::Lithuanian, "Tamsiai rožinė"},            {MenuLangId::Afrikaans, "Donkerpienk"},            {MenuLangId::Irish, "bándearg dorcha"},            {MenuLangId::Assamese, "গাঢ় গোলাপী"},            {MenuLangId::Amharic, "ጥቁር ሮዝ"},            {MenuLangId::Estonian, "tumeroosa"},            {MenuLangId::Kazakh, "Қою қызғылт"},            {MenuLangId::Catalan, "rosa fosc"},            {MenuLangId::Kyrgyz, "коюу кызгылт"},            {MenuLangId::Slovak, "tmavoružová"},            {MenuLangId::Slovenian, "temno rožnata"},            {MenuLangId::Zulu, "pinki emnyama"},            {MenuLangId::Basque, "arrosa iluna"},            {MenuLangId::Hebrew, "ורוד כהה"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -7807,6 +20357,7 @@
             {MenuLangId::Russian, "Январь"},
             {MenuLangId::ChineseSimplified, "1 月"},
             {MenuLangId::ChineseTraditional, "1 月"},
+            {MenuLangId::ChineseHongKong, "1 月"},
             {MenuLangId::Korean, "1월"},
             {MenuLangId::Arabic, "يناير"},
             {MenuLangId::Indonesian, "Januari"},
@@ -7822,7 +20373,56 @@
             {MenuLangId::Finnish, "Tammikuu"},
             {MenuLangId::Vietnamese, "Tháng Một"},
             {MenuLangId::Polish, "Styczeń"},
-            {MenuLangId::Romanian, "Ianuarie"},
+            {MenuLangId::Romanian, "Ianuarie"},            {MenuLangId::Filipino, "January"},            {MenuLangId::Swahili, "January"},            {MenuLangId::Croatian, "Siječanj"},            {MenuLangId::Icelandic, "Janúar"},            {MenuLangId::Hindi, "जनवरी"},            {MenuLangId::Bengali, "জানুয়ারি"},            {MenuLangId::Urdu, "جنوری"},            {MenuLangId::Punjabi, "ਜਨਵਰੀ"},            {MenuLangId::Telugu, "జనవరి"},            {MenuLangId::Persian, "ژانویه"},            {MenuLangId::Malay, "Januari"},            {MenuLangId::Marathi, "जानेवारी"},            {MenuLangId::Tamil, "ஜனவரி"},            {MenuLangId::Gujarati, "જાન્યુઆરી"},            {MenuLangId::Kannada, "ಜನವರಿ"},            {MenuLangId::Odia, "ଜାନୁଆରୀ"},            {MenuLangId::Malayalam, "ജനുവരി"},            {MenuLangId::Burmese, "ဇန်နဝါရီ"},            {MenuLangId::Uzbek, "Yanvar"},            {MenuLangId::Azerbaijani, "Yanvar"},            {MenuLangId::Nepali, "जनवरी"},            {MenuLangId::Sinhala, "ජනවාරි"},            {MenuLangId::Khmer, "មករា"},            {MenuLangId::Lao, "ມັງກອນ"},            {MenuLangId::Armenian, "Հունվար"},            {MenuLangId::Albanian, "Janar"},            {MenuLangId::Georgian, "იანვარი"},            {MenuLangId::Bosnian, "Januar"},            {MenuLangId::Serbian, "Јануар"},            {MenuLangId::Macedonian, "Јануари"},            {MenuLangId::Bulgarian, "Януари"},            {MenuLangId::Belarusian, "Студзень"},            {MenuLangId::Maltese, "Jannar"},            {MenuLangId::Mongolian, "Нэгдүгээр сар"},            {MenuLangId::Latvian, "Janvāris"},            {MenuLangId::Lithuanian, "Sausis"},            {MenuLangId::Afrikaans, "Januarie"},            {MenuLangId::Irish, "Eanáir"},            {MenuLangId::Assamese, "জানুৱাৰী"},            {MenuLangId::Amharic, "ጃንዋሪ"},            {MenuLangId::Estonian, "jaanuar"},            {MenuLangId::Kazakh, "қаңтар"},            {MenuLangId::Catalan, "gener"},            {MenuLangId::Kyrgyz, "январь"},            {MenuLangId::Slovak, "január"},            {MenuLangId::Slovenian, "januar"},            {MenuLangId::Zulu, "Januwari"},            {MenuLangId::Basque, "urtarrila"},            {MenuLangId::Hebrew, "ינואר"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -7838,6 +20438,7 @@
             {MenuLangId::Russian, "Февраль"},
             {MenuLangId::ChineseSimplified, "2 月"},
             {MenuLangId::ChineseTraditional, "2 月"},
+            {MenuLangId::ChineseHongKong, "2 月"},
             {MenuLangId::Korean, "2월"},
             {MenuLangId::Arabic, "فبراير"},
             {MenuLangId::Indonesian, "Februari"},
@@ -7853,7 +20454,56 @@
             {MenuLangId::Finnish, "Helmikuu"},
             {MenuLangId::Vietnamese, "Tháng 2"},
             {MenuLangId::Polish, "Luty"},
-            {MenuLangId::Romanian, "Februarie"},
+            {MenuLangId::Romanian, "Februarie"},            {MenuLangId::Filipino, "February"},            {MenuLangId::Swahili, "February"},            {MenuLangId::Croatian, "Veljača"},            {MenuLangId::Icelandic, "Febrúar"},            {MenuLangId::Hindi, "फ़रवरी"},            {MenuLangId::Bengali, "ফেব্রুয়ারি"},            {MenuLangId::Urdu, "فروری"},            {MenuLangId::Punjabi, "ਫਰਵਰੀ"},            {MenuLangId::Telugu, "ఫిబ్రవరి"},            {MenuLangId::Persian, "فوریه"},            {MenuLangId::Malay, "Februari"},            {MenuLangId::Marathi, "फेब्रुवारी"},            {MenuLangId::Tamil, "பிப்ரவரி"},            {MenuLangId::Gujarati, "ફેબ્રુઆરી"},            {MenuLangId::Kannada, "ಫೆಬ್ರವರಿ"},            {MenuLangId::Odia, "ଫେବୃଆରୀ"},            {MenuLangId::Malayalam, "ഫെബ്രുവരി"},            {MenuLangId::Burmese, "ဖေဖော်ဝါရီ"},            {MenuLangId::Uzbek, "Fevral"},            {MenuLangId::Azerbaijani, "Fevral"},            {MenuLangId::Nepali, "फेब्रुअरी"},            {MenuLangId::Sinhala, "පෙබරවාරි"},            {MenuLangId::Khmer, "កុម្ភៈ"},            {MenuLangId::Lao, "ກຸມພາ"},            {MenuLangId::Armenian, "Փետրվար"},            {MenuLangId::Albanian, "Shkurt"},            {MenuLangId::Georgian, "თებერვალი"},            {MenuLangId::Bosnian, "Februar"},            {MenuLangId::Serbian, "Фебруар"},            {MenuLangId::Macedonian, "Февруари"},            {MenuLangId::Bulgarian, "Февруари"},            {MenuLangId::Belarusian, "Люты"},            {MenuLangId::Maltese, "Frar"},            {MenuLangId::Mongolian, "Хоёрдугаар сар"},            {MenuLangId::Latvian, "Februāris"},            {MenuLangId::Lithuanian, "Vasaris"},            {MenuLangId::Afrikaans, "Februarie"},            {MenuLangId::Irish, "Feabhra"},            {MenuLangId::Assamese, "ফেব্ৰুৱাৰী"},            {MenuLangId::Amharic, "ፌብሩዋሪ"},            {MenuLangId::Estonian, "veebruar"},            {MenuLangId::Kazakh, "ақпан"},            {MenuLangId::Catalan, "febrer"},            {MenuLangId::Kyrgyz, "февраль"},            {MenuLangId::Slovak, "február"},            {MenuLangId::Slovenian, "februar"},            {MenuLangId::Zulu, "Februwari"},            {MenuLangId::Basque, "otsaila"},            {MenuLangId::Hebrew, "פברואר"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -7869,6 +20519,7 @@
             {MenuLangId::Russian, "Март"},
             {MenuLangId::ChineseSimplified, "3 月"},
             {MenuLangId::ChineseTraditional, "3 月"},
+            {MenuLangId::ChineseHongKong, "3 月"},
             {MenuLangId::Korean, "3월"},
             {MenuLangId::Arabic, "مارس"},
             {MenuLangId::Indonesian, "Maret"},
@@ -7884,7 +20535,56 @@
             {MenuLangId::Finnish, "Maaliskuu"},
             {MenuLangId::Vietnamese, "Tháng 3"},
             {MenuLangId::Polish, "Marzec"},
-            {MenuLangId::Romanian, "Martie"},
+            {MenuLangId::Romanian, "Martie"},            {MenuLangId::Filipino, "March"},            {MenuLangId::Swahili, "March"},            {MenuLangId::Croatian, "Ožujak"},            {MenuLangId::Icelandic, "Mars"},            {MenuLangId::Hindi, "मार्च"},            {MenuLangId::Bengali, "মার্চ"},            {MenuLangId::Urdu, "مارچ"},            {MenuLangId::Punjabi, "ਮਾਰਚ"},            {MenuLangId::Telugu, "మార్చి"},            {MenuLangId::Persian, "مارس"},            {MenuLangId::Malay, "Mac"},            {MenuLangId::Marathi, "मार्च"},            {MenuLangId::Tamil, "மார்ச்"},            {MenuLangId::Gujarati, "માર્ચ"},            {MenuLangId::Kannada, "ಮಾರ್ಚ್"},            {MenuLangId::Odia, "ମାର୍ଚ୍ଚ"},            {MenuLangId::Malayalam, "മാർച്ച്"},            {MenuLangId::Burmese, "မတ်"},            {MenuLangId::Uzbek, "Mart"},            {MenuLangId::Azerbaijani, "Mart"},            {MenuLangId::Nepali, "मार्च"},            {MenuLangId::Sinhala, "මාර්තු"},            {MenuLangId::Khmer, "មីនា"},            {MenuLangId::Lao, "ມີນາ"},            {MenuLangId::Armenian, "Մարտ"},            {MenuLangId::Albanian, "Mars"},            {MenuLangId::Georgian, "მარტი"},            {MenuLangId::Bosnian, "Mart"},            {MenuLangId::Serbian, "Март"},            {MenuLangId::Macedonian, "Март"},            {MenuLangId::Bulgarian, "Март"},            {MenuLangId::Belarusian, "Сакавік"},            {MenuLangId::Maltese, "Marzu"},            {MenuLangId::Mongolian, "Гуравдугаар сар"},            {MenuLangId::Latvian, "Marts"},            {MenuLangId::Lithuanian, "Kovas"},            {MenuLangId::Afrikaans, "Maart"},            {MenuLangId::Irish, "Márta"},            {MenuLangId::Assamese, "মাৰ্চ"},            {MenuLangId::Amharic, "ማርች"},            {MenuLangId::Estonian, "märts"},            {MenuLangId::Kazakh, "наурыз"},            {MenuLangId::Catalan, "març"},            {MenuLangId::Kyrgyz, "март"},            {MenuLangId::Slovak, "marec"},            {MenuLangId::Slovenian, "marec"},            {MenuLangId::Zulu, "Mashi"},            {MenuLangId::Basque, "martxoa"},            {MenuLangId::Hebrew, "מרץ"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -7900,6 +20600,7 @@
             {MenuLangId::Russian, "Апрель"},
             {MenuLangId::ChineseSimplified, "4 月"},
             {MenuLangId::ChineseTraditional, "4 月"},
+            {MenuLangId::ChineseHongKong, "4 月"},
             {MenuLangId::Korean, "4월"},
             {MenuLangId::Arabic, "أبريل"},
             {MenuLangId::Indonesian, "April"},
@@ -7915,7 +20616,56 @@
             {MenuLangId::Finnish, "Huhtikuu"},
             {MenuLangId::Vietnamese, "Tháng 4"},
             {MenuLangId::Polish, "Kwiecień"},
-            {MenuLangId::Romanian, "Aprilie"},
+            {MenuLangId::Romanian, "Aprilie"},            {MenuLangId::Filipino, "April"},            {MenuLangId::Swahili, "April"},            {MenuLangId::Croatian, "Travanj"},            {MenuLangId::Icelandic, "Apríl"},            {MenuLangId::Hindi, "अप्रैल"},            {MenuLangId::Bengali, "এপ্রিল"},            {MenuLangId::Urdu, "اپریل"},            {MenuLangId::Punjabi, "ਅਪ੍ਰੈਲ"},            {MenuLangId::Telugu, "ఏప్రిల్"},            {MenuLangId::Persian, "آوریل"},            {MenuLangId::Malay, "April"},            {MenuLangId::Marathi, "एप्रिल"},            {MenuLangId::Tamil, "ஏப்ரல்"},            {MenuLangId::Gujarati, "એપ્રિલ"},            {MenuLangId::Kannada, "ಏಪ್ರಿಲ್"},            {MenuLangId::Odia, "ଏପ୍ରିଲ୍"},            {MenuLangId::Malayalam, "ഏപ്രിൽ"},            {MenuLangId::Burmese, "ဧပြီ"},            {MenuLangId::Uzbek, "Aprel"},            {MenuLangId::Azerbaijani, "Aprel"},            {MenuLangId::Nepali, "अप्रिल"},            {MenuLangId::Sinhala, "අප්‍රේල්"},            {MenuLangId::Khmer, "មេសា"},            {MenuLangId::Lao, "ເມສາ"},            {MenuLangId::Armenian, "Ապրիլ"},            {MenuLangId::Albanian, "Prill"},            {MenuLangId::Georgian, "აპრილი"},            {MenuLangId::Bosnian, "April mjesec"},            {MenuLangId::Serbian, "Април"},            {MenuLangId::Macedonian, "Април"},            {MenuLangId::Bulgarian, "Април"},            {MenuLangId::Belarusian, "Красавік"},            {MenuLangId::Maltese, "April"},            {MenuLangId::Mongolian, "Дөрөвдүгээр сар"},            {MenuLangId::Latvian, "Aprīlis"},            {MenuLangId::Lithuanian, "Balandis"},            {MenuLangId::Afrikaans, "April"},            {MenuLangId::Irish, "Aibreán"},            {MenuLangId::Assamese, "এপ্ৰিল"},            {MenuLangId::Amharic, "ኤፕሪል"},            {MenuLangId::Estonian, "aprill"},            {MenuLangId::Kazakh, "сәуір"},            {MenuLangId::Catalan, "abril"},            {MenuLangId::Kyrgyz, "апрель"},            {MenuLangId::Slovak, "apríl"},            {MenuLangId::Slovenian, "april"},            {MenuLangId::Zulu, "Ephreli"},            {MenuLangId::Basque, "apirila"},            {MenuLangId::Hebrew, "אפריל"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -7931,6 +20681,7 @@
             {MenuLangId::Russian, "Май"},
             {MenuLangId::ChineseSimplified, "5 月"},
             {MenuLangId::ChineseTraditional, "5 月"},
+            {MenuLangId::ChineseHongKong, "5 月"},
             {MenuLangId::Korean, "5월"},
             {MenuLangId::Arabic, "مايو"},
             {MenuLangId::Indonesian, "Mei"},
@@ -7946,7 +20697,56 @@
             {MenuLangId::Finnish, "Toukokuu"},
             {MenuLangId::Vietnamese, "Tháng 5"},
             {MenuLangId::Polish, "Maj"},
-            {MenuLangId::Romanian, "Mai"},
+            {MenuLangId::Romanian, "Mai"},            {MenuLangId::Filipino, "May"},            {MenuLangId::Swahili, "May"},            {MenuLangId::Croatian, "May"},            {MenuLangId::Icelandic, "May"},            {MenuLangId::Hindi, "May"},            {MenuLangId::Bengali, "May"},            {MenuLangId::Urdu, "May"},            {MenuLangId::Punjabi, "May"},            {MenuLangId::Telugu, "May"},            {MenuLangId::Persian, "May"},            {MenuLangId::Malay, "May"},            {MenuLangId::Marathi, "May"},            {MenuLangId::Tamil, "May"},            {MenuLangId::Gujarati, "May"},            {MenuLangId::Kannada, "May"},            {MenuLangId::Odia, "May"},            {MenuLangId::Malayalam, "May"},            {MenuLangId::Burmese, "May"},            {MenuLangId::Uzbek, "May"},            {MenuLangId::Azerbaijani, "May"},            {MenuLangId::Nepali, "May"},            {MenuLangId::Sinhala, "May"},            {MenuLangId::Khmer, "May"},            {MenuLangId::Lao, "May"},            {MenuLangId::Armenian, "May"},            {MenuLangId::Albanian, "May"},            {MenuLangId::Georgian, "May"},            {MenuLangId::Bosnian, "May"},            {MenuLangId::Serbian, "May"},            {MenuLangId::Macedonian, "May"},            {MenuLangId::Bulgarian, "May"},            {MenuLangId::Belarusian, "May"},            {MenuLangId::Maltese, "May"},            {MenuLangId::Mongolian, "May"},            {MenuLangId::Latvian, "May"},            {MenuLangId::Lithuanian, "May"},            {MenuLangId::Afrikaans, "May"},            {MenuLangId::Irish, "May"},            {MenuLangId::Assamese, "May"},            {MenuLangId::Amharic, "May"},            {MenuLangId::Estonian, "May"},            {MenuLangId::Kazakh, "May"},            {MenuLangId::Catalan, "May"},            {MenuLangId::Kyrgyz, "May"},            {MenuLangId::Slovak, "May"},            {MenuLangId::Slovenian, "May"},            {MenuLangId::Zulu, "May"},            {MenuLangId::Basque, "May"},            {MenuLangId::Hebrew, "May"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -7962,6 +20762,7 @@
             {MenuLangId::Russian, "Июнь"},
             {MenuLangId::ChineseSimplified, "6 月"},
             {MenuLangId::ChineseTraditional, "6 月"},
+            {MenuLangId::ChineseHongKong, "6 月"},
             {MenuLangId::Korean, "6월"},
             {MenuLangId::Arabic, "يونيو"},
             {MenuLangId::Indonesian, "Juni"},
@@ -7977,7 +20778,56 @@
             {MenuLangId::Finnish, "Kesäkuu"},
             {MenuLangId::Vietnamese, "Tháng Sáu"},
             {MenuLangId::Polish, "Czerwiec"},
-            {MenuLangId::Romanian, "Iunie"},
+            {MenuLangId::Romanian, "Iunie"},            {MenuLangId::Filipino, "June"},            {MenuLangId::Swahili, "June"},            {MenuLangId::Croatian, "Lipanj"},            {MenuLangId::Icelandic, "Júní"},            {MenuLangId::Hindi, "जून"},            {MenuLangId::Bengali, "জুন"},            {MenuLangId::Urdu, "جون"},            {MenuLangId::Punjabi, "ਜੂਨ"},            {MenuLangId::Telugu, "జూన్"},            {MenuLangId::Persian, "ژوئن"},            {MenuLangId::Malay, "Jun"},            {MenuLangId::Marathi, "जून"},            {MenuLangId::Tamil, "ஜூன்"},            {MenuLangId::Gujarati, "જૂન"},            {MenuLangId::Kannada, "ಜೂನ್"},            {MenuLangId::Odia, "ଜୁନ୍"},            {MenuLangId::Malayalam, "ജൂൺ"},            {MenuLangId::Burmese, "ဇွန်"},            {MenuLangId::Uzbek, "Iyun"},            {MenuLangId::Azerbaijani, "İyun"},            {MenuLangId::Nepali, "जुन"},            {MenuLangId::Sinhala, "ජූනි"},            {MenuLangId::Khmer, "មិថុនា"},            {MenuLangId::Lao, "ມິຖຸນາ"},            {MenuLangId::Armenian, "Հունիս"},            {MenuLangId::Albanian, "Qershor"},            {MenuLangId::Georgian, "ივნისი"},            {MenuLangId::Bosnian, "Juni"},            {MenuLangId::Serbian, "Јун"},            {MenuLangId::Macedonian, "Јуни"},            {MenuLangId::Bulgarian, "Юни"},            {MenuLangId::Belarusian, "Чэрвень"},            {MenuLangId::Maltese, "Ġunju"},            {MenuLangId::Mongolian, "Зургаадугаар сар"},            {MenuLangId::Latvian, "Jūnijs"},            {MenuLangId::Lithuanian, "Birželis"},            {MenuLangId::Afrikaans, "Junie"},            {MenuLangId::Irish, "Meitheamh"},            {MenuLangId::Assamese, "জুন"},            {MenuLangId::Amharic, "ጁን"},            {MenuLangId::Estonian, "juuni"},            {MenuLangId::Kazakh, "маусым"},            {MenuLangId::Catalan, "juny"},            {MenuLangId::Kyrgyz, "июнь"},            {MenuLangId::Slovak, "jún"},            {MenuLangId::Slovenian, "junij"},            {MenuLangId::Zulu, "Juni"},            {MenuLangId::Basque, "ekaina"},            {MenuLangId::Hebrew, "יוני"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -7993,6 +20843,7 @@
             {MenuLangId::Russian, "Июль"},
             {MenuLangId::ChineseSimplified, "7 月"},
             {MenuLangId::ChineseTraditional, "7 月"},
+            {MenuLangId::ChineseHongKong, "7 月"},
             {MenuLangId::Korean, "7월"},
             {MenuLangId::Arabic, "يوليو"},
             {MenuLangId::Indonesian, "Juli"},
@@ -8008,7 +20859,56 @@
             {MenuLangId::Finnish, "Heinäkuu"},
             {MenuLangId::Vietnamese, "Tháng 7"},
             {MenuLangId::Polish, "Lipiec"},
-            {MenuLangId::Romanian, "Iulie"},
+            {MenuLangId::Romanian, "Iulie"},            {MenuLangId::Filipino, "July"},            {MenuLangId::Swahili, "July"},            {MenuLangId::Croatian, "Srpanj"},            {MenuLangId::Icelandic, "Júlí"},            {MenuLangId::Hindi, "जुलाई"},            {MenuLangId::Bengali, "জুলাই"},            {MenuLangId::Urdu, "جولائی"},            {MenuLangId::Punjabi, "ਜੁਲਾਈ"},            {MenuLangId::Telugu, "జూలై"},            {MenuLangId::Persian, "ژوئیه"},            {MenuLangId::Malay, "Julai"},            {MenuLangId::Marathi, "जुलै"},            {MenuLangId::Tamil, "ஜூலை"},            {MenuLangId::Gujarati, "જુલાઈ"},            {MenuLangId::Kannada, "ಜುಲೈ"},            {MenuLangId::Odia, "ଜୁଲାଇ"},            {MenuLangId::Malayalam, "ജൂലൈ"},            {MenuLangId::Burmese, "ဇူလိုင်"},            {MenuLangId::Uzbek, "Iyul"},            {MenuLangId::Azerbaijani, "İyul"},            {MenuLangId::Nepali, "जुलाई"},            {MenuLangId::Sinhala, "ජූලි"},            {MenuLangId::Khmer, "កក្កដា"},            {MenuLangId::Lao, "ກໍລະກົດ"},            {MenuLangId::Armenian, "Հուլիս"},            {MenuLangId::Albanian, "Korrik"},            {MenuLangId::Georgian, "ივლისი"},            {MenuLangId::Bosnian, "Juli"},            {MenuLangId::Serbian, "Јул"},            {MenuLangId::Macedonian, "Јули"},            {MenuLangId::Bulgarian, "Юли"},            {MenuLangId::Belarusian, "Ліпень"},            {MenuLangId::Maltese, "Lulju"},            {MenuLangId::Mongolian, "Долоодугаар сар"},            {MenuLangId::Latvian, "Jūlijs"},            {MenuLangId::Lithuanian, "Liepa"},            {MenuLangId::Afrikaans, "Julie"},            {MenuLangId::Irish, "Iúil"},            {MenuLangId::Assamese, "জুলাই"},            {MenuLangId::Amharic, "ጁላይ"},            {MenuLangId::Estonian, "juuli"},            {MenuLangId::Kazakh, "шілде"},            {MenuLangId::Catalan, "juliol"},            {MenuLangId::Kyrgyz, "июль"},            {MenuLangId::Slovak, "júl"},            {MenuLangId::Slovenian, "julij"},            {MenuLangId::Zulu, "Julayi"},            {MenuLangId::Basque, "uztaila"},            {MenuLangId::Hebrew, "יולי"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -8024,6 +20924,7 @@
             {MenuLangId::Russian, "Август"},
             {MenuLangId::ChineseSimplified, "8 月"},
             {MenuLangId::ChineseTraditional, "8 月"},
+            {MenuLangId::ChineseHongKong, "8 月"},
             {MenuLangId::Korean, "8월"},
             {MenuLangId::Arabic, "أغسطس"},
             {MenuLangId::Indonesian, "Agustus"},
@@ -8039,7 +20940,56 @@
             {MenuLangId::Finnish, "Elokuu"},
             {MenuLangId::Vietnamese, "Tháng 8"},
             {MenuLangId::Polish, "Sierpień"},
-            {MenuLangId::Romanian, "August"},
+            {MenuLangId::Romanian, "August"},            {MenuLangId::Filipino, "August"},            {MenuLangId::Swahili, "August"},            {MenuLangId::Croatian, "Kolovoz"},            {MenuLangId::Icelandic, "Ágúst"},            {MenuLangId::Hindi, "अगस्त"},            {MenuLangId::Bengali, "আগস্ট"},            {MenuLangId::Urdu, "اگست"},            {MenuLangId::Punjabi, "ਅਗਸਤ"},            {MenuLangId::Telugu, "ఆగస్టు"},            {MenuLangId::Persian, "اوت"},            {MenuLangId::Malay, "Ogos"},            {MenuLangId::Marathi, "ऑगस्ट"},            {MenuLangId::Tamil, "ஆகஸ்ட்"},            {MenuLangId::Gujarati, "ઑગસ્ટ"},            {MenuLangId::Kannada, "ಆಗಸ್ಟ್"},            {MenuLangId::Odia, "ଅଗଷ୍ଟ"},            {MenuLangId::Malayalam, "ഓഗസ്റ്റ്"},            {MenuLangId::Burmese, "ဩဂုတ်"},            {MenuLangId::Uzbek, "Avgust"},            {MenuLangId::Azerbaijani, "Avqust"},            {MenuLangId::Nepali, "अगस्ट"},            {MenuLangId::Sinhala, "අගෝස්තු"},            {MenuLangId::Khmer, "សីហា"},            {MenuLangId::Lao, "ສິງຫາ"},            {MenuLangId::Armenian, "Օգոստոս"},            {MenuLangId::Albanian, "Gusht"},            {MenuLangId::Georgian, "აგვისტო"},            {MenuLangId::Bosnian, "August mjesec"},            {MenuLangId::Serbian, "Август"},            {MenuLangId::Macedonian, "Август"},            {MenuLangId::Bulgarian, "Август"},            {MenuLangId::Belarusian, "Жнівень"},            {MenuLangId::Maltese, "Awwissu"},            {MenuLangId::Mongolian, "Наймдугаар сар"},            {MenuLangId::Latvian, "Augusts"},            {MenuLangId::Lithuanian, "Rugpjūtis"},            {MenuLangId::Afrikaans, "Augustus"},            {MenuLangId::Irish, "Lúnasa"},            {MenuLangId::Assamese, "আগষ্ট"},            {MenuLangId::Amharic, "ኦገስት"},            {MenuLangId::Estonian, "august"},            {MenuLangId::Kazakh, "тамыз"},            {MenuLangId::Catalan, "agost"},            {MenuLangId::Kyrgyz, "август"},            {MenuLangId::Slovak, "august"},            {MenuLangId::Slovenian, "avgust"},            {MenuLangId::Zulu, "Agasti"},            {MenuLangId::Basque, "abuztua"},            {MenuLangId::Hebrew, "אוגוסט"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -8055,6 +21005,7 @@
             {MenuLangId::Russian, "Сентябрь"},
             {MenuLangId::ChineseSimplified, "9 月"},
             {MenuLangId::ChineseTraditional, "9 月"},
+            {MenuLangId::ChineseHongKong, "9 月"},
             {MenuLangId::Korean, "9월"},
             {MenuLangId::Arabic, "سبتمبر"},
             {MenuLangId::Indonesian, "September"},
@@ -8070,7 +21021,56 @@
             {MenuLangId::Finnish, "Syyskuu"},
             {MenuLangId::Vietnamese, "Tháng 9"},
             {MenuLangId::Polish, "Wrzesień"},
-            {MenuLangId::Romanian, "Septembrie"},
+            {MenuLangId::Romanian, "Septembrie"},            {MenuLangId::Filipino, "September"},            {MenuLangId::Swahili, "September"},            {MenuLangId::Croatian, "Rujan"},            {MenuLangId::Icelandic, "September"},            {MenuLangId::Hindi, "सितंबर"},            {MenuLangId::Bengali, "সেপ্টেম্বর"},            {MenuLangId::Urdu, "ستمبر"},            {MenuLangId::Punjabi, "ਸਤੰਬਰ"},            {MenuLangId::Telugu, "సెప్టెంబర్"},            {MenuLangId::Persian, "سپتامبر"},            {MenuLangId::Malay, "September"},            {MenuLangId::Marathi, "सप्टेंबर"},            {MenuLangId::Tamil, "செப்டம்பர்"},            {MenuLangId::Gujarati, "સપ્ટેમ્બર"},            {MenuLangId::Kannada, "ಸೆಪ್ಟೆಂಬರ್"},            {MenuLangId::Odia, "ସେପ୍ଟେମ୍ବର୍"},            {MenuLangId::Malayalam, "സെപ്റ്റംബർ"},            {MenuLangId::Burmese, "စက်တင်ဘာ"},            {MenuLangId::Uzbek, "Sentabr"},            {MenuLangId::Azerbaijani, "Sentyabr"},            {MenuLangId::Nepali, "सेप्टेम्बर"},            {MenuLangId::Sinhala, "සැප්තැම්බර්"},            {MenuLangId::Khmer, "កញ្ញា"},            {MenuLangId::Lao, "ກັນຍາ"},            {MenuLangId::Armenian, "Սեպտեմբեր"},            {MenuLangId::Albanian, "Shtator"},            {MenuLangId::Georgian, "სექტემბერი"},            {MenuLangId::Bosnian, "Septembar"},            {MenuLangId::Serbian, "Септембар"},            {MenuLangId::Macedonian, "Септември"},            {MenuLangId::Bulgarian, "Септември"},            {MenuLangId::Belarusian, "Верасень"},            {MenuLangId::Maltese, "Settembru"},            {MenuLangId::Mongolian, "Есдүгээр сар"},            {MenuLangId::Latvian, "Septembris"},            {MenuLangId::Lithuanian, "Rugsėjis"},            {MenuLangId::Afrikaans, "September"},            {MenuLangId::Irish, "Meán Fómhair"},            {MenuLangId::Assamese, "ছেপ্টেম্বৰ"},            {MenuLangId::Amharic, "ሴፕቴምበር"},            {MenuLangId::Estonian, "september"},            {MenuLangId::Kazakh, "қыркүйек"},            {MenuLangId::Catalan, "setembre"},            {MenuLangId::Kyrgyz, "сентябрь"},            {MenuLangId::Slovak, "september"},            {MenuLangId::Slovenian, "september"},            {MenuLangId::Zulu, "Septhemba"},            {MenuLangId::Basque, "iraila"},            {MenuLangId::Hebrew, "ספטמבר"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -8086,6 +21086,7 @@
             {MenuLangId::Russian, "Октябрь"},
             {MenuLangId::ChineseSimplified, "10 月"},
             {MenuLangId::ChineseTraditional, "10 月"},
+            {MenuLangId::ChineseHongKong, "10 月"},
             {MenuLangId::Korean, "10월"},
             {MenuLangId::Arabic, "أكتوبر"},
             {MenuLangId::Indonesian, "Oktober"},
@@ -8101,7 +21102,56 @@
             {MenuLangId::Finnish, "Lokakuu"},
             {MenuLangId::Vietnamese, "Tháng 10"},
             {MenuLangId::Polish, "Październik"},
-            {MenuLangId::Romanian, "Octombrie"},
+            {MenuLangId::Romanian, "Octombrie"},            {MenuLangId::Filipino, "October"},            {MenuLangId::Swahili, "October"},            {MenuLangId::Croatian, "Listopad"},            {MenuLangId::Icelandic, "Október"},            {MenuLangId::Hindi, "अक्टूबर"},            {MenuLangId::Bengali, "অক্টোবর"},            {MenuLangId::Urdu, "اکتوبر"},            {MenuLangId::Punjabi, "ਅਕਤੂਬਰ"},            {MenuLangId::Telugu, "అక్టోబర్"},            {MenuLangId::Persian, "اکتبر"},            {MenuLangId::Malay, "Oktober"},            {MenuLangId::Marathi, "ऑक्टोबर"},            {MenuLangId::Tamil, "அக்டோபர்"},            {MenuLangId::Gujarati, "ઑક્ટોબર"},            {MenuLangId::Kannada, "ಅಕ್ಟೋಬರ್"},            {MenuLangId::Odia, "ଅକ୍ଟୋବର୍"},            {MenuLangId::Malayalam, "ഒക്ടോബർ"},            {MenuLangId::Burmese, "အောက်တိုဘာ"},            {MenuLangId::Uzbek, "Oktabr"},            {MenuLangId::Azerbaijani, "Oktyabr"},            {MenuLangId::Nepali, "अक्टोबर"},            {MenuLangId::Sinhala, "ඔක්තෝබර්"},            {MenuLangId::Khmer, "តុលា"},            {MenuLangId::Lao, "ຕຸລາ"},            {MenuLangId::Armenian, "Հոկտեմբեր"},            {MenuLangId::Albanian, "Tetor"},            {MenuLangId::Georgian, "ოქტომბერი"},            {MenuLangId::Bosnian, "Oktobar"},            {MenuLangId::Serbian, "Октобар"},            {MenuLangId::Macedonian, "Октомври"},            {MenuLangId::Bulgarian, "Октомври"},            {MenuLangId::Belarusian, "Кастрычнік"},            {MenuLangId::Maltese, "Ottubru"},            {MenuLangId::Mongolian, "Аравдугаар сар"},            {MenuLangId::Latvian, "Oktobris"},            {MenuLangId::Lithuanian, "Spalis"},            {MenuLangId::Afrikaans, "Oktober"},            {MenuLangId::Irish, "Deireadh Fómhair"},            {MenuLangId::Assamese, "অক্টোবৰ"},            {MenuLangId::Amharic, "ኦክቶበር"},            {MenuLangId::Estonian, "oktoober"},            {MenuLangId::Kazakh, "қазан"},            {MenuLangId::Catalan, "octubre"},            {MenuLangId::Kyrgyz, "октябрь"},            {MenuLangId::Slovak, "október"},            {MenuLangId::Slovenian, "oktober"},            {MenuLangId::Zulu, "Okthoba"},            {MenuLangId::Basque, "urria"},            {MenuLangId::Hebrew, "אוקטובר"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -8117,6 +21167,7 @@
             {MenuLangId::Russian, "Ноябрь"},
             {MenuLangId::ChineseSimplified, "11 月"},
             {MenuLangId::ChineseTraditional, "11 月"},
+            {MenuLangId::ChineseHongKong, "11 月"},
             {MenuLangId::Korean, "11월"},
             {MenuLangId::Arabic, "نوفمبر"},
             {MenuLangId::Indonesian, "November"},
@@ -8132,7 +21183,56 @@
             {MenuLangId::Finnish, "Marraskuu"},
             {MenuLangId::Vietnamese, "Tháng Mười Một"},
             {MenuLangId::Polish, "Listopad"},
-            {MenuLangId::Romanian, "Noiembrie"},
+            {MenuLangId::Romanian, "Noiembrie"},            {MenuLangId::Filipino, "November"},            {MenuLangId::Swahili, "November"},            {MenuLangId::Croatian, "Studeni"},            {MenuLangId::Icelandic, "Nóvember"},            {MenuLangId::Hindi, "नवंबर"},            {MenuLangId::Bengali, "নভেম্বর"},            {MenuLangId::Urdu, "نومبر"},            {MenuLangId::Punjabi, "ਨਵੰਬਰ"},            {MenuLangId::Telugu, "నవంబర్"},            {MenuLangId::Persian, "نوامبر"},            {MenuLangId::Malay, "November"},            {MenuLangId::Marathi, "नोव्हेंबर"},            {MenuLangId::Tamil, "நவம்பர்"},            {MenuLangId::Gujarati, "નવેમ્બર"},            {MenuLangId::Kannada, "ನವೆಂಬರ್"},            {MenuLangId::Odia, "ନଭେମ୍ବର୍"},            {MenuLangId::Malayalam, "നവംബർ"},            {MenuLangId::Burmese, "နိုဝင်ဘာ"},            {MenuLangId::Uzbek, "Noyabr"},            {MenuLangId::Azerbaijani, "Noyabr"},            {MenuLangId::Nepali, "नोभेम्बर"},            {MenuLangId::Sinhala, "නොවැම්බර්"},            {MenuLangId::Khmer, "វិច្ឆិកា"},            {MenuLangId::Lao, "ພະຈິກ"},            {MenuLangId::Armenian, "Նոյեմբեր"},            {MenuLangId::Albanian, "Nëntor"},            {MenuLangId::Georgian, "ნოემბერი"},            {MenuLangId::Bosnian, "Novembar"},            {MenuLangId::Serbian, "Новембар"},            {MenuLangId::Macedonian, "Ноември"},            {MenuLangId::Bulgarian, "Ноември"},            {MenuLangId::Belarusian, "Лістапад"},            {MenuLangId::Maltese, "Novembru"},            {MenuLangId::Mongolian, "Арван нэгдүгээр сар"},            {MenuLangId::Latvian, "Novembris"},            {MenuLangId::Lithuanian, "Lapkritis"},            {MenuLangId::Afrikaans, "November"},            {MenuLangId::Irish, "Samhain"},            {MenuLangId::Assamese, "নৱেম্বৰ"},            {MenuLangId::Amharic, "ኖቬምበር"},            {MenuLangId::Estonian, "november"},            {MenuLangId::Kazakh, "қараша"},            {MenuLangId::Catalan, "novembre"},            {MenuLangId::Kyrgyz, "ноябрь"},            {MenuLangId::Slovak, "november"},            {MenuLangId::Slovenian, "november"},            {MenuLangId::Zulu, "Novemba"},            {MenuLangId::Basque, "azaroa"},            {MenuLangId::Hebrew, "נובמבר"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
     {
@@ -8148,6 +21248,7 @@
             {MenuLangId::Russian, "Декабрь"},
             {MenuLangId::ChineseSimplified, "12 月"},
             {MenuLangId::ChineseTraditional, "12 月"},
+            {MenuLangId::ChineseHongKong, "12 月"},
             {MenuLangId::Korean, "12월"},
             {MenuLangId::Arabic, "ديسمبر"},
             {MenuLangId::Indonesian, "Desember"},
@@ -8163,6 +21264,55 @@
             {MenuLangId::Finnish, "Joulukuu"},
             {MenuLangId::Vietnamese, "Tháng 12"},
             {MenuLangId::Polish, "Grudzień"},
-            {MenuLangId::Romanian, "Decembrie"},
+            {MenuLangId::Romanian, "Decembrie"},            {MenuLangId::Filipino, "December"},            {MenuLangId::Swahili, "December"},            {MenuLangId::Croatian, "Prosinac"},            {MenuLangId::Icelandic, "Desember"},            {MenuLangId::Hindi, "दिसंबर"},            {MenuLangId::Bengali, "ডিসেম্বর"},            {MenuLangId::Urdu, "دسمبر"},            {MenuLangId::Punjabi, "ਦਸੰਬਰ"},            {MenuLangId::Telugu, "డిసెంబర్"},            {MenuLangId::Persian, "دسامبر"},            {MenuLangId::Malay, "Disember"},            {MenuLangId::Marathi, "डिसेंबर"},            {MenuLangId::Tamil, "டிசம்பர்"},            {MenuLangId::Gujarati, "ડિસેમ્બર"},            {MenuLangId::Kannada, "ಡಿಸೆಂಬರ್"},            {MenuLangId::Odia, "ଡିସେମ୍ବର୍"},            {MenuLangId::Malayalam, "ഡിസംബർ"},            {MenuLangId::Burmese, "ဒီဇင်ဘာ"},            {MenuLangId::Uzbek, "Dekabr"},            {MenuLangId::Azerbaijani, "Dekabr"},            {MenuLangId::Nepali, "डिसेम्बर"},            {MenuLangId::Sinhala, "දෙසැම්බර්"},            {MenuLangId::Khmer, "ធ្នូ"},            {MenuLangId::Lao, "ທັນວາ"},            {MenuLangId::Armenian, "Դեկտեմբեր"},            {MenuLangId::Albanian, "Dhjetor"},            {MenuLangId::Georgian, "დეკემბერი"},            {MenuLangId::Bosnian, "Decembar"},            {MenuLangId::Serbian, "Децембар"},            {MenuLangId::Macedonian, "Декември"},            {MenuLangId::Bulgarian, "Декември"},            {MenuLangId::Belarusian, "Снежань"},            {MenuLangId::Maltese, "Diċembru"},            {MenuLangId::Mongolian, "Арван хоёрдугаар сар"},            {MenuLangId::Latvian, "Decembris"},            {MenuLangId::Lithuanian, "Gruodis"},            {MenuLangId::Afrikaans, "Desember"},            {MenuLangId::Irish, "Nollaig"},            {MenuLangId::Assamese, "ডিচেম্বৰ"},            {MenuLangId::Amharic, "ዲሴምበር"},            {MenuLangId::Estonian, "detsember"},            {MenuLangId::Kazakh, "желтоқсан"},            {MenuLangId::Catalan, "desembre"},            {MenuLangId::Kyrgyz, "декабрь"},            {MenuLangId::Slovak, "december"},            {MenuLangId::Slovenian, "december"},            {MenuLangId::Zulu, "Disemba"},            {MenuLangId::Basque, "abendua"},            {MenuLangId::Hebrew, "דצמבר"},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         }
     },
