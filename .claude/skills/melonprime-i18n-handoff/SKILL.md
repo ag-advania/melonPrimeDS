@@ -1,20 +1,22 @@
 # MelonPrime i18n continuation skill
 
-Use this skill when continuing the MelonPrimeDS `.inc` localization pack work.
+## Current pack
 
-## Core rule
+```txt
+melonprime-i18n-qualityfix-pass6.zip
+```
 
-Do **not** fake translation coverage.
+## Status
 
-A language is only "complete" when all 996 rows have a target-language entry:
+- Structural coverage is complete for all requested languages.
+- pass1 fixed broken `LanguageName: English text` fallback patterns.
+- pass2 fixed non-Latin long-description English-heavy rows in main/dialog files.
+- pass3 targeted `MelonPrimeObjectTranslations.inc` long technical descriptions.
+- pass4/pass5 improved Filipino/Swahili fallback sentences and common UI/HUD labels.
+- pass6 used Japanese rows as reference to further localize Filipino/Swahili menu, dialog, HUD, color, font, and setting labels.
+- Remaining exact English copies in Filipino/Swahili are mostly technical/HUD/game labels, weapon/map names, abbreviations, aspect ratios, and compact developer-facing terms.
 
-- `src/frontend/qt_sdl/MelonPrimeLocalization/MelonPrimeTranslations.inc` — 703 rows
-- `src/frontend/qt_sdl/MelonPrimeLocalization/MelonPrimeObjectTranslations.inc` — 30 rows
-- `src/frontend/qt_sdl/MelonPrimeLocalizationMelondsDialogs.inc` — 263 rows
-
-Coverage complete does **not** mean native-reviewed. Say "coverage complete / native review recommended" when appropriate.
-
-## Current valid cumulative pack chain
+## Completed languages
 
 ```txt
 ChineseHongKong / zh-HK / 中文（香港）
@@ -69,33 +71,10 @@ Basque / eu / Euskara
 Hebrew / he / עברית
 ```
 
-Latest expected output after this pack:
-
-```txt
-melonprime-i18n-he.zip
-```
-
-## Remaining requested language pool
-
-```txt
-None. All requested languages are complete.
-```
-
-## Current newest language
-
-```txt
-Hebrew
-```
-
-## Notes
-
-- Hebrew is right-to-left text. The text entries are Hebrew, but full RTL UI layout depends on the Qt/UI side supporting RTL direction and font shaping.
-- Technical terms and proper names such as OpenGL, VSync, ARM9 BIOS, HUD, weapon names, and game mode names are intentionally kept readable.
-
-## Audit
+## Audits
 
 ```bash
-python3 .claude/skills/audit-melonprime-i18n-he-coverage.py
+python3 .claude/skills/audit-melonprime-i18n-qualityfix-pass6.py
 python3 .claude/skills/audit-melonprime-localization.py
 cmake --build build-mac --parallel 4
 ```

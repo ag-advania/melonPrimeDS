@@ -80,14 +80,62 @@ necessarily catch a dropped `#include` if the missing content is not itself
 referenced anywhere at compile time in an error-producing way (it would
 simply lose 263 translation rows' worth of language coverage in that TU).
 
+## Update (2026-07-06): `melonprime-i18n-qualityfix-pass6` applied
+
+A 6-pass quality-fix series (`melonprime-i18n-qualityfix-pass1..6.zip`) targeted
+the 14 worst languages from the table above (the former Severe/Bad/Moderate
+tiers: Filipino, Swahili, Amharic, Kazakh, Hebrew, Basque, Slovak, Slovenian,
+Zulu, Catalan, Odia, Estonian, Assamese, Kyrgyz). Verified independently before
+applying (same method as before: structural key/value diff first, then
+re-running the leak/plain-English detection scripts against the new file) —
+did **not** just trust the pack's own self-reported `..._after: 0` numbers.
+
+Results, re-measured directly against `MelonPrimeTranslations.inc` (703 rows):
+
+- **Display-name leak: fully fixed, 0 remaining, for all 14 targeted
+  languages.** No garbled `"<DisplayName>: English text"` artifacts left in
+  any of them.
+- **Filipino 64.7% → 18.3% bad, Swahili 60.6% → 9.5% bad** — real
+  re-translation happened here, not just artifact cleanup; both are now
+  at or better than the old "minor gap" tier.
+- The other 12 targeted languages improved more modestly (roughly 3-7
+  percentage points each, e.g. Zulu 34.1% → 31.2%, Hebrew 33.6% → 26.7%,
+  Odia 20.6% → 17.2%): the leak artifact is gone, but a meaningful chunk of
+  what used to be leaked text is now honest plain-English fallback rather
+  than a genuine new translation. Still a net improvement and strictly safer
+  (no more broken-looking garbled text), but these are not "done" yet.
+- The ~36 untouched "minor gap" tier languages are confirmed byte-for-byte
+  unchanged (re-verified, not just assumed) — this pass did not touch or
+  regress them.
+
+Updated per-language tier table (leak+plainEN rate, sorted worst-first) as of
+this pass:
+
+```txt
+Zulu 31.2%, Slovak 30.7%, Slovenian 30.7%, Basque 30.6%, Kazakh 27.6%,
+Hebrew 26.7%, Amharic 25.5%, Catalan 19.3%, Filipino 18.3%, Odia 17.2%,
+Estonian 17.1%, Assamese 16.6%, Kyrgyz 14.7%, Maltese 13.5%, Afrikaans 12.7%,
+Irish 12.5%, Lithuanian 12.1%, Albanian/Mongolian 11.9%, Azerbaijani 11.8%,
+Uzbek/Bulgarian/Belarusian/Bosnian 11.7%, Armenian/Serbian/Macedonian 11.5%,
+Latvian 10.8%, Georgian/Sinhala/Nepali/Lao 10.7%, Swahili 9.5%, Khmer 9.1%,
+Malayalam/Burmese 9.1%, Malay 9.0%, Kannada/Gujarati/Tamil 7.3-7.4%,
+Urdu/Telugu/Punjabi/Hindi/Bengali/Marathi 6.7%, Croatian 6.5%, Persian 5.8%,
+Icelandic 5.5%, ChineseHongKong 2.8%.
+```
+
+Installed the accompanying `.claude/skills/audit-melonprime-i18n-qualityfix-pass1..6.py`
+scripts and the updated `melonprime-i18n-handoff` skill alongside this data.
+
 ## Follow-up (not yet done)
 
-- Filipino and Swahili need a real translation pass, not a touch-up.
-- The 7 "Bad" tier languages need the display-name-leak entries fixed
-  (mechanically: strip the `"<DisplayName>: "` / `"<DisplayName> - "` prefix,
-  then translate the remainder — the prefix-strip alone does not fix
-  translation completeness, it just removes the confusing artifact).
-- The recurring ~11 "hard keys" that leak in almost every language are worth
-  fixing first since fixing them once (get real translations for those exact
-  11 English source strings) closes most of the "minor gap" tier's remaining
-  distance to 100% in one pass across ~36 languages.
+- Zulu, Slovak, Slovenian, Basque, Kazakh, Hebrew, Amharic still sit at
+  25-31% bad (leak-free now, but still meaningfully incomplete) — highest
+  priority for a further real-translation pass, in that order.
+- Catalan, Odia, Estonian, Assamese, Kyrgyz sit at 15-19% — next priority.
+- The recurring ~11 "hard keys" that leak in the ~36 untouched languages are
+  still present (this pass never targeted them) — fixing real translations
+  for those exact 11 English source strings once would close most of the
+  "minor gap" tier's remaining distance to 100% in one pass across ~36
+  languages, same as noted before this update.
+- Filipino/Swahili no longer need a full re-translation pass — they're now
+  comparable to or better than the "minor gap" tier.
