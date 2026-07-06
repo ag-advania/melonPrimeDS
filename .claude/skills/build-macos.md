@@ -10,6 +10,18 @@ Fixed dev configure + build. Run from anywhere:
 ./.claude/skills/build-macos-dev.sh
 ```
 
+Finder / double-click (macOS):
+
+```zsh
+open .claude/skills/build-macos-dev.command
+```
+
+Incremental rebuild only (existing `build-mac` tree):
+
+```zsh
+open .claude/skills/build-macos-dev-existing.command
+```
+
 This is the checked-in form of:
 
 ```zsh
