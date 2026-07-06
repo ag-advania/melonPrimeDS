@@ -618,6 +618,16 @@ MainWindow::MainWindow(int id, EmuInstance* inst, QWidget* parent) :
             QMenu* menu = menubar->addMenu("Config");
 
             actEmuSettings = menu->addAction("Emu settings");
+#ifdef MELONPRIME_DS
+            // Qt's default QAction::TextHeuristicRole scans the action's *current* (possibly
+            // localized) text for substrings like "config"/"setup"/"prefer"/"option" and, on
+            // macOS, auto-reassigns matching items to the single native Preferences menu slot --
+            // silently removing them from this menu. Several MelonPrime menu-language
+            // translations (e.g. Portuguese "Configurações...") match that heuristic even though
+            // the English source text does not, so every non-Preferences item in this menu must
+            // opt out explicitly regardless of which language is active.
+            actEmuSettings->setMenuRole(QAction::NoRole);
+#endif
             connect(actEmuSettings, &QAction::triggered, this, &MainWindow::onOpenEmuSettings);
 
 #ifdef __APPLE__
@@ -627,40 +637,73 @@ MainWindow::MainWindow(int id, EmuInstance* inst, QWidget* parent) :
 #endif
 
             actInputConfig = menu->addAction("Input and hotkeys");
+#ifdef MELONPRIME_DS
+            actInputConfig->setMenuRole(QAction::NoRole);
+#endif
             connect(actInputConfig, &QAction::triggered, this, &MainWindow::onOpenInputConfig);
 
             actVideoSettings = menu->addAction("Video settings");
+#ifdef MELONPRIME_DS
+            actVideoSettings->setMenuRole(QAction::NoRole);
+#endif
             connect(actVideoSettings, &QAction::triggered, this, &MainWindow::onOpenVideoSettings);
 
             actCameraSettings = menu->addAction("Camera settings");
+#ifdef MELONPRIME_DS
+            actCameraSettings->setMenuRole(QAction::NoRole);
+#endif
             connect(actCameraSettings, &QAction::triggered, this, &MainWindow::onOpenCameraSettings);
 
             actAudioSettings = menu->addAction("Audio settings");
+#ifdef MELONPRIME_DS
+            actAudioSettings->setMenuRole(QAction::NoRole);
+#endif
             connect(actAudioSettings, &QAction::triggered, this, &MainWindow::onOpenAudioSettings);
 
             actMPSettings = menu->addAction("Multiplayer settings");
+#ifdef MELONPRIME_DS
+            actMPSettings->setMenuRole(QAction::NoRole);
+#endif
             connect(actMPSettings, &QAction::triggered, this, &MainWindow::onOpenMPSettings);
 
             actWifiSettings = menu->addAction("Wifi settings");
+#ifdef MELONPRIME_DS
+            actWifiSettings->setMenuRole(QAction::NoRole);
+#endif
             connect(actWifiSettings, &QAction::triggered, this, &MainWindow::onOpenWifiSettings);
 
             actFirmwareSettings = menu->addAction("Firmware settings");
+#ifdef MELONPRIME_DS
+            actFirmwareSettings->setMenuRole(QAction::NoRole);
+#endif
             connect(actFirmwareSettings, &QAction::triggered, this, &MainWindow::onOpenFirmwareSettings);
 
             actInterfaceSettings = menu->addAction("Interface settings");
+#ifdef MELONPRIME_DS
+            actInterfaceSettings->setMenuRole(QAction::NoRole);
+#endif
             connect(actInterfaceSettings, &QAction::triggered, this, &MainWindow::onOpenInterfaceSettings);
 
             actPathSettings = menu->addAction("Path settings");
+#ifdef MELONPRIME_DS
+            actPathSettings->setMenuRole(QAction::NoRole);
+#endif
             connect(actPathSettings, &QAction::triggered, this, &MainWindow::onOpenPathSettings);
 
             menu->addSeparator();
 
             actLimitFramerate = menu->addAction("Limit framerate");
             actLimitFramerate->setCheckable(true);
+#ifdef MELONPRIME_DS
+            actLimitFramerate->setMenuRole(QAction::NoRole);
+#endif
             connect(actLimitFramerate, &QAction::triggered, this, &MainWindow::onChangeLimitFramerate);
 
             actAudioSync = menu->addAction("Audio sync");
             actAudioSync->setCheckable(true);
+#ifdef MELONPRIME_DS
+            actAudioSync->setMenuRole(QAction::NoRole);
+#endif
             connect(actAudioSync, &QAction::triggered, this, &MainWindow::onChangeAudioSync);
         }
 #ifdef MELONPRIME_DS
@@ -669,18 +712,25 @@ MainWindow::MainWindow(int id, EmuInstance* inst, QWidget* parent) :
             QMenu* menu = menubar->addMenu("MelonPrime");
 
             actEmuSettings = menu->addAction("Input settings");
+            // Same Qt text-heuristic menu-role issue as the Config menu above: some
+            // menu-language translations of these labels match macOS's built-in
+            // Preferences/About/Quit keyword scan and would otherwise vanish from this menu.
+            actEmuSettings->setMenuRole(QAction::NoRole);
             connect(actEmuSettings, &QAction::triggered, this, &MainWindow::onOpenMetroidInputSettings);
 
             actInputConfig = menu->addAction("MelonPrime settings");
+            actInputConfig->setMenuRole(QAction::NoRole);
             connect(actInputConfig, &QAction::triggered, this, &MainWindow::onOpenMetroidOtherSettings);
 
             actMetroidCustomHudSettings = menu->addAction("Custom HUD settings");
+            actMetroidCustomHudSettings->setMenuRole(QAction::NoRole);
             connect(actMetroidCustomHudSettings, &QAction::triggered, this, &MainWindow::onOpenMetroidCustomHudSettings);
 
             menu->addSeparator();
 
             actMetroidInGameTopScreenOnly = menu->addAction("In-Game Top Screen Only");
             actMetroidInGameTopScreenOnly->setCheckable(true);
+            actMetroidInGameTopScreenOnly->setMenuRole(QAction::NoRole);
             connect(
                 actMetroidInGameTopScreenOnly,
                 &QAction::triggered,
@@ -689,10 +739,12 @@ MainWindow::MainWindow(int id, EmuInstance* inst, QWidget* parent) :
 
             actMetroidFixSF = menu->addAction("Disable SF (Shadow Freeze)");
             actMetroidFixSF->setCheckable(true);
+            actMetroidFixSF->setMenuRole(QAction::NoRole);
             connect(actMetroidFixSF, &QAction::triggered, this, &MainWindow::onChangeMetroidFixSF);
 
             actMetroidDisableDoubleDamageMultiplier = menu->addAction("Disable Double Damage Multiplier");
             actMetroidDisableDoubleDamageMultiplier->setCheckable(true);
+            actMetroidDisableDoubleDamageMultiplier->setMenuRole(QAction::NoRole);
             connect(
                 actMetroidDisableDoubleDamageMultiplier,
                 &QAction::triggered,
@@ -701,6 +753,7 @@ MainWindow::MainWindow(int id, EmuInstance* inst, QWidget* parent) :
 
             actMetroidDamageNotifyPurple = menu->addAction("Damage Notify Purple");
             actMetroidDamageNotifyPurple->setCheckable(true);
+            actMetroidDamageNotifyPurple->setMenuRole(QAction::NoRole);
             connect(
                 actMetroidDamageNotifyPurple,
                 &QAction::triggered,
@@ -709,6 +762,7 @@ MainWindow::MainWindow(int id, EmuInstance* inst, QWidget* parent) :
 
             actMetroidPowerUpPickupNoEffect = menu->addAction("Power-Ups: Pick Up With No Effect");
             actMetroidPowerUpPickupNoEffect->setCheckable(true);
+            actMetroidPowerUpPickupNoEffect->setMenuRole(QAction::NoRole);
             connect(
                 actMetroidPowerUpPickupNoEffect,
                 &QAction::triggered,
