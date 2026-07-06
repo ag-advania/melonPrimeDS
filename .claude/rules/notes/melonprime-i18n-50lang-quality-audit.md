@@ -139,3 +139,59 @@ scripts and the updated `melonprime-i18n-handoff` skill alongside this data.
   languages, same as noted before this update.
 - Filipino/Swahili no longer need a full re-translation pass — they're now
   comparable to or better than the "minor gap" tier.
+
+## Update (2026-07-06): `melonprime-i18n-release-candidate` applied — Filipino/Swahili polish, review scaffolding not committed
+
+A much larger follow-on pack (`melonprime-i18n-release-candidate.zip`, base
+`melonprime-i18n-phase9-native-review-packs.zip`) arrived, covering phases 4a
+through 10 of the external session's own workflow: automated review-queue
+generation (16,870 flagged rows) plus static-pattern audits (font/RTL/clipping
+block checks) across **all** selectable languages, not just the 50 new ones —
+its `README.md` even lists established languages like Greek, Russian, German,
+French, Italian as having review-flagged (P2/P3) rows.
+
+Despite that broad review scope, re-verified with the same structural
+key/value diff used for every prior pack (zero rows lost/added across all
+966 `kTranslations` keys — 703 direct + 263 spliced from
+`MelonPrimeLocalizationMelondsDialogs.inc` — and 30 `kObjectTextTranslations`
+keys) and found **only Filipino and Swahili actually changed content** (63 +
+13 = 76 rows in `kTranslations`, 13 in `kObjectTextTranslations`). Every other
+language, including the ones the README lists as having P2/P3 review flags,
+is byte-for-byte unchanged — the phase6-10 work for those was flagging for
+future native review, not auto-translating.
+
+Spot-checked the Filipino/Swahili diffs directly (not just trusting the
+pack's `coverage: OK` claim): these fix a specific artifact from the earlier
+pass6 pass — partial word-substitution leftovers where only isolated English
+words got swapped for a native word inside an otherwise-English sentence
+(e.g. `"Controls how the laro's kasalukuyang aim direction follows..."`,
+`"Checked: gamitin the native ARM9 laro function hook..."`). The new values
+are fully natural Filipino/Swahili sentences
+(`"Kinokontrol kung paano sumusunod ang kasalukuyang direksyon ng aim ng
+laro sa target na direksyon ng aim."`). No new leak or plain-English
+artifact was introduced in either language.
+
+**Not committed to the repo**: the pack's `i18n_quality_phase4a/`through
+`i18n_quality_phase9/` review-queue data (~80MB of CSV/JSON flagged-row
+dumps) and the top-level `*_stats.json` / `QUALITYFIX_PASS*_REPORT.json`
+files. These are the external session's own working artifacts (its review
+queue, not translation content or code), the same category as game ROMs or
+screenshots per this repo's asset policy — kept out of git history for size,
+consistent with not committing the equivalent data from prior passes either.
+The `audit-melonprime-i18n-phase5a..10.py` scripts were kept (small, and
+useful as a record of the methodology), but running them will show `[FAIL]
+missing ...` lines for the uncommitted review-queue paths — that is expected
+and not a regression; only `audit-melonprime-localization.py` (the strict
+gate) is required to be green, and it is.
+
+**Manual UI verification is explicitly still pending** — the pack's own
+`README.md` states the external session cannot launch the Qt app or visually
+inspect rendering, so RTL punctuation/layout, complex-script glyph shaping,
+and clipping candidates flagged in the phase 8 review data (11,125 font,
+2,153 RTL, 3,153 clipping candidates) have **not** been visually confirmed in
+this session either — this was a data/content-quality pass only. If a future
+session inherits `i18n_quality_phase10/ui_verification_checklist.csv`-style
+manual UI review work, treat it as a distinct, still-open task from this
+content pass.
+
+Applied, strict audit green, macOS build clean, launch/exit smoke clean.
