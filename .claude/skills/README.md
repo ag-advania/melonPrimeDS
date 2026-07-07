@@ -5,11 +5,14 @@
   - `build-mingw-existing.bat`: build existing tree only, no configure/vcpkg
 - [macOS Build](build-macos.md) — configure, build, and launch-test MelonPrimeDS on macOS
   - `build-macos-dev.sh`: canonical dev configure + build (`DEVELOPER_FEATURES=ON`, parallel 4)
+  - `build-macos-dev.command`: Finder-friendly wrapper for `build-macos-dev.sh`
   - `build-macos-dev-existing.sh`: build existing `build-mac` tree only
+  - `build-macos-dev-existing.command`: Finder-friendly wrapper for incremental rebuild
   - `build-macos.sh`: optional wrapper (`--release`, `--jobs`, `--open`, …)
 - [Custom HUD Runtime](custom-hud-runtime.md) — reference for runtime HUD rendering, caches, fonts, no-HUD patch, radar overlay
 - [Settings UI and Edit Mode](settings-ui-and-edit-mode.md) — settings dialog and in-game HUD edit mode; how to add a HUD setting surface
 - [Qt Menu Actions](qt-menu-actions.md) — add a menu item / checkable MelonPrime toggle to the Qt menubar
+- [Add a Menu Language](add-menu-language.md) — add a new `MenuLangId` / locale detection / translation content, and how to verify a translation pack before applying it
 - [Merge Latest Commits from melonDS Upstream](merge-upstream-melonds.md) — pull `melonDS-emu/melonDS:master` into this fork
 - [Release Notes Generation](release-notes.md) — generate GitHub release notes from a commit range
 

@@ -95,6 +95,11 @@ set(SOURCES_QT_SDL
     MelonPrime.cpp
     MelonPrimeLifecycle.cpp
     MelonPrimeLocalization.cpp
+    MelonPrimeLocalization/MelonPrimeLanguageRegistry.cpp
+    MelonPrimeLocalization/MelonPrimeTranslationCatalog.cpp
+    MelonPrimeLocalization/MelonPrimeTranslationDynamic.cpp
+    MelonPrimeLocalization/MelonPrimeWidgetLocalizer.cpp
+    MelonPrimeLocalization/MelonPrimeSplashLocalization.cpp
     MelonPrimeHudRender.cpp
     MelonPrimeHudConfigOnScreenEdit.cpp
     MelonPrimePatchAspectRatio.cpp

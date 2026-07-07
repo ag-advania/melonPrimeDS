@@ -19,11 +19,34 @@ Primary files:
 
 MelonPrime menu labels are localized through the `MelonPrime::UiText` API in `MelonPrimeLocalization.h`; the translation tables live in `MelonPrimeLocalization.cpp`.
 
-- Add every user-facing `QMenu`/`QAction` label to `kTranslations` (in `MelonPrimeLocalization.cpp`) when adding or renaming a menu item.
+- Add every user-facing `QMenu`/`QAction` label to `kTranslations` (in `MelonPrimeLocalization/MelonPrimeTranslations.inc`, via the `MelonPrimeLocalization.cpp` facade) when adding or renaming a menu item. See [Add a Menu Language](add-menu-language.md) for the full translation-content workflow and pack-verification rules.
 - `MainWindow::localizeMenuText()` applies the saved `Metroid.UI.MenuLanguage` to the menubar.
 - For labels that change after construction, use `MelonPrime::UiText::SetLocalizedActionText(action, englishSourceText)` instead of raw `setText()` so the English source text stays available when switching between Japanese and English.
 - Dynamically rebuilt menus, such as `recentMenu`, should call `MelonPrime::UiText::LocalizeMenu(menu)` after repopulating actions.
-- The menu language selector appears only on Japanese OS locales; non-Japanese OS locales stay English-only.
+- The menu language selector is always available (not gated to any OS locale) and currently lists 82 selectable languages plus "System default" — see `AllSelectableMenuLanguages()` in `MelonPrimeLanguageRegistry.cpp`.
+
+### macOS: always set `QAction::NoRole` on new top-level menu actions
+
+Every new `QAction` defaults to `QAction::TextHeuristicRole`. On macOS, Qt scans the action's
+**current** text (i.e. whatever it is *after* localization runs) for substrings like
+`"config"`/`"setup"`/`"prefer"`/`"option"` (case-insensitive) and silently reassigns matching
+items to the single native Preferences menu slot, removing them from their real menu position.
+
+This does not depend on the English source text at all — it depends on whatever the *active
+menu language* translated it to. `"Video settings"` never matches in English, but its Portuguese
+translation `"Configurações de vídeo"` does (it contains the substring `"config"`), so an item
+that renders fine in English or Japanese can vanish the moment the user switches to Portuguese
+(or any future language whose translation happens to contain one of those substrings). This bit
+almost the entire Config menu and the first three MelonPrime menu items in Portuguese before
+being fixed (2026-07) — see `git log --oneline -- src/frontend/qt_sdl/Window.cpp` around that
+date for the fix.
+
+**Add `action->setMenuRole(QAction::NoRole);` right after every `menu->addAction(...)` call for a
+new Config-menu or MelonPrime-menu item**, unless the action is genuinely meant to route to a
+native macOS role (the real "Preferences..." action already sets `PreferencesRole` explicitly;
+"About..." intentionally relies on the heuristic matching its English text so macOS moves it into
+the app menu — do not add `NoRole` to that one). When in doubt, add `NoRole` and verify with a
+menu-language smoke test rather than leaving it to the heuristic.
 
 ## Pattern: Checkable MelonPrime Toggle
 

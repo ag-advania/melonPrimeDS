@@ -31,6 +31,7 @@ This file is an index only. Keep detailed instructions in the linked Rules, Skil
 - [.claude/skills/custom-hud-runtime.md](.claude/skills/custom-hud-runtime.md)
 - [.claude/skills/settings-ui-and-edit-mode.md](.claude/skills/settings-ui-and-edit-mode.md)
 - [.claude/skills/qt-menu-actions.md](.claude/skills/qt-menu-actions.md)
+- [.claude/skills/add-menu-language.md](.claude/skills/add-menu-language.md)
 - [.claude/skills/merge-upstream-melonds.md](.claude/skills/merge-upstream-melonds.md)
 - [.claude/skills/release-notes.md](.claude/skills/release-notes.md)
 
