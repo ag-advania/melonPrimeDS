@@ -11,7 +11,6 @@ void ResetForEmuStart(melonDS::NDS* nds,
                       Config::Table& cfg,
                       const RomAddresses& rom)
 {
-    (void)emu;
     ARM9Hook_Uninstall(nds, emu);
     const PatchCtx ctx{ nds, emu, cfg, rom };
     Patches_RestoreOnStop(ctx);
@@ -34,6 +33,8 @@ void RestoreForEmuStop(melonDS::NDS* nds,
                        const RomAddresses& rom,
                        bool romDetected)
 {
+    // Historical OnEmuStop behavior: DS patch restore runs unconditionally.
+    // romDetected is reserved for a future guard; do not gate restore here yet.
     (void)romDetected;
     ARM9Hook_Uninstall(nds, emu);
     const PatchCtx ctx{ nds, emu, cfg, rom };

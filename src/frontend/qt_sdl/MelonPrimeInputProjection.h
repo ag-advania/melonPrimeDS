@@ -2,10 +2,11 @@
 
 #include "MelonPrimeCompilerHints.h"
 #include "MelonPrimeDef.h"
-#include "EmuInstance.h"
 
 #include <array>
 #include <cstdint>
+
+// HK_* hotkey indices (EmuInstance.h) must be visible before this include.
 
 namespace MelonPrime::InputProjection {
 

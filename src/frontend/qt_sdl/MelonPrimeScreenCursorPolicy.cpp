@@ -9,6 +9,8 @@
 #include <QCursor>
 #include <Qt>
 
+#include <atomic>
+
 #ifdef _WIN32
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
@@ -164,7 +166,7 @@ void UpdateClipIfNeeded(ScreenPanel& panel)
     auto* thread = emu ? emu->getEmuThread() : nullptr;
     auto* core = thread ? thread->GetMelonPrimeCore() : nullptr;
 
-    if (core && !core->isFocused) {
+    if (core && !core->isFocused.load(std::memory_order_acquire)) {
         panel.setCursor(Qt::ArrowCursor);
         Unclip(panel);
         return;
