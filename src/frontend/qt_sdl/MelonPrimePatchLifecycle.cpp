@@ -92,4 +92,24 @@ void RestoreOnMatchEnd(melonDS::NDS* nds,
         emu);
 }
 
+void ApplyOnBattleRuntimeEnter(melonDS::NDS* nds,
+                               EmuInstance* emu,
+                               Config::Table& cfg,
+                               const RomAddresses& rom,
+                               MelonPrimeCore* core,
+                               bool nativeWeaponSwitchEnabled)
+{
+    const PatchCtx ctx{ nds, emu, cfg, rom };
+    Patches_Apply(PatchSite_BattleRuntime, ctx);
+    ARM9Hook_SetMatchHooksActive(
+        nds,
+        cfg,
+        rom.romGroupIndex,
+        core,
+        true,
+        emu);
+    if (nativeWeaponSwitchEnabled)
+        (void)MelonPrimeCore::WeaponSwitchHook_IsSiteValid(nds, rom.romGroupIndex);
+}
+
 } // namespace MelonPrime::PatchLifecycle

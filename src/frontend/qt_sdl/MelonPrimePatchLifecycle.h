@@ -62,5 +62,21 @@ void RestoreOnMatchEnd(melonDS::NDS* nds,
                        const RomAddresses& rom,
                        MelonPrimeCore* core);
 
+// Step 3 / Site B (see melonprime_patch_lifecycle_gateway_step3_plan.md).
+// Called once from HandleBattleRuntimeEnter() on the first
+// mode==MODE_BATTLE_RUNTIME && flow==FLOW_ACTIVE_MATCH frame after join.
+// Applies battle-runtime static patches, activates match ARM9 hooks, and
+// (when native weapon switch is enabled) validates/installs the weapon
+// switch trampoline. The caller still owns setting
+// StateFlags::BIT_BATTLE_RUNTIME_MODE and keeping HandleBattleRuntimeEnter
+// as a single cold outlined function — do not inline it back into
+// RunFrameHook.
+void ApplyOnBattleRuntimeEnter(melonDS::NDS* nds,
+                               EmuInstance* emu,
+                               Config::Table& cfg,
+                               const RomAddresses& rom,
+                               MelonPrimeCore* core,
+                               bool nativeWeaponSwitchEnabled);
+
 } // namespace PatchLifecycle
 } // namespace MelonPrime

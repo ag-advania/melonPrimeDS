@@ -624,13 +624,11 @@ namespace MelonPrime {
     {
         m_flags.set(StateFlags::BIT_BATTLE_RUNTIME_MODE);
 #ifdef MELONPRIME_DS
-        melonDS::NDS* const nds = emuInstance->getNDS();
-        const PatchCtx ctx{ nds, emuInstance, localCfg, m_currentRom };
-        Patches_Apply(PatchSite_BattleRuntime, ctx);
-        ARM9Hook_SetMatchHooksActive(
-            nds, localCfg, m_currentRom.romGroupIndex, this, true, emuInstance);
-        if (m_enableNativeWeaponSwitch)
-            (void)WeaponSwitchHook_IsSiteValid(nds, m_currentRom.romGroupIndex);
+        // PatchLifecycle Step 3 / Site B — see
+        // melonprime_patch_lifecycle_gateway_step3_plan.md.
+        PatchLifecycle::ApplyOnBattleRuntimeEnter(
+            emuInstance->getNDS(), emuInstance, localCfg, m_currentRom, this,
+            m_enableNativeWeaponSwitch);
 #endif
     }
 
