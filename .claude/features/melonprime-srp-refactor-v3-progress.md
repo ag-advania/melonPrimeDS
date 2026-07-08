@@ -442,11 +442,90 @@ per the doc's "verify first" note (bundling it with Site A was flagged as
 possible but not required, and this batch did not do the S6/S7 pass that
 note calls for).
 
+## Batch 2: RunFrameHook/PatchLifecycle doc sync (2026-07-08)
+
+**Changed:** `melonprime-patch-system.md`, `notes/MelonPrimeBattleFlowState.md` (commit `2d8855b2`)
+
+Docs-only. Named the `PatchLifecycle` gateway wrapper functions at each
+`RunFrameHook`/`HandleBattleRuntimeEnter` call site instead of describing
+the raw `Patches_*`/`ARM9Hook_*` calls as if they were still inline. No
+behavior description changed.
+
+## Batch 3: HUD Editor FormBuilder polish (2026-07-08)
+
+**Changed:** `MelonPrimeHudEditorFormBuilder.h/.cpp` (commit `f67aa028`)
+
+Comment-only (verified via `git diff` — no non-comment lines changed).
+Added the explicit `WidgetFactoryContext` lifetime rule (no owning-value
+members, no references to temporaries), a "user-click only" comment on
+`PickAndApplyColor` explaining why it skips the `populating` guard, and
+matching section banners in the header and `.cpp`.
+
+## Batch 4: aim config reload paths audit (2026-07-08)
+
+**Added:** `melonprime_aim_config_reload_paths_audit.md` (commit `20d1dc1b`)
+
+Doc-only. Documents the 3-way split between `ReloadAimConfigFromTable`/
+`AimConfigSnapshot`, the hotkey path `RecalcAimSensitivityCache`, and the
+now-identified-dead `ApplyAimAdjustSetting` (zero call sites anywhere in
+`src/`). Records three possible unification outcomes without selecting
+one — outcome A ("keep current split, document it") is what shipped.
+
+## Batch 5: ScreenCursorPolicy bottom-screen confinement extraction (2026-07-08)
+
+**Changed:** `Screen.h/.cpp`, `MelonPrimeScreenCursorPolicy.h/.cpp` (commit `0e91db0d`)
+
+Moved `ScreenPanel::clipCursorToBottomScreen()`'s body into
+`MelonPrime::ScreenCursorPolicy::ConfineToBottomScreen()`. Along the way,
+deduplicated a byte-identical Windows helper
+(`getVirtualScreenRectForBottomClip` vs. the pre-existing
+`getVirtualScreenRect`) and replaced an inline
+`!isVisible()||!window()||!window()->isActiveWindow()` check with the
+existing `isActiveVisibleWindowForMelonPrime()` accessor (same expression).
+Added `ScreenPanel::getBottomScreenWidgetRectForPolicy()` as the narrow
+accessor needed by the extracted function. `shouldConfineCursorToBottomScreen()`
+(the decision predicate) was intentionally left untouched — only the clip
+implementation moved.
+
+### Full-matrix CI at HEAD `0e91db0d` (Batch 5 boundary, `ci/batch5-screencursorpolicy-verification`)
+
+| Platform | Run | Conclusion |
+|---|---|---|
+| Windows | [28940048680](https://github.com/ag-advania/melonPrimeDS/actions/runs/28940048680) | success — all audit steps including `Audit platform scatter budget` (the key check for this platform-`#ifdef`-touching change) + build all green |
+| Ubuntu | [28940048728](https://github.com/ag-advania/melonPrimeDS/actions/runs/28940048728) | success |
+| macOS | [28940048822](https://github.com/ag-advania/melonPrimeDS/actions/runs/28940048822) | success |
+| BSD | [28940048796](https://github.com/ag-advania/melonPrimeDS/actions/runs/28940048796) | success |
+
+All 4 platforms green. Batch 5 is fully CI-confirmed.
+
+## Batch 6: SRP v3 completion summary (2026-07-08)
+
+**Added:** `melonprime-srp-v3-completion-summary.md` (commit `88a8bbc4`)
+
+Read-this-first overview tying together the whole SRP v3 effort (Immediate
+Plan → Phase 7-16 → Phase A-D → Batch 1-6): what was split, what stayed
+inline and why, notable findings, CI history, manual smoke coverage, and
+the deferred-work list.
+
+## Accelerated Follow-up Plan Status: Complete
+
+Batches 1-6 of the accelerated follow-up plan are all done, committed, and
+pushed. Batch 1 and Batch 5 (the two batches that changed code touching
+platform `#ifdef`s / `RunFrameHook`-adjacent call order) both have
+confirmed 4-platform CI green at their exact commits. Batches 2-4 were
+docs/comments-only and used local build+audit verification per the plan's
+own CI Strategy (full CI required only for code changes touching platform
+ifdefs or call order).
+
 Still deferred (do not touch without a dedicated plan):
 
 ```text
 RunFrameHook大分割 / ARM9 hook context化 / HUD render unity分割 /
 MelonPrimeCore hot state struct抽出 / Screen mouse router全面化 /
 PlatformInput raw ownership再設計
+PatchLifecycleGateway Step 3 Site C (explicit non-goal)
 PatchLifecycleGateway Step 3 Site D bundling (see step3_plan.md "verify first" note)
+Aim config reload path unification outcomes B/C (see
+  melonprime_aim_config_reload_paths_audit.md)
+ApplyAimAdjustSetting dead-code removal (flagged in Batch 4, not removed)
 ```
