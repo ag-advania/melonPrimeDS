@@ -372,6 +372,20 @@ frame-relative call position — no `RunFrameHook` reordering, no state-flag
 changes. Verified via `audit-melonprime-srp-performance.ps1` and a macOS
 launch/close smoke.
 
+**Full-matrix CI at HEAD `6f76636a95f6e465b7e8458bfec73c825c2365a2`** (pushed
+to the same `ci/phase11-16-verification` branch, fast-forwarded from
+`81f9fe49`):
+
+| Platform | Run | Conclusion |
+|---|---|---|
+| macOS | [28931739117](https://github.com/ag-advania/melonPrimeDS/actions/runs/28931739117) | success |
+| Ubuntu | [28931739178](https://github.com/ag-advania/melonPrimeDS/actions/runs/28931739178) | success |
+| Windows | [28931739149](https://github.com/ag-advania/melonPrimeDS/actions/runs/28931739149) | success — all audit steps (config defaults, HUD key parity, literal budget, platform scatter, color dialog prefs, SRP/performance) + Configure + Build + golden-harness-absent check all green |
+| BSD | [28931739144](https://github.com/ag-advania/melonPrimeDS/actions/runs/28931739144) | success |
+
+All 4 platforms green at the Phase D commit. Phase A-D and the Phase 11-16
+continuation plan are now both fully CI-confirmed end to end.
+
 Sites A (match-end restore) and B (battle-runtime enter) remain
 un-extracted per the plan's recommended order — each needs its own commit
 and its own S6/S7 (plus S2/S3 for B) verification pass.
