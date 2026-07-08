@@ -2,6 +2,7 @@
 
 #include "MelonPrimeHudConfigOnScreenEdit.h"
 #include "MelonPrimeColorDialogPrefs.h"
+#include "MelonPrimeHudEditorFormBuilder.h"
 #include "MelonPrimeHudPropSchema.inc"
 #include "MelonPrimeHudRender.h"
 #include "MelonPrimeLocalization.h"
@@ -17,7 +18,6 @@ namespace
 constexpr int kPanelWidth = 300;
 constexpr int kRadioOnWidth = 48;
 constexpr int kRadioOffWidth = 58;
-constexpr int kColorButtonWidth = 74;
 constexpr int kSliderValueWidth = 38;
 } // namespace
 
@@ -132,13 +132,11 @@ QWidget* MelonPrimeHudConfigOnScreenEdit::addCheckBox(const QString& label, cons
     std::string k(key);
     connect(on, &QRadioButton::toggled, this, [this, k](bool checked) {
         if (m_populating || !checked) return;
-        cfg().SetBool(k, true);
-        MelonPrime::CustomHud_InvalidateConfigCache();
+        MelonPrime::HudEditorForm::SetBoolIfEditing(cfg(), m_populating, k, true);
     });
     connect(off, &QRadioButton::toggled, this, [this, k](bool checked) {
         if (m_populating || !checked) return;
-        cfg().SetBool(k, false);
-        MelonPrime::CustomHud_InvalidateConfigCache();
+        MelonPrime::HudEditorForm::SetBoolIfEditing(cfg(), m_populating, k, false);
     });
 
     hlay->addWidget(rowLabel, 1);
@@ -160,12 +158,9 @@ QComboBox* MelonPrimeHudConfigOnScreenEdit::addComboBox(const QString& label, co
     cb->setCurrentIndex(cfg().GetInt(key));
     std::string k(key);
     connect(cb, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this, k](int idx) {
-        if (m_populating) return;
-        cfg().SetInt(k, idx);
-        MelonPrime::CustomHud_InvalidateConfigCache();
+        MelonPrime::HudEditorForm::SetIntIfEditing(cfg(), m_populating, k, idx);
     });
-    m_form->addRow(MelonPrime::UiText::Tr(label), cb);
-    m_rows.append(cb);
+    MelonPrime::HudEditorForm::AppendLabeledRow(*m_form, m_rows, label, *cb);
     return cb;
 }
 
@@ -179,12 +174,9 @@ QSpinBox* MelonPrimeHudConfigOnScreenEdit::addSpinBox(const QString& label, cons
     sb->setValue(cfg().GetInt(key));
     std::string k(key);
     connect(sb, QOverload<int>::of(&QSpinBox::valueChanged), this, [this, k](int v) {
-        if (m_populating) return;
-        cfg().SetInt(k, v);
-        MelonPrime::CustomHud_InvalidateConfigCache();
+        MelonPrime::HudEditorForm::SetIntIfEditing(cfg(), m_populating, k, v);
     });
-    m_form->addRow(MelonPrime::UiText::Tr(label), sb);
-    m_rows.append(sb);
+    MelonPrime::HudEditorForm::AppendLabeledRow(*m_form, m_rows, label, *sb);
     return sb;
 }
 
@@ -200,12 +192,9 @@ QDoubleSpinBox* MelonPrimeHudConfigOnScreenEdit::addDoubleSpinBox(const QString&
     sb->setValue(cfg().GetDouble(key));
     std::string k(key);
     connect(sb, QOverload<double>::of(&QDoubleSpinBox::valueChanged), this, [this, k](double v) {
-        if (m_populating) return;
-        cfg().SetDouble(k, v);
-        MelonPrime::CustomHud_InvalidateConfigCache();
+        MelonPrime::HudEditorForm::SetDoubleIfEditing(cfg(), m_populating, k, v);
     });
-    m_form->addRow(MelonPrime::UiText::Tr(label), sb);
-    m_rows.append(sb);
+    MelonPrime::HudEditorForm::AppendLabeledRow(*m_form, m_rows, label, *sb);
     return sb;
 }
 
@@ -233,9 +222,7 @@ QSlider* MelonPrimeHudConfigOnScreenEdit::addOpacitySlider(const QString& label,
     std::string k(key);
     connect(slider, &QSlider::valueChanged, this, [this, k, lbl](int v) {
         lbl->setText(QString::number(v) + QStringLiteral("%"));
-        if (m_populating) return;
-        cfg().SetDouble(k, v / 100.0);
-        MelonPrime::CustomHud_InvalidateConfigCache();
+        MelonPrime::HudEditorForm::SetDoubleIfEditing(cfg(), m_populating, k, v / 100.0);
     });
 
     m_form->addRow(MelonPrime::UiText::Tr(label), container);
@@ -252,37 +239,19 @@ QLineEdit* MelonPrimeHudConfigOnScreenEdit::addLineEdit(const QString& label, co
     le->setText(QString::fromStdString(cfg().GetString(key)));
     std::string k(key);
     connect(le, &QLineEdit::textChanged, this, [this, k](const QString& text) {
-        if (m_populating) return;
-        cfg().SetString(k, text.toStdString());
-        MelonPrime::CustomHud_InvalidateConfigCache();
+        MelonPrime::HudEditorForm::SetStringIfEditing(cfg(), m_populating, k, text.toStdString());
     });
-    m_form->addRow(MelonPrime::UiText::Tr(label), le);
-    m_rows.append(le);
+    MelonPrime::HudEditorForm::AppendLabeledRow(*m_form, m_rows, label, *le);
     return le;
 }
 
 // ─── Factory: Color Picker ──────────────────────────────────────────────────
 
-static void updateColorButton(QPushButton* btn, int r, int g, int b)
-{
-    const QColor color(r, g, b);
-    const int luma = (color.red() * 299 + color.green() * 587 + color.blue() * 114) / 1000;
-    const QString textColor = (luma >= 128) ? QStringLiteral("#000") : QStringLiteral("#fff");
-    const QString colorName = color.name();
-    btn->setMinimumWidth(kColorButtonWidth);
-    btn->setStyleSheet(QStringLiteral(
-        "font-size: 9px; color: %1; background-color: %2; border: 1px solid #888;"
-        "min-width: %3px; min-height: 16px; padding: 1px 4px;")
-        .arg(textColor, colorName)
-        .arg(kColorButtonWidth));
-    btn->setText(colorName);
-}
-
 QPushButton* MelonPrimeHudConfigOnScreenEdit::addColorPicker(const QString& label, const char* keyR, const char* keyG, const char* keyB)
 {
     auto* btn = new QPushButton(this);
     int r = cfg().GetInt(keyR), g = cfg().GetInt(keyG), b = cfg().GetInt(keyB);
-    updateColorButton(btn, r, g, b);
+    MelonPrime::HudEditorForm::UpdateColorButton(*btn, r, g, b);
     std::string kR(keyR), kG(keyG), kB(keyB);
     connect(btn, &QPushButton::clicked, this, [this, btn, kR, kG, kB]() {
         QColor cur(cfg().GetInt(kR), cfg().GetInt(kG), cfg().GetInt(kB));
@@ -294,12 +263,11 @@ QPushButton* MelonPrimeHudConfigOnScreenEdit::addColorPicker(const QString& labe
             cfg().SetInt(kR, picked.red());
             cfg().SetInt(kG, picked.green());
             cfg().SetInt(kB, picked.blue());
-            updateColorButton(btn, picked.red(), picked.green(), picked.blue());
-            MelonPrime::CustomHud_InvalidateConfigCache();
+            MelonPrime::HudEditorForm::UpdateColorButton(*btn, picked.red(), picked.green(), picked.blue());
+            MelonPrime::HudEditorForm::InvalidateHudConfigCache();
         }
     });
-    m_form->addRow(MelonPrime::UiText::Tr(label), btn);
-    m_rows.append(btn);
+    MelonPrime::HudEditorForm::AppendLabeledRow(*m_form, m_rows, label, *btn);
     return btn;
 }
 
@@ -321,7 +289,7 @@ void MelonPrimeHudConfigOnScreenEdit::addSubColor(const QString& label, const ch
 
     auto* btn = new QPushButton(container);
     int r = cfg().GetInt(keyR), g = cfg().GetInt(keyG), b = cfg().GetInt(keyB);
-    updateColorButton(btn, r, g, b);
+    MelonPrime::HudEditorForm::UpdateColorButton(*btn, r, g, b);
     btn->setEnabled(!isOverall);
 
     hlay->addWidget(combo, 1);
@@ -344,8 +312,8 @@ void MelonPrimeHudConfigOnScreenEdit::addSubColor(const QString& label, const ch
             cfg().SetInt(kR, picked.red());
             cfg().SetInt(kG, picked.green());
             cfg().SetInt(kB, picked.blue());
-            updateColorButton(btn, picked.red(), picked.green(), picked.blue());
-            MelonPrime::CustomHud_InvalidateConfigCache();
+            MelonPrime::HudEditorForm::UpdateColorButton(*btn, picked.red(), picked.green(), picked.blue());
+            MelonPrime::HudEditorForm::InvalidateHudConfigCache();
         }
     });
 
@@ -378,7 +346,7 @@ void MelonPrimeHudConfigOnScreenEdit::addColorOverlayRow(
 
     auto* btn = new QPushButton(container);
     int r = cfg().GetInt(keyR), g = cfg().GetInt(keyG), b = cfg().GetInt(keyB);
-    updateColorButton(btn, r, g, b);
+    MelonPrime::HudEditorForm::UpdateColorButton(*btn, r, g, b);
     btn->setEnabled(enabled);
 
     hlay->addWidget(rowLabel, 1);
@@ -409,8 +377,8 @@ void MelonPrimeHudConfigOnScreenEdit::addColorOverlayRow(
             cfg().SetInt(kR, picked.red());
             cfg().SetInt(kG, picked.green());
             cfg().SetInt(kB, picked.blue());
-            updateColorButton(btn, picked.red(), picked.green(), picked.blue());
-            MelonPrime::CustomHud_InvalidateConfigCache();
+            MelonPrime::HudEditorForm::UpdateColorButton(*btn, picked.red(), picked.green(), picked.blue());
+            MelonPrime::HudEditorForm::InvalidateHudConfigCache();
         }
     });
 

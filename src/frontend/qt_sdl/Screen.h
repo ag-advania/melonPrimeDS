@@ -46,9 +46,16 @@ class MainWindow;
 class EmuInstance;
 
 #ifdef MELONPRIME_DS
+class ScreenPanel;
 namespace MelonPrime {
 class MelonPrimeCore;
-}
+namespace ScreenCursorPolicy {
+void ClipCenter1px(ScreenPanel& panel);
+void UpdateClipIfNeeded(ScreenPanel& panel);
+void Unclip(ScreenPanel& panel);
+void ContainAimCursorIfNeeded(ScreenPanel& panel);
+} // namespace ScreenCursorPolicy
+} // namespace MelonPrime
 #endif
 
 
@@ -291,6 +298,11 @@ private:
     bool m_lastClipFocusedState = false;
     bool m_hasLastClipFocusedState = false;
     bool closing = false;
+
+    friend void MelonPrime::ScreenCursorPolicy::ClipCenter1px(ScreenPanel& panel);
+    friend void MelonPrime::ScreenCursorPolicy::UpdateClipIfNeeded(ScreenPanel& panel);
+    friend void MelonPrime::ScreenCursorPolicy::Unclip(ScreenPanel& panel);
+    friend void MelonPrime::ScreenCursorPolicy::ContainAimCursorIfNeeded(ScreenPanel& panel);
 #endif
 };
 

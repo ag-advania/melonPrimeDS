@@ -53,6 +53,7 @@
 #include "MelonPrime.h"
 #include "MelonPrimeLocalization.h"
 #include "MelonPrimePlatformInput.h"
+#include "MelonPrimeScreenCursorPolicy.h"
 #include "MelonPrimePerfProbe.h"
 #include "MelonPrimeHudPropSchema.inc"
 
@@ -72,74 +73,6 @@
 #include <dwmapi.h>
 #pragma comment(lib, "dwmapi.lib")
 #endif
-#endif // MELONPRIME_DS
-
-
-
-#ifdef MELONPRIME_DS
-#ifdef _WIN32
-// 仮想デスクトップ矩形取得用ヘルパー
-inline RECT getVirtualScreenRect() {
-    const int vx = GetSystemMetrics(SM_XVIRTUALSCREEN);
-    const int vy = GetSystemMetrics(SM_YVIRTUALSCREEN);
-    const int vw = GetSystemMetrics(SM_CXVIRTUALSCREEN);
-    const int vh = GetSystemMetrics(SM_CYVIRTUALSCREEN);
-    return RECT{ vx, vy, vx + vw, vy + vh };
-}
-
-// 幅1pxのクリップ縦帯を生成
-static RECT computeCenter1pxClipRectSafe(HWND hwnd) {
-    RECT rc; GetClientRect(hwnd, &rc);
-    POINT tl{ rc.left, rc.top }, br{ rc.right, rc.bottom };
-    ClientToScreen(hwnd, &tl);
-    ClientToScreen(hwnd, &br);
-
-    LONG cx = (tl.x + br.x) / 2;
-
-    const RECT vs = getVirtualScreenRect();
-
-    if (cx < vs.left)  cx = vs.left;
-    if (cx >= vs.right) cx = vs.right - 1;
-
-    LONG top = (tl.y > vs.top) ? tl.y : vs.top;
-    LONG bottom = (br.y < vs.bottom) ? br.y : vs.bottom;
-
-    if (top >= bottom) {
-        top = vs.top;
-        bottom = vs.bottom;
-    }
-
-    RECT clip{ cx, top, cx + 1, bottom };
-    return clip;
-}
-
-static RECT computeWidgetClipRectSafe(HWND hwnd, const QRect& widgetRect) {
-    POINT tl{ widgetRect.left(), widgetRect.top() };
-    POINT br{ widgetRect.right() + 1, widgetRect.bottom() + 1 };
-    ClientToScreen(hwnd, &tl);
-    ClientToScreen(hwnd, &br);
-
-    RECT clip{ tl.x, tl.y, br.x, br.y };
-    const RECT vs = getVirtualScreenRect();
-
-    clip.left = std::clamp<LONG>(clip.left, vs.left, vs.right - 1);
-    clip.right = std::clamp<LONG>(clip.right, clip.left + 1, vs.right);
-    clip.top = std::clamp<LONG>(clip.top, vs.top, vs.bottom - 1);
-    clip.bottom = std::clamp<LONG>(clip.bottom, clip.top + 1, vs.bottom);
-
-    return clip;
-}
-
-// 垂直中央を維持してRECTの高さを1/2に縮小
-inline RECT shrinkRectHeightToHalfCentered(RECT r) {
-    const LONG h = r.bottom - r.top;
-    const LONG cy = (r.top + r.bottom) / 2;
-    const LONG quarter = h / 4;
-    r.top = cy - quarter;
-    r.bottom = cy + quarter;
-    return r;
-}
-#endif // _WIN32
 #endif // MELONPRIME_DS
 
 using namespace melonDS;
@@ -303,29 +236,41 @@ QRect ScreenPanel::aimContainmentLocalRect() const
 
 void ScreenPanel::containAimCursorIfNeeded()
 {
-    if (closing || !qApp || qApp->closingDown())
-        return;
-    if (!getClipWanted())
-        return;
-    if (!isVisible() || !window() || !window()->isActiveWindow())
-        return;
-
-#if defined(__APPLE__)
-    const auto* core = melonPrimeCore();
-    if (core && core->IsGcMouseAimActive())
-        return;
-#endif
-
-    const QRect local = aimContainmentLocalRect();
-    const QPoint globalTopLeft = mapToGlobal(local.topLeft());
-    const QRect globalRect(globalTopLeft, local.size());
-    const QPoint global = QCursor::pos();
-    if (globalRect.contains(global))
-        return;
-
-    const QPoint center = mapToGlobal(local.center());
-    MelonPrime::PlatformInput_WarpCursor(center.x(), center.y());
+    MelonPrime::ScreenCursorPolicy::ContainAimCursorIfNeeded(*this);
 }
+
+#ifdef _WIN32
+namespace {
+
+inline RECT getVirtualScreenRectForBottomClip()
+{
+    const int vx = GetSystemMetrics(SM_XVIRTUALSCREEN);
+    const int vy = GetSystemMetrics(SM_YVIRTUALSCREEN);
+    const int vw = GetSystemMetrics(SM_CXVIRTUALSCREEN);
+    const int vh = GetSystemMetrics(SM_CYVIRTUALSCREEN);
+    return RECT{ vx, vy, vx + vw, vy + vh };
+}
+
+RECT computeWidgetClipRectSafe(HWND hwnd, const QRect& widgetRect)
+{
+    POINT tl{ widgetRect.left(), widgetRect.top() };
+    POINT br{ widgetRect.right() + 1, widgetRect.bottom() + 1 };
+    ClientToScreen(hwnd, &tl);
+    ClientToScreen(hwnd, &br);
+
+    RECT clip{ tl.x, tl.y, br.x, br.y };
+    const RECT vs = getVirtualScreenRectForBottomClip();
+
+    clip.left = std::clamp<LONG>(clip.left, vs.left, vs.right - 1);
+    clip.right = std::clamp<LONG>(clip.right, clip.left + 1, vs.right);
+    clip.top = std::clamp<LONG>(clip.top, vs.top, vs.bottom - 1);
+    clip.bottom = std::clamp<LONG>(clip.bottom, clip.top + 1, vs.bottom);
+
+    return clip;
+}
+
+} // namespace
+#endif
 
 void ScreenPanel::clipCursorToBottomScreen() {
     if (closing || !qApp || qApp->closingDown())
@@ -343,59 +288,11 @@ void ScreenPanel::clipCursorToBottomScreen() {
 }
 
 void ScreenPanel::clipCursorCenter1px() {
-    if (closing || !qApp || qApp->closingDown())
-        return;
-    setClipWanted(true);
-    setCursor(Qt::BlankCursor);
-#if defined(__linux__)
-    resetAimMouseDelta();
-#endif
-
-#if defined(__APPLE__)
-    if (isVisible() && window() && window()->isActiveWindow()) {
-        const auto* core = melonPrimeCore();
-        const QPoint c = mapToGlobal(aimContainmentLocalRect().center());
-        const bool gcMouseActive = core && core->IsGcMouseAimActive();
-        MelonPrime::PlatformInput_WarpCursor(c.x(), c.y());
-        MelonPrime::MacSetAimCursorCaptured(gcMouseActive);
-    }
-#elif defined(__linux__)
-    if (isVisible() && window() && window()->isActiveWindow()) {
-        const auto* core = melonPrimeCore();
-        if (!core || !core->IsPlatformRawAimActive()) {
-            const QPoint c = mapToGlobal(rect().center());
-            MelonPrime::PlatformInput_WarpCursor(c.x(), c.y());
-        }
-    }
-#elif !defined(_WIN32)
-    if (isVisible() && window() && window()->isActiveWindow()) {
-        const QPoint c = mapToGlobal(rect().center());
-        MelonPrime::PlatformInput_WarpCursor(c.x(), c.y());
-    }
-#endif
-
-#ifdef _WIN32
-    if (!isVisible() || !window() || !window()->isActiveWindow()) return;
-    const HWND hwnd = reinterpret_cast<HWND>(winId());
-    RECT clip = computeCenter1pxClipRectSafe(hwnd);
-    clip = shrinkRectHeightToHalfCentered(clip);
-    ClipCursor(&clip);
-#endif
+    MelonPrime::ScreenCursorPolicy::ClipCenter1px(*this);
 }
 
 void ScreenPanel::unclip() {
-    if (closing || !qApp || qApp->closingDown())
-        return;
-    setClipWanted(false);
-#if defined(__APPLE__)
-    MelonPrime::MacSetAimCursorCaptured(false);
-#endif
-#if defined(__linux__)
-    resetAimMouseDelta();
-#endif
-#ifdef _WIN32
-    ClipCursor(nullptr);
-#endif
+    MelonPrime::ScreenCursorPolicy::Unclip(*this);
 }
 
 void ScreenPanel::releaseCursorStateForClose()
@@ -421,34 +318,7 @@ void ScreenPanel::beginClose()
 }
 
 void ScreenPanel::updateClipIfNeeded() {
-    if (closing || !qApp || qApp->closingDown())
-        return;
-
-    auto* emu = emuInstance;
-    auto* thread = emu ? emu->getEmuThread() : nullptr;
-    auto* core = thread ? thread->GetMelonPrimeCore() : nullptr;
-
-    if (core && !core->isFocused) {
-        setCursor(Qt::ArrowCursor);
-        unclip();
-        return;
-    }
-
-    if (getClipWanted()) {
-        clipCursorCenter1px();
-#if defined(__APPLE__)
-        containAimCursorIfNeeded();
-#endif
-        return;
-    }
-
-    if (shouldConfineCursorToBottomScreen()) {
-        clipCursorToBottomScreen();
-        return;
-    }
-
-    setCursor(Qt::ArrowCursor);
-    unclip();
+    MelonPrime::ScreenCursorPolicy::UpdateClipIfNeeded(*this);
 }
 #endif // MELONPRIME_DS
 
