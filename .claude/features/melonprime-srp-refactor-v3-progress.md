@@ -194,14 +194,33 @@ mixing of unrelated widget kinds or subsystems in one change.
 
 | Phase | Title | Status |
 |---|---|---|
-| 11 | Stabilization / docs cleanup | ✅ Done |
-| 12 | HUD Editor FormBuilder Step 3 (opacity slider, line edit) | Pending |
+| 11 | Stabilization / docs cleanup | ✅ Done (`fe5ef70b`) |
+| 12 | HUD Editor FormBuilder Step 3 (opacity slider, line edit) | ✅ Done (`31b3b993`) |
 | 13 | HUD Editor FormBuilder Step 4 (color picker, sub-color, overlay row) | Pending |
 | 14 | ScreenCursorPolicy `ReleaseForClose` extraction | Pending |
 | 15 | PatchLifecycleGateway Step 3 (design doc only) | Pending |
 | 16 | RuntimeConfig cleanup follow-up (naming/comments only) | Pending |
 
-Next up: **Phase 12 — HUD Editor FormBuilder Step 3**.
+## Phase 12: HUD FormBuilder Step 3
+
+**Changed:** `MelonPrimeHudEditorFormBuilder.h/.cpp`, `MelonPrimeHudConfigOnScreenEdit.cpp`
+
+**Moved:** `addOpacitySlider`, `addLineEdit` widget factories (as
+`AddOpacitySliderRow` / `AddLineEditRow`, `WidgetFactoryContext`-based).
+
+**Bug fix bundled with this phase:** `WidgetFactoryContext::populating` was a
+`bool` value-copy, and the Step 2 factories (`AddBoolRadioRow` /
+`AddComboBoxRow` / `AddSpinBoxRow` / `AddDoubleSpinBoxRow`) captured `ctx`
+*by reference* in their `connect()` lambdas. `ctx` is a stack-local
+constructed at each `addXxx()` call site, so those lambdas held a dangling
+reference once the constructing call returned; separately, the frozen
+`populating` snapshot (captured while `populateForElement()` had it `true`)
+would have kept every post-populate edit blocked forever. Fixed by making
+`populating` a `bool&` (aliasing `m_populating`) and capturing `ctx` by value
+everywhere — copies of reference members still alias the same long-lived
+objects. No config key or UI behavior change.
+
+Next up: **Phase 13 — HUD Editor FormBuilder Step 4**.
 
 Still deferred (do not touch without a dedicated plan):
 
