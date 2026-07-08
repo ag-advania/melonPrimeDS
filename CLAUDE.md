@@ -40,6 +40,7 @@ This file is an index only. Keep detailed instructions in the linked Rules, Skil
 - [.claude/features/zoom-status-performance.md](.claude/features/zoom-status-performance.md)
 - [.claude/features/zoom-aim-sensitivity.md](.claude/features/zoom-aim-sensitivity.md)
 - [.claude/features/custom-hud-zoom-crosshair.md](.claude/features/custom-hud-zoom-crosshair.md)
+- [.claude/features/custom-hud-color-dialog-prefs.md](.claude/features/custom-hud-color-dialog-prefs.md)
 - [.claude/features/morph-ball-boost.md](.claude/features/morph-ball-boost.md)
 - [.claude/features/sf-reticle-effects-reference.md](.claude/features/sf-reticle-effects-reference.md)
 

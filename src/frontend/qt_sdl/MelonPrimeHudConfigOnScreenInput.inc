@@ -248,7 +248,9 @@ void CustomHud_EditMousePress(QPointF pt, Qt::MouseButton btn, Config::Table& cf
                     int r = cfg.GetInt(MP_HUD_PROP_KEY_CrosshairColorR);
                     int g = cfg.GetInt(MP_HUD_PROP_KEY_CrosshairColorG);
                     int b = cfg.GetInt(MP_HUD_PROP_KEY_CrosshairColorB);
-                    QColor chosen = QColorDialog::getColor(QColor(r, g, b), nullptr,
+                    QColor chosen = ColorDialogPrefs::getColor(
+                        nullptr,
+                        QColor(r, g, b),
                         UiText::Tr("Crosshair Color"));
                     s_colorDialogOpen = false;
                     if (chosen.isValid()) {
@@ -435,7 +437,10 @@ void CustomHud_EditMousePress(QPointF pt, Qt::MouseButton btn, Config::Table& cf
                             if (s_colorDialogOpen) return;
                             QColor cur(cfg.GetInt(d.colorRKey), cfg.GetInt(d.colorGKey), cfg.GetInt(d.colorBKey));
                             s_colorDialogOpen = true;
-                            QColor picked = QColorDialog::getColor(cur, nullptr, UiText::Tr("Pick Color"));
+                            QColor picked = ColorDialogPrefs::getColor(
+                                nullptr,
+                                cur,
+                                UiText::Tr("Pick Color"));
                             s_colorDialogOpen = false;
                             if (picked.isValid()) {
                                 cfg.SetInt(d.colorRKey, picked.red());
@@ -509,7 +514,9 @@ void CustomHud_EditMousePress(QPointF pt, Qt::MouseButton btn, Config::Table& cf
                             } else if (!s_colorDialogOpen) {
                                 QColor cur(cfg.GetInt(pr.extra1), cfg.GetInt(pr.extra2), cfg.GetInt(pr.extra3));
                                 s_colorDialogOpen = true;
-                                QColor picked = QColorDialog::getColor(cur, nullptr,
+                                QColor picked = ColorDialogPrefs::getColor(
+                                    nullptr,
+                                    cur,
                                     UiText::Tr("Pick Color") + QStringLiteral(": ") + UiText::Tr(pr.label));
                                 s_colorDialogOpen = false;
                                 if (picked.isValid()) {

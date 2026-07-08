@@ -101,6 +101,7 @@ set(SOURCES_QT_SDL
     MelonPrimeLocalization/MelonPrimeWidgetLocalizer.cpp
     MelonPrimeLocalization/MelonPrimeSplashLocalization.cpp
     MelonPrimeHudRender.cpp
+    MelonPrimeColorDialogPrefs.cpp
     MelonPrimeHudConfigOnScreenEdit.cpp
     MelonPrimePatchAspectRatio.cpp
     MelonPrimePatchOsdColor.cpp
