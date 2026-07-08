@@ -85,6 +85,12 @@ only after confirming with S6/S7 that both extracted call sites still fire
 in exactly the same frame-relative order as today. This is a "verify
 before doing" note, not a decision to defer D's extraction indefinitely.
 
+**Follow-up (2026-07-08):** now that Sites A/B/E are done, see
+`melonprime_patch_lifecycle_gateway_site_d_plan.md` for a fuller
+investigation of Site D specifically — the A-vs-D distinction, why D
+intentionally skips `Patches_RestoreOnLeave`, and a recommendation not to
+bundle it with anything else if it is ever extracted.
+
 ## 4. What must not change
 
 Per `melonprime-srp-performance-contract.md`'s `RunFrameHook` order table
