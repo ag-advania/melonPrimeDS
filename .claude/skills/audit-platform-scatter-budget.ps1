@@ -7,7 +7,8 @@
 #
 # Scope is intentionally narrow:
 #   - MelonPrime*.cpp/h under src/frontend/qt_sdl
-#   - excludes MelonPrimePlatformInput.h (canonical dispatch owner)
+#   - excludes MelonPrimePlatformInput.h (canonical raw input dispatch owner)
+#   - excludes MelonPrimeScreenCursorPolicy.cpp/h (canonical cursor clip/warp policy owner)
 #   - excludes MelonPrimeLocalization/ (menu-language locale detection; not
 #     raw-input / cursor-warp dispatch — new __APPLE__ there must not consume
 #     the input scatter budget or force Q_OS_* workarounds)
@@ -30,6 +31,11 @@ $qtSdl = Join-Path $repoRoot 'src/frontend/qt_sdl'
 
 $markerRegex = [regex]'__APPLE__|__linux__'
 $scatterExcludePathRegex = [regex]'(^|/)MelonPrimeLocalization/'
+$platformFacadeFiles = @(
+    'MelonPrimePlatformInput.h',
+    'MelonPrimeScreenCursorPolicy.cpp',
+    'MelonPrimeScreenCursorPolicy.h'
+)
 $cursorSetPosRegex = [regex]'\bQCursor::setPos\s*\('
 
 function Test-CanCompileOnApple {
@@ -133,7 +139,7 @@ foreach ($file in $allMelonPrimeSources) {
     }
     if ($count -le 0) { continue }
 
-    if ($file.Name -eq 'MelonPrimePlatformInput.h' -or $scatterExcludePathRegex.IsMatch($rel)) {
+    if ($platformFacadeFiles -contains $file.Name -or $scatterExcludePathRegex.IsMatch($rel)) {
         $excludedRows += [pscustomobject]@{
             File = $rel
             Count = $count
