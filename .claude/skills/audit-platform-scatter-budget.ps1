@@ -1,13 +1,21 @@
 # audit-platform-scatter-budget.ps1
 #
-# Counts platform condition markers added by the macOS/Linux input paths. This
-# is a ratchet for melonprime-full-refactor-plan-v4/v6: V4 introduced the
-# platform facade, and V6 fixes the current post-Linux/macOS count.
+# Counts platform condition markers in macOS/Linux *input/runtime dispatch*
+# call sites. This is a ratchet for melonprime-full-refactor-plan-v4/v6:
+# V4 introduced MelonPrimePlatformInput.h as the canonical facade; V6 lowered
+# the budget to 22 after lifecycle declutter removed duplicate markers.
 #
-# Scope is intentionally narrow: MelonPrime*.cpp/h under src/frontend/qt_sdl,
-# excluding MelonPrimePlatformInput.h because that file is the canonical
-# platform-dispatch owner created to reduce call-site scatter. Windows Raw
-# Input sites are not part of this budget.
+# Scope is intentionally narrow:
+#   - MelonPrime*.cpp/h under src/frontend/qt_sdl
+#   - excludes MelonPrimePlatformInput.h (canonical dispatch owner)
+#   - excludes MelonPrimeLocalization/ (menu-language locale detection; not
+#     raw-input / cursor-warp dispatch — new __APPLE__ there must not consume
+#     the input scatter budget or force Q_OS_* workarounds)
+# Windows Raw Input sites are not part of this budget.
+#
+# Raising the budget above 22 is a regression unless input dispatch truly
+# gained new platform branches. Non-input platform hooks belong outside scope
+# or in the facade, not in alternate macros that evade the ratchet.
 
 param(
     [int]$Budget = 22,
@@ -21,6 +29,7 @@ $repoRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 $qtSdl = Join-Path $repoRoot 'src/frontend/qt_sdl'
 
 $markerRegex = [regex]'__APPLE__|__linux__'
+$scatterExcludePathRegex = [regex]'(^|/)MelonPrimeLocalization/'
 $cursorSetPosRegex = [regex]'\bQCursor::setPos\s*\('
 
 function Test-CanCompileOnApple {
@@ -109,25 +118,33 @@ function Find-MacQCursorSetPos {
     return $hits
 }
 
-$sourceFiles = Get-ChildItem -Path $qtSdl -Recurse -File -Include 'MelonPrime*.cpp','MelonPrime*.h' |
-    Where-Object { $_.Name -ne 'MelonPrimePlatformInput.h' }
 $cursorGuardFiles = Get-ChildItem -Path $qtSdl -Recurse -File -Include '*.cpp','*.h','*.hpp','*.inc'
 $rows = @()
+$excludedRows = @()
 $total = 0
 $macCursorHits = @()
 
-foreach ($file in $sourceFiles) {
+$allMelonPrimeSources = Get-ChildItem -Path $qtSdl -Recurse -File -Include 'MelonPrime*.cpp','MelonPrime*.h'
+foreach ($file in $allMelonPrimeSources) {
     $rel = [System.IO.Path]::GetRelativePath($repoRoot, $file.FullName) -replace '\\', '/'
     $count = 0
     foreach ($line in [System.IO.File]::ReadLines($file.FullName)) {
         $count += $markerRegex.Matches($line).Count
     }
-    if ($count -gt 0) {
-        $total += $count
-        $rows += [pscustomobject]@{
+    if ($count -le 0) { continue }
+
+    if ($file.Name -eq 'MelonPrimePlatformInput.h' -or $scatterExcludePathRegex.IsMatch($rel)) {
+        $excludedRows += [pscustomobject]@{
             File = $rel
             Count = $count
         }
+        continue
+    }
+
+    $total += $count
+    $rows += [pscustomobject]@{
+        File = $rel
+        Count = $count
     }
 }
 
@@ -142,12 +159,17 @@ if ($Json) {
         Budget = $Budget
         Count = $total
         MarkerRegex = $markerRegex.ToString()
+        ExcludedFiles = @($excludedRows)
         Files = $rows
         MacQCursorSetPosHits = @($macCursorHits)
     } | ConvertTo-Json -Depth 4
 } else {
     Write-Host "Platform scatter budget: $total / $Budget"
     $rows | Select-Object -First $MaxList | Format-Table -AutoSize | Out-String -Width 240 | Write-Host
+    if ($excludedRows.Count -gt 0) {
+        Write-Host "Excluded from scatter budget (facade / localization):"
+        $excludedRows | Select-Object -First $MaxList | Format-Table -AutoSize | Out-String -Width 240 | Write-Host
+    }
     if ($macCursorHits.Count -gt 0) {
         Write-Host "macOS QCursor::setPos call(s) found in Apple-reachable code:"
         $macCursorHits | Format-Table -AutoSize | Out-String -Width 240 | Write-Host
