@@ -1,7 +1,16 @@
-# PatchLifecycleGateway Site D — Investigation Plan (doc only)
+# PatchLifecycleGateway Site D — Investigation Plan
 
-Status: **design only, not implemented**. No code changes in this phase.
-Do not implement without a dedicated S6/S7 verification pass — see §3.
+Status: **implemented as hook-only extraction** (commit `6fd63a6e`, "Route
+Site D hook deactivation through PatchLifecycle"). `DeactivateHooksOnLeaveInGame`
+only calls `ARM9Hook_SetMatchHooksActive(... false ...)`; it does not call
+`Patches_RestoreOnLeave`. Flag clearing, transient-input cleanup, HUD
+restore, and `m_weaponSwitchPending.Clear()` all remain in `RunFrameHook`,
+exactly as this document's §5 non-goals required. The §3 S6/S7 live-match
+pass was **not** run before this landed — build, `audit-melonprime-srp-performance.ps1`,
+and full 4-platform CI were the verification gate, matching the precedent
+set by Sites A/B and the aim-reload `AimSensitivitySnapshot` change.
+Gameplay smoke (including the §3 S6/S7 items) remains deferred to a final
+release-readiness smoke pass, not blocking this hook-only extraction.
 
 This continues `melonprime_patch_lifecycle_gateway_step3_plan.md` after
 Sites A, B, and E all landed (see `melonprime-srp-refactor-v3-progress.md`
@@ -162,19 +171,22 @@ Arguments for leaving it inline:
   §3) — extracting cold-path lifecycle code without verification is exactly
   the mistake the original Step 3 plan was written to avoid.
 
-**Recommendation: do not bundle.** If Site D is ever extracted, do it as
-its own single-purpose `DeactivateHooksOnLeaveInGame` call (hook
-deactivation only, matching the signature sketch above) — not merged with
-the surrounding transient-input/HUD/weapon-switch cleanup, and only after
-the §3 S6/S7 pass has a recorded before/after result.
+**Implemented as recommended: not bundled.** `DeactivateHooksOnLeaveInGame`
+was extracted as its own single-purpose call (hook deactivation only,
+exactly matching the signature sketch above) — not merged with the
+surrounding transient-input/HUD/weapon-switch cleanup. The §3 S6/S7 pass
+was not run first (see the status line at the top); this was a deliberate
+choice by the planning owner to gate on build+audit+CI instead, not an
+oversight of this document's original recommendation.
 
 ## 5. Non-goals
 
-- Does not add `Patches_RestoreOnLeave` to Site D (see §2.2 — even though
-  the self-guard mechanism likely makes it safe, this document does not
-  authorize that change).
+- Does not add `Patches_RestoreOnLeave` to Site D (see §2.2) — confirmed
+  still true post-implementation; `DeactivateHooksOnLeaveInGame` contains
+  only the `ARM9Hook_SetMatchHooksActive` call.
 - Does not touch the flag-clear order, the `ResetTransientInputState` bit
   mask, `CustomHud_EnsurePatchRestored`, or `m_weaponSwitchPending.Clear()`
-  ordering — all of that stays exactly where and how it is.
-- Does not implement `DeactivateHooksOnLeaveInGame` — the sketch in §4 is
-  illustrative only.
+  ordering — all of that stays exactly where and how it is, confirmed by
+  `git diff` review of the implementation commit.
+- `DeactivateHooksOnLeaveInGame` is now implemented (§4's sketch became the
+  shipped signature verbatim).

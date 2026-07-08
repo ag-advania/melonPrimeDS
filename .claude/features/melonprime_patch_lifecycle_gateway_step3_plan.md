@@ -91,6 +91,11 @@ investigation of Site D specifically — the A-vs-D distinction, why D
 intentionally skips `Patches_RestoreOnLeave`, and a recommendation not to
 bundle it with anything else if it is ever extracted.
 
+**Site D: implemented as hook-only PatchLifecycle gateway**
+(`PatchLifecycle::DeactivateHooksOnLeaveInGame`, commit `6fd63a6e`). No
+`Patches_RestoreOnLeave` was added to Site D — see the site-D plan doc §2.2
+and §5. Site C's status is unchanged (still a non-goal).
+
 ## 4. What must not change
 
 Per `melonprime-srp-performance-contract.md`'s `RunFrameHook` order table
