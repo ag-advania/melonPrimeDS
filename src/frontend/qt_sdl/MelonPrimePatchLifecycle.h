@@ -78,5 +78,18 @@ void ApplyOnBattleRuntimeEnter(melonDS::NDS* nds,
                                MelonPrimeCore* core,
                                bool nativeWeaponSwitchEnabled);
 
+// Step 3 / Site D (see melonprime_patch_lifecycle_gateway_site_d_plan.md).
+// Called from RunFrameHook when the legacy in-game flag is false while
+// in-game lifecycle flags are still set. Deactivates match ARM9 hooks only.
+// The caller still owns clearing BIT_IN_GAME_INIT /
+// BIT_END_OF_GAME_PATCH_RESTORED / BIT_BATTLE_RUNTIME_MODE and the
+// transient-input / HUD / weapon-switch cleanup that runs alongside this
+// leave-in-game transition. Do not add Patches_RestoreOnLeave here.
+void DeactivateHooksOnLeaveInGame(melonDS::NDS* nds,
+                                  EmuInstance* emu,
+                                  Config::Table& cfg,
+                                  const RomAddresses& rom,
+                                  MelonPrimeCore* core);
+
 } // namespace PatchLifecycle
 } // namespace MelonPrime

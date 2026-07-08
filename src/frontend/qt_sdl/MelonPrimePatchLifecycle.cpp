@@ -112,4 +112,19 @@ void ApplyOnBattleRuntimeEnter(melonDS::NDS* nds,
         (void)MelonPrimeCore::WeaponSwitchHook_IsSiteValid(nds, rom.romGroupIndex);
 }
 
+void DeactivateHooksOnLeaveInGame(melonDS::NDS* nds,
+                                  EmuInstance* emu,
+                                  Config::Table& cfg,
+                                  const RomAddresses& rom,
+                                  MelonPrimeCore* core)
+{
+    ARM9Hook_SetMatchHooksActive(
+        nds,
+        cfg,
+        rom.romGroupIndex,
+        core,
+        false,
+        emu);
+}
+
 } // namespace MelonPrime::PatchLifecycle
