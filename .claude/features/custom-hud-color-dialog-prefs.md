@@ -143,6 +143,15 @@ rg "loadCustomColors|saveCustomColors|loadPersistedCustomColors|saveCurrentCusto
 - Forward-declared `QWidget`; dropped header dependency on `QColorDialog`
 - Added `HasKey()` guard on load
 
+### Phase 3 — Qt slot count + dirty-aware save + audit script
+
+- Replaced hard-coded slot count with `QColorDialog::customCount()`
+- Split serialization: `readPersistedCustomColors`, `captureCurrentCustomColors`,
+  `applyCustomColorsToDialog`, `writePersistedCustomColors`
+- `persistCurrentCustomColorsIfChanged()` skips `Config::Save()` when palette unchanged
+- `normalizeHexRgbString()` stabilizes TOML compare/write as lowercase `#rrggbb`
+- Added `.claude/skills/audit-color-dialog-prefs.ps1` (local grep ratchet; CI optional)
+
 ## Follow-Up Refactoring (Optional)
 
 Prioritized backlog if further cleanup is desired. None are blockers.
@@ -150,7 +159,7 @@ Prioritized backlog if further cleanup is desired. None are blockers.
 ### P1 — Documentation drift (low effort)
 
 - [x] Add this feature note
-- [ ] Keep `settings-ui-and-edit-mode.md` color picker section aligned (references helper, not raw `QColorDialog`)
+- [x] Keep `settings-ui-and-edit-mode.md` color picker section aligned
 
 ### P2 — Re-entrancy guard consolidation (medium)
 
@@ -166,20 +175,13 @@ needs careful design before moving.
 
 ### P3 — CI grep ratchet (low)
 
-Add a lightweight check to Windows/Ubuntu audit jobs (or a new skill script):
-
-```bash
-rg -n "QColorDialog::getColor" src/frontend/qt_sdl \
-  | rg -v "MelonPrimeColorDialogPrefs.cpp" && exit 1 || exit 0
-```
-
-Prevents future direct `QColorDialog` usage outside the helper.
+- [x] Local script: `.claude/skills/audit-color-dialog-prefs.ps1`
+- [ ] Optional: add to Windows/Ubuntu audit workflow jobs
 
 ### P4 — Empty palette key cleanup (low)
 
-After `saveCurrentCustomColors()`, if all 16 slots are invalid, the TOML key may
-exist as an empty array. Optional: remove `MelonPrime.ColorDialog.CustomColors`
-when nothing valid remains. Cosmetic only.
+After save, if all slots are empty, the TOML key may exist as an empty array.
+Requires `Config::Table::RemoveKey()` — defer to a separate change.
 
 ### P5 — Load caching (defer)
 
@@ -202,6 +204,10 @@ open latency matters.
 # Encapsulation
 rg "QColorDialog::getColor" src/frontend/qt_sdl
 rg "#include <QColorDialog>" src/frontend/qt_sdl
+pwsh -NoProfile -File .claude/skills/audit-color-dialog-prefs.ps1
+
+# Slot count uses Qt API (no hard-coded 16)
+rg "customColorSlotCount|QColorDialog::customCount" src/frontend/qt_sdl/MelonPrimeColorDialogPrefs.cpp
 
 # CMake
 rg "MelonPrimeColorDialogPrefs.cpp" src/frontend/qt_sdl/CMakeLists.txt
@@ -228,6 +234,7 @@ cmake --build build/release-mingw-x86_64 --config Release  # Windows
 
 - `e5b7420f` — initial persistence + call-site migration
 - `e81e6545` — header/cpp refactor (`getColor()` only, `HasKey` load guard)
+- Phase 3 — `customCount()`, dirty-aware save, audit script (see branch HEAD)
 
 ## Related Docs
 

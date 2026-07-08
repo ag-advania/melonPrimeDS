@@ -9,11 +9,18 @@
 
 #include <algorithm>
 #include <string>
+#include <vector>
 
 namespace
 {
-constexpr int kCustomColorSlotCount = 16;
 constexpr const char* kCustomColorsArrayKey = "MelonPrime.ColorDialog.CustomColors";
+
+using ColorSlotList = std::vector<std::string>;
+
+int customColorSlotCount()
+{
+    return QColorDialog::customCount();
+}
 
 bool isValidHexRgbString(const std::string& s)
 {
@@ -35,6 +42,18 @@ bool isValidHexRgbString(const std::string& s)
     return true;
 }
 
+std::string normalizeHexRgbString(const std::string& value)
+{
+    if (!isValidHexRgbString(value))
+        return {};
+
+    const QColor color(QString::fromStdString(value));
+    if (!color.isValid())
+        return {};
+
+    return color.name(QColor::HexRgb).toStdString();
+}
+
 QColorDialog::ColorDialogOptions colorDialogOptions()
 {
     QColorDialog::ColorDialogOptions options;
@@ -48,45 +67,88 @@ QColorDialog::ColorDialogOptions colorDialogOptions()
     return options;
 }
 
-void loadPersistedCustomColors()
+ColorSlotList readPersistedCustomColors()
 {
     Config::Table cfg = Config::GetGlobalTable();
+    ColorSlotList palette(static_cast<size_t>(customColorSlotCount()));
 
     if (!cfg.HasKey(kCustomColorsArrayKey))
-        return;
+        return palette;
 
     Config::Array colors = cfg.GetArray(kCustomColorsArrayKey);
+    const int count = std::min<int>(
+        static_cast<int>(colors.Size()),
+        customColorSlotCount());
 
-    const int count = static_cast<int>(
-        std::min<size_t>(colors.Size(), kCustomColorSlotCount));
+    for (int i = 0; i < count; ++i)
+        palette[static_cast<size_t>(i)] = normalizeHexRgbString(colors.GetString(i));
 
-    for (int i = 0; i < count; ++i) {
-        const std::string value = colors.GetString(i);
-        if (!isValidHexRgbString(value))
-            continue;
+    return palette;
+}
 
-        const QColor color(QString::fromStdString(value));
+ColorSlotList captureCurrentCustomColors()
+{
+    ColorSlotList palette(static_cast<size_t>(customColorSlotCount()));
+
+    for (int i = 0; i < customColorSlotCount(); ++i) {
+        const QColor color = QColorDialog::customColor(i);
         if (!color.isValid())
             continue;
 
-        QColorDialog::setCustomColor(i, color);
+        palette[static_cast<size_t>(i)] = color.name(QColor::HexRgb).toStdString();
+    }
+
+    return palette;
+}
+
+void applyCustomColorsToDialog(const ColorSlotList& palette)
+{
+    const int count = std::min<int>(
+        static_cast<int>(palette.size()),
+        customColorSlotCount());
+
+    for (int i = 0; i < count; ++i) {
+        const std::string& value = palette[static_cast<size_t>(i)];
+        if (value.empty())
+            continue;
+
+        QColorDialog::setCustomColor(i, QColor(QString::fromStdString(value)));
     }
 }
 
-void saveCurrentCustomColors()
+void loadPersistedCustomColors()
+{
+    applyCustomColorsToDialog(readPersistedCustomColors());
+}
+
+void writePersistedCustomColors(const ColorSlotList& palette)
 {
     Config::Table cfg = Config::GetGlobalTable();
     Config::Array colors = cfg.GetArray(kCustomColorsArrayKey);
     colors.Clear();
 
-    for (int i = 0; i < kCustomColorSlotCount; ++i) {
-        const QColor color = QColorDialog::customColor(i);
-        if (!color.isValid())
+    const int count = std::min<int>(
+        static_cast<int>(palette.size()),
+        customColorSlotCount());
+
+    for (int i = 0; i < count; ++i) {
+        const std::string& value = palette[static_cast<size_t>(i)];
+        if (value.empty())
             continue;
 
-        colors.SetString(i, color.name(QColor::HexRgb).toStdString());
+        colors.SetString(i, value);
     }
+}
 
+void persistCurrentCustomColorsIfChanged()
+{
+    const ColorSlotList before = readPersistedCustomColors();
+    const ColorSlotList current = captureCurrentCustomColors();
+
+    if (current == before)
+        return;
+
+    writePersistedCustomColors(current);
     Config::Save();
 }
 
@@ -106,7 +168,7 @@ QColor getColor(QWidget* parent, const QColor& initial, const QString& title)
         colorDialogOptions());
 
     if (picked.isValid())
-        saveCurrentCustomColors();
+        persistCurrentCustomColorsIfChanged();
 
     return picked;
 }
