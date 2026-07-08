@@ -144,6 +144,12 @@ namespace MelonPrime {
 #endif
     }
 
+    // Only place that writes an AimConfigSnapshot into MelonPrimeCore.
+    // Side effect: RecalcAimFixedPoint() rebuilds the Q-format aim scale/
+    // adjust/snap-threshold fields from the new sensitivity/adjust values
+    // and resets the sub-pixel aim residuals (P-17) since they were
+    // accumulated under the previous scale. See the Load/Apply boundary
+    // comment in MelonPrimeRuntimeConfig.h.
     void MelonPrimeCore::ApplyAimConfigSnapshot(const AimConfigSnapshot& s)
     {
         m_aimSensiFactor = s.aimSensiFactor;
@@ -152,6 +158,9 @@ namespace MelonPrime {
         RecalcAimFixedPoint();
     }
 
+    // Called from Initialize(), ApplyConfigReload(), and ROM detect — see
+    // MelonPrimeRuntimeConfig.h for why this is a separate reload path from
+    // ReloadConfigFlags()/RuntimeConfigSnapshot.
     void MelonPrimeCore::ReloadAimConfigFromTable(Config::Table& cfg)
     {
         ApplyAimConfigSnapshot(LoadAimConfigSnapshot(cfg));

@@ -33,6 +33,13 @@ namespace MelonPrime {
     MelonPrimeCore::~MelonPrimeCore() = default;
 #endif
 
+    // Only place that writes a RuntimeConfigSnapshot into MelonPrimeCore.
+    // Side effects beyond plain member assignment: clears
+    // m_directTransformPendingFrames / m_nativeBipedFire* / m_weaponSwitchPending
+    // / m_nativeZoomToggle* / m_nativeZoomPending when the corresponding
+    // feature flag is now off, and recalculates the effective zoom-aim
+    // fixed-point scale (resetting aim residuals) when the zoom-aim scale
+    // changed. See the Load/Apply boundary comment in MelonPrimeRuntimeConfig.h.
     void MelonPrimeCore::ApplyRuntimeConfigSnapshot(const RuntimeConfigSnapshot& s)
     {
         m_flags.assign(StateFlags::BIT_JOY2KEY, s.joy2Key);
