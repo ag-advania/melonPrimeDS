@@ -424,9 +424,16 @@ function (not inlined into `RunFrameHook`, not split awkwardly across files).
   substitutions — same calls, same order, same arguments
 - macOS launch/close smoke after Site B (no crash)
 
-### Full-matrix CI at HEAD `a56d06ad...` (Batch 1 boundary)
+### Full-matrix CI at HEAD `26210070...` (Batch 1 boundary, `ci/phase-d-sites-a-b-verification`)
 
-_(run in progress at time of commit — see below for confirmed results)_
+| Platform | Run | Conclusion |
+|---|---|---|
+| macOS | [28938331032](https://github.com/ag-advania/melonPrimeDS/actions/runs/28938331032) | success |
+| Ubuntu | [28938331051](https://github.com/ag-advania/melonPrimeDS/actions/runs/28938331051) | success |
+| Windows | [28938331050](https://github.com/ag-advania/melonPrimeDS/actions/runs/28938331050) | success — all audit steps (config defaults, HUD key parity, literal budget, platform scatter, color dialog prefs, SRP/performance, HUD schema) + build all green |
+| BSD | [28938331098](https://github.com/ag-advania/melonPrimeDS/actions/runs/28938331098) | success |
+
+All 4 platforms green. Batch 1 (Sites A and B) is fully CI-confirmed.
 
 Sites C and D remain untouched, matching the design doc:
 Site C (per-frame `OsdColor_ApplyOnce` re-apply) is an explicit non-goal;
