@@ -7,6 +7,26 @@
 
 namespace MelonPrime::PatchLifecycle {
 
+namespace {
+
+void SetMatchHooksActive(melonDS::NDS* nds,
+                         EmuInstance* emu,
+                         Config::Table& cfg,
+                         const RomAddresses& rom,
+                         MelonPrimeCore* core,
+                         bool active)
+{
+    ARM9Hook_SetMatchHooksActive(
+        nds,
+        cfg,
+        rom.romGroupIndex,
+        core,
+        active,
+        emu);
+}
+
+} // namespace
+
 void ResetForEmuStart(melonDS::NDS* nds,
                       EmuInstance* emu,
                       Config::Table& cfg,
@@ -55,13 +75,7 @@ void ReapplyForConfigReload(melonDS::NDS* nds,
     if (!romDetected || !battleRuntimeMode)
         return;
 
-    ARM9Hook_SetMatchHooksActive(
-        nds,
-        cfg,
-        rom.romGroupIndex,
-        core,
-        true,
-        emu);
+    SetMatchHooksActive(nds, emu, cfg, rom, core, true);
     const PatchCtx ctx{ nds, emu, cfg, rom };
     Patches_Apply(PatchSite_ConfigReload, ctx);
 }
@@ -83,13 +97,7 @@ void RestoreOnMatchEnd(melonDS::NDS* nds,
 {
     const PatchCtx ctx{ nds, emu, cfg, rom };
     Patches_RestoreOnLeave(ctx);
-    ARM9Hook_SetMatchHooksActive(
-        nds,
-        cfg,
-        rom.romGroupIndex,
-        core,
-        false,
-        emu);
+    SetMatchHooksActive(nds, emu, cfg, rom, core, false);
 }
 
 void ApplyOnBattleRuntimeEnter(melonDS::NDS* nds,
@@ -101,13 +109,7 @@ void ApplyOnBattleRuntimeEnter(melonDS::NDS* nds,
 {
     const PatchCtx ctx{ nds, emu, cfg, rom };
     Patches_Apply(PatchSite_BattleRuntime, ctx);
-    ARM9Hook_SetMatchHooksActive(
-        nds,
-        cfg,
-        rom.romGroupIndex,
-        core,
-        true,
-        emu);
+    SetMatchHooksActive(nds, emu, cfg, rom, core, true);
     if (nativeWeaponSwitchEnabled)
         (void)MelonPrimeCore::WeaponSwitchHook_IsSiteValid(nds, rom.romGroupIndex);
 }
@@ -118,13 +120,7 @@ void DeactivateHooksOnLeaveInGame(melonDS::NDS* nds,
                                   const RomAddresses& rom,
                                   MelonPrimeCore* core)
 {
-    ARM9Hook_SetMatchHooksActive(
-        nds,
-        cfg,
-        rom.romGroupIndex,
-        core,
-        false,
-        emu);
+    SetMatchHooksActive(nds, emu, cfg, rom, core, false);
 }
 
 void DeactivateHooksForRomDetect(melonDS::NDS* nds,
@@ -133,13 +129,7 @@ void DeactivateHooksForRomDetect(melonDS::NDS* nds,
                                  const RomAddresses& rom,
                                  MelonPrimeCore* core)
 {
-    ARM9Hook_SetMatchHooksActive(
-        nds,
-        cfg,
-        rom.romGroupIndex,
-        core,
-        false,
-        emu);
+    SetMatchHooksActive(nds, emu, cfg, rom, core, false);
 }
 
 } // namespace MelonPrime::PatchLifecycle
