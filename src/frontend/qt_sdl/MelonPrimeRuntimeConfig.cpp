@@ -104,13 +104,22 @@ RuntimeConfigSnapshot LoadRuntimeConfigSnapshot(Config::Table& cfg) noexcept
     return s;
 }
 
-AimConfigSnapshot LoadAimConfigSnapshot(Config::Table& cfg) noexcept
+AimSensitivitySnapshot LoadAimSensitivitySnapshot(Config::Table& cfg) noexcept
 {
-    AimConfigSnapshot s{};
+    AimSensitivitySnapshot s{};
     const float sens = static_cast<float>(cfg.GetInt(CfgKey::AimSens));
     const float yScale = static_cast<float>(cfg.GetDouble(CfgKey::AimYScale));
     s.aimSensiFactor = sens * 0.01f;
     s.aimCombinedY = s.aimSensiFactor * yScale;
+    return s;
+}
+
+AimConfigSnapshot LoadAimConfigSnapshot(Config::Table& cfg) noexcept
+{
+    AimConfigSnapshot s{};
+    const AimSensitivitySnapshot sens = LoadAimSensitivitySnapshot(cfg);
+    s.aimSensiFactor = sens.aimSensiFactor;
+    s.aimCombinedY = sens.aimCombinedY;
     const double v = cfg.GetDouble(CfgKey::AimAdjust);
     s.aimAdjust = static_cast<float>(std::max(0.0, std::isnan(v) ? 0.0 : v));
     return s;
