@@ -220,19 +220,14 @@ namespace MelonPrime {
 #endif
 
 #ifdef MELONPRIME_DS
-        if (m_flags.test(StateFlags::BIT_ROM_DETECTED)
-                && m_flags.test(StateFlags::BIT_BATTLE_RUNTIME_MODE)) {
-            melonDS::NDS* const nds = emuInstance->getNDS();
-            ARM9Hook_SetMatchHooksActive(
-                nds,
-                localCfg,
-                m_currentRom.romGroupIndex,
-                this,
-                true,
-                emuInstance);
-            const PatchCtx ctx{ nds, emuInstance, localCfg, m_currentRom };
-            Patches_Apply(PatchSite_ConfigReload, ctx);
-        }
+        PatchLifecycle::ReapplyForConfigReload(
+            emuInstance->getNDS(),
+            emuInstance,
+            localCfg,
+            m_currentRom,
+            this,
+            m_flags.test(StateFlags::BIT_ROM_DETECTED),
+            m_flags.test(StateFlags::BIT_BATTLE_RUNTIME_MODE));
 #endif
     }
 

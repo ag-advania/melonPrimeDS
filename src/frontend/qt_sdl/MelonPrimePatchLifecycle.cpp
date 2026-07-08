@@ -1,6 +1,7 @@
 #include "MelonPrimePatchLifecycle.h"
 
 #include "EmuInstance.h"
+#include "MelonPrime.h"
 #include "MelonPrimeArm9Hook.h"
 #include "MelonPrimePatchRegistry.h"
 
@@ -41,6 +42,28 @@ void RestoreForEmuStop(melonDS::NDS* nds,
     Patches_RestoreOnStop(ctx);
     Patches_ResetAll();
     ARM9Hook_ResetPatchState();
+}
+
+void ReapplyForConfigReload(melonDS::NDS* nds,
+                            EmuInstance* emu,
+                            Config::Table& cfg,
+                            const RomAddresses& rom,
+                            MelonPrimeCore* core,
+                            bool romDetected,
+                            bool battleRuntimeMode)
+{
+    if (!romDetected || !battleRuntimeMode)
+        return;
+
+    ARM9Hook_SetMatchHooksActive(
+        nds,
+        cfg,
+        rom.romGroupIndex,
+        core,
+        true,
+        emu);
+    const PatchCtx ctx{ nds, emu, cfg, rom };
+    Patches_Apply(PatchSite_ConfigReload, ctx);
 }
 
 } // namespace MelonPrime::PatchLifecycle
