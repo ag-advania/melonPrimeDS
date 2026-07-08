@@ -24,7 +24,7 @@ single gateway.
 | Input projection | `MelonPrimeInputProjection.h` (header-only) | Hotkey → down/press bit projection, `FORCE_INLINE`, zero new abstraction cost on the hot path |
 | Screen cursor | `MelonPrimeScreenCursorPolicy.h/.cpp` | Cursor clip/warp/capture/confinement policy: `ClipCenter1px`, `Unclip`, `UpdateClipIfNeeded`, `ContainAimCursorIfNeeded`, `ReleaseForClose`, `ConfineToBottomScreen` |
 | HUD editor widgets | `MelonPrimeHudEditorFormBuilder.h/.cpp` | Every property-panel widget factory: checkbox/combo/spin/double-spin/opacity-slider/line-edit/color-picker/sub-color/color-overlay-row, all `WidgetFactoryContext`-based |
-| Patch/hook lifecycle | `MelonPrimePatchLifecycle.h/.cpp` | `ResetForEmuStart` / `ResetForBoot` / `RestoreForEmuStop` / `ReapplyForConfigReload` / `ApplyOutOfGameFrame` (Site E) / `RestoreOnMatchEnd` (Site A) / `ApplyOnBattleRuntimeEnter` (Site B) |
+| Patch/hook lifecycle | `MelonPrimePatchLifecycle.h/.cpp` | `ResetForEmuStart` / `ResetForBoot` / `RestoreForEmuStop` / `ReapplyForConfigReload` / `ApplyOutOfGameFrame` (Site E) / `RestoreOnMatchEnd` (Site A) / `ApplyOnBattleRuntimeEnter` (Site B) / `DeactivateHooksOnLeaveInGame` (Site D) |
 
 `MelonPrimeHudConfigOnScreenEdit.cpp` is now a thin delegate layer over
 `MelonPrimeHudEditorFormBuilder` for every widget factory — only
@@ -37,7 +37,7 @@ specific code remain in that file.
 |---|---|
 | `RunFrameHook`'s 19-step order | Documented contract in `melonprime-srp-performance-contract.md`; hot path, no new abstraction cost allowed |
 | Site C — per-frame `OsdColor_ApplyOnce` re-apply | Explicit non-goal from the start — pattern B (game overwrites the RAM it patches), tracked separately as a performance question, not a lifecycle-ownership one |
-| Site D — leave-in-game `ARM9Hook_SetMatchHooksActive(false)` | The design doc flagged bundling it with Site A as possible but requiring its own S6/S7 verification pass first; that pass was never done, so it stays a direct inline call |
+| Site D surrounding cleanup | Only hook deactivation moved to `PatchLifecycle` (`DeactivateHooksOnLeaveInGame`). Flag clears, transient input reset, `CustomHud_EnsurePatchRestored`, and `m_weaponSwitchPending.Clear()` stay inline in `RunFrameHook` — frame-state and per-subsystem ownership, not patch-lifecycle ownership |
 | `ARM9 hook context化` | Deferred — no batch touched ARM9 hook dispatch internals |
 | HUD render unity split | Deferred — `MelonPrimeHudRender*.inc` unity-fragment structure is untouched |
 | `MelonPrimeCore` hot state struct extraction | Deferred — member layout in `MelonPrime.h` is untouched |
@@ -146,8 +146,7 @@ MelonPrimeCore hot state struct extraction
 Screen mouse router rewrite
 PlatformInput raw ownership redesign
 PatchLifecycleGateway Site C (explicit non-goal)
-PatchLifecycleGateway Site D bundling with Site A (needs its own S6/S7 pass)
-Aim config reload path unification (outcomes B/C in
-  melonprime_aim_config_reload_paths_audit.md — outcome A, "keep as
-  documented," is what shipped)
+Aim config reload path unification outcome B (see
+  melonprime_aim_config_reload_paths_audit.md — outcome C shipped as
+  AimSensitivitySnapshot)
 ```

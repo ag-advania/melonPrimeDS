@@ -572,3 +572,28 @@ Implemented outcome C from the aim reload audit:
 Commits: `5a49864c` (code), doc updates on top marking outcome C
 implemented in `melonprime_aim_config_reload_paths_audit.md` and
 `melonprime_aim_reload_outcome_c_design_note.md`.
+
+## Post-Closeout Implementation: PatchLifecycle Site D hook-only extraction
+
+Implemented Site D as `PatchLifecycle::DeactivateHooksOnLeaveInGame(...)`:
+- moved only the `ARM9Hook_SetMatchHooksActive(... false ...)` call;
+- left lifecycle flag clears in `RunFrameHook`;
+- left `ResetTransientInputState`, `CustomHud_EnsurePatchRestored`, and
+  `m_weaponSwitchPending.Clear()` in `RunFrameHook`;
+- did not add `Patches_RestoreOnLeave` to Site D;
+- build and SRP performance audit passed;
+- gameplay smoke intentionally deferred to final release-readiness smoke.
+
+Commit: `6fd63a6e` ("Route Site D hook deactivation through PatchLifecycle").
+
+Full CI: pending — branch `ci/patchlifecycle-site-d-verification` to be
+pushed after this doc commit; will update this entry with run IDs once
+complete.
+
+Note: `MelonPrimeGameRomDetect.cpp` still has one direct
+`ARM9Hook_SetMatchHooksActive(... false ...)` call (in ROM detection,
+unrelated to the `RunFrameHook` leave-in-game Site D block). It was left
+untouched — out of this task's allowed-files scope
+(`MelonPrimePatchLifecycle.h/.cpp`, `MelonPrime.cpp` only). `PatchLifecycle`
+now owns 3 of the 4 non-declaration `ARM9Hook_SetMatchHooksActive` call
+sites in the codebase, not all 4.
