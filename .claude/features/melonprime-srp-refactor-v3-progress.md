@@ -612,3 +612,15 @@ helper. Public PatchLifecycle API unchanged; RunFrameHook and ROM-detect call
 sites unchanged. Build and SRP performance audit passed.
 
 Commit: `19241ced` ("Consolidate PatchLifecycle match hook calls").
+
+## Post-Closeout Implementation: PatchLifecycle reset helper cleanup
+
+Consolidated repeated reset/stop bookkeeping inside
+`MelonPrimePatchLifecycle.cpp` into private helpers:
+- `RestoreStopPatches(...)`
+- `ResetPatchAndHookBookkeeping()`
+
+Public PatchLifecycle API unchanged. Reset/boot/stop ordering unchanged.
+Build and SRP performance audit passed.
+
+Commit: `911904c1` ("Consolidate PatchLifecycle reset helpers").
