@@ -8,8 +8,8 @@ Merged from `melonprime-srp-refactor-v3` in PR #520 (`c5e95f55`)
 
 | Phase | Title | Status | Commit |
 |---|---|---|---|
-| 7 | HUD FormBuilder Step 2 | ✅ Done | (pending push) |
-| 8 | ScreenCursorPolicy friend reduction | ⏳ Pending | |
+| 7 | HUD FormBuilder Step 2 | ✅ Done | `c5811762` |
+| 8 | ScreenCursorPolicy friend reduction | ✅ Done | `c95b7959` |
 | 9 | PatchLifecycleGateway Step 2 | ⏳ Pending | |
 | 10 | RuntimeConfig aim sensitivity | ⏳ Pending | |
 
