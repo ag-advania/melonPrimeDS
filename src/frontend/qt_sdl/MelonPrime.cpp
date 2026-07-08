@@ -385,13 +385,12 @@ namespace MelonPrime {
                 m_flags.clear(StateFlags::BIT_END_OF_GAME_PATCH_RESTORED);
                 m_flags.clear(StateFlags::BIT_BATTLE_RUNTIME_MODE);
 #ifdef MELONPRIME_DS
-                ARM9Hook_SetMatchHooksActive(
-                    emuInstance->getNDS(),
-                    localCfg,
-                    m_currentRom.romGroupIndex,
-                    this,
-                    false,
-                    emuInstance);
+                // PatchLifecycle Step 3 / Site D — hook deactivation only.
+                // Flag clears and the transient-input / HUD / weapon-switch
+                // cleanup stay in RunFrameHook because they are frame-state /
+                // per-subsystem ownership.
+                PatchLifecycle::DeactivateHooksOnLeaveInGame(
+                    emuInstance->getNDS(), emuInstance, localCfg, m_currentRom, this);
 #endif
                 // weaponSwitchPending cleared in the DS block below where ordering matters.
                 ResetTransientInputState(
