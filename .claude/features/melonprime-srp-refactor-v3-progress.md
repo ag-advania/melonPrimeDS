@@ -558,3 +558,17 @@ deferred) is now done — see Phase 1.
 
 New docs added: `melonprime_patch_lifecycle_gateway_site_d_plan.md`,
 `melonprime_aim_reload_outcome_c_design_note.md`. Latest HEAD: `e84c46fd`.
+
+## Post-Closeout Implementation: AimSensitivitySnapshot / Outcome C
+
+Implemented outcome C from the aim reload audit:
+- Added `AimSensitivitySnapshot`.
+- `LoadAimConfigSnapshot` now reuses `LoadAimSensitivitySnapshot`.
+- `RecalcAimSensitivityCache` now uses `LoadAimSensitivitySnapshot`.
+- Hotkey path still skips `AimAdjust`.
+- Build and audit passed.
+- Gameplay smoke intentionally deferred to final release-readiness smoke.
+
+Commits: `5a49864c` (code), doc updates on top marking outcome C
+implemented in `melonprime_aim_config_reload_paths_audit.md` and
+`melonprime_aim_reload_outcome_c_design_note.md`.
