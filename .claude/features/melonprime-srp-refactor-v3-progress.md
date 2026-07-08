@@ -603,3 +603,12 @@ Follow-up: ROM-detect hook deactivation was also routed through
 `PatchLifecycle` now owns the direct `ARM9Hook_SetMatchHooksActive` call
 sites in `qt_sdl`; no direct call remains outside
 `MelonPrimePatchLifecycle.cpp`.
+
+## Post-Closeout Implementation: PatchLifecycle internal hook helper
+
+Consolidated repeated `ARM9Hook_SetMatchHooksActive` argument plumbing inside
+`MelonPrimePatchLifecycle.cpp` into a private `SetMatchHooksActive(...)`
+helper. Public PatchLifecycle API unchanged; RunFrameHook and ROM-detect call
+sites unchanged. Build and SRP performance audit passed.
+
+Commit: `19241ced` ("Consolidate PatchLifecycle match hook calls").

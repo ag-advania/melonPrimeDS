@@ -31,6 +31,9 @@ single gateway.
 `addSeparator`, layout/populate/snapshot logic, and crosshair/preview-
 specific code remain in that file.
 
+Internally, `MelonPrimePatchLifecycle.cpp` now funnels match-hook activation/
+deactivation through a private helper; public gateway APIs are unchanged.
+
 ## What was deliberately kept inline (and why)
 
 | Item | Why it stayed |
