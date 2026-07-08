@@ -4,18 +4,18 @@
 
 #include "Config.h"
 
-#include <QColor>
 #include <QColorDialog>
-#include <QString>
+#include <QtGlobal>
 
 #include <algorithm>
+#include <string>
 
 namespace
 {
-constexpr int kMaxCustomColors = 16;
+constexpr int kCustomColorSlotCount = 16;
 constexpr const char* kCustomColorsArrayKey = "MelonPrime.ColorDialog.CustomColors";
 
-bool isValidCustomColorString(const std::string& s)
+bool isValidHexRgbString(const std::string& s)
 {
     if (s.size() != 7)
         return false;
@@ -48,20 +48,21 @@ QColorDialog::ColorDialogOptions colorDialogOptions()
     return options;
 }
 
-} // namespace
-
-namespace MelonPrime::ColorDialogPrefs
-{
-
-void loadCustomColors()
+void loadPersistedCustomColors()
 {
     Config::Table cfg = Config::GetGlobalTable();
+
+    if (!cfg.HasKey(kCustomColorsArrayKey))
+        return;
+
     Config::Array colors = cfg.GetArray(kCustomColorsArrayKey);
 
-    const int count = static_cast<int>(std::min<size_t>(colors.Size(), kMaxCustomColors));
+    const int count = static_cast<int>(
+        std::min<size_t>(colors.Size(), kCustomColorSlotCount));
+
     for (int i = 0; i < count; ++i) {
         const std::string value = colors.GetString(i);
-        if (!isValidCustomColorString(value))
+        if (!isValidHexRgbString(value))
             continue;
 
         const QColor color(QString::fromStdString(value));
@@ -72,13 +73,13 @@ void loadCustomColors()
     }
 }
 
-void saveCustomColors()
+void saveCurrentCustomColors()
 {
     Config::Table cfg = Config::GetGlobalTable();
     Config::Array colors = cfg.GetArray(kCustomColorsArrayKey);
     colors.Clear();
 
-    for (int i = 0; i < kMaxCustomColors; ++i) {
+    for (int i = 0; i < kCustomColorSlotCount; ++i) {
         const QColor color = QColorDialog::customColor(i);
         if (!color.isValid())
             continue;
@@ -89,9 +90,14 @@ void saveCustomColors()
     Config::Save();
 }
 
+} // namespace
+
+namespace MelonPrime::ColorDialogPrefs
+{
+
 QColor getColor(QWidget* parent, const QColor& initial, const QString& title)
 {
-    loadCustomColors();
+    loadPersistedCustomColors();
 
     const QColor picked = QColorDialog::getColor(
         initial,
@@ -100,7 +106,7 @@ QColor getColor(QWidget* parent, const QColor& initial, const QString& title)
         colorDialogOptions());
 
     if (picked.isValid())
-        saveCustomColors();
+        saveCurrentCustomColors();
 
     return picked;
 }
