@@ -1,6 +1,7 @@
 # PatchLifecycleGateway Step 3 — Design Plan (doc only)
 
-Status: **design only, not implemented**. No code changes in this phase.
+Status: Site E implemented (2026-07-08, `melonprime-srp-refactor-v3-progress.md`
+Phase D). Sites A and B are still **design only, not implemented** — see §3.
 
 Steps 1–2 of `MelonPrimePatchLifecycle` (`MelonPrimePatchLifecycle.h/.cpp`)
 already own the **cold, out-of-frame** patch/hook lifecycle:
@@ -50,9 +51,11 @@ Per the continuation plan's own risk assessment (medium–high; do not rush):
 
 ```text
 1. doc only (this file)
-2. Site E (out-of-game per-frame patch) — simplest: no state-flag side
-   effects beyond the registry's own self-guards, runs every out-of-game
-   frame regardless of match history, easiest to verify with S6.
+2. [DONE 2026-07-08] Site E (out-of-game per-frame patch) — simplest: no
+   state-flag side effects beyond the registry's own self-guards, runs
+   every out-of-game frame regardless of match history, easiest to verify
+   with S6. Implemented as PatchLifecycle::ApplyOutOfGameFrame(); see
+   melonprime-srp-refactor-v3-progress.md Phase D.
 3. Site A (match-end restore) — single well-defined transition edge; the
    `BIT_END_OF_GAME_PATCH_RESTORED` flag write must stay in RunFrameHook
    (state-flag ownership, not patch-lifecycle ownership) even after the
