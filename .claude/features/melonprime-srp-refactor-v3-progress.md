@@ -71,4 +71,5 @@ Base: `highres_fonts_v3`
 
 - macOS Release build: green (`build-mac`)
 - Hot path order: unchanged by design
-- SRP audit script: ready for Ubuntu/Windows CI once workflow push lands
+- SRP audit script: wired in Ubuntu/Windows CI (runs on PR to `master` or `ci/*`)
+- Post-audit cleanups (L1/L2/L3/L4): applied after push audit

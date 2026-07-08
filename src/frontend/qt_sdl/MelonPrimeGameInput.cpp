@@ -1,6 +1,6 @@
 #include "MelonPrimeInternal.h"
-#include "MelonPrimeInputProjection.h"
 #include "EmuInstance.h"
+#include "MelonPrimeInputProjection.h"
 #include "NDS.h"
 #include "main.h"
 #include "Screen.h"
