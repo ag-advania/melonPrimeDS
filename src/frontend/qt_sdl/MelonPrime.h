@@ -693,7 +693,6 @@ namespace MelonPrime {
         COLD_FUNCTION void ApplyGameSettingsOnce();
 
         void RecalcAimSensitivityCache(Config::Table& cfg);
-        void ApplyAimAdjustSetting(Config::Table& cfg);
         void RecalcAimFixedPoint();
         void RecalcAimEffectiveFixedScale();
         void UpdateZoomAimEffectiveScale();
