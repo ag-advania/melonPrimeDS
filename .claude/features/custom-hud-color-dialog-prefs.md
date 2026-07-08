@@ -150,7 +150,12 @@ rg "loadCustomColors|saveCustomColors|loadPersistedCustomColors|saveCurrentCusto
   `applyCustomColorsToDialog`, `writePersistedCustomColors`
 - `persistCurrentCustomColorsIfChanged()` skips `Config::Save()` when palette unchanged
 - `normalizeHexRgbString()` stabilizes TOML compare/write as lowercase `#rrggbb`
-- Added `.claude/skills/audit-color-dialog-prefs.ps1` (local grep ratchet; CI optional)
+- Added `.claude/skills/audit-color-dialog-prefs.ps1` (grep ratchet; Windows/Ubuntu CI)
+
+### Phase 4 — slot count locals + CI wiring
+
+- Cache `customColorSlotCount()` as `const int slotCount` within each palette helper
+- Run `audit-color-dialog-prefs.ps1` in Windows and Ubuntu audit jobs
 
 ## Follow-Up Refactoring (Optional)
 
@@ -176,7 +181,7 @@ needs careful design before moving.
 ### P3 — CI grep ratchet (low)
 
 - [x] Local script: `.claude/skills/audit-color-dialog-prefs.ps1`
-- [ ] Optional: add to Windows/Ubuntu audit workflow jobs
+- [x] Windows/Ubuntu audit workflow jobs
 
 ### P4 — Empty palette key cleanup (low)
 
