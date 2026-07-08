@@ -322,6 +322,47 @@ void ScreenPanel::updateClipIfNeeded() {
 }
 #endif // MELONPRIME_DS
 
+#ifdef MELONPRIME_DS
+bool ScreenPanel::isActiveVisibleWindowForMelonPrime() const
+{
+    return isVisible() && window() && window()->isActiveWindow();
+}
+
+MelonPrime::MelonPrimeCore* ScreenPanel::melonPrimeCoreForPolicy() const
+{
+    return melonPrimeCore();
+}
+
+QRect ScreenPanel::aimContainmentLocalRectForPolicy() const
+{
+    return aimContainmentLocalRect();
+}
+
+QPoint ScreenPanel::aimContainmentCenterGlobalForPolicy() const
+{
+    return mapToGlobal(aimContainmentLocalRect().center());
+}
+
+bool ScreenPanel::shouldConfineCursorToBottomScreenForPolicy() const
+{
+    return shouldConfineCursorToBottomScreen();
+}
+
+void ScreenPanel::clipCursorToBottomScreenForPolicy()
+{
+    clipCursorToBottomScreen();
+}
+
+void ScreenPanel::setClipWantedForMelonPrime(bool value)
+{
+    setClipWanted(value);
+}
+
+bool ScreenPanel::getClipWantedForMelonPrime() const
+{
+    return getClipWanted();
+}
+#endif // MELONPRIME_DS
 
 ScreenPanel::ScreenPanel(QWidget* parent) : QWidget(parent)
 {
