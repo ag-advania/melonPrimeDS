@@ -13,6 +13,7 @@ class Table;
 namespace MelonPrime {
 
 struct RomAddresses;
+class MelonPrimeCore;
 
 namespace PatchLifecycle {
 
@@ -29,6 +30,14 @@ void RestoreForEmuStop(melonDS::NDS* nds,
                        Config::Table& cfg,
                        const RomAddresses& rom,
                        bool romDetected);
+
+void ReapplyForConfigReload(melonDS::NDS* nds,
+                            EmuInstance* emu,
+                            Config::Table& cfg,
+                            const RomAddresses& rom,
+                            MelonPrimeCore* core,
+                            bool romDetected,
+                            bool battleRuntimeMode);
 
 } // namespace PatchLifecycle
 } // namespace MelonPrime
