@@ -8,6 +8,7 @@ Contract for the MelonPrime SRP refactor v3 immediate plan. Audited by
 | Unit | Owns | Must not own |
 |---|---|---|
 | `RuntimeConfigSnapshot` | Config read, clamp, developer gate, derived bools | Core member mutation, pending clears, `RecalcAimEffectiveFixedScale` |
+| `AimConfigSnapshot` (Phase 10) | Aim sensitivity/Y-scale/adjust read | Core member mutation, `RecalcAimFixedPoint` |
 | `InputProjection` | Hotkey → down/press projection | Aim pipeline, SnapTap policy |
 | `ScreenCursorPolicy` | Platform cursor clip/warp/capture | Mouse event routing, HUD editor bridge |
 | `HudEditorFormBuilder` | Shared HUD editor helpers | `QColorDialog` direct calls, `Config::Save` |
