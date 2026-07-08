@@ -25,6 +25,21 @@ void SetMatchHooksActive(melonDS::NDS* nds,
         emu);
 }
 
+void ResetPatchAndHookBookkeeping()
+{
+    Patches_ResetAll();
+    ARM9Hook_ResetPatchState();
+}
+
+void RestoreStopPatches(melonDS::NDS* nds,
+                        EmuInstance* emu,
+                        Config::Table& cfg,
+                        const RomAddresses& rom)
+{
+    const PatchCtx ctx{ nds, emu, cfg, rom };
+    Patches_RestoreOnStop(ctx);
+}
+
 } // namespace
 
 void ResetForEmuStart(melonDS::NDS* nds,
@@ -33,10 +48,8 @@ void ResetForEmuStart(melonDS::NDS* nds,
                       const RomAddresses& rom)
 {
     ARM9Hook_Uninstall(nds, emu);
-    const PatchCtx ctx{ nds, emu, cfg, rom };
-    Patches_RestoreOnStop(ctx);
-    Patches_ResetAll();
-    ARM9Hook_ResetPatchState();
+    RestoreStopPatches(nds, emu, cfg, rom);
+    ResetPatchAndHookBookkeeping();
 }
 
 void ResetForBoot(melonDS::NDS* nds,
@@ -44,8 +57,7 @@ void ResetForBoot(melonDS::NDS* nds,
 {
     ARM9Hook_Uninstall(nds, emu);
     // boot reset: state only, no RAM restore (emu memory is being re-initialized)
-    Patches_ResetAll();
-    ARM9Hook_ResetPatchState();
+    ResetPatchAndHookBookkeeping();
 }
 
 void RestoreForEmuStop(melonDS::NDS* nds,
@@ -58,10 +70,8 @@ void RestoreForEmuStop(melonDS::NDS* nds,
     // romDetected is reserved for a future guard; do not gate restore here yet.
     (void)romDetected;
     ARM9Hook_Uninstall(nds, emu);
-    const PatchCtx ctx{ nds, emu, cfg, rom };
-    Patches_RestoreOnStop(ctx);
-    Patches_ResetAll();
-    ARM9Hook_ResetPatchState();
+    RestoreStopPatches(nds, emu, cfg, rom);
+    ResetPatchAndHookBookkeeping();
 }
 
 void ReapplyForConfigReload(melonDS::NDS* nds,
