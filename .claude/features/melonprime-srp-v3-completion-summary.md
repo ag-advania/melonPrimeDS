@@ -24,7 +24,7 @@ single gateway.
 | Input projection | `MelonPrimeInputProjection.h` (header-only) | Hotkey → down/press bit projection, `FORCE_INLINE`, zero new abstraction cost on the hot path |
 | Screen cursor | `MelonPrimeScreenCursorPolicy.h/.cpp` | Cursor clip/warp/capture/confinement policy: `ClipCenter1px`, `Unclip`, `UpdateClipIfNeeded`, `ContainAimCursorIfNeeded`, `ReleaseForClose`, `ConfineToBottomScreen` |
 | HUD editor widgets | `MelonPrimeHudEditorFormBuilder.h/.cpp` | Every property-panel widget factory: checkbox/combo/spin/double-spin/opacity-slider/line-edit/color-picker/sub-color/color-overlay-row, all `WidgetFactoryContext`-based |
-| Patch/hook lifecycle | `MelonPrimePatchLifecycle.h/.cpp` | `ResetForEmuStart` / `ResetForBoot` / `RestoreForEmuStop` / `ReapplyForConfigReload` / `ApplyOutOfGameFrame` (Site E) / `RestoreOnMatchEnd` (Site A) / `ApplyOnBattleRuntimeEnter` (Site B) / `DeactivateHooksOnLeaveInGame` (Site D) |
+| Patch/hook lifecycle | `MelonPrimePatchLifecycle.h/.cpp` | `ResetForEmuStart` / `ResetForBoot` / `RestoreForEmuStop` / `ReapplyForConfigReload` / `ApplyOutOfGameFrame` (Site E) / `RestoreOnMatchEnd` (Site A) / `ApplyOnBattleRuntimeEnter` (Site B) / `DeactivateHooksOnLeaveInGame` (Site D) / `DeactivateHooksForRomDetect` (ROM-detect cold path). `PatchLifecycle` owns every direct `ARM9Hook_SetMatchHooksActive` call site in `qt_sdl` |
 
 `MelonPrimeHudConfigOnScreenEdit.cpp` is now a thin delegate layer over
 `MelonPrimeHudEditorFormBuilder` for every widget factory — only
