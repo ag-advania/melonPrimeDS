@@ -21,7 +21,7 @@
 #include <QClipboard>
 #include <QFormLayout>
 #include <QCheckBox>
-#include <QColorDialog>
+#include "../MelonPrimeColorDialogPrefs.h"
 #include <QHBoxLayout>
 #include <QVBoxLayout>
 #include <QSlider>

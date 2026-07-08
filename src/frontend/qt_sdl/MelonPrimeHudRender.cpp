@@ -16,6 +16,7 @@
 #include "MelonPrimeHudGeometry.h"
 #include "MelonPrimePerfProbe.h"
 #include "MelonPrimeLocalization.h"
+#include "MelonPrimeColorDialogPrefs.h"
 #include "MelonPrimeHudPropSchema.inc"
 
 #include <QPainter>
@@ -29,7 +30,6 @@
 #include <QPoint>
 #include <QRect>
 #include <QRectF>
-#include <QColorDialog>
 #include <QInputDialog>
 #include <QFont>
 #include <QFontDatabase>
