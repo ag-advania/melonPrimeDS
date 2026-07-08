@@ -18,6 +18,9 @@
 #if defined(MELONPRIME_CUSTOM_HUD) || defined(MELONPRIME_DS)
 #include "MelonPrimePatch.h"
 #endif
+#ifdef MELONPRIME_DS
+#include "MelonPrimePatchLifecycle.h"
+#endif
 
 #include <cmath>
 #include <algorithm>
@@ -419,12 +422,12 @@ namespace MelonPrime {
                     m_flags.clear(StateFlags::BIT_IN_ADVENTURE);
                     SetAimBlockBranchless(AIMBLK_NOT_IN_GAME, true);
 #ifdef MELONPRIME_DS
-                    {
-                        // Per-frame menu site (cold path): a tight masked loop
-                        // over the registry; matching entries self-guard.
-                        const PatchCtx ctx{ emuInstance->getNDS(), emuInstance, localCfg, m_currentRom };
-                        Patches_Apply(PatchSite_OutOfGameFrame, ctx);
-                    }
+                    // Per-frame menu site (cold path): a tight masked loop
+                    // over the registry; matching entries self-guard.
+                    // PatchLifecycle Step 3 / Site E — see
+                    // melonprime_patch_lifecycle_gateway_step3_plan.md.
+                    PatchLifecycle::ApplyOutOfGameFrame(
+                        emuInstance->getNDS(), emuInstance, localCfg, m_currentRom);
 #endif
                     // Out-of-game screens (e.g. the Adventure planet/region map)
                     // still accept WASD movement so the player can navigate.
