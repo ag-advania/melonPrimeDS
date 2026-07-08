@@ -66,4 +66,13 @@ void ReapplyForConfigReload(melonDS::NDS* nds,
     Patches_Apply(PatchSite_ConfigReload, ctx);
 }
 
+void ApplyOutOfGameFrame(melonDS::NDS* nds,
+                         EmuInstance* emu,
+                         Config::Table& cfg,
+                         const RomAddresses& rom)
+{
+    const PatchCtx ctx{ nds, emu, cfg, rom };
+    Patches_Apply(PatchSite_OutOfGameFrame, ctx);
+}
+
 } // namespace MelonPrime::PatchLifecycle
