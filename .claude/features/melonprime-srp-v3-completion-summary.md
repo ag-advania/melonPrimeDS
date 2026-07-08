@@ -34,6 +34,7 @@ specific code remain in that file.
 Internally, `MelonPrimePatchLifecycle.cpp` now funnels match-hook activation/
 deactivation through a private helper; public gateway APIs are unchanged.
 The reset/boot/stop paths also share private PatchLifecycle helpers for stop-patch restore and patch/hook bookkeeping.
+Patch registry apply/restore calls inside `MelonPrimePatchLifecycle.cpp` also share private `PatchCtx` helper wrappers.
 
 ## What was deliberately kept inline (and why)
 

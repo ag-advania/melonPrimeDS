@@ -624,3 +624,16 @@ Public PatchLifecycle API unchanged. Reset/boot/stop ordering unchanged.
 Build and SRP performance audit passed.
 
 Commit: `911904c1` ("Consolidate PatchLifecycle reset helpers").
+
+## Post-Closeout Implementation: PatchLifecycle PatchCtx helper cleanup
+
+Consolidated repeated `PatchCtx` construction inside
+`MelonPrimePatchLifecycle.cpp` into private helpers:
+- `ApplyRegistryPatches(...)`
+- `RestoreLeavePatches(...)`
+- existing `RestoreStopPatches(...)`
+
+Public PatchLifecycle API unchanged. Patch apply/restore ordering unchanged.
+Build and SRP performance audit passed.
+
+Commit: `a091fc44` ("Consolidate PatchLifecycle patch context helpers").
