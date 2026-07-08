@@ -7,8 +7,9 @@
 #include <cstdio>
 #include <cstdlib>
 
-#if !defined(_WIN32)
 #include <QCursor>
+
+#if !defined(_WIN32)
 #include <QGuiApplication>
 #endif
 
@@ -336,6 +337,8 @@ inline void PlatformInput_ResetPanelAfterWarp(AimPanel* panel)
 #endif
 }
 
+#endif // !defined(_WIN32)
+
 inline void PlatformInput_WarpCursor(int x, int y)
 {
 #if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
@@ -352,7 +355,6 @@ inline void PlatformInput_WarpCursor(int x, int y)
     QCursor::setPos(x, y);
 #endif
 }
-#endif // !defined(_WIN32)
 
 } // namespace MelonPrime
 
