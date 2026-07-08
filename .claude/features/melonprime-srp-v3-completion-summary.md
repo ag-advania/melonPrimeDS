@@ -1,10 +1,10 @@
 # MelonPrime SRP v3 — Completion Summary
 
 Concise developer-facing summary of the whole SRP v3 effort (Immediate Plan
-→ Phase 7-16 continuation → Phase A-D → Batch 1-6). The full blow-by-blow
-history, commit hashes, and per-phase CI run IDs live in
-`melonprime-srp-refactor-v3-progress.md`; this document is the "read this
-first" overview.
+→ Phase 7-16 continuation → Phase A-D → Batch 1-6 → Post-Batch-6 cleanup).
+The full blow-by-blow history, commit hashes, and per-phase CI run IDs live
+in `melonprime-srp-refactor-v3-progress.md`; this document is the "read
+this first" overview.
 
 ## What SRP v3 was solving
 
@@ -53,9 +53,9 @@ specific code remain in that file.
   `populating` was a frozen value-copy rather than a live reference. Fixed
   by making `populating` a `bool&` and capturing `ctx` by value everywhere.
 - **Batch 4** — the aim config reload paths audit found
-  `MelonPrimeCore::ApplyAimAdjustSetting` has zero call sites anywhere in
-  `src/` (superseded by the `AimConfigSnapshot` path). Flagged as a future
-  dead-code removal candidate, not removed in the audit itself.
+  `MelonPrimeCore::ApplyAimAdjustSetting` had zero call sites anywhere in
+  `src/` (superseded by the `AimConfigSnapshot` path). Removed in the
+  Post-Batch-6 cleanup response — this dead-code item is closed.
 - **Batch 5** — extracting `ConfineToBottomScreen` found a byte-identical
   duplicate helper (`getVirtualScreenRectForBottomClip` in `Screen.cpp` vs.
   the pre-existing `getVirtualScreenRect` in `MelonPrimeScreenCursorPolicy.cpp`)
@@ -91,12 +91,21 @@ Doc-only / comment-only batches (Batch 2, Batch 3, Batch 4) did not require
 a fresh full-matrix CI run per the accelerated plan's CI Strategy — local
 build + the relevant `audit-*.ps1` scripts were sufficient.
 
-**Latest verified HEAD as of this summary:** `59c229f9` closed out
-Batches 1-6. A follow-up cleanup pass in response to an external push
-audit (dead-code removal, a historical ordering re-check that turned out
-to be a non-issue, this self-containment polish, and two doc-only
-investigation notes — PatchLifecycleGateway Site D, aim reload outcome C)
-landed on top of that, ending at `e233f7f6` — see
+`59c229f9` closed out Batches 1-6 (historical reference only). A
+Post-Batch-6 cleanup response in reply to an external push audit landed on
+top of that:
+
+```text
+Post-Batch-6 cleanup response:
+- Removed dead ApplyAimAdjustSetting.
+- Rechecked Site B flag ordering and confirmed no issue.
+- Made completion summary self-contained.
+- Recorded gameplay smoke handoff.
+- Added Site D investigation doc.
+- Added aim reload outcome C design note.
+```
+
+**Latest close-out HEAD: `e233f7f6eae0124e657ee8cd7715f3e89a3a3b3d`** — see
 `melonprime-srp-refactor-v3-progress.md`'s "Post-Batch-6 Cleanup Response"
 section for the exact commit list.
 
