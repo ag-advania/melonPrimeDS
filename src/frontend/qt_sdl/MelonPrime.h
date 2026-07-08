@@ -29,6 +29,8 @@ namespace melonDS { class NDS; }
 
 namespace MelonPrime {
 
+    struct RuntimeConfigSnapshot;
+
 #ifdef _WIN32
     class RawInputWinFilter;
 #endif
@@ -710,6 +712,7 @@ namespace MelonPrime {
 
         void SetupRawInput();
         void ApplyJoy2KeySupportAndQtFilter(bool enable, bool doReset = true);
+        void ApplyRuntimeConfigSnapshot(const RuntimeConfigSnapshot& snapshot);
         void ReloadConfigFlags();
         COLD_FUNCTION void ApplyConfigReload();
     };

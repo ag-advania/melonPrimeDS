@@ -1,5 +1,6 @@
 #include "MelonPrimeInternal.h"
 #include "MelonPrimeGameSettings.h"
+#include "MelonPrimeRuntimeConfig.h"
 #include "EmuInstance.h"
 #include "Screen.h"
 #include "MelonPrimeDef.h"
@@ -22,15 +23,6 @@
 
 namespace MelonPrime {
 
-    [[nodiscard]] static int NormalizeScreenSyncMode(int mode) noexcept
-    {
-#ifdef _WIN32
-        return (mode >= 0 && mode <= 2) ? mode : 0;
-#else
-        return (mode == 1) ? 1 : 0;
-#endif
-    }
-
 #if MELONPRIME_PLATFORM_RAW_FILTER_ENABLED
     MelonPrimeCore::~MelonPrimeCore()
     {
@@ -40,74 +32,35 @@ namespace MelonPrime {
     MelonPrimeCore::~MelonPrimeCore() = default;
 #endif
 
-    void MelonPrimeCore::ReloadConfigFlags()
+    void MelonPrimeCore::ApplyRuntimeConfigSnapshot(const RuntimeConfigSnapshot& s)
     {
-        m_flags.assign(StateFlags::BIT_JOY2KEY, localCfg.GetBool(CfgKey::Joy2Key));
-        m_flags.assign(StateFlags::BIT_SNAP_TAP, localCfg.GetBool(CfgKey::SnapTap));
-        m_flags.assign(StateFlags::BIT_STYLUS_MODE, localCfg.GetBool(CfgKey::StylusMode));
+        m_flags.assign(StateFlags::BIT_JOY2KEY, s.joy2Key);
+        m_flags.assign(StateFlags::BIT_SNAP_TAP, s.snapTap);
+        m_flags.assign(StateFlags::BIT_STYLUS_MODE, s.stylusMode);
         isStylusMode    = m_flags.test(StateFlags::BIT_STYLUS_MODE);
         m_snapTapMode   = m_flags.test(StateFlags::BIT_SNAP_TAP);
 
-        m_disableMphAimSmoothing = localCfg.GetBool(CfgKey::DisableMphAimSmoothing);
-        m_enableAimAccumulator = localCfg.GetBool(CfgKey::AimAccumulator);
-        m_nativeAimHookMode = static_cast<int8_t>(localCfg.GetInt(CfgKey::NativeAimHookMode));
-#ifndef MELONPRIME_ENABLE_DEVELOPER_FEATURES
-        m_nativeAimHookMode = 0;
-#endif
-        m_enableNativeAimDeltaHook = (m_nativeAimHookMode != 0);
-        int lowLatencyAimMode =
-            std::clamp(localCfg.GetInt(CfgKey::LowLatencyAimMode),
-                       LowLatencyAimMode::Off,
-                       LowLatencyAimMode::InstantAimFollow);
-        if (lowLatencyAimMode == LowLatencyAimMode::Off
-            && localCfg.GetBool(CfgKey::InstantAimFollow))
-            lowLatencyAimMode = LowLatencyAimMode::ImmediateSync;
-#ifndef MELONPRIME_ENABLE_DEVELOPER_FEATURES
-        if (lowLatencyAimMode == LowLatencyAimMode::InstantAimFollow)
-            lowLatencyAimMode = LowLatencyAimMode::ImmediateSync;
-#endif
-        m_lowLatencyAimMode = static_cast<int8_t>(lowLatencyAimMode);
-        if (!m_disableMphAimSmoothing)
-            m_lowLatencyAimMode = LowLatencyAimMode::Off;
-        m_moonLikeAimNormalStepQ12 = std::clamp(
-            localCfg.GetInt(CfgKey::MoonLikeAimNormalStepQ12), 1, 8192);
-        m_moonLikeAimFastStepQ12 = std::clamp(
-            localCfg.GetInt(CfgKey::MoonLikeAimFastStepQ12), 1, 8192);
-        m_moonLikeAimFastThresholdQ12 = std::clamp(
-            localCfg.GetInt(CfgKey::MoonLikeAimFastThresholdQ12), 1, 8192);
-#ifdef MELONPRIME_ENABLE_DEVELOPER_FEATURES
-        m_enableImmediateInputEdgeOverlay = localCfg.GetBool(CfgKey::ImmediateInputEdgeOverlay);
-#else
-        m_enableImmediateInputEdgeOverlay = false;
-#endif
-        m_enableDirectAltFormTransform    = localCfg.GetBool(CfgKey::DirectAltFormTransform);
+        m_disableMphAimSmoothing = s.disableMphAimSmoothing;
+        m_enableAimAccumulator = s.aimAccumulator;
+        m_nativeAimHookMode = s.nativeAimHookMode;
+        m_enableNativeAimDeltaHook = s.enableNativeAimDeltaHook;
+        m_lowLatencyAimMode = s.lowLatencyAimMode;
+        m_moonLikeAimNormalStepQ12 = s.moonLikeAimNormalStepQ12;
+        m_moonLikeAimFastStepQ12 = s.moonLikeAimFastStepQ12;
+        m_moonLikeAimFastThresholdQ12 = s.moonLikeAimFastThresholdQ12;
+        m_enableImmediateInputEdgeOverlay = s.immediateInputEdgeOverlay;
+        m_enableDirectAltFormTransform = s.directAltFormTransform;
         if (!m_enableDirectAltFormTransform)
             m_directTransformPendingFrames = 0;
-#ifdef MELONPRIME_ENABLE_DEVELOPER_FEATURES
-        m_enableNativeBipedFire =
-            localCfg.GetInt(CfgKey::BipedFireMethod) != BipedFireMethod::LegacyInput;
-#else
-        m_enableNativeBipedFire = false;
-#endif
+        m_enableNativeBipedFire = s.nativeBipedFire;
         if (!m_enableNativeBipedFire) {
             m_nativeBipedFirePending = false;
             m_nativeBipedFireDirectActive = false;
         }
-        const int zoomInputMethod = localCfg.GetInt(CfgKey::ZoomInputMethod);
-        m_enableNewZoomInputMethod =
-            zoomInputMethod == ZoomInputMethod::NewPresetBinding;
-#ifdef MELONPRIME_ENABLE_DEVELOPER_FEATURES
-        m_enableNativeZoomToggle =
-            zoomInputMethod == ZoomInputMethod::NewNativeToggle;
-#else
-        m_enableNativeZoomToggle = false;
-#endif
-        const int zoomAimScalePct = std::clamp(localCfg.GetInt(CfgKey::ZoomAimScalePct), 10, 300);
-        m_zoomAimScaleQ14 = static_cast<uint32_t>(
-            (static_cast<int64_t>(zoomAimScalePct) * AIM_ONE_FP + 50) / 100);
-        m_enableZoomAimScale =
-            localCfg.GetBool(CfgKey::ZoomAimScaleEnable)
-            && m_zoomAimScaleQ14 != static_cast<uint32_t>(AIM_ONE_FP);
+        m_enableNewZoomInputMethod = s.newZoomInputMethod;
+        m_enableNativeZoomToggle = s.nativeZoomToggle;
+        m_zoomAimScaleQ14 = s.zoomAimScaleQ14;
+        m_enableZoomAimScale = s.zoomAimScaleEnable;
         if (!m_enableZoomAimScale) {
             if (m_activeZoomAimScaleQ14 != static_cast<uint32_t>(AIM_ONE_FP)) {
                 m_activeZoomAimScaleQ14 = static_cast<uint32_t>(AIM_ONE_FP);
@@ -131,14 +84,20 @@ namespace MelonPrime {
         }
 
 #ifdef MELONPRIME_DS
-        m_enableNativeWeaponSwitch =
-            localCfg.GetInt(CfgKey::WeaponSwitchMethod) != WeaponSwitchMethod::LegacyTouch;
+        m_enableNativeWeaponSwitch = s.nativeWeaponSwitch;
         if (!m_enableNativeWeaponSwitch)
             m_weaponSwitchPending.Clear();
 #endif
 
-        screenSyncMode = NormalizeScreenSyncMode(localCfg.GetInt(CfgKey::ScreenSyncMode));
+        screenSyncMode = s.screenSyncMode;
+    }
 
+    void MelonPrimeCore::ReloadConfigFlags()
+    {
+        const RuntimeConfigSnapshot snapshot =
+            LoadRuntimeConfigSnapshot(localCfg);
+
+        ApplyRuntimeConfigSnapshot(snapshot);
         ReloadDamageNotifyPurpleConfig();
     }
 
