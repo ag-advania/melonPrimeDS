@@ -56,20 +56,28 @@ Per the continuation plan's own risk assessment (medium–high; do not rush):
    every out-of-game frame regardless of match history, easiest to verify
    with S6. Implemented as PatchLifecycle::ApplyOutOfGameFrame(); see
    melonprime-srp-refactor-v3-progress.md Phase D.
-3. Site A (match-end restore) — single well-defined transition edge; the
-   `BIT_END_OF_GAME_PATCH_RESTORED` flag write must stay in RunFrameHook
-   (state-flag ownership, not patch-lifecycle ownership) even after the
-   Patches_RestoreOnLeave + ARM9Hook_SetMatchHooksActive(false) pair moves
-   into the gateway.
-4. Site B (battle-runtime enter) — last, because it also owns
-   `WeaponSwitchHook_IsSiteValid` (not a `PatchLifecycle` concern in Steps
-   1-2) and sets `BIT_BATTLE_RUNTIME_MODE`. Extracting the patch/hook halves
-   without pulling in the weapon-switch trampoline call would split one
-   cold helper across two files for a marginal benefit; if this is ever
-   done, `HandleBattleRuntimeEnter()` should probably become a single
-   `PatchLifecycle::ApplyOnBattleRuntimeEnter(...)` call plus the weapon
-   switch line, not a partial extraction.
+3. [DONE 2026-07-08] Site A (match-end restore) — single well-defined
+   transition edge; the `BIT_END_OF_GAME_PATCH_RESTORED` flag write stayed
+   in RunFrameHook (state-flag ownership, not patch-lifecycle ownership).
+   Implemented as `PatchLifecycle::RestoreOnMatchEnd()`, wrapping
+   `Patches_RestoreOnLeave` + `ARM9Hook_SetMatchHooksActive(false)` — see
+   `melonprime-srp-refactor-v3-progress.md` Batch 1 Site A.
+4. [DONE 2026-07-08] Site B (battle-runtime enter) — implemented as
+   `PatchLifecycle::ApplyOnBattleRuntimeEnter(...)`, pulling in
+   `WeaponSwitchHook_IsSiteValid` alongside the patch/hook pair rather than
+   partially extracting (it is a public static `MelonPrimeCore` method, so
+   calling it from `PatchLifecycle.cpp` — which already includes
+   `MelonPrime.h` and takes a `MelonPrimeCore*` — introduced no ownership
+   coupling). `HandleBattleRuntimeEnter()` remains a single cold outlined
+   function and still owns setting `BIT_BATTLE_RUNTIME_MODE` — see
+   `melonprime-srp-refactor-v3-progress.md` Batch 1 Site B.
 ```
+
+Both extractions were verified as byte-for-byte call-order-preserving via
+`git diff` review (same calls, same order, same arguments, only the
+call site changed), plus `audit-melonprime-srp-performance.ps1` and a
+macOS launch/close smoke. Full 4-platform CI ran at the batch boundary —
+see the progress doc's Batch 1 CI section.
 
 Site D's `ARM9Hook_SetMatchHooksActive(false)` call could ride along with
 Site A's extraction (same underlying primitive, different call site) — but
