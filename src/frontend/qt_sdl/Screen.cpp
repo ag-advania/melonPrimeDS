@@ -359,13 +359,18 @@ void ScreenPanel::clipCursorCenter1px() {
         MelonPrime::PlatformInput_WarpCursor(c.x(), c.y());
         MelonPrime::MacSetAimCursorCaptured(gcMouseActive);
     }
-#elif !defined(_WIN32)
+#elif defined(__linux__)
     if (isVisible() && window() && window()->isActiveWindow()) {
         const auto* core = melonPrimeCore();
         if (!core || !core->IsPlatformRawAimActive()) {
             const QPoint c = mapToGlobal(rect().center());
             MelonPrime::PlatformInput_WarpCursor(c.x(), c.y());
         }
+    }
+#elif !defined(_WIN32)
+    if (isVisible() && window() && window()->isActiveWindow()) {
+        const QPoint c = mapToGlobal(rect().center());
+        MelonPrime::PlatformInput_WarpCursor(c.x(), c.y());
     }
 #endif
 
