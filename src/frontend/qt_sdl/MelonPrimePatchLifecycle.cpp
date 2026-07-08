@@ -40,6 +40,25 @@ void RestoreStopPatches(melonDS::NDS* nds,
     Patches_RestoreOnStop(ctx);
 }
 
+void ApplyRegistryPatches(uint8_t siteMask,
+                          melonDS::NDS* nds,
+                          EmuInstance* emu,
+                          Config::Table& cfg,
+                          const RomAddresses& rom)
+{
+    const PatchCtx ctx{ nds, emu, cfg, rom };
+    Patches_Apply(siteMask, ctx);
+}
+
+void RestoreLeavePatches(melonDS::NDS* nds,
+                         EmuInstance* emu,
+                         Config::Table& cfg,
+                         const RomAddresses& rom)
+{
+    const PatchCtx ctx{ nds, emu, cfg, rom };
+    Patches_RestoreOnLeave(ctx);
+}
+
 } // namespace
 
 void ResetForEmuStart(melonDS::NDS* nds,
@@ -86,8 +105,7 @@ void ReapplyForConfigReload(melonDS::NDS* nds,
         return;
 
     SetMatchHooksActive(nds, emu, cfg, rom, core, true);
-    const PatchCtx ctx{ nds, emu, cfg, rom };
-    Patches_Apply(PatchSite_ConfigReload, ctx);
+    ApplyRegistryPatches(PatchSite_ConfigReload, nds, emu, cfg, rom);
 }
 
 void ApplyOutOfGameFrame(melonDS::NDS* nds,
@@ -95,8 +113,7 @@ void ApplyOutOfGameFrame(melonDS::NDS* nds,
                          Config::Table& cfg,
                          const RomAddresses& rom)
 {
-    const PatchCtx ctx{ nds, emu, cfg, rom };
-    Patches_Apply(PatchSite_OutOfGameFrame, ctx);
+    ApplyRegistryPatches(PatchSite_OutOfGameFrame, nds, emu, cfg, rom);
 }
 
 void RestoreOnMatchEnd(melonDS::NDS* nds,
@@ -105,8 +122,7 @@ void RestoreOnMatchEnd(melonDS::NDS* nds,
                        const RomAddresses& rom,
                        MelonPrimeCore* core)
 {
-    const PatchCtx ctx{ nds, emu, cfg, rom };
-    Patches_RestoreOnLeave(ctx);
+    RestoreLeavePatches(nds, emu, cfg, rom);
     SetMatchHooksActive(nds, emu, cfg, rom, core, false);
 }
 
@@ -117,8 +133,7 @@ void ApplyOnBattleRuntimeEnter(melonDS::NDS* nds,
                                MelonPrimeCore* core,
                                bool nativeWeaponSwitchEnabled)
 {
-    const PatchCtx ctx{ nds, emu, cfg, rom };
-    Patches_Apply(PatchSite_BattleRuntime, ctx);
+    ApplyRegistryPatches(PatchSite_BattleRuntime, nds, emu, cfg, rom);
     SetMatchHooksActive(nds, emu, cfg, rom, core, true);
     if (nativeWeaponSwitchEnabled)
         (void)MelonPrimeCore::WeaponSwitchHook_IsSiteValid(nds, rom.romGroupIndex);
