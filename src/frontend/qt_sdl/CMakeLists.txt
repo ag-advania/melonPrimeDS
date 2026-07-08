@@ -94,6 +94,7 @@ set(SOURCES_QT_SDL
 
     MelonPrime.cpp
     MelonPrimeLifecycle.cpp
+    MelonPrimeRuntimeConfig.cpp
     MelonPrimeLocalization.cpp
     MelonPrimeLocalization/MelonPrimeLanguageRegistry.cpp
     MelonPrimeLocalization/MelonPrimeTranslationCatalog.cpp
