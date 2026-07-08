@@ -177,12 +177,6 @@ namespace MelonPrime {
         RecalcAimFixedPoint();
     }
 
-    void MelonPrimeCore::ApplyAimAdjustSetting(Config::Table& cfg) {
-        const double v = cfg.GetDouble(CfgKey::AimAdjust);
-        m_aimAdjust = static_cast<float>(std::max(0.0, std::isnan(v) ? 0.0 : v));
-        RecalcAimFixedPoint();
-    }
-
     void MelonPrimeCore::RecalcAimFixedPoint()
     {
         m_aimFixedScaleX = static_cast<int32_t>(m_aimSensiFactor * AIM_ONE_FP + 0.5f);
