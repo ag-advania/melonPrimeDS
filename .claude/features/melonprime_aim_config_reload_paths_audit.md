@@ -11,7 +11,7 @@ dedicated review — this area affects aim feel.
 |---|---|---|---|---|
 | Snapshot reload | `MelonPrimeCore::ReloadAimConfigFromTable(cfg)` → `ApplyAimConfigSnapshot(LoadAimConfigSnapshot(cfg))` | `AimSens`, `AimYScale`, `AimAdjust` | Yes, via `RecalcAimFixedPoint()` | `Initialize()`, `ApplyConfigReload()`, ROM detect (`DetectRomAndSetAddresses()`) |
 | Sensitivity hotkey | `MelonPrimeCore::RecalcAimSensitivityCache(cfg)` | `AimSens`, `AimYScale` (**not** `AimAdjust`) | Yes, via `RecalcAimFixedPoint()` | `HandleGlobalHotkeys()` — `HK_MetroidIngameSensiUp` / `HK_MetroidIngameSensiDown` |
-| Dead code | `MelonPrimeCore::ApplyAimAdjustSetting(cfg)` | `AimAdjust` | Yes, via `RecalcAimFixedPoint()` | **none** — zero call sites found (`grep -rn ApplyAimAdjustSetting src/` matches only its own declaration + definition) |
+| Dead code (removed) | `MelonPrimeCore::ApplyAimAdjustSetting(cfg)` — **removed in `8e6206b6`, see §6** | `AimAdjust` | Yes, via `RecalcAimFixedPoint()` | had none — zero call sites found before removal |
 
 All three ultimately call the same `RecalcAimFixedPoint()`, which rebuilds
 `m_aimFixedScaleX/Y`, `m_aimFixedAdjust`, `m_aimFixedSnapThresh`, and — as a
@@ -103,13 +103,14 @@ doc-only change.
 **No outcome is selected by this document.** B and C are not implemented
 here.
 
-## 6. Secondary finding: dead code
+## 6. Secondary finding: dead code — REMOVED (2026-07-08)
 
-`MelonPrimeCore::ApplyAimAdjustSetting(Config::Table&)` (`MelonPrime.h:696`,
-`MelonPrime.cpp:180-184`) has zero call sites. Its purpose — applying
-`AimAdjust` on its own — is now fully covered by `ReloadAimConfigFromTable`
-(which applies `AimSens` + `AimYScale` + `AimAdjust` together via
-`AimConfigSnapshot`). This looks like a superseded helper from before the
-snapshot split landed. Not removed in this document (doc-only scope); flagged
-as a small, low-risk future cleanup candidate — a plain dead-function removal,
-verified by the same `grep -rn` search used here, with no behavior change.
+`MelonPrimeCore::ApplyAimAdjustSetting(Config::Table&)` had zero call sites.
+Its purpose — applying `AimAdjust` on its own — was fully covered by
+`ReloadAimConfigFromTable` (which applies `AimSens` + `AimYScale` +
+`AimAdjust` together via `AimConfigSnapshot`); it was a superseded helper
+from before the snapshot split landed. Removed in commit `8e6206b6`
+("Phase 1: remove dead MelonPrimeCore::ApplyAimAdjustSetting") after
+re-confirming zero call sites via `grep -rn` — declaration and definition
+only, no call sites to update, build + `audit-melonprime-srp-performance.ps1`
+both green.
