@@ -29,6 +29,8 @@ constexpr int kLineEditMinWidth = 78;
 
 } // namespace
 
+// ─── Context construction ───────────────────────────────────────────────────
+
 WidgetFactoryContext MakeFactoryContext(
     QWidget& parent,
     QFormLayout& form,
@@ -39,6 +41,8 @@ WidgetFactoryContext MakeFactoryContext(
 {
     return WidgetFactoryContext{ parent, form, rows, cfg, populating, signalReceiver };
 }
+
+// ─── Shared helpers ─────────────────────────────────────────────────────────
 
 void UpdateColorButton(QPushButton& button, int r, int g, int b)
 {
@@ -66,6 +70,8 @@ void AppendLabeledRow(QFormLayout& form, QList<QWidget*>& rows,
     form.addRow(UiText::Tr(label), &widget);
     rows.append(&widget);
 }
+
+// ─── Config write helpers (all no-op while `populating` is true) ───────────
 
 void SetBoolIfEditing(Config::Table& cfg, bool populating,
                       const std::string& key, bool value)
@@ -98,6 +104,8 @@ void SetStringIfEditing(Config::Table& cfg, bool populating,
     cfg.SetString(key, value);
     InvalidateHudConfigCache();
 }
+
+// ─── Plain value-widget row factories ───────────────────────────────────────
 
 QWidget* AddBoolRadioRow(WidgetFactoryContext& ctx,
                          const QString& label, const char* key)
@@ -242,12 +250,23 @@ QLineEdit* AddLineEditRow(WidgetFactoryContext& ctx,
     return le;
 }
 
+// ─── Color row factories (all route through ColorDialogPrefs::getColor —
+// never call QColorDialog directly; enforced by audit-color-dialog-prefs.ps1) ─
+
 namespace {
 
 // Opens the color picker for the current keyR/keyG/keyB value, and on a
 // valid pick writes it back to config + refreshes the swatch button.
 // Shared by AddColorPickerRow / AddSubColorRow / AddColorOverlayRow, all of
 // which otherwise repeat this exact sequence.
+//
+// User-click-only path: called exclusively from QPushButton::clicked
+// handlers, so it is intentionally not gated by ctx.populating (there is no
+// "populate the form and this fires spuriously" concern the way there is
+// for setValue()/setChecked() on the other widget types). If a future
+// change ever triggers a color button click programmatically, this
+// function would need the same populating guard the other Set*IfEditing
+// helpers use.
 void PickAndApplyColor(QWidget& dialogParent, Config::Table& cfg, QPushButton& btn,
                        const std::string& keyR, const std::string& keyG, const std::string& keyB)
 {
