@@ -11,7 +11,9 @@ Merged from `melonprime-srp-refactor-v3` in PR #520 (`c5e95f55`)
 | 7 | HUD FormBuilder Step 2 | ✅ Done | `c5811762` |
 | 8 | ScreenCursorPolicy friend reduction | ✅ Done | `c95b7959` |
 | 9 | PatchLifecycleGateway Step 2 | ✅ Done | `c02768eb` |
-| 10 | RuntimeConfig aim sensitivity | ⏳ Pending | |
+| 10 | RuntimeConfig aim sensitivity | ✅ Done | `6f543432` |
+
+All post-merge phases (7–10) complete.
 
 ## Immediate Plan (merged via PR #520)
 
@@ -119,7 +121,7 @@ Artifact digest: `sha256:a5ba47b3081219e23c8e0fb7c647712fa92cdc5180ada4abaead48e
 
 **Step 1 scope:** `UpdateColorButton`, `InvalidateHudConfigCache`, `Set*IfEditing`, `AppendLabeledRow`
 
-**Not moved:** widget factories (`addCheckBox`, etc.)
+**Not moved:** opacity slider, line edit, color picker, sub-color rows (Steps 3–4)
 
 ## PR 6: PatchLifecycleGateway Step 1
 
@@ -129,7 +131,31 @@ Artifact digest: `sha256:a5ba47b3081219e23c8e0fb7c647712fa92cdc5180ada4abaead48e
 
 **Boundary:** DS ARM9 patch lifecycle only; Custom HUD patch state stays in lifecycle.
 
-**Not touched:** `RunFrameHook`, `ApplyConfigReload` patch paths.
+**Not touched:** `RunFrameHook`.
+
+## Phase 7: HUD FormBuilder Step 2
+
+**Changed:** `MelonPrimeHudEditorFormBuilder.h/.cpp`, `MelonPrimeHudConfigOnScreenEdit.cpp`
+
+**Moved:** `addCheckBox`, `addComboBox`, `addSpinBox`, `addDoubleSpinBox` widget factories.
+
+## Phase 8: ScreenCursorPolicy friend reduction
+
+**Changed:** `Screen.h/.cpp`, `MelonPrimeScreenCursorPolicy.cpp`
+
+**Behavior:** Policy uses narrow `ScreenPanel` accessors; friend declarations removed.
+
+## Phase 9: PatchLifecycleGateway Step 2
+
+**Changed:** `MelonPrimePatchLifecycle.h/.cpp`, `MelonPrimeLifecycle.cpp`
+
+**Behavior:** `ApplyConfigReload()` patch/hook reapply via `ReapplyForConfigReload`.
+
+## Phase 10: RuntimeConfig aim sensitivity
+
+**Changed:** `MelonPrimeRuntimeConfig.h/.cpp`, `MelonPrime.h/.cpp`, `MelonPrimeLifecycle.cpp`, `MelonPrimeGameRomDetect.cpp`
+
+**Behavior:** `AimConfigSnapshot` load/apply; lifecycle/ROM-detect use `ReloadAimConfigFromTable`.
 
 ## Audit Summary
 
@@ -154,22 +180,20 @@ Artifact digest: `sha256:a5ba47b3081219e23c8e0fb7c647712fa92cdc5180ada4abaead48e
 
 ## Post-Merge (after merge to highres_fonts_v3)
 
-Record here:
-
 ```text
-- Merged to `highres_fonts_v3` in `<merge-sha>`
-- Windows CI passed in run `28924163273`
-- Ubuntu/macOS/BSD CI passed in `<run-id>`
+- Merged SRP refactor v3 immediate plan via PR #520 (`c5e95f55`) into `highres_fonts_v3`
+- Post-merge phases 7–10 completed on `highres_fonts_v3` (commits `c5811762`–`6f543432`)
+- Windows CI passed in run `28924163273` (pre phases 7–10)
+- CI for phases 7–10: pending confirmation
 ```
 
-## Next Phase (after merge)
+## Next Phase (after v3 phases 7–10)
 
-Do **not** mix with v3 merge. Start with small steps:
+Do **not** mix with completed v3 work. Start with small steps:
 
-1. **HUD Editor FormBuilder Step 2** — `addCheckBox`, `addComboBox`, `addSpinBox`, `addDoubleSpinBox`
-2. **ScreenCursorPolicy friend reduction** — minimal accessors, no public API bloat
-3. **PatchLifecycleGateway Step 2** — `ApplyConfigReload()` patch/hook reapply only
-4. **RuntimeConfig follow-up** — Aim sensitivity snapshot (separate PR; behavior-sensitive)
+1. **HUD Editor FormBuilder Step 3** — opacity slider, line edit helpers
+2. **HUD Editor FormBuilder Step 4** — color picker, sub-color rows
+3. **ScreenCursorPolicy** — `releaseCursorStateForClose` policy extraction (optional)
 
 Still deferred:
 
