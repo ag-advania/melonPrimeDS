@@ -127,4 +127,19 @@ void DeactivateHooksOnLeaveInGame(melonDS::NDS* nds,
         emu);
 }
 
+void DeactivateHooksForRomDetect(melonDS::NDS* nds,
+                                 EmuInstance* emu,
+                                 Config::Table& cfg,
+                                 const RomAddresses& rom,
+                                 MelonPrimeCore* core)
+{
+    ARM9Hook_SetMatchHooksActive(
+        nds,
+        cfg,
+        rom.romGroupIndex,
+        core,
+        false,
+        emu);
+}
+
 } // namespace MelonPrime::PatchLifecycle
