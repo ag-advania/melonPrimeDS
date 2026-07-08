@@ -184,18 +184,26 @@ Artifact digest: `sha256:a5ba47b3081219e23c8e0fb7c647712fa92cdc5180ada4abaead48e
 - Merged SRP refactor v3 immediate plan via PR #520 (`c5e95f55`) into `highres_fonts_v3`
 - Post-merge phases 7–10 completed on `highres_fonts_v3` (commits `c5811762`–`6f543432`)
 - Windows CI passed in run `28924163273` (pre phases 7–10)
-- CI for phases 7–10: pending confirmation
+- CI for phases 7–10: pending manual run
 ```
 
-## Next Phase (after v3 phases 7–10)
+## Post-Phase-10 Continuation Plan (Phases 11–16)
 
-Do **not** mix with completed v3 work. Start with small steps:
+Tracked in the "Never Mix Rules" spirit — each phase is its own commit, no
+mixing of unrelated widget kinds or subsystems in one change.
 
-1. **HUD Editor FormBuilder Step 3** — opacity slider, line edit helpers
-2. **HUD Editor FormBuilder Step 4** — color picker, sub-color rows
-3. **ScreenCursorPolicy** — `releaseCursorStateForClose` policy extraction (optional)
+| Phase | Title | Status |
+|---|---|---|
+| 11 | Stabilization / docs cleanup | ✅ Done |
+| 12 | HUD Editor FormBuilder Step 3 (opacity slider, line edit) | Pending |
+| 13 | HUD Editor FormBuilder Step 4 (color picker, sub-color, overlay row) | Pending |
+| 14 | ScreenCursorPolicy `ReleaseForClose` extraction | Pending |
+| 15 | PatchLifecycleGateway Step 3 (design doc only) | Pending |
+| 16 | RuntimeConfig cleanup follow-up (naming/comments only) | Pending |
 
-Still deferred:
+Next up: **Phase 12 — HUD Editor FormBuilder Step 3**.
+
+Still deferred (do not touch without a dedicated plan):
 
 ```text
 RunFrameHook大分割 / ARM9 hook context化 / HUD render unity分割 /
