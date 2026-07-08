@@ -107,7 +107,12 @@ Done (macOS, via computer-use against a real MPH ROM):
 - App window close (`ReleaseForClose`)
 
 Still open (flagged, not blocking, per the accelerated plan's "manual smoke
-for gameplay-sensitive batches only" standard):
+for gameplay-sensitive batches only" standard). A live gameplay pass
+(loading Adventure Mode via computer-use) was attempted 2026-07-08 but
+handed off to the user instead — they closed the automated session and
+opted to run this pass themselves rather than have it done via
+computer-use, given the time cost of blind-clicking through DS touch-menu
+navigation:
 - In-game aim, shoot/zoom, weapon switch, morph ball boost, Adventure map
   WASD, pause/resume, stop/reset — none of these were exercised end-to-end
   in a live match, so PatchLifecycleGateway Sites A/B (match-end restore,
