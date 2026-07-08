@@ -170,10 +170,9 @@ namespace MelonPrime {
     }
 
     void MelonPrimeCore::RecalcAimSensitivityCache(Config::Table& cfg) {
-        const float sens = static_cast<float>(cfg.GetInt(CfgKey::AimSens));
-        const float yScale = static_cast<float>(cfg.GetDouble(CfgKey::AimYScale));
-        m_aimSensiFactor = sens * 0.01f;
-        m_aimCombinedY = m_aimSensiFactor * yScale;
+        const AimSensitivitySnapshot s = LoadAimSensitivitySnapshot(cfg);
+        m_aimSensiFactor = s.aimSensiFactor;
+        m_aimCombinedY = s.aimCombinedY;
         RecalcAimFixedPoint();
     }
 
