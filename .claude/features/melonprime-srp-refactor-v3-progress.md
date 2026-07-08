@@ -416,6 +416,16 @@ from `PatchLifecycle.cpp`. `StateFlags::BIT_BATTLE_RUNTIME_MODE` stays set
 in `HandleBattleRuntimeEnter()`, which remains a single cold outlined
 function (not inlined into `RunFrameHook`, not split awkwardly across files).
 
+**Flag-ordering re-check (2026-07-08, in response to external audit R1):**
+`git show b8e819e4:src/frontend/qt_sdl/MelonPrime.cpp` (the commit
+immediately before Site B) confirms `m_flags.set(StateFlags::BIT_BATTLE_RUNTIME_MODE)`
+was already the first statement in `HandleBattleRuntimeEnter()`, before the
+patch/hook/weapon-switch sequence — identical to the current code. Batch 1
+did not move this write earlier or later relative to
+`Patches_Apply(PatchSite_BattleRuntime)`; only the three-call body below it
+was wrapped into `PatchLifecycle::ApplyOnBattleRuntimeEnter(...)`. No
+ordering change occurred.
+
 ### Verification (per commit)
 
 - Clean macOS build after each commit
