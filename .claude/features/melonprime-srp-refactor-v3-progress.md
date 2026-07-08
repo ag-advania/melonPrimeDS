@@ -1,14 +1,19 @@
 # MelonPrime SRP Refactor v3 — Progress
 
-Branch: `melonprime-srp-refactor-v3`
+Branch: `highres_fonts_v3` (active)
 
-Base: `highres_fonts_v3`
+Merged from `melonprime-srp-refactor-v3` in PR #520 (`c5e95f55`)
 
-HEAD: `d7992c43` — Split MelonPrime audit steps in Ubuntu and Windows workflows.
+## Post-Merge Phase Status
 
-Status vs base: **10 commits ahead / 0 behind** `highres_fonts_v3`
+| Phase | Title | Status | Commit |
+|---|---|---|---|
+| 7 | HUD FormBuilder Step 2 | ✅ Done | (pending push) |
+| 8 | ScreenCursorPolicy friend reduction | ⏳ Pending | |
+| 9 | PatchLifecycleGateway Step 2 | ⏳ Pending | |
+| 10 | RuntimeConfig aim sensitivity | ⏳ Pending | |
 
-## PR Status (Immediate Plan)
+## Immediate Plan (merged via PR #520)
 
 | PR | Title | Status | Commit |
 |---|---|---|---|
