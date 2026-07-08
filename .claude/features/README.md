@@ -13,5 +13,6 @@ Keep each feature note small and practical:
 - [Zoom status performance](zoom-status-performance.md)
 - [Zoom aim sensitivity](zoom-aim-sensitivity.md)
 - [Custom HUD zoom crosshair](custom-hud-zoom-crosshair.md)
+- [Custom HUD color dialog preferences](custom-hud-color-dialog-prefs.md)
 - [Morph ball boost](morph-ball-boost.md)
 - [SF reticle effects reference](sf-reticle-effects-reference.md)
