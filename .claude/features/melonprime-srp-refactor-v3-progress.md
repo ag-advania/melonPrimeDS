@@ -196,7 +196,7 @@ mixing of unrelated widget kinds or subsystems in one change.
 |---|---|---|
 | 11 | Stabilization / docs cleanup | ✅ Done (`fe5ef70b`) |
 | 12 | HUD Editor FormBuilder Step 3 (opacity slider, line edit) | ✅ Done (`31b3b993`) |
-| 13 | HUD Editor FormBuilder Step 4 (color picker, sub-color, overlay row) | Pending |
+| 13 | HUD Editor FormBuilder Step 4 (color picker, sub-color, overlay row) | ✅ Done (`40a779f3`) |
 | 14 | ScreenCursorPolicy `ReleaseForClose` extraction | Pending |
 | 15 | PatchLifecycleGateway Step 3 (design doc only) | Pending |
 | 16 | RuntimeConfig cleanup follow-up (naming/comments only) | Pending |
@@ -220,7 +220,28 @@ would have kept every post-populate edit blocked forever. Fixed by making
 everywhere — copies of reference members still alias the same long-lived
 objects. No config key or UI behavior change.
 
-Next up: **Phase 13 — HUD Editor FormBuilder Step 4**.
+## Phase 13: HUD FormBuilder Step 4
+
+**Changed:** `MelonPrimeHudEditorFormBuilder.h/.cpp`, `MelonPrimeHudConfigOnScreenEdit.cpp`
+
+**Moved:** `addColorPicker`, `addSubColor`, `addColorOverlayRow` widget
+factories (as `AddColorPickerRow` / `AddSubColorRow` / `AddColorOverlayRow`,
+`WidgetFactoryContext`-based). All three route through
+`MelonPrime::ColorDialogPrefs::getColor` (never `QColorDialog` directly,
+verified by `audit-color-dialog-prefs.ps1`). The repeated "open picker →
+apply RGB → refresh swatch → invalidate cache" body is now a single
+`PickAndApplyColor` helper shared by all three, instead of being
+copy-pasted three times. `MelonPrimeHudConfigOnScreenEdit.cpp` dropped its
+now-unused `QHBoxLayout`/`QRadioButton`/`MelonPrimeColorDialogPrefs.h`
+includes and the `kRadioOnWidth`/`kRadioOffWidth` constants.
+
+`MelonPrimeHudConfigOnScreenEdit.cpp` (845 → 697 lines) is now a thin
+delegate layer over `MelonPrimeHudEditorFormBuilder` for every widget
+factory (checkbox/combo/spin/double-spin/opacity/line-edit/color/sub-color/
+overlay-row); only `addSeparator`, layout/populate/snapshot logic, and the
+crosshair/preview-specific code remain in this file.
+
+Next up: **Phase 14 — ScreenCursorPolicy `ReleaseForClose` extraction**.
 
 Still deferred (do not touch without a dedicated plan):
 
