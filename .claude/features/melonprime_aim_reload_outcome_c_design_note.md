@@ -1,9 +1,11 @@
-# Aim Config Reload — Outcome C Design Note (doc only)
+# Aim Config Reload — Outcome C Design Note
 
-Status: **design note only, not implemented**. Answers the three questions
-raised in `melonprime_aim_config_reload_paths_audit.md` §5 outcome C before
-anyone implements it. Do not implement from this note alone — it still
-needs its own build+audit+smoke pass per that audit's own guidance.
+Status: **implemented** (commit `5a49864c`, "Introduce AimSensitivitySnapshot
+helper"). Outcome C has been implemented as `AimSensitivitySnapshot`,
+matching the shape below exactly. Gameplay smoke (sensitivity hotkey
+up/down in-game, and a Settings-dialog `AimAdjust` change followed by a
+sensitivity hotkey press) remains deferred to the final release-readiness
+smoke pass — it was not run as part of this implementation.
 
 ## 1. The duplication this would remove
 
@@ -128,15 +130,15 @@ remembering not to add it.
 
 ## 4. Verdict
 
-All three answers are favorable: outcome C removes a literal duplicate
+All three answers were favorable: outcome C removes a literal duplicate
 computation, changes zero call-site behavior, and turns an implicit
-invariant (hotkey path skips `AimAdjust`) into a structural one. It is
-lower-risk than it looked in the original audit's framing.
+invariant (hotkey path skips `AimAdjust`) into a structural one.
 
-**Still not implemented here.** Per `melonprime_aim_config_reload_paths_audit.md`
-§5, this needs its own build + `audit-melonprime-srp-performance.ps1` +
-smoke pass (specifically: sensitivity hotkey up/down in-game, and a
-Settings-dialog `AimAdjust` change followed immediately by a sensitivity
-hotkey press, to confirm the OSD-visible sensitivity value and actual aim
-feel are unchanged) before landing as code, consistent with how Sites A/B
-and the ScreenCursorPolicy extraction were each verified in this repo.
+**Implemented.** Build and `audit-melonprime-srp-performance.ps1` both
+passed for the implementation commit. The gameplay smoke pass described
+above (sensitivity hotkey up/down in-game, and a Settings-dialog
+`AimAdjust` change followed immediately by a sensitivity hotkey press, to
+confirm the OSD-visible sensitivity value and actual aim feel are
+unchanged) is intentionally deferred to final release-readiness smoke,
+consistent with how Sites A/B and the ScreenCursorPolicy extraction were
+each build+audit verified before their own later gameplay smoke passes.

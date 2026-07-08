@@ -1,9 +1,10 @@
 # Aim Config Reload Paths — Audit (doc only)
 
-Status: **audit only, no behavior change**. This document exists to make the
-tradeoff visible before anyone decides to unify these paths (Batch 4 of the
-accelerated follow-up plan). Do not implement outcome B or C below without a
-dedicated review — this area affects aim feel.
+Status: **audit; outcome C selected and implemented** (see §5). This
+document exists to make the tradeoff visible before anyone decides to
+unify these paths (Batch 4 of the accelerated follow-up plan). Outcome C
+has since been implemented as `AimSensitivitySnapshot`. Do not implement
+outcome B without a dedicated review — this area affects aim feel.
 
 ## 1. The three paths
 
@@ -87,24 +88,23 @@ current code's omission of `AimAdjust` reads as intentional ("a sensitivity
 hotkey should only touch sensitivity"), not an oversight, so this outcome
 should not be assumed correct by default.
 
-**C. Introduce a lighter `AimSensitivitySnapshot` (no `AimAdjust`) and route
-both `RecalcAimSensitivityCache` and the `AimSens`/`AimYScale` portion of
-`ReloadAimConfigFromTable` through it.** Would remove the duplicated
-`sens * 0.01f` / `m_aimSensiFactor * yScale` math (currently written twice:
-`MelonPrime.cpp:158-159` inside `ApplyAimConfigSnapshot` and again at
-`MelonPrime.cpp:175-176` inside `RecalcAimSensitivityCache`), while
-preserving the existing behavior split (hotkey never touches `AimAdjust`).
-This is the option that removes duplication without changing observable
-behavior — but it still touches hot-launch-adjacent code (`RecalcAimFixedPoint`
-call site count would not change, only how the two callers get their
-sensitivity values), so it needs its own build+audit+smoke pass, not a
-doc-only change. **See `melonprime_aim_reload_outcome_c_design_note.md`**
-for the worked-out shape and an explicit answer to the three tradeoff
-questions below — all three came back favorable, but implementation is
-still deferred pending its own verification pass.
+**C. [SELECTED, IMPLEMENTED] Introduce a lighter `AimSensitivitySnapshot`
+(no `AimAdjust`) and route both `RecalcAimSensitivityCache` and the
+`AimSens`/`AimYScale` portion of `ReloadAimConfigFromTable` through it.**
+Removed the duplicated `sens * 0.01f` / `m_aimSensiFactor * yScale` math
+(previously written twice: inside `ApplyAimConfigSnapshot`'s
+`LoadAimConfigSnapshot` call and again inside `RecalcAimSensitivityCache`),
+while preserving the existing behavior split — the hotkey path still never
+touches `AimAdjust`, and that skip is now structural (`AimSensitivitySnapshot`
+has no `aimAdjust` field) rather than a convention. Implemented in commit
+`5a49864c` ("Introduce AimSensitivitySnapshot helper"); build and
+`audit-melonprime-srp-performance.ps1` both passed. **See
+`melonprime_aim_reload_outcome_c_design_note.md`** for the worked-out shape
+and the three tradeoff questions this resolved. Outcome B was not selected
+and remains a possible future option, not implemented.
 
-**No outcome is selected by this document.** B and C are not implemented
-here.
+**Outcome C was selected and implemented** (commit `5a49864c`). Outcome B
+remains not implemented.
 
 ## 6. Secondary finding: dead code — REMOVED (2026-07-08)
 
