@@ -31,6 +31,8 @@ namespace MelonPrime {
 
     struct RuntimeConfigSnapshot;
 
+    struct AimConfigSnapshot;
+
 #ifdef _WIN32
     class RawInputWinFilter;
 #endif
@@ -713,6 +715,8 @@ namespace MelonPrime {
         void SetupRawInput();
         void ApplyJoy2KeySupportAndQtFilter(bool enable, bool doReset = true);
         void ApplyRuntimeConfigSnapshot(const RuntimeConfigSnapshot& snapshot);
+        void ApplyAimConfigSnapshot(const AimConfigSnapshot& snapshot);
+        void ReloadAimConfigFromTable(Config::Table& cfg);
         void ReloadConfigFlags();
         COLD_FUNCTION void ApplyConfigReload();
     };

@@ -10,6 +10,7 @@
 #include "MelonPrimePlatformInput.h"
 #include "MelonPrimeGameRomAddrTable.h"
 #include "MelonPrimeBattleFlowState.h"
+#include "MelonPrimeRuntimeConfig.h"
 
 #ifdef MELONPRIME_CUSTOM_HUD
 #include "MelonPrimeHudRender.h"
@@ -141,6 +142,19 @@ namespace MelonPrime {
             m_rawFilter->resetHotkeyEdges();
         }
 #endif
+    }
+
+    void MelonPrimeCore::ApplyAimConfigSnapshot(const AimConfigSnapshot& s)
+    {
+        m_aimSensiFactor = s.aimSensiFactor;
+        m_aimCombinedY = s.aimCombinedY;
+        m_aimAdjust = s.aimAdjust;
+        RecalcAimFixedPoint();
+    }
+
+    void MelonPrimeCore::ReloadAimConfigFromTable(Config::Table& cfg)
+    {
+        ApplyAimConfigSnapshot(LoadAimConfigSnapshot(cfg));
     }
 
     void MelonPrimeCore::RecalcAimSensitivityCache(Config::Table& cfg) {

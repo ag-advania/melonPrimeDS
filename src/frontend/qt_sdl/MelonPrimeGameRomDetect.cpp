@@ -152,8 +152,7 @@ namespace MelonPrime {
         }
         emuInstance->osdAddMessage(0, message);
 
-        RecalcAimSensitivityCache(localCfg);
-        ApplyAimAdjustSetting(localCfg);
+        ReloadAimConfigFromTable(localCfg);
     }
 
 } // namespace MelonPrime
